@@ -19,6 +19,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 [-Config Rel
 - 成否は**終了コードだけ**で判断する (出力を grep しない)
 - ビルド → `RMTests.exe` → `check_layers.ps1` の順に全部通ること
 - 画面に関わる変更は、実際に起動して操作して確かめる。確かめていないことは「未確認」と書く
+- 画面の確認はユーザーが自分で行う。機能を足したら [docs/HOW_TO_TRY.md](docs/HOW_TO_TRY.md) の試し方を書き足す
 
 ## 憲法 (前のエンジンの失敗から。破らない)
 
