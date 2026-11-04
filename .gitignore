@@ -1,0 +1,6 @@
+# Build output
+build/
+.vs/
+*.user
+*.aps
+*.tmp

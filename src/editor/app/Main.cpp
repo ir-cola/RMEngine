@@ -1,0 +1,77 @@
+// Entry point of RM_Engine.exe (Hub + editor).
+
+#include "base/Log.h"
+#include "base/Utf.h"
+#include "base/Version.h"
+#include "editor/app/App.h"
+#include "editor/project/HubSettings.h"
+#include "platform/Win.h"
+
+#include <objbase.h>
+#include <shellapi.h>
+
+#include <filesystem>
+#include <fstream>
+#include <mutex>
+
+namespace {
+
+rm::editor::LaunchOptions ParseCommandLine() {
+    rm::editor::LaunchOptions opt;
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (!argv) return opt;
+    for (int i = 1; i < argc; ++i) {
+        const std::wstring a = argv[i];
+        if (a == L"--project" && i + 1 < argc) {
+            opt.projectFile = argv[++i];
+        } else if (a.size() > 5 && _wcsicmp(a.c_str() + a.size() - 5, L".rmpf") == 0) {
+            opt.projectFile = a;  // a .rmpf passed directly (e.g. opened from Explorer)
+        }
+    }
+    LocalFree(argv);
+    return opt;
+}
+
+void InstallLogSinks() {
+    // Debugger output (Visual Studio "Output" window).
+    rm::log::AddSink([](const rm::log::Entry& e) {
+        const char* tag = e.level == rm::log::Level::Error ? "[error] " : e.level == rm::log::Level::Warn ? "[warn]  " : "[info]  ";
+        OutputDebugStringW(rm::Utf8ToWide(std::string(tag) + e.text + "\n").c_str());
+    });
+    // %LOCALAPPDATA%\RM_Engine\Logs\editor.log (overwritten on every start).
+    wchar_t* local = nullptr;
+    size_t len = 0;
+    if (_wdupenv_s(&local, &len, L"LOCALAPPDATA") != 0 || !local) return;
+    const std::filesystem::path dir = std::filesystem::path(local) / L"RM_Engine" / L"Logs";
+    free(local);
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    static std::ofstream file(dir / L"editor.log", std::ios::binary | std::ios::trunc);
+    static std::mutex mtx;
+    if (!file) return;
+    rm::log::AddSink([](const rm::log::Entry& e) {
+        std::lock_guard lock(mtx);
+        const char* tag = e.level == rm::log::Level::Error ? "ERROR" : e.level == rm::log::Level::Warn ? "WARN " : "INFO ";
+        file << std::format("{:9.3f} {} {}\n", e.time, tag, e.text);
+        file.flush();
+    });
+}
+
+}  // namespace
+
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+    // STA is required by the shell file dialogs.
+    const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    InstallLogSinks();
+    rm::log::Info("{} {} を起動しました", rm::kEngineName, rm::kEngineVersion);
+
+    int code = 0;
+    {
+        rm::editor::App app;
+        code = app.Run(ParseCommandLine());
+    }
+    rm::log::Info("終了しました");
+    if (SUCCEEDED(hr)) CoUninitialize();
+    return code;
+}

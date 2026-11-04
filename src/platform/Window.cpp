@@ -1,0 +1,138 @@
+#include "platform/Window.h"
+
+#include <dwmapi.h>
+#include <shellscalingapi.h>
+
+#include <algorithm>
+
+#include "resource.h"
+
+namespace rm::platform {
+
+namespace {
+
+constexpr wchar_t kClassName[] = L"RMEngineWindow";
+
+void RegisterClassOnce(WNDPROC proc) {
+    static bool done = false;
+    if (done) return;
+    HINSTANCE inst = GetModuleHandleW(nullptr);
+    WNDCLASSEXW wc{};
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_DBLCLKS;
+    wc.lpfnWndProc = proc;
+    wc.hInstance = inst;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = CreateSolidBrush(RGB(0x1B, 0x1C, 0x1F));
+    wc.lpszClassName = kClassName;
+    wc.hIcon = static_cast<HICON>(LoadImageW(inst, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON, GetSystemMetrics(SM_CXICON),
+                                             GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR));
+    wc.hIconSm = static_cast<HICON>(LoadImageW(inst, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+                                               GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
+    RegisterClassExW(&wc);
+    done = true;
+}
+
+DWORD StyleFor(const WindowDesc& d) {
+    return d.resizable ? WS_OVERLAPPEDWINDOW : (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX);
+}
+
+}  // namespace
+
+bool Window::Create(const WindowDesc& desc, WindowListener* listener) {
+    desc_ = desc;
+    listener_ = listener;
+    RegisterClassOnce(&Window::WndProc);
+
+    POINT cursor{};
+    GetCursorPos(&cursor);
+    HMONITOR mon = MonitorFromPoint(cursor, MONITOR_DEFAULTTOPRIMARY);
+    UINT dpiX = 96, dpiY = 96;
+    GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
+    MONITORINFO mi{sizeof(mi)};
+    GetMonitorInfoW(mon, &mi);
+
+    const DWORD style = StyleFor(desc);
+    const float s = dpiX / 96.f;
+    RECT r{0, 0, static_cast<LONG>(desc.widthDip * s), static_cast<LONG>(desc.heightDip * s)};
+    AdjustWindowRectExForDpi(&r, style, FALSE, 0, dpiX);
+    const RECT& wa = mi.rcWork;
+    const int w = std::min<int>(r.right - r.left, wa.right - wa.left);
+    const int h = std::min<int>(r.bottom - r.top, wa.bottom - wa.top);
+    const int x = wa.left + (wa.right - wa.left - w) / 2;
+    const int y = wa.top + (wa.bottom - wa.top - h) / 2;
+
+    hwnd_ = CreateWindowExW(0, kClassName, desc.title.c_str(), style, x, y, w, h, nullptr, nullptr, GetModuleHandleW(nullptr),
+                            this);
+    if (!hwnd_) return false;
+    dpi_ = GetDpiForWindow(hwnd_);
+
+    const BOOL dark = TRUE;
+    DwmSetWindowAttribute(hwnd_, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
+    const COLORREF caption = RGB((desc.captionRgb >> 16) & 0xFF, (desc.captionRgb >> 8) & 0xFF, desc.captionRgb & 0xFF);
+    DwmSetWindowAttribute(hwnd_, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
+    return true;
+}
+
+void Window::Destroy() {
+    listener_ = nullptr;
+    if (hwnd_) {
+        HWND h = hwnd_;
+        hwnd_ = nullptr;
+        SetWindowLongPtrW(h, GWLP_USERDATA, 0);
+        DestroyWindow(h);
+    }
+}
+
+void Window::SetTitle(std::wstring_view title) {
+    if (hwnd_) SetWindowTextW(hwnd_, std::wstring(title).c_str());
+}
+
+LRESULT CALLBACK Window::WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_NCCREATE) {
+        // CreateWindowExW is still running: remember the object for every later message.
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(l);
+        auto* created = static_cast<Window*>(cs->lpCreateParams);
+        created->hwnd_ = h;
+        SetWindowLongPtrW(h, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(created));
+        return DefWindowProcW(h, m, w, l);
+    }
+    auto* self = reinterpret_cast<Window*>(GetWindowLongPtrW(h, GWLP_USERDATA));
+    if (!self) return DefWindowProcW(h, m, w, l);  // before WM_NCCREATE or after Destroy()
+
+    switch (m) {
+        case WM_GETMINMAXINFO: {
+            auto* mmi = reinterpret_cast<MINMAXINFO*>(l);
+            const UINT dpi = GetDpiForWindow(h);
+            const float s = dpi / 96.f;
+            RECT r{0, 0, static_cast<LONG>(self->desc_.minWidthDip * s), static_cast<LONG>(self->desc_.minHeightDip * s)};
+            AdjustWindowRectExForDpi(&r, StyleFor(self->desc_), FALSE, 0, dpi);
+            mmi->ptMinTrackSize = {r.right - r.left, r.bottom - r.top};
+            return 0;
+        }
+        case WM_DPICHANGED: {
+            self->dpi_ = HIWORD(w);
+            if (self->listener_) {
+                bool handled = false;
+                self->listener_->OnMessage(h, m, w, l, handled);
+            }
+            const RECT* rc = reinterpret_cast<const RECT*>(l);
+            SetWindowPos(h, nullptr, rc->left, rc->top, rc->right - rc->left, rc->bottom - rc->top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+            return 0;
+        }
+        case WM_ERASEBKGND:
+            return 1;  // everything is drawn by Direct2D
+        default:
+            break;
+    }
+
+    if (self->listener_) {
+        bool handled = false;
+        const LRESULT r = self->listener_->OnMessage(h, m, w, l, handled);
+        if (handled) return r;
+    }
+    return DefWindowProcW(h, m, w, l);
+}
+
+}  // namespace rm::platform

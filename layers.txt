@@ -1,0 +1,12 @@
+# The only source of truth for "which folder of src/ is which layer".
+# Checked by tools/check_layers.ps1 (locally and in CI).
+#
+# folder    layer  ships-in-game
+#   layer: a folder may include only folders with the same or a lower number
+#   ships-in-game: "yes" folders may never include "no" folders (the game exe has no editor)
+
+base        0      yes    # L0 types, strings, JSON, log (pure, std only)
+core        2      yes    # L2 engine core that is not tied to a software (undo history ...)
+platform    3      yes    # L3 Windows: windows, D3D11 / D2D, dialogs, files
+ui          4      yes    # core UI foundation (layout, input, text editing, drawing) - no colors
+editor      6      no     # L6 Hub + editor shell + editor widgets

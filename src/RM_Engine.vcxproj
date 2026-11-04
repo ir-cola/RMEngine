@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RM_Engine.exe = Hub + editor. (The exported game will be a separate exe without any of the editor.) -->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{A3D52E7C-1F64-4B8A-8C2E-5E9F0A7B6C22}</ProjectGuid>
+    <RootNamespace>RM_Engine</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="RM.Common.props" />
+  </ImportGroup>
+  <PropertyGroup>
+    <TargetName>RM_Engine</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;d2d1.lib;dwrite.lib;windowscodecs.lib;dwmapi.lib;imm32.lib;shcore.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <Manifest>
+      <AdditionalManifestFiles>$(RMRoot)resources\app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectReference Include="RMBase.vcxproj">
+      <Project>{6F1C2A41-8B3E-4E1D-9A55-2C7D1E0B3A11}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="core\UndoHistory.cpp" />
+    <ClCompile Include="platform\Gfx.cpp" />
+    <ClCompile Include="platform\Shell.cpp" />
+    <ClCompile Include="platform\Window.cpp" />
+    <ClCompile Include="ui\Context.cpp" />
+    <ClCompile Include="ui\Painter.cpp" />
+    <ClCompile Include="ui\TextEdit.cpp" />
+    <ClCompile Include="editor\app\App.cpp" />
+    <ClCompile Include="editor\app\Main.cpp" />
+    <ClCompile Include="editor\app\ScreenWindow.cpp" />
+    <ClCompile Include="editor\hub\HubScreen.cpp" />
+    <ClCompile Include="editor\project\HubSettings.cpp" />
+    <ClCompile Include="editor\project\Project.cpp" />
+    <ClCompile Include="editor\shell\EditorScreen.cpp" />
+    <ClCompile Include="editor\widgets\Widgets.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="core\UndoHistory.h" />
+    <ClInclude Include="platform\Gfx.h" />
+    <ClInclude Include="platform\Shell.h" />
+    <ClInclude Include="platform\Win.h" />
+    <ClInclude Include="platform\Window.h" />
+    <ClInclude Include="ui\Context.h" />
+    <ClInclude Include="ui\Painter.h" />
+    <ClInclude Include="ui\TextEdit.h" />
+    <ClInclude Include="ui\Types.h" />
+    <ClInclude Include="editor\app\App.h" />
+    <ClInclude Include="editor\app\ScreenWindow.h" />
+    <ClInclude Include="editor\hub\HubScreen.h" />
+    <ClInclude Include="editor\project\HubSettings.h" />
+    <ClInclude Include="editor\project\Project.h" />
+    <ClInclude Include="editor\shell\EditorScreen.h" />
+    <ClInclude Include="editor\widgets\Theme.h" />
+    <ClInclude Include="editor\widgets\Widgets.h" />
+    <ClInclude Include="..\resources\resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\resources\app.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\resources\app.manifest" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

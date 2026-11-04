@@ -1,0 +1,57 @@
+#pragma once
+// Undo / Redo history (pure).
+//
+// Two rules carried over from the previous engine (handoff memo 2-1 / 4-6):
+//  * "Pushed to the history" == "unsaved". The owner wires SetOnModified to its dirty flag,
+//    so an edit that reaches the history can never be lost silently on close.
+//  * Take the command out of the stack first, then run it. A command that tries to Push
+//    while it is being undone / redone is rejected, so the stacks never get out of order
+//    (bug #15 of the previous engine).
+
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace rm {
+
+class ICommand {
+public:
+    virtual ~ICommand() = default;
+    virtual void Do() = 0;
+    virtual void Undo() = 0;
+    virtual std::string Label() const { return {}; }
+};
+
+class UndoHistory {
+public:
+    void SetOnModified(std::function<void()> fn) { onModified_ = std::move(fn); }
+    void SetMaxDepth(size_t n) { maxDepth_ = n; }
+
+    // alreadyDone = true: the edit has been applied by the caller (typical for UI drags).
+    // Returns false when called from inside Undo()/Redo() (the command is dropped).
+    bool Push(std::unique_ptr<ICommand> cmd, bool alreadyDone = true);
+
+    bool CanUndo() const { return !executing_ && !undo_.empty(); }
+    bool CanRedo() const { return !executing_ && !redo_.empty(); }
+    bool Undo();
+    bool Redo();
+    void Clear();
+
+    size_t UndoCount() const { return undo_.size(); }
+    size_t RedoCount() const { return redo_.size(); }
+    bool IsExecuting() const { return executing_; }
+
+private:
+    void Modified() {
+        if (onModified_) onModified_();
+    }
+
+    std::vector<std::unique_ptr<ICommand>> undo_;
+    std::vector<std::unique_ptr<ICommand>> redo_;
+    std::function<void()> onModified_;
+    size_t maxDepth_ = 1000;
+    bool executing_ = false;
+};
+
+}  // namespace rm
