@@ -1,0 +1,40 @@
+#pragma once
+// Reflected types used by the tests (rmgen reads this file for RMTests).
+
+#include "core/reflect/Reflect.h"
+
+#include <string>
+#include <vector>
+
+namespace rmtest {
+
+RM_ENUM(Label="品質")
+enum class Quality { RM_ITEM(Label="低") Low, Medium, RM_ITEM(Label="高") High = 7 };
+
+RM_STRUCT()
+struct Window {
+    RM_PROPERTY(Edit, Min=320, Max=7680) int width = 1280;
+    RM_PROPERTY(Edit, Min=240) int height = 720;
+    RM_PROPERTY(Edit) bool fullscreen = false;
+};
+
+RM_STRUCT(Label="テスト用の設定")
+struct Settings {
+    RM_PROPERTY(Edit, Label="名前", Tooltip="ゲームの名前") std::string title = "My Game";
+    RM_PROPERTY(Edit, Label="速さ", Min=0, Max=10, Step=0.5) float speed = 5.0f;
+    RM_PROPERTY(Edit, Min=-3, Max=3) int level = 1;
+    RM_PROPERTY(Edit) bool vsync = true;
+    RM_PROPERTY(Edit, Min=0, Max=1) rm::Color clear{0.1f, 0.2f, 0.3f, 1.0f};
+    RM_PROPERTY(Edit) rm::Vec2 gravity2d{0, -9.8f};
+    RM_PROPERTY(Edit) rm::Vec3 gravity{0, -9.8f, 0};
+    RM_PROPERTY(Edit) Quality quality = Quality::Medium;
+    RM_PROPERTY(Edit) Window window;
+    RM_PROPERTY(Edit) std::vector<int> scores;
+    RM_PROPERTY(Edit) std::vector<Window> monitors;
+    RM_PROPERTY(Edit) std::vector<Quality> history;
+    RM_PROPERTY(ReadOnly) std::string build = "dev";
+    RM_TRANSIENT() float timer = 0;
+    RM_TRANSIENT() void* runtimeHandle = nullptr;
+};
+
+}  // namespace rmtest

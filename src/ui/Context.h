@@ -89,6 +89,11 @@ public:
     void SetCursor(Cursor c) { cursor_ = c; }
     Cursor GetCursor() const { return cursor_; }
 
+    // Drawn after everything else in the frame, without the clip of the panel that asked
+    // (a drop-down list inside a panel must not be cut off by the panel's edge).
+    void AddOverlay(std::function<void()> fn) { overlays_.push_back(std::move(fn)); }
+    void RunOverlays();
+
     // Set by the window (platform code), used by text fields.
     std::function<std::wstring()> getClipboardText;
     std::function<void(const std::wstring&)> setClipboardText;
@@ -115,6 +120,7 @@ private:
     double caretReset_ = 0;
 
     std::unordered_map<Id, float> floats_;
+    std::vector<std::function<void()>> overlays_;
     bool redraw_ = false;
     Cursor cursor_ = Cursor::Arrow;
 };

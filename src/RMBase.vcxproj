@@ -41,6 +41,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="base\FileName.h" />
+    <ClInclude Include="base\Math.h" />
     <ClInclude Include="base\Json.h" />
     <ClInclude Include="base\Log.h" />
     <ClInclude Include="base\Utf.h" />

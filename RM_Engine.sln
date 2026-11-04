@@ -8,6 +8,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RMBase", "src\RMBase.vcxpro
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RMTests", "tests\RMTests.vcxproj", "{C7E81B93-2D45-4F6C-B1A8-9D3E4F5A6B33}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rmgen", "tools\rmgen\rmgen.vcxproj", "{D4A1F2B3-6C7E-4F80-9A1B-2C3D4E5F6A44}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -26,6 +28,10 @@ Global
 		{C7E81B93-2D45-4F6C-B1A8-9D3E4F5A6B33}.Debug|x64.Build.0 = Debug|x64
 		{C7E81B93-2D45-4F6C-B1A8-9D3E4F5A6B33}.Release|x64.ActiveCfg = Release|x64
 		{C7E81B93-2D45-4F6C-B1A8-9D3E4F5A6B33}.Release|x64.Build.0 = Release|x64
+		{D4A1F2B3-6C7E-4F80-9A1B-2C3D4E5F6A44}.Debug|x64.ActiveCfg = Debug|x64
+		{D4A1F2B3-6C7E-4F80-9A1B-2C3D4E5F6A44}.Debug|x64.Build.0 = Debug|x64
+		{D4A1F2B3-6C7E-4F80-9A1B-2C3D4E5F6A44}.Release|x64.ActiveCfg = Release|x64
+		{D4A1F2B3-6C7E-4F80-9A1B-2C3D4E5F6A44}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

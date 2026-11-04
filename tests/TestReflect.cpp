@@ -1,0 +1,245 @@
+// Tests for reflection (core/reflect): the design's completion conditions T1-T3 plus equality,
+// diff, copy, unknown enum names and the undo command. The types are in TestReflectTypes.h and
+// their tables are written by rmgen during the build of RMTests.
+
+#include "Test.h"
+
+#include "TestReflectTypes.h"
+#include "core/UndoHistory.h"
+#include "core/reflect/Data.h"
+#include "core/reflect/FieldCommand.h"
+
+#include <array>
+#include <cmath>
+#include <limits>
+#include <random>
+
+using namespace rm;
+using namespace rm::reflect;
+using rmtest::Quality;
+using rmtest::Settings;
+using rmtest::Window;
+
+namespace {
+
+const FieldDesc& FieldNamed(const TypeDesc& t, std::string_view name) {
+    for (const auto& f : t.fields) {
+        if (name == f.name) return f;
+    }
+    static FieldDesc none{};
+    return none;
+}
+
+size_t IndexOf(const TypeDesc& t, std::string_view name) {
+    for (size_t i = 0; i < t.fields.size(); ++i) {
+        if (name == t.fields[i].name) return i;
+    }
+    return ~size_t{0};
+}
+
+}  // namespace
+
+RM_TEST(Reflect_TableFromHeader) {
+    const TypeDesc& t = TypeOf<Settings>();
+    CHECK(std::string_view(t.label) == "テスト用の設定");
+    CHECK(t.kind == TypeKind::Struct);
+    CHECK(t.fields.size() == 13);  // transient fields are not in the table
+    CHECK(FieldCount<Settings>() == 15);
+    const FieldDesc& speed = FieldNamed(t, "speed");
+    CHECK(speed.value.type == FieldType::Float);
+    CHECK(speed.hasMin && speed.min == 0 && speed.hasMax && speed.max == 10 && speed.hasStep && speed.step == 0.5);
+    CHECK(std::string_view(speed.Label()) == "速さ");
+    CHECK(std::string_view(FieldNamed(t, "title").tooltip) == "ゲームの名前");
+    CHECK(FieldNamed(t, "build").readOnly && !FieldNamed(t, "build").edit);
+    CHECK(FieldNamed(t, "window").value.structType == &TypeOf<Window>());
+    CHECK(FieldNamed(t, "monitors").array->element.structType == &TypeOf<Window>());
+    const EnumDesc* q = FieldNamed(t, "quality").value.enumType;
+    CHECK(q && q->items.size() == 3);
+    CHECK(std::string_view(q->items[0].label) == "低" && std::string_view(q->items[1].label) == "Medium");
+    CHECK(q->items[2].value == 7);
+    CHECK(FindEnum(typeid(Quality)) == q);
+    CHECK(AllTypes().size() == 2 && AllEnums().size() == 1);
+}
+
+RM_TEST(Reflect_T1_RoundTrip) {
+    // 10,000 random objects: save -> load -> save gives the same bytes, and the objects are equal.
+    std::mt19937 rng(1234);
+    std::uniform_real_distribution<float> unit(0.f, 1.f);
+    const TypeDesc& t = TypeOf<Settings>();
+    for (int n = 0; n < 10000; ++n) {
+        Settings a;
+        a.title = "名前 " + std::to_string(rng());
+        a.speed = unit(rng) * 10.f;
+        a.level = static_cast<int>(rng() % 7) - 3;
+        a.vsync = rng() % 2 == 0;
+        a.clear = {unit(rng), unit(rng), unit(rng), unit(rng)};
+        a.gravity2d = {unit(rng) * 100 - 50, unit(rng) * -20};
+        a.gravity = {unit(rng), -unit(rng) * 30, unit(rng) * 1e-6f};
+        a.quality = std::array{Quality::Low, Quality::Medium, Quality::High}[rng() % 3];
+        a.window.width = 320 + static_cast<int>(rng() % 7000);
+        a.window.fullscreen = rng() % 2 == 0;
+        for (size_t i = rng() % 5; i > 0; --i) a.scores.push_back(static_cast<int>(rng()));
+        for (size_t i = rng() % 3; i > 0; --i) a.monitors.push_back({640 + static_cast<int>(rng() % 100), 480, true});
+        for (size_t i = rng() % 3; i > 0; --i) a.history.push_back(Quality::High);
+        const std::string text = json::Write(Save(a));
+        Settings b;
+        Load(b, *json::Parse(text));
+        if (!Equals(t, &a, &b) || json::Write(Save(b)) != text) {
+            CHECK(false);
+            break;
+        }
+    }
+}
+
+RM_TEST(Reflect_T2_UnknownKeysAreKept) {
+    Settings a;
+    a.speed = 2.5f;
+    json::Value v = Save(a);
+    v.Set("addedByANewerVersion", "keep me");
+    json::Value nested = json::Value::MakeObject();
+    nested.Set("x", 1);
+    v.Set("pluginData", nested);
+    json::Value w = v.Get("window");
+    w.Set("refreshRate", 144);
+    v.Set("window", w);
+    v.Set("quality", "Ultra");  // an enum value this version does not know
+
+    Settings b;
+    Unknowns u;
+    Warnings warn;
+    Load(b, v, &u, &warn);
+    CHECK(b.speed == 2.5f);
+    CHECK(b.quality == Quality::Medium);  // behaves with the default ...
+    CHECK(!warn.empty());                 // ... says so ...
+    const json::Value back = Save(b, &u);  // ... and writes everything back
+    CHECK(back.Get("addedByANewerVersion").AsString() == "keep me");
+    CHECK(back.Get("pluginData").Get("x").AsInt() == 1);
+    CHECK(back.Get("window").Get("refreshRate").AsInt() == 144);
+    CHECK(back.Get("quality").AsString() == "Ultra");
+    CHECK(back.Get("speed").AsDouble() == 2.5);
+    // without an Unknowns the file is read the same way, and only known data is written
+    Settings c;
+    Load(c, v);
+    CHECK(Equals(TypeOf<Settings>(), &b, &c));
+    CHECK(Save(c).Find("addedByANewerVersion") == nullptr);
+}
+
+RM_TEST(Reflect_T3_ClampIsTheSameOnBothRoads) {
+    // speed: Min=0 Max=10, level: Min=-3 Max=3 (int)
+    const TypeDesc& t = TypeOf<Settings>();
+    const double inf = std::numeric_limits<double>::infinity();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    struct Case {
+        const char* field;
+        double in;
+        const char* typed;
+    };
+    const Case cases[] = {{"speed", -5, "-5"},   {"speed", 15, "15"},   {"speed", nan, "nan"},  {"speed", inf, "inf"},
+                          {"speed", -inf, "-inf"}, {"speed", 3.25, "3.25"}, {"level", 2.6, "2.6"}, {"level", -100, "-100"},
+                          {"level", inf, "inf"},   {"level", 1e300, "1e300"}};
+    for (const Case& c : cases) {
+        const FieldDesc& f = FieldNamed(t, c.field);
+        // the loader's road
+        Settings loaded;
+        json::Value v = Save(loaded);
+        v.Set(c.field, c.in);
+        Load(loaded, v);
+        const double fromFile = std::string_view(c.field) == "speed" ? loaded.speed : loaded.level;
+        // the inspector's road (typed text, the current value being the default)
+        const Settings fresh;
+        const double current = std::string_view(c.field) == "speed" ? fresh.speed : fresh.level;
+        const auto fromInput = NumberFromInput(f, c.typed, current);
+        CHECK(fromInput.has_value());
+        CHECK(fromInput && static_cast<float>(*fromInput) == static_cast<float>(fromFile));
+    }
+    // the results themselves
+    const FieldDesc& speed = FieldNamed(t, "speed");
+    CHECK(SanitizeNumber(speed, -5, 5) == 0 && SanitizeNumber(speed, 15, 5) == 10 && SanitizeNumber(speed, nan, 5) == 5);
+    CHECK(SanitizeNumber(FieldNamed(t, "level"), 2.6, 1) == 3);
+    CHECK(!NumberFromInput(speed, "abc", 5).has_value());
+    CHECK(!NumberFromInput(speed, "", 5).has_value());
+    CHECK(NumberFromInput(speed, " +4 ", 5) == 4.0);
+    // nested struct fields are clamped by their own attributes
+    Settings s;
+    json::Value v = Save(s);
+    json::Value w = v.Get("window");
+    w.Set("width", 10);
+    v.Set("window", w);
+    Load(s, v);
+    CHECK(s.window.width == 320);
+}
+
+RM_TEST(Reflect_WrongTypesKeepTheValue) {
+    Settings s;
+    json::Value v = json::Value::MakeObject();
+    v.Set("speed", "fast");
+    v.Set("gravity", json::Value::MakeArray());
+    v.Set("window", 3);
+    Warnings w;
+    Load(s, v, nullptr, &w);
+    CHECK(s.speed == 5.0f);
+    CHECK(s.gravity.y == -9.8f);
+    CHECK(s.window.width == 1280);
+    CHECK(w.size() == 3);
+}
+
+RM_TEST(Reflect_EqualsDiffCopy) {
+    const TypeDesc& t = TypeOf<Settings>();
+    Settings a, b;
+    CHECK(Equals(t, &a, &b) && Diff(t, &a, &b) == 0);
+    b.timer = 99;  // transient: not part of the data
+    CHECK(Equals(t, &a, &b));
+    b.speed = 1;
+    b.window.height = 999;
+    const uint64_t d = Diff(t, &a, &b);
+    CHECK(d == ((uint64_t{1} << IndexOf(t, "speed")) | (uint64_t{1} << IndexOf(t, "window"))));
+    b.scores = {1, 2};
+    CHECK(Diff(t, &a, &b) & (uint64_t{1} << IndexOf(t, "scores")));
+    Settings c;
+    t.copy(&c, &b);
+    CHECK(Equals(t, &b, &c));
+    // construct / destruct by the table
+    alignas(Settings) unsigned char raw[sizeof(Settings)];
+    t.construct(raw);
+    CHECK(reinterpret_cast<Settings*>(raw)->title == "My Game");
+    t.destruct(raw);
+}
+
+RM_TEST(Reflect_SetFieldCommandUndo) {
+    Settings s;
+    Unknowns u;
+    json::Value v = Save(s);
+    v.Set("quality", "Ultra");
+    Load(s, v, &u);
+    const TypeDesc& t = TypeOf<Settings>();
+    UndoHistory h;
+    int modified = 0;
+    h.SetOnModified([&] { ++modified; });
+    auto resolve = [&] { return EditTarget{&s, &u}; };
+
+    // a nested field: window.width (clamped by its Min when applied)
+    const FieldPath widthPath{IndexOf(t, "window"), IndexOf(TypeOf<Window>(), "width")};
+    const PathTarget pt = Resolve(t, &s, &u, widthPath);
+    CHECK(pt.field && std::string_view(pt.field->name) == "width");
+    CHECK(PathText(t, widthPath) == "window.width");
+    h.Push(std::make_unique<SetFieldCommand>(t, widthPath, SaveField(*pt.field, pt.owner, pt.unknowns), json::Value(100), resolve,
+                                             "幅"),
+           false);
+    CHECK(s.window.width == 320);
+    CHECK(modified == 1);
+    h.Undo();
+    CHECK(s.window.width == 1280);
+    h.Redo();
+    CHECK(s.window.width == 320);
+
+    // choosing a value for an enum that held an unknown name replaces it; undo brings the name back
+    const FieldPath qp{IndexOf(t, "quality")};
+    const PathTarget qt = Resolve(t, &s, &u, qp);
+    const json::Value before = SaveField(*qt.field, qt.owner, qt.unknowns);
+    CHECK(before.AsString() == "Ultra");
+    h.Push(std::make_unique<SetFieldCommand>(t, qp, before, json::Value("High"), resolve, "品質"), false);
+    CHECK(s.quality == Quality::High);
+    CHECK(Save(s, &u).Get("quality").AsString() == "High");
+    h.Undo();
+    CHECK(Save(s, &u).Get("quality").AsString() == "Ultra");
+}

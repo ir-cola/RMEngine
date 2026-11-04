@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reflection (src/core/reflect/Reflect.h): rmgen reads the headers under $(RmGenRoots) before
+     compiling and writes $(RmGenOut)*.reflect.cpp + rm_all_types.cpp, which are compiled here.
+     rmgen rewrites a file only when its text changes, so an unchanged header recompiles nothing.
+     /p:RmGenSkip=true skips the generator (used to check that a stale table stops the build). -->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="RmGen" Condition="'$(RmGenSkip)' != 'true'">
+    <Exec Command="&quot;$(OutDir)rmgen.exe&quot; --out &quot;$(RmGenOut).&quot; $(RmGenRoots)" StdOutEncoding="UTF-8" />
+  </Target>
+  <Target Name="RmGenCompile" BeforeTargets="ClCompile" DependsOnTargets="RmGen">
+    <MakeDir Directories="$(IntDir)generated" />
+    <ItemGroup>
+      <ClCompile Include="$(RmGenOut)*.cpp">
+        <ObjectFileName>$(IntDir)generated\</ObjectFileName>
+      </ClCompile>
+    </ItemGroup>
+  </Target>
+</Project>

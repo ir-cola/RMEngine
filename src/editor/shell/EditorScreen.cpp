@@ -85,6 +85,7 @@ public:
 
 EditorScreen::EditorScreen(App& app, Project project) : ScreenWindow(app), project_(std::move(project)) {
     BuildWorkspaces();
+    LoadSoftwareData();
 }
 
 EditorScreen::~EditorScreen() {
@@ -184,6 +185,58 @@ void EditorScreen::BuildWorkspaces() {
     }
     // The most important wire of the editor: an edit that reaches any history marks the project unsaved.
     for (auto& ws : workspaces_) ws->history.SetOnModified([this] { SetDirty(true); });
+}
+
+// .rmpf: "softwareData": [ { "author": ..., "plugin": ..., "software": ..., "data": {...} } ]
+// Entries of softwares that are not installed now are kept as they are.
+void EditorScreen::LoadSoftwareData() {
+    const json::Value& entries = project_.doc.Get("softwareData");
+    for (auto& ws : workspaces_) {
+        if (!ws->software) continue;
+        const json::Value key = WorkspaceKey(ws->type);
+        const json::Value* data = nullptr;
+        for (const auto& e : entries.Items()) {
+            if (SameKey(e, key)) data = &e.Get("data");
+        }
+        static const json::Value kNone;
+        ws->software->LoadData(data ? *data : kNone);
+    }
+}
+
+void EditorScreen::StoreSoftwareData() {
+    json::Value* entries = project_.doc.Find("softwareData");
+    for (auto& ws : workspaces_) {
+        if (!ws->software) continue;
+        const json::Value key = WorkspaceKey(ws->type);
+        json::Value* entry = nullptr;
+        if (entries) {
+            for (auto& e : entries->Items()) {
+                if (SameKey(e, key)) entry = &e;
+            }
+        }
+        json::Value data = entry ? entry->Get("data") : json::Value::MakeObject();
+        if (!ws->software->SaveData(data)) continue;
+        if (!entries || !entries->IsArray()) entries = &project_.doc.Set("softwareData", json::Value::MakeArray());
+        if (!entry) {
+            entries->Push(key);
+            entry = &entries->Items().back();
+        }
+        entry->Set("data", std::move(data));
+        // The project now has this plugin's data: record it, so the project is never opened without
+        // it (and saved without its data). The record is written automatically, never by hand.
+        json::Value* used = project_.doc.Find("plugins");
+        if (!used || !used->IsArray()) used = &project_.doc.Set("plugins", json::Value::MakeArray());
+        const PluginId& id = ws->type->plugin;
+        bool known = false;
+        for (const auto& u : used->Items()) known |= u.Get("author").AsString() == id.author && u.Get("name").AsString() == id.name;
+        if (!known) {
+            json::Value rec = json::Value::MakeObject();
+            rec.Set("author", id.author);
+            rec.Set("name", id.name);
+            used->Push(std::move(rec));
+            log::Info("このプロジェクトが使うプラグインとして記録しました: {}", id.Text());
+        }
+    }
 }
 
 void EditorScreen::SwitchSoftware(size_t index) {
@@ -380,6 +433,7 @@ void EditorScreen::UpdateTitle() {
 }
 
 bool EditorScreen::Save() {
+    StoreSoftwareData();
     std::string err;
     if (!SaveProject(project_, &err)) {
         log::Error("{}", err);
@@ -650,10 +704,26 @@ void EditorScreen::DrawHierarchy(ui::Context& c, Rect r) {
 }
 
 void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
-    ui::TextStyle hint = Style(12, theme::TextFaint);
-    hint.wrap = true;
-    hint.v = ui::VAlign::Top;
-    c.P().Text(r.Inset(12, 10, 12, 10), L"何も選ばれていません。", hint);
+    Workspace& ws = Active();
+    const Inspectable& target = ws.inspected;
+    const reflect::EditTarget obj = target.type && target.resolve ? target.resolve() : reflect::EditTarget{};
+    if (!obj.object) {
+        ui::TextStyle hint = Style(12, theme::TextFaint);
+        hint.wrap = true;
+        hint.v = ui::VAlign::Top;
+        c.P().Text(r.Inset(12, 10, 12, 10), L"何も選ばれていません。", hint);
+        return;
+    }
+    const Rect title = ui::TakeTop(r, 34);
+    c.P().Text(title.Inset(12, 0, 12, 0), target.title.empty() ? Utf8ToWide(target.type->label) : target.title,
+               Style(14, theme::Text, true));
+    c.P().FillRect({title.x + 8, title.Bottom() - 1, title.w - 16, 1}, theme::Border);
+    if (auto edit = inspector::Draw(c, ws.inspectorState, r, *target.type, obj.object, obj.unknowns)) {
+        // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly.
+        ws.history.Push(std::make_unique<reflect::SetFieldCommand>(*target.type, std::move(edit->path), std::move(edit->before),
+                                                                   std::move(edit->after), target.resolve, std::move(edit->label)),
+                        false);
+    }
 }
 
 void EditorScreen::DrawStart(ui::Context& c, Rect r) {

@@ -12,8 +12,10 @@
 // Plugins are built into the exe (static linking, design RME_PLATFORM 10 (a)). The list of them
 // is in plugins/BuiltinPlugins.cpp - the core never includes a plugin header.
 
+#include "base/Json.h"
 #include "core/PluginId.h"
 #include "core/UndoHistory.h"
+#include "core/reflect/FieldCommand.h"
 #include "editor/dock/DockLayout.h"
 #include "editor/dock/DockSpace.h"
 
@@ -35,6 +37,14 @@ inline constexpr char kConsole[] = "core.console";
 inline constexpr char kAssets[] = "core.assets";
 }  // namespace core_panel
 
+// Something shown in the core inspector. Any reflected type works: the inspector draws it from
+// its description, and edits go to this software's history as reflect::SetFieldCommand.
+struct Inspectable {
+    const reflect::TypeDesc* type = nullptr;
+    std::function<reflect::EditTarget()> resolve;  // where the object is now (+ its unknowns)
+    std::wstring title;
+};
+
 // What the editor gives one software.
 class SoftwareHost {
 public:
@@ -43,6 +53,8 @@ public:
     virtual UndoHistory& History() = 0;
     virtual const Project& GetProject() const = 0;
     virtual void Redraw() = 0;
+    // Shows the object in this software's インスペクター (an empty Inspectable clears it).
+    virtual void Inspect(Inspectable target) = 0;
 };
 
 // One software inside one open project.
@@ -53,6 +65,16 @@ public:
     virtual std::vector<dock::PanelType> Panels() = 0;
     // The first layout (also "reset layout"). May use the core_panel ids.
     virtual dock::Layout DefaultLayout() const = 0;
+
+    // The software's part of the project file (.rmpf "softwareData"). LoadData is called once after
+    // the software is created - with null when the project has nothing yet. SaveData is called when
+    // the project is saved; returning true keeps `data` in the file and records the plugin as used
+    // by the project (it will not be opened without it). Unknown keys are the software's to keep.
+    virtual void LoadData(const json::Value& data) { (void)data; }
+    virtual bool SaveData(json::Value& data) const {
+        (void)data;
+        return false;
+    }
 };
 
 struct SoftwareType {

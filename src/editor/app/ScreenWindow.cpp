@@ -164,6 +164,7 @@ void ScreenWindow::RunFrame() {
     painter_.Begin(dc);
     ctx_.BeginFrame(&painter_, &input_, {0, 0, w, h}, platform::NowSeconds());
     OnFrame(ctx_, w, h);
+    ctx_.RunOverlays();
     ctx_.EndFrame();
     painter_.End();
     dc->EndDraw();

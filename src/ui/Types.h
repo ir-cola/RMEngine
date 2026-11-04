@@ -1,6 +1,8 @@
 #pragma once
 // Basic types of the core UI (the "foundation": no colors, no look).
 
+#include "base/Math.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <string>
@@ -8,14 +10,7 @@
 
 namespace rm::ui {
 
-struct Color {
-    float r = 0, g = 0, b = 0, a = 1;
-
-    static constexpr Color Hex(uint32_t rgb, float alpha = 1.f) {
-        return {((rgb >> 16) & 0xFF) / 255.f, ((rgb >> 8) & 0xFF) / 255.f, (rgb & 0xFF) / 255.f, alpha};
-    }
-    constexpr Color Alpha(float na) const { return {r, g, b, na}; }
-};
+using Color = rm::Color;  // one colour type for data and drawing (base/Math.h)
 
 struct Rect {
     float x = 0, y = 0, w = 0, h = 0;

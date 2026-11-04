@@ -30,7 +30,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 [-Config Rel
 6. 保存形式は自己記述型 (JSON)。知らないキーは捨てずに書き戻す
 7. Undo に積んだ編集 = 未保存。編集 UI を足したら必ず Undo に積む
 8. 新しいフォルダを作るときは先に `layers.txt` に足す
-9. 核 (`src/`) はプラグインを知らない。プラグインは `plugins/<作者>/<名前>/` に置き、読めるのは `requires` に書いたものだけ ([plugins/README.md](plugins/README.md))
+9. データの型は `RM_STRUCT` + `RM_PROPERTY` で書く (保存・読み込み・インスペクター・Undo を手で書かない。`src/core/reflect/Reflect.h`)
+10. 核 (`src/`) はプラグインを知らない。プラグインは `plugins/<作者>/<名前>/` に置き、読めるのは `requires` に書いたものだけ ([plugins/README.md](plugins/README.md))
 
 ## 書き方
 

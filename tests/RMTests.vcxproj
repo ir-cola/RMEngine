@@ -37,8 +37,16 @@
     <Link>
       <SubSystem>Console</SubSystem>
     </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(RMRoot)tools;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ProjectReference Include="..\tools\rmgen\rmgen.vcxproj">
+      <Project>{D4A1F2B3-6C7E-4F80-9A1B-2C3D4E5F6A44}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\src\RMBase.vcxproj">
       <Project>{6F1C2A41-8B3E-4E1D-9A55-2C7D1E0B3A11}</Project>
     </ProjectReference>
@@ -49,14 +57,25 @@
     <ClCompile Include="TestCore.cpp" />
     <ClCompile Include="TestDock.cpp" />
     <ClCompile Include="TestPlugin.cpp" />
+    <ClCompile Include="TestReflect.cpp" />
+    <ClCompile Include="TestRmgen.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />
     <ClCompile Include="..\src\editor\dock\DockLayout.cpp" />
     <ClCompile Include="..\src\editor\plugin\PluginManifest.cpp" />
+    <ClCompile Include="..\src\core\reflect\Data.cpp" />
+    <ClCompile Include="..\src\core\reflect\FieldCommand.cpp" />
+    <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Test.h" />
+    <ClInclude Include="TestReflectTypes.h" />
   </ItemGroup>
+  <PropertyGroup>
+    <RmGenOut>$(RMRoot)build\generated\$(ProjectName)\</RmGenOut>
+    <RmGenRoots>--root "$(MSBuildProjectDirectory)"</RmGenRoots>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="..\src\RM.Reflect.targets" />
 </Project>

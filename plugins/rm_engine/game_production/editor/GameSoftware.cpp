@@ -1,6 +1,10 @@
 #include "rm_engine/game_production/editor/GameSoftware.h"
 
+#include "base/Log.h"
+#include "core/reflect/Data.h"
 #include "editor/widgets/Theme.h"
+#include "editor/widgets/Widgets.h"
+#include "rm_engine/game_production/runtime/GameSettings.h"
 
 namespace rm::game_production {
 
@@ -41,8 +45,10 @@ public:
                              L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。");
              }},
             {kGameView, L"ゲーム",
-             [](ui::Context& c, const Rect& r) {
+             [this](ui::Context& c, const Rect& r) {
                  Placeholder(c, r, L"ゲームビュー", L"Play を押すと、ゲームのカメラから見た画面がここに映ります。");
+                 const Rect button{r.x + (r.w - 200) * 0.5f, r.y + r.h * 0.5f + 70, 200, 36};
+                 if (editor::w::Button(c, "settings", button, L"ゲームの設定を開く")) InspectSettings();
              }},
         };
     }
@@ -58,8 +64,35 @@ public:
         return l;
     }
 
+    void LoadData(const json::Value& data) override {
+        hadData_ = data.IsObject();
+        if (hadData_) {
+            reflect::Warnings warnings;
+            reflect::Load(settings_, data.Get("settings"), &unknowns_, &warnings);
+            for (const auto& w : warnings) log::Warn("ゲームの設定: {}", w);
+        }
+        InspectSettings();
+    }
+
+    bool SaveData(json::Value& data) const override {
+        // Nothing is written (and the plugin is not recorded as used) until the settings differ
+        // from the defaults - opening a project once must not tie it to this plugin.
+        const GameSettings defaults;
+        if (!hadData_ && reflect::Equals(reflect::TypeOf<GameSettings>(), &settings_, &defaults) && unknowns_.Empty()) return false;
+        data.Set("settings", reflect::Save(settings_, &unknowns_));
+        return true;
+    }
+
 private:
-    editor::SoftwareHost& host_;  // history / project, used once the game has data
+    void InspectSettings() {
+        host_.Inspect({&reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; },
+                       L"ゲームの設定"});
+    }
+
+    editor::SoftwareHost& host_;
+    GameSettings settings_;
+    reflect::Unknowns unknowns_;  // keys / enum names of a newer version: written back unchanged
+    bool hadData_ = false;
 };
 
 }  // namespace

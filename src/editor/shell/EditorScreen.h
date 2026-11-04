@@ -22,6 +22,7 @@
 #include "core/UndoHistory.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/dock/DockSpace.h"
+#include "editor/inspector/Inspector.h"
 #include "editor/plugin/Software.h"
 #include "editor/project/Project.h"
 #include "editor/widgets/Widgets.h"
@@ -80,6 +81,11 @@ private:
         UndoHistory& History() override { return history; }
         const Project& GetProject() const override { return editor_.project_; }
         void Redraw() override { editor_.RedrawAll(); }
+        void Inspect(Inspectable target) override {
+            inspected = std::move(target);
+            inspectorState = {};
+            editor_.RedrawAll();
+        }
         dock::Layout DefaultLayout() const;
         std::wstring Title() const { return type ? type->title : L"コア"; }
 
@@ -87,6 +93,8 @@ private:
         UndoHistory history;                 // declared before `software`, so it outlives it
         dock::DockSpace dock;
         std::unique_ptr<Software> software;
+        Inspectable inspected;  // what the インスペクター shows
+        inspector::State inspectorState;
 
     private:
         EditorScreen& editor_;
@@ -94,6 +102,9 @@ private:
 
     // Workspaces, panels and their layout
     void BuildWorkspaces();
+    // .rmpf "softwareData": each software's own part of the project (read once, written on save).
+    void LoadSoftwareData();
+    void StoreSoftwareData();
     std::vector<dock::PanelType> CorePanels(bool withStart);
     Workspace& Active() { return *workspaces_[active_]; }
     const Workspace& Active() const { return *workspaces_[active_]; }

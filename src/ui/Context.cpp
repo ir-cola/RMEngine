@@ -130,6 +130,14 @@ void Context::PopClip() {
     painter_->PopClip();
 }
 
+void Context::RunOverlays() {
+    while (!overlays_.empty()) {
+        auto list = std::move(overlays_);
+        overlays_.clear();
+        for (auto& fn : list) fn();
+    }
+}
+
 float& Context::FloatState(Id id, float init) {
     auto it = floats_.find(id);
     if (it == floats_.end()) it = floats_.emplace(id, init).first;
