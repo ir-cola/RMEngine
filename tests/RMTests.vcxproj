@@ -59,11 +59,15 @@
     <ClCompile Include="TestPlugin.cpp" />
     <ClCompile Include="TestReflect.cpp" />
     <ClCompile Include="TestRmgen.cpp" />
+    <ClCompile Include="TestScene.cpp" />
+    <ClCompile Include="TestTree.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />
     <ClCompile Include="..\src\editor\dock\DockLayout.cpp" />
     <ClCompile Include="..\src\editor\plugin\PluginManifest.cpp" />
+    <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
     <ClCompile Include="..\src\core\reflect\Data.cpp" />
     <ClCompile Include="..\src\core\reflect\FieldCommand.cpp" />
     <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
@@ -74,7 +78,7 @@
   </ItemGroup>
   <PropertyGroup>
     <RmGenOut>$(RMRoot)build\generated\$(ProjectName)\</RmGenOut>
-    <RmGenRoots>--root "$(MSBuildProjectDirectory)"</RmGenRoots>
+    <RmGenRoots>--root "$(MSBuildProjectDirectory)" --root "$(RMRoot)plugins"</RmGenRoots>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="..\src\RM.Reflect.targets" />

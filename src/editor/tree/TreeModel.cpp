@@ -1,0 +1,231 @@
+#include "editor/tree/TreeModel.h"
+
+#include <algorithm>
+#include <unordered_map>
+
+namespace rm::editor::tree {
+
+namespace {
+
+constexpr size_t npos = static_cast<size_t>(-1);
+
+char Lower(char ch) { return ch >= 'A' && ch <= 'Z' ? static_cast<char>(ch - 'A' + 'a') : ch; }
+
+std::unordered_map<ItemId, size_t> IndexOf(std::span<const Item> items) {
+    std::unordered_map<ItemId, size_t> m;
+    m.reserve(items.size());
+    for (size_t i = 0; i < items.size(); ++i) m.emplace(items[i].id, i);
+    return m;
+}
+
+// The parent's index, or npos for the top level. A parent that is missing or listed after its
+// child (a software's mistake) counts as the top level, so the tree never loops.
+std::vector<size_t> ParentIndices(std::span<const Item> items) {
+    const auto index = IndexOf(items);
+    std::vector<size_t> parent(items.size(), npos);
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (items[i].parent == 0) continue;
+        const auto it = index.find(items[i].parent);
+        if (it != index.end() && it->second < i) parent[i] = it->second;
+    }
+    return parent;
+}
+
+bool Contains(std::span<const ItemId> ids, ItemId id) { return std::find(ids.begin(), ids.end(), id) != ids.end(); }
+
+// How many children of `parent` that are not moving come before list position `stop`.
+size_t SiblingsBefore(std::span<const Item> items, ItemId parent, size_t stop, std::span<const ItemId> moving) {
+    size_t n = 0;
+    for (size_t i = 0; i < stop && i < items.size(); ++i) {
+        if (items[i].parent == parent && !Contains(moving, items[i].id)) ++n;
+    }
+    return n;
+}
+
+bool ParentAllowed(std::span<const Item> items, ItemId parent, std::span<const ItemId> moving) {
+    if (parent == 0) return true;
+    return std::none_of(moving.begin(), moving.end(), [&](ItemId m) { return IsUnder(items, parent, m); });
+}
+
+}  // namespace
+
+bool NameMatches(std::string_view name, std::string_view filter) {
+    if (filter.empty()) return true;
+    if (filter.size() > name.size()) return false;
+    for (size_t start = 0; start + filter.size() <= name.size(); ++start) {
+        size_t k = 0;
+        while (k < filter.size() && Lower(name[start + k]) == Lower(filter[k])) ++k;
+        if (k == filter.size()) return true;
+    }
+    return false;
+}
+
+std::vector<Row> VisibleRows(std::span<const Item> items, const std::unordered_set<ItemId>& collapsed, std::string_view filter) {
+    const std::vector<size_t> parent = ParentIndices(items);
+    std::vector<int> depth(items.size(), 0);
+    std::vector<bool> hasChildren(items.size(), false);
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (parent[i] == npos) continue;
+        depth[i] = depth[parent[i]] + 1;
+        hasChildren[parent[i]] = true;
+    }
+
+    // With a filter: an item is shown when it matches or something below it does.
+    std::vector<bool> shown(items.size(), filter.empty());
+    if (!filter.empty()) {
+        for (size_t i = items.size(); i-- > 0;) {
+            if (NameMatches(items[i].name, filter)) shown[i] = true;
+            if (shown[i] && parent[i] != npos) shown[parent[i]] = true;
+        }
+    }
+
+    std::vector<Row> rows;
+    std::vector<bool> open(items.size(), false);  // the item is visible and its children are shown
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (!shown[i]) continue;
+        if (parent[i] != npos && !open[parent[i]]) continue;
+        Row r;
+        r.item = i;
+        r.depth = depth[i];
+        r.hasChildren = hasChildren[i];
+        r.expanded = hasChildren[i] && (!filter.empty() || !collapsed.contains(items[i].id));
+        open[i] = r.expanded;
+        rows.push_back(r);
+    }
+    return rows;
+}
+
+size_t Find(std::span<const Item> items, ItemId id) {
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (items[i].id == id) return i;
+    }
+    return npos;
+}
+
+bool IsUnder(std::span<const Item> items, ItemId id, ItemId ancestor) {
+    if (id == 0 || ancestor == 0) return false;
+    const auto index = IndexOf(items);
+    ItemId cur = id;
+    for (size_t steps = 0; cur != 0 && steps <= items.size(); ++steps) {
+        if (cur == ancestor) return true;
+        const auto it = index.find(cur);
+        if (it == index.end()) return false;
+        cur = items[it->second].parent;
+    }
+    return false;
+}
+
+bool Selection::Contains(ItemId id) const { return std::find(ids.begin(), ids.end(), id) != ids.end(); }
+
+void SelectOnly(Selection& sel, ItemId id) {
+    sel.ids.clear();
+    if (id != 0) sel.ids.push_back(id);
+    sel.anchor = sel.focus = id;
+}
+
+void Click(Selection& sel, std::span<const Item> items, std::span<const Row> rows, ItemId id, bool ctrl, bool shift) {
+    if (shift) {
+        auto rowOf = [&](ItemId x) -> size_t {
+            for (size_t r = 0; r < rows.size(); ++r) {
+                if (items[rows[r].item].id == x) return r;
+            }
+            return npos;
+        };
+        const size_t a = rowOf(sel.anchor), b = rowOf(id);
+        if (a != npos && b != npos) {
+            if (!ctrl) sel.ids.clear();
+            for (size_t r = std::min(a, b); r <= std::max(a, b); ++r) {
+                const ItemId x = items[rows[r].item].id;
+                if (!sel.Contains(x)) sel.ids.push_back(x);
+            }
+            sel.focus = id;
+            Prune(sel, items);  // display order
+            return;
+        }
+    }
+    if (ctrl) {
+        if (sel.Contains(id)) {
+            std::erase(sel.ids, id);
+        } else {
+            sel.ids.push_back(id);
+        }
+        sel.anchor = sel.focus = id;
+        Prune(sel, items);
+        return;
+    }
+    SelectOnly(sel, id);
+}
+
+void SelectAll(Selection& sel, std::span<const Item> items, std::span<const Row> rows) {
+    sel.ids.clear();
+    for (const Row& r : rows) sel.ids.push_back(items[r.item].id);
+    if (!sel.ids.empty() && !sel.Contains(sel.focus)) sel.focus = sel.anchor = sel.ids.front();
+}
+
+bool Prune(Selection& sel, std::span<const Item> items) {
+    std::vector<ItemId> kept;
+    for (const Item& it : items) {
+        if (sel.Contains(it.id)) kept.push_back(it.id);
+    }
+    const bool changed = kept != sel.ids;
+    sel.ids = std::move(kept);
+    if (Find(items, sel.anchor) == npos) sel.anchor = 0;
+    if (Find(items, sel.focus) == npos) sel.focus = 0;
+    return changed;
+}
+
+std::vector<ItemId> Roots(std::span<const Item> items, std::span<const ItemId> ids) {
+    const std::vector<size_t> parent = ParentIndices(items);
+    std::vector<ItemId> out;
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (!Contains(ids, items[i].id)) continue;
+        bool covered = false;
+        for (size_t p = parent[i]; p != npos && !covered; p = parent[p]) covered = Contains(ids, items[p].id);
+        if (!covered) out.push_back(items[i].id);
+    }
+    return out;
+}
+
+std::optional<Drop> DropOnRow(std::span<const Item> items, std::span<const Row> rows, size_t rowIndex, float fraction,
+                              std::span<const ItemId> moving) {
+    if (rowIndex >= rows.size()) return std::nullopt;
+    const Row& row = rows[rowIndex];
+    const Item& it = items[row.item];
+    const bool movingItself = Contains(moving, it.id);
+
+    Drop d;
+    d.target = it.id;
+    float before = 0.25f, after = 0.75f;
+    if (!it.canHaveChildren) before = after = 0.5f;
+    if (fraction < before) {
+        d.mark = Drop::Mark::Before;
+        d.parent = it.parent;
+        d.index = SiblingsBefore(items, it.parent, row.item, moving);
+    } else if (fraction >= after) {
+        d.mark = Drop::Mark::After;
+        if (row.expanded) {
+            // The line under an open item is above its first child: the first child it is.
+            d.parent = it.id;
+            d.index = 0;
+        } else {
+            d.parent = it.parent;
+            d.index = SiblingsBefore(items, it.parent, row.item, moving) + (movingItself ? 0 : 1);
+        }
+    } else {
+        d.mark = Drop::Mark::Inside;
+        d.parent = it.id;
+        d.index = SiblingsBefore(items, it.id, items.size(), moving);
+    }
+    if (!ParentAllowed(items, d.parent, moving)) return std::nullopt;
+    return d;
+}
+
+Drop DropAtEnd(std::span<const Item> items, std::span<const ItemId> moving) {
+    Drop d;
+    d.mark = Drop::Mark::End;
+    d.parent = 0;
+    d.index = SiblingsBefore(items, 0, items.size(), moving);
+    return d;
+}
+
+}  // namespace rm::editor::tree

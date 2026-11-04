@@ -86,6 +86,10 @@ private:
             inspectorState = {};
             editor_.RedrawAll();
         }
+        void SelectInTree(std::vector<tree::ItemId> ids, bool rename) override {
+            tree::RequestSelect(treeState, std::move(ids), rename);
+            editor_.RedrawAll();
+        }
         dock::Layout DefaultLayout() const;
         std::wstring Title() const { return type ? type->title : L"コア"; }
 
@@ -95,6 +99,7 @@ private:
         std::unique_ptr<Software> software;
         Inspectable inspected;  // what the インスペクター shows
         inspector::State inspectorState;
+        tree::State treeState;  // the 階層: selection, open items, search
 
     private:
         EditorScreen& editor_;

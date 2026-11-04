@@ -697,10 +697,16 @@ void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
 }
 
 void EditorScreen::DrawHierarchy(ui::Context& c, Rect r) {
+    Workspace& ws = Active();
+    if (tree::Source* src = ws.software ? ws.software->Hierarchy() : nullptr) {
+        tree::Draw(c, ws.treeState, *src, r);
+        return;
+    }
     ui::TextStyle hint = Style(12, theme::TextFaint);
     hint.wrap = true;
     hint.v = ui::VAlign::Top;
-    c.P().Text(r.Inset(12, 10, 12, 10), L"ここに中身 (ゲームならエンティティの親子) が並びます。", hint);
+    c.P().Text(r.Inset(12, 10, 12, 10),
+               ws.software ? L"このソフトは階層を使いません。" : L"ソフトを入れると、ここに中身 (ゲームならエンティティの親子) が並びます。", hint);
 }
 
 void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
@@ -711,7 +717,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
         ui::TextStyle hint = Style(12, theme::TextFaint);
         hint.wrap = true;
         hint.v = ui::VAlign::Top;
-        c.P().Text(r.Inset(12, 10, 12, 10), L"何も選ばれていません。", hint);
+        c.P().Text(r.Inset(12, 10, 12, 10), !target.type && !target.title.empty() ? target.title : L"何も選ばれていません。", hint);
         return;
     }
     const Rect title = ui::TakeTop(r, 34);

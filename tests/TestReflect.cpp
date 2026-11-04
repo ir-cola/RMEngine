@@ -9,6 +9,7 @@
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -58,7 +59,10 @@ RM_TEST(Reflect_TableFromHeader) {
     CHECK(std::string_view(q->items[0].label) == "低" && std::string_view(q->items[1].label) == "Medium");
     CHECK(q->items[2].value == 7);
     CHECK(FindEnum(typeid(Quality)) == q);
-    CHECK(AllTypes().size() == 2 && AllEnums().size() == 1);
+    // Every reflected type of the program is listed (the tests also build the plugins' types).
+    auto listed = [](const TypeDesc* d) { return std::find(AllTypes().begin(), AllTypes().end(), d) != AllTypes().end(); };
+    CHECK(listed(&TypeOf<Settings>()) && listed(&TypeOf<Window>()));
+    CHECK(std::find(AllEnums().begin(), AllEnums().end(), q) != AllEnums().end());
 }
 
 RM_TEST(Reflect_T1_RoundTrip) {

@@ -18,6 +18,7 @@
 #include "core/reflect/FieldCommand.h"
 #include "editor/dock/DockLayout.h"
 #include "editor/dock/DockSpace.h"
+#include "editor/tree/TreeView.h"
 
 #include <functional>
 #include <memory>
@@ -39,9 +40,10 @@ inline constexpr char kAssets[] = "core.assets";
 
 // Something shown in the core inspector. Any reflected type works: the inspector draws it from
 // its description, and edits go to this software's history as reflect::SetFieldCommand.
+// With no type, the inspector shows only `title` (e.g. "3 個選んでいます").
 struct Inspectable {
     const reflect::TypeDesc* type = nullptr;
-    std::function<reflect::EditTarget()> resolve;  // where the object is now (+ its unknowns)
+    std::function<reflect::EditTarget()> resolve;  // where the object is now (+ its unknowns); null object = gone
     std::wstring title;
 };
 
@@ -55,6 +57,8 @@ public:
     virtual void Redraw() = 0;
     // Shows the object in this software's インスペクター (an empty Inspectable clears it).
     virtual void Inspect(Inspectable target) = 0;
+    // Selects items of this software's 階層 (after creating one, say); rename = start renaming it.
+    virtual void SelectInTree(std::vector<tree::ItemId> ids, bool rename = false) = 0;
 };
 
 // One software inside one open project.
@@ -65,6 +69,10 @@ public:
     virtual std::vector<dock::PanelType> Panels() = 0;
     // The first layout (also "reset layout"). May use the core_panel ids.
     virtual dock::Layout DefaultLayout() const = 0;
+    // What the core 階層 panel shows (game: entities, 3D model: meshes and bones ...). The core
+    // draws the tree; the software lists the items and decides what renaming / moving / the
+    // menu rows do. Null: the panel shows a hint.
+    virtual tree::Source* Hierarchy() { return nullptr; }
 
     // The software's part of the project file (.rmpf "softwareData"). LoadData is called once after
     // the software is created - with null when the project has nothing yet. SaveData is called when

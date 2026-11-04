@@ -1,0 +1,87 @@
+#pragma once
+// The pure part of the core tree (階層): which rows are visible, selection, and where a drop goes.
+// No drawing, no I/O - tested in tests/TestTree.cpp.
+//
+// Design RME_PLATFORM 4-c: the core shows the tree (open / close, select, drag to reorder, rename,
+// search, the right-click menu frame) and knows nothing of what is in it. A software lists its
+// items (game: entities and their parents, 3D model: meshes and bones, illustration: layers) and
+// decides what a move or a menu row means.
+
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <unordered_set>
+#include <vector>
+
+namespace rm::editor::tree {
+
+using ItemId = uint64_t;  // chosen by the software; 0 = nothing / the top level
+
+struct Item {
+    ItemId id = 0;
+    ItemId parent = 0;     // 0 = top level
+    std::string name;      // UTF-8
+    bool canHaveChildren = true;
+    bool dimmed = false;   // drawn faint (e.g. a disabled entity)
+};
+// A software lists its items in display order: a parent before its children, siblings in order.
+
+struct Row {
+    size_t item = 0;  // index into the item list
+    int depth = 0;
+    bool hasChildren = false;
+    bool expanded = false;  // children are shown
+};
+
+// The rows to draw. `collapsed`: items whose children are hidden. A non-empty `filter` shows the
+// items whose name contains it (ASCII letters ignore case) and their ancestors, all opened.
+std::vector<Row> VisibleRows(std::span<const Item> items, const std::unordered_set<ItemId>& collapsed, std::string_view filter);
+bool NameMatches(std::string_view name, std::string_view filter);
+
+// Index of an item in the list, or npos.
+size_t Find(std::span<const Item> items, ItemId id);
+// True when `id` is `ancestor` itself or somewhere below it.
+bool IsUnder(std::span<const Item> items, ItemId id, ItemId ancestor);
+
+struct Selection {
+    std::vector<ItemId> ids;  // in display order
+    ItemId anchor = 0;        // where a Shift range starts
+    ItemId focus = 0;         // the keyboard cursor / last clicked
+
+    bool Contains(ItemId id) const;
+    bool operator==(const Selection&) const = default;
+};
+
+// A click on a row: plain = only it, Ctrl = toggle it, Shift = the range from the anchor over the
+// visible rows, Ctrl+Shift = add that range.
+void Click(Selection& sel, std::span<const Item> items, std::span<const Row> rows, ItemId id, bool ctrl, bool shift);
+void SelectOnly(Selection& sel, ItemId id);
+void SelectAll(Selection& sel, std::span<const Item> items, std::span<const Row> rows);
+// Forgets ids that are gone and puts the rest in display order. Returns true when the ids changed.
+bool Prune(Selection& sel, std::span<const Item> items);
+
+// The selected items that move (or are copied / deleted) as a whole: an item whose ancestor is
+// also selected goes along with that ancestor. In display order.
+std::vector<ItemId> Roots(std::span<const Item> items, std::span<const ItemId> ids);
+
+// Where dragged items go: under `parent`, at `index` among its children counted WITHOUT the moved
+// items (so the software removes them first, then inserts there).
+struct Drop {
+    ItemId parent = 0;
+    size_t index = 0;
+    enum class Mark { Before, Inside, After, End } mark = Mark::End;  // what the view draws
+    ItemId target = 0;                                                // the row the mark is on (not for End)
+    bool operator==(const Drop&) const = default;
+};
+
+// rowIndex: the visible row under the mouse, `fraction`: 0 (its top) .. 1 (its bottom).
+// Top quarter = before it, bottom quarter = after it (or first child when it is open), middle =
+// inside it (at the end). nullopt when the drop would put an item inside itself.
+std::optional<Drop> DropOnRow(std::span<const Item> items, std::span<const Row> rows, size_t rowIndex, float fraction,
+                              std::span<const ItemId> moving);
+// Below the last row: the end of the top level.
+Drop DropAtEnd(std::span<const Item> items, std::span<const ItemId> moving);
+
+}  // namespace rm::editor::tree

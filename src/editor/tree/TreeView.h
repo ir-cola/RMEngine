@@ -1,0 +1,105 @@
+#pragma once
+// The core tree view (階層 panel). One piece of code draws every tree of every software
+// (rule 3); a software only implements tree::Source.
+//
+//   click / Ctrl+click / Shift+click     select (range over the visible rows)
+//   ▸ / ▾, ← / →                         close / open (← on a closed item goes to its parent)
+//   ↑ / ↓ / Home / End (+Shift)          move the selection
+//   drag rows                            move them: on the upper / lower edge of a row = before /
+//                                        after it, on its middle = inside it, below the last row = the end
+//   F2 / double-click                    rename in place (Enter / clicking elsewhere = done, Esc = cancel)
+//   Ctrl+A                               select all
+//   right-click                          the software's menu (+ 名前を変更)
+//   search box                           shows the matching items and their parents
+//
+// The view never changes the software's data. Renaming and moving are requests the software
+// turns into undo entries (rule 7); what the menu rows do is up to the software.
+
+#include "editor/tree/TreeModel.h"
+#include "editor/widgets/Widgets.h"
+#include "ui/Context.h"
+
+#include <functional>
+#include <span>
+#include <string>
+#include <unordered_set>
+#include <vector>
+
+namespace rm::editor::tree {
+
+// A row of the right-click menu, optionally with a shortcut (works while the tree has the keys).
+struct Action {
+    std::wstring label;
+    std::function<void()> run;  // empty for a separator
+    bool enabled = true;
+    bool separator = false;
+    ui::Key key = ui::Key::None;
+    bool ctrl = false, shift = false;
+};
+
+// What a software puts in the tree.
+class Source {
+public:
+    virtual ~Source() = default;
+    // Every item, in display order (see Item). Called whenever the tree is drawn.
+    virtual void Items(std::vector<Item>& out) = 0;
+    // Shown when there are no items.
+    virtual std::wstring EmptyText() const { return L"まだ何もありません。"; }
+
+    virtual bool CanRename(ItemId id) const {
+        (void)id;
+        return false;
+    }
+    virtual void Rename(ItemId id, const std::string& nameUtf8) {
+        (void)id;
+        (void)nameUtf8;
+    }
+    // Move `items` (Roots of the selection, in display order) under `parent` at `index` (see Drop).
+    virtual bool CanMove() const { return false; }
+    virtual void Move(std::span<const ItemId> items, ItemId parent, size_t index) {
+        (void)items;
+        (void)parent;
+        (void)index;
+    }
+    // The selection changed (also when selected items disappeared, e.g. after undo).
+    virtual void SelectionChanged(std::span<const ItemId> ids) { (void)ids; }
+    // Menu rows for a right-click (on empty space the selection is empty) and their shortcuts.
+    virtual std::vector<Action> Actions(std::span<const ItemId> selection) {
+        (void)selection;
+        return {};
+    }
+};
+
+// Per tree (one per software): selection, open / closed items, search, rename, drag.
+struct State {
+    Selection sel;
+    std::unordered_set<ItemId> collapsed;
+    std::string filter;
+
+    // Set from outside (the software): applied at the next Draw, once the items are listed.
+    bool hasPending = false;
+    std::vector<ItemId> pending;
+    bool pendingRename = false;
+
+    ItemId renaming = 0;
+    bool renameStart = false;
+    std::string renameText;
+
+    ItemId pressItem = 0;     // a row pressed with the left button, not yet released
+    float pressX = 0, pressY = 0;
+    bool pressDeferred = false;  // a press on a selected row: select only it on release (not after a drag)
+    bool dragging = false;
+    std::vector<ItemId> moving;
+
+    bool hasKeys = false;     // the last click was in this tree
+    w::Popup menu;
+    std::vector<Action> menuActions;
+    ItemId scrollTo = 0;      // keep this row in view on the next Draw
+};
+
+// Asks the tree to select `ids` (and, with rename, to start renaming the first) at the next Draw.
+void RequestSelect(State& st, std::vector<ItemId> ids, bool rename = false);
+
+void Draw(ui::Context& c, State& st, Source& src, const ui::Rect& area);
+
+}  // namespace rm::editor::tree

@@ -70,6 +70,8 @@
     <ClCompile Include="editor\dock\DockSpace.cpp" />
     <ClCompile Include="editor\inspector\Inspector.cpp" />
     <ClCompile Include="editor\plugin\PluginManifest.cpp" />
+    <ClCompile Include="editor\tree\TreeModel.cpp" />
+    <ClCompile Include="editor\tree\TreeView.cpp" />
     <ClCompile Include="editor\plugin\Plugins.cpp" />
     <ClCompile Include="editor\app\Main.cpp" />
     <ClCompile Include="editor\app\ScreenWindow.cpp" />
@@ -102,6 +104,8 @@
     <ClInclude Include="editor\plugin\PluginManifest.h" />
     <ClInclude Include="editor\plugin\Plugins.h" />
     <ClInclude Include="editor\plugin\Software.h" />
+    <ClInclude Include="editor\tree\TreeModel.h" />
+    <ClInclude Include="editor\tree\TreeView.h" />
     <ClInclude Include="editor\hub\HubScreen.h" />
     <ClInclude Include="editor\project\HubSettings.h" />
     <ClInclude Include="editor\project\Project.h" />
