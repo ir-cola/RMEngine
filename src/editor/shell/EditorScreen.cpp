@@ -4,6 +4,7 @@
 #include "base/Utf.h"
 #include "base/Version.h"
 #include "editor/app/App.h"
+#include "editor/plugin/Plugins.h"
 #include "editor/shell/FloatWindow.h"
 #include "editor/widgets/Theme.h"
 #include "platform/Shell.h"
@@ -28,17 +29,47 @@ ui::TextStyle Style(float size, ui::Color color, bool bold = false, ui::HAlign h
     return s;
 }
 
-// The core panels (always there, whatever plugins are installed).
-constexpr char kHierarchy[] = "core.hierarchy";
-constexpr char kInspector[] = "core.inspector";
+// The "start" panel exists only while no software is installed.
 constexpr char kStart[] = "core.start";
-constexpr char kConsole[] = "core.console";
-constexpr char kAssets[] = "core.assets";
 
-// Layouts are kept per software. Until a plugin adds one, the editor shows the core panels only.
-constexpr char kCoreSoftware[] = "core";
+// <project>/UserSettings/Layout.json
+//   { "kind": "rm_engine.layout", "formatVersion": 2,
+//     "active": { "author": "rm_engine", "plugin": "game_production", "software": "game" },
+//     "softwares": [ { "author": ..., "plugin": ..., "software": ..., "layout": { "main": ..., "floating": [...] } } ] }
+// The workspace without a software has only "software": "core". Entries of softwares that are not
+// installed now, and keys this version does not know, are written back unchanged.
 constexpr char kLayoutKind[] = "rm_engine.layout";
-constexpr int64_t kLayoutFormatVersion = 1;
+constexpr int64_t kLayoutFormatVersion = 2;
+constexpr char kCoreSoftware[] = "core";
+
+dock::Layout CoreDefaultLayout() {
+    using dock::Axis;
+    namespace cp = core_panel;
+    dock::Layout l;
+    auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({cp::kHierarchy}),
+                           l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf({kStart}), l.MakeLeaf({cp::kInspector})));
+    l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets}));
+    return l;
+}
+
+json::Value WorkspaceKey(const SoftwareType* type) {
+    json::Value k = json::Value::MakeObject();
+    if (type) {
+        k.Set("author", type->plugin.author);
+        k.Set("plugin", type->plugin.name);
+        k.Set("software", type->id);
+    } else {
+        k.Set("software", kCoreSoftware);
+    }
+    return k;
+}
+
+bool SameKey(const json::Value& entry, const json::Value& key) {
+    for (const char* f : {"author", "plugin", "software"}) {
+        if (entry.Get(f).AsString() != key.Get(f).AsString()) return false;
+    }
+    return true;
+}
 
 #ifdef _DEBUG
 // Debug builds only: an edit that changes nothing, to exercise "unsaved changes" end to end.
@@ -53,9 +84,7 @@ public:
 }  // namespace
 
 EditorScreen::EditorScreen(App& app, Project project) : ScreenWindow(app), project_(std::move(project)) {
-    // The most important wire of the editor: an edit that reaches the history marks the project unsaved.
-    history_.SetOnModified([this] { SetDirty(true); });
-    RegisterPanels();
+    BuildWorkspaces();
 }
 
 EditorScreen::~EditorScreen() {
@@ -74,11 +103,16 @@ bool EditorScreen::Open() {
     RefreshAssets();
     LoadLayout();  // before the callbacks below: nothing to sync yet
     if (!CreateScreenWindow(d, SW_SHOWMAXIMIZED)) return false;
-    dock_.onStructureChanged = [this] { RequestSyncFloating(); };
-    dock_.onRedrawAll = [this] { RedrawAll(); };
+    for (auto& ws : workspaces_) {
+        Workspace* w = ws.get();
+        w->dock.onStructureChanged = [this, w] {
+            if (w == &Active()) RequestSyncFloating();
+        };
+        w->dock.onRedrawAll = [this] { RedrawAll(); };
+    }
     SyncFloating(false);  // panel windows saved last time come back without taking the focus
     logSink_ = log::AddSink([this](const log::Entry&) { RedrawAll(); });
-    log::Info("エディターを開きました: {}", project_.Name());
+    log::Info("エディターを開きました: {} ({})", project_.Name(), WideToUtf8(Active().Title()));
     UpdateTitle();
     return true;
 }
@@ -94,38 +128,78 @@ void EditorScreen::RedrawAll() {
 }
 
 // ---------------------------------------------------------------------------
-// Panels and layout
+// Workspaces (one per software) and their layouts
 // ---------------------------------------------------------------------------
 
-void EditorScreen::RegisterPanels() {
+dock::Layout EditorScreen::Workspace::DefaultLayout() const {
+    return software ? software->DefaultLayout() : CoreDefaultLayout();
+}
+
+std::vector<dock::PanelType> EditorScreen::CorePanels(bool withStart) {
     auto panel = [this](const char* id, const wchar_t* title, void (EditorScreen::*draw)(ui::Context&, Rect)) {
         return dock::PanelType{id, title, [this, draw](ui::Context& c, const Rect& r) { (this->*draw)(c, r); }};
     };
-    dock_.SetPanelTypes({
-        panel(kHierarchy, L"階層", &EditorScreen::DrawHierarchy),
-        panel(kStart, L"スタート", &EditorScreen::DrawStart),
-        panel(kInspector, L"インスペクター", &EditorScreen::DrawInspector),
-        panel(kConsole, L"コンソール", &EditorScreen::DrawConsole),
-        panel(kAssets, L"アセット", &EditorScreen::DrawAssets),
-    });
+    std::vector<dock::PanelType> list;
+    list.push_back(panel(core_panel::kHierarchy, L"階層", &EditorScreen::DrawHierarchy));
+    if (withStart) list.push_back(panel(kStart, L"スタート", &EditorScreen::DrawStart));
+    list.push_back(panel(core_panel::kInspector, L"インスペクター", &EditorScreen::DrawInspector));
+    list.push_back(panel(core_panel::kConsole, L"コンソール", &EditorScreen::DrawConsole));
+    list.push_back(panel(core_panel::kAssets, L"アセット", &EditorScreen::DrawAssets));
+    return list;
 }
 
-dock::Layout EditorScreen::DefaultLayout() const {
-    using dock::Axis;
-    dock::Layout l;
-    auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({kHierarchy}),
-                           l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf({kStart}), l.MakeLeaf({kInspector})));
-    l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({kConsole, kAssets}));
-    return l;
+void EditorScreen::BuildWorkspaces() {
+    for (const SoftwareType& type : app_.GetPlugins().Registry().Softwares()) {
+        auto ws = std::make_unique<Workspace>(*this);
+        ws->type = &type;
+        ws->software = type.create(*ws);
+        if (!ws->software) {
+            log::Error("ソフト「{}」を作れませんでした ({})", WideToUtf8(type.title), type.plugin.Text());
+            continue;
+        }
+        // The software's panels after the core ones; ids must not collide (they are saved in layouts).
+        std::vector<dock::PanelType> panels = CorePanels(false);
+        for (auto& pt : ws->software->Panels()) {
+            const bool taken = pt.id.starts_with("core.") ||
+                               std::any_of(panels.begin(), panels.end(), [&](const dock::PanelType& q) { return q.id == pt.id; });
+            if (taken) {
+                log::Error("ソフト「{}」のパネル ID「{}」は使えません (core. で始まるか、重なっています)", WideToUtf8(type.title), pt.id);
+                continue;
+            }
+            panels.push_back(std::move(pt));
+        }
+        ws->dock.SetPanelTypes(std::move(panels));
+        workspaces_.push_back(std::move(ws));
+    }
+    if (workspaces_.empty()) {
+        auto ws = std::make_unique<Workspace>(*this);
+        ws->dock.SetPanelTypes(CorePanels(true));
+        workspaces_.push_back(std::move(ws));
+    }
+    // The most important wire of the editor: an edit that reaches any history marks the project unsaved.
+    for (auto& ws : workspaces_) ws->history.SetOnModified([this] { SetDirty(true); });
+}
+
+void EditorScreen::SwitchSoftware(size_t index) {
+    if (index >= workspaces_.size() || index == active_) return;
+    // Outside the frame: the floating windows of the old software are destroyed, the new one's created.
+    Defer([this, index] {
+        if (index == active_) return;
+        CloseFloats();
+        ctx_.ClearFocus();
+        active_ = index;
+        SyncFloating(false);
+        log::Info("ソフトを切り替えました: {}", WideToUtf8(Active().Title()));
+    });
 }
 
 fs::path EditorScreen::LayoutFile() const { return project_.Root() / L"UserSettings" / L"Layout.json"; }
 
 void EditorScreen::LoadLayout() {
     layoutDoc_ = json::Value::MakeObject();
-    std::optional<dock::Layout> loaded;
     const fs::path file = LayoutFile();
     std::error_code ec;
+    bool broken = false;
     if (fs::exists(file, ec)) {
         std::string err;
         auto bytes = platform::ReadFileBytes(file, &err);
@@ -133,27 +207,64 @@ void EditorScreen::LoadLayout() {
         if (doc && doc->IsObject() && doc->Get("kind").AsString() == kLayoutKind) {
             layoutDoc_ = std::move(*doc);
             layoutReadOnly_ = layoutDoc_.Get("formatVersion").AsInt(0) > kLayoutFormatVersion;
-            if (const json::Value* soft = layoutDoc_.Get("softwares").Find(kCoreSoftware)) loaded = dock::Layout::FromJson(*soft);
+            if (layoutReadOnly_) log::Warn("パネルの配置は新しい版の RM Engine で保存されています。この版では上書きしません");
+        } else {
+            broken = true;
         }
-        if (!loaded) log::Warn("パネルの配置を読めなかったので、最初の配置で開きます: {}", PathToUtf8(file));
-        if (layoutReadOnly_) log::Warn("パネルの配置は新しい版の RM Engine で保存されています。この版では上書きしません");
+        // Format 1 kept { "softwares": { "core": <layout> } }.
+        if (const json::Value* old = layoutDoc_.Find("softwares"); old && old->IsObject()) {
+            json::Value list = json::Value::MakeArray();
+            if (const json::Value* core = old->Find(kCoreSoftware)) {
+                json::Value e = WorkspaceKey(nullptr);
+                e.Set("layout", *core);
+                list.Push(std::move(e));
+            }
+            layoutDoc_.Set("softwares", std::move(list));
+        }
     }
-    dock::Layout layout = loaded ? std::move(*loaded) : DefaultLayout();
-    layout.Sanitize(dock_.PanelIds());
-    dock_.SetLayout(std::move(layout));
+    const json::Value& entries = layoutDoc_.Get("softwares");
+    for (auto& ws : workspaces_) {
+        const json::Value key = WorkspaceKey(ws->type);
+        std::optional<dock::Layout> loaded;
+        for (const auto& e : entries.Items()) {
+            if (!SameKey(e, key)) continue;
+            loaded = dock::Layout::FromJson(e.Get("layout"));
+            if (!loaded) broken = true;
+        }
+        dock::Layout layout = loaded ? std::move(*loaded) : ws->DefaultLayout();
+        layout.Sanitize(ws->dock.PanelIds());
+        ws->dock.SetLayout(std::move(layout));
+    }
+    if (broken) log::Warn("パネルの配置を一部読めなかったので、最初の配置で開きます: {}", PathToUtf8(file));
+    const json::Value& active = layoutDoc_.Get("active");
+    for (size_t i = 0; i < workspaces_.size(); ++i) {
+        if (active.IsObject() && SameKey(active, WorkspaceKey(workspaces_[i]->type))) active_ = i;
+    }
 }
 
 void EditorScreen::SaveLayout() {
     if (layoutReadOnly_) return;
-    dock::Layout& layout = dock_.GetLayout();
+    dock::Layout& current = Active().dock.GetLayout();
     for (auto& fw : floats_) {
-        if (dock::Floating* f = layout.FindFloating(fw->Id())) f->rect = fw->CurrentRect();
+        if (dock::Floating* f = current.FindFloating(fw->Id())) f->rect = fw->CurrentRect();
     }
     layoutDoc_.Set("kind", kLayoutKind);
     layoutDoc_.Set("formatVersion", kLayoutFormatVersion);
-    json::Value* softwares = layoutDoc_.Find("softwares");
-    if (!softwares || !softwares->IsObject()) softwares = &layoutDoc_.Set("softwares", json::Value::MakeObject());
-    softwares->Set(kCoreSoftware, layout.ToJson());
+    layoutDoc_.Set("active", WorkspaceKey(Active().type));
+    json::Value* entries = layoutDoc_.Find("softwares");
+    if (!entries || !entries->IsArray()) entries = &layoutDoc_.Set("softwares", json::Value::MakeArray());
+    for (auto& ws : workspaces_) {
+        const json::Value key = WorkspaceKey(ws->type);
+        json::Value* entry = nullptr;
+        for (auto& e : entries->Items()) {
+            if (SameKey(e, key)) entry = &e;
+        }
+        if (!entry) {
+            entries->Push(key);
+            entry = &entries->Items().back();
+        }
+        entry->Set("layout", ws->dock.GetLayout().ToJson());
+    }
 
     const fs::path file = LayoutFile();
     std::error_code ec;
@@ -163,10 +274,10 @@ void EditorScreen::SaveLayout() {
 }
 
 void EditorScreen::ResetLayout() {
-    dock::Layout layout = DefaultLayout();
-    layout.Sanitize(dock_.PanelIds());
-    dock_.SetLayout(std::move(layout));
-    log::Info("パネルの配置を最初の状態に戻しました");
+    dock::Layout layout = Active().DefaultLayout();
+    layout.Sanitize(Active().dock.PanelIds());
+    Active().dock.SetLayout(std::move(layout));
+    log::Info("パネルの配置を最初の状態に戻しました ({})", WideToUtf8(Active().Title()));
 }
 
 void EditorScreen::RequestSyncFloating() {
@@ -179,19 +290,19 @@ void EditorScreen::RequestSyncFloating() {
 
 void EditorScreen::SyncFloating(bool activate) {
     syncQueued_ = false;
-    dock::Layout& layout = dock_.GetLayout();
+    dock::Layout& layout = Active().dock.GetLayout();
     for (auto it = floats_.begin(); it != floats_.end();) {
         if (layout.FindFloating((*it)->Id())) {
             ++it;
             continue;
         }
-        dock_.ForgetSite((*it)->Id());
+        Active().dock.ForgetSite((*it)->Id());
         (*it)->Close();
         it = floats_.erase(it);
     }
     std::vector<uint32_t> failed;
     for (auto& f : layout.floating) {
-        const std::wstring title = dock_.FloatingTitle(f.id);
+        const std::wstring title = Active().dock.FloatingTitle(f.id);
         auto it = std::find_if(floats_.begin(), floats_.end(), [&](const auto& w) { return w->Id() == f.id; });
         if (it == floats_.end()) {
             auto fw = std::make_unique<FloatWindow>(app_, *this, f.id);
@@ -217,7 +328,7 @@ void EditorScreen::SyncFloating(bool activate) {
 
 void EditorScreen::CloseFloats() {
     for (auto& f : floats_) {
-        dock_.ForgetSite(f->Id());
+        Active().dock.ForgetSite(f->Id());
         f->Close();
     }
     floats_.clear();
@@ -229,19 +340,19 @@ void EditorScreen::DrawFloating(ui::Context& c, float width, float height, Float
     const bool blocked = modal_ != Modal::None;
     c.SetInputEnabled(!blocked);
     if (!blocked) HandleShortcuts(c);
-    dock_.Draw(c, Rect{0, 0, width, height}.Inset(4), window.Id(), window.Hwnd(), window.Scale());
-    dock_.DrawOverlay(c, window.Id());
+    Active().dock.Draw(c, Rect{0, 0, width, height}.Inset(4), window.Id(), window.Hwnd(), window.Scale());
+    Active().dock.DrawOverlay(c, window.Id());
     c.SetInputEnabled(true);
 }
 
-void EditorScreen::CloseFloatingWindow(uint32_t floatingId) { dock_.CloseFloating(floatingId); }
+void EditorScreen::CloseFloatingWindow(uint32_t floatingId) { Active().dock.CloseFloating(floatingId); }
 
-void EditorScreen::FloatingMoving(uint32_t floatingId, HWND hwnd) { dock_.WindowMoving(floatingId, hwnd); }
+void EditorScreen::FloatingMoving(uint32_t floatingId, HWND hwnd) { Active().dock.WindowMoving(floatingId, hwnd); }
 
 void EditorScreen::FloatingMoveEnded(uint32_t floatingId) {
-    dock_.WindowMoveEnded(floatingId);
+    Active().dock.WindowMoveEnded(floatingId);
     // Still floating (not docked back): remember where the user put it.
-    dock::Floating* f = dock_.GetLayout().FindFloating(floatingId);
+    dock::Floating* f = Active().dock.GetLayout().FindFloating(floatingId);
     for (auto& fw : floats_) {
         if (f && fw->Id() == floatingId) f->rect = fw->CurrentRect();
     }
@@ -319,21 +430,33 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
         case Menu::File:
             return {{L"保存", L"Ctrl+S"}, {L"", L"", true, true}, {L"Hub に戻る"}, {L"終了"}};
         case Menu::Edit:
-            return {{L"元に戻す", L"Ctrl+Z", history_.CanUndo()}, {L"やり直し", L"Ctrl+Y", history_.CanRedo()}};
+            return {{L"元に戻す", L"Ctrl+Z", Active().history.CanUndo()}, {L"やり直し", L"Ctrl+Y", Active().history.CanRedo()}};
         case Menu::Window: {
             std::vector<w::MenuItem> items;
-            for (const auto& t : dock_.PanelTypes()) {
+            for (const auto& t : Active().dock.PanelTypes()) {
                 w::MenuItem it;
                 it.label = t.title;
-                it.checked = dock_.GetLayout().Contains(t.id);
+                it.checked = Active().dock.GetLayout().Contains(t.id);
                 items.push_back(std::move(it));
             }
             items.push_back({L"", L"", true, true});
             items.push_back({L"パネルの配置を元に戻す"});
             return items;
         }
-        case Menu::Plugins:
-            return {{L"インストール済みのプラグイン: なし", L"", false}, {L"プラグインを追加… (準備中)", L"", false}};
+        case Menu::Plugins: {
+            std::vector<w::MenuItem> items;
+            for (const PluginStatus& st : app_.GetPlugins().Statuses()) {
+                w::MenuItem it;
+                it.label = Utf8ToWide(st.displayName) + L"  (" + Utf8ToWide(st.id.Text()) + L")";
+                it.shortcut = st.state == PluginState::Enabled ? L"使用中" : L"使えません";
+                it.enabled = false;  // information only (installing comes with the Hub's plugin page)
+                items.push_back(std::move(it));
+            }
+            if (items.empty()) items.push_back({L"インストール済みのプラグイン: なし", L"", false});
+            items.push_back({L"", L"", true, true});
+            items.push_back({L"プラグインを追加… (準備中)", L"", false});
+            return items;
+        }
         case Menu::Help:
             return {{L"RM Engine について"}};
         case Menu::Debug:
@@ -349,12 +472,12 @@ void EditorScreen::RunMenu(Menu m, int index) {
         if (index == 2) RequestClose(CloseAction::ToHub);
         if (index == 3) RequestClose(CloseAction::Quit);
     } else if (m == Menu::Edit) {
-        if (index == 0) history_.Undo();
-        if (index == 1) history_.Redo();
+        if (index == 0) Active().history.Undo();
+        if (index == 1) Active().history.Redo();
     } else if (m == Menu::Window) {
-        const auto& types = dock_.PanelTypes();
+        const auto& types = Active().dock.PanelTypes();
         if (index >= 0 && index < static_cast<int>(types.size())) {
-            dock_.TogglePanel(types[static_cast<size_t>(index)].id);
+            Active().dock.TogglePanel(types[static_cast<size_t>(index)].id);
         } else if (index == static_cast<int>(types.size()) + 1) {
             ResetLayout();
         }
@@ -362,7 +485,7 @@ void EditorScreen::RunMenu(Menu m, int index) {
         modal_ = Modal::About;
     } else if (m == Menu::Debug) {
 #ifdef _DEBUG
-        history_.Push(std::make_unique<TestCommand>());
+        Active().history.Push(std::make_unique<TestCommand>());
         log::Info("テスト用の変更を履歴に積みました");
 #endif
     }
@@ -384,13 +507,13 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     const Rect menuBar = ui::TakeTop(full, 30);
     const Rect tabs = ui::TakeTop(full, 36);
     const Rect status = ui::TakeBottom(full, 24);
-    dock_.Draw(c, full.Inset(4), 0, Hwnd(), Scale());
+    Active().dock.Draw(c, full.Inset(4), 0, Hwnd(), Scale());
     DrawSoftTabs(c, tabs);
     DrawStatusBar(c, status);
     DrawMenuBar(c, menuBar);
 
     c.SetInputEnabled(!overlay);
-    dock_.DrawOverlay(c, 0);
+    Active().dock.DrawOverlay(c, 0);
     c.SetInputEnabled(true);
     if (menuPopup_.open) DrawOpenMenu(c);
     DrawModal(c);
@@ -400,8 +523,8 @@ void EditorScreen::HandleShortcuts(ui::Context& c) {
     // Shared by the editor window and the panel windows: Ctrl+S works wherever the focus is.
     if (c.Focused() != 0) return;
     if (c.KeyPressed(ui::Key::S, true)) Save();
-    if (c.KeyPressed(ui::Key::Z, true)) history_.Undo();
-    if (c.KeyPressed(ui::Key::Y, true) || c.KeyPressed(ui::Key::Z, true, true)) history_.Redo();
+    if (c.KeyPressed(ui::Key::Z, true)) Active().history.Undo();
+    if (c.KeyPressed(ui::Key::Y, true) || c.KeyPressed(ui::Key::Z, true, true)) Active().history.Redo();
 }
 
 void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
@@ -447,7 +570,14 @@ void EditorScreen::DrawOpenMenu(ui::Context& c) {
     }
     // A click on the title of the open menu closes it (MenuPopup treats it as "outside").
     const Menu m = openMenu_;
-    const int picked = w::MenuPopup(c, menuPopup_, MenuItems(m), 260);
+    const std::vector<w::MenuItem> items = MenuItems(m);
+    // As wide as the longest row (label + shortcut), at least 260.
+    float width = 260;
+    for (const auto& it : items) {
+        const float need = c.P().TextWidth(it.label, theme::FontSize) + c.P().TextWidth(it.shortcut, theme::FontSize) + 84;
+        width = std::max(width, need);
+    }
+    const int picked = w::MenuPopup(c, menuPopup_, items, width);
     if (picked >= 0) RunMenu(m, picked);
 }
 
@@ -455,16 +585,38 @@ void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
     auto& p = c.P();
     p.FillRect(r, theme::Bg);
     p.FillRect({r.x, r.Bottom() - 1, r.w, 1}, theme::Border);
-    // No plugin provides a "software" yet, so there are no tabs to show.
-    p.Text(r.Inset(16, 0, 16, 0), L"ソフトはまだありません — プラグインを追加すると、ここにソフト (ゲーム・イラスト・作曲 …) のタブが並びます",
-           Style(12, theme::TextFaint));
+    if (!workspaces_[0]->type) {
+        // No plugin provides a "software", so there are no tabs to show.
+        p.Text(r.Inset(16, 0, 16, 0), L"ソフトはまだありません — プラグインを追加すると、ここにソフト (ゲーム・イラスト・作曲 …) のタブが並びます",
+               Style(12, theme::TextFaint));
+        return;
+    }
+    float x = r.x + 8;
+    for (size_t i = 0; i < workspaces_.size(); ++i) {
+        const std::wstring title = workspaces_[i]->Title();
+        const float wdt = p.TextWidth(title, 13, true) + 36;
+        const Rect tab{x, r.y + 4, wdt, r.h - 5};
+        c.PushId(static_cast<uint64_t>(i));
+        const auto b = c.ButtonBehavior(c.MakeId("software"), tab);
+        c.PopId();
+        const bool sel = i == active_;
+        if (sel) {
+            p.FillRoundRect(tab, 5, theme::Panel);
+            p.FillRect({tab.x + 10, tab.Bottom() - 2, tab.w - 20, 2}, theme::Accent);
+        } else if (b.hovered) {
+            p.FillRoundRect(tab, 5, theme::Pressed);
+        }
+        p.Text(tab, title, Style(13, sel ? theme::Text : theme::TextDim, true, ui::HAlign::Center));
+        if (b.clicked) SwitchSoftware(i);
+        x += wdt + 4;
+    }
 }
 
 void EditorScreen::DrawHierarchy(ui::Context& c, Rect r) {
     ui::TextStyle hint = Style(12, theme::TextFaint);
     hint.wrap = true;
     hint.v = ui::VAlign::Top;
-    c.P().Text(r.Inset(12, 10, 12, 10), L"ソフトを選ぶと、ここに中身 (ゲームならエンティティの親子) が並びます。", hint);
+    c.P().Text(r.Inset(12, 10, 12, 10), L"ここに中身 (ゲームならエンティティの親子) が並びます。", hint);
 }
 
 void EditorScreen::DrawInspector(ui::Context& c, Rect r) {

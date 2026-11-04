@@ -48,10 +48,12 @@
     <ClCompile Include="TestBase.cpp" />
     <ClCompile Include="TestCore.cpp" />
     <ClCompile Include="TestDock.cpp" />
+    <ClCompile Include="TestPlugin.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />
     <ClCompile Include="..\src\editor\dock\DockLayout.cpp" />
+    <ClCompile Include="..\src\editor\plugin\PluginManifest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Test.h" />

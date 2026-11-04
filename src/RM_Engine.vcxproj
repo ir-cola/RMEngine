@@ -61,6 +61,8 @@
     <ClCompile Include="editor\app\App.cpp" />
     <ClCompile Include="editor\dock\DockLayout.cpp" />
     <ClCompile Include="editor\dock\DockSpace.cpp" />
+    <ClCompile Include="editor\plugin\PluginManifest.cpp" />
+    <ClCompile Include="editor\plugin\Plugins.cpp" />
     <ClCompile Include="editor\app\Main.cpp" />
     <ClCompile Include="editor\app\ScreenWindow.cpp" />
     <ClCompile Include="editor\hub\HubScreen.cpp" />
@@ -71,6 +73,7 @@
     <ClCompile Include="editor\widgets\Widgets.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="core\PluginId.h" />
     <ClInclude Include="core\UndoHistory.h" />
     <ClInclude Include="platform\Gfx.h" />
     <ClInclude Include="platform\Shell.h" />
@@ -84,6 +87,9 @@
     <ClInclude Include="editor\app\ScreenWindow.h" />
     <ClInclude Include="editor\dock\DockLayout.h" />
     <ClInclude Include="editor\dock\DockSpace.h" />
+    <ClInclude Include="editor\plugin\PluginManifest.h" />
+    <ClInclude Include="editor\plugin\Plugins.h" />
+    <ClInclude Include="editor\plugin\Software.h" />
     <ClInclude Include="editor\hub\HubScreen.h" />
     <ClInclude Include="editor\project\HubSettings.h" />
     <ClInclude Include="editor\project\Project.h" />
@@ -99,5 +105,22 @@
   <ItemGroup>
     <None Include="..\resources\app.manifest" />
   </ItemGroup>
+  <!-- Plugins (plugins/<author>/<name>/): every source file is built in (static linking).
+       Listed by wildcard so adding a plugin never means editing this file. -->
+  <ItemGroup>
+    <!-- one object folder per source folder: two plugins may both have an editor/Register.cpp -->
+    <ClCompile Include="..\plugins\**\*.cpp">
+      <ObjectFileName>$(IntDir)plugins\%(RecursiveDir)</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="..\plugins\**\*.h" />
+    <None Include="..\plugins\**\plugin.json" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <!-- plugin.json files go next to the exe as Plugins/<author>/<name>/plugin.json (read at start-up). -->
+  <Target Name="CopyPluginManifests" AfterTargets="Build">
+    <ItemGroup>
+      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginManifest)" DestinationFiles="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

@@ -9,6 +9,7 @@
 // (never from inside a window procedure), so a window is never destroyed while one of
 // its own handlers is still running.
 
+#include "editor/plugin/Plugins.h"
 #include "editor/project/HubSettings.h"
 #include "platform/Gfx.h"
 
@@ -33,6 +34,7 @@ public:
 
     platform::Gfx& Gfx() { return gfx_; }
     HubSettings& Settings() { return settings_; }
+    const Plugins& GetPlugins() const { return plugins_; }
 
     void RequestOpenProject(const std::filesystem::path& file);
     void RequestHub(std::string errorMessage = {});
@@ -43,9 +45,12 @@ private:
     void ApplyPending();
     void ShowHub(const std::string& errorMessage);
     void Replace(std::unique_ptr<ScreenWindow> next);
+    // Empty when every plugin the project records is usable, else the Japanese reason not to open it.
+    std::string MissingPluginsMessage(const Project& project) const;
 
     platform::Gfx gfx_;
     HubSettings settings_;
+    Plugins plugins_;
     std::unique_ptr<ScreenWindow> screen_;
     Pending pending_ = Pending::None;
     std::filesystem::path pendingFile_;

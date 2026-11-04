@@ -40,6 +40,9 @@ HWND TopLevelWindowAt(POINT screen, HWND exclude = nullptr);
 // The visible window rectangle (without the invisible resize borders of Windows 10/11).
 RECT VisibleWindowRect(HWND hwnd);
 
+// The folder of the running exe (the engine's own files - Plugins/ ... - are next to it).
+std::filesystem::path ExeDirectory();
+
 // Seconds from an arbitrary start point (QueryPerformanceCounter).
 double NowSeconds();
 

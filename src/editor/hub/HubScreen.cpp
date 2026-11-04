@@ -387,17 +387,35 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
 void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     auto& p = c.P();
     p.Text(ui::TakeTop(area, 40), L"プラグイン", Style(24, theme::Text, true));
-    ui::TakeTop(area, 18);
-    const Rect box = ui::TakeTop(area, 150);
-    p.FillRoundRect(box, 8, theme::Panel);
-    p.Text({box.x + 24, box.y + 20, box.w - 48, 26}, L"インストールされているプラグインはありません", Style(15, theme::Text, true));
-    ui::TextStyle ts = Style(13, theme::TextDim);
-    ts.wrap = true;
-    ts.v = ui::VAlign::Top;
-    p.Text({box.x + 24, box.y + 56, box.w - 48, box.h - 70},
-           L"ゲーム・イラスト・作曲・3D モデルなどの機能は、プラグインとして追加します。\n"
-           L"ここでプラグインのインストール・削除・再インストールを行えるようにする予定です。",
-           ts);
+    ui::TextStyle note = Style(13, theme::TextDim);
+    note.wrap = true;
+    note.v = ui::VAlign::Top;
+    p.Text(ui::TakeTop(area, 44),
+           L"エンジンに組み込まれているプラグインです。入れたプラグインはすべてのプロジェクトで使えます。"
+           L"インストール・削除・再インストールはこれから作ります。",
+           note);
+    ui::TakeTop(area, 8);
+    const auto& list = app_.GetPlugins().Statuses();
+    if (list.empty()) {
+        const Rect box = ui::TakeTop(area, 80);
+        p.FillRoundRect(box, 8, theme::Panel);
+        p.Text(box.Inset(24, 0, 24, 0), L"インストールされているプラグインはありません", Style(15, theme::Text, true));
+        return;
+    }
+    for (const PluginStatus& st : list) {
+        const Rect row = ui::TakeTop(area, 68);
+        ui::TakeTop(area, 8);
+        p.FillRoundRect(row, 8, theme::Panel);
+        p.Text({row.x + 24, row.y + 12, row.w - 220, 24}, Utf8ToWide(st.displayName), Style(15, theme::Text, true));
+        p.Text({row.x + 24, row.y + 38, row.w - 220, 20}, Utf8ToWide("作者 " + st.id.author + "   名前 " + st.id.name),
+               Style(12, theme::TextFaint));
+        if (st.state == PluginState::Enabled) {
+            p.Text({row.Right() - 200, row.y, 176, row.h}, L"使用中", Style(13, theme::TextDim, false, ui::HAlign::Right));
+        } else {
+            p.Text({row.Right() - 420, row.y, 396, row.h}, L"使えません: " + Utf8ToWide(st.reason),
+                   Style(12, theme::Danger, false, ui::HAlign::Right));
+        }
+    }
 }
 
 void HubScreen::DrawRowMenu(ui::Context& c) {

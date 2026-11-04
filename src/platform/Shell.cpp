@@ -189,4 +189,18 @@ HWND TopLevelWindowAt(POINT screen, HWND exclude) {
     return nullptr;
 }
 
+std::filesystem::path ExeDirectory() {
+    std::wstring buf(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD n = GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));
+        if (n == 0) return {};
+        if (n < buf.size()) {
+            buf.resize(n);
+            break;
+        }
+        buf.resize(buf.size() * 2);
+    }
+    return std::filesystem::path(buf).parent_path();
+}
+
 }  // namespace rm::platform

@@ -4,6 +4,9 @@
 #include "base/Utf.h"
 #include "editor/hub/HubScreen.h"
 #include "editor/shell/EditorScreen.h"
+#include "platform/Shell.h"
+
+#include <format>
 
 namespace rm::editor {
 
@@ -16,6 +19,7 @@ int App::Run(const LaunchOptions& options) {
         return 1;
     }
     settings_.Load();
+    plugins_.Load(platform::ExeDirectory() / L"Plugins");
     if (!options.projectFile.empty()) {
         RequestOpenProject(options.projectFile);
     } else {
@@ -63,6 +67,25 @@ void App::ShowHub(const std::string& errorMessage) {
     Replace(std::move(hub));
 }
 
+std::string App::MissingPluginsMessage(const Project& project) const {
+    // Design RME_PLATFORM 5-a: a project that records a plugin which is not installed (or cannot be
+    // used) is not opened - saving it without the plugin could only lose that plugin's data.
+    std::string err;
+    auto used = ParsePluginIdList(project.doc.Get("plugins"), &err);
+    if (!used) return std::format("プロジェクトファイルの「plugins」の形が正しくありません: {}", err);
+    std::string missing;
+    for (const PluginId& id : *used) {
+        if (plugins_.IsEnabled(id)) continue;
+        const PluginStatus* st = plugins_.Find(id);
+        missing += std::format("\n・{}{}", st ? st->displayName + " (" + id.Text() + ")" : id.Text(),
+                               st ? " — " + st->reason : std::string(" — インストールされていません"));
+    }
+    if (missing.empty()) return {};
+    return std::format("このプロジェクトが使っているプラグインがそろっていないため、開けません。{}\n\n"
+                       "データを守るため、開かずに止めました。",
+                       missing);
+}
+
 void App::ApplyPending() {
     while (pending_ != Pending::None) {
         const Pending kind = pending_;
@@ -80,7 +103,8 @@ void App::ApplyPending() {
             case Pending::OpenProject: {
                 std::string err;
                 auto project = LoadProject(pendingFile_, &err);
-                if (!project) {
+                if (project) err = MissingPluginsMessage(*project);
+                if (!project || !err.empty()) {
                     log::Error("{}", err);
                     if (auto* hub = dynamic_cast<HubScreen*>(screen_.get())) {
                         hub->ShowError(Utf8ToWide(err));
