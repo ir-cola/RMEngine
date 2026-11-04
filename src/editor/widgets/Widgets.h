@@ -33,6 +33,7 @@ struct MenuItem {
     std::wstring shortcut;
     bool enabled = true;
     bool separator = false;
+    bool checked = false;  // a check mark in front of the label
 };
 
 struct Popup {

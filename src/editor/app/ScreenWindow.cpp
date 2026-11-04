@@ -55,6 +55,8 @@ LPCWSTR CursorResource(ui::Cursor c) {
     switch (c) {
         case ui::Cursor::Hand: return IDC_HAND;
         case ui::Cursor::IBeam: return IDC_IBEAM;
+        case ui::Cursor::SizeWE: return IDC_SIZEWE;
+        case ui::Cursor::SizeNS: return IDC_SIZENS;
         default: return IDC_ARROW;
     }
 }
@@ -83,7 +85,7 @@ bool ScreenWindow::CreateScreenWindow(const platform::WindowDesc& desc, int show
     alive_ = true;
     OnCreated();
     ShowWindow(Hwnd(), showCmd);
-    SetForegroundWindow(Hwnd());
+    if (showCmd != SW_SHOWNOACTIVATE) SetForegroundWindow(Hwnd());
     Invalidate();
     return true;
 }
@@ -352,6 +354,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             RunDeferred();
             return 0;
         default:
+            OnOtherMessage(m, wp, lp);
             handled = false;
             return 0;
     }

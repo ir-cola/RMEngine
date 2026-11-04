@@ -284,6 +284,7 @@ int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, 
 
     int clicked = -1;
     float y = box.y + kPad;
+    const bool checks = std::any_of(items.begin(), items.end(), [](const MenuItem& it) { return it.checked; });
     c.PushId("menu");
     for (size_t i = 0; i < items.size(); ++i) {
         const auto& it = items[i];
@@ -300,7 +301,12 @@ int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, 
         ui::TextStyle ts;
         ts.size = theme::FontSize;
         ts.color = it.enabled ? theme::Text : theme::TextFaint;
-        p.Text(row.Inset(10, 0, 10, 0), it.label, ts);
+        if (it.checked) {
+            ts.h = ui::HAlign::Center;
+            p.Text({row.x, row.y, 26, row.h}, L"✓", ts);
+            ts.h = ui::HAlign::Left;
+        }
+        p.Text(row.Inset(checks ? 28.f : 10.f, 0, 10, 0), it.label, ts);
         if (!it.shortcut.empty()) {
             ts.h = ui::HAlign::Right;
             ts.color = theme::TextFaint;

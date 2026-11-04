@@ -2,6 +2,7 @@
 
 #include "base/Utf.h"
 
+#include <dwmapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <wrl/client.h>
@@ -168,6 +169,24 @@ double NowSeconds() {
     LARGE_INTEGER c{};
     QueryPerformanceCounter(&c);
     return static_cast<double>(c.QuadPart) / freq;
+}
+
+RECT VisibleWindowRect(HWND hwnd) {
+    RECT r{};
+    if (FAILED(DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &r, sizeof(r)))) GetWindowRect(hwnd, &r);
+    return r;
+}
+
+HWND TopLevelWindowAt(POINT screen, HWND exclude) {
+    for (HWND h = GetTopWindow(nullptr); h; h = GetWindow(h, GW_HWNDNEXT)) {
+        if (h == exclude || !IsWindowVisible(h) || IsIconic(h)) continue;
+        if (GetWindowLongPtrW(h, GWL_EXSTYLE) & WS_EX_TRANSPARENT) continue;
+        BOOL cloaked = FALSE;
+        if (SUCCEEDED(DwmGetWindowAttribute(h, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && cloaked) continue;
+        const RECT r = VisibleWindowRect(h);
+        if (PtInRect(&r, screen)) return h;
+    }
+    return nullptr;
 }
 
 }  // namespace rm::platform

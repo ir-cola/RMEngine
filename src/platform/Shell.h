@@ -34,6 +34,12 @@ std::optional<std::string> ReadFileBytes(const std::filesystem::path& path, std:
 // in the middle never leaves a half-written project file.
 bool WriteFileAtomic(const std::filesystem::path& path, std::string_view data, std::string* error);
 
+// The top-level window under a screen point (physical pixels), skipping `exclude`, hidden,
+// minimized, click-through and cloaked windows. Used while dragging panels between windows.
+HWND TopLevelWindowAt(POINT screen, HWND exclude = nullptr);
+// The visible window rectangle (without the invisible resize borders of Windows 10/11).
+RECT VisibleWindowRect(HWND hwnd);
+
 // Seconds from an arbitrary start point (QueryPerformanceCounter).
 double NowSeconds();
 

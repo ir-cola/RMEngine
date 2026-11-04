@@ -34,8 +34,11 @@ void RegisterClassOnce(WNDPROC proc) {
 }
 
 DWORD StyleFor(const WindowDesc& d) {
+    if (d.tool) return WS_OVERLAPPEDWINDOW & ~WS_MINIMIZEBOX;
     return d.resizable ? WS_OVERLAPPEDWINDOW : (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX);
 }
+
+DWORD ExStyleFor(const WindowDesc& d) { return d.tool ? WS_EX_TOOLWINDOW : 0; }
 
 }  // namespace
 
@@ -53,17 +56,36 @@ bool Window::Create(const WindowDesc& desc, WindowListener* listener) {
     GetMonitorInfoW(mon, &mi);
 
     const DWORD style = StyleFor(desc);
+    const DWORD exStyle = ExStyleFor(desc);
     const float s = dpiX / 96.f;
     RECT r{0, 0, static_cast<LONG>(desc.widthDip * s), static_cast<LONG>(desc.heightDip * s)};
-    AdjustWindowRectExForDpi(&r, style, FALSE, 0, dpiX);
+    AdjustWindowRectExForDpi(&r, style, FALSE, exStyle, dpiX);
     const RECT& wa = mi.rcWork;
-    const int w = std::min<int>(r.right - r.left, wa.right - wa.left);
-    const int h = std::min<int>(r.bottom - r.top, wa.bottom - wa.top);
-    const int x = wa.left + (wa.right - wa.left - w) / 2;
-    const int y = wa.top + (wa.bottom - wa.top - h) / 2;
+    int w = std::min<int>(r.right - r.left, wa.right - wa.left);
+    int h = std::min<int>(r.bottom - r.top, wa.bottom - wa.top);
+    int x = wa.left + (wa.right - wa.left - w) / 2;
+    int y = wa.top + (wa.bottom - wa.top - h) / 2;
+    if (desc.hasRect) {
+        const RECT want{desc.x, desc.y, desc.x + desc.w, desc.y + desc.h};
+        if (HMONITOR on = MonitorFromRect(&want, MONITOR_DEFAULTTONULL)) {
+            // Kept inside the work area of the monitor it is on (not under the taskbar, not off screen).
+            MONITORINFO om{sizeof(om)};
+            GetMonitorInfoW(on, &om);
+            const RECT& owa = om.rcWork;
+            w = std::min(desc.w, static_cast<int>(owa.right - owa.left));
+            h = std::min(desc.h, static_cast<int>(owa.bottom - owa.top));
+            x = std::clamp(desc.x, static_cast<int>(owa.left), static_cast<int>(owa.right) - w);
+            y = std::clamp(desc.y, static_cast<int>(owa.top), static_cast<int>(owa.bottom) - h);
+        } else {
+            w = std::min(desc.w, static_cast<int>(wa.right - wa.left));
+            h = std::min(desc.h, static_cast<int>(wa.bottom - wa.top));
+            x = wa.left + (wa.right - wa.left - w) / 2;
+            y = wa.top + (wa.bottom - wa.top - h) / 2;
+        }
+    }
 
-    hwnd_ = CreateWindowExW(0, kClassName, desc.title.c_str(), style, x, y, w, h, nullptr, nullptr, GetModuleHandleW(nullptr),
-                            this);
+    hwnd_ = CreateWindowExW(exStyle, kClassName, desc.title.c_str(), style, x, y, w, h, desc.owner, nullptr,
+                            GetModuleHandleW(nullptr), this);
     if (!hwnd_) return false;
     dpi_ = GetDpiForWindow(hwnd_);
 
@@ -106,7 +128,7 @@ LRESULT CALLBACK Window::WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             const UINT dpi = GetDpiForWindow(h);
             const float s = dpi / 96.f;
             RECT r{0, 0, static_cast<LONG>(self->desc_.minWidthDip * s), static_cast<LONG>(self->desc_.minHeightDip * s)};
-            AdjustWindowRectExForDpi(&r, StyleFor(self->desc_), FALSE, 0, dpi);
+            AdjustWindowRectExForDpi(&r, StyleFor(self->desc_), FALSE, ExStyleFor(self->desc_), dpi);
             mmi->ptMinTrackSize = {r.right - r.left, r.bottom - r.top};
             return 0;
         }

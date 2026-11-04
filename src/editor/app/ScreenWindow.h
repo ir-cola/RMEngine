@@ -26,7 +26,7 @@ public:
     ScreenWindow& operator=(const ScreenWindow&) = delete;
 
     // Releases the swap chain and destroys the window. Safe to call twice.
-    void Close();
+    virtual void Close();
 
     HWND Hwnd() const { return window_.Handle(); }
     void Invalidate();
@@ -34,6 +34,7 @@ public:
     // a modal OS dialog: those run their own message loop and would re-enter the frame.
     void Defer(std::function<void()> fn);
     void SetTitle(std::wstring_view title) { window_.SetTitle(title); }
+    float Scale() const { return window_.Scale(); }
 
 protected:
     bool CreateScreenWindow(const platform::WindowDesc& desc, int showCmd);
@@ -41,6 +42,12 @@ protected:
     virtual void OnCreated() {}
     virtual void OnFrame(ui::Context& c, float width, float height) = 0;
     virtual void OnCloseRequested() = 0;  // the title bar X / Alt+F4
+    // Messages the screen window does not handle itself (WM_MOVING ...). DefWindowProc still runs.
+    virtual void OnOtherMessage(UINT msg, WPARAM wp, LPARAM lp) {
+        (void)msg;
+        (void)wp;
+        (void)lp;
+    }
 
     App& app_;
     platform::Window window_;

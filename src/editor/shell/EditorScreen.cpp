@@ -4,7 +4,9 @@
 #include "base/Utf.h"
 #include "base/Version.h"
 #include "editor/app/App.h"
+#include "editor/shell/FloatWindow.h"
 #include "editor/widgets/Theme.h"
+#include "platform/Shell.h"
 
 #include <algorithm>
 #include <format>
@@ -26,6 +28,18 @@ ui::TextStyle Style(float size, ui::Color color, bool bold = false, ui::HAlign h
     return s;
 }
 
+// The core panels (always there, whatever plugins are installed).
+constexpr char kHierarchy[] = "core.hierarchy";
+constexpr char kInspector[] = "core.inspector";
+constexpr char kStart[] = "core.start";
+constexpr char kConsole[] = "core.console";
+constexpr char kAssets[] = "core.assets";
+
+// Layouts are kept per software. Until a plugin adds one, the editor shows the core panels only.
+constexpr char kCoreSoftware[] = "core";
+constexpr char kLayoutKind[] = "rm_engine.layout";
+constexpr int64_t kLayoutFormatVersion = 1;
+
 #ifdef _DEBUG
 // Debug builds only: an edit that changes nothing, to exercise "unsaved changes" end to end.
 class TestCommand final : public ICommand {
@@ -41,10 +55,12 @@ public:
 EditorScreen::EditorScreen(App& app, Project project) : ScreenWindow(app), project_(std::move(project)) {
     // The most important wire of the editor: an edit that reaches the history marks the project unsaved.
     history_.SetOnModified([this] { SetDirty(true); });
+    RegisterPanels();
 }
 
 EditorScreen::~EditorScreen() {
     if (logSink_) log::RemoveSink(logSink_);
+    CloseFloats();
 }
 
 bool EditorScreen::Open() {
@@ -56,11 +72,179 @@ bool EditorScreen::Open() {
     d.minHeightDip = 560;
     d.captionRgb = 0x151618;
     RefreshAssets();
+    LoadLayout();  // before the callbacks below: nothing to sync yet
     if (!CreateScreenWindow(d, SW_SHOWMAXIMIZED)) return false;
-    logSink_ = log::AddSink([this](const log::Entry&) { Invalidate(); });
+    dock_.onStructureChanged = [this] { RequestSyncFloating(); };
+    dock_.onRedrawAll = [this] { RedrawAll(); };
+    SyncFloating(false);  // panel windows saved last time come back without taking the focus
+    logSink_ = log::AddSink([this](const log::Entry&) { RedrawAll(); });
     log::Info("エディターを開きました: {}", project_.Name());
     UpdateTitle();
     return true;
+}
+
+void EditorScreen::Close() {
+    CloseFloats();
+    ScreenWindow::Close();
+}
+
+void EditorScreen::RedrawAll() {
+    Invalidate();
+    for (auto& f : floats_) f->Invalidate();
+}
+
+// ---------------------------------------------------------------------------
+// Panels and layout
+// ---------------------------------------------------------------------------
+
+void EditorScreen::RegisterPanels() {
+    auto panel = [this](const char* id, const wchar_t* title, void (EditorScreen::*draw)(ui::Context&, Rect)) {
+        return dock::PanelType{id, title, [this, draw](ui::Context& c, const Rect& r) { (this->*draw)(c, r); }};
+    };
+    dock_.SetPanelTypes({
+        panel(kHierarchy, L"階層", &EditorScreen::DrawHierarchy),
+        panel(kStart, L"スタート", &EditorScreen::DrawStart),
+        panel(kInspector, L"インスペクター", &EditorScreen::DrawInspector),
+        panel(kConsole, L"コンソール", &EditorScreen::DrawConsole),
+        panel(kAssets, L"アセット", &EditorScreen::DrawAssets),
+    });
+}
+
+dock::Layout EditorScreen::DefaultLayout() const {
+    using dock::Axis;
+    dock::Layout l;
+    auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({kHierarchy}),
+                           l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf({kStart}), l.MakeLeaf({kInspector})));
+    l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({kConsole, kAssets}));
+    return l;
+}
+
+fs::path EditorScreen::LayoutFile() const { return project_.Root() / L"UserSettings" / L"Layout.json"; }
+
+void EditorScreen::LoadLayout() {
+    layoutDoc_ = json::Value::MakeObject();
+    std::optional<dock::Layout> loaded;
+    const fs::path file = LayoutFile();
+    std::error_code ec;
+    if (fs::exists(file, ec)) {
+        std::string err;
+        auto bytes = platform::ReadFileBytes(file, &err);
+        auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
+        if (doc && doc->IsObject() && doc->Get("kind").AsString() == kLayoutKind) {
+            layoutDoc_ = std::move(*doc);
+            layoutReadOnly_ = layoutDoc_.Get("formatVersion").AsInt(0) > kLayoutFormatVersion;
+            if (const json::Value* soft = layoutDoc_.Get("softwares").Find(kCoreSoftware)) loaded = dock::Layout::FromJson(*soft);
+        }
+        if (!loaded) log::Warn("パネルの配置を読めなかったので、最初の配置で開きます: {}", PathToUtf8(file));
+        if (layoutReadOnly_) log::Warn("パネルの配置は新しい版の RM Engine で保存されています。この版では上書きしません");
+    }
+    dock::Layout layout = loaded ? std::move(*loaded) : DefaultLayout();
+    layout.Sanitize(dock_.PanelIds());
+    dock_.SetLayout(std::move(layout));
+}
+
+void EditorScreen::SaveLayout() {
+    if (layoutReadOnly_) return;
+    dock::Layout& layout = dock_.GetLayout();
+    for (auto& fw : floats_) {
+        if (dock::Floating* f = layout.FindFloating(fw->Id())) f->rect = fw->CurrentRect();
+    }
+    layoutDoc_.Set("kind", kLayoutKind);
+    layoutDoc_.Set("formatVersion", kLayoutFormatVersion);
+    json::Value* softwares = layoutDoc_.Find("softwares");
+    if (!softwares || !softwares->IsObject()) softwares = &layoutDoc_.Set("softwares", json::Value::MakeObject());
+    softwares->Set(kCoreSoftware, layout.ToJson());
+
+    const fs::path file = LayoutFile();
+    std::error_code ec;
+    fs::create_directories(file.parent_path(), ec);
+    std::string err;
+    if (!platform::WriteFileAtomic(file, json::Write(layoutDoc_), &err)) log::Warn("パネルの配置を保存できませんでした: {}", err);
+}
+
+void EditorScreen::ResetLayout() {
+    dock::Layout layout = DefaultLayout();
+    layout.Sanitize(dock_.PanelIds());
+    dock_.SetLayout(std::move(layout));
+    log::Info("パネルの配置を最初の状態に戻しました");
+}
+
+void EditorScreen::RequestSyncFloating() {
+    // Windows are created and destroyed from the message loop, never inside a frame or a
+    // window procedure of the window being destroyed.
+    if (syncQueued_) return;
+    syncQueued_ = true;
+    Defer([this] { SyncFloating(true); });
+}
+
+void EditorScreen::SyncFloating(bool activate) {
+    syncQueued_ = false;
+    dock::Layout& layout = dock_.GetLayout();
+    for (auto it = floats_.begin(); it != floats_.end();) {
+        if (layout.FindFloating((*it)->Id())) {
+            ++it;
+            continue;
+        }
+        dock_.ForgetSite((*it)->Id());
+        (*it)->Close();
+        it = floats_.erase(it);
+    }
+    std::vector<uint32_t> failed;
+    for (auto& f : layout.floating) {
+        const std::wstring title = dock_.FloatingTitle(f.id);
+        auto it = std::find_if(floats_.begin(), floats_.end(), [&](const auto& w) { return w->Id() == f.id; });
+        if (it == floats_.end()) {
+            auto fw = std::make_unique<FloatWindow>(app_, *this, f.id);
+            if (!fw->Open(f.rect, Hwnd(), title, activate)) {
+                failed.push_back(f.id);
+                continue;
+            }
+            f.rect = fw->CurrentRect();  // may differ: a saved position on a monitor that is gone
+            floats_.push_back(std::move(fw));
+            continue;
+        }
+        FloatWindow& fw = **it;
+        const dock::ScreenRect& a = fw.Applied();
+        if (a.x != f.rect.x || a.y != f.rect.y || a.w != f.rect.w || a.h != f.rect.h) fw.MoveTo(f.rect);
+        fw.SetTitle(title);
+    }
+    for (const uint32_t id : failed) {
+        log::Error("パネルのウィンドウを作れませんでした。中のパネルは閉じます");
+        layout.CloseFloating(id);
+    }
+    RedrawAll();
+}
+
+void EditorScreen::CloseFloats() {
+    for (auto& f : floats_) {
+        dock_.ForgetSite(f->Id());
+        f->Close();
+    }
+    floats_.clear();
+}
+
+void EditorScreen::DrawFloating(ui::Context& c, float width, float height, FloatWindow& window) {
+    c.P().Clear(theme::Bg);
+    // While the editor shows a dialog, the panel windows only show.
+    const bool blocked = modal_ != Modal::None;
+    c.SetInputEnabled(!blocked);
+    if (!blocked) HandleShortcuts(c);
+    dock_.Draw(c, Rect{0, 0, width, height}.Inset(4), window.Id(), window.Hwnd(), window.Scale());
+    dock_.DrawOverlay(c, window.Id());
+    c.SetInputEnabled(true);
+}
+
+void EditorScreen::CloseFloatingWindow(uint32_t floatingId) { dock_.CloseFloating(floatingId); }
+
+void EditorScreen::FloatingMoving(uint32_t floatingId, HWND hwnd) { dock_.WindowMoving(floatingId, hwnd); }
+
+void EditorScreen::FloatingMoveEnded(uint32_t floatingId) {
+    dock_.WindowMoveEnded(floatingId);
+    // Still floating (not docked back): remember where the user put it.
+    dock::Floating* f = dock_.GetLayout().FindFloating(floatingId);
+    for (auto& fw : floats_) {
+        if (f && fw->Id() == floatingId) f->rect = fw->CurrentRect();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +271,7 @@ bool EditorScreen::Save() {
         return false;
     }
     SetDirty(false);
+    SaveLayout();
     RefreshAssets();
     return true;
 }
@@ -117,6 +302,7 @@ void EditorScreen::RequestClose(CloseAction action) {
 
 void EditorScreen::FinishClose(CloseAction action) {
     log::Info("エディターを閉じます: {}", project_.Name());
+    SaveLayout();
     if (action == CloseAction::Quit) {
         app_.RequestQuit();
     } else {
@@ -134,6 +320,18 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
             return {{L"保存", L"Ctrl+S"}, {L"", L"", true, true}, {L"Hub に戻る"}, {L"終了"}};
         case Menu::Edit:
             return {{L"元に戻す", L"Ctrl+Z", history_.CanUndo()}, {L"やり直し", L"Ctrl+Y", history_.CanRedo()}};
+        case Menu::Window: {
+            std::vector<w::MenuItem> items;
+            for (const auto& t : dock_.PanelTypes()) {
+                w::MenuItem it;
+                it.label = t.title;
+                it.checked = dock_.GetLayout().Contains(t.id);
+                items.push_back(std::move(it));
+            }
+            items.push_back({L"", L"", true, true});
+            items.push_back({L"パネルの配置を元に戻す"});
+            return items;
+        }
         case Menu::Plugins:
             return {{L"インストール済みのプラグイン: なし", L"", false}, {L"プラグインを追加… (準備中)", L"", false}};
         case Menu::Help:
@@ -153,6 +351,13 @@ void EditorScreen::RunMenu(Menu m, int index) {
     } else if (m == Menu::Edit) {
         if (index == 0) history_.Undo();
         if (index == 1) history_.Redo();
+    } else if (m == Menu::Window) {
+        const auto& types = dock_.PanelTypes();
+        if (index >= 0 && index < static_cast<int>(types.size())) {
+            dock_.TogglePanel(types[static_cast<size_t>(index)].id);
+        } else if (index == static_cast<int>(types.size()) + 1) {
+            ResetLayout();
+        }
     } else if (m == Menu::Help) {
         modal_ = Modal::About;
     } else if (m == Menu::Debug) {
@@ -173,30 +378,36 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     const bool overlay = modal_ != Modal::None || menuPopup_.open;
     c.SetInputEnabled(!overlay);
 
-    if (!overlay && c.Focused() == 0) {
-        if (c.KeyPressed(ui::Key::S, true)) Save();
-        if (c.KeyPressed(ui::Key::Z, true)) history_.Undo();
-        if (c.KeyPressed(ui::Key::Y, true) || c.KeyPressed(ui::Key::Z, true, true)) history_.Redo();
-    }
+    if (!overlay) HandleShortcuts(c);
 
     Rect full{0, 0, width, height};
     const Rect menuBar = ui::TakeTop(full, 30);
     const Rect tabs = ui::TakeTop(full, 36);
     const Rect status = ui::TakeBottom(full, 24);
-    DrawWorkspace(c, full);
+    dock_.Draw(c, full.Inset(4), 0, Hwnd(), Scale());
     DrawSoftTabs(c, tabs);
     DrawStatusBar(c, status);
     DrawMenuBar(c, menuBar);
 
+    c.SetInputEnabled(!overlay);
+    dock_.DrawOverlay(c, 0);
     c.SetInputEnabled(true);
     if (menuPopup_.open) DrawOpenMenu(c);
     DrawModal(c);
 }
 
+void EditorScreen::HandleShortcuts(ui::Context& c) {
+    // Shared by the editor window and the panel windows: Ctrl+S works wherever the focus is.
+    if (c.Focused() != 0) return;
+    if (c.KeyPressed(ui::Key::S, true)) Save();
+    if (c.KeyPressed(ui::Key::Z, true)) history_.Undo();
+    if (c.KeyPressed(ui::Key::Y, true) || c.KeyPressed(ui::Key::Z, true, true)) history_.Redo();
+}
+
 void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
     auto& p = c.P();
     p.FillRect(r, theme::Sidebar);
-    static const wchar_t* kTitles[] = {L"ファイル", L"編集", L"プラグイン", L"ヘルプ", L"デバッグ"};
+    static const wchar_t* kTitles[] = {L"ファイル", L"編集", L"ウィンドウ", L"プラグイン", L"ヘルプ", L"デバッグ"};
 #ifdef _DEBUG
     const int count = static_cast<int>(Menu::Count);
 #else
@@ -249,68 +460,31 @@ void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
            Style(12, theme::TextFaint));
 }
 
-void EditorScreen::DrawWorkspace(ui::Context& c, Rect r) {
-    auto& p = c.P();
-    r = r.Inset(4);
-    const Rect bottom = ui::TakeBottom(r, std::min(240.f, r.h * 0.35f));
-    const Rect left = ui::TakeLeft(r, 260);
-    const Rect right = ui::TakeRight(r, 320);
-    const Rect center = r;
-
-    const Rect hierarchy = w::Panel(c, left.Inset(2), L"階層");
+void EditorScreen::DrawHierarchy(ui::Context& c, Rect r) {
     ui::TextStyle hint = Style(12, theme::TextFaint);
     hint.wrap = true;
     hint.v = ui::VAlign::Top;
-    p.Text(hierarchy.Inset(12, 10, 12, 10), L"ソフトを選ぶと、ここに中身 (ゲームならエンティティの親子) が並びます。", hint);
+    c.P().Text(r.Inset(12, 10, 12, 10), L"ソフトを選ぶと、ここに中身 (ゲームならエンティティの親子) が並びます。", hint);
+}
 
-    const Rect inspector = w::Panel(c, right.Inset(2), L"インスペクター");
-    p.Text(inspector.Inset(12, 10, 12, 10), L"何も選ばれていません。", hint);
+void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
+    ui::TextStyle hint = Style(12, theme::TextFaint);
+    hint.wrap = true;
+    hint.v = ui::VAlign::Top;
+    c.P().Text(r.Inset(12, 10, 12, 10), L"何も選ばれていません。", hint);
+}
 
-    const Rect main = center.Inset(2);
-    p.FillRoundRect(main, 6, theme::Panel);
-    const float cy = main.y + main.h * 0.5f;
-    p.Text({main.x, cy - 46, main.w, 30}, L"ソフトがまだありません", Style(20, theme::Text, true, ui::HAlign::Center));
+void EditorScreen::DrawStart(ui::Context& c, Rect r) {
+    auto& p = c.P();
+    const float cy = r.y + r.h * 0.5f;
+    p.Text({r.x, cy - 46, r.w, 30}, L"ソフトがまだありません", Style(20, theme::Text, true, ui::HAlign::Center));
     ui::TextStyle body = Style(13, theme::TextDim, false, ui::HAlign::Center);
     body.wrap = true;
     body.v = ui::VAlign::Top;
-    p.Text({main.x + 40, cy - 6, main.w - 80, 80},
+    p.Text({r.x + 40, cy - 6, r.w - 80, 80},
            L"ゲーム・イラスト・作曲・3D モデルなどの機能は、プラグインとして追加します。\n"
            L"プラグインを入れると上のタブにソフトが並び、ここにそのソフトのパネルが表示されます。",
            body);
-
-    DrawBottomPanel(c, bottom.Inset(2));
-}
-
-void EditorScreen::DrawBottomPanel(ui::Context& c, Rect r) {
-    auto& p = c.P();
-    p.FillRoundRect(r, 6, theme::Panel);
-    Rect body = r;
-    const Rect header = ui::TakeTop(body, 30);
-    const wchar_t* names[] = {L"コンソール", L"アセット"};
-    float x = header.x + 6;
-    for (int i = 0; i < 2; ++i) {
-        const float wdt = p.TextWidth(names[i], 12, true) + 28;
-        const Rect tab{x, header.y + 3, wdt, header.h - 3};
-        c.PushId(static_cast<uint64_t>(i));
-        const auto b = c.ButtonBehavior(c.MakeId("bottomtab"), tab);
-        c.PopId();
-        const bool sel = bottomTab_ == i;
-        if (sel) {
-            p.FillRoundRect(tab, 4, theme::PanelHeader);
-            p.FillRect({tab.x + 8, tab.Bottom() - 2, tab.w - 16, 2}, theme::Accent);
-        } else if (b.hovered) {
-            p.FillRoundRect(tab, 4, theme::Pressed);
-        }
-        p.Text(tab, names[i], Style(12, sel ? theme::Text : theme::TextDim, true, ui::HAlign::Center));
-        if (b.clicked) bottomTab_ = i;
-        x += wdt + 2;
-    }
-    p.FillRect({r.x, header.Bottom() - 1, r.w, 1}, theme::Border);
-    if (bottomTab_ == 0) {
-        DrawConsole(c, body);
-    } else {
-        DrawAssets(c, body);
-    }
 }
 
 void EditorScreen::DrawConsole(ui::Context& c, Rect r) {
@@ -319,9 +493,10 @@ void EditorScreen::DrawConsole(ui::Context& c, Rect r) {
     const float lineH = 20;
     const float content = lineH * static_cast<float>(entries.size()) + 8;
     const uint64_t last = entries.empty() ? 0 : entries.back().seq;
-    if (last != consoleSeenSeq_) {
-        w::ScrollToEnd(c, "console");  // follow new output
-        consoleSeenSeq_ = last;
+    auto seen = consoleSeenSeq_.try_emplace(&c, ~0ull).first;
+    if (last != seen->second) {
+        w::ScrollToEnd(c, "console");  // follow new output (and start at the end in a new window)
+        seen->second = last;
     }
     const Rect view = r.Inset(0, 2, 0, 2);
     const float off = w::BeginScroll(c, "console", view, content);
@@ -342,7 +517,7 @@ void EditorScreen::DrawAssets(ui::Context& c, Rect r) {
     p.Text({r.x + 12, r.y + 4, r.w - 24, 22}, project_.AssetsDir().native(), Style(12, theme::TextFaint));
     const Rect view = r.Inset(0, 28, 0, 2);
     if (assets_.empty()) {
-        p.Text(view.Inset(12, 4, 12, 4), L"Assets フォルダは空です。", Style(12, theme::TextDim));
+        p.Text({view.x + 12, view.y + 4, view.w - 24, 22}, L"Assets フォルダは空です。", Style(12, theme::TextDim));
         return;
     }
     const float lineH = 24;

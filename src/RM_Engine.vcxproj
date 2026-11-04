@@ -59,12 +59,15 @@
     <ClCompile Include="ui\Painter.cpp" />
     <ClCompile Include="ui\TextEdit.cpp" />
     <ClCompile Include="editor\app\App.cpp" />
+    <ClCompile Include="editor\dock\DockLayout.cpp" />
+    <ClCompile Include="editor\dock\DockSpace.cpp" />
     <ClCompile Include="editor\app\Main.cpp" />
     <ClCompile Include="editor\app\ScreenWindow.cpp" />
     <ClCompile Include="editor\hub\HubScreen.cpp" />
     <ClCompile Include="editor\project\HubSettings.cpp" />
     <ClCompile Include="editor\project\Project.cpp" />
     <ClCompile Include="editor\shell\EditorScreen.cpp" />
+    <ClCompile Include="editor\shell\FloatWindow.cpp" />
     <ClCompile Include="editor\widgets\Widgets.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -79,10 +82,13 @@
     <ClInclude Include="ui\Types.h" />
     <ClInclude Include="editor\app\App.h" />
     <ClInclude Include="editor\app\ScreenWindow.h" />
+    <ClInclude Include="editor\dock\DockLayout.h" />
+    <ClInclude Include="editor\dock\DockSpace.h" />
     <ClInclude Include="editor\hub\HubScreen.h" />
     <ClInclude Include="editor\project\HubSettings.h" />
     <ClInclude Include="editor\project\Project.h" />
     <ClInclude Include="editor\shell\EditorScreen.h" />
+    <ClInclude Include="editor\shell\FloatWindow.h" />
     <ClInclude Include="editor\widgets\Theme.h" />
     <ClInclude Include="editor\widgets\Widgets.h" />
     <ClInclude Include="..\resources\resource.h" />

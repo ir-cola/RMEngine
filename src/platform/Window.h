@@ -25,6 +25,14 @@ struct WindowDesc {
     int minHeightDip = 400;
     bool resizable = true;
     uint32_t captionRgb = 0x151618;  // title bar color (Windows 11)
+
+    // Panels taken out of the editor: owned by the editor window (stays above it, no taskbar button).
+    HWND owner = nullptr;
+    bool tool = false;
+    // Window rectangle in physical pixels of the virtual screen. Ignored (centered instead)
+    // when it is not on any monitor any more (a saved position from an unplugged screen).
+    bool hasRect = false;
+    int x = 0, y = 0, w = 0, h = 0;
 };
 
 class Window {
@@ -34,7 +42,7 @@ public:
     Window& operator=(const Window&) = delete;
     ~Window() { Destroy(); }
 
-    // Created hidden and centered on the monitor under the mouse cursor.
+    // Created hidden; centered on the monitor under the mouse cursor unless desc.hasRect.
     bool Create(const WindowDesc& desc, WindowListener* listener);
     // Stops forwarding messages first, then destroys the HWND.
     void Destroy();

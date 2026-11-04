@@ -95,7 +95,7 @@ struct Input {
     }
 };
 
-enum class Cursor : uint8_t { Arrow, Hand, IBeam };
+enum class Cursor : uint8_t { Arrow, Hand, IBeam, SizeWE, SizeNS };
 enum class HAlign : uint8_t { Left, Center, Right };
 enum class VAlign : uint8_t { Top, Center, Bottom };
 
