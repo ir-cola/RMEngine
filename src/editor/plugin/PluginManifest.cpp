@@ -1,5 +1,6 @@
 #include "editor/plugin/PluginManifest.h"
 
+#include <algorithm>
 #include <format>
 
 namespace rm::editor {
@@ -68,7 +69,10 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
         PluginStatus& s = r.statuses[i];
         s.id = c[i].id;
         s.displayName = c[i].manifest ? c[i].manifest->displayName : c[i].id.Text();
-        if (!c[i].manifestFound) {
+        if (!c[i].installed) {
+            s.state = PluginState::NotInstalled;
+            s.reason = "インストールされていません";
+        } else if (!c[i].manifestFound) {
             s.state = PluginState::NoManifest;
             s.reason = "plugin.json が見つかりません";
         } else if (!c[i].manifest) {
@@ -109,6 +113,7 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
         PluginStatus& s = r.statuses[i];
         if (usable[i]) {
             for (const PluginId& req : c[i].manifest->requirements) {
+                // (a not-installed candidate is never "usable", so its requirements are not followed)
                 const size_t j = find(req);
                 if (j == n) {
                     s.state = PluginState::MissingRequirement;
@@ -123,7 +128,9 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
                 self(self, j);
                 if (r.statuses[j].state != PluginState::Enabled) {
                     s.state = PluginState::RequirementDisabled;
-                    s.reason = std::format("前提のプラグイン「{}」が使えないため、使えません", r.statuses[j].displayName);
+                    s.reason = r.statuses[j].state == PluginState::NotInstalled
+                                   ? std::format("前提のプラグイン「{}」がインストールされていません", r.statuses[j].displayName)
+                                   : std::format("前提のプラグイン「{}」が使えないため、使えません", r.statuses[j].displayName);
                     break;
                 }
             }
@@ -133,6 +140,68 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
     };
     for (size_t i = 0; i < n; ++i) visit(visit, i);
     return r;
+}
+
+namespace {
+
+const PluginManifest* FindManifest(const std::vector<PluginManifest>& list, const PluginId& id) {
+    for (const auto& m : list) {
+        if (m.id == id) return &m;
+    }
+    return nullptr;
+}
+
+bool Contains(const std::vector<PluginId>& list, const PluginId& id) {
+    return std::find(list.begin(), list.end(), id) != list.end();
+}
+
+}  // namespace
+
+std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginManifest>& available,
+                                  const std::vector<PluginId>& ready, std::vector<PluginId>* unavailable) {
+    std::vector<PluginId> plan;
+    std::vector<PluginId> visiting;
+    std::vector<PluginId> walked;
+    auto add = [&](auto&& self, const PluginId& p) -> void {
+        if (Contains(walked, p) || Contains(visiting, p)) return;
+        const bool isReady = Contains(ready, p);
+        const PluginManifest* m = FindManifest(available, p);
+        if (!m) {
+            if (!isReady && unavailable && !Contains(*unavailable, p)) unavailable->push_back(p);
+            return;
+        }
+        // Ready plugins are walked through too: a requirement further down may be missing.
+        visiting.push_back(p);
+        for (const PluginId& req : m->requirements) self(self, req);
+        visiting.pop_back();
+        walked.push_back(p);
+        if (!isReady) plan.push_back(p);
+    };
+    add(add, id);
+    return plan;
+}
+
+std::vector<Dependent> Dependents(const PluginId& id, const std::vector<PluginManifest>& installed) {
+    // Breadth first from `id`: whoever requires a plugin in the frontier is the next ring.
+    std::vector<Dependent> out;
+    std::vector<PluginId> frontier{id};
+    std::vector<PluginId> seen{id};
+    while (!frontier.empty()) {
+        std::vector<PluginId> next;
+        for (const PluginId& f : frontier) {
+            for (const PluginManifest& m : installed) {
+                if (Contains(seen, m.id) || !Contains(m.requirements, f)) continue;
+                seen.push_back(m.id);
+                next.push_back(m.id);
+                Dependent d;
+                d.id = m.id;
+                if (f != id) d.via = f;
+                out.push_back(std::move(d));
+            }
+        }
+        frontier = std::move(next);
+    }
+    return out;
 }
 
 }  // namespace rm::editor

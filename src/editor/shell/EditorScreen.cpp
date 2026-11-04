@@ -122,6 +122,12 @@ void EditorScreen::Close() {
     ScreenWindow::Close();
 }
 
+void EditorScreen::ShowError(std::wstring message) {
+    modalText_ = std::move(message);
+    modal_ = Modal::Error;
+    Invalidate();
+}
+
 void EditorScreen::RedrawAll() {
     Invalidate();
     for (auto& f : floats_) f->Invalidate();
@@ -444,17 +450,24 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
             return items;
         }
         case Menu::Plugins: {
+            // One row per plugin, in the order of Plugins::Entries() (RunMenu relies on it).
             std::vector<w::MenuItem> items;
-            for (const PluginStatus& st : app_.GetPlugins().Statuses()) {
+            for (const Plugins::Entry& e : app_.GetPlugins().Entries()) {
                 w::MenuItem it;
-                it.label = Utf8ToWide(st.displayName) + L"  (" + Utf8ToWide(st.id.Text()) + L")";
-                it.shortcut = st.state == PluginState::Enabled ? L"使用中" : L"使えません";
-                it.enabled = false;  // information only (installing comes with the Hub's plugin page)
+                const std::wstring name = Utf8ToWide(e.status.displayName);
+                if (e.installed) {
+                    it.label = name + L"  (" + Utf8ToWide(e.status.id.Text()) + L")";
+                    it.shortcut = e.status.state == PluginState::Enabled ? L"使用中" : L"⚠ 使えません";
+                    it.enabled = false;  // information only
+                } else {
+                    it.label = L"「" + name + L"」をインストール…";
+                    it.enabled = e.available;
+                }
                 items.push_back(std::move(it));
             }
-            if (items.empty()) items.push_back({L"インストール済みのプラグイン: なし", L"", false});
+            if (items.empty()) items.push_back({L"このエンジンにはプラグインがありません", L"", false});
             items.push_back({L"", L"", true, true});
-            items.push_back({L"プラグインを追加… (準備中)", L"", false});
+            items.push_back({L"削除・再インストールは Hub の「プラグイン」で行います", L"", false});
             return items;
         }
         case Menu::Help:
@@ -481,6 +494,9 @@ void EditorScreen::RunMenu(Menu m, int index) {
         } else if (index == static_cast<int>(types.size()) + 1) {
             ResetLayout();
         }
+    } else if (m == Menu::Plugins) {
+        const auto& entries = app_.GetPlugins().Entries();
+        if (index >= 0 && index < static_cast<int>(entries.size())) BeginInstallPlugin(entries[static_cast<size_t>(index)].status.id);
     } else if (m == Menu::Help) {
         modal_ = Modal::About;
     } else if (m == Menu::Debug) {
@@ -517,6 +533,20 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     c.SetInputEnabled(true);
     if (menuPopup_.open) DrawOpenMenu(c);
     DrawModal(c);
+}
+
+void EditorScreen::BeginInstallPlugin(const PluginId& id) {
+    std::vector<PluginId> unavailable;
+    installPlan_ = app_.GetPlugins().InstallPlan(id, &unavailable);
+    installName_ = Utf8ToWide(app_.GetPlugins().DisplayName(id));
+    if (!unavailable.empty()) {
+        std::wstring names;
+        for (const PluginId& u : unavailable) names += L"\n・" + Utf8ToWide(app_.GetPlugins().DisplayName(u));
+        ShowError(L"「" + installName_ + L"」の前提プラグインがこのエンジンにありません。エンジンを新しい版にしてください。" + names);
+        return;
+    }
+    if (installPlan_.empty()) return;
+    modal_ = Modal::InstallPlugin;
 }
 
 void EditorScreen::HandleShortcuts(ui::Context& c) {
@@ -721,6 +751,28 @@ void EditorScreen::DrawModal(ui::Context& c) {
         } else if (w::Button(c, "uc.save", save, L"保存して閉じる", w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
             modal_ = Modal::None;
             if (Save()) FinishClose(pendingClose_);  // on failure Save() shows the error and the editor stays open
+        }
+        return;
+    }
+
+    if (modal_ == Modal::InstallPlugin) {
+        std::wstring list;
+        if (installPlan_.size() > 1) {
+            list = L"\n前提のプラグインも一緒に入ります:";
+            for (const PluginId& id : installPlan_) list += L"\n・" + Utf8ToWide(app_.GetPlugins().DisplayName(id));
+        }
+        const Rect cr = w::BeginModal(c, 620, 250 + 20 * static_cast<float>(installPlan_.size()), L"プラグインのインストール");
+        p.Text({cr.x, cr.y, cr.w, cr.h - 48},
+               L"「" + installName_ + L"」をインストールします。" + list +
+                   L"\n\nプロジェクトを保存してから、このプロジェクトを開き直します。\n元に戻す (Undo) の履歴は消えます。",
+               body);
+        const Rect ok{cr.Right() - 180, cr.Bottom() - 36, 180, 36};
+        if (w::Button(c, "ip.cancel", {ok.x - 12 - 110, ok.y, 110, 36}, L"やめる") || c.KeyPressed(ui::Key::Escape)) {
+            modal_ = Modal::None;
+        } else if (w::Button(c, "ip.ok", ok, L"保存して開き直す", w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
+            modal_ = Modal::None;
+            // A failed save shows its error and the editor stays as it is (nothing is lost).
+            if (Save()) app_.RequestInstallAndReopen(installPlan_, project_.file);
         }
         return;
     }

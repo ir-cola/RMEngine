@@ -192,6 +192,28 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
     return changed;
 }
 
+bool Checkbox(ui::Context& c, std::string_view idStr, const Rect& r, bool& value, std::wstring_view label) {
+    auto& p = c.P();
+    const auto b = c.ButtonBehavior(c.MakeId(idStr), r);
+    if (b.hovered) c.SetCursor(ui::Cursor::Hand);
+    const Rect box{r.x, r.y + (r.h - 16) * 0.5f, 16, 16};
+    p.FillRoundRect(box, 3, value ? theme::Accent : theme::Field);
+    p.StrokeRoundRect(box, 3, value ? theme::AccentHover : (b.hovered ? theme::BorderHover : theme::Border));
+    if (value) {
+        p.Line(box.x + 3.5f, box.y + 8.5f, box.x + 6.5f, box.y + 11.5f, theme::Text, 2);
+        p.Line(box.x + 6.5f, box.y + 11.5f, box.x + 12.5f, box.y + 4.5f, theme::Text, 2);
+    }
+    ui::TextStyle ts;
+    ts.size = theme::FontSize;
+    ts.color = theme::Text;
+    p.Text({box.Right() + 8, r.y, r.w - 24, r.h}, label, ts);
+    if (b.clicked) {
+        value = !value;
+        return true;
+    }
+    return false;
+}
+
 Rect Panel(ui::Context& c, const Rect& r, std::wstring_view title) {
     auto& p = c.P();
     p.FillRoundRect(r, 6, theme::Panel);

@@ -10,6 +10,15 @@
 
 namespace rm::editor {
 
+namespace {
+
+// A request may come from a message that was *sent* to a window (WM_CLOSE from taskkill or from
+// Windows shutting down). Sent messages are handled inside GetMessage, which then keeps waiting -
+// so the request would wait for the next unrelated message. A posted no-op wakes the loop up.
+void WakeMessageLoop() { PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0); }
+
+}  // namespace
+
 App::App() = default;
 App::~App() = default;
 
@@ -19,7 +28,8 @@ int App::Run(const LaunchOptions& options) {
         return 1;
     }
     settings_.Load();
-    plugins_.Load(platform::ExeDirectory() / L"Plugins");
+    plugins_.Load(platform::ExeDirectory() / L"Plugins",
+                  platform::GetKnownFolder(platform::KnownFolder::LocalAppData) / L"RM_Engine" / L"Plugins");
     if (!options.projectFile.empty()) {
         RequestOpenProject(options.projectFile);
     } else {
@@ -38,17 +48,42 @@ int App::Run(const LaunchOptions& options) {
     return 0;
 }
 
-void App::RequestOpenProject(const std::filesystem::path& file) {
+void App::RequestOpenProject(const std::filesystem::path& file, bool skipNotice) {
     pending_ = Pending::OpenProject;
     pendingFile_ = file;
+    pendingSkipNotice_ = skipNotice;
+    WakeMessageLoop();
+}
+
+void App::RequestInstallAndReopen(std::vector<PluginId> ids, const std::filesystem::path& project) {
+    pending_ = Pending::InstallAndReopen;
+    pendingInstall_ = std::move(ids);
+    pendingFile_ = project;
+    WakeMessageLoop();
+}
+
+bool App::InstallPlugins(const std::vector<PluginId>& ids, std::string* error) {
+    const bool ok = plugins_.Install(ids, error);
+    plugins_.Reload();
+    return ok;
+}
+
+bool App::UninstallPlugin(const PluginId& id, std::string* error) {
+    const bool ok = plugins_.Uninstall(id, error);
+    plugins_.Reload();
+    return ok;
 }
 
 void App::RequestHub(std::string errorMessage) {
     pending_ = Pending::Hub;
     pendingMessage_ = std::move(errorMessage);
+    WakeMessageLoop();
 }
 
-void App::RequestQuit() { pending_ = Pending::Quit; }
+void App::RequestQuit() {
+    pending_ = Pending::Quit;
+    WakeMessageLoop();
+}
 
 void App::Replace(std::unique_ptr<ScreenWindow> next) {
     std::unique_ptr<ScreenWindow> old = std::move(screen_);
@@ -67,23 +102,54 @@ void App::ShowHub(const std::string& errorMessage) {
     Replace(std::move(hub));
 }
 
-std::string App::MissingPluginsMessage(const Project& project) const {
-    // Design RME_PLATFORM 5-a: a project that records a plugin which is not installed (or cannot be
-    // used) is not opened - saving it without the plugin could only lose that plugin's data.
+HubScreen* App::EnsureHub() {
+    if (auto* hub = dynamic_cast<HubScreen*>(screen_.get())) return hub;
+    ShowHub({});
+    return dynamic_cast<HubScreen*>(screen_.get());
+}
+
+void App::OpenProjectNow() {
     std::string err;
-    auto used = ParsePluginIdList(project.doc.Get("plugins"), &err);
-    if (!used) return std::format("プロジェクトファイルの「plugins」の形が正しくありません: {}", err);
-    std::string missing;
-    for (const PluginId& id : *used) {
-        if (plugins_.IsEnabled(id)) continue;
-        const PluginStatus* st = plugins_.Find(id);
-        missing += std::format("\n・{}{}", st ? st->displayName + " (" + id.Text() + ")" : id.Text(),
-                               st ? " — " + st->reason : std::string(" — インストールされていません"));
+    auto project = LoadProject(pendingFile_, &err);
+    std::optional<std::vector<PluginId>> used;
+    if (project) {
+        used = ParsePluginIdList(project->doc.Get("plugins"), &err);
+        if (!used) err = "プロジェクトファイルの「plugins」の形が正しくありません: " + err;
     }
-    if (missing.empty()) return {};
-    return std::format("このプロジェクトが使っているプラグインがそろっていないため、開けません。{}\n\n"
-                       "データを守るため、開かずに止めました。",
-                       missing);
+    if (!project || !used) {
+        log::Error("{}", err);
+        if (HubScreen* hub = EnsureHub()) hub->ShowError(Utf8ToWide(err));
+        return;
+    }
+    // Design RME_PLATFORM 5-a: a project that records a plugin which cannot be used is not opened -
+    // saving it without the plugin could only lose that plugin's data.
+    std::vector<PluginId> blocking;
+    for (const PluginId& id : *used) {
+        if (!plugins_.IsEnabled(id)) blocking.push_back(id);
+    }
+    if (!blocking.empty()) {
+        log::Warn("プラグインがそろっていないため、開きません: {}", PathToUtf8(pendingFile_));
+        if (HubScreen* hub = EnsureHub()) hub->AskBlockingPlugins(pendingFile_, blocking);
+        return;
+    }
+    // Installed plugins that lack a requirement: told once, before opening (decided 2026-11-04).
+    std::vector<PluginId> limited;
+    for (const auto& e : plugins_.Entries()) {
+        if (e.installed && e.status.state != PluginState::Enabled) limited.push_back(e.status.id);
+    }
+    if (!limited.empty() && !pendingSkipNotice_ && !settings_.LimitedNoticeHidden(limited)) {
+        if (HubScreen* hub = EnsureHub()) hub->AskLimitedPlugins(pendingFile_, limited);
+        return;
+    }
+    settings_.Touch(project->file);
+    settings_.Save();
+    log::Info("プロジェクトを開きます: {}", PathToUtf8(project->file));
+    auto editor = std::make_unique<EditorScreen>(*this, std::move(*project));
+    if (!editor->Open()) {
+        ShowHub("エディターのウィンドウを作れませんでした。");
+        return;
+    }
+    Replace(std::move(editor));
 }
 
 void App::ApplyPending() {
@@ -100,28 +166,21 @@ void App::ApplyPending() {
                 ShowHub(pendingMessage_);
                 pendingMessage_.clear();
                 break;
-            case Pending::OpenProject: {
+            case Pending::OpenProject:
+                OpenProjectNow();
+                break;
+            case Pending::InstallAndReopen: {
                 std::string err;
-                auto project = LoadProject(pendingFile_, &err);
-                if (project) err = MissingPluginsMessage(*project);
-                if (!project || !err.empty()) {
+                if (!plugins_.Install(pendingInstall_, &err)) {
                     log::Error("{}", err);
-                    if (auto* hub = dynamic_cast<HubScreen*>(screen_.get())) {
-                        hub->ShowError(Utf8ToWide(err));
-                    } else {
-                        ShowHub(err);
-                    }
+                    if (auto* editor = dynamic_cast<EditorScreen*>(screen_.get())) editor->ShowError(Utf8ToWide(err));
                     break;
                 }
-                settings_.Touch(project->file);
-                settings_.Save();
-                log::Info("プロジェクトを開きます: {}", PathToUtf8(project->file));
-                auto editor = std::make_unique<EditorScreen>(*this, std::move(*project));
-                if (!editor->Open()) {
-                    ShowHub("エディターのウィンドウを作れませんでした。");
-                    break;
-                }
-                Replace(std::move(editor));
+                // The editor closes before the plugins are read again: its workspaces point into the registry.
+                if (screen_) screen_->Close();
+                screen_.reset();
+                plugins_.Reload();
+                RequestOpenProject(pendingFile_, true);
                 break;
             }
             case Pending::None: break;

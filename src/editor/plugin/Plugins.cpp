@@ -29,57 +29,178 @@ void PluginRegistry::AddSoftware(SoftwareType type) {
     softwares_.push_back(std::move(type));
 }
 
-void Plugins::Load(const fs::path& dir) {
+namespace {
+
+struct ReadResult {
+    bool found = false;
+    std::optional<PluginManifest> manifest;
+    std::string error;
+};
+
+ReadResult ReadManifest(const fs::path& folder) {
+    ReadResult r;
+    const fs::path file = folder / L"plugin.json";
+    std::error_code ec;
+    if (!fs::exists(file, ec)) return r;
+    r.found = true;
+    std::string err;
+    if (auto bytes = platform::ReadFileBytes(file, &err)) {
+        json::ParseError pe;
+        if (auto doc = json::Parse(*bytes, &pe)) {
+            r.manifest = ParsePluginManifest(*doc, &r.error);
+        } else {
+            r.error = std::format("plugin.json が壊れています ({} 行 {} 文字目: {})", pe.line, pe.column, pe.message);
+        }
+    } else {
+        r.error = err;
+    }
+    return r;
+}
+
+fs::path FolderOf(const fs::path& root, const PluginId& id) { return root / PathFromUtf8(id.author) / PathFromUtf8(id.name); }
+
+std::string FsError(const std::error_code& ec) { return platform::ErrorText(static_cast<DWORD>(ec.value())); }
+
+}  // namespace
+
+void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir) {
+    availableDir_ = availableDir;
+    installedDir_ = installedDir;
+    std::error_code ec;
+    const bool firstStart = !fs::exists(installedDir_, ec);
+    Reload();  // the engine's copies are known (names in the log) before anything is installed
+    if (firstStart) {
+        // First start of this engine for this user: everything that comes with it is installed.
+        fs::create_directories(installedDir_, ec);
+        std::vector<PluginId> all;
+        for (const BuiltinPlugin& b : BuiltinPlugins()) {
+            if (fs::exists(FolderOf(availableDir_, b.id.Id()) / L"plugin.json", ec)) all.push_back(b.id.Id());
+        }
+        std::string err;
+        if (!Install(all, &err)) log::Error("{}", err);
+        log::Info("最初の起動なので、エンジンに入っているプラグインをすべてインストールしました ({} 個)", all.size());
+        Reload();
+    }
+}
+
+void Plugins::Reload() {
     const auto builtin = BuiltinPlugins();
+    available_.clear();
+    installed_.clear();
+    entries_.clear();
+    registry_ = PluginRegistry{};
+
     std::vector<PluginCandidate> candidates;
+    std::vector<bool> availableFlags;
     for (const BuiltinPlugin& b : builtin) {
         PluginCandidate cand;
         cand.id = b.id.Id();
-        const fs::path file = dir / PathFromUtf8(cand.id.author) / PathFromUtf8(cand.id.name) / L"plugin.json";
+        const ReadResult engineCopy = ReadManifest(FolderOf(availableDir_, cand.id));
+        if (engineCopy.manifest) available_.push_back(*engineCopy.manifest);
+        availableFlags.push_back(engineCopy.manifest.has_value());
+
         std::error_code ec;
-        if (fs::exists(file, ec)) {
-            cand.manifestFound = true;
-            std::string err;
-            if (auto bytes = platform::ReadFileBytes(file, &err)) {
-                json::ParseError pe;
-                if (auto doc = json::Parse(*bytes, &pe)) {
-                    cand.manifest = ParsePluginManifest(*doc, &cand.manifestError);
-                } else {
-                    cand.manifestError = std::format("plugin.json が壊れています ({} 行 {} 文字目: {})", pe.line, pe.column, pe.message);
-                }
-            } else {
-                cand.manifestError = err;
-            }
+        cand.installed = fs::is_directory(FolderOf(installedDir_, cand.id), ec);
+        if (cand.installed) {
+            const ReadResult mine = ReadManifest(FolderOf(installedDir_, cand.id));
+            cand.manifestFound = mine.found;
+            cand.manifest = mine.manifest;
+            cand.manifestError = mine.error;
+            if (mine.manifest) installed_.push_back(*mine.manifest);
+        } else {
+            cand.manifest = engineCopy.manifest;  // for its display name
         }
         candidates.push_back(std::move(cand));
     }
 
     PluginResolution res = ResolvePlugins(candidates);
-    statuses_ = std::move(res.statuses);
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        PluginStatus st = res.statuses[i];
+        if (!candidates[i].manifest) {
+            for (const auto& m : available_) {
+                if (m.id == st.id) st.displayName = m.displayName;  // the installed plugin.json is unreadable
+            }
+        }
+        entries_.push_back({std::move(st), availableFlags[i], candidates[i].installed});
+    }
     for (const size_t i : res.order) {
-        registry_.BeginPlugin(statuses_[i].id);
+        registry_.BeginPlugin(entries_[i].status.id);
         builtin[i].registerEditor(registry_);
         registry_.EndPlugin();
     }
-    for (const auto& s : statuses_) {
+    for (const auto& e : entries_) {
+        const PluginStatus& s = e.status;
         if (s.state == PluginState::Enabled) {
             log::Info("プラグイン: {} ({})", s.displayName, s.id.Text());
-        } else {
+        } else if (s.state != PluginState::NotInstalled) {
             log::Warn("プラグイン {} ({}) は使えません: {}", s.displayName, s.id.Text(), s.reason);
         }
     }
 }
 
-const PluginStatus* Plugins::Find(const PluginId& id) const {
-    for (const auto& s : statuses_) {
-        if (s.id == id) return &s;
+const Plugins::Entry* Plugins::Find(const PluginId& id) const {
+    for (const auto& e : entries_) {
+        if (e.status.id == id) return &e;
     }
     return nullptr;
 }
 
 bool Plugins::IsEnabled(const PluginId& id) const {
-    const PluginStatus* s = Find(id);
-    return s && s->state == PluginState::Enabled;
+    const Entry* e = Find(id);
+    return e && e->status.state == PluginState::Enabled;
+}
+
+std::string Plugins::DisplayName(const PluginId& id) const {
+    const Entry* e = Find(id);
+    return e ? e->status.displayName : id.Text();
+}
+
+std::vector<PluginId> Plugins::InstallPlan(const PluginId& id, std::vector<PluginId>* unavailable) const {
+    // "Ready" = installed with a readable plugin.json. A broken installed copy is copied again.
+    std::vector<PluginId> ready;
+    for (const auto& m : installed_) ready.push_back(m.id);
+    return editor::InstallPlan(id, available_, ready, unavailable);
+}
+
+std::vector<Dependent> Plugins::Dependents(const PluginId& id) const { return editor::Dependents(id, installed_); }
+
+bool Plugins::CopyIn(const PluginId& id, std::string* error) {
+    const fs::path from = FolderOf(availableDir_, id);
+    const fs::path to = FolderOf(installedDir_, id);
+    fs::path temp = to;
+    temp += L".installing";
+    std::error_code ec;
+    // Copy next to the target first, then swap: a failure in the middle leaves the old copy as it was.
+    fs::remove_all(temp, ec);
+    fs::create_directories(temp.parent_path(), ec);
+    fs::copy(from, temp, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+    if (!ec) fs::remove_all(to, ec);
+    if (!ec) fs::rename(temp, to, ec);
+    if (ec) {
+        fs::remove_all(temp, ec);
+        if (error) *error = std::format("「{}」をインストールできませんでした: {}", DisplayName(id), FsError(ec));
+        return false;
+    }
+    log::Info("プラグインをインストールしました: {} ({})", DisplayName(id), id.Text());
+    return true;
+}
+
+bool Plugins::Install(const std::vector<PluginId>& ids, std::string* error) {
+    for (const PluginId& id : ids) {
+        if (!CopyIn(id, error)) return false;
+    }
+    return true;
+}
+
+bool Plugins::Uninstall(const PluginId& id, std::string* error) {
+    std::error_code ec;
+    fs::remove_all(FolderOf(installedDir_, id), ec);
+    if (ec) {
+        if (error) *error = std::format("「{}」を削除できませんでした: {}", DisplayName(id), FsError(ec));
+        return false;
+    }
+    log::Info("プラグインを削除しました: {} ({})", DisplayName(id), id.Text());
+    return true;
 }
 
 }  // namespace rm::editor

@@ -18,6 +18,9 @@ bool Button(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring
 bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::string& valueUtf8,
                std::wstring_view placeholder = {}, bool enabled = true);
 
+// Check box with a label. Returns true when the value changed.
+bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label);
+
 // Rounded panel with a title bar. Returns the content area.
 ui::Rect Panel(ui::Context& c, const ui::Rect& r, std::wstring_view title);
 

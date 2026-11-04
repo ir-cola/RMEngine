@@ -126,3 +126,79 @@ RM_TEST(Plugins_CycleAndDuplicate) {
     CHECK(r.statuses[3].state == PluginState::BadManifest);
     CHECK(r.order.empty());
 }
+
+namespace {
+
+PluginManifest Manifest(const char* name, std::vector<PluginId> requirements = {}) {
+    PluginManifest m;
+    m.id = {"rm_engine", name};
+    m.displayName = name;
+    m.requirements = std::move(requirements);
+    return m;
+}
+
+PluginId Id(const char* name) { return {"rm_engine", name}; }
+
+}  // namespace
+
+RM_TEST(Plugins_InstallPlan) {
+    // game_ui -> game_production -> space3d ; physics -> game_production
+    const std::vector<PluginManifest> available = {
+        Manifest("game_ui", {Id("game_production")}),
+        Manifest("game_production", {Id("space3d")}),
+        Manifest("space3d"),
+        Manifest("physics", {Id("game_production"), Id("cloth_sim")}),  // cloth_sim is not in this engine
+    };
+    std::vector<PluginId> unavailable;
+    // nothing installed: the whole tree, requirements first
+    auto plan = InstallPlan(Id("game_ui"), available, {}, &unavailable);
+    CHECK(plan == std::vector<PluginId>({Id("space3d"), Id("game_production"), Id("game_ui")}));
+    CHECK(unavailable.empty());
+    // already installed ones are not copied again
+    plan = InstallPlan(Id("game_ui"), available, {Id("space3d")}, &unavailable);
+    CHECK(plan == std::vector<PluginId>({Id("game_production"), Id("game_ui")}));
+    // the plugin is installed, but a requirement two steps down is missing: found through the ready ones
+    plan = InstallPlan(Id("game_ui"), available, {Id("game_ui"), Id("game_production")}, &unavailable);
+    CHECK(plan == std::vector<PluginId>({Id("space3d")}));
+    // everything ready: nothing to do
+    plan = InstallPlan(Id("game_ui"), available, {Id("game_ui"), Id("game_production"), Id("space3d")}, &unavailable);
+    CHECK(plan.empty());
+    // a requirement this engine does not have
+    plan = InstallPlan(Id("physics"), available, {}, &unavailable);
+    CHECK(unavailable == std::vector<PluginId>({Id("cloth_sim")}));
+    CHECK(plan.back() == Id("physics"));
+    // a circle does not loop forever
+    const std::vector<PluginManifest> loop = {Manifest("alpha", {Id("bravo")}), Manifest("bravo", {Id("alpha")})};
+    plan = InstallPlan(Id("alpha"), loop, {}, nullptr);
+    CHECK(plan.size() == 2);
+}
+
+RM_TEST(Plugins_Dependents) {
+    const std::vector<PluginManifest> installed = {
+        Manifest("space3d"),
+        Manifest("render3d", {Id("space3d")}),
+        Manifest("shader_graph", {Id("render3d")}),
+        Manifest("particles", {Id("shader_graph"), Id("render3d")}),
+        Manifest("music_daw"),
+    };
+    const auto d = Dependents(Id("space3d"), installed);
+    CHECK(d.size() == 3);
+    CHECK(d[0].id == Id("render3d") && !d[0].via);
+    CHECK(d[1].id == Id("shader_graph") && d[1].via == Id("render3d"));
+    CHECK(d[2].id == Id("particles") && d[2].via.has_value());
+    CHECK(Dependents(Id("music_daw"), installed).empty());
+}
+
+RM_TEST(Plugins_NotInstalled) {
+    std::vector<PluginCandidate> c;
+    c.push_back(Candidate("rm_engine", "game_ui", {Id("game_production")}));
+    PluginCandidate notInstalled = Candidate("rm_engine", "game_production");
+    notInstalled.installed = false;
+    c.push_back(notInstalled);
+    const PluginResolution r = ResolvePlugins(c);
+    CHECK(r.statuses[1].state == PluginState::NotInstalled);
+    CHECK(r.statuses[0].state == PluginState::RequirementDisabled);
+    CHECK(r.statuses[0].reason.find("インストールされていません") != std::string::npos);
+    CHECK(LacksRequirement(r.statuses[0].state));
+    CHECK(r.order.empty());
+}

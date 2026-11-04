@@ -42,6 +42,7 @@ public:
     ~EditorScreen() override;
     bool Open();
     void Close() override;  // closes the floating panel windows first
+    void ShowError(std::wstring message);
 
     // --- Called by the floating panel windows ---
     void DrawFloating(ui::Context& c, float width, float height, FloatWindow& window);
@@ -55,7 +56,7 @@ protected:
 
 private:
     enum class CloseAction { None, ToHub, Quit };
-    enum class Modal { None, UnsavedChanges, Error, About };
+    enum class Modal { None, UnsavedChanges, Error, About, InstallPlugin };
     enum class Menu { None = -1, File, Edit, Window, Plugins, Help, Debug, Count };
 
     void RequestClose(CloseAction action);
@@ -67,6 +68,9 @@ private:
     std::vector<w::MenuItem> MenuItems(Menu m) const;
     void RunMenu(Menu m, int index);
     void HandleShortcuts(ui::Context& c);
+    // Plugin menu: installing from the editor saves, installs and opens the same project again
+    // (design RME_PLATFORM 5-a, decided 2026-09-29). Removing is only possible in the Hub.
+    void BeginInstallPlugin(const PluginId& id);
     void RedrawAll();
 
     // One software inside this project (or, with no software installed, the core panels alone).
@@ -120,6 +124,8 @@ private:
     Modal modal_ = Modal::None;
     CloseAction pendingClose_ = CloseAction::None;
     std::wstring modalText_;
+    std::wstring installName_;
+    std::vector<PluginId> installPlan_;
 
     w::Popup menuPopup_;
     Menu openMenu_ = Menu::None;

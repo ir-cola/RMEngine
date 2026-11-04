@@ -34,17 +34,20 @@ std::optional<PluginManifest> ParsePluginManifest(const json::Value& v, std::str
 
 enum class PluginState {
     Enabled,
+    NotInstalled,         // this engine has it, the user has not installed it
     NoManifest,           // plugin.json not found
     BadManifest,          // unreadable, wrong shape, invalid ID, two plugins with one ID
     IdMismatch,           // plugin.json and the code disagree
-    MissingRequirement,   // a required plugin is not built in / installed
-    RequirementDisabled,  // a required plugin exists but cannot be used
+    MissingRequirement,   // a required plugin is not in this engine at all
+    RequirementDisabled,  // a required plugin exists but is not installed or cannot be used
     Cycle,                // requirements go round in a circle
 };
 
 // One plugin built into the exe, with what was read from its plugin.json.
 struct PluginCandidate {
     PluginId id;  // from the code
+    bool installed = true;
+    // Installed: its installed plugin.json. Not installed: the engine's copy (for the name only).
     std::optional<PluginManifest> manifest;
     bool manifestFound = false;
     std::string manifestError;  // when found but not usable
@@ -63,5 +66,29 @@ struct PluginResolution {
 };
 
 PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& candidates);
+
+// True for the states the Hub marks "⚠ 前提が無い" (installed, but a requirement is missing).
+inline bool LacksRequirement(PluginState s) {
+    return s == PluginState::MissingRequirement || s == PluginState::RequirementDisabled || s == PluginState::Cycle;
+}
+
+// --- Installing and removing (pure) ------------------------------------------------------
+// Design RME_PLATFORM 1-b-2 / 5: requirements are installed together with a plugin; any installed
+// plugin can be removed on its own, after a warning that lists who needs it.
+
+// What to copy so that `id` can be used: every plugin of its requirement tree, `id` included,
+// that is not in `ready` (installed and readable) - requirements first, each once. Ready plugins
+// are looked through, so a requirement missing further down is found. Empty = nothing to copy.
+// A plugin of the tree that is not in `available` (not in this engine) goes to *unavailable.
+std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginManifest>& available,
+                                  const std::vector<PluginId>& ready, std::vector<PluginId>* unavailable);
+
+struct Dependent {
+    PluginId id;
+    std::optional<PluginId> via;  // empty: needs it directly; else needs it through this plugin
+};
+// Installed plugins that stop working when `id` is removed: direct ones first, then the ones
+// that need it through them. Each once.
+std::vector<Dependent> Dependents(const PluginId& id, const std::vector<PluginManifest>& installed);
 
 }  // namespace rm::editor

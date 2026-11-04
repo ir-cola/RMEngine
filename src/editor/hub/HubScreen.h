@@ -1,6 +1,9 @@
 #pragma once
-// The Hub: pick, create and open projects. (Plugin management will live here too.)
+// The Hub: pick, create and open projects, and manage the plugins (install / reinstall / remove).
+// Plugins are changed only here or from the editor's plugin menu (install only) - removing while a
+// project is open can never happen (design RME_PLATFORM 5-a).
 
+#include "core/PluginId.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/widgets/Widgets.h"
 
@@ -15,7 +18,12 @@ class HubScreen final : public ScreenWindow {
 public:
     explicit HubScreen(App& app) : ScreenWindow(app) {}
     bool Open();
-    void ShowError(std::wstring message, std::filesystem::path removableFile = {});
+    void ShowError(std::wstring message, std::filesystem::path removableFile = {}, std::wstring title = L"開けませんでした");
+    // Asked by the App before opening a project.
+    //   blocking: the project uses plugins that cannot be used -> "起動できません。前提プラグインをインストールしますか？"
+    //   limited:  installed plugins lack a requirement -> told once, [インストール] [このまま開く]
+    void AskBlockingPlugins(const std::filesystem::path& project, const std::vector<PluginId>& blocking);
+    void AskLimitedPlugins(const std::filesystem::path& project, const std::vector<PluginId>& limited);
 
 protected:
     void OnCreated() override;
@@ -24,7 +32,20 @@ protected:
 
 private:
     enum class Page { Projects, Plugins };
-    enum class Modal { None, NewProject, Error };
+    enum class Modal { None, NewProject, Error, Plugin };
+    enum class PromptKind { Blocking, Limited, Install, Remove };
+
+    // One plugin question at a time (design: pop-ups one by one).
+    struct Prompt {
+        PromptKind kind = PromptKind::Install;
+        std::wstring title;
+        std::wstring body;
+        std::filesystem::path project;    // Blocking / Limited: opened afterwards
+        PluginId target;                  // Remove
+        std::vector<PluginId> toInstall;  // what the install button copies
+        std::vector<PluginId> limited;    // Limited: the set "do not show again" remembers
+        bool hideAgain = false;
+    };
 
     struct Row {
         std::filesystem::path file;
@@ -45,6 +66,15 @@ private:
     void DrawNewProject(ui::Context& c);
     void DrawError(ui::Context& c);
     void DrawRowMenu(ui::Context& c);
+    void DrawPluginPrompt(ui::Context& c);
+
+    void BeginInstall(const PluginId& id);
+    void BeginRemove(const PluginId& id);
+    void RunInstall(const std::vector<PluginId>& ids);
+    std::wstring PluginLine(const PluginId& id) const;
+    std::wstring PluginNames(const std::vector<PluginId>& ids) const;
+    int RecentProjectsUsing(const PluginId& id) const;
+    void ShowPrompt(Prompt prompt);
 
     void OpenRow(const Row& row);
     void BrowseOpen();
@@ -72,7 +102,10 @@ private:
     std::wstring newError_;
     bool focusNewName_ = false;
 
+    Prompt prompt_;
+
     // Error dialog
+    std::wstring errorTitle_;
     std::wstring errorText_;
     std::filesystem::path errorRemovable_;
 };

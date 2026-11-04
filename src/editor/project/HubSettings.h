@@ -3,6 +3,7 @@
 // used for "new project". Stored in %APPDATA%\RM_Engine\hub.json (unknown keys kept).
 
 #include "base/Json.h"
+#include "core/PluginId.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -27,6 +28,11 @@ public:
 
     std::filesystem::path LastLocation() const;
     void SetLastLocation(const std::filesystem::path& folder);
+
+    // "Do not show again until this changes" of the notice about plugins that lack a requirement
+    // (design RME_PLATFORM 1-b-2): hidden only while the set of such plugins stays the same.
+    bool LimitedNoticeHidden(const std::vector<PluginId>& limited) const;
+    void HideLimitedNotice(const std::vector<PluginId>& limited);
 
     static std::filesystem::path SettingsDir();
 

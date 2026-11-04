@@ -5,6 +5,7 @@
 #include "base/Utf.h"
 #include "base/Version.h"
 #include "editor/app/App.h"
+#include "editor/plugin/Plugins.h"
 #include "editor/project/Project.h"
 #include "editor/widgets/Theme.h"
 #include "platform/Shell.h"
@@ -89,7 +90,8 @@ void HubScreen::OnCreated() {
 
 void HubScreen::OnCloseRequested() { app_.RequestQuit(); }
 
-void HubScreen::ShowError(std::wstring message, fs::path removableFile) {
+void HubScreen::ShowError(std::wstring message, fs::path removableFile, std::wstring title) {
+    errorTitle_ = std::move(title);
     errorText_ = std::move(message);
     errorRemovable_ = std::move(removableFile);
     modal_ = Modal::Error;
@@ -250,6 +252,7 @@ void HubScreen::OnFrame(ui::Context& c, float width, float height) {
     if (rowMenu_.open) DrawRowMenu(c);
     if (modal_ == Modal::NewProject) DrawNewProject(c);
     if (modal_ == Modal::Error) DrawError(c);
+    if (modal_ == Modal::Plugin) DrawPluginPrompt(c);
 }
 
 void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
@@ -386,35 +389,298 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
 
 void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     auto& p = c.P();
+    const Plugins& plugins = app_.GetPlugins();
     p.Text(ui::TakeTop(area, 40), L"プラグイン", Style(24, theme::Text, true));
     ui::TextStyle note = Style(13, theme::TextDim);
     note.wrap = true;
     note.v = ui::VAlign::Top;
     p.Text(ui::TakeTop(area, 44),
-           L"エンジンに組み込まれているプラグインです。入れたプラグインはすべてのプロジェクトで使えます。"
-           L"インストール・削除・再インストールはこれから作ります。",
+           L"インストールしたプラグインは、すべてのプロジェクトで使えます。前提のプラグインは一緒にインストールされます。"
+           L"削除はここだけでできます。",
            note);
     ui::TakeTop(area, 8);
-    const auto& list = app_.GetPlugins().Statuses();
-    if (list.empty()) {
+    if (plugins.Entries().empty()) {
         const Rect box = ui::TakeTop(area, 80);
         p.FillRoundRect(box, 8, theme::Panel);
-        p.Text(box.Inset(24, 0, 24, 0), L"インストールされているプラグインはありません", Style(15, theme::Text, true));
+        p.Text(box.Inset(24, 0, 24, 0), L"このエンジンにはプラグインが入っていません", Style(15, theme::Text, true));
         return;
     }
-    for (const PluginStatus& st : list) {
-        const Rect row = ui::TakeTop(area, 68);
+    for (const Plugins::Entry& e : plugins.Entries()) {
+        const PluginStatus& st = e.status;
+        const Rect row = ui::TakeTop(area, 72);
         ui::TakeTop(area, 8);
         p.FillRoundRect(row, 8, theme::Panel);
-        p.Text({row.x + 24, row.y + 12, row.w - 220, 24}, Utf8ToWide(st.displayName), Style(15, theme::Text, true));
-        p.Text({row.x + 24, row.y + 38, row.w - 220, 20}, Utf8ToWide("作者 " + st.id.author + "   名前 " + st.id.name),
+        p.Text({row.x + 24, row.y + 14, row.w * 0.4f, 24}, Utf8ToWide(st.displayName), Style(15, theme::Text, true));
+        p.Text({row.x + 24, row.y + 40, row.w * 0.4f, 20}, Utf8ToWide("作者 " + st.id.author + "   名前 " + st.id.name),
                Style(12, theme::TextFaint));
-        if (st.state == PluginState::Enabled) {
-            p.Text({row.Right() - 200, row.y, 176, row.h}, L"使用中", Style(13, theme::TextDim, false, ui::HAlign::Right));
+
+        // Buttons from the right edge.
+        c.PushId(st.id.author);
+        c.PushId(st.id.name);
+        Rect b{row.Right() - 20 - 110, row.y + 18, 110, 36};
+        auto next = [&](float wdt) {
+            const Rect r{b.x - 8 - wdt, b.y, wdt, b.h};
+            return r;
+        };
+        float textRight = b.x;
+        if (!e.installed) {
+            const Rect install{row.Right() - 20 - 150, b.y, 150, 36};
+            if (w::Button(c, "install", install, e.available ? L"インストール" : L"このエンジンに無い", w::ButtonKind::Primary,
+                          e.available)) {
+                BeginInstall(st.id);
+            }
+            textRight = install.x;
         } else {
-            p.Text({row.Right() - 420, row.y, 396, row.h}, L"使えません: " + Utf8ToWide(st.reason),
-                   Style(12, theme::Danger, false, ui::HAlign::Right));
+            if (w::Button(c, "remove", b, L"削除")) BeginRemove(st.id);
+            const Rect re = next(130);
+            if (w::Button(c, "reinstall", re, L"再インストール", w::ButtonKind::Secondary, e.available)) RunInstall({st.id});
+            textRight = re.x;
+            if (LacksRequirement(st.state)) {
+                b = re;
+                const Rect req = next(150);
+                if (w::Button(c, "requirements", req, L"前提をインストール", w::ButtonKind::Primary)) {
+                    std::vector<PluginId> unavailable;
+                    const auto plan = plugins.InstallPlan(st.id, &unavailable);
+                    if (!unavailable.empty()) {
+                        ShowError(L"このエンジンには次の前提プラグインがありません。エンジンを新しい版にしてください。\n" +
+                                      PluginNames(unavailable),
+                                  {}, L"インストールできません");
+                    } else {
+                        RunInstall(plan);
+                    }
+                }
+                textRight = req.x;
+            }
         }
+        c.PopId();
+        c.PopId();
+
+        const Rect status{row.x + row.w * 0.42f, row.y, textRight - 16 - (row.x + row.w * 0.42f), row.h};
+        if (st.state == PluginState::Enabled) {
+            p.Text(status, L"使用中", Style(13, theme::TextDim, false, ui::HAlign::Right));
+        } else if (st.state == PluginState::NotInstalled) {
+            p.Text(status, L"インストールされていません", Style(13, theme::TextFaint, false, ui::HAlign::Right));
+        } else if (LacksRequirement(st.state)) {
+            p.Text(status, L"⚠ 前提が無い: " + Utf8ToWide(st.reason), Style(12, theme::Warn, false, ui::HAlign::Right));
+        } else {
+            p.Text(status, L"⚠ 使えません: " + Utf8ToWide(st.reason), Style(12, theme::Danger, false, ui::HAlign::Right));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Plugin questions
+// ---------------------------------------------------------------------------
+
+std::wstring HubScreen::PluginLine(const PluginId& id) const {
+    const Plugins::Entry* e = app_.GetPlugins().Find(id);
+    const std::wstring name = Utf8ToWide(app_.GetPlugins().DisplayName(id));
+    if (!e) return L"・" + name + L" — このエンジンにはありません";
+    return L"・" + name + L" — " + Utf8ToWide(e->status.reason);
+}
+
+std::wstring HubScreen::PluginNames(const std::vector<PluginId>& ids) const {
+    std::wstring out;
+    for (const PluginId& id : ids) {
+        if (!out.empty()) out += L"\n";
+        out += L"・" + Utf8ToWide(app_.GetPlugins().DisplayName(id)) + L"  (" + Utf8ToWide(id.Text()) + L")";
+    }
+    return out;
+}
+
+int HubScreen::RecentProjectsUsing(const PluginId& id) const {
+    // Only the projects the Hub knows (the recent list) - the PC is never searched.
+    int n = 0;
+    for (const auto& r : app_.Settings().Recent()) {
+        auto project = LoadProject(r.file, nullptr);
+        if (!project) continue;
+        auto used = ParsePluginIdList(project->doc.Get("plugins"), nullptr);
+        if (used && std::find(used->begin(), used->end(), id) != used->end()) ++n;
+    }
+    return n;
+}
+
+void HubScreen::ShowPrompt(Prompt prompt) {
+    prompt_ = std::move(prompt);
+    modal_ = Modal::Plugin;
+    Invalidate();
+}
+
+namespace {
+
+void AppendUnique(std::vector<PluginId>& to, const std::vector<PluginId>& from) {
+    for (const PluginId& id : from) {
+        if (std::find(to.begin(), to.end(), id) == to.end()) to.push_back(id);
+    }
+}
+
+}  // namespace
+
+void HubScreen::AskBlockingPlugins(const fs::path& project, const std::vector<PluginId>& blocking) {
+    Prompt pr;
+    pr.kind = PromptKind::Blocking;
+    pr.project = project;
+    pr.title = L"起動できません";
+    std::vector<PluginId> unavailable;
+    for (const PluginId& id : blocking) AppendUnique(pr.toInstall, app_.GetPlugins().InstallPlan(id, &unavailable));
+    pr.body = L"このプロジェクトが使っているプラグインがそろっていないため、開けません。\n";
+    for (const PluginId& id : blocking) pr.body += PluginLine(id) + L"\n";
+    if (!unavailable.empty()) {
+        pr.toInstall.clear();  // cannot make it whole: nothing to offer
+        pr.body += L"\nこのエンジンには次のプラグインがありません。エンジンを新しい版にしてください。\n" + PluginNames(unavailable);
+    } else if (!pr.toInstall.empty()) {
+        pr.body += L"\n前提プラグインをインストールしますか？\n" + PluginNames(pr.toInstall);
+    } else {
+        pr.body += L"\nデータを守るため、開かずに止めました。";
+    }
+    ShowPrompt(std::move(pr));
+}
+
+void HubScreen::AskLimitedPlugins(const fs::path& project, const std::vector<PluginId>& limited) {
+    Prompt pr;
+    pr.kind = PromptKind::Limited;
+    pr.project = project;
+    pr.limited = limited;
+    pr.title = L"お知らせ";
+    for (const PluginId& id : limited) AppendUnique(pr.toInstall, app_.GetPlugins().InstallPlan(id, nullptr));
+    const bool onlyRequirements = std::all_of(limited.begin(), limited.end(), [&](const PluginId& id) {
+        const Plugins::Entry* e = app_.GetPlugins().Find(id);
+        return e && LacksRequirement(e->status.state);
+    });
+    pr.body = onlyRequirements ? L"前提プラグインが存在しないプラグインがあるため、その機能が制限されます。\n"
+                               : L"使えないプラグインがあるため、その機能が制限されます。\n";
+    for (const PluginId& id : limited) pr.body += PluginLine(id) + L"\n";
+    if (!pr.toInstall.empty()) pr.body += L"\n「インストール」で次のプラグインを入れてから開きます。\n" + PluginNames(pr.toInstall);
+    ShowPrompt(std::move(pr));
+}
+
+void HubScreen::BeginInstall(const PluginId& id) {
+    std::vector<PluginId> unavailable;
+    const auto plan = app_.GetPlugins().InstallPlan(id, &unavailable);
+    if (!unavailable.empty()) {
+        ShowError(L"このエンジンには次の前提プラグインがありません。エンジンを新しい版にしてください。\n" + PluginNames(unavailable), {},
+                  L"インストールできません");
+        return;
+    }
+    if (plan.size() <= 1) {
+        RunInstall(plan);
+        return;
+    }
+    Prompt pr;
+    pr.kind = PromptKind::Install;
+    pr.title = L"プラグインのインストール";
+    pr.toInstall = plan;
+    pr.body = L"「" + Utf8ToWide(app_.GetPlugins().DisplayName(id)) + L"」をインストールします。前提のプラグインも一緒に入ります。\n" +
+              PluginNames(plan);
+    ShowPrompt(std::move(pr));
+}
+
+void HubScreen::BeginRemove(const PluginId& id) {
+    Prompt pr;
+    pr.kind = PromptKind::Remove;
+    pr.target = id;
+    pr.title = L"プラグインの削除";
+    const std::wstring name = Utf8ToWide(app_.GetPlugins().DisplayName(id));
+    const auto dependents = app_.GetPlugins().Dependents(id);
+    if (dependents.empty()) {
+        pr.body = L"「" + name + L"」を削除しますか？\n";
+    } else {
+        pr.body = L"「" + name + L"」は、以下のプラグインの前提として使われています。削除すると、これらは使えなくなります。\n";
+        for (const Dependent& d : dependents) {
+            pr.body += L"・" + Utf8ToWide(app_.GetPlugins().DisplayName(d.id));
+            if (d.via) pr.body += L" (" + Utf8ToWide(app_.GetPlugins().DisplayName(*d.via)) + L" を通して)";
+            pr.body += L"\n";
+        }
+        pr.body += L"\n本当に削除しますか？\n";
+    }
+    if (const int n = RecentProjectsUsing(id); n > 0) {
+        pr.body += std::format(L"\n最近のプロジェクトのうち {} 個がこのプラグインを使っています (開くときにインストールを求められます)。", n);
+    }
+    ShowPrompt(std::move(pr));
+}
+
+void HubScreen::RunInstall(const std::vector<PluginId>& ids) {
+    if (ids.empty()) return;
+    std::string err;
+    if (!app_.InstallPlugins(ids, &err)) ShowError(Utf8ToWide(err), {}, L"インストールできませんでした");
+    Invalidate();
+}
+
+void HubScreen::DrawPluginPrompt(ui::Context& c) {
+    auto& p = c.P();
+    Prompt& pr = prompt_;
+    const float lines = static_cast<float>(std::count(pr.body.begin(), pr.body.end(), L'\n') + 1);
+    const float extra = pr.kind == PromptKind::Limited ? 36.f : 0.f;
+    const Rect cr = w::BeginModal(c, 660, std::min(640.f, 150 + 21 * lines + extra), pr.title);
+    ui::TextStyle ts = Style(13, theme::Text);
+    ts.wrap = true;
+    ts.v = ui::VAlign::Top;
+    p.Text({cr.x, cr.y, cr.w, cr.h - 52 - extra}, pr.body, ts);
+
+    const Rect right{cr.Right() - 170, cr.Bottom() - 36, 170, 36};
+    const Rect left{right.x - 12 - 150, right.y, 150, 36};
+    const bool enter = c.KeyPressed(ui::Key::Enter);
+    const bool esc = c.KeyPressed(ui::Key::Escape);
+    auto close = [&] { modal_ = Modal::None; };
+
+    switch (pr.kind) {
+        case PromptKind::Blocking:
+            if (pr.toInstall.empty()) {
+                if (w::Button(c, "pp.ok", right, L"OK", w::ButtonKind::Primary) || enter || esc) close();
+                break;
+            }
+            if (w::Button(c, "pp.cancel", left, L"やめる") || esc) {
+                close();
+            } else if (w::Button(c, "pp.install", right, L"インストールして開く", w::ButtonKind::Primary) || enter) {
+                close();
+                std::string err;
+                if (app_.InstallPlugins(pr.toInstall, &err)) {
+                    app_.RequestOpenProject(pr.project);
+                } else {
+                    ShowError(Utf8ToWide(err), {}, L"インストールできませんでした");
+                }
+            }
+            break;
+        case PromptKind::Limited: {
+            w::Checkbox(c, "pp.hide", {cr.x, right.y - 44, cr.w, 28}, pr.hideAgain, L"この状態が変わるまで表示しない");
+            if (esc) {
+                close();
+            } else if (w::Button(c, "pp.open", right, L"このまま開く", w::ButtonKind::Primary) || enter) {
+                close();
+                if (pr.hideAgain) {
+                    app_.Settings().HideLimitedNotice(pr.limited);
+                    app_.Settings().Save();
+                }
+                app_.RequestOpenProject(pr.project, true);
+            } else if (!pr.toInstall.empty() && w::Button(c, "pp.install", left, L"インストール")) {
+                close();
+                std::string err;
+                if (app_.InstallPlugins(pr.toInstall, &err)) {
+                    app_.RequestOpenProject(pr.project);
+                } else {
+                    ShowError(Utf8ToWide(err), {}, L"インストールできませんでした");
+                }
+            }
+            break;
+        }
+        case PromptKind::Install:
+            if (w::Button(c, "pp.cancel", left, L"やめる") || esc) {
+                close();
+            } else if (w::Button(c, "pp.install", right, L"インストール", w::ButtonKind::Primary) || enter) {
+                close();
+                RunInstall(pr.toInstall);
+            }
+            break;
+        case PromptKind::Remove:
+            // The safe answer is the default: Enter and Esc both mean "no" (decided 2026-09-30).
+            if (w::Button(c, "pp.no", left, L"いいえ") || enter || esc) {
+                close();
+            } else if (w::Button(c, "pp.remove", right, L"削除", w::ButtonKind::Primary)) {
+                close();
+                std::string err;
+                if (!app_.UninstallPlugin(pr.target, &err)) ShowError(Utf8ToWide(err), {}, L"削除できませんでした");
+            }
+            break;
     }
 }
 
@@ -510,7 +776,7 @@ void HubScreen::DrawNewProject(ui::Context& c) {
 
 void HubScreen::DrawError(ui::Context& c) {
     auto& p = c.P();
-    const Rect cr = w::BeginModal(c, 600, 280, L"開けませんでした");
+    const Rect cr = w::BeginModal(c, 600, 280, errorTitle_);
     ui::TextStyle ts = Style(13, theme::Text);
     ts.wrap = true;
     ts.v = ui::VAlign::Top;

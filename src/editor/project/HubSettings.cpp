@@ -2,6 +2,7 @@
 
 #include "base/Log.h"
 #include "base/Utf.h"
+#include "editor/plugin/PluginManifest.h"
 #include "platform/Shell.h"
 
 #include <algorithm>
@@ -94,5 +95,25 @@ void HubSettings::Remove(const fs::path& file) {
 fs::path HubSettings::LastLocation() const { return PathFromUtf8(doc_.Get("lastLocation").AsString()); }
 
 void HubSettings::SetLastLocation(const fs::path& folder) { doc_.Set("lastLocation", PathToUtf8(folder)); }
+
+bool HubSettings::LimitedNoticeHidden(const std::vector<PluginId>& limited) const {
+    auto hidden = ParsePluginIdList(doc_.Get("hiddenPluginNotice"), nullptr);
+    if (!hidden || hidden->size() != limited.size()) return false;
+    for (const PluginId& id : limited) {
+        if (std::find(hidden->begin(), hidden->end(), id) == hidden->end()) return false;
+    }
+    return true;
+}
+
+void HubSettings::HideLimitedNotice(const std::vector<PluginId>& limited) {
+    json::Value list = json::Value::MakeArray();
+    for (const PluginId& id : limited) {
+        json::Value item = json::Value::MakeObject();
+        item.Set("author", id.author);
+        item.Set("name", id.name);
+        list.Push(std::move(item));
+    }
+    doc_.Set("hiddenPluginNotice", std::move(list));
+}
 
 }  // namespace rm::editor
