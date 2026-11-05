@@ -222,6 +222,42 @@ void HubScreen::CreateNewProject() {
     app_.RequestOpenProject(project->file);
 }
 
+void HubScreen::BeginRename(const Row& row) {
+    if (row.missing) return;
+    renameFile_ = row.file;
+    renameOld_ = row.name;
+    renameName_ = WideToUtf8(row.name);
+    renameError_.clear();
+    focusRename_ = true;
+    modal_ = Modal::Rename;
+    Invalidate();
+}
+
+void HubScreen::RunRename() {
+    const FileNameError ne = ValidateFileName(renameName_);
+    if (ne != FileNameError::None) {
+        renameError_ = NameErrorText(ne);
+        return;
+    }
+    // Already called that everywhere: nothing to do.
+    const fs::path asName = PathFromUtf8(renameName_);
+    if (WideToUtf8(renameOld_) == renameName_ && renameFile_.parent_path().filename() == asName && renameFile_.stem() == asName) {
+        modal_ = Modal::None;
+        return;
+    }
+    std::string err;
+    const auto newFile = RenameProject(renameFile_, renameName_, &err);
+    if (!newFile) {
+        renameError_ = Utf8ToWide(err);
+        return;
+    }
+    app_.Settings().Replace(renameFile_, *newFile);
+    app_.Settings().Save();
+    if (SamePath(selected_, renameFile_)) selected_ = *newFile;
+    modal_ = Modal::None;
+    Refresh();
+}
+
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
@@ -249,6 +285,7 @@ void HubScreen::OnFrame(ui::Context& c, float width, float height) {
     c.SetInputEnabled(true);
     if (rowMenu_.open) DrawRowMenu(c);
     if (modal_ == Modal::NewProject) DrawNewProject(c);
+    if (modal_ == Modal::Rename) DrawRename(c);
     if (modal_ == Modal::Error) DrawError(c);
     if (modal_ == Modal::Plugin) DrawPluginPrompt(c);
 }
@@ -375,12 +412,16 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
     }
     w::EndScroll(c, "hub.rows", view, content);
 
-    if (!selected_.empty() && c.KeyPressed(ui::Key::Enter) && c.Focused() == 0) {
+    if (!selected_.empty() && c.Focused() == 0 && (c.KeyPressed(ui::Key::Enter) || c.KeyPressed(ui::Key::F2))) {
+        const bool open = c.KeyPressed(ui::Key::Enter);
         for (const auto& row : rows_) {
-            if (SamePath(row.file, selected_)) {
+            if (!SamePath(row.file, selected_)) continue;
+            if (open) {
                 OpenRow(row);
-                break;
+            } else {
+                BeginRename(row);
             }
+            break;
         }
     }
 }
@@ -693,6 +734,7 @@ void HubScreen::DrawRowMenu(ui::Context& c) {
     }
     const std::vector<w::MenuItem> items = {
         {L"開く", L"Enter"},
+        {L"名前を変更…", L"F2", !row->missing},
         {L"エクスプローラーで表示", L"", !row->missing},
         {L"", L"", true, true},
         {L"一覧から外す (ファイルは消しません)"},
@@ -701,8 +743,10 @@ void HubScreen::DrawRowMenu(ui::Context& c) {
     if (picked == 0) {
         OpenRow(*row);
     } else if (picked == 1) {
+        BeginRename(*row);
+    } else if (picked == 2) {
         platform::ShowInExplorer(row->file);
-    } else if (picked == 3) {
+    } else if (picked == 4) {
         app_.Settings().Remove(row->file);
         app_.Settings().Save();
         if (SamePath(selected_, row->file)) selected_.clear();
@@ -770,6 +814,46 @@ void HubScreen::DrawNewProject(ui::Context& c) {
     if (w::Button(c, "np.create", create, L"作成", w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
         CreateNewProject();
     }
+}
+
+void HubScreen::DrawRename(ui::Context& c) {
+    auto& p = c.P();
+    const Rect cr = w::BeginModal(c, 640, 330, L"プロジェクトの名前を変更");
+    float y = cr.y;
+    p.Text({cr.x, y, cr.w, 20}, L"「" + renameOld_ + L"」の新しい名前", Style(12, theme::TextDim, true));
+    y += 24;
+    if (focusRename_) {
+        c.FocusText(c.MakeId("rn.name"), Utf8ToWide(renameName_), true);
+        focusRename_ = false;
+    }
+    if (w::TextField(c, "rn.name", {cr.x, y, cr.w, 34}, renameName_, L"プロジェクト名")) renameError_.clear();
+    y += 46;
+
+    // What changes on disk: the folder, the .rmpf and the name inside, together.
+    const fs::path oldFolder = renameFile_.parent_path();
+    const std::wstring newName = Utf8ToWide(renameName_);
+    ui::TextStyle faint = Style(12, theme::TextFaint);
+    p.Text({cr.x, y, cr.w, 20}, L"フォルダ: " + oldFolder.filename().native() + L"  →  " + newName, faint);
+    y += 22;
+    p.Text({cr.x, y, cr.w, 20}, L"ファイル: " + renameFile_.filename().native() + L"  →  " + newName + kProjectExtension, faint);
+    y += 22;
+    p.Text({cr.x, y, cr.w, 20}, L"場所: " + oldFolder.parent_path().native(), faint);
+    y += 30;
+    if (!renameError_.empty()) {
+        ui::TextStyle es = Style(12, theme::Danger);
+        es.wrap = true;
+        es.v = ui::VAlign::Top;
+        p.Text({cr.x, y, cr.w, cr.Bottom() - 44 - y}, renameError_, es);
+    }
+
+    const Rect ok{cr.Right() - 120, cr.Bottom() - 36, 120, 36};
+    const Rect cancel{ok.x - 12 - 110, ok.y, 110, 36};
+    if (w::Button(c, "rn.cancel", cancel, L"キャンセル") || c.KeyPressed(ui::Key::Escape)) {
+        modal_ = Modal::None;
+        c.ClearFocus();
+        return;
+    }
+    if (w::Button(c, "rn.ok", ok, L"変更", w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) RunRename();
 }
 
 void HubScreen::DrawError(ui::Context& c) {

@@ -3,6 +3,7 @@
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "base/Version.h"
+#include "editor/project/HubSettings.h"
 #include "platform/Shell.h"
 
 #include <format>
@@ -98,6 +99,75 @@ std::optional<Project> CreateProject(const fs::path& parentDir, const std::strin
     if (!SaveProject(p, error)) return std::nullopt;
     log::Info("プロジェクトを作りました: {}", PathToUtf8(p.file));
     return p;
+}
+
+std::optional<fs::path> RenameProject(const fs::path& file, const std::string& newNameUtf8, std::string* error) {
+    auto fail = [&](std::string msg) -> std::optional<fs::path> {
+        log::Error("プロジェクトの名前を変えられませんでした: {}", msg);
+        if (error) *error = std::move(msg);
+        return std::nullopt;
+    };
+    std::optional<Project> project = LoadProject(file, error);
+    if (!project) return std::nullopt;
+    const std::string oldName = project->Name();
+
+    const fs::path oldFolder = file.parent_path();
+    const fs::path newFolder = oldFolder.parent_path() / PathFromUtf8(newNameUtf8);
+    const fs::path newFileName = PathFromUtf8(newNameUtf8).native() + kProjectExtension;
+    const fs::path newFile = newFolder / newFileName;
+    if (newFile.native().size() > 240) return fail("新しい名前だとパスが長すぎます。短い名前にしてください。");
+    // Only the letter case may differ (Windows names ignore case): the same folder, renamed.
+    const bool sameFolder = SamePath(oldFolder, newFolder);
+    std::error_code ec;
+    if (!sameFolder && fs::exists(newFolder, ec)) return fail(std::format("同じ名前のフォルダが既にあります: {}", PathToUtf8(newFolder)));
+
+    // 1. The folder.
+    bool folderMoved = false;
+    if (oldFolder.filename().native() != newFolder.filename().native()) {
+        fs::rename(oldFolder, newFolder, ec);
+        if (ec) {
+            return fail(std::format("フォルダの名前を変えられませんでした。中のファイルをほかのアプリ (エクスプローラーなど) で開いていないか確かめてください。\n{}\n{}",
+                                    PathToUtf8(oldFolder), ec.message()));
+        }
+        folderMoved = true;
+    }
+    auto undoFolder = [&] {
+        if (!folderMoved) return;
+        std::error_code e2;
+        fs::rename(newFolder, oldFolder, e2);
+        if (e2) log::Error("フォルダの名前を元に戻せませんでした: {} → {} ({})", PathToUtf8(newFolder), PathToUtf8(oldFolder), e2.message());
+    };
+
+    // 2. The .rmpf (now inside the renamed folder).
+    const fs::path fileNow = newFolder / file.filename();
+    bool fileMoved = false;
+    if (file.filename().native() != newFileName.native()) {
+        if (!SamePath(fileNow, newFile) && fs::exists(newFile, ec)) {
+            undoFolder();
+            return fail(std::format("フォルダの中に同じ名前のファイルが既にあります: {}", PathToUtf8(newFileName)));
+        }
+        fs::rename(fileNow, newFile, ec);
+        if (ec) {
+            undoFolder();
+            return fail(std::format("プロジェクトファイルの名前を変えられませんでした: {}\n{}", PathToUtf8(fileNow), ec.message()));
+        }
+        fileMoved = true;
+    }
+
+    // 3. The name inside (every other key is written back as it was).
+    project->file = newFile;
+    project->doc.Set("name", newNameUtf8);
+    std::string saveErr;
+    if (!SaveProject(*project, &saveErr)) {
+        if (fileMoved) {
+            std::error_code e2;
+            fs::rename(newFile, fileNow, e2);
+        }
+        undoFolder();
+        return fail(saveErr);
+    }
+    log::Info("プロジェクトの名前を変えました: {} → {} ({})", oldName, newNameUtf8, PathToUtf8(newFile));
+    return newFile;
 }
 
 }  // namespace rm::editor

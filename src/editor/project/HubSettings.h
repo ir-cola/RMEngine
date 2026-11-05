@@ -26,6 +26,8 @@ public:
     const std::vector<RecentProject>& Recent() const { return recent_; }
     void Touch(const std::filesystem::path& file);  // move to the top, set lastOpened = now
     void Remove(const std::filesystem::path& file);
+    // The project moved (renamed): same place in the list, same lastOpened.
+    void Replace(const std::filesystem::path& from, const std::filesystem::path& to);
 
     // "Do not show again until this changes" of the notice about plugins that lack a requirement
     // (design RME_PLATFORM 1-b-2): hidden only while the set of such plugins stays the same.

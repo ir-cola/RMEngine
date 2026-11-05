@@ -32,7 +32,7 @@ protected:
 
 private:
     enum class Page { Projects, Plugins };
-    enum class Modal { None, NewProject, Error, Plugin };
+    enum class Modal { None, NewProject, Rename, Error, Plugin };
     enum class PromptKind { Blocking, Limited, Install, Remove };
 
     // One plugin question at a time (design: pop-ups one by one).
@@ -64,6 +64,7 @@ private:
     void DrawProjects(ui::Context& c, ui::Rect r);
     void DrawPlugins(ui::Context& c, ui::Rect r);
     void DrawNewProject(ui::Context& c);
+    void DrawRename(ui::Context& c);
     void DrawError(ui::Context& c);
     void DrawRowMenu(ui::Context& c);
     void DrawPluginPrompt(ui::Context& c);
@@ -81,6 +82,9 @@ private:
     void BeginNewProject();
     void BrowseLocation();
     void CreateNewProject();
+    // Rename (folder + .rmpf + name inside). Only from the Hub: no project is open while it shows.
+    void BeginRename(const Row& row);
+    void RunRename();
 
     Page page_ = Page::Projects;
     Modal modal_ = Modal::None;
@@ -101,6 +105,13 @@ private:
     size_t newTemplate_ = 0;
     std::wstring newError_;
     bool focusNewName_ = false;
+
+    // Rename dialog
+    std::filesystem::path renameFile_;
+    std::wstring renameOld_;
+    std::string renameName_;
+    std::wstring renameError_;
+    bool focusRename_ = false;
 
     Prompt prompt_;
 

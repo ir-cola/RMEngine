@@ -92,6 +92,14 @@ void HubSettings::Remove(const fs::path& file) {
     std::erase_if(recent_, [&](const RecentProject& r) { return SamePath(r.file, file); });
 }
 
+void HubSettings::Replace(const fs::path& from, const fs::path& to) {
+    // An old row for the new path (a project that used to be there) would be a duplicate.
+    if (!SamePath(from, to)) std::erase_if(recent_, [&](const RecentProject& r) { return SamePath(r.file, to); });
+    for (auto& r : recent_) {
+        if (SamePath(r.file, from)) r.file = to;
+    }
+}
+
 bool HubSettings::LimitedNoticeHidden(const std::vector<PluginId>& limited) const {
     auto hidden = ParsePluginIdList(doc_.Get("hiddenPluginNotice"), nullptr);
     if (!hidden || hidden->size() != limited.size()) return false;
