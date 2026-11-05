@@ -2,6 +2,8 @@
 
 #include "Test.h"
 
+#include "base/Math.h"
+
 #include "core/UndoHistory.h"
 #include "ui/TextEdit.h"
 
@@ -150,4 +152,16 @@ RM_TEST(TextEdit_MaxLength) {
     e.SetText(L"abc");
     e.Insert(L"\xD83D\xDE00");  // would split the pair -> dropped
     CHECK(e.Text() == L"abc");
+}
+
+RM_TEST(Color_MixAndShade) {
+    const rm::Color red{0.8f, 0.2f, 0.2f, 1.f};
+    CHECK(rm::Mix(red, {0, 0, 0, 0}, 0.f) == red);
+    const rm::Color half = rm::Mix({0, 0, 0, 1}, {1, 1, 1, 1}, 0.5f);
+    CHECK(half.r == 0.5f && half.g == 0.5f && half.a == 1.f);
+    // Shade keeps the hue and alpha, only lighter (towards white) or darker (towards black).
+    const rm::Color light = rm::Shade(red.Alpha(0.5f), 0.5f);
+    CHECK(light.r == 0.9f && light.g == 0.6f && light.a == 0.5f);
+    const rm::Color dark = rm::Shade(red, -0.5f);
+    CHECK(dark.r == 0.4f && dark.g == 0.1f && dark.a == 1.f);
 }

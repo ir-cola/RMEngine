@@ -9,6 +9,11 @@ namespace rm::ui {
 namespace {
 D2D1_RECT_F ToD2D(const Rect& r) { return D2D1::RectF(r.x, r.y, r.x + r.w, r.y + r.h); }
 D2D1_COLOR_F ToD2D(Color c) { return D2D1::ColorF(c.r, c.g, c.b, c.a); }
+// 8 bits per component of both colors: 64 bits, so equal keys mean equal (shown) colors.
+uint64_t GradientKey(Color a, Color b) {
+    auto q = [](float v) { return static_cast<uint64_t>(std::lround(std::fmin(std::fmax(v, 0.f), 1.f) * 255.f)); };
+    return q(a.r) | q(a.g) << 8 | q(a.b) << 16 | q(a.a) << 24 | q(b.r) << 32 | q(b.g) << 40 | q(b.b) << 48 | q(b.a) << 56;
+}
 uint32_t FormatKey(float size, bool bold) { return (static_cast<uint32_t>(std::lround(size * 4.f)) << 1) | (bold ? 1u : 0u); }
 }  // namespace
 
@@ -24,6 +29,7 @@ void Painter::Begin(ID2D1DeviceContext* dc) {
     clipDepth_ = 0;
     if (brushOwner_ != dc) {
         brush_.Reset();
+        gradients_.clear();  // brushes belong to a device context
         dc_->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &brush_);
         brushOwner_ = dc;
     }
@@ -71,6 +77,54 @@ void Painter::Line(float x1, float y1, float x2, float y2, Color c, float width)
 
 void Painter::FillCircle(float cx, float cy, float radius, Color c) {
     dc_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), radius, radius), Brush(c));
+}
+
+ID2D1LinearGradientBrush* Painter::Gradient(Color top, Color bottom, float y0, float y1) {
+    const uint64_t key = GradientKey(top, bottom);
+    auto it = gradients_.find(key);
+    if (it == gradients_.end()) {
+        if (gradients_.size() > 512) gradients_.clear();  // never grows without bound
+        const D2D1_GRADIENT_STOP stops[2] = {{0.f, ToD2D(top)}, {1.f, ToD2D(bottom)}};
+        ComPtr<ID2D1GradientStopCollection> collection;
+        ComPtr<ID2D1LinearGradientBrush> brush;
+        if (FAILED(dc_->CreateGradientStopCollection(stops, 2, &collection)) ||
+            FAILED(dc_->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(D2D1::Point2F(0, 0), D2D1::Point2F(0, 1)),
+                                                  collection.Get(), &brush))) {
+            return nullptr;
+        }
+        it = gradients_.emplace(key, brush).first;
+    }
+    it->second->SetStartPoint(D2D1::Point2F(0, y0));
+    it->second->SetEndPoint(D2D1::Point2F(0, y1));
+    return it->second.Get();
+}
+
+void Painter::FillRectGradient(const Rect& r, Color top, Color bottom) {
+    if (r.w <= 0 || r.h <= 0) return;
+    if (ID2D1Brush* b = Gradient(top, bottom, r.y, r.Bottom())) {
+        dc_->FillRectangle(ToD2D(r), b);
+    } else {
+        FillRect(r, top);
+    }
+}
+
+void Painter::FillRoundRectGradient(const Rect& r, float radius, Color top, Color bottom) {
+    if (r.w <= 0 || r.h <= 0) return;
+    if (ID2D1Brush* b = Gradient(top, bottom, r.y, r.Bottom())) {
+        dc_->FillRoundedRectangle(D2D1::RoundedRect(ToD2D(r), radius, radius), b);
+    } else {
+        FillRoundRect(r, radius, top);
+    }
+}
+
+void Painter::Shadow(const Rect& r, float radius, Color c, float size) {
+    // Four layers, each a little wider, lower and fainter: reads as a soft blur, costs four fills.
+    constexpr float kAlpha[4] = {0.40f, 0.24f, 0.12f, 0.05f};
+    for (int i = 0; i < 4; ++i) {
+        const float s = size * static_cast<float>(i + 1) / 4.f;
+        const Rect layer{r.x - s * 0.5f, r.y + s * 0.35f - s * 0.25f, r.w + s, r.h + s * 0.6f};
+        FillRoundRect(layer, radius + s * 0.5f, c.Alpha(c.a * kAlpha[i]));
+    }
 }
 
 IDWriteTextFormat* Painter::Format(float size, bool bold) {

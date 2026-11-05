@@ -635,7 +635,7 @@ void EditorScreen::HandleShortcuts(ui::Context& c) {
 
 void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
     auto& p = c.P();
-    p.FillRect(r, theme::Sidebar);
+    w::DrawBar(c, r, theme::Sidebar);
     static const wchar_t* kTitles[] = {TrKey(L"ファイル"), TrKey(L"編集"), TrKey(L"ウィンドウ"), TrKey(L"プラグイン"), TrKey(L"ヘルプ"), TrKey(L"デバッグ")};
 #ifdef _DEBUG
     const int count = static_cast<int>(Menu::Count);
@@ -652,7 +652,7 @@ void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
         const auto b = c.ButtonBehavior(c.MakeId("menubar"), item);
         c.PopId();
         const bool open = menuPopup_.open && static_cast<int>(openMenu_) == i;
-        if (open || b.hovered) p.FillRoundRect(item, 4, open ? theme::Hover : theme::Pressed);
+        if (open || b.hovered) w::DrawSurface(c, item, open ? w::Surface::Pressed : w::Surface::Hovered);
         p.Text(item, menuTitle, Style(13, theme::Text, false, ui::HAlign::Center));
         if (b.clicked) {
             openMenu_ = static_cast<Menu>(i);
@@ -661,7 +661,7 @@ void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
         x += wdt + 2;
     }
     for (int i = count; i < static_cast<int>(Menu::Count); ++i) menuTitleRects_[i] = {};
-    p.FillRect({r.x, r.Bottom() - 1, r.w, 1}, theme::Border);
+    w::Separator(c, r.x, r.Bottom() - 1, r.w);
 }
 
 void EditorScreen::DrawOpenMenu(ui::Context& c) {
@@ -690,8 +690,8 @@ void EditorScreen::DrawOpenMenu(ui::Context& c) {
 
 void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
     auto& p = c.P();
-    p.FillRect(r, theme::Bg);
-    p.FillRect({r.x, r.Bottom() - 1, r.w, 1}, theme::Border);
+    w::DrawBar(c, r, theme::Bg);
+    w::Separator(c, r.x, r.Bottom() - 1, r.w);
     if (!workspaces_[0]->type) {
         // No plugin provides a "software", so there are no tabs to show.
         p.Text(r.Inset(16, 0, 16, 0), Tr(L"ソフトはまだありません — プラグインを追加すると、ここにソフト (ゲーム・イラスト・作曲 …) のタブが並びます"),
@@ -707,12 +707,7 @@ void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
         const auto b = c.ButtonBehavior(c.MakeId("software"), tab);
         c.PopId();
         const bool sel = i == active_;
-        if (sel) {
-            p.FillRoundRect(tab, 5, theme::Panel);
-            p.FillRect({tab.x + 10, tab.Bottom() - 2, tab.w - 20, 2}, theme::Accent);
-        } else if (b.hovered) {
-            p.FillRoundRect(tab, 5, theme::Pressed);
-        }
+        w::DrawTab(c, tab, sel, b.hovered);
         p.Text(tab, title, Style(13, sel ? theme::Text : theme::TextDim, true, ui::HAlign::Center));
         if (b.clicked) SwitchSoftware(i);
         x += wdt + 4;
@@ -756,7 +751,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     }
     const Rect title = ui::TakeTop(r, 34);
     c.P().Text(title.Inset(12, 0, 12, 0), target.title, Style(14, theme::Text, true));
-    c.P().FillRect({title.x + 8, title.Bottom() - 1, title.w - 16, 1}, theme::Border);
+    w::Separator(c, title.x + 8, title.Bottom() - 1, title.w - 16);
     // (a choice made in a drop-down arrives a frame later: the list may have changed since)
     if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu); edit && edit->block < source.size()) {
         // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly.
@@ -827,8 +822,8 @@ void EditorScreen::DrawAssets(ui::Context& c, Rect r) {
 
 void EditorScreen::DrawStatusBar(ui::Context& c, Rect r) {
     auto& p = c.P();
-    p.FillRect(r, theme::Sidebar);
-    p.FillRect({r.x, r.y, r.w, 1}, theme::Border);
+    w::DrawBar(c, r, theme::Sidebar);
+    w::Separator(c, r.x, r.y, r.w);
     p.Text(r.Inset(12, 0, 260, 0), project_.file.native(), Style(12, theme::TextFaint));
     if (dirty_) {
         p.Text(r.Inset(12, 0, 12, 0), Tr(L"● 未保存の変更があります"), Style(12, theme::Warn, false, ui::HAlign::Right));

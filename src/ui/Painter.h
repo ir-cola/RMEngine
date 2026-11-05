@@ -31,6 +31,11 @@ public:
     void StrokeRoundRect(const Rect& r, float radius, Color c, float width = 1.f);
     void Line(float x1, float y1, float x2, float y2, Color c, float width = 1.f);
     void FillCircle(float cx, float cy, float radius, Color c);
+    // Vertical gradients: 	op at the top edge, ottom at the bottom edge.
+    void FillRectGradient(const Rect& r, Color top, Color bottom);
+    void FillRoundRectGradient(const Rect& r, float radius, Color top, Color bottom);
+    // A soft shadow around a rounded rectangle (a few widening layers; drawn before the box).
+    void Shadow(const Rect& r, float radius, Color c, float size);
 
     void Text(const Rect& r, std::wstring_view text, const TextStyle& style);
     float TextWidth(std::wstring_view text, float size, bool bold = false);
@@ -48,12 +53,15 @@ private:
     IDWriteTextFormat* Format(float size, bool bold);
     Microsoft::WRL::ComPtr<IDWriteTextLayout> Layout(std::wstring_view text, float size, bool bold);
     ID2D1SolidColorBrush* Brush(Color c);
+    ID2D1LinearGradientBrush* Gradient(Color top, Color bottom, float y0, float y1);
 
     IDWriteFactory* dwrite_ = nullptr;
     std::wstring family_;
     ID2D1DeviceContext* dc_ = nullptr;
     ID2D1DeviceContext* brushOwner_ = nullptr;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+    // One gradient brush per pair of colors (made once, moved to each rectangle).
+    std::unordered_map<uint64_t, Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush>> gradients_;
     std::unordered_map<uint32_t, Microsoft::WRL::ComPtr<IDWriteTextFormat>> formats_;
     std::unordered_map<uint32_t, Microsoft::WRL::ComPtr<IDWriteInlineObject>> ellipsis_;
     int clipDepth_ = 0;

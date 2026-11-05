@@ -77,4 +77,29 @@ inline void Apply(bool light) {
 inline constexpr float FontSize = 13.f;
 inline constexpr float Radius = 4.f;
 
+// --- Gradients -------------------------------------------------------------------------------
+// The flat colors above, lit from above: a little lighter at the top, a little darker at the
+// bottom - the same hue, so the palette stays as it is. Every box the widgets draw uses these.
+
+struct Gradient {
+    Color top, bottom;
+    Gradient Flipped() const { return {bottom, top}; }  // pressed / sunk in
+};
+
+// A surface that stands out (buttons, headers, tabs): stronger on the dark theme, where light
+// from above shows more.
+inline Gradient Raised(Color c) { return IsLight ? Gradient{Shade(c, 0.55f), Shade(c, -0.05f)} : Gradient{Shade(c, 0.07f), Shade(c, -0.12f)}; }
+// A large area (panels, the sidebar): the same light, gentler.
+inline Gradient Gentle(Color c) { return IsLight ? Gradient{Shade(c, 0.35f), Shade(c, -0.025f)} : Gradient{Shade(c, 0.035f), Shade(c, -0.06f)}; }
+// Sunk in (text fields, check boxes): darker at the top, as if lit from above.
+inline Gradient Sunken(Color c) { return IsLight ? Gradient{Shade(c, -0.05f), c} : Gradient{Shade(c, -0.25f), Shade(c, 0.03f)}; }
+// The accent (primary buttons, the selected item): bright and clear on both themes.
+inline Gradient AccentOf(Color c) { return {Shade(c, 0.12f), Shade(c, -0.14f)}; }
+
+// A thin light line inside the top edge of a raised surface (where the light catches it).
+inline Color Highlight() { return IsLight ? Color{1, 1, 1, 0.75f} : Color{1, 1, 1, 0.06f}; }
+inline Color AccentHighlight() { return Color{1, 1, 1, 0.22f}; }
+// Text and marks on the accent (always white: the accent is the same red on both themes).
+inline Color OnAccent() { return Color{1, 1, 1, 1}; }
+
 }  // namespace rm::editor::theme

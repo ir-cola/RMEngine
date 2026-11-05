@@ -6,26 +6,72 @@
       "version": "0.0.1",
       "date": "2026-11-05",
       "items": [
-        { "ja": "オプション: 色のテーマ (黒 / 白 / PC の設定に合わせる)・言語 (日本語 / English)・自動保存の間隔・エディターの自動アップデート", "en": "Options: color theme (dark / light / follow Windows), language (Japanese / English), auto-save interval, automatic editor updates" },
-        { "ja": "オプション: エディターの整合性の確認 (エンジンのファイルが欠けていないか・壊れていないかを調べ、入れたプラグインを直す)", "en": "Options: verify the editor's integrity (checks that the engine's files are all there and unchanged, and repairs installed plugins)" },
-        { "ja": "Hub に「アップデート情報」(このページ) と「オプション」を追加", "en": "The Hub has two new pages: Updates (this page) and Options" },
-        { "ja": "エンティティに部品 (コンポーネント) を付けられるように。インスペクターで足す・外す・値を変える", "en": "Entities can have components: add, remove and edit them in the Inspector" },
-        { "ja": "「3D 空間」プラグイン (Transform) と、つなぎ「ゲーム制作 × 3D」を追加", "en": "New plugins: 3D Space (Transform) and the connector Game Production × 3D" },
-        { "ja": "Hub でプロジェクトの名前を変えられるように (フォルダごと)", "en": "Projects can be renamed in the Hub (the folder too)" },
-        { "ja": "新しいプロジェクトの既定の保存先を、エンジンのフォルダの Project に", "en": "New projects go to the engine's Project folder by default" },
-        { "ja": "ビルドで rmgen がファイルを一瞬開けないと止まる問題を直した", "en": "Fixed: the build stopped when rmgen could not open a file for a moment" }
+        {
+          "ja": "見た目を一新: ボタン・行・タブ・見出しにテーマの色のグラデーション、メニューやダイアログに影、×・⋯・▾ などの印を線で描くように",
+          "en": "A new look: theme-colored gradients on buttons, rows, tabs and headers, shadows under menus and dialogs, and icons (×, ⋯, ▾ ...) drawn with lines"
+        },
+        {
+          "ja": "オプション: 色のテーマ (黒 / 白 / PC の設定に合わせる)・言語 (日本語 / English)・自動保存の間隔・エディターの自動アップデート",
+          "en": "Options: color theme (dark / light / follow Windows), language (Japanese / English), auto-save interval, automatic editor updates"
+        },
+        {
+          "ja": "オプション: エディターの整合性の確認 (エンジンのファイルが欠けていないか・壊れていないかを調べ、入れたプラグインを直す)",
+          "en": "Options: verify the editor's integrity (checks that the engine's files are all there and unchanged, and repairs installed plugins)"
+        },
+        {
+          "ja": "Hub に「アップデート情報」(このページ) と「オプション」を追加",
+          "en": "The Hub has two new pages: Updates (this page) and Options"
+        },
+        {
+          "ja": "エンティティに部品 (コンポーネント) を付けられるように。インスペクターで足す・外す・値を変える",
+          "en": "Entities can have components: add, remove and edit them in the Inspector"
+        },
+        {
+          "ja": "「3D 空間」プラグイン (Transform) と、つなぎ「ゲーム制作 × 3D」を追加",
+          "en": "New plugins: 3D Space (Transform) and the connector Game Production × 3D"
+        },
+        {
+          "ja": "Hub でプロジェクトの名前を変えられるように (フォルダごと)",
+          "en": "Projects can be renamed in the Hub (the folder too)"
+        },
+        {
+          "ja": "新しいプロジェクトの既定の保存先を、エンジンのフォルダの Project に",
+          "en": "New projects go to the engine's Project folder by default"
+        },
+        {
+          "ja": "ビルドで rmgen がファイルを一瞬開けないと止まる問題を直した",
+          "en": "Fixed: the build stopped when rmgen could not open a file for a moment"
+        }
       ]
     },
     {
       "version": "0.0.1",
       "date": "2026-11-04",
       "items": [
-        { "ja": "階層: エンティティの親子を木で表示。選ぶ・ドラッグで並べ替え・名前の変更・検索・右クリックのメニュー", "en": "Hierarchy: entities and their parents as a tree; select, drag to reorder, rename, search, right-click menu" },
-        { "ja": "リフレクション: データの型を 1 か所に書けば、保存・読み込み・インスペクター・Undo がそこから出る", "en": "Reflection: describe a data type once, and saving, loading, the Inspector and undo come from it" },
-        { "ja": "Hub のプラグイン管理 (インストール / 再インストール / 削除) と、プロジェクトを開く前の確認", "en": "Plugin management in the Hub (install / reinstall / remove) and checks before a project opens" },
-        { "ja": "ソフトの登録の仕組みと、最初のソフト「ゲーム」", "en": "Softwares added by plugins, and the first one: Game" },
-        { "ja": "パネルのドッキングと、パネルを別のウィンドウに出す機能", "en": "Docking panels, and taking panels out into their own windows" },
-        { "ja": "Hub とエディターの最初の形", "en": "The first Hub and editor" }
+        {
+          "ja": "階層: エンティティの親子を木で表示。選ぶ・ドラッグで並べ替え・名前の変更・検索・右クリックのメニュー",
+          "en": "Hierarchy: entities and their parents as a tree; select, drag to reorder, rename, search, right-click menu"
+        },
+        {
+          "ja": "リフレクション: データの型を 1 か所に書けば、保存・読み込み・インスペクター・Undo がそこから出る",
+          "en": "Reflection: describe a data type once, and saving, loading, the Inspector and undo come from it"
+        },
+        {
+          "ja": "Hub のプラグイン管理 (インストール / 再インストール / 削除) と、プロジェクトを開く前の確認",
+          "en": "Plugin management in the Hub (install / reinstall / remove) and checks before a project opens"
+        },
+        {
+          "ja": "ソフトの登録の仕組みと、最初のソフト「ゲーム」",
+          "en": "Softwares added by plugins, and the first one: Game"
+        },
+        {
+          "ja": "パネルのドッキングと、パネルを別のウィンドウに出す機能",
+          "en": "Docking panels, and taking panels out into their own windows"
+        },
+        {
+          "ja": "Hub とエディターの最初の形",
+          "en": "The first Hub and editor"
+        }
       ]
     }
   ]

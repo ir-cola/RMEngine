@@ -307,7 +307,7 @@ void HubScreen::OnFrame(ui::Context& c, float width, float height) {
 
 void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
     auto& p = c.P();
-    p.FillRect(r, theme::Sidebar);
+    w::DrawBar(c, r, theme::Sidebar);
     p.FillRect({r.Right() - 1, r.y, 1, r.h}, theme::Border);
 
     float y = r.y + 34;
@@ -323,13 +323,7 @@ void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
     }
 
     auto nav = [&](std::string_view id, std::wstring_view label, Page page) {
-        const Rect item{r.x + 14, y, r.w - 28, 40};
-        const auto b = c.ButtonBehavior(c.MakeId(id), item);
-        const bool sel = page_ == page;
-        if (sel || b.hovered) p.FillRoundRect(item, 6, sel ? theme::Hover : theme::Pressed);
-        if (sel) p.FillRoundRect({item.x, item.y + 10, 3, item.h - 20}, 1.5f, theme::Accent);
-        p.Text(item.Inset(18, 0, 10, 0), label, Style(14, sel ? theme::Text : theme::TextDim, sel));
-        if (b.clicked) page_ = page;
+        if (w::NavItem(c, id, {r.x + 14, y, r.w - 28, 40}, label, page_ == page)) page_ = page;
         y += 44;
     };
     nav("nav.projects", Tr(L"プロジェクト"), Page::Projects);
@@ -365,9 +359,12 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
     auto headerCell = [&](std::string_view id, float x, float wdt, std::wstring_view label, int column) {
         const Rect cell{x, head.y, wdt, head.h};
         const auto b = c.ButtonBehavior(c.MakeId(id), cell);
-        std::wstring text(label);
-        if (sortColumn_ == column) text += sortAscending_ ? L"  ▲" : L"  ▼";
-        p.Text(cell.Inset(18, 0, 8, 0), text, Style(12, b.hovered || sortColumn_ == column ? theme::Text : theme::TextDim, true));
+        const ui::Color ink = b.hovered || sortColumn_ == column ? theme::Text : theme::TextDim;
+        p.Text(cell.Inset(18, 0, 8, 0), label, Style(12, ink, true));
+        if (sortColumn_ == column) {
+            const float lw = p.TextWidth(label, 12, true);
+            w::DrawIcon(c, {cell.x + 18 + lw + 4, cell.y, 16, cell.h}, sortAscending_ ? w::Icon::ChevronUp : w::Icon::ChevronDown, ink);
+        }
         if (b.clicked) {
             if (sortColumn_ == column) {
                 sortAscending_ = !sortAscending_;
@@ -381,7 +378,7 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
     headerCell("col.name", xName, nameW, Tr(L"名前"), 0);
     headerCell("col.mod", xMod, modW, Tr(L"更新日時"), 1);
     headerCell("col.path", xPath, pathW, Tr(L"場所"), 2);
-    p.FillRect({table.x, head.Bottom() - 1, table.w, 1}, theme::Border);
+    w::Separator(c, table.x, head.Bottom() - 1, table.w);
 
     const std::vector<size_t> visible = FilteredRows();
     if (visible.empty()) {
@@ -402,21 +399,14 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
         const Rect rr{view.x + 6, view.y + 4 + rowH * static_cast<float>(vi) - off, view.w - 12, rowH - 2};
         if (rr.Bottom() < view.y || rr.y > view.Bottom()) continue;
         c.PushId(WideToUtf8(row.file.native()));
-        const auto b = c.ButtonBehavior(c.MakeId("row"), rr);
-        const bool sel = SamePath(selected_, row.file);
-        if (sel || b.hovered) p.FillRoundRect(rr, 6, sel ? theme::Selected : theme::Hover);
+        const auto b = w::Selectable(c, "row", rr, SamePath(selected_, row.file));
 
         p.Text({xName + 18, rr.y, nameW - 26, rr.h}, row.name, Style(14, row.missing ? theme::TextFaint : theme::Text, true));
         p.Text({xMod + 18, rr.y, modW - 26, rr.h}, row.modifiedText, Style(13, row.missing ? theme::Danger : theme::TextDim));
         p.Text({xPath + 18, rr.y, pathW - 26, rr.h}, row.folder, Style(12, theme::TextFaint));
 
         const Rect more{rr.Right() - 40, rr.y + 7, 32, rr.h - 14};
-        const bool moreClicked = w::Button(c, "more", more, L"", w::ButtonKind::Ghost);
-        // Three dots in the middle of the button (the "…" character sits on the text baseline, low).
-        for (int d = -1; d <= 1; ++d) {
-            p.FillRoundRect({more.x + more.w * 0.5f - 1.5f + 6.f * static_cast<float>(d), more.y + more.h * 0.5f - 1.5f, 3, 3}, 1.5f, theme::TextDim);
-        }
-        if (moreClicked) {
+        if (w::IconButton(c, "more", more, w::Icon::Dots)) {
             selected_ = row.file;
             rowMenuFile_ = row.file;
             rowMenu_.OpenAt(more.x, more.Bottom() + 2);
@@ -460,7 +450,7 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     ui::TakeTop(area, 8);
     if (plugins.Entries().empty()) {
         const Rect box = ui::TakeTop(area, 80);
-        p.FillRoundRect(box, 8, theme::Panel);
+        w::DrawSurface(c, box, w::Surface::Panel, 8.f);
         p.Text(box.Inset(24, 0, 24, 0), Tr(L"このエンジンにはプラグインが入っていません"), Style(15, theme::Text, true));
         return;
     }
@@ -468,7 +458,7 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
         const PluginStatus& st = e.status;
         const Rect row = ui::TakeTop(area, 72);
         ui::TakeTop(area, 8);
-        p.FillRoundRect(row, 8, theme::Panel);
+        w::DrawSurface(c, row, w::Surface::Panel, 8.f);
         p.Text({row.x + 24, row.y + 14, row.w * 0.4f, 24}, Utf8ToWide(TrU8(st.displayName)), Style(15, theme::Text, true));
         p.Text({row.x + 24, row.y + 40, row.w * 0.4f, 20}, TrF(L"作者 {}   名前 {}", Utf8ToWide(st.id.author), Utf8ToWide(st.id.name)),
                Style(12, theme::TextFaint));
@@ -753,7 +743,7 @@ void HubScreen::DrawOptions(ui::Context& c, Rect area) {
     auto section = [&](std::wstring_view title) {
         p.Text({area.x, y, area.w, 24}, title, Style(15, theme::Text, true));
         y += 30;
-        p.FillRect({area.x, y - 4, area.w, 1}, theme::Border);
+        w::Separator(c, area.x, y - 4, area.w);
         y += 6;
     };
     auto note = [&](std::wstring_view text) {
@@ -866,14 +856,14 @@ void HubScreen::DrawUpdates(ui::Context& c, Rect area) {
     for (const UpdateEntry& e : entries) {
         p.Text({area.x, y, area.w, 26}, TrF(L"バージョン {}  ({})", Utf8ToWide(e.version), Utf8ToWide(e.date)), Style(16, theme::Text, true));
         y += 32;
-        p.FillRect({area.x, y - 4, area.w, 1}, theme::Border);
+        w::Separator(c, area.x, y - 4, area.w);
         y += 8;
         for (const std::string& line : e.items) {
             const std::wstring text = Utf8ToWide(line);
             // Long lines wrap: measure roughly (one line per this many DIPs of text).
             const float width = area.w - 28;
             const float lines = std::max(1.f, std::ceil(p.TextWidth(text, 13) / std::max(1.f, width)));
-            p.FillRoundRect({area.x + 6, y + 8, 5, 5}, 2.5f, theme::Accent);
+            p.FillCircle(area.x + 8.5f, y + 10.5f, 2.5f, theme::Accent);
             p.Text({area.x + 22, y, width, 22 * lines}, text, item);
             y += 22 * lines + 6;
         }
@@ -1006,8 +996,7 @@ void HubScreen::DrawNewProject(ui::Context& c) {
         const auto b = c.ButtonBehavior(c.MakeId("tmpl"), card);
         c.PopId();
         const bool sel = newTemplate_ == i;
-        p.FillRoundRect(card, 6, sel ? theme::Selected : b.hovered ? theme::Hover : theme::Field);
-        p.StrokeRoundRect(card, 6, sel ? theme::Accent : theme::Border);
+        w::DrawSurface(c, card, sel ? w::Surface::Selected : b.hovered ? w::Surface::Hovered : w::Surface::Raised, 6.f);
         p.Text({card.x + 16, card.y + 8, card.w - 32, 22}, Tr(templates[i].name), Style(14, theme::Text, true));
         p.Text({card.x + 16, card.y + 31, card.w - 32, 20}, Tr(templates[i].description), Style(12, theme::TextDim));
         if (b.clicked) newTemplate_ = i;

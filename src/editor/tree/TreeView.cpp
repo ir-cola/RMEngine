@@ -279,14 +279,9 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             if (!st.menuActions.empty()) st.menu.OpenAt(in.mouseX, in.mouseY);
         }
 
-        if (selected) {
-            p.FillRoundRect(row, 4, st.hasKeys ? theme::Selected : theme::Pressed);
-            if (st.hasKeys) p.FillRect({row.x, row.y + 4, 2, row.h - 8}, theme::Accent);
-        } else if (hovered && !st.dragging) {
-            p.FillRoundRect(row, 4, theme::Hover);
-        }
+        w::DrawRow(c, row, {selected, hovered && !st.dragging, st.hasKeys});
         if (rw.hasChildren) {
-            p.Text(arrow, rw.expanded ? L"▾" : L"▸", Style(11, onArrow ? theme::Text : theme::TextDim, ui::HAlign::Center));
+            w::DrawIcon(c, arrow, rw.expanded ? w::Icon::ChevronDown : w::Icon::ChevronRight, onArrow ? theme::Text : theme::TextDim);
         }
 
         if (st.renaming == it.id) {
@@ -408,9 +403,8 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             auto& pp = c.P();
             const float wdt = std::min(260.f, pp.TextWidth(tag, 12) + 20);
             const Rect r{c.In().mouseX + 14, c.In().mouseY + 10, wdt, 24};
-            pp.FillRoundRect({r.x + 1, r.y + 2, r.w, r.h}, 5, theme::Shadow);
-            pp.FillRoundRect(r, 5, theme::PanelHeader);
-            pp.StrokeRoundRect(r, 5, ok ? theme::Accent : theme::Border);
+            w::DrawSurface(c, r, w::Surface::Popup, 5.f);
+            if (ok) pp.StrokeRoundRect(r, 5, theme::Accent);
             pp.Text(r.Inset(10, 0, 10, 0), tag, Style(12, ok ? theme::Text : theme::TextDim));
         });
     }

@@ -188,11 +188,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
             } else {
                 shown = std::to_wstring(e.get(value));
             }
-            const auto b = enabled ? c.ButtonBehavior(c.MakeId("v"), valueR) : ui::Context::ButtonResult{};
-            p.FillRoundRect(valueR, theme::Radius, b.hovered ? theme::Hover : theme::Field);
-            p.StrokeRoundRect(valueR, theme::Radius, theme::Border);
-            p.Text(valueR.Inset(8, 0, 22, 0), shown, Text(theme::FontSize, enabled ? theme::Text : theme::TextFaint));
-            p.Text({valueR.Right() - 20, valueR.y, 14, valueR.h}, L"▾", Text(11, theme::TextDim));
+            const auto b = w::ComboBox(c, "v", valueR, shown, enabled);
             if (b.clicked) {
                 x.st.popup.OpenAt(valueR.x, valueR.Bottom() + 2);
                 x.st.popupPath = path;
@@ -261,24 +257,19 @@ void DrawStruct(Pass& x, const TypeDesc& t, const void* obj, const Unknowns* u, 
 
 void DrawHeader(Pass& x, const Block& b, bool folded) {
     ui::Context& c = x.c;
-    auto& p = c.P();
     const Rect row{x.view.x + 6, x.y, x.view.w - 12, 28};
     x.y += 32;
     const bool hasMenu = !b.menu.empty();
-    const Rect menuR{row.Right() - 30, row.y + 2, 26, row.h - 4};
-    const Rect foldR{row.x, row.y, row.w - (hasMenu ? 34.f : 0.f), row.h};
-    const auto fb = c.ButtonBehavior(c.MakeId("header"), foldR);
-    p.FillRoundRect(row, 5, fb.hovered ? theme::Hover : theme::PanelHeader);
-    p.Text({row.x + 6, row.y, 16, row.h}, folded ? L"▸" : L"▾", Text(11, theme::TextDim));
-    p.Text({row.x + 24, row.y, row.w - 64, row.h}, b.title, Text(13, theme::Text, true));
-    if (fb.clicked) {
-        if (folded) {
+    const Rect menuR{row.Right() - 28, row.y + 3, 24, row.h - 6};
+    bool open = !folded;
+    if (w::CollapsingHeader(c, "header", row, b.title, open, hasMenu ? 32.f : 0.f)) {
+        if (open) {
             x.st.folded.erase(b.title);
         } else {
             x.st.folded.insert(b.title);
         }
     }
-    if (hasMenu && w::Button(c, "menu", menuR, L"⋮", w::ButtonKind::Ghost)) {
+    if (hasMenu && w::IconButton(c, "menu", menuR, w::Icon::DotsVertical)) {
         x.st.menuActions = b.menu;
         x.st.menu.OpenAt(menuR.x, menuR.Bottom() + 2);
     }
@@ -337,16 +328,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
     if (!st.popup.open) st.popupPath.clear();
 
     if (!x.tooltip.empty()) {
-        const std::wstring tip = x.tooltip;
-        c.AddOverlay([&c, tip] {
-            auto& p = c.P();
-            const float wdt = std::min(420.f, p.TextWidth(tip, 12) + 20);
-            const Rect r{c.In().mouseX + 14, c.In().mouseY + 18, wdt, 28};
-            p.FillRoundRect({r.x + 1, r.y + 2, r.w, r.h}, 5, theme::Shadow);
-            p.FillRoundRect(r, 5, theme::PanelHeader);
-            p.StrokeRoundRect(r, 5, theme::Border);
-            p.Text(r.Inset(10, 0, 10, 0), tip, Text(12, theme::Text));
-        });
+        w::Tooltip(c, x.tooltip);
     }
     w::ActionMenu(c, st.menu, st.menuActions);
     if (x.edit) result = std::move(x.edit);

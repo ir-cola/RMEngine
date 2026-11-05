@@ -26,4 +26,14 @@ struct Color {
     bool operator==(const Color&) const = default;
 };
 
+// a at t = 0, b at t = 1 (every component, alpha too).
+constexpr Color Mix(Color a, Color b, float t) {
+    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
+}
+// Towards white (amount > 0) or black (amount < 0), keeping alpha: the same hue, lighter or darker.
+constexpr Color Shade(Color c, float amount) {
+    const Color to = amount >= 0 ? Color{1, 1, 1, c.a} : Color{0, 0, 0, c.a};
+    return Mix(c, to, amount >= 0 ? amount : -amount);
+}
+
 }  // namespace rm

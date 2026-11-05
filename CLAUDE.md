@@ -22,6 +22,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 [-Config Rel
 - 画面の確認はユーザーが自分で行う。機能を足したら [docs/HOW_TO_TRY.md](docs/HOW_TO_TRY.md) の試し方を書き足す
 - 画面に出す文字は日本語で書いて `Tr(L"…")` / `TrF` / `TrU8` を通し、英語を `resources/lang/en.json` (プラグインは `plugins/<作者>/<名前>/lang/en.json`) に足す。足し忘れは `tools/check_lang.ps1` (build.ps1 が走らせる) が止める。ログは日本語のまま
 - 色は `theme::` の変数だけを使う (直に `Color::Hex` を書かない。黒と白のテーマで切り替わるため)
+- 画面は `w::` の部品で描く (ボタン・行・タブ・見出し・印・箱は `editor/widgets` にある)。画面のコードで四角を自分で塗らない。新しい見た目が要るときは widgets に部品を足す
 - 目に見える変更をしたら `resources/updates.json` (Hub の「アップデート情報」) に日本語と英語で 1 行足す
 - 新しい技術 (API・ライブラリ・作り方) を使ったら [docs/TECHNOLOGIES.md](docs/TECHNOLOGIES.md) に説明を書き足し、末尾の「追記の記録」に 1 行足す (ユーザーが人に説明するためのメモ)
 

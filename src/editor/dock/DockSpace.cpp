@@ -3,6 +3,7 @@
 
 #include "base/Utf.h"
 #include "editor/widgets/Theme.h"
+#include "editor/widgets/Widgets.h"
 #include "platform/Shell.h"
 
 #include <algorithm>
@@ -36,12 +37,11 @@ ui::TextStyle TabText(ui::Color color) {
 
 Rect Centered(float cx, float cy, float size) { return {cx - size * 0.5f, cy - size * 0.5f, size, size}; }
 
-void DrawGuide(ui::Painter& p, const Rect& box, Zone zone, bool hot) {
-    p.FillRoundRect({box.x + 1, box.y + 2, box.w, box.h}, 6, theme::Shadow);
-    p.FillRoundRect(box, 6, hot ? theme::Accent : theme::PanelHeader);
-    p.StrokeRoundRect(box, 6, hot ? theme::AccentHover : theme::BorderHover);
+void DrawGuide(ui::Context& c, const Rect& box, Zone zone, bool hot) {
+    auto& p = c.P();
+    w::DrawSurface(c, box, hot ? w::Surface::Accent : w::Surface::Popup, 6.f);
     const Rect in = box.Inset(8);
-    const ui::Color ink = theme::Text.Alpha(hot ? 1.f : 0.75f);
+    const ui::Color ink = (hot ? theme::OnAccent() : theme::Text).Alpha(hot ? 1.f : 0.75f);
     p.StrokeRect(in, ink);
     Rect part = in;
     switch (zone) {
@@ -185,11 +185,11 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
     auto& p = c.P();
     geo.id = leaf.id;
     geo.rect = r;
-    p.FillRoundRect(r, 6, theme::Panel);
+    w::DrawSurface(c, r, w::Surface::Panel, 6.f);
     Rect body = r;
     const Rect strip = ui::TakeTop(body, kStripH);
     geo.strip = strip;
-    p.FillRect({r.x, strip.Bottom() - 1, r.w, 1}, theme::Border);
+    w::Separator(c, r.x + 1, strip.Bottom() - 1, r.w - 2);
 
     c.PushClip(strip);
     float x = strip.x + 4;
@@ -230,19 +230,11 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
         }
         c.PopId();
 
-        if (sel) {
-            p.FillRoundRect(tab, 4, theme::PanelHeader);
-            p.FillRect({tab.x + 8, tab.Bottom() - 2, tab.w - 16, 2}, theme::Accent);
-        } else if (b.hovered) {
-            p.FillRoundRect(tab, 4, theme::Pressed);
-        }
+        w::DrawTab(c, tab, sel, b.hovered);
         p.Text({tab.x + 10, tab.y, tw - 10 - kCloseW, tab.h}, title, TabText(sel ? theme::Text : theme::TextDim));
         if (showClose) {
-            if (cb.hovered) p.FillRoundRect(close, 4, theme::Hover);
-            ui::TextStyle xs = TabText(cb.hovered ? theme::Text : theme::TextFaint);
-            xs.h = ui::HAlign::Center;
-            xs.bold = false;
-            p.Text(close, L"×", xs);
+            if (cb.hovered) w::DrawSurface(c, close, cb.held ? w::Surface::Pressed : w::Surface::Hovered);
+            w::DrawIcon(c, close, w::Icon::Close, cb.hovered ? theme::Text : theme::TextFaint);
         }
         x += tw + 2;
     }
@@ -450,7 +442,7 @@ void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
             p.StrokeRoundRect(pr.Inset(1), 6, theme::Accent.Alpha(0.9f), 2);
         }
         for (const Guide& g : GuidesAt(siteIt->second, drag_.hoverX, drag_.hoverY)) {
-            DrawGuide(p, g.rect, g.zone, g.rect.Contains(drag_.hoverX, drag_.hoverY));
+            DrawGuide(c, g.rect, g.zone, g.rect.Contains(drag_.hoverX, drag_.hoverY));
         }
     }
     // The tab being dragged follows the mouse inside the window it came from.
@@ -459,8 +451,7 @@ void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
         const std::wstring title = type ? Tr(type->title) : Utf8ToWide(drag_.panel);
         const float tw = p.TextWidth(title, 12, true) + 24;
         const Rect ghost{c.In().mouseX + 12, c.In().mouseY + 10, tw, 26};
-        p.FillRoundRect({ghost.x + 1, ghost.y + 2, ghost.w, ghost.h}, 5, theme::Shadow);
-        p.FillRoundRect(ghost, 5, theme::PanelHeader);
+        w::DrawSurface(c, ghost, w::Surface::Popup, 5.f);
         p.StrokeRoundRect(ghost, 5, theme::Accent);
         ui::TextStyle ts = TabText(theme::Text);
         ts.h = ui::HAlign::Center;
