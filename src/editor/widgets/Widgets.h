@@ -56,11 +56,12 @@ struct RowLook {
     bool selected = false;
     bool hovered = false;
     bool focused = true;  // the list has the keys: a selected row shows the accent bar
+    bool flat = false;    // square, edge to edge: rows of a list split by lines (Hub's pages, project list)
 };
 void DrawRow(ui::Context& c, const ui::Rect& r, RowLook look);
 // A clickable row (ImGui's Selectable). Draws the row; what is on it is drawn by the caller.
-ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view id, const ui::Rect& r, bool selected);
-// A page link of a sidebar. True when clicked.
+ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view id, const ui::Rect& r, bool selected, bool flat = false);
+// A page link of a sidebar: a flat row (the caller draws the lines between them). True when clicked.
 bool NavItem(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label, bool selected);
 
 // --- Tabs and headers ------------------------------------------------------------------------

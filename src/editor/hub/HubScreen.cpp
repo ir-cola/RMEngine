@@ -322,9 +322,13 @@ void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
         y += 72;
     }
 
+    // The pages: whole-width rows split by lines (the whole row is the button).
+    constexpr float kNavH = 50.f;
+    w::Separator(c, r.x, y, r.w - 1);
     auto nav = [&](std::string_view id, std::wstring_view label, Page page) {
-        if (w::NavItem(c, id, {r.x + 14, y, r.w - 28, 40}, label, page_ == page)) page_ = page;
-        y += 44;
+        if (w::NavItem(c, id, {r.x, y + 1, r.w - 1, kNavH - 1}, label, page_ == page)) page_ = page;
+        y += kNavH;
+        w::Separator(c, r.x, y, r.w - 1);
     };
     nav("nav.projects", Tr(L"プロジェクト"), Page::Projects);
     nav("nav.plugins", Tr(L"プラグイン"), Page::Plugins);
@@ -360,9 +364,9 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
         const Rect cell{x, head.y, wdt, head.h};
         const auto b = c.ButtonBehavior(c.MakeId(id), cell);
         const ui::Color ink = b.hovered || sortColumn_ == column ? theme::Text : theme::TextDim;
-        p.Text(cell.Inset(18, 0, 8, 0), label, Style(12, ink, true));
+        p.Text(cell.Inset(18, 0, 8, 0), label, Style(13, ink, true));
         if (sortColumn_ == column) {
-            const float lw = p.TextWidth(label, 12, true);
+            const float lw = p.TextWidth(label, 13, true);
             w::DrawIcon(c, {cell.x + 18 + lw + 4, cell.y, 16, cell.h}, sortAscending_ ? w::Icon::ChevronUp : w::Icon::ChevronDown, ink);
         }
         if (b.clicked) {
@@ -390,22 +394,25 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
         return;
     }
 
-    const float rowH = 46;
-    const float content = rowH * static_cast<float>(visible.size()) + 8;
-    const Rect view = table.Inset(0, 4, 0, 4);
+    // Whole-width rows split by lines; the whole row is the button.
+    const float rowH = 56;
+    const float content = rowH * static_cast<float>(visible.size());
+    const Rect view = table;
     const float off = w::BeginScroll(c, "hub.rows", view, content);
     for (size_t vi = 0; vi < visible.size(); ++vi) {
         const Row& row = rows_[visible[vi]];
-        const Rect rr{view.x + 6, view.y + 4 + rowH * static_cast<float>(vi) - off, view.w - 12, rowH - 2};
+        const float top = view.y + rowH * static_cast<float>(vi) - off;
+        const Rect rr{view.x, top, view.w, rowH - 1};
         if (rr.Bottom() < view.y || rr.y > view.Bottom()) continue;
         c.PushId(WideToUtf8(row.file.native()));
-        const auto b = w::Selectable(c, "row", rr, SamePath(selected_, row.file));
+        const auto b = w::Selectable(c, "row", rr, SamePath(selected_, row.file), true);
+        w::Separator(c, view.x, top + rowH - 1, view.w);
 
-        p.Text({xName + 18, rr.y, nameW - 26, rr.h}, row.name, Style(14, row.missing ? theme::TextFaint : theme::Text, true));
-        p.Text({xMod + 18, rr.y, modW - 26, rr.h}, row.modifiedText, Style(13, row.missing ? theme::Danger : theme::TextDim));
-        p.Text({xPath + 18, rr.y, pathW - 26, rr.h}, row.folder, Style(12, theme::TextFaint));
+        p.Text({xName + 18, rr.y, nameW - 26, rr.h}, row.name, Style(16, row.missing ? theme::TextFaint : theme::Text, true));
+        p.Text({xMod + 18, rr.y, modW - 26, rr.h}, row.modifiedText, Style(14, row.missing ? theme::Danger : theme::TextDim));
+        p.Text({xPath + 18, rr.y, pathW - 26, rr.h}, row.folder, Style(13, theme::TextFaint));
 
-        const Rect more{rr.Right() - 40, rr.y + 7, 32, rr.h - 14};
+        const Rect more{rr.Right() - 44, rr.y + 10, 34, rr.h - 20};
         if (w::IconButton(c, "more", more, w::Icon::Dots)) {
             selected_ = row.file;
             rowMenuFile_ = row.file;
@@ -776,7 +783,8 @@ void HubScreen::DrawOptions(ui::Context& c, Rect area) {
     Options& opts = app_.Settings().GetOptions();
     reflect::Unknowns& unknowns = app_.Settings().OptionsUnknowns();
     const inspector::Block block{&reflect::TypeOf<Options>(), &opts, &unknowns, {}, {}, {}};
-    const Rect box{area.x - 12, y, area.w + 12, 4 * 30.f + 16};
+    // As tall as the options are (the inspector measures them while drawing): no scroll bar of its own.
+    const Rect box{area.x - 12, y, area.w + 12, std::max(4 * 30.f + 20, optionsInspector_.contentHeight)};
     if (auto edit = inspector::Draw(c, optionsInspector_, box, std::span(&block, 1))) {
         // Not project data: applied at once, saved in hub.json, not undoable.
         reflect::SetFieldCommand change(reflect::TypeOf<Options>(), std::move(edit->path), std::move(edit->before), std::move(edit->after),

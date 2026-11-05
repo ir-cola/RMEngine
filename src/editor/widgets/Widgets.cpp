@@ -161,34 +161,41 @@ bool IconButton(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon
 
 void DrawRow(ui::Context& c, const Rect& r, RowLook look) {
     auto& p = c.P();
-    constexpr float kRadius = 5.f;
+    const float radius = look.flat ? 0.f : 5.f;
     if (look.selected) {
         const theme::Gradient g = theme::Raised(look.focused ? theme::Selected : theme::Pressed);
-        p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
-        TopLight(p, r, kRadius, theme::Highlight());
+        p.FillRoundRectGradient(r, radius, g.top, g.bottom);
+        TopLight(p, r, radius, theme::Highlight());
         if (look.focused) {
+            // The accent bar: on the edge of a flat row, inside a rounded one.
             const theme::Gradient a = theme::AccentOf(theme::Accent);
-            p.FillRoundRectGradient({r.x, r.y + 4, 3, r.h - 8}, 1.5f, a.top, a.bottom);
+            const Rect bar = look.flat ? Rect{r.x, r.y, 3, r.h} : Rect{r.x, r.y + 4, 3, r.h - 8};
+            p.FillRoundRectGradient(bar, look.flat ? 0.f : 1.5f, a.top, a.bottom);
         }
     } else if (look.hovered) {
         const theme::Gradient g = theme::Gentle(theme::Hover);
-        p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
+        p.FillRoundRectGradient(r, radius, g.top, g.bottom);
     }
 }
 
-ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view idStr, const Rect& r, bool selected) {
+ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view idStr, const Rect& r, bool selected, bool flat) {
     const auto b = c.ButtonBehavior(c.MakeId(idStr), r);
-    DrawRow(c, r, {selected, b.hovered, true});
+    if (b.hovered) c.SetCursor(ui::Cursor::Hand);
+    RowLook look;
+    look.selected = selected;
+    look.hovered = b.hovered;
+    look.flat = flat;
+    DrawRow(c, r, look);
     return b;
 }
 
 bool NavItem(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view label, bool selected) {
-    const auto b = Selectable(c, idStr, r, selected);
+    const auto b = Selectable(c, idStr, r, selected, true);
     ui::TextStyle ts;
-    ts.size = 14;
+    ts.size = 15;
     ts.bold = selected;
-    ts.color = selected ? theme::Text : theme::TextDim;
-    c.P().Text(r.Inset(18, 0, 10, 0), label, ts);
+    ts.color = selected || b.hovered ? theme::Text : theme::TextDim;
+    c.P().Text(r.Inset(24, 0, 12, 0), label, ts);
     return b.clicked;
 }
 
