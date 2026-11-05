@@ -22,7 +22,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 
 | 場所 | 中身 |
 |---|---|
-| `%APPDATA%\RM_Engine\hub.json` | 最近のプロジェクト・最後に使った保存先・「この状態が変わるまで表示しない」の記録 |
+| `%APPDATA%\RM_Engine\hub.json` | 最近のプロジェクト・「この状態が変わるまで表示しない」の記録 |
+| `RM_Engine\Project\` (リポジトリのフォルダ) | 新しいプロジェクトの既定の保存先。中身は git に入らない |
 | `%LOCALAPPDATA%\RM_Engine\Logs\editor.log` | ログ (起動ごとに上書き)。エディターのコンソールと同じ中身 |
 | `%LOCALAPPDATA%\RM_Engine\Plugins\<作者>\<名前>\` | インストールしたプラグイン |
 | `build\bin\x64\Debug\Plugins\` | エンジンが持っているプラグイン (ビルドで写される) |
@@ -44,7 +45,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 - **新規作成** (Ctrl+N) でダイアログが開く
   - テンプレートは「白紙」だけ。名前の欄には最初からカーソルが入っている
   - 保存先は欄に直接書くか「参照…」で選ぶ。下に、作られるパスが出る
-  - 既定の保存先は「ドキュメント\RM_Engine Projects」(初回)。2 回目からは最後に使った場所
+  - 既定の保存先は**毎回** エンジンのフォルダの `Project` (ソースからビルドした exe なら `RM_Engine.sln` のあるフォルダ = `C:\Users\…\RM_Engine\Project`、配った exe なら exe の横)。「参照…」でほかの場所にしても、次の新規作成ではまた `Project` に戻る
   - Enter で作成、Esc で閉じる
   - 作ると `<保存先>\<名前>\<名前>.rmpf` と `Assets\` ができ、エディターが開く
 - **名前のエラー表示** (試してみる):

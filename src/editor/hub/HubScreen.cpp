@@ -168,8 +168,8 @@ void HubScreen::BrowseOpen() {
 }
 
 void HubScreen::BeginNewProject() {
-    fs::path loc = app_.Settings().LastLocation();
-    if (loc.empty()) loc = platform::GetKnownFolder(platform::KnownFolder::Documents) / L"RM_Engine Projects";
+    // Always the engine's Project folder (another place can be chosen with 参照… for each project).
+    const fs::path loc = platform::EngineDirectory() / L"Project";
     newLocation_ = PathToUtf8(loc);
     newName_ = "NewProject";
     std::error_code ec;
@@ -218,8 +218,6 @@ void HubScreen::CreateNewProject() {
         newError_ = Utf8ToWide(err);
         return;
     }
-    app_.Settings().SetLastLocation(location);
-    app_.Settings().Save();
     modal_ = Modal::None;
     app_.RequestOpenProject(project->file);
 }

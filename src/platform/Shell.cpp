@@ -203,4 +203,18 @@ std::filesystem::path ExeDirectory() {
     return std::filesystem::path(buf).parent_path();
 }
 
+std::filesystem::path EngineDirectory() {
+    const std::filesystem::path exe = ExeDirectory();
+    // Built from source: the exe is in <source>/build/bin/x64/<config>/. The source folder is the
+    // one with RM_Engine.sln (a few levels up at most).
+    std::error_code ec;
+    std::filesystem::path dir = exe;
+    for (int up = 0; up < 6 && !dir.empty(); ++up) {
+        if (std::filesystem::exists(dir / L"RM_Engine.sln", ec)) return dir;
+        if (dir == dir.parent_path()) break;
+        dir = dir.parent_path();
+    }
+    return exe;
+}
+
 }  // namespace rm::platform

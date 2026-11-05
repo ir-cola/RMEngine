@@ -92,10 +92,6 @@ void HubSettings::Remove(const fs::path& file) {
     std::erase_if(recent_, [&](const RecentProject& r) { return SamePath(r.file, file); });
 }
 
-fs::path HubSettings::LastLocation() const { return PathFromUtf8(doc_.Get("lastLocation").AsString()); }
-
-void HubSettings::SetLastLocation(const fs::path& folder) { doc_.Set("lastLocation", PathToUtf8(folder)); }
-
 bool HubSettings::LimitedNoticeHidden(const std::vector<PluginId>& limited) const {
     auto hidden = ParsePluginIdList(doc_.Get("hiddenPluginNotice"), nullptr);
     if (!hidden || hidden->size() != limited.size()) return false;

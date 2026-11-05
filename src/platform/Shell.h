@@ -42,6 +42,9 @@ RECT VisibleWindowRect(HWND hwnd);
 
 // The folder of the running exe (the engine's own files - Plugins/ ... - are next to it).
 std::filesystem::path ExeDirectory();
+// The engine's folder: the source folder (the one with RM_Engine.sln) when the exe was built from
+// it, otherwise the exe's folder. New projects go in its Project/ by default.
+std::filesystem::path EngineDirectory();
 
 // Seconds from an arbitrary start point (QueryPerformanceCounter).
 double NowSeconds();

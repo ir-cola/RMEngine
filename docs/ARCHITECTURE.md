@@ -229,7 +229,8 @@ GameSettings.h                         rmgen (ビルドの最初に毎回)      
 | `Plugins/<作者>/<名前>/` | exe の横 | このエンジンが持っているプラグイン (ビルドで `plugins/` から写す) |
 | `Plugins\<作者>\<名前>\` | `%LOCALAPPDATA%\RM_Engine\` | 入れたプラグイン (全部のプロジェクトで共通) |
 | `hub.json` の `hiddenPluginNotice` | `%APPDATA%\RM_Engine\` | 「この状態が変わるまで表示しない」を選んだときの、使えないプラグインの顔ぶれ |
-| `hub.json` | `%APPDATA%\RM_Engine\` | 最近のプロジェクト・最後に使った保存先 |
+| `hub.json` | `%APPDATA%\RM_Engine\` | 最近のプロジェクト (前の版の `lastLocation` は残るが使わない) |
+| `Project/` | エンジンのフォルダ | 新しいプロジェクトの既定の保存先 (毎回ここ。ほかの場所は「参照…」で)。エンジンのフォルダ = `RM_Engine.sln` のあるソースのフォルダ (ソースからビルドした exe のとき)、無ければ exe のフォルダ (`platform::EngineDirectory`)。中身は git に入れない (`.gitkeep` だけ) |
 | `editor.log` | `%LOCALAPPDATA%\RM_Engine\Logs\` | 起動ごとに上書き |
 
 保存は `<ファイル>.tmp` に書いてから置き換える (途中で落ちても半端なファイルが残らない)。

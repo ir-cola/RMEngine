@@ -4,3 +4,7 @@ build/
 *.user
 *.aps
 *.tmp
+
+# Projects made with the engine (Hub's default location). The folder itself is kept.
+Project/*
+!Project/.gitkeep
