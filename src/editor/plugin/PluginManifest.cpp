@@ -257,7 +257,7 @@ std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginMa
         }
         // A plugin being installed that needs a connector: its connector (the one there already, else
         // the first one this engine has) with everything that connector requires - an installed
-        // connector may need a plugin a newer engine added (ゲーム制作 × 3D now needs 3D 描画).
+        // connector may need a plugin a newer engine added (a connector that now requires one more plugin).
         std::vector<PluginId> targets = plan;
         if (!Contains(targets, id)) targets.push_back(id);
         for (const PluginId& t : targets) {
@@ -279,6 +279,15 @@ std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginMa
         }
     }
     return plan;
+}
+
+std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available) {
+    std::vector<PluginId> ready;
+    for (const PluginManifest& m : installed) {
+        const PluginManifest* engine = FindManifest(available, m.id);
+        if (!engine || *engine == m) ready.push_back(m.id);
+    }
+    return ready;
 }
 
 std::vector<Dependent> Dependents(const PluginId& id, const std::vector<PluginManifest>& installed) {

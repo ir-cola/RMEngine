@@ -1,4 +1,4 @@
-#include "rm_engine/render3d/runtime/Renderer3D.h"
+#include "rm_engine/space3d/runtime/Renderer3D.h"
 
 #include <d3dcompiler.h>
 
@@ -6,7 +6,7 @@
 #include <cstring>
 #include <format>
 
-namespace rm::render3d {
+namespace rm::space3d {
 
 namespace {
 
@@ -59,11 +59,11 @@ struct BoxVertex {
     float px, py, pz, nx, ny, nz;
 };
 
-void CopyMatrix(float out[16], const space3d::Mat4& m) { std::memcpy(out, &m.m[0][0], sizeof(float) * 16); }
+void CopyMatrix(float out[16], const Mat4& m) { std::memcpy(out, &m.m[0][0], sizeof(float) * 16); }
 
 bool Compile(const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DBlob>& out, std::string* error) {
     Microsoft::WRL::ComPtr<ID3DBlob> messages;
-    const HRESULT hr = D3DCompile(kShaders, sizeof(kShaders) - 1, "render3d", nullptr, nullptr, entry, target,
+    const HRESULT hr = D3DCompile(kShaders, sizeof(kShaders) - 1, "space3d", nullptr, nullptr, entry, target,
                                   D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &out, &messages);
     if (FAILED(hr)) {
         if (error) {
@@ -85,7 +85,7 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
         return false;
     }
     auto fail = [&](const char* what) {
-        if (error) *error = std::format("3D 描画の準備に失敗しました: {}", what);
+        if (error) *error = std::format("3D の描画の準備に失敗しました: {}", what);
         boxVs_.Reset();
         return false;
     };
@@ -228,7 +228,7 @@ bool Renderer::LineCapacity(size_t vertices) {
     return true;
 }
 
-ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const Frame& f) {
+ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f) {
     if (!Ready() || f.width == 0 || f.height == 0 || !Resize(f.width, f.height)) return nullptr;
 
     ID3D11RenderTargetView* rtv = rtv_.Get();
@@ -275,7 +275,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const Frame& f) {
         if (SUCCEEDED(ctx->Map(lineVb_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) {
             std::memcpy(map.pData, f.lines.data(), f.lines.size() * sizeof(LineVertex));
             ctx->Unmap(lineVb_.Get(), 0);
-            CopyMatrix(c.world, space3d::Mat4{});
+            CopyMatrix(c.world, Mat4{});
             ctx->UpdateSubresource(cb, 0, nullptr, &c, 0, 0);
             ctx->IASetInputLayout(lineLayout_.Get());
             ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
@@ -294,4 +294,4 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const Frame& f) {
     return picture_.Get();
 }
 
-}  // namespace rm::render3d
+}  // namespace rm::space3d

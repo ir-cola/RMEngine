@@ -7,8 +7,8 @@
       "date": "2026-11-05",
       "items": [
         {
-          "ja": "シーンビューが 3D に: 床のグリッドと軸、Transform の付いたエンティティを箱で表示 (親子も)。Unity と同じカメラ操作、クリックで選ぶ。「3D 描画」プラグインを追加",
-          "en": "The scene view is 3D: a floor grid and axes, entities with a Transform shown as boxes (with their parents). Unity-style camera, click to select. New plugin: 3D Rendering"
+          "ja": "シーンビューが 3D に: 床のグリッドと軸、Transform の付いたエンティティを箱で表示 (親子も)。Unity と同じカメラ操作、クリックで選ぶ。描画は「3D 空間」プラグインに入っている",
+          "en": "The scene view is 3D: a floor grid and axes, entities with a Transform shown as boxes (with their parents). Unity-style camera, click to select. The drawing is part of the 3D Space plugin"
         },
         {
           "ja": "見た目を一新: ボタン・行・タブ・見出しにテーマの色のグラデーション、メニューやダイアログに影、×・⋯・▾ などの印を線で描くように",

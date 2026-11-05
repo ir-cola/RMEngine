@@ -1,6 +1,6 @@
 #pragma once
-// 3D 空間: where a thing is in 3D space, and the math of it. Shared by every software that has a
-// 3D space (the game through the connector "ゲーム制作 × 3D", the 3D model software later) -
+// 3D 空間: where a thing is in 3D space, and the math of it (its drawing is Renderer3D.h, the same
+// plugin). Shared by every software that has a 3D space (the game through the connector "ゲーム制作 × 3D", the 3D model software later) -
 // design RME_PLATFORM 4-b: "3D 空間プラグイン = Transform (値と計算)・親子・レイ / 当たり / 投影".
 // Pure: no drawing, no files - tested in tests/TestSpace3d.cpp.
 

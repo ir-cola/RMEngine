@@ -10,7 +10,7 @@
 //   F                   come to the selected entity
 //   left click          select the entity under the mouse (nothing there: none)
 //
-// Drawn by 3D 描画 into a picture that the panel shows (Direct3D and Direct2D share one GPU).
+// Drawn by 3D 空間's renderer into a picture that the panel shows (Direct3D and Direct2D share one GPU).
 
 #include "rm_engine/game_production/editor/SceneView.h"
 

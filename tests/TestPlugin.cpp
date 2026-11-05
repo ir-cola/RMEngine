@@ -310,15 +310,30 @@ RM_TEST(Plugins_DependentsThroughConnector) {
 }
 
 RM_TEST(Plugins_InstallPlanFindsWhatAnInstalledConnectorLacks) {
-    // A newer engine: the connector now also needs render3d, which is not installed.
+    // A newer engine: the connector now also needs physics_lib, which is not installed.
     auto w = ConnectorWorld();
-    w[2].requirements.push_back(Id("render3d"));
-    w.push_back(Manifest("render3d", {Id("space3d")}));
+    w[2].requirements.push_back(Id("physics_lib"));
+    w.push_back(Manifest("physics_lib", {Id("space3d")}));
     const std::vector<PluginId> ready = {Id("game_production"), Id("space3d"), Id("game_x_3d")};
     auto plan = InstallPlan(Id("game_production"), w, ready, nullptr);
-    CHECK(plan == std::vector<PluginId>({Id("render3d")}));
+    CHECK(plan == std::vector<PluginId>({Id("physics_lib")}));
     // Everything there: nothing.
     auto all = ready;
-    all.push_back(Id("render3d"));
+    all.push_back(Id("physics_lib"));
     CHECK(InstallPlan(Id("game_production"), w, all, nullptr).empty());
+}
+
+RM_TEST(Plugins_ReadyPlugins_OlderCopiesAreCopiedAgain) {
+    const auto engine = ConnectorWorld();
+    // Installed from an older engine: the connector still requires a plugin this engine dropped,
+    // and game production lacks the connector rule.
+    auto installed = engine;
+    installed[2].requirements.push_back(Id("render3d"));
+    installed[0].needsConnector = false;
+    installed.push_back(Manifest("someone_else"));  // not in this engine: taken as it is
+    const auto ready = ReadyPlugins(installed, engine);
+    CHECK(ready == std::vector<PluginId>({Id("space3d"), Id("game_ui"), Id("someone_else")}));
+    // So installing game production copies it and its connector again.
+    const auto plan = InstallPlan(Id("game_production"), engine, ready, nullptr);
+    CHECK(plan == std::vector<PluginId>({Id("game_production"), Id("game_x_3d")}));
 }

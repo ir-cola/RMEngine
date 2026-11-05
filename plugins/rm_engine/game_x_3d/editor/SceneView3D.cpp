@@ -3,7 +3,7 @@
 #include "base/Log.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
-#include "rm_engine/render3d/runtime/Renderer3D.h"
+#include "rm_engine/space3d/runtime/Renderer3D.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <algorithm>
@@ -191,7 +191,7 @@ private:
         float dpiX = 96, dpiY = 96;
         dc->GetDpi(&dpiX, &dpiY);
         const float scale = dpiX / 96.f;
-        render3d::Frame f;
+        space3d::RenderFrame f;
         f.width = static_cast<uint32_t>(std::max(1.f, std::round(r.w * scale)));
         f.height = static_cast<uint32_t>(std::max(1.f, std::round(r.h * scale)));
         f.view = cam_.ViewMatrix();
@@ -249,11 +249,11 @@ private:
     enum class Drag { None, Look, Pan, Orbit, Click };
 
     space3d::OrbitView cam_;
-    render3d::Renderer renderer_;
+    space3d::Renderer renderer_;
     bool tried_ = false;
     std::vector<Placed> placed_;
-    std::vector<render3d::LineVertex> lines_;
-    std::vector<render3d::Box> boxes_;
+    std::vector<space3d::LineVertex> lines_;
+    std::vector<space3d::Box> boxes_;
 
     Drag drag_ = Drag::None;
     float lastX_ = 0, lastY_ = 0, pressX_ = 0, pressY_ = 0;

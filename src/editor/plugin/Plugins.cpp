@@ -158,10 +158,8 @@ std::string Plugins::DisplayName(const PluginId& id) const {
 }
 
 std::vector<PluginId> Plugins::InstallPlan(const PluginId& id, std::vector<PluginId>* unavailable) const {
-    // "Ready" = installed with a readable plugin.json. A broken installed copy is copied again.
-    std::vector<PluginId> ready;
-    for (const auto& m : installed_) ready.push_back(m.id);
-    return editor::InstallPlan(id, available_, ready, unavailable);
+    // "Ready" = installed, readable and the same as this engine's copy. A broken or older copy is copied again.
+    return editor::InstallPlan(id, available_, ReadyPlugins(installed_, available_), unavailable);
 }
 
 std::vector<Dependent> Plugins::Dependents(const PluginId& id) const { return editor::Dependents(id, installed_); }

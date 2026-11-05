@@ -34,6 +34,8 @@ struct PluginManifest {
     std::vector<PluginId> requirements;
     bool needsConnector = false;            // enabled only while a connector for it is
     std::optional<PluginId> connectorFor;   // this plugin is a connector for that one (also in requirements)
+
+    bool operator==(const PluginManifest&) const = default;
 };
 
 // A list of IDs: [ { "author": ..., "name": ... }, ... ]. Used for "requires" and for the
@@ -96,6 +98,11 @@ inline bool LacksRequirement(PluginState s) {
 // its requirements (game production alone brings 3D 空間 and ゲーム制作 × 3D).
 std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginManifest>& available,
                                   const std::vector<PluginId>& ready, std::vector<PluginId>* unavailable);
+
+// The installed plugins that need no copying: readable, and the same as this engine's copy. An installed
+// copy that differs (from an older engine: other requirements, a connector rule it lacked) is copied
+// again by the next install plan. Plugins this engine does not have are taken as they are.
+std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available);
 
 struct Dependent {
     PluginId id;
