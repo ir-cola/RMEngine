@@ -28,33 +28,109 @@ std::string U8(const fs::path& p) {
     return std::string(s.begin(), s.end());
 }
 
-bool ReadAll(const fs::path& p, std::string& out) {
-    std::ifstream f(p, std::ios::binary);
-    if (!f) return false;
-    out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-    return true;
+// Another program (Visual Studio saving a file, an antivirus scan, a compiler reading the output)
+// can hold a file for a moment. Every file operation is tried again a few times before giving up.
+constexpr int kTries = 20;
+constexpr DWORD kWaitMs = 100;
+
+std::string ErrorText(DWORD code) {
+    wchar_t* buf = nullptr;
+    const DWORD n = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+                                   code, 0, reinterpret_cast<wchar_t*>(&buf), 0, nullptr);
+    std::wstring w = n && buf ? std::wstring(buf, n) : std::wstring();
+    if (buf) LocalFree(buf);
+    while (!w.empty() && (w.back() == L'\r' || w.back() == L'\n' || w.back() == L' ' || w.back() == L'.')) w.pop_back();
+    const std::u8string u = fs::path(w).u8string();
+    return std::string(u.begin(), u.end()) + " (" + std::to_string(code) + ")";
 }
 
-// Writes only when the text differs. Returns false on an I/O error.
-bool WriteIfChanged(const fs::path& p, const std::string& text, bool& wrote) {
+bool ReadOnce(const fs::path& p, std::string& out, DWORD& error) {
+    // Share everything: a file being written or renamed by someone else can still be read.
+    HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        error = GetLastError();
+        return false;
+    }
+    out.clear();
+    char buf[64 * 1024];
+    DWORD got = 0;
+    bool ok = true;
+    while ((ok = ReadFile(h, buf, sizeof(buf), &got, nullptr) != 0) && got > 0) out.append(buf, got);
+    if (!ok) error = GetLastError();
+    CloseHandle(h);
+    return ok;
+}
+
+// missing = the file is not there (not an error for an output file that was never written).
+bool ReadAll(const fs::path& p, std::string& out, std::string* why = nullptr, bool* missing = nullptr) {
+    DWORD error = 0;
+    for (int i = 0; i < kTries; ++i) {
+        if (ReadOnce(p, out, error)) return true;
+        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
+            if (missing) *missing = true;
+            break;
+        }
+        Sleep(kWaitMs);
+    }
+    if (why) *why = ErrorText(error);
+    return false;
+}
+
+// Writes only when the text differs. Returns false (with the reason) on an I/O error.
+bool WriteIfChanged(const fs::path& p, const std::string& text, bool& wrote, std::string& why) {
     std::string old;
     wrote = false;
-    if (ReadAll(p, old) && old == text) return true;
+    bool missing = false;
+    if (ReadAll(p, old, nullptr, &missing) && old == text) return true;
     fs::path tmp = p;
     tmp += L".tmp";
-    {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (!f) return false;
-        f.write(text.data(), static_cast<std::streamsize>(text.size()));
-        if (!f) return false;
+    DWORD error = 0;
+    for (int i = 0; i < kTries; ++i) {
+        if (i > 0) Sleep(kWaitMs);
+        HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) {
+            error = GetLastError();
+            continue;
+        }
+        DWORD put = 0;
+        const bool ok = WriteFile(h, text.data(), static_cast<DWORD>(text.size()), &put, nullptr) && put == text.size();
+        if (!ok) error = GetLastError();
+        CloseHandle(h);
+        if (!ok) continue;
+        if (MoveFileExW(tmp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            wrote = true;
+            return true;
+        }
+        error = GetLastError();
     }
-    std::error_code ec;
-    fs::rename(tmp, p, ec);
-    if (ec) return false;
-    wrote = true;
-    return true;
+    DeleteFileW(tmp.c_str());
+    why = ErrorText(error);
+    return false;
 }
 
+// Every .h under `base`. An entry that vanishes while the folder is listed (a temporary file of
+// another program) is skipped; a folder that cannot be listed is tried again before giving up.
+bool ListHeaders(const fs::path& base, std::vector<fs::path>& out, std::string& why) {
+    std::error_code exists;
+    if (!fs::is_directory(base, exists)) {
+        why = ErrorText(ERROR_PATH_NOT_FOUND);
+        return false;
+    }
+    for (int i = 0; i < kTries; ++i) {
+        if (i > 0) Sleep(kWaitMs);
+        out.clear();
+        std::error_code ec;
+        for (fs::recursive_directory_iterator it(base, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
+             it.increment(ec)) {
+            std::error_code entryEc;
+            if (it->path().extension() == L".h" && it->is_regular_file(entryEc)) out.push_back(it->path());
+        }
+        if (!ec) return true;
+        why = ErrorText(static_cast<DWORD>(ec.value()));
+    }
+    return false;
+}
 bool Mentions(const std::string& text) {
     for (const char* m : {"RM_STRUCT", "RM_COMPONENT", "RM_SCRIPT", "RM_ENUM", "RM_PROPERTY", "RM_TRANSIENT", "RM_ITEM"}) {
         if (text.find(m) != std::string::npos) return true;
@@ -89,27 +165,30 @@ int wmain(int argc, wchar_t** argv) {
     for (const fs::path& root : roots) {
         std::error_code ec;
         const fs::path base = fs::absolute(root, ec).lexically_normal();
-        for (fs::recursive_directory_iterator it(base, ec), end; !ec && it != end; it.increment(ec)) {
-            if (!it->is_regular_file(ec) || it->path().extension() != L".h") continue;
+        std::vector<fs::path> files;
+        std::string why;
+        if (!ListHeaders(base, files, why)) {
+            std::printf("rmgen: error RM0007: フォルダの中を読めませんでした: %s (%s)\n", U8(base).c_str(), why.c_str());
+            return 2;
+        }
+        for (const fs::path& file : files) {
             std::string text;
-            if (!ReadAll(it->path(), text)) {
-                std::printf("%s: error RM0007: 読めませんでした\n", U8(it->path()).c_str());
+            bool missing = false;
+            if (!ReadAll(file, text, &why, &missing)) {
+                if (missing) continue;  // removed while we were reading the folder
+                std::printf("%s: error RM0007: 読めませんでした (%s)。ほかのアプリがこのファイルを開いていないか確かめてください\n",
+                            U8(file).c_str(), why.c_str());
                 return 2;
             }
             if (!Mentions(text)) continue;
-            std::string include = U8(it->path().lexically_relative(base));
+            std::string include = U8(file.lexically_relative(base));
             for (char& c : include) {
                 if (c == '\\') c = '/';
             }
-            rmgen::Header h = rmgen::Scan(text, U8(it->path()), include, diags);
+            rmgen::Header h = rmgen::Scan(text, U8(file), include, diags);
             if (!h.structs.empty() || !h.enums.empty()) headers.push_back(std::move(h));
         }
-        if (ec) {
-            std::printf("rmgen: %s を読めませんでした\n", U8(base).c_str());
-            return 2;
-        }
-    }
-    rmgen::Validate(headers, diags);
+    }    rmgen::Validate(headers, diags);
     if (!diags.empty()) {
         for (const auto& d : diags) std::printf("%s\n", d.Text().c_str());
         std::printf("rmgen: %zu 個のエラー。反映するコードは作り直していません\n", diags.size());
@@ -124,8 +203,10 @@ int wmain(int argc, wchar_t** argv) {
         const fs::path p = out / fs::path(std::u8string(name.begin(), name.end()));
         produced.insert(p.filename());
         bool wrote = false;
-        if (!WriteIfChanged(p, text, wrote)) {
-            std::printf("%s: error RM0007: 書き込めませんでした\n", U8(p).c_str());
+        std::string why;
+        if (!WriteIfChanged(p, text, wrote, why)) {
+            std::printf("%s: error RM0007: 書き込めませんでした (%s)。ほかのアプリ (ウイルス対策など) がこのファイルを開いていないか確かめてください\n",
+                        U8(p).c_str(), why.c_str());
             return false;
         }
         written += wrote ? 1 : 0;
