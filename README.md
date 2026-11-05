@@ -47,4 +47,4 @@ docs/         設計と決めたこと
 layers.txt    フォルダ → 層 の唯一の出所 (CI で検査)
 ```
 
-詳しくは [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。いま作ってあるものの試し方は [docs/HOW_TO_TRY.md](docs/HOW_TO_TRY.md)。
+詳しくは [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。いま作ってあるものの試し方は [docs/HOW_TO_TRY.md](docs/HOW_TO_TRY.md)。使っている技術の説明は [docs/TECHNOLOGIES.md](docs/TECHNOLOGIES.md)。
