@@ -1,3 +1,6 @@
 {
-  "ゲーム制作 × 3D": "Game Production × 3D"
+  "3D の描画を始められませんでした。くわしくはコンソールを見てください。": "Could not start 3D drawing. See the console for details.",
+  "Transform の付いたエンティティが、ここに箱で出ます。": "Entities with a Transform show here as boxes.",
+  "ゲーム制作 × 3D": "Game Production × 3D",
+  "右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ": "Right drag: look (W A S D / Q E to move)   Middle drag: pan   Wheel: zoom   Alt+left drag: orbit   F: frame selection   Click: select"
 }

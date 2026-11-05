@@ -562,6 +562,10 @@ const wchar_t* KeyName(ui::Key k) {
         case ui::Key::A: return L"A";
         case ui::Key::C: return L"C";
         case ui::Key::D: return L"D";
+        case ui::Key::E: return L"E";
+        case ui::Key::F: return L"F";
+        case ui::Key::Q: return L"Q";
+        case ui::Key::W: return L"W";
         case ui::Key::N: return L"N";
         case ui::Key::O: return L"O";
         case ui::Key::S: return L"S";

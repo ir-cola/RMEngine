@@ -2,7 +2,7 @@
 //
 // The only file that knows every plugin. The core declares BuiltinPlugins() and never includes
 // a plugin; tools/check_layers.ps1 checks that every plugin with an editor part is listed here.
-// A plugin with only a runtime part (3D 空間) is listed too, with no RegisterEditor - it can be
+// A plugin with only a runtime part (3D 空間, 3D 描画) is listed too, with no RegisterEditor - it can be
 // installed and required like any other.
 // Order does not matter: the loader enables requirements first.
 
@@ -11,6 +11,7 @@
 #include "rm_engine/game_production/runtime/Id.h"
 #include "rm_engine/game_x_3d/editor/Connector.h"
 #include "rm_engine/game_x_3d/runtime/Id.h"
+#include "rm_engine/render3d/runtime/Id.h"
 #include "rm_engine/space3d/runtime/Id.h"
 
 namespace rm::editor {
@@ -19,6 +20,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
     static constexpr BuiltinPlugin kPlugins[] = {
         {game_production::kPluginId, &game_production::RegisterEditor},
         {space3d::kPluginId, nullptr},
+        {render3d::kPluginId, nullptr},
         {game_x_3d::kPluginId, &game_x_3d::RegisterEditor},
     };
     return kPlugins;

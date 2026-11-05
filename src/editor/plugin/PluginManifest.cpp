@@ -255,23 +255,26 @@ std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginMa
                 changed = true;
             }
         }
-        // A plugin being installed that needs a connector and would have none: the first one this
-        // engine has for it, with its requirements.
+        // A plugin being installed that needs a connector: its connector (the one there already, else
+        // the first one this engine has) with everything that connector requires - an installed
+        // connector may need a plugin a newer engine added (ゲーム制作 × 3D now needs 3D 描画).
         std::vector<PluginId> targets = plan;
         if (!Contains(targets, id)) targets.push_back(id);
         for (const PluginId& t : targets) {
             const PluginManifest* tm = FindManifest(available, t);
             if (!tm || !tm->needsConnector) continue;
-            const PluginManifest* first = nullptr;
-            bool has = false;
+            const PluginManifest* chosen = nullptr;
             for (const PluginManifest& m : available) {
                 if (!m.connectorFor || *m.connectorFor != t) continue;
-                has |= have(m.id);
-                if (!first) first = &m;
+                if (have(m.id)) {
+                    chosen = &m;
+                    break;
+                }
+                if (!chosen) chosen = &m;
             }
-            if (has || !first) continue;
+            if (!chosen || Contains(walked, chosen->id)) continue;
             const size_t before = plan.size();
-            add(add, first->id);
+            add(add, chosen->id);
             changed |= plan.size() != before;
         }
     }

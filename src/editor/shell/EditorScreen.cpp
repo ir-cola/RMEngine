@@ -159,6 +159,8 @@ void EditorScreen::RedrawAll() {
 
 const PluginRegistry& EditorScreen::Workspace::Registry() const { return editor_.app_.GetPlugins().Registry(); }
 
+platform::Gfx& EditorScreen::Workspace::Graphics() { return editor_.app_.Gfx(); }
+
 dock::Layout EditorScreen::Workspace::DefaultLayout() const {
     return software ? software->DefaultLayout() : CoreDefaultLayout();
 }

@@ -39,7 +39,7 @@
   <ItemDefinitionGroup>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>d3d11.lib;dxgi.lib;d2d1.lib;dwrite.lib;windowscodecs.lib;dwmapi.lib;imm32.lib;shcore.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;d2d1.lib;dwrite.lib;windowscodecs.lib;dwmapi.lib;imm32.lib;shcore.lib;bcrypt.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(RMRoot)resources\app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>

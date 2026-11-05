@@ -19,6 +19,7 @@
 #include "editor/dock/DockLayout.h"
 #include "editor/dock/DockSpace.h"
 #include "editor/tree/TreeView.h"
+#include "platform/Gfx.h"
 
 #include <functional>
 #include <memory>
@@ -83,6 +84,8 @@ public:
     virtual void SelectInTree(std::vector<tree::ItemId> ids, bool rename = false) = 0;
     // What the enabled plugins registered (their contributions, e.g. the components of a game).
     virtual const PluginRegistry& Registry() const = 0;
+    // The GPU (Direct3D 11 + Direct2D), for software that draws with it (a 3D scene view).
+    virtual platform::Gfx& Graphics() = 0;
 };
 
 // One software inside one open project.

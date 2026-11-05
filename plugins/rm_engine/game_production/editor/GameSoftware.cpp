@@ -6,6 +6,7 @@
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
+#include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 
@@ -83,11 +84,7 @@ public:
     // --- Software ---------------------------------------------------------------------------
     std::vector<editor::dock::PanelType> Panels() override {
         return {
-            {kSceneView, TrKey(L"シーン"),
-             [](ui::Context& c, const Rect& r) {
-                 Placeholder(c, r, Tr(L"シーンビュー"),
-                             Tr(L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。"));
-             }},
+            {kSceneView, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawSceneView(c, r); }},
             {kGameView, TrKey(L"ゲーム"),
              [this](ui::Context& c, const Rect& r) {
                  Placeholder(c, r, Tr(L"ゲームビュー"), Tr(L"Play を押すと、ゲームのカメラから見た画面がここに映ります。"));
@@ -177,6 +174,8 @@ public:
     }
 
     void SelectionChanged(std::span<const tree::ItemId> ids) override {
+        selection_.clear();
+        for (const tree::ItemId id : ids) selection_.push_back(static_cast<int>(id));
         if (ids.size() == 1) {
             host_.Inspect(EntityInspectable(static_cast<int>(ids[0])));
             inspectingEntities_ = true;
@@ -265,6 +264,24 @@ public:
     }
 
 private:
+    // The scene view comes from a plugin that knows a space (ゲーム制作 × 3D); without one, a note.
+    void DrawSceneView(ui::Context& c, const Rect& r) {
+        if (!sceneView_ && !sceneViewAsked_) {
+            sceneViewAsked_ = true;
+            const auto views = host_.Registry().Contributions<SceneViewInfo>(kSceneViewPoint);
+            if (!views.empty() && views[0].item->create) sceneView_ = views[0].item->create();
+        }
+        if (!sceneView_) {
+            Placeholder(c, r, Tr(L"シーンビュー"),
+                        Tr(L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。"));
+            return;
+        }
+        SceneViewHost h{host_, scene_, selection_, [this](std::vector<int> ids) {
+                            host_.SelectInTree(std::vector<tree::ItemId>(ids.begin(), ids.end()));
+                        }};
+        sceneView_->Draw(c, r, h);
+    }
+
     void InspectSettings() {
         inspectingEntities_ = false;
         host_.Inspect(editor::Inspectable::Single(
@@ -369,6 +386,9 @@ private:
     GameSettings settings_;
     reflect::Unknowns unknowns_;  // keys / enum names of a newer version: written back unchanged
     Scene scene_;
+    std::vector<int> selection_;  // the 階層's selection (shown in the scene view)
+    std::unique_ptr<SceneView> sceneView_;
+    bool sceneViewAsked_ = false;
     std::vector<const reflect::TypeDesc*> newEntityTypes_;  // components every new entity gets
     bool hadData_ = false;
     bool inspectingEntities_ = false;  // the inspector shows the 階層's selection (not the settings)

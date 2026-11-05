@@ -39,4 +39,5 @@ plugins/
 |---|---|
 | `rm_engine` / `game_production` (ゲーム制作) | ソフト「ゲーム」。ゲームの設定・シーン (エンティティの親子)・部品 (コンポーネント) の仕組み。**つなぎが要る** (空間を知らない)。部品の種類は口 `rm_engine.game_production.component` で受け取る |
 | `rm_engine` / `space3d` (3D 空間) | Transform (位置・回転・大きさ) と行列の計算。ランタイムだけ |
-| `rm_engine` / `game_x_3d` (ゲーム制作 × 3D) | つなぎ。Transform をゲームの部品として差し出す (新しいエンティティに付く) |
+| `rm_engine` / `render3d` (3D 描画) | Direct3D 11 で 3D の線と箱を自分のテクスチャに描く。前提 = 3D 空間。ランタイムだけ |
+| `rm_engine` / `game_x_3d` (ゲーム制作 × 3D) | つなぎ。前提 = ゲーム制作・3D 空間・3D 描画。Transform をゲームの部品として差し出し (新しいエンティティに付く)、3D のシーンビューを出す (口 `rm_engine.game_production.scene_view`) |

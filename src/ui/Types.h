@@ -52,7 +52,8 @@ inline Rect TakeRight(Rect& r, float w) {
 enum class Key : uint8_t {
     None, Left, Right, Up, Down, Home, End, PageUp, PageDown,
     Backspace, Delete, Enter, Escape, Tab, F2, F5,
-    A, C, D, N, O, S, V, X, Y, Z,
+    A, C, D, E, F, N, O, Q, S, V, W, X, Y, Z,
+    Count,  // the number of keys (for KeyDown)
 };
 
 struct KeyEvent {
@@ -72,6 +73,8 @@ struct Input {
     bool doubleClicked = false;
     float wheel = 0.f;  // notches, + = away from the user
     bool ctrl = false, shift = false, alt = false;
+
+    bool keyDown[static_cast<int>(Key::Count)] = {};  // held now (kept across frames; cleared when the window loses the focus)
 
     std::wstring chars;              // typed characters
     std::vector<KeyEvent> keys;      // key presses (with repeat)

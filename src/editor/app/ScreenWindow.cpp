@@ -7,6 +7,8 @@
 #include <imm.h>
 #include <windowsx.h>
 
+#include <algorithm>
+#include <iterator>
 #include <string_view>
 
 namespace rm::editor {
@@ -36,6 +38,10 @@ ui::Key MapKey(WPARAM vk) {
         case 'A': return ui::Key::A;
         case 'C': return ui::Key::C;
         case 'D': return ui::Key::D;
+        case 'E': return ui::Key::E;
+        case 'F': return ui::Key::F;
+        case 'Q': return ui::Key::Q;
+        case 'W': return ui::Key::W;
         case 'N': return ui::Key::N;
         case 'O': return ui::Key::O;
         case 'S': return ui::Key::S;
@@ -198,6 +204,8 @@ void ScreenWindow::RunFrame() {
     // A frame that changed state (opened a menu, clicked a button ...) is followed by one
     // more frame so everything drawn earlier in the frame sees the new state. Bounded.
     if ((ctx_.RedrawRequested() || hadInput) && ++chainedFrames_ < 4) Invalidate();
+    // Something is moving by itself (a flying camera): keep drawing, frame after frame.
+    if (ctx_.AnimationRequested()) Invalidate();
 }
 
 void ScreenWindow::UpdateIme() {
@@ -292,6 +300,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             return 0;
         case WM_CAPTURECHANGED:
         case WM_KILLFOCUS:
+            if (m == WM_KILLFOCUS) std::fill(std::begin(input_.keyDown), std::end(input_.keyDown), false);  // the key-up goes elsewhere
             for (int i = 0; i < 3; ++i) {
                 if (input_.down[i]) input_.released[i] = true;
                 input_.down[i] = false;
@@ -305,9 +314,19 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             const ui::Key k = MapKey(wp);
             if (k != ui::Key::None) {
                 input_.keys.push_back({k, input_.ctrl, input_.shift, input_.alt});
+                input_.keyDown[static_cast<int>(k)] = true;
                 OnInput();
             }
             handled = m == WM_KEYDOWN;  // keep Alt+F4 / Alt+Space working
+            return 0;
+        }
+        case WM_KEYUP: {
+            UpdateModifiers();
+            const ui::Key k = MapKey(wp);
+            if (k != ui::Key::None) {
+                input_.keyDown[static_cast<int>(k)] = false;
+                OnInput();
+            }
             return 0;
         }
         case WM_SYSKEYUP:

@@ -102,4 +102,15 @@ inline Color AccentHighlight() { return Color{1, 1, 1, 0.22f}; }
 // Text and marks on the accent (always white: the accent is the same red on both themes).
 inline Color OnAccent() { return Color{1, 1, 1, 1}; }
 
+// --- 3D views (scene view): the floor, the axes, things in the scene -------------------------
+inline Color SceneBackground() { return IsLight ? Shade(Bg, -0.07f) : Shade(Field, -0.1f); }
+inline Color SceneGrid() { return Text.Alpha(IsLight ? 0.14f : 0.09f); }
+inline Color SceneGridMajor() { return Text.Alpha(IsLight ? 0.30f : 0.20f); }
+inline Color AxisX() { return Color::Hex(0xE5484D); }  // red, as in every 3D tool
+inline Color AxisY() { return Color::Hex(0x5BB974); }  // green
+inline Color AxisZ() { return Color::Hex(0x4C8DF6); }  // blue
+inline Color SceneObject() { return IsLight ? Color::Hex(0xAEB4BF) : Color::Hex(0x98A2B3); }
+inline Color SceneObjectSelected() { return Mix(SceneObject(), Accent, 0.55f); }
+inline Color SceneObjectInactive() { return Mix(SceneObject(), SceneBackground(), 0.6f); }
+
 }  // namespace rm::editor::theme

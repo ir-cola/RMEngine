@@ -48,6 +48,8 @@ public:
     bool MouseReleased(Mouse b = Mouse::Left) const { return inputEnabled_ && in_->released[static_cast<int>(b)]; }
     // Exact modifier match: KeyPressed(Key::S, true) is Ctrl+S, not Ctrl+Shift+S.
     bool KeyPressed(Key k, bool ctrl = false, bool shift = false) const;
+    // Held down now (e.g. W while flying a camera). False while input is disabled.
+    bool KeyDown(Key k) const { return inputEnabled_ && k != Key::None && k < Key::Count && in_->keyDown[static_cast<int>(k)]; }
 
     // --- Clickable behaviour ---
     struct ButtonResult {
@@ -86,6 +88,10 @@ public:
     // --- Frame requests ---
     void RequestRedraw() { redraw_ = true; }
     bool RedrawRequested() const { return redraw_; }
+    // Something moves by itself (a camera flying while a key is held): draw the next frame as soon
+    // as possible, for as long as this is asked every frame. Without it the screen draws only on input.
+    void RequestAnimation() { animate_ = true; }
+    bool AnimationRequested() const { return animate_; }
     void SetCursor(Cursor c) { cursor_ = c; }
     Cursor GetCursor() const { return cursor_; }
 
@@ -122,6 +128,7 @@ private:
     std::unordered_map<Id, float> floats_;
     std::vector<std::function<void()>> overlays_;
     bool redraw_ = false;
+    bool animate_ = false;
     Cursor cursor_ = Cursor::Arrow;
 };
 

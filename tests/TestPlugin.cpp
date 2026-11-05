@@ -308,3 +308,17 @@ RM_TEST(Plugins_DependentsThroughConnector) {
     const auto d2 = Dependents(Id("space3d"), more);
     CHECK(d2.size() == 1 && d2[0].id == Id("game_x_3d"));
 }
+
+RM_TEST(Plugins_InstallPlanFindsWhatAnInstalledConnectorLacks) {
+    // A newer engine: the connector now also needs render3d, which is not installed.
+    auto w = ConnectorWorld();
+    w[2].requirements.push_back(Id("render3d"));
+    w.push_back(Manifest("render3d", {Id("space3d")}));
+    const std::vector<PluginId> ready = {Id("game_production"), Id("space3d"), Id("game_x_3d")};
+    auto plan = InstallPlan(Id("game_production"), w, ready, nullptr);
+    CHECK(plan == std::vector<PluginId>({Id("render3d")}));
+    // Everything there: nothing.
+    auto all = ready;
+    all.push_back(Id("render3d"));
+    CHECK(InstallPlan(Id("game_production"), w, all, nullptr).empty());
+}

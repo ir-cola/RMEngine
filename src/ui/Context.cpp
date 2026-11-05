@@ -22,6 +22,7 @@ void Context::BeginFrame(Painter* painter, const Input* input, Rect viewport, do
     focusAlive_ = false;
     textInputThisFrame_ = false;
     redraw_ = false;
+    animate_ = false;
     cursor_ = Cursor::Arrow;
 }
 

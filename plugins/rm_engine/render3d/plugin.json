@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "render3d",
+  "displayName": "3D 描画",
+  "version": 1,
+  "requires": [
+    { "author": "rm_engine", "name": "space3d" }
+  ]
+}
