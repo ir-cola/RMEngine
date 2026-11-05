@@ -5,7 +5,11 @@
 #include "base/Utf.h"
 #include "base/Version.h"
 #include "editor/app/App.h"
+#include "editor/app/Integrity.h"
 #include "editor/app/Paths.h"
+#include "editor/hub/Updates.h"
+#include "editor/lang/Lang.h"
+#include "core/reflect/FieldCommand.h"
 #include "editor/plugin/Plugins.h"
 #include "editor/project/Project.h"
 #include "editor/widgets/Theme.h"
@@ -14,6 +18,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <ctime>
 #include <cwctype>
 #include <format>
@@ -49,12 +54,12 @@ std::wstring Lower(std::wstring s) {
 
 std::wstring NameErrorText(FileNameError e) {
     switch (e) {
-        case FileNameError::Empty: return L"プロジェクト名を入力してください。";
-        case FileNameError::TooLong: return L"プロジェクト名が長すぎます (64 文字まで)。";
-        case FileNameError::InvalidChar: return L"使えない文字が入っています ( < > : \" / \\ | ? * )。";
-        case FileNameError::ReservedName: return L"Windows が予約している名前なので使えません (CON / NUL / COM1 など)。";
-        case FileNameError::LeadingSpace: return L"先頭に空白は使えません。";
-        case FileNameError::TrailingDotOrSpace: return L"末尾にピリオドや空白は使えません。";
+        case FileNameError::Empty: return Tr(L"プロジェクト名を入力してください。");
+        case FileNameError::TooLong: return Tr(L"プロジェクト名が長すぎます (64 文字まで)。");
+        case FileNameError::InvalidChar: return Tr(L"使えない文字が入っています ( < > : \" / \\ | ? * )。");
+        case FileNameError::ReservedName: return Tr(L"Windows が予約している名前なので使えません (CON / NUL / COM1 など)。");
+        case FileNameError::LeadingSpace: return Tr(L"先頭に空白は使えません。");
+        case FileNameError::TrailingDotOrSpace: return Tr(L"末尾にピリオドや空白は使えません。");
         case FileNameError::None: break;
     }
     return {};
@@ -78,7 +83,6 @@ bool HubScreen::Open() {
     d.heightDip = 760;
     d.minWidthDip = 980;
     d.minHeightDip = 600;
-    d.captionRgb = 0x151618;
     if (!CreateScreenWindow(d, SW_SHOWNORMAL)) return false;
     log::Info("Hub を開きました");
     return true;
@@ -90,6 +94,11 @@ void HubScreen::OnCreated() {
 }
 
 void HubScreen::OnCloseRequested() { app_.RequestQuit(); }
+
+void HubScreen::OnLookChanged() {
+    ScreenWindow::OnLookChanged();
+    Refresh();
+}
 
 void HubScreen::ShowError(std::wstring message, fs::path removableFile, std::wstring title) {
     errorTitle_ = std::move(title);
@@ -114,7 +123,7 @@ void HubScreen::Refresh() {
         if (row.missing) {
             row.name = r.file.stem().native();
             row.modifiedSort = 0;
-            row.modifiedText = L"見つかりません";
+            row.modifiedText = Tr(L"見つかりません");
         } else {
             std::string err;
             auto p = LoadProject(r.file, &err);
@@ -155,7 +164,7 @@ std::vector<size_t> HubScreen::FilteredRows() const {
 
 void HubScreen::OpenRow(const Row& row) {
     if (row.missing) {
-        ShowError(L"プロジェクトが見つかりません。移動または削除された可能性があります。\n\n" + row.file.native(), row.file);
+        ShowError(Tr(L"プロジェクトが見つかりません。移動または削除された可能性があります。") + L"\n\n" + row.file.native(), row.file);
         return;
     }
     app_.RequestOpenProject(row.file);
@@ -163,7 +172,7 @@ void HubScreen::OpenRow(const Row& row) {
 
 void HubScreen::BrowseOpen() {
     Defer([this] {
-        auto file = platform::PickOpenFile(Hwnd(), L"プロジェクトを開く", L"RM Engine プロジェクト (*.rmpf)", L"*.rmpf");
+        auto file = platform::PickOpenFile(Hwnd(), Tr(L"プロジェクトを開く"), Tr(L"RM Engine プロジェクト (*.rmpf)"), L"*.rmpf");
         if (file) app_.RequestOpenProject(*file);
     });
 }
@@ -184,7 +193,7 @@ void HubScreen::BeginNewProject() {
 
 void HubScreen::BrowseLocation() {
     Defer([this] {
-        auto folder = platform::PickFolder(Hwnd(), L"保存先のフォルダを選択", Utf8ToWide(newLocation_));
+        auto folder = platform::PickFolder(Hwnd(), Tr(L"保存先のフォルダを選択"), Utf8ToWide(newLocation_));
         if (folder) {
             ctx_.ClearFocus();  // the field must not write its old text back over the new value
             newLocation_ = WideToUtf8(*folder);
@@ -201,16 +210,16 @@ void HubScreen::CreateNewProject() {
     }
     const fs::path location = PathFromUtf8(newLocation_);
     if (newLocation_.empty()) {
-        newError_ = L"保存先を選んでください。";
+        newError_ = Tr(L"保存先を選んでください。");
         return;
     }
     if (!location.is_absolute()) {
-        newError_ = L"保存先はドライブから始まるフォルダで指定してください (例: C:\\Users\\...)。";
+        newError_ = Tr(L"保存先はドライブから始まるフォルダで指定してください (例: C:\\Users\\...)。");
         return;
     }
     const fs::path file = location / PathFromUtf8(newName_) / (PathFromUtf8(newName_).native() + kProjectExtension);
     if (file.native().size() > 240) {
-        newError_ = L"保存先のパスが長すぎます。もっと浅いフォルダを選んでください。";
+        newError_ = Tr(L"保存先のパスが長すぎます。もっと浅いフォルダを選んでください。");
         return;
     }
     std::string err;
@@ -281,6 +290,8 @@ void HubScreen::OnFrame(ui::Context& c, float width, float height) {
         DrawProjects(c, full.Inset(32, 28, 32, 28));
     } else if (page_ == Page::Plugins) {
         DrawPlugins(c, full.Inset(32, 28, 32, 28));
+    } else if (page_ == Page::Updates) {
+        DrawUpdates(c, full.Inset(32, 28, 32, 28));
     } else {
         DrawOptions(c, full.Inset(32, 28, 32, 28));
     }
@@ -291,6 +302,7 @@ void HubScreen::OnFrame(ui::Context& c, float width, float height) {
     if (modal_ == Modal::Rename) DrawRename(c);
     if (modal_ == Modal::Error) DrawError(c);
     if (modal_ == Modal::Plugin) DrawPluginPrompt(c);
+    if (modal_ == Modal::Integrity) DrawIntegrity(c);
 }
 
 void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
@@ -320,25 +332,26 @@ void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
         if (b.clicked) page_ = page;
         y += 44;
     };
-    nav("nav.projects", L"プロジェクト", Page::Projects);
-    nav("nav.plugins", L"プラグイン", Page::Plugins);
-    nav("nav.options", L"オプション", Page::Options);
+    nav("nav.projects", Tr(L"プロジェクト"), Page::Projects);
+    nav("nav.plugins", Tr(L"プラグイン"), Page::Plugins);
+    nav("nav.updates", Tr(L"アップデート情報"), Page::Updates);
+    nav("nav.options", Tr(L"オプション"), Page::Options);
 
-    p.Text({r.x + 28, r.Bottom() - 44, r.w - 56, 20}, std::format(L"バージョン {}", kEngineVersionW), Style(12, theme::TextFaint));
+    p.Text({r.x + 28, r.Bottom() - 44, r.w - 56, 20}, TrF(L"バージョン {}", std::wstring(kEngineVersionW)), Style(12, theme::TextFaint));
 }
 
 void HubScreen::DrawProjects(ui::Context& c, Rect area) {
     auto& p = c.P();
     const Rect header = ui::TakeTop(area, 40);
-    p.Text(header, L"プロジェクト", Style(24, theme::Text, true));
+    p.Text(header, Tr(L"プロジェクト"), Style(24, theme::Text, true));
     const Rect btnNew{header.Right() - 132, header.y + 2, 132, 36};
     const Rect btnOpen{btnNew.x - 12 - 112, header.y + 2, 112, 36};
-    if (w::Button(c, "hub.new", btnNew, L"新規作成", w::ButtonKind::Primary)) BeginNewProject();
-    if (w::Button(c, "hub.open", btnOpen, L"開く…")) BrowseOpen();
+    if (w::Button(c, "hub.new", btnNew, Tr(L"新規作成"), w::ButtonKind::Primary)) BeginNewProject();
+    if (w::Button(c, "hub.open", btnOpen, Tr(L"開く…"))) BrowseOpen();
 
     ui::TakeTop(area, 18);
     const Rect searchRow = ui::TakeTop(area, 34);
-    w::TextField(c, "hub.search", {searchRow.x, searchRow.y, std::min(360.f, searchRow.w), 34}, search_, L"プロジェクトを検索");
+    w::TextField(c, "hub.search", {searchRow.x, searchRow.y, std::min(360.f, searchRow.w), 34}, search_, Tr(L"プロジェクトを検索"));
     ui::TakeTop(area, 16);
 
     // Table (on the page's own background: only the header line, and the hovered / selected row, are drawn)
@@ -365,15 +378,15 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
             SortRows();
         }
     };
-    headerCell("col.name", xName, nameW, L"名前", 0);
-    headerCell("col.mod", xMod, modW, L"更新日時", 1);
-    headerCell("col.path", xPath, pathW, L"場所", 2);
+    headerCell("col.name", xName, nameW, Tr(L"名前"), 0);
+    headerCell("col.mod", xMod, modW, Tr(L"更新日時"), 1);
+    headerCell("col.path", xPath, pathW, Tr(L"場所"), 2);
     p.FillRect({table.x, head.Bottom() - 1, table.w, 1}, theme::Border);
 
     const std::vector<size_t> visible = FilteredRows();
     if (visible.empty()) {
-        const std::wstring msg = rows_.empty() ? L"プロジェクトがありません。\n「新規作成」で作るか、「開く…」で既存のプロジェクト (.rmpf) を追加してください。"
-                                               : L"検索に一致するプロジェクトはありません。";
+        const std::wstring msg = rows_.empty() ? Tr(L"プロジェクトがありません。\n「新規作成」で作るか、「開く…」で既存のプロジェクト (.rmpf) を追加してください。")
+                                               : Tr(L"検索に一致するプロジェクトはありません。");
         ui::TextStyle ts = Style(14, theme::TextDim, false, ui::HAlign::Center);
         ts.wrap = true;
         p.Text(table.Inset(40, 0, 40, 40), msg, ts);
@@ -437,19 +450,18 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
 void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     auto& p = c.P();
     const Plugins& plugins = app_.GetPlugins();
-    p.Text(ui::TakeTop(area, 40), L"プラグイン", Style(24, theme::Text, true));
+    p.Text(ui::TakeTop(area, 40), Tr(L"プラグイン"), Style(24, theme::Text, true));
     ui::TextStyle note = Style(13, theme::TextDim);
     note.wrap = true;
     note.v = ui::VAlign::Top;
     p.Text(ui::TakeTop(area, 44),
-           L"インストールしたプラグインは、すべてのプロジェクトで使えます。前提のプラグインは一緒にインストールされます。"
-           L"削除はここだけでできます。",
+           Tr(L"インストールしたプラグインは、すべてのプロジェクトで使えます。前提のプラグインは一緒にインストールされます。削除はここだけでできます。"),
            note);
     ui::TakeTop(area, 8);
     if (plugins.Entries().empty()) {
         const Rect box = ui::TakeTop(area, 80);
         p.FillRoundRect(box, 8, theme::Panel);
-        p.Text(box.Inset(24, 0, 24, 0), L"このエンジンにはプラグインが入っていません", Style(15, theme::Text, true));
+        p.Text(box.Inset(24, 0, 24, 0), Tr(L"このエンジンにはプラグインが入っていません"), Style(15, theme::Text, true));
         return;
     }
     for (const Plugins::Entry& e : plugins.Entries()) {
@@ -457,8 +469,8 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
         const Rect row = ui::TakeTop(area, 72);
         ui::TakeTop(area, 8);
         p.FillRoundRect(row, 8, theme::Panel);
-        p.Text({row.x + 24, row.y + 14, row.w * 0.4f, 24}, Utf8ToWide(st.displayName), Style(15, theme::Text, true));
-        p.Text({row.x + 24, row.y + 40, row.w * 0.4f, 20}, Utf8ToWide("作者 " + st.id.author + "   名前 " + st.id.name),
+        p.Text({row.x + 24, row.y + 14, row.w * 0.4f, 24}, Utf8ToWide(TrU8(st.displayName)), Style(15, theme::Text, true));
+        p.Text({row.x + 24, row.y + 40, row.w * 0.4f, 20}, TrF(L"作者 {}   名前 {}", Utf8ToWide(st.id.author), Utf8ToWide(st.id.name)),
                Style(12, theme::TextFaint));
 
         // Buttons from the right edge.
@@ -472,26 +484,26 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
         float textRight = b.x;
         if (!e.installed) {
             const Rect install{row.Right() - 20 - 150, b.y, 150, 36};
-            if (w::Button(c, "install", install, e.available ? L"インストール" : L"このエンジンに無い", w::ButtonKind::Primary,
+            if (w::Button(c, "install", install, e.available ? Tr(L"インストール") : Tr(L"このエンジンに無い"), w::ButtonKind::Primary,
                           e.available)) {
                 BeginInstall(st.id);
             }
             textRight = install.x;
         } else {
-            if (w::Button(c, "remove", b, L"削除")) BeginRemove(st.id);
+            if (w::Button(c, "remove", b, Tr(L"削除"))) BeginRemove(st.id);
             const Rect re = next(130);
-            if (w::Button(c, "reinstall", re, L"再インストール", w::ButtonKind::Secondary, e.available)) RunInstall({st.id});
+            if (w::Button(c, "reinstall", re, Tr(L"再インストール"), w::ButtonKind::Secondary, e.available)) RunInstall({st.id});
             textRight = re.x;
             if (LacksRequirement(st.state)) {
                 b = re;
                 const Rect req = next(150);
-                if (w::Button(c, "requirements", req, L"前提をインストール", w::ButtonKind::Primary)) {
+                if (w::Button(c, "requirements", req, Tr(L"前提をインストール"), w::ButtonKind::Primary)) {
                     std::vector<PluginId> unavailable;
                     const auto plan = plugins.InstallPlan(st.id, &unavailable);
                     if (!unavailable.empty()) {
-                        ShowError(L"このエンジンには次の前提プラグインがありません。エンジンを新しい版にしてください。\n" +
+                        ShowError(Tr(L"このエンジンには次の前提プラグインがありません。エンジンを新しい版にしてください。") + L"\n" +
                                       PluginNames(unavailable),
-                                  {}, L"インストールできません");
+                                  {}, Tr(L"インストールできません"));
                     } else {
                         RunInstall(plan);
                     }
@@ -504,13 +516,13 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
 
         const Rect status{row.x + row.w * 0.42f, row.y, textRight - 16 - (row.x + row.w * 0.42f), row.h};
         if (st.state == PluginState::Enabled) {
-            p.Text(status, L"使用中", Style(13, theme::TextDim, false, ui::HAlign::Right));
+            p.Text(status, Tr(L"使用中"), Style(13, theme::TextDim, false, ui::HAlign::Right));
         } else if (st.state == PluginState::NotInstalled) {
-            p.Text(status, L"インストールされていません", Style(13, theme::TextFaint, false, ui::HAlign::Right));
+            p.Text(status, Tr(L"インストールされていません"), Style(13, theme::TextFaint, false, ui::HAlign::Right));
         } else if (LacksRequirement(st.state)) {
-            p.Text(status, L"⚠ 前提が無い: " + Utf8ToWide(st.reason), Style(12, theme::Warn, false, ui::HAlign::Right));
+            p.Text(status, TrF(L"⚠ 前提が無い: {}", Utf8ToWide(st.reason)), Style(12, theme::Warn, false, ui::HAlign::Right));
         } else {
-            p.Text(status, L"⚠ 使えません: " + Utf8ToWide(st.reason), Style(12, theme::Danger, false, ui::HAlign::Right));
+            p.Text(status, TrF(L"⚠ 使えません: {}", Utf8ToWide(st.reason)), Style(12, theme::Danger, false, ui::HAlign::Right));
         }
     }
 }
@@ -522,7 +534,7 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
 std::wstring HubScreen::PluginLine(const PluginId& id) const {
     const Plugins::Entry* e = app_.GetPlugins().Find(id);
     const std::wstring name = Utf8ToWide(app_.GetPlugins().DisplayName(id));
-    if (!e) return L"・" + name + L" — このエンジンにはありません";
+    if (!e) return L"・" + name + L" — " + Tr(L"このエンジンにはありません");
     return L"・" + name + L" — " + Utf8ToWide(e->status.reason);
 }
 
@@ -567,18 +579,18 @@ void HubScreen::AskBlockingPlugins(const fs::path& project, const std::vector<Pl
     Prompt pr;
     pr.kind = PromptKind::Blocking;
     pr.project = project;
-    pr.title = L"起動できません";
+    pr.title = Tr(L"起動できません");
     std::vector<PluginId> unavailable;
     for (const PluginId& id : blocking) AppendUnique(pr.toInstall, app_.GetPlugins().InstallPlan(id, &unavailable));
-    pr.body = L"このプロジェクトが使っているプラグインがそろっていないため、開けません。\n";
+    pr.body = Tr(L"このプロジェクトが使っているプラグインがそろっていないため、開けません。") + L"\n";
     for (const PluginId& id : blocking) pr.body += PluginLine(id) + L"\n";
     if (!unavailable.empty()) {
         pr.toInstall.clear();  // cannot make it whole: nothing to offer
-        pr.body += L"\nこのエンジンには次のプラグインがありません。エンジンを新しい版にしてください。\n" + PluginNames(unavailable);
+        pr.body += L"\n" + Tr(L"このエンジンには次のプラグインがありません。エンジンを新しい版にしてください。") + L"\n" + PluginNames(unavailable);
     } else if (!pr.toInstall.empty()) {
-        pr.body += L"\n前提プラグインをインストールしますか？\n" + PluginNames(pr.toInstall);
+        pr.body += L"\n" + Tr(L"前提プラグインをインストールしますか？") + L"\n" + PluginNames(pr.toInstall);
     } else {
-        pr.body += L"\nデータを守るため、開かずに止めました。";
+        pr.body += L"\n" + Tr(L"データを守るため、開かずに止めました。");
     }
     ShowPrompt(std::move(pr));
 }
@@ -588,16 +600,17 @@ void HubScreen::AskLimitedPlugins(const fs::path& project, const std::vector<Plu
     pr.kind = PromptKind::Limited;
     pr.project = project;
     pr.limited = limited;
-    pr.title = L"お知らせ";
+    pr.title = Tr(L"お知らせ");
     for (const PluginId& id : limited) AppendUnique(pr.toInstall, app_.GetPlugins().InstallPlan(id, nullptr));
     const bool onlyRequirements = std::all_of(limited.begin(), limited.end(), [&](const PluginId& id) {
         const Plugins::Entry* e = app_.GetPlugins().Find(id);
         return e && LacksRequirement(e->status.state);
     });
-    pr.body = onlyRequirements ? L"前提プラグインが存在しないプラグインがあるため、その機能が制限されます。\n"
-                               : L"使えないプラグインがあるため、その機能が制限されます。\n";
+    pr.body = (onlyRequirements ? Tr(L"前提プラグインが存在しないプラグインがあるため、その機能が制限されます。")
+                                : Tr(L"使えないプラグインがあるため、その機能が制限されます。")) +
+              L"\n";
     for (const PluginId& id : limited) pr.body += PluginLine(id) + L"\n";
-    if (!pr.toInstall.empty()) pr.body += L"\n「インストール」で次のプラグインを入れてから開きます。\n" + PluginNames(pr.toInstall);
+    if (!pr.toInstall.empty()) pr.body += L"\n" + Tr(L"「インストール」で次のプラグインを入れてから開きます。") + L"\n" + PluginNames(pr.toInstall);
     ShowPrompt(std::move(pr));
 }
 
@@ -605,8 +618,8 @@ void HubScreen::BeginInstall(const PluginId& id) {
     std::vector<PluginId> unavailable;
     const auto plan = app_.GetPlugins().InstallPlan(id, &unavailable);
     if (!unavailable.empty()) {
-        ShowError(L"このエンジンには次の前提プラグインがありません。エンジンを新しい版にしてください。\n" + PluginNames(unavailable), {},
-                  L"インストールできません");
+        ShowError(Tr(L"このエンジンには次の前提プラグインがありません。エンジンを新しい版にしてください。") + L"\n" + PluginNames(unavailable), {},
+                  Tr(L"インストールできません"));
         return;
     }
     if (plan.size() <= 1) {
@@ -615,9 +628,9 @@ void HubScreen::BeginInstall(const PluginId& id) {
     }
     Prompt pr;
     pr.kind = PromptKind::Install;
-    pr.title = L"プラグインのインストール";
+    pr.title = Tr(L"プラグインのインストール");
     pr.toInstall = plan;
-    pr.body = L"「" + Utf8ToWide(app_.GetPlugins().DisplayName(id)) + L"」をインストールします。前提のプラグインも一緒に入ります。\n" +
+    pr.body = TrF(L"「{}」をインストールします。前提のプラグインも一緒に入ります。", Utf8ToWide(app_.GetPlugins().DisplayName(id))) + L"\n" +
               PluginNames(plan);
     ShowPrompt(std::move(pr));
 }
@@ -626,22 +639,22 @@ void HubScreen::BeginRemove(const PluginId& id) {
     Prompt pr;
     pr.kind = PromptKind::Remove;
     pr.target = id;
-    pr.title = L"プラグインの削除";
+    pr.title = Tr(L"プラグインの削除");
     const std::wstring name = Utf8ToWide(app_.GetPlugins().DisplayName(id));
     const auto dependents = app_.GetPlugins().Dependents(id);
     if (dependents.empty()) {
-        pr.body = L"「" + name + L"」を削除しますか？\n";
+        pr.body = TrF(L"「{}」を削除しますか？", name) + L"\n";
     } else {
-        pr.body = L"「" + name + L"」は、以下のプラグインの前提として使われています。削除すると、これらは使えなくなります。\n";
+        pr.body = TrF(L"「{}」は、以下のプラグインの前提として使われています。削除すると、これらは使えなくなります。", name) + L"\n";
         for (const Dependent& d : dependents) {
             pr.body += L"・" + Utf8ToWide(app_.GetPlugins().DisplayName(d.id));
-            if (d.via) pr.body += L" (" + Utf8ToWide(app_.GetPlugins().DisplayName(*d.via)) + L" を通して)";
+            if (d.via) pr.body += L" " + TrF(L"({} を通して)", Utf8ToWide(app_.GetPlugins().DisplayName(*d.via)));
             pr.body += L"\n";
         }
-        pr.body += L"\n本当に削除しますか？\n";
+        pr.body += L"\n" + Tr(L"本当に削除しますか？") + L"\n";
     }
     if (const int n = RecentProjectsUsing(id); n > 0) {
-        pr.body += std::format(L"\n最近のプロジェクトのうち {} 個がこのプラグインを使っています (開くときにインストールを求められます)。", n);
+        pr.body += L"\n" + TrF(L"最近のプロジェクトのうち {} 個がこのプラグインを使っています (開くときにインストールを求められます)。", n);
     }
     ShowPrompt(std::move(pr));
 }
@@ -649,7 +662,7 @@ void HubScreen::BeginRemove(const PluginId& id) {
 void HubScreen::RunInstall(const std::vector<PluginId>& ids) {
     if (ids.empty()) return;
     std::string err;
-    if (!app_.InstallPlugins(ids, &err)) ShowError(Utf8ToWide(err), {}, L"インストールできませんでした");
+    if (!app_.InstallPlugins(ids, &err)) ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
     Invalidate();
 }
 
@@ -676,56 +689,56 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
                 if (w::Button(c, "pp.ok", right, L"OK", w::ButtonKind::Primary) || enter || esc) close();
                 break;
             }
-            if (w::Button(c, "pp.cancel", left, L"やめる") || esc) {
+            if (w::Button(c, "pp.cancel", left, Tr(L"やめる")) || esc) {
                 close();
-            } else if (w::Button(c, "pp.install", right, L"インストールして開く", w::ButtonKind::Primary) || enter) {
+            } else if (w::Button(c, "pp.install", right, Tr(L"インストールして開く"), w::ButtonKind::Primary) || enter) {
                 close();
                 std::string err;
                 if (app_.InstallPlugins(pr.toInstall, &err)) {
                     app_.RequestOpenProject(pr.project);
                 } else {
-                    ShowError(Utf8ToWide(err), {}, L"インストールできませんでした");
+                    ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
                 }
             }
             break;
         case PromptKind::Limited: {
-            w::Checkbox(c, "pp.hide", {cr.x, right.y - 44, cr.w, 28}, pr.hideAgain, L"この状態が変わるまで表示しない");
+            w::Checkbox(c, "pp.hide", {cr.x, right.y - 44, cr.w, 28}, pr.hideAgain, Tr(L"この状態が変わるまで表示しない"));
             if (esc) {
                 close();
-            } else if (w::Button(c, "pp.open", right, L"このまま開く", w::ButtonKind::Primary) || enter) {
+            } else if (w::Button(c, "pp.open", right, Tr(L"このまま開く"), w::ButtonKind::Primary) || enter) {
                 close();
                 if (pr.hideAgain) {
                     app_.Settings().HideLimitedNotice(pr.limited);
                     app_.Settings().Save();
                 }
                 app_.RequestOpenProject(pr.project, true);
-            } else if (!pr.toInstall.empty() && w::Button(c, "pp.install", left, L"インストール")) {
+            } else if (!pr.toInstall.empty() && w::Button(c, "pp.install", left, Tr(L"インストール"))) {
                 close();
                 std::string err;
                 if (app_.InstallPlugins(pr.toInstall, &err)) {
                     app_.RequestOpenProject(pr.project);
                 } else {
-                    ShowError(Utf8ToWide(err), {}, L"インストールできませんでした");
+                    ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
                 }
             }
             break;
         }
         case PromptKind::Install:
-            if (w::Button(c, "pp.cancel", left, L"やめる") || esc) {
+            if (w::Button(c, "pp.cancel", left, Tr(L"やめる")) || esc) {
                 close();
-            } else if (w::Button(c, "pp.install", right, L"インストール", w::ButtonKind::Primary) || enter) {
+            } else if (w::Button(c, "pp.install", right, Tr(L"インストール"), w::ButtonKind::Primary) || enter) {
                 close();
                 RunInstall(pr.toInstall);
             }
             break;
         case PromptKind::Remove:
             // The safe answer is the default: Enter and Esc both mean "no" (decided 2026-09-30).
-            if (w::Button(c, "pp.no", left, L"いいえ") || enter || esc) {
+            if (w::Button(c, "pp.no", left, Tr(L"いいえ")) || enter || esc) {
                 close();
-            } else if (w::Button(c, "pp.remove", right, L"削除", w::ButtonKind::Primary)) {
+            } else if (w::Button(c, "pp.remove", right, Tr(L"削除"), w::ButtonKind::Primary)) {
                 close();
                 std::string err;
-                if (!app_.UninstallPlugin(pr.target, &err)) ShowError(Utf8ToWide(err), {}, L"削除できませんでした");
+                if (!app_.UninstallPlugin(pr.target, &err)) ShowError(Utf8ToWide(err), {}, Tr(L"削除できませんでした"));
             }
             break;
     }
@@ -733,7 +746,7 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
 
 void HubScreen::DrawOptions(ui::Context& c, Rect area) {
     auto& p = c.P();
-    p.Text(ui::TakeTop(area, 40), L"オプション", Style(24, theme::Text, true));
+    p.Text(ui::TakeTop(area, 40), Tr(L"オプション"), Style(24, theme::Text, true));
     ui::TakeTop(area, 22);
     float y = area.y;
     const float labelW = 230, buttonW = 190;
@@ -754,41 +767,195 @@ void HubScreen::DrawOptions(ui::Context& c, Rect area) {
         p.Text({row.x + labelW, row.y, row.w - labelW - buttonW - 16, row.h}, path.native(), Style(12, theme::Text));
         std::error_code ec;
         const bool exists = fs::exists(path, ec);
-        if (w::Button(c, id, {row.Right() - buttonW, row.y + 2, buttonW, row.h - 4}, exists ? L"エクスプローラーで表示" : L"まだありません",
+        if (w::Button(c, id, {row.Right() - buttonW, row.y + 2, buttonW, row.h - 4}, exists ? Tr(L"エクスプローラーで表示") : Tr(L"まだありません"),
                       w::ButtonKind::Secondary, exists)) {
             platform::ShowInExplorer(path);
         }
         y += 42;
     };
 
-    section(L"新しいプロジェクト");
-    place("opt.projects", L"既定の保存先", paths::DefaultProjects());
-    note(L"「新規作成」で最初から入っている場所です。作るときに「参照…」でほかの場所にもできます。");
+    // The page scrolls when the window is low.
+    const Rect view{area.x - 4, area.y, area.w + 8, area.h};
+    float& contentH = c.FloatState(c.MakeId("opt.contentH"), 900.f);
+    const float off = w::BeginScroll(c, "opt.scroll", view, contentH);
+    y -= off;
+    const float top = y;
+
+    // --- The options themselves: drawn by the inspector from their type (editor/project/Options.h).
+    section(Tr(L"設定"));
+    Options& opts = app_.Settings().GetOptions();
+    reflect::Unknowns& unknowns = app_.Settings().OptionsUnknowns();
+    const inspector::Block block{&reflect::TypeOf<Options>(), &opts, &unknowns, {}, {}, {}};
+    const Rect box{area.x - 12, y, area.w + 12, 4 * 30.f + 16};
+    if (auto edit = inspector::Draw(c, optionsInspector_, box, std::span(&block, 1))) {
+        // Not project data: applied at once, saved in hub.json, not undoable.
+        reflect::SetFieldCommand change(reflect::TypeOf<Options>(), std::move(edit->path), std::move(edit->before), std::move(edit->after),
+                                        [&opts, &unknowns] { return reflect::EditTarget{&opts, &unknowns}; }, std::move(edit->label));
+        change.Do();
+        app_.Settings().Save();
+        app_.ApplyOptions();
+        log::Info("オプションを変えました: {}", change.Label());
+    }
+    y += box.h;
+    note(Tr(L"自動アップデートは、エディターを配布する仕組みができたら効きます。プラグインの更新は「プラグイン」のページで行います。"));
     y += 14;
 
-    section(L"エンジンのファイル");
-    place("opt.installed", L"入れたプラグイン", paths::InstalledPlugins());
-    place("opt.engine", L"このエンジンが持つプラグイン", paths::EnginePlugins());
-    place("opt.log", L"ログ (editor.log)", paths::LogFile());
-    place("opt.hub", L"Hub の設定 (hub.json)", paths::HubSettingsFile());
+    section(Tr(L"エディターの整合性"));
+    p.Text({area.x, y, area.w - buttonW - 16, 36}, Tr(L"エンジンのファイルが欠けていないか・壊れていないかを調べます。入れたプラグインが古い・壊れているときは直せます。"),
+           Style(13, theme::TextDim));
+    if (w::Button(c, "opt.integrity", {area.Right() - buttonW, y + 2, buttonW, 32}, Tr(L"確認する"))) RunIntegrityCheck();
+    y += 56;
+
+    section(Tr(L"新しいプロジェクト"));
+    place("opt.projects", Tr(L"既定の保存先"), paths::DefaultProjects());
+    note(Tr(L"「新規作成」で最初から入っている場所です。作るときに「参照…」でほかの場所にもできます。"));
     y += 14;
 
-    section(L"お知らせ");
+    section(Tr(L"エンジンのファイル"));
+    place("opt.installed", Tr(L"入れたプラグイン"), paths::InstalledPlugins());
+    place("opt.engine", Tr(L"このエンジンが持つプラグイン"), paths::EnginePlugins());
+    place("opt.log", Tr(L"ログ (editor.log)"), paths::LogFile());
+    place("opt.hub", Tr(L"Hub の設定 (hub.json)"), paths::HubSettingsFile());
+    y += 14;
+
+    section(Tr(L"お知らせ"));
     const bool hidden = app_.Settings().HasHiddenNotice();
     p.Text({area.x, y, area.w - buttonW - 16, 36},
-           hidden ? L"「この状態が変わるまで表示しない」にしたプラグインのお知らせがあります。" : L"表示しないことにしたお知らせはありません。",
+           hidden ? Tr(L"「この状態が変わるまで表示しない」にしたプラグインのお知らせがあります。") : Tr(L"表示しないことにしたお知らせはありません。"),
            Style(13, theme::TextDim));
-    if (w::Button(c, "opt.notices", {area.Right() - buttonW, y + 2, buttonW, 32}, L"また表示する", w::ButtonKind::Secondary, hidden)) {
+    if (w::Button(c, "opt.notices", {area.Right() - buttonW, y + 2, buttonW, 32}, Tr(L"また表示する"), w::ButtonKind::Secondary, hidden)) {
         app_.Settings().ShowNoticesAgain();
         app_.Settings().Save();
         log::Info("表示しないことにしたお知らせを、また表示するようにしました");
     }
     y += 56;
 
-    section(L"このエンジンについて");
-    p.Text({area.x, y, area.w, 22}, std::format(L"RM Engine  バージョン {}", kEngineVersionW), Style(13, theme::TextDim));
+    section(Tr(L"このエンジンについて"));
+    p.Text({area.x, y, area.w, 22}, TrF(L"RM Engine  バージョン {}", std::wstring(kEngineVersionW)), Style(13, theme::TextDim));
     y += 26;
-    p.Text({area.x, y, area.w, 22}, L"エンジンのフォルダ: " + platform::EngineDirectory().native(), Style(12, theme::TextFaint));
+    p.Text({area.x, y, area.w, 22}, TrF(L"エンジンのフォルダ: {}", platform::EngineDirectory().native()), Style(12, theme::TextFaint));
+    y += 34;
+
+    contentH = y - top;
+    w::EndScroll(c, "opt.scroll", view, contentH);
+}
+
+void HubScreen::DrawUpdates(ui::Context& c, Rect area) {
+    auto& p = c.P();
+    p.Text(ui::TakeTop(area, 40), Tr(L"アップデート情報"), Style(24, theme::Text, true));
+    ui::TakeTop(area, 22);
+    static const json::Value doc = [] {
+        const auto bytes = platform::ResourceBytes(IDR_UPDATES);
+        auto v = json::Parse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+        return v ? std::move(*v) : json::Value();
+    }();
+    const std::vector<UpdateEntry> entries = ParseUpdates(doc, lang::Current() == lang::Language::English);
+
+    const Rect view{area.x - 4, area.y, area.w + 8, area.h};
+    float& contentH = c.FloatState(c.MakeId("upd.contentH"), 600.f);
+    const float off = w::BeginScroll(c, "upd.scroll", view, contentH);
+    float y = area.y - off;
+    const float top = y;
+    if (entries.empty()) {
+        p.Text({area.x, y, area.w, 24}, Tr(L"アップデート情報はありません。"), Style(13, theme::TextDim));
+        y += 30;
+    }
+    ui::TextStyle item = Style(13, theme::Text);
+    item.wrap = true;
+    item.v = ui::VAlign::Top;
+    for (const UpdateEntry& e : entries) {
+        p.Text({area.x, y, area.w, 26}, TrF(L"バージョン {}  ({})", Utf8ToWide(e.version), Utf8ToWide(e.date)), Style(16, theme::Text, true));
+        y += 32;
+        p.FillRect({area.x, y - 4, area.w, 1}, theme::Border);
+        y += 8;
+        for (const std::string& line : e.items) {
+            const std::wstring text = Utf8ToWide(line);
+            // Long lines wrap: measure roughly (one line per this many DIPs of text).
+            const float width = area.w - 28;
+            const float lines = std::max(1.f, std::ceil(p.TextWidth(text, 13) / std::max(1.f, width)));
+            p.FillRoundRect({area.x + 6, y + 8, 5, 5}, 2.5f, theme::Accent);
+            p.Text({area.x + 22, y, width, 22 * lines}, text, item);
+            y += 22 * lines + 6;
+        }
+        y += 22;
+    }
+    contentH = y - top;
+    w::EndScroll(c, "upd.scroll", view, contentH);
+}
+
+void HubScreen::RunIntegrityCheck() {
+    integrityStale_.clear();
+    std::string err;
+    const fs::path listFile = paths::FileList();
+    auto bytes = platform::ReadFileBytes(listFile, &err);
+    auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
+    auto list = doc ? integrity::ParseFileList(*doc, &err) : std::nullopt;
+    if (!list) {
+        integrityText_ = TrF(L"ファイルの一覧 ({}) を読めないので、確かめられません。エンジンをビルドし直すか、入れ直してください。", listFile.native());
+        modal_ = Modal::Integrity;
+        log::Warn("整合性の確認: ファイルの一覧を読めません: {}", PathToUtf8(listFile));
+        return;
+    }
+    const fs::path exeDir = platform::ExeDirectory();
+    const auto problems = integrity::CheckFiles(*list, [&](const std::string& rel) { return platform::Sha256File(exeDir / PathFromUtf8(rel)); });
+
+    // Installed plugins compared with the engine's copies.
+    std::vector<PluginId> installed;
+    for (const auto& e : app_.GetPlugins().Entries()) {
+        if (e.installed) installed.push_back(e.status.id);
+    }
+    const fs::path installedDir = paths::InstalledPlugins();
+    integrityStale_ = integrity::StalePlugins(*list, installed, [&](const PluginId& id, const std::string& rel) {
+        return platform::Sha256File(installedDir / PathFromUtf8(id.author) / PathFromUtf8(id.name) / PathFromUtf8(rel));
+    });
+
+    std::wstring text;
+    if (problems.empty()) {
+        text = TrF(L"エンジンのファイル {} 個は、すべてそろっていて壊れていません。", list->size());
+    } else {
+        text = TrF(L"エンジンのファイルに問題があります ({} 個)。エンジンをビルドし直すか、入れ直してください。", problems.size());
+        const size_t shown = std::min<size_t>(problems.size(), 8);
+        for (size_t i = 0; i < shown; ++i) {
+            const auto& pr = problems[i];
+            text += L"\n・" + Utf8ToWide(pr.path) + L"  " + (pr.problem == integrity::Problem::Missing ? Tr(L"(見つかりません)") : Tr(L"(中身が違います)"));
+        }
+        if (problems.size() > shown) text += TrF(L"\n… ほか {} 個", problems.size() - shown);
+    }
+    if (integrityStale_.empty()) {
+        text += L"\n\n" + Tr(L"入れたプラグインも、エンジンのものと同じです。");
+    } else {
+        text += L"\n\n" + Tr(L"入れたプラグインのうち、エンジンのものと違う (古い・壊れている) もの:");
+        for (const PluginId& id : integrityStale_) text += L"\n・" + Utf8ToWide(TrU8(app_.GetPlugins().DisplayName(id)));
+    }
+    integrityText_ = std::move(text);
+    log::Info("整合性の確認: エンジンのファイルの問題 {} 個 / 違うプラグイン {} 個", problems.size(), integrityStale_.size());
+    modal_ = Modal::Integrity;
+}
+
+void HubScreen::DrawIntegrity(ui::Context& c) {
+    auto& p = c.P();
+    const Rect cr = w::BeginModal(c, 640, 420, Tr(L"エディターの整合性"));
+    ui::TextStyle ts = Style(13, theme::Text);
+    ts.wrap = true;
+    ts.v = ui::VAlign::Top;
+    p.Text({cr.x, cr.y, cr.w, cr.h - 48}, integrityText_, ts);
+    const Rect ok{cr.Right() - 110, cr.Bottom() - 36, 110, 36};
+    if (!integrityStale_.empty() &&
+        w::Button(c, "int.fix", {ok.x - 12 - 220, ok.y, 220, 36}, Tr(L"プラグインを入れ直して直す"), w::ButtonKind::Primary)) {
+        std::string err;
+        const std::vector<PluginId> ids = integrityStale_;
+        modal_ = Modal::None;
+        if (!app_.InstallPlugins(ids, &err)) {
+            ShowError(Utf8ToWide(err), {}, Tr(L"直せませんでした"));
+        } else {
+            RunIntegrityCheck();  // shows the result again
+        }
+        return;
+    }
+    if (w::Button(c, "int.ok", ok, Tr(L"閉じる"), integrityStale_.empty() ? w::ButtonKind::Primary : w::ButtonKind::Secondary) ||
+        c.KeyPressed(ui::Key::Escape) || (integrityStale_.empty() && c.KeyPressed(ui::Key::Enter))) {
+        modal_ = Modal::None;
+    }
 }
 
 void HubScreen::DrawRowMenu(ui::Context& c) {
@@ -801,11 +968,11 @@ void HubScreen::DrawRowMenu(ui::Context& c) {
         return;
     }
     const std::vector<w::MenuItem> items = {
-        {L"開く", L"Enter"},
-        {L"名前を変更…", L"F2", !row->missing},
-        {L"エクスプローラーで表示", L"", !row->missing},
+        {Tr(L"開く"), L"Enter"},
+        {Tr(L"名前を変更…"), L"F2", !row->missing},
+        {Tr(L"エクスプローラーで表示"), L"", !row->missing},
         {L"", L"", true, true},
-        {L"一覧から外す (ファイルは消しません)"},
+        {Tr(L"一覧から外す (ファイルは消しません)")},
     };
     const int picked = w::MenuPopup(c, rowMenu_, items, 280);
     if (picked == 0) {
@@ -824,14 +991,14 @@ void HubScreen::DrawRowMenu(ui::Context& c) {
 
 void HubScreen::DrawNewProject(ui::Context& c) {
     auto& p = c.P();
-    const Rect cr = w::BeginModal(c, 640, 520, L"新しいプロジェクト");
+    const Rect cr = w::BeginModal(c, 640, 520, Tr(L"新しいプロジェクト"));
     float y = cr.y;
     auto label = [&](std::wstring_view text) {
         p.Text({cr.x, y, cr.w, 20}, text, Style(12, theme::TextDim, true));
         y += 24;
     };
 
-    label(L"テンプレート");
+    label(Tr(L"テンプレート"));
     const auto& templates = ProjectTemplates();
     for (size_t i = 0; i < templates.size(); ++i) {
         const Rect card{cr.x, y, cr.w, 60};
@@ -841,29 +1008,29 @@ void HubScreen::DrawNewProject(ui::Context& c) {
         const bool sel = newTemplate_ == i;
         p.FillRoundRect(card, 6, sel ? theme::Selected : b.hovered ? theme::Hover : theme::Field);
         p.StrokeRoundRect(card, 6, sel ? theme::Accent : theme::Border);
-        p.Text({card.x + 16, card.y + 8, card.w - 32, 22}, templates[i].name, Style(14, theme::Text, true));
-        p.Text({card.x + 16, card.y + 31, card.w - 32, 20}, templates[i].description, Style(12, theme::TextDim));
+        p.Text({card.x + 16, card.y + 8, card.w - 32, 22}, Tr(templates[i].name), Style(14, theme::Text, true));
+        p.Text({card.x + 16, card.y + 31, card.w - 32, 20}, Tr(templates[i].description), Style(12, theme::TextDim));
         if (b.clicked) newTemplate_ = i;
         y += 66;
     }
-    p.Text({cr.x, y, cr.w, 18}, L"ゲーム・イラストなどのテンプレートは、プラグインを追加すると増えます。", Style(11, theme::TextFaint));
+    p.Text({cr.x, y, cr.w, 18}, Tr(L"ゲーム・イラストなどのテンプレートは、プラグインを追加すると増えます。"), Style(11, theme::TextFaint));
     y += 30;
 
-    label(L"プロジェクト名");
+    label(Tr(L"プロジェクト名"));
     if (focusNewName_) {
         c.FocusText(c.MakeId("np.name"), Utf8ToWide(newName_), true);
         focusNewName_ = false;
     }
-    if (w::TextField(c, "np.name", {cr.x, y, cr.w, 34}, newName_, L"プロジェクト名")) newError_.clear();
+    if (w::TextField(c, "np.name", {cr.x, y, cr.w, 34}, newName_, Tr(L"プロジェクト名"))) newError_.clear();
     y += 46;
 
-    label(L"保存先");
-    if (w::TextField(c, "np.location", {cr.x, y, cr.w - 104, 34}, newLocation_, L"フォルダ")) newError_.clear();
-    if (w::Button(c, "np.browse", {cr.Right() - 96, y, 96, 34}, L"参照…")) BrowseLocation();
+    label(Tr(L"保存先"));
+    if (w::TextField(c, "np.location", {cr.x, y, cr.w - 104, 34}, newLocation_, Tr(L"フォルダ"))) newError_.clear();
+    if (w::Button(c, "np.browse", {cr.Right() - 96, y, 96, 34}, Tr(L"参照…"))) BrowseLocation();
     y += 44;
 
     const std::wstring target = Utf8ToWide(newLocation_) + L"\\" + Utf8ToWide(newName_);
-    p.Text({cr.x, y, cr.w, 20}, L"作成されるフォルダ: " + target, Style(12, theme::TextFaint));
+    p.Text({cr.x, y, cr.w, 20}, TrF(L"作成されるフォルダ: {}", target), Style(12, theme::TextFaint));
     y += 26;
     if (!newError_.empty()) {
         ui::TextStyle es = Style(12, theme::Danger);
@@ -874,38 +1041,38 @@ void HubScreen::DrawNewProject(ui::Context& c) {
 
     const Rect create{cr.Right() - 120, cr.Bottom() - 36, 120, 36};
     const Rect cancel{create.x - 12 - 110, create.y, 110, 36};
-    if (w::Button(c, "np.cancel", cancel, L"キャンセル") || c.KeyPressed(ui::Key::Escape)) {
+    if (w::Button(c, "np.cancel", cancel, Tr(L"キャンセル")) || c.KeyPressed(ui::Key::Escape)) {
         modal_ = Modal::None;
         c.ClearFocus();
         return;
     }
-    if (w::Button(c, "np.create", create, L"作成", w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
+    if (w::Button(c, "np.create", create, Tr(L"作成"), w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
         CreateNewProject();
     }
 }
 
 void HubScreen::DrawRename(ui::Context& c) {
     auto& p = c.P();
-    const Rect cr = w::BeginModal(c, 640, 330, L"プロジェクトの名前を変更");
+    const Rect cr = w::BeginModal(c, 640, 330, Tr(L"プロジェクトの名前を変更"));
     float y = cr.y;
-    p.Text({cr.x, y, cr.w, 20}, L"「" + renameOld_ + L"」の新しい名前", Style(12, theme::TextDim, true));
+    p.Text({cr.x, y, cr.w, 20}, TrF(L"「{}」の新しい名前", renameOld_), Style(12, theme::TextDim, true));
     y += 24;
     if (focusRename_) {
         c.FocusText(c.MakeId("rn.name"), Utf8ToWide(renameName_), true);
         focusRename_ = false;
     }
-    if (w::TextField(c, "rn.name", {cr.x, y, cr.w, 34}, renameName_, L"プロジェクト名")) renameError_.clear();
+    if (w::TextField(c, "rn.name", {cr.x, y, cr.w, 34}, renameName_, Tr(L"プロジェクト名"))) renameError_.clear();
     y += 46;
 
     // What changes on disk: the folder, the .rmpf and the name inside, together.
     const fs::path oldFolder = renameFile_.parent_path();
     const std::wstring newName = Utf8ToWide(renameName_);
     ui::TextStyle faint = Style(12, theme::TextFaint);
-    p.Text({cr.x, y, cr.w, 20}, L"フォルダ: " + oldFolder.filename().native() + L"  →  " + newName, faint);
+    p.Text({cr.x, y, cr.w, 20}, TrF(L"フォルダ: {}  →  {}", oldFolder.filename().native(), newName), faint);
     y += 22;
-    p.Text({cr.x, y, cr.w, 20}, L"ファイル: " + renameFile_.filename().native() + L"  →  " + newName + kProjectExtension, faint);
+    p.Text({cr.x, y, cr.w, 20}, TrF(L"ファイル: {}  →  {}", renameFile_.filename().native(), newName + kProjectExtension), faint);
     y += 22;
-    p.Text({cr.x, y, cr.w, 20}, L"場所: " + oldFolder.parent_path().native(), faint);
+    p.Text({cr.x, y, cr.w, 20}, TrF(L"場所: {}", oldFolder.parent_path().native()), faint);
     y += 30;
     if (!renameError_.empty()) {
         ui::TextStyle es = Style(12, theme::Danger);
@@ -916,12 +1083,12 @@ void HubScreen::DrawRename(ui::Context& c) {
 
     const Rect ok{cr.Right() - 120, cr.Bottom() - 36, 120, 36};
     const Rect cancel{ok.x - 12 - 110, ok.y, 110, 36};
-    if (w::Button(c, "rn.cancel", cancel, L"キャンセル") || c.KeyPressed(ui::Key::Escape)) {
+    if (w::Button(c, "rn.cancel", cancel, Tr(L"キャンセル")) || c.KeyPressed(ui::Key::Escape)) {
         modal_ = Modal::None;
         c.ClearFocus();
         return;
     }
-    if (w::Button(c, "rn.ok", ok, L"変更", w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) RunRename();
+    if (w::Button(c, "rn.ok", ok, Tr(L"変更"), w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) RunRename();
 }
 
 void HubScreen::DrawError(ui::Context& c) {
@@ -935,7 +1102,7 @@ void HubScreen::DrawError(ui::Context& c) {
     const Rect ok{cr.Right() - 110, cr.Bottom() - 36, 110, 36};
     bool close = w::Button(c, "err.ok", ok, L"OK", w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter) ||
                  c.KeyPressed(ui::Key::Escape);
-    if (!errorRemovable_.empty() && w::Button(c, "err.remove", {ok.x - 12 - 150, ok.y, 150, 36}, L"一覧から外す")) {
+    if (!errorRemovable_.empty() && w::Button(c, "err.remove", {ok.x - 12 - 150, ok.y, 150, 36}, Tr(L"一覧から外す"))) {
         app_.Settings().Remove(errorRemovable_);
         app_.Settings().Save();
         Refresh();

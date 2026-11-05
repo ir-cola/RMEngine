@@ -4,6 +4,8 @@
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "editor/hub/HubScreen.h"
+#include "editor/lang/Lang.h"
+#include "editor/widgets/Theme.h"
 #include "editor/shell/EditorScreen.h"
 #include "platform/Shell.h"
 
@@ -25,10 +27,12 @@ App::~App() = default;
 
 int App::Run(const LaunchOptions& options) {
     if (!gfx_.Init()) {
-        MessageBoxW(nullptr, L"グラフィックスを初期化できませんでした (Direct3D 11 / Direct2D)。", L"RM Engine", MB_ICONERROR);
+        MessageBoxW(nullptr, Tr(L"グラフィックスを初期化できませんでした (Direct3D 11 / Direct2D)。").c_str(), L"RM Engine", MB_ICONERROR);
         return 1;
     }
     settings_.Load();
+    LoadLanguageCatalogs();
+    ApplyOptions();
     plugins_.Load(paths::EnginePlugins(), paths::InstalledPlugins());
     if (!options.projectFile.empty()) {
         RequestOpenProject(options.projectFile);
@@ -85,6 +89,48 @@ void App::RequestQuit() {
     WakeMessageLoop();
 }
 
+void App::LoadLanguageCatalogs() {
+    // The core's English (<exe>/Lang/en.json) and each plugin's (<exe>/Plugins/<author>/<name>/lang/en.json).
+    // The engine's own copies: the plugins' code is built into this exe, so their texts match it.
+    lang::Catalog& en = lang::EnglishCatalog();
+    en.Clear();
+    std::vector<std::filesystem::path> files{paths::LangFolder() / L"en.json"};
+    std::error_code ec;
+    for (std::filesystem::directory_iterator a(paths::EnginePlugins(), ec), end; !ec && a != end; a.increment(ec)) {
+        std::error_code ec2;
+        for (std::filesystem::directory_iterator n(a->path(), ec2), end2; !ec2 && n != end2; n.increment(ec2)) {
+            files.push_back(n->path() / L"lang" / L"en.json");
+        }
+    }
+    size_t count = 0;
+    for (const auto& file : files) {
+        std::error_code e3;
+        if (!std::filesystem::exists(file, e3)) continue;
+        std::string err;
+        auto bytes = platform::ReadFileBytes(file, &err);
+        json::ParseError pe;
+        auto doc = bytes ? json::Parse(*bytes, &pe) : std::nullopt;
+        if (!doc) {
+            log::Warn("英語の表を読めませんでした: {}", PathToUtf8(file));
+            continue;
+        }
+        count += en.Add(*doc);
+    }
+    log::Info("英語の表: {} 個", count);
+}
+
+void App::ApplyOptions() {
+    const Options& o = settings_.GetOptions();
+    const bool light = o.theme == ThemeMode::Light || (o.theme == ThemeMode::System && platform::SystemPrefersLight());
+    theme::Apply(light);
+    lang::SetLanguage(o.language == UiLanguage::English ? lang::Language::English : lang::Language::Japanese);
+    if (screen_) screen_->OnLookChanged();
+}
+
+void App::SystemThemeChanged() {
+    if (settings_.GetOptions().theme == ThemeMode::System) ApplyOptions();
+}
+
 void App::Replace(std::unique_ptr<ScreenWindow> next) {
     std::unique_ptr<ScreenWindow> old = std::move(screen_);
     screen_ = std::move(next);
@@ -94,7 +140,7 @@ void App::Replace(std::unique_ptr<ScreenWindow> next) {
 void App::ShowHub(const std::string& errorMessage) {
     auto hub = std::make_unique<HubScreen>(*this);
     if (!hub->Open()) {
-        MessageBoxW(nullptr, L"Hub のウィンドウを作れませんでした。", L"RM Engine", MB_ICONERROR);
+        MessageBoxW(nullptr, Tr(L"Hub のウィンドウを作れませんでした。").c_str(), L"RM Engine", MB_ICONERROR);
         running_ = false;
         return;
     }
@@ -114,7 +160,7 @@ void App::OpenProjectNow() {
     std::optional<std::vector<PluginId>> used;
     if (project) {
         used = ParsePluginIdList(project->doc.Get("plugins"), &err);
-        if (!used) err = "プロジェクトファイルの「plugins」の形が正しくありません: " + err;
+        if (!used) err = TrU8("プロジェクトファイルの「plugins」の形が正しくありません: ") + err;
     }
     if (!project || !used) {
         log::Error("{}", err);
@@ -146,7 +192,7 @@ void App::OpenProjectNow() {
     log::Info("プロジェクトを開きます: {}", PathToUtf8(project->file));
     auto editor = std::make_unique<EditorScreen>(*this, std::move(*project));
     if (!editor->Open()) {
-        ShowHub("エディターのウィンドウを作れませんでした。");
+        ShowHub(TrU8("エディターのウィンドウを作れませんでした。"));
         return;
     }
     Replace(std::move(editor));

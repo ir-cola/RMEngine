@@ -1,3 +1,4 @@
+#include "editor/lang/Lang.h"
 #include "editor/dock/DockSpace.h"
 
 #include "base/Utf.h"
@@ -108,7 +109,7 @@ std::wstring DockSpace::FloatingTitle(uint32_t floatingId) const {
         for (const auto& id : n->tabs) {
             if (!title.empty()) title += L" / ";
             const PanelType* t = FindPanel(id);
-            title += t ? t->title : Utf8ToWide(id);
+            title += t ? Tr(t->title) : Utf8ToWide(id);
         }
     }
     return title;
@@ -195,7 +196,7 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
     for (size_t i = 0; i < leaf.tabs.size(); ++i) {
         const std::string& id = leaf.tabs[i];
         const PanelType* type = FindPanel(id);
-        const std::wstring title = type ? type->title : Utf8ToWide(id);
+        const std::wstring title = type ? Tr(type->title) : Utf8ToWide(id);
         const bool sel = static_cast<int>(i) == leaf.active;
         const float tw = p.TextWidth(title, 12, true) + 20 + kCloseW;
         const Rect tab{x, strip.y + 3, tw, strip.h - 3};
@@ -252,7 +253,7 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
         hint.bold = false;
         hint.wrap = true;
         hint.h = ui::HAlign::Center;
-        p.Text(body.Inset(16), L"パネルがありません。\n「ウィンドウ」メニューから開けます。", hint);
+        p.Text(body.Inset(16), Tr(L"パネルがありません。\n「ウィンドウ」メニューから開けます。"), hint);
         return;
     }
     const PanelType* type = FindPanel(leaf.tabs[static_cast<size_t>(leaf.active)]);
@@ -455,7 +456,7 @@ void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
     // The tab being dragged follows the mouse inside the window it came from.
     if (drag_.kind == DragKind::Tab && drag_.fromSite == siteId && c.Viewport().Contains(c.In().mouseX, c.In().mouseY)) {
         const PanelType* type = FindPanel(drag_.panel);
-        const std::wstring title = type ? type->title : Utf8ToWide(drag_.panel);
+        const std::wstring title = type ? Tr(type->title) : Utf8ToWide(drag_.panel);
         const float tw = p.TextWidth(title, 12, true) + 24;
         const Rect ghost{c.In().mouseX + 12, c.In().mouseY + 10, tw, 26};
         p.FillRoundRect({ghost.x + 1, ghost.y + 2, ghost.w, ghost.h}, 5, theme::Shadow);
@@ -478,9 +479,9 @@ void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
     const Node* floatRoot = RootOf(fid);
     const bool aloneInWindow = fid != 0 && floatRoot == leaf && leaf->tabs.size() == 1;
     const std::vector<w::MenuItem> items = {
-        {L"閉じる", L"中クリック"},
-        {L"別ウィンドウに出す", L"", !aloneInWindow},
-        {L"エディターのウィンドウに戻す", L"", fid != 0},
+        {Tr(L"閉じる"), Tr(L"中クリック")},
+        {Tr(L"別ウィンドウに出す"), L"", !aloneInWindow},
+        {Tr(L"エディターのウィンドウに戻す"), L"", fid != 0},
     };
     const std::string panel = m.panel;
     const int pick = w::MenuPopup(c, m.popup, items, 250);

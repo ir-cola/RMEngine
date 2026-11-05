@@ -261,7 +261,7 @@ void EndScroll(ui::Context& c, std::string_view idStr, const Rect& view, float c
         }
     }
     const bool hot = b.hovered || c.Active() == tid;
-    p.FillRoundRect(thumb, 3, hot ? Color::Hex(0x6A6D75) : Color::Hex(0x45474E));
+    p.FillRoundRect(thumb, 3, hot ? theme::ScrollThumbHot : theme::ScrollThumb);
 }
 
 void ScrollToEnd(ui::Context& c, std::string_view idStr) { c.FloatState(c.MakeId(idStr)) = 1e9f; }
@@ -406,7 +406,7 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
 Rect BeginModal(ui::Context& c, float width, float height, std::wstring_view title) {
     auto& p = c.P();
     const Rect& vp = c.Viewport();
-    p.FillRect(vp, Color::Hex(0x000000, 0.55f));
+    p.FillRect(vp, theme::Dim);
     width = std::min(width, vp.w - 32);
     height = std::min(height, vp.h - 32);
     const Rect box{vp.x + (vp.w - width) * 0.5f, vp.y + (vp.h - height) * 0.5f, width, height};

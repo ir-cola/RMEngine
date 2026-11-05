@@ -47,6 +47,11 @@ public:
     void RequestHub(std::string errorMessage = {});
     void RequestQuit();
 
+    // Applies the options (color theme, language) to every window. At start and after a change.
+    void ApplyOptions();
+    // Windows' light / dark setting changed (matters only for "PC の設定に合わせる").
+    void SystemThemeChanged();
+
 private:
     enum class Pending { None, OpenProject, InstallAndReopen, Hub, Quit };
     void ApplyPending();
@@ -54,6 +59,7 @@ private:
     void ShowHub(const std::string& errorMessage);
     class HubScreen* EnsureHub();
     void Replace(std::unique_ptr<ScreenWindow> next);
+    void LoadLanguageCatalogs();
 
     platform::Gfx gfx_;
     HubSettings settings_;

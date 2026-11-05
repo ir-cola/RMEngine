@@ -46,6 +46,12 @@ std::filesystem::path ExeDirectory();
 // it, otherwise the exe's folder. New projects go in its Project/ by default.
 std::filesystem::path EngineDirectory();
 
+// Windows' "app mode" is light (Settings > Personalization > Colors).
+bool SystemPrefersLight();
+
+// SHA-256 of a file as lower-case hex; nullopt when it cannot be read (missing ...).
+std::optional<std::string> Sha256File(const std::filesystem::path& path);
+
 // Seconds from an arbitrary start point (QueryPerformanceCounter).
 double NowSeconds();
 

@@ -2,10 +2,13 @@
 
 #include "base/Utf.h"
 
+#include <bcrypt.h>
 #include <dwmapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <wrl/client.h>
+
+#include <vector>
 
 using Microsoft::WRL::ComPtr;
 
@@ -215,6 +218,48 @@ std::filesystem::path EngineDirectory() {
         dir = dir.parent_path();
     }
     return exe;
+}
+
+bool SystemPrefersLight() {
+    DWORD value = 0, size = sizeof(value);
+    const LSTATUS r = RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                                   L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size);
+    return r == ERROR_SUCCESS && value != 0;
+}
+
+std::optional<std::string> Sha256File(const std::filesystem::path& path) {
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                           FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return std::nullopt;
+    BCRYPT_ALG_HANDLE alg = nullptr;
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    std::optional<std::string> out;
+    if (BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0)) &&
+        BCRYPT_SUCCESS(BCryptCreateHash(alg, &hash, nullptr, 0, nullptr, 0, 0))) {
+        std::vector<unsigned char> buf(1 << 16);
+        DWORD got = 0;
+        bool ok = true;
+        while ((ok = ReadFile(f, buf.data(), static_cast<DWORD>(buf.size()), &got, nullptr) != 0) && got > 0) {
+            if (!BCRYPT_SUCCESS(BCryptHashData(hash, buf.data(), got, 0))) {
+                ok = false;
+                break;
+            }
+        }
+        unsigned char digest[32];
+        if (ok && BCRYPT_SUCCESS(BCryptFinishHash(hash, digest, sizeof(digest), 0))) {
+            static const char* kHex = "0123456789abcdef";
+            std::string hex;
+            for (const unsigned char b : digest) {
+                hex += kHex[b >> 4];
+                hex += kHex[b & 15];
+            }
+            out = std::move(hex);
+        }
+    }
+    if (hash) BCryptDestroyHash(hash);
+    if (alg) BCryptCloseAlgorithmProvider(alg, 0);
+    CloseHandle(f);
+    return out;
 }
 
 }  // namespace rm::platform

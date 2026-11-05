@@ -17,5 +17,7 @@ std::filesystem::path InstalledPlugins();
 std::filesystem::path LogFolder();
 std::filesystem::path LogFile();
 std::filesystem::path HubSettingsFile();
+std::filesystem::path LangFolder();      // <exe>/Lang (the core's translations)
+std::filesystem::path FileList();        // <exe>/RM_Engine.files.json (for the integrity check)
 
 }  // namespace rm::editor::paths

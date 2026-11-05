@@ -17,9 +17,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 [-Config Rel
 ```
 
 - 成否は**終了コードだけ**で判断する (出力を grep しない)
-- ビルド → `RMTests.exe` → `check_layers.ps1` の順に全部通ること
+- ビルド → `RMTests.exe` → `check_layers.ps1` → `check_lang.ps1` の順に全部通ること
 - 画面に関わる変更は、実際に起動して操作して確かめる。確かめていないことは「未確認」と書く
 - 画面の確認はユーザーが自分で行う。機能を足したら [docs/HOW_TO_TRY.md](docs/HOW_TO_TRY.md) の試し方を書き足す
+- 画面に出す文字は日本語で書いて `Tr(L"…")` / `TrF` / `TrU8` を通し、英語を `resources/lang/en.json` (プラグインは `plugins/<作者>/<名前>/lang/en.json`) に足す。足し忘れは `tools/check_lang.ps1` (build.ps1 が走らせる) が止める。ログは日本語のまま
+- 色は `theme::` の変数だけを使う (直に `Color::Hex` を書かない。黒と白のテーマで切り替わるため)
+- 目に見える変更をしたら `resources/updates.json` (Hub の「アップデート情報」) に日本語と英語で 1 行足す
 - 新しい技術 (API・ライブラリ・作り方) を使ったら [docs/TECHNOLOGIES.md](docs/TECHNOLOGIES.md) に説明を書き足し、末尾の「追記の記録」に 1 行足す (ユーザーが人に説明するためのメモ)
 
 ## 憲法 (前のエンジンの失敗から。破らない)

@@ -89,11 +89,16 @@ bool Window::Create(const WindowDesc& desc, WindowListener* listener) {
     if (!hwnd_) return false;
     dpi_ = GetDpiForWindow(hwnd_);
 
-    const BOOL dark = TRUE;
-    DwmSetWindowAttribute(hwnd_, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
-    const COLORREF caption = RGB((desc.captionRgb >> 16) & 0xFF, (desc.captionRgb >> 8) & 0xFF, desc.captionRgb & 0xFF);
-    DwmSetWindowAttribute(hwnd_, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
+    SetCaption(desc.darkCaption, desc.captionRgb);
     return true;
+}
+
+void Window::SetCaption(bool dark, uint32_t rgb) {
+    if (!hwnd_) return;
+    const BOOL d = dark ? TRUE : FALSE;
+    DwmSetWindowAttribute(hwnd_, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &d, sizeof(d));
+    const COLORREF caption = RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    DwmSetWindowAttribute(hwnd_, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
 }
 
 void Window::Destroy() {

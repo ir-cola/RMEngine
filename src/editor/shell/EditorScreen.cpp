@@ -1,3 +1,4 @@
+#include "editor/lang/Lang.h"
 #include "editor/shell/EditorScreen.h"
 
 #include "base/Log.h"
@@ -100,7 +101,6 @@ bool EditorScreen::Open() {
     d.heightDip = 900;
     d.minWidthDip = 960;
     d.minHeightDip = 560;
-    d.captionRgb = 0x151618;
     RefreshAssets();
     LoadLayout();  // before the callbacks below: nothing to sync yet
     if (!CreateScreenWindow(d, SW_SHOWMAXIMIZED)) return false;
@@ -115,10 +115,29 @@ bool EditorScreen::Open() {
     logSink_ = log::AddSink([this](const log::Entry&) { RedrawAll(); });
     log::Info("エディターを開きました: {} ({})", project_.Name(), WideToUtf8(Active().Title()));
     UpdateTitle();
+    SetTimer(Hwnd(), kAutoSaveTimer, 15000, nullptr);  // looks every 15 s; saves at the chosen interval
     return true;
 }
 
+void EditorScreen::OnLookChanged() {
+    ScreenWindow::OnLookChanged();
+    for (auto& f : floats_) f->OnLookChanged();
+    UpdateTitle();
+}
+
+void EditorScreen::OnTimer(UINT_PTR id) {
+    if (id != kAutoSaveTimer || !dirty_) return;
+    // Never in the middle of something: a dialog, an open menu, typing, a drag (a button held).
+    if (modal_ != Modal::None || menuPopup_.open || ctx_.Focused() != 0) return;
+    if (GetKeyState(VK_LBUTTON) < 0 || GetKeyState(VK_RBUTTON) < 0 || GetKeyState(VK_MBUTTON) < 0) return;
+    const double minutes = Minutes(app_.Settings().GetOptions().autoSave);
+    if (platform::NowSeconds() - dirtySince_ < minutes * 60.0) return;
+    log::Info("自動保存します ({} 分ごと)", minutes);
+    if (!Save()) dirtySince_ = platform::NowSeconds();  // the error is shown; try again after another interval
+}
+
 void EditorScreen::Close() {
+    if (Hwnd()) KillTimer(Hwnd(), kAutoSaveTimer);
     CloseFloats();
     ScreenWindow::Close();
 }
@@ -149,11 +168,11 @@ std::vector<dock::PanelType> EditorScreen::CorePanels(bool withStart) {
         return dock::PanelType{id, title, [this, draw](ui::Context& c, const Rect& r) { (this->*draw)(c, r); }};
     };
     std::vector<dock::PanelType> list;
-    list.push_back(panel(core_panel::kHierarchy, L"階層", &EditorScreen::DrawHierarchy));
-    if (withStart) list.push_back(panel(kStart, L"スタート", &EditorScreen::DrawStart));
-    list.push_back(panel(core_panel::kInspector, L"インスペクター", &EditorScreen::DrawInspector));
-    list.push_back(panel(core_panel::kConsole, L"コンソール", &EditorScreen::DrawConsole));
-    list.push_back(panel(core_panel::kAssets, L"アセット", &EditorScreen::DrawAssets));
+    list.push_back(panel(core_panel::kHierarchy, TrKey(L"階層"), &EditorScreen::DrawHierarchy));
+    if (withStart) list.push_back(panel(kStart, TrKey(L"スタート"), &EditorScreen::DrawStart));
+    list.push_back(panel(core_panel::kInspector, TrKey(L"インスペクター"), &EditorScreen::DrawInspector));
+    list.push_back(panel(core_panel::kConsole, TrKey(L"コンソール"), &EditorScreen::DrawConsole));
+    list.push_back(panel(core_panel::kAssets, TrKey(L"アセット"), &EditorScreen::DrawAssets));
     return list;
 }
 
@@ -425,6 +444,7 @@ void EditorScreen::FloatingMoveEnded(uint32_t floatingId) {
 
 void EditorScreen::SetDirty(bool dirty) {
     if (dirty_ == dirty) return;
+    if (dirty) dirtySince_ = platform::NowSeconds();  // the auto-save interval counts from the first unsaved change
     dirty_ = dirty;
     UpdateTitle();
     Invalidate();
@@ -490,19 +510,19 @@ void EditorScreen::FinishClose(CloseAction action) {
 std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
     switch (m) {
         case Menu::File:
-            return {{L"保存", L"Ctrl+S"}, {L"", L"", true, true}, {L"Hub に戻る"}, {L"終了"}};
+            return {{Tr(L"保存"), L"Ctrl+S"}, {L"", L"", true, true}, {Tr(L"Hub に戻る")}, {Tr(L"終了")}};
         case Menu::Edit:
-            return {{L"元に戻す", L"Ctrl+Z", Active().history.CanUndo()}, {L"やり直し", L"Ctrl+Y", Active().history.CanRedo()}};
+            return {{Tr(L"元に戻す"), L"Ctrl+Z", Active().history.CanUndo()}, {Tr(L"やり直し"), L"Ctrl+Y", Active().history.CanRedo()}};
         case Menu::Window: {
             std::vector<w::MenuItem> items;
             for (const auto& t : Active().dock.PanelTypes()) {
                 w::MenuItem it;
-                it.label = t.title;
+                it.label = Tr(t.title);
                 it.checked = Active().dock.GetLayout().Contains(t.id);
                 items.push_back(std::move(it));
             }
             items.push_back({L"", L"", true, true});
-            items.push_back({L"パネルの配置を元に戻す"});
+            items.push_back({Tr(L"パネルの配置を元に戻す")});
             return items;
         }
         case Menu::Plugins: {
@@ -510,26 +530,26 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
             std::vector<w::MenuItem> items;
             for (const Plugins::Entry& e : app_.GetPlugins().Entries()) {
                 w::MenuItem it;
-                const std::wstring name = Utf8ToWide(e.status.displayName);
+                const std::wstring name = Utf8ToWide(TrU8(e.status.displayName));
                 if (e.installed) {
                     it.label = name + L"  (" + Utf8ToWide(e.status.id.Text()) + L")";
-                    it.shortcut = e.status.state == PluginState::Enabled ? L"使用中" : L"⚠ 使えません";
+                    it.shortcut = e.status.state == PluginState::Enabled ? Tr(L"使用中") : Tr(L"⚠ 使えません");
                     it.enabled = false;  // information only
                 } else {
-                    it.label = L"「" + name + L"」をインストール…";
+                    it.label = TrF(L"「{}」をインストール…", name);
                     it.enabled = e.available;
                 }
                 items.push_back(std::move(it));
             }
-            if (items.empty()) items.push_back({L"このエンジンにはプラグインがありません", L"", false});
+            if (items.empty()) items.push_back({Tr(L"このエンジンにはプラグインがありません"), L"", false});
             items.push_back({L"", L"", true, true});
-            items.push_back({L"削除・再インストールは Hub の「プラグイン」で行います", L"", false});
+            items.push_back({Tr(L"削除・再インストールは Hub の「プラグイン」で行います"), L"", false});
             return items;
         }
         case Menu::Help:
-            return {{L"RM Engine について"}};
+            return {{Tr(L"RM Engine について")}};
         case Menu::Debug:
-            return {{L"未保存の変更を作る (テスト用)"}};
+            return {{Tr(L"未保存の変更を作る (テスト用)")}};
         default:
             return {};
     }
@@ -598,7 +618,7 @@ void EditorScreen::BeginInstallPlugin(const PluginId& id) {
     if (!unavailable.empty()) {
         std::wstring names;
         for (const PluginId& u : unavailable) names += L"\n・" + Utf8ToWide(app_.GetPlugins().DisplayName(u));
-        ShowError(L"「" + installName_ + L"」の前提プラグインがこのエンジンにありません。エンジンを新しい版にしてください。" + names);
+        ShowError(TrF(L"「{}」の前提プラグインがこのエンジンにありません。エンジンを新しい版にしてください。", installName_) + names);
         return;
     }
     if (installPlan_.empty()) return;
@@ -616,7 +636,7 @@ void EditorScreen::HandleShortcuts(ui::Context& c) {
 void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
     auto& p = c.P();
     p.FillRect(r, theme::Sidebar);
-    static const wchar_t* kTitles[] = {L"ファイル", L"編集", L"ウィンドウ", L"プラグイン", L"ヘルプ", L"デバッグ"};
+    static const wchar_t* kTitles[] = {TrKey(L"ファイル"), TrKey(L"編集"), TrKey(L"ウィンドウ"), TrKey(L"プラグイン"), TrKey(L"ヘルプ"), TrKey(L"デバッグ")};
 #ifdef _DEBUG
     const int count = static_cast<int>(Menu::Count);
 #else
@@ -624,7 +644,8 @@ void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
 #endif
     float x = r.x + 6;
     for (int i = 0; i < count; ++i) {
-        const float wdt = p.TextWidth(kTitles[i], 13) + 24;
+        const std::wstring menuTitle = Tr(kTitles[i]);
+        const float wdt = p.TextWidth(menuTitle, 13) + 24;
         const Rect item{x, r.y + 3, wdt, r.h - 6};
         menuTitleRects_[i] = item;
         c.PushId(static_cast<uint64_t>(i));
@@ -632,7 +653,7 @@ void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
         c.PopId();
         const bool open = menuPopup_.open && static_cast<int>(openMenu_) == i;
         if (open || b.hovered) p.FillRoundRect(item, 4, open ? theme::Hover : theme::Pressed);
-        p.Text(item, kTitles[i], Style(13, theme::Text, false, ui::HAlign::Center));
+        p.Text(item, menuTitle, Style(13, theme::Text, false, ui::HAlign::Center));
         if (b.clicked) {
             openMenu_ = static_cast<Menu>(i);
             menuPopup_.OpenAt(item.x, r.Bottom());
@@ -673,7 +694,7 @@ void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
     p.FillRect({r.x, r.Bottom() - 1, r.w, 1}, theme::Border);
     if (!workspaces_[0]->type) {
         // No plugin provides a "software", so there are no tabs to show.
-        p.Text(r.Inset(16, 0, 16, 0), L"ソフトはまだありません — プラグインを追加すると、ここにソフト (ゲーム・イラスト・作曲 …) のタブが並びます",
+        p.Text(r.Inset(16, 0, 16, 0), Tr(L"ソフトはまだありません — プラグインを追加すると、ここにソフト (ゲーム・イラスト・作曲 …) のタブが並びます"),
                Style(12, theme::TextFaint));
         return;
     }
@@ -708,7 +729,7 @@ void EditorScreen::DrawHierarchy(ui::Context& c, Rect r) {
     hint.wrap = true;
     hint.v = ui::VAlign::Top;
     c.P().Text(r.Inset(12, 10, 12, 10),
-               ws.software ? L"このソフトは階層を使いません。" : L"ソフトを入れると、ここに中身 (ゲームならエンティティの親子) が並びます。", hint);
+               ws.software ? Tr(L"このソフトは階層を使いません。") : Tr(L"ソフトを入れると、ここに中身 (ゲームならエンティティの親子) が並びます。"), hint);
 }
 
 void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
@@ -730,7 +751,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
         ui::TextStyle hint = Style(12, theme::TextFaint);
         hint.wrap = true;
         hint.v = ui::VAlign::Top;
-        c.P().Text(r.Inset(12, 10, 12, 10), !gone && !target.title.empty() ? target.title : L"何も選ばれていません。", hint);
+        c.P().Text(r.Inset(12, 10, 12, 10), !gone && !target.title.empty() ? target.title : Tr(L"何も選ばれていません。"), hint);
         return;
     }
     const Rect title = ui::TakeTop(r, 34);
@@ -749,13 +770,12 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
 void EditorScreen::DrawStart(ui::Context& c, Rect r) {
     auto& p = c.P();
     const float cy = r.y + r.h * 0.5f;
-    p.Text({r.x, cy - 46, r.w, 30}, L"ソフトがまだありません", Style(20, theme::Text, true, ui::HAlign::Center));
+    p.Text({r.x, cy - 46, r.w, 30}, Tr(L"ソフトがまだありません"), Style(20, theme::Text, true, ui::HAlign::Center));
     ui::TextStyle body = Style(13, theme::TextDim, false, ui::HAlign::Center);
     body.wrap = true;
     body.v = ui::VAlign::Top;
     p.Text({r.x + 40, cy - 6, r.w - 80, 80},
-           L"ゲーム・イラスト・作曲・3D モデルなどの機能は、プラグインとして追加します。\n"
-           L"プラグインを入れると上のタブにソフトが並び、ここにそのソフトのパネルが表示されます。",
+           Tr(L"ゲーム・イラスト・作曲・3D モデルなどの機能は、プラグインとして追加します。\nプラグインを入れると上のタブにソフトが並び、ここにそのソフトのパネルが表示されます。"),
            body);
 }
 
@@ -789,7 +809,7 @@ void EditorScreen::DrawAssets(ui::Context& c, Rect r) {
     p.Text({r.x + 12, r.y + 4, r.w - 24, 22}, project_.AssetsDir().native(), Style(12, theme::TextFaint));
     const Rect view = r.Inset(0, 28, 0, 2);
     if (assets_.empty()) {
-        p.Text({view.x + 12, view.y + 4, view.w - 24, 22}, L"Assets フォルダは空です。", Style(12, theme::TextDim));
+        p.Text({view.x + 12, view.y + 4, view.w - 24, 22}, Tr(L"Assets フォルダは空です。"), Style(12, theme::TextDim));
         return;
     }
     const float lineH = 24;
@@ -811,9 +831,9 @@ void EditorScreen::DrawStatusBar(ui::Context& c, Rect r) {
     p.FillRect({r.x, r.y, r.w, 1}, theme::Border);
     p.Text(r.Inset(12, 0, 260, 0), project_.file.native(), Style(12, theme::TextFaint));
     if (dirty_) {
-        p.Text(r.Inset(12, 0, 12, 0), L"● 未保存の変更があります", Style(12, theme::Warn, false, ui::HAlign::Right));
+        p.Text(r.Inset(12, 0, 12, 0), Tr(L"● 未保存の変更があります"), Style(12, theme::Warn, false, ui::HAlign::Right));
     } else {
-        p.Text(r.Inset(12, 0, 12, 0), L"保存済み", Style(12, theme::TextDim, false, ui::HAlign::Right));
+        p.Text(r.Inset(12, 0, 12, 0), Tr(L"保存済み"), Style(12, theme::TextDim, false, ui::HAlign::Right));
     }
 }
 
@@ -825,20 +845,20 @@ void EditorScreen::DrawModal(ui::Context& c) {
     body.v = ui::VAlign::Top;
 
     if (modal_ == Modal::UnsavedChanges) {
-        const Rect cr = w::BeginModal(c, 600, 220, L"保存されていない変更があります");
+        const Rect cr = w::BeginModal(c, 600, 220, Tr(L"保存されていない変更があります"));
         p.Text({cr.x, cr.y, cr.w, cr.h - 48},
-               std::format(L"「{}」の変更を保存しますか？\n保存しないで閉じると、変更は失われます。", Utf8ToWide(project_.Name())), body);
+               TrF(L"「{}」の変更を保存しますか？\n保存しないで閉じると、変更は失われます。", Utf8ToWide(project_.Name())), body);
         const Rect save{cr.Right() - 150, cr.Bottom() - 36, 150, 36};
         const Rect discard{save.x - 12 - 150, save.y, 150, 36};
         const Rect cancel{discard.x - 12 - 110, save.y, 110, 36};
-        if (w::Button(c, "uc.cancel", cancel, L"キャンセル") || c.KeyPressed(ui::Key::Escape)) {
+        if (w::Button(c, "uc.cancel", cancel, Tr(L"キャンセル")) || c.KeyPressed(ui::Key::Escape)) {
             modal_ = Modal::None;
             pendingClose_ = CloseAction::None;
-        } else if (w::Button(c, "uc.discard", discard, L"保存せずに閉じる")) {
+        } else if (w::Button(c, "uc.discard", discard, Tr(L"保存せずに閉じる"))) {
             modal_ = Modal::None;
             log::Warn("保存せずに閉じました: {}", project_.Name());
             FinishClose(pendingClose_);
-        } else if (w::Button(c, "uc.save", save, L"保存して閉じる", w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
+        } else if (w::Button(c, "uc.save", save, Tr(L"保存して閉じる"), w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
             modal_ = Modal::None;
             if (Save()) FinishClose(pendingClose_);  // on failure Save() shows the error and the editor stays open
         }
@@ -848,18 +868,18 @@ void EditorScreen::DrawModal(ui::Context& c) {
     if (modal_ == Modal::InstallPlugin) {
         std::wstring list;
         if (installPlan_.size() > 1) {
-            list = L"\n前提のプラグインも一緒に入ります:";
+            list = L"\n" + Tr(L"前提のプラグインも一緒に入ります:");
             for (const PluginId& id : installPlan_) list += L"\n・" + Utf8ToWide(app_.GetPlugins().DisplayName(id));
         }
-        const Rect cr = w::BeginModal(c, 620, 250 + 20 * static_cast<float>(installPlan_.size()), L"プラグインのインストール");
+        const Rect cr = w::BeginModal(c, 620, 250 + 20 * static_cast<float>(installPlan_.size()), Tr(L"プラグインのインストール"));
         p.Text({cr.x, cr.y, cr.w, cr.h - 48},
-               L"「" + installName_ + L"」をインストールします。" + list +
-                   L"\n\nプロジェクトを保存してから、このプロジェクトを開き直します。\n元に戻す (Undo) の履歴は消えます。",
+               TrF(L"「{}」をインストールします。", installName_) + list + L"\n\n" +
+                   Tr(L"プロジェクトを保存してから、このプロジェクトを開き直します。\n元に戻す (Undo) の履歴は消えます。"),
                body);
         const Rect ok{cr.Right() - 180, cr.Bottom() - 36, 180, 36};
-        if (w::Button(c, "ip.cancel", {ok.x - 12 - 110, ok.y, 110, 36}, L"やめる") || c.KeyPressed(ui::Key::Escape)) {
+        if (w::Button(c, "ip.cancel", {ok.x - 12 - 110, ok.y, 110, 36}, Tr(L"やめる")) || c.KeyPressed(ui::Key::Escape)) {
             modal_ = Modal::None;
-        } else if (w::Button(c, "ip.ok", ok, L"保存して開き直す", w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
+        } else if (w::Button(c, "ip.ok", ok, Tr(L"保存して開き直す"), w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
             modal_ = Modal::None;
             // A failed save shows its error and the editor stays as it is (nothing is lost).
             if (Save()) app_.RequestInstallAndReopen(installPlan_, project_.file);
@@ -868,7 +888,7 @@ void EditorScreen::DrawModal(ui::Context& c) {
     }
 
     if (modal_ == Modal::Error) {
-        const Rect cr = w::BeginModal(c, 600, 260, L"エラー");
+        const Rect cr = w::BeginModal(c, 600, 260, Tr(L"エラー"));
         p.Text({cr.x, cr.y, cr.w, cr.h - 48}, modalText_, body);
         if (w::Button(c, "err.ok", {cr.Right() - 110, cr.Bottom() - 36, 110, 36}, L"OK", w::ButtonKind::Primary) ||
             c.KeyPressed(ui::Key::Enter) || c.KeyPressed(ui::Key::Escape)) {
@@ -878,12 +898,12 @@ void EditorScreen::DrawModal(ui::Context& c) {
     }
 
     if (modal_ == Modal::About) {
-        const Rect cr = w::BeginModal(c, 520, 230, L"RM Engine について");
+        const Rect cr = w::BeginModal(c, 520, 230, Tr(L"RM Engine について"));
         p.Text({cr.x, cr.y, cr.w, cr.h - 48},
-               std::format(L"RM Engine  バージョン {}\n\nゲーム・イラスト・作曲・3D モデルなどを、プラグインを足して 1 つのソフトで作るための制作環境。",
+               TrF(L"RM Engine  バージョン {}\n\nゲーム・イラスト・作曲・3D モデルなどを、プラグインを足して 1 つのソフトで作るための制作環境。",
                            kEngineVersionW),
                body);
-        if (w::Button(c, "about.ok", {cr.Right() - 110, cr.Bottom() - 36, 110, 36}, L"閉じる", w::ButtonKind::Primary) ||
+        if (w::Button(c, "about.ok", {cr.Right() - 110, cr.Bottom() - 36, 110, 36}, Tr(L"閉じる"), w::ButtonKind::Primary) ||
             c.KeyPressed(ui::Key::Enter) || c.KeyPressed(ui::Key::Escape)) {
             modal_ = Modal::None;
         }

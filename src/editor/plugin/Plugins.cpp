@@ -2,6 +2,7 @@
 
 #include "base/Log.h"
 #include "base/Utf.h"
+#include "editor/lang/Lang.h"
 #include "platform/Shell.h"
 
 #include <format>
@@ -49,7 +50,7 @@ ReadResult ReadManifest(const fs::path& folder) {
         if (auto doc = json::Parse(*bytes, &pe)) {
             r.manifest = ParsePluginManifest(*doc, &r.error);
         } else {
-            r.error = std::format("plugin.json が壊れています ({} 行 {} 文字目: {})", pe.line, pe.column, pe.message);
+            r.error = TrU8F("plugin.json が壊れています ({} 行 {} 文字目: {})", pe.line, pe.column, pe.message);
         }
     } else {
         r.error = err;
@@ -153,7 +154,7 @@ bool Plugins::IsEnabled(const PluginId& id) const {
 
 std::string Plugins::DisplayName(const PluginId& id) const {
     const Entry* e = Find(id);
-    return e ? e->status.displayName : id.Text();
+    return e ? TrU8(e->status.displayName) : id.Text();
 }
 
 std::vector<PluginId> Plugins::InstallPlan(const PluginId& id, std::vector<PluginId>* unavailable) const {
@@ -179,7 +180,7 @@ bool Plugins::CopyIn(const PluginId& id, std::string* error) {
     if (!ec) fs::rename(temp, to, ec);
     if (ec) {
         fs::remove_all(temp, ec);
-        if (error) *error = std::format("「{}」をインストールできませんでした: {}", DisplayName(id), FsError(ec));
+        if (error) *error = TrU8F("「{}」をインストールできませんでした: {}", DisplayName(id), FsError(ec));
         return false;
     }
     log::Info("プラグインをインストールしました: {} ({})", DisplayName(id), id.Text());
@@ -197,7 +198,7 @@ bool Plugins::Uninstall(const PluginId& id, std::string* error) {
     std::error_code ec;
     fs::remove_all(FolderOf(installedDir_, id), ec);
     if (ec) {
-        if (error) *error = std::format("「{}」を削除できませんでした: {}", DisplayName(id), FsError(ec));
+        if (error) *error = TrU8F("「{}」を削除できませんでした: {}", DisplayName(id), FsError(ec));
         return false;
     }
     log::Info("プラグインを削除しました: {} ({})", DisplayName(id), id.Text());

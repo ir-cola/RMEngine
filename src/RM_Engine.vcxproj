@@ -39,7 +39,7 @@
   <ItemDefinitionGroup>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>d3d11.lib;dxgi.lib;d2d1.lib;dwrite.lib;windowscodecs.lib;dwmapi.lib;imm32.lib;shcore.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;d2d1.lib;dwrite.lib;windowscodecs.lib;dwmapi.lib;imm32.lib;shcore.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(RMRoot)resources\app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
@@ -68,6 +68,9 @@
     <ClCompile Include="ui\TextEdit.cpp" />
     <ClCompile Include="editor\app\App.cpp" />
     <ClCompile Include="editor\app\Paths.cpp" />
+    <ClCompile Include="editor\app\Integrity.cpp" />
+    <ClCompile Include="editor\lang\Lang.cpp" />
+    <ClCompile Include="editor\hub\Updates.cpp" />
     <ClCompile Include="editor\dock\DockLayout.cpp" />
     <ClCompile Include="editor\dock\DockSpace.cpp" />
     <ClCompile Include="editor\inspector\Inspector.cpp" />
@@ -101,6 +104,10 @@
     <ClInclude Include="ui\Types.h" />
     <ClInclude Include="editor\app\App.h" />
     <ClInclude Include="editor\app\Paths.h" />
+    <ClInclude Include="editor\app\Integrity.h" />
+    <ClInclude Include="editor\lang\Lang.h" />
+    <ClInclude Include="editor\hub\Updates.h" />
+    <ClInclude Include="editor\project\Options.h" />
     <ClInclude Include="editor\app\ScreenWindow.h" />
     <ClInclude Include="editor\dock\DockLayout.h" />
     <ClInclude Include="editor\dock\DockSpace.h" />
@@ -124,6 +131,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\resources\app.manifest" />
+    <None Include="..\resources\lang\en.json" />
+    <None Include="..\resources\updates.json" />
   </ItemGroup>
   <!-- Plugins (plugins/<author>/<name>/): every source file is built in (static linking).
        Listed by wildcard so adding a plugin never means editing this file. -->
@@ -144,8 +153,13 @@
   <!-- plugin.json files go next to the exe as Plugins/<author>/<name>/plugin.json (read at start-up). -->
   <Target Name="CopyPluginManifests" AfterTargets="Build">
     <ItemGroup>
-      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json" />
+      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json" />
+      <LangFile Include="$(RMRoot)resources\lang\*.json" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginManifest)" DestinationFiles="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <!-- the core's translations: <exe>/Lang/en.json (editor/lang) -->
+    <Copy SourceFiles="@(LangFile)" DestinationFolder="$(OutDir)Lang" SkipUnchangedFiles="true" />
+    <!-- the list of the engine's files with their SHA-256, for the integrity check (Hub > オプション) -->
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(RMRoot)tools\make_filelist.ps1&quot; -Dir &quot;$(OutDir).&quot;" />
   </Target>
 </Project>

@@ -5,6 +5,8 @@
 
 #include "base/Json.h"
 #include "core/PluginId.h"
+#include "core/reflect/Data.h"
+#include "editor/project/Options.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -36,10 +38,16 @@ public:
     bool HasHiddenNotice() const;
     void ShowNoticesAgain();  // forgets "この状態が変わるまで表示しない"
 
+    // The options (hub.json "options"; keys of a newer version are kept).
+    Options& GetOptions() { return options_; }
+    reflect::Unknowns& OptionsUnknowns() { return optionsUnknowns_; }
+
 
 private:
     json::Value doc_ = json::Value::MakeObject();
     std::vector<RecentProject> recent_;
+    Options options_;
+    reflect::Unknowns optionsUnknowns_;
 };
 
 // Windows paths compare case-insensitively.

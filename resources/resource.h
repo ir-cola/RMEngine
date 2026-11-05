@@ -3,3 +3,4 @@
 
 #define IDI_APP 101
 #define IDR_LOGO_HUB 201
+#define IDR_UPDATES 202

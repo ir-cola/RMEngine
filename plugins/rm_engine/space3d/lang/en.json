@@ -1,0 +1,8 @@
+{
+  "3D 空間": "3D Space",
+  "Transform (位置・回転・大きさ)": "Transform (position, rotation, scale)",
+  "X 軸 → Y 軸 → Z 軸 の順に回します (オイラー角)": "Rotates about X, then Y, then Z (Euler angles)",
+  "位置": "Position",
+  "回転 (度)": "Rotation (degrees)",
+  "大きさ": "Scale"
+}

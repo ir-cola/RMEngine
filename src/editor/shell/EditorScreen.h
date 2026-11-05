@@ -23,6 +23,7 @@
 #include "editor/app/ScreenWindow.h"
 #include "editor/dock/DockSpace.h"
 #include "editor/inspector/Inspector.h"
+#include "editor/lang/Lang.h"
 #include "editor/plugin/Software.h"
 #include "editor/project/Project.h"
 #include "editor/widgets/Widgets.h"
@@ -44,6 +45,7 @@ public:
     bool Open();
     void Close() override;  // closes the floating panel windows first
     void ShowError(std::wstring message);
+    void OnLookChanged() override;  // the panel windows too
 
     // --- Called by the floating panel windows ---
     void DrawFloating(ui::Context& c, float width, float height, FloatWindow& window);
@@ -54,8 +56,10 @@ public:
 protected:
     void OnFrame(ui::Context& c, float width, float height) override;
     void OnCloseRequested() override;
+    void OnTimer(UINT_PTR id) override;  // auto-save
 
 private:
+    static constexpr UINT_PTR kAutoSaveTimer = 100;
     enum class CloseAction { None, ToHub, Quit };
     enum class Modal { None, UnsavedChanges, Error, About, InstallPlugin };
     enum class Menu { None = -1, File, Edit, Window, Plugins, Help, Debug, Count };
@@ -92,7 +96,7 @@ private:
             editor_.RedrawAll();
         }
         dock::Layout DefaultLayout() const;
-        std::wstring Title() const { return type ? type->title : L"コア"; }
+        std::wstring Title() const { return Tr(type ? type->title : TrKey(L"コア")); }  // in the language in use
 
         const SoftwareType* type = nullptr;  // nullptr: no software (core panels + "start")
         UndoHistory history;                 // declared before `software`, so it outlives it
@@ -137,6 +141,7 @@ private:
 
     Project project_;
     bool dirty_ = false;
+    double dirtySince_ = 0;  // platform::NowSeconds() of the first unsaved change
 
     Modal modal_ = Modal::None;
     CloseAction pendingClose_ = CloseAction::None;

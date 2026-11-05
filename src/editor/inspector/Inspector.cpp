@@ -1,3 +1,4 @@
+#include "editor/lang/Lang.h"
 #include "editor/inspector/Inspector.h"
 
 #include "base/Utf.h"
@@ -70,7 +71,7 @@ std::optional<std::string> CommitField(Pass& x, std::string_view id, const Rect&
 
 std::string Summary(const FieldDesc& f, const reflect::ValueType& vt, const void* p) {
     switch (vt.type) {
-        case FieldType::Bool: return *static_cast<const bool*>(p) ? "はい" : "いいえ";
+        case FieldType::Bool: return *static_cast<const bool*>(p) ? TrU8("はい") : TrU8("いいえ");
         case FieldType::Int: return std::to_string(*static_cast<const int*>(p));
         case FieldType::Float: return reflect::FormatNumber(f, *static_cast<const float*>(p));
         case FieldType::String: return "\"" + *static_cast<const std::string*>(p) + "\"";
@@ -84,7 +85,7 @@ std::string Summary(const FieldDesc& f, const reflect::ValueType& vt, const void
         }
         case FieldType::Enum: {
             const reflect::EnumItem* it = reflect::FindItem(*vt.enumType, vt.enumType->get(p));
-            return it ? it->label : std::to_string(vt.enumType->get(p));
+            return it ? TrU8(it->label) : std::to_string(vt.enumType->get(p));
         }
         case FieldType::Struct: return "{…}";
         case FieldType::Array: return "[…]";
@@ -114,8 +115,8 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
         x.y += kRow;
     }
 
-    p.Text(labelR, Utf8ToWide(f.Label()), Text(12, enabled ? theme::TextDim : theme::TextFaint, f.value.type == FieldType::Struct));
-    if (f.tooltip && c.IsHovered(labelR)) x.tooltip = Utf8ToWide(f.tooltip);
+    p.Text(labelR, Utf8ToWide(TrU8(f.Label())), Text(12, enabled ? theme::TextDim : theme::TextFaint, f.value.type == FieldType::Struct));
+    if (f.tooltip && c.IsHovered(labelR)) x.tooltip = Utf8ToWide(TrU8(f.tooltip));
 
     c.PushId("field");
     for (const size_t i : path) c.PushId(static_cast<uint64_t>(i));
@@ -181,9 +182,9 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
             const reflect::EnumDesc& e = *f.value.enumType;
             std::wstring shown;
             if (const std::string* unknown = u ? u->Enum(f.name) : nullptr) {
-                shown = Utf8ToWide(*unknown) + L" (不明)";
+                shown = Utf8ToWide(*unknown) + Tr(L" (不明)");
             } else if (const reflect::EnumItem* it = reflect::FindItem(e, e.get(value))) {
-                shown = Utf8ToWide(it->label);
+                shown = Utf8ToWide(TrU8(it->label));
             } else {
                 shown = std::to_wstring(e.get(value));
             }
@@ -207,7 +208,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
                 const size_t block = x.block;
                 c.AddOverlay([&c, st, &e, path, before, width, label, block] {
                     std::vector<w::MenuItem> items;
-                    for (const auto& it : e.items) items.push_back({Utf8ToWide(it.label)});
+                    for (const auto& it : e.items) items.push_back({Utf8ToWide(TrU8(it.label))});
                     const bool wasEnabled = c.InputEnabled();
                     c.SetInputEnabled(true);
                     const int picked = w::MenuPopup(c, st->popup, items, width);
@@ -233,7 +234,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
         case FieldType::Array: {
             const reflect::ArrayOps& ops = *f.array;
             const size_t count = ops.size(value);
-            p.Text(valueR, std::format(L"{} 個  (追加・削除・並べ替えはこれから)", count), Text(12, theme::TextFaint));
+            p.Text(valueR, TrF(L"{} 個  (追加・削除・並べ替えはこれから)", count), Text(12, theme::TextFaint));
             const size_t shownCount = std::min<size_t>(count, 20);
             for (size_t i = 0; i < shownCount; ++i) {
                 const Rect r{x.view.x + 12 + indent + kIndent, x.y, x.view.w - 24 - indent - kIndent, 24};
@@ -243,7 +244,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
                 x.y += 24;
             }
             if (count > shownCount) {
-                p.Text({x.view.x + 12 + indent + kIndent, x.y, 300, 22}, std::format(L"… ほか {} 個", count - shownCount),
+                p.Text({x.view.x + 12 + indent + kIndent, x.y, 300, 22}, TrF(L"… ほか {} 個", count - shownCount),
                        Text(12, theme::TextFaint));
                 x.y += 22;
             }

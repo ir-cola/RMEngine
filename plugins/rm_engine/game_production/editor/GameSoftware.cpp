@@ -3,6 +3,7 @@
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "core/reflect/Data.h"
+#include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
@@ -17,12 +18,16 @@ namespace {
 
 namespace theme = editor::theme;
 namespace tree = editor::tree;
+using editor::Tr;
+using editor::TrF;
+using editor::TrKey;
+using editor::TrU8;
 using ui::Rect;
 
 constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
 
-void Placeholder(ui::Context& c, const Rect& r, const wchar_t* title, const wchar_t* body) {
+void Placeholder(ui::Context& c, const Rect& r, const std::wstring& title, const std::wstring& body) {
     auto& p = c.P();
     const float cy = r.y + r.h * 0.5f;
     ui::TextStyle ts;
@@ -78,16 +83,16 @@ public:
     // --- Software ---------------------------------------------------------------------------
     std::vector<editor::dock::PanelType> Panels() override {
         return {
-            {kSceneView, L"シーン",
+            {kSceneView, TrKey(L"シーン"),
              [](ui::Context& c, const Rect& r) {
-                 Placeholder(c, r, L"シーンビュー",
-                             L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。");
+                 Placeholder(c, r, Tr(L"シーンビュー"),
+                             Tr(L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。"));
              }},
-            {kGameView, L"ゲーム",
+            {kGameView, TrKey(L"ゲーム"),
              [this](ui::Context& c, const Rect& r) {
-                 Placeholder(c, r, L"ゲームビュー", L"Play を押すと、ゲームのカメラから見た画面がここに映ります。");
+                 Placeholder(c, r, Tr(L"ゲームビュー"), Tr(L"Play を押すと、ゲームのカメラから見た画面がここに映ります。"));
                  const Rect button{r.x + (r.w - 200) * 0.5f, r.y + r.h * 0.5f + 70, 200, 36};
-                 if (editor::w::Button(c, "settings", button, L"ゲームの設定を開く")) InspectSettings();
+                 if (editor::w::Button(c, "settings", button, Tr(L"ゲームの設定を開く"))) InspectSettings();
              }},
         };
     }
@@ -142,7 +147,7 @@ public:
     }
 
     std::wstring EmptyText() const override {
-        return L"エンティティはまだありません。\nここを右クリックして「エンティティを作る」で作れます。";
+        return Tr(L"エンティティはまだありません。\nここを右クリックして「エンティティを作る」で作れます。");
     }
 
     bool CanRename(tree::ItemId id) const override { return scene_.Find(static_cast<int>(id)) != nullptr; }
@@ -177,7 +182,7 @@ public:
             inspectingEntities_ = true;
         } else if (ids.size() > 1) {
             editor::Inspectable many;
-            many.title = std::format(L"{} 個のエンティティを選んでいます。\nまとめての編集はこれからです。", ids.size());
+            many.title = TrF(L"{} 個のエンティティを選んでいます。\nまとめての編集はこれからです。", ids.size());
             host_.Inspect(std::move(many));
             inspectingEntities_ = true;
         } else if (inspectingEntities_) {
@@ -191,7 +196,7 @@ public:
         std::vector<tree::Action> list;
 
         tree::Action create;
-        create.label = L"エンティティを作る";
+        create.label = Tr(L"エンティティを作る");
         create.key = ui::Key::N;
         create.ctrl = create.shift = true;
         create.run = [this, sel] {
@@ -210,7 +215,7 @@ public:
         list.push_back(std::move(create));
 
         tree::Action child;
-        child.label = L"子エンティティを作る";
+        child.label = Tr(L"子エンティティを作る");
         child.enabled = sel.size() == 1;
         if (child.enabled) child.run = [this, sel] { CreateEntity(sel[0], Scene::kEnd); };
         list.push_back(std::move(child));
@@ -221,7 +226,7 @@ public:
         list.push_back(sep);
 
         tree::Action dup;
-        dup.label = L"複製";
+        dup.label = Tr(L"複製");
         dup.key = ui::Key::D;
         dup.ctrl = true;
         dup.run = [this, sel] {
@@ -237,7 +242,7 @@ public:
             return e && e->data.parent != 0;
         });
         tree::Action unparent;
-        unparent.label = L"親から外す (一番上に出す)";
+        unparent.label = Tr(L"親から外す (一番上に出す)");
         unparent.enabled = anyParent;
         if (anyParent) {
             unparent.run = [this, sel] {
@@ -249,7 +254,7 @@ public:
 
         list.push_back(sep);
         tree::Action del;
-        del.label = L"削除";
+        del.label = Tr(L"削除");
         del.key = ui::Key::Delete;
         del.run = [this, sel] {
             Edit(sel.size() == 1 ? std::format("「{}」を削除", NameOf(sel[0])) : std::format("{} 個のエンティティを削除", sel.size()),
@@ -263,7 +268,7 @@ private:
     void InspectSettings() {
         inspectingEntities_ = false;
         host_.Inspect(editor::Inspectable::Single(
-            reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, L"ゲームの設定"));
+            reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, Tr(L"ゲームの設定")));
         host_.SelectInTree({});
     }
 
@@ -287,7 +292,7 @@ private:
     // "部品を足す" under them. Asked again every time it is drawn (undo may add or take components).
     editor::Inspectable EntityInspectable(int id) {
         editor::Inspectable in;
-        in.title = L"エンティティ";
+        in.title = Tr(L"エンティティ");
         in.blocks = [this, id] {
             std::vector<editor::InspectBlock> blocks;
             const SceneEntity* e = scene_.Find(id);
@@ -297,27 +302,27 @@ private:
                 editor::w::Action remove;
                 const std::string type = c.type;
                 const std::string label = c.Known() ? c.value.Type()->label : c.type;
-                remove.label = L"外す";
+                remove.label = Tr(L"外す");
                 remove.run = [this, id, type, label] {
                     Edit(std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type); });
                 };
                 if (c.Known()) {
-                    blocks.push_back({c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(label), {}, {remove}});
+                    blocks.push_back({c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(TrU8(label)), {}, {remove}});
                 } else {
-                    blocks.push_back({nullptr, {}, Utf8ToWide(label) + L" (使えない部品)",
-                                      L"この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。", {remove}});
+                    blocks.push_back({nullptr, {}, Utf8ToWide(label) + Tr(L" (使えない部品)"),
+                                      Tr(L"この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。"), {remove}});
                 }
             }
             return blocks;
         };
-        in.addLabel = L"＋ 部品を足す";
+        in.addLabel = Tr(L"＋ 部品を足す");
         in.addMenu = [this, id] {
             std::vector<editor::w::Action> list;
             const SceneEntity* e = scene_.Find(id);
             for (const reflect::TypeDesc* t : scene_.ComponentTypes()) {
                 if (!e || e->FindComponent(t->name)) continue;
                 editor::w::Action add;
-                add.label = Utf8ToWide(t->label);
+                add.label = Utf8ToWide(TrU8(t->label));
                 add.run = [this, id, t] {
                     Edit(std::format("「{}」を足す", t->label), [&] { scene_.AddComponent(id, *t); });
                 };
@@ -325,8 +330,8 @@ private:
             }
             if (list.empty()) {
                 editor::w::Action none;
-                none.label = scene_.ComponentTypes().empty() ? L"足せる部品がありません (3D 空間 などのプラグインで増えます)"
-                                                             : L"足せる部品は全部付いています";
+                none.label = scene_.ComponentTypes().empty() ? Tr(L"足せる部品がありません (3D 空間 などのプラグインで増えます)")
+                                                             : Tr(L"足せる部品は全部付いています");
                 none.enabled = false;
                 list.push_back(std::move(none));
             }
@@ -354,7 +359,7 @@ private:
     void CreateEntity(int parent, size_t index) {
         int made = 0;
         Edit("エンティティを作成", [&] {
-            made = scene_.Create("エンティティ", parent, index);
+            made = scene_.Create(TrU8("エンティティ"), parent, index);  // the name it starts with, in the language in use
             for (const reflect::TypeDesc* t : newEntityTypes_) scene_.AddComponent(made, *t);  // e.g. Transform
         });
         host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
@@ -374,7 +379,7 @@ private:
 void RegisterEditor(editor::PluginRegistry& registry) {
     editor::SoftwareType t;
     t.id = "game";
-    t.title = L"ゲーム";
+    t.title = TrKey(L"ゲーム");
     t.create = [](editor::SoftwareHost& host) -> std::unique_ptr<editor::Software> {
         return std::make_unique<GameSoftware>(host);
     };

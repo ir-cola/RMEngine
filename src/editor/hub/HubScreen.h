@@ -5,6 +5,8 @@
 
 #include "core/PluginId.h"
 #include "editor/app/ScreenWindow.h"
+#include "editor/inspector/Inspector.h"
+#include "editor/lang/Lang.h"
 #include "editor/widgets/Widgets.h"
 
 #include <cstdint>
@@ -18,7 +20,8 @@ class HubScreen final : public ScreenWindow {
 public:
     explicit HubScreen(App& app) : ScreenWindow(app) {}
     bool Open();
-    void ShowError(std::wstring message, std::filesystem::path removableFile = {}, std::wstring title = L"開けませんでした");
+    void OnLookChanged() override;  // texts made earlier (the list) are made again in the new language
+    void ShowError(std::wstring message, std::filesystem::path removableFile = {}, std::wstring title = Tr(L"開けませんでした"));
     // Asked by the App before opening a project.
     //   blocking: the project uses plugins that cannot be used -> "起動できません。前提プラグインをインストールしますか？"
     //   limited:  installed plugins lack a requirement -> told once, [インストール] [このまま開く]
@@ -31,8 +34,8 @@ protected:
     void OnCloseRequested() override;
 
 private:
-    enum class Page { Projects, Plugins, Options };
-    enum class Modal { None, NewProject, Rename, Error, Plugin };
+    enum class Page { Projects, Plugins, Updates, Options };
+    enum class Modal { None, NewProject, Rename, Error, Plugin, Integrity };
     enum class PromptKind { Blocking, Limited, Install, Remove };
 
     // One plugin question at a time (design: pop-ups one by one).
@@ -64,6 +67,9 @@ private:
     void DrawProjects(ui::Context& c, ui::Rect r);
     void DrawPlugins(ui::Context& c, ui::Rect r);
     void DrawOptions(ui::Context& c, ui::Rect r);
+    void DrawUpdates(ui::Context& c, ui::Rect r);
+    void DrawIntegrity(ui::Context& c);
+    void RunIntegrityCheck();
     void DrawNewProject(ui::Context& c);
     void DrawRename(ui::Context& c);
     void DrawError(ui::Context& c);
@@ -115,6 +121,12 @@ private:
     bool focusRename_ = false;
 
     Prompt prompt_;
+
+    // Options page (the options are drawn by the inspector from their type)
+    inspector::State optionsInspector_;
+    // Integrity check result
+    std::wstring integrityText_;
+    std::vector<PluginId> integrityStale_;  // installed plugins that differ from the engine's copies
 
     // Error dialog
     std::wstring errorTitle_;

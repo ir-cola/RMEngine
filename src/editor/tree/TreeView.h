@@ -15,6 +15,7 @@
 // The view never changes the software's data. Renaming and moving are requests the software
 // turns into undo entries (rule 7); what the menu rows do is up to the software.
 
+#include "editor/lang/Lang.h"
 #include "editor/tree/TreeModel.h"
 #include "editor/widgets/Widgets.h"
 #include "ui/Context.h"
@@ -37,7 +38,7 @@ public:
     // Every item, in display order (see Item). Called whenever the tree is drawn.
     virtual void Items(std::vector<Item>& out) = 0;
     // Shown when there are no items.
-    virtual std::wstring EmptyText() const { return L"まだ何もありません。"; }
+    virtual std::wstring EmptyText() const { return Tr(L"まだ何もありません。"); }
 
     virtual bool CanRename(ItemId id) const {
         (void)id;

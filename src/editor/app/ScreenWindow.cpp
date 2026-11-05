@@ -1,10 +1,13 @@
 #include "editor/app/ScreenWindow.h"
 
 #include "editor/app/App.h"
+#include "editor/widgets/Theme.h"
 #include "platform/Shell.h"
 
 #include <imm.h>
 #include <windowsx.h>
+
+#include <string_view>
 
 namespace rm::editor {
 
@@ -74,7 +77,10 @@ void ScreenWindow::Close() {
     window_.Destroy();
 }
 
-bool ScreenWindow::CreateScreenWindow(const platform::WindowDesc& desc, int showCmd) {
+bool ScreenWindow::CreateScreenWindow(const platform::WindowDesc& descIn, int showCmd) {
+    platform::WindowDesc desc = descIn;
+    desc.captionRgb = theme::CaptionRgb;  // the title bar in the colors of the theme in use
+    desc.darkCaption = !theme::IsLight;
     if (!window_.Create(desc, this)) return false;
     if (!target_.Create(app_.Gfx(), window_.Handle(), window_.Dpi())) return false;
     painter_.Init(app_.Gfx().DWrite());
@@ -89,6 +95,11 @@ bool ScreenWindow::CreateScreenWindow(const platform::WindowDesc& desc, int show
     if (showCmd != SW_SHOWNOACTIVATE) SetForegroundWindow(Hwnd());
     Invalidate();
     return true;
+}
+
+void ScreenWindow::OnLookChanged() {
+    window_.SetCaption(!theme::IsLight, theme::CaptionRgb);
+    Invalidate();
 }
 
 void ScreenWindow::Invalidate() {
@@ -347,13 +358,22 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             handled = false;
             return 0;
         case WM_TIMER:
-            if (wp == kCaretTimer) Invalidate();
+            if (wp == kCaretTimer) {
+                Invalidate();
+            } else {
+                OnTimer(wp);
+            }
             return 0;
         case WM_CLOSE:
             OnCloseRequested();
             return 0;
         case kWmDeferred:
             RunDeferred();
+            return 0;
+        case WM_SETTINGCHANGE:
+            // Windows' light / dark setting changed (for "PC の設定に合わせる").
+            if (lp && std::wstring_view(reinterpret_cast<const wchar_t*>(lp)) == L"ImmersiveColorSet") app_.SystemThemeChanged();
+            handled = false;
             return 0;
         default:
             OnOtherMessage(m, wp, lp);

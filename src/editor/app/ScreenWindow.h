@@ -35,6 +35,8 @@ public:
     void Defer(std::function<void()> fn);
     void SetTitle(std::wstring_view title) { window_.SetTitle(title); }
     float Scale() const { return window_.Scale(); }
+    // The color theme or the language changed: the title bar follows, everything is drawn again.
+    virtual void OnLookChanged();
 
 protected:
     bool CreateScreenWindow(const platform::WindowDesc& desc, int showCmd);
@@ -43,6 +45,8 @@ protected:
     virtual void OnFrame(ui::Context& c, float width, float height) = 0;
     virtual void OnCloseRequested() = 0;  // the title bar X / Alt+F4
     // Messages the screen window does not handle itself (WM_MOVING ...). DefWindowProc still runs.
+    // A timer the screen set with SetTimer(Hwnd(), id, ...) (ids from 100 up; 1 is the caret).
+    virtual void OnTimer(UINT_PTR id) { (void)id; }
     virtual void OnOtherMessage(UINT msg, WPARAM wp, LPARAM lp) {
         (void)msg;
         (void)wp;

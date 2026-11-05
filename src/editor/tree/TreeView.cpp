@@ -1,3 +1,4 @@
+#include "editor/lang/Lang.h"
 #include "editor/tree/TreeView.h"
 
 #include "base/Utf.h"
@@ -63,7 +64,7 @@ std::vector<Action> MenuFor(Source& src, State& st, std::span<const Item> items)
         const size_t i = Find(items, id);
         const std::string name = i != npos ? items[i].name : std::string();
         Action rename;
-        rename.label = L"名前を変更";
+        rename.label = Tr(L"名前を変更");
         rename.key = ui::Key::F2;
         rename.run = [sp, id, name] {
             sp->renaming = id;
@@ -126,7 +127,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         st.filter.clear();
         c.ClearFocus();
     }
-    w::TextField(c, "tree.search", search, st.filter, L"検索");
+    w::TextField(c, "tree.search", search, st.filter, Tr(L"検索"));
     const Rect view = body.Inset(0, 2, 0, 2);
 
     std::vector<Row> rows = VisibleRows(items, st.collapsed, st.filter);
@@ -224,7 +225,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         hint.v = ui::VAlign::Top;
         p.Text({view.x + 12, view.y + 6, view.w - 24, 80}, src.EmptyText(), hint);
     } else if (rows.empty()) {
-        p.Text({view.x + 12, view.y + 6, view.w - 24, 22}, L"見つかりません。", Style(12, theme::TextFaint));
+        p.Text({view.x + 12, view.y + 6, view.w - 24, 22}, Tr(L"見つかりません。"), Style(12, theme::TextFaint));
     }
 
     // --- Rows ------------------------------------------------------------------------------------
@@ -401,7 +402,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     if (st.dragging) {
         // What is being dragged, next to the mouse (over everything, also outside the panel).
         const size_t i = st.moving.size() == 1 ? Find(items, st.moving[0]) : npos;
-        const std::wstring tag = i != npos ? Utf8ToWide(items[i].name) : std::format(L"{} 個", st.moving.size());
+        const std::wstring tag = i != npos ? Utf8ToWide(items[i].name) : TrF(L"{} 個", st.moving.size());
         const bool ok = drop.has_value();
         c.AddOverlay([&c, tag, ok] {
             auto& pp = c.P();

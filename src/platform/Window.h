@@ -25,6 +25,7 @@ struct WindowDesc {
     int minHeightDip = 400;
     bool resizable = true;
     uint32_t captionRgb = 0x151618;  // title bar color (Windows 11)
+    bool darkCaption = true;         // light text on the title bar (Windows 10 / 11)
 
     // Panels taken out of the editor: owned by the editor window (stays above it, no taskbar button).
     HWND owner = nullptr;
@@ -51,6 +52,8 @@ public:
     float Dpi() const { return static_cast<float>(dpi_); }
     float Scale() const { return static_cast<float>(dpi_) / 96.f; }
     void SetTitle(std::wstring_view title);
+    // The title bar follows the editor's color theme.
+    void SetCaption(bool dark, uint32_t rgb);
 
 private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);

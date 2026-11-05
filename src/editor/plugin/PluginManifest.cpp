@@ -1,5 +1,6 @@
 #include "editor/plugin/PluginManifest.h"
 
+#include "editor/lang/Lang.h"
 #include <algorithm>
 #include <format>
 
@@ -11,12 +12,12 @@ std::optional<PluginId> ParseId(const json::Value& v, std::string* error) {
     const json::Value* a = v.IsObject() ? v.Find("author") : nullptr;
     const json::Value* n = v.IsObject() ? v.Find("name") : nullptr;
     if (!a || !n || !a->IsString() || !n->IsString()) {
-        if (error) *error = "ID には author と name の両方を文字で書いてください";
+        if (error) *error = TrU8("ID には author と name の両方を文字で書いてください");
         return std::nullopt;
     }
     PluginId id{a->AsString(), n->AsString()};
     if (const char* p = PluginIdProblem(id.author, id.name)) {
-        if (error) *error = std::format("ID ({}) が正しくありません: {}", id.Text(), p);
+        if (error) *error = TrU8F("ID ({}) が正しくありません: {}", id.Text(), TrU8(p));
         return std::nullopt;
     }
     return id;
@@ -28,7 +29,7 @@ std::optional<std::vector<PluginId>> ParsePluginIdList(const json::Value& v, std
     std::vector<PluginId> out;
     if (v.IsNull()) return out;
     if (!v.IsArray()) {
-        if (error) *error = "プラグインの一覧は配列で書いてください";
+        if (error) *error = TrU8("プラグインの一覧は配列で書いてください");
         return std::nullopt;
     }
     for (const auto& item : v.Items()) {
@@ -41,7 +42,7 @@ std::optional<std::vector<PluginId>> ParsePluginIdList(const json::Value& v, std
 
 std::optional<PluginManifest> ParsePluginManifest(const json::Value& v, std::string* error) {
     if (!v.IsObject()) {
-        if (error) *error = "plugin.json の形が正しくありません";
+        if (error) *error = TrU8("plugin.json の形が正しくありません");
         return std::nullopt;
     }
     auto id = ParseId(v, error);
@@ -60,7 +61,7 @@ std::optional<PluginManifest> ParsePluginManifest(const json::Value& v, std::str
 
     if (const json::Value* nc = v.Find("needsConnector")) {
         if (!nc->IsBool()) {
-            if (error) *error = "needsConnector は true か false で書いてください";
+            if (error) *error = TrU8("needsConnector は true か false で書いてください");
             return std::nullopt;
         }
         m.needsConnector = nc->AsBool();
@@ -73,11 +74,11 @@ std::optional<PluginManifest> ParsePluginManifest(const json::Value& v, std::str
             return std::nullopt;
         }
         if (*target == m.id || m.needsConnector) {
-            if (error) *error = "つなぎのプラグインは、自分自身のつなぎにも、つなぎが要るプラグインにもなれません";
+            if (error) *error = TrU8("つなぎのプラグインは、自分自身のつなぎにも、つなぎが要るプラグインにもなれません");
             return std::nullopt;
         }
         if (std::find(m.requirements.begin(), m.requirements.end(), *target) == m.requirements.end()) {
-            if (error) *error = std::format("connectorFor の相手 ({}) を requires にも書いてください", target->Text());
+            if (error) *error = TrU8F("connectorFor の相手 ({}) を requires にも書いてください", target->Text());
             return std::nullopt;
         }
         m.connectorFor = std::move(*target);
@@ -96,16 +97,16 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
         s.displayName = c[i].manifest ? c[i].manifest->displayName : c[i].id.Text();
         if (!c[i].installed) {
             s.state = PluginState::NotInstalled;
-            s.reason = "インストールされていません";
+            s.reason = TrU8("インストールされていません");
         } else if (!c[i].manifestFound) {
             s.state = PluginState::NoManifest;
-            s.reason = "plugin.json が見つかりません";
+            s.reason = TrU8("plugin.json が見つかりません");
         } else if (!c[i].manifest) {
             s.state = PluginState::BadManifest;
-            s.reason = c[i].manifestError.empty() ? "plugin.json を読めません" : c[i].manifestError;
+            s.reason = c[i].manifestError.empty() ? TrU8("plugin.json を読めません") : c[i].manifestError;
         } else if (c[i].manifest->id != c[i].id) {
             s.state = PluginState::IdMismatch;
-            s.reason = std::format("plugin.json の ID ({}) がプログラムの ID ({}) と違います", c[i].manifest->id.Text(),
+            s.reason = TrU8F("plugin.json の ID ({}) がプログラムの ID ({}) と違います", c[i].manifest->id.Text(),
                                    c[i].id.Text());
         } else {
             usable[i] = true;
@@ -117,7 +118,7 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
                 for (const size_t k : {i, j}) {
                     usable[k] = false;
                     r.statuses[k].state = PluginState::BadManifest;
-                    r.statuses[k].reason = std::format("同じ ID ({}) のプラグインが 2 つあります", c[i].id.Text());
+                    r.statuses[k].reason = TrU8F("同じ ID ({}) のプラグインが 2 つあります", c[i].id.Text());
                 }
             }
         }
@@ -142,20 +143,20 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
                 const size_t j = find(req);
                 if (j == n) {
                     s.state = PluginState::MissingRequirement;
-                    s.reason = std::format("前提のプラグイン {} がありません", req.Text());
+                    s.reason = TrU8F("前提のプラグイン {} がありません", req.Text());
                     break;
                 }
                 if (mark[j] == Mark::Visiting) {
                     s.state = PluginState::Cycle;
-                    s.reason = std::format("前提が輪になっています ({} → {})", c[i].id.Text(), req.Text());
+                    s.reason = TrU8F("前提が輪になっています ({} → {})", c[i].id.Text(), req.Text());
                     break;
                 }
                 self(self, j);
                 if (r.statuses[j].state != PluginState::Enabled) {
                     s.state = PluginState::RequirementDisabled;
                     s.reason = r.statuses[j].state == PluginState::NotInstalled
-                                   ? std::format("前提のプラグイン「{}」がインストールされていません", r.statuses[j].displayName)
-                                   : std::format("前提のプラグイン「{}」が使えないため、使えません", r.statuses[j].displayName);
+                                   ? TrU8F("前提のプラグイン「{}」がインストールされていません", TrU8(r.statuses[j].displayName))
+                                   : TrU8F("前提のプラグイン「{}」が使えないため、使えません", TrU8(r.statuses[j].displayName));
                     break;
                 }
             }
@@ -179,13 +180,13 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
                 const auto& mj = c[j].manifest;
                 if (!mj || !mj->connectorFor || *mj->connectorFor != c[i].id) continue;
                 any |= isEnabled(j);
-                names += (names.empty() ? "「" : "」「") + r.statuses[j].displayName;
+                names += (names.empty() ? "「" : "」「") + TrU8(r.statuses[j].displayName);
             }
             if (any) continue;
             PluginStatus& s = r.statuses[i];
             s.state = PluginState::NoConnector;
-            s.reason = names.empty() ? "つなぎのプラグイン (3D 空間 などと組み合わせるもの) がこのエンジンにありません"
-                                     : std::format("つなぎのプラグイン ({}」) が使えないため、使えません。3D 空間 などのプラグインと一緒に入れてください", names);
+            s.reason = names.empty() ? TrU8("つなぎのプラグイン (3D 空間 などと組み合わせるもの) がこのエンジンにありません")
+                                     : TrU8F("つなぎのプラグイン ({}」) が使えないため、使えません。3D 空間 などのプラグインと一緒に入れてください", names);
             changed = true;
         }
         for (size_t i = 0; i < n; ++i) {
@@ -194,7 +195,7 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
                 const size_t j = find(req);
                 if (j == n || isEnabled(j)) continue;
                 r.statuses[i].state = PluginState::RequirementDisabled;
-                r.statuses[i].reason = std::format("前提のプラグイン「{}」が使えないため、使えません", r.statuses[j].displayName);
+                r.statuses[i].reason = TrU8F("前提のプラグイン「{}」が使えないため、使えません", TrU8(r.statuses[j].displayName));
                 changed = true;
                 break;
             }

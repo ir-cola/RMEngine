@@ -36,6 +36,8 @@ bool SamePath(const fs::path& a, const fs::path& b) { return Normalized(a) == No
 void HubSettings::Load() {
     recent_.clear();
     doc_ = json::Value::MakeObject();
+    options_ = {};
+    optionsUnknowns_ = {};
     const fs::path file = paths::HubSettingsFile();
     std::error_code ec;
     if (!fs::exists(file, ec)) return;
@@ -52,6 +54,11 @@ void HubSettings::Load() {
         return;
     }
     doc_ = std::move(*doc);
+    if (doc_.Get("options").IsObject()) {
+        reflect::Warnings warnings;
+        reflect::Load(options_, doc_.Get("options"), &optionsUnknowns_, &warnings);
+        for (const auto& w : warnings) log::Warn("オプション: {}", w);
+    }
     for (const auto& item : doc_.Get("recent").Items()) {
         const std::string& path = item.Get("path").AsString();
         if (path.empty()) continue;
@@ -69,6 +76,7 @@ bool HubSettings::Save() {
     }
     doc_.Set("version", 1);
     doc_.Set("recent", std::move(list));
+    doc_.Set("options", reflect::Save(options_, &optionsUnknowns_));
 
     const fs::path file = paths::HubSettingsFile();
     std::error_code ec;

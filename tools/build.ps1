@@ -39,4 +39,7 @@ if (-not $NoTest) {
 }
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tools\check_layers.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# Every string on screen has English (editor/lang).
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tools\check_lang.ps1')
 exit $LASTEXITCODE

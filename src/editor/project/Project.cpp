@@ -1,5 +1,6 @@
 #include "editor/project/Project.h"
 
+#include "editor/lang/Lang.h"
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "base/Version.h"
@@ -14,7 +15,7 @@ namespace rm::editor {
 
 const std::vector<ProjectTemplate>& ProjectTemplates() {
     static const std::vector<ProjectTemplate> kTemplates = {
-        {"rm_engine/blank", L"白紙", L"何も入っていないプロジェクト。プラグインを足して育てます。"},
+        {"rm_engine/blank", TrKey(L"白紙"), TrKey(L"何も入っていないプロジェクト。プラグインを足して育てます。")},
     };
     return kTemplates;
 }
@@ -28,30 +29,28 @@ std::optional<Project> LoadProject(const fs::path& file, std::string* error) {
     std::string readErr;
     auto bytes = platform::ReadFileBytes(file, &readErr);
     if (!bytes) {
-        if (error) *error = std::format("プロジェクトファイルを開けません: {}\n{}", PathToUtf8(file), readErr);
+        if (error) *error = TrU8F("プロジェクトファイルを開けません: {}\n{}", PathToUtf8(file), readErr);
         return std::nullopt;
     }
     json::ParseError pe;
     auto doc = json::Parse(*bytes, &pe);
     if (!doc || !doc->IsObject()) {
         if (error) {
-            *error = doc ? std::format("プロジェクトファイルの形が正しくありません: {}", PathToUtf8(file))
-                         : std::format("プロジェクトファイルが壊れています: {}\n{} 行 {} 文字目: {}", PathToUtf8(file), pe.line,
+            *error = doc ? TrU8F("プロジェクトファイルの形が正しくありません: {}", PathToUtf8(file))
+                         : TrU8F("プロジェクトファイルが壊れています: {}\n{} 行 {} 文字目: {}", PathToUtf8(file), pe.line,
                                        pe.column, pe.message);
         }
         return std::nullopt;
     }
     if (doc->Get("kind").AsString() != kProjectKind) {
-        if (error) *error = std::format("RM Engine のプロジェクトファイルではありません: {}", PathToUtf8(file));
+        if (error) *error = TrU8F("RM Engine のプロジェクトファイルではありません: {}", PathToUtf8(file));
         return std::nullopt;
     }
     const int64_t ver = doc->Get("formatVersion").AsInt(0);
     if (ver > kProjectFormatVersion) {
         if (error) {
-            *error = std::format(
-                "このプロジェクトは新しいバージョンの RM Engine で作られています (形式 {} / このエンジンは {} まで)。\n"
-                "データを壊さないよう、開かずに止めました。",
-                ver, kProjectFormatVersion);
+            *error = TrU8F("このプロジェクトは新しいバージョンの RM Engine で作られています (形式 {} / このエンジンは {} まで)。\nデータを壊さないよう、開かずに止めました。",
+                           ver, kProjectFormatVersion);
         }
         return std::nullopt;
     }
@@ -64,7 +63,7 @@ std::optional<Project> LoadProject(const fs::path& file, std::string* error) {
 bool SaveProject(const Project& project, std::string* error) {
     std::string err;
     if (!platform::WriteFileAtomic(project.file, json::Write(project.doc), &err)) {
-        if (error) *error = std::format("保存できませんでした: {}\n{}", PathToUtf8(project.file), err);
+        if (error) *error = TrU8F("保存できませんでした: {}\n{}", PathToUtf8(project.file), err);
         return false;
     }
     log::Info("保存しました: {}", PathToUtf8(project.file));
@@ -76,12 +75,12 @@ std::optional<Project> CreateProject(const fs::path& parentDir, const std::strin
     const fs::path folder = parentDir / PathFromUtf8(nameUtf8);
     std::error_code ec;
     if (fs::exists(folder, ec) && !fs::is_empty(folder, ec)) {
-        if (error) *error = std::format("同じ名前のフォルダが既にあり、空ではありません: {}", PathToUtf8(folder));
+        if (error) *error = TrU8F("同じ名前のフォルダが既にあり、空ではありません: {}", PathToUtf8(folder));
         return std::nullopt;
     }
     fs::create_directories(folder / L"Assets", ec);
     if (ec) {
-        if (error) *error = std::format("フォルダを作れませんでした: {}\n{}", PathToUtf8(folder), ec.message());
+        if (error) *error = TrU8F("フォルダを作れませんでした: {}\n{}", PathToUtf8(folder), ec.message());
         return std::nullopt;
     }
 
@@ -115,18 +114,18 @@ std::optional<fs::path> RenameProject(const fs::path& file, const std::string& n
     const fs::path newFolder = oldFolder.parent_path() / PathFromUtf8(newNameUtf8);
     const fs::path newFileName = PathFromUtf8(newNameUtf8).native() + kProjectExtension;
     const fs::path newFile = newFolder / newFileName;
-    if (newFile.native().size() > 240) return fail("新しい名前だとパスが長すぎます。短い名前にしてください。");
+    if (newFile.native().size() > 240) return fail(TrU8("新しい名前だとパスが長すぎます。短い名前にしてください。"));
     // Only the letter case may differ (Windows names ignore case): the same folder, renamed.
     const bool sameFolder = SamePath(oldFolder, newFolder);
     std::error_code ec;
-    if (!sameFolder && fs::exists(newFolder, ec)) return fail(std::format("同じ名前のフォルダが既にあります: {}", PathToUtf8(newFolder)));
+    if (!sameFolder && fs::exists(newFolder, ec)) return fail(TrU8F("同じ名前のフォルダが既にあります: {}", PathToUtf8(newFolder)));
 
     // 1. The folder.
     bool folderMoved = false;
     if (oldFolder.filename().native() != newFolder.filename().native()) {
         fs::rename(oldFolder, newFolder, ec);
         if (ec) {
-            return fail(std::format("フォルダの名前を変えられませんでした。中のファイルをほかのアプリ (エクスプローラーなど) で開いていないか確かめてください。\n{}\n{}",
+            return fail(TrU8F("フォルダの名前を変えられませんでした。中のファイルをほかのアプリ (エクスプローラーなど) で開いていないか確かめてください。\n{}\n{}",
                                     PathToUtf8(oldFolder), ec.message()));
         }
         folderMoved = true;
@@ -144,12 +143,12 @@ std::optional<fs::path> RenameProject(const fs::path& file, const std::string& n
     if (file.filename().native() != newFileName.native()) {
         if (!SamePath(fileNow, newFile) && fs::exists(newFile, ec)) {
             undoFolder();
-            return fail(std::format("フォルダの中に同じ名前のファイルが既にあります: {}", PathToUtf8(newFileName)));
+            return fail(TrU8F("フォルダの中に同じ名前のファイルが既にあります: {}", PathToUtf8(newFileName)));
         }
         fs::rename(fileNow, newFile, ec);
         if (ec) {
             undoFolder();
-            return fail(std::format("プロジェクトファイルの名前を変えられませんでした: {}\n{}", PathToUtf8(fileNow), ec.message()));
+            return fail(TrU8F("プロジェクトファイルの名前を変えられませんでした: {}\n{}", PathToUtf8(fileNow), ec.message()));
         }
         fileMoved = true;
     }

@@ -137,6 +137,24 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **どう作ったか** — 核は木の見せ方だけを持ち、何を並べるかはソフトが決める (インターフェース `tree::Source`)。「見える行」「選択」「どこに落とすか」は純粋な計算でテストがある
 - **どこ** — `src/editor/tree/*`
 
+### 色のテーマ (黒・白・PC に合わせる)
+- **何か** — 画面の色を 2 つの組 (黒と白) で持ち、切り替える仕組み
+- **どう作ったか** — 色は全部 `theme::` の変数を通して使うので、変数の中身を入れ替えるだけで全部の画面が変わる。タイトルバーは DWM の `DWMWA_USE_IMMERSIVE_DARK_MODE` / `DWMWA_CAPTION_COLOR` で合わせる
+- **PC に合わせる** — Windows の設定はレジストリ `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize` の `AppsUseLightTheme` にある。Windows は設定が変わると全部のウィンドウに `WM_SETTINGCHANGE` ("ImmersiveColorSet") を送るので、それを受けて読み直す
+- **どこ** — `src/editor/widgets/Theme.h`、`src/platform/Window.cpp` (`SetCaption`)、`src/platform/Shell.cpp` (`SystemPrefersLight`)
+
+### 多言語化 (日本語の文を鍵にした翻訳表)
+- **何か** — 画面の文字を言語に合わせて出し分ける仕組み (i18n)。gettext という有名な仕組みと同じ考え方で、**元の言語 (日本語) の文そのものを鍵**にして、英語の表 (JSON) を引く
+- **良い点** — コードを読めば何が出るか分かる (番号や英字の ID にしない)。英語が無い文は日本語のまま出るので、訳し忘れても画面が壊れない
+- **訳し忘れを止める** — ビルドのたびに `tools/check_lang.ps1` がソースを読み、`Tr(L"…")` などの文と、リフレクションの項目名に英語があるかを調べる。`{}` (std::format の差し込み) の数が違っても失敗にする
+- **std::vformat** — 訳した文に値を差し込むのは、実行中に決まる書式で `std::vformat` を使う (書式が合わなければ日本語の書式に戻る)
+- **どこ** — `src/editor/lang/*`、`resources/lang/en.json`、`plugins/*/*/lang/en.json`、`tools/check_lang.ps1`
+
+### 自動保存 (タイマー)
+- **何か** — Windows のタイマー (`SetTimer` → `WM_TIMER`) で 15 秒ごとに起き、未保存の変更が決めた時間たっていれば保存する
+- **工夫** — 入力中・ドラッグ中 (`GetKeyState` でマウスのボタン)・ダイアログ中は保存しない。何も起きていないときは描かない作り (CPU 0%) を崩さないよう、タイマーは描画せずに見るだけ
+- **どこ** — `src/editor/shell/EditorScreen.cpp` (`OnTimer`)
+
 ---
 
 ## 5. データと保存
@@ -171,6 +189,17 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **何に使っているか** — エンティティの部品 (コンポーネント)。ゲーム制作は Transform という型を知らないが、型の表があれば Transform の値を持てる
 - **どう作ったか** — 型の表の大きさでメモリを取り、表の construct (既定値で作る)・copy・destruct を呼ぶ。C++ の「5 つの特別な関数」(コピー・移動・代入・デストラクタ) をきちんと書いて、ふつうの値と同じに使える
 - **どこ** — `src/core/reflect/Object.*`
+
+### 整合性の確認 (SHA-256)
+- **何か** — ファイルの中身から 32 バイトの「指紋」(ハッシュ) を作る計算 SHA-256 で、ファイルが壊れていないか・入れ替わっていないかを確かめる。Steam の「ゲームファイルの整合性を確認」と同じ考え方
+- **どう作ったか** — ビルドの最後に PowerShell の `Get-FileHash` でエンジンのファイルの一覧と指紋を JSON に書く。確認のときは Windows の暗号の仕組み BCrypt (`BCryptHashData`) で指紋を計り直して比べる
+- **限界** — 一覧そのものに署名が無いので、悪意のある書き換えは防げない (壊れた・欠けた・古いを見つけるためのもの)
+- **どこ** — `tools/make_filelist.ps1`、`src/editor/app/Integrity.*`、`src/platform/Shell.cpp` (`Sha256File`)
+
+### 埋め込みリソース
+- **何か** — 画像や JSON を exe の中に入れておく Windows の仕組み (`.rc` ファイルの `RCDATA`)。ファイルを無くす心配が無い
+- **何に使っているか** — Hub のロゴ、アップデート情報 (`resources/updates.json`)
+- **どこ** — `resources/app.rc`、`platform::ResourceBytes`
 
 ### 知らないデータを捨てない
 - 新しい版のファイルや、プラグインが無い状態で開いたファイルでも、分からないキー・分からない選択肢の名前を覚えておいて、保存のときにそのまま書き戻す (`reflect::Unknowns`)
@@ -250,5 +279,6 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-05 | 色のテーマ・多言語化 (翻訳表と検査)・自動保存のタイマー・整合性の確認 (SHA-256 / BCrypt)・埋め込みリソース を足した |
 | 2026-11-05 | ECS の C (部品)・型を消した値・つなぎプラグイン・差し出しの口・3D の座標変換 を足した。予定の表の ECS を S と Prefab に絞った |
 | 2026-11-05 | このメモを作成。ここまでの技術 (C++20 / VS2022 / CI / Win32 / DPI / D3D11 / Direct2D / DirectWrite / WIC / IME / DWM / シェル / 安全な保存 / 即時モード UI / ドッキング / 階層 / JSON / リフレクションと rmgen / Undo / プラグイン / テスト) をまとめた |
