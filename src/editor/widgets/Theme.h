@@ -98,6 +98,11 @@ inline Gradient AccentOf(Color c) { return {Shade(c, 0.12f), Shade(c, -0.14f)}; 
 
 // A thin light line inside the top edge of a raised surface (where the light catches it).
 inline Color Highlight() { return IsLight ? Color{1, 1, 1, 0.75f} : Color{1, 1, 1, 0.06f}; }
+// The edge of a panel, two lines: a dark one just outside (also the 1px seam between docked panels)
+// and a thin light one just inside, brighter at the top and faint - but still lighter than the
+// background - at the bottom, so every side of the panel can be seen.
+inline Color EdgeOuter() { return IsLight ? Color::Hex(0xC4C6CD) : Color::Hex(0x0B0C0E); }
+inline Gradient EdgeInner() { return IsLight ? Gradient{Color{1, 1, 1, 1}, Color{1, 1, 1, 0.55f}} : Gradient{Color{1, 1, 1, 0.10f}, Color{1, 1, 1, 0.035f}}; }
 inline Color AccentHighlight() { return Color{1, 1, 1, 0.22f}; }
 // Text and marks on the accent (always white: the accent is the same red on both themes).
 inline Color OnAccent() { return Color{1, 1, 1, 1}; }

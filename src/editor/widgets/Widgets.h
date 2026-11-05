@@ -38,6 +38,9 @@ enum class Surface {
     Popup,          // a menu / tooltip / dialog: soft shadow, raised gradient, border
 };
 void DrawSurface(ui::Context& c, const ui::Rect& r, Surface s, float radius = theme::Radius);
+// A panel with its edge (theme::EdgeOuter / EdgeInner): the dark line lies 1px OUTSIDE r, so two
+// panels 1px apart share one dark seam. Each corner its own radius - square where it touches another.
+void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
 // A strip of the window's frame (menu bar, status bar, sidebar): gentle gradient, no border.
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 

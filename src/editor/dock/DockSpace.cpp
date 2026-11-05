@@ -15,7 +15,9 @@ using ui::Rect;
 
 namespace {
 
-constexpr float kGap = 4.f;            // splitter thickness
+constexpr float kGap = 1.f;            // between two panels: one dark seam (the panels' outer edge line)
+constexpr float kSplitterGrab = 3.f;   // the seam can be grabbed this far into the panels on each side
+constexpr float kPanelRadius = 6.f;    // corners on the outside of the dock area (touching ones are square)
 constexpr float kStripH = 30.f;        // tab strip height
 constexpr float kMinPanel = 80.f;      // a splitter never makes a side smaller than this
 constexpr float kCloseW = 22.f;        // room for the x of a tab
@@ -185,7 +187,13 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
     auto& p = c.P();
     geo.id = leaf.id;
     geo.rect = r;
-    w::DrawSurface(c, r, w::Surface::Panel, 6.f);
+    // Rounded only where the panel touches nothing: both sides of the corner on the dock area's edge.
+    const Rect& area = sites_[siteId].area;
+    constexpr float eps = 0.5f;
+    const bool left = r.x <= area.x + eps, top = r.y <= area.y + eps;
+    const bool right = r.Right() >= area.Right() - eps, bottom = r.Bottom() >= area.Bottom() - eps;
+    auto round = [](bool a, bool b) { return a && b ? kPanelRadius : 0.f; };
+    w::DrawPanelFrame(c, r, {round(top, left), round(top, right), round(bottom, right), round(bottom, left)});
     Rect body = r;
     const Rect strip = ui::TakeTop(body, kStripH);
     geo.strip = strip;
@@ -260,7 +268,7 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
 void DockSpace::DrawSplitter(ui::Context& c, const Node& split, const Rect& r) {
     const bool horizontal = split.axis == Axis::Horizontal;
     const Rect bar = SplitterRect(split, r, kGap);
-    const Rect hit = horizontal ? bar.Inset(-2, 0, -2, 0) : bar.Inset(0, -2, 0, -2);
+    const Rect hit = horizontal ? bar.Inset(-kSplitterGrab, 0, -kSplitterGrab, 0) : bar.Inset(0, -kSplitterGrab, 0, -kSplitterGrab);
     c.PushId(static_cast<uint64_t>(split.id));
     const ui::Id id = c.MakeId("splitter");
     c.PopId();
@@ -268,6 +276,7 @@ void DockSpace::DrawSplitter(ui::Context& c, const Node& split, const Rect& r) {
     const bool dragging = c.Active() == id;
     if (b.hovered || dragging) {
         c.SetCursor(horizontal ? ui::Cursor::SizeWE : ui::Cursor::SizeNS);
+        // The seam lights up (2px, over the panels' edges).
         const Rect line = horizontal ? Rect{bar.x + bar.w * 0.5f - 1, bar.y, 2, bar.h} : Rect{bar.x, bar.y + bar.h * 0.5f - 1, bar.w, 2};
         c.P().FillRect(line, dragging ? theme::Accent : theme::BorderHover);
     }

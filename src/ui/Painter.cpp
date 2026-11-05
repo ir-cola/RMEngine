@@ -117,6 +117,53 @@ void Painter::FillRoundRectGradient(const Rect& r, float radius, Color top, Colo
     }
 }
 
+ComPtr<ID2D1PathGeometry> Painter::RoundRectPath(const Rect& r, Corners k) {
+    ComPtr<ID2D1Factory> factory;
+    dc_->GetFactory(&factory);
+    ComPtr<ID2D1PathGeometry> path;
+    ComPtr<ID2D1GeometrySink> sink;
+    if (!factory || FAILED(factory->CreatePathGeometry(&path)) || FAILED(path->Open(&sink))) return nullptr;
+    // No radius larger than half a side.
+    const float lim = std::fmin(r.w, r.h) * 0.5f;
+    k = {std::fmin(k.tl, lim), std::fmin(k.tr, lim), std::fmin(k.br, lim), std::fmin(k.bl, lim)};
+    const float x0 = r.x, y0 = r.y, x1 = r.Right(), y1 = r.Bottom();
+    auto arc = [&](float x, float y, float radius) {
+        if (radius > 0)
+            sink->AddArc(D2D1::ArcSegment(D2D1::Point2F(x, y), D2D1::SizeF(radius, radius), 0.f, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                                          D2D1_ARC_SIZE_SMALL));
+    };
+    sink->BeginFigure(D2D1::Point2F(x0 + k.tl, y0), D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLine(D2D1::Point2F(x1 - k.tr, y0));
+    arc(x1, y0 + k.tr, k.tr);
+    sink->AddLine(D2D1::Point2F(x1, y1 - k.br));
+    arc(x1 - k.br, y1, k.br);
+    sink->AddLine(D2D1::Point2F(x0 + k.bl, y1));
+    arc(x0, y1 - k.bl, k.bl);
+    sink->AddLine(D2D1::Point2F(x0, y0 + k.tl));
+    arc(x0 + k.tl, y0, k.tl);
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    if (FAILED(sink->Close())) return nullptr;
+    return path;
+}
+
+void Painter::FillRoundRectGradient(const Rect& r, Corners radii, Color top, Color bottom) {
+    if (r.w <= 0 || r.h <= 0) return;
+    auto path = RoundRectPath(r, radii);
+    ID2D1Brush* b = Gradient(top, bottom, r.y, r.Bottom());
+    if (path && b) dc_->FillGeometry(path.Get(), b);
+}
+
+void Painter::StrokeRoundRectGradient(const Rect& r, Corners radii, Color top, Color bottom, float width) {
+    // The line sits inside the rectangle (its centre half a width in), the corners shrink with it.
+    const float h = width * 0.5f;
+    const Rect in{r.x + h, r.y + h, r.w - width, r.h - width};
+    if (in.w <= 0 || in.h <= 0) return;
+    auto shrink = [&](float k) { return std::fmax(0.f, k - h); };
+    auto path = RoundRectPath(in, {shrink(radii.tl), shrink(radii.tr), shrink(radii.br), shrink(radii.bl)});
+    ID2D1Brush* b = Gradient(top, bottom, r.y, r.Bottom());
+    if (path && b) dc_->DrawGeometry(path.Get(), b, width);
+}
+
 void Painter::Shadow(const Rect& r, float radius, Color c, float size) {
     // Four layers, each a little wider, lower and fainter: reads as a soft blur, costs four fills.
     constexpr float kAlpha[4] = {0.40f, 0.24f, 0.12f, 0.05f};

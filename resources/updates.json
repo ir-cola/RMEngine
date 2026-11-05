@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "パネルに縁: 外側の暗い線と、上が明るく下が薄い内側の線。並んだパネルは 1 本の線で四角く区切り、何ともくっついていない角だけ丸く",
+          "en": "Panels have an edge: a dark outer line and an inner line, bright at the top and faint at the bottom. Panels side by side are split by one straight line; only corners that touch nothing are rounded"
+        },
+        {
           "ja": "シーンビュー: 右ドラッグなどでカメラを動かす間はカーソルが消え、画面の端で止まらずに動いた分だけ回るように",
           "en": "Scene view: while dragging the camera the cursor hides, and the view keeps turning as far as you move - it no longer stops at the screen edge"
         },

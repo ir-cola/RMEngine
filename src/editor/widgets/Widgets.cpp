@@ -31,8 +31,7 @@ void DrawSurface(ui::Context& c, const Rect& r, Surface s, float radius) {
     auto& p = c.P();
     switch (s) {
         case Surface::Panel:
-            FillGradient(p, r, radius, theme::Gentle(theme::Panel));
-            p.StrokeRoundRect(r, radius, theme::Border);
+            DrawPanelFrame(c, r, ui::Corners::All(radius));
             break;
         case Surface::Raised:
             FillGradient(p, r, radius, theme::Raised(theme::PanelHeader));
@@ -74,6 +73,18 @@ void DrawSurface(ui::Context& c, const Rect& r, Surface s, float radius) {
             p.StrokeRoundRect(r, radius, theme::Border);
             break;
     }
+}
+
+void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
+    if (r.w <= 0 || r.h <= 0) return;
+    auto& p = c.P();
+    auto grow = [](float v) { return v > 0 ? v + 1.f : 0.f; };  // the outer line's corners: the same curve, 1px out
+    const theme::Gradient fill = theme::Gentle(theme::Panel);
+    const theme::Gradient inner = theme::EdgeInner();
+    const Color outer = theme::EdgeOuter();
+    p.StrokeRoundRectGradient(r.Inset(-1), {grow(k.tl), grow(k.tr), grow(k.br), grow(k.bl)}, outer, outer);
+    p.FillRoundRectGradient(r, k, fill.top, fill.bottom);
+    p.StrokeRoundRectGradient(r, k, inner.top, inner.bottom);
 }
 
 void DrawBar(ui::Context& c, const Rect& r, Color base) {

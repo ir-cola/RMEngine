@@ -17,6 +17,12 @@
 
 namespace rm::ui {
 
+// The radius of each corner of a rectangle (0 = square): a panel touching another is square there.
+struct Corners {
+    float tl = 0, tr = 0, br = 0, bl = 0;
+    static constexpr Corners All(float r) { return {r, r, r, r}; }
+};
+
 class Painter {
 public:
     void Init(IDWriteFactory* dwrite, std::wstring fontFamily = L"Yu Gothic UI");
@@ -34,6 +40,9 @@ public:
     // Vertical gradients: 	op at the top edge, ottom at the bottom edge.
     void FillRectGradient(const Rect& r, Color top, Color bottom);
     void FillRoundRectGradient(const Rect& r, float radius, Color top, Color bottom);
+    // Each corner its own radius; filled top-to-bottom, or outlined with a line whose color runs top-to-bottom.
+    void FillRoundRectGradient(const Rect& r, Corners radii, Color top, Color bottom);
+    void StrokeRoundRectGradient(const Rect& r, Corners radii, Color top, Color bottom, float width = 1.f);
     // A soft shadow around a rounded rectangle (a few widening layers; drawn before the box).
     void Shadow(const Rect& r, float radius, Color c, float size);
 
@@ -54,6 +63,7 @@ private:
     Microsoft::WRL::ComPtr<IDWriteTextLayout> Layout(std::wstring_view text, float size, bool bold);
     ID2D1SolidColorBrush* Brush(Color c);
     ID2D1LinearGradientBrush* Gradient(Color top, Color bottom, float y0, float y1);
+    Microsoft::WRL::ComPtr<ID2D1PathGeometry> RoundRectPath(const Rect& r, Corners radii);
 
     IDWriteFactory* dwrite_ = nullptr;
     std::wstring family_;
