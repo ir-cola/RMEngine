@@ -89,7 +89,8 @@ private:
         const float dt = static_cast<float>(std::clamp(now - lastTime_, 0.0, 0.1));
         lastTime_ = now;
         const bool hovered = c.IsHovered(r);
-        const float dx = in.mouseX - lastX_, dy = in.mouseY - lastY_;
+        // How far the mouse moved (still counted while the cursor is held at the drag's start).
+        const float dx = in.mouseDX, dy = in.mouseDY;
 
         // Start a drag (only inside the view); it goes on outside until the button is let go.
         if (drag_ == Drag::None && hovered) {
@@ -118,10 +119,11 @@ private:
                 space3d::Orbit(cam_, -dx * kOrbitDegreesPerDip, dy * kOrbitDegreesPerDip);
             }
         }
+        // Turning / sliding never stops at the edge of the screen: the cursor hides and stays where the
+        // drag started (from its first frame), and comes back there when the button is let go.
+        if (drag_ != Drag::None && drag_ != Drag::Click) c.LockMouse();
         if (hovered && in.wheel != 0.f) space3d::Dolly(cam_, in.wheel);
         if (hovered && c.Focused() == 0 && drag_ != Drag::Look && c.KeyPressed(ui::Key::F)) FrameSelection(host);
-        lastX_ = in.mouseX;
-        lastY_ = in.mouseY;
     }
 
     // While looking around (right button held): W A S D forward / left / back / right, E Q up / down.
@@ -256,7 +258,7 @@ private:
     std::vector<space3d::Box> boxes_;
 
     Drag drag_ = Drag::None;
-    float lastX_ = 0, lastY_ = 0, pressX_ = 0, pressY_ = 0;
+    float pressX_ = 0, pressY_ = 0;
     double lastTime_ = 0;
 
     // The picture as a Direct2D bitmap, made again when the picture or the window's context changes.

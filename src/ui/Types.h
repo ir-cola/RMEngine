@@ -72,6 +72,9 @@ struct Input {
     bool released[3] = {};
     bool doubleClicked = false;
     float wheel = 0.f;  // notches, + = away from the user
+    // How far the mouse moved since the last frame (DIPs). Keeps counting while the mouse is locked
+    // (Context::LockMouse), when mouseX / mouseY stay where the drag started.
+    float mouseDX = 0.f, mouseDY = 0.f;
     bool ctrl = false, shift = false, alt = false;
 
     bool keyDown[static_cast<int>(Key::Count)] = {};  // held now (kept across frames; cleared when the window loses the focus)
@@ -87,6 +90,7 @@ struct Input {
         for (int i = 0; i < 3; ++i) pressed[i] = released[i] = false;
         doubleClicked = false;
         wheel = 0.f;
+        mouseDX = mouseDY = 0.f;
         chars.clear();
         keys.clear();
         imeResult.clear();

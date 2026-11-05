@@ -66,6 +66,8 @@ private:
     void OnInput();
     void MouseButton(int button, LPARAM lp, bool down, bool doubleClick);
     void UpdateMouse(LPARAM lp);
+    void MouseMoved(LPARAM lp);
+    void UpdateMouseLock();
     void UpdateModifiers();
     void UpdateIme();
     void RunDeferred();
@@ -75,6 +77,8 @@ private:
     bool trackingMouse_ = false;
     bool imeOn_ = true;
     bool caretTimer_ = false;
+    bool mouseLocked_ = false;      // Context::LockMouse: hidden, kept at the anchor
+    float anchorX_ = 0, anchorY_ = 0;  // DIPs in the client area
     int chainedFrames_ = 0;
     ui::Cursor cursor_ = ui::Cursor::Arrow;
     std::vector<std::function<void()>> deferred_;

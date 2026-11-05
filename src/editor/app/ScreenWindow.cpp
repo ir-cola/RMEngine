@@ -8,6 +8,7 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <string_view>
 
@@ -145,6 +146,43 @@ void ScreenWindow::UpdateMouse(LPARAM lp) {
     input_.mouseInside = true;
 }
 
+void ScreenWindow::MouseMoved(LPARAM lp) {
+    const float s = window_.Scale();
+    const float x = GET_X_LPARAM(lp) / s, y = GET_Y_LPARAM(lp) / s;
+    if (mouseLocked_) {
+        // Count the move, then put the cursor back where the drag started: it never reaches a screen edge.
+        input_.mouseDX += x - anchorX_;
+        input_.mouseDY += y - anchorY_;
+        if (x != anchorX_ || y != anchorY_) {
+            POINT p{static_cast<LONG>(std::lround(anchorX_ * s)), static_cast<LONG>(std::lround(anchorY_ * s))};
+            ClientToScreen(Hwnd(), &p);
+            SetCursorPos(p.x, p.y);  // its own WM_MOUSEMOVE comes at the anchor: a move of 0
+        }
+        input_.mouseX = anchorX_;
+        input_.mouseY = anchorY_;
+        input_.mouseInside = true;
+        return;
+    }
+    if (input_.mouseInside) {
+        input_.mouseDX += x - input_.mouseX;
+        input_.mouseDY += y - input_.mouseY;
+    }
+    UpdateMouse(lp);
+}
+
+void ScreenWindow::UpdateMouseLock() {
+    const bool want = ctx_.MouseLockRequested();
+    if (want == mouseLocked_) return;
+    mouseLocked_ = want;
+    if (want) {
+        anchorX_ = input_.mouseX;
+        anchorY_ = input_.mouseY;
+        SetCursor(nullptr);
+    } else {
+        SetCursor(LoadCursorW(nullptr, CursorResource(cursor_)));
+    }
+}
+
 void ScreenWindow::MouseButton(int button, LPARAM lp, bool down, bool doubleClick) {
     UpdateMouse(lp);
     UpdateModifiers();
@@ -196,10 +234,11 @@ void ScreenWindow::RunFrame() {
 
     if (!alive_) return;  // OnFrame may have closed the screen
     UpdateIme();
+    UpdateMouseLock();
     const ui::Cursor want = ctx_.GetCursor();
     if (want != cursor_) {
         cursor_ = want;
-        if (input_.mouseInside) SetCursor(LoadCursorW(nullptr, CursorResource(cursor_)));
+        if (input_.mouseInside && !mouseLocked_) SetCursor(LoadCursorW(nullptr, CursorResource(cursor_)));
     }
     // A frame that changed state (opened a menu, clicked a button ...) is followed by one
     // more frame so everything drawn earlier in the frame sees the new state. Bounded.
@@ -271,7 +310,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             Invalidate();
             return 0;
         case WM_MOUSEMOVE:
-            UpdateMouse(lp);
+            MouseMoved(lp);
             UpdateModifiers();
             if (!trackingMouse_) {
                 TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, h, 0};
@@ -370,6 +409,10 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
         case WM_IME_CHAR:
             return 0;
         case WM_SETCURSOR:
+            if (mouseLocked_) {
+                SetCursor(nullptr);  // hidden while a drag turns the camera
+                return TRUE;
+            }
             if (LOWORD(lp) == HTCLIENT) {
                 SetCursor(LoadCursorW(nullptr, CursorResource(cursor_)));
                 return TRUE;

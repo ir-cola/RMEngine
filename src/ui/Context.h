@@ -92,6 +92,11 @@ public:
     // as possible, for as long as this is asked every frame. Without it the screen draws only on input.
     void RequestAnimation() { animate_ = true; }
     bool AnimationRequested() const { return animate_; }
+    // While dragging something that turns or slides without end (a camera): the cursor hides and stays
+    // where the drag started, so it never stops at the edge of the screen; In().mouseDX / mouseDY
+    // say how far the mouse moved. Ask every frame of the drag; when no longer asked, the cursor comes back.
+    void LockMouse() { lockMouse_ = true; }
+    bool MouseLockRequested() const { return lockMouse_; }
     void SetCursor(Cursor c) { cursor_ = c; }
     Cursor GetCursor() const { return cursor_; }
 
@@ -129,6 +134,7 @@ private:
     std::vector<std::function<void()>> overlays_;
     bool redraw_ = false;
     bool animate_ = false;
+    bool lockMouse_ = false;
     Cursor cursor_ = Cursor::Arrow;
 };
 
