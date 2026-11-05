@@ -1,4 +1,5 @@
 #include "editor/app/App.h"
+#include "editor/app/Paths.h"
 
 #include "base/Log.h"
 #include "base/Utf.h"
@@ -28,8 +29,7 @@ int App::Run(const LaunchOptions& options) {
         return 1;
     }
     settings_.Load();
-    plugins_.Load(platform::ExeDirectory() / L"Plugins",
-                  platform::GetKnownFolder(platform::KnownFolder::LocalAppData) / L"RM_Engine" / L"Plugins");
+    plugins_.Load(paths::EnginePlugins(), paths::InstalledPlugins());
     if (!options.projectFile.empty()) {
         RequestOpenProject(options.projectFile);
     } else {

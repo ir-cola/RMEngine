@@ -4,6 +4,7 @@
 #include "base/Utf.h"
 #include "base/Version.h"
 #include "editor/app/App.h"
+#include "editor/app/Paths.h"
 #include "editor/project/HubSettings.h"
 #include "platform/Win.h"
 
@@ -40,14 +41,9 @@ void InstallLogSinks() {
         OutputDebugStringW(rm::Utf8ToWide(std::string(tag) + e.text + "\n").c_str());
     });
     // %LOCALAPPDATA%\RM_Engine\Logs\editor.log (overwritten on every start).
-    wchar_t* local = nullptr;
-    size_t len = 0;
-    if (_wdupenv_s(&local, &len, L"LOCALAPPDATA") != 0 || !local) return;
-    const std::filesystem::path dir = std::filesystem::path(local) / L"RM_Engine" / L"Logs";
-    free(local);
     std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    static std::ofstream file(dir / L"editor.log", std::ios::binary | std::ios::trunc);
+    std::filesystem::create_directories(rm::editor::paths::LogFolder(), ec);
+    static std::ofstream file(rm::editor::paths::LogFile(), std::ios::binary | std::ios::trunc);
     static std::mutex mtx;
     if (!file) return;
     rm::log::AddSink([](const rm::log::Entry& e) {

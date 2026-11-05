@@ -67,6 +67,7 @@
     <ClCompile Include="ui\Painter.cpp" />
     <ClCompile Include="ui\TextEdit.cpp" />
     <ClCompile Include="editor\app\App.cpp" />
+    <ClCompile Include="editor\app\Paths.cpp" />
     <ClCompile Include="editor\dock\DockLayout.cpp" />
     <ClCompile Include="editor\dock\DockSpace.cpp" />
     <ClCompile Include="editor\inspector\Inspector.cpp" />
@@ -99,6 +100,7 @@
     <ClInclude Include="ui\TextEdit.h" />
     <ClInclude Include="ui\Types.h" />
     <ClInclude Include="editor\app\App.h" />
+    <ClInclude Include="editor\app\Paths.h" />
     <ClInclude Include="editor\app\ScreenWindow.h" />
     <ClInclude Include="editor\dock\DockLayout.h" />
     <ClInclude Include="editor\dock\DockSpace.h" />

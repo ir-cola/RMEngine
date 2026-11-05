@@ -275,6 +275,8 @@ GameSettings.h                         rmgen (ビルドの最初に毎回)      
 | `Project/` | エンジンのフォルダ | 新しいプロジェクトの既定の保存先 (毎回ここ。ほかの場所は「参照…」で)。エンジンのフォルダ = `RM_Engine.sln` のあるソースのフォルダ (ソースからビルドした exe のとき)、無ければ exe のフォルダ (`platform::EngineDirectory`)。中身は git に入れない (`.gitkeep` だけ) |
 | `editor.log` | `%LOCALAPPDATA%\RM_Engine\Logs\` | 起動ごとに上書き |
 
+エンジンのファイルの場所は `src/editor/app/Paths.h` の 1 か所に書く (Hub の「オプション」が同じ関数で場所を出す)。
+
 保存は `<ファイル>.tmp` に書いてから置き換える (途中で落ちても半端なファイルが残らない)。
 
 ## 9. 検証

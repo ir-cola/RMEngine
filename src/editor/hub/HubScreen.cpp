@@ -5,6 +5,7 @@
 #include "base/Utf.h"
 #include "base/Version.h"
 #include "editor/app/App.h"
+#include "editor/app/Paths.h"
 #include "editor/plugin/Plugins.h"
 #include "editor/project/Project.h"
 #include "editor/widgets/Theme.h"
@@ -169,7 +170,7 @@ void HubScreen::BrowseOpen() {
 
 void HubScreen::BeginNewProject() {
     // Always the engine's Project folder (another place can be chosen with 参照… for each project).
-    const fs::path loc = platform::EngineDirectory() / L"Project";
+    const fs::path loc = paths::DefaultProjects();
     newLocation_ = PathToUtf8(loc);
     newName_ = "NewProject";
     std::error_code ec;
@@ -278,8 +279,10 @@ void HubScreen::OnFrame(ui::Context& c, float width, float height) {
     DrawSidebar(c, ui::TakeLeft(full, 232));
     if (page_ == Page::Projects) {
         DrawProjects(c, full.Inset(32, 28, 32, 28));
-    } else {
+    } else if (page_ == Page::Plugins) {
         DrawPlugins(c, full.Inset(32, 28, 32, 28));
+    } else {
+        DrawOptions(c, full.Inset(32, 28, 32, 28));
     }
 
     c.SetInputEnabled(true);
@@ -319,6 +322,7 @@ void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
     };
     nav("nav.projects", L"プロジェクト", Page::Projects);
     nav("nav.plugins", L"プラグイン", Page::Plugins);
+    nav("nav.options", L"オプション", Page::Options);
 
     p.Text({r.x + 28, r.Bottom() - 44, r.w - 56, 20}, std::format(L"バージョン {}", kEngineVersionW), Style(12, theme::TextFaint));
 }
@@ -337,8 +341,7 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
     w::TextField(c, "hub.search", {searchRow.x, searchRow.y, std::min(360.f, searchRow.w), 34}, search_, L"プロジェクトを検索");
     ui::TakeTop(area, 16);
 
-    // Table
-    p.FillRoundRect(area, 8, theme::Panel);
+    // Table (on the page's own background: only the header line, and the hovered / selected row, are drawn)
     Rect table = area;
     const Rect head = ui::TakeTop(table, 38);
     const float menuW = 48, modW = 180;
@@ -395,7 +398,12 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
         p.Text({xPath + 18, rr.y, pathW - 26, rr.h}, row.folder, Style(12, theme::TextFaint));
 
         const Rect more{rr.Right() - 40, rr.y + 7, 32, rr.h - 14};
-        if (w::Button(c, "more", more, L"…", w::ButtonKind::Ghost)) {
+        const bool moreClicked = w::Button(c, "more", more, L"", w::ButtonKind::Ghost);
+        // Three dots in the middle of the button (the "…" character sits on the text baseline, low).
+        for (int d = -1; d <= 1; ++d) {
+            p.FillRoundRect({more.x + more.w * 0.5f - 1.5f + 6.f * static_cast<float>(d), more.y + more.h * 0.5f - 1.5f, 3, 3}, 1.5f, theme::TextDim);
+        }
+        if (moreClicked) {
             selected_ = row.file;
             rowMenuFile_ = row.file;
             rowMenu_.OpenAt(more.x, more.Bottom() + 2);
@@ -721,6 +729,66 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
             }
             break;
     }
+}
+
+void HubScreen::DrawOptions(ui::Context& c, Rect area) {
+    auto& p = c.P();
+    p.Text(ui::TakeTop(area, 40), L"オプション", Style(24, theme::Text, true));
+    ui::TakeTop(area, 22);
+    float y = area.y;
+    const float labelW = 230, buttonW = 190;
+    auto section = [&](std::wstring_view title) {
+        p.Text({area.x, y, area.w, 24}, title, Style(15, theme::Text, true));
+        y += 30;
+        p.FillRect({area.x, y - 4, area.w, 1}, theme::Border);
+        y += 6;
+    };
+    auto note = [&](std::wstring_view text) {
+        p.Text({area.x, y, area.w, 20}, text, Style(12, theme::TextFaint));
+        y += 26;
+    };
+    // A place on disk, with a button that shows it in Explorer (when it exists).
+    auto place = [&](std::string_view id, std::wstring_view label, const fs::path& path) {
+        const Rect row{area.x, y, area.w, 36};
+        p.Text({row.x, row.y, labelW, row.h}, label, Style(13, theme::TextDim));
+        p.Text({row.x + labelW, row.y, row.w - labelW - buttonW - 16, row.h}, path.native(), Style(12, theme::Text));
+        std::error_code ec;
+        const bool exists = fs::exists(path, ec);
+        if (w::Button(c, id, {row.Right() - buttonW, row.y + 2, buttonW, row.h - 4}, exists ? L"エクスプローラーで表示" : L"まだありません",
+                      w::ButtonKind::Secondary, exists)) {
+            platform::ShowInExplorer(path);
+        }
+        y += 42;
+    };
+
+    section(L"新しいプロジェクト");
+    place("opt.projects", L"既定の保存先", paths::DefaultProjects());
+    note(L"「新規作成」で最初から入っている場所です。作るときに「参照…」でほかの場所にもできます。");
+    y += 14;
+
+    section(L"エンジンのファイル");
+    place("opt.installed", L"入れたプラグイン", paths::InstalledPlugins());
+    place("opt.engine", L"このエンジンが持つプラグイン", paths::EnginePlugins());
+    place("opt.log", L"ログ (editor.log)", paths::LogFile());
+    place("opt.hub", L"Hub の設定 (hub.json)", paths::HubSettingsFile());
+    y += 14;
+
+    section(L"お知らせ");
+    const bool hidden = app_.Settings().HasHiddenNotice();
+    p.Text({area.x, y, area.w - buttonW - 16, 36},
+           hidden ? L"「この状態が変わるまで表示しない」にしたプラグインのお知らせがあります。" : L"表示しないことにしたお知らせはありません。",
+           Style(13, theme::TextDim));
+    if (w::Button(c, "opt.notices", {area.Right() - buttonW, y + 2, buttonW, 32}, L"また表示する", w::ButtonKind::Secondary, hidden)) {
+        app_.Settings().ShowNoticesAgain();
+        app_.Settings().Save();
+        log::Info("表示しないことにしたお知らせを、また表示するようにしました");
+    }
+    y += 56;
+
+    section(L"このエンジンについて");
+    p.Text({area.x, y, area.w, 22}, std::format(L"RM Engine  バージョン {}", kEngineVersionW), Style(13, theme::TextDim));
+    y += 26;
+    p.Text({area.x, y, area.w, 22}, L"エンジンのフォルダ: " + platform::EngineDirectory().native(), Style(12, theme::TextFaint));
 }
 
 void HubScreen::DrawRowMenu(ui::Context& c) {

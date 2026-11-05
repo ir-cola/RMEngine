@@ -31,7 +31,7 @@ protected:
     void OnCloseRequested() override;
 
 private:
-    enum class Page { Projects, Plugins };
+    enum class Page { Projects, Plugins, Options };
     enum class Modal { None, NewProject, Rename, Error, Plugin };
     enum class PromptKind { Blocking, Limited, Install, Remove };
 
@@ -63,6 +63,7 @@ private:
     void DrawSidebar(ui::Context& c, ui::Rect r);
     void DrawProjects(ui::Context& c, ui::Rect r);
     void DrawPlugins(ui::Context& c, ui::Rect r);
+    void DrawOptions(ui::Context& c, ui::Rect r);
     void DrawNewProject(ui::Context& c);
     void DrawRename(ui::Context& c);
     void DrawError(ui::Context& c);

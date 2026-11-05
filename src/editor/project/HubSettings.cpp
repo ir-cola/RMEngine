@@ -2,6 +2,7 @@
 
 #include "base/Log.h"
 #include "base/Utf.h"
+#include "editor/app/Paths.h"
 #include "editor/plugin/PluginManifest.h"
 #include "platform/Shell.h"
 
@@ -32,12 +33,10 @@ int64_t NowUnix() {
 
 bool SamePath(const fs::path& a, const fs::path& b) { return Normalized(a) == Normalized(b); }
 
-fs::path HubSettings::SettingsDir() { return platform::GetKnownFolder(platform::KnownFolder::RoamingAppData) / L"RM_Engine"; }
-
 void HubSettings::Load() {
     recent_.clear();
     doc_ = json::Value::MakeObject();
-    const fs::path file = SettingsDir() / L"hub.json";
+    const fs::path file = paths::HubSettingsFile();
     std::error_code ec;
     if (!fs::exists(file, ec)) return;
     std::string err;
@@ -71,11 +70,11 @@ bool HubSettings::Save() {
     doc_.Set("version", 1);
     doc_.Set("recent", std::move(list));
 
-    const fs::path dir = SettingsDir();
+    const fs::path file = paths::HubSettingsFile();
     std::error_code ec;
-    fs::create_directories(dir, ec);
+    fs::create_directories(file.parent_path(), ec);
     std::string err;
-    if (!platform::WriteFileAtomic(dir / L"hub.json", json::Write(doc_), &err)) {
+    if (!platform::WriteFileAtomic(file, json::Write(doc_), &err)) {
         log::Warn("Hub の設定を保存できませんでした: {}", err);
         return false;
     }
@@ -108,6 +107,10 @@ bool HubSettings::LimitedNoticeHidden(const std::vector<PluginId>& limited) cons
     }
     return true;
 }
+
+bool HubSettings::HasHiddenNotice() const { return doc_.Get("hiddenPluginNotice").Size() > 0; }
+
+void HubSettings::ShowNoticesAgain() { doc_.Erase("hiddenPluginNotice"); }
 
 void HubSettings::HideLimitedNotice(const std::vector<PluginId>& limited) {
     json::Value list = json::Value::MakeArray();

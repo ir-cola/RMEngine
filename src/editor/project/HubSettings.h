@@ -33,8 +33,9 @@ public:
     // (design RME_PLATFORM 1-b-2): hidden only while the set of such plugins stays the same.
     bool LimitedNoticeHidden(const std::vector<PluginId>& limited) const;
     void HideLimitedNotice(const std::vector<PluginId>& limited);
+    bool HasHiddenNotice() const;
+    void ShowNoticesAgain();  // forgets "この状態が変わるまで表示しない"
 
-    static std::filesystem::path SettingsDir();
 
 private:
     json::Value doc_ = json::Value::MakeObject();
