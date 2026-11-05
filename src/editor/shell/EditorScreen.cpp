@@ -138,6 +138,8 @@ void EditorScreen::RedrawAll() {
 // Workspaces (one per software) and their layouts
 // ---------------------------------------------------------------------------
 
+const PluginRegistry& EditorScreen::Workspace::Registry() const { return editor_.app_.GetPlugins().Registry(); }
+
 dock::Layout EditorScreen::Workspace::DefaultLayout() const {
     return software ? software->DefaultLayout() : CoreDefaultLayout();
 }
@@ -712,22 +714,34 @@ void EditorScreen::DrawHierarchy(ui::Context& c, Rect r) {
 void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     Workspace& ws = Active();
     const Inspectable& target = ws.inspected;
-    const reflect::EditTarget obj = target.type && target.resolve ? target.resolve() : reflect::EditTarget{};
-    if (!obj.object) {
+    // The blocks as they are now (a component may have come back or gone with an undo).
+    const std::vector<InspectBlock> blocks = target.blocks ? target.blocks() : std::vector<InspectBlock>{};
+    std::vector<inspector::Block> shown;
+    std::vector<size_t> source;  // shown[i] is blocks[source[i]]
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        const InspectBlock& b = blocks[i];
+        const reflect::EditTarget obj = b.type && b.resolve ? b.resolve() : reflect::EditTarget{};
+        if (b.type && !obj.object) continue;  // gone
+        shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu});
+        source.push_back(i);
+    }
+    const bool gone = target.blocks && shown.empty();
+    if (shown.empty()) {
         ui::TextStyle hint = Style(12, theme::TextFaint);
         hint.wrap = true;
         hint.v = ui::VAlign::Top;
-        c.P().Text(r.Inset(12, 10, 12, 10), !target.type && !target.title.empty() ? target.title : L"何も選ばれていません。", hint);
+        c.P().Text(r.Inset(12, 10, 12, 10), !gone && !target.title.empty() ? target.title : L"何も選ばれていません。", hint);
         return;
     }
     const Rect title = ui::TakeTop(r, 34);
-    c.P().Text(title.Inset(12, 0, 12, 0), target.title.empty() ? Utf8ToWide(target.type->label) : target.title,
-               Style(14, theme::Text, true));
+    c.P().Text(title.Inset(12, 0, 12, 0), target.title, Style(14, theme::Text, true));
     c.P().FillRect({title.x + 8, title.Bottom() - 1, title.w - 16, 1}, theme::Border);
-    if (auto edit = inspector::Draw(c, ws.inspectorState, r, *target.type, obj.object, obj.unknowns)) {
+    // (a choice made in a drop-down arrives a frame later: the list may have changed since)
+    if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu); edit && edit->block < source.size()) {
         // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly.
-        ws.history.Push(std::make_unique<reflect::SetFieldCommand>(*target.type, std::move(edit->path), std::move(edit->before),
-                                                                   std::move(edit->after), target.resolve, std::move(edit->label)),
+        const InspectBlock& b = blocks[source[edit->block]];
+        ws.history.Push(std::make_unique<reflect::SetFieldCommand>(*b.type, std::move(edit->path), std::move(edit->before),
+                                                                   std::move(edit->after), b.resolve, std::move(edit->label)),
                         false);
     }
 }

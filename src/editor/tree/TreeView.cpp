@@ -29,35 +29,6 @@ ui::TextStyle Style(float size, ui::Color color, ui::HAlign h = ui::HAlign::Left
     return s;
 }
 
-const wchar_t* KeyName(ui::Key k) {
-    switch (k) {
-        case ui::Key::Delete: return L"Delete";
-        case ui::Key::Backspace: return L"Backspace";
-        case ui::Key::Enter: return L"Enter";
-        case ui::Key::F2: return L"F2";
-        case ui::Key::F5: return L"F5";
-        case ui::Key::A: return L"A";
-        case ui::Key::C: return L"C";
-        case ui::Key::D: return L"D";
-        case ui::Key::N: return L"N";
-        case ui::Key::O: return L"O";
-        case ui::Key::S: return L"S";
-        case ui::Key::V: return L"V";
-        case ui::Key::X: return L"X";
-        case ui::Key::Y: return L"Y";
-        case ui::Key::Z: return L"Z";
-        default: return L"";
-    }
-}
-
-std::wstring ShortcutText(const Action& a) {
-    if (a.key == ui::Key::None) return {};
-    std::wstring s;
-    if (a.ctrl) s += L"Ctrl+";
-    if (a.shift) s += L"Shift+";
-    return s + KeyName(a.key);
-}
-
 size_t RowOf(std::span<const Item> items, std::span<const Row> rows, ItemId id) {
     if (id == 0) return npos;
     for (size_t r = 0; r < rows.size(); ++r) {
@@ -446,30 +417,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     c.SetInputEnabled(inputWas);
 
     // --- The right-click menu (at the end of the frame: not cut off by the panel) -----------------
-    if (st.menu.open) {
-        State* sp = &st;
-        c.AddOverlay([&c, sp] {
-            std::vector<w::MenuItem> rowsOfMenu;
-            float width = 220;
-            for (const Action& a : sp->menuActions) {
-                w::MenuItem mi;
-                mi.label = a.label;
-                mi.shortcut = ShortcutText(a);
-                mi.enabled = a.enabled && static_cast<bool>(a.run);
-                mi.separator = a.separator;
-                width = std::max(width, c.P().TextWidth(mi.label, theme::FontSize) + c.P().TextWidth(mi.shortcut, theme::FontSize) + 72);
-                rowsOfMenu.push_back(std::move(mi));
-            }
-            const bool was = c.InputEnabled();
-            c.SetInputEnabled(true);
-            const int picked = w::MenuPopup(c, sp->menu, rowsOfMenu, width);
-            c.SetInputEnabled(was);
-            if (picked >= 0 && static_cast<size_t>(picked) < sp->menuActions.size()) {
-                const auto run = sp->menuActions[static_cast<size_t>(picked)].run;  // a copy: run may rebuild the list
-                if (run) run();
-            }
-        });
-    }
+    w::ActionMenu(c, st.menu, st.menuActions);
 
     if (st.sel.ids != before) src.SelectionChanged(st.sel.ids);
 }

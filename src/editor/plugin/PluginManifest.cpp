@@ -57,6 +57,31 @@ std::optional<PluginManifest> ParsePluginManifest(const json::Value& v, std::str
     m.displayName = v.Get("displayName").AsString();
     if (m.displayName.empty()) m.displayName = m.id.name;
     m.requirements = std::move(*requirements);
+
+    if (const json::Value* nc = v.Find("needsConnector")) {
+        if (!nc->IsBool()) {
+            if (error) *error = "needsConnector は true か false で書いてください";
+            return std::nullopt;
+        }
+        m.needsConnector = nc->AsBool();
+    }
+    if (const json::Value* cf = v.Find("connectorFor")) {
+        std::string cfError;
+        auto target = ParseId(*cf, &cfError);
+        if (!target) {
+            if (error) *error = "connectorFor: " + cfError;
+            return std::nullopt;
+        }
+        if (*target == m.id || m.needsConnector) {
+            if (error) *error = "つなぎのプラグインは、自分自身のつなぎにも、つなぎが要るプラグインにもなれません";
+            return std::nullopt;
+        }
+        if (std::find(m.requirements.begin(), m.requirements.end(), *target) == m.requirements.end()) {
+            if (error) *error = std::format("connectorFor の相手 ({}) を requires にも書いてください", target->Text());
+            return std::nullopt;
+        }
+        m.connectorFor = std::move(*target);
+    }
     return m;
 }
 
@@ -139,6 +164,43 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
         mark[i] = Mark::Done;
     };
     for (size_t i = 0; i < n; ++i) visit(visit, i);
+
+    // Connectors (design 4-f, rule 2): a plugin that needs one is enabled only while one is. Its
+    // connectors require it, so it may only be switched off afterwards - and then whatever requires
+    // it (its connectors among them) goes off too, until nothing changes.
+    auto isEnabled = [&](size_t j) { return r.statuses[j].state == PluginState::Enabled; };
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (size_t i = 0; i < n; ++i) {
+            if (!isEnabled(i) || !c[i].manifest->needsConnector) continue;
+            bool any = false;
+            std::string names;
+            for (size_t j = 0; j < n; ++j) {
+                const auto& mj = c[j].manifest;
+                if (!mj || !mj->connectorFor || *mj->connectorFor != c[i].id) continue;
+                any |= isEnabled(j);
+                names += (names.empty() ? "「" : "」「") + r.statuses[j].displayName;
+            }
+            if (any) continue;
+            PluginStatus& s = r.statuses[i];
+            s.state = PluginState::NoConnector;
+            s.reason = names.empty() ? "つなぎのプラグイン (3D 空間 などと組み合わせるもの) がこのエンジンにありません"
+                                     : std::format("つなぎのプラグイン ({}」) が使えないため、使えません。3D 空間 などのプラグインと一緒に入れてください", names);
+            changed = true;
+        }
+        for (size_t i = 0; i < n; ++i) {
+            if (!isEnabled(i)) continue;
+            for (const PluginId& req : c[i].manifest->requirements) {
+                const size_t j = find(req);
+                if (j == n || isEnabled(j)) continue;
+                r.statuses[i].state = PluginState::RequirementDisabled;
+                r.statuses[i].reason = std::format("前提のプラグイン「{}」が使えないため、使えません", r.statuses[j].displayName);
+                changed = true;
+                break;
+            }
+        }
+    }
+    std::erase_if(r.order, [&](size_t i) { return !isEnabled(i); });
     return r;
 }
 
@@ -178,6 +240,40 @@ std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginMa
         if (!isReady) plan.push_back(p);
     };
     add(add, id);
+
+    // Connectors come along (design 4-f, rule 1: they are never chosen by hand).
+    auto have = [&](const PluginId& p) { return Contains(ready, p) || Contains(plan, p); };
+    for (bool changed = true; changed;) {
+        changed = false;
+        // Every connector whose requirements are all there.
+        for (const PluginManifest& m : available) {
+            if (!m.connectorFor || have(m.id)) continue;
+            if (std::all_of(m.requirements.begin(), m.requirements.end(), have)) {
+                plan.push_back(m.id);
+                walked.push_back(m.id);
+                changed = true;
+            }
+        }
+        // A plugin being installed that needs a connector and would have none: the first one this
+        // engine has for it, with its requirements.
+        std::vector<PluginId> targets = plan;
+        if (!Contains(targets, id)) targets.push_back(id);
+        for (const PluginId& t : targets) {
+            const PluginManifest* tm = FindManifest(available, t);
+            if (!tm || !tm->needsConnector) continue;
+            const PluginManifest* first = nullptr;
+            bool has = false;
+            for (const PluginManifest& m : available) {
+                if (!m.connectorFor || *m.connectorFor != t) continue;
+                has |= have(m.id);
+                if (!first) first = &m;
+            }
+            if (has || !first) continue;
+            const size_t before = plan.size();
+            add(add, first->id);
+            changed |= plan.size() != before;
+        }
+    }
     return plan;
 }
 
@@ -197,6 +293,17 @@ std::vector<Dependent> Dependents(const PluginId& id, const std::vector<PluginMa
                 d.id = m.id;
                 if (f != id) d.via = f;
                 out.push_back(std::move(d));
+                // A connector that goes: the plugin it serves stops too when it was the last one.
+                if (!m.connectorFor || Contains(seen, *m.connectorFor)) continue;
+                const PluginManifest* target = FindManifest(installed, *m.connectorFor);
+                if (!target || !target->needsConnector) continue;
+                const bool another = std::any_of(installed.begin(), installed.end(), [&](const PluginManifest& o) {
+                    return o.connectorFor && *o.connectorFor == target->id && !Contains(seen, o.id);
+                });
+                if (another) continue;
+                seen.push_back(target->id);
+                next.push_back(target->id);
+                out.push_back({target->id, m.id});
             }
         }
         frontier = std::move(next);

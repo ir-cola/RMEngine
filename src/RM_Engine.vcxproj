@@ -59,6 +59,7 @@
     <ClCompile Include="core\UndoHistory.cpp" />
     <ClCompile Include="core\reflect\Data.cpp" />
     <ClCompile Include="core\reflect\FieldCommand.cpp" />
+    <ClCompile Include="core\reflect\Object.cpp" />
     <ClCompile Include="platform\Gfx.cpp" />
     <ClCompile Include="platform\Shell.cpp" />
     <ClCompile Include="platform\Window.cpp" />
@@ -87,6 +88,7 @@
     <ClInclude Include="core\UndoHistory.h" />
     <ClInclude Include="core\reflect\Data.h" />
     <ClInclude Include="core\reflect\FieldCommand.h" />
+    <ClInclude Include="core\reflect\Object.h" />
     <ClInclude Include="core\reflect\Reflect.h" />
     <ClInclude Include="platform\Gfx.h" />
     <ClInclude Include="platform\Shell.h" />

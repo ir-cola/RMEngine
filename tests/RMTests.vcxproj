@@ -60,6 +60,7 @@
     <ClCompile Include="TestReflect.cpp" />
     <ClCompile Include="TestRmgen.cpp" />
     <ClCompile Include="TestScene.cpp" />
+    <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestTree.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
@@ -70,6 +71,8 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
     <ClCompile Include="..\src\core\reflect\Data.cpp" />
     <ClCompile Include="..\src\core\reflect\FieldCommand.cpp" />
+    <ClCompile Include="..\src\core\reflect\Object.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Transform.cpp" />
     <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
   </ItemGroup>
   <ItemGroup>

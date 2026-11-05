@@ -3,6 +3,7 @@
 
 #include "ui/Context.h"
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -56,6 +57,21 @@ struct Popup {
 int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, float width = 240.f);
 // The rectangle MenuPopup will use (after keeping it inside the viewport).
 ui::Rect MenuRect(const ui::Context& c, const Popup& popup, const std::vector<MenuItem>& items, float width = 240.f);
+
+// A menu row that does something, optionally with a shortcut. Used by menus that a software fills
+// (the 階層's right-click menu, the inspector's block menus ...).
+struct Action {
+    std::wstring label;
+    std::function<void()> run;  // empty for a separator
+    bool enabled = true;
+    bool separator = false;
+    ui::Key key = ui::Key::None;
+    bool ctrl = false, shift = false;
+};
+std::wstring ShortcutText(const Action& a);  // "Ctrl+D", "Delete", "" (no shortcut)
+// Draws `popup` (when open) with `actions` at the end of the frame (not cut off by a panel) and runs
+// the picked row. The list is kept by the caller until the menu closes.
+void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions);
 
 // --- Modal dialog -------------------------------------------------------------
 // Dims the screen, draws the dialog box and title, returns the content area.

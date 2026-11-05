@@ -11,6 +11,13 @@
 // header (for C++) and in plugin.json (read without compiling). Loading compares the two and
 // refuses a plugin whose IDs differ - the mismatch is always found, never silently picked.
 // A plugin whose requirement is missing or unusable is not enabled, and says why.
+//
+// Connectors (design RME_PLATFORM 4-f, plan C): game production must not know 3D or 2D, so the
+// parts that do live in a connector plugin ("ゲーム制作 × 3D") that requires both sides:
+//   game production   "needsConnector": true          -> enabled only while one of its connectors is
+//   the connector     "connectorFor": { game production }, "requires": [ game production, 3D 空間 ]
+// The arrow goes one way only (connector -> both sides), so requirements never go round.
+// A connector is installed automatically once everything it requires is (never chosen by hand).
 
 #include "base/Json.h"
 #include "core/PluginId.h"
@@ -25,6 +32,8 @@ struct PluginManifest {
     PluginId id;
     std::string displayName;  // UTF-8
     std::vector<PluginId> requirements;
+    bool needsConnector = false;            // enabled only while a connector for it is
+    std::optional<PluginId> connectorFor;   // this plugin is a connector for that one (also in requirements)
 };
 
 // A list of IDs: [ { "author": ..., "name": ... }, ... ]. Used for "requires" and for the
@@ -41,6 +50,7 @@ enum class PluginState {
     MissingRequirement,   // a required plugin is not in this engine at all
     RequirementDisabled,  // a required plugin exists but is not installed or cannot be used
     Cycle,                // requirements go round in a circle
+    NoConnector,          // "needsConnector", and none of its connectors can be used
 };
 
 // One plugin built into the exe, with what was read from its plugin.json.
@@ -69,7 +79,8 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& candidates);
 
 // True for the states the Hub marks "⚠ 前提が無い" (installed, but a requirement is missing).
 inline bool LacksRequirement(PluginState s) {
-    return s == PluginState::MissingRequirement || s == PluginState::RequirementDisabled || s == PluginState::Cycle;
+    return s == PluginState::MissingRequirement || s == PluginState::RequirementDisabled || s == PluginState::Cycle ||
+           s == PluginState::NoConnector;
 }
 
 // --- Installing and removing (pure) ------------------------------------------------------
@@ -80,6 +91,9 @@ inline bool LacksRequirement(PluginState s) {
 // that is not in `ready` (installed and readable) - requirements first, each once. Ready plugins
 // are looked through, so a requirement missing further down is found. Empty = nothing to copy.
 // A plugin of the tree that is not in `available` (not in this engine) goes to *unavailable.
+// Connectors come along: every connector whose requirements are then all there, and - for a plugin
+// that needs a connector and would have none - the first connector this engine has for it, with
+// its requirements (game production alone brings 3D 空間 and ゲーム制作 × 3D).
 std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginManifest>& available,
                                   const std::vector<PluginId>& ready, std::vector<PluginId>* unavailable);
 
@@ -88,7 +102,7 @@ struct Dependent {
     std::optional<PluginId> via;  // empty: needs it directly; else needs it through this plugin
 };
 // Installed plugins that stop working when `id` is removed: direct ones first, then the ones
-// that need it through them. Each once.
+// that need it through them. Each once. A plugin that loses its last connector counts too (via the connector).
 std::vector<Dependent> Dependents(const PluginId& id, const std::vector<PluginManifest>& installed);
 
 }  // namespace rm::editor

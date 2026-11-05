@@ -5,6 +5,8 @@
 #include "core/PluginId.h"
 #include "editor/plugin/PluginManifest.h"
 
+#include <algorithm>
+
 using namespace rm;
 using namespace rm::editor;
 
@@ -201,4 +203,108 @@ RM_TEST(Plugins_NotInstalled) {
     CHECK(r.statuses[0].reason.find("インストールされていません") != std::string::npos);
     CHECK(LacksRequirement(r.statuses[0].state));
     CHECK(r.order.empty());
+}
+
+namespace {
+
+// game_production needs a connector; game_x_3d connects it with space3d.
+std::vector<PluginManifest> ConnectorWorld() {
+    PluginManifest game = Manifest("game_production");
+    game.needsConnector = true;
+    PluginManifest x3d = Manifest("game_x_3d", {Id("game_production"), Id("space3d")});
+    x3d.connectorFor = Id("game_production");
+    return {game, Manifest("space3d"), x3d, Manifest("game_ui", {Id("game_production")})};
+}
+
+PluginCandidate FromManifest(const PluginManifest& m, bool installed = true) {
+    PluginCandidate c;
+    c.id = m.id;
+    c.installed = installed;
+    c.manifestFound = true;
+    c.manifest = m;
+    return c;
+}
+
+}  // namespace
+
+RM_TEST(PluginManifest_ConnectorKeys) {
+    std::string err;
+    auto ok = json::Parse(R"({"author":"rm_engine","name":"game_x_3d","connectorFor":{"author":"rm_engine","name":"game_production"},
+                             "requires":[{"author":"rm_engine","name":"game_production"},{"author":"rm_engine","name":"space3d"}]})");
+    auto m = ParsePluginManifest(*ok, &err);
+    CHECK(m && m->connectorFor == Id("game_production") && !m->needsConnector);
+    auto needs = json::Parse(R"({"author":"rm_engine","name":"game_production","needsConnector":true})");
+    auto g = ParsePluginManifest(*needs, &err);
+    CHECK(g && g->needsConnector && !g->connectorFor);
+    // The target must also be required (so it is enabled first), never itself, never a connector that needs one.
+    auto notRequired = json::Parse(R"({"author":"rm_engine","name":"game_x_3d","connectorFor":{"author":"rm_engine","name":"game_production"}})");
+    CHECK(!ParsePluginManifest(*notRequired, &err));
+    auto self = json::Parse(R"({"author":"rm_engine","name":"game_x_3d","connectorFor":{"author":"rm_engine","name":"game_x_3d"},
+                               "requires":[{"author":"rm_engine","name":"game_x_3d"}]})");
+    CHECK(!ParsePluginManifest(*self, &err));
+    auto notBool = json::Parse(R"({"author":"rm_engine","name":"game_production","needsConnector":"yes"})");
+    CHECK(!ParsePluginManifest(*notBool, &err));
+}
+
+RM_TEST(Plugins_ConnectorDecidesEnabled) {
+    const auto w = ConnectorWorld();
+    // Everything installed: all enabled, the connector after both of its sides.
+    std::vector<PluginCandidate> c;
+    for (const auto& m : w) c.push_back(FromManifest(m));
+    auto r = ResolvePlugins(c);
+    for (const auto& s : r.statuses) CHECK(s.state == PluginState::Enabled);
+    CHECK(r.order.size() == 4);
+    auto pos = [&](size_t idx) { return std::find(r.order.begin(), r.order.end(), idx) - r.order.begin(); };
+    CHECK(pos(2) > pos(0) && pos(2) > pos(1));
+
+    // 3D 空間 not installed: the connector cannot work, so game production is off - and game_ui with it.
+    c[1].installed = false;
+    r = ResolvePlugins(c);
+    CHECK(r.statuses[2].state == PluginState::RequirementDisabled);
+    CHECK(r.statuses[0].state == PluginState::NoConnector);
+    CHECK(r.statuses[0].reason.find("game_x_3d") != std::string::npos);
+    CHECK(LacksRequirement(r.statuses[0].state));
+    CHECK(r.statuses[3].state == PluginState::RequirementDisabled);
+    CHECK(r.order.empty());
+
+    // No connector in the engine at all.
+    std::vector<PluginCandidate> alone = {FromManifest(w[0])};
+    r = ResolvePlugins(alone);
+    CHECK(r.statuses[0].state == PluginState::NoConnector);
+}
+
+RM_TEST(Plugins_InstallPlanBringsConnectors) {
+    const auto w = ConnectorWorld();
+    // Game production alone brings a space and the connector.
+    auto plan = InstallPlan(Id("game_production"), w, {}, nullptr);
+    CHECK(plan == std::vector<PluginId>({Id("game_production"), Id("space3d"), Id("game_x_3d")}));
+    // Installed, but without a connector ("前提をインストール"): only what is missing.
+    plan = InstallPlan(Id("game_production"), w, {Id("game_production")}, nullptr);
+    CHECK(plan == std::vector<PluginId>({Id("space3d"), Id("game_x_3d")}));
+    // 3D 空間 when game production is there: the connector comes along by itself.
+    plan = InstallPlan(Id("space3d"), w, {Id("game_production")}, nullptr);
+    CHECK(plan == std::vector<PluginId>({Id("space3d"), Id("game_x_3d")}));
+    // 3D 空間 alone: no connector (game production is not there).
+    plan = InstallPlan(Id("space3d"), w, {}, nullptr);
+    CHECK(plan == std::vector<PluginId>({Id("space3d")}));
+    // Everything there: nothing.
+    CHECK(InstallPlan(Id("game_ui"), w, {Id("game_production"), Id("space3d"), Id("game_x_3d"), Id("game_ui")}, nullptr).empty());
+}
+
+RM_TEST(Plugins_DependentsThroughConnector) {
+    const auto w = ConnectorWorld();
+    // Removing 3D 空間: the connector goes, so game production (its last connector) and game_ui go too.
+    const auto d = Dependents(Id("space3d"), w);
+    CHECK(d.size() == 3);
+    CHECK(d[0].id == Id("game_x_3d") && !d[0].via);
+    CHECK(d[1].id == Id("game_production") && d[1].via == Id("game_x_3d"));
+    CHECK(d[2].id == Id("game_ui") && d[2].via == Id("game_production"));
+    // With a second connector (2D) still there, game production keeps working.
+    auto more = w;
+    PluginManifest x2d = Manifest("game_x_2d", {Id("game_production"), Id("space2d")});
+    x2d.connectorFor = Id("game_production");
+    more.push_back(Manifest("space2d"));
+    more.push_back(x2d);
+    const auto d2 = Dependents(Id("space3d"), more);
+    CHECK(d2.size() == 1 && d2[0].id == Id("game_x_3d"));
 }

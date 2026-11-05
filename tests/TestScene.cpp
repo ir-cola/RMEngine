@@ -4,6 +4,7 @@
 #include "Test.h"
 
 #include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/space3d/runtime/Transform.h"
 
 using namespace rm;
 using namespace rm::game_production;
@@ -163,4 +164,65 @@ RM_TEST(Scene_Load_RepairsBrokenFiles) {
     // New ids never collide with loaded ones.
     const int fresh = s.Create("new");
     CHECK(fresh > 7);
+}
+
+namespace {
+
+const reflect::TypeDesc& TransformType() { return reflect::TypeOf<space3d::Transform>(); }
+
+}  // namespace
+
+RM_TEST(Scene_Components_AddRemoveDuplicate) {
+    Scene s = Sample();
+    s.SetComponentTypes({&TransformType()});
+    CHECK(s.AddComponent(1, TransformType()));
+    CHECK(!s.AddComponent(1, TransformType()));  // one of each type
+    CHECK(!s.AddComponent(99, TransformType()));
+    Component* c = s.Find(1)->FindComponent(TransformType().name);
+    CHECK(c && c->Known());
+    auto* t = static_cast<space3d::Transform*>(c->value.Get());
+    CHECK(t->scale.x == 1 && t->position.y == 0);  // the type's defaults
+    t->position = {1, 2, 3};
+    // A copy of the entity has its own copy of the component.
+    const auto made = s.Duplicate(std::vector<int>{1});
+    auto* copy = static_cast<space3d::Transform*>(s.Find(made[0])->FindComponent(TransformType().name)->value.Get());
+    CHECK(copy != t && copy->position.z == 3);
+    copy->position.z = 9;
+    CHECK(t->position.z == 3);
+    CHECK(s.RemoveComponent(1, TransformType().name));
+    CHECK(!s.RemoveComponent(1, TransformType().name));
+    CHECK(s.Find(1)->components.empty());
+}
+
+RM_TEST(Scene_Components_SaveLoadAndUnknownTypes) {
+    Scene s = Sample();
+    s.SetComponentTypes({&TransformType()});
+    s.AddComponent(2, TransformType());
+    static_cast<space3d::Transform*>(s.Find(2)->FindComponent(TransformType().name)->value.Get())->rotation = {0, 45, 0};
+    json::Value saved = s.Save();
+    // A component of a plugin that is not here, and a key of a newer version inside a known one.
+    json::Value& e2 = saved.Find("entities")->At(1);
+    json::Value foreign = json::Value::MakeObject();
+    foreign.Set("type", "someone::Physics");
+    foreign.Set("data", json::Value::MakeObject());
+    foreign.Find("data")->Set("mass", 2.5);
+    e2.Find("components")->Push(foreign);
+    e2.Find("components")->At(0).Find("data")->Set("pivot", "center");
+
+    Scene t;
+    t.SetComponentTypes({&TransformType()});
+    reflect::Warnings w;
+    t.Load(saved, &w);
+    CHECK(w.size() == 1);  // the unknown component
+    const SceneEntity* e = t.Find(2);
+    CHECK(e->components.size() == 2);
+    CHECK(e->components[0].Known() && !e->components[1].Known());
+    CHECK(static_cast<const space3d::Transform*>(e->components[0].value.Get())->rotation.y == 45);
+    CHECK(t.Save() == saved);  // both written back as they were
+
+    // Without the type offered (3D 空間 not installed): read as unknown, still written back.
+    Scene none;
+    none.Load(saved, nullptr);
+    CHECK(!none.Find(2)->components[0].Known());
+    CHECK(none.Save() == saved);
 }

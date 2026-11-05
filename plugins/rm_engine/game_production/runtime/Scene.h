@@ -6,13 +6,15 @@
 // The order of the entities in the list is the order of siblings (children of the same parent),
 // which is the order the 階層 shows them in.
 //
-// Components (Transform and the rest) come with the ECS; for now an entity has a name and a switch.
+// An entity has a name, a switch and its components (Components.h): at most one of each type.
 
 #include "base/Json.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/Reflect.h"
+#include "rm_engine/game_production/runtime/Components.h"
 
 #include <span>
+#include <string_view>
 #include <string>
 #include <vector>
 
@@ -29,6 +31,10 @@ struct Entity {
 struct SceneEntity {
     Entity data;
     reflect::Unknowns unknowns;  // keys of a newer version: written back unchanged
+    std::vector<Component> components;  // in the order they were added
+
+    Component* FindComponent(std::string_view type);
+    const Component* FindComponent(std::string_view type) const;
 };
 
 // Where an entity is in the tree: parents before their children, siblings in order.
@@ -41,6 +47,11 @@ struct TreeEntry {
 class Scene {
 public:
     static constexpr size_t kEnd = static_cast<size_t>(-1);
+
+    // The component types offered now (by the plugins). Loading reads the others as unknown and
+    // keeps them; set this before Load.
+    void SetComponentTypes(std::vector<const reflect::TypeDesc*> types) { componentTypes_ = std::move(types); }
+    const std::vector<const reflect::TypeDesc*>& ComponentTypes() const { return componentTypes_; }
 
     bool Empty() const { return entities_.empty(); }
     const std::vector<SceneEntity>& Entities() const { return entities_; }
@@ -66,7 +77,13 @@ public:
     // parent) or nothing changed.
     bool Move(std::span<const int> ids, int parent, size_t index);
 
-    // { "nextId": 7, "entities": [ {"id": 1, "parent": 0, "name": ..., "active": ...}, ... ] }
+    // A component of `type` with its default values. False: no such entity, or it has one already.
+    bool AddComponent(int id, const reflect::TypeDesc& type);
+    // False when the entity has none of that type (known or not).
+    bool RemoveComponent(int id, std::string_view type);
+
+    // { "nextId": 7, "entities": [ {"id": 1, "parent": 0, "name": ..., "active": ...,
+    //     "components": [ {"type": "rm::space3d::Transform", "data": {...}} ] }, ... ] }
     // Keys this version does not know (of the scene and of each entity) are written back.
     json::Value Save() const;
     // Repairs what cannot be (missing or repeated ids, a missing parent, a parent loop) with a warning.
@@ -77,6 +94,7 @@ private:
     size_t InsertPosition(int parent, size_t index) const;
 
     std::vector<SceneEntity> entities_;
+    std::vector<const reflect::TypeDesc*> componentTypes_;
     int nextId_ = 1;
     json::Value extra_ = json::Value::MakeObject();  // the scene object as loaded (its unknown keys are kept)
 };

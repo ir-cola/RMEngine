@@ -1,0 +1,31 @@
+#pragma once
+// 3D 空間: where a thing is in 3D space, and the math of it. Shared by every software that has a
+// 3D space (the game through the connector "ゲーム制作 × 3D", the 3D model software later) -
+// design RME_PLATFORM 4-b: "3D 空間プラグイン = Transform (値と計算)・親子・レイ / 当たり / 投影".
+// Pure: no drawing, no files - tested in tests/TestSpace3d.cpp.
+
+#include "core/reflect/Reflect.h"
+
+namespace rm::space3d {
+
+RM_STRUCT(Label="Transform (位置・回転・大きさ)")
+struct Transform {
+    RM_PROPERTY(Edit, Label="位置") Vec3 position{0, 0, 0};
+    RM_PROPERTY(Edit, Label="回転 (度)", Tooltip="X 軸 → Y 軸 → Z 軸 の順に回します (オイラー角)") Vec3 rotation{0, 0, 0};
+    RM_PROPERTY(Edit, Label="大きさ") Vec3 scale{1, 1, 1};
+};
+
+// 4x4 matrix, column vectors (p' = M * p), m[column][row].
+struct Mat4 {
+    float m[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
+};
+
+Mat4 operator*(const Mat4& a, const Mat4& b);  // a after b: (a * b) * p = a * (b * p)
+Vec3 TransformPoint(const Mat4& m, Vec3 p);
+
+// Scale, then rotate X -> Y -> Z, then move: T * Rz * Ry * Rx * S.
+Mat4 LocalMatrix(const Transform& t);
+// In the parent's space: parentWorld * LocalMatrix(t) (the top level's parent is the identity).
+inline Mat4 WorldMatrix(const Mat4& parentWorld, const Transform& t) { return parentWorld * LocalMatrix(t); }
+
+}  // namespace rm::space3d

@@ -86,6 +86,7 @@ private:
             inspectorState = {};
             editor_.RedrawAll();
         }
+        const PluginRegistry& Registry() const override;
         void SelectInTree(std::vector<tree::ItemId> ids, bool rename) override {
             tree::RequestSelect(treeState, std::move(ids), rename);
             editor_.RedrawAll();

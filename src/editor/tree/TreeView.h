@@ -28,14 +28,7 @@
 namespace rm::editor::tree {
 
 // A row of the right-click menu, optionally with a shortcut (works while the tree has the keys).
-struct Action {
-    std::wstring label;
-    std::function<void()> run;  // empty for a separator
-    bool enabled = true;
-    bool separator = false;
-    ui::Key key = ui::Key::None;
-    bool ctrl = false, shift = false;
-};
+using Action = w::Action;
 
 // What a software puts in the tree.
 class Source {

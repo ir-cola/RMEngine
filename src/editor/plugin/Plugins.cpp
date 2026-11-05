@@ -124,6 +124,7 @@ void Plugins::Reload() {
         entries_.push_back({std::move(st), availableFlags[i], candidates[i].installed});
     }
     for (const size_t i : res.order) {
+        if (!builtin[i].registerEditor) continue;  // only a runtime part (e.g. 3D 空間)
         registry_.BeginPlugin(entries_[i].status.id);
         builtin[i].registerEditor(registry_);
         registry_.EndPlugin();

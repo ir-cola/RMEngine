@@ -345,6 +345,64 @@ int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, 
     return clicked;
 }
 
+namespace {
+const wchar_t* KeyName(ui::Key k) {
+    switch (k) {
+        case ui::Key::Delete: return L"Delete";
+        case ui::Key::Backspace: return L"Backspace";
+        case ui::Key::Enter: return L"Enter";
+        case ui::Key::F2: return L"F2";
+        case ui::Key::F5: return L"F5";
+        case ui::Key::A: return L"A";
+        case ui::Key::C: return L"C";
+        case ui::Key::D: return L"D";
+        case ui::Key::N: return L"N";
+        case ui::Key::O: return L"O";
+        case ui::Key::S: return L"S";
+        case ui::Key::V: return L"V";
+        case ui::Key::X: return L"X";
+        case ui::Key::Y: return L"Y";
+        case ui::Key::Z: return L"Z";
+        default: return L"";
+    }
+}
+}  // namespace
+
+std::wstring ShortcutText(const Action& a) {
+    if (a.key == ui::Key::None) return {};
+    std::wstring s;
+    if (a.ctrl) s += L"Ctrl+";
+    if (a.shift) s += L"Shift+";
+    return s + KeyName(a.key);
+}
+
+void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions) {
+    if (!popup.open) return;
+    Popup* pp = &popup;
+    const std::vector<Action>* list = &actions;
+    c.AddOverlay([&c, pp, list] {
+        std::vector<MenuItem> rows;
+        float width = 220;
+        for (const Action& a : *list) {
+            MenuItem mi;
+            mi.label = a.label;
+            mi.shortcut = ShortcutText(a);
+            mi.enabled = a.enabled && static_cast<bool>(a.run);
+            mi.separator = a.separator;
+            width = std::max(width, c.P().TextWidth(mi.label, theme::FontSize) + c.P().TextWidth(mi.shortcut, theme::FontSize) + 72);
+            rows.push_back(std::move(mi));
+        }
+        const bool was = c.InputEnabled();
+        c.SetInputEnabled(true);
+        const int picked = MenuPopup(c, *pp, rows, width);
+        c.SetInputEnabled(was);
+        if (picked >= 0 && static_cast<size_t>(picked) < list->size()) {
+            const auto run = (*list)[static_cast<size_t>(picked)].run;  // a copy: running may rebuild the list
+            if (run) run();
+        }
+    });
+}
+
 Rect BeginModal(ui::Context& c, float width, float height, std::wstring_view title) {
     auto& p = c.P();
     const Rect& vp = c.Viewport();

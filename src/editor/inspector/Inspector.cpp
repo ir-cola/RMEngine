@@ -32,6 +32,7 @@ struct Pass {
     ui::Context& c;
     State& st;
     Rect view;
+    size_t block = 0;
     float y = 0;
     float labelW = 0;
     std::optional<Edit> edit;
@@ -121,6 +122,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
 
     auto makeEdit = [&](json::Value after) {
         Edit e;
+        e.block = x.block;
         e.path = path;
         e.before = reflect::SaveField(f, owner, u);
         e.after = std::move(after);
@@ -193,15 +195,17 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
             if (b.clicked) {
                 x.st.popup.OpenAt(valueR.x, valueR.Bottom() + 2);
                 x.st.popupPath = path;
+                x.st.popupBlock = x.block;
             }
-            if (x.st.popup.open && x.st.popupPath == path) {
+            if (x.st.popup.open && x.st.popupPath == path && x.st.popupBlock == x.block) {
                 // The list is drawn at the end of the frame (not cut off by the panel). The choice is
                 // handed back through State and returned by the next Draw.
                 const json::Value before = reflect::SaveField(f, owner, u);
                 const float width = std::max(valueR.w, 180.f);
                 const std::string label = std::format("「{}」を変更", f.Label());
                 State* st = &x.st;
-                c.AddOverlay([&c, st, &e, path, before, width, label] {
+                const size_t block = x.block;
+                c.AddOverlay([&c, st, &e, path, before, width, label, block] {
                     std::vector<w::MenuItem> items;
                     for (const auto& it : e.items) items.push_back({Utf8ToWide(it.label)});
                     const bool wasEnabled = c.InputEnabled();
@@ -210,6 +214,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
                     c.SetInputEnabled(wasEnabled);
                     if (picked >= 0) {
                         Edit ed;
+                        ed.block = block;
                         ed.path = path;
                         ed.before = before;
                         ed.after = json::Value(e.items[static_cast<size_t>(picked)].name);
@@ -253,9 +258,35 @@ void DrawStruct(Pass& x, const TypeDesc& t, const void* obj, const Unknowns* u, 
     for (size_t i = 0; i < t.fields.size(); ++i) DrawField(x, t.fields[i], i, obj, u, prefix, indent);
 }
 
+void DrawHeader(Pass& x, const Block& b, bool folded) {
+    ui::Context& c = x.c;
+    auto& p = c.P();
+    const Rect row{x.view.x + 6, x.y, x.view.w - 12, 28};
+    x.y += 32;
+    const bool hasMenu = !b.menu.empty();
+    const Rect menuR{row.Right() - 30, row.y + 2, 26, row.h - 4};
+    const Rect foldR{row.x, row.y, row.w - (hasMenu ? 34.f : 0.f), row.h};
+    const auto fb = c.ButtonBehavior(c.MakeId("header"), foldR);
+    p.FillRoundRect(row, 5, fb.hovered ? theme::Hover : theme::PanelHeader);
+    p.Text({row.x + 6, row.y, 16, row.h}, folded ? L"▸" : L"▾", Text(11, theme::TextDim));
+    p.Text({row.x + 24, row.y, row.w - 64, row.h}, b.title, Text(13, theme::Text, true));
+    if (fb.clicked) {
+        if (folded) {
+            x.st.folded.erase(b.title);
+        } else {
+            x.st.folded.insert(b.title);
+        }
+    }
+    if (hasMenu && w::Button(c, "menu", menuR, L"⋮", w::ButtonKind::Ghost)) {
+        x.st.menuActions = b.menu;
+        x.st.menu.OpenAt(menuR.x, menuR.Bottom() + 2);
+    }
+}
+
 }  // namespace
 
-std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, const TypeDesc& type, const void* object, const Unknowns* unknowns) {
+std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<const Block> blocks, std::wstring_view addLabel,
+                         const std::function<std::vector<w::Action>()>& addMenu) {
     std::optional<Edit> result = std::move(st.pending);
     st.pending.reset();
 
@@ -263,11 +294,42 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, const Type
     Pass x{c, st, area};
     x.y = area.y + 6 - off;
     x.labelW = std::clamp(area.w * 0.38f, 96.f, 220.f);
-    // While a drop-down is open, the fields under it only show.
+    // While a drop-down or a menu is open, the fields under it only show.
     const bool inputWas = c.InputEnabled();
-    if (st.popup.open) c.SetInputEnabled(false);
-    FieldPath prefix;
-    DrawStruct(x, type, object, unknowns, prefix, 0);
+    if (st.popup.open || st.menu.open) c.SetInputEnabled(false);
+    for (size_t bi = 0; bi < blocks.size(); ++bi) {
+        const Block& b = blocks[bi];
+        x.block = bi;
+        // Ids by title (the list may change - a component added or removed - without mixing up fields).
+        c.PushId(b.title.empty() ? std::string("block") : WideToUtf8(b.title));
+        const bool folded = !b.title.empty() && st.folded.contains(b.title);
+        if (!b.title.empty()) DrawHeader(x, b, folded);
+        if (!folded) {
+            if (!b.note.empty()) {
+                ui::TextStyle ns = Text(12, theme::TextFaint);
+                ns.wrap = true;
+                ns.v = ui::VAlign::Top;
+                c.P().Text({x.view.x + 14, x.y, x.view.w - 28, 40}, b.note, ns);
+                x.y += 42;
+            }
+            if (b.type && b.object) {
+                FieldPath prefix;
+                DrawStruct(x, *b.type, b.object, b.unknowns, prefix, 0);
+            }
+            x.y += 8;
+        }
+        c.PopId();
+    }
+    if (!addLabel.empty()) {
+        x.y += 4;
+        const float wdt = std::min(260.f, area.w - 24);
+        const Rect btn{area.x + (area.w - wdt) * 0.5f, x.y, wdt, 32};
+        if (w::Button(c, "inspector.add", btn, addLabel) && addMenu) {
+            st.menuActions = addMenu();
+            st.menu.OpenAt(btn.x, btn.Bottom() + 2);
+        }
+        x.y += 44;
+    }
     c.SetInputEnabled(inputWas);
     st.contentHeight = x.y + off - area.y + 6;
     w::EndScroll(c, "inspector", area, st.contentHeight);
@@ -285,6 +347,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, const Type
             p.Text(r.Inset(10, 0, 10, 0), tip, Text(12, theme::Text));
         });
     }
+    w::ActionMenu(c, st.menu, st.menuActions);
     if (x.edit) result = std::move(x.edit);
     return result;
 }

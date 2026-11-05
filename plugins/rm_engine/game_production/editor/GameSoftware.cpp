@@ -63,7 +63,17 @@ std::vector<int> ToEntityIds(std::span<const tree::ItemId> ids) {
 
 class GameSoftware final : public editor::Software, public tree::Source {
 public:
-    explicit GameSoftware(editor::SoftwareHost& host) : host_(host) {}
+    explicit GameSoftware(editor::SoftwareHost& host) : host_(host) {
+        // Component types come from other plugins (the connectors: "ゲーム制作 × 3D" offers Transform).
+        std::vector<const reflect::TypeDesc*> types;
+        for (const auto& c : host.Registry().Contributions<ComponentInfo>(kComponentPoint)) {
+            const reflect::TypeDesc* t = &c.item->type();
+            if (std::find(types.begin(), types.end(), t) != types.end()) continue;
+            types.push_back(t);
+            if (c.item->onNewEntities) newEntityTypes_.push_back(t);
+        }
+        scene_.SetComponentTypes(std::move(types));
+    }
 
     // --- Software ---------------------------------------------------------------------------
     std::vector<editor::dock::PanelType> Panels() override {
@@ -163,11 +173,12 @@ public:
 
     void SelectionChanged(std::span<const tree::ItemId> ids) override {
         if (ids.size() == 1) {
-            const int id = static_cast<int>(ids[0]);
-            host_.Inspect({&reflect::TypeOf<Entity>(), ResolveEntity(id), L"エンティティ"});
+            host_.Inspect(EntityInspectable(static_cast<int>(ids[0])));
             inspectingEntities_ = true;
         } else if (ids.size() > 1) {
-            host_.Inspect({nullptr, {}, std::format(L"{} 個のエンティティを選んでいます。\nまとめての編集はこれからです。", ids.size())});
+            editor::Inspectable many;
+            many.title = std::format(L"{} 個のエンティティを選んでいます。\nまとめての編集はこれからです。", ids.size());
+            host_.Inspect(std::move(many));
             inspectingEntities_ = true;
         } else if (inspectingEntities_) {
             host_.Inspect({});
@@ -251,8 +262,8 @@ public:
 private:
     void InspectSettings() {
         inspectingEntities_ = false;
-        host_.Inspect({&reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; },
-                       L"ゲームの設定"});
+        host_.Inspect(editor::Inspectable::Single(
+            reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, L"ゲームの設定"));
         host_.SelectInTree({});
     }
 
@@ -262,6 +273,66 @@ private:
             SceneEntity* e = scene_.Find(id);
             return e ? reflect::EditTarget{&e->data, &e->unknowns} : reflect::EditTarget{};
         };
+    }
+
+    std::function<reflect::EditTarget()> ResolveComponent(int id, std::string type) {
+        return [this, id, type] {
+            SceneEntity* e = scene_.Find(id);
+            Component* c = e ? e->FindComponent(type) : nullptr;
+            return c && c->Known() ? reflect::EditTarget{c->value.Get(), &c->unknowns} : reflect::EditTarget{};
+        };
+    }
+
+    // The inspector of one entity: the entity itself, then its components (each with ⋮ → 外す), and
+    // "部品を足す" under them. Asked again every time it is drawn (undo may add or take components).
+    editor::Inspectable EntityInspectable(int id) {
+        editor::Inspectable in;
+        in.title = L"エンティティ";
+        in.blocks = [this, id] {
+            std::vector<editor::InspectBlock> blocks;
+            const SceneEntity* e = scene_.Find(id);
+            if (!e) return blocks;
+            blocks.push_back({&reflect::TypeOf<Entity>(), ResolveEntity(id), {}, {}, {}});
+            for (const Component& c : e->components) {
+                editor::w::Action remove;
+                const std::string type = c.type;
+                const std::string label = c.Known() ? c.value.Type()->label : c.type;
+                remove.label = L"外す";
+                remove.run = [this, id, type, label] {
+                    Edit(std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type); });
+                };
+                if (c.Known()) {
+                    blocks.push_back({c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(label), {}, {remove}});
+                } else {
+                    blocks.push_back({nullptr, {}, Utf8ToWide(label) + L" (使えない部品)",
+                                      L"この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。", {remove}});
+                }
+            }
+            return blocks;
+        };
+        in.addLabel = L"＋ 部品を足す";
+        in.addMenu = [this, id] {
+            std::vector<editor::w::Action> list;
+            const SceneEntity* e = scene_.Find(id);
+            for (const reflect::TypeDesc* t : scene_.ComponentTypes()) {
+                if (!e || e->FindComponent(t->name)) continue;
+                editor::w::Action add;
+                add.label = Utf8ToWide(t->label);
+                add.run = [this, id, t] {
+                    Edit(std::format("「{}」を足す", t->label), [&] { scene_.AddComponent(id, *t); });
+                };
+                list.push_back(std::move(add));
+            }
+            if (list.empty()) {
+                editor::w::Action none;
+                none.label = scene_.ComponentTypes().empty() ? L"足せる部品がありません (3D 空間 などのプラグインで増えます)"
+                                                             : L"足せる部品は全部付いています";
+                none.enabled = false;
+                list.push_back(std::move(none));
+            }
+            return list;
+        };
+        return in;
     }
 
     std::string NameOf(int id) const {
@@ -282,7 +353,10 @@ private:
 
     void CreateEntity(int parent, size_t index) {
         int made = 0;
-        Edit("エンティティを作成", [&] { made = scene_.Create("エンティティ", parent, index); });
+        Edit("エンティティを作成", [&] {
+            made = scene_.Create("エンティティ", parent, index);
+            for (const reflect::TypeDesc* t : newEntityTypes_) scene_.AddComponent(made, *t);  // e.g. Transform
+        });
         host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
     }
 
@@ -290,6 +364,7 @@ private:
     GameSettings settings_;
     reflect::Unknowns unknowns_;  // keys / enum names of a newer version: written back unchanged
     Scene scene_;
+    std::vector<const reflect::TypeDesc*> newEntityTypes_;  // components every new entity gets
     bool hadData_ = false;
     bool inspectingEntities_ = false;  // the inspector shows the 階層's selection (not the settings)
 };

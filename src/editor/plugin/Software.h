@@ -24,11 +24,14 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
+#include <typeinfo>
 #include <vector>
 
 namespace rm::editor {
 
 struct Project;
+class PluginRegistry;
 
 // The core panels every software has. A software's default layout places them by these ids.
 namespace core_panel {
@@ -38,13 +41,32 @@ inline constexpr char kConsole[] = "core.console";
 inline constexpr char kAssets[] = "core.assets";
 }  // namespace core_panel
 
-// Something shown in the core inspector. Any reflected type works: the inspector draws it from
-// its description, and edits go to this software's history as reflect::SetFieldCommand.
-// With no type, the inspector shows only `title` (e.g. "3 個選んでいます").
-struct Inspectable {
-    const reflect::TypeDesc* type = nullptr;
+// What the core inspector shows: a title and a list of blocks ("lumps of values" - for a game's
+// entity, the entity and then each component). Any reflected type works: the inspector draws it
+// from its description, and edits go to this software's history as reflect::SetFieldCommand.
+// The blocks are asked for every time the inspector is drawn, so after an undo (a component back
+// or gone) it shows what is there now. A block whose object is gone is left out.
+struct InspectBlock {
+    const reflect::TypeDesc* type = nullptr;  // null: only `note` is shown
     std::function<reflect::EditTarget()> resolve;  // where the object is now (+ its unknowns); null object = gone
-    std::wstring title;
+    std::wstring title;           // header (empty = none)
+    std::wstring note;            // a line under the header
+    std::vector<w::Action> menu;  // the header's ⋮ menu (e.g. 外す)
+};
+
+struct Inspectable {
+    std::wstring title;  // on top; with no blocks it is all that is shown (e.g. "3 個選んでいます")
+    std::function<std::vector<InspectBlock>()> blocks;
+    std::wstring addLabel;  // a button under the blocks (e.g. "部品を足す") ...
+    std::function<std::vector<w::Action>()> addMenu;  // ... and its menu
+
+    // One object, no header (the game settings).
+    static Inspectable Single(const reflect::TypeDesc& type, std::function<reflect::EditTarget()> resolve, std::wstring title) {
+        Inspectable i;
+        i.title = std::move(title);
+        i.blocks = [&type, resolve = std::move(resolve)] { return std::vector<InspectBlock>{{&type, resolve, {}, {}, {}}}; };
+        return i;
+    }
 };
 
 // What the editor gives one software.
@@ -59,6 +81,8 @@ public:
     virtual void Inspect(Inspectable target) = 0;
     // Selects items of this software's 階層 (after creating one, say); rename = start renaming it.
     virtual void SelectInTree(std::vector<tree::ItemId> ids, bool rename = false) = 0;
+    // What the enabled plugins registered (their contributions, e.g. the components of a game).
+    virtual const PluginRegistry& Registry() const = 0;
 };
 
 // One software inside one open project.
@@ -92,23 +116,56 @@ struct SoftwareType {
     std::function<std::unique_ptr<Software>(SoftwareHost&)> create;
 };
 
+// Something a plugin offers to another plugin through the core, which knows neither side nor what
+// the item is. The plugin that reads a "point" names it and defines its item type, e.g. game
+// production reads "rm_engine.game_production.component" items of game_production::ComponentInfo,
+// and the 3D connector offers Transform there.
+template <class T>
+struct Contributed {
+    PluginId plugin;  // who offered it
+    const T* item;
+};
+
 class PluginRegistry {
 public:
     void AddSoftware(SoftwareType type);
     const std::vector<SoftwareType>& Softwares() const { return softwares_; }
+
+    // `item` must live as long as the program (a static). Only enabled plugins register, so only
+    // their items are listed; requirements register first.
+    template <class T>
+    void Contribute(std::string_view point, const T& item) {
+        contributions_.push_back({current_, std::string(point), &item, &typeid(T)});
+    }
+    // Items of `point` of type T, in registration order (an item of another type is skipped).
+    template <class T>
+    std::vector<Contributed<T>> Contributions(std::string_view point) const {
+        std::vector<Contributed<T>> out;
+        for (const auto& c : contributions_) {
+            if (c.point == point && *c.type == typeid(T)) out.push_back({c.plugin, static_cast<const T*>(c.item)});
+        }
+        return out;
+    }
 
     // Used by the loader around each plugin's RegisterEditor call.
     void BeginPlugin(const PluginId& id) { current_ = id; }
     void EndPlugin() { current_ = {}; }
 
 private:
+    struct Contribution {
+        PluginId plugin;
+        std::string point;
+        const void* item;
+        const std::type_info* type;
+    };
     PluginId current_;
     std::vector<SoftwareType> softwares_;
+    std::vector<Contribution> contributions_;
 };
 
 struct BuiltinPlugin {
     PluginIdLiteral id;  // the plugin's kPluginId (checked against its plugin.json when loading)
-    void (*registerEditor)(PluginRegistry& registry);
+    void (*registerEditor)(PluginRegistry& registry);  // null for a plugin with only a runtime part
 };
 
 // Every plugin built into this exe. Defined in plugins/BuiltinPlugins.cpp.

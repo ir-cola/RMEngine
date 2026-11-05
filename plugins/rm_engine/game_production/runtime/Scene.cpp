@@ -15,6 +15,38 @@ bool Has(std::span<const int> ids, int id) { return std::find(ids.begin(), ids.e
 
 }  // namespace
 
+Component* SceneEntity::FindComponent(std::string_view type) {
+    for (auto& c : components) {
+        if (c.type == type) return &c;
+    }
+    return nullptr;
+}
+
+const Component* SceneEntity::FindComponent(std::string_view type) const {
+    for (const auto& c : components) {
+        if (c.type == type) return &c;
+    }
+    return nullptr;
+}
+
+bool Scene::AddComponent(int id, const reflect::TypeDesc& type) {
+    SceneEntity* e = Find(id);
+    if (!e || e->FindComponent(type.name)) return false;
+    Component c;
+    c.type = type.name;
+    c.value = reflect::Object(type);
+    e->components.push_back(std::move(c));
+    return true;
+}
+
+bool Scene::RemoveComponent(int id, std::string_view type) {
+    SceneEntity* e = Find(id);
+    if (!e) return false;
+    const size_t before = e->components.size();
+    std::erase_if(e->components, [&](const Component& c) { return c.type == type; });
+    return e->components.size() != before;
+}
+
 size_t Scene::IndexOf(int id) const {
     if (id <= 0) return npos;
     for (size_t i = 0; i < entities_.size(); ++i) {
@@ -194,7 +226,22 @@ json::Value Scene::Save() const {
     json::Value o = extra_;
     o.Set("nextId", nextId_);
     json::Value list = json::Value::MakeArray();
-    for (const auto& e : entities_) list.Push(reflect::Save(e.data, &e.unknowns));
+    for (const auto& e : entities_) {
+        json::Value ej = reflect::Save(e.data, &e.unknowns);
+        json::Value comps = json::Value::MakeArray();
+        for (const Component& c : e.components) {
+            if (!c.Known()) {
+                comps.Push(c.raw);  // a type not offered now: exactly as it was read
+                continue;
+            }
+            json::Value cj = c.raw.IsObject() ? c.raw : json::Value::MakeObject();
+            cj.Set("type", c.type);
+            cj.Set("data", reflect::Save(*c.value.Type(), c.value.Get(), &c.unknowns));
+            comps.Push(std::move(cj));
+        }
+        ej.Set("components", std::move(comps));
+        list.Push(std::move(ej));
+    }
     o.Set("entities", std::move(list));
     return o;
 }
@@ -210,7 +257,30 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
     extra_ = v;  // every key in its place; Save replaces "nextId" and "entities" in place
     for (const auto& item : v.Get("entities").Items()) {
         SceneEntity e;
-        reflect::Load(e.data, item, &e.unknowns, warnings);
+        // "components" is the scene's to read (not an unknown key of the entity).
+        json::Value fields = item;
+        json::Value comps;
+        if (json::Value* cs = fields.Find("components")) comps = std::move(*cs);
+        fields.Erase("components");
+        reflect::Load(e.data, fields, &e.unknowns, warnings);
+        for (const auto& cj : comps.Items()) {
+            Component c;
+            c.type = cj.Get("type").AsString();
+            c.raw = cj;
+            const reflect::TypeDesc* t = reflect::FindTypeNamed(componentTypes_, c.type);
+            const json::Value& data = cj.Get("data");
+            if (t && data.IsObject() && !e.FindComponent(c.type)) {
+                c.value = reflect::Object(*t);
+                reflect::Load(*t, c.value.Get(), data, &c.unknowns, warnings);
+                c.raw.Erase("data");  // written again from the value
+            } else if (!t) {
+                warn(std::format("エンティティ「{}」の部品「{}」は、いま入っているプラグインでは使えないので、そのまま残します", e.data.name,
+                                 c.type));
+            } else {
+                warn(std::format("エンティティ「{}」の部品「{}」は読めない (2 つ目か形が違う) ので、そのまま残します", e.data.name, c.type));
+            }
+            e.components.push_back(std::move(c));
+        }
         entities_.push_back(std::move(e));
     }
 

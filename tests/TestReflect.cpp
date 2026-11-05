@@ -8,6 +8,7 @@
 #include "core/UndoHistory.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
+#include "core/reflect/Object.h"
 
 #include <algorithm>
 #include <array>
@@ -246,4 +247,26 @@ RM_TEST(Reflect_SetFieldCommandUndo) {
     CHECK(Save(s, &u).Get("quality").AsString() == "High");
     h.Undo();
     CHECK(Save(s, &u).Get("quality").AsString() == "Ultra");
+}
+
+RM_TEST(Reflect_Object_OwnsAValueOfAnyType) {
+    const TypeDesc& t = TypeOf<Settings>();
+    Object a(t);
+    CHECK(!a.Empty() && a.Type() == &t);
+    auto* s = static_cast<Settings*>(a.Get());
+    CHECK(s->title == "My Game" && s->speed == 5.0f);  // the default member values
+    s->title = "changed";
+    s->scores = {1, 2, 3};
+    Object b = a;  // a deep copy
+    static_cast<Settings*>(b.Get())->scores.push_back(4);
+    CHECK(s->scores.size() == 3);
+    CHECK(static_cast<Settings*>(b.Get())->title == "changed");
+    Object c = std::move(b);
+    CHECK(b.Empty() && c.Type() == &t);
+    c = a;
+    CHECK(static_cast<Settings*>(c.Get())->scores.size() == 3);
+    c = Object();
+    CHECK(c.Empty());
+    CHECK(FindTypeNamed(AllTypes(), t.name) == &t);
+    CHECK(FindTypeNamed(AllTypes(), "rmtest::Nothing") == nullptr);
 }
