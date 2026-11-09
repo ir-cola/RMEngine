@@ -42,10 +42,17 @@ void DrawSurface(ui::Context& c, const ui::Rect& r, Surface s, float radius = th
 // A panel with its edge (theme::EdgeOuter / EdgeInner): the dark line lies 1px OUTSIDE r, so two
 // panels 1px apart share one dark seam. Each corner its own radius - square where it touches another.
 void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
-// The ornament of the theme in use (桜: a cherry blossom), faint in the bottom-left of `window`.
+// The pictures of the theme in use (the seasons), laid faintly over the main window (Hub / editor):
+//   スプリング  a cherry tree (bottom-right), a blossom (bottom-left), a flurry of petals (top-left)
+//   サマー      the sun, clouds, a beach with a sand castle and a parasol, a sunflower (bottom-left)
+//   フォール    an autumn wood, leaves thick along the top, a maple leaf (bottom-left)
+//   ウィンター  a snowflake (bottom-left); the snow lies on panels and tabs (DrawPanelFrame / DrawTab)
 // Drawn after the window's content and before its menus and dialogs, never over the areas the
 // content asked to keep clear (ui::Context::KeepClear - the scene and game views). Nothing for most themes.
 void DrawOrnament(ui::Context& c, const ui::Rect& window);
+// The same for a panel window of its own (a panel dragged out): spring's petals, summer's blue sky
+// and clouds. The silhouettes and the trees stay in the main window.
+void DrawFloatOrnament(ui::Context& c, const ui::Rect& window);
 // A strip of the window's frame (menu bar, status bar, sidebar): gentle gradient, no border.
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 

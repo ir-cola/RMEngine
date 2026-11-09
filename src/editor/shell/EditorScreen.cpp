@@ -439,6 +439,7 @@ void EditorScreen::DrawFloating(ui::Context& c, float width, float height, Float
     c.SetInputEnabled(!blocked);
     if (!blocked) HandleShortcuts(c);
     Active().dock.Draw(c, Rect{0, 0, width, height}.Inset(4), window.Id(), window.Hwnd(), window.Scale());
+    w::DrawFloatOrnament(c, {0, 0, width, height});
     Active().dock.DrawOverlay(c, window.Id());
     c.SetInputEnabled(true);
 }

@@ -7,6 +7,26 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "季節のテーマ: 「桜」を「スプリング」に。「サマー」「フォール」「ウィンター」を追加",
+          "en": "Seasonal themes: Sakura is now Spring; added Summer, Fall and Winter"
+        },
+        {
+          "ja": "スプリング: 右下に桜の木、左上に花吹雪 (別のウィンドウにも)",
+          "en": "Spring: a cherry tree in the bottom-right and a petal flurry in the top-left (also in panel windows)"
+        },
+        {
+          "ja": "サマー: 空・太陽・雲・砂浜・砂の城・ビーチパラソル、左下にひまわり",
+          "en": "Summer: sky, sun, clouds, a beach with a sand castle and a parasol, a sunflower in the bottom-left"
+        },
+        {
+          "ja": "フォール: 上に紅葉した葉、秋の森、左下に椛の葉",
+          "en": "Fall: autumn leaves along the top, an autumn wood, a maple leaf in the bottom-left"
+        },
+        {
+          "ja": "ウィンター: パネルやタブに雪が積もる、左下に雪の結晶",
+          "en": "Winter: snow lies on panels and tabs, a snowflake in the bottom-left"
+        },
+        {
           "ja": "インスペクター: 数の名前 (ベクトルは X / Y / Z) を左右にドラッグして値を変える",
           "en": "Inspector: drag a number's name (X / Y / Z for vectors) left or right to change it"
         },

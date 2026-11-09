@@ -173,6 +173,8 @@ void Painter::FillPath(const Path& path, Color c, std::span<const Rect> without)
     ComPtr<ID2D1PathGeometry> geo;
     ComPtr<ID2D1GeometrySink> sink;
     if (!factory || FAILED(factory->CreatePathGeometry(&geo)) || FAILED(geo->Open(&sink))) return;
+    // Figures that overlap join into one shape (when they go round the same way), never cut holes.
+    sink->SetFillMode(D2D1_FILL_MODE_WINDING);
     auto pt = [](Vec2 v) { return D2D1::Point2F(v.x, v.y); };
     bool open = false;
     for (const Path::Step& s : path.steps) {
