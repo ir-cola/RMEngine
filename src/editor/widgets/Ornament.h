@@ -54,11 +54,10 @@ struct Beach {
 Beach BeachCorner(const ui::Rect& window, float width, float height);
 // Where the shore is at x (the sand is below it): for putting things on the beach.
 float ShoreY(const ui::Rect& window, float width, float height, float x);
-// A sand castle standing on `base` (the middle of its foot), and the little flag on its top tower.
-struct Castle {
-    ui::Path walls, flag;
-};
-Castle SandCastle(Vec2 base, float height);
+// A sand castle standing on `base` (the middle of its foot), made by hand: a wall and three towers
+// that lean and bulge a little, round lumps on their tops, a heap of sand at its foot (so, filled
+// together with the beach, it grows out of the sand).
+ui::Path SandCastle(Vec2 base, float height);
 // A beach parasol stuck in the sand at `base`, leaning: its canopy in stripes of two colors, its pole.
 struct Parasol {
     ui::Path stripesA, stripesB, pole;
@@ -82,8 +81,9 @@ ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed);
 // corners). Its swells are measured from r's left edge in pixels, so a box that grows or moves keeps
 // the same drift (only its right end follows).
 ui::Path SnowDrift(const ui::Rect& r, float depth, float cornerRadius);
-// Icicles hanging from the top edge of `window` at random places (spaced from its left edge, so
-// they stay put when the window is resized), each up to `maxLength` long, under a thin ridge of snow.
+// A few icicles hanging from the top edge of `window`, here and there (a small group of one to three
+// under a lump of snow every 260 .. 640 pixels, spaced from its left edge so they stay put when the
+// window is resized), each up to `maxLength` long.
 ui::Path Icicles(const ui::Rect& window, float maxLength, uint32_t seed);
 
 }  // namespace rm::editor::ornament

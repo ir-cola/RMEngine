@@ -185,6 +185,10 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
 
     const rm::ui::Rect win{0, 0, 800, 600};
     // The beach: only the bottom-right corner, its shore from (800 - 300, 600) up to (800, 600 - 200).
+    // The sand castle: on its base (its heap a little below it, in the sand), as wide and tall as asked.
+    const Bounds castle = BoundsOf(SandCastle({400, 500}, 100));
+    CHECK(castle.x0 > 400 - 90 && castle.x1 < 400 + 90 && castle.y0 > 500 - 100 && castle.y1 < 500 + 12);
+    CHECK(AllClockwise(SandCastle({400, 500}, 100)));
     const Beach beach = BeachCorner(win, 300, 200);
     const Bounds sand = BoundsOf(beach.sand);
     CHECK(sand.x0 >= 500 && sand.x1 == 800 && sand.y0 >= 400 - 0.01f && sand.y1 == 600);
@@ -224,7 +228,9 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
 
     // Icicles hang from the top edge, no longer than asked, in the same places when the window widens.
     const Bounds ice = BoundsOf(Icicles(win, 40, 5));
-    CHECK(ice.figures > 10 && ice.y0 >= -1.01f && ice.y1 <= 2 + 40 + 0.01f && ice.x0 >= 0 && ice.x1 <= 800);
+    CHECK(ice.y0 >= -4.01f && ice.y1 <= 2 + 40 + 0.01f && ice.x0 >= 0 && ice.x1 <= 800);
+    // ... only a few, here and there (not along the whole edge).
+    CHECK(ice.figures >= 2 && ice.figures <= 4 * (800 / 260 + 1));
     CHECK(AllClockwise(Icicles(win, 40, 5)));
     // (each icicle's tip is the end of its first curve)
     const auto tips = [](const rm::ui::Path& path) {
@@ -236,5 +242,5 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
         return out;
     };
     const std::vector<rm::Vec2> t1 = tips(Icicles({0, 0, 800, 600}, 40, 5)), t2 = tips(Icicles({0, 0, 1200, 600}, 40, 5));
-    CHECK(t1.size() > 10 && t1 == t2);
+    CHECK(!t1.empty() && t1 == t2);
 }

@@ -224,8 +224,6 @@ inline Color Sky() { return Color::Hex(0x2F8FE0, 0.12f); }            // summer:
 inline Color CloudColor() { return Color::Hex(0xFFFFFF, 0.55f); }
 inline Color FoamColor() { return Color::Hex(0xFFFFFF, 0.70f); }
 inline Color SandColor() { return Color::Hex(0xEFC96B, 0.42f); }
-inline Color CastleColor() { return Color::Hex(0xC99A4B, 0.30f); }
-inline Color FlagColor() { return Color::Hex(0xE2483D, 0.40f); }
 inline Color ParasolA() { return Color::Hex(0xE2483D, 0.30f); }
 inline Color ParasolB() { return Color::Hex(0xFFFFFF, 0.55f); }
 inline Color PoleColor() { return Color::Hex(0x8C6D4A, 0.30f); }

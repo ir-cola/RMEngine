@@ -88,7 +88,7 @@ void Winter(ui::Context& c, const Rect& w, float scale) {
     using namespace theme::season;
     const int count = std::max(20, static_cast<int>(w.w * w.h / 3600.f));
     Fill(c, ornament::Snowfall(w, count, 5.5f * scale, 0x5A0Fu), Flake());
-    // Icicles from the window's top edge (a shade 1px lower first, so their edges show).
+    // A few icicles here and there from the window's top edge (a shade 1px lower first, so their edges show).
     const float icicle = 38.f * scale;
     Fill(c, ornament::Icicles({w.x, w.y + 1.f, w.w, w.h}, icicle, 0x1C1Eu), IceShade());
     Fill(c, ornament::Icicles(w, icicle, 0x1C1Eu), Ice());
@@ -153,15 +153,22 @@ void DrawOrnament(ui::Context& c, const Rect& w) {
             // A beach sloping gently into the bottom-right corner with the parasol and a sand castle on
             // it; clouds at the top-right; a sunflower in the bottom-left.
             const float beachW = w.w * 0.55f, beachH = w.h * 0.22f;
-            const ornament::Beach beach = ornament::BeachCorner(w, beachW, beachH);
-            Fill(c, beach.sand, SandColor());
-            Fill(c, beach.foam, FoamColor());
-            SummerClouds(c, w, 1.f);
+            ornament::Beach beach = ornament::BeachCorner(w, beachW, beachH);
             // On the sand: half way between the shore and the bottom edge.
             auto onSand = [&](float x) { return Vec2{x, (ornament::ShoreY(w, beachW, beachH, x) + w.Bottom()) * 0.5f}; };
-            const ornament::Castle castle = ornament::SandCastle(onSand(w.Right() - beachW * 0.55f), std::clamp(w.h * 0.09f, 40.f, 100.f));
-            Fill(c, castle.walls, CastleColor());
-            Fill(c, castle.flag, FlagColor());
+            // The sand castle is the beach's own sand: one shape with it, so no seam shows between them.
+            // It stands on the shore (its foot a little sunk in), so all of it rises out of the sand.
+            const float castleH = std::clamp(w.h * 0.11f, 48.f, 120.f), castleX = w.Right() - beachW * 0.55f;
+            const ui::Path castle =
+                ornament::SandCastle({castleX, ornament::ShoreY(w, beachW, beachH, castleX) + castleH * 0.12f}, castleH);
+            beach.sand.steps.insert(beach.sand.steps.end(), castle.steps.begin(), castle.steps.end());
+            Fill(c, beach.sand, SandColor());
+            // The foam along the shore, but not across the castle's foot (the sand is see-through).
+            std::vector<Rect> foamOff(c.KeepClearAreas().begin(), c.KeepClearAreas().end());
+            foamOff.push_back({castleX - castleH * 0.9f, ornament::ShoreY(w, beachW, beachH, castleX) - castleH * 1.1f, castleH * 1.8f,
+                               castleH * 1.4f});
+            c.P().FillPath(beach.foam, FoamColor(), foamOff);
+            SummerClouds(c, w, 1.f);
             const ornament::Parasol parasol = ornament::BeachParasol(onSand(w.Right() - w.w * 0.11f), std::clamp(w.h * 0.26f, 110.f, 260.f), 12.f);
             Fill(c, parasol.pole, PoleColor());
             Fill(c, parasol.stripesA, ParasolA());
@@ -170,13 +177,11 @@ void DrawOrnament(ui::Context& c, const Rect& w) {
             return;
         }
         case theme::Ornament::Fall: {
-            // Red / orange / yellow leaves thick along the top and scattered further down, a big maple
-            // leaf in the bottom-left.
+            // Red / orange / yellow leaves thick along the top and scattered further down, a maple leaf
+            // in the bottom-left (as big and where the other seasons' are).
             const auto canopy = ornament::Canopy(w, std::clamp(w.h * 0.32f, 120.f, 300.f), 1.f / 4.f, 0xF411u);
             for (int i = 0; i < 4; ++i) Fill(c, canopy[static_cast<size_t>(i)], Leaf(i));
-            // Bigger than the other seasons' and nearer the corner (its side lobes and stalk may run off the edges).
-            const float big = std::min(r * 1.5f, 220.f);
-            Fill(c, ornament::MapleLeaf({w.x + 8.f + big * 0.8f, w.Bottom() - 8.f - big * 0.8f}, big, 10.f), theme::OrnamentColor());
+            Fill(c, ornament::MapleLeaf(corner, r, 10.f), theme::OrnamentColor());
             return;
         }
         case theme::Ornament::Winter:

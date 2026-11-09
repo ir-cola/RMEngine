@@ -202,29 +202,45 @@ Beach BeachCorner(const ui::Rect& win, float width, float height) {
     return b;
 }
 
-Castle SandCastle(Vec2 base, float h) {
-    Castle c;
+ui::Path SandCastle(Vec2 base, float h) {
+    ui::Path p;
+    Random rnd{0x5A2Du};
     auto at = [&](float x, float y) { return Vec2{base.x + x * h, base.y - y * h}; };
-    auto block = [&](float x0, float x1, float y1, int teeth) {
-        // A wall or tower from the ground up to y1, with its battlements on top.
-        const Vec2 r[4] = {at(x0, 0), at(x1, 0), at(x1, y1), at(x0, y1)};
-        AddPolygon(c.walls, r);
-        const float w = (x1 - x0) / static_cast<float>(teeth * 2 - 1);
-        for (int i = 0; i < teeth; ++i) {
-            const float tx = x0 + w * 2.f * static_cast<float>(i);
-            const Vec2 t[4] = {at(tx, y1), at(tx + w, y1), at(tx + w, y1 + 0.08f), at(tx, y1 + 0.08f)};
-            AddPolygon(c.walls, t);
+    auto wobble = [&](float amount) { return (rnd.Next() - 0.5f) * 2.f * amount; };
+    // A lump of packed sand: from x0 to x1 at the ground up to `top`, the sides leaning in (wider at
+    // the foot) and bulging unevenly, a few round lumps along the top instead of battlements.
+    auto lump = [&](float x0, float x1, float top, int bumps, float lean) {
+        std::vector<Vec2> pts;
+        const float inset = (x1 - x0) * 0.12f;
+        const int sides = 5;
+        for (int i = 0; i <= sides; ++i) {  // up the left side
+            const float t = static_cast<float>(i) / static_cast<float>(sides);
+            pts.push_back(at(x0 + inset * t + lean * t + wobble(0.012f), top * t));
+        }
+        for (int i = 1; i < 6; ++i) {  // across the top, slightly uneven
+            const float t = static_cast<float>(i) / 6.f;
+            pts.push_back(at(x0 + inset + lean + (x1 - x0 - 2.f * inset) * t, top + wobble(0.018f)));
+        }
+        for (int i = sides; i >= 0; --i) {  // down the right side
+            const float t = static_cast<float>(i) / static_cast<float>(sides);
+            pts.push_back(at(x1 - inset * t + lean * t + wobble(0.012f), top * t));
+        }
+        AddPolygon(p, pts);
+        const float w = x1 - x0 - 2.f * inset;
+        for (int i = 0; i < bumps; ++i) {
+            const float t = (static_cast<float>(i) + 0.5f) / static_cast<float>(bumps);
+            AddEllipse(p, at(x0 + inset + lean + w * t, top + 0.01f), w / static_cast<float>(bumps) * 0.42f * h,
+                       (0.05f + 0.02f * rnd.Next()) * h, wobble(12.f));
         }
     };
-    block(-0.62f, 0.62f, 0.40f, 5);   // the wall
-    block(-0.66f, -0.38f, 0.66f, 2);  // the towers
-    block(0.38f, 0.66f, 0.66f, 2);
-    block(-0.17f, 0.17f, 0.92f, 3);   // the keep
-    // The flag: its pole and a little pennant.
-    AddBar(c.walls, at(0.f, 1.0f), at(0.f, 1.28f), 0.025f * h, 0.02f * h);
-    const Vec2 f[3] = {at(0.012f, 1.27f), at(0.24f, 1.21f), at(0.012f, 1.15f)};
-    AddPolygon(c.flag, f);
-    return c;
+    lump(-0.62f, 0.62f, 0.36f, 5, 0.f);       // the wall
+    lump(-0.70f, -0.34f, 0.62f, 2, 0.02f);    // the towers, leaning a little
+    lump(0.36f, 0.70f, 0.56f, 2, -0.025f);
+    lump(-0.19f, 0.19f, 0.86f, 3, 0.015f);    // the keep
+    AddEllipse(p, at(0.f, 0.86f + 0.07f), 0.07f * h, 0.06f * h, 0);  // a round knob on its top
+    // The heap of sand at its foot (it sits in the beach, not on it).
+    AddEllipse(p, at(0.f, 0.02f), 0.86f * h, 0.12f * h, 0);
+    return p;
 }
 
 Parasol BeachParasol(Vec2 base, float h, float degreesCcw) {
@@ -357,23 +373,22 @@ ui::Path Icicles(const ui::Rect& win, float maxLength, uint32_t seed) {
     ui::Path p;
     Random rnd{seed};
     const float top = win.y, right = win.x + win.w;
-    // The ridge of snow they hang from: a thin wavy band along the whole top edge.
-    std::vector<Vec2> ridge{{win.x, top - 1.f}};
-    for (float x = win.x; x <= right; x += 6.f) ridge.push_back({x, top + 3.f + 1.5f * std::sin((x - win.x) * 0.07f)});
-    ridge.push_back({right, top + 3.f});
-    ridge.push_back({right, top - 1.f});
-    AddPolygon(p, ridge);
-    // The icicles: a long thin point with a rounded root, now and then a long one among short ones.
-    for (float x = win.x + 6.f + 20.f * rnd.Next(); x < right - 4.f; x += 9.f + 34.f * rnd.Next()) {
-        const float u = rnd.Next();
-        const float len = maxLength * (u < 0.15f ? 0.75f + 0.25f * rnd.Next() : 0.18f + 0.4f * rnd.Next());
-        const float half = 2.2f + 2.6f * rnd.Next() * (len / maxLength + 0.3f);
-        const float lean = (rnd.Next() - 0.5f) * 2.f;  // the tip a little to one side
-        const float y0 = top + 2.f;
-        p.Begin({x - half, y0});
-        p.Line({x + half, y0});
-        p.Cubic({x + half * 0.8f, y0 + len * 0.35f}, {x + lean + half * 0.25f, y0 + len * 0.8f}, {x + lean, y0 + len});
-        p.Cubic({x + lean - half * 0.25f, y0 + len * 0.8f}, {x - half * 0.8f, y0 + len * 0.35f}, {x - half, y0});
+    // A small group every 260 .. 640 pixels; within it, one to three icicles of different lengths.
+    for (float gx = win.x + 60.f + 160.f * rnd.Next(); gx < right - 20.f; gx += 260.f + 380.f * rnd.Next()) {
+        const int count = 1 + static_cast<int>(rnd.Next() * 3.f) % 3;
+        const float groupW = 6.f + 9.f * static_cast<float>(count);
+        AddEllipse(p, {gx + groupW * 0.5f - 4.f, top + 1.f}, groupW * 0.5f + 4.f, 4.5f, 0);  // the lump of snow
+        for (int i = 0; i < count; ++i) {
+            const float x = gx + 9.f * static_cast<float>(i) + 3.f * rnd.Next();
+            const float len = maxLength * (i == count / 2 ? 0.7f + 0.3f * rnd.Next() : 0.3f + 0.35f * rnd.Next());
+            const float half = 2.4f + 2.2f * rnd.Next() * (len / maxLength + 0.3f);
+            const float lean = (rnd.Next() - 0.5f) * 2.f;  // the tip a little to one side
+            const float y0 = top + 2.f;
+            p.Begin({x - half, y0});
+            p.Line({x + half, y0});
+            p.Cubic({x + half * 0.8f, y0 + len * 0.35f}, {x + lean + half * 0.25f, y0 + len * 0.8f}, {x + lean, y0 + len});
+            p.Cubic({x + lean - half * 0.25f, y0 + len * 0.8f}, {x - half * 0.8f, y0 + len * 0.35f}, {x - half, y0});
+        }
     }
     return p;
 }
