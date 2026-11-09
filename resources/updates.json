@@ -15,16 +15,16 @@
           "en": "Spring: a cherry tree in the bottom-right and a petal flurry in the top-left (also in panel windows)"
         },
         {
-          "ja": "サマー: 空・太陽・雲・砂浜・砂の城・ビーチパラソル、左下にひまわり",
-          "en": "Summer: sky, sun, clouds, a beach with a sand castle and a parasol, a sunflower in the bottom-left"
+          "ja": "サマー: 濃いめの青、海と波、右下に斜めの砂浜 (パラソルと砂の城)、雲、左下にひまわり",
+          "en": "Summer: a deeper blue, the sea and its waves, a diagonal beach in the bottom-right (parasol and sand castle), clouds, a sunflower in the bottom-left"
         },
         {
-          "ja": "フォール: 上に紅葉した葉、秋の森、左下に椛の葉",
-          "en": "Fall: autumn leaves along the top, an autumn wood, a maple leaf in the bottom-left"
+          "ja": "フォール: 上に紅葉した葉がいっぱい (下の方まで散らばる)、左下に大きな椛の葉",
+          "en": "Fall: plenty of autumn leaves along the top, drifting further down, and a big maple leaf in the bottom-left"
         },
         {
-          "ja": "ウィンター: パネルやタブに雪が積もる、左下に雪の結晶",
-          "en": "Winter: snow lies on panels and tabs, a snowflake in the bottom-left"
+          "ja": "ウィンター: 雪が降り、パネルの下に積もる。左下に雪の結晶",
+          "en": "Winter: snow falls and piles up at the bottom of panels; a snowflake in the bottom-left"
         },
         {
           "ja": "インスペクター: 数の名前 (ベクトルは X / Y / Z) を左右にドラッグして値を変える",

@@ -158,18 +158,6 @@ ui::Path Sunflower(Vec2 center, float r, float degreesCcw) {
     return p;
 }
 
-ui::Path Sun(Vec2 center, float r) {
-    ui::Path p;
-    AddCircle(p, center, 0.56f * r);
-    for (int i = 0; i < 12; ++i) {
-        const float a = static_cast<float>(i) * 30.f;
-        const Vec2 tri[3] = {Add(center, Scale(Rotate({-0.09f, -0.66f}, a), r)), Add(center, Scale(Rotate({0, -1.f}, a), r)),
-                             Add(center, Scale(Rotate({0.09f, -0.66f}, a), r))};
-        AddPolygon(p, tri);
-    }
-    return p;
-}
-
 ui::Path Cloud(Vec2 c, float w) {
     ui::Path p;
     AddCircle(p, {c.x - 0.30f * w, c.y + 0.02f * w}, 0.17f * w);
@@ -185,19 +173,67 @@ ui::Path Cloud(Vec2 c, float w) {
     return p;
 }
 
-ui::Path Sand(const ui::Rect& win, float height) {
+ui::Path Sea(const ui::Rect& win, float height) {
     ui::Path p;
     const float bottom = win.y + win.h;
     p.Begin({win.x, bottom});
     const int steps = 48;
     for (int i = 0; i <= steps; ++i) {
         const float t = static_cast<float>(i) / static_cast<float>(steps);
-        // Low waves: higher towards the right (the beach rises), never above `height`.
-        const float wave = 0.78f + 0.12f * std::sin(t * 7.f) + 0.06f * std::sin(t * 17.f + 1.f);
-        p.Line({win.x + win.w * t, bottom - height * wave * (0.85f + 0.15f * t)});
+        p.Line({win.x + win.w * t, bottom - height * (0.96f + 0.04f * std::sin(t * 11.f))});
     }
     p.Line({win.x + win.w, bottom});
     return p;
+}
+
+ui::Path Waves(const ui::Rect& area, int rows) {
+    ui::Path p;
+    for (int r = 0; r < rows; ++r) {
+        // Lower rows: nearer, so longer waves and thicker lines.
+        const float t = (static_cast<float>(r) + 0.5f) / static_cast<float>(rows);
+        const float y = area.y + area.h * t;
+        const float len = 34.f + 30.f * t, amp = 2.f + 2.5f * t, thick = 1.2f + 1.3f * t;
+        const int steps = std::max(8, static_cast<int>(area.w / 6.f));
+        std::vector<Vec2> top, under;
+        for (int i = 0; i <= steps; ++i) {
+            const float x = area.x + area.w * static_cast<float>(i) / static_cast<float>(steps);
+            const float wy = y + amp * std::sin((x + 17.f * static_cast<float>(r)) / len * 2.f * kPi);
+            top.push_back({x, wy});
+            under.push_back({x, wy + thick});
+        }
+        top.insert(top.end(), under.rbegin(), under.rend());
+        AddPolygon(p, top);
+    }
+    return p;
+}
+
+float ShoreY(const ui::Rect& win, float width, float height, float x) {
+    // From (right - width, bottom) to (right, bottom - height), bowed a little towards the sea.
+    const float t = std::clamp((x - (win.x + win.w - width)) / std::max(width, 1.f), 0.f, 1.f);
+    const float bow = 0.10f * std::sin(t * kPi);
+    return win.y + win.h - height * std::min(1.f, t + bow);
+}
+
+Beach BeachCorner(const ui::Rect& win, float width, float height) {
+    Beach b;
+    const float right = win.x + win.w, bottom = win.y + win.h;
+    std::vector<Vec2> sand{{right - width, bottom}};
+    std::vector<Vec2> foamTop, foamUnder;
+    const int steps = 40;
+    for (int i = 0; i <= steps; ++i) {
+        const float x = right - width + width * static_cast<float>(i) / static_cast<float>(steps);
+        const float y = ShoreY(win, width, height, x);
+        sand.push_back({x, y});
+        // The foam: a thin, slightly uneven band just on the sea's side of the shore.
+        const float f = 3.f + 1.5f * std::sin(x * 0.09f);
+        foamTop.push_back({x - f * 0.4f, y - f});
+        foamUnder.push_back({x, y + 1.f});
+    }
+    sand.push_back({right, bottom});
+    AddPolygon(b.sand, sand);
+    foamTop.insert(foamTop.end(), foamUnder.rbegin(), foamUnder.rend());
+    AddPolygon(b.foam, foamTop);
+    return b;
 }
 
 Castle SandCastle(Vec2 base, float h) {
@@ -279,15 +315,15 @@ ui::Path MapleLeaf(Vec2 center, float r, float degreesCcw, int points) {
     return p;
 }
 
-std::array<ui::Path, 4> Canopy(const ui::Rect& win, float depth, uint32_t seed) {
+std::array<ui::Path, 4> Canopy(const ui::Rect& win, float depth, float perPixel, uint32_t seed) {
     std::array<ui::Path, 4> out;
     Random rnd{seed};
-    // Thick along the very top, thinning out below; about one leaf every 7 pixels across.
-    const int count = std::max(12, static_cast<int>(win.w / 7.f));
+    // Thick along the very top, thinning out below (a few drift all the way down to `depth`).
+    const int count = std::max(12, static_cast<int>(win.w * perPixel));
     for (int i = 0; i < count; ++i) {
         const float x = win.x - 10.f + (win.w + 20.f) * rnd.Next();
         const float v = rnd.Next();
-        const float y = win.y - 6.f + depth * v * v;
+        const float y = win.y - 6.f + depth * std::pow(v, 2.2f);
         const float size = (7.f + 9.f * rnd.Next()) * (1.f - 0.35f * v);
         const int color = static_cast<int>(rnd.Next() * 4.f) % 4;
         const ui::Path leaf = MapleLeaf({x, y}, size, rnd.Next() * 360.f, 40);
@@ -295,22 +331,6 @@ std::array<ui::Path, 4> Canopy(const ui::Rect& win, float depth, uint32_t seed) 
         dst.insert(dst.end(), leaf.steps.begin(), leaf.steps.end());
     }
     return out;
-}
-
-Wood Forest(const ui::Rect& win, float height, uint32_t seed) {
-    Wood w;
-    Random rnd{seed};
-    const float bottom = win.y + win.h;
-    for (float x = win.x + 30.f * rnd.Next(); x < win.x + win.w + 40.f; x += height * (0.45f + 0.35f * rnd.Next())) {
-        const float th = height * (0.6f + 0.4f * rnd.Next());
-        AddBar(w.trunks, {x, bottom + 2.f}, {x, bottom - th * 0.62f}, th * 0.07f, th * 0.04f);
-        const Vec2 top{x, bottom - th * 0.68f};
-        AddCircle(w.crowns, top, th * 0.26f);
-        AddCircle(w.crowns, {top.x - th * 0.18f, top.y + th * 0.08f}, th * 0.19f);
-        AddCircle(w.crowns, {top.x + th * 0.19f, top.y + th * 0.06f}, th * 0.2f);
-        AddCircle(w.crowns, {top.x, top.y - th * 0.16f}, th * 0.17f);
-    }
-    return w;
 }
 
 // --- Winter -----------------------------------------------------------------------------------
@@ -335,30 +355,41 @@ ui::Path Snowflake(Vec2 center, float r, float degreesCcw) {
     return p;
 }
 
-ui::Path SnowCap(const ui::Rect& r, float depth, float corner) {
+ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed) {
+    ui::Path p;
+    Random rnd{seed};
+    for (int i = 0; i < count; ++i) {
+        const Vec2 c{area.x + area.w * rnd.Next(), area.y + area.h * rnd.Next()};
+        AddCircle(p, c, size * (0.35f + 0.65f * rnd.Next()) * 0.5f);
+    }
+    return p;
+}
+
+ui::Path SnowDrift(const ui::Rect& r, float depth, float corner) {
     ui::Path p;
     const float x0 = r.x + corner * 0.6f, x1 = r.x + r.w - corner * 0.6f;
     if (x1 - x0 < 6.f || depth <= 0) return p;
-    // The heap's height along the edge: soft bumps tied to the position on the screen (the same
-    // every frame), lower towards both ends.
+    const float bottom = r.y + r.h;
+    // The drift's height along the edge: soft swells tied to the position on the screen (the same
+    // every frame), low at both ends.
     auto height = [&](float x) {
         const float t = (x - x0) / (x1 - x0);
-        const float ends = std::min(1.f, std::min(t, 1.f - t) * 7.f);
-        const float bumps = 0.62f + 0.22f * std::sin(x * 0.11f) + 0.16f * std::sin(x * 0.047f + 2.f);
-        return depth * ends * bumps;
+        const float ends = std::min(1.f, std::min(t, 1.f - t) * 6.f);
+        const float swells = 0.55f + 0.25f * std::sin(x * 0.045f) + 0.20f * std::sin(x * 0.13f + 1.f);
+        return depth * ends * swells;
     };
     const int steps = std::max(4, static_cast<int>((x1 - x0) / 5.f));
-    p.Begin({x0, r.y + 1.5f});
+    // Clockwise on the screen: along the drift's top to the right, then back along the bottom.
     for (int i = 0; i <= steps; ++i) {
         const float x = x0 + (x1 - x0) * static_cast<float>(i) / static_cast<float>(steps);
-        p.Line({x, r.y - height(x)});
+        if (i == 0) {
+            p.Begin({x, bottom - height(x)});
+        } else {
+            p.Line({x, bottom - height(x)});
+        }
     }
-    p.Line({x1, r.y + 1.5f});
-    // A few drops hanging over the edge (where the heap is high), clockwise like the rest.
-    for (float x = x0 + 18.f; x < x1 - 12.f; x += 37.f + 23.f * (0.5f + 0.5f * std::sin(x * 0.31f))) {
-        if (height(x) < depth * 0.6f) continue;
-        AddEllipse(p, {x, r.y + 2.5f}, 2.2f, 2.6f + 1.4f * (0.5f + 0.5f * std::sin(x)), 0);
-    }
+    p.Line({x1, bottom});
+    p.Line({x0, bottom});
     return p;
 }
 

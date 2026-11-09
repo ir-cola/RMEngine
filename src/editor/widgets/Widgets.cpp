@@ -79,15 +79,23 @@ void DrawSurface(ui::Context& c, const Rect& r, Surface s, float radius) {
 
 namespace {
 
-// Snow lying on the top edge of a box (winter): a thin shade along its top, then the snow.
-void DrawSnow(ui::Context& c, const Rect& r, float depth, float corner) {
-    auto& p = c.P();
-    p.FillPath(ornament::SnowCap({r.x, r.y - 1.f, r.w, r.h}, depth, corner), theme::season::SnowShade());
-    p.FillPath(ornament::SnowCap(r, depth, corner), theme::season::Snow());
-}
-
 // A season's picture, never over what the content asked to keep clear (the scene and game views).
 void Fill(ui::Context& c, const ui::Path& path, Color color) { c.P().FillPath(path, color, c.KeepClearAreas()); }
+
+// Winter: snow falling over the window (held still), and piled up at the bottom of every panel drawn
+// this frame (each with a thin shade along its top, so it shows on a white panel).
+void Winter(ui::Context& c, const Rect& w, float scale) {
+    using namespace theme::season;
+    const int count = std::max(20, static_cast<int>(w.w * w.h / 3600.f));
+    Fill(c, ornament::Snowfall(w, count, 5.5f * scale, 0x5A0Fu), Flake());
+    for (const ui::Context::Decorated& d : c.DecoratedAreas()) {
+        // An outline above, the white snow, and its shaded foot (white alone would vanish on a white panel).
+        constexpr float kDepth = 14.f;
+        Fill(c, ornament::SnowDrift({d.r.x, d.r.y - 1.5f, d.r.w, d.r.h}, kDepth, d.corner), SnowShade());
+        Fill(c, ornament::SnowDrift(d.r, kDepth, d.corner), Snow());
+        Fill(c, ornament::SnowDrift(d.r, kDepth * 0.45f, d.corner), SnowLow());
+    }
+}
 
 // The silhouette in the bottom-left corner: turned 10 degrees counter-clockwise, sized by the window.
 float CornerRadius(const Rect& w) { return std::clamp(std::min(w.w, w.h) * 0.17f, 56.f, 150.f); }
@@ -118,7 +126,8 @@ void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
     p.StrokeRoundRectGradient(r.Inset(-1), {grow(k.tl), grow(k.tr), grow(k.br), grow(k.bl)}, outer, outer);
     p.FillRoundRectGradient(r, k, fill.top, fill.bottom);
     p.StrokeRoundRectGradient(r, k, inner.top, inner.bottom);
-    if (theme::CurrentOrnament == theme::Ornament::Winter) DrawSnow(c, r, 6.f, std::max(k.tl, k.tr));
+    // Winter piles snow up at its bottom, after the content (w::DrawOrnament).
+    if (theme::CurrentOrnament == theme::Ornament::Winter) c.Decorate(r, std::max(k.bl, k.br));
 }
 
 void DrawOrnament(ui::Context& c, const Rect& w) {
@@ -137,19 +146,23 @@ void DrawOrnament(ui::Context& c, const Rect& w) {
             return;
         }
         case theme::Ornament::Summer: {
-            // The beach along the bottom with a sand castle and a parasol on it, the sun at the top-left,
-            // clouds at the top-right, a sunflower in the bottom-left.
-            const float sand = std::clamp(w.h * 0.10f, 40.f, 110.f);
-            Fill(c, ornament::Sand(w, sand), SandColor());
-            const float sun = std::clamp(std::min(w.w, w.h) * 0.09f, 34.f, 80.f);
-            Fill(c, ornament::Sun({w.x + sun + 34.f, w.y + sun + 44.f}, sun), SunColor());
+            // The sea along the bottom with its waves; a beach running diagonally into the bottom-right
+            // corner with the parasol and a sand castle on it; clouds at the top-right; a sunflower
+            // over the sea in the bottom-left.
+            const float sea = std::clamp(w.h * 0.22f, 90.f, 220.f);
+            Fill(c, ornament::Sea(w, sea), SeaColor());
+            Fill(c, ornament::Waves({w.x, w.Bottom() - sea * 0.85f, w.w, sea * 0.8f}, 4), WaveColor());
+            const float beachW = w.w * 0.42f, beachH = w.h * 0.40f;
+            const ornament::Beach beach = ornament::BeachCorner(w, beachW, beachH);
+            Fill(c, beach.sand, SandColor());
+            Fill(c, beach.foam, FoamColor());
             SummerClouds(c, w, 1.f);
-            const ornament::Castle castle =
-                ornament::SandCastle({w.x + w.w * 0.36f, w.Bottom() - sand * 0.5f}, std::clamp(w.h * 0.11f, 50.f, 120.f));
+            // On the sand: half way between the shore and the bottom edge.
+            auto onSand = [&](float x) { return Vec2{x, (ornament::ShoreY(w, beachW, beachH, x) + w.Bottom()) * 0.5f}; };
+            const ornament::Castle castle = ornament::SandCastle(onSand(w.Right() - beachW * 0.55f), std::clamp(w.h * 0.09f, 40.f, 100.f));
             Fill(c, castle.walls, CastleColor());
             Fill(c, castle.flag, FlagColor());
-            const ornament::Parasol parasol =
-                ornament::BeachParasol({w.Right() - w.w * 0.12f, w.Bottom() - sand * 0.45f}, std::clamp(w.h * 0.26f, 110.f, 260.f), 12.f);
+            const ornament::Parasol parasol = ornament::BeachParasol(onSand(w.Right() - w.w * 0.11f), std::clamp(w.h * 0.26f, 110.f, 260.f), 12.f);
             Fill(c, parasol.pole, PoleColor());
             Fill(c, parasol.stripesA, ParasolA());
             Fill(c, parasol.stripesB, ParasolB());
@@ -157,17 +170,16 @@ void DrawOrnament(ui::Context& c, const Rect& w) {
             return;
         }
         case theme::Ornament::Fall: {
-            // An autumn wood behind, red / orange / yellow leaves thick along the top, a maple leaf in the bottom-left.
-            const ornament::Wood wood = ornament::Forest(w, std::clamp(w.h * 0.34f, 120.f, 300.f), 0xA07Eu);
-            Fill(c, wood.trunks, WoodTrunk());
-            Fill(c, wood.crowns, WoodCrown());
-            const auto canopy = ornament::Canopy(w, std::clamp(w.h * 0.12f, 50.f, 110.f), 0xF411u);
+            // Red / orange / yellow leaves thick along the top and scattered further down, a big maple
+            // leaf in the bottom-left.
+            const auto canopy = ornament::Canopy(w, std::clamp(w.h * 0.32f, 120.f, 300.f), 1.f / 4.f, 0xF411u);
             for (int i = 0; i < 4; ++i) Fill(c, canopy[static_cast<size_t>(i)], Leaf(i));
-            Fill(c, ornament::MapleLeaf(corner, r, 10.f), theme::OrnamentColor());
+            const float big = std::min(r * 1.5f, 220.f);
+            Fill(c, ornament::MapleLeaf(CornerCenter(w, big), big, 10.f), theme::OrnamentColor());
             return;
         }
         case theme::Ornament::Winter:
-            // The snow lies on the panels and tabs themselves (DrawPanelFrame / DrawTab); here the snowflake.
+            Winter(c, w, 1.f);
             Fill(c, ornament::Snowflake(corner, r, 10.f), theme::OrnamentColor());
             return;
     }
@@ -188,9 +200,11 @@ void DrawFloatOrnament(ui::Context& c, const Rect& w) {
             SummerClouds(c, {w.x, w.y, w.w, std::min(w.h, 260.f)}, 0.6f);
             return;
         }
+        case theme::Ornament::Winter:
+            Winter(c, w, 0.8f);  // falling snow, and snow at the bottom of its panels
+            return;
         case theme::Ornament::None:
         case theme::Ornament::Fall:
-        case theme::Ornament::Winter:  // (its snow is on the panels and tabs, here too)
             return;
     }
 }
@@ -444,8 +458,6 @@ void DrawTab(ui::Context& c, const Rect& r, bool selected, bool hovered) {
         const theme::Gradient g = theme::Gentle(theme::Hover);
         p.FillRoundRectGradient(r, theme::Radius, g.top, g.bottom);
     }
-    // Winter: a little snow on every tab, selected or not.
-    if (theme::CurrentOrnament == theme::Ornament::Winter) DrawSnow(c, r, 4.f, theme::Radius);
 }
 
 bool CollapsingHeader(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view title, bool& open, float reserveRight) {

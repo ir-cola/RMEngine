@@ -85,13 +85,13 @@ inline constexpr Palette kSpring{
     Color::Hex(0xE2C6D0), Color::Hex(0xC6A3B0), Color::Hex(0x000000, 0.30f), 0xF5E4EA, true, Ornament::Spring,
 };
 
-// サマー: a summer sky (light blue), a sea-blue accent.
+// サマー: a deep summer sky (blue), a sea-blue accent.
 inline constexpr Palette kSummer{
-    Color::Hex(0xD3EAFA), Color::Hex(0xC3E1F7), Color::Hex(0xF1F8FE), Color::Hex(0xE1F0FB), Color::Hex(0xB3D4EC),
-    Color::Hex(0x8BBADC), Color::Hex(0xFFFFFF), Color::Hex(0xDAEDFA), Color::Hex(0xCBE3F5), Color::Hex(0xBEDFF7),
-    Color::Hex(0x1A86D9), Color::Hex(0x3498E6), Color::Hex(0x136BB0), Color::Hex(0x15232E), Color::Hex(0x4D6373),
-    Color::Hex(0x8297A6), Color::Hex(0xD03030), Color::Hex(0xA87A06), Color::Hex(0xC9921B), Color::Hex(0x000000, 0.13f),
-    Color::Hex(0xB1CDE2), Color::Hex(0x8DB2CE), Color::Hex(0x000000, 0.32f), 0xC3E1F7, true, Ornament::Summer,
+    Color::Hex(0xB4D9F5), Color::Hex(0xA2CDF0), Color::Hex(0xE3F1FC), Color::Hex(0xD0E7FA), Color::Hex(0x96C1E4),
+    Color::Hex(0x6EA4D0), Color::Hex(0xF7FBFF), Color::Hex(0xCBE3F7), Color::Hex(0xBAD8F3), Color::Hex(0xA9D0F2),
+    Color::Hex(0x1270C0), Color::Hex(0x2685D2), Color::Hex(0x0D5A9C), Color::Hex(0x0F1F2B), Color::Hex(0x435768),
+    Color::Hex(0x728CA0), Color::Hex(0xD03030), Color::Hex(0xA87A06), Color::Hex(0xC9921B), Color::Hex(0x000000, 0.14f),
+    Color::Hex(0x9DBFDB), Color::Hex(0x789FC2), Color::Hex(0x000000, 0.32f), 0xA2CDF0, true, Ornament::Summer,
 };
 
 // フォール: an autumn wood - yellow and orange, a maple-red accent.
@@ -220,10 +220,12 @@ inline Color OrnamentColor() { return Accent.Alpha(IsLight ? 0.10f : 0.12f); }
 // The colors of the seasons' pictures (laid faintly over the window: their alpha is part of them).
 namespace season {
 inline Color Petal() { return Color::Hex(0xEE8FAE, 0.42f); }          // spring: the flurry
-inline Color Sky() { return Color::Hex(0x5DB2F0, 0.10f); }            // summer: a blue wash (the panel windows)
-inline Color SunColor() { return Color::Hex(0xF7B423, 0.30f); }
+inline Color Sky() { return Color::Hex(0x2F8FE0, 0.12f); }            // summer: a blue wash (the panel windows)
 inline Color CloudColor() { return Color::Hex(0xFFFFFF, 0.55f); }
-inline Color SandColor() { return Color::Hex(0xEFC96B, 0.30f); }
+inline Color SeaColor() { return Color::Hex(0x1268B8, 0.20f); }
+inline Color WaveColor() { return Color::Hex(0xFFFFFF, 0.50f); }
+inline Color FoamColor() { return Color::Hex(0xFFFFFF, 0.70f); }
+inline Color SandColor() { return Color::Hex(0xEFC96B, 0.42f); }
 inline Color CastleColor() { return Color::Hex(0xC99A4B, 0.30f); }
 inline Color FlagColor() { return Color::Hex(0xE2483D, 0.40f); }
 inline Color ParasolA() { return Color::Hex(0xE2483D, 0.30f); }
@@ -233,10 +235,10 @@ inline Color Leaf(int i) {                                            // fall: t
     constexpr uint32_t k[4] = {0xD8432A, 0xE8832A, 0xE7B43A, 0xB0432A};
     return Color::Hex(k[i & 3], 0.34f);
 }
-inline Color WoodTrunk() { return Color::Hex(0x7A4E2E, 0.10f); }
-inline Color WoodCrown() { return Color::Hex(0xE58F2C, 0.11f); }
-inline Color Snow() { return Color::Hex(0xFFFFFF); }                  // winter: lying on tabs and windows
-inline Color SnowShade() { return Color::Hex(0xB9C7D6, 0.9f); }       // its outline (snow on a white panel)
+inline Color Snow() { return Color::Hex(0xFFFFFF); }                  // winter: piled up at the bottom of panels
+inline Color SnowShade() { return Color::Hex(0x91A5BB); }             // its outline (snow on a white panel)
+inline Color SnowLow() { return Color::Hex(0xDCE6F1); }               // the shaded foot of the drift
+inline Color Flake() { return Color::Hex(0xB9C9DB, 0.85f); }          // falling snow (soft blue-grey: seen on white)
 }  // namespace season
 // How bright a color looks (relative luminance, 0 = black .. 1 = white; WCAG's formula).
 inline float Luminance(Color c) {

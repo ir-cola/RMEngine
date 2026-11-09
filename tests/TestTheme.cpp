@@ -168,8 +168,6 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     CHECK(AllClockwise(Snowflake(c, 100, 10)));
     const Bounds flower = BoundsOf(Sunflower(c, 100, 0));
     CHECK(flower.x0 > 390 && flower.x1 < 610 && flower.y0 > 390 && flower.y1 < 660);  // the stem hangs 1.45 below
-    const Bounds sun = BoundsOf(Sun(c, 100));
-    CHECK(std::fabs(sun.y0 - 400) < 0.5f && sun.x1 < 601);
 
     // The cherry tree stands on its base and keeps under its height.
     const Bounds tree = BoundsOf(CherryTree({500, 900}, 400));
@@ -185,18 +183,37 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     const Bounds pb = BoundsOf(petals);
     CHECK(pb.figures == 40 && pb.x0 > -8 && pb.y0 > -8 && pb.x1 < 308 && pb.y1 < 208);
 
-    // The beach covers the bottom of the window, no higher than asked.
+    // The sea covers the bottom of the window, no higher than asked; its waves stay in their band.
     const rm::ui::Rect win{0, 0, 800, 600};
-    const Bounds sand = BoundsOf(Sand(win, 100));
-    CHECK(sand.y1 == 600 && sand.y0 >= 500 && sand.x0 == 0 && sand.x1 == 800);
-    // The canopy keeps to the top.
-    for (const auto& part : Canopy(win, 80, 9)) CHECK(part.steps.empty() || BoundsOf(part).y1 < 80 + 30);
+    const Bounds sea = BoundsOf(Sea(win, 100));
+    CHECK(sea.y1 == 600 && sea.y0 >= 500 && sea.x0 == 0 && sea.x1 == 800);
+    const Bounds waves = BoundsOf(Waves({0, 500, 800, 80}, 4));
+    CHECK(waves.figures == 4 && waves.y0 > 495 && waves.y1 < 585);
+    CHECK(AllClockwise(Waves({0, 500, 800, 80}, 4)));
+    // The beach: only the bottom-right corner, its shore from (800 - 300, 600) up to (800, 600 - 200).
+    const Beach beach = BeachCorner(win, 300, 200);
+    const Bounds sand = BoundsOf(beach.sand);
+    CHECK(sand.x0 >= 500 && sand.x1 == 800 && sand.y0 >= 400 - 0.01f && sand.y1 == 600);
+    CHECK(std::fabs(ShoreY(win, 300, 200, 500) - 600) < 0.01f && std::fabs(ShoreY(win, 300, 200, 800) - 400) < 0.01f);
+    CHECK(ShoreY(win, 300, 200, 650) < 600 - 100);  // bowed towards the sea in the middle
+    CHECK(AllClockwise(beach.sand) && AllClockwise(beach.foam));
+    // The canopy: thick at the top, a few further down, never below `depth` (give or take a leaf).
+    int above = 0, below = 0;
+    for (const auto& part : Canopy(win, 200, 0.25f, 9)) {
+        if (part.steps.empty()) continue;
+        CHECK(BoundsOf(part).y1 < 200 + 30);
+        for (const auto& st : part.steps) (st.a.y < 60 ? above : below) += st.op == rm::ui::Path::Op::Begin ? 1 : 0;
+    }
+    CHECK(above + below >= 200 && above > below);  // 800 x 0.25 leaves (and a stalk each), most near the top
 
-    // Snow lies on the top edge: never more than `depth` above it, barely below it, off the corners.
+    // Falling snow stays in its area; the same flakes for the same seed.
+    const Bounds flakes = BoundsOf(Snowfall({0, 0, 400, 300}, 50, 6, 3));
+    CHECK(flakes.figures == 50 && flakes.x0 > -4 && flakes.y0 > -4 && flakes.x1 < 404 && flakes.y1 < 304);
+    // Snow piles up at the bottom edge, inside it: never more than `depth` above it, off the corners.
     const rm::ui::Rect panel{100, 200, 300, 150};
-    const Bounds snow = BoundsOf(SnowCap(panel, 6, 8));
-    CHECK(snow.y0 >= 200 - 6.01f && snow.y1 <= 200 + 6.f);
-    CHECK(snow.x0 >= 100 + 4.f && snow.x1 <= 400 - 4.f);
-    CHECK(AllClockwise(SnowCap(panel, 6, 8)));
-    CHECK(SnowCap({0, 0, 5, 10}, 6, 8).steps.empty());  // too narrow for any
+    const Bounds drift = BoundsOf(SnowDrift(panel, 9, 8));
+    CHECK(drift.y1 == 350 && drift.y0 >= 350 - 9.01f);
+    CHECK(drift.x0 >= 100 + 4.f && drift.x1 <= 400 - 4.f);
+    CHECK(AllClockwise(SnowDrift(panel, 9, 8)));
+    CHECK(SnowDrift({0, 0, 5, 10}, 6, 8).steps.empty());  // too narrow for any
 }

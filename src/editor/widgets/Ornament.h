@@ -44,10 +44,20 @@ ui::Path Petals(const ui::Rect& area, int count, float size, uint32_t seed);
 
 // --- Summer -----------------------------------------------------------------------------------
 ui::Path Sunflower(Vec2 center, float radius, float degreesCcw);
-ui::Path Sun(Vec2 center, float radius);  // a disc and its rays (radius = to the rays' tips)
 ui::Path Cloud(Vec2 center, float width);
-// The beach along the bottom of `window`, `height` tall at most, its edge gently waving.
-ui::Path Sand(const ui::Rect& window, float height);
+// The sea along the bottom of `window`, `height` tall, its horizon gently waving.
+ui::Path Sea(const ui::Rect& window, float height);
+// White crests on the sea: `rows` thin wavy lines across `area` (the sea's own rectangle).
+ui::Path Waves(const ui::Rect& area, int rows);
+// A beach in the bottom-right corner of `window`, its shore running diagonally from `width` left of
+// the corner (on the bottom edge) up to `height` above it (on the right edge), gently curved; and
+// the white foam along that shore.
+struct Beach {
+    ui::Path sand, foam;
+};
+Beach BeachCorner(const ui::Rect& window, float width, float height);
+// Where the shore is at x (the sand is below it): for putting things on the beach.
+float ShoreY(const ui::Rect& window, float width, float height, float x);
 // A sand castle standing on `base` (the middle of its foot), and the little flag on its top tower.
 struct Castle {
     ui::Path walls, flag;
@@ -63,18 +73,16 @@ Parasol BeachParasol(Vec2 base, float height, float degreesCcw);
 // A maple leaf (五つの尖った葉先と葉柄): radius = from the centre to the top tip. `points` = how
 // finely its edge is drawn (fewer for the small leaves of the canopy).
 ui::Path MapleLeaf(Vec2 center, float radius, float degreesCcw, int points = 180);
-// Autumn leaves thick along the top of `window`, down to about `depth`, in four colors (one path each).
-std::array<ui::Path, 4> Canopy(const ui::Rect& window, float depth, uint32_t seed);
-// A wood along the bottom of `window`: trunks and round crowns.
-struct Wood {
-    ui::Path trunks, crowns;
-};
-Wood Forest(const ui::Rect& window, float height, uint32_t seed);
+// Autumn leaves thick along the top of `window` and thinning out down to about `depth`, in four
+// colors (one path each). `perPixel` = leaves per pixel of width.
+std::array<ui::Path, 4> Canopy(const ui::Rect& window, float depth, float perPixel, uint32_t seed);
 
 // --- Winter -----------------------------------------------------------------------------------
 ui::Path Snowflake(Vec2 center, float radius, float degreesCcw);
-// Snow lying on the top edge of `r` (a panel, a tab, a dialog): a soft wavy heap at most `depth`
-// high above the edge, a little over it, with a few drops hanging. Kept off the rounded corners.
-ui::Path SnowCap(const ui::Rect& r, float depth, float cornerRadius);
+// Falling snow, held still: round flakes of about `size` scattered over `area`.
+ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed);
+// Snow piled up at the bottom of `r` (a panel, a window): a soft wavy drift rising at most `depth`
+// from the bottom edge, inside it, highest in a few places and low at both ends (off the rounded corners).
+ui::Path SnowDrift(const ui::Rect& r, float depth, float cornerRadius);
 
 }  // namespace rm::editor::ornament

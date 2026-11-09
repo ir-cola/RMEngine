@@ -44,14 +44,16 @@ void DrawSurface(ui::Context& c, const ui::Rect& r, Surface s, float radius = th
 void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
 // The pictures of the theme in use (the seasons), laid faintly over the main window (Hub / editor):
 //   スプリング  a cherry tree (bottom-right), a blossom (bottom-left), a flurry of petals (top-left)
-//   サマー      the sun, clouds, a beach with a sand castle and a parasol, a sunflower (bottom-left)
-//   フォール    an autumn wood, leaves thick along the top, a maple leaf (bottom-left)
-//   ウィンター  a snowflake (bottom-left); the snow lies on panels and tabs (DrawPanelFrame / DrawTab)
+//   サマー      the sea and its waves, a beach in the bottom-right corner with a parasol and a sand
+//               castle, clouds, a sunflower (bottom-left)
+//   フォール    leaves thick along the top and scattered below, a big maple leaf (bottom-left)
+//   ウィンター  falling snow (held still), snow piled at the bottom of every panel (DrawPanelFrame
+//               notes them: ui::Context::Decorate), a snowflake (bottom-left)
 // Drawn after the window's content and before its menus and dialogs, never over the areas the
 // content asked to keep clear (ui::Context::KeepClear - the scene and game views). Nothing for most themes.
 void DrawOrnament(ui::Context& c, const ui::Rect& window);
 // The same for a panel window of its own (a panel dragged out): spring's petals, summer's blue sky
-// and clouds. The silhouettes and the trees stay in the main window.
+// and clouds, winter's snow. The silhouettes, the tree and the beach stay in the main window.
 void DrawFloatOrnament(ui::Context& c, const ui::Rect& window);
 // A strip of the window's frame (menu bar, status bar, sidebar): gentle gradient, no border.
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
