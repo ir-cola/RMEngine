@@ -16,6 +16,7 @@
 #include "core/reflect/Data.h"
 #include "core/reflect/Object.h"
 
+#include <span>
 #include <string>
 
 namespace rm::game_production {
@@ -26,6 +27,12 @@ inline constexpr char kComponentPoint[] = "rm_engine.game_production.component";
 struct ComponentInfo {
     const reflect::TypeDesc& (*type)();  // e.g. &reflect::TypeOf<space3d::Transform>
     bool onNewEntities = false;          // every new entity gets one
+    // Optional: values worked out from this component and the same component of every parent, shown
+    // read-only under it (a Transform's place in the world - game production does not know what they
+    // mean). `chain`: the top parent's value first, this entity's last (parents without the component
+    // are skipped); `out`: a value of derivedType(). The block's title is derivedType()'s label.
+    const reflect::TypeDesc& (*derivedType)() = nullptr;
+    void (*derive)(std::span<const void* const> chain, void* out) = nullptr;
 };
 
 struct Component {

@@ -4,5 +4,7 @@
   "X 軸 → Y 軸 → Z 軸 の順に回します (オイラー角)": "Rotates about X, then Y, then Z (Euler angles)",
   "位置": "Position",
   "回転 (度)": "Rotation (degrees)",
-  "大きさ": "Scale"
+  "大きさ": "Scale",
+  "ワールドでの値 (親を含む)": "In the world (parents included)",
+  "親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です": "When a parent is scaled unevenly and turned, the shape is skewed, so this is an approximation"
 }

@@ -7,6 +7,18 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "シーンビューにギズモ: 選んだ物を矢印で動かす・輪で回す・箱で大きさを変える (W / E / R、X でローカル / ワールド、Ctrl で刻む、Undo できる)",
+          "en": "Scene view gizmo: move with arrows, turn with rings and scale with boxes (W / E / R, X for local / world, Ctrl to snap, undoable)"
+        },
+        {
+          "ja": "シーンビューのカメラと選んだ道具を、プロジェクトを開き直しても覚えておく",
+          "en": "The scene view remembers its camera and tool when the project is opened again"
+        },
+        {
+          "ja": "インスペクターの Transform の下に、親を含めたワールドでの位置・回転・大きさを表示",
+          "en": "The inspector shows a Transform's world position, rotation and scale (parents included) under it"
+        },
+        {
           "ja": "Hub の左上のロゴを、テーマに合わせて白か黒で表示 (明るいテーマでも見える)",
           "en": "The Hub's logo is shown in white or black to suit the theme (visible on light themes too)"
         },

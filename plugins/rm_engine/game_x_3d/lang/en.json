@@ -2,5 +2,15 @@
   "3D の描画を始められませんでした。くわしくはコンソールを見てください。": "Could not start 3D drawing. See the console for details.",
   "Transform の付いたエンティティが、ここに箱で出ます。": "Entities with a Transform show here as boxes.",
   "ゲーム制作 × 3D": "Game Production × 3D",
-  "右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ": "Right drag: look (W A S D / Q E to move)   Middle drag: pan   Wheel: zoom   Alt+left drag: orbit   F: frame selection   Click: select"
+  "移動": "Move",
+  "回転": "Rotate",
+  "拡大縮小": "Scale",
+  "矢印で動かす (W)": "Move with the arrows (W)",
+  "輪で回す (E)": "Turn with the rings (E)",
+  "箱で大きさを変える (R)": "Scale with the boxes (R)",
+  "ローカル": "Local",
+  "ワールド": "World",
+  "選んだ物の向きに合わせる (X で切り替え)": "Along the selected object's own axes (X to switch)",
+  "世界の向き (X で切り替え)。大きさは常に物の向き": "Along the world's axes (X to switch). Scale always follows the object",
+  "右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ   Ctrl+ギズモ: 刻んで動かす   Esc: ドラッグをやめる": "Right drag: look (W A S D / Q E to move)   Middle drag: pan   Wheel: zoom   Alt+left drag: orbit   F: frame selection   Click: select   Ctrl+gizmo: snap   Esc: cancel the drag"
 }

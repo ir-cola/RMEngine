@@ -76,6 +76,23 @@ RM_TEST(Undo_ReentrantPushIsRejected) {
     CHECK(v == 0);
 }
 
+RM_TEST(Undo_GroupIsOneEntryUndoneInReverse) {
+    UndoHistory h;
+    int v = 0;
+    auto group = std::make_unique<CommandGroup>("移動");
+    CHECK(group->Empty());
+    group->Add(std::make_unique<SetInt>(v, 0, 1));
+    group->Add(std::make_unique<SetInt>(v, 1, 2));  // depends on the first: reverse order matters
+    group->Add(nullptr);                             // ignored
+    CHECK(!group->Empty());
+    CHECK(h.Push(std::move(group), false));
+    CHECK(v == 2 && h.UndoCount() == 1);
+    CHECK(h.Undo());
+    CHECK(v == 0);  // 2 -> 1 -> 0
+    CHECK(h.Redo());
+    CHECK(v == 2);
+}
+
 RM_TEST(Undo_MaxDepth) {
     UndoHistory h;
     h.SetMaxDepth(3);

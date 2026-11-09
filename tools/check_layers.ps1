@@ -112,7 +112,10 @@ if (Test-Path $pluginsRoot) {
     $listFile = Join-Path $pluginsRoot 'BuiltinPlugins.cpp'
     $listText = if (Test-Path $listFile) { Get-Content $listFile -Raw -Encoding UTF8 } else { '' }
     foreach ($k in $plugins.Keys) {
-        if ((Test-Path (Join-Path $pluginsRoot "$k/editor")) -and -not $listText.Contains("`"$k/editor/")) {
+        # Listed = its editor part or its id is included there (space3d's editor part is only a library
+        # for other plugins' editors - the gizmo - so it has nothing to register).
+        $listed = $listText.Contains("`"$k/editor/") -or $listText.Contains("`"$k/runtime/Id.h`"")
+        if ((Test-Path (Join-Path $pluginsRoot "$k/editor")) -and -not $listed) {
             Write-Host "plugins/${k}: has an editor part but is not listed in plugins/BuiltinPlugins.cpp"
             $errors++
         }

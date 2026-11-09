@@ -9,12 +9,14 @@
 //
 // The first scene view offered is used. Without one, the panel says which plugins bring it.
 
+#include "core/reflect/FieldCommand.h"
 #include "editor/plugin/Software.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 
 #include <functional>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace rm::game_production {
@@ -28,6 +30,10 @@ struct SceneViewHost {
     const Scene& scene;
     std::span<const int> selection;                 // the selected entities (the 階層's)
     std::function<void(std::vector<int>)> select;   // select these instead (empty: nothing)
+    // Where a component of an entity is (found again each time it is called - undo may rebuild the
+    // scene). For edits: change the value through it and push reflect::SetFieldCommand with it on
+    // host.History() (edit = undo entry = unsaved).
+    std::function<std::function<reflect::EditTarget()>(int id, const std::string& type)> component;
 };
 
 // One per open game: keeps its own camera.
@@ -35,6 +41,9 @@ class SceneView {
 public:
     virtual ~SceneView() = default;
     virtual void Draw(ui::Context& c, const ui::Rect& r, SceneViewHost& host) = 0;
+    // How the user looks (camera, tool ...): kept with the panel layout, not in the project.
+    virtual void LoadState(const json::Value& state) { (void)state; }
+    virtual json::Value SaveState() const { return {}; }
 };
 
 struct SceneViewInfo {

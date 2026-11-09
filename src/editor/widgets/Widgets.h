@@ -16,6 +16,7 @@
 #include "ui/Context.h"
 
 #include <functional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -57,6 +58,11 @@ bool Button(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring
             ButtonKind kind = ButtonKind::Secondary, bool enabled = true);
 // A small square button with an icon (Ghost look: only a surface under the mouse).
 bool IconButton(ui::Context& c, std::string_view id, const ui::Rect& r, Icon icon, bool enabled = true);
+// One of a few choices, side by side in one floating strip (the scene view's 移動 / 回転 / 拡大縮小):
+// the chosen one in the accent. Returns the index clicked, -1 when none. `tooltips` (optional, one
+// per label) shows under the mouse.
+int Segmented(ui::Context& c, std::string_view id, const ui::Rect& r, std::span<const std::wstring_view> labels, int selected,
+              std::span<const std::wstring_view> tooltips = {});
 
 // --- Rows (lists, trees, menus, sidebars) ----------------------------------------------------
 struct RowLook {

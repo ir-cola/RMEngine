@@ -110,6 +110,13 @@ public:
         (void)data;
         return false;
     }
+
+    // How the user looks at this software (a scene view's camera, the gizmo chosen ...): not project
+    // data - it is kept next to the layout in UserSettings/Layout.json, never marks the project
+    // unsaved and is not undone. LoadView is called once after LoadData (null: nothing kept yet);
+    // SaveView whenever the layout is saved (null: nothing to keep).
+    virtual void LoadView(const json::Value& view) { (void)view; }
+    virtual json::Value SaveView() const { return {}; }
 };
 
 struct SoftwareType {

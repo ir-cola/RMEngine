@@ -177,6 +177,34 @@ bool Button(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_
     return enabled && b.clicked;
 }
 
+int Segmented(ui::Context& c, std::string_view idStr, const Rect& r, std::span<const std::wstring_view> labels, int selected,
+              std::span<const std::wstring_view> tooltips) {
+    if (labels.empty()) return -1;
+    DrawSurface(c, r, Surface::Popup);
+    const float w = (r.w - 4.f) / static_cast<float>(labels.size());
+    int clicked = -1;
+    for (size_t i = 0; i < labels.size(); ++i) {
+        const Rect seg{r.x + 2.f + w * static_cast<float>(i), r.y + 2.f, w, r.h - 4.f};
+        const auto b = c.ButtonBehavior(c.MakeId(std::string(idStr) + "#" + std::to_string(i)), seg);
+        const bool on = static_cast<int>(i) == selected;
+        const bool down = b.held && b.hovered;
+        if (on) {
+            DrawSurface(c, seg, down ? Surface::AccentPressed : b.hovered ? Surface::AccentHovered : Surface::Accent, theme::Radius - 1.f);
+        } else if (b.hovered) {
+            DrawSurface(c, seg, down ? Surface::Pressed : Surface::Hovered, theme::Radius - 1.f);
+        }
+        ui::TextStyle ts;
+        ts.size = 12;
+        ts.bold = on;
+        ts.h = ui::HAlign::Center;
+        ts.color = on ? theme::OnAccent() : b.hovered ? theme::Text : theme::TextDim;
+        c.P().Text(seg.Inset(4, 0, 4, 0), labels[i], ts);
+        if (b.hovered && i < tooltips.size() && !tooltips[i].empty()) Tooltip(c, tooltips[i]);
+        if (b.clicked) clicked = static_cast<int>(i);
+    }
+    return clicked;
+}
+
 bool IconButton(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon, bool enabled) {
     ui::Context::ButtonResult b;
     if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);

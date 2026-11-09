@@ -23,6 +23,28 @@ public:
     virtual std::string Label() const { return {}; }
 };
 
+// Several edits that are one action for the user (a gizmo drag of 3 selected objects): one entry,
+// undone in the reverse order. Empty groups should not be pushed.
+class CommandGroup final : public ICommand {
+public:
+    explicit CommandGroup(std::string label) : label_(std::move(label)) {}
+    void Add(std::unique_ptr<ICommand> cmd) {
+        if (cmd) cmds_.push_back(std::move(cmd));
+    }
+    bool Empty() const { return cmds_.empty(); }
+    void Do() override {
+        for (auto& c : cmds_) c->Do();
+    }
+    void Undo() override {
+        for (auto it = cmds_.rbegin(); it != cmds_.rend(); ++it) (*it)->Undo();
+    }
+    std::string Label() const override { return label_; }
+
+private:
+    std::vector<std::unique_ptr<ICommand>> cmds_;
+    std::string label_;
+};
+
 class UndoHistory {
 public:
     void SetOnModified(std::function<void()> fn) { onModified_ = std::move(fn); }

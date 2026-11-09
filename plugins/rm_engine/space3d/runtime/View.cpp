@@ -88,6 +88,13 @@ Mat4 LookAt(Vec3 eye, Vec3 target, Vec3 up) {
     return v;
 }
 
+std::optional<Vec3> ProjectToNdc(const Mat4& vp, Vec3 p) {
+    float o[4];
+    Transform4(vp, p.x, p.y, p.z, 1.f, o);
+    if (o[3] <= 1e-6f) return std::nullopt;
+    return Vec3{o[0] / o[3], o[1] / o[3], o[2] / o[3]};
+}
+
 Ray ScreenRay(const Mat4& inv, float ndcX, float ndcY) {
     float n[4], f[4];
     Transform4(inv, ndcX, ndcY, 0.f, 1.f, n);
@@ -132,6 +139,12 @@ Vec3 OrbitView::Forward() const {
 }
 Vec3 OrbitView::Right() const { return Normalize(Cross(Forward(), {0, 1, 0})); }
 Vec3 OrbitView::Up() const { return Cross(Right(), Forward()); }
+float OrbitView::WorldPerPixel(Vec3 p, float viewHeight) const {
+    const float depth = Dot(p - Eye(), Forward());
+    if (depth <= 1e-4f) return 0.f;
+    return 2.f * depth * std::tan(fovY * kDeg * 0.5f) / std::max(viewHeight, 1.f);
+}
+
 Mat4 OrbitView::ProjectionMatrix(float aspect) const {
     // The near plane follows the distance, so small and large scenes both keep their depth precision.
     const float nearZ = std::clamp(distance * 0.01f, 0.01f, 1.f);

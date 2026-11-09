@@ -52,7 +52,7 @@ inline Rect TakeRight(Rect& r, float w) {
 enum class Key : uint8_t {
     None, Left, Right, Up, Down, Home, End, PageUp, PageDown,
     Backspace, Delete, Enter, Escape, Tab, F2, F5,
-    A, C, D, E, F, N, O, Q, S, V, W, X, Y, Z,
+    A, C, D, E, F, N, O, Q, R, S, V, W, X, Y, Z,
     Count,  // the number of keys (for KeyDown)
 };
 

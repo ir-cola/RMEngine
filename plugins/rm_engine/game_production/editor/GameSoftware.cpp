@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <format>
+#include <memory>
 
 namespace rm::game_production {
 
@@ -76,6 +77,7 @@ public:
             const reflect::TypeDesc* t = &c.item->type();
             if (std::find(types.begin(), types.end(), t) != types.end()) continue;
             types.push_back(t);
+            componentInfos_.push_back(c.item);
             if (c.item->onNewEntities) newEntityTypes_.push_back(t);
         }
         scene_.SetComponentTypes(std::move(types));
@@ -107,6 +109,20 @@ public:
     }
 
     tree::Source* Hierarchy() override { return this; }
+
+    // The view is kept as read, so a scene view not opened this time keeps its camera (and keys of a
+    // newer version stay).
+    void LoadView(const json::Value& view) override {
+        view_ = view.IsObject() ? view : json::Value::MakeObject();
+        if (sceneView_) sceneView_->LoadState(view_.Get("sceneView"));
+    }
+    json::Value SaveView() const override {
+        json::Value v = view_.IsObject() ? view_ : json::Value::MakeObject();
+        if (sceneView_) {
+            if (json::Value s = sceneView_->SaveState(); !s.IsNull()) v.Set("sceneView", std::move(s));
+        }
+        return v;
+    }
 
     void LoadData(const json::Value& data) override {
         hadData_ = data.IsObject();
@@ -271,6 +287,7 @@ private:
             sceneViewAsked_ = true;
             const auto views = host_.Registry().Contributions<SceneViewInfo>(kSceneViewPoint);
             if (!views.empty() && views[0].item->create) sceneView_ = views[0].item->create();
+            if (sceneView_) sceneView_->LoadState(view_.Get("sceneView"));
         }
         if (!sceneView_) {
             Placeholder(c, r, Tr(L"シーンビュー"),
@@ -278,9 +295,9 @@ private:
             return;
         }
         c.KeepClear(r);  // the picture of the scene: no theme ornament over it
-        SceneViewHost h{host_, scene_, selection_, [this](std::vector<int> ids) {
-                            host_.SelectInTree(std::vector<tree::ItemId>(ids.begin(), ids.end()));
-                        }};
+        SceneViewHost h{host_, scene_, selection_,
+                        [this](std::vector<int> ids) { host_.SelectInTree(std::vector<tree::ItemId>(ids.begin(), ids.end())); },
+                        [this](int id, const std::string& type) { return ResolveComponent(id, type); }};
         sceneView_->Draw(c, r, h);
     }
 
@@ -307,6 +324,31 @@ private:
         };
     }
 
+    const ComponentInfo* InfoOf(const std::string& type) const {
+        for (const ComponentInfo* i : componentInfos_) {
+            if (i->type().name == type) return i;
+        }
+        return nullptr;
+    }
+
+    // The values a component's plugin works out through the parents (read-only, so never edited):
+    // worked out again every time the inspector asks, into a value of their own.
+    std::function<reflect::EditTarget()> Derived(int id, std::string type, const ComponentInfo* info) {
+        auto value = std::make_shared<reflect::Object>(info->derivedType());
+        return [this, id, type = std::move(type), info, value] {
+            std::vector<const void*> chain;
+            size_t steps = 0;  // a broken file could make a ring of parents
+            for (const SceneEntity* e = scene_.Find(id); e && steps++ <= scene_.Entities().size(); e = scene_.Find(e->data.parent)) {
+                const Component* c = e->FindComponent(type);
+                if (c && c->Known()) chain.push_back(c->value.Get());
+            }
+            if (chain.empty()) return reflect::EditTarget{};  // gone (undo)
+            std::reverse(chain.begin(), chain.end());
+            info->derive(chain, value->Get());
+            return reflect::EditTarget{value->Get(), nullptr};
+        };
+    }
+
     // The inspector of one entity: the entity itself, then its components (each with ⋮ → 外す), and
     // "部品を足す" under them. Asked again every time it is drawn (undo may add or take components).
     editor::Inspectable EntityInspectable(int id) {
@@ -327,6 +369,10 @@ private:
                 };
                 if (c.Known()) {
                     blocks.push_back({c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(TrU8(label)), {}, {remove}});
+                    if (const ComponentInfo* info = InfoOf(c.type); info && info->derivedType && info->derive) {
+                        const reflect::TypeDesc& dt = info->derivedType();
+                        blocks.push_back({&dt, Derived(id, c.type, info), Utf8ToWide(TrU8(dt.label)), {}, {}});
+                    }
                 } else {
                     blocks.push_back({nullptr, {}, Utf8ToWide(label) + Tr(L" (使えない部品)"),
                                       Tr(L"この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。"), {remove}});
@@ -392,6 +438,8 @@ private:
     std::unique_ptr<SceneView> sceneView_;
     bool sceneViewAsked_ = false;
     std::vector<const reflect::TypeDesc*> newEntityTypes_;  // components every new entity gets
+    std::vector<const ComponentInfo*> componentInfos_;      // one per component type, as offered
+    json::Value view_;  // UserSettings: how the user looks (the scene view's camera ...)
     bool hadData_ = false;
     bool inspectingEntities_ = false;  // the inspector shows the 階層's selection (not the settings)
 };

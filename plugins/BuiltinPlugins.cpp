@@ -2,7 +2,8 @@
 //
 // The only file that knows every plugin. The core declares BuiltinPlugins() and never includes
 // a plugin; tools/check_layers.ps1 checks that every plugin with an editor part is listed here.
-// A plugin with only a runtime part (3D 空間) is listed too, with no RegisterEditor - it can be
+// A plugin with nothing to register (3D 空間: its runtime, and an editor part that is only a library
+// for other plugins' editors - the gizmo) is listed too, with no RegisterEditor - it can be
 // installed and required like any other.
 // Order does not matter: the loader enables requirements first.
 

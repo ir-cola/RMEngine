@@ -36,7 +36,8 @@ constexpr char kStart[] = "core.start";
 // <project>/UserSettings/Layout.json
 //   { "kind": "rm_engine.layout", "formatVersion": 2,
 //     "active": { "author": "rm_engine", "plugin": "game_production", "software": "game" },
-//     "softwares": [ { "author": ..., "plugin": ..., "software": ..., "layout": { "main": ..., "floating": [...] } } ] }
+//     "softwares": [ { "author": ..., "plugin": ..., "software": ..., "layout": { "main": ..., "floating": [...] },
+//                      "view": { ... the software's own (Software::SaveView) } } ] }
 // The workspace without a software has only "software": "core". Entries of softwares that are not
 // installed now, and keys this version does not know, are written back unchanged.
 constexpr char kLayoutKind[] = "rm_engine.layout";
@@ -308,11 +309,14 @@ void EditorScreen::LoadLayout() {
     for (auto& ws : workspaces_) {
         const json::Value key = WorkspaceKey(ws->type);
         std::optional<dock::Layout> loaded;
+        const json::Value* view = nullptr;
         for (const auto& e : entries.Items()) {
             if (!SameKey(e, key)) continue;
             loaded = dock::Layout::FromJson(e.Get("layout"));
             if (!loaded) broken = true;
+            view = e.Find("view");
         }
+        if (ws->software) ws->software->LoadView(view ? *view : json::Value());
         dock::Layout layout = loaded ? std::move(*loaded) : ws->DefaultLayout();
         layout.Sanitize(ws->dock.PanelIds());
         ws->dock.SetLayout(std::move(layout));
@@ -346,6 +350,9 @@ void EditorScreen::SaveLayout() {
             entry = &entries->Items().back();
         }
         entry->Set("layout", ws->dock.GetLayout().ToJson());
+        if (ws->software) {
+            if (json::Value view = ws->software->SaveView(); !view.IsNull()) entry->Set("view", std::move(view));
+        }
     }
 
     const fs::path file = LayoutFile();

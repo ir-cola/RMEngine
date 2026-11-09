@@ -42,6 +42,7 @@ ui::Key MapKey(WPARAM vk) {
         case 'E': return ui::Key::E;
         case 'F': return ui::Key::F;
         case 'Q': return ui::Key::Q;
+        case 'R': return ui::Key::R;
         case 'W': return ui::Key::W;
         case 'N': return ui::Key::N;
         case 'O': return ui::Key::O;

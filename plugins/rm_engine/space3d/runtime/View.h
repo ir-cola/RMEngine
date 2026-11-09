@@ -37,13 +37,19 @@ std::optional<float> IntersectBox(const Ray& ray, Vec3 min, Vec3 max);
 // The unit cube (-0.5 .. 0.5) placed by `world` (moved, turned, scaled): distance in world units.
 std::optional<float> IntersectPlacedCube(const Ray& ray, const Mat4& world);
 
-// An editing camera that turns around a point it looks at (the pivot).
+// Where a point is on the screen: ndc x / y (-1 .. 1, y up) and its depth (0 near .. 1 far);
+// nullopt when it is behind the eye.
+std::optional<Vec3> ProjectToNdc(const Mat4& viewProjection, Vec3 p);
+
+// An editing camera that turns around a point it looks at (the pivot). Reflected so the editor can
+// keep it (the user's way of looking, not project data); never shown in an inspector.
+RM_STRUCT()
 struct OrbitView {
-    Vec3 pivot{0, 0, 0};
-    float yaw = 35.f;      // degrees around Y; 0 looks along -Z
-    float pitch = 25.f;    // degrees; positive looks down
-    float distance = 9.f;  // from the eye to the pivot
-    float fovY = 60.f;     // degrees
+    RM_PROPERTY() Vec3 pivot{0, 0, 0};
+    RM_PROPERTY(Min=-100000, Max=100000) float yaw = 35.f;  // degrees around Y; 0 looks along -Z
+    RM_PROPERTY(Min=-89, Max=89) float pitch = 25.f;        // degrees; positive looks down
+    RM_PROPERTY(Min=0.05, Max=10000) float distance = 9.f;  // from the eye to the pivot
+    RM_PROPERTY(Min=10, Max=120) float fovY = 60.f;         // degrees
 
     Vec3 Forward() const;  // where the eye looks
     Vec3 Right() const;
@@ -51,6 +57,9 @@ struct OrbitView {
     Vec3 Eye() const { return pivot - Forward() * distance; }
     Mat4 ViewMatrix() const { return LookAt(Eye(), pivot, {0, 1, 0}); }
     Mat4 ProjectionMatrix(float aspect) const;
+    // How long one pixel of a picture `viewHeight` pixels tall is at point p (things drawn at the same
+    // size on screen whatever their distance: the gizmo). 0 when p is behind the eye.
+    float WorldPerPixel(Vec3 p, float viewHeight) const;
 };
 
 // The camera moves (the editor decides which mouse / keys do which):
