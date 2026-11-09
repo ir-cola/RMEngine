@@ -164,6 +164,35 @@ void Painter::StrokeRoundRectGradient(const Rect& r, Corners radii, Color top, C
     if (path && b) dc_->DrawGeometry(path.Get(), b, width);
 }
 
+void Painter::FillPath(const Path& path, Color c) {
+    if (path.steps.empty()) return;
+    ComPtr<ID2D1Factory> factory;
+    dc_->GetFactory(&factory);
+    ComPtr<ID2D1PathGeometry> geo;
+    ComPtr<ID2D1GeometrySink> sink;
+    if (!factory || FAILED(factory->CreatePathGeometry(&geo)) || FAILED(geo->Open(&sink))) return;
+    auto pt = [](Vec2 v) { return D2D1::Point2F(v.x, v.y); };
+    bool open = false;
+    for (const Path::Step& s : path.steps) {
+        switch (s.op) {
+            case Path::Op::Begin:
+                if (open) sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+                sink->BeginFigure(pt(s.a), D2D1_FIGURE_BEGIN_FILLED);
+                open = true;
+                break;
+            case Path::Op::Line:
+                if (open) sink->AddLine(pt(s.a));
+                break;
+            case Path::Op::Cubic:
+                if (open) sink->AddBezier(D2D1::BezierSegment(pt(s.a), pt(s.b), pt(s.c)));
+                break;
+        }
+    }
+    if (open) sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    if (FAILED(sink->Close())) return;
+    if (ID2D1Brush* b = Brush(c)) dc_->FillGeometry(geo.Get(), b);
+}
+
 void Painter::Shadow(const Rect& r, float radius, Color c, float size) {
     // Four layers, each a little wider, lower and fainter: reads as a soft blur, costs four fills.
     constexpr float kAlpha[4] = {0.40f, 0.24f, 0.12f, 0.05f};

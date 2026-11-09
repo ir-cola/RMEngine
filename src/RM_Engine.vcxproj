@@ -86,6 +86,8 @@
     <ClCompile Include="editor\shell\EditorScreen.cpp" />
     <ClCompile Include="editor\shell\FloatWindow.cpp" />
     <ClCompile Include="editor\widgets\Widgets.cpp" />
+    <ClCompile Include="editor\widgets\Ornament.cpp" />
+    <ClCompile Include="editor\widgets\Ornament.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\PluginId.h" />
@@ -123,6 +125,10 @@
     <ClInclude Include="editor\shell\EditorScreen.h" />
     <ClInclude Include="editor\shell\FloatWindow.h" />
     <ClInclude Include="editor\widgets\Theme.h" />
+    <ClInclude Include="editor\widgets\Ornament.h" />
+    <ClInclude Include="ui\Path.h" />
+    <ClInclude Include="editor\widgets\Ornament.h" />
+    <ClInclude Include="ui\Path.h" />
     <ClInclude Include="editor\widgets\Widgets.h" />
     <ClInclude Include="..\resources\resource.h" />
   </ItemGroup>

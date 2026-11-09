@@ -605,6 +605,7 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     DrawSoftTabs(c, tabs);
     DrawStatusBar(c, status);
     DrawMenuBar(c, menuBar);
+    w::DrawOrnament(c, {0, 0, width, height});
 
     c.SetInputEnabled(!overlay);
     Active().dock.DrawOverlay(c, 0);

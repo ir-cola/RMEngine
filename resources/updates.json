@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "「桜」テーマ: ウィンドウの左下に、少し傾いた桜の花のシルエットを薄く表示",
+          "en": "Sakura theme: a faint, slightly tilted cherry-blossom silhouette in the bottom-left of the window"
+        },
+        {
           "ja": "色のテーマに「桜」を追加 (淡い桜色と濃いピンク)",
           "en": "A new color theme: Sakura (pale cherry-blossom pink with a deep pink accent)"
         },

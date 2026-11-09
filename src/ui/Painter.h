@@ -4,6 +4,7 @@
 // This is the only file of the UI that touches Direct2D: one way to draw each thing
 // (constitution 7: "do not write two pieces of code that draw the same thing").
 
+#include "ui/Path.h"
 #include "ui/Types.h"
 
 #include <d2d1_1.h>
@@ -43,6 +44,8 @@ public:
     // Each corner its own radius; filled top-to-bottom, or outlined with a line whose color runs top-to-bottom.
     void FillRoundRectGradient(const Rect& r, Corners radii, Color top, Color bottom);
     void StrokeRoundRectGradient(const Rect& r, Corners radii, Color top, Color bottom, float width = 1.f);
+    // Any shape (ui/Path.h), filled with one color.
+    void FillPath(const Path& path, Color c);
     // A soft shadow around a rounded rectangle (a few widening layers; drawn before the box).
     void Shadow(const Rect& r, float radius, Color c, float size);
 

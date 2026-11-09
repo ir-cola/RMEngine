@@ -1,6 +1,7 @@
 #include "editor/widgets/Widgets.h"
 
 #include "base/Utf.h"
+#include "editor/widgets/Ornament.h"
 #include "editor/widgets/Theme.h"
 
 #include <algorithm>
@@ -86,6 +87,20 @@ void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
     p.StrokeRoundRectGradient(r.Inset(-1), {grow(k.tl), grow(k.tr), grow(k.br), grow(k.bl)}, outer, outer);
     p.FillRoundRectGradient(r, k, fill.top, fill.bottom);
     p.StrokeRoundRectGradient(r, k, inner.top, inner.bottom);
+}
+
+void DrawOrnament(ui::Context& c, const Rect& window) {
+    switch (theme::CurrentOrnament) {
+        case theme::Ornament::None:
+            return;
+        case theme::Ornament::Sakura: {
+            // Turned 10 degrees counter-clockwise, its size following the window's.
+            const float r = std::clamp(std::min(window.w, window.h) * 0.17f, 56.f, 150.f);
+            const Vec2 center{window.x + 28 + r, window.Bottom() - 28 - r};
+            c.P().FillPath(ornament::Sakura(center, r, 10.f), theme::OrnamentColor());
+            return;
+        }
+    }
 }
 
 void DrawBar(ui::Context& c, const Rect& r, Color base) {

@@ -19,12 +19,16 @@ namespace rm::editor::theme {
 
 using ui::Color;
 
+// A picture a theme puts faintly in the window's bottom-left corner (shapes: editor/widgets/Ornament.h).
+enum class Ornament : uint8_t { None, Sakura };
+
 struct Palette {
     Color bg, sidebar, panel, panelHeader, border, borderHover, field, hover, pressed, selected;
     Color accent, accentHover, accentPressed, text, textDim, textFaint, danger, warn, folder, shadow;
     Color scrollThumb, scrollThumbHot, dim;
     uint32_t caption;  // title bar (0xRRGGBB)
     bool light;        // a light theme (the gradients below are made for light or dark)
+    Ornament ornament = Ornament::None;
 };
 
 inline constexpr Palette kDark{
@@ -76,7 +80,7 @@ inline constexpr Palette kSakura{
     Color::Hex(0xD4AFBD), Color::Hex(0xFFFFFF), Color::Hex(0xF3E1E7), Color::Hex(0xEBD3DC), Color::Hex(0xF9D5E1),
     Color::Hex(0xD94F7E), Color::Hex(0xE6668F), Color::Hex(0xB93D67), Color::Hex(0x2E2226), Color::Hex(0x6E5A61),
     Color::Hex(0xA08C93), Color::Hex(0xC8322E), Color::Hex(0x9C6F00), Color::Hex(0xC08A2A), Color::Hex(0x000000, 0.13f),
-    Color::Hex(0xE2C6D0), Color::Hex(0xC6A3B0), Color::Hex(0x000000, 0.30f), 0xF5E4EA, true,
+    Color::Hex(0xE2C6D0), Color::Hex(0xC6A3B0), Color::Hex(0x000000, 0.30f), 0xF5E4EA, true, Ornament::Sakura,
 };
 
 // The palette in use (dark until Apply is called).
@@ -105,6 +109,7 @@ inline Color ScrollThumbHot = kDark.scrollThumbHot;
 inline Color Dim = kDark.dim;  // behind a dialog
 inline uint32_t CaptionRgb = kDark.caption;
 inline bool IsLight = false;
+inline Ornament CurrentOrnament = Ornament::None;
 
 // One theme of the list. Its id is what hub.json keeps (options.theme).
 struct ThemeInfo {
@@ -143,6 +148,7 @@ inline void Apply(const Palette& p) {
     TextDim = p.textDim, TextFaint = p.textFaint, Danger = p.danger, Warn = p.warn, Folder = p.folder, Shadow = p.shadow;
     ScrollThumb = p.scrollThumb, ScrollThumbHot = p.scrollThumbHot, Dim = p.dim, CaptionRgb = p.caption;
     IsLight = light;
+    CurrentOrnament = p.ornament;
 }
 
 inline constexpr float FontSize = 13.f;
@@ -175,6 +181,8 @@ inline Color Highlight() { return IsLight ? Color{1, 1, 1, 0.75f} : Color{1, 1, 
 inline Color EdgeOuter() { return IsLight ? Color::Hex(0xC4C6CD) : Color::Hex(0x0B0C0E); }
 inline Gradient EdgeInner() { return IsLight ? Gradient{Color{1, 1, 1, 1}, Color{1, 1, 1, 0.55f}} : Gradient{Color{1, 1, 1, 0.10f}, Color{1, 1, 1, 0.035f}}; }
 inline Color AccentHighlight() { return Color{1, 1, 1, 0.22f}; }
+// The theme's ornament: the accent, faint (it lies over the panels, so the text stays readable).
+inline Color OrnamentColor() { return Accent.Alpha(IsLight ? 0.10f : 0.12f); }
 // Text and marks on the accent (always white: the accent is the same red on both themes).
 inline Color OnAccent() { return Color{1, 1, 1, 1}; }
 

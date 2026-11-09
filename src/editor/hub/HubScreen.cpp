@@ -295,6 +295,7 @@ void HubScreen::OnFrame(ui::Context& c, float width, float height) {
     } else {
         DrawOptions(c, full.Inset(32, 28, 32, 28));
     }
+    w::DrawOrnament(c, {0, 0, width, height});
 
     c.SetInputEnabled(true);
     if (rowMenu_.open) DrawRowMenu(c);
