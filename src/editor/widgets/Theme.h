@@ -102,14 +102,15 @@ struct ThemeInfo {
     const char* id;
     const wchar_t* name;     // Japanese (Tr when shown)
     const Palette* palette;  // nullptr: follows Windows (kDark or kLight)
+    int group;               // the theme screen draws a line between groups (0 = the basic three)
 };
 inline constexpr ThemeInfo kThemes[] = {
-    {"Dark", TrKey(L"黒"), &kDark},
-    {"Light", TrKey(L"白"), &kLight},
-    {"System", TrKey(L"PC の設定に合わせる"), nullptr},
-    {"Midnight", TrKey(L"深い青"), &kMidnight},
-    {"Forest", TrKey(L"森"), &kForest},
-    {"Paper", TrKey(L"紙"), &kPaper},
+    {"Dark", TrKey(L"黒"), &kDark, 0},
+    {"Light", TrKey(L"白"), &kLight, 0},
+    {"System", TrKey(L"PC の設定に合わせる"), nullptr, 0},
+    {"Midnight", TrKey(L"深い青"), &kMidnight, 1},
+    {"Forest", TrKey(L"森"), &kForest, 1},
+    {"Paper", TrKey(L"紙"), &kPaper, 1},
 };
 inline std::span<const ThemeInfo> Themes() { return kThemes; }
 // An unknown id (a theme of a newer version, a typo in hub.json) is the first theme.

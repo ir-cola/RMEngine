@@ -944,23 +944,47 @@ void HubScreen::RunIntegrityCheck() {
 void HubScreen::DrawThemePicker(ui::Context& c) {
     auto& p = c.P();
     const auto themes = theme::Themes();
-    constexpr int kCols = 3;
-    constexpr float kGap = 16, kCardH = 168, kNoteH = 30, kButtonsH = 52;
-    const int rows = (static_cast<int>(themes.size()) + kCols - 1) / kCols;
-    const float gridH = rows * kCardH + (rows - 1) * kGap;
-    const Rect cr = w::BeginModal(c, 780, 58 + kNoteH + gridH + 8 + kButtonsH + 20, Tr(L"色のテーマ"));
+    constexpr int kCols = 4;
+    constexpr float kGap = 16, kCardH = 156, kLineGap = 36, kNoteH = 30, kButtonsH = 52;
+    // Where each card goes: four to a row, and each group (the basic three, then the others) starts a
+    // new row below a line.
+    struct Cell {
+        int col, row, lines;  // lines = how many group lines are above it
+    };
+    std::vector<Cell> cells;
+    int col = 0, row = 0, lines = 0;
+    for (size_t i = 0; i < themes.size(); ++i) {
+        if (i > 0 && themes[i].group != themes[i - 1].group) {
+            if (col > 0) ++row;
+            col = 0;
+            ++lines;
+        } else if (col == kCols) {
+            col = 0;
+            ++row;
+        }
+        cells.push_back({col++, row, lines});
+    }
+    const int rows = themes.empty() ? 0 : row + 1;
+    const float gridH = rows * kCardH + std::max(0, rows - 1 - lines) * kGap + lines * kLineGap;
+    const Rect cr = w::BeginModal(c, 900, 58 + kNoteH + gridH + 8 + kButtonsH + 20, Tr(L"色のテーマ"));
     p.Text({cr.x, cr.y, cr.w, 24}, Tr(L"選ぶとすぐに変わります。"), Style(13, theme::TextDim));
 
-    // The cards, three to a row (the grid scrolls when the window is too low for all of them).
+    // The cards (the grid scrolls when the window is too low for all of them).
     const Rect view{cr.x - 4, cr.y + kNoteH, cr.w + 8, cr.h - kNoteH - kButtonsH};
     const float off = w::BeginScroll(c, "theme.scroll", view, gridH + 8);
     const float cardW = (cr.w - kGap * (kCols - 1)) / kCols;
+    // A row's top: rows above it, each followed by a gap - or, at a group's end, by the line's space.
+    auto rowTop = [&](const Cell& cell) {
+        return view.y + 4 - off + cell.row * kCardH + (cell.row - cell.lines) * kGap + cell.lines * kLineGap;
+    };
     Options& opts = app_.Settings().GetOptions();
     const theme::ThemeInfo& current = theme::FindTheme(opts.theme);
     for (size_t i = 0; i < themes.size(); ++i) {
         const theme::ThemeInfo& t = themes[i];
-        const int col = static_cast<int>(i) % kCols, row = static_cast<int>(i) / kCols;
-        const Rect card{cr.x + col * (cardW + kGap), view.y + 4 - off + row * (kCardH + kGap), cardW, kCardH};
+        const Cell& cell = cells[i];
+        const float top = rowTop(cell);
+        if (i > 0 && cell.lines != cells[i - 1].lines) w::Separator(c, cr.x, top - kLineGap * 0.5f, cr.w);
+        const Rect card{cr.x + cell.col * (cardW + kGap), top, cardW, kCardH};
         c.PushId(static_cast<uint64_t>(i));
         const bool clicked = w::ThemeCard(c, "card", card, t.palette, Tr(t.name), &t == &current).clicked;
         c.PopId();
