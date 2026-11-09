@@ -303,6 +303,7 @@ void HubScreen::OnFrame(ui::Context& c, float width, float height) {
     if (modal_ == Modal::Error) DrawError(c);
     if (modal_ == Modal::Plugin) DrawPluginPrompt(c);
     if (modal_ == Modal::Integrity) DrawIntegrity(c);
+    if (modal_ == Modal::Theme) DrawThemePicker(c);
 }
 
 void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
@@ -781,10 +782,20 @@ void HubScreen::DrawOptions(ui::Context& c, Rect area) {
     // --- The options themselves: drawn by the inspector from their type (editor/project/Options.h).
     section(Tr(L"設定"));
     Options& opts = app_.Settings().GetOptions();
+    {
+        // The theme: chosen on its own screen (there will be many), the one in use shown here.
+        const Rect row{area.x, y, area.w, 36};
+        p.Text({row.x, row.y, labelW, row.h}, Tr(L"色のテーマ"), Style(13, theme::TextDim));
+        p.Text({row.x + labelW, row.y, row.w - labelW - buttonW - 16, row.h}, Tr(theme::FindTheme(opts.theme).name), Style(13, theme::Text));
+        if (w::Button(c, "opt.theme", {row.Right() - buttonW, row.y + 2, buttonW, row.h - 4}, Tr(L"テーマを変更…"), w::ButtonKind::Secondary)) {
+            modal_ = Modal::Theme;
+        }
+        y += 46;
+    }
     reflect::Unknowns& unknowns = app_.Settings().OptionsUnknowns();
     const inspector::Block block{&reflect::TypeOf<Options>(), &opts, &unknowns, {}, {}, {}};
     // As tall as the options are (the inspector measures them while drawing): no scroll bar of its own.
-    const Rect box{area.x - 12, y, area.w + 12, std::max(4 * 30.f + 20, optionsInspector_.contentHeight)};
+    const Rect box{area.x - 12, y, area.w + 12, std::max(3 * 30.f + 20, optionsInspector_.contentHeight)};
     if (auto edit = inspector::Draw(c, optionsInspector_, box, std::span(&block, 1))) {
         // Not project data: applied at once, saved in hub.json, not undoable.
         reflect::SetFieldCommand change(reflect::TypeOf<Options>(), std::move(edit->path), std::move(edit->before), std::move(edit->after),
@@ -928,6 +939,46 @@ void HubScreen::RunIntegrityCheck() {
     integrityText_ = std::move(text);
     log::Info("整合性の確認: エンジンのファイルの問題 {} 個 / 違うプラグイン {} 個", problems.size(), integrityStale_.size());
     modal_ = Modal::Integrity;
+}
+
+void HubScreen::DrawThemePicker(ui::Context& c) {
+    auto& p = c.P();
+    const auto themes = theme::Themes();
+    constexpr int kCols = 3;
+    constexpr float kGap = 16, kCardH = 168, kNoteH = 30, kButtonsH = 52;
+    const int rows = (static_cast<int>(themes.size()) + kCols - 1) / kCols;
+    const float gridH = rows * kCardH + (rows - 1) * kGap;
+    const Rect cr = w::BeginModal(c, 780, 58 + kNoteH + gridH + 8 + kButtonsH + 20, Tr(L"色のテーマ"));
+    p.Text({cr.x, cr.y, cr.w, 24}, Tr(L"選ぶとすぐに変わります。"), Style(13, theme::TextDim));
+
+    // The cards, three to a row (the grid scrolls when the window is too low for all of them).
+    const Rect view{cr.x - 4, cr.y + kNoteH, cr.w + 8, cr.h - kNoteH - kButtonsH};
+    const float off = w::BeginScroll(c, "theme.scroll", view, gridH + 8);
+    const float cardW = (cr.w - kGap * (kCols - 1)) / kCols;
+    Options& opts = app_.Settings().GetOptions();
+    const theme::ThemeInfo& current = theme::FindTheme(opts.theme);
+    for (size_t i = 0; i < themes.size(); ++i) {
+        const theme::ThemeInfo& t = themes[i];
+        const int col = static_cast<int>(i) % kCols, row = static_cast<int>(i) / kCols;
+        const Rect card{cr.x + col * (cardW + kGap), view.y + 4 - off + row * (kCardH + kGap), cardW, kCardH};
+        c.PushId(static_cast<uint64_t>(i));
+        const bool clicked = w::ThemeCard(c, "card", card, t.palette, Tr(t.name), &t == &current).clicked;
+        c.PopId();
+        if (clicked && &t != &current) {
+            // Not project data: applied at once, saved in hub.json, not undoable (like the other options).
+            opts.theme = t.id;
+            app_.Settings().Save();
+            app_.ApplyOptions();
+            log::Info("色のテーマを変えました: {}", t.id);
+        }
+    }
+    w::EndScroll(c, "theme.scroll", view, gridH + 8);
+
+    const Rect ok{cr.Right() - 110, cr.Bottom() - 36, 110, 36};
+    if (w::Button(c, "theme.ok", ok, Tr(L"閉じる"), w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Escape) ||
+        c.KeyPressed(ui::Key::Enter)) {
+        modal_ = Modal::None;
+    }
 }
 
 void HubScreen::DrawIntegrity(ui::Context& c) {

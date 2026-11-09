@@ -64,6 +64,11 @@ struct RowLook {
 void DrawRow(ui::Context& c, const ui::Rect& r, RowLook look);
 // A clickable row (ImGui's Selectable). Draws the row; what is on it is drawn by the caller.
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view id, const ui::Rect& r, bool selected, bool flat = false);
+// One theme to choose (the theme screen): a small window drawn in that theme's own colors, its name
+// below, the chosen one outlined in the accent with a check. palette = nullptr: "PC の設定に合わせる"
+// (half dark, half light).
+ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view id, const ui::Rect& r, const theme::Palette* palette,
+                                    std::wstring_view name, bool selected);
 // A page link of a sidebar: a flat row (the caller draws the lines between them). True when clicked.
 bool NavItem(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label, bool selected);
 

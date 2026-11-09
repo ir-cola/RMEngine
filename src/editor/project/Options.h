@@ -6,13 +6,6 @@
 
 namespace rm::editor {
 
-RM_ENUM(Label="色のテーマ")
-enum class ThemeMode {
-    RM_ITEM(Label="黒") Dark,
-    RM_ITEM(Label="白") Light,
-    RM_ITEM(Label="PC の設定に合わせる") System,
-};
-
 RM_ENUM(Label="言語")
 enum class UiLanguage {
     RM_ITEM(Label="日本語") Japanese,
@@ -33,7 +26,9 @@ enum class AutoSaveInterval {
 
 RM_STRUCT(Label="オプション")
 struct Options {
-    RM_PROPERTY(Edit, Label="色のテーマ") ThemeMode theme = ThemeMode::Dark;
+    // The id of one of theme::kThemes (chosen on its own screen, so not in the inspector). The ids are the
+    // names of the old three-way choice, so a hub.json from before keeps its theme.
+    RM_PROPERTY(Label="色のテーマ") std::string theme = "Dark";
     RM_PROPERTY(Edit, Label="言語") UiLanguage language = UiLanguage::Japanese;
     RM_PROPERTY(Edit, Label="自動保存の間隔", Tooltip="開いているプロジェクトに未保存の変更があれば、この間隔で保存します") AutoSaveInterval autoSave = AutoSaveInterval::Min5;
     RM_PROPERTY(Edit, Label="エディターの自動アップデート", Tooltip="新しい版を自動で入れます (配布の仕組みができたら効きます)") bool autoUpdate = true;

@@ -4,6 +4,7 @@
 #include "editor/widgets/Theme.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace rm::editor::w {
 
@@ -197,6 +198,69 @@ ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view idStr, con
     look.hovered = b.hovered;
     look.flat = flat;
     DrawRow(c, r, look);
+    return b;
+}
+
+namespace {
+// A tiny editor window in a palette's own colors (not the palette in use): title bar, sidebar with
+// a selected item, a panel with lines of text and an accent button.
+void ThemePreview(ui::Painter& p, const Rect& r, const theme::Palette& k) {
+    constexpr float R = 5.f, barH = 12.f;
+    p.FillRoundRect(r, R, k.bg);
+    p.FillRoundRectGradient({r.x, r.y, r.w, barH}, ui::Corners{R, R, 0, 0}, k.sidebar, k.sidebar);
+    const float sideW = std::round(r.w * 0.26f);
+    const Rect side{r.x, r.y + barH, sideW, r.h - barH};
+    p.FillRoundRectGradient(side, ui::Corners{0, 0, 0, R}, k.sidebar, k.sidebar);
+    float sy = side.y + 10;
+    for (int i = 0; i < 3; ++i) {
+        const Rect item{side.x + 6, sy, side.w - 12, 9};
+        if (i == 1) {
+            p.FillRoundRect(item, 2, k.selected);
+            p.FillRect({item.x, item.y, 2, item.h}, k.accent);
+        }
+        p.FillRoundRect({item.x + 5, item.y + 3, (item.w - 10) * (i == 1 ? 0.8f : 0.6f), 3}, 1.5f, i == 1 ? k.text : k.textDim);
+        sy += 15;
+    }
+    const Rect panel{side.Right() + 8, r.y + barH + 8, r.Right() - side.Right() - 16, r.h - barH - 16};
+    if (panel.w <= 0 || panel.h <= 0) return;
+    p.FillRoundRect(panel, 4, k.panel);
+    p.StrokeRoundRect(panel, 4, k.border);
+    p.FillRoundRect({panel.x + 8, panel.y + 9, panel.w * 0.55f, 4}, 2, k.text);
+    p.FillRoundRect({panel.x + 8, panel.y + 19, panel.w * 0.42f, 3}, 1.5f, k.textDim);
+    p.FillRoundRect({panel.x + 8, panel.y + 27, panel.w * 0.34f, 3}, 1.5f, k.textFaint);
+    p.FillRoundRect({panel.x + 8, panel.Bottom() - 18, std::min(44.f, panel.w - 16), 11}, 3, k.accent);
+}
+}  // namespace
+
+ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view idStr, const Rect& r, const theme::Palette* palette,
+                                    std::wstring_view name, bool selected) {
+    auto& p = c.P();
+    const auto b = c.ButtonBehavior(c.MakeId(idStr), r);
+    if (b.hovered) c.SetCursor(ui::Cursor::Hand);
+    DrawSurface(c, r, b.hovered && !selected ? Surface::Hovered : Surface::Panel, 8.f);
+    const Rect pr{r.x + 10, r.y + 10, r.w - 20, r.h - 20 - 30};
+    if (palette) {
+        ThemePreview(p, pr, *palette);
+    } else {
+        // Follows Windows: dark on the left, light on the right.
+        const float half = std::round(pr.w * 0.5f);
+        p.PushClip({pr.x, pr.y, half, pr.h});
+        ThemePreview(p, pr, theme::kDark);
+        p.PopClip();
+        p.PushClip({pr.x + half, pr.y, pr.w - half, pr.h});
+        ThemePreview(p, pr, theme::kLight);
+        p.PopClip();
+    }
+    ui::TextStyle ts;
+    ts.size = 13;
+    ts.bold = selected;
+    ts.color = theme::Text;
+    const Rect label{r.x + 12, r.Bottom() - 34, r.w - 24 - 20, 28};
+    p.Text(label, name, ts);
+    if (selected) {
+        DrawIcon(c, {r.Right() - 12 - 16, label.y + 6, 16, 16}, Icon::Check, theme::Accent);
+        p.StrokeRoundRect(r.Inset(-1), 9.f, theme::Accent, 2.f);
+    }
     return b;
 }
 

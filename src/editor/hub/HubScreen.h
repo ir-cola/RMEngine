@@ -35,7 +35,7 @@ protected:
 
 private:
     enum class Page { Projects, Plugins, Updates, Options };
-    enum class Modal { None, NewProject, Rename, Error, Plugin, Integrity };
+    enum class Modal { None, NewProject, Rename, Error, Plugin, Integrity, Theme };
     enum class PromptKind { Blocking, Limited, Install, Remove };
 
     // One plugin question at a time (design: pop-ups one by one).
@@ -69,6 +69,7 @@ private:
     void DrawOptions(ui::Context& c, ui::Rect r);
     void DrawUpdates(ui::Context& c, ui::Rect r);
     void DrawIntegrity(ui::Context& c);
+    void DrawThemePicker(ui::Context& c);
     void RunIntegrityCheck();
     void DrawNewProject(ui::Context& c);
     void DrawRename(ui::Context& c);

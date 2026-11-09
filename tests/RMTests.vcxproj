@@ -61,6 +61,7 @@
     <ClCompile Include="TestRmgen.cpp" />
     <ClCompile Include="TestScene.cpp" />
     <ClCompile Include="TestLang.cpp" />
+    <ClCompile Include="TestTheme.cpp" />
     <ClCompile Include="TestIntegrity.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestTree.cpp" />

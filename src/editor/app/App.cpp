@@ -121,14 +121,13 @@ void App::LoadLanguageCatalogs() {
 
 void App::ApplyOptions() {
     const Options& o = settings_.GetOptions();
-    const bool light = o.theme == ThemeMode::Light || (o.theme == ThemeMode::System && platform::SystemPrefersLight());
-    theme::Apply(light);
+    theme::Apply(theme::PaletteOf(theme::FindTheme(o.theme), platform::SystemPrefersLight()));
     lang::SetLanguage(o.language == UiLanguage::English ? lang::Language::English : lang::Language::Japanese);
     if (screen_) screen_->OnLookChanged();
 }
 
 void App::SystemThemeChanged() {
-    if (settings_.GetOptions().theme == ThemeMode::System) ApplyOptions();
+    if (!theme::FindTheme(settings_.GetOptions().theme).palette) ApplyOptions();
 }
 
 void App::Replace(std::unique_ptr<ScreenWindow> next) {

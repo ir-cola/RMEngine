@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "オプション: 色のテーマは「テーマを変更…」から専用の画面で選ぶように。テーマをカードで 3 列に並べ、それぞれの色で描いた小さな絵を見て選べる",
+          "en": "Options: the color theme is now chosen on its own screen (\"Change theme…\"). Themes are cards in three columns, each with a small picture in its own colors"
+        },
+        {
           "ja": "パネルに縁: 外側の暗い線と、上が明るく下が薄い内側の線。並んだパネルは 1 本の線で四角く区切り、何ともくっついていない角だけ丸く",
           "en": "Panels have an edge: a dark outer line and an inner line, bright at the top and faint at the bottom. Panels side by side are split by one straight line; only corners that touch nothing are rounded"
         },
