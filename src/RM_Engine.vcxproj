@@ -39,7 +39,7 @@
   <ItemDefinitionGroup>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>d3d11.lib;dxgi.lib;d2d1.lib;dwrite.lib;windowscodecs.lib;dwmapi.lib;imm32.lib;shcore.lib;bcrypt.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;d2d1.lib;dwrite.lib;windowscodecs.lib;dwmapi.lib;imm32.lib;shcore.lib;bcrypt.lib;d3dcompiler.lib;dxguid.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(RMRoot)resources\app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
@@ -87,7 +87,6 @@
     <ClCompile Include="editor\shell\FloatWindow.cpp" />
     <ClCompile Include="editor\widgets\Widgets.cpp" />
     <ClCompile Include="editor\widgets\Ornament.cpp" />
-    <ClCompile Include="editor\widgets\Ornament.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\PluginId.h" />
@@ -125,8 +124,6 @@
     <ClInclude Include="editor\shell\EditorScreen.h" />
     <ClInclude Include="editor\shell\FloatWindow.h" />
     <ClInclude Include="editor\widgets\Theme.h" />
-    <ClInclude Include="editor\widgets\Ornament.h" />
-    <ClInclude Include="ui\Path.h" />
     <ClInclude Include="editor\widgets\Ornament.h" />
     <ClInclude Include="ui\Path.h" />
     <ClInclude Include="editor\widgets\Widgets.h" />

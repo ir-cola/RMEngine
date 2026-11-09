@@ -58,6 +58,9 @@ public:
     size_t HitTest(std::wstring_view text, float x, float size, bool bold = false);
 
     void Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity = 1.f);
+    // A picture in one color: only its shape (its alpha) is kept, every pixel painted `c`
+    // (a one-color logo shown white or black to suit the background).
+    void ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c);
 
     void PushClip(const Rect& r);
     void PopClip();
@@ -68,6 +71,8 @@ private:
     ID2D1SolidColorBrush* Brush(Color c);
     ID2D1LinearGradientBrush* Gradient(Color top, Color bottom, float y0, float y1);
     Microsoft::WRL::ComPtr<ID2D1PathGeometry> RoundRectPath(const Rect& r, Corners radii);
+    Microsoft::WRL::ComPtr<ID2D1Effect> tint_;  // ImageTinted (made once per device context)
+    ID2D1DeviceContext* tintOwner_ = nullptr;
 
     IDWriteFactory* dwrite_ = nullptr;
     std::wstring family_;

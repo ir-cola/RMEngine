@@ -11,6 +11,7 @@
 #include "editor/lang/Lang.h"
 #include "ui/Types.h"
 
+#include <cmath>
 #include <cstdint>
 #include <span>
 #include <string_view>
@@ -183,6 +184,18 @@ inline Gradient EdgeInner() { return IsLight ? Gradient{Color{1, 1, 1, 1}, Color
 inline Color AccentHighlight() { return Color{1, 1, 1, 0.22f}; }
 // The theme's ornament: the accent, faint (it lies over the panels, so the text stays readable).
 inline Color OrnamentColor() { return Accent.Alpha(IsLight ? 0.10f : 0.12f); }
+// How bright a color looks (relative luminance, 0 = black .. 1 = white; WCAG's formula).
+inline float Luminance(Color c) {
+    auto lin = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
+    return 0.2126f * lin(c.r) + 0.7152f * lin(c.g) + 0.0722f * lin(c.b);
+}
+// White or black, whichever stands out more on `bg` (the higher contrast ratio): for one-color
+// pictures like the Hub's logo, so they can be seen on every theme.
+inline Color InkOn(Color bg) {
+    const float l = Luminance(bg);
+    const float onWhite = 1.05f / (l + 0.05f), onBlack = (l + 0.05f) / 0.05f;
+    return onWhite >= onBlack ? Color{1, 1, 1, 1} : Color{0, 0, 0, 1};
+}
 // Text and marks on the accent (always white: the accent is the same red on both themes).
 inline Color OnAccent() { return Color{1, 1, 1, 1}; }
 

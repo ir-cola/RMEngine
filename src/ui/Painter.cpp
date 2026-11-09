@@ -1,5 +1,7 @@
 #include "ui/Painter.h"
 
+#include <d2d1effects.h>
+
 #include <cmath>
 
 using Microsoft::WRL::ComPtr;
@@ -310,6 +312,33 @@ size_t Painter::HitTest(std::wstring_view text, float x, float size, bool bold) 
 void Painter::Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity) {
     if (!bmp) return;
     dc_->DrawBitmap(bmp, ToD2D(dst), opacity, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr, nullptr);
+}
+
+void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
+    if (!bmp || dst.w <= 0 || dst.h <= 0) return;
+    if (tintOwner_ != dc_) {
+        tint_.Reset();
+        if (FAILED(dc_->CreateEffect(CLSID_D2D1ColorMatrix, &tint_))) tint_.Reset();
+        tintOwner_ = dc_;
+    }
+    if (!tint_) return;
+    // Rows: the input's r, g, b, a and 1; columns: the output's r, g, b, a (straight alpha - the
+    // effect takes premultiplied colors apart first). The color is fixed, the alpha is kept.
+    const D2D1_MATRIX_5X4_F m = D2D1::Matrix5x4F(0, 0, 0, 0,  //
+                                                 0, 0, 0, 0,  //
+                                                 0, 0, 0, 0,  //
+                                                 0, 0, 0, c.a,  //
+                                                 c.r, c.g, c.b, 0);
+    tint_->SetInput(0, bmp);
+    tint_->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
+    // Scaled by the transform, so the picture is smoothed as nicely as Image() does.
+    const D2D1_SIZE_F size = bmp->GetSize();
+    if (size.width <= 0 || size.height <= 0) return;
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(D2D1::Matrix3x2F::Scale(dst.w / size.width, dst.h / size.height) * D2D1::Matrix3x2F::Translation(dst.x, dst.y) * old);
+    dc_->DrawImage(tint_.Get(), D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+    dc_->SetTransform(old);
 }
 
 void Painter::PushClip(const Rect& r) {

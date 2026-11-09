@@ -317,7 +317,8 @@ void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
         const auto sz = logo_->GetSize();
         const float lw = r.w - 64;
         const float lh = lw * sz.height / sz.width;
-        p.Image(logo_.Get(), {r.x + 32, y, lw, lh});
+        // The logo is one color: white on a dark sidebar, black on a light one (every theme).
+        p.ImageTinted(logo_.Get(), {r.x + 32, y, lw, lh}, theme::InkOn(theme::Sidebar));
         y += lh + 40;
     } else {
         p.Text({r.x + 28, y, r.w - 56, 40}, L"RM Engine", Style(22, theme::Text, true));

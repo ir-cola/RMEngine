@@ -71,3 +71,18 @@ RM_TEST(Ornament_SakuraShape) {
     CHECK(n.x < 200 - 14 && n.x > 200 - 15);
     CHECK(std::fabs(std::hypot(n.x - c.x, n.y - c.y) - 84) < 0.01f);
 }
+
+RM_TEST(Theme_InkOn_WhiteOnDarkBlackOnLight) {
+    const rm::Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
+    CHECK(theme::InkOn(theme::kDark.sidebar) == white);
+    CHECK(theme::InkOn(theme::kMidnight.sidebar) == white);
+    CHECK(theme::InkOn(theme::kForest.sidebar) == white);
+    CHECK(theme::InkOn(theme::kLight.sidebar) == black);
+    CHECK(theme::InkOn(theme::kPaper.sidebar) == black);
+    CHECK(theme::InkOn(theme::kSakura.sidebar) == black);
+    CHECK(theme::InkOn(black) == white && theme::InkOn(white) == black);
+    // Every theme: the logo's ink is the one a theme of that kind (light / dark) expects.
+    for (const theme::ThemeInfo& t : theme::Themes()) {
+        if (t.palette) CHECK(theme::InkOn(t.palette->sidebar) == (t.palette->light ? black : white));
+    }
+}

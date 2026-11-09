@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "Hub の左上のロゴを、テーマに合わせて白か黒で表示 (明るいテーマでも見える)",
+          "en": "The Hub's logo is shown in white or black to suit the theme (visible on light themes too)"
+        },
+        {
           "ja": "「桜」テーマ: ウィンドウの左下に、少し傾いた桜の花のシルエットを薄く表示 (シーンビューとゲームビューの上には出さない)",
           "en": "Sakura theme: a faint, slightly tilted cherry-blossom silhouette in the bottom-left of the window (never over the scene or game view)"
         },
