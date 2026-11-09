@@ -41,6 +41,10 @@ struct ComponentInfo {
     const wchar_t* ownLabel = nullptr;      // e.g. ローカル (a TrKey string: translated when shown)
     const wchar_t* derivedLabel = nullptr;  // e.g. ワールド
 
+    // The picture of an entity that has this component in the 階層 (a name the core knows: "cube").
+    // When several components have one, the last of the entity's components wins; none: "object".
+    const char* icon = nullptr;
+
     bool HasDerived() const { return derivedType && derive && underive && ownLabel && derivedLabel; }
 };
 

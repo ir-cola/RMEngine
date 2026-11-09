@@ -19,12 +19,23 @@ namespace rm::editor::tree {
 
 using ItemId = uint64_t;  // chosen by the software; 0 = nothing / the top level
 
+// The small picture in front of a row's name (drawn by the core; the software picks one).
+enum class Icon : uint8_t {
+    None,    // no picture (the name starts where the picture would be)
+    Object,  // a thing with no shape of its own (a circle): an entity without a place
+    Cube,    // a thing in 3D space
+};
+// By name, for plugins that cannot see this header (a component's ComponentInfo::icon): "object",
+// "cube"; anything else is None.
+Icon IconNamed(std::string_view name);
+
 struct Item {
     ItemId id = 0;
     ItemId parent = 0;     // 0 = top level
     std::string name;      // UTF-8
     bool canHaveChildren = true;
     bool dimmed = false;   // drawn faint (e.g. a disabled entity)
+    Icon icon = Icon::None;
 };
 // A software lists its items in display order: a parent before its children, siblings in order.
 

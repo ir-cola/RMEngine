@@ -146,3 +146,10 @@ RM_TEST(Tree_Drop_NeverIntoItself) {
     CHECK(d && d->parent == 0 && d->index == 1);
     CHECK(!DropOnRow(items, rows, 99, 0.5f, moving));
 }
+
+RM_TEST(Tree_IconNamed) {
+    CHECK(IconNamed("cube") == Icon::Cube);
+    CHECK(IconNamed("object") == Icon::Object);
+    CHECK(IconNamed("teapot") == Icon::None);
+    CHECK(IconNamed("") == Icon::None);
+}

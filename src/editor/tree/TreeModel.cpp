@@ -5,6 +5,13 @@
 
 namespace rm::editor::tree {
 
+Icon IconNamed(std::string_view name) {
+    if (name == "object") return Icon::Object;
+    if (name == "cube") return Icon::Cube;
+    return Icon::None;
+}
+
+
 namespace {
 
 constexpr size_t npos = static_cast<size_t>(-1);

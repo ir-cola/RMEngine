@@ -109,14 +109,31 @@ std::string Summary(const FieldDesc& f, const reflect::ValueType& vt, const void
     return {};
 }
 
-void DrawStruct(Pass& x, const TypeDesc& t, const void* obj, const Unknowns* u, FieldPath& prefix, float indent);
+// Shown in a field whose value is not the same in every object edited together.
+constexpr char kMixed[] = "\xE2\x80\x94";  // —
 
-void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, const Unknowns* u, FieldPath& prefix, float indent) {
+using Others = std::span<const void* const>;
+
+void DrawStruct(Pass& x, const TypeDesc& t, const void* obj, Others others, const Unknowns* u, FieldPath& prefix, float indent);
+
+void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, Others others, const Unknowns* u, FieldPath& prefix,
+               float indent) {
     if (!f.edit && !f.readOnly) return;  // saved, not shown
     ui::Context& c = x.c;
     auto& p = c.P();
     const bool enabled = f.edit && !f.readOnly;
     const void* value = f.Get(owner);
+    std::vector<const void*> otherValues;  // the same field in the objects edited together
+    for (const void* o : others) otherValues.push_back(f.Get(o));
+    // Not the same in all of them (compared as saved, so every type is compared alike).
+    auto mixed = [&]() {
+        if (otherValues.empty()) return false;
+        const json::Value mine = reflect::SaveField(f, owner, nullptr);
+        for (const void* o : others) {
+            if (reflect::SaveField(f, o, nullptr) != mine) return true;
+        }
+        return false;
+    };
     FieldPath path = prefix;
     path.push_back(index);
 
@@ -137,15 +154,17 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
     c.PushId("field");
     for (const size_t i : path) c.PushId(static_cast<uint64_t>(i));
 
-    auto makeEdit = [&](json::Value after, uint64_t merge = 0) {
+    auto makeEdit = [&](json::Value after, uint64_t merge = 0, int component = -1) {
         Edit e;
+        e.component = component;
         e.block = x.block;
         e.path = path;
         e.before = reflect::SaveField(f, owner, u);
         e.after = std::move(after);
         e.label = std::format("「{}」を変更", f.Label());
         e.merge = merge;
-        if (e.before != e.after) x.edit = std::move(e);
+        // With others, a change counts even when this object has the value already (they may not).
+        if (e.before != e.after || !otherValues.empty()) x.edit = std::move(e);
     };
     uint64_t merge = 0;
 
@@ -159,7 +178,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
         case FieldType::Float: {
             const bool isInt = f.value.type == FieldType::Int;
             const double cur = isInt ? *static_cast<const int*>(value) : *static_cast<const float*>(value);
-            if (auto typed = LiveField(x, "v", valueR, reflect::FormatNumber(f, cur), enabled, merge)) {
+            if (auto typed = LiveField(x, "v", valueR, mixed() ? kMixed : reflect::FormatNumber(f, cur), enabled, merge)) {
                 if (auto n = reflect::NumberFromInput(f, *typed, cur)) {
                     makeEdit(isInt ? json::Value(static_cast<int64_t>(*n)) : json::Value(static_cast<double>(static_cast<float>(*n))), merge);
                 }
@@ -167,7 +186,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
             break;
         }
         case FieldType::String: {
-            if (auto typed = LiveField(x, "v", valueR, *static_cast<const std::string*>(value), enabled, merge)) {
+            if (auto typed = LiveField(x, "v", valueR, mixed() ? std::string(kMixed) : *static_cast<const std::string*>(value), enabled, merge)) {
                 makeEdit(json::Value(*typed), merge);
             }
             break;
@@ -188,11 +207,13 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
             static const char* kIds[] = {"x", "y", "z", "w"};
             for (size_t i = 0; i < n; ++i) {
                 const Rect r{area.x + (each + 4) * static_cast<float>(i), area.y, each, area.h};
-                if (auto typed = LiveField(x, kIds[i], r, reflect::FormatNumber(f, values[i]), enabled, merge)) {
+                const bool mixedHere = std::any_of(otherValues.begin(), otherValues.end(),
+                                                   [&](const void* o) { return static_cast<const float*>(o)[i] != values[i]; });
+                if (auto typed = LiveField(x, kIds[i], r, mixedHere ? kMixed : reflect::FormatNumber(f, values[i]), enabled, merge)) {
                     if (auto v = reflect::NumberFromInput(f, *typed, values[i])) {
                         json::Value arr = json::Value::MakeArray();
                         for (size_t k = 0; k < n; ++k) arr.Push(static_cast<double>(k == i ? static_cast<float>(*v) : values[k]));
-                        makeEdit(std::move(arr), merge);
+                        makeEdit(std::move(arr), merge, static_cast<int>(i));
                     }
                 }
             }
@@ -201,7 +222,9 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
         case FieldType::Enum: {
             const reflect::EnumDesc& e = *f.value.enumType;
             std::wstring shown;
-            if (const std::string* unknown = u ? u->Enum(f.name) : nullptr) {
+            if (mixed()) {
+                shown = Utf8ToWide(kMixed);
+            } else if (const std::string* unknown = u ? u->Enum(f.name) : nullptr) {
                 shown = Utf8ToWide(*unknown) + Tr(L" (不明)");
             } else if (const reflect::EnumItem* it = reflect::FindItem(e, e.get(value))) {
                 shown = Utf8ToWide(TrU8(it->label));
@@ -222,7 +245,8 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
                 const std::string label = std::format("「{}」を変更", f.Label());
                 State* st = &x.st;
                 const size_t block = x.block;
-                c.AddOverlay([&c, st, &e, path, before, width, label, block] {
+                const bool withOthers = !otherValues.empty();
+                c.AddOverlay([&c, st, &e, path, before, width, label, block, withOthers] {
                     std::vector<w::MenuItem> items;
                     for (const auto& it : e.items) items.push_back({Utf8ToWide(TrU8(it.label))});
                     const bool wasEnabled = c.InputEnabled();
@@ -236,7 +260,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
                         ed.before = before;
                         ed.after = json::Value(e.items[static_cast<size_t>(picked)].name);
                         ed.label = label;
-                        if (ed.before != ed.after) st->pending = std::move(ed);
+                        if (ed.before != ed.after || withOthers) st->pending = std::move(ed);
                     }
                 });
             }
@@ -244,7 +268,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
         }
         case FieldType::Struct: {
             FieldPath inner = path;
-            DrawStruct(x, *f.value.structType, value, u ? u->Child(f.name) : nullptr, inner, indent + kIndent);
+            DrawStruct(x, *f.value.structType, value, otherValues, u ? u->Child(f.name) : nullptr, inner, indent + kIndent);
             break;
         }
         case FieldType::Array: {
@@ -271,8 +295,8 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
     c.PopId();
 }
 
-void DrawStruct(Pass& x, const TypeDesc& t, const void* obj, const Unknowns* u, FieldPath& prefix, float indent) {
-    for (size_t i = 0; i < t.fields.size(); ++i) DrawField(x, t.fields[i], i, obj, u, prefix, indent);
+void DrawStruct(Pass& x, const TypeDesc& t, const void* obj, Others others, const Unknowns* u, FieldPath& prefix, float indent) {
+    for (size_t i = 0; i < t.fields.size(); ++i) DrawField(x, t.fields[i], i, obj, others, u, prefix, indent);
 }
 
 void DrawHeader(Pass& x, const Block& b, bool folded) {
@@ -339,7 +363,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
             }
             if (b.type && b.object) {
                 FieldPath prefix;
-                DrawStruct(x, *b.type, b.object, b.unknowns, prefix, 0);
+                DrawStruct(x, *b.type, b.object, b.others, b.unknowns, prefix, 0);
             }
             x.y += 8;
         }

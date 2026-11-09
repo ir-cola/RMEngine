@@ -173,6 +173,11 @@ public:
             it.parent = static_cast<tree::ItemId>(t.entity->data.parent);
             it.name = t.entity->data.name;
             it.dimmed = !t.activeInHierarchy;
+            it.icon = tree::Icon::Object;
+            for (const Component& c : t.entity->components) {
+                const ComponentInfo* info = c.Known() ? InfoOf(c.type) : nullptr;
+                if (info && info->icon) it.icon = tree::IconNamed(info->icon);
+            }
             out.push_back(std::move(it));
         }
     }
@@ -214,9 +219,7 @@ public:
             host_.Inspect(EntityInspectable(static_cast<int>(ids[0])));
             inspectingEntities_ = true;
         } else if (ids.size() > 1) {
-            editor::Inspectable many;
-            many.title = TrF(L"{} 個のエンティティを選んでいます。\nまとめての編集はこれからです。", ids.size());
-            host_.Inspect(std::move(many));
+            host_.Inspect(ManyInspectable(ToEntityIds(ids)));
             inspectingEntities_ = true;
         } else if (inspectingEntities_) {
             host_.Inspect({});
@@ -253,9 +256,59 @@ public:
         if (child.enabled) child.run = [this, sel] { CreateEntity(sel[0], Scene::kEnd); };
         list.push_back(std::move(child));
 
-        if (sel.empty()) return list;
         tree::Action sep;
         sep.separator = true;
+        list.push_back(sep);
+
+        // The clipboard: entities as JSON text (the file's form), so another project can take them.
+        tree::Action copy;
+        copy.label = Tr(L"コピー");
+        copy.key = ui::Key::C;
+        copy.ctrl = true;
+        copy.enabled = !sel.empty();
+        if (copy.enabled) copy.run = [this, sel] { CopyEntities(sel); };
+        list.push_back(std::move(copy));
+
+        tree::Action cut;
+        cut.label = Tr(L"切り取り");
+        cut.key = ui::Key::X;
+        cut.ctrl = true;
+        cut.enabled = !sel.empty();
+        if (cut.enabled) {
+            cut.run = [this, sel] {
+                if (!CopyEntities(sel)) return;
+                Edit(sel.size() == 1 ? std::format("「{}」を切り取り", NameOf(sel[0])) : std::format("{} 個のエンティティを切り取り", sel.size()),
+                     [&] { scene_.Delete(sel); });
+            };
+        }
+        list.push_back(std::move(cut));
+
+        tree::Action paste;
+        paste.label = Tr(L"貼り付け");
+        paste.key = ui::Key::V;
+        paste.ctrl = true;
+        paste.run = [this, sel] {
+            // Right after the (last) selected entity, as its sibling; nothing selected: the end of the top level.
+            int parent = 0;
+            size_t index = Scene::kEnd;
+            if (!sel.empty()) {
+                if (const SceneEntity* e = scene_.Find(sel.back())) {
+                    parent = e->data.parent;
+                    const std::vector<int> siblings = scene_.Children(parent);
+                    index = static_cast<size_t>(std::find(siblings.begin(), siblings.end(), sel.back()) - siblings.begin()) + 1;
+                }
+            }
+            PasteEntities(parent, index);
+        };
+        list.push_back(std::move(paste));
+
+        tree::Action pasteChild;
+        pasteChild.label = Tr(L"子として貼り付け");
+        pasteChild.enabled = sel.size() == 1;
+        if (pasteChild.enabled) pasteChild.run = [this, sel] { PasteEntities(sel[0], Scene::kEnd); };
+        list.push_back(std::move(pasteChild));
+
+        if (sel.empty()) return list;
         list.push_back(sep);
 
         tree::Action dup;
@@ -483,6 +536,77 @@ private:
         return in;
     }
 
+    // Several entities at once: the entity's own values and the components every one of them has,
+    // shown from the last selected; a change goes to all ("—" where they differ). 外す / 部品を足す
+    // work on all of them.
+    editor::Inspectable ManyInspectable(std::vector<int> ids) {
+        editor::Inspectable in;
+        in.title = TrF(L"{} 個のエンティティ", ids.size());
+        in.blocks = [this, ids] {
+            std::vector<editor::InspectBlock> blocks;
+            std::vector<int> here;  // the ones that are still there (undo)
+            for (const int id : ids) {
+                if (scene_.Find(id)) here.push_back(id);
+            }
+            if (here.empty()) return blocks;
+            const int main = here.back();
+            const std::vector<int> rest(here.begin(), here.end() - 1);
+            editor::InspectBlock entity{&reflect::TypeOf<Entity>(), ResolveEntity(main), {}, {}, {}};
+            for (const int id : rest) entity.also.push_back(ResolveEntity(id));
+            blocks.push_back(std::move(entity));
+            for (const Component& c : scene_.Find(main)->components) {
+                if (!c.Known()) continue;
+                const bool everyone = std::all_of(rest.begin(), rest.end(), [&](int id) {
+                    const Component* o = scene_.Find(id)->FindComponent(c.type);
+                    return o && o->Known();
+                });
+                if (!everyone) continue;
+                const std::string type = c.type;
+                const std::string label = c.value.Type()->label;
+                editor::w::Action remove;
+                remove.label = Tr(L"外す");
+                remove.run = [this, here, type, label] {
+                    Edit(std::format("{} 個のエンティティから「{}」を外す", here.size(), label), [&] {
+                        for (const int id : here) scene_.RemoveComponent(id, type);
+                    });
+                };
+                editor::InspectBlock b{c.value.Type(), ResolveComponent(main, type), Utf8ToWide(TrU8(label)), {}, {remove}};
+                for (const int id : rest) b.also.push_back(ResolveComponent(id, type));
+                blocks.push_back(std::move(b));
+            }
+            return blocks;
+        };
+        in.addLabel = Tr(L"＋ 部品を足す");
+        in.addMenu = [this, ids] {
+            std::vector<editor::w::Action> list;
+            for (const reflect::TypeDesc* t : scene_.ComponentTypes()) {
+                // Offered while at least one of them lacks it; added to those that lack it.
+                const bool someLack = std::any_of(ids.begin(), ids.end(), [&](int id) {
+                    const SceneEntity* e = scene_.Find(id);
+                    return e && !e->FindComponent(t->name);
+                });
+                if (!someLack) continue;
+                editor::w::Action add;
+                add.label = Utf8ToWide(TrU8(t->label));
+                add.run = [this, ids, t] {
+                    Edit(std::format("{} 個のエンティティに「{}」を足す", ids.size(), t->label), [&] {
+                        for (const int id : ids) scene_.AddComponent(id, *t);
+                    });
+                };
+                list.push_back(std::move(add));
+            }
+            if (list.empty()) {
+                editor::w::Action none;
+                none.label = scene_.ComponentTypes().empty() ? Tr(L"足せる部品がありません (3D 空間 などのプラグインで増えます)")
+                                                             : Tr(L"足せる部品は全部付いています");
+                none.enabled = false;
+                list.push_back(std::move(none));
+            }
+            return list;
+        };
+        return in;
+    }
+
     std::string NameOf(int id) const {
         const SceneEntity* e = scene_.Find(id);
         return e ? e->data.name : std::string();
@@ -497,6 +621,30 @@ private:
         json::Value after = scene_.Save();
         if (before == after) return;
         host_.History().Push(std::make_unique<SceneCommand>(scene_, std::move(before), std::move(after), std::move(label)));
+    }
+
+    bool CopyEntities(const std::vector<int>& ids) {
+        const json::Value clip = scene_.Copy(ids);
+        if (!host_.SetClipboard(json::Write(clip))) {
+            log::Warn("クリップボードに書けませんでした (ほかのアプリが使っているかもしれません)");
+            return false;
+        }
+        log::Info("{} 個のエンティティをコピーしました", clip.Get("entities").Items().size());
+        return true;
+    }
+
+    void PasteEntities(int parent, size_t index) {
+        const auto clip = json::Parse(host_.Clipboard());
+        if (!clip || !Scene::IsClip(*clip)) {
+            log::Info("クリップボードにエンティティがありません");
+            return;
+        }
+        std::vector<int> made;
+        reflect::Warnings warnings;
+        Edit(std::format("{} 個のエンティティを貼り付け", clip->Get("entities").Items().size()),
+             [&] { made = scene_.Paste(*clip, parent, index, &warnings); });
+        for (const auto& w : warnings) log::Warn("貼り付け: {}", w);
+        host_.SelectInTree({made.begin(), made.end()});
     }
 
     void CreateEntity(int parent, size_t index) {

@@ -34,7 +34,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // the world (ワールド: through every parent), switched above its fields in the inspector.
     static const game_production::ComponentInfo kTransform{&reflect::TypeOf<space3d::Transform>, true,
                                                            &reflect::TypeOf<space3d::WorldPlacement>, &DeriveWorld,
-                                                           &UnderiveWorld, editor::TrKey(L"ローカル"), editor::TrKey(L"ワールド")};
+                                                           &UnderiveWorld, editor::TrKey(L"ローカル"), editor::TrKey(L"ワールド"), "cube"};
     registry.Contribute(game_production::kComponentPoint, kTransform);
     // ... and are seen in 3D in the scene view.
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView3D};

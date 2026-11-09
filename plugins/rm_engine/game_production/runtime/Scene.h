@@ -70,6 +70,16 @@ public:
     // Copies of the given entities and everything below them, each right after its original.
     // Returns the ids of the copies of the roots.
     std::vector<int> Duplicate(std::span<const int> ids);
+    // The given entities and everything below them, as text for the clipboard (JSON, the same
+    // entity form as the file): { "kind": "rm_engine.game_production.entities", "format": 1,
+    // "entities": [...] }. Ids are the originals; Paste gives new ones.
+    json::Value Copy(std::span<const int> ids) const;
+    // Copies of what Copy wrote, under `parent` (0 or a missing id = top level) at `index` among its
+    // children, with new ids. Components of types not offered now are kept as they were. Returns
+    // the ids of the copies of the roots (empty: `clip` is not entities).
+    std::vector<int> Paste(const json::Value& clip, int parent = 0, size_t index = kEnd, reflect::Warnings* warnings = nullptr);
+    static bool IsClip(const json::Value& clip);
+
     // Deletes the given entities and everything below them. Returns how many were deleted.
     size_t Delete(std::span<const int> ids);
     // Moves the given entities (with everything below them) under `parent` at `index` among its
@@ -90,6 +100,9 @@ public:
     void Load(const json::Value& v, reflect::Warnings* warnings = nullptr);
 
 private:
+    // One entity as it is in the file (and on the clipboard), and back.
+    json::Value SaveEntity(const SceneEntity& e) const;
+    SceneEntity LoadEntity(const json::Value& item, reflect::Warnings* warnings) const;
     size_t IndexOf(int id) const;
     size_t InsertPosition(int parent, size_t index) const;
 

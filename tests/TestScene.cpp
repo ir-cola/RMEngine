@@ -226,3 +226,58 @@ RM_TEST(Scene_Components_SaveLoadAndUnknownTypes) {
     CHECK(!none.Find(2)->components[0].Known());
     CHECK(none.Save() == saved);
 }
+
+RM_TEST(Scene_CopyPaste_NewIdsWhereAsked) {
+    Scene s = Sample();
+    s.SetComponentTypes({&TransformType()});
+    s.AddComponent(2, TransformType());
+    static_cast<space3d::Transform*>(s.Find(2)->FindComponent(TransformType().name)->value.Get())->position = {1, 2, 3};
+    const json::Value clip = s.Copy(std::vector<int>{1, 3});  // 3 is under 1: copied with it, once
+    CHECK(Scene::IsClip(clip) && clip.Get("entities").Items().size() == 4);
+    CHECK(s.Entities().size() == 5);  // copying changes nothing
+
+    // At the end of the top level: new ids, the same shape below.
+    const auto roots = s.Paste(clip);
+    CHECK((roots == std::vector<int>{6}));
+    CHECK((s.Children(0) == std::vector<int>{1, 5, 6}));
+    const auto kids = s.Children(6);
+    CHECK(kids.size() == 2 && s.Find(kids[0])->data.name == "A1" && s.Find(kids[1])->data.name == "A2");
+    CHECK(s.Children(kids[0]).size() == 1);
+    // The component came along, a copy of its own.
+    auto* t = static_cast<space3d::Transform*>(s.Find(kids[0])->FindComponent(TransformType().name)->value.Get());
+    CHECK(t->position.z == 3);
+    t->position.z = 9;
+    CHECK(static_cast<space3d::Transform*>(s.Find(2)->FindComponent(TransformType().name)->value.Get())->position.z == 3);
+
+    // Under B, first; twice is fine (new ids again).
+    const auto under = s.Paste(clip, 5, 0);
+    CHECK(under.size() == 1 && s.Children(5).front() == under[0] && s.Find(under[0])->data.parent == 5);
+    // A missing parent: the top level. Not entities: nothing.
+    CHECK(s.Find(s.Paste(clip, 999)[0])->data.parent == 0);
+    CHECK(s.Paste(json::Value("hello")).empty());
+    CHECK(s.Paste(s.Save()).empty());  // a whole scene is not a clip
+}
+
+RM_TEST(Scene_Paste_NeverMakesALoop) {
+    Scene s;
+    // Written by hand (or broken): a parent after its child, a parent loop, a repeated id.
+    json::Value clip = json::Value::MakeObject();
+    clip.Set("kind", "rm_engine.game_production.entities");
+    json::Value list = json::Value::MakeArray();
+    auto entity = [&](int id, int parent, const char* name) {
+        json::Value e = json::Value::MakeObject();
+        e.Set("id", id);
+        e.Set("parent", parent);
+        e.Set("name", name);
+        list.Push(std::move(e));
+    };
+    entity(1, 2, "a");  // its parent comes later: a root
+    entity(2, 1, "b");  // under a
+    entity(2, 0, "c");  // the same id again: a root of its own
+    entity(3, 3, "d");  // its own parent: a root
+    clip.Set("entities", std::move(list));
+    const auto roots = s.Paste(clip);
+    CHECK(roots.size() == 3);
+    CHECK(s.Entities().size() == 4);
+    CHECK(s.TreeOrder().size() == 4);  // every entity is reachable from the top
+}

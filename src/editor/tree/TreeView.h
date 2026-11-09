@@ -15,6 +15,7 @@
 // The view never changes the software's data. Renaming and moving are requests the software
 // turns into undo entries (rule 7); what the menu rows do is up to the software.
 
+#include "base/Json.h"
 #include "editor/lang/Lang.h"
 #include "editor/tree/TreeModel.h"
 #include "editor/widgets/Widgets.h"
@@ -93,6 +94,13 @@ struct State {
 
 // Asks the tree to select `ids` (and, with rename, to start renaming the first) at the next Draw.
 void RequestSelect(State& st, std::vector<ItemId> ids, bool rename = false);
+
+// What is kept of a tree when the project is closed (UserSettings/Layout.json, with the layout - the
+// user's way of looking, not project data): { "collapsed": [ids], "selected": [ids] }. Loading asks
+// for the selection (applied at the next Draw; ids that are gone are dropped there, and closed ids
+// of items that are gone are forgotten by Draw).
+json::Value SaveState(const State& st);
+void LoadState(State& st, const json::Value& v);
 
 void Draw(ui::Context& c, State& st, Source& src, const ui::Rect& area);
 

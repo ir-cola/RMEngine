@@ -37,7 +37,8 @@ constexpr char kStart[] = "core.start";
 //   { "kind": "rm_engine.layout", "formatVersion": 2,
 //     "active": { "author": "rm_engine", "plugin": "game_production", "software": "game" },
 //     "softwares": [ { "author": ..., "plugin": ..., "software": ..., "layout": { "main": ..., "floating": [...] },
-//                      "view": { ... the software's own (Software::SaveView) } } ] }
+//                      "view": { ... the software's own (Software::SaveView) },
+//                      "tree": { "collapsed": [...], "selected": [...] } (the 階層: tree::SaveState) } ] }
 // The workspace without a software has only "software": "core". Entries of softwares that are not
 // installed now, and keys this version does not know, are written back unchanged.
 constexpr char kLayoutKind[] = "rm_engine.layout";
@@ -161,6 +162,12 @@ void EditorScreen::RedrawAll() {
 const PluginRegistry& EditorScreen::Workspace::Registry() const { return editor_.app_.GetPlugins().Registry(); }
 
 platform::Gfx& EditorScreen::Workspace::Graphics() { return editor_.app_.Gfx(); }
+
+bool EditorScreen::Workspace::SetClipboard(const std::string& textUtf8) {
+    return platform::SetClipboardText(editor_.Hwnd(), Utf8ToWide(textUtf8));
+}
+
+std::string EditorScreen::Workspace::Clipboard() { return WideToUtf8(platform::GetClipboardText(editor_.Hwnd())); }
 
 dock::Layout EditorScreen::Workspace::DefaultLayout() const {
     return software ? software->DefaultLayout() : CoreDefaultLayout();
@@ -315,6 +322,7 @@ void EditorScreen::LoadLayout() {
             loaded = dock::Layout::FromJson(e.Get("layout"));
             if (!loaded) broken = true;
             view = e.Find("view");
+            if (const json::Value* t = e.Find("tree")) tree::LoadState(ws->treeState, *t);
         }
         if (ws->software) ws->software->LoadView(view ? *view : json::Value());
         dock::Layout layout = loaded ? std::move(*loaded) : ws->DefaultLayout();
@@ -352,6 +360,7 @@ void EditorScreen::SaveLayout() {
         entry->Set("layout", ws->dock.GetLayout().ToJson());
         if (ws->software) {
             if (json::Value view = ws->software->SaveView(); !view.IsNull()) entry->Set("view", std::move(view));
+            if (ws->software->Hierarchy()) entry->Set("tree", tree::SaveState(ws->treeState));
         }
     }
 
@@ -748,7 +757,11 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
         const InspectBlock& b = blocks[i];
         const reflect::EditTarget obj = b.type && b.resolve ? b.resolve() : reflect::EditTarget{};
         if (b.type && !obj.object) continue;  // gone
-        shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode});
+        std::vector<const void*> others;
+        for (const auto& resolveOther : b.also) {
+            if (const reflect::EditTarget o = resolveOther ? resolveOther() : reflect::EditTarget{}; o.object) others.push_back(o.object);
+        }
+        shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode, std::move(others)});
         source.push_back(i);
     }
     const bool gone = target.blocks && shown.empty();
@@ -768,6 +781,29 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
         const InspectBlock& b = blocks[source[edit->block]];
         if (b.onEdit) {
             b.onEdit({std::move(edit->path), std::move(edit->before), std::move(edit->after), std::move(edit->label), edit->merge});
+        } else if (!b.also.empty()) {
+            // The same change to every selected one, as one entry. Every target gets a command (even one
+            // that has the value already), so the typing of one field joins command by command.
+            auto group = std::make_unique<CommandGroup>(edit->label, edit->merge);
+            std::vector<std::function<reflect::EditTarget()>> targets{b.resolve};
+            targets.insert(targets.end(), b.also.begin(), b.also.end());
+            for (const auto& resolveOne : targets) {
+                const reflect::EditTarget t = resolveOne ? resolveOne() : reflect::EditTarget{};
+                if (!t.object) continue;
+                const reflect::PathTarget pt = reflect::Resolve(*b.type, t.object, t.unknowns, edit->path);
+                if (!pt.field) continue;
+                json::Value before = reflect::SaveField(*pt.field, pt.owner, pt.unknowns);
+                json::Value after = edit->after;
+                if (edit->component >= 0 && before.IsArray() && after.IsArray()) {
+                    // A vector: only the number typed; the others keep their own.
+                    after = before;
+                    const size_t i = static_cast<size_t>(edit->component);
+                    if (i < after.Items().size() && i < edit->after.Items().size()) after.At(i) = edit->after.At(i);
+                }
+                group->Add(std::make_unique<reflect::SetFieldCommand>(*b.type, edit->path, std::move(before), std::move(after), resolveOne,
+                                                                      edit->label, edit->merge));
+            }
+            if (!group->Empty()) ws.history.Push(std::move(group), false);
         } else {
             ws.history.Push(std::make_unique<reflect::SetFieldCommand>(*b.type, std::move(edit->path), std::move(edit->before),
                                                                        std::move(edit->after), b.resolve, std::move(edit->label), edit->merge),

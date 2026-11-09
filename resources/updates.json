@@ -7,6 +7,22 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "階層: エンティティのコピー・切り取り・貼り付け (Ctrl+C / X / V、別のプロジェクトにも貼れる)",
+          "en": "Hierarchy: copy, cut and paste entities (Ctrl+C / X / V, also into another project)"
+        },
+        {
+          "ja": "複数のエンティティを選んでまとめて編集 (違う値は「—」、打つと全部がその値に)",
+          "en": "Edit several selected entities at once (differing values show “—”; typing sets them all)"
+        },
+        {
+          "ja": "階層の閉じた行と選択を、開き直しても覚えておく",
+          "en": "The hierarchy remembers closed rows and the selection when the project is opened again"
+        },
+        {
+          "ja": "階層の行に絵 (3D の物は立方体、ほかは丸)",
+          "en": "Hierarchy rows have icons (a cube for 3D objects, a circle otherwise)"
+        },
+        {
           "ja": "インスペクターの欄: クリックで全部選ぶ・ドラッグで選ぶ・打つたびに反映 (Enter 不要、1 つの欄に打った分は Undo 1 回)",
           "en": "Inspector fields: a click selects all, a drag selects part, and values apply as you type (no Enter; one undo per field)"
         },

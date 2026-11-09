@@ -69,6 +69,10 @@ struct InspectBlock {
         uint64_t merge = 0;
     };
     std::function<void(Change)> onEdit;
+    // Several things selected: the same block of the others (same type), edited together with
+    // `resolve`'s object. Values that differ show "—"; a change goes to all of them (for a vector
+    // only the number typed) as one undo entry.
+    std::vector<std::function<reflect::EditTarget()>> also;
 };
 
 struct Inspectable {
@@ -102,6 +106,10 @@ public:
     virtual const PluginRegistry& Registry() const = 0;
     // The GPU (Direct3D 11 + Direct2D), for software that draws with it (a 3D scene view).
     virtual platform::Gfx& Graphics() = 0;
+    // The Windows clipboard, as text (UTF-8): copying entities puts them there as JSON, so they can
+    // be pasted into another project (or another RM Engine). False / empty when it cannot be used.
+    virtual bool SetClipboard(const std::string& textUtf8) = 0;
+    virtual std::string Clipboard() = 0;
 };
 
 // One software inside one open project.

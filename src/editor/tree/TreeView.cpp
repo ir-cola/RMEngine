@@ -92,12 +92,39 @@ void RequestSelect(State& st, std::vector<ItemId> ids, bool rename) {
     st.pendingRename = rename;
 }
 
+json::Value SaveState(const State& st) {
+    json::Value o = json::Value::MakeObject();
+    std::vector<ItemId> closed(st.collapsed.begin(), st.collapsed.end());
+    std::sort(closed.begin(), closed.end());  // the same file for the same tree
+    json::Value list = json::Value::MakeArray();
+    for (const ItemId id : closed) list.Push(static_cast<uint64_t>(id));
+    o.Set("collapsed", std::move(list));
+    json::Value sel = json::Value::MakeArray();
+    for (const ItemId id : st.hasPending ? st.pending : st.sel.ids) sel.Push(static_cast<uint64_t>(id));
+    o.Set("selected", std::move(sel));
+    return o;
+}
+
+void LoadState(State& st, const json::Value& v) {
+    st.collapsed.clear();
+    for (const auto& id : v.Get("collapsed").Items()) {
+        if (id.IsInt() && id.AsInt() > 0) st.collapsed.insert(static_cast<ItemId>(id.AsInt()));
+    }
+    std::vector<ItemId> sel;
+    for (const auto& id : v.Get("selected").Items()) {
+        if (id.IsInt() && id.AsInt() > 0) sel.push_back(static_cast<ItemId>(id.AsInt()));
+    }
+    if (!sel.empty()) RequestSelect(st, std::move(sel));
+}
+
 void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     auto& p = c.P();
     const ui::Input& in = c.In();
     std::vector<Item> items;
     src.Items(items);
     const std::vector<ItemId> before = st.sel.ids;
+    // Closed items that are gone (deleted) are forgotten, so the kept list does not grow forever.
+    std::erase_if(st.collapsed, [&](ItemId id) { return Find(items, id) == static_cast<size_t>(-1); });
 
     // --- What the software asked for, and what disappeared ------------------------------
     if (st.hasPending) {
@@ -218,6 +245,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     const float rowsTop = view.y + kTop - off;
     auto rowRect = [&](size_t r) { return Rect{view.x + 4, rowsTop + kRowH * static_cast<float>(r), view.w - 8, kRowH}; };
     auto textX = [&](int depth) { return view.x + 8 + kIndent * static_cast<float>(depth) + kArrow + 2; };
+    constexpr float kIconW = 18.f;  // the row's picture, between the arrow and the name
 
     if (items.empty()) {
         ui::TextStyle hint = Style(12, theme::TextFaint);
@@ -238,7 +266,8 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         const bool selected = st.sel.Contains(it.id);
         const float indentX = view.x + 8 + kIndent * static_cast<float>(rw.depth);
         const Rect arrow{indentX, row.y, kArrow, row.h};
-        const Rect label{textX(rw.depth), row.y, row.Right() - textX(rw.depth) - 4, row.h};
+        const float nameX = textX(rw.depth) + (it.icon != Icon::None ? kIconW + 2 : 0.f);
+        const Rect label{nameX, row.y, row.Right() - nameX - 4, row.h};
         c.PushId(it.id);
 
         bool onArrow = false;
@@ -282,6 +311,10 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         w::DrawRow(c, row, {selected, hovered && !st.dragging, st.hasKeys});
         if (rw.hasChildren) {
             w::DrawIcon(c, arrow, rw.expanded ? w::Icon::ChevronDown : w::Icon::ChevronRight, onArrow ? theme::Text : theme::TextDim);
+        }
+        if (it.icon != Icon::None) {
+            const w::Icon pic = it.icon == Icon::Cube ? w::Icon::Cube : w::Icon::Object;
+            w::DrawIcon(c, {textX(rw.depth), row.y, kIconW, row.h}, pic, it.dimmed ? theme::TextFaint : theme::TextDim);
         }
 
         if (st.renaming == it.id) {

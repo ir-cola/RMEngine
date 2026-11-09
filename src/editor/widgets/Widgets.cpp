@@ -140,6 +140,22 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.Line(cx - s, cy, cx - s * 0.3f, cy + s * 0.7f, color, 2.f);
             p.Line(cx - s * 0.3f, cy + s * 0.7f, cx + s, cy - s * 0.8f, color, 2.f);
             break;
+        case Icon::Object: {
+            const float rr = std::min(r.w, r.h) * 0.27f;
+            p.StrokeRoundRect({cx - rr, cy - rr, rr * 2, rr * 2}, rr, color, 1.3f);
+            break;
+        }
+        case Icon::Cube: {
+            // Seen from above a corner: the outline (a hexagon) and the three edges of the near corner.
+            const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;
+            const float x[6] = {cx, cx + k, cx + k, cx, cx - k, cx - k};
+            const float y[6] = {cy - h, cy - h * 0.5f, cy + h * 0.5f, cy + h, cy + h * 0.5f, cy - h * 0.5f};
+            for (int i = 0; i < 6; ++i) p.Line(x[i], y[i], x[(i + 1) % 6], y[(i + 1) % 6], color, 1.3f);
+            p.Line(cx, cy, x[1], y[1], color, 1.3f);
+            p.Line(cx, cy, x[5], y[5], color, 1.3f);
+            p.Line(cx, cy, x[3], y[3], color, 1.3f);
+            break;
+        }
     }
 }
 

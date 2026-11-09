@@ -43,6 +43,7 @@ struct Edit {
     json::Value before, after;
     std::string label;  // for the undo history, e.g. 「目標 FPS」を変更
     uint64_t merge = 0;  // != 0: typing into one field - edits with the same key are one undo entry
+    int component = -1;  // a Vec2 / Vec3 / Color field: the one number typed (-1: the whole value)
 };
 
 // One lump of values.
@@ -58,6 +59,10 @@ struct Block {
     std::vector<std::wstring> modes;
     int mode = 0;
     std::function<void(int)> setMode;
+    // More objects of the same type edited together with `object` (several things selected): a
+    // value that is not the same in all of them shows "—". The Edit is the one for `object`; the
+    // caller applies it to these too (for a vector, only its `component`).
+    std::vector<const void*> others;
 };
 
 // Per inspector: text being typed, the open drop-down / menu, folded blocks.

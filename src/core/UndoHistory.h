@@ -8,6 +8,7 @@
 //    while it is being undone / redone is rejected, so the stacks never get out of order
 //    (bug #15 of the previous engine).
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -32,10 +33,12 @@ public:
 };
 
 // Several edits that are one action for the user (a gizmo drag of 3 selected objects): one entry,
-// undone in the reverse order. Empty groups should not be pushed.
+// undone in the reverse order. Empty groups should not be pushed. mergeKey != 0: a later group with
+// the same key and as many commands joins this one command by command (typing into a field of
+// several selected things) - so give every group of one typing the same targets in the same order.
 class CommandGroup final : public ICommand {
 public:
-    explicit CommandGroup(std::string label) : label_(std::move(label)) {}
+    explicit CommandGroup(std::string label, uint64_t mergeKey = 0) : label_(std::move(label)), mergeKey_(mergeKey) {}
     void Add(std::unique_ptr<ICommand> cmd) {
         if (cmd) cmds_.push_back(std::move(cmd));
     }
@@ -47,10 +50,25 @@ public:
         for (auto it = cmds_.rbegin(); it != cmds_.rend(); ++it) (*it)->Undo();
     }
     std::string Label() const override { return label_; }
+    bool MergeWith(const ICommand& next) override {
+        const auto* n = dynamic_cast<const CommandGroup*>(&next);
+        if (!n || mergeKey_ == 0 || n->mergeKey_ != mergeKey_ || n->cmds_.size() != cmds_.size()) return false;
+        for (size_t i = 0; i < cmds_.size(); ++i) {
+            if (!cmds_[i]->MergeWith(*n->cmds_[i])) return false;  // (the same targets in the same order: all join)
+        }
+        return true;
+    }
+    bool IsNoOp() const override {
+        for (const auto& c : cmds_) {
+            if (!c->IsNoOp()) return false;
+        }
+        return true;
+    }
 
 private:
     std::vector<std::unique_ptr<ICommand>> cmds_;
     std::string label_;
+    uint64_t mergeKey_ = 0;
 };
 
 class UndoHistory {

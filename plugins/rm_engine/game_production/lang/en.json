@@ -2,7 +2,6 @@
   " (使えない部品)": " (unusable component)",
   "3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。": "With a 3D or 2D space plugin, the scene shows here and you can place and move entities.",
   "Play を押すと、ゲームのカメラから見た画面がここに映ります。": "Press Play to see the game through its camera here.",
-  "{} 個のエンティティを選んでいます。\nまとめての編集はこれからです。": "{} entities selected.\nEditing several at once will come later.",
   "この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。": "The plugin of this component is not installed, or its data cannot be read. The data is kept and saved as it is.",
   "ウィンドウ": "Windowed",
   "エンティティ": "Entity",
@@ -40,5 +39,10 @@
   "足せる部品は全部付いています": "Every component is already added",
   "重力": "Gravity",
   "高さ": "Height",
-  "＋ 部品を足す": "＋ Add component"
+  "＋ 部品を足す": "＋ Add component",
+  "コピー": "Copy",
+  "切り取り": "Cut",
+  "貼り付け": "Paste",
+  "子として貼り付け": "Paste as child",
+  "{} 個のエンティティ": "{} entities"
 }
