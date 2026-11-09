@@ -173,40 +173,6 @@ ui::Path Cloud(Vec2 c, float w) {
     return p;
 }
 
-ui::Path Sea(const ui::Rect& win, float height) {
-    ui::Path p;
-    const float bottom = win.y + win.h;
-    p.Begin({win.x, bottom});
-    const int steps = 48;
-    for (int i = 0; i <= steps; ++i) {
-        const float t = static_cast<float>(i) / static_cast<float>(steps);
-        p.Line({win.x + win.w * t, bottom - height * (0.96f + 0.04f * std::sin(t * 11.f))});
-    }
-    p.Line({win.x + win.w, bottom});
-    return p;
-}
-
-ui::Path Waves(const ui::Rect& area, int rows) {
-    ui::Path p;
-    for (int r = 0; r < rows; ++r) {
-        // Lower rows: nearer, so longer waves and thicker lines.
-        const float t = (static_cast<float>(r) + 0.5f) / static_cast<float>(rows);
-        const float y = area.y + area.h * t;
-        const float len = 34.f + 30.f * t, amp = 2.f + 2.5f * t, thick = 1.2f + 1.3f * t;
-        const int steps = std::max(8, static_cast<int>(area.w / 6.f));
-        std::vector<Vec2> top, under;
-        for (int i = 0; i <= steps; ++i) {
-            const float x = area.x + area.w * static_cast<float>(i) / static_cast<float>(steps);
-            const float wy = y + amp * std::sin((x + 17.f * static_cast<float>(r)) / len * 2.f * kPi);
-            top.push_back({x, wy});
-            under.push_back({x, wy + thick});
-        }
-        top.insert(top.end(), under.rbegin(), under.rend());
-        AddPolygon(p, top);
-    }
-    return p;
-}
-
 float ShoreY(const ui::Rect& win, float width, float height, float x) {
     // From (right - width, bottom) to (right, bottom - height), bowed a little towards the sea.
     const float t = std::clamp((x - (win.x + win.w - width)) / std::max(width, 1.f), 0.f, 1.f);
@@ -367,29 +333,48 @@ ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed) {
 
 ui::Path SnowDrift(const ui::Rect& r, float depth, float corner) {
     ui::Path p;
-    const float x0 = r.x + corner * 0.6f, x1 = r.x + r.w - corner * 0.6f;
-    if (x1 - x0 < 6.f || depth <= 0) return p;
+    // In the box's own coordinates (from its left edge): the same drift wherever it is.
+    const float l0 = corner * 0.6f, l1 = r.w - corner * 0.6f;
+    if (l1 - l0 < 6.f || depth <= 0) return p;
     const float bottom = r.y + r.h;
-    // The drift's height along the edge: soft swells tied to the position on the screen (the same
-    // every frame), low at both ends.
-    auto height = [&](float x) {
-        const float t = (x - x0) / (x1 - x0);
-        const float ends = std::min(1.f, std::min(t, 1.f - t) * 6.f);
-        const float swells = 0.55f + 0.25f * std::sin(x * 0.045f) + 0.20f * std::sin(x * 0.13f + 1.f);
-        return depth * ends * swells;
+    constexpr float kSlope = 26.f;  // the drift slopes down to nothing over this many pixels at each end
+    auto top = [&](float l) {
+        const float ends = std::min(1.f, std::min(l - l0, l1 - l) / kSlope);
+        const float swells = 0.62f + 0.22f * std::sin(l * 0.045f) + 0.16f * std::sin(l * 0.13f + 1.f);
+        return Vec2{r.x + l, bottom - depth * std::max(0.f, ends) * swells};
     };
-    const int steps = std::max(4, static_cast<int>((x1 - x0) / 5.f));
-    // Clockwise on the screen: along the drift's top to the right, then back along the bottom.
-    for (int i = 0; i <= steps; ++i) {
-        const float x = x0 + (x1 - x0) * static_cast<float>(i) / static_cast<float>(steps);
-        if (i == 0) {
-            p.Begin({x, bottom - height(x)});
-        } else {
-            p.Line({x, bottom - height(x)});
-        }
+    // Clockwise on the screen: along the drift's top to the right (a point every 4 pixels from the
+    // left, so the left part never changes with the width), then back along the bottom.
+    p.Begin(top(l0));
+    for (int i = 1; l0 + 4.f * static_cast<float>(i) < l1; ++i) p.Line(top(l0 + 4.f * static_cast<float>(i)));
+    p.Line(top(l1));
+    p.Line({r.x + l1, bottom});
+    p.Line({r.x + l0, bottom});
+    return p;
+}
+
+ui::Path Icicles(const ui::Rect& win, float maxLength, uint32_t seed) {
+    ui::Path p;
+    Random rnd{seed};
+    const float top = win.y, right = win.x + win.w;
+    // The ridge of snow they hang from: a thin wavy band along the whole top edge.
+    std::vector<Vec2> ridge{{win.x, top - 1.f}};
+    for (float x = win.x; x <= right; x += 6.f) ridge.push_back({x, top + 3.f + 1.5f * std::sin((x - win.x) * 0.07f)});
+    ridge.push_back({right, top + 3.f});
+    ridge.push_back({right, top - 1.f});
+    AddPolygon(p, ridge);
+    // The icicles: a long thin point with a rounded root, now and then a long one among short ones.
+    for (float x = win.x + 6.f + 20.f * rnd.Next(); x < right - 4.f; x += 9.f + 34.f * rnd.Next()) {
+        const float u = rnd.Next();
+        const float len = maxLength * (u < 0.15f ? 0.75f + 0.25f * rnd.Next() : 0.18f + 0.4f * rnd.Next());
+        const float half = 2.2f + 2.6f * rnd.Next() * (len / maxLength + 0.3f);
+        const float lean = (rnd.Next() - 0.5f) * 2.f;  // the tip a little to one side
+        const float y0 = top + 2.f;
+        p.Begin({x - half, y0});
+        p.Line({x + half, y0});
+        p.Cubic({x + half * 0.8f, y0 + len * 0.35f}, {x + lean + half * 0.25f, y0 + len * 0.8f}, {x + lean, y0 + len});
+        p.Cubic({x + lean - half * 0.25f, y0 + len * 0.8f}, {x - half * 0.8f, y0 + len * 0.35f}, {x - half, y0});
     }
-    p.Line({x1, bottom});
-    p.Line({x0, bottom});
     return p;
 }
 

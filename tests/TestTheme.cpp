@@ -183,13 +183,7 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     const Bounds pb = BoundsOf(petals);
     CHECK(pb.figures == 40 && pb.x0 > -8 && pb.y0 > -8 && pb.x1 < 308 && pb.y1 < 208);
 
-    // The sea covers the bottom of the window, no higher than asked; its waves stay in their band.
     const rm::ui::Rect win{0, 0, 800, 600};
-    const Bounds sea = BoundsOf(Sea(win, 100));
-    CHECK(sea.y1 == 600 && sea.y0 >= 500 && sea.x0 == 0 && sea.x1 == 800);
-    const Bounds waves = BoundsOf(Waves({0, 500, 800, 80}, 4));
-    CHECK(waves.figures == 4 && waves.y0 > 495 && waves.y1 < 585);
-    CHECK(AllClockwise(Waves({0, 500, 800, 80}, 4)));
     // The beach: only the bottom-right corner, its shore from (800 - 300, 600) up to (800, 600 - 200).
     const Beach beach = BeachCorner(win, 300, 200);
     const Bounds sand = BoundsOf(beach.sand);
@@ -216,4 +210,31 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     CHECK(drift.x0 >= 100 + 4.f && drift.x1 <= 400 - 4.f);
     CHECK(AllClockwise(SnowDrift(panel, 9, 8)));
     CHECK(SnowDrift({0, 0, 5, 10}, 6, 8).steps.empty());  // too narrow for any
+    // The same drift wherever the panel is and however wide it grows (only its right end follows).
+    const auto heights = [](const rm::ui::Rect& r) {
+        std::vector<float> out;
+        for (const auto& st : SnowDrift(r, 9, 8).steps) out.push_back(st.a.y);
+        return out;
+    };
+    const std::vector<float> narrow = heights({100, 200, 300, 150}), wide = heights({100, 200, 600, 150});
+    const std::vector<float> moved = heights({250, 200, 300, 150});
+    CHECK(narrow.size() > 40 && wide.size() > narrow.size());
+    for (size_t i = 0; i + 10 < narrow.size(); ++i) CHECK(narrow[i] == wide[i]);  // until the right end's slope
+    CHECK(moved == narrow);
+
+    // Icicles hang from the top edge, no longer than asked, in the same places when the window widens.
+    const Bounds ice = BoundsOf(Icicles(win, 40, 5));
+    CHECK(ice.figures > 10 && ice.y0 >= -1.01f && ice.y1 <= 2 + 40 + 0.01f && ice.x0 >= 0 && ice.x1 <= 800);
+    CHECK(AllClockwise(Icicles(win, 40, 5)));
+    // (each icicle's tip is the end of its first curve)
+    const auto tips = [](const rm::ui::Path& path) {
+        std::vector<rm::Vec2> out;
+        for (size_t i = 0; i + 1 < path.steps.size(); ++i) {
+            if (path.steps[i].op == rm::ui::Path::Op::Line && path.steps[i + 1].op == rm::ui::Path::Op::Cubic && path.steps[i + 1].c.x < 700)
+                out.push_back(path.steps[i + 1].c);
+        }
+        return out;
+    };
+    const std::vector<rm::Vec2> t1 = tips(Icicles({0, 0, 800, 600}, 40, 5)), t2 = tips(Icicles({0, 0, 1200, 600}, 40, 5));
+    CHECK(t1.size() > 10 && t1 == t2);
 }

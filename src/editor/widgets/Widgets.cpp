@@ -82,15 +82,19 @@ namespace {
 // A season's picture, never over what the content asked to keep clear (the scene and game views).
 void Fill(ui::Context& c, const ui::Path& path, Color color) { c.P().FillPath(path, color, c.KeepClearAreas()); }
 
-// Winter: snow falling over the window (held still), and piled up at the bottom of every panel drawn
-// this frame (each with a thin shade along its top, so it shows on a white panel).
+// Winter: snow falling over the window (held still), icicles from its top edge, and snow piled up at
+// the bottom of every panel drawn this frame (each with a thin shade along its top).
 void Winter(ui::Context& c, const Rect& w, float scale) {
     using namespace theme::season;
     const int count = std::max(20, static_cast<int>(w.w * w.h / 3600.f));
     Fill(c, ornament::Snowfall(w, count, 5.5f * scale, 0x5A0Fu), Flake());
+    // Icicles from the window's top edge (a shade 1px lower first, so their edges show).
+    const float icicle = 38.f * scale;
+    Fill(c, ornament::Icicles({w.x, w.y + 1.f, w.w, w.h}, icicle, 0x1C1Eu), IceShade());
+    Fill(c, ornament::Icicles(w, icicle, 0x1C1Eu), Ice());
     for (const ui::Context::Decorated& d : c.DecoratedAreas()) {
-        // An outline above, the white snow, and its shaded foot (white alone would vanish on a white panel).
-        constexpr float kDepth = 14.f;
+        // An outline above, the white snow, and its shaded foot.
+        constexpr float kDepth = 22.f;
         Fill(c, ornament::SnowDrift({d.r.x, d.r.y - 1.5f, d.r.w, d.r.h}, kDepth, d.corner), SnowShade());
         Fill(c, ornament::SnowDrift(d.r, kDepth, d.corner), Snow());
         Fill(c, ornament::SnowDrift(d.r, kDepth * 0.45f, d.corner), SnowLow());
@@ -146,13 +150,9 @@ void DrawOrnament(ui::Context& c, const Rect& w) {
             return;
         }
         case theme::Ornament::Summer: {
-            // The sea along the bottom with its waves; a beach running diagonally into the bottom-right
-            // corner with the parasol and a sand castle on it; clouds at the top-right; a sunflower
-            // over the sea in the bottom-left.
-            const float sea = std::clamp(w.h * 0.22f, 90.f, 220.f);
-            Fill(c, ornament::Sea(w, sea), SeaColor());
-            Fill(c, ornament::Waves({w.x, w.Bottom() - sea * 0.85f, w.w, sea * 0.8f}, 4), WaveColor());
-            const float beachW = w.w * 0.42f, beachH = w.h * 0.40f;
+            // A beach sloping gently into the bottom-right corner with the parasol and a sand castle on
+            // it; clouds at the top-right; a sunflower in the bottom-left.
+            const float beachW = w.w * 0.55f, beachH = w.h * 0.22f;
             const ornament::Beach beach = ornament::BeachCorner(w, beachW, beachH);
             Fill(c, beach.sand, SandColor());
             Fill(c, beach.foam, FoamColor());

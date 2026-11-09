@@ -45,10 +45,6 @@ ui::Path Petals(const ui::Rect& area, int count, float size, uint32_t seed);
 // --- Summer -----------------------------------------------------------------------------------
 ui::Path Sunflower(Vec2 center, float radius, float degreesCcw);
 ui::Path Cloud(Vec2 center, float width);
-// The sea along the bottom of `window`, `height` tall, its horizon gently waving.
-ui::Path Sea(const ui::Rect& window, float height);
-// White crests on the sea: `rows` thin wavy lines across `area` (the sea's own rectangle).
-ui::Path Waves(const ui::Rect& area, int rows);
 // A beach in the bottom-right corner of `window`, its shore running diagonally from `width` left of
 // the corner (on the bottom edge) up to `height` above it (on the right edge), gently curved; and
 // the white foam along that shore.
@@ -82,7 +78,12 @@ ui::Path Snowflake(Vec2 center, float radius, float degreesCcw);
 // Falling snow, held still: round flakes of about `size` scattered over `area`.
 ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed);
 // Snow piled up at the bottom of `r` (a panel, a window): a soft wavy drift rising at most `depth`
-// from the bottom edge, inside it, highest in a few places and low at both ends (off the rounded corners).
+// from the bottom edge, inside it, sloping down over the last pixels at both ends (off the rounded
+// corners). Its swells are measured from r's left edge in pixels, so a box that grows or moves keeps
+// the same drift (only its right end follows).
 ui::Path SnowDrift(const ui::Rect& r, float depth, float cornerRadius);
+// Icicles hanging from the top edge of `window` at random places (spaced from its left edge, so
+// they stay put when the window is resized), each up to `maxLength` long, under a thin ridge of snow.
+ui::Path Icicles(const ui::Rect& window, float maxLength, uint32_t seed);
 
 }  // namespace rm::editor::ornament

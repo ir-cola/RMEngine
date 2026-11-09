@@ -44,11 +44,11 @@ void DrawSurface(ui::Context& c, const ui::Rect& r, Surface s, float radius = th
 void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
 // The pictures of the theme in use (the seasons), laid faintly over the main window (Hub / editor):
 //   スプリング  a cherry tree (bottom-right), a blossom (bottom-left), a flurry of petals (top-left)
-//   サマー      the sea and its waves, a beach in the bottom-right corner with a parasol and a sand
-//               castle, clouds, a sunflower (bottom-left)
+//   サマー      a beach sloping gently into the bottom-right corner with a parasol and a sand castle,
+//               clouds, a sunflower (bottom-left)
 //   フォール    leaves thick along the top and scattered below, a big maple leaf (bottom-left)
-//   ウィンター  falling snow (held still), snow piled at the bottom of every panel (DrawPanelFrame
-//               notes them: ui::Context::Decorate), a snowflake (bottom-left)
+//   ウィンター  falling snow (held still), icicles from the top edge, snow piled at the bottom of every
+//               panel (DrawPanelFrame notes them: ui::Context::Decorate), a snowflake (bottom-left)
 // Drawn after the window's content and before its menus and dialogs, never over the areas the
 // content asked to keep clear (ui::Context::KeepClear - the scene and game views). Nothing for most themes.
 void DrawOrnament(ui::Context& c, const ui::Rect& window);
