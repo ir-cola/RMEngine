@@ -249,6 +249,32 @@ RM_TEST(Reflect_SetFieldCommandUndo) {
     CHECK(Save(s, &u).Get("quality").AsString() == "Ultra");
 }
 
+RM_TEST(Reflect_SetFieldCommand_TypingIsOneEntry) {
+    Settings s;
+    Unknowns u;
+    const TypeDesc& t = TypeOf<Settings>();
+    UndoHistory h;
+    auto resolve = [&] { return EditTarget{&s, &u}; };
+    const FieldPath wp{IndexOf(t, "window"), IndexOf(TypeOf<Window>(), "width")};
+    const FieldPath hp{IndexOf(t, "window"), IndexOf(TypeOf<Window>(), "height")};
+    const int startW = s.window.width;
+    // "6", "64", "640" typed into the width field: one entry, undone at once.
+    for (int v : {600, 640, 1640}) {
+        const PathTarget pt = Resolve(t, &s, &u, wp);
+        h.Push(std::make_unique<SetFieldCommand>(t, wp, SaveField(*pt.field, pt.owner, pt.unknowns), json::Value(v), resolve, "幅", 42),
+               false);
+    }
+    CHECK(s.window.width == 1640 && h.UndoCount() == 1);
+    // Another field with the same key does not join; no key never joins.
+    h.Push(std::make_unique<SetFieldCommand>(t, hp, json::Value(s.window.height), json::Value(500), resolve, "高さ", 42), false);
+    h.Push(std::make_unique<SetFieldCommand>(t, hp, json::Value(500), json::Value(510), resolve, "高さ"), false);
+    CHECK(h.UndoCount() == 3);
+    h.Undo();
+    h.Undo();
+    h.Undo();
+    CHECK(s.window.width == startW);
+}
+
 RM_TEST(Reflect_Object_OwnsAValueOfAnyType) {
     const TypeDesc& t = TypeOf<Settings>();
     Object a(t);

@@ -377,7 +377,7 @@ void Tooltip(ui::Context& c, std::wstring_view text) {
 }
 
 bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::string& value, std::wstring_view placeholder,
-               bool enabled) {
+               bool enabled, bool selectAllOnFocus) {
     auto& p = c.P();
     const auto& in = c.In();
     const ui::Id id = c.MakeId(idStr);
@@ -438,8 +438,14 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
         }
     }
 
-    // 2) Clicks: focus / caret placement, or losing the focus.
+    // 2) Clicks: focus / caret placement, or losing the focus. While the left button is held after a
+    //    press in the field, the selection follows the mouse (from where it was pressed).
+    //    drag: 0 = none, 1 = selecting, 2 = pressed while entering the field (select all on release
+    //    unless the mouse moved: selectAllOnFocus).
+    float& drag = c.FloatState(id ^ 0xD1A6D1A6D1A6D1A6ull);
+    float& pressX = c.FloatState(id ^ 0x9E55E59E55E59E55ull);
     if (hovered && c.MousePressed()) {
+        const bool entering = !focused;
         if (!focused) {
             c.FocusText(id, Utf8ToWide(value), false);
             focused = true;
@@ -447,11 +453,24 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
         auto& e = c.FocusedEdit();
         e.SetCaret(p.HitTest(e.Text(), in.mouseX - inner.x + scroll, fs), in.shift);
         if (in.doubleClicked) e.SelectAll();
+        drag = entering && selectAllOnFocus && !in.shift && !in.doubleClicked ? 2.f : in.doubleClicked ? 0.f : 1.f;
+        pressX = in.mouseX;
+        if (drag == 2.f) e.SelectAll();  // shown at once; a drag replaces it with what it covers
         c.ResetCaretBlink();
     } else if (focused && !c.FocusIsNew() && (in.pressed[0] || in.pressed[1]) && !r.Contains(in.mouseX, in.mouseY)) {
         c.ClearFocus();
         focused = false;
+        drag = 0;
+    } else if (focused && drag != 0 && in.down[0]) {
+        if (drag == 1.f || std::fabs(in.mouseX - pressX) >= 3.f) {
+            auto& e = c.FocusedEdit();
+            if (drag == 2.f) e.SetCaret(p.HitTest(e.Text(), pressX - inner.x + scroll, fs), false);  // the drag starts where it was pressed
+            drag = 1.f;
+            e.SetCaret(p.HitTest(e.Text(), in.mouseX - inner.x + scroll, fs), true);
+            c.ResetCaretBlink();
+        }
     }
+    if (drag != 0 && (!in.down[0] || !focused)) drag = 0;
 
     // 3) What to draw.
     std::wstring display;

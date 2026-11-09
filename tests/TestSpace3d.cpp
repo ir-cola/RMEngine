@@ -178,6 +178,37 @@ RM_TEST(Space3d_EulerFromRotation) {
     CHECK(NearM(RotationMatrix(down), RotationMatrix({-30, -90, 10})));
 }
 
+RM_TEST(Space3d_FromWorld_ChangesOnlyWhatWasTyped) {
+    Transform parent;
+    parent.position = {5, 0, 0};
+    parent.rotation = {0, 90, 0};
+    parent.scale = {2, 2, 2};
+    const Mat4 pw = LocalMatrix(parent);
+    Transform child;
+    child.position = {1, 0, 0};
+    child.rotation = {0, 0, 30};
+    const WorldPlacement now = Decompose(WorldMatrix(pw, child), child.rotation);
+    // Nothing typed: nothing changes (to the last bit).
+    const Transform same = FromWorld(child, pw, now);
+    CHECK(same.position == child.position && same.rotation == child.rotation && same.scale == child.scale);
+    // The world position: only the position moves.
+    WorldPlacement want = now;
+    want.position = {5, 0, -4};  // 2 along the parent's X (turned to -Z), which is 2x as big
+    const Transform moved = FromWorld(child, pw, want);
+    CHECK(Near(moved.position, {2, 0, 0}) && moved.rotation == child.rotation && moved.scale == child.scale);
+    // The world rotation and scale come out as typed.
+    want = now;
+    want.rotation = {10, 20, 30};
+    const Transform turned = FromWorld(child, pw, want);
+    CHECK(NearM(RotationMatrix(Decompose(WorldMatrix(pw, turned)).rotation), RotationMatrix({10, 20, 30})));
+    CHECK(turned.position == child.position);
+    want = now;
+    want.scale = {6, 2, 2};
+    const Transform scaled = FromWorld(child, pw, want);
+    CHECK(Near(scaled.scale, {3, 1, 1}));
+    CHECK(Near(Decompose(WorldMatrix(pw, scaled)).scale, {6, 2, 2}));
+}
+
 RM_TEST(Space3d_Decompose_WorldPlacement) {
     Transform parent;
     parent.rotation = {0, 90, 0};
@@ -234,9 +265,17 @@ RM_TEST(Gizmo_FrameAndScreen) {
 RM_TEST(Gizmo_RingShowsTheHalfFacingTheEye) {
     const OrbitView v = FrontView();
     const gizmo::Frame f = *gizmo::MakeFrame(Mat4{}, gizmo::Tool::Rotate, gizmo::Space::World, v, 600);
-    const auto facing = gizmo::RingArcs(f, 2, v.Eye(), 64);  // about Z: faces the eye
+    const auto facing = gizmo::RingArcs(f, 2, v.Eye(), true, 64);  // about Z: faces the eye
     CHECK(facing.size() == 1 && facing[0].size() == 65);
-    const auto edge = gizmo::RingArcs(f, 1, v.Eye(), 64);  // about Y: half of it is in front
+    CHECK(gizmo::RingArcs(f, 2, v.Eye(), false, 64).empty());  // ... so it has no back
+    const auto back = gizmo::RingArcs(f, 1, v.Eye(), false, 64);  // about Y: the other half is behind
+    size_t backPoints = 0;
+    for (const auto& arc : back) {
+        backPoints += arc.size();
+        for (Vec3 p : arc) CHECK(p.z <= 1e-3f);
+    }
+    CHECK(back.size() == 1 && backPoints >= 32 && backPoints <= 34);
+    const auto edge = gizmo::RingArcs(f, 1, v.Eye(), true, 64);  // about Y: half of it is in front
     size_t points = 0;
     for (const auto& arc : edge) {
         points += arc.size();

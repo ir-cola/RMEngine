@@ -1,5 +1,7 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 
+#include "rm_engine/space3d/runtime/View.h"  // Inverse
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -113,6 +115,32 @@ WorldPlacement Decompose(const Mat4& w, Vec3 hint) {
     }
     out.rotation = EulerFromRotation(r, hint);
     return out;
+}
+
+Transform FromWorld(const Transform& current, const Mat4& parentWorld, const WorldPlacement& want) {
+    Transform t = current;
+    const auto toParent = Inverse(parentWorld);
+    if (!toParent) return t;  // a parent of scale 0: nothing can be put anywhere
+    const WorldPlacement now = Decompose(parentWorld * LocalMatrix(current), current.rotation);
+    if (!(want.position == now.position)) t.position = TransformPoint(*toParent, want.position);
+    if (!(want.rotation == now.rotation)) {
+        // The parent's turn alone (its scale taken out), undone: the turn left is the thing's own.
+        const auto parentTurn = Inverse(RotationMatrix(Decompose(parentWorld).rotation));
+        if (parentTurn) t.rotation = EulerFromRotation(*parentTurn * RotationMatrix(want.rotation), current.rotation);
+    }
+    if (!(want.scale == now.scale)) {
+        // World scale of an axis = own scale x how much the parent stretches that (turned) axis.
+        const Mat4 turned = parentWorld * RotationMatrix(t.rotation);
+        const float w[3] = {want.scale.x, want.scale.y, want.scale.z}, n[3] = {now.scale.x, now.scale.y, now.scale.z};
+        float* own[3] = {&t.scale.x, &t.scale.y, &t.scale.z};
+        for (int i = 0; i < 3; ++i) {
+            if (w[i] == n[i]) continue;
+            const float c0 = turned.m[i][0], c1 = turned.m[i][1], c2 = turned.m[i][2];
+            const float stretch = std::sqrt(c0 * c0 + c1 * c1 + c2 * c2);
+            if (stretch > 0) *own[i] = w[i] / stretch;
+        }
+    }
+    return t;
 }
 
 }  // namespace rm::space3d

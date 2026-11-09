@@ -66,9 +66,11 @@ inline constexpr float kHeadStart = 0.8f;                 // the arrow's head: f
 inline constexpr float kPlaneNear = 0.2f, kPlaneFar = 0.42f;  // the plane squares: 0.2 .. 0.42 of size
 Vec3 AxisEnd(const Frame& f, int axis);
 std::array<Vec3, 4> PlaneQuad(const Frame& f, Handle plane);
-// The ring of the rotate handle about `axis`, as polylines: only the half facing the eye is shown
-// and grabbed (the back half is hidden by the front), so the circle is cut where it turns away.
-std::vector<std::vector<Vec3>> RingArcs(const Frame& f, int axis, Vec3 eye, int segments = 64);
+// The ring of the rotate handle about `axis`, as polylines, cut where it turns away from the eye:
+// front = the half facing the eye (drawn strong, grabbed first), else the half behind (drawn faint,
+// so every ring reads as a whole circle; grabbed only where no front ring is nearer).
+std::vector<std::vector<Vec3>> RingArcs(const Frame& f, int axis, Vec3 eye, bool front = true, int segments = 64);
+inline constexpr float kBackPenalty = 5.f;  // pixels: a ring's back half is grabbed as if this much farther
 // An axis that points almost straight at the eye is not drawn or grabbed (it would be a dot).
 bool AxisShown(const Frame& f, const Screen& s, int axis);
 // ... and a plane square seen almost edge-on is not either. The square's corners on the screen in `out`.

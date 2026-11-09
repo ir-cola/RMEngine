@@ -40,9 +40,18 @@ struct Pass {
     std::wstring tooltip;
 };
 
-// A text box that reports its text only when the user is done: Enter, or leaving the field.
-// Esc puts the value back. While it is not being edited it simply shows `shown`.
-std::optional<std::string> CommitField(Pass& x, std::string_view id, const Rect& r, const std::string& shown, bool enabled) {
+// Every typing session gets its own merge key (unique in the program: two inspectors never share one).
+uint64_t NewSession() {
+    static uint64_t next = 0;
+    return ++next;
+}
+
+// A text box whose text is used as it is typed: returned after every change, and once more on
+// Enter / leaving the field when the value shown differs from it. Esc returns the value from before
+// the field was entered. While it is not being edited it simply shows `shown`. `merge` = the key of
+// this typing (one undo entry).
+std::optional<std::string> LiveField(Pass& x, std::string_view id, const Rect& r, const std::string& shown, bool enabled,
+                                     uint64_t& merge) {
     ui::Context& c = x.c;
     const ui::Id uid = c.MakeId(id);
     const bool wasEditing = x.st.editing == uid;
@@ -51,14 +60,20 @@ std::optional<std::string> CommitField(Pass& x, std::string_view id, const Rect&
     const bool focusedBefore = c.Focused() == uid;
     const bool enter = focusedBefore && c.KeyPressed(ui::Key::Enter);
     const bool escape = focusedBefore && c.KeyPressed(ui::Key::Escape);
-    w::TextField(c, id, r, buf, {}, enabled);
+    const std::string typedBefore = buf;
+    w::TextField(c, id, r, buf, {}, enabled, true);
     const bool focusedNow = c.Focused() == uid;
-    if (focusedNow) x.st.editing = uid;
+    if (focusedNow && !wasEditing) {
+        x.st.editing = uid;
+        x.st.original = shown;
+        x.st.session = NewSession();
+    }
+    merge = x.st.session;
     if (escape) {
         c.ClearFocus();
-        buf = shown;
         x.st.editing = 0;
-        return std::nullopt;
+        buf = x.st.original;
+        return x.st.original != shown ? std::optional<std::string>(x.st.original) : std::nullopt;
     }
     if (enter || (wasEditing && !focusedNow)) {
         if (enter) c.ClearFocus();
@@ -66,6 +81,7 @@ std::optional<std::string> CommitField(Pass& x, std::string_view id, const Rect&
         if (buf == shown) return std::nullopt;
         return buf;
     }
+    if (focusedNow && buf != typedBefore) return buf;
     return std::nullopt;
 }
 
@@ -121,15 +137,17 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
     c.PushId("field");
     for (const size_t i : path) c.PushId(static_cast<uint64_t>(i));
 
-    auto makeEdit = [&](json::Value after) {
+    auto makeEdit = [&](json::Value after, uint64_t merge = 0) {
         Edit e;
         e.block = x.block;
         e.path = path;
         e.before = reflect::SaveField(f, owner, u);
         e.after = std::move(after);
         e.label = std::format("「{}」を変更", f.Label());
+        e.merge = merge;
         if (e.before != e.after) x.edit = std::move(e);
     };
+    uint64_t merge = 0;
 
     switch (f.value.type) {
         case FieldType::Bool: {
@@ -141,15 +159,17 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
         case FieldType::Float: {
             const bool isInt = f.value.type == FieldType::Int;
             const double cur = isInt ? *static_cast<const int*>(value) : *static_cast<const float*>(value);
-            if (auto typed = CommitField(x, "v", valueR, reflect::FormatNumber(f, cur), enabled)) {
+            if (auto typed = LiveField(x, "v", valueR, reflect::FormatNumber(f, cur), enabled, merge)) {
                 if (auto n = reflect::NumberFromInput(f, *typed, cur)) {
-                    makeEdit(isInt ? json::Value(static_cast<int64_t>(*n)) : json::Value(static_cast<double>(static_cast<float>(*n))));
+                    makeEdit(isInt ? json::Value(static_cast<int64_t>(*n)) : json::Value(static_cast<double>(static_cast<float>(*n))), merge);
                 }
             }
             break;
         }
         case FieldType::String: {
-            if (auto typed = CommitField(x, "v", valueR, *static_cast<const std::string*>(value), enabled)) makeEdit(json::Value(*typed));
+            if (auto typed = LiveField(x, "v", valueR, *static_cast<const std::string*>(value), enabled, merge)) {
+                makeEdit(json::Value(*typed), merge);
+            }
             break;
         }
         case FieldType::Vec2:
@@ -168,11 +188,11 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, con
             static const char* kIds[] = {"x", "y", "z", "w"};
             for (size_t i = 0; i < n; ++i) {
                 const Rect r{area.x + (each + 4) * static_cast<float>(i), area.y, each, area.h};
-                if (auto typed = CommitField(x, kIds[i], r, reflect::FormatNumber(f, values[i]), enabled)) {
+                if (auto typed = LiveField(x, kIds[i], r, reflect::FormatNumber(f, values[i]), enabled, merge)) {
                     if (auto v = reflect::NumberFromInput(f, *typed, values[i])) {
                         json::Value arr = json::Value::MakeArray();
                         for (size_t k = 0; k < n; ++k) arr.Push(static_cast<double>(k == i ? static_cast<float>(*v) : values[k]));
-                        makeEdit(std::move(arr));
+                        makeEdit(std::move(arr), merge);
                     }
                 }
             }
@@ -303,6 +323,14 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 ns.v = ui::VAlign::Top;
                 c.P().Text({x.view.x + 14, x.y, x.view.w - 28, 40}, b.note, ns);
                 x.y += 42;
+            }
+            if (!b.modes.empty()) {
+                // The switch between the ways of showing the block, above its fields.
+                std::vector<std::wstring_view> labels(b.modes.begin(), b.modes.end());
+                const float wdt = std::min(84.f * static_cast<float>(labels.size()) + 4.f, x.view.w - 24);
+                const int picked = w::Segmented(c, "mode", {x.view.x + 12, x.y + 2, wdt, 26}, labels, b.mode);
+                if (picked >= 0 && picked != b.mode && b.setMode) b.setMode(picked);
+                x.y += 34;
             }
             if (b.type && b.object) {
                 FieldPath prefix;

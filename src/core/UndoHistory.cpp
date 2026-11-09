@@ -9,6 +9,11 @@ bool UndoHistory::Push(std::unique_ptr<ICommand> cmd, bool alreadyDone) {
         cmd->Do();
         executing_ = false;
     }
+    if (redo_.empty() && !undo_.empty() && undo_.back()->MergeWith(*cmd)) {
+        if (undo_.back()->IsNoOp()) undo_.pop_back();
+        Modified();
+        return true;
+    }
     undo_.push_back(std::move(cmd));
     redo_.clear();
     if (undo_.size() > maxDepth_) undo_.erase(undo_.begin());

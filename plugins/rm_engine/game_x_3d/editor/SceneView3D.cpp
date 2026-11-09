@@ -439,13 +439,17 @@ private:
 
         p.PushClip(r);
         if (tool == gizmo::Tool::Rotate) {
-            for (int a = 0; a < 3; ++a) {
-                const ui::Color col = colorOf(handleOf(a), a);
-                const float width = handleOf(a) == active ? 3.f : 2.f;
-                for (const auto& arc : gizmo::RingArcs(f, a, state_.camera.Eye())) {
-                    for (size_t i = 0; i + 1 < arc.size(); ++i) {
-                        const auto a0 = s.ToScreen(arc[i]), a1 = s.ToScreen(arc[i + 1]);
-                        if (a0 && a1) p.Line(a0->x, a0->y, a1->x, a1->y, col, width);
+            // The halves behind first and faint (each ring reads as a whole circle), then the front.
+            for (const bool front : {false, true}) {
+                for (int a = 0; a < 3; ++a) {
+                    const bool hot = handleOf(a) == active;
+                    const ui::Color col = colorOf(handleOf(a), a).Alpha(front ? 1.f : hot ? 0.6f : 0.3f);
+                    const float width = front ? (hot ? 3.f : 2.f) : 1.5f;
+                    for (const auto& arc : gizmo::RingArcs(f, a, state_.camera.Eye(), front)) {
+                        for (size_t i = 0; i + 1 < arc.size(); ++i) {
+                            const auto a0 = s.ToScreen(arc[i]), a1 = s.ToScreen(arc[i + 1]);
+                            if (a0 && a1) p.Line(a0->x, a0->y, a1->x, a1->y, col, width);
+                        }
                     }
                 }
             }

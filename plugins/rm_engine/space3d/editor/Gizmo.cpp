@@ -46,17 +46,19 @@ void Across(Vec3 axis, Vec3& u, Vec3& v) {
 std::optional<Vec3> NearestOnRing(const Frame& f, const Screen& s, Vec3 eye, int axis, Vec2 mouse, float* distance) {
     std::optional<Vec3> best;
     float bestD = std::numeric_limits<float>::infinity();
-    for (const auto& arc : RingArcs(f, axis, eye)) {
+    for (const bool front : {true, false}) {
+      for (const auto& arc : RingArcs(f, axis, eye, front)) {
         for (size_t i = 0; i + 1 < arc.size(); ++i) {
             const auto a = s.ToScreen(arc[i]), b = s.ToScreen(arc[i + 1]);
             if (!a || !b) continue;
-            const float d = DistanceToSegment(mouse, *a, *b);
+            const float d = DistanceToSegment(mouse, *a, *b) + (front ? 0.f : kBackPenalty);
             if (d < bestD) {
                 bestD = d;
                 // The nearer end is close enough to grab by (64 points around).
                 best = Len2(Sub(mouse, *a)) <= Len2(Sub(mouse, *b)) ? arc[i] : arc[i + 1];
             }
         }
+      }
     }
     if (distance) *distance = bestD;
     return best;
@@ -118,7 +120,7 @@ std::array<Vec3, 4> PlaneQuad(const Frame& f, Handle plane) {
             f.origin + u * kPlaneFar + v * kPlaneFar, f.origin + u * kPlaneNear + v * kPlaneFar};
 }
 
-std::vector<std::vector<Vec3>> RingArcs(const Frame& f, int axis, Vec3 eye, int segments) {
+std::vector<std::vector<Vec3>> RingArcs(const Frame& f, int axis, Vec3 eye, bool front, int segments) {
     Vec3 u, v;
     Across(f.axes[axis], u, v);
     const Vec3 toEye = Normalize(eye - f.origin);
@@ -128,10 +130,14 @@ std::vector<std::vector<Vec3>> RingArcs(const Frame& f, int axis, Vec3 eye, int 
         const float t = 2.f * std::numbers::pi_v<float> * static_cast<float>(i) / static_cast<float>(segments);
         const Vec3 dir = u * std::cos(t) + v * std::sin(t);
         pts[i] = f.origin + dir * f.size;
-        shown[i] = Dot(dir, toEye) >= -0.02f;  // a ring that faces the eye is shown whole
+        // A ring that faces the eye is all front (and has no back). The halves share their two ends,
+        // so front and back together make the whole circle without a gap.
+        const float d = Dot(dir, toEye);
+        shown[i] = front ? d >= -0.02f : d <= 0.02f && Dot(f.axes[axis], toEye) * Dot(f.axes[axis], toEye) < 0.9996f;
     }
     std::vector<std::vector<Vec3>> arcs;
     const auto start = std::find(shown.begin(), shown.end(), false);
+    if (std::find(shown.begin(), shown.end(), true) == shown.end()) return arcs;  // none of it
     if (start == shown.end()) {  // all of it: one closed loop
         pts.push_back(pts.front());
         arcs.push_back(std::move(pts));

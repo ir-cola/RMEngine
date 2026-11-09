@@ -93,6 +93,46 @@ RM_TEST(Undo_GroupIsOneEntryUndoneInReverse) {
     CHECK(v == 2);
 }
 
+namespace {
+// Typing: commands with the same key join.
+struct Typed final : ICommand {
+    int& target;
+    int before, after, key;
+    Typed(int& t, int b, int a, int k) : target(t), before(b), after(a), key(k) {}
+    void Do() override { target = after; }
+    void Undo() override { target = before; }
+    bool MergeWith(const ICommand& next) override {
+        const auto* n = dynamic_cast<const Typed*>(&next);
+        if (!n || n->key != key) return false;
+        after = n->after;
+        return true;
+    }
+    bool IsNoOp() const override { return before == after; }
+};
+}  // namespace
+
+RM_TEST(Undo_MergeTypingIntoOneEntry) {
+    UndoHistory h;
+    int modified = 0;
+    h.SetOnModified([&] { ++modified; });
+    int v = 0;
+    CHECK(h.Push(std::make_unique<Typed>(v, 0, 1, 7), false));
+    CHECK(h.Push(std::make_unique<Typed>(v, 1, 12, 7), false));
+    CHECK(h.Push(std::make_unique<Typed>(v, 12, 123, 7), false));
+    CHECK(v == 123 && h.UndoCount() == 1 && modified == 3);
+    CHECK(h.Undo() && v == 0);  // one undo: all of the typing
+    CHECK(h.Redo() && v == 123);
+    // After an undo nothing joins (the redo would be lost under it otherwise).
+    CHECK(h.Undo());
+    CHECK(h.Push(std::make_unique<Typed>(v, 0, 5, 7), false));
+    CHECK(h.UndoCount() == 1 && h.RedoCount() == 0 && v == 5);
+    // Another key: a new entry. Back to where it began: the entry goes.
+    CHECK(h.Push(std::make_unique<Typed>(v, 5, 6, 8), false));
+    CHECK(h.UndoCount() == 2);
+    CHECK(h.Push(std::make_unique<Typed>(v, 6, 5, 8), false));
+    CHECK(h.UndoCount() == 1 && v == 5);
+}
+
 RM_TEST(Undo_MaxDepth) {
     UndoHistory h;
     h.SetMaxDepth(3);

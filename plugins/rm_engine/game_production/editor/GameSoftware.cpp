@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <format>
 #include <memory>
+#include <unordered_map>
 
 namespace rm::game_production {
 
@@ -112,15 +113,31 @@ public:
 
     // The view is kept as read, so a scene view not opened this time keeps its camera (and keys of a
     // newer version stay).
+    // "inspectorModes": [[entity id, mode], ...] - how each entity's Transform is shown (switched by the user).
     void LoadView(const json::Value& view) override {
         view_ = view.IsObject() ? view : json::Value::MakeObject();
         if (sceneView_) sceneView_->LoadState(view_.Get("sceneView"));
+        modes_.clear();
+        for (const auto& pair : view_.Get("inspectorModes").Items()) {
+            if (pair.Items().size() == 2) modes_[static_cast<int>(pair.Items()[0].AsInt())] = pair.Items()[1].AsInt() != 0 ? 1 : 0;
+        }
     }
     json::Value SaveView() const override {
         json::Value v = view_.IsObject() ? view_ : json::Value::MakeObject();
         if (sceneView_) {
             if (json::Value s = sceneView_->SaveState(); !s.IsNull()) v.Set("sceneView", std::move(s));
         }
+        json::Value modes = json::Value::MakeArray();
+        std::vector<std::pair<int, int>> sorted(modes_.begin(), modes_.end());
+        std::sort(sorted.begin(), sorted.end());  // the same file for the same choices
+        for (const auto& [id, mode] : sorted) {
+            if (!scene_.Find(id)) continue;  // deleted since
+            json::Value pair = json::Value::MakeArray();
+            pair.Push(id);
+            pair.Push(mode);
+            modes.Push(std::move(pair));
+        }
+        v.Set("inspectorModes", std::move(modes));
         return v;
     }
 
@@ -331,22 +348,75 @@ private:
         return nullptr;
     }
 
-    // The values a component's plugin works out through the parents (read-only, so never edited):
-    // worked out again every time the inspector asks, into a value of their own.
+    // The component `type` of the entity and of its parents that have it: the top parent's first.
+    // Empty when the entity or its component is gone.
+    std::vector<const void*> Chain(int id, const std::string& type) const {
+        std::vector<const void*> chain;
+        const SceneEntity* self = scene_.Find(id);
+        const Component* own = self ? self->FindComponent(type) : nullptr;
+        if (!own || !own->Known()) return chain;
+        size_t steps = 0;  // a broken file could make a ring of parents
+        for (const SceneEntity* e = self; e && steps++ <= scene_.Entities().size(); e = scene_.Find(e->data.parent)) {
+            const Component* c = e->FindComponent(type);
+            if (c && c->Known()) chain.push_back(c->value.Get());
+        }
+        std::reverse(chain.begin(), chain.end());
+        return chain;
+    }
+
+    // The values a component's plugin works out through the parents: worked out again every time the
+    // inspector asks, into a value of their own (edits of it go through EditDerived).
     std::function<reflect::EditTarget()> Derived(int id, std::string type, const ComponentInfo* info) {
         auto value = std::make_shared<reflect::Object>(info->derivedType());
         return [this, id, type = std::move(type), info, value] {
-            std::vector<const void*> chain;
-            size_t steps = 0;  // a broken file could make a ring of parents
-            for (const SceneEntity* e = scene_.Find(id); e && steps++ <= scene_.Entities().size(); e = scene_.Find(e->data.parent)) {
-                const Component* c = e->FindComponent(type);
-                if (c && c->Known()) chain.push_back(c->value.Get());
-            }
+            const std::vector<const void*> chain = Chain(id, type);
             if (chain.empty()) return reflect::EditTarget{};  // gone (undo)
-            std::reverse(chain.begin(), chain.end());
             info->derive(chain, value->Get());
             return reflect::EditTarget{value->Get(), nullptr};
         };
+    }
+
+    // A derived value typed in the inspector: the component's plugin works out the component that
+    // gives it; the fields that change are edits of the component (one undo entry; typing one field
+    // joins into one entry).
+    void EditDerived(int id, const std::string& type, const ComponentInfo* info, editor::InspectBlock::Change ch) {
+        const std::vector<const void*> chain = Chain(id, type);
+        if (chain.empty()) return;
+        const reflect::TypeDesc& dt = info->derivedType();
+        const reflect::TypeDesc& ct = info->type();
+        reflect::Object derived(dt);
+        info->derive(chain, derived.Get());
+        const reflect::PathTarget pt = reflect::Resolve(dt, derived.Get(), nullptr, ch.path);
+        if (!pt.field) return;
+        reflect::LoadField(*pt.field, pt.owner, ch.after, nullptr, nullptr);
+        reflect::Object next(ct);
+        ct.copy(next.Get(), chain.back());
+        info->underive(chain, derived.Get(), next.Get());
+        const uint64_t diff = reflect::Diff(ct, chain.back(), next.Get());
+        if (diff == 0) return;
+        const auto resolve = ResolveComponent(id, type);
+        std::vector<std::unique_ptr<ICommand>> cmds;
+        for (size_t i = 0; i < ct.fields.size() && i < 64; ++i) {
+            if (!(diff >> i & 1)) continue;
+            const reflect::FieldDesc& f = ct.fields[i];
+            cmds.push_back(std::make_unique<reflect::SetFieldCommand>(ct, reflect::FieldPath{i}, reflect::SaveField(f, chain.back(), nullptr),
+                                                                      reflect::SaveField(f, next.Get(), nullptr), resolve, ch.label, ch.merge));
+        }
+        if (cmds.size() == 1) {
+            host_.History().Push(std::move(cmds.front()), false);
+            return;
+        }
+        auto group = std::make_unique<CommandGroup>(ch.label);
+        for (auto& cmd : cmds) group->Add(std::move(cmd));
+        host_.History().Push(std::move(group), false);
+    }
+
+    // How a component with derived values is shown for an entity: 1 = derived (the top level starts
+    // so), 0 = its own (a child starts so). Once switched it stays (kept in UserSettings).
+    int ModeOf(const SceneEntity& e) const {
+        const auto it = modes_.find(e.data.id);
+        if (it != modes_.end()) return it->second;
+        return e.data.parent == 0 ? 1 : 0;
     }
 
     // The inspector of one entity: the entity itself, then its components (each with ⋮ → 外す), and
@@ -368,11 +438,19 @@ private:
                     Edit(std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type); });
                 };
                 if (c.Known()) {
-                    blocks.push_back({c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(TrU8(label)), {}, {remove}});
-                    if (const ComponentInfo* info = InfoOf(c.type); info && info->derivedType && info->derive) {
-                        const reflect::TypeDesc& dt = info->derivedType();
-                        blocks.push_back({&dt, Derived(id, c.type, info), Utf8ToWide(TrU8(dt.label)), {}, {}});
+                    editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(TrU8(label)), {}, {remove}};
+                    if (const ComponentInfo* info = InfoOf(c.type); info && info->HasDerived()) {
+                        // ローカル / ワールド (or whatever the plugin calls them): one block, shown either way.
+                        b.modes = {Tr(info->ownLabel), Tr(info->derivedLabel)};
+                        b.mode = ModeOf(*e);
+                        b.setMode = [this, id](int m) { modes_[id] = m; };
+                        if (b.mode == 1) {
+                            b.type = &info->derivedType();
+                            b.resolve = Derived(id, c.type, info);
+                            b.onEdit = [this, id, type, info](editor::InspectBlock::Change ch) { EditDerived(id, type, info, std::move(ch)); };
+                        }
                     }
+                    blocks.push_back(std::move(b));
                 } else {
                     blocks.push_back({nullptr, {}, Utf8ToWide(label) + Tr(L" (使えない部品)"),
                                       Tr(L"この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。"), {remove}});
@@ -440,6 +518,7 @@ private:
     std::vector<const reflect::TypeDesc*> newEntityTypes_;  // components every new entity gets
     std::vector<const ComponentInfo*> componentInfos_;      // one per component type, as offered
     json::Value view_;  // UserSettings: how the user looks (the scene view's camera ...)
+    std::unordered_map<int, int> modes_;  // entity id -> how its component with derived values is shown
     bool hadData_ = false;
     bool inspectingEntities_ = false;  // the inspector shows the 階層's selection (not the settings)
 };

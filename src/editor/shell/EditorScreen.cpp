@@ -748,7 +748,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
         const InspectBlock& b = blocks[i];
         const reflect::EditTarget obj = b.type && b.resolve ? b.resolve() : reflect::EditTarget{};
         if (b.type && !obj.object) continue;  // gone
-        shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu});
+        shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode});
         source.push_back(i);
     }
     const bool gone = target.blocks && shown.empty();
@@ -766,9 +766,13 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu); edit && edit->block < source.size()) {
         // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly.
         const InspectBlock& b = blocks[source[edit->block]];
-        ws.history.Push(std::make_unique<reflect::SetFieldCommand>(*b.type, std::move(edit->path), std::move(edit->before),
-                                                                   std::move(edit->after), b.resolve, std::move(edit->label)),
-                        false);
+        if (b.onEdit) {
+            b.onEdit({std::move(edit->path), std::move(edit->before), std::move(edit->after), std::move(edit->label), edit->merge});
+        } else {
+            ws.history.Push(std::make_unique<reflect::SetFieldCommand>(*b.type, std::move(edit->path), std::move(edit->before),
+                                                                       std::move(edit->after), b.resolve, std::move(edit->label), edit->merge),
+                            false);
+        }
     }
 }
 

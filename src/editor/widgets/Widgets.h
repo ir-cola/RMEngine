@@ -98,8 +98,11 @@ void Separator(ui::Context& c, float x, float y, float width);
 void Tooltip(ui::Context& c, std::wstring_view text);
 
 // Single-line text field (IME, selection, clipboard). Returns true when the value changed.
+// Dragging the mouse selects; a double click selects everything. selectAllOnFocus: a click that
+// enters the field selects all of it (a value to type over - the inspector's fields); a drag that
+// enters it selects what it goes over instead.
 bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::string& valueUtf8,
-               std::wstring_view placeholder = {}, bool enabled = true);
+               std::wstring_view placeholder = {}, bool enabled = true, bool selectAllOnFocus = false);
 
 // Check box with a label. Returns true when the value changed.
 bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label);

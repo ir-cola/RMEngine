@@ -35,15 +35,19 @@ Vec3 EulerFromRotation(const Mat4& r, Vec3 hint = {});
 // In the parent's space: parentWorld * LocalMatrix(t) (the top level's parent is the identity).
 inline Mat4 WorldMatrix(const Mat4& parentWorld, const Transform& t) { return parentWorld * LocalMatrix(t); }
 
-// Where a thing is in the world, its parents included - shown read-only under its Transform.
+// Where a thing is in the world, its parents included - the inspector's ワールド view of a Transform.
 RM_STRUCT(Label="ワールドでの値 (親を含む)")
 struct WorldPlacement {
-    RM_PROPERTY(ReadOnly, Label="位置") Vec3 position{0, 0, 0};
-    RM_PROPERTY(ReadOnly, Label="回転 (度)") Vec3 rotation{0, 0, 0};
-    RM_PROPERTY(ReadOnly, Label="大きさ", Tooltip="親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です") Vec3 scale{1, 1, 1};
+    RM_PROPERTY(Edit, Label="位置") Vec3 position{0, 0, 0};
+    RM_PROPERTY(Edit, Label="回転 (度)", Tooltip="X 軸 → Y 軸 → Z 軸 の順に回します (オイラー角)") Vec3 rotation{0, 0, 0};
+    RM_PROPERTY(Edit, Label="大きさ", Tooltip="親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です") Vec3 scale{1, 1, 1};
 };
 // A world matrix taken apart into position, rotation and (positive) scale; a mirrored matrix gets
 // a negative X scale. `hint`: as EulerFromRotation.
 WorldPlacement Decompose(const Mat4& world, Vec3 hint = {});
+// The Transform that puts a thing at `want` in the world under a parent at `parentWorld`, changing
+// only what `want` changes from where `current` puts it now (typing the world X position moves, never
+// turns). Exact unless a parent is scaled unevenly and turned (then the nearest).
+Transform FromWorld(const Transform& current, const Mat4& parentWorld, const WorldPlacement& want);
 
 }  // namespace rm::space3d

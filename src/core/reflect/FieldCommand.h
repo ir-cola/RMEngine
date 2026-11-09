@@ -6,6 +6,7 @@
 #include "core/UndoHistory.h"
 #include "core/reflect/Data.h"
 
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -19,12 +20,16 @@ struct EditTarget {
 
 class SetFieldCommand final : public ICommand {
 public:
+    // mergeKey != 0: later commands with the same key (and field) join this one - the keys typed into
+    // one field while it has the focus are one undo entry.
     SetFieldCommand(const TypeDesc& type, FieldPath path, json::Value before, json::Value after,
-                    std::function<EditTarget()> resolve, std::string label);
+                    std::function<EditTarget()> resolve, std::string label, uint64_t mergeKey = 0);
 
     void Do() override { Apply(after_); }
     void Undo() override { Apply(before_); }
     std::string Label() const override { return label_; }
+    bool MergeWith(const ICommand& next) override;
+    bool IsNoOp() const override { return before_ == after_; }
 
 private:
     void Apply(const json::Value& v);
@@ -34,6 +39,7 @@ private:
     json::Value before_, after_;
     std::function<EditTarget()> resolve_;
     std::string label_;
+    uint64_t mergeKey_ = 0;
 };
 
 }  // namespace rm::reflect

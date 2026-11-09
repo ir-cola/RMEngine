@@ -27,12 +27,21 @@ inline constexpr char kComponentPoint[] = "rm_engine.game_production.component";
 struct ComponentInfo {
     const reflect::TypeDesc& (*type)();  // e.g. &reflect::TypeOf<space3d::Transform>
     bool onNewEntities = false;          // every new entity gets one
-    // Optional: values worked out from this component and the same component of every parent, shown
-    // read-only under it (a Transform's place in the world - game production does not know what they
-    // mean). `chain`: the top parent's value first, this entity's last (parents without the component
-    // are skipped); `out`: a value of derivedType(). The block's title is derivedType()'s label.
+    // Optional: a second way to show the component - values worked out from it and the same component
+    // of every parent (a Transform in the world). The inspector puts a switch ownLabel / derivedLabel
+    // above its fields; an entity at the top level starts with the derived values shown, a child with
+    // its own (game production does not know what they mean). All four or none.
+    //   derive:   `chain` = the top parent's value first, this entity's last (parents without the
+    //             component are skipped) -> `out`, a value of derivedType().
+    //   underive: the derived values the user typed -> `component` (a copy of chain's last, changed
+    //             so that it derives them).
     const reflect::TypeDesc& (*derivedType)() = nullptr;
     void (*derive)(std::span<const void* const> chain, void* out) = nullptr;
+    void (*underive)(std::span<const void* const> chain, const void* derived, void* component) = nullptr;
+    const wchar_t* ownLabel = nullptr;      // e.g. ローカル (a TrKey string: translated when shown)
+    const wchar_t* derivedLabel = nullptr;  // e.g. ワールド
+
+    bool HasDerived() const { return derivedType && derive && underive && ownLabel && derivedLabel; }
 };
 
 struct Component {

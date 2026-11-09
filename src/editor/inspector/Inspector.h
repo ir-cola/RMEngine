@@ -8,13 +8,16 @@
 // block has a title, an optional menu (⋮: e.g. 外す) and its fields; under the blocks there can be
 // an "add" button whose menu the software fills. The word "component" is the game's, not the core's.
 //
-// It never writes into an object. A change the user finishes (Enter / leaving the field / a click
-// on a check box or a list item) comes back as an Edit (with the index of its block), which the
-// caller turns into a reflect::SetFieldCommand on the software's history - so every edit is
-// undoable and marks the project unsaved (rule 7). Numbers go through reflect::NumberFromInput: the
-// same Min / Max / rounding as loading a file (design R1 T3).
+// It never writes into an object. A change comes back as an Edit (with the index of its block),
+// which the caller turns into a reflect::SetFieldCommand on the software's history - so every edit
+// is undoable and marks the project unsaved (rule 7). Text and number fields send an Edit for every
+// key typed (the value changes as it is typed), all with the same `merge` key while the field keeps
+// the focus, so the history keeps one entry for the whole typing; Esc sends the value from before
+// the field was entered (the entry goes away). A click into a field selects all of it; a drag
+// selects what it covers. Numbers go through reflect::NumberFromInput: the same Min / Max /
+// rounding as loading a file (design R1 T3) - text that is not a number yet ("-", "1e") waits.
 //
-//   bool           check box          int / float     number field (Enter / leaving = set)
+//   bool           check box          int / float     number field
 //   std::string    text field         Vec2/3, Color   one number field per component (+ a swatch)
 //   enum           drop-down list (a name this version does not know shows as "名前 (不明)")
 //   struct         its fields, indented          std::vector   read-only list for now
@@ -39,6 +42,7 @@ struct Edit {
     reflect::FieldPath path;
     json::Value before, after;
     std::string label;  // for the undo history, e.g. 「目標 FPS」を変更
+    uint64_t merge = 0;  // != 0: typing into one field - edits with the same key are one undo entry
 };
 
 // One lump of values.
@@ -49,12 +53,19 @@ struct Block {
     std::wstring title;           // the header (folds the block when clicked); empty = no header
     std::wstring note;            // a line under the header
     std::vector<w::Action> menu;  // the header's ⋮ menu; empty = no button
+    // Ways to show the block (e.g. ローカル / ワールド): a switch above its fields; empty = none.
+    // Choosing one calls setMode - the caller then gives the block shown that way.
+    std::vector<std::wstring> modes;
+    int mode = 0;
+    std::function<void(int)> setMode;
 };
 
 // Per inspector: text being typed, the open drop-down / menu, folded blocks.
 struct State {
     std::unordered_map<ui::Id, std::string> text;
     ui::Id editing = 0;
+    std::string original;  // the value of the field being edited when it was entered (Esc)
+    uint64_t session = 0;  // the merge key of that typing
     w::Popup popup;  // a drop-down list of an enum field
     size_t popupBlock = 0;
     reflect::FieldPath popupPath;

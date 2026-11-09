@@ -21,6 +21,14 @@ public:
     virtual void Do() = 0;
     virtual void Undo() = 0;
     virtual std::string Label() const { return {}; }
+    // Typing into a field applies every key at once, but is one entry: the history asks the newest
+    // entry to take in the next command (true = taken: it now ends where `next` ends).
+    virtual bool MergeWith(const ICommand& next) {
+        (void)next;
+        return false;
+    }
+    // After merging, an entry that ends where it began (typed, then Esc) is dropped.
+    virtual bool IsNoOp() const { return false; }
 };
 
 // Several edits that are one action for the user (a gizmo drag of 3 selected objects): one entry,
@@ -52,6 +60,8 @@ public:
 
     // alreadyDone = true: the edit has been applied by the caller (typical for UI drags).
     // Returns false when called from inside Undo()/Redo() (the command is dropped).
+    // When nothing was undone since the newest entry and it takes `cmd` in (ICommand::MergeWith), no
+    // new entry is made; if that leaves it changing nothing, it is removed.
     bool Push(std::unique_ptr<ICommand> cmd, bool alreadyDone = true);
 
     bool CanUndo() const { return !executing_ && !undo_.empty(); }

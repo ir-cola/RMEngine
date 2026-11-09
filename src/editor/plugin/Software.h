@@ -53,6 +53,22 @@ struct InspectBlock {
     std::wstring title;           // header (empty = none)
     std::wstring note;            // a line under the header
     std::vector<w::Action> menu;  // the header's ⋮ menu (e.g. 外す)
+    // Ways to show the block (e.g. a Transform as ローカル / ワールド): a switch above its fields.
+    // Choosing one calls setMode; the software then gives the block shown that way.
+    std::vector<std::wstring> modes;
+    int mode = 0;
+    std::function<void(int)> setMode;
+    // Set when the object shown is not the one edited (values worked out from it - a Transform shown
+    // in the world): the software turns the change into edits of its own data and puts them in its
+    // history. Unset: the change is a reflect::SetFieldCommand on `resolve`'s object. `merge` != 0:
+    // typing into one field (inspector::Edit::merge) - one undo entry.
+    struct Change {
+        reflect::FieldPath path;
+        json::Value before, after;
+        std::string label;
+        uint64_t merge = 0;
+    };
+    std::function<void(Change)> onEdit;
 };
 
 struct Inspectable {
