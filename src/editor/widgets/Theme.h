@@ -43,6 +43,33 @@ inline constexpr Palette kLight{
     Color::Hex(0xC2C4CB), Color::Hex(0x9EA1AA), Color::Hex(0x000000, 0.35f), 0xE8E8EC, true,
 };
 
+// 深い青: dark navy, a blue accent.
+inline constexpr Palette kMidnight{
+    Color::Hex(0x161B26), Color::Hex(0x111520), Color::Hex(0x1C2230), Color::Hex(0x232A3A), Color::Hex(0x2E3648),
+    Color::Hex(0x44506A), Color::Hex(0x10141D), Color::Hex(0x283044), Color::Hex(0x20273A), Color::Hex(0x1E3354),
+    Color::Hex(0x3D8BFD), Color::Hex(0x5A9DFF), Color::Hex(0x2A6FD6), Color::Hex(0xE4E8F0), Color::Hex(0x98A3B8),
+    Color::Hex(0x667089), Color::Hex(0xFF6B6B), Color::Hex(0xF2C14E), Color::Hex(0xE3B341), Color::Hex(0x000000, 0.40f),
+    Color::Hex(0x3A4459), Color::Hex(0x5A6680), Color::Hex(0x000000, 0.55f), 0x111520, false,
+};
+
+// 森: dark with a touch of green, a green accent.
+inline constexpr Palette kForest{
+    Color::Hex(0x171D1A), Color::Hex(0x121714), Color::Hex(0x1D2420), Color::Hex(0x242C27), Color::Hex(0x303A34),
+    Color::Hex(0x46544B), Color::Hex(0x111613), Color::Hex(0x29322D), Color::Hex(0x222A25), Color::Hex(0x1F3A2C),
+    Color::Hex(0x2F9E6B), Color::Hex(0x3FB27F), Color::Hex(0x247F56), Color::Hex(0xE5EBE7), Color::Hex(0x9CA8A0),
+    Color::Hex(0x6A766E), Color::Hex(0xFF6B6B), Color::Hex(0xF2C14E), Color::Hex(0xE3B341), Color::Hex(0x000000, 0.38f),
+    Color::Hex(0x3C4741), Color::Hex(0x5C6A62), Color::Hex(0x000000, 0.55f), 0x121714, false,
+};
+
+// 紙: light and warm (cream paper), a burnt-orange accent.
+inline constexpr Palette kPaper{
+    Color::Hex(0xF4EFE6), Color::Hex(0xEAE3D6), Color::Hex(0xFBF8F2), Color::Hex(0xF0EADF), Color::Hex(0xD8CFBE),
+    Color::Hex(0xBCB09A), Color::Hex(0xFFFDF8), Color::Hex(0xEAE2D3), Color::Hex(0xDFD6C5), Color::Hex(0xF5DCCB),
+    Color::Hex(0xC2571A), Color::Hex(0xD66A2C), Color::Hex(0xA34512), Color::Hex(0x2B2620), Color::Hex(0x655D52),
+    Color::Hex(0x978D7F), Color::Hex(0xC83A2E), Color::Hex(0x9C6F00), Color::Hex(0xB7831B), Color::Hex(0x000000, 0.14f),
+    Color::Hex(0xCFC5B3), Color::Hex(0xA89D89), Color::Hex(0x000000, 0.32f), 0xEAE3D6, true,
+};
+
 // The palette in use (dark until Apply is called).
 inline Color Bg = kDark.bg;
 inline Color Sidebar = kDark.sidebar;
@@ -80,6 +107,9 @@ inline constexpr ThemeInfo kThemes[] = {
     {"Dark", TrKey(L"黒"), &kDark},
     {"Light", TrKey(L"白"), &kLight},
     {"System", TrKey(L"PC の設定に合わせる"), nullptr},
+    {"Midnight", TrKey(L"深い青"), &kMidnight},
+    {"Forest", TrKey(L"森"), &kForest},
+    {"Paper", TrKey(L"紙"), &kPaper},
 };
 inline std::span<const ThemeInfo> Themes() { return kThemes; }
 // An unknown id (a theme of a newer version, a typo in hub.json) is the first theme.

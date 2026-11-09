@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "色のテーマを 3 つ追加: 深い青 (紺と青)・森 (緑)・紙 (クリーム色と橙)",
+          "en": "Three new color themes: Midnight (navy and blue), Forest (green) and Paper (cream and orange)"
+        },
+        {
           "ja": "オプション: 色のテーマは「テーマを変更…」から専用の画面で選ぶように。テーマをカードで 3 列に並べ、それぞれの色で描いた小さな絵を見て選べる",
           "en": "Options: the color theme is now chosen on its own screen (\"Change theme…\"). Themes are cards in three columns, each with a small picture in its own colors"
         },
