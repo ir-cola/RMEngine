@@ -106,6 +106,14 @@ bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::stri
 
 // Check box with a label. Returns true when the value changed.
 bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label);
+// A switch as on a phone: a long round track, its round knob slides to the right when on (the track
+// turns the accent color). `offLabel` / `onLabel` (optional) stand at its left / right; the one that
+// is chosen is bright. A click anywhere on it turns it over. Returns true when clicked (`on` changed).
+// The width it takes: SwitchWidth.
+bool Switch(ui::Context& c, std::string_view id, float x, float y, bool& on, std::wstring_view offLabel = {},
+            std::wstring_view onLabel = {});
+float SwitchWidth(ui::Context& c, std::wstring_view offLabel = {}, std::wstring_view onLabel = {});
+inline constexpr float kSwitchH = 22.f;
 
 // Rounded panel with a title bar. Returns the content area.
 ui::Rect Panel(ui::Context& c, const ui::Rect& r, std::wstring_view title);

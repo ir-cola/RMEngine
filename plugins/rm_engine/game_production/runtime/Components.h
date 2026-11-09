@@ -27,10 +27,10 @@ inline constexpr char kComponentPoint[] = "rm_engine.game_production.component";
 struct ComponentInfo {
     const reflect::TypeDesc& (*type)();  // e.g. &reflect::TypeOf<space3d::Transform>
     bool onNewEntities = false;          // every new entity gets one
-    // Optional: a second way to show the component - values worked out from it and the same component
-    // of every parent (a Transform in the world). The inspector puts a switch ownLabel / derivedLabel
-    // above its fields; an entity at the top level starts with the derived values shown, a child with
-    // its own (game production does not know what they mean). All four or none.
+    // Optional: a second way to show a child's component - values worked out from it and the same
+    // component of every parent (a Transform in the world). The inspector puts a switch ownLabel /
+    // derivedLabel above its fields (only for a child: at the top level both are the same); it starts
+    // with its own values (game production does not know what they mean). All five or none.
     //   derive:   `chain` = the top parent's value first, this entity's last (parents without the
     //             component are skipped) -> `out`, a value of derivedType().
     //   underive: the derived values the user typed -> `component` (a copy of chain's last, changed

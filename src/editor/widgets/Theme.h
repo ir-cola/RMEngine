@@ -198,6 +198,9 @@ inline Color InkOn(Color bg) {
 }
 // Text and marks on the accent (always white: the accent is the same red on both themes).
 inline Color OnAccent() { return Color{1, 1, 1, 1}; }
+// A switch (w::Switch): the track when off, and the round knob (white in every theme, as on a phone).
+inline Color SwitchOff() { return IsLight ? Color::Hex(0xD3D6DC) : Color::Hex(0x3B3F48); }
+inline Color SwitchKnob() { return Color{1, 1, 1, 1}; }
 
 // --- 3D views (scene view): the floor, the axes, things in the scene -------------------------
 inline Color SceneBackground() { return IsLight ? Shade(Bg, -0.07f) : Shade(Field, -0.1f); }

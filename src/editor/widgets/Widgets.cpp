@@ -560,6 +560,62 @@ bool Checkbox(ui::Context& c, std::string_view idStr, const Rect& r, bool& value
     return false;
 }
 
+namespace {
+constexpr float kTrackW = 40.f, kLabelGap = 8.f;
+}  // namespace
+
+float SwitchWidth(ui::Context& c, std::wstring_view offLabel, std::wstring_view onLabel) {
+    float w = kTrackW;
+    if (!offLabel.empty()) w += c.P().TextWidth(offLabel, theme::FontSize) + kLabelGap;
+    if (!onLabel.empty()) w += c.P().TextWidth(onLabel, theme::FontSize) + kLabelGap;
+    return w;
+}
+
+bool Switch(ui::Context& c, std::string_view idStr, float x, float y, bool& on, std::wstring_view offLabel, std::wstring_view onLabel) {
+    auto& p = c.P();
+    const ui::Id id = c.MakeId(idStr);
+    const Rect all{x, y, SwitchWidth(c, offLabel, onLabel), kSwitchH};
+    const auto b = c.ButtonBehavior(id, all);
+    if (b.hovered) c.SetCursor(ui::Cursor::Hand);
+    if (b.clicked) on = !on;
+
+    // Where the knob is: 0 = left (off) .. 1 = right (on). It slides there over a few frames.
+    float& pos = c.FloatState(id ^ 0x5717C85717C85717ull, on ? 1.f : 0.f);
+    const float target = on ? 1.f : 0.f;
+    if (pos != target) {
+        pos = target > pos ? std::min(target, pos + 0.2f) : std::max(target, pos - 0.2f);
+        c.RequestAnimation();
+    }
+
+    ui::TextStyle ts;
+    ts.size = theme::FontSize;
+    float cx = x;
+    if (!offLabel.empty()) {
+        const float tw = p.TextWidth(offLabel, ts.size);
+        ts.color = !on ? theme::Text : theme::TextFaint;
+        ts.bold = !on;
+        p.Text({cx, y, tw + 2, kSwitchH}, offLabel, ts);
+        cx += tw + kLabelGap;
+    }
+    const Rect track{cx, y, kTrackW, kSwitchH};
+    const float r = kSwitchH * 0.5f;
+    // The track turns from grey to the accent as the knob goes right.
+    p.FillRoundRect(track, r, Mix(theme::SwitchOff(), b.hovered ? theme::AccentHover : theme::Accent, pos));
+    if (pos < 1.f) p.StrokeRoundRect(track, r, theme::Border.Alpha(1.f - pos));
+    const float knobR = r - 2.f;
+    const float kx = track.x + r + (track.w - 2.f * r) * pos;
+    p.FillCircle(kx, track.y + r + 0.8f, knobR, theme::Shadow.Alpha(0.35f));  // a soft shade under it
+    p.FillCircle(kx, track.y + r, knobR, theme::SwitchKnob());
+    cx += kTrackW + kLabelGap;
+    if (!onLabel.empty()) {
+        const float tw = p.TextWidth(onLabel, ts.size);
+        ts.color = on ? theme::Text : theme::TextFaint;
+        ts.bold = on;
+        p.Text({cx, y, tw + 2, kSwitchH}, onLabel, ts);
+    }
+    return b.clicked;
+}
+
 Rect Panel(ui::Context& c, const Rect& r, std::wstring_view title) {
     auto& p = c.P();
     DrawSurface(c, r, Surface::Panel, 6.f);

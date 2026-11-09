@@ -11,8 +11,8 @@
           "en": "Inspector fields: a click selects all, a drag selects part, and values apply as you type (no Enter; one undo per field)"
         },
         {
-          "ja": "インスペクターの Transform に「ローカル / ワールド」の切り替え (ワールドのまま打っても動く)",
-          "en": "Local / World switch on the inspector's Transform (world values can be typed too)"
+          "ja": "インスペクターの子の Transform に「ローカル / ワールド」のスイッチ (丸が左右にすべる。ワールドのまま打っても動く)",
+          "en": "Local / World switch (a sliding knob) on a child’s Transform in the inspector (world values can be typed too)"
         },
         {
           "ja": "回転のギズモの輪を、奥の半分も薄く描いて 1 周見えるように",

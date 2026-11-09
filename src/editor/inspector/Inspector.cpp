@@ -324,8 +324,13 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 c.P().Text({x.view.x + 14, x.y, x.view.w - 28, 40}, b.note, ns);
                 x.y += 42;
             }
-            if (!b.modes.empty()) {
-                // The switch between the ways of showing the block, above its fields.
+            if (b.modes.size() == 2) {
+                // Two ways of showing the block: a switch above its fields (left = the first way).
+                bool second = b.mode == 1;
+                if (w::Switch(c, "mode", x.view.x + 12, x.y + 4, second, b.modes[0], b.modes[1]) && b.setMode) b.setMode(second ? 1 : 0);
+                x.y += 32;
+            } else if (!b.modes.empty()) {
+                // More ways: one strip of choices.
                 std::vector<std::wstring_view> labels(b.modes.begin(), b.modes.end());
                 const float wdt = std::min(84.f * static_cast<float>(labels.size()) + 4.f, x.view.w - 24);
                 const int picked = w::Segmented(c, "mode", {x.view.x + 12, x.y + 2, wdt, 26}, labels, b.mode);

@@ -411,12 +411,11 @@ private:
         host_.History().Push(std::move(group), false);
     }
 
-    // How a component with derived values is shown for an entity: 1 = derived (the top level starts
-    // so), 0 = its own (a child starts so). Once switched it stays (kept in UserSettings).
+    // How a child's component with derived values is shown: 0 = its own (as it starts), 1 = derived.
+    // Once switched it stays (kept in UserSettings).
     int ModeOf(const SceneEntity& e) const {
         const auto it = modes_.find(e.data.id);
-        if (it != modes_.end()) return it->second;
-        return e.data.parent == 0 ? 1 : 0;
+        return it != modes_.end() ? it->second : 0;
     }
 
     // The inspector of one entity: the entity itself, then its components (each with ⋮ → 外す), and
@@ -439,8 +438,9 @@ private:
                 };
                 if (c.Known()) {
                     editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(TrU8(label)), {}, {remove}};
-                    if (const ComponentInfo* info = InfoOf(c.type); info && info->HasDerived()) {
-                        // ローカル / ワールド (or whatever the plugin calls them): one block, shown either way.
+                    // A child: ローカル / ワールド (or whatever the plugin calls them), one block shown either way.
+                    // At the top level both ways are the same numbers, so there is no switch.
+                    if (const ComponentInfo* info = InfoOf(c.type); info && info->HasDerived() && e->data.parent != 0) {
                         b.modes = {Tr(info->ownLabel), Tr(info->derivedLabel)};
                         b.mode = ModeOf(*e);
                         b.setMode = [this, id](int m) { modes_[id] = m; };
