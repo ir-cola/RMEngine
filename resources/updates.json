@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "色のテーマに「桜」を追加 (淡い桜色と濃いピンク)",
+          "en": "A new color theme: Sakura (pale cherry-blossom pink with a deep pink accent)"
+        },
+        {
           "ja": "色のテーマを 3 つ追加: 深い青 (紺と青)・森 (緑)・紙 (クリーム色と橙)",
           "en": "Three new color themes: Midnight (navy and blue), Forest (green) and Paper (cream and orange)"
         },

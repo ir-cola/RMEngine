@@ -70,6 +70,15 @@ inline constexpr Palette kPaper{
     Color::Hex(0xCFC5B3), Color::Hex(0xA89D89), Color::Hex(0x000000, 0.32f), 0xEAE3D6, true,
 };
 
+// 桜: light, pale cherry-blossom pink, a deep pink accent.
+inline constexpr Palette kSakura{
+    Color::Hex(0xFBF1F4), Color::Hex(0xF5E4EA), Color::Hex(0xFFFAFB), Color::Hex(0xF8EBEF), Color::Hex(0xE8CFD8),
+    Color::Hex(0xD4AFBD), Color::Hex(0xFFFFFF), Color::Hex(0xF3E1E7), Color::Hex(0xEBD3DC), Color::Hex(0xF9D5E1),
+    Color::Hex(0xD94F7E), Color::Hex(0xE6668F), Color::Hex(0xB93D67), Color::Hex(0x2E2226), Color::Hex(0x6E5A61),
+    Color::Hex(0xA08C93), Color::Hex(0xC8322E), Color::Hex(0x9C6F00), Color::Hex(0xC08A2A), Color::Hex(0x000000, 0.13f),
+    Color::Hex(0xE2C6D0), Color::Hex(0xC6A3B0), Color::Hex(0x000000, 0.30f), 0xF5E4EA, true,
+};
+
 // The palette in use (dark until Apply is called).
 inline Color Bg = kDark.bg;
 inline Color Sidebar = kDark.sidebar;
@@ -111,6 +120,7 @@ inline constexpr ThemeInfo kThemes[] = {
     {"Midnight", TrKey(L"深い青"), &kMidnight, 1},
     {"Forest", TrKey(L"森"), &kForest, 1},
     {"Paper", TrKey(L"紙"), &kPaper, 1},
+    {"Sakura", TrKey(L"桜"), &kSakura, 1},
 };
 inline std::span<const ThemeInfo> Themes() { return kThemes; }
 // An unknown id (a theme of a newer version, a typo in hub.json) is the first theme.
