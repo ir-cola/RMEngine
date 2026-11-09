@@ -7,24 +7,28 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "季節の左下のシルエットを、4 つとも同じ大きさの四角にそろえる (椛が小さかった)",
+          "en": "The seasons' bottom-left silhouettes all fill the same square (the maple leaf was too small)"
+        },
+        {
           "ja": "季節のテーマ: 「桜」を「スプリング」に。「サマー」「フォール」「ウィンター」を追加",
           "en": "Seasonal themes: Sakura is now Spring; added Summer, Fall and Winter"
         },
         {
-          "ja": "スプリング: 右下に桜の木、左上に花吹雪 (別のウィンドウにも)",
-          "en": "Spring: a cherry tree in the bottom-right and a petal flurry in the top-left (also in panel windows)"
+          "ja": "スプリング: 右の端全体に桜の木、そこから花びらが吹雪く。左上にも花吹雪 (別のウィンドウにも)",
+          "en": "Spring: a cherry tree along the whole right edge with petals blowing off it, and a flurry at the top-left (also in panel windows)"
         },
         {
-          "ja": "サマー: 濃いめの青、右下になだらかな砂浜 (パラソルと、砂浜とつながった手作り風の砂の城)、雲、左下にひまわり",
-          "en": "Summer: a deeper blue, a gently sloping beach in the bottom-right (a parasol and a hand-built sand castle growing out of the sand), clouds, a sunflower in the bottom-left"
+          "ja": "サマー: ほかの季節と同じ作りに。右下に浜辺のシルエット (砂の丘・パラソル・砂の城)、右上に雲、左下にひまわり",
+          "en": "Summer: made like the other seasons - a beach silhouette in the bottom-right (sand mound, parasol, sand castle), clouds at the top-right, a sunflower in the bottom-left"
         },
         {
           "ja": "フォール: 上に紅葉した葉がいっぱい (下の方まで散らばる)、左下に椛の葉",
           "en": "Fall: plenty of autumn leaves along the top, drifting further down, and a maple leaf in the bottom-left"
         },
         {
-          "ja": "ウィンター: 青みの強い色、雪が降り、上にまばらなつらら、パネルの下に雪が積もる (幅を変えても形が同じ)。左下に雪の結晶",
-          "en": "Winter: a bluer palette, falling snow, a few icicles along the top, snow piled at the bottom of panels (same shape when resized), a snowflake in the bottom-left"
+          "ja": "ウィンター: 青みの強い色、雪が降り、上にまばらな氷らしいつらら (端で切れて見える)、パネルの下に雪が積もる。左下に雪の結晶",
+          "en": "Winter: a bluer palette, falling snow, a few icy-looking icicles along the top (cut off at the edge), snow piled at the bottom of panels, a snowflake in the bottom-left"
         },
         {
           "ja": "インスペクター: 数の名前 (ベクトルは X / Y / Z) を左右にドラッグして値を変える",

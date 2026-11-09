@@ -88,10 +88,16 @@ void Winter(ui::Context& c, const Rect& w, float scale) {
     using namespace theme::season;
     const int count = std::max(20, static_cast<int>(w.w * w.h / 3600.f));
     Fill(c, ornament::Snowfall(w, count, 5.5f * scale, 0x5A0Fu), Flake());
-    // A few icicles here and there from the window's top edge (a shade 1px lower first, so their edges show).
-    const float icicle = 38.f * scale;
-    Fill(c, ornament::Icicles({w.x, w.y + 1.f, w.w, w.h}, icicle, 0x1C1Eu), IceShade());
-    Fill(c, ornament::Icicles(w, icicle, 0x1C1Eu), Ice());
+    // A few icicles here and there from the window's top edge: their edge (the ice 1px lower and to
+    // the right), the pale ice, the shine down their left side, the snow they hang from.
+    const float icicle = 40.f * scale;
+    const ornament::IcicleShapes edge = ornament::Icicles({w.x + 0.8f, w.y + 1.f, w.w, w.h}, icicle, 0x1C1Eu);
+    const ornament::IcicleShapes ice = ornament::Icicles(w, icicle, 0x1C1Eu);
+    Fill(c, edge.ice, IceShade());
+    Fill(c, ice.ice, Ice());
+    Fill(c, ice.shine, IceShine());
+    Fill(c, edge.snow, SnowShade());
+    Fill(c, ice.snow, Snow());
     for (const ui::Context::Decorated& d : c.DecoratedAreas()) {
         // An outline above, the white snow, and its shaded foot.
         constexpr float kDepth = 22.f;
@@ -101,9 +107,10 @@ void Winter(ui::Context& c, const Rect& w, float scale) {
     }
 }
 
-// The silhouette in the bottom-left corner: turned 10 degrees counter-clockwise, sized by the window.
+// The silhouette in the bottom-left corner: turned 10 degrees counter-clockwise and fitted into the
+// same square for every season (so a maple leaf is as tall as a cherry blossom), sized by the window.
 float CornerRadius(const Rect& w) { return std::clamp(std::min(w.w, w.h) * 0.17f, 56.f, 150.f); }
-Vec2 CornerCenter(const Rect& w, float r) { return {w.x + 28 + r, w.Bottom() - 28 - r}; }
+Rect Corner(const Rect& w, float r) { return {w.x + 28.f, w.Bottom() - 28.f - 2.f * r, 2.f * r, 2.f * r}; }
 
 void SpringFlurry(ui::Context& c, const Rect& w, float scale) {
     const Rect area{w.x, w.y, std::min(w.w * 0.42f, 560.f * scale), std::min(w.h * 0.38f, 320.f * scale)};
@@ -137,43 +144,28 @@ void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
 void DrawOrnament(ui::Context& c, const Rect& w) {
     using namespace theme::season;
     const float r = CornerRadius(w);
-    const Vec2 corner = CornerCenter(w, r);
     switch (theme::CurrentOrnament) {
         case theme::Ornament::None:
             return;
         case theme::Ornament::Spring: {
-            // A cherry tree in the bottom-right, a blossom in the bottom-left, petals blowing at the top-left.
-            const float h = std::clamp(w.h * 0.46f, 170.f, 440.f);
-            Fill(c, ornament::CherryTree({w.Right() - 0.58f * h, w.Bottom() - 14.f}, h), theme::OrnamentColor());
-            Fill(c, ornament::Sakura(corner, r, 10.f), theme::OrnamentColor());
+            // A cherry tree along the whole right edge with its petals blowing off it to the left, a
+            // blossom in the bottom-left, petals at the top-left.
+            const float d = std::clamp(w.w * 0.18f, 150.f, 340.f);
+            Fill(c, ornament::CherryEdge(w, d), theme::OrnamentColor());
+            const int stream = std::max(24, static_cast<int>(w.w * w.h / 16000.f));
+            Fill(c, ornament::PetalStream(w, w.Right() - d * 0.9f, stream, 9.f, 0xB10Fu), Petal());
+            Fill(c, ornament::FitInto(ornament::Sakura({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
             SpringFlurry(c, w, 1.f);
             return;
         }
         case theme::Ornament::Summer: {
-            // A beach sloping gently into the bottom-right corner with the parasol and a sand castle on
-            // it; clouds at the top-right; a sunflower in the bottom-left.
-            const float beachW = w.w * 0.55f, beachH = w.h * 0.22f;
-            ornament::Beach beach = ornament::BeachCorner(w, beachW, beachH);
-            // On the sand: half way between the shore and the bottom edge.
-            auto onSand = [&](float x) { return Vec2{x, (ornament::ShoreY(w, beachW, beachH, x) + w.Bottom()) * 0.5f}; };
-            // The sand castle is the beach's own sand: one shape with it, so no seam shows between them.
-            // It stands on the shore (its foot a little sunk in), so all of it rises out of the sand.
-            const float castleH = std::clamp(w.h * 0.11f, 48.f, 120.f), castleX = w.Right() - beachW * 0.55f;
-            const ui::Path castle =
-                ornament::SandCastle({castleX, ornament::ShoreY(w, beachW, beachH, castleX) + castleH * 0.12f}, castleH);
-            beach.sand.steps.insert(beach.sand.steps.end(), castle.steps.begin(), castle.steps.end());
-            Fill(c, beach.sand, SandColor());
-            // The foam along the shore, but not across the castle's foot (the sand is see-through).
-            std::vector<Rect> foamOff(c.KeepClearAreas().begin(), c.KeepClearAreas().end());
-            foamOff.push_back({castleX - castleH * 0.9f, ornament::ShoreY(w, beachW, beachH, castleX) - castleH * 1.1f, castleH * 1.8f,
-                               castleH * 1.4f});
-            c.P().FillPath(beach.foam, FoamColor(), foamOff);
+            // Like the other seasons: a sunflower in the bottom-left, a silhouette in the bottom-right
+            // (a mound of sand with a parasol and a sand castle, as spring has its tree), clouds at the
+            // top-right (as spring has its petals at the top-left).
+            const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
+            Fill(c, ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h), theme::OrnamentColor());
+            Fill(c, ornament::FitInto(ornament::Sunflower({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
             SummerClouds(c, w, 1.f);
-            const ornament::Parasol parasol = ornament::BeachParasol(onSand(w.Right() - w.w * 0.11f), std::clamp(w.h * 0.26f, 110.f, 260.f), 12.f);
-            Fill(c, parasol.pole, PoleColor());
-            Fill(c, parasol.stripesA, ParasolA());
-            Fill(c, parasol.stripesB, ParasolB());
-            Fill(c, ornament::Sunflower({corner.x, corner.y - r * 0.25f}, r * 0.8f, 10.f), theme::OrnamentColor());
             return;
         }
         case theme::Ornament::Fall: {
@@ -181,12 +173,12 @@ void DrawOrnament(ui::Context& c, const Rect& w) {
             // in the bottom-left (as big and where the other seasons' are).
             const auto canopy = ornament::Canopy(w, std::clamp(w.h * 0.32f, 120.f, 300.f), 1.f / 4.f, 0xF411u);
             for (int i = 0; i < 4; ++i) Fill(c, canopy[static_cast<size_t>(i)], Leaf(i));
-            Fill(c, ornament::MapleLeaf(corner, r, 10.f), theme::OrnamentColor());
+            Fill(c, ornament::FitInto(ornament::MapleLeaf({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
             return;
         }
         case theme::Ornament::Winter:
             Winter(c, w, 1.f);
-            Fill(c, ornament::Snowflake(corner, r, 10.f), theme::OrnamentColor());
+            Fill(c, ornament::FitInto(ornament::Snowflake({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
             return;
     }
 }
@@ -197,15 +189,9 @@ void DrawFloatOrnament(ui::Context& c, const Rect& w) {
         case theme::Ornament::Spring:
             SpringFlurry(c, w, 0.6f);  // the petals only (the tree and the blossom are the editor's own)
             return;
-        case theme::Ornament::Summer: {
-            // A blue sky and clouds along the top.
-            ui::Path sky;
-            const Vec2 all[4] = {{w.x, w.y}, {w.Right(), w.y}, {w.Right(), w.Bottom()}, {w.x, w.Bottom()}};
-            ornament::AddPolygon(sky, all);
-            Fill(c, sky, Sky());
-            SummerClouds(c, {w.x, w.y, w.w, std::min(w.h, 260.f)}, 0.6f);
+        case theme::Ornament::Summer:
+            SummerClouds(c, {w.x, w.y, w.w, std::min(w.h, 260.f)}, 0.6f);  // the clouds only (as spring: its petals)
             return;
-        }
         case theme::Ornament::Winter:
             Winter(c, w, 0.8f);  // falling snow, and snow at the bottom of its panels
             return;

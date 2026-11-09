@@ -220,13 +220,7 @@ inline Color OrnamentColor() { return Accent.Alpha(IsLight ? 0.10f : 0.12f); }
 // The colors of the seasons' pictures (laid faintly over the window: their alpha is part of them).
 namespace season {
 inline Color Petal() { return Color::Hex(0xEE8FAE, 0.42f); }          // spring: the flurry
-inline Color Sky() { return Color::Hex(0x2F8FE0, 0.12f); }            // summer: a blue wash (the panel windows)
-inline Color CloudColor() { return Color::Hex(0xFFFFFF, 0.55f); }
-inline Color FoamColor() { return Color::Hex(0xFFFFFF, 0.70f); }
-inline Color SandColor() { return Color::Hex(0xEFC96B, 0.42f); }
-inline Color ParasolA() { return Color::Hex(0xE2483D, 0.30f); }
-inline Color ParasolB() { return Color::Hex(0xFFFFFF, 0.55f); }
-inline Color PoleColor() { return Color::Hex(0x8C6D4A, 0.30f); }
+inline Color CloudColor() { return Color::Hex(0xFFFFFF, 0.40f); }            // summer: clouds at the top-right
 inline Color Leaf(int i) {                                            // fall: the canopy, four colors
     constexpr uint32_t k[4] = {0xD8432A, 0xE8832A, 0xE7B43A, 0xB0432A};
     return Color::Hex(k[i & 3], 0.34f);
@@ -235,8 +229,9 @@ inline Color Snow() { return Color::Hex(0xFFFFFF); }                  // winter:
 inline Color SnowShade() { return Color::Hex(0x8CA3BD); }             // its outline
 inline Color SnowLow() { return Color::Hex(0xE6EEF7); }               // the shaded foot of the drift
 inline Color Flake() { return Color::Hex(0xFFFFFF, 0.9f); }           // falling snow
-inline Color Ice() { return Color::Hex(0xF3F9FF, 0.95f); }            // icicles
-inline Color IceShade() { return Color::Hex(0x7F98B4, 0.8f); }
+inline Color Ice() { return Color::Hex(0xD6E7F6, 0.88f); }            // icicles: pale, a little see-through
+inline Color IceShade() { return Color::Hex(0x6F8AA8, 0.75f); }       // their edge
+inline Color IceShine() { return Color::Hex(0xFFFFFF, 0.95f); }
 }  // namespace season
 // How bright a color looks (relative luminance, 0 = black .. 1 = white; WCAG's formula).
 inline float Luminance(Color c) {

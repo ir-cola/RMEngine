@@ -43,17 +43,18 @@ void DrawSurface(ui::Context& c, const ui::Rect& r, Surface s, float radius = th
 // panels 1px apart share one dark seam. Each corner its own radius - square where it touches another.
 void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
 // The pictures of the theme in use (the seasons), laid faintly over the main window (Hub / editor):
-//   スプリング  a cherry tree (bottom-right), a blossom (bottom-left), a flurry of petals (top-left)
-//   サマー      a beach sloping gently into the bottom-right corner with a parasol and a sand castle,
-//               clouds, a sunflower (bottom-left)
+//   スプリング  a cherry tree along the right edge with petals blowing off it, a blossom
+//               (bottom-left), a flurry of petals (top-left)
+//   サマー      a mound of sand with a parasol and a sand castle (bottom-right, a silhouette like
+//               spring's tree), clouds (top-right), a sunflower (bottom-left)
 //   フォール    leaves thick along the top and scattered below, a big maple leaf (bottom-left)
 //   ウィンター  falling snow (held still), icicles from the top edge, snow piled at the bottom of every
 //               panel (DrawPanelFrame notes them: ui::Context::Decorate), a snowflake (bottom-left)
 // Drawn after the window's content and before its menus and dialogs, never over the areas the
 // content asked to keep clear (ui::Context::KeepClear - the scene and game views). Nothing for most themes.
 void DrawOrnament(ui::Context& c, const ui::Rect& window);
-// The same for a panel window of its own (a panel dragged out): spring's petals, summer's blue sky
-// and clouds, winter's snow. The silhouettes, the tree and the beach stay in the main window.
+// The same for a panel window of its own (a panel dragged out): spring's petals, summer's clouds,
+// winter's snow. The silhouettes stay in the main window.
 void DrawFloatOrnament(ui::Context& c, const ui::Rect& window);
 // A strip of the window's frame (menu bar, status bar, sidebar): gentle gradient, no border.
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);

@@ -44,6 +44,28 @@ float Random::Next() {
 
 // --- Building blocks --------------------------------------------------------------------------
 
+ui::Path FitInto(const ui::Path& path, const ui::Rect& box) {
+    if (path.steps.empty()) return path;
+    float x0 = 1e30f, y0 = 1e30f, x1 = -1e30f, y1 = -1e30f;
+    auto grow = [&](Vec2 v) { x0 = std::min(x0, v.x), y0 = std::min(y0, v.y), x1 = std::max(x1, v.x), y1 = std::max(y1, v.y); };
+    for (const auto& st : path.steps) {
+        grow(st.a);
+        if (st.op == ui::Path::Op::Cubic) grow(st.b), grow(st.c);
+    }
+    const float w = x1 - x0, h = y1 - y0;
+    if (w <= 0 || h <= 0) return path;
+    const float s = std::min(box.w / w, box.h / h);
+    const Vec2 from{(x0 + x1) * 0.5f, (y0 + y1) * 0.5f}, to{box.x + box.w * 0.5f, box.y + box.h * 0.5f};
+    auto move = [&](Vec2 v) { return Vec2{to.x + (v.x - from.x) * s, to.y + (v.y - from.y) * s}; };
+    ui::Path out = path;
+    for (auto& st : out.steps) {
+        st.a = move(st.a);
+        st.b = move(st.b);
+        st.c = move(st.c);
+    }
+    return out;
+}
+
 void AddEllipse(ui::Path& p, Vec2 c, float rx, float ry, float degrees) {
     // Four cubic curves (the usual 0.5523 handles), clockwise on the screen: right, down, left, up.
     constexpr float k = 0.5522847f;
@@ -93,37 +115,58 @@ ui::Path Sakura(Vec2 center, float radius, float degreesCcw) {
     return path;
 }
 
-ui::Path CherryTree(Vec2 base, float h) {
+ui::Path CherryEdge(const ui::Rect& win, float d) {
     ui::Path p;
-    auto at = [&](float x, float y) { return Vec2{base.x + x * h, base.y - y * h}; };  // y = up, in heights
-    // The trunk, a little bent, flaring into roots at the foot.
-    const Vec2 trunk[] = {at(-0.13f, 0.f),   at(-0.07f, 0.03f), at(-0.05f, 0.14f), at(-0.065f, 0.28f), at(-0.04f, 0.38f),
-                          at(0.045f, 0.40f), at(0.06f, 0.28f),  at(0.045f, 0.15f), at(0.07f, 0.03f),   at(0.14f, 0.f)};
-    AddPolygon(p, trunk);
-    // The branches: from the fork up and out into the crown (the left one low, as in the picture).
-    AddBar(p, at(-0.02f, 0.36f), at(-0.24f, 0.58f), 0.07f * h, 0.022f * h);
-    AddBar(p, at(0.02f, 0.37f), at(0.24f, 0.58f), 0.065f * h, 0.02f * h);
-    AddBar(p, at(0.f, 0.38f), at(0.04f, 0.70f), 0.055f * h, 0.018f * h);
-    AddBar(p, at(-0.045f, 0.24f), at(-0.38f, 0.40f), 0.05f * h, 0.015f * h);
-    // The crown: a wide, flat-topped cloud of blossom made of many small puffs (fluffy, not bubbly),
-    // heavier on the left and hanging low there.
     Random rnd{0xC0FFEEu};
-    const Vec2 crown = at(-0.03f, 0.64f);
-    const float hw = 0.62f * h, hh = 0.21f * h;
-    for (int i = 0; i < 110; ++i) {
-        const float a = rnd.Next() * 2.f * kPi, d = std::sqrt(rnd.Next());
-        const Vec2 c{crown.x + std::cos(a) * d * hw, crown.y + std::sin(a) * d * hh};
-        AddCircle(p, c, (0.045f + 0.05f * rnd.Next()) * h * (1.f - 0.3f * d));
+    const float right = win.x + win.w, top = win.y, bottom = win.y + win.h;
+    // The trunk: up the right edge, mostly outside, a little of it showing, bending gently.
+    const Vec2 trunk[] = {{right + 0.45f * d, bottom + 4.f}, {right - 0.16f * d, bottom + 4.f}, {right - 0.10f * d, bottom - 0.08f * d},
+                          {right - 0.07f * d, top + win.h * 0.55f}, {right - 0.04f * d, top + win.h * 0.25f}, {right - 0.02f * d, top - 4.f},
+                          {right + 0.45f * d, top - 4.f}};
+    AddPolygon(p, trunk);
+    // The branches: one every so often from the top down, reaching left and a little up, each heavy
+    // with blossom towards its end; the blossom also covers the trunk's edge.
+    const int branches = std::max(3, static_cast<int>(win.h / 110.f));
+    for (int i = 0; i < branches; ++i) {
+        const float y = top + win.h * (static_cast<float>(i) + 0.35f + 0.3f * rnd.Next()) / static_cast<float>(branches);
+        const float reach = d * (0.55f + 0.4f * rnd.Next());
+        const Vec2 from{right - 0.05f * d, y};
+        const Vec2 to{right - reach, y - d * (0.05f + 0.15f * rnd.Next())};
+        AddBar(p, from, to, 0.08f * d, 0.02f * d);
+        // A twig off it, upwards.
+        const Vec2 mid{(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f};
+        AddBar(p, mid, {mid.x - 0.12f * d, mid.y - 0.16f * d}, 0.035f * d, 0.012f * d);
+        // Blossom: round puffs along the outer two thirds of the branch, bigger towards its end.
+        for (int k = 0; k < 9; ++k) {
+            const float t = 0.3f + 0.7f * static_cast<float>(k) / 8.f + 0.05f * rnd.Next();
+            const Vec2 c{from.x + (to.x - from.x) * t + d * 0.06f * (rnd.Next() - 0.5f), from.y + (to.y - from.y) * t + d * 0.12f * (rnd.Next() - 0.6f)};
+            AddCircle(p, c, d * (0.06f + 0.07f * t) * (0.7f + 0.5f * rnd.Next()));
+        }
     }
-    for (int i = 0; i < 26; ++i) {
-        const float t = rnd.Next();
-        AddCircle(p, at(-0.66f + 0.40f * t + 0.04f * rnd.Next(), 0.40f + 0.12f * std::sin(t * kPi) + 0.06f * rnd.Next()),
-                  (0.04f + 0.035f * rnd.Next()) * h);
+    for (float y = top - 10.f; y < bottom; y += d * (0.12f + 0.1f * rnd.Next())) {
+        AddCircle(p, {right - d * (0.08f + 0.12f * rnd.Next()), y}, d * (0.08f + 0.06f * rnd.Next()));
     }
-    // A few petals falling around it.
-    for (int i = 0; i < 14; ++i) {
-        const Vec2 c = at(-0.75f + 1.5f * rnd.Next(), 0.04f + 0.36f * rnd.Next());
-        AddEllipse(p, c, 0.012f * h, 0.007f * h, rnd.Next() * 180.f);
+    // A few petals falling just beside it.
+    for (int i = 0; i < 10; ++i) {
+        const Vec2 c{right - d * (0.9f + 0.5f * rnd.Next()), top + win.h * rnd.Next()};
+        AddEllipse(p, c, 0.025f * d, 0.015f * d, rnd.Next() * 180.f);
+    }
+    return p;
+}
+
+ui::Path PetalStream(const ui::Rect& win, float fromX, int count, float size, uint32_t seed) {
+    ui::Path p;
+    Random rnd{seed};
+    const float span = std::max(fromX - win.x, 1.f);
+    for (int i = 0; i < count; ++i) {
+        // How far it has flown (0 = at the tree): most of them still near it.
+        const float u = std::pow(rnd.Next(), 1.8f);
+        const float x = fromX + 20.f * rnd.Next() - span * u;
+        // Blown out from anywhere on the tree, sinking slowly as it flies.
+        const float y = win.y + win.h * (0.05f + 0.8f * rnd.Next()) + win.h * 0.15f * u;
+        if (y > win.y + win.h) continue;
+        const float s = size * (0.6f + 0.7f * rnd.Next()) * (1.f - 0.3f * u);
+        AddEllipse(p, {x, y}, s * 0.5f, s * 0.3f, rnd.Next() * 180.f);
     }
     return p;
 }
@@ -173,35 +216,6 @@ ui::Path Cloud(Vec2 c, float w) {
     return p;
 }
 
-float ShoreY(const ui::Rect& win, float width, float height, float x) {
-    // From (right - width, bottom) to (right, bottom - height), bowed a little towards the sea.
-    const float t = std::clamp((x - (win.x + win.w - width)) / std::max(width, 1.f), 0.f, 1.f);
-    const float bow = 0.10f * std::sin(t * kPi);
-    return win.y + win.h - height * std::min(1.f, t + bow);
-}
-
-Beach BeachCorner(const ui::Rect& win, float width, float height) {
-    Beach b;
-    const float right = win.x + win.w, bottom = win.y + win.h;
-    std::vector<Vec2> sand{{right - width, bottom}};
-    std::vector<Vec2> foamTop, foamUnder;
-    const int steps = 40;
-    for (int i = 0; i <= steps; ++i) {
-        const float x = right - width + width * static_cast<float>(i) / static_cast<float>(steps);
-        const float y = ShoreY(win, width, height, x);
-        sand.push_back({x, y});
-        // The foam: a thin, slightly uneven band just on the sea's side of the shore.
-        const float f = 3.f + 1.5f * std::sin(x * 0.09f);
-        foamTop.push_back({x - f * 0.4f, y - f});
-        foamUnder.push_back({x, y + 1.f});
-    }
-    sand.push_back({right, bottom});
-    AddPolygon(b.sand, sand);
-    foamTop.insert(foamTop.end(), foamUnder.rbegin(), foamUnder.rend());
-    AddPolygon(b.foam, foamTop);
-    return b;
-}
-
 ui::Path SandCastle(Vec2 base, float h) {
     ui::Path p;
     Random rnd{0x5A2Du};
@@ -243,11 +257,11 @@ ui::Path SandCastle(Vec2 base, float h) {
     return p;
 }
 
-Parasol BeachParasol(Vec2 base, float h, float degreesCcw) {
-    Parasol s;
+ui::Path BeachParasol(Vec2 base, float h, float degreesCcw) {
+    ui::Path p;
     auto at = [&](float x, float y) { return Add(base, Rotate({x * h, -y * h}, degreesCcw)); };
-    AddBar(s.pole, at(0, 0), at(0, 1.02f), 0.035f * h, 0.03f * h);
-    // The canopy: a flat dome cut into eight wedges, two colors in turn.
+    AddBar(p, at(0, -0.05f), at(0, 1.02f), 0.035f * h, 0.03f * h);
+    // The canopy: a flat dome, its rim scalloped between eight ribs.
     const Vec2 top = at(0, 1.0f);
     const float R = 0.62f, rise = 0.32f;
     for (int i = 0; i < 8; ++i) {
@@ -255,15 +269,26 @@ Parasol BeachParasol(Vec2 base, float h, float degreesCcw) {
         for (int k = 0; k <= 4; ++k) {
             const float t = (static_cast<float>(i) + static_cast<float>(k) / 4.f) / 8.f;  // 0 .. 1, left to right
             const float ang = kPi * (1.f - t);                                          // 180 .. 0 degrees
-            // A dome: wide and low, its rim scalloped between the ribs.
             const float sag = 0.04f * std::sin(static_cast<float>(k) / 4.f * kPi);
             wedge.push_back(at(std::cos(ang) * R, 1.0f - rise + std::sin(ang) * rise * 0.15f - sag));
         }
-        AddPolygon(i % 2 == 0 ? s.stripesA : s.stripesB, wedge);
+        AddPolygon(p, wedge);
     }
-    // The cap on the top.
-    AddCircle(s.pole, top, 0.035f * h);
-    return s;
+    AddCircle(p, top, 0.035f * h);
+    return p;
+}
+
+ui::Path BeachScene(Vec2 base, float h) {
+    ui::Path p;
+    // The mound: a wide, low hill whose foot is the window's bottom edge (half of it below).
+    AddEllipse(p, {base.x, base.y + 0.04f * h}, 0.78f * h, 0.17f * h, 0);
+    AddEllipse(p, {base.x + 0.42f * h, base.y + 0.02f * h}, 0.42f * h, 0.12f * h, -4.f);
+    // The parasol stuck in it, leaning to the left; the sand castle on the left of the mound.
+    ui::Path parasol = BeachParasol({base.x + 0.18f * h, base.y - 0.08f * h}, 0.86f * h, 12.f);
+    p.steps.insert(p.steps.end(), parasol.steps.begin(), parasol.steps.end());
+    ui::Path castle = SandCastle({base.x - 0.36f * h, base.y - 0.09f * h}, 0.30f * h);
+    p.steps.insert(p.steps.end(), castle.steps.begin(), castle.steps.end());
+    return p;
 }
 
 // --- Fall -------------------------------------------------------------------------------------
@@ -369,28 +394,52 @@ ui::Path SnowDrift(const ui::Rect& r, float depth, float corner) {
     return p;
 }
 
-ui::Path Icicles(const ui::Rect& win, float maxLength, uint32_t seed) {
-    ui::Path p;
+IcicleShapes Icicles(const ui::Rect& win, float maxLength, uint32_t seed) {
+    IcicleShapes out;
     Random rnd{seed};
     const float top = win.y, right = win.x + win.w;
-    // A small group every 260 .. 640 pixels; within it, one to three icicles of different lengths.
-    for (float gx = win.x + 60.f + 160.f * rnd.Next(); gx < right - 20.f; gx += 260.f + 380.f * rnd.Next()) {
+    // A small group every 260 .. 640 pixels from the left edge; every group that starts inside the
+    // window is made (the painter cuts one that runs past the edge), so none pops in or out.
+    for (float gx = win.x + 60.f + 160.f * rnd.Next(); gx < right; gx += 260.f + 380.f * rnd.Next()) {
         const int count = 1 + static_cast<int>(rnd.Next() * 3.f) % 3;
-        const float groupW = 6.f + 9.f * static_cast<float>(count);
-        AddEllipse(p, {gx + groupW * 0.5f - 4.f, top + 1.f}, groupW * 0.5f + 4.f, 4.5f, 0);  // the lump of snow
+        const float groupW = 6.f + 10.f * static_cast<float>(count);
+        // The lump of snow they hang from, with a smaller one on it.
+        AddEllipse(out.snow, {gx + groupW * 0.5f - 4.f, top + 1.f}, groupW * 0.5f + 5.f, 5.f, 0);
+        AddEllipse(out.snow, {gx + groupW * 0.35f - 4.f, top + 3.5f}, groupW * 0.22f + 3.f, 3.f, 0);
         for (int i = 0; i < count; ++i) {
-            const float x = gx + 9.f * static_cast<float>(i) + 3.f * rnd.Next();
+            const float x = gx + 10.f * static_cast<float>(i) + 3.f * rnd.Next();
             const float len = maxLength * (i == count / 2 ? 0.7f + 0.3f * rnd.Next() : 0.3f + 0.35f * rnd.Next());
-            const float half = 2.4f + 2.2f * rnd.Next() * (len / maxLength + 0.3f);
-            const float lean = (rnd.Next() - 0.5f) * 2.f;  // the tip a little to one side
+            const float half = 3.2f + 3.0f * rnd.Next() * (len / maxLength + 0.3f);
+            const float lean = (rnd.Next() - 0.5f) * 3.f;  // the tip a little to one side
+            const float phase = rnd.Next() * 6.28f;
             const float y0 = top + 2.f;
-            p.Begin({x - half, y0});
-            p.Line({x + half, y0});
-            p.Cubic({x + half * 0.8f, y0 + len * 0.35f}, {x + lean + half * 0.25f, y0 + len * 0.8f}, {x + lean, y0 + len});
-            p.Cubic({x + lean - half * 0.25f, y0 + len * 0.8f}, {x - half * 0.8f, y0 + len * 0.35f}, {x - half, y0});
+            // Its outline: down the right side and up the left, the width shrinking to a sharp tip
+            // with small ripples (where the water froze in rings), the whole bending towards `lean`.
+            std::vector<Vec2> pts;
+            constexpr int kSteps = 14;
+            auto at = [&](float t, float side) {
+                const float width = half * std::pow(1.f - t, 0.85f) * (1.f + 0.13f * std::sin(t * 17.f + phase) * (1.f - t));
+                return Vec2{x + lean * t * t + side * width, y0 + len * t};
+            };
+            for (int k = 0; k <= kSteps; ++k) pts.push_back(at(static_cast<float>(k) / kSteps, 1.f));
+            for (int k = kSteps - 1; k >= 0; --k) pts.push_back(at(static_cast<float>(k) / kSteps, -1.f));
+            AddPolygon(out.ice, pts);
+            // The shine: a thin bright stripe down the left side, fading out before the tip.
+            std::vector<Vec2> shine;
+            for (int k = 1; k <= 9; ++k) {
+                const float t = static_cast<float>(k) / 14.f;
+                const Vec2 edge = at(t, -1.f);
+                shine.push_back({edge.x + half * 0.25f, edge.y});
+            }
+            for (int k = 9; k >= 1; --k) {
+                const float t = static_cast<float>(k) / 14.f;
+                const Vec2 edge = at(t, -1.f);
+                shine.push_back({edge.x + half * (0.25f + 0.35f * (1.f - t)), edge.y});
+            }
+            AddPolygon(out.shine, shine);
         }
     }
-    return p;
+    return out;
 }
 
 }  // namespace rm::editor::ornament

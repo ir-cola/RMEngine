@@ -169,13 +169,30 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     const Bounds flower = BoundsOf(Sunflower(c, 100, 0));
     CHECK(flower.x0 > 390 && flower.x1 < 610 && flower.y0 > 390 && flower.y1 < 660);  // the stem hangs 1.45 below
 
-    // The cherry tree stands on its base and keeps under its height.
-    const Bounds tree = BoundsOf(CherryTree({500, 900}, 400));
-    CHECK(tree.y1 <= 900.5f && tree.y0 > 900 - 400 * 1.05f);
-    CHECK(tree.x0 > 500 - 400 * 0.8f && tree.x1 < 500 + 400 * 0.8f);
-    CHECK(AllClockwise(CherryTree({500, 900}, 400)));
-    // The same tree every time.
-    CHECK(CherryTree({1, 2}, 50).steps.size() == CherryTree({1, 2}, 50).steps.size());
+    // The cherry tree stands along the right edge, reaching about `depth` in; its petals blow to the left.
+    const rm::ui::Rect screen{0, 0, 1000, 700};
+    const Bounds tree = BoundsOf(CherryEdge(screen, 200));
+    CHECK(tree.x0 > 1000 - 200 * 1.5f && tree.x1 > 1000 && tree.y0 < 0 && tree.y1 > 700);
+    CHECK(AllClockwise(CherryEdge(screen, 200)));
+    const rm::ui::Path stream = PetalStream(screen, 820, 80, 9, 4);
+    const Bounds sb = BoundsOf(stream);
+    CHECK(sb.figures > 60 && sb.x1 < 820 + 30 && sb.x0 > -10 && sb.y1 <= 700 + 10);
+    int nearTree = 0, farAway = 0;  // thick near the tree, thinning out
+    for (const auto& st : stream.steps) {
+        if (st.op != rm::ui::Path::Op::Begin) continue;
+        (st.a.x > 820 - 300 ? nearTree : farAway) += 1;
+    }
+    CHECK(nearTree > farAway);
+
+    // Every corner silhouette fills the same box (a maple leaf as tall as a cherry blossom).
+    const rm::ui::Rect box{10, 400, 200, 200};
+    for (const rm::ui::Path& sil : {FitInto(Sakura({0, 0}, 1, 10), box), FitInto(MapleLeaf({0, 0}, 1, 10), box),
+                                     FitInto(Snowflake({0, 0}, 1, 10), box), FitInto(Sunflower({0, 0}, 1, 10), box)}) {
+        const Bounds sb2 = BoundsOf(sil);
+        CHECK(sb2.x0 >= 10 - 0.01f && sb2.x1 <= 210 + 0.01f && sb2.y0 >= 400 - 0.01f && sb2.y1 <= 600 + 0.01f);
+        CHECK(std::fabs((sb2.x1 - sb2.x0) - 200) < 0.01f || std::fabs((sb2.y1 - sb2.y0) - 200) < 0.01f);  // as large as it fits
+        CHECK(std::fabs((sb2.x0 + sb2.x1) * 0.5f - 110) < 0.01f && std::fabs((sb2.y0 + sb2.y1) * 0.5f - 500) < 0.01f);  // centred
+    }
 
     // The flurry stays in its area (give or take a petal's size).
     const rm::ui::Rect area{0, 0, 300, 200};
@@ -189,12 +206,11 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     const Bounds castle = BoundsOf(SandCastle({400, 500}, 100));
     CHECK(castle.x0 > 400 - 90 && castle.x1 < 400 + 90 && castle.y0 > 500 - 100 && castle.y1 < 500 + 12);
     CHECK(AllClockwise(SandCastle({400, 500}, 100)));
-    const Beach beach = BeachCorner(win, 300, 200);
-    const Bounds sand = BoundsOf(beach.sand);
-    CHECK(sand.x0 >= 500 && sand.x1 == 800 && sand.y0 >= 400 - 0.01f && sand.y1 == 600);
-    CHECK(std::fabs(ShoreY(win, 300, 200, 500) - 600) < 0.01f && std::fabs(ShoreY(win, 300, 200, 800) - 400) < 0.01f);
-    CHECK(ShoreY(win, 300, 200, 650) < 600 - 100);  // bowed towards the sea in the middle
-    CHECK(AllClockwise(beach.sand) && AllClockwise(beach.foam));
+    // The summer silhouette: a mound on the bottom edge, the parasol the tallest thing on it.
+    const Bounds scene = BoundsOf(BeachScene({500, 600}, 300));
+    CHECK(scene.y1 > 600 && scene.y0 > 600 - 300 * 1.1f && scene.y0 < 600 - 300 * 0.85f);
+    CHECK(scene.x0 > 500 - 300 && scene.x1 < 500 + 300 * 0.9f);
+    CHECK(AllClockwise(BeachScene({500, 600}, 300)));
     // The canopy: thick at the top, a few further down, never below `depth` (give or take a leaf).
     int above = 0, below = 0;
     for (const auto& part : Canopy(win, 200, 0.25f, 9)) {
@@ -226,21 +242,29 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     for (size_t i = 0; i + 10 < narrow.size(); ++i) CHECK(narrow[i] == wide[i]);  // until the right end's slope
     CHECK(moved == narrow);
 
-    // Icicles hang from the top edge, no longer than asked, in the same places when the window widens.
-    const Bounds ice = BoundsOf(Icicles(win, 40, 5));
-    CHECK(ice.y0 >= -4.01f && ice.y1 <= 2 + 40 + 0.01f && ice.x0 >= 0 && ice.x1 <= 800);
-    // ... only a few, here and there (not along the whole edge).
-    CHECK(ice.figures >= 2 && ice.figures <= 4 * (800 / 260 + 1));
-    CHECK(AllClockwise(Icicles(win, 40, 5)));
-    // (each icicle's tip is the end of its first curve)
-    const auto tips = [](const rm::ui::Path& path) {
+    // Icicles hang from the top edge, no longer than asked, only a few here and there.
+    const IcicleShapes ice = Icicles(win, 40, 5);
+    const Bounds ib = BoundsOf(ice.ice);
+    CHECK(ib.y0 >= 2 - 0.01f && ib.y1 <= 2 + 40 + 0.01f && ib.x0 >= 0);
+    CHECK(ib.figures >= 1 && ib.figures <= 3 * (800 / 260 + 1));
+    CHECK(BoundsOf(ice.snow).y0 >= -5.01f && BoundsOf(ice.shine).y1 <= ib.y1);
+    CHECK(AllClockwise(ice.ice) && AllClockwise(ice.shine) && AllClockwise(ice.snow));
+    // Each icicle's tip (its lowest point): the same icicles in the same places whatever the window's
+    // width - one running past the right edge is kept (cut off by the edge), never dropped.
+    const auto tips = [](const rm::ui::Path& path, float before) {
         std::vector<rm::Vec2> out;
-        for (size_t i = 0; i + 1 < path.steps.size(); ++i) {
-            if (path.steps[i].op == rm::ui::Path::Op::Line && path.steps[i + 1].op == rm::ui::Path::Op::Cubic && path.steps[i + 1].c.x < 700)
-                out.push_back(path.steps[i + 1].c);
+        rm::Vec2 low{0, -1e9f};
+        auto flush = [&] {
+            if (low.y > -1e9f && low.x < before) out.push_back(low);
+            low = {0, -1e9f};
+        };
+        for (const auto& st : path.steps) {
+            if (st.op == rm::ui::Path::Op::Begin) flush();
+            if (st.a.y > low.y) low = st.a;
         }
+        flush();
         return out;
     };
-    const std::vector<rm::Vec2> t1 = tips(Icicles({0, 0, 800, 600}, 40, 5)), t2 = tips(Icicles({0, 0, 1200, 600}, 40, 5));
-    CHECK(!t1.empty() && t1 == t2);
+    const auto tipsNarrow = tips(Icicles({0, 0, 800, 600}, 40, 5).ice, 800), tipsWide = tips(Icicles({0, 0, 2000, 600}, 40, 5).ice, 800);
+    CHECK(!tipsNarrow.empty() && tipsNarrow == tipsWide);
 }
