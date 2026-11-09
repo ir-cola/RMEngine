@@ -87,6 +87,7 @@ public:
             {kSceneView, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawSceneView(c, r); }},
             {kGameView, TrKey(L"ゲーム"),
              [this](ui::Context& c, const Rect& r) {
+                 c.KeepClear(r);  // the game's picture: no theme ornament over it
                  Placeholder(c, r, Tr(L"ゲームビュー"), Tr(L"Play を押すと、ゲームのカメラから見た画面がここに映ります。"));
                  const Rect button{r.x + (r.w - 200) * 0.5f, r.y + r.h * 0.5f + 70, 200, 36};
                  if (editor::w::Button(c, "settings", button, Tr(L"ゲームの設定を開く"))) InspectSettings();
@@ -276,6 +277,7 @@ private:
                         Tr(L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。"));
             return;
         }
+        c.KeepClear(r);  // the picture of the scene: no theme ornament over it
         SceneViewHost h{host_, scene_, selection_, [this](std::vector<int> ids) {
                             host_.SelectInTree(std::vector<tree::ItemId>(ids.begin(), ids.end()));
                         }};

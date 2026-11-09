@@ -164,7 +164,7 @@ void Painter::StrokeRoundRectGradient(const Rect& r, Corners radii, Color top, C
     if (path && b) dc_->DrawGeometry(path.Get(), b, width);
 }
 
-void Painter::FillPath(const Path& path, Color c) {
+void Painter::FillPath(const Path& path, Color c, std::span<const Rect> without) {
     if (path.steps.empty()) return;
     ComPtr<ID2D1Factory> factory;
     dc_->GetFactory(&factory);
@@ -190,7 +190,31 @@ void Painter::FillPath(const Path& path, Color c) {
     }
     if (open) sink->EndFigure(D2D1_FIGURE_END_CLOSED);
     if (FAILED(sink->Close())) return;
-    if (ID2D1Brush* b = Brush(c)) dc_->FillGeometry(geo.Get(), b);
+    ComPtr<ID2D1Geometry> shape = geo;
+    if (!without.empty()) {
+        // The shape minus the rectangles: one group of rectangles, cut out of the shape.
+        std::vector<ComPtr<ID2D1RectangleGeometry>> rects;
+        std::vector<ID2D1Geometry*> parts;
+        for (const Rect& r : without) {
+            if (r.w <= 0 || r.h <= 0) continue;
+            ComPtr<ID2D1RectangleGeometry> g;
+            if (FAILED(factory->CreateRectangleGeometry(ToD2D(r), &g))) return;
+            parts.push_back(g.Get());
+            rects.push_back(std::move(g));
+        }
+        if (!parts.empty()) {
+            ComPtr<ID2D1GeometryGroup> group;
+            ComPtr<ID2D1PathGeometry> cut;
+            ComPtr<ID2D1GeometrySink> cutSink;
+            if (FAILED(factory->CreateGeometryGroup(D2D1_FILL_MODE_WINDING, parts.data(), static_cast<UINT32>(parts.size()), &group)) ||
+                FAILED(factory->CreatePathGeometry(&cut)) || FAILED(cut->Open(&cutSink)) ||
+                FAILED(geo->CombineWithGeometry(group.Get(), D2D1_COMBINE_MODE_EXCLUDE, nullptr, cutSink.Get())) || FAILED(cutSink->Close())) {
+                return;
+            }
+            shape = cut;
+        }
+    }
+    if (ID2D1Brush* b = Brush(c)) dc_->FillGeometry(shape.Get(), b);
 }
 
 void Painter::Shadow(const Rect& r, float radius, Color c, float size) {

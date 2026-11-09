@@ -97,7 +97,7 @@ void DrawOrnament(ui::Context& c, const Rect& window) {
             // Turned 10 degrees counter-clockwise, its size following the window's.
             const float r = std::clamp(std::min(window.w, window.h) * 0.17f, 56.f, 150.f);
             const Vec2 center{window.x + 28 + r, window.Bottom() - 28 - r};
-            c.P().FillPath(ornament::Sakura(center, r, 10.f), theme::OrnamentColor());
+            c.P().FillPath(ornament::Sakura(center, r, 10.f), theme::OrnamentColor(), c.KeepClearAreas());
             return;
         }
     }

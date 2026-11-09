@@ -148,6 +148,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **どう作ったか** — 花びら 1 枚を、中心の近くの丸い先 → いちばん太い所 → 先の 2 つのとがり → 切れ込み、と**3 次ベジェ曲線** (始点・終点と 2 つの「引っ張る点」で決まる曲線) と直線でなぞる。もらった絵から寸法を測った。それを 72 度ずつ回して 5 枚にし、全体を 10 度回す
 - **回転の式** — 画面は下向きが y の正なので、見た目で反時計回りに θ 回すのは x' = x cosθ + y sinθ、y' = y cosθ − x sinθ
 - **分けたこと** — 形を作る計算 (`ornament::Sakura`) は描画を知らない純粋なコードでテストがある。描くのは `Painter::FillPath` (Direct2D の `ID2D1PathGeometry` に `AddBezier` / `AddLine` で写して塗る)
+- **よけるところ** — シーンビューとゲームビューは描くたびに「ここには飾りを重ねないで」と土台に伝える (`Context::KeepClear`)。飾りを塗るとき、その四角を形から切り取る (Direct2D の `CombineWithGeometry` で「引き算」 = `D2D1_COMBINE_MODE_EXCLUDE`)
 - **どこ** — `src/ui/Path.h` (形のデータ)、`src/ui/Painter.cpp` (`FillPath`)、`src/editor/widgets/Ornament.*` (桜の形)、`src/editor/widgets/Widgets.cpp` (`DrawOrnament`)
 
 ### ドッキング (木で配置を持つ)

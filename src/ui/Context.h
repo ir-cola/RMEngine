@@ -14,6 +14,7 @@
 #include "ui/Types.h"
 
 #include <functional>
+#include <span>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -97,6 +98,10 @@ public:
     // say how far the mouse moved. Ask every frame of the drag; when no longer asked, the cursor comes back.
     void LockMouse() { lockMouse_ = true; }
     bool MouseLockRequested() const { return lockMouse_; }
+    // An area window decorations (a theme's ornament) must leave alone, e.g. the scene view, where
+    // every pixel is the picture. Asked every frame while it is shown (cut to the current clip).
+    void KeepClear(const Rect& r) { keepClear_.push_back(r.Intersect(CurrentClip())); }
+    std::span<const Rect> KeepClearAreas() const { return keepClear_; }
     void SetCursor(Cursor c) { cursor_ = c; }
     Cursor GetCursor() const { return cursor_; }
 
@@ -135,6 +140,7 @@ private:
     bool redraw_ = false;
     bool animate_ = false;
     bool lockMouse_ = false;
+    std::vector<Rect> keepClear_;
     Cursor cursor_ = Cursor::Arrow;
 };
 

@@ -42,7 +42,8 @@ void DrawSurface(ui::Context& c, const ui::Rect& r, Surface s, float radius = th
 // panels 1px apart share one dark seam. Each corner its own radius - square where it touches another.
 void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
 // The ornament of the theme in use (桜: a cherry blossom), faint in the bottom-left of `window`.
-// Drawn after the window's content and before its menus and dialogs. Nothing for most themes.
+// Drawn after the window's content and before its menus and dialogs, never over the areas the
+// content asked to keep clear (ui::Context::KeepClear - the scene and game views). Nothing for most themes.
 void DrawOrnament(ui::Context& c, const ui::Rect& window);
 // A strip of the window's frame (menu bar, status bar, sidebar): gentle gradient, no border.
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
