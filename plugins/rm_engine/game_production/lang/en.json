@@ -44,5 +44,7 @@
   "切り取り": "Cut",
   "貼り付け": "Paste",
   "子として貼り付け": "Paste as child",
-  "{} 個のエンティティ": "{} entities"
+  "{} 個のエンティティ": "{} entities",
+  "上へ移動": "Move up",
+  "下へ移動": "Move down"
 }

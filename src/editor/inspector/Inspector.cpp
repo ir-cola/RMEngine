@@ -2,9 +2,11 @@
 #include "editor/inspector/Inspector.h"
 
 #include "base/Utf.h"
+#include "core/reflect/Object.h"
 #include "editor/widgets/Theme.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 
 namespace rm::editor::inspector {
@@ -20,6 +22,8 @@ namespace {
 
 constexpr float kRow = 30.f;
 constexpr float kIndent = 14.f;
+constexpr float kAxisW = 14.f;   // the X / Y / Z in front of a vector's boxes
+constexpr float kElemRow = 28.f;
 
 ui::TextStyle Text(float size, ui::Color color, bool bold = false) {
     ui::TextStyle ts;
@@ -28,6 +32,9 @@ ui::TextStyle Text(float size, ui::Color color, bool bold = false) {
     ts.bold = bold;
     return ts;
 }
+
+// An edit made inside an array element, turned into the edit of the array field (or nothing).
+using Wrap = std::function<std::optional<Edit>(Edit)>;
 
 struct Pass {
     ui::Context& c;
@@ -38,9 +45,18 @@ struct Pass {
     float labelW = 0;
     std::optional<Edit> edit;
     std::wstring tooltip;
+    Wrap wrap;  // inside an array element (null: the edit is the field's own)
+
+    void Put(Edit e) {
+        if (!wrap) {
+            edit = std::move(e);
+        } else if (auto outer = wrap(std::move(e))) {
+            edit = std::move(*outer);
+        }
+    }
 };
 
-// Every typing session gets its own merge key (unique in the program: two inspectors never share one).
+// Every typing / dragging session gets its own merge key (unique in the program: two inspectors never share one).
 uint64_t NewSession() {
     static uint64_t next = 0;
     return ++next;
@@ -85,28 +101,36 @@ std::optional<std::string> LiveField(Pass& x, std::string_view id, const Rect& r
     return std::nullopt;
 }
 
-std::string Summary(const FieldDesc& f, const reflect::ValueType& vt, const void* p) {
-    switch (vt.type) {
-        case FieldType::Bool: return *static_cast<const bool*>(p) ? TrU8("はい") : TrU8("いいえ");
-        case FieldType::Int: return std::to_string(*static_cast<const int*>(p));
-        case FieldType::Float: return reflect::FormatNumber(f, *static_cast<const float*>(p));
-        case FieldType::String: return "\"" + *static_cast<const std::string*>(p) + "\"";
-        case FieldType::Vec2:
-        case FieldType::Vec3:
-        case FieldType::Color: {
-            const size_t n = vt.type == FieldType::Vec2 ? 2 : vt.type == FieldType::Vec3 ? 3 : 4;
-            std::string s = "(";
-            for (size_t i = 0; i < n; ++i) s += (i ? ", " : "") + reflect::FormatNumber(f, static_cast<const float*>(p)[i]);
-            return s + ")";
-        }
-        case FieldType::Enum: {
-            const reflect::EnumItem* it = reflect::FindItem(*vt.enumType, vt.enumType->get(p));
-            return it ? TrU8(it->label) : std::to_string(vt.enumType->get(p));
-        }
-        case FieldType::Struct: return "{…}";
-        case FieldType::Array: return "[…]";
+// Dragging `handle` left / right changes a number, like a slider without end (the cursor hides and
+// the mouse goes on past the screen's edge). The speed is chosen when the drag starts: the field's
+// Step per pixel, or more for a big number (Unity's rule); Shift x4, Alt x1/4. Returns the new
+// value while it changes; `merge` = the drag's key (one undo entry).
+std::optional<double> Scrub(Pass& x, std::string_view id, const Rect& handle, double current, const FieldDesc& f, bool enabled,
+                            uint64_t& merge) {
+    if (!enabled || handle.w <= 0) return std::nullopt;
+    ui::Context& c = x.c;
+    const ui::Input& in = c.In();
+    const ui::Id uid = c.MakeId(id);
+    const auto b = c.ButtonBehavior(uid, handle);
+    if (b.hovered || b.held) c.SetCursor(ui::Cursor::SizeWE);
+    if (!b.held) {
+        if (x.st.scrub == uid) x.st.scrub = 0;
+        return std::nullopt;
     }
-    return {};
+    if (x.st.scrub != uid) {
+        x.st.scrub = uid;
+        x.st.scrubStart = current;
+        x.st.scrubMoved = 0;
+        x.st.scrubSession = NewSession();
+        x.st.scrubSpeed = f.hasStep && f.step > 0 ? f.step : std::max(1.0, std::sqrt(std::fabs(current))) * 0.03;
+        c.ClearFocus();  // a field being typed into is finished first
+    }
+    c.LockMouse();
+    merge = x.st.scrubSession;
+    if (in.mouseDX == 0) return std::nullopt;
+    x.st.scrubMoved += in.mouseDX * (in.shift ? 4.0 : in.alt ? 0.25 : 1.0);
+    const double v = reflect::SanitizeNumber(f, x.st.scrubStart + x.st.scrubMoved * x.st.scrubSpeed, current);
+    return v != current ? std::optional<double>(v) : std::nullopt;
 }
 
 // Shown in a field whose value is not the same in every object edited together.
@@ -114,10 +138,314 @@ constexpr char kMixed[] = "\xE2\x80\x94";  // —
 
 using Others = std::span<const void* const>;
 
+size_t Components(FieldType t) { return t == FieldType::Vec2 ? 2 : t == FieldType::Vec3 ? 3 : t == FieldType::Color ? 4 : 0; }
+
+// One value: a number, a vector, text, a check box or a list - of a field or of an array element.
+struct Spot {
+    const FieldDesc& f;          // its field (number rules: Min / Max / Int / Step)
+    reflect::ValueType vt;       // its type (the field's, or the array's element)
+    const void* value = nullptr;
+    std::vector<const void*> others;  // the same value in the objects edited together
+    const Unknowns* u = nullptr;      // the owner's unknowns (an enum name kept) - null for elements
+    const char* enumKey = nullptr;    // the field name the enum's unknown name is kept under
+    bool enabled = true;
+    Rect r;                       // where the value goes
+    Rect scrub;                   // a label that changes a single number when dragged (w = 0: none)
+    // The Edit for a new value (path, before, label - the block's); `merge` / `component` are added.
+    std::function<Edit(json::Value)> editFor;
+};
+
+void DrawValue(Pass& x, const Spot& s) {
+    ui::Context& c = x.c;
+    auto& p = c.P();
+    auto put = [&](json::Value after, uint64_t merge = 0, int component = -1) {
+        Edit e = s.editFor(std::move(after));
+        e.merge = merge;
+        e.component = component;
+        // With others, a change counts even when this object has the value already (they may not).
+        if (e.before != e.after || !s.others.empty()) x.Put(std::move(e));
+    };
+    uint64_t merge = 0;
+
+    switch (s.vt.type) {
+        case FieldType::Bool: {
+            bool v = *static_cast<const bool*>(s.value);
+            if (w::Checkbox(c, "v", {s.r.x, s.r.y, 28, s.r.h}, v, L"") && s.enabled) put(json::Value(v));
+            break;
+        }
+        case FieldType::Int:
+        case FieldType::Float: {
+            const bool isInt = s.vt.type == FieldType::Int;
+            auto read = [&](const void* q) { return isInt ? static_cast<double>(*static_cast<const int*>(q)) : *static_cast<const float*>(q); };
+            const double cur = read(s.value);
+            const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return read(o) != cur; });
+            auto number = [&](double n) { return isInt ? json::Value(static_cast<int64_t>(n)) : json::Value(static_cast<double>(static_cast<float>(n))); };
+            if (auto v = Scrub(x, "scrub", s.scrub, cur, s.f, s.enabled, merge)) put(number(*v), merge);
+            if (auto typed = LiveField(x, "v", s.r, differ ? kMixed : reflect::FormatNumber(s.f, cur), s.enabled, merge)) {
+                if (auto n = reflect::NumberFromInput(s.f, *typed, cur)) put(number(*n), merge);
+            }
+            break;
+        }
+        case FieldType::String: {
+            const std::string& cur = *static_cast<const std::string*>(s.value);
+            const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return *static_cast<const std::string*>(o) != cur; });
+            if (auto typed = LiveField(x, "v", s.r, differ ? std::string(kMixed) : cur, s.enabled, merge)) put(json::Value(*typed), merge);
+            break;
+        }
+        case FieldType::Vec2:
+        case FieldType::Vec3:
+        case FieldType::Color: {
+            const size_t n = Components(s.vt.type);
+            const float* values = static_cast<const float*>(s.value);
+            const bool isColor = s.vt.type == FieldType::Color;
+            Rect area = s.r;
+            if (isColor) {
+                const Rect swatch = ui::TakeLeft(area, 26);
+                const Color col{values[0], values[1], values[2], values[3]};
+                p.FillRoundRect(swatch.Inset(0, 1, 4, 1), 4, col);
+                p.StrokeRoundRect(swatch.Inset(0, 1, 4, 1), 4, theme::Border);
+            }
+            const float each = (area.w - 4.f * static_cast<float>(n - 1)) / static_cast<float>(n);
+            static const char* kIds[] = {"x", "y", "z", "w"};
+            static const wchar_t* kAxes[] = {L"X", L"Y", L"Z", L"W"};
+            static const wchar_t* kChannels[] = {L"R", L"G", L"B", L"A"};
+            for (size_t i = 0; i < n; ++i) {
+                const Rect cell{area.x + (each + 4) * static_cast<float>(i), area.y, each, area.h};
+                // A letter in front of each box: which one it is, and a handle to drag it.
+                const Rect handle{cell.x, cell.y, kAxisW, cell.h};
+                const Rect box{cell.x + kAxisW, cell.y, cell.w - kAxisW, cell.h};
+                const ui::Color letter = !s.enabled || isColor ? theme::TextFaint
+                                         : i == 0             ? theme::AxisX()
+                                         : i == 1             ? theme::AxisY()
+                                         : i == 2             ? theme::AxisZ()
+                                                              : theme::TextFaint;
+                ui::TextStyle ls = Text(11, letter, true);
+                ls.h = ui::HAlign::Center;
+                p.Text(handle, isColor ? kChannels[i] : kAxes[i], ls);
+                const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return static_cast<const float*>(o)[i] != values[i]; });
+                auto withComponent = [&](double v) {
+                    json::Value arr = json::Value::MakeArray();
+                    for (size_t k = 0; k < n; ++k) arr.Push(static_cast<double>(k == i ? static_cast<float>(v) : values[k]));
+                    return arr;
+                };
+                c.PushId(kIds[i]);
+                if (auto v = Scrub(x, "scrub", handle, values[i], s.f, s.enabled, merge)) put(withComponent(*v), merge, static_cast<int>(i));
+                if (auto typed = LiveField(x, "v", box, differ ? kMixed : reflect::FormatNumber(s.f, values[i]), s.enabled, merge)) {
+                    if (auto v = reflect::NumberFromInput(s.f, *typed, values[i])) put(withComponent(*v), merge, static_cast<int>(i));
+                }
+                c.PopId();
+            }
+            break;
+        }
+        case FieldType::Enum: {
+            const reflect::EnumDesc& e = *s.vt.enumType;
+            const int64_t cur = e.get(s.value);
+            const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return e.get(o) != cur; });
+            std::wstring shown;
+            if (differ) {
+                shown = Utf8ToWide(kMixed);
+            } else if (const std::string* unknown = s.u && s.enumKey ? s.u->Enum(s.enumKey) : nullptr) {
+                shown = Utf8ToWide(*unknown) + Tr(L" (不明)");
+            } else if (const reflect::EnumItem* it = reflect::FindItem(e, cur)) {
+                shown = Utf8ToWide(TrU8(it->label));
+            } else {
+                shown = std::to_wstring(cur);
+            }
+            const ui::Id popupId = c.MakeId("v");
+            const auto b = w::ComboBox(c, "v", s.r, shown, s.enabled);
+            if (b.clicked) {
+                x.st.popup.OpenAt(s.r.x, s.r.Bottom() + 2);
+                x.st.popupId = popupId;
+            }
+            if (x.st.popup.open && x.st.popupId == popupId) {
+                // The list is drawn at the end of the frame (not cut off by the panel). The choice is
+                // handed back through State and returned by the next Draw.
+                const float width = std::max(s.r.w, 180.f);
+                State* st = &x.st;
+                const bool withOthers = !s.others.empty();
+                c.AddOverlay([&c, st, &e, width, withOthers, editFor = s.editFor, wrap = x.wrap] {
+                    std::vector<w::MenuItem> items;
+                    for (const auto& it : e.items) items.push_back({Utf8ToWide(TrU8(it.label))});
+                    const bool wasEnabled = c.InputEnabled();
+                    c.SetInputEnabled(true);
+                    const int picked = w::MenuPopup(c, st->popup, items, width);
+                    c.SetInputEnabled(wasEnabled);
+                    if (picked < 0) return;
+                    Edit ed = editFor(json::Value(e.items[static_cast<size_t>(picked)].name));
+                    if (ed.before == ed.after && !withOthers) return;
+                    if (wrap) {
+                        if (auto outer = wrap(std::move(ed))) st->pending = std::move(*outer);
+                    } else {
+                        st->pending = std::move(ed);
+                    }
+                });
+            }
+            break;
+        }
+        case FieldType::Struct:
+        case FieldType::Array: break;  // (not single values: DrawField)
+    }
+}
+
 void DrawStruct(Pass& x, const TypeDesc& t, const void* obj, Others others, const Unknowns* u, FieldPath& prefix, float indent);
 
-void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, Others others, const Unknowns* u, FieldPath& prefix,
-               float indent) {
+// An array: its count and ＋, then every element with its grip, index, value and ×. Every change is
+// the whole array, written as it is saved.
+void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const void* owner, Others others, const Unknowns* u,
+               const FieldPath& path, float indent, const Rect& valueR, bool enabled, const std::function<Edit(json::Value)>& editFor) {
+    ui::Context& c = x.c;
+    auto& p = c.P();
+    const ui::Input& in = c.In();
+    const reflect::ArrayOps& ops = *f.array;
+    const void* value = f.Get(owner);
+    const size_t count = ops.size(value);
+    const json::Value arr = reflect::SaveField(f, owner, u);
+    auto put = [&](json::Value after) {
+        Edit e = editFor(std::move(after));
+        if (e.before != e.after || !others.empty()) x.Put(std::move(e));
+    };
+    const bool differ = std::any_of(others.begin(), others.end(), [&](const void* o) { return reflect::SaveField(f, o, nullptr) != arr; });
+
+    // "N 個" and ＋ on the field's row.
+    const Rect plusR{valueR.Right() - 26, valueR.y, 26, valueR.h};
+    p.Text({valueR.x, valueR.y, valueR.w - 30, valueR.h}, differ ? Utf8ToWide(kMixed) : TrF(L"{} 個", count), Text(12, theme::TextDim));
+    if (w::IconButton(c, "add", plusR, w::Icon::Plus, enabled && !differ)) {
+        json::Value after = arr;
+        if (count > 0) {
+            after.Push(arr.At(count - 1));  // a copy of the last (what is usually wanted next)
+        } else {
+            // One element with its default value: a copy of the owner with the array made one longer.
+            reflect::Object tmp(ownerType);
+            ownerType.copy(tmp.Get(), owner);
+            ops.resize(f.Get(tmp.Get()), 1);
+            after = reflect::SaveField(f, tmp.Get(), nullptr);
+        }
+        put(std::move(after));
+    }
+    if (differ) {
+        p.Text({x.view.x + 12 + indent + kIndent, x.y, x.view.w - 24 - indent - kIndent, 22}, Tr(L"選んだ物で中身が違うので、まとめては変えられません。"),
+               Text(12, theme::TextFaint));
+        x.y += 24;
+        return;
+    }
+
+    const ui::Id arrayId = c.MakeId("array");
+    std::vector<float> tops;  // each element's row, for dropping a dragged one
+    const reflect::TypeDesc* elemStruct = ops.element.type == FieldType::Struct ? ops.element.structType : nullptr;
+    const float left = x.view.x + 12 + indent + kIndent;
+    const float width = x.view.w - 24 - indent - kIndent;
+    for (size_t i = 0; i < count; ++i) {
+        c.PushId("elem");
+        c.PushId(static_cast<uint64_t>(i));
+        const void* elem = ops.at(const_cast<void*>(value), i);
+        const Rect row{left, x.y, width, kElemRow};
+        tops.push_back(row.y);
+        x.y += kElemRow;
+
+        // The grip: drag it up / down to move the element.
+        const Rect grip{row.x, row.y, 16, row.h};
+        if (enabled) {
+            const auto g = c.ButtonBehavior(c.MakeId("grip"), grip);
+            if (g.hovered || g.held) c.SetCursor(ui::Cursor::SizeNS);
+            if (g.held) {
+                x.st.arrayDrag = arrayId;
+                x.st.arrayDragFrom = i;
+            }
+        }
+        w::DrawIcon(c, grip, w::Icon::Grip, enabled ? theme::TextFaint : theme::TextFaint.Alpha(0.5f));
+        const Rect indexR{row.x + 18, row.y, 26, row.h};
+        p.Text(indexR, std::to_wstring(i), Text(11, theme::TextFaint));
+        const Rect removeR{row.Right() - 24, row.y + 3, 24, row.h - 6};
+        if (w::IconButton(c, "remove", removeR, w::Icon::Close, enabled)) {
+            json::Value after = arr;
+            after.Items().erase(after.Items().begin() + static_cast<std::ptrdiff_t>(i));
+            put(std::move(after));
+        }
+
+        // The element's value; its edits become the whole array's.
+        const Wrap outer = x.wrap;
+        const size_t block = x.block;
+        const bool withOthers = !others.empty();
+        x.wrap = [outer, arr, i, elemStruct, path, block, withOthers](Edit inner) -> std::optional<Edit> {
+            json::Value after = arr;
+            if (i >= after.Items().size()) return std::nullopt;
+            json::Value elemJson = after.At(i);
+            if (inner.path.empty()) {
+                elemJson = inner.after;
+            } else if (elemStruct) {
+                reflect::Object tmp(*elemStruct);
+                Unknowns uk;
+                reflect::Load(*elemStruct, tmp.Get(), elemJson, &uk);
+                const reflect::PathTarget pt = reflect::Resolve(*elemStruct, tmp.Get(), &uk, inner.path);
+                if (!pt.field) return std::nullopt;
+                reflect::LoadField(*pt.field, pt.owner, inner.after, pt.unknowns, nullptr);
+                elemJson = reflect::Save(*elemStruct, tmp.Get(), &uk);
+            }
+            after.At(i) = std::move(elemJson);
+            Edit e;
+            e.block = block;
+            e.path = path;
+            e.before = arr;
+            e.after = std::move(after);
+            e.label = std::move(inner.label);
+            e.merge = inner.merge;
+            if (e.before == e.after && !withOthers) return std::nullopt;
+            if (outer) return outer(std::move(e));
+            return e;
+        };
+        if (elemStruct) {
+            // A struct: its fields under the element's row.
+            FieldPath inner;
+            DrawStruct(x, *elemStruct, elem, {}, nullptr, inner, indent + 2 * kIndent);
+        } else {
+            Spot s{f, ops.element, elem};
+            s.enabled = enabled;
+            s.r = {row.x + 46, row.y + 3, std::max(30.f, row.w - 46 - 28), row.h - 6};
+            s.scrub = indexR;  // the index: drag it to change a number
+            const std::string label = std::format("「{}」を変更", f.Label());
+            const json::Value before = arr.At(i);
+            s.editFor = [label, before](json::Value after) {
+                Edit e;
+                e.before = before;
+                e.after = std::move(after);
+                e.label = label;
+                return e;
+            };
+            DrawValue(x, s);
+        }
+        x.wrap = outer;
+        c.PopId();
+        c.PopId();
+    }
+
+    // An element being dragged: a line where it would go; let go = moved there.
+    if (x.st.arrayDrag == arrayId && count > 1) {
+        size_t slot = 0;  // before element `slot` (count = at the end)
+        while (slot < tops.size() && in.mouseY > tops[slot] + kElemRow * 0.5f) ++slot;
+        const size_t from = std::min(x.st.arrayDragFrom, count - 1);
+        if (in.down[0]) {
+            const float ly = slot < tops.size() ? tops[slot] : tops.back() + kElemRow;
+            if (slot != from && slot != from + 1) p.FillRect({left, ly - 1, width, 2}, theme::Accent);
+            c.RequestRedraw();
+        } else {
+            x.st.arrayDrag = 0;
+            if (slot != from && slot != from + 1) {
+                json::Value after = arr;
+                auto& items = after.Items();
+                json::Value moved = items[from];
+                items.erase(items.begin() + static_cast<std::ptrdiff_t>(from));
+                const size_t to = slot > from ? slot - 1 : slot;
+                items.insert(items.begin() + static_cast<std::ptrdiff_t>(to), std::move(moved));
+                put(std::move(after));
+            }
+        }
+    } else if (x.st.arrayDrag == arrayId && !in.down[0]) {
+        x.st.arrayDrag = 0;
+    }
+}
+
+void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t index, const void* owner, Others others, const Unknowns* u,
+               FieldPath& prefix, float indent) {
     if (!f.edit && !f.readOnly) return;  // saved, not shown
     ui::Context& c = x.c;
     auto& p = c.P();
@@ -125,15 +453,6 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, Oth
     const void* value = f.Get(owner);
     std::vector<const void*> otherValues;  // the same field in the objects edited together
     for (const void* o : others) otherValues.push_back(f.Get(o));
-    // Not the same in all of them (compared as saved, so every type is compared alike).
-    auto mixed = [&]() {
-        if (otherValues.empty()) return false;
-        const json::Value mine = reflect::SaveField(f, owner, nullptr);
-        for (const void* o : others) {
-            if (reflect::SaveField(f, o, nullptr) != mine) return true;
-        }
-        return false;
-    };
     FieldPath path = prefix;
     path.push_back(index);
 
@@ -142,8 +461,8 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, Oth
     Rect valueR{row.x + 12 + x.labelW + 8, row.y + 3, std::max(40.f, row.w - x.labelW - 34), row.h - 6};
     x.y += kRow;
     // Vectors and colours get their own line when the panel is too narrow for their boxes.
-    const size_t comps = f.value.type == FieldType::Vec2 ? 2 : f.value.type == FieldType::Vec3 ? 3 : f.value.type == FieldType::Color ? 4 : 0;
-    if (comps > 0 && valueR.w / static_cast<float>(comps) < 64.f) {
+    const size_t comps = Components(f.value.type);
+    if (comps > 0 && valueR.w / static_cast<float>(comps) < 64.f + kAxisW) {
         valueR = {row.x + 12 + indent + kIndent, x.y + 1, row.w - 24 - indent - kIndent, kRow - 6};
         x.y += kRow;
     }
@@ -154,140 +473,36 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, Oth
     c.PushId("field");
     for (const size_t i : path) c.PushId(static_cast<uint64_t>(i));
 
-    auto makeEdit = [&](json::Value after, uint64_t merge = 0, int component = -1) {
+    const json::Value before = reflect::SaveField(f, owner, u);
+    const std::string label = std::format("「{}」を変更", f.Label());
+    const size_t block = x.block;
+    auto editFor = [block, path, before, label](json::Value after) {
         Edit e;
-        e.component = component;
-        e.block = x.block;
+        e.block = block;
         e.path = path;
-        e.before = reflect::SaveField(f, owner, u);
+        e.before = before;
         e.after = std::move(after);
-        e.label = std::format("「{}」を変更", f.Label());
-        e.merge = merge;
-        // With others, a change counts even when this object has the value already (they may not).
-        if (e.before != e.after || !otherValues.empty()) x.edit = std::move(e);
+        e.label = label;
+        return e;
     };
-    uint64_t merge = 0;
 
     switch (f.value.type) {
-        case FieldType::Bool: {
-            bool v = *static_cast<const bool*>(value);
-            if (w::Checkbox(c, "v", {valueR.x, valueR.y, 28, valueR.h}, v, L"") && enabled) makeEdit(json::Value(v));
-            break;
-        }
-        case FieldType::Int:
-        case FieldType::Float: {
-            const bool isInt = f.value.type == FieldType::Int;
-            const double cur = isInt ? *static_cast<const int*>(value) : *static_cast<const float*>(value);
-            if (auto typed = LiveField(x, "v", valueR, mixed() ? kMixed : reflect::FormatNumber(f, cur), enabled, merge)) {
-                if (auto n = reflect::NumberFromInput(f, *typed, cur)) {
-                    makeEdit(isInt ? json::Value(static_cast<int64_t>(*n)) : json::Value(static_cast<double>(static_cast<float>(*n))), merge);
-                }
-            }
-            break;
-        }
-        case FieldType::String: {
-            if (auto typed = LiveField(x, "v", valueR, mixed() ? std::string(kMixed) : *static_cast<const std::string*>(value), enabled, merge)) {
-                makeEdit(json::Value(*typed), merge);
-            }
-            break;
-        }
-        case FieldType::Vec2:
-        case FieldType::Vec3:
-        case FieldType::Color: {
-            const size_t n = comps;
-            const float* values = static_cast<const float*>(value);
-            Rect area = valueR;
-            if (f.value.type == FieldType::Color) {
-                const Rect swatch = ui::TakeLeft(area, 26);
-                const Color col{values[0], values[1], values[2], values[3]};
-                p.FillRoundRect(swatch.Inset(0, 1, 4, 1), 4, col);
-                p.StrokeRoundRect(swatch.Inset(0, 1, 4, 1), 4, theme::Border);
-            }
-            const float each = (area.w - 4.f * static_cast<float>(n - 1)) / static_cast<float>(n);
-            static const char* kIds[] = {"x", "y", "z", "w"};
-            for (size_t i = 0; i < n; ++i) {
-                const Rect r{area.x + (each + 4) * static_cast<float>(i), area.y, each, area.h};
-                const bool mixedHere = std::any_of(otherValues.begin(), otherValues.end(),
-                                                   [&](const void* o) { return static_cast<const float*>(o)[i] != values[i]; });
-                if (auto typed = LiveField(x, kIds[i], r, mixedHere ? kMixed : reflect::FormatNumber(f, values[i]), enabled, merge)) {
-                    if (auto v = reflect::NumberFromInput(f, *typed, values[i])) {
-                        json::Value arr = json::Value::MakeArray();
-                        for (size_t k = 0; k < n; ++k) arr.Push(static_cast<double>(k == i ? static_cast<float>(*v) : values[k]));
-                        makeEdit(std::move(arr), merge, static_cast<int>(i));
-                    }
-                }
-            }
-            break;
-        }
-        case FieldType::Enum: {
-            const reflect::EnumDesc& e = *f.value.enumType;
-            std::wstring shown;
-            if (mixed()) {
-                shown = Utf8ToWide(kMixed);
-            } else if (const std::string* unknown = u ? u->Enum(f.name) : nullptr) {
-                shown = Utf8ToWide(*unknown) + Tr(L" (不明)");
-            } else if (const reflect::EnumItem* it = reflect::FindItem(e, e.get(value))) {
-                shown = Utf8ToWide(TrU8(it->label));
-            } else {
-                shown = std::to_wstring(e.get(value));
-            }
-            const auto b = w::ComboBox(c, "v", valueR, shown, enabled);
-            if (b.clicked) {
-                x.st.popup.OpenAt(valueR.x, valueR.Bottom() + 2);
-                x.st.popupPath = path;
-                x.st.popupBlock = x.block;
-            }
-            if (x.st.popup.open && x.st.popupPath == path && x.st.popupBlock == x.block) {
-                // The list is drawn at the end of the frame (not cut off by the panel). The choice is
-                // handed back through State and returned by the next Draw.
-                const json::Value before = reflect::SaveField(f, owner, u);
-                const float width = std::max(valueR.w, 180.f);
-                const std::string label = std::format("「{}」を変更", f.Label());
-                State* st = &x.st;
-                const size_t block = x.block;
-                const bool withOthers = !otherValues.empty();
-                c.AddOverlay([&c, st, &e, path, before, width, label, block, withOthers] {
-                    std::vector<w::MenuItem> items;
-                    for (const auto& it : e.items) items.push_back({Utf8ToWide(TrU8(it.label))});
-                    const bool wasEnabled = c.InputEnabled();
-                    c.SetInputEnabled(true);
-                    const int picked = w::MenuPopup(c, st->popup, items, width);
-                    c.SetInputEnabled(wasEnabled);
-                    if (picked >= 0) {
-                        Edit ed;
-                        ed.block = block;
-                        ed.path = path;
-                        ed.before = before;
-                        ed.after = json::Value(e.items[static_cast<size_t>(picked)].name);
-                        ed.label = label;
-                        if (ed.before != ed.after || withOthers) st->pending = std::move(ed);
-                    }
-                });
-            }
-            break;
-        }
         case FieldType::Struct: {
             FieldPath inner = path;
             DrawStruct(x, *f.value.structType, value, otherValues, u ? u->Child(f.name) : nullptr, inner, indent + kIndent);
             break;
         }
-        case FieldType::Array: {
-            const reflect::ArrayOps& ops = *f.array;
-            const size_t count = ops.size(value);
-            p.Text(valueR, TrF(L"{} 個  (追加・削除・並べ替えはこれから)", count), Text(12, theme::TextFaint));
-            const size_t shownCount = std::min<size_t>(count, 20);
-            for (size_t i = 0; i < shownCount; ++i) {
-                const Rect r{x.view.x + 12 + indent + kIndent, x.y, x.view.w - 24 - indent - kIndent, 24};
-                const void* elem = ops.at(const_cast<void*>(value), i);
-                p.Text({r.x, r.y, 50, r.h}, std::format(L"[{}]", i), Text(12, theme::TextFaint));
-                p.Text({r.x + 50, r.y, r.w - 50, r.h}, Utf8ToWide(Summary(f, ops.element, elem)), Text(12, theme::TextDim));
-                x.y += 24;
-            }
-            if (count > shownCount) {
-                p.Text({x.view.x + 12 + indent + kIndent, x.y, 300, 22}, TrF(L"… ほか {} 個", count - shownCount),
-                       Text(12, theme::TextFaint));
-                x.y += 22;
-            }
+        case FieldType::Array:
+            DrawArray(x, ownerType, f, owner, others, u, path, indent, valueR, enabled, editFor);
+            break;
+        default: {
+            Spot s{f, f.value, value, otherValues, u, f.name};
+            s.enabled = enabled;
+            s.r = valueR;
+            // A single number: its label is the handle to drag it.
+            if (f.value.type == FieldType::Int || f.value.type == FieldType::Float) s.scrub = labelR;
+            s.editFor = editFor;
+            DrawValue(x, s);
             break;
         }
     }
@@ -296,7 +511,7 @@ void DrawField(Pass& x, const FieldDesc& f, size_t index, const void* owner, Oth
 }
 
 void DrawStruct(Pass& x, const TypeDesc& t, const void* obj, Others others, const Unknowns* u, FieldPath& prefix, float indent) {
-    for (size_t i = 0; i < t.fields.size(); ++i) DrawField(x, t.fields[i], i, obj, others, u, prefix, indent);
+    for (size_t i = 0; i < t.fields.size(); ++i) DrawField(x, t, t.fields[i], i, obj, others, u, prefix, indent);
 }
 
 void DrawHeader(Pass& x, const Block& b, bool folded) {
@@ -382,7 +597,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
     c.SetInputEnabled(inputWas);
     st.contentHeight = x.y + off - area.y + 6;
     w::EndScroll(c, "inspector", area, st.contentHeight);
-    if (!st.popup.open) st.popupPath.clear();
+    if (!st.popup.open) st.popupId = 0;
 
     if (!x.tooltip.empty()) {
         w::Tooltip(c, x.tooltip);

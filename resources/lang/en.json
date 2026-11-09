@@ -36,8 +36,6 @@
   "plugin.json の形が正しくありません": "plugin.json is not in the right shape",
   "plugin.json を読めません": "Cannot read plugin.json",
   "{} 個": "{} items",
-  "{} 個  (追加・削除・並べ替えはこれから)": "{} items  (adding, removing and reordering will come later)",
-  "… ほか {} 個": "… and {} more",
   "● 未保存の変更があります": "● Unsaved changes",
   "⚠ 使えません": "⚠ Unusable",
   "⚠ 使えません: {}": "⚠ Unusable: {}",
@@ -248,5 +246,6 @@
   "開く…": "Open…",
   "開けませんでした": "Could not open",
   "階層": "Hierarchy",
-  "黒": "Dark"
+  "黒": "Dark",
+  "選んだ物で中身が違うので、まとめては変えられません。": "The selected objects hold different lists, so they cannot be changed together."
 }

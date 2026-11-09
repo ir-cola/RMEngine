@@ -47,6 +47,19 @@ bool Scene::RemoveComponent(int id, std::string_view type) {
     return e->components.size() != before;
 }
 
+bool Scene::MoveComponent(int id, std::string_view type, int by) {
+    SceneEntity* e = Find(id);
+    if (!e || (by != -1 && by != 1)) return false;
+    auto& list = e->components;
+    const auto it = std::find_if(list.begin(), list.end(), [&](const Component& c) { return c.type == type; });
+    if (it == list.end()) return false;
+    const auto i = it - list.begin();
+    const auto j = i + by;
+    if (j < 0 || j >= static_cast<std::ptrdiff_t>(list.size())) return false;
+    std::swap(list[static_cast<size_t>(i)], list[static_cast<size_t>(j)]);
+    return true;
+}
+
 size_t Scene::IndexOf(int id) const {
     if (id <= 0) return npos;
     for (size_t i = 0; i < entities_.size(); ++i) {

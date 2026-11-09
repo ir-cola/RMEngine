@@ -50,7 +50,7 @@ void DrawOrnament(ui::Context& c, const ui::Rect& window);
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 
 // --- Icons: drawn with lines, so they sit in the middle of their box at any size ------------
-enum class Icon { Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, Check, Object, Cube };
+enum class Icon { Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, Check, Object, Cube, Plus, Grip };
 void DrawIcon(ui::Context& c, const ui::Rect& r, Icon icon, ui::Color color);
 
 // --- Buttons ---------------------------------------------------------------------------------

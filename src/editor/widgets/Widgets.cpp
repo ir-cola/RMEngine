@@ -140,6 +140,13 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.Line(cx - s, cy, cx - s * 0.3f, cy + s * 0.7f, color, 2.f);
             p.Line(cx - s * 0.3f, cy + s * 0.7f, cx + s, cy - s * 0.8f, color, 2.f);
             break;
+        case Icon::Plus:
+            p.Line(cx - s, cy, cx + s, cy, color, kW);
+            p.Line(cx, cy - s, cx, cy + s, color, kW);
+            break;
+        case Icon::Grip:  // something to hold and drag: three short lines
+            for (int i = -1; i <= 1; ++i) p.Line(cx - s, cy + static_cast<float>(i) * s * 0.75f, cx + s, cy + static_cast<float>(i) * s * 0.75f, color, 1.3f);
+            break;
         case Icon::Object: {
             const float rr = std::min(r.w, r.h) * 0.27f;
             p.StrokeRoundRect({cx - rr, cy - rr, rr * 2, rr * 2}, rr, color, 1.3f);

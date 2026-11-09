@@ -17,10 +17,17 @@
 // selects what it covers. Numbers go through reflect::NumberFromInput: the same Min / Max /
 // rounding as loading a file (design R1 T3) - text that is not a number yet ("-", "1e") waits.
 //
+// Dragging a number's label (or the X / Y / Z in front of a vector's boxes, the index of an array
+// element) left / right changes it like a slider without end (Shift: faster, Alt: slower; one undo
+// entry per drag).
+//
 //   bool           check box          int / float     number field
 //   std::string    text field         Vec2/3, Color   one number field per component (+ a swatch)
 //   enum           drop-down list (a name this version does not know shows as "名前 (不明)")
-//   struct         its fields, indented          std::vector   read-only list for now
+//   struct         its fields, indented
+//   std::vector    "N 個" and ＋ (adds a copy of the last), then each element: a grip to drag it to
+//                  another place, its index, its value (any of the above), × to remove it. Every
+//                  change is the whole array set at once (one undo entry).
 
 #include "base/Json.h"
 #include "core/reflect/Data.h"
@@ -72,8 +79,14 @@ struct State {
     std::string original;  // the value of the field being edited when it was entered (Esc)
     uint64_t session = 0;  // the merge key of that typing
     w::Popup popup;  // a drop-down list of an enum field
-    size_t popupBlock = 0;
-    reflect::FieldPath popupPath;
+    ui::Id popupId = 0;  // ... of this field (or array element)
+    // Dragging a label to change a number: which one, from what value, how far, its undo key.
+    ui::Id scrub = 0;
+    double scrubStart = 0, scrubMoved = 0, scrubSpeed = 0;
+    uint64_t scrubSession = 0;
+    // Dragging an array element by its grip: which array, which element.
+    ui::Id arrayDrag = 0;
+    size_t arrayDragFrom = 0;
     std::optional<Edit> pending;  // chosen in the drop-down (drawn at the end of the frame)
     w::Popup menu;                // a block's ⋮ menu or the add button's menu
     std::vector<w::Action> menuActions;

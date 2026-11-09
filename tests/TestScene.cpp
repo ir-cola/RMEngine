@@ -281,3 +281,25 @@ RM_TEST(Scene_Paste_NeverMakesALoop) {
     CHECK(s.Entities().size() == 4);
     CHECK(s.TreeOrder().size() == 4);  // every entity is reachable from the top
 }
+
+RM_TEST(Scene_MoveComponent_UpAndDown) {
+    Scene s = Sample();
+    s.SetComponentTypes({&TransformType()});
+    s.AddComponent(1, TransformType());
+    // A second component: one of a plugin that is not here (kept as read), after the Transform.
+    json::Value saved = s.Save();
+    json::Value foreign = json::Value::MakeObject();
+    foreign.Set("type", "someone::Physics");
+    saved.Find("entities")->At(0).Find("components")->Push(foreign);
+    s.Load(saved);
+    const std::string t = TransformType().name;
+    CHECK(!s.MoveComponent(1, t, -1));  // first already
+    CHECK(s.MoveComponent(1, t, 1));
+    CHECK(s.Find(1)->components[0].type == "someone::Physics" && s.Find(1)->components[1].type == t);
+    CHECK(!s.MoveComponent(1, t, 1));  // last now
+    CHECK(s.MoveComponent(1, "someone::Physics", 1));
+    CHECK(s.Find(1)->components[0].type == t);
+    CHECK(!s.MoveComponent(1, "nothing", 1));
+    CHECK(!s.MoveComponent(99, t, 1));
+    CHECK(!s.MoveComponent(1, t, 2));  // one place at a time
+}

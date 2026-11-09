@@ -7,6 +7,18 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "インスペクター: 数の名前 (ベクトルは X / Y / Z) を左右にドラッグして値を変える",
+          "en": "Inspector: drag a number's name (X / Y / Z for vectors) left or right to change it"
+        },
+        {
+          "ja": "インスペクター: 配列の要素を足す・消す・つまみでドラッグして並べ替える",
+          "en": "Inspector: add, remove and drag to reorder array elements"
+        },
+        {
+          "ja": "部品の順番を「上へ移動」「下へ移動」で入れ替える",
+          "en": "Reorder components with Move up / Move down"
+        },
+        {
           "ja": "階層: エンティティのコピー・切り取り・貼り付け (Ctrl+C / X / V、別のプロジェクトにも貼れる)",
           "en": "Hierarchy: copy, cut and paste entities (Ctrl+C / X / V, also into another project)"
         },

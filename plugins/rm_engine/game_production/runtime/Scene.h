@@ -91,6 +91,9 @@ public:
     bool AddComponent(int id, const reflect::TypeDesc& type);
     // False when the entity has none of that type (known or not).
     bool RemoveComponent(int id, std::string_view type);
+    // Moves a component one place up (by = -1) or down (+1) among the entity's (the inspector's order).
+    // False when it cannot move (no such entity / component, already first / last).
+    bool MoveComponent(int id, std::string_view type, int by);
 
     // { "nextId": 7, "entities": [ {"id": 1, "parent": 0, "name": ..., "active": ...,
     //     "components": [ {"type": "rm::space3d::Transform", "data": {...}} ] }, ... ] }

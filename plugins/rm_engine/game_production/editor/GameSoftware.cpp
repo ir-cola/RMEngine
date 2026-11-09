@@ -489,8 +489,25 @@ private:
                 remove.run = [this, id, type, label] {
                     Edit(std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type); });
                 };
+                // Its place among the entity's components (the order they are shown - and run, later).
+                const size_t at = static_cast<size_t>(&c - e->components.data());
+                editor::w::Action up;
+                up.label = Tr(L"上へ移動");
+                up.enabled = at > 0;
+                up.run = [this, id, type, label] {
+                    Edit(std::format("「{}」を上へ移動", label), [&] { scene_.MoveComponent(id, type, -1); });
+                };
+                editor::w::Action down;
+                down.label = Tr(L"下へ移動");
+                down.enabled = at + 1 < e->components.size();
+                down.run = [this, id, type, label] {
+                    Edit(std::format("「{}」を下へ移動", label), [&] { scene_.MoveComponent(id, type, 1); });
+                };
+                editor::w::Action sep;
+                sep.separator = true;
+                const std::vector<editor::w::Action> menu{up, down, sep, remove};
                 if (c.Known()) {
-                    editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(TrU8(label)), {}, {remove}};
+                    editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(TrU8(label)), {}, menu};
                     // A child: ローカル / ワールド (or whatever the plugin calls them), one block shown either way.
                     // At the top level both ways are the same numbers, so there is no switch.
                     if (const ComponentInfo* info = InfoOf(c.type); info && info->HasDerived() && e->data.parent != 0) {
@@ -506,7 +523,7 @@ private:
                     blocks.push_back(std::move(b));
                 } else {
                     blocks.push_back({nullptr, {}, Utf8ToWide(label) + Tr(L" (使えない部品)"),
-                                      Tr(L"この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。"), {remove}});
+                                      Tr(L"この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。"), menu});
                 }
             }
             return blocks;
