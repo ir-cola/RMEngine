@@ -174,8 +174,9 @@ void DrawOrnament(ui::Context& c, const Rect& w) {
             // leaf in the bottom-left.
             const auto canopy = ornament::Canopy(w, std::clamp(w.h * 0.32f, 120.f, 300.f), 1.f / 4.f, 0xF411u);
             for (int i = 0; i < 4; ++i) Fill(c, canopy[static_cast<size_t>(i)], Leaf(i));
+            // Bigger than the other seasons' and nearer the corner (its side lobes and stalk may run off the edges).
             const float big = std::min(r * 1.5f, 220.f);
-            Fill(c, ornament::MapleLeaf(CornerCenter(w, big), big, 10.f), theme::OrnamentColor());
+            Fill(c, ornament::MapleLeaf({w.x + 8.f + big * 0.8f, w.Bottom() - 8.f - big * 0.8f}, big, 10.f), theme::OrnamentColor());
             return;
         }
         case theme::Ornament::Winter:
