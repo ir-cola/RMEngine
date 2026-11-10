@@ -166,8 +166,9 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     const Bounds flake = BoundsOf(Snowflake(c, 100, 0));
     CHECK(flake.x0 > 390 && flake.x1 < 610 && flake.y0 > 390 && flake.y1 < 610);
     CHECK(AllClockwise(Snowflake(c, 100, 10)));
-    const Bounds flower = BoundsOf(Sunflower(c, 100, 0));
-    CHECK(flower.x0 > 390 && flower.x1 < 610 && flower.y0 > 390 && flower.y1 < 660);  // the stem hangs 1.45 below
+    const Bounds sun = BoundsOf(Sun(c, 100, 0));
+    CHECK(std::fabs(sun.y0 - 400) < 0.5f && sun.x0 > 390 && sun.x1 < 610 && sun.y1 < 610);  // the top ray's tip at the radius
+    CHECK(AllClockwise(Sun(c, 100, 10)));
 
     // The cherry tree stands along the right edge, reaching about `depth` in; its petals blow to the left.
     const rm::ui::Rect screen{0, 0, 1000, 700};
@@ -187,7 +188,7 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     // Every corner silhouette fills the same box (a maple leaf as tall as a cherry blossom).
     const rm::ui::Rect box{10, 400, 200, 200};
     for (const rm::ui::Path& sil : {FitInto(Sakura({0, 0}, 1, 10), box), FitInto(MapleLeaf({0, 0}, 1, 10), box),
-                                     FitInto(Snowflake({0, 0}, 1, 10), box), FitInto(Sunflower({0, 0}, 1, 10), box)}) {
+                                     FitInto(Snowflake({0, 0}, 1, 10), box), FitInto(Sun({0, 0}, 1, 10), box)}) {
         const Bounds sb2 = BoundsOf(sil);
         CHECK(sb2.x0 >= 10 - 0.01f && sb2.x1 <= 210 + 0.01f && sb2.y0 >= 400 - 0.01f && sb2.y1 <= 600 + 0.01f);
         CHECK(std::fabs((sb2.x1 - sb2.x0) - 200) < 0.01f || std::fabs((sb2.y1 - sb2.y0) - 200) < 0.01f);  // as large as it fits

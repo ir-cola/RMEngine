@@ -186,18 +186,16 @@ ui::Path Petals(const ui::Rect& area, int count, float size, uint32_t seed) {
 
 // --- Summer -----------------------------------------------------------------------------------
 
-ui::Path Sunflower(Vec2 center, float r, float degreesCcw) {
+ui::Path Sun(Vec2 center, float r, float degreesCcw) {
     ui::Path p;
-    // Fourteen long petals with gaps between their tips, around a big round heart (so it reads as a
-    // flower, not a cog), on a stem with a leaf.
-    for (int i = 0; i < 14; ++i) {
-        const float a = degreesCcw + static_cast<float>(i) * (360.f / 14.f);
-        AddEllipse(p, Add(center, Scale(Rotate({0, -0.68f}, a), r)), 0.115f * r, 0.31f * r, a);
+    AddCircle(p, center, 0.50f * r);
+    for (int i = 0; i < 12; ++i) {
+        const float a = degreesCcw + static_cast<float>(i) * 30.f;
+        const float tip = i % 2 == 0 ? 1.f : 0.80f;  // long and short rays in turn
+        const Vec2 ray[3] = {Add(center, Scale(Rotate({-0.10f, -0.58f}, a), r)), Add(center, Scale(Rotate({0, -tip}, a), r)),
+                             Add(center, Scale(Rotate({0.10f, -0.58f}, a), r))};
+        AddPolygon(p, ray);
     }
-    AddCircle(p, center, 0.40f * r);
-    auto at = [&](float x, float y) { return Add(center, Scale(Rotate({x, y}, degreesCcw), r)); };
-    AddBar(p, at(0, 0.3f), at(0.08f, 1.45f), 0.11f * r, 0.08f * r);
-    AddEllipse(p, at(0.30f, 1.05f), 0.24f * r, 0.09f * r, degreesCcw + 30.f);
     return p;
 }
 

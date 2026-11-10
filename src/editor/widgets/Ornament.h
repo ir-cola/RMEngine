@@ -51,7 +51,9 @@ ui::Path PetalStream(const ui::Rect& window, float fromX, int count, float size,
 ui::Path Petals(const ui::Rect& area, int count, float size, uint32_t seed);
 
 // --- Summer -----------------------------------------------------------------------------------
-ui::Path Sunflower(Vec2 center, float radius, float degreesCcw);
+// The sun: a round disc and twelve pointed rays around it, long and short in turn (radius = to the
+// long rays' tips), turned `degreesCcw`.
+ui::Path Sun(Vec2 center, float radius, float degreesCcw);
 ui::Path Cloud(Vec2 center, float width);
 // A sand castle standing on `base` (the middle of its foot), made by hand: a wall and three towers
 // that lean and bulge a little, round lumps on their tops, a heap of sand at its foot (so, filled

@@ -46,7 +46,7 @@ void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
 //   スプリング  a cherry tree along the right edge with petals blowing off it, a blossom
 //               (bottom-left), a flurry of petals (top-left)
 //   サマー      a mound of sand with a parasol and a sand castle (bottom-right, a silhouette like
-//               spring's tree), clouds (top-right), a sunflower (bottom-left)
+//               spring's tree), clouds (top-right), the sun (bottom-left)
 //   フォール    leaves thick along the top and scattered below, a big maple leaf (bottom-left)
 //   ウィンター  falling snow (held still), icicles from the top edge, snow piled at the bottom of every
 //               panel (DrawPanelFrame notes them: ui::Context::Decorate), a snowflake (bottom-left)

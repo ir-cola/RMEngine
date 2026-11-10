@@ -85,13 +85,14 @@ inline constexpr Palette kSpring{
     Color::Hex(0xE2C6D0), Color::Hex(0xC6A3B0), Color::Hex(0x000000, 0.30f), 0xF5E4EA, true, Ornament::Spring,
 };
 
-// サマー: a deep summer sky (blue), a sea-blue accent.
+// サマー: the pale parts (panels, fields) a pale yellow like sunlit sand, the deeper parts (the
+// window's background, the sidebar, borders, the selection) a pale summer-sky blue; a sea-blue accent.
 inline constexpr Palette kSummer{
-    Color::Hex(0xB4D9F5), Color::Hex(0xA2CDF0), Color::Hex(0xE3F1FC), Color::Hex(0xD0E7FA), Color::Hex(0x96C1E4),
-    Color::Hex(0x6EA4D0), Color::Hex(0xF7FBFF), Color::Hex(0xCBE3F7), Color::Hex(0xBAD8F3), Color::Hex(0xA9D0F2),
-    Color::Hex(0x1270C0), Color::Hex(0x2685D2), Color::Hex(0x0D5A9C), Color::Hex(0x0F1F2B), Color::Hex(0x435768),
-    Color::Hex(0x728CA0), Color::Hex(0xD03030), Color::Hex(0xA87A06), Color::Hex(0xC9921B), Color::Hex(0x000000, 0.14f),
-    Color::Hex(0x9DBFDB), Color::Hex(0x789FC2), Color::Hex(0x000000, 0.32f), 0xA2CDF0, true, Ornament::Summer,
+    Color::Hex(0xBDDCF4), Color::Hex(0xAED2F0), Color::Hex(0xFFF8DE), Color::Hex(0xFCEFC6), Color::Hex(0x9DC4E5),
+    Color::Hex(0x77A9D3), Color::Hex(0xFFFCEE), Color::Hex(0xF8EBBE), Color::Hex(0xF1E1A8), Color::Hex(0xCDE5F8),
+    Color::Hex(0x1270C0), Color::Hex(0x2685D2), Color::Hex(0x0D5A9C), Color::Hex(0x1C2731), Color::Hex(0x535F69),
+    Color::Hex(0x8A949C), Color::Hex(0xD03030), Color::Hex(0xA87A06), Color::Hex(0xC9921B), Color::Hex(0x000000, 0.14f),
+    Color::Hex(0xE0CF96), Color::Hex(0xC9B372), Color::Hex(0x000000, 0.32f), 0xAED2F0, true, Ornament::Summer,
 };
 
 // フォール: an autumn wood - yellow and orange, a maple-red accent.

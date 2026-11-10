@@ -159,12 +159,12 @@ void DrawOrnament(ui::Context& c, const Rect& w) {
             return;
         }
         case theme::Ornament::Summer: {
-            // Like the other seasons: a sunflower in the bottom-left, a silhouette in the bottom-right
+            // Like the other seasons: the sun in the bottom-left, a silhouette in the bottom-right
             // (a mound of sand with a parasol and a sand castle, as spring has its tree), clouds at the
             // top-right (as spring has its petals at the top-left).
             const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
             Fill(c, ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h), theme::OrnamentColor());
-            Fill(c, ornament::FitInto(ornament::Sunflower({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
+            Fill(c, ornament::FitInto(ornament::Sun({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
             SummerClouds(c, w, 1.f);
             return;
         }
