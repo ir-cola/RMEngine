@@ -148,12 +148,12 @@ void DrawOrnament(ui::Context& c, const Rect& w) {
         case theme::Ornament::None:
             return;
         case theme::Ornament::Spring: {
-            // A cherry tree along the whole right edge with its petals blowing off it to the left, a
-            // blossom in the bottom-left, petals at the top-left.
-            const float d = std::clamp(w.w * 0.18f, 150.f, 340.f);
-            Fill(c, ornament::CherryEdge(w, d), theme::OrnamentColor());
+            // A cherry tree growing from the bottom edge on the right, in bloom up top, its petals
+            // blowing off it to the left; a blossom in the bottom-left, petals at the top-left.
+            const float d = std::clamp(std::max(w.w * 0.18f, w.h * 0.25f), 150.f, 340.f);
+            Fill(c, ornament::CherryTree(w, d), theme::OrnamentColor());
             const int stream = std::max(24, static_cast<int>(w.w * w.h / 16000.f));
-            Fill(c, ornament::PetalStream(w, w.Right() - d * 0.9f, stream, 9.f, 0xB10Fu), Petal());
+            Fill(c, ornament::PetalStream(w, w.Right() - d * 1.3f, stream, 9.f, 0xB10Fu), Petal());
             Fill(c, ornament::FitInto(ornament::Sakura({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
             SpringFlurry(c, w, 1.f);
             return;

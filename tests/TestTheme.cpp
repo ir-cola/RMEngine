@@ -170,11 +170,21 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     CHECK(std::fabs(sun.y0 - 400) < 0.5f && sun.x0 > 390 && sun.x1 < 610 && sun.y1 < 610);  // the top ray's tip at the radius
     CHECK(AllClockwise(Sun(c, 100, 10)));
 
-    // The cherry tree stands along the right edge, reaching about `depth` in; its petals blow to the left.
+    // The cherry tree grows from the bottom edge near the right, its crown up top past the top and
+    // right edges, reaching about 1.6 x size in; its petals blow to the left.
     const rm::ui::Rect screen{0, 0, 1000, 700};
-    const Bounds tree = BoundsOf(CherryEdge(screen, 200));
-    CHECK(tree.x0 > 1000 - 200 * 1.5f && tree.x1 > 1000 && tree.y0 < 0 && tree.y1 > 700);
-    CHECK(AllClockwise(CherryEdge(screen, 200)));
+    const rm::ui::Path cherry = CherryTree(screen, 200);
+    const Bounds tree = BoundsOf(cherry);
+    CHECK(tree.x0 > 1000 - 200 * 1.7f && tree.x1 > 1000 && tree.y0 < 0 && tree.y1 > 700);
+    CHECK(AllClockwise(cherry));
+    // Near the bottom only the trunk (and a petal or two): narrow, standing near the right edge.
+    float lowLeft = 1e9f, lowRight = -1e9f;
+    for (const auto& st : cherry.steps) {
+        if (st.a.y < 680) continue;
+        lowLeft = std::min(lowLeft, st.a.x);
+        lowRight = std::max(lowRight, st.a.x);
+    }
+    CHECK(lowLeft > 1000 - 200 * 1.0f && lowRight < 1000);
     const rm::ui::Path stream = PetalStream(screen, 820, 80, 9, 4);
     const Bounds sb = BoundsOf(stream);
     CHECK(sb.figures > 60 && sb.x1 < 820 + 30 && sb.x0 > -10 && sb.y1 <= 700 + 10);

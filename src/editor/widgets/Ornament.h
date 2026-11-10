@@ -1,5 +1,5 @@
 #pragma once
-// The shapes of theme ornaments (the seasons' pictures: a cherry tree, a sunflower, a maple leaf, a
+// The shapes of theme ornaments (the seasons' pictures: a cherry tree, the sun, a maple leaf, a
 // snowflake, the sun, clouds, snow on an edge ...). Pure: they only make ui::Paths (tested in
 // tests/TestTheme.cpp); w::DrawOrnament / DrawFloatOrnament / the snow in the widgets draw them in
 // the theme's colors.
@@ -40,12 +40,14 @@ struct Random {
 // turning, one petal points straight up. radius = from the centre to the petals' tips;
 // degreesCcw = turned counter-clockwise as seen on screen.
 ui::Path Sakura(Vec2 center, float radius, float degreesCcw);
-// A cherry tree in full bloom standing along the whole right edge of `window` (its trunk mostly
-// outside it), its branches reaching up to `depth` into the window at several heights, heavy with
-// blossom; the left edge of its blossom is about `depth` from the window's right edge.
-ui::Path CherryEdge(const ui::Rect& window, float depth);
-// Petals blown off that tree to the left: thick near it (`fromX` = its left edge), thinning out and
-// drifting down a little as they fly across the window.
+// A cherry tree in full bloom growing from the bottom edge of `window` near its right edge: a trunk
+// rising (bending a little, its roots flaring at the foot) to a fork a little past the window's
+// middle, branches spreading up from there into a wide crown of blossom up top (its top and right
+// cut off by the window's edges), a low branch with its own clump off to the left. `size` = the
+// crown's half width; its blossom reaches about 1.6 x size left of the window's right edge.
+ui::Path CherryTree(const ui::Rect& window, float size);
+// Petals blown off that tree's crown to the left: thick near it (`fromX` = its left edge), thinning
+// out and sinking as they fly across the window.
 ui::Path PetalStream(const ui::Rect& window, float fromX, int count, float size, uint32_t seed);
 // Small petals scattered in `area` (a flurry), each about `size` long.
 ui::Path Petals(const ui::Rect& area, int count, float size, uint32_t seed);

@@ -43,7 +43,7 @@ void DrawSurface(ui::Context& c, const ui::Rect& r, Surface s, float radius = th
 // panels 1px apart share one dark seam. Each corner its own radius - square where it touches another.
 void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
 // The pictures of the theme in use (the seasons), laid faintly over the main window (Hub / editor):
-//   スプリング  a cherry tree along the right edge with petals blowing off it, a blossom
+//   スプリング  a cherry tree growing up on the right, in bloom up top, petals blowing off it, a blossom
 //               (bottom-left), a flurry of petals (top-left)
 //   サマー      a mound of sand with a parasol and a sand castle (bottom-right, a silhouette like
 //               spring's tree), clouds (top-right), the sun (bottom-left)

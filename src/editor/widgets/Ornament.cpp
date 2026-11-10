@@ -115,40 +115,64 @@ ui::Path Sakura(Vec2 center, float radius, float degreesCcw) {
     return path;
 }
 
-ui::Path CherryEdge(const ui::Rect& win, float d) {
+ui::Path CherryTree(const ui::Rect& win, float d) {
     ui::Path p;
     Random rnd{0xC0FFEEu};
     const float right = win.x + win.w, top = win.y, bottom = win.y + win.h;
-    // The trunk: up the right edge, mostly outside, a little of it showing, bending gently.
-    const Vec2 trunk[] = {{right + 0.45f * d, bottom + 4.f}, {right - 0.16f * d, bottom + 4.f}, {right - 0.10f * d, bottom - 0.08f * d},
-                          {right - 0.07f * d, top + win.h * 0.55f}, {right - 0.04f * d, top + win.h * 0.25f}, {right - 0.02f * d, top - 4.f},
-                          {right + 0.45f * d, top - 4.f}};
+    // The crown: up top, wide, a little heavier on the left, its top just past the window's top.
+    const float rx = d, ry = std::min(std::max(0.25f * win.h, 0.45f * d), 0.8f * d);
+    const Vec2 crown{right - 0.62f * d, top + 0.8f * ry};
+    const Vec2 fork{right - 0.52f * d, crown.y + ry + 0.1f * d};
+    const float foot = right - 0.42f * d;
+    // The trunk: a column from the bottom edge up to the fork, bending a little, flaring into roots
+    // at its foot.
+    constexpr int kSteps = 24;
+    std::vector<Vec2> trunk(2 * (kSteps + 1));
+    for (int k = 0; k <= kSteps; ++k) {
+        const float s = static_cast<float>(k) / kSteps;
+        const float x = foot + (fork.x - foot) * s + 0.06f * d * std::sin(kPi * s);
+        const float y = bottom + 4.f + (fork.y - bottom - 4.f) * s;
+        float half = 0.13f * d * (1.f - 0.45f * s);
+        if (s < 0.12f) half *= 1.f + 1.6f * ((0.12f - s) / 0.12f) * ((0.12f - s) / 0.12f);
+        trunk[static_cast<size_t>(k)] = {x - half, y};
+        trunk[trunk.size() - 1 - static_cast<size_t>(k)] = {x + half, y};
+    }
     AddPolygon(p, trunk);
-    // The branches: one every so often from the top down, reaching left and a little up, each heavy
-    // with blossom towards its end; the blossom also covers the trunk's edge.
-    const int branches = std::max(3, static_cast<int>(win.h / 110.f));
-    for (int i = 0; i < branches; ++i) {
-        const float y = top + win.h * (static_cast<float>(i) + 0.35f + 0.3f * rnd.Next()) / static_cast<float>(branches);
-        const float reach = d * (0.55f + 0.4f * rnd.Next());
-        const Vec2 from{right - 0.05f * d, y};
-        const Vec2 to{right - reach, y - d * (0.05f + 0.15f * rnd.Next())};
-        AddBar(p, from, to, 0.08f * d, 0.02f * d);
-        // A twig off it, upwards.
-        const Vec2 mid{(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f};
-        AddBar(p, mid, {mid.x - 0.12f * d, mid.y - 0.16f * d}, 0.035f * d, 0.012f * d);
-        // Blossom: round puffs along the outer two thirds of the branch, bigger towards its end.
-        for (int k = 0; k < 9; ++k) {
-            const float t = 0.3f + 0.7f * static_cast<float>(k) / 8.f + 0.05f * rnd.Next();
-            const Vec2 c{from.x + (to.x - from.x) * t + d * 0.06f * (rnd.Next() - 0.5f), from.y + (to.y - from.y) * t + d * 0.12f * (rnd.Next() - 0.6f)};
-            AddCircle(p, c, d * (0.06f + 0.07f * t) * (0.7f + 0.5f * rnd.Next()));
-        }
+    // The branches: from the fork up and out into the crown, each with a slight elbow.
+    const Vec2 ends[] = {{crown.x - 0.72f * rx, crown.y + 0.50f * ry}, {crown.x - 0.30f * rx, crown.y + 0.05f * ry},
+                         {crown.x + 0.45f * rx, crown.y + 0.30f * ry}, {crown.x - 0.05f * rx, crown.y - 0.45f * ry},
+                         {crown.x + 0.25f * rx, crown.y - 0.15f * ry}};
+    const float widths[] = {0.085f, 0.08f, 0.075f, 0.06f, 0.055f};
+    for (size_t i = 0; i < std::size(ends); ++i) {
+        const float wd = widths[i] * d;
+        const Vec2 mid{(fork.x + ends[i].x) * 0.5f + 0.05f * d, (fork.y + ends[i].y) * 0.5f + 0.04f * d};
+        AddBar(p, fork, mid, wd, wd * 0.7f);
+        AddBar(p, mid, ends[i], wd * 0.7f, 0.02f * d);
     }
-    for (float y = top - 10.f; y < bottom; y += d * (0.12f + 0.1f * rnd.Next())) {
-        AddCircle(p, {right - d * (0.08f + 0.12f * rnd.Next()), y}, d * (0.08f + 0.06f * rnd.Next()));
+    // A low branch off the trunk, reaching left under the crown.
+    const Vec2 lowFrom{foot - 0.01f * d, fork.y + 0.30f * (bottom - fork.y)};
+    const Vec2 lowTo{right - 1.30f * d, fork.y - 0.10f * d};
+    const Vec2 lowMid{(lowFrom.x + lowTo.x) * 0.5f, (lowFrom.y + lowTo.y) * 0.5f + 0.06f * d};
+    AddBar(p, lowFrom, lowMid, 0.07f * d, 0.045f * d);
+    AddBar(p, lowMid, lowTo, 0.045f * d, 0.015f * d);
+    // Blossom: a solid middle, big puffs filling the crown, smaller ones round its edge (fluffy, not
+    // bubbly), and a clump on the low branch's end.
+    AddEllipse(p, crown, 0.72f * rx, 0.72f * ry, 0);
+    for (int i = 0; i < 110; ++i) {
+        const float a = rnd.Next() * 2.f * kPi, t = std::sqrt(rnd.Next()) * 0.85f;
+        AddCircle(p, {crown.x + std::cos(a) * t * rx, crown.y + std::sin(a) * t * ry}, d * (0.10f + 0.08f * rnd.Next()) * (1.f - 0.4f * t));
     }
-    // A few petals falling just beside it.
-    for (int i = 0; i < 10; ++i) {
-        const Vec2 c{right - d * (0.9f + 0.5f * rnd.Next()), top + win.h * rnd.Next()};
+    for (int i = 0; i < 70; ++i) {
+        const float a = rnd.Next() * 2.f * kPi, t = 0.85f + 0.15f * rnd.Next();
+        AddCircle(p, {crown.x + std::cos(a) * t * rx, crown.y + std::sin(a) * t * ry}, d * (0.05f + 0.05f * rnd.Next()));
+    }
+    for (int i = 0; i < 18; ++i) {
+        const float a = rnd.Next() * 2.f * kPi, t = std::sqrt(rnd.Next());
+        AddCircle(p, {lowTo.x + 0.05f * d + std::cos(a) * t * 0.26f * d, lowTo.y + std::sin(a) * t * 0.14f * d}, d * (0.05f + 0.04f * rnd.Next()));
+    }
+    // A few petals falling under it.
+    for (int i = 0; i < 12; ++i) {
+        const Vec2 c{right - d * (0.2f + 1.4f * rnd.Next()), crown.y + ry + 0.1f * d + (bottom - crown.y - ry) * 0.7f * rnd.Next()};
         AddEllipse(p, c, 0.025f * d, 0.015f * d, rnd.Next() * 180.f);
     }
     return p;
@@ -162,8 +186,8 @@ ui::Path PetalStream(const ui::Rect& win, float fromX, int count, float size, ui
         // How far it has flown (0 = at the tree): most of them still near it.
         const float u = std::pow(rnd.Next(), 1.8f);
         const float x = fromX + 20.f * rnd.Next() - span * u;
-        // Blown out from anywhere on the tree, sinking slowly as it flies.
-        const float y = win.y + win.h * (0.05f + 0.8f * rnd.Next()) + win.h * 0.15f * u;
+        // Blown out from the crown (the upper half), sinking as it flies.
+        const float y = win.y + win.h * (0.04f + 0.42f * rnd.Next()) + win.h * 0.35f * u;
         if (y > win.y + win.h) continue;
         const float s = size * (0.6f + 0.7f * rnd.Next()) * (1.f - 0.3f * u);
         AddEllipse(p, {x, y}, s * 0.5f, s * 0.3f, rnd.Next() * 180.f);
