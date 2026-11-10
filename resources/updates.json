@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "テーマパックを外して黒になったあと、パックを入れ直しても前のテーマに勝手に戻らないように",
+          "en": "After a theme pack is removed (the theme turns Dark), installing it again no longer brings the old theme back by itself"
+        },
+        {
           "ja": "テーマをパック (プラグイン) で足す形に。組み込みは黒・白・PC の設定に合わせるの 3 つ。基本カラーテーマパック (青・緑)・季節テーマパック・紙は Hub の「プラグイン」から入れる",
           "en": "Themes now come in packs (plugins). Built in: Dark, Light and Follow Windows. The Basic Color Theme Pack (Blue, Green), the Seasons Theme Pack and Paper are installed from the Hub's Plugins page"
         },

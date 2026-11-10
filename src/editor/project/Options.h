@@ -28,7 +28,7 @@ RM_STRUCT(Label="オプション")
 struct Options {
     // The id of one of theme::Themes() (chosen on its own screen, so not in the inspector): a built-in
     // one or a theme pack's. The built-in ids are the names of the old three-way choice, so a hub.json
-    // from before keeps its theme; a pack's theme comes back when its pack is installed again.
+    // from before keeps its theme. A pack's theme whose pack is removed becomes the first theme (for good).
     RM_PROPERTY(Label="色のテーマ") std::string theme = "Dark";
     RM_PROPERTY(Edit, Label="言語") UiLanguage language = UiLanguage::Japanese;
     RM_PROPERTY(Edit, Label="自動保存の間隔", Tooltip="開いているプロジェクトに未保存の変更があれば、この間隔で保存します") AutoSaveInterval autoSave = AutoSaveInterval::Min5;

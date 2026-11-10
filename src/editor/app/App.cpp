@@ -180,6 +180,16 @@ void App::LoadThemes() {
     }
     log::Info("テーマ: パックから {} 個", themes.size());
     theme::SetPackThemes(std::move(themes));
+    // The theme chosen is not there any more (its pack removed, or not installed): the first theme
+    // from now on, written to hub.json - installing the pack again does not bring it back. An old id
+    // (a theme's alias) becomes the theme's own.
+    Options& o = settings_.GetOptions();
+    const theme::ThemeInfo& now = theme::FindTheme(o.theme);
+    if (now.id != o.theme) {
+        log::Info("選んでいたテーマ {} が無いので、{} にしました", o.theme, now.id);
+        o.theme = now.id;
+        settings_.Save();
+    }
 }
 
 void App::ApplyOptions() {

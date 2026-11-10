@@ -114,7 +114,7 @@ inline void SetPackThemes(std::vector<ThemeInfo> themes) {
     for (ThemeInfo& t : themes) list.push_back(std::move(t));
 }
 // An unknown id (a pack that is not installed, a theme of a newer version, a typo in hub.json) is the
-// first theme. hub.json keeps the id, so the theme comes back when its pack is installed again.
+// first theme (App then writes that one to hub.json: installing the pack again does not bring it back).
 inline const ThemeInfo& FindTheme(std::string_view id) {
     const auto list = Themes();
     for (const ThemeInfo& t : list) {
