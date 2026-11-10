@@ -14,7 +14,9 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
+#include <format>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
@@ -39,7 +41,14 @@ constexpr float kOrbitDegreesPerDip = 0.4f;
 constexpr float kClickSlop = 4.f;  // a press that moves less than this is a click
 constexpr int kGridHalf = 20;      // the grid goes from -20 to 20 (1 per line, darker every 10)
 constexpr float kBarH = 28.f;      // the tool strip at the top left
-constexpr float kToolW = 196.f, kSpaceW = 168.f, kBarGap = 8.f;
+constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kBarGap = 8.f;
+constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
+
+// The tool strip's parts: 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心, 刻み; they go on a
+// second row when the view is too narrow for one. `all` = round all of them.
+struct BarLayout {
+    Rect tool, space, pivot, snap, all;
+};
 
 struct Placed {
     int id;
@@ -87,12 +96,14 @@ public:
         }
         transformType_ = reflect::TypeOf<Transform>().name;
         Place(host.scene);
-        const std::optional<Rect> bar = BarRect(r);
+        const std::optional<BarLayout> bar = Bar(r);
+        if (!bar) snapOpen_ = false;
         if (HandleInput(c, r, host, bar)) Place(host.scene);  // a gizmo drag moved things this frame
         Render(c, r, host);
         DrawGizmo(c, r, host);
+        DrawHints(c, r, bar);
         if (bar) DrawBar(c, *bar);
-        DrawHints(c, r);
+        if (bar && snapOpen_) DrawSnapBox(c, SnapBox(r, *bar));
     }
 
     void LoadState(const json::Value& s) override {
@@ -148,29 +159,80 @@ private:
         return nullptr;
     }
 
+    // The gizmo: on the one selected last (それぞれ), or in the middle of every selected thing (中心) -
+    // the things that move, a child of a selected parent not counted - with the last one's axes.
     std::optional<gizmo::Frame> GizmoFrame(const Rect& r, const game_production::SceneViewHost& host) const {
         const Placed* p = Primary(host);
         if (!p) return std::nullopt;
-        return gizmo::MakeFrame(p->world, state_.tool, state_.space, state_.camera, r.h);
+        if (state_.pivot == gizmo::Pivot::Each) return gizmo::MakeFrame(p->world, state_.tool, state_.space, state_.camera, r.h);
+        Vec3 sum{0, 0, 0};
+        int n = 0;
+        for (const int id : host.scene.Roots(host.selection)) {
+            if (const Placed* q = FindPlaced(id)) {
+                sum = sum + space3d::TransformPoint(q->world, {0, 0, 0});
+                ++n;
+            }
+        }
+        const Vec3 center = n > 0 ? sum * (1.f / static_cast<float>(n)) : space3d::TransformPoint(p->world, {0, 0, 0});
+        return gizmo::MakeFrame(center, gizmo::AxesOf(p->world, state_.tool, state_.space), state_.camera, r.h);
     }
 
     Mat4 ViewProjection(const Rect& r) const { return state_.camera.ProjectionMatrix(r.w / r.h) * state_.camera.ViewMatrix(); }
 
-    // The tool strip (top left): shown when the view is wide enough for it.
-    static std::optional<Rect> BarRect(const Rect& r) {
-        const float wNeeded = kToolW + kBarGap + kSpaceW;
-        if (r.w < wNeeded + 24 || r.h < kBarH + 60) return std::nullopt;
-        return Rect{r.x + 8, r.y + 8, wNeeded, kBarH};
+    // The tool strip (top left): its parts left to right, onto a new row where the view ends; none
+    // when the view is too small even for the first part.
+    static std::optional<BarLayout> Bar(const Rect& r) {
+        if (r.w < kToolW + 16 || r.h < kBarH + 60) return std::nullopt;
+        BarLayout b;
+        float x = r.x + 8, y = r.y + 8;
+        auto place = [&](float w) {
+            if (x > r.x + 8 && x + w > r.Right() - 8) {
+                x = r.x + 8;
+                y += kBarH + 6;
+            }
+            const Rect at{x, y, w, kBarH};
+            x += w + kBarGap;
+            return at;
+        };
+        b.tool = place(kToolW);
+        b.space = place(kSpaceW);
+        b.pivot = place(kPivotW);
+        b.snap = place(kSnapW);
+        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right()});
+        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.snap.Bottom() - (r.y + 8)};
+        return b;
+    }
+
+    // The box of the steps, under 刻み (kept inside the view).
+    static Rect SnapBox(const Rect& r, const BarLayout& b) {
+        const float h = 10 + 3 * kSnapRowH + 30 + 8;
+        return {std::max(r.x + 8, std::min(b.snap.x, r.Right() - 8 - kSnapBoxW)), b.snap.Bottom() + 4, kSnapBoxW, h};
+    }
+
+    bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
+        if (!bar) return false;
+        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap}) {
+            if (part.Contains(x, y)) return true;
+        }
+        return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
     }
 
     // Returns true when a gizmo drag changed the scene this frame.
-    bool HandleInput(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const std::optional<Rect>& bar) {
+    bool HandleInput(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const std::optional<BarLayout>& bar) {
         const ui::Input& in = c.In();
         const double now = c.Time();
         const float dt = static_cast<float>(std::clamp(now - lastTime_, 0.0, 0.1));
         lastTime_ = now;
-        const bool overBar = bar && bar->Contains(in.mouseX, in.mouseY);
-        const bool hovered = c.IsHovered(r) && !overBar;
+        const bool overBar = OverBar(r, bar, in.mouseX, in.mouseY);
+        bool hovered = c.IsHovered(r) && !overBar;
+        // The box of the steps closes on a click outside it (the click does nothing else) or Esc.
+        if (snapOpen_ && drag_ == Drag::None) {
+            const bool pressed = c.MousePressed() || c.MousePressed(ui::Mouse::Right) || c.MousePressed(ui::Mouse::Middle);
+            if ((pressed && !overBar) || (c.Focused() == 0 && c.KeyPressed(ui::Key::Escape))) {
+                snapOpen_ = false;
+                if (pressed) hovered = false;
+            }
+        }
         // How far the mouse moved (still counted while the cursor is held at the drag's start).
         const float dx = in.mouseDX, dy = in.mouseDY;
         const Vec2 mouse{in.mouseX, in.mouseY};
@@ -220,8 +282,12 @@ private:
                     CancelGizmo();  // everything back where it was; the button still has to be let go
                     drag_ = Drag::Cancelled;
                 } else if (screen) {
+                    // Ctrl: in steps - or smoothly, when it is always in steps.
                     gizmo::Snap snap;
-                    snap.on = in.ctrl;
+                    snap.on = in.ctrl != state_.snapAlways;
+                    snap.move = state_.snapMove;
+                    snap.degrees = state_.snapDegrees;
+                    snap.scale = state_.snapScale;
                     if (const auto change = gizmo::Update(*gizmo_, *screen, mouse, snap)) ApplyGizmo(*change);
                 }
                 changed = true;
@@ -237,11 +303,13 @@ private:
             if (c.KeyPressed(ui::Key::E)) state_.tool = gizmo::Tool::Rotate;
             if (c.KeyPressed(ui::Key::R)) state_.tool = gizmo::Tool::Scale;
             if (c.KeyPressed(ui::Key::X)) ToggleSpace();
+            if (c.KeyPressed(ui::Key::Z)) TogglePivot();
         }
         return changed;
     }
 
     void ToggleSpace() { state_.space = state_.space == gizmo::Space::Local ? gizmo::Space::World : gizmo::Space::Local; }
+    void TogglePivot() { state_.pivot = state_.pivot == gizmo::Pivot::Each ? gizmo::Pivot::Center : gizmo::Pivot::Each; }
 
     // While looking around (right button held): W A S D forward / left / back / right, E Q up / down.
     void Fly(ui::Context& c, float dt) {
@@ -272,6 +340,8 @@ private:
         gizmo_ = std::move(drag);
         dragTool_ = state_.tool;
         dragSpace_ = state_.space;
+        // 中心: everything turns / scales about the middle where the gizmo is.
+        pivot_ = state_.pivot == gizmo::Pivot::Center ? std::optional<Vec3>(frame.origin) : std::nullopt;
         return true;
     }
 
@@ -282,7 +352,7 @@ private:
             const reflect::EditTarget t = e.resolve();
             if (!t.object) continue;  // gone (undone while dragging)
             auto* tr = static_cast<Transform*>(t.object);
-            *tr = gizmo::Apply(e.start, e.parentWorld, e.startWorld, change, dragSpace_, tr->rotation);
+            *tr = gizmo::Apply(e.start, e.parentWorld, e.startWorld, change, dragSpace_, tr->rotation, pivot_);
         }
     }
 
@@ -437,22 +507,45 @@ private:
             p.FillPath(sq, col);
         };
 
+        auto polyline = [&](const std::vector<Vec3>& pts, ui::Color col, float width) {
+            for (size_t i = 0; i + 1 < pts.size(); ++i) {
+                const auto a0 = s.ToScreen(pts[i]), a1 = s.ToScreen(pts[i + 1]);
+                if (a0 && a1) p.Line(a0->x, a0->y, a1->x, a1->y, col, width);
+            }
+        };
+        const ui::Color viewColor = theme::Text.Alpha(0.85f);
+
         p.PushClip(r);
         if (tool == gizmo::Tool::Rotate) {
+            // The ball's outline (a drag inside it turns freely: filled faintly when it would).
+            const std::vector<Vec3> ball = gizmo::FacingCircle(f, state_.camera.Eye(), 1.f);
+            if (active == gizmo::Handle::Free) {
+                ui::Path disc;
+                for (size_t i = 0; i < ball.size(); ++i) {
+                    const auto q = s.ToScreen(ball[i]);
+                    if (!q) continue;
+                    if (disc.steps.empty()) {
+                        disc.Begin(*q);
+                    } else {
+                        disc.Line(*q);
+                    }
+                }
+                p.FillPath(disc, theme::GizmoHot().Alpha(0.16f));
+            }
+            polyline(ball, viewColor.Alpha(active == gizmo::Handle::Free ? 0.6f : 0.25f), 1.f);
             // The halves behind first and faint (each ring reads as a whole circle), then the front.
             for (const bool front : {false, true}) {
                 for (int a = 0; a < 3; ++a) {
                     const bool hot = handleOf(a) == active;
                     const ui::Color col = colorOf(handleOf(a), a).Alpha(front ? 1.f : hot ? 0.6f : 0.3f);
                     const float width = front ? (hot ? 3.f : 2.f) : 1.5f;
-                    for (const auto& arc : gizmo::RingArcs(f, a, state_.camera.Eye(), front)) {
-                        for (size_t i = 0; i + 1 < arc.size(); ++i) {
-                            const auto a0 = s.ToScreen(arc[i]), a1 = s.ToScreen(arc[i + 1]);
-                            if (a0 && a1) p.Line(a0->x, a0->y, a1->x, a1->y, col, width);
-                        }
-                    }
+                    for (const auto& arc : gizmo::RingArcs(f, a, state_.camera.Eye(), front)) polyline(arc, col, width);
                 }
             }
+            // The outer ring facing the eye: turns about the line of sight.
+            const bool viewHot = active == gizmo::Handle::View;
+            polyline(gizmo::FacingCircle(f, state_.camera.Eye(), gizmo::kViewRing), viewHot ? theme::GizmoHot() : viewColor,
+                     viewHot ? 3.f : 2.f);
         } else {
             if (tool == gizmo::Tool::Move) {
                 for (gizmo::Handle plane : {gizmo::Handle::YZ, gizmo::Handle::ZX, gizmo::Handle::XY}) {
@@ -494,40 +587,85 @@ private:
         p.PopClip();
     }
 
-    // 移動 / 回転 / 拡大縮小 and ローカル / ワールド, floating at the top left of the view.
-    void DrawBar(ui::Context& c, const Rect& bar) {
+    // 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心 and 刻み, floating at the top left of the view.
+    void DrawBar(ui::Context& c, const BarLayout& bar) {
         const std::wstring move = Tr(L"移動"), rotate = Tr(L"回転"), scale = Tr(L"拡大縮小");
         const std::wstring moveTip = Tr(L"矢印で動かす (W)"), rotateTip = Tr(L"輪で回す (E)"), scaleTip = Tr(L"箱で大きさを変える (R)");
         const std::array<std::wstring_view, 3> tools{move, rotate, scale};
         const std::array<std::wstring_view, 3> toolTips{moveTip, rotateTip, scaleTip};
-        if (const int i = w::Segmented(c, "gizmo_tool", {bar.x, bar.y, kToolW, bar.h}, tools, static_cast<int>(state_.tool), toolTips); i >= 0) {
+        if (const int i = w::Segmented(c, "gizmo_tool", bar.tool, tools, static_cast<int>(state_.tool), toolTips); i >= 0) {
             state_.tool = static_cast<gizmo::Tool>(i);
         }
         const std::wstring local = Tr(L"ローカル"), world = Tr(L"ワールド");
         const std::wstring localTip = Tr(L"選んだ物の向きに合わせる (X で切り替え)"), worldTip = Tr(L"世界の向き (X で切り替え)。大きさは常に物の向き");
         const std::array<std::wstring_view, 2> spaces{local, world};
         const std::array<std::wstring_view, 2> spaceTips{localTip, worldTip};
-        if (const int i = w::Segmented(c, "gizmo_space", {bar.x + kToolW + kBarGap, bar.y, kSpaceW, bar.h}, spaces,
-                                       static_cast<int>(state_.space), spaceTips);
-            i >= 0) {
+        if (const int i = w::Segmented(c, "gizmo_space", bar.space, spaces, static_cast<int>(state_.space), spaceTips); i >= 0) {
             state_.space = static_cast<gizmo::Space>(i);
         }
+        const std::wstring each = Tr(L"それぞれ"), center = Tr(L"中心");
+        const std::wstring eachTip = Tr(L"選んだ物をそれぞれの場所で回す・大きさを変える。ギズモは最後に選んだ物に (Z で切り替え)");
+        const std::wstring centerTip = Tr(L"選んだ物全部の真ん中にギズモを出し、そこを中心に回す・大きさを変える (Z で切り替え)");
+        const std::array<std::wstring_view, 2> pivots{each, center};
+        const std::array<std::wstring_view, 2> pivotTips{eachTip, centerTip};
+        if (const int i = w::Segmented(c, "gizmo_pivot", bar.pivot, pivots, static_cast<int>(state_.pivot), pivotTips); i >= 0) {
+            state_.pivot = static_cast<gizmo::Pivot>(i);
+        }
+        // 刻み: opens the box of the steps (in the accent while the gizmo always moves in steps).
+        if (w::Button(c, "gizmo_snap", bar.snap, Tr(L"刻み"), state_.snapAlways ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+            snapOpen_ = !snapOpen_;
+        }
+        if (!snapOpen_ && c.IsHovered(bar.snap)) w::Tooltip(c, Tr(L"ギズモの刻む幅 (Ctrl を押しながらドラッグすると刻んで動く)"));
     }
 
-    void DrawHints(ui::Context& c, const Rect& r) {
+    // The steps of the gizmo: how far a move, a turn and a scale go at a time; and whether always.
+    // View state like the tool (kept in UserSettings, not an edit of the project).
+    void DrawSnapBox(ui::Context& c, const Rect& box) {
+        w::DrawSurface(c, box, w::Surface::Popup);
+        ui::TextStyle label;
+        label.size = theme::FontSize;
+        label.color = theme::TextDim;
+        label.v = ui::VAlign::Center;
+        struct Row {
+            const char* id;
+            std::wstring name;
+            float* value;
+            float min, max;
+        };
+        Row rows[] = {{"snap_move", Tr(L"移動"), &state_.snapMove, 0.001f, 1000.f},
+                      {"snap_degrees", Tr(L"回転 (度)"), &state_.snapDegrees, 0.1f, 180.f},
+                      {"snap_scale", Tr(L"大きさ"), &state_.snapScale, 0.001f, 10.f}};
+        float y = box.y + 10;
+        for (size_t i = 0; i < std::size(rows); ++i, y += kSnapRowH) {
+            Row& row = rows[i];
+            c.P().Text({box.x + 12, y, 120, kSnapRowH - 6}, row.name, label);
+            // The text as typed while it is being typed; the value otherwise.
+            std::string& text = snapText_[i];
+            if (c.Focused() != c.MakeId(row.id)) text = std::format("{:g}", *row.value);
+            if (w::TextField(c, row.id, {box.Right() - 12 - 110, y, 110, kSnapRowH - 6}, text, {}, true, true)) {
+                float v = 0;
+                const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), v);
+                if (ec == std::errc{} && end == text.data() + text.size() && v > 0) *row.value = std::clamp(v, row.min, row.max);
+            }
+        }
+        w::Checkbox(c, "snap_always", {box.x + 12, y + 2, box.w - 24, 24}, state_.snapAlways, Tr(L"いつも刻む (Ctrl を押すとなめらか)"));
+    }
+
+    void DrawHints(ui::Context& c, const Rect& r, const std::optional<BarLayout>& bar) {
         ui::TextStyle ts;
         ts.size = 11;
         ts.color = theme::TextDim;
         ts.v = ui::VAlign::Bottom;
+        ts.wrap = true;
         c.P().Text(r.Inset(10, 8, 10, 8),
-                   Tr(L"右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ   Ctrl+ギズモ: 刻んで動かす   Esc: ドラッグをやめる"),
+                   Tr(L"右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ   W / E / R: 移動・回転・拡大縮小   X: ローカル / ワールド   Z: それぞれ / 中心   回転の球の中をドラッグ: 自由に回す   Ctrl+ギズモ: 刻んで動かす   Esc: ドラッグをやめる"),
                    ts);
         if (placed_.empty()) {
             ui::TextStyle hint = ts;
             hint.size = 12;
             hint.v = ui::VAlign::Top;
             hint.color = theme::TextFaint;
-            c.P().Text(r.Inset(10, BarRect(r) ? 8 + kBarH + 10 : 8, 10, 8), Tr(L"Transform の付いたエンティティが、ここに箱で出ます。"), hint);
+            c.P().Text(r.Inset(10, bar ? bar->all.Bottom() - r.y + 10 : 8, 10, 8), Tr(L"Transform の付いたエンティティが、ここに箱で出ます。"), hint);
         }
     }
 
@@ -550,7 +688,10 @@ private:
     std::optional<gizmo::Drag> gizmo_;          // the gizmo drag going on
     gizmo::Tool dragTool_ = gizmo::Tool::Move;  // as they were when it began (the keys may change them)
     gizmo::Space dragSpace_ = gizmo::Space::Local;
+    std::optional<Vec3> pivot_;                 // 中心: what the drag turns / scales about
     std::vector<Edited> edited_;
+    bool snapOpen_ = false;                     // the box of the steps is open
+    std::array<std::string, 3> snapText_;       // its fields' text
 
     // The picture as a Direct2D bitmap, made again when the picture or the window's context changes.
     Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap_;

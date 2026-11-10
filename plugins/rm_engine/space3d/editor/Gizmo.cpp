@@ -42,7 +42,52 @@ void Across(Vec3 axis, Vec3& u, Vec3& v) {
     v = Cross(axis, u);
 }
 
-// The point of the ring's visible arcs nearest the mouse (on the screen), and how hint it is.
+// The point of a closed loop nearest the mouse (on the screen), and how far it is.
+std::optional<Vec3> NearestOnLoop(const Screen& s, const std::vector<Vec3>& loop, Vec2 mouse, float* distance) {
+    std::optional<Vec3> best;
+    float bestD = std::numeric_limits<float>::infinity();
+    for (size_t i = 0; i + 1 < loop.size(); ++i) {
+        const auto a = s.ToScreen(loop[i]), b = s.ToScreen(loop[i + 1]);
+        if (!a || !b) continue;
+        const float d = DistanceToSegment(mouse, *a, *b);
+        if (d < bestD) {
+            bestD = d;
+            best = Len2(Sub(mouse, *a)) <= Len2(Sub(mouse, *b)) ? loop[i] : loop[i + 1];
+        }
+    }
+    if (distance) *distance = bestD;
+    return best;
+}
+
+// Inside a closed loop on the screen (even-odd crossings).
+bool InsideLoop(const Screen& s, const std::vector<Vec3>& loop, Vec2 p) {
+    bool inside = false;
+    for (size_t i = 0; i + 1 < loop.size(); ++i) {
+        const auto a = s.ToScreen(loop[i]), b = s.ToScreen(loop[i + 1]);
+        if (!a || !b) return false;
+        if ((a->y > p.y) != (b->y > p.y) && p.x < a->x + (b->x - a->x) * (p.y - a->y) / (b->y - a->y)) inside = !inside;
+    }
+    return inside;
+}
+
+// The screen direction in which `grab` (a point of a ring about `axis`) goes when it turns forward
+// (the right hand about the axis). nullopt when it cannot be told.
+std::optional<Vec2> TangentAt(const Frame& f, const Screen& s, Vec3 axis, Vec3 grab) {
+    const Vec3 forward = Normalize(Cross(axis, grab - f.origin));
+    const auto a = s.ToScreen(grab), b = s.ToScreen(grab + forward * (f.size * 0.1f));
+    const auto o = s.ToScreen(f.origin);
+    if (!a || !b || !o) return std::nullopt;
+    Vec2 t = Sub(*b, *a);
+    if (Len2(t) < 1e-3f) {  // the ring seen edge-on at this point: across the line from the middle
+        const Vec2 radial = Sub(*a, *o);
+        t = {-radial.y, radial.x};
+    }
+    const float len = Len2(t);
+    if (len < 1e-6f) return std::nullopt;
+    return Vec2{t.x / len, t.y / len};
+}
+
+// The point of the ring's visible arcs nearest the mouse (on the screen), and how far it is.
 std::optional<Vec3> NearestOnRing(const Frame& f, const Screen& s, Vec3 eye, int axis, Vec2 mouse, float* distance) {
     std::optional<Vec3> best;
     float bestD = std::numeric_limits<float>::infinity();
@@ -86,13 +131,17 @@ std::array<Vec3, 3> AxesOf(const Mat4& world, Tool tool, Space space) {
 }
 
 std::optional<Frame> MakeFrame(const Mat4& world, Tool tool, Space space, const OrbitView& view, float viewHeight, float pixels) {
+    return MakeFrame(TransformPoint(world, {0, 0, 0}), AxesOf(world, tool, space), view, viewHeight, pixels);
+}
+
+std::optional<Frame> MakeFrame(Vec3 origin, const std::array<Vec3, 3>& axes, const OrbitView& view, float viewHeight, float pixels) {
     Frame f;
-    f.origin = TransformPoint(world, {0, 0, 0});
+    f.origin = origin;
     const float perPixel = view.WorldPerPixel(f.origin, viewHeight);
     if (perPixel <= 0) return std::nullopt;
     f.size = pixels * perPixel;
     f.pixels = pixels;
-    f.axes = AxesOf(world, tool, space);
+    f.axes = axes;
     return f;
 }
 
@@ -159,6 +208,18 @@ std::vector<std::vector<Vec3>> RingArcs(const Frame& f, int axis, Vec3 eye, bool
     return arcs;
 }
 
+std::vector<Vec3> FacingCircle(const Frame& f, Vec3 eye, float radius, int segments) {
+    Vec3 u, v;
+    Across(Normalize(eye - f.origin), u, v);
+    std::vector<Vec3> pts;
+    pts.reserve(static_cast<size_t>(segments) + 1);
+    for (int i = 0; i <= segments; ++i) {
+        const float t = 2.f * std::numbers::pi_v<float> * static_cast<float>(i % segments) / static_cast<float>(segments);
+        pts.push_back(f.origin + (u * std::cos(t) + v * std::sin(t)) * (f.size * radius));
+    }
+    return pts;
+}
+
 bool AxisShown(const Frame& f, const Screen& s, int axis) {
     const auto o = s.ToScreen(f.origin), e = s.ToScreen(AxisEnd(f, axis));
     return o && e && Len2(Sub(*e, *o)) > f.pixels * 0.12f;
@@ -193,6 +254,9 @@ Handle HitTest(Tool tool, const Frame& f, const Screen& s, Vec3 eye, Vec2 mouse,
                 best = static_cast<Handle>(static_cast<int>(Handle::X) + a);
             }
         }
+        float d = 0;
+        if (NearestOnLoop(s, FacingCircle(f, eye, kViewRing), mouse, &d) && d < bestD) best = Handle::View;
+        if (best == Handle::None && InsideLoop(s, FacingCircle(f, eye, 1.f), mouse)) best = Handle::Free;
         return best;
     }
     if (tool == Tool::Scale && Len2(Sub(mouse, *origin)) <= tolerance + 3.f) return Handle::Uniform;
@@ -227,22 +291,29 @@ std::optional<Drag> BeginDrag(Tool tool, Handle handle, const Frame& f, const Sc
     const int axis = AxisOf(handle);
     if (handle == Handle::Uniform) return d;
     if (tool == Tool::Rotate) {
-        const auto grab = NearestOnRing(f, s, eye, axis, mouse, nullptr);
-        if (!grab) return std::nullopt;
-        d.startPoint = *grab;
-        // A point of the ring goes this way when it turns forward (the right hand about the axis).
-        const Vec3 forward = Normalize(Cross(f.axes[axis], *grab - f.origin));
-        const auto a = s.ToScreen(*grab), b = s.ToScreen(*grab + forward * (f.size * 0.1f));
-        const auto o = s.ToScreen(f.origin);
-        if (!a || !b || !o) return std::nullopt;
-        Vec2 t = Sub(*b, *a);
-        if (Len2(t) < 1e-3f) {  // the ring seen edge-on at this point: across the line from the middle
-            const Vec2 radial = Sub(*a, *o);
-            t = {-radial.y, radial.x};
+        const Vec3 toEye = Normalize(eye - f.origin);
+        if (handle == Handle::Free) {
+            // The screen's right and up in the world, at the gizmo (from the rays beside its middle).
+            const auto o = s.ToScreen(f.origin);
+            if (!o || Length(toEye) == 0) return std::nullopt;
+            Vec3 right = s.RayAt({o->x + 1.f, o->y}).dir - s.RayAt(*o).dir;
+            right = Normalize(right - toEye * Dot(right, toEye));
+            if (Length(right) == 0) return std::nullopt;
+            d.axis = toEye;
+            d.right = right;
+            d.up = Cross(toEye, right);
+            return d;
         }
-        const float len = Len2(t);
-        if (len < 1e-6f) return std::nullopt;
-        d.tangent = {t.x / len, t.y / len};
+        // A ring: the gizmo's axis, or the line of sight for the outer ring.
+        const Vec3 axis3 = handle == Handle::View ? toEye : f.axes[axis];
+        const auto grab = handle == Handle::View ? NearestOnLoop(s, FacingCircle(f, eye, kViewRing), mouse, nullptr)
+                                                 : NearestOnRing(f, s, eye, axis, mouse, nullptr);
+        if (!grab || Length(axis3) == 0) return std::nullopt;
+        d.startPoint = *grab;
+        d.axis = axis3;
+        const auto t = TangentAt(f, s, axis3, *grab);
+        if (!t) return std::nullopt;
+        d.tangent = *t;
         return d;
     }
     if (handle == Handle::YZ || handle == Handle::ZX || handle == Handle::XY) {
@@ -272,12 +343,26 @@ std::optional<Change> Update(const Drag& d, const Screen& s, Vec2 mouse, const S
         return c;
     }
     if (d.tool == Tool::Rotate) {
+        if (d.handle == Handle::Free) {
+            // Like rolling a ball: the side facing the eye follows the mouse; the farther, the more.
+            const Vec2 m = Sub(mouse, d.startMouse);
+            const float len = Len2(m);
+            const Vec3 axis3 = Normalize(Cross(d.axis, d.right * m.x - d.up * m.y));
+            float degrees = len / std::max(f.pixels, 1.f) * kRadToDeg;
+            if (snap.on) degrees = Step(degrees, snap.degrees);
+            c.worldAxis = len > 0 && Length(axis3) > 0 ? axis3 : d.up;
+            c.degrees = len > 0 ? degrees : 0.f;
+            return c;
+        }
+        const float radius = d.handle == Handle::View ? kViewRing : 1.f;
         const float along = Dot2(Sub(mouse, d.startMouse), d.tangent);
-        float degrees = along / std::max(f.pixels, 1.f) * kRadToDeg;  // the ring's length under the mouse
+        float degrees = along / std::max(f.pixels * radius, 1.f) * kRadToDeg;  // the ring's length under the mouse
         if (snap.on) degrees = Step(degrees, snap.degrees);
         c.degrees = degrees;
+        c.worldAxis = d.axis;
         return c;
     }
+    if (axis >= 0) c.worldAxis = f.axes[axis];
     const Ray ray = s.RayAt(mouse);
     if (d.handle == Handle::YZ || d.handle == Handle::ZX || d.handle == Handle::XY) {
         const auto hit = IntersectPlane(ray, f.origin, f.axes[axis]);
@@ -304,27 +389,40 @@ std::optional<Change> Update(const Drag& d, const Screen& s, Vec2 mouse, const S
     return c;
 }
 
-Transform Apply(const Transform& start, const Mat4& parentWorld, const Mat4& startWorld, const Change& c, Space space, Vec3 hint) {
+Transform Apply(const Transform& start, const Mat4& parentWorld, const Mat4& startWorld, const Change& c, Space space, Vec3 hint,
+                const std::optional<Vec3>& pivot) {
     Transform t = start;
     const auto toParent = Inverse(parentWorld);
+    // Turning / scaling about a pivot moves the thing too: `offset` = where it goes, from the pivot.
+    const Vec3 startPlace = TransformPoint(startWorld, {0, 0, 0});
+    const Vec3 fromPivot = pivot ? startPlace - *pivot : Vec3{0, 0, 0};
+    auto placeAt = [&](Vec3 offset) {
+        if (pivot && toParent) t.position = TransformPoint(*toParent, *pivot + offset);
+    };
     switch (c.tool) {
         case Tool::Move:
             if (toParent) t.position = start.position + TransformDirection(*toParent, c.move);
             break;
         case Tool::Rotate: {
-            if (c.axis < 0 || !toParent) break;
-            // About the axis as the gizmo shows it, written in the parent's space (where rotation is).
-            const Vec3 worldAxis = AxesOf(startWorld, Tool::Rotate, space)[c.axis];
+            if (!toParent) break;
+            // About the axis as the gizmo shows it (a ring: each thing's own axis when they turn in their
+            // own places), written in the parent's space (where rotation is).
+            const bool own = c.axis >= 0 && (!pivot || Length(c.worldAxis) == 0);
+            const Vec3 worldAxis = own ? AxesOf(startWorld, Tool::Rotate, space)[c.axis] : Normalize(c.worldAxis);
             const Vec3 axis = Normalize(TransformDirection(*toParent, worldAxis));
             if (Length(axis) == 0) break;
             t.rotation = EulerFromRotation(AxisAngle(axis, c.degrees) * RotationMatrix(start.rotation), hint);
+            placeAt(TransformDirection(AxisAngle(worldAxis, c.degrees), fromPivot));
             break;
         }
         case Tool::Scale:
             if (c.axis < 0) {
                 t.scale = start.scale * c.factor;
+                placeAt(fromPivot * c.factor);
             } else {
                 (&t.scale.x)[c.axis] = (&start.scale.x)[c.axis] * c.factor;
+                const Vec3 along = Normalize(c.worldAxis);
+                placeAt(fromPivot + along * (Dot(fromPivot, along) * (c.factor - 1.f)));
             }
             break;
     }

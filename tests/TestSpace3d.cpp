@@ -380,17 +380,91 @@ RM_TEST(Gizmo_ApplyThroughTheParent) {
     CHECK(Near(local.rotation, {90, 90, 0}));  // X first, then Y: just as the inspector would write it
 }
 
+RM_TEST(Gizmo_ViewRingAndFreeRotation) {
+    const OrbitView v = FrontView();  // the eye on +Z looking at the origin
+    const gizmo::Screen s = ScreenOf(v);
+    const gizmo::Frame f = *gizmo::MakeFrame(Mat4{}, gizmo::Tool::Rotate, gizmo::Space::World, v, 600);
+    using gizmo::Handle;
+    using gizmo::Tool;
+    const float outer = 90.f * gizmo::kViewRing;
+    // The outer ring facing the eye, and inside the ball (away from the rings): turn freely.
+    CHECK(gizmo::HitTest(Tool::Rotate, f, s, v.Eye(), {400 + outer, 300}) == Handle::View);
+    CHECK(gizmo::HitTest(Tool::Rotate, f, s, v.Eye(), {430, 320}) == Handle::Free);
+    CHECK(gizmo::HitTest(Tool::Rotate, f, s, v.Eye(), {400 + outer + 30, 300}) == Handle::None);
+    const float quarter = 3.14159265f / 2.f;
+    gizmo::Snap smooth;
+    {  // the outer ring: about the line of sight (+Z here), a quarter of its length = 90 degrees
+        const auto drag = gizmo::BeginDrag(Tool::Rotate, Handle::View, f, s, v.Eye(), {400 + outer, 300});
+        CHECK(drag.has_value());
+        CHECK(std::abs(drag->tangent.x) < 1e-3f && drag->tangent.y < -0.99f);  // forward = up the screen
+        const auto c = gizmo::Update(*drag, s, {400 + outer, 300 - outer * quarter}, smooth);
+        CHECK(c && std::abs(c->degrees - 90) < 0.5f && c->axis == -1 && Near(c->worldAxis, {0, 0, 1}));
+        const Transform t = gizmo::Apply({}, Mat4{}, Mat4{}, *c, gizmo::Space::Local, {});
+        CHECK(NearM(RotationMatrix(t.rotation), AxisAngle({0, 0, 1}, c->degrees)));
+    }
+    {  // inside: dragging right rolls the front to the right = about +Y; the length of a quarter = 90 degrees
+        const auto drag = gizmo::BeginDrag(Tool::Rotate, Handle::Free, f, s, v.Eye(), {430, 320});
+        CHECK(drag.has_value());
+        const auto c = gizmo::Update(*drag, s, {430 + 90.f * quarter, 320}, smooth);
+        CHECK(c && std::abs(c->degrees - 90) < 0.5f && Near(c->worldAxis, {0, 1, 0}));
+        const auto upward = gizmo::Update(*drag, s, {430, 320 - 90.f * quarter}, smooth);  // up: the front goes up = about -X
+        CHECK(upward && std::abs(upward->degrees - 90) < 0.5f && Near(upward->worldAxis, {-1, 0, 0}));
+        const auto still = gizmo::Update(*drag, s, {430, 320}, smooth);
+        CHECK(still && still->degrees == 0);
+    }
+}
+
+RM_TEST(Gizmo_PivotCenterMovesThePlaces) {
+    // Several things about one pivot (the middle of them): their places turn / scale with them.
+    Transform start;
+    start.position = {1, 0, 0};
+    const Mat4 sw = LocalMatrix(start);
+    const std::optional<Vec3> pivot = Vec3{0, 0, 0};
+    gizmo::Change rot;
+    rot.tool = gizmo::Tool::Rotate;
+    rot.axis = 1;
+    rot.worldAxis = {0, 1, 0};
+    rot.degrees = 90;
+    const Transform turned = gizmo::Apply(start, Mat4{}, sw, rot, gizmo::Space::World, {}, pivot);
+    CHECK(Near(turned.position, {0, 0, -1}));
+    CHECK(NearM(RotationMatrix(turned.rotation), AxisAngle({0, 1, 0}, 90)));
+    CHECK(Near(gizmo::Apply(start, Mat4{}, sw, rot, gizmo::Space::World, {}).position, {1, 0, 0}));  // no pivot: stays
+    gizmo::Change all;
+    all.tool = gizmo::Tool::Scale;
+    all.factor = 2;
+    const Transform bigger = gizmo::Apply(start, Mat4{}, sw, all, gizmo::Space::Local, {}, pivot);
+    CHECK(Near(bigger.position, {2, 0, 0}) && Near(bigger.scale, {2, 2, 2}));
+    Transform corner;
+    corner.position = {1, 0, 1};
+    gizmo::Change wide;
+    wide.tool = gizmo::Tool::Scale;
+    wide.axis = 0;
+    wide.worldAxis = {1, 0, 0};
+    wide.factor = 2;
+    const Transform wider = gizmo::Apply(corner, Mat4{}, LocalMatrix(corner), wide, gizmo::Space::Local, {}, pivot);
+    CHECK(Near(wider.position, {2, 0, 1}) && Near(wider.scale, {2, 1, 1}));
+    // The gizmo put in the middle of them, with the axes it is given.
+    const gizmo::Frame f = *gizmo::MakeFrame(Vec3{1, 2, 3}, gizmo::AxesOf(Mat4{}, gizmo::Tool::Move, gizmo::Space::World), FrontView(), 600);
+    CHECK(Near(f.origin, {1, 2, 3}) && f.size > 0);
+}
+
 RM_TEST(SceneViewState_KeepsCameraAndTool) {
     game_x_3d::SceneViewState st;
     st.camera.pivot = {1, 2, 3};
     st.camera.pitch = 40;
     st.tool = gizmo::Tool::Rotate;
     st.space = gizmo::Space::World;
+    st.pivot = gizmo::Pivot::Center;
+    st.snapMove = 0.5f;
+    st.snapDegrees = 45;
+    st.snapAlways = true;
     json::Value j = reflect::Save(st);
     game_x_3d::SceneViewState back;
     reflect::Load(back, j);
     CHECK(Near(back.camera.pivot, {1, 2, 3}) && back.camera.pitch == 40);
     CHECK(back.tool == gizmo::Tool::Rotate && back.space == gizmo::Space::World);
+    CHECK(back.pivot == gizmo::Pivot::Center && back.snapMove == 0.5f && back.snapDegrees == 45 && back.snapAlways);
+    CHECK(back.snapScale == 0.1f);  // not changed: the default
     // A value out of range is brought back in; a key of a newer version is written back.
     j.Find("camera")->Set("pitch", 500.0);
     j.Set("future", 1);
@@ -398,5 +472,9 @@ RM_TEST(SceneViewState_KeepsCameraAndTool) {
     game_x_3d::SceneViewState clamped;
     reflect::Load(clamped, j, &u);
     CHECK(clamped.camera.pitch == 89);
+    j.Set("snapDegrees", 0.0);  // a step of nothing would never move: brought up to the least
+    game_x_3d::SceneViewState least;
+    reflect::Load(least, j);
+    CHECK(std::abs(least.snapDegrees - 0.1f) < 1e-6f);
     CHECK(reflect::Save(clamped, &u).Find("future") != nullptr);
 }

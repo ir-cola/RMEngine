@@ -12,5 +12,14 @@
   "ワールド": "World",
   "選んだ物の向きに合わせる (X で切り替え)": "Along the selected object's own axes (X to switch)",
   "世界の向き (X で切り替え)。大きさは常に物の向き": "Along the world's axes (X to switch). Scale always follows the object",
-  "右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ   Ctrl+ギズモ: 刻んで動かす   Esc: ドラッグをやめる": "Right drag: look (W A S D / Q E to move)   Middle drag: pan   Wheel: zoom   Alt+left drag: orbit   F: frame selection   Click: select   Ctrl+gizmo: snap   Esc: cancel the drag"
+  "右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ   W / E / R: 移動・回転・拡大縮小   X: ローカル / ワールド   Z: それぞれ / 中心   回転の球の中をドラッグ: 自由に回す   Ctrl+ギズモ: 刻んで動かす   Esc: ドラッグをやめる": "Right drag: look (W A S D / Q E to move)   Middle drag: pan   Wheel: zoom   Alt+left drag: orbit   F: frame selection   Click: select   W / E / R: move / rotate / scale   X: local / world   Z: each / center   Drag inside the rotate ball: turn freely   Ctrl+gizmo: snap   Esc: cancel the drag",
+  "それぞれ": "Each",
+  "中心": "Center",
+  "選んだ物をそれぞれの場所で回す・大きさを変える。ギズモは最後に選んだ物に (Z で切り替え)": "Turn and scale each selected object in its own place. The gizmo sits on the one selected last (Z to switch)",
+  "選んだ物全部の真ん中にギズモを出し、そこを中心に回す・大きさを変える (Z で切り替え)": "Put the gizmo in the middle of all selected objects and turn / scale them about it (Z to switch)",
+  "刻み": "Snap",
+  "ギズモの刻む幅 (Ctrl を押しながらドラッグすると刻んで動く)": "The gizmo's snap steps (drag with Ctrl held to move in steps)",
+  "回転 (度)": "Rotate (degrees)",
+  "大きさ": "Scale",
+  "いつも刻む (Ctrl を押すとなめらか)": "Always snap (Ctrl for smooth)"
 }

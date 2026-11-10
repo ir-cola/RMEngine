@@ -1,5 +1,5 @@
 #pragma once
-// How the user looks at a game's 3D scene view: the camera and the gizmo chosen. Kept next to the
+// How the user looks at a game's 3D scene view: the camera, the gizmo chosen and its steps. Kept next to the
 // panel layout (UserSettings/Layout.json), not in the project - written once here, so saving and
 // loading come from the description (rule 9). Never shown in an inspector.
 
@@ -13,6 +13,12 @@ struct SceneViewState {
     RM_PROPERTY() space3d::OrbitView camera;
     RM_PROPERTY() space3d::gizmo::Tool tool = space3d::gizmo::Tool::Move;
     RM_PROPERTY() space3d::gizmo::Space space = space3d::gizmo::Space::Local;
+    RM_PROPERTY() space3d::gizmo::Pivot pivot = space3d::gizmo::Pivot::Each;
+    // The steps of the gizmo (Ctrl held, or always when snapAlways - then Ctrl moves smoothly).
+    RM_PROPERTY(Min=0.001, Max=1000) float snapMove = 0.25f;  // world units
+    RM_PROPERTY(Min=0.1, Max=180) float snapDegrees = 15.f;
+    RM_PROPERTY(Min=0.001, Max=10) float snapScale = 0.1f;   // of the scale at the start
+    RM_PROPERTY() bool snapAlways = false;
 };
 
 }  // namespace rm::game_x_3d

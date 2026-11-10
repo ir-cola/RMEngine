@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "シーンビューのギズモ: 回転に画面に向いた外の輪と、球の中のドラッグで自由に回す。「それぞれ / 中心」(Z) で選んだ物全部の真ん中を中心に回す・大きさを変える。「刻み」で刻む幅と「いつも刻む」",
+          "en": "Scene view gizmo: rotate has an outer ring facing you and a free turn when dragging inside the ball. Each / Center (Z) turns and scales everything about the middle of the selection. Snap sets the step sizes and Always snap"
+        },
+        {
           "ja": "ウィンター: 左下の雪の結晶を太く、先を尖らせた形に",
           "en": "Winter: the snowflake in the bottom-left is thicker, with sharp points"
         },
