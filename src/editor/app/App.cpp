@@ -6,10 +6,14 @@
 #include "editor/hub/HubScreen.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
+#include "editor/widgets/ThemeFile.h"
+#include "editor/widgets/Widgets.h"
 #include "editor/shell/EditorScreen.h"
 #include "platform/Shell.h"
 
 #include <format>
+#include <tuple>
+#include <algorithm>
 
 namespace rm::editor {
 
@@ -34,6 +38,8 @@ int App::Run(const LaunchOptions& options) {
     LoadLanguageCatalogs();
     ApplyOptions();
     plugins_.Load(paths::EnginePlugins(), paths::InstalledPlugins());
+    LoadThemes();
+    ApplyOptions();  // the theme chosen may be a pack's
     if (!options.projectFile.empty()) {
         RequestOpenProject(options.projectFile);
     } else {
@@ -68,13 +74,13 @@ void App::RequestInstallAndReopen(std::vector<PluginId> ids, const std::filesyst
 
 bool App::InstallPlugins(const std::vector<PluginId>& ids, std::string* error) {
     const bool ok = plugins_.Install(ids, error);
-    plugins_.Reload();
+    ReloadPlugins();
     return ok;
 }
 
 bool App::UninstallPlugin(const PluginId& id, std::string* error) {
     const bool ok = plugins_.Uninstall(id, error);
-    plugins_.Reload();
+    ReloadPlugins();
     return ok;
 }
 
@@ -119,9 +125,66 @@ void App::LoadLanguageCatalogs() {
     log::Info("英語の表: {} 個", count);
 }
 
+void App::ReloadPlugins() {
+    plugins_.Reload();
+    LoadThemes();
+    ApplyOptions();
+}
+
+void App::LoadThemes() {
+    theme::SetPackThemes({});  // the built-in three only, while the packs are read
+    const auto ornaments = plugins_.Registry().Contributions<w::OrnamentInfo>(w::kOrnamentPoint);
+    std::vector<theme::ThemeInfo> themes;
+    int group = 0;
+    for (const Plugins::Entry& e : plugins_.Entries()) {
+        if (e.status.state != PluginState::Enabled) continue;
+        std::vector<std::filesystem::path> files;
+        std::error_code ec;
+        for (std::filesystem::directory_iterator it(plugins_.InstalledFolder(e.status.id) / L"themes", ec), end; !ec && it != end;
+             it.increment(ec)) {
+            if (it->path().extension() == L".json") files.push_back(it->path());
+        }
+        if (files.empty()) continue;
+        std::vector<theme::ThemeFromFile> pack;
+        for (const auto& file : files) {
+            std::string err;
+            auto bytes = platform::ReadFileBytes(file, &err);
+            json::ParseError pe;
+            auto doc = bytes ? json::Parse(*bytes, &pe) : std::nullopt;
+            auto t = doc ? theme::ParseThemeFile(*doc, &err) : std::nullopt;
+            if (!t) {
+                log::Warn("テーマのファイルを読めませんでした: {} ({})", PathToUtf8(file), doc ? err : "JSON ではありません");
+                continue;
+            }
+            pack.push_back(std::move(*t));
+        }
+        std::sort(pack.begin(), pack.end(), [](const auto& a, const auto& b) { return std::tie(a.order, a.info.id) < std::tie(b.order, b.info.id); });
+        ++group;
+        for (theme::ThemeFromFile& t : pack) {
+            const auto same = [&](const theme::ThemeInfo& o) { return o.id == t.info.id; };
+            if (std::any_of(theme::Themes().begin(), theme::Themes().end(), same) || std::any_of(themes.begin(), themes.end(), same)) {
+                log::Warn("テーマの id が重なっています (後のほうを使いません): {} ({})", t.info.id, e.status.id.Text());
+                continue;
+            }
+            if (!t.ornament.empty()) {
+                // Its pictures: offered by the same plugin's code under that name.
+                for (const auto& o : ornaments) {
+                    if (o.plugin == e.status.id && t.ornament == o.item->name) t.info.ornament = o.item;
+                }
+                if (!t.info.ornament) log::Warn("テーマ {} の絵 \"{}\" がありません ({})", t.info.id, t.ornament, e.status.id.Text());
+            }
+            t.info.group = group;
+            t.info.pack = Utf8ToWide(e.status.displayName);
+            themes.push_back(std::move(t.info));
+        }
+    }
+    log::Info("テーマ: パックから {} 個", themes.size());
+    theme::SetPackThemes(std::move(themes));
+}
+
 void App::ApplyOptions() {
     const Options& o = settings_.GetOptions();
-    theme::Apply(theme::PaletteOf(theme::FindTheme(o.theme), platform::SystemPrefersLight()));
+    theme::ApplyTheme(theme::FindTheme(o.theme), platform::SystemPrefersLight());
     lang::SetLanguage(o.language == UiLanguage::English ? lang::Language::English : lang::Language::Japanese);
     if (screen_) screen_->OnLookChanged();
 }
@@ -224,7 +287,7 @@ void App::ApplyPending() {
                 // The editor closes before the plugins are read again: its workspaces point into the registry.
                 if (screen_) screen_->Close();
                 screen_.reset();
-                plugins_.Reload();
+                ReloadPlugins();
                 RequestOpenProject(pendingFile_, true);
                 break;
             }

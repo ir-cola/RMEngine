@@ -434,12 +434,12 @@ void EditorScreen::CloseFloats() {
 
 void EditorScreen::DrawFloating(ui::Context& c, float width, float height, FloatWindow& window) {
     c.P().Clear(theme::Bg);
+    w::DrawBackdrop(c, true);  // the theme's picture, behind everything
     // While the editor shows a dialog, the panel windows only show.
     const bool blocked = modal_ != Modal::None;
     c.SetInputEnabled(!blocked);
     if (!blocked) HandleShortcuts(c);
     Active().dock.Draw(c, Rect{0, 0, width, height}.Inset(4), window.Id(), window.Hwnd(), window.Scale());
-    w::DrawFloatOrnament(c, {0, 0, width, height});
     Active().dock.DrawOverlay(c, window.Id());
     c.SetInputEnabled(true);
 }
@@ -609,6 +609,7 @@ void EditorScreen::RunMenu(Menu m, int index) {
 void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     auto& p = c.P();
     p.Clear(theme::Bg);
+    w::DrawBackdrop(c, false);  // the theme's picture, behind everything (again on each panel and bar)
     const bool overlay = modal_ != Modal::None || menuPopup_.open;
     c.SetInputEnabled(!overlay);
 
@@ -622,7 +623,6 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     DrawSoftTabs(c, tabs);
     DrawStatusBar(c, status);
     DrawMenuBar(c, menuBar);
-    w::DrawOrnament(c, {0, 0, width, height});
 
     c.SetInputEnabled(!overlay);
     Active().dock.DrawOverlay(c, 0);

@@ -36,6 +36,8 @@ public:
     const Entry* Find(const PluginId& id) const;
     bool IsEnabled(const PluginId& id) const;
     std::string DisplayName(const PluginId& id) const;  // the ID text for an unknown plugin
+    // Where an installed plugin's files are (its theme files: themes/*.json).
+    std::filesystem::path InstalledFolder(const PluginId& id) const;
     const PluginRegistry& Registry() const { return registry_; }
 
     // What installing (or repairing) `id` copies: it and its requirements that are not installed

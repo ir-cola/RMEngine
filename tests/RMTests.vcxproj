@@ -38,7 +38,8 @@
       <SubSystem>Console</SubSystem>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(RMRoot)tools;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- src\editor\widgets: its reflected types (ThemeFile.h) are generated with paths from there -->
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(RMRoot)tools;$(RMRoot)src\editor\widgets;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -74,7 +75,8 @@
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
     <ClCompile Include="..\src\editor\app\Integrity.cpp" />
     <ClCompile Include="..\src\editor\hub\Updates.cpp" />
-    <ClCompile Include="..\src\editor\widgets\Ornament.cpp" />
+    <ClCompile Include="..\src\editor\widgets\ThemeFile.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\theme_seasons\editor\Ornament.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
     <ClCompile Include="..\src\core\reflect\Data.cpp" />
     <ClCompile Include="..\src\core\reflect\FieldCommand.cpp" />
@@ -90,7 +92,7 @@
   </ItemGroup>
   <PropertyGroup>
     <RmGenOut>$(RMRoot)build\generated\$(ProjectName)\</RmGenOut>
-    <RmGenRoots>--root "$(MSBuildProjectDirectory)" --root "$(RMRoot)plugins"</RmGenRoots>
+    <RmGenRoots>--root "$(MSBuildProjectDirectory)" --root "$(RMRoot)plugins" --root "$(RMRoot)src\editor\widgets"</RmGenRoots>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="..\src\RM.Reflect.targets" />

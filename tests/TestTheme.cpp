@@ -1,33 +1,33 @@
-// Tests for the list of color themes (editor/widgets/Theme.h): ids, the fallback, "PC の設定に合わせる".
+// Tests for the color themes (editor/widgets/Theme.h, ThemeFile.h): the built-in three, the themes of
+// the theme packs (their files in plugins/<author>/<name>/themes/), and the shapes of the seasons
+// pack's pictures (plugins/rm_engine/theme_seasons/editor/Ornament.h).
 
 #include "Test.h"
 
-#include "editor/widgets/Ornament.h"
 #include "editor/widgets/Theme.h"
+#include "editor/widgets/ThemeFile.h"
+#include "rm_engine/theme_seasons/editor/Ornament.h"
 
 #include <algorithm>
 #include <cmath>
-
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <set>
 #include <string>
 
 using namespace rm::editor;
+namespace ornament = rm::theme_seasons::ornament;
 
-RM_TEST(Theme_IdsAreUniqueAndNamed) {
-    std::set<std::string> ids;
-    for (const theme::ThemeInfo& t : theme::Themes()) {
-        CHECK(ids.insert(t.id).second);
-        CHECK(t.name && *t.name);
-    }
-    CHECK(!ids.empty());
-}
-
-RM_TEST(Theme_FindKnownAndUnknown) {
-    CHECK(std::string(theme::FindTheme("Light").id) == "Light");
+RM_TEST(Theme_BuiltInThree) {
+    const auto list = theme::Themes();
+    CHECK(list.size() >= 3);
+    CHECK(list[0].id == "Dark" && list[1].id == "Light" && list[2].id == "System");
+    for (size_t i = 0; i < 3; ++i) CHECK(list[i].group == 0 && list[i].pack.empty() && !list[i].ornament && !list[i].name.empty());
     // The old three-way choice was saved by these names: a hub.json from before keeps its theme.
-    CHECK(theme::FindTheme("Dark").palette == &theme::kDark);
-    CHECK(theme::FindTheme("System").palette == nullptr);
-    // Unknown (a newer version's theme, a typo): the first theme.
+    CHECK(theme::FindTheme("Dark").palette && theme::FindTheme("Dark").palette->bg == theme::kDark.bg);
+    CHECK(!theme::FindTheme("System").palette);
+    // Unknown (a pack not installed, a newer version's theme, a typo): the first theme.
     CHECK(&theme::FindTheme("NoSuchTheme") == &theme::Themes()[0]);
     CHECK(&theme::FindTheme("") == &theme::Themes()[0]);
 }
@@ -36,21 +36,80 @@ RM_TEST(Theme_SystemFollowsWindows) {
     const theme::ThemeInfo& sys = theme::FindTheme("System");
     CHECK(&theme::PaletteOf(sys, true) == &theme::kLight);
     CHECK(&theme::PaletteOf(sys, false) == &theme::kDark);
-    CHECK(&theme::PaletteOf(theme::FindTheme("Dark"), true) == &theme::kDark);
+    CHECK(theme::PaletteOf(theme::FindTheme("Dark"), true).bg == theme::kDark.bg);
     CHECK(theme::kLight.light && !theme::kDark.light);
 }
 
-RM_TEST(Theme_TheFourSeasons) {
-    CHECK(theme::FindTheme("Spring").palette->ornament == theme::Ornament::Spring);
-    CHECK(theme::FindTheme("Summer").palette->ornament == theme::Ornament::Summer);
-    CHECK(theme::FindTheme("Fall").palette->ornament == theme::Ornament::Fall);
-    CHECK(theme::FindTheme("Winter").palette->ornament == theme::Ornament::Winter);
-    // 桜 was renamed スプリング: a hub.json from before keeps its theme.
-    CHECK(std::string_view(theme::FindTheme("Sakura").id) == "Spring");
-    // The seasons are a group of their own (their own row on the theme screen).
-    for (const char* id : {"Spring", "Summer", "Fall", "Winter"}) CHECK(theme::FindTheme(id).group == 2);
-    CHECK(theme::kDark.ornament == theme::Ornament::None);
-    CHECK(theme::kLight.ornament == theme::Ornament::None);
+RM_TEST(Theme_PackThemesComeAndGo) {
+    theme::ThemeInfo spring;
+    spring.id = "Spring";
+    spring.name = L"スプリング";
+    spring.palette = theme::kLight;
+    spring.group = 1;
+    spring.aliases = {"Sakura"};
+    theme::SetPackThemes({spring});
+    CHECK(theme::Themes().size() == 4);
+    CHECK(theme::FindTheme("Spring").id == "Spring" && theme::FindTheme("Spring").group == 1);
+    CHECK(theme::FindTheme("Sakura").id == "Spring");  // its name before (桜)
+    // The pack removed: the first theme (hub.json keeps the id, so it comes back with the pack).
+    theme::SetPackThemes({});
+    CHECK(theme::Themes().size() == 3);
+    CHECK(&theme::FindTheme("Spring") == &theme::Themes()[0]);
+}
+
+RM_TEST(ThemeFile_ReadsColorsAndFillsTheRest) {
+    CHECK(theme::ParseHexColor("#FF8000") == rm::Color::Hex(0xFF8000));
+    CHECK(theme::ParseHexColor("00000080") == rm::Color::Hex(0x000000, 128.f / 255.f));
+    CHECK(!theme::ParseHexColor("#12345") && !theme::ParseHexColor("#GG0000") && !theme::ParseHexColor(""));
+    const auto doc = rm::json::Parse(R"({"kind": "rm_engine.theme", "format": 1, "id": "Sea", "name": "海", "light": true,
+        "ornament": "waves", "aliases": ["Ocean"], "order": 2, "caption": "#102030",
+        "colors": {"bg": "#AABBCC", "shadow": "#00000040"}, "future": 1})");
+    CHECK(doc.has_value());
+    std::string err;
+    const auto t = theme::ParseThemeFile(*doc, &err);
+    CHECK(t.has_value());
+    if (!t) return;
+    CHECK(t->info.id == "Sea" && t->info.name == L"海" && t->order == 2 && t->ornament == "waves");
+    CHECK(t->info.aliases == std::vector<std::string>{"Ocean"});
+    CHECK(t->info.palette && t->info.palette->light);
+    CHECK(t->info.palette->bg == rm::Color::Hex(0xAABBCC));
+    CHECK(t->info.palette->shadow == rm::Color::Hex(0x000000, 64.f / 255.f));
+    CHECK(t->info.palette->caption == 0x102030u);
+    CHECK(t->info.palette->text == theme::kLight.text);  // left out: the light theme's
+    // Not a theme, no id, a color that cannot be read: refused, with the reason.
+    for (const char* bad : {R"({"kind": "other", "id": "A", "name": "A"})", R"({"kind": "rm_engine.theme", "name": "A"})",
+                            R"({"kind": "rm_engine.theme", "id": "A", "name": "A", "colors": {"bg": "red"}})"}) {
+        std::string why;
+        CHECK(!theme::ParseThemeFile(*rm::json::Parse(bad), &why) && !why.empty());
+    }
+}
+
+// Every theme file of the packs in this repository: readable, ids unique, light ones light.
+RM_TEST(ThemeFile_ThePacks) {
+    const std::filesystem::path plugins = std::filesystem::path(__FILE__).parent_path().parent_path() / "plugins";
+    std::set<std::string> ids{"Dark", "Light", "System"};
+    int count = 0;
+    std::error_code ec;
+    for (std::filesystem::recursive_directory_iterator it(plugins, ec), end; !ec && it != end; it.increment(ec)) {
+        if (it->path().extension() != ".json" || it->path().parent_path().filename() != "themes") continue;
+        std::ifstream in(it->path(), std::ios::binary);
+        const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+        const auto doc = rm::json::Parse(text);
+        CHECK(doc.has_value());
+        if (!doc) continue;
+        std::string err;
+        const auto t = theme::ParseThemeFile(*doc, &err);
+        CHECK(t.has_value());
+        if (!t) continue;
+        CHECK(ids.insert(t->info.id).second);
+        for (const std::string& a : t->info.aliases) CHECK(ids.insert(a).second);
+        // The logo's ink (white or black, whichever stands out) is the one a theme of its kind expects.
+        const rm::Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
+        CHECK(theme::InkOn(t->info.palette->sidebar) == (t->info.palette->light ? black : white));
+        ++count;
+    }
+    CHECK(count == 7);
+    for (const char* id : {"Midnight", "Forest", "Paper", "Spring", "Summer", "Fall", "Winter", "Sakura"}) CHECK(ids.count(id) == 1);
 }
 
 RM_TEST(Ornament_SakuraShape) {
@@ -82,19 +141,8 @@ RM_TEST(Ornament_SakuraShape) {
 RM_TEST(Theme_InkOn_WhiteOnDarkBlackOnLight) {
     const rm::Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
     CHECK(theme::InkOn(theme::kDark.sidebar) == white);
-    CHECK(theme::InkOn(theme::kMidnight.sidebar) == white);
-    CHECK(theme::InkOn(theme::kForest.sidebar) == white);
     CHECK(theme::InkOn(theme::kLight.sidebar) == black);
-    CHECK(theme::InkOn(theme::kPaper.sidebar) == black);
-    CHECK(theme::InkOn(theme::kSpring.sidebar) == black);
-    CHECK(theme::InkOn(theme::kSummer.sidebar) == black);
-    CHECK(theme::InkOn(theme::kFall.sidebar) == black);
-    CHECK(theme::InkOn(theme::kWinter.sidebar) == black);
     CHECK(theme::InkOn(black) == white && theme::InkOn(white) == black);
-    // Every theme: the logo's ink is the one a theme of that kind (light / dark) expects.
-    for (const theme::ThemeInfo& t : theme::Themes()) {
-        if (t.palette) CHECK(theme::InkOn(t.palette->sidebar) == (t.palette->light ? black : white));
-    }
 }
 
 namespace {

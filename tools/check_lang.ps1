@@ -2,7 +2,7 @@
 #
 #   Tr(L"..."), TrF(L"...", ...), TrU8("..."), TrU8F("...", ...)   in src/ and plugins/
 #   Label="..." / Tooltip="..." of RM_STRUCT / RM_PROPERTY / RM_ENUM / RM_ITEM in headers
-#   "displayName" of plugin.json
+#   "displayName" of plugin.json, "name" of a theme pack's theme files (plugins/<a>/<n>/themes/*.json)
 #
 # A string from src/ needs an entry in resources/lang/en.json; a string from
 # plugins/<author>/<name>/ in that plugin's lang/en.json. The English must take the same {}
@@ -68,6 +68,11 @@ foreach ($pj in Get-ChildItem (Join-Path $Root 'plugins') -Recurse -Filter plugi
     $rel = $pj.FullName.Substring($Root.Length + 1) -replace '\\', '/'
     $d = ([IO.File]::ReadAllText($pj.FullName, $utf8) | ConvertFrom-Json).displayName
     if ($d) { Need $rel 1 $d }
+}
+foreach ($tf in Get-ChildItem (Join-Path $Root 'plugins') -Recurse -Filter *.json | Where-Object { $_.Directory.Name -eq 'themes' }) {
+    $rel = $tf.FullName.Substring($Root.Length + 1) -replace '\\', '/'
+    $n = ([IO.File]::ReadAllText($tf.FullName, $utf8) | ConvertFrom-Json).name
+    if ($n) { Need $rel 1 $n }
 }
 
 foreach ($m in $missing) { Write-Host $m }

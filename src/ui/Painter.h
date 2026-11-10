@@ -45,9 +45,9 @@ public:
     // Each corner its own radius; filled top-to-bottom, or outlined with a line whose color runs top-to-bottom.
     void FillRoundRectGradient(const Rect& r, Corners radii, Color top, Color bottom);
     void StrokeRoundRectGradient(const Rect& r, Corners radii, Color top, Color bottom, float width = 1.f);
-    // Any shape (ui/Path.h), filled with one color - except inside the `without` rectangles. Figures
-    // that overlap and go round the same way join (filled by winding).
-    void FillPath(const Path& path, Color c, std::span<const Rect> without = {});
+    // Any shape (ui/Path.h), filled with one color. Figures that overlap and go round the same way
+    // join (filled by winding).
+    void FillPath(const Path& path, Color c);
     // A soft shadow around a rounded rectangle (a few widening layers; drawn before the box).
     void Shadow(const Rect& r, float radius, Color c, float size);
 

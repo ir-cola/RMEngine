@@ -152,6 +152,10 @@ bool Plugins::IsEnabled(const PluginId& id) const {
     return e && e->status.state == PluginState::Enabled;
 }
 
+std::filesystem::path Plugins::InstalledFolder(const PluginId& id) const {
+    return installedDir_ / PathFromUtf8(id.author) / PathFromUtf8(id.name);
+}
+
 std::string Plugins::DisplayName(const PluginId& id) const {
     const Entry* e = Find(id);
     return e ? TrU8(e->status.displayName) : id.Text();

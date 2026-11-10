@@ -1,0 +1,38 @@
+{
+  "kind": "rm_engine.theme",
+  "format": 1,
+  "id": "Spring",
+  "name": "スプリング",
+  "aliases": [
+    "Sakura"
+  ],
+  "order": 1,
+  "light": true,
+  "ornament": "spring",
+  "caption": "#F5E4EA",
+  "colors": {
+    "bg": "#FBF1F4",
+    "sidebar": "#F5E4EA",
+    "panel": "#FFFAFB",
+    "panelHeader": "#F8EBEF",
+    "border": "#E8CFD8",
+    "borderHover": "#D4AFBD",
+    "field": "#FFFFFF",
+    "hover": "#F3E1E7",
+    "pressed": "#EBD3DC",
+    "selected": "#F9D5E1",
+    "accent": "#D94F7E",
+    "accentHover": "#E6668F",
+    "accentPressed": "#B93D67",
+    "text": "#2E2226",
+    "textDim": "#6E5A61",
+    "textFaint": "#A08C93",
+    "danger": "#C8322E",
+    "warn": "#9C6F00",
+    "folder": "#C08A2A",
+    "shadow": "#00000021",
+    "scrollThumb": "#E2C6D0",
+    "scrollThumbHot": "#C6A3B0",
+    "dim": "#0000004C"
+  }
+}

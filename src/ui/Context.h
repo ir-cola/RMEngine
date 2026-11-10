@@ -98,23 +98,6 @@ public:
     // say how far the mouse moved. Ask every frame of the drag; when no longer asked, the cursor comes back.
     void LockMouse() { lockMouse_ = true; }
     bool MouseLockRequested() const { return lockMouse_; }
-    // An area window decorations (a theme's ornament) must leave alone, e.g. the scene view, where
-    // every pixel is the picture. Asked every frame while it is shown (cut to the current clip).
-    void KeepClear(const Rect& r) { keepClear_.push_back(r.Intersect(CurrentClip())); }
-    std::span<const Rect> KeepClearAreas() const { return keepClear_; }
-    // A box a theme may decorate after the content is drawn (winter's snow piles up at the bottom of
-    // panels). Asked by the panel's own drawing every frame; left out when its bottom edge is cut
-    // off (scrolled out of a list).
-    struct Decorated {
-        Rect r;
-        float corner;  // its corners' radius (the snow keeps off them)
-    };
-    void Decorate(const Rect& r, float corner) {
-        const Rect clip = CurrentClip();
-        if (r.Bottom() > clip.Bottom() + 0.5f || r.Bottom() < clip.y || r.Right() < clip.x || r.x > clip.Right()) return;
-        decorated_.push_back({r, corner});
-    }
-    std::span<const Decorated> DecoratedAreas() const { return decorated_; }
     void SetCursor(Cursor c) { cursor_ = c; }
     Cursor GetCursor() const { return cursor_; }
 
@@ -153,8 +136,6 @@ private:
     bool redraw_ = false;
     bool animate_ = false;
     bool lockMouse_ = false;
-    std::vector<Rect> keepClear_;
-    std::vector<Decorated> decorated_;
     Cursor cursor_ = Cursor::Arrow;
 };
 

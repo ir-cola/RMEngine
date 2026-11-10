@@ -86,7 +86,7 @@
     <ClCompile Include="editor\shell\EditorScreen.cpp" />
     <ClCompile Include="editor\shell\FloatWindow.cpp" />
     <ClCompile Include="editor\widgets\Widgets.cpp" />
-    <ClCompile Include="editor\widgets\Ornament.cpp" />
+    <ClCompile Include="editor\widgets\ThemeFile.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\PluginId.h" />
@@ -124,7 +124,7 @@
     <ClInclude Include="editor\shell\EditorScreen.h" />
     <ClInclude Include="editor\shell\FloatWindow.h" />
     <ClInclude Include="editor\widgets\Theme.h" />
-    <ClInclude Include="editor\widgets\Ornament.h" />
+    <ClInclude Include="editor\widgets\ThemeFile.h" />
     <ClInclude Include="ui\Path.h" />
     <ClInclude Include="editor\widgets\Widgets.h" />
     <ClInclude Include="..\resources\resource.h" />
@@ -153,10 +153,10 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="RM.Reflect.targets" />
-  <!-- plugin.json files go next to the exe as Plugins/<author>/<name>/plugin.json (read at start-up). -->
+  <!-- plugin.json files (+ their English and theme files) go next to the exe as Plugins/<author>/<name>/... (read at start-up). -->
   <Target Name="CopyPluginManifests" AfterTargets="Build">
     <ItemGroup>
-      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json" />
+      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json;$(RMRoot)plugins\**\themes\*.json" />
       <LangFile Include="$(RMRoot)resources\lang\*.json" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginManifest)" DestinationFiles="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />

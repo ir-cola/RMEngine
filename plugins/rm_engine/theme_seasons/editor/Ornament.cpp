@@ -1,4 +1,4 @@
-#include "editor/widgets/Ornament.h"
+#include "rm_engine/theme_seasons/editor/Ornament.h"
 
 #include <algorithm>
 #include <cmath>
@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-namespace rm::editor::ornament {
+namespace rm::theme_seasons::ornament {
 
 namespace {
 
@@ -467,4 +467,4 @@ IcicleShapes Icicles(const ui::Rect& win, float maxLength, uint32_t seed) {
     return out;
 }
 
-}  // namespace rm::editor::ornament
+}  // namespace rm::theme_seasons::ornament

@@ -7,6 +7,14 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "テーマをパック (プラグイン) で足す形に。組み込みは黒・白・PC の設定に合わせるの 3 つ。基本カラーテーマパック (青・緑)・季節テーマパック・紙は Hub の「プラグイン」から入れる",
+          "en": "Themes now come in packs (plugins). Built in: Dark, Light and Follow Windows. The Basic Color Theme Pack (Blue, Green), the Seasons Theme Pack and Paper are installed from the Hub's Plugins page"
+        },
+        {
+          "ja": "季節の絵をいつも背景に (積もった雪や木などが文字より手前に来ない)",
+          "en": "The seasons' pictures always stay in the background (snow, trees and the rest never cover the text)"
+        },
+        {
           "ja": "シーンビューのギズモ: 回転に画面に向いた外の輪と、球の中のドラッグで自由に回す。「それぞれ / 中心」(Z) で選んだ物全部の真ん中を中心に回す・大きさを変える。「刻み」で刻む幅と「いつも刻む」",
           "en": "Scene view gizmo: rotate has an outer ring facing you and a free turn when dragging inside the ball. Each / Center (Z) turns and scales everything about the middle of the selection. Snap sets the step sizes and Always snap"
         },

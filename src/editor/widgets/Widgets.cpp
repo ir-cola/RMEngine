@@ -1,11 +1,11 @@
 #include "editor/widgets/Widgets.h"
 
 #include "base/Utf.h"
-#include "editor/widgets/Ornament.h"
 #include "editor/widgets/Theme.h"
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 namespace rm::editor::w {
 
@@ -79,53 +79,28 @@ void DrawSurface(ui::Context& c, const Rect& r, Surface s, float radius) {
 
 namespace {
 
-// A season's picture, never over what the content asked to keep clear (the scene and game views).
-void Fill(ui::Context& c, const ui::Path& path, Color color) { c.P().FillPath(path, color, c.KeepClearAreas()); }
-
-// Winter: snow falling over the window (held still), icicles from its top edge, and snow piled up at
-// the bottom of every panel drawn this frame (each with a thin shade along its top).
-void Winter(ui::Context& c, const Rect& w, float scale) {
-    using namespace theme::season;
-    const int count = std::max(20, static_cast<int>(w.w * w.h / 3600.f));
-    Fill(c, ornament::Snowfall(w, count, 5.5f * scale, 0x5A0Fu), Flake());
-    // A few icicles here and there from the window's top edge: their edge (the ice 1px lower and to
-    // the right), the pale ice, the shine down their left side, the snow they hang from.
-    const float icicle = 40.f * scale;
-    const ornament::IcicleShapes edge = ornament::Icicles({w.x + 0.8f, w.y + 1.f, w.w, w.h}, icicle, 0x1C1Eu);
-    const ornament::IcicleShapes ice = ornament::Icicles(w, icicle, 0x1C1Eu);
-    Fill(c, edge.ice, IceShade());
-    Fill(c, ice.ice, Ice());
-    Fill(c, ice.shine, IceShine());
-    Fill(c, edge.snow, SnowShade());
-    Fill(c, ice.snow, Snow());
-    for (const ui::Context::Decorated& d : c.DecoratedAreas()) {
-        // An outline above, the white snow, and its shaded foot.
-        constexpr float kDepth = 22.f;
-        Fill(c, ornament::SnowDrift({d.r.x, d.r.y - 1.5f, d.r.w, d.r.h}, kDepth, d.corner), SnowShade());
-        Fill(c, ornament::SnowDrift(d.r, kDepth, d.corner), Snow());
-        Fill(c, ornament::SnowDrift(d.r, kDepth * 0.45f, d.corner), SnowLow());
-    }
-}
-
-// The silhouette in the bottom-left corner: turned 10 degrees counter-clockwise and fitted into the
-// same square for every season (so a maple leaf is as tall as a cherry blossom), sized by the window.
-float CornerRadius(const Rect& w) { return std::clamp(std::min(w.w, w.h) * 0.17f, 56.f, 150.f); }
-Rect Corner(const Rect& w, float r) { return {w.x + 28.f, w.Bottom() - 28.f - 2.f * r, 2.f * r, 2.f * r}; }
-
-void SpringFlurry(ui::Context& c, const Rect& w, float scale) {
-    const Rect area{w.x, w.y, std::min(w.w * 0.42f, 560.f * scale), std::min(w.h * 0.38f, 320.f * scale)};
-    const int count = std::max(10, static_cast<int>(area.w * area.h / 4200.f));
-    Fill(c, ornament::Petals(area, count, 9.f * std::max(scale, 0.7f), 0x5A6E7Au), theme::season::Petal());
-}
-
-void SummerClouds(ui::Context& c, const Rect& w, float scale) {
-    const float cw = std::clamp(w.w * 0.16f, 110.f, 260.f) * scale;
-    Fill(c, ornament::Cloud({w.Right() - w.w * 0.17f, w.y + std::max(70.f, w.h * 0.12f) * scale}, cw), theme::season::CloudColor());
-    Fill(c, ornament::Cloud({w.Right() - w.w * 0.40f, w.y + std::max(42.f, w.h * 0.07f) * scale}, cw * 0.62f), theme::season::CloudColor());
-    Fill(c, ornament::Cloud({w.Right() - w.w * 0.06f, w.y + std::max(150.f, w.h * 0.25f) * scale}, cw * 0.5f), theme::season::CloudColor());
+// Which windows are panel windows of their own (DrawBackdrop notes it; their picture is lighter).
+std::unordered_map<const ui::Context*, bool>& FloatingWindows() {
+    static std::unordered_map<const ui::Context*, bool> floating;
+    return floating;
 }
 
 }  // namespace
+
+void DrawBackdrop(ui::Context& c, bool floating) {
+    FloatingWindows()[&c] = floating;
+    if (const OrnamentInfo* o = theme::CurrentOrnament) o->window(c, c.Viewport(), floating);
+}
+
+void DrawBackdropOn(ui::Context& c, const Rect& r, float corner) {
+    const OrnamentInfo* o = theme::CurrentOrnament;
+    if (!o || r.w <= 0 || r.h <= 0) return;
+    const auto it = FloatingWindows().find(&c);
+    c.P().PushClip(r);
+    o->window(c, c.Viewport(), it != FloatingWindows().end() && it->second);
+    c.P().PopClip();
+    if (o->panel) o->panel(c, r, corner);
+}
 
 void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
     if (r.w <= 0 || r.h <= 0) return;
@@ -136,74 +111,14 @@ void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
     const Color outer = theme::EdgeOuter();
     p.StrokeRoundRectGradient(r.Inset(-1), {grow(k.tl), grow(k.tr), grow(k.br), grow(k.bl)}, outer, outer);
     p.FillRoundRectGradient(r, k, fill.top, fill.bottom);
+    DrawBackdropOn(c, r, std::max(k.bl, k.br));  // the theme's picture, under the content
     p.StrokeRoundRectGradient(r, k, inner.top, inner.bottom);
-    // Winter piles snow up at its bottom, after the content (w::DrawOrnament).
-    if (theme::CurrentOrnament == theme::Ornament::Winter) c.Decorate(r, std::max(k.bl, k.br));
-}
-
-void DrawOrnament(ui::Context& c, const Rect& w) {
-    using namespace theme::season;
-    const float r = CornerRadius(w);
-    switch (theme::CurrentOrnament) {
-        case theme::Ornament::None:
-            return;
-        case theme::Ornament::Spring: {
-            // A cherry tree growing from the bottom edge on the right, in bloom up top, its petals
-            // blowing off it to the left; a blossom in the bottom-left, petals at the top-left.
-            const float d = std::clamp(std::max(w.w * 0.18f, w.h * 0.25f), 150.f, 340.f);
-            Fill(c, ornament::CherryTree(w, d), theme::OrnamentColor());
-            const int stream = std::max(24, static_cast<int>(w.w * w.h / 16000.f));
-            Fill(c, ornament::PetalStream(w, w.Right() - d * 1.3f, stream, 9.f, 0xB10Fu), Petal());
-            Fill(c, ornament::FitInto(ornament::Sakura({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
-            SpringFlurry(c, w, 1.f);
-            return;
-        }
-        case theme::Ornament::Summer: {
-            // Like the other seasons: the sun in the bottom-left, a silhouette in the bottom-right
-            // (a mound of sand with a parasol and a sand castle, as spring has its tree), clouds at the
-            // top-right (as spring has its petals at the top-left).
-            const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
-            Fill(c, ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h), theme::OrnamentColor());
-            Fill(c, ornament::FitInto(ornament::Sun({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
-            SummerClouds(c, w, 1.f);
-            return;
-        }
-        case theme::Ornament::Fall: {
-            // Red / orange / yellow leaves thick along the top and scattered further down, a maple leaf
-            // in the bottom-left (as big and where the other seasons' are).
-            const auto canopy = ornament::Canopy(w, std::clamp(w.h * 0.32f, 120.f, 300.f), 1.f / 4.f, 0xF411u);
-            for (int i = 0; i < 4; ++i) Fill(c, canopy[static_cast<size_t>(i)], Leaf(i));
-            Fill(c, ornament::FitInto(ornament::MapleLeaf({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
-            return;
-        }
-        case theme::Ornament::Winter:
-            Winter(c, w, 1.f);
-            Fill(c, ornament::FitInto(ornament::Snowflake({0, 0}, 1.f, 10.f), Corner(w, r)), theme::OrnamentColor());
-            return;
-    }
-}
-
-void DrawFloatOrnament(ui::Context& c, const Rect& w) {
-    using namespace theme::season;
-    switch (theme::CurrentOrnament) {
-        case theme::Ornament::Spring:
-            SpringFlurry(c, w, 0.6f);  // the petals only (the tree and the blossom are the editor's own)
-            return;
-        case theme::Ornament::Summer:
-            SummerClouds(c, {w.x, w.y, w.w, std::min(w.h, 260.f)}, 0.6f);  // the clouds only (as spring: its petals)
-            return;
-        case theme::Ornament::Winter:
-            Winter(c, w, 0.8f);  // falling snow, and snow at the bottom of its panels
-            return;
-        case theme::Ornament::None:
-        case theme::Ornament::Fall:
-            return;
-    }
 }
 
 void DrawBar(ui::Context& c, const Rect& r, Color base) {
     const theme::Gradient g = theme::Gentle(base);
     c.P().FillRectGradient(r, g.top, g.bottom);
+    DrawBackdropOn(c, r);
 }
 
 void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {

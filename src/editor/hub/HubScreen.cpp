@@ -275,6 +275,7 @@ void HubScreen::RunRename() {
 void HubScreen::OnFrame(ui::Context& c, float width, float height) {
     auto& p = c.P();
     p.Clear(theme::Bg);
+    w::DrawBackdrop(c, false);  // the theme's picture, behind everything (again on the sidebar)
     const bool overlay = modal_ != Modal::None || rowMenu_.open;
     c.SetInputEnabled(!overlay);
 
@@ -295,7 +296,6 @@ void HubScreen::OnFrame(ui::Context& c, float width, float height) {
     } else {
         DrawOptions(c, full.Inset(32, 28, 32, 28));
     }
-    w::DrawOrnament(c, {0, 0, width, height});
 
     c.SetInputEnabled(true);
     if (rowMenu_.open) DrawRowMenu(c);
@@ -948,8 +948,8 @@ void HubScreen::DrawThemePicker(ui::Context& c) {
     const auto themes = theme::Themes();
     constexpr int kCols = 4;
     constexpr float kGap = 16, kCardH = 156, kLineGap = 36, kNoteH = 30, kButtonsH = 52;
-    // Where each card goes: four to a row, and each group (the basic three, then the others) starts a
-    // new row below a line.
+    // Where each card goes: four to a row, and each group (the built-in three, then each theme pack)
+    // starts a new row under a line with the pack's name.
     struct Cell {
         int col, row, lines;  // lines = how many group lines are above it
     };
@@ -985,10 +985,16 @@ void HubScreen::DrawThemePicker(ui::Context& c) {
         const theme::ThemeInfo& t = themes[i];
         const Cell& cell = cells[i];
         const float top = rowTop(cell);
-        if (i > 0 && cell.lines != cells[i - 1].lines) w::Separator(c, cr.x, top - kLineGap * 0.5f, cr.w);
+        if (i > 0 && cell.lines != cells[i - 1].lines) {
+            // The pack's name, then the line.
+            const std::wstring pack = Tr(t.pack);
+            const float nameW = pack.empty() ? 0.f : p.TextWidth(pack, 12) + 10.f;
+            p.Text({cr.x, top - kLineGap, nameW, kLineGap - 6}, pack, Style(12, theme::TextDim));
+            w::Separator(c, cr.x + nameW, top - kLineGap * 0.5f - 3, cr.w - nameW);
+        }
         const Rect card{cr.x + cell.col * (cardW + kGap), top, cardW, kCardH};
         c.PushId(static_cast<uint64_t>(i));
-        const bool clicked = w::ThemeCard(c, "card", card, t.palette, Tr(t.name), &t == &current).clicked;
+        const bool clicked = w::ThemeCard(c, "card", card, t.palette ? &*t.palette : nullptr, Tr(t.name), &t == &current).clicked;
         c.PopId();
         if (clicked && &t != &current) {
             // Not project data: applied at once, saved in hub.json, not undoable (like the other options).

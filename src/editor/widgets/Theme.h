@@ -2,27 +2,32 @@
 // The editor's look. The core UI foundation (src/ui) has no colors on purpose:
 // a game UI built on the same foundation must not change when the editor theme does.
 //
-// The palettes (黒 = dark, the default; 白 = light) and the list of themes (kThemes: what オプション >
-// 色のテーマ > 「テーマを変更…」 shows). The colors below are the palette in use; Apply switches them.
-// Every screen reads them while drawing, so a switch shows on the next frame.
+// The built-in palettes (黒 = dark, the default; 白 = light) and the list of themes (Themes(): what
+// オプション > 色のテーマ > 「テーマを変更…」 shows). The colors below are the palette in use; ApplyTheme
+// switches them. Every screen reads them while drawing, so a switch shows on the next frame.
 //
-// A new theme = a Palette and one line in kThemes (its name in resources/lang/en.json too).
+// Built in: 黒, 白 and PC の設定に合わせる. Every other theme comes from a theme pack: a plugin with
+// theme files (plugins/<author>/<name>/themes/*.json, read by ThemeFile.h when the plugins are read;
+// a pack's pictures are its code, offered at w::kOrnamentPoint). A new theme = a theme file in a pack.
 
 #include "editor/lang/Lang.h"
 #include "ui/Types.h"
 
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <span>
+#include <string>
 #include <string_view>
+#include <vector>
+
+namespace rm::editor::w {
+struct OrnamentInfo;  // a theme pack's pictures (Widgets.h)
+}
 
 namespace rm::editor::theme {
 
 using ui::Color;
-
-// The pictures a theme puts faintly over the window (the four seasons; shapes: editor/widgets/Ornament.h,
-// drawn by w::DrawOrnament and w::DrawFloatOrnament - and the snow of winter by the widgets themselves).
-enum class Ornament : uint8_t { None, Spring, Summer, Fall, Winter };
 
 struct Palette {
     Color bg, sidebar, panel, panelHeader, border, borderHover, field, hover, pressed, selected;
@@ -30,7 +35,6 @@ struct Palette {
     Color scrollThumb, scrollThumbHot, dim;
     uint32_t caption;  // title bar (0xRRGGBB)
     bool light;        // a light theme (the gradients below are made for light or dark)
-    Ornament ornament = Ornament::None;
 };
 
 inline constexpr Palette kDark{
@@ -47,70 +51,6 @@ inline constexpr Palette kLight{
     Color::Hex(0xD62828), Color::Hex(0xE84444), Color::Hex(0xB31F1F), Color::Hex(0x1D1E23), Color::Hex(0x585B64),
     Color::Hex(0x8C8F98), Color::Hex(0xD03030), Color::Hex(0xA87A06), Color::Hex(0xC9921B), Color::Hex(0x000000, 0.14f),
     Color::Hex(0xC2C4CB), Color::Hex(0x9EA1AA), Color::Hex(0x000000, 0.35f), 0xE8E8EC, true,
-};
-
-// 深い青: dark navy, a blue accent.
-inline constexpr Palette kMidnight{
-    Color::Hex(0x161B26), Color::Hex(0x111520), Color::Hex(0x1C2230), Color::Hex(0x232A3A), Color::Hex(0x2E3648),
-    Color::Hex(0x44506A), Color::Hex(0x10141D), Color::Hex(0x283044), Color::Hex(0x20273A), Color::Hex(0x1E3354),
-    Color::Hex(0x3D8BFD), Color::Hex(0x5A9DFF), Color::Hex(0x2A6FD6), Color::Hex(0xE4E8F0), Color::Hex(0x98A3B8),
-    Color::Hex(0x667089), Color::Hex(0xFF6B6B), Color::Hex(0xF2C14E), Color::Hex(0xE3B341), Color::Hex(0x000000, 0.40f),
-    Color::Hex(0x3A4459), Color::Hex(0x5A6680), Color::Hex(0x000000, 0.55f), 0x111520, false,
-};
-
-// 森: dark with a touch of green, a green accent.
-inline constexpr Palette kForest{
-    Color::Hex(0x171D1A), Color::Hex(0x121714), Color::Hex(0x1D2420), Color::Hex(0x242C27), Color::Hex(0x303A34),
-    Color::Hex(0x46544B), Color::Hex(0x111613), Color::Hex(0x29322D), Color::Hex(0x222A25), Color::Hex(0x1F3A2C),
-    Color::Hex(0x2F9E6B), Color::Hex(0x3FB27F), Color::Hex(0x247F56), Color::Hex(0xE5EBE7), Color::Hex(0x9CA8A0),
-    Color::Hex(0x6A766E), Color::Hex(0xFF6B6B), Color::Hex(0xF2C14E), Color::Hex(0xE3B341), Color::Hex(0x000000, 0.38f),
-    Color::Hex(0x3C4741), Color::Hex(0x5C6A62), Color::Hex(0x000000, 0.55f), 0x121714, false,
-};
-
-// 紙: light and warm (cream paper), a burnt-orange accent.
-inline constexpr Palette kPaper{
-    Color::Hex(0xF4EFE6), Color::Hex(0xEAE3D6), Color::Hex(0xFBF8F2), Color::Hex(0xF0EADF), Color::Hex(0xD8CFBE),
-    Color::Hex(0xBCB09A), Color::Hex(0xFFFDF8), Color::Hex(0xEAE2D3), Color::Hex(0xDFD6C5), Color::Hex(0xF5DCCB),
-    Color::Hex(0xC2571A), Color::Hex(0xD66A2C), Color::Hex(0xA34512), Color::Hex(0x2B2620), Color::Hex(0x655D52),
-    Color::Hex(0x978D7F), Color::Hex(0xC83A2E), Color::Hex(0x9C6F00), Color::Hex(0xB7831B), Color::Hex(0x000000, 0.14f),
-    Color::Hex(0xCFC5B3), Color::Hex(0xA89D89), Color::Hex(0x000000, 0.32f), 0xEAE3D6, true,
-};
-
-// スプリング: light, pale cherry-blossom pink, a deep pink accent.
-inline constexpr Palette kSpring{
-    Color::Hex(0xFBF1F4), Color::Hex(0xF5E4EA), Color::Hex(0xFFFAFB), Color::Hex(0xF8EBEF), Color::Hex(0xE8CFD8),
-    Color::Hex(0xD4AFBD), Color::Hex(0xFFFFFF), Color::Hex(0xF3E1E7), Color::Hex(0xEBD3DC), Color::Hex(0xF9D5E1),
-    Color::Hex(0xD94F7E), Color::Hex(0xE6668F), Color::Hex(0xB93D67), Color::Hex(0x2E2226), Color::Hex(0x6E5A61),
-    Color::Hex(0xA08C93), Color::Hex(0xC8322E), Color::Hex(0x9C6F00), Color::Hex(0xC08A2A), Color::Hex(0x000000, 0.13f),
-    Color::Hex(0xE2C6D0), Color::Hex(0xC6A3B0), Color::Hex(0x000000, 0.30f), 0xF5E4EA, true, Ornament::Spring,
-};
-
-// サマー: the pale parts (panels, fields) a pale yellow like sunlit sand, the deeper parts (the
-// window's background, the sidebar, borders, the selection) a pale summer-sky blue; a sea-blue accent.
-inline constexpr Palette kSummer{
-    Color::Hex(0xBDDCF4), Color::Hex(0xAED2F0), Color::Hex(0xFFF8DE), Color::Hex(0xFCEFC6), Color::Hex(0x9DC4E5),
-    Color::Hex(0x77A9D3), Color::Hex(0xFFFCEE), Color::Hex(0xF8EBBE), Color::Hex(0xF1E1A8), Color::Hex(0xCDE5F8),
-    Color::Hex(0x1270C0), Color::Hex(0x2685D2), Color::Hex(0x0D5A9C), Color::Hex(0x1C2731), Color::Hex(0x535F69),
-    Color::Hex(0x8A949C), Color::Hex(0xD03030), Color::Hex(0xA87A06), Color::Hex(0xC9921B), Color::Hex(0x000000, 0.14f),
-    Color::Hex(0xE0CF96), Color::Hex(0xC9B372), Color::Hex(0x000000, 0.32f), 0xAED2F0, true, Ornament::Summer,
-};
-
-// フォール: an autumn wood - yellow and orange, a maple-red accent.
-inline constexpr Palette kFall{
-    Color::Hex(0xF5E2C0), Color::Hex(0xEFD3A6), Color::Hex(0xFFF6E6), Color::Hex(0xF8E8CC), Color::Hex(0xE0C391),
-    Color::Hex(0xC9A062), Color::Hex(0xFFFBF2), Color::Hex(0xF4E0BC), Color::Hex(0xEBD2A8), Color::Hex(0xF6CFA0),
-    Color::Hex(0xCF4F1C), Color::Hex(0xDE652F), Color::Hex(0xAA3F13), Color::Hex(0x2F2216), Color::Hex(0x6C5640),
-    Color::Hex(0x9D876B), Color::Hex(0xC8322E), Color::Hex(0x9C6F00), Color::Hex(0xC08A2A), Color::Hex(0x000000, 0.14f),
-    Color::Hex(0xDEC293), Color::Hex(0xC5A36C), Color::Hex(0x000000, 0.32f), 0xEFD3A6, true, Ornament::Fall,
-};
-
-// ウィンター: a cold winter blue (so the white of the snow stands out), a steel-blue accent.
-inline constexpr Palette kWinter{
-    Color::Hex(0xBFD2E6), Color::Hex(0xB0C6DE), Color::Hex(0xDDE8F3), Color::Hex(0xD0DEEC), Color::Hex(0xA2B9D1),
-    Color::Hex(0x839EBB), Color::Hex(0xF1F6FB), Color::Hex(0xCFDCEA), Color::Hex(0xC2D3E4), Color::Hex(0xB9CFE6),
-    Color::Hex(0x3A6C99), Color::Hex(0x4E7FAA), Color::Hex(0x2D567B), Color::Hex(0x16202B), Color::Hex(0x47566A),
-    Color::Hex(0x7689A0), Color::Hex(0xC8322E), Color::Hex(0x9C6F00), Color::Hex(0xB89040), Color::Hex(0x000000, 0.13f),
-    Color::Hex(0xA5B9CE), Color::Hex(0x8399B2), Color::Hex(0x000000, 0.30f), 0xB0C6DE, true, Ornament::Winter,
 };
 
 // The palette in use (dark until Apply is called).
@@ -139,35 +79,53 @@ inline Color ScrollThumbHot = kDark.scrollThumbHot;
 inline Color Dim = kDark.dim;  // behind a dialog
 inline uint32_t CaptionRgb = kDark.caption;
 inline bool IsLight = false;
-inline Ornament CurrentOrnament = Ornament::None;
+inline const w::OrnamentInfo* CurrentOrnament = nullptr;  // the theme's pictures (none for most)
 
 // One theme of the list. Its id is what hub.json keeps (options.theme).
 struct ThemeInfo {
-    const char* id;
-    const wchar_t* name;     // Japanese (Tr when shown)
-    const Palette* palette;  // nullptr: follows Windows (kDark or kLight)
-    int group;               // the theme screen draws a line between groups (0 = the basic three, 2 = the seasons)
+    std::string id;
+    std::wstring name;               // Japanese (Tr when shown)
+    std::optional<Palette> palette;  // none: follows Windows (kDark or kLight)
+    int group = 0;                   // 0 = the built-in three, then one number per pack (the theme screen
+                                     // starts a new row for each, under the pack's name)
+    std::wstring pack;               // the pack's name (its plugin's display name; Tr when shown)
+    std::vector<std::string> aliases;           // ids it was saved under before (a hub.json of then keeps it)
+    const w::OrnamentInfo* ornament = nullptr;  // its pictures, from the pack's code
 };
-inline constexpr ThemeInfo kThemes[] = {
-    {"Dark", TrKey(L"黒"), &kDark, 0},
-    {"Light", TrKey(L"白"), &kLight, 0},
-    {"System", TrKey(L"PC の設定に合わせる"), nullptr, 0},
-    {"Midnight", TrKey(L"深い青"), &kMidnight, 1},
-    {"Forest", TrKey(L"森"), &kForest, 1},
-    {"Paper", TrKey(L"紙"), &kPaper, 1},
-    {"Spring", TrKey(L"スプリング"), &kSpring, 2},
-    {"Summer", TrKey(L"サマー"), &kSummer, 2},
-    {"Fall", TrKey(L"フォール"), &kFall, 2},
-    {"Winter", TrKey(L"ウィンター"), &kWinter, 2},
-};
-inline std::span<const ThemeInfo> Themes() { return kThemes; }
-// An unknown id (a theme of a newer version, a typo in hub.json) is the first theme.
+
+namespace detail {
+inline std::vector<ThemeInfo>& List() {
+    static std::vector<ThemeInfo> list{
+        {"Dark", TrKey(L"黒"), kDark},
+        {"Light", TrKey(L"白"), kLight},
+        {"System", TrKey(L"PC の設定に合わせる"), std::nullopt},
+    };
+    return list;
+}
+inline constexpr size_t kBuiltIn = 3;
+}  // namespace detail
+
+inline std::span<const ThemeInfo> Themes() { return detail::List(); }
+// The themes of the packs (read again whenever the plugins are), after the built-in three. A
+// reference from FindTheme is good until the next call.
+inline void SetPackThemes(std::vector<ThemeInfo> themes) {
+    auto& list = detail::List();
+    list.resize(detail::kBuiltIn);
+    for (ThemeInfo& t : themes) list.push_back(std::move(t));
+}
+// An unknown id (a pack that is not installed, a theme of a newer version, a typo in hub.json) is the
+// first theme. hub.json keeps the id, so the theme comes back when its pack is installed again.
 inline const ThemeInfo& FindTheme(std::string_view id) {
-    if (id == "Sakura") id = "Spring";  // its name before (a hub.json of then keeps its theme)
-    for (const ThemeInfo& t : kThemes) {
+    const auto list = Themes();
+    for (const ThemeInfo& t : list) {
         if (id == t.id) return t;
     }
-    return kThemes[0];
+    for (const ThemeInfo& t : list) {
+        for (const std::string& a : t.aliases) {
+            if (id == a) return t;
+        }
+    }
+    return list[0];
 }
 // The palette a theme stands for now (for "PC の設定に合わせる": what Windows uses).
 inline const Palette& PaletteOf(const ThemeInfo& t, bool systemPrefersLight) {
@@ -182,7 +140,11 @@ inline void Apply(const Palette& p) {
     TextDim = p.textDim, TextFaint = p.textFaint, Danger = p.danger, Warn = p.warn, Folder = p.folder, Shadow = p.shadow;
     ScrollThumb = p.scrollThumb, ScrollThumbHot = p.scrollThumbHot, Dim = p.dim, CaptionRgb = p.caption;
     IsLight = light;
-    CurrentOrnament = p.ornament;
+}
+// The theme's palette and its pictures.
+inline void ApplyTheme(const ThemeInfo& t, bool systemPrefersLight) {
+    Apply(PaletteOf(t, systemPrefersLight));
+    CurrentOrnament = t.ornament;
 }
 
 inline constexpr float FontSize = 13.f;
@@ -215,25 +177,9 @@ inline Color Highlight() { return IsLight ? Color{1, 1, 1, 0.75f} : Color{1, 1, 
 inline Color EdgeOuter() { return IsLight ? Color::Hex(0xC4C6CD) : Color::Hex(0x0B0C0E); }
 inline Gradient EdgeInner() { return IsLight ? Gradient{Color{1, 1, 1, 1}, Color{1, 1, 1, 0.55f}} : Gradient{Color{1, 1, 1, 0.10f}, Color{1, 1, 1, 0.035f}}; }
 inline Color AccentHighlight() { return Color{1, 1, 1, 0.22f}; }
-// The theme's ornament: the accent, faint (it lies over the panels, so the text stays readable).
+// A theme pack's silhouettes: the accent, faint (behind the content, on the panels too).
 inline Color OrnamentColor() { return Accent.Alpha(IsLight ? 0.10f : 0.12f); }
 
-// The colors of the seasons' pictures (laid faintly over the window: their alpha is part of them).
-namespace season {
-inline Color Petal() { return Color::Hex(0xEE8FAE, 0.42f); }          // spring: the flurry
-inline Color CloudColor() { return Color::Hex(0xFFFFFF, 0.40f); }            // summer: clouds at the top-right
-inline Color Leaf(int i) {                                            // fall: the canopy, four colors
-    constexpr uint32_t k[4] = {0xD8432A, 0xE8832A, 0xE7B43A, 0xB0432A};
-    return Color::Hex(k[i & 3], 0.34f);
-}
-inline Color Snow() { return Color::Hex(0xFFFFFF); }                  // winter: piled up at the bottom of panels
-inline Color SnowShade() { return Color::Hex(0x8CA3BD); }             // its outline
-inline Color SnowLow() { return Color::Hex(0xE6EEF7); }               // the shaded foot of the drift
-inline Color Flake() { return Color::Hex(0xFFFFFF, 0.9f); }           // falling snow
-inline Color Ice() { return Color::Hex(0xD6E7F6, 0.88f); }            // icicles: pale, a little see-through
-inline Color IceShade() { return Color::Hex(0x6F8AA8, 0.75f); }       // their edge
-inline Color IceShine() { return Color::Hex(0xFFFFFF, 0.95f); }
-}  // namespace season
 // How bright a color looks (relative luminance, 0 = black .. 1 = white; WCAG's formula).
 inline float Luminance(Color c) {
     auto lin = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };

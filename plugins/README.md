@@ -20,6 +20,7 @@ plugins/
 | 層 | `runtime/` はゲームに入る層 (`base` `core` `platform` `ui`) と、前提の `runtime/` だけを読める。`editor/` は何でも読める。**`src/` (核) はプラグインを読まない** |
 | つなぎ | 2 つのプラグインの両方を知らないと作れない部分は、両方を `requires` にした**つなぎ**に入れる (`"connectorFor": {相手}`)。つなぎが要る側は `"needsConnector": true` (つなぎが 1 つも使えないと使えない)。つなぎは要るものがそろうと一緒に入る (RME_PLATFORM 4-f) |
 | 差し出し | 別のプラグインへ物を渡すときは `registry.Contribute(口の名前, static な物)`。受け取る側が口の名前と物の型を決めて `Contributions<型>(口)` で読む |
+| テーマパック | `themes/*.json` に 1 テーマ 1 ファイル (形は `src/editor/widgets/ThemeFile.h`)。核がプラグインを読むたびに、使えるプラグインのインストール先の `themes/` を読む。名前の英語はそのプラグインの `lang/en.json` (`check_lang.ps1` が確かめる)。絵が要るなら、コードで `w::OrnamentInfo` を口 `w::kOrnamentPoint` に差し出し、テーマのファイルの `"ornament"` にその名前を書く (同じプラグインの物だけを探す) |
 | ランタイムだけ | エディターの部分が無いプラグインも `BuiltinPlugins.cpp` に `RegisterEditor` 無し (`nullptr`) で載せる |
 | ビルド | 全部 `RM_Engine.exe` に静的リンク。ソースはワイルドカードで拾うので vcxproj を書き直さなくてよい。`plugin.json` はビルドで `build/bin/.../Plugins/<作者>/<名前>/` へ写る (= このエンジンが持っているもの) |
 | インストール | Hub で入れると `%LOCALAPPDATA%\RM_Engine\Plugins\<作者>\<名前>\` へフォルダごと写る。入っていないプラグインは初期化されない。最初の起動では全部入る |
@@ -39,4 +40,7 @@ plugins/
 |---|---|
 | `rm_engine` / `game_production` (ゲーム制作) | ソフト「ゲーム」。ゲームの設定・シーン (エンティティの親子)・部品 (コンポーネント) の仕組み。**つなぎが要る** (空間を知らない)。部品の種類は口 `rm_engine.game_production.component` で受け取る |
 | `rm_engine` / `space3d` (3D 空間) | Transform と行列の計算・カメラとレイ・Direct3D 11 での 3D の描画 (線と箱)。ランタイムだけ |
+| `rm_engine` / `theme_colors` (基本カラーテーマパック) | テーマのファイルだけ: 青・緑 (`themes/*.json`)。コードは `runtime/Id.h` だけ |
+| `rm_engine` / `theme_seasons` (季節テーマパック) | テーマのファイル (スプリング・サマー・フォール・ウィンター) と、その絵を描くコード (`editor/Seasons.cpp`。口 `core.theme_ornament` に差し出す。形は `editor/Ornament.*`、テストあり) |
+| `rm_engine` / `theme_paper` (紙) | テーマのファイルだけ: 紙 |
 | `rm_engine` / `game_x_3d` (ゲーム制作 × 3D) | つなぎ。前提 = ゲーム制作・3D 空間。Transform をゲームの部品として差し出し (新しいエンティティに付く)、3D のシーンビューを出す (口 `rm_engine.game_production.scene_view`) |

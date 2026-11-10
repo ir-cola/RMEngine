@@ -60,6 +60,11 @@ private:
     class HubScreen* EnsureHub();
     void Replace(std::unique_ptr<ScreenWindow> next);
     void LoadLanguageCatalogs();
+    // The themes of the theme packs: themes/*.json of every enabled plugin (+ its pictures, offered by
+    // its code at w::kOrnamentPoint). After each reading of the plugins.
+    void LoadThemes();
+    // The plugins read again (after installing / removing), then their themes, then the look.
+    void ReloadPlugins();
 
     platform::Gfx gfx_;
     HubSettings settings_;

@@ -1,8 +1,7 @@
 #pragma once
-// The shapes of theme ornaments (the seasons' pictures: a cherry tree, the sun, a maple leaf, a
-// snowflake, the sun, clouds, snow on an edge ...). Pure: they only make ui::Paths (tested in
-// tests/TestTheme.cpp); w::DrawOrnament / DrawFloatOrnament / the snow in the widgets draw them in
-// the theme's colors.
+// 季節テーマパック - the shapes of the seasons' pictures (a cherry tree, the sun, a maple leaf, a
+// snowflake, clouds, snow on an edge ...). Pure: they only make ui::Paths (tested in
+// tests/TestTheme.cpp); Seasons.cpp draws them in the season's colors, behind the content.
 //
 // Every figure goes round the same way (clockwise on the screen) and the painter fills by winding,
 // so figures that overlap (the circles of a tree's crown) make one silhouette, never holes.
@@ -15,7 +14,7 @@
 #include <cstdint>
 #include <span>
 
-namespace rm::editor::ornament {
+namespace rm::theme_seasons::ornament {
 
 // --- Building blocks --------------------------------------------------------------------------
 void AddCircle(ui::Path& p, Vec2 center, float r);
@@ -97,4 +96,4 @@ struct IcicleShapes {
 };
 IcicleShapes Icicles(const ui::Rect& window, float maxLength, uint32_t seed);
 
-}  // namespace rm::editor::ornament
+}  // namespace rm::theme_seasons::ornament

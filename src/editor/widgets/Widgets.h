@@ -42,20 +42,24 @@ void DrawSurface(ui::Context& c, const ui::Rect& r, Surface s, float radius = th
 // A panel with its edge (theme::EdgeOuter / EdgeInner): the dark line lies 1px OUTSIDE r, so two
 // panels 1px apart share one dark seam. Each corner its own radius - square where it touches another.
 void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
-// The pictures of the theme in use (the seasons), laid faintly over the main window (Hub / editor):
-//   スプリング  a cherry tree growing up on the right, in bloom up top, petals blowing off it, a blossom
-//               (bottom-left), a flurry of petals (top-left)
-//   サマー      a mound of sand with a parasol and a sand castle (bottom-right, a silhouette like
-//               spring's tree), clouds (top-right), the sun (bottom-left)
-//   フォール    leaves thick along the top and scattered below, a big maple leaf (bottom-left)
-//   ウィンター  falling snow (held still), icicles from the top edge, snow piled at the bottom of every
-//               panel (DrawPanelFrame notes them: ui::Context::Decorate), a snowflake (bottom-left)
-// Drawn after the window's content and before its menus and dialogs, never over the areas the
-// content asked to keep clear (ui::Context::KeepClear - the scene and game views). Nothing for most themes.
-void DrawOrnament(ui::Context& c, const ui::Rect& window);
-// The same for a panel window of its own (a panel dragged out): spring's petals, summer's clouds,
-// winter's snow. The silhouettes stay in the main window.
-void DrawFloatOrnament(ui::Context& c, const ui::Rect& window);
+
+// --- A theme's pictures: always behind the content ---------------------------------------
+// A theme pack's code draws them (offered at kOrnamentPoint; a theme file of the same plugin names
+// one by `name` - "ornament").
+struct OrnamentInfo {
+    const char* name;
+    // The picture of a whole window (`floating`: a panel window of its own - a lighter picture). Drawn
+    // on the window's background, then again on each panel and bar (clipped to it) after its fill.
+    void (*window)(ui::Context& c, const ui::Rect& window, bool floating);
+    // Something of a panel's own, after the window's picture on it (winter: snow at its bottom). May be null.
+    void (*panel)(ui::Context& c, const ui::Rect& r, float corner);
+};
+inline constexpr char kOrnamentPoint[] = "core.theme_ornament";
+// First in a frame, after clearing the window: the theme's picture on its background.
+void DrawBackdrop(ui::Context& c, bool floating);
+// The picture again on a surface just filled (DrawPanelFrame / DrawBar do it), clipped to `r`.
+void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0);
+
 // A strip of the window's frame (menu bar, status bar, sidebar): gentle gradient, no border.
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 
