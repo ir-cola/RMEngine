@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -369,17 +370,19 @@ ui::Path Snowflake(Vec2 center, float r, float degreesCcw) {
     for (int i = 0; i < 6; ++i) {
         const float a = degreesCcw + 60.f * static_cast<float>(i);
         auto at = [&](float x, float y) { return Add(center, Scale(Rotate({x, y}, a), r)); };
-        AddBar(p, at(0, 0), at(0, -1.f), 0.10f * r, 0.06f * r);
-        // Two pairs of side branches on each arm, and a small fork at its tip.
-        for (const auto& [along, len] : {std::pair{0.42f, 0.30f}, std::pair{0.68f, 0.22f}}) {
-            AddBar(p, at(0, -along), at(-len * 0.75f, -along - len * 0.75f), 0.07f * r, 0.045f * r);
-            AddBar(p, at(0, -along), at(len * 0.75f, -along - len * 0.75f), 0.07f * r, 0.045f * r);
+        // The arm: thick from the heart, swelling into a long sharp spearhead at its tip.
+        const Vec2 arm[] = {at(-0.085f, 0), at(-0.075f, -0.62f), at(-0.11f, -0.72f), at(0, -1.f),
+                            at(0.11f, -0.72f), at(0.075f, -0.62f), at(0.085f, 0)};
+        AddPolygon(p, arm);
+        // Two pairs of side branches on each arm, thick at the arm and sharp at their points.
+        for (const auto& [along, len, wd] : {std::tuple{0.30f, 0.30f, 0.075f}, std::tuple{0.56f, 0.24f, 0.06f}}) {
+            AddBar(p, at(0, -along), at(-len * 0.80f, -along - len * 0.62f), 2.f * wd * r, 0);
+            AddBar(p, at(0, -along), at(len * 0.80f, -along - len * 0.62f), 2.f * wd * r, 0);
         }
-        AddCircle(p, at(0, -1.f), 0.06f * r);
     }
-    // The heart: a small hexagon.
+    // The heart: a hexagon.
     std::vector<Vec2> hex;
-    for (int i = 0; i < 6; ++i) hex.push_back(Add(center, Scale(Rotate({0, -0.2f}, degreesCcw + 60.f * static_cast<float>(i) + 30.f), r)));
+    for (int i = 0; i < 6; ++i) hex.push_back(Add(center, Scale(Rotate({0, -0.24f}, degreesCcw + 60.f * static_cast<float>(i) + 30.f), r)));
     AddPolygon(p, hex);
     return p;
 }

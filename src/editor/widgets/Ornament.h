@@ -77,6 +77,8 @@ ui::Path MapleLeaf(Vec2 center, float radius, float degreesCcw, int points = 180
 std::array<ui::Path, 4> Canopy(const ui::Rect& window, float depth, float perPixel, uint32_t seed);
 
 // --- Winter -----------------------------------------------------------------------------------
+// A snowflake: six thick arms each ending in a sharp spearhead, two pairs of thick pointed branches
+// on each, a hexagon at the heart. radius = to the arms' tips.
 ui::Path Snowflake(Vec2 center, float radius, float degreesCcw);
 // Falling snow, held still: round flakes of about `size` scattered over `area`.
 ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed);
