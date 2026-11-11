@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "2D のゲーム: プラグイン「2D 空間」(入れるとつなぎ「ゲーム制作 × 2D」も一緒に入る)。部品 Transform 2D (位置・回転・大きさ・並び順)・スプライト (画像・色・反転・ドット絵)・回り続ける (2D)。2D のシーンビュー (格子・ドラッグで動かす・ホイールで近づく・移動 / 回転 / 拡大縮小のつまみ)。3D と 2D の両方があるときは、シーンの上の帯でゲームの空間を切り替える。Hub のプラグインの一覧では、つなぎを下に分けて出す (自分で入れる・消すものではないため)",
+          "en": "2D games: the plugin 2D Space (installing it also brings the connector Game Production × 2D). Components Transform 2D (position, rotation, scale, order), Sprite (image, color, flips, pixel art) and Keep Spinning (2D). A 2D scene view (grid, drag to move, wheel to zoom, move / rotate / scale handles). With both 3D and 2D, a strip above the scene switches the game's space. The Hub's plugin list shows connectors apart at the bottom (they are never installed or removed by hand)"
+        },
+        {
           "ja": "ゲーム: 部品「カメラ」(透視 / 平行投影・画角・近い面 / 遠い面・背景の色) と「光」(平行光 / 点光源 / スポット・色・強さ・影)。ゲームビューと Play はゲームの設定の「最初のカメラ」から見る。シーンビューにカメラの見える範囲の線と光の向きの線と印、カメラを選ぶと右下にプレビュー。階層の行にカメラと光の絵",
           "en": "Game: new Camera component (perspective / orthographic, field of view, near / far planes, background color) and Light component (directional / point / spot, color, intensity, shadows). The game view and Play look through the game settings' Starting camera. The scene view shows camera frustums, light directions and their icons, and a preview of the selected camera at the bottom right. Camera and light icons in the Hierarchy"
         },
