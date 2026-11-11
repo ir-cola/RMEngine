@@ -27,7 +27,8 @@
 
 namespace rm::space3d {
 
-std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* error);
+// `budget`: what the reading may take (Mesh.h's ReadBudget; null = its limits).
+std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* error, ReadBudget* budget = nullptr);
 
 // The node tree (both kinds of FBX read into this), tested on its own.
 struct FbxProperty {
@@ -47,6 +48,6 @@ struct FbxNode {
 };
 
 // The top-level nodes; nullopt (and *error, Japanese) when the file is broken. `version`: 7400 etc.
-std::optional<std::vector<FbxNode>> ParseFbxNodes(std::span<const uint8_t> bytes, int* version, std::string* error);
+std::optional<std::vector<FbxNode>> ParseFbxNodes(std::span<const uint8_t> bytes, int* version, std::string* error, ReadBudget* budget = nullptr);
 
 }  // namespace rm::space3d

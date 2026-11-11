@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "壊れた・細工した 3D モデルのファイルで、エディターが落ちたり固まったりしないように (1 つのモデルで頂点 2000 万・メモリー 2 GB・ノード 100 万回まで。超えたら箱のまま理由を出す)",
+          "en": "Broken or crafted 3D model files no longer crash or freeze the editor (up to 20 million vertices, 2 GB of memory and a million nodes per model; past that it stays a box and says why)"
+        },
+        {
           "ja": "同じプロジェクトを 2 つの RM Engine で開けないように (2 つ目は「別の RM Engine で開いています」と出して開かない。開いているプロジェクトの名前も変えられない)",
           "en": "A project can no longer be opened in two RM Engines at once (the second says it is open in another RM Engine and does not open it; a project that is open cannot be renamed either)"
         },

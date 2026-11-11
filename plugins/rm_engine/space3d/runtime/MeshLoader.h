@@ -9,11 +9,15 @@
 //
 // Only the reading (file -> MeshData: the slow part) happens on the thread. Putting it on the GPU
 // and decoding its pictures stay with the caller (the drawing thread: Renderer::Upload, ModelPaint),
-// so nothing of Direct3D or WIC is touched from two threads. The destructor waits for the file being
-// read (if any) and drops the rest.
+// so nothing of Direct3D or WIC is touched from two threads. The destructor cancels the file being
+// read (the reader stops at its next ask of the budget) and drops the rest.
+//
+// Nothing the reading does can end the editor: what it throws (out of memory, ...) becomes an
+// error, and every reader keeps to Mesh.h's ReadBudget (vertices, memory, nodes walked).
 
 #include "rm_engine/space3d/runtime/Mesh.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -30,7 +34,8 @@ namespace rm::space3d {
 class MeshLoader {
 public:
     using Ticket = uint64_t;  // 0 = none
-    using LoadFn = std::function<std::optional<MeshData>(const std::filesystem::path& file, std::string* error)>;
+    // Reads `file`; asks `budget` before making room (it says no when cancelled).
+    using LoadFn = std::function<std::optional<MeshData>(const std::filesystem::path& file, std::string* error, ReadBudget& budget)>;
 
     struct Result {
         std::optional<MeshData> mesh;  // nullopt: `error` says why (Japanese)
@@ -59,6 +64,7 @@ private:
     std::unordered_map<Ticket, Result> done_;
     Ticket reading_ = 0;     // the one on the thread now
     bool dropReading_ = false;  // ... cancelled while being read
+    std::atomic<bool> stopReading_{false};  // ... tells its reader to stop (its budget's cancel)
     Ticket next_ = 1;
     std::jthread worker_;  // last: stopped and joined first
 };

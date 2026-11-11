@@ -7,11 +7,14 @@
 
 namespace rm::space3d {
 
-MeshLoader::MeshLoader(LoadFn load) : load_(load ? std::move(load) : LoadFn(&LoadMeshFile)) {}
+MeshLoader::MeshLoader(LoadFn load)
+    : load_(load ? std::move(load)
+                 : LoadFn([](const std::filesystem::path& file, std::string* error, ReadBudget& budget) { return LoadMeshFile(file, error, &budget); })) {}
 
 MeshLoader::~MeshLoader() {
     if (worker_.joinable()) {
         worker_.request_stop();
+        stopReading_ = true;  // the file being read stops at its next ask (after request_stop: see Run)
         wake_.notify_all();
         worker_.join();  // waits for the file being read now, if any
     }
@@ -40,7 +43,10 @@ void MeshLoader::Cancel(Ticket ticket) {
     std::lock_guard lock(mu_);
     std::erase_if(queue_, [&](const auto& q) { return q.first == ticket; });
     done_.erase(ticket);
-    if (reading_ == ticket) dropReading_ = true;
+    if (reading_ == ticket) {
+        dropReading_ = true;
+        stopReading_ = true;
+    }
 }
 
 size_t MeshLoader::Pending() const {
@@ -57,11 +63,26 @@ void MeshLoader::Run(std::stop_token stop) {
         queue_.pop_front();
         reading_ = ticket;
         dropReading_ = false;
+        stopReading_ = stop.stop_requested();  // closing already (the destructor sets it after asking to stop)
         lock.unlock();
 
         Result r;
         const auto start = std::chrono::steady_clock::now();
-        r.mesh = load_(file, &r.error);
+        // Whatever goes wrong while reading becomes "not readable" (an exception leaving a thread's
+        // function would end the whole program).
+        try {
+            ReadBudget budget(&stopReading_);
+            r.mesh = load_(file, &r.error, budget);
+        } catch (const std::bad_alloc&) {
+            r.mesh.reset();
+            r.error = "メモリーが足りないので読めません";
+        } catch (const std::exception& e) {
+            r.mesh.reset();
+            r.error = std::string("読み込み中に問題が起きました (") + e.what() + ")";
+        } catch (...) {
+            r.mesh.reset();
+            r.error = "読み込み中に問題が起きました";
+        }
         r.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
         lock.lock();

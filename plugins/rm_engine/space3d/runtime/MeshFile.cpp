@@ -24,10 +24,15 @@ std::optional<std::vector<uint8_t>> ReadAll(const std::filesystem::path& file) {
     return bytes;
 }
 
-}  // namespace
-
-std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::string* error) {
-    const std::string name = PathToUtf8(file.filename());
+std::optional<MeshData> Load(const std::filesystem::path& file, const std::string& name, std::string* error, ReadBudget& budget) {
+    // The file itself is in memory while it is read.
+    std::error_code ec;
+    const uintmax_t size = std::filesystem::file_size(file, ec);
+    std::string why;
+    if (!ec && !budget.Take(0, size, &why)) {
+        if (error) *error = std::format("「{}」: {}", name, why);
+        return std::nullopt;
+    }
     auto bytes = ReadAll(file);
     if (!bytes) {
         if (error) *error = std::format("「{}」を読めませんでした (ファイルが無いか、開けません)", name);
@@ -38,14 +43,28 @@ std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::str
         if (at.empty()) return std::nullopt;
         return ReadAll(at);
     };
-    std::string why;
-    auto mesh = ParseMesh(PathToUtf8(file.extension()), *bytes, related, &why);
+    auto mesh = ParseMesh(PathToUtf8(file.extension()), *bytes, related, &why, &budget);
     if (!mesh && error) *error = std::format("「{}」: {}", name, why);
     if (mesh) {
         const auto imp = asset::ReadImport<asset::ModelImport>(file);
         ApplyModelImport(*mesh, imp.scale, imp.up == asset::UpAxis::Z);
     }
     return mesh;
+}
+
+}  // namespace
+
+std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::string* error, ReadBudget* budget) {
+    const std::string name = PathToUtf8(file.filename());
+    ReadBudget own;
+    try {
+        return Load(file, name, error, budget ? *budget : own);
+    } catch (const std::bad_alloc&) {
+        if (error) *error = std::format("「{}」: メモリーが足りないので読めません", name);
+    } catch (const std::exception& e) {
+        if (error) *error = std::format("「{}」: 読み込み中に問題が起きました ({})", name, e.what());
+    }
+    return std::nullopt;
 }
 
 std::filesystem::path RelatedFile(const std::filesystem::path& model, std::string_view relative, const std::filesystem::path& root) {

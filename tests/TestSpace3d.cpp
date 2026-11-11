@@ -22,6 +22,8 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <stdexcept>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <cstring>
@@ -1112,7 +1114,7 @@ std::optional<MeshLoader::Result> WaitFor(MeshLoader& loader, MeshLoader::Ticket
 RM_TEST(MeshLoader_ReadsOnItsThreadInOrder) {
     std::vector<std::string> read;
     std::mutex mu;
-    MeshLoader loader([&](const std::filesystem::path& file, std::string* error) -> std::optional<MeshData> {
+    MeshLoader loader([&](const std::filesystem::path& file, std::string* error, ReadBudget&) -> std::optional<MeshData> {
         {
             std::lock_guard lock(mu);
             read.push_back(file.filename().string());
@@ -1140,7 +1142,7 @@ RM_TEST(MeshLoader_ReadsOnItsThreadInOrder) {
 RM_TEST(MeshLoader_CancelledIsNotKept) {
     std::atomic<bool> open{false};
     std::atomic<int> calls{0};
-    MeshLoader loader([&](const std::filesystem::path&, std::string* error) -> std::optional<MeshData> {
+    MeshLoader loader([&](const std::filesystem::path&, std::string* error, ReadBudget&) -> std::optional<MeshData> {
         ++calls;
         while (!open) std::this_thread::sleep_for(std::chrono::milliseconds(1));  // held until the test opens it
         return ParseObj("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", error);
@@ -1162,7 +1164,7 @@ RM_TEST(MeshLoader_StopsWhileReading) {
     // Destroyed with work left: waits for the file being read, drops the rest (no crash, no hang).
     std::atomic<int> calls{0};
     {
-        MeshLoader loader([&](const std::filesystem::path&, std::string*) -> std::optional<MeshData> {
+        MeshLoader loader([&](const std::filesystem::path&, std::string*, ReadBudget&) -> std::optional<MeshData> {
             ++calls;
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             return std::nullopt;
@@ -1511,4 +1513,193 @@ RM_TEST(Light_Ambient_ToRender) {
     CHECK(NearF(d.sky.r, r.sky.r) && NearF(d.ground.g, r.ground.g) && NearF(d.intensity, r.intensity));
     a.intensity = 3;
     CHECK(NearF(game_x_3d::ToRenderAmbient(a).intensity, 3));
+}
+
+// --- Crafted files: never crash, never hang, never fill the memory (ReadBudget) ----------------
+
+namespace {
+
+double SecondsSince(std::chrono::steady_clock::time_point t) { return std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count(); }
+
+}  // namespace
+
+RM_TEST(ReadBudget_LimitsAndCancel) {
+    std::string error;
+    ReadBudget b(nullptr, 100, 1000, 3);
+    CHECK(b.Take(60, 500, &error) && b.Take(40, 500, &error));
+    CHECK(!b.Take(1, 0, &error) && error.find("頂点") != std::string::npos);
+    CHECK(!b.Take(0, 1, &error) && error.find("メモリー") != std::string::npos);
+    CHECK(!b.Take(0, UINT64_MAX, &error));  // no wrap-around
+    CHECK(b.Vertices() == 100 && b.Bytes() == 1000);
+    CHECK(b.Step(&error) && b.Step(&error) && b.Step(&error) && !b.Step(&error));
+    std::atomic<bool> cancel{false};
+    ReadBudget c(&cancel);
+    CHECK(c.Take(10, 10, &error));
+    cancel = true;
+    CHECK(!c.Take(0, 0, &error) && !c.Step(&error) && error.find("取り消") != std::string::npos);
+}
+
+RM_TEST(Crafted_Gltf_AccessorWithoutDataCannotAskForMillions) {
+    // 50 million vertices named in a few bytes (an accessor without a bufferView is all zeros).
+    const std::string doc = R"({"asset":{"version":"2.0"},"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],)"
+                            R"("accessors":[{"componentType":5126,"count":50000000,"type":"VEC3"}]})";
+    std::string error;
+    const auto start = std::chrono::steady_clock::now();
+    CHECK(!ParseGltf(Bytes(doc), nullptr, &error));
+    CHECK(error.find("頂点が多すぎる") != std::string::npos);
+    CHECK(SecondsSince(start) < 2);  // told before any room was made
+}
+
+RM_TEST(Crafted_Gltf_SameChildTwiceAtEveryLevel) {
+    // Node i names node i + 1 twice, 40 levels down: 2^40 walks if every visit were made.
+    std::string nodes = "{\"mesh\":0,\"children\":[1,1]}";
+    for (int i = 1; i < 40; ++i) nodes += ",{\"children\":[" + std::to_string(i + 1) + "," + std::to_string(i + 1) + "]}";
+    nodes += ",{}";
+    const std::string doc = std::string(R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[)") + nodes + "]," +
+                            R"("meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}],)" + R"("buffers":[{"byteLength":44)" +
+                            Embedded(TriangleBin()) + "}]," +
+                            R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":6}],)" +
+                            R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},)" +
+                            R"({"bufferView":1,"componentType":5123,"count":3,"type":"SCALAR"}]})";
+    std::string error;
+    const auto start = std::chrono::steady_clock::now();
+    CHECK(!ParseGltf(Bytes(doc), nullptr, &error));
+    CHECK(error.find("ノードやつながりが多すぎる") != std::string::npos);
+    CHECK(SecondsSince(start) < 10);
+}
+
+RM_TEST(Crafted_Gltf_OneMeshPlacedByManyNodes) {
+    // The same triangle in 5000 nodes, read with room for 1000 vertices: stops with the reason.
+    std::string list, nodes;
+    for (int i = 0; i < 5000; ++i) {
+        list += (i ? "," : "") + std::to_string(i);
+        nodes += std::string(i ? "," : "") + "{\"mesh\":0}";
+    }
+    const std::string doc = std::string(R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[)") + list + "]}],\"nodes\":[" + nodes + "]," +
+                            R"("meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}],)" + R"("buffers":[{"byteLength":44)" +
+                            Embedded(TriangleBin()) + "}]," +
+                            R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":6}],)" +
+                            R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},)" +
+                            R"({"bufferView":1,"componentType":5123,"count":3,"type":"SCALAR"}]})";
+    std::string error;
+    ReadBudget small(nullptr, 1000);
+    CHECK(!ParseGltf(Bytes(doc), nullptr, &error, &small));
+    CHECK(error.find("頂点が多すぎる") != std::string::npos);
+    ReadBudget enough;
+    const auto m = ParseGltf(Bytes(doc), nullptr, &error, &enough);  // with the usual room it is a model of 5000 triangles
+    CHECK(m && m->indices.size() == 15000 && enough.Vertices() == 15000);
+}
+
+RM_TEST(Crafted_Obj_TooManyVertices) {
+    std::string text;
+    for (int i = 0; i < 400; ++i) text += "v 0 0 0\nv 1 0 0\nv 0 1 0\nf -3 -2 -1\n";
+    std::string error;
+    ReadBudget small(nullptr, 500);
+    CHECK(!ParseObj(text, nullptr, &error, &small) && error.find("頂点が多すぎる") != std::string::npos);
+    CHECK(ParseObj(text, &error).has_value());
+}
+
+RM_TEST(Crafted_Fbx_BadIndicesAreNotRead) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    // A quad whose UV indices are NaN, huge, past the end and negative; its material number huge.
+    TNode geometry{"Geometry", {Prop<int64_t>('L', 100), PropS(FbxName("Q", "Geometry")), PropS("Mesh")},
+                   {{"Vertices", {PropD({0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0})}, {}},
+                    {"PolygonVertexIndex", {PropI({0, 1, 2, -4})}, {}},
+                    {"LayerElementUV", {Prop<int32_t>('I', 0)},
+                     {{"MappingInformationType", {PropS("ByPolygonVertex")}, {}},
+                      {"ReferenceInformationType", {PropS("IndexToDirect")}, {}},
+                      {"UV", {PropD({0.5, 0.5})}, {}},
+                      {"UVIndex", {PropD({nan, 1e300, 4294967296.0 * 4, -1})}, {}}}},
+                    {"LayerElementNormal", {Prop<int32_t>('I', 0)},
+                     {{"MappingInformationType", {PropS("ByPolygonVertex")}, {}},
+                      {"ReferenceInformationType", {PropS("IndexToDirect")}, {}},
+                      {"Normals", {PropD({0, 0, 1})}, {}},
+                      {"NormalsIndex", {PropD({0, 1e19, nan, 18446744073709551616.0})}, {}}}},
+                    {"LayerElementMaterial", {Prop<int32_t>('I', 0)},
+                     {{"MappingInformationType", {PropS("AllSame")}, {}}, {"Materials", {PropD({1e30})}, {}}}}}};
+    TNode model{"Model", {Prop<int64_t>('L', 200), PropS(FbxName("Q", "Model")), PropS("Mesh")}, {}};
+    auto oo = [](int64_t child, int64_t parent) { return TNode{"C", {PropS("OO"), Prop<int64_t>('L', child), Prop<int64_t>('L', parent)}, {}}; };
+    std::string error;
+    const auto m = ParseFbx(WriteFbx({{"Objects", {}, {geometry, model}}, {"Connections", {}, {oo(200, 0), oo(100, 200)}}}), &error);
+    CHECK(m.has_value());
+    if (m) {
+        for (const MeshVertex& v : m->vertices) CHECK(NearF(v.uv.x, 0) && NearF(v.uv.y, 1));  // pointed at nothing: the default
+        CHECK(m->parts.size() == 1 && m->parts[0].material == -1);
+    }
+    // Corner numbers that are not whole numbers a vertex can have.
+    TNode bad = geometry;
+    bad.kids[1] = {"PolygonVertexIndex", {PropD({0, nan, 1e300, -4})}, {}};
+    CHECK(!ParseFbx(WriteFbx({{"Objects", {}, {bad, model}}, {"Connections", {}, {oo(200, 0), oo(100, 200)}}}), &error));
+}
+
+RM_TEST(Crafted_Fbx_SameLinkManyTimes) {
+    // The geometry linked to its model 200 times: put in once.
+    std::vector<uint8_t> once = SampleFbx();
+    const auto one = ParseFbx(once, nullptr);
+    CHECK(one.has_value());
+    TNode geometry{"Geometry", {Prop<int64_t>('L', 100), PropS(FbxName("T", "Geometry")), PropS("Mesh")},
+                   {{"Vertices", {PropD({0, 0, 0, 1, 0, 0, 0, 1, 0})}, {}}, {"PolygonVertexIndex", {PropI({0, 1, -3})}, {}}}};
+    TNode model{"Model", {Prop<int64_t>('L', 200), PropS(FbxName("T", "Model")), PropS("Mesh")}, {}};
+    TNode links{"Connections", {}, {}};
+    for (int i = 0; i < 200; ++i) links.kids.push_back({"C", {PropS("OO"), Prop<int64_t>('L', 100), Prop<int64_t>('L', 200)}, {}});
+    std::string error;
+    const auto m = ParseFbx(WriteFbx({{"Objects", {}, {geometry, model}}, links}), &error);
+    CHECK(m && m->indices.size() == 3);
+}
+
+RM_TEST(Crafted_Fbx_ArraysTooBig) {
+    // An array that says it holds 200 million doubles (1.6 GB kept), in a few compressed bytes.
+    std::vector<uint8_t> arr{'d'};
+    PutBytes<uint32_t>(arr, {200'000'000u, 1u, 8u});
+    PutBytes<uint64_t>(arr, {0});
+    TNode geometry{"Geometry", {Prop<int64_t>('L', 1), PropS("G"), PropS("Mesh")}, {{"Vertices", {arr}, {}}}};
+    std::string error;
+    const auto start = std::chrono::steady_clock::now();
+    CHECK(!ParseFbx(WriteFbx({{"Objects", {}, {geometry}}}), &error) && error.find("大きすぎ") != std::string::npos);
+    // 4-byte numbers count as the doubles they become: 150 million ints are 1.2 GB kept.
+    std::vector<uint8_t> ints{'i'};
+    PutBytes<uint32_t>(ints, {150'000'000u, 1u, 8u});
+    PutBytes<uint64_t>(ints, {0});
+    TNode g2{"Geometry", {Prop<int64_t>('L', 1), PropS("G"), PropS("Mesh")}, {{"PolygonVertexIndex", {ints}, {}}}};
+    CHECK(!ParseFbx(WriteFbx({{"Objects", {}, {g2}}}), &error) && error.find("大きすぎ") != std::string::npos);
+    // The whole file counts together: a model that fits in itself but not in the room given.
+    ReadBudget small(nullptr, kMaxModelVertices, 1000);
+    CHECK(!ParseFbx(SampleFbx(), &error, &small) && error.find("メモリー") != std::string::npos);
+    CHECK(SecondsSince(start) < 5);
+}
+
+RM_TEST(MeshLoader_WhatTheReaderThrowsIsAnError) {
+    MeshLoader loader([](const std::filesystem::path& file, std::string*, ReadBudget&) -> std::optional<MeshData> {
+        if (file == "memory.glb") throw std::bad_alloc();
+        throw std::runtime_error("boom");
+    });
+    const auto a = loader.Request("memory.glb");
+    const auto b = loader.Request("other.glb");
+    const auto ra = WaitFor(loader, a), rb = WaitFor(loader, b);
+    CHECK(ra && !ra->mesh && ra->error.find("メモリー") != std::string::npos);
+    CHECK(rb && !rb->mesh && rb->error.find("boom") != std::string::npos);
+}
+
+RM_TEST(MeshLoader_CancelStopsAReadingInTheMiddle) {
+    std::atomic<int> started{0};
+    auto endless = [&](const std::filesystem::path& file, std::string* error, ReadBudget& budget) -> std::optional<MeshData> {
+        if (file == "quick.obj") return ParseObj("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", error);
+        ++started;
+        for (;;) {  // a reading that would never end, asking its budget as the readers do
+            if (!budget.Take(0, 0, error)) return std::nullopt;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    };
+    {
+        MeshLoader loader(endless);
+        const auto big = loader.Request("big.glb");
+        while (started == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        loader.Cancel(big);
+        const auto quick = loader.Request("quick.obj");
+        CHECK(WaitFor(loader, quick).has_value());  // the endless one stopped, so this one was read
+        // Closing while one is being read: it stops too (the test would hang otherwise).
+        loader.Request("big2.glb");
+        while (started < 2) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(started == 2);
 }

@@ -13,8 +13,9 @@ namespace rm::space3d {
 
 // nullopt: *error says why (Japanese, with the file's name). What the model points to (a .gltf's
 // buffers, an OBJ's .mtl) is read only from the model's folder and below. The asset's import settings
-// (its .meta: size, which way is up - core/asset/ImportSettings.h) are applied.
-std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::string* error);
+// (its .meta: size, which way is up - core/asset/ImportSettings.h) are applied. `budget`: what the
+// reading may take (null: Mesh.h's limits). Never throws: running out of memory is "not readable" too.
+std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::string* error, ReadBudget* budget = nullptr);
 
 // The file a model names by a relative path ("tex/wood.png", "../Textures/wood.png"), as a full
 // path - empty when it is not inside `root` (or is written as a full path). Pure (no disk).

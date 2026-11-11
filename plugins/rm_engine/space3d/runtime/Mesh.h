@@ -28,6 +28,7 @@
 #include "base/Math.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -96,18 +97,47 @@ struct MeshData {
     std::vector<std::string> warnings;  // read anyway, but something was missing (an OBJ's .mtl) - Japanese
 };
 
+// --- How much one model may take while it is read (every reader asks before it makes room) ---
+// A broken or crafted file can ask for far more than it holds: an accessor without data names 50
+// million vertices in a few bytes, one mesh is placed by a million nodes, a node names the same child
+// twice at every level (2^256 walks). Past these the model is "not readable", with the reason:
+inline constexpr uint64_t kMaxModelVertices = 20'000'000;  // vertices of the finished model, all parts
+inline constexpr uint64_t kMaxModelBytes = 2ull << 30;     // memory the reading takes (2 GB, counted roughly)
+inline constexpr uint64_t kMaxModelSteps = 1'000'000;      // nodes and links walked (glTF nodes, FBX nodes / links)
+
+class ReadBudget {
+public:
+    // `cancel`: set (by another thread) to stop the reading at its next ask.
+    explicit ReadBudget(const std::atomic<bool>* cancel = nullptr, uint64_t maxVertices = kMaxModelVertices, uint64_t maxBytes = kMaxModelBytes,
+                        uint64_t maxSteps = kMaxModelSteps)
+        : cancel_(cancel), maxVertices_(maxVertices), maxBytes_(maxBytes), maxSteps_(maxSteps) {}
+    // Room for `vertices` more vertices and `bytes` more bytes. False (and *error, Japanese) when that
+    // goes past a limit, or the reading was cancelled.
+    bool Take(uint64_t vertices, uint64_t bytes, std::string* error);
+    // One more node / link walked (and a look at cancel).
+    bool Step(std::string* error);
+    uint64_t Vertices() const { return vertices_; }
+    uint64_t Bytes() const { return bytes_; }
+
+private:
+    bool Cancelled(std::string* error) const;
+    const std::atomic<bool>* cancel_;
+    uint64_t maxVertices_, maxBytes_, maxSteps_;
+    uint64_t vertices_ = 0, bytes_ = 0, steps_ = 0;
+};
+
 // Another file a model points to (a .gltf's buffer "model.bin", an OBJ's "model.mtl"), by the path
 // relative to the model's folder (percent signs already decoded, '/' between folders); nullopt
 // when it cannot be read.
 using ReadRelated = std::function<std::optional<std::vector<uint8_t>>(std::string_view uri)>;
 
-// By the file's extension (".gltf" / ".glb" / ".obj" / ".fbx", any case).
+// By the file's extension (".gltf" / ".glb" / ".obj" / ".fbx", any case). `budget`: null = the limits above.
 std::optional<MeshData> ParseMesh(std::string_view extension, std::span<const uint8_t> bytes, const ReadRelated& read,
-                                  std::string* error);
+                                  std::string* error, ReadBudget* budget = nullptr);
 // .gltf or .glb (told apart by the first bytes).
-std::optional<MeshData> ParseGltf(std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error);
+std::optional<MeshData> ParseGltf(std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error, ReadBudget* budget = nullptr);
 // `read` finds the .mtl files (null: no materials).
-std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read, std::string* error);
+std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read, std::string* error, ReadBudget* budget = nullptr);
 inline std::optional<MeshData> ParseObj(std::string_view text, std::string* error) { return ParseObj(text, nullptr, error); }
 
 // One .mtl file's materials (folder: where the .mtl is, relative to the model's folder - "" or

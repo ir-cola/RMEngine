@@ -9,6 +9,10 @@
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <limits>
+#include <set>
+#include <tuple>
+#include <type_traits>
 #include <unordered_map>
 
 namespace rm::space3d {
@@ -31,6 +35,16 @@ bool Fail(std::string* error, std::string message) {
     return false;
 }
 
+// Numbers from the file go through these: a NaN or a huge number never reaches a cast that has no
+// answer for it (converting those to an integer, or past float's range, is undefined in C++).
+int64_t ToInteger(double d, int64_t def = 0) {
+    return std::isfinite(d) && std::fabs(d) < 9.0e18 ? static_cast<int64_t>(d) : def;
+}
+float ToFloat(double d) {
+    if (std::isnan(d)) return 0.f;
+    return static_cast<float>(std::clamp(d, -static_cast<double>(std::numeric_limits<float>::max()), static_cast<double>(std::numeric_limits<float>::max())));
+}
+
 // Binary names are "Name\0\1Class"; ASCII writes "Class::Name". Both become the second.
 std::string ClassName(std::string_view s) {
     const size_t sep = s.find(std::string_view("\0\1", 2));
@@ -44,7 +58,8 @@ constexpr char kBinaryMagic[] = "Kaydara FBX Binary  ";  // + '\0', 0x1A, 0x00, 
 
 class BinaryReader {
 public:
-    BinaryReader(std::span<const uint8_t> b, uint32_t version, std::string* error) : b_(b), wide_(version >= 7500), error_(error) {}
+    BinaryReader(std::span<const uint8_t> b, uint32_t version, std::string* error, ReadBudget& budget)
+        : b_(b), wide_(version >= 7500), error_(error), budget_(budget) {}
 
     std::optional<std::vector<FbxNode>> Read() {
         std::vector<FbxNode> top;
@@ -71,6 +86,7 @@ private:
 
     bool Node(size_t& at, int depth, FbxNode& out, bool& end) {
         if (depth > kMaxDepth) return Fail(error_, "FBX のノードの入れ子が深すぎます");
+        if (!budget_.Step(error_)) return false;
         if (at + Header() > b_.size()) return Fail(error_, "FBX が途中で切れています");
         const uint64_t endAt = wide_ ? Get<uint64_t>(at) : Get<uint32_t>(at);
         const uint64_t count = wide_ ? Get<uint64_t>(at + 8) : Get<uint32_t>(at + 4);
@@ -91,7 +107,7 @@ private:
         const size_t propsEnd = propsAt + static_cast<size_t>(listLen);
         for (uint64_t i = 0; i < count; ++i) {
             FbxProperty prop;
-            if (!Property(p, propsEnd, prop)) return false;
+            if (!budget_.Take(0, sizeof(FbxProperty), error_) || !Property(p, propsEnd, prop)) return false;
             out.props.push_back(std::move(prop));
         }
         size_t c = propsEnd;
@@ -112,7 +128,8 @@ private:
         auto need = [&](size_t n) { return n <= end - p; };
         auto scalar = [&](auto v) {
             out.number = static_cast<double>(v);
-            out.integer = static_cast<int64_t>(v);
+            out.integer = ToInteger(out.number);
+            if constexpr (std::is_same_v<decltype(v), int64_t>) out.integer = v;  // exact (ids)
         };
         switch (out.type) {
             case 'Y': if (!need(2)) break; scalar(Get<int16_t>(p)); p += 2; return true;
@@ -139,7 +156,11 @@ private:
                 if (!need(stored)) break;
                 const size_t elem = out.type == 'd' || out.type == 'l' ? 8 : out.type == 'b' ? 1 : 4;
                 const uint64_t bytes = uint64_t{count} * elem;
-                if (bytes > kMaxArrayBytes) return Fail(error_, "FBX の配列が大きすぎます");
+                // Kept as doubles (8 bytes each, whatever the file's type), and unpacked first when compressed.
+                const uint64_t kept = uint64_t{count} * sizeof(double);
+                if (kept > kMaxArrayBytes) return Fail(error_, "FBX の配列が大きすぎます");
+                if (encoding == 0 && stored != bytes) return Fail(error_, std::format("FBX の配列 ({} バイト目) の長さが合いません", p));
+                if (!budget_.Take(0, kept + (encoding == 1 ? bytes : 0), error_)) return false;
                 std::span<const uint8_t> data = b_.subspan(p, stored);
                 std::optional<std::vector<uint8_t>> unpacked;
                 if (encoding == 1) {
@@ -174,6 +195,7 @@ private:
     std::span<const uint8_t> b_;
     bool wide_;
     std::string* error_;
+    ReadBudget& budget_;
 };
 
 // --- ASCII ----------------------------------------------------------------------------------
@@ -183,7 +205,7 @@ private:
 
 class AsciiReader {
 public:
-    AsciiReader(std::string_view s, std::string* error) : s_(s), error_(error) {}
+    AsciiReader(std::string_view s, std::string* error, ReadBudget& budget) : s_(s), error_(error), budget_(budget) {}
 
     std::optional<std::vector<FbxNode>> Read() {
         std::vector<FbxNode> top;
@@ -223,6 +245,7 @@ private:
             const size_t start = i_;
             while (!AtEnd() && s_[i_] != ':' && s_[i_] != '\n' && s_[i_] != '{' && s_[i_] != '}') ++i_;
             if (AtEnd() || s_[i_] != ':') return Bad("「名前:」の形ではありません");
+            if (!budget_.Step(error_)) return false;
             FbxNode n;
             n.name = std::string(s_.substr(start, i_ - start));
             ++i_;
@@ -266,6 +289,7 @@ private:
                         p.text = std::string(tok);  // a bare word (Shading: T)
                     }
                 }
+                if (!budget_.Take(0, sizeof(FbxProperty), error_)) return false;
                 n.props.push_back(std::move(p));
             }
             if (isArray) {
@@ -301,7 +325,7 @@ private:
         if (ec != std::errc{} || end != t.data() + t.size()) return false;
         p.type = 'D';
         p.number = d;
-        p.integer = static_cast<int64_t>(d);
+        p.integer = ToInteger(d);
         return true;
     }
 
@@ -309,6 +333,7 @@ private:
     size_t i_ = 0;
     int line_ = 1;
     std::string* error_;
+    ReadBudget& budget_;
 };
 
 // --- From the tree to a mesh --------------------------------------------------------------------
@@ -343,7 +368,7 @@ Mat4 Euler(Vec3 d, int64_t order) {
 
 class FbxScene {
 public:
-    FbxScene(const std::vector<FbxNode>& top, std::string* error) : error_(error) {
+    FbxScene(const std::vector<FbxNode>& top, std::string* error, ReadBudget& budget) : error_(error), budget_(budget) {
         for (const FbxNode& n : top) {
             if (n.name == "Objects") objects_ = &n;
             if (n.name == "Connections") connections_ = &n;
@@ -360,9 +385,16 @@ public:
             if (!o.props.empty()) byId_[o.props[0].integer] = &o;
         }
         if (connections_) {
+            // The same link written twice counts once (it would put the same mesh in twice).
+            std::set<std::tuple<std::string, int64_t, int64_t, std::string>> seen;
             for (const FbxNode& c : connections_->children) {
                 if (c.name != "C" || c.props.size() < 3) continue;
-                links_.push_back({c.props[0].text, c.props[1].integer, c.props[2].integer, c.props.size() > 3 ? c.props[3].text : std::string()});
+                if (!budget_.Step(error_)) return std::nullopt;
+                Link l{c.props[0].text, c.props[1].integer, c.props[2].integer, c.props.size() > 3 ? c.props[3].text : std::string()};
+                if (!seen.emplace(l.kind, l.child, l.parent, l.property).second) continue;
+                childrenOf_[l.parent].push_back(links_.size());
+                if (l.kind == "OO" && Object(l.parent, "Model") && !parentOf_.contains(l.child)) parentOf_[l.child] = l.parent;
+                links_.push_back(std::move(l));
             }
         }
         const Mat4 axes = Axes();
@@ -373,7 +405,7 @@ public:
             const FbxNode* model = Object(l.parent, "Model");
             if (!geo || !model) continue;
             ++meshes;
-            if (!Geometry(*geo, l.parent, axes * World(l.parent, 0) * Geometric(*model))) return std::nullopt;
+            if (!Geometry(*geo, l.parent, axes * World(l.parent) * Geometric(*model))) return std::nullopt;
         }
         if (meshes == 0) {
             Fail(error_, "FBX にメッシュがありません (FBX 6 より前の形は読めません)");
@@ -394,6 +426,16 @@ private:
         int64_t child, parent;
         std::string property;
     };
+
+    // The links to `id` (what is connected to it: its materials, its pictures ...).
+    template <class F>
+    void ForChildren(int64_t id, F&& f) const {
+        const auto it = childrenOf_.find(id);
+        if (it == childrenOf_.end()) return;
+        for (const size_t k : it->second) {
+            if (!f(links_[k])) return;
+        }
+    }
 
     const FbxNode* Object(int64_t id, std::string_view name) const {
         const auto it = byId_.find(id);
@@ -416,16 +458,18 @@ private:
     static Vec3 PVec(const FbxNode* obj, std::string_view name, Vec3 def) {
         const FbxNode* p = P(obj, name);
         if (!p || p->props.size() < 7) return def;
-        return {static_cast<float>(p->props[4].number), static_cast<float>(p->props[5].number), static_cast<float>(p->props[6].number)};
+        return {ToFloat(p->props[4].number), ToFloat(p->props[5].number), ToFloat(p->props[6].number)};
     }
 
     // The file's axes and units to this engine's (Y up, X right, Z towards the viewer; metres).
     Mat4 Axes() const {
-        const auto axis = [&](std::string_view n, int64_t def) { return static_cast<int>(PNumber(settings_, n, static_cast<double>(def))); };
+        const auto axis = [&](std::string_view n, int64_t def) {
+            return static_cast<int>(std::clamp<int64_t>(ToInteger(PNumber(settings_, n, static_cast<double>(def)), def), -8, 8));
+        };
         const int up = axis("UpAxis", 1), front = axis("FrontAxis", 2), coord = axis("CoordAxis", 0);
         const float upSign = axis("UpAxisSign", 1) < 0 ? -1.f : 1.f, frontSign = axis("FrontAxisSign", 1) < 0 ? -1.f : 1.f,
                     coordSign = axis("CoordAxisSign", 1) < 0 ? -1.f : 1.f;
-        const float scale = static_cast<float>(PNumber(settings_, "UnitScaleFactor", 1.0) / 100.0);  // centimetres per unit
+        const float scale = ToFloat(PNumber(settings_, "UnitScaleFactor", 1.0) / 100.0);  // centimetres per unit
         Mat4 m;
         if (up >= 0 && up < 3 && front >= 0 && front < 3 && coord >= 0 && coord < 3 && up != front && up != coord && front != coord) {
             m = {};
@@ -437,23 +481,22 @@ private:
             m.m[front][2] = frontSign;  // our Z <- the file's front
             m.m[3][3] = 1;
         }
-        return Scaling({scale > 0 ? scale : 1.f, scale > 0 ? scale : 1.f, scale > 0 ? scale : 1.f}) * m;
+        const float s = scale > 0 && std::isfinite(scale) ? scale : 1.f;
+        return Scaling({s, s, s}) * m;
     }
 
     // A model's place under its parents (FBX SDK: T * Roff * Rp * Rpre * R * Rpost^-1 * Rp^-1 * Soff * Sp * S * Sp^-1).
-    Mat4 World(int64_t id, int depth) {
+    Mat4 World(int64_t id, int depth = 0) {
         const FbxNode* model = Object(id, "Model");
         if (!model || depth > kMaxDepth) return Mat4{};
-        const int64_t order = static_cast<int64_t>(PNumber(model, "RotationOrder", 0));
+        const int64_t order = ToInteger(PNumber(model, "RotationOrder", 0));
         const Vec3 rp = PVec(model, "RotationPivot", {}), sp = PVec(model, "ScalingPivot", {});
         const Mat4 local = Translation(PVec(model, "Lcl Translation", {})) * Translation(PVec(model, "RotationOffset", {})) * Translation(rp) *
                            Euler(PVec(model, "PreRotation", {}), 0) * Euler(PVec(model, "Lcl Rotation", {}), order) *
                            Inv(Euler(PVec(model, "PostRotation", {}), 0)) * Translation(rp * -1.f) * Translation(PVec(model, "ScalingOffset", {})) *
                            Translation(sp) * Scaling(PVec(model, "Lcl Scaling", {1, 1, 1})) * Translation(sp * -1.f);
-        for (const Link& l : links_) {
-            if (l.kind == "OO" && l.child == id && Object(l.parent, "Model")) return World(l.parent, depth + 1) * local;
-        }
-        return local;
+        const auto parent = parentOf_.find(id);
+        return parent != parentOf_.end() ? World(parent->second, depth + 1) * local : local;
     }
 
     // Moves the mesh inside its model only (not passed on to children).
@@ -479,25 +522,28 @@ private:
         else if (mapping == "ByPolygon") k = polygon;
         else if (mapping == "AllSame") k = 0;
         // (Materials say IndexToDirect too, but their numbers are already the index: no index list.)
+        const std::vector<double>& v = data->props[0].numbers;
+        const size_t values = v.size() / static_cast<size_t>(comps);  // how many there are to point at
         if (!indexName.empty() && (reference == "IndexToDirect" || reference == "Index")) {
             const FbxNode* index = layer.Child(indexName);
             if (!index || index->props.empty() || k >= index->props[0].numbers.size()) return false;
+            // Compared as a double first: a NaN, a negative or a huge number points at nothing.
             const double ix = index->props[0].numbers[k];
-            if (ix < 0) return false;
+            if (!(ix >= 0 && ix < static_cast<double>(values))) return false;
             k = static_cast<size_t>(ix);
         }
-        const std::vector<double>& v = data->props[0].numbers;
-        if ((k + 1) * static_cast<size_t>(comps) > v.size()) return false;
-        for (int c = 0; c < comps; ++c) out[c] = static_cast<float>(v[k * static_cast<size_t>(comps) + static_cast<size_t>(c)]);
+        if (k >= values) return false;
+        for (int c = 0; c < comps; ++c) out[c] = ToFloat(v[k * static_cast<size_t>(comps) + static_cast<size_t>(c)]);
         return true;
     }
 
     // The materials of a model, in the order they were connected (what LayerElementMaterial counts).
     std::vector<int> ModelMaterials(int64_t modelId) {
         std::vector<int> list;
-        for (const Link& l : links_) {
-            if (l.kind == "OO" && l.parent == modelId && Object(l.child, "Material")) list.push_back(Material(l.child));
-        }
+        ForChildren(modelId, [&](const Link& l) {
+            if (l.kind == "OO" && Object(l.child, "Material")) list.push_back(Material(l.child));
+            return true;
+        });
         return list;
     }
 
@@ -510,22 +556,22 @@ private:
             mat.name = n.starts_with("Material::") ? n.substr(10) : n;
         }
         const Vec3 diffuse = PVec(m, "DiffuseColor", PVec(m, "Diffuse", {0.8f, 0.8f, 0.8f}));
-        const float factor = static_cast<float>(PNumber(m, "DiffuseFactor", 1.0));
-        const float opacity = static_cast<float>(std::clamp(PNumber(m, "Opacity", 1.0 - PNumber(m, "TransparencyFactor", 0.0)), 0.0, 1.0));
+        const float factor = ToFloat(PNumber(m, "DiffuseFactor", 1.0));
+        const float opacity = ToFloat(std::clamp(PNumber(m, "Opacity", 1.0 - PNumber(m, "TransparencyFactor", 0.0)), 0.0, 1.0));
         mat.baseColor = {std::clamp(diffuse.x * factor, 0.f, 1.f), std::clamp(diffuse.y * factor, 0.f, 1.f), std::clamp(diffuse.z * factor, 0.f, 1.f), opacity};
         if (opacity < 0.999f) mat.alpha = AlphaMode::Blend;
         // Light of its own (linear, may be more than 1).
-        const Vec3 emissive = PVec(m, "EmissiveColor", PVec(m, "Emissive", {0, 0, 0})) * static_cast<float>(PNumber(m, "EmissiveFactor", 1.0));
+        const Vec3 emissive = PVec(m, "EmissiveColor", PVec(m, "Emissive", {0, 0, 0})) * ToFloat(PNumber(m, "EmissiveFactor", 1.0));
         mat.emissive = {std::max(emissive.x, 0.f), std::max(emissive.y, 0.f), std::max(emissive.z, 0.f), 1};
         // The picture on its diffuse colour (or, when none says so, any picture on it).
         int64_t texture = 0;
-        for (const Link& l : links_) {
-            if (l.parent != id || !Object(l.child, "Texture")) continue;
+        ForChildren(id, [&](const Link& l) {
+            if (!Object(l.child, "Texture")) return true;
             const bool diffuseSlot = l.property.find("Diffuse") != std::string::npos || l.property.find("BaseColor") != std::string::npos ||
                                      l.property.find("base_color") != std::string::npos || l.property.find("baseColor") != std::string::npos;
             if (diffuseSlot || texture == 0) texture = l.child;
-            if (diffuseSlot) break;
-        }
+            return !diffuseSlot;
+        });
         if (texture != 0) mat.image = Image(texture);
         const int index = static_cast<int>(out_.materials.size());
         out_.materials.push_back(std::move(mat));
@@ -551,15 +597,13 @@ private:
             file = full.substr(full.find_last_of('/') + 1);
         }
         // The picture written inside the file (Video's Content) wins over the file.
-        for (const Link& l : links_) {
-            if (l.parent != textureId) continue;
+        ForChildren(textureId, [&](const Link& l) {
             const FbxNode* video = Object(l.child, "Video");
             const FbxNode* content = video ? video->Child("Content") : nullptr;
-            if (content && !content->props.empty() && !content->props[0].text.empty()) {
-                img.bytes.assign(content->props[0].text.begin(), content->props[0].text.end());
-                break;
-            }
-        }
+            if (!content || content->props.empty() || content->props[0].text.empty()) return true;
+            img.bytes.assign(content->props[0].text.begin(), content->props[0].text.end());
+            return false;
+        });
         if (img.bytes.empty()) img.file = file;
         img.name = file.empty() ? std::format("画像 {}", out_.images.size() + 1) : file.substr(file.find_last_of('/') + 1);
         const int index = static_cast<int>(out_.images.size());
@@ -580,6 +624,10 @@ private:
         const FbxNode* uvs = geo.Child("LayerElementUV");
         const FbxNode* mats = geo.Child("LayerElementMaterial");
         const std::vector<int> modelMaterials = ModelMaterials(modelId);
+        // One vertex per corner, in the part and in the model; a triangle per corner at most.
+        if (!budget_.Take(corners.size(), uint64_t{corners.size()} * (sizeof(MeshVertex) * 2 + sizeof(uint32_t) * 6 + sizeof(int) * 2), error_)) {
+            return false;
+        }
 
         MeshData part;
         std::vector<int> partMaterial;
@@ -588,13 +636,14 @@ private:
         for (size_t k = 0; k < corners.size(); ++k) {
             const double raw = corners[k];
             const bool last = raw < 0;
-            const int64_t point = last ? -static_cast<int64_t>(raw) - 1 : static_cast<int64_t>(raw);
+            const int64_t number = ToInteger(raw, std::numeric_limits<int64_t>::min());
+            const int64_t point = number == std::numeric_limits<int64_t>::min() ? -1 : last ? -number - 1 : number;
             if (point < 0 || static_cast<size_t>(point) >= points) {
                 return Fail(error_, std::format("FBX の面の頂点の番号 {} が頂点の数 ({}) を超えています", point, points));
             }
             const size_t cp = static_cast<size_t>(point);
             MeshVertex v;
-            v.position = {static_cast<float>(pos[cp * 3]), static_cast<float>(pos[cp * 3 + 1]), static_cast<float>(pos[cp * 3 + 2])};
+            v.position = {ToFloat(pos[cp * 3]), ToFloat(pos[cp * 3 + 1]), ToFloat(pos[cp * 3 + 2])};
             float n[3] = {0, 1, 0}, uv[2] = {0, 0};
             if (normals && !LayerValue(*normals, "Normals", "NormalsIndex", 3, k, cp, polygon, n)) missingNormal = true;
             if (uvs) LayerValue(*uvs, "UV", "UVIndex", 2, k, cp, polygon, uv);
@@ -607,7 +656,7 @@ private:
             const size_t count = k + 1 - first;
             int material = -1;
             float m = 0;
-            if (mats && LayerValue(*mats, "Materials", "", 1, k, cp, polygon, &m) && m >= 0 && static_cast<size_t>(m) < modelMaterials.size()) {
+            if (mats && LayerValue(*mats, "Materials", "", 1, k, cp, polygon, &m) && m >= 0 && m < static_cast<float>(modelMaterials.size())) {
                 material = modelMaterials[static_cast<size_t>(m)];
             } else if (!mats && !modelMaterials.empty()) {
                 material = modelMaterials[0];
@@ -631,15 +680,20 @@ private:
     const FbxNode* settings_ = nullptr;
     std::unordered_map<int64_t, const FbxNode*> byId_;
     std::vector<Link> links_;
+    std::unordered_map<int64_t, std::vector<size_t>> childrenOf_;  // parent -> its links (into links_)
+    std::unordered_map<int64_t, int64_t> parentOf_;                // a model -> its parent model
     std::unordered_map<int64_t, int> materials_, images_;
     MeshData out_;
     std::vector<int> triangleMaterial_;
     std::string* error_;
+    ReadBudget& budget_;
 };
 
 }  // namespace
 
-std::optional<std::vector<FbxNode>> ParseFbxNodes(std::span<const uint8_t> bytes, int* version, std::string* error) {
+std::optional<std::vector<FbxNode>> ParseFbxNodes(std::span<const uint8_t> bytes, int* version, std::string* error, ReadBudget* budget) {
+    ReadBudget own;
+    ReadBudget& b = budget ? *budget : own;
     if (bytes.size() >= 27 && std::memcmp(bytes.data(), kBinaryMagic, 21) == 0) {
         uint32_t v = 0;
         std::memcpy(&v, bytes.data() + 23, 4);
@@ -648,7 +702,7 @@ std::optional<std::vector<FbxNode>> ParseFbxNodes(std::span<const uint8_t> bytes
             Fail(error, std::format("FBX {} は古い形なので読めません (7.0 以降を読めます)", v));
             return std::nullopt;
         }
-        return BinaryReader(bytes, v, error).Read();
+        return BinaryReader(bytes, v, error, b).Read();
     }
     const std::string_view text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     if (text.find("FBXHeaderExtension") == std::string_view::npos && text.find("Objects:") == std::string_view::npos) {
@@ -663,18 +717,20 @@ std::optional<std::vector<FbxNode>> ParseFbxNodes(std::span<const uint8_t> bytes
             std::from_chars(rest.data(), rest.data() + rest.size(), *version);
         }
     }
-    return AsciiReader(text, error).Read();
+    return AsciiReader(text, error, b).Read();
 }
 
-std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* error) {
+std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* error, ReadBudget* budget) {
+    ReadBudget own;
+    ReadBudget& b = budget ? *budget : own;
     int version = 0;
-    const auto nodes = ParseFbxNodes(bytes, &version, error);
+    const auto nodes = ParseFbxNodes(bytes, &version, error, &b);
     if (!nodes) return std::nullopt;
     if (version != 0 && version < 7000) {
         Fail(error, std::format("FBX {} は古い形なので読めません (7.0 以降を読めます)", version));
         return std::nullopt;
     }
-    return FbxScene(*nodes, error).Read();
+    return FbxScene(*nodes, error, b).Read();
 }
 
 }  // namespace rm::space3d

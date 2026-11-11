@@ -119,8 +119,8 @@ float Unit(float v) { return std::clamp(v, 0.f, 1.f); }
 
 class GltfReader {
 public:
-    GltfReader(const json::Value& doc, std::span<const uint8_t> glbBin, const ReadRelated& read, std::string* error)
-        : doc_(doc), glbBin_(glbBin), read_(read), error_(error) {}
+    GltfReader(const json::Value& doc, std::span<const uint8_t> glbBin, const ReadRelated& read, std::string* error, ReadBudget& budget)
+        : doc_(doc), glbBin_(glbBin), read_(read), error_(error), budget_(budget) {}
 
     std::optional<MeshData> Read() {
         const json::Value& asset = doc_.Get("asset");
@@ -200,6 +200,7 @@ private:
             if (data.size() < length) {
                 return Fail(error_, std::format("バッファー {} が短すぎます ({} バイトのはずが {} バイト)", i, length, data.size()));
             }
+            if (!budget_.Take(0, data.size(), error_)) return false;
             buffers_.push_back(std::move(data));
         }
         return true;
@@ -321,6 +322,8 @@ private:
     }
 
     bool Node(int64_t index, const Mat4& parent, int depth) {
+        // Every visit counts: a node may name the same child twice at every level (2^depth walks).
+        if (!budget_.Step(error_)) return false;
         const json::Value& nodes = doc_.Get("nodes");
         if (index < 0 || static_cast<size_t>(index) >= nodes.Size()) return Fail(error_, std::format("ノード {} がありません", index));
         if (depth > kMaxNodeDepth) return Fail(error_, "ノードの親子が深すぎるか、輪になっています");
@@ -375,6 +378,8 @@ private:
         if (!posIndex) return Fail(error_, "頂点の位置 (POSITION) のないプリミティブがあります");
         Accessor pos;
         if (!Open(posIndex->AsInt(-1), 3, pos)) return false;
+        // The part and its copy in the model (an accessor without data names its count for free).
+        if (!budget_.Take(pos.count, uint64_t{pos.count} * sizeof(MeshVertex) * 2, error_)) return false;
         MeshData part;
         part.vertices.resize(pos.count);
         for (size_t i = 0; i < pos.count; ++i) part.vertices[i].position = {pos.Float(i, 0), pos.Float(i, 1), pos.Float(i, 2)};
@@ -401,12 +406,14 @@ private:
             if (ix.componentType != 5121 && ix.componentType != 5123 && ix.componentType != 5125) {
                 return Fail(error_, "インデックスの型が正しくありません");
             }
+            if (!budget_.Take(0, uint64_t{ix.count} * sizeof(uint32_t) * 3 + ix.count / 3 * sizeof(int), error_)) return false;
             corners.resize(ix.count);
             for (size_t i = 0; i < ix.count; ++i) {
                 corners[i] = ix.Index(i);
                 if (corners[i] >= pos.count) return Fail(error_, std::format("インデックス {} が頂点の数 ({}) を超えています", corners[i], pos.count));
             }
         } else {
+            if (!budget_.Take(0, uint64_t{pos.count} * sizeof(uint32_t) * 3 + pos.count / 3 * sizeof(int), error_)) return false;
             corners.resize(pos.count);
             for (size_t i = 0; i < pos.count; ++i) corners[i] = static_cast<uint32_t>(i);
         }
@@ -470,6 +477,7 @@ private:
     std::span<const uint8_t> glbBin_;
     const ReadRelated& read_;
     std::string* error_;
+    ReadBudget& budget_;
     std::vector<std::vector<uint8_t>> buffers_;
     MeshData out_;
     std::vector<int> triangleMaterial_;  // one per triangle of out_
@@ -533,7 +541,9 @@ struct CornerHash {
 
 }  // namespace
 
-std::optional<MeshData> ParseGltf(std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error) {
+std::optional<MeshData> ParseGltf(std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error, ReadBudget* budget) {
+    ReadBudget own;
+    ReadBudget& b = budget ? *budget : own;
     std::string_view jsonText;
     std::span<const uint8_t> bin;
     if (bytes.size() >= 4 && ReadU32(bytes.data()) == kGlbMagic) {
@@ -570,16 +580,20 @@ std::optional<MeshData> ParseGltf(std::span<const uint8_t> bytes, const ReadRela
     } else {
         jsonText = {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
     }
+    // The JSON's tree takes a few times the text (counted as 4).
+    if (!b.Take(0, uint64_t{jsonText.size()} * 4, error)) return std::nullopt;
     json::ParseError pe;
     const auto doc = json::Parse(jsonText, &pe);
     if (!doc || !doc->IsObject()) {
         Fail(error, doc ? "glTF の JSON がオブジェクトではありません" : std::format("glTF の JSON を読めません ({} 行 {} 列: {})", pe.line, pe.column, pe.message));
         return std::nullopt;
     }
-    return GltfReader(*doc, bin, read, error).Read();
+    return GltfReader(*doc, bin, read, error, b).Read();
 }
 
-std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read, std::string* error) {
+std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read, std::string* error, ReadBudget* budget) {
+    ReadBudget own;
+    ReadBudget& b = budget ? *budget : own;
     std::vector<Vec3> positions, normals;
     std::vector<Vec2> uvs;
     MeshData mesh;
@@ -613,6 +627,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
                 Fail(error, std::format("{} 行目: 頂点 (v) の数字が読めません", lineNo));
                 return std::nullopt;
             }
+            if (!b.Take(0, sizeof(Vec3), error)) return std::nullopt;
             positions.push_back({p[0], p[1], p[2]});
         } else if (key == "vt") {
             float t[2] = {0, 0};
@@ -620,6 +635,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
                 Fail(error, std::format("{} 行目: UV (vt) の数字が読めません", lineNo));
                 return std::nullopt;
             }
+            if (!b.Take(0, sizeof(Vec2), error)) return std::nullopt;
             uvs.push_back({t[0], 1.f - t[1]});  // OBJ's V goes up
         } else if (key == "vn") {
             float n[3] = {0, 0, 0};
@@ -627,6 +643,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
                 Fail(error, std::format("{} 行目: 法線 (vn) の数字が読めません", lineNo));
                 return std::nullopt;
             }
+            if (!b.Take(0, sizeof(Vec3), error)) return std::nullopt;
             normals.push_back(Normalize({n[0], n[1], n[2]}));
         } else if (key == "f") {
             std::vector<uint32_t> poly;
@@ -658,10 +675,8 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
                 if (c.n < 0) missingNormal = true;
                 auto [it, added] = made.try_emplace(c, static_cast<uint32_t>(mesh.vertices.size()));
                 if (added) {
-                    if (mesh.vertices.size() >= kMaxCount) {
-                        Fail(error, "頂点が多すぎます");
-                        return std::nullopt;
-                    }
+                    // The vertex and its entry in the table of corners.
+                    if (!b.Take(1, sizeof(MeshVertex) + 48, error)) return std::nullopt;
                     MeshVertex v;
                     v.position = positions[static_cast<size_t>(c.v)];
                     if (c.t >= 0) v.uv = uvs[static_cast<size_t>(c.t)];
@@ -672,6 +687,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
             }
             // A fan from the first corner (polygons in OBJ files are flat and convex).
             for (size_t i = 2; i < poly.size(); ++i) {
+                if (!b.Take(0, 3 * sizeof(uint32_t) + sizeof(int), error)) return std::nullopt;
                 mesh.indices.insert(mesh.indices.end(), {poly[0], poly[i - 1], poly[i]});
                 triangleMaterial.push_back(current);
             }
@@ -860,12 +876,41 @@ void SortByMaterial(MeshData& mesh, std::span<const int> materialOfTriangle) {
     mesh.indices = std::move(sorted);
 }
 
-std::optional<MeshData> ParseMesh(std::string_view extension, std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error) {
-    if (SameIgnoringCase(extension, ".gltf") || SameIgnoringCase(extension, ".glb")) return ParseGltf(bytes, read, error);
-    if (SameIgnoringCase(extension, ".obj")) return ParseObj({reinterpret_cast<const char*>(bytes.data()), bytes.size()}, read, error);
-    if (SameIgnoringCase(extension, ".fbx")) return ParseFbx(bytes, error);
+std::optional<MeshData> ParseMesh(std::string_view extension, std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error,
+                                  ReadBudget* budget) {
+    if (SameIgnoringCase(extension, ".gltf") || SameIgnoringCase(extension, ".glb")) return ParseGltf(bytes, read, error, budget);
+    if (SameIgnoringCase(extension, ".obj")) return ParseObj({reinterpret_cast<const char*>(bytes.data()), bytes.size()}, read, error, budget);
+    if (SameIgnoringCase(extension, ".fbx")) return ParseFbx(bytes, error, budget);
     Fail(error, std::format("「{}」のモデルは読めません (.gltf / .glb / .obj / .fbx が読めます)", extension));
     return std::nullopt;
+}
+
+bool ReadBudget::Cancelled(std::string* error) const {
+    if (!cancel_ || !cancel_->load(std::memory_order_relaxed)) return false;
+    Fail(error, "読み込みを取り消しました");
+    return true;
+}
+
+bool ReadBudget::Take(uint64_t vertices, uint64_t bytes, std::string* error) {
+    if (Cancelled(error)) return false;
+    if (vertices > maxVertices_ - vertices_) {
+        return Fail(error, std::format("頂点が多すぎるので読みません (1 つのモデルで {} 万個まで)", maxVertices_ / 10'000));
+    }
+    if (bytes > maxBytes_ - bytes_) {
+        return Fail(error, std::format("読むのに要るメモリーが大きすぎるので読みません (1 つのモデルで {} MB まで)", maxBytes_ >> 20));
+    }
+    vertices_ += vertices;
+    bytes_ += bytes;
+    return true;
+}
+
+bool ReadBudget::Step(std::string* error) {
+    if (Cancelled(error)) return false;
+    if (steps_ >= maxSteps_) {
+        return Fail(error, std::format("ノードやつながりが多すぎるので読みません ({} 万回までたどります。同じ子を何度も指していませんか)", maxSteps_ / 10'000));
+    }
+    ++steps_;
+    return true;
 }
 
 void AppendPlaced(MeshData& out, const MeshData& part, const Mat4& world) {
