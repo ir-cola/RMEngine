@@ -7,14 +7,16 @@
 //             becomes one mesh in the model's own space. Triangles, strips and fans.
 //   OBJ:      v / vt / vn / f (polygons are cut into triangles; negative numbers count from the end).
 //
-// Materials (the colour of each part): glTF's pbrMetallicRoughness baseColorFactor and
-// baseColorTexture (a picture file next to the model, one inside the .glb, or a data: URI); OBJ's
-// .mtl (mtllib / usemtl: Kd, d and map_Kd). The triangles are sorted by material into parts
-// (MeshPart: one draw each). Pictures are not decoded here (MeshImage keeps the bytes or the file's
-// name): that needs Windows (WIC) - see Texture.h.
+// Materials (metal / roughness PBR, as glTF): glTF's pbrMetallicRoughness (baseColorFactor /
+// Texture, metallicFactor, roughnessFactor, metallicRoughnessTexture), normalTexture (+ scale),
+// emissiveFactor / Texture (+ KHR_materials_emissive_strength), alphaMode; pictures in a file next to
+// the model, inside the .glb, or a data: URI. OBJ's .mtl (mtllib / usemtl: Kd, d / Tr, Ns, Pr, Pm,
+// Ke, map_Kd, map_Ke, norm / map_Bump / bump - taken as a normal map, -bm its strength). The
+// triangles are sorted by material into parts (MeshPart: one draw each). Pictures are not decoded
+// here (MeshImage keeps the bytes or the file's name): that needs Windows (WIC) - see Texture.h.
 //
-// Not read (yet): the rest of a material (metal, roughness, normal maps, emission), glTF samplers
-// (every picture repeats), skins, morph targets, animation, sparse accessors, Draco.
+// Not read (yet): occlusion maps, glTF samplers (every picture repeats), TEXCOORD_1, other material
+// extensions, skins, morph targets, animation, sparse accessors, Draco.
 // Normals that are missing are made from the triangles (smooth). The front of a triangle is
 // counter-clockwise, as in both formats; UV (0, 0) is the top left of a picture, as in glTF and
 // Direct3D (OBJ's V, which goes up, is turned over).
@@ -53,14 +55,25 @@ struct MeshImage {
 // channel is ignored), as a cut-out (less than alphaCutoff is a hole), or see-through.
 enum class AlphaMode : uint8_t { Opaque, Mask, Blend };
 
-// The colour of a part: baseColor (as shown on the screen, 0..1; glTF's linear factor is turned
-// into it) times the picture at the vertex's UV (image: index into MeshData::images, -1 = none).
+// How a part looks. Colours are linear light (as glTF writes them; an OBJ's screen colours are
+// turned into it). Pictures are indices into MeshData::images (-1 = none), at the vertex's UV:
+//   colour   = baseColor x image (its rgb are the screen's colours: sRGB)
+//   metallic / roughness x metallicRoughnessImage (glTF: blue = metal, green = rough; linear)
+//   normal   = normalImage (tangent space, linear), its bend times normalScale
+//   emission = emissive x emissiveImage (sRGB), added to the light
 struct MeshMaterial {
     std::string name;
     Color baseColor{1, 1, 1, 1};
     int image = -1;
     AlphaMode alpha = AlphaMode::Opaque;
     float alphaCutoff = 0.5f;
+    float metallic = 0.f;
+    float roughness = 0.8f;
+    int metallicRoughnessImage = -1;
+    int normalImage = -1;
+    float normalScale = 1.f;
+    Color emissive{0, 0, 0, 1};  // rgb, may be more than 1 (alpha is not used)
+    int emissiveImage = -1;
 };
 
 // Triangles [firstIndex, firstIndex + indexCount) of `indices`, all of one material (-1: none -
@@ -99,8 +112,10 @@ inline std::optional<MeshData> ParseObj(std::string_view text, std::string* erro
 // "mats/" - so its pictures can be found from the model). Lines it does not know are skipped.
 std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folder, std::vector<MeshImage>& images);
 
-// A colour component from linear light (glTF's factors) to the screen's (sRGB) 0..1.
+// A colour component between linear light (glTF's factors, the renderer's light) and the screen's
+// numbers (sRGB: paint tools, the UI's colours, .mtl), 0..1.
 float LinearToScreen(float linear);
+float ScreenToLinear(float screen);
 
 // The triangles sorted by material (stable: the order inside a material stays), and the parts that
 // say where each material's run is. `materialOfTriangle` has one entry per triangle.

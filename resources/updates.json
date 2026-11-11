@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "3D モデルの金属・ざらざら・法線マップ・光る色 (glTF の PBR の材質と .mtl の Ns / Pr / Pm / Ke / 法線の絵)。光の計算を本物の光の量 (リニア) で行うようにした",
+          "en": "Metal, roughness, normal maps and emission on 3D models (glTF PBR materials; .mtl Ns / Pr / Pm / Ke / normal pictures). Lighting is now worked out in linear light"
+        },
+        {
           "ja": "大きな 3D モデルを別のスレッドで読む: 読んでいる間も画面は止まらず、箱の上に「読み込み中…」。読み終わったらモデルに差し替わる",
           "en": "Big 3D models are read on a thread of their own: the screen keeps going while one loads (a box with \"Loading…\" over it), and the model takes its place when ready"
         },

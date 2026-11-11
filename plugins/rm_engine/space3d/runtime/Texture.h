@@ -14,6 +14,7 @@
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -27,16 +28,19 @@ namespace rm::space3d {
 
 constexpr uint32_t kMaxTextureSize = 4096;
 
-// Decodes a picture's bytes and puts it on the GPU; null (and *error, Japanese) when it cannot.
-std::shared_ptr<const GpuTexture> LoadTexture(Renderer& renderer, IWICImagingFactory* wic, std::span<const uint8_t> bytes, std::string* error);
+// Decodes a picture's bytes and puts it on the GPU (srgb: a colour picture - see UploadTexture); null
+// (and *error, Japanese) when it cannot.
+std::shared_ptr<const GpuTexture> LoadTexture(Renderer& renderer, IWICImagingFactory* wic, std::span<const uint8_t> bytes, bool srgb,
+                                              std::string* error);
 
 class TextureCache {
 public:
     static constexpr double kCheckSeconds = 1.0;  // how often a file is looked at again
 
-    // The picture of `file` (a full path); null when it cannot be read (told once - again only after
-    // the file changed). `now`: seconds, any clock that goes forward.
-    const GpuTexture* Get(Renderer& renderer, IWICImagingFactory* wic, const std::filesystem::path& file, double now);
+    // The picture of `file` (a full path) as colours (srgb) or numbers - kept apart; null when it
+    // cannot be read (told once - again only after the file changed). `now`: seconds, any clock that
+    // goes forward.
+    const GpuTexture* Get(Renderer& renderer, IWICImagingFactory* wic, const std::filesystem::path& file, bool srgb, double now);
     // Pictures nobody asked for in `seconds` leave the GPU.
     void ForgetUnused(double now, double seconds);
     size_t Size() const { return entries_.size(); }
@@ -61,12 +65,19 @@ public:
               const std::filesystem::path& root, const std::string& modelName);
     // The materials as Render takes them (by MeshPart::material); the files' pictures from `cache`.
     std::span<const DrawMaterial> Materials(Renderer& renderer, IWICImagingFactory* wic, TextureCache& cache, double now);
-    size_t Pictures() const;  // how many materials have a picture (for the console)
+    size_t Pictures() const;  // how many pictures the materials use (for the console)
 
 private:
+    // One picture of a material: written inside the model (own) or a file (from the cache).
+    struct Slot {
+        std::shared_ptr<const GpuTexture> own;
+        std::filesystem::path file;
+        bool srgb = true;
+        bool Used() const { return own || !file.empty(); }
+    };
+    enum { kColour, kMetalRough, kNormal, kEmission, kSlots };
     std::vector<DrawMaterial> draw_;
-    std::vector<std::shared_ptr<const GpuTexture>> own_;  // per material: a picture written inside the model
-    std::vector<std::filesystem::path> files_;            // per material: a picture file (empty: none)
+    std::vector<std::array<Slot, kSlots>> slots_;  // per material
 };
 
 }  // namespace rm::space3d

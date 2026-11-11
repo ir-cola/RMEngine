@@ -11,10 +11,19 @@
 //   f.meshes = draws;   f.shadows = true;             // MeshDraw{robot.get(), world, color, ..., materials}
 //   ID3D11Texture2D* picture = r.Render(context, f);
 //
-// Colour: draw's colour x the part's material colour x its picture (UV, repeating, mipmapped) x the
-// light. A model's parts (MeshPart) are drawn one by one with their own material (DrawMaterial:
-// the colour and the picture on the GPU - UploadTexture). The selected thing is shown by a glow at
-// its edges (MeshDraw::highlight), which keeps the material's colours.
+// Colour (physically based, metal / roughness as glTF): the light is worked out in linear light and
+// turned into the screen's numbers (sRGB) at the end of each pixel. A surface has a colour (draw's
+// colour x the part's material colour x its picture), a metalness and a roughness (x the metal /
+// rough picture), a normal (bent by the normal map: the tangents are made from the screen's
+// derivatives of the position and the UV - no tangents in the vertices) and an emission (added).
+// Each light gives a diffuse part (Lambert, none on metal) and a highlight (GGX / Smith / Schlick);
+// the sky gives a little of both. A model's parts (MeshPart) are drawn one by one with their own
+// material (DrawMaterial: the numbers and the pictures on the GPU - UploadTexture). Colour and
+// emission pictures are sRGB (the GPU turns them into linear light when it reads them); metal /
+// rough and normal pictures are numbers. The selected thing is shown by a glow at its edges
+// (MeshDraw::highlight), which keeps the material's colours.
+// The colours given to a draw (MeshDraw::color, Box::color, highlight, lines, the floor's shadow)
+// are the screen's colours, as everywhere in the UI; a material's are linear light (Mesh.h).
 //
 // The shaders are written in Renderer3D.cpp in HLSL and compiled when the renderer starts
 // (D3DCompile, which every Windows 10 / 11 has). Drawn with 4x multisampling when the GPU can.
@@ -70,18 +79,25 @@ private:
 class GpuTexture {
 public:
     uint32_t width = 0, height = 0;
+    bool srgb = false;  // read as colours (sRGB -> linear) or as numbers
 
 private:
     friend class Renderer;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
 };
 
-// How one material of a model is painted.
+// How one material of a model is painted (MeshMaterial on the GPU; a null picture: the numbers only).
 struct DrawMaterial {
-    Color color{1, 1, 1, 1};
-    const GpuTexture* texture = nullptr;  // null: the colour only
+    Color color{1, 1, 1, 1};              // linear light
+    const GpuTexture* texture = nullptr;  // the colour (sRGB)
     AlphaMode alpha = AlphaMode::Opaque;
     float alphaCutoff = 0.5f;  // Mask: less than this is not drawn
+    float metallic = 0.f, roughness = 0.8f;
+    const GpuTexture* metalRough = nullptr;  // blue: metal, green: rough
+    const GpuTexture* normal = nullptr;      // tangent space
+    float normalScale = 1.f;
+    Color emissive{0, 0, 0, 1};               // linear light, may be more than 1
+    const GpuTexture* emission = nullptr;    // sRGB
 };
 
 struct MeshDraw {
@@ -116,8 +132,9 @@ public:
     bool Ready() const { return meshVs_ != nullptr; }
     // The shape goes to the GPU once; null (and *error, Japanese) when it cannot.
     std::shared_ptr<const GpuMesh> Upload(const MeshData& mesh, std::string* error);
-    // A picture (PixelOrder::Rgba) goes to the GPU once, with its mipmaps; null (and *error) when it cannot.
-    std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, std::string* error);
+    // A picture (PixelOrder::Rgba) goes to the GPU once, with its mipmaps; null (and *error) when it
+    // cannot. srgb: a colour picture (read as linear light); false: numbers (metal / rough, normals).
+    std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error);
     // Draws the frame and returns the finished picture (B8G8R8A8, usable by Direct2D); null on failure.
     // The picture is kept until the next Render (its size follows the frame's).
     ID3D11Texture2D* Render(ID3D11DeviceContext* ctx, const RenderFrame& f);

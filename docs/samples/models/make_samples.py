@@ -5,6 +5,9 @@
 #   house.glb                                       the same house in one file (pictures inside it)
 #   crate.gltf                                      a box with its picture written inside (data: URI)
 #   torus.obj + torus.mtl + torus_stripes.png        OBJ: two materials from the .mtl (a picture and a colour)
+#   pbr_ball.glb                                    metal / roughness: bands of polished metal and rough paint
+#                                                   (a metal / rough picture), dimples (a normal map) and a
+#                                                   glowing ring (an emission picture), all inside the file
 #
 # Only the Python standard library (the PNGs are written by hand: zlib + the PNG chunks).
 import base64, json, math, os, struct, sys, zlib
@@ -254,4 +257,69 @@ with open(os.path.join(out, "torus.mtl"), "w", encoding="utf-8", newline="\n") a
     f.write("# RM Engine sample (docs/samples/models): the torus's materials\n"
             "newmtl Stripes\nKd 1 1 1\nmap_Kd torus_stripes.png\n\n"
             "newmtl Gold\nKd 0.95 0.72 0.25\n")
+# --- The PBR ball (GLB): metal / roughness, a normal map and emission --------------------------
+
+def ball(radius, nu, nv):
+    # A UV sphere centred above the floor; u around (0..1), v from the top (0) to the bottom (1).
+    verts, idx = [], []
+    for j in range(nv + 1):
+        t = math.pi * j / nv
+        for i in range(nu + 1):
+            p_ = 2 * math.pi * i / nu
+            n = (math.sin(t) * math.cos(p_), math.cos(t), -math.sin(t) * math.sin(p_))
+            verts.append(([radius * n[0], radius * n[1] + radius, radius * n[2]], n, (i / nu, j / nv)))
+    for j in range(nv):
+        for i in range(nu):
+            a = j * (nu + 1) + i; b = a + nu + 1
+            idx += [a, b, a + 1, a + 1, b, b + 1]  # CCW from outside
+    return verts, idx
+
+W, H = 128, 64
+def band(y):
+    return (y * 8) // H  # 8 bands from the top
+def metal_rough(x, y):
+    # glTF: green = roughness, blue = metalness. Even bands: polished metal; odd bands: rough paint.
+    return (0, 40, 255, 255) if band(y) % 2 == 0 else (0, 220, 0, 255)
+def colour(x, y):
+    return (230, 190, 120, 255) if band(y) % 2 == 0 else (40, 90, 160, 255)
+def heights(x, y):
+    # Round dimples on a grid (deeper in the middle).
+    cx, cy = (x % 16) - 7.5, (y % 16) - 7.5
+    d = math.sqrt(cx * cx + cy * cy)
+    return -max(0.0, 1 - d / 6) ** 2
+def normal(x, y):
+    k = 3.0
+    dx = (heights((x + 1) % W, y) - heights((x - 1) % W, y)) * 0.5
+    dy = (heights(x, (y + 1) % H) - heights(x, (y - 1) % H)) * 0.5  # down the picture
+    n = (-dx * k, dy * k, 1.0)  # +Y is up the picture
+    l = math.sqrt(sum(c * c for c in n))
+    return tuple(int((c / l * 0.5 + 0.5) * 255) for c in n) + (255,)
+def emission(x, y):
+    # A glowing ring round the middle.
+    return (255, 120, 40, 255) if abs(y - H // 2) <= 2 else (0, 0, 0, 255)
+
+ball_pngs = [png(W, H, colour), png(W, H, metal_rough), png(W, H, normal), png(W, H, emission)]
+sphere = ball(0.6, 48, 24) + (0,)
+bin_, views, accs, meshes, image_views = pack([sphere], ball_pngs)
+meshes[0]["name"] = "Ball"
+ball_doc = {
+    "asset": {"version": "2.0", "generator": "RM Engine sample (docs/samples/models)"},
+    "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"name": "PBR ball", "mesh": 0}],
+    "meshes": meshes,
+    "materials": [{
+        "name": "Bands",
+        "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 1, "roughnessFactor": 1,
+                                 "metallicRoughnessTexture": {"index": 1}},
+        "normalTexture": {"index": 2, "scale": 1},
+        "emissiveTexture": {"index": 3}, "emissiveFactor": [1, 1, 1],
+        "extensions": {"KHR_materials_emissive_strength": {"emissiveStrength": 2}},
+    }],
+    "extensionsUsed": ["KHR_materials_emissive_strength"],
+    "textures": [{"source": k} for k in range(4)],
+    "images": [{"name": n, "bufferView": image_views[k], "mimeType": "image/png"} for k, n in enumerate(["colour", "metal_rough", "normal", "emission"])],
+    "buffers": [{"byteLength": len(bin_)}],
+    "bufferViews": views, "accessors": accs,
+}
+write_glb(os.path.join(out, "pbr_ball.glb"), ball_doc, bin_)
+
 print("ok", glb_size, os.path.getsize(os.path.join(out, "torus.obj")))

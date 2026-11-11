@@ -108,9 +108,13 @@ Mat4 FromQuaternion(float x, float y, float z, float w) {
     return r;
 }
 
-float Number(const json::Value& arr, size_t i, float def) {
+// arr[i] as a number (scalar: the value itself), or def.
+float Number(const json::Value& arr, size_t i, float def, bool scalar = false) {
+    if (scalar) return arr.IsNumber() ? static_cast<float>(arr.AsDouble()) : def;
     return arr.IsArray() && i < arr.Size() && arr.At(i).IsNumber() ? static_cast<float>(arr.At(i).AsDouble()) : def;
 }
+
+float Unit(float v) { return std::clamp(v, 0.f, 1.f); }
 
 class GltfReader {
 public:
@@ -210,28 +214,45 @@ private:
             if (mat.name.empty()) mat.name = std::format("材質 {}", i);
             const json::Value& pbr = m.Get("pbrMetallicRoughness");
             const json::Value& f = pbr.Get("baseColorFactor");
-            // The factor is linear light; the screen's colours (and the pictures) are not.
-            mat.baseColor = {LinearToScreen(Number(f, 0, 1)), LinearToScreen(Number(f, 1, 1)), LinearToScreen(Number(f, 2, 1)),
-                             std::clamp(Number(f, 3, 1), 0.f, 1.f)};
+            // Linear light, as glTF writes it (the renderer works in linear light).
+            mat.baseColor = {Unit(Number(f, 0, 1)), Unit(Number(f, 1, 1)), Unit(Number(f, 2, 1)), Unit(Number(f, 3, 1))};
+            // glTF's defaults: a rough metal (most files write both).
+            mat.metallic = Unit(Number(pbr.Get("metallicFactor"), 0, 1.f, true));
+            mat.roughness = Unit(Number(pbr.Get("roughnessFactor"), 0, 1.f, true));
+            const json::Value& e = m.Get("emissiveFactor");
+            // KHR_materials_emissive_strength: brighter than 1.
+            const float strength = std::max(0.f, Number(m.Get("extensions").Get("KHR_materials_emissive_strength").Get("emissiveStrength"), 0, 1.f, true));
+            mat.emissive = {std::max(0.f, Number(e, 0, 0)) * strength, std::max(0.f, Number(e, 1, 0)) * strength,
+                            std::max(0.f, Number(e, 2, 0)) * strength, 1};
             const std::string& mode = m.Get("alphaMode").AsString();
             mat.alpha = mode == "MASK" ? AlphaMode::Mask : mode == "BLEND" ? AlphaMode::Blend : AlphaMode::Opaque;
             if (const json::Value* cut = m.Find("alphaCutoff"); cut && cut->IsNumber()) mat.alphaCutoff = static_cast<float>(cut->AsDouble());
-            if (const json::Value* tex = pbr.Find("baseColorTexture")) {
-                const int64_t t = tex->Get("index").AsInt(-1);
-                const json::Value& textures = doc_.Get("textures");
-                if (t < 0 || static_cast<size_t>(t) >= textures.Size()) return Fail(error_, std::format("テクスチャ {} がありません", t));
-                if (const json::Value* source = textures.At(static_cast<size_t>(t)).Find("source")) {
-                    const int image = Image(source->AsInt(-1));
-                    if (image == kBroken) return false;
-                    mat.image = image;
-                }
+            if (!TextureImage(pbr.Find("baseColorTexture"), mat.image) || !TextureImage(pbr.Find("metallicRoughnessTexture"), mat.metallicRoughnessImage) ||
+                !TextureImage(m.Find("normalTexture"), mat.normalImage) || !TextureImage(m.Find("emissiveTexture"), mat.emissiveImage)) {
+                return false;
             }
+            if (const json::Value* n = m.Find("normalTexture")) mat.normalScale = Number(n->Get("scale"), 0, 1.f, true);
             out_.materials.push_back(std::move(mat));
         }
         return true;
     }
 
     static constexpr int kBroken = -2;
+
+    // A material's textureInfo ({"index": texture}) -> one of out_.images in `out` (left as it is when
+    // there is none, or the texture has no picture). False: told why.
+    bool TextureImage(const json::Value* info, int& out) {
+        if (!info) return true;
+        const int64_t t = info->Get("index").AsInt(-1);
+        const json::Value& textures = doc_.Get("textures");
+        if (t < 0 || static_cast<size_t>(t) >= textures.Size()) return Fail(error_, std::format("テクスチャ {} がありません", t));
+        if (const json::Value* source = textures.At(static_cast<size_t>(t)).Find("source")) {
+            const int image = Image(source->AsInt(-1));
+            if (image == kBroken) return false;
+            out = image;
+        }
+        return true;
+    }
 
     // glTF image `index` as one of out_.images (each read once); -1: it has no picture; kBroken: told why.
     int Image(int64_t index) {
@@ -746,18 +767,36 @@ std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folde
                 ++n;
             }
             if (n == 1) rgb[1] = rgb[2] = rgb[0];  // one number: grey
-            if (n == 1 || n == 3) {
-                m.baseColor = {std::clamp(rgb[0], 0.f, 1.f), std::clamp(rgb[1], 0.f, 1.f), std::clamp(rgb[2], 0.f, 1.f), m.baseColor.a};
+            // The screen's colours (as in every paint tool) into linear light.
+            if (n == 1 || n == 3) m.baseColor = {ScreenToLinear(rgb[0]), ScreenToLinear(rgb[1]), ScreenToLinear(rgb[2]), m.baseColor.a};
+        } else if (key == "Ke") {
+            float rgb[3] = {0, 0, 0};
+            int n = 0;
+            for (std::string_view t = NextToken(line); !t.empty() && n < 3; t = NextToken(line)) {
+                if (!ParseFloat(t, rgb[n])) break;
+                ++n;
             }
+            if (n == 1) rgb[1] = rgb[2] = rgb[0];
+            if (n == 1 || n == 3) m.emissive = {ScreenToLinear(rgb[0]), ScreenToLinear(rgb[1]), ScreenToLinear(rgb[2]), 1};
+        } else if (key == "Ns") {
+            // The shininess (0 .. 1000) as a roughness, as Blender reads it back (it writes (1 - roughness)² x 1000).
+            float ns = 0;
+            if (ParseFloat(NextToken(line), ns)) m.roughness = 1.f - std::sqrt(std::clamp(ns, 0.f, 1000.f) / 1000.f);
+        } else if (key == "Pr" || key == "Pm") {
+            // The PBR additions to .mtl: roughness / metallic.
+            float v = 0;
+            if (ParseFloat(NextToken(line), v)) (key == "Pr" ? m.roughness : m.metallic) = std::clamp(v, 0.f, 1.f);
         } else if (key == "d" || key == "Tr") {
             float v = 1;
             if (ParseFloat(NextToken(line), v)) {
                 m.baseColor.a = std::clamp(key == "d" ? v : 1.f - v, 0.f, 1.f);
                 m.alpha = m.baseColor.a < 1.f ? AlphaMode::Blend : AlphaMode::Opaque;
             }
-        } else if (key == "map_Kd") {
-            // Options (-s 1 1 1, -clamp on ...) come before the file's name, which is the rest.
+        } else if (key == "map_Kd" || key == "map_Ke" || key == "norm" || key == "map_Bump" || key == "bump") {
+            // Options (-s 1 1 1, -clamp on, -bm 0.5 ...) come before the file's name, which is the rest.
+            // A bump map is taken as a normal map (what Blender writes for one); -bm is its strength.
             std::string_view rest = Rest(line);
+            float bm = 1.f;
             while (rest.starts_with("-")) {
                 std::string_view probe = rest;
                 const std::string_view option = NextToken(probe);
@@ -766,8 +805,9 @@ std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folde
                 for (; args > 0; --args) {
                     std::string_view look = probe;
                     const std::string_view t = NextToken(look);
-                    float ignored = 0;
-                    if (t.empty() || (numbers && !ParseFloat(t, ignored))) break;
+                    float value = 0;
+                    if (t.empty() || (numbers && !ParseFloat(t, value))) break;
+                    if (option == "-bm") ParseFloat(t, bm);
                     probe = look;
                 }
                 rest = Rest(probe);
@@ -775,16 +815,31 @@ std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folde
             if (rest.empty()) continue;
             const std::string file = std::string(folder) + Slashes(rest);
             const auto it = std::find_if(images.begin(), images.end(), [&](const MeshImage& im) { return im.file == file; });
-            m.image = static_cast<int>(it - images.begin());
+            const int image = static_cast<int>(it - images.begin());
             if (it == images.end()) {
                 MeshImage im;
                 im.file = file;
                 im.name = file;
                 images.push_back(std::move(im));
             }
+            if (key == "map_Kd") {
+                m.image = image;
+            } else if (key == "map_Ke") {
+                m.emissiveImage = image;
+                if (m.emissive.r == 0 && m.emissive.g == 0 && m.emissive.b == 0) m.emissive = {1, 1, 1, 1};  // the picture as it is
+            } else {
+                m.normalImage = image;
+                m.normalScale = bm;
+            }
         }
     }
     return out;
+}
+
+float ScreenToLinear(float screen) {
+    const float c = std::clamp(screen, 0.f, 1.f);
+    if (c >= 1.f) return 1.f;
+    return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
 }
 
 float LinearToScreen(float linear) {

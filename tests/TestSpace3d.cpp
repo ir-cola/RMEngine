@@ -689,6 +689,8 @@ RM_TEST(Mesh_LinearToScreen) {
     CHECK(NearF(LinearToScreen(0), 0) && NearF(LinearToScreen(1), 1));
     CHECK(std::abs(LinearToScreen(0.5f) - 0.7354f) < 1e-3f);  // half the light looks much brighter than half
     CHECK(NearF(LinearToScreen(-1), 0) && NearF(LinearToScreen(3), 1));
+    CHECK(NearF(ScreenToLinear(0), 0) && NearF(ScreenToLinear(1), 1) && std::abs(ScreenToLinear(0.7354f) - 0.5f) < 1e-3f);
+    for (const float v : {0.001f, 0.02f, 0.3f, 0.9f}) CHECK(std::abs(ScreenToLinear(LinearToScreen(v)) - v) < 1e-4f);  // there and back
 }
 
 RM_TEST(Mesh_Gltf_MaterialsMakeParts) {
@@ -707,10 +709,38 @@ RM_TEST(Mesh_Gltf_MaterialsMakeParts) {
     CHECK(m->materials.size() == 2 && m->materials[0].name == "Red");
     CHECK(m->materials[0].baseColor == (Color{1, 0, 0, 1}) && m->materials[0].image == 0);
     CHECK(m->images.size() == 1 && m->images[0].file == "tex a.png" && m->images[0].bytes.empty());  // a file next to the model
-    // The factor is linear light: shown as the screen's 0.735; alpha stays as it is.
-    CHECK(std::abs(m->materials[1].baseColor.r - 0.7354f) < 1e-3f && NearF(m->materials[1].baseColor.a, 0.5f));
+    // The factor is linear light, kept as it is (the renderer works in linear light).
+    CHECK(NearF(m->materials[1].baseColor.r, 0.5f) && NearF(m->materials[1].baseColor.a, 0.5f));
     CHECK(m->materials[1].alpha == AlphaMode::Mask && NearF(m->materials[1].alphaCutoff, 0.3f) && m->materials[1].image == -1);
     CHECK(m->materials[0].alpha == AlphaMode::Opaque);
+    // Nothing said about metal and roughness: glTF's defaults (a rough metal); no normal map, no light of its own.
+    CHECK(NearF(m->materials[0].metallic, 1) && NearF(m->materials[0].roughness, 1));
+    CHECK(m->materials[0].normalImage == -1 && m->materials[0].emissive == (Color{0, 0, 0, 1}));
+}
+
+RM_TEST(Mesh_Gltf_MetalRoughnessNormalEmission) {
+    const std::string doc = TwoMaterialGltf(
+        R"("materials":[{"pbrMetallicRoughness":{"metallicFactor":0.25,"roughnessFactor":0.5,"metallicRoughnessTexture":{"index":1}},)"
+        R"("normalTexture":{"index":2,"scale":0.7},"emissiveFactor":[1,0.5,0],"emissiveTexture":{"index":0},)"
+        R"("extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":4}}},)"
+        R"({"pbrMetallicRoughness":{"metallicFactor":3,"roughnessFactor":-1}}],)"
+        R"("textures":[{"source":0},{"source":1},{"source":2}],"images":[{"uri":"glow.png"},{"uri":"mr.png"},{"uri":"normal.png"}])");
+    std::string error;
+    const auto m = ParseGltf(Bytes(doc), nullptr, &error);
+    CHECK(m.has_value());
+    if (!m || m->materials.size() != 2) return;
+    const MeshMaterial& a = m->materials[0];
+    CHECK(NearF(a.metallic, 0.25f) && NearF(a.roughness, 0.5f));
+    CHECK(a.metallicRoughnessImage >= 0 && m->images[a.metallicRoughnessImage].file == "mr.png");
+    CHECK(a.normalImage >= 0 && m->images[a.normalImage].file == "normal.png" && NearF(a.normalScale, 0.7f));
+    CHECK(a.emissiveImage >= 0 && m->images[a.emissiveImage].file == "glow.png");
+    CHECK(NearF(a.emissive.r, 4) && NearF(a.emissive.g, 2) && NearF(a.emissive.b, 0));  // x the strength
+    CHECK(a.image == -1);  // no colour picture
+    // Out of 0..1: brought in.
+    CHECK(NearF(m->materials[1].metallic, 1) && NearF(m->materials[1].roughness, 0));
+    // A normal map's texture that is not there is told like the others.
+    CHECK(!ParseGltf(Bytes(TwoMaterialGltf(R"("materials":[{"normalTexture":{"index":5}},{}])")), nullptr, &error));
+    CHECK(error.find("テクスチャ 5") != std::string::npos);
 }
 
 RM_TEST(Mesh_Gltf_PicturesInsideTheFile) {
@@ -755,8 +785,9 @@ RM_TEST(Mesh_Obj_MaterialsFromMtl) {
         "mtllib mats\\colors.mtl\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nvt 0 0\nvt 1 1\n"
         "usemtl Brick Red\nf 1/1 2/1 3/2\nusemtl Plain\nf 1 3 4\nusemtl Brick Red\nf 1 2 4\nusemtl Ghost\nf 2 3 4\n";
     const std::string mtl =
-        "# made by hand\nnewmtl Brick Red\nKd 0.8 0.2 0.1\nmap_Kd -s 2 2 1 -clamp on tex\\brick wall.png\n"
-        "newmtl Plain\nKd 0.5\nd 0.25\n";
+        "# made by hand\nnewmtl Brick Red\nKd 0.8 0.2 0.1\nmap_Kd -s 2 2 1 -clamp on tex\\brick wall.png\nNs 250\n"
+        "map_Bump -bm 0.5 tex/brick_n.png\nKe 0.5 0.5 0.5\nmap_Ke glow.png\n"
+        "newmtl Plain\nKd 0.5\nd 0.25\nPm 0.8\nPr 0.3\n";
     std::vector<std::string> asked;
     const ReadRelated read = [&](std::string_view uri) -> std::optional<std::vector<uint8_t>> {
         asked.emplace_back(uri);
@@ -769,9 +800,15 @@ RM_TEST(Mesh_Obj_MaterialsFromMtl) {
     CHECK(asked.size() == 1 && asked[0] == "mats/colors.mtl");  // '\' written by Windows tools
     CHECK(m->materials.size() == 3);
     if (m->materials.size() != 3) return;
-    CHECK(m->materials[0].name == "Brick Red" && m->materials[0].baseColor == (Color{0.8f, 0.2f, 0.1f, 1}));
-    CHECK(m->materials[0].image == 0 && m->images.size() == 1 && m->images[0].file == "mats/tex/brick wall.png");  // next to the .mtl
-    CHECK(m->materials[1].name == "Plain" && NearF(m->materials[1].baseColor.g, 0.5f) && NearF(m->materials[1].baseColor.a, 0.25f));
+    // Kd is the screen's colour: turned into linear light.
+    const Color brick{ScreenToLinear(0.8f), ScreenToLinear(0.2f), ScreenToLinear(0.1f), 1};
+    CHECK(m->materials[0].name == "Brick Red" && m->materials[0].baseColor == brick);
+    CHECK(m->materials[0].image == 0 && m->images.size() == 3 && m->images[0].file == "mats/tex/brick wall.png");  // next to the .mtl
+    CHECK(NearF(m->materials[0].roughness, 0.5f) && NearF(m->materials[0].metallic, 0));  // Ns 250: Blender's 0.5
+    CHECK(m->materials[0].normalImage == 1 && m->images[1].file == "mats/tex/brick_n.png" && NearF(m->materials[0].normalScale, 0.5f));
+    CHECK(m->materials[0].emissiveImage == 2 && NearF(m->materials[0].emissive.r, ScreenToLinear(0.5f)));
+    CHECK(m->materials[1].name == "Plain" && NearF(m->materials[1].baseColor.g, ScreenToLinear(0.5f)) && NearF(m->materials[1].baseColor.a, 0.25f));
+    CHECK(NearF(m->materials[1].metallic, 0.8f) && NearF(m->materials[1].roughness, 0.3f));
     CHECK(m->materials[1].alpha == AlphaMode::Blend && m->materials[0].alpha == AlphaMode::Opaque);
     CHECK(m->materials[2].name == "Ghost" && m->materials[2].baseColor == (Color{1, 1, 1, 1}));  // not in the .mtl: white
     CHECK(m->warnings.size() == 1 && m->warnings[0].find("Ghost") != std::string::npos);

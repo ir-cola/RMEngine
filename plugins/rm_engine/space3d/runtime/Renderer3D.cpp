@@ -25,9 +25,11 @@ cbuffer PerDraw : register(b0) {
     float4 light;            // xyz: where the light goes; w: 1 = shadows
     float4 shadow;           // x: one texel of the shadow map (uv); y: depth bias; z: normal offset (world)
     float4 eye;              // xyz: where the camera is (world)
-    float4 material;         // the part's material colour (times `color`)
-    float4 paint;            // x: 1 = a picture (baseMap); y: alpha 0 opaque / 1 mask / 2 blend; z: mask's cutoff
-    float4 highlight;        // a glow at the edges (selected): rgb, a = how strong
+    float4 material;         // the part's material colour, linear (times `color`, which is the screen's)
+    float4 paint;            // x: 1 = a colour picture; y: alpha 0 opaque / 1 mask / 2 blend; z: mask's cutoff; w: 1 = a normal map
+    float4 highlight;        // a glow at the edges (selected): rgb (the screen's), a = how strong
+    float4 pbr;              // x: metallic, y: roughness, z: the normal map's strength; w: 1 = a metal / rough picture
+    float4 emissive;         // rgb: the light it gives (linear); w: 1 = an emission picture
 };
 // The lights of the frame (Lighting.h's LightBlock: set once per frame).
 cbuffer Lights : register(b1) {
@@ -39,8 +41,20 @@ cbuffer Lights : register(b1) {
 };
 Texture2D shadowMap : register(t0);
 SamplerComparisonState shadowSampler : register(s0);
-Texture2D baseMap : register(t1);
+Texture2D baseMap : register(t1);        // sRGB: read as linear
+Texture2D metalRoughMap : register(t2);  // b: metal, g: rough
+Texture2D normalMap : register(t3);      // tangent space (x right, y up, z out)
+Texture2D emissionMap : register(t4);    // sRGB
 SamplerState baseSampler : register(s1);
+
+static const float PI = 3.14159265;
+
+// The screen's numbers (sRGB) <-> linear light, per component.
+float3 ToLinear(float3 c) { return c <= 0.04045 ? c / 12.92 : pow(abs((c + 0.055) / 1.055), 2.4); }
+float3 ToScreen(float3 c) {
+    c = saturate(c);
+    return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(abs(c), 1.0 / 2.4) - 0.055;
+}
 
 struct LineIn  { float3 pos : POSITION; float4 col : COLOR; };
 struct LineOut { float4 pos : SV_Position; float4 col : COLOR; };
@@ -82,33 +96,77 @@ float Lit(float4 lpos) {
     return sum / 9;
 }
 
-// How much light reaches a point facing n: the sky (every face, faces turned up a little more - even
-// in shadow) and each light (its angle, its fade with distance / out of the cone, its shadow).
-float3 LightAmount(float3 n, float3 wpos, float shadowLit) {
+// One light at a point: what comes (colour x strength x its fade with distance / out of the cone)
+// and from where (toLight). The light's numbers are made by Lighting.h (not changed here).
+float3 LightAt(int l, float3 wpos, out float3 toLight) {
+    toLight = -lightDir[l].xyz;
+    float fade = 1;
+    if (lightPos[l].w > 0.5) {
+        float3 d = lightPos[l].xyz - wpos;
+        float dist = length(d);
+        toLight = d / max(dist, 1e-4);
+        float x = saturate(1 - dist / lightDir[l].w);
+        fade = x * x;
+        if (lightPos[l].w > 1.5) fade *= smoothstep(lightSpot[l].x, lightSpot[l].y, dot(-toLight, lightDir[l].xyz));
+    }
+    return lightColor[l].rgb * fade;
+}
+
+// The light leaving a surface towards the eye (linear): the sky (a little from everywhere, more from
+// above - even in shadow) and each light (diffuse + GGX highlight; its shadow if it has one).
+float3 Shade(float3 albedo, float metal, float rough, float3 n, float3 v, float3 wpos, float shadowLit) {
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metal);  // how much a surface mirrors, head on
+    float3 diffuse = albedo * (1 - metal);                       // metal has no diffuse colour
+    float a = rough * rough;
+    float a2 = a * a;
+    float nv = max(dot(n, v), 1e-4);
+    float k = (rough + 1) * (rough + 1) / 8;
+    // The sky: diffuse from the normal's side, and a dim reflection of it (Fresnel by the angle).
     float sky = 0.5 + 0.5 * n.y;
-    float3 k = 0.30 + 0.12 * sky;
+    float skyMirror = 0.5 + 0.5 * reflect(-v, n).y;
+    float3 fSky = f0 + (max(float3(1 - rough, 1 - rough, 1 - rough), f0) - f0) * pow(1 - nv, 5);
+    float3 c = diffuse * (0.08 + 0.08 * sky) + fSky * (0.08 + 0.12 * skyMirror) * (1 - 0.6 * rough);
     int count = (int)lightInfo.x;
     [loop] for (int l = 0; l < count; ++l) {
-        float3 toLight = -lightDir[l].xyz;
-        float fade = 1;
-        if (lightPos[l].w > 0.5) {
-            float3 d = lightPos[l].xyz - wpos;
-            float dist = length(d);
-            toLight = d / max(dist, 1e-4);
-            float x = saturate(1 - dist / lightDir[l].w);
-            fade = x * x;
-            if (lightPos[l].w > 1.5) fade *= smoothstep(lightSpot[l].x, lightSpot[l].y, dot(-toLight, lightDir[l].xyz));
-        }
-        float s = lightColor[l].w > 0.5 ? shadowLit : 1;
-        k += 0.58 * lightColor[l].rgb * (saturate(dot(n, toLight)) * fade * s);
+        float3 toLight;
+        float3 e = LightAt(l, wpos, toLight) * (lightColor[l].w > 0.5 ? shadowLit : 1);
+        float nl = saturate(dot(n, toLight));
+        if (nl <= 0) continue;
+        float3 h = normalize(toLight + v);
+        float nh = saturate(dot(n, h));
+        float vh = saturate(dot(v, h));
+        float dd = nh * nh * (a2 - 1) + 1;
+        float D = a2 / (PI * dd * dd);                                     // GGX: how many tiny faces turn to h
+        float G = nl / (nl * (1 - k) + k) * (nv / (nv * (1 - k) + k));     // Smith: the ones not hidden
+        float3 F = f0 + (1 - f0) * pow(1 - vh, 5);                         // Schlick: more mirror at a slant
+        float3 spec = D * G * F / max(4 * nl * nv, 1e-4);
+        // Strength 1 on a white face head on = 0.85 (the look the scene had before lights).
+        c += ((1 - F) * diffuse + PI * spec) * e * (nl * 0.85);
     }
-    return k;
+    return c;
+}
+
+// The normal bent by the normal map. The tangents come from how the position and the UV change
+// from pixel to pixel (a "cotangent frame"): no tangents are needed in the vertices.
+float3 Bend(float3 n, MeshOut i) {
+    float3 t = normalMap.Sample(baseSampler, i.uv).xyz * 2 - 1;  // (sampled before any branch)
+    float3 dp1 = ddx(i.wpos), dp2 = ddy(i.wpos);
+    float2 du1 = ddx(i.uv), du2 = ddy(i.uv);
+    if (paint.w < 0.5) return n;
+    float3 dp2perp = cross(dp2, n), dp1perp = cross(n, dp1);
+    float3 T = dp2perp * du1.x + dp1perp * du2.x;
+    float3 B = dp2perp * du1.y + dp1perp * du2.y;  // where V grows: down the picture
+    float m = max(dot(T, T), dot(B, B));
+    if (m < 1e-20) return n;  // no UVs to follow
+    float s = rsqrt(m);
+    t.xy *= pbr.z;
+    return normalize(T * (s * t.x) - B * (s * t.y) + n * t.z);  // the map's +Y is up the picture
 }
 
 // The surface's own colour: the draw's x the material's x the picture. Alpha by the material's mode
 // (opaque: a picture's alpha is no hole; mask: a hole below the cutoff; blend: see-through).
 float4 Paint(MeshOut i) {
-    float4 c = color * material;
+    float4 c = float4(ToLinear(color.rgb), color.a) * material;
     if (paint.x > 0.5) c *= baseMap.Sample(baseSampler, i.uv);
     if (paint.y > 0.5 && paint.y < 1.5) clip(c.a - paint.z);  // mask: a hole, or not
     if (paint.y < 1.5) c.a = color.a;                          // only blend sees through by its alpha
@@ -123,9 +181,14 @@ float4 MeshPS(MeshOut i) : SV_Target {
     float3 n = normalize(i.nrm);
     float3 toEye = normalize(eye.xyz - i.wpos);
     if (dot(n, toEye) < 0) n = -n;
-    float3 rgb = base.rgb * LightAmount(n, i.wpos, Lit(i.lpos));  // the surface's colour x the amount of light
+    float rim = pow(1 - saturate(dot(n, toEye)), 2.5) * highlight.a;  // (by the shape, not the normal map)
+    n = Bend(n, i);
+    float4 mr = metalRoughMap.Sample(baseSampler, i.uv);
+    float metal = pbr.x * (pbr.w > 0.5 ? mr.b : 1);
+    float rough = clamp(pbr.y * (pbr.w > 0.5 ? mr.g : 1), 0.04, 1);
+    float3 glow = emissive.rgb * (emissive.w > 0.5 ? emissionMap.Sample(baseSampler, i.uv).rgb : float3(1, 1, 1));
+    float3 rgb = ToScreen(Shade(base.rgb, metal, rough, n, toEye, i.wpos, Lit(i.lpos)) + glow);
     // Selected: the edges (where the surface turns away from the eye) glow, the colours stay.
-    float rim = pow(1 - saturate(dot(n, toEye)), 2.5) * highlight.a;
     return float4(lerp(rgb, highlight.rgb, rim), base.a);
 }
 
@@ -150,6 +213,8 @@ struct Constants {
     float material[4];
     float paint[4];
     float highlight[4];
+    float pbr[4];
+    float emissive[4];
 };
 static_assert(sizeof(Constants) % 16 == 0);
 static_assert(sizeof(MeshVertex) == 32, "MeshVertex goes to the GPU as it is (POSITION, NORMAL, TEXCOORD)");
@@ -183,7 +248,10 @@ bool Compile(const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DB
 
 // What the GPU needs for a mipmap chain: each level half the one before (2 x 2 averaged; an odd
 // last row / column is averaged with what there is), down to 1 x 1.
-std::vector<platform::Image> Mipmaps(const platform::Image& top) {
+std::vector<platform::Image> Mipmaps(const platform::Image& top, bool srgb) {
+    // Colour pictures are averaged as light (sRGB -> linear -> back), so smaller copies do not darken.
+    float toLinear[256];
+    for (int v = 0; v < 256; ++v) toLinear[v] = srgb ? ScreenToLinear(v / 255.f) : v / 255.f;
     std::vector<platform::Image> levels;
     levels.push_back(top);
     while (levels.back().width > 1 || levels.back().height > 1) {
@@ -197,9 +265,14 @@ std::vector<platform::Image> Mipmaps(const platform::Image& top) {
                 const uint32_t x0 = std::min(x * 2, a.width - 1), x1 = std::min(x * 2 + 1, a.width - 1);
                 const uint32_t y0 = std::min(y * 2, a.height - 1), y1 = std::min(y * 2 + 1, a.height - 1);
                 for (uint32_t k = 0; k < 4; ++k) {
-                    auto at = [&](uint32_t px, uint32_t py) { return static_cast<uint32_t>(a.pixels[(static_cast<size_t>(py) * a.width + px) * 4 + k]); };
-                    b.pixels[(static_cast<size_t>(y) * b.width + x) * 4 + k] =
-                        static_cast<uint8_t>((at(x0, y0) + at(x1, y0) + at(x0, y1) + at(x1, y1) + 2) / 4);
+                    auto at = [&](uint32_t px, uint32_t py) { return a.pixels[(static_cast<size_t>(py) * a.width + px) * 4 + k]; };
+                    uint8_t& out = b.pixels[(static_cast<size_t>(y) * b.width + x) * 4 + k];
+                    if (k < 3 && srgb) {
+                        const float sum = toLinear[at(x0, y0)] + toLinear[at(x1, y0)] + toLinear[at(x0, y1)] + toLinear[at(x1, y1)];
+                        out = static_cast<uint8_t>(LinearToScreen(sum * 0.25f) * 255.f + 0.5f);
+                    } else {
+                        out = static_cast<uint8_t>((uint32_t{at(x0, y0)} + at(x1, y0) + at(x0, y1) + at(x1, y1) + 2) / 4);
+                    }
                 }
             }
         }
@@ -410,7 +483,7 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     return gpu;
 }
 
-std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image& rgba, std::string* error) {
+std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image& rgba, bool srgb, std::string* error) {
     auto fail = [&](const char* why) {
         if (error) *error = why;
         return nullptr;
@@ -420,7 +493,7 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image&
     if (rgba.width > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION || rgba.height > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION) {
         return fail("画像が大きすぎて GPU に載せられません");
     }
-    const std::vector<platform::Image> levels = Mipmaps(rgba);
+    const std::vector<platform::Image> levels = Mipmaps(rgba, srgb);
     std::vector<D3D11_SUBRESOURCE_DATA> init;
     for (const platform::Image& l : levels) init.push_back({l.pixels.data(), l.width * 4, 0});
     D3D11_TEXTURE2D_DESC td{};
@@ -428,7 +501,7 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image&
     td.Height = rgba.height;
     td.MipLevels = static_cast<UINT>(levels.size());
     td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // the picture's numbers as they are (the screen's colours, like the rest)
+    td.Format = srgb ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;  // sRGB: the GPU reads linear light
     td.SampleDesc.Count = 1;
     td.Usage = D3D11_USAGE_IMMUTABLE;
     td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -439,6 +512,7 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image&
     }
     gpu->width = rgba.width;
     gpu->height = rgba.height;
+    gpu->srgb = srgb;
     return gpu;
 }
 
@@ -556,11 +630,13 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         put(c.material, {1, 1, 1, 1});
         put(c.paint, {0, 0, 0, 0});
         put(c.highlight, {0, 0, 0, 0});
+        put(c.pbr, {0, 0.8f, 1, 0});
+        put(c.emissive, {0, 0, 0, 0});
         ctx->UpdateSubresource(cb, 0, nullptr, &c, 0, 0);
         BindMesh(ctx, mesh.vertices.Get(), mesh.indices.Get());
         ctx->DrawIndexed(mesh.indexCount, 0, 0);
     };
-    // Part by part, each with its material (colour, picture, alpha).
+    // Part by part, each with its material (colour, metal / rough, normals, emission, alpha, pictures).
     auto drawPainted = [&](const Item& it) {
         CopyMatrix(c.world, *it.world);
         CopyMatrix(c.normalWorld, NormalMatrix(*it.world));
@@ -575,9 +651,12 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             const DrawMaterial& mat = m ? *m : white;
             put(c.material, mat.color);
             const float mode = mat.alpha == AlphaMode::Mask ? 1.f : mat.alpha == AlphaMode::Blend ? 2.f : 0.f;
-            put(c.paint, {mat.texture ? 1.f : 0.f, mode, mat.alphaCutoff, 0});
-            ID3D11ShaderResourceView* view = mat.texture ? mat.texture->view.Get() : nullptr;
-            ctx->PSSetShaderResources(1, 1, &view);
+            put(c.paint, {mat.texture ? 1.f : 0.f, mode, mat.alphaCutoff, mat.normal ? 1.f : 0.f});
+            put(c.pbr, {mat.metallic, mat.roughness, mat.normalScale, mat.metalRough ? 1.f : 0.f});
+            put(c.emissive, {mat.emissive.r, mat.emissive.g, mat.emissive.b, mat.emission ? 1.f : 0.f});
+            auto view = [](const GpuTexture* t) -> ID3D11ShaderResourceView* { return t ? t->view.Get() : nullptr; };
+            ID3D11ShaderResourceView* views[4] = {view(mat.texture), view(mat.metalRough), view(mat.normal), view(mat.emission)};
+            ctx->PSSetShaderResources(1, 4, views);
             ctx->UpdateSubresource(cb, 0, nullptr, &c, 0, 0);
             ctx->DrawIndexed(part.indexCount, part.firstIndex, 0);
         }
@@ -649,7 +728,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         for (const Item& it : items_) {
             if (it.seen) drawPainted(it);
         }
-        ctx->PSSetShaderResources(1, 1, &noSrv);
+        ID3D11ShaderResourceView* none[4] = {};
+        ctx->PSSetShaderResources(1, 4, none);
     }
     // The shadows on the floor: see-through, over what is already drawn (the depth test still hides
     // the floor behind things), and writing no depth (the grid lies on it).
