@@ -2,19 +2,34 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <deque>
+#include <memory>
 #include <mutex>
+#include <thread>
 
 namespace rm::log {
 
 namespace {
 
 constexpr size_t kRingMax = 2000;
+constexpr size_t kQueueMax = 2000;
+
+struct SinkRec {
+    int id = 0;
+    Sink fn;
+    Delivery delivery = Delivery::AnyThread;
+    bool removed = false;
+    std::vector<std::thread::id> callers;  // threads calling it right now (one entry per call)
+};
 
 struct State {
     std::mutex mtx;
+    std::condition_variable idle;  // a call of a sink has ended
     std::deque<Entry> ring;
-    std::vector<std::pair<int, Sink>> sinks;
+    std::vector<std::shared_ptr<SinkRec>> sinks;
+    std::deque<std::pair<std::shared_ptr<SinkRec>, Entry>> queue;  // for Queued sinks
+    std::function<void()> wake;
     int nextSinkId = 1;
     uint64_t seq = 0;
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
@@ -25,26 +40,62 @@ State& S() {
     return s;
 }
 
+// Calls `rec` with `e` unless it was removed; RemoveSink (on another thread) waits for the call to end.
+void Call(State& s, const std::shared_ptr<SinkRec>& rec, const Entry& e) {
+    const auto me = std::this_thread::get_id();
+    {
+        std::lock_guard lock(s.mtx);
+        if (rec->removed) return;
+        rec->callers.push_back(me);
+    }
+    // Outside the lock: a sink may log or read Snapshot() itself.
+    rec->fn(e);
+    {
+        std::lock_guard lock(s.mtx);
+        rec->callers.erase(std::find(rec->callers.begin(), rec->callers.end(), me));
+    }
+    s.idle.notify_all();
+}
+
 }  // namespace
 
-int AddSink(Sink sink) {
+int AddSink(Sink sink, Delivery delivery) {
     auto& s = S();
     std::lock_guard lock(s.mtx);
-    const int id = s.nextSinkId++;
-    s.sinks.emplace_back(id, std::move(sink));
-    return id;
+    auto rec = std::make_shared<SinkRec>();
+    rec->id = s.nextSinkId++;
+    rec->fn = std::move(sink);
+    rec->delivery = delivery;
+    s.sinks.push_back(rec);
+    return rec->id;
 }
 
 void RemoveSink(int id) {
     auto& s = S();
+    std::unique_lock lock(s.mtx);
+    const auto it = std::find_if(s.sinks.begin(), s.sinks.end(), [id](const auto& r) { return r->id == id; });
+    if (it == s.sinks.end()) return;
+    const std::shared_ptr<SinkRec> rec = *it;
+    s.sinks.erase(it);
+    rec->removed = true;
+    std::erase_if(s.queue, [&](const auto& q) { return q.first == rec; });
+    // Wait for calls on other threads (a call on this thread - the sink removing itself - cannot end
+    // before we return, and it is the caller's own business).
+    const auto me = std::this_thread::get_id();
+    s.idle.wait(lock, [&] { return std::all_of(rec->callers.begin(), rec->callers.end(), [&](const auto& t) { return t == me; }); });
+}
+
+void SetWake(std::function<void()> wake) {
+    auto& s = S();
     std::lock_guard lock(s.mtx);
-    std::erase_if(s.sinks, [id](const auto& p) { return p.first == id; });
+    s.wake = std::move(wake);
 }
 
 void Write(Level level, std::string text) {
     auto& s = S();
     Entry e;
-    std::vector<Sink> sinks;
+    std::vector<std::shared_ptr<SinkRec>> now;
+    std::function<void()> wake;
     {
         std::lock_guard lock(s.mtx);
         e.level = level;
@@ -53,11 +104,29 @@ void Write(Level level, std::string text) {
         e.text = std::move(text);
         s.ring.push_back(e);
         if (s.ring.size() > kRingMax) s.ring.pop_front();
-        sinks.reserve(s.sinks.size());
-        for (const auto& [id, sink] : s.sinks) sinks.push_back(sink);
+        const bool wasEmpty = s.queue.empty();
+        for (const auto& rec : s.sinks) {
+            if (rec->delivery == Delivery::AnyThread) {
+                now.push_back(rec);
+            } else {
+                s.queue.emplace_back(rec, e);
+                if (s.queue.size() > kQueueMax) s.queue.pop_front();
+            }
+        }
+        if (wasEmpty && !s.queue.empty()) wake = s.wake;
     }
-    // Sinks run outside the lock so they may log or read Snapshot() themselves.
-    for (const auto& sink : sinks) sink(e);
+    for (const auto& rec : now) Call(s, rec, e);
+    if (wake) wake();
+}
+
+void DeliverQueued() {
+    auto& s = S();
+    std::deque<std::pair<std::shared_ptr<SinkRec>, Entry>> taken;
+    {
+        std::lock_guard lock(s.mtx);
+        taken.swap(s.queue);
+    }
+    for (const auto& [rec, e] : taken) Call(s, rec, e);
 }
 
 std::vector<Entry> Snapshot() {

@@ -66,7 +66,44 @@ struct Speed final {
     const std::string out = EmitHeader(r.headers, h);
     CHECK(out.find("FieldCount<::game::data::Speed>() == 4") != std::string::npos);
     CHECK(out.find(".min = -1.5") != std::string::npos && out.find(".step = 0.25") != std::string::npos);
-    CHECK(OutputName("a/b/C.h") == "a_b_C.reflect.cpp");
+    CHECK(OutputName("a/b/C.h").starts_with("a_b_C.") && OutputName("a/b/C.h").ends_with(".reflect.cpp"));
+}
+
+RM_TEST(Rmgen_OutputNamesNeverMeet) {
+    // Paths that read the same once '/' is '_' still make different files (a hash of the whole path).
+    CHECK(OutputName("rm_engine/game_x_3d/A.h") != OutputName("rm_engine/game_x/3d/A.h"));
+    CHECK(OutputName("core/x/A.h") != OutputName("core_x/A.h"));
+    CHECK(OutputName("a/b/C.h") == OutputName("a\\b\\C.h"));  // the same path either way
+    CHECK(OutputName("a/b/C.h") == OutputName("a/b/C.h"));    // and the same every build
+    CHECK(OutputName("a/b/C.h").size() == std::string("a_b_C.12345678.reflect.cpp").size());
+
+    // Two headers with the same include path (a plugin author named "core" next to src/core; or only
+    // the case differs - one file on Windows): rmgen stops (RM0012) instead of writing one over the other.
+    const char* text = "RM_STRUCT()\nstruct A {\n    RM_PROPERTY() int a = 0;\n};\n";
+    const char* other = "RM_STRUCT()\nstruct B {\n    RM_PROPERTY() int b = 0;\n};\n";
+    std::vector<Diagnostic> diags;
+    std::vector<Header> headers;
+    headers.push_back(Scan(text, "src/core/x/A.h", "core/x/A.h", diags));
+    headers.push_back(Scan(other, "plugins/core/x/A.h", "core/x/A.h", diags));
+    Validate(headers, diags);
+    bool found = false;
+    for (const auto& d : diags) found = found || (d.code == "RM0012" && d.file == "plugins/core/x/A.h");
+    CHECK(found);
+    diags.clear();
+    headers.clear();
+    headers.push_back(Scan(text, "1/A.h", "game/A.h", diags));
+    headers.push_back(Scan(other, "2/A.h", "Game/A.h", diags));
+    Validate(headers, diags);
+    found = false;
+    for (const auto& d : diags) found = found || d.code == "RM0012";
+    CHECK(found);
+    // Different paths: no error.
+    diags.clear();
+    headers.clear();
+    headers.push_back(Scan(text, "1/A.h", "rm_engine/game_x_3d/A.h", diags));
+    headers.push_back(Scan(other, "2/A.h", "rm_engine/game_x/3d/A.h", diags));
+    Validate(headers, diags);
+    CHECK(diags.empty());
 }
 
 RM_TEST(Rmgen_T4_UnannotatedFieldIsAnError) {

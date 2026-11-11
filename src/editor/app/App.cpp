@@ -48,12 +48,19 @@ int App::Run(const LaunchOptions& options) {
     }
     ApplyPending();
 
+    // Log entries for the windows (queued sinks) are given here, on this thread; a log written on another
+    // thread wakes the loop up for it.
+    const DWORD uiThread = GetCurrentThreadId();
+    log::SetWake([uiThread] { PostThreadMessageW(uiThread, WM_NULL, 0, 0); });
+    log::DeliverQueued();
     MSG msg;
     while (running_ && GetMessageW(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
+        log::DeliverQueued();
         ApplyPending();
     }
+    log::SetWake({});
     if (screen_) screen_->Close();
     screen_.reset();
     return 0;

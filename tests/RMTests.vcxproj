@@ -55,6 +55,7 @@
   <ItemGroup>
     <ClCompile Include="TestMain.cpp" />
     <ClCompile Include="TestBase.cpp" />
+    <ClCompile Include="TestLog.cpp" />
     <ClCompile Include="TestCore.cpp" />
     <ClCompile Include="TestDock.cpp" />
     <ClCompile Include="TestPlugin.cpp" />

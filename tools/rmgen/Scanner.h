@@ -18,6 +18,7 @@
 //   RM0009  the same type name twice
 //   RM0010  more than 64 fields
 //   RM0011  private / protected / base classes (reflected types are plain public structs)
+//   RM0012  two headers that would make the same generated file (or have the same include path)
 
 #include <string>
 #include <string_view>
@@ -94,7 +95,9 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags);
 // The generated .cpp of one header, and the table of every type.
 std::string EmitHeader(const std::vector<Header>& all, const Header& h);
 std::string EmitAll(const std::vector<Header>& all);
-// File name of the generated .cpp for an include path ("a/b/C.h" -> "a_b_C.reflect.cpp").
+// File name of the generated .cpp for an include path: readable, plus a hash of the whole path so two
+// paths never meet ("a/b_c/D.h" and "a/b/c/D.h" both read a_b_c_D): "a/b/C.h" -> "a_b_C.<8 hex>.reflect.cpp".
+// Validate still checks every pair (RM0012), ignoring case as Windows does.
 std::string OutputName(const std::string& includePath);
 
 }  // namespace rmgen

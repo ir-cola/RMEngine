@@ -119,7 +119,9 @@ bool EditorScreen::Open() {
         w->dock.onRedrawAll = [this] { RedrawAll(); };
     }
     SyncFloating(false);  // panel windows saved last time come back without taking the focus
-    logSink_ = log::AddSink([this](const log::Entry&) { RedrawAll(); });
+    // Queued: a log written on a worker thread reaches the windows on this (the UI) thread, from the
+    // App's message loop (log::DeliverQueued) - RedrawAll touches the windows.
+    logSink_ = log::AddSink([this](const log::Entry&) { RedrawAll(); }, log::Delivery::Queued);
     log::Info("エディターを開きました: {} ({})", project_.Name(), WideToUtf8(Active().Title()));
     UpdateTitle();
     SetTimer(Hwnd(), kAutoSaveTimer, 15000, nullptr);  // looks every 15 s; saves at the chosen interval

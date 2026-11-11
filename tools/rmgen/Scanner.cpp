@@ -1,6 +1,7 @@
 #include "Scanner.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <format>
 #include <map>
 #include <set>
@@ -744,6 +745,28 @@ Header Scan(std::string_view text, const std::string& file, const std::string& i
 }
 
 void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
+    // Two headers must not make the same file, nor have the same include path (one would hide the
+    // other). Compared without case: Windows' files do not tell "A" from "a".
+    {
+        auto lower = [](std::string s) {
+            for (char& c : s) c = (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : (c == '\\' ? '/' : c);
+            return s;
+        };
+        std::map<std::string, const Header*> paths, outputs;
+        for (const Header& h : headers) {
+            if (const auto [it, fresh] = paths.emplace(lower(h.includePath), &h); !fresh) {
+                diags.push_back({h.file, 1, 1, "RM0012",
+                                 std::format("#include のパス \"{}\" が {} と同じです (--root のどれから見ても違うパスにしてください)",
+                                             h.includePath, it->second->file)});
+                continue;
+            }
+            if (const auto [it, fresh] = outputs.emplace(lower(OutputName(h.includePath)), &h); !fresh) {
+                diags.push_back({h.file, 1, 1, "RM0012",
+                                 std::format("作るファイル {} が {} のものと同じになります (ヘッダーの名前か場所を変えてください)",
+                                             OutputName(h.includePath), it->second->file)});
+            }
+        }
+    }
     struct Known {
         std::string qualified;
         bool isEnum;
@@ -853,9 +876,14 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
 
 std::string OutputName(const std::string& includePath) {
     std::string s;
-    for (const char c : includePath) s += (c == '/' || c == '\\') ? '_' : c;
+    uint32_t hash = 2166136261u;  // FNV-1a of the whole path ('\' read as '/')
+    for (const char c : includePath) {
+        const char k = c == '\\' ? '/' : c;
+        hash = (hash ^ static_cast<uint8_t>(k)) * 16777619u;
+        s += k == '/' ? '_' : k;
+    }
     if (s.ends_with(".h")) s.resize(s.size() - 2);
-    return s + ".reflect.cpp";
+    return std::format("{}.{:08x}.reflect.cpp", s, hash);
 }
 
 std::string EmitHeader(const std::vector<Header>& all, const Header& h) {
