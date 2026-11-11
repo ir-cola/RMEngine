@@ -332,6 +332,7 @@ Assets/                                   core/asset (ゲームに入る)
 | 右クリック | メニューの枠 (+「名前を変更 F2」)。何も無い所の右クリックは選択を外してから | `Actions(selection)`: 行と、そのショートカット (木が最後にクリックされた所で、文字の入力中でないときに効く) |
 
 - 純粋な部分 (`TreeModel`: 見える行・検索・選択・落とす場所) はテストあり (`tests/TestTree.cpp`)。描画と入力 (`TreeView`) はそれを使うだけ
+- **重さ**: 毎フレームの仕事は「項目の数 + 選んだ数」に比例させ、「項目 × 選んだ物」にしない。id から位置は `ItemIndex` (フレームに 1 回作る)、選んだ物・動かす物は集合 (`Selection::Set()`) で引く。`Prune`・`Roots`・Shift の範囲・落とす場所 (`SiblingsBefore` / 自分の中に落とさない判定は親から 1 回たどるだけ) も同じ。2 万項目を全部選ぶテストあり (`Tree_ThousandsAllSelected_StayLight`)
 - 選択・開いている物・検索の文字はソフトごと (`Workspace::treeState`)。**閉じた物と選択は覚える**: `tree::SaveState` / `LoadState` で `Layout.json` のソフトの行の `"tree"` に (配置と同じとき。プロジェクトのデータではない)。消えた物の ID は次の描画で忘れる
 - 行の絵: `Item::icon` (`tree::Icon`: 無し / 物 (丸) / 立方体)。ソフトが選ぶ。ゲームは部品が決める (`ComponentInfo::icon` の名前 → `tree::IconNamed`。最後の部品の絵、無ければ丸)
 - **コピー / 切り取り / 貼り付け**: ゲーム制作の `Scene::Copy` / `Paste` (純粋でテストあり)。クリップボードにはファイルと同じ形のエンティティを JSON の文字で (`SoftwareHost::SetClipboard` / `Clipboard`)。貼ると新しい ID、クリップの中の親子は前に出てきた親だけをたどる (輪にならない)。別のプロジェクトにも貼れる

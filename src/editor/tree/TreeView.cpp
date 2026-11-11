@@ -40,13 +40,13 @@ size_t RowOf(std::span<const Item> items, std::span<const Row> rows, ItemId id) 
 }
 
 // Opens every ancestor of `id`, so the row can be seen.
-void Reveal(State& st, std::span<const Item> items, ItemId id) {
-    size_t i = Find(items, id);
+void Reveal(State& st, std::span<const Item> items, const ItemIndex& index, ItemId id) {
+    size_t i = index.Find(id);
     for (size_t steps = 0; i != npos && steps <= items.size(); ++steps) {
         const ItemId parent = items[i].parent;
         if (parent == 0) break;
         st.collapsed.erase(parent);
-        i = Find(items, parent);
+        i = index.Find(parent);
     }
 }
 
@@ -151,8 +151,9 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     // The picture: the Icon's width in a short row, square and as tall as the row allows in a tall one.
     const float pictureW = std::max(kIconW, kRowH - 6.f);
     const std::vector<ItemId> before = st.sel.ids;
+    const ItemIndex index(items);  // finding by id, all frame long (thousands of items stay light)
     // Closed items that are gone (deleted) are forgotten, so the kept list does not grow forever.
-    std::erase_if(st.collapsed, [&](ItemId id) { return Find(items, id) == static_cast<size_t>(-1); });
+    std::erase_if(st.collapsed, [&](ItemId id) { return !index.Has(id); });
 
     // --- What the software asked for, and what disappeared ------------------------------
     if (st.hasPending) {
@@ -161,18 +162,18 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         st.pending.clear();
         Prune(st.sel, items);
         st.sel.anchor = st.sel.focus = st.sel.ids.empty() ? 0 : st.sel.ids.front();
-        for (const ItemId id : st.sel.ids) Reveal(st, items, id);
+        for (const ItemId id : st.sel.ids) Reveal(st, items, index, id);
         st.scrollTo = st.sel.focus;
         if (st.pendingRename && st.sel.ids.size() == 1 && src.CanRename(st.sel.ids[0])) {
-            StartRename(st, items[Find(items, st.sel.ids[0])]);
+            StartRename(st, items[index.Find(st.sel.ids[0])]);
             st.filter.clear();  // the new item must be visible to be renamed
         }
         st.pendingRename = false;
         if (!st.sel.ids.empty()) st.hasKeys = true;  // Delete / F2 work on what was just made
     }
     Prune(st.sel, items);
-    if (st.renaming != 0 && Find(items, st.renaming) == npos) st.renaming = 0;
-    std::erase_if(st.moving, [&](ItemId id) { return Find(items, id) == npos; });
+    if (st.renaming != 0 && !index.Has(st.renaming)) st.renaming = 0;
+    std::erase_if(st.moving, [&](ItemId id) { return !index.Has(id); });
 
     // --- Search box ------------------------------------------------------------------------
     Rect body = area;
@@ -285,12 +286,13 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
 
     // --- Rows ------------------------------------------------------------------------------------
     bool rowPressed = false, rowRightClicked = false, renameDrawn = false;
+    const std::unordered_set<ItemId> selectedSet = st.sel.Set();  // once, not per row
     for (size_t r = 0; r < rows.size(); ++r) {
         const Rect row = rowRect(r);
         if (row.Bottom() < view.y || row.y > view.Bottom()) continue;
         const Row& rw = rows[r];
         const Item& it = items[rw.item];
-        const bool selected = st.sel.Contains(it.id);
+        const bool selected = selectedSet.contains(it.id);
         const float indentX = view.x + 8 + kIndent * static_cast<float>(rw.depth);
         const Rect arrow{indentX, row.y, kArrow, row.h};
         const float nameX = textX(rw.depth) + (it.icon != Icon::None ? pictureW + 2 + (pictureW > kIconW ? 4.f : 0.f) : 0.f);

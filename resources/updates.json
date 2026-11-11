@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "階層に数千の物があって全部選んでも重くならないように (選んだ物を探すのを集合と索引にした)",
+          "en": "The Hierarchy stays light with thousands of items, even with all of them selected (selection lookups now use sets and an index)"
+        },
+        {
           "ja": "GPU がリセットされたとき (ドライバーの更新・落ち直しなど) に、画面が真っ黒のまま止まらず、作り直して続けられるように。作り直せないときは保存を勧める",
           "en": "When the GPU is reset (a driver update or crash), the screen no longer stays black: the editor rebuilds its graphics and carries on, and offers to save when it cannot"
         },

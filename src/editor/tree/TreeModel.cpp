@@ -42,20 +42,30 @@ std::vector<size_t> ParentIndices(std::span<const Item> items) {
     return parent;
 }
 
-bool Contains(std::span<const ItemId> ids, ItemId id) { return std::find(ids.begin(), ids.end(), id) != ids.end(); }
+using IdSet = std::unordered_set<ItemId>;
+IdSet SetOf(std::span<const ItemId> ids) { return {ids.begin(), ids.end()}; }
 
 // How many children of `parent` that are not moving come before list position `stop`.
-size_t SiblingsBefore(std::span<const Item> items, ItemId parent, size_t stop, std::span<const ItemId> moving) {
+size_t SiblingsBefore(std::span<const Item> items, ItemId parent, size_t stop, const IdSet& moving) {
     size_t n = 0;
     for (size_t i = 0; i < stop && i < items.size(); ++i) {
-        if (items[i].parent == parent && !Contains(moving, items[i].id)) ++n;
+        if (items[i].parent == parent && !moving.contains(items[i].id)) ++n;
     }
     return n;
 }
 
-bool ParentAllowed(std::span<const Item> items, ItemId parent, std::span<const ItemId> moving) {
+// Not into a moving item or below one: walk up from `parent` once (not once per moving item).
+bool ParentAllowed(std::span<const Item> items, ItemId parent, const IdSet& moving) {
     if (parent == 0) return true;
-    return std::none_of(moving.begin(), moving.end(), [&](ItemId m) { return IsUnder(items, parent, m); });
+    const ItemIndex index(items);
+    ItemId cur = parent;
+    for (size_t steps = 0; cur != 0 && steps <= items.size(); ++steps) {
+        if (moving.contains(cur)) return false;
+        const size_t i = index.Find(cur);
+        if (i == npos) break;
+        cur = items[i].parent;
+    }
+    return true;
 }
 
 }  // namespace
@@ -106,6 +116,16 @@ std::vector<Row> VisibleRows(std::span<const Item> items, const std::unordered_s
     return rows;
 }
 
+ItemIndex::ItemIndex(std::span<const Item> items) {
+    map_.reserve(items.size());
+    for (size_t i = 0; i < items.size(); ++i) map_.emplace(items[i].id, i);
+}
+
+size_t ItemIndex::Find(ItemId id) const {
+    const auto it = map_.find(id);
+    return it == map_.end() ? npos : it->second;
+}
+
 size_t Find(std::span<const Item> items, ItemId id) {
     for (size_t i = 0; i < items.size(); ++i) {
         if (items[i].id == id) return i;
@@ -145,9 +165,10 @@ void Click(Selection& sel, std::span<const Item> items, std::span<const Row> row
         const size_t a = rowOf(sel.anchor), b = rowOf(id);
         if (a != npos && b != npos) {
             if (!ctrl) sel.ids.clear();
+            IdSet have = sel.Set();
             for (size_t r = std::min(a, b); r <= std::max(a, b); ++r) {
                 const ItemId x = items[rows[r].item].id;
-                if (!sel.Contains(x)) sel.ids.push_back(x);
+                if (have.insert(x).second) sel.ids.push_back(x);
             }
             sel.focus = id;
             Prune(sel, items);  // display order
@@ -174,25 +195,34 @@ void SelectAll(Selection& sel, std::span<const Item> items, std::span<const Row>
 }
 
 bool Prune(Selection& sel, std::span<const Item> items) {
+    // Every frame: items + selected, never items x selected.
+    const IdSet selected = sel.Set();
     std::vector<ItemId> kept;
+    kept.reserve(sel.ids.size());
+    bool anchorThere = sel.anchor == 0, focusThere = sel.focus == 0;
     for (const Item& it : items) {
-        if (sel.Contains(it.id)) kept.push_back(it.id);
+        if (selected.contains(it.id)) kept.push_back(it.id);
+        anchorThere |= it.id == sel.anchor;
+        focusThere |= it.id == sel.focus;
     }
     const bool changed = kept != sel.ids;
     sel.ids = std::move(kept);
-    if (Find(items, sel.anchor) == npos) sel.anchor = 0;
-    if (Find(items, sel.focus) == npos) sel.focus = 0;
+    if (!anchorThere) sel.anchor = 0;
+    if (!focusThere) sel.focus = 0;
     return changed;
 }
 
 std::vector<ItemId> Roots(std::span<const Item> items, std::span<const ItemId> ids) {
     const std::vector<size_t> parent = ParentIndices(items);
+    const IdSet selected = SetOf(ids);
+    // covered[i]: item i is selected or below a selected one (parents come first in the list).
+    std::vector<bool> covered(items.size(), false);
     std::vector<ItemId> out;
     for (size_t i = 0; i < items.size(); ++i) {
-        if (!Contains(ids, items[i].id)) continue;
-        bool covered = false;
-        for (size_t p = parent[i]; p != npos && !covered; p = parent[p]) covered = Contains(ids, items[p].id);
-        if (!covered) out.push_back(items[i].id);
+        const bool underSelected = parent[i] != npos && covered[parent[i]];
+        const bool isSelected = selected.contains(items[i].id);
+        covered[i] = underSelected || isSelected;
+        if (isSelected && !underSelected) out.push_back(items[i].id);
     }
     return out;
 }
@@ -202,7 +232,8 @@ std::optional<Drop> DropOnRow(std::span<const Item> items, std::span<const Row> 
     if (rowIndex >= rows.size()) return std::nullopt;
     const Row& row = rows[rowIndex];
     const Item& it = items[row.item];
-    const bool movingItself = Contains(moving, it.id);
+    const IdSet movingSet = SetOf(moving);
+    const bool movingItself = movingSet.contains(it.id);
 
     Drop d;
     d.target = it.id;
@@ -211,7 +242,7 @@ std::optional<Drop> DropOnRow(std::span<const Item> items, std::span<const Row> 
     if (fraction < before) {
         d.mark = Drop::Mark::Before;
         d.parent = it.parent;
-        d.index = SiblingsBefore(items, it.parent, row.item, moving);
+        d.index = SiblingsBefore(items, it.parent, row.item, movingSet);
     } else if (fraction >= after) {
         d.mark = Drop::Mark::After;
         if (row.expanded) {
@@ -220,14 +251,14 @@ std::optional<Drop> DropOnRow(std::span<const Item> items, std::span<const Row> 
             d.index = 0;
         } else {
             d.parent = it.parent;
-            d.index = SiblingsBefore(items, it.parent, row.item, moving) + (movingItself ? 0 : 1);
+            d.index = SiblingsBefore(items, it.parent, row.item, movingSet) + (movingItself ? 0 : 1);
         }
     } else {
         d.mark = Drop::Mark::Inside;
         d.parent = it.id;
-        d.index = SiblingsBefore(items, it.id, items.size(), moving);
+        d.index = SiblingsBefore(items, it.id, items.size(), movingSet);
     }
-    if (!ParentAllowed(items, d.parent, moving)) return std::nullopt;
+    if (!ParentAllowed(items, d.parent, movingSet)) return std::nullopt;
     return d;
 }
 
@@ -235,7 +266,7 @@ Drop DropAtEnd(std::span<const Item> items, std::span<const ItemId> moving) {
     Drop d;
     d.mark = Drop::Mark::End;
     d.parent = 0;
-    d.index = SiblingsBefore(items, 0, items.size(), moving);
+    d.index = SiblingsBefore(items, 0, items.size(), SetOf(moving));
     return d;
 }
 

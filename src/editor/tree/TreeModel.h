@@ -12,6 +12,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -62,8 +63,21 @@ struct Row {
 std::vector<Row> VisibleRows(std::span<const Item> items, const std::unordered_set<ItemId>& collapsed, std::string_view filter);
 bool NameMatches(std::string_view name, std::string_view filter);
 
-// Index of an item in the list, or npos.
+// Index of an item in the list, or npos. Looks through the list: for many lookups, ItemIndex.
 size_t Find(std::span<const Item> items, ItemId id);
+
+// id -> position in the list, made once (per frame) so that finding by id costs nothing. Every
+// function here that looks things up for each item or each selected one uses it (or a set): a
+// tree of thousands of items, all selected, stays light (no work that grows with items x selected).
+class ItemIndex {
+public:
+    explicit ItemIndex(std::span<const Item> items);
+    size_t Find(ItemId id) const;  // npos when missing
+    bool Has(ItemId id) const { return map_.contains(id); }
+
+private:
+    std::unordered_map<ItemId, size_t> map_;
+};
 // True when `id` is `ancestor` itself or somewhere below it.
 bool IsUnder(std::span<const Item> items, ItemId id, ItemId ancestor);
 
@@ -72,7 +86,8 @@ struct Selection {
     ItemId anchor = 0;        // where a Shift range starts
     ItemId focus = 0;         // the keyboard cursor / last clicked
 
-    bool Contains(ItemId id) const;
+    bool Contains(ItemId id) const;  // looks through ids: for every row of a frame, use Set()
+    std::unordered_set<ItemId> Set() const { return {ids.begin(), ids.end()}; }
     bool operator==(const Selection&) const = default;
 };
 

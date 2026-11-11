@@ -4,6 +4,8 @@
 
 #include "editor/tree/TreeModel.h"
 
+#include <chrono>
+
 using namespace rm::editor::tree;
 
 namespace {
@@ -154,4 +156,49 @@ RM_TEST(Tree_IconNamed) {
     CHECK(IconNamed("light") == Icon::Light);
     CHECK(IconNamed("teapot") == Icon::None);
     CHECK(IconNamed("") == Icon::None);
+}
+
+RM_TEST(Tree_ItemIndex) {
+    const auto items = Sample();
+    const ItemIndex index(items);
+    CHECK(index.Find(4) == 3 && index.Find(1) == 0);
+    CHECK(index.Find(99) == static_cast<size_t>(-1) && !index.Has(99) && index.Has(6));
+}
+
+// Thousands of items, all selected: every step stays proportional to items + selected (it used to
+// look through the selection for each item, and rebuild an index for each moving item).
+RM_TEST(Tree_ThousandsAllSelected_StayLight) {
+    constexpr ItemId kGroups = 200, kEach = 100;  // 200 parents with 100 children each = 20 200 items
+    std::vector<Item> items;
+    for (ItemId g = 1; g <= kGroups; ++g) {
+        const ItemId parent = g * 1000;
+        items.push_back({parent, 0, "group"});
+        for (ItemId k = 1; k <= kEach; ++k) items.push_back({parent + k, parent, "child"});
+    }
+    const auto start = std::chrono::steady_clock::now();
+
+    const std::vector<Row> rows = VisibleRows(items, {}, "");
+    CHECK(rows.size() == items.size());
+    Selection sel;
+    SelectAll(sel, items, rows);
+    CHECK(sel.ids.size() == items.size());
+    for (int frame = 0; frame < 10; ++frame) CHECK(!Prune(sel, items));  // every frame
+    // Shift+click over everything (the range adds what is not selected yet)
+    Selection range;
+    SelectOnly(range, items.front().id);
+    Click(range, items, rows, items.back().id, false, true);
+    CHECK(range.ids.size() == items.size());
+    // Only the groups move as a whole (their children go with them).
+    const auto roots = Roots(items, sel.ids);
+    CHECK(roots.size() == kGroups && roots.front() == 1000);
+    // Dropping everything somewhere: never into itself, counted without the moving ones.
+    CHECK(!DropOnRow(items, rows, 5, 0.5f, sel.ids));
+    const Drop end = DropAtEnd(items, sel.ids);
+    CHECK(end.index == 0);
+    const auto onlyLast = std::vector<ItemId>{items.back().id};
+    const auto d = DropOnRow(items, rows, 0, 0.5f, onlyLast);
+    CHECK(d && d->parent == 1000 && d->index == kEach);
+
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    CHECK(seconds < 3.0);  // generous: the quadratic version took far longer at this size
 }

@@ -651,11 +651,12 @@ inspector::Refs EditorScreen::MakeRefs() {
         std::vector<tree::Item> items;
         src->Items(items);
         std::vector<inspector::RefChoice> out;
+        const tree::ItemIndex index(items);
         for (const tree::Item& it : items) {
             inspector::RefChoice r;
             r.value = std::to_string(it.id);
             r.name = Utf8ToWide(it.name);
-            const size_t p = it.parent != 0 ? tree::Find(items, it.parent) : static_cast<size_t>(-1);
+            const size_t p = it.parent != 0 ? index.Find(it.parent) : static_cast<size_t>(-1);
             if (p != static_cast<size_t>(-1)) r.detail = Utf8ToWide(items[p].name);
             r.icon = tree::PictureOf(it.icon);
             out.push_back(std::move(r));
