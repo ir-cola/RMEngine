@@ -74,4 +74,19 @@ def ball(x, y):
 
 
 write_png(os.path.join(out, "ball.png"), 100, 100, ball)
+
+
+# walker.png: 64 x 16 = 4 cells of 16 x 16 (a sprite sheet: 横のコマ数 4) - the slime squashing and
+# stretching, for スプライトのアニメーション.
+def walker(x, y):
+    cell, cx = divmod(x, 16)
+    squash = [0, 1, 2, 1][cell]  # rows taken off the top (and added to the width)
+    sy = y - squash
+    if sy < 0:
+        return COLORS["."]
+    row = SLIME[min(15, max(0, 3 + (sy - 3) * 13 // (13 - squash) if sy >= 3 else sy))]
+    return COLORS[row[cx]]
+
+
+write_png(os.path.join(out, "walker.png"), 64, 16, walker)
 print("wrote", out)

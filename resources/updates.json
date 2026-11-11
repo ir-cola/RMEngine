@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "2D のシーンビュー: 四角で囲んで選ぶ・ギズモの「それぞれ / 中心」(Z)・刻みの幅を決める箱。スプライトのアトラス (1 枚の画像をコマに切る) と部品「スプライトのアニメーション」(Play でコマ送り)。カメラ (2D) がエンティティと一緒に回る。3D のゲームのゲームビューに、カメラ (2D) で見た 2D の絵を重ねる (「3D の上に重ねる」)",
+          "en": "2D scene view: box selection, the gizmo's Each / Center (Z) and a box to set the snap steps. Sprite atlases (one image cut into cells) and a new Sprite Animation component (steps through cells in Play). Camera (2D) turns with its entity. In a 3D game, the game view lays the 2D picture seen through a Camera (2D) over the 3D one (Overlay on 3D)"
+        },
+        {
           "ja": "3D モデルの金属・ざらざら・法線マップ・光る色 (glTF の PBR の材質と .mtl の Ns / Pr / Pm / Ke / 法線の絵)。光の計算を本物の光の量 (リニア) で行うようにした",
           "en": "Metal, roughness, normal maps and emission on 3D models (glTF PBR materials; .mtl Ns / Pr / Pm / Ke / normal pictures). Lighting is now worked out in linear light"
         },
