@@ -4,6 +4,7 @@
 
 #include <bcrypt.h>
 #include <dwmapi.h>
+#include <shellapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <wrl/client.h>
@@ -60,6 +61,52 @@ void ShowInExplorer(const std::filesystem::path& path) {
     if (!pidl) return;
     SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0);
     ILFree(pidl);
+}
+
+void OpenFolder(const std::filesystem::path& folder) {
+    ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string* error) {
+    if (paths.empty()) return true;
+    // SHFileOperation wants the paths one after another, each ending with a 0, and one more 0 at the end.
+    std::wstring list;
+    for (const auto& p : paths) {
+        list += p.native();
+        list.push_back(L'\0');
+    }
+    list.push_back(L'\0');
+    SHFILEOPSTRUCTW op{};
+    op.wFunc = FO_DELETE;
+    op.pFrom = list.c_str();
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+    const int r = SHFileOperationW(&op);
+    if (r != 0 || op.fAnyOperationsAborted) {
+        if (error) *error = r != 0 ? ErrorText(static_cast<DWORD>(r)) : std::string("途中で止められました");
+        return false;
+    }
+    return true;
+}
+
+FolderWatch::~FolderWatch() {
+    if (handle_) FindCloseChangeNotification(handle_);
+}
+
+bool FolderWatch::Start(const std::filesystem::path& folder) {
+    if (handle_) FindCloseChangeNotification(handle_);
+    handle_ = FindFirstChangeNotificationW(folder.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME);
+    if (handle_ == INVALID_HANDLE_VALUE) handle_ = nullptr;
+    return handle_ != nullptr;
+}
+
+bool FolderWatch::Changed() {
+    if (!handle_ || WaitForSingleObject(handle_, 0) != WAIT_OBJECT_0) return false;
+    // Several changes in a row are one: wait for the next only after this one is seen.
+    if (!FindNextChangeNotification(handle_)) {
+        FindCloseChangeNotification(handle_);
+        handle_ = nullptr;
+    }
+    return true;
 }
 
 std::filesystem::path GetKnownFolder(KnownFolder which) {

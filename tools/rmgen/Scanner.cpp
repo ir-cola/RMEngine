@@ -335,7 +335,7 @@ private:
         static const Rule kProperty[] = {{"Edit", Attr::Kind::Flag},       {"ReadOnly", Attr::Kind::Flag},
                                          {"Label", Attr::Kind::String},    {"Tooltip", Attr::Kind::String},
                                          {"Min", Attr::Kind::Number},      {"Max", Attr::Kind::Number},
-                                         {"Step", Attr::Kind::Number}};
+                                         {"Step", Attr::Kind::Number},     {"AssetKind", Attr::Kind::String}};
         static const Rule kLabelOnly[] = {{"Label", Attr::Kind::String}};
         std::span<const Rule> rules;
         if (macro == "RM_PROPERTY") {
@@ -628,6 +628,8 @@ private:
                 {"std::int32_t", TypeRef::Kind::Int}, {"float", TypeRef::Kind::Float},  {"std::string", TypeRef::Kind::String},
                 {"Vec2", TypeRef::Kind::Vec2},      {"rm::Vec2", TypeRef::Kind::Vec2},   {"Vec3", TypeRef::Kind::Vec3},
                 {"rm::Vec3", TypeRef::Kind::Vec3},  {"Color", TypeRef::Kind::Color},     {"rm::Color", TypeRef::Kind::Color},
+                {"AssetRef", TypeRef::Kind::AssetRef}, {"rm::AssetRef", TypeRef::Kind::AssetRef},
+                {"EntityRef", TypeRef::Kind::EntityRef}, {"rm::EntityRef", TypeRef::Kind::EntityRef},
             };
             static const std::set<std::string> kRefused = {"double", "long", "short", "char", "unsigned", "signed", "int8_t",
                                                            "uint8_t", "int16_t", "uint16_t", "uint32_t", "int64_t", "uint64_t",
@@ -680,6 +682,8 @@ const char* FieldTypeName(const TypeRef& t) {
         case TypeRef::Kind::Vec2: return "Vec2";
         case TypeRef::Kind::Vec3: return "Vec3";
         case TypeRef::Kind::Color: return "Color";
+        case TypeRef::Kind::AssetRef: return "AssetRef";
+        case TypeRef::Kind::EntityRef: return "EntityRef";
         case TypeRef::Kind::Named: return t.isEnum ? "Enum" : "Struct";
         case TypeRef::Kind::Vector: return "Array";
     }
@@ -695,6 +699,8 @@ std::string CppTypeOf(const TypeRef& t) {
         case TypeRef::Kind::Vec2: return "::rm::Vec2";
         case TypeRef::Kind::Vec3: return "::rm::Vec3";
         case TypeRef::Kind::Color: return "::rm::Color";
+        case TypeRef::Kind::AssetRef: return "::rm::AssetRef";
+        case TypeRef::Kind::EntityRef: return "::rm::EntityRef";
         case TypeRef::Kind::Named: return Cpp(t.resolved);
         case TypeRef::Kind::Vector: return "std::vector<" + CppTypeOf(t.element[0]) + ">";
     }
@@ -810,6 +816,18 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
                 for (const Attr& a : f.attrs) {
                     if ((a.key == "Min" || a.key == "Max" || a.key == "Step") && !numeric) {
                         diags.push_back({h.file, a.line, a.col, "RM0003", std::format("{} は数値・ベクトル・色だけに付けられます", a.key)});
+                    }
+                    if (a.key == "AssetKind") {
+                        // The names themselves (image, model ...) are core/asset's; a test checks every one is known.
+                        const bool words = !a.value.empty() && a.value.front() != ',' && a.value.back() != ',' &&
+                                           a.value.find(",,") == std::string::npos &&
+                                           std::all_of(a.value.begin(), a.value.end(), [](char ch) { return (ch >= 'a' && ch <= 'z') || ch == ','; });
+                        if (base.kind != TypeRef::Kind::AssetRef) {
+                            diags.push_back({h.file, a.line, a.col, "RM0003", "AssetKind は AssetRef (とその配列) だけに付けられます"});
+                        } else if (!words) {
+                            diags.push_back({h.file, a.line, a.col, "RM0003",
+                                             std::format("AssetKind=\"{}\": 種類の名前 (小文字) をコンマで区切って書いてください (例: \"image,model\")", a.value)});
+                        }
                     }
                     if (a.kind != Attr::Kind::Number) continue;
                     try {
@@ -931,16 +949,18 @@ std::string EmitHeader(const std::vector<Header>& all, const Header& h) {
                 const Attr* mn = attr("Min");
                 const Attr* mx = attr("Max");
                 const Attr* st = attr("Step");
+                const Attr* kinds = attr("AssetKind");
                 auto num = [](const Attr* a) { return a && a->kind == Attr::Kind::Number ? NumberLiteral(a->value) : std::string("0.0"); };
                 o += std::format(
                     "    {{.name = \"{}\", .value = {}, .access = [](void* o) -> void* {{ return &static_cast<{}*>(o)->{}; }}, .array = {},\n"
                     "     .edit = {}, .readOnly = {}, .label = {}, .tooltip = {},\n"
-                    "     .hasMin = {}, .hasMax = {}, .hasStep = {}, .min = {}, .max = {}, .step = {}, .line = {}}},\n",
+                    "     .hasMin = {}, .hasMax = {}, .hasStep = {}, .min = {}, .max = {}, .step = {}, .line = {}, .assetKinds = {}}},\n",
                     f.name, ValueTypeInit(f.type), cpp, f.name, f.type.kind == TypeRef::Kind::Vector ? "&A_" + id + "_" + f.name : "nullptr",
                     attr("Edit") ? "true" : "false", attr("ReadOnly") ? "true" : "false",
                     label ? "\"" + label->value + "\"" : "nullptr", tip ? "\"" + tip->value + "\"" : "nullptr",
                     mn && mn->kind == Attr::Kind::Number ? "true" : "false", mx && mx->kind == Attr::Kind::Number ? "true" : "false",
-                    st && st->kind == Attr::Kind::Number ? "true" : "false", num(mn), num(mx), num(st), f.line);
+                    st && st->kind == Attr::Kind::Number ? "true" : "false", num(mn), num(mx), num(st), f.line,
+                    kinds && kinds->kind == Attr::Kind::String ? "\"" + kinds->value + "\"" : std::string("nullptr"));
             }
             o += "};\n";
         }

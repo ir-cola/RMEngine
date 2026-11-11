@@ -20,13 +20,14 @@
 // regenerating and the build stops with "rmgen を走らせ直してください".
 //
 // Every field of a reflected struct must be RM_PROPERTY or RM_TRANSIENT (error RM0001).
-// RM_PROPERTY attributes: Edit, ReadOnly, Label="", Tooltip="", Min=, Max=, Step= (numbers only).
+// RM_PROPERTY attributes: Edit, ReadOnly, Label="", Tooltip="", Min=, Max=, Step= (numbers only),
+// AssetKind="model" / "image,model" (AssetRef only: the kinds of file it takes - core/asset).
 //
-// Types: bool, int, float, std::string, Vec2, Vec3, Color, RM_ENUM enums (saved by NAME),
-// RM_STRUCT structs (nested), std::vector<one of those> (arrays: saved / compared; the inspector
-// shows them read-only for now). Asset and entity references come with the asset / entity systems.
+// Types: bool, int, float, std::string, Vec2, Vec3, Color, AssetRef, EntityRef (base/Ref.h: saved
+// as the id), RM_ENUM enums (saved by NAME), RM_STRUCT structs (nested), std::vector<one of those>.
 
 #include "base/Math.h"
+#include "base/Ref.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -46,7 +47,7 @@
 
 namespace rm::reflect {
 
-enum class FieldType : uint8_t { Bool, Int, Float, String, Vec2, Vec3, Color, Enum, Struct, Array };
+enum class FieldType : uint8_t { Bool, Int, Float, String, Vec2, Vec3, Color, Enum, Struct, Array, AssetRef, EntityRef };
 
 struct TypeDesc;
 
@@ -91,6 +92,7 @@ struct FieldDesc {
     bool hasMin = false, hasMax = false, hasStep = false;
     double min = 0, max = 0, step = 0;
     int line = 0;  // in the header (for messages)
+    const char* assetKinds = nullptr;  // AssetRef: AssetKind="..." (null: any file)
 
     const void* Get(const void* object) const { return access(const_cast<void*>(object)); }
     void* Get(void* object) const { return access(object); }

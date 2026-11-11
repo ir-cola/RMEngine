@@ -249,6 +249,65 @@ RM_TEST(Reflect_SetFieldCommandUndo) {
     CHECK(Save(s, &u).Get("quality").AsString() == "Ultra");
 }
 
+RM_TEST(Reflect_References) {
+    using rmtest::Links;
+    const TypeDesc& t = TypeOf<Links>();
+    CHECK(FieldNamed(t, "model").value.type == FieldType::AssetRef);
+    CHECK(std::string_view(FieldNamed(t, "model").assetKinds) == "model");
+    CHECK(FieldNamed(t, "target").value.type == FieldType::EntityRef && FieldNamed(t, "target").assetKinds == nullptr);
+    CHECK(FieldNamed(t, "textures").array->element.type == FieldType::AssetRef);
+    CHECK(std::string_view(FieldNamed(t, "textures").assetKinds) == "image,model");
+
+    // Saved as the ids; read back the same.
+    Links a;
+    a.model.guid = "0123456789abcdef0123456789abcdef";
+    a.target.id = 42;
+    a.textures = {{"00000000000000000000000000000001"}, {}};
+    a.followers = {{7}, {9}};
+    const json::Value v = Save(a);
+    CHECK(v.Get("model").AsString() == a.model.guid);
+    CHECK(v.Get("target").AsInt() == 42);
+    CHECK(v.Get("textures").Items().size() == 2 && v.Get("textures").At(1).AsString().empty());
+    Links b;
+    Load(b, *json::Parse(json::Write(v)));
+    CHECK(Equals(t, &a, &b));
+    CHECK(json::Write(Save(b)) == json::Write(v));
+    const Links none;
+    CHECK(Diff(t, &a, &none) == 0b1111);
+
+    // An id this version does not know is kept as it is (written back unchanged); null = none;
+    // a wrong type keeps the value and warns.
+    json::Value odd = v;
+    odd.Set("model", "made-by-a-newer-version");
+    odd.Set("target", nullptr);
+    Links c = a;
+    Load(c, odd);
+    CHECK(c.model.guid == "made-by-a-newer-version" && c.target.Empty());
+    CHECK(Save(c).Get("model").AsString() == "made-by-a-newer-version");
+    json::Value wrong = v;
+    wrong.Set("model", 5);
+    wrong.Set("target", -1);
+    Links d = a;
+    Warnings warn;
+    Load(d, wrong, nullptr, &warn);
+    CHECK(d.model == a.model && d.target == a.target && warn.size() == 2);
+
+    // Changed through the one undo command, like any field.
+    UndoHistory h;
+    Links s;
+    auto resolve = [&] { return EditTarget{&s, nullptr}; };
+    const FieldPath mp{IndexOf(t, "model")};
+    h.Push(std::make_unique<SetFieldCommand>(t, mp, json::Value(""), json::Value(a.model.guid), resolve, "モデル"), false);
+    CHECK(s.model == a.model);
+    h.Undo();
+    CHECK(s.model.Empty());
+    const FieldPath tp{IndexOf(t, "target")};
+    h.Push(std::make_unique<SetFieldCommand>(t, tp, json::Value(uint64_t{0}), json::Value(uint64_t{3}), resolve, "相手"), false);
+    CHECK(s.target.id == 3);
+    h.Undo();
+    CHECK(s.target.Empty());
+}
+
 RM_TEST(Reflect_SetFieldCommand_TypingIsOneEntry) {
     Settings s;
     Unknowns u;

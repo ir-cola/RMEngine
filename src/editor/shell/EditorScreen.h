@@ -22,6 +22,8 @@
 
 #include "core/UndoHistory.h"
 #include "editor/app/ScreenWindow.h"
+#include "editor/assets/AssetLibrary.h"
+#include "editor/assets/AssetPanel.h"
 #include "editor/dock/DockSpace.h"
 #include "editor/dock/NamedLayouts.h"
 #include "editor/inspector/Inspector.h"
@@ -71,7 +73,8 @@ private:
     bool Save();
     void SetDirty(bool dirty);
     void UpdateTitle();
-    void RefreshAssets();
+    // What reference fields of the インスペクター show (assets, the 階層's items of the software shown).
+    inspector::Refs MakeRefs();
     std::vector<w::MenuItem> MenuItems(Menu m) const;
     void RunMenu(Menu m, int index);
     void HandleShortcuts(ui::Context& c);
@@ -97,6 +100,7 @@ private:
         platform::Gfx& Graphics() override;
         bool SetClipboard(const std::string& textUtf8) override;
         std::string Clipboard() override;
+        std::filesystem::path AssetFile(const AssetRef& ref) const override;
         void SelectInTree(std::vector<tree::ItemId> ids, bool rename) override {
             tree::RequestSelect(treeState, std::move(ids), rename);
             editor_.RedrawAll();
@@ -113,6 +117,7 @@ private:
         tree::State treeState;  // the 階層: selection, open items, search
         dock::NamedLayouts named;  // layouts the user saved under a name (UserSettings)
         std::string namedShown;    // the named layout switched to / saved last (checked in the menu)
+        std::unique_ptr<AssetPanel> assetPanel;  // the アセット panel (made when first drawn)
 
     private:
         EditorScreen& editor_;
@@ -182,11 +187,7 @@ private:
     json::Value layoutDoc_;        // the whole Layout.json (other softwares and unknown keys are kept)
     bool layoutReadOnly_ = false;  // written by a newer engine: used but never overwritten
 
-    struct AssetEntry {
-        std::wstring name;
-        bool folder = false;
-    };
-    std::vector<AssetEntry> assets_;
+    std::unique_ptr<AssetLibrary> assets_;  // the project's Assets/ (ids, file operations) - every software's
 
     int logSink_ = 0;
     // Last log entry each window's console has followed (a panel can move between windows).

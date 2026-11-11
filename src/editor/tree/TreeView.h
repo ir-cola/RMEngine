@@ -6,7 +6,8 @@
 //   ▸ / ▾, ← / →                         close / open (← on a closed item goes to its parent)
 //   ↑ / ↓ / Home / End (+Shift)          move the selection
 //   drag rows                            move them: on the upper / lower edge of a row = before /
-//                                        after it, on its middle = inside it, below the last row = the end
+//                                        after it, on its middle = inside it, below the last row = the end;
+//                                        out of the tree onto a reference field (Source::DragOut)
 //   F2 / double-click                    rename in place (Enter / clicking elsewhere = done, Esc = cancel)
 //   Ctrl+A                               select all
 //   right-click                          the software's menu (+ 名前を変更)
@@ -63,6 +64,9 @@ public:
         (void)selection;
         return {};
     }
+    // Rows dragged out of the tree onto another panel (a reference field of the インスペクター): what
+    // they are (w::DragThing). The default: "item" with the ids (EntityRef fields take them).
+    virtual w::DragThing DragOut(std::span<const ItemId> items);
 };
 
 // Per tree (one per software): selection, open / closed items, search, rename, drag.

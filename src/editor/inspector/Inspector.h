@@ -25,6 +25,10 @@
 //   std::string    text field         Vec2/3, Color   one number field per component (+ a swatch)
 //   enum           drop-down list (a name this version does not know shows as "名前 (不明)")
 //   struct         its fields, indented
+//   AssetRef       the file's name (+ its picture); a drag from the アセット panel puts one in (only the
+//   EntityRef      kinds of AssetKind=), a click opens a list to pick from (with a search box), × clears
+//                  it; an entity: an item of the 階層 the same way. An id that is not there any more
+//                  shows "(見つかりません)" and is kept. What there is comes from Refs (the editor's).
 //   std::vector    "N 個" and ＋ (adds a copy of the last), then each element: a grip to drag it to
 //                  another place, its index, its value (any of the above), × to remove it. Every
 //                  change is the whole array set at once (one undo entry).
@@ -51,6 +55,21 @@ struct Edit {
     std::string label;  // for the undo history, e.g. 「目標 FPS」を変更
     uint64_t merge = 0;  // != 0: typing into one field - edits with the same key are one undo entry
     int component = -1;  // a Vec2 / Vec3 / Color field: the one number typed (-1: the whole value)
+};
+
+// What reference fields show and offer (the inspector knows neither the assets nor the 階層).
+struct RefChoice {
+    std::string value;    // as it is saved: an asset's id / an item's id (in decimal)
+    std::wstring name;
+    std::wstring detail;  // where it is (its folder / its parent), shown faint
+    w::Icon icon = w::Icon::File;
+    std::string kind;     // an asset's kind ("image", "model" ... core/asset KindKey)
+};
+struct Refs {
+    std::function<std::optional<RefChoice>(std::string_view guid)> asset;  // nullopt: not in the project
+    std::function<std::vector<RefChoice>()> assets;                         // every file and folder
+    std::function<std::optional<RefChoice>(uint64_t id)> item;             // an item of the 階層
+    std::function<std::vector<RefChoice>()> items;
 };
 
 // One lump of values.
@@ -80,8 +99,9 @@ struct State {
     ui::Id editing = 0;
     std::string original;  // the value of the field being edited when it was entered (Esc)
     uint64_t session = 0;  // the merge key of that typing
-    w::Popup popup;  // a drop-down list of an enum field
+    w::Popup popup;  // a drop-down list of an enum field, or the list of a reference field
     ui::Id popupId = 0;  // ... of this field (or array element)
+    std::string pickSearch;  // typed into the reference list's search box
     // Dragging a label to change a number: which one, from what value, how far, its undo key.
     ui::Id scrub = 0;
     double scrubStart = 0, scrubMoved = 0, scrubSpeed = 0;
@@ -98,7 +118,9 @@ struct State {
 
 // Draws the blocks into `area` (scrolls when needed); `addLabel` non-empty = a button under them
 // that opens the menu `addMenu` returns. Returns a finished change, if any.
+// `refs`: what reference fields can show (null: they show only "(なし)" / "(見つかりません)").
 std::optional<Edit> Draw(ui::Context& c, State& st, const ui::Rect& area, std::span<const Block> blocks,
-                         std::wstring_view addLabel = {}, const std::function<std::vector<w::Action>()>& addMenu = {});
+                         std::wstring_view addLabel = {}, const std::function<std::vector<w::Action>()>& addMenu = {},
+                         const Refs* refs = nullptr);
 
 }  // namespace rm::editor::inspector

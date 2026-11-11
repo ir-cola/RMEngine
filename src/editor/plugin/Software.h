@@ -21,6 +21,7 @@
 #include "editor/tree/TreeView.h"
 #include "platform/Gfx.h"
 
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <span>
@@ -112,6 +113,10 @@ public:
     // be pasted into another project (or another RM Engine). False / empty when it cannot be used.
     virtual bool SetClipboard(const std::string& textUtf8) = 0;
     virtual std::string Clipboard() = 0;
+    // The file an AssetRef names now (in the project's Assets/, wherever it was moved or renamed to);
+    // empty when it is not there. A value that is not an id but a path inside the project (data made
+    // before references: "Assets/Models/robot.glb") is taken as that path, so old data still works.
+    virtual std::filesystem::path AssetFile(const AssetRef& ref) const = 0;
 };
 
 // One software inside one open project.

@@ -84,7 +84,29 @@ std::vector<Action> MenuFor(Source& src, State& st, std::span<const Item> items)
     return list;
 }
 
+// The picture of a row (Item::icon) as the widgets draw it.
+w::Icon PictureOf(Icon icon) {
+    switch (icon) {
+        case Icon::Cube:
+        case Icon::Model: return w::Icon::Cube;
+        case Icon::Folder: return w::Icon::Folder;
+        case Icon::File: return w::Icon::File;
+        case Icon::Image: return w::Icon::Image;
+        case Icon::Audio: return w::Icon::Audio;
+        case Icon::Font: return w::Icon::Font;
+        case Icon::Text: return w::Icon::Text;
+        default: return w::Icon::Object;
+    }
+}
+
 }  // namespace
+
+w::DragThing Source::DragOut(std::span<const ItemId> items) {
+    w::DragThing t;
+    t.kind = "item";
+    for (const ItemId id : items) t.values.push_back(std::to_string(id));
+    return t;
+}
 
 void RequestSelect(State& st, std::vector<ItemId> ids, bool rename) {
     st.hasPending = true;
@@ -313,8 +335,8 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             w::DrawIcon(c, arrow, rw.expanded ? w::Icon::ChevronDown : w::Icon::ChevronRight, onArrow ? theme::Text : theme::TextDim);
         }
         if (it.icon != Icon::None) {
-            const w::Icon pic = it.icon == Icon::Cube ? w::Icon::Cube : w::Icon::Object;
-            w::DrawIcon(c, {textX(rw.depth), row.y, kIconW, row.h}, pic, it.dimmed ? theme::TextFaint : theme::TextDim);
+            const ui::Color col = it.dimmed ? theme::TextFaint : it.icon == Icon::Folder ? theme::Folder : theme::TextDim;
+            w::DrawIcon(c, {textX(rw.depth), row.y, kIconW, row.h}, PictureOf(it.icon), col);
         }
 
         if (st.renaming == it.id) {
@@ -376,9 +398,12 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             st.dragging = false;
             st.pressItem = 0;
             st.moving.clear();
+            w::EndDragThing(c);
             c.RequestRedraw();
         }
     }
+    // Out of the tree, the rows can be dropped on another panel (a reference field).
+    if (st.dragging) w::SetDragThing(src.DragOut(st.moving));
     if (st.dragging && in.mouseInside && view.Contains(in.mouseX, in.mouseY)) {
         const float rel = in.mouseY - rowsTop;
         if (rel < 0) {
@@ -421,6 +446,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         } else if (!st.dragging && st.pressDeferred) {
             SelectOnly(st.sel, st.pressItem);
         }
+        if (st.dragging) w::EndDragThing(c);  // (a panel drawn after this one still sees it let go)
         st.pressItem = 0;
         st.pressDeferred = false;
         st.dragging = false;
@@ -431,8 +457,10 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         // What is being dragged, next to the mouse (over everything, also outside the panel).
         const size_t i = st.moving.size() == 1 ? Find(items, st.moving[0]) : npos;
         const std::wstring tag = i != npos ? Utf8ToWide(items[i].name) : TrF(L"{} 個", st.moving.size());
-        const bool ok = drop.has_value();
-        c.AddOverlay([&c, tag, ok] {
+        const bool inTree = drop.has_value();
+        c.AddOverlay([&c, tag, inTree] {
+            // (at the end of the frame: a reference field drawn after the tree has said whether it takes it)
+            const bool ok = w::TakeDragAccepted() || inTree;
             auto& pp = c.P();
             const float wdt = std::min(260.f, pp.TextWidth(tag, 12) + 20);
             const Rect r{c.In().mouseX + 14, c.In().mouseY + 10, wdt, 24};

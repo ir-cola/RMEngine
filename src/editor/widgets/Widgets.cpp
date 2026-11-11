@@ -1,6 +1,7 @@
 #include "editor/widgets/Widgets.h"
 
 #include "base/Utf.h"
+#include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "ui/Path.h"
 
@@ -194,6 +195,65 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
         case Icon::Stop:  // a square
             p.FillRect({cx - s * 0.9f, cy - s * 0.9f, s * 1.8f, s * 1.8f}, color);
             break;
+        case Icon::Folder: {
+            // A folder from the side: its body and the tab on its upper left.
+            const float h = std::min(r.w, r.h) * 0.34f;
+            const float x0 = cx - h * 1.1f, x1 = cx + h * 1.1f, y0 = cy - h * 0.55f, y1 = cy + h * 0.8f;
+            p.StrokeRoundRect({x0, y0, x1 - x0, y1 - y0}, 1.5f, color, 1.3f);
+            p.Line(x0, y0 + 0.5f, x0 + h * 0.15f, y0 - h * 0.35f, color, 1.3f);
+            p.Line(x0 + h * 0.15f, y0 - h * 0.35f, x0 + h * 0.85f, y0 - h * 0.35f, color, 1.3f);
+            p.Line(x0 + h * 0.85f, y0 - h * 0.35f, x0 + h * 1.05f, y0, color, 1.3f);
+            break;
+        }
+        case Icon::File:
+        case Icon::Text: {
+            // A page with its upper right corner folded (+ lines of text).
+            const float h = std::min(r.w, r.h) * 0.36f;
+            const float x0 = cx - h * 0.72f, x1 = cx + h * 0.72f, y0 = cy - h, y1 = cy + h, f = h * 0.5f;
+            p.Line(x0, y0, x1 - f, y0, color, 1.3f);
+            p.Line(x1 - f, y0, x1, y0 + f, color, 1.3f);
+            p.Line(x1, y0 + f, x1, y1, color, 1.3f);
+            p.Line(x1, y1, x0, y1, color, 1.3f);
+            p.Line(x0, y1, x0, y0, color, 1.3f);
+            p.Line(x1 - f, y0, x1 - f, y0 + f, color, 1.1f);
+            p.Line(x1 - f, y0 + f, x1, y0 + f, color, 1.1f);
+            if (icon == Icon::Text) {
+                for (int i = 0; i < 3; ++i) {
+                    const float ly = cy - h * 0.05f + static_cast<float>(i) * h * 0.38f;
+                    p.Line(x0 + h * 0.3f, ly, x1 - h * 0.3f, ly, color, 1.1f);
+                }
+            }
+            break;
+        }
+        case Icon::Image: {
+            // A picture: its frame, a mountain and the sun.
+            const float h = std::min(r.w, r.h) * 0.36f;
+            const float x0 = cx - h * 1.05f, x1 = cx + h * 1.05f, y0 = cy - h * 0.8f, y1 = cy + h * 0.8f;
+            p.StrokeRoundRect({x0, y0, x1 - x0, y1 - y0}, 1.5f, color, 1.3f);
+            p.Line(x0 + h * 0.2f, y1 - h * 0.2f, cx - h * 0.25f, cy - h * 0.05f, color, 1.3f);
+            p.Line(cx - h * 0.25f, cy - h * 0.05f, cx + h * 0.2f, y1 - h * 0.55f, color, 1.3f);
+            p.Line(cx + h * 0.2f, y1 - h * 0.55f, cx + h * 0.45f, cy + h * 0.15f, color, 1.3f);
+            p.Line(cx + h * 0.45f, cy + h * 0.15f, x1 - h * 0.2f, y1 - h * 0.2f, color, 1.3f);
+            p.FillCircle(cx + h * 0.5f, cy - h * 0.35f, h * 0.17f, color);
+            break;
+        }
+        case Icon::Audio: {
+            // A note: its head, stem and flag.
+            const float h = std::min(r.w, r.h) * 0.36f;
+            const float sx = cx + h * 0.3f;
+            p.FillCircle(cx - h * 0.05f, cy + h * 0.62f, h * 0.36f, color);
+            p.Line(sx, cy + h * 0.6f, sx, cy - h, color, 1.3f);
+            p.Line(sx, cy - h, sx + h * 0.55f, cy - h * 0.55f, color, 1.3f);
+            break;
+        }
+        case Icon::Font: {
+            // The letter A.
+            const float h = std::min(r.w, r.h) * 0.36f;
+            p.Line(cx - h * 0.75f, cy + h, cx, cy - h, color, 1.4f);
+            p.Line(cx, cy - h, cx + h * 0.75f, cy + h, color, 1.4f);
+            p.Line(cx - h * 0.4f, cy + h * 0.25f, cx + h * 0.4f, cy + h * 0.25f, color, 1.3f);
+            break;
+        }
         case Icon::Cube: {
             // Seen from above a corner: the outline (a hexagon) and the three edges of the near corner.
             const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;
@@ -427,14 +487,20 @@ bool CollapsingHeader(ui::Context& c, std::string_view idStr, const Rect& r, std
     return false;
 }
 
-ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view text, bool enabled) {
+ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view text, bool enabled,
+                                   std::optional<Icon> icon) {
     ui::Context::ButtonResult b;
     if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);
     DrawSurface(c, r, b.hovered ? Surface::Hovered : Surface::Raised);
     ui::TextStyle ts;
     ts.size = theme::FontSize;
     ts.color = enabled ? theme::Text : theme::TextFaint;
-    c.P().Text(r.Inset(8, 0, 24, 0), text, ts);
+    float left = 8;
+    if (icon) {
+        DrawIcon(c, {r.x + 5, r.y, 18, r.h}, *icon, *icon == Icon::Folder ? theme::Folder : theme::TextDim);
+        left = 26;
+    }
+    c.P().Text(r.Inset(left, 0, 24, 0), text, ts);
     DrawIcon(c, {r.Right() - 22, r.y, 18, r.h}, Icon::ChevronDown, b.hovered ? theme::Text : theme::TextDim);
     return b;
 }
@@ -884,6 +950,121 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
             if (run) run();
         }
     });
+}
+
+int PickerPopup(ui::Context& c, Popup& popup, std::string_view idStr, std::string& search, std::span<const PickRow> rows, float width) {
+    if (!popup.open) return -1;
+    auto& p = c.P();
+    const auto& in = c.In();
+    constexpr float kSearchH = 38.f, kRowH = 26.f;
+    const float listH = kRowH * static_cast<float>(std::clamp<size_t>(rows.size(), 1, 10));
+    const float h = kPad * 2 + kSearchH + listH;
+    const Rect& vp = c.Viewport();
+    const Rect box{std::clamp(popup.x, vp.x + 4, std::max(vp.x + 4, vp.Right() - width - 4)),
+                   std::clamp(popup.y, vp.y + 4, std::max(vp.y + 4, vp.Bottom() - h - 4)), width, h};
+    c.PushId(idStr);
+    const ui::Id searchId = c.MakeId("search");
+    auto close = [&] {
+        popup.open = false;
+        if (c.Focused() == searchId) c.ClearFocus();
+        c.RequestRedraw();
+    };
+    const bool fresh = popup.fresh;
+    popup.fresh = false;
+    if (fresh) c.FocusText(searchId, Utf8ToWide(search), true);
+    if ((!fresh && (in.pressed[0] || in.pressed[1]) && !box.Contains(in.mouseX, in.mouseY)) || c.KeyPressed(ui::Key::Escape)) {
+        close();
+        c.PopId();
+        return -1;
+    }
+    const bool enter = c.KeyPressed(ui::Key::Enter);
+
+    DrawSurface(c, box, Surface::Popup, 6.f);
+    TextField(c, "search", {box.x + kPad + 2, box.y + kPad + 4, box.w - kPad * 2 - 4, kSearchH - 10}, search, Tr(L"検索"));
+    const Rect list{box.x + kPad, box.y + kPad + kSearchH, box.w - kPad * 2, listH};
+    int clicked = -1;
+    if (rows.empty()) {
+        ui::TextStyle ts;
+        ts.size = 12;
+        ts.color = theme::TextFaint;
+        p.Text(list.Inset(10, 0, 10, 0), Tr(L"見つかりません。"), ts);
+    }
+    const float content = kRowH * static_cast<float>(rows.size());
+    const float off = BeginScroll(c, "list", list, content);
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const Rect row{list.x, list.y + kRowH * static_cast<float>(i) - off, list.w - (content > list.h ? 12.f : 0.f), kRowH};
+        if (row.Bottom() < list.y || row.y > list.Bottom()) continue;
+        c.PushId(static_cast<uint64_t>(i));
+        const auto b = c.ButtonBehavior(c.MakeId("row"), row);
+        c.PopId();
+        DrawRow(c, row, {false, b.hovered, true});
+        const PickRow& it = rows[i];
+        float x = row.x + 8;
+        if (it.hasIcon) {
+            DrawIcon(c, {x, row.y, 18, row.h}, it.icon, it.icon == Icon::Folder ? theme::Folder : theme::TextDim);
+            x += 22;
+        }
+        ui::TextStyle ts;
+        ts.size = theme::FontSize;
+        ts.color = theme::Text;
+        const float detailW = it.detail.empty() ? 0.f : std::min(row.w * 0.45f, p.TextWidth(it.detail, 11) + 8);
+        p.Text({x, row.y, row.Right() - x - detailW - 6, row.h}, it.name, ts);
+        if (detailW > 0) {
+            ts.size = 11;
+            ts.color = theme::TextFaint;
+            ts.h = ui::HAlign::Right;
+            p.Text({row.Right() - detailW - 6, row.y, detailW, row.h}, it.detail, ts);
+        }
+        if (b.clicked) clicked = static_cast<int>(i);
+    }
+    EndScroll(c, "list", list, content);
+    if (clicked < 0 && enter && !rows.empty()) clicked = 0;
+    if (clicked >= 0) close();
+    c.PopId();
+    return clicked;
+}
+
+namespace {
+struct DragState {
+    bool active = false;
+    DragThing thing;
+    bool accepted = false;
+};
+DragState& Drag() {
+    static DragState d;
+    return d;
+}
+}  // namespace
+
+void SetDragThing(DragThing thing) {
+    Drag().active = true;
+    Drag().thing = std::move(thing);
+}
+
+void EndDragThing(ui::Context& c) {
+    c.AddOverlay([] {
+        Drag().active = false;
+        Drag().thing = {};
+    });
+}
+
+const DragThing* DraggedThing() { return Drag().active ? &Drag().thing : nullptr; }
+
+const DragThing* DropTarget(ui::Context& c, const Rect& r, const std::function<bool(const DragThing&)>& accepts) {
+    const DragThing* t = DraggedThing();
+    const bool released = c.MouseReleased();
+    // (only while the button is held or just let go: a drag whose panel went away leaves nothing behind)
+    if (!t || (!c.In().down[0] && !released) || !c.IsHovered(r) || (accepts && !accepts(*t))) return nullptr;
+    Drag().accepted = true;
+    c.P().StrokeRoundRect(r.Inset(-1), theme::Radius, theme::Accent, 2.f);
+    c.RequestRedraw();
+    return released ? t : nullptr;  // let go over it
+}
+
+bool TakeDragAccepted() {
+    const bool a = Drag().accepted;
+    Drag().accepted = false;
+    return a;
 }
 
 Rect BeginModal(ui::Context& c, float width, float height, std::wstring_view title) {

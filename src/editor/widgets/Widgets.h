@@ -16,6 +16,7 @@
 #include "ui/Context.h"
 
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -64,7 +65,11 @@ void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0);
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 
 // --- Icons: drawn with lines, so they sit in the middle of their box at any size ------------
-enum class Icon { Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Object, Cube, Plus, Grip, Play, Pause, Step, Stop };
+enum class Icon {
+    Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Object, Cube, Plus, Grip, Play, Pause, Step, Stop,
+    // what a file is (the アセット panel, reference fields)
+    Folder, File, Image, Audio, Font, Text,
+};
 void DrawIcon(ui::Context& c, const ui::Rect& r, Icon icon, ui::Color color);
 
 // --- Buttons ---------------------------------------------------------------------------------
@@ -108,7 +113,9 @@ bool CollapsingHeader(ui::Context& c, std::string_view id, const ui::Rect& r, st
                       float reserveRight = 0.f);
 
 // --- A drop-down list's face (the list itself is a MenuPopup the caller opens) -------------
-ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view text, bool enabled = true);
+// `icon`: a picture in front of the text (a reference field: what kind of file).
+ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view text, bool enabled = true,
+                                   std::optional<Icon> icon = std::nullopt);
 
 // --- Lines and tips --------------------------------------------------------------------------
 void Separator(ui::Context& c, float x, float y, float width);
@@ -183,6 +190,37 @@ std::wstring ShortcutText(const Action& a);  // "Ctrl+D", "Delete", "" (no short
 // Draws `popup` (when open) with `actions` at the end of the frame (not cut off by a panel) and runs
 // the picked row. The list is kept by the caller until the menu closes.
 void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions);
+
+// A list to choose one thing from, with a search box on top (a reference field's choices). Call it at
+// the end of the frame, like MenuPopup. `search` is what is typed (kept by the caller, who lists only
+// the rows that match it). Returns the row clicked - or the first one on Enter - and closes; -1 for none.
+struct PickRow {
+    std::wstring name;
+    std::wstring detail;  // faint, on the right (where it is)
+    bool hasIcon = false;
+    Icon icon = Icon::File;
+};
+int PickerPopup(ui::Context& c, Popup& popup, std::string_view id, std::string& search, std::span<const PickRow> rows,
+                float width = 320.f);
+
+// --- Dragging a thing from one panel to another (an asset or an item of the 階層 onto a reference
+// field of the インスペクター). One mouse, so one thing at a time for the whole program. The panel it
+// comes from sets it while the drag goes on and ends it when the button is let go; a place that takes
+// it asks DropTarget. Only within one window (the window that has the mouse captured).
+struct DragThing {
+    std::string kind;                 // what it is: "asset" (values: ids) / "item" (values: ids of the 階層's items)
+    std::vector<std::string> values;  // one or more
+};
+void SetDragThing(DragThing thing);
+// Ends the drag at the end of this frame: places drawn later in the same frame still see it let go.
+void EndDragThing(ui::Context& c);
+const DragThing* DraggedThing();
+// A place it can be dropped on. While a thing that `accepts` takes is over `r`, outlines it; returns
+// the thing when the mouse is let go there (else null).
+const DragThing* DropTarget(ui::Context& c, const ui::Rect& r, const std::function<bool(const DragThing&)>& accepts);
+// Whether a DropTarget under the mouse took the thing in this frame (the tag next to the mouse shows
+// it). Reading it forgets it - call it once a frame, at its end.
+bool TakeDragAccepted();
 
 // --- Modal dialog -------------------------------------------------------------
 // Dims the screen, draws the dialog box and title, returns the content area.

@@ -60,6 +60,8 @@
     <ClCompile Include="core\reflect\Data.cpp" />
     <ClCompile Include="core\reflect\FieldCommand.cpp" />
     <ClCompile Include="core\reflect\Object.cpp" />
+    <ClCompile Include="core\asset\AssetIndex.cpp" />
+    <ClCompile Include="core\asset\AssetFiles.cpp" />
     <ClCompile Include="platform\Gfx.cpp" />
     <ClCompile Include="platform\Shell.cpp" />
     <ClCompile Include="platform\Window.cpp" />
@@ -75,6 +77,8 @@
     <ClCompile Include="editor\dock\DockSpace.cpp" />
     <ClCompile Include="editor\dock\NamedLayouts.cpp" />
     <ClCompile Include="editor\inspector\Inspector.cpp" />
+    <ClCompile Include="editor\assets\AssetLibrary.cpp" />
+    <ClCompile Include="editor\assets\AssetPanel.cpp" />
     <ClCompile Include="editor\plugin\PluginManifest.cpp" />
     <ClCompile Include="editor\tree\TreeModel.cpp" />
     <ClCompile Include="editor\tree\TreeView.cpp" />
@@ -97,6 +101,8 @@
     <ClInclude Include="core\reflect\FieldCommand.h" />
     <ClInclude Include="core\reflect\Object.h" />
     <ClInclude Include="core\reflect\Reflect.h" />
+    <ClInclude Include="core\asset\AssetIndex.h" />
+    <ClInclude Include="core\asset\AssetFiles.h" />
     <ClInclude Include="platform\Gfx.h" />
     <ClInclude Include="platform\Shell.h" />
     <ClInclude Include="platform\Win.h" />
@@ -116,6 +122,8 @@
     <ClInclude Include="editor\dock\DockSpace.h" />
     <ClInclude Include="editor\dock\NamedLayouts.h" />
     <ClInclude Include="editor\inspector\Inspector.h" />
+    <ClInclude Include="editor\assets\AssetLibrary.h" />
+    <ClInclude Include="editor\assets\AssetPanel.h" />
     <ClInclude Include="editor\plugin\PluginManifest.h" />
     <ClInclude Include="editor\plugin\Plugins.h" />
     <ClInclude Include="editor\plugin\Software.h" />

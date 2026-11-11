@@ -37,4 +37,13 @@ struct Settings {
     RM_TRANSIENT() void* runtimeHandle = nullptr;
 };
 
+// References (base/Ref.h): saved as ids.
+RM_STRUCT()
+struct Links {
+    RM_PROPERTY(Edit, AssetKind="model") rm::AssetRef model;
+    RM_PROPERTY(Edit) rm::EntityRef target;
+    RM_PROPERTY(Edit, AssetKind="image,model") std::vector<rm::AssetRef> textures;
+    RM_PROPERTY(Edit) std::vector<rm::EntityRef> followers;
+};
+
 }  // namespace rmtest

@@ -67,5 +67,9 @@
   "Prefab「{}」から切り離す": "Unlink from the prefab \"{}\"",
   "Prefab を置く: {}": "Place prefab: {}",
   "Prefab を置く (Assets に Prefab がありません)": "Place prefab (no prefab in Assets)",
-  "… ほか {} 個の Prefab": "… {} more prefabs"
+  "… ほか {} 個の Prefab": "… {} more prefabs",
+  "アイコン": "Icon",
+  "書き出したゲームのウィンドウとタスクバーの絵 (画像のアセット)": "The picture of the exported game's window and taskbar button (an image asset)",
+  "最初のカメラ": "Starting camera",
+  "ゲームを始めたときに使うカメラのエンティティ (カメラの部品ができたら使います)": "The camera entity used when the game starts (used once there is a camera component)"
 }

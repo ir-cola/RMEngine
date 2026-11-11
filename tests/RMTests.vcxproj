@@ -68,6 +68,7 @@
     <ClCompile Include="TestTree.cpp" />
     <ClCompile Include="TestSystems.cpp" />
     <ClCompile Include="TestPrefab.cpp" />
+    <ClCompile Include="TestAsset.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />
@@ -87,6 +88,8 @@
     <ClCompile Include="..\src\core\reflect\Data.cpp" />
     <ClCompile Include="..\src\core\reflect\FieldCommand.cpp" />
     <ClCompile Include="..\src\core\reflect\Object.cpp" />
+    <ClCompile Include="..\src\core\asset\AssetIndex.cpp" />
+    <ClCompile Include="..\src\core\asset\AssetFiles.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Transform.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\View.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Mesh.cpp" />

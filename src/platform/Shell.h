@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -18,6 +19,27 @@ std::optional<std::wstring> PickOpenFile(HWND owner, std::wstring_view title, st
 
 // Opens Explorer with the file (or folder) selected.
 void ShowInExplorer(const std::filesystem::path& path);
+// Opens a folder in Explorer (its contents, nothing selected).
+void OpenFolder(const std::filesystem::path& folder);
+// Moves files / folders to the Recycle Bin (no question asked, no progress window). False when any
+// of them could not be moved; *error (UTF-8) says why.
+bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string* error);
+
+// Tells when something under a folder was added, removed or renamed (Windows' change notification).
+// Asked without waiting: Changed() is true once after each change (the .meta files the editor writes
+// count too - looking again then finds nothing new).
+class FolderWatch {
+public:
+    FolderWatch() = default;
+    FolderWatch(const FolderWatch&) = delete;
+    FolderWatch& operator=(const FolderWatch&) = delete;
+    ~FolderWatch();
+    bool Start(const std::filesystem::path& folder);  // false: the folder cannot be watched (Changed() stays false)
+    bool Changed();
+
+private:
+    HANDLE handle_ = nullptr;
+};
 
 enum class KnownFolder { Documents, RoamingAppData, LocalAppData };
 std::filesystem::path GetKnownFolder(KnownFolder which);

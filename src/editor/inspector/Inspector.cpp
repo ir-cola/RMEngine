@@ -2,7 +2,9 @@
 #include "editor/inspector/Inspector.h"
 
 #include "base/Utf.h"
+#include "core/asset/AssetIndex.h"
 #include "core/reflect/Object.h"
+#include "editor/tree/TreeModel.h"
 #include "editor/widgets/Theme.h"
 
 #include <algorithm>
@@ -46,6 +48,7 @@ struct Pass {
     std::optional<Edit> edit;
     std::wstring tooltip;
     Wrap wrap;  // inside an array element (null: the edit is the field's own)
+    const Refs* refs = nullptr;
 
     void Put(Edit e) {
         if (!wrap) {
@@ -154,6 +157,113 @@ struct Spot {
     // The Edit for a new value (path, before, label - the block's); `merge` / `component` are added.
     std::function<Edit(json::Value)> editFor;
 };
+
+// The id a reference holds, as text ("" = none).
+std::string RefValue(FieldType t, const void* v) {
+    if (t == FieldType::AssetRef) return static_cast<const AssetRef*>(v)->guid;
+    const uint64_t id = static_cast<const EntityRef*>(v)->id;
+    return id == 0 ? std::string() : std::to_string(id);
+}
+
+json::Value RefJson(FieldType t, const std::string& value) {
+    if (t == FieldType::AssetRef) return json::Value(value);
+    uint64_t id = 0;
+    for (const char ch : value) {
+        if (ch < '0' || ch > '9') return json::Value(uint64_t{0});
+        id = id * 10 + static_cast<uint64_t>(ch - '0');
+    }
+    return json::Value(id);
+}
+
+// A reference: its name in a box (a click opens the list), × to clear it, and a place to drop one.
+template <class Put>
+void DrawRef(Pass& x, const Spot& s, const Put& put) {
+    ui::Context& c = x.c;
+    const bool isAsset = s.vt.type == FieldType::AssetRef;
+    const std::string kinds = isAsset && s.f.assetKinds ? s.f.assetKinds : "";
+    const std::string cur = RefValue(s.vt.type, s.value);
+    const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return RefValue(s.vt.type, o) != cur; });
+    std::optional<RefChoice> found;
+    if (!cur.empty() && x.refs) {
+        if (isAsset && x.refs->asset) found = x.refs->asset(cur);
+        if (!isAsset && x.refs->item) found = x.refs->item(static_cast<const EntityRef*>(s.value)->id);
+    }
+    const std::wstring shown = differ ? Utf8ToWide(kMixed) : cur.empty() ? Tr(L"(なし)") : found ? found->name : Tr(L"(見つかりません)");
+    const bool canClear = s.enabled && (!cur.empty() || differ);
+    Rect face = s.r;
+    if (canClear) face.w -= 26;
+    const ui::Id popupId = c.MakeId("v");
+    const auto b = w::ComboBox(c, "v", face, shown, s.enabled && x.refs != nullptr,
+                               found && !differ ? std::optional<w::Icon>(found->icon) : std::nullopt);
+    if (b.hovered && !differ) {
+        if (found && !found->detail.empty()) x.tooltip = found->detail;
+        if (!found && !cur.empty()) {
+            x.tooltip = isAsset ? TrF(L"ID {} のアセットはプロジェクトにありません。値はそのまま残ります", Utf8ToWide(cur))
+                                : TrF(L"ID {} の物はありません。値はそのまま残ります", Utf8ToWide(cur));
+        }
+    }
+    if (canClear && w::IconButton(c, "clear", {face.Right() + 2, s.r.y, 24, s.r.h}, w::Icon::Close)) put(RefJson(s.vt.type, ""), 0, -1);
+    if (!s.enabled || !x.refs) return;
+
+    // Dropped from the アセット panel / the 階層.
+    const Refs* refs = x.refs;
+    const auto accepts = [&](const w::DragThing& t) {
+        if (t.values.empty()) return false;
+        if (!isAsset) return t.kind == "item";
+        if (t.kind != "asset" || !refs->asset) return false;
+        const auto a = refs->asset(t.values[0]);
+        const auto k = a ? asset::KindFromKey(a->kind) : std::nullopt;
+        return k && asset::KindMatches(*k, kinds);
+    };
+    if (const w::DragThing* t = w::DropTarget(c, s.r, accepts)) put(RefJson(s.vt.type, t->values[0]), 0, -1);
+
+    if (b.clicked) {
+        x.st.popup.OpenAt(face.x, face.Bottom() + 2);
+        x.st.popupId = popupId;
+        x.st.pickSearch.clear();
+    }
+    if (!x.st.popup.open || x.st.popupId != popupId) return;
+    // The list (at the end of the frame, over everything): (なし) and what there is of the kinds asked.
+    std::vector<RefChoice> choices;
+    if (isAsset && refs->assets) {
+        for (RefChoice& r : refs->assets()) {
+            const auto k = asset::KindFromKey(r.kind);
+            if (k && asset::KindMatches(*k, kinds)) choices.push_back(std::move(r));
+        }
+    } else if (!isAsset && refs->items) {
+        choices = refs->items();
+    }
+    State* st = &x.st;
+    const bool withOthers = !s.others.empty();
+    const float width = std::max(s.r.w, 300.f);
+    const FieldType type = s.vt.type;
+    c.AddOverlay([&c, st, choices = std::move(choices), width, withOthers, type, editFor = s.editFor, wrap = x.wrap] {
+        std::vector<const RefChoice*> picks;
+        std::vector<w::PickRow> rows;
+        if (st->pickSearch.empty()) {  // "(なし)" first, while nothing is typed
+            rows.push_back({Tr(L"(なし)")});
+            picks.push_back(nullptr);
+        }
+        for (const RefChoice& r : choices) {
+            if (!st->pickSearch.empty() && !tree::NameMatches(WideToUtf8(r.name), st->pickSearch)) continue;
+            rows.push_back({r.name, r.detail, true, r.icon});
+            picks.push_back(&r);
+        }
+        const bool wasEnabled = c.InputEnabled();
+        c.SetInputEnabled(true);
+        const int picked = w::PickerPopup(c, st->popup, "refpick", st->pickSearch, rows, width);
+        c.SetInputEnabled(wasEnabled);
+        if (picked < 0) return;
+        const RefChoice* r = picks[static_cast<size_t>(picked)];
+        Edit ed = editFor(RefJson(type, r ? r->value : std::string()));
+        if (ed.before == ed.after && !withOthers) return;
+        if (wrap) {
+            if (auto outer = wrap(std::move(ed))) st->pending = std::move(*outer);
+        } else {
+            st->pending = std::move(ed);
+        }
+    });
+}
 
 void DrawValue(Pass& x, const Spot& s) {
     ui::Context& c = x.c;
@@ -282,6 +392,8 @@ void DrawValue(Pass& x, const Spot& s) {
             }
             break;
         }
+        case FieldType::AssetRef:
+        case FieldType::EntityRef: DrawRef(x, s, put); break;
         case FieldType::Struct:
         case FieldType::Array: break;  // (not single values: DrawField)
     }
@@ -537,12 +649,13 @@ void DrawHeader(Pass& x, const Block& b, bool folded) {
 }  // namespace
 
 std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<const Block> blocks, std::wstring_view addLabel,
-                         const std::function<std::vector<w::Action>()>& addMenu) {
+                         const std::function<std::vector<w::Action>()>& addMenu, const Refs* refs) {
     std::optional<Edit> result = std::move(st.pending);
     st.pending.reset();
 
     const float off = w::BeginScroll(c, "inspector", area, st.contentHeight);
     Pass x{c, st, area};
+    x.refs = refs;
     x.y = area.y + 6 - off;
     x.labelW = std::clamp(area.w * 0.38f, 96.f, 220.f);
     // While a drop-down or a menu is open, the fields under it only show.

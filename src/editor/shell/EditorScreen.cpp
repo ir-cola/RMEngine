@@ -88,6 +88,7 @@ public:
 }  // namespace
 
 EditorScreen::EditorScreen(App& app, Project project) : ScreenWindow(app), project_(std::move(project)) {
+    assets_ = std::make_unique<AssetLibrary>(project_.AssetsDir());
     BuildWorkspaces();
     LoadSoftwareData();
 }
@@ -104,7 +105,7 @@ bool EditorScreen::Open() {
     d.heightDip = 900;
     d.minWidthDip = 960;
     d.minHeightDip = 560;
-    RefreshAssets();
+    assets_->Refresh();  // ids for the files that have none yet (written next to them as .meta)
     LoadLayout();  // before the callbacks below: nothing to sync yet
     if (!CreateScreenWindow(d, SW_SHOWMAXIMIZED)) return false;
     for (auto& ws : workspaces_) {
@@ -169,6 +170,22 @@ bool EditorScreen::Workspace::SetClipboard(const std::string& textUtf8) {
 }
 
 std::string EditorScreen::Workspace::Clipboard() { return WideToUtf8(platform::GetClipboardText(editor_.Hwnd())); }
+
+fs::path EditorScreen::Workspace::AssetFile(const AssetRef& ref) const {
+    const AssetLibrary& lib = *editor_.assets_;
+    if (ref.Empty()) return {};
+    if (asset::IsGuid(ref.guid)) {
+        const asset::Entry* e = lib.Index().ByGuid(ref.guid);
+        return e ? lib.FullPath(*e) : fs::path();
+    }
+    // Data from before references: a path inside the project ("Assets/Models/robot.glb").
+    std::string rel = ref.guid;
+    std::replace(rel.begin(), rel.end(), '\\', '/');
+    if (rel.find("..") != std::string::npos || rel.find(':') != std::string::npos) return {};  // stays inside the project
+    std::error_code ec;
+    const fs::path p = editor_.project_.Root() / PathFromUtf8(rel);
+    return fs::exists(p, ec) ? p : fs::path();
+}
 
 dock::Layout EditorScreen::Workspace::DefaultLayout() const {
     return software ? software->DefaultLayout() : CoreDefaultLayout();
@@ -494,20 +511,41 @@ bool EditorScreen::Save() {
     }
     SetDirty(false);
     SaveLayout();
-    RefreshAssets();
     return true;
 }
 
-void EditorScreen::RefreshAssets() {
-    assets_.clear();
-    std::error_code ec;
-    for (fs::directory_iterator it(project_.AssetsDir(), ec), end; !ec && it != end; it.increment(ec)) {
-        assets_.push_back({it->path().filename().native(), it->is_directory(ec)});
-    }
-    std::sort(assets_.begin(), assets_.end(), [](const AssetEntry& a, const AssetEntry& b) {
-        if (a.folder != b.folder) return a.folder;
-        return a.name < b.name;
-    });
+inspector::Refs EditorScreen::MakeRefs() {
+    inspector::Refs refs;
+    AssetLibrary* lib = assets_.get();
+    refs.asset = [lib](std::string_view guid) { return AssetChoice(*lib, guid); };
+    refs.assets = [lib] { return AssetChoices(*lib); };
+    // An entity reference = an item of this software's 階層 (game: an entity). Its parent is "where".
+    tree::Source* src = Active().software ? Active().software->Hierarchy() : nullptr;
+    if (!src) return refs;
+    auto choices = [src] {
+        std::vector<tree::Item> items;
+        src->Items(items);
+        std::vector<inspector::RefChoice> out;
+        for (const tree::Item& it : items) {
+            inspector::RefChoice r;
+            r.value = std::to_string(it.id);
+            r.name = Utf8ToWide(it.name);
+            const size_t p = it.parent != 0 ? tree::Find(items, it.parent) : static_cast<size_t>(-1);
+            if (p != static_cast<size_t>(-1)) r.detail = Utf8ToWide(items[p].name);
+            r.icon = it.icon == tree::Icon::Cube ? w::Icon::Cube : w::Icon::Object;
+            out.push_back(std::move(r));
+        }
+        return out;
+    };
+    refs.items = choices;
+    refs.item = [choices](uint64_t id) -> std::optional<inspector::RefChoice> {
+        const std::string key = std::to_string(id);
+        for (auto& r : choices()) {
+            if (r.value == key) return std::move(r);
+        }
+        return std::nullopt;
+    };
+    return refs;
 }
 
 void EditorScreen::OnCloseRequested() { RequestClose(CloseAction::ToHub); }
@@ -641,6 +679,8 @@ void EditorScreen::RunMenu(Menu m, int index) {
 
 void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     auto& p = c.P();
+    // Files added / moved / renamed outside (Explorer): the ids follow, the names shown too.
+    if (assets_->Poll()) RedrawAll();
     p.Clear(theme::Bg);
     w::DrawBackdrop(c, false);  // the theme's picture, behind everything (again on each panel and bar)
     const bool overlay = modal_ != Modal::None || menuPopup_.open;
@@ -833,7 +873,8 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     c.P().Text(title.Inset(12, 0, 12, 0), target.title, Style(14, theme::Text, true));
     w::Separator(c, title.x + 8, title.Bottom() - 1, title.w - 16);
     // (a choice made in a drop-down arrives a frame later: the list may have changed since)
-    if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu); edit && edit->block < source.size()) {
+    const inspector::Refs refs = MakeRefs();
+    if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu, &refs); edit && edit->block < source.size()) {
         // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly.
         const InspectBlock& b = blocks[source[edit->block]];
         if (b.readOnly) {
@@ -909,24 +950,9 @@ void EditorScreen::DrawConsole(ui::Context& c, Rect r) {
 }
 
 void EditorScreen::DrawAssets(ui::Context& c, Rect r) {
-    auto& p = c.P();
-    p.Text({r.x + 12, r.y + 4, r.w - 24, 22}, project_.AssetsDir().native(), Style(12, theme::TextFaint));
-    const Rect view = r.Inset(0, 28, 0, 2);
-    if (assets_.empty()) {
-        p.Text({view.x + 12, view.y + 4, view.w - 24, 22}, Tr(L"Assets フォルダは空です。"), Style(12, theme::TextDim));
-        return;
-    }
-    const float lineH = 24;
-    const float content = lineH * static_cast<float>(assets_.size()) + 4;
-    const float off = w::BeginScroll(c, "assets", view, content);
-    for (size_t i = 0; i < assets_.size(); ++i) {
-        const float y = view.y + lineH * static_cast<float>(i) - off;
-        if (y + lineH < view.y || y > view.Bottom()) continue;
-        const auto& a = assets_[i];
-        p.FillRoundRect({view.x + 14, y + 6, 14, 12}, 2, a.folder ? theme::Folder : theme::TextFaint);
-        p.Text({view.x + 36, y, view.w - 50, lineH}, a.name, Style(12, theme::Text));
-    }
-    w::EndScroll(c, "assets", view, content);
+    Workspace& ws = Active();
+    if (!ws.assetPanel) ws.assetPanel = std::make_unique<AssetPanel>(*assets_, [this](std::wstring problem) { ShowError(std::move(problem)); });
+    ws.assetPanel->Draw(c, r);
 }
 
 void EditorScreen::DrawStatusBar(ui::Context& c, Rect r) {

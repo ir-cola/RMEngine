@@ -135,3 +135,37 @@ RM_TEST(Rmgen_NamesResolveLikeCpp) {
     CHECK(all.find("&rmgen_generated::T_a__b__S") != std::string::npos);
     CHECK(all.find("&rmgen_generated::E_a__E") != std::string::npos);
 }
+
+RM_TEST(Rmgen_References) {
+    const Result r = Run(R"(RM_STRUCT()
+struct Links {
+    RM_PROPERTY(Edit, AssetKind="model") rm::AssetRef model;
+    RM_PROPERTY(Edit) EntityRef target;
+    RM_PROPERTY(Edit, AssetKind="image,model") std::vector<AssetRef> textures;
+};
+)");
+    CHECK(r.diags.empty());
+    const Struct& s = r.headers[0].structs[0];
+    CHECK(s.fields[0].type.kind == TypeRef::Kind::AssetRef && s.fields[1].type.kind == TypeRef::Kind::EntityRef);
+    CHECK(s.fields[2].type.element[0].kind == TypeRef::Kind::AssetRef);
+    const std::string out = EmitHeader(r.headers, r.headers[0]);
+    CHECK(out.find("FieldType::AssetRef") != std::string::npos && out.find("FieldType::EntityRef") != std::string::npos);
+    CHECK(out.find(".assetKinds = \"model\"") != std::string::npos && out.find(".assetKinds = \"image,model\"") != std::string::npos);
+    CHECK(out.find("decltype(::Links::model), ::rm::AssetRef>") != std::string::npos);
+
+    // AssetKind only on an AssetRef, and only lower-case names with commas.
+    const Result bad = Run(R"(RM_STRUCT()
+struct A {
+    RM_PROPERTY(AssetKind="model") int a = 0;
+    RM_PROPERTY(AssetKind="Model") AssetRef b;
+    RM_PROPERTY(AssetKind="image,,model") AssetRef c;
+    RM_PROPERTY(AssetKind=model) AssetRef d;
+    RM_PROPERTY(Min=0) EntityRef e;
+};
+)");
+    CHECK(Has(bad, "RM0003", 3));
+    CHECK(Has(bad, "RM0003", 4));
+    CHECK(Has(bad, "RM0003", 5));
+    CHECK(Has(bad, "RM0003", 6));
+    CHECK(Has(bad, "RM0003", 7));
+}
