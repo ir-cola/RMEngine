@@ -5,6 +5,10 @@
 // `image` is an asset reference (the id in the file's .meta): moving or renaming the file does not lose it.
 // The size in the plane comes from the image: its pixels ÷ 1 単位のピクセル数 (100: an image of 100 x 50
 // pixels is 1 x 0.5 units), its middle at the entity's place.
+//
+// An atlas (a sprite sheet): the image cut into 横のコマ数 x 縦のコマ数 cells of the same size; コマ is the
+// one drawn (0 = top left, left to right, then down - space2d::CellOf), and its size is the cell's.
+// スプライトのアニメーション (SpriteAnimation.h) steps コマ while the game plays.
 
 #include "core/reflect/Reflect.h"
 
@@ -18,6 +22,9 @@ struct Sprite {
     RM_PROPERTY(Edit, Label="上下反転") bool flipY = false;
     RM_PROPERTY(Edit, Label="並び順", Tooltip="Transform 2D の並び順が同じ物の中で、大きいほど手前に描きます", Min=-100000, Max=100000) int order = 0;
     RM_PROPERTY(Edit, Label="1 単位のピクセル数", Tooltip="画像の何ピクセルを 1 単位の長さにするか", Min=0.01, Max=100000) float pixelsPerUnit = 100.f;
+    RM_PROPERTY(Edit, Label="横のコマ数", Tooltip="画像を同じ大きさのコマに切るとき (アトラス): 横に並ぶコマの数", Min=1, Max=1024) int columns = 1;
+    RM_PROPERTY(Edit, Label="縦のコマ数", Tooltip="画像を同じ大きさのコマに切るとき (アトラス): 縦に並ぶコマの数", Min=1, Max=1024) int rows = 1;
+    RM_PROPERTY(Edit, Label="コマ", Tooltip="描くコマの番号 (左上が 0。左から右へ、行の終わりで下の行へ)。アニメーションがあると、Play 中はそれが決めます", Min=0, Max=1000000) int cell = 0;
     RM_PROPERTY(Edit, Label="くっきり (ドット絵)", Tooltip="拡大してもぼかさず、ピクセルをそのまま大きくします") bool crisp = false;
 };
 

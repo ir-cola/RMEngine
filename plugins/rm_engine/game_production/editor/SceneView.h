@@ -60,6 +60,10 @@ class SceneView {
 public:
     virtual ~SceneView() = default;
     virtual void Draw(ui::Context& c, const ui::Rect& r, SceneViewHost& host) = 0;
+    // The game view of another space (the game's own space drew first): this space's picture laid over
+    // it, without filling the background (2D over 3D: a HUD), when the view has something to show
+    // that way. `host.game` is true. Default: nothing.
+    virtual void DrawLayer(ui::Context& c, const ui::Rect& r, SceneViewHost& host) { (void)c, (void)r, (void)host; }
     // How the user looks (camera, tool ...): kept with the panel layout, not in the project.
     virtual void LoadState(const json::Value& state) { (void)state; }
     virtual json::Value SaveState() const { return {}; }

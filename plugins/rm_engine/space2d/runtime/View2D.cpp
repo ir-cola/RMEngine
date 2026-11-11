@@ -12,28 +12,25 @@ constexpr float kZoomPerNotch = 1.2f;
 }  // namespace
 
 Vec2 ToScreen(const Camera2D& cam, const ScreenRect& r, Vec2 world) {
-    return {r.x + r.w * 0.5f + (world.x - cam.center.x) * cam.zoom, r.y + r.h * 0.5f - (world.y - cam.center.y) * cam.zoom};
+    const Vec2 d = cam.rotation != 0 ? Rotate(world - cam.center, -cam.rotation) : world - cam.center;
+    return {r.x + r.w * 0.5f + d.x * cam.zoom, r.y + r.h * 0.5f - d.y * cam.zoom};
 }
 
 Vec2 ToWorld(const Camera2D& cam, const ScreenRect& r, Vec2 screen) {
     const float z = std::max(cam.zoom, 1e-6f);
-    return {cam.center.x + (screen.x - (r.x + r.w * 0.5f)) / z, cam.center.y - (screen.y - (r.y + r.h * 0.5f)) / z};
+    const Vec2 d{(screen.x - (r.x + r.w * 0.5f)) / z, -(screen.y - (r.y + r.h * 0.5f)) / z};
+    return cam.center + (cam.rotation != 0 ? Rotate(d, cam.rotation) : d);
 }
 
 Mat3 ScreenMatrix(const Camera2D& cam, const ScreenRect& r) {
-    // x' = cx + (x - center.x) * zoom, y' = cy - (y - center.y) * zoom
-    Mat3 m;
-    m.a = cam.zoom;
-    m.d = -cam.zoom;
-    m.tx = r.x + r.w * 0.5f - cam.center.x * cam.zoom;
-    m.ty = r.y + r.h * 0.5f + cam.center.y * cam.zoom;
-    return m;
+    // The middle of the screen, Y turned over and zoomed, the camera's turn taken back, the centre to 0.
+    const Mat3 screen{cam.zoom, 0, 0, -cam.zoom, r.x + r.w * 0.5f, r.y + r.h * 0.5f};
+    return screen * Rotation(-cam.rotation) * Translation(Vec2{0, 0} - cam.center);
 }
 
 void Pan(Camera2D& cam, float dx, float dy) {
     const float z = std::max(cam.zoom, 1e-6f);
-    cam.center.x -= dx / z;
-    cam.center.y += dy / z;
+    cam.center = cam.center + Rotate({-dx / z, dy / z}, cam.rotation);
 }
 
 void ZoomAt(Camera2D& cam, const ScreenRect& r, Vec2 screen, float notches) {

@@ -135,6 +135,12 @@ bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::stri
 // Check box with a label. Returns true when the value changed.
 // mixed: the objects edited together do not agree - a dash instead of the check; a click makes it on.
 bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label, bool mixed = false);
+// A number in a text field (a view's setting - the scene view's steps): the text as typed while the field
+// has the focus, the value otherwise (`text` keeps it between frames). True when `value` changed: a number
+// typed (brought into min .. max); text that is not one changes nothing.
+bool NumberField(ui::Context& c, std::string_view id, const ui::Rect& r, float& value, float min, float max, std::string& text);
+// The rectangle being dragged out to select what is in it (a scene view): faint accent with its edge.
+void DrawSelectionBand(ui::Context& c, const ui::Rect& r);
 // A switch as on a phone: a long round track, its round knob slides to the right when on (the track
 // turns the accent color). `offLabel` / `onLabel` (optional) stand at its left / right; the one that
 // is chosen is bright. A click anywhere on it turns it over. Returns true when clicked (`on` changed).

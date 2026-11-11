@@ -1,5 +1,5 @@
 #pragma once
-// How the user looks at a game's 2D scene view: the camera, the gizmo chosen, the grid on / off. Kept
+// How the user looks at a game's 2D scene view: the camera, the gizmo chosen (and its steps), the grid on / off. Kept
 // next to the panel layout (UserSettings/Layout.json, "sceneViews" -> "2d"), not in the project - written
 // once here, so saving and loading come from the description (rule 9). Never shown in an inspector.
 
@@ -13,7 +13,14 @@ struct SceneViewState2D {
     RM_PROPERTY() space2d::Camera2D camera;
     RM_PROPERTY() space2d::gizmo2d::Tool tool = space2d::gizmo2d::Tool::Move;
     RM_PROPERTY() space2d::gizmo2d::Space space = space2d::gizmo2d::Space::Local;
+    RM_PROPERTY() space2d::gizmo2d::Pivot pivot = space2d::gizmo2d::Pivot::Each;
     RM_PROPERTY() bool grid = true;
+    // The steps of a drag (Ctrl held, or always when snapAlways - then Ctrl moves smoothly).
+    RM_PROPERTY() bool snapToGrid = true;                     // moves by the grid's step (finer when nearer)
+    RM_PROPERTY(Min=0.001, Max=100000) float snapMove = 0.25f;  // ... or by this (units)
+    RM_PROPERTY(Min=0.1, Max=180) float snapDegrees = 15.f;
+    RM_PROPERTY(Min=0.001, Max=10) float snapScale = 0.1f;     // of the scale at the start
+    RM_PROPERTY() bool snapAlways = false;
 };
 
 }  // namespace rm::game_x_2d

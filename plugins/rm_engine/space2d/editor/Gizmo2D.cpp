@@ -9,8 +9,8 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// The plane's direction on the screen (Y turned over), unit length.
-Vec2 OnScreen(Vec2 axis) { return Normalize({axis.x, -axis.y}); }
+// A direction of the plane on the screen (Y turned over, the camera's turn), unit length.
+Vec2 OnScreen(const Camera2D& cam, Vec2 axis) { return Normalize({Rotate(axis, -cam.rotation).x, -Rotate(axis, -cam.rotation).y}); }
 
 float DistanceToSegment(Vec2 p, Vec2 a, Vec2 b) {
     const Vec2 ab = b - a;
@@ -40,10 +40,19 @@ Frame MakeFrame(const Mat3& world, Tool tool, Space space) {
     return f;
 }
 
+Frame CenterFrame(std::span<const Vec2> places, const Frame& axesFrom) {
+    Frame f = axesFrom;
+    if (places.empty()) return f;
+    Vec2 sum{0, 0};
+    for (const Vec2 p : places) sum = sum + p;
+    f.origin = sum * (1.f / static_cast<float>(places.size()));
+    return f;
+}
+
 ScreenShape ShapeOf(const Frame& f, const Camera2D& cam, const ScreenRect& r) {
     ScreenShape s;
     s.origin = ToScreen(cam, r, f.origin);
-    for (size_t i = 0; i < 2; ++i) s.tips[i] = s.origin + OnScreen(f.axes[i]) * kArrowLength;
+    for (size_t i = 0; i < 2; ++i) s.tips[i] = s.origin + OnScreen(cam, f.axes[i]) * kArrowLength;
     return s;
 }
 
@@ -118,10 +127,23 @@ Change Update(Drag& drag, const Camera2D& cam, const ScreenRect& r, Vec2 mouse, 
     return ch;
 }
 
-Transform2D Apply(const Transform2D& start, const Mat3& parentWorld, const Mat3& startWorld, const Change& change) {
+Transform2D Apply(const Transform2D& start, const Mat3& parentWorld, const Mat3& startWorld, const Change& change,
+                  const Frame* pivot) {
     Transform2D t = start;
-    if (change.move.x != 0 || change.move.y != 0) {
-        const Vec2 world = TransformPoint(startWorld, {0, 0}) + change.move;
+    Vec2 world = TransformPoint(startWorld, {0, 0}) + change.move;
+    bool moved = change.move.x != 0 || change.move.y != 0;
+    if (pivot) {
+        Vec2 d = world - pivot->origin;
+        if (change.degrees != 0) d = Rotate(d, change.degrees);
+        if (change.scale.x != 1 || change.scale.y != 1) {
+            const Vec2 a = pivot->axes[0], b = pivot->axes[1];
+            d = a * (Dot(d, a) * change.scale.x) + b * (Dot(d, b) * change.scale.y);
+        }
+        const Vec2 now = pivot->origin + d;
+        moved = moved || now != world;
+        world = now;
+    }
+    if (moved) {
         if (const auto inv = Inverse(parentWorld)) t.position = TransformPoint(*inv, world);
     }
     if (change.degrees != 0) t.rotation = start.rotation + change.degrees * (Determinant(parentWorld) < 0 ? -1.f : 1.f);

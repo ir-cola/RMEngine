@@ -7,15 +7,17 @@
 //   sprites  (an image, or a square of one colour)            back to front, as given
 //   overlay  (in the plane: outlines of what is selected)     over everything
 //
-// Images are read by WIC (platform::LoadBitmapFromMemory) into Direct2D bitmaps. Bitmaps belong to
-// the Direct2D device, which every window shares, so a panel moved to a window of its own keeps them.
+// Images are read by the core's one way (platform/Image: WIC) into Direct2D bitmaps (BitmapFromImage).
+// Bitmaps belong to the Direct2D device, which every window shares, so a panel moved to a window of its
+// own keeps them.
 
-#include "platform/Gfx.h"
+#include "rm_engine/space2d/runtime/Atlas.h"
 #include "rm_engine/space2d/runtime/View2D.h"
 
-#include <filesystem>
+#include <d2d1_1.h>
+#include <wrl/client.h>
+
 #include <span>
-#include <string>
 
 namespace rm::space2d {
 
@@ -27,6 +29,7 @@ struct Line2D {
 
 struct SpriteDraw {
     ID2D1Bitmap* image = nullptr;  // null: a square of `color`
+    PixelRect part;                // the part of the image (an atlas's cell, pixels); empty: all of it
     Mat3 world;                    // where it is (its parents included)
     Vec2 size{1, 1};               // in the plane, before `world` (its middle at the thing's origin)
     Color color{1, 1, 1, 1};       // multiplies the image's colours (white: as it is)
@@ -37,7 +40,7 @@ struct SpriteDraw {
 struct RenderFrame2D {
     ScreenRect viewport;
     Camera2D camera;
-    Color clear{0, 0, 0, 1};
+    Color clear{0, 0, 0, 1};  // alpha 0: not filled (a layer over another space's picture)
     std::span<const Line2D> lines;
     std::span<const SpriteDraw> sprites;
     std::span<const Line2D> overlay;
@@ -56,10 +59,5 @@ private:
     Microsoft::WRL::ComPtr<ID2D1Effect> tint_;  // ColorMatrix: multiplies an image by a colour
     ID2D1DeviceContext* owner_ = nullptr;       // the context brush_ and tint_ were made for
 };
-
-// An image file (PNG / JPEG / BMP / GIF / TIFF ... what WIC reads) as a Direct2D bitmap; null and
-// `error` (Japanese) when it cannot be read.
-Microsoft::WRL::ComPtr<ID2D1Bitmap> LoadImageFile(platform::Gfx& gfx, ID2D1DeviceContext* dc, const std::filesystem::path& file,
-                                                  std::string* error);
 
 }  // namespace rm::space2d

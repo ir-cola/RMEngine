@@ -1,9 +1,6 @@
 #include "rm_engine/space2d/runtime/Renderer2D.h"
 
 #include <algorithm>
-#include <fstream>
-#include <iterator>
-#include <vector>
 
 namespace rm::space2d {
 
@@ -40,7 +37,9 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
     if (!dc || f.viewport.w <= 0 || f.viewport.h <= 0) return;
     D2D1_MATRIX_3X2_F old;
     dc->GetTransform(&old);
-    if (ID2D1SolidColorBrush* br = Brush(dc, f.clear)) {
+    if (f.clear.a <= 0) {
+        // a layer over another picture: nothing to fill
+    } else if (ID2D1SolidColorBrush* br = Brush(dc, f.clear)) {
         dc->FillRectangle(D2D1::RectF(f.viewport.x, f.viewport.y, f.viewport.x + f.viewport.w, f.viewport.y + f.viewport.h), br);
     }
     DrawLines(dc, f, f.lines);
@@ -50,11 +49,20 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
         const float fx = s.flipX ? -1.f : 1.f, fy = s.flipY ? -1.f : 1.f;
         // What is drawn (the image in its own DIPs, or the unit square) -> the sprite's own space:
         // its middle at the origin, Y up, `size` units across (turned over when flipped).
+        // A part of the image (an atlas's cell) is drawn at (0, 0) in the image's DIPs (its pixels may be
+        // other than 96 per inch).
         float w = 1, h = 1;
+        D2D1_RECT_F source{};
         if (s.image) {
             const D2D1_SIZE_F dip = s.image->GetSize();
-            w = std::max(dip.width, 1e-3f);
-            h = std::max(dip.height, 1e-3f);
+            const D2D1_SIZE_U px = s.image->GetPixelSize();
+            const float kx = px.width > 0 ? dip.width / static_cast<float>(px.width) : 1.f;
+            const float ky = px.height > 0 ? dip.height / static_cast<float>(px.height) : 1.f;
+            const PixelRect part = s.part.w > 0 && s.part.h > 0 ? s.part : PixelRect{0, 0, px.width, px.height};
+            source = D2D1::RectF(static_cast<float>(part.x) * kx, static_cast<float>(part.y) * ky, static_cast<float>(part.x + part.w) * kx,
+                                 static_cast<float>(part.y + part.h) * ky);
+            w = std::max(source.right - source.left, 1e-3f);
+            h = std::max(source.bottom - source.top, 1e-3f);
         }
         const Mat3 own{s.size.x * fx / w, 0, 0, -s.size.y * fy / h, -0.5f * s.size.x * fx, 0.5f * s.size.y * fy};
         dc->SetTransform(ToD2D(screen * s.world * own) * old);
@@ -65,13 +73,13 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
         }
         const D2D1_INTERPOLATION_MODE mode = s.crisp ? D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR : D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC;
         if (IsWhite(s.color)) {
-            dc->DrawBitmap(s.image, rect, s.color.a, mode, nullptr, nullptr);
+            dc->DrawBitmap(s.image, rect, s.color.a, mode, &source, nullptr);
             continue;
         }
         Brush(dc, s.color);  // (makes sure tint_ belongs to this context)
         if (!tint_ && FAILED(dc->CreateEffect(CLSID_D2D1ColorMatrix, &tint_))) tint_.Reset();
         if (!tint_) {
-            dc->DrawBitmap(s.image, rect, s.color.a, mode, nullptr, nullptr);
+            dc->DrawBitmap(s.image, rect, s.color.a, mode, &source, nullptr);
             continue;
         }
         // Rows: the input's r, g, b, a and 1; columns: the output's. Each colour multiplied by the tint.
@@ -82,22 +90,14 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
                                                      0, 0, 0, 0);
         tint_->SetInput(0, s.image);
         tint_->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
-        dc->DrawImage(tint_.Get(), mode);
+        Microsoft::WRL::ComPtr<ID2D1Image> out;
+        tint_->GetOutput(&out);
+        const D2D1_POINT_2F at{0, 0};  // the part's top left lands at (0, 0)
+        dc->DrawImage(out.Get(), &at, &source, mode);
         tint_->SetInput(0, nullptr);
     }
     dc->SetTransform(old);
     DrawLines(dc, f, f.overlay);
-}
-
-Microsoft::WRL::ComPtr<ID2D1Bitmap> LoadImageFile(platform::Gfx& gfx, ID2D1DeviceContext* dc, const std::filesystem::path& file,
-                                                  std::string* error) {
-    std::ifstream in(file, std::ios::binary);
-    if (!in) {
-        if (error) *error = "ファイルを開けませんでした";
-        return {};
-    }
-    const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    return platform::LoadBitmapFromMemory(gfx, dc, bytes, 0, error);
 }
 
 }  // namespace rm::space2d

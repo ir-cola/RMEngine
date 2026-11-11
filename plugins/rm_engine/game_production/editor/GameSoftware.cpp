@@ -640,6 +640,10 @@ private:
         if (!Running() && r.h > 120) DrawStoppedStrip(c, ui::TakeTop(r, kSpaceStripH));
         SceneViewHost h = ViewHost(true);
         view->game->Draw(c, r, h);
+        // The other spaces over it, in their order (2D over a 3D game, when it has a camera to show it).
+        for (View& other : views_) {
+            if (&other != view) other.game->DrawLayer(c, r, h);
+        }
         if (play_ == PlayState::Playing) c.RequestAnimation();
     }
 

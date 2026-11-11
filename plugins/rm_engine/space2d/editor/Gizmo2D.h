@@ -9,7 +9,7 @@
 //   gizmo2d::Handle h = gizmo2d::HitTest(tool, f, camera, rect, mouse);
 //   gizmo2d::Drag drag = gizmo2d::BeginDrag(tool, h, f, camera, rect, mouse);   // on press
 //   gizmo2d::Change ch = gizmo2d::Update(drag, camera, rect, mouse, snap);     // every move
-//   transform = gizmo2d::Apply(start, parentWorld, startWorld, ch);
+//   transform = gizmo2d::Apply(start, parentWorld, startWorld, ch);          // (or with &f: about its middle)
 //
 // The gizmo keeps one size on the screen (DIPs) however near the camera is.
 
@@ -18,6 +18,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 
 namespace rm::space2d::gizmo2d {
 
@@ -27,6 +28,10 @@ enum class Tool { Move, Rotate, Scale };
 // own axes - a Transform 2D's scale is.)
 RM_ENUM()
 enum class Space { Local, World };
+// Where the gizmo sits when several things are selected, and what they turn / scale about: each about
+// its own place (the gizmo on the one selected last), or all about the middle of them (the gizmo there).
+RM_ENUM()
+enum class Pivot { Each, Center };
 
 enum class Handle : uint8_t {
     None,
@@ -47,6 +52,8 @@ struct Frame {
     std::array<Vec2, 2> axes{Vec2{1, 0}, Vec2{0, 1}};
 };
 Frame MakeFrame(const Mat3& world, Tool tool, Space space);
+// The middle of several places (中心), with the axes of `axesFrom` (the one selected last).
+Frame CenterFrame(std::span<const Vec2> places, const Frame& axesFrom);
 
 // On the screen: the gizmo's middle and the tip of each arrow.
 struct ScreenShape {
@@ -87,7 +94,10 @@ struct Change {
 Change Update(Drag& drag, const Camera2D& cam, const ScreenRect& r, Vec2 mouse, const Snap& snap);
 
 // The Transform 2D after the change (from how it was when the drag began): a move is in the world and
-// goes through the parent's inverse; a turn is turned over under a mirrored parent.
-Transform2D Apply(const Transform2D& start, const Mat3& parentWorld, const Mat3& startWorld, const Change& change);
+// goes through the parent's inverse; a turn is turned over under a mirrored parent. `pivot` (中心): a
+// turn also carries its place round the gizmo's middle, a scale moves it away from the middle along the
+// gizmo's axes.
+Transform2D Apply(const Transform2D& start, const Mat3& parentWorld, const Mat3& startWorld, const Change& change,
+                  const Frame* pivot = nullptr);
 
 }  // namespace rm::space2d::gizmo2d

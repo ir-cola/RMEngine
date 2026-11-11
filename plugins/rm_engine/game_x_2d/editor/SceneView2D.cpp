@@ -7,10 +7,13 @@
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
+#include "platform/Gfx.h"
+#include "platform/Image.h"
 #include "rm_engine/game_x_2d/editor/SceneViewState2D.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/space2d/editor/Gizmo2D.h"
+#include "rm_engine/space2d/runtime/Atlas.h"
 #include "rm_engine/space2d/runtime/Renderer2D.h"
 #include "rm_engine/space2d/runtime/View2D.h"
 #include "ui/Path.h"
@@ -44,13 +47,14 @@ using ui::Rect;
 constexpr float kClickSlop = 4.f;     // a press that moves less than this is a click
 constexpr float kMarkRadius = 7.f;    // the ring of an entity without a sprite (DIPs)
 constexpr float kBarH = 28.f;         // the tool strip at the top left
-constexpr float kToolW = 196.f, kSpaceW = 168.f, kGridW = 56.f, kBarGap = 8.f;
-constexpr float kSnapDegrees = 15.f, kSnapScale = 0.1f;
+constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kGridW = 56.f, kBarGap = 8.f;
+constexpr float kSnapBoxW = 280.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
+constexpr uint32_t kMaxImageSize = 16384;     // what Direct2D can hold in one bitmap (bigger: scaled down)
 constexpr double kImageCheckSeconds = 1.0;    // how often an image file is looked at again (changed on disk?)
 constexpr double kImageForgetSeconds = 10.0;  // an image no entity uses for this long is let go
 
 struct BarLayout {
-    Rect tool, space, grid, all;
+    Rect tool, space, pivot, snap, grid, all;
 };
 
 // An entity with a Transform 2D, as it is this frame.
@@ -81,6 +85,7 @@ Rect Fit(const Rect& r, float aspect) {
 // again now and then: a file changed on disk is read again; a file that cannot be read is told once.
 struct ImageEntry {
     Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
+    uint32_t width = 0, height = 0;  // the file's pixels (the bitmap may be smaller: kMaxImageSize)
     bool looked = false, loaded = false, told = false;
     std::filesystem::file_time_type time{};
     double checkedAt = 0, usedAt = 0;
@@ -103,28 +108,48 @@ std::optional<size_t> FieldIndex(std::string_view name) {
     return std::nullopt;
 }
 
+Rect Normalized(Vec2 a, Vec2 b) { return {std::min(a.x, b.x), std::min(a.y, b.y), std::abs(b.x - a.x), std::abs(b.y - a.y)}; }
+
 class SceneView2D final : public game_production::SceneView {
 public:
     void Draw(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) override {
         if (r.w < 8 || r.h < 8) return;
-        transformType_ = reflect::TypeOf<Transform2D>().name;
-        spriteType_ = reflect::TypeOf<Sprite>().name;
-        cameraType_ = reflect::TypeOf<Camera2D>().name;
-        now_ = c.Time();
-        Place(c, host);
-        ForgetUnusedImages();
+        Begin(c, host);
         if (host.game) {  // the game view: only the picture, through the game's camera
             DrawGame(c, r, host);
             return;
         }
         c.P().PushClip(r);
         const std::optional<BarLayout> bar = Bar(r);
+        if (!bar) snapOpen_ = false;
         if (HandleInput(c, r, host, bar)) Place(c, host);  // a drag moved things this frame
         Render(c, r, host, state_.camera, theme::SceneBackground());
         DrawGizmo(c, r, host);
+        if (drag_ == Drag::Band) w::DrawSelectionBand(c, Normalized(press_, {c.In().mouseX, c.In().mouseY}).Intersect(r));
         DrawHints(c, r, bar);
         c.P().PopClip();
         if (bar) DrawBar(c, *bar);
+        if (bar && snapOpen_) DrawSnapBox(c, SnapBox(r, *bar));
+    }
+
+    // In a 3D game: the 2D picture over the 3D one, through a カメラ (2D) with 3D の上に重ねる - the
+    // 最初のカメラ when it is one, else the first active one in the 階層. Nothing without one.
+    void DrawLayer(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) override {
+        if (r.w < 8 || r.h < 8) return;
+        Begin(c, host);
+        const Placed* cam = nullptr;
+        auto usable = [](const Placed& p) { return p.camera && p.camera->overlay && p.active; };
+        if (const Placed* chosen = host.camera != 0 ? FindPlaced(static_cast<int>(host.camera)) : nullptr; chosen && usable(*chosen)) {
+            cam = chosen;
+        }
+        for (const Placed& p : placed_) {
+            if (!cam && usable(p)) cam = &p;
+        }
+        if (!cam) return;
+        const Rect at = Fit(r, host.aspect);
+        c.P().PushClip(at);
+        Render(c, at, host, ViewOf(*cam->camera, cam->world, at.h), Color{0, 0, 0, 0});
+        c.P().PopClip();
     }
 
     void LoadState(const json::Value& s) override {
@@ -137,6 +162,15 @@ public:
     json::Value SaveState() const override { return reflect::Save(state_, &unknowns_); }
 
 private:
+    void Begin(ui::Context& c, game_production::SceneViewHost& host) {
+        transformType_ = reflect::TypeOf<Transform2D>().name;
+        spriteType_ = reflect::TypeOf<Sprite>().name;
+        cameraType_ = reflect::TypeOf<Camera2D>().name;
+        now_ = c.Time();
+        Place(c, host);
+        ForgetUnusedImages();
+    }
+
     // --- Where everything is ---------------------------------------------------------------------
     void Place(ui::Context& c, game_production::SceneViewHost& host) {
         placed_.clear();
@@ -177,11 +211,15 @@ private:
                 p.draw.flipX = sp.flipX;
                 p.draw.flipY = sp.flipY;
                 p.draw.crisp = sp.crisp;
-                p.draw.image = Image(c, sp.image, host);
-                if (p.draw.image) {
-                    const D2D1_SIZE_U px = p.draw.image->GetPixelSize();
+                if (const ImageEntry* img = Image(c, sp.image, host)) {
+                    p.draw.image = img->bitmap.Get();
+                    // The cell of the atlas, in the bitmap's pixels; its size in the plane from the file's
+                    // pixels (a bitmap scaled down to fit keeps the sprite's size).
+                    const D2D1_SIZE_U px = img->bitmap->GetPixelSize();
+                    p.draw.part = space2d::CellOf(px.width, px.height, sp.columns, sp.rows, sp.cell);
+                    const space2d::PixelRect file = space2d::CellOf(img->width, img->height, sp.columns, sp.rows, sp.cell);
                     const float ppu = std::max(sp.pixelsPerUnit, 0.01f);
-                    p.draw.size = {static_cast<float>(px.width) / ppu, static_cast<float>(px.height) / ppu};
+                    p.draw.size = {static_cast<float>(file.w) / ppu, static_cast<float>(file.h) / ppu};
                 }
             }
             placed_.push_back(p);
@@ -189,11 +227,12 @@ private:
     }
 
     // The image `ref` names (wherever it is now), read the first time it is asked for; null: a square.
-    ID2D1Bitmap* Image(ui::Context& c, const AssetRef& ref, game_production::SceneViewHost& host) {
+    // Read by the core's one way to read pictures (platform/Image: WIC), made a Direct2D bitmap.
+    const ImageEntry* Image(ui::Context& c, const AssetRef& ref, game_production::SceneViewHost& host) {
         if (ref.Empty()) return nullptr;
         ImageEntry& m = images_[ref.guid];
         m.usedAt = now_;
-        if (m.looked && now_ - m.checkedAt < kImageCheckSeconds) return m.bitmap.Get();
+        if (m.looked && now_ - m.checkedAt < kImageCheckSeconds) return m.bitmap ? &m : nullptr;
         m.looked = true;
         m.checkedAt = now_;
         const std::filesystem::path file = host.host.AssetFile(ref);
@@ -210,19 +249,30 @@ private:
             return nullptr;
         }
         m.told = false;
-        if (m.loaded && time == m.time) return m.bitmap.Get();  // not changed
+        if (m.loaded && time == m.time) return m.bitmap ? &m : nullptr;  // not changed
         const bool again = m.bitmap != nullptr;
         m.loaded = true;
         m.time = time;
+        m.bitmap.Reset();
         std::string error;
-        m.bitmap = space2d::LoadImageFile(host.host.Graphics(), c.P().DC(), file, &error);
+        // (the file's own size first: a picture bigger than a bitmap is scaled down, the sprite keeps its size)
+        const auto whole = platform::LoadImageFile(host.host.Graphics().Wic(), file, platform::PixelOrder::PremultipliedBgra, {}, &error);
+        if (whole) {
+            m.width = whole->width;
+            m.height = whole->height;
+            const bool big = whole->width > kMaxImageSize || whole->height > kMaxImageSize;
+            const auto fitted = big ? platform::LoadImageFile(host.host.Graphics().Wic(), file, platform::PixelOrder::PremultipliedBgra,
+                                                              {kMaxImageSize, kMaxImageSize}, &error)
+                                    : std::nullopt;
+            m.bitmap = platform::BitmapFromImage(c.P().DC(), big && fitted ? *fitted : *whole);
+            if (!m.bitmap && error.empty()) error = "Direct2D のビットマップにできませんでした";
+        }
         if (m.bitmap) {
-            const D2D1_SIZE_U px = m.bitmap->GetPixelSize();
-            log::Info("2D のシーンビュー: 画像「{}」を{}読みました ({} x {} ピクセル)", name, again ? "もう一度" : "", px.width, px.height);
+            log::Info("2D のシーンビュー: 画像「{}」を{}読みました ({} x {} ピクセル)", name, again ? "もう一度" : "", m.width, m.height);
         } else {
             log::Warn("2D のシーンビュー: 画像「{}」を読めないので四角で描きます: {}", name, error);
         }
-        return m.bitmap.Get();
+        return m.bitmap ? &m : nullptr;
     }
 
     void ForgetUnusedImages() {
@@ -236,12 +286,26 @@ private:
         return nullptr;
     }
 
-    // The gizmo sits on the last selected entity that has a place (the one clicked last).
+    // The gizmo's axes come from the last selected entity that has a place (the one clicked last).
     const Placed* Primary(std::span<const int> selection) const {
         for (auto it = selection.rbegin(); it != selection.rend(); ++it) {
             if (const Placed* p = FindPlaced(*it)) return p;
         }
         return nullptr;
+    }
+
+    // Where the gizmo is: on the one selected last (それぞれ), or in the middle of every selected thing
+    // that moves - a child of a selected parent not counted - with the last one's axes (中心).
+    std::optional<gizmo::Frame> GizmoFrame(const game_production::SceneViewHost& host, gizmo::Tool tool) const {
+        const Placed* p = Primary(host.selection);
+        if (!p) return std::nullopt;
+        const gizmo::Frame own = gizmo::MakeFrame(p->world, tool, state_.space);
+        if (state_.pivot == gizmo::Pivot::Each) return own;
+        std::vector<Vec2> places;
+        for (const int id : host.scene.Roots(host.selection)) {
+            if (const Placed* q = FindPlaced(id)) places.push_back(space2d::TransformPoint(q->world, {0, 0}));
+        }
+        return gizmo::CenterFrame(places, own);
     }
 
     // What a click hits: a sprite's rectangle, or the ring of a thing without one.
@@ -253,6 +317,25 @@ private:
         }
         const Vec2 at = space2d::ToScreen(state_.camera, sr, space2d::TransformPoint(p.world, {0, 0}));
         return space2d::Length(mouse - at) <= kMarkRadius + 3.f;
+    }
+
+    // Where a thing is on the screen: the box around its sprite's corners, or around its ring.
+    Rect ScreenBounds(const Placed& p, const Rect& r) const {
+        const space2d::ScreenRect sr = ToScreenRect(r);
+        if (!p.sprite) {
+            const Vec2 at = space2d::ToScreen(state_.camera, sr, space2d::TransformPoint(p.world, {0, 0}));
+            return {at.x - kMarkRadius, at.y - kMarkRadius, kMarkRadius * 2, kMarkRadius * 2};
+        }
+        const Vec2 half = p.draw.size * 0.5f;
+        Vec2 k[4];
+        space2d::PlacedBoxCorners(p.world, {-half.x, -half.y}, half, k);
+        Vec2 mn = space2d::ToScreen(state_.camera, sr, k[0]), mx = mn;
+        for (const Vec2& q : k) {
+            const Vec2 s = space2d::ToScreen(state_.camera, sr, q);
+            mn = {std::min(mn.x, s.x), std::min(mn.y, s.y)};
+            mx = {std::max(mx.x, s.x), std::max(mx.y, s.y)};
+        }
+        return {mn.x, mn.y, mx.x - mn.x, mx.y - mn.y};
     }
 
     // The front one under the mouse (0: none).
@@ -273,7 +356,7 @@ private:
         return space2d::DrawOrder(keys);
     }
 
-    // --- The tool strip --------------------------------------------------------------------------
+    // --- The tool strip and the box of the steps -------------------------------------------------
     static std::optional<BarLayout> Bar(const Rect& r) {
         if (r.w < kToolW + 16 || r.h < kBarH + 60) return std::nullopt;
         BarLayout b;
@@ -289,18 +372,26 @@ private:
         };
         b.tool = place(kToolW);
         b.space = place(kSpaceW);
+        b.pivot = place(kPivotW);
+        b.snap = place(kSnapW);
         b.grid = place(kGridW);
-        const float right = std::max({b.tool.Right(), b.space.Right(), b.grid.Right()});
+        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.grid.Right()});
         b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.grid.Bottom() - (r.y + 8)};
         return b;
     }
 
-    static bool OverBar(const std::optional<BarLayout>& bar, float x, float y) {
+    // The box of the steps, under 刻み (kept inside the view).
+    static Rect SnapBox(const Rect& r, const BarLayout& b) {
+        const float h = 10 + 5 * kSnapRowH + 6;
+        return {std::max(r.x + 8, std::min(b.snap.x, r.Right() - 8 - kSnapBoxW)), b.snap.Bottom() + 4, kSnapBoxW, h};
+    }
+
+    bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (!bar) return false;
-        for (const Rect& part : {bar->tool, bar->space, bar->grid}) {
+        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->grid}) {
             if (part.Contains(x, y)) return true;
         }
-        return false;
+        return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
     }
 
     void DrawBar(ui::Context& c, const BarLayout& bar) {
@@ -318,25 +409,76 @@ private:
         if (const int i = w::Segmented(c, "gizmo2d_space", bar.space, spaces, static_cast<int>(state_.space), spaceTips); i >= 0) {
             state_.space = static_cast<gizmo::Space>(i);
         }
+        const std::wstring each = Tr(L"それぞれ"), center = Tr(L"中心");
+        const std::wstring eachTip = Tr(L"選んだ物をそれぞれの場所で回す・大きさを変える。ギズモは最後に選んだ物に (Z で切り替え)");
+        const std::wstring centerTip = Tr(L"選んだ物全部の真ん中にギズモを出し、そこを中心に回す・大きさを変える (Z で切り替え)");
+        const std::array<std::wstring_view, 2> pivots{each, center};
+        const std::array<std::wstring_view, 2> pivotTips{eachTip, centerTip};
+        if (const int i = w::Segmented(c, "gizmo2d_pivot", bar.pivot, pivots, static_cast<int>(state_.pivot), pivotTips); i >= 0) {
+            state_.pivot = static_cast<gizmo::Pivot>(i);
+        }
+        // 刻み: opens the box of the steps (in the accent while drags always go in steps).
+        if (w::Button(c, "gizmo2d_snap", bar.snap, Tr(L"刻み"), state_.snapAlways ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+            snapOpen_ = !snapOpen_;
+        }
+        if (!snapOpen_ && c.IsHovered(bar.snap)) w::Tooltip(c, Tr(L"ドラッグの刻む幅 (Ctrl を押しながらドラッグすると刻んで動く)"));
         if (w::Button(c, "scene2d_grid", bar.grid, Tr(L"格子"), state_.grid ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.grid = !state_.grid;
         }
-        if (c.IsHovered(bar.grid)) w::Tooltip(c, Tr(L"格子を出す・消す (Ctrl でドラッグすると格子の目に合わせて動く)"));
+        if (c.IsHovered(bar.grid)) w::Tooltip(c, Tr(L"格子を出す・消す"));
+    }
+
+    // The steps: how far a move, a turn and a scale go at a time; and whether always. View state like the
+    // tool (kept in UserSettings, not an edit of the project).
+    void DrawSnapBox(ui::Context& c, const Rect& box) {
+        w::DrawSurface(c, box, w::Surface::Popup);
+        ui::TextStyle label;
+        label.size = theme::FontSize;
+        label.color = theme::TextDim;
+        label.v = ui::VAlign::Center;
+        float y = box.y + 10;
+        w::Checkbox(c, "snap2d_grid", {box.x + 12, y + 2, box.w - 24, 24}, state_.snapToGrid, Tr(L"移動は格子の目に合わせる (近づくと細かく)"));
+        y += kSnapRowH;
+        struct Row {
+            const char* id;
+            std::wstring name;
+            float* value;
+            float min, max;
+        };
+        Row rows[] = {{"snap2d_move", Tr(L"移動"), &state_.snapMove, 0.001f, 100000.f},
+                      {"snap2d_degrees", Tr(L"回転 (度)"), &state_.snapDegrees, 0.1f, 180.f},
+                      {"snap2d_scale", Tr(L"大きさ"), &state_.snapScale, 0.001f, 10.f}};
+        for (size_t i = 0; i < std::size(rows); ++i, y += kSnapRowH) {
+            Row& row = rows[i];
+            const bool off = i == 0 && state_.snapToGrid;  // the grid's step is used instead
+            ui::TextStyle l = label;
+            if (off) l.color = theme::TextFaint;
+            c.P().Text({box.x + 12, y, 140, kSnapRowH - 6}, row.name, l);
+            w::NumberField(c, row.id, {box.Right() - 12 - 110, y, 110, kSnapRowH - 6}, *row.value, row.min, row.max, snapText_[i]);
+        }
+        w::Checkbox(c, "snap2d_always", {box.x + 12, y + 2, box.w - 24, 24}, state_.snapAlways, Tr(L"いつも刻む (Ctrl を押すとなめらか)"));
     }
 
     // --- Input ---------------------------------------------------------------------------------
     // Returns true when a drag changed the scene this frame.
     bool HandleInput(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const std::optional<BarLayout>& bar) {
         const ui::Input& in = c.In();
-        const bool hovered = c.IsHovered(r) && !OverBar(bar, in.mouseX, in.mouseY);
+        const bool overBar = OverBar(r, bar, in.mouseX, in.mouseY);
+        bool hovered = c.IsHovered(r) && !overBar;
+        // The box of the steps closes on a click outside it (the click does nothing else) or Esc.
+        if (snapOpen_ && drag_ == Drag::None) {
+            const bool pressed = c.MousePressed() || c.MousePressed(ui::Mouse::Right) || c.MousePressed(ui::Mouse::Middle);
+            if ((pressed && !overBar) || (c.Focused() == 0 && c.KeyPressed(ui::Key::Escape))) {
+                snapOpen_ = false;
+                if (pressed) hovered = false;
+            }
+        }
         const Vec2 mouse{in.mouseX, in.mouseY};
         const space2d::ScreenRect sr = ToScreenRect(r);
         bool changed = false;
 
         // In Play the scene is the copy that plays: shown, not edited (no gizmo, no dragging things).
-        const Placed* primary = host.playing ? nullptr : Primary(host.selection);
-        const std::optional<gizmo::Frame> frame =
-            primary ? std::optional<gizmo::Frame>(gizmo::MakeFrame(primary->world, state_.tool, state_.space)) : std::nullopt;
+        const std::optional<gizmo::Frame> frame = host.playing ? std::nullopt : GizmoFrame(host, state_.tool);
         if (drag_ == Drag::None) {
             hot_ = hovered && frame ? gizmo::HitTest(state_.tool, *frame, state_.camera, sr, mouse) : gizmo::Handle::None;
         }
@@ -349,6 +491,8 @@ private:
             } else if (c.MousePressed() && hot_ != gizmo::Handle::None && frame &&
                        BeginEdit(host, host.scene.Roots(host.selection))) {
                 gizmo_ = gizmo::BeginDrag(state_.tool, hot_, *frame, state_.camera, sr, mouse);
+                // 中心: turns and scales go about the gizmo's middle (a move is the same either way).
+                pivot_ = state_.pivot == gizmo::Pivot::Center ? std::optional<gizmo::Frame>(*frame) : std::nullopt;
                 drag_ = Drag::Gizmo;
             } else if (c.MousePressed()) {
                 drag_ = Drag::Press;
@@ -359,14 +503,19 @@ private:
             const bool held = drag_ == Drag::PanRight ? in.down[1] : drag_ == Drag::PanMiddle ? in.down[2] : in.down[0];
             if (!held) {
                 if (drag_ == Drag::Press) Click(host, r, in.ctrl);
+                if (drag_ == Drag::Band) SelectInBand(host, r, Normalized(press_, mouse), in.ctrl);
                 if (drag_ == Drag::Gizmo || drag_ == Drag::Body) EndEdit(host);
                 drag_ = Drag::None;
             } else if (drag_ == Drag::PanRight || drag_ == Drag::PanMiddle) {
                 space2d::Pan(state_.camera, in.mouseDX, in.mouseDY);
-            } else if (drag_ == Drag::Press) {
-                // Far enough: a drag that started on a thing moves it (with the rest of the selection,
-                // when it is selected; alone - and selected now - when it is not).
-                if (pressed_ != 0 && space2d::Length(mouse - press_) >= kClickSlop) {
+            } else if (drag_ == Drag::Band) {
+                if (c.KeyPressed(ui::Key::Escape)) drag_ = Drag::Cancelled;
+            } else if (drag_ == Drag::Press && space2d::Length(mouse - press_) >= kClickSlop) {
+                if (pressed_ == 0) {
+                    drag_ = Drag::Band;  // from an empty place: a rectangle selects what it touches
+                } else {
+                    // A drag that started on a thing moves it (with the rest of the selection, when it is
+                    // selected; alone - and selected now - when it is not).
                     const bool inSelection = std::find(host.selection.begin(), host.selection.end(), pressed_) != host.selection.end();
                     std::vector<int> ids = inSelection ? host.scene.Roots(host.selection) : std::vector<int>{pressed_};
                     if (!inSelection) host.select({pressed_});
@@ -374,6 +523,7 @@ private:
                         gizmo::Frame f;
                         f.origin = space2d::TransformPoint(FindPlaced(pressed_)->world, {0, 0});
                         gizmo_ = gizmo::BeginDrag(gizmo::Tool::Move, gizmo::Handle::Free, f, state_.camera, sr, press_);
+                        pivot_.reset();
                         drag_ = Drag::Body;
                     } else {
                         drag_ = Drag::Cancelled;
@@ -385,11 +535,12 @@ private:
                     CancelEdit();  // everything back where it was; the button still has to be let go
                     drag_ = Drag::Cancelled;
                 } else {
+                    // Ctrl: in steps - or smoothly, when it is always in steps.
                     gizmo::Snap snap;
-                    snap.on = in.ctrl;
-                    snap.move = space2d::GridFor(state_.camera.zoom).step;
-                    snap.degrees = kSnapDegrees;
-                    snap.scale = kSnapScale;
+                    snap.on = in.ctrl != state_.snapAlways;
+                    snap.move = state_.snapToGrid ? space2d::GridFor(state_.camera.zoom).step : state_.snapMove;
+                    snap.degrees = state_.snapDegrees;
+                    snap.scale = state_.snapScale;
                     ApplyEdit(gizmo::Update(*gizmo_, state_.camera, sr, mouse, snap));
                 }
                 changed = true;
@@ -402,6 +553,7 @@ private:
             if (c.KeyPressed(ui::Key::E)) state_.tool = gizmo::Tool::Rotate;
             if (c.KeyPressed(ui::Key::R)) state_.tool = gizmo::Tool::Scale;
             if (c.KeyPressed(ui::Key::X)) state_.space = state_.space == gizmo::Space::Local ? gizmo::Space::World : gizmo::Space::Local;
+            if (c.KeyPressed(ui::Key::Z)) state_.pivot = state_.pivot == gizmo::Pivot::Each ? gizmo::Pivot::Center : gizmo::Pivot::Each;
         }
         return changed;
     }
@@ -419,6 +571,17 @@ private:
             sel.erase(it);
         } else {
             sel.push_back(hit);
+        }
+        host.select(std::move(sel));
+    }
+
+    // The rectangle dragged out: everything it touches (in the 階層's order); Ctrl adds to the selection.
+    void SelectInBand(game_production::SceneViewHost& host, const Rect& r, const Rect& band, bool ctrl) {
+        std::vector<int> sel = ctrl ? std::vector<int>(host.selection.begin(), host.selection.end()) : std::vector<int>{};
+        for (const Placed& p : placed_) {
+            const Rect b = ScreenBounds(p, r);
+            const bool touches = b.x <= band.Right() && b.Right() >= band.x && b.y <= band.Bottom() && b.Bottom() >= band.y;
+            if (touches && std::find(sel.begin(), sel.end(), p.id) == sel.end()) sel.push_back(p.id);
         }
         host.select(std::move(sel));
     }
@@ -457,7 +620,9 @@ private:
     void ApplyEdit(const gizmo::Change& change) {
         for (const Edited& e : edited_) {
             const reflect::EditTarget t = e.resolve();
-            if (t.object) *static_cast<Transform2D*>(t.object) = gizmo::Apply(e.start, e.parentWorld, e.startWorld, change);
+            if (t.object) {
+                *static_cast<Transform2D*>(t.object) = gizmo::Apply(e.start, e.parentWorld, e.startWorld, change, pivot_ ? &*pivot_ : nullptr);
+            }
         }
     }
 
@@ -493,6 +658,7 @@ private:
         if (!group->Empty()) host.host.History().Push(std::move(group));  // already applied while dragging
         edited_.clear();
         gizmo_.reset();
+        pivot_.reset();
     }
 
     // --- The game view -------------------------------------------------------------------------
@@ -532,6 +698,7 @@ private:
     }
 
     // --- Drawing -------------------------------------------------------------------------------
+    // `clear` alpha 0: a layer over another space's picture (nothing filled).
     void Render(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const space2d::Camera2D& view, Color clear) {
         const bool game = host.game;
         const space2d::ScreenRect sr = ToScreenRect(r);
@@ -559,7 +726,7 @@ private:
                 if (p.sprite) {
                     if (selected) Outline(p, theme::Accent);
                 } else {
-                    Mark(p, sr, selected ? theme::Accent : p.active ? theme::SceneObject() : theme::SceneObjectInactive());
+                    Mark(p, selected ? theme::Accent : p.active ? theme::SceneObject() : theme::SceneObjectInactive());
                 }
             }
         }
@@ -598,21 +765,24 @@ private:
         for (int i = 0; i < 4; ++i) overlay_.push_back({k[i], k[(i + 1) % 4], col, 1.5f});
     }
 
-    // What a camera sees (the game screen's shape about its place), and a small mark on its top edge
-    // (which way is up).
+    // What a camera sees (the game screen's shape about its place, turned with it), and a small mark on
+    // its top edge (which way is up).
     void CameraFrame(const Placed& p, float aspect, ui::Color col) {
         const Vec2 half = HalfExtent(*p.camera, aspect);
-        const Vec2 o = space2d::TransformPoint(p.world, {0, 0});
-        const Vec2 k[4] = {o + Vec2{-half.x, -half.y}, o + Vec2{half.x, -half.y}, o + half, o + Vec2{-half.x, half.y}};
+        const space2d::WorldPlacement2D at = space2d::Decompose(p.world);
+        const Mat3 frame = space2d::Translation(at.position) * space2d::Rotation(at.rotation);
+        Vec2 k[4];
+        space2d::PlacedBoxCorners(frame, {-half.x, -half.y}, half, k);
         for (int i = 0; i < 4; ++i) overlay_.push_back({k[i], k[(i + 1) % 4], col, 1.5f});
         const float tick = half.y * 0.08f;
-        overlay_.push_back({o + Vec2{-tick, half.y}, o + Vec2{0, half.y + tick}, col, 1.5f});
-        overlay_.push_back({o + Vec2{0, half.y + tick}, o + Vec2{tick, half.y}, col, 1.5f});
+        const Vec2 a = space2d::TransformPoint(frame, {-tick, half.y}), top = space2d::TransformPoint(frame, {0, half.y + tick});
+        const Vec2 b = space2d::TransformPoint(frame, {tick, half.y});
+        overlay_.push_back({a, top, col, 1.5f});
+        overlay_.push_back({top, b, col, 1.5f});
     }
 
     // A thing without a sprite: a small ring (the same size on the screen) with a tick along its X axis.
-    void Mark(const Placed& p, const space2d::ScreenRect& sr, ui::Color col) {
-        (void)sr;
+    void Mark(const Placed& p, ui::Color col) {
         const float rad = kMarkRadius / std::max(state_.camera.zoom, 1e-6f);
         const Vec2 o = space2d::TransformPoint(p.world, {0, 0});
         constexpr int kSegments = 20;
@@ -626,14 +796,12 @@ private:
 
     // The gizmo over the picture (drawn on the screen from gizmo2d's shapes: what is drawn is what is grabbed).
     void DrawGizmo(ui::Context& c, const Rect& r, const game_production::SceneViewHost& host) {
-        if (host.playing || drag_ == Drag::Body) return;  // Play: not edited / dragging the thing itself
-        const Placed* primary = Primary(host.selection);
-        if (!primary) return;
+        if (host.playing || drag_ == Drag::Body || drag_ == Drag::Band) return;  // Play: not edited
         const gizmo::Tool tool = drag_ == Drag::Gizmo && gizmo_ ? gizmo_->tool : state_.tool;
-        const gizmo::Frame f = drag_ == Drag::Gizmo && gizmo_ ? gizmo_->frame : gizmo::MakeFrame(primary->world, tool, state_.space);
-        // While dragging, the gizmo follows the thing (its frame as it is now).
-        const gizmo::Frame shown = drag_ == Drag::Gizmo ? gizmo::MakeFrame(primary->world, tool, state_.space) : f;
-        const gizmo::ScreenShape s = gizmo::ShapeOf(shown, state_.camera, ToScreenRect(r));
+        // While dragging, the gizmo follows the things (made again from where they are now).
+        const std::optional<gizmo::Frame> shown = GizmoFrame(host, tool);
+        if (!shown) return;
+        const gizmo::ScreenShape s = gizmo::ShapeOf(*shown, state_.camera, ToScreenRect(r));
         const gizmo::Handle active = drag_ == Drag::Gizmo && gizmo_ ? gizmo_->handle : hot_;
         auto& p = c.P();
         auto colorOf = [&](gizmo::Handle h, ui::Color base) { return h == active ? theme::GizmoHot() : base; };
@@ -689,7 +857,7 @@ private:
         ts.v = ui::VAlign::Bottom;
         ts.wrap = true;
         c.P().Text(r.Inset(10, 8, 10, 8),
-                   Tr(L"右 / 中ドラッグ: 平行移動   ホイール: 近づく   クリック: 選ぶ (Ctrl: 足す・外す)   物をドラッグ: 動かす   F: 選んだ物へ   W / E / R: 移動・回転・拡大縮小   X: ローカル / ワールド   Ctrl+ドラッグ: 刻んで動かす   Esc: ドラッグをやめる"),
+                   Tr(L"右 / 中ドラッグ: 平行移動   ホイール: 近づく   クリック: 選ぶ (Ctrl: 足す・外す)   何も無い所からドラッグ: 四角で囲んで選ぶ   物をドラッグ: 動かす   F: 選んだ物へ   W / E / R: 移動・回転・拡大縮小   X: ローカル / ワールド   Z: それぞれ / 中心   Ctrl+ドラッグ: 刻んで動かす   Esc: ドラッグをやめる"),
                    ts);
         if (placed_.empty()) {
             ui::TextStyle hint = ts;
@@ -702,9 +870,9 @@ private:
         }
     }
 
-    enum class Drag { None, PanRight, PanMiddle, Press, Body, Gizmo, Cancelled };
+    enum class Drag { None, PanRight, PanMiddle, Press, Band, Body, Gizmo, Cancelled };
 
-    SceneViewState2D state_;      // the camera, the tool, the grid (kept in UserSettings)
+    SceneViewState2D state_;      // the camera, the tool, the steps, the grid (kept in UserSettings)
     reflect::Unknowns unknowns_;  // keys of a newer version: written back unchanged
     space2d::Renderer2D renderer_;
     std::string transformType_, spriteType_, cameraType_;
@@ -719,7 +887,10 @@ private:
     int pressed_ = 0;  // the entity under the mouse when the left button went down (0: none)
     gizmo::Handle hot_ = gizmo::Handle::None;
     std::optional<gizmo::Drag> gizmo_;
+    std::optional<gizmo::Frame> pivot_;  // 中心: what the drag turns / scales about
     std::vector<Edited> edited_;
+    bool snapOpen_ = false;              // the box of the steps is open
+    std::array<std::string, 3> snapText_;
 };
 
 }  // namespace

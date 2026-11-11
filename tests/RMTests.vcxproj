@@ -107,6 +107,8 @@
     <ClCompile Include="..\plugins\rm_engine\space2d\editor\Gizmo2D.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\Spin2D.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\Camera2D.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\SpriteAnimation.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space2d\runtime\Atlas.cpp" />
     <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
   </ItemGroup>
   <ItemGroup>

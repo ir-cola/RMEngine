@@ -6,7 +6,9 @@
 #include "ui/Path.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
+#include <format>
 #include <unordered_map>
 
 namespace rm::editor::w {
@@ -720,6 +722,24 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
     }
     c.PopClip();
     return changed;
+}
+
+bool NumberField(ui::Context& c, std::string_view id, const Rect& r, float& value, float min, float max, std::string& text) {
+    if (c.Focused() != c.MakeId(id)) text = std::format("{:g}", value);
+    if (!TextField(c, id, r, text, {}, true, true)) return false;
+    float v = 0;
+    const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), v);
+    if (ec != std::errc{} || end != text.data() + text.size() || !std::isfinite(v)) return false;
+    const float clamped = std::clamp(v, min, max);
+    if (clamped == value) return false;
+    value = clamped;
+    return true;
+}
+
+void DrawSelectionBand(ui::Context& c, const Rect& r) {
+    if (r.w <= 0 || r.h <= 0) return;
+    c.P().FillRect(r, theme::Accent.Alpha(0.12f));
+    c.P().StrokeRect(r, theme::Accent.Alpha(0.9f), 1.f);
 }
 
 bool Checkbox(ui::Context& c, std::string_view idStr, const Rect& r, bool& value, std::wstring_view label, bool mixed) {

@@ -8,6 +8,7 @@
 #include "rm_engine/game_x_2d/editor/SceneView2D.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Spin2D.h"
+#include "rm_engine/game_x_2d/runtime/SpriteAnimation.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
 
@@ -57,6 +58,12 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // ... and may be drawn as a picture (added by hand).
     static const game_production::ComponentInfo kSprite{.type = &reflect::TypeOf<Sprite>, .icon = "image"};
     registry.Contribute(game_production::kComponentPoint, kSprite);
+    // ... a sprite may step through the cells of its image (an atlas) while the game plays.
+    static const game_production::ComponentInfo kAnimation{.type = &reflect::TypeOf<SpriteAnimation>, .icon = "image"};
+    registry.Contribute(game_production::kComponentPoint, kAnimation);
+    static const game_production::SystemInfo kAnimationSystem{"スプライトのアニメーション", game_production::SystemPhase::Frame, 0,
+                                                              &RunSpriteAnimation};
+    registry.Contribute(game_production::kSystemPoint, kAnimationSystem);
     // ... a camera: what the game sees (the game settings' 最初のカメラ points at one).
     static const game_production::ComponentInfo kCamera{.type = &reflect::TypeOf<Camera2D>, .icon = "camera"};
     registry.Contribute(game_production::kComponentPoint, kCamera);

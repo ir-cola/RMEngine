@@ -3,7 +3,9 @@
 // screen touches. Pure - tested in tests/TestSpace2d.cpp.
 //
 // The screen is a rectangle of DIPs with Y going down; the plane has Y up (Transform2D.h). The camera
-// puts `center` in the middle of the rectangle, `zoom` DIPs for one unit of the plane.
+// puts `center` in the middle of the rectangle, `zoom` DIPs for one unit of the plane, turned by
+// `rotation` (a camera turned counter-clockwise shows the plane turned clockwise; the editing camera
+// is never turned, a game's camera turns with its entity).
 
 #include "rm_engine/space2d/runtime/Transform2D.h"
 
@@ -18,6 +20,7 @@ RM_STRUCT()
 struct Camera2D {
     RM_PROPERTY() Vec2 center{0, 0};
     RM_PROPERTY(Min=0.5, Max=20000) float zoom = 100.f;  // DIPs per unit (100: a sprite of 100 pixels per unit shows 1:1)
+    RM_PROPERTY() float rotation = 0;  // degrees, counter-clockwise
 };
 
 inline constexpr float kMinZoom = 0.5f;

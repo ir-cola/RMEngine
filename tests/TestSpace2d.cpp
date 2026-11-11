@@ -9,8 +9,10 @@
 #include "rm_engine/game_x_2d/editor/SceneViewState2D.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Spin2D.h"
+#include "rm_engine/game_x_2d/runtime/SpriteAnimation.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/space2d/editor/Gizmo2D.h"
+#include "rm_engine/space2d/runtime/Atlas.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
 #include "rm_engine/space2d/runtime/View2D.h"
 
@@ -307,4 +309,103 @@ RM_TEST(Space2d_GameCamera_WhatItSees) {
     cam.ownBackground = true;
     cam.background = {1, 0, 0, 1};
     CHECK(game_x_2d::BackgroundOf(cam, game) == cam.background);
+}
+
+RM_TEST(Space2d_Camera_Turned) {
+    Camera2D cam;
+    cam.center = {1, 1};
+    cam.zoom = 10;
+    cam.rotation = 90;  // turned counter-clockwise: what is to its left (-X) ... its up is the plane's -X
+    const ScreenRect r{0, 0, 200, 100};
+    CHECK(Near(ToScreen(cam, r, {1, 1}), {100, 50}));
+    CHECK(Near(ToScreen(cam, r, {0, 1}), {100, 40}));  // the plane's -X is up on the screen
+    CHECK(Near(ToScreen(cam, r, {1, 2}), {110, 50}));  // the plane's +Y is to the right
+    CHECK(Near(ToWorld(cam, r, ToScreen(cam, r, {-3, 7})), {-3, 7}));
+    CHECK(Near(TransformPoint(ScreenMatrix(cam, r), {-3, 7}), ToScreen(cam, r, {-3, 7})));
+    // Panning still follows the mouse; zooming still keeps the point under it.
+    const Vec2 before = ToScreen(cam, r, {0, 0});
+    Pan(cam, 5, 7);
+    CHECK(Near(ToScreen(cam, r, {0, 0}), {before.x + 5, before.y + 7}));
+    const Vec2 under = ToWorld(cam, r, {20, 80});
+    ZoomAt(cam, r, {20, 80}, 2);
+    CHECK(Near(ToWorld(cam, r, {20, 80}), under));
+    // A game camera turns with its entity.
+    game_x_2d::Camera2D gc;
+    const Camera2D v = game_x_2d::ViewOf(gc, LocalMatrix(Make({0, 0}, 30, {2, 2})), 100);
+    CHECK(Near(v.rotation, 30) && Near(v.zoom, 10));  // its scale does not change what it sees
+}
+
+RM_TEST(Space2d_Gizmo_AboutTheMiddle) {
+    using namespace gizmo2d;
+    const std::vector<Vec2> places{{-2, 0}, {2, 0}, {0, 3}};
+    gizmo2d::Frame own;
+    own.axes = {Vec2{0, 1}, Vec2{-1, 0}};
+    const gizmo2d::Frame mid = CenterFrame(places, own);
+    CHECK(Near(mid.origin, {0, 1}) && Near(mid.axes[0], {0, 1}));  // the middle, the last one's axes
+    // Turning 90 about the middle carries a thing round it (and turns it).
+    const Transform2D a = Make({2, 1}, 10, {1, 1});
+    Change turn;
+    turn.degrees = 90;
+    gizmo2d::Frame center;
+    center.origin = {0, 1};
+    const Transform2D ta = Apply(a, {}, LocalMatrix(a), turn, &center);
+    CHECK(Near(ta.position, {0, 3}) && Near(ta.rotation, 100));
+    CHECK(Near(Apply(a, {}, LocalMatrix(a), turn).position, {2, 1}));  // それぞれ: stays in its place
+    // Scaling twice along X about the middle doubles its distance along X.
+    Change grow;
+    grow.scale = {2, 1};
+    const Transform2D ga = Apply(a, {}, LocalMatrix(a), grow, &center);
+    CHECK(Near(ga.position, {4, 1}) && Near(ga.scale, {2, 1}));
+    // Under a parent moved by (10, 0): the place in the world goes round, the local one follows.
+    const Mat3 parent = Translation({10, 0});
+    center.origin = {10, 0};
+    const Transform2D child = Make({1, 0}, 0, {1, 1});
+    CHECK(Near(Apply(child, parent, WorldMatrix(parent, child), turn, &center).position, {0, 1}));
+}
+
+RM_TEST(Space2d_Atlas_CellsAndAnimation) {
+    // 4 x 2 cells of 32 x 16 in a 128 x 32 image.
+    CHECK((CellOf(128, 32, 4, 2, 0) == PixelRect{0, 0, 32, 16}));
+    CHECK((CellOf(128, 32, 4, 2, 5) == PixelRect{32, 16, 32, 16}));
+    CHECK((CellOf(128, 32, 4, 2, 8) == PixelRect{0, 0, 32, 16}));    // past the last: wraps
+    CHECK((CellOf(128, 32, 4, 2, -1) == PixelRect{96, 16, 32, 16}));  // below 0 too
+    CHECK((CellOf(100, 50, 3, 1, 2) == PixelRect{66, 0, 33, 50}));   // not evenly: never past the edge
+    CHECK((CellOf(2, 2, 10, 10, 3) == PixelRect{0, 0, 2, 2}));       // more cells than pixels: all of it
+    CHECK((CellOf(64, 64, 0, -3, 0) == PixelRect{0, 0, 64, 64}));    // at least 1 x 1
+    // Every cell in turn at 4 a second; the given order; stopping at the end.
+    CHECK(AnimationCell({}, 3, 4, 0.0, true) == 0);
+    CHECK(AnimationCell({}, 3, 4, 0.3, true) == 1);
+    CHECK(AnimationCell({}, 3, 4, 0.8, true) == 0);  // 3 steps: round again
+    const std::vector<int> frames{5, 2, 7};
+    CHECK(AnimationCell(frames, 8, 2, 0.6, true) == 2);
+    CHECK(AnimationCell(frames, 8, 2, 1.1, true) == 7);
+    CHECK(AnimationCell(frames, 8, 2, 100, false) == 7);
+    CHECK(AnimationCell(frames, 8, 0, 100, true) == 5);  // speed 0: stays
+}
+
+RM_TEST(Space2d_SpriteAnimation_StepsTheSprite) {
+    using namespace game_production;
+    const reflect::TypeDesc& sprite = reflect::TypeOf<game_x_2d::Sprite>();
+    const reflect::TypeDesc& anim = reflect::TypeOf<game_x_2d::SpriteAnimation>();
+    Scene s;
+    s.SetComponentTypes({&sprite, &anim}, {});
+    const int e = s.Create("walker");
+    s.AddComponent(e, sprite);
+    s.AddComponent(e, anim);
+    auto& sp = *static_cast<game_x_2d::Sprite*>(s.Find(e)->FindComponent(sprite.name)->value.Get());
+    sp.columns = 4;
+    sp.rows = 1;
+    static_cast<game_x_2d::SpriteAnimation*>(s.Find(e)->FindComponent(anim.name)->value.Get())->framesPerSecond = 10;
+    static const SystemInfo kAnim{"スプライトのアニメーション", SystemPhase::Frame, 0, &game_x_2d::RunSpriteAnimation};
+    const SystemInfo* list[] = {&kAnim};
+    SystemRunner runner;
+    runner.SetSystems(list);
+    runner.Advance(s, 0.25, 0.02f);
+    CHECK(sp.cell == 2);
+    runner.Advance(s, 0.2, 0.02f);
+    CHECK(sp.cell == 0);  // 4.5 cells: round again
+    // The time is not saved (a scene saved after Play starts from the beginning).
+    CHECK(reflect::Save(*static_cast<game_x_2d::SpriteAnimation*>(s.Find(e)->FindComponent(anim.name)->value.Get()), nullptr)
+              .Get("time")
+              .IsNull());
 }
