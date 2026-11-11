@@ -17,11 +17,13 @@
 //
 // The panel layout is the user's view, not project data: it is not undoable, does not make the
 // project unsaved, and is kept in <project>/UserSettings/Layout.json (one entry per software,
-// plus which software was shown last).
+// plus which software was shown last). Layouts saved under a name are kept there too, per software
+// (Window menu: save / switch / manage - EditorLayouts.cpp).
 
 #include "core/UndoHistory.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/dock/DockSpace.h"
+#include "editor/dock/NamedLayouts.h"
 #include "editor/inspector/Inspector.h"
 #include "editor/lang/Lang.h"
 #include "editor/plugin/Software.h"
@@ -61,7 +63,7 @@ protected:
 private:
     static constexpr UINT_PTR kAutoSaveTimer = 100;
     enum class CloseAction { None, ToHub, Quit };
-    enum class Modal { None, UnsavedChanges, Error, About, InstallPlugin };
+    enum class Modal { None, UnsavedChanges, Error, About, InstallPlugin, SaveLayoutAs, Layouts };
     enum class Menu { None = -1, File, Edit, Window, Plugins, Help, Debug, Count };
 
     void RequestClose(CloseAction action);
@@ -108,6 +110,8 @@ private:
         Inspectable inspected;  // what the インスペクター shows
         inspector::State inspectorState;
         tree::State treeState;  // the 階層: selection, open items, search
+        dock::NamedLayouts named;  // layouts the user saved under a name (UserSettings)
+        std::string namedShown;    // the named layout switched to / saved last (checked in the menu)
 
     private:
         EditorScreen& editor_;
@@ -126,6 +130,13 @@ private:
     void LoadLayout();
     void SaveLayout();
     void ResetLayout();
+    void CaptureFloatingRects();  // where the user put the panel windows, into the layout
+    // Named layouts (EditorLayouts.cpp)
+    void BeginSaveLayoutAs();
+    bool SaveNamedLayout(const std::string& name);
+    void ApplyNamedLayout(const std::string& name);
+    void DrawSaveLayoutAs(ui::Context& c);
+    void DrawLayouts(ui::Context& c);
     void RequestSyncFloating();
     void SyncFloating(bool activate);
     void CloseFloats();
@@ -151,6 +162,13 @@ private:
     std::wstring modalText_;
     std::wstring installName_;
     std::vector<PluginId> installPlan_;
+    // the named layout dialogs
+    std::string layoutName_;      // typed in "save as"
+    bool focusLayoutName_ = false;
+    std::string renamingLayout_;  // the row being renamed in the list ("" = none)
+    std::string renameText_;
+    bool focusRename_ = false;
+    std::string confirmDelete_;   // the row whose 削除 was pressed once
 
     w::Popup menuPopup_;
     Menu openMenu_ = Menu::None;

@@ -21,6 +21,13 @@ constexpr float kPanelRadius = 6.f;    // corners on the outside of the dock are
 constexpr float kStripH = 30.f;        // tab strip height
 constexpr float kMinPanel = 80.f;      // a splitter never makes a side smaller than this
 constexpr float kCloseW = 22.f;        // room for the x of a tab
+constexpr float kStripPad = 4.f;       // before the first tab and after the last one / the buttons
+constexpr float kTabSpacing = 2.f;     // between two tabs
+constexpr float kStripButton = 22.f;   // < > v when the tabs do not fit
+constexpr float kStripButtons = kStripButton * 3 + 4;
+constexpr float kWheelStep = 60.f;     // one notch of the wheel over a tab strip
+constexpr float kDragEdge = 28.f;      // a dragged tab this close to an end of a row moves the row
+constexpr double kDragScrollSpeed = 500.0;  // DIPs per second
 constexpr float kGuide = 32.f;         // drop guide size
 constexpr float kGuideStep = 38.f;     // distance between the guides of a cross
 constexpr float kDragThreshold = 6.f;  // a tab moves only after the mouse moved this far
@@ -79,7 +86,15 @@ void DockSpace::SetLayout(Layout layout) {
     layout_ = std::move(layout);
     drag_ = {};
     for (auto& [site, m] : menus_) m.popup.open = false;
+    for (auto& [site, m] : tabLists_) m.popup.open = false;
+    strips_.clear();  // node ids start again in the new layout
     Changed();
+}
+
+bool DockSpace::MenuOpen(uint32_t site) const {
+    const auto m = menus_.find(site);
+    const auto l = tabLists_.find(site);
+    return (m != menus_.end() && m->second.popup.open) || (l != tabLists_.end() && l->second.popup.open);
 }
 
 void DockSpace::Changed() {
@@ -120,6 +135,7 @@ std::wstring DockSpace::FloatingTitle(uint32_t floatingId) const {
 void DockSpace::ForgetSite(uint32_t site) {
     sites_.erase(site);
     menus_.erase(site);
+    tabLists_.erase(site);
     if (drag_.kind != DragKind::None && drag_.fromSite == site) drag_ = {};
 }
 
@@ -140,7 +156,7 @@ void DockSpace::Draw(ui::Context& c, const Rect& area, uint32_t siteId, HWND hwn
 
     // While a tab menu is open or something is being dragged, the panels only show.
     const bool inputWas = c.InputEnabled();
-    if (menus_[siteId].popup.open || IsDragging()) c.SetInputEnabled(false);
+    if (MenuOpen(siteId) || IsDragging()) c.SetInputEnabled(false);
 
     std::vector<Placed> placed;
     Arrange(*root, area, kGap, placed);
@@ -199,54 +215,7 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
     geo.strip = strip;
     w::Separator(c, r.x + 1, strip.Bottom() - 1, r.w - 2);
 
-    c.PushClip(strip);
-    float x = strip.x + 4;
-    for (size_t i = 0; i < leaf.tabs.size(); ++i) {
-        const std::string& id = leaf.tabs[i];
-        const PanelType* type = FindPanel(id);
-        const std::wstring title = type ? Tr(type->title) : Utf8ToWide(id);
-        const bool sel = static_cast<int>(i) == leaf.active;
-        const float tw = p.TextWidth(title, 12, true) + 20 + kCloseW;
-        const Rect tab{x, strip.y + 3, tw, strip.h - 3};
-        geo.tabs.push_back(tab);
-
-        c.PushId(id);
-        const auto b = c.ButtonBehavior(c.MakeId("tab"), tab);
-        const Rect close{tab.Right() - kCloseW, tab.y + (tab.h - 18) * 0.5f, 18, 18};
-        const bool showClose = sel || b.hovered;
-        const auto cb = showClose ? c.ButtonBehavior(c.MakeId("close"), close) : ui::Context::ButtonResult{};
-        if (b.hovered && c.MousePressed() && !cb.hovered) {
-            Post([this, id] { layout_.Activate(id); });
-            drag_ = {};
-            drag_.kind = DragKind::Pending;
-            drag_.panel = id;
-            drag_.fromSite = siteId;
-            drag_.startX = c.In().mouseX;
-            drag_.startY = c.In().mouseY;
-            drag_.fromLeaf = r;
-        }
-        if ((b.hovered && c.MousePressed(ui::Mouse::Middle)) || cb.clicked) {
-            Post([this, id] {
-                if (layout_.Close(id)) Changed();
-            });
-        }
-        if (b.rightClicked) {
-            TabMenu& m = menus_[siteId];
-            m.panel = id;
-            m.popup.OpenAt(c.In().mouseX, c.In().mouseY);
-            Post([this, id] { layout_.Activate(id); });
-        }
-        c.PopId();
-
-        w::DrawTab(c, tab, sel, b.hovered);
-        p.Text({tab.x + 10, tab.y, tw - 10 - kCloseW, tab.h}, title, TabText(sel ? theme::Text : theme::TextDim));
-        if (showClose) {
-            if (cb.hovered) w::DrawSurface(c, close, cb.held ? w::Surface::Pressed : w::Surface::Hovered);
-            w::DrawIcon(c, close, w::Icon::Close, cb.hovered ? theme::Text : theme::TextFaint);
-        }
-        x += tw + 2;
-    }
-    c.PopClip();
+    DrawTabStrip(c, leaf, strip, siteId, geo);
 
     if (leaf.tabs.empty()) {
         ui::TextStyle hint = TabText(theme::TextFaint);
@@ -263,6 +232,106 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
     type->draw(c, body);
     c.PopClip();
     c.PopId();
+}
+
+void DockSpace::DrawTabStrip(ui::Context& c, const Node& leaf, const Rect& strip, uint32_t siteId, LeafGeo& geo) {
+    auto& p = c.P();
+    std::vector<std::wstring> titles;
+    for (const std::string& id : leaf.tabs) {
+        const PanelType* type = FindPanel(id);
+        titles.push_back(type ? Tr(type->title) : Utf8ToWide(id));
+        geo.widths.push_back(p.TextWidth(titles.back(), 12, true) + 20 + kCloseW);
+    }
+
+    // Where the row is: kept per leaf, moved so that a tab that comes to the front is seen whole
+    // (clicked, chosen from the v list, opened from the Window menu, dropped here).
+    StripState& st = strips_[leaf.id];
+    TabStripFit fit = FitTabStrip(geo.widths, kTabSpacing, strip.w - kStripPad * 2, kStripButtons, st.scroll);
+    const std::string shown = leaf.tabs.empty() ? std::string() : leaf.tabs[static_cast<size_t>(leaf.active)];
+    if (shown != st.shown || leaf.tabs.size() != st.count) {
+        if (fit.overflow) fit.scroll = ScrollToShowTab(geo.widths, kTabSpacing, fit.view, fit.scroll, static_cast<size_t>(leaf.active));
+        st.shown = shown;
+        st.count = leaf.tabs.size();
+    }
+    if (fit.overflow && c.In().wheel != 0.f && c.IsHovered(strip)) {
+        fit.scroll = ClampTabScroll(fit.content, fit.view, fit.scroll - c.In().wheel * kWheelStep);
+        c.RequestRedraw();
+    }
+    const Rect view{strip.x + kStripPad, strip.y, fit.view, strip.h};
+    geo.view = view;
+    geo.overflow = fit.overflow;
+
+    // < > v at the right end, only while the tabs do not fit.
+    if (fit.overflow) {
+        c.PushId(static_cast<uint64_t>(leaf.id));
+        const float by = strip.y + 3 + (strip.h - 3 - kStripButton) * 0.5f;
+        Rect b{view.Right() + 4, by, kStripButton, kStripButton};
+        if (w::IconButton(c, "tabs.left", b, w::Icon::ChevronLeft, fit.scroll > 0.5f)) {
+            fit.scroll = StepTabScroll(geo.widths, kTabSpacing, fit.view, fit.scroll, -1);
+        }
+        b.x += kStripButton;
+        if (w::IconButton(c, "tabs.right", b, w::Icon::ChevronRight, fit.scroll < fit.content - fit.view - 0.5f)) {
+            fit.scroll = StepTabScroll(geo.widths, kTabSpacing, fit.view, fit.scroll, 1);
+        }
+        b.x += kStripButton;
+        if (w::IconButton(c, "tabs.list", b, w::Icon::ChevronDown)) {
+            TabList& list = tabLists_[siteId];
+            list.leaf = leaf.id;
+            list.popup.OpenAt(b.x, b.Bottom() + 2);
+            menus_[siteId].popup.open = false;
+        }
+        c.PopId();
+    }
+    st.scroll = fit.scroll;
+
+    c.PushClip(view);
+    float x = view.x - fit.scroll;
+    for (size_t i = 0; i < leaf.tabs.size(); ++i) {
+        const std::string& id = leaf.tabs[i];
+        const std::wstring& title = titles[i];
+        const bool sel = static_cast<int>(i) == leaf.active;
+        const float tw = geo.widths[i];
+        const Rect tab{x, strip.y + 3, tw, strip.h - 3};
+        x += tw + kTabSpacing;
+        if (tab.Right() < view.x || tab.x > view.Right()) continue;  // out of view: nothing to draw or touch
+
+        c.PushId(id);
+        const auto b = c.ButtonBehavior(c.MakeId("tab"), tab);
+        const Rect close{tab.Right() - kCloseW, tab.y + (tab.h - 18) * 0.5f, 18, 18};
+        const bool showClose = sel || b.hovered;
+        const auto cb = showClose ? c.ButtonBehavior(c.MakeId("close"), close) : ui::Context::ButtonResult{};
+        if (b.hovered && c.MousePressed() && !cb.hovered) {
+            Post([this, id] { layout_.Activate(id); });
+            drag_ = {};
+            drag_.kind = DragKind::Pending;
+            drag_.panel = id;
+            drag_.fromSite = siteId;
+            drag_.startX = c.In().mouseX;
+            drag_.startY = c.In().mouseY;
+            drag_.fromLeaf = geo.rect;
+        }
+        if ((b.hovered && c.MousePressed(ui::Mouse::Middle)) || cb.clicked) {
+            Post([this, id] {
+                if (layout_.Close(id)) Changed();
+            });
+        }
+        if (b.rightClicked) {
+            TabMenu& m = menus_[siteId];
+            m.panel = id;
+            m.popup.OpenAt(c.In().mouseX, c.In().mouseY);
+            tabLists_[siteId].popup.open = false;
+            Post([this, id] { layout_.Activate(id); });
+        }
+        c.PopId();
+
+        w::DrawTab(c, tab, sel, b.hovered);
+        p.Text({tab.x + 10, tab.y, tw - 10 - kCloseW, tab.h}, title, TabText(sel ? theme::Text : theme::TextDim));
+        if (showClose) {
+            if (cb.hovered) w::DrawSurface(c, close, cb.held ? w::Surface::Pressed : w::Surface::Hovered);
+            w::DrawIcon(c, close, w::Icon::Close, cb.hovered ? theme::Text : theme::TextFaint);
+        }
+    }
+    c.PopClip();
 }
 
 void DockSpace::DrawSplitter(ui::Context& c, const Node& split, const Rect& r) {
@@ -353,10 +422,12 @@ void DockSpace::UpdateHover(HWND exclude) {
         if (!t.valid) {
             for (const auto& leaf : s.leaves) {
                 if (!leaf.strip.Contains(hx, hy)) continue;
-                int index = 0;
-                for (const Rect& tab : leaf.tabs) {
-                    if (tab.x + tab.w * 0.5f < hx) ++index;
-                }
+                if (leaf.overflow) ScrollWhileDragging(leaf, hx, pt);
+                // Counted in the row (hidden tabs too); a drop on the buttons goes after the last tab seen.
+                const auto st = strips_.find(leaf.id);
+                const float scroll = leaf.overflow && st != strips_.end() ? st->second.scroll : 0.f;
+                const float rx = std::clamp(hx, leaf.view.x, leaf.view.Right()) - leaf.view.x + scroll;
+                const int index = TabInsertIndex(leaf.widths, kTabSpacing, rx);
                 t.valid = true;
                 t.site = hover;
                 t.node = leaf.id;
@@ -378,7 +449,27 @@ void DockSpace::UpdateHover(HWND exclude) {
     drag_.hoverY = hy;
     drag_.hoverLeaf = leafUnder;
     drag_.target = t;
+    drag_.lastCursor = pt;
     if (changed && onRedrawAll) onRedrawAll();
+}
+
+void DockSpace::ScrollWhileDragging(const LeafGeo& leaf, float x, POINT cursor) {
+    // Moved only when the cursor moves: redrawing on its own would make the dragging window paint
+    // itself forever (see UpdateHover). Held still, the row stays; a little wiggle keeps it going.
+    const double now = platform::NowSeconds();
+    const double dt = std::min(now - drag_.lastScrollTime, 0.05);
+    drag_.lastScrollTime = now;
+    if (drag_.kind != DragKind::Tab || (cursor.x == drag_.lastCursor.x && cursor.y == drag_.lastCursor.y)) return;
+    int dir = 0;
+    if (x < leaf.view.x + kDragEdge) dir = -1;
+    if (x > leaf.view.Right() - kDragEdge) dir = 1;  // the < > v buttons count as the right end
+    if (dir == 0) return;
+    StripState& st = strips_[leaf.id];
+    const TabStripFit fit = FitTabStrip(leaf.widths, kTabSpacing, leaf.strip.w - kStripPad * 2, kStripButtons, st.scroll);
+    const float next = ClampTabScroll(fit.content, fit.view, st.scroll + static_cast<float>(dir * kDragScrollSpeed * dt));
+    if (next == st.scroll) return;
+    st.scroll = next;
+    if (onRedrawAll) onRedrawAll();
 }
 
 ScreenRect DockSpace::FloatRectNear(const Site& site, const Rect& leafRect, POINT at) const {
@@ -467,6 +558,8 @@ void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
         p.Text(ghost, title, ts);
     }
 
+    DrawTabList(c, siteId);
+
     const auto menuIt = menus_.find(siteId);
     if (menuIt == menus_.end() || !menuIt->second.popup.open) return;
     TabMenu& m = menuIt->second;
@@ -492,6 +585,34 @@ void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
     } else if (pick == 2) {
         const uint32_t target = LargestMainLeaf();
         if (layout_.Dock(panel, target, Zone::Center)) Changed();
+    }
+}
+
+void DockSpace::DrawTabList(ui::Context& c, uint32_t siteId) {
+    const auto it = tabLists_.find(siteId);
+    if (it == tabLists_.end() || !it->second.popup.open) return;
+    TabList& list = it->second;
+    const Node* leaf = layout_.FindNode(list.leaf);
+    if (!leaf || !leaf->IsLeaf() || leaf->tabs.empty()) {
+        list.popup.open = false;
+        return;
+    }
+    std::vector<w::MenuItem> items;
+    float width = 200;
+    for (size_t i = 0; i < leaf->tabs.size(); ++i) {
+        const PanelType* type = FindPanel(leaf->tabs[i]);
+        w::MenuItem item;
+        item.label = type ? Tr(type->title) : Utf8ToWide(leaf->tabs[i]);
+        item.checked = static_cast<int>(i) == leaf->active;
+        width = std::max(width, c.P().TextWidth(item.label, theme::FontSize) + 64);
+        items.push_back(std::move(item));
+    }
+    const std::vector<std::string> tabs = leaf->tabs;  // a copy: activating edits the layout
+    const int pick = w::MenuPopup(c, list.popup, items, width);
+    if (pick >= 0) {
+        // In front = moved into view (DrawTabStrip, next frame).
+        layout_.Activate(tabs[static_cast<size_t>(pick)]);
+        if (onRedrawAll) onRedrawAll();
     }
 }
 

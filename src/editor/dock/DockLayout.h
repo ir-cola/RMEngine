@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -136,5 +137,30 @@ float RatioAt(const Node& split, const ui::Rect& r, float gap, float mouse, floa
 ui::Rect ZonePreview(const ui::Rect& target, Zone zone, bool targetIsLeaf);
 // Share the new part gets when an edge drop splits a node.
 float EdgeShare(bool targetIsLeaf);
+
+// --- Tab strip: a row of tabs that may be longer than the strip (pure) ----------------------
+//
+//   | pad | tab0 | spacing | tab1 | ... |  < > v | pad |
+//         '-------- view (moved by scroll) -------'  buttons only while the tabs do not fit
+//
+// Positions are measured from the start of the row (the left of tab0 when scroll = 0).
+struct TabStripFit {
+    float content = 0;      // all tabs side by side, with the spacing between them
+    float view = 0;         // the width the tabs are shown in
+    float scroll = 0;       // how far the row is moved to the left (kept in 0 .. content - view)
+    bool overflow = false;  // the tabs do not fit: the buttons take room at the right
+};
+// available = the strip width minus its padding; buttons = room the < > v buttons need.
+TabStripFit FitTabStrip(std::span<const float> widths, float spacing, float available, float buttons, float scroll);
+float TabLeft(std::span<const float> widths, float spacing, size_t index);
+float ClampTabScroll(float content, float view, float scroll);
+// The scroll that shows tab `index` whole, moving as little as possible (a tab wider than the
+// view shows its left side).
+float ScrollToShowTab(std::span<const float> widths, float spacing, float view, float scroll, size_t index);
+// One press of < (dir -1) or > (dir +1): brings the next tab that is cut off or hidden on that side
+// fully into view.
+float StepTabScroll(std::span<const float> widths, float spacing, float view, float scroll, int dir);
+// Where a tab dropped at x (relative to the row start, scroll already added) is inserted.
+int TabInsertIndex(std::span<const float> widths, float spacing, float x);
 
 }  // namespace rm::editor::dock

@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "パネルのタブが列に入りきらないとき、ホイール・左右の送りボタンで流し、▾ の一覧から選べるように (選んだタブは見える所までずれる)。「ウィンドウ」メニューで今の配置に名前を付けて保存し、切り替え・名前の変更・削除ができるように",
+          "en": "When a panel's tabs do not fit, scroll them with the wheel or the arrow buttons, or pick one from the ▾ list (the chosen tab scrolls into view). The Window menu can save the current layout under a name, switch to it, rename it and delete it"
+        },
+        {
           "ja": "テーマパックを外して黒になったあと、パックを入れ直しても前のテーマに勝手に戻らないように",
           "en": "After a theme pack is removed (the theme turns Dark), installing it again no longer brings the old theme back by itself"
         },

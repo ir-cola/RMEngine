@@ -1,7 +1,9 @@
 #pragma once
 // Draws a docking tree in a window and lets the user rearrange it (editor only).
 //
-//   tab strip      click = show, drag = move, middle click / x = close, right click = menu
+//   tab strip      click = show, drag = move, middle click / x = close, right click = menu.
+//                  Tabs that do not fit: the wheel or < > move the row, v lists every tab; the shown
+//                  tab is always moved into view. Dragging a tab near an end of the row moves it too.
 //   splitter       drag = resize (the ratio is kept, so the panels scale with the window)
 //   drop guides    while dragging, guides appear on the panel under the cursor (and on the
 //                  edges of the window). Releasing on a guide docks there; on a tab strip it
@@ -73,7 +75,15 @@ private:
         uint32_t id = 0;
         ui::Rect rect;   // whole leaf
         ui::Rect strip;  // tab strip
-        std::vector<ui::Rect> tabs;
+        ui::Rect view;   // the part of the strip the tabs are shown in (without the < > v buttons)
+        std::vector<float> widths;  // of each tab
+        bool overflow = false;
+    };
+    // The row of a leaf's tabs (by leaf id; not saved).
+    struct StripState {
+        float scroll = 0;
+        std::string shown;  // the tab that was in front last frame: a new one is moved into view
+        size_t count = 0;
     };
     struct Site {
         HWND hwnd = nullptr;
@@ -110,17 +120,28 @@ private:
         float hoverX = 0, hoverY = 0;  // in the hovered window, DIPs
         uint32_t hoverLeaf = 0;        // leaf under the cursor (its guides are shown)
         Target target;
+        // moving a row of tabs that does not fit, while the tab is held near one of its ends
+        POINT lastCursor{};
+        double lastScrollTime = 0;
     };
     struct TabMenu {
         w::Popup popup;
         std::string panel;
     };
+    struct TabList {  // the v menu: every tab of one leaf
+        w::Popup popup;
+        uint32_t leaf = 0;
+    };
 
     const Node* RootOf(uint32_t site) const;
     void DrawLeaf(ui::Context& c, const Node& leaf, const ui::Rect& r, uint32_t site, LeafGeo& geo);
+    void DrawTabStrip(ui::Context& c, const Node& leaf, const ui::Rect& strip, uint32_t site, LeafGeo& geo);
+    void DrawTabList(ui::Context& c, uint32_t site);
     void DrawSplitter(ui::Context& c, const Node& split, const ui::Rect& r);
     std::vector<Guide> GuidesAt(const Site& site, float x, float y) const;
     void UpdateHover(HWND exclude);
+    void ScrollWhileDragging(const LeafGeo& leaf, float x, POINT cursor);
+    bool MenuOpen(uint32_t site) const;
     void FinishTabDrag();
     void CancelDrag();
     void Post(std::function<void()> fn) { post_.push_back(std::move(fn)); }
@@ -132,6 +153,8 @@ private:
     Layout layout_;
     std::unordered_map<uint32_t, Site> sites_;
     std::unordered_map<uint32_t, TabMenu> menus_;
+    std::unordered_map<uint32_t, TabList> tabLists_;
+    std::unordered_map<uint32_t, StripState> strips_;
     Drag drag_;
     std::vector<std::function<void()>> post_;
 };

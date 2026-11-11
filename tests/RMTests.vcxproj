@@ -38,8 +38,8 @@
       <SubSystem>Console</SubSystem>
     </Link>
     <ClCompile>
-      <!-- src\editor\widgets: its reflected types (ThemeFile.h) are generated with paths from there -->
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(RMRoot)tools;$(RMRoot)src\editor\widgets;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- src\editor\widgets, src\editor\dock: their reflected types (ThemeFile.h, NamedLayouts.h) are generated with paths from there -->
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(RMRoot)tools;$(RMRoot)src\editor\widgets;$(RMRoot)src\editor\dock;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -70,6 +70,7 @@
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />
     <ClCompile Include="..\src\editor\dock\DockLayout.cpp" />
+    <ClCompile Include="..\src\editor\dock\NamedLayouts.cpp" />
     <ClCompile Include="..\src\editor\plugin\PluginManifest.cpp" />
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
@@ -92,7 +93,7 @@
   </ItemGroup>
   <PropertyGroup>
     <RmGenOut>$(RMRoot)build\generated\$(ProjectName)\</RmGenOut>
-    <RmGenRoots>--root "$(MSBuildProjectDirectory)" --root "$(RMRoot)plugins" --root "$(RMRoot)src\editor\widgets"</RmGenRoots>
+    <RmGenRoots>--root "$(MSBuildProjectDirectory)" --root "$(RMRoot)plugins" --root "$(RMRoot)src\editor\widgets" --root "$(RMRoot)src\editor\dock"</RmGenRoots>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="..\src\RM.Reflect.targets" />

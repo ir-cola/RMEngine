@@ -490,4 +490,63 @@ ui::Rect ZonePreview(const ui::Rect& t, Zone zone, bool targetIsLeaf) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tab strip
+// ---------------------------------------------------------------------------
+
+float TabLeft(std::span<const float> widths, float spacing, size_t index) {
+    float x = 0;
+    for (size_t i = 0; i < index && i < widths.size(); ++i) x += widths[i] + spacing;
+    return x;
+}
+
+float ClampTabScroll(float content, float view, float scroll) {
+    if (!std::isfinite(scroll)) return 0.f;
+    return std::clamp(scroll, 0.f, std::max(0.f, content - view));
+}
+
+TabStripFit FitTabStrip(std::span<const float> widths, float spacing, float available, float buttons, float scroll) {
+    TabStripFit f;
+    f.content = widths.empty() ? 0.f : TabLeft(widths, spacing, widths.size()) - spacing;
+    available = std::max(0.f, available);
+    f.overflow = f.content > available + 0.5f;
+    f.view = f.overflow ? std::max(0.f, available - buttons) : available;
+    f.scroll = f.overflow ? ClampTabScroll(f.content, f.view, scroll) : 0.f;
+    return f;
+}
+
+float ScrollToShowTab(std::span<const float> widths, float spacing, float view, float scroll, size_t index) {
+    if (index >= widths.size()) return scroll;
+    const float content = TabLeft(widths, spacing, widths.size()) - spacing;
+    const float left = TabLeft(widths, spacing, index);
+    const float right = left + widths[index];
+    if (right > scroll + view) scroll = right - view;  // cut off on the right: its right edge to the view's
+    if (left < scroll) scroll = left;                   // on the left (or wider than the view): its left edge
+    return ClampTabScroll(content, view, scroll);
+}
+
+float StepTabScroll(std::span<const float> widths, float spacing, float view, float scroll, int dir) {
+    if (widths.empty()) return 0.f;
+    constexpr float eps = 0.5f;
+    if (dir > 0) {
+        for (size_t i = 0; i < widths.size(); ++i) {
+            if (TabLeft(widths, spacing, i) + widths[i] > scroll + view + eps) return ScrollToShowTab(widths, spacing, view, scroll, i);
+        }
+    } else if (dir < 0) {
+        for (size_t i = widths.size(); i-- > 0;) {
+            if (TabLeft(widths, spacing, i) < scroll - eps) return ScrollToShowTab(widths, spacing, view, scroll, i);
+        }
+    }
+    const float content = TabLeft(widths, spacing, widths.size()) - spacing;
+    return ClampTabScroll(content, view, scroll);
+}
+
+int TabInsertIndex(std::span<const float> widths, float spacing, float x) {
+    int index = 0;
+    for (size_t i = 0; i < widths.size(); ++i) {
+        if (TabLeft(widths, spacing, i) + widths[i] * 0.5f < x) ++index;
+    }
+    return index;
+}
+
 }  // namespace rm::editor::dock

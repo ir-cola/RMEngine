@@ -149,6 +149,10 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.Line(cx - s * 0.5f, cy - s, cx + s * 0.5f, cy, color, kW);
             p.Line(cx + s * 0.5f, cy, cx - s * 0.5f, cy + s, color, kW);
             break;
+        case Icon::ChevronLeft:
+            p.Line(cx + s * 0.5f, cy - s, cx - s * 0.5f, cy, color, kW);
+            p.Line(cx - s * 0.5f, cy, cx + s * 0.5f, cy + s, color, kW);
+            break;
         case Icon::Check:
             p.Line(cx - s, cy, cx - s * 0.3f, cy + s * 0.7f, color, 2.f);
             p.Line(cx - s * 0.3f, cy + s * 0.7f, cx + s, cy - s * 0.8f, color, 2.f);

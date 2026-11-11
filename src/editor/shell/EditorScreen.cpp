@@ -38,6 +38,7 @@ constexpr char kStart[] = "core.start";
 //     "active": { "author": "rm_engine", "plugin": "game_production", "software": "game" },
 //     "softwares": [ { "author": ..., "plugin": ..., "software": ..., "layout": { "main": ..., "floating": [...] },
 //                      "view": { ... the software's own (Software::SaveView) },
+//                      "named": [ { "name": ..., "layout": {...} } ] (layouts saved under a name: dock/NamedLayouts.h),
 //                      "tree": { "collapsed": [...], "selected": [...] } (the 階層: tree::SaveState) } ] }
 // The workspace without a software has only "software": "core". Entries of softwares that are not
 // installed now, and keys this version does not know, are written back unchanged.
@@ -322,6 +323,9 @@ void EditorScreen::LoadLayout() {
             loaded = dock::Layout::FromJson(e.Get("layout"));
             if (!loaded) broken = true;
             view = e.Find("view");
+            reflect::Warnings warnings;
+            ws->named = dock::NamedLayouts::FromJson(e.Get("named"), &warnings);
+            for (const auto& wmsg : warnings) log::Warn("名前を付けた配置: {}", wmsg);
             if (const json::Value* t = e.Find("tree")) tree::LoadState(ws->treeState, *t);
         }
         if (ws->software) ws->software->LoadView(view ? *view : json::Value());
@@ -336,12 +340,16 @@ void EditorScreen::LoadLayout() {
     }
 }
 
-void EditorScreen::SaveLayout() {
-    if (layoutReadOnly_) return;
+void EditorScreen::CaptureFloatingRects() {
     dock::Layout& current = Active().dock.GetLayout();
     for (auto& fw : floats_) {
         if (dock::Floating* f = current.FindFloating(fw->Id())) f->rect = fw->CurrentRect();
     }
+}
+
+void EditorScreen::SaveLayout() {
+    if (layoutReadOnly_) return;
+    CaptureFloatingRects();
     layoutDoc_.Set("kind", kLayoutKind);
     layoutDoc_.Set("formatVersion", kLayoutFormatVersion);
     layoutDoc_.Set("active", WorkspaceKey(Active().type));
@@ -358,6 +366,7 @@ void EditorScreen::SaveLayout() {
             entry = &entries->Items().back();
         }
         entry->Set("layout", ws->dock.GetLayout().ToJson());
+        if (!ws->named.Empty() || entry->Find("named")) entry->Set("named", ws->named.ToJson());
         if (ws->software) {
             if (json::Value view = ws->software->SaveView(); !view.IsNull()) entry->Set("view", std::move(view));
             if (ws->software->Hierarchy()) entry->Set("tree", tree::SaveState(ws->treeState));
@@ -375,6 +384,7 @@ void EditorScreen::ResetLayout() {
     dock::Layout layout = Active().DefaultLayout();
     layout.Sanitize(Active().dock.PanelIds());
     Active().dock.SetLayout(std::move(layout));
+    Active().namedShown.clear();
     log::Info("パネルの配置を最初の状態に戻しました ({})", WideToUtf8(Active().Title()));
 }
 
@@ -540,8 +550,19 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
                 it.checked = Active().dock.GetLayout().Contains(t.id);
                 items.push_back(std::move(it));
             }
+            // Order read by RunMenu: panels | named layouts (when there are some) | the commands.
             items.push_back({L"", L"", true, true});
-            items.push_back({Tr(L"パネルの配置を元に戻す")});
+            for (const auto& e : Active().named.Entries()) {
+                w::MenuItem it;
+                it.label = Utf8ToWide(e.info.name);
+                it.shortcut = Tr(L"配置");
+                it.checked = e.info.name == Active().namedShown;
+                items.push_back(std::move(it));
+            }
+            if (!Active().named.Empty()) items.push_back({L"", L"", true, true});
+            items.push_back({Tr(L"今の配置に名前を付けて保存…")});
+            items.push_back({Tr(L"配置の管理…")});
+            items.push_back({Tr(L"最初の配置に戻す")});
             return items;
         }
         case Menu::Plugins: {
@@ -584,9 +605,21 @@ void EditorScreen::RunMenu(Menu m, int index) {
         if (index == 1) Active().history.Redo();
     } else if (m == Menu::Window) {
         const auto& types = Active().dock.PanelTypes();
-        if (index >= 0 && index < static_cast<int>(types.size())) {
+        const auto& named = Active().named.Entries();
+        const int panels = static_cast<int>(types.size());
+        const int firstNamed = panels + 1;
+        const int commands = firstNamed + (named.empty() ? 0 : static_cast<int>(named.size()) + 1);
+        if (index >= 0 && index < panels) {
             Active().dock.TogglePanel(types[static_cast<size_t>(index)].id);
-        } else if (index == static_cast<int>(types.size()) + 1) {
+        } else if (index >= firstNamed && index < firstNamed + static_cast<int>(named.size())) {
+            ApplyNamedLayout(named[static_cast<size_t>(index - firstNamed)].info.name);
+        } else if (index == commands) {
+            BeginSaveLayoutAs();
+        } else if (index == commands + 1) {
+            renamingLayout_.clear();
+            confirmDelete_.clear();
+            modal_ = Modal::Layouts;
+        } else if (index == commands + 2) {
             ResetLayout();
         }
     } else if (m == Menu::Plugins) {
@@ -908,6 +941,15 @@ void EditorScreen::DrawModal(ui::Context& c) {
             modal_ = Modal::None;
             if (Save()) FinishClose(pendingClose_);  // on failure Save() shows the error and the editor stays open
         }
+        return;
+    }
+
+    if (modal_ == Modal::SaveLayoutAs) {
+        DrawSaveLayoutAs(c);
+        return;
+    }
+    if (modal_ == Modal::Layouts) {
+        DrawLayouts(c);
         return;
     }
 
