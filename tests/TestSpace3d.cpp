@@ -1057,12 +1057,14 @@ RM_TEST(Lighting_Values) {
     lights[2].type = LightType::Directional;  // the first that casts: the shadow map is its
     lights[2].direction = {1, 0, 0};
     const LightSetup s = MakeLights(lights, {0, -1, 0});
+    // The directional lights come first (in their order), then the point light.
     CHECK(NearF(s.block.info[0], 3));
-    CHECK(NearF(s.block.position[0][0], 1) && NearF(s.block.position[0][2], 3) && NearF(s.block.position[0][3], 1));
-    CHECK(NearF(s.block.color[0][0], 2) && NearF(s.block.color[0][1], 1) && NearF(s.block.color[0][2], 0));  // colour x strength
-    CHECK(NearF(s.block.direction[0][3], 4));  // the range
-    CHECK(NearF(s.block.color[0][3], 0) && NearF(s.block.color[1][3], 0) && NearF(s.block.color[2][3], 1));
-    CHECK(s.shadowLight == 2 && Near(s.shadowDirection, {1, 0, 0}));
+    CHECK(NearF(s.block.position[0][3], 0) && NearF(s.block.position[1][3], 0) && NearF(s.block.position[2][3], 1));
+    CHECK(NearF(s.block.position[2][0], 1) && NearF(s.block.position[2][2], 3));
+    CHECK(NearF(s.block.color[2][0], 2) && NearF(s.block.color[2][1], 1) && NearF(s.block.color[2][2], 0));  // colour x strength
+    CHECK(NearF(s.block.direction[2][3], 4));  // the range
+    CHECK(NearF(s.block.color[0][3], 0) && NearF(s.block.color[1][3], 1) && NearF(s.block.color[2][3], 0));
+    CHECK(s.shadowLight == 1 && Near(s.shadowDirection, {1, 0, 0}));
     // A point light never takes the shadow map (directional only).
     std::vector<Light> points(1);
     points[0].type = LightType::Point;
@@ -1081,9 +1083,10 @@ RM_TEST(Lighting_Values) {
 RM_TEST(Lighting_AtMostEight) {
     std::vector<Light> many(11);
     for (Light& l : many) l.type = LightType::Point;
-    many[9].type = LightType::Directional;  // past the eighth: left out (no shadows)
+    many[9].type = LightType::Directional;  // listed late, but a directional light lights everything: it comes first
     const LightSetup s = MakeLights(many, {0, -1, 0});
-    CHECK(NearF(s.block.info[0], static_cast<float>(kMaxLights)) && s.dropped == 3 && s.shadowLight == -1);
+    CHECK(NearF(s.block.info[0], static_cast<float>(kMaxLights)) && s.dropped == 3 && s.shadowLight == 0);
+    CHECK(NearF(s.block.position[0][3], 0));
 }
 
 RM_TEST(Light_FromItsEntity) {
@@ -1833,4 +1836,40 @@ RM_TEST(Mesh_IndicesInRange) {
     CHECK(!IndicesInRange(m, &error) && error.find("超えて") != std::string::npos);
     m.indices = {0, 1, 0xFFFFFFFFu};
     CHECK(!IndicesInRange(m, &error));
+}
+
+RM_TEST(Lighting_ChoosesNearAndBright) {
+    // 12 point lights in a row along X (range 2), the eye at x = 0: the 8 nearest are drawn, nearest first.
+    std::vector<Light> row(12);
+    for (size_t i = 0; i < row.size(); ++i) {
+        row[i].type = LightType::Point;
+        row[i].range = 2;
+        row[i].position = {static_cast<float>(11 - i) * 5.f, 0, 0};  // listed farthest first
+    }
+    const LightSetup s = MakeLights(row, {0, -1, 0}, {}, {0, 0, 0});
+    CHECK(s.dropped == 4);
+    for (size_t i = 0; i < kMaxLights; ++i) CHECK(NearF(s.block.position[i][0], static_cast<float>(i) * 5.f));
+    // Moving the eye changes which ones.
+    const LightSetup far = MakeLights(row, {0, -1, 0}, {}, {55, 0, 0});
+    CHECK(NearF(far.block.position[0][0], 55));
+    // A bright light a little farther comes before a dim one nearer.
+    std::vector<Light> two(2);
+    two[0].type = two[1].type = LightType::Point;
+    two[0].range = two[1].range = 1;
+    two[0].position = {3, 0, 0};
+    two[0].intensity = 0.1f;
+    two[1].position = {4, 0, 0};
+    two[1].intensity = 10;
+    CHECK(LightWeight(two[1], {}) > LightWeight(two[0], {}));
+    CHECK(NearF(MakeLights(two, {0, -1, 0}, {}, {0, 0, 0}).block.position[0][0], 4));
+    // Inside a light's reach the distance does not lower it.
+    CHECK(NearF(LightWeight(two[0], {3, 0, 0}), LightWeight(two[0], {3.5f, 0, 0})));
+    // The nearest point light gets the shadow maps (6): only one point light can have shadows.
+    std::vector<Light> points(3);
+    for (size_t i = 0; i < points.size(); ++i) {
+        points[i].type = LightType::Point;
+        points[i].position = {static_cast<float>(2 - i) * 30.f, 0, 0};
+    }
+    const LightSetup sp = MakeLights(points, {0, -1, 0}, {}, {0, 0, 0});
+    CHECK(NearF(sp.block.position[0][0], 0) && NearF(sp.block.shadow[0][0], 0) && NearF(sp.block.shadow[1][0], -1) && sp.shadowsLeftOut == 2);
 }

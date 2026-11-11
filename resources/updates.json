@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "3D の描画が軽く: 1 フレームの CPU の時間がおよそ半分 (物 1000 個・光 8 個)。光が 9 個以上のときは、カメラに近くて明るい光から 8 個を使う",
+          "en": "Lighter 3D drawing: about half the CPU time per frame (1000 objects, 8 lights). With more than 8 lights, the 8 nearest and brightest to the camera are used"
+        },
+        {
           "ja": "遅いドライブやネットワークのプロジェクトがあっても Hub が固まらないように (最近のプロジェクトは別のスレッドで読み、読み終わるまで「読み込み中…」。整合性の確認は進み具合を出して別のスレッドで。起動のときのプラグインの確かめも)",
           "en": "The Hub no longer freezes on projects on slow or network drives (recent projects are read on another thread and show Loading… until read; the integrity check runs on another thread with its progress; so does the plugin check at startup)"
         },

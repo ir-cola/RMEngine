@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <vector>
 
 namespace rm::space3d {
 
@@ -51,10 +52,30 @@ std::array<Mat4, 6> PointShadowMatrices(Vec3 position, float range) {
     return out;
 }
 
-LightSetup MakeLights(std::span<const Light> lights, Vec3 defaultDirection, const Ambient& ambient) {
+float LightWeight(const Light& light, Vec3 eye) {
+    const float brightness = (0.2126f * light.color.r + 0.7152f * light.color.g + 0.0722f * light.color.b) * std::max(light.intensity, 0.f);
+    const float outside = std::max(Length(light.position - eye) - std::max(light.range, 0.f), 0.f);
+    return brightness / (1.f + outside * outside);
+}
+
+LightSetup MakeLights(std::span<const Light> lightsIn, Vec3 defaultDirection, const Ambient& ambient, Vec3 eye) {
     LightSetup s;
     const Light fallback{.direction = defaultDirection};
-    const std::span<const Light> used = lights.empty() ? std::span<const Light>(&fallback, 1) : lights;
+    const std::span<const Light> given = lightsIn.empty() ? std::span<const Light>(&fallback, 1) : lightsIn;
+    // The directional lights first, then the point / spot lights that matter most to the eye.
+    std::vector<size_t> order(given.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::vector<float> weight(given.size());
+    for (size_t i = 0; i < given.size(); ++i) weight[i] = given[i].type == LightType::Directional ? 0.f : LightWeight(given[i], eye);
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        const bool da = given[a].type == LightType::Directional, db = given[b].type == LightType::Directional;
+        if (da != db) return da;
+        return !da && weight[a] > weight[b];
+    });
+    std::vector<Light> sorted;
+    sorted.reserve(order.size());
+    for (const size_t i : order) sorted.push_back(given[i]);
+    const std::span<const Light> used = sorted;
     const size_t n = std::min(used.size(), kMaxLights);
     s.dropped = used.size() - n;
     s.block.info[0] = static_cast<float>(n);

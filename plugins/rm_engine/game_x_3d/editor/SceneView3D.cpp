@@ -746,7 +746,7 @@ private:
         }
         warnedLights_ = lights_.size() > space3d::kMaxLights ? lights_.size() : 0;
         // Point lights and spots whose shadows found no map left (told once per number).
-        const size_t leftOut = gameLook ? warnedShadows_ : space3d::MakeLights(lights_, {}).shadowsLeftOut;
+        const size_t leftOut = gameLook ? warnedShadows_ : space3d::MakeLights(lights_, {}, {}, state_.camera.Eye()).shadowsLeftOut;
         if (leftOut > 0 && leftOut != warnedShadows_) {
             log::Warn("シーンビュー: 影の地図が足りないので、点光源・スポットの {} 個は影を落としません (地図は {} 枚: 点光源は 6 枚、スポットは 1 枚)", leftOut,
                       space3d::kLocalShadowSlices);

@@ -44,6 +44,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -68,6 +69,7 @@ struct Box {
 // that (the renderer does not need it between frames).
 class GpuMesh {
 public:
+    uint64_t serial = 0;              // never the same for two meshes (what a shadow map holds is told by it)
     Vec3 min{0, 0, 0}, max{0, 0, 0};  // the bounds in the model's own space
     uint32_t indexCount = 0;
     std::vector<MeshPart> parts;      // one draw each, by material (at least one)
@@ -139,7 +141,7 @@ public:
     static constexpr uint32_t kShadowMapSize = 2048;
 
     bool Init(ID3D11Device* device, std::string* error);
-    bool Ready() const { return meshVs_ != nullptr; }
+    bool Ready() const { return shared_ != nullptr; }
     // Different for every Init (of any renderer): what a GpuTexture remembers as madeBy.
     uint64_t Id() const { return id_; }
     // The shape goes to the GPU once; null (and *error, Japanese) when it cannot.
@@ -158,9 +160,15 @@ public:
     // what the camera sees (View.h's BoxInView on its world bounds) is not drawn - but still casts its
     // shadow (it may fall inside the picture).
     struct Stats {
-        size_t things = 0;  // boxes and models given
-        size_t drawn = 0;   // ... drawn in the picture (the rest were culled)
+        size_t things = 0;     // boxes and models given
+        size_t drawn = 0;      // ... drawn in the picture (the rest were culled)
+        size_t mapsDrawn = 0;  // shadow maps drawn
+        size_t mapsKept = 0;   // ... and not drawn again: they already held the same (nothing moved)
     };
+    // Per device (shared by every renderer on it: the scene view, the camera preview, the
+    // thumbnails): the shaders and states, the cube and the floor, the constant buffers and the
+    // shadow maps with what each map holds now. Renderer3D.cpp.
+    struct Shared;
     const Stats& LastStats() const { return stats_; }
 
 private:
@@ -173,46 +181,44 @@ private:
         Color highlight;
         bool seen = true;  // inside what the camera sees (frustum culling); drawn into the shadow maps either way
         Bounds bounds;     // in the world
+        uint32_t thing = 0;          // where its numbers are in things_ (in float4s)
+        uint32_t firstMaterial = 0;  // ... and its parts' materials, one after another
     };
-
-    // Shadow maps of one kind: tiles of `size` pixels side by side in one texture (up to 4 a row).
-    // Made when first needed, made again larger when more are needed.
-    struct ShadowMaps {
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-        Microsoft::WRL::ComPtr<ID3D11DepthStencilView> dsv;
-        uint32_t tiles = 0, cols = 0, rows = 0, size = 0;
+    // One draw: some triangles of a mesh, with the numbers of a thing and a material (`slot`: its
+    // place in draws_, read by the shader as the instance's data).
+    struct Cmd {
+        const GpuMesh* mesh;
+        uint32_t firstIndex, indexCount;
+        uint32_t slot;
+        const DrawMaterial* material;  // its pictures (null: none - a shadow map, the floor)
     };
-    bool EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size);
 
     bool Resize(uint32_t width, uint32_t height);
     bool LineCapacity(size_t vertices);
-    bool MakeShadowSampler();
+    // The frame's numbers on the GPU (made larger when needed).
+    bool UploadFrame(ID3D11DeviceContext* ctx);
+    uint32_t AddThing(const Mat4& world, Color color, Color highlight);
+    uint32_t AddMaterial(const DrawMaterial& m);
+    uint32_t AddDraw(uint32_t thing, uint32_t material);
 
     template <class T>
     using Ptr = Microsoft::WRL::ComPtr<T>;
+    std::shared_ptr<Shared> shared_;
     Ptr<ID3D11Device> device_;
     uint64_t id_ = 0;
-    Ptr<ID3D11VertexShader> lineVs_, meshVs_, shadowVs_;
-    Ptr<ID3D11PixelShader> linePs_, meshPs_, floorPs_;
-    Ptr<ID3D11InputLayout> lineLayout_, meshLayout_;
-    Ptr<ID3D11Buffer> lineVb_, constants_, lights_, shadows_;
-    std::shared_ptr<const GpuMesh> cube_, floor_;
+    Ptr<ID3D11Buffer> lineVb_;
     size_t lineCapacity_ = 0;
-    Ptr<ID3D11RasterizerState> raster_, shadowRaster_;
-    Ptr<ID3D11DepthStencilState> depth_, depthNoWrite_;
-    Ptr<ID3D11BlendState> blend_;
-    Ptr<ID3D11SamplerState> textureSampler_;  // pictures: repeat, smooth, mipmapped
-    Ptr<ID3D11SamplerState> sharpSampler_;    // pictures set to くっきり (import setting): the nearest pixel
+    // Every thing's and material's numbers, and every draw's (thing, material), written once a frame.
+    std::vector<std::array<float, 4>> things_;
+    std::vector<uint32_t> draws_;  // pairs
+    Ptr<ID3D11Buffer> thingsBuffer_, drawsBuffer_;
+    Ptr<ID3D11ShaderResourceView> thingsView_;
+    size_t thingsCapacity_ = 0, drawsCapacity_ = 0;
     std::vector<Item> items_;
+    std::vector<Cmd> cmds_;
     std::vector<std::pair<size_t, const MeshPart*>> seeThrough_;  // (item, part) drawn last, back to front
     std::vector<Vec3> centers_;
     Stats stats_;
-
-    // The shadow maps (depth seen from the lights): the sun's (1, or kCascades) and the point / spot
-    // lights' (kLocalShadowSlices).
-    ShadowMaps sun_, local_;
-    Ptr<ID3D11SamplerState> shadowSampler_;
 
     UINT samples_ = 1;
     uint32_t width_ = 0, height_ = 0;
@@ -224,3 +230,4 @@ private:
 };
 
 }  // namespace rm::space3d
+

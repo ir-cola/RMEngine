@@ -11,6 +11,10 @@
 // No light at all: one white directional light of strength 1 going `defaultDirection` (the look of
 // the scene before there were lights), casting shadows.
 // At most kMaxLights lights are drawn (directional ones included); the rest are left out (`dropped`).
+// Which ones (and in which order the point / spot lights get shadow maps): the directional lights
+// first (they light everything, in the order given), then the point / spot lights that matter most
+// where the camera is - the brighter (colour x strength) and the nearer (how far the eye is outside
+// its reach) first (LightWeight); equal ones in the order given.
 //
 // Shadows:
 //   directional  the first directional light that casts them. Its maps are orthographic: one fitted
@@ -95,7 +99,10 @@ struct LightSetup {
     size_t shadowsLeftOut = 0;       // point / spot lights that wanted shadows but found no map free
 };
 
-LightSetup MakeLights(std::span<const Light> lights, Vec3 defaultDirection, const Ambient& ambient = {});
+LightSetup MakeLights(std::span<const Light> lights, Vec3 defaultDirection, const Ambient& ambient = {}, Vec3 eye = {0, 0, 0});
+// How much a point / spot light matters to a camera at `eye`: its brightness (the colour's luminance
+// x strength), less the farther the eye is outside its reach (1 / (1 + d²), d = distance - range).
+float LightWeight(const Light& light, Vec3 eye);
 
 // A spot light's shadow map: from where it is, through its cone (a little wider for the soft edge).
 Mat4 SpotShadowMatrix(Vec3 position, Vec3 direction, float spotAngle, float range);

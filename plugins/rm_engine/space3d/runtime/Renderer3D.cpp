@@ -6,9 +6,12 @@
 #include <d3dcompiler.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstring>
 #include <format>
+#include <mutex>
+#include <unordered_map>
 
 namespace rm::space3d {
 
@@ -17,19 +20,35 @@ namespace {
 // Matrices are stored column by column (m[column][row]), which is HLSL's default packing, so they
 // go to the GPU as they are and mul(matrix, vector) means matrix * vector.
 constexpr char kShaders[] = R"(
-cbuffer PerDraw : register(b0) {
+cbuffer Frame : register(b0) {
     float4x4 viewProj;
-    float4x4 world;
-    float4x4 normalWorld;    // the inverse transpose of world: normals stay at right angles
     float4x4 lightViewProj;  // ShadowVS: world -> the shadow map being drawn (x, y -1..1, depth 0..1)
-    float4 color;
     float4 eye;              // xyz: where the camera is (world)
-    float4 material;         // the part's material colour, linear (times `color`, which is the screen's)
-    float4 paint;            // x: 1 = a colour picture; y: alpha 0 opaque / 1 mask / 2 blend; z: mask's cutoff; w: 1 = a normal map
-    float4 highlight;        // a glow at the edges (selected): rgb (the screen's), a = how strong
-    float4 pbr;              // x: metallic, y: roughness, z: the normal map's strength; w: 1 = a metal / rough picture
-    float4 emissive;         // rgb: the light it gives (linear); w: 1 = an emission picture
 };
+// Every thing's and material's numbers of the frame, written once a frame (Renderer3D.cpp's things_).
+// A draw says where its thing and its material are (DRAW: x, y, in float4s):
+//   a thing:    world (4 columns), normalWorld (3 columns: the inverse transpose of world - normals
+//               stay at right angles), color (the screen's), highlight (a glow at the edges: rgb, a = how strong)
+//   a material: material (its colour, linear: times `color`), paint (x: 1 = a colour picture; y: alpha
+//               0 opaque / 1 mask / 2 blend; z: mask's cutoff; w: 1 = a normal map), pbr (x: metallic,
+//               y: roughness, z: the normal map's strength; w: 1 = a metal / rough picture), emissive
+//               (rgb: the light it gives, linear; w: 1 = an emission picture)
+Buffer<float4> things : register(t6);
+static float4x4 world;
+static float3x3 normalWorld;
+static float4 color, highlight, material, paint, pbr, emissive;
+void LoadPlace(uint at) {
+    world = transpose(float4x4(things.Load(at), things.Load(at + 1), things.Load(at + 2), things.Load(at + 3)));
+    normalWorld = transpose(float3x3(things.Load(at + 4).xyz, things.Load(at + 5).xyz, things.Load(at + 6).xyz));
+}
+void LoadLook(uint2 draw) {
+    color = things.Load(draw.x + 7);
+    highlight = things.Load(draw.x + 8);
+    material = things.Load(draw.y);
+    paint = things.Load(draw.y + 1);
+    pbr = things.Load(draw.y + 2);
+    emissive = things.Load(draw.y + 3);
+}
 // The lights of the frame (Lighting.h's LightBlock: set once per frame).
 cbuffer Lights : register(b1) {
     float4 lightInfo;         // x: how many
@@ -80,15 +99,17 @@ LineOut LineVS(LineIn i) {
 }
 float4 LinePS(LineOut i) : SV_Target { return i.col; }
 
-struct MeshIn  { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; };
-struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float3 wpos : TEXCOORD2; };
+struct MeshIn  { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; uint2 draw : DRAW; };
+struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float3 wpos : TEXCOORD2; nointerpolation uint2 draw : DRAW; };
 MeshOut MeshVS(MeshIn i) {
+    LoadPlace(i.draw.x);
     MeshOut o;
     float4 w = mul(world, float4(i.pos, 1));
     o.pos = mul(viewProj, w);
-    o.nrm = mul((float3x3)normalWorld, i.nrm);
+    o.nrm = mul(normalWorld, i.nrm);
     o.wpos = w.xyz;
     o.uv = i.uv;
+    o.draw = i.draw;
     return o;
 }
 
@@ -229,6 +250,7 @@ float4 Paint(MeshOut i) {
 }
 
 float4 MeshPS(MeshOut i) : SV_Target {
+    LoadLook(i.draw);
     float4 base = Paint(i);
     // The side seen is the side facing the eye (the back of an open model is lit as its own side).
     // Told from the eye, not from the triangle's winding on the screen, so a mirrored model or a
@@ -250,6 +272,7 @@ float4 MeshPS(MeshOut i) : SV_Target {
 // The floor: nothing of its own, only the shadows (seen from above) - the darkest one of a light
 // that reaches it.
 float4 FloorPS(MeshOut i) : SV_Target {
+    LoadLook(i.draw);
     if (eye.y < 0) discard;  // seen from below the floor
     float3 up = float3(0, 1, 0);
     float dark = 0;
@@ -264,23 +287,26 @@ float4 FloorPS(MeshOut i) : SV_Target {
     return float4(color.rgb, color.a * dark);
 }
 
-float4 ShadowVS(MeshIn i) : SV_Position { return mul(lightViewProj, mul(world, float4(i.pos, 1))); }
+float4 ShadowVS(MeshIn i) : SV_Position {
+    LoadPlace(i.draw.x);
+    return mul(lightViewProj, mul(world, float4(i.pos, 1)));
+}
+
+// A tile of a shadow map cleared: one triangle over the whole viewport at depth 1 (drawn with the
+// depth test off). ClearDepthStencilView would clear every tile.
+float4 ClearVS(uint id : SV_VertexID) : SV_Position {
+    float2 p = float2((id << 1) & 2, id & 2);
+    return float4(p * float2(2, -2) + float2(-1, 1), 1, 1);
+}
 )";
 
-struct Constants {
+// The constant buffer `Frame`.
+struct FrameConstants {
     float viewProj[16];
-    float world[16];
-    float normalWorld[16];
     float lightViewProj[16];
-    float color[4];
     float eye[4];
-    float material[4];
-    float paint[4];
-    float highlight[4];
-    float pbr[4];
-    float emissive[4];
 };
-static_assert(sizeof(Constants) % 16 == 0);
+static_assert(sizeof(FrameConstants) % 16 == 0);
 
 // The constant buffer `Shadows`.
 struct ShadowConstants {
@@ -366,57 +392,115 @@ MeshData FloorPlane() {
     return m;
 }
 
+// Shadow maps of one kind: tiles of `size` pixels side by side in one texture (up to 4 a row), and
+// what each tile holds now (a fingerprint of the light's matrix and of what was drawn into it). A tile
+// whose fingerprint has not changed is not drawn again - in any renderer of the device.
+struct ShadowMaps {
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> dsv;
+    uint32_t tiles = 0, cols = 0, rows = 0, size = 0;
+    std::vector<uint64_t> holds;  // per tile (0: nothing known)
+};
+
 }  // namespace
 
-bool Renderer::Init(ID3D11Device* device, std::string* error) {
-    device_ = device;
-    static std::atomic<uint64_t> next{0};
-    id_ = ++next;
-    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs;
+struct Renderer::Shared {
+    template <class T>
+    using Ptr = Microsoft::WRL::ComPtr<T>;
+    Ptr<ID3D11Device> device;
+    Ptr<ID3D11VertexShader> lineVs, meshVs, shadowVs, clearVs;
+    Ptr<ID3D11PixelShader> linePs, meshPs, floorPs;
+    Ptr<ID3D11InputLayout> lineLayout, meshLayout;
+    Ptr<ID3D11Buffer> frame, lights, shadows;  // the constant buffers (b0, b1, b2)
+    std::shared_ptr<const GpuMesh> cube, floor;
+    Ptr<ID3D11RasterizerState> raster, shadowRaster;
+    Ptr<ID3D11DepthStencilState> depth, depthNoWrite, depthClear;
+    Ptr<ID3D11BlendState> blend;
+    Ptr<ID3D11SamplerState> textureSampler;  // pictures: repeat, smooth, mipmapped
+    Ptr<ID3D11SamplerState> sharpSampler;    // pictures set to くっきり (import setting): the nearest pixel
+    Ptr<ID3D11SamplerState> shadowSampler;
+    // The shadow maps (depth seen from the lights): the sun's (1, or kCascades) and the point / spot
+    // lights' (kLocalShadowSlices). Made when first needed.
+    ShadowMaps sun, local;
+    UINT samples = 1;
+
+    bool Init(Renderer& owner, std::string* error);
+    bool EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size);
+};
+
+namespace {
+
+// One Shared per device: made by the first renderer on it, gone with the last. A device made again
+// (the GPU was lost: platform::Gfx::Generation) is another device, so it gets its own.
+std::mutex g_sharedMutex;
+std::unordered_map<ID3D11Device*, std::weak_ptr<Renderer::Shared>>& SharedByDevice() {
+    static std::unordered_map<ID3D11Device*, std::weak_ptr<Renderer::Shared>> map;
+    return map;
+}
+
+// A fingerprint (FNV-1a, 64 bits) of some bytes, added to `h`.
+uint64_t Mix(uint64_t h, const void* data, size_t size) {
+    const auto* p = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < size; ++i) h = (h ^ p[i]) * 1099511628211ull;
+    return h;
+}
+constexpr uint64_t kFingerprintStart = 14695981039346656037ull;
+
+std::atomic<uint64_t> g_meshSerial{0};  // GpuMesh::serial: never the same twice
+
+}  // namespace
+
+bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
+    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs, cvs;
     if (!Compile("LineVS", "vs_4_0", lvs, error) || !Compile("LinePS", "ps_4_0", lps, error) || !Compile("MeshVS", "vs_4_0", mvs, error) ||
-        !Compile("MeshPS", "ps_4_0", mps, error) || !Compile("FloorPS", "ps_4_0", fps, error) || !Compile("ShadowVS", "vs_4_0", svs, error)) {
+        !Compile("MeshPS", "ps_4_0", mps, error) || !Compile("FloorPS", "ps_4_0", fps, error) || !Compile("ShadowVS", "vs_4_0", svs, error) ||
+        !Compile("ClearVS", "vs_4_0", cvs, error)) {
         return false;
     }
     auto fail = [&](const char* what) {
         if (error) *error = std::format("3D の描画の準備に失敗しました: {}", what);
-        meshVs_.Reset();
         return false;
     };
-    if (FAILED(device->CreateVertexShader(lvs->GetBufferPointer(), lvs->GetBufferSize(), nullptr, &lineVs_)) ||
-        FAILED(device->CreatePixelShader(lps->GetBufferPointer(), lps->GetBufferSize(), nullptr, &linePs_)) ||
-        FAILED(device->CreatePixelShader(mps->GetBufferPointer(), mps->GetBufferSize(), nullptr, &meshPs_)) ||
-        FAILED(device->CreatePixelShader(fps->GetBufferPointer(), fps->GetBufferSize(), nullptr, &floorPs_)) ||
-        FAILED(device->CreateVertexShader(svs->GetBufferPointer(), svs->GetBufferSize(), nullptr, &shadowVs_)) ||
-        FAILED(device->CreateVertexShader(mvs->GetBufferPointer(), mvs->GetBufferSize(), nullptr, &meshVs_))) {
+    if (FAILED(device->CreateVertexShader(lvs->GetBufferPointer(), lvs->GetBufferSize(), nullptr, &lineVs)) ||
+        FAILED(device->CreatePixelShader(lps->GetBufferPointer(), lps->GetBufferSize(), nullptr, &linePs)) ||
+        FAILED(device->CreatePixelShader(mps->GetBufferPointer(), mps->GetBufferSize(), nullptr, &meshPs)) ||
+        FAILED(device->CreatePixelShader(fps->GetBufferPointer(), fps->GetBufferSize(), nullptr, &floorPs)) ||
+        FAILED(device->CreateVertexShader(svs->GetBufferPointer(), svs->GetBufferSize(), nullptr, &shadowVs)) ||
+        FAILED(device->CreateVertexShader(cvs->GetBufferPointer(), cvs->GetBufferSize(), nullptr, &clearVs)) ||
+        FAILED(device->CreateVertexShader(mvs->GetBufferPointer(), mvs->GetBufferSize(), nullptr, &meshVs))) {
         return fail("シェーダー");
     }
     const D3D11_INPUT_ELEMENT_DESC lineIn[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
+    // The vertices (slot 0) and, per draw, where its thing and material are (slot 1: one "instance"
+    // whose data is picked by the draw's start instance).
     const D3D11_INPUT_ELEMENT_DESC meshIn[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"DRAW", 0, DXGI_FORMAT_R32G32_UINT, 1, 0, D3D11_INPUT_PER_INSTANCE_DATA, 1},
     };
-    if (FAILED(device->CreateInputLayout(lineIn, 2, lvs->GetBufferPointer(), lvs->GetBufferSize(), &lineLayout_)) ||
-        FAILED(device->CreateInputLayout(meshIn, 3, mvs->GetBufferPointer(), mvs->GetBufferSize(), &meshLayout_))) {
+    if (FAILED(device->CreateInputLayout(lineIn, 2, lvs->GetBufferPointer(), lvs->GetBufferSize(), &lineLayout)) ||
+        FAILED(device->CreateInputLayout(meshIn, 4, mvs->GetBufferPointer(), mvs->GetBufferSize(), &meshLayout))) {
         return fail("入力レイアウト");
     }
 
     std::string why;
-    cube_ = Upload(UnitCube(), &why);
-    floor_ = Upload(FloorPlane(), &why);
-    if (!cube_ || !floor_) return fail("箱");
+    cube = owner.Upload(UnitCube(), &why);
+    floor = owner.Upload(FloorPlane(), &why);
+    if (!cube || !floor) return fail("箱");
     D3D11_BUFFER_DESC cd{};
     cd.Usage = D3D11_USAGE_DEFAULT;
-    cd.ByteWidth = sizeof(Constants);
+    cd.ByteWidth = sizeof(FrameConstants);
     cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    if (FAILED(device->CreateBuffer(&cd, nullptr, &constants_))) return fail("定数");
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &frame))) return fail("定数");
     cd.ByteWidth = sizeof(LightBlock);
-    if (FAILED(device->CreateBuffer(&cd, nullptr, &lights_))) return fail("光");
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &lights))) return fail("光");
     cd.ByteWidth = sizeof(ShadowConstants);
-    if (FAILED(device->CreateBuffer(&cd, nullptr, &shadows_))) return fail("影");
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &shadows))) return fail("影");
 
     D3D11_RASTERIZER_DESC rd{};
     rd.FillMode = D3D11_FILL_SOLID;
@@ -432,6 +516,8 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     dd.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
     D3D11_DEPTH_STENCIL_DESC dn = dd;
     dn.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+    D3D11_DEPTH_STENCIL_DESC dc = dd;  // a tile of a shadow map cleared (ClearVS: depth 1 everywhere)
+    dc.DepthFunc = D3D11_COMPARISON_ALWAYS;
     D3D11_BLEND_DESC bl{};
     bl.RenderTarget[0].BlendEnable = TRUE;
     bl.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
@@ -447,41 +533,35 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     ts.AddressU = ts.AddressV = ts.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;  // UVs past 0..1 repeat the picture
     ts.ComparisonFunc = D3D11_COMPARISON_NEVER;
     ts.MaxLOD = D3D11_FLOAT32_MAX;
-    if (FAILED(device->CreateRasterizerState(&rd, &raster_)) || FAILED(device->CreateRasterizerState(&sd, &shadowRaster_)) ||
-        FAILED(device->CreateDepthStencilState(&dd, &depth_)) || FAILED(device->CreateDepthStencilState(&dn, &depthNoWrite_)) ||
-        FAILED(device->CreateBlendState(&bl, &blend_)) || FAILED(device->CreateSamplerState(&ts, &textureSampler_))) {
-        return fail("描画の設定");
-    }
     D3D11_SAMPLER_DESC tp = ts;  // くっきり: the nearest pixel (the smaller copies still far away)
     tp.Filter = D3D11_FILTER_MIN_MAG_POINT_MIP_LINEAR;
     tp.MaxAnisotropy = 1;
-    if (FAILED(device->CreateSamplerState(&tp, &sharpSampler_))) {
+    // Compares the pixel's depth with the map's, blending the answers of the 2 x 2 texels around it.
+    // Outside the map the depth is 1 (the farthest): nothing there casts a shadow.
+    D3D11_SAMPLER_DESC ss{};
+    ss.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+    ss.AddressU = ss.AddressV = ss.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+    ss.BorderColor[0] = ss.BorderColor[1] = ss.BorderColor[2] = ss.BorderColor[3] = 1.f;
+    ss.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
+    ss.MaxLOD = D3D11_FLOAT32_MAX;
+    if (FAILED(device->CreateRasterizerState(&rd, &raster)) || FAILED(device->CreateRasterizerState(&sd, &shadowRaster)) ||
+        FAILED(device->CreateDepthStencilState(&dd, &depth)) || FAILED(device->CreateDepthStencilState(&dn, &depthNoWrite)) ||
+        FAILED(device->CreateDepthStencilState(&dc, &depthClear)) || FAILED(device->CreateBlendState(&bl, &blend)) ||
+        FAILED(device->CreateSamplerState(&ts, &textureSampler)) || FAILED(device->CreateSamplerState(&tp, &sharpSampler))) {
         return fail("描画の設定");
     }
-    if (!MakeShadowSampler()) return fail("影");
+    if (FAILED(device->CreateSamplerState(&ss, &shadowSampler))) return fail("影");
 
     UINT quality = 0;
-    samples_ = 1;
+    samples = 1;
     if (SUCCEEDED(device->CheckMultisampleQualityLevels(DXGI_FORMAT_B8G8R8A8_UNORM, 4, &quality)) && quality > 0) {
         UINT dq = 0;
-        if (SUCCEEDED(device->CheckMultisampleQualityLevels(DXGI_FORMAT_D24_UNORM_S8_UINT, 4, &dq)) && dq > 0) samples_ = 4;
+        if (SUCCEEDED(device->CheckMultisampleQualityLevels(DXGI_FORMAT_D24_UNORM_S8_UINT, 4, &dq)) && dq > 0) samples = 4;
     }
     return true;
 }
 
-bool Renderer::MakeShadowSampler() {
-    // Compares the pixel's depth with the map's, blending the answers of the 2 x 2 texels around it.
-    // Outside the map the depth is 1 (the farthest): nothing there casts a shadow.
-    D3D11_SAMPLER_DESC sd{};
-    sd.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
-    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
-    sd.BorderColor[0] = sd.BorderColor[1] = sd.BorderColor[2] = sd.BorderColor[3] = 1.f;
-    sd.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
-    sd.MaxLOD = D3D11_FLOAT32_MAX;
-    return SUCCEEDED(device_->CreateSamplerState(&sd, &shadowSampler_));
-}
-
-bool Renderer::EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size) {
+bool Renderer::Shared::EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size) {
     if (maps.tiles >= tiles && maps.size == size && maps.srv) return true;
     maps = {};
     // Up to 4 tiles a row. One texture seen two ways: written as depth (D32), read as numbers (R32)
@@ -503,9 +583,9 @@ bool Renderer::EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size) {
     sv.Format = DXGI_FORMAT_R32_FLOAT;
     sv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     sv.Texture2D.MipLevels = 1;
-    if (FAILED(device_->CreateTexture2D(&td, nullptr, &maps.texture)) ||
-        FAILED(device_->CreateDepthStencilView(maps.texture.Get(), &dv, &maps.dsv)) ||
-        FAILED(device_->CreateShaderResourceView(maps.texture.Get(), &sv, &maps.srv))) {
+    if (FAILED(device->CreateTexture2D(&td, nullptr, &maps.texture)) ||
+        FAILED(device->CreateDepthStencilView(maps.texture.Get(), &dv, &maps.dsv)) ||
+        FAILED(device->CreateShaderResourceView(maps.texture.Get(), &sv, &maps.srv))) {
         maps = {};
         return false;
     }
@@ -513,6 +593,30 @@ bool Renderer::EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size) {
     maps.cols = cols;
     maps.rows = rows;
     maps.size = size;
+    maps.holds.assign(tiles, 0);
+    return true;
+}
+
+bool Renderer::Init(ID3D11Device* device, std::string* error) {
+    device_ = device;
+    static std::atomic<uint64_t> next{0};
+    id_ = ++next;
+    shared_.reset();
+    std::lock_guard lock(g_sharedMutex);
+    auto& map = SharedByDevice();
+    std::erase_if(map, [](const auto& kv) { return kv.second.expired(); });
+    if (auto found = map[device].lock()) {
+        shared_ = std::move(found);
+        return true;
+    }
+    auto made = std::make_shared<Shared>();
+    made->device = device;
+    if (!made->Init(*this, error)) {
+        map.erase(device);
+        return false;
+    }
+    map[device] = made;
+    shared_ = std::move(made);
     return true;
 }
 
@@ -543,6 +647,7 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
     init.pSysMem = mesh.indices.data();
     if (FAILED(device_->CreateBuffer(&bd, &init, &gpu->indices))) return fail("インデックスを GPU に載せられませんでした (メモリーが足りない?)");
+    gpu->serial = ++g_meshSerial;
     gpu->min = mesh.min;
     gpu->max = mesh.max;
     gpu->indexCount = static_cast<uint32_t>(mesh.indices.size() / 3 * 3);
@@ -623,6 +728,7 @@ bool Renderer::Resize(uint32_t width, uint32_t height) {
     td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;  // shader resource: Direct2D draws it
     if (FAILED(device_->CreateTexture2D(&td, nullptr, &picture_))) return false;
     ID3D11Texture2D* target = picture_.Get();
+    samples_ = shared_->samples;
     if (samples_ > 1) {
         td.SampleDesc.Count = samples_;
         td.BindFlags = D3D11_BIND_RENDER_TARGET;
@@ -666,66 +772,124 @@ void BindMesh(ID3D11DeviceContext* ctx, ID3D11Buffer* vb, ID3D11Buffer* ib) {
     ctx->IASetIndexBuffer(ib, DXGI_FORMAT_R32_UINT, 0);
 }
 
+void Put(std::array<float, 4>& out, Color c) { out = {c.r, c.g, c.b, c.a}; }
+
+// A dynamic buffer at least `bytes` big (made again, larger, when it is not).
+bool EnsureDynamic(ID3D11Device* device, Microsoft::WRL::ComPtr<ID3D11Buffer>& buffer, size_t& capacity, size_t bytes, UINT bind) {
+    if (buffer && capacity >= bytes) return true;
+    const size_t cap = std::max(bytes, capacity * 2) + 4096;
+    D3D11_BUFFER_DESC bd{};
+    bd.Usage = D3D11_USAGE_DYNAMIC;
+    bd.ByteWidth = static_cast<UINT>(cap);
+    bd.BindFlags = bind;
+    bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    buffer.Reset();
+    capacity = 0;
+    if (FAILED(device->CreateBuffer(&bd, nullptr, &buffer))) return false;
+    capacity = cap;
+    return true;
+}
+
+bool Fill(ID3D11DeviceContext* ctx, ID3D11Buffer* buffer, const void* data, size_t bytes) {
+    D3D11_MAPPED_SUBRESOURCE map{};
+    if (FAILED(ctx->Map(buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) return false;
+    std::memcpy(map.pData, data, bytes);
+    ctx->Unmap(buffer, 0);
+    return true;
+}
+
 }  // namespace
+
+uint32_t Renderer::AddThing(const Mat4& world, Color color, Color highlight) {
+    const auto at = static_cast<uint32_t>(things_.size());
+    const Mat4 n = NormalMatrix(world);
+    for (int c = 0; c < 4; ++c) things_.push_back({world.m[c][0], world.m[c][1], world.m[c][2], world.m[c][3]});
+    for (int c = 0; c < 3; ++c) things_.push_back({n.m[c][0], n.m[c][1], n.m[c][2], 0});
+    things_.emplace_back();
+    Put(things_.back(), color);
+    things_.emplace_back();
+    Put(things_.back(), highlight);
+    return at;
+}
+
+uint32_t Renderer::AddMaterial(const DrawMaterial& m) {
+    const auto at = static_cast<uint32_t>(things_.size());
+    const float mode = m.alpha == AlphaMode::Mask ? 1.f : m.alpha == AlphaMode::Blend ? 2.f : 0.f;
+    things_.emplace_back();
+    Put(things_.back(), m.color);
+    things_.push_back({m.texture ? 1.f : 0.f, mode, m.alphaCutoff, m.normal ? 1.f : 0.f});
+    things_.push_back({m.metallic, m.roughness, m.normalScale, m.metalRough ? 1.f : 0.f});
+    things_.push_back({m.emissive.r, m.emissive.g, m.emissive.b, m.emission ? 1.f : 0.f});
+    return at;
+}
+
+uint32_t Renderer::AddDraw(uint32_t thing, uint32_t material) {
+    const auto slot = static_cast<uint32_t>(draws_.size() / 2);
+    draws_.push_back(thing);
+    draws_.push_back(material);
+    return slot;
+}
+
+bool Renderer::UploadFrame(ID3D11DeviceContext* ctx) {
+    const size_t thingBytes = things_.size() * sizeof(things_[0]), drawBytes = draws_.size() * sizeof(uint32_t);
+    const bool grew = !thingsBuffer_ || thingsCapacity_ < thingBytes;
+    if (!EnsureDynamic(device_.Get(), thingsBuffer_, thingsCapacity_, thingBytes, D3D11_BIND_SHADER_RESOURCE) ||
+        !EnsureDynamic(device_.Get(), drawsBuffer_, drawsCapacity_, std::max<size_t>(drawBytes, 8), D3D11_BIND_VERTEX_BUFFER)) {
+        return false;
+    }
+    if (grew || !thingsView_) {
+        D3D11_SHADER_RESOURCE_VIEW_DESC sv{};
+        sv.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+        sv.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        sv.Buffer.FirstElement = 0;
+        sv.Buffer.NumElements = static_cast<UINT>(thingsCapacity_ / sizeof(things_[0]));
+        thingsView_.Reset();
+        if (FAILED(device_->CreateShaderResourceView(thingsBuffer_.Get(), &sv, &thingsView_))) return false;
+    }
+    return Fill(ctx, thingsBuffer_.Get(), things_.data(), thingBytes) && (draws_.empty() || Fill(ctx, drawsBuffer_.Get(), draws_.data(), drawBytes));
+}
 
 ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f) {
     if (!Ready() || f.width == 0 || f.height == 0 || !Resize(f.width, f.height)) return nullptr;
+    Shared& s = *shared_;
 
     // Everything filled: the boxes and the models (each with its own place and colour).
     items_.clear();
-    for (const Box& b : f.boxes) items_.push_back({cube_.get(), &b.world, b.color, b.castShadow, {}, {0, 0, 0, 0}});
+    for (const Box& b : f.boxes) items_.push_back({s.cube.get(), &b.world, b.color, b.castShadow, {}, {0, 0, 0, 0}});
     for (const MeshDraw& m : f.meshes) {
         if (m.mesh && m.mesh->indexCount > 0) items_.push_back({m.mesh, &m.world, m.color, m.castShadow, m.materials, m.highlight});
     }
     // Culling (always): what lies wholly outside the camera's view is left out of the picture.
     const Mat4 viewProj = f.projection * f.view;
-    stats_ = {items_.size(), 0};
+    stats_ = {items_.size(), 0, 0, 0};
     for (Item& it : items_) {
         it.bounds = WorldBounds(*it.world, it.mesh->min, it.mesh->max);
         it.seen = BoxInView(viewProj, it.bounds);
         if (it.seen) ++stats_.drawn;
     }
-
-    ID3D11Buffer* cb = constants_.Get();
-    ctx->VSSetConstantBuffers(0, 1, &cb);
-    ctx->PSSetConstantBuffers(0, 1, &cb);
-    // The lights (none: the one default directional light) and the ambient light.
-    LightSetup lights = MakeLights(f.lights, f.lightDirection, f.ambient);
-    ID3D11Buffer* lb = lights_.Get();
-    ID3D11Buffer* sb = shadows_.Get();
-    ID3D11Buffer* both[2] = {lb, sb};
-    ctx->PSSetConstantBuffers(1, 2, both);
-    ctx->IASetInputLayout(meshLayout_.Get());
-    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    const float factor[4] = {0, 0, 0, 0};
-    ctx->OMSetBlendState(blend_.Get(), factor, 0xFFFFFFFF);
-    ID3D11ShaderResourceView* noSrvs[6] = {};
-    ctx->PSSetShaderResources(0, 6, noSrvs);  // the maps may still be bound for reading: they are written first
-
-    Constants c{};
-    CopyMatrix(c.viewProj, f.projection * f.view);
+    Vec3 eye{0, 0, 0}, forward{0, 0, -1};
     if (const auto toWorld = Inverse(f.view)) {
-        const Vec3 eye = TransformPoint(*toWorld, {0, 0, 0});
-        c.eye[0] = eye.x, c.eye[1] = eye.y, c.eye[2] = eye.z;
+        eye = TransformPoint(*toWorld, {0, 0, 0});
+        forward = Normalize(TransformDirection(*toWorld, {0, 0, -1}));
     }
-    auto put = [](float out[4], Color col) { out[0] = col.r, out[1] = col.g, out[2] = col.b, out[3] = col.a; };
-    // The whole shape at once (the shadow map, the floor): no materials.
-    auto draw = [&](const GpuMesh& mesh, const Mat4& world, Color col) {
-        CopyMatrix(c.world, world);
-        CopyMatrix(c.normalWorld, NormalMatrix(world));
-        put(c.color, col);
-        put(c.material, {1, 1, 1, 1});
-        put(c.paint, {0, 0, 0, 0});
-        put(c.highlight, {0, 0, 0, 0});
-        put(c.pbr, {0, 0.8f, 1, 0});
-        put(c.emissive, {0, 0, 0, 0});
-        ctx->UpdateSubresource(cb, 0, nullptr, &c, 0, 0);
-        BindMesh(ctx, mesh.vertices.Get(), mesh.indices.Get());
-        ctx->DrawIndexed(mesh.indexCount, 0, 0);
-    };
-    // Part by part, each with its material (colour, metal / rough, normals, emission, alpha, pictures).
-    // `seeThrough`: only the parts that are see-through (BLEND, or the whole thing faded) - or only the others.
+    // The lights (none: the one default directional light; more than kMaxLights: the nearest and
+    // brightest) and the ambient light.
+    LightSetup lights = MakeLights(f.lights, f.lightDirection, f.ambient, eye);
+
+    // Every thing's and material's numbers, once for the frame (the draws only say which).
+    things_.clear();
+    draws_.clear();
+    cmds_.clear();
     static const DrawMaterial kWhite;
+    const uint32_t white = AddMaterial(kWhite);
+    for (Item& it : items_) {
+        it.thing = AddThing(*it.world, it.color, it.highlight);
+        it.firstMaterial = static_cast<uint32_t>(things_.size());
+        for (const MeshPart& part : it.mesh->parts) {
+            AddMaterial(part.material >= 0 && static_cast<size_t>(part.material) < it.materials.size() ? it.materials[static_cast<size_t>(part.material)]
+                                                                                                         : kWhite);
+        }
+    }
     auto materialOf = [](const Item& it, const MeshPart& part) -> const DrawMaterial& {
         return part.material >= 0 && static_cast<size_t>(part.material) < it.materials.size() ? it.materials[static_cast<size_t>(part.material)]
                                                                                                : kWhite;
@@ -733,38 +897,16 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     auto isSeeThrough = [&](const Item& it, const MeshPart& part) {
         return it.color.a < 1.f || materialOf(it, part).alpha == AlphaMode::Blend;
     };
-    auto drawPainted = [&](const Item& it, bool seeThrough, const MeshPart* only) {
-        CopyMatrix(c.world, *it.world);
-        CopyMatrix(c.normalWorld, NormalMatrix(*it.world));
-        put(c.color, it.color);
-        put(c.highlight, it.highlight);
-        BindMesh(ctx, it.mesh->vertices.Get(), it.mesh->indices.Get());
-        for (const MeshPart& part : it.mesh->parts) {
-            if (only ? &part != only : isSeeThrough(it, part) != seeThrough) continue;
-            const DrawMaterial& mat = materialOf(it, part);
-            put(c.material, mat.color);
-            const float mode = mat.alpha == AlphaMode::Mask ? 1.f : mat.alpha == AlphaMode::Blend ? 2.f : 0.f;
-            put(c.paint, {mat.texture ? 1.f : 0.f, mode, mat.alphaCutoff, mat.normal ? 1.f : 0.f});
-            put(c.pbr, {mat.metallic, mat.roughness, mat.normalScale, mat.metalRough ? 1.f : 0.f});
-            put(c.emissive, {mat.emissive.r, mat.emissive.g, mat.emissive.b, mat.emission ? 1.f : 0.f});
-            auto view = [](const GpuTexture* t) -> ID3D11ShaderResourceView* { return t ? t->view.Get() : nullptr; };
-            ID3D11ShaderResourceView* views[4] = {view(mat.texture.get()), view(mat.metalRough.get()), view(mat.normal.get()),
-                                                  view(mat.emission.get())};
-            ctx->PSSetShaderResources(1, 4, views);
-            // (the colour picture decides: くっきり is the image's import setting)
-            ID3D11SamplerState* sampler = mat.texture && mat.texture->sharp ? sharpSampler_.Get() : textureSampler_.Get();
-            ctx->PSSetSamplers(1, 1, &sampler);
-            ctx->UpdateSubresource(cb, 0, nullptr, &c, 0, 0);
-            ctx->DrawIndexed(part.indexCount, part.firstIndex, 0);
-        }
+    auto partDraw = [&](const Item& it, const MeshPart& part) {
+        const auto k = static_cast<uint32_t>(&part - it.mesh->parts.data());
+        cmds_.push_back({it.mesh, part.firstIndex, part.indexCount, AddDraw(it.thing, it.firstMaterial + k * 4), &materialOf(it, part)});
     };
 
-    // 1. The shadow maps: what casts, seen from the lights (an item outside a map is not drawn into it).
+    // 1. The shadow maps to draw: what casts, seen from each light. Only what lies in a map is drawn
+    // into it (the same test as the camera's culling), and a map that would hold the same as it does
+    // (the same matrix, the same things where they were) is not drawn again.
     ShadowConstants sc{};
-    if (const auto toWorld = Inverse(f.view)) {
-        const Vec3 forward = Normalize(TransformDirection(*toWorld, {0, 0, -1}));
-        sc.viewForward[0] = forward.x, sc.viewForward[1] = forward.y, sc.viewForward[2] = forward.z;
-    }
+    sc.viewForward[0] = forward.x, sc.viewForward[1] = forward.y, sc.viewForward[2] = forward.z;
     Bounds casters;
     bool anyCaster = false;
     for (const Item& it : items_) {
@@ -774,38 +916,44 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         casters.max = anyCaster ? Vec3{std::max(casters.max.x, b.max.x), std::max(casters.max.y, b.max.y), std::max(casters.max.z, b.max.z)} : b.max;
         anyCaster = true;
     }
-    // Each kind of map: cleared once, then each map drawn into its tile.
-    auto clearMaps = [&](const ShadowMaps& maps) {
-        ctx->OMSetRenderTargets(0, nullptr, maps.dsv.Get());
-        ctx->ClearDepthStencilView(maps.dsv.Get(), D3D11_CLEAR_DEPTH, 1.f, 0);
+    struct MapWork {
+        ShadowMaps* maps;
+        uint32_t tile;
+        Mat4 viewProj;
+        size_t first, end;  // its draws in cmds_
     };
-    auto drawMap = [&](const ShadowMaps& maps, uint32_t tile, const Mat4& lightViewProj) {
-        const float size = static_cast<float>(maps.size);
-        const D3D11_VIEWPORT svp{static_cast<float>(tile % maps.cols) * size, static_cast<float>(tile / maps.cols) * size, size, size, 0, 1};
-        ctx->RSSetViewports(1, &svp);
-        ctx->RSSetState(shadowRaster_.Get());
-        ctx->OMSetDepthStencilState(depth_.Get(), 0);
-        ctx->VSSetShader(shadowVs_.Get(), nullptr, 0);
-        ctx->PSSetShader(nullptr, nullptr, 0);  // depth only
-        CopyMatrix(c.lightViewProj, lightViewProj);
+    std::vector<MapWork> work;
+    auto planMap = [&](ShadowMaps& maps, uint32_t tile, const Mat4& lightViewProj) {
+        uint64_t fingerprint = Mix(kFingerprintStart, &lightViewProj, sizeof(Mat4));
+        const size_t first = cmds_.size();
         for (const Item& it : items_) {
-            if (it.castShadow && BoxInView(lightViewProj, it.bounds)) draw(*it.mesh, *it.world, it.color);
+            if (!it.castShadow || !BoxInView(lightViewProj, it.bounds)) continue;
+            fingerprint = Mix(fingerprint, &it.mesh->serial, sizeof(it.mesh->serial));
+            fingerprint = Mix(fingerprint, it.world, sizeof(Mat4));
+            cmds_.push_back({it.mesh, 0, it.mesh->indexCount, AddDraw(it.thing, white), nullptr});
         }
+        if (maps.holds[tile] == fingerprint) {  // drawn already (this frame's, the last's, or another renderer's)
+            cmds_.resize(first);
+            ++stats_.mapsKept;
+            return;
+        }
+        maps.holds[tile] = fingerprint;
+        work.push_back({&maps, tile, lightViewProj, first, cmds_.size()});
+        ++stats_.mapsDrawn;
     };
     // The sun: one map fitted to what casts, or the cascades along the view.
     int sunMaps = 0;
     if (f.shadows && anyCaster && lights.shadowLight >= 0) {
         const SunShadowPlan plan = PlanSunShadows(lights.shadowDirection, casters, f.view, f.projection, kShadowMapSize);
-        if (plan.count > 0 && EnsureMaps(sun_, static_cast<uint32_t>(plan.count), kShadowMapSize)) {
+        if (plan.count > 0 && s.EnsureMaps(s.sun, static_cast<uint32_t>(plan.count), kShadowMapSize)) {
             sunMaps = plan.count;
-            clearMaps(sun_);
             for (size_t m = 0; m < static_cast<size_t>(plan.count); ++m) {
                 CopyMatrix(sc.sunViewProj[m], plan.viewProj[m]);
                 // The biases are a texel or so: the normal offset in the world, the depth's in the map.
                 sc.sunInfo[m][0] = plan.splitFar[m];
                 sc.sunInfo[m][1] = plan.texel[m] * 1.5f;
                 sc.sunInfo[m][2] = plan.texel[m] / std::max(plan.depthRange[m], 1e-6f);
-                drawMap(sun_, static_cast<uint32_t>(m), plan.viewProj[m]);
+                planMap(s.sun, static_cast<uint32_t>(m), plan.viewProj[m]);
             }
         }
     }
@@ -813,86 +961,38 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     sc.shadowInfo[1] = 1.f / static_cast<float>(kShadowMapSize);
     // The point lights and spots.
     bool localMaps = false;
-    if (f.shadows && anyCaster && lights.localSlices > 0 && EnsureMaps(local_, static_cast<uint32_t>(kLocalShadowSlices), kLocalShadowSize)) {
+    if (f.shadows && anyCaster && lights.localSlices > 0 && s.EnsureMaps(s.local, static_cast<uint32_t>(kLocalShadowSlices), kLocalShadowSize)) {
         localMaps = true;
-        clearMaps(local_);
         for (size_t m = 0; m < lights.localSlices; ++m) {
             CopyMatrix(sc.localViewProj[m], lights.localViewProj[m]);
-            drawMap(local_, static_cast<uint32_t>(m), lights.localViewProj[m]);
+            planMap(s.local, static_cast<uint32_t>(m), lights.localViewProj[m]);
         }
     }
     sc.shadowInfo[2] = 1.f / static_cast<float>(kLocalShadowSize);
-    sc.atlas[0] = static_cast<float>(std::max(sun_.cols, 1u)), sc.atlas[1] = static_cast<float>(std::max(sun_.rows, 1u));
-    sc.atlas[2] = static_cast<float>(std::max(local_.cols, 1u)), sc.atlas[3] = static_cast<float>(std::max(local_.rows, 1u));
+    sc.atlas[0] = static_cast<float>(std::max(s.sun.cols, 1u)), sc.atlas[1] = static_cast<float>(std::max(s.sun.rows, 1u));
+    sc.atlas[2] = static_cast<float>(std::max(s.local.cols, 1u)), sc.atlas[3] = static_cast<float>(std::max(s.local.rows, 1u));
     // Lights whose maps were not drawn have no shadows.
     for (size_t i = 0; i < kMaxLights; ++i) {
         if (sunMaps == 0) lights.block.color[i][3] = 0;
         if (!localMaps) lights.block.shadow[i][0] = -1;
     }
     const bool shadows = sunMaps > 0 || localMaps;
-    ctx->UpdateSubresource(lb, 0, nullptr, &lights.block, 0, 0);
-    ctx->UpdateSubresource(sb, 0, nullptr, &sc, 0, 0);
 
-    // 2. The picture.
-    ID3D11RenderTargetView* rtv = rtv_.Get();
-    ctx->OMSetRenderTargets(1, &rtv, dsv_.Get());
-    const D3D11_VIEWPORT vp{0, 0, static_cast<float>(f.width), static_cast<float>(f.height), 0, 1};
-    ctx->RSSetViewports(1, &vp);
-    const float clear[4] = {f.clear.r, f.clear.g, f.clear.b, f.clear.a};  // a < 1: a picture to put over something (a thumbnail)
-    ctx->ClearRenderTargetView(rtv, clear);
-    ctx->ClearDepthStencilView(dsv_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.f, 0);
-    ctx->RSSetState(raster_.Get());
-    ctx->OMSetDepthStencilState(depth_.Get(), 0);
-    if (shadows) {
-        ID3D11ShaderResourceView* sunSrv = sun_.srv.Get();
-        ID3D11ShaderResourceView* localSrv = local_.srv.Get();
-        ID3D11SamplerState* sampler = shadowSampler_.Get();
-        ctx->PSSetShaderResources(0, 1, &sunSrv);
-        ctx->PSSetShaderResources(5, 1, &localSrv);
-        ctx->PSSetSamplers(0, 1, &sampler);
-    }
-
-    if (!items_.empty()) {
-        ctx->VSSetShader(meshVs_.Get(), nullptr, 0);
-        ctx->PSSetShader(meshPs_.Get(), nullptr, 0);
-        ID3D11SamplerState* sampler = textureSampler_.Get();
-        ctx->PSSetSamplers(1, 1, &sampler);
-        // What is not see-through first (any order: the depth test sorts it out).
-        for (const Item& it : items_) {
-            if (it.seen) drawPainted(it, false, nullptr);
+    // 2. The picture's draws: what is not see-through (any order: the depth test sorts it out), the
+    // floor's shadows, then what is see-through, the farthest first (by the middle of its part).
+    const size_t opaqueFirst = cmds_.size();
+    for (const Item& it : items_) {
+        if (!it.seen) continue;
+        for (const MeshPart& part : it.mesh->parts) {
+            if (!isSeeThrough(it, part)) partDraw(it, part);
         }
     }
-    // The shadows on the floor: see-through, over what is already drawn (the depth test still hides
-    // the floor behind things), and writing no depth (the grid lies on it).
+    const size_t opaqueEnd = cmds_.size();
     if (shadows) {
-        ctx->OMSetDepthStencilState(depthNoWrite_.Get(), 0);
-        ctx->VSSetShader(meshVs_.Get(), nullptr, 0);
-        ctx->PSSetShader(floorPs_.Get(), nullptr, 0);
-        draw(*floor_, Mat4{}, f.shadowColor);
-        ctx->OMSetDepthStencilState(depth_.Get(), 0);
+        const uint32_t floorThing = AddThing(Mat4{}, f.shadowColor, {0, 0, 0, 0});
+        cmds_.push_back({s.floor.get(), 0, s.floor->indexCount, AddDraw(floorThing, white), nullptr});
     }
-
-    // Lines (after the filled things: the grid is see-through, and the depth test still hides it behind them).
-    if (!f.lines.empty() && LineCapacity(f.lines.size())) {
-        D3D11_MAPPED_SUBRESOURCE map{};
-        if (SUCCEEDED(ctx->Map(lineVb_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) {
-            std::memcpy(map.pData, f.lines.data(), f.lines.size() * sizeof(LineVertex));
-            ctx->Unmap(lineVb_.Get(), 0);
-            CopyMatrix(c.world, Mat4{});
-            ctx->UpdateSubresource(cb, 0, nullptr, &c, 0, 0);
-            ctx->IASetInputLayout(lineLayout_.Get());
-            ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-            const UINT stride = sizeof(LineVertex), offset = 0;
-            ID3D11Buffer* vb = lineVb_.Get();
-            ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
-            ctx->VSSetShader(lineVs_.Get(), nullptr, 0);
-            ctx->PSSetShader(linePs_.Get(), nullptr, 0);
-            ctx->Draw(static_cast<UINT>(f.lines.size() & ~size_t{1}), 0);
-        }
-    }
-
-    // 3. What is see-through, the farthest first (by the middle of its part), over everything else and
-    // writing no depth (what is behind another see-through part still shows through it).
+    const size_t floorEnd = cmds_.size();
     seeThrough_.clear();
     for (size_t i = 0; i < items_.size(); ++i) {
         if (!items_[i].seen) continue;
@@ -906,26 +1006,156 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             const GpuMesh& m = *items_[i].mesh;
             centers_.push_back(TransformPoint(*items_[i].world, m.partCenters[static_cast<size_t>(part - m.parts.data())]));
         }
-        Vec3 eye{0, 0, 0};
-        if (const auto toWorld = Inverse(f.view)) eye = TransformPoint(*toWorld, {0, 0, 0});
-        ctx->IASetInputLayout(meshLayout_.Get());
-        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        ctx->OMSetDepthStencilState(depthNoWrite_.Get(), 0);
-        ctx->VSSetShader(meshVs_.Get(), nullptr, 0);
-        ctx->PSSetShader(meshPs_.Get(), nullptr, 0);
-        for (const size_t k : BackToFront(centers_, eye)) drawPainted(items_[seeThrough_[k].first], true, seeThrough_[k].second);
-        ctx->OMSetDepthStencilState(depth_.Get(), 0);
+        for (const size_t k : BackToFront(centers_, eye)) partDraw(items_[seeThrough_[k].first], *seeThrough_[k].second);
     }
-    ID3D11ShaderResourceView* none[4] = {};
-    ctx->PSSetShaderResources(1, 4, none);
+    const size_t seeThroughEnd = cmds_.size();
+
+    // The frame's numbers go to the GPU at once.
+    if (!UploadFrame(ctx)) return nullptr;
+    FrameConstants fc{};
+    CopyMatrix(fc.viewProj, viewProj);
+    fc.eye[0] = eye.x, fc.eye[1] = eye.y, fc.eye[2] = eye.z;
+    ctx->UpdateSubresource(s.lights.Get(), 0, nullptr, &lights.block, 0, 0);
+    ctx->UpdateSubresource(s.shadows.Get(), 0, nullptr, &sc, 0, 0);
+    ID3D11Buffer* frameCb = s.frame.Get();
+    ID3D11Buffer* cbs[3] = {frameCb, s.lights.Get(), s.shadows.Get()};
+    ctx->VSSetConstantBuffers(0, 1, &frameCb);
+    ctx->PSSetConstantBuffers(0, 3, cbs);
+    ID3D11ShaderResourceView* noSrvs[7] = {};
+    ctx->PSSetShaderResources(0, 7, noSrvs);  // the maps may still be bound for reading: they are written first
+    ID3D11ShaderResourceView* thingsView = thingsView_.Get();
+    ctx->VSSetShaderResources(6, 1, &thingsView);
+    ctx->PSSetShaderResources(6, 1, &thingsView);
+    ctx->IASetInputLayout(s.meshLayout.Get());
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    {
+        const UINT stride = sizeof(uint32_t) * 2, offset = 0;
+        ID3D11Buffer* db = drawsBuffer_.Get();
+        ctx->IASetVertexBuffers(1, 1, &db, &stride, &offset);
+    }
+    const float factor[4] = {0, 0, 0, 0};
+    ctx->OMSetBlendState(s.blend.Get(), factor, 0xFFFFFFFF);
+
+    // Runs draws: the mesh bound when it changes, the pictures when the material has them.
+    const GpuMesh* bound = nullptr;
+    auto run = [&](size_t first, size_t end, bool painted) {
+        for (size_t k = first; k < end; ++k) {
+            const Cmd& cmd = cmds_[k];
+            if (cmd.mesh != bound) {
+                BindMesh(ctx, cmd.mesh->vertices.Get(), cmd.mesh->indices.Get());
+                bound = cmd.mesh;
+            }
+            if (painted) {
+                const DrawMaterial& mat = cmd.material ? *cmd.material : kWhite;
+                auto view = [](const GpuTexture* t) -> ID3D11ShaderResourceView* { return t ? t->view.Get() : nullptr; };
+                ID3D11ShaderResourceView* views[4] = {view(mat.texture.get()), view(mat.metalRough.get()), view(mat.normal.get()),
+                                                      view(mat.emission.get())};
+                ctx->PSSetShaderResources(1, 4, views);
+                // (the colour picture decides: くっきり is the image's import setting)
+                ID3D11SamplerState* sampler = mat.texture && mat.texture->sharp ? s.sharpSampler.Get() : s.textureSampler.Get();
+                ctx->PSSetSamplers(1, 1, &sampler);
+            }
+            ctx->DrawIndexedInstanced(cmd.indexCount, 1, cmd.firstIndex, 0, cmd.slot);
+        }
+    };
+
+    // 1. The shadow maps that changed: each tile cleared (depth 1) and drawn.
+    if (!work.empty()) {
+        ctx->RSSetState(s.shadowRaster.Get());
+        ctx->PSSetShader(nullptr, nullptr, 0);  // depth only
+        const ShadowMaps* target = nullptr;
+        for (const MapWork& w : work) {
+            if (w.maps != target) {
+                ctx->OMSetRenderTargets(0, nullptr, w.maps->dsv.Get());
+                target = w.maps;
+            }
+            const float size = static_cast<float>(w.maps->size);
+            const D3D11_VIEWPORT svp{static_cast<float>(w.tile % w.maps->cols) * size, static_cast<float>(w.tile / w.maps->cols) * size, size, size, 0, 1};
+            ctx->RSSetViewports(1, &svp);
+            ctx->OMSetDepthStencilState(s.depthClear.Get(), 0);
+            ctx->VSSetShader(s.clearVs.Get(), nullptr, 0);
+            ctx->Draw(3, 0);
+            ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+            CopyMatrix(fc.lightViewProj, w.viewProj);
+            ctx->UpdateSubresource(frameCb, 0, nullptr, &fc, 0, 0);
+            ctx->VSSetShader(s.shadowVs.Get(), nullptr, 0);
+            run(w.first, w.end, false);
+        }
+    }
+    ctx->UpdateSubresource(frameCb, 0, nullptr, &fc, 0, 0);
+
+    // 2. The picture.
+    ID3D11RenderTargetView* rtv = rtv_.Get();
+    ctx->OMSetRenderTargets(1, &rtv, dsv_.Get());
+    const D3D11_VIEWPORT vp{0, 0, static_cast<float>(f.width), static_cast<float>(f.height), 0, 1};
+    ctx->RSSetViewports(1, &vp);
+    const float clear[4] = {f.clear.r, f.clear.g, f.clear.b, f.clear.a};  // a < 1: a picture to put over something (a thumbnail)
+    ctx->ClearRenderTargetView(rtv, clear);
+    ctx->ClearDepthStencilView(dsv_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.f, 0);
+    ctx->RSSetState(s.raster.Get());
+    ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+    if (shadows) {
+        ID3D11ShaderResourceView* sunSrv = s.sun.srv.Get();
+        ID3D11ShaderResourceView* localSrv = s.local.srv.Get();
+        ID3D11SamplerState* sampler = s.shadowSampler.Get();
+        ctx->PSSetShaderResources(0, 1, &sunSrv);
+        ctx->PSSetShaderResources(5, 1, &localSrv);
+        ctx->PSSetSamplers(0, 1, &sampler);
+    }
+    ctx->VSSetShader(s.meshVs.Get(), nullptr, 0);
+    ctx->PSSetShader(s.meshPs.Get(), nullptr, 0);
+    run(opaqueFirst, opaqueEnd, true);
+    // The shadows on the floor: see-through, over what is already drawn (the depth test still hides
+    // the floor behind things), and writing no depth (the grid lies on it).
+    if (floorEnd > opaqueEnd) {
+        ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
+        ctx->PSSetShader(s.floorPs.Get(), nullptr, 0);
+        run(opaqueEnd, floorEnd, false);
+        ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+    }
+
+    // Lines (after the filled things: the grid is see-through, and the depth test still hides it behind them).
+    if (!f.lines.empty() && LineCapacity(f.lines.size())) {
+        D3D11_MAPPED_SUBRESOURCE map{};
+        if (SUCCEEDED(ctx->Map(lineVb_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) {
+            std::memcpy(map.pData, f.lines.data(), f.lines.size() * sizeof(LineVertex));
+            ctx->Unmap(lineVb_.Get(), 0);
+            ctx->IASetInputLayout(s.lineLayout.Get());
+            ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+            const UINT stride = sizeof(LineVertex), offset = 0;
+            ID3D11Buffer* vb = lineVb_.Get();
+            ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+            bound = nullptr;
+            ctx->VSSetShader(s.lineVs.Get(), nullptr, 0);
+            ctx->PSSetShader(s.linePs.Get(), nullptr, 0);
+            ctx->Draw(static_cast<UINT>(f.lines.size() & ~size_t{1}), 0);
+        }
+    }
+
+    // 3. What is see-through, over everything else and writing no depth (what is behind another
+    // see-through part still shows through it).
+    if (seeThroughEnd > floorEnd) {
+        ctx->IASetInputLayout(s.meshLayout.Get());
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
+        ctx->VSSetShader(s.meshVs.Get(), nullptr, 0);
+        ctx->PSSetShader(s.meshPs.Get(), nullptr, 0);
+        run(floorEnd, seeThroughEnd, true);
+        ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+    }
 
     if (samples_ > 1) ctx->ResolveSubresource(picture_.Get(), 0, multisample_.Get(), 0, DXGI_FORMAT_B8G8R8A8_UNORM);
     // Nothing of ours stays bound (Direct2D draws the picture next).
     ctx->OMSetRenderTargets(0, nullptr, nullptr);
-    ctx->PSSetShaderResources(0, 6, noSrvs);
-    ID3D11Buffer* noCbs[2] = {nullptr, nullptr};
-    ctx->PSSetConstantBuffers(1, 2, noCbs);
+    ctx->PSSetShaderResources(0, 7, noSrvs);
+    ctx->VSSetShaderResources(6, 1, noSrvs);
+    ID3D11Buffer* noCbs[3] = {};
+    ctx->PSSetConstantBuffers(0, 3, noCbs);
+    ID3D11Buffer* noVb = nullptr;
+    const UINT zero = 0;
+    ctx->IASetVertexBuffers(1, 1, &noVb, &zero, &zero);
     return picture_.Get();
 }
 
 }  // namespace rm::space3d
+
