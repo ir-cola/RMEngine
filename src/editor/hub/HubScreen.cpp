@@ -184,7 +184,7 @@ void HubScreen::BeginNewProject() {
     newName_ = "NewProject";
     std::error_code ec;
     for (int i = 2; fs::exists(loc / PathFromUtf8(newName_), ec) && i < 1000; ++i) newName_ = std::format("NewProject{}", i);
-    newTemplate_ = 0;
+    newPath_ = BlankTemplate().path;
     newError_.clear();
     focusNewName_ = true;
     modal_ = Modal::NewProject;
@@ -202,28 +202,71 @@ void HubScreen::BrowseLocation() {
     });
 }
 
-void HubScreen::CreateNewProject() {
+bool HubScreen::CheckNewProject() {
     const FileNameError ne = ValidateFileName(newName_);
     if (ne != FileNameError::None) {
         newError_ = NameErrorText(ne);
-        return;
+        return false;
     }
     const fs::path location = PathFromUtf8(newLocation_);
     if (newLocation_.empty()) {
         newError_ = Tr(L"保存先を選んでください。");
-        return;
+        return false;
     }
     if (!location.is_absolute()) {
         newError_ = Tr(L"保存先はドライブから始まるフォルダで指定してください (例: C:\\Users\\...)。");
-        return;
+        return false;
     }
     const fs::path file = location / PathFromUtf8(newName_) / (PathFromUtf8(newName_).native() + kProjectExtension);
     if (file.native().size() > 240) {
         newError_ = Tr(L"保存先のパスが長すぎます。もっと浅いフォルダを選んでください。");
+        return false;
+    }
+    return true;
+}
+
+size_t HubScreen::NewNode() const { return app_.GetPlugins().Templates().Find(newPath_); }
+
+void HubScreen::CreateNewProject() {
+    if (!CheckNewProject()) return;
+    const Plugins& plugins = app_.GetPlugins();
+    const size_t node = NewNode();
+    const ProjectTemplate* t = plugins.Templates().At(node);
+    if (!t) {
+        newError_ = Tr(L"テンプレートを選んでください (名前だけの枝からは作れません)。");
+        return;
+    }
+    // The plugins of the template and of the ones below it (design 09-29), asked for as opening a project does.
+    std::vector<PluginId> unavailable;
+    std::vector<PluginId> plan = plugins.TemplateInstallPlan(node, &unavailable);
+    if (!unavailable.empty()) {
+        newError_ = Tr(L"このエンジンには次のプラグインがありません。エンジンを新しい版にしてください。") + L"\n" + PluginNames(unavailable);
+        return;
+    }
+    if (plan.empty()) {
+        MakeNewProject();
+        return;
+    }
+    Prompt pr;
+    pr.kind = PromptKind::Create;
+    pr.title = Tr(L"必須プラグインがインストールされていません");
+    pr.body = TrF(L"テンプレート「{}」で作るには、次のプラグインが要ります (前提とつなぎを含みます)。インストールしてから作成しますか？",
+                  Utf8ToWide(TrU8(t->name))) +
+              L"\n" + PluginNames(plan);
+    pr.toInstall = std::move(plan);
+    // After this frame: the Enter that pressed 作成 must not also answer the question.
+    Defer([this, pr = std::move(pr)]() mutable { ShowPrompt(std::move(pr)); });
+}
+
+void HubScreen::MakeNewProject() {
+    modal_ = Modal::NewProject;
+    const ProjectTemplate* t = app_.GetPlugins().Templates().At(NewNode());
+    if (!t) {
+        newError_ = Tr(L"テンプレートを選んでください (名前だけの枝からは作れません)。");
         return;
     }
     std::string err;
-    auto project = CreateProject(location, newName_, ProjectTemplates()[newTemplate_], &err);
+    auto project = CreateProject(PathFromUtf8(newLocation_), newName_, *t, &err);
     if (!project) {
         newError_ = Utf8ToWide(err);
         return;
@@ -457,7 +500,22 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     p.Text(ui::TakeTop(area, 44),
            Tr(L"インストールしたプラグインは、すべてのプロジェクトで使えます。前提のプラグインは一緒にインストールされます。削除はここだけでできます。"),
            note);
-    ui::TakeTop(area, 8);
+    ui::TakeTop(area, 4);
+    // ソフトで絞る (design 1-b-2 A): すべて / each software of the template tree / 共通.
+    const auto& groups = plugins.SoftwareGroups();
+    if (!groups.empty()) {
+        std::vector<std::wstring> texts{Tr(L"すべて")};
+        for (const SoftwareGroup& g : groups) texts.push_back(Tr(Utf8ToWide(g.name)));
+        texts.push_back(Tr(L"共通"));
+        const std::vector<std::wstring_view> labels(texts.begin(), texts.end());
+        if (pluginFilter_ < 0 || pluginFilter_ >= static_cast<int>(labels.size())) pluginFilter_ = 0;
+        const Rect row = ui::TakeTop(area, 32);
+        p.Text({row.x, row.y, 110, row.h}, Tr(L"ソフトで絞る"), Style(12, theme::TextDim));
+        const float segW = std::min(row.w - 110, 104.f * static_cast<float>(labels.size()));
+        const int picked = w::Segmented(c, "plg.filter", {row.x + 110, row.y, segW, row.h}, labels, pluginFilter_);
+        if (picked >= 0) pluginFilter_ = picked;
+        ui::TakeTop(area, 12);
+    }
     if (plugins.Entries().empty()) {
         const Rect box = ui::TakeTop(area, 80);
         w::DrawSurface(c, box, w::Surface::Panel, 8.f);
@@ -471,8 +529,11 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     Rect content{area.x, area.y - off, area.w, 100000.f};
     const float top = content.y;
     auto outside = [&](const Rect& row) { return row.Bottom() < view.y || row.y > view.Bottom(); };
+    bool anyShown = false;
     for (const Plugins::Entry& e : plugins.Entries()) {
         if (e.connector) continue;  // below, apart: they are never chosen by hand
+        if (!PluginShown(e.status.id)) continue;
+        anyShown = true;
         const PluginStatus& st = e.status;
         const Rect row = ui::TakeTop(content, 72);
         ui::TakeTop(content, 8);
@@ -534,6 +595,7 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
             p.Text(status, TrF(L"⚠ 使えません: {}", Utf8ToWide(st.reason)), Style(12, theme::Danger, false, ui::HAlign::Right));
         }
     }
+    if (!anyShown) p.Text(ui::TakeTop(content, 40), Tr(L"このソフトで使うプラグインはありません。"), Style(13, theme::TextDim));
     DrawConnectors(c, content, view);
     contentH = content.y - top;
     w::EndScroll(c, "plg.scroll", view, contentH);
@@ -545,7 +607,8 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
 void HubScreen::DrawConnectors(ui::Context& c, Rect& area, const Rect& view) {
     auto& p = c.P();
     const Plugins& plugins = app_.GetPlugins();
-    const bool any = std::any_of(plugins.Entries().begin(), plugins.Entries().end(), [](const Plugins::Entry& e) { return e.connector; });
+    const bool any = std::any_of(plugins.Entries().begin(), plugins.Entries().end(),
+                                 [&](const Plugins::Entry& e) { return e.connector && PluginShown(e.status.id); });
     if (!any) return;
     ui::TakeTop(area, 10);
     p.Text(ui::TakeTop(area, 28), Tr(L"つなぎのプラグイン"), Style(16, theme::Text, true));
@@ -554,7 +617,7 @@ void HubScreen::DrawConnectors(ui::Context& c, Rect& area, const Rect& view) {
     note.v = ui::VAlign::Top;
     p.Text(ui::TakeTop(area, 36), Tr(L"2 つのプラグインをつなぐものです。つなぐ両方が入っていると自動で入り、自分で選ぶことはありません。"), note);
     for (const Plugins::Entry& e : plugins.Entries()) {
-        if (!e.connector) continue;
+        if (!e.connector || !PluginShown(e.status.id)) continue;
         const PluginStatus& st = e.status;
         const Rect row = ui::TakeTop(area, 44);
         ui::TakeTop(area, 6);
@@ -587,6 +650,15 @@ void HubScreen::DrawConnectors(ui::Context& c, Rect& area, const Rect& view) {
             p.Text(status, TrF(L"⚠ 使えません: {}", Utf8ToWide(st.reason)), Style(12, theme::Danger, false, ui::HAlign::Right));
         }
     }
+}
+
+bool HubScreen::PluginShown(const PluginId& id) const {
+    const auto& groups = app_.GetPlugins().SoftwareGroups();
+    const int n = static_cast<int>(groups.size());
+    if (pluginFilter_ <= 0 || pluginFilter_ > n + 1) return true;
+    auto in = [&](const SoftwareGroup& g) { return std::find(g.plugins.begin(), g.plugins.end(), id) != g.plugins.end(); };
+    if (pluginFilter_ == n + 1) return std::none_of(groups.begin(), groups.end(), in);  // 共通: in no software
+    return in(groups[static_cast<size_t>(pluginFilter_ - 1)]);
 }
 
 // ---------------------------------------------------------------------------
@@ -791,6 +863,19 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
             } else if (w::Button(c, "pp.install", right, Tr(L"インストール"), w::ButtonKind::Primary) || enter) {
                 close();
                 RunInstall(pr.toInstall);
+            }
+            break;
+        case PromptKind::Create:
+            // Back to the new project dialog either way (what was typed there is kept).
+            if (w::Button(c, "pp.cancel", left, Tr(L"やめる")) || esc) {
+                modal_ = Modal::NewProject;
+            } else if (w::Button(c, "pp.install", right, Tr(L"インストールして作成"), w::ButtonKind::Primary) || enter) {
+                std::string err;
+                if (app_.InstallPlugins(pr.toInstall, &err)) {
+                    MakeNewProject();
+                } else {
+                    ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
+                }
             }
             break;
         case PromptKind::Remove:
@@ -1132,53 +1217,83 @@ void HubScreen::DrawRowMenu(ui::Context& c) {
     }
 }
 
+// The new project dialog: the template tree on the left (design RME_PLATFORM 1-b-2: a node needs the
+// plugins of its template and of every one below it), what the chosen one is and needs, the name and
+// the place on the right.
 void HubScreen::DrawNewProject(ui::Context& c) {
     auto& p = c.P();
-    const Rect cr = w::BeginModal(c, 640, 520, Tr(L"新しいプロジェクト"));
-    float y = cr.y;
+    const Plugins& plugins = app_.GetPlugins();
+    const TemplateTree& tree = plugins.Templates();
+    const Rect cr = w::BeginModal(c, 940, 620, Tr(L"新しいプロジェクト"));
+    Rect body{cr.x, cr.y, cr.w, cr.h - 52};
+    const Rect left = ui::TakeLeft(body, 310);
+    ui::TakeLeft(body, 28);
+    const size_t chosen = NewNode();
+
+    // --- The tree (rows indented by depth; a mark when choosing it installs plugins first)
+    p.Text({left.x, left.y, left.w, 20}, Tr(L"テンプレート"), Style(12, theme::TextDim, true));
+    const Rect list{left.x, left.y + 26, left.w, left.h - 26 - 26};
+    w::DrawSurface(c, list, w::Surface::Panel, 6.f);
+    const Rect view = list.Inset(4, 4, 4, 4);
+    constexpr float kRowH = 40.f;
+    const float content = kRowH * static_cast<float>(tree.nodes.size());
+    const float off = w::BeginScroll(c, "np.tree", view, content);
+    for (size_t i = 0; i < tree.nodes.size(); ++i) {
+        const TemplateNode& n = tree.nodes[i];
+        const Rect row{view.x, view.y + kRowH * static_cast<float>(i) - off, view.w, kRowH - 2};
+        if (row.Bottom() < view.y || row.y > view.Bottom()) continue;
+        c.PushId(static_cast<uint64_t>(i));
+        const auto b = w::Selectable(c, "node", row, i == chosen);
+        c.PopId();
+        const float indent = 10.f + 22.f * static_cast<float>(n.depth);
+        const bool hasChildren = i + 1 < tree.nodes.size() && tree.nodes[i + 1].parent == i;
+        if (hasChildren) w::DrawIcon(c, {row.x + indent, row.y, 14, row.h}, w::Icon::ChevronDown, theme::TextFaint);
+        const ProjectTemplate* t = tree.At(i);
+        const bool needsInstall = t && !plugins.TemplateInstallPlan(i).empty();
+        const float markW = needsInstall ? 92.f : 0.f;
+        p.Text({row.x + indent + 18, row.y, row.w - indent - 18 - markW - 8, row.h}, Tr(Utf8ToWide(tree.Label(i))),
+               Style(14, t ? theme::Text : theme::TextDim, t != nullptr));
+        if (needsInstall) {
+            p.Text({row.Right() - markW - 8, row.y, markW, row.h}, Tr(L"要インストール"), Style(11, theme::Warn, false, ui::HAlign::Right));
+        }
+        if (b.clicked) {
+            newPath_ = n.path;
+            newError_.clear();
+        }
+        if (b.doubleClicked && t) CreateNewProject();
+    }
+    w::EndScroll(c, "np.tree", view, content);
+    p.Text({left.x, list.Bottom() + 6, left.w, 18}, Tr(L"テンプレートは、プラグインが持ってきます。"), Style(11, theme::TextFaint));
+
+    // --- The name and the place (at the bottom), the chosen template above them
+    constexpr float kFieldsH = 24 + 46 + 24 + 44 + 26 + 40;
+    DrawTemplateDetails(c, {body.x, body.y, body.w, body.h - kFieldsH - 8}, chosen);
+    float y = body.Bottom() - kFieldsH;
     auto label = [&](std::wstring_view text) {
-        p.Text({cr.x, y, cr.w, 20}, text, Style(12, theme::TextDim, true));
+        p.Text({body.x, y, body.w, 20}, text, Style(12, theme::TextDim, true));
         y += 24;
     };
-
-    label(Tr(L"テンプレート"));
-    const auto& templates = ProjectTemplates();
-    for (size_t i = 0; i < templates.size(); ++i) {
-        const Rect card{cr.x, y, cr.w, 60};
-        c.PushId(static_cast<uint64_t>(i));
-        const auto b = c.ButtonBehavior(c.MakeId("tmpl"), card);
-        c.PopId();
-        const bool sel = newTemplate_ == i;
-        w::DrawSurface(c, card, sel ? w::Surface::Selected : b.hovered ? w::Surface::Hovered : w::Surface::Raised, 6.f);
-        p.Text({card.x + 16, card.y + 8, card.w - 32, 22}, Tr(templates[i].name), Style(14, theme::Text, true));
-        p.Text({card.x + 16, card.y + 31, card.w - 32, 20}, Tr(templates[i].description), Style(12, theme::TextDim));
-        if (b.clicked) newTemplate_ = i;
-        y += 66;
-    }
-    p.Text({cr.x, y, cr.w, 18}, Tr(L"ゲーム・イラストなどのテンプレートは、プラグインを追加すると増えます。"), Style(11, theme::TextFaint));
-    y += 30;
-
     label(Tr(L"プロジェクト名"));
     if (focusNewName_) {
         c.FocusText(c.MakeId("np.name"), Utf8ToWide(newName_), true);
         focusNewName_ = false;
     }
-    if (w::TextField(c, "np.name", {cr.x, y, cr.w, 34}, newName_, Tr(L"プロジェクト名"))) newError_.clear();
+    if (w::TextField(c, "np.name", {body.x, y, body.w, 34}, newName_, Tr(L"プロジェクト名"))) newError_.clear();
     y += 46;
 
     label(Tr(L"保存先"));
-    if (w::TextField(c, "np.location", {cr.x, y, cr.w - 104, 34}, newLocation_, Tr(L"フォルダ"))) newError_.clear();
-    if (w::Button(c, "np.browse", {cr.Right() - 96, y, 96, 34}, Tr(L"参照…"))) BrowseLocation();
+    if (w::TextField(c, "np.location", {body.x, y, body.w - 104, 34}, newLocation_, Tr(L"フォルダ"))) newError_.clear();
+    if (w::Button(c, "np.browse", {body.Right() - 96, y, 96, 34}, Tr(L"参照…"))) BrowseLocation();
     y += 44;
 
     const std::wstring target = Utf8ToWide(newLocation_) + L"\\" + Utf8ToWide(newName_);
-    p.Text({cr.x, y, cr.w, 20}, TrF(L"作成されるフォルダ: {}", target), Style(12, theme::TextFaint));
+    p.Text({body.x, y, body.w, 20}, TrF(L"作成されるフォルダ: {}", target), Style(12, theme::TextFaint));
     y += 26;
     if (!newError_.empty()) {
         ui::TextStyle es = Style(12, theme::Danger);
         es.wrap = true;
         es.v = ui::VAlign::Top;
-        p.Text({cr.x, y, cr.w, cr.Bottom() - 44 - y}, newError_, es);
+        p.Text({body.x, y, body.w, body.Bottom() - y}, newError_, es);
     }
 
     const Rect create{cr.Right() - 120, cr.Bottom() - 36, 120, 36};
@@ -1188,8 +1303,76 @@ void HubScreen::DrawNewProject(ui::Context& c) {
         c.ClearFocus();
         return;
     }
-    if (w::Button(c, "np.create", create, Tr(L"作成"), w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
+    const bool can = tree.At(chosen) != nullptr;
+    if (w::Button(c, "np.create", create, Tr(L"作成"), w::ButtonKind::Primary, can) || (can && c.KeyPressed(ui::Key::Enter))) {
         CreateNewProject();
+    }
+}
+
+// The chosen node: its name and description, the plugins it uses (and how each is now), and how many
+// creating it installs first.
+void HubScreen::DrawTemplateDetails(ui::Context& c, const Rect& r, size_t node) {
+    auto& p = c.P();
+    const Plugins& plugins = app_.GetPlugins();
+    const TemplateTree& tree = plugins.Templates();
+    if (node >= tree.nodes.size()) return;
+    float y = r.y;
+    p.Text({r.x, y, r.w, 28}, Tr(Utf8ToWide(tree.Label(node))), Style(18, theme::Text, true));
+    y += 34;
+    ui::TextStyle wrap = Style(13, theme::TextDim);
+    wrap.wrap = true;
+    wrap.v = ui::VAlign::Top;
+    const ProjectTemplate* t = tree.At(node);
+    if (!t) {
+        p.Text({r.x, y, r.w, 40}, Tr(L"名前だけの枝です。下のテンプレートを選んでください。"), wrap);
+        return;
+    }
+    p.Text({r.x, y, r.w, 40}, Tr(Utf8ToWide(t->description)), wrap);
+    y += 46;
+
+    const std::vector<PluginId> needed = TemplatePlugins(tree, node);
+    if (needed.empty()) {
+        p.Text({r.x, y, r.w, 20}, Tr(L"プラグインは使いません。"), Style(12, theme::TextFaint));
+        return;
+    }
+    const bool below = node + 1 < tree.nodes.size() && tree.nodes[node + 1].parent == node;
+    p.Text({r.x, y, r.w, 20}, below ? Tr(L"使うプラグイン (この下のテンプレートの分も入ります)") : Tr(L"使うプラグイン"),
+           Style(12, theme::TextDim, true));
+    y += 24;
+    std::vector<PluginId> unavailable;
+    const std::vector<PluginId> plan = plugins.TemplateInstallPlan(node, &unavailable);
+    // The plugins needed, then the ones that come along (requirements and connectors).
+    std::vector<PluginId> shown = needed;
+    for (const PluginId& id : plan) {
+        if (std::find(shown.begin(), shown.end(), id) == shown.end()) shown.push_back(id);
+    }
+    const float bottom = r.Bottom() - (plan.empty() ? 0.f : 26.f);
+    for (size_t i = 0; i < shown.size(); ++i) {
+        if (y + 42 > bottom && i + 1 < shown.size()) {
+            p.Text({r.x + 12, y, r.w - 12, 20}, TrF(L"… ほか {} 個", shown.size() - i), Style(12, theme::TextFaint));
+            break;
+        }
+        const PluginId& id = shown[i];
+        const bool extra = i >= needed.size();
+        p.Text({r.x + 12, y, r.w * 0.6f, 20}, L"・" + Utf8ToWide(plugins.DisplayName(id)) + (extra ? L"  " + Tr(L"(一緒に入る)") : L""),
+               Style(12, extra ? theme::TextDim : theme::Text));
+        std::wstring state;
+        ui::Color ink = theme::TextDim;
+        if (std::find(unavailable.begin(), unavailable.end(), id) != unavailable.end()) {
+            state = Tr(L"このエンジンにありません");
+            ink = theme::Danger;
+        } else if (std::find(plan.begin(), plan.end(), id) != plan.end()) {
+            state = Tr(L"インストールされていません");
+            ink = theme::Warn;
+        } else {
+            state = Tr(L"インストール済み");
+        }
+        p.Text({r.x + r.w * 0.6f, y, r.w * 0.4f, 20}, state, Style(12, ink, false, ui::HAlign::Right));
+        y += 21;
+    }
+    if (!plan.empty()) {
+        p.Text({r.x, r.Bottom() - 22, r.w, 20}, TrF(L"作成の前に {} 個のプラグインをインストールします。", plan.size()),
+               Style(12, theme::Warn, true));
     }
 }
 

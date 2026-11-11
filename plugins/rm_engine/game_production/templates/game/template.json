@@ -1,0 +1,11 @@
+{
+  "kind": "rm_engine.template",
+  "format": 1,
+  "id": "game",
+  "path": ["game"],
+  "name": "ゲーム",
+  "description": "3D と 2D の両方を使えるゲーム。空のシーンから始めます。",
+  "order": 0,
+  "plugins": [],
+  "open": { "author": "rm_engine", "plugin": "game_production", "software": "game" }
+}

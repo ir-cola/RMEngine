@@ -7,6 +7,7 @@
 #include "editor/lang/Lang.h"
 #include "platform/Shell.h"
 
+#include <algorithm>
 #include <format>
 
 namespace fs = std::filesystem;
@@ -144,6 +145,7 @@ void Plugins::Reload() {
         builtin[i].registerEditor(registry_);
         registry_.EndPlugin();
     }
+    LoadTemplates();
     for (const auto& e : entries_) {
         const PluginStatus& s = e.status;
         if (s.state == PluginState::Enabled) {
@@ -152,6 +154,40 @@ void Plugins::Reload() {
             log::Warn("プラグイン {} ({}) は使えません: {}", s.displayName, s.id.Text(), s.reason);
         }
     }
+}
+
+void Plugins::LoadTemplates() {
+    std::vector<ProjectTemplate> list{BlankTemplate()};
+    for (const BuiltinPlugin& b : BuiltinPlugins()) {
+        const PluginId id = b.id.Id();
+        std::error_code ec;
+        std::vector<fs::path> files;
+        for (fs::directory_iterator it(FolderOf(availableDir_, id) / L"templates", ec), end; !ec && it != end; it.increment(ec)) {
+            std::error_code e2;
+            if (fs::is_regular_file(it->path() / L"template.json", e2)) files.push_back(it->path() / L"template.json");
+        }
+        std::sort(files.begin(), files.end());
+        for (const fs::path& file : files) {
+            std::string err;
+            auto bytes = platform::ReadFileBytes(file, &err);
+            json::ParseError pe;
+            auto doc = bytes ? json::Parse(*bytes, &pe) : std::nullopt;
+            if (bytes && !doc) err = TrU8F("JSON が壊れています ({} 行 {} 文字目: {})", pe.line, pe.column, pe.message);
+            auto t = doc ? ParseTemplate(*doc, id, &err) : std::nullopt;
+            if (!t) {
+                log::Warn("テンプレートを読めませんでした: {} ({})", PathToUtf8(file), err);
+                continue;
+            }
+            list.push_back(std::move(*t));
+        }
+    }
+    templates_ = BuildTemplateTree(std::move(list));
+    for (const auto& w : templates_.warnings) log::Warn("テンプレート: {}", w);
+    softwareGroups_ = GroupPluginsBySoftware(templates_, available_);
+}
+
+std::vector<PluginId> Plugins::TemplateInstallPlan(size_t node, std::vector<PluginId>* unavailable) const {
+    return editor::TemplateInstallPlan(TemplatePlugins(templates_, node), available_, ReadyPlugins(installed_, available_), unavailable);
 }
 
 const Plugins::Entry* Plugins::Find(const PluginId& id) const {

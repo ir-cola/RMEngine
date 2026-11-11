@@ -11,6 +11,7 @@
 
 #include "base/Json.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -22,15 +23,13 @@ inline constexpr const char* kProjectKind = "rm_engine.project";
 inline constexpr int kProjectFormatVersion = 1;
 inline constexpr const wchar_t* kProjectExtension = L".rmpf";
 
-struct ProjectTemplate {
-    std::string id;           // "rm_engine/blank"
-    std::wstring name;        // shown in the Hub
-    std::wstring description;
-};
+// <project>/UserSettings/Layout.json (the panels' layout and how each software is looked at: the
+// user's, not project data). Written by the editor (EditorScreen) and, for a new project, from its
+// template (Templates.h).
+inline constexpr char kLayoutKind[] = "rm_engine.layout";
+inline constexpr int64_t kLayoutFormatVersion = 2;
 
-// Templates offered by the Hub. Today only the blank project exists; plugins will add theirs
-// (game -> 2D / 3D -> genre, see the template tree in the design docs).
-const std::vector<ProjectTemplate>& ProjectTemplates();
+struct ProjectTemplate;
 
 struct Project {
     std::filesystem::path file;  // the .rmpf
@@ -38,6 +37,7 @@ struct Project {
 
     std::filesystem::path Root() const { return file.parent_path(); }
     std::filesystem::path AssetsDir() const { return Root() / L"Assets"; }
+    std::filesystem::path LayoutFile() const { return Root() / L"UserSettings" / L"Layout.json"; }
     std::string Name() const;  // UTF-8
 };
 
@@ -45,7 +45,9 @@ struct Project {
 std::optional<Project> LoadProject(const std::filesystem::path& file, std::string* error);
 bool SaveProject(const Project& project, std::string* error);
 
-// Creates <parentDir>/<name>/ with the .rmpf and Assets/. The name must already be validated.
+// Creates <parentDir>/<name>/ with the .rmpf and Assets/, made from the template (its first data in the
+// .rmpf, its first layout in UserSettings/Layout.json). The name must already be validated; the
+// template's plugins should be installed (the project is made either way - opening it asks for them).
 std::optional<Project> CreateProject(const std::filesystem::path& parentDir, const std::string& nameUtf8,
                                      const ProjectTemplate& tmpl, std::string* error);
 

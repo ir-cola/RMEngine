@@ -36,7 +36,8 @@ protected:
 private:
     enum class Page { Projects, Plugins, Updates, Options };
     enum class Modal { None, NewProject, Rename, Error, Plugin, Integrity, Theme };
-    enum class PromptKind { Blocking, Limited, Install, Remove };
+    // Create: the new project's template needs plugins that are not installed (asked like Blocking).
+    enum class PromptKind { Blocking, Limited, Install, Remove, Create };
 
     // One plugin question at a time (design: pop-ups one by one).
     struct Prompt {
@@ -91,7 +92,15 @@ private:
     void BrowseOpen();
     void BeginNewProject();
     void BrowseLocation();
+    // 作成: checks the name and place, then asks for the template's missing plugins (Prompt Create)
+    // or makes the project at once.
     void CreateNewProject();
+    bool CheckNewProject();     // the name and the place (newError_ when not)
+    void MakeNewProject();      // makes it from the chosen template and opens it
+    size_t NewNode() const;     // the chosen node of the template tree (npos: none)
+    void DrawTemplateDetails(ui::Context& c, const ui::Rect& r, size_t node);
+    // The plugin page's "ソフトで絞る": is the plugin in the chosen software (or 共通)?
+    bool PluginShown(const PluginId& id) const;
     // Rename (folder + .rmpf + name inside). Only from the Hub: no project is open while it shows.
     void BeginRename(const Row& row);
     void RunRename();
@@ -112,7 +121,7 @@ private:
     // New project dialog
     std::string newName_;
     std::string newLocation_;
-    size_t newTemplate_ = 0;
+    std::vector<std::string> newPath_;  // the chosen template tree node (kept by its path: the tree is remade on install)
     std::wstring newError_;
     bool focusNewName_ = false;
 
@@ -124,6 +133,7 @@ private:
     bool focusRename_ = false;
 
     Prompt prompt_;
+    int pluginFilter_ = 0;  // 0 すべて, 1..n Plugins::SoftwareGroups()[i - 1], n + 1 共通
 
     // Options page (the options are drawn by the inspector from their type)
     inspector::State optionsInspector_;

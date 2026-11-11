@@ -83,6 +83,17 @@ std::optional<PluginManifest> ParsePluginManifest(const json::Value& v, std::str
         }
         m.connectorFor = std::move(*target);
     }
+    if (const json::Value* sw = v.Find("software")) {
+        bool ok = sw->IsArray();
+        for (const auto& item : sw->Items()) {
+            ok = ok && item.IsString() && !item.AsString().empty();
+            if (ok) m.softwares.push_back(item.AsString());
+        }
+        if (!ok) {
+            if (error) *error = TrU8("software はソフトの ID (文字) の配列で書いてください");
+            return std::nullopt;
+        }
+    }
     return m;
 }
 

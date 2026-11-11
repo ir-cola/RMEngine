@@ -66,5 +66,7 @@
   "繰り返す": "Loop",
   "外すと、最後のコマで止まる": "Off: stops on the last cell",
   "3D の上に重ねる": "Overlay on 3D",
-  "ゲームの空間が 3D のとき、このカメラで見た 2D の絵をゲームビューの 3D の上に重ねます (点数や体力の表示など)。背景は塗りません": "When the game's space is 3D, the 2D picture seen through this camera is laid over the 3D one in the game view (scores, health and so on). No background is filled"
+  "ゲームの空間が 3D のとき、このカメラで見た 2D の絵をゲームビューの 3D の上に重ねます (点数や体力の表示など)。背景は塗りません": "When the game's space is 3D, the 2D picture seen through this camera is laid over the 3D one in the game view (scores, health and so on). No background is filled",
+  "2D のゲーム": "2D game",
+  "カメラ・地面・プレイヤーの四角が置いてある 2D のゲーム。": "A 2D game with a camera, the ground and a player square in place."
 }

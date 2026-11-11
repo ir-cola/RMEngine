@@ -45,8 +45,7 @@ constexpr char kStart[] = "core.start";
 //                      "assets": { "thumbnail": 40 } (the アセット panel: the thumbnails' size in DIPs) } ] }
 // The workspace without a software has only "software": "core". Entries of softwares that are not
 // installed now, and keys this version does not know, are written back unchanged.
-constexpr char kLayoutKind[] = "rm_engine.layout";
-constexpr int64_t kLayoutFormatVersion = 2;
+// (kLayoutKind / kLayoutFormatVersion: editor/project/Project.h - a new project's template writes it too.)
 constexpr char kCoreSoftware[] = "core";
 
 dock::Layout CoreDefaultLayout() {
@@ -316,7 +315,7 @@ void EditorScreen::SwitchSoftware(size_t index) {
     });
 }
 
-fs::path EditorScreen::LayoutFile() const { return project_.Root() / L"UserSettings" / L"Layout.json"; }
+fs::path EditorScreen::LayoutFile() const { return project_.LayoutFile(); }
 
 void EditorScreen::LoadLayout() {
     layoutDoc_ = json::Value::MakeObject();

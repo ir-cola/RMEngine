@@ -12,6 +12,7 @@
 
 #include "editor/plugin/PluginManifest.h"
 #include "editor/plugin/Software.h"
+#include "editor/project/Templates.h"
 
 #include <filesystem>
 #include <string>
@@ -44,6 +45,15 @@ public:
     std::filesystem::path InstalledFolder(const PluginId& id) const;
     const PluginRegistry& Registry() const { return registry_; }
 
+    // The project templates (the Hub's 新規作成): 白紙 and every template.json of the plugins this
+    // engine has - installed or not (<engine plugins>/<author>/<name>/templates/<id>/template.json).
+    const TemplateTree& Templates() const { return templates_; }
+    // The softwares of the template tree with their plugins (the Hub's "ソフトで絞る").
+    const std::vector<SoftwareGroup>& SoftwareGroups() const { return softwareGroups_; }
+    // What to copy before a project can be made from the template tree's `node` (its plugins and those
+    // below it, with their requirements and connectors). This engine lacks some -> *unavailable.
+    std::vector<PluginId> TemplateInstallPlan(size_t node, std::vector<PluginId>* unavailable = nullptr) const;
+
     // What installing (or repairing) `id` copies: it and its requirements that are not installed
     // and usable already, requirements first. Requirements this engine does not have -> *unavailable.
     std::vector<PluginId> InstallPlan(const PluginId& id, std::vector<PluginId>* unavailable = nullptr) const;
@@ -63,11 +73,14 @@ public:
 
 private:
     bool CopyIn(const PluginId& id, std::string* error);
+    void LoadTemplates();
 
     std::filesystem::path availableDir_, installedDir_;
     std::vector<PluginManifest> available_;  // manifests of the engine's copies
     std::vector<PluginManifest> installed_;  // manifests of the installed copies that could be read
     std::vector<Entry> entries_;             // one per plugin built into the exe
+    TemplateTree templates_;
+    std::vector<SoftwareGroup> softwareGroups_;
     PluginRegistry registry_;
 };
 

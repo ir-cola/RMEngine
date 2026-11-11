@@ -34,6 +34,9 @@ struct PluginManifest {
     std::vector<PluginId> requirements;
     bool needsConnector = false;            // enabled only while a connector for it is
     std::optional<PluginId> connectorFor;   // this plugin is a connector for that one (also in requirements)
+    // The softwares it belongs to, when no template needs it ("software": ["game"]: ids of the template
+    // tree's top nodes - editor/project/Templates.h). Only for the Hub's "ソフトで絞る"; optional.
+    std::vector<std::string> softwares;
 
     bool operator==(const PluginManifest&) const = default;
 };

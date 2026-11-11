@@ -5,6 +5,7 @@
 #include "base/Utf.h"
 #include "base/Version.h"
 #include "editor/project/HubSettings.h"
+#include "editor/project/Templates.h"
 #include "platform/Shell.h"
 
 #include <format>
@@ -12,13 +13,6 @@
 namespace fs = std::filesystem;
 
 namespace rm::editor {
-
-const std::vector<ProjectTemplate>& ProjectTemplates() {
-    static const std::vector<ProjectTemplate> kTemplates = {
-        {"rm_engine/blank", TrKey(L"白紙"), TrKey(L"何も入っていないプロジェクト。プラグインを足して育てます。")},
-    };
-    return kTemplates;
-}
 
 std::string Project::Name() const {
     const std::string& n = doc.Get("name").AsString();
@@ -91,12 +85,23 @@ std::optional<Project> CreateProject(const fs::path& parentDir, const std::strin
     p.doc.Set("formatVersion", kProjectFormatVersion);
     p.doc.Set("name", nameUtf8);
     p.doc.Set("engineVersion", kEngineVersion);
-    p.doc.Set("template", tmpl.id);
-    // Plugins this project uses. Recorded automatically (never by hand) once plugins exist.
+    // Plugins this project uses. Recorded automatically (never by hand): here, the plugins of the
+    // template's first data; afterwards, whenever a software saves its data.
     p.doc.Set("plugins", json::Value::MakeArray());
+    ApplyTemplate(p.doc, tmpl);
 
+    // The first layout (which software shows first ...) before the project file: a project is never
+    // found without it.
+    if (const json::Value layout = TemplateLayout(tmpl); !layout.IsNull()) {
+        std::string err;
+        fs::create_directories(p.LayoutFile().parent_path(), ec);
+        if (ec || !platform::WriteFileAtomic(p.LayoutFile(), json::Write(layout), &err)) {
+            if (error) *error = TrU8F("最初の配置を書けませんでした: {}\n{}", PathToUtf8(p.LayoutFile()), ec ? ec.message() : err);
+            return std::nullopt;
+        }
+    }
     if (!SaveProject(p, error)) return std::nullopt;
-    log::Info("プロジェクトを作りました: {}", PathToUtf8(p.file));
+    log::Info("プロジェクトを作りました: {} (テンプレート: {})", PathToUtf8(p.file), tmpl.id);
     return p;
 }
 

@@ -71,12 +71,14 @@
     <ClCompile Include="TestPrefab.cpp" />
     <ClCompile Include="TestAsset.cpp" />
     <ClCompile Include="TestEntityRefs.cpp" />
+    <ClCompile Include="TestTemplates.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />
     <ClCompile Include="..\src\editor\dock\DockLayout.cpp" />
     <ClCompile Include="..\src\editor\dock\NamedLayouts.cpp" />
     <ClCompile Include="..\src\editor\plugin\PluginManifest.cpp" />
+    <ClCompile Include="..\src\editor\project\Templates.cpp" />
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
     <ClCompile Include="..\src\editor\app\Integrity.cpp" />
