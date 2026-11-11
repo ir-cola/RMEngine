@@ -64,7 +64,7 @@ void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0);
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 
 // --- Icons: drawn with lines, so they sit in the middle of their box at any size ------------
-enum class Icon { Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Object, Cube, Plus, Grip };
+enum class Icon { Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Object, Cube, Plus, Grip, Play, Pause, Step, Stop };
 void DrawIcon(ui::Context& c, const ui::Rect& r, Icon icon, ui::Color color);
 
 // --- Buttons ---------------------------------------------------------------------------------
@@ -72,6 +72,10 @@ bool Button(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring
             ButtonKind kind = ButtonKind::Secondary, bool enabled = true);
 // A small square button with an icon (Ghost look: only a surface under the mouse).
 bool IconButton(ui::Context& c, std::string_view id, const ui::Rect& r, Icon icon, bool enabled = true);
+// An icon button that stays pressed in (the accent) while `on` - a game's ▶ while it plays. `tooltip`
+// (optional) shows under the mouse.
+bool IconToggle(ui::Context& c, std::string_view id, const ui::Rect& r, Icon icon, bool on, bool enabled = true,
+                std::wstring_view tooltip = {});
 // One of a few choices, side by side in one floating strip (the scene view's 移動 / 回転 / 拡大縮小):
 // the chosen one in the accent. Returns the index clicked, -1 when none. `tooltips` (optional, one
 // per label) shows under the mouse.

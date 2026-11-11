@@ -45,6 +45,12 @@ struct ComponentInfo {
     // When several components have one, the last of the entity's components wins; none: "object".
     const char* icon = nullptr;
 
+    // An entity may have several of it (each its own block in the inspector; they run in order).
+    bool multiple = false;
+    // Where a placed prefab is (a Transform): on the root of a placed prefab its values always stay
+    // the placed one's own when the prefab changes (Prefab.h).
+    bool placement = false;
+
     bool HasDerived() const { return derivedType && derive && underive && ownLabel && derivedLabel; }
 };
 

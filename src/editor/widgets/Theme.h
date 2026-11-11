@@ -212,4 +212,7 @@ inline Color SceneObjectInactive() { return Mix(SceneObject(), SceneBackground()
 // Shadows falling on the floor (laid over the background: darker on the dark theme to still show).
 inline Color SceneShadow() { return Color{0, 0, 0, IsLight ? 0.30f : 0.55f}; }
 
+// --- A software running (a game in Play): its tab row is tinted with the accent -----------------
+inline Color RunningBar() { return Mix(Bg, Accent, IsLight ? 0.22f : 0.28f); }
+
 }  // namespace rm::editor::theme

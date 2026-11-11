@@ -2,6 +2,7 @@
 
 #include "base/Utf.h"
 #include "editor/widgets/Theme.h"
+#include "ui/Path.h"
 
 #include <algorithm>
 #include <cmath>
@@ -169,6 +170,30 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.StrokeRoundRect({cx - rr, cy - rr, rr * 2, rr * 2}, rr, color, 1.3f);
             break;
         }
+        case Icon::Play: {  // a triangle pointing right
+            ui::Path tri;
+            tri.Begin({cx - s * 0.8f, cy - s * 1.1f});
+            tri.Line({cx + s * 1.1f, cy});
+            tri.Line({cx - s * 0.8f, cy + s * 1.1f});
+            p.FillPath(tri, color);
+            break;
+        }
+        case Icon::Pause:  // two bars
+            p.FillRect({cx - s * 0.95f, cy - s * 1.05f, s * 0.7f, s * 2.1f}, color);
+            p.FillRect({cx + s * 0.25f, cy - s * 1.05f, s * 0.7f, s * 2.1f}, color);
+            break;
+        case Icon::Step: {  // a smaller triangle and a bar: one frame on
+            ui::Path tri;
+            tri.Begin({cx - s * 1.0f, cy - s * 1.0f});
+            tri.Line({cx + s * 0.5f, cy});
+            tri.Line({cx - s * 1.0f, cy + s * 1.0f});
+            p.FillPath(tri, color);
+            p.FillRect({cx + s * 0.6f, cy - s * 1.0f, s * 0.5f, s * 2.0f}, color);
+            break;
+        }
+        case Icon::Stop:  // a square
+            p.FillRect({cx - s * 0.9f, cy - s * 0.9f, s * 1.8f, s * 1.8f}, color);
+            break;
         case Icon::Cube: {
             // Seen from above a corner: the outline (a hexagon) and the three edges of the near corner.
             const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;
@@ -251,6 +276,20 @@ bool IconButton(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon
     const bool down = b.held && b.hovered;
     if (b.hovered) DrawSurface(c, r, down ? Surface::Pressed : Surface::Hovered);
     DrawIcon(c, r, icon, !enabled ? theme::TextFaint : b.hovered ? theme::Text : theme::TextDim);
+    return enabled && b.clicked;
+}
+
+bool IconToggle(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon, bool on, bool enabled, std::wstring_view tooltip) {
+    ui::Context::ButtonResult b;
+    if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);
+    const bool down = b.held && b.hovered;
+    if (on) {
+        DrawSurface(c, r, down ? Surface::AccentPressed : b.hovered ? Surface::AccentHovered : Surface::Accent);
+    } else {
+        DrawSurface(c, r, down ? Surface::Pressed : b.hovered ? Surface::Hovered : Surface::Raised);
+    }
+    DrawIcon(c, r, icon, on ? theme::OnAccent() : !enabled ? theme::TextFaint : b.hovered ? theme::Text : theme::TextDim);
+    if (b.hovered && !tooltip.empty()) Tooltip(c, tooltip);
     return enabled && b.clicked;
 }
 
@@ -801,6 +840,7 @@ const wchar_t* KeyName(ui::Key k) {
         case ui::Key::W: return L"W";
         case ui::Key::N: return L"N";
         case ui::Key::O: return L"O";
+        case ui::Key::P: return L"P";
         case ui::Key::S: return L"S";
         case ui::Key::V: return L"V";
         case ui::Key::X: return L"X";

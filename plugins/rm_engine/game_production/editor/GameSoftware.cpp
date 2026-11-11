@@ -1,18 +1,26 @@
 #include "rm_engine/game_production/editor/GameSoftware.h"
 
+#include "base/FileName.h"
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "core/reflect/Data.h"
 #include "editor/lang/Lang.h"
+#include "editor/project/Project.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
+#include "platform/Shell.h"
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
+#include "rm_engine/game_production/runtime/Prefab.h"
 #include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/game_production/runtime/Systems.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <format>
 #include <memory>
+#include <optional>
+#include <system_error>
 #include <unordered_map>
 
 namespace rm::game_production {
@@ -29,6 +37,7 @@ using ui::Rect;
 
 constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
+constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" rows in the 階層's menu
 
 void Placeholder(ui::Context& c, const Rect& r, const std::wstring& title, const std::wstring& body) {
     auto& p = c.P();
@@ -69,31 +78,36 @@ std::vector<int> ToEntityIds(std::span<const tree::ItemId> ids) {
     return out;
 }
 
+// Play: the scene is copied and the copy plays; stopping throws the copy away (the scene, the undo
+// history and the unsaved mark never see it).
+enum class PlayState { Stopped, Playing, Paused };
+
 class GameSoftware final : public editor::Software, public tree::Source {
 public:
     explicit GameSoftware(editor::SoftwareHost& host) : host_(host) {
         // Component types come from other plugins (the connectors: "ゲーム制作 × 3D" offers Transform).
-        std::vector<const reflect::TypeDesc*> types;
+        std::vector<const reflect::TypeDesc*> types, multiple;
         for (const auto& c : host.Registry().Contributions<ComponentInfo>(kComponentPoint)) {
             const reflect::TypeDesc* t = &c.item->type();
             if (std::find(types.begin(), types.end(), t) != types.end()) continue;
             types.push_back(t);
             componentInfos_.push_back(c.item);
             if (c.item->onNewEntities) newEntityTypes_.push_back(t);
+            if (c.item->multiple) multiple.push_back(t);
+            if (c.item->placement) placementTypes_.push_back(t->name);
         }
-        scene_.SetComponentTypes(std::move(types));
+        scene_.SetComponentTypes(std::move(types), std::move(multiple));
+        // ... and so do the systems that move them while the game plays.
+        std::vector<const SystemInfo*> systems;
+        for (const auto& s : host.Registry().Contributions<SystemInfo>(kSystemPoint)) systems.push_back(s.item);
+        runner_.SetSystems(systems);
     }
 
     // --- Software ---------------------------------------------------------------------------
     std::vector<editor::dock::PanelType> Panels() override {
         return {
             {kSceneView, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawSceneView(c, r); }},
-            {kGameView, TrKey(L"ゲーム"),
-             [this](ui::Context& c, const Rect& r) {
-                 Placeholder(c, r, Tr(L"ゲームビュー"), Tr(L"Play を押すと、ゲームのカメラから見た画面がここに映ります。"));
-                 const Rect button{r.x + (r.w - 200) * 0.5f, r.y + r.h * 0.5f + 70, 200, 36};
-                 if (editor::w::Button(c, "settings", button, Tr(L"ゲームの設定を開く"))) InspectSettings();
-             }},
+            {kGameView, TrKey(L"ゲーム"), [this](ui::Context& c, const Rect& r) { DrawGameView(c, r); }},
         };
     }
 
@@ -149,6 +163,7 @@ public:
             warnings.clear();
             scene_.Load(data.Get("scene"), &warnings);
             for (const auto& w : warnings) log::Warn("シーン: {}", w);
+            RefreshPrefabsOnOpen();
         }
         InspectSettings();
     }
@@ -160,13 +175,80 @@ public:
         const bool untouched = reflect::Equals(reflect::TypeOf<GameSettings>(), &settings_, &defaults) && unknowns_.Empty();
         if (!hadData_ && untouched && scene_.Empty()) return false;
         data.Set("settings", reflect::Save(settings_, &unknowns_));
-        data.Set("scene", scene_.Save());
+        // What each placed prefab changed, worked out now against its prefab (kept in the file so a
+        // changed prefab can be put under them again when the project is opened).
+        Scene saved = scene_;
+        for (const int root : saved.PrefabRoots()) {
+            SceneEntity* r = saved.Find(root);
+            if (const auto it = prefabs_.find(r->prefab.path); it != prefabs_.end()) {
+                r->prefab.overrides = Overrides(saved, root, it->second, placementTypes_);
+            }
+        }
+        data.Set("scene", saved.Save());
         return true;
     }
 
+    // --- Play --------------------------------------------------------------------------------
+    void Tick(ui::Context& c) override {
+        if (c.Focused() == 0) {
+            if (c.KeyPressed(ui::Key::P, true)) Running() ? StopPlay() : StartPlay(c);
+            if (c.KeyPressed(ui::Key::P, true, true) && Running()) TogglePause(c);
+        }
+        if (play_ == PlayState::Playing && playScene_) {
+            // The time since the last frame (at most a quarter of a second: a frame that took long -
+            // a window dragged, the software switched - does not make the game jump).
+            const double dt = std::clamp(c.Time() - lastTick_, 0.0, 0.25);
+            lastTick_ = c.Time();
+            runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
+            c.RequestAnimation();
+        }
+    }
+
+    // ▶ ⏸ ⏭ ■ in the middle of the tab row, and what is going on next to them.
+    void DrawToolbar(ui::Context& c, const Rect& r) override {
+        constexpr float kB = 30, kGap = 4;
+        const float groupW = kB * 4 + kGap * 3;
+        float x = std::max(r.x, r.x + (r.w - groupW) * 0.5f);
+        const float y = r.y + (r.h - 26) * 0.5f;
+        auto next = [&] {
+            const Rect b{x, y, kB, 26};
+            x += kB + kGap;
+            return b;
+        };
+        const bool running = Running();
+        if (editor::w::IconToggle(c, "play", next(), editor::w::Icon::Play, play_ == PlayState::Playing, true,
+                                  running ? Tr(L"続ける (Ctrl+P で停止)") : Tr(L"Play (Ctrl+P)"))) {
+            if (play_ == PlayState::Paused) {
+                TogglePause(c);
+            } else if (!running) {
+                StartPlay(c);
+            }
+        }
+        if (editor::w::IconToggle(c, "pause", next(), editor::w::Icon::Pause, play_ == PlayState::Paused, running,
+                                  Tr(L"一時停止 (Ctrl+Shift+P)"))) {
+            TogglePause(c);
+        }
+        if (editor::w::IconToggle(c, "step", next(), editor::w::Icon::Step, false, running, Tr(L"1 コマ進める (一時停止して)"))) {
+            StepFrame(c);
+        }
+        if (editor::w::IconToggle(c, "stop", next(), editor::w::Icon::Stop, false, running, Tr(L"停止 (Play の前に戻る)"))) {
+            StopPlay();
+        }
+        if (running && r.Right() - x > 80) {
+            ui::TextStyle ts;
+            ts.size = 12;
+            ts.color = theme::Text;
+            const std::wstring text = play_ == PlayState::Paused ? Tr(L"一時停止中 — ■ で止めると Play の前に戻ります")
+                                                                  : Tr(L"Play 中 — 編集はできません。■ で止めると Play の前に戻ります");
+            c.P().Text({x + 8, r.y, r.Right() - x - 8, r.h}, text, ts);
+        }
+    }
+
+    bool Running() const override { return play_ != PlayState::Stopped; }
+
     // --- tree::Source (the 階層) ----------------------------------------------------------------
     void Items(std::vector<tree::Item>& out) override {
-        for (const TreeEntry& t : scene_.TreeOrder()) {
+        for (const TreeEntry& t : Shown().TreeOrder()) {
             tree::Item it;
             it.id = static_cast<tree::ItemId>(t.entity->data.id);
             it.parent = static_cast<tree::ItemId>(t.entity->data.parent);
@@ -185,9 +267,10 @@ public:
         return Tr(L"エンティティはまだありません。\nここを右クリックして「エンティティを作る」で作れます。");
     }
 
-    bool CanRename(tree::ItemId id) const override { return scene_.Find(static_cast<int>(id)) != nullptr; }
+    bool CanRename(tree::ItemId id) const override { return !Running() && scene_.Find(static_cast<int>(id)) != nullptr; }
 
     void Rename(tree::ItemId id, const std::string& name) override {
+        if (Running()) return;
         // The same field and the same command as editing 名前 in the inspector.
         const reflect::TypeDesc& t = reflect::TypeOf<Entity>();
         SceneEntity* e = scene_.Find(static_cast<int>(id));
@@ -203,9 +286,10 @@ public:
         }
     }
 
-    bool CanMove() const override { return true; }
+    bool CanMove() const override { return !Running(); }
 
     void Move(std::span<const tree::ItemId> items, tree::ItemId parent, size_t index) override {
+        if (Running()) return;
         const std::vector<int> ids = ToEntityIds(items);
         Edit(ids.size() == 1 ? std::format("「{}」を移動", NameOf(ids[0])) : std::format("{} 個のエンティティを移動", ids.size()),
              [&] { scene_.Move(ids, static_cast<int>(parent), index); });
@@ -227,7 +311,25 @@ public:
     }
 
     std::vector<tree::Action> Actions(std::span<const tree::ItemId> selection) override {
-        const std::vector<int> sel = ToEntityIds(selection);
+        std::vector<tree::Action> list = EditActions(ToEntityIds(selection));
+        if (Running()) {
+            // Play: the scene is not changed (the copy plays). The rows stay, greyed, under a note.
+            for (auto& a : list) {
+                a.enabled = false;
+                a.run = nullptr;
+            }
+            tree::Action note;
+            note.label = Tr(L"Play 中は編集できません (■ で止めてから)");
+            note.enabled = false;
+            tree::Action sep;
+            sep.separator = true;
+            list.insert(list.begin(), {note, sep});
+        }
+        return list;
+    }
+
+private:
+    std::vector<tree::Action> EditActions(const std::vector<int>& sel) {
         std::vector<tree::Action> list;
 
         tree::Action create;
@@ -235,16 +337,7 @@ public:
         create.key = ui::Key::N;
         create.ctrl = create.shift = true;
         create.run = [this, sel] {
-            // Next to the (last) selected entity, or at the end of the top level.
-            int parent = 0;
-            size_t index = Scene::kEnd;
-            if (!sel.empty()) {
-                if (const SceneEntity* e = scene_.Find(sel.back())) {
-                    parent = e->data.parent;
-                    const std::vector<int> siblings = scene_.Children(parent);
-                    index = static_cast<size_t>(std::find(siblings.begin(), siblings.end(), sel.back()) - siblings.begin()) + 1;
-                }
-            }
+            const auto [parent, index] = After(sel);
             CreateEntity(parent, index);
         };
         list.push_back(std::move(create));
@@ -288,15 +381,7 @@ public:
         paste.ctrl = true;
         paste.run = [this, sel] {
             // Right after the (last) selected entity, as its sibling; nothing selected: the end of the top level.
-            int parent = 0;
-            size_t index = Scene::kEnd;
-            if (!sel.empty()) {
-                if (const SceneEntity* e = scene_.Find(sel.back())) {
-                    parent = e->data.parent;
-                    const std::vector<int> siblings = scene_.Children(parent);
-                    index = static_cast<size_t>(std::find(siblings.begin(), siblings.end(), sel.back()) - siblings.begin()) + 1;
-                }
-            }
+            const auto [parent, index] = After(sel);
             PasteEntities(parent, index);
         };
         list.push_back(std::move(paste));
@@ -306,6 +391,8 @@ public:
         pasteChild.enabled = sel.size() == 1;
         if (pasteChild.enabled) pasteChild.run = [this, sel] { PasteEntities(sel[0], Scene::kEnd); };
         list.push_back(std::move(pasteChild));
+
+        PrefabActions(sel, list);
 
         if (sel.empty()) return list;
         list.push_back(sep);
@@ -349,45 +436,148 @@ public:
         return list;
     }
 
-private:
+    // Right after the (last) selected entity, as its sibling; nothing selected: the end of the top level.
+    std::pair<int, size_t> After(const std::vector<int>& sel) const {
+        if (!sel.empty()) {
+            if (const SceneEntity* e = scene_.Find(sel.back())) {
+                const int parent = e->data.parent;
+                const std::vector<int> siblings = scene_.Children(parent);
+                return {parent, static_cast<size_t>(std::find(siblings.begin(), siblings.end(), sel.back()) - siblings.begin()) + 1};
+            }
+        }
+        return {0, Scene::kEnd};
+    }
+
+    // --- Play ----------------------------------------------------------------------------------
+    // The scene that is shown: the copy that plays, or the scene itself.
+    Scene& Shown() { return playScene_ ? *playScene_ : scene_; }
+    const Scene& Shown() const { return playScene_ ? *playScene_ : scene_; }
+
+    void StartPlay(ui::Context& c) {
+        if (Running()) return;
+        playScene_ = std::make_unique<Scene>(scene_);  // the copy that plays (components are deep copies)
+        runner_.Reset();
+        play_ = PlayState::Playing;
+        lastTick_ = c.Time();
+        // The game view looks from where the scene view looks (until there is a camera component).
+        EnsureViews();
+        if (sceneView_ && gameView_) gameView_->LoadState(sceneView_->SaveState());
+        log::Info("▶ Play (システム {} 個)。止めると Play の前のシーンに戻ります", runner_.Systems().size());
+        c.RequestAnimation();
+        host_.Redraw();
+    }
+
+    void StopPlay() {
+        if (!Running()) return;
+        log::Info("■ 停止 ({:.2f} 秒・{} コマ)。シーンは Play の前に戻りました", runner_.Time(), runner_.Frames());
+        playScene_.reset();
+        play_ = PlayState::Stopped;
+        host_.Redraw();
+    }
+
+    void TogglePause(ui::Context& c) {
+        if (!Running()) return;
+        play_ = play_ == PlayState::Paused ? PlayState::Playing : PlayState::Paused;
+        lastTick_ = c.Time();  // the paused time does not count
+        c.RequestAnimation();
+    }
+
+    // One frame (1 / 目標 FPS seconds), then paused.
+    void StepFrame(ui::Context& c) {
+        if (!Running() || !playScene_) return;
+        play_ = PlayState::Paused;
+        runner_.Advance(*playScene_, 1.0 / std::max(1, settings_.targetFps), settings_.fixedTimestep);
+        lastTick_ = c.Time();
+        host_.Redraw();
+    }
+
+    // Both views come from the plugin that knows a space (ゲーム制作 × 3D): asked once.
+    void EnsureViews() {
+        if (viewsAsked_) return;
+        viewsAsked_ = true;
+        const auto views = host_.Registry().Contributions<SceneViewInfo>(kSceneViewPoint);
+        if (views.empty() || !views[0].item->create) return;
+        sceneView_ = views[0].item->create();
+        gameView_ = views[0].item->create();
+        if (sceneView_) sceneView_->LoadState(view_.Get("sceneView"));
+    }
+
+    SceneViewHost ViewHost(bool game) {
+        SceneViewHost h{host_, Shown(), selection_,
+                        [this](std::vector<int> ids) { host_.SelectInTree(std::vector<tree::ItemId>(ids.begin(), ids.end())); },
+                        [this](int id, const std::string& type) { return ResolveComponent(id, type); }};
+        h.playing = Running();
+        h.game = game;
+        h.background = settings_.clearColor;
+        return h;
+    }
+
     // The scene view comes from a plugin that knows a space (ゲーム制作 × 3D); without one, a note.
     void DrawSceneView(ui::Context& c, const Rect& r) {
-        if (!sceneView_ && !sceneViewAsked_) {
-            sceneViewAsked_ = true;
-            const auto views = host_.Registry().Contributions<SceneViewInfo>(kSceneViewPoint);
-            if (!views.empty() && views[0].item->create) sceneView_ = views[0].item->create();
-            if (sceneView_) sceneView_->LoadState(view_.Get("sceneView"));
-        }
+        EnsureViews();
         if (!sceneView_) {
             Placeholder(c, r, Tr(L"シーンビュー"),
                         Tr(L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。"));
             return;
         }
-        SceneViewHost h{host_, scene_, selection_,
-                        [this](std::vector<int> ids) { host_.SelectInTree(std::vector<tree::ItemId>(ids.begin(), ids.end())); },
-                        [this](int id, const std::string& type) { return ResolveComponent(id, type); }};
+        SceneViewHost h = ViewHost(false);
         sceneView_->Draw(c, r, h);
+        if (play_ == PlayState::Playing) c.RequestAnimation();  // this panel may be in a window of its own
+    }
+
+    // While playing: the copy that plays, as the game sees it. Otherwise how to start, and the settings.
+    void DrawGameView(ui::Context& c, const Rect& r) {
+        EnsureViews();
+        if (!Running()) {
+            Placeholder(c, r, Tr(L"ゲームビュー"), Tr(L"上の ▶ (Ctrl+P) で Play すると、動いているゲームがここに映ります。"));
+            const Rect button{r.x + (r.w - 200) * 0.5f, r.y + r.h * 0.5f + 70, 200, 36};
+            if (editor::w::Button(c, "settings", button, Tr(L"ゲームの設定を開く"))) InspectSettings();
+            return;
+        }
+        if (!gameView_) {
+            Placeholder(c, r, Tr(L"ゲームビュー"), Tr(L"3D 空間 / 2D 空間のプラグインが入ると、動いているゲームがここに映ります。"));
+            return;
+        }
+        SceneViewHost h = ViewHost(true);
+        gameView_->Draw(c, r, h);
+        if (play_ == PlayState::Playing) c.RequestAnimation();
+    }
+
+    // --- Inspector -----------------------------------------------------------------------------
+    // A note on top of the inspector while playing (its blocks are shown, not edited).
+    static editor::InspectBlock PlayNote() {
+        return {nullptr, {}, {}, Tr(L"Play 中です。ここに出ているのは動いているコピーで、変えられません。■ で止めると Play の前に戻ります。"), {}};
     }
 
     void InspectSettings() {
         inspectingEntities_ = false;
-        host_.Inspect(editor::Inspectable::Single(
-            reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, Tr(L"ゲームの設定")));
+        editor::Inspectable in;
+        in.title = Tr(L"ゲームの設定");
+        in.blocks = [this] {
+            std::vector<editor::InspectBlock> blocks;
+            if (Running()) blocks.push_back(PlayNote());
+            editor::InspectBlock b{&reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, {}, {}, {}};
+            b.readOnly = Running();
+            blocks.push_back(std::move(b));
+            return blocks;
+        };
+        host_.Inspect(std::move(in));
         host_.SelectInTree({});
     }
 
     // Where an entity is now (the list may have been rebuilt by undo since): found by id each time.
-    std::function<reflect::EditTarget()> ResolveEntity(int id) {
-        return [this, id] {
-            SceneEntity* e = scene_.Find(id);
+    // `play`: in the copy that plays (shown while playing; never edited).
+    std::function<reflect::EditTarget()> ResolveEntity(int id, bool play = false) {
+        return [this, id, play] {
+            SceneEntity* e = (play ? Shown() : scene_).Find(id);
             return e ? reflect::EditTarget{&e->data, &e->unknowns} : reflect::EditTarget{};
         };
     }
 
-    std::function<reflect::EditTarget()> ResolveComponent(int id, std::string type) {
-        return [this, id, type] {
-            SceneEntity* e = scene_.Find(id);
-            Component* c = e ? e->FindComponent(type) : nullptr;
+    std::function<reflect::EditTarget()> ResolveComponent(int id, std::string type, size_t nth = 0, bool play = false) {
+        return [this, id, type, nth, play] {
+            SceneEntity* e = (play ? Shown() : scene_).Find(id);
+            Component* c = e ? e->FindComponent(type, nth) : nullptr;
             return c && c->Known() ? reflect::EditTarget{c->value.Get(), &c->unknowns} : reflect::EditTarget{};
         };
     }
@@ -401,13 +591,13 @@ private:
 
     // The component `type` of the entity and of its parents that have it: the top parent's first.
     // Empty when the entity or its component is gone.
-    std::vector<const void*> Chain(int id, const std::string& type) const {
+    static std::vector<const void*> Chain(const Scene& scene, int id, const std::string& type) {
         std::vector<const void*> chain;
-        const SceneEntity* self = scene_.Find(id);
+        const SceneEntity* self = scene.Find(id);
         const Component* own = self ? self->FindComponent(type) : nullptr;
         if (!own || !own->Known()) return chain;
         size_t steps = 0;  // a broken file could make a ring of parents
-        for (const SceneEntity* e = self; e && steps++ <= scene_.Entities().size(); e = scene_.Find(e->data.parent)) {
+        for (const SceneEntity* e = self; e && steps++ <= scene.Entities().size(); e = scene.Find(e->data.parent)) {
             const Component* c = e->FindComponent(type);
             if (c && c->Known()) chain.push_back(c->value.Get());
         }
@@ -417,10 +607,10 @@ private:
 
     // The values a component's plugin works out through the parents: worked out again every time the
     // inspector asks, into a value of their own (edits of it go through EditDerived).
-    std::function<reflect::EditTarget()> Derived(int id, std::string type, const ComponentInfo* info) {
+    std::function<reflect::EditTarget()> Derived(int id, std::string type, const ComponentInfo* info, bool play) {
         auto value = std::make_shared<reflect::Object>(info->derivedType());
-        return [this, id, type = std::move(type), info, value] {
-            const std::vector<const void*> chain = Chain(id, type);
+        return [this, id, type = std::move(type), info, value, play] {
+            const std::vector<const void*> chain = Chain(play ? Shown() : scene_, id, type);
             if (chain.empty()) return reflect::EditTarget{};  // gone (undo)
             info->derive(chain, value->Get());
             return reflect::EditTarget{value->Get(), nullptr};
@@ -431,7 +621,7 @@ private:
     // gives it; the fields that change are edits of the component (one undo entry; typing one field
     // joins into one entry).
     void EditDerived(int id, const std::string& type, const ComponentInfo* info, editor::InspectBlock::Change ch) {
-        const std::vector<const void*> chain = Chain(id, type);
+        const std::vector<const void*> chain = Chain(scene_, id, type);
         if (chain.empty()) return;
         const reflect::TypeDesc& dt = info->derivedType();
         const reflect::TypeDesc& ct = info->type();
@@ -469,58 +659,84 @@ private:
         return it != modes_.end() ? it->second : 0;
     }
 
+    // A line under the entity's header when it is part of a placed prefab.
+    std::wstring PrefabNote(int id) const {
+        const int root = scene_.PrefabRootOf(id);
+        if (root == 0) return {};
+        const SceneEntity* r = scene_.Find(root);
+        const std::wstring name = Utf8ToWide(PrefabName(r->prefab.path));
+        if (root != id) return TrF(L"Prefab「{}」の一部です", name);
+        const auto it = prefabs_.find(r->prefab.path);
+        if (it == prefabs_.end()) return TrF(L"Prefab「{}」を置いた物です (ファイル {} が読めません)", name, Utf8ToWide(r->prefab.path));
+        const size_t n = CountOverrides(Overrides(scene_, root, it->second, placementTypes_));
+        return TrF(L"Prefab「{}」を置いた物です ({})。Prefab と違う所: {} 個 (名前と置き場所を含む)", name, Utf8ToWide(r->prefab.path), n);
+    }
+
     // The inspector of one entity: the entity itself, then its components (each with ⋮ → 外す), and
-    // "部品を足す" under them. Asked again every time it is drawn (undo may add or take components).
+    // "部品を足す" under them. Asked again every time it is drawn (undo may add or take components;
+    // Play shows the copy that plays).
     editor::Inspectable EntityInspectable(int id) {
         editor::Inspectable in;
         in.title = Tr(L"エンティティ");
         in.blocks = [this, id] {
             std::vector<editor::InspectBlock> blocks;
-            const SceneEntity* e = scene_.Find(id);
+            const bool play = Running();
+            const SceneEntity* e = Shown().Find(id);
             if (!e) return blocks;
-            blocks.push_back({&reflect::TypeOf<Entity>(), ResolveEntity(id), {}, {}, {}});
+            if (play) blocks.push_back(PlayNote());
+            editor::InspectBlock entity{&reflect::TypeOf<Entity>(), ResolveEntity(id, play), {}, PrefabNote(id), {}};
+            entity.readOnly = play;
+            blocks.push_back(std::move(entity));
             for (const Component& c : e->components) {
-                editor::w::Action remove;
                 const std::string type = c.type;
+                const size_t nth = e->NthOf(c);
+                const size_t count = e->CountComponents(type);
                 const std::string label = c.Known() ? c.value.Type()->label : c.type;
+                // Several of one type: numbered (the block's title is also what keeps its fields apart).
+                const std::wstring number = count > 1 ? std::format(L" ({})", nth + 1) : std::wstring();
+                editor::w::Action remove;
                 remove.label = Tr(L"外す");
-                remove.run = [this, id, type, label] {
-                    Edit(std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type); });
+                remove.run = [this, id, type, nth, label] {
+                    Edit(std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type, nth); });
                 };
-                // Its place among the entity's components (the order they are shown - and run, later).
+                // Its place among the entity's components (the order they are shown - and run).
                 const size_t at = static_cast<size_t>(&c - e->components.data());
                 editor::w::Action up;
                 up.label = Tr(L"上へ移動");
                 up.enabled = at > 0;
-                up.run = [this, id, type, label] {
-                    Edit(std::format("「{}」を上へ移動", label), [&] { scene_.MoveComponent(id, type, -1); });
+                up.run = [this, id, type, nth, label] {
+                    Edit(std::format("「{}」を上へ移動", label), [&] { scene_.MoveComponent(id, type, -1, nth); });
                 };
                 editor::w::Action down;
                 down.label = Tr(L"下へ移動");
                 down.enabled = at + 1 < e->components.size();
-                down.run = [this, id, type, label] {
-                    Edit(std::format("「{}」を下へ移動", label), [&] { scene_.MoveComponent(id, type, 1); });
+                down.run = [this, id, type, nth, label] {
+                    Edit(std::format("「{}」を下へ移動", label), [&] { scene_.MoveComponent(id, type, 1, nth); });
                 };
                 editor::w::Action sep;
                 sep.separator = true;
-                const std::vector<editor::w::Action> menu{up, down, sep, remove};
+                std::vector<editor::w::Action> menu{up, down, sep, remove};
+                if (play) {
+                    for (auto& a : menu) a.enabled = false;
+                }
                 if (c.Known()) {
-                    editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type), Utf8ToWide(TrU8(label)), {}, menu};
+                    editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type, nth, play), Utf8ToWide(TrU8(label)) + number, {}, menu};
+                    b.readOnly = play;
                     // A child: ローカル / ワールド (or whatever the plugin calls them), one block shown either way.
                     // At the top level both ways are the same numbers, so there is no switch.
-                    if (const ComponentInfo* info = InfoOf(c.type); info && info->HasDerived() && e->data.parent != 0) {
+                    if (const ComponentInfo* info = InfoOf(c.type); info && info->HasDerived() && nth == 0 && e->data.parent != 0) {
                         b.modes = {Tr(info->ownLabel), Tr(info->derivedLabel)};
                         b.mode = ModeOf(*e);
                         b.setMode = [this, id](int m) { modes_[id] = m; };
                         if (b.mode == 1) {
                             b.type = &info->derivedType();
-                            b.resolve = Derived(id, c.type, info);
+                            b.resolve = Derived(id, c.type, info, play);
                             b.onEdit = [this, id, type, info](editor::InspectBlock::Change ch) { EditDerived(id, type, info, std::move(ch)); };
                         }
                     }
                     blocks.push_back(std::move(b));
                 } else {
-                    blocks.push_back({nullptr, {}, Utf8ToWide(label) + Tr(L" (使えない部品)"),
+                    blocks.push_back({nullptr, {}, Utf8ToWide(label) + Tr(L" (使えない部品)") + number,
                                       Tr(L"この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。"), menu});
                 }
             }
@@ -529,11 +745,19 @@ private:
         in.addLabel = Tr(L"＋ 部品を足す");
         in.addMenu = [this, id] {
             std::vector<editor::w::Action> list;
+            if (Running()) {
+                editor::w::Action none;
+                none.label = Tr(L"Play 中は部品を足せません");
+                none.enabled = false;
+                list.push_back(std::move(none));
+                return list;
+            }
             const SceneEntity* e = scene_.Find(id);
             for (const reflect::TypeDesc* t : scene_.ComponentTypes()) {
-                if (!e || e->FindComponent(t->name)) continue;
+                if (!e || (e->FindComponent(t->name) && !scene_.AllowsMultiple(t->name))) continue;
                 editor::w::Action add;
                 add.label = Utf8ToWide(TrU8(t->label));
+                if (e->FindComponent(t->name)) add.label += Tr(L" (もう 1 つ)");
                 add.run = [this, id, t] {
                     Edit(std::format("「{}」を足す", t->label), [&] { scene_.AddComponent(id, *t); });
                 };
@@ -551,28 +775,33 @@ private:
         return in;
     }
 
-    // Several entities at once: the entity's own values and the components every one of them has,
-    // shown from the last selected; a change goes to all ("—" where they differ). 外す / 部品を足す
-    // work on all of them.
+    // Several entities at once: the entity's own values and the components every one of them has
+    // (the first of each type), shown from the last selected; a change goes to all ("—" where they
+    // differ). 外す / 部品を足す work on all of them.
     editor::Inspectable ManyInspectable(std::vector<int> ids) {
         editor::Inspectable in;
         in.title = TrF(L"{} 個のエンティティ", ids.size());
         in.blocks = [this, ids] {
             std::vector<editor::InspectBlock> blocks;
+            const bool play = Running();
+            const Scene& shown = Shown();
             std::vector<int> here;  // the ones that are still there (undo)
             for (const int id : ids) {
-                if (scene_.Find(id)) here.push_back(id);
+                if (shown.Find(id)) here.push_back(id);
             }
             if (here.empty()) return blocks;
+            if (play) blocks.push_back(PlayNote());
             const int main = here.back();
             const std::vector<int> rest(here.begin(), here.end() - 1);
-            editor::InspectBlock entity{&reflect::TypeOf<Entity>(), ResolveEntity(main), {}, {}, {}};
-            for (const int id : rest) entity.also.push_back(ResolveEntity(id));
+            editor::InspectBlock entity{&reflect::TypeOf<Entity>(), ResolveEntity(main, play), {}, {}, {}};
+            for (const int id : rest) entity.also.push_back(ResolveEntity(id, play));
+            entity.readOnly = play;
             blocks.push_back(std::move(entity));
-            for (const Component& c : scene_.Find(main)->components) {
-                if (!c.Known()) continue;
+            const SceneEntity* me = shown.Find(main);
+            for (const Component& c : me->components) {
+                if (!c.Known() || me->NthOf(c) != 0) continue;
                 const bool everyone = std::all_of(rest.begin(), rest.end(), [&](int id) {
-                    const Component* o = scene_.Find(id)->FindComponent(c.type);
+                    const Component* o = shown.Find(id)->FindComponent(c.type);
                     return o && o->Known();
                 });
                 if (!everyone) continue;
@@ -580,13 +809,15 @@ private:
                 const std::string label = c.value.Type()->label;
                 editor::w::Action remove;
                 remove.label = Tr(L"外す");
+                remove.enabled = !play;
                 remove.run = [this, here, type, label] {
                     Edit(std::format("{} 個のエンティティから「{}」を外す", here.size(), label), [&] {
                         for (const int id : here) scene_.RemoveComponent(id, type);
                     });
                 };
-                editor::InspectBlock b{c.value.Type(), ResolveComponent(main, type), Utf8ToWide(TrU8(label)), {}, {remove}};
-                for (const int id : rest) b.also.push_back(ResolveComponent(id, type));
+                editor::InspectBlock b{c.value.Type(), ResolveComponent(main, type, 0, play), Utf8ToWide(TrU8(label)), {}, {remove}};
+                for (const int id : rest) b.also.push_back(ResolveComponent(id, type, 0, play));
+                b.readOnly = play;
                 blocks.push_back(std::move(b));
             }
             return blocks;
@@ -594,13 +825,20 @@ private:
         in.addLabel = Tr(L"＋ 部品を足す");
         in.addMenu = [this, ids] {
             std::vector<editor::w::Action> list;
+            if (Running()) {
+                editor::w::Action none;
+                none.label = Tr(L"Play 中は部品を足せません");
+                none.enabled = false;
+                list.push_back(std::move(none));
+                return list;
+            }
             for (const reflect::TypeDesc* t : scene_.ComponentTypes()) {
-                // Offered while at least one of them lacks it; added to those that lack it.
-                const bool someLack = std::any_of(ids.begin(), ids.end(), [&](int id) {
-                    const SceneEntity* e = scene_.Find(id);
-                    return e && !e->FindComponent(t->name);
-                });
-                if (!someLack) continue;
+                // Offered while at least one of them lacks it (or may have more); added where it can be.
+                const bool someCan = scene_.AllowsMultiple(t->name) || std::any_of(ids.begin(), ids.end(), [&](int id) {
+                                         const SceneEntity* e = scene_.Find(id);
+                                         return e && !e->FindComponent(t->name);
+                                     });
+                if (!someCan) continue;
                 editor::w::Action add;
                 add.label = Utf8ToWide(TrU8(t->label));
                 add.run = [this, ids, t] {
@@ -622,15 +860,223 @@ private:
         return in;
     }
 
+    // --- Prefabs -------------------------------------------------------------------------------
+    // Files are named from the project folder ("Assets/Cube.rmprefab"). ★ An asset reference later.
+    std::filesystem::path FullPath(const std::string& path) const { return host_.GetProject().Root() / PathFromUtf8(path); }
+
+    // The prefab file, read now (and kept as the last known form of it). Nothing when it cannot be read.
+    const json::Value* ReadPrefab(const std::string& path) {
+        std::string err;
+        const auto bytes = platform::ReadFileBytes(FullPath(path), &err);
+        if (!bytes) {
+            log::Warn("Prefab「{}」を読めませんでした: {}", path, err);
+            return nullptr;
+        }
+        json::ParseError perr;
+        auto v = json::Parse(*bytes, &perr);
+        if (!v || !IsPrefab(*v)) {
+            log::Warn("「{}」は Prefab のファイルではありません", path);
+            return nullptr;
+        }
+        return &(prefabs_[path] = std::move(*v));
+    }
+
+    // Opening the project: every placed prefab is made from its file again (with what it changed), so
+    // a prefab changed since (by another scene, by hand) shows. Not an edit: the project is as it was.
+    void RefreshPrefabsOnOpen() {
+        prefabs_.clear();
+        std::vector<std::string> paths;
+        for (const int root : scene_.PrefabRoots()) {
+            const std::string& p = scene_.Find(root)->prefab.path;
+            if (std::find(paths.begin(), paths.end(), p) == paths.end()) paths.push_back(p);
+        }
+        for (const std::string& path : paths) {
+            const json::Value* prefab = ReadPrefab(path);
+            if (!prefab) continue;  // kept as it was saved
+            reflect::Warnings warnings;
+            for (const int root : scene_.PrefabRoots(path)) {
+                const json::Value overrides = scene_.Find(root)->prefab.overrides;
+                scene_.ApplyPrefab(root, *prefab, overrides, &warnings);
+            }
+            for (const auto& w : warnings) log::Warn("Prefab「{}」: {}", path, w);
+        }
+    }
+
+    // Every placed prefab of `path` made again from `next`, keeping what each changed from `before`
+    // (except `skip`). Inside an Edit.
+    void ReapplyPrefab(const std::string& path, const json::Value& before, const json::Value& next, int skip) {
+        reflect::Warnings warnings;
+        for (const int root : scene_.PrefabRoots(path)) {
+            if (root == skip) continue;
+            const json::Value overrides = Overrides(scene_, root, before, placementTypes_);
+            scene_.ApplyPrefab(root, next, overrides, &warnings);
+        }
+        for (const auto& w : warnings) log::Warn("Prefab「{}」: {}", path, w);
+    }
+
+    // The prefab files in Assets/ (looked for again at most every 2 seconds: the menu is asked often).
+    const std::vector<std::string>& PrefabFiles() {
+        const double now = platform::NowSeconds();
+        if (now - prefabFilesTime_ < 2.0 && prefabFilesTime_ > 0) return prefabFiles_;
+        prefabFilesTime_ = now;
+        prefabFiles_.clear();
+        const std::filesystem::path root = host_.GetProject().Root();
+        std::error_code ec;
+        for (std::filesystem::recursive_directory_iterator it(host_.GetProject().AssetsDir(), ec), end; !ec && it != end; it.increment(ec)) {
+            if (!it->is_regular_file(ec) || it->path().extension() != kPrefabExtension) continue;
+            prefabFiles_.push_back(PathToUtf8(it->path().lexically_relative(root).generic_wstring()));
+            if (prefabFiles_.size() >= 200) break;
+        }
+        std::sort(prefabFiles_.begin(), prefabFiles_.end());
+        return prefabFiles_;
+    }
+
+    // A file name in Assets/ for a new prefab named after the entity (not one that is there).
+    std::string NewPrefabPath(const std::string& entityName) const {
+        const std::string stem = ValidateFileName(entityName, 48) == FileNameError::None ? entityName : std::string("Prefab");
+        std::error_code ec;
+        for (int n = 1;; ++n) {
+            const std::string name = n == 1 ? stem : std::format("{} ({})", stem, n);
+            const std::string path = "Assets/" + name + kPrefabExtension;
+            if (!std::filesystem::exists(FullPath(path), ec)) return path;
+        }
+    }
+
+    bool WritePrefab(const std::string& path, const json::Value& prefab) {
+        std::error_code ec;
+        std::filesystem::create_directories(FullPath(path).parent_path(), ec);
+        std::string err;
+        if (!platform::WriteFileAtomic(FullPath(path), json::Write(prefab), &err)) {
+            log::Error("Prefab「{}」を書けませんでした: {}", path, err);
+            return false;
+        }
+        prefabs_[path] = prefab;
+        prefabFilesTime_ = 0;  // look again
+        return true;
+    }
+
+    void PrefabActions(const std::vector<int>& sel, std::vector<tree::Action>& list) {
+        tree::Action sep;
+        sep.separator = true;
+        list.push_back(sep);
+        if (sel.size() == 1 && scene_.Find(sel[0])) {
+            const int id = sel[0];
+            tree::Action make;
+            make.label = Tr(L"Prefab にする (Assets に保存)");
+            make.run = [this, id] { MakePrefabOf(id); };
+            list.push_back(std::move(make));
+            if (const int root = scene_.PrefabRootOf(id)) {
+                const std::wstring name = Utf8ToWide(PrefabName(scene_.Find(root)->prefab.path));
+                tree::Action apply;
+                apply.label = TrF(L"Prefab「{}」に反映 (置いたほかの物も変わる)", name);
+                apply.run = [this, root] { ApplyToPrefab(root); };
+                list.push_back(std::move(apply));
+                tree::Action reload;
+                reload.label = TrF(L"Prefab「{}」を読み直す", name);
+                reload.run = [this, root] { ReloadPrefab(root); };
+                list.push_back(std::move(reload));
+                tree::Action unlink;
+                unlink.label = TrF(L"Prefab「{}」から切り離す", name);
+                unlink.run = [this, root] {
+                    Edit(std::format("「{}」を Prefab から切り離す", NameOf(root)), [&] { scene_.UnlinkPrefab(root); });
+                };
+                list.push_back(std::move(unlink));
+            }
+        }
+        // Placing one: after the selected entity, like 貼り付け.
+        const std::vector<std::string>& files = PrefabFiles();
+        for (size_t i = 0; i < files.size() && i < kMaxPrefabRows; ++i) {
+            tree::Action place;
+            place.label = TrF(L"Prefab を置く: {}", Utf8ToWide(files[i]));
+            place.run = [this, sel, path = files[i]] { PlacePrefabFile(path, sel); };
+            list.push_back(std::move(place));
+        }
+        if (files.empty()) {
+            tree::Action none;
+            none.label = Tr(L"Prefab を置く (Assets に Prefab がありません)");
+            none.enabled = false;
+            list.push_back(std::move(none));
+        } else if (files.size() > kMaxPrefabRows) {
+            tree::Action more;
+            more.label = TrF(L"… ほか {} 個の Prefab", files.size() - kMaxPrefabRows);
+            more.enabled = false;
+            list.push_back(std::move(more));
+        }
+    }
+
+    void MakePrefabOf(int id) {
+        const SceneEntity* e = scene_.Find(id);
+        if (!e) return;
+        const std::string name = e->data.name;
+        const std::string path = NewPrefabPath(name);
+        std::unordered_map<int, int> sources;
+        const json::Value prefab = MakePrefab(scene_, id, &sources);
+        if (!WritePrefab(path, prefab)) return;
+        Edit(std::format("「{}」を Prefab にする", name), [&] { scene_.LinkPrefab(id, path, sources); });
+        log::Info("Prefab を作りました: {}", path);
+    }
+
+    void ApplyToPrefab(int root) {
+        const SceneEntity* r = scene_.Find(root);
+        if (!r || !r->prefab.Root()) return;
+        const std::string path = r->prefab.path;
+        // The prefab as it was (what the other placed ones changed is worked out against it).
+        json::Value before;
+        if (const auto it = prefabs_.find(path); it != prefabs_.end()) {
+            before = it->second;
+        } else if (const json::Value* read = ReadPrefab(path)) {
+            before = *read;
+        }
+        std::unordered_map<int, int> sources;
+        const json::Value next = MakePrefab(scene_, root, &sources);
+        if (!WritePrefab(path, next)) return;
+        if (!IsPrefab(before)) before = next;
+        Edit(std::format("Prefab「{}」に反映", PrefabName(path)), [&] {
+            scene_.LinkPrefab(root, path, sources);
+            ReapplyPrefab(path, before, next, root);
+        });
+        log::Info("Prefab「{}」に反映しました (置いた物 {} 個)", path, scene_.PrefabRoots(path).size());
+    }
+
+    // The file as it is now (changed by hand, by another project): every placed one follows it.
+    void ReloadPrefab(int root) {
+        const SceneEntity* r = scene_.Find(root);
+        if (!r || !r->prefab.Root()) return;
+        const std::string path = r->prefab.path;
+        const auto it = prefabs_.find(path);
+        const json::Value before = it != prefabs_.end() ? it->second : json::Value();
+        const json::Value* read = ReadPrefab(path);
+        if (!read) return;
+        const json::Value next = *read;
+        Edit(std::format("Prefab「{}」を読み直す", PrefabName(path)), [&] { ReapplyPrefab(path, IsPrefab(before) ? before : next, next, 0); });
+    }
+
+    void PlacePrefabFile(const std::string& path, const std::vector<int>& sel) {
+        const json::Value* prefab = ReadPrefab(path);
+        if (!prefab) return;
+        const json::Value copy = *prefab;
+        const auto [parent, index] = After(sel);
+        int made = 0;
+        reflect::Warnings warnings;
+        Edit(std::format("Prefab「{}」を置く", PrefabName(path)), [&] { made = scene_.PlacePrefab(copy, path, parent, index, &warnings); });
+        for (const auto& w : warnings) log::Warn("Prefab「{}」: {}", path, w);
+        if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)});
+    }
+
+    // --- Editing -------------------------------------------------------------------------------
     std::string NameOf(int id) const {
         const SceneEntity* e = scene_.Find(id);
         return e ? e->data.name : std::string();
     }
 
     // Runs a change of the scene's shape and puts it in the history (edit = undo entry = unsaved).
-    // A change that changes nothing leaves no entry.
+    // A change that changes nothing leaves no entry. Never while playing (the copy plays).
     template <class Fn>
     void Edit(std::string label, Fn&& change) {
+        if (Running()) {
+            log::Info("Play 中は編集できません (■ で止めてから)");
+            return;
+        }
         json::Value before = scene_.Save();
         change();
         json::Value after = scene_.Save();
@@ -668,7 +1114,7 @@ private:
             made = scene_.Create(TrU8("エンティティ"), parent, index);  // the name it starts with, in the language in use
             for (const reflect::TypeDesc* t : newEntityTypes_) scene_.AddComponent(made, *t);  // e.g. Transform
         });
-        host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
+        if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
     }
 
     editor::SoftwareHost& host_;
@@ -677,13 +1123,26 @@ private:
     Scene scene_;
     std::vector<int> selection_;  // the 階層's selection (shown in the scene view)
     std::unique_ptr<SceneView> sceneView_;
-    bool sceneViewAsked_ = false;
+    std::unique_ptr<SceneView> gameView_;  // the same kind of view, showing the game while it plays
+    bool viewsAsked_ = false;
     std::vector<const reflect::TypeDesc*> newEntityTypes_;  // components every new entity gets
     std::vector<const ComponentInfo*> componentInfos_;      // one per component type, as offered
+    std::vector<std::string> placementTypes_;               // where a placed prefab is (Transform)
     json::Value view_;  // UserSettings: how the user looks (the scene view's camera ...)
     std::unordered_map<int, int> modes_;  // entity id -> how its component with derived values is shown
     bool hadData_ = false;
     bool inspectingEntities_ = false;  // the inspector shows the 階層's selection (not the settings)
+
+    // Play
+    PlayState play_ = PlayState::Stopped;
+    std::unique_ptr<Scene> playScene_;  // the copy that plays
+    SystemRunner runner_;
+    double lastTick_ = 0;
+
+    // Prefabs: the files as last read or written (path -> content)
+    std::unordered_map<std::string, json::Value> prefabs_;
+    std::vector<std::string> prefabFiles_;
+    double prefabFilesTime_ = 0;
 };
 
 }  // namespace

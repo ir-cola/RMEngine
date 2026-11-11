@@ -3,6 +3,8 @@
 #include "editor/lang/Lang.h"
 
 #include "rm_engine/game_production/runtime/Components.h"
+#include "rm_engine/game_production/runtime/Systems.h"
+#include "rm_engine/game_x_3d/runtime/Spin.h"
 #include "rm_engine/game_x_3d/editor/SceneView3D.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/space3d/runtime/Transform.h"
@@ -35,11 +37,17 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // the world (ワールド: through every parent), switched above its fields in the inspector.
     static const game_production::ComponentInfo kTransform{&reflect::TypeOf<space3d::Transform>, true,
                                                            &reflect::TypeOf<space3d::WorldPlacement>, &DeriveWorld,
-                                                           &UnderiveWorld, editor::TrKey(L"ローカル"), editor::TrKey(L"ワールド"), "cube"};
+                                                           &UnderiveWorld, editor::TrKey(L"ローカル"), editor::TrKey(L"ワールド"), "cube",
+                                                           /*multiple*/ false, /*placement*/ true};
     registry.Contribute(game_production::kComponentPoint, kTransform);
     // ... and may be drawn as a 3D model (added by hand: a new entity is a box until it has one).
     static const game_production::ComponentInfo kMesh{&reflect::TypeOf<MeshRenderer>, false};
     registry.Contribute(game_production::kComponentPoint, kMesh);
+    // 回り続ける: turns its entity while the game plays (several add up), and the system that does it.
+    static const game_production::ComponentInfo kSpin{.type = &reflect::TypeOf<Spin>, .multiple = true};
+    registry.Contribute(game_production::kComponentPoint, kSpin);
+    static const game_production::SystemInfo kSpinSystem{"回り続ける", game_production::SystemPhase::Frame, 0, &RunSpin};
+    registry.Contribute(game_production::kSystemPoint, kSpinSystem);
     // ... and are seen in 3D in the scene view.
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView3D};
     registry.Contribute(game_production::kSceneViewPoint, kSceneView);

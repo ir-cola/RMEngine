@@ -70,6 +70,8 @@ struct Block {
     // value that is not the same in all of them shows "—". The Edit is the one for `object`; the
     // caller applies it to these too (for a vector, only its `component`).
     std::vector<const void*> others;
+    // Shown, not edited (a game in Play shows the copy that plays): the fields take no input.
+    bool readOnly = false;
 };
 
 // Per inspector: text being typed, the open drop-down / menu, folded blocks.

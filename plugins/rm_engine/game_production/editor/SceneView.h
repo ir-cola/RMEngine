@@ -34,9 +34,15 @@ struct SceneViewHost {
     // scene). For edits: change the value through it and push reflect::SetFieldCommand with it on
     // host.History() (edit = undo entry = unsaved).
     std::function<std::function<reflect::EditTarget()>(int id, const std::string& type)> component;
+    // Play: `scene` is the copy that plays (it changes every frame, and is not edited - no gizmo).
+    bool playing = false;
+    // The game view: only the picture of the game - no grid, tools or selection, the camera does not
+    // move, the game settings' 背景の色 behind it.
+    bool game = false;
+    Color background{0, 0, 0, 1};
 };
 
-// One per open game: keeps its own camera.
+// One per open game and view (the scene view, the game view): keeps its own camera.
 class SceneView {
 public:
     virtual ~SceneView() = default;

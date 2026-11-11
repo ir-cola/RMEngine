@@ -15,23 +15,40 @@ bool Has(std::span<const int> ids, int id) { return std::find(ids.begin(), ids.e
 
 }  // namespace
 
-Component* SceneEntity::FindComponent(std::string_view type) {
+Component* SceneEntity::FindComponent(std::string_view type, size_t nth) {
     for (auto& c : components) {
-        if (c.type == type) return &c;
+        if (c.type == type && nth-- == 0) return &c;
     }
     return nullptr;
 }
 
-const Component* SceneEntity::FindComponent(std::string_view type) const {
+const Component* SceneEntity::FindComponent(std::string_view type, size_t nth) const {
     for (const auto& c : components) {
-        if (c.type == type) return &c;
+        if (c.type == type && nth-- == 0) return &c;
     }
     return nullptr;
+}
+
+size_t SceneEntity::CountComponents(std::string_view type) const {
+    return static_cast<size_t>(std::count_if(components.begin(), components.end(), [&](const Component& c) { return c.type == type; }));
+}
+
+size_t SceneEntity::NthOf(const Component& c) const {
+    size_t n = 0;
+    for (const auto& o : components) {
+        if (&o == &c) return n;
+        if (o.type == c.type) ++n;
+    }
+    return n;
+}
+
+bool Scene::AllowsMultiple(std::string_view type) const {
+    return std::any_of(multipleTypes_.begin(), multipleTypes_.end(), [&](const reflect::TypeDesc* t) { return t->name == type; });
 }
 
 bool Scene::AddComponent(int id, const reflect::TypeDesc& type) {
     SceneEntity* e = Find(id);
-    if (!e || e->FindComponent(type.name)) return false;
+    if (!e || (e->FindComponent(type.name) && !AllowsMultiple(type.name))) return false;
     Component c;
     c.type = type.name;
     c.value = reflect::Object(type);
@@ -39,21 +56,21 @@ bool Scene::AddComponent(int id, const reflect::TypeDesc& type) {
     return true;
 }
 
-bool Scene::RemoveComponent(int id, std::string_view type) {
+bool Scene::RemoveComponent(int id, std::string_view type, size_t nth) {
     SceneEntity* e = Find(id);
-    if (!e) return false;
-    const size_t before = e->components.size();
-    std::erase_if(e->components, [&](const Component& c) { return c.type == type; });
-    return e->components.size() != before;
+    const Component* c = e ? e->FindComponent(type, nth) : nullptr;
+    if (!c) return false;
+    e->components.erase(e->components.begin() + (c - e->components.data()));
+    return true;
 }
 
-bool Scene::MoveComponent(int id, std::string_view type, int by) {
+bool Scene::MoveComponent(int id, std::string_view type, int by, size_t nth) {
     SceneEntity* e = Find(id);
     if (!e || (by != -1 && by != 1)) return false;
     auto& list = e->components;
-    const auto it = std::find_if(list.begin(), list.end(), [&](const Component& c) { return c.type == type; });
-    if (it == list.end()) return false;
-    const auto i = it - list.begin();
+    const Component* c = e->FindComponent(type, nth);
+    if (!c) return false;
+    const auto i = c - list.data();
     const auto j = i + by;
     if (j < 0 || j >= static_cast<std::ptrdiff_t>(list.size())) return false;
     std::swap(list[static_cast<size_t>(i)], list[static_cast<size_t>(j)]);
@@ -235,51 +252,74 @@ bool Scene::Move(std::span<const int> ids, int parent, size_t index) {
     return siblings(was) != siblings(now);
 }
 
+json::Value Scene::SaveComponent(const Component& c) {
+    if (!c.Known()) return c.raw;  // a type not offered now: exactly as it was read
+    json::Value cj = c.raw.IsObject() ? c.raw : json::Value::MakeObject();
+    cj.Set("type", c.type);
+    cj.Set("data", reflect::Save(*c.value.Type(), c.value.Get(), &c.unknowns));
+    return cj;
+}
+
+Component Scene::LoadComponent(const json::Value& cj, bool allowed, const std::string& entityName, reflect::Warnings* warnings) const {
+    auto warn = [&](std::string msg) {
+        if (warnings) warnings->push_back(std::move(msg));
+    };
+    Component c;
+    c.type = cj.Get("type").AsString();
+    c.raw = cj;
+    const reflect::TypeDesc* t = reflect::FindTypeNamed(componentTypes_, c.type);
+    const json::Value& data = cj.Get("data");
+    if (t && data.IsObject() && allowed) {
+        c.value = reflect::Object(*t);
+        reflect::Load(*t, c.value.Get(), data, &c.unknowns, warnings);
+        c.raw.Erase("data");  // written again from the value
+    } else if (!t) {
+        warn(std::format("エンティティ「{}」の部品「{}」は、いま入っているプラグインでは使えないので、そのまま残します", entityName, c.type));
+    } else {
+        warn(std::format("エンティティ「{}」の部品「{}」は読めない (2 つ目か形が違う) ので、そのまま残します", entityName, c.type));
+    }
+    return c;
+}
+
 json::Value Scene::SaveEntity(const SceneEntity& e) const {
     json::Value ej = reflect::Save(e.data, &e.unknowns);
     json::Value comps = json::Value::MakeArray();
-    for (const Component& c : e.components) {
-        if (!c.Known()) {
-            comps.Push(c.raw);  // a type not offered now: exactly as it was read
-            continue;
-        }
-        json::Value cj = c.raw.IsObject() ? c.raw : json::Value::MakeObject();
-        cj.Set("type", c.type);
-        cj.Set("data", reflect::Save(*c.value.Type(), c.value.Get(), &c.unknowns));
-        comps.Push(std::move(cj));
-    }
+    for (const Component& c : e.components) comps.Push(SaveComponent(c));
     ej.Set("components", std::move(comps));
+    if (e.prefab.Linked()) {
+        json::Value link = e.prefab.extra.IsObject() ? e.prefab.extra : json::Value::MakeObject();
+        link.Set("source", e.prefab.source);
+        if (!e.prefab.path.empty()) {
+            link.Set("path", e.prefab.path);
+            if (e.prefab.overrides.IsObject()) link.Set("overrides", e.prefab.overrides);
+        } else {
+            link.Erase("path");
+            link.Erase("overrides");
+        }
+        ej.Set("prefab", std::move(link));
+    }
     return ej;
 }
 
 SceneEntity Scene::LoadEntity(const json::Value& item, reflect::Warnings* warnings) const {
-    auto warn = [&](std::string msg) {
-        if (warnings) warnings->push_back(std::move(msg));
-    };
     SceneEntity e;
-    // "components" is the scene's to read (not an unknown key of the entity).
+    // "components" and "prefab" are the scene's to read (not unknown keys of the entity).
     json::Value fields = item;
     json::Value comps;
     if (json::Value* cs = fields.Find("components")) comps = std::move(*cs);
     fields.Erase("components");
+    if (const json::Value* link = fields.Find("prefab"); link && link->IsObject() && link->Get("source").AsInt(0) > 0) {
+        e.prefab.extra = *link;
+        e.prefab.source = static_cast<int>(link->Get("source").AsInt(0));
+        e.prefab.path = link->Get("path").AsString();
+        if (!e.prefab.path.empty()) e.prefab.overrides = link->Get("overrides");
+        fields.Erase("prefab");
+    }
     reflect::Load(e.data, fields, &e.unknowns, warnings);
     for (const auto& cj : comps.Items()) {
-        Component c;
-        c.type = cj.Get("type").AsString();
-        c.raw = cj;
-        const reflect::TypeDesc* t = reflect::FindTypeNamed(componentTypes_, c.type);
-        const json::Value& data = cj.Get("data");
-        if (t && data.IsObject() && !e.FindComponent(c.type)) {
-            c.value = reflect::Object(*t);
-            reflect::Load(*t, c.value.Get(), data, &c.unknowns, warnings);
-            c.raw.Erase("data");  // written again from the value
-        } else if (!t) {
-            warn(std::format("エンティティ「{}」の部品「{}」は、いま入っているプラグインでは使えないので、そのまま残します", e.data.name,
-                             c.type));
-        } else {
-            warn(std::format("エンティティ「{}」の部品「{}」は読めない (2 つ目か形が違う) ので、そのまま残します", e.data.name, c.type));
-        }
-        e.components.push_back(std::move(c));
+        const std::string type = cj.Get("type").AsString();
+        const bool allowed = !e.FindComponent(type) || AllowsMultiple(type);
+        e.components.push_back(LoadComponent(cj, allowed, e.data.name, warnings));
     }
     return e;
 }
@@ -313,14 +353,19 @@ json::Value Scene::Copy(std::span<const int> ids) const {
 }
 
 std::vector<int> Scene::Paste(const json::Value& clip, int parent, size_t index, reflect::Warnings* warnings) {
+    if (!IsClip(clip)) return {};
+    return PasteList(clip.Get("entities"), parent, index, warnings, nullptr);
+}
+
+std::vector<int> Scene::PasteList(const json::Value& entities, int parent, size_t index, reflect::Warnings* warnings,
+                                  std::unordered_map<int, int>* idMap) {
     std::vector<int> roots;
-    if (!IsClip(clip)) return roots;
     if (parent != 0 && !Find(parent)) parent = 0;
     // New ids; a parent inside the clip is followed only when it came before (so there is never a
     // loop) - anything else is a root, placed at `parent`.
     std::unordered_map<int, int> newId;
     std::vector<SceneEntity> copies;
-    for (const auto& item : clip.Get("entities").Items()) {
+    for (const auto& item : entities.Items()) {
         if (!item.IsObject()) continue;
         SceneEntity e = LoadEntity(item, warnings);
         const int oldId = e.data.id;
@@ -338,6 +383,7 @@ std::vector<int> Scene::Paste(const json::Value& clip, int parent, size_t index,
     const size_t pos = InsertPosition(parent, index);
     entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(std::min(pos, entities_.size())), std::make_move_iterator(copies.begin()),
                      std::make_move_iterator(copies.end()));
+    if (idMap) *idMap = std::move(newId);
     return roots;
 }
 

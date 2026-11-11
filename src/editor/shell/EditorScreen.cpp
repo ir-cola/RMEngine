@@ -601,8 +601,8 @@ void EditorScreen::RunMenu(Menu m, int index) {
         if (index == 2) RequestClose(CloseAction::ToHub);
         if (index == 3) RequestClose(CloseAction::Quit);
     } else if (m == Menu::Edit) {
-        if (index == 0) Active().history.Undo();
-        if (index == 1) Active().history.Redo();
+        if (index == 0) UndoRedo(false);
+        if (index == 1) UndoRedo(true);
     } else if (m == Menu::Window) {
         const auto& types = Active().dock.PanelTypes();
         const auto& named = Active().named.Entries();
@@ -652,6 +652,7 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     const Rect menuBar = ui::TakeTop(full, 30);
     const Rect tabs = ui::TakeTop(full, 36);
     const Rect status = ui::TakeBottom(full, 24);
+    if (Active().software) Active().software->Tick(c);  // a game that plays moves on before it is drawn
     Active().dock.Draw(c, full.Inset(4), 0, Hwnd(), Scale());
     DrawSoftTabs(c, tabs);
     DrawStatusBar(c, status);
@@ -682,8 +683,22 @@ void EditorScreen::HandleShortcuts(ui::Context& c) {
     // Shared by the editor window and the panel windows: Ctrl+S works wherever the focus is.
     if (c.Focused() != 0) return;
     if (c.KeyPressed(ui::Key::S, true)) Save();
-    if (c.KeyPressed(ui::Key::Z, true)) Active().history.Undo();
-    if (c.KeyPressed(ui::Key::Y, true) || c.KeyPressed(ui::Key::Z, true, true)) Active().history.Redo();
+    if (c.KeyPressed(ui::Key::Z, true)) UndoRedo(false);
+    if (c.KeyPressed(ui::Key::Y, true) || c.KeyPressed(ui::Key::Z, true, true)) UndoRedo(true);
+}
+
+void EditorScreen::UndoRedo(bool redo) {
+    // While a software runs (a game in Play) its data stays as it was: undo would change what the
+    // run goes back to, under it.
+    if (Active().software && Active().software->Running()) {
+        log::Info("Play 中は元に戻す / やり直しはできません (止めてから)");
+        return;
+    }
+    if (redo) {
+        Active().history.Redo();
+    } else {
+        Active().history.Undo();
+    }
 }
 
 void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
@@ -743,7 +758,9 @@ void EditorScreen::DrawOpenMenu(ui::Context& c) {
 
 void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
     auto& p = c.P();
-    w::DrawBar(c, r, theme::Bg);
+    // A software that runs (a game in Play) tints the row: it can be seen from anywhere in the window.
+    const bool running = Active().software && Active().software->Running();
+    w::DrawBar(c, r, running ? theme::RunningBar() : theme::Bg);
     w::Separator(c, r.x, r.Bottom() - 1, r.w);
     if (!workspaces_[0]->type) {
         // No plugin provides a "software", so there are no tabs to show.
@@ -764,6 +781,12 @@ void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
         p.Text(tab, title, Style(13, sel ? theme::Text : theme::TextDim, true, ui::HAlign::Center));
         if (b.clicked) SwitchSoftware(i);
         x += wdt + 4;
+    }
+    // The software's own controls (a game's ▶ Play ■), in the room right of the tabs.
+    if (Active().software && r.Right() - x > 40) {
+        c.PushId("toolbar");
+        Active().software->DrawToolbar(c, {x + 8, r.y, r.Right() - x - 16, r.h});
+        c.PopId();
     }
 }
 
@@ -795,7 +818,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
         for (const auto& resolveOther : b.also) {
             if (const reflect::EditTarget o = resolveOther ? resolveOther() : reflect::EditTarget{}; o.object) others.push_back(o.object);
         }
-        shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode, std::move(others)});
+        shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode, std::move(others), b.readOnly});
         source.push_back(i);
     }
     const bool gone = target.blocks && shown.empty();
@@ -813,7 +836,9 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu); edit && edit->block < source.size()) {
         // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly.
         const InspectBlock& b = blocks[source[edit->block]];
-        if (b.onEdit) {
+        if (b.readOnly) {
+            // shown only (a drop-down chosen just before Play started): nothing changes
+        } else if (b.onEdit) {
             b.onEdit({std::move(edit->path), std::move(edit->before), std::move(edit->after), std::move(edit->label), edit->merge});
         } else if (!b.also.empty()) {
             // The same change to every selected one, as one entry. Every target gets a command (even one

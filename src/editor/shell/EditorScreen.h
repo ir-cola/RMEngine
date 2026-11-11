@@ -75,6 +75,7 @@ private:
     std::vector<w::MenuItem> MenuItems(Menu m) const;
     void RunMenu(Menu m, int index);
     void HandleShortcuts(ui::Context& c);
+    void UndoRedo(bool redo);  // the shown software's history (not while it runs)
     // Plugin menu: installing from the editor saves, installs and opens the same project again
     // (design RME_PLATFORM 5-a, decided 2026-09-29). Removing is only possible in the Hub.
     void BeginInstallPlugin(const PluginId& id);

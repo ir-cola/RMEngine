@@ -124,6 +124,10 @@ public:
         now_ = c.Time();
         Place(host);
         ForgetUnusedModels();
+        if (host.game) {  // the game view: only the picture
+            Render(c, r, host);
+            return;
+        }
         const std::optional<BarLayout> bar = Bar(r);
         if (!bar) snapOpen_ = false;
         if (HandleInput(c, r, host, bar)) Place(host);  // a gizmo drag moved things this frame
@@ -338,7 +342,8 @@ private:
         bool changed = false;
 
         const std::optional<gizmo::Screen> screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h);
-        const std::optional<gizmo::Frame> frame = GizmoFrame(r, host);
+        // In Play the scene is the copy that plays: shown, not edited (no gizmo).
+        const std::optional<gizmo::Frame> frame = host.playing ? std::nullopt : GizmoFrame(r, host);
         // The handle under the mouse (yellow), when nothing else is going on.
         if (drag_ == Drag::None) {
             hot_ = hovered && !in.alt && frame && screen
@@ -515,25 +520,27 @@ private:
     }
 
     void Render(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) {
-        // The grid on the floor (y = 0) and the axes through the middle.
+        // The grid on the floor (y = 0) and the axes through the middle (not in the game view).
         lines_.clear();
+        const bool game = host.game;
         auto line = [&](Vec3 a, Vec3 b, ui::Color col) {
             lines_.push_back({a, col});
             lines_.push_back({b, col});
         };
         const float h = static_cast<float>(kGridHalf);
-        for (int i = -kGridHalf; i <= kGridHalf; ++i) {
+        for (int i = -kGridHalf; i <= kGridHalf && !game; ++i) {
             const float v = static_cast<float>(i);
             const ui::Color minor = i % 10 == 0 ? theme::SceneGridMajor() : theme::SceneGrid();
             line({v, 0, -h}, {v, 0, h}, i == 0 ? theme::AxisZ() : minor);  // along Z (the line x = 0 is the Z axis)
             line({-h, 0, v}, {h, 0, v}, i == 0 ? theme::AxisX() : minor);  // along X
         }
-        line({0, 0, 0}, {0, 1.5f, 0}, theme::AxisY());
+        if (!game) line({0, 0, 0}, {0, 1.5f, 0}, theme::AxisY());
 
         boxes_.clear();
         meshes_.clear();
         for (const Placed& p : placed_) {
-            const bool selected = std::find(host.selection.begin(), host.selection.end(), p.id) != host.selection.end();
+            if (game && !p.active) continue;  // switched off: not in the game
+            const bool selected = !game && std::find(host.selection.begin(), host.selection.end(), p.id) != host.selection.end();
             const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
             if (p.mesh) {
                 meshes_.push_back({p.mesh, p.world, col, p.castShadow});
@@ -553,7 +560,7 @@ private:
         f.height = static_cast<uint32_t>(std::max(1.f, std::round(r.h * scale)));
         f.view = state_.camera.ViewMatrix();
         f.projection = state_.camera.ProjectionMatrix(r.w / r.h);
-        f.clear = theme::SceneBackground();
+        f.clear = game ? host.background : theme::SceneBackground();
         f.lines = lines_;
         f.boxes = boxes_;
         f.meshes = meshes_;
@@ -593,6 +600,7 @@ private:
     // The gizmo over the picture, always in front (drawn on the screen from gizmo::'s shapes: what is
     // drawn is what is grabbed).
     void DrawGizmo(ui::Context& c, const Rect& r, const game_production::SceneViewHost& host) {
+        if (host.playing) return;  // Play: not edited
         const auto frame = GizmoFrame(r, host);
         const auto screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h);
         if (!frame || !screen) return;

@@ -66,6 +66,8 @@
     <ClCompile Include="TestIntegrity.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestTree.cpp" />
+    <ClCompile Include="TestSystems.cpp" />
+    <ClCompile Include="TestPrefab.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />
@@ -79,6 +81,9 @@
     <ClCompile Include="..\src\editor\widgets\ThemeFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\theme_seasons\editor\Ornament.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Systems.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Prefab.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
     <ClCompile Include="..\src\core\reflect\Data.cpp" />
     <ClCompile Include="..\src\core\reflect\FieldCommand.cpp" />
     <ClCompile Include="..\src\core\reflect\Object.cpp" />

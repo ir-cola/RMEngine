@@ -27,5 +27,8 @@
   "メッシュ (3D モデル)": "Mesh (3D model)",
   "モデル": "Model",
   "プロジェクトのフォルダからの相対パス (例: Assets/Models/robot.glb)。.gltf / .glb / .obj が読めます": "A path relative to the project folder (e.g. Assets/Models/robot.glb). Reads .gltf / .glb / .obj",
-  "影を落とす": "Cast shadows"
+  "影を落とす": "Cast shadows",
+  "回り続ける": "Keep Spinning",
+  "1 秒に回る角度 (度)": "Degrees per second",
+  "Transform の回転に、1 秒でこれだけ足します (X → Y → Z の順のオイラー角)": "Adds this much to the Transform's rotation every second (Euler angles, X → Y → Z)"
 }

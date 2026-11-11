@@ -73,6 +73,8 @@ struct InspectBlock {
     // `resolve`'s object. Values that differ show "—"; a change goes to all of them (for a vector
     // only the number typed) as one undo entry.
     std::vector<std::function<reflect::EditTarget()>> also;
+    // Shown, not edited (a game in Play shows the copy that plays): the fields take no input.
+    bool readOnly = false;
 };
 
 struct Inspectable {
@@ -141,6 +143,20 @@ public:
     // SaveView whenever the layout is saved (null: nothing to keep).
     virtual void LoadView(const json::Value& view) { (void)view; }
     virtual json::Value SaveView() const { return {}; }
+
+    // Called once a frame, before the panels are drawn, while this software is the one shown (a game
+    // that plays moves on here; it asks for the next frame with c.RequestAnimation()).
+    virtual void Tick(ui::Context& c) { (void)c; }
+    // The software's own controls in the tab row, right of the tabs (a game's ▶ Play ■). `r` is the
+    // room there (the full height of the row).
+    virtual void DrawToolbar(ui::Context& c, const ui::Rect& r) {
+        (void)c;
+        (void)r;
+    }
+    // True while the software runs something that its data must not be changed under (a game in
+    // Play: it plays a copy, and goes back when stopped). The editor tints the tab row and does not
+    // undo / redo meanwhile.
+    virtual bool Running() const { return false; }
 };
 
 struct SoftwareType {
