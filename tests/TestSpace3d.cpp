@@ -12,11 +12,16 @@
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
+#include "rm_engine/space3d/runtime/MeshLoader.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
 
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <mutex>
+#include <thread>
 #include <cstring>
 #include <filesystem>
 #include <optional>
@@ -1040,4 +1045,83 @@ RM_TEST(Space3d_BoxInView_Culling) {
     const Mat4 o = game_x_3d::ProjectionOf(cam, 1.f) * LookAt({0, 0, 5}, {0, 0, 0}, {0, 1, 0});
     CHECK(BoxInView(o, {{1.5f, 1.5f, -0.5f}, {2.5f, 2.5f, 0.5f}}));
     CHECK(!BoxInView(o, {{2.5f, -0.5f, -0.5f}, {3.5f, 0.5f, 0.5f}}));  // just past the right edge (no perspective widening)
+}
+
+// --- Reading models on a thread of their own (space3d/runtime/MeshLoader) ---------------------
+
+namespace {
+
+// Waits (a little at a time) until `ticket` is done; nullopt after about 5 seconds.
+std::optional<MeshLoader::Result> WaitFor(MeshLoader& loader, MeshLoader::Ticket ticket) {
+    for (int i = 0; i < 500; ++i) {
+        if (auto r = loader.Take(ticket)) return r;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return std::nullopt;
+}
+
+}  // namespace
+
+RM_TEST(MeshLoader_ReadsOnItsThreadInOrder) {
+    std::vector<std::string> read;
+    std::mutex mu;
+    MeshLoader loader([&](const std::filesystem::path& file, std::string* error) -> std::optional<MeshData> {
+        {
+            std::lock_guard lock(mu);
+            read.push_back(file.filename().string());
+        }
+        if (file.filename() == "bad.obj") {
+            *error = "読めません";
+            return std::nullopt;
+        }
+        return ParseObj("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", error);
+    });
+    CHECK(loader.Pending() == 0);
+    const auto a = loader.Request("a.obj");
+    const auto b = loader.Request("bad.obj");
+    CHECK(a != 0 && b != 0 && a != b);
+    const auto ra = WaitFor(loader, a);
+    CHECK(ra && ra->mesh && ra->mesh->indices.size() == 3 && ra->seconds >= 0);
+    const auto rb = WaitFor(loader, b);
+    CHECK(rb && !rb->mesh && rb->error == "読めません");
+    CHECK(!loader.Take(a));  // taken once only
+    CHECK(loader.Pending() == 0);
+    std::lock_guard lock(mu);
+    CHECK(read == std::vector<std::string>({"a.obj", "bad.obj"}));
+}
+
+RM_TEST(MeshLoader_CancelledIsNotKept) {
+    std::atomic<bool> open{false};
+    std::atomic<int> calls{0};
+    MeshLoader loader([&](const std::filesystem::path&, std::string* error) -> std::optional<MeshData> {
+        ++calls;
+        while (!open) std::this_thread::sleep_for(std::chrono::milliseconds(1));  // held until the test opens it
+        return ParseObj("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", error);
+    });
+    const auto first = loader.Request("first.obj");    // being read (held)
+    const auto second = loader.Request("second.obj");  // waiting
+    while (calls == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    loader.Cancel(first);   // dropped when its reading ends
+    loader.Cancel(second);  // never read
+    CHECK(loader.Pending() == 0);
+    const auto third = loader.Request("third.obj");
+    open = true;
+    CHECK(WaitFor(loader, third).has_value());
+    CHECK(!loader.Take(first) && !loader.Take(second));
+    CHECK(calls == 2);  // first and third
+}
+
+RM_TEST(MeshLoader_StopsWhileReading) {
+    // Destroyed with work left: waits for the file being read, drops the rest (no crash, no hang).
+    std::atomic<int> calls{0};
+    {
+        MeshLoader loader([&](const std::filesystem::path&, std::string*) -> std::optional<MeshData> {
+            ++calls;
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            return std::nullopt;
+        });
+        for (int i = 0; i < 5; ++i) loader.Request("x.obj");
+        while (calls == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(calls >= 1 && calls < 5);
 }

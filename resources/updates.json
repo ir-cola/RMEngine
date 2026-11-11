@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "大きな 3D モデルを別のスレッドで読む: 読んでいる間も画面は止まらず、箱の上に「読み込み中…」。読み終わったらモデルに差し替わる",
+          "en": "Big 3D models are read on a thread of their own: the screen keeps going while one loads (a box with \"Loading…\" over it), and the model takes its place when ready"
+        },
+        {
           "ja": "エンジンを新しくすると、入れたプラグインのうち古い写し (plugin.json・訳・テーマのファイル) を起動のときに自動で写し直す (削除したものは入れない)",
           "en": "After the engine is updated, outdated copies of installed plugins (plugin.json, translations, theme files) are copied again at startup (removed plugins stay removed)"
         },

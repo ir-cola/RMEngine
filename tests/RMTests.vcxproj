@@ -100,6 +100,7 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Mesh.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Lighting.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshFile.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshLoader.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\editor\Gizmo.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space2d\runtime\Transform2D.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space2d\runtime\View2D.cpp" />

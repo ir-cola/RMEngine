@@ -15,6 +15,7 @@
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
+#include "rm_engine/space3d/runtime/MeshLoader.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 #include "rm_engine/space3d/runtime/Texture.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -78,6 +79,7 @@ struct Placed {
     std::span<const space3d::DrawMaterial> materials;  // the model's colours and pictures
     bool castShadow = true;
     Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
+    bool loading = false;  // its model is being read (a box until then, with 読み込み中 over it)
     // A camera / a light on it (copies for this frame). `marker`: it has one and no model - nothing
     // of its own is drawn; it is seen (and clicked) by its mark and its lines.
     std::optional<Camera> camera;
@@ -117,10 +119,14 @@ std::pair<Vec3, Vec3> Across(Vec3 d) {
 // entities with the same model share it). Looked at again now and then: a file changed on disk
 // (exported again from a 3D tool) is read again; a file that cannot be read is told once. Its
 // materials' pictures in files are shared through SceneView3D::textures_ (read again on their own
-// when they change).
+// when they change). The file is read on the loader's thread (`ticket`); until it is done the old
+// shape stays (a box the first time).
 struct ModelEntry {
     std::shared_ptr<const space3d::GpuMesh> gpu;
     space3d::ModelPaint paint;
+    space3d::MeshLoader::Ticket ticket = 0;  // being read
+    std::filesystem::path file;              // ... this file
+    std::string name;                        // its name, for the console
     bool looked = false;  // the file has been looked for at least once
     bool loaded = false;  // ... and read (or tried to be) as it is at `time`
     bool told = false;    // that it is missing / not inside the project was written to the console
@@ -172,6 +178,7 @@ public:
         now_ = c.Time();
         Place(host);
         ForgetUnusedModels();
+        if (loader_.Pending() > 0) c.RequestAnimation();  // drawn again until the models being read arrive
         if (host.game) {  // the game view: only the picture, through the game's camera
             DrawGame(c, r, host);
             return;
@@ -232,12 +239,14 @@ private:
                 if (mc && mc->Known()) {
                     const auto& mr = *static_cast<const MeshRenderer*>(mc->value.Get());
                     p.castShadow = p.castShadow && mr.castShadows;
-                    if (ModelEntry* m = Model(mr.model, host)) {
+                    bool loading = false;
+                    if (ModelEntry* m = Model(mr.model, host, loading)) {
                         p.mesh = m->gpu.get();
                         p.materials = m->paint.Materials(main_.renderer, host.host.Graphics().Wic(), textures_, now_);
                         p.min = p.mesh->min;
                         p.max = p.mesh->max;
                     }
+                    p.loading = loading;
                 }
                 if (const game_production::Component* cc = e.FindComponent(cameraType_); cc && cc->Known()) {
                     p.camera = *static_cast<const Camera*>(cc->value.Get());
@@ -253,13 +262,17 @@ private:
         }
     }
 
-    // The model `ref` names (an asset - wherever it is now), read the first time it is asked for;
-    // null: draw a box.
-    ModelEntry* Model(const AssetRef& ref, game_production::SceneViewHost& host) {
+    // The model `ref` names (an asset - wherever it is now), read (on the loader's thread) the first
+    // time it is asked for; null: draw a box. `loading`: its file is being read now.
+    ModelEntry* Model(const AssetRef& ref, game_production::SceneViewHost& host, bool& loading) {
         if (ref.Empty()) return nullptr;
         ModelEntry& m = models_[ref.guid];
         m.usedAt = now_;
-        auto found = [&] { return m.gpu ? &m : nullptr; };
+        Arrived(m, host);
+        auto found = [&] {
+            loading = m.ticket != 0;
+            return m.gpu ? &m : nullptr;
+        };
         if (m.looked && now_ - m.checkedAt < kModelCheckSeconds) return found();
         m.looked = true;
         m.checkedAt = now_;
@@ -269,6 +282,8 @@ private:
         std::error_code ec;
         const auto time = file.empty() ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(file, ec);
         if (file.empty() || ec) {
+            loader_.Cancel(m.ticket);
+            m.ticket = 0;
             m.gpu.reset();
             m.loaded = false;
             if (!m.told) {
@@ -279,30 +294,50 @@ private:
         }
         m.told = false;
         if (m.loaded && time == m.time) return found();  // not changed
-        const bool again = m.gpu != nullptr;
+        // New or changed: read on the loader's thread (a read still going for the old file is dropped).
         m.loaded = true;
         m.time = time;
-        m.gpu.reset();
-        std::string error;
-        if (auto mesh = space3d::LoadMeshFile(file, &error)) {
-            for (const std::string& w : mesh->warnings) log::Warn("シーンビュー: モデル「{}」: {}", path, w);
-            m.gpu = main_.renderer.Upload(*mesh, &error);
-            if (m.gpu) {
-                m.paint.Load(main_.renderer, host.host.Graphics().Wic(), *mesh, file, host.host.GetProject().AssetsDir(), path);
-                log::Info("シーンビュー: モデル「{}」を{}読みました (頂点 {}・三角形 {}・材質 {}・テクスチャ {})", path, again ? "もう一度" : "",
-                          mesh->vertices.size(), mesh->indices.size() / 3, mesh->materials.size(), m.paint.Pictures());
-            } else {
-                log::Warn("シーンビュー: モデル「{}」を GPU に載せられないので箱で描きます: {}", path, error);
-            }
-        } else {
-            log::Warn("シーンビュー: モデル「{}」を読めないので箱で描きます: {}", path, error);
-        }
+        loader_.Cancel(m.ticket);
+        m.ticket = loader_.Request(file);
+        m.file = file;
+        m.name = path;
         return found();
+    }
+
+    // A model the loader has finished: onto the GPU with its pictures (here, on the drawing thread),
+    // in place of the shape drawn until now.
+    void Arrived(ModelEntry& m, game_production::SceneViewHost& host) {
+        if (m.ticket == 0) return;
+        std::optional<space3d::MeshLoader::Result> done = loader_.Take(m.ticket);
+        if (!done) return;
+        m.ticket = 0;
+        const bool again = m.gpu != nullptr;
+        if (!done->mesh) {
+            m.gpu.reset();
+            log::Warn("シーンビュー: モデル「{}」を読めないので箱で描きます: {}", m.name, done->error);
+            return;
+        }
+        const space3d::MeshData& mesh = *done->mesh;
+        for (const std::string& w : mesh.warnings) log::Warn("シーンビュー: モデル「{}」: {}", m.name, w);
+        std::string error;
+        m.gpu = main_.renderer.Upload(mesh, &error);
+        if (!m.gpu) {
+            log::Warn("シーンビュー: モデル「{}」を GPU に載せられないので箱で描きます: {}", m.name, error);
+            return;
+        }
+        m.paint = {};
+        m.paint.Load(main_.renderer, host.host.Graphics().Wic(), mesh, m.file, host.host.GetProject().AssetsDir(), m.name);
+        log::Info("シーンビュー: モデル「{}」を{}読みました (頂点 {}・三角形 {}・材質 {}・テクスチャ {}・{:.2f} 秒)", m.name, again ? "もう一度" : "",
+                  mesh.vertices.size(), mesh.indices.size() / 3, mesh.materials.size(), m.paint.Pictures(), done->seconds);
     }
 
     // Models (and pictures) nothing has used for a while leave the GPU (read again if they come back).
     void ForgetUnusedModels() {
-        std::erase_if(models_, [&](const auto& kv) { return now_ - kv.second.usedAt > kModelForgetSeconds; });
+        std::erase_if(models_, [&](const auto& kv) {
+            if (now_ - kv.second.usedAt <= kModelForgetSeconds) return false;
+            loader_.Cancel(kv.second.ticket);  // no longer wanted: not read (or its result dropped)
+            return true;
+        });
         textures_.ForgetUnused(now_, kModelForgetSeconds);
     }
 
@@ -821,6 +856,17 @@ private:
         const auto screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h);
         if (!screen) return;
         c.P().PushClip(r);
+        // A model still being read: its box, and 読み込み中 over it.
+        ui::TextStyle loadingStyle;
+        loadingStyle.size = 11;
+        loadingStyle.color = theme::TextDim;
+        loadingStyle.h = ui::HAlign::Center;
+        loadingStyle.v = ui::VAlign::Bottom;
+        for (const Placed& p : placed_) {
+            if (!p.loading) continue;
+            const auto at = screen->ToScreen(space3d::TransformPoint(p.world, {0, p.max.y, 0}));
+            if (at) c.P().Text({at->x - 80, at->y - 22, 160, 18}, Tr(L"読み込み中…"), loadingStyle);
+        }
         for (const Placed& p : placed_) {
             if (!p.camera && !p.light) continue;
             const auto at = screen->ToScreen(space3d::TransformPoint(p.world, {0, 0, 0}));
@@ -1095,6 +1141,7 @@ private:
     std::vector<space3d::Light> lights_;
     size_t warnedLights_ = 0;  // the number of lights told about (too many)
     std::unordered_map<std::string, ModelEntry> models_;  // by MeshRenderer::model (the asset's id)
+    space3d::MeshLoader loader_;                          // reads the model files on its own thread
     space3d::TextureCache textures_;                      // the models' picture files, by full path
     double now_ = 0;
 
