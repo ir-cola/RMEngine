@@ -29,5 +29,17 @@
   "拡大してもぼかさず、ピクセルをそのまま大きくします": "Enlarges pixels as they are, without blurring",
   "回り続ける (2D)": "Keep Spinning (2D)",
   "1 秒に回る角度 (度)": "Degrees per second",
-  "Transform 2D の回転に、1 秒でこれだけ足します (反時計回りが +)": "Adds this much to the Transform 2D's rotation every second (counter-clockwise is +)"
+  "Transform 2D の回転に、1 秒でこれだけ足します (反時計回りが +)": "Adds this much to the Transform 2D's rotation every second (counter-clockwise is +)",
+  "カメラ (2D)": "Camera (2D)",
+  "見える大きさ": "Size",
+  "画面の縦に映る長さの半分 (単位)。小さいほど大きく映ります": "Half of the height seen on the screen (in units). Smaller shows things larger",
+  "自分の背景の色を使う": "Use its own background color",
+  "外すと、ゲームの設定の「背景の色」で塗ります": "Off: filled with the game settings' Background color",
+  "背景の色": "Background color",
+  "「自分の背景の色を使う」のとき": "When \"Use its own background color\" is on",
+  "ゲームの設定の「最初のカメラ」が選ばれていません。カメラ (2D) の部品を付けたエンティティを選ぶと、そこから見た絵がここに映ります。": "No Starting camera is chosen in the game settings. Choose an entity with a Camera (2D) component and its view shows here.",
+  "「最初のカメラ」のエンティティがシーンにありません (消されたかもしれません)。ゲームの設定で選び直してください。": "The Starting camera entity is not in the scene (it may have been deleted). Choose it again in the game settings.",
+  "「{}」にカメラ (2D) の部品がありません (Transform 2D も要ります)。インスペクターの「部品を足す」で付けてください。": "\"{}\" has no Camera (2D) component (it also needs a Transform 2D). Add one with \"Add component\" in the inspector.",
+  "カメラの「{}」が有効ではありません。有効にすると、そこから見た絵が映ります。": "The camera \"{}\" is not active. Make it active and its view shows here.",
+  "ゲームの設定を開く": "Open game settings"
 }

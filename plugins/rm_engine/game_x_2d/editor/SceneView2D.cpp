@@ -8,6 +8,7 @@
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/game_x_2d/editor/SceneViewState2D.h"
+#include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/space2d/editor/Gizmo2D.h"
 #include "rm_engine/space2d/runtime/Renderer2D.h"
@@ -32,6 +33,7 @@ namespace theme = editor::theme;
 namespace w = editor::w;
 namespace gizmo = space2d::gizmo2d;
 using editor::Tr;
+using editor::TrF;
 using space2d::Mat3;
 using space2d::Transform2D;
 using space2d::operator+;
@@ -61,7 +63,19 @@ struct Placed {
     bool sprite = false;  // has a sprite (else drawn as a small ring, not in the game)
     space2d::SpriteDraw draw;
     int subOrder = 0;     // the sprite's 並び順
+    std::optional<Camera2D> camera;  // it is a camera (カメラ (2D))
 };
+
+// The largest rectangle of `aspect` (width / height) in the middle of r (the game screen's shape).
+Rect Fit(const Rect& r, float aspect) {
+    const float a = std::max(aspect, 1e-3f);
+    float w = r.w, h = r.w / a;
+    if (h > r.h) {
+        h = r.h;
+        w = h * a;
+    }
+    return {r.x + (r.w - w) * 0.5f, r.y + (r.h - h) * 0.5f, w, h};
+}
 
 // An image file read once by the asset's id (several entities with the same image share it). Looked at
 // again now and then: a file changed on disk is read again; a file that cannot be read is told once.
@@ -95,18 +109,18 @@ public:
         if (r.w < 8 || r.h < 8) return;
         transformType_ = reflect::TypeOf<Transform2D>().name;
         spriteType_ = reflect::TypeOf<Sprite>().name;
+        cameraType_ = reflect::TypeOf<Camera2D>().name;
         now_ = c.Time();
         Place(c, host);
         ForgetUnusedImages();
-        c.P().PushClip(r);
-        if (host.game) {  // the game view: only the picture
-            Render(c, r, host);
-            c.P().PopClip();
+        if (host.game) {  // the game view: only the picture, through the game's camera
+            DrawGame(c, r, host);
             return;
         }
+        c.P().PushClip(r);
         const std::optional<BarLayout> bar = Bar(r);
         if (HandleInput(c, r, host, bar)) Place(c, host);  // a drag moved things this frame
-        Render(c, r, host);
+        Render(c, r, host, state_.camera, theme::SceneBackground());
         DrawGizmo(c, r, host);
         DrawHints(c, r, bar);
         c.P().PopClip();
@@ -151,6 +165,9 @@ private:
             p.tree = index++;
             p.active = t.activeInHierarchy;
             parents[e.data.id] = {p.world, p.order};
+            if (const game_production::Component* cc = e.FindComponent(cameraType_); cc && cc->Known()) {
+                p.camera = *static_cast<const Camera2D*>(cc->value.Get());
+            }
             if (const game_production::Component* sc = e.FindComponent(spriteType_); sc && sc->Known()) {
                 const auto& sp = *static_cast<const Sprite*>(sc->value.Get());
                 p.sprite = true;
@@ -478,8 +495,44 @@ private:
         gizmo_.reset();
     }
 
+    // --- The game view -------------------------------------------------------------------------
+    // Through the game settings' 最初のカメラ (a カメラ (2D) on an entity with a Transform 2D), in the game
+    // screen's shape; what is missing when it cannot (and the way to the settings).
+    void DrawGame(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) {
+        std::wstring problem;
+        const game_production::SceneEntity* e = host.camera != 0 ? host.scene.Find(static_cast<int>(host.camera)) : nullptr;
+        const Placed* cam = e ? FindPlaced(e->data.id) : nullptr;
+        if (host.camera == 0) {
+            problem = Tr(L"ゲームの設定の「最初のカメラ」が選ばれていません。カメラ (2D) の部品を付けたエンティティを選ぶと、そこから見た絵がここに映ります。");
+        } else if (!e) {
+            problem = Tr(L"「最初のカメラ」のエンティティがシーンにありません (消されたかもしれません)。ゲームの設定で選び直してください。");
+        } else if (!cam || !cam->camera) {
+            problem = TrF(L"「{}」にカメラ (2D) の部品がありません (Transform 2D も要ります)。インスペクターの「部品を足す」で付けてください。",
+                          Utf8ToWide(e->data.name));
+        } else if (!cam->active) {
+            problem = TrF(L"カメラの「{}」が有効ではありません。有効にすると、そこから見た絵が映ります。", Utf8ToWide(e->data.name));
+        }
+        if (!problem.empty()) {
+            const float cy = r.y + r.h * 0.5f;
+            ui::TextStyle ts;
+            ts.size = 13;
+            ts.wrap = true;
+            ts.color = theme::TextDim;
+            ts.h = ui::HAlign::Center;
+            ts.v = ui::VAlign::Bottom;
+            c.P().Text({r.x + 24, r.y + 8, r.w - 48, cy - r.y}, problem, ts);
+            const Rect button{r.x + (r.w - 200) * 0.5f, cy + 16, 200, 36};
+            if (host.openSettings && w::Button(c, "game_camera_settings", button, Tr(L"ゲームの設定を開く"))) host.openSettings();
+            return;
+        }
+        const Rect at = Fit(r, host.aspect);
+        c.P().PushClip(at);
+        Render(c, at, host, ViewOf(*cam->camera, cam->world, at.h), BackgroundOf(*cam->camera, host.background));
+        c.P().PopClip();
+    }
+
     // --- Drawing -------------------------------------------------------------------------------
-    void Render(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) {
+    void Render(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const space2d::Camera2D& view, Color clear) {
         const bool game = host.game;
         const space2d::ScreenRect sr = ToScreenRect(r);
         lines_.clear();
@@ -488,7 +541,7 @@ private:
         if (!game && state_.grid) Grid(sr);
         if (!game) {
             // The axes through the origin: X red, Y green (as the gizmo's arrows).
-            const Vec2 a = space2d::ToWorld(state_.camera, sr, {r.x, r.Bottom()}), b = space2d::ToWorld(state_.camera, sr, {r.Right(), r.y});
+            const Vec2 a = space2d::ToWorld(view, sr, {r.x, r.Bottom()}), b = space2d::ToWorld(view, sr, {r.Right(), r.y});
             lines_.push_back({{a.x, 0}, {b.x, 0}, theme::AxisX().Alpha(0.8f), 1.f});
             lines_.push_back({{0, a.y}, {0, b.y}, theme::AxisY().Alpha(0.8f), 1.f});
         }
@@ -502,6 +555,7 @@ private:
         if (!game) {
             for (const Placed& p : placed_) {
                 const bool selected = std::find(host.selection.begin(), host.selection.end(), p.id) != host.selection.end();
+                if (p.camera) CameraFrame(p, host.aspect, selected ? theme::Accent : theme::SceneCamera());
                 if (p.sprite) {
                     if (selected) Outline(p, theme::Accent);
                 } else {
@@ -511,8 +565,8 @@ private:
         }
         space2d::RenderFrame2D f;
         f.viewport = sr;
-        f.camera = state_.camera;
-        f.clear = game ? host.background : theme::SceneBackground();
+        f.camera = view;
+        f.clear = clear;
         f.lines = lines_;
         f.sprites = sprites_;
         f.overlay = overlay_;
@@ -542,6 +596,18 @@ private:
         Vec2 k[4];
         space2d::PlacedBoxCorners(p.world, {-half.x, -half.y}, half, k);
         for (int i = 0; i < 4; ++i) overlay_.push_back({k[i], k[(i + 1) % 4], col, 1.5f});
+    }
+
+    // What a camera sees (the game screen's shape about its place), and a small mark on its top edge
+    // (which way is up).
+    void CameraFrame(const Placed& p, float aspect, ui::Color col) {
+        const Vec2 half = HalfExtent(*p.camera, aspect);
+        const Vec2 o = space2d::TransformPoint(p.world, {0, 0});
+        const Vec2 k[4] = {o + Vec2{-half.x, -half.y}, o + Vec2{half.x, -half.y}, o + half, o + Vec2{-half.x, half.y}};
+        for (int i = 0; i < 4; ++i) overlay_.push_back({k[i], k[(i + 1) % 4], col, 1.5f});
+        const float tick = half.y * 0.08f;
+        overlay_.push_back({o + Vec2{-tick, half.y}, o + Vec2{0, half.y + tick}, col, 1.5f});
+        overlay_.push_back({o + Vec2{0, half.y + tick}, o + Vec2{tick, half.y}, col, 1.5f});
     }
 
     // A thing without a sprite: a small ring (the same size on the screen) with a tick along its X axis.
@@ -641,7 +707,7 @@ private:
     SceneViewState2D state_;      // the camera, the tool, the grid (kept in UserSettings)
     reflect::Unknowns unknowns_;  // keys of a newer version: written back unchanged
     space2d::Renderer2D renderer_;
-    std::string transformType_, spriteType_;
+    std::string transformType_, spriteType_, cameraType_;
     std::vector<Placed> placed_;
     std::vector<space2d::Line2D> lines_, overlay_;
     std::vector<space2d::SpriteDraw> sprites_;

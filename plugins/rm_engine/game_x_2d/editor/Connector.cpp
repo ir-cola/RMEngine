@@ -6,6 +6,7 @@
 #include "rm_engine/game_production/runtime/Components.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_2d/editor/SceneView2D.h"
+#include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Spin2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
@@ -56,6 +57,9 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // ... and may be drawn as a picture (added by hand).
     static const game_production::ComponentInfo kSprite{.type = &reflect::TypeOf<Sprite>, .icon = "image"};
     registry.Contribute(game_production::kComponentPoint, kSprite);
+    // ... a camera: what the game sees (the game settings' 最初のカメラ points at one).
+    static const game_production::ComponentInfo kCamera{.type = &reflect::TypeOf<Camera2D>, .icon = "camera"};
+    registry.Contribute(game_production::kComponentPoint, kCamera);
     // 回り続ける (2D): turns its entity while the game plays (several add up), and the system that does it.
     static const game_production::ComponentInfo kSpin{.type = &reflect::TypeOf<Spin2D>, .multiple = true};
     registry.Contribute(game_production::kComponentPoint, kSpin);

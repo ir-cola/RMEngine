@@ -7,6 +7,7 @@
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_2d/editor/SceneViewState2D.h"
+#include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Spin2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/space2d/editor/Gizmo2D.h"
@@ -288,4 +289,22 @@ RM_TEST(Space2d_SpriteAndViewState_SaveAndLoad) {
     CHECK(Near(st2.camera.center, {3, -4}) && st2.tool == gizmo2d::Tool::Rotate && !st2.grid);
     CHECK(st2.camera.zoom <= kMaxZoom);
     CHECK(reflect::Save(st2, &unknowns).Get("newerKey").AsInt() == 7);
+}
+
+RM_TEST(Space2d_GameCamera_WhatItSees) {
+    game_x_2d::Camera2D cam;  // 5 units above and below its middle
+    const Mat3 world = LocalMatrix(Make({3, -2}, 0, {1, 1}));
+    const Camera2D view = game_x_2d::ViewOf(cam, world, 400);
+    CHECK(Near(view.center, {3, -2}));
+    CHECK(Near(view.zoom, 40));  // 400 DIPs show 10 units
+    const ScreenRect r{0, 0, 600, 400};
+    CHECK(Near(ToScreen(view, r, {3, 3}), {300, 0}));     // the top edge of what it sees
+    CHECK(Near(game_x_2d::HalfExtent(cam, 1.5f), {7.5f, 5}));
+    cam.size = 0;  // (never 0 after loading; still no division by 0)
+    CHECK(std::isfinite(game_x_2d::ViewOf(cam, world, 400).zoom));
+    const Color game{0.1f, 0.2f, 0.3f, 1};
+    CHECK(game_x_2d::BackgroundOf(cam, game) == game);
+    cam.ownBackground = true;
+    cam.background = {1, 0, 0, 1};
+    CHECK(game_x_2d::BackgroundOf(cam, game) == cam.background);
 }
