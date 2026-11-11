@@ -31,6 +31,13 @@ rm::editor::LaunchOptions ParseCommandLine() {
         }
     }
     LocalFree(argv);
+    // A path relative to where the engine was started from becomes a full one: the Hub's list of
+    // projects holds full paths, so the same project never shows twice.
+    if (!opt.projectFile.empty()) {
+        std::error_code ec;
+        const auto full = std::filesystem::absolute(opt.projectFile, ec);
+        if (!ec) opt.projectFile = full.lexically_normal();
+    }
     return opt;
 }
 

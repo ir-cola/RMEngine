@@ -53,6 +53,8 @@ public:
 
     void Text(const Rect& r, std::wstring_view text, const TextStyle& style);
     float TextWidth(std::wstring_view text, float size, bool bold = false);
+    // How tall the text is when wrapped to `width` (as Text draws it with style.wrap).
+    float TextHeight(std::wstring_view text, float size, float width, bool bold = false);
     // x offset of the caret placed before text[index].
     float CaretX(std::wstring_view text, size_t index, float size, bool bold = false);
     // Index of the caret position closest to x.

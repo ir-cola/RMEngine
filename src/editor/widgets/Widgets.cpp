@@ -94,14 +94,14 @@ void DrawBackdrop(ui::Context& c, bool floating) {
     if (const OrnamentInfo* o = theme::CurrentOrnament) o->window(c, c.Viewport(), floating);
 }
 
-void DrawBackdropOn(ui::Context& c, const Rect& r, float corner) {
+void DrawBackdropOn(ui::Context& c, const Rect& r, float corner, bool panelThings) {
     const OrnamentInfo* o = theme::CurrentOrnament;
     if (!o || r.w <= 0 || r.h <= 0) return;
     const auto it = FloatingWindows().find(&c);
     c.P().PushClip(r);
     o->window(c, c.Viewport(), it != FloatingWindows().end() && it->second);
     c.P().PopClip();
-    if (o->panel) o->panel(c, r, corner);
+    if (panelThings && o->panel) o->panel(c, r, corner);
 }
 
 void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
@@ -120,7 +120,7 @@ void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
 void DrawBar(ui::Context& c, const Rect& r, Color base) {
     const theme::Gradient g = theme::Gentle(base);
     c.P().FillRectGradient(r, g.top, g.bottom);
-    DrawBackdropOn(c, r);
+    DrawBackdropOn(c, r, 0, false);  // the picture only: no snow piled on a thin strip
 }
 
 void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {

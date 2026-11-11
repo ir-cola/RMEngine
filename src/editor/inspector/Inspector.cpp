@@ -673,8 +673,10 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 ui::TextStyle ns = Text(12, theme::TextFaint);
                 ns.wrap = true;
                 ns.v = ui::VAlign::Top;
-                c.P().Text({x.view.x + 14, x.y, x.view.w - 28, 40}, b.note, ns);
-                x.y += 42;
+                // As tall as the note is (a long one wraps to three lines and more).
+                const float h = std::ceil(c.P().TextHeight(b.note, ns.size, x.view.w - 28));
+                c.P().Text({x.view.x + 14, x.y, x.view.w - 28, h + 2}, b.note, ns);
+                x.y += h + 8;
             }
             if (b.modes.size() == 2) {
                 // Two ways of showing the block: a switch above its fields (left = the first way).

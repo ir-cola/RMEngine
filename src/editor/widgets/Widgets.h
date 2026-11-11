@@ -58,8 +58,9 @@ struct OrnamentInfo {
 inline constexpr char kOrnamentPoint[] = "core.theme_ornament";
 // First in a frame, after clearing the window: the theme's picture on its background.
 void DrawBackdrop(ui::Context& c, bool floating);
-// The picture again on a surface just filled (DrawPanelFrame / DrawBar do it), clipped to `r`.
-void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0);
+// The picture again on a surface just filled (DrawPanelFrame / DrawBar do it), clipped to `r`, and
+// (`panelThings`) the pack's things of a panel (winter: snow piled at its bottom) - not on bars.
+void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0, bool panelThings = true);
 
 // A strip of the window's frame (menu bar, status bar, sidebar): gentle gradient, no border.
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);

@@ -265,6 +265,17 @@ float Painter::TextWidth(std::wstring_view text, float size, bool bold) {
     return m.widthIncludingTrailingWhitespace;
 }
 
+float Painter::TextHeight(std::wstring_view text, float size, float width, bool bold) {
+    if (text.empty() || width <= 0) return 0.f;
+    auto layout = Layout(text, size, bold);
+    if (!layout) return 0.f;
+    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+    layout->SetMaxWidth(width);
+    DWRITE_TEXT_METRICS m{};
+    layout->GetMetrics(&m);
+    return m.height;
+}
+
 float Painter::CaretX(std::wstring_view text, size_t index, float size, bool bold) {
     if (index == 0 || text.empty()) return 0.f;
     if (index > text.size()) index = text.size();

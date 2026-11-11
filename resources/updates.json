@@ -7,6 +7,18 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "シーンビューで物の表の面が暗く、床に影が出なかったのを直す (見えている側を目の位置から決める)",
+          "en": "Fixed objects in the scene view looking dark and shadows missing on the floor (the side seen is now told from the eye)"
+        },
+        {
+          "ja": "ウィンター: メニューやタブの細い帯には雪を積もらせない。インスペクターの長い案内文が下の行に重ならないように",
+          "en": "Winter: no snow piled on the thin menu and tab bars. A long note in the inspector no longer overlaps the row below"
+        },
+        {
+          "ja": "コマンドラインで相対パスのプロジェクトを渡したとき、Hub の一覧に同じプロジェクトが 2 つ出ないように",
+          "en": "A project passed on the command line with a relative path no longer shows twice in the Hub's list"
+        },
+        {
           "ja": "アセットのパネル: Assets フォルダの木 (種類ごとの印)・名前の変更・ドラッグでフォルダへ移動・新しいフォルダ・ごみ箱へ削除・エクスプローラーで表示。ファイルには動かしても名前を変えても変わらない ID (横の .meta) が付き、エクスプローラーで動かしても付いていく。インスペクターの参照の欄 (アセット・エンティティ) にドラッグで入れる・一覧から選ぶ・× で外す。メッシュの「モデル」もアセットの参照に (動かしても外れない)",
           "en": "Assets panel: the Assets folder as a tree (an icon per kind), rename, drag into folders, new folder, delete to the Recycle Bin, show in Explorer. Every file gets an ID that survives moving and renaming (in a .meta next to it), even when moved in Explorer. Reference fields (asset, entity) in the Inspector: drop one in, pick from a list, or clear with ×. A mesh's Model is now an asset reference (it stays when the file moves)"
         },

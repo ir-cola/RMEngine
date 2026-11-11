@@ -23,6 +23,7 @@ cbuffer PerDraw : register(b0) {
     float4 color;
     float4 light;            // xyz: where the light goes; w: 1 = shadows
     float4 shadow;           // x: one texel of the shadow map (uv); y: depth bias; z: normal offset (world)
+    float4 eye;              // xyz: where the camera is (world)
 };
 Texture2D shadowMap : register(t0);
 SamplerComparisonState shadowSampler : register(s0);
@@ -38,7 +39,7 @@ LineOut LineVS(LineIn i) {
 float4 LinePS(LineOut i) : SV_Target { return i.col; }
 
 struct MeshIn  { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; };
-struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float4 lpos : TEXCOORD1; };
+struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float4 lpos : TEXCOORD1; float3 wpos : TEXCOORD2; };
 MeshOut MeshVS(MeshIn i) {
     MeshOut o;
     float4 w = mul(world, float4(i.pos, 1));
@@ -47,6 +48,7 @@ MeshOut MeshVS(MeshIn i) {
     // Looked up a little off the surface (normal offset): a surface does not shadow itself.
     float3 n = o.nrm * rsqrt(max(dot(o.nrm, o.nrm), 1e-12));
     o.lpos = mul(lightViewProj, float4(w.xyz + n * shadow.z, 1));
+    o.wpos = w.xyz;
     return o;
 }
 
@@ -65,8 +67,12 @@ float Lit(float4 lpos) {
     return sum / 9;
 }
 
-float4 MeshPS(MeshOut i, bool front : SV_IsFrontFace) : SV_Target {
-    float3 n = normalize(front ? i.nrm : -i.nrm);  // the back of an open model is lit as its own side
+float4 MeshPS(MeshOut i) : SV_Target {
+    // The side seen is the side facing the eye (the back of an open model is lit as its own side).
+    // Told from the eye, not from the triangle's winding on the screen, so a mirrored model or a
+    // flipped projection never lights the wrong side.
+    float3 n = normalize(i.nrm);
+    if (dot(n, eye.xyz - i.wpos) < 0) n = -n;
     float lit = saturate(dot(n, -normalize(light.xyz))) * Lit(i.lpos);
     float sky = 0.5 + 0.5 * n.y;  // faces turned up are a little brighter even in shadow
     float k = 0.30 + 0.12 * sky + 0.58 * lit;
@@ -74,8 +80,8 @@ float4 MeshPS(MeshOut i, bool front : SV_IsFrontFace) : SV_Target {
 }
 
 // The floor: nothing of its own, only the shadow (seen from above).
-float4 FloorPS(MeshOut i, bool front : SV_IsFrontFace) : SV_Target {
-    if (!front) discard;
+float4 FloorPS(MeshOut i) : SV_Target {
+    if (eye.y < 0) discard;  // seen from below the floor
     return float4(color.rgb, color.a * (1 - Lit(i.lpos)));
 }
 
@@ -90,6 +96,7 @@ struct Constants {
     float color[4];
     float light[4];
     float shadow[4];
+    float eye[4];
 };
 static_assert(sizeof(Constants) % 16 == 0);
 static_assert(sizeof(MeshVertex) == 32, "MeshVertex goes to the GPU as it is (POSITION, NORMAL, TEXCOORD)");
@@ -214,8 +221,7 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
 
     D3D11_RASTERIZER_DESC rd{};
     rd.FillMode = D3D11_FILL_SOLID;
-    rd.CullMode = D3D11_CULL_NONE;  // open models show their inside too (lit as its own side)
-    rd.FrontCounterClockwise = FALSE;  // counter-clockwise in the world is clockwise on the screen (y goes down)
+    rd.CullMode = D3D11_CULL_NONE;  // open models show their inside too (lit as its own side: MeshPS asks the eye)
     rd.DepthClipEnable = TRUE;
     rd.MultisampleEnable = TRUE;
     D3D11_RASTERIZER_DESC sd = rd;
@@ -396,6 +402,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
 
     Constants c{};
     CopyMatrix(c.viewProj, f.projection * f.view);
+    if (const auto toWorld = Inverse(f.view)) {
+        const Vec3 eye = TransformPoint(*toWorld, {0, 0, 0});
+        c.eye[0] = eye.x, c.eye[1] = eye.y, c.eye[2] = eye.z;
+    }
     const Vec3 l = f.lightDirection;
     c.light[0] = l.x, c.light[1] = l.y, c.light[2] = l.z;
     auto draw = [&](const GpuMesh& mesh, const Mat4& world, Color col) {
