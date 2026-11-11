@@ -101,18 +101,23 @@ float AssetPanel::RowHeight() const {
 bool AssetPanel::DrawPicture(ui::Context& c, const tree::Item& item, const Rect& r) {
     if (!thumbnails_ || thumbnailSize_ < kThumbnailsFrom) return false;
     const auto it = guids_.find(item.id);
-    const asset::Entry* e = it != guids_.end() ? lib_.Index().ByGuid(it->second) : nullptr;
-    if (!e) return false;
-    const asset::Kind kind = asset::KindOf(e->path, e->folder);
-    if (!thumbnails_->Has(kind)) return false;
-    // In the window's pixels (sharp on a high-DPI screen).
-    float dpiX = 96, dpiY = 96;
-    if (ID2D1DeviceContext* dc = c.P().DC()) dc->GetDpi(&dpiX, &dpiY);
-    const uint32_t pixels = static_cast<uint32_t>(std::ceil(r.w * dpiX / 96.f));
-    ID2D1Bitmap* bitmap = thumbnails_->Get(c, e->guid, kind, lib_.FullPath(*e), pixels);
+    if (it == guids_.end()) return false;
+    ID2D1Bitmap* bitmap = AssetThumbnail(c, lib_, *thumbnails_, it->second, r.w);
     if (!bitmap) return false;
     w::DrawThumbnail(c, r, bitmap, item.dimmed);
     return true;
+}
+
+ID2D1Bitmap* AssetThumbnail(ui::Context& c, const AssetLibrary& lib, Thumbnails& thumbnails, std::string_view guid, float size) {
+    const asset::Entry* e = lib.Index().ByGuid(guid);
+    if (!e) return nullptr;
+    const asset::Kind kind = asset::KindOf(e->path, e->folder);
+    if (!thumbnails.Has(kind)) return nullptr;
+    // In the window's pixels (sharp on a high-DPI screen).
+    float dpiX = 96, dpiY = 96;
+    if (ID2D1DeviceContext* dc = c.P().DC()) dc->GetDpi(&dpiX, &dpiY);
+    const uint32_t pixels = static_cast<uint32_t>(std::ceil(size * dpiX / 96.f));
+    return thumbnails.Get(c, e->guid, kind, lib.FullPath(*e), pixels);
 }
 
 void AssetPanel::Report(const std::wstring& problem) {

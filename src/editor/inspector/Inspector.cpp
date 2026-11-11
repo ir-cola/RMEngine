@@ -237,7 +237,9 @@ void DrawRef(Pass& x, const Spot& s, const Put& put) {
     const bool withOthers = !s.others.empty();
     const float width = std::max(s.r.w, 300.f);
     const FieldType type = s.vt.type;
-    c.AddOverlay([&c, st, choices = std::move(choices), width, withOthers, type, editFor = s.editFor, wrap = x.wrap] {
+    // Assets: their thumbnails in the list (the same ones as the アセット panel's).
+    auto thumbnail = isAsset ? refs->thumbnail : nullptr;
+    c.AddOverlay([&c, st, choices = std::move(choices), width, withOthers, type, editFor = s.editFor, wrap = x.wrap, thumbnail] {
         std::vector<const RefChoice*> picks;
         std::vector<w::PickRow> rows;
         if (st->pickSearch.empty()) {  // "(なし)" first, while nothing is typed
@@ -251,7 +253,11 @@ void DrawRef(Pass& x, const Spot& s, const Put& put) {
         }
         const bool wasEnabled = c.InputEnabled();
         c.SetInputEnabled(true);
-        const int picked = w::PickerPopup(c, st->popup, "refpick", st->pickSearch, rows, width);
+        std::function<ID2D1Bitmap*(size_t, float)> picture;
+        if (thumbnail) {
+            picture = [&](size_t i, float size) -> ID2D1Bitmap* { return picks[i] ? thumbnail(c, picks[i]->value, size) : nullptr; };
+        }
+        const int picked = w::PickerPopup(c, st->popup, "refpick", st->pickSearch, rows, width, thumbnail ? 40.f : 26.f, picture);
         c.SetInputEnabled(wasEnabled);
         if (picked < 0) return;
         const RefChoice* r = picks[static_cast<size_t>(picked)];

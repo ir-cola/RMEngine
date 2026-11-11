@@ -52,6 +52,10 @@ struct SceneEntity {
     std::vector<Component> components;  // in the order they were added
     PrefabLink prefab;
 
+    // Every entity reference (EntityRef) in its components: to[id] when it is there; otherwise kept,
+    // or cleared (0) with `clearOthers`. Copies use it to point at the copies.
+    void MapEntityRefs(const std::unordered_map<int, int>& to, bool clearOthers);
+
     // The nth component of `type` (0 = the first of that type).
     Component* FindComponent(std::string_view type, size_t nth = 0);
     const Component* FindComponent(std::string_view type, size_t nth = 0) const;

@@ -70,6 +70,8 @@ std::wstring KindLabel(asset::Kind kind);
 
 // What a reference field (AssetRef) of the インスペクター shows and lists.
 std::optional<inspector::RefChoice> AssetChoice(const AssetLibrary& library, std::string_view guid);
+// The thumbnail of an asset, `size` DIPs square (in the window's pixels); null: none, or not made yet.
+ID2D1Bitmap* AssetThumbnail(ui::Context& c, const AssetLibrary& library, Thumbnails& thumbnails, std::string_view guid, float size);
 std::vector<inspector::RefChoice> AssetChoices(const AssetLibrary& library);
 
 }  // namespace rm::editor

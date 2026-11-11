@@ -70,6 +70,7 @@
     <ClCompile Include="TestSystems.cpp" />
     <ClCompile Include="TestPrefab.cpp" />
     <ClCompile Include="TestAsset.cpp" />
+    <ClCompile Include="TestEntityRefs.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />

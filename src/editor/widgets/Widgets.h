@@ -213,13 +213,17 @@ struct PickRow {
     bool hasIcon = false;
     Icon icon = Icon::File;
 };
+// `picture` (optional): a small picture for row i, asked only for the rows in view (null: its icon);
+// `rowHeight` makes room for it.
 int PickerPopup(ui::Context& c, Popup& popup, std::string_view id, std::string& search, std::span<const PickRow> rows,
-                float width = 320.f);
+                float width = 320.f, float rowHeight = 26.f, const std::function<ID2D1Bitmap*(size_t row, float size)>& picture = {});
 
 // --- Dragging a thing from one panel to another (an asset or an item of the 階層 onto a reference
 // field of the インスペクター). One mouse, so one thing at a time for the whole program. The panel it
 // comes from sets it while the drag goes on and ends it when the button is let go; a place that takes
-// it asks DropTarget. Only within one window (the window that has the mouse captured).
+// it asks DropTarget. The window that has the mouse captured sees the drag; when the mouse is over
+// another window of the program, the editor tells that window where (SetDragElsewhere), so its places
+// light up and take the thing too (a panel moved out into its own window).
 struct DragThing {
     std::string kind;                 // what it is: "asset" (values: ids) / "item" (values: ids of the 階層's items)
     std::vector<std::string> values;  // one or more
@@ -234,6 +238,13 @@ const DragThing* DropTarget(ui::Context& c, const ui::Rect& r, const std::functi
 // Whether a DropTarget under the mouse took the thing in this frame (the tag next to the mouse shows
 // it). Reading it forgets it - call it once a frame, at its end.
 bool TakeDragAccepted();
+// The dragged thing is over another window (`target`: its context; x, y: the mouse there, in its
+// DIPs); `released`: let go there. Null target: over no other window of ours.
+void SetDragElsewhere(const ui::Context* target, float x, float y, bool released);
+// Where the drag is now, for the window it was told to (SetDragElsewhere): null when none.
+const ui::Context* DragElsewhereTarget();
+// At the end of a window's frame: a drop handed to it is used up (taken or not).
+void EndDragFrame(ui::Context& c);
 
 // --- Modal dialog -------------------------------------------------------------
 // Dims the screen, draws the dialog box and title, returns the content area.

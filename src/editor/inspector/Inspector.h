@@ -70,6 +70,8 @@ struct Refs {
     std::function<std::vector<RefChoice>()> assets;                         // every file and folder
     std::function<std::optional<RefChoice>(uint64_t id)> item;             // an item of the 階層
     std::function<std::vector<RefChoice>()> items;
+    // An asset's small picture (the アセット panel's thumbnail), `size` DIPs; null: none (yet).
+    std::function<ID2D1Bitmap*(ui::Context& c, const std::string& guid, float size)> thumbnail;
 };
 
 // One lump of values.

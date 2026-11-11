@@ -1027,12 +1027,14 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
     });
 }
 
-int PickerPopup(ui::Context& c, Popup& popup, std::string_view idStr, std::string& search, std::span<const PickRow> rows, float width) {
+int PickerPopup(ui::Context& c, Popup& popup, std::string_view idStr, std::string& search, std::span<const PickRow> rows, float width,
+                float rowHeight, const std::function<ID2D1Bitmap*(size_t row, float size)>& picture) {
     if (!popup.open) return -1;
     auto& p = c.P();
     const auto& in = c.In();
-    constexpr float kSearchH = 38.f, kRowH = 26.f;
-    const float listH = kRowH * static_cast<float>(std::clamp<size_t>(rows.size(), 1, 10));
+    constexpr float kSearchH = 38.f;
+    const float kRowH = std::max(26.f, rowHeight);
+    const float listH = kRowH * static_cast<float>(std::clamp<size_t>(rows.size(), 1, kRowH > 30.f ? 7 : 10));
     const float h = kPad * 2 + kSearchH + listH;
     const Rect& vp = c.Viewport();
     const Rect box{std::clamp(popup.x, vp.x + 4, std::max(vp.x + 4, vp.Right() - width - 4)),
@@ -1075,9 +1077,15 @@ int PickerPopup(ui::Context& c, Popup& popup, std::string_view idStr, std::strin
         DrawRow(c, row, {false, b.hovered, true});
         const PickRow& it = rows[i];
         float x = row.x + 8;
-        if (it.hasIcon) {
-            DrawIcon(c, {x, row.y, 18, row.h}, it.icon, it.icon == Icon::Folder ? theme::Folder : theme::TextDim);
-            x += 22;
+        const float picSize = kRowH - 6.f;
+        ID2D1Bitmap* bitmap = picture ? picture(i, picSize) : nullptr;
+        if (bitmap) {
+            DrawThumbnail(c, {x, row.y + 3.f, picSize, picSize}, bitmap);
+            x += picSize + 6.f;
+        } else if (it.hasIcon) {
+            const float iconW = kRowH > 30.f ? picSize : 18.f;
+            DrawIcon(c, {x, row.y, iconW, row.h}, it.icon, it.icon == Icon::Folder ? theme::Folder : theme::TextDim);
+            x += iconW + 4.f;
         }
         ui::TextStyle ts;
         ts.size = theme::FontSize;
@@ -1104,6 +1112,11 @@ struct DragState {
     bool active = false;
     DragThing thing;
     bool accepted = false;
+    // Over another window (see SetDragElsewhere): a copy of the thing, kept for that window's frame.
+    const ui::Context* elsewhere = nullptr;
+    float x = 0, y = 0;
+    bool released = false;
+    DragThing elsewhereThing;
 };
 DragState& Drag() {
     static DragState d;
@@ -1126,6 +1139,17 @@ void EndDragThing(ui::Context& c) {
 const DragThing* DraggedThing() { return Drag().active ? &Drag().thing : nullptr; }
 
 const DragThing* DropTarget(ui::Context& c, const Rect& r, const std::function<bool(const DragThing&)>& accepts) {
+    DragState& d = Drag();
+    if (d.elsewhere == &c) {
+        // Dragged in another window, over this one.
+        const bool over = r.Contains(d.x, d.y) && c.CurrentClip().Contains(d.x, d.y);
+        if (!over || (accepts && !accepts(d.elsewhereThing))) return nullptr;
+        c.P().StrokeRoundRect(r.Inset(-1), theme::Radius, theme::Accent, 2.f);
+        if (!d.released) return nullptr;
+        d.released = false;
+        d.elsewhere = nullptr;
+        return &d.elsewhereThing;  // valid until the next drag
+    }
     const DragThing* t = DraggedThing();
     const bool released = c.MouseReleased();
     // (only while the button is held or just let go: a drag whose panel went away leaves nothing behind)
@@ -1140,6 +1164,25 @@ bool TakeDragAccepted() {
     const bool a = Drag().accepted;
     Drag().accepted = false;
     return a;
+}
+
+void SetDragElsewhere(const ui::Context* target, float x, float y, bool released) {
+    DragState& d = Drag();
+    d.elsewhere = target;
+    d.x = x;
+    d.y = y;
+    d.released = target && released;
+    if (target && d.active) d.elsewhereThing = d.thing;
+}
+
+const ui::Context* DragElsewhereTarget() { return Drag().elsewhere; }
+
+void EndDragFrame(ui::Context& c) {
+    DragState& d = Drag();
+    if (d.elsewhere == &c && d.released) {
+        d.elsewhere = nullptr;
+        d.released = false;
+    }
 }
 
 Rect BeginModal(ui::Context& c, float width, float height, std::wstring_view title) {

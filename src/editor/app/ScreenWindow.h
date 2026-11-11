@@ -35,6 +35,7 @@ public:
     void Defer(std::function<void()> fn);
     void SetTitle(std::wstring_view title) { window_.SetTitle(title); }
     float Scale() const { return window_.Scale(); }
+    const ui::Context& UiContext() const { return ctx_; }
     // The color theme or the language changed: the title bar follows, everything is drawn again.
     virtual void OnLookChanged();
 

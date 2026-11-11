@@ -403,6 +403,33 @@ void Load(const TypeDesc& type, void* object, const json::Value& v, Unknowns* un
     }
 }
 
+namespace {
+
+void MapValueRefs(const ValueType& vt, const ArrayOps* array, void* p, const std::function<uint64_t(uint64_t)>& map) {
+    switch (vt.type) {
+        case FieldType::EntityRef: {
+            uint64_t& id = static_cast<EntityRef*>(p)->id;
+            if (id != 0) id = map(id);
+            return;
+        }
+        case FieldType::Struct: MapEntityRefs(*vt.structType, p, map); return;
+        case FieldType::Array: {
+            const size_t n = array->size(p);
+            for (size_t i = 0; i < n; ++i) MapValueRefs(array->element, nullptr, array->at(p, i), map);
+            return;
+        }
+        default: return;
+    }
+}
+
+}  // namespace
+
+void MapEntityRefs(const TypeDesc& type, void* object, const std::function<uint64_t(uint64_t)>& map) {
+    for (const FieldDesc& f : type.fields) {
+        if (!f.transient) MapValueRefs(f.value, f.array, f.Get(object), map);
+    }
+}
+
 bool Equals(const TypeDesc& type, const void* a, const void* b) {
     for (const FieldDesc& f : type.fields) {
         if (!f.transient && !ValueEquals(f, f.value, f.Get(a), f.Get(b))) return false;

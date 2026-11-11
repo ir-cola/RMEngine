@@ -53,6 +53,9 @@ public:
 
     // --- Called by the floating panel windows ---
     void DrawFloating(ui::Context& c, float width, float height, FloatWindow& window);
+    // A thing dragged out of a panel (an asset, an item of the 階層) is over another window of this
+    // editor: that window is told where, so a reference field there takes it (w::SetDragElsewhere).
+    void ForwardDrag(ui::Context& c, HWND self, float width, float height);
     void CloseFloatingWindow(uint32_t floatingId);
     void FloatingMoving(uint32_t floatingId, HWND hwnd);
     void FloatingMoveEnded(uint32_t floatingId);
@@ -199,6 +202,7 @@ private:
     bool sharedReadOnly_ = false;
 
     std::unique_ptr<AssetLibrary> assets_;  // the project's Assets/ (ids, file operations) - every software's
+    HWND dragTarget_ = nullptr;  // the window last told about a drag over it (ForwardDrag)
     std::unique_ptr<Thumbnails> thumbnails_;  // the assets' small pictures - every software's panel shares them
 
     int logSink_ = 0;

@@ -9,6 +9,7 @@
 #include "base/Json.h"
 #include "core/reflect/Reflect.h"
 
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -49,6 +50,10 @@ void Load(const TypeDesc& type, void* object, const json::Value& v, Unknowns* un
 // One field (the value at `field.Get(object)`); `unknowns` is the object's (enum names live there).
 json::Value SaveField(const FieldDesc& field, const void* object, const Unknowns* unknowns);
 void LoadField(const FieldDesc& field, void* object, const json::Value& v, Unknowns* unknowns, Warnings* warnings);
+
+// Every EntityRef inside `object` (in nested structs and arrays too) that is set: id = map(id)
+// (0 clears it). Copies of entities use it to point at the copies (pasting, prefabs).
+void MapEntityRefs(const TypeDesc& type, void* object, const std::function<uint64_t(uint64_t)>& map);
 
 bool Equals(const TypeDesc& type, const void* a, const void* b);
 // Bit i set = field i differs (transient fields never). At most 64 fields (rmgen checks).

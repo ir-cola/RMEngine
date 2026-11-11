@@ -548,6 +548,38 @@ void EditorScreen::DrawFloating(ui::Context& c, float width, float height, Float
     Active().dock.Draw(c, Rect{0, 0, width, height}.Inset(4), window.Id(), window.Hwnd(), window.Scale());
     Active().dock.DrawOverlay(c, window.Id());
     c.SetInputEnabled(true);
+    ForwardDrag(c, window.Hwnd(), width, height);
+    w::EndDragFrame(c);
+}
+
+void EditorScreen::ForwardDrag(ui::Context& c, HWND self, float width, float height) {
+    const ui::Input& in = c.In();
+    // Only the window the drag is in has the button down (it has the mouse captured) or sees it let go.
+    if (!w::DraggedThing() || (!in.down[0] && !in.released[0])) return;
+    ScreenWindow* target = nullptr;
+    POINT pt{};
+    const bool outside = in.mouseX < 0 || in.mouseY < 0 || in.mouseX >= width || in.mouseY >= height;
+    if (outside && GetCursorPos(&pt)) {
+        const HWND under = platform::TopLevelWindowAt(pt, self);
+        if (under == Hwnd()) target = this;
+        for (auto& f : floats_) {
+            if (under && f->Hwnd() == under) target = f.get();
+        }
+    }
+    float x = 0, y = 0;
+    if (target) {
+        ScreenToClient(target->Hwnd(), &pt);
+        x = static_cast<float>(pt.x) / target->Scale();
+        y = static_cast<float>(pt.y) / target->Scale();
+    }
+    const HWND now = target ? target->Hwnd() : nullptr;
+    if (dragTarget_ && dragTarget_ != now) InvalidateRect(dragTarget_, nullptr, FALSE);  // its outline goes away
+    dragTarget_ = in.released[0] ? nullptr : now;
+    w::SetDragElsewhere(target ? &target->UiContext() : nullptr, x, y, in.released[0]);
+    if (target) {
+        target->Invalidate();
+        c.RequestRedraw();  // keep following the mouse
+    }
 }
 
 void EditorScreen::CloseFloatingWindow(uint32_t floatingId) { Active().dock.CloseFloating(floatingId); }
@@ -598,6 +630,9 @@ inspector::Refs EditorScreen::MakeRefs() {
     AssetLibrary* lib = assets_.get();
     refs.asset = [lib](std::string_view guid) { return AssetChoice(*lib, guid); };
     refs.assets = [lib] { return AssetChoices(*lib); };
+    if (Thumbnails* thumbs = thumbnails_.get()) {
+        refs.thumbnail = [lib, thumbs](ui::Context& c, const std::string& guid, float size) { return AssetThumbnail(c, *lib, *thumbs, guid, size); };
+    }
     // An entity reference = an item of this software's 階層 (game: an entity). Its parent is "where".
     tree::Source* src = Active().software ? Active().software->Hierarchy() : nullptr;
     if (!src) return refs;
@@ -795,6 +830,8 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     c.SetInputEnabled(true);
     if (menuPopup_.open) DrawOpenMenu(c);
     DrawModal(c);
+    ForwardDrag(c, Hwnd(), width, height);
+    w::EndDragFrame(c);
 }
 
 void EditorScreen::BeginInstallPlugin(const PluginId& id) {

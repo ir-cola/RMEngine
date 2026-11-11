@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -181,6 +182,18 @@ int Scene::Create(std::string name, int parent, size_t index) {
     return entities_[pos].data.id;
 }
 
+void SceneEntity::MapEntityRefs(const std::unordered_map<int, int>& to, bool clearOthers) {
+    const auto map = [&](uint64_t id) -> uint64_t {
+        const auto it = id <= static_cast<uint64_t>(std::numeric_limits<int>::max()) ? to.find(static_cast<int>(id)) : to.end();
+        if (it != to.end()) return static_cast<uint64_t>(it->second);
+        return clearOthers ? 0 : id;
+    };
+    reflect::MapEntityRefs(reflect::TypeOf<Entity>(), &data, map);
+    for (Component& c : components) {
+        if (c.Known()) reflect::MapEntityRefs(*c.value.Type(), c.value.Get(), map);  // (one not offered now stays as read)
+    }
+}
+
 std::vector<int> Scene::Duplicate(std::span<const int> ids) {
     std::vector<int> made;
     for (const int root : Roots(ids)) {
@@ -195,6 +208,7 @@ std::vector<int> Scene::Duplicate(std::span<const int> ids) {
         }
         for (auto& c : copies) {
             if (const auto it = newId.find(c.data.parent); it != newId.end()) c.data.parent = it->second;  // the root keeps its parent
+            c.MapEntityRefs(newId, false);  // a reference inside the copied ones points at the copy
         }
         made.push_back(newId[root]);
         const size_t pos = IndexOf(root) + 1;
@@ -380,6 +394,9 @@ std::vector<int> Scene::PasteList(const json::Value& entities, int parent, size_
         }
         copies.push_back(std::move(e));
     }
+    // References to what was copied point at the copies; to anything else they stay (pasted in the
+    // same scene: still that entity) - a prefab's point only inside it (the others are 0 in its file).
+    for (SceneEntity& e : copies) e.MapEntityRefs(newId, false);
     const size_t pos = InsertPosition(parent, index);
     entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(std::min(pos, entities_.size())), std::make_move_iterator(copies.begin()),
                      std::make_move_iterator(copies.end()));

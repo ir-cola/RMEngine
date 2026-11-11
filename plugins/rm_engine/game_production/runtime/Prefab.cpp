@@ -58,7 +58,7 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
     }
     std::unordered_map<int, int> ids;  // scene id -> id in the file
     std::unordered_set<int> used;
-    json::Value list = json::Value::MakeArray();
+    std::vector<const SceneEntity*> inside;
     for (const TreeEntry& t : scene.TreeOrder()) {  // parents first, siblings in order
         const SceneEntity& e = *t.entity;
         if (!scene.IsUnder(e.data.id, root)) continue;
@@ -67,6 +67,15 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
         const int id = k != kept.end() && !used.contains(k->second) ? k->second : next++;
         used.insert(id);
         ids[e.data.id] = id;
+        inside.push_back(&e);
+    }
+    json::Value list = json::Value::MakeArray();
+    for (const SceneEntity* ep : inside) {
+        // Entity references in the file's ids; one to an entity outside the prefab is cleared (a
+        // prefab is placed in other scenes - the placed one keeps it as an override).
+        SceneEntity e = *ep;
+        e.MapEntityRefs(ids, true);
+        const int id = ids[e.data.id];
         json::Value ej = scene.SaveEntity(e);
         ej.Erase("prefab");
         ej.Set("id", id);
@@ -91,6 +100,13 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
     }
     const reflect::TypeDesc& entityType = reflect::TypeOf<Entity>();
     const auto& list = prefab.Get("entities").Items();
+    std::unordered_map<int, int> toScene;  // id in the file -> the placed entity's id
+    for (size_t i = 0; i < list.size(); ++i) {
+        const int src = static_cast<int>(list[i].Get("id").AsInt(0));
+        const auto found = bySource.find(src);
+        if (i == 0 && src > 0) toScene[src] = root;
+        else if (src > 0 && found != bySource.end() && found->second->data.id != root) toScene.try_emplace(src, found->second->data.id);
+    }
     for (size_t i = 0; i < list.size(); ++i) {
         const json::Value& p = list[i];
         const int src = static_cast<int>(p.Get("id").AsInt(0));
@@ -104,7 +120,8 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
         }
         const SceneEntity& e = *placed;
         const bool isRoot = i == 0;
-        const SceneEntity pe = scene.LoadEntity(p, nullptr);
+        SceneEntity pe = scene.LoadEntity(p, nullptr);
+        pe.MapEntityRefs(toScene, true);  // (references in the file's ids -> the placed entities')
         // The entity's own fields.
         for (const auto& f : entityType.fields) {
             if (!PrefabField(f)) continue;
@@ -249,6 +266,16 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
 
     // Every entity of the prefab, parents first; one whose parent is not there (removed, or later in
     // a broken file) is left out with everything below it.
+    // The scene id of every entity of the prefab, before any is made: references between them
+    // (in the file's ids) become these. (A new id that ends up unused is simply skipped.)
+    std::unordered_map<int, int> planned;  // source -> scene id
+    for (size_t i = 0; i < list.size(); ++i) {
+        const int src = static_cast<int>(list[i].Get("id").AsInt(0));
+        if (src <= 0 || planned.contains(src)) continue;
+        const auto had = idOf.find(src);
+        planned[src] = i == 0 ? root : had != idOf.end() && had->second != root ? had->second : nextId_++;
+    }
+
     std::vector<SceneEntity> built;
     std::unordered_map<int, int> builtId;  // source -> scene id
     for (size_t i = 0; i < list.size(); ++i) {
@@ -261,8 +288,8 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
         json::Value fields = p;
         fields.Erase("prefab");
         SceneEntity e = LoadEntity(fields, warnings);
-        const auto had = idOf.find(src);
-        e.data.id = isRoot ? root : had != idOf.end() && had->second != root ? had->second : nextId_++;
+        e.MapEntityRefs(planned, true);  // the prefab's own; the overrides below are in scene ids already
+        e.data.id = isRoot ? root : planned[src];
         e.data.parent = isRoot ? parent : builtId[parentSrc];
         e.prefab = {};
         e.prefab.source = src > 0 ? src : rootLink.source;
