@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "Hub の新規作成でテンプレートを木から選ぶ: 白紙 / ゲーム (3D と 2D の両方) / 3D のゲーム (カメラ・光・床・箱) / 2D のゲーム (カメラ・地面・プレイヤー)。要るプラグインが入っていなければ、作る前にまとめてインストールできる。Hub のプラグイン一覧に「ソフトで絞る」(すべて / ゲーム / 共通)",
+          "en": "New projects in the Hub start from a template chosen in a tree: Blank / Game (both 3D and 2D) / 3D game (camera, light, floor, box) / 2D game (camera, ground, player). Missing plugins can be installed together before the project is created. The Hub's plugin list can be filtered by software (All / Game / Common)"
+        },
+        {
           "ja": "3D: 点光源とスポットも影を落とす (影の地図 8 枚まで)。広いシーンの平行光の影は、カメラの前を 3 つに分けて近くをくっきり (カスケード)。部品「環境光」で、上からの色・下からの色・強さを変えられる",
           "en": "3D: point and spot lights cast shadows too (up to 8 shadow maps). Directional shadows in wide scenes split the view into 3 parts so nearby shadows stay sharp (cascades). New Ambient Light component: color from above, color from below and intensity"
         },
