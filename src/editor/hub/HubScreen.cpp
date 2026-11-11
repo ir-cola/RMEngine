@@ -804,9 +804,13 @@ void HubScreen::BeginRemove(const PluginId& id) {
 
 void HubScreen::RunInstall(const std::vector<PluginId>& ids) {
     if (ids.empty()) return;
-    std::string err;
-    if (!app_.InstallPlugins(ids, &err)) ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
-    Invalidate();
+    // Installing reads the plugins again (Entries() is made anew): never in the middle of drawing the
+    // list of them - after the frame, from the message loop.
+    Defer([this, ids] {
+        std::string err;
+        if (!app_.InstallPlugins(ids, &err)) ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
+        Invalidate();
+    });
 }
 
 void HubScreen::DrawPluginPrompt(ui::Context& c) {
@@ -836,12 +840,14 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
                 close();
             } else if (w::Button(c, "pp.install", right, Tr(L"インストールして開く"), w::ButtonKind::Primary) || enter) {
                 close();
-                std::string err;
-                if (app_.InstallPlugins(pr.toInstall, &err)) {
-                    app_.RequestOpenProject(pr.project);
-                } else {
-                    ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
-                }
+                Defer([this, ids = pr.toInstall, project = pr.project] {
+                    std::string err;
+                    if (app_.InstallPlugins(ids, &err)) {
+                        app_.RequestOpenProject(project);
+                    } else {
+                        ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
+                    }
+                });
             }
             break;
         case PromptKind::Limited: {
@@ -857,12 +863,14 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
                 app_.RequestOpenProject(pr.project, true);
             } else if (!pr.toInstall.empty() && w::Button(c, "pp.install", left, Tr(L"インストール"))) {
                 close();
-                std::string err;
-                if (app_.InstallPlugins(pr.toInstall, &err)) {
-                    app_.RequestOpenProject(pr.project);
-                } else {
-                    ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
-                }
+                Defer([this, ids = pr.toInstall, project = pr.project] {
+                    std::string err;
+                    if (app_.InstallPlugins(ids, &err)) {
+                        app_.RequestOpenProject(project);
+                    } else {
+                        ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
+                    }
+                });
             }
             break;
         }
@@ -879,12 +887,14 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
             if (w::Button(c, "pp.cancel", left, Tr(L"やめる")) || esc) {
                 modal_ = Modal::NewProject;
             } else if (w::Button(c, "pp.install", right, Tr(L"インストールして作成"), w::ButtonKind::Primary) || enter) {
-                std::string err;
-                if (app_.InstallPlugins(pr.toInstall, &err)) {
-                    MakeNewProject();
-                } else {
-                    ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
-                }
+                Defer([this, ids = pr.toInstall] {
+                    std::string err;
+                    if (app_.InstallPlugins(ids, &err)) {
+                        MakeNewProject();
+                    } else {
+                        ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
+                    }
+                });
             }
             break;
         case PromptKind::Remove:
@@ -893,8 +903,11 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
                 close();
             } else if (w::Button(c, "pp.remove", right, Tr(L"削除"), w::ButtonKind::Primary)) {
                 close();
-                std::string err;
-                if (!app_.UninstallPlugin(pr.target, &err)) ShowError(Utf8ToWide(err), {}, Tr(L"削除できませんでした"));
+                Defer([this, id = pr.target] {
+                    std::string err;
+                    if (!app_.UninstallPlugin(id, &err)) ShowError(Utf8ToWide(err), {}, Tr(L"削除できませんでした"));
+                    Invalidate();
+                });
             }
             break;
     }
@@ -1179,14 +1192,16 @@ void HubScreen::DrawIntegrity(ui::Context& c) {
     const Rect ok{cr.Right() - 110, cr.Bottom() - 36, 110, 36};
     if (!integrityStale_.empty() &&
         w::Button(c, "int.fix", {ok.x - 12 - 220, ok.y, 220, 36}, Tr(L"プラグインを入れ直して直す"), w::ButtonKind::Primary)) {
-        std::string err;
         const std::vector<PluginId> ids = integrityStale_;
         modal_ = Modal::None;
-        if (!app_.InstallPlugins(ids, &err)) {
-            ShowError(Utf8ToWide(err), {}, Tr(L"直せませんでした"));
-        } else {
-            RunIntegrityCheck();  // shows the result again
-        }
+        Defer([this, ids] {
+            std::string err;
+            if (!app_.InstallPlugins(ids, &err)) {
+                ShowError(Utf8ToWide(err), {}, Tr(L"直せませんでした"));
+            } else {
+                RunIntegrityCheck();  // shows the result again
+            }
+        });
         return;
     }
     if (w::Button(c, "int.ok", ok, Tr(L"閉じる"), integrityStale_.empty() ? w::ButtonKind::Primary : w::ButtonKind::Secondary) ||

@@ -23,6 +23,7 @@
   "RM Engine について": "About RM Engine",
   "RM Engine のプロジェクトファイルではありません: {}": "This is not an RM Engine project file: {}",
   "RM Engine プロジェクト (*.rmpf)": "RM Engine project (*.rmpf)",
+  "RM Engine: 保存されていない変更があります": "RM Engine: there are unsaved changes",
   "RM_Engine.files.json に読めない行があります: ": "RM_Engine.files.json has a line that cannot be read: ",
   "RM_Engine.files.json の形が正しくありません": "RM_Engine.files.json is not in the right shape",
   "Windows が予約している名前なので使えません (CON / NUL / COM1 など)。": "This name is reserved by Windows (CON / NUL / COM1 ...).",

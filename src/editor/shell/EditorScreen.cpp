@@ -685,7 +685,38 @@ void EditorScreen::RequestClose(CloseAction action) {
     FinishClose(action);
 }
 
+bool EditorScreen::OnQueryEndSession() {
+    if (!dirty_) {
+        SaveLayout();
+        return true;
+    }
+    // Asked like closing: save / close without saving / cancel. Windows waits on its shutdown page
+    // with this reason; "保存して閉じる" then quits, and the shutdown goes on (or the user starts it again).
+    if (!shutdownBlocked_) {
+        ShutdownBlockReasonCreate(Hwnd(), Tr(L"RM Engine: 保存されていない変更があります").c_str());
+        shutdownBlocked_ = true;
+    }
+    pendingClose_ = CloseAction::Quit;
+    modal_ = Modal::UnsavedChanges;
+    log::Warn("Windows の終了を待ってもらいました (保存されていない変更があるため): {}", project_.Name());
+    Invalidate();
+    return false;
+}
+
+void EditorScreen::OnEndSession() {
+    // Shutting down anyway ("強制的にシャットダウン"): the layout is kept; unsaved changes cannot be asked about.
+    if (dirty_) log::Warn("保存しないまま Windows が終了しました: {}", project_.Name());
+    SaveLayout();
+}
+
+void EditorScreen::EndShutdownBlock() {
+    if (!shutdownBlocked_) return;
+    ShutdownBlockReasonDestroy(Hwnd());
+    shutdownBlocked_ = false;
+}
+
 void EditorScreen::FinishClose(CloseAction action) {
+    EndShutdownBlock();
     log::Info("エディターを閉じます: {}", project_.Name());
     SaveLayout();
     if (action == CloseAction::Quit) {
@@ -1130,6 +1161,7 @@ void EditorScreen::DrawModal(ui::Context& c) {
         if (w::Button(c, "uc.cancel", cancel, Tr(L"キャンセル")) || c.KeyPressed(ui::Key::Escape)) {
             modal_ = Modal::None;
             pendingClose_ = CloseAction::None;
+            EndShutdownBlock();  // Windows' shutdown (if it was one) is cancelled
         } else if (w::Button(c, "uc.discard", discard, Tr(L"保存せずに閉じる"))) {
             modal_ = Modal::None;
             log::Warn("保存せずに閉じました: {}", project_.Name());

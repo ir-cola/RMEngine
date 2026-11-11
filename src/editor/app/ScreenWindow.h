@@ -45,6 +45,11 @@ protected:
     virtual void OnCreated() {}
     virtual void OnFrame(ui::Context& c, float width, float height) = 0;
     virtual void OnCloseRequested() = 0;  // the title bar X / Alt+F4
+    // Windows is shutting down / signing out (WM_QUERYENDSESSION). false = not now (unsaved changes:
+    // the screen asks the user; Windows shows the reason on its "apps are preventing shutdown" page).
+    virtual bool OnQueryEndSession() { return true; }
+    // It ends anyway (WM_ENDSESSION): nothing can be asked any more - keep what can be kept, quickly.
+    virtual void OnEndSession() {}
     // Messages the screen window does not handle itself (WM_MOVING ...). DefWindowProc still runs.
     // A timer the screen set with SetTimer(Hwnd(), id, ...) (ids from 100 up; 1 is the caret).
     virtual void OnTimer(UINT_PTR id) { (void)id; }

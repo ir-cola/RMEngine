@@ -66,6 +66,8 @@ public:
 protected:
     void OnFrame(ui::Context& c, float width, float height) override;
     void OnCloseRequested() override;
+    bool OnQueryEndSession() override;  // unsaved changes: asks (the same dialog as closing)
+    void OnEndSession() override;
     void OnTimer(UINT_PTR id) override;  // auto-save
 
 private:
@@ -76,6 +78,7 @@ private:
 
     void RequestClose(CloseAction action);
     void FinishClose(CloseAction action);
+    void EndShutdownBlock();  // the reason given to Windows while asking (ShutdownBlockReasonCreate)
     bool Save();
     void SetDirty(bool dirty);
     void UpdateTitle();
@@ -181,6 +184,7 @@ private:
 
     Modal modal_ = Modal::None;
     CloseAction pendingClose_ = CloseAction::None;
+    bool shutdownBlocked_ = false;
     std::wstring modalText_;
     std::wstring installName_;
     std::vector<PluginId> installPlan_;

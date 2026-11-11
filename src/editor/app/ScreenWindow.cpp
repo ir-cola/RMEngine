@@ -431,6 +431,11 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
         case WM_CLOSE:
             OnCloseRequested();
             return 0;
+        case WM_QUERYENDSESSION:
+            return OnQueryEndSession() ? TRUE : FALSE;
+        case WM_ENDSESSION:
+            if (wp) OnEndSession();
+            return 0;
         case kWmDeferred:
             RunDeferred();
             return 0;

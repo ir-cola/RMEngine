@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "未保存の変更があるまま Windows を終えようとすると、保存するか聞くように (Windows の終了の画面にも理由が出る)",
+          "en": "Shutting down or signing out of Windows with unsaved changes now asks whether to save (Windows' shutdown page shows the reason too)"
+        },
+        {
           "ja": "アセットの安全: 読めない・壊れた .meta を書き換えず、ID も作り直さない。ごみ箱に入れられない所 (USB メモリ・ネットワーク) のファイルは消さずに知らせる。閉じている間にコピーしたファイルが元の ID を取らない。行き先に .meta が残っていたら動かさない",
           "en": "Safer assets: an unreadable or broken .meta is never written over and its ID is never replaced. A file that cannot go to the Recycle Bin (USB stick, network) is not deleted, and you are told. A file copied while the editor was closed no longer takes the original's ID. A move onto a leftover .meta is refused"
         },
