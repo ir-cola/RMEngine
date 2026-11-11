@@ -562,6 +562,7 @@ void EditorScreen::DrawFloating(ui::Context& c, float width, float height, Float
     Active().dock.DrawOverlay(c, window.Id());
     c.SetInputEnabled(true);
     ForwardDrag(c, window.Hwnd(), width, height);
+    FlushAssetEdits(c);
     w::EndDragFrame(c);
 }
 
@@ -624,7 +625,16 @@ void EditorScreen::UpdateTitle() {
     SetTitle((dirty_ ? L"* " : L"") + Utf8ToWide(project_.Name()) + L" - RM Engine");
 }
 
+void EditorScreen::FlushAssetEdits(const ui::Context& c) {
+    // An import setting is written once the edit is finished: no button held (a drag of a number),
+    // no field of this window being typed into.
+    if (!assets_->HasQueuedImports() || c.Focused() != 0) return;
+    if (GetKeyState(VK_LBUTTON) < 0 || GetKeyState(VK_RBUTTON) < 0 || GetKeyState(VK_MBUTTON) < 0) return;
+    assets_->FlushImports();
+}
+
 bool EditorScreen::Save() {
+    assets_->FlushImports();
     StoreSoftwareData();
     std::string err;
     if (!SaveProject(project_, &err)) {
@@ -649,11 +659,21 @@ inspector::Refs EditorScreen::MakeRefs() {
     // An entity reference = an item of this software's 階層 (game: an entity). Its parent is "where".
     tree::Source* src = Active().software ? Active().software->Hierarchy() : nullptr;
     if (!src) return refs;
-    auto choices = [src] {
+    // Listed once per drawing of the インスペクター, and only when a field asks (every entity-reference
+    // field of the drawing shares the list, and finds its item by the id's index).
+    struct Items {
+        bool built = false;
+        std::vector<inspector::RefChoice> list;
+        std::unordered_map<uint64_t, size_t> at;  // id -> its place in list
+    };
+    auto cache = std::make_shared<Items>();
+    auto build = [src, cache]() -> const Items& {
+        if (cache->built) return *cache;
+        cache->built = true;
         std::vector<tree::Item> items;
         src->Items(items);
-        std::vector<inspector::RefChoice> out;
-        const tree::ItemIndex index(items);
+        const tree::ItemIndex index(items);  // (the tree's own id index)
+        cache->list.reserve(items.size());
         for (const tree::Item& it : items) {
             inspector::RefChoice r;
             r.value = std::to_string(it.id);
@@ -661,17 +681,17 @@ inspector::Refs EditorScreen::MakeRefs() {
             const size_t p = it.parent != 0 ? index.Find(it.parent) : static_cast<size_t>(-1);
             if (p != static_cast<size_t>(-1)) r.detail = Utf8ToWide(items[p].name);
             r.icon = tree::PictureOf(it.icon);
-            out.push_back(std::move(r));
+            cache->at.try_emplace(it.id, cache->list.size());
+            cache->list.push_back(std::move(r));
         }
-        return out;
+        return *cache;
     };
-    refs.items = choices;
-    refs.item = [choices](uint64_t id) -> std::optional<inspector::RefChoice> {
-        const std::string key = std::to_string(id);
-        for (auto& r : choices()) {
-            if (r.value == key) return std::move(r);
-        }
-        return std::nullopt;
+    refs.items = [build] { return build().list; };
+    refs.item = [build](uint64_t id) -> std::optional<inspector::RefChoice> {
+        const Items& c = build();
+        const auto it = c.at.find(id);
+        if (it == c.at.end()) return std::nullopt;
+        return c.list[it->second];
     };
     return refs;
 }
@@ -719,6 +739,7 @@ void EditorScreen::EndShutdownBlock() {
 }
 
 void EditorScreen::FinishClose(CloseAction action) {
+    assets_->FlushImports();
     EndShutdownBlock();
     log::Info("エディターを閉じます: {}", project_.Name());
     SaveLayout();
@@ -853,6 +874,7 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     auto& p = c.P();
     // Files added / moved / renamed outside (Explorer): the ids follow, the names shown too.
     if (assets_->Poll()) RedrawAll();
+    FlushAssetEdits(c);
     p.Clear(theme::Bg);
     w::DrawBackdrop(c, false);  // the theme's picture, behind everything (again on each panel and bar)
     const bool overlay = modal_ != Modal::None || menuPopup_.open;

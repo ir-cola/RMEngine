@@ -59,6 +59,9 @@ public:
     // A thing dragged out of a panel (an asset, an item of the 階層) is over another window of this
     // editor: that window is told where, so a reference field there takes it (w::SetDragElsewhere).
     void ForwardDrag(ui::Context& c, HWND self, float width, float height);
+    // Import settings changed in the インスペクター are written to their .meta once the edit is
+    // finished (AssetLibrary::FlushImports) - asked at the end of every window's frame.
+    void FlushAssetEdits(const ui::Context& c);
     void CloseFloatingWindow(uint32_t floatingId);
     void FloatingMoving(uint32_t floatingId, HWND hwnd);
     void FloatingMoveEnded(uint32_t floatingId);

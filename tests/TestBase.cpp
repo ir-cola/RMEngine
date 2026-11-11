@@ -6,6 +6,8 @@
 #include "base/Json.h"
 #include "base/Utf.h"
 
+#include <chrono>
+#include <format>
 #include <string>
 
 using namespace rm;
@@ -162,4 +164,50 @@ RM_TEST(FileName_Validation) {
     CHECK(ValidateFileName(" abc") == FileNameError::LeadingSpace);
     CHECK(ValidateFileName(std::string(64, 'a')) == FileNameError::None);
     CHECK(ValidateFileName(std::string(65, 'a')) == FileNameError::TooLong);
+}
+
+RM_TEST(Json_BigObjectsStayFast) {
+    // 200,000 keys: read, filled and searched in a straight line (a list search per key would be the
+    // square: 4e10 comparisons, minutes).
+    std::string text = "{";
+    for (int i = 0; i < 200000; ++i) text += std::format("{}\"k{}\": {}", i ? "," : "", i, i);
+    text += "}";
+    const auto start = std::chrono::steady_clock::now();
+    const auto v = json::Parse(text);
+    CHECK(v && v->Size() == 200000);
+    json::Value filled = json::Value::MakeObject();
+    for (int i = 0; i < 200000; ++i) filled.Set(std::format("k{}", i), i);
+    int64_t sum = 0;
+    for (int i = 0; i < 200000; i += 7) sum += v->Get(std::format("k{}", i)).AsInt();
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    CHECK(seconds < 10.0);
+    CHECK(sum > 0 && filled.Get("k199999").AsInt() == 199999 && !filled.Find("k200000"));
+    CHECK(json::Write(*v, false) == json::Write(*json::Parse(json::Write(*v, false)), false));
+}
+
+RM_TEST(Json_BigObjectIndexFollowsChanges) {
+    json::Value o = json::Value::MakeObject();
+    for (int i = 0; i < 40; ++i) o.Set(std::format("k{}", i), i);
+    CHECK(o.Get("k30").AsInt() == 30);
+    // Replaced in place (the order stays), erased, set again (at the end).
+    o.Set("k30", 300);
+    CHECK(o.Get("k30").AsInt() == 300 && o.Members()[30].first == "k30");
+    CHECK(o.Erase("k5") && !o.Find("k5") && o.Get("k6").AsInt() == 6 && o.Size() == 39);
+    o.Set("k5", 5);
+    CHECK(o.Members().back().first == "k5" && o.Get("k5").AsInt() == 5);
+    // Changed from outside through Members(): still found right.
+    o.Members().erase(o.Members().begin());  // k0 gone
+    CHECK(!o.Find("k0") && o.Get("k1").AsInt() == 1);
+    o.Members()[0].first = "renamed";
+    CHECK(o.Get("renamed").AsInt() == 1 && !o.Find("k1"));
+    // A copy has its own (the cache is not shared).
+    json::Value c = o;
+    c.Set("only_in_copy", 1);
+    CHECK(c.Find("only_in_copy") && !o.Find("only_in_copy"));
+    // A repeated key in a big object: the last value, at the place of the first (as for small ones).
+    std::string text = "{";
+    for (int i = 0; i < 30; ++i) text += std::format("\"k{}\": {},", i, i);
+    text += "\"k3\": 33}";
+    const auto p = json::Parse(text);
+    CHECK(p && p->Size() == 30 && p->Get("k3").AsInt() == 33 && p->Members()[3].first == "k3");
 }

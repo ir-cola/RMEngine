@@ -13,6 +13,8 @@
 
 #include <windows.h>
 
+#include <chrono>
+#include <format>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -445,5 +447,75 @@ RM_TEST(Asset_FilesOnDisk_CopiedWhileClosed) {
         text.assign(std::istreambuf_iterator<char>(m), std::istreambuf_iterator<char>());
     }
     CHECK(ReadMeta(text).name == "Y.png" && ReadMeta(text).guid == id);
+    fs::remove_all(root.parent_path(), ec);
+}
+
+// --- Big folders --------------------------------------------------------------------------------
+
+RM_TEST(Asset_Reconcile_BigFolderIsFast) {
+    // 20,000 files in 100 folders: 18,000 with their .meta, 1,000 moved without it (orphans left
+    // behind), 1,000 new; and the last look's ids. The time grows with the count, not its square.
+    Counter ids;
+    std::vector<Found> found;
+    std::vector<Orphan> orphans;
+    std::vector<Entry> before;
+    for (int i = 0; i < 20000; ++i) {
+        const std::string folder = std::format("F{}", i % 100);
+        Found f{std::format("{}/file{}.png", folder, i), false, ""};
+        if (i < 18000) {
+            f.metaGuid = G(static_cast<uint64_t>(i + 1));
+            f.meta = MetaState::Ok;
+            before.push_back({f.path, f.metaGuid, false});
+        } else if (i < 19000) {
+            // moved here from another folder, its .meta left behind
+            const std::string old = std::format("Old{}/file{}.png", i % 100, i);
+            orphans.push_back({old, G(static_cast<uint64_t>(i + 1))});
+            before.push_back({old, G(static_cast<uint64_t>(i + 1)), false});
+        }
+        found.push_back(std::move(f));
+    }
+    const auto start = std::chrono::steady_clock::now();
+    const Plan p = Reconcile(before, found, orphans, ids);
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    CHECK(seconds < 5.0);
+    CHECK(p.entries.size() == 20000);
+    CHECK(p.moves.size() == 1000);  // every moved one kept its id
+    CHECK(At(p, "F50/file18050.png")->guid == G(18051));
+    // DisplayOrder of the same: folders first, then by name.
+    const auto t2 = std::chrono::steady_clock::now();
+    const std::vector<size_t> order = DisplayOrder(p.entries);
+    CHECK(order.size() == 20000);
+    CHECK(std::chrono::duration<double>(std::chrono::steady_clock::now() - t2).count() < 5.0);
+}
+
+RM_TEST(Asset_ScanReadsOnlyChangedMeta) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path root = fs::temp_directory_path() / L"rm_asset_cache" / L"Assets";
+    fs::remove_all(root.parent_path(), ec);
+    fs::create_directories(root, ec);
+    for (int i = 0; i < 50; ++i) std::ofstream(root / std::format(L"f{}.png", i), std::ios::binary) << "x";
+    MetaCache cache;
+    std::vector<std::string> notes;
+    bool wrote = false;
+    const std::vector<Entry> first = Update(root, {}, notes, &cache, &wrote);
+    CHECK(first.size() == 50 && wrote);  // the ids were written
+    // Looked at again: the .meta files it wrote are read once (they are new to the cache) ...
+    const std::vector<Entry> second = Update(root, first, notes, &cache, &wrote);
+    CHECK(second == first && !wrote);
+    // ... and after that, none - nothing changed.
+    const std::vector<Entry> third = Update(root, second, notes, &cache, &wrote);
+    CHECK(third == first && cache.reads == 0);
+    // One .meta changed (its import settings): only that one is read.
+    json::Value imp = json::Value::MakeObject();
+    imp.Set("sharp", true);
+    CHECK(WriteImportJson(root / L"f7.png", imp));
+    Update(root, third, notes, &cache, &wrote);
+    CHECK(cache.reads == 1);
+    // A file gone: its .meta is no longer kept.
+    fs::remove(root / L"f3.png", ec);
+    fs::remove(root / L"f3.png.meta", ec);
+    const std::vector<Entry> fourth = Update(root, third, notes, &cache, &wrote);
+    CHECK(fourth.size() == 49 && cache.byPath.size() == 49);
     fs::remove_all(root.parent_path(), ec);
 }

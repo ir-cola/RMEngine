@@ -6,6 +6,8 @@
 #include <format>
 #include <map>
 #include <set>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace rm::asset {
 
@@ -265,31 +267,60 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
     }
 
     // 2. Items without one: the id of something that vanished, when it is clearly the same thing.
+    //    Everything is looked up through indexes made once (by path, by name, by folder + extension,
+    //    by id): the time grows with the number of files, not with its square.
     struct Gone {
         std::string path, guid;
         bool hasMeta = false;  // an Orphan (its .meta moves along) / only in `previous` (a .meta is written)
         bool used = false;
+        std::string name, place;  // FileNameOf(path) / folder + '\0' + extension (made once)
     };
     std::vector<Gone> gone;
+    std::unordered_set<std::string> goneGuids;
+    auto addGone = [&](const std::string& path, const std::string& guid, bool hasMeta) {
+        if (!goneGuids.insert(guid).second && !hasMeta) return;  // (an id of `previous` already left as a .meta)
+        Gone g{path, guid, hasMeta};
+        g.name = std::string(FileNameOf(path));
+        g.place = std::string(ParentOf(path)) + '\0' + Extension(path);
+        gone.push_back(std::move(g));
+    };
     for (const Orphan& o : orphans) {
-        if (IsGuid(o.guid) && !taken.count(o.guid)) gone.push_back({o.path, o.guid, true});
+        if (IsGuid(o.guid) && !taken.count(o.guid)) addGone(o.path, o.guid, true);
     }
     for (const Entry& e : previous) {
-        if (taken.count(e.guid)) continue;  // (its path may be found: the .meta was deleted - a. below)
-        const bool known = std::any_of(gone.begin(), gone.end(), [&](const Gone& g) { return g.guid == e.guid; });
-        if (!known) gone.push_back({e.path, e.guid, false});
+        if (!taken.count(e.guid) && !goneGuids.count(e.guid)) addGone(e.path, e.guid, false);  // (its path may be found: the .meta was deleted - a. below)
+    }
+    std::unordered_map<std::string, std::vector<size_t>> goneByPath, goneByName, goneByPlace, goneByGuid;
+    std::unordered_map<std::string, int> unusedByName, unusedByPlace;  // how many not used yet
+    for (size_t k = 0; k < gone.size(); ++k) {
+        goneByPath[gone[k].path].push_back(k);
+        goneByName[gone[k].name].push_back(k);
+        goneByPlace[gone[k].place].push_back(k);
+        goneByGuid[gone[k].guid].push_back(k);
+        ++unusedByName[gone[k].name];
+        ++unusedByPlace[gone[k].place];
     }
     // The same guid may be left twice (two .meta copies): use it once.
     auto give = [&](size_t i, Gone& g, const char* why) {
         ids[i] = g.guid;
         taken.insert(g.guid);
-        for (Gone& other : gone) {
-            if (other.guid == g.guid) other.used = true;
+        for (const size_t k : goneByGuid[g.guid]) {
+            if (gone[k].used) continue;
+            gone[k].used = true;
+            --unusedByName[gone[k].name];
+            --unusedByPlace[gone[k].place];
         }
         if (g.hasMeta) plan.moves.push_back({g.path, found[i].path});
         // (after a move: the .meta now says the new name - a copy of it later is told apart by it)
         plan.writes.push_back({found[i].path, g.guid, std::string(FileNameOf(found[i].path))});
         if (g.path != found[i].path) plan.notes.push_back(std::format("{} → {} ({}。ID はそのまま)", g.path, found[i].path, why));
+    };
+    // The unused one of a list (when the count says there is exactly one).
+    auto unusedIn = [&](const std::vector<size_t>& list) -> Gone* {
+        for (const size_t k : list) {
+            if (!gone[k].used) return &gone[k];
+        }
+        return nullptr;
     };
     std::vector<size_t> open;  // items still without an id
     for (size_t i = 0; i < n; ++i) {
@@ -297,44 +328,38 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
     }
     // a. Its own old path (the .meta was deleted, the file is where it was).
     for (const size_t i : open) {
-        for (Gone& g : gone) {
-            if (!g.used && g.path == found[i].path) {
-                give(i, g, "同じ場所");
-                break;
-            }
+        if (const auto it = goneByPath.find(found[i].path); it != goneByPath.end()) {
+            if (Gone* g = unusedIn(it->second)) give(i, *g, "同じ場所");
         }
     }
     std::erase_if(open, [&](size_t i) { return !ids[i].empty(); });
     // b. The only vanished thing with the same name, and the only new one with it (moved).
-    for (const size_t i : open) {
-        const std::string_view name = FileNameOf(found[i].path);
-        Gone* match = nullptr;
-        int count = 0;
-        for (Gone& g : gone) {
-            if (!g.used && FileNameOf(g.path) == name) {
-                match = &g;
-                ++count;
-            }
+    {
+        std::unordered_map<std::string, int> rivals;  // new ones by name
+        for (const size_t i : open) ++rivals[std::string(FileNameOf(found[i].path))];
+        for (const size_t i : open) {
+            const std::string name(FileNameOf(found[i].path));
+            if (rivals[name] != 1) continue;
+            const auto c = unusedByName.find(name);
+            if (c == unusedByName.end() || c->second != 1) continue;
+            if (Gone* g = unusedIn(goneByName[name])) give(i, *g, "移動");
         }
-        const auto rivals = std::count_if(open.begin(), open.end(), [&](size_t k) { return ids[k].empty() && FileNameOf(found[k].path) == name; });
-        if (count == 1 && rivals == 1) give(i, *match, "移動");
     }
     std::erase_if(open, [&](size_t i) { return !ids[i].empty(); });
     // c. The only vanished thing in the same folder with the same extension, and the only new one there (renamed).
-    for (const size_t i : open) {
-        const std::string_view folder = ParentOf(found[i].path);
-        const std::string ext = Extension(found[i].path);
-        auto same = [&](std::string_view p) { return ParentOf(p) == folder && Extension(p) == ext; };
-        Gone* match = nullptr;
-        int count = 0;
-        for (Gone& g : gone) {
-            if (!g.used && same(g.path)) {
-                match = &g;
-                ++count;
-            }
+    {
+        std::vector<std::string> place(n);
+        std::unordered_map<std::string, int> rivals;
+        for (const size_t i : open) {
+            place[i] = std::string(ParentOf(found[i].path)) + '\0' + Extension(found[i].path);
+            ++rivals[place[i]];
         }
-        const auto rivals = std::count_if(open.begin(), open.end(), [&](size_t k) { return ids[k].empty() && same(found[k].path); });
-        if (count == 1 && rivals == 1) give(i, *match, "名前の変更");
+        for (const size_t i : open) {
+            if (rivals[place[i]] != 1) continue;
+            const auto c = unusedByPlace.find(place[i]);
+            if (c == unusedByPlace.end() || c->second != 1) continue;
+            if (Gone* g = unusedIn(goneByPlace[place[i]])) give(i, *g, "名前の変更");
+        }
     }
 
     // 3. Everything else: a new id (copies keep their other .meta keys - the write keeps them). A copy
@@ -366,13 +391,16 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
 // ---------------------------------------------------------------------------
 
 std::vector<size_t> DisplayOrder(std::span<const Entry> entries) {
-    std::map<std::string, std::vector<size_t>, std::less<>> children;  // folder path -> items in it
-    for (size_t i = 0; i < entries.size(); ++i) children[std::string(ParentOf(entries[i].path))].push_back(i);
+    std::unordered_map<std::string, std::vector<size_t>> children;  // folder path -> items in it
+    std::vector<std::string> lower(entries.size());                  // names ignoring case (made once)
+    for (size_t i = 0; i < entries.size(); ++i) {
+        children[std::string(ParentOf(entries[i].path))].push_back(i);
+        lower[i] = LowerText(FileNameOf(entries[i].path));
+    }
     for (auto& [folder, list] : children) {
         std::sort(list.begin(), list.end(), [&](size_t a, size_t b) {
             if (entries[a].folder != entries[b].folder) return entries[a].folder;
-            const std::string la = LowerText(FileNameOf(entries[a].path)), lb = LowerText(FileNameOf(entries[b].path));
-            if (la != lb) return la < lb;
+            if (lower[a] != lower[b]) return lower[a] < lower[b];
             return entries[a].path < entries[b].path;
         });
     }
@@ -380,7 +408,7 @@ std::vector<size_t> DisplayOrder(std::span<const Entry> entries) {
     out.reserve(entries.size());
     std::vector<bool> placed(entries.size(), false);
     auto walk = [&](auto&& self, std::string_view folder, int depth) -> void {
-        const auto it = children.find(folder);
+        const auto it = children.find(std::string(folder));
         if (it == children.end() || depth > 256) return;
         for (const size_t i : it->second) {
             if (placed[i]) continue;

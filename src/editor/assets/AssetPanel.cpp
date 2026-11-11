@@ -244,18 +244,17 @@ public:
 
 private:
     void Apply(const json::Value& v) {
-        const asset::Entry* e = lib_.Index().ByGuid(guid_);  // (wherever the file is now)
-        if (!e) return;
-        const std::filesystem::path file = lib_.FullPath(*e);
-        // What the .meta has now, with this one field changed (other settings and unknown keys stay).
+        if (!lib_.Index().ByGuid(guid_)) return;  // (deleted)
+        // The settings now, with this one field changed (other settings and unknown keys stay). Written
+        // to the .meta when the edit is finished (AssetLibrary::FlushImports), not at every step of a drag.
         reflect::Object o(type_);
         reflect::Unknowns u;
-        reflect::Load(type_, o.Get(), asset::ReadImportJson(file), &u);
+        reflect::Load(type_, o.Get(), lib_.Import(guid_), &u);
         const reflect::PathTarget pt = reflect::Resolve(type_, o.Get(), &u, path_);
         if (!pt.field) return;
         reflect::LoadField(*pt.field, pt.owner, v, pt.unknowns, nullptr);
         const json::Value out = reflect::Save(type_, o.Get(), &u);
-        if (!asset::WriteImportJson(file, out)) log::Warn("取り込みの設定を {}.meta に書けませんでした", e->path);
+        lib_.QueueImport(guid_, out);
         if (auto view = view_.lock(); view && view->guid == guid_) {
             view->object = reflect::Object(type_);
             view->unknowns = {};
@@ -295,7 +294,7 @@ void AssetPanel::InspectSelected() {
     view_->unknowns = {};
     if (type) {
         view_->object = reflect::Object(*type);
-        reflect::Load(*type, view_->object.Get(), asset::ReadImportJson(lib_.FullPath(*e)), &view_->unknowns);
+        reflect::Load(*type, view_->object.Get(), lib_.Import(guid), &view_->unknowns);
     } else {
         view_->object = {};
     }

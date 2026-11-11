@@ -9,10 +9,13 @@
 // once, are not undone with Ctrl+Z and do not make the project unsaved (deleting goes to the
 // Recycle Bin - that is the way back).
 
+#include "base/Json.h"
+#include "core/asset/AssetFiles.h"
 #include "core/asset/AssetIndex.h"
 #include "platform/Shell.h"
 
 #include <filesystem>
+#include <map>
 #include <set>
 #include <span>
 #include <string>
@@ -23,6 +26,7 @@ namespace rm::editor {
 class AssetLibrary {
 public:
     explicit AssetLibrary(std::filesystem::path root);
+    ~AssetLibrary();  // writes the import settings still waiting
 
     const std::filesystem::path& Root() const { return root_; }
     const asset::Index& Index() const { return index_; }
@@ -31,11 +35,23 @@ public:
     // Changes every time the ids or paths may have changed (a refresh).
     uint64_t Version() const { return version_; }
 
-    // Looks at the folder again (creating it when it is missing).
+    // Looks at the folder again (creating it when it is missing). A .meta that did not change since the
+    // last look (same size and time) is not read again. The folder watch's news of the .meta files it
+    // wrote itself is dropped (one look, not a second one for its own writes).
     void Refresh();
     // Refresh when something under the folder was added, removed or renamed since the last look.
     // True when it refreshed.
     bool Poll();
+
+    // An asset's import settings as they are now - with a change of the インスペクター that is still
+    // waiting to be written.
+    json::Value Import(const std::string& guid) const;
+    // A change of them: kept, and written to the .meta by FlushImports - when the edit is finished (a
+    // drag let go, typing done), not at every step of it. Whoever reads the asset reads it again then.
+    void QueueImport(const std::string& guid, json::Value import);
+    bool HasQueuedImports() const { return !queuedImports_.empty(); }
+    // Writes what waits, into each .meta only (the folder is not looked at again for it).
+    void FlushImports();
 
     std::filesystem::path FullPath(const asset::Entry& e) const;
     std::wstring NameOf(const asset::Entry& e) const;      // the file name
@@ -60,6 +76,8 @@ private:
     bool watching_ = false;
     uint64_t version_ = 0;
     std::set<std::string> lastNotes_;  // what the last look told the console
+    asset::MetaCache metaCache_;       // the .meta files as the last look read them
+    std::map<std::string, json::Value> queuedImports_;  // guid -> import settings waiting to be written
 };
 
 }  // namespace rm::editor

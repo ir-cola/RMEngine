@@ -53,29 +53,6 @@ int64_t CreatedAt(const fs::path& p) {
     return 0;
 }
 
-// What the .meta next to an item says, read with care: one that is there but cannot be opened or
-// read is Unreadable (never "missing" - that would give the item a new id and write over it).
-void LookAtMeta(const fs::path& meta, Found& f) {
-    std::error_code ec;
-    if (!fs::exists(meta, ec)) {
-        f.meta = ec ? MetaState::Unreadable : MetaState::None;
-        if (ec) f.metaProblem = "あるかどうか調べられません";
-        return;
-    }
-    std::string text;
-    if (!ReadText(meta, text)) {
-        f.meta = MetaState::Unreadable;
-        f.metaProblem = "開けません (ほかのアプリが使っている・同期中など)";
-        return;
-    }
-    const MetaInfo info = ReadMeta(text);
-    f.meta = info.state;
-    f.metaGuid = info.guid;
-    f.metaName = info.name;
-    f.metaCreated = CreatedAt(meta);
-    if (info.state == MetaState::Unreadable) f.metaProblem = "中身を JSON として読めず、ID も見つかりません";
-}
-
 // May the .meta at `p` be written? Only when it is not there, or it is one this engine can read
 // whole - a broken or locked one is never written over (what it holds would be lost).
 bool SafeToWrite(const fs::path& p, std::string& old, std::string& why) {
@@ -112,10 +89,43 @@ fs::path MetaPath(const fs::path& root, std::string_view path) {
     return p;
 }
 
-Scan ScanFolder(const fs::path& root) {
+namespace {
+
+// What a .meta says: from the cache when it is the same size with the same time, else read (and
+// kept). One that cannot be read is not kept (tried again next time).
+bool ReadMetaCached(const fs::path& meta, uintmax_t size, fs::file_time_type time, MetaCache* cache, MetaInfo& info, int64_t& created) {
+    if (cache) {
+        const auto it = cache->byPath.find(meta.native());
+        if (it != cache->byPath.end() && it->second.size == size && it->second.time == time) {
+            info = it->second.info;
+            created = it->second.created;
+            return true;
+        }
+    }
+    std::string text;
+    if (!ReadText(meta, text)) return false;
+    info = ReadMeta(text);
+    created = CreatedAt(meta);
+    if (cache) {
+        cache->byPath[meta.native()] = {size, time, info, created};
+        ++cache->reads;
+    }
+    return true;
+}
+
+}  // namespace
+
+Scan ScanFolder(const fs::path& root, MetaCache* cache) {
     Scan out;
+    if (cache) cache->reads = 0;
     std::error_code ec;
-    std::vector<fs::path> metas;
+    struct MetaFile {
+        uintmax_t size = 0;
+        fs::file_time_type time{};
+        bool known = false;  // size and time could be read from the listing
+    };
+    std::unordered_map<std::wstring, MetaFile> metas;  // every .meta under root
+    std::vector<std::pair<fs::path, bool>> items;       // every file / folder (not ignored)
     for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
          it.increment(ec)) {
         const fs::path& p = it->path();
@@ -123,33 +133,71 @@ Scan ScanFolder(const fs::path& root) {
         std::error_code e2;
         const bool folder = it->is_directory(e2);
         if (!folder && name.size() > kMetaSuffix.size() && Extension(name) == kMetaSuffix) {
-            metas.push_back(p);
+            // (the listing already has the size and the time: no more calls to Windows for them)
+            MetaFile m;
+            std::error_code e3, e4;
+            m.size = it->file_size(e3);
+            m.time = it->last_write_time(e4);
+            m.known = !e3 && !e4;
+            metas.emplace(p.native(), m);
             continue;
         }
         if (Ignored(name)) {
             if (folder) it.disable_recursion_pending();
             continue;
         }
+        items.emplace_back(p, folder);
+    }
+    std::unordered_map<std::wstring, bool> itemSet;
+    for (const auto& [p, folder] : items) itemSet.emplace(p.native(), folder);
+    std::unordered_map<std::wstring, bool> seen;  // the .meta files used by this look (the rest leave the cache)
+
+    for (const auto& [p, folder] : items) {
         Found f;
         f.path = Rel(root, p);
         f.folder = folder;
-        LookAtMeta(MetaPath(root, f.path), f);
+        fs::path meta = p;
+        meta += PathFromUtf8(kMetaSuffix);
+        const auto m = metas.find(meta.native());
+        if (m == metas.end()) {
+            f.meta = MetaState::None;
+        } else {
+            seen[meta.native()] = true;
+            MetaInfo info;
+            int64_t created = 0;
+            if (!m->second.known || !ReadMetaCached(meta, m->second.size, m->second.time, cache, info, created)) {
+                f.meta = MetaState::Unreadable;
+                f.metaProblem = "開けません (ほかのアプリが使っている・同期中など)";
+            } else {
+                f.meta = info.state;
+                f.metaGuid = info.guid;
+                f.metaName = info.name;
+                f.metaCreated = created;
+                if (info.state == MetaState::Unreadable) f.metaProblem = "中身を JSON として読めず、ID も見つかりません";
+            }
+        }
         out.found.push_back(std::move(f));
     }
-    for (const fs::path& m : metas) {
-        fs::path target = m;
+    for (const auto& [metaPath, m] : metas) {
+        fs::path target(metaPath);
         target.replace_extension();  // "a.png.meta" -> "a.png"
+        if (itemSet.contains(target.native())) continue;
         std::error_code e2;
-        if (fs::exists(target, e2)) continue;
-        std::string text;
-        if (!ReadText(m, text)) continue;
-        if (const MetaInfo info = ReadMeta(text); info.state == MetaState::Ok || info.state == MetaState::Damaged) {
-            out.orphans.push_back({Rel(root, target), info.guid});
-        }
+        if (fs::exists(target, e2)) continue;  // (an ignored file's .meta)
+        seen[metaPath] = true;
+        MetaInfo info;
+        int64_t created = 0;
+        if (!m.known || !ReadMetaCached(fs::path(metaPath), m.size, m.time, cache, info, created)) continue;
+        if (info.state == MetaState::Ok || info.state == MetaState::Damaged) out.orphans.push_back({Rel(root, target), info.guid});
     }
+    if (cache) std::erase_if(cache->byPath, [&](const auto& kv) { return !seen.contains(kv.first); });
+    // (a stable order for the orphans: the map has none)
+    std::sort(out.orphans.begin(), out.orphans.end(), [](const Orphan& a, const Orphan& b) { return a.path < b.path; });
     std::vector<Entry> tmp;
+    tmp.reserve(out.found.size());
     for (const Found& f : out.found) tmp.push_back({f.path, {}, f.folder});
     std::vector<Found> ordered;
+    ordered.reserve(out.found.size());
     for (const size_t i : DisplayOrder(tmp)) ordered.push_back(std::move(out.found[i]));
     out.found = std::move(ordered);
     return out;
@@ -180,9 +228,11 @@ void ApplyPlan(const fs::path& root, const Plan& plan, std::vector<std::string>&
     }
 }
 
-std::vector<Entry> Update(const fs::path& root, std::span<const Entry> previous, std::vector<std::string>& notes) {
-    const Scan scan = ScanFolder(root);
+std::vector<Entry> Update(const fs::path& root, std::span<const Entry> previous, std::vector<std::string>& notes, MetaCache* cache,
+                          bool* wrote) {
+    const Scan scan = ScanFolder(root, cache);
     Plan plan = Reconcile(previous, scan.found, scan.orphans, NewGuid);
+    if (wrote) *wrote = !plan.writes.empty() || !plan.moves.empty();
     ApplyPlan(root, plan, notes);
     for (auto& n : plan.notes) notes.push_back(std::move(n));
     return std::move(plan.entries);

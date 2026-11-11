@@ -53,20 +53,39 @@ void Value::Push(Value v) {
     arr_.push_back(std::move(v));
 }
 
-const Value* Value::Find(std::string_view key) const {
-    if (type_ != Type::Object) return nullptr;
-    for (const auto& m : obj_) {
-        if (m.first == key) return &m.second;
+size_t Value::IndexOf(std::string_view key) const {
+    if (type_ != Type::Object) return kNotFound;
+    if (obj_.size() < kIndexFrom) {
+        for (size_t i = 0; i < obj_.size(); ++i) {
+            if (obj_[i].first == key) return i;
+        }
+        return kNotFound;
     }
-    return nullptr;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        if (!index_.built || index_.size != obj_.size()) {
+            index_.Forget();
+            index_.at = std::make_unique<std::unordered_map<std::string, size_t, KeyHash, std::equal_to<>>>();
+            index_.at->reserve(obj_.size());
+            for (size_t i = 0; i < obj_.size(); ++i) index_.at->try_emplace(obj_[i].first, i);  // (the first of a key, as a search finds)
+            index_.size = obj_.size();
+            index_.built = true;
+        }
+        const auto it = index_.at->find(key);
+        if (it == index_.at->end()) return kNotFound;
+        if (it->second < obj_.size() && obj_[it->second].first == key) return it->second;
+        index_.built = false;  // the list was changed from outside: build it again once
+    }
+    return kNotFound;
+}
+
+const Value* Value::Find(std::string_view key) const {
+    const size_t i = IndexOf(key);
+    return i == kNotFound ? nullptr : &obj_[i].second;
 }
 
 Value* Value::Find(std::string_view key) {
-    if (type_ != Type::Object) return nullptr;
-    for (auto& m : obj_) {
-        if (m.first == key) return &m.second;
-    }
-    return nullptr;
+    const size_t i = IndexOf(key);
+    return i == kNotFound ? nullptr : &obj_[i].second;
 }
 
 const Value& Value::Get(std::string_view key) const {
@@ -82,18 +101,19 @@ Value& Value::Set(std::string_view key, Value v) {
         return *existing;
     }
     obj_.emplace_back(std::string(key), std::move(v));
+    if (index_.built && index_.size + 1 == obj_.size()) {  // keep an up-to-date index up to date
+        index_.at->try_emplace(obj_.back().first, obj_.size() - 1);
+        index_.size = obj_.size();
+    }
     return obj_.back().second;
 }
 
 bool Value::Erase(std::string_view key) {
-    if (type_ != Type::Object) return false;
-    for (auto it = obj_.begin(); it != obj_.end(); ++it) {
-        if (it->first == key) {
-            obj_.erase(it);
-            return true;
-        }
-    }
-    return false;
+    const size_t i = IndexOf(key);
+    if (i == kNotFound) return false;
+    obj_.erase(obj_.begin() + static_cast<std::ptrdiff_t>(i));
+    index_.Forget();  // the keys after it moved
+    return true;
 }
 
 bool Value::operator==(const Value& o) const {

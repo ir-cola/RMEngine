@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "大きなプロジェクトで軽く: アセットの見直しは変わった .meta だけを読み、ファイルが多くても照合が重くならない。取り込みの設定は数のドラッグを離したときに 1 回だけ書く。キーの多い JSON の読み込みも速く",
+          "en": "Lighter on big projects: looking at the assets again reads only the .meta files that changed, and matching stays quick with many files. An import setting is written once, when a number drag is let go. JSON with many keys reads fast"
+        },
+        {
           "ja": "エンティティが多いシーンでも重くならないように (探す・選ぶ・消す・複製・システムを毎フレーム動かす・Prefab と違う所の数え方)。元に戻す (Undo) の履歴が大きくなりすぎないように (合計 256 MB まで。古いものから捨てる)",
           "en": "Scenes with many entities no longer slow down (finding, selecting, deleting, duplicating, running systems every frame, counting prefab differences). The undo history no longer grows without limit (256 MB in all; the oldest entries go first)"
         },

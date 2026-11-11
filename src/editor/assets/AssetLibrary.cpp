@@ -4,6 +4,7 @@
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "core/asset/AssetFiles.h"
+#include "core/asset/ImportSettings.h"
 #include "editor/lang/Lang.h"
 
 #include <algorithm>
@@ -79,13 +80,45 @@ std::wstring MoveWithMeta(const fs::path& from, const fs::path& to, const std::w
 
 AssetLibrary::AssetLibrary(fs::path root) : root_(std::move(root)) {}
 
+AssetLibrary::~AssetLibrary() { FlushImports(); }
+
+json::Value AssetLibrary::Import(const std::string& guid) const {
+    if (const auto it = queuedImports_.find(guid); it != queuedImports_.end()) return it->second;
+    const asset::Entry* e = index_.ByGuid(guid);
+    return e ? asset::ReadImportJson(FullPath(*e)) : json::Value::MakeObject();
+}
+
+void AssetLibrary::QueueImport(const std::string& guid, json::Value import) { queuedImports_[guid] = std::move(import); }
+
+void AssetLibrary::FlushImports() {
+    if (queuedImports_.empty()) return;
+    for (auto& [guid, import] : queuedImports_) {
+        const asset::Entry* e = index_.ByGuid(guid);
+        if (!e) continue;  // (deleted meanwhile)
+        if (!asset::WriteImportJson(FullPath(*e), import)) log::Warn("取り込みの設定を {}.meta に書けませんでした (開けない・壊れている)", e->path);
+    }
+    queuedImports_.clear();
+    // Only .meta files changed (no file came or went): the watch's news of them needs no look at the
+    // whole folder. Whoever reads those assets sees the .meta's new time and reads them again.
+    if (watching_) {
+        while (watch_.Changed()) {
+        }
+    }
+}
+
 void AssetLibrary::Refresh() {
     std::error_code ec;
     fs::create_directories(root_, ec);
     if (!watching_) watching_ = watch_.Start(root_);
     std::vector<std::string> notes;
     std::vector<asset::Entry> before(index_.Entries().begin(), index_.Entries().end());
-    std::vector<asset::Entry> now = asset::Update(root_, before, notes);
+    bool wrote = false;
+    std::vector<asset::Entry> now = asset::Update(root_, before, notes, &metaCache_, &wrote);
+    // The .meta files it wrote itself: the watch would only bring them back as news.
+    if (wrote && watching_) {
+        while (watch_.Changed()) {
+        }
+    }
     // (a note that stays true - a .meta that still cannot be read - is told once, not at every look)
     std::set<std::string> told;
     for (std::string& n : notes) {
