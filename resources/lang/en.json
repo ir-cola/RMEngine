@@ -129,6 +129,7 @@
   "ファイルの一覧 ({}) を読めないので、確かめられません。エンジンをビルドし直すか、入れ直してください。": "Cannot check: the file list ({}) cannot be read. Rebuild or reinstall the engine.",
   "フォルダ": "Folder",
   "フォルダ: {}  →  {}": "Folder: {}  →  {}",
+  "フォルダ: {} (変えません。プロジェクトの名前のフォルダではないため)": "Folder: {} (kept: it is not named after the project)",
   "フォルダの中に同じ名前のファイルが既にあります: {}": "The folder already has a file with that name: {}",
   "フォルダの名前を変えられませんでした。中のファイルをほかのアプリ (エクスプローラーなど) で開いていないか確かめてください。\n{}\n{}": "Could not rename the folder. Check that no other app (Explorer ...) has a file in it open.\n{}\n{}",
   "フォルダを作れませんでした: {}\n{}": "Could not create the folder: {}\n{}",

@@ -91,6 +91,7 @@
     <ClCompile Include="editor\hub\HubScreen.cpp" />
     <ClCompile Include="editor\project\HubSettings.cpp" />
     <ClCompile Include="editor\project\Project.cpp" />
+    <ClCompile Include="editor\project\ProjectRename.cpp" />
     <ClCompile Include="editor\project\Templates.cpp" />
     <ClCompile Include="editor\shell\EditorLayouts.cpp" />
     <ClCompile Include="editor\shell\EditorScreen.cpp" />
@@ -139,6 +140,7 @@
     <ClInclude Include="editor\hub\HubScreen.h" />
     <ClInclude Include="editor\project\HubSettings.h" />
     <ClInclude Include="editor\project\Project.h" />
+    <ClInclude Include="editor\project\ProjectRename.h" />
     <ClInclude Include="editor\project\Templates.h" />
     <ClInclude Include="editor\shell\EditorScreen.h" />
     <ClInclude Include="editor\shell\FloatWindow.h" />

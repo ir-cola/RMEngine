@@ -5,6 +5,7 @@
 #include "base/Utf.h"
 #include "base/Version.h"
 #include "editor/project/HubSettings.h"
+#include "editor/project/ProjectRename.h"
 #include "editor/project/Templates.h"
 #include "platform/Shell.h"
 
@@ -115,19 +116,22 @@ std::optional<fs::path> RenameProject(const fs::path& file, const std::string& n
     if (!project) return std::nullopt;
     const std::string oldName = project->Name();
 
+    // The folder follows only when it is the project's own (named after it); a folder of the user's
+    // (a .rmpf opened from D:\Work) keeps its name - only the .rmpf and the name inside change.
+    const ProjectRenamePlan plan = PlanProjectRename(file, oldName, newNameUtf8);
     const fs::path oldFolder = file.parent_path();
-    const fs::path newFolder = oldFolder.parent_path() / PathFromUtf8(newNameUtf8);
-    const fs::path newFileName = PathFromUtf8(newNameUtf8).native() + kProjectExtension;
-    const fs::path newFile = newFolder / newFileName;
+    const fs::path newFolder = plan.folder;
+    const fs::path newFile = plan.file;
+    const fs::path newFileName = newFile.filename();
     if (newFile.native().size() > 240) return fail(TrU8("新しい名前だとパスが長すぎます。短い名前にしてください。"));
     // Only the letter case may differ (Windows names ignore case): the same folder, renamed.
     const bool sameFolder = SamePath(oldFolder, newFolder);
     std::error_code ec;
     if (!sameFolder && fs::exists(newFolder, ec)) return fail(TrU8F("同じ名前のフォルダが既にあります: {}", PathToUtf8(newFolder)));
 
-    // 1. The folder.
+    // 1. The folder (only when it is the project's).
     bool folderMoved = false;
-    if (oldFolder.filename().native() != newFolder.filename().native()) {
+    if (plan.renameFolder) {
         fs::rename(oldFolder, newFolder, ec);
         if (ec) {
             return fail(TrU8F("フォルダの名前を変えられませんでした。中のファイルをほかのアプリ (エクスプローラーなど) で開いていないか確かめてください。\n{}\n{}",

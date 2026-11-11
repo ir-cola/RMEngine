@@ -64,6 +64,7 @@
     <ClCompile Include="TestLang.cpp" />
     <ClCompile Include="TestTheme.cpp" />
     <ClCompile Include="TestIntegrity.cpp" />
+    <ClCompile Include="TestProject.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
@@ -82,6 +83,7 @@
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
     <ClCompile Include="..\src\editor\app\Integrity.cpp" />
+    <ClCompile Include="..\src\editor\project\ProjectRename.cpp" />
     <ClCompile Include="..\src\editor\hub\Updates.cpp" />
     <ClCompile Include="..\src\editor\widgets\ThemeFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\theme_seasons\editor\Ornament.cpp" />

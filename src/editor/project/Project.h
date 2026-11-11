@@ -51,8 +51,9 @@ bool SaveProject(const Project& project, std::string* error);
 std::optional<Project> CreateProject(const std::filesystem::path& parentDir, const std::string& nameUtf8,
                                      const ProjectTemplate& tmpl, std::string* error);
 
-// Renames a project that is not open: its folder, its .rmpf and the "name" inside, all to the new
-// name (already validated). The folder goes first (what fails most often: a file in it is open in
+// Renames a project that is not open: its .rmpf and the "name" inside, and its folder when the folder
+// is the project's own (named after it - ProjectRename.h; a folder of the user's keeps its name), all
+// to the new name (already validated). The folder goes first (what fails most often: a file in it is open in
 // another app); a step that fails puts the earlier ones back, so the project is never half renamed.
 // Returns the new .rmpf.
 std::optional<std::filesystem::path> RenameProject(const std::filesystem::path& file, const std::string& newNameUtf8,

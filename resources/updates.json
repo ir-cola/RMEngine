@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "プロジェクトの名前を変えたとき、フォルダの名前がプロジェクトの名前と違う (自分のフォルダに置いた) なら、フォルダはそのままにして .rmpf の名前だけを変えるように (前はフォルダごと名前が変わっていた)",
+          "en": "Renaming a project whose folder is not named after it (a folder of your own) now keeps the folder and renames only the .rmpf (the whole folder used to be renamed)"
+        },
+        {
           "ja": "シーンビュー (2D / 3D): 物を押したままやギズモのドラッグ中に Ctrl+Z (元に戻す) をすると落ちる・値がずれることがあったのを直す (ドラッグをやめ、ドラッグで変えた所だけを戻す)",
           "en": "Scene view (2D / 3D): fixed a crash or wrong values when undoing (Ctrl+Z) while holding an object or dragging the gizmo (the drag now stops and puts back only what it changed)"
         },

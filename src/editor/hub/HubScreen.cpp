@@ -12,6 +12,7 @@
 #include "core/reflect/FieldCommand.h"
 #include "editor/plugin/Plugins.h"
 #include "editor/project/Project.h"
+#include "editor/project/ProjectRename.h"
 #include "editor/widgets/Theme.h"
 #include "platform/Shell.h"
 #include "resource.h"
@@ -293,8 +294,8 @@ void HubScreen::RunRename() {
         return;
     }
     // Already called that everywhere: nothing to do.
-    const fs::path asName = PathFromUtf8(renameName_);
-    if (WideToUtf8(renameOld_) == renameName_ && renameFile_.parent_path().filename() == asName && renameFile_.stem() == asName) {
+    const ProjectRenamePlan plan = PlanProjectRename(renameFile_, WideToUtf8(renameOld_), renameName_);
+    if (WideToUtf8(renameOld_) == renameName_ && !plan.renameFolder && plan.file.native() == renameFile_.native()) {
         modal_ = Modal::None;
         return;
     }
@@ -1389,13 +1390,18 @@ void HubScreen::DrawRename(ui::Context& c) {
     if (w::TextField(c, "rn.name", {cr.x, y, cr.w, 34}, renameName_, Tr(L"プロジェクト名"))) renameError_.clear();
     y += 46;
 
-    // What changes on disk: the folder, the .rmpf and the name inside, together.
+    // What changes on disk: the .rmpf and the name inside, and the folder when it is the project's own
+    // (named after it). A folder of the user's keeps its name.
     const fs::path oldFolder = renameFile_.parent_path();
-    const std::wstring newName = Utf8ToWide(renameName_);
+    const ProjectRenamePlan plan = PlanProjectRename(renameFile_, WideToUtf8(renameOld_), renameName_);
     ui::TextStyle faint = Style(12, theme::TextFaint);
-    p.Text({cr.x, y, cr.w, 20}, TrF(L"フォルダ: {}  →  {}", oldFolder.filename().native(), newName), faint);
+    if (plan.renameFolder) {
+        p.Text({cr.x, y, cr.w, 20}, TrF(L"フォルダ: {}  →  {}", oldFolder.filename().native(), plan.folder.filename().native()), faint);
+    } else {
+        p.Text({cr.x, y, cr.w, 20}, TrF(L"フォルダ: {} (変えません。プロジェクトの名前のフォルダではないため)", oldFolder.filename().native()), faint);
+    }
     y += 22;
-    p.Text({cr.x, y, cr.w, 20}, TrF(L"ファイル: {}  →  {}", renameFile_.filename().native(), newName + kProjectExtension), faint);
+    p.Text({cr.x, y, cr.w, 20}, TrF(L"ファイル: {}  →  {}", renameFile_.filename().native(), plan.file.filename().native()), faint);
     y += 22;
     p.Text({cr.x, y, cr.w, 20}, TrF(L"場所: {}", oldFolder.parent_path().native()), faint);
     y += 30;
