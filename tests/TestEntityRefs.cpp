@@ -80,14 +80,14 @@ RM_TEST(EntityRefs_Prefabs) {
     const json::Value& data = prefab.Get("entities").At(0).Get("components").At(0).Get("data");
     CHECK(data.Get("target").AsInt() == sources[b]);
     CHECK(data.Get("followers").At(0).AsInt() == 0);
-    s.LinkPrefab(a, "Assets/A.rmprefab", sources);
+    s.LinkPrefab(a, AssetRef{"Assets/A.rmprefab"}, sources);
     // The reference inside is not a change of the placed one; the one to C is (it is kept that way).
     const json::Value ov = Overrides(s, a, prefab);
     CHECK(!HasOverride(ov, "target"));
     CHECK(HasOverride(ov, "followers"));
 
     // Placed: points at its own B.
-    const int p = s.PlacePrefab(prefab, "Assets/A.rmprefab");
+    const int p = s.PlacePrefab(prefab, AssetRef{"Assets/A.rmprefab"});
     const int pb = s.Children(p)[0];
     CHECK(LinksOf(s, p).target.id == static_cast<uint64_t>(pb));
     CHECK(LinksOf(s, p).followers[0].id == 0);
