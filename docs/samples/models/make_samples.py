@@ -8,6 +8,7 @@
 #   pbr_ball.glb                                    metal / roughness: bands of polished metal and rough paint
 #                                                   (a metal / rough picture), dimples (a normal map) and a
 #                                                   glowing ring (an emission picture), all inside the file
+#   glass.gltf                                      three see-through panes (alphaMode BLEND) one behind another
 #
 # Only the Python standard library (the PNGs are written by hand: zlib + the PNG chunks).
 import base64, json, math, os, struct, sys, zlib
@@ -321,5 +322,22 @@ ball_doc = {
     "bufferViews": views, "accessors": accs,
 }
 write_glb(os.path.join(out, "pbr_ball.glb"), ball_doc, bin_)
+
+# --- Glass (glTF): three see-through panes, red / green / blue, one behind another ----------------
+panes = [box(1.2, 1.2, 0.04) + (k,) for k in range(3)]
+bin_, views, accs, meshes, _ = pack(panes)
+glass_doc = {
+    "asset": {"version": "2.0", "generator": "RM Engine sample (docs/samples/models)"},
+    "scene": 0, "scenes": [{"nodes": [0, 1, 2]}],
+    "nodes": [{"name": n, "mesh": k, "translation": [k * 0.25, 0, -k * 0.5]} for k, n in enumerate(["Red", "Green", "Blue"])],
+    "meshes": meshes,
+    "materials": [{"name": n, "alphaMode": "BLEND",
+                   "pbrMetallicRoughness": {"baseColorFactor": [linear(c[0]), linear(c[1]), linear(c[2]), 0.45], "metallicFactor": 0, "roughnessFactor": 0.1}}
+                  for n, c in (("Red glass", (0.9, 0.2, 0.2)), ("Green glass", (0.2, 0.85, 0.3)), ("Blue glass", (0.25, 0.4, 0.95)))],
+    "buffers": [{"byteLength": len(bin_), "uri": "data:application/octet-stream;base64," + base64.b64encode(bin_).decode()}],
+    "bufferViews": views, "accessors": accs,
+}
+with open(os.path.join(out, "glass.gltf"), "w", encoding="utf-8", newline="\n") as f:
+    json.dump(glass_doc, f, indent=1); f.write("\n")
 
 print("ok", glb_size, os.path.getsize(os.path.join(out, "torus.obj")))

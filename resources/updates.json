@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "3D: 透ける物 (ガラスなど) を奥から順に描くので、透ける物どうしが重なっても後ろが見える",
+          "en": "3D: see-through things (glass ...) are drawn back to front, so one shows through another"
+        },
+        {
           "ja": "アセットを 1 つ選ぶとインスペクターに取り込みの設定: 3D モデルの大きさ・上の向き (Z が上のモデルを起こす)、画像のくっきり (ドット絵)・大きさの上限。変えると .meta にすぐ書いて読み直し、Ctrl+Z で戻せる",
           "en": "Selecting one asset shows its import settings in the inspector: a 3D model's scale and up axis (stands up a Z-up model), an image's sharp (pixel art) and maximum size. A change is written to the .meta at once and read again; Ctrl+Z undoes it"
         },

@@ -272,4 +272,16 @@ void Frame(OrbitView& v, Vec3 target, float radius) {
     v.distance = std::max(radius * 2.5f, 2.f);
 }
 
+std::vector<size_t> BackToFront(std::span<const Vec3> centers, Vec3 eye) {
+    std::vector<size_t> order(centers.size());
+    std::vector<float> far(centers.size());
+    for (size_t i = 0; i < centers.size(); ++i) {
+        order[i] = i;
+        const Vec3 d = centers[i] - eye;
+        far[i] = Dot(d, d);
+    }
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return far[a] > far[b]; });
+    return order;
+}
+
 }  // namespace rm::space3d

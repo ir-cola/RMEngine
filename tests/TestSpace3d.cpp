@@ -848,6 +848,14 @@ RM_TEST(MeshFile_RelatedFileStaysInside) {
     CHECK(!RelatedFile(model, "bin/x.bin", model.parent_path()).empty());
 }
 
+RM_TEST(Space3d_BackToFront) {
+    // See-through things are drawn the farthest first; the same distance keeps the given order.
+    const Vec3 eye{0, 0, 10};
+    const std::vector<Vec3> centers{{0, 0, 5}, {0, 0, -5}, {0, 0, 0}, {5, 0, 10}, {0, 0, 0}};
+    CHECK(BackToFront(centers, eye) == std::vector<size_t>({1, 2, 4, 0, 3}));
+    CHECK(BackToFront({}, eye).empty());
+}
+
 RM_TEST(Space3d_BoundsAndShadowMatrix) {
     // A model's bounds placed in the world, and a ray hitting them where the unit cube is not.
     Transform t;

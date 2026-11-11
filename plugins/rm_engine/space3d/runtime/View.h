@@ -9,6 +9,8 @@
 
 #include <array>
 #include <optional>
+#include <span>
+#include <vector>
 
 namespace rm::space3d {
 
@@ -59,6 +61,10 @@ Bounds WorldBounds(const Mat4& world, Vec3 min, Vec3 max);
 // plane) - tested in clip space, where each side is a plane, so corners behind the eye count right.
 // Never says false for a box that shows; a box just outside a corner of the frustum may still be true.
 bool BoxInView(const Mat4& viewProjection, const Bounds& box);
+
+// The order to draw see-through things in: the farthest from the eye first (each one's colour is laid
+// over what is behind it). Indices into `centers`; the same distance keeps the given order.
+std::vector<size_t> BackToFront(std::span<const Vec3> centers, Vec3 eye);
 
 // A directional light's view-projection for a shadow map: looks along `direction` (where the light
 // goes) and holds the box `casters` (everything that casts a shadow) in -1..1 x -1..1, depth 0..1.

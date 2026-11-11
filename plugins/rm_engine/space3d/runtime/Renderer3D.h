@@ -69,6 +69,7 @@ public:
     Vec3 min{0, 0, 0}, max{0, 0, 0};  // the bounds in the model's own space
     uint32_t indexCount = 0;
     std::vector<MeshPart> parts;      // one draw each, by material (at least one)
+    std::vector<Vec3> partCenters;    // the middle of each part's bounds (see-through parts are sorted by it)
 
 private:
     friend class Renderer;
@@ -180,6 +181,8 @@ private:
     Ptr<ID3D11SamplerState> textureSampler_;  // pictures: repeat, smooth, mipmapped
     Ptr<ID3D11SamplerState> sharpSampler_;    // pictures set to くっきり (import setting): the nearest pixel
     std::vector<Item> items_;
+    std::vector<std::pair<size_t, const MeshPart*>> seeThrough_;  // (item, part) drawn last, back to front
+    std::vector<Vec3> centers_;
     Stats stats_;
 
     // The shadow map (depth seen from the light).

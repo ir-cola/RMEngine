@@ -486,6 +486,15 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
         if (part.indexCount >= 3 && end <= gpu->indexCount) gpu->parts.push_back({part.firstIndex, part.indexCount / 3 * 3, part.material});
     }
     if (gpu->parts.empty()) gpu->parts.push_back({0, gpu->indexCount, -1});
+    for (const MeshPart& part : gpu->parts) {
+        Vec3 lo = mesh.vertices[mesh.indices[part.firstIndex]].position, hi = lo;
+        for (uint32_t k = part.firstIndex; k < part.firstIndex + part.indexCount; ++k) {
+            const Vec3 p = mesh.vertices[mesh.indices[k]].position;
+            lo = {std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z)};
+            hi = {std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z)};
+        }
+        gpu->partCenters.push_back((lo + hi) * 0.5f);
+    }
     return gpu;
 }
 
@@ -644,18 +653,24 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->DrawIndexed(mesh.indexCount, 0, 0);
     };
     // Part by part, each with its material (colour, metal / rough, normals, emission, alpha, pictures).
-    auto drawPainted = [&](const Item& it) {
+    // `seeThrough`: only the parts that are see-through (BLEND, or the whole thing faded) - or only the others.
+    static const DrawMaterial kWhite;
+    auto materialOf = [](const Item& it, const MeshPart& part) -> const DrawMaterial& {
+        return part.material >= 0 && static_cast<size_t>(part.material) < it.materials.size() ? it.materials[static_cast<size_t>(part.material)]
+                                                                                               : kWhite;
+    };
+    auto isSeeThrough = [&](const Item& it, const MeshPart& part) {
+        return it.color.a < 1.f || materialOf(it, part).alpha == AlphaMode::Blend;
+    };
+    auto drawPainted = [&](const Item& it, bool seeThrough, const MeshPart* only) {
         CopyMatrix(c.world, *it.world);
         CopyMatrix(c.normalWorld, NormalMatrix(*it.world));
         put(c.color, it.color);
         put(c.highlight, it.highlight);
         BindMesh(ctx, it.mesh->vertices.Get(), it.mesh->indices.Get());
         for (const MeshPart& part : it.mesh->parts) {
-            const DrawMaterial* m = part.material >= 0 && static_cast<size_t>(part.material) < it.materials.size()
-                                        ? &it.materials[static_cast<size_t>(part.material)]
-                                        : nullptr;
-            const DrawMaterial white;
-            const DrawMaterial& mat = m ? *m : white;
+            if (only ? &part != only : isSeeThrough(it, part) != seeThrough) continue;
+            const DrawMaterial& mat = materialOf(it, part);
             put(c.material, mat.color);
             const float mode = mat.alpha == AlphaMode::Mask ? 1.f : mat.alpha == AlphaMode::Blend ? 2.f : 0.f;
             put(c.paint, {mat.texture ? 1.f : 0.f, mode, mat.alphaCutoff, mat.normal ? 1.f : 0.f});
@@ -735,11 +750,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->PSSetShader(meshPs_.Get(), nullptr, 0);
         ID3D11SamplerState* sampler = textureSampler_.Get();
         ctx->PSSetSamplers(1, 1, &sampler);
+        // What is not see-through first (any order: the depth test sorts it out).
         for (const Item& it : items_) {
-            if (it.seen) drawPainted(it);
+            if (it.seen) drawPainted(it, false, nullptr);
         }
-        ID3D11ShaderResourceView* none[4] = {};
-        ctx->PSSetShaderResources(1, 4, none);
     }
     // The shadows on the floor: see-through, over what is already drawn (the depth test still hides
     // the floor behind things), and writing no depth (the grid lies on it).
@@ -769,6 +783,34 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             ctx->Draw(static_cast<UINT>(f.lines.size() & ~size_t{1}), 0);
         }
     }
+
+    // 3. What is see-through, the farthest first (by the middle of its part), over everything else and
+    // writing no depth (what is behind another see-through part still shows through it).
+    seeThrough_.clear();
+    for (size_t i = 0; i < items_.size(); ++i) {
+        if (!items_[i].seen) continue;
+        for (const MeshPart& part : items_[i].mesh->parts) {
+            if (isSeeThrough(items_[i], part)) seeThrough_.push_back({i, &part});
+        }
+    }
+    if (!seeThrough_.empty()) {
+        centers_.clear();
+        for (const auto& [i, part] : seeThrough_) {
+            const GpuMesh& m = *items_[i].mesh;
+            centers_.push_back(TransformPoint(*items_[i].world, m.partCenters[static_cast<size_t>(part - m.parts.data())]));
+        }
+        Vec3 eye{0, 0, 0};
+        if (const auto toWorld = Inverse(f.view)) eye = TransformPoint(*toWorld, {0, 0, 0});
+        ctx->IASetInputLayout(meshLayout_.Get());
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->OMSetDepthStencilState(depthNoWrite_.Get(), 0);
+        ctx->VSSetShader(meshVs_.Get(), nullptr, 0);
+        ctx->PSSetShader(meshPs_.Get(), nullptr, 0);
+        for (const size_t k : BackToFront(centers_, eye)) drawPainted(items_[seeThrough_[k].first], true, seeThrough_[k].second);
+        ctx->OMSetDepthStencilState(depth_.Get(), 0);
+    }
+    ID3D11ShaderResourceView* none[4] = {};
+    ctx->PSSetShaderResources(1, 4, none);
 
     if (samples_ > 1) ctx->ResolveSubresource(picture_.Get(), 0, multisample_.Get(), 0, DXGI_FORMAT_B8G8R8A8_UNORM);
     // Nothing of ours stays bound (Direct2D draws the picture next).
