@@ -28,6 +28,7 @@
 #include <span>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 
 namespace rm::game_x_2d {
 
@@ -93,9 +94,10 @@ struct ImageEntry {
     double checkedAt = 0, usedAt = 0;
 };
 
-// One thing being dragged: as it was when the drag began.
+// One thing being dragged: as it was when the drag began, and as the drag last left it.
 struct Edited {
     Transform2D start;
+    Transform2D last;
     Mat3 parentWorld, startWorld;
     std::function<reflect::EditTarget()> resolve;
 };
@@ -508,6 +510,12 @@ private:
                 pressed_ = host.playing ? 0 : PickAt(r, mouse);
             }
         } else if (drag_ != Drag::None) {
+            // Undo / redo (Ctrl+Z) while the button is still held: the scene may no longer be what the drag
+            // started from (the thing gone, its Transform 2D back) - the drag stops (nothing is pushed).
+            if ((drag_ == Drag::Gizmo || drag_ == Drag::Body) && HistoryMoved(host)) {
+                AbandonEdit();
+                drag_ = Drag::Cancelled;
+            }
             const bool held = drag_ == Drag::PanRight ? in.down[1] : drag_ == Drag::PanMiddle ? in.down[2] : in.down[0];
             if (!held) {
                 if (drag_ == Drag::Press) Click(host, r, in.ctrl);
@@ -524,12 +532,14 @@ private:
                 } else {
                     // A drag that started on a thing moves it (with the rest of the selection, when it is
                     // selected; alone - and selected now - when it is not).
+                    // The thing pressed is looked for again: it may have gone since (Ctrl+Z with the button held).
+                    const Placed* grabbed = FindPlaced(pressed_);
                     const bool inSelection = std::find(host.selection.begin(), host.selection.end(), pressed_) != host.selection.end();
                     std::vector<int> ids = inSelection ? host.scene.Roots(host.selection) : std::vector<int>{pressed_};
-                    if (!inSelection) host.select({pressed_});
-                    if (BeginEdit(host, ids)) {
+                    if (grabbed && !inSelection) host.select({pressed_});
+                    if (grabbed && BeginEdit(host, ids)) {
                         gizmo::Frame f;
-                        f.origin = space2d::TransformPoint(FindPlaced(pressed_)->world, {0, 0});
+                        f.origin = space2d::TransformPoint(grabbed->world, {0, 0});
                         gizmo_ = gizmo::BeginDrag(gizmo::Tool::Move, gizmo::Handle::Free, f, state_.camera, sr, press_);
                         pivot_.reset();
                         drag_ = Drag::Body;
@@ -618,18 +628,43 @@ private:
             auto resolve = host.component(id, transformType_);
             const reflect::EditTarget t = resolve ? resolve() : reflect::EditTarget{};
             if (!t.object) continue;
-            edited_.push_back({*static_cast<const Transform2D*>(t.object), p->parentWorld, p->world, std::move(resolve)});
+            const Transform2D now = *static_cast<const Transform2D*>(t.object);
+            edited_.push_back({now, now, p->parentWorld, p->world, std::move(resolve)});
         }
+        history_ = {host.host.History().UndoCount(), host.host.History().RedoCount()};
         return !edited_.empty();
+    }
+
+    // The history changed since the drag began (an undo / redo, or an edit from elsewhere).
+    bool HistoryMoved(game_production::SceneViewHost& host) const {
+        return history_ != std::pair{host.host.History().UndoCount(), host.host.History().RedoCount()};
+    }
+
+    // Stops a drag after the history moved under it: each field the drag changed - and nothing else
+    // changed since - goes back to where it started (what the undo / redo set stays). Nothing is pushed.
+    void AbandonEdit() {
+        for (const Edited& e : edited_) {
+            const reflect::EditTarget t = e.resolve();
+            if (!t.object) continue;  // gone
+            auto& tr = *static_cast<Transform2D*>(t.object);
+            if (tr.position == e.last.position) tr.position = e.start.position;
+            if (tr.rotation == e.last.rotation) tr.rotation = e.start.rotation;
+            if (tr.scale == e.last.scale) tr.scale = e.start.scale;
+        }
+        edited_.clear();
+        gizmo_.reset();
+        pivot_.reset();
+        log::Info("ドラッグ中に元に戻す / やり直しがあったので、ドラッグをやめました");
     }
 
     // While dragging, the Transforms are changed directly (the inspector follows); the history gets
     // one entry when the button is let go.
     void ApplyEdit(const gizmo::Change& change) {
-        for (const Edited& e : edited_) {
+        for (Edited& e : edited_) {
             const reflect::EditTarget t = e.resolve();
             if (t.object) {
-                *static_cast<Transform2D*>(t.object) = gizmo::Apply(e.start, e.parentWorld, e.startWorld, change, pivot_ ? &*pivot_ : nullptr);
+                e.last = gizmo::Apply(e.start, e.parentWorld, e.startWorld, change, pivot_ ? &*pivot_ : nullptr);
+                *static_cast<Transform2D*>(t.object) = e.last;
             }
         }
     }
@@ -897,6 +932,7 @@ private:
     std::optional<gizmo::Drag> gizmo_;
     std::optional<gizmo::Frame> pivot_;  // 中心: what the drag turns / scales about
     std::vector<Edited> edited_;
+    std::pair<size_t, size_t> history_{0, 0};  // the undo / redo counts of the history when the drag began
     bool snapOpen_ = false;              // the box of the steps is open
     std::array<std::string, 3> snapText_;
 };

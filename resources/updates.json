@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "シーンビュー (2D / 3D): 物を押したままやギズモのドラッグ中に Ctrl+Z (元に戻す) をすると落ちる・値がずれることがあったのを直す (ドラッグをやめ、ドラッグで変えた所だけを戻す)",
+          "en": "Scene view (2D / 3D): fixed a crash or wrong values when undoing (Ctrl+Z) while holding an object or dragging the gizmo (the drag now stops and puts back only what it changed)"
+        },
+        {
           "ja": "アセットのパネル: サムネイルを別のスレッドで作るので、大きな画像やモデルがあっても画面が止まらない",
           "en": "Assets panel: thumbnails are made on a thread of their own, so big pictures and models no longer stall the screen"
         },

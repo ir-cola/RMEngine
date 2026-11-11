@@ -407,6 +407,7 @@ Prefab のファイル (.rmprefab)   { "kind": "rm_engine.game_production.prefab
   - 刻む幅 (`Snap`) はシーンビューの見え方 (`SceneViewState`: `snapMove` / `snapDegrees` / `snapScale` / `snapAlways`。範囲は `RM_PROPERTY` の Min / Max)。いつも刻むときは Ctrl でなめらか
   - 当て方: 移動はワールドで動いた分を親の逆行列で親の中の量に。回転は軸を親の中に写し、`AxisAngle × いまの回転`。ローカル / ワールドは軸の取り方だけの違い
   - シーンビュー: ドラッグ中は Transform を直接書き換え (インスペクターが付いてくる)、ボタンを離したら**選んでいた物全部の `SetFieldCommand` を `CommandGroup` 1 つにまとめて**履歴に積む (Undo 1 回で全部戻る)。Esc でドラッグ前に戻す。親も選ばれている物は動かさない (`Scene::Roots`)
+  - **ドラッグ中の元に戻す / やり直し** (2D も同じ): ボタンを押したまま Ctrl+Z などで履歴が動くと (Undo / Redo の数がドラッグを始めたときと違う)、ドラッグをやめる。ドラッグで変えた欄のうち、その後ほかから変わっていない欄だけを始めの値に戻し、何も積まない (消えた物は探し直して触らない)。押した物も毎フレーム ID で探し直す (2026-11-11: 押した物が Undo で消えると落ちていた)
   - `CommandGroup` (`core/UndoHistory.h`): いくつかの編集を 1 回の Undo にまとめる。戻すときは逆順
 
 ### 3D の描画 (`plugins/rm_engine/space3d/runtime/Renderer3D`) とシーンビュー

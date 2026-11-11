@@ -32,6 +32,7 @@
 #include <optional>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 
 namespace rm::game_x_3d {
 
@@ -139,6 +140,7 @@ struct ModelEntry {
 // One thing being dragged by the gizmo: as it was when the drag began, and where it is now.
 struct Edited {
     Transform start;
+    Transform last;  // as the drag last left it
     Mat4 parentWorld, startWorld;
     std::function<reflect::EditTarget()> resolve;
 };
@@ -475,6 +477,12 @@ private:
                 pressY_ = in.mouseY;
             }
         } else if (drag_ != Drag::None) {
+            // Undo / redo (Ctrl+Z) while the button is still held: the scene may no longer be what the drag
+            // started from (a thing gone, its Transform back) - the drag stops (nothing is pushed).
+            if (drag_ == Drag::Gizmo && HistoryMoved(host)) {
+                AbandonGizmo();
+                drag_ = Drag::Cancelled;
+            }
             const bool held = drag_ == Drag::Look ? in.down[1] : drag_ == Drag::Pan ? in.down[2] : in.down[0];
             if (!held) {
                 if (drag_ == Drag::Click && std::hypot(in.mouseX - pressX_, in.mouseY - pressY_) < kClickSlop) Pick(r, host);
@@ -544,9 +552,11 @@ private:
             auto resolve = host.component(id, transformType_);
             const reflect::EditTarget t = resolve ? resolve() : reflect::EditTarget{};
             if (!t.object) continue;
-            edited_.push_back({*static_cast<const Transform*>(t.object), p->parentWorld, p->world, std::move(resolve)});
+            const Transform now = *static_cast<const Transform*>(t.object);
+            edited_.push_back({now, now, p->parentWorld, p->world, std::move(resolve)});
         }
         if (edited_.empty()) return false;
+        history_ = {host.host.History().UndoCount(), host.host.History().RedoCount()};
         gizmo_ = std::move(drag);
         dragTool_ = state_.tool;
         dragSpace_ = state_.space;
@@ -558,12 +568,34 @@ private:
     // While dragging, the Transforms are changed directly (the inspector follows); the history gets
     // one entry when the button is let go.
     void ApplyGizmo(const gizmo::Change& change) {
-        for (const Edited& e : edited_) {
+        for (Edited& e : edited_) {
             const reflect::EditTarget t = e.resolve();
             if (!t.object) continue;  // gone (undone while dragging)
             auto* tr = static_cast<Transform*>(t.object);
             *tr = gizmo::Apply(e.start, e.parentWorld, e.startWorld, change, dragSpace_, tr->rotation, pivot_);
+            e.last = *tr;
         }
+    }
+
+    // The history changed since the drag began (an undo / redo, or an edit from elsewhere).
+    bool HistoryMoved(game_production::SceneViewHost& host) const {
+        return history_ != std::pair{host.host.History().UndoCount(), host.host.History().RedoCount()};
+    }
+
+    // Stops a drag after the history moved under it: each field the drag changed - and nothing else
+    // changed since - goes back to where it started (what the undo / redo set stays). Nothing is pushed.
+    void AbandonGizmo() {
+        for (const Edited& e : edited_) {
+            const reflect::EditTarget t = e.resolve();
+            if (!t.object) continue;  // gone
+            auto& tr = *static_cast<Transform*>(t.object);
+            if (tr.position == e.last.position) tr.position = e.start.position;
+            if (tr.rotation == e.last.rotation) tr.rotation = e.start.rotation;
+            if (tr.scale == e.last.scale) tr.scale = e.start.scale;
+        }
+        edited_.clear();
+        gizmo_.reset();
+        log::Info("ドラッグ中に元に戻す / やり直しがあったので、ドラッグをやめました");
     }
 
     void CancelGizmo() {
@@ -1175,6 +1207,7 @@ private:
     gizmo::Space dragSpace_ = gizmo::Space::Local;
     std::optional<Vec3> pivot_;                 // 中心: what the drag turns / scales about
     std::vector<Edited> edited_;
+    std::pair<size_t, size_t> history_{0, 0};  // the undo / redo counts of the history when the drag began
     bool snapOpen_ = false;                     // the box of the steps is open
     std::array<std::string, 3> snapText_;       // its fields' text
 };
