@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "256 MB を超えるプロジェクトファイルは、保存すると開けなくなるので保存しないで理由を出すように (近づくとコンソールに警告)",
+          "en": "A project file over 256 MB is no longer saved (it could not be opened again); the reason is shown, and the console warns when it gets close"
+        },
+        {
           "ja": "階層に数千の物があって全部選んでも重くならないように (選んだ物を探すのを集合と索引にした)",
           "en": "The Hierarchy stays light with thousands of items, even with all of them selected (selection lookups now use sets and an index)"
         },

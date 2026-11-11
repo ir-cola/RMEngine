@@ -152,6 +152,7 @@
   "プロジェクトを検索": "Search projects",
   "プロジェクトを開く": "Open project",
   "プロジェクトファイルが壊れています: {}\n{} 行 {} 文字目: {}": "The project file is broken: {}\nline {}, column {}: {}",
+  "プロジェクトファイルが大きすぎるので保存しませんでした ({} MB / 上限 {} MB)。前に保存したものはそのままです。\n大きなデータ (絵・音・モデルなど) は Assets フォルダのファイルにしてください。": "The project file is too large, so it was not saved ({} MB / limit {} MB). What was saved before is unchanged.\nPut large data (pictures, sounds, models ...) in files in the Assets folder.",
   "プロジェクトファイルの「plugins」の形が正しくありません: ": "\"plugins\" in the project file is not in the right shape: ",
   "プロジェクトファイルの名前を変えられませんでした: {}\n{}": "Could not rename the project file: {}\n{}",
   "プロジェクトファイルの形が正しくありません: {}": "The project file is not in the right shape: {}",

@@ -9,6 +9,7 @@
 #include <shobjidl.h>
 #include <wrl/client.h>
 
+#include <format>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
@@ -240,9 +241,9 @@ std::optional<std::string> ReadFileBytes(const std::filesystem::path& path, std:
     }
     LARGE_INTEGER size{};
     GetFileSizeEx(f, &size);
-    if (size.QuadPart > (256ll << 20)) {
+    if (static_cast<uint64_t>(size.QuadPart) > kMaxFileBytes) {
         CloseHandle(f);
-        if (error) *error = "ファイルが大きすぎます";
+        if (error) *error = std::format("ファイルが大きすぎます ({} MB / 読める上限 {} MB)", size.QuadPart >> 20, kMaxFileBytes >> 20);
         return std::nullopt;
     }
     std::string data(static_cast<size_t>(size.QuadPart), '\0');
@@ -258,6 +259,11 @@ std::optional<std::string> ReadFileBytes(const std::filesystem::path& path, std:
 }
 
 bool WriteFileAtomic(const std::filesystem::path& path, std::string_view data, std::string* error) {
+    if (data.size() > kMaxFileBytes) {
+        // Never written: it could not be read back (ReadFileBytes has the same limit).
+        if (error) *error = std::format("大きすぎて書けません ({} MB / 上限 {} MB)", data.size() >> 20, kMaxFileBytes >> 20);
+        return false;
+    }
     std::filesystem::path tmp = path;
     tmp += L".tmp";
     HANDLE f = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

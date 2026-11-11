@@ -56,8 +56,22 @@ std::optional<Project> LoadProject(const fs::path& file, std::string* error) {
 }
 
 bool SaveProject(const Project& project, std::string* error) {
+    const std::string text = json::Write(project.doc);
+    constexpr uint64_t kLimitMb = platform::kMaxFileBytes >> 20;
+    if (text.size() > platform::kMaxFileBytes) {
+        // Not saved (the file on disk stays as it was): it could not be opened again.
+        if (error) {
+            *error = TrU8F("プロジェクトファイルが大きすぎるので保存しませんでした ({} MB / 上限 {} MB)。前に保存したものはそのままです。\n大きなデータ (絵・音・モデルなど) は Assets フォルダのファイルにしてください。",
+                           text.size() >> 20, kLimitMb);
+        }
+        return false;
+    }
+    if (text.size() > platform::kMaxFileBytes / 4 * 3) {
+        log::Warn("プロジェクトファイルが上限に近づいています ({} MB / 上限 {} MB)。大きなデータは Assets のファイルにしてください: {}",
+                  text.size() >> 20, kLimitMb, PathToUtf8(project.file));
+    }
     std::string err;
-    if (!platform::WriteFileAtomic(project.file, json::Write(project.doc), &err)) {
+    if (!platform::WriteFileAtomic(project.file, text, &err)) {
         if (error) *error = TrU8F("保存できませんでした: {}\n{}", PathToUtf8(project.file), err);
         return false;
     }

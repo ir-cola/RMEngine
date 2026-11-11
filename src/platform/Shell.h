@@ -5,6 +5,7 @@
 #include "platform/FileLock.h"
 #include "platform/Win.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -53,10 +54,15 @@ std::wstring GetClipboardText(HWND owner);
 // Text of a Win32 error code (UTF-8, no trailing newline).
 std::string ErrorText(DWORD code);
 
-// Reads a whole file. On failure returns nullopt and sets *error (UTF-8).
+// The largest file ReadFileBytes reads - and WriteFileAtomic writes: one limit for both, so nothing
+// can be saved that cannot be opened again (a .rmpf over it used to save and then never open).
+inline constexpr uint64_t kMaxFileBytes = 256ull << 20;  // 256 MB
+
+// Reads a whole file (at most kMaxFileBytes). On failure returns nullopt and sets *error (UTF-8).
 std::optional<std::string> ReadFileBytes(const std::filesystem::path& path, std::string* error);
 // Writes to "<path>.tmp" first, then replaces the file in one step, so a crash
-// in the middle never leaves a half-written project file.
+// in the middle never leaves a half-written project file. More than kMaxFileBytes is refused
+// (nothing is written; the file stays as it was).
 bool WriteFileAtomic(const std::filesystem::path& path, std::string_view data, std::string* error);
 
 // The top-level window under a screen point (physical pixels), skipping `exclude`, hidden,
