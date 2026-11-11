@@ -7,8 +7,8 @@
       "date": "2026-11-05",
       "items": [
         {
-          "ja": "アセットのパネル: Assets フォルダの木 (種類ごとの印)・名前の変更・ドラッグでフォルダへ移動・新しいフォルダ・ごみ箱へ削除・エクスプローラーで表示。ファイルには動かしても名前を変えても変わらない ID (横の .meta) が付き、エクスプローラーで動かしても付いていく。インスペクターの参照の欄 (アセット・エンティティ) にドラッグで入れる・一覧から選ぶ・× で外す",
-          "en": "Assets panel: the Assets folder as a tree (an icon per kind), rename, drag into folders, new folder, delete to the Recycle Bin, show in Explorer. Every file gets an ID that survives moving and renaming (in a .meta next to it), even when moved in Explorer. Reference fields (asset, entity) in the Inspector: drop one in, pick from a list, or clear with ×"
+          "ja": "アセットのパネル: Assets フォルダの木 (種類ごとの印)・名前の変更・ドラッグでフォルダへ移動・新しいフォルダ・ごみ箱へ削除・エクスプローラーで表示。ファイルには動かしても名前を変えても変わらない ID (横の .meta) が付き、エクスプローラーで動かしても付いていく。インスペクターの参照の欄 (アセット・エンティティ) にドラッグで入れる・一覧から選ぶ・× で外す。メッシュの「モデル」もアセットの参照に (動かしても外れない)",
+          "en": "Assets panel: the Assets folder as a tree (an icon per kind), rename, drag into folders, new folder, delete to the Recycle Bin, show in Explorer. Every file gets an ID that survives moving and renaming (in a .meta next to it), even when moved in Explorer. Reference fields (asset, entity) in the Inspector: drop one in, pick from a list, or clear with ×. A mesh's Model is now an asset reference (it stays when the file moves)"
         },
         {
           "ja": "ゲーム: ▶ Play / 一時停止 / 1 コマ送り / ■ 停止 (Ctrl+P)。Play 中はシーンのコピーが動き (帯の色が変わる・編集は止まる)、止めると前に戻る。ゲームビューに動いているゲーム。部品「回り続ける」。同じ部品を複数付ける (「回り続ける」)。Prefab (作る・置く・置いた物の上書き・Prefab に反映)",

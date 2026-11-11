@@ -190,32 +190,25 @@ private:
         }
     }
 
-    // The model at `path` (inside the project), read the first time it is asked for; null: draw a box.
-    const space3d::GpuMesh* Model(const std::string& path, game_production::SceneViewHost& host) {
-        if (path.empty()) return nullptr;
-        ModelEntry& m = models_[path];
+    // The model `ref` names (an asset - wherever it is now), read the first time it is asked for;
+    // null: draw a box.
+    const space3d::GpuMesh* Model(const AssetRef& ref, game_production::SceneViewHost& host) {
+        if (ref.Empty()) return nullptr;
+        ModelEntry& m = models_[ref.guid];
         m.usedAt = now_;
         if (m.looked && now_ - m.checkedAt < kModelCheckSeconds) return m.gpu.get();
-        const bool firstLook = !m.looked;
         m.looked = true;
         m.checkedAt = now_;
-        const std::filesystem::path rel = PathFromUtf8(path);
-        if (rel.has_root_name() || rel.has_root_directory()) {
-            if (!m.told) log::Warn("シーンビュー: モデル「{}」は絶対パスなので読みません。プロジェクトのフォルダからの相対パスにしてください (箱で描きます)", path);
-            m.told = true;
-            return nullptr;
-        }
-        const std::filesystem::path root = host.host.GetProject().Root();
-        const std::filesystem::path file = root / rel;
+        const std::filesystem::path file = host.host.AssetFile(ref);
+        // (for the console: the file's name; the id when there is no file)
+        const std::string path = file.empty() ? ref.guid : PathToUtf8(file.filename());
         std::error_code ec;
-        const auto time = std::filesystem::last_write_time(file, ec);
-        if (ec) {
-            // A path still being typed in the inspector is not there either: told only when it is
-            // still missing at the next look (a second later), once.
+        const auto time = file.empty() ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(file, ec);
+        if (file.empty() || ec) {
             m.gpu.reset();
             m.loaded = false;
-            if (!firstLook && !m.told) {
-                log::Warn("シーンビュー: モデル「{}」が見つからないので箱で描きます (プロジェクトのフォルダ「{}」からの相対パスです)", path, PathToUtf8(root));
+            if (!m.told) {
+                log::Warn("シーンビュー: モデル「{}」がプロジェクトに見つからないので箱で描きます (消されたか、アセットの外のファイル)", path);
                 m.told = true;
             }
             return nullptr;
@@ -801,7 +794,7 @@ private:
     std::vector<space3d::LineVertex> lines_;
     std::vector<space3d::Box> boxes_;
     std::vector<space3d::MeshDraw> meshes_;
-    std::unordered_map<std::string, ModelEntry> models_;  // by the path written in MeshRenderer
+    std::unordered_map<std::string, ModelEntry> models_;  // by MeshRenderer::model (the asset's id)
     double now_ = 0;
 
     Drag drag_ = Drag::None;

@@ -26,7 +26,7 @@
   "上からの光の影を、床と物に落とす (押すと切り替え)": "Cast the light's shadows on the floor and on objects (click to switch)",
   "メッシュ (3D モデル)": "Mesh (3D model)",
   "モデル": "Model",
-  "プロジェクトのフォルダからの相対パス (例: Assets/Models/robot.glb)。.gltf / .glb / .obj が読めます": "A path relative to the project folder (e.g. Assets/Models/robot.glb). Reads .gltf / .glb / .obj",
+  "3D モデルのアセット (.gltf / .glb / .obj が読めます)。アセットのパネルからドラッグするか、クリックして選びます": "A 3D model asset (reads .gltf / .glb / .obj). Drag one from the Assets panel, or click to choose",
   "影を落とす": "Cast shadows",
   "回り続ける": "Keep Spinning",
   "1 秒に回る角度 (度)": "Degrees per second",

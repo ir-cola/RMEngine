@@ -691,13 +691,20 @@ RM_TEST(Space3d_BoundsAndShadowMatrix) {
 
 RM_TEST(MeshRenderer_SavesItsModel) {
     game_x_3d::MeshRenderer m;
-    CHECK(m.model.empty() && m.castShadows);
-    m.model = "Assets/Models/robot.glb";
+    CHECK(m.model.Empty() && m.castShadows);
+    m.model.guid = "0123456789abcdef0123456789abcdef";  // an asset reference: saved as the id
     m.castShadows = false;
     const json::Value j = reflect::Save(m);
+    CHECK(j.Get("model").AsString() == m.model.guid);
     game_x_3d::MeshRenderer back;
     reflect::Load(back, j);
-    CHECK(back.model == "Assets/Models/robot.glb" && !back.castShadows);
+    CHECK(back.model == m.model && !back.castShadows);
+    CHECK(std::string_view(reflect::TypeOf<game_x_3d::MeshRenderer>().fields[0].assetKinds) == "model");
+    // Data from before references (the path as a string) is read as it is (SoftwareHost::AssetFile finds the file).
+    json::Value old = j;
+    old.Set("model", "Assets/Models/robot.glb");
+    reflect::Load(back, old);
+    CHECK(back.model.guid == "Assets/Models/robot.glb");
 }
 
 RM_TEST(SceneViewState_KeepsShadows) {
