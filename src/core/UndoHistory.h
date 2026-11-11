@@ -28,6 +28,12 @@ public:
         (void)next;
         return false;
     }
+    // Whether MergeWith(next) would take it in - asked without changing anything (a group joins only
+    // when every one of its commands can; a command that does not answer is never joined in a group).
+    virtual bool CanMergeWith(const ICommand& next) const {
+        (void)next;
+        return false;
+    }
     // After merging, an entry that ends where it began (typed, then Esc) is dropped.
     virtual bool IsNoOp() const { return false; }
 };
@@ -50,12 +56,19 @@ public:
         for (auto it = cmds_.rbegin(); it != cmds_.rend(); ++it) (*it)->Undo();
     }
     std::string Label() const override { return label_; }
-    bool MergeWith(const ICommand& next) override {
+    bool CanMergeWith(const ICommand& next) const override {
         const auto* n = dynamic_cast<const CommandGroup*>(&next);
         if (!n || mergeKey_ == 0 || n->mergeKey_ != mergeKey_ || n->cmds_.size() != cmds_.size()) return false;
         for (size_t i = 0; i < cmds_.size(); ++i) {
-            if (!cmds_[i]->MergeWith(*n->cmds_[i])) return false;  // (the same targets in the same order: all join)
+            if (!cmds_[i]->CanMergeWith(*n->cmds_[i])) return false;  // the same targets in the same order
         }
+        return true;
+    }
+    // All or nothing: nothing is changed unless every command joins (no half-joined group).
+    bool MergeWith(const ICommand& next) override {
+        if (!CanMergeWith(next)) return false;
+        const auto& n = static_cast<const CommandGroup&>(next);
+        for (size_t i = 0; i < cmds_.size(); ++i) cmds_[i]->MergeWith(*n.cmds_[i]);
         return true;
     }
     bool IsNoOp() const override {

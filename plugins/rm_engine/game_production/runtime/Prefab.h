@@ -52,16 +52,20 @@ namespace rm::game_production {
 
 inline constexpr char kPrefabKind[] = "rm_engine.game_production.prefab";
 inline constexpr char kPrefabExtension[] = ".rmprefab";
+inline constexpr int kPrefabFormat = 1;  // the "format" this version writes
 
 bool IsPrefab(const json::Value& v);
+// Written by a newer version ("format" above kPrefabFormat): not read, and never written over.
+bool NewerPrefab(const json::Value& v);
 
 // The prefab of `root` and everything below it. Entities of a placed prefab keep their source as
 // their id in the file (so the other placed ones still match after it is written back); the others
 // get ids after those. `sources` (if given): scene id -> id in the file, for Scene::LinkPrefab.
 // A prefab placed inside is written as its root with its link and its current PrefabLink::overrides
 // (the caller works them out first); what is inside it is not written (★ nor plain entities put
-// under its insides).
-json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int>* sources = nullptr);
+// under its insides). `previous`: the file as it was (when writing it again) - its keys this version
+// does not know are kept (rule 6).
+json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int>* sources = nullptr, const json::Value* previous = nullptr);
 
 // The asset ids of the prefabs nested in `prefab` (a file's content), in order, each once.
 std::vector<std::string> NestedAssets(const json::Value& prefab);

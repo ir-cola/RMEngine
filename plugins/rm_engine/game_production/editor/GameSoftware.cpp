@@ -72,14 +72,37 @@ class SceneCommand final : public ICommand {
 public:
     SceneCommand(Scene& scene, json::Value before, json::Value after, std::string label)
         : scene_(scene), before_(std::move(before)), after_(std::move(after)), label_(std::move(label)) {}
-    void Do() override { scene_.Load(after_); }
-    void Undo() override { scene_.Load(before_); }
+    // The next id is kept: an id given out once is never given again (an entity made after an undo
+    // never gets the id of one that was undone - references and saved views would point at it).
+    void Do() override { Load(after_); }
+    void Undo() override { Load(before_); }
     std::string Label() const override { return label_; }
 
 private:
+    void Load(const json::Value& v) {
+        const int next = scene_.NextId();
+        scene_.Load(v);
+        scene_.KeepNextId(next);
+    }
+
     Scene& scene_;
     json::Value before_, after_;
     std::string label_;
+};
+
+// A file an edit wrote (a prefab - Prefab に反映): undo writes back what was there, redo the new one.
+// Put in the same entry as the scene's change, so undo never leaves the file and the scene apart.
+class FileCommand final : public ICommand {
+public:
+    FileCommand(std::function<void(const std::string&)> write, std::string before, std::string after, std::string label)
+        : write_(std::move(write)), before_(std::move(before)), after_(std::move(after)), label_(std::move(label)) {}
+    void Do() override { write_(after_); }
+    void Undo() override { write_(before_); }
+    std::string Label() const override { return label_; }
+
+private:
+    std::function<void(const std::string&)> write_;
+    std::string before_, after_, label_;
 };
 
 std::vector<int> ToEntityIds(std::span<const tree::ItemId> ids) {
@@ -464,6 +487,13 @@ private:
 
     void StartPlay(ui::Context& c) {
         if (Running()) return;
+        // Not in the middle of a drag (a gizmo, a row): the rest of it would go to the scene and the
+        // history under the copy that plays.
+        const ui::Input& in = c.In();
+        if (in.down[0] || in.down[1] || in.down[2]) {
+            log::Info("ドラッグ中は Play を始めません (ボタンを離してから)");
+            return;
+        }
         playScene_ = std::make_unique<Scene>(scene_);  // the copy that plays (components are deep copies)
         runner_.Reset();
         runner_.SetCamera(settings_.startCamera.id);  // the systems may switch it (SystemContext::camera)
@@ -1001,6 +1031,10 @@ private:
             log::Warn("「{}」は Prefab のファイルではありません", PathToUtf8(file.filename()));
             return nullptr;
         }
+        if (NewerPrefab(*v)) {
+            log::Warn("Prefab「{}」は新しい版のエンジンで作られたので読みません (置いた物は保存したまま)", PathToUtf8(file.filename()));
+            return nullptr;
+        }
         return &(prefabs_[ref.guid] = std::move(*v));
     }
     const json::Value* Cached(const AssetRef& ref) {
@@ -1173,6 +1207,22 @@ private:
         return true;
     }
 
+    // Writes a prefab file's text (wherever the asset is now) and keeps it as the last known form.
+    bool WriteBytes(const AssetRef& ref, const std::string& text) {
+        const std::filesystem::path file = host_.AssetFile(ref);
+        std::string err;
+        if (file.empty() || !platform::WriteFileAtomic(file, text, &err)) {
+            log::Error("Prefab「{}」のファイルを書けませんでした: {}", PrefabTitle(ref), file.empty() ? std::string("見つかりません") : err);
+            return false;
+        }
+        if (auto v = json::Parse(text); v && IsPrefab(*v)) {
+            prefabs_[ref.guid] = std::move(*v);
+        } else {
+            prefabs_.erase(ref.guid);
+        }
+        return true;
+    }
+
     void PrefabActions(const std::vector<int>& sel, std::vector<tree::Action>& list) {
         tree::Action sep;
         sep.separator = true;
@@ -1250,23 +1300,37 @@ private:
             log::Warn("Prefab「{}」のファイルが見つからないので反映できません", PrefabTitle(ref));
             return;
         }
+        // The file as it is now: kept whole for undo, and never written over when it is not a prefab
+        // this version can read (a newer version's, a broken one).
+        std::string err;
+        const auto onDisk = platform::ReadFileBytes(file, &err);
+        const auto parsed = onDisk ? json::Parse(*onDisk) : std::nullopt;
+        if (!parsed || !IsPrefab(*parsed) || NewerPrefab(*parsed)) {
+            log::Warn("Prefab「{}」のファイルが読めない (新しい版で作られたか、壊れている) ので、反映しません", PrefabTitle(ref));
+            return;
+        }
         // The prefab as it was (what the other placed ones changed is worked out against it).
-        json::Value before;
+        json::Value before = *parsed;
         if (const json::Value* old = Cached(ref)) before = *old;
         UpdateOverrides(scene_);  // while the cache still has the prefabs as they were
         std::unordered_map<int, int> sources;
-        const json::Value next = MakePrefab(scene_, root, &sources);
+        const json::Value next = MakePrefab(scene_, root, &sources, &*parsed);  // (the file's other keys stay)
         if (ContainsPrefab(next, ref.guid)) {
             log::Warn("Prefab「{}」の中に「{}」自身が入ることになるので、反映しません", PrefabTitle(ref), PrefabTitle(ref));
             return;
         }
-        if (!WriteFile(file, next)) return;
-        prefabs_[ref.guid] = next;
-        if (!IsPrefab(before)) before = next;
-        Edit(std::format("Prefab「{}」に反映", PrefabTitle(ref)), [&] {
-            scene_.LinkPrefab(root, ref, sources);
-            ReapplyPrefab(ref, before, next, root);
-        });
+        const std::string nextText = json::Write(next);
+        if (!WriteBytes(ref, nextText)) return;
+        // Undo writes the file back as it was (and the placed ones with it); redo writes it again.
+        auto fileCmd = std::make_unique<FileCommand>([this, ref](const std::string& text) { WriteBytes(ref, text); }, *onDisk, nextText,
+                                                   std::format("Prefab「{}」のファイル", PrefabTitle(ref)));
+        Edit(
+            std::format("Prefab「{}」に反映", PrefabTitle(ref)),
+            [&] {
+                scene_.LinkPrefab(root, ref, sources);
+                ReapplyPrefab(ref, before, next, root);
+            },
+            std::move(fileCmd));
         log::Info("Prefab「{}」に反映しました (置いた物 {} 個)", PrefabWhere(ref), scene_.PrefabRoots(ref.guid).size());
     }
 
@@ -1314,8 +1378,9 @@ private:
 
     // Runs a change of the scene's shape and puts it in the history (edit = undo entry = unsaved).
     // A change that changes nothing leaves no entry. Never while playing (the copy plays).
+    // `also`: something done with it, outside the scene (a file written), undone with it in one entry.
     template <class Fn>
-    void Edit(std::string label, Fn&& change) {
+    void Edit(std::string label, Fn&& change, std::unique_ptr<ICommand> also = nullptr) {
         if (Running()) {
             log::Info("Play 中は編集できません (■ で止めてから)");
             return;
@@ -1323,8 +1388,15 @@ private:
         json::Value before = scene_.Save();
         change();
         json::Value after = scene_.Save();
-        if (before == after) return;
-        host_.History().Push(std::make_unique<SceneCommand>(scene_, std::move(before), std::move(after), std::move(label)));
+        if (!also) {
+            if (before == after) return;
+            host_.History().Push(std::make_unique<SceneCommand>(scene_, std::move(before), std::move(after), std::move(label)));
+            return;
+        }
+        auto group = std::make_unique<CommandGroup>(label);
+        if (before != after) group->Add(std::make_unique<SceneCommand>(scene_, std::move(before), std::move(after), label));
+        group->Add(std::move(also));
+        host_.History().Push(std::move(group));
     }
 
     bool CopyEntities(const std::vector<int>& ids) {

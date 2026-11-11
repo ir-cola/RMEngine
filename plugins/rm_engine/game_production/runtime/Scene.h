@@ -21,6 +21,7 @@
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_production/runtime/Components.h"
 
+#include <algorithm>
 #include <span>
 #include <string_view>
 #include <string>
@@ -124,7 +125,9 @@ public:
     size_t Delete(std::span<const int> ids);
     // Moves the given entities (with everything below them) under `parent` at `index` among its
     // children counted without the moved ones. False when it is refused (into itself, a missing
-    // parent) or nothing changed.
+    // parent) or nothing changed. A part of a placed prefab moved to another parent leaves it (plain
+    // entities - the prefab decides its own parents); a nested prefab moved out of the one around it
+    // is placed by hand. (So a part never joins another placed prefab with an id of the wrong file.)
     bool Move(std::span<const int> ids, int parent, size_t index);
 
     // A component of `type` with its default values, after the entity's others. False: no such
@@ -171,6 +174,13 @@ public:
     // root or `prefab` has no entities.
     bool ApplyPrefab(int root, const json::Value& prefab, const json::Value& overrides, reflect::Warnings* warnings = nullptr);
 
+    // Ids are never used again, not even after an undo brought back an older scene: the next id
+    // (what a new entity gets) is kept by the undo command and put back with KeepNextId.
+    int NextId() const { return nextId_; }
+    void KeepNextId(int atLeast) { nextId_ = std::max(nextId_, atLeast); }
+    // Ids above this are taken as broken (and replaced when loading): there is always room for new ones.
+    static constexpr int kMaxId = 1 << 30;
+
     // { "nextId": 7, "entities": [ {"id": 1, "parent": 0, "name": ..., "active": ...,
     //     "components": [ {"type": "rm::space3d::Transform", "data": {...}} ] }, ... ] }
     // Keys this version does not know (of the scene and of each entity) are written back.
@@ -195,6 +205,9 @@ private:
     // Copies (pasted, duplicated) of entities of a placed prefab that came without its root are plain
     // entities; a copied nested root without the prefab around it is placed by hand.
     void DetachCopies(const std::vector<int>& made);
+    // `id` leaves the placed prefab it is a part of: it and the parts below it become plain entities,
+    // the prefabs nested in them are placed by hand (a nested root itself: placed by hand).
+    void DetachFromPrefab(int id);
 
     std::vector<SceneEntity> entities_;
     std::vector<const reflect::TypeDesc*> componentTypes_;

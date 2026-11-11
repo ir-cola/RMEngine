@@ -20,8 +20,9 @@ struct EditTarget {
 
 class SetFieldCommand final : public ICommand {
 public:
-    // mergeKey != 0: later commands with the same key (and field) join this one - the keys typed into
-    // one field while it has the focus are one undo entry.
+    // mergeKey != 0: later commands with the same key, the same field and the same object (where
+    // `resolve` points now) join this one - the keys typed into one field while it has the focus are
+    // one undo entry.
     SetFieldCommand(const TypeDesc& type, FieldPath path, json::Value before, json::Value after,
                     std::function<EditTarget()> resolve, std::string label, uint64_t mergeKey = 0);
 
@@ -29,6 +30,7 @@ public:
     void Undo() override { Apply(before_); }
     std::string Label() const override { return label_; }
     bool MergeWith(const ICommand& next) override;
+    bool CanMergeWith(const ICommand& next) const override;
     bool IsNoOp() const override { return before_ == after_; }
 
 private:

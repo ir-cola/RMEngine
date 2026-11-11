@@ -12,10 +12,18 @@ SetFieldCommand::SetFieldCommand(const TypeDesc& type, FieldPath path, json::Val
       label_(std::move(label)),
       mergeKey_(mergeKey) {}
 
-bool SetFieldCommand::MergeWith(const ICommand& next) {
+bool SetFieldCommand::CanMergeWith(const ICommand& next) const {
     const auto* n = dynamic_cast<const SetFieldCommand*>(&next);
     if (!n || mergeKey_ == 0 || n->mergeKey_ != mergeKey_ || &n->type_ != &type_ || n->path_ != path_) return false;
-    after_ = n->after_;  // this entry now ends where the newer one ends (and still starts where it started)
+    // The same object: a key that happens to be the same for another thing never joins them.
+    const EditTarget a = resolve_ ? resolve_() : EditTarget{};
+    const EditTarget b = n->resolve_ ? n->resolve_() : EditTarget{};
+    return a.object && a.object == b.object;
+}
+
+bool SetFieldCommand::MergeWith(const ICommand& next) {
+    if (!CanMergeWith(next)) return false;
+    after_ = static_cast<const SetFieldCommand&>(next).after_;  // this entry now ends where the newer one ends
     return true;
 }
 

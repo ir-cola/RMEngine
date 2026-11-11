@@ -246,6 +246,13 @@ bool Scene::Move(std::span<const int> ids, int parent, size_t index) {
     }
     std::vector<std::pair<int, int>> was;  // (id, parent) in list order, to tell whether anything changed
     for (const auto& e : entities_) was.emplace_back(e.data.id, e.data.parent);
+    // Parts of placed prefabs that go to another parent leave their prefab (worked out before anything moves).
+    std::vector<int> leaving;
+    for (const int r : roots) {
+        const SceneEntity* e = Find(r);
+        if (e->data.parent != parent && e->prefab.Linked() && (!e->prefab.Root() || e->prefab.outer > 0)) leaving.push_back(r);
+    }
+    for (const int r : leaving) DetachFromPrefab(r);
 
     std::vector<SceneEntity> taken;
     for (const int r : roots) {
@@ -435,12 +442,16 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
     for (const auto& item : v.Get("entities").Items()) entities_.push_back(LoadEntity(item, warnings));
 
     // Ids: positive and unique. Repeated or missing ones get new ids (never one in use).
+    // (An id or a nextId too big to count on from - a broken file - is not used: no overflow.)
     int maxId = 0;
-    for (const auto& e : entities_) maxId = std::max(maxId, e.data.id);
-    nextId_ = std::max<int>(static_cast<int>(v.Get("nextId").AsInt(1)), maxId + 1);
+    for (const auto& e : entities_) {
+        if (e.data.id <= kMaxId) maxId = std::max(maxId, e.data.id);
+    }
+    const int64_t fileNext = v.Get("nextId").AsInt(1);
+    nextId_ = std::max(fileNext >= 1 && fileNext <= kMaxId ? static_cast<int>(fileNext) : 1, maxId + 1);
     std::unordered_set<int> seen;
     for (auto& e : entities_) {
-        if (e.data.id > 0 && seen.insert(e.data.id).second) continue;
+        if (e.data.id > 0 && e.data.id <= kMaxId && seen.insert(e.data.id).second) continue;
         const int fresh = nextId_++;
         warn(std::format("エンティティ「{}」の ID ({}) が使えないので {} にしました", e.data.name, e.data.id, fresh));
         e.data.id = fresh;

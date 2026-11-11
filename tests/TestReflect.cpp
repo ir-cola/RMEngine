@@ -334,6 +334,49 @@ RM_TEST(Reflect_SetFieldCommand_TypingIsOneEntry) {
     CHECK(s.window.width == startW);
 }
 
+RM_TEST(Reflect_SetFieldCommand_OnlyTheSameObjectJoins) {
+    const TypeDesc& t = TypeOf<Settings>();
+    const FieldPath wp{IndexOf(t, "window"), IndexOf(TypeOf<Window>(), "width")};
+    Settings a, b, c;
+    Unknowns ua, ub, uc;
+    auto at = [&](Settings& s, Unknowns& u) { return [&s, &u] { return EditTarget{&s, &u}; }; };
+    auto set = [&](Settings& s, Unknowns& u, int from, int to, uint64_t key) {
+        return std::make_unique<SetFieldCommand>(t, wp, json::Value(from), json::Value(to), at(s, u), "幅", key);
+    };
+    UndoHistory h;
+    // The same key and field, another object (two inspectors, a key used again): two entries.
+    h.Push(set(a, ua, a.window.width, 700, 9), false);
+    h.Push(set(b, ub, b.window.width, 800, 9), false);
+    CHECK(h.UndoCount() == 2 && a.window.width == 700 && b.window.width == 800);
+
+    // Groups join all or nothing: the second group's last target is another object, so nothing of
+    // the first one may change (a redo must give 710, not the second group's 720).
+    h.Clear();
+    auto g1 = std::make_unique<CommandGroup>("幅", 5);
+    g1->Add(set(a, ua, 700, 710, 11));
+    g1->Add(set(b, ub, 800, 810, 11));
+    h.Push(std::move(g1), false);
+    auto g2 = std::make_unique<CommandGroup>("幅", 5);
+    g2->Add(set(a, ua, 710, 720, 11));
+    g2->Add(set(c, uc, c.window.width, 820, 11));
+    h.Push(std::move(g2), false);
+    CHECK(h.UndoCount() == 2 && a.window.width == 720 && c.window.width == 820);
+    CHECK(h.Undo() && h.Undo());
+    CHECK(a.window.width == 700 && b.window.width == 800);
+    CHECK(h.Redo());
+    CHECK(a.window.width == 710 && b.window.width == 810);
+    // The same targets in the same order still join (typing into a field of several things).
+    auto g3 = std::make_unique<CommandGroup>("幅", 6);
+    g3->Add(set(a, ua, 710, 711, 12));
+    g3->Add(set(b, ub, 810, 811, 12));
+    h.Push(std::move(g3), false);
+    auto g4 = std::make_unique<CommandGroup>("幅", 6);
+    g4->Add(set(a, ua, 711, 712, 12));
+    g4->Add(set(b, ub, 811, 812, 12));
+    h.Push(std::move(g4), false);
+    CHECK(h.UndoCount() == 2);
+}
+
 RM_TEST(Reflect_Object_OwnsAValueOfAnyType) {
     const TypeDesc& t = TypeOf<Settings>();
     Object a(t);

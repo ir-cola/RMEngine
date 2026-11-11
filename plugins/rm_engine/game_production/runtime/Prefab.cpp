@@ -48,6 +48,7 @@ json::Value FieldOverride(int source, const std::string& component, size_t index
 }  // namespace
 
 bool IsPrefab(const json::Value& v) { return v.IsObject() && v.Get("kind").AsString() == kPrefabKind; }
+bool NewerPrefab(const json::Value& v) { return IsPrefab(v) && v.Get("format").AsInt(1) > kPrefabFormat; }
 
 std::string PrefabName(std::string_view path) {
     const size_t slash = path.find_last_of("/\\");
@@ -57,7 +58,7 @@ std::string PrefabName(std::string_view path) {
     return std::string(name);
 }
 
-json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int>* sources) {
+json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int>* sources, const json::Value* previous) {
     const SceneEntity* r = scene.Find(root);
     if (!r) return {};
     // Ids in the file: the sources of a placed prefab stay; everything else after them.
@@ -94,7 +95,9 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
         if (e.data.id != root && e.prefab.Root()) {
             // A prefab placed inside: kept as its root, linked to its own file, with what was changed
             // on it (as of the caller's last Overrides). What is inside it comes from its file.
-            json::Value link = json::Value::MakeObject();
+            json::Value link = e.prefab.extra.IsObject() ? e.prefab.extra : json::Value::MakeObject();  // (keys of a newer version stay)
+            link.Erase("outer");  // the scene's (its id in this file is its "id")
+            link.Erase("path");
             link.Set("source", e.prefab.source);
             link.Set("asset", e.prefab.asset.guid);
             link.Set("overrides", e.prefab.overrides.IsObject() ? e.prefab.overrides : json::Value::MakeObject());
@@ -107,9 +110,9 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
         list.Push(std::move(ej));
     }
     if (sources) *sources = std::move(ids);
-    json::Value o = json::Value::MakeObject();
+    json::Value o = previous && previous->IsObject() ? *previous : json::Value::MakeObject();  // its other keys stay
     o.Set("kind", kPrefabKind);
-    o.Set("format", 1);
+    o.Set("format", kPrefabFormat);
     o.Set("entities", std::move(list));
     return o;
 }
@@ -308,6 +311,28 @@ int Scene::PlacePrefab(const json::Value& prefab, const AssetRef& asset, int par
     return roots[0];
 }
 
+void Scene::DetachFromPrefab(int id) {
+    const SceneEntity* e = Find(id);
+    if (!e || !e->prefab.Linked()) return;
+    if (e->prefab.Root()) {
+        Find(id)->prefab.outer = 0;  // a nested prefab: placed by hand now (it stays a prefab of its own)
+        return;
+    }
+    // The parts below it of the same placed prefab, and the prefabs nested in those (worked out first).
+    const int around = PrefabRootOf(id);
+    std::vector<int> plain, byHand;
+    for (const auto& d : entities_) {
+        if (!IsUnder(d.data.id, id) || !d.prefab.Linked()) continue;
+        if (!d.prefab.Root()) {
+            if (PrefabRootOf(d.data.id) == around) plain.push_back(d.data.id);
+        } else if (d.prefab.outer > 0 && PrefabRootOf(d.data.parent) == around) {
+            byHand.push_back(d.data.id);
+        }
+    }
+    for (const int p : plain) Find(p)->prefab = {};
+    for (const int p : byHand) Find(p)->prefab.outer = 0;
+}
+
 void Scene::DetachCopies(const std::vector<int>& made) {
     const std::unordered_set<int> copied(made.begin(), made.end());
     std::vector<int> plain, byHand;
@@ -337,6 +362,22 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
     {
         const std::vector<int> siblings = Children(parent);
         siblingIndex = static_cast<size_t>(std::find(siblings.begin(), siblings.end(), root) - siblings.begin());
+    }
+    // Two parts with the same id in the file (data from before parts left a prefab when moved, a
+    // file edited by hand): the later ones leave the prefab as plain entities - nothing is lost.
+    {
+        std::unordered_set<int> keys;
+        std::vector<int> clash;
+        for (const int m : PrefabMembers(root)) {
+            if (!keys.insert(KeyOf(*Find(m), root)).second) clash.push_back(m);
+        }
+        for (const int c : clash) {
+            if (warnings) {
+                warnings->push_back(std::format("エンティティ「{}」は Prefab の中の ID がほかと重なっているので、Prefab から外してふつうのエンティティにしました",
+                                                Find(c)->data.name));
+            }
+            DetachFromPrefab(c);
+        }
     }
     const std::vector<int> members = PrefabMembers(root);
     const std::unordered_set<int> memberSet(members.begin(), members.end());

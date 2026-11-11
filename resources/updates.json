@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "直したもの: 置いた Prefab の一部を別の Prefab の下へ移すと、開き直したときにエンティティが消えることがあった (移した物は Prefab から外れるように)。「Prefab に反映」の Undo でファイルも戻る。別の物への入力が 1 つの Undo にまとまることがあった。Undo の後にエンティティの ID が使い回されることがあった。ドラッグ中に Play を始めない",
+          "en": "Fixed: moving part of a placed prefab under another prefab could make entities disappear when the project was opened again (a moved part now leaves its prefab). Undoing Apply to Prefab also restores the file. Typing into another object could join the same undo entry. Entity ids could be reused after an undo. Play does not start in the middle of a drag"
+        },
+        {
           "ja": "プラグインの (再) インストールが途中で失敗しても、前の写しが消えたままにならないように (よけてから置き換え、失敗したら戻す。エラーの文にどの段かを出す)",
           "en": "A plugin (re)install that fails halfway no longer leaves the plugin deleted (the old copy is moved aside, then replaced, and put back on failure; the error says which step failed)"
         },

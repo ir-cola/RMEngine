@@ -310,3 +310,93 @@ RM_TEST(Prefab_Nested_KeptAsALinkAndFilledFromItsOwnFile) {
     CHECK(s.NestedPrefabs(room2).empty());
     CHECK(s.Find(lidCopy[0]));  // the plain copy stays where it was put
 }
+
+RM_TEST(Prefab_MovedPartsLeaveTheirPrefab_NothingIsLost) {
+    const std::vector<std::string> placement{T().name};
+    int cube = 0, lid = 0;
+    Scene s = WithCube(&cube, &lid);
+    std::unordered_map<int, int> sources;
+    const json::Value v1 = MakePrefab(s, cube, &sources);
+    const int a = s.PlacePrefab(v1, kCube);
+    const int b = s.PlacePrefab(v1, kCube);
+    const int aLid = s.Children(a)[0];
+    const size_t count = s.Entities().size();
+    // A's lid goes under B: it leaves A (a plain entity), it does not join B with A's id in the file.
+    CHECK(s.Move(std::vector<int>{aLid}, b, Scene::kEnd));
+    CHECK(!s.Find(aLid)->prefab.Linked() && s.PrefabRootOf(aLid) == 0);
+    CHECK(s.PrefabMembers(b).size() == 2);
+    // Made again from the prefab (as when the project is opened): nothing goes.
+    CHECK(s.ApplyPrefab(a, v1, Overrides(s, a, v1, placement)));
+    CHECK(s.ApplyPrefab(b, v1, Overrides(s, b, v1, placement)));
+    CHECK(s.Entities().size() == count && s.Find(aLid) && s.Find(aLid)->data.parent == b);
+    // Only the order among the same parent's children: still a part.
+    int bLid = 0;
+    for (const int k : s.Children(b)) {
+        if (s.Find(k)->prefab.Linked()) bLid = k;  // b's own lid (the moved one is plain)
+    }
+    CHECK(bLid != 0 && bLid != aLid);
+    CHECK(s.Move(std::vector<int>{bLid}, b, 0));
+    CHECK(s.Find(bLid)->prefab.Linked() && s.PrefabRootOf(bLid) == b);
+
+    // Data from before: two parts with the same id in the file. The second is kept as a plain entity.
+    s.Find(aLid)->prefab.source = s.Find(bLid)->prefab.source;
+    reflect::Warnings w;
+    const size_t before = s.Entities().size();
+    CHECK(s.ApplyPrefab(b, v1, json::Value::MakeObject(), &w));
+    CHECK(w.size() == 1 && s.Entities().size() == before);
+    CHECK(s.Find(aLid) && s.Find(bLid));
+    CHECK(s.PrefabMembers(b).size() == 2);
+}
+
+RM_TEST(Prefab_NestedRootMovedOutIsPlacedByHand) {
+    int cube = 0, lid = 0;
+    Scene s = WithCube(&cube, &lid);
+    std::unordered_map<int, int> sources;
+    const json::Value cubeFile = MakePrefab(s, cube, &sources);
+    const int room = s.Create("Room");
+    const int inRoom = s.PlacePrefab(cubeFile, kCube, room);
+    std::unordered_map<int, int> roomSources;
+    MakePrefab(s, room, &roomSources);
+    s.LinkPrefab(room, kRoom, roomSources);
+    CHECK(s.Find(inRoom)->prefab.outer > 0);
+    // Out of the room, into another placed cube: placed by hand there (its id of the room's file goes).
+    const int other = s.PlacePrefab(cubeFile, kCube);
+    CHECK(s.Move(std::vector<int>{inRoom}, other, Scene::kEnd));
+    CHECK(s.Find(inRoom)->prefab.Root() && s.Find(inRoom)->prefab.outer == 0);
+    CHECK(s.NestedPrefabs(room).empty() && s.NestedPrefabs(other).empty());
+    CHECK(s.PrefabRootOf(s.Children(inRoom)[0]) == inRoom);  // its own parts stay its own
+}
+
+RM_TEST(Prefab_UnknownKeysOfTheFileStay) {
+    int cube = 0, lid = 0;
+    Scene s = WithCube(&cube, &lid);
+    json::Value old = MakePrefab(s, cube);
+    old.Set("author", "someone");  // a key of a newer version
+    const json::Value again = MakePrefab(s, cube, nullptr, &old);
+    CHECK(again.Get("author").AsString() == "someone" && IsPrefab(again) && !NewerPrefab(again));
+    json::Value newer = again;
+    newer.Set("format", kPrefabFormat + 1);
+    CHECK(NewerPrefab(newer));
+}
+
+RM_TEST(Scene_IdsAreNeverUsedAgain) {
+    Scene s = Empty();
+    s.Create("a");
+    const json::Value before = s.Save();
+    const int made = s.Create("b");
+    // What the undo of 「エンティティを作成」 does: the scene from before, the next id kept.
+    const int next = s.NextId();
+    s.Load(before);
+    s.KeepNextId(next);
+    CHECK(s.Create("c") > made);
+    // A broken file with an id too big to count on from: replaced, and no overflow.
+    json::Value broken = s.Save();
+    broken.Find("entities")->At(0).Set("id", int64_t{2147483647});
+    broken.Set("nextId", int64_t{2147483647});
+    Scene t = Empty();
+    reflect::Warnings w;
+    t.Load(broken, &w);
+    CHECK(!w.empty());
+    for (const auto& e : t.Entities()) CHECK(e.data.id > 0 && e.data.id <= Scene::kMaxId);
+    CHECK(t.Create("d") > 0);
+}
