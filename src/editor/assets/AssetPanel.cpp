@@ -1,6 +1,9 @@
 #include "editor/assets/AssetPanel.h"
 
+#include "base/Log.h"
 #include "base/Utf.h"
+#include "core/asset/ImportSettings.h"
+#include "core/reflect/Data.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 
@@ -220,11 +223,126 @@ w::DragThing AssetPanel::DragOut(std::span<const tree::ItemId> items) {
     return t;
 }
 
+// One change of an asset's import settings: written to its .meta (and back on undo).
+class ImportCommand final : public ICommand {
+public:
+    ImportCommand(AssetLibrary& lib, std::weak_ptr<AssetPanel::ImportView> view, std::string guid, const reflect::TypeDesc& type,
+                  reflect::FieldPath path, json::Value before, json::Value after, std::string label, uint64_t merge)
+        : lib_(lib), view_(std::move(view)), guid_(std::move(guid)), type_(type), path_(std::move(path)), before_(std::move(before)),
+          after_(std::move(after)), label_(std::move(label)), merge_(merge) {}
+
+    void Do() override { Apply(after_); }
+    void Undo() override { Apply(before_); }
+    std::string Label() const override { return label_; }
+    bool IsNoOp() const override { return before_ == after_; }
+    bool MergeWith(const ICommand& next) override {
+        const auto* n = dynamic_cast<const ImportCommand*>(&next);
+        if (!n || merge_ == 0 || n->merge_ != merge_ || n->guid_ != guid_ || n->path_ != path_) return false;
+        after_ = n->after_;
+        return true;
+    }
+
+private:
+    void Apply(const json::Value& v) {
+        const asset::Entry* e = lib_.Index().ByGuid(guid_);  // (wherever the file is now)
+        if (!e) return;
+        const std::filesystem::path file = lib_.FullPath(*e);
+        // What the .meta has now, with this one field changed (other settings and unknown keys stay).
+        reflect::Object o(type_);
+        reflect::Unknowns u;
+        reflect::Load(type_, o.Get(), asset::ReadImportJson(file), &u);
+        const reflect::PathTarget pt = reflect::Resolve(type_, o.Get(), &u, path_);
+        if (!pt.field) return;
+        reflect::LoadField(*pt.field, pt.owner, v, pt.unknowns, nullptr);
+        const json::Value out = reflect::Save(type_, o.Get(), &u);
+        if (!asset::WriteImportJson(file, out)) log::Warn("取り込みの設定を {}.meta に書けませんでした", e->path);
+        if (auto view = view_.lock(); view && view->guid == guid_) {
+            view->object = reflect::Object(type_);
+            view->unknowns = {};
+            reflect::Load(type_, view->object.Get(), out, &view->unknowns);
+        }
+    }
+
+    AssetLibrary& lib_;
+    std::weak_ptr<AssetPanel::ImportView> view_;
+    std::string guid_;
+    const reflect::TypeDesc& type_;
+    reflect::FieldPath path_;
+    json::Value before_, after_;
+    std::string label_;
+    uint64_t merge_ = 0;
+};
+
+void AssetPanel::SetInspector(std::function<void(Inspectable)> inspect, std::function<void(std::unique_ptr<ICommand>)> push) {
+    inspect_ = std::move(inspect);
+    push_ = std::move(push);
+}
+
+void AssetPanel::SelectionChanged(std::span<const tree::ItemId> ids) {
+    if (ids.size() == 1) pendingInspect_ = true;  // shown when the button is let go (not after a drag)
+}
+
+void AssetPanel::InspectSelected() {
+    const std::vector<std::string> sel = GuidsOf(state_.sel.ids);
+    if (sel.size() != 1 || !inspect_) return;
+    const asset::Entry* e = lib_.Index().ByGuid(sel[0]);
+    if (!e) return;
+    const std::string guid = e->guid;
+    const asset::Kind kind = asset::KindOf(e->path, e->folder);
+    const reflect::TypeDesc* type = asset::ImportTypeOf(kind);
+    // The settings as the .meta has them now.
+    view_->guid = guid;
+    view_->unknowns = {};
+    if (type) {
+        view_->object = reflect::Object(*type);
+        reflect::Load(*type, view_->object.Get(), asset::ReadImportJson(lib_.FullPath(*e)), &view_->unknowns);
+    } else {
+        view_->object = {};
+    }
+    Inspectable target;
+    target.title = lib_.NameOf(*e);
+    AssetLibrary* lib = &lib_;
+    std::shared_ptr<ImportView> view = view_;
+    auto push = push_;
+    target.blocks = [lib, view, guid, type, push] {
+        std::vector<InspectBlock> blocks;
+        const asset::Entry* now = lib->Index().ByGuid(guid);
+        if (!now) return blocks;  // deleted: nothing is shown
+        InspectBlock info;
+        info.note = KindLabel(asset::KindOf(now->path, now->folder)) + L"  ·  Assets/" + Utf8ToWide(now->path) + L"\nID " + Utf8ToWide(guid);
+        blocks.push_back(std::move(info));
+        if (!type) return blocks;
+        InspectBlock settings;
+        settings.type = type;
+        settings.title = Utf8ToWide(TrU8(type->label));
+        settings.note = Tr(L"変えると .meta にすぐ書き、使っている所 (シーンビューなど) が読み直します。Ctrl+Z で戻せます");
+        settings.resolve = [view, guid]() -> reflect::EditTarget {
+            if (view->guid != guid || view->object.Empty()) return {};
+            return {view->object.Get(), &view->unknowns};
+        };
+        std::weak_ptr<ImportView> weak = view;
+        settings.onEdit = [lib, weak, guid, type, push](InspectBlock::Change ch) {
+            if (push) push(std::make_unique<ImportCommand>(*lib, weak, guid, *type, std::move(ch.path), std::move(ch.before), std::move(ch.after),
+                                                           std::move(ch.label), ch.merge));
+        };
+        blocks.push_back(std::move(settings));
+        return blocks;
+    };
+    inspect_(std::move(target));
+}
+
 void AssetPanel::Draw(ui::Context& c, const Rect& r) {
     if (lib_.Poll()) c.RequestRedraw();  // changed on the disk (Explorer ...)
     Rect area = r;
     const Rect info = ui::TakeBottom(area, 24);
     tree::Draw(c, state_, *this, area);
+    // A click on one asset shows it in the インスペクター - once the button is up, and not after a drag
+    // (the drag may be going to a field of what the インスペクター shows now).
+    if (state_.dragging) pendingInspect_ = false;
+    if (pendingInspect_ && !c.In().down[0]) {
+        pendingInspect_ = false;
+        InspectSelected();
+    }
 
     // Under the tree: what the selected one is and where it is.
     std::wstring text;

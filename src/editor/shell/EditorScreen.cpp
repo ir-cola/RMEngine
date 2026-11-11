@@ -1083,6 +1083,9 @@ void EditorScreen::DrawAssets(ui::Context& c, Rect r) {
     if (!ws.assetPanel) {
         ws.assetPanel = std::make_unique<AssetPanel>(*assets_, thumbnails_.get(), ws.assetThumbnail,
                                                      [this](std::wstring problem) { ShowError(std::move(problem)); });
+        Workspace* wp = &ws;
+        ws.assetPanel->SetInspector([wp](Inspectable i) { wp->Inspect(std::move(i)); },
+                                    [wp](std::unique_ptr<ICommand> cmd) { wp->history.Push(std::move(cmd), false); });
     }
     ws.assetPanel->Draw(c, r);
 }

@@ -2,6 +2,7 @@
 
 #include "base/Log.h"
 #include "base/Utf.h"
+#include "core/asset/ImportSettings.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
 #include "editor/lang/Lang.h"
@@ -86,6 +87,7 @@ Rect Fit(const Rect& r, float aspect) {
 struct ImageEntry {
     Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
     uint32_t width = 0, height = 0;  // the file's pixels (the bitmap may be smaller: kMaxImageSize)
+    bool sharp = false;  // the image's import setting くっきり (with the sprite's own)
     bool looked = false, loaded = false, told = false;
     std::filesystem::file_time_type time{};
     double checkedAt = 0, usedAt = 0;
@@ -210,8 +212,9 @@ private:
                 p.draw.color = sp.color;
                 p.draw.flipX = sp.flipX;
                 p.draw.flipY = sp.flipY;
-                p.draw.crisp = sp.crisp;
-                if (const ImageEntry* img = Image(c, sp.image, host)) {
+                const ImageEntry* img = Image(c, sp.image, host);
+                p.draw.crisp = sp.crisp || (img && img->sharp);  // the sprite's own, or the image's import setting
+                if (img) {
                     p.draw.image = img->bitmap.Get();
                     // The cell of the atlas, in the bitmap's pixels; its size in the plane from the file's
                     // pixels (a bitmap scaled down to fit keeps the sprite's size).
@@ -238,7 +241,8 @@ private:
         const std::filesystem::path file = host.host.AssetFile(ref);
         const std::string name = file.empty() ? ref.guid : PathToUtf8(file.filename());
         std::error_code ec;
-        const auto time = file.empty() ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(file, ec);
+        // (the picture or its import settings in the .meta)
+        const auto time = file.empty() ? std::filesystem::file_time_type{} : asset::ChangedAt(file, ec);
         if (file.empty() || ec) {
             m.bitmap.Reset();
             m.loaded = false;
@@ -255,14 +259,18 @@ private:
         m.time = time;
         m.bitmap.Reset();
         std::string error;
+        // The image's import settings (its .meta): くっきり, and how big it may be.
+        const auto imp = asset::ReadImport<asset::ImageImport>(file);
+        m.sharp = imp.sharp;
+        const uint32_t most = std::min<uint32_t>(kMaxImageSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
         // (the file's own size first: a picture bigger than a bitmap is scaled down, the sprite keeps its size)
         const auto whole = platform::LoadImageFile(host.host.Graphics().Wic(), file, platform::PixelOrder::PremultipliedBgra, {}, &error);
         if (whole) {
             m.width = whole->width;
             m.height = whole->height;
-            const bool big = whole->width > kMaxImageSize || whole->height > kMaxImageSize;
+            const bool big = whole->width > most || whole->height > most;
             const auto fitted = big ? platform::LoadImageFile(host.host.Graphics().Wic(), file, platform::PixelOrder::PremultipliedBgra,
-                                                              {kMaxImageSize, kMaxImageSize}, &error)
+                                                              {most, most}, &error)
                                     : std::nullopt;
             m.bitmap = platform::BitmapFromImage(c.P().DC(), big && fitted ? *fitted : *whole);
             if (!m.bitmap && error.empty()) error = "Direct2D のビットマップにできませんでした";

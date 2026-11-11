@@ -1,5 +1,7 @@
 #include "editor/assets/Thumbnails.h"
 
+#include "core/asset/ImportSettings.h"
+
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "editor/plugin/Software.h"
@@ -64,7 +66,7 @@ ID2D1Bitmap* Thumbnails::Get(ui::Context& c, const std::string& guid, asset::Kin
     if (now - e.checkedAt >= kCheckSeconds) {
         e.checkedAt = now;
         std::error_code ec;
-        const auto time = std::filesystem::last_write_time(file, ec);
+        const auto time = asset::ChangedAt(file, ec);  // the file or its import settings (.meta)
         if (ec) return nullptr;  // gone (the panel will see it soon)
         if (time != e.time) {
             e.time = time;

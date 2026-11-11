@@ -300,5 +300,18 @@
   "2 つのプラグインをつなぐものです。つなぐ両方が入っていると自動で入り、自分で選ぶことはありません。": "They join two plugins. A connector is installed automatically when both of the plugins it joins are; you never choose one yourself.",
   "つなぐもの: {}": "Joins: {}",
   "つなぐ両方が入ると自動で入ります": "Installed automatically with both of the plugins it joins",
-  "つなぐものが足りないので休んでいます": "Resting: a plugin it joins is missing"
+  "つなぐものが足りないので休んでいます": "Resting: a plugin it joins is missing",
+  "上の向き": "Up axis",
+  "Y が上": "Y up",
+  "Z が上 (Blender の OBJ・3ds Max など)": "Z up (Blender's OBJ, 3ds Max ...)",
+  "3D モデルの取り込み": "3D model import",
+  "大きさ": "Scale",
+  "読み込んだ形に掛ける倍率 (センチメートルで作ったモデルなら 0.01)": "Multiplies the shape read (0.01 for a model made in centimeters)",
+  "作ったソフトで上だった軸。Z なら Y が上になるように起こして読みます": "The axis that was up in the tool it was made with. With Z, the model is stood up so Y is up",
+  "画像の取り込み": "Image import",
+  "くっきり (ドット絵)": "Sharp (pixel art)",
+  "拡大してもぼかさず、ピクセルをそのまま大きくします (3D のテクスチャと 2D のスプライト)": "Not smoothed when enlarged: the pixels just get bigger (3D textures and 2D sprites)",
+  "大きさの上限 (ピクセル)": "Maximum size (pixels)",
+  "これより大きい画像は縮めて読みます (GPU のメモリを減らす)。ファイルはそのまま": "Bigger images are read smaller (less GPU memory). The file stays as it is",
+  "変えると .meta にすぐ書き、使っている所 (シーンビューなど) が読み直します。Ctrl+Z で戻せます": "A change is written to the .meta at once and whatever uses the asset (the scene view ...) reads it again. Ctrl+Z undoes it"
 }

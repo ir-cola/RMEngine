@@ -7,6 +7,8 @@
 #include "base/Utf.h"
 #include "core/asset/AssetFiles.h"
 #include "core/asset/AssetIndex.h"
+#include "core/asset/ImportSettings.h"
+#include "rm_engine/space3d/runtime/Mesh.h"
 #include "core/reflect/Reflect.h"
 
 #include <filesystem>
@@ -211,4 +213,71 @@ RM_TEST(Asset_KindsOfReflectedFields) {
             if (f.assetKinds && !ValidKindFilter(f.assetKinds)) CHECK(!"unknown AssetKind");
         }
     }
+}
+
+RM_TEST(Asset_ImportSettingsInMeta) {
+    // The "import" object of a .meta, and a new text with another one: the id and other keys stay.
+    const std::string meta = R"({"guid": "0000000000000abc0000000000000001", "memo": 1, "import": {"scale": 0.5, "future": true}})";
+    const json::Value imp = ImportInMeta(meta);
+    CHECK(imp.Get("scale").AsDouble() == 0.5);
+    CHECK(ImportInMeta("{}").IsObject() && ImportInMeta("broken").IsObject());
+    json::Value changed = imp;
+    changed.Set("scale", 2.0);
+    const std::string text = MetaWithImport(meta, changed);
+    CHECK(GuidInMeta(text) == G(1));
+    CHECK(text.find("\"memo\"") != std::string::npos && text.find("\"future\"") != std::string::npos);
+    CHECK(ImportInMeta(text).Get("scale").AsDouble() == 2.0);
+    // Writing the id again keeps the settings (MetaText keeps every other key).
+    CHECK(ImportInMeta(MetaText(text, G(2))).Get("scale").AsDouble() == 2.0);
+    // Typed: what a loader reads (defaults for what is missing, the range kept).
+    ModelImport m;
+    reflect::Load(m, *json::Parse(R"({"scale": 0, "up": "Z"})"));
+    CHECK(m.scale == 0.0001f && m.up == UpAxis::Z);
+    CHECK(ImportTypeOf(Kind::Model) == &reflect::TypeOf<ModelImport>() && ImportTypeOf(Kind::Image) == &reflect::TypeOf<ImageImport>());
+    CHECK(ImportTypeOf(Kind::Audio) == nullptr && ImportTypeOf(Kind::Folder) == nullptr);
+}
+
+RM_TEST(Asset_ImportSettingsOnDisk) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path root = fs::temp_directory_path() / L"rm_asset_import_test";
+    fs::remove_all(root, ec);
+    fs::create_directories(root, ec);
+    const fs::path file = root / L"木.obj";
+    std::ofstream(file, std::ios::binary) << "v 0 0 0\n";
+    std::vector<std::string> notes;
+    Update(root, {}, notes);  // the id
+    const auto before = ChangedAt(file, ec);
+    CHECK(!ec);
+    CHECK(ReadImport<ModelImport>(file).scale == 1.f);  // none yet: the defaults
+    json::Value imp = json::Value::MakeObject();
+    imp.Set("scale", 0.01);
+    imp.Set("up", "Z");
+    CHECK(WriteImportJson(file, imp));
+    const ModelImport m = ReadImport<ModelImport>(file);
+    CHECK(m.scale == 0.01f && m.up == UpAxis::Z);
+    CHECK(ChangedAt(file, ec) >= before);
+    // The id is still there, and looking at the folder again keeps the settings.
+    const std::vector<Entry> again = Update(root, {}, notes);
+    CHECK(again.size() == 1 && IsGuid(again[0].guid));
+    CHECK(ReadImport<ModelImport>(file).up == UpAxis::Z);
+    ChangedAt(root / L"無い.obj", ec);
+    CHECK(static_cast<bool>(ec));
+    fs::remove_all(root, ec);
+}
+
+RM_TEST(Asset_ModelImportApplied) {
+    space3d::MeshData mesh;
+    mesh.vertices.push_back({{1, 2, 3}, {0, 0, 1}, {0, 0}});
+    mesh.vertices.push_back({{-1, 0, 0}, {0, 1, 0}, {0, 0}});
+    space3d::ComputeBounds(mesh);
+    space3d::ApplyModelImport(mesh, 2.f, true);  // Z up -> Y up, twice as big
+    const space3d::MeshVertex& v = mesh.vertices[0];
+    CHECK(v.position.x == 2 && v.position.y == 6 && v.position.z == -4);
+    CHECK(v.normal.x == 0 && v.normal.y == 1 && v.normal.z == 0);  // what faced up (Z) faces up (Y)
+    CHECK(mesh.vertices[1].normal.z == -1);
+    CHECK(mesh.max.y == 6 && mesh.min.x == -2 && mesh.min.z == -4);
+    space3d::MeshData same = mesh;
+    space3d::ApplyModelImport(same, 1.f, false);  // the defaults change nothing
+    CHECK(same.vertices[0].position.y == 6);
 }

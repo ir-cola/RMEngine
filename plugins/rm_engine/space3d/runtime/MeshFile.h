@@ -12,7 +12,8 @@
 namespace rm::space3d {
 
 // nullopt: *error says why (Japanese, with the file's name). What the model points to (a .gltf's
-// buffers, an OBJ's .mtl) is read only from the model's folder and below.
+// buffers, an OBJ's .mtl) is read only from the model's folder and below. The asset's import settings
+// (its .meta: size, which way is up - core/asset/ImportSettings.h) are applied.
 std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::string* error);
 
 // The file a model names by a relative path ("tex/wood.png", "../Textures/wood.png"), as a full

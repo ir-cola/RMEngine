@@ -2,8 +2,11 @@
 
 #include "base/Log.h"
 #include "base/Utf.h"
+#include "core/asset/ImportSettings.h"
 #include "platform/Image.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
+
+#include <algorithm>
 
 namespace rm::space3d {
 
@@ -20,7 +23,7 @@ const GpuTexture* TextureCache::Get(Renderer& renderer, IWICImagingFactory* wic,
     e.checkedAt = now;
     const std::string name = PathToUtf8(file.filename());
     std::error_code ec;
-    const auto time = std::filesystem::last_write_time(file, ec);
+    const auto time = asset::ChangedAt(file, ec);  // the picture or its import settings (.meta)
     if (ec) {
         e.gpu.reset();
         e.loaded = true;
@@ -36,8 +39,10 @@ const GpuTexture* TextureCache::Get(Renderer& renderer, IWICImagingFactory* wic,
     e.time = time;
     e.told = false;
     std::string error;
-    const auto image = platform::LoadImageFile(wic, file, platform::PixelOrder::Rgba, {kMaxTextureSize, kMaxTextureSize}, &error);
-    e.gpu = image ? renderer.UploadTexture(*image, srgb, &error) : nullptr;
+    const auto imp = asset::ReadImport<asset::ImageImport>(file);
+    const uint32_t most = std::min(kMaxTextureSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
+    const auto image = platform::LoadImageFile(wic, file, platform::PixelOrder::Rgba, {most, most}, &error);
+    e.gpu = image ? renderer.UploadTexture(*image, srgb, &error, imp.sharp) : nullptr;
     if (e.gpu) {
         log::Info("テクスチャ「{}」を{}読みました ({} x {})", name, again ? "もう一度" : "", e.gpu->width, e.gpu->height);
     } else {

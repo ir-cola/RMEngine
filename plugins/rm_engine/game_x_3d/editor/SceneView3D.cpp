@@ -2,6 +2,7 @@
 
 #include "base/Log.h"
 #include "base/Utf.h"
+#include "core/asset/ImportSettings.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
 #include "editor/lang/Lang.h"
@@ -280,7 +281,8 @@ private:
         // (for the console: the file's name; the id when there is no file)
         const std::string path = file.empty() ? ref.guid : PathToUtf8(file.filename());
         std::error_code ec;
-        const auto time = file.empty() ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(file, ec);
+        // (the model or its import settings in the .meta: changing the size reads it again)
+        const auto time = file.empty() ? std::filesystem::file_time_type{} : asset::ChangedAt(file, ec);
         if (file.empty() || ec) {
             loader_.Cancel(m.ticket);
             m.ticket = 0;

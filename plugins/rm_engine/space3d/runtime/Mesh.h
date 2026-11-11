@@ -132,6 +132,9 @@ void AppendPlaced(MeshData& out, const MeshData& part, const Mat4& world);
 // points up.
 void ComputeNormals(MeshData& mesh);
 void ComputeBounds(MeshData& mesh);
+// The asset's import settings (core/asset ModelImport): every position times `scale`, and a model made
+// with Z up stood up so Y is up (y = z, z = -y; normals too). The bounds follow.
+void ApplyModelImport(MeshData& mesh, float scale, bool zUp);
 
 // Pieces of reading, tested on their own.
 std::optional<std::vector<uint8_t>> DecodeBase64(std::string_view text);

@@ -904,6 +904,19 @@ void ComputeNormals(MeshData& mesh) {
     }
 }
 
+void ApplyModelImport(MeshData& mesh, float scale, bool zUp) {
+    if (scale == 1.f && !zUp) return;
+    for (MeshVertex& v : mesh.vertices) {
+        if (zUp) {
+            v.position = {v.position.x, v.position.z, -v.position.y};
+            v.normal = {v.normal.x, v.normal.z, -v.normal.y};
+        }
+        v.position = {v.position.x * scale, v.position.y * scale, v.position.z * scale};
+    }
+    // (a turn keeps the triangles' winding; a scale is never negative - Min of the setting)
+    ComputeBounds(mesh);
+}
+
 void ComputeBounds(MeshData& mesh) {
     if (mesh.vertices.empty()) {
         mesh.min = mesh.max = {0, 0, 0};

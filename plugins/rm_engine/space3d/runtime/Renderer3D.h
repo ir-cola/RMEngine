@@ -80,6 +80,7 @@ class GpuTexture {
 public:
     uint32_t width = 0, height = 0;
     bool srgb = false;  // read as colours (sRGB -> linear) or as numbers
+    bool sharp = false;  // drawn with the nearest pixel (no smoothing): the image's import setting
 
 private:
     friend class Renderer;
@@ -134,7 +135,8 @@ public:
     std::shared_ptr<const GpuMesh> Upload(const MeshData& mesh, std::string* error);
     // A picture (PixelOrder::Rgba) goes to the GPU once, with its mipmaps; null (and *error) when it
     // cannot. srgb: a colour picture (read as linear light); false: numbers (metal / rough, normals).
-    std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error);
+    // sharp: drawn with the nearest pixel (dot pictures: the image's import setting) instead of smoothed.
+    std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, bool sharp = false);
     // Draws the frame and returns the finished picture (B8G8R8A8, usable by Direct2D); null on failure.
     // The picture is kept until the next Render (its size follows the frame's).
     ID3D11Texture2D* Render(ID3D11DeviceContext* ctx, const RenderFrame& f);
@@ -176,6 +178,7 @@ private:
     Ptr<ID3D11DepthStencilState> depth_, depthNoWrite_;
     Ptr<ID3D11BlendState> blend_;
     Ptr<ID3D11SamplerState> textureSampler_;  // pictures: repeat, smooth, mipmapped
+    Ptr<ID3D11SamplerState> sharpSampler_;    // pictures set to くっきり (import setting): the nearest pixel
     std::vector<Item> items_;
     Stats stats_;
 

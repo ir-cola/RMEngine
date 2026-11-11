@@ -408,6 +408,12 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
         FAILED(device->CreateBlendState(&bl, &blend_)) || FAILED(device->CreateSamplerState(&ts, &textureSampler_))) {
         return fail("描画の設定");
     }
+    D3D11_SAMPLER_DESC tp = ts;  // くっきり: the nearest pixel (the smaller copies still far away)
+    tp.Filter = D3D11_FILTER_MIN_MAG_POINT_MIP_LINEAR;
+    tp.MaxAnisotropy = 1;
+    if (FAILED(device->CreateSamplerState(&tp, &sharpSampler_))) {
+        return fail("描画の設定");
+    }
     if (!MakeShadowMap()) return fail("影");
 
     UINT quality = 0;
@@ -483,7 +489,7 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     return gpu;
 }
 
-std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image& rgba, bool srgb, std::string* error) {
+std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, bool sharp) {
     auto fail = [&](const char* why) {
         if (error) *error = why;
         return nullptr;
@@ -507,6 +513,7 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image&
     td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     Ptr<ID3D11Texture2D> tex;
     auto gpu = std::make_shared<GpuTexture>();
+    gpu->sharp = sharp;
     if (FAILED(device_->CreateTexture2D(&td, init.data(), &tex)) || FAILED(device_->CreateShaderResourceView(tex.Get(), nullptr, &gpu->view))) {
         return fail("画像を GPU に載せられませんでした (メモリーが足りない?)");
     }
@@ -657,6 +664,9 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             auto view = [](const GpuTexture* t) -> ID3D11ShaderResourceView* { return t ? t->view.Get() : nullptr; };
             ID3D11ShaderResourceView* views[4] = {view(mat.texture), view(mat.metalRough), view(mat.normal), view(mat.emission)};
             ctx->PSSetShaderResources(1, 4, views);
+            // (the colour picture decides: くっきり is the image's import setting)
+            ID3D11SamplerState* sampler = mat.texture && mat.texture->sharp ? sharpSampler_.Get() : textureSampler_.Get();
+            ctx->PSSetSamplers(1, 1, &sampler);
             ctx->UpdateSubresource(cb, 0, nullptr, &c, 0, 0);
             ctx->DrawIndexed(part.indexCount, part.firstIndex, 0);
         }

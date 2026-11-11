@@ -1,0 +1,63 @@
+#pragma once
+// How an asset is read ("取り込みの設定"): kept in its .meta under "import", next to the id -
+//   { "guid": "...", "import": { "scale": 0.01, "up": "Z" } }
+// Written once here as RM_STRUCTs, so saving, loading, the インスペクター and undo come from them (rule 9).
+// Keys of a newer version inside "import" (and around it) are written back unchanged (rule 6).
+//
+// The editor shows them when an asset is selected in the アセット panel and writes the .meta at once.
+// Whoever reads the asset (a plugin: the 3D model loader, the textures, the 2D sprites) reads them
+// with ReadImport and reads the file again when ChangedAt moves (the file OR its .meta changed).
+// The game reads the same .meta files.
+
+#include "base/Json.h"
+#include "core/asset/AssetIndex.h"
+#include "core/reflect/Data.h"
+#include "core/reflect/Reflect.h"
+
+#include <filesystem>
+#include <string_view>
+#include <system_error>
+
+namespace rm::asset {
+
+RM_ENUM(Label="上の向き")
+enum class UpAxis {
+    RM_ITEM(Label="Y が上") Y,
+    RM_ITEM(Label="Z が上 (Blender の OBJ・3ds Max など)") Z,
+};
+
+RM_STRUCT(Label="3D モデルの取り込み")
+struct ModelImport {
+    RM_PROPERTY(Edit, Label="大きさ", Tooltip="読み込んだ形に掛ける倍率 (センチメートルで作ったモデルなら 0.01)", Min=0.0001, Max=10000) float scale = 1;
+    RM_PROPERTY(Edit, Label="上の向き", Tooltip="作ったソフトで上だった軸。Z なら Y が上になるように起こして読みます") UpAxis up = UpAxis::Y;
+};
+
+RM_STRUCT(Label="画像の取り込み")
+struct ImageImport {
+    RM_PROPERTY(Edit, Label="くっきり (ドット絵)", Tooltip="拡大してもぼかさず、ピクセルをそのまま大きくします (3D のテクスチャと 2D のスプライト)") bool sharp = false;
+    RM_PROPERTY(Edit, Label="大きさの上限 (ピクセル)", Tooltip="これより大きい画像は縮めて読みます (GPU のメモリを減らす)。ファイルはそのまま", Min=16, Max=8192) int maxSize = 4096;
+};
+
+// The settings type of a kind of asset (null: it has none).
+const reflect::TypeDesc* ImportTypeOf(Kind kind);
+
+// Pure: the "import" object of a .meta's text (an empty object when there is none), and the text
+// with another one (every other key kept).
+json::Value ImportInMeta(std::string_view metaText);
+std::string MetaWithImport(std::string_view metaText, const json::Value& import);
+
+// Files: the import settings of `file` (an asset's full path; read from "<file>.meta").
+json::Value ReadImportJson(const std::filesystem::path& file);
+// Writes them into its .meta (made when missing - it gets its id at the next look). False: could not.
+bool WriteImportJson(const std::filesystem::path& file, const json::Value& import);
+template <class T>
+T ReadImport(const std::filesystem::path& file) {
+    T t;
+    reflect::Load(t, ReadImportJson(file));
+    return t;
+}
+// The later of the file's and its .meta's times: when it moves, read the asset again (a setting
+// changed counts as the file changing). `ec` is set when the file itself is not there.
+std::filesystem::file_time_type ChangedAt(const std::filesystem::path& file, std::error_code& ec);
+
+}  // namespace rm::asset

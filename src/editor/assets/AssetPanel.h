@@ -13,13 +13,16 @@
 // Pictures and 3D models show a thumbnail (Thumbnails.h) instead of their kind's picture.
 // One per software (its own selection and open folders); the files are the project's (AssetLibrary).
 
+#include "core/reflect/Object.h"
 #include "editor/assets/AssetLibrary.h"
 #include "editor/assets/Thumbnails.h"
 #include "editor/inspector/Inspector.h"
+#include "editor/plugin/Software.h"
 #include "editor/tree/TreeView.h"
 #include "editor/widgets/Widgets.h"
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -39,6 +42,13 @@ public:
 
     void Draw(ui::Context& c, const ui::Rect& r);
 
+    // Selecting one asset shows it in the software's インスペクター (`inspect`): what it is and, for a
+    // kind that has them, its import settings (core/asset/ImportSettings.h). A change is written to
+    // its .meta at once as an undo entry on the software's history (`push`) - Ctrl+Z writes the old
+    // value back. Shown when the button is let go without a drag (dragging an asset to a field of the
+    // インスペクター does not take the インスペクター away from what it shows).
+    void SetInspector(std::function<void(Inspectable)> inspect, std::function<void(std::unique_ptr<ICommand>)> push);
+
     // tree::Source
     void Items(std::vector<tree::Item>& out) override;
     std::wstring EmptyText() const override;
@@ -48,12 +58,26 @@ public:
     void Move(std::span<const tree::ItemId> items, tree::ItemId parent, size_t index) override;
     std::vector<tree::Action> Actions(std::span<const tree::ItemId> selection) override;
     w::DragThing DragOut(std::span<const tree::ItemId> items) override;
+    void SelectionChanged(std::span<const tree::ItemId> ids) override;
     float RowHeight() const override;
     bool DrawPicture(ui::Context& c, const tree::Item& item, const ui::Rect& r) override;
 
 private:
     std::vector<std::string> GuidsOf(std::span<const tree::ItemId> ids) const;
     void Report(const std::wstring& problem);
+    void InspectSelected();
+
+    // The import settings shown in the インスペクター (one asset at a time).
+    struct ImportView {
+        std::string guid;
+        reflect::Object object;
+        reflect::Unknowns unknowns;
+    };
+    std::shared_ptr<ImportView> view_ = std::make_shared<ImportView>();
+    std::function<void(Inspectable)> inspect_;
+    std::function<void(std::unique_ptr<ICommand>)> push_;
+    bool pendingInspect_ = false;
+    friend class ImportCommand;
 
     AssetLibrary& lib_;
     Thumbnails* thumbnails_;

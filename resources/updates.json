@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "アセットを 1 つ選ぶとインスペクターに取り込みの設定: 3D モデルの大きさ・上の向き (Z が上のモデルを起こす)、画像のくっきり (ドット絵)・大きさの上限。変えると .meta にすぐ書いて読み直し、Ctrl+Z で戻せる",
+          "en": "Selecting one asset shows its import settings in the inspector: a 3D model's scale and up axis (stands up a Z-up model), an image's sharp (pixel art) and maximum size. A change is written to the .meta at once and read again; Ctrl+Z undoes it"
+        },
+        {
           "ja": "3D モデルに FBX (.fbx、バイナリーとテキストの 7.x) が使える: 形・法線・UV・材質の色と絵・模型の親子。Z が上やセンチメートルのファイルも向きと大きさを直して読む",
           "en": "3D models can be FBX (.fbx, binary and ASCII 7.x): shape, normals, UVs, material colours and pictures, and the model hierarchy. Files with Z up or in centimetres are turned and scaled to fit"
         },

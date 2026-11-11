@@ -1,6 +1,7 @@
 #include "rm_engine/space3d/runtime/MeshFile.h"
 
 #include "base/Utf.h"
+#include "core/asset/ImportSettings.h"
 
 #include <format>
 #include <fstream>
@@ -40,6 +41,10 @@ std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::str
     std::string why;
     auto mesh = ParseMesh(PathToUtf8(file.extension()), *bytes, related, &why);
     if (!mesh && error) *error = std::format("「{}」: {}", name, why);
+    if (mesh) {
+        const auto imp = asset::ReadImport<asset::ModelImport>(file);
+        ApplyModelImport(*mesh, imp.scale, imp.up == asset::UpAxis::Z);
+    }
     return mesh;
 }
 
