@@ -54,6 +54,13 @@ public:
     bool Install(const std::vector<PluginId>& ids, std::string* error);  // also reinstalls installed ones
     bool Uninstall(const PluginId& id, std::string* error);
 
+    // Each start, after Load: when the engine was updated (its file list changed since the last start),
+    // installed plugins whose files differ from the engine's copies are copied again - what the Hub's
+    // 再インストール does, without asking (they are the engine's files, not the user's). Plugins the
+    // user removed stay removed. Reloads when anything was copied. Returns what was copied.
+    // The stamp (SHA-256 of the file list) is kept in <installed>/engine_files.sha256.
+    std::vector<PluginId> RefreshFromEngine(const std::filesystem::path& fileList);
+
 private:
     bool CopyIn(const PluginId& id, std::string* error);
 

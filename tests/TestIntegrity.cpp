@@ -58,3 +58,31 @@ RM_TEST(Integrity_StalePlugins) {
     stale = StalePlugins(Sample(), {space}, [&](const PluginId&, const std::string&) { return std::optional<std::string>(); });
     CHECK(stale.size() == 1);  // missing in the installed copy
 }
+
+RM_TEST(Integrity_EngineChanged) {
+    CHECK(!EngineChanged(kA, kA));                // the same engine as at the last start: nothing to look at
+    CHECK(EngineChanged(kB, kA));                 // a new file list
+    CHECK(EngineChanged(kA, ""));                 // never looked at yet
+    CHECK(EngineChanged(std::nullopt, kA));       // no list: always (only plugin.json, cheap)
+}
+
+RM_TEST(Integrity_PluginsToRefresh) {
+    const PluginId space{"rm_engine", "space3d"}, game{"rm_engine", "game_production"};
+    int manifestLooks = 0;
+    auto differs = [&](const PluginId& id) {
+        ++manifestLooks;
+        return id == game;
+    };
+    // With the list: the files in it decide (an old plugin.json of space3d), plugin.json alone is not read.
+    auto old = [&](const PluginId&, const std::string&) { return std::optional<std::string>(kA); };
+    auto got = PluginsToRefresh(Sample(), {space, game}, old, differs);
+    CHECK(got.size() == 1 && got[0] == space);
+    CHECK(manifestLooks == 0);
+    auto same = [&](const PluginId&, const std::string&) { return std::optional<std::string>(kB); };
+    CHECK(PluginsToRefresh(Sample(), {space, game}, same, differs).empty());
+    // Without the list: plugin.json of each.
+    got = PluginsToRefresh(std::nullopt, {space, game}, same, differs);
+    CHECK(got.size() == 1 && got[0] == game);
+    CHECK(manifestLooks == 2);
+    CHECK(PluginsToRefresh(std::nullopt, {}, same, differs).empty());  // removed plugins are not looked at
+}

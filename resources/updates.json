@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "エンジンを新しくすると、入れたプラグインのうち古い写し (plugin.json・訳・テーマのファイル) を起動のときに自動で写し直す (削除したものは入れない)",
+          "en": "After the engine is updated, outdated copies of installed plugins (plugin.json, translations, theme files) are copied again at startup (removed plugins stay removed)"
+        },
+        {
           "ja": "参照の欄の一覧に画像と 3D モデルのサムネイル。外に出したアセットのパネル (階層) から、エディターのインスペクターへもドラッグで入れられるように。エンティティを複製・貼り付け・Prefab から置いたとき、中を指す参照の欄はコピーの方を指すように",
           "en": "The list of a reference field shows thumbnails of pictures and 3D models. Assets (and hierarchy items) can be dragged from a panel in its own window onto the editor's inspector. Duplicating, pasting or placing entities from a prefab makes reference fields that pointed inside them point at the copies"
         },

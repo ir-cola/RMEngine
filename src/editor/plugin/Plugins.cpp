@@ -1,5 +1,7 @@
 #include "editor/plugin/Plugins.h"
 
+#include "editor/app/Integrity.h"
+
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "editor/lang/Lang.h"
@@ -203,6 +205,59 @@ bool Plugins::Install(const std::vector<PluginId>& ids, std::string* error) {
         if (!CopyIn(id, error)) return false;
     }
     return true;
+}
+
+std::vector<PluginId> Plugins::RefreshFromEngine(const fs::path& fileList) {
+    std::error_code ec;
+    if (!fs::is_directory(installedDir_, ec)) return {};
+    const fs::path stampFile = installedDir_ / L"engine_files.sha256";
+    const std::optional<std::string> listHash = platform::Sha256File(fileList);
+    std::string kept;
+    if (auto bytes = platform::ReadFileBytes(stampFile, nullptr)) kept = *bytes;
+    if (!integrity::EngineChanged(listHash, kept)) return {};
+
+    std::optional<std::vector<integrity::FileEntry>> list;
+    if (listHash) {
+        std::string err;
+        auto bytes = platform::ReadFileBytes(fileList, &err);
+        auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
+        if (doc) list = integrity::ParseFileList(*doc, &err);
+        if (!list) log::Warn("ファイルの一覧を読めないので、入れたプラグインは plugin.json だけを比べます: {}", err);
+    }
+    std::vector<PluginId> candidates;
+    for (const Entry& e : entries_) {
+        if (e.installed && e.available) candidates.push_back(e.status.id);
+    }
+    const auto refresh = integrity::PluginsToRefresh(
+        list, candidates,
+        [&](const PluginId& id, const std::string& rel) { return platform::Sha256File(FolderOf(installedDir_, id) / PathFromUtf8(rel)); },
+        [&](const PluginId& id) {
+            const auto engine = platform::ReadFileBytes(FolderOf(availableDir_, id) / L"plugin.json", nullptr);
+            const auto mine = platform::ReadFileBytes(FolderOf(installedDir_, id) / L"plugin.json", nullptr);
+            return engine && (!mine || *mine != *engine);  // an unreadable engine copy is never copied
+        });
+
+    std::vector<PluginId> copied;
+    bool allCopied = true;
+    for (const PluginId& id : refresh) {
+        std::string err;
+        if (CopyIn(id, &err)) {
+            copied.push_back(id);
+        } else {
+            allCopied = false;
+            log::Error("{}", err);
+        }
+    }
+    if (!copied.empty()) {
+        log::Info("エンジンが新しくなったので、入れたプラグインを写し直しました ({} 個)", copied.size());
+        Reload();
+    }
+    // Looked at again on the next start when something failed (or there is no list to stamp).
+    if (listHash && allCopied) {
+        std::string err;
+        if (!platform::WriteFileAtomic(stampFile, *listHash, &err)) log::Warn("プラグインの確認の印を書けませんでした: {}", err);
+    }
+    return copied;
 }
 
 bool Plugins::Uninstall(const PluginId& id, std::string* error) {

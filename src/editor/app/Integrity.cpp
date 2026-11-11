@@ -60,4 +60,18 @@ std::vector<PluginId> StalePlugins(const std::vector<FileEntry>& list, const std
     return out;
 }
 
+bool EngineChanged(const std::optional<std::string>& fileListHash, const std::string& keptStamp) {
+    return !fileListHash || *fileListHash != keptStamp;
+}
+
+std::vector<PluginId> PluginsToRefresh(const std::optional<std::vector<FileEntry>>& list, const std::vector<PluginId>& installed,
+                                       const InstalledHashOf& installedHashOf, const ManifestDiffers& manifestDiffers) {
+    if (list) return StalePlugins(*list, installed, installedHashOf);
+    std::vector<PluginId> out;
+    for (const PluginId& id : installed) {
+        if (manifestDiffers(id)) out.push_back(id);
+    }
+    return out;
+}
+
 }  // namespace rm::editor::integrity

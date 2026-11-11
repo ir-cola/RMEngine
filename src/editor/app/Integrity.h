@@ -44,4 +44,16 @@ using InstalledHashOf = std::function<std::optional<std::string>(const PluginId&
 std::vector<PluginId> StalePlugins(const std::vector<FileEntry>& list, const std::vector<PluginId>& installed,
                                    const InstalledHashOf& installedHashOf);
 
+// --- After the engine was updated (each start) ------------------------------------------------
+// The installed plugins are copies of the engine's; a new engine may bring new copies (plugin.json,
+// translations, theme files ...). Whether to look at all: the SHA-256 of the engine's file list
+// differs from the stamp kept after the last look (no list: always - then only plugin.json is
+// compared, which is cheap).
+bool EngineChanged(const std::optional<std::string>& fileListHash, const std::string& keptStamp);
+// Which installed plugins (that this engine also has) to copy again: with the file list, those whose
+// files differ (StalePlugins); without it, those whose plugin.json differs (manifestDiffers).
+using ManifestDiffers = std::function<bool(const PluginId& id)>;
+std::vector<PluginId> PluginsToRefresh(const std::optional<std::vector<FileEntry>>& list, const std::vector<PluginId>& installed,
+                                       const InstalledHashOf& installedHashOf, const ManifestDiffers& manifestDiffers);
+
 }  // namespace rm::editor::integrity

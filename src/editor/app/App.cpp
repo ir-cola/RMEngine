@@ -38,6 +38,7 @@ int App::Run(const LaunchOptions& options) {
     LoadLanguageCatalogs();
     ApplyOptions();
     plugins_.Load(paths::EnginePlugins(), paths::InstalledPlugins());
+    plugins_.RefreshFromEngine(paths::FileList());  // a new engine: new copies of the installed plugins
     LoadThemes();
     ApplyOptions();  // the theme chosen may be a pack's
     if (!options.projectFile.empty()) {
