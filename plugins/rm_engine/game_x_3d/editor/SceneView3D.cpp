@@ -85,6 +85,7 @@ struct Placed {
     // of its own is drawn; it is seen (and clicked) by its mark and its lines.
     std::optional<Camera> camera;
     std::optional<Light> light;
+    bool ambient = false;  // it has a 環境光 (shown by the light's mark)
     bool marker = false;
 };
 
@@ -176,6 +177,7 @@ public:
         meshType_ = reflect::TypeOf<MeshRenderer>().name;
         cameraType_ = reflect::TypeOf<Camera>().name;
         lightType_ = reflect::TypeOf<Light>().name;
+        ambientType_ = reflect::TypeOf<AmbientLight>().name;
         now_ = c.Time();
         Place(host);
         ForgetUnusedModels();
@@ -225,9 +227,14 @@ private:
     void Place(game_production::SceneViewHost& host) {
         const game_production::Scene& scene = host.scene;
         placed_.clear();
+        ambient_.reset();
         std::unordered_map<int, Mat4> world;  // parents come before their children in TreeOrder
         for (const auto& t : scene.TreeOrder()) {
             const auto& e = *t.entity;
+            // 環境光: the first that runs decides (its entity needs no place).
+            const game_production::Component* ac = e.FindComponent(ambientType_);
+            const bool hasAmbient = ac && ac->Known();
+            if (hasAmbient && t.activeInHierarchy && !ambient_) ambient_ = ToRenderAmbient(*static_cast<const AmbientLight*>(ac->value.Get()));
             const auto it = world.find(e.data.parent);
             const Mat4 parent = it != world.end() ? it->second : Mat4{};
             const game_production::Component* comp = e.FindComponent(transformType_);
@@ -255,7 +262,8 @@ private:
                 if (const game_production::Component* lc = e.FindComponent(lightType_); lc && lc->Known()) {
                     p.light = *static_cast<const Light*>(lc->value.Get());
                 }
-                p.marker = (p.camera || p.light) && !(mc && mc->Known());
+                p.ambient = hasAmbient;
+                p.marker = (p.camera || p.light || p.ambient) && !(mc && mc->Known());
                 placed_.push_back(p);
             } else {
                 world[e.data.id] = parent;  // no place of its own: its children follow the parent
@@ -600,7 +608,7 @@ private:
             float nearest = kMarkPick;
             int mark = 0;
             for (const Placed& p : placed_) {
-                if (!p.camera && !p.light) continue;
+                if (!p.camera && !p.light && !p.ambient) continue;
                 const auto at = screen->ToScreen(space3d::TransformPoint(p.world, {0, 0, 0}));
                 if (!at) continue;
                 const float d = std::hypot(at->x - pressX_, at->y - pressY_);
@@ -687,6 +695,13 @@ private:
             log::Warn("シーンビュー: 光が {} 個あります。描くのは最初の {} 個だけです", lights_.size(), space3d::kMaxLights);
         }
         warnedLights_ = lights_.size() > space3d::kMaxLights ? lights_.size() : 0;
+        // Point lights and spots whose shadows found no map left (told once per number).
+        const size_t leftOut = gameLook ? warnedShadows_ : space3d::MakeLights(lights_, {}).shadowsLeftOut;
+        if (leftOut > 0 && leftOut != warnedShadows_) {
+            log::Warn("シーンビュー: 影の地図が足りないので、点光源・スポットの {} 個は影を落としません (地図は {} 枚: 点光源は 6 枚、スポットは 1 枚)", leftOut,
+                      space3d::kLocalShadowSlices);
+        }
+        warnedShadows_ = leftOut;
     }
 
     // The scene view's own camera (the editing camera).
@@ -724,6 +739,7 @@ private:
         f.boxes = boxes_;
         f.meshes = meshes_;
         f.lights = lights_;
+        f.ambient = ambient_.value_or(space3d::Ambient{});
 
         // Direct2D's drawing so far goes to the GPU first; then Direct3D draws into its own picture.
         dc->Flush();
@@ -870,7 +886,7 @@ private:
             if (at) c.P().Text({at->x - 80, at->y - 22, 160, 18}, Tr(L"読み込み中…"), loadingStyle);
         }
         for (const Placed& p : placed_) {
-            if (!p.camera && !p.light) continue;
+            if (!p.camera && !p.light && !p.ambient) continue;
             const auto at = screen->ToScreen(space3d::TransformPoint(p.world, {0, 0, 0}));
             if (!at) continue;
             const ui::Color col = IsSelected(host, p.id) ? theme::Accent
@@ -1064,7 +1080,7 @@ private:
         if (w::Button(c, "scene_shadows", bar.shadow, Tr(L"影"), state_.shadows ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.shadows = !state_.shadows;
         }
-        if (c.IsHovered(bar.shadow)) w::Tooltip(c, Tr(L"光の影を床と物に落とす (影を落とす平行光の 1 つ目。光の部品が無いときは上からの光。押すと切り替え)"));
+        if (c.IsHovered(bar.shadow)) w::Tooltip(c, Tr(L"光の影を床と物に落とす (光の部品の「影を落とす」に従う。光の部品が無いときは上からの光。押すと切り替え)"));
     }
 
     // The steps of the gizmo: how far a move, a turn and a scale go at a time; and whether always.
@@ -1135,7 +1151,9 @@ private:
     Picture main_;     // the view
     Picture preview_;  // the selected camera's picture (started when first needed)
     std::optional<Rect> previewAt_;
-    std::string transformType_, meshType_, cameraType_, lightType_;
+    std::string transformType_, meshType_, cameraType_, lightType_, ambientType_;
+    std::optional<space3d::Ambient> ambient_;  // the scene's 環境光 (none: the default)
+    size_t warnedShadows_ = 0;  // lights told about that have no shadow map left
     std::vector<Placed> placed_;
     std::vector<space3d::LineVertex> lines_;
     std::vector<space3d::Box> boxes_;

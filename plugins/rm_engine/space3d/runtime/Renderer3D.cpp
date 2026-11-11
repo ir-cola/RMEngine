@@ -20,10 +20,8 @@ cbuffer PerDraw : register(b0) {
     float4x4 viewProj;
     float4x4 world;
     float4x4 normalWorld;    // the inverse transpose of world: normals stay at right angles
-    float4x4 lightViewProj;  // world -> the shadow map (x, y -1..1, depth 0..1)
+    float4x4 lightViewProj;  // ShadowVS: world -> the shadow map being drawn (x, y -1..1, depth 0..1)
     float4 color;
-    float4 light;            // xyz: where the light goes; w: 1 = shadows
-    float4 shadow;           // x: one texel of the shadow map (uv); y: depth bias; z: normal offset (world)
     float4 eye;              // xyz: where the camera is (world)
     float4 material;         // the part's material colour, linear (times `color`, which is the screen's)
     float4 paint;            // x: 1 = a colour picture; y: alpha 0 opaque / 1 mask / 2 blend; z: mask's cutoff; w: 1 = a normal map
@@ -34,12 +32,27 @@ cbuffer PerDraw : register(b0) {
 // The lights of the frame (Lighting.h's LightBlock: set once per frame).
 cbuffer Lights : register(b1) {
     float4 lightInfo;         // x: how many
+    float4 ambientSky;        // rgb: the ambient light on faces turned up
+    float4 ambientGround;     // rgb: ... turned down
     float4 lightPos[8];       // xyz: where (point, spot); w: 0 directional, 1 point, 2 spot
     float4 lightDir[8];       // xyz: where the light goes; w: the range
-    float4 lightColor[8];     // rgb: colour x strength; w: 1 = its shadows are in the shadow map
+    float4 lightColor[8];     // rgb: colour x strength; w: 1 = its shadows are the sun's maps
     float4 lightSpot[8];      // x: cos of the cone's edge, y: cos where it starts to fade
+    float4 lightShadow[8];    // point / spot: x: its first map (-1: none); y: normal offset per distance; z: depth bias at distance 1
 };
-Texture2D shadowMap : register(t0);
+// The shadow maps of the frame (Renderer3D.cpp's ShadowConstants).
+cbuffer Shadows : register(b2) {
+    float4x4 sunViewProj[3];    // world -> the sun's maps (one, or the cascades)
+    float4x4 localViewProj[8];  // world -> the point / spot lights' maps
+    float4 sunInfo[3];          // x: where the map ends in front of the eye; y: normal offset (world); z: depth bias
+    float4 shadowInfo;          // x: how many sun maps (0: none); y: a texel of a sun's map (its uv); z: ... of the others
+    float4 viewForward;         // xyz: where the camera looks
+    float4 atlas;               // how the maps lie side by side in their texture: xy: the sun's columns, rows; zw: the others'
+};
+// Each kind of shadow map lies side by side (tiles) in one texture (an array of maps would need
+// ps_4_1 to be compared by the sampler).
+Texture2D sunMaps : register(t0);
+Texture2D localMaps : register(t5);
 SamplerComparisonState shadowSampler : register(s0);
 Texture2D baseMap : register(t1);        // sRGB: read as linear
 Texture2D metalRoughMap : register(t2);  // b: metal, g: rough
@@ -67,38 +80,73 @@ LineOut LineVS(LineIn i) {
 float4 LinePS(LineOut i) : SV_Target { return i.col; }
 
 struct MeshIn  { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; };
-struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 lpos : TEXCOORD1; float3 wpos : TEXCOORD2; };
+struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float3 wpos : TEXCOORD2; };
 MeshOut MeshVS(MeshIn i) {
     MeshOut o;
     float4 w = mul(world, float4(i.pos, 1));
     o.pos = mul(viewProj, w);
     o.nrm = mul((float3x3)normalWorld, i.nrm);
-    // Looked up a little off the surface (normal offset): a surface does not shadow itself.
-    float3 n = o.nrm * rsqrt(max(dot(o.nrm, o.nrm), 1e-12));
-    o.lpos = mul(lightViewProj, float4(w.xyz + n * shadow.z, 1));
     o.wpos = w.xyz;
     o.uv = i.uv;
     return o;
 }
 
-// 1 = in the light, 0 = in shadow. 3 x 3 looks, each already a blend of 2 x 2 texels (PCF).
-float Lit(float4 lpos) {
-    if (light.w < 0.5) return 1;
-    float2 uv = lpos.xy * float2(0.5, -0.5) + 0.5;
-    if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1) return 1;  // outside: nothing casts there
-    float d = min(lpos.z, 1) - shadow.y;                            // beyond the map's depth: behind everything
+// 1 = in the light, 0 = in shadow: the map `tile` of `maps` (tiles lie `grid` columns x rows) at p
+// (after the divide: x, y -1..1, depth 0..1). 3 x 3 looks, each already a blend of 2 x 2 texels
+// (PCF), kept inside the tile. Outside the map: lit.
+float ShadowLook(Texture2D maps, float2 grid, float3 p, float tile, float texel, float bias) {
+    float2 uv = p.xy * float2(0.5, -0.5) + 0.5;
+    if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1) return 1;
+    float d = min(p.z, 1) - bias;  // beyond the map's depth: behind everything
+    float2 corner = float2(tile - grid.x * floor(tile / grid.x), floor(tile / grid.x));
     float sum = 0;
     [unroll] for (int y = -1; y <= 1; ++y) {
         [unroll] for (int x = -1; x <= 1; ++x) {
-            sum += shadowMap.SampleCmpLevelZero(shadowSampler, uv + float2(x, y) * shadow.x, d);
+            float2 t = clamp(uv + float2(x, y) * texel, texel, 1 - texel);
+            sum += maps.SampleCmpLevelZero(shadowSampler, (corner + t) / grid, d);
         }
     }
     return sum / 9;
 }
 
-// One light at a point: what comes (colour x strength x its fade with distance / out of the cone)
-// and from where (toLight). The light's numbers are made by Lighting.h (not changed here).
-float3 LightAt(int l, float3 wpos, out float3 toLight) {
+// The sun: the first of its maps that reaches as far as the point is in front of the eye (one map,
+// or the cascades: near ones sharp). Looked up a little off the surface (normal offset): a surface
+// does not shadow itself. Beyond the last: lit.
+float SunShadow(float3 wpos, float3 n) {
+    int count = (int)shadowInfo.x;
+    float ahead = dot(wpos - eye.xyz, viewForward.xyz);
+    [loop] for (int c = 0; c < count; ++c) {
+        if (ahead <= sunInfo[c].x) {
+            float4 p = mul(sunViewProj[c], float4(wpos + n * sunInfo[c].y, 1));
+            return ShadowLook(sunMaps, atlas.xy, p.xyz / p.w, c, shadowInfo.y, sunInfo[c].z);
+        }
+    }
+    return 1;
+}
+
+// A point light (the side of its cube the point is on: the largest of |x| |y| |z|, in the order
+// +X -X +Y -Y +Z -Z) or a spot (its one map). The depth of a perspective map is not even: the bias
+// shrinks with the distance.
+float LocalShadow(int l, float3 wpos, float3 n) {
+    float slice = lightShadow[l].x;
+    if (slice < 0) return 1;
+    float3 from = wpos - lightPos[l].xyz;
+    if (lightPos[l].w < 1.5) {
+        float3 a = abs(from);
+        if (a.x >= a.y && a.x >= a.z) slice += from.x > 0 ? 0 : 1;
+        else if (a.y >= a.z) slice += from.y > 0 ? 2 : 3;
+        else slice += from.z > 0 ? 4 : 5;
+    }
+    float4 p = mul(localViewProj[(int)slice], float4(wpos + n * (lightShadow[l].y * length(from)), 1));
+    if (p.w <= 1e-4) return 1;
+    return ShadowLook(localMaps, atlas.zw, p.xyz / p.w, slice, shadowInfo.z, lightShadow[l].z / p.w);
+}
+
+float ShadowOf(int l, float3 wpos, float3 n) { return lightColor[l].w > 0.5 ? SunShadow(wpos, n) : LocalShadow(l, wpos, n); }
+
+// How much of a light is left at a point (its fade with distance / out of the cone), and from where
+// (toLight).
+float FadeAt(int l, float3 wpos, out float3 toLight) {
     toLight = -lightDir[l].xyz;
     float fade = 1;
     if (lightPos[l].w > 0.5) {
@@ -109,12 +157,16 @@ float3 LightAt(int l, float3 wpos, out float3 toLight) {
         fade = x * x;
         if (lightPos[l].w > 1.5) fade *= smoothstep(lightSpot[l].x, lightSpot[l].y, dot(-toLight, lightDir[l].xyz));
     }
-    return lightColor[l].rgb * fade;
+    return fade;
 }
 
-// The light leaving a surface towards the eye (linear): the sky (a little from everywhere, more from
-// above - even in shadow) and each light (diffuse + GGX highlight; its shadow if it has one).
-float3 Shade(float3 albedo, float metal, float rough, float3 n, float3 v, float3 wpos, float shadowLit) {
+// One light at a point: what comes (colour x strength x its fade) and from where (toLight). The
+// light's numbers are made by Lighting.h.
+float3 LightAt(int l, float3 wpos, out float3 toLight) { return lightColor[l].rgb * FadeAt(l, wpos, toLight); }
+
+// The light leaving a surface towards the eye (linear): the ambient light (from everywhere, the sky's
+// from above - even in shadow) and each light (diffuse + GGX highlight; its shadow if it has one).
+float3 Shade(float3 albedo, float metal, float rough, float3 n, float3 v, float3 wpos) {
     float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metal);  // how much a surface mirrors, head on
     float3 diffuse = albedo * (1 - metal);                       // metal has no diffuse colour
     float a = rough * rough;
@@ -125,13 +177,15 @@ float3 Shade(float3 albedo, float metal, float rough, float3 n, float3 v, float3
     float sky = 0.5 + 0.5 * n.y;
     float skyMirror = 0.5 + 0.5 * reflect(-v, n).y;
     float3 fSky = f0 + (max(float3(1 - rough, 1 - rough, 1 - rough), f0) - f0) * pow(1 - nv, 5);
-    float3 c = diffuse * (0.08 + 0.08 * sky) + fSky * (0.08 + 0.12 * skyMirror) * (1 - 0.6 * rough);
+    // The ambient light (環境光, linear): the ground's from below .. the sky's from above.
+    float3 c = diffuse * lerp(ambientGround.rgb, ambientSky.rgb, sky) + fSky * lerp(ambientGround.rgb, ambientSky.rgb, skyMirror) * (1 - 0.6 * rough);
     int count = (int)lightInfo.x;
     [loop] for (int l = 0; l < count; ++l) {
         float3 toLight;
-        float3 e = LightAt(l, wpos, toLight) * (lightColor[l].w > 0.5 ? shadowLit : 1);
+        float3 e = LightAt(l, wpos, toLight);
         float nl = saturate(dot(n, toLight));
-        if (nl <= 0) continue;
+        if (nl <= 0 || all(e <= 0)) continue;
+        e *= ShadowOf(l, wpos, n);  // 1 for a light without shadows
         float3 h = normalize(toLight + v);
         float nh = saturate(dot(n, h));
         float vh = saturate(dot(v, h));
@@ -187,15 +241,26 @@ float4 MeshPS(MeshOut i) : SV_Target {
     float metal = pbr.x * (pbr.w > 0.5 ? mr.b : 1);
     float rough = clamp(pbr.y * (pbr.w > 0.5 ? mr.g : 1), 0.04, 1);
     float3 glow = emissive.rgb * (emissive.w > 0.5 ? emissionMap.Sample(baseSampler, i.uv).rgb : float3(1, 1, 1));
-    float3 rgb = ToScreen(Shade(base.rgb, metal, rough, n, toEye, i.wpos, Lit(i.lpos)) + glow);
+    float3 rgb = ToScreen(Shade(base.rgb, metal, rough, n, toEye, i.wpos) + glow);
     // Selected: the edges (where the surface turns away from the eye) glow, the colours stay.
     return float4(lerp(rgb, highlight.rgb, rim), base.a);
 }
 
-// The floor: nothing of its own, only the shadow (seen from above).
+// The floor: nothing of its own, only the shadows (seen from above) - the darkest one of a light
+// that reaches it.
 float4 FloorPS(MeshOut i) : SV_Target {
     if (eye.y < 0) discard;  // seen from below the floor
-    return float4(color.rgb, color.a * (1 - Lit(i.lpos)));
+    float3 up = float3(0, 1, 0);
+    float dark = 0;
+    int count = (int)lightInfo.x;
+    [loop] for (int l = 0; l < count; ++l) {
+        if (lightColor[l].w < 0.5 && lightShadow[l].x < 0) continue;  // no shadows
+        float3 toLight;
+        float fade = FadeAt(l, i.wpos, toLight);
+        float r = saturate(saturate(dot(up, toLight)) * fade * 4);
+        if (r > 0) dark = max(dark, (1 - ShadowOf(l, i.wpos, up)) * r);
+    }
+    return float4(color.rgb, color.a * dark);
 }
 
 float4 ShadowVS(MeshIn i) : SV_Position { return mul(lightViewProj, mul(world, float4(i.pos, 1))); }
@@ -207,8 +272,6 @@ struct Constants {
     float normalWorld[16];
     float lightViewProj[16];
     float color[4];
-    float light[4];
-    float shadow[4];
     float eye[4];
     float material[4];
     float paint[4];
@@ -217,6 +280,17 @@ struct Constants {
     float emissive[4];
 };
 static_assert(sizeof(Constants) % 16 == 0);
+
+// The constant buffer `Shadows`.
+struct ShadowConstants {
+    float sunViewProj[kCascades][16];
+    float localViewProj[kLocalShadowSlices][16];
+    float sunInfo[kCascades][4];
+    float shadowInfo[4];
+    float viewForward[4];
+    float atlas[4];
+};
+static_assert(sizeof(ShadowConstants) % 16 == 0);
 static_assert(sizeof(MeshVertex) == 32, "MeshVertex goes to the GPU as it is (POSITION, NORMAL, TEXCOORD)");
 
 void CopyMatrix(float out[16], const Mat4& m) { std::memcpy(out, &m.m[0][0], sizeof(float) * 16); }
@@ -373,6 +447,8 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     if (FAILED(device->CreateBuffer(&cd, nullptr, &constants_))) return fail("定数");
     cd.ByteWidth = sizeof(LightBlock);
     if (FAILED(device->CreateBuffer(&cd, nullptr, &lights_))) return fail("光");
+    cd.ByteWidth = sizeof(ShadowConstants);
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &shadows_))) return fail("影");
 
     D3D11_RASTERIZER_DESC rd{};
     rd.FillMode = D3D11_FILL_SOLID;
@@ -414,7 +490,7 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     if (FAILED(device->CreateSamplerState(&tp, &sharpSampler_))) {
         return fail("描画の設定");
     }
-    if (!MakeShadowMap()) return fail("影");
+    if (!MakeShadowSampler()) return fail("影");
 
     UINT quality = 0;
     samples_ = 1;
@@ -425,10 +501,27 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     return true;
 }
 
-bool Renderer::MakeShadowMap() {
-    // One texture seen two ways: written as depth (D32), read as numbers (R32) by the comparing sampler.
+bool Renderer::MakeShadowSampler() {
+    // Compares the pixel's depth with the map's, blending the answers of the 2 x 2 texels around it.
+    // Outside the map the depth is 1 (the farthest): nothing there casts a shadow.
+    D3D11_SAMPLER_DESC sd{};
+    sd.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+    sd.BorderColor[0] = sd.BorderColor[1] = sd.BorderColor[2] = sd.BorderColor[3] = 1.f;
+    sd.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
+    sd.MaxLOD = D3D11_FLOAT32_MAX;
+    return SUCCEEDED(device_->CreateSamplerState(&sd, &shadowSampler_));
+}
+
+bool Renderer::EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size) {
+    if (maps.tiles >= tiles && maps.size == size && maps.srv) return true;
+    maps = {};
+    // Up to 4 tiles a row. One texture seen two ways: written as depth (D32), read as numbers (R32)
+    // by the comparing sampler.
+    const uint32_t cols = std::min(tiles, 4u), rows = (tiles + cols - 1) / cols;
     D3D11_TEXTURE2D_DESC td{};
-    td.Width = td.Height = kShadowMapSize;
+    td.Width = size * cols;
+    td.Height = size * rows;
     td.MipLevels = 1;
     td.ArraySize = 1;
     td.Format = DXGI_FORMAT_R32_TYPELESS;
@@ -442,18 +535,17 @@ bool Renderer::MakeShadowMap() {
     sv.Format = DXGI_FORMAT_R32_FLOAT;
     sv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     sv.Texture2D.MipLevels = 1;
-    // Compares the pixel's depth with the map's, blending the answers of the 2 x 2 texels around it.
-    // Outside the map the depth is 1 (the farthest): nothing there casts a shadow.
-    D3D11_SAMPLER_DESC sd{};
-    sd.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
-    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
-    sd.BorderColor[0] = sd.BorderColor[1] = sd.BorderColor[2] = sd.BorderColor[3] = 1.f;
-    sd.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
-    sd.MaxLOD = D3D11_FLOAT32_MAX;
-    return SUCCEEDED(device_->CreateTexture2D(&td, nullptr, &shadowTex_)) &&
-           SUCCEEDED(device_->CreateDepthStencilView(shadowTex_.Get(), &dv, &shadowDsv_)) &&
-           SUCCEEDED(device_->CreateShaderResourceView(shadowTex_.Get(), &sv, &shadowSrv_)) &&
-           SUCCEEDED(device_->CreateSamplerState(&sd, &shadowSampler_));
+    if (FAILED(device_->CreateTexture2D(&td, nullptr, &maps.texture)) ||
+        FAILED(device_->CreateDepthStencilView(maps.texture.Get(), &dv, &maps.dsv)) ||
+        FAILED(device_->CreateShaderResourceView(maps.texture.Get(), &sv, &maps.srv))) {
+        maps = {};
+        return false;
+    }
+    maps.tiles = tiles;
+    maps.cols = cols;
+    maps.rows = rows;
+    maps.size = size;
+    return true;
 }
 
 std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::string* error) {
@@ -609,25 +701,26 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     const Mat4 viewProj = f.projection * f.view;
     stats_ = {items_.size(), 0};
     for (Item& it : items_) {
-        it.seen = BoxInView(viewProj, WorldBounds(*it.world, it.mesh->min, it.mesh->max));
+        it.bounds = WorldBounds(*it.world, it.mesh->min, it.mesh->max);
+        it.seen = BoxInView(viewProj, it.bounds);
         if (it.seen) ++stats_.drawn;
     }
 
     ID3D11Buffer* cb = constants_.Get();
     ctx->VSSetConstantBuffers(0, 1, &cb);
     ctx->PSSetConstantBuffers(0, 1, &cb);
-    // The lights (none: the one default directional light); the shadow map is the first directional
-    // light's that casts shadows.
-    const LightSetup lights = MakeLights(f.lights, f.lightDirection);
-    ctx->UpdateSubresource(lights_.Get(), 0, nullptr, &lights.block, 0, 0);
+    // The lights (none: the one default directional light) and the ambient light.
+    LightSetup lights = MakeLights(f.lights, f.lightDirection, f.ambient);
     ID3D11Buffer* lb = lights_.Get();
-    ctx->PSSetConstantBuffers(1, 1, &lb);
+    ID3D11Buffer* sb = shadows_.Get();
+    ID3D11Buffer* both[2] = {lb, sb};
+    ctx->PSSetConstantBuffers(1, 2, both);
     ctx->IASetInputLayout(meshLayout_.Get());
     ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     const float factor[4] = {0, 0, 0, 0};
     ctx->OMSetBlendState(blend_.Get(), factor, 0xFFFFFFFF);
-    ID3D11ShaderResourceView* noSrv = nullptr;
-    ctx->PSSetShaderResources(0, 1, &noSrv);  // the map may still be bound for reading: it is written first
+    ID3D11ShaderResourceView* noSrvs[6] = {};
+    ctx->PSSetShaderResources(0, 6, noSrvs);  // the maps may still be bound for reading: they are written first
 
     Constants c{};
     CopyMatrix(c.viewProj, f.projection * f.view);
@@ -635,8 +728,6 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         const Vec3 eye = TransformPoint(*toWorld, {0, 0, 0});
         c.eye[0] = eye.x, c.eye[1] = eye.y, c.eye[2] = eye.z;
     }
-    const Vec3 l = lights.shadowDirection;
-    c.light[0] = l.x, c.light[1] = l.y, c.light[2] = l.z;
     auto put = [](float out[4], Color col) { out[0] = col.r, out[1] = col.g, out[2] = col.b, out[3] = col.a; };
     // The whole shape at once (the shadow map, the floor): no materials.
     auto draw = [&](const GpuMesh& mesh, const Mat4& world, Color col) {
@@ -687,45 +778,79 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         }
     };
 
-    // 1. The shadow map: what casts, seen from the light, fitted to the box that holds all of it.
-    bool shadows = false;
-    if (f.shadows && lights.shadowLight >= 0 && shadowDsv_) {
-        Bounds casters;
+    // 1. The shadow maps: what casts, seen from the lights (an item outside a map is not drawn into it).
+    ShadowConstants sc{};
+    if (const auto toWorld = Inverse(f.view)) {
+        const Vec3 forward = Normalize(TransformDirection(*toWorld, {0, 0, -1}));
+        sc.viewForward[0] = forward.x, sc.viewForward[1] = forward.y, sc.viewForward[2] = forward.z;
+    }
+    Bounds casters;
+    bool anyCaster = false;
+    for (const Item& it : items_) {
+        if (!it.castShadow) continue;
+        const Bounds& b = it.bounds;
+        casters.min = anyCaster ? Vec3{std::min(casters.min.x, b.min.x), std::min(casters.min.y, b.min.y), std::min(casters.min.z, b.min.z)} : b.min;
+        casters.max = anyCaster ? Vec3{std::max(casters.max.x, b.max.x), std::max(casters.max.y, b.max.y), std::max(casters.max.z, b.max.z)} : b.max;
+        anyCaster = true;
+    }
+    // Each kind of map: cleared once, then each map drawn into its tile.
+    auto clearMaps = [&](const ShadowMaps& maps) {
+        ctx->OMSetRenderTargets(0, nullptr, maps.dsv.Get());
+        ctx->ClearDepthStencilView(maps.dsv.Get(), D3D11_CLEAR_DEPTH, 1.f, 0);
+    };
+    auto drawMap = [&](const ShadowMaps& maps, uint32_t tile, const Mat4& lightViewProj) {
+        const float size = static_cast<float>(maps.size);
+        const D3D11_VIEWPORT svp{static_cast<float>(tile % maps.cols) * size, static_cast<float>(tile / maps.cols) * size, size, size, 0, 1};
+        ctx->RSSetViewports(1, &svp);
+        ctx->RSSetState(shadowRaster_.Get());
+        ctx->OMSetDepthStencilState(depth_.Get(), 0);
+        ctx->VSSetShader(shadowVs_.Get(), nullptr, 0);
+        ctx->PSSetShader(nullptr, nullptr, 0);  // depth only
+        CopyMatrix(c.lightViewProj, lightViewProj);
         for (const Item& it : items_) {
-            if (!it.castShadow) continue;
-            const Bounds b = WorldBounds(*it.world, it.mesh->min, it.mesh->max);
-            casters.min = shadows ? Vec3{std::min(casters.min.x, b.min.x), std::min(casters.min.y, b.min.y), std::min(casters.min.z, b.min.z)} : b.min;
-            casters.max = shadows ? Vec3{std::max(casters.max.x, b.max.x), std::max(casters.max.y, b.max.y), std::max(casters.max.z, b.max.z)} : b.max;
-            shadows = true;
+            if (it.castShadow && BoxInView(lightViewProj, it.bounds)) draw(*it.mesh, *it.world, it.color);
         }
-        if (shadows) {
-            const Mat4 lightViewProj = DirectionalShadowMatrix(lights.shadowDirection, casters);
-            CopyMatrix(c.lightViewProj, lightViewProj);
-            // How big one texel is in the world, and how deep the map is (the light's view only turns
-            // and moves, so each row of the matrix is the orthographic scale of that axis): the
-            // biases are a texel or so.
-            auto rowLength = [&](int r) {
-                return Length({lightViewProj.m[0][r], lightViewProj.m[1][r], lightViewProj.m[2][r]});
-            };
-            const float width = 2.f / std::max(rowLength(0), 1e-12f), height = 2.f / std::max(rowLength(1), 1e-12f);
-            const float depthRange = 1.f / std::max(rowLength(2), 1e-12f);
-            const float texel = std::max(width, height) / static_cast<float>(kShadowMapSize);
-            c.shadow[0] = 1.f / static_cast<float>(kShadowMapSize);
-            c.shadow[1] = texel / depthRange;
-            c.shadow[2] = texel * 1.5f;
-            ctx->OMSetRenderTargets(0, nullptr, shadowDsv_.Get());
-            const D3D11_VIEWPORT svp{0, 0, static_cast<float>(kShadowMapSize), static_cast<float>(kShadowMapSize), 0, 1};
-            ctx->RSSetViewports(1, &svp);
-            ctx->ClearDepthStencilView(shadowDsv_.Get(), D3D11_CLEAR_DEPTH, 1.f, 0);
-            ctx->RSSetState(shadowRaster_.Get());
-            ctx->OMSetDepthStencilState(depth_.Get(), 0);
-            ctx->VSSetShader(shadowVs_.Get(), nullptr, 0);
-            ctx->PSSetShader(nullptr, nullptr, 0);  // depth only
-            for (const Item& it : items_) {
-                if (it.castShadow) draw(*it.mesh, *it.world, it.color);
+    };
+    // The sun: one map fitted to what casts, or the cascades along the view.
+    int sunMaps = 0;
+    if (f.shadows && anyCaster && lights.shadowLight >= 0) {
+        const SunShadowPlan plan = PlanSunShadows(lights.shadowDirection, casters, f.view, f.projection, kShadowMapSize);
+        if (plan.count > 0 && EnsureMaps(sun_, static_cast<uint32_t>(plan.count), kShadowMapSize)) {
+            sunMaps = plan.count;
+            clearMaps(sun_);
+            for (size_t m = 0; m < static_cast<size_t>(plan.count); ++m) {
+                CopyMatrix(sc.sunViewProj[m], plan.viewProj[m]);
+                // The biases are a texel or so: the normal offset in the world, the depth's in the map.
+                sc.sunInfo[m][0] = plan.splitFar[m];
+                sc.sunInfo[m][1] = plan.texel[m] * 1.5f;
+                sc.sunInfo[m][2] = plan.texel[m] / std::max(plan.depthRange[m], 1e-6f);
+                drawMap(sun_, static_cast<uint32_t>(m), plan.viewProj[m]);
             }
         }
     }
+    sc.shadowInfo[0] = static_cast<float>(sunMaps);
+    sc.shadowInfo[1] = 1.f / static_cast<float>(kShadowMapSize);
+    // The point lights and spots.
+    bool localMaps = false;
+    if (f.shadows && anyCaster && lights.localSlices > 0 && EnsureMaps(local_, static_cast<uint32_t>(kLocalShadowSlices), kLocalShadowSize)) {
+        localMaps = true;
+        clearMaps(local_);
+        for (size_t m = 0; m < lights.localSlices; ++m) {
+            CopyMatrix(sc.localViewProj[m], lights.localViewProj[m]);
+            drawMap(local_, static_cast<uint32_t>(m), lights.localViewProj[m]);
+        }
+    }
+    sc.shadowInfo[2] = 1.f / static_cast<float>(kLocalShadowSize);
+    sc.atlas[0] = static_cast<float>(std::max(sun_.cols, 1u)), sc.atlas[1] = static_cast<float>(std::max(sun_.rows, 1u));
+    sc.atlas[2] = static_cast<float>(std::max(local_.cols, 1u)), sc.atlas[3] = static_cast<float>(std::max(local_.rows, 1u));
+    // Lights whose maps were not drawn have no shadows.
+    for (size_t i = 0; i < kMaxLights; ++i) {
+        if (sunMaps == 0) lights.block.color[i][3] = 0;
+        if (!localMaps) lights.block.shadow[i][0] = -1;
+    }
+    const bool shadows = sunMaps > 0 || localMaps;
+    ctx->UpdateSubresource(lb, 0, nullptr, &lights.block, 0, 0);
+    ctx->UpdateSubresource(sb, 0, nullptr, &sc, 0, 0);
 
     // 2. The picture.
     ID3D11RenderTargetView* rtv = rtv_.Get();
@@ -737,11 +862,12 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->ClearDepthStencilView(dsv_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.f, 0);
     ctx->RSSetState(raster_.Get());
     ctx->OMSetDepthStencilState(depth_.Get(), 0);
-    c.light[3] = shadows ? 1.f : 0.f;
     if (shadows) {
-        ID3D11ShaderResourceView* srv = shadowSrv_.Get();
+        ID3D11ShaderResourceView* sunSrv = sun_.srv.Get();
+        ID3D11ShaderResourceView* localSrv = local_.srv.Get();
         ID3D11SamplerState* sampler = shadowSampler_.Get();
-        ctx->PSSetShaderResources(0, 1, &srv);
+        ctx->PSSetShaderResources(0, 1, &sunSrv);
+        ctx->PSSetShaderResources(5, 1, &localSrv);
         ctx->PSSetSamplers(0, 1, &sampler);
     }
 
@@ -815,9 +941,9 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     if (samples_ > 1) ctx->ResolveSubresource(picture_.Get(), 0, multisample_.Get(), 0, DXGI_FORMAT_B8G8R8A8_UNORM);
     // Nothing of ours stays bound (Direct2D draws the picture next).
     ctx->OMSetRenderTargets(0, nullptr, nullptr);
-    ctx->PSSetShaderResources(0, 1, &noSrv);
-    ID3D11Buffer* noCb = nullptr;
-    ctx->PSSetConstantBuffers(1, 1, &noCb);
+    ctx->PSSetShaderResources(0, 6, noSrvs);
+    ID3D11Buffer* noCbs[2] = {nullptr, nullptr};
+    ctx->PSSetConstantBuffers(1, 2, noCbs);
     return picture_.Get();
 }
 

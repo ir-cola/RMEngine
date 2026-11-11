@@ -4,6 +4,8 @@
 
 namespace rm::game_x_3d {
 
+space3d::Ambient ToRenderAmbient(const AmbientLight& ambient) { return {ambient.sky, ambient.ground, ambient.intensity}; }
+
 space3d::Light ToRenderLight(const Light& light, const space3d::Mat4& world) {
     space3d::Light l;
     l.type = light.kind == LightKind::Point ? space3d::LightType::Point

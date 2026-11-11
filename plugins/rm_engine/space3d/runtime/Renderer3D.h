@@ -28,9 +28,10 @@
 // The shaders are written in Renderer3D.cpp in HLSL and compiled when the renderer starts
 // (D3DCompile, which every Windows 10 / 11 has). Drawn with 4x multisampling when the GPU can.
 //
-// Shadows: a shadow map - everything that casts a shadow is first drawn from the light into a depth
-// picture (orthographic, fitted to what casts); each pixel then looks there to see whether something
-// is between it and the light, at 3 x 3 places with the GPU's comparing filter (PCF: soft edges).
+// Shadows: shadow maps - everything that casts a shadow is first drawn from the light into depth
+// pictures (Lighting.h: the sun's one map fitted to what casts or its cascades along the view, a
+// spot's one, a point light's six); each pixel then looks there to see whether something is between
+// it and the light, at 3 x 3 places with the GPU's comparing filter (PCF: soft edges).
 // The floor (y = 0) is an invisible plane that only shows the shadows falling on it.
 
 #include "base/Math.h"
@@ -122,7 +123,8 @@ struct RenderFrame {
     // `lightDirection` (from above, a little from the front).
     std::span<const Light> lights;
     Vec3 lightDirection{-0.45f, -1.f, -0.3f};
-    bool shadows = false;  // of the first directional light that casts them
+    Ambient ambient;       // the light every face gets (環境光)
+    bool shadows = false;  // the lights' shadows (Lighting.h says which lights have them)
     Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
 };
 
@@ -159,12 +161,23 @@ private:
         bool castShadow;
         std::span<const DrawMaterial> materials;
         Color highlight;
-        bool seen = true;  // inside what the camera sees (frustum culling); drawn into the shadow map either way
+        bool seen = true;  // inside what the camera sees (frustum culling); drawn into the shadow maps either way
+        Bounds bounds;     // in the world
     };
+
+    // Shadow maps of one kind: tiles of `size` pixels side by side in one texture (up to 4 a row).
+    // Made when first needed, made again larger when more are needed.
+    struct ShadowMaps {
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+        Microsoft::WRL::ComPtr<ID3D11DepthStencilView> dsv;
+        uint32_t tiles = 0, cols = 0, rows = 0, size = 0;
+    };
+    bool EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size);
 
     bool Resize(uint32_t width, uint32_t height);
     bool LineCapacity(size_t vertices);
-    bool MakeShadowMap();
+    bool MakeShadowSampler();
 
     template <class T>
     using Ptr = Microsoft::WRL::ComPtr<T>;
@@ -172,7 +185,7 @@ private:
     Ptr<ID3D11VertexShader> lineVs_, meshVs_, shadowVs_;
     Ptr<ID3D11PixelShader> linePs_, meshPs_, floorPs_;
     Ptr<ID3D11InputLayout> lineLayout_, meshLayout_;
-    Ptr<ID3D11Buffer> lineVb_, constants_, lights_;
+    Ptr<ID3D11Buffer> lineVb_, constants_, lights_, shadows_;
     std::shared_ptr<const GpuMesh> cube_, floor_;
     size_t lineCapacity_ = 0;
     Ptr<ID3D11RasterizerState> raster_, shadowRaster_;
@@ -185,10 +198,9 @@ private:
     std::vector<Vec3> centers_;
     Stats stats_;
 
-    // The shadow map (depth seen from the light).
-    Ptr<ID3D11Texture2D> shadowTex_;
-    Ptr<ID3D11DepthStencilView> shadowDsv_;
-    Ptr<ID3D11ShaderResourceView> shadowSrv_;
+    // The shadow maps (depth seen from the lights): the sun's (1, or kCascades) and the point / spot
+    // lights' (kLocalShadowSlices).
+    ShadowMaps sun_, local_;
     Ptr<ID3D11SamplerState> shadowSampler_;
 
     UINT samples_ = 1;

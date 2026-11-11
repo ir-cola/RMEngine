@@ -31,7 +31,6 @@
   "回り続ける": "Keep Spinning",
   "1 秒に回る角度 (度)": "Degrees per second",
   "Transform の回転に、1 秒でこれだけ足します (X → Y → Z の順のオイラー角)": "Adds this much to the Transform's rotation every second (Euler angles, X → Y → Z)",
-  "光の影を床と物に落とす (影を落とす平行光の 1 つ目。光の部品が無いときは上からの光。押すと切り替え)": "Cast shadows on the floor and objects (from the first directional light that casts shadows; from above when there are no lights. Click to switch)",
   "カメラ": "Camera",
   "投影": "Projection",
   "透視": "Perspective",
@@ -61,7 +60,6 @@
   "点光源とスポット。ここで光が 0 になります": "Point and spot. The light fades to nothing here",
   "円すいの角度 (度)": "Cone angle (degrees)",
   "スポットのとき。光の広がりの全体の角度": "Spot only. The whole angle the light spreads over",
-  "平行光だけ。影を落とすのは、影を落とす平行光の 1 つ目だけです": "Directional only. Only the first directional light that casts shadows has shadows",
   "ゲームの設定の「最初のカメラ」が選ばれていません。カメラの部品を付けたエンティティを選ぶと、そこから見た絵がここに映ります。": "No Starting camera is chosen in the game settings. Choose an entity with a Camera component and its view shows here.",
   "「最初のカメラ」のエンティティがシーンにありません (消されたかもしれません)。ゲームの設定で選び直してください。": "The Starting camera's entity is not in the scene (it may have been deleted). Choose it again in the game settings.",
   "「{}」にカメラの部品がありません (Transform も要ります)。インスペクターの「部品を足す」でカメラを付けてください。": "\"{}\" has no Camera component (it needs a Transform too). Add a Camera with \"Add component\" in the Inspector.",
@@ -72,5 +70,12 @@
   "カメラを順に切り替える": "Cycle Cameras",
   "間隔 (秒)": "Interval (seconds)",
   "Play の間、この秒数ごとにゲームのカメラを次のカメラ (階層の順) に切り替えます": "While playing, switches the game's camera to the next camera (in Hierarchy order) every this many seconds",
-  "読み込み中…": "Loading…"
+  "読み込み中…": "Loading…",
+  "平行光は、影を落とす平行光の 1 つ目だけが影を出します。点光源とスポットは影の地図 8 枚を階層の順に使います (点光源は 6 枚、スポットは 1 枚)。足りない光は影なし": "For directional lights, only the first one that casts shadows has them. Point and spot lights share 8 shadow maps in Hierarchy order (a point light takes 6, a spot 1); lights left without one cast no shadows",
+  "環境光": "Ambient Light",
+  "上からの色": "Color from above",
+  "上を向いた面に当たる光 (空の明るさ)": "The light on faces turned up (the sky)",
+  "下からの色": "Color from below",
+  "下を向いた面に当たる光 (地面からの照り返し)": "The light on faces turned down (bounced off the ground)",
+  "光の影を床と物に落とす (光の部品の「影を落とす」に従う。光の部品が無いときは上からの光。押すと切り替え)": "Cast shadows on the floor and objects (as each light's Cast shadows says; from above when there are no lights. Click to switch)"
 }

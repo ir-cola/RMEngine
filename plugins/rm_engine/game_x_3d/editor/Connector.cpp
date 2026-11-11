@@ -48,6 +48,8 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     registry.Contribute(game_production::kComponentPoint, kCamera);
     static const game_production::ComponentInfo kLight{.type = &reflect::TypeOf<Light>, .icon = "light"};
     registry.Contribute(game_production::kComponentPoint, kLight);
+    static const game_production::ComponentInfo kAmbient{.type = &reflect::TypeOf<AmbientLight>, .icon = "light"};
+    registry.Contribute(game_production::kComponentPoint, kAmbient);
     // (回り続ける, カメラを順に切り替える and their systems are the runtime part's: runtime/Register.cpp)
     // ... and are seen in 3D in the scene view.
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView3D, "3d", editor::TrKey(L"3D"), /*order*/ 0};

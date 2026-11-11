@@ -1391,3 +1391,124 @@ RM_TEST(Fbx_BrokenFilesAreToldWhy) {
     CHECK(!ParseFbx(WriteFbx({{"Objects", {}, {geometry, model}}, links}), &error));
     CHECK(error.find("9") != std::string::npos);
 }
+
+RM_TEST(Lighting_Ambient) {
+    // The default is the look before it could be set: 0.16 from above, 0.08 from below (linear).
+    const LightSetup d = MakeLights({}, {0, -1, 0});
+    CHECK(NearF(d.block.ambientSky[0], 0.16f) && NearF(d.block.ambientSky[2], 0.16f) && NearF(d.block.ambientGround[1], 0.08f));
+    Ambient a;
+    a.sky = {0.2f, 0.4f, 0.8f, 1};
+    a.ground = {0.1f, 0, 0, 1};
+    a.intensity = 2;
+    const LightSetup s = MakeLights({}, {0, -1, 0}, a);
+    CHECK(NearF(s.block.ambientSky[0], 0.4f) && NearF(s.block.ambientSky[1], 0.8f) && NearF(s.block.ambientSky[2], 1.6f));
+    CHECK(NearF(s.block.ambientGround[0], 0.2f) && NearF(s.block.ambientGround[1], 0));
+    a.intensity = -1;  // no negative light
+    CHECK(NearF(MakeLights({}, {0, -1, 0}, a).block.ambientSky[0], 0));
+}
+
+RM_TEST(Lighting_PointAndSpotShadowMaps) {
+    std::vector<Light> lights(5);
+    lights[0].type = LightType::Point;  // maps 0 .. 5
+    lights[0].position = {1, 2, 3};
+    lights[1].type = LightType::Spot;   // map 6
+    lights[2].type = LightType::Point;  // 6 more do not fit: no shadows
+    lights[3].type = LightType::Spot;   // map 7
+    lights[4].type = LightType::Spot;   // none left
+    lights[4].castShadow = true;
+    const LightSetup s = MakeLights(lights, {0, -1, 0});
+    CHECK(s.localSlices == kLocalShadowSlices);
+    CHECK(NearF(s.block.shadow[0][0], 0) && NearF(s.block.shadow[1][0], 6) && NearF(s.block.shadow[2][0], -1) &&
+          NearF(s.block.shadow[3][0], 7) && NearF(s.block.shadow[4][0], -1));
+    CHECK(s.shadowsLeftOut == 2);
+    CHECK(s.block.shadow[0][1] > 0 && s.block.shadow[0][2] > 0);  // a normal offset and a depth bias
+    // The point light's maps are its PointShadowMatrices, in order.
+    const auto sides = PointShadowMatrices({1, 2, 3}, 10);
+    CHECK(std::memcmp(&s.localViewProj[3], &sides[3], sizeof(Mat4)) == 0);
+    // A light that casts no shadows takes no map.
+    std::vector<Light> quiet(1);
+    quiet[0].type = LightType::Spot;
+    quiet[0].castShadow = false;
+    const LightSetup q = MakeLights(quiet, {0, -1, 0});
+    CHECK(q.localSlices == 0 && NearF(q.block.shadow[0][0], -1) && q.shadowsLeftOut == 0);
+}
+
+RM_TEST(Lighting_PointShadowSides) {
+    // Each side looks along its axis (+X -X +Y -Y +Z -Z): a point 3 away on that axis is in its middle.
+    const Vec3 at{1, 2, 3};
+    const auto sides = PointShadowMatrices(at, 10);
+    const Vec3 axes[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    for (size_t i = 0; i < 6; ++i) {
+        const auto p = ProjectToNdc(sides[i], at + axes[i] * 3.f);
+        CHECK(p && NearF(p->x, 0) && NearF(p->y, 0) && p->z > 0 && p->z < 1);
+        // A point a little off the axis (45 degrees) is still inside: the sides meet.
+        const Vec3 other = axes[(i + 2) % 6];
+        const auto q = ProjectToNdc(sides[i], at + (axes[i] + other) * 2.f);
+        CHECK(q && std::abs(q->x) <= 1 && std::abs(q->y) <= 1);
+    }
+}
+
+RM_TEST(Lighting_SpotShadowMatrix) {
+    // Down from (0, 5, 0), a 60 degree cone reaching 10: the middle of the cone is the middle of the
+    // map; its edge (30 degrees off) is inside it.
+    const Mat4 m = SpotShadowMatrix({0, 5, 0}, {0, -1, 0}, 60, 10);
+    const auto mid = ProjectToNdc(m, {0, 0, 0});
+    CHECK(mid && NearF(mid->x, 0) && NearF(mid->y, 0) && mid->z > 0 && mid->z < 1);
+    const float edge = 5.f * std::tan(30.f * 3.14159265f / 180.f);
+    const auto e = ProjectToNdc(m, {edge, 0, 0});
+    CHECK(e && std::abs(e->x) < 1 && std::abs(e->x) > 0.5f);
+    // Beyond its reach: past depth 1.
+    const auto far = ProjectToNdc(m, {0, -6, 0});
+    CHECK(far && far->z > 1);
+}
+
+RM_TEST(Lighting_CascadeSplits) {
+    const auto s = CascadeSplits(0.1f, 100);
+    CHECK(s[0] > 0.1f && s[0] < s[1] && s[1] < s[2] && NearF(s[2], 100));
+    // Closer together near the eye than even steps would be.
+    CHECK(s[0] < 100.f / kCascades);
+}
+
+RM_TEST(Lighting_SunShadowPlan) {
+    const Mat4 view = LookAt({0, 2, 10}, {0, 0, 0}, {0, 1, 0});
+    const Mat4 projection = Perspective(60, 16.f / 9.f, 0.1f, 1000);
+    const Vec3 dir{-0.45f, -1.f, -0.3f};
+    // A small scene: one map fitted to what casts (as before cascades).
+    const Bounds small{{-2, 0, -2}, {2, 3, 2}};
+    const SunShadowPlan one = PlanSunShadows(dir, small, view, projection, 2048);
+    CHECK(one.count == 1);
+    const Mat4 fitted = DirectionalShadowMatrix(Normalize(dir), small);
+    CHECK(std::memcmp(&one.viewProj[0], &fitted, sizeof(Mat4)) == 0);
+    CHECK(one.texel[0] > 0 && one.depthRange[0] > 0);
+    // A wide scene: cascades along the view, the last ending kShadowDistance in front of the eye.
+    const Bounds wide{{-200, 0, -200}, {200, 5, 200}};
+    const SunShadowPlan plan = PlanSunShadows(dir, wide, view, projection, 2048);
+    CHECK(plan.count == kCascades);
+    CHECK(plan.splitFar[0] < plan.splitFar[1] && plan.splitFar[1] < plan.splitFar[2] && NearF(plan.splitFar[2], kShadowDistance));
+    CHECK(plan.texel[0] < plan.texel[2]);  // near ones sharper
+    // A point on the line of sight in each cascade's part is inside that cascade's map.
+    const Vec3 eye{0, 2, 10};
+    const Vec3 forward = Normalize(Vec3{0, -2, -10});
+    float start = 0.1f;
+    for (size_t c = 0; c < static_cast<size_t>(kCascades); ++c) {
+        const float mid = (start + plan.splitFar[c]) * 0.5f;
+        const auto p = ProjectToNdc(plan.viewProj[c], eye + forward * mid);
+        CHECK(p && std::abs(p->x) <= 1 && std::abs(p->y) <= 1 && p->z >= 0 && p->z <= 1);
+        start = plan.splitFar[c];
+    }
+    // Moved in whole texels: the camera sliding a little keeps each map's move a whole number of texels.
+    const SunShadowPlan moved = PlanSunShadows(dir, wide, LookAt({0.37f, 2, 10}, {0.37f, 0, 0}, {0, 1, 0}), projection, 2048);
+    for (size_t c = 0; c < static_cast<size_t>(kCascades); ++c) {
+        const float shift = (moved.viewProj[c].m[3][0] - plan.viewProj[c].m[3][0]) * 2048.f / 2.f;
+        CHECK(std::abs(shift - std::round(shift)) < 0.01f);
+    }
+}
+
+RM_TEST(Light_Ambient_ToRender) {
+    game_x_3d::AmbientLight a;
+    const Ambient d = game_x_3d::ToRenderAmbient(a);  // the component's default is the renderer's
+    const Ambient r;
+    CHECK(NearF(d.sky.r, r.sky.r) && NearF(d.ground.g, r.ground.g) && NearF(d.intensity, r.intensity));
+    a.intensity = 3;
+    CHECK(NearF(game_x_3d::ToRenderAmbient(a).intensity, 3));
+}
