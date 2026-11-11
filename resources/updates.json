@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "アセットの安全: 読めない・壊れた .meta を書き換えず、ID も作り直さない。ごみ箱に入れられない所 (USB メモリ・ネットワーク) のファイルは消さずに知らせる。閉じている間にコピーしたファイルが元の ID を取らない。行き先に .meta が残っていたら動かさない",
+          "en": "Safer assets: an unreadable or broken .meta is never written over and its ID is never replaced. A file that cannot go to the Recycle Bin (USB stick, network) is not deleted, and you are told. A file copied while the editor was closed no longer takes the original's ID. A move onto a leftover .meta is refused"
+        },
+        {
           "ja": "直したもの: 置いた Prefab の一部を別の Prefab の下へ移すと、開き直したときにエンティティが消えることがあった (移した物は Prefab から外れるように)。「Prefab に反映」の Undo でファイルも戻る。別の物への入力が 1 つの Undo にまとまることがあった。Undo の後にエンティティの ID が使い回されることがあった。ドラッグ中に Play を始めない",
           "en": "Fixed: moving part of a placed prefab under another prefab could make entities disappear when the project was opened again (a moved part now leaves its prefab). Undoing Apply to Prefab also restores the file. Typing into another object could join the same undo entry. Entity ids could be reused after an undo. Play does not start in the middle of a drag"
         },

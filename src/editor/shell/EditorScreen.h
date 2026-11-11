@@ -197,6 +197,12 @@ private:
     Menu openMenu_ = Menu::None;
     ui::Rect menuTitleRects_[static_cast<int>(Menu::Count)] = {};
 
+    // Declared BEFORE the workspaces, so they are destroyed AFTER them (members go in reverse order):
+    // every workspace's AssetPanel, its ImportCommands in the undo history and Workspace::AssetFile
+    // point at them while the workspaces are being torn down.
+    std::unique_ptr<AssetLibrary> assets_;    // the project's Assets/ (ids, file operations) - every software's
+    std::unique_ptr<Thumbnails> thumbnails_;  // the assets' small pictures - every software's panel shares them (its thread ends here)
+
     std::vector<std::unique_ptr<Workspace>> workspaces_;  // never empty
     size_t active_ = 0;
     std::vector<std::unique_ptr<FloatWindow>> floats_;  // of the active workspace only
@@ -206,9 +212,7 @@ private:
     json::Value sharedDoc_;        // the whole shared Layouts.json (other softwares and unknown keys are kept)
     bool sharedReadOnly_ = false;
 
-    std::unique_ptr<AssetLibrary> assets_;  // the project's Assets/ (ids, file operations) - every software's
     HWND dragTarget_ = nullptr;  // the window last told about a drag over it (ForwardDrag)
-    std::unique_ptr<Thumbnails> thumbnails_;  // the assets' small pictures - every software's panel shares them
 
     int logSink_ = 0;
     // Last log entry each window's console has followed (a panel can move between windows).

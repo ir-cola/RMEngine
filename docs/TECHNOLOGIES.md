@@ -104,7 +104,8 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **どこ** — `src/platform/Shell.*`
 
 ### フォルダの変化を知る (変更通知) とごみ箱
-- **何か** — Windows に「このフォルダの下でファイルが増えた・消えた・名前が変わったら教えて」と頼む仕組み (`FindFirstChangeNotification` / `FindNextChangeNotification`) と、ファイルを消す代わりにごみ箱へ移す仕組み (`SHFileOperation` の `FOF_ALLOWUNDO`)
+- **何か** — Windows に「このフォルダの下でファイルが増えた・消えた・名前が変わったら教えて」と頼む仕組み (`FindFirstChangeNotification` / `FindNextChangeNotification`) と、ファイルを消す代わりにごみ箱へ移す仕組み (`IFileOperation` と `FOFX_RECYCLEONDELETE`)
+- **完全に消さないために** — ごみ箱の無い所 (USB メモリ・ネットワーク) や、ごみ箱より大きいファイルは、ごみ箱へ移すつもりでも Windows が完全に消してしまう (確認を出さない設定だと黙って)。`IFileOperation` に「進み具合の受け手」(`IFileOperationProgressSink`) を付けると、1 つ消す前ごとに `PreDeleteItem` が呼ばれ、そのとき「ごみ箱へ行けるか」の印 (`TSF_DELETE_RECYCLE_IF_POSSIBLE`) が分かる。印が無ければ取り消しの値を返して、その物は消さない
 - **何に使っているか** — アセットのパネル。エクスプローラーでファイルを動かしたら、エディターに戻ったときにパネルが付いていく。パネルの「削除」はごみ箱へ (戻せる)
 - **どう使っているか** — 通知はスレッドで待たず、描くたびに「来ているか」だけを 0 秒で聞く (`WaitForSingleObject(…, 0)`)。来ていたらフォルダを読み直す。自分で書いたファイルでも通知は来るが、読み直して何も変わらなければそこで止まる
 - **どこ** — `platform::FolderWatch` / `MoveToRecycleBin` (`src/platform/Shell.*`)、`src/editor/assets/AssetLibrary.*`
@@ -587,6 +588,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-12 | ごみ箱へ行かない物を消さない (IFileOperation の進み具合の受け手 PreDeleteItem)・ファイルの作成日時 (_wstat64) でコピーを見分ける を足した |
 | 2026-11-11 | 読み込みの上限 (予算・取り消しの印・作業スレッドの例外・浮動小数点から整数へ) を足した |
 | 2026-11-11 | サムネイルを作業スレッドで作る (重い所だけをスレッドへ・GPU は UI のスレッド・スレッドごとの WIC) を足した |
 | 2026-11-11 | テンプレート (データで書くひな形と、パスから作る木・ソフトで絞る) を足した |

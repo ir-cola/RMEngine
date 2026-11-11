@@ -28,6 +28,10 @@ std::vector<Entry> Update(const std::filesystem::path& root, std::span<const Ent
 // The ids as the .meta files say, without writing anything (the game: an id -> its file).
 std::vector<Entry> ReadIndex(const std::filesystem::path& root);
 
+// Records the file's current name in its .meta (after a rename / move) - only into a .meta that can
+// be read whole. False when it was not written.
+bool RecordName(const std::filesystem::path& file);
+
 // A new random id.
 std::string NewGuid();
 

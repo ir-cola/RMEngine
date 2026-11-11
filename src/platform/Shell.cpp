@@ -67,22 +67,93 @@ void OpenFolder(const std::filesystem::path& folder) {
     ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
-bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string* error) {
-    if (paths.empty()) return true;
-    // SHFileOperation wants the paths one after another, each ending with a 0, and one more 0 at the end.
-    std::wstring list;
-    for (const auto& p : paths) {
-        list += p.native();
-        list.push_back(L'\0');
+namespace {
+
+// Told by the shell before each item is deleted. When it would not go to the Recycle Bin (the flag
+// TSF_DELETE_RECYCLE_IF_POSSIBLE is missing: no bin on that drive, or the item is bigger than the
+// bin), the deletion is cancelled - with FOF_NOCONFIRMATION the shell would otherwise delete it for
+// good without asking.
+class RecycleOnly final : public IFileOperationProgressSink {
+public:
+    bool refused = false;
+
+    IFACEMETHODIMP QueryInterface(REFIID riid, void** out) override {
+        if (riid == IID_IUnknown || riid == __uuidof(IFileOperationProgressSink)) {
+            *out = static_cast<IFileOperationProgressSink*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *out = nullptr;
+        return E_NOINTERFACE;
     }
-    list.push_back(L'\0');
-    SHFILEOPSTRUCTW op{};
-    op.wFunc = FO_DELETE;
-    op.pFrom = list.c_str();
-    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
-    const int r = SHFileOperationW(&op);
-    if (r != 0 || op.fAnyOperationsAborted) {
-        if (error) *error = r != 0 ? ErrorText(static_cast<DWORD>(r)) : std::string("途中で止められました");
+    IFACEMETHODIMP_(ULONG) AddRef() override { return ++refs_; }
+    IFACEMETHODIMP_(ULONG) Release() override { return --refs_; }  // lives on the caller's stack
+
+    IFACEMETHODIMP PreDeleteItem(DWORD flags, IShellItem*) override {
+        if (flags & TSF_DELETE_RECYCLE_IF_POSSIBLE) return S_OK;
+        refused = true;
+        return HRESULT_FROM_WIN32(ERROR_CANCELLED);
+    }
+    IFACEMETHODIMP StartOperations() override { return S_OK; }
+    IFACEMETHODIMP FinishOperations(HRESULT) override { return S_OK; }
+    IFACEMETHODIMP PreRenameItem(DWORD, IShellItem*, LPCWSTR) override { return S_OK; }
+    IFACEMETHODIMP PostRenameItem(DWORD, IShellItem*, LPCWSTR, HRESULT, IShellItem*) override { return S_OK; }
+    IFACEMETHODIMP PreMoveItem(DWORD, IShellItem*, IShellItem*, LPCWSTR) override { return S_OK; }
+    IFACEMETHODIMP PostMoveItem(DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*) override { return S_OK; }
+    IFACEMETHODIMP PreCopyItem(DWORD, IShellItem*, IShellItem*, LPCWSTR) override { return S_OK; }
+    IFACEMETHODIMP PostCopyItem(DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*) override { return S_OK; }
+    IFACEMETHODIMP PostDeleteItem(DWORD, IShellItem*, HRESULT, IShellItem*) override { return S_OK; }
+    IFACEMETHODIMP PreNewItem(DWORD, IShellItem*, LPCWSTR) override { return S_OK; }
+    IFACEMETHODIMP PostNewItem(DWORD, IShellItem*, LPCWSTR, LPCWSTR, DWORD, HRESULT, IShellItem*) override { return S_OK; }
+    IFACEMETHODIMP UpdateProgress(UINT, UINT) override { return S_OK; }
+    IFACEMETHODIMP ResetTimer() override { return S_OK; }
+    IFACEMETHODIMP PauseTimer() override { return S_OK; }
+    IFACEMETHODIMP ResumeTimer() override { return S_OK; }
+
+private:
+    ULONG refs_ = 1;
+};
+
+}  // namespace
+
+bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string* error, bool* notRecyclable) {
+    if (notRecyclable) *notRecyclable = false;
+    if (paths.empty()) return true;
+    ComPtr<IFileOperation> op;
+    HRESULT hr = CoCreateInstance(CLSID_FileOperation, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&op));
+    if (FAILED(hr)) {
+        if (error) *error = ErrorText(static_cast<DWORD>(hr));
+        return false;
+    }
+    // FOFX_RECYCLEONDELETE: to the Recycle Bin (Windows 8+). No questions, no window, no error dialog.
+    op->SetOperationFlags(FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI);
+    RecycleOnly sink;
+    DWORD cookie = 0;
+    const bool advised = SUCCEEDED(op->Advise(&sink, &cookie));
+    if (!advised) {
+        // Without the sink there is no way to stop a permanent deletion: do not delete.
+        if (error) *error = "ごみ箱へ移すかどうかを確かめられないので、消していません";
+        return false;
+    }
+    for (const auto& p : paths) {
+        ComPtr<IShellItem> item;
+        if (FAILED(SHCreateItemFromParsingName(p.c_str(), nullptr, IID_PPV_ARGS(&item))) || FAILED(op->DeleteItem(item.Get(), nullptr))) {
+            op->Unadvise(cookie);
+            if (error) *error = "消す物を指せませんでした: " + WideToUtf8(p.native());
+            return false;
+        }
+    }
+    hr = op->PerformOperations();
+    BOOL aborted = FALSE;
+    op->GetAnyOperationsAborted(&aborted);
+    op->Unadvise(cookie);
+    if (sink.refused) {
+        if (notRecyclable) *notRecyclable = true;
+        if (error) *error = "ごみ箱に入れられない場所 (USB メモリ・ネットワーク・ごみ箱より大きい物) なので、消していません";
+        return false;
+    }
+    if (FAILED(hr) || aborted) {
+        if (error) *error = FAILED(hr) ? ErrorText(static_cast<DWORD>(hr)) : std::string("途中で止められました");
         return false;
     }
     return true;

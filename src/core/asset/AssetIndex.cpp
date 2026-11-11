@@ -119,21 +119,54 @@ bool Ignored(std::string_view name) {
     if (name.empty() || name.front() == '.') return true;
     const std::string lower = LowerText(name);
     if (lower == "desktop.ini" || lower == "thumbs.db") return true;
+    if (lower.ends_with(".meta.tmp")) return true;  // a .meta being written (or left by a failed write)
     return lower.size() > kMetaSuffix.size() && lower.ends_with(kMetaSuffix);
 }
 
-std::optional<std::string> GuidInMeta(std::string_view text) {
-    const auto v = json::Parse(text);
-    if (!v || !v->IsObject()) return std::nullopt;
-    const json::Value& g = v->Get("guid");
-    if (!g.IsString() || !IsGuid(g.AsString())) return std::nullopt;
-    return g.AsString();
+MetaInfo ReadMeta(std::string_view text) {
+    MetaInfo m;
+    if (const auto v = json::Parse(text); v && v->IsObject()) {
+        const json::Value& g = v->Get("guid");
+        if (g.IsString() && IsGuid(g.AsString())) {
+            m.state = MetaState::Ok;
+            m.guid = g.AsString();
+            if (v->Get("name").IsString()) m.name = v->Get("name").AsString();
+            return m;
+        }
+        m.state = MetaState::Unreadable;  // JSON, but no id in it
+        return m;
+    }
+    // Not JSON (a comma too many, git's conflict marks ...): the id is still picked out when it is
+    // written plainly - but such a file is never written over (what else it held would be lost).
+    m.state = MetaState::Unreadable;
+    const size_t key = text.find("\"guid\"");
+    if (key == std::string_view::npos) return m;
+    size_t i = key + 6;
+    while (i < text.size() && (text[i] == ' ' || text[i] == '\t' || text[i] == '\r' || text[i] == '\n')) ++i;
+    if (i >= text.size() || text[i] != ':') return m;
+    ++i;
+    while (i < text.size() && (text[i] == ' ' || text[i] == '\t' || text[i] == '\r' || text[i] == '\n')) ++i;
+    if (i >= text.size() || text[i] != '"' || i + 33 >= text.size() || text[i + 33] != '"') return m;
+    const std::string_view guid = text.substr(i + 1, 32);
+    if (!IsGuid(guid)) return m;
+    // Only one id in it (two - a merge conflict between two of them - is not clear).
+    if (text.find("\"guid\"", key + 6) != std::string_view::npos) return m;
+    m.state = MetaState::Damaged;
+    m.guid = std::string(guid);
+    return m;
 }
 
-std::string MetaText(std::string_view old, const std::string& guid) {
+std::optional<std::string> GuidInMeta(std::string_view text) {
+    const MetaInfo m = ReadMeta(text);
+    if (m.state != MetaState::Ok) return std::nullopt;
+    return m.guid;
+}
+
+std::string MetaText(std::string_view old, const std::string& guid, std::string_view name) {
     json::Value doc = json::Value::MakeObject();
     if (auto v = json::Parse(old); v && v->IsObject()) doc = std::move(*v);  // the other keys stay
     doc.Set("guid", guid);
+    if (!name.empty()) doc.Set("name", std::string(name));
     return json::Write(doc) + "\n";
 }
 
@@ -141,34 +174,94 @@ std::string MetaText(std::string_view old, const std::string& guid) {
 // Reconcile
 // ---------------------------------------------------------------------------
 
+namespace {
+
+bool HasId(const Found& f) { return f.meta != MetaState::Unreadable && IsGuid(f.metaGuid); }
+
+// Several items whose .meta has the same id (a file copied with its .meta): which is the original.
+// `sure` = false when nothing tells them apart (the first in the list is taken).
+size_t Original(std::span<const Found> found, const std::vector<size_t>& list, const std::string* previousPath, bool& sure) {
+    sure = true;
+    // a. Where the id was at the last look (the editor saw it there).
+    if (previousPath) {
+        for (const size_t i : list) {
+            if (found[i].path == *previousPath) return i;
+        }
+    }
+    // b. The name the .meta was written for: a copy ("X - コピー.png") keeps the original's name.
+    std::vector<size_t> named;
+    for (const size_t i : list) {
+        if (!found[i].metaName.empty() && FileNameOf(found[i].path) == found[i].metaName) named.push_back(i);
+    }
+    if (named.size() == 1) return named[0];
+    // c. The .meta made first (a copy's is made when it is copied; moving keeps the time). Only when
+    //    every time is known and the earliest is one alone.
+    const std::vector<size_t>& pool = named.empty() ? list : named;
+    if (pool.size() == 1) return pool.front();
+    const bool known = std::all_of(pool.begin(), pool.end(), [&](size_t i) { return found[i].metaCreated > 0; });
+    if (known) {
+        const size_t first = *std::min_element(pool.begin(), pool.end(), [&](size_t a, size_t b) { return found[a].metaCreated < found[b].metaCreated; });
+        const auto ties = std::count_if(pool.begin(), pool.end(), [&](size_t i) { return found[i].metaCreated == found[first].metaCreated; });
+        if (ties == 1) return first;
+    }
+    sure = false;
+    return pool.front();
+}
+
+}  // namespace
+
 Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, std::span<const Orphan> orphans,
                const std::function<std::string()>& newGuid) {
     Plan plan;
     const size_t n = found.size();
     std::vector<std::string> ids(n);
+    std::vector<bool> skipped(n, false);  // no id now (its .meta cannot be read / cannot be given its own)
     std::set<std::string, std::less<>> taken;
     std::map<std::string, std::string, std::less<>> previousPath;  // guid -> where it was
-    for (const Entry& e : previous) previousPath[e.guid] = e.path;
+    std::map<std::string, std::string, std::less<>> previousId;    // path -> its guid
+    for (const Entry& e : previous) {
+        previousPath[e.guid] = e.path;
+        previousId[e.path] = e.guid;
+    }
+
+    // 0. A .meta that is there but cannot be read (another program has it open, its text is broken
+    //    and no id can be picked out): never written over, never given a new id. The item keeps the
+    //    id it had at the last look, else it waits (not listed) until the .meta can be read.
+    for (size_t i = 0; i < n; ++i) {
+        if (found[i].meta != MetaState::Unreadable) continue;
+        const std::string why = found[i].metaProblem.empty() ? std::string("読めません") : found[i].metaProblem;
+        if (const auto it = previousId.find(found[i].path); it != previousId.end()) {
+            ids[i] = it->second;
+            taken.insert(it->second);
+            plan.notes.push_back(std::format("{}.meta を読めません ({})。前の ID のまま使い、.meta は書き換えません", found[i].path, why));
+        } else {
+            skipped[i] = true;
+            plan.notes.push_back(std::format("{}.meta を読めないので、ID が分からないまま一覧から外しています ({})。.meta は書き換えません。読めるようになれば元どおり",
+                                             found[i].path, why));
+        }
+    }
 
     // 1. Items with their own .meta. A guid claimed twice (a copy made with its .meta) stays with the
-    //    one at the guid's old path, else the first; the others get new ids below.
+    //    original (Original); the others get new ids below.
     std::map<std::string, std::vector<size_t>, std::less<>> claims;
     for (size_t i = 0; i < n; ++i) {
-        if (IsGuid(found[i].metaGuid)) claims[found[i].metaGuid].push_back(i);
+        if (ids[i].empty() && !skipped[i] && HasId(found[i])) claims[found[i].metaGuid].push_back(i);
     }
     std::vector<bool> copied(n, false);
     for (const auto& [guid, list] : claims) {
-        size_t winner = list.front();
-        if (const auto it = previousPath.find(guid); it != previousPath.end()) {
-            for (const size_t i : list) {
-                if (found[i].path == it->second) winner = i;
-            }
+        if (taken.count(guid)) {  // (kept by an item whose .meta cannot be read now)
+            for (const size_t i : list) copied[i] = true;
+            continue;
         }
+        const auto prev = previousPath.find(guid);
+        bool sure = true;
+        const size_t winner = Original(found, list, prev != previousPath.end() ? &prev->second : nullptr, sure);
         ids[winner] = guid;
         taken.insert(guid);
         for (const size_t i : list) {
             if (i != winner) copied[i] = true;
         }
+        if (!sure) plan.notes.push_back(std::format("同じ ID の .meta が {} 個あり、どれが元か分からないので {} を元にしました", list.size(), found[winner].path));
     }
 
     // 2. Items without one: the id of something that vanished, when it is clearly the same thing.
@@ -193,16 +286,14 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
         for (Gone& other : gone) {
             if (other.guid == g.guid) other.used = true;
         }
-        if (g.hasMeta) {
-            plan.moves.push_back({g.path, found[i].path});
-        } else {
-            plan.writes.push_back({found[i].path, g.guid});
-        }
+        if (g.hasMeta) plan.moves.push_back({g.path, found[i].path});
+        // (after a move: the .meta now says the new name - a copy of it later is told apart by it)
+        plan.writes.push_back({found[i].path, g.guid, std::string(FileNameOf(found[i].path))});
         if (g.path != found[i].path) plan.notes.push_back(std::format("{} → {} ({}。ID はそのまま)", g.path, found[i].path, why));
     };
     std::vector<size_t> open;  // items still without an id
     for (size_t i = 0; i < n; ++i) {
-        if (ids[i].empty() && !copied[i]) open.push_back(i);
+        if (ids[i].empty() && !copied[i] && !skipped[i]) open.push_back(i);
     }
     // a. Its own old path (the .meta was deleted, the file is where it was).
     for (const size_t i : open) {
@@ -246,19 +337,27 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
         if (count == 1 && rivals == 1) give(i, *match, "名前の変更");
     }
 
-    // 3. Everything else: a new id (copies keep their other .meta keys - the write keeps them).
+    // 3. Everything else: a new id (copies keep their other .meta keys - the write keeps them). A copy
+    //    whose .meta is broken cannot be given its own id without losing what it holds: left out.
     for (size_t i = 0; i < n; ++i) {
-        if (!ids[i].empty()) continue;
+        if (!ids[i].empty() || skipped[i]) continue;
+        if (copied[i] && found[i].meta == MetaState::Damaged) {
+            skipped[i] = true;
+            plan.notes.push_back(std::format("{}: ほかのファイルと同じ ID で、.meta が壊れていて書き直せないので、一覧から外しています。.meta を直すか消してください", found[i].path));
+            continue;
+        }
         std::string guid = newGuid();
         while (!IsGuid(guid) || taken.count(guid)) guid = newGuid();
         ids[i] = guid;
         taken.insert(guid);
-        plan.writes.push_back({found[i].path, guid});
+        plan.writes.push_back({found[i].path, guid, std::string(FileNameOf(found[i].path))});
         if (copied[i]) plan.notes.push_back(std::format("{}: ほかのファイルと同じ ID だったので、新しい ID にしました (.meta ごと写したもの)", found[i].path));
     }
 
     plan.entries.reserve(n);
-    for (size_t i = 0; i < n; ++i) plan.entries.push_back({found[i].path, ids[i], found[i].folder});
+    for (size_t i = 0; i < n; ++i) {
+        if (!ids[i].empty()) plan.entries.push_back({found[i].path, ids[i], found[i].folder});
+    }
     return plan;
 }
 

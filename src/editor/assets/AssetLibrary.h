@@ -13,6 +13,7 @@
 #include "platform/Shell.h"
 
 #include <filesystem>
+#include <set>
 #include <span>
 #include <string>
 #include <vector>
@@ -58,6 +59,7 @@ private:
     platform::FolderWatch watch_;
     bool watching_ = false;
     uint64_t version_ = 0;
+    std::set<std::string> lastNotes_;  // what the last look told the console
 };
 
 }  // namespace rm::editor

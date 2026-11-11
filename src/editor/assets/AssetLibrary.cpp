@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <format>
+#include <set>
 
 namespace fs = std::filesystem;
 
@@ -40,25 +41,38 @@ const wchar_t* NameProblem(const std::string& name) {
     return nullptr;
 }
 
-// Renames `from` to `to` together with its .meta (the id goes along). Undoes the file when the
-// .meta cannot follow, so the two never part.
-bool MoveWithMeta(const fs::path& from, const fs::path& to, std::error_code& ec) {
+// Renames `from` to `to` together with its .meta (the id goes along), and records the new name in the
+// .meta. Refuses when a .meta is already where its .meta would go (it would be written over, or
+// taken as the moved file's). Puts the file back when the .meta cannot follow, so the two never part
+// - and says so when even that fails. Returns what went wrong (in the language in use), empty = done.
+std::wstring MoveWithMeta(const fs::path& from, const fs::path& to, const std::wstring& name) {
     fs::path metaFrom = from, metaTo = to;
     metaFrom += L".meta";
     metaTo += L".meta";
+    std::error_code ec;
+    const bool sameMeta = fs::equivalent(metaFrom, metaTo, ec);  // (only the letter case changes)
+    if (!sameMeta && fs::exists(metaTo, ec)) {
+        return Problem(TrKey(L"行き先にもう「{}」があるので、「{}」を動かしていません (ID がぶつかります)。"), metaTo.filename().native(), name);
+    }
     fs::rename(from, to, ec);
-    if (ec) return false;
+    if (ec) return Problem(TrKey(L"「{}」を動かせませんでした: {}"), name, Why(ec));
     std::error_code metaEc;
     if (fs::exists(metaFrom, metaEc)) {
         fs::rename(metaFrom, metaTo, metaEc);
         if (metaEc) {
             std::error_code back;
             fs::rename(to, from, back);
-            ec = metaEc;
-            return false;
+            if (back) {
+                log::Error("「{}」の .meta を動かせず、ファイルを元に戻すこともできませんでした。ファイルは {}、.meta は {} にあります: {} / {}",
+                           WideToUtf8(name), PathToUtf8(to), PathToUtf8(metaFrom), metaEc.message(), back.message());
+                return TrF(L"「{}」の .meta を動かせず、ファイルを元の場所に戻すこともできませんでした。ファイルは「{}」、.meta は「{}」にあります。エクスプローラーで .meta をファイルの横へ動かしてください",
+                           name, to.native(), metaFrom.native());
+            }
+            return Problem(TrKey(L"「{}」の .meta を動かせなかったので、動かしていません: {}"), name, Why(metaEc));
         }
     }
-    return true;
+    asset::RecordName(to);  // (the name a copy of it would not have)
+    return {};
 }
 
 }  // namespace
@@ -72,7 +86,13 @@ void AssetLibrary::Refresh() {
     std::vector<std::string> notes;
     std::vector<asset::Entry> before(index_.Entries().begin(), index_.Entries().end());
     std::vector<asset::Entry> now = asset::Update(root_, before, notes);
-    for (const std::string& n : notes) log::Info("アセット: {}", n);
+    // (a note that stays true - a .meta that still cannot be read - is told once, not at every look)
+    std::set<std::string> told;
+    for (std::string& n : notes) {
+        if (!lastNotes_.contains(n)) log::Warn("アセット: {}", n);
+        told.insert(std::move(n));
+    }
+    lastNotes_ = std::move(told);
     index_.Set(std::move(now));
     order_ = asset::DisplayOrder(index_.Entries());
     ++version_;
@@ -105,8 +125,9 @@ std::wstring AssetLibrary::Rename(const std::string& guid, const std::string& ne
     // (a different name only in letter case is the same file to Windows: rename it all the same)
     const bool sameFile = fs::equivalent(from, to, ec);
     if (!sameFile && fs::exists(to, ec)) return Problem(TrKey(L"「{}」はもうあります。"), Utf8ToWide(newName));
-    if (!MoveWithMeta(from, to, ec)) {
-        return Problem(TrKey(L"「{}」の名前を変えられませんでした: {}"), NameOf(*e), Why(ec));
+    if (std::wstring problem = MoveWithMeta(from, to, NameOf(*e)); !problem.empty()) {
+        Refresh();
+        return problem;
     }
     log::Info("アセットの名前を変えました: {} → {}", e->path, newName);
     Refresh();
@@ -139,8 +160,8 @@ std::wstring AssetLibrary::Move(std::span<const std::string> guids, const std::s
             problem = Problem(TrKey(L"動かす先に同じ名前の「{}」があります。"), NameOf(e));
             continue;
         }
-        if (!MoveWithMeta(FullPath(e), to, ec)) {
-            problem = Problem(TrKey(L"「{}」を動かせませんでした: {}"), NameOf(e), Why(ec));
+        if (std::wstring p = MoveWithMeta(FullPath(e), to, NameOf(e)); !p.empty()) {
+            problem = std::move(p);
             continue;
         }
         ++moved;
@@ -173,8 +194,13 @@ std::wstring AssetLibrary::NewFolder(const std::string& whereGuid, std::string* 
 }
 
 std::wstring AssetLibrary::Delete(std::span<const std::string> guids) {
-    std::vector<fs::path> paths;
-    std::vector<std::string> names;
+    // One asset at a time (the file and its .meta together): one that cannot go to the Recycle Bin
+    // stays, and the others still go.
+    struct One {
+        std::vector<fs::path> paths;
+        std::string name;
+    };
+    std::vector<One> items;
     for (const std::string& g : guids) {
         const asset::Entry* e = index_.ByGuid(g);
         if (!e) continue;
@@ -184,20 +210,32 @@ std::wstring AssetLibrary::Delete(std::span<const std::string> guids) {
             return o && o != e && o->folder && e->path.starts_with(o->path + "/");
         });
         if (inside) continue;
-        paths.push_back(FullPath(*e));
+        One one;
+        one.paths.push_back(FullPath(*e));
         std::error_code ec;
         fs::path meta = FullPath(*e);
         meta += L".meta";
-        if (fs::exists(meta, ec)) paths.push_back(meta);
-        names.push_back(e->path);
+        if (fs::exists(meta, ec)) one.paths.push_back(meta);
+        one.name = e->path;
+        items.push_back(std::move(one));
     }
-    if (paths.empty()) return {};
-    std::string why;
-    const bool ok = platform::MoveToRecycleBin(paths, &why);
+    if (items.empty()) return {};
+    std::wstring problem;
+    for (const One& one : items) {
+        std::string why;
+        bool notRecyclable = false;
+        if (platform::MoveToRecycleBin(one.paths, &why, &notRecyclable)) {
+            log::Info("ごみ箱へ移しました: {}", one.name);
+        } else if (notRecyclable) {
+            // Never deleted for good (no Recycle Bin there, or it is too big for it).
+            problem = Problem(TrKey(L"「{}」はごみ箱に入れられない場所にある (USB メモリ・ネットワーク・ごみ箱より大きい) ので、消していません。消すならエクスプローラーで消してください。"),
+                              Utf8ToWide(one.name));
+        } else {
+            problem = Problem(TrKey(L"「{}」をごみ箱へ移せませんでした: {}"), Utf8ToWide(one.name), Utf8ToWide(why));
+        }
+    }
     Refresh();
-    if (!ok) return Problem(TrKey(L"ごみ箱へ移せませんでした: {}"), Utf8ToWide(why));
-    for (const std::string& n : names) log::Info("ごみ箱へ移しました: {}", n);
-    return {};
+    return problem;
 }
 
 }  // namespace rm::editor

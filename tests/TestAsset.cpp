@@ -11,8 +11,11 @@
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "core/reflect/Reflect.h"
 
+#include <windows.h>
+
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -96,7 +99,7 @@ RM_TEST(Asset_Reconcile_MovedWithoutMeta) {
     const Plan p = Reconcile(before, found, orphans, ids);
     CHECK(At(p, "Props/Tree.fbx")->guid == G(2));  // the same id: references still find it
     CHECK(p.moves.size() == 1 && p.moves[0].from == "Models/Tree.fbx" && p.moves[0].to == "Props/Tree.fbx");
-    CHECK(p.writes.empty());
+    CHECK(p.writes.size() == 1 && p.writes[0].guid == G(2) && p.writes[0].name == "Tree.fbx");  // the moved .meta says its name
     CHECK(!p.notes.empty());
 }
 
@@ -280,4 +283,167 @@ RM_TEST(Asset_ModelImportApplied) {
     space3d::MeshData same = mesh;
     space3d::ApplyModelImport(same, 1.f, false);  // the defaults change nothing
     CHECK(same.vertices[0].position.y == 6);
+}
+
+// --- A .meta that cannot be read, and copies made outside the editor ------------------------------
+
+namespace {
+// git's conflict marks around two ids (written out here so the marks are not at a line start of this file).
+std::string ConflictText() {
+    const std::string lt(7, '<'), eq(7, '='), gt(7, '>');
+    return lt + " HEAD\n{\"guid\": \"0000000000000abc0000000000000001\"}\n" + eq + "\n{\"guid\": \"0000000000000abc0000000000000002\"}\n" + gt +
+           " other\n";
+}
+}  // namespace
+
+RM_TEST(Asset_ReadMeta_OkDamagedUnreadable) {
+    const MetaInfo ok = ReadMeta(R"({"guid": "0000000000000abc0000000000000001", "name": "a.png"})");
+    CHECK(ok.state == MetaState::Ok && ok.guid == G(1) && ok.name == "a.png");
+    // A comma too many: not JSON, but the one id in it is picked out (and the file is never rewritten).
+    const MetaInfo comma = ReadMeta("{\"guid\": \"0000000000000abc0000000000000002\",}");
+    CHECK(comma.state == MetaState::Damaged && comma.guid == G(2));
+    CHECK(!GuidInMeta("{\"guid\": \"0000000000000abc0000000000000002\",}"));  // (only an Ok one counts there)
+    // git's conflict marks with two ids: which one is not clear.
+    CHECK(ReadMeta(ConflictText()).state == MetaState::Unreadable);
+    CHECK(ReadMeta("garbage").state == MetaState::Unreadable);
+    CHECK(ReadMeta("{\"memo\": 1}").state == MetaState::Unreadable);  // JSON, but no id
+    // The name is written with the id; other keys stay.
+    const std::string t = MetaText(R"({"guid": "0000000000000abc0000000000000001", "memo": 1})", G(1), "b.png");
+    CHECK(ReadMeta(t).name == "b.png" && t.find("\"memo\"") != std::string::npos);
+    CHECK(Ignored("a.png.meta.tmp") && Ignored("A.PNG.META.TMP") && !Ignored("a.tmp"));
+}
+
+RM_TEST(Asset_Reconcile_UnreadableMetaIsNeverReplaced) {
+    Counter ids;
+    Found locked{"a.png", false, ""};
+    locked.meta = MetaState::Unreadable;
+    locked.metaProblem = "開けません";
+    // Opened at start (no last look): left out until it can be read - no new id, nothing written.
+    const Plan p = Reconcile({}, std::vector<Found>{locked}, {}, ids);
+    CHECK(p.entries.empty() && p.writes.empty() && p.moves.empty());
+    CHECK(!p.notes.empty());
+    // During the session: it keeps the id of the last look - still nothing written.
+    const std::vector<Entry> before = {{"a.png", G(1), false}};
+    const Plan q = Reconcile(before, std::vector<Found>{locked}, {}, ids);
+    CHECK(q.entries.size() == 1 && q.entries[0].guid == G(1) && q.writes.empty());
+    // A broken .meta whose id could be picked out: used, never written.
+    Found broken{"b.png", false, G(2)};
+    broken.meta = MetaState::Damaged;
+    const Plan r = Reconcile({}, std::vector<Found>{broken}, {}, ids);
+    CHECK(r.entries.size() == 1 && r.entries[0].guid == G(2) && r.writes.empty());
+}
+
+RM_TEST(Asset_Reconcile_CopyDoesNotTakeTheId) {
+    Counter ids;
+    // Copied in Explorer while the editor was closed: "X - コピー.png" + a copy of the .meta, listed
+    // first (' ' comes before '.'). The .meta says the name it was written for: the original keeps it.
+    Found copy{"X - コピー.png", false, G(1)};
+    copy.meta = MetaState::Ok;
+    copy.metaName = "X.png";
+    Found original{"X.png", false, G(1)};
+    original.meta = MetaState::Ok;
+    original.metaName = "X.png";
+    const Plan p = Reconcile({}, std::vector<Found>{copy, original}, {}, ids);
+    CHECK(At(p, "X.png")->guid == G(1));
+    CHECK(At(p, "X - コピー.png")->guid != G(1));
+    CHECK(p.writes.size() == 1 && p.writes[0].path == "X - コピー.png" && p.writes[0].name == "X - コピー.png");
+    // A .meta from before names were written: the one made first is the original (a copy is made new).
+    copy.metaName = original.metaName = "";
+    copy.metaCreated = 2000;
+    original.metaCreated = 1000;
+    const Plan q = Reconcile({}, std::vector<Found>{copy, original}, {}, ids);
+    CHECK(At(q, "X.png")->guid == G(1));
+    // Nothing tells them apart: the first, with a note that it is a guess.
+    copy.metaCreated = original.metaCreated = 0;
+    const Plan r = Reconcile({}, std::vector<Found>{copy, original}, {}, ids);
+    CHECK(At(r, "X - コピー.png")->guid == G(1) && !r.notes.empty());
+    // A copy whose .meta is broken cannot be given its own id: left out, its .meta untouched.
+    copy.meta = MetaState::Damaged;
+    copy.metaName = "";
+    original.metaName = "X.png";
+    const Plan s = Reconcile({}, std::vector<Found>{copy, original}, {}, ids);
+    CHECK(At(s, "X.png")->guid == G(1) && !At(s, "X - コピー.png") && s.writes.empty());
+}
+
+RM_TEST(Asset_FilesOnDisk_BrokenAndLockedMetaStay) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path root = fs::temp_directory_path() / L"rm_asset_safety" / L"Assets";
+    fs::remove_all(root.parent_path(), ec);
+    fs::create_directories(root, ec);
+    auto write = [](const fs::path& p, const std::string& text) { std::ofstream(p, std::ios::binary) << text; };
+    auto read = [](const fs::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    };
+    // A .meta with a comma too many, and one with git's conflict marks.
+    const std::string commaText = "{\"guid\": \"0000000000000abc0000000000000007\", \"memo\": 1,}";
+    const std::string conflictText = ConflictText();
+    write(root / L"a.png", "a");
+    write(root / L"a.png.meta", commaText);
+    write(root / L"b.png", "b");
+    write(root / L"b.png.meta", conflictText);
+    write(root / L"c.png.meta.tmp", "left by a failed write");
+    std::vector<std::string> notes;
+    const std::vector<Entry> first = Update(root, {}, notes);
+    CHECK(first.size() == 1 && first[0].path == "a.png" && first[0].guid == G(7));  // b waits; the .tmp is not an asset
+    CHECK(read(root / L"a.png.meta") == commaText);  // not written over
+    CHECK(read(root / L"b.png.meta") == conflictText);
+    CHECK(!notes.empty());
+
+    // Fixed by hand: b gets the id written in it again.
+    write(root / L"b.png.meta", "{\"guid\": \"0000000000000abc0000000000000002\"}");
+    const std::vector<Entry> second = Update(root, first, notes);
+    CHECK(second.size() == 2);
+
+    // A .meta another program holds open (no sharing): the id of the last look stays, and the
+    // .meta is not written over.
+    const fs::path bMeta = root / L"b.png.meta";
+    HANDLE h = CreateFileW(bMeta.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    CHECK(h != INVALID_HANDLE_VALUE);
+    const std::vector<Entry> third = Update(root, second, notes);
+    bool kept = false;
+    for (const Entry& e : third) kept |= e.path == "b.png" && e.guid == G(2);
+    CHECK(kept);
+    // Opened at start while it is held: left out (not given a new id).
+    const std::vector<Entry> fresh = Update(root, {}, notes);
+    CHECK(fresh.size() == 1);
+    CloseHandle(h);
+    CHECK(read(bMeta) == "{\"guid\": \"0000000000000abc0000000000000002\"}");
+    // Import settings are not written into a broken .meta either.
+    CHECK(!WriteImportJson(root / L"a.png", json::Value::MakeObject()));
+    CHECK(read(root / L"a.png.meta") == commaText);
+    fs::remove_all(root.parent_path(), ec);
+}
+
+RM_TEST(Asset_FilesOnDisk_CopiedWhileClosed) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path root = fs::temp_directory_path() / L"rm_asset_copy" / L"Assets";
+    fs::remove_all(root.parent_path(), ec);
+    fs::create_directories(root, ec);
+    std::ofstream(root / L"X.png", std::ios::binary) << "x";
+    std::vector<std::string> notes;
+    const std::vector<Entry> first = Update(root, {}, notes);
+    CHECK(first.size() == 1);
+    const std::string id = first[0].guid;
+    // The editor is closed; Explorer copies the file and its .meta.
+    fs::copy_file(root / L"X.png", root / L"X - コピー.png", ec);
+    fs::copy_file(root / L"X.png.meta", root / L"X - コピー.png.meta", ec);
+    const std::vector<Entry> second = Update(root, {}, notes);  // opened again: no last look
+    std::string original, copy;
+    for (const Entry& e : second) (e.path == "X.png" ? original : copy) = e.guid;
+    CHECK(original == id);
+    CHECK(IsGuid(copy) && copy != id);
+    // Renamed in the editor: the .meta says the new name.
+    fs::rename(root / L"X.png", root / L"Y.png", ec);
+    fs::rename(root / L"X.png.meta", root / L"Y.png.meta", ec);
+    CHECK(RecordName(root / L"Y.png"));
+    std::string text;
+    {
+        std::ifstream m(root / L"Y.png.meta", std::ios::binary);
+        text.assign(std::istreambuf_iterator<char>(m), std::istreambuf_iterator<char>());
+    }
+    CHECK(ReadMeta(text).name == "Y.png" && ReadMeta(text).guid == id);
+    fs::remove_all(root.parent_path(), ec);
 }

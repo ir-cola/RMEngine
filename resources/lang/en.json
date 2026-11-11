@@ -290,7 +290,6 @@
   "「{}」を動かせませんでした: {}": "Could not move \"{}\": {}",
   "新しいフォルダ": "New Folder",
   "フォルダを作れませんでした: {}": "Could not create the folder: {}",
-  "ごみ箱へ移せませんでした: {}": "Could not move to the Recycle Bin: {}",
   "画像": "Image",
   "3D モデル": "3D model",
   "音": "Audio",
@@ -352,5 +351,10 @@
   "作成の前に {} 個のプラグインをインストールします。": "{} plugins are installed before the project is created.",
   "ソフトで絞る": "Filter by software",
   "すべて": "All",
-  "このソフトで使うプラグインはありません。": "This software uses no plugins."
+  "このソフトで使うプラグインはありません。": "This software uses no plugins.",
+  "行き先にもう「{}」があるので、「{}」を動かしていません (ID がぶつかります)。": "\"{}\" is already where it would go, so \"{}\" was not moved (the IDs would clash).",
+  "「{}」の .meta を動かせず、ファイルを元の場所に戻すこともできませんでした。ファイルは「{}」、.meta は「{}」にあります。エクスプローラーで .meta をファイルの横へ動かしてください": "The .meta of \"{}\" could not be moved, and the file could not be put back either. The file is at \"{}\" and the .meta at \"{}\". Move the .meta next to the file in Explorer",
+  "「{}」の .meta を動かせなかったので、動かしていません: {}": "The .meta of \"{}\" could not be moved, so nothing was moved: {}",
+  "「{}」はごみ箱に入れられない場所にある (USB メモリ・ネットワーク・ごみ箱より大きい) ので、消していません。消すならエクスプローラーで消してください。": "\"{}\" cannot go to the Recycle Bin (a USB stick, a network folder, or bigger than the Recycle Bin), so it was not deleted. Delete it in Explorer if you mean to.",
+  "「{}」をごみ箱へ移せませんでした: {}": "Could not move \"{}\" to the Recycle Bin: {}"
 }

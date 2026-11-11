@@ -22,9 +22,11 @@ std::optional<std::wstring> PickOpenFile(HWND owner, std::wstring_view title, st
 void ShowInExplorer(const std::filesystem::path& path);
 // Opens a folder in Explorer (its contents, nothing selected).
 void OpenFolder(const std::filesystem::path& folder);
-// Moves files / folders to the Recycle Bin (no question asked, no progress window). False when any
-// of them could not be moved; *error (UTF-8) says why.
-bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string* error);
+// Moves files / folders to the Recycle Bin (no question asked, no progress window). NEVER deletes
+// for good: where there is no Recycle Bin (a USB stick, a network folder) or it is too small for the
+// item, the shell would delete it permanently - that item is refused and stays (*notRecyclable =
+// true). False when any of them was not moved; *error (UTF-8) says why.
+bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string* error, bool* notRecyclable = nullptr);
 
 // Tells when something under a folder was added, removed or renamed (Windows' change notification).
 // Asked without waiting: Changed() is true once after each change (the .meta files the editor writes

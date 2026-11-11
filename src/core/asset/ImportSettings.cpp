@@ -58,7 +58,9 @@ json::Value ReadImportJson(const fs::path& file) {
 bool WriteImportJson(const fs::path& file, const json::Value& import) {
     const fs::path meta = MetaOf(file);
     std::string old;
-    ReadText(meta, old);
+    // Only into a .meta that is there and can be read whole (with its id): one that is locked or
+    // broken is never written over, and one without an id would lose the asset its id.
+    if (!ReadText(meta, old) || ReadMeta(old).state != MetaState::Ok) return false;
     const std::string text = MetaWithImport(old, import);
     // Next to it first, then in place (a crash never leaves half a .meta).
     fs::path tmp = meta;
