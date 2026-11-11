@@ -118,6 +118,7 @@ private:
         dock::NamedLayouts named;  // layouts the user saved under a name (UserSettings)
         std::string namedShown;    // the named layout switched to / saved last (checked in the menu)
         std::unique_ptr<AssetPanel> assetPanel;  // the アセット panel (made when first drawn)
+        float assetThumbnail = 40.f;             // its thumbnails' size (UserSettings: "assets": {"thumbnail"})
 
     private:
         EditorScreen& editor_;
@@ -188,6 +189,7 @@ private:
     bool layoutReadOnly_ = false;  // written by a newer engine: used but never overwritten
 
     std::unique_ptr<AssetLibrary> assets_;  // the project's Assets/ (ids, file operations) - every software's
+    std::unique_ptr<Thumbnails> thumbnails_;  // the assets' small pictures - every software's panel shares them
 
     int logSink_ = 0;
     // Last log entry each window's console has followed (a panel can move between windows).

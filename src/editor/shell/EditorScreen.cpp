@@ -11,6 +11,7 @@
 #include "platform/Shell.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 
 namespace fs = std::filesystem;
@@ -39,7 +40,8 @@ constexpr char kStart[] = "core.start";
 //     "softwares": [ { "author": ..., "plugin": ..., "software": ..., "layout": { "main": ..., "floating": [...] },
 //                      "view": { ... the software's own (Software::SaveView) },
 //                      "named": [ { "name": ..., "layout": {...} } ] (layouts saved under a name: dock/NamedLayouts.h),
-//                      "tree": { "collapsed": [...], "selected": [...] } (the 階層: tree::SaveState) } ] }
+//                      "tree": { "collapsed": [...], "selected": [...] } (the 階層: tree::SaveState),
+//                      "assets": { "thumbnail": 40 } (the アセット panel: the thumbnails' size in DIPs) } ] }
 // The workspace without a software has only "software": "core". Entries of softwares that are not
 // installed now, and keys this version does not know, are written back unchanged.
 constexpr char kLayoutKind[] = "rm_engine.layout";
@@ -89,6 +91,7 @@ public:
 
 EditorScreen::EditorScreen(App& app, Project project) : ScreenWindow(app), project_(std::move(project)) {
     assets_ = std::make_unique<AssetLibrary>(project_.AssetsDir());
+    thumbnails_ = std::make_unique<Thumbnails>(app_.Gfx(), app_.GetPlugins().Registry(), project_.AssetsDir());
     BuildWorkspaces();
     LoadSoftwareData();
 }
@@ -344,6 +347,8 @@ void EditorScreen::LoadLayout() {
             ws->named = dock::NamedLayouts::FromJson(e.Get("named"), &warnings);
             for (const auto& wmsg : warnings) log::Warn("名前を付けた配置: {}", wmsg);
             if (const json::Value* t = e.Find("tree")) tree::LoadState(ws->treeState, *t);
+            ws->assetThumbnail = std::clamp(static_cast<float>(e.Get("assets").Get("thumbnail").AsDouble(ws->assetThumbnail)),
+                                            AssetPanel::kMinThumbnail, AssetPanel::kMaxThumbnail);
         }
         if (ws->software) ws->software->LoadView(view ? *view : json::Value());
         dock::Layout layout = loaded ? std::move(*loaded) : ws->DefaultLayout();
@@ -384,6 +389,9 @@ void EditorScreen::SaveLayout() {
         }
         entry->Set("layout", ws->dock.GetLayout().ToJson());
         if (!ws->named.Empty() || entry->Find("named")) entry->Set("named", ws->named.ToJson());
+        json::Value* assets = entry->Find("assets");
+        if (!assets || !assets->IsObject()) assets = &entry->Set("assets", json::Value::MakeObject());
+        assets->Set("thumbnail", static_cast<double>(std::round(ws->assetThumbnail)));
         if (ws->software) {
             if (json::Value view = ws->software->SaveView(); !view.IsNull()) entry->Set("view", std::move(view));
             if (ws->software->Hierarchy()) entry->Set("tree", tree::SaveState(ws->treeState));
@@ -956,7 +964,10 @@ void EditorScreen::DrawConsole(ui::Context& c, Rect r) {
 
 void EditorScreen::DrawAssets(ui::Context& c, Rect r) {
     Workspace& ws = Active();
-    if (!ws.assetPanel) ws.assetPanel = std::make_unique<AssetPanel>(*assets_, [this](std::wstring problem) { ShowError(std::move(problem)); });
+    if (!ws.assetPanel) {
+        ws.assetPanel = std::make_unique<AssetPanel>(*assets_, thumbnails_.get(), ws.assetThumbnail,
+                                                     [this](std::wstring problem) { ShowError(std::move(problem)); });
+    }
     ws.assetPanel->Draw(c, r);
 }
 

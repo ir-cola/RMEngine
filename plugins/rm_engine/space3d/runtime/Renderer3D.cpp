@@ -25,6 +25,9 @@ cbuffer PerDraw : register(b0) {
     float4 light;            // xyz: where the light goes; w: 1 = shadows
     float4 shadow;           // x: one texel of the shadow map (uv); y: depth bias; z: normal offset (world)
     float4 eye;              // xyz: where the camera is (world)
+    float4 material;         // the part's material colour (times `color`)
+    float4 paint;            // x: 1 = a picture (baseMap); y: alpha 0 opaque / 1 mask / 2 blend; z: mask's cutoff
+    float4 highlight;        // a glow at the edges (selected): rgb, a = how strong
 };
 // The lights of the frame (Lighting.h's LightBlock: set once per frame).
 cbuffer Lights : register(b1) {
@@ -36,6 +39,8 @@ cbuffer Lights : register(b1) {
 };
 Texture2D shadowMap : register(t0);
 SamplerComparisonState shadowSampler : register(s0);
+Texture2D baseMap : register(t1);
+SamplerState baseSampler : register(s1);
 
 struct LineIn  { float3 pos : POSITION; float4 col : COLOR; };
 struct LineOut { float4 pos : SV_Position; float4 col : COLOR; };
@@ -48,7 +53,7 @@ LineOut LineVS(LineIn i) {
 float4 LinePS(LineOut i) : SV_Target { return i.col; }
 
 struct MeshIn  { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; };
-struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float4 lpos : TEXCOORD1; float3 wpos : TEXCOORD2; };
+struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 lpos : TEXCOORD1; float3 wpos : TEXCOORD2; };
 MeshOut MeshVS(MeshIn i) {
     MeshOut o;
     float4 w = mul(world, float4(i.pos, 1));
@@ -58,6 +63,7 @@ MeshOut MeshVS(MeshIn i) {
     float3 n = o.nrm * rsqrt(max(dot(o.nrm, o.nrm), 1e-12));
     o.lpos = mul(lightViewProj, float4(w.xyz + n * shadow.z, 1));
     o.wpos = w.xyz;
+    o.uv = i.uv;
     return o;
 }
 
@@ -99,14 +105,28 @@ float3 LightAmount(float3 n, float3 wpos, float shadowLit) {
     return k;
 }
 
+// The surface's own colour: the draw's x the material's x the picture. Alpha by the material's mode
+// (opaque: a picture's alpha is no hole; mask: a hole below the cutoff; blend: see-through).
+float4 Paint(MeshOut i) {
+    float4 c = color * material;
+    if (paint.x > 0.5) c *= baseMap.Sample(baseSampler, i.uv);
+    if (paint.y > 0.5 && paint.y < 1.5) clip(c.a - paint.z);  // mask: a hole, or not
+    if (paint.y < 1.5) c.a = color.a;                          // only blend sees through by its alpha
+    return c;
+}
+
 float4 MeshPS(MeshOut i) : SV_Target {
+    float4 base = Paint(i);
     // The side seen is the side facing the eye (the back of an open model is lit as its own side).
     // Told from the eye, not from the triangle's winding on the screen, so a mirrored model or a
     // flipped projection never lights the wrong side.
     float3 n = normalize(i.nrm);
-    if (dot(n, eye.xyz - i.wpos) < 0) n = -n;
-    float3 k = LightAmount(n, i.wpos, Lit(i.lpos));
-    return float4(color.rgb * k, color.a);
+    float3 toEye = normalize(eye.xyz - i.wpos);
+    if (dot(n, toEye) < 0) n = -n;
+    float3 rgb = base.rgb * LightAmount(n, i.wpos, Lit(i.lpos));  // the surface's colour x the amount of light
+    // Selected: the edges (where the surface turns away from the eye) glow, the colours stay.
+    float rim = pow(1 - saturate(dot(n, toEye)), 2.5) * highlight.a;
+    return float4(lerp(rgb, highlight.rgb, rim), base.a);
 }
 
 // The floor: nothing of its own, only the shadow (seen from above).
@@ -127,6 +147,9 @@ struct Constants {
     float light[4];
     float shadow[4];
     float eye[4];
+    float material[4];
+    float paint[4];
+    float highlight[4];
 };
 static_assert(sizeof(Constants) % 16 == 0);
 static_assert(sizeof(MeshVertex) == 32, "MeshVertex goes to the GPU as it is (POSITION, NORMAL, TEXCOORD)");
@@ -156,6 +179,33 @@ bool Compile(const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DB
         return false;
     }
     return true;
+}
+
+// What the GPU needs for a mipmap chain: each level half the one before (2 x 2 averaged; an odd
+// last row / column is averaged with what there is), down to 1 x 1.
+std::vector<platform::Image> Mipmaps(const platform::Image& top) {
+    std::vector<platform::Image> levels;
+    levels.push_back(top);
+    while (levels.back().width > 1 || levels.back().height > 1) {
+        const platform::Image& a = levels.back();
+        platform::Image b;
+        b.width = std::max(1u, a.width / 2);
+        b.height = std::max(1u, a.height / 2);
+        b.pixels.resize(static_cast<size_t>(b.width) * b.height * 4);
+        for (uint32_t y = 0; y < b.height; ++y) {
+            for (uint32_t x = 0; x < b.width; ++x) {
+                const uint32_t x0 = std::min(x * 2, a.width - 1), x1 = std::min(x * 2 + 1, a.width - 1);
+                const uint32_t y0 = std::min(y * 2, a.height - 1), y1 = std::min(y * 2 + 1, a.height - 1);
+                for (uint32_t k = 0; k < 4; ++k) {
+                    auto at = [&](uint32_t px, uint32_t py) { return static_cast<uint32_t>(a.pixels[(static_cast<size_t>(py) * a.width + px) * 4 + k]); };
+                    b.pixels[(static_cast<size_t>(y) * b.width + x) * 4 + k] =
+                        static_cast<uint8_t>((at(x0, y0) + at(x1, y0) + at(x0, y1) + at(x1, y1) + 2) / 4);
+                }
+            }
+        }
+        levels.push_back(std::move(b));
+    }
+    return levels;
 }
 
 // Every triangle turned so its front (counter-clockwise) faces the way its corners' normals do.
@@ -274,9 +324,15 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
     bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
     bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    D3D11_SAMPLER_DESC ts{};
+    ts.Filter = D3D11_FILTER_ANISOTROPIC;
+    ts.MaxAnisotropy = 8;
+    ts.AddressU = ts.AddressV = ts.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;  // UVs past 0..1 repeat the picture
+    ts.ComparisonFunc = D3D11_COMPARISON_NEVER;
+    ts.MaxLOD = D3D11_FLOAT32_MAX;
     if (FAILED(device->CreateRasterizerState(&rd, &raster_)) || FAILED(device->CreateRasterizerState(&sd, &shadowRaster_)) ||
         FAILED(device->CreateDepthStencilState(&dd, &depth_)) || FAILED(device->CreateDepthStencilState(&dn, &depthNoWrite_)) ||
-        FAILED(device->CreateBlendState(&bl, &blend_))) {
+        FAILED(device->CreateBlendState(&bl, &blend_)) || FAILED(device->CreateSamplerState(&ts, &textureSampler_))) {
         return fail("描画の設定");
     }
     if (!MakeShadowMap()) return fail("影");
@@ -345,6 +401,44 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     gpu->min = mesh.min;
     gpu->max = mesh.max;
     gpu->indexCount = static_cast<uint32_t>(mesh.indices.size() / 3 * 3);
+    // The parts as they are (only whole triangles inside the indices); none: one part, no material.
+    for (const MeshPart& part : mesh.parts) {
+        const uint64_t end = static_cast<uint64_t>(part.firstIndex) + part.indexCount;
+        if (part.indexCount >= 3 && end <= gpu->indexCount) gpu->parts.push_back({part.firstIndex, part.indexCount / 3 * 3, part.material});
+    }
+    if (gpu->parts.empty()) gpu->parts.push_back({0, gpu->indexCount, -1});
+    return gpu;
+}
+
+std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image& rgba, std::string* error) {
+    auto fail = [&](const char* why) {
+        if (error) *error = why;
+        return nullptr;
+    };
+    if (!device_) return fail("3D の描画が始まっていません");
+    if (rgba.width == 0 || rgba.height == 0 || rgba.pixels.size() < static_cast<size_t>(rgba.width) * rgba.height * 4) return fail("画像が空です");
+    if (rgba.width > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION || rgba.height > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION) {
+        return fail("画像が大きすぎて GPU に載せられません");
+    }
+    const std::vector<platform::Image> levels = Mipmaps(rgba);
+    std::vector<D3D11_SUBRESOURCE_DATA> init;
+    for (const platform::Image& l : levels) init.push_back({l.pixels.data(), l.width * 4, 0});
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = rgba.width;
+    td.Height = rgba.height;
+    td.MipLevels = static_cast<UINT>(levels.size());
+    td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // the picture's numbers as they are (the screen's colours, like the rest)
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_IMMUTABLE;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    Ptr<ID3D11Texture2D> tex;
+    auto gpu = std::make_shared<GpuTexture>();
+    if (FAILED(device_->CreateTexture2D(&td, init.data(), &tex)) || FAILED(device_->CreateShaderResourceView(tex.Get(), nullptr, &gpu->view))) {
+        return fail("画像を GPU に載せられませんでした (メモリーが足りない?)");
+    }
+    gpu->width = rgba.width;
+    gpu->height = rgba.height;
     return gpu;
 }
 
@@ -417,9 +511,9 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
 
     // Everything filled: the boxes and the models (each with its own place and colour).
     items_.clear();
-    for (const Box& b : f.boxes) items_.push_back({cube_.get(), &b.world, b.color, b.castShadow});
+    for (const Box& b : f.boxes) items_.push_back({cube_.get(), &b.world, b.color, b.castShadow, {}, {0, 0, 0, 0}});
     for (const MeshDraw& m : f.meshes) {
-        if (m.mesh && m.mesh->indexCount > 0) items_.push_back({m.mesh, &m.world, m.color, m.castShadow});
+        if (m.mesh && m.mesh->indexCount > 0) items_.push_back({m.mesh, &m.world, m.color, m.castShadow, m.materials, m.highlight});
     }
 
     ID3D11Buffer* cb = constants_.Get();
@@ -446,13 +540,40 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     }
     const Vec3 l = lights.shadowDirection;
     c.light[0] = l.x, c.light[1] = l.y, c.light[2] = l.z;
+    auto put = [](float out[4], Color col) { out[0] = col.r, out[1] = col.g, out[2] = col.b, out[3] = col.a; };
+    // The whole shape at once (the shadow map, the floor): no materials.
     auto draw = [&](const GpuMesh& mesh, const Mat4& world, Color col) {
         CopyMatrix(c.world, world);
         CopyMatrix(c.normalWorld, NormalMatrix(world));
-        c.color[0] = col.r, c.color[1] = col.g, c.color[2] = col.b, c.color[3] = col.a;
+        put(c.color, col);
+        put(c.material, {1, 1, 1, 1});
+        put(c.paint, {0, 0, 0, 0});
+        put(c.highlight, {0, 0, 0, 0});
         ctx->UpdateSubresource(cb, 0, nullptr, &c, 0, 0);
         BindMesh(ctx, mesh.vertices.Get(), mesh.indices.Get());
         ctx->DrawIndexed(mesh.indexCount, 0, 0);
+    };
+    // Part by part, each with its material (colour, picture, alpha).
+    auto drawPainted = [&](const Item& it) {
+        CopyMatrix(c.world, *it.world);
+        CopyMatrix(c.normalWorld, NormalMatrix(*it.world));
+        put(c.color, it.color);
+        put(c.highlight, it.highlight);
+        BindMesh(ctx, it.mesh->vertices.Get(), it.mesh->indices.Get());
+        for (const MeshPart& part : it.mesh->parts) {
+            const DrawMaterial* m = part.material >= 0 && static_cast<size_t>(part.material) < it.materials.size()
+                                        ? &it.materials[static_cast<size_t>(part.material)]
+                                        : nullptr;
+            const DrawMaterial white;
+            const DrawMaterial& mat = m ? *m : white;
+            put(c.material, mat.color);
+            const float mode = mat.alpha == AlphaMode::Mask ? 1.f : mat.alpha == AlphaMode::Blend ? 2.f : 0.f;
+            put(c.paint, {mat.texture ? 1.f : 0.f, mode, mat.alphaCutoff, 0});
+            ID3D11ShaderResourceView* view = mat.texture ? mat.texture->view.Get() : nullptr;
+            ctx->PSSetShaderResources(1, 1, &view);
+            ctx->UpdateSubresource(cb, 0, nullptr, &c, 0, 0);
+            ctx->DrawIndexed(part.indexCount, part.firstIndex, 0);
+        }
     };
 
     // 1. The shadow map: what casts, seen from the light, fitted to the box that holds all of it.
@@ -500,7 +621,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->OMSetRenderTargets(1, &rtv, dsv_.Get());
     const D3D11_VIEWPORT vp{0, 0, static_cast<float>(f.width), static_cast<float>(f.height), 0, 1};
     ctx->RSSetViewports(1, &vp);
-    const float clear[4] = {f.clear.r, f.clear.g, f.clear.b, 1};
+    const float clear[4] = {f.clear.r, f.clear.g, f.clear.b, f.clear.a};  // a < 1: a picture to put over something (a thumbnail)
     ctx->ClearRenderTargetView(rtv, clear);
     ctx->ClearDepthStencilView(dsv_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.f, 0);
     ctx->RSSetState(raster_.Get());
@@ -516,7 +637,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     if (!items_.empty()) {
         ctx->VSSetShader(meshVs_.Get(), nullptr, 0);
         ctx->PSSetShader(meshPs_.Get(), nullptr, 0);
-        for (const Item& it : items_) draw(*it.mesh, *it.world, it.color);
+        ID3D11SamplerState* sampler = textureSampler_.Get();
+        ctx->PSSetSamplers(1, 1, &sampler);
+        for (const Item& it : items_) drawPainted(it);
+        ctx->PSSetShaderResources(1, 1, &noSrv);
     }
     // The shadows on the floor: see-through, over what is already drawn (the depth test still hides
     // the floor behind things), and writing no depth (the grid lies on it).

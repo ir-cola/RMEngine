@@ -7,11 +7,14 @@
 //   drag rows out of the panel        onto a reference field (AssetRef) of the インスペクター
 //   right-click                       新しいフォルダ / エクスプローラーで表示 / 削除 (ごみ箱へ)
 //                                     (on empty space: 新しいフォルダ / エクスプローラーで開く)
-//   under the tree                    what the selected one is and where
+//   under the tree                    what the selected one is and where, and the slider of the
+//                                     thumbnails' size (left end: no thumbnails, the kinds' pictures)
 //
+// Pictures and 3D models show a thumbnail (Thumbnails.h) instead of their kind's picture.
 // One per software (its own selection and open folders); the files are the project's (AssetLibrary).
 
 #include "editor/assets/AssetLibrary.h"
+#include "editor/assets/Thumbnails.h"
 #include "editor/inspector/Inspector.h"
 #include "editor/tree/TreeView.h"
 #include "editor/widgets/Widgets.h"
@@ -26,8 +29,13 @@ namespace rm::editor {
 
 class AssetPanel final : public tree::Source {
 public:
-    // showError: a problem with a file operation (a dialog).
-    AssetPanel(AssetLibrary& library, std::function<void(std::wstring)> showError);
+    static constexpr float kMinThumbnail = 16.f;  // and below kThumbnailsFrom: no thumbnails
+    static constexpr float kThumbnailsFrom = 20.f;
+    static constexpr float kMaxThumbnail = 96.f;
+
+    // showError: a problem with a file operation (a dialog). thumbnails: null = none. thumbnailSize:
+    // the thumbnails' size in DIPs (the software's view: kept in UserSettings by the editor).
+    AssetPanel(AssetLibrary& library, Thumbnails* thumbnails, float& thumbnailSize, std::function<void(std::wstring)> showError);
 
     void Draw(ui::Context& c, const ui::Rect& r);
 
@@ -40,12 +48,16 @@ public:
     void Move(std::span<const tree::ItemId> items, tree::ItemId parent, size_t index) override;
     std::vector<tree::Action> Actions(std::span<const tree::ItemId> selection) override;
     w::DragThing DragOut(std::span<const tree::ItemId> items) override;
+    float RowHeight() const override;
+    bool DrawPicture(ui::Context& c, const tree::Item& item, const ui::Rect& r) override;
 
 private:
     std::vector<std::string> GuidsOf(std::span<const tree::ItemId> ids) const;
     void Report(const std::wstring& problem);
 
     AssetLibrary& lib_;
+    Thumbnails* thumbnails_;
+    float& thumbnailSize_;
     std::function<void(std::wstring)> showError_;
     tree::State state_;
     std::unordered_map<tree::ItemId, std::string> guids_;  // tree id -> asset id (from the last Items)

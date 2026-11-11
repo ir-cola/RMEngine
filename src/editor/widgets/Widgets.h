@@ -143,6 +143,15 @@ bool Switch(ui::Context& c, std::string_view id, float x, float y, bool& on, std
 float SwitchWidth(ui::Context& c, std::wstring_view offLabel = {}, std::wstring_view onLabel = {});
 inline constexpr float kSwitchH = 22.f;
 
+// A small picture of a file (the アセット panel's thumbnails): on a faint square, fitted inside `r`
+// keeping its shape; faint when `dimmed`.
+void DrawThumbnail(ui::Context& c, const ui::Rect& r, ID2D1Bitmap* bitmap, bool dimmed = false);
+
+// A slider: a thin track (the accent up to the knob) and a round knob. Pressing anywhere on it and
+// dragging sets `value` between min and max (it follows the mouse outside too, until let go).
+// Returns true while it changes the value.
+bool Slider(ui::Context& c, std::string_view id, const ui::Rect& r, float& value, float min, float max);
+
 // Rounded panel with a title bar. Returns the content area.
 ui::Rect Panel(ui::Context& c, const ui::Rect& r, std::wstring_view title);
 

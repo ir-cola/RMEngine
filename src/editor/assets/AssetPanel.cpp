@@ -4,6 +4,9 @@
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace rm::editor {
 
 using ui::Rect;
@@ -88,8 +91,29 @@ std::vector<inspector::RefChoice> AssetChoices(const AssetLibrary& lib) {
 
 // ---------------------------------------------------------------------------
 
-AssetPanel::AssetPanel(AssetLibrary& library, std::function<void(std::wstring)> showError)
-    : lib_(library), showError_(std::move(showError)) {}
+AssetPanel::AssetPanel(AssetLibrary& library, Thumbnails* thumbnails, float& thumbnailSize, std::function<void(std::wstring)> showError)
+    : lib_(library), thumbnails_(thumbnails), thumbnailSize_(thumbnailSize), showError_(std::move(showError)) {}
+
+float AssetPanel::RowHeight() const {
+    return thumbnails_ && thumbnailSize_ >= kThumbnailsFrom ? std::max(24.f, thumbnailSize_ + 6.f) : 24.f;
+}
+
+bool AssetPanel::DrawPicture(ui::Context& c, const tree::Item& item, const Rect& r) {
+    if (!thumbnails_ || thumbnailSize_ < kThumbnailsFrom) return false;
+    const auto it = guids_.find(item.id);
+    const asset::Entry* e = it != guids_.end() ? lib_.Index().ByGuid(it->second) : nullptr;
+    if (!e) return false;
+    const asset::Kind kind = asset::KindOf(e->path, e->folder);
+    if (!thumbnails_->Has(kind)) return false;
+    // In the window's pixels (sharp on a high-DPI screen).
+    float dpiX = 96, dpiY = 96;
+    if (ID2D1DeviceContext* dc = c.P().DC()) dc->GetDpi(&dpiX, &dpiY);
+    const uint32_t pixels = static_cast<uint32_t>(std::ceil(r.w * dpiX / 96.f));
+    ID2D1Bitmap* bitmap = thumbnails_->Get(c, e->guid, kind, lib_.FullPath(*e), pixels);
+    if (!bitmap) return false;
+    w::DrawThumbnail(c, r, bitmap, item.dimmed);
+    return true;
+}
 
 void AssetPanel::Report(const std::wstring& problem) {
     if (!problem.empty() && showError_) showError_(problem);
@@ -210,7 +234,16 @@ void AssetPanel::Draw(ui::Context& c, const Rect& r) {
         text = TrF(L"{} 個のファイルとフォルダ", lib_.Index().Entries().size());
     }
     w::Separator(c, info.x + 8, info.y, info.w - 16);
-    c.P().Text(info.Inset(12, 0, 12, 0), text, Style(11, theme::TextFaint));
+    float textRight = 12;
+    if (thumbnails_ && info.w > 260) {
+        // The thumbnails' size (the left end: none - the kinds' pictures, as small rows).
+        constexpr float kSliderW = 96;
+        const Rect slider{info.Right() - 12 - kSliderW, info.y + 2, kSliderW, info.h - 4};
+        if (w::Slider(c, "asset_thumbnail_size", slider, thumbnailSize_, kMinThumbnail, kMaxThumbnail)) c.RequestRedraw();
+        if (c.IsHovered(slider)) w::Tooltip(c, Tr(L"サムネイルの大きさ (左の端: サムネイルなし)"));
+        textRight += kSliderW + 12;
+    }
+    c.P().Text(info.Inset(12, 0, textRight, 0), text, Style(11, theme::TextFaint));
 }
 
 }  // namespace rm::editor

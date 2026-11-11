@@ -70,6 +70,16 @@ public:
     // Rows dragged out of the tree onto another panel (a reference field of the インスペクター): what
     // they are (w::DragThing). The default: "item" with the ids (EntityRef fields take them).
     virtual w::DragThing DragOut(std::span<const ItemId> items);
+    // How tall a row is (DIPs). Taller rows have a bigger picture (the アセット panel's thumbnails).
+    virtual float RowHeight() const { return 24.f; }
+    // Draws the row's picture itself into `r` (a thumbnail) and returns true; false: the core draws
+    // the item's Icon.
+    virtual bool DrawPicture(ui::Context& c, const Item& item, const ui::Rect& r) {
+        (void)c;
+        (void)item;
+        (void)r;
+        return false;
+    }
 };
 
 // Per tree (one per software): selection, open / closed items, search, rename, drag.

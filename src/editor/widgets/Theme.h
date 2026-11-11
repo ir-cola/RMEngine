@@ -212,6 +212,13 @@ inline Color SceneObjectInactive() { return Mix(SceneObject(), SceneBackground()
 // A camera's shape (the lines of what it sees) and a light's (its direction, its reach) and their marks.
 inline Color SceneCamera() { return Text.Alpha(IsLight ? 0.70f : 0.75f); }
 inline Color SceneLight() { return IsLight ? Color::Hex(0xC08A12) : Color::Hex(0xF2D16B); }
+// A model is drawn in its own colours (materials and pictures) times this: as it is, or faint and
+// see-through when switched off. The selected one glows at its edges instead of being recoloured.
+inline Color SceneModel() { return Color{1, 1, 1, 1}; }
+inline Color SceneModelInactive() { return Color{1, 1, 1, 0.35f}; }
+inline Color SceneSelectedGlow() { return Accent.Alpha(0.85f); }
+// Behind a model's thumbnail (アセット panel): a faint square so a light or dark model shows on both themes.
+inline Color ThumbnailBack() { return Text.Alpha(IsLight ? 0.06f : 0.08f); }
 // Shadows falling on the floor (laid over the background: darker on the dark theme to still show).
 inline Color SceneShadow() { return Color{0, 0, 0, IsLight ? 0.30f : 0.55f}; }
 

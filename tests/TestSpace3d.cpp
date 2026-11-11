@@ -1,5 +1,6 @@
 // Tests for the 3D space plugin's math (plugins/rm_engine/space3d/runtime/Transform, View), models
-// (Mesh) and lights (Lighting), and the connector's camera and light components (game_x_3d/runtime).
+// (Mesh: shapes, materials and parts; MeshFile: which related files may be read) and lights (Lighting),
+// and the connector's camera and light components (game_x_3d/runtime).
 
 #include "Test.h"
 
@@ -11,11 +12,14 @@
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
+#include "rm_engine/space3d/runtime/MeshFile.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -653,6 +657,151 @@ RM_TEST(Mesh_Obj) {
     CHECK(!ParseObj("v 0 0 0\nv 1 0 0\nf 1 2 9\n", &error));
     CHECK(error.find("3 行目") != std::string::npos);
     CHECK(!ParseObj("v 0 0 0\n", &error));  // no faces
+}
+
+// --- Materials (colours and pictures) and the parts they cut a model into --------------------
+
+namespace {
+
+// The triangle twice, each primitive with its own material; `more` = the rest of the document
+// ("materials", "textures", "images" ...); `extraViews` = more buffer views after the two.
+std::string TwoMaterialGltf(const std::string& more, const std::string& extraViews = "", const std::string& firstMaterial = "0",
+                            const std::string& secondMaterial = "1") {
+    return std::string(R"({"asset":{"version":"2.0"},"meshes":[{"primitives":[)") +
+           R"({"attributes":{"POSITION":0},"indices":1,"material":)" + firstMaterial + "}," +
+           R"({"attributes":{"POSITION":0},"indices":1,"material":)" + secondMaterial + "}]}]," + R"("buffers":[{"byteLength":44)" +
+           Embedded(TriangleBin()) + "}]," +
+           R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":6})" + extraViews + "]," +
+           R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},)" +
+           R"({"bufferView":1,"componentType":5123,"count":3,"type":"SCALAR"}],)" + more + "}";
+}
+
+std::optional<std::vector<uint8_t>> TextFile(const std::string& s) { return std::vector<uint8_t>(s.begin(), s.end()); }
+
+}  // namespace
+
+RM_TEST(Mesh_LinearToScreen) {
+    CHECK(NearF(LinearToScreen(0), 0) && NearF(LinearToScreen(1), 1));
+    CHECK(std::abs(LinearToScreen(0.5f) - 0.7354f) < 1e-3f);  // half the light looks much brighter than half
+    CHECK(NearF(LinearToScreen(-1), 0) && NearF(LinearToScreen(3), 1));
+}
+
+RM_TEST(Mesh_Gltf_MaterialsMakeParts) {
+    const std::string doc = TwoMaterialGltf(
+        R"("materials":[{"name":"Red","pbrMetallicRoughness":{"baseColorFactor":[1,0,0,1],"baseColorTexture":{"index":0}}},)"
+        R"({"pbrMetallicRoughness":{"baseColorFactor":[0.5,0.5,0.5,0.5]},"alphaMode":"MASK","alphaCutoff":0.3}],)"
+        R"("textures":[{"source":0}],"images":[{"uri":"tex%20a.png"}])");
+    std::string error;
+    const auto m = ParseGltf(Bytes(doc), nullptr, &error);
+    CHECK(m.has_value());
+    if (!m) return;
+    CHECK(m->indices.size() == 6);
+    CHECK(m->parts.size() == 2);
+    if (m->parts.size() != 2) return;
+    CHECK((m->parts[0] == MeshPart{0, 3, 0}) && (m->parts[1] == MeshPart{3, 3, 1}));
+    CHECK(m->materials.size() == 2 && m->materials[0].name == "Red");
+    CHECK(m->materials[0].baseColor == (Color{1, 0, 0, 1}) && m->materials[0].image == 0);
+    CHECK(m->images.size() == 1 && m->images[0].file == "tex a.png" && m->images[0].bytes.empty());  // a file next to the model
+    // The factor is linear light: shown as the screen's 0.735; alpha stays as it is.
+    CHECK(std::abs(m->materials[1].baseColor.r - 0.7354f) < 1e-3f && NearF(m->materials[1].baseColor.a, 0.5f));
+    CHECK(m->materials[1].alpha == AlphaMode::Mask && NearF(m->materials[1].alphaCutoff, 0.3f) && m->materials[1].image == -1);
+    CHECK(m->materials[0].alpha == AlphaMode::Opaque);
+}
+
+RM_TEST(Mesh_Gltf_PicturesInsideTheFile) {
+    // One picture in a buffer view (as in a .glb), one in a data: URI; a third material shares the first.
+    const std::string doc = TwoMaterialGltf(
+        R"("materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0}}},{"pbrMetallicRoughness":{"baseColorTexture":{"index":1}}},)"
+        R"({"pbrMetallicRoughness":{"baseColorTexture":{"index":0}}}],)"
+        R"("textures":[{"source":0},{"source":1}],"images":[{"bufferView":2,"mimeType":"image/png"},{"uri":"data:image/png;base64,AAEC"}])",
+        R"(,{"buffer":0,"byteOffset":0,"byteLength":4})", "0", "2");
+    std::string error;
+    const auto m = ParseGltf(Bytes(doc), nullptr, &error);
+    CHECK(m.has_value());
+    if (!m) return;
+    CHECK(m->images.size() == 2);  // read once each, whoever uses them
+    CHECK(m->materials.size() == 3 && m->materials[0].image == m->materials[2].image);
+    CHECK(m->images[m->materials[0].image].bytes == std::vector<uint8_t>({0, 0, 0, 0}));  // the triangle's first float, 0
+    CHECK(m->images[m->materials[1].image].bytes == std::vector<uint8_t>({0, 1, 2}));
+    // Both triangles use pictures 0 (materials 0 and 2): two parts.
+    CHECK(m->parts.size() == 2 && m->parts[0].material == 0 && m->parts[1].material == 2);
+}
+
+RM_TEST(Mesh_Gltf_BrokenMaterialsAreToldWhy) {
+    std::string error;
+    // A material that is not there.
+    CHECK(!ParseGltf(Bytes(TwoMaterialGltf(R"("materials":[{}])")), nullptr, &error));
+    CHECK(error.find("材質 1") != std::string::npos);
+    // A texture that is not there; a picture's buffer view outside its buffer.
+    CHECK(!ParseGltf(Bytes(TwoMaterialGltf(R"("materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":3}}},{}])")), nullptr, &error));
+    CHECK(error.find("テクスチャ 3") != std::string::npos);
+    CHECK(!ParseGltf(Bytes(TwoMaterialGltf(R"("materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0}}},{}],)"
+                                           R"("textures":[{"source":0}],"images":[{"bufferView":2}])",
+                                           R"(,{"buffer":0,"byteOffset":40,"byteLength":40})")),
+                     nullptr, &error));
+    CHECK(error.find("はみ出して") != std::string::npos);
+    // No material at all: one part, drawn white.
+    const auto plain = ParseGltf(Bytes(TriangleGltf(Embedded(TriangleBin()))), nullptr, &error);
+    CHECK(plain && plain->parts.size() == 1 && plain->parts[0].material == -1 && plain->parts[0].indexCount == 3);
+}
+
+RM_TEST(Mesh_Obj_MaterialsFromMtl) {
+    const std::string obj =
+        "mtllib mats\\colors.mtl\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nvt 0 0\nvt 1 1\n"
+        "usemtl Brick Red\nf 1/1 2/1 3/2\nusemtl Plain\nf 1 3 4\nusemtl Brick Red\nf 1 2 4\nusemtl Ghost\nf 2 3 4\n";
+    const std::string mtl =
+        "# made by hand\nnewmtl Brick Red\nKd 0.8 0.2 0.1\nmap_Kd -s 2 2 1 -clamp on tex\\brick wall.png\n"
+        "newmtl Plain\nKd 0.5\nd 0.25\n";
+    std::vector<std::string> asked;
+    const ReadRelated read = [&](std::string_view uri) -> std::optional<std::vector<uint8_t>> {
+        asked.emplace_back(uri);
+        return uri == "mats/colors.mtl" ? TextFile(mtl) : std::nullopt;
+    };
+    std::string error;
+    const auto m = ParseObj(obj, read, &error);
+    CHECK(m.has_value());
+    if (!m) return;
+    CHECK(asked.size() == 1 && asked[0] == "mats/colors.mtl");  // '\' written by Windows tools
+    CHECK(m->materials.size() == 3);
+    if (m->materials.size() != 3) return;
+    CHECK(m->materials[0].name == "Brick Red" && m->materials[0].baseColor == (Color{0.8f, 0.2f, 0.1f, 1}));
+    CHECK(m->materials[0].image == 0 && m->images.size() == 1 && m->images[0].file == "mats/tex/brick wall.png");  // next to the .mtl
+    CHECK(m->materials[1].name == "Plain" && NearF(m->materials[1].baseColor.g, 0.5f) && NearF(m->materials[1].baseColor.a, 0.25f));
+    CHECK(m->materials[1].alpha == AlphaMode::Blend && m->materials[0].alpha == AlphaMode::Opaque);
+    CHECK(m->materials[2].name == "Ghost" && m->materials[2].baseColor == (Color{1, 1, 1, 1}));  // not in the .mtl: white
+    CHECK(m->warnings.size() == 1 && m->warnings[0].find("Ghost") != std::string::npos);
+    // The triangles sorted by material, in the order each was first used (Brick Red's two stay in order).
+    CHECK(m->parts.size() == 3);
+    if (m->parts.size() != 3) return;
+    CHECK((m->parts[0] == MeshPart{0, 6, 0}) && (m->parts[1] == MeshPart{6, 3, 1}) && (m->parts[2] == MeshPart{9, 3, 2}));
+    CHECK(Near(m->vertices[m->indices[5]].position, {0, 1, 0}));  // Brick Red's second triangle (1 2 4) is at 3..5
+    // A missing .mtl is not a broken model: white, with a warning.
+    const auto missing = ParseObj(obj, [](std::string_view) -> std::optional<std::vector<uint8_t>> { return std::nullopt; }, &error);
+    CHECK(missing && missing->materials.size() == 3 && missing->warnings.size() == 1 && missing->warnings[0].find("colors.mtl") != std::string::npos);
+}
+
+RM_TEST(Mesh_SortByMaterial_KeepsTheOrderInside) {
+    MeshData m;
+    m.indices = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    m.materials.resize(2);
+    const int of[] = {1, -1, 1, 7};  // 7 is not a material: none
+    SortByMaterial(m, of);
+    CHECK(m.indices == std::vector<uint32_t>({0, 1, 2, 6, 7, 8, 3, 4, 5, 9, 10, 11}));
+    CHECK(m.parts.size() == 2 && (m.parts[0] == MeshPart{0, 6, 1}) && (m.parts[1] == MeshPart{6, 6, -1}));
+}
+
+RM_TEST(MeshFile_RelatedFileStaysInside) {
+    const std::filesystem::path root = L"C:/P/Assets";
+    const std::filesystem::path model = L"C:/P/Assets/Models/house.gltf";
+    CHECK(RelatedFile(model, "tex/wood.png", root) == std::filesystem::path(L"C:/P/Assets/Models/tex/wood.png").lexically_normal());
+    CHECK(RelatedFile(model, "../Textures/wood.png", root) == std::filesystem::path(L"C:/P/Assets/Textures/wood.png").lexically_normal());
+    CHECK(RelatedFile(model, "../../secret.png", root).empty());  // outside the project's Assets
+    CHECK(RelatedFile(model, "C:/elsewhere/a.png", root).empty());
+    CHECK(RelatedFile(model, "/a.png", root).empty());
+    CHECK(RelatedFile(model, "", root).empty());
+    // Only below the model's own folder (a .gltf's buffers, an OBJ's .mtl).
+    CHECK(RelatedFile(model, "../x.bin", model.parent_path()).empty());
+    CHECK(!RelatedFile(model, "bin/x.bin", model.parent_path()).empty());
 }
 
 RM_TEST(Space3d_BoundsAndShadowMatrix) {

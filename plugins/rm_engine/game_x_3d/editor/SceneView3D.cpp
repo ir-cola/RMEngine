@@ -16,6 +16,7 @@
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
+#include "rm_engine/space3d/runtime/Texture.h"
 #include "rm_engine/space3d/runtime/View.h"
 #include "ui/Path.h"
 
@@ -74,6 +75,7 @@ struct Placed {
     // What is drawn: the model (null: the unit cube) and its bounds in its own space - what a click
     // hits and what F frames.
     const space3d::GpuMesh* mesh = nullptr;
+    std::span<const space3d::DrawMaterial> materials;  // the model's colours and pictures
     bool castShadow = true;
     Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
     // A camera / a light on it (copies for this frame). `marker`: it has one and no model - nothing
@@ -113,9 +115,12 @@ std::pair<Vec3, Vec3> Across(Vec3 d) {
 
 // A model file read once and kept on the GPU, by the path written in the MeshRenderer (several
 // entities with the same model share it). Looked at again now and then: a file changed on disk
-// (exported again from a 3D tool) is read again; a file that cannot be read is told once.
+// (exported again from a 3D tool) is read again; a file that cannot be read is told once. Its
+// materials' pictures in files are shared through SceneView3D::textures_ (read again on their own
+// when they change).
 struct ModelEntry {
     std::shared_ptr<const space3d::GpuMesh> gpu;
+    space3d::ModelPaint paint;
     bool looked = false;  // the file has been looked for at least once
     bool loaded = false;  // ... and read (or tried to be) as it is at `time`
     bool told = false;    // that it is missing / not inside the project was written to the console
@@ -227,10 +232,11 @@ private:
                 if (mc && mc->Known()) {
                     const auto& mr = *static_cast<const MeshRenderer*>(mc->value.Get());
                     p.castShadow = p.castShadow && mr.castShadows;
-                    if (const space3d::GpuMesh* g = Model(mr.model, host)) {
-                        p.mesh = g;
-                        p.min = g->min;
-                        p.max = g->max;
+                    if (ModelEntry* m = Model(mr.model, host)) {
+                        p.mesh = m->gpu.get();
+                        p.materials = m->paint.Materials(main_.renderer, host.host.Graphics().Wic(), textures_, now_);
+                        p.min = p.mesh->min;
+                        p.max = p.mesh->max;
                     }
                 }
                 if (const game_production::Component* cc = e.FindComponent(cameraType_); cc && cc->Known()) {
@@ -249,11 +255,12 @@ private:
 
     // The model `ref` names (an asset - wherever it is now), read the first time it is asked for;
     // null: draw a box.
-    const space3d::GpuMesh* Model(const AssetRef& ref, game_production::SceneViewHost& host) {
+    ModelEntry* Model(const AssetRef& ref, game_production::SceneViewHost& host) {
         if (ref.Empty()) return nullptr;
         ModelEntry& m = models_[ref.guid];
         m.usedAt = now_;
-        if (m.looked && now_ - m.checkedAt < kModelCheckSeconds) return m.gpu.get();
+        auto found = [&] { return m.gpu ? &m : nullptr; };
+        if (m.looked && now_ - m.checkedAt < kModelCheckSeconds) return found();
         m.looked = true;
         m.checkedAt = now_;
         const std::filesystem::path file = host.host.AssetFile(ref);
@@ -271,29 +278,32 @@ private:
             return nullptr;
         }
         m.told = false;
-        if (m.loaded && time == m.time) return m.gpu.get();  // not changed
+        if (m.loaded && time == m.time) return found();  // not changed
         const bool again = m.gpu != nullptr;
         m.loaded = true;
         m.time = time;
         m.gpu.reset();
         std::string error;
         if (auto mesh = space3d::LoadMeshFile(file, &error)) {
+            for (const std::string& w : mesh->warnings) log::Warn("シーンビュー: モデル「{}」: {}", path, w);
             m.gpu = main_.renderer.Upload(*mesh, &error);
             if (m.gpu) {
-                log::Info("シーンビュー: モデル「{}」を{}読みました (頂点 {}・三角形 {})", path, again ? "もう一度" : "", mesh->vertices.size(),
-                          mesh->indices.size() / 3);
+                m.paint.Load(main_.renderer, host.host.Graphics().Wic(), *mesh, file, host.host.GetProject().AssetsDir(), path);
+                log::Info("シーンビュー: モデル「{}」を{}読みました (頂点 {}・三角形 {}・材質 {}・テクスチャ {})", path, again ? "もう一度" : "",
+                          mesh->vertices.size(), mesh->indices.size() / 3, mesh->materials.size(), m.paint.Pictures());
             } else {
                 log::Warn("シーンビュー: モデル「{}」を GPU に載せられないので箱で描きます: {}", path, error);
             }
         } else {
             log::Warn("シーンビュー: モデル「{}」を読めないので箱で描きます: {}", path, error);
         }
-        return m.gpu.get();
+        return found();
     }
 
-    // Models no entity has used for a while leave the GPU (read again if they come back).
+    // Models (and pictures) nothing has used for a while leave the GPU (read again if they come back).
     void ForgetUnusedModels() {
         std::erase_if(models_, [&](const auto& kv) { return now_ - kv.second.usedAt > kModelForgetSeconds; });
+        textures_.ForgetUnused(now_, kModelForgetSeconds);
     }
 
     const Placed* FindPlaced(int id) const {
@@ -625,10 +635,13 @@ private:
             if (!gameLook && p.camera) CameraLines(p, selected, host.aspect);
             if (!gameLook && p.light) LightLines(p, selected);
             if (p.marker) continue;
-            const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
             if (p.mesh) {
-                meshes_.push_back({p.mesh, p.world, col, p.castShadow});
+                // A model keeps its own colours: the selected one glows at its edges (and has the frame).
+                const ui::Color glow = theme::SceneSelectedGlow();
+                meshes_.push_back({p.mesh, p.world, p.active ? theme::SceneModel() : theme::SceneModelInactive(), p.castShadow, p.materials,
+                                   selected ? glow : glow.Alpha(0)});
             } else {
+                const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
                 boxes_.push_back({p.world, col, p.castShadow});
             }
             if (selected) Outline(p.world, p.min, p.max, theme::Accent);
@@ -1073,6 +1086,7 @@ private:
     std::vector<space3d::Light> lights_;
     size_t warnedLights_ = 0;  // the number of lights told about (too many)
     std::unordered_map<std::string, ModelEntry> models_;  // by MeshRenderer::model (the asset's id)
+    space3d::TextureCache textures_;                      // the models' picture files, by full path
     double now_ = 0;
 
     Drag drag_ = Drag::None;

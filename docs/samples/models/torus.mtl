@@ -1,0 +1,7 @@
+# RM Engine sample (docs/samples/models): the torus's materials
+newmtl Stripes
+Kd 1 1 1
+map_Kd torus_stripes.png
+
+newmtl Gold
+Kd 0.95 0.72 0.25

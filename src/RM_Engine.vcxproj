@@ -63,6 +63,7 @@
     <ClCompile Include="core\asset\AssetIndex.cpp" />
     <ClCompile Include="core\asset\AssetFiles.cpp" />
     <ClCompile Include="platform\Gfx.cpp" />
+    <ClCompile Include="platform\Image.cpp" />
     <ClCompile Include="platform\Shell.cpp" />
     <ClCompile Include="platform\Window.cpp" />
     <ClCompile Include="ui\Context.cpp" />
@@ -79,6 +80,7 @@
     <ClCompile Include="editor\inspector\Inspector.cpp" />
     <ClCompile Include="editor\assets\AssetLibrary.cpp" />
     <ClCompile Include="editor\assets\AssetPanel.cpp" />
+    <ClCompile Include="editor\assets\Thumbnails.cpp" />
     <ClCompile Include="editor\plugin\PluginManifest.cpp" />
     <ClCompile Include="editor\tree\TreeModel.cpp" />
     <ClCompile Include="editor\tree\TreeView.cpp" />
@@ -104,6 +106,7 @@
     <ClInclude Include="core\asset\AssetIndex.h" />
     <ClInclude Include="core\asset\AssetFiles.h" />
     <ClInclude Include="platform\Gfx.h" />
+    <ClInclude Include="platform\Image.h" />
     <ClInclude Include="platform\Shell.h" />
     <ClInclude Include="platform\Win.h" />
     <ClInclude Include="platform\Window.h" />
@@ -124,6 +127,7 @@
     <ClInclude Include="editor\inspector\Inspector.h" />
     <ClInclude Include="editor\assets\AssetLibrary.h" />
     <ClInclude Include="editor\assets\AssetPanel.h" />
+    <ClInclude Include="editor\assets\Thumbnails.h" />
     <ClInclude Include="editor\plugin\PluginManifest.h" />
     <ClInclude Include="editor\plugin\Plugins.h" />
     <ClInclude Include="editor\plugin\Software.h" />

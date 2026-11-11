@@ -1,6 +1,7 @@
 #include "platform/Gfx.h"
 
 #include "base/Log.h"
+#include "platform/Image.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -158,47 +159,22 @@ std::span<const uint8_t> ResourceBytes(int id) {
 
 ComPtr<ID2D1Bitmap> LoadBitmapFromMemory(Gfx& gfx, ID2D1DeviceContext* dc, std::span<const uint8_t> data, UINT maxWidth,
                                          std::string* error) {
-    ComPtr<ID2D1Bitmap> bmp;
-    auto fail = [&](const char* why) {
+    // The one way pictures are decoded (platform/Image: WIC), then made a Direct2D bitmap.
+    std::string why;
+    std::optional<Image> image;
+    if (!dc) {
+        why = "画像を読む準備ができていません";
+    } else {
+        image = DecodeImage(gfx.Wic(), data, PixelOrder::PremultipliedBgra, {maxWidth, 0}, &why);
+    }
+    ComPtr<ID2D1Bitmap> bmp = image ? BitmapFromImage(dc, *image) : nullptr;
+    if (image && !bmp) why = "画像を変換できませんでした";
+    if (!bmp) {
         if (error) {
             *error = why;
         } else {
-            log::Warn("{}", why);
+            log::Warn("画像を読めませんでした: {}", why);
         }
-    };
-    if (data.empty() || !dc || !gfx.Wic()) {
-        fail(data.empty() ? "画像のファイルが空です" : "画像を読む準備ができていません");
-        return bmp;
-    }
-    IWICImagingFactory* wic = gfx.Wic();
-    ComPtr<IWICStream> stream;
-    ComPtr<IWICBitmapDecoder> decoder;
-    ComPtr<IWICBitmapFrameDecode> frame;
-    if (FAILED(wic->CreateStream(&stream)) ||
-        FAILED(stream->InitializeFromMemory(const_cast<BYTE*>(data.data()), static_cast<DWORD>(data.size()))) ||
-        FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, &decoder)) ||
-        FAILED(decoder->GetFrame(0, &frame))) {
-        fail("画像を読めませんでした (WIC が知らない形か、壊れたファイル)");
-        return bmp;
-    }
-    ComPtr<IWICBitmapSource> source = frame;
-    UINT w = 0, h = 0;
-    frame->GetSize(&w, &h);
-    if (maxWidth > 0 && w > maxWidth) {
-        ComPtr<IWICBitmapScaler> scaler;
-        const UINT nh = std::max<UINT>(1, static_cast<UINT>(static_cast<uint64_t>(h) * maxWidth / w));
-        if (SUCCEEDED(wic->CreateBitmapScaler(&scaler)) &&
-            SUCCEEDED(scaler->Initialize(source.Get(), maxWidth, nh, WICBitmapInterpolationModeHighQualityCubic))) {
-            source = scaler;
-        }
-    }
-    ComPtr<IWICFormatConverter> conv;
-    if (FAILED(wic->CreateFormatConverter(&conv)) ||
-        FAILED(conv->Initialize(source.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
-                                WICBitmapPaletteTypeMedianCut)) ||
-        FAILED(dc->CreateBitmapFromWicBitmap(conv.Get(), nullptr, &bmp))) {
-        fail("画像を変換できませんでした");
-        bmp.Reset();
     }
     return bmp;
 }

@@ -8,8 +8,13 @@
 //   space3d::Renderer r;   r.Init(device, &error);
 //   auto robot = r.Upload(meshData, &error);          // once: the shape stays on the GPU
 //   space3d::RenderFrame f{width, height, view, projection, clearColor, lines, boxes};
-//   f.meshes = draws;   f.shadows = true;             // MeshDraw{robot.get(), world, color}
+//   f.meshes = draws;   f.shadows = true;             // MeshDraw{robot.get(), world, color, ..., materials}
 //   ID3D11Texture2D* picture = r.Render(context, f);
+//
+// Colour: draw's colour x the part's material colour x its picture (UV, repeating, mipmapped) x the
+// light. A model's parts (MeshPart) are drawn one by one with their own material (DrawMaterial:
+// the colour and the picture on the GPU - UploadTexture). The selected thing is shown by a glow at
+// its edges (MeshDraw::highlight), which keeps the material's colours.
 //
 // The shaders are written in Renderer3D.cpp in HLSL and compiled when the renderer starts
 // (D3DCompile, which every Windows 10 / 11 has). Drawn with 4x multisampling when the GPU can.
@@ -20,6 +25,7 @@
 // The floor (y = 0) is an invisible plane that only shows the shadows falling on it.
 
 #include "base/Math.h"
+#include "platform/Image.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Transform.h"
@@ -53,17 +59,38 @@ class GpuMesh {
 public:
     Vec3 min{0, 0, 0}, max{0, 0, 0};  // the bounds in the model's own space
     uint32_t indexCount = 0;
+    std::vector<MeshPart> parts;      // one draw each, by material (at least one)
 
 private:
     friend class Renderer;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertices, indices;
 };
 
+// A picture on the GPU (Renderer::UploadTexture), with its smaller copies (mipmaps: no shimmer far away).
+class GpuTexture {
+public:
+    uint32_t width = 0, height = 0;
+
+private:
+    friend class Renderer;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
+};
+
+// How one material of a model is painted.
+struct DrawMaterial {
+    Color color{1, 1, 1, 1};
+    const GpuTexture* texture = nullptr;  // null: the colour only
+    AlphaMode alpha = AlphaMode::Opaque;
+    float alphaCutoff = 0.5f;  // Mask: less than this is not drawn
+};
+
 struct MeshDraw {
     const GpuMesh* mesh = nullptr;
     Mat4 world;
-    Color color;
+    Color color{1, 1, 1, 1};  // times every material (white: as the model is)
     bool castShadow = true;
+    std::span<const DrawMaterial> materials;  // by MeshPart::material; a part without one here is white
+    Color highlight{0, 0, 0, 0};              // a glow at the edges (selected): its colour, alpha = how strong
 };
 
 struct RenderFrame {
@@ -89,6 +116,8 @@ public:
     bool Ready() const { return meshVs_ != nullptr; }
     // The shape goes to the GPU once; null (and *error, Japanese) when it cannot.
     std::shared_ptr<const GpuMesh> Upload(const MeshData& mesh, std::string* error);
+    // A picture (PixelOrder::Rgba) goes to the GPU once, with its mipmaps; null (and *error) when it cannot.
+    std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, std::string* error);
     // Draws the frame and returns the finished picture (B8G8R8A8, usable by Direct2D); null on failure.
     // The picture is kept until the next Render (its size follows the frame's).
     ID3D11Texture2D* Render(ID3D11DeviceContext* ctx, const RenderFrame& f);
@@ -99,6 +128,8 @@ private:
         const Mat4* world;
         Color color;
         bool castShadow;
+        std::span<const DrawMaterial> materials;
+        Color highlight;
     };
 
     bool Resize(uint32_t width, uint32_t height);
@@ -117,6 +148,7 @@ private:
     Ptr<ID3D11RasterizerState> raster_, shadowRaster_;
     Ptr<ID3D11DepthStencilState> depth_, depthNoWrite_;
     Ptr<ID3D11BlendState> blend_;
+    Ptr<ID3D11SamplerState> textureSampler_;  // pictures: repeat, smooth, mipmapped
     std::vector<Item> items_;
 
     // The shadow map (depth seen from the light).

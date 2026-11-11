@@ -1,8 +1,80 @@
-# Makes the small sample models in docs/samples/models (run from the repository root).
-import base64, json, math, os, struct, sys
+# Makes the small sample models in docs/samples/models (run from the repository root):
+#   python docs/samples/models/make_samples.py docs/samples/models
+#
+#   house.gltf + house_walls.png + roof_tiles.png   glTF: materials, pictures in files next to it
+#   house.glb                                       the same house in one file (pictures inside it)
+#   crate.gltf                                      a box with its picture written inside (data: URI)
+#   torus.obj + torus.mtl + torus_stripes.png        OBJ: two materials from the .mtl (a picture and a colour)
+#
+# Only the Python standard library (the PNGs are written by hand: zlib + the PNG chunks).
+import base64, json, math, os, struct, sys, zlib
 
 out = sys.argv[1]
 os.makedirs(out, exist_ok=True)
+
+# --- Pictures -------------------------------------------------------------------------------------
+
+def png(w, h, pixel):
+    # pixel(x, y) -> (r, g, b, a) 0..255; rows from the top.
+    raw = bytearray()
+    for y in range(h):
+        raw.append(0)  # no filter
+        for x in range(w):
+            raw.extend(bytes(max(0, min(255, int(v))) for v in pixel(x, y)))
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) +
+            chunk(b"IDAT", zlib.compress(bytes(raw), 9)) + chunk(b"IEND", b""))
+
+def noise(x, y, seed):
+    # A little grain, the same every time.
+    n = (x * 374761393 + y * 668265263 + seed * 2147483647) & 0xFFFFFFFF
+    n = ((n ^ (n >> 13)) * 1274126177) & 0xFFFFFFFF
+    return ((n ^ (n >> 16)) & 255) / 255.0 - 0.5
+
+def walls(x, y):
+    # Cream plaster with dark wooden beams (a frame and a cross).
+    s = 128
+    beam = x < 8 or x >= s - 8 or y < 8 or y >= s - 8 or abs(x - y) < 6 or abs(x + y - s) < 6
+    if beam:
+        g = 1 + 0.25 * noise(x // 2, y, 3)
+        return (92 * g, 60 * g, 38 * g, 255)
+    g = 1 + 0.08 * noise(x, y, 1)
+    return (236 * g, 222 * g, 190 * g, 255)
+
+def tiles(x, y):
+    # Rows of red-brown roof tiles, each row shifted by half a tile; dark lines between.
+    row = y // 16
+    tx = (x + (8 if row % 2 else 0)) % 16
+    if y % 16 >= 14 or tx == 0:
+        return (70, 32, 24, 255)
+    shade = 1 - (y % 16) / 40 + 0.1 * noise(x // 16 + row * 7, row, 5)
+    return (178 * shade, 74 * shade, 52 * shade, 255)
+
+def crate(x, y):
+    # A wooden crate: planks along X, a frame, and a diagonal brace.
+    s = 64
+    frame = x < 6 or x >= s - 6 or y < 6 or y >= s - 6 or abs(x - y) < 4
+    g = 1 + 0.18 * noise(x // 3, y, 9) + (0.06 if (y // 8) % 2 else 0)
+    if frame:
+        return (150 * g, 98 * g, 50 * g, 255)
+    if y % 8 == 0:
+        return (90, 58, 30, 255)
+    return (196 * g, 144 * g, 82 * g, 255)
+
+def stripes(x, y):
+    # Blue and white stripes around the ring.
+    blue = (x // 8) % 2 == 0
+    return (40, 96, 200, 255) if blue else (245, 245, 250, 255)
+
+walls_png = png(128, 128, walls)
+tiles_png = png(64, 64, tiles)
+crate_png = png(64, 64, crate)
+stripes_png = png(64, 16, stripes)
+for name, data in (("house_walls.png", walls_png), ("roof_tiles.png", tiles_png), ("torus_stripes.png", stripes_png)):
+    with open(os.path.join(out, name), "wb") as f: f.write(data)
+
+# --- Shapes ---------------------------------------------------------------------------------------
 
 def box(sx, sy, sz):
     # 6 faces, own normals, CCW from outside; origin at the bottom middle.
@@ -24,8 +96,9 @@ def box(sx, sy, sz):
         idx += [base+t for t in tri]
     return verts, idx
 
-def roof(w, h, d):
-    # A prism: the ridge along X, at height h; origin at the bottom middle. Flat faces.
+def roof(w, h, d, repeat=(3, 2)):
+    # A prism: the ridge along X, at height h; origin at the bottom middle. Flat faces. The UVs of the
+    # two slopes go past 1 (the tiles repeat).
     A, B = (-w/2, 0, d/2), (w/2, 0, d/2)
     C, D = (w/2, 0, -d/2), (-w/2, 0, -d/2)
     E, F = (-w/2, h, 0), (w/2, h, 0)
@@ -36,9 +109,10 @@ def roof(w, h, d):
         e1 = [p1[i]-p0[i] for i in range(3)]; e2 = [p2[i]-p0[i] for i in range(3)]
         c = (e1[1]*e2[2]-e1[2]*e2[1], e1[2]*e2[0]-e1[0]*e2[2], e1[0]*e2[1]-e1[1]*e2[0])
         l = math.sqrt(sum(x*x for x in c)); return tuple(x/l for x in c)
+    ru, rv = repeat
     for q in quads:
         n = normal(q[0], q[1], q[2]); base = len(verts)
-        for k, p in enumerate(q): verts.append((p, n, ((0,0),(1,0),(1,1),(0,1))[k]))
+        for k, p in enumerate(q): verts.append((p, n, ((0,rv),(ru,rv),(ru,0),(0,0))[k]))
         idx += [base, base+1, base+2, base, base+2, base+3]
     for t in tris:
         n = normal(*t); base = len(verts)
@@ -46,14 +120,16 @@ def roof(w, h, d):
         idx += [base, base+1, base+2]
     return verts, idx
 
-def pack(prims):
-    # prims: list of (verts, idx) -> bin, bufferViews, accessors, meshes
+def pack(prims, images=()):
+    # prims: list of (verts, idx, material) -> bin, bufferViews, accessors, meshes. `images`: picture
+    # bytes to put in the buffer too (a .glb); their buffer views are returned last.
     bin_ = bytearray(); views = []; accs = []; meshes = []
-    for verts, idx in prims:
-        def view(data, target):
-            while len(bin_) % 4: bin_.append(0)
-            views.append({"buffer": 0, "byteOffset": len(bin_), "byteLength": len(data), "target": target})
-            bin_.extend(data); return len(views) - 1
+    def view(data, target=None):
+        while len(bin_) % 4: bin_.append(0)
+        v = {"buffer": 0, "byteOffset": len(bin_), "byteLength": len(data)}
+        if target: v["target"] = target
+        views.append(v); bin_.extend(data); return len(views) - 1
+    for verts, idx, material in prims:
         pos = b"".join(struct.pack("<3f", *v[0]) for v in verts)
         nrm = b"".join(struct.pack("<3f", *v[1]) for v in verts)
         uv = b"".join(struct.pack("<2f", *v[2]) for v in verts)
@@ -64,44 +140,91 @@ def pack(prims):
         accs.append({"bufferView": view(nrm, 34962), "componentType": 5126, "count": len(verts), "type": "VEC3"})
         accs.append({"bufferView": view(uv, 34962), "componentType": 5126, "count": len(verts), "type": "VEC2"})
         accs.append({"bufferView": view(ind, 34963), "componentType": 5123, "count": len(idx), "type": "SCALAR"})
-        meshes.append({"primitives": [{"attributes": {"POSITION": a0, "NORMAL": a0+1, "TEXCOORD_0": a0+2}, "indices": a0+3}]})
+        meshes.append({"primitives": [{"attributes": {"POSITION": a0, "NORMAL": a0+1, "TEXCOORD_0": a0+2}, "indices": a0+3, "material": material}]})
+    image_views = [view(data) for data in images]
     while len(bin_) % 4: bin_.append(0)
-    return bytes(bin_), views, accs, meshes
+    return bytes(bin_), views, accs, meshes, image_views
 
-body = box(2.0, 1.4, 1.6)
-top = roof(2.3, 0.9, 1.9)
-chimney = box(0.3, 0.7, 0.3)
-bin_, views, accs, meshes = pack([body, top, chimney])
-meshes[0]["name"] = "Body"; meshes[1]["name"] = "Roof"; meshes[2]["name"] = "Chimney"
-doc = {
-    "asset": {"version": "2.0", "generator": "RM Engine sample (docs/samples/models)"},
-    "scene": 0,
-    "scenes": [{"nodes": [0]}],
-    # The body is the root; the roof sits on it (a child, moved up); the chimney is on the roof, turned a little.
-    "nodes": [
-        {"name": "House", "mesh": 0, "children": [1]},
-        {"name": "Roof", "mesh": 1, "translation": [0, 1.4, 0], "children": [2]},
-        {"name": "Chimney", "mesh": 2, "translation": [0.55, 0.1, -0.35], "rotation": [0, math.sin(math.radians(10)), 0, math.cos(math.radians(10))]},
-    ],
-    "meshes": meshes,
-    "bufferViews": views,
-    "accessors": accs,
-}
-gltf = dict(doc)
+def linear(c):
+    # glTF's baseColorFactor is linear light: the screen's 0..1 turned into it.
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+def write_glb(path, doc, bin_):
+    js = json.dumps(doc, separators=(",", ":")).encode()
+    while len(js) % 4: js += b" "
+    glb = (struct.pack("<III", 0x46546C67, 2, 12 + 8 + len(js) + 8 + len(bin_)) + struct.pack("<II", len(js), 0x4E4F534A) + js +
+           struct.pack("<II", len(bin_), 0x004E4942) + bin_)
+    with open(path, "wb") as f: f.write(glb)
+    return len(glb)
+
+# --- The house (glTF + GLB) -----------------------------------------------------------------------
+
+materials = [
+    {"name": "Walls", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0, "roughnessFactor": 0.9}},
+    {"name": "Roof tiles", "pbrMetallicRoughness": {"baseColorTexture": {"index": 1}, "metallicFactor": 0, "roughnessFactor": 0.8}},
+    # A colour only (dark red brick): no picture.
+    {"name": "Brick", "pbrMetallicRoughness": {"baseColorFactor": [linear(0.55), linear(0.22), linear(0.18), 1], "metallicFactor": 0}},
+]
+body = box(2.0, 1.4, 1.6) + (0,)
+top = roof(2.3, 0.9, 1.9) + (1,)
+chimney = box(0.3, 0.7, 0.3) + (2,)
+
+def house(bin_, views, accs, meshes):
+    meshes[0]["name"] = "Body"; meshes[1]["name"] = "Roof"; meshes[2]["name"] = "Chimney"
+    return {
+        "asset": {"version": "2.0", "generator": "RM Engine sample (docs/samples/models)"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        # The body is the root; the roof sits on it (a child, moved up); the chimney is on the roof, turned a little.
+        "nodes": [
+            {"name": "House", "mesh": 0, "children": [1]},
+            {"name": "Roof", "mesh": 1, "translation": [0, 1.4, 0], "children": [2]},
+            {"name": "Chimney", "mesh": 2, "translation": [0.55, 0.1, -0.35], "rotation": [0, math.sin(math.radians(10)), 0, math.cos(math.radians(10))]},
+        ],
+        "meshes": meshes,
+        "materials": materials,
+        "textures": [{"source": 0}, {"source": 1}],
+        "bufferViews": views,
+        "accessors": accs,
+    }
+
+# .gltf: the shape in a data: URI, the pictures in files next to it.
+bin_, views, accs, meshes, _ = pack([body, top, chimney])
+gltf = house(bin_, views, accs, meshes)
+gltf["images"] = [{"uri": "house_walls.png"}, {"uri": "roof_tiles.png"}]
 gltf["buffers"] = [{"byteLength": len(bin_), "uri": "data:application/octet-stream;base64," + base64.b64encode(bin_).decode()}]
 with open(os.path.join(out, "house.gltf"), "w", encoding="utf-8", newline="\n") as f:
     json.dump(gltf, f, indent=1); f.write("\n")
 
-glbdoc = dict(doc)
+# .glb: everything in one file (the pictures in the binary chunk).
+bin_, views, accs, meshes, image_views = pack([body, top, chimney], [walls_png, tiles_png])
+glbdoc = house(bin_, views, accs, meshes)
+glbdoc["images"] = [{"bufferView": image_views[0], "mimeType": "image/png"}, {"bufferView": image_views[1], "mimeType": "image/png"}]
 glbdoc["buffers"] = [{"byteLength": len(bin_)}]
-js = json.dumps(glbdoc, separators=(",", ":")).encode()
-while len(js) % 4: js += b" "
-glb = struct.pack("<III", 0x46546C67, 2, 12 + 8 + len(js) + 8 + len(bin_)) + struct.pack("<II", len(js), 0x4E4F534A) + js + struct.pack("<II", len(bin_), 0x004E4942) + bin_
-with open(os.path.join(out, "house.glb"), "wb") as f: f.write(glb)
+glb_size = write_glb(os.path.join(out, "house.glb"), glbdoc, bin_)
 
-# A torus (ring) with smooth normals: shows the smooth light and a shadow with a hole.
+# --- The crate (glTF, the picture in a data: URI) -------------------------------------------------
+
+cube = box(1.0, 1.0, 1.0) + (0,)
+bin_, views, accs, meshes, _ = pack([cube])
+meshes[0]["name"] = "Crate"
+crate_doc = {
+    "asset": {"version": "2.0", "generator": "RM Engine sample (docs/samples/models)"},
+    "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"name": "Crate", "mesh": 0}],
+    "meshes": meshes,
+    "materials": [{"name": "Wood", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0}}],
+    "textures": [{"source": 0}],
+    "images": [{"name": "crate", "uri": "data:image/png;base64," + base64.b64encode(crate_png).decode()}],
+    "buffers": [{"byteLength": len(bin_), "uri": "data:application/octet-stream;base64," + base64.b64encode(bin_).decode()}],
+    "bufferViews": views, "accessors": accs,
+}
+with open(os.path.join(out, "crate.gltf"), "w", encoding="utf-8", newline="\n") as f:
+    json.dump(crate_doc, f, indent=1); f.write("\n")
+
+# --- The torus (OBJ + MTL): the outer half striped (a picture), the inner half gold (a colour) ----
+
 R, r, nu, nv = 1.0, 0.35, 48, 24
-lines = ["# RM Engine sample (docs/samples/models): a torus, smooth normals", "o Torus"]
+lines = ["# RM Engine sample (docs/samples/models): a torus, smooth normals, two materials", "mtllib torus.mtl", "o Torus"]
 for i in range(nu):
     u = 2 * math.pi * i / nu
     for j in range(nv):
@@ -110,7 +233,7 @@ for i in range(nu):
         lines.append(f"v {x:.5f} {y:.5f} {z:.5f}")
 for i in range(nu + 1):
     for j in range(nv + 1):
-        lines.append(f"vt {i/nu:.5f} {j/nv:.5f}")
+        lines.append(f"vt {i/nu*4:.5f} {j/nv:.5f}")  # the stripes go round 4 times (the picture repeats)
 for i in range(nu):
     u = 2 * math.pi * i / nu
     for j in range(nv):
@@ -118,11 +241,17 @@ for i in range(nu):
         lines.append(f"vn {math.cos(v)*math.cos(u):.5f} {math.sin(v):.5f} {math.cos(v)*math.sin(u):.5f}")
 def vi(i, j): return (i % nu) * nv + (j % nv) + 1
 def ti(i, j): return i * (nv + 1) + j + 1
-for i in range(nu):
-    for j in range(nv):
-        a, b, c, d = (i, j), (i, j + 1), (i + 1, j + 1), (i + 1, j)
-        # CCW seen from outside
-        lines.append("f " + " ".join(f"{vi(*p)}/{ti(*p)}/{vi(*p)}" for p in (a, b, c, d)))
+for half, material in ((range(0, nv // 4), "Stripes"), (range(nv // 4, 3 * nv // 4), "Gold"), (range(3 * nv // 4, nv), "Stripes")):
+    lines.append(f"usemtl {material}")
+    for i in range(nu):
+        for j in half:
+            a, b, c, d = (i, j), (i, j + 1), (i + 1, j + 1), (i + 1, j)
+            # CCW seen from outside
+            lines.append("f " + " ".join(f"{vi(*p)}/{ti(*p)}/{vi(*p)}" for p in (a, b, c, d)))
 with open(os.path.join(out, "torus.obj"), "w", encoding="utf-8", newline="\n") as f:
     f.write("\n".join(lines) + "\n")
-print("ok", len(glb), os.path.getsize(os.path.join(out, "torus.obj")))
+with open(os.path.join(out, "torus.mtl"), "w", encoding="utf-8", newline="\n") as f:
+    f.write("# RM Engine sample (docs/samples/models): the torus's materials\n"
+            "newmtl Stripes\nKd 1 1 1\nmap_Kd torus_stripes.png\n\n"
+            "newmtl Gold\nKd 0.95 0.72 0.25\n")
+print("ok", glb_size, os.path.getsize(os.path.join(out, "torus.obj")))

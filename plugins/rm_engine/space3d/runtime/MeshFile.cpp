@@ -32,19 +32,24 @@ std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::str
         if (error) *error = std::format("「{}」を読めませんでした (ファイルが無いか、開けません)", name);
         return std::nullopt;
     }
-    const std::filesystem::path folder = file.parent_path();
     const ReadRelated related = [&](std::string_view uri) -> std::optional<std::vector<uint8_t>> {
-        const std::filesystem::path rel = PathFromUtf8(uri);
-        if (rel.empty() || rel.has_root_name() || rel.has_root_directory()) return std::nullopt;
-        for (const auto& part : rel) {
-            if (part == L"..") return std::nullopt;  // stays inside the model's folder
-        }
-        return ReadAll(folder / rel);
+        const std::filesystem::path at = RelatedFile(file, uri, file.parent_path());  // stays inside the model's folder
+        if (at.empty()) return std::nullopt;
+        return ReadAll(at);
     };
     std::string why;
     auto mesh = ParseMesh(PathToUtf8(file.extension()), *bytes, related, &why);
     if (!mesh && error) *error = std::format("「{}」: {}", name, why);
     return mesh;
+}
+
+std::filesystem::path RelatedFile(const std::filesystem::path& model, std::string_view relative, const std::filesystem::path& root) {
+    const std::filesystem::path rel = PathFromUtf8(relative);
+    if (rel.empty() || rel.has_root_name() || rel.has_root_directory()) return {};
+    const std::filesystem::path at = (model.parent_path() / rel).lexically_normal();
+    const std::filesystem::path inside = at.lexically_relative(root.lexically_normal());
+    if (inside.empty() || *inside.begin() == L".." || inside == L".") return {};
+    return at;
 }
 
 }  // namespace rm::space3d

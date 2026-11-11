@@ -15,7 +15,8 @@ using ui::Rect;
 namespace {
 
 constexpr size_t npos = static_cast<size_t>(-1);
-constexpr float kRowH = 24.f;
+constexpr float kIconW = 18.f;  // the row's picture (Icon), between the arrow and the name
+constexpr float kLineH = 24.f;  // the name (and the rename field) in a row of any height
 constexpr float kIndent = 16.f;
 constexpr float kArrow = 16.f;
 constexpr float kDragStart = 6.f;  // DIPs the mouse moves before a press becomes a drag
@@ -146,6 +147,9 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     const ui::Input& in = c.In();
     std::vector<Item> items;
     src.Items(items);
+    const float kRowH = std::clamp(src.RowHeight(), 20.f, 200.f);
+    // The picture: the Icon's width in a short row, square and as tall as the row allows in a tall one.
+    const float pictureW = std::max(kIconW, kRowH - 6.f);
     const std::vector<ItemId> before = st.sel.ids;
     // Closed items that are gone (deleted) are forgotten, so the kept list does not grow forever.
     std::erase_if(st.collapsed, [&](ItemId id) { return Find(items, id) == static_cast<size_t>(-1); });
@@ -269,7 +273,6 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     const float rowsTop = view.y + kTop - off;
     auto rowRect = [&](size_t r) { return Rect{view.x + 4, rowsTop + kRowH * static_cast<float>(r), view.w - 8, kRowH}; };
     auto textX = [&](int depth) { return view.x + 8 + kIndent * static_cast<float>(depth) + kArrow + 2; };
-    constexpr float kIconW = 18.f;  // the row's picture, between the arrow and the name
 
     if (items.empty()) {
         ui::TextStyle hint = Style(12, theme::TextFaint);
@@ -290,8 +293,8 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         const bool selected = st.sel.Contains(it.id);
         const float indentX = view.x + 8 + kIndent * static_cast<float>(rw.depth);
         const Rect arrow{indentX, row.y, kArrow, row.h};
-        const float nameX = textX(rw.depth) + (it.icon != Icon::None ? kIconW + 2 : 0.f);
-        const Rect label{nameX, row.y, row.Right() - nameX - 4, row.h};
+        const float nameX = textX(rw.depth) + (it.icon != Icon::None ? pictureW + 2 + (pictureW > kIconW ? 4.f : 0.f) : 0.f);
+        const Rect label{nameX, row.y + (row.h - kLineH) * 0.5f, row.Right() - nameX - 4, kLineH};
         c.PushId(it.id);
 
         bool onArrow = false;
@@ -336,9 +339,9 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         if (rw.hasChildren) {
             w::DrawIcon(c, arrow, rw.expanded ? w::Icon::ChevronDown : w::Icon::ChevronRight, onArrow ? theme::Text : theme::TextDim);
         }
-        if (it.icon != Icon::None) {
+        if (it.icon != Icon::None && !src.DrawPicture(c, it, {textX(rw.depth), row.y + (row.h - pictureW) * 0.5f, pictureW, pictureW})) {
             const ui::Color col = it.dimmed ? theme::TextFaint : it.icon == Icon::Folder ? theme::Folder : theme::TextDim;
-            w::DrawIcon(c, {textX(rw.depth), row.y, kIconW, row.h}, PictureOf(it.icon), col);
+            w::DrawIcon(c, {textX(rw.depth) + (pictureW - kIconW) * 0.5f, row.y, kIconW, row.h}, PictureOf(it.icon), col);
         }
 
         if (st.renaming == it.id) {

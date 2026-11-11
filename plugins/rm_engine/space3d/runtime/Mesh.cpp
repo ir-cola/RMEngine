@@ -124,7 +124,7 @@ public:
             Fail(error_, std::format("glTF {} には対応していません (2.0 だけ読めます)", version));
             return std::nullopt;
         }
-        if (!LoadBuffers()) return std::nullopt;
+        if (!LoadBuffers() || !LoadMaterials()) return std::nullopt;
 
         const json::Value& scenes = doc_.Get("scenes");
         const json::Value& nodes = doc_.Get("nodes");
@@ -160,6 +160,7 @@ public:
             return std::nullopt;
         }
         ComputeBounds(out_);
+        SortByMaterial(out_, triangleMaterial_);
         return std::move(out_);
     }
 
@@ -197,6 +198,104 @@ private:
             buffers_.push_back(std::move(data));
         }
         return true;
+    }
+
+    // Every material's colour and picture (pbrMetallicRoughness: baseColorFactor x baseColorTexture).
+    bool LoadMaterials() {
+        const json::Value& materials = doc_.Get("materials");
+        for (size_t i = 0; i < materials.Size(); ++i) {
+            const json::Value& m = materials.At(i);
+            MeshMaterial mat;
+            mat.name = m.Get("name").AsString();
+            if (mat.name.empty()) mat.name = std::format("材質 {}", i);
+            const json::Value& pbr = m.Get("pbrMetallicRoughness");
+            const json::Value& f = pbr.Get("baseColorFactor");
+            // The factor is linear light; the screen's colours (and the pictures) are not.
+            mat.baseColor = {LinearToScreen(Number(f, 0, 1)), LinearToScreen(Number(f, 1, 1)), LinearToScreen(Number(f, 2, 1)),
+                             std::clamp(Number(f, 3, 1), 0.f, 1.f)};
+            const std::string& mode = m.Get("alphaMode").AsString();
+            mat.alpha = mode == "MASK" ? AlphaMode::Mask : mode == "BLEND" ? AlphaMode::Blend : AlphaMode::Opaque;
+            if (const json::Value* cut = m.Find("alphaCutoff"); cut && cut->IsNumber()) mat.alphaCutoff = static_cast<float>(cut->AsDouble());
+            if (const json::Value* tex = pbr.Find("baseColorTexture")) {
+                const int64_t t = tex->Get("index").AsInt(-1);
+                const json::Value& textures = doc_.Get("textures");
+                if (t < 0 || static_cast<size_t>(t) >= textures.Size()) return Fail(error_, std::format("テクスチャ {} がありません", t));
+                if (const json::Value* source = textures.At(static_cast<size_t>(t)).Find("source")) {
+                    const int image = Image(source->AsInt(-1));
+                    if (image == kBroken) return false;
+                    mat.image = image;
+                }
+            }
+            out_.materials.push_back(std::move(mat));
+        }
+        return true;
+    }
+
+    static constexpr int kBroken = -2;
+
+    // glTF image `index` as one of out_.images (each read once); -1: it has no picture; kBroken: told why.
+    int Image(int64_t index) {
+        const json::Value& images = doc_.Get("images");
+        if (index < 0 || static_cast<size_t>(index) >= images.Size()) {
+            Fail(error_, std::format("画像 {} がありません", index));
+            return kBroken;
+        }
+        if (imageOf_.size() < images.Size()) imageOf_.resize(images.Size(), kBroken);
+        int& known = imageOf_[static_cast<size_t>(index)];
+        if (known != kBroken) return known;
+        const json::Value& im = images.At(static_cast<size_t>(index));
+        MeshImage out;
+        out.name = im.Get("name").AsString();
+        if (const json::Value* uri = im.Find("uri")) {
+            const std::string& u = uri->AsString();
+            if (u.starts_with("data:")) {
+                const size_t comma = u.find(',');
+                auto decoded = comma == std::string::npos || u.substr(0, comma).find(";base64") == std::string::npos
+                                   ? std::nullopt
+                                   : DecodeBase64(std::string_view(u).substr(comma + 1));
+                if (!decoded) {
+                    Fail(error_, std::format("画像 {} の data: URI が読めません (base64 ではないか、壊れています)", index));
+                    return kBroken;
+                }
+                out.bytes = std::move(*decoded);
+            } else {
+                out.file = DecodePercent(u);
+                if (out.name.empty()) out.name = out.file;
+            }
+        } else if (const json::Value* view = im.Find("bufferView")) {
+            const auto bytes = View(view->AsInt(-1));
+            if (!bytes) return kBroken;
+            out.bytes.assign(bytes->begin(), bytes->end());
+        } else {
+            known = -1;  // nothing to paint with
+            return known;
+        }
+        if (out.name.empty()) out.name = std::format("画像 {}", index);
+        known = static_cast<int>(out_.images.size());
+        out_.images.push_back(std::move(out));
+        return known;
+    }
+
+    // The bytes of a buffer view, checked to lie inside its buffer.
+    std::optional<std::span<const uint8_t>> View(int64_t vi) {
+        const json::Value& views = doc_.Get("bufferViews");
+        if (vi < 0 || static_cast<size_t>(vi) >= views.Size()) {
+            Fail(error_, std::format("バッファービュー {} がありません", vi));
+            return std::nullopt;
+        }
+        const json::Value& v = views.At(static_cast<size_t>(vi));
+        const int64_t bi = v.Get("buffer").AsInt(-1);
+        if (bi < 0 || static_cast<size_t>(bi) >= buffers_.size()) {
+            Fail(error_, std::format("バッファー {} がありません", bi));
+            return std::nullopt;
+        }
+        const std::vector<uint8_t>& buffer = buffers_[static_cast<size_t>(bi)];
+        const int64_t offset = v.Get("byteOffset").AsInt(0), length = v.Get("byteLength").AsInt(-1);
+        if (offset < 0 || length < 0 || static_cast<uint64_t>(offset) + static_cast<uint64_t>(length) > buffer.size()) {
+            Fail(error_, std::format("バッファービュー {} がバッファーからはみ出しています", vi));
+            return std::nullopt;
+        }
+        return std::span<const uint8_t>(buffer.data() + offset, static_cast<size_t>(length));
     }
 
     bool Node(int64_t index, const Mat4& parent, int depth) {
@@ -242,6 +341,12 @@ private:
         if (mode != 4 && mode != 5 && mode != 6) {
             ++skipped_;  // points and lines: nothing to fill
             return true;
+        }
+        int material = -1;
+        if (const json::Value* m = prim.Find("material")) {
+            const int64_t k = m->AsInt(-1);
+            if (k < 0 || static_cast<size_t>(k) >= out_.materials.size()) return Fail(error_, std::format("材質 {} がありません", k));
+            material = static_cast<int>(k);
         }
         const json::Value& attrs = prim.Get("attributes");
         const json::Value* posIndex = attrs.Find("POSITION");
@@ -298,6 +403,7 @@ private:
         }
         if (!hasNormals) ComputeNormals(part);
         Append(part, world);
+        triangleMaterial_.resize(out_.indices.size() / 3, material);
         return true;
     }
 
@@ -343,25 +449,18 @@ private:
         const size_t element = static_cast<size_t>(size) * static_cast<size_t>(out.components);
         const json::Value* viewIndex = a.Find("bufferView");
         if (!viewIndex) return true;  // all zero
-        const json::Value& views = doc_.Get("bufferViews");
         const int64_t vi = viewIndex->AsInt(-1);
-        if (vi < 0 || static_cast<size_t>(vi) >= views.Size()) return Fail(error_, std::format("バッファービュー {} がありません", vi));
-        const json::Value& v = views.At(static_cast<size_t>(vi));
-        const int64_t bi = v.Get("buffer").AsInt(-1);
-        if (bi < 0 || static_cast<size_t>(bi) >= buffers_.size()) return Fail(error_, std::format("バッファー {} がありません", bi));
-        const std::vector<uint8_t>& buffer = buffers_[static_cast<size_t>(bi)];
-        const int64_t viewOffset = v.Get("byteOffset").AsInt(0), viewLength = v.Get("byteLength").AsInt(-1);
-        const int64_t stride = v.Get("byteStride").AsInt(0);
+        const auto view = View(vi);
+        if (!view) return false;
+        const int64_t stride = doc_.Get("bufferViews").At(static_cast<size_t>(vi)).Get("byteStride").AsInt(0);
         const int64_t offset = a.Get("byteOffset").AsInt(0);
-        if (viewOffset < 0 || viewLength < 0 || offset < 0 || stride < 0 || static_cast<uint64_t>(viewOffset) + static_cast<uint64_t>(viewLength) > buffer.size()) {
-            return Fail(error_, std::format("バッファービュー {} がバッファーからはみ出しています", vi));
-        }
+        if (offset < 0 || stride < 0) return Fail(error_, std::format("アクセサー {} がバッファービューからはみ出しています", index));
         out.stride = stride > 0 ? static_cast<size_t>(stride) : element;
         if (out.count > 0) {
             const uint64_t end = static_cast<uint64_t>(offset) + static_cast<uint64_t>(out.count - 1) * out.stride + element;
-            if (end > static_cast<uint64_t>(viewLength)) return Fail(error_, std::format("アクセサー {} がバッファービューからはみ出しています", index));
+            if (end > view->size()) return Fail(error_, std::format("アクセサー {} がバッファービューからはみ出しています", index));
         }
-        out.base = buffer.data() + viewOffset + offset;
+        out.base = view->data() + offset;
         return true;
     }
 
@@ -371,6 +470,8 @@ private:
     std::string* error_;
     std::vector<std::vector<uint8_t>> buffers_;
     MeshData out_;
+    std::vector<int> triangleMaterial_;  // one per triangle of out_
+    std::vector<int> imageOf_;           // glTF image -> out_.images (kBroken: not yet)
     int skipped_ = 0;
 };
 
@@ -396,6 +497,26 @@ bool ParseInt(std::string_view t, int64_t& out) {
     if (t.empty()) return false;
     const auto [end, ec] = std::from_chars(t.data(), t.data() + t.size(), out);
     return ec == std::errc{} && end == t.data() + t.size();
+}
+
+// The rest of the line without the spaces around it (names with spaces: "newmtl red brick").
+std::string_view Rest(std::string_view s) {
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.remove_suffix(1);
+    return s;
+}
+
+// A path written in a model's text file, with '/' between folders (Windows tools write '\').
+std::string Slashes(std::string_view s) {
+    std::string out(s);
+    std::replace(out.begin(), out.end(), '\\', '/');
+    return out;
+}
+
+// The folder part of a relative path, with its '/' ("mats/a.mtl" -> "mats/"; "a.mtl" -> "").
+std::string_view FolderOf(std::string_view path) {
+    const size_t slash = path.rfind('/');
+    return slash == std::string_view::npos ? std::string_view{} : path.substr(0, slash + 1);
 }
 
 struct Corner {
@@ -456,10 +577,15 @@ std::optional<MeshData> ParseGltf(std::span<const uint8_t> bytes, const ReadRela
     return GltfReader(*doc, bin, read, error).Read();
 }
 
-std::optional<MeshData> ParseObj(std::string_view text, std::string* error) {
+std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read, std::string* error) {
     std::vector<Vec3> positions, normals;
     std::vector<Vec2> uvs;
     MeshData mesh;
+    // Materials: the names used (usemtl), in order, and what the .mtl files say about each name.
+    std::vector<std::string> used;
+    int current = -1;  // into `used`; -1 before the first usemtl
+    std::vector<int> triangleMaterial;
+    std::vector<MeshMaterial> library;
     std::unordered_map<Corner, uint32_t, CornerHash> made;
     bool missingNormal = false;
     size_t lineNo = 0;
@@ -543,9 +669,35 @@ std::optional<MeshData> ParseObj(std::string_view text, std::string* error) {
                 poly.push_back(it->second);
             }
             // A fan from the first corner (polygons in OBJ files are flat and convex).
-            for (size_t i = 2; i < poly.size(); ++i) mesh.indices.insert(mesh.indices.end(), {poly[0], poly[i - 1], poly[i]});
+            for (size_t i = 2; i < poly.size(); ++i) {
+                mesh.indices.insert(mesh.indices.end(), {poly[0], poly[i - 1], poly[i]});
+                triangleMaterial.push_back(current);
+            }
+        } else if (key == "usemtl") {
+            const std::string name(Rest(line));
+            const auto it = std::find(used.begin(), used.end(), name);
+            current = static_cast<int>(it - used.begin());
+            if (it == used.end()) used.push_back(name);
+        } else if (key == "mtllib") {
+            // One file, or several separated by spaces (a name with spaces is tried whole first).
+            const std::string_view rest = Rest(line);
+            std::vector<std::string> files{Slashes(rest)};
+            if (rest.find(' ') != std::string_view::npos) {
+                for (std::string_view t = NextToken(line); !t.empty(); t = NextToken(line)) files.push_back(Slashes(t));
+            }
+            for (size_t k = 0; k < files.size(); ++k) {
+                auto bytes = read ? read(files[k]) : std::nullopt;
+                if (!bytes) {
+                    if (k == 0 && files.size() > 1) continue;  // not one name with spaces: the names one by one
+                    mesh.warnings.push_back(std::format("材質のファイル「{}」を読めませんでした (色なしで描きます)", files[k]));
+                    continue;
+                }
+                auto mats = ParseMtl({reinterpret_cast<const char*>(bytes->data()), bytes->size()}, FolderOf(files[k]), mesh.images);
+                library.insert(library.end(), std::make_move_iterator(mats.begin()), std::make_move_iterator(mats.end()));
+                if (k == 0) break;  // the whole line was one file
+            }
         }
-        // Everything else (o, g, s, usemtl, mtllib, l, p ...) is not needed for the shape.
+        // Everything else (o, g, s, l, p ...) is not needed for the shape.
     }
     if (mesh.indices.empty()) {
         Fail(error, "三角形の面 (f) がありません");
@@ -553,12 +705,128 @@ std::optional<MeshData> ParseObj(std::string_view text, std::string* error) {
     }
     if (missingNormal) ComputeNormals(mesh);
     ComputeBounds(mesh);
+    // The materials used, by name (a name no .mtl has is drawn white).
+    for (const std::string& name : used) {
+        const auto it = std::find_if(library.begin(), library.end(), [&](const MeshMaterial& m) { return m.name == name; });
+        if (it != library.end()) {
+            mesh.materials.push_back(*it);
+        } else {
+            MeshMaterial m;
+            m.name = name;
+            mesh.materials.push_back(std::move(m));
+            if (!library.empty()) mesh.warnings.push_back(std::format("材質「{}」が .mtl にありません (色なしで描きます)", name));
+        }
+    }
+    SortByMaterial(mesh, triangleMaterial);
     return mesh;
+}
+
+std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folder, std::vector<MeshImage>& images) {
+    std::vector<MeshMaterial> out;
+    while (!text.empty()) {
+        const size_t nl = text.find('\n');
+        std::string_view line = text.substr(0, nl);
+        text.remove_prefix(nl == std::string_view::npos ? text.size() : nl + 1);
+        if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+        if (const size_t hash = line.find('#'); hash != std::string_view::npos) line = line.substr(0, hash);
+        const std::string_view key = NextToken(line);
+        if (key == "newmtl") {
+            MeshMaterial m;
+            m.name = std::string(Rest(line));
+            out.push_back(std::move(m));
+            continue;
+        }
+        if (out.empty()) continue;  // before the first material: nothing to give it to
+        MeshMaterial& m = out.back();
+        if (key == "Kd") {
+            float rgb[3] = {1, 1, 1};
+            int n = 0;
+            for (std::string_view t = NextToken(line); !t.empty() && n < 3; t = NextToken(line)) {
+                if (!ParseFloat(t, rgb[n])) break;
+                ++n;
+            }
+            if (n == 1) rgb[1] = rgb[2] = rgb[0];  // one number: grey
+            if (n == 1 || n == 3) {
+                m.baseColor = {std::clamp(rgb[0], 0.f, 1.f), std::clamp(rgb[1], 0.f, 1.f), std::clamp(rgb[2], 0.f, 1.f), m.baseColor.a};
+            }
+        } else if (key == "d" || key == "Tr") {
+            float v = 1;
+            if (ParseFloat(NextToken(line), v)) {
+                m.baseColor.a = std::clamp(key == "d" ? v : 1.f - v, 0.f, 1.f);
+                m.alpha = m.baseColor.a < 1.f ? AlphaMode::Blend : AlphaMode::Opaque;
+            }
+        } else if (key == "map_Kd") {
+            // Options (-s 1 1 1, -clamp on ...) come before the file's name, which is the rest.
+            std::string_view rest = Rest(line);
+            while (rest.starts_with("-")) {
+                std::string_view probe = rest;
+                const std::string_view option = NextToken(probe);
+                const bool numbers = option == "-o" || option == "-s" || option == "-t";  // 1 to 3 numbers
+                int args = numbers ? 3 : option == "-mm" ? 2 : 1;
+                for (; args > 0; --args) {
+                    std::string_view look = probe;
+                    const std::string_view t = NextToken(look);
+                    float ignored = 0;
+                    if (t.empty() || (numbers && !ParseFloat(t, ignored))) break;
+                    probe = look;
+                }
+                rest = Rest(probe);
+            }
+            if (rest.empty()) continue;
+            const std::string file = std::string(folder) + Slashes(rest);
+            const auto it = std::find_if(images.begin(), images.end(), [&](const MeshImage& im) { return im.file == file; });
+            m.image = static_cast<int>(it - images.begin());
+            if (it == images.end()) {
+                MeshImage im;
+                im.file = file;
+                im.name = file;
+                images.push_back(std::move(im));
+            }
+        }
+    }
+    return out;
+}
+
+float LinearToScreen(float linear) {
+    const float c = std::clamp(linear, 0.f, 1.f);
+    if (c >= 1.f) return 1.f;  // exactly (the curve's float sum may miss it by a hair)
+    return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.f / 2.4f) - 0.055f;
+}
+
+void SortByMaterial(MeshData& mesh, std::span<const int> materialOfTriangle) {
+    const size_t triangles = mesh.indices.size() / 3;
+    auto materialOf = [&](size_t t) {
+        const int m = t < materialOfTriangle.size() ? materialOfTriangle[t] : -1;
+        return m >= 0 && static_cast<size_t>(m) < mesh.materials.size() ? m : -1;
+    };
+    // Each material's place in the order they first appear (slot 0: no material).
+    std::vector<int> rank(mesh.materials.size() + 1, -1);
+    std::vector<int> order;
+    for (size_t t = 0; t < triangles; ++t) {
+        int& r = rank[static_cast<size_t>(materialOf(t) + 1)];
+        if (r < 0) {
+            r = static_cast<int>(order.size());
+            order.push_back(materialOf(t));
+        }
+    }
+    // Counted, then each triangle to its run (the order inside a run stays).
+    std::vector<uint32_t> start(order.size() + 1, 0);
+    for (size_t t = 0; t < triangles; ++t) start[static_cast<size_t>(rank[static_cast<size_t>(materialOf(t) + 1)]) + 1] += 3;
+    for (size_t k = 1; k < start.size(); ++k) start[k] += start[k - 1];
+    mesh.parts.clear();
+    for (size_t k = 0; k < order.size(); ++k) mesh.parts.push_back({start[k], start[k + 1] - start[k], order[k]});
+    std::vector<uint32_t> sorted(triangles * 3);
+    for (size_t t = 0; t < triangles; ++t) {
+        uint32_t& at = start[static_cast<size_t>(rank[static_cast<size_t>(materialOf(t) + 1)])];
+        for (size_t k = 0; k < 3; ++k) sorted[at + k] = mesh.indices[t * 3 + k];
+        at += 3;
+    }
+    mesh.indices = std::move(sorted);
 }
 
 std::optional<MeshData> ParseMesh(std::string_view extension, std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error) {
     if (SameIgnoringCase(extension, ".gltf") || SameIgnoringCase(extension, ".glb")) return ParseGltf(bytes, read, error);
-    if (SameIgnoringCase(extension, ".obj")) return ParseObj({reinterpret_cast<const char*>(bytes.data()), bytes.size()}, error);
+    if (SameIgnoringCase(extension, ".obj")) return ParseObj({reinterpret_cast<const char*>(bytes.data()), bytes.size()}, read, error);
     Fail(error, std::format("「{}」のモデルは読めません (.gltf / .glb / .obj が読めます)", extension));
     return std::nullopt;
 }

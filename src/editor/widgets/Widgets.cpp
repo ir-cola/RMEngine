@@ -794,6 +794,44 @@ bool Switch(ui::Context& c, std::string_view idStr, float x, float y, bool& on, 
     return b.clicked;
 }
 
+void DrawThumbnail(ui::Context& c, const Rect& r, ID2D1Bitmap* bitmap, bool dimmed) {
+    auto& p = c.P();
+    p.FillRoundRect(r, 3, theme::ThumbnailBack());
+    if (!bitmap) return;
+    const D2D1_SIZE_F size = bitmap->GetSize();
+    if (size.width <= 0 || size.height <= 0) return;
+    const float k = std::min(r.w / size.width, r.h / size.height);
+    const float w = size.width * k, h = size.height * k;
+    p.Image(bitmap, {r.x + (r.w - w) * 0.5f, r.y + (r.h - h) * 0.5f, w, h}, dimmed ? 0.45f : 1.f);
+}
+
+bool Slider(ui::Context& c, std::string_view idStr, const Rect& r, float& value, float min, float max) {
+    auto& p = c.P();
+    const ui::Id id = c.MakeId(idStr);
+    const auto b = c.ButtonBehavior(id, r);
+    if (b.hovered || b.held) c.SetCursor(ui::Cursor::Hand);
+    constexpr float knobR = 6.f;
+    const float x0 = r.x + knobR, x1 = r.Right() - knobR;
+    bool changed = false;
+    if (b.held && x1 > x0 && max > min) {
+        const float t = std::clamp((c.In().mouseX - x0) / (x1 - x0), 0.f, 1.f);
+        const float v = min + t * (max - min);
+        if (v != value) {
+            value = v;
+            changed = true;
+        }
+    }
+    const float t = max > min ? std::clamp((value - min) / (max - min), 0.f, 1.f) : 0.f;
+    const float cy = r.y + r.h * 0.5f;
+    const float kx = x0 + (x1 - x0) * t;
+    p.FillRoundRect({x0, cy - 2, x1 - x0, 4}, 2, theme::SwitchOff());
+    p.FillRoundRect({x0, cy - 2, kx - x0, 4}, 2, b.hovered || b.held ? theme::AccentHover : theme::Accent);
+    p.FillCircle(kx, cy + 0.8f, knobR, theme::Shadow.Alpha(0.35f));  // a soft shade under it
+    p.FillCircle(kx, cy, knobR, theme::SwitchKnob());
+    p.FillCircle(kx, cy, knobR - 3.5f, b.held ? theme::Accent : theme::SwitchOff());
+    return changed;
+}
+
 Rect Panel(ui::Context& c, const Rect& r, std::wstring_view title) {
     auto& p = c.P();
     DrawSurface(c, r, Surface::Panel, 6.f);

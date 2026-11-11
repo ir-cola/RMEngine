@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "3D モデルに色とテクスチャ: glTF の材質の色と絵 (横のファイル・.glb の中・data:)、OBJ の .mtl の色と絵。材質ごとに分けて描き、絵を描き直すと読み直す。選んだモデルは色を変えずに縁が光る。アセットのパネルに画像と 3D モデルのサムネイル (下のつまみで大きさを変える)",
+          "en": "Colors and textures on 3D models: glTF material colors and pictures (next to the file, inside a .glb, or data:), OBJ .mtl colors and pictures. Drawn part by part per material; a picture is read again when it is saved. A selected model keeps its colors and glows at its edges. Thumbnails of pictures and 3D models in the Assets panel (resize with the slider at the bottom)"
+        },
+        {
           "ja": "2D のゲーム: プラグイン「2D 空間」(入れるとつなぎ「ゲーム制作 × 2D」も一緒に入る)。部品 Transform 2D (位置・回転・大きさ・並び順)・スプライト (画像・色・反転・ドット絵)・カメラ (2D)・回り続ける (2D)。2D のシーンビュー (格子・ドラッグで動かす・ホイールで近づく・移動 / 回転 / 拡大縮小のつまみ)。3D と 2D の両方があるときは、シーンの上の帯でゲームの空間を切り替える。Hub のプラグインの一覧では、つなぎを下に分けて出す (自分で入れる・消すものではないため)",
           "en": "2D games: the plugin 2D Space (installing it also brings the connector Game Production × 2D). Components Transform 2D (position, rotation, scale, order), Sprite (image, color, flips, pixel art), Camera (2D) and Keep Spinning (2D). A 2D scene view (grid, drag to move, wheel to zoom, move / rotate / scale handles). With both 3D and 2D, a strip above the scene switches the game's space. The Hub's plugin list shows connectors apart at the bottom (they are never installed or removed by hand)"
         },
