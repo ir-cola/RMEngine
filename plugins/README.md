@@ -38,9 +38,9 @@ plugins/
 
 | プラグイン | 中身 |
 |---|---|
-| `rm_engine` / `game_production` (ゲーム制作) | ソフト「ゲーム」。ゲームの設定・シーン (エンティティの親子)・部品 (コンポーネント) の仕組み。**つなぎが要る** (空間を知らない)。部品の種類は口 `rm_engine.game_production.component` で受け取る |
+| `rm_engine` / `game_production` (ゲーム制作) | ソフト「ゲーム」。ゲームの設定・シーン (エンティティの親子)・部品 (コンポーネント) の仕組み。**つなぎが要る** (空間を知らない)。部品の種類は口 `rm_engine.game_production.component`、システム (毎フレーム動く処理) は口 `rm_engine.game_production.system` で受け取る。Play (シーンのコピーを動かす・ゲームビュー)・同じ部品を複数・Prefab (`.rmprefab`) |
 | `rm_engine` / `space3d` (3D 空間) | Transform と行列の計算・カメラとレイ・Direct3D 11 での 3D の描画 (線と箱)。ランタイムだけ |
 | `rm_engine` / `theme_colors` (基本カラーテーマパック) | テーマのファイルだけ: 青・緑 (`themes/*.json`)。コードは `runtime/Id.h` だけ |
 | `rm_engine` / `theme_seasons` (季節テーマパック) | テーマのファイル (スプリング・サマー・フォール・ウィンター) と、その絵を描くコード (`editor/Seasons.cpp`。口 `core.theme_ornament` に差し出す。形は `editor/Ornament.*`、テストあり) |
 | `rm_engine` / `theme_paper` (紙) | テーマのファイルだけ: 紙 |
-| `rm_engine` / `game_x_3d` (ゲーム制作 × 3D) | つなぎ。前提 = ゲーム制作・3D 空間。Transform をゲームの部品として差し出し (新しいエンティティに付く)、3D のシーンビューを出す (口 `rm_engine.game_production.scene_view`) |
+| `rm_engine` / `game_x_3d` (ゲーム制作 × 3D) | つなぎ。前提 = ゲーム制作・3D 空間。Transform をゲームの部品として差し出し (新しいエンティティに付く)、部品とシステム「回り続ける」(Play で確かめる用。`runtime/Spin.*`) を差し出し、3D のシーンビューを出す (口 `rm_engine.game_production.scene_view`) |

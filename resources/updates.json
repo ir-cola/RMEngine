@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム: ▶ Play / 一時停止 / 1 コマ送り / ■ 停止 (Ctrl+P)。Play 中はシーンのコピーが動き (帯の色が変わる・編集は止まる)、止めると前に戻る。ゲームビューに動いているゲーム。部品「回り続ける」。同じ部品を複数付ける (「回り続ける」)。Prefab (作る・置く・置いた物の上書き・Prefab に反映)",
+          "en": "Game: ▶ Play / Pause / Step / ■ Stop (Ctrl+P). While playing, a copy of the scene runs (the tab row changes color, editing is off) and stopping goes back. The game view shows the running game. New component Keep Spinning. Several of one component (Keep Spinning). Prefabs (make, place, overrides on placed ones, apply to the prefab)"
+        },
+        {
           "ja": "シーンビューで 3D モデル (glTF / GLB / OBJ) を描く: エンティティに「メッシュ (3D モデル)」の部品を足して、プロジェクトの中のファイルを指す。光の影を床と物に落とす (左上の「影」でオン / オフ)",
           "en": "The scene view draws 3D models (glTF / GLB / OBJ): add a Mesh (3D model) component to an entity and point it at a file in the project. The light casts shadows on the floor and on objects (Shadows at the top left turns them on / off)"
         },
