@@ -155,6 +155,9 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.Line(cx + s * 0.5f, cy - s, cx - s * 0.5f, cy, color, kW);
             p.Line(cx - s * 0.5f, cy, cx + s * 0.5f, cy + s, color, kW);
             break;
+        case Icon::Dash:  // "some yes, some no" (a check box of things edited together)
+            p.Line(cx - s, cy, cx + s, cy, color, 2.f);
+            break;
         case Icon::Check:
             p.Line(cx - s, cy, cx - s * 0.3f, cy + s * 0.7f, color, 2.f);
             p.Line(cx - s * 0.3f, cy + s * 0.7f, cx + s, cy - s * 0.8f, color, 2.f);
@@ -719,20 +722,21 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
     return changed;
 }
 
-bool Checkbox(ui::Context& c, std::string_view idStr, const Rect& r, bool& value, std::wstring_view label) {
+bool Checkbox(ui::Context& c, std::string_view idStr, const Rect& r, bool& value, std::wstring_view label, bool mixed) {
     auto& p = c.P();
     const auto b = c.ButtonBehavior(c.MakeId(idStr), r);
     if (b.hovered) c.SetCursor(ui::Cursor::Hand);
     const Rect box{r.x, r.y + (r.h - 16) * 0.5f, 16, 16};
-    DrawSurface(c, box, value ? (b.hovered ? Surface::AccentHovered : Surface::Accent) : Surface::Sunken, 3.f);
-    if (!value && b.hovered) p.StrokeRoundRect(box, 3, theme::BorderHover);
-    if (value) DrawIcon(c, box, Icon::Check, theme::OnAccent());
+    const bool filled = value || mixed;
+    DrawSurface(c, box, filled ? (b.hovered ? Surface::AccentHovered : Surface::Accent) : Surface::Sunken, 3.f);
+    if (!filled && b.hovered) p.StrokeRoundRect(box, 3, theme::BorderHover);
+    if (filled) DrawIcon(c, box, mixed ? Icon::Dash : Icon::Check, theme::OnAccent());
     ui::TextStyle ts;
     ts.size = theme::FontSize;
     ts.color = theme::Text;
     p.Text({box.Right() + 8, r.y, r.w - 24, r.h}, label, ts);
     if (b.clicked) {
-        value = !value;
+        value = mixed ? true : !value;
         return true;
     }
     return false;

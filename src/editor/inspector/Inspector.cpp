@@ -280,7 +280,9 @@ void DrawValue(Pass& x, const Spot& s) {
     switch (s.vt.type) {
         case FieldType::Bool: {
             bool v = *static_cast<const bool*>(s.value);
-            if (w::Checkbox(c, "v", {s.r.x, s.r.y, 28, s.r.h}, v, L"") && s.enabled) put(json::Value(v));
+            // Not the same in all the objects edited together: a dash (like the "—" of a number).
+            const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return *static_cast<const bool*>(o) != v; });
+            if (w::Checkbox(c, "v", {s.r.x, s.r.y, 28, s.r.h}, v, L"", differ) && s.enabled) put(json::Value(v));
             break;
         }
         case FieldType::Int:

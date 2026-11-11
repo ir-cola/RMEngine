@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "まとめての編集で、チェックが物によって違うときは横線の印で出る (押すと全部オンにそろう)",
+          "en": "When editing several objects together, a check box whose value differs between them shows a dash (clicking it turns all of them on)"
+        },
+        {
           "ja": "名前を付けた配置を「共通の配置」にすると、どのプロジェクトでも使える (保存のときのチェック、または「配置の管理…」の「共通にする」)",
           "en": "A named layout can be made a shared layout that every project can use (a check box when saving, or Make shared in Manage Layouts…)"
         },

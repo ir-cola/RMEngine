@@ -67,7 +67,7 @@ void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 
 // --- Icons: drawn with lines, so they sit in the middle of their box at any size ------------
 enum class Icon {
-    Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Object, Cube, Square, Plus, Grip, Play, Pause, Step, Stop,
+    Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Dash, Object, Cube, Square, Plus, Grip, Play, Pause, Step, Stop,
     // what an entity is (the 階層, the scene view's marks)
     Camera, Light,
     // what a file is (the アセット panel, reference fields)
@@ -133,7 +133,8 @@ bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::stri
                std::wstring_view placeholder = {}, bool enabled = true, bool selectAllOnFocus = false);
 
 // Check box with a label. Returns true when the value changed.
-bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label);
+// mixed: the objects edited together do not agree - a dash instead of the check; a click makes it on.
+bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label, bool mixed = false);
 // A switch as on a phone: a long round track, its round knob slides to the right when on (the track
 // turns the accent color). `offLabel` / `onLabel` (optional) stand at its left / right; the one that
 // is chosen is bright. A click anywhere on it turns it over. Returns true when clicked (`on` changed).
