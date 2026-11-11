@@ -4,6 +4,8 @@
 #include "Test.h"
 
 #include "rm_engine/game_production/runtime/Systems.h"
+#include "rm_engine/game_x_3d/runtime/Camera.h"
+#include "rm_engine/game_x_3d/runtime/CameraCycle.h"
 #include "rm_engine/game_x_3d/runtime/Spin.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -114,4 +116,60 @@ RM_TEST(Systems_Spin_TurnsTheTransform) {
     for (int i = 0; i < 10; ++i) r.Advance(s, 1.0, 0.02f);
     CHECK(rot.y > -360 && rot.y < 360);
     CHECK(Near(rot.y, std::fmod(45.f + 900.f, 360.f)));
+}
+
+namespace {
+uint64_t g_wanted = 0;
+void SwitchTo(SystemContext& c) { c.camera = g_wanted; }
+}  // namespace
+
+RM_TEST(Systems_SwitchTheCamera) {
+    // A system sets SystemContext::camera; the runner keeps it for the next systems and frames.
+    static const SystemInfo kSwitch{"switch", SystemPhase::Frame, 0, &SwitchTo};
+    const SystemInfo* list[] = {&kSwitch};
+    SystemRunner r;
+    r.SetSystems(list);
+    Scene s;
+    r.SetCamera(7);
+    g_wanted = 7;
+    r.Advance(s, 0.1, 0.02f);
+    CHECK(r.Camera() == 7);
+    g_wanted = 9;
+    r.Advance(s, 0.1, 0.02f);
+    CHECK(r.Camera() == 9);
+    r.Reset();
+    CHECK(r.Camera() == 0);
+}
+
+RM_TEST(Systems_CameraCycle) {
+    const reflect::TypeDesc& camera = reflect::TypeOf<game_x_3d::Camera>();
+    const reflect::TypeDesc& cycle = reflect::TypeOf<game_x_3d::CameraCycle>();
+    Scene s;
+    s.SetComponentTypes({&camera, &cycle}, {});
+    const int a = s.Create("A");
+    s.AddComponent(a, camera);
+    const int b = s.Create("B");
+    s.AddComponent(b, camera);
+    const int off = s.Create("off");
+    s.AddComponent(off, camera);
+    s.Find(off)->data.active = false;  // a camera switched off is skipped
+    const int director = s.Create("director");
+    s.AddComponent(director, cycle);
+    static_cast<game_x_3d::CameraCycle*>(s.Find(director)->FindComponent(cycle.name)->value.Get())->seconds = 1.5f;
+
+    static const SystemInfo kCycle{"カメラを順に切り替える", SystemPhase::Frame, 0, &game_x_3d::RunCameraCycle};
+    const SystemInfo* list[] = {&kCycle};
+    SystemRunner r;
+    r.SetSystems(list);
+    r.SetCamera(static_cast<uint64_t>(a));
+    r.Advance(s, 1.0, 0.02f);  // 0 .. 1: no change
+    CHECK(r.Camera() == static_cast<uint64_t>(a));
+    r.Advance(s, 1.0, 0.02f);  // 1 .. 2: passes 1.5 -> B
+    CHECK(r.Camera() == static_cast<uint64_t>(b));
+    r.Advance(s, 1.0, 0.02f);  // 2 .. 3: passes 3.0? (3.0 is the end: floor(3 / 1.5) = 2 > 1) -> back to A
+    CHECK(r.Camera() == static_cast<uint64_t>(a));
+    // Without the component nothing switches.
+    s.RemoveComponent(director, cycle.name);
+    r.Advance(s, 5.0, 0.02f);
+    CHECK(r.Camera() == static_cast<uint64_t>(a));
 }

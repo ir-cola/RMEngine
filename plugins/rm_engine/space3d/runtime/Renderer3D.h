@@ -122,6 +122,15 @@ public:
     // The picture is kept until the next Render (its size follows the frame's).
     ID3D11Texture2D* Render(ID3D11DeviceContext* ctx, const RenderFrame& f);
 
+    // What the last Render did with the boxes and models. Culling is always on: a thing wholly outside
+    // what the camera sees (View.h's BoxInView on its world bounds) is not drawn - but still casts its
+    // shadow (it may fall inside the picture).
+    struct Stats {
+        size_t things = 0;  // boxes and models given
+        size_t drawn = 0;   // ... drawn in the picture (the rest were culled)
+    };
+    const Stats& LastStats() const { return stats_; }
+
 private:
     struct Item {
         const GpuMesh* mesh;
@@ -130,6 +139,7 @@ private:
         bool castShadow;
         std::span<const DrawMaterial> materials;
         Color highlight;
+        bool seen = true;  // inside what the camera sees (frustum culling); drawn into the shadow map either way
     };
 
     bool Resize(uint32_t width, uint32_t height);
@@ -150,6 +160,7 @@ private:
     Ptr<ID3D11BlendState> blend_;
     Ptr<ID3D11SamplerState> textureSampler_;  // pictures: repeat, smooth, mipmapped
     std::vector<Item> items_;
+    Stats stats_;
 
     // The shadow map (depth seen from the light).
     Ptr<ID3D11Texture2D> shadowTex_;

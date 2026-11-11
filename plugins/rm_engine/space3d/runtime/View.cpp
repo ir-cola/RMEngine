@@ -185,6 +185,24 @@ Bounds WorldBounds(const Mat4& world, Vec3 mn, Vec3 mx) {
     return b;
 }
 
+bool BoxInView(const Mat4& viewProjection, const Bounds& box) {
+    unsigned all = 0x3F;  // the sides every corner is outside of so far
+    for (int i = 0; i < 8; ++i) {
+        float c[4];
+        Transform4(viewProjection, (i & 1) ? box.max.x : box.min.x, (i & 2) ? box.max.y : box.min.y, (i & 4) ? box.max.z : box.min.z, 1.f, c);
+        unsigned out = 0;
+        if (c[0] < -c[3]) out |= 1;
+        if (c[0] > c[3]) out |= 2;
+        if (c[1] < -c[3]) out |= 4;
+        if (c[1] > c[3]) out |= 8;
+        if (c[2] < 0) out |= 16;  // depth 0..1 (Direct3D): nearer than the near plane
+        if (c[2] > c[3]) out |= 32;
+        all &= out;
+        if (all == 0) return true;
+    }
+    return false;
+}
+
 Mat4 DirectionalShadowMatrix(Vec3 direction, const Bounds& casters) {
     Vec3 dir = Normalize(direction);
     if (Length(dir) == 0) dir = {0, -1, 0};

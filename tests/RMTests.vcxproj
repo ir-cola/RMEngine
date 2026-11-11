@@ -88,6 +88,7 @@
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Camera.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Light.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\CameraCycle.cpp" />
     <ClCompile Include="..\src\core\reflect\Data.cpp" />
     <ClCompile Include="..\src\core\reflect\FieldCommand.cpp" />
     <ClCompile Include="..\src\core\reflect\Object.cpp" />

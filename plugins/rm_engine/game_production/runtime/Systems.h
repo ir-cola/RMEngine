@@ -36,6 +36,10 @@ struct SystemContext {
     float dt = 0;          // seconds: the fixed step (Fixed) or the time since the last frame (Frame)
     double time = 0;       // seconds of game time before this run
     uint64_t frame = 0;    // frames run before this one (the first frame is 0)
+    // The entity the game sees through now (its id; 0: none). It starts as the game settings'
+    // 最初のカメラ when Play starts; a system switches the game's camera by setting it to another
+    // entity (what makes an entity a camera is the space's business: a 3D Camera component ...).
+    uint64_t camera = 0;
 };
 
 struct SystemInfo {
@@ -69,6 +73,10 @@ public:
 
     double Time() const { return time_; }
     uint64_t Frames() const { return frames_; }
+    // The camera the game sees through (SystemContext::camera): set when Play starts, changed by the
+    // systems. Reset makes it 0.
+    void SetCamera(uint64_t entity) { camera_ = entity; }
+    uint64_t Camera() const { return camera_; }
 
 private:
     std::vector<const SystemInfo*> systems_;  // Fixed first, then Frame; by order inside each
@@ -76,6 +84,7 @@ private:
     double fixedTime_ = 0;  // game time the Fixed steps have reached
     double carry_ = 0;      // time not yet covered by a Fixed step
     uint64_t frames_ = 0;
+    uint64_t camera_ = 0;
 };
 
 }  // namespace rm::game_production

@@ -36,6 +36,7 @@ void SystemRunner::SetSystems(std::span<const SystemInfo* const> systems) {
 void SystemRunner::Reset() {
     time_ = fixedTime_ = carry_ = 0;
     frames_ = 0;
+    camera_ = 0;
 }
 
 int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
@@ -48,8 +49,9 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
         while (carry_ + eps >= fixedStep && steps < kMaxFixedSteps) {
             for (const SystemInfo* s : systems_) {
                 if (s->phase != SystemPhase::Fixed) continue;
-                SystemContext ctx{scene, fixedStep, fixedTime_, frames_};
+                SystemContext ctx{scene, fixedStep, fixedTime_, frames_, camera_};
                 s->run(ctx);
+                camera_ = ctx.camera;
             }
             carry_ -= fixedStep;
             fixedTime_ += fixedStep;
@@ -60,8 +62,9 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
     }
     for (const SystemInfo* s : systems_) {
         if (s->phase != SystemPhase::Frame) continue;
-        SystemContext ctx{scene, static_cast<float>(dt), time_, frames_};
+        SystemContext ctx{scene, static_cast<float>(dt), time_, frames_, camera_};
         s->run(ctx);
+        camera_ = ctx.camera;
     }
     time_ += dt;
     ++frames_;

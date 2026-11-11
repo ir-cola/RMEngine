@@ -54,6 +54,12 @@ struct Bounds {
 };
 Bounds WorldBounds(const Mat4& world, Vec3 min, Vec3 max);
 
+// Frustum culling: whether a box of the world may be seen through `viewProjection`. False only when
+// all 8 corners are outside the same side of what is seen (left, right, bottom, top, near or far
+// plane) - tested in clip space, where each side is a plane, so corners behind the eye count right.
+// Never says false for a box that shows; a box just outside a corner of the frustum may still be true.
+bool BoxInView(const Mat4& viewProjection, const Bounds& box);
+
 // A directional light's view-projection for a shadow map: looks along `direction` (where the light
 // goes) and holds the box `casters` (everything that casts a shadow) in -1..1 x -1..1, depth 0..1.
 // A shadow falls along the light, so the places it falls on are inside the same x / y. A point

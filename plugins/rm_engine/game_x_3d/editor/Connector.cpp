@@ -7,6 +7,7 @@
 #include "rm_engine/game_x_3d/runtime/Spin.h"
 #include "rm_engine/game_x_3d/editor/SceneView3D.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
+#include "rm_engine/game_x_3d/runtime/CameraCycle.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/space3d/runtime/Transform.h"
@@ -50,6 +51,11 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     registry.Contribute(game_production::kComponentPoint, kCamera);
     static const game_production::ComponentInfo kLight{.type = &reflect::TypeOf<Light>, .icon = "light"};
     registry.Contribute(game_production::kComponentPoint, kLight);
+    // カメラを順に切り替える: a system switching the game's camera while it plays (SystemContext::camera).
+    static const game_production::ComponentInfo kCycle{.type = &reflect::TypeOf<CameraCycle>};
+    registry.Contribute(game_production::kComponentPoint, kCycle);
+    static const game_production::SystemInfo kCycleSystem{"カメラを順に切り替える", game_production::SystemPhase::Frame, 0, &RunCameraCycle};
+    registry.Contribute(game_production::kSystemPoint, kCycleSystem);
     // 回り続ける: turns its entity while the game plays (several add up), and the system that does it.
     static const game_production::ComponentInfo kSpin{.type = &reflect::TypeOf<Spin>, .multiple = true};
     registry.Contribute(game_production::kComponentPoint, kSpin);

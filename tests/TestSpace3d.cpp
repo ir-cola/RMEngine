@@ -1018,3 +1018,26 @@ RM_TEST(Light_FromItsEntity) {
     t.scale = {3, 3, 3};  // a scale does not make it longer
     CHECK(NearF(Length(game_x_3d::ToRenderLight(light, LocalMatrix(t)).direction), 1));
 }
+
+RM_TEST(Space3d_BoxInView_Culling) {
+    // Looking along -Z from (0, 0, 5), 60 degrees, square, 0.1 .. 100.
+    const Mat4 vp = Perspective(60, 1, 0.1f, 100) * LookAt({0, 0, 5}, {0, 0, 0}, {0, 1, 0});
+    CHECK(BoxInView(vp, {{-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}}));   // in the middle
+    CHECK(!BoxInView(vp, {{-0.5f, -0.5f, 6}, {0.5f, 0.5f, 7}}));         // behind the eye
+    CHECK(!BoxInView(vp, {{20, -0.5f, -0.5f}, {21, 0.5f, 0.5f}}));       // far to the right
+    CHECK(!BoxInView(vp, {{-21, -0.5f, -0.5f}, {-20, 0.5f, 0.5f}}));     // far to the left
+    CHECK(!BoxInView(vp, {{-0.5f, 20, -0.5f}, {0.5f, 21, 0.5f}}));       // above
+    CHECK(!BoxInView(vp, {{-0.5f, -0.5f, -200}, {0.5f, 0.5f, -150}}));   // beyond the far plane
+    // Partly inside (it crosses the edge, or reaches from behind the eye to the front): seen.
+    CHECK(BoxInView(vp, {{2, -0.5f, -0.5f}, {30, 0.5f, 0.5f}}));
+    CHECK(BoxInView(vp, {{-0.5f, -0.5f, -3}, {0.5f, 0.5f, 10}}));
+    // A huge box around the eye: seen (every corner is outside, but not outside the same side).
+    CHECK(BoxInView(vp, {{-1000, -1000, -1000}, {1000, 1000, 1000}}));
+    // Orthographic too (the camera component's other projection).
+    game_x_3d::Camera cam;
+    cam.projection = game_x_3d::CameraProjection::Orthographic;
+    cam.orthographicSize = 2;
+    const Mat4 o = game_x_3d::ProjectionOf(cam, 1.f) * LookAt({0, 0, 5}, {0, 0, 0}, {0, 1, 0});
+    CHECK(BoxInView(o, {{1.5f, 1.5f, -0.5f}, {2.5f, 2.5f, 0.5f}}));
+    CHECK(!BoxInView(o, {{2.5f, -0.5f, -0.5f}, {3.5f, 0.5f, 0.5f}}));  // just past the right edge (no perspective widening)
+}

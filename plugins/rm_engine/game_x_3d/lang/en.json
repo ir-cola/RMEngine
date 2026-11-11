@@ -67,5 +67,9 @@
   "「{}」にカメラの部品がありません (Transform も要ります)。インスペクターの「部品を足す」でカメラを付けてください。": "\"{}\" has no Camera component (it needs a Transform too). Add a Camera with \"Add component\" in the Inspector.",
   "カメラの「{}」が有効ではありません。有効にすると、そこから見た絵が映ります。": "The camera \"{}\" is not active. Make it active and its view shows here.",
   "ゲームの設定を開く": "Open game settings",
-  "カメラのプレビュー: {}": "Camera preview: {}"
+  "カメラのプレビュー: {}": "Camera preview: {}",
+  "描いた物 {} / {} (カメラの外は描かない)": "Drawn {} / {} (things outside the camera are skipped)",
+  "カメラを順に切り替える": "Cycle Cameras",
+  "間隔 (秒)": "Interval (seconds)",
+  "Play の間、この秒数ごとにゲームのカメラを次のカメラ (階層の順) に切り替えます": "While playing, switches the game's camera to the next camera (in Hierarchy order) every this many seconds"
 }

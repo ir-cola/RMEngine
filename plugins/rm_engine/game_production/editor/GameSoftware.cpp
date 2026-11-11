@@ -214,7 +214,7 @@ public:
             // a window dragged, the software switched - does not make the game jump).
             const double dt = std::clamp(c.Time() - lastTick_, 0.0, 0.25);
             lastTick_ = c.Time();
-            runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
+            AdvancePlay(dt);
             c.RequestAnimation();
         }
     }
@@ -472,12 +472,23 @@ private:
         if (Running()) return;
         playScene_ = std::make_unique<Scene>(scene_);  // the copy that plays (components are deep copies)
         runner_.Reset();
+        runner_.SetCamera(settings_.startCamera.id);  // the systems may switch it (SystemContext::camera)
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
         EnsureViews();  // the game view sees through the game settings' 最初のカメラ
         log::Info("▶ Play (システム {} 個)。止めると Play の前のシーンに戻ります", runner_.Systems().size());
         c.RequestAnimation();
         host_.Redraw();
+    }
+
+    // One frame of the systems; a camera they switched to is told on the console.
+    void AdvancePlay(double dt) {
+        const uint64_t before = runner_.Camera();
+        runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
+        if (runner_.Camera() != before) {
+            const SceneEntity* e = playScene_->Find(static_cast<int>(runner_.Camera()));
+            log::Info("ゲームのカメラを「{}」に切り替えました", e ? e->data.name : std::string("(なし)"));
+        }
     }
 
     void StopPlay() {
@@ -499,7 +510,7 @@ private:
     void StepFrame(ui::Context& c) {
         if (!Running() || !playScene_) return;
         play_ = PlayState::Paused;
-        runner_.Advance(*playScene_, 1.0 / std::max(1, settings_.targetFps), settings_.fixedTimestep);
+        AdvancePlay(1.0 / std::max(1, settings_.targetFps));
         lastTick_ = c.Time();
         host_.Redraw();
     }
@@ -559,6 +570,19 @@ private:
         if (i >= 0 && i != selected && !Running()) ChooseSpace(views_[static_cast<size_t>(i)].info->space);
     }
 
+    // Above the game view while it is stopped: that it is, and the game settings (最初のカメラ ...).
+    void DrawStoppedStrip(ui::Context& c, const Rect& strip) {
+        editor::w::DrawBar(c, strip, theme::Bg);
+        constexpr float kButtonW = 150;
+        const Rect button{strip.Right() - 8 - kButtonW, strip.y + 4, kButtonW, strip.h - 8};
+        ui::TextStyle ts;
+        ts.size = 12;
+        ts.color = theme::TextDim;
+        ts.v = ui::VAlign::Center;
+        c.P().Text({strip.x + 10, strip.y, button.x - strip.x - 18, strip.h}, Tr(L"止まっています (▶ / Ctrl+P で Play)。最初のカメラから見たシーン"), ts);
+        if (editor::w::Button(c, "game_settings", button, Tr(L"ゲームの設定を開く"))) InspectSettings();
+    }
+
     void ChooseSpace(const std::string& space) {
         const reflect::TypeDesc& type = reflect::TypeOf<GameSettings>();
         for (size_t f = 0; f < type.fields.size(); ++f) {
@@ -581,7 +605,7 @@ private:
         h.playing = Running();
         h.game = game;
         h.background = settings_.clearColor;
-        h.camera = settings_.startCamera.id;
+        h.camera = Running() ? runner_.Camera() : settings_.startCamera.id;  // in Play: as the systems left it
         h.aspect = static_cast<float>(std::max(1, settings_.display.width)) / static_cast<float>(std::max(1, settings_.display.height));
         h.openSettings = [this] { InspectSettings(); };
         return h;
@@ -601,20 +625,19 @@ private:
         if (play_ == PlayState::Playing) c.RequestAnimation();  // this panel may be in a window of its own
     }
 
-    // While playing: the copy that plays, as the game sees it. Otherwise how to start, and the settings.
-    void DrawGameView(ui::Context& c, const Rect& r) {
+    // The game as it sees itself: while playing the copy that plays, otherwise the scene as it is (a
+    // strip on top says so, with the way to the settings).
+    void DrawGameView(ui::Context& c, const Rect& panel) {
         EnsureViews();
-        if (!Running()) {
-            Placeholder(c, r, Tr(L"ゲームビュー"), Tr(L"上の ▶ (Ctrl+P) で Play すると、動いているゲームがここに映ります。"));
-            const Rect button{r.x + (r.w - 200) * 0.5f, r.y + r.h * 0.5f + 70, 200, 36};
+        View* view = Current();
+        if (!view) {
+            Placeholder(c, panel, Tr(L"ゲームビュー"), Tr(L"3D 空間 / 2D 空間のプラグインが入ると、ゲームがここに映ります。"));
+            const Rect button{panel.x + (panel.w - 200) * 0.5f, panel.y + panel.h * 0.5f + 70, 200, 36};
             if (editor::w::Button(c, "settings", button, Tr(L"ゲームの設定を開く"))) InspectSettings();
             return;
         }
-        View* view = Current();
-        if (!view) {
-            Placeholder(c, r, Tr(L"ゲームビュー"), Tr(L"3D 空間 / 2D 空間のプラグインが入ると、動いているゲームがここに映ります。"));
-            return;
-        }
+        Rect r = panel;
+        if (!Running() && r.h > 120) DrawStoppedStrip(c, ui::TakeTop(r, kSpaceStripH));
         SceneViewHost h = ViewHost(true);
         view->game->Draw(c, r, h);
         if (play_ == PlayState::Playing) c.RequestAnimation();

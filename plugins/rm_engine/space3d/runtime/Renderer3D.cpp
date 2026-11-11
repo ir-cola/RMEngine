@@ -515,6 +515,13 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     for (const MeshDraw& m : f.meshes) {
         if (m.mesh && m.mesh->indexCount > 0) items_.push_back({m.mesh, &m.world, m.color, m.castShadow, m.materials, m.highlight});
     }
+    // Culling (always): what lies wholly outside the camera's view is left out of the picture.
+    const Mat4 viewProj = f.projection * f.view;
+    stats_ = {items_.size(), 0};
+    for (Item& it : items_) {
+        it.seen = BoxInView(viewProj, WorldBounds(*it.world, it.mesh->min, it.mesh->max));
+        if (it.seen) ++stats_.drawn;
+    }
 
     ID3D11Buffer* cb = constants_.Get();
     ctx->VSSetConstantBuffers(0, 1, &cb);
@@ -639,7 +646,9 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->PSSetShader(meshPs_.Get(), nullptr, 0);
         ID3D11SamplerState* sampler = textureSampler_.Get();
         ctx->PSSetSamplers(1, 1, &sampler);
-        for (const Item& it : items_) drawPainted(it);
+        for (const Item& it : items_) {
+            if (it.seen) drawPainted(it);
+        }
         ctx->PSSetShaderResources(1, 1, &noSrv);
     }
     // The shadows on the floor: see-through, over what is already drawn (the depth test still hides

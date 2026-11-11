@@ -1062,6 +1062,15 @@ private:
         c.P().Text(r.Inset(10, 8, right, 8),
                    Tr(L"右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ   W / E / R: 移動・回転・拡大縮小   X: ローカル / ワールド   Z: それぞれ / 中心   回転の球の中をドラッグ: 自由に回す   Ctrl+ギズモ: 刻んで動かす   Esc: ドラッグをやめる"),
                    ts);
+        if (!placed_.empty()) {
+            // How many things the camera sees now (the rest are culled: not drawn, their shadows still are).
+            const space3d::Renderer::Stats& st = main_.renderer.LastStats();
+            ui::TextStyle faint = ts;
+            faint.v = ui::VAlign::Top;
+            faint.wrap = false;
+            faint.color = theme::TextFaint;
+            c.P().Text(r.Inset(10, bar ? bar->all.Bottom() - r.y + 6 : 8, 10, 8), TrF(L"描いた物 {} / {} (カメラの外は描かない)", st.drawn, st.things), faint);
+        }
         if (placed_.empty()) {
             ui::TextStyle hint = ts;
             hint.size = 12;
