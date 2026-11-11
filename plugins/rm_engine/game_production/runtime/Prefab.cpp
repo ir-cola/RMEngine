@@ -74,9 +74,10 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
     std::unordered_map<int, int> ids;  // scene id -> id in the file
     std::unordered_set<int> used;
     std::vector<const SceneEntity*> inside;
+    const std::unordered_set<int> under = scene.Subtree(std::span<const int>(&root, 1));
     for (const TreeEntry& t : scene.TreeOrder()) {  // parents first, siblings in order
         const SceneEntity& e = *t.entity;
-        if (!scene.IsUnder(e.data.id, root) || InsideNested(scene, e, root)) continue;
+        if (!under.contains(e.data.id) || InsideNested(scene, e, root)) continue;
         // Two of the same source (a broken file): the second gets its own.
         const auto k = kept.find(e.data.id);
         const int id = k != kept.end() && !used.contains(k->second) ? k->second : next++;
@@ -225,9 +226,10 @@ std::vector<int> Scene::PrefabMembers(int root) const {
     std::vector<int> out;
     const SceneEntity* r = Find(root);
     if (!r || !r->prefab.Root()) return out;
+    const std::unordered_set<int> under = Subtree(std::span<const int>(&root, 1));
     for (const TreeEntry& t : TreeOrder()) {
         const SceneEntity& e = *t.entity;
-        if (!IsUnder(e.data.id, root)) continue;
+        if (!under.contains(e.data.id)) continue;
         const bool own = PrefabRootOf(e.data.id) == root;
         const bool nested = e.data.id != root && e.prefab.Root() && e.prefab.outer > 0 && PrefabRootOf(e.data.parent) == root;
         if (own || nested) out.push_back(e.data.id);
@@ -256,8 +258,9 @@ bool Scene::LinkPrefab(int root, const AssetRef& asset, const std::unordered_map
     SceneEntity* r = Find(root);
     if (!r || asset.Empty()) return false;
     const int outer = r->prefab.Root() ? r->prefab.outer : 0;  // a nested root made its own prefab stays nested
+    const std::unordered_set<int> under = Subtree(std::span<const int>(&root, 1));
     for (auto& e : entities_) {
-        if (!IsUnder(e.data.id, root)) continue;
+        if (!under.contains(e.data.id)) continue;
         const auto it = sources.find(e.data.id);
         if (it == sources.end() || it->second <= 0) continue;
         if (e.data.id != root && e.prefab.Root()) {
@@ -321,8 +324,9 @@ void Scene::DetachFromPrefab(int id) {
     // The parts below it of the same placed prefab, and the prefabs nested in those (worked out first).
     const int around = PrefabRootOf(id);
     std::vector<int> plain, byHand;
+    const std::unordered_set<int> under = Subtree(std::span<const int>(&id, 1));
     for (const auto& d : entities_) {
-        if (!IsUnder(d.data.id, id) || !d.prefab.Linked()) continue;
+        if (!under.contains(d.data.id) || !d.prefab.Linked()) continue;
         if (!d.prefab.Root()) {
             if (PrefabRootOf(d.data.id) == around) plain.push_back(d.data.id);
         } else if (d.prefab.outer > 0 && PrefabRootOf(d.data.parent) == around) {
@@ -471,10 +475,14 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
     std::unordered_set<int> builtIds;
     for (const auto& e : built) builtIds.insert(e.data.id);
     std::unordered_set<int> erase = memberSet;
+    std::vector<int> goneNested;
     for (const int m : members) {
-        if (builtIds.contains(m) || m == root || !Find(m)->prefab.Root()) continue;
+        if (!builtIds.contains(m) && m != root && Find(m)->prefab.Root()) goneNested.push_back(m);
+    }
+    if (!goneNested.empty()) {
+        const std::unordered_set<int> inside = Subtree(goneNested);
         for (const auto& e : entities_) {
-            if (e.prefab.Linked() && IsUnder(e.data.id, m)) erase.insert(e.data.id);
+            if (e.prefab.Linked() && inside.contains(e.data.id)) erase.insert(e.data.id);
         }
     }
     // Plain entities under an entity that went: under the root.
@@ -489,6 +497,7 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
     const size_t pos = std::min(InsertPosition(parent, siblingIndex), entities_.size());
     entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(pos), std::make_move_iterator(built.begin()),
                      std::make_move_iterator(built.end()));
+    Touch();
     return true;
 }
 

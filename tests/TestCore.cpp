@@ -133,6 +133,34 @@ RM_TEST(Undo_MergeTypingIntoOneEntry) {
     CHECK(h.UndoCount() == 1 && v == 5);
 }
 
+namespace {
+// An entry that says how much it keeps.
+struct Heavy final : ICommand {
+    int& target;
+    int before, after;
+    size_t bytes;
+    Heavy(int& t, int b, int a, size_t n) : target(t), before(b), after(a), bytes(n) {}
+    void Do() override { target = after; }
+    void Undo() override { target = before; }
+    size_t Bytes() const override { return bytes; }
+};
+}  // namespace
+
+RM_TEST(Undo_MaxBytes_TheOldestGoFirst) {
+    UndoHistory h;
+    h.SetMaxBytes(250);
+    int v = 0;
+    const uint64_t changes = h.Changes();
+    for (int i = 0; i < 5; ++i) h.Push(std::make_unique<Heavy>(v, i, i + 1, 100), false);
+    CHECK(h.UndoCount() == 2 && v == 5);  // 200 bytes: the two newest
+    CHECK(h.Changes() == changes + 5);
+    CHECK(h.Undo() && h.Undo() && v == 3 && !h.CanUndo());
+    // One entry bigger than the limit still stays (the newest is never dropped).
+    h.Push(std::make_unique<Heavy>(v, 3, 9, 1000), false);
+    CHECK(h.UndoCount() == 1 && h.Undo() && v == 3);
+    static_assert(UndoHistory::kMaxBytes >= (size_t{64} << 20));
+}
+
 RM_TEST(Undo_MaxDepth) {
     UndoHistory h;
     h.SetMaxDepth(3);

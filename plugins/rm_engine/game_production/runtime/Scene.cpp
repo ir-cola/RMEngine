@@ -12,7 +12,6 @@ namespace {
 
 constexpr size_t npos = static_cast<size_t>(-1);
 
-bool Has(std::span<const int> ids, int id) { return std::find(ids.begin(), ids.end(), id) != ids.end(); }
 
 }  // namespace
 
@@ -78,10 +77,23 @@ bool Scene::MoveComponent(int id, std::string_view type, int by, size_t nth) {
     return true;
 }
 
+void Scene::Reindex() const {
+    index_.clear();
+    index_.reserve(entities_.size());
+    for (size_t i = 0; i < entities_.size(); ++i) index_.emplace(entities_[i].data.id, i);  // (the first of a repeated id)
+    indexStale_ = false;
+}
+
 size_t Scene::IndexOf(int id) const {
     if (id <= 0) return npos;
-    for (size_t i = 0; i < entities_.size(); ++i) {
-        if (entities_[i].data.id == id) return i;
+    if (indexStale_) Reindex();
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const auto it = index_.find(id);
+        if (it != index_.end() && it->second < entities_.size() && entities_[it->second].data.id == id) return it->second;
+        // Out of date (a change that did not Touch, or a list of another size): once more, freshly.
+        const bool stale = it != index_.end() || index_.size() != entities_.size();
+        if (!stale || attempt == 1) break;
+        Reindex();
     }
     return npos;
 }
@@ -100,6 +112,26 @@ std::vector<int> Scene::Children(int parent) const {
     std::vector<int> out;
     for (const auto& e : entities_) {
         if (e.data.parent == parent) out.push_back(e.data.id);
+    }
+    return out;
+}
+
+std::unordered_set<int> Scene::Subtree(std::span<const int> roots) const {
+    std::unordered_map<int, std::vector<int>> children;  // parent id -> ids
+    for (const auto& e : entities_) children[e.data.parent].push_back(e.data.id);
+    std::unordered_set<int> out;
+    std::vector<int> todo;
+    for (const int r : roots) {
+        if (Find(r) && out.insert(r).second) todo.push_back(r);
+    }
+    while (!todo.empty()) {
+        const int id = todo.back();
+        todo.pop_back();
+        const auto it = children.find(id);
+        if (it == children.end()) continue;
+        for (const int c : it->second) {
+            if (out.insert(c).second) todo.push_back(c);
+        }
     }
     return out;
 }
@@ -145,17 +177,17 @@ std::vector<TreeEntry> Scene::TreeOrder() const {
 }
 
 std::vector<int> Scene::Roots(std::span<const int> ids) const {
+    // One pass in tree order (parents come first): an entity is covered when its parent is given or
+    // covered.
+    const std::unordered_set<int> given(ids.begin(), ids.end());
+    std::unordered_set<int> covered;  // given, or below a given one
     std::vector<int> out;
     for (const TreeEntry& t : TreeOrder()) {
         const int id = t.entity->data.id;
-        if (!Has(ids, id)) continue;
-        bool covered = false;
-        for (int p = t.entity->data.parent; p > 0 && !covered;) {
-            covered = Has(ids, p);
-            const SceneEntity* pe = Find(p);
-            p = pe ? pe->data.parent : 0;
-        }
-        if (!covered) out.push_back(id);
+        const bool under = covered.contains(t.entity->data.parent);
+        const bool mine = given.contains(id);
+        if (mine && !under) out.push_back(id);
+        if (mine || under) covered.insert(id);
     }
     return out;
 }
@@ -179,6 +211,7 @@ int Scene::Create(std::string name, int parent, size_t index) {
     e.data.name = std::move(name);
     const size_t pos = InsertPosition(parent, index);
     entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(pos), std::move(e));
+    Touch();
     return entities_[pos].data.id;
 }
 
@@ -200,8 +233,9 @@ std::vector<int> Scene::Duplicate(std::span<const int> ids) {
         // The root and everything below it, in list order (so siblings keep their order).
         std::vector<SceneEntity> copies;
         std::unordered_map<int, int> newId;
+        const std::unordered_set<int> inside = Subtree(std::span<const int>(&root, 1));
         for (const auto& e : entities_) {
-            if (!IsUnder(e.data.id, root)) continue;
+            if (!inside.contains(e.data.id)) continue;
             SceneEntity c = e;
             newId[e.data.id] = c.data.id = nextId_++;
             copies.push_back(std::move(c));
@@ -214,6 +248,7 @@ std::vector<int> Scene::Duplicate(std::span<const int> ids) {
         const size_t pos = IndexOf(root) + 1;
         entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(pos), std::make_move_iterator(copies.begin()),
                          std::make_move_iterator(copies.end()));
+        Touch();
         std::vector<int> all;
         for (const auto& [from, to] : newId) all.push_back(to);
         DetachCopies(all);
@@ -223,17 +258,9 @@ std::vector<int> Scene::Duplicate(std::span<const int> ids) {
 
 size_t Scene::Delete(std::span<const int> ids) {
     const size_t before = entities_.size();
-    const std::vector<int> roots = Roots(ids);
-    std::vector<int> gone;
-    for (const auto& e : entities_) {
-        for (const int r : roots) {
-            if (IsUnder(e.data.id, r)) {
-                gone.push_back(e.data.id);
-                break;
-            }
-        }
-    }
-    std::erase_if(entities_, [&](const SceneEntity& e) { return Has(gone, e.data.id); });
+    const std::unordered_set<int> gone = Subtree(Roots(ids));
+    std::erase_if(entities_, [&](const SceneEntity& e) { return gone.contains(e.data.id); });
+    Touch();
     return before - entities_.size();
 }
 
@@ -259,11 +286,13 @@ bool Scene::Move(std::span<const int> ids, int parent, size_t index) {
         const size_t i = IndexOf(r);
         taken.push_back(std::move(entities_[i]));
         entities_.erase(entities_.begin() + static_cast<std::ptrdiff_t>(i));
+        Touch();
         taken.back().data.parent = parent;
     }
     const size_t pos = InsertPosition(parent, index);
     entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(pos), std::make_move_iterator(taken.begin()),
                      std::make_move_iterator(taken.end()));
+    Touch();
 
     std::vector<std::pair<int, int>> now;
     for (const auto& e : entities_) now.emplace_back(e.data.id, e.data.parent);
@@ -374,10 +403,10 @@ constexpr char kClipKind[] = "rm_engine.game_production.entities";
 bool Scene::IsClip(const json::Value& clip) { return clip.IsObject() && clip.Get("kind").AsString() == kClipKind; }
 
 json::Value Scene::Copy(std::span<const int> ids) const {
-    const std::vector<int> roots = Roots(ids);
+    const std::unordered_set<int> inside = Subtree(Roots(ids));
     json::Value list = json::Value::MakeArray();
     for (const auto& e : entities_) {  // list order: siblings keep their order
-        if (std::any_of(roots.begin(), roots.end(), [&](int r) { return IsUnder(e.data.id, r); })) list.Push(SaveEntity(e));
+        if (inside.contains(e.data.id)) list.Push(SaveEntity(e));
     }
     json::Value o = json::Value::MakeObject();
     o.Set("kind", kClipKind);
@@ -426,6 +455,7 @@ std::vector<int> Scene::PasteList(const json::Value& entities, int parent, size_
     const size_t pos = InsertPosition(parent, index);
     entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(std::min(pos, entities_.size())), std::make_move_iterator(copies.begin()),
                      std::make_move_iterator(copies.end()));
+    Touch();
     if (idMap) *idMap = std::move(newId);
     return roots;
 }
@@ -435,11 +465,13 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
         if (warnings) warnings->push_back(std::move(msg));
     };
     entities_.clear();
+    Touch();
     extra_ = json::Value::MakeObject();
     nextId_ = 1;
     if (!v.IsObject()) return;
     extra_ = v;  // every key in its place; Save replaces "nextId" and "entities" in place
     for (const auto& item : v.Get("entities").Items()) entities_.push_back(LoadEntity(item, warnings));
+    Touch();
 
     // Ids: positive and unique. Repeated or missing ones get new ids (never one in use).
     // (An id or a nextId too big to count on from - a broken file - is not used: no overflow.)
@@ -457,6 +489,7 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
         e.data.id = fresh;
         seen.insert(fresh);
     }
+    Touch();  // the ids repaired
     // Parents: existing, and no loops.
     for (auto& e : entities_) {
         if (e.data.parent == 0) continue;

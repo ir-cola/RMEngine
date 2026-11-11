@@ -26,6 +26,7 @@
 #include <string_view>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace rm::game_production {
@@ -103,6 +104,9 @@ public:
     std::vector<int> Children(int parent) const;  // in order
     // True when `id` is `ancestor` itself or somewhere below it.
     bool IsUnder(int id, int ancestor) const;
+    // The given entities and everything below them (one pass over the scene: use it instead of
+    // asking IsUnder for every entity).
+    std::unordered_set<int> Subtree(std::span<const int> roots) const;
     // The given entities without the ones whose parent (or grand-parent ...) is also given, in tree order.
     std::vector<int> Roots(std::span<const int> ids) const;
 
@@ -198,6 +202,11 @@ public:
 
 private:
     size_t IndexOf(int id) const;
+    // Where each id is in entities_ (Find is one look-up, not a walk through the list). Made again
+    // when it is next needed after anything that adds, removes or reorders entities (Touch), and
+    // whenever a look-up finds it out of date (a safety net: it is never trusted blindly).
+    void Touch() { indexStale_ = true; }
+    void Reindex() const;
     size_t InsertPosition(int parent, size_t index) const;
     // Entities as Copy writes them, under `parent` at `index`, with new ids. `idMap`: old id -> new id.
     std::vector<int> PasteList(const json::Value& list, int parent, size_t index, reflect::Warnings* warnings,
@@ -210,6 +219,8 @@ private:
     void DetachFromPrefab(int id);
 
     std::vector<SceneEntity> entities_;
+    mutable std::unordered_map<int, size_t> index_;
+    mutable bool indexStale_ = true;
     std::vector<const reflect::TypeDesc*> componentTypes_;
     std::vector<const reflect::TypeDesc*> multipleTypes_;
     int nextId_ = 1;

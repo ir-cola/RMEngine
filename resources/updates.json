@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "エンティティが多いシーンでも重くならないように (探す・選ぶ・消す・複製・システムを毎フレーム動かす・Prefab と違う所の数え方)。元に戻す (Undo) の履歴が大きくなりすぎないように (合計 256 MB まで。古いものから捨てる)",
+          "en": "Scenes with many entities no longer slow down (finding, selecting, deleting, duplicating, running systems every frame, counting prefab differences). The undo history no longer grows without limit (256 MB in all; the oldest entries go first)"
+        },
+        {
           "ja": "入れたプラグインをエンジン (exe の場所) ごとに分けた。古いビルドを起動しても、新しいビルドのプラグインを古いもので上書きしない (最初の起動は、前に入れていたものと同じものを入れる)",
           "en": "Installed plugins are now kept per engine (where its exe is). Starting an old build no longer overwrites a newer build's plugins with old ones (the first start installs the same plugins as before)"
         },

@@ -36,6 +36,9 @@ public:
     }
     // After merging, an entry that ends where it began (typed, then Esc) is dropped.
     virtual bool IsNoOp() const { return false; }
+    // About how much memory the entry keeps (a scene before and after: its size as text). 0 = small.
+    // The history keeps at most UndoHistory::kMaxBytes of entries (the oldest go first).
+    virtual size_t Bytes() const { return 0; }
 };
 
 // Several edits that are one action for the user (a gizmo drag of 3 selected objects): one entry,
@@ -77,6 +80,11 @@ public:
         }
         return true;
     }
+    size_t Bytes() const override {
+        size_t n = 0;
+        for (const auto& c : cmds_) n += c->Bytes();
+        return n;
+    }
 
 private:
     std::vector<std::unique_ptr<ICommand>> cmds_;
@@ -88,6 +96,14 @@ class UndoHistory {
 public:
     void SetOnModified(std::function<void()> fn) { onModified_ = std::move(fn); }
     void SetMaxDepth(size_t n) { maxDepth_ = n; }
+    // The entries kept together may hold at most this much (ICommand::Bytes): a big scene whose every
+    // change keeps two copies of it does not fill the memory - the oldest entries go first (the newest
+    // one always stays). 256 MB per history (per software).
+    static constexpr size_t kMaxBytes = size_t{256} << 20;
+    void SetMaxBytes(size_t n) { maxBytes_ = n; }
+    // Goes up by one at every change of the history (an entry pushed, joined, undone, redone, cleared):
+    // what a cache of things worked out from the edited data compares (has anything changed since?).
+    uint64_t Changes() const { return changes_; }
 
     // alreadyDone = true: the edit has been applied by the caller (typical for UI drags).
     // Returns false when called from inside Undo()/Redo() (the command is dropped).
@@ -107,13 +123,17 @@ public:
 
 private:
     void Modified() {
+        ++changes_;
         if (onModified_) onModified_();
     }
+    void Trim();  // the oldest entries go while there are too many or they hold too much
 
     std::vector<std::unique_ptr<ICommand>> undo_;
     std::vector<std::unique_ptr<ICommand>> redo_;
     std::function<void()> onModified_;
     size_t maxDepth_ = 1000;
+    size_t maxBytes_ = kMaxBytes;
+    uint64_t changes_ = 0;
     bool executing_ = false;
 };
 

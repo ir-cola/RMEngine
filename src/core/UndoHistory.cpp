@@ -16,9 +16,20 @@ bool UndoHistory::Push(std::unique_ptr<ICommand> cmd, bool alreadyDone) {
     }
     undo_.push_back(std::move(cmd));
     redo_.clear();
-    if (undo_.size() > maxDepth_) undo_.erase(undo_.begin());
+    Trim();
     Modified();
     return true;
+}
+
+void UndoHistory::Trim() {
+    size_t bytes = 0;
+    for (const auto& c : undo_) bytes += c->Bytes();
+    size_t drop = 0;
+    while (undo_.size() - drop > 1 && (undo_.size() - drop > maxDepth_ || bytes > maxBytes_)) {
+        bytes -= undo_[drop]->Bytes();
+        ++drop;
+    }
+    if (drop > 0) undo_.erase(undo_.begin(), undo_.begin() + static_cast<std::ptrdiff_t>(drop));
 }
 
 bool UndoHistory::Undo() {
@@ -48,6 +59,7 @@ bool UndoHistory::Redo() {
 void UndoHistory::Clear() {
     undo_.clear();
     redo_.clear();
+    ++changes_;
 }
 
 }  // namespace rm

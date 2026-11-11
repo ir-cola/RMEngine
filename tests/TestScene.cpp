@@ -3,7 +3,11 @@
 
 #include "Test.h"
 
+#include <chrono>
+
 #include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/game_production/runtime/Systems.h"
+#include "rm_engine/game_x_3d/runtime/Spin.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
 using namespace rm;
@@ -302,4 +306,107 @@ RM_TEST(Scene_MoveComponent_UpAndDown) {
     CHECK(!s.MoveComponent(1, "nothing", 1));
     CHECK(!s.MoveComponent(99, t, 1));
     CHECK(!s.MoveComponent(1, t, 2));  // one place at a time
+}
+
+namespace {
+
+double SecondsSince(std::chrono::steady_clock::time_point t) {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
+}
+
+// 10,000 entities: 100 chains of 100 (each the parent of the next), every one with a Transform and a
+// 回り続ける - deep and wide enough that anything that walks the list per entity shows.
+json::Value BigScene() {
+    const std::string transform = TransformType().name;
+    const std::string spin = reflect::TypeOf<game_x_3d::Spin>().name;
+    json::Value list = json::Value::MakeArray();
+    for (int i = 1; i <= 10000; ++i) {
+        json::Value e = json::Value::MakeObject();
+        e.Set("id", i);
+        e.Set("parent", i % 100 == 1 ? 0 : i - 1);
+        e.Set("name", "e");
+        json::Value comps = json::Value::MakeArray();
+        for (const std::string* type : {&transform, &spin}) {
+            json::Value c = json::Value::MakeObject();
+            c.Set("type", *type);
+            c.Set("data", json::Value::MakeObject());
+            comps.Push(std::move(c));
+        }
+        e.Set("components", std::move(comps));
+        list.Push(std::move(e));
+    }
+    json::Value o = json::Value::MakeObject();
+    o.Set("nextId", 10001);
+    o.Set("entities", std::move(list));
+    return o;
+}
+
+}  // namespace
+
+RM_TEST(Scene_TenThousand_InReasonableTime) {
+    // The limits are loose on purpose (a slow or busy PC must not fail): they catch work that grows
+    // with the square of the entities (seconds to minutes here), not small slowdowns.
+    const reflect::TypeDesc& spin = reflect::TypeOf<game_x_3d::Spin>();
+    Scene s;
+    s.SetComponentTypes({&TransformType(), &spin}, {&spin});
+    auto t = std::chrono::steady_clock::now();
+    s.Load(BigScene());
+    CHECK(s.Entities().size() == 10000);
+    CHECK(SecondsSince(t) < 5.0);
+
+    t = std::chrono::steady_clock::now();
+    long long found = 0;
+    for (int round = 0; round < 10; ++round) {
+        for (int id = 1; id <= 10000; ++id) found += s.Find(id) ? 1 : 0;
+    }
+    CHECK(found == 100000);
+    CHECK(SecondsSince(t) < 3.0);
+
+    // One frame of a system over every entity.
+    static const SystemInfo kSpin{"回り続ける", SystemPhase::Frame, 0, &game_x_3d::RunSpin};
+    const SystemInfo* list[] = {&kSpin};
+    SystemRunner runner;
+    runner.SetSystems(list);
+    t = std::chrono::steady_clock::now();
+    runner.Advance(s, 0.1, 0.02f);
+    CHECK(SecondsSince(t) < 3.0);
+    CHECK(static_cast<const space3d::Transform*>(s.Find(10000)->FindComponent(TransformType().name)->value.Get())->rotation.y > 0);
+
+    // The roots of half of them, a copy of a chain, then half of them deleted.
+    std::vector<int> half;
+    for (int id = 1; id <= 5000; ++id) half.push_back(id);
+    t = std::chrono::steady_clock::now();
+    CHECK(s.Roots(half).size() == 50);
+    CHECK(s.Duplicate(std::vector<int>{101}).size() == 1);
+    CHECK(s.Delete(half) == 5000);
+    CHECK(SecondsSince(t) < 5.0);
+    CHECK(s.Entities().size() == 5100);
+}
+
+RM_TEST(Scene_IndexStaysRightAfterEveryChange) {
+    Scene s = Sample();
+    auto allFound = [&](const Scene& sc) {
+        for (const auto& e : sc.Entities()) {
+            if (sc.Find(e.data.id) != &e) return false;
+        }
+        return true;
+    };
+    CHECK(allFound(s));
+    const json::Value before = s.Save();
+    const int made = s.Create("new", 1, 0);
+    CHECK(allFound(s) && s.Find(made)->data.name == "new");
+    CHECK(s.Move(std::vector<int>{5}, 0, 0));
+    CHECK(allFound(s));
+    const auto copies = s.Duplicate(std::vector<int>{1});
+    CHECK(allFound(s) && s.Find(copies[0]));
+    s.Delete(std::vector<int>{2});
+    CHECK(allFound(s) && !s.Find(2) && !s.Find(3));
+    s.Paste(s.Copy(std::vector<int>{1}));
+    CHECK(allFound(s));
+    // What undo does: the scene from before. The ids made since are gone, the others found again.
+    s.Load(before);
+    CHECK(allFound(s) && !s.Find(made) && s.Find(3) && s.Find(3)->data.name == "A1a");
+    // A copy of the scene keeps its own, right index.
+    Scene copy = s;
+    CHECK(allFound(copy) && copy.Find(1) != s.Find(1));
 }

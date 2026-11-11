@@ -71,7 +71,10 @@ void Placeholder(ui::Context& c, const Rect& r, const std::wstring& title, const
 class SceneCommand final : public ICommand {
 public:
     SceneCommand(Scene& scene, json::Value before, json::Value after, std::string label)
-        : scene_(scene), before_(std::move(before)), after_(std::move(after)), label_(std::move(label)) {}
+        : scene_(scene), before_(std::move(before)), after_(std::move(after)), label_(std::move(label)) {
+        bytes_ = json::Write(before_, false).size() + json::Write(after_, false).size();  // once (the history's limit)
+    }
+    size_t Bytes() const override { return bytes_; }
     // The next id is kept: an id given out once is never given again (an entity made after an undo
     // never gets the id of one that was undone - references and saved views would point at it).
     void Do() override { Load(after_); }
@@ -88,6 +91,7 @@ private:
     Scene& scene_;
     json::Value before_, after_;
     std::string label_;
+    size_t bytes_ = 0;
 };
 
 // A file an edit wrote (a prefab - Prefab に反映): undo writes back what was there, redo the new one.
@@ -99,6 +103,7 @@ public:
     void Do() override { write_(after_); }
     void Undo() override { write_(before_); }
     std::string Label() const override { return label_; }
+    size_t Bytes() const override { return before_.size() + after_.size(); }
 
 private:
     std::function<void(const std::string&)> write_;
@@ -201,6 +206,7 @@ public:
             scene_.Load(data.Get("scene"), &warnings);
             for (const auto& w : warnings) log::Warn("シーン: {}", w);
             RefreshPrefabsOnOpen();
+            ++dataVersion_;  // (the scene was made again: no history entry tells it)
         }
         InspectSettings();
     }
@@ -797,7 +803,8 @@ private:
         const std::wstring where = Utf8ToWide(PrefabWhere(r->prefab.asset));
         const auto it = prefabs_.find(r->prefab.asset.guid);
         if (it == prefabs_.end()) return TrF(L"Prefab「{}」を置いた物です (ファイル {} が読めません)", name, where);
-        const size_t n = CountOverrides(Overrides(scene_, root, it->second, placementTypes_));
+        const json::Value* overrides = CachedOverrides(root);
+        const size_t n = overrides ? CountOverrides(*overrides) : 0;
         // A prefab nested in another placed prefab: say which.
         if (const int around = r->prefab.outer > 0 ? scene_.PrefabRootOf(r->data.parent) : 0) {
             return TrF(L"Prefab「{}」を置いた物です ({})。Prefab「{}」の中に入っています。Prefab と違う所: {} 個 (名前と置き場所を含む)", name,
@@ -1035,6 +1042,7 @@ private:
             log::Warn("Prefab「{}」は新しい版のエンジンで作られたので読みません (置いた物は保存したまま)", PathToUtf8(file.filename()));
             return nullptr;
         }
+        ++dataVersion_;
         return &(prefabs_[ref.guid] = std::move(*v));
     }
     const json::Value* Cached(const AssetRef& ref) {
@@ -1044,13 +1052,28 @@ private:
 
     // What every placed prefab of `scene` changed, worked out now against its prefab as last read
     // (kept in the file and in a nested prefab's link, so a changed prefab can be put under it again).
+    // `scene` is scene_ or a copy of it as it is now (SaveData).
     void UpdateOverrides(Scene& scene) const {
         for (const int root : scene.PrefabRoots()) {
-            SceneEntity* r = scene.Find(root);
-            if (const auto it = prefabs_.find(r->prefab.asset.guid); it != prefabs_.end()) {
-                r->prefab.overrides = Overrides(scene, root, it->second, placementTypes_);
-            }
+            if (const json::Value* o = CachedOverrides(root)) scene.Find(root)->prefab.overrides = *o;
         }
+    }
+
+    // What the placed prefab `root` changed, against its prefab as last read - worked out once per
+    // change of the scene (the history's change number), of a prefab file or of the loaded data, not
+    // every time the inspector is drawn. Null: not a placed prefab, or its file is not read.
+    const json::Value* CachedOverrides(int root) const {
+        const std::pair<uint64_t, uint64_t> stamp{host_.History().Changes(), dataVersion_};
+        if (stamp != overridesStamp_) {
+            overridesCache_.clear();
+            overridesStamp_ = stamp;
+        }
+        if (const auto it = overridesCache_.find(root); it != overridesCache_.end()) return &it->second;
+        const SceneEntity* r = scene_.Find(root);
+        if (!r || !r->prefab.Root()) return nullptr;
+        const auto p = prefabs_.find(r->prefab.asset.guid);
+        if (p == prefabs_.end()) return nullptr;
+        return &(overridesCache_[root] = Overrides(scene_, root, p->second, placementTypes_));
     }
 
     // The prefabs `root` is inside (and its own): a prefab is never filled inside itself.
@@ -1116,6 +1139,7 @@ private:
     // project is as it was.
     void RefreshPrefabsOnOpen() {
         prefabs_.clear();
+        ++dataVersion_;
         // Data from before assets had ids: the prefab named by a path gets its file's id (written so
         // at the next save).
         for (const int root : scene_.PrefabRoots()) {
@@ -1220,6 +1244,7 @@ private:
         } else {
             prefabs_.erase(ref.guid);
         }
+        ++dataVersion_;
         return true;
     }
 
@@ -1287,6 +1312,7 @@ private:
             return;
         }
         prefabs_[ref.guid] = prefab;
+        ++dataVersion_;
         Edit(std::format("「{}」を Prefab にする", name), [&] { scene_.LinkPrefab(id, ref, sources); });
         log::Info("Prefab を作りました: {}", path);
     }
@@ -1459,6 +1485,9 @@ private:
 
     // Prefabs: the files as last read or written (path -> content)
     std::unordered_map<std::string, json::Value> prefabs_;
+    uint64_t dataVersion_ = 0;  // up at every change of prefabs_ or of a scene made without the history
+    mutable std::unordered_map<int, json::Value> overridesCache_;  // root -> CachedOverrides
+    mutable std::pair<uint64_t, uint64_t> overridesStamp_{~uint64_t{0}, ~uint64_t{0}};
     std::vector<std::string> prefabFiles_;
     double prefabFilesTime_ = 0;
 };
