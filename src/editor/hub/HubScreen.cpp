@@ -299,6 +299,14 @@ void HubScreen::RunRename() {
         modal_ = Modal::None;
         return;
     }
+    // Open in another RM Engine: its editor would keep saving to the old place.
+    {
+        platform::FileLock probe;
+        if (probe.Take(ProjectLockFile(renameFile_), nullptr) == platform::FileLock::Result::HeldByOther) {
+            renameError_ = Tr(L"このプロジェクトは別の RM Engine で開いているので、名前を変えられません。そちらを閉じてからにしてください。");
+            return;
+        }
+    }  // let go before the folder is renamed (an open file inside would stop it)
     std::string err;
     const auto newFile = RenameProject(renameFile_, renameName_, &err);
     if (!newFile) {

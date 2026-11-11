@@ -31,6 +31,7 @@
 #include "editor/plugin/Software.h"
 #include "editor/project/Project.h"
 #include "editor/widgets/Widgets.h"
+#include "platform/Shell.h"
 
 #include <filesystem>
 #include <memory>
@@ -47,6 +48,8 @@ public:
     EditorScreen(App& app, Project project);
     ~EditorScreen() override;
     bool Open();
+    // The project's lock (ProjectLockFile), held while this editor is open.
+    void AdoptLock(std::unique_ptr<platform::FileLock> lock) { lock_ = std::move(lock); }
     void Close() override;  // closes the floating panel windows first
     void ShowError(std::wstring message);
     void OnLookChanged() override;  // the panel windows too
@@ -172,6 +175,7 @@ private:
     void DrawAssets(ui::Context& c, ui::Rect r);
 
     Project project_;
+    std::unique_ptr<platform::FileLock> lock_;  // let go in Close() (and when destroyed)
     bool dirty_ = false;
     double dirtySince_ = 0;  // platform::NowSeconds() of the first unsaved change
 

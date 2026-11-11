@@ -2,6 +2,7 @@
 // Windows shell services: file dialogs, Explorer, known folders, clipboard, files, time.
 // File dialogs require COM in STA mode (MTA makes Show() wait forever - previous engine 4-2).
 
+#include "platform/FileLock.h"
 #include "platform/Win.h"
 
 #include <filesystem>

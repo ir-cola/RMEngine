@@ -260,10 +260,25 @@ void App::OpenProjectNow() {
         if (HubScreen* hub = EnsureHub()) hub->AskLimitedPlugins(pendingFile_, limited);
         return;
     }
+    // Open in another RM Engine: never twice (both would save over each other's changes).
+    auto lock = std::make_unique<platform::FileLock>();
+    std::string lockErr;
+    const auto taken = lock->Take(ProjectLockFile(project->file), &lockErr);
+    if (taken == platform::FileLock::Result::HeldByOther) {
+        const std::string msg = TrU8F("このプロジェクトは別の RM Engine で開いています。そちらを閉じてから開いてください。\n{}", PathToUtf8(project->file));
+        log::Warn("{}", msg);
+        if (HubScreen* hub = EnsureHub()) hub->ShowError(Utf8ToWide(msg));
+        return;
+    }
+    if (taken == platform::FileLock::Result::Failed) {
+        // A folder where nothing can be written (read only ...): opened, but not guarded.
+        log::Warn("プロジェクトの印 (ほかの RM Engine で開かないための) を作れませんでした。そのまま開きます: {}", lockErr);
+    }
     settings_.Touch(project->file);
     settings_.Save();
     log::Info("プロジェクトを開きます: {}", PathToUtf8(project->file));
     auto editor = std::make_unique<EditorScreen>(*this, std::move(*project));
+    editor->AdoptLock(std::move(lock));
     if (!editor->Open()) {
         ShowHub(TrU8("エディターのウィンドウを作れませんでした。"));
         return;

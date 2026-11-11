@@ -147,6 +147,7 @@ void EditorScreen::Close() {
     if (Hwnd()) KillTimer(Hwnd(), kAutoSaveTimer);
     CloseFloats();
     ScreenWindow::Close();
+    if (lock_) lock_->Release();  // another RM Engine may open the project now
 }
 
 void EditorScreen::ShowError(std::wstring message) {

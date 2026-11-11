@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "同じプロジェクトを 2 つの RM Engine で開けないように (2 つ目は「別の RM Engine で開いています」と出して開かない。開いているプロジェクトの名前も変えられない)",
+          "en": "A project can no longer be opened in two RM Engines at once (the second says it is open in another RM Engine and does not open it; a project that is open cannot be renamed either)"
+        },
+        {
           "ja": "プロジェクトの名前を変えたとき、フォルダの名前がプロジェクトの名前と違う (自分のフォルダに置いた) なら、フォルダはそのままにして .rmpf の名前だけを変えるように (前はフォルダごと名前が変わっていた)",
           "en": "Renaming a project whose folder is not named after it (a folder of your own) now keeps the folder and renames only the .rmpf (the whole folder used to be renamed)"
         },

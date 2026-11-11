@@ -69,6 +69,8 @@
   "このプロジェクトが使っているプラグインがそろっていないため、開けません。": "The project cannot be opened: some of the plugins it uses are missing.",
   "このプロジェクトに同じ名前の配置があります": "This project already has a layout with this name",
   "このプロジェクトの配置": "This project's layout",
+  "このプロジェクトは別の RM Engine で開いています。そちらを閉じてから開いてください。\n{}": "This project is open in another RM Engine. Close it there first.\n{}",
+  "このプロジェクトは別の RM Engine で開いているので、名前を変えられません。そちらを閉じてからにしてください。": "This project is open in another RM Engine, so it cannot be renamed. Close it there first.",
   "このプロジェクトは新しいバージョンの RM Engine で作られています (形式 {} / このエンジンは {} まで)。\nデータを壊さないよう、開かずに止めました。": "This project was made with a newer RM Engine (format {}; this engine reads up to {}).\nIt was not opened, so that no data is damaged.",
   "このプロジェクトへ": "Into this project",
   "この状態が変わるまで表示しない": "Don't show again until this changes",

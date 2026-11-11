@@ -29,6 +29,15 @@ inline constexpr const wchar_t* kProjectExtension = L".rmpf";
 inline constexpr char kLayoutKind[] = "rm_engine.layout";
 inline constexpr int64_t kLayoutFormatVersion = 2;
 
+// <folder>/<name>.rmpf.lock - held by the editor while the project is open (platform::FileLock), so a
+// second RM Engine does not open it too (two editors would save over each other) and the Hub does not
+// rename it. Hidden, and gone when the editor closes or the process ends.
+inline std::filesystem::path ProjectLockFile(const std::filesystem::path& rmpf) {
+    std::filesystem::path p = rmpf;
+    p += L".lock";
+    return p;
+}
+
 struct ProjectTemplate;
 
 struct Project {
