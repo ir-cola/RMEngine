@@ -1,6 +1,7 @@
 #include "rm_engine/space3d/runtime/Mesh.h"
 
 #include "base/Json.h"
+#include "rm_engine/space3d/runtime/Fbx.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <algorithm>
@@ -428,28 +429,8 @@ private:
         return true;
     }
 
-    // The node's place is put into the vertices (one mesh in the model's space). A mirroring place
-    // turns the triangles over, so they are turned back (the front stays counter-clockwise).
-    void Append(const MeshData& part, const Mat4& world) {
-        const auto inv = Inverse(world);
-        const Mat4 normalM = inv ? *inv : Mat4{};
-        const Vec3 x = TransformDirection(world, {1, 0, 0}), y = TransformDirection(world, {0, 1, 0}), z = TransformDirection(world, {0, 0, 1});
-        const bool mirrored = Dot(Cross(x, y), z) < 0;
-        const uint32_t base = static_cast<uint32_t>(out_.vertices.size());
-        for (MeshVertex v : part.vertices) {
-            v.position = TransformPoint(world, v.position);
-            // Normals go by the inverse transpose (stays at right angles to a surface scaled unevenly).
-            const Vec3 n = v.normal;
-            v.normal = Normalize({normalM.m[0][0] * n.x + normalM.m[0][1] * n.y + normalM.m[0][2] * n.z,
-                                  normalM.m[1][0] * n.x + normalM.m[1][1] * n.y + normalM.m[1][2] * n.z,
-                                  normalM.m[2][0] * n.x + normalM.m[2][1] * n.y + normalM.m[2][2] * n.z});
-            out_.vertices.push_back(v);
-        }
-        for (size_t i = 0; i + 2 < part.indices.size(); i += 3) {
-            const uint32_t a = part.indices[i], b = part.indices[i + 1], c = part.indices[i + 2];
-            out_.indices.insert(out_.indices.end(), {base + a, base + (mirrored ? c : b), base + (mirrored ? b : c)});
-        }
-    }
+    // The node's place is put into the vertices (one mesh in the model's space).
+    void Append(const MeshData& part, const Mat4& world) { AppendPlaced(out_, part, world); }
 
     // An accessor's numbers, checked to lie inside its buffer.
     bool Open(int64_t index, int wantComponents, Accessor& out) {
@@ -882,8 +863,30 @@ void SortByMaterial(MeshData& mesh, std::span<const int> materialOfTriangle) {
 std::optional<MeshData> ParseMesh(std::string_view extension, std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error) {
     if (SameIgnoringCase(extension, ".gltf") || SameIgnoringCase(extension, ".glb")) return ParseGltf(bytes, read, error);
     if (SameIgnoringCase(extension, ".obj")) return ParseObj({reinterpret_cast<const char*>(bytes.data()), bytes.size()}, read, error);
-    Fail(error, std::format("「{}」のモデルは読めません (.gltf / .glb / .obj が読めます)", extension));
+    if (SameIgnoringCase(extension, ".fbx")) return ParseFbx(bytes, error);
+    Fail(error, std::format("「{}」のモデルは読めません (.gltf / .glb / .obj / .fbx が読めます)", extension));
     return std::nullopt;
+}
+
+void AppendPlaced(MeshData& out, const MeshData& part, const Mat4& world) {
+    const auto inv = Inverse(world);
+    const Mat4 normalM = inv ? *inv : Mat4{};
+    const Vec3 x = TransformDirection(world, {1, 0, 0}), y = TransformDirection(world, {0, 1, 0}), z = TransformDirection(world, {0, 0, 1});
+    const bool mirrored = Dot(Cross(x, y), z) < 0;
+    const uint32_t base = static_cast<uint32_t>(out.vertices.size());
+    for (MeshVertex v : part.vertices) {
+        v.position = TransformPoint(world, v.position);
+        // Normals go by the inverse transpose (stays at right angles to a surface scaled unevenly).
+        const Vec3 n = v.normal;
+        v.normal = Normalize({normalM.m[0][0] * n.x + normalM.m[0][1] * n.y + normalM.m[0][2] * n.z,
+                              normalM.m[1][0] * n.x + normalM.m[1][1] * n.y + normalM.m[1][2] * n.z,
+                              normalM.m[2][0] * n.x + normalM.m[2][1] * n.y + normalM.m[2][2] * n.z});
+        out.vertices.push_back(v);
+    }
+    for (size_t i = 0; i + 2 < part.indices.size(); i += 3) {
+        const uint32_t a = part.indices[i], b = part.indices[i + 1], c = part.indices[i + 2];
+        out.indices.insert(out.indices.end(), {base + a, base + (mirrored ? c : b), base + (mirrored ? b : c)});
+    }
 }
 
 void ComputeNormals(MeshData& mesh) {

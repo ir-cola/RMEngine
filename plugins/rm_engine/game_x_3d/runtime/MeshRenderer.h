@@ -15,7 +15,7 @@ namespace rm::game_x_3d {
 
 RM_STRUCT(Label="メッシュ (3D モデル)")
 struct MeshRenderer {
-    RM_PROPERTY(Edit, Label="モデル", Tooltip="3D モデルのアセット (.gltf / .glb / .obj が読めます)。アセットのパネルからドラッグするか、クリックして選びます", AssetKind="model") AssetRef model;
+    RM_PROPERTY(Edit, Label="モデル", Tooltip="3D モデルのアセット (.gltf / .glb / .obj / .fbx が読めます)。アセットのパネルからドラッグするか、クリックして選びます", AssetKind="model") AssetRef model;
     RM_PROPERTY(Edit, Label="影を落とす") bool castShadows = true;
 };
 

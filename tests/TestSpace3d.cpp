@@ -11,6 +11,8 @@
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
+#include "rm_engine/space3d/runtime/Fbx.h"
+#include "rm_engine/space3d/runtime/Inflate.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/MeshLoader.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
@@ -1161,4 +1163,223 @@ RM_TEST(MeshLoader_StopsWhileReading) {
         while (calls == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     CHECK(calls >= 1 && calls < 5);
+}
+
+// --- Deflate (space3d/runtime/Inflate) and FBX (space3d/runtime/Fbx) -------------------------
+// The compressed bytes were made by Python's zlib (levels 0 and 9, and a raw stream).
+
+RM_TEST(Inflate_FixedDynamicStoredAndRaw) {
+    const std::string hello = "hello hello hello hello hello";
+    const std::vector<uint8_t> fixed{0x78, 0xDA, 0xCB, 0x48, 0xCD, 0xC9, 0xC9, 0x57, 0xC8, 0xC0, 0x4E, 0x02, 0x00, 0xA3, 0x10, 0x0A, 0xE5};
+    const auto a = InflateZlib(fixed, 1000);
+    CHECK(a && std::string(a->begin(), a->end()) == hello);
+    // The same without zlib's wrapper.
+    const std::vector<uint8_t> raw{0xCB, 0x48, 0xCD, 0xC9, 0xC9, 0x57, 0xC8, 0xC0, 0x4E, 0x02, 0x00};
+    const auto r = Inflate(raw, 1000);
+    CHECK(r && std::string(r->begin(), r->end()) == hello);
+    // Stored (not compressed) blocks.
+    const std::vector<uint8_t> stored{0x78, 0x01, 0x01, 0x07, 0x00, 0xF8, 0xFF, 0x73, 0x74, 0x6F, 0x72, 0x65, 0x64, 0x21, 0x0B, 0xEF, 0x02, 0xB3};
+    const auto s = InflateZlib(stored, 1000);
+    CHECK(s && std::string(s->begin(), s->end()) == "stored!");
+    // Its own Huffman codes (a dynamic block).
+    const std::string text = "aaabaacbaabadbaaaaaaaabaacbaabbbabbaaaabcaaaabababcbaabbbaaabbababaabbacaabdaaaacabcaababadabaabaaba";
+    const std::vector<uint8_t> dynamic{0x78, 0xDA, 0x35, 0x8A, 0x89, 0x0D, 0x00, 0x00, 0x0C, 0x01, 0x67, 0xA5, 0xF6, 0x9F, 0xA1, 0x68, 0xDA,
+                                       0x87, 0xE4, 0x00, 0x40, 0x60, 0x18, 0x93, 0xF5, 0xE6, 0x11, 0xE9, 0x2F, 0x98, 0xC3, 0xDE, 0x0F, 0xA2,
+                                       0x25, 0x71, 0xC7, 0x54, 0x2A, 0xD3, 0x6A, 0xB0, 0x1A, 0xE5, 0x16, 0x84, 0x87, 0x26, 0x1C};
+    CHECK((dynamic[2] >> 1 & 3) == 2);
+    const auto d = InflateZlib(dynamic, 1000);
+    CHECK(d && std::string(d->begin(), d->end()) == text);
+    // Broken: a wrong checksum, cut short, more than allowed, not zlib.
+    std::vector<uint8_t> wrong = fixed;
+    wrong.back() ^= 1;
+    CHECK(!InflateZlib(wrong, 1000));
+    CHECK(!InflateZlib(std::span(fixed).first(9), 1000));
+    CHECK(!InflateZlib(fixed, 10));
+    CHECK(!InflateZlib(std::vector<uint8_t>{0x12, 0x34, 0, 0, 0, 0, 0}, 1000));
+}
+
+namespace {
+
+// A tiny binary FBX writer (7400: 32-bit offsets), for the tests only.
+struct TNode {
+    std::string name;
+    std::vector<std::vector<uint8_t>> props;
+    std::vector<TNode> kids;
+};
+
+template <class T>
+std::vector<uint8_t> Prop(char type, T v) {
+    std::vector<uint8_t> b{static_cast<uint8_t>(type)};
+    PutBytes<T>(b, {v});
+    return b;
+}
+std::vector<uint8_t> PropS(std::string_view s) {
+    std::vector<uint8_t> b{'S'};
+    PutBytes<uint32_t>(b, {static_cast<uint32_t>(s.size())});
+    b.insert(b.end(), s.begin(), s.end());
+    return b;
+}
+std::vector<uint8_t> PropD(std::initializer_list<double> v) {
+    std::vector<uint8_t> b{'d'};
+    PutBytes<uint32_t>(b, {static_cast<uint32_t>(v.size()), 0u, static_cast<uint32_t>(v.size() * 8)});
+    PutBytes<double>(b, v);
+    return b;
+}
+std::vector<uint8_t> PropI(std::initializer_list<int32_t> v) {
+    std::vector<uint8_t> b{'i'};
+    PutBytes<uint32_t>(b, {static_cast<uint32_t>(v.size()), 0u, static_cast<uint32_t>(v.size() * 4)});
+    PutBytes<int32_t>(b, v);
+    return b;
+}
+// A binary FBX name: "Name\0\1Class".
+std::string FbxName(std::string_view name, std::string_view cls) { return std::string(name) + std::string("\0\1", 2) + std::string(cls); }
+// "P": name, type, type2, flags, values.
+TNode P(std::string_view name, std::initializer_list<double> values) {
+    TNode p{"P", {PropS(name), PropS("Vector3D"), PropS(""), PropS("A")}, {}};
+    for (const double v : values) p.props.push_back(Prop<double>('D', v));
+    return p;
+}
+TNode PInt(std::string_view name, int32_t v) { return {"P", {PropS(name), PropS("int"), PropS("Integer"), PropS(""), Prop<int32_t>('I', v)}, {}}; }
+
+void WriteNode(std::vector<uint8_t>& out, const TNode& n) {
+    const size_t start = out.size();
+    PutBytes<uint32_t>(out, {0u, static_cast<uint32_t>(n.props.size()), 0u});
+    out.push_back(static_cast<uint8_t>(n.name.size()));
+    out.insert(out.end(), n.name.begin(), n.name.end());
+    const size_t propsAt = out.size();
+    for (const auto& p : n.props) out.insert(out.end(), p.begin(), p.end());
+    const uint32_t listLen = static_cast<uint32_t>(out.size() - propsAt);
+    std::memcpy(out.data() + start + 8, &listLen, 4);
+    for (const TNode& k : n.kids) WriteNode(out, k);
+    if (!n.kids.empty()) out.insert(out.end(), 13, 0);
+    const uint32_t end = static_cast<uint32_t>(out.size());
+    std::memcpy(out.data() + start, &end, 4);
+}
+
+std::vector<uint8_t> WriteFbx(const std::vector<TNode>& top, uint32_t version = 7400) {
+    std::vector<uint8_t> out;
+    const char magic[] = "Kaydara FBX Binary  ";
+    out.insert(out.end(), magic, magic + 21);  // with its '\0'
+    out.push_back(0x1A);
+    out.push_back(0x00);
+    PutBytes<uint32_t>(out, {version});
+    for (const TNode& n : top) WriteNode(out, n);
+    out.insert(out.end(), 13, 0);
+    out.insert(out.end(), 16, 0xFA);  // a footer (not read)
+    return out;
+}
+
+// A quad (0 1 2 3) and a triangle (1 4 2), counter-clockwise seen from +Z, in a Z-up file in centimetres
+// x 100 (metres); the model 5 up; the quad in a red material, the triangle in one with a picture.
+std::vector<uint8_t> SampleFbx() {
+    // PolygonVertexIndex 0,1,2,-4, 1,4,-3 compressed by zlib (as the FBX SDK writes big arrays).
+    std::vector<uint8_t> pvi{'i'};
+    const std::vector<uint8_t> z{0x78, 0xDA, 0x63, 0x60, 0x60, 0x60, 0x60, 0x04, 0x62, 0x26, 0x20, 0xFE, 0xF3, 0xFF,
+                                 0xFF, 0x7F, 0x10, 0x9B, 0x05, 0x88, 0xFF, 0x02, 0xD9, 0x00, 0x44, 0x0C, 0x07, 0xFC};
+    PutBytes<uint32_t>(pvi, {7u, 1u, static_cast<uint32_t>(z.size())});
+    pvi.insert(pvi.end(), z.begin(), z.end());
+
+    TNode settings{"GlobalSettings", {}, {{"Properties70", {}, {PInt("UpAxis", 2), PInt("UpAxisSign", 1), PInt("FrontAxis", 1), PInt("FrontAxisSign", -1),
+                                                                PInt("CoordAxis", 0), PInt("CoordAxisSign", 1), P("UnitScaleFactor", {100})}}}};
+    TNode geometry{"Geometry", {Prop<int64_t>('L', 100), PropS(FbxName("Cube", "Geometry")), PropS("Mesh")},
+                   {{"Vertices", {PropD({0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 2, 1, 0})}, {}},
+                    {"PolygonVertexIndex", {pvi}, {}},
+                    {"LayerElementNormal", {Prop<int32_t>('I', 0)},
+                     {{"MappingInformationType", {PropS("ByVertice")}, {}},
+                      {"ReferenceInformationType", {PropS("Direct")}, {}},
+                      {"Normals", {PropD({0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1})}, {}}}},
+                    {"LayerElementUV", {Prop<int32_t>('I', 0)},
+                     {{"MappingInformationType", {PropS("ByPolygonVertex")}, {}},
+                      {"ReferenceInformationType", {PropS("IndexToDirect")}, {}},
+                      {"UV", {PropD({0, 0, 1, 0, 1, 1, 0, 1})}, {}},
+                      {"UVIndex", {PropI({0, 1, 2, 3, 1, 1, 2})}, {}}}},
+                    {"LayerElementMaterial", {Prop<int32_t>('I', 0)},
+                     {{"MappingInformationType", {PropS("ByPolygon")}, {}},
+                      {"ReferenceInformationType", {PropS("IndexToDirect")}, {}},
+                      {"Materials", {PropI({0, 1})}, {}}}}}};
+    TNode model{"Model", {Prop<int64_t>('L', 200), PropS(FbxName("Cube", "Model")), PropS("Mesh")},
+                {{"Properties70", {}, {P("Lcl Translation", {0, 0, 5})}}}};
+    TNode red{"Material", {Prop<int64_t>('L', 300), PropS(FbxName("Red", "Material")), PropS("")},
+              {{"Properties70", {}, {P("DiffuseColor", {1, 0, 0}), P("DiffuseFactor", {0.5})}}}};
+    TNode wood{"Material", {Prop<int64_t>('L', 301), PropS(FbxName("Wood", "Material")), PropS("")}, {}};
+    TNode texture{"Texture", {Prop<int64_t>('L', 400), PropS(FbxName("Wood", "Texture")), PropS("")},
+                  {{"FileName", {PropS("C:\\Users\\someone\\tex\\wood.png")}, {}}, {"RelativeFilename", {PropS("tex\\wood.png")}, {}}}};
+    TNode objects{"Objects", {}, {geometry, model, red, wood, texture}};
+    auto oo = [](int64_t child, int64_t parent) { return TNode{"C", {PropS("OO"), Prop<int64_t>('L', child), Prop<int64_t>('L', parent)}, {}}; };
+    TNode links{"Connections", {}, {oo(200, 0), oo(100, 200), oo(300, 200), oo(301, 200),
+                                    {"C", {PropS("OP"), Prop<int64_t>('L', 400), Prop<int64_t>('L', 301), PropS("DiffuseColor")}, {}}}};
+    return WriteFbx({{"FBXHeaderExtension", {}, {{"FBXVersion", {Prop<int32_t>('I', 7400)}, {}}}}, settings, objects, links});
+}
+
+}  // namespace
+
+RM_TEST(Fbx_Binary_MeshMaterialsAndAxes) {
+    std::string error;
+    const std::vector<uint8_t> file = SampleFbx();
+    int version = 0;
+    const auto nodes = ParseFbxNodes(file, &version, &error);
+    CHECK(nodes && version == 7400 && nodes->size() == 4);
+    if (nodes) {
+        const FbxNode* objects = &(*nodes)[2];
+        CHECK(objects->name == "Objects" && objects->children[0].props[1].text == "Geometry::Cube");  // names turned around
+        CHECK(objects->children[0].Child("PolygonVertexIndex")->props[0].numbers == std::vector<double>({0, 1, 2, -4, 1, 4, -3}));
+    }
+    const auto m = ParseMesh(".FBX", file, nullptr, &error);
+    CHECK(m.has_value());
+    if (!m) return;
+    CHECK(m->indices.size() == 9 && m->vertices.size() == 7);  // a quad (2 triangles) and a triangle
+    // Z up in the file -> Y up here; the model's 5 along the file's Z is 5 up.
+    CHECK(Near(m->vertices[2].position, {1, 5, -1}));
+    CHECK(Near(m->vertices[0].normal, {0, 1, 0}));
+    CHECK(Near(m->min, {0, 5, -1}) && Near(m->max, {2, 5, 0}));
+    for (size_t t = 0; t < m->indices.size(); t += 3) {
+        const Vec3 a = m->vertices[m->indices[t]].position, b = m->vertices[m->indices[t + 1]].position, c = m->vertices[m->indices[t + 2]].position;
+        CHECK(Dot(Cross(b - a, c - a), {0, 1, 0}) > 0);  // the front stays the front
+    }
+    CHECK(NearF(m->vertices[0].uv.x, 0) && NearF(m->vertices[0].uv.y, 1));  // V turned over
+    // Materials: the quad red x 0.5, the triangle the wood picture next to the model.
+    CHECK(m->materials.size() == 2 && m->parts.size() == 2);
+    CHECK(m->materials[0].name == "Red" && NearF(m->materials[0].baseColor.r, 0.5f) && NearF(m->materials[0].baseColor.g, 0));
+    CHECK(m->materials[1].image == 0 && m->images.size() == 1 && m->images[0].file == "tex/wood.png");
+    CHECK(m->parts[0].indexCount == 6 && m->parts[1].indexCount == 3 && m->parts[1].material == 1);
+}
+
+RM_TEST(Fbx_Ascii) {
+    // A triangle, Y up (no GlobalSettings: 1 unit = 1 cm -> 0.01 m), the array wrapped over two lines.
+    const std::string text = "; FBX 7.4.0 project file\n"
+                             "FBXHeaderExtension:  {\n\tFBXVersion: 7400\n}\n"
+                             "Objects:  {\n"
+                             "\tGeometry: 1001, \"Geometry::Tri\", \"Mesh\" {\n"
+                             "\t\tVertices: *9 {\n\t\t\ta: 0,0,0,100,0,0,\n0,100,0\n\t\t} \n"
+                             "\t\tPolygonVertexIndex: *3 {\n\t\t\ta: 0,1,-3\n\t\t} \n"
+                             "\t}\n"
+                             "\tModel: 1002, \"Model::Tri\", \"Mesh\" {\n\t\tVersion: 232\n\t\tShading: T\n\t}\n"
+                             "}\n"
+                             "Connections:  {\n\t;Model::Tri, Model::RootNode\n\tC: \"OO\",1002,0\n\tC: \"OO\",1001,1002\n}\n";
+    std::string error;
+    const auto m = ParseMesh(".fbx", Bytes(text), nullptr, &error);
+    CHECK(m.has_value());
+    if (!m) return;
+    CHECK(m->indices.size() == 3 && Near(m->vertices[1].position, {1, 0, 0}));
+    CHECK(Near(m->vertices[0].normal, {0, 0, 1}));  // no normals: made from the face
+}
+
+RM_TEST(Fbx_BrokenFilesAreToldWhy) {
+    std::string error;
+    std::vector<uint8_t> file = SampleFbx();
+    // Cut short in the middle of the nodes.
+    std::vector<uint8_t> cut(file.begin(), file.begin() + static_cast<std::ptrdiff_t>(file.size() / 2));
+    CHECK(!ParseFbx(cut, &error) && !error.empty());
+    // An old FBX (6.1).
+    CHECK(!ParseFbx(WriteFbx({}, 6100), &error) && error.find("6100") != std::string::npos);
+    // No meshes; not an FBX at all.
+    CHECK(!ParseFbx(WriteFbx({{"Objects", {}, {}}}), &error));
+    CHECK(!ParseFbx(Bytes(std::string("hello")), &error));
+    // A face pointing past the last vertex.
+    TNode geometry{"Geometry", {Prop<int64_t>('L', 1), PropS("G"), PropS("Mesh")},
+                   {{"Vertices", {PropD({0, 0, 0, 1, 0, 0, 0, 1, 0})}, {}}, {"PolygonVertexIndex", {PropI({0, 1, -10})}, {}}}};
+    TNode model{"Model", {Prop<int64_t>('L', 2), PropS("M"), PropS("Mesh")}, {}};
+    TNode links{"Connections", {}, {{"C", {PropS("OO"), Prop<int64_t>('L', 1), Prop<int64_t>('L', 2)}, {}}}};
+    CHECK(!ParseFbx(WriteFbx({{"Objects", {}, {geometry, model}}, links}), &error));
+    CHECK(error.find("9") != std::string::npos);
 }

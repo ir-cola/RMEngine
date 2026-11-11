@@ -6,6 +6,7 @@
 //             file). Every mesh of the default scene, placed by its nodes (matrix or T / R / S),
 //             becomes one mesh in the model's own space. Triangles, strips and fans.
 //   OBJ:      v / vt / vn / f (polygons are cut into triangles; negative numbers count from the end).
+//   FBX:      binary and ASCII 7.x - Fbx.h.
 //
 // Materials (metal / roughness PBR, as glTF): glTF's pbrMetallicRoughness (baseColorFactor /
 // Texture, metallicFactor, roughnessFactor, metallicRoughnessTexture), normalTexture (+ scale),
@@ -25,6 +26,7 @@
 //   auto mesh = space3d::ParseMesh(".glb", bytes, readRelated, &error);   // nullopt: error says why (Japanese)
 
 #include "base/Math.h"
+#include "rm_engine/space3d/runtime/Transform.h"
 
 #include <cstdint>
 #include <functional>
@@ -99,7 +101,7 @@ struct MeshData {
 // when it cannot be read.
 using ReadRelated = std::function<std::optional<std::vector<uint8_t>>(std::string_view uri)>;
 
-// By the file's extension (".gltf" / ".glb" / ".obj", any case).
+// By the file's extension (".gltf" / ".glb" / ".obj" / ".fbx", any case).
 std::optional<MeshData> ParseMesh(std::string_view extension, std::span<const uint8_t> bytes, const ReadRelated& read,
                                   std::string* error);
 // .gltf or .glb (told apart by the first bytes).
@@ -120,6 +122,11 @@ float ScreenToLinear(float screen);
 // The triangles sorted by material (stable: the order inside a material stays), and the parts that
 // say where each material's run is. `materialOfTriangle` has one entry per triangle.
 void SortByMaterial(MeshData& mesh, std::span<const int> materialOfTriangle);
+
+// `part`'s vertices and triangles added to `out`, placed by `world` (normals by its inverse
+// transpose; a mirroring `world` turns the triangles back, so the front stays counter-clockwise).
+// Parts / materials are not touched (the reader sorts by material at the end).
+void AppendPlaced(MeshData& out, const MeshData& part, const Mat4& world);
 
 // Smooth normals from the triangles (each triangle counts by its area); a vertex on no triangle
 // points up.

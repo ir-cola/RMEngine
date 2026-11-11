@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "3D モデルに FBX (.fbx、バイナリーとテキストの 7.x) が使える: 形・法線・UV・材質の色と絵・模型の親子。Z が上やセンチメートルのファイルも向きと大きさを直して読む",
+          "en": "3D models can be FBX (.fbx, binary and ASCII 7.x): shape, normals, UVs, material colours and pictures, and the model hierarchy. Files with Z up or in centimetres are turned and scaled to fit"
+        },
+        {
           "ja": "2D のシーンビュー: 四角で囲んで選ぶ・ギズモの「それぞれ / 中心」(Z)・刻みの幅を決める箱。スプライトのアトラス (1 枚の画像をコマに切る) と部品「スプライトのアニメーション」(Play でコマ送り)。カメラ (2D) がエンティティと一緒に回る。3D のゲームのゲームビューに、カメラ (2D) で見た 2D の絵を重ねる (「3D の上に重ねる」)",
           "en": "2D scene view: box selection, the gizmo's Each / Center (Z) and a box to set the snap steps. Sprite atlases (one image cut into cells) and a new Sprite Animation component (steps through cells in Play). Camera (2D) turns with its entity. In a 3D game, the game view lays the 2D picture seen through a Camera (2D) over the 3D one (Overlay on 3D)"
         },
