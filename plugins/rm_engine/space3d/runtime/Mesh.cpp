@@ -934,6 +934,14 @@ void AppendPlaced(MeshData& out, const MeshData& part, const Mat4& world) {
     }
 }
 
+bool IndicesInRange(const MeshData& mesh, std::string* error) {
+    const size_t n = mesh.vertices.size();
+    for (size_t k = 0; k < mesh.indices.size(); ++k) {
+        if (mesh.indices[k] >= n) return Fail(error, std::format("インデックス {} (の {} 番目) が頂点の数 ({}) を超えています", mesh.indices[k], k, n));
+    }
+    return true;
+}
+
 void ComputeNormals(MeshData& mesh) {
     for (MeshVertex& v : mesh.vertices) v.normal = {0, 0, 0};
     for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {

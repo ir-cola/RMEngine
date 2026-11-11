@@ -24,7 +24,9 @@ Vec3 Normalize(Vec3 v);  // (0,0,0) stays (0,0,0)
 
 // p' = M * (p, w): w = 1 for a point (moves), 0 for a direction (does not).
 Vec3 TransformDirection(const Mat4& m, Vec3 d);
-std::optional<Mat4> Inverse(const Mat4& m);  // nullopt when it cannot be inverted (a scale of 0)
+// nullopt when it cannot be inverted: a scale of 0, or columns (nearly) in a plane - judged against
+// the columns' lengths, so a tiny thing (a uniform scale of 1e-6) still inverts.
+std::optional<Mat4> Inverse(const Mat4& m);
 
 Mat4 Perspective(float fovYDegrees, float aspect, float nearZ, float farZ);
 // A box of view space (x left..right, y bottom..top, z -nearZ..-farZ: in front of the eye) -> -1..1, -1..1, 0..1.

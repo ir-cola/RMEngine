@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "とても小さな物 (大きさ 0.0001 以下) もシーンビューでクリックして選べ、ワールドの値も打てるように。ギズモで 1 つの軸の大きさを 0 や裏返しにできないように。つながりの多い大きな FBX も速く読む",
+          "en": "Very small objects (scale 0.0001 or less) can be clicked in the scene view and given world values. The gizmo can no longer scale one axis to zero or inside out. Big FBX files with many links load quickly"
+        },
+        {
           "ja": "3D: 大きな絵をたくさん持つモデルでも、絵を GPU に上げるのを 1 フレームずつに分けて画面が止まらないように。GPU が作り直された後に古い絵を使わない",
           "en": "3D: models with many big pictures put them on the GPU a few per frame, so the screen does not stall. Pictures from before the GPU was made again are never used"
         },

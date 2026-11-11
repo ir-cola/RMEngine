@@ -339,7 +339,7 @@ std::optional<Change> Update(const Drag& d, const Screen& s, Vec2 mouse, const S
         const Vec2 m = Sub(mouse, d.startMouse);
         float factor = 1.f + (m.x - m.y) * 0.01f;  // right / up: bigger
         if (snap.on) factor = 1.f + Step(factor - 1.f, snap.scale);
-        c.factor = std::max(factor, 0.01f);
+        c.factor = std::max(factor, kMinScaleFactor);
         return c;
     }
     if (d.tool == Tool::Rotate) {
@@ -380,7 +380,7 @@ std::optional<Change> Update(const Drag& d, const Screen& s, Vec2 mouse, const S
     if (d.tool == Tool::Scale) {
         float factor = std::fabs(d.startT) > 1e-6f ? *t / d.startT : 1.f;
         if (snap.on) factor = 1.f + Step(factor - 1.f, snap.scale);
-        c.factor = factor;
+        c.factor = std::max(factor, kMinScaleFactor);  // as the uniform box: never 0 or turned inside out
         return c;
     }
     float along = *t - d.startT;

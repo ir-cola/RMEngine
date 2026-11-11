@@ -36,9 +36,11 @@ Vec3 TransformDirection(const Mat4& m, Vec3 d) {
 }
 
 std::optional<Mat4> Inverse(const Mat4& mat) {
-    // Cofactors of the 16 numbers as stored (the inverse of the stored layout is the stored inverse).
-    const float* m = &mat.m[0][0];
-    float inv[16];
+    // Cofactors of the 16 numbers as stored (the inverse of the stored layout is the stored inverse),
+    // in double: a thing 1e-5 across has a determinant of 1e-15, too close to float's floor.
+    double m[16];
+    for (int i = 0; i < 16; ++i) m[i] = (&mat.m[0][0])[i];
+    double inv[16];
     inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
     inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
     inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
@@ -55,11 +57,16 @@ std::optional<Mat4> Inverse(const Mat4& mat) {
     inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
     inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
     inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
-    const float det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
-    if (std::fabs(det) < 1e-12f) return std::nullopt;
+    const double det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+    // Not invertible = the columns (nearly) lie in a smaller space - told by the determinant against
+    // the largest it could be for columns that long (Hadamard: |det| <= the product of their lengths).
+    // A small thing (all columns short) is fine; only a flattened one is not.
+    double longest = 1;
+    for (int c = 0; c < 4; ++c) longest *= std::sqrt(m[c * 4] * m[c * 4] + m[c * 4 + 1] * m[c * 4 + 1] + m[c * 4 + 2] * m[c * 4 + 2] + m[c * 4 + 3] * m[c * 4 + 3]);
+    if (!(longest > 0) || !(std::fabs(det) > 1e-7 * longest)) return std::nullopt;  // NaN fails too
     Mat4 out;
     float* o = &out.m[0][0];
-    for (int i = 0; i < 16; ++i) o[i] = inv[i] / det;
+    for (int i = 0; i < 16; ++i) o[i] = static_cast<float>(inv[i] / det);
     return out;
 }
 

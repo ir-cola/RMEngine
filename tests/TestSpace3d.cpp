@@ -1730,3 +1730,107 @@ RM_TEST(MeshLoader_CancelStopsAReadingInTheMiddle) {
     }
     CHECK(started == 2);
 }
+
+// --- Big but honest files, tiny things, meshes from elsewhere ------------------------------------
+
+RM_TEST(Fbx_ManyLinksStayQuick) {
+    // 33,000 models under one root, each with the same geometry and material: about 100,000 links.
+    // Looking at every link for every geometry would take minutes; the indexes make it a moment.
+    constexpr int kModels = 33'000;
+    std::vector<TNode> objects;
+    objects.push_back({"Geometry", {Prop<int64_t>('L', 1), PropS(FbxName("T", "Geometry")), PropS("Mesh")},
+                       {{"Vertices", {PropD({0, 0, 0, 1, 0, 0, 0, 1, 0})}, {}}, {"PolygonVertexIndex", {PropI({0, 1, -3})}, {}}}});
+    objects.push_back({"Material", {Prop<int64_t>('L', 2), PropS(FbxName("M", "Material")), PropS("")}, {}});
+    objects.push_back({"Model", {Prop<int64_t>('L', 10), PropS(FbxName("Root", "Model")), PropS("Null")}, {}});
+    TNode links{"Connections", {}, {{"C", {PropS("OO"), Prop<int64_t>('L', 10), Prop<int64_t>('L', 0)}, {}}}};
+    for (int i = 0; i < kModels; ++i) {
+        const int64_t id = 100 + i;
+        objects.push_back({"Model", {Prop<int64_t>('L', id), PropS(FbxName("T", "Model")), PropS("Mesh")}, {}});
+        links.kids.push_back({"C", {PropS("OO"), Prop<int64_t>('L', id), Prop<int64_t>('L', 10)}, {}});
+        links.kids.push_back({"C", {PropS("OO"), Prop<int64_t>('L', 1), Prop<int64_t>('L', id)}, {}});
+        links.kids.push_back({"C", {PropS("OO"), Prop<int64_t>('L', 2), Prop<int64_t>('L', id)}, {}});
+    }
+    const std::vector<uint8_t> file = WriteFbx({{"Objects", {}, objects}, links});
+    std::string error;
+    const auto start = std::chrono::steady_clock::now();
+    const auto m = ParseFbx(file, &error);
+    CHECK(m && m->indices.size() == size_t{kModels} * 3 && m->materials.size() == 1);
+    CHECK(SecondsSince(start) < 10);
+}
+
+RM_TEST(Space3d_Inverse_TinyThingsStillInvert) {
+    for (const float s : {1e-4f, 1e-6f, 1e-8f}) {
+        // At the origin: far from it, float itself cannot hold a 1e-6 step (100 + 1e-6 is 100).
+        Transform t;
+        t.rotation = {10, 20, 30};
+        t.scale = {s, s, s};
+        const Mat4 m = LocalMatrix(t);
+        const auto inv = Inverse(m);
+        CHECK(inv.has_value());
+        if (!inv) continue;
+        const Vec3 p{0.5f, -0.25f, 0.125f};  // in the thing's own space
+        const Vec3 back = TransformPoint(*inv, TransformPoint(m, p));
+        CHECK(Length(back - p) < 1e-3f);
+        // A click hits it, and F would frame it (its bounds placed).
+        const Ray ray{{0, 0, 50}, {0, 0, -1}};
+        CHECK(IntersectPlacedCube(ray, m).has_value());
+    }
+    // Uneven but not flat: a long thin rod.
+    Transform rod;
+    rod.scale = {1, 1e-4f, 1e-4f};
+    CHECK(Inverse(LocalMatrix(rod)).has_value());
+    // Flat (a scale of 0) and nearly flat (two columns all but parallel): not invertible.
+    Transform flat;
+    flat.scale = {1, 0, 1};
+    CHECK(!Inverse(LocalMatrix(flat)).has_value());
+    Mat4 sheared;
+    sheared.m[1][0] = 1, sheared.m[1][1] = 1e-9f;  // the Y column = (1, 1e-9, 0): the X column, almost
+    CHECK(!Inverse(sheared).has_value());
+    Mat4 broken;
+    broken.m[0][0] = std::numeric_limits<float>::quiet_NaN();
+    CHECK(!Inverse(broken).has_value());
+}
+
+RM_TEST(Space3d_FromWorld_UnderATinyParent) {
+    // A child under a parent scaled to 1e-5: typing a world position still puts it there.
+    Transform parent;
+    parent.scale = {1e-5f, 1e-5f, 1e-5f};
+    const Mat4 pw = LocalMatrix(parent);
+    Transform child;
+    WorldPlacement want = Decompose(WorldMatrix(pw, child));
+    want.position = {2e-5f, 0, 0};
+    const Transform t = FromWorld(child, pw, want);
+    CHECK(std::abs(t.position.x - 2.f) < 1e-3f);
+}
+
+RM_TEST(Gizmo_ScaleOneAxisNeverReachesZero) {
+    using gizmo::Handle;
+    using gizmo::Tool;
+    const OrbitView v = FrontView();
+    const gizmo::Screen s = ScreenOf(v);
+    const gizmo::Frame f = *gizmo::MakeFrame(Mat4{}, Tool::Scale, gizmo::Space::World, v, 600);
+    const gizmo::Snap smooth;
+    const auto x = gizmo::BeginDrag(Tool::Scale, Handle::X, f, s, v.Eye(), {490, 300});
+    CHECK(x.has_value());
+    if (!x) return;
+    // Dragged back through the middle and past it: the factor stops at the least, as the uniform box's.
+    for (const float to : {400.f, 300.f, 100.f}) {
+        const auto c = gizmo::Update(*x, s, {to, 300}, smooth);
+        CHECK(c && c->factor >= gizmo::kMinScaleFactor && c->axis == 0);
+    }
+    const auto all = gizmo::BeginDrag(Tool::Scale, Handle::Uniform, f, s, v.Eye(), {400, 300});
+    const auto c = gizmo::Update(*all, s, {100, 300}, smooth);
+    CHECK(c && c->factor == gizmo::kMinScaleFactor);
+}
+
+RM_TEST(Mesh_IndicesInRange) {
+    MeshData m;
+    m.vertices.resize(3);
+    m.indices = {0, 1, 2};
+    std::string error;
+    CHECK(IndicesInRange(m, &error));
+    m.indices = {0, 1, 3};
+    CHECK(!IndicesInRange(m, &error) && error.find("超えて") != std::string::npos);
+    m.indices = {0, 1, 0xFFFFFFFFu};
+    CHECK(!IndicesInRange(m, &error));
+}

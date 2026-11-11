@@ -84,6 +84,9 @@ inline constexpr float kBackPenalty = 5.f;  // pixels: a ring's back half is gra
 // A circle facing the eye around the gizmo, `radius` x size (closed: its last point is its first).
 // kViewRing = the outer ring (Handle::View); 1 = the ball's outline, inside which a drag turns freely.
 inline constexpr float kViewRing = 1.18f;
+// A scale drag (one axis or all three) never makes a thing smaller than this times its size at the
+// start: never 0 (it could not be grabbed, or inverted, again) and never turned inside out.
+inline constexpr float kMinScaleFactor = 0.01f;
 std::vector<Vec3> FacingCircle(const Frame& f, Vec3 eye, float radius, int segments = 64);
 // An axis that points almost straight at the eye is not drawn or grabbed (it would be a dot).
 bool AxisShown(const Frame& f, const Screen& s, int axis);

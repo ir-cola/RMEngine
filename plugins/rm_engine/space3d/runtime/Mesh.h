@@ -158,6 +158,10 @@ void SortByMaterial(MeshData& mesh, std::span<const int> materialOfTriangle);
 // Parts / materials are not touched (the reader sorts by material at the end).
 void AppendPlaced(MeshData& out, const MeshData& part, const Mat4& world);
 
+// Every index names a vertex that is there (the readers check as they read; this is for meshes
+// made elsewhere - a plugin's own - before they are used: Renderer::Upload). False and *error.
+bool IndicesInRange(const MeshData& mesh, std::string* error);
+
 // Smooth normals from the triangles (each triangle counts by its area); a vertex on no triangle
 // points up.
 void ComputeNormals(MeshData& mesh);

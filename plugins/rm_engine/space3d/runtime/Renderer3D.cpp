@@ -526,6 +526,12 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     if (mesh.vertices.size() > UINT32_MAX / sizeof(MeshVertex) || mesh.indices.size() > UINT32_MAX / sizeof(uint32_t)) {
         return fail("頂点が多すぎて GPU に載せられません");
     }
+    // A mesh made by a plugin directly (not through the readers) may point past its vertices: the
+    // part boxes below read vertices[indices[k]] on the CPU.
+    if (std::string why; !IndicesInRange(mesh, &why)) {
+        if (error) *error = why;
+        return nullptr;
+    }
     auto gpu = std::make_shared<GpuMesh>();
     D3D11_BUFFER_DESC bd{};
     bd.Usage = D3D11_USAGE_IMMUTABLE;  // written once, never changed
