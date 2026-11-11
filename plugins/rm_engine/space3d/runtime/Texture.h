@@ -13,13 +13,16 @@
 //                  the pictures in files next to it come from the cache
 //
 // Until a picture is ready its material is drawn without it (the drawer asks for more frames while
-// TextureCache::Waiting). A picture that cannot be read is told once in the console (Japanese, with
-// why) and the material is drawn without it. Pictures bigger than kMaxTextureSize (or the image's
+// TextureCache::Waiting). The copies to the GPU of one frame stop at kUploadBytesPerFrame (at least
+// one is made): the rest go on the next frames. A picture made by another renderer (the GPU was made
+// again) is never used: it is read again. A picture that cannot be read is told once in the console
+// (Japanese, with why) and the material is drawn without it. Pictures bigger than kMaxTextureSize (or the image's
 // import setting) are made smaller.
 
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <condition_variable>
@@ -49,7 +52,7 @@ struct PictureSlot {
 };
 constexpr size_t kPictureSlots = 4;
 std::array<PictureSlot, kPictureSlots> PictureSlots(const MeshMaterial& m);
-void SetPicture(DrawMaterial& d, size_t slot, const GpuTexture* texture);
+void SetPicture(DrawMaterial& d, size_t slot, TextureRef texture);
 
 class PictureDecoder {
 public:
@@ -94,19 +97,23 @@ private:
 
 class TextureCache {
 public:
-    static constexpr double kCheckSeconds = 1.0;  // how often a file is looked at again
+    static constexpr double kCheckSeconds = 1.0;                // how often a file is looked at again
+    static constexpr size_t kUploadBytesPerFrame = 32u << 20;   // GPU copies in one frame (after the first)
 
     // The picture of `file` (a full path) as colours (srgb) or numbers - kept apart; null when it is
     // not ready yet or cannot be read (told once - again only after the file changed). `now`:
-    // seconds, any clock that goes forward. Call it every frame the picture is used.
-    const GpuTexture* Get(Renderer& renderer, const std::filesystem::path& file, bool srgb, double now);
+    // seconds, any clock that goes forward - a new value is a new frame. Call it every frame the
+    // picture is used.
+    TextureRef Get(Renderer& renderer, const std::filesystem::path& file, bool srgb, double now);
+    // Whether a copy of `bytes` to the GPU may be made in the frame `now` (counted when it may).
+    bool MayUpload(size_t bytes, double now);
     // Pictures nobody asked for in `seconds` leave the GPU.
     void ForgetUnused(double now, double seconds);
     // Everything goes (the GPU's devices were made again: read again when asked).
     void Clear() { entries_.clear(); }
     size_t Size() const { return entries_.size(); }
-    // Pictures being decoded (draw again until 0).
-    size_t Waiting() const { return decoder_.Waiting(); }
+    // Pictures being decoded or waiting for their copy to the GPU (draw again until 0).
+    size_t Waiting() const { return decoder_.Waiting() + std::max(deferred_, deferredBefore_); }
     PictureDecoder& Decoder() { return decoder_; }
 
 private:
@@ -120,7 +127,10 @@ private:
         double checkedAt = 0, usedAt = 0;
     };
     std::unordered_map<std::wstring, Entry> entries_;
-    PictureDecoder decoder_;  // last: its thread stops first
+    double frame_ = -1;           // the frame being drawn (MayUpload)
+    size_t uploaded_ = 0;         // bytes copied to the GPU in it
+    size_t deferred_ = 0, deferredBefore_ = 0;  // copies put off to a later frame (this one, the one before)
+    PictureDecoder decoder_;      // last: its thread stops first
 };
 
 class ModelPaint {
@@ -135,13 +145,14 @@ public:
     size_t Pictures() const;  // how many pictures the materials use (for the console)
 
 private:
-    // A picture written inside the model, once per way it is read.
+    // A picture written inside the model, once per way it is read (its bytes kept: read again if the
+    // GPU is made again).
     struct Inside {
         std::shared_ptr<const std::vector<uint8_t>> bytes;
         std::string name;
         bool srgb = true;
         std::shared_ptr<PictureDecoder::Job> job;
-        std::shared_ptr<const GpuTexture> gpu;
+        TextureRef gpu;
         bool failed = false;
     };
     // One picture of a material: inside the model (an index into inside_) or a file (from the cache).

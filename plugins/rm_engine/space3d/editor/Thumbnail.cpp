@@ -139,7 +139,7 @@ bool DrawModelThumbnail(platform::Gfx& gfx, const void* prepared, uint32_t size,
         DrawMaterial d = MaterialNumbers(mesh.materials[i]);
         for (size_t k = 0; k < kPictureSlots; ++k) {
             const int t = p.slots[i][k];
-            SetPicture(d, k, t >= 0 ? textures[static_cast<size_t>(t)].get() : nullptr);
+            SetPicture(d, k, t >= 0 ? textures[static_cast<size_t>(t)] : nullptr);
         }
         materials.push_back(d);
     }

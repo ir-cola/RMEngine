@@ -72,14 +72,45 @@ void PictureDecoder::Run(std::stop_token stop) {
 
 // --- TextureCache --------------------------------------------------------------------------------
 
-const GpuTexture* TextureCache::Get(Renderer& renderer, const std::filesystem::path& file, bool srgb, double now) {
+namespace {
+
+size_t BytesOf(const TexturePixels& p) {
+    size_t n = 0;
+    for (const platform::Image& l : p.levels) n += l.pixels.size();
+    return n;
+}
+
+}  // namespace
+
+bool TextureCache::MayUpload(size_t bytes, double now) {
+    if (now != frame_) {
+        frame_ = now;
+        uploaded_ = 0;
+        deferredBefore_ = deferred_;
+        deferred_ = 0;
+    }
+    if (uploaded_ > 0 && uploaded_ + bytes > kUploadBytesPerFrame) {
+        ++deferred_;
+        return false;
+    }
+    uploaded_ += bytes;
+    return true;
+}
+
+TextureRef TextureCache::Get(Renderer& renderer, const std::filesystem::path& file, bool srgb, double now) {
     Entry& e = entries_[(srgb ? L"c:" : L"n:") + file.native()];
     e.usedAt = now;
     const std::string name = PathToUtf8(file.filename());
-    if (e.job && e.job->Done()) {
-        // Decoded: only the copy to the GPU is left.
+    if (e.gpu && e.gpu->madeBy != renderer.Id()) {
+        // Made by another renderer (the GPU was made again): never used here - read again.
+        e.gpu.reset();
+        e.job.reset();
+        e.loaded = false;
+    }
+    if (e.job && e.job->Done() && (!e.job->pixels || MayUpload(BytesOf(*e.job->pixels), now))) {
+        // Decoded: only the copy to the GPU is left (put off to a later frame when this one has copied enough).
         std::string error = e.job->error;
-        std::shared_ptr<const GpuTexture> gpu = e.job->pixels ? renderer.UploadTexture(*e.job->pixels, &error, e.sharp) : nullptr;
+        TextureRef gpu = e.job->pixels ? renderer.UploadTexture(*e.job->pixels, &error, e.sharp) : nullptr;
         const bool again = e.gpu != nullptr;
         e.job.reset();
         if (gpu) {
@@ -90,7 +121,7 @@ const GpuTexture* TextureCache::Get(Renderer& renderer, const std::filesystem::p
             log::Warn("テクスチャ「{}」を読めないので、その絵なしで描きます: {}", name, error);
         }
     }
-    if (e.loaded && now - e.checkedAt < kCheckSeconds) return e.gpu.get();
+    if (e.loaded && now - e.checkedAt < kCheckSeconds) return e.gpu;
     e.checkedAt = now;
     std::error_code ec;
     const auto time = asset::ChangedAt(file, ec);  // the picture or its import settings (.meta)
@@ -103,7 +134,7 @@ const GpuTexture* TextureCache::Get(Renderer& renderer, const std::filesystem::p
         e.told = true;
         return nullptr;
     }
-    if (e.loaded && time == e.time) return e.gpu.get();  // not changed (ready, being read, or could not be read)
+    if (e.loaded && time == e.time) return e.gpu;  // not changed (ready, being read, or could not be read)
     e.loaded = true;
     e.time = time;
     e.told = false;
@@ -112,7 +143,7 @@ const GpuTexture* TextureCache::Get(Renderer& renderer, const std::filesystem::p
     e.sharp = imp.sharp;
     const uint32_t most = std::min(kMaxTextureSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
     e.job = decoder_.Request({nullptr, file, srgb, most});
-    return e.gpu.get();
+    return e.gpu;
 }
 
 void TextureCache::ForgetUnused(double now, double seconds) {
@@ -138,12 +169,12 @@ std::array<PictureSlot, kPictureSlots> PictureSlots(const MeshMaterial& m) {
             PictureSlot{m.emissiveImage, true}};
 }
 
-void SetPicture(DrawMaterial& d, size_t slot, const GpuTexture* texture) {
+void SetPicture(DrawMaterial& d, size_t slot, TextureRef texture) {
     switch (slot) {
-        case 0: d.texture = texture; break;
-        case 1: d.metalRough = texture; break;
-        case 2: d.normal = texture; break;
-        default: d.emission = texture; break;
+        case 0: d.texture = std::move(texture); break;
+        case 1: d.metalRough = std::move(texture); break;
+        case 2: d.normal = std::move(texture); break;
+        default: d.emission = std::move(texture); break;
     }
 }
 
@@ -188,31 +219,30 @@ void ModelPaint::Load(const MeshData& mesh, const std::filesystem::path& modelFi
 }
 
 std::span<const DrawMaterial> ModelPaint::Materials(Renderer& renderer, TextureCache& cache, double now) {
-    // The pictures inside the model: asked for once, put on the GPU when decoded.
+    // The pictures inside the model: asked for once, put on the GPU when decoded (and the frame has room).
     for (Inside& in : inside_) {
+        if (in.gpu && in.gpu->madeBy != renderer.Id()) in.gpu.reset();  // the GPU was made again: read again
         if (in.gpu || in.failed) continue;
         if (!in.job) {
             in.job = cache.Decoder().Request({in.bytes, {}, in.srgb, kMaxTextureSize});
             continue;
         }
-        if (!in.job->Done()) continue;
+        if (!in.job->Done() || (in.job->pixels && !cache.MayUpload(BytesOf(*in.job->pixels), now))) continue;
         std::string error = in.job->error;
         if (in.job->pixels) in.gpu = renderer.UploadTexture(*in.job->pixels, &error);
         in.job.reset();
         if (!in.gpu) {
             in.failed = true;
             log::Warn("モデル「{}」: 中の画像「{}」を読めないので、その絵なしで描きます: {}", name_, in.name, error);
-        } else {
-            in.bytes.reset();  // on the GPU: the file's bytes are not needed any more
         }
     }
     for (size_t i = 0; i < draw_.size(); ++i) {
         for (size_t k = 0; k < kPictureSlots; ++k) {
             const Slot& sl = slots_[i][k];
-            const GpuTexture* t = sl.inside >= 0 ? inside_[static_cast<size_t>(sl.inside)].gpu.get()
-                                  : sl.file.empty() ? nullptr
-                                                    : cache.Get(renderer, sl.file, sl.srgb, now);
-            SetPicture(draw_[i], k, t);
+            TextureRef t = sl.inside >= 0 ? inside_[static_cast<size_t>(sl.inside)].gpu
+                           : sl.file.empty() ? nullptr
+                                             : cache.Get(renderer, sl.file, sl.srgb, now);
+            SetPicture(draw_[i], k, std::move(t));
         }
     }
     return draw_;

@@ -6,6 +6,7 @@
 #include <d3dcompiler.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <format>
 
@@ -369,6 +370,8 @@ MeshData FloorPlane() {
 
 bool Renderer::Init(ID3D11Device* device, std::string* error) {
     device_ = device;
+    static std::atomic<uint64_t> next{0};
+    id_ = ++next;
     Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs;
     if (!Compile("LineVS", "vs_4_0", lvs, error) || !Compile("LinePS", "ps_4_0", lps, error) || !Compile("MeshVS", "vs_4_0", mvs, error) ||
         !Compile("MeshPS", "ps_4_0", mps, error) || !Compile("FloorPS", "ps_4_0", fps, error) || !Compile("ShadowVS", "vs_4_0", svs, error)) {
@@ -590,6 +593,8 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const TexturePixels& p
     gpu->width = top.width;
     gpu->height = top.height;
     gpu->srgb = pixels.srgb;
+    gpu->madeBy = id_;
+    for (const platform::Image& l : pixels.levels) gpu->bytes += l.pixels.size();
     return gpu;
 }
 
@@ -737,7 +742,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             put(c.pbr, {mat.metallic, mat.roughness, mat.normalScale, mat.metalRough ? 1.f : 0.f});
             put(c.emissive, {mat.emissive.r, mat.emissive.g, mat.emissive.b, mat.emission ? 1.f : 0.f});
             auto view = [](const GpuTexture* t) -> ID3D11ShaderResourceView* { return t ? t->view.Get() : nullptr; };
-            ID3D11ShaderResourceView* views[4] = {view(mat.texture), view(mat.metalRough), view(mat.normal), view(mat.emission)};
+            ID3D11ShaderResourceView* views[4] = {view(mat.texture.get()), view(mat.metalRough.get()), view(mat.normal.get()),
+                                                  view(mat.emission.get())};
             ctx->PSSetShaderResources(1, 4, views);
             // (the colour picture decides: くっきり is the image's import setting)
             ID3D11SamplerState* sampler = mat.texture && mat.texture->sharp ? sharpSampler_.Get() : textureSampler_.Get();

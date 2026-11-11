@@ -84,6 +84,8 @@ public:
     uint32_t width = 0, height = 0;
     bool srgb = false;  // read as colours (sRGB -> linear) or as numbers
     bool sharp = false;  // drawn with the nearest pixel (no smoothing): the image's import setting
+    size_t bytes = 0;    // on the GPU, its mipmaps included
+    uint64_t madeBy = 0;  // the Renderer::Id that made it (another one - a GPU made again - cannot use it)
 
 private:
     friend class Renderer;
@@ -91,17 +93,20 @@ private:
 };
 
 // How one material of a model is painted (MeshMaterial on the GPU; a null picture: the numbers only).
+// The pictures are shared: a material keeps its pictures alive while it is drawn, even if the cache
+// reads a file again (and lets go of the old picture) meanwhile.
+using TextureRef = std::shared_ptr<const GpuTexture>;
 struct DrawMaterial {
-    Color color{1, 1, 1, 1};              // linear light
-    const GpuTexture* texture = nullptr;  // the colour (sRGB)
+    Color color{1, 1, 1, 1};  // linear light
+    TextureRef texture;       // the colour (sRGB)
     AlphaMode alpha = AlphaMode::Opaque;
     float alphaCutoff = 0.5f;  // Mask: less than this is not drawn
     float metallic = 0.f, roughness = 0.8f;
-    const GpuTexture* metalRough = nullptr;  // blue: metal, green: rough
-    const GpuTexture* normal = nullptr;      // tangent space
+    TextureRef metalRough;  // blue: metal, green: rough
+    TextureRef normal;      // tangent space
     float normalScale = 1.f;
-    Color emissive{0, 0, 0, 1};               // linear light, may be more than 1
-    const GpuTexture* emission = nullptr;    // sRGB
+    Color emissive{0, 0, 0, 1};  // linear light, may be more than 1
+    TextureRef emission;         // sRGB
 };
 
 struct MeshDraw {
@@ -135,6 +140,8 @@ public:
 
     bool Init(ID3D11Device* device, std::string* error);
     bool Ready() const { return meshVs_ != nullptr; }
+    // Different for every Init (of any renderer): what a GpuTexture remembers as madeBy.
+    uint64_t Id() const { return id_; }
     // The shape goes to the GPU once; null (and *error, Japanese) when it cannot.
     std::shared_ptr<const GpuMesh> Upload(const MeshData& mesh, std::string* error);
     // A picture (PixelOrder::Rgba) goes to the GPU once, with its mipmaps; null (and *error) when it
@@ -185,6 +192,7 @@ private:
     template <class T>
     using Ptr = Microsoft::WRL::ComPtr<T>;
     Ptr<ID3D11Device> device_;
+    uint64_t id_ = 0;
     Ptr<ID3D11VertexShader> lineVs_, meshVs_, shadowVs_;
     Ptr<ID3D11PixelShader> linePs_, meshPs_, floorPs_;
     Ptr<ID3D11InputLayout> lineLayout_, meshLayout_;

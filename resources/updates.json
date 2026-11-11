@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "3D: 大きな絵をたくさん持つモデルでも、絵を GPU に上げるのを 1 フレームずつに分けて画面が止まらないように。GPU が作り直された後に古い絵を使わない",
+          "en": "3D: models with many big pictures put them on the GPU a few per frame, so the screen does not stall. Pictures from before the GPU was made again are never used"
+        },
+        {
           "ja": "256 MB を超えるプロジェクトファイルは、保存すると開けなくなるので保存しないで理由を出すように (近づくとコンソールに警告)",
           "en": "A project file over 256 MB is no longer saved (it could not be opened again); the reason is shown, and the console warns when it gets close"
         },
