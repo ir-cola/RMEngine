@@ -16,6 +16,7 @@
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/MeshLoader.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
+#include "rm_engine/space3d/runtime/TexturePixels.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
 
@@ -856,6 +857,32 @@ RM_TEST(Space3d_BackToFront) {
     const std::vector<Vec3> centers{{0, 0, 5}, {0, 0, -5}, {0, 0, 0}, {5, 0, 10}, {0, 0, 0}};
     CHECK(BackToFront(centers, eye) == std::vector<size_t>({1, 2, 4, 0, 3}));
     CHECK(BackToFront({}, eye).empty());
+}
+
+RM_TEST(TexturePixels_MipmapsAveragedAsLight) {
+    // 4 x 2: the left half black, the right half white (a colour picture), alpha 255 / 0.
+    platform::Image img;
+    img.width = 4;
+    img.height = 2;
+    for (uint32_t y = 0; y < 2; ++y) {
+        for (uint32_t x = 0; x < 4; ++x) {
+            const uint8_t v = x < 2 ? 0 : 255;
+            img.pixels.insert(img.pixels.end(), {v, v, v, static_cast<uint8_t>(x % 2 ? 0 : 255)});
+        }
+    }
+    const TexturePixels colour = MakeTexturePixels(img, true);
+    CHECK(colour.srgb && colour.levels.size() == 3);  // 4x2, 2x1, 1x1
+    if (colour.levels.size() != 3) return;
+    CHECK(colour.levels[1].width == 2 && colour.levels[1].height == 1 && colour.levels[2].width == 1 && colour.levels[2].height == 1);
+    CHECK(colour.levels[1].pixels[0] == 0 && colour.levels[1].pixels[4] == 255);
+    // Half black, half white as light is the screen's 188, not 128 (which would look darker).
+    CHECK(std::abs(int(colour.levels[2].pixels[0]) - 188) <= 1);
+    CHECK(std::abs(int(colour.levels[2].pixels[3]) - 128) <= 1);  // alpha: as it is
+    // Numbers (a normal map, metal / rough) are averaged as they are.
+    const TexturePixels numbers = MakeTexturePixels(img, false);
+    CHECK(!numbers.srgb && numbers.levels.size() == 3 && std::abs(int(numbers.levels[2].pixels[0]) - 128) <= 1);
+    // An empty picture: nothing to put on the GPU.
+    CHECK(MakeTexturePixels(platform::Image{}, true).levels.empty());
 }
 
 RM_TEST(Space3d_BoundsAndShadowMatrix) {

@@ -183,7 +183,8 @@ public:
         now_ = c.Time();
         Place(host);
         ForgetUnusedModels();
-        if (loader_.Pending() > 0) c.RequestAnimation();  // drawn again until the models being read arrive
+        // Drawn again until the models (and their pictures) being read on the other threads arrive.
+        if (loader_.Pending() > 0 || textures_.Waiting() > 0) c.RequestAnimation();
         if (host.game) {  // the game view: only the picture, through the game's camera
             DrawGame(c, r, host);
             return;
@@ -252,7 +253,7 @@ private:
                     bool loading = false;
                     if (ModelEntry* m = Model(mr.model, host, loading)) {
                         p.mesh = m->gpu.get();
-                        p.materials = m->paint.Materials(main_.renderer, host.host.Graphics().Wic(), textures_, now_);
+                        p.materials = m->paint.Materials(main_.renderer, textures_, now_);
                         p.min = p.mesh->min;
                         p.max = p.mesh->max;
                     }
@@ -338,7 +339,7 @@ private:
             return;
         }
         m.paint = {};
-        m.paint.Load(main_.renderer, host.host.Graphics().Wic(), mesh, m.file, host.host.GetProject().AssetsDir(), m.name);
+        m.paint.Load(mesh, m.file, host.host.GetProject().AssetsDir(), m.name);
         log::Info("シーンビュー: モデル「{}」を{}読みました (頂点 {}・三角形 {}・材質 {}・テクスチャ {}・{:.2f} 秒)", m.name, again ? "もう一度" : "",
                   mesh.vertices.size(), mesh.indices.size() / 3, mesh.materials.size(), m.paint.Pictures(), done->seconds);
     }

@@ -10,6 +10,7 @@
 // draws (BitmapFromImage). A picture bigger than `fit` is scaled down into it, keeping its shape
 // (0 = no limit that way). Used by the game too (textures), so it ships in games.
 
+#include "platform/Pixels.h"
 #include "platform/Win.h"
 
 #include <d2d1_1.h>
@@ -25,16 +26,6 @@
 
 namespace rm::platform {
 
-enum class PixelOrder { Rgba, PremultipliedBgra };
-
-struct Fit {
-    uint32_t maxWidth = 0, maxHeight = 0;
-};
-
-struct Image {
-    uint32_t width = 0, height = 0;
-    std::vector<uint8_t> pixels;  // 4 bytes per pixel, rows from the top, no gaps
-};
 
 // nullopt: *error says why (Japanese).
 std::optional<Image> DecodeImage(IWICImagingFactory* wic, std::span<const uint8_t> bytes, PixelOrder order, Fit fit,

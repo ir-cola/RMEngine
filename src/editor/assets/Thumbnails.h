@@ -95,6 +95,7 @@ private:
     };
 
     const ThumbnailMaker* MakerFor(asset::Kind kind) const;
+    static Done Failed(Job job, std::string why);
     void Work(std::stop_token stop);         // the worker thread
     void Collect(ui::Context& c);            // the worker's results into the entries (UI thread)
     void Finish(Done& d, ui::Context& c);    // one result: drawn if it must be, kept

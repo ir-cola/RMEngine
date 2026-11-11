@@ -7,6 +7,9 @@
 #include "editor/plugin/Software.h"
 
 #include <chrono>
+#include <exception>
+#include <format>
+#include <new>
 
 namespace rm::editor {
 
@@ -43,6 +46,14 @@ const ThumbnailMaker* Thumbnails::MakerFor(asset::Kind kind) const {
 
 bool Thumbnails::Has(asset::Kind kind) const { return kind == asset::Kind::Image || MakerFor(kind) != nullptr; }
 
+// A result that says only why it could not be made.
+Thumbnails::Done Thumbnails::Failed(Job job, std::string why) {
+    Done d;
+    d.job = std::move(job);
+    d.error = std::move(why);
+    return d;
+}
+
 void Thumbnails::Work(std::stop_token stop) {
     for (;;) {
         Job job;
@@ -54,14 +65,24 @@ void Thumbnails::Work(std::stop_token stop) {
         }
         Done d;
         d.job = std::move(job);
-        if (d.job.kind == asset::Kind::Image) {
-            auto image = platform::LoadImageFile(platform::ThreadImagingFactory(), d.job.file, platform::PixelOrder::PremultipliedBgra,
-                                                 {d.job.size, d.job.size}, &d.error);
-            d.ok = image.has_value();
-            if (image) d.image = std::move(*image);
-        } else if (const ThumbnailMaker* maker = MakerFor(d.job.kind)) {
-            d.prepared = maker->prepare(d.job.file, root_, d.job.size, &d.error);
-            d.ok = d.prepared != nullptr;
+        // Nothing thrown here may leave the thread (that would end the whole editor): a file that
+        // makes the reading run out of memory, or a plugin that throws, is just "cannot be made".
+        try {
+            if (d.job.kind == asset::Kind::Image) {
+                auto image = platform::LoadImageFile(platform::ThreadImagingFactory(), d.job.file, platform::PixelOrder::PremultipliedBgra,
+                                                     {d.job.size, d.job.size}, &d.error);
+                d.ok = image.has_value();
+                if (image) d.image = std::move(*image);
+            } else if (const ThumbnailMaker* maker = MakerFor(d.job.kind)) {
+                d.prepared = maker->prepare(d.job.file, root_, d.job.size, &d.error);
+                d.ok = d.prepared != nullptr;
+            }
+        } catch (const std::bad_alloc&) {
+            d = Failed(std::move(d.job), "メモリーが足りなくなりました (壊れているか、大きすぎるファイル)");
+        } catch (const std::exception& ex) {
+            d = Failed(std::move(d.job), std::format("読んでいる途中で止まりました ({})", ex.what()));
+        } catch (...) {
+            d = Failed(std::move(d.job), "読んでいる途中で止まりました");
         }
         std::lock_guard lock(mu_);
         done_.push_back(std::move(d));
@@ -74,10 +95,17 @@ void Thumbnails::Finish(Done& d, ui::Context& c) {
     Entry& e = it->second;
     if (e.asked == d.job.size) e.asked = 0;
     if (d.job.time != e.time) return;  // the file changed meanwhile: it is asked again
+    // Newest first: a smaller one asked earlier may come after a bigger one - it never replaces it.
+    if (!e.failed && e.image.width > 0 && d.job.size < e.size) return;
     if (d.ok && d.prepared) {
         const ThumbnailMaker* maker = MakerFor(d.job.kind);
         if (ID2D1DeviceContext* dc = c.P().DC()) dc->Flush();  // what Direct2D drew so far goes to the GPU first
-        d.ok = maker && maker->draw(gfx_, d.prepared.get(), d.job.size, d.image, &d.error);
+        try {
+            d.ok = maker && maker->draw(gfx_, d.prepared.get(), d.job.size, d.image, &d.error);
+        } catch (const std::exception& ex) {
+            d.ok = false;
+            d.error = std::format("描いている途中で止まりました ({})", ex.what());
+        }
     }
     if (!d.ok) log::Info("サムネイル: 「{}」を作れないので種類の印で出します: {}", PathToUtf8(d.job.file.filename()), d.error);
     e.size = d.job.size;

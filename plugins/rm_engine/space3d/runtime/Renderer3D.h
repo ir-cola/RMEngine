@@ -38,6 +38,7 @@
 #include "platform/Image.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
+#include "rm_engine/space3d/runtime/TexturePixels.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <d3d11.h>
@@ -77,7 +78,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertices, indices;
 };
 
-// A picture on the GPU (Renderer::UploadTexture), with its smaller copies (mipmaps: no shimmer far away).
+// A picture on the GPU (Renderer::UploadTexture).
 class GpuTexture {
 public:
     uint32_t width = 0, height = 0;
@@ -140,6 +141,8 @@ public:
     // cannot. srgb: a colour picture (read as linear light); false: numbers (metal / rough, normals).
     // sharp: drawn with the nearest pixel (dot pictures: the image's import setting) instead of smoothed.
     std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, bool sharp = false);
+    // The same with the mipmaps already made (the quick part: only the copy to the GPU).
+    std::shared_ptr<const GpuTexture> UploadTexture(const TexturePixels& pixels, std::string* error, bool sharp = false);
     // Draws the frame and returns the finished picture (B8G8R8A8, usable by Direct2D); null on failure.
     // The picture is kept until the next Render (its size follows the frame's).
     ID3D11Texture2D* Render(ID3D11DeviceContext* ctx, const RenderFrame& f);

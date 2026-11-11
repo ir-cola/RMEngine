@@ -7,53 +7,119 @@
 #include "rm_engine/space3d/runtime/MeshFile.h"
 
 #include <algorithm>
+#include <exception>
+#include <format>
+#include <new>
 
 namespace rm::space3d {
 
-std::shared_ptr<const GpuTexture> LoadTexture(Renderer& renderer, IWICImagingFactory* wic, std::span<const uint8_t> bytes, bool srgb,
-                                              std::string* error) {
-    const auto image = platform::DecodeImage(wic, bytes, platform::PixelOrder::Rgba, {kMaxTextureSize, kMaxTextureSize}, error);
-    return image ? renderer.UploadTexture(*image, srgb, error) : nullptr;
+// --- PictureDecoder ------------------------------------------------------------------------------
+
+PictureDecoder::~PictureDecoder() {
+    if (worker_.joinable()) {
+        worker_.request_stop();
+        wake_.notify_all();
+    }
 }
 
-const GpuTexture* TextureCache::Get(Renderer& renderer, IWICImagingFactory* wic, const std::filesystem::path& file, bool srgb, double now) {
+std::shared_ptr<PictureDecoder::Job> PictureDecoder::Request(Source source) {
+    auto job = std::make_shared<Job>();
+    job->source_ = std::move(source);
+    ++waiting_;
+    {
+        std::lock_guard lock(mu_);
+        queue_.push_back(job);
+    }
+    if (!worker_.joinable()) worker_ = std::jthread([this](std::stop_token stop) { Run(stop); });
+    wake_.notify_one();
+    return job;
+}
+
+void PictureDecoder::Run(std::stop_token stop) {
+    for (;;) {
+        std::shared_ptr<Job> job;
+        {
+            std::unique_lock lock(mu_);
+            if (!wake_.wait(lock, stop, [&] { return !queue_.empty(); })) return;  // stopped
+            job = std::move(queue_.front());
+            queue_.pop_front();
+        }
+        if (job.use_count() > 1) {  // somebody still wants it
+            // Nothing thrown may leave the thread (that would end the program): a broken picture
+            // that makes the decoding run out of memory is just "cannot be read".
+            try {
+                const Source& s = job->source_;
+                IWICImagingFactory* wic = platform::ThreadImagingFactory();
+                std::optional<platform::Image> image =
+                    s.bytes ? platform::DecodeImage(wic, *s.bytes, platform::PixelOrder::Rgba, {s.maxSize, s.maxSize}, &job->error)
+                            : platform::LoadImageFile(wic, s.file, platform::PixelOrder::Rgba, {s.maxSize, s.maxSize}, &job->error);
+                if (image) job->pixels = MakeTexturePixels(std::move(*image), s.srgb);
+            } catch (const std::bad_alloc&) {
+                job->pixels.reset();
+                job->error = "メモリーが足りなくなりました (壊れているか、大きすぎる画像)";
+            } catch (const std::exception& ex) {
+                job->pixels.reset();
+                job->error = std::format("読んでいる途中で止まりました ({})", ex.what());
+            } catch (...) {
+                job->pixels.reset();
+                job->error = "読んでいる途中で止まりました";
+            }
+            job->done_.store(true, std::memory_order_release);
+        }
+        --waiting_;
+    }
+}
+
+// --- TextureCache --------------------------------------------------------------------------------
+
+const GpuTexture* TextureCache::Get(Renderer& renderer, const std::filesystem::path& file, bool srgb, double now) {
     Entry& e = entries_[(srgb ? L"c:" : L"n:") + file.native()];
     e.usedAt = now;
+    const std::string name = PathToUtf8(file.filename());
+    if (e.job && e.job->Done()) {
+        // Decoded: only the copy to the GPU is left.
+        std::string error = e.job->error;
+        std::shared_ptr<const GpuTexture> gpu = e.job->pixels ? renderer.UploadTexture(*e.job->pixels, &error, e.sharp) : nullptr;
+        const bool again = e.gpu != nullptr;
+        e.job.reset();
+        if (gpu) {
+            e.gpu = std::move(gpu);
+            log::Info("テクスチャ「{}」を{}読みました ({} x {})", name, again ? "もう一度" : "", e.gpu->width, e.gpu->height);
+        } else {
+            e.gpu.reset();
+            log::Warn("テクスチャ「{}」を読めないので、その絵なしで描きます: {}", name, error);
+        }
+    }
     if (e.loaded && now - e.checkedAt < kCheckSeconds) return e.gpu.get();
     e.checkedAt = now;
-    const std::string name = PathToUtf8(file.filename());
     std::error_code ec;
     const auto time = asset::ChangedAt(file, ec);  // the picture or its import settings (.meta)
     if (ec) {
         e.gpu.reset();
+        e.job.reset();
         e.loaded = true;
         e.time = {};
         if (!e.told) log::Warn("テクスチャ「{}」が見つからないので、その絵なしで描きます", name);
         e.told = true;
         return nullptr;
     }
-    if (e.loaded && e.gpu && time == e.time) return e.gpu.get();  // not changed
-    if (e.loaded && !e.gpu && time == e.time) return nullptr;     // could not be read, and still the same
-    const bool again = e.gpu != nullptr;
+    if (e.loaded && time == e.time) return e.gpu.get();  // not changed (ready, being read, or could not be read)
     e.loaded = true;
     e.time = time;
     e.told = false;
-    std::string error;
+    // To the decoder; the old picture stays until the new one is ready.
     const auto imp = asset::ReadImport<asset::ImageImport>(file);
+    e.sharp = imp.sharp;
     const uint32_t most = std::min(kMaxTextureSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
-    const auto image = platform::LoadImageFile(wic, file, platform::PixelOrder::Rgba, {most, most}, &error);
-    e.gpu = image ? renderer.UploadTexture(*image, srgb, &error, imp.sharp) : nullptr;
-    if (e.gpu) {
-        log::Info("テクスチャ「{}」を{}読みました ({} x {})", name, again ? "もう一度" : "", e.gpu->width, e.gpu->height);
-    } else {
-        log::Warn("テクスチャ「{}」を読めないので、その絵なしで描きます: {}", name, error);
-    }
+    e.job = decoder_.Request({nullptr, file, srgb, most});
     return e.gpu.get();
 }
 
 void TextureCache::ForgetUnused(double now, double seconds) {
     std::erase_if(entries_, [&](const auto& kv) { return now - kv.second.usedAt > seconds; });
 }
+
+// --- Materials -----------------------------------------------------------------------------------
 
 DrawMaterial MaterialNumbers(const MeshMaterial& m) {
     DrawMaterial d;
@@ -81,18 +147,21 @@ void SetPicture(DrawMaterial& d, size_t slot, const GpuTexture* texture) {
     }
 }
 
-void ModelPaint::Load(Renderer& renderer, IWICImagingFactory* wic, const MeshData& mesh, const std::filesystem::path& modelFile,
-                      const std::filesystem::path& root, const std::string& modelName) {
+void ModelPaint::Load(const MeshData& mesh, const std::filesystem::path& modelFile, const std::filesystem::path& root,
+                      const std::string& modelName) {
+    name_ = modelName;
+    inside_.clear();
     draw_.clear();
     slots_.clear();
-    // Each picture inside the model goes to the GPU once per way it is read, however many materials use it.
-    std::vector<std::shared_ptr<const GpuTexture>> inside(mesh.images.size() * 2);
-    std::vector<bool> tried(mesh.images.size() * 2, false);
+    // Each picture inside the model is decoded once per way it is read, however many materials use it.
+    std::vector<int> insideOf(mesh.images.size() * 2, -1);
+    std::vector<std::shared_ptr<const std::vector<uint8_t>>> bytes(mesh.images.size());
     auto slot = [&](PictureSlot ps) {
         Slot out;
         out.srgb = ps.srgb;
         if (ps.image < 0 || static_cast<size_t>(ps.image) >= mesh.images.size()) return out;
-        const MeshImage& im = mesh.images[static_cast<size_t>(ps.image)];
+        const size_t i = static_cast<size_t>(ps.image);
+        const MeshImage& im = mesh.images[i];
         if (!im.file.empty()) {
             out.file = RelatedFile(modelFile, im.file, root);
             if (out.file.empty()) {
@@ -100,14 +169,13 @@ void ModelPaint::Load(Renderer& renderer, IWICImagingFactory* wic, const MeshDat
             }
             return out;
         }
-        const size_t k = static_cast<size_t>(ps.image) * 2 + (ps.srgb ? 1 : 0);
-        if (!tried[k]) {
-            tried[k] = true;
-            std::string error;
-            inside[k] = LoadTexture(renderer, wic, im.bytes, ps.srgb, &error);
-            if (!inside[k]) log::Warn("モデル「{}」: 中の画像「{}」を読めないので、その絵なしで描きます: {}", modelName, im.name, error);
+        int& at = insideOf[i * 2 + (ps.srgb ? 1 : 0)];
+        if (at < 0) {
+            if (!bytes[i]) bytes[i] = std::make_shared<const std::vector<uint8_t>>(im.bytes);
+            at = static_cast<int>(inside_.size());
+            inside_.push_back({bytes[i], im.name, ps.srgb, nullptr, nullptr, false});
         }
-        out.own = inside[k];
+        out.inside = at;
         return out;
     };
     for (const MeshMaterial& m : mesh.materials) {
@@ -119,11 +187,32 @@ void ModelPaint::Load(Renderer& renderer, IWICImagingFactory* wic, const MeshDat
     }
 }
 
-std::span<const DrawMaterial> ModelPaint::Materials(Renderer& renderer, IWICImagingFactory* wic, TextureCache& cache, double now) {
+std::span<const DrawMaterial> ModelPaint::Materials(Renderer& renderer, TextureCache& cache, double now) {
+    // The pictures inside the model: asked for once, put on the GPU when decoded.
+    for (Inside& in : inside_) {
+        if (in.gpu || in.failed) continue;
+        if (!in.job) {
+            in.job = cache.Decoder().Request({in.bytes, {}, in.srgb, kMaxTextureSize});
+            continue;
+        }
+        if (!in.job->Done()) continue;
+        std::string error = in.job->error;
+        if (in.job->pixels) in.gpu = renderer.UploadTexture(*in.job->pixels, &error);
+        in.job.reset();
+        if (!in.gpu) {
+            in.failed = true;
+            log::Warn("モデル「{}」: 中の画像「{}」を読めないので、その絵なしで描きます: {}", name_, in.name, error);
+        } else {
+            in.bytes.reset();  // on the GPU: the file's bytes are not needed any more
+        }
+    }
     for (size_t i = 0; i < draw_.size(); ++i) {
         for (size_t k = 0; k < kPictureSlots; ++k) {
             const Slot& sl = slots_[i][k];
-            SetPicture(draw_[i], k, sl.own ? sl.own.get() : sl.file.empty() ? nullptr : cache.Get(renderer, wic, sl.file, sl.srgb, now));
+            const GpuTexture* t = sl.inside >= 0 ? inside_[static_cast<size_t>(sl.inside)].gpu.get()
+                                  : sl.file.empty() ? nullptr
+                                                    : cache.Get(renderer, sl.file, sl.srgb, now);
+            SetPicture(draw_[i], k, t);
         }
     }
     return draw_;

@@ -320,41 +320,6 @@ bool Compile(const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DB
     return true;
 }
 
-// What the GPU needs for a mipmap chain: each level half the one before (2 x 2 averaged; an odd
-// last row / column is averaged with what there is), down to 1 x 1.
-std::vector<platform::Image> Mipmaps(const platform::Image& top, bool srgb) {
-    // Colour pictures are averaged as light (sRGB -> linear -> back), so smaller copies do not darken.
-    float toLinear[256];
-    for (int v = 0; v < 256; ++v) toLinear[v] = srgb ? ScreenToLinear(v / 255.f) : v / 255.f;
-    std::vector<platform::Image> levels;
-    levels.push_back(top);
-    while (levels.back().width > 1 || levels.back().height > 1) {
-        const platform::Image& a = levels.back();
-        platform::Image b;
-        b.width = std::max(1u, a.width / 2);
-        b.height = std::max(1u, a.height / 2);
-        b.pixels.resize(static_cast<size_t>(b.width) * b.height * 4);
-        for (uint32_t y = 0; y < b.height; ++y) {
-            for (uint32_t x = 0; x < b.width; ++x) {
-                const uint32_t x0 = std::min(x * 2, a.width - 1), x1 = std::min(x * 2 + 1, a.width - 1);
-                const uint32_t y0 = std::min(y * 2, a.height - 1), y1 = std::min(y * 2 + 1, a.height - 1);
-                for (uint32_t k = 0; k < 4; ++k) {
-                    auto at = [&](uint32_t px, uint32_t py) { return a.pixels[(static_cast<size_t>(py) * a.width + px) * 4 + k]; };
-                    uint8_t& out = b.pixels[(static_cast<size_t>(y) * b.width + x) * 4 + k];
-                    if (k < 3 && srgb) {
-                        const float sum = toLinear[at(x0, y0)] + toLinear[at(x1, y0)] + toLinear[at(x0, y1)] + toLinear[at(x1, y1)];
-                        out = static_cast<uint8_t>(LinearToScreen(sum * 0.25f) * 255.f + 0.5f);
-                    } else {
-                        out = static_cast<uint8_t>((uint32_t{at(x0, y0)} + at(x1, y0) + at(x0, y1) + at(x1, y1) + 2) / 4);
-                    }
-                }
-            }
-        }
-        levels.push_back(std::move(b));
-    }
-    return levels;
-}
-
 // Every triangle turned so its front (counter-clockwise) faces the way its corners' normals do.
 void FaceOut(MeshData& m) {
     for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
@@ -591,24 +556,28 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
 }
 
 std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, bool sharp) {
+    return UploadTexture(MakeTexturePixels(rgba, srgb), error, sharp);
+}
+
+std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const TexturePixels& pixels, std::string* error, bool sharp) {
     auto fail = [&](const char* why) {
         if (error) *error = why;
         return nullptr;
     };
     if (!device_) return fail("3D の描画が始まっていません");
-    if (rgba.width == 0 || rgba.height == 0 || rgba.pixels.size() < static_cast<size_t>(rgba.width) * rgba.height * 4) return fail("画像が空です");
-    if (rgba.width > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION || rgba.height > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION) {
+    if (pixels.levels.empty()) return fail("画像が空です");
+    const platform::Image& top = pixels.levels[0];
+    if (top.width > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION || top.height > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION) {
         return fail("画像が大きすぎて GPU に載せられません");
     }
-    const std::vector<platform::Image> levels = Mipmaps(rgba, srgb);
     std::vector<D3D11_SUBRESOURCE_DATA> init;
-    for (const platform::Image& l : levels) init.push_back({l.pixels.data(), l.width * 4, 0});
+    for (const platform::Image& l : pixels.levels) init.push_back({l.pixels.data(), l.width * 4, 0});
     D3D11_TEXTURE2D_DESC td{};
-    td.Width = rgba.width;
-    td.Height = rgba.height;
-    td.MipLevels = static_cast<UINT>(levels.size());
+    td.Width = top.width;
+    td.Height = top.height;
+    td.MipLevels = static_cast<UINT>(pixels.levels.size());
     td.ArraySize = 1;
-    td.Format = srgb ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;  // sRGB: the GPU reads linear light
+    td.Format = pixels.srgb ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;  // sRGB: the GPU reads linear light
     td.SampleDesc.Count = 1;
     td.Usage = D3D11_USAGE_IMMUTABLE;
     td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -618,9 +587,9 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image&
     if (FAILED(device_->CreateTexture2D(&td, init.data(), &tex)) || FAILED(device_->CreateShaderResourceView(tex.Get(), nullptr, &gpu->view))) {
         return fail("画像を GPU に載せられませんでした (メモリーが足りない?)");
     }
-    gpu->width = rgba.width;
-    gpu->height = rgba.height;
-    gpu->srgb = srgb;
+    gpu->width = top.width;
+    gpu->height = top.height;
+    gpu->srgb = pixels.srgb;
     return gpu;
 }
 
