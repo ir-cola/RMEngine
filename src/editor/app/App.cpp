@@ -200,6 +200,57 @@ void App::ApplyOptions() {
     if (screen_) screen_->OnLookChanged();
 }
 
+namespace {
+
+// Every window of the editor (the Hub or the editor, and its panel windows) drawn again.
+void RedrawAllWindows() {
+    EnumThreadWindows(
+        GetCurrentThreadId(),
+        [](HWND h, LPARAM) -> BOOL {
+            InvalidateRect(h, nullptr, FALSE);
+            return TRUE;
+        },
+        0);
+}
+
+}  // namespace
+
+bool App::RecoverGraphics(ScreenWindow& asking) {
+    if (!gfx_.Lost()) return true;
+    if (graphicsFailures_ == 0) {
+        log::Warn("GPU が使えなくなりました (0x{:08X})。デバイスを作り直します", static_cast<uint32_t>(gfx_.LostReason()));
+    }
+    if (gfx_.Recreate()) {
+        graphicsFailures_ = 0;
+        graphicsTold_ = false;
+        RedrawAllWindows();
+        return true;
+    }
+    ++graphicsFailures_;
+    log::Error("GPU のデバイスを作り直せませんでした ({} 回目)。少ししてからもう一度試します", graphicsFailures_);
+    constexpr int kTellAfter = 3;
+    if (graphicsFailures_ >= kTellAfter && !graphicsTold_) {
+        graphicsTold_ = true;
+        // Outside the frame (a message box runs its own message loop). Drawn by Windows, not by the GPU.
+        asking.Defer([this, hwnd = asking.Hwnd()] {
+            ScreenWindow* screen = screen_.get();
+            const std::wstring title = Tr(L"GPU が使えません");
+            if (screen) {
+                const int answer = MessageBoxW(hwnd,
+                                               Tr(L"GPU (グラフィックス) が使えなくなり、作り直せませんでした。画面が正しく出ないことがあります。\n\n今の作業を保存しますか? 保存したら、エディターを閉じて開き直してください (PC の再起動が要ることもあります)。").c_str(),
+                                               title.c_str(), MB_YESNO | MB_ICONERROR);
+                if (answer != IDYES) return;
+                const std::optional<bool> saved = screen->SaveWork();
+                const std::wstring text = !saved ? Tr(L"保存するものはありません。エディターを閉じて開き直してください。")
+                                          : *saved ? Tr(L"保存しました。エディターを閉じて開き直してください。")
+                                                   : Tr(L"保存できませんでした。くわしくはコンソールとログを見てください。");
+                MessageBoxW(hwnd, text.c_str(), title.c_str(), MB_OK | (saved.value_or(true) ? MB_ICONINFORMATION : MB_ICONERROR));
+            }
+        });
+    }
+    return false;
+}
+
 void App::SystemThemeChanged() {
     if (!theme::FindTheme(settings_.GetOptions().theme).palette) ApplyOptions();
 }

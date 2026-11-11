@@ -115,6 +115,24 @@
 - **整合性の確認**: ビルドの最後に `tools/make_filelist.ps1` が `RM_Engine.files.json` (exe・`Lang/**`・`Plugins/**` の大きさと SHA-256) を書く。「確認する」でファイルの SHA-256 を計り直して比べる (`editor/app/Integrity`: 純粋でテストあり。ハッシュは `platform::Sha256File` = Windows の BCrypt)。入れたプラグインはエンジンの写しと比べ、違えば「入れ直して直す」(`Plugins::Install`)。**入れ直しは前の写しを先に消さない** (`Plugins::CopyIn`): `<名前>.installing` に写す → 前の写しを `<名前>.old` へよける → 新しい写しを置く → よけた写しを消す。置けなければよけた写しを戻す。落ちて `.old` だけが残っていたら `Reload` のときに戻す (`PutBackInterrupted`)。**エンジンを新しくしたとき**: 起動ごとに `Plugins::RefreshFromEngine` が一覧の SHA-256 を前の印 (`<入れた先>/engine_files.sha256`) と比べ (`integrity::EngineChanged`)、違えば入れたプラグイン (エンジンにもあるもの) のうちファイルが違うものを黙って写し直す (`PluginsToRefresh`: 一覧があれば全部のファイル、無ければ `plugin.json` だけ。純粋でテストあり)。削除したものは入れない。全部写せたときだけ印を書く (失敗したら次の起動でもう一度)。★ 改ざんを防ぐものではない (一覧に署名は無い)。壊れた・欠けた・古いを見つけるためのもの
 - **自動アップデート**: ★ 設定だけ。配布の仕組み (取ってくる先) を決めてから作る
 
+## 4-4. GPU が失われたとき (`platform/Gfx` + `editor/app`)
+
+```
+描く前 (ScreenWindow::EnsureDevice)     Gfx::Lost()? ──はい──▶ App::RecoverGraphics ──▶ Gfx::Recreate (D3D / DXGI / D2D のデバイスを作り直し、Generation +1)
+                                         │                       └ 失敗: 1 秒後にもう一度 (3 回で Windows のダイアログ「保存しますか?」)
+                                         ▼
+                                   自分のスワップチェーンの Generation が違う? ──▶ 作り直す + Painter のブラシ・効果を捨てる + OnDeviceChanged (Hub のロゴ)
+描いた後                           EndDraw が D2DERR_RECREATE_TARGET / Present が失敗して Lost ──▶ Gfx::MarkLost → 次のフレームで上へ
+GPU の物を持つ所                   覚えた Generation と違えば自分の物を全部捨てる (要るときに作り直す)
+```
+
+- **1 本の口**: `Gfx::Generation()` (デバイスを作った回数)。GPU に物を持つ所は、それを作った回を覚え、違っていたら捨てる。持つ所: ウィンドウのスワップチェーン (`SwapTarget::Generation`)・`ui::Painter` (ブラシ・グラデーション・色を塗る効果: `DeviceChanged`)・Hub のロゴ・3D のシーンビュー (2 つの `Renderer` = シェーダー・バッファ・影の地図・絵とそのビットマップ、モデル、テクスチャのキャッシュ `TextureCache::Clear`。モデルのファイルは読み直す)・2D のシーンビュー (`Renderer2D` のブラシと効果・画像のビットマップ)・サムネイル (ビットマップ。絵そのものはメモリーに持っているので作り直すだけ)・3D のサムネイルの `Renderer`
+- Direct2D / DirectWrite / WIC の**ファクトリーは GPU に無いので作り直さない** (形 (ジオメトリ)・文字の書式はそのまま使える)
+- 失われたことを知る道: `ID3D11Device::GetDeviceRemovedReason`・`EndDraw` の `D2DERR_RECREATE_TARGET`・`Present` の `DXGI_ERROR_DEVICE_REMOVED` / `RESET`。試すための口: Ctrl+Alt+Shift+F12 (`Gfx::MarkLost`)
+- ウィンドウ 1 つにスワップチェーンは 1 つしか作れないので、古いものを先に捨てる。Direct3D は物をあとでまとめて消すので、捨てたら古いデバイスのコンテキストを `Flush` する (`SwapTarget::Reset`)
+- 作り直しに失敗している間は描かない (前の絵のまま)。3 回続けて失敗したら、GPU を使わない Windows のダイアログ (`MessageBoxW`) で伝え、保存を勧める (`ScreenWindow::SaveWork`: エディターは `Save`、Hub は保存する物なし)
+- ★ 画面は未確認 (2026-11-11。ビルドとテストだけ。試し方は `docs/HOW_TO_TRY.md` の 8-3 章)
+
 ## 5. パネルのドッキング (`editor/dock`)
 
 ```

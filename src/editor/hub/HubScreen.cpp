@@ -90,8 +90,12 @@ bool HubScreen::Open() {
 }
 
 void HubScreen::OnCreated() {
-    logo_ = platform::LoadBitmapFromMemory(app_.Gfx(), target_.Context(), platform::ResourceBytes(IDR_LOGO_HUB));
+    OnDeviceChanged();
     Refresh();
+}
+
+void HubScreen::OnDeviceChanged() {
+    logo_ = platform::LoadBitmapFromMemory(app_.Gfx(), target_.Context(), platform::ResourceBytes(IDR_LOGO_HUB));
 }
 
 void HubScreen::OnCloseRequested() { app_.RequestQuit(); }

@@ -26,6 +26,14 @@ void Painter::Init(IDWriteFactory* dwrite, std::wstring fontFamily) {
     ellipsis_.clear();
 }
 
+void Painter::DeviceChanged() {
+    brush_.Reset();
+    gradients_.clear();
+    brushOwner_ = nullptr;
+    tint_.Reset();
+    tintOwner_ = nullptr;
+}
+
 void Painter::Begin(ID2D1DeviceContext* dc) {
     dc_ = dc;
     clipDepth_ = 0;

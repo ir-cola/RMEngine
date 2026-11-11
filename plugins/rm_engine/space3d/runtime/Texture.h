@@ -102,6 +102,8 @@ public:
     const GpuTexture* Get(Renderer& renderer, const std::filesystem::path& file, bool srgb, double now);
     // Pictures nobody asked for in `seconds` leave the GPU.
     void ForgetUnused(double now, double seconds);
+    // Everything goes (the GPU's devices were made again: read again when asked).
+    void Clear() { entries_.clear(); }
     size_t Size() const { return entries_.size(); }
     // Pictures being decoded (draw again until 0).
     size_t Waiting() const { return decoder_.Waiting(); }

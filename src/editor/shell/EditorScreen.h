@@ -69,6 +69,7 @@ protected:
     bool OnQueryEndSession() override;  // unsaved changes: asks (the same dialog as closing)
     void OnEndSession() override;
     void OnTimer(UINT_PTR id) override;  // auto-save
+    std::optional<bool> SaveWork() override { return Save(); }  // the GPU is gone for good
 
 private:
     static constexpr UINT_PTR kAutoSaveTimer = 100;

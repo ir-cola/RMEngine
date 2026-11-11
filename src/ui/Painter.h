@@ -28,6 +28,9 @@ struct Corners {
 class Painter {
 public:
     void Init(IDWriteFactory* dwrite, std::wstring fontFamily = L"Yu Gothic UI");
+    // The GPU's devices were made again: the brushes and effects (made on the old one) are dropped
+    // (made again on the next Begin / use). Text formats are not on the GPU and stay.
+    void DeviceChanged();
     void Begin(ID2D1DeviceContext* dc);
     void End();
     ID2D1DeviceContext* DC() const { return dc_; }

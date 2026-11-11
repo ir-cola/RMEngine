@@ -52,6 +52,11 @@ public:
     // Windows' light / dark setting changed (matters only for "PC の設定に合わせる").
     void SystemThemeChanged();
 
+    // The GPU is lost (Gfx::Lost): its devices made again, every window drawn again (each makes its
+    // own drawing again on the next frame). False when it cannot be now - the window asking tries
+    // again in a moment; after a few failures the user is told and offered to save.
+    bool RecoverGraphics(ScreenWindow& asking);
+
 private:
     enum class Pending { None, OpenProject, InstallAndReopen, Hub, Quit };
     void ApplyPending();
@@ -77,6 +82,8 @@ private:
     std::vector<PluginId> pendingInstall_;
     std::string pendingMessage_;
     bool running_ = true;
+    int graphicsFailures_ = 0;  // Recreate failed this many times in a row
+    bool graphicsTold_ = false; // ... and the user was told
 };
 
 }  // namespace rm::editor

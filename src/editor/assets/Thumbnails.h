@@ -107,6 +107,7 @@ private:
     double frame_ = -1;    // the time of the frame being drawn (a new one resets the budget)
     double spentMs_ = 0;   // spent making thumbnails in this frame
     double sweptAt_ = 0;
+    uint64_t generation_ = 0;  // the GPU's devices the bitmaps were made on (platform::Gfx::Generation)
 
     // Shared with the worker (under mu_).
     std::mutex mu_;

@@ -357,5 +357,10 @@
   "「{}」の .meta を動かせず、ファイルを元の場所に戻すこともできませんでした。ファイルは「{}」、.meta は「{}」にあります。エクスプローラーで .meta をファイルの横へ動かしてください": "The .meta of \"{}\" could not be moved, and the file could not be put back either. The file is at \"{}\" and the .meta at \"{}\". Move the .meta next to the file in Explorer",
   "「{}」の .meta を動かせなかったので、動かしていません: {}": "The .meta of \"{}\" could not be moved, so nothing was moved: {}",
   "「{}」はごみ箱に入れられない場所にある (USB メモリ・ネットワーク・ごみ箱より大きい) ので、消していません。消すならエクスプローラーで消してください。": "\"{}\" cannot go to the Recycle Bin (a USB stick, a network folder, or bigger than the Recycle Bin), so it was not deleted. Delete it in Explorer if you mean to.",
-  "「{}」をごみ箱へ移せませんでした: {}": "Could not move \"{}\" to the Recycle Bin: {}"
+  "「{}」をごみ箱へ移せませんでした: {}": "Could not move \"{}\" to the Recycle Bin: {}",
+  "GPU が使えません": "The GPU cannot be used",
+  "GPU (グラフィックス) が使えなくなり、作り直せませんでした。画面が正しく出ないことがあります。\n\n今の作業を保存しますか? 保存したら、エディターを閉じて開き直してください (PC の再起動が要ることもあります)。": "The GPU (graphics) stopped working and could not be started again. The screen may not show correctly.\n\nSave your work now? After saving, close the editor and open it again (restarting the PC may be needed).",
+  "保存するものはありません。エディターを閉じて開き直してください。": "There is nothing to save. Close the editor and open it again.",
+  "保存しました。エディターを閉じて開き直してください。": "Saved. Close the editor and open it again.",
+  "保存できませんでした。くわしくはコンソールとログを見てください。": "Could not save. See the console and the log for details."
 }

@@ -75,6 +75,14 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — Windows ならどの PC でも動き、情報も多い。D3D12 より書く量が少ない
 - **どこ** — `src/platform/Gfx.*`
 
+### GPU が失われたとき (デバイスの消失と作り直し)
+- **何か** — ドライバーの更新・ドライバーの落ち直し・GPU が固まったときに Windows が GPU をリセットする仕組み (**TDR**: Timeout Detection and Recovery) などで、アプリの Direct3D のデバイスは「失われる」(`DXGI_ERROR_DEVICE_REMOVED`)。そのデバイスで作った物 (スワップチェーン・テクスチャ・バッファ・シェーダー・Direct2D のビットマップやブラシ) は全部使えなくなる。直す方法は**デバイスから全部作り直す**ことだけ
+- **知る方法** — `ID3D11Device::GetDeviceRemovedReason()` が S_OK 以外 / Direct2D の `EndDraw` が `D2DERR_RECREATE_TARGET` / `Present` が `DXGI_ERROR_DEVICE_REMOVED` か `DXGI_ERROR_DEVICE_RESET`
+- **このエンジンのやり方** — デバイスを作った回数 (世代の番号) を 1 つ持ち、GPU の物を持つ所はそれぞれ「作ったときの番号」を覚える。番号が変わったら自分の物を捨てて、要るときに作り直す (全部を知る 1 か所の一覧を作らないので、プラグインが増えても同じ形で乗れる)
+- **ファクトリーは残る** — Direct2D / DirectWrite / WIC のファクトリーは CPU の側の物なので、作り直さなくてよい (図形と文字の書式もそのまま)
+- **試し方** — Windows の「グラフィックス ツール」の `dxcap -forcetdr` で本当に TDR を起こせる。このエンジンには、失われたことにして同じ道を通る口 (Ctrl+Alt+Shift+F12) もある
+- **どこ** — `src/platform/Gfx.*` (`Generation` / `Lost` / `Recreate` / `MarkLost`)、`src/editor/app/ScreenWindow.cpp` (`EnsureDevice`)、`src/editor/app/App.cpp` (`RecoverGraphics`)
+
 ### Direct2D / DirectWrite
 - **何か** — GPU で 2D の図形 (Direct2D) と文字 (DirectWrite) を描く Windows の仕組み
 - **何に使っているか** — エディターの UI 全部 (四角・角丸・線・文字・画像)。日本語の文字、文字の幅の計測、はみ出したときの「…」、折り返しも DirectWrite
@@ -597,6 +605,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 |---|---|
 | 2026-11-12 | ごみ箱へ行かない物を消さない (IFileOperation の進み具合の受け手 PreDeleteItem)・ファイルの作成日時 (_wstat64) でコピーを見分ける を足した |
 | 2026-11-11 | 絵を解く・ミップマップ作りを作業スレッドへ (共有の結果と atomic・表で sRGB を直す)・スレッドの中の例外の受け止め を足した |
+| 2026-11-11 | GPU が失われたとき (デバイスの消失・TDR・作り直しと世代の番号) を足した |
 | 2026-11-11 | 読み込みの上限 (予算・取り消しの印・作業スレッドの例外・浮動小数点から整数へ) を足した |
 | 2026-11-11 | サムネイルを作業スレッドで作る (重い所だけをスレッドへ・GPU は UI のスレッド・スレッドごとの WIC) を足した |
 | 2026-11-11 | テンプレート (データで書くひな形と、パスから作る木・ソフトで絞る) を足した |

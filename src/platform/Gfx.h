@@ -5,7 +5,17 @@
 // Rules from the previous engine (design doc RME_PLATFORM 7-1):
 //  * every window's swap chain is FLIP_DISCARD + DXGI_SCALING_NONE (never stretched)
 //  * the window redraws inside WM_SIZE, so dragging the border never freezes the picture
-
+//
+// The GPU can be lost while the editor runs (the driver updated or crashed, the GPU reset after a
+// hang - TDR -, an external GPU unplugged). Then every object made on it is dead: Recreate makes new
+// devices and counts it in Generation(). Whoever keeps something made on the GPU (a swap chain,
+// textures, buffers, shaders, Direct2D bitmaps / brushes / effects) remembers the generation it was
+// made in and throws it away - to make it again - when the number has changed:
+//
+//   if (gfx.Generation() != madeIn_) { DropGpuThings(); madeIn_ = gfx.Generation(); }
+//
+// The factories (Direct2D, DirectWrite, WIC) are not on the GPU and stay: geometry and text
+// formats live on.
 #include "platform/Win.h"
 
 #include <d2d1_1.h>
@@ -25,6 +35,19 @@ class Gfx {
 public:
     bool Init();
 
+    // How many times the devices were made (1 after Init; one more after each Recreate).
+    uint64_t Generation() const { return generation_; }
+    // The device is gone (or SimulateLoss was called): nothing drawn reaches the screen until Recreate.
+    bool Lost() const;
+    // Why, for the console (S_OK when it is not lost; DXGI_ERROR_DEVICE_REMOVED for a simulated loss).
+    HRESULT LostReason() const;
+    // New Direct3D / Direct2D devices (the old objects are left for their owners to drop). False when
+    // they cannot be made now (try again a little later); the old devices are kept then.
+    bool Recreate();
+    // Something said the device is gone (Direct2D's D2DERR_RECREATE_TARGET), or the way back is being
+    // tried without a real GPU reset: Lost() is true until the next Recreate.
+    void MarkLost() { markedLost_ = true; }
+
     ID3D11Device* D3D() const { return d3d_.Get(); }
     ID3D11DeviceContext* D3DContext() const { return d3dContext_.Get(); }
     IDXGIFactory2* Dxgi() const { return dxgiFactory_.Get(); }
@@ -34,6 +57,10 @@ public:
     IWICImagingFactory* Wic() const { return wic_.Get(); }
 
 private:
+    bool CreateDevices();  // Direct3D, its DXGI factory and the Direct2D device on it
+
+    uint64_t generation_ = 0;
+    bool markedLost_ = false;
     Microsoft::WRL::ComPtr<ID3D11Device> d3d_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext_;
     Microsoft::WRL::ComPtr<IDXGIFactory2> dxgiFactory_;
@@ -53,6 +80,8 @@ public:
     bool Present();
 
     ID2D1DeviceContext* Context() const { return dc_.Get(); }
+    // The Gfx::Generation it was made in (0: not made).
+    uint64_t Generation() const { return generation_; }
     UINT Width() const { return width_; }
     UINT Height() const { return height_; }
     float Dpi() const { return dpi_; }
@@ -66,6 +95,7 @@ private:
     UINT width_ = 0;
     UINT height_ = 0;
     float dpi_ = 96.f;
+    uint64_t generation_ = 0;
 };
 
 // Bytes of an RCDATA resource embedded in the exe (empty when missing).

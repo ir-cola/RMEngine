@@ -166,6 +166,7 @@ class SceneView3D final : public game_production::SceneView {
 public:
     void Draw(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) override {
         if (r.w < 8 || r.h < 8) return;
+        DropGpuIfNew(host);
         if (!Ready(host)) {
             ui::TextStyle ts;
             ts.size = 13;
@@ -215,6 +216,22 @@ public:
 
 private:
     bool Ready(game_production::SceneViewHost& host) { return Start(main_, host); }
+
+    // The GPU's devices were made again (the GPU was lost: platform::Gfx::Generation): everything made
+    // on the old ones goes - the renderers (shaders, buffers, shadow maps, the pictures and their
+    // bitmaps), the models and the pictures of their materials. All are made again as they are needed
+    // (the model files are read again).
+    void DropGpuIfNew(game_production::SceneViewHost& host) {
+        const uint64_t now = host.host.Graphics().Generation();
+        if (now == generation_) return;
+        if (generation_ != 0) log::Info("シーンビュー: GPU が作り直されたので、3D の描画とモデルを作り直します");
+        generation_ = now;
+        for (auto& [guid, m] : models_) loader_.Cancel(m.ticket);
+        models_.clear();
+        textures_.Clear();
+        main_ = Picture{};
+        preview_ = Picture{};
+    }
 
     static bool Start(Picture& pic, game_production::SceneViewHost& host) {
         if (!pic.tried) {
@@ -1181,6 +1198,7 @@ private:
 
     SceneViewState state_;       // the camera and the gizmo chosen (kept in UserSettings)
     reflect::Unknowns unknowns_;  // keys of a newer version: written back unchanged
+    uint64_t generation_ = 0;  // the GPU's devices everything below was made on (platform::Gfx::Generation)
     Picture main_;     // the view
     Picture preview_;  // the selected camera's picture (started when first needed)
     std::optional<Rect> previewAt_;

@@ -7,7 +7,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace rm::platform {
 
-bool Gfx::Init() {
+bool Gfx::CreateDevices() {
     const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1,
                                         D3D_FEATURE_LEVEL_10_0};
     const UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;  // required by Direct2D
@@ -39,12 +39,54 @@ bool Gfx::Init() {
         return false;
     }
 
+    if (FAILED(d2dFactory_->CreateDevice(dxgiDevice.Get(), &d2dDevice_))) {
+        log::Error("Direct2D のデバイスを作れませんでした");
+        return false;
+    }
+    ++generation_;
+    return true;
+}
+
+bool Gfx::Lost() const { return LostReason() != S_OK; }
+
+HRESULT Gfx::LostReason() const {
+    if (!d3d_) return DXGI_ERROR_DEVICE_REMOVED;
+    const HRESULT hr = d3d_->GetDeviceRemovedReason();
+    if (hr != S_OK) return hr;
+    return markedLost_ ? DXGI_ERROR_DEVICE_REMOVED : S_OK;
+}
+
+bool Gfx::Recreate() {
+    // The old devices go first: objects still holding them keep them alive, but nothing new is made on them.
+    ComPtr<ID3D11Device> oldD3d = d3d_;
+    ComPtr<ID3D11DeviceContext> oldContext = d3dContext_;
+    ComPtr<IDXGIFactory2> oldDxgi = dxgiFactory_;
+    ComPtr<ID2D1Device> oldD2d = d2dDevice_;
+    if (d3dContext_) {
+        d3dContext_->ClearState();
+        d3dContext_->Flush();
+    }
+    d2dDevice_.Reset();
+    dxgiFactory_.Reset();
+    if (!CreateDevices()) {
+        d3d_ = oldD3d;  // nothing changed: tried again later
+        d3dContext_ = oldContext;
+        dxgiFactory_ = oldDxgi;
+        d2dDevice_ = oldD2d;
+        return false;
+    }
+    markedLost_ = false;
+    log::Info("GPU のデバイスを作り直しました (作り直し {} 回目)", generation_ - 1);
+    return true;
+}
+
+bool Gfx::Init() {
     D2D1_FACTORY_OPTIONS opts{};
-    if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, opts, d2dFactory_.GetAddressOf())) ||
-        FAILED(d2dFactory_->CreateDevice(dxgiDevice.Get(), &d2dDevice_))) {
+    if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, opts, d2dFactory_.GetAddressOf()))) {
         log::Error("Direct2D の初期化に失敗しました");
         return false;
     }
+    if (!CreateDevices()) return false;
     if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
                                    reinterpret_cast<IUnknown**>(dwrite_.GetAddressOf())))) {
         log::Error("DirectWrite の初期化に失敗しました");
@@ -83,6 +125,7 @@ bool SwapTarget::Create(Gfx& gfx, HWND hwnd, float dpi) {
         return false;
     }
     gfx.Dxgi()->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
+    generation_ = gfx.Generation();
     hr = gfx.D2D()->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &dc_);
     if (FAILED(hr)) {
         log::Error("Direct2D のデバイスコンテキストを作れませんでした (0x{:08X})", static_cast<uint32_t>(hr));
@@ -92,10 +135,20 @@ bool SwapTarget::Create(Gfx& gfx, HWND hwnd, float dpi) {
 }
 
 void SwapTarget::Reset() {
+    // Direct3D destroys objects lazily: the swap chain is really gone (and the window free for a new
+    // one - a window has one at a time) only after its device's context is flushed.
+    ComPtr<ID3D11Device> device;
+    if (swap_) swap_->GetDevice(IID_PPV_ARGS(&device));
     if (dc_) dc_->SetTarget(nullptr);
     target_.Reset();
     dc_.Reset();
     swap_.Reset();
+    generation_ = 0;
+    if (device) {
+        ComPtr<ID3D11DeviceContext> ctx;
+        device->GetImmediateContext(&ctx);
+        if (ctx) ctx->Flush();
+    }
 }
 
 bool SwapTarget::CreateTargetBitmap() {

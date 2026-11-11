@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "GPU がリセットされたとき (ドライバーの更新・落ち直しなど) に、画面が真っ黒のまま止まらず、作り直して続けられるように。作り直せないときは保存を勧める",
+          "en": "When the GPU is reset (a driver update or crash), the screen no longer stays black: the editor rebuilds its graphics and carries on, and offers to save when it cannot"
+        },
+        {
           "ja": "3D モデルの絵を別のスレッドで解くので、大きな絵の入ったモデルでも画面が止まらない。壊れたファイルでサムネイルを作ってもエディターが落ちないように",
           "en": "Pictures of 3D models are decoded on a thread of their own, so models with big pictures no longer stall the screen. A broken file no longer brings the editor down while its thumbnail is made"
         },

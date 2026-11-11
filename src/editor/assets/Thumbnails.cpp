@@ -146,6 +146,14 @@ ID2D1Bitmap* Thumbnails::Get(ui::Context& c, const std::string& guid, asset::Kin
         }
         Collect(c);
     }
+    // The GPU's devices were made again: every bitmap goes (made again from the kept pictures).
+    if (gfx_.Generation() != generation_) {
+        generation_ = gfx_.Generation();
+        for (auto& [id, entry] : entries_) {
+            entry.bitmap.Reset();
+            entry.dc = nullptr;
+        }
+    }
     Entry& e = entries_[guid];
     e.usedAt = now;
     if (now - e.checkedAt >= kCheckSeconds) {

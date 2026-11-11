@@ -1,5 +1,6 @@
 #include "editor/app/ScreenWindow.h"
 
+#include "base/Log.h"
 #include "editor/app/App.h"
 #include "editor/widgets/Theme.h"
 #include "platform/Shell.h"
@@ -18,6 +19,8 @@ namespace {
 
 constexpr UINT kWmDeferred = WM_APP + 1;
 constexpr UINT_PTR kCaretTimer = 1;
+constexpr UINT_PTR kDeviceTimer = 2;  // the GPU could not be made again: try again in a moment
+constexpr UINT kDeviceRetryMs = 1000;
 
 ui::Key MapKey(WPARAM vk) {
     switch (vk) {
@@ -210,8 +213,28 @@ void ScreenWindow::MouseButton(int button, LPARAM lp, bool down, bool doubleClic
     OnInput();
 }
 
+// The GPU lost (or its devices made again by another window): made again before drawing - the
+// swap chain and the painter's brushes here, the screen's own things in OnDeviceChanged, everything
+// else by its owner when it sees Gfx::Generation change.
+bool ScreenWindow::EnsureDevice() {
+    platform::Gfx& gfx = app_.Gfx();
+    if (gfx.Lost() && !app_.RecoverGraphics(*this)) {
+        SetTimer(Hwnd(), kDeviceTimer, kDeviceRetryMs, nullptr);
+        return false;
+    }
+    if (target_.Generation() == gfx.Generation()) return true;
+    target_.Reset();  // a window has one swap chain at a time: the old one goes first
+    if (!target_.Create(gfx, Hwnd(), window_.Dpi())) {
+        SetTimer(Hwnd(), kDeviceTimer, kDeviceRetryMs, nullptr);  // tried again (a lost device: Lost() says so then)
+        return false;
+    }
+    painter_.DeviceChanged();
+    OnDeviceChanged();
+    return true;
+}
+
 void ScreenWindow::RunFrame() {
-    if (!alive_ || inFrame_ || !target_.Context()) return;
+    if (!alive_ || inFrame_ || !EnsureDevice() || !target_.Context()) return;
     inFrame_ = true;
     ID2D1DeviceContext* dc = target_.Context();
     const float scale = window_.Scale();
@@ -225,8 +248,13 @@ void ScreenWindow::RunFrame() {
     ctx_.RunOverlays();
     ctx_.EndFrame();
     painter_.End();
-    dc->EndDraw();
-    target_.Present();
+    const HRESULT drawn = dc->EndDraw();
+    const bool shown = target_.Present();
+    // The GPU went away during this frame: everything is made again before the next one.
+    if (drawn == D2DERR_RECREATE_TARGET || (!shown && app_.Gfx().Lost())) {
+        app_.Gfx().MarkLost();
+        Invalidate();
+    }
     // Clicks and keys may change state after the widgets that show it were drawn
     // (Esc closing a dialog, a click opening a menu). Such a frame is always followed by one more.
     bool hadInput = !input_.keys.empty() || !input_.chars.empty() || !input_.imeResult.empty() || input_.wheel != 0.f;
@@ -352,6 +380,13 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN: {
             UpdateModifiers();
+            // Ctrl+Alt+Shift+F12: as if the GPU were lost (to try the way back without a real reset).
+            if (wp == VK_F12 && input_.ctrl && input_.alt && input_.shift) {
+                log::Warn("GPU のデバイスが失われたことにします (Ctrl+Alt+Shift+F12: 作り直しの試し)");
+                app_.Gfx().MarkLost();
+                Invalidate();
+                return 0;
+            }
             const ui::Key k = MapKey(wp);
             if (k != ui::Key::None) {
                 input_.keys.push_back({k, input_.ctrl, input_.shift, input_.alt});
@@ -424,6 +459,9 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
         case WM_TIMER:
             if (wp == kCaretTimer) {
                 Invalidate();
+            } else if (wp == kDeviceTimer) {
+                KillTimer(h, kDeviceTimer);
+                Invalidate();  // the next frame tries the GPU again
             } else {
                 OnTimer(wp);
             }

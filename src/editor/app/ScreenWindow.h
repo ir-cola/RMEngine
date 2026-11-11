@@ -11,6 +11,7 @@
 #include "ui/Context.h"
 
 #include <functional>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -38,6 +39,9 @@ public:
     const ui::Context& UiContext() const { return ctx_; }
     // The color theme or the language changed: the title bar follows, everything is drawn again.
     virtual void OnLookChanged();
+    // When the GPU cannot be made again: the screen's work saved, if it has any (nullopt: nothing to
+    // save; true / false: saved or not).
+    virtual std::optional<bool> SaveWork() { return std::nullopt; }
 
 protected:
     bool CreateScreenWindow(const platform::WindowDesc& desc, int showCmd);
@@ -53,6 +57,9 @@ protected:
     // Messages the screen window does not handle itself (WM_MOVING ...). DefWindowProc still runs.
     // A timer the screen set with SetTimer(Hwnd(), id, ...) (ids from 100 up; 1 is the caret).
     virtual void OnTimer(UINT_PTR id) { (void)id; }
+    // The GPU's devices were made again (it was lost): Direct2D things the screen keeps (bitmaps ...)
+    // are made again here. The swap chain and the painter are already new.
+    virtual void OnDeviceChanged() {}
     virtual void OnOtherMessage(UINT msg, WPARAM wp, LPARAM lp) {
         (void)msg;
         (void)wp;
@@ -77,6 +84,7 @@ private:
     void UpdateModifiers();
     void UpdateIme();
     void RunDeferred();
+    bool EnsureDevice();  // the GPU usable and this window's drawing made on its current devices
 
     bool alive_ = false;
     bool inFrame_ = false;

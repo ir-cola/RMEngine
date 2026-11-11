@@ -22,13 +22,13 @@ namespace {
 constexpr float kFovDegrees = 30.f;  // narrow: little bending at the edges of a small picture
 
 // One renderer for every thumbnail (made again when the GPU changes).
-Renderer& ThumbnailRenderer(ID3D11Device* device, std::string* error, bool* ready) {
+Renderer& ThumbnailRenderer(platform::Gfx& gfx, std::string* error, bool* ready) {
     static Renderer renderer;
-    static ID3D11Device* madeFor = nullptr;
-    if (madeFor != device) {
+    static uint64_t madeIn = 0;  // the GPU's devices it was made on (made again when they are: Gfx::Generation)
+    if (madeIn != gfx.Generation()) {
         renderer = Renderer{};
-        madeFor = device;
-        renderer.Init(device, error);
+        madeIn = gfx.Generation();
+        renderer.Init(gfx.D3D(), error);
     }
     *ready = renderer.Ready();
     return renderer;
@@ -124,7 +124,7 @@ std::shared_ptr<void> PrepareModelThumbnail(const std::filesystem::path& file, c
 bool DrawModelThumbnail(platform::Gfx& gfx, const void* prepared, uint32_t size, platform::Image& out, std::string* error) {
     const Prepared& p = *static_cast<const Prepared*>(prepared);
     bool ready = false;
-    Renderer& renderer = ThumbnailRenderer(gfx.D3D(), error, &ready);
+    Renderer& renderer = ThumbnailRenderer(gfx, error, &ready);
     if (!ready) return false;
     const MeshData& mesh = p.mesh;
     const auto gpu = renderer.Upload(mesh, error);

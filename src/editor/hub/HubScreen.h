@@ -30,6 +30,7 @@ public:
 
 protected:
     void OnCreated() override;
+    void OnDeviceChanged() override;  // the logo is made again
     void OnFrame(ui::Context& c, float width, float height) override;
     void OnCloseRequested() override;
 

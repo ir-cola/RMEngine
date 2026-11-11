@@ -118,6 +118,13 @@ class SceneView2D final : public game_production::SceneView {
 public:
     void Draw(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) override {
         if (r.w < 8 || r.h < 8) return;
+        // The GPU's devices were made again (platform::Gfx::Generation): Direct2D's things go - the
+        // renderer's brush and effect, the images' bitmaps (read again when needed).
+        if (const uint64_t now = host.host.Graphics().Generation(); now != generation_) {
+            generation_ = now;
+            renderer_ = {};
+            images_.clear();
+        }
         Begin(c, host);
         if (host.game) {  // the game view: only the picture, through the game's camera
             DrawGame(c, r, host);
@@ -918,6 +925,7 @@ private:
     SceneViewState2D state_;      // the camera, the tool, the steps, the grid (kept in UserSettings)
     reflect::Unknowns unknowns_;  // keys of a newer version: written back unchanged
     space2d::Renderer2D renderer_;
+    uint64_t generation_ = 0;  // the GPU's devices renderer_ and images_ were made on
     std::string transformType_, spriteType_, cameraType_;
     std::vector<Placed> placed_;
     std::vector<space2d::Line2D> lines_, overlay_;
