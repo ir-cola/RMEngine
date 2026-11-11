@@ -2,7 +2,7 @@
 // エディターの整合性の確認 (Hub > オプション): are the engine's files all there and unchanged?
 // Like Steam's "verify integrity of game files". The build writes <exe>/RM_Engine.files.json
 // (tools/make_filelist.ps1: path, size, SHA-256 of RM_Engine.exe, Lang/**, Plugins/**); the check
-// hashes the files again and compares. Installed plugins (%LOCALAPPDATA%\RM_Engine\Plugins) are
+// hashes the files again and compares. Installed plugins (%LOCALAPPDATA%\RM_Engine\Engines\<engine>\Plugins) are
 // compared with the engine's copies in the same list: a stale or broken one can be copied again.
 //
 // Pure (the hashing is passed in) - tested in tests/TestIntegrity.cpp.

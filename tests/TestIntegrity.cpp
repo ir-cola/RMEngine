@@ -2,6 +2,7 @@
 
 #include "Test.h"
 
+#include "editor/app/EngineKey.h"
 #include "editor/app/Integrity.h"
 
 #include <map>
@@ -85,4 +86,18 @@ RM_TEST(Integrity_PluginsToRefresh) {
     CHECK(got.size() == 1 && got[0] == game);
     CHECK(manifestLooks == 2);
     CHECK(PluginsToRefresh(std::nullopt, {}, same, differs).empty());  // removed plugins are not looked at
+}
+
+RM_TEST(EngineKey_OneFolderPerEngine) {
+    const std::string k = rm::editor::EngineKey(LR"(C:\RM\build\bin\x64\Release)");
+    CHECK(k.starts_with("release-") && k.size() == std::string("release-").size() + 16);
+    // the same folder written differently is the same engine
+    CHECK(rm::editor::EngineKey(LR"(c:\rm\BUILD\bin\x64\Release\\)") == k);
+    CHECK(rm::editor::EngineKey(LR"(C:/RM/build/bin/x64/Release)") == k);
+    CHECK(rm::editor::EngineKey(LR"(C:\RM\build\bin\x64\.\Release)") == k);
+    // another build (Debug, a worktree) is another engine
+    CHECK(rm::editor::EngineKey(LR"(C:\RM\build\bin\x64\Debug)") != k);
+    CHECK(rm::editor::EngineKey(LR"(C:\RM\.claude\worktrees\a\build\bin\x64\Release)") != k);
+    // a name with no ASCII letters still makes a folder name
+    CHECK(rm::editor::EngineKey(LR"(D:\エンジン)").starts_with("engine-"));
 }

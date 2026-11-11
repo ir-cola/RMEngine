@@ -3,7 +3,7 @@
 // (design RME_PLATFORM 5-a: a plugin installed in the Hub works in every project).
 //
 //   available   <exe folder>/Plugins/<author>/<name>/          what this engine has (comes with the engine)
-//   installed   %LOCALAPPDATA%\RM_Engine\Plugins\<author>\<name>\   what the user installed
+//   installed   %LOCALAPPDATA%\RM_Engine\Engines\<engine>\Plugins\<author>\<name>\   what the user installed
 //
 // Installing copies a plugin's folder from "available" to "installed", removing deletes it, and
 // reinstalling copies it again (repairs broken files without passing through "not installed").
@@ -32,7 +32,10 @@ public:
         std::vector<PluginId> joins;  // what it requires (the two sides it joins)
     };
 
-    void Load(const std::filesystem::path& availableDir, const std::filesystem::path& installedDir);
+    // The first start of this engine (installedDir missing) installs what `legacyDir` has installed
+    // (the folder every engine shared before) - or, with nothing there, everything available.
+    void Load(const std::filesystem::path& availableDir, const std::filesystem::path& installedDir,
+              const std::filesystem::path& legacyDir = {});
     // Reads everything again and rebuilds the registry. Only while no editor is open
     // (open workspaces point into the registry).
     void Reload();

@@ -74,6 +74,7 @@
     <ClCompile Include="editor\app\App.cpp" />
     <ClCompile Include="editor\app\Paths.cpp" />
     <ClCompile Include="editor\app\Integrity.cpp" />
+    <ClCompile Include="editor\app\EngineKey.cpp" />
     <ClCompile Include="editor\lang\Lang.cpp" />
     <ClCompile Include="editor\hub\Updates.cpp" />
     <ClCompile Include="editor\dock\DockLayout.cpp" />
@@ -124,6 +125,7 @@
     <ClInclude Include="editor\app\App.h" />
     <ClInclude Include="editor\app\Paths.h" />
     <ClInclude Include="editor\app\Integrity.h" />
+    <ClInclude Include="editor\app\EngineKey.h" />
     <ClInclude Include="editor\lang\Lang.h" />
     <ClInclude Include="editor\hub\Updates.h" />
     <ClInclude Include="editor\project\Options.h" />

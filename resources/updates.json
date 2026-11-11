@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "入れたプラグインをエンジン (exe の場所) ごとに分けた。古いビルドを起動しても、新しいビルドのプラグインを古いもので上書きしない (最初の起動は、前に入れていたものと同じものを入れる)",
+          "en": "Installed plugins are now kept per engine (where its exe is). Starting an old build no longer overwrites a newer build's plugins with old ones (the first start installs the same plugins as before)"
+        },
+        {
           "ja": "とても小さな物 (大きさ 0.0001 以下) もシーンビューでクリックして選べ、ワールドの値も打てるように。ギズモで 1 つの軸の大きさを 0 や裏返しにできないように。つながりの多い大きな FBX も速く読む",
           "en": "Very small objects (scale 0.0001 or less) can be clicked in the scene view and given world values. The gizmo can no longer scale one axis to zero or inside out. Big FBX files with many links load quickly"
         },

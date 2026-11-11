@@ -1,5 +1,7 @@
 #include "editor/app/Paths.h"
 
+#include "editor/app/EngineKey.h"
+#include "base/Utf.h"
 #include "platform/Shell.h"
 
 namespace rm::editor::paths {
@@ -12,7 +14,8 @@ fs::path LocalRoot() { return platform::GetKnownFolder(platform::KnownFolder::Lo
 
 fs::path DefaultProjects() { return platform::EngineDirectory() / L"Project"; }
 fs::path EnginePlugins() { return platform::ExeDirectory() / L"Plugins"; }
-fs::path InstalledPlugins() { return LocalRoot() / L"Plugins"; }
+fs::path InstalledPlugins() { return LocalRoot() / L"Engines" / PathFromUtf8(EngineKey(platform::ExeDirectory())) / L"Plugins"; }
+fs::path LegacyInstalledPlugins() { return LocalRoot() / L"Plugins"; }
 fs::path LogFolder() { return LocalRoot() / L"Logs"; }
 fs::path LogFile() { return LogFolder() / L"editor.log"; }
 fs::path HubSettingsFile() { return platform::GetKnownFolder(platform::KnownFolder::RoamingAppData) / L"RM_Engine" / L"hub.json"; }

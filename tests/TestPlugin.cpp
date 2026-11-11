@@ -337,3 +337,13 @@ RM_TEST(Plugins_ReadyPlugins_OlderCopiesAreCopiedAgain) {
     const auto plan = InstallPlan(Id("game_production"), engine, ready, nullptr);
     CHECK(plan == std::vector<PluginId>({Id("game_production"), Id("game_x_3d")}));
 }
+
+RM_TEST(Plugin_FirstStartInstalls) {
+    const PluginId a{"rm_engine", "game_production"}, b{"rm_engine", "space3d"}, c{"rm_engine", "space2d"};
+    // A new engine with nothing installed before: everything.
+    CHECK(FirstStartInstalls({a, b, c}, {}) == std::vector<PluginId>({a, b, c}));
+    // What the user had in the shared folder carries over (space2d was removed there), in the engine's order;
+    // a plugin this engine does not have is not asked for.
+    const PluginId gone{"someone", "old"};
+    CHECK(FirstStartInstalls({a, b, c}, {b, gone, a}) == std::vector<PluginId>({a, b}));
+}

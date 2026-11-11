@@ -87,22 +87,29 @@ void PutBackInterrupted(const fs::path& to) {
 
 }  // namespace
 
-void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir) {
+void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir, const fs::path& legacyDir) {
     availableDir_ = availableDir;
     installedDir_ = installedDir;
     std::error_code ec;
     const bool firstStart = !fs::exists(installedDir_, ec);
     Reload();  // the engine's copies are known (names in the log) before anything is installed
     if (firstStart) {
-        // First start of this engine for this user: everything that comes with it is installed.
+        // First start of this engine for this user: what was installed in the folder every engine
+        // shared before (the user's choice carries over), else everything that comes with it.
         fs::create_directories(installedDir_, ec);
-        std::vector<PluginId> all;
+        std::vector<PluginId> available, legacy;
         for (const BuiltinPlugin& b : BuiltinPlugins()) {
-            if (fs::exists(FolderOf(availableDir_, b.id.Id()) / L"plugin.json", ec)) all.push_back(b.id.Id());
+            if (fs::exists(FolderOf(availableDir_, b.id.Id()) / L"plugin.json", ec)) available.push_back(b.id.Id());
+            if (!legacyDir.empty() && fs::exists(FolderOf(legacyDir, b.id.Id()) / L"plugin.json", ec)) legacy.push_back(b.id.Id());
         }
+        const std::vector<PluginId> first = FirstStartInstalls(available, legacy);
         std::string err;
-        if (!Install(all, &err)) log::Error("{}", err);
-        log::Info("最初の起動なので、エンジンに入っているプラグインをすべてインストールしました ({} 個)", all.size());
+        if (!Install(first, &err)) log::Error("{}", err);
+        if (legacy.empty()) {
+            log::Info("このエンジンの最初の起動なので、エンジンに入っているプラグインをすべてインストールしました ({} 個)", first.size());
+        } else {
+            log::Info("このエンジンの最初の起動なので、前に入れていたプラグイン ({}) と同じものをインストールしました ({} 個)", PathToUtf8(legacyDir), first.size());
+        }
         Reload();
     }
 }

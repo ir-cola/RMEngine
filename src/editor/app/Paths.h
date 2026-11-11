@@ -3,7 +3,10 @@
 //
 //   <engine>/Project/                       new projects (default)   engine = platform::EngineDirectory()
 //   <exe>/Plugins/<author>/<name>/          plugins this engine has
-//   %LOCALAPPDATA%\RM_Engine\Plugins\       installed plugins
+//   %LOCALAPPDATA%\RM_Engine\Engines\<key>\Plugins\   installed plugins of THIS engine (EngineKey.h:
+//                                           every build / copy of the engine has its own)
+//   %LOCALAPPDATA%\RM_Engine\Plugins\       where every engine kept them before (read once: what
+//                                           was installed there is what a new engine installs first)
 //   %LOCALAPPDATA%\RM_Engine\Logs\          editor.log
 //   %APPDATA%\RM_Engine\hub.json            the Hub's settings (HubSettings)
 //   %APPDATA%\RM_Engine\Layouts.json        panel layouts shared by every project (per software)
@@ -15,6 +18,7 @@ namespace rm::editor::paths {
 std::filesystem::path DefaultProjects();
 std::filesystem::path EnginePlugins();
 std::filesystem::path InstalledPlugins();
+std::filesystem::path LegacyInstalledPlugins();
 std::filesystem::path LogFolder();
 std::filesystem::path LogFile();
 std::filesystem::path HubSettingsFile();

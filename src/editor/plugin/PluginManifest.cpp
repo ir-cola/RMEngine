@@ -301,6 +301,15 @@ std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed,
     return ready;
 }
 
+std::vector<PluginId> FirstStartInstalls(const std::vector<PluginId>& available, const std::vector<PluginId>& legacyInstalled) {
+    if (legacyInstalled.empty()) return available;
+    std::vector<PluginId> out;
+    for (const PluginId& id : available) {
+        if (Contains(legacyInstalled, id)) out.push_back(id);
+    }
+    return out;
+}
+
 std::vector<Dependent> Dependents(const PluginId& id, const std::vector<PluginManifest>& installed) {
     // Breadth first from `id`: whoever requires a plugin in the frontier is the next ring.
     std::vector<Dependent> out;

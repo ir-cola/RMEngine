@@ -107,6 +107,11 @@ std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginMa
 // again by the next install plan. Plugins this engine does not have are taken as they are.
 std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available);
 
+// What the first start of an engine installs (its own folder of installed plugins is new): what the
+// user had installed in the folder every engine shared before (`legacyInstalled`, when it had any),
+// else everything the engine has. In the engine's order; only plugins the engine has.
+std::vector<PluginId> FirstStartInstalls(const std::vector<PluginId>& available, const std::vector<PluginId>& legacyInstalled);
+
 struct Dependent {
     PluginId id;
     std::optional<PluginId> via;  // empty: needs it directly; else needs it through this plugin

@@ -29,7 +29,7 @@ plugins/
 | テンプレート | `templates/<id>/template.json` に 1 テンプレート 1 ファイル (形は `src/editor/project/Templates.h`): 木の場所 `path` (ID の配列。a-z 0-9 _)・`name` / `description`・`plugins` (中身が使うもの。自分は書かなくてよい)・`open` (最初に開くソフト)・`project` (新しい `.rmpf` に入れるキー。ゲームなら `softwareData` に最初のシーン)・`userSettings` (`Layout.json` の `softwares` に入れる最初の配置)。核は**エンジンが持つ方**の `templates/` を読むので、入っていなくても木に出る。名前と説明の英語はそのプラグインの `lang/en.json` (`check_lang.ps1` が確かめる)。テンプレートが使わないプラグインは `plugin.json` に `"software": ["game"]` を書くと、Hub の「ソフトで絞る」でそのソフトに出る (書かなければ「共通」) |
 | ランタイムだけ | エディターの部分が無いプラグインも `BuiltinPlugins.cpp` に `RegisterEditor` 無し (`nullptr`) で載せる |
 | ビルド | 全部 `RM_Engine.exe` に静的リンク。ソースはワイルドカードで拾うので vcxproj を書き直さなくてよい。`plugin.json` はビルドで `build/bin/.../Plugins/<作者>/<名前>/` へ写る (= このエンジンが持っているもの) |
-| インストール | Hub で入れると `%LOCALAPPDATA%\RM_Engine\Plugins\<作者>\<名前>\` へフォルダごと写る。入っていないプラグインは初期化されない。最初の起動では全部入る |
+| インストール | Hub で入れると `%LOCALAPPDATA%\RM_Engine\Engines\<エンジン>\Plugins\<作者>\<名前>\` へフォルダごと写る。入っていないプラグインは初期化されない。最初の起動では全部入る |
 
 決まりは `tools/check_layers.ps1` がビルドと CI のたびに検査する。
 
