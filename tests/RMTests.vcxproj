@@ -84,6 +84,7 @@
     <ClCompile Include="..\src\core\reflect\Object.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Transform.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\View.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Mesh.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\editor\Gizmo.cpp" />
     <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
   </ItemGroup>

@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "シーンビューで 3D モデル (glTF / GLB / OBJ) を描く: エンティティに「メッシュ (3D モデル)」の部品を足して、プロジェクトの中のファイルを指す。光の影を床と物に落とす (左上の「影」でオン / オフ)",
+          "en": "The scene view draws 3D models (glTF / GLB / OBJ): add a Mesh (3D model) component to an entity and point it at a file in the project. The light casts shadows on the floor and on objects (Shadows at the top left turns them on / off)"
+        },
+        {
           "ja": "パネルのタブが列に入りきらないとき、ホイール・左右の送りボタンで流し、▾ の一覧から選べるように (選んだタブは見える所までずれる)。「ウィンドウ」メニューで今の配置に名前を付けて保存し、切り替え・名前の変更・削除ができるように",
           "en": "When a panel's tabs do not fit, scroll them with the wheel or the arrow buttons, or pick one from the ▾ list (the chosen tab scrolls into view). The Window menu can save the current layout under a name, switch to it, rename it and delete it"
         },

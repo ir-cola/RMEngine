@@ -209,5 +209,7 @@ inline Color GizmoHot() { return Color::Hex(0xF2C230); }  // the gizmo handle un
 inline Color SceneObject() { return IsLight ? Color::Hex(0xAEB4BF) : Color::Hex(0x98A2B3); }
 inline Color SceneObjectSelected() { return Mix(SceneObject(), Accent, 0.55f); }
 inline Color SceneObjectInactive() { return Mix(SceneObject(), SceneBackground(), 0.6f); }
+// Shadows falling on the floor (laid over the background: darker on the dark theme to still show).
+inline Color SceneShadow() { return Color{0, 0, 0, IsLight ? 0.30f : 0.55f}; }
 
 }  // namespace rm::editor::theme

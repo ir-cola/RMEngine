@@ -24,6 +24,8 @@ Vec3 TransformDirection(const Mat4& m, Vec3 d);
 std::optional<Mat4> Inverse(const Mat4& m);  // nullopt when it cannot be inverted (a scale of 0)
 
 Mat4 Perspective(float fovYDegrees, float aspect, float nearZ, float farZ);
+// A box of view space (x left..right, y bottom..top, z -nearZ..-farZ: in front of the eye) -> -1..1, -1..1, 0..1.
+Mat4 Orthographic(float left, float right, float bottom, float top, float nearZ, float farZ);
 Mat4 LookAt(Vec3 eye, Vec3 target, Vec3 up);
 
 struct Ray {
@@ -36,6 +38,20 @@ Ray ScreenRay(const Mat4& inverseViewProjection, float ndcX, float ndcY);
 std::optional<float> IntersectBox(const Ray& ray, Vec3 min, Vec3 max);
 // The unit cube (-0.5 .. 0.5) placed by `world` (moved, turned, scaled): distance in world units.
 std::optional<float> IntersectPlacedCube(const Ray& ray, const Mat4& world);
+// A box of a thing's own space (a model's bounds) placed by `world`: distance in world units.
+std::optional<float> IntersectPlacedBox(const Ray& ray, const Mat4& world, Vec3 min, Vec3 max);
+
+// The box along the world's axes that holds a box of a thing's own space placed by `world`.
+struct Bounds {
+    Vec3 min{0, 0, 0}, max{0, 0, 0};
+};
+Bounds WorldBounds(const Mat4& world, Vec3 min, Vec3 max);
+
+// A directional light's view-projection for a shadow map: looks along `direction` (where the light
+// goes) and holds the box `casters` (everything that casts a shadow) in -1..1 x -1..1, depth 0..1.
+// A shadow falls along the light, so the places it falls on are inside the same x / y. A point
+// farther than the box is past depth 1 (the shader keeps it at 1: behind every caster).
+Mat4 DirectionalShadowMatrix(Vec3 direction, const Bounds& casters);
 
 // Where a point is on the screen: ndc x / y (-1 .. 1, y up) and its depth (0 near .. 1 far);
 // nullopt when it is behind the eye.

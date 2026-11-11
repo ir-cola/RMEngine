@@ -8,3 +8,4 @@
 *.rc   text eol=crlf
 *.png  binary
 *.ico  binary
+*.glb  binary

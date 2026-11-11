@@ -1,13 +1,17 @@
 #include "rm_engine/game_x_3d/editor/SceneView3D.h"
 
 #include "base/Log.h"
+#include "base/Utf.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
 #include "editor/lang/Lang.h"
+#include "editor/project/Project.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/game_x_3d/editor/SceneViewState.h"
+#include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
+#include "rm_engine/space3d/runtime/MeshFile.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 #include "rm_engine/space3d/runtime/View.h"
 #include "ui/Path.h"
@@ -16,7 +20,9 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <filesystem>
 #include <format>
+#include <memory>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
@@ -41,13 +47,15 @@ constexpr float kOrbitDegreesPerDip = 0.4f;
 constexpr float kClickSlop = 4.f;  // a press that moves less than this is a click
 constexpr int kGridHalf = 20;      // the grid goes from -20 to 20 (1 per line, darker every 10)
 constexpr float kBarH = 28.f;      // the tool strip at the top left
-constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kBarGap = 8.f;
+constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kShadowW = 56.f, kBarGap = 8.f;
 constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
+constexpr double kModelCheckSeconds = 1.0;    // how often a model file is looked at again (changed on disk?)
+constexpr double kModelForgetSeconds = 10.0;  // a model no entity uses for this long leaves the GPU
 
-// The tool strip's parts: 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心, 刻み; they go on a
+// The tool strip's parts: 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心, 刻み, 影; they go on a
 // second row when the view is too narrow for one. `all` = round all of them.
 struct BarLayout {
-    Rect tool, space, pivot, snap, all;
+    Rect tool, space, pivot, snap, shadow, all;
 };
 
 struct Placed {
@@ -55,6 +63,23 @@ struct Placed {
     Mat4 world;
     Mat4 parentWorld;
     bool active;
+    // What is drawn: the model (null: the unit cube) and its bounds in its own space - what a click
+    // hits and what F frames.
+    const space3d::GpuMesh* mesh = nullptr;
+    bool castShadow = true;
+    Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
+};
+
+// A model file read once and kept on the GPU, by the path written in the MeshRenderer (several
+// entities with the same model share it). Looked at again now and then: a file changed on disk
+// (exported again from a 3D tool) is read again; a file that cannot be read is told once.
+struct ModelEntry {
+    std::shared_ptr<const space3d::GpuMesh> gpu;
+    bool looked = false;  // the file has been looked for at least once
+    bool loaded = false;  // ... and read (or tried to be) as it is at `time`
+    bool told = false;    // that it is missing / not inside the project was written to the console
+    std::filesystem::file_time_type time{};
+    double checkedAt = 0, usedAt = 0;
 };
 
 // One thing being dragged by the gizmo: as it was when the drag began, and where it is now.
@@ -95,10 +120,13 @@ public:
             return;
         }
         transformType_ = reflect::TypeOf<Transform>().name;
-        Place(host.scene);
+        meshType_ = reflect::TypeOf<MeshRenderer>().name;
+        now_ = c.Time();
+        Place(host);
+        ForgetUnusedModels();
         const std::optional<BarLayout> bar = Bar(r);
         if (!bar) snapOpen_ = false;
-        if (HandleInput(c, r, host, bar)) Place(host.scene);  // a gizmo drag moved things this frame
+        if (HandleInput(c, r, host, bar)) Place(host);  // a gizmo drag moved things this frame
         Render(c, r, host);
         DrawGizmo(c, r, host);
         DrawHints(c, r, bar);
@@ -125,8 +153,10 @@ private:
         return renderer_.Ready();
     }
 
-    // Where every entity with a Transform is in the world (its parents' Transforms included).
-    void Place(const game_production::Scene& scene) {
+    // Where every entity with a Transform is in the world (its parents' Transforms included), and
+    // what it looks like (its model, or a box).
+    void Place(game_production::SceneViewHost& host) {
+        const game_production::Scene& scene = host.scene;
         placed_.clear();
         std::unordered_map<int, Mat4> world;  // parents come before their children in TreeOrder
         for (const auto& t : scene.TreeOrder()) {
@@ -137,11 +167,79 @@ private:
             if (comp && comp->Known()) {
                 const Mat4 w = space3d::WorldMatrix(parent, *static_cast<const Transform*>(comp->value.Get()));
                 world[e.data.id] = w;
-                placed_.push_back({e.data.id, w, parent, t.activeInHierarchy});
+                Placed p{e.data.id, w, parent, t.activeInHierarchy};
+                p.castShadow = t.activeInHierarchy;  // a thing switched off shows faintly, without a shadow
+                const game_production::Component* mc = e.FindComponent(meshType_);
+                if (mc && mc->Known()) {
+                    const auto& mr = *static_cast<const MeshRenderer*>(mc->value.Get());
+                    p.castShadow = p.castShadow && mr.castShadows;
+                    if (const space3d::GpuMesh* g = Model(mr.model, host)) {
+                        p.mesh = g;
+                        p.min = g->min;
+                        p.max = g->max;
+                    }
+                }
+                placed_.push_back(p);
             } else {
                 world[e.data.id] = parent;  // no place of its own: its children follow the parent
             }
         }
+    }
+
+    // The model at `path` (inside the project), read the first time it is asked for; null: draw a box.
+    const space3d::GpuMesh* Model(const std::string& path, game_production::SceneViewHost& host) {
+        if (path.empty()) return nullptr;
+        ModelEntry& m = models_[path];
+        m.usedAt = now_;
+        if (m.looked && now_ - m.checkedAt < kModelCheckSeconds) return m.gpu.get();
+        const bool firstLook = !m.looked;
+        m.looked = true;
+        m.checkedAt = now_;
+        const std::filesystem::path rel = PathFromUtf8(path);
+        if (rel.has_root_name() || rel.has_root_directory()) {
+            if (!m.told) log::Warn("シーンビュー: モデル「{}」は絶対パスなので読みません。プロジェクトのフォルダからの相対パスにしてください (箱で描きます)", path);
+            m.told = true;
+            return nullptr;
+        }
+        const std::filesystem::path root = host.host.GetProject().Root();
+        const std::filesystem::path file = root / rel;
+        std::error_code ec;
+        const auto time = std::filesystem::last_write_time(file, ec);
+        if (ec) {
+            // A path still being typed in the inspector is not there either: told only when it is
+            // still missing at the next look (a second later), once.
+            m.gpu.reset();
+            m.loaded = false;
+            if (!firstLook && !m.told) {
+                log::Warn("シーンビュー: モデル「{}」が見つからないので箱で描きます (プロジェクトのフォルダ「{}」からの相対パスです)", path, PathToUtf8(root));
+                m.told = true;
+            }
+            return nullptr;
+        }
+        m.told = false;
+        if (m.loaded && time == m.time) return m.gpu.get();  // not changed
+        const bool again = m.gpu != nullptr;
+        m.loaded = true;
+        m.time = time;
+        m.gpu.reset();
+        std::string error;
+        if (auto mesh = space3d::LoadMeshFile(file, &error)) {
+            m.gpu = renderer_.Upload(*mesh, &error);
+            if (m.gpu) {
+                log::Info("シーンビュー: モデル「{}」を{}読みました (頂点 {}・三角形 {})", path, again ? "もう一度" : "", mesh->vertices.size(),
+                          mesh->indices.size() / 3);
+            } else {
+                log::Warn("シーンビュー: モデル「{}」を GPU に載せられないので箱で描きます: {}", path, error);
+            }
+        } else {
+            log::Warn("シーンビュー: モデル「{}」を読めないので箱で描きます: {}", path, error);
+        }
+        return m.gpu.get();
+    }
+
+    // Models no entity has used for a while leave the GPU (read again if they come back).
+    void ForgetUnusedModels() {
+        std::erase_if(models_, [&](const auto& kv) { return now_ - kv.second.usedAt > kModelForgetSeconds; });
     }
 
     const Placed* FindPlaced(int id) const {
@@ -198,8 +296,9 @@ private:
         b.space = place(kSpaceW);
         b.pivot = place(kPivotW);
         b.snap = place(kSnapW);
-        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right()});
-        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.snap.Bottom() - (r.y + 8)};
+        b.shadow = place(kShadowW);
+        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.shadow.Right()});
+        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.shadow.Bottom() - (r.y + 8)};
         return b;
     }
 
@@ -211,7 +310,7 @@ private:
 
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (!bar) return false;
-        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap}) {
+        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->shadow}) {
             if (part.Contains(x, y)) return true;
         }
         return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
@@ -397,7 +496,7 @@ private:
         std::optional<float> best;
         int hit = 0;
         for (const Placed& p : placed_) {
-            const auto t = space3d::IntersectPlacedCube(ray, p.world);
+            const auto t = space3d::IntersectPlacedBox(ray, p.world, p.min, p.max);
             if (t && (!best || *t < *best)) {
                 best = t;
                 hit = p.id;
@@ -408,8 +507,9 @@ private:
 
     void FrameSelection(game_production::SceneViewHost& host) {
         if (const Placed* p = Primary(host)) {
-            const Vec3 center = space3d::TransformPoint(p->world, {0, 0, 0});
-            const float size = space3d::Length(space3d::TransformDirection(p->world, {1, 1, 1}));
+            // The middle of its bounds (a model's origin may be at its feet), as far as they reach.
+            const Vec3 center = space3d::TransformPoint(p->world, (p->min + p->max) * 0.5f);
+            const float size = space3d::Length(space3d::TransformDirection(p->world, p->max - p->min));
             space3d::Frame(state_.camera, center, std::max(size * 0.5f, 0.5f));
         }
     }
@@ -431,11 +531,16 @@ private:
         line({0, 0, 0}, {0, 1.5f, 0}, theme::AxisY());
 
         boxes_.clear();
+        meshes_.clear();
         for (const Placed& p : placed_) {
             const bool selected = std::find(host.selection.begin(), host.selection.end(), p.id) != host.selection.end();
             const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
-            boxes_.push_back({p.world, col});
-            if (selected) Outline(p.world, theme::Accent);
+            if (p.mesh) {
+                meshes_.push_back({p.mesh, p.world, col, p.castShadow});
+            } else {
+                boxes_.push_back({p.world, col, p.castShadow});
+            }
+            if (selected) Outline(p.world, p.min, p.max, theme::Accent);
         }
 
         // The picture in pixels of this window (sharp on high-DPI screens).
@@ -451,6 +556,9 @@ private:
         f.clear = theme::SceneBackground();
         f.lines = lines_;
         f.boxes = boxes_;
+        f.meshes = meshes_;
+        f.shadows = state_.shadows;
+        f.shadowColor = theme::SceneShadow();
 
         // Direct2D's drawing so far goes to the GPU first; then Direct3D draws into its own picture.
         dc->Flush();
@@ -469,11 +577,11 @@ private:
         c.P().Image(bitmap_.Get(), r);
     }
 
-    // The 12 edges of the placed unit cube.
-    void Outline(const Mat4& w, ui::Color col) {
+    // The 12 edges of a box of the thing's own space (the unit cube, or a model's bounds), placed.
+    void Outline(const Mat4& w, Vec3 mn, Vec3 mx, ui::Color col) {
         Vec3 k[8];
         for (int i = 0; i < 8; ++i) {
-            k[i] = space3d::TransformPoint(w, {(i & 1) ? 0.5f : -0.5f, (i & 2) ? 0.5f : -0.5f, (i & 4) ? 0.5f : -0.5f});
+            k[i] = space3d::TransformPoint(w, {(i & 1) ? mx.x : mn.x, (i & 2) ? mx.y : mn.y, (i & 4) ? mx.z : mn.z});
         }
         const int edges[12][2] = {{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
         for (const auto& e : edges) {
@@ -616,6 +724,11 @@ private:
             snapOpen_ = !snapOpen_;
         }
         if (!snapOpen_ && c.IsHovered(bar.snap)) w::Tooltip(c, Tr(L"ギズモの刻む幅 (Ctrl を押しながらドラッグすると刻んで動く)"));
+        // 影: the light's shadows on the floor and on things (in the accent while on).
+        if (w::Button(c, "scene_shadows", bar.shadow, Tr(L"影"), state_.shadows ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+            state_.shadows = !state_.shadows;
+        }
+        if (c.IsHovered(bar.shadow)) w::Tooltip(c, Tr(L"上からの光の影を、床と物に落とす (押すと切り替え)"));
     }
 
     // The steps of the gizmo: how far a move, a turn and a scale go at a time; and whether always.
@@ -665,7 +778,7 @@ private:
             hint.size = 12;
             hint.v = ui::VAlign::Top;
             hint.color = theme::TextFaint;
-            c.P().Text(r.Inset(10, bar ? bar->all.Bottom() - r.y + 10 : 8, 10, 8), Tr(L"Transform の付いたエンティティが、ここに箱で出ます。"), hint);
+            c.P().Text(r.Inset(10, bar ? bar->all.Bottom() - r.y + 10 : 8, 10, 8), Tr(L"Transform の付いたエンティティが、ここに箱で出ます。メッシュ (3D モデル) の部品を付けると、そのモデルで描きます。"), hint);
         }
     }
 
@@ -675,10 +788,13 @@ private:
     reflect::Unknowns unknowns_;  // keys of a newer version: written back unchanged
     space3d::Renderer renderer_;
     bool tried_ = false;
-    std::string transformType_;
+    std::string transformType_, meshType_;
     std::vector<Placed> placed_;
     std::vector<space3d::LineVertex> lines_;
     std::vector<space3d::Box> boxes_;
+    std::vector<space3d::MeshDraw> meshes_;
+    std::unordered_map<std::string, ModelEntry> models_;  // by the path written in MeshRenderer
+    double now_ = 0;
 
     Drag drag_ = Drag::None;
     float pressX_ = 0, pressY_ = 0;

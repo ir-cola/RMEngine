@@ -75,6 +75,17 @@ Mat4 Perspective(float fovYDegrees, float aspect, float nearZ, float farZ) {
     return p;
 }
 
+Mat4 Orthographic(float l, float r, float b, float t, float n, float f) {
+    Mat4 o;
+    o.m[0][0] = 2.f / (r - l);
+    o.m[1][1] = 2.f / (t - b);
+    o.m[2][2] = 1.f / (n - f);
+    o.m[3][0] = (l + r) / (l - r);
+    o.m[3][1] = (t + b) / (b - t);
+    o.m[3][2] = n / (n - f);
+    return o;
+}
+
 Mat4 LookAt(Vec3 eye, Vec3 target, Vec3 up) {
     const Vec3 f = Normalize(target - eye);
     Vec3 s = Normalize(Cross(f, up));
@@ -126,11 +137,53 @@ std::optional<float> IntersectBox(const Ray& ray, Vec3 mn, Vec3 mx) {
 }
 
 std::optional<float> IntersectPlacedCube(const Ray& ray, const Mat4& world) {
+    return IntersectPlacedBox(ray, world, {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f});
+}
+
+std::optional<float> IntersectPlacedBox(const Ray& ray, const Mat4& world, Vec3 mn, Vec3 mx) {
     const auto inv = Inverse(world);
     if (!inv) return std::nullopt;
-    // In the cube's own space the same t reaches the same point (the ray is moved, not re-measured).
+    // In the box's own space the same t reaches the same point (the ray is moved, not re-measured).
     const Ray local{TransformPoint(*inv, ray.origin), TransformDirection(*inv, ray.dir)};
-    return IntersectBox(local, {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f});
+    return IntersectBox(local, mn, mx);
+}
+
+Bounds WorldBounds(const Mat4& world, Vec3 mn, Vec3 mx) {
+    Bounds b;
+    for (int i = 0; i < 8; ++i) {
+        const Vec3 p = TransformPoint(world, {(i & 1) ? mx.x : mn.x, (i & 2) ? mx.y : mn.y, (i & 4) ? mx.z : mn.z});
+        if (i == 0) {
+            b.min = b.max = p;
+            continue;
+        }
+        b.min = {std::min(b.min.x, p.x), std::min(b.min.y, p.y), std::min(b.min.z, p.z)};
+        b.max = {std::max(b.max.x, p.x), std::max(b.max.y, p.y), std::max(b.max.z, p.z)};
+    }
+    return b;
+}
+
+Mat4 DirectionalShadowMatrix(Vec3 direction, const Bounds& casters) {
+    Vec3 dir = Normalize(direction);
+    if (Length(dir) == 0) dir = {0, -1, 0};
+    const Vec3 center = (casters.min + casters.max) * 0.5f;
+    const float radius = std::max(Length(casters.max - casters.min) * 0.5f, 0.01f);
+    // Looking straight down (or up) the usual up is the line of sight: another one is taken.
+    const Vec3 up = std::fabs(dir.y) > 0.99f ? Vec3{0, 0, 1} : Vec3{0, 1, 0};
+    const Mat4 view = LookAt(center - dir * (radius * 2.f), center, up);
+    // The box's corners as the light sees them: the tightest fit (a little wider, so edges are not cut).
+    float lo[3] = {0, 0, 0}, hi[3] = {0, 0, 0};
+    for (int i = 0; i < 8; ++i) {
+        const Vec3 p = TransformPoint(view, {(i & 1) ? casters.max.x : casters.min.x, (i & 2) ? casters.max.y : casters.min.y,
+                                             (i & 4) ? casters.max.z : casters.min.z});
+        const float v[3] = {p.x, p.y, p.z};
+        for (int a = 0; a < 3; ++a) {
+            lo[a] = i == 0 ? v[a] : std::min(lo[a], v[a]);
+            hi[a] = i == 0 ? v[a] : std::max(hi[a], v[a]);
+        }
+    }
+    const float pad = radius * 0.02f + 0.01f;
+    // View space looks along -z: the nearest corner has the largest z.
+    return Orthographic(lo[0] - pad, hi[0] + pad, lo[1] - pad, hi[1] + pad, -hi[2] - pad, -lo[2] + pad) * view;
 }
 
 Vec3 OrbitView::Forward() const {

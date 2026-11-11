@@ -1,6 +1,6 @@
 {
   "3D の描画を始められませんでした。くわしくはコンソールを見てください。": "Could not start 3D drawing. See the console for details.",
-  "Transform の付いたエンティティが、ここに箱で出ます。": "Entities with a Transform show here as boxes.",
+  "Transform の付いたエンティティが、ここに箱で出ます。メッシュ (3D モデル) の部品を付けると、そのモデルで描きます。": "Entities with a Transform show here as boxes. Add a Mesh (3D model) component to draw them with that model.",
   "ゲーム制作 × 3D": "Game Production × 3D",
   "移動": "Move",
   "回転": "Rotate",
@@ -21,5 +21,11 @@
   "ギズモの刻む幅 (Ctrl を押しながらドラッグすると刻んで動く)": "The gizmo's snap steps (drag with Ctrl held to move in steps)",
   "回転 (度)": "Rotate (degrees)",
   "大きさ": "Scale",
-  "いつも刻む (Ctrl を押すとなめらか)": "Always snap (Ctrl for smooth)"
+  "いつも刻む (Ctrl を押すとなめらか)": "Always snap (Ctrl for smooth)",
+  "影": "Shadows",
+  "上からの光の影を、床と物に落とす (押すと切り替え)": "Cast the light's shadows on the floor and on objects (click to switch)",
+  "メッシュ (3D モデル)": "Mesh (3D model)",
+  "モデル": "Model",
+  "プロジェクトのフォルダからの相対パス (例: Assets/Models/robot.glb)。.gltf / .glb / .obj が読めます": "A path relative to the project folder (e.g. Assets/Models/robot.glb). Reads .gltf / .glb / .obj",
+  "影を落とす": "Cast shadows"
 }

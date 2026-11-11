@@ -1,14 +1,19 @@
-// Tests for the 3D space plugin's math (plugins/rm_engine/space3d/runtime/Transform).
+// Tests for the 3D space plugin's math (plugins/rm_engine/space3d/runtime/Transform, View) and models (Mesh).
 
 #include "Test.h"
 
 #include "core/reflect/Data.h"
 #include "rm_engine/game_x_3d/editor/SceneViewState.h"
+#include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
+#include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <cmath>
+#include <cstring>
+#include <string>
+#include <vector>
 
 using namespace rm;
 using namespace rm::space3d;
@@ -477,4 +482,229 @@ RM_TEST(SceneViewState_KeepsCameraAndTool) {
     reflect::Load(least, j);
     CHECK(std::abs(least.snapDegrees - 0.1f) < 1e-6f);
     CHECK(reflect::Save(clamped, &u).Find("future") != nullptr);
+}
+
+// --- Models (space3d/runtime/Mesh) and what the scene view does with their bounds ---------------
+
+namespace {
+
+std::string Base64(const std::vector<uint8_t>& b) {
+    static const char* k = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    for (size_t i = 0; i < b.size(); i += 3) {
+        const uint32_t n = (uint32_t{b[i]} << 16) | (i + 1 < b.size() ? uint32_t{b[i + 1]} << 8 : 0u) | (i + 2 < b.size() ? uint32_t{b[i + 2]} : 0u);
+        out += k[(n >> 18) & 63];
+        out += k[(n >> 12) & 63];
+        out += i + 1 < b.size() ? k[(n >> 6) & 63] : '=';
+        out += i + 2 < b.size() ? k[n & 63] : '=';
+    }
+    return out;
+}
+
+template <class T>
+void PutBytes(std::vector<uint8_t>& out, std::initializer_list<T> values) {
+    for (const T v : values) {
+        uint8_t p[sizeof(T)];
+        std::memcpy(p, &v, sizeof(T));
+        out.insert(out.end(), p, p + sizeof(T));
+    }
+}
+
+// One triangle (0,0,0) (1,0,0) (0,1,0), counter-clockwise seen from +Z, with ushort indices: 44 bytes.
+std::vector<uint8_t> TriangleBin(uint16_t lastIndex = 2) {
+    std::vector<uint8_t> b;
+    PutBytes<float>(b, {0, 0, 0, 1, 0, 0, 0, 1, 0});
+    PutBytes<uint16_t>(b, {0, 1, lastIndex, 0});
+    return b;
+}
+
+// The glTF of that triangle; `buffer` = more keys of "buffers":[{...}], `node` = the node's keys.
+std::string TriangleGltf(const std::string& buffer, const std::string& node = "\"translation\":[0,0,5]") {
+    return std::string(R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],)") + R"("nodes":[{"mesh":0,)" + node + "}]," +
+           R"("meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}],)" + R"("buffers":[{"byteLength":44)" + buffer + "}]," +
+           R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":6}],)" +
+           R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},)" +
+           R"({"bufferView":1,"componentType":5123,"count":3,"type":"SCALAR"}]})";
+}
+
+std::string Embedded(const std::vector<uint8_t>& bin) { return ",\"uri\":\"data:application/octet-stream;base64," + Base64(bin) + "\""; }
+
+std::span<const uint8_t> Bytes(const std::string& s) { return {reinterpret_cast<const uint8_t*>(s.data()), s.size()}; }
+
+}  // namespace
+
+RM_TEST(Mesh_Base64AndPercent) {
+    const std::vector<uint8_t> data{0, 1, 2, 250, 251, 252, 'a'};
+    const auto back = DecodeBase64(Base64(data));
+    CHECK(back && *back == data);
+    CHECK(DecodeBase64("TWFu") == std::vector<uint8_t>({'M', 'a', 'n'}));
+    CHECK(!DecodeBase64("TW*u"));   // not base64
+    CHECK(!DecodeBase64("TWFuT"));  // one character alone
+    CHECK(DecodePercent("my%20model.bin") == "my model.bin");
+    CHECK(DecodePercent("100%") == "100%");  // not a code: left as it is
+}
+
+RM_TEST(Mesh_Gltf_EmbeddedTriangleIsPlacedByItsNode) {
+    std::string error;
+    const std::string doc = TriangleGltf(Embedded(TriangleBin()));
+    const auto m = ParseMesh(".gltf", Bytes(doc), nullptr, &error);
+    CHECK(m.has_value());
+    if (!m) return;
+    CHECK(m->vertices.size() == 3 && m->indices.size() == 3);
+    CHECK(Near(m->vertices[1].position, {1, 0, 5}));  // moved by the node
+    CHECK(Near(m->vertices[0].normal, {0, 0, 1}));    // no normals in the file: made, facing the front
+    CHECK(Near(m->min, {0, 0, 5}) && Near(m->max, {1, 1, 5}));
+}
+
+RM_TEST(Mesh_Gltf_MirroredNodeKeepsTheFront) {
+    std::string error;
+    const auto m = ParseGltf(Bytes(TriangleGltf(Embedded(TriangleBin()), "\"scale\":[-1,1,1]")), nullptr, &error);
+    CHECK(m.has_value());
+    if (!m) return;
+    const Vec3 a = m->vertices[m->indices[0]].position, b = m->vertices[m->indices[1]].position, c = m->vertices[m->indices[2]].position;
+    CHECK(Near(m->vertices[1].position, {-1, 0, 0}));
+    // Counter-clockwise still turns towards the normal.
+    CHECK(Dot(Cross(b - a, c - a), m->vertices[0].normal) > 0);
+}
+
+RM_TEST(Mesh_Gltf_BufferInAnotherFile) {
+    std::string error;
+    std::string asked;
+    const ReadRelated read = [&](std::string_view uri) -> std::optional<std::vector<uint8_t>> {
+        asked = uri;
+        return TriangleBin();
+    };
+    const auto m = ParseGltf(Bytes(TriangleGltf(",\"uri\":\"tri%20data.bin\"")), read, &error);
+    CHECK(m.has_value() && asked == "tri data.bin");
+    const ReadRelated missing = [](std::string_view) -> std::optional<std::vector<uint8_t>> { return std::nullopt; };
+    CHECK(!ParseGltf(Bytes(TriangleGltf(",\"uri\":\"gone.bin\"")), missing, &error));
+    CHECK(error.find("gone.bin") != std::string::npos);
+}
+
+RM_TEST(Mesh_Glb_OneFile) {
+    std::string json = TriangleGltf("");  // buffer 0 without a uri: the BIN chunk
+    while (json.size() % 4 != 0) json += ' ';
+    const std::vector<uint8_t> bin = TriangleBin();
+    std::vector<uint8_t> glb;
+    PutBytes<uint32_t>(glb, {0x46546C67u, 2u, static_cast<uint32_t>(12 + 8 + json.size() + 8 + bin.size())});
+    PutBytes<uint32_t>(glb, {static_cast<uint32_t>(json.size()), 0x4E4F534Au});
+    glb.insert(glb.end(), json.begin(), json.end());
+    PutBytes<uint32_t>(glb, {static_cast<uint32_t>(bin.size()), 0x004E4942u});
+    glb.insert(glb.end(), bin.begin(), bin.end());
+    std::string error;
+    const auto m = ParseMesh(".GLB", glb, nullptr, &error);
+    CHECK(m.has_value() && m->indices.size() == 3);
+    // Cut short: told, not read past the end.
+    glb.resize(glb.size() - 20);
+    CHECK(!ParseMesh(".glb", glb, nullptr, &error));
+}
+
+RM_TEST(Mesh_Gltf_BrokenFilesAreToldWhy) {
+    std::string error;
+    // An index past the last vertex.
+    CHECK(!ParseGltf(Bytes(TriangleGltf(Embedded(TriangleBin(7)))), nullptr, &error));
+    CHECK(error.find("インデックス") != std::string::npos);
+    // A buffer shorter than it says.
+    std::vector<uint8_t> shortBin = TriangleBin();
+    shortBin.resize(20);
+    CHECK(!ParseGltf(Bytes(TriangleGltf(Embedded(shortBin))), nullptr, &error));
+    // Not JSON at all; glTF 1.0; a format not read.
+    CHECK(!ParseGltf(Bytes(std::string("not json")), nullptr, &error));
+    CHECK(!ParseGltf(Bytes(std::string(R"({"asset":{"version":"1.0"}})")), nullptr, &error));
+    CHECK(!ParseMesh(".fbx", Bytes(std::string("x")), nullptr, &error));
+}
+
+RM_TEST(Mesh_Gltf_StripBecomesTriangles) {
+    std::vector<uint8_t> bin;
+    PutBytes<float>(bin, {0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0});
+    const std::string doc = std::string(R"({"asset":{"version":"2.0"},"meshes":[{"primitives":[{"attributes":{"POSITION":0},"mode":5}]}],)") +
+                            R"("buffers":[{"byteLength":48)" + Embedded(bin) + "}]," +
+                            R"("bufferViews":[{"buffer":0,"byteLength":48}],"accessors":[{"bufferView":0,"componentType":5126,"count":4,"type":"VEC3"}]})";
+    std::string error;
+    const auto m = ParseGltf(Bytes(doc), nullptr, &error);  // no scenes, no nodes: the meshes as they are
+    CHECK(m.has_value() && m->indices.size() == 6);
+    if (!m) return;
+    for (size_t t = 0; t < 6; t += 3) {
+        const Vec3 a = m->vertices[m->indices[t]].position, b = m->vertices[m->indices[t + 1]].position, c = m->vertices[m->indices[t + 2]].position;
+        CHECK(Cross(b - a, c - a).z > 0);  // both face the front
+    }
+}
+
+RM_TEST(Mesh_Obj) {
+    std::string error;
+    // A square (one polygon of 4) with UVs and normals; the second face counts back from the end.
+    const char* square = "# a square\nv 0 0 0\nv 1 0 0\nv 1 1 0\r\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\nvn 0 0 1\n"
+                         "o Square\nusemtl none\nf 1/1/1 2/2/1 3/3/1 4/4/1\nf -4/-4/-1 -2/-2/-1 -1/-1/-1\n";
+    const auto m = ParseObj(square, &error);
+    CHECK(m.has_value());
+    if (!m) return;
+    CHECK(m->indices.size() == 9);
+    CHECK(m->vertices.size() == 4);  // the same corner (v/vt/vn) is one vertex
+    CHECK(NearF(m->vertices[0].uv.y, 1.f) && NearF(m->vertices[2].uv.y, 0.f));  // OBJ's V turned over
+    CHECK(Near(m->min, {0, 0, 0}) && Near(m->max, {1, 1, 0}));
+    // Without normals: made from the faces.
+    const auto flat = ParseObj("v 0 0 0\nv 0 0 1\nv 1 0 0\nf 1 2 3\n", &error);
+    CHECK(flat && Near(flat->vertices[0].normal, {0, 1, 0}));
+    // A wrong number names its line.
+    CHECK(!ParseObj("v 0 0 0\nv 1 0 0\nf 1 2 9\n", &error));
+    CHECK(error.find("3 行目") != std::string::npos);
+    CHECK(!ParseObj("v 0 0 0\n", &error));  // no faces
+}
+
+RM_TEST(Space3d_BoundsAndShadowMatrix) {
+    // A model's bounds placed in the world, and a ray hitting them where the unit cube is not.
+    Transform t;
+    t.position = {10, 0, 0};
+    t.rotation = {0, 90, 0};
+    const Mat4 w = LocalMatrix(t);
+    const Bounds b = WorldBounds(w, {-1, 0, -3}, {1, 2, 3});
+    CHECK(Near(b.min, {7, 0, -1}) && Near(b.max, {13, 2, 1}));
+    const Ray ray{{12.5f, 1, 50}, {0, 0, -1}};
+    CHECK(!IntersectPlacedCube(ray, w).has_value());
+    const auto hit = IntersectPlacedBox(ray, w, {-1, 0, -3}, {1, 2, 3});
+    CHECK(hit && NearF(*hit, 49.f));
+    // Orthographic: the box's corners land on the edges.
+    const Mat4 o = Orthographic(-2, 2, -1, 1, 1, 11);
+    const auto back = ProjectToNdc(o, {2, 1, -11});
+    CHECK(back && Near(*back, {1, 1, 1}));
+    const auto front = ProjectToNdc(o, {-2, -1, -1});
+    CHECK(front && Near(*front, {-1, -1, 0}));
+    // The light's matrix holds every corner of what casts.
+    const Bounds casters{{-1, 0, -1}, {1, 3, 2}};
+    const Vec3 lightDir{-0.45f, -1.f, -0.3f};
+    const Mat4 light = DirectionalShadowMatrix(lightDir, casters);
+    for (int i = 0; i < 8; ++i) {
+        const Vec3 p{(i & 1) ? casters.max.x : casters.min.x, (i & 2) ? casters.max.y : casters.min.y, (i & 4) ? casters.max.z : casters.min.z};
+        const auto q = ProjectToNdc(light, p);
+        CHECK(q && std::abs(q->x) <= 1 && std::abs(q->y) <= 1 && q->z >= 0 && q->z <= 1);
+    }
+    // The shadow of the top corner falls on the floor at the same place of the map, deeper.
+    const Vec3 top{1, 3, 2};
+    const Vec3 dir = Normalize(lightDir);
+    const Vec3 onFloor = top + dir * (3.f / -dir.y);
+    const auto a = ProjectToNdc(light, top), f = ProjectToNdc(light, onFloor);
+    CHECK(a && f && NearF(a->x, f->x) && NearF(a->y, f->y) && f->z > a->z);
+    // Straight down works too (another up is taken).
+    const auto down = ProjectToNdc(DirectionalShadowMatrix({0, -1, 0}, casters), {0, 1, 0});
+    CHECK(down && std::abs(down->x) <= 1 && down->z >= 0 && down->z <= 1);
+}
+
+RM_TEST(MeshRenderer_SavesItsModel) {
+    game_x_3d::MeshRenderer m;
+    CHECK(m.model.empty() && m.castShadows);
+    m.model = "Assets/Models/robot.glb";
+    m.castShadows = false;
+    const json::Value j = reflect::Save(m);
+    game_x_3d::MeshRenderer back;
+    reflect::Load(back, j);
+    CHECK(back.model == "Assets/Models/robot.glb" && !back.castShadows);
+}
+
+RM_TEST(SceneViewState_KeepsShadows) {
+    game_x_3d::SceneViewState st;
+    CHECK(st.shadows);  // on at first
+    st.shadows = false;
+    game_x_3d::SceneViewState back;
+    reflect::Load(back, reflect::Save(st));
+    CHECK(!back.shadows);
 }
