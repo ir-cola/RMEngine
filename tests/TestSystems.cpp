@@ -6,6 +6,8 @@
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/CameraCycle.h"
+#include "rm_engine/game_x_3d/runtime/Id.h"
+#include "rm_engine/game_x_3d/runtime/Register.h"
 #include "rm_engine/game_x_3d/runtime/Spin.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -172,4 +174,19 @@ RM_TEST(Systems_CameraCycle) {
     s.RemoveComponent(director, cycle.name);
     r.Advance(s, 5.0, 0.02f);
     CHECK(r.Camera() == static_cast<uint64_t>(a));
+RM_TEST(Systems_RuntimeRegistry_TheGameReadsTheSameList) {
+    // What an exported game does: the runtime parts of the plugins it has register into one list.
+    RuntimeRegistry r;
+    const PluginId x3d = game_x_3d::kPluginId.Id();
+    RegisterRuntimeParts(r, std::span<const PluginId>(&x3d, 1));
+    const auto systems = RegisteredSystems(r);
+    CHECK(systems.size() == 2 && systems[0]->run == &game_x_3d::RunSpin && systems[1]->run == &game_x_3d::RunCameraCycle);
+    const auto comps = r.Contributions<ComponentInfo>(kComponentPoint);
+    CHECK(comps.size() == 2 && comps[0].item->multiple && comps[0].plugin == x3d);
+    CHECK(r.Contributions<SystemInfo>(kComponentPoint).empty());  // another type at that point: not read
+    // A plugin that is not enabled registers nothing.
+    RuntimeRegistry none;
+    const PluginId other{"rm_engine", "space3d"};
+    RegisterRuntimeParts(none, std::span<const PluginId>(&other, 1));
+    CHECK(RegisteredSystems(none).empty());
 }

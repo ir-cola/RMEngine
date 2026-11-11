@@ -10,6 +10,7 @@
 #   * a plugin includes only itself and the plugins listed in "requires" of its plugin.json
 #   * plugin.json names the folder it is in; "requires" never goes round in a circle
 #   * every plugin with an editor part is listed in plugins/BuiltinPlugins.cpp
+#   * plugins/RuntimePlugins.cpp (the list a game exe links) includes nothing editor-only
 param([string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path)
 
 $layers = @{}
@@ -123,6 +124,21 @@ if (Test-Path $pluginsRoot) {
     Get-ChildItem $pluginsRoot -Recurse -Include *.h, *.cpp | ForEach-Object {
         $rel = $_.FullName.Substring($pluginsRoot.Length + 1) -replace '\\', '/'
         if ($rel -eq 'BuiltinPlugins.cpp') { return }  # the list of every plugin
+        if ($rel -eq 'RuntimePlugins.cpp') {
+            # The list of runtime parts: goes into games, so only what ships in games.
+            $n = 0
+            foreach ($text in Get-Content $_.FullName -Encoding UTF8) {
+                $n++
+                if ($text -notmatch '^\s*#\s*include\s+"([^"]+)"') { continue }
+                $inc = $Matches[1]
+                $segs = $inc.Split('/')
+                if (($layers.ContainsKey($segs[0]) -and -not $ships[$segs[0]]) -or ($authors.ContainsKey($segs[0]) -and ($segs.Count -lt 4 -or $segs[2] -ne 'runtime'))) {
+                    Write-Host "plugins/${rel}:${n}: the runtime list ships in games and must include only runtime parts: $inc"
+                    $script:errors++
+                }
+            }
+            return
+        }
         $parts = $rel.Split('/')
         if ($parts.Count -lt 4 -or ($parts[2] -ne 'runtime' -and $parts[2] -ne 'editor')) {
             Write-Host "plugins/${rel}: plugin code goes in <author>/<name>/runtime/ or <author>/<name>/editor/"

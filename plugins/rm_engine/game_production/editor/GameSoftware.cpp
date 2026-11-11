@@ -3,6 +3,7 @@
 #include "base/FileName.h"
 #include "base/Log.h"
 #include "base/Utf.h"
+#include "core/asset/AssetIndex.h"
 #include "core/reflect/Data.h"
 #include "editor/lang/Lang.h"
 #include "editor/project/Project.h"
@@ -107,9 +108,7 @@ public:
         }
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
         // ... and so do the systems that move them while the game plays.
-        std::vector<const SystemInfo*> systems;
-        for (const auto& s : host.Registry().Contributions<SystemInfo>(kSystemPoint)) systems.push_back(s.item);
-        runner_.SetSystems(systems);
+        runner_.SetSystems(RegisteredSystems(host.Registry()));
     }
 
     // --- Software ---------------------------------------------------------------------------
@@ -193,12 +192,7 @@ public:
         // What each placed prefab changed, worked out now against its prefab (kept in the file so a
         // changed prefab can be put under them again when the project is opened).
         Scene saved = scene_;
-        for (const int root : saved.PrefabRoots()) {
-            SceneEntity* r = saved.Find(root);
-            if (const auto it = prefabs_.find(r->prefab.path); it != prefabs_.end()) {
-                r->prefab.overrides = Overrides(saved, root, it->second, placementTypes_);
-            }
-        }
+        UpdateOverrides(saved);
         data.Set("scene", saved.Save());
         return true;
     }
@@ -768,12 +762,18 @@ private:
         const int root = scene_.PrefabRootOf(id);
         if (root == 0) return {};
         const SceneEntity* r = scene_.Find(root);
-        const std::wstring name = Utf8ToWide(PrefabName(r->prefab.path));
+        const std::wstring name = Utf8ToWide(PrefabTitle(r->prefab.asset));
         if (root != id) return TrF(L"Prefab「{}」の一部です", name);
-        const auto it = prefabs_.find(r->prefab.path);
-        if (it == prefabs_.end()) return TrF(L"Prefab「{}」を置いた物です (ファイル {} が読めません)", name, Utf8ToWide(r->prefab.path));
+        const std::wstring where = Utf8ToWide(PrefabWhere(r->prefab.asset));
+        const auto it = prefabs_.find(r->prefab.asset.guid);
+        if (it == prefabs_.end()) return TrF(L"Prefab「{}」を置いた物です (ファイル {} が読めません)", name, where);
         const size_t n = CountOverrides(Overrides(scene_, root, it->second, placementTypes_));
-        return TrF(L"Prefab「{}」を置いた物です ({})。Prefab と違う所: {} 個 (名前と置き場所を含む)", name, Utf8ToWide(r->prefab.path), n);
+        // A prefab nested in another placed prefab: say which.
+        if (const int around = r->prefab.outer > 0 ? scene_.PrefabRootOf(r->data.parent) : 0) {
+            return TrF(L"Prefab「{}」を置いた物です ({})。Prefab「{}」の中に入っています。Prefab と違う所: {} 個 (名前と置き場所を含む)", name,
+                       where, Utf8ToWide(PrefabTitle(scene_.Find(around)->prefab.asset)), n);
+        }
+        return TrF(L"Prefab「{}」を置いた物です ({})。Prefab と違う所: {} 個 (名前と置き場所を含む)", name, where, n);
     }
 
     // The inspector of one entity: the entity itself, then its components (each with ⋮ → 外す), and
@@ -965,57 +965,172 @@ private:
     }
 
     // --- Prefabs -------------------------------------------------------------------------------
-    // Files are named from the project folder ("Assets/Cube.rmprefab"). ★ An asset reference later.
+    // A prefab file is an asset (a .rmprefab in Assets/) and is named by its id (AssetRef): moving or
+    // renaming it keeps every placed one linked. Data from before assets had ids names it by a path
+    // from the project folder - read the same way (SoftwareHost::AssetFile), made an id when opened.
+    static constexpr size_t kMaxNesting = 16;  // prefabs inside prefabs inside ...
+
     std::filesystem::path FullPath(const std::string& path) const { return host_.GetProject().Root() / PathFromUtf8(path); }
 
+    // The prefab's name (its file's, without .rmprefab) and where its file is, for the screen.
+    std::string PrefabTitle(const AssetRef& ref) const {
+        const std::filesystem::path f = host_.AssetFile(ref);
+        return f.empty() ? PrefabName(ref.guid) : PathToUtf8(f.stem());
+    }
+    std::string PrefabWhere(const AssetRef& ref) const {
+        const std::filesystem::path f = host_.AssetFile(ref);
+        return f.empty() ? ref.guid : PathToUtf8(f.lexically_relative(host_.GetProject().Root()).generic_wstring());
+    }
+
     // The prefab file, read now (and kept as the last known form of it). Nothing when it cannot be read.
-    const json::Value* ReadPrefab(const std::string& path) {
+    const json::Value* ReadPrefab(const AssetRef& ref) {
+        const std::filesystem::path file = host_.AssetFile(ref);
+        if (file.empty()) {
+            log::Warn("Prefab のファイル ({}) がプロジェクトの Assets に見つかりません (消されたか、外へ動かされました)", ref.guid);
+            return nullptr;
+        }
         std::string err;
-        const auto bytes = platform::ReadFileBytes(FullPath(path), &err);
+        const auto bytes = platform::ReadFileBytes(file, &err);
         if (!bytes) {
-            log::Warn("Prefab「{}」を読めませんでした: {}", path, err);
+            log::Warn("Prefab「{}」を読めませんでした: {}", PathToUtf8(file.filename()), err);
             return nullptr;
         }
         json::ParseError perr;
         auto v = json::Parse(*bytes, &perr);
         if (!v || !IsPrefab(*v)) {
-            log::Warn("「{}」は Prefab のファイルではありません", path);
+            log::Warn("「{}」は Prefab のファイルではありません", PathToUtf8(file.filename()));
             return nullptr;
         }
-        return &(prefabs_[path] = std::move(*v));
+        return &(prefabs_[ref.guid] = std::move(*v));
+    }
+    const json::Value* Cached(const AssetRef& ref) {
+        const auto it = prefabs_.find(ref.guid);
+        return it != prefabs_.end() ? &it->second : ReadPrefab(ref);
     }
 
-    // Opening the project: every placed prefab is made from its file again (with what it changed), so
-    // a prefab changed since (by another scene, by hand) shows. Not an edit: the project is as it was.
+    // What every placed prefab of `scene` changed, worked out now against its prefab as last read
+    // (kept in the file and in a nested prefab's link, so a changed prefab can be put under it again).
+    void UpdateOverrides(Scene& scene) const {
+        for (const int root : scene.PrefabRoots()) {
+            SceneEntity* r = scene.Find(root);
+            if (const auto it = prefabs_.find(r->prefab.asset.guid); it != prefabs_.end()) {
+                r->prefab.overrides = Overrides(scene, root, it->second, placementTypes_);
+            }
+        }
+    }
+
+    // The prefabs `root` is inside (and its own): a prefab is never filled inside itself.
+    std::vector<std::string> ChainOf(int root) const {
+        std::vector<std::string> chain;
+        size_t steps = 0;
+        for (const SceneEntity* e = scene_.Find(root); e && steps++ <= scene_.Entities().size(); e = scene_.Find(e->data.parent)) {
+            if (e->prefab.Root()) chain.push_back(e->prefab.asset.guid);
+        }
+        return chain;
+    }
+
+    // True when `prefab` has `guid` inside it (nested, at any depth, through the files as last read).
+    bool ContainsPrefab(const json::Value& prefab, const std::string& guid, size_t depth = 0) {
+        if (depth > kMaxNesting) return true;  // deeper than anything sensible: a loop
+        for (const std::string& a : NestedAssets(prefab)) {
+            if (a == guid) return true;
+            if (const json::Value* inner = Cached(AssetRef{a}); inner && ContainsPrefab(*inner, guid, depth + 1)) return true;
+        }
+        return false;
+    }
+
+    // Fills the prefabs nested in the placed prefab `root` from their own files (each with its own
+    // overrides), and the ones nested in those ...
+    void FillNested(int root, std::vector<std::string>& chain, reflect::Warnings& warnings) {
+        if (chain.size() > kMaxNesting) return;
+        for (const int n : scene_.NestedPrefabs(root)) {
+            const SceneEntity* e = scene_.Find(n);
+            if (!e) continue;
+            const AssetRef ref = e->prefab.asset;
+            if (std::find(chain.begin(), chain.end(), ref.guid) != chain.end()) {
+                warnings.push_back(std::format("Prefab「{}」が自分の中に入っているので、中を作りません", PrefabTitle(ref)));
+                continue;
+            }
+            const json::Value* prefab = Cached(ref);
+            if (!prefab) continue;  // as it was saved
+            const json::Value copy = *prefab;
+            const json::Value overrides = e->prefab.overrides;
+            scene_.ApplyPrefab(n, copy, overrides, &warnings);
+            chain.push_back(ref.guid);
+            FillNested(n, chain, warnings);
+            chain.pop_back();
+        }
+    }
+
+    // The placed prefab `root` made again from `prefab` with `overrides`, then what is nested in it.
+    void Remake(int root, const json::Value& prefab, const json::Value& overrides, reflect::Warnings& warnings) {
+        scene_.ApplyPrefab(root, prefab, overrides, &warnings);
+        std::vector<std::string> chain = ChainOf(root);
+        FillNested(root, chain, warnings);
+    }
+
+    // The overrides a prefab file keeps for the prefab nested in it as entity `id`.
+    static json::Value FileOverrides(const json::Value& prefab, int id) {
+        for (const auto& e : prefab.Get("entities").Items()) {
+            if (e.Get("id").AsInt(0) == id) return e.Get("prefab").Get("overrides");
+        }
+        return {};
+    }
+
+    // Opening the project: every placed prefab is made from its file again (with what it changed),
+    // outermost first, so a prefab changed since (by another scene, by hand) shows. Not an edit: the
+    // project is as it was.
     void RefreshPrefabsOnOpen() {
         prefabs_.clear();
-        std::vector<std::string> paths;
+        // Data from before assets had ids: the prefab named by a path gets its file's id (written so
+        // at the next save).
         for (const int root : scene_.PrefabRoots()) {
-            const std::string& p = scene_.Find(root)->prefab.path;
-            if (std::find(paths.begin(), paths.end(), p) == paths.end()) paths.push_back(p);
-        }
-        for (const std::string& path : paths) {
-            const json::Value* prefab = ReadPrefab(path);
-            if (!prefab) continue;  // kept as it was saved
-            reflect::Warnings warnings;
-            for (const int root : scene_.PrefabRoots(path)) {
-                const json::Value overrides = scene_.Find(root)->prefab.overrides;
-                scene_.ApplyPrefab(root, *prefab, overrides, &warnings);
+            AssetRef& ref = scene_.Find(root)->prefab.asset;
+            if (asset::IsGuid(ref.guid)) continue;
+            if (const std::filesystem::path file = host_.AssetFile(ref); !file.empty()) {
+                if (const AssetRef id = host_.AssetOf(file); !id.Empty()) ref = id;
             }
-            for (const auto& w : warnings) log::Warn("Prefab「{}」: {}", path, w);
         }
+        reflect::Warnings warnings;
+        for (const int root : scene_.PrefabRoots()) {
+            const SceneEntity* r = scene_.Find(root);
+            if (!r) continue;  // went with a prefab around it
+            if (r->prefab.outer > 0 && scene_.PrefabRootOf(r->data.parent) != 0) continue;  // filled with the one around it
+            const AssetRef ref = r->prefab.asset;
+            const json::Value overrides = r->prefab.overrides;
+            if (const json::Value* prefab = Cached(ref)) {
+                const json::Value copy = *prefab;
+                Remake(root, copy, overrides, warnings);
+            } else {
+                std::vector<std::string> chain = ChainOf(root);
+                FillNested(root, chain, warnings);  // kept as saved; the ones inside still follow their files
+            }
+        }
+        for (const auto& w : warnings) log::Warn("Prefab: {}", w);
     }
 
-    // Every placed prefab of `path` made again from `next`, keeping what each changed from `before`
-    // (except `skip`). Inside an Edit.
-    void ReapplyPrefab(const std::string& path, const json::Value& before, const json::Value& next, int skip) {
+    // Every placed prefab of `ref` made again from `next`, keeping what each changed from `before`
+    // (except `skip`). A prefab nested in one that was not changed there takes what `next` has for it.
+    // Inside an Edit; UpdateOverrides has been called while the cache still had `before`.
+    void ReapplyPrefab(const AssetRef& ref, const json::Value& before, const json::Value& next, int skip) {
         reflect::Warnings warnings;
-        for (const int root : scene_.PrefabRoots(path)) {
-            if (root == skip) continue;
+        for (const int root : scene_.PrefabRoots(ref.guid)) {
+            if (root == skip || !scene_.Find(root)) continue;
             const json::Value overrides = Overrides(scene_, root, before, placementTypes_);
+            std::vector<std::pair<int, int>> untouched;  // (nested root, its id in the file)
+            for (const int n : scene_.NestedPrefabs(root)) {
+                const PrefabLink& l = scene_.Find(n)->prefab;
+                if (l.overrides == FileOverrides(before, l.outer)) untouched.emplace_back(n, l.outer);
+            }
             scene_.ApplyPrefab(root, next, overrides, &warnings);
+            for (const auto& [n, id] : untouched) {
+                SceneEntity* e = scene_.Find(n);
+                if (const json::Value fresh = FileOverrides(next, id); e && fresh.IsObject()) e->prefab.overrides = fresh;
+            }
+            std::vector<std::string> chain = ChainOf(root);
+            FillNested(root, chain, warnings);
         }
-        for (const auto& w : warnings) log::Warn("Prefab「{}」: {}", path, w);
+        for (const auto& w : warnings) log::Warn("Prefab「{}」: {}", PrefabTitle(ref), w);
     }
 
     // The prefab files in Assets/ (looked for again at most every 2 seconds: the menu is asked often).
@@ -1046,15 +1161,14 @@ private:
         }
     }
 
-    bool WritePrefab(const std::string& path, const json::Value& prefab) {
+    bool WriteFile(const std::filesystem::path& file, const json::Value& prefab) {
         std::error_code ec;
-        std::filesystem::create_directories(FullPath(path).parent_path(), ec);
+        std::filesystem::create_directories(file.parent_path(), ec);
         std::string err;
-        if (!platform::WriteFileAtomic(FullPath(path), json::Write(prefab), &err)) {
-            log::Error("Prefab「{}」を書けませんでした: {}", path, err);
+        if (!platform::WriteFileAtomic(file, json::Write(prefab), &err)) {
+            log::Error("Prefab「{}」を書けませんでした: {}", PathToUtf8(file.filename()), err);
             return false;
         }
-        prefabs_[path] = prefab;
         prefabFilesTime_ = 0;  // look again
         return true;
     }
@@ -1070,7 +1184,7 @@ private:
             make.run = [this, id] { MakePrefabOf(id); };
             list.push_back(std::move(make));
             if (const int root = scene_.PrefabRootOf(id)) {
-                const std::wstring name = Utf8ToWide(PrefabName(scene_.Find(root)->prefab.path));
+                const std::wstring name = Utf8ToWide(PrefabTitle(scene_.Find(root)->prefab.asset));
                 tree::Action apply;
                 apply.label = TrF(L"Prefab「{}」に反映 (置いたほかの物も変わる)", name);
                 apply.run = [this, root] { ApplyToPrefab(root); };
@@ -1113,56 +1227,81 @@ private:
         if (!e) return;
         const std::string name = e->data.name;
         const std::string path = NewPrefabPath(name);
+        UpdateOverrides(scene_);  // the prefabs placed inside are kept with what was changed on them
         std::unordered_map<int, int> sources;
         const json::Value prefab = MakePrefab(scene_, id, &sources);
-        if (!WritePrefab(path, prefab)) return;
-        Edit(std::format("「{}」を Prefab にする", name), [&] { scene_.LinkPrefab(id, path, sources); });
+        if (!WriteFile(FullPath(path), prefab)) return;
+        const AssetRef ref = host_.AssetOf(FullPath(path));  // the new file's id (its .meta is written now)
+        if (ref.Empty()) {
+            log::Error("Prefab「{}」をアセットにできませんでした (Assets の中に作れませんでした)", path);
+            return;
+        }
+        prefabs_[ref.guid] = prefab;
+        Edit(std::format("「{}」を Prefab にする", name), [&] { scene_.LinkPrefab(id, ref, sources); });
         log::Info("Prefab を作りました: {}", path);
     }
 
     void ApplyToPrefab(int root) {
         const SceneEntity* r = scene_.Find(root);
         if (!r || !r->prefab.Root()) return;
-        const std::string path = r->prefab.path;
+        const AssetRef ref = r->prefab.asset;
+        const std::filesystem::path file = host_.AssetFile(ref);
+        if (file.empty()) {
+            log::Warn("Prefab「{}」のファイルが見つからないので反映できません", PrefabTitle(ref));
+            return;
+        }
         // The prefab as it was (what the other placed ones changed is worked out against it).
         json::Value before;
-        if (const auto it = prefabs_.find(path); it != prefabs_.end()) {
-            before = it->second;
-        } else if (const json::Value* read = ReadPrefab(path)) {
-            before = *read;
-        }
+        if (const json::Value* old = Cached(ref)) before = *old;
+        UpdateOverrides(scene_);  // while the cache still has the prefabs as they were
         std::unordered_map<int, int> sources;
         const json::Value next = MakePrefab(scene_, root, &sources);
-        if (!WritePrefab(path, next)) return;
+        if (ContainsPrefab(next, ref.guid)) {
+            log::Warn("Prefab「{}」の中に「{}」自身が入ることになるので、反映しません", PrefabTitle(ref), PrefabTitle(ref));
+            return;
+        }
+        if (!WriteFile(file, next)) return;
+        prefabs_[ref.guid] = next;
         if (!IsPrefab(before)) before = next;
-        Edit(std::format("Prefab「{}」に反映", PrefabName(path)), [&] {
-            scene_.LinkPrefab(root, path, sources);
-            ReapplyPrefab(path, before, next, root);
+        Edit(std::format("Prefab「{}」に反映", PrefabTitle(ref)), [&] {
+            scene_.LinkPrefab(root, ref, sources);
+            ReapplyPrefab(ref, before, next, root);
         });
-        log::Info("Prefab「{}」に反映しました (置いた物 {} 個)", path, scene_.PrefabRoots(path).size());
+        log::Info("Prefab「{}」に反映しました (置いた物 {} 個)", PrefabWhere(ref), scene_.PrefabRoots(ref.guid).size());
     }
 
     // The file as it is now (changed by hand, by another project): every placed one follows it.
     void ReloadPrefab(int root) {
         const SceneEntity* r = scene_.Find(root);
         if (!r || !r->prefab.Root()) return;
-        const std::string path = r->prefab.path;
-        const auto it = prefabs_.find(path);
+        const AssetRef ref = r->prefab.asset;
+        const auto it = prefabs_.find(ref.guid);
         const json::Value before = it != prefabs_.end() ? it->second : json::Value();
-        const json::Value* read = ReadPrefab(path);
+        UpdateOverrides(scene_);
+        const json::Value* read = ReadPrefab(ref);
         if (!read) return;
         const json::Value next = *read;
-        Edit(std::format("Prefab「{}」を読み直す", PrefabName(path)), [&] { ReapplyPrefab(path, IsPrefab(before) ? before : next, next, 0); });
+        Edit(std::format("Prefab「{}」を読み直す", PrefabTitle(ref)), [&] { ReapplyPrefab(ref, IsPrefab(before) ? before : next, next, 0); });
     }
 
     void PlacePrefabFile(const std::string& path, const std::vector<int>& sel) {
-        const json::Value* prefab = ReadPrefab(path);
+        const AssetRef ref = host_.AssetOf(FullPath(path));
+        if (ref.Empty()) {
+            log::Warn("「{}」は Assets の中のファイルではないので置けません", path);
+            return;
+        }
+        const json::Value* prefab = ReadPrefab(ref);
         if (!prefab) return;
         const json::Value copy = *prefab;
         const auto [parent, index] = After(sel);
         int made = 0;
         reflect::Warnings warnings;
-        Edit(std::format("Prefab「{}」を置く", PrefabName(path)), [&] { made = scene_.PlacePrefab(copy, path, parent, index, &warnings); });
+        Edit(std::format("Prefab「{}」を置く", PrefabTitle(ref)), [&] {
+            made = scene_.PlacePrefab(copy, ref, parent, index, &warnings);
+            if (!made) return;
+            std::vector<std::string> chain = ChainOf(made);
+            FillNested(made, chain, warnings);  // the prefabs inside it, from their own files
+        });
         for (const auto& w : warnings) log::Warn("Prefab「{}」: {}", path, w);
         if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)});
     }

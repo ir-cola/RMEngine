@@ -87,6 +87,8 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Systems.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Prefab.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Register.cpp" />
+    <ClCompile Include="..\plugins\RuntimePlugins.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Camera.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Light.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\CameraCycle.cpp" />

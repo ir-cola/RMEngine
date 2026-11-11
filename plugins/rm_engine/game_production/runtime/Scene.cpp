@@ -214,6 +214,9 @@ std::vector<int> Scene::Duplicate(std::span<const int> ids) {
         const size_t pos = IndexOf(root) + 1;
         entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(pos), std::make_move_iterator(copies.begin()),
                          std::make_move_iterator(copies.end()));
+        std::vector<int> all;
+        for (const auto& [from, to] : newId) all.push_back(to);
+        DetachCopies(all);
     }
     return made;
 }
@@ -303,12 +306,18 @@ json::Value Scene::SaveEntity(const SceneEntity& e) const {
     if (e.prefab.Linked()) {
         json::Value link = e.prefab.extra.IsObject() ? e.prefab.extra : json::Value::MakeObject();
         link.Set("source", e.prefab.source);
-        if (!e.prefab.path.empty()) {
-            link.Set("path", e.prefab.path);
+        link.Erase("path");  // the form from before assets had ids: written as "asset" now
+        if (e.prefab.Root()) {
+            link.Set("asset", e.prefab.asset.guid);
             if (e.prefab.overrides.IsObject()) link.Set("overrides", e.prefab.overrides);
         } else {
-            link.Erase("path");
+            link.Erase("asset");
             link.Erase("overrides");
+        }
+        if (e.prefab.Root() && e.prefab.outer > 0) {
+            link.Set("outer", e.prefab.outer);
+        } else {
+            link.Erase("outer");
         }
         ej.Set("prefab", std::move(link));
     }
@@ -325,8 +334,12 @@ SceneEntity Scene::LoadEntity(const json::Value& item, reflect::Warnings* warnin
     if (const json::Value* link = fields.Find("prefab"); link && link->IsObject() && link->Get("source").AsInt(0) > 0) {
         e.prefab.extra = *link;
         e.prefab.source = static_cast<int>(link->Get("source").AsInt(0));
-        e.prefab.path = link->Get("path").AsString();
-        if (!e.prefab.path.empty()) e.prefab.overrides = link->Get("overrides");
+        // "asset": the prefab file's id; "path": a file from before assets had ids (read the same way).
+        e.prefab.asset.guid = link->Find("asset") ? link->Get("asset").AsString() : link->Get("path").AsString();
+        if (e.prefab.Root()) {
+            e.prefab.overrides = link->Get("overrides");
+            e.prefab.outer = std::max(0, static_cast<int>(link->Get("outer").AsInt(0)));
+        }
         fields.Erase("prefab");
     }
     reflect::Load(e.data, fields, &e.unknowns, warnings);
@@ -368,7 +381,13 @@ json::Value Scene::Copy(std::span<const int> ids) const {
 
 std::vector<int> Scene::Paste(const json::Value& clip, int parent, size_t index, reflect::Warnings* warnings) {
     if (!IsClip(clip)) return {};
-    return PasteList(clip.Get("entities"), parent, index, warnings, nullptr);
+    std::unordered_map<int, int> idMap;
+    std::vector<int> roots = PasteList(clip.Get("entities"), parent, index, warnings, &idMap);
+    std::vector<int> all;
+    for (const auto& [from, to] : idMap) all.push_back(to);
+    for (const int r : roots) all.push_back(r);  // (an entity without an id of its own is in no map)
+    DetachCopies(all);
+    return roots;
 }
 
 std::vector<int> Scene::PasteList(const json::Value& entities, int parent, size_t index, reflect::Warnings* warnings,

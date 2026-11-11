@@ -73,5 +73,6 @@
   "最初のカメラ": "Starting camera",
   "ゲームビューと Play はこのエンティティのカメラから見ます (カメラの部品を付けたエンティティを選びます)": "The game view and Play look through this entity's camera (choose an entity with a Camera component)",
   "このゲームの空間。新しいエンティティに付く Transform と、ゲームビューもこれに合わせます": "This game's space. New entities get its Transform, and the game view shows it",
-  "Play 中は切り替えられません": "Cannot be switched while playing"
+  "Play 中は切り替えられません": "Cannot be switched while playing",
+  "Prefab「{}」を置いた物です ({})。Prefab「{}」の中に入っています。Prefab と違う所: {} 個 (名前と置き場所を含む)": "Placed from the prefab \"{}\" ({}), inside the prefab \"{}\". Differences from the prefab: {} (the name and the place included)"
 }

@@ -21,6 +21,20 @@ const reflect::FieldDesc* FieldNamed(const reflect::TypeDesc& t, std::string_vie
     return nullptr;
 }
 
+// An entity's id in the file of the placed prefab `root`: its source - or, for a prefab nested in
+// it, its outer id (its source is its id in its own file).
+int KeyOf(const SceneEntity& e, int root) { return e.data.id != root && e.prefab.Root() ? e.prefab.outer : e.prefab.source; }
+
+// True when `e` is inside a prefab nested in `root` (a placed prefab's root between them).
+bool InsideNested(const Scene& scene, const SceneEntity& e, int root) {
+    size_t steps = 0;
+    for (const SceneEntity* p = scene.Find(e.data.parent); p && p->data.id != root && steps++ <= scene.Entities().size();
+         p = scene.Find(p->data.parent)) {
+        if (p->prefab.Root()) return true;
+    }
+    return false;
+}
+
 json::Value FieldOverride(int source, const std::string& component, size_t index, const char* field, json::Value value) {
     json::Value o = json::Value::MakeObject();
     o.Set("source", source);
@@ -51,7 +65,7 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
     int next = 1;
     if (r->prefab.Root()) {
         for (const int m : scene.PrefabMembers(root)) {
-            const int s = scene.Find(m)->prefab.source;
+            const int s = KeyOf(*scene.Find(m), root);
             kept[m] = s;
             next = std::max(next, s + 1);
         }
@@ -61,7 +75,7 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
     std::vector<const SceneEntity*> inside;
     for (const TreeEntry& t : scene.TreeOrder()) {  // parents first, siblings in order
         const SceneEntity& e = *t.entity;
-        if (!scene.IsUnder(e.data.id, root)) continue;
+        if (!scene.IsUnder(e.data.id, root) || InsideNested(scene, e, root)) continue;
         // Two of the same source (a broken file): the second gets its own.
         const auto k = kept.find(e.data.id);
         const int id = k != kept.end() && !used.contains(k->second) ? k->second : next++;
@@ -77,7 +91,17 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
         e.MapEntityRefs(ids, true);
         const int id = ids[e.data.id];
         json::Value ej = scene.SaveEntity(e);
-        ej.Erase("prefab");
+        if (e.data.id != root && e.prefab.Root()) {
+            // A prefab placed inside: kept as its root, linked to its own file, with what was changed
+            // on it (as of the caller's last Overrides). What is inside it comes from its file.
+            json::Value link = json::Value::MakeObject();
+            link.Set("source", e.prefab.source);
+            link.Set("asset", e.prefab.asset.guid);
+            link.Set("overrides", e.prefab.overrides.IsObject() ? e.prefab.overrides : json::Value::MakeObject());
+            ej.Set("prefab", std::move(link));
+        } else {
+            ej.Erase("prefab");
+        }
         ej.Set("id", id);
         ej.Set("parent", e.data.id == root ? 0 : ids[e.data.parent]);
         list.Push(std::move(ej));
@@ -96,7 +120,7 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
     std::unordered_map<int, const SceneEntity*> bySource;
     for (const int m : scene.PrefabMembers(root)) {
         const SceneEntity* e = scene.Find(m);
-        bySource.try_emplace(e->prefab.source, e);
+        bySource.try_emplace(KeyOf(*e, root), e);
     }
     const reflect::TypeDesc& entityType = reflect::TypeOf<Entity>();
     const auto& list = prefab.Get("entities").Items();
@@ -167,6 +191,16 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
     return o;
 }
 
+std::vector<std::string> NestedAssets(const json::Value& prefab) {
+    std::vector<std::string> out;
+    const auto& list = prefab.Get("entities").Items();
+    for (size_t i = 1; i < list.size(); ++i) {
+        const std::string& a = list[i].Get("prefab").Get("asset").AsString();
+        if (!a.empty() && std::find(out.begin(), out.end(), a) == out.end()) out.push_back(a);
+    }
+    return out;
+}
+
 size_t CountOverrides(const json::Value& overrides) {
     size_t n = 0;
     for (const char* key : {"fields", "addedComponents", "removedComponents", "removedEntities"}) n += overrides.Get(key).Items().size();
@@ -189,59 +223,107 @@ std::vector<int> Scene::PrefabMembers(int root) const {
     const SceneEntity* r = Find(root);
     if (!r || !r->prefab.Root()) return out;
     for (const TreeEntry& t : TreeOrder()) {
-        if (IsUnder(t.entity->data.id, root) && PrefabRootOf(t.entity->data.id) == root) out.push_back(t.entity->data.id);
+        const SceneEntity& e = *t.entity;
+        if (!IsUnder(e.data.id, root)) continue;
+        const bool own = PrefabRootOf(e.data.id) == root;
+        const bool nested = e.data.id != root && e.prefab.Root() && e.prefab.outer > 0 && PrefabRootOf(e.data.parent) == root;
+        if (own || nested) out.push_back(e.data.id);
     }
     return out;
 }
 
-std::vector<int> Scene::PrefabRoots(std::string_view path) const {
+std::vector<int> Scene::NestedPrefabs(int root) const {
+    std::vector<int> out;
+    for (const int m : PrefabMembers(root)) {
+        if (m != root && Find(m)->prefab.Root()) out.push_back(m);
+    }
+    return out;
+}
+
+std::vector<int> Scene::PrefabRoots(std::string_view asset) const {
     std::vector<int> out;
     for (const TreeEntry& t : TreeOrder()) {
         const PrefabLink& l = t.entity->prefab;
-        if (l.Root() && (path.empty() || l.path == path)) out.push_back(t.entity->data.id);
+        if (l.Root() && (asset.empty() || l.asset.guid == asset)) out.push_back(t.entity->data.id);
     }
     return out;
 }
 
-bool Scene::LinkPrefab(int root, const std::string& path, const std::unordered_map<int, int>& sources) {
-    if (!Find(root) || path.empty()) return false;
+bool Scene::LinkPrefab(int root, const AssetRef& asset, const std::unordered_map<int, int>& sources) {
+    SceneEntity* r = Find(root);
+    if (!r || asset.Empty()) return false;
+    const int outer = r->prefab.Root() ? r->prefab.outer : 0;  // a nested root made its own prefab stays nested
     for (auto& e : entities_) {
         if (!IsUnder(e.data.id, root)) continue;
         const auto it = sources.find(e.data.id);
         if (it == sources.end() || it->second <= 0) continue;
+        if (e.data.id != root && e.prefab.Root()) {
+            e.prefab.outer = it->second;  // a prefab placed inside: nested now
+            continue;
+        }
         e.prefab = {};
         e.prefab.source = it->second;
-        if (e.data.id == root) {
-            e.prefab.path = path;
-            e.prefab.overrides = json::Value::MakeObject();
-        }
     }
-    return Find(root)->prefab.Root();
+    r = Find(root);
+    r->prefab.asset = asset;
+    r->prefab.overrides = json::Value::MakeObject();
+    r->prefab.outer = outer;
+    return r->prefab.Root();
 }
 
 bool Scene::UnlinkPrefab(int root) {
     const std::vector<int> members = PrefabMembers(root);
     if (members.empty()) return false;
-    for (const int m : members) Find(m)->prefab = {};
+    for (const int m : members) {
+        SceneEntity* e = Find(m);
+        if (m != root && e->prefab.Root()) {
+            e->prefab.outer = 0;  // a nested prefab: placed by hand now
+        } else {
+            e->prefab = {};
+        }
+    }
     return true;
 }
 
-int Scene::PlacePrefab(const json::Value& prefab, const std::string& path, int parent, size_t index, reflect::Warnings* warnings) {
-    if (!IsPrefab(prefab) || prefab.Get("entities").Items().empty() || path.empty()) return 0;
+int Scene::PlacePrefab(const json::Value& prefab, const AssetRef& asset, int parent, size_t index, reflect::Warnings* warnings) {
+    if (!IsPrefab(prefab) || prefab.Get("entities").Items().empty() || asset.Empty()) return 0;
     std::unordered_map<int, int> idMap;
     const std::vector<int> roots = PasteList(prefab.Get("entities"), parent, index, warnings, &idMap);
     if (roots.empty()) return 0;
     for (const auto& [source, id] : idMap) {
-        if (SceneEntity* e = Find(id)) {
+        SceneEntity* e = Find(id);
+        if (!e) continue;
+        if (id != roots[0] && e->prefab.Root()) {
+            e->prefab.outer = source;  // a prefab nested in this one (filled from its own file by the editor)
+        } else {
             e->prefab = {};
             e->prefab.source = source;
         }
     }
     SceneEntity* r = Find(roots[0]);
     if (!r->prefab.Linked()) r->prefab.source = 1;  // a hand-written file without ids
-    r->prefab.path = path;
+    r->prefab.asset = asset;
     r->prefab.overrides = json::Value::MakeObject();
+    r->prefab.outer = 0;
     return roots[0];
+}
+
+void Scene::DetachCopies(const std::vector<int>& made) {
+    const std::unordered_set<int> copied(made.begin(), made.end());
+    std::vector<int> plain, byHand;
+    for (const int id : made) {
+        const SceneEntity* e = Find(id);
+        if (!e || !e->prefab.Linked()) continue;
+        if (e->prefab.Root()) {
+            // A nested root copied without the prefab around it.
+            const int around = e->prefab.outer > 0 ? PrefabRootOf(e->data.parent) : 0;
+            if (e->prefab.outer > 0 && !copied.contains(around)) byHand.push_back(id);
+        } else if (!copied.contains(PrefabRootOf(id))) {
+            plain.push_back(id);  // a part of a placed prefab copied without its root
+        }
+    }
+    for (const int id : plain) Find(id)->prefab = {};
+    for (const int id : byHand) Find(id)->prefab.outer = 0;
 }
 
 bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& overrides, reflect::Warnings* warnings) {
@@ -258,8 +340,8 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
     }
     const std::vector<int> members = PrefabMembers(root);
     const std::unordered_set<int> memberSet(members.begin(), members.end());
-    std::unordered_map<int, int> idOf;  // source -> the scene id it had
-    for (const int m : members) idOf.try_emplace(Find(m)->prefab.source, m);
+    std::unordered_map<int, int> idOf;  // id in the file -> the scene id it had
+    for (const int m : members) idOf.try_emplace(KeyOf(*Find(m), root), m);
 
     std::unordered_set<int> removedEntities;
     for (const auto& v : overrides.Get("removedEntities").Items()) removedEntities.insert(static_cast<int>(v.AsInt(0)));
@@ -277,7 +359,7 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
     }
 
     std::vector<SceneEntity> built;
-    std::unordered_map<int, int> builtId;  // source -> scene id
+    std::unordered_map<int, int> builtId;  // id in the file -> scene id
     for (size_t i = 0; i < list.size(); ++i) {
         const json::Value& p = list[i];
         const int src = static_cast<int>(p.Get("id").AsInt(0));
@@ -285,22 +367,34 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
         if (!isRoot && (src <= 0 || builtId.contains(src) || removedEntities.contains(src))) continue;
         const int parentSrc = static_cast<int>(p.Get("parent").AsInt(0));
         if (!isRoot && !builtId.contains(parentSrc)) continue;
-        json::Value fields = p;
-        fields.Erase("prefab");
-        SceneEntity e = LoadEntity(fields, warnings);
+        SceneEntity e = LoadEntity(p, warnings);  // (with its "prefab": a nested one's link)
         e.MapEntityRefs(planned, true);  // the prefab's own; the overrides below are in scene ids already
+        const auto had = idOf.find(src);
+        const SceneEntity* before = had != idOf.end() ? Find(had->second) : nullptr;
         e.data.id = isRoot ? root : planned[src];
         e.data.parent = isRoot ? parent : builtId[parentSrc];
-        e.prefab = {};
-        e.prefab.source = src > 0 ? src : rootLink.source;
+        const bool nested = !isRoot && e.prefab.Root();
+        if (nested) {
+            // A prefab nested in this one: its own link (from the file) - but one that was here keeps
+            // what was changed on it here.
+            if (before && before->prefab.Root() && before->prefab.asset == e.prefab.asset) {
+                e.prefab.overrides = before->prefab.overrides;
+                e.prefab.extra = before->prefab.extra;
+            }
+            e.prefab.outer = src;
+        } else {
+            e.prefab = {};
+            e.prefab.source = src > 0 ? src : rootLink.source;
+        }
         if (isRoot) {
-            e.prefab.path = rootLink.path;
+            e.prefab.asset = rootLink.asset;
             e.prefab.extra = rootLink.extra;
             e.prefab.overrides = overrides.IsObject() ? overrides : json::Value::MakeObject();
+            e.prefab.outer = rootLink.outer;
         }
 
-        // What the placed one changed.
-        const int key = e.prefab.source;
+        // What the placed one changed (by the entity's id in the file).
+        const int key = src > 0 ? src : rootLink.source;
         for (const auto& o : overrides.Get("fields").Items()) {
             if (o.Get("source").AsInt(0) != key) continue;
             const std::string& comp = o.Get("component").AsString();
@@ -332,17 +426,25 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
         built.push_back(std::move(e));
     }
 
-    // Plain entities under an entity that went: under the root.
+    // What goes: the members not made again - a nested prefab that went with everything in it.
     std::unordered_set<int> builtIds;
     for (const auto& e : built) builtIds.insert(e.data.id);
+    std::unordered_set<int> erase = memberSet;
+    for (const int m : members) {
+        if (builtIds.contains(m) || m == root || !Find(m)->prefab.Root()) continue;
+        for (const auto& e : entities_) {
+            if (e.prefab.Linked() && IsUnder(e.data.id, m)) erase.insert(e.data.id);
+        }
+    }
+    // Plain entities under an entity that went: under the root.
     for (auto& e : entities_) {
-        if (memberSet.contains(e.data.id)) continue;
-        if (memberSet.contains(e.data.parent) && !builtIds.contains(e.data.parent)) {
+        if (erase.contains(e.data.id)) continue;
+        if (erase.contains(e.data.parent) && !builtIds.contains(e.data.parent)) {
             if (warnings) warnings->push_back(std::format("エンティティ「{}」の親が Prefab から無くなったので、Prefab の一番上の物の下に置きました", e.data.name));
             e.data.parent = root;
         }
     }
-    std::erase_if(entities_, [&](const SceneEntity& e) { return memberSet.contains(e.data.id); });
+    std::erase_if(entities_, [&](const SceneEntity& e) { return erase.contains(e.data.id); });
     const size_t pos = std::min(InsertPosition(parent, siblingIndex), entities_.size());
     entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(pos), std::make_move_iterator(built.begin()),
                      std::make_move_iterator(built.end()));

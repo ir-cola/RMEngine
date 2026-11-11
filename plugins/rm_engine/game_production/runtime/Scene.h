@@ -11,9 +11,12 @@
 // number among the entity's components of that type (0 = the first).
 //
 // Prefabs (Prefab.h): the entities of a placed prefab carry a PrefabLink - which entity of the
-// prefab file they are, and on the placed root the file and what differs from it.
+// prefab file they are, and on the placed root the file and what differs from it. A prefab placed
+// inside another prefab's file (nested) has both: it is a placed prefab of its own, and one of the
+// entities of the prefab around it (`outer`).
 
 #include "base/Json.h"
+#include "base/Ref.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_production/runtime/Components.h"
@@ -35,15 +38,20 @@ struct Entity {
 };
 
 // Where an entity of a placed prefab comes from. Saved as the entity's "prefab" key (only when set):
-//   { "source": 3, "path": "Assets/Cube.rmprefab", "overrides": {...} }   (path / overrides: the root only)
+//   { "source": 3, "asset": "<id of the .rmprefab>", "overrides": {...}, "outer": 2 }
+//   asset / overrides: the root of a placed prefab only. outer: a root that is itself one of the
+//   entities of the placed prefab around it (nested) - its id in that prefab's file.
+// Data from before assets had ids has "path": "Assets/Cube.rmprefab" instead of "asset": it is read
+// into `asset` as it is (SoftwareHost::AssetFile finds the file by either) and written as "asset".
 struct PrefabLink {
-    int source = 0;          // the entity's id inside the prefab file; 0 = not from a prefab
-    std::string path;        // the root of a placed prefab: the file, from the project folder ("/")
+    int source = 0;          // the entity's id inside its prefab file (a root: the file's first); 0 = not from a prefab
+    AssetRef asset;          // the root of a placed prefab: the prefab file
     json::Value overrides;   // the root: what differs from the prefab (Prefab.h), as of the last save
+    int outer = 0;           // a nested root: its id in the file of the prefab around it; 0 = placed by hand
     json::Value extra;       // the "prefab" object as read (keys of a newer version are kept)
 
     bool Linked() const { return source > 0; }
-    bool Root() const { return source > 0 && !path.empty(); }
+    bool Root() const { return source > 0 && !asset.Empty(); }
 };
 
 struct SceneEntity {
@@ -133,25 +141,34 @@ public:
     // The root of the placed prefab `id` belongs to (itself when it is a root); 0: none. Walks up
     // through linked entities only: a plain entity in between ends it.
     int PrefabRootOf(int id) const;
-    // The root and the entities of its placed prefab, in tree order (not the entities of another
-    // prefab placed inside it, nor plain entities added under it).
+    // The root and the entities of its placed prefab, in tree order: the roots of the prefabs nested
+    // in it too (they are its entities), but not what is inside those, nor plain entities added.
     std::vector<int> PrefabMembers(int root) const;
-    // Every root of a placed prefab (of the file `path`; empty = any), in tree order.
-    std::vector<int> PrefabRoots(std::string_view path = {}) const;
-    // `root` and everything below it become a placed prefab of `path`: each entity's source is
-    // sources[its id] (entities not in `sources` stay as they are). Prefabs placed inside are
-    // taken in (their roots lose their own file).
-    bool LinkPrefab(int root, const std::string& path, const std::unordered_map<int, int>& sources);
-    // The entities of the placed prefab become plain entities again. False: `root` is not a root.
+    // The roots of the prefabs nested in the placed prefab `root` (its members that are roots).
+    std::vector<int> NestedPrefabs(int root) const;
+    // Every root of a placed prefab (of the prefab file `asset` - an AssetRef's guid; empty = any), in
+    // tree order: an outer one before the ones nested in it.
+    std::vector<int> PrefabRoots(std::string_view asset = {}) const;
+    // `root` and everything below it in `sources` become a placed prefab of `asset`: each entity's
+    // source is sources[its id]; a placed prefab's root among them stays one and becomes nested
+    // (outer = sources[its id]). Entities not in `sources` (inside nested prefabs) stay as they are.
+    bool LinkPrefab(int root, const AssetRef& asset, const std::unordered_map<int, int>& sources);
+    // The entities of the placed prefab become plain entities again (the prefabs nested in it stay,
+    // placed by hand now). False: `root` is not a root.
     bool UnlinkPrefab(int root);
     // A copy of `prefab` (a prefab file's content) under `parent` at `index` among its children, linked
-    // to `path`. Returns the new root's id (0: not a prefab, or it has no entities).
-    int PlacePrefab(const json::Value& prefab, const std::string& path, int parent = 0, size_t index = kEnd,
+    // to `asset`. The prefabs nested in it come as their roots only: the editor fills them from their
+    // own files (ApplyPrefab on each of NestedPrefabs). Returns the new root's id (0: not a prefab, or
+    // it has no entities).
+    int PlacePrefab(const json::Value& prefab, const AssetRef& asset, int parent = 0, size_t index = kEnd,
                     reflect::Warnings* warnings = nullptr);
     // Makes the placed prefab `root` the prefab again, with `overrides` (Prefab.h) on it: entities
     // keep their ids (matched by source), new ones in the prefab come with new ids, ones gone from it
-    // go (with their components); plain entities added under it stay (under the root when their
-    // parent went). False: `root` is not a root or `prefab` has no entities.
+    // go (with their components; a nested prefab with everything in it); plain entities added under
+    // it stay (under the root when their parent went). A nested prefab that was there keeps its own
+    // overrides (what was changed on it here); a new one takes the file's. What is inside the nested
+    // ones is left as it is: the editor makes them again from their own files. False: `root` is not a
+    // root or `prefab` has no entities.
     bool ApplyPrefab(int root, const json::Value& prefab, const json::Value& overrides, reflect::Warnings* warnings = nullptr);
 
     // { "nextId": 7, "entities": [ {"id": 1, "parent": 0, "name": ..., "active": ...,
@@ -175,6 +192,9 @@ private:
     // Entities as Copy writes them, under `parent` at `index`, with new ids. `idMap`: old id -> new id.
     std::vector<int> PasteList(const json::Value& list, int parent, size_t index, reflect::Warnings* warnings,
                                std::unordered_map<int, int>* idMap);
+    // Copies (pasted, duplicated) of entities of a placed prefab that came without its root are plain
+    // entities; a copied nested root without the prefab around it is placed by hand.
+    void DetachCopies(const std::vector<int>& made);
 
     std::vector<SceneEntity> entities_;
     std::vector<const reflect::TypeDesc*> componentTypes_;

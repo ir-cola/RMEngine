@@ -14,6 +14,7 @@
 
 #include "base/Json.h"
 #include "core/PluginId.h"
+#include "core/RuntimeRegistry.h"
 #include "core/UndoHistory.h"
 #include "core/reflect/FieldCommand.h"
 #include "editor/dock/DockLayout.h"
@@ -117,6 +118,9 @@ public:
     // empty when it is not there. A value that is not an id but a path inside the project (data made
     // before references: "Assets/Models/robot.glb") is taken as that path, so old data still works.
     virtual std::filesystem::path AssetFile(const AssetRef& ref) const = 0;
+    // The asset id of a file inside the project's Assets/ (a file the software just wrote gets its
+    // .meta now); empty when the file is not there or not inside Assets/.
+    virtual AssetRef AssetOf(const std::filesystem::path& file) = 0;
 };
 
 // One software inside one open project.
@@ -176,46 +180,17 @@ struct SoftwareType {
 // production reads "rm_engine.game_production.component" items of game_production::ComponentInfo,
 // and the 3D connector offers Transform there.
 template <class T>
-struct Contributed {
-    PluginId plugin;  // who offered it
-    const T* item;
-};
+using Contributed = rm::Contributed<T>;
 
-class PluginRegistry {
+// The contributions are the core's RuntimeRegistry (core/RuntimeRegistry.h): a plugin's runtime part
+// registers into the same list first (what an exported game also sees), then its editor part.
+class PluginRegistry : public RuntimeRegistry {
 public:
     void AddSoftware(SoftwareType type);
     const std::vector<SoftwareType>& Softwares() const { return softwares_; }
 
-    // `item` must live as long as the program (a static). Only enabled plugins register, so only
-    // their items are listed; requirements register first.
-    template <class T>
-    void Contribute(std::string_view point, const T& item) {
-        contributions_.push_back({current_, std::string(point), &item, &typeid(T)});
-    }
-    // Items of `point` of type T, in registration order (an item of another type is skipped).
-    template <class T>
-    std::vector<Contributed<T>> Contributions(std::string_view point) const {
-        std::vector<Contributed<T>> out;
-        for (const auto& c : contributions_) {
-            if (c.point == point && *c.type == typeid(T)) out.push_back({c.plugin, static_cast<const T*>(c.item)});
-        }
-        return out;
-    }
-
-    // Used by the loader around each plugin's RegisterEditor call.
-    void BeginPlugin(const PluginId& id) { current_ = id; }
-    void EndPlugin() { current_ = {}; }
-
 private:
-    struct Contribution {
-        PluginId plugin;
-        std::string point;
-        const void* item;
-        const std::type_info* type;
-    };
-    PluginId current_;
     std::vector<SoftwareType> softwares_;
-    std::vector<Contribution> contributions_;
 };
 
 struct BuiltinPlugin {

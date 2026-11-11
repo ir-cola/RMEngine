@@ -14,19 +14,19 @@ namespace fs = std::filesystem;
 namespace rm::editor {
 
 void PluginRegistry::AddSoftware(SoftwareType type) {
-    type.plugin = current_;
+    type.plugin = Current();
     if (const char* p = plugin_id_detail::PartProblem(type.id, 2, 64, "ソフトの ID が短すぎます", "ソフトの ID が長すぎます")) {
-        log::Error("プラグイン {} のソフト「{}」を登録できません: {}", current_.Text(), type.id, p);
+        log::Error("プラグイン {} のソフト「{}」を登録できません: {}", Current().Text(), type.id, p);
         return;
     }
     for (const auto& s : softwares_) {
         if (s.plugin == type.plugin && s.id == type.id) {
-            log::Error("プラグイン {} がソフト「{}」を 2 回登録しました", current_.Text(), type.id);
+            log::Error("プラグイン {} がソフト「{}」を 2 回登録しました", Current().Text(), type.id);
             return;
         }
     }
     if (!type.create) {
-        log::Error("プラグイン {} のソフト「{}」に作り方 (create) がありません", current_.Text(), type.id);
+        log::Error("プラグイン {} のソフト「{}」に作り方 (create) がありません", Current().Text(), type.id);
         return;
     }
     softwares_.push_back(std::move(type));
@@ -136,8 +136,11 @@ void Plugins::Reload() {
         entries_.push_back(std::move(entry));
     }
     for (const size_t i : res.order) {
-        if (!builtin[i].registerEditor) continue;  // only a runtime part (e.g. 3D 空間)
-        registry_.BeginPlugin(entries_[i].status.id);
+        // The runtime part first (what an exported game registers too), then the editor part.
+        const PluginId id = entries_[i].status.id;
+        RegisterRuntimeParts(registry_, std::span<const PluginId>(&id, 1));
+        if (!builtin[i].registerEditor) continue;  // nothing of the editor's (e.g. 2D 空間)
+        registry_.BeginPlugin(id);
         builtin[i].registerEditor(registry_);
         registry_.EndPlugin();
     }

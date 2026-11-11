@@ -6,6 +6,7 @@
 ```
 plugins/
   BuiltinPlugins.cpp           エンジンに組み込むプラグインの一覧 (ここだけが全部のプラグインを知る)
+  RuntimePlugins.cpp           ランタイムの部分が登録するプラグインの一覧 (書き出したゲームもリンクする。runtime/ のヘッダーだけ)
   <作者>/<名前>/
     plugin.json                author / name / displayName / requires (+ needsConnector / connectorFor)
     runtime/                   ゲームに入る部分 (ID の定数 Id.h もここ)
@@ -21,6 +22,7 @@ plugins/
 | つなぎ | 2 つのプラグインの両方を知らないと作れない部分は、両方を `requires` にした**つなぎ**に入れる (`"connectorFor": {相手}`)。つなぎが要る側は `"needsConnector": true` (つなぎが 1 つも使えないと使えない)。つなぎは要るものがそろうと一緒に入る (RME_PLATFORM 4-f)。Hub の一覧でも別の見出し「つなぎのプラグイン」に出て、インストール・削除のボタンは無い |
 | 差し出し | 別のプラグインへ物を渡すときは `registry.Contribute(口の名前, static な物)`。受け取る側が口の名前と物の型を決めて `Contributions<型>(口)` で読む |
 | テーマパック | `themes/*.json` に 1 テーマ 1 ファイル (形は `src/editor/widgets/ThemeFile.h`)。核がプラグインを読むたびに、使えるプラグインのインストール先の `themes/` を読む。名前の英語はそのプラグインの `lang/en.json` (`check_lang.ps1` が確かめる)。絵が要るなら、コードで `w::OrnamentInfo` を口 `w::kOrnamentPoint` に差し出し、テーマのファイルの `"ornament"` にその名前を書く (同じプラグインの物だけを探す) |
+| ランタイムの登録 | ゲームにも要る物 (システムなど) は `runtime/Register.cpp` の `RegisterRuntime(RuntimeRegistry&)` で差し出し、`RuntimePlugins.cpp` に 1 行足す (`src/core/RuntimeRegistry.h`)。エディターはランタイムの部分 → `RegisterEditor` の順に呼ぶ |
 | ランタイムだけ | エディターの部分が無いプラグインも `BuiltinPlugins.cpp` に `RegisterEditor` 無し (`nullptr`) で載せる |
 | ビルド | 全部 `RM_Engine.exe` に静的リンク。ソースはワイルドカードで拾うので vcxproj を書き直さなくてよい。`plugin.json` はビルドで `build/bin/.../Plugins/<作者>/<名前>/` へ写る (= このエンジンが持っているもの) |
 | インストール | Hub で入れると `%LOCALAPPDATA%\RM_Engine\Plugins\<作者>\<名前>\` へフォルダごと写る。入っていないプラグインは初期化されない。最初の起動では全部入る |

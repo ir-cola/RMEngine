@@ -104,6 +104,7 @@ private:
         bool SetClipboard(const std::string& textUtf8) override;
         std::string Clipboard() override;
         std::filesystem::path AssetFile(const AssetRef& ref) const override;
+        AssetRef AssetOf(const std::filesystem::path& file) override;
         void SelectInTree(std::vector<tree::ItemId> ids, bool rename) override {
             tree::RequestSelect(treeState, std::move(ids), rename);
             editor_.RedrawAll();

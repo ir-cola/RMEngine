@@ -2,7 +2,8 @@
 // Systems: what moves the game every frame (the S of ECS). Game production does not know what any
 // system does - plugins offer them, like components (Components.h):
 //
-//   // in a plugin's RegisterEditor (the exported game will read the same list):
+//   // in a plugin's runtime part (runtime/Register.cpp - core/RuntimeRegistry.h), so the exported game
+//   // reads the same list as the editor's Play:
 //   static const game_production::SystemInfo kSpin{"回り続ける", game_production::SystemPhase::Frame, 0, &RunSpin};
 //   registry.Contribute(game_production::kSystemPoint, kSpin);
 //
@@ -15,6 +16,7 @@
 //
 // Pure (the runtime: no editor, no drawing, no files) - tested in tests/TestSystems.cpp.
 
+#include "core/RuntimeRegistry.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 
 #include <cstdint>
@@ -53,6 +55,10 @@ struct SystemInfo {
 // order; an entity with several of that type gives each, in its order. Components whose plugin is
 // missing are not given.
 void ForEachComponent(Scene& scene, std::string_view type, const std::function<void(SceneEntity&, Component&)>& fn);
+
+// The systems the plugins offered (their runtime parts), in the order they were offered - what a game
+// runs (SystemRunner::SetSystems sorts them).
+std::vector<const SystemInfo*> RegisteredSystems(const RuntimeRegistry& registry);
 
 // Runs the systems over a scene (the copy that plays). Keeps the game's clock and what is left of
 // the fixed step.

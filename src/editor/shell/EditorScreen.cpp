@@ -191,6 +191,17 @@ fs::path EditorScreen::Workspace::AssetFile(const AssetRef& ref) const {
     return fs::exists(p, ec) ? p : fs::path();
 }
 
+AssetRef EditorScreen::Workspace::AssetOf(const fs::path& file) {
+    AssetLibrary& lib = *editor_.assets_;
+    const fs::path rel = file.lexically_normal().lexically_relative(lib.Root().lexically_normal());
+    if (rel.empty() || rel.native().starts_with(L"..")) return {};  // not inside Assets/
+    const std::string path = PathToUtf8(rel.generic_wstring());
+    if (const asset::Entry* e = lib.Index().ByPath(path)) return {e->guid};
+    lib.Refresh();  // a file just written: it gets its id (.meta) now
+    const asset::Entry* e = lib.Index().ByPath(path);
+    return e ? AssetRef{e->guid} : AssetRef{};
+}
+
 dock::Layout EditorScreen::Workspace::DefaultLayout() const {
     return software ? software->DefaultLayout() : CoreDefaultLayout();
 }

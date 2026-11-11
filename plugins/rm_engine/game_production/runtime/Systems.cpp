@@ -22,6 +22,12 @@ void ForEachComponent(Scene& scene, std::string_view type, const std::function<v
     }
 }
 
+std::vector<const SystemInfo*> RegisteredSystems(const RuntimeRegistry& registry) {
+    std::vector<const SystemInfo*> out;
+    for (const auto& s : registry.Contributions<SystemInfo>(kSystemPoint)) out.push_back(s.item);
+    return out;
+}
+
 void SystemRunner::SetSystems(std::span<const SystemInfo* const> systems) {
     systems_.clear();
     for (const SystemInfo* s : systems) {

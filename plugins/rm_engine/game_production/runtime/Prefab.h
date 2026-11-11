@@ -9,7 +9,7 @@
 //
 //   a placed prefab, in the scene
 //     every entity has "prefab": { "source": <its id in the file> }; the root also has
-//     "path": "Assets/Cube.rmprefab" and "overrides": {
+//     "asset": "<the .rmprefab's asset id>" and "overrides": {
 //        "fields":            [ {"source": 1, "component": "", "index": 0, "field": "name", "value": "Cube 2"},
 //                               {"source": 1, "component": "rm::space3d::Transform", "index": 0, "field": "position", "value": [...]} ],
 //        "addedComponents":   [ {"source": 2, "component": {"type": ..., "data": {...}}} ],
@@ -21,8 +21,21 @@
 //   fields of its "placement" components (Transform - ComponentInfo::placement) always count as
 //   overrides: a placed thing keeps its name and its place when the prefab changes.
 //
-// The path is from the project folder (a relative path, '/'). ★ It becomes an asset reference when
-// assets have ids.
+// The prefab file is named by its asset id (AssetRef: moving or renaming it keeps the link). Data
+// from before assets had ids has "path" (from the project folder) - read the same way.
+//
+// NESTED PREFABS: a placed prefab inside the entities a prefab is made from stays a prefab of its own.
+// The outer file keeps only its root, with its link ("prefab": {"source", "asset", "overrides"} -
+// what was changed on it, against ITS prefab); what is inside it always comes from its own file.
+//   * in the scene the nested root is both: the root of its placed prefab, and one of the outer's
+//     entities (PrefabLink::outer = its id in the outer file)
+//   * the outer's overrides cover the outer's own entities (the nested root's place, say); a change
+//     on the nested prefab's insides is the nested root's own overrides
+//   * changing the inner prefab reaches every placed one, nested ones included (they are made from
+//     its file); changing the outer remakes its entities and keeps the nested roots that were there
+//     with their own overrides (the editor first works them out again)
+//   * the editor fills the nested ones (Scene::NestedPrefabs → ApplyPrefab from their files),
+//     outermost first, and refuses a prefab that would end up inside itself
 //
 // Pure (no files) - tested in tests/TestPrefab.cpp. Reading and writing the files is the editor's.
 
@@ -33,6 +46,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace rm::game_production {
 
@@ -44,8 +58,13 @@ bool IsPrefab(const json::Value& v);
 // The prefab of `root` and everything below it. Entities of a placed prefab keep their source as
 // their id in the file (so the other placed ones still match after it is written back); the others
 // get ids after those. `sources` (if given): scene id -> id in the file, for Scene::LinkPrefab.
-// Links of prefabs placed inside are not written (they become part of this one).
+// A prefab placed inside is written as its root with its link and its current PrefabLink::overrides
+// (the caller works them out first); what is inside it is not written (★ nor plain entities put
+// under its insides).
 json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int>* sources = nullptr);
+
+// The asset ids of the prefabs nested in `prefab` (a file's content), in order, each once.
+std::vector<std::string> NestedAssets(const json::Value& prefab);
 
 // How the placed prefab `root` differs from `prefab` (the form above). `placement`: component types
 // whose fields on the root always count as overrides.

@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "Prefab をアセットの ID で指すように (ファイルを動かしても名前を変えても外れない。前の版のファイルも開ける)。入れ子の Prefab (Prefab の中に置いた Prefab。中の Prefab を直すと、どの Prefab の中に置いた物にも伝わる)",
+          "en": "Prefabs are now named by their asset id (moving or renaming the file keeps the link; older projects still open). Nested prefabs (a prefab placed inside a prefab: changing the inner prefab reaches it wherever it is placed)"
+        },
+        {
           "ja": "3D: 透ける物 (ガラスなど) を奥から順に描くので、透ける物どうしが重なっても後ろが見える",
           "en": "3D: see-through things (glass ...) are drawn back to front, so one shows through another"
         },
