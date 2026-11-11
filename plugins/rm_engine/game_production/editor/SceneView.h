@@ -13,6 +13,7 @@
 #include "editor/plugin/Software.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <span>
@@ -36,10 +37,18 @@ struct SceneViewHost {
     std::function<std::function<reflect::EditTarget()>(int id, const std::string& type)> component;
     // Play: `scene` is the copy that plays (it changes every frame, and is not edited - no gizmo).
     bool playing = false;
-    // The game view: only the picture of the game - no grid, tools or selection, the camera does not
-    // move, the game settings' 背景の色 behind it.
+    // The game view: only the picture of the game - no grid, tools or selection, seen through the
+    // game's camera (`camera`), the game settings' 背景の色 behind it (unless the camera has its own).
     bool game = false;
     Color background{0, 0, 0, 1};
+    // The game settings' 最初のカメラ: the entity the game sees through (0: none chosen). What makes an
+    // entity a camera is the view's business (a 3D camera component, ...).
+    uint64_t camera = 0;
+    // The shape of the game's screen (the game settings' 画面: width / height). The game view is drawn
+    // in it (bands around when the panel is wider or taller); the scene view's camera preview too.
+    float aspect = 16.f / 9.f;
+    // Shows the game settings in the inspector (the game view's way to choose 最初のカメラ).
+    std::function<void()> openSettings;
 };
 
 // One per open game and view (the scene view, the game view): keeps its own camera.

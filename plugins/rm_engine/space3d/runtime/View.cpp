@@ -99,6 +99,29 @@ Mat4 LookAt(Vec3 eye, Vec3 target, Vec3 up) {
     return v;
 }
 
+Mat4 ViewFromWorld(const Mat4& world) {
+    const Vec3 eye = TransformPoint(world, {0, 0, 0});
+    Vec3 forward = Normalize(TransformDirection(world, {0, 0, -1}));
+    Vec3 up = Normalize(TransformDirection(world, {0, 1, 0}));
+    if (Length(forward) == 0) forward = {0, 0, -1};  // a scale of 0
+    if (Length(up) == 0 || std::fabs(Dot(forward, up)) > 0.9999f) up = std::fabs(forward.y) > 0.99f ? Vec3{0, 0, 1} : Vec3{0, 1, 0};
+    return LookAt(eye, eye + forward, up);
+}
+
+std::optional<std::array<Vec3, 8>> FrustumCorners(const Mat4& viewProjection) {
+    const auto inv = Inverse(viewProjection);
+    if (!inv) return std::nullopt;
+    std::array<Vec3, 8> out;
+    const float xs[4] = {-1, 1, 1, -1}, ys[4] = {-1, -1, 1, 1};
+    for (int i = 0; i < 8; ++i) {
+        float o[4];
+        Transform4(*inv, xs[i % 4], ys[i % 4], i < 4 ? 0.f : 1.f, 1.f, o);
+        if (std::fabs(o[3]) < 1e-12f) return std::nullopt;
+        out[static_cast<size_t>(i)] = {o[0] / o[3], o[1] / o[3], o[2] / o[3]};
+    }
+    return out;
+}
+
 std::optional<Vec3> ProjectToNdc(const Mat4& vp, Vec3 p) {
     float o[4];
     Transform4(vp, p.x, p.y, p.z, 1.f, o);

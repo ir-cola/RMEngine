@@ -18,6 +18,11 @@
 // in steps", in the strip's 刻み box), Esc puts everything back while dragging. The camera, the tool
 // and the steps are kept in UserSettings.
 //
+// Cameras and lights (Camera.h / Light.h) show as marks with their lines (what a camera sees, where a
+// light goes); a selected camera's picture is shown small at the bottom right. The lights light the
+// scene (none: one white light from above). The game view (SceneViewHost::game) is the picture
+// through the game settings' 最初のカメラ.
+//
 // Drawn by 3D 空間's renderer into a picture that the panel shows (Direct3D and Direct2D share one GPU).
 
 #include "rm_engine/game_production/editor/SceneView.h"

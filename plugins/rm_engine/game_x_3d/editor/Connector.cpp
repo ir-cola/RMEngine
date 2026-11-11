@@ -6,6 +6,8 @@
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_3d/runtime/Spin.h"
 #include "rm_engine/game_x_3d/editor/SceneView3D.h"
+#include "rm_engine/game_x_3d/runtime/Camera.h"
+#include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -43,6 +45,11 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // ... and may be drawn as a 3D model (added by hand: a new entity is a box until it has one).
     static const game_production::ComponentInfo kMesh{&reflect::TypeOf<MeshRenderer>, false};
     registry.Contribute(game_production::kComponentPoint, kMesh);
+    // カメラ (what the game sees: the game settings' 最初のカメラ) and 光 - each with its own picture in the 階層.
+    static const game_production::ComponentInfo kCamera{.type = &reflect::TypeOf<Camera>, .icon = "camera"};
+    registry.Contribute(game_production::kComponentPoint, kCamera);
+    static const game_production::ComponentInfo kLight{.type = &reflect::TypeOf<Light>, .icon = "light"};
+    registry.Contribute(game_production::kComponentPoint, kLight);
     // 回り続ける: turns its entity while the game plays (several add up), and the system that does it.
     static const game_production::ComponentInfo kSpin{.type = &reflect::TypeOf<Spin>, .multiple = true};
     registry.Contribute(game_production::kComponentPoint, kSpin);

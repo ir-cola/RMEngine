@@ -459,9 +459,7 @@ private:
         runner_.Reset();
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
-        // The game view looks from where the scene view looks (until there is a camera component).
-        EnsureViews();
-        if (sceneView_ && gameView_) gameView_->LoadState(sceneView_->SaveState());
+        EnsureViews();  // the game view sees through the game settings' 最初のカメラ
         log::Info("▶ Play (システム {} 個)。止めると Play の前のシーンに戻ります", runner_.Systems().size());
         c.RequestAnimation();
         host_.Redraw();
@@ -509,6 +507,9 @@ private:
         h.playing = Running();
         h.game = game;
         h.background = settings_.clearColor;
+        h.camera = settings_.startCamera.id;
+        h.aspect = static_cast<float>(std::max(1, settings_.display.width)) / static_cast<float>(std::max(1, settings_.display.height));
+        h.openSettings = [this] { InspectSettings(); };
         return h;
     }
 

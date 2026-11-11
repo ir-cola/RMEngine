@@ -254,6 +254,30 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.Line(cx - h * 0.4f, cy + h * 0.25f, cx + h * 0.4f, cy + h * 0.25f, color, 1.3f);
             break;
         }
+        case Icon::Camera: {
+            // A film camera from the side: the body and the lens's cone on its right.
+            const float h = std::min(r.w, r.h) * 0.36f;
+            const float bx = cx - h * 1.0f, bw = h * 1.25f, by = cy - h * 0.55f, bh = h * 1.1f;
+            p.StrokeRoundRect({bx, by, bw, bh}, h * 0.15f, color, 1.3f);
+            ui::Path lens;
+            lens.Begin({bx + bw, cy - h * 0.18f});
+            lens.Line({cx + h * 0.95f, cy - h * 0.55f});
+            lens.Line({cx + h * 0.95f, cy + h * 0.55f});
+            lens.Line({bx + bw, cy + h * 0.18f});
+            p.FillPath(lens, color);
+            break;
+        }
+        case Icon::Light: {
+            // A sun: a round middle and eight short rays.
+            const float h = std::min(r.w, r.h) * 0.38f;
+            p.FillCircle(cx, cy, h * 0.42f, color);
+            for (int i = 0; i < 8; ++i) {
+                const float a = static_cast<float>(i) * 0.785398f;
+                const float ca = std::cos(a), sa = std::sin(a);
+                p.Line(cx + ca * h * 0.66f, cy + sa * h * 0.66f, cx + ca * h, cy + sa * h, color, 1.3f);
+            }
+            break;
+        }
         case Icon::Cube: {
             // Seen from above a corner: the outline (a hexagon) and the three edges of the near corner.
             const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;

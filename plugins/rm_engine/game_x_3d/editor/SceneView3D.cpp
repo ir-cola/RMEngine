@@ -9,8 +9,11 @@
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/game_x_3d/editor/SceneViewState.h"
+#include "rm_engine/game_x_3d/runtime/Camera.h"
+#include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
+#include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -35,6 +38,7 @@ namespace theme = editor::theme;
 namespace w = editor::w;
 namespace gizmo = space3d::gizmo;
 using editor::Tr;
+using editor::TrF;
 using space3d::Mat4;
 using space3d::Transform;
 using space3d::operator*;  // Vec3 is rm::Vec3: its 3D operators live in space3d
@@ -51,6 +55,10 @@ constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f,
 constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
 constexpr double kModelCheckSeconds = 1.0;    // how often a model file is looked at again (changed on disk?)
 constexpr double kModelForgetSeconds = 10.0;  // a model no entity uses for this long leaves the GPU
+constexpr float kFrustumShown = 10.f;  // a camera's shape is drawn this far at most (its far plane may be at 1000)
+constexpr float kMarkSize = 18.f;      // the mark of a camera / a light (pixels)
+constexpr float kMarkPick = 11.f;      // a click this near a mark selects its entity
+constexpr float kPreviewMaxW = 360.f;  // the camera preview at the bottom right
 
 // The tool strip's parts: 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心, 刻み, 影; they go on a
 // second row when the view is too narrow for one. `all` = round all of them.
@@ -68,7 +76,40 @@ struct Placed {
     const space3d::GpuMesh* mesh = nullptr;
     bool castShadow = true;
     Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
+    // A camera / a light on it (copies for this frame). `marker`: it has one and no model - nothing
+    // of its own is drawn; it is seen (and clicked) by its mark and its lines.
+    std::optional<Camera> camera;
+    std::optional<Light> light;
+    bool marker = false;
 };
+
+// One picture drawn by Direct3D and shown by Direct2D: the view itself, or the camera preview in its
+// corner (a picture of its own: the first is still waiting to be drawn when the second is made).
+struct Picture {
+    space3d::Renderer renderer;
+    bool tried = false;
+    // The picture as a Direct2D bitmap, made again when the picture or the window's context changes.
+    Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
+    ID3D11Texture2D* texture = nullptr;
+    ID2D1DeviceContext* dc = nullptr;
+};
+
+// The largest rectangle of `aspect` (width / height) in the middle of r.
+Rect Fit(const Rect& r, float aspect) {
+    const float a = std::max(aspect, 1e-3f);
+    float w = r.w, h = r.w / a;
+    if (h > r.h) {
+        h = r.h;
+        w = h * a;
+    }
+    return {r.x + (r.w - w) * 0.5f, r.y + (r.h - h) * 0.5f, w, h};
+}
+
+// Two directions at right angles to d (and to each other): a circle facing d.
+std::pair<Vec3, Vec3> Across(Vec3 d) {
+    const Vec3 u = space3d::Normalize(space3d::Cross(d, std::fabs(d.y) < 0.99f ? Vec3{0, 1, 0} : Vec3{1, 0, 0}));
+    return {u, space3d::Cross(u, d)};
+}
 
 // A model file read once and kept on the GPU, by the path written in the MeshRenderer (several
 // entities with the same model share it). Looked at again now and then: a file changed on disk
@@ -121,18 +162,25 @@ public:
         }
         transformType_ = reflect::TypeOf<Transform>().name;
         meshType_ = reflect::TypeOf<MeshRenderer>().name;
+        cameraType_ = reflect::TypeOf<Camera>().name;
+        lightType_ = reflect::TypeOf<Light>().name;
         now_ = c.Time();
         Place(host);
         ForgetUnusedModels();
-        if (host.game) {  // the game view: only the picture
-            Render(c, r, host);
+        if (host.game) {  // the game view: only the picture, through the game's camera
+            DrawGame(c, r, host);
             return;
         }
         const std::optional<BarLayout> bar = Bar(r);
         if (!bar) snapOpen_ = false;
+        previewAt_ = PreviewRect(r, host);  // clicks on the preview do not reach the scene
         if (HandleInput(c, r, host, bar)) Place(host);  // a gizmo drag moved things this frame
-        Render(c, r, host);
+        Build(host, false);
+        Show(c, r, host, main_, SceneFrame(r));
+        DrawMarks(c, r, host);
         DrawGizmo(c, r, host);
+        previewAt_ = PreviewRect(r, host);
+        if (previewAt_) DrawPreview(c, *previewAt_, host);
         DrawHints(c, r, bar);
         if (bar) DrawBar(c, *bar);
         if (bar && snapOpen_) DrawSnapBox(c, SnapBox(r, *bar));
@@ -148,13 +196,15 @@ public:
     json::Value SaveState() const override { return reflect::Save(state_, &unknowns_); }
 
 private:
-    bool Ready(game_production::SceneViewHost& host) {
-        if (!tried_) {
-            tried_ = true;
+    bool Ready(game_production::SceneViewHost& host) { return Start(main_, host); }
+
+    static bool Start(Picture& pic, game_production::SceneViewHost& host) {
+        if (!pic.tried) {
+            pic.tried = true;
             std::string err;
-            if (!renderer_.Init(host.host.Graphics().D3D(), &err)) log::Error("シーンビュー: {}", err);
+            if (!pic.renderer.Init(host.host.Graphics().D3D(), &err)) log::Error("シーンビュー: {}", err);
         }
-        return renderer_.Ready();
+        return pic.renderer.Ready();
     }
 
     // Where every entity with a Transform is in the world (its parents' Transforms included), and
@@ -183,6 +233,13 @@ private:
                         p.max = g->max;
                     }
                 }
+                if (const game_production::Component* cc = e.FindComponent(cameraType_); cc && cc->Known()) {
+                    p.camera = *static_cast<const Camera*>(cc->value.Get());
+                }
+                if (const game_production::Component* lc = e.FindComponent(lightType_); lc && lc->Known()) {
+                    p.light = *static_cast<const Light*>(lc->value.Get());
+                }
+                p.marker = (p.camera || p.light) && !(mc && mc->Known());
                 placed_.push_back(p);
             } else {
                 world[e.data.id] = parent;  // no place of its own: its children follow the parent
@@ -221,7 +278,7 @@ private:
         m.gpu.reset();
         std::string error;
         if (auto mesh = space3d::LoadMeshFile(file, &error)) {
-            m.gpu = renderer_.Upload(*mesh, &error);
+            m.gpu = main_.renderer.Upload(*mesh, &error);
             if (m.gpu) {
                 log::Info("シーンビュー: モデル「{}」を{}読みました (頂点 {}・三角形 {})", path, again ? "もう一度" : "", mesh->vertices.size(),
                           mesh->indices.size() / 3);
@@ -306,6 +363,7 @@ private:
     }
 
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
+        if (previewAt_ && previewAt_->Inset(-4, -24, -4, -4).Contains(x, y)) return true;  // the camera preview
         if (!bar) return false;
         for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->shadow}) {
             if (part.Contains(x, y)) return true;
@@ -490,10 +548,30 @@ private:
         if (!inv) return;
         const float ndcX = (pressX_ - r.x) / r.w * 2.f - 1.f;
         const float ndcY = 1.f - (pressY_ - r.y) / r.h * 2.f;
+        // A mark (a camera, a light) is drawn over everything: the nearest one under the mouse first.
+        if (const auto screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h)) {
+            float nearest = kMarkPick;
+            int mark = 0;
+            for (const Placed& p : placed_) {
+                if (!p.camera && !p.light) continue;
+                const auto at = screen->ToScreen(space3d::TransformPoint(p.world, {0, 0, 0}));
+                if (!at) continue;
+                const float d = std::hypot(at->x - pressX_, at->y - pressY_);
+                if (d <= nearest) {
+                    nearest = d;
+                    mark = p.id;
+                }
+            }
+            if (mark != 0) {
+                host.select({mark});
+                return;
+            }
+        }
         const space3d::Ray ray = space3d::ScreenRay(*inv, ndcX, ndcY);
         std::optional<float> best;
         int hit = 0;
         for (const Placed& p : placed_) {
+            if (p.marker) continue;  // nothing of its own to hit
             const auto t = space3d::IntersectPlacedBox(ray, p.world, p.min, p.max);
             if (t && (!best || *t < *best)) {
                 best = t;
@@ -504,7 +582,9 @@ private:
     }
 
     void FrameSelection(game_production::SceneViewHost& host) {
-        if (const Placed* p = Primary(host)) {
+        if (const Placed* p = Primary(host); p && p->marker) {
+            space3d::Frame(state_.camera, space3d::TransformPoint(p->world, {0, 0, 0}), 1.f);  // a camera / a light
+        } else if (p) {
             // The middle of its bounds (a model's origin may be at its feet), as far as they reach.
             const Vec3 center = space3d::TransformPoint(p->world, (p->min + p->max) * 0.5f);
             const float size = space3d::Length(space3d::TransformDirection(p->world, p->max - p->min));
@@ -512,28 +592,39 @@ private:
         }
     }
 
-    void Render(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) {
-        // The grid on the floor (y = 0) and the axes through the middle (not in the game view).
+    static bool IsSelected(const game_production::SceneViewHost& host, int id) {
+        return std::find(host.selection.begin(), host.selection.end(), id) != host.selection.end();
+    }
+
+    // What is drawn this frame: the grid and the axes, the things (boxes, models), the lights; the
+    // shapes of the cameras and lights and the selection's outlines. `gameLook`: as the game sees it
+    // (the game view, the camera preview) - only the things that are on, nothing of the editor's.
+    void Build(const game_production::SceneViewHost& host, bool gameLook) {
         lines_.clear();
-        const bool game = host.game;
+        boxes_.clear();
+        meshes_.clear();
+        lights_.clear();
         auto line = [&](Vec3 a, Vec3 b, ui::Color col) {
             lines_.push_back({a, col});
             lines_.push_back({b, col});
         };
+        // The grid on the floor (y = 0) and the axes through the middle.
         const float h = static_cast<float>(kGridHalf);
-        for (int i = -kGridHalf; i <= kGridHalf && !game; ++i) {
+        for (int i = -kGridHalf; i <= kGridHalf && !gameLook; ++i) {
             const float v = static_cast<float>(i);
             const ui::Color minor = i % 10 == 0 ? theme::SceneGridMajor() : theme::SceneGrid();
             line({v, 0, -h}, {v, 0, h}, i == 0 ? theme::AxisZ() : minor);  // along Z (the line x = 0 is the Z axis)
             line({-h, 0, v}, {h, 0, v}, i == 0 ? theme::AxisX() : minor);  // along X
         }
-        if (!game) line({0, 0, 0}, {0, 1.5f, 0}, theme::AxisY());
+        if (!gameLook) line({0, 0, 0}, {0, 1.5f, 0}, theme::AxisY());
 
-        boxes_.clear();
-        meshes_.clear();
         for (const Placed& p : placed_) {
-            if (game && !p.active) continue;  // switched off: not in the game
-            const bool selected = !game && std::find(host.selection.begin(), host.selection.end(), p.id) != host.selection.end();
+            if (p.light && p.active) lights_.push_back(ToRenderLight(*p.light, p.world));  // a light switched off is dark
+            if (gameLook && !p.active) continue;  // switched off: not in the game
+            const bool selected = !gameLook && IsSelected(host, p.id);
+            if (!gameLook && p.camera) CameraLines(p, selected, host.aspect);
+            if (!gameLook && p.light) LightLines(p, selected);
+            if (p.marker) continue;
             const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
             if (p.mesh) {
                 meshes_.push_back({p.mesh, p.world, col, p.castShadow});
@@ -542,39 +633,222 @@ private:
             }
             if (selected) Outline(p.world, p.min, p.max, theme::Accent);
         }
+        if (lights_.size() > space3d::kMaxLights && lights_.size() != warnedLights_) {
+            log::Warn("シーンビュー: 光が {} 個あります。描くのは最初の {} 個だけです", lights_.size(), space3d::kMaxLights);
+        }
+        warnedLights_ = lights_.size() > space3d::kMaxLights ? lights_.size() : 0;
+    }
 
-        // The picture in pixels of this window (sharp on high-DPI screens).
+    // The scene view's own camera (the editing camera).
+    space3d::RenderFrame SceneFrame(const Rect& r) const {
+        space3d::RenderFrame f;
+        f.view = state_.camera.ViewMatrix();
+        f.projection = state_.camera.ProjectionMatrix(r.w / r.h);
+        f.clear = theme::SceneBackground();
+        f.shadows = state_.shadows;
+        f.shadowColor = theme::SceneShadow();
+        return f;
+    }
+
+    // Through a camera of the scene, as the game sees it.
+    static space3d::RenderFrame CameraFrame(const Placed& cam, const game_production::SceneViewHost& host) {
+        space3d::RenderFrame f;
+        f.view = space3d::ViewFromWorld(cam.world);
+        f.projection = ProjectionOf(*cam.camera, host.aspect);
+        f.clear = BackgroundOf(*cam.camera, host.background);
+        f.shadows = true;  // the lights decide (影を落とす)
+        f.shadowColor = theme::SceneShadow();
+        return f;
+    }
+
+    // Draws what Build made into `pic` and shows it in r (in pixels of this window: sharp on high-DPI
+    // screens).
+    void Show(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, Picture& pic, space3d::RenderFrame f) {
         ID2D1DeviceContext* dc = c.P().DC();
         float dpiX = 96, dpiY = 96;
         dc->GetDpi(&dpiX, &dpiY);
         const float scale = dpiX / 96.f;
-        space3d::RenderFrame f;
         f.width = static_cast<uint32_t>(std::max(1.f, std::round(r.w * scale)));
         f.height = static_cast<uint32_t>(std::max(1.f, std::round(r.h * scale)));
-        f.view = state_.camera.ViewMatrix();
-        f.projection = state_.camera.ProjectionMatrix(r.w / r.h);
-        f.clear = game ? host.background : theme::SceneBackground();
         f.lines = lines_;
         f.boxes = boxes_;
         f.meshes = meshes_;
-        f.shadows = state_.shadows;
-        f.shadowColor = theme::SceneShadow();
+        f.lights = lights_;
 
         // Direct2D's drawing so far goes to the GPU first; then Direct3D draws into its own picture.
         dc->Flush();
-        ID3D11Texture2D* picture = renderer_.Render(host.host.Graphics().D3DContext(), f);
+        ID3D11Texture2D* picture = pic.renderer.Render(host.host.Graphics().D3DContext(), f);
         if (!picture) return;
-        if (picture != bitmapTexture_ || dc != bitmapDc_ || !bitmap_) {
-            bitmap_.Reset();
+        if (picture != pic.texture || dc != pic.dc || !pic.bitmap) {
+            pic.bitmap.Reset();
             Microsoft::WRL::ComPtr<IDXGISurface> surface;
             if (FAILED(picture->QueryInterface(IID_PPV_ARGS(&surface)))) return;
             const D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
                 D2D1_BITMAP_OPTIONS_NONE, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE), dpiX, dpiY);
-            if (FAILED(dc->CreateBitmapFromDxgiSurface(surface.Get(), &props, &bitmap_))) return;
-            bitmapTexture_ = picture;
-            bitmapDc_ = dc;
+            if (FAILED(dc->CreateBitmapFromDxgiSurface(surface.Get(), &props, &pic.bitmap))) return;
+            pic.texture = picture;
+            pic.dc = dc;
         }
-        c.P().Image(bitmap_.Get(), r);
+        c.P().Image(pic.bitmap.Get(), r);
+    }
+
+    // --- The game view -------------------------------------------------------------------------
+    // Through the game settings' 最初のカメラ, in the game screen's shape; what is missing when it
+    // cannot (and the way to the settings).
+    void DrawGame(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) {
+        std::wstring problem;
+        const Placed* cam = nullptr;
+        const game_production::SceneEntity* e = host.camera != 0 ? host.scene.Find(static_cast<int>(host.camera)) : nullptr;
+        if (e) cam = FindPlaced(e->data.id);
+        if (host.camera == 0) {
+            problem = Tr(L"ゲームの設定の「最初のカメラ」が選ばれていません。カメラの部品を付けたエンティティを選ぶと、そこから見た絵がここに映ります。");
+        } else if (!e) {
+            problem = Tr(L"「最初のカメラ」のエンティティがシーンにありません (消されたかもしれません)。ゲームの設定で選び直してください。");
+        } else if (!cam || !cam->camera) {
+            problem = TrF(L"「{}」にカメラの部品がありません (Transform も要ります)。インスペクターの「部品を足す」でカメラを付けてください。", Utf8ToWide(e->data.name));
+        } else if (!cam->active) {
+            problem = TrF(L"カメラの「{}」が有効ではありません。有効にすると、そこから見た絵が映ります。", Utf8ToWide(e->data.name));
+        }
+        if (!problem.empty()) {
+            const float cy = r.y + r.h * 0.5f;
+            ui::TextStyle ts;
+            ts.size = 13;
+            ts.wrap = true;
+            ts.color = theme::TextDim;
+            ts.h = ui::HAlign::Center;
+            ts.v = ui::VAlign::Bottom;
+            c.P().Text({r.x + 24, r.y + 8, r.w - 48, cy - r.y}, problem, ts);
+            const Rect button{r.x + (r.w - 200) * 0.5f, cy + 16, 200, 36};
+            if (host.openSettings && w::Button(c, "game_camera_settings", button, Tr(L"ゲームの設定を開く"))) host.openSettings();
+            return;
+        }
+        Build(host, true);
+        Show(c, Fit(r, host.aspect), host, main_, CameraFrame(*cam, host));
+    }
+
+    // --- Cameras and lights in the scene view --------------------------------------------------
+    // A camera's shape: what it sees (its near and far planes - the far one at most kFrustumShown
+    // away - and the edges between), and a little roof on top (which way is up).
+    void CameraLines(const Placed& p, bool selected, float aspect) {
+        const ui::Color col = selected ? theme::Accent : p.active ? theme::SceneCamera() : theme::SceneCamera().Alpha(0.3f);
+        const Camera shown = ShownNear(*p.camera, kFrustumShown);
+        const auto k = space3d::FrustumCorners(ProjectionOf(shown, aspect) * space3d::ViewFromWorld(p.world));
+        if (!k) return;
+        auto line = [&](Vec3 a, Vec3 b) {
+            lines_.push_back({a, col});
+            lines_.push_back({b, col});
+        };
+        for (size_t i = 0; i < 4; ++i) {
+            line((*k)[i], (*k)[(i + 1) % 4]);
+            line((*k)[4 + i], (*k)[4 + (i + 1) % 4]);
+            line((*k)[i], (*k)[4 + i]);
+        }
+        const Vec3 topLeft = (*k)[7], topRight = (*k)[6];
+        const Vec3 a = topLeft + (topRight - topLeft) * 0.35f, b = topLeft + (topRight - topLeft) * 0.65f;
+        const Vec3 apex = (a + b) * 0.5f + space3d::Normalize(topLeft - (*k)[4]) * (space3d::Length(topRight - topLeft) * 0.15f);
+        line(a, apex);
+        line(apex, b);
+    }
+
+    // A light's shape: 平行光 = a ring and its rays going the light's way; スポット = its cone as far as it
+    // reaches; 点光源 = how far it reaches (three rings, while selected).
+    void LightLines(const Placed& p, bool selected) {
+        const ui::Color col = selected ? theme::Accent : p.active ? theme::SceneLight() : theme::SceneLight().Alpha(0.35f);
+        const space3d::Light l = ToRenderLight(*p.light, p.world);
+        const Vec3 d = space3d::Length(l.direction) > 0 ? l.direction : Vec3{0, -1, 0};
+        const auto [u, v] = Across(d);
+        auto line = [&](Vec3 a, Vec3 b) {
+            lines_.push_back({a, col});
+            lines_.push_back({b, col});
+        };
+        auto ring = [&](Vec3 center, Vec3 x, Vec3 y, float radius) {
+            constexpr int n = 32;
+            for (int i = 0; i < n; ++i) {
+                const float a0 = static_cast<float>(i) / n * 6.2831853f, a1 = static_cast<float>(i + 1) / n * 6.2831853f;
+                line(center + (x * std::cos(a0) + y * std::sin(a0)) * radius, center + (x * std::cos(a1) + y * std::sin(a1)) * radius);
+            }
+        };
+        switch (p.light->kind) {
+            case LightKind::Directional: {
+                constexpr float radius = 0.3f, length = 1.5f;
+                ring(l.position, u, v, radius);
+                for (int i = 0; i < 4; ++i) {
+                    const float a = static_cast<float>(i) * 1.5707963f;
+                    const Vec3 at = l.position + (u * std::cos(a) + v * std::sin(a)) * radius;
+                    line(at, at + d * length);
+                }
+                line(l.position, l.position + d * (length + 0.5f));
+                break;
+            }
+            case LightKind::Spot: {
+                const float half = std::clamp(p.light->spotAngle, 1.f, 179.f) * 0.5f * 0.01745329f;
+                const float reach = std::max(p.light->range, 0.01f);
+                const Vec3 end = l.position + d * (reach * std::cos(half));
+                const float radius = reach * std::sin(half);
+                ring(end, u, v, radius);
+                for (int i = 0; i < 4; ++i) {
+                    const float a = static_cast<float>(i) * 1.5707963f;
+                    line(l.position, end + (u * std::cos(a) + v * std::sin(a)) * radius);
+                }
+                break;
+            }
+            case LightKind::Point:
+                if (selected) {
+                    const float reach = std::max(p.light->range, 0.01f);
+                    ring(l.position, {1, 0, 0}, {0, 1, 0}, reach);
+                    ring(l.position, {0, 1, 0}, {0, 0, 1}, reach);
+                    ring(l.position, {0, 0, 1}, {1, 0, 0}, reach);
+                }
+                break;
+        }
+    }
+
+    // The marks of the cameras and the lights where they are (a click on one selects it).
+    void DrawMarks(ui::Context& c, const Rect& r, const game_production::SceneViewHost& host) {
+        const auto screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h);
+        if (!screen) return;
+        c.P().PushClip(r);
+        for (const Placed& p : placed_) {
+            if (!p.camera && !p.light) continue;
+            const auto at = screen->ToScreen(space3d::TransformPoint(p.world, {0, 0, 0}));
+            if (!at) continue;
+            const ui::Color col = IsSelected(host, p.id) ? theme::Accent
+                                  : !p.active        ? theme::TextFaint
+                                  : p.camera         ? theme::SceneCamera()
+                                                     : theme::SceneLight();
+            w::DrawIcon(c, {at->x - kMarkSize * 0.5f, at->y - kMarkSize * 0.5f, kMarkSize, kMarkSize},
+                        p.camera ? w::Icon::Camera : w::Icon::Light, col);
+        }
+        c.P().PopClip();
+    }
+
+    // The selected camera's picture, small at the bottom right (in the game screen's shape).
+    std::optional<Rect> PreviewRect(const Rect& r, const game_production::SceneViewHost& host) const {
+        const Placed* p = Primary(host);
+        if (!p || !p->camera) return std::nullopt;
+        const float aspect = std::max(host.aspect, 1e-3f);
+        float w = std::clamp(r.w * 0.3f, 140.f, kPreviewMaxW), h = w / aspect;
+        if (h > r.h * 0.4f) {
+            h = r.h * 0.4f;
+            w = h * aspect;
+        }
+        if (w < 60 || h < 34 || r.w < w + 40) return std::nullopt;
+        return Rect{r.Right() - w - 12, r.Bottom() - h - 12, w, h};
+    }
+
+    void DrawPreview(ui::Context& c, const Rect& at, game_production::SceneViewHost& host) {
+        const Placed* p = Primary(host);
+        const game_production::SceneEntity* e = p ? host.scene.Find(p->id) : nullptr;
+        if (!p || !p->camera || !e) return;
+        w::DrawSurface(c, at.Inset(-4, -24, -4, -4), w::Surface::Popup);
+        ui::TextStyle ts;
+        ts.size = 11;
+        ts.color = theme::TextDim;
+        ts.v = ui::VAlign::Center;
+        c.P().Text({at.x + 2, at.y - 22, at.w - 4, 20}, TrF(L"カメラのプレビュー: {}", Utf8ToWide(e->data.name)), ts);
+        if (!Start(preview_, host)) return;
+        Build(host, true);
+        Show(c, at, host, preview_, CameraFrame(*p, host));
     }
 
     // The 12 edges of a box of the thing's own space (the unit cube, or a model's bounds), placed.
@@ -729,7 +1003,7 @@ private:
         if (w::Button(c, "scene_shadows", bar.shadow, Tr(L"影"), state_.shadows ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.shadows = !state_.shadows;
         }
-        if (c.IsHovered(bar.shadow)) w::Tooltip(c, Tr(L"上からの光の影を、床と物に落とす (押すと切り替え)"));
+        if (c.IsHovered(bar.shadow)) w::Tooltip(c, Tr(L"光の影を床と物に落とす (影を落とす平行光の 1 つ目。光の部品が無いときは上からの光。押すと切り替え)"));
     }
 
     // The steps of the gizmo: how far a move, a turn and a scale go at a time; and whether always.
@@ -771,7 +1045,8 @@ private:
         ts.color = theme::TextDim;
         ts.v = ui::VAlign::Bottom;
         ts.wrap = true;
-        c.P().Text(r.Inset(10, 8, 10, 8),
+        const float right = previewAt_ ? r.Right() - previewAt_->x + 8 : 10;
+        c.P().Text(r.Inset(10, 8, right, 8),
                    Tr(L"右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ   W / E / R: 移動・回転・拡大縮小   X: ローカル / ワールド   Z: それぞれ / 中心   回転の球の中をドラッグ: 自由に回す   Ctrl+ギズモ: 刻んで動かす   Esc: ドラッグをやめる"),
                    ts);
         if (placed_.empty()) {
@@ -787,13 +1062,16 @@ private:
 
     SceneViewState state_;       // the camera and the gizmo chosen (kept in UserSettings)
     reflect::Unknowns unknowns_;  // keys of a newer version: written back unchanged
-    space3d::Renderer renderer_;
-    bool tried_ = false;
-    std::string transformType_, meshType_;
+    Picture main_;     // the view
+    Picture preview_;  // the selected camera's picture (started when first needed)
+    std::optional<Rect> previewAt_;
+    std::string transformType_, meshType_, cameraType_, lightType_;
     std::vector<Placed> placed_;
     std::vector<space3d::LineVertex> lines_;
     std::vector<space3d::Box> boxes_;
     std::vector<space3d::MeshDraw> meshes_;
+    std::vector<space3d::Light> lights_;
+    size_t warnedLights_ = 0;  // the number of lights told about (too many)
     std::unordered_map<std::string, ModelEntry> models_;  // by MeshRenderer::model (the asset's id)
     double now_ = 0;
 
@@ -809,11 +1087,6 @@ private:
     std::vector<Edited> edited_;
     bool snapOpen_ = false;                     // the box of the steps is open
     std::array<std::string, 3> snapText_;       // its fields' text
-
-    // The picture as a Direct2D bitmap, made again when the picture or the window's context changes.
-    Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap_;
-    ID3D11Texture2D* bitmapTexture_ = nullptr;
-    ID2D1DeviceContext* bitmapDc_ = nullptr;
 };
 
 }  // namespace

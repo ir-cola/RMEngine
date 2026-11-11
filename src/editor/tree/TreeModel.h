@@ -24,6 +24,8 @@ enum class Icon : uint8_t {
     None,    // no picture (the name starts where the picture would be)
     Object,  // a thing with no shape of its own (a circle): an entity without a place
     Cube,    // a thing in 3D space
+    Camera,  // a thing that looks (a game's camera)
+    Light,   // a thing that lights the others
     // files (the アセット panel)
     Folder,
     File,
@@ -34,7 +36,7 @@ enum class Icon : uint8_t {
     Text,
 };
 // By name, for plugins that cannot see this header (a component's ComponentInfo::icon): "object",
-// "cube"; anything else is None.
+// "cube", "camera", "light"; anything else is None.
 Icon IconNamed(std::string_view name);
 
 struct Item {

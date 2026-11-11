@@ -33,6 +33,9 @@ namespace rm::editor::tree {
 // A row of the right-click menu, optionally with a shortcut (works while the tree has the keys).
 using Action = w::Action;
 
+// The picture of a row (Item::icon) as the widgets draw it (the rows, and a reference field's list).
+w::Icon PictureOf(Icon icon);
+
 // What a software puts in the tree.
 class Source {
 public:

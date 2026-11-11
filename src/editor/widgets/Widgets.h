@@ -68,6 +68,8 @@ void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 // --- Icons: drawn with lines, so they sit in the middle of their box at any size ------------
 enum class Icon {
     Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Object, Cube, Plus, Grip, Play, Pause, Step, Stop,
+    // what an entity is (the 階層, the scene view's marks)
+    Camera, Light,
     // what a file is (the アセット panel, reference fields)
     Folder, File, Image, Audio, Font, Text,
 };

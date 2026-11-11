@@ -209,6 +209,9 @@ inline Color GizmoHot() { return Color::Hex(0xF2C230); }  // the gizmo handle un
 inline Color SceneObject() { return IsLight ? Color::Hex(0xAEB4BF) : Color::Hex(0x98A2B3); }
 inline Color SceneObjectSelected() { return Mix(SceneObject(), Accent, 0.55f); }
 inline Color SceneObjectInactive() { return Mix(SceneObject(), SceneBackground(), 0.6f); }
+// A camera's shape (the lines of what it sees) and a light's (its direction, its reach) and their marks.
+inline Color SceneCamera() { return Text.Alpha(IsLight ? 0.70f : 0.75f); }
+inline Color SceneLight() { return IsLight ? Color::Hex(0xC08A12) : Color::Hex(0xF2D16B); }
 // Shadows falling on the floor (laid over the background: darker on the dark theme to still show).
 inline Color SceneShadow() { return Color{0, 0, 0, IsLight ? 0.30f : 0.55f}; }
 

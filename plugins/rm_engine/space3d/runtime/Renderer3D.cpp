@@ -1,5 +1,6 @@
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 
+#include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <d3dcompiler.h>
@@ -24,6 +25,14 @@ cbuffer PerDraw : register(b0) {
     float4 light;            // xyz: where the light goes; w: 1 = shadows
     float4 shadow;           // x: one texel of the shadow map (uv); y: depth bias; z: normal offset (world)
     float4 eye;              // xyz: where the camera is (world)
+};
+// The lights of the frame (Lighting.h's LightBlock: set once per frame).
+cbuffer Lights : register(b1) {
+    float4 lightInfo;         // x: how many
+    float4 lightPos[8];       // xyz: where (point, spot); w: 0 directional, 1 point, 2 spot
+    float4 lightDir[8];       // xyz: where the light goes; w: the range
+    float4 lightColor[8];     // rgb: colour x strength; w: 1 = its shadows are in the shadow map
+    float4 lightSpot[8];      // x: cos of the cone's edge, y: cos where it starts to fade
 };
 Texture2D shadowMap : register(t0);
 SamplerComparisonState shadowSampler : register(s0);
@@ -67,15 +76,36 @@ float Lit(float4 lpos) {
     return sum / 9;
 }
 
+// How much light reaches a point facing n: the sky (every face, faces turned up a little more - even
+// in shadow) and each light (its angle, its fade with distance / out of the cone, its shadow).
+float3 LightAmount(float3 n, float3 wpos, float shadowLit) {
+    float sky = 0.5 + 0.5 * n.y;
+    float3 k = 0.30 + 0.12 * sky;
+    int count = (int)lightInfo.x;
+    [loop] for (int l = 0; l < count; ++l) {
+        float3 toLight = -lightDir[l].xyz;
+        float fade = 1;
+        if (lightPos[l].w > 0.5) {
+            float3 d = lightPos[l].xyz - wpos;
+            float dist = length(d);
+            toLight = d / max(dist, 1e-4);
+            float x = saturate(1 - dist / lightDir[l].w);
+            fade = x * x;
+            if (lightPos[l].w > 1.5) fade *= smoothstep(lightSpot[l].x, lightSpot[l].y, dot(-toLight, lightDir[l].xyz));
+        }
+        float s = lightColor[l].w > 0.5 ? shadowLit : 1;
+        k += 0.58 * lightColor[l].rgb * (saturate(dot(n, toLight)) * fade * s);
+    }
+    return k;
+}
+
 float4 MeshPS(MeshOut i) : SV_Target {
     // The side seen is the side facing the eye (the back of an open model is lit as its own side).
     // Told from the eye, not from the triangle's winding on the screen, so a mirrored model or a
     // flipped projection never lights the wrong side.
     float3 n = normalize(i.nrm);
     if (dot(n, eye.xyz - i.wpos) < 0) n = -n;
-    float lit = saturate(dot(n, -normalize(light.xyz))) * Lit(i.lpos);
-    float sky = 0.5 + 0.5 * n.y;  // faces turned up are a little brighter even in shadow
-    float k = 0.30 + 0.12 * sky + 0.58 * lit;
+    float3 k = LightAmount(n, i.wpos, Lit(i.lpos));
     return float4(color.rgb * k, color.a);
 }
 
@@ -218,6 +248,8 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     cd.ByteWidth = sizeof(Constants);
     cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     if (FAILED(device->CreateBuffer(&cd, nullptr, &constants_))) return fail("定数");
+    cd.ByteWidth = sizeof(LightBlock);
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &lights_))) return fail("光");
 
     D3D11_RASTERIZER_DESC rd{};
     rd.FillMode = D3D11_FILL_SOLID;
@@ -393,6 +425,12 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ID3D11Buffer* cb = constants_.Get();
     ctx->VSSetConstantBuffers(0, 1, &cb);
     ctx->PSSetConstantBuffers(0, 1, &cb);
+    // The lights (none: the one default directional light); the shadow map is the first directional
+    // light's that casts shadows.
+    const LightSetup lights = MakeLights(f.lights, f.lightDirection);
+    ctx->UpdateSubresource(lights_.Get(), 0, nullptr, &lights.block, 0, 0);
+    ID3D11Buffer* lb = lights_.Get();
+    ctx->PSSetConstantBuffers(1, 1, &lb);
     ctx->IASetInputLayout(meshLayout_.Get());
     ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     const float factor[4] = {0, 0, 0, 0};
@@ -406,7 +444,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         const Vec3 eye = TransformPoint(*toWorld, {0, 0, 0});
         c.eye[0] = eye.x, c.eye[1] = eye.y, c.eye[2] = eye.z;
     }
-    const Vec3 l = f.lightDirection;
+    const Vec3 l = lights.shadowDirection;
     c.light[0] = l.x, c.light[1] = l.y, c.light[2] = l.z;
     auto draw = [&](const GpuMesh& mesh, const Mat4& world, Color col) {
         CopyMatrix(c.world, world);
@@ -419,7 +457,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
 
     // 1. The shadow map: what casts, seen from the light, fitted to the box that holds all of it.
     bool shadows = false;
-    if (f.shadows && shadowDsv_) {
+    if (f.shadows && lights.shadowLight >= 0 && shadowDsv_) {
         Bounds casters;
         for (const Item& it : items_) {
             if (!it.castShadow) continue;
@@ -429,7 +467,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             shadows = true;
         }
         if (shadows) {
-            const Mat4 lightViewProj = DirectionalShadowMatrix(f.lightDirection, casters);
+            const Mat4 lightViewProj = DirectionalShadowMatrix(lights.shadowDirection, casters);
             CopyMatrix(c.lightViewProj, lightViewProj);
             // How big one texel is in the world, and how deep the map is (the light's view only turns
             // and moves, so each row of the matrix is the orthographic scale of that axis): the
@@ -513,6 +551,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     // Nothing of ours stays bound (Direct2D draws the picture next).
     ctx->OMSetRenderTargets(0, nullptr, nullptr);
     ctx->PSSetShaderResources(0, 1, &noSrv);
+    ID3D11Buffer* noCb = nullptr;
+    ctx->PSSetConstantBuffers(1, 1, &noCb);
     return picture_.Get();
 }
 

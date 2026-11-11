@@ -1,6 +1,6 @@
 #pragma once
 // 3D 空間 - drawing: 3D lines, lit boxes and models with Direct3D 11 into a picture of its own (a
-// texture), with the shadows of one directional light. The editor shows that picture in a panel (the
+// texture), lit by up to 8 lights (Lighting.h) with the shadows of one directional light. The editor shows that picture in a panel (the
 // scene view); the exported game will draw the same way to its window. Knows nothing of games or
 // editors. (The space and its drawing are one plugin: one is never used without the other -
 // decided 2026-11-05.)
@@ -20,6 +20,7 @@
 // The floor (y = 0) is an invisible plane that only shows the shadows falling on it.
 
 #include "base/Math.h"
+#include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -72,8 +73,11 @@ struct RenderFrame {
     std::span<const LineVertex> lines;  // pairs: 0-1, 2-3, ...
     std::span<const Box> boxes;
     std::span<const MeshDraw> meshes;
-    Vec3 lightDirection{-0.45f, -1.f, -0.3f};  // where the light goes (from above, a little from the front)
-    bool shadows = false;
+    // The lights (Lighting.h: at most kMaxLights). None: one white directional light going
+    // `lightDirection` (from above, a little from the front).
+    std::span<const Light> lights;
+    Vec3 lightDirection{-0.45f, -1.f, -0.3f};
+    bool shadows = false;  // of the first directional light that casts them
     Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
 };
 
@@ -107,7 +111,7 @@ private:
     Ptr<ID3D11VertexShader> lineVs_, meshVs_, shadowVs_;
     Ptr<ID3D11PixelShader> linePs_, meshPs_, floorPs_;
     Ptr<ID3D11InputLayout> lineLayout_, meshLayout_;
-    Ptr<ID3D11Buffer> lineVb_, constants_;
+    Ptr<ID3D11Buffer> lineVb_, constants_, lights_;
     std::shared_ptr<const GpuMesh> cube_, floor_;
     size_t lineCapacity_ = 0;
     Ptr<ID3D11RasterizerState> raster_, shadowRaster_;

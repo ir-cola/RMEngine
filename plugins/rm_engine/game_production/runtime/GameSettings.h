@@ -33,9 +33,9 @@ struct GameSettings {
     RM_PROPERTY(Edit, Label="背景の色", Min=0, Max=1) Color clearColor{0.10f, 0.10f, 0.12f, 1};
     RM_PROPERTY(Edit, Label="画面") DisplaySettings display;
     RM_PROPERTY(Edit, Label="タグ") std::vector<std::string> tags;
-    // References (saved as ids). Used once the game is exported / cameras exist.
+    // References (saved as ids). The icon is used once the game is exported.
     RM_PROPERTY(Edit, Label="アイコン", Tooltip="書き出したゲームのウィンドウとタスクバーの絵 (画像のアセット)", AssetKind="image") AssetRef icon;
-    RM_PROPERTY(Edit, Label="最初のカメラ", Tooltip="ゲームを始めたときに使うカメラのエンティティ (カメラの部品ができたら使います)") EntityRef startCamera;
+    RM_PROPERTY(Edit, Label="最初のカメラ", Tooltip="ゲームビューと Play はこのエンティティのカメラから見ます (カメラの部品を付けたエンティティを選びます)") EntityRef startCamera;
 };
 
 }  // namespace rm::game_production

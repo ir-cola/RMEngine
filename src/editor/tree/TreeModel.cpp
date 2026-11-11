@@ -8,6 +8,8 @@ namespace rm::editor::tree {
 Icon IconNamed(std::string_view name) {
     if (name == "object") return Icon::Object;
     if (name == "cube") return Icon::Cube;
+    if (name == "camera") return Icon::Camera;
+    if (name == "light") return Icon::Light;
     return Icon::None;
 }
 

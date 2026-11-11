@@ -1,11 +1,15 @@
-// Tests for the 3D space plugin's math (plugins/rm_engine/space3d/runtime/Transform, View) and models (Mesh).
+// Tests for the 3D space plugin's math (plugins/rm_engine/space3d/runtime/Transform, View), models
+// (Mesh) and lights (Lighting), and the connector's camera and light components (game_x_3d/runtime).
 
 #include "Test.h"
 
 #include "core/reflect/Data.h"
 #include "rm_engine/game_x_3d/editor/SceneViewState.h"
+#include "rm_engine/game_x_3d/runtime/Camera.h"
+#include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
+#include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -714,4 +718,154 @@ RM_TEST(SceneViewState_KeepsShadows) {
     game_x_3d::SceneViewState back;
     reflect::Load(back, reflect::Save(st));
     CHECK(!back.shadows);
+}
+
+RM_TEST(Space3d_ViewFromWorld_LooksAlongMinusZ) {
+    // At (0, 0, 5) unturned: the world's middle is 5 in front (view space looks along -Z).
+    Transform t;
+    t.position = {0, 0, 5};
+    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(t)), {0, 0, 0}), {0, 0, -5}));
+    // Turned 90 degrees about Y it looks along -X; a scale changes nothing.
+    Transform turned;
+    turned.rotation = {0, 90, 0};
+    turned.scale = {2, 3, 4};
+    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(turned)), {-3, 0, 0}), {0, 0, -3}));
+    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(turned)), {0, 1, 0}), {0, 1, 0}));  // up stays up
+    // Looking straight down still has a view.
+    Transform down;
+    down.rotation = {-90, 0, 0};
+    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(down)), {0, -2, 0}), {0, 0, -2}));
+}
+
+RM_TEST(Space3d_FrustumCorners) {
+    // 90 degrees, square, near 1, far 10, looking along -Z from the middle.
+    const auto k = FrustumCorners(Perspective(90, 1, 1, 10));
+    CHECK(k.has_value());
+    if (!k) return;
+    CHECK(Near((*k)[0], {-1, -1, -1}) && Near((*k)[1], {1, -1, -1}) && Near((*k)[2], {1, 1, -1}) && Near((*k)[3], {-1, 1, -1}));
+    CHECK(Near((*k)[4], {-10, -10, -10}) && Near((*k)[6], {10, 10, -10}));
+    // A matrix that cannot be inverted has none.
+    Mat4 flat;
+    flat.m[0][0] = 0;
+    CHECK(!FrustumCorners(flat).has_value());
+}
+
+RM_TEST(Camera_Projection) {
+    game_x_3d::Camera cam;  // perspective 60 degrees, 0.1 .. 1000
+    const Mat4 p = game_x_3d::ProjectionOf(cam, 2.f);
+    const Mat4 want = Perspective(60, 2.f, 0.1f, 1000.f);
+    CHECK(std::memcmp(&p, &want, sizeof(Mat4)) == 0);
+    // Orthographic: half the height is the size, the width follows the aspect; the same size at any depth.
+    cam.projection = game_x_3d::CameraProjection::Orthographic;
+    cam.orthographicSize = 5;
+    const Mat4 o = game_x_3d::ProjectionOf(cam, 2.f);
+    const auto near1 = ProjectToNdc(o, {10, 5, -1}), far1 = ProjectToNdc(o, {10, 5, -500});
+    CHECK(near1 && far1 && NearF(near1->x, 1) && NearF(near1->y, 1) && NearF(far1->x, 1) && NearF(far1->y, 1));
+    CHECK(near1 && far1 && near1->z >= 0 && far1->z <= 1 && far1->z > near1->z);
+    // A far plane not beyond the near one (while typing) still gives a picture: no NaN.
+    cam.projection = game_x_3d::CameraProjection::Perspective;
+    cam.nearClip = 5;
+    cam.farClip = 1;
+    const auto q = ProjectToNdc(game_x_3d::ProjectionOf(cam, 1.f), {0, 0, -5});
+    CHECK(q && std::isfinite(q->z));
+    // The scene view draws its shape at most so far.
+    game_x_3d::Camera wide;
+    CHECK(NearF(game_x_3d::ShownNear(wide, 10).farClip, 10) && NearF(game_x_3d::ShownNear(wide, 10).nearClip, 0.1f));
+    wide.farClip = 3;
+    CHECK(NearF(game_x_3d::ShownNear(wide, 10).farClip, 3));
+}
+
+RM_TEST(Camera_Background) {
+    game_x_3d::Camera cam;
+    const Color game{0.2f, 0.3f, 0.4f, 1};
+    const Color a = game_x_3d::BackgroundOf(cam, game);  // the game settings' 背景の色 unless its own
+    CHECK(NearF(a.r, game.r) && NearF(a.g, game.g) && NearF(a.b, game.b));
+    cam.ownBackground = true;
+    cam.background = {1, 0, 0, 1};
+    const Color b = game_x_3d::BackgroundOf(cam, game);
+    CHECK(NearF(b.r, 1) && NearF(b.g, 0) && NearF(b.b, 0));
+}
+
+RM_TEST(Camera_Light_SaveByName) {
+    game_x_3d::Camera cam;
+    cam.projection = game_x_3d::CameraProjection::Orthographic;
+    const json::Value j = reflect::Save(cam);
+    CHECK(j.Get("projection").AsString() == "Orthographic");  // enums by name
+    game_x_3d::Camera back;
+    reflect::Load(back, j);
+    CHECK(back.projection == game_x_3d::CameraProjection::Orthographic);
+    game_x_3d::Light light;
+    light.kind = game_x_3d::LightKind::Spot;
+    game_x_3d::Light lb;
+    reflect::Load(lb, reflect::Save(light));
+    CHECK(lb.kind == game_x_3d::LightKind::Spot);
+    json::Value big = reflect::Save(light);
+    big.Set("intensity", 1000.0);  // clamped like every number (Max=100)
+    reflect::Load(lb, big);
+    CHECK(NearF(lb.intensity, 100));
+}
+
+RM_TEST(Lighting_DefaultLight) {
+    // No light: the one white directional light (going the default way), with shadows.
+    const LightSetup s = MakeLights({}, {0, -2, 0});
+    CHECK(NearF(s.block.info[0], 1) && s.dropped == 0);
+    CHECK(NearF(s.block.position[0][3], 0));    // directional
+    CHECK(NearF(s.block.direction[0][1], -1));  // made length 1
+    CHECK(NearF(s.block.color[0][0], 1) && NearF(s.block.color[0][1], 1) && NearF(s.block.color[0][2], 1));
+    CHECK(s.shadowLight == 0 && NearF(s.block.color[0][3], 1) && Near(s.shadowDirection, {0, -1, 0}));
+}
+
+RM_TEST(Lighting_Values) {
+    std::vector<Light> lights(3);
+    lights[0].type = LightType::Point;
+    lights[0].position = {1, 2, 3};
+    lights[0].color = {1, 0.5f, 0, 1};
+    lights[0].intensity = 2;
+    lights[0].range = 4;
+    lights[1].type = LightType::Directional;  // casts no shadow
+    lights[1].castShadow = false;
+    lights[2].type = LightType::Directional;  // the first that casts: the shadow map is its
+    lights[2].direction = {1, 0, 0};
+    const LightSetup s = MakeLights(lights, {0, -1, 0});
+    CHECK(NearF(s.block.info[0], 3));
+    CHECK(NearF(s.block.position[0][0], 1) && NearF(s.block.position[0][2], 3) && NearF(s.block.position[0][3], 1));
+    CHECK(NearF(s.block.color[0][0], 2) && NearF(s.block.color[0][1], 1) && NearF(s.block.color[0][2], 0));  // colour x strength
+    CHECK(NearF(s.block.direction[0][3], 4));  // the range
+    CHECK(NearF(s.block.color[0][3], 0) && NearF(s.block.color[1][3], 0) && NearF(s.block.color[2][3], 1));
+    CHECK(s.shadowLight == 2 && Near(s.shadowDirection, {1, 0, 0}));
+    // A point light never takes the shadow map (directional only).
+    std::vector<Light> points(1);
+    points[0].type = LightType::Point;
+    CHECK(MakeLights(points, {0, -1, 0}).shadowLight == -1);
+    // A spot: its cone's edge at half the angle, the fade from 3/4 of it.
+    Light spot;
+    spot.type = LightType::Spot;
+    spot.spotAngle = 60;
+    spot.intensity = -3;  // no negative light
+    const LightSetup sp = MakeLights(std::span<const Light>(&spot, 1), {0, -1, 0});
+    CHECK(NearF(sp.block.position[0][3], 2));
+    CHECK(NearF(sp.block.spot[0][0], std::cos(30.f * 3.14159265f / 180.f)) && NearF(sp.block.spot[0][1], std::cos(22.5f * 3.14159265f / 180.f)));
+    CHECK(NearF(sp.block.color[0][0], 0));
+}
+
+RM_TEST(Lighting_AtMostEight) {
+    std::vector<Light> many(11);
+    for (Light& l : many) l.type = LightType::Point;
+    many[9].type = LightType::Directional;  // past the eighth: left out (no shadows)
+    const LightSetup s = MakeLights(many, {0, -1, 0});
+    CHECK(NearF(s.block.info[0], static_cast<float>(kMaxLights)) && s.dropped == 3 && s.shadowLight == -1);
+}
+
+RM_TEST(Light_FromItsEntity) {
+    // Turned -90 degrees about X, the light's -Z points down; it is where its entity is.
+    game_x_3d::Light light;
+    light.kind = game_x_3d::LightKind::Spot;
+    light.intensity = 3;
+    Transform t;
+    t.position = {4, 5, 6};
+    t.rotation = {-90, 0, 0};
+    const space3d::Light l = game_x_3d::ToRenderLight(light, LocalMatrix(t));
+    CHECK(l.type == LightType::Spot && Near(l.position, {4, 5, 6}) && Near(l.direction, {0, -1, 0}) && NearF(l.intensity, 3));
+    t.scale = {3, 3, 3};  // a scale does not make it longer
+    CHECK(NearF(Length(game_x_3d::ToRenderLight(light, LocalMatrix(t)).direction), 1));
 }

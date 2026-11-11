@@ -84,11 +84,14 @@ std::vector<Action> MenuFor(Source& src, State& st, std::span<const Item> items)
     return list;
 }
 
-// The picture of a row (Item::icon) as the widgets draw it.
+}  // namespace
+
 w::Icon PictureOf(Icon icon) {
     switch (icon) {
         case Icon::Cube:
         case Icon::Model: return w::Icon::Cube;
+        case Icon::Camera: return w::Icon::Camera;
+        case Icon::Light: return w::Icon::Light;
         case Icon::Folder: return w::Icon::Folder;
         case Icon::File: return w::Icon::File;
         case Icon::Image: return w::Icon::Image;
@@ -98,8 +101,6 @@ w::Icon PictureOf(Icon icon) {
         default: return w::Icon::Object;
     }
 }
-
-}  // namespace
 
 w::DragThing Source::DragOut(std::span<const ItemId> items) {
     w::DragThing t;

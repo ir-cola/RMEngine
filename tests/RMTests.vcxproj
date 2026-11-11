@@ -85,6 +85,8 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Systems.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Prefab.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Camera.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Light.cpp" />
     <ClCompile Include="..\src\core\reflect\Data.cpp" />
     <ClCompile Include="..\src\core\reflect\FieldCommand.cpp" />
     <ClCompile Include="..\src\core\reflect\Object.cpp" />
@@ -93,6 +95,7 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Transform.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\View.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Mesh.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Lighting.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\editor\Gizmo.cpp" />
     <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
   </ItemGroup>

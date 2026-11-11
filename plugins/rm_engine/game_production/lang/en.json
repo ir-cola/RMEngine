@@ -71,5 +71,5 @@
   "アイコン": "Icon",
   "書き出したゲームのウィンドウとタスクバーの絵 (画像のアセット)": "The picture of the exported game's window and taskbar button (an image asset)",
   "最初のカメラ": "Starting camera",
-  "ゲームを始めたときに使うカメラのエンティティ (カメラの部品ができたら使います)": "The camera entity used when the game starts (used once there is a camera component)"
+  "ゲームビューと Play はこのエンティティのカメラから見ます (カメラの部品を付けたエンティティを選びます)": "The game view and Play look through this entity's camera (choose an entity with a Camera component)"
 }

@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム: 部品「カメラ」(透視 / 平行投影・画角・近い面 / 遠い面・背景の色) と「光」(平行光 / 点光源 / スポット・色・強さ・影)。ゲームビューと Play はゲームの設定の「最初のカメラ」から見る。シーンビューにカメラの見える範囲の線と光の向きの線と印、カメラを選ぶと右下にプレビュー。階層の行にカメラと光の絵",
+          "en": "Game: new Camera component (perspective / orthographic, field of view, near / far planes, background color) and Light component (directional / point / spot, color, intensity, shadows). The game view and Play look through the game settings' Starting camera. The scene view shows camera frustums, light directions and their icons, and a preview of the selected camera at the bottom right. Camera and light icons in the Hierarchy"
+        },
+        {
           "ja": "シーンビューで物の表の面が暗く、床に影が出なかったのを直す (見えている側を目の位置から決める)",
           "en": "Fixed objects in the scene view looking dark and shadows missing on the floor (the side seen is now told from the eye)"
         },

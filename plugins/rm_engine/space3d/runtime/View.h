@@ -7,6 +7,7 @@
 
 #include "rm_engine/space3d/runtime/Transform.h"
 
+#include <array>
 #include <optional>
 
 namespace rm::space3d {
@@ -27,6 +28,12 @@ Mat4 Perspective(float fovYDegrees, float aspect, float nearZ, float farZ);
 // A box of view space (x left..right, y bottom..top, z -nearZ..-farZ: in front of the eye) -> -1..1, -1..1, 0..1.
 Mat4 Orthographic(float left, float right, float bottom, float top, float nearZ, float farZ);
 Mat4 LookAt(Vec3 eye, Vec3 target, Vec3 up);
+// The view matrix of a camera placed by `world`: it looks along its own -Z with its +Y up (as the
+// editing camera and LookAt). A scale in `world` is left out (it would stretch the picture).
+Mat4 ViewFromWorld(const Mat4& world);
+// The 8 corners (world) of what a view-projection sees: the near plane 0..3, the far plane 4..7, each
+// bottom-left, bottom-right, top-right, top-left. nullopt when it cannot be inverted.
+std::optional<std::array<Vec3, 8>> FrustumCorners(const Mat4& viewProjection);
 
 struct Ray {
     Vec3 origin;
