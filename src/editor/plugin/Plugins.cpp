@@ -65,6 +65,26 @@ fs::path FolderOf(const fs::path& root, const PluginId& id) { return root / Path
 
 std::string FsError(const std::error_code& ec) { return platform::ErrorText(static_cast<DWORD>(ec.value())); }
 
+fs::path WithSuffix(const fs::path& p, const wchar_t* suffix) {
+    fs::path out = p;
+    out += suffix;
+    return out;
+}
+
+// A copy that was put aside (<folder>.old) and never replaced - the app stopped between the two
+// renames of CopyIn: the old copy goes back, so the plugin is never lost.
+void PutBackInterrupted(const fs::path& to) {
+    const fs::path aside = WithSuffix(to, L".old");
+    std::error_code ec;
+    if (fs::is_directory(to, ec) || !fs::is_directory(aside, ec)) return;
+    fs::rename(aside, to, ec);
+    if (ec) {
+        log::Error("途中で止まったインストールの前の写しを戻せませんでした: {} ({})", PathToUtf8(aside), FsError(ec));
+    } else {
+        log::Warn("途中で止まったインストールがあったので、前の写しに戻しました: {}", PathToUtf8(to));
+    }
+}
+
 }  // namespace
 
 void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir) {
@@ -99,6 +119,7 @@ void Plugins::Reload() {
     for (const BuiltinPlugin& b : builtin) {
         PluginCandidate cand;
         cand.id = b.id.Id();
+        PutBackInterrupted(FolderOf(installedDir_, cand.id));
         const ReadResult engineCopy = ReadManifest(FolderOf(availableDir_, cand.id));
         if (engineCopy.manifest) available_.push_back(*engineCopy.manifest);
         availableFlags.push_back(engineCopy.manifest.has_value());
@@ -221,19 +242,48 @@ std::vector<Dependent> Plugins::Dependents(const PluginId& id) const { return ed
 bool Plugins::CopyIn(const PluginId& id, std::string* error) {
     const fs::path from = FolderOf(availableDir_, id);
     const fs::path to = FolderOf(installedDir_, id);
-    fs::path temp = to;
-    temp += L".installing";
-    std::error_code ec;
-    // Copy next to the target first, then swap: a failure in the middle leaves the old copy as it was.
-    fs::remove_all(temp, ec);
-    fs::create_directories(temp.parent_path(), ec);
-    fs::copy(from, temp, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-    if (!ec) fs::remove_all(to, ec);
-    if (!ec) fs::rename(temp, to, ec);
-    if (ec) {
-        fs::remove_all(temp, ec);
-        if (error) *error = TrU8F("「{}」をインストールできませんでした: {}", DisplayName(id), FsError(ec));
+    const fs::path temp = WithSuffix(to, L".installing");
+    const fs::path aside = WithSuffix(to, L".old");
+    auto fail = [&](const wchar_t* step, const std::error_code& why) {
+        std::error_code ignored;
+        fs::remove_all(temp, ignored);
+        if (error) *error = TrU8F("「{}」をインストールできませんでした ({}): {}", DisplayName(id), WideToUtf8(Tr(step)), FsError(why));
         return false;
+    };
+    // The old copy is never deleted before the new one is in place:
+    //   1. copy the engine's files next to it (<folder>.installing)    fails -> the old copy is untouched
+    //   2. put the old copy aside (<folder>.old)                        fails -> the old copy is untouched
+    //   3. the new copy takes its place                                 fails -> the old copy goes back
+    //   4. the old copy is deleted                                      fails -> only a leftover (removed next time)
+    PutBackInterrupted(to);
+    std::error_code ec;
+    fs::remove_all(temp, ec);
+    fs::remove_all(aside, ec);
+    fs::create_directories(temp.parent_path(), ec);
+    std::error_code copyEc;
+    fs::copy(from, temp, fs::copy_options::recursive | fs::copy_options::overwrite_existing, copyEc);
+    if (copyEc) return fail(TrKey(L"ファイルを写す"), copyEc);
+
+    const bool hadOld = fs::is_directory(to, ec);
+    if (hadOld) {
+        std::error_code asideEc;
+        fs::rename(to, aside, asideEc);
+        if (asideEc) return fail(TrKey(L"前の写しをよける"), asideEc);  // a file inside is open in another app ...
+    }
+    std::error_code placeEc;
+    fs::rename(temp, to, placeEc);
+    if (placeEc) {
+        if (hadOld) {
+            std::error_code backEc;
+            fs::rename(aside, to, backEc);
+            if (backEc) log::Error("前の写しを戻せませんでした: {} ({})", PathToUtf8(aside), FsError(backEc));
+        }
+        return fail(TrKey(L"新しい写しを置く"), placeEc);
+    }
+    if (hadOld) {
+        std::error_code removeEc;
+        fs::remove_all(aside, removeEc);
+        if (removeEc) log::Warn("前の写しを消せませんでした (次のインストールで消します): {} ({})", PathToUtf8(aside), FsError(removeEc));
     }
     log::Info("プラグインをインストールしました: {} ({})", DisplayName(id), id.Text());
     return true;

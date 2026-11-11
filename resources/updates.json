@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "プラグインの (再) インストールが途中で失敗しても、前の写しが消えたままにならないように (よけてから置き換え、失敗したら戻す。エラーの文にどの段かを出す)",
+          "en": "A plugin (re)install that fails halfway no longer leaves the plugin deleted (the old copy is moved aside, then replaced, and put back on failure; the error says which step failed)"
+        },
+        {
           "ja": "壊れた・細工した 3D モデルのファイルで、エディターが落ちたり固まったりしないように (1 つのモデルで頂点 2000 万・メモリー 2 GB・ノード 100 万回まで。超えたら箱のまま理由を出す)",
           "en": "Broken or crafted 3D model files no longer crash or freeze the editor (up to 20 million vertices, 2 GB of memory and a million nodes per model; past that it stays a box and says why)"
         },
