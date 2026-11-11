@@ -65,6 +65,7 @@
     <ClCompile Include="TestTheme.cpp" />
     <ClCompile Include="TestIntegrity.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
+    <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
     <ClCompile Include="TestSystems.cpp" />
     <ClCompile Include="TestPrefab.cpp" />
@@ -97,6 +98,10 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Mesh.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Lighting.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\editor\Gizmo.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space2d\runtime\Transform2D.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space2d\runtime\View2D.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space2d\editor\Gizmo2D.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\Spin2D.cpp" />
     <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
   </ItemGroup>
   <ItemGroup>

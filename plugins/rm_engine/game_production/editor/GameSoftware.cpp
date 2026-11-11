@@ -38,6 +38,15 @@ using ui::Rect;
 constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
 constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" rows in the 階層's menu
+constexpr float kSpaceStripH = 34.f;   // the strip of spaces (3D / 2D) above the scene view
+
+// The views of one space (a SceneViewInfo): the scene view, and the game view showing the game while it
+// plays (the same kind of view).
+struct View {
+    const SceneViewInfo* info = nullptr;
+    std::unique_ptr<SceneView> scene;
+    std::unique_ptr<SceneView> game;
+};
 
 void Placeholder(ui::Context& c, const Rect& r, const std::wstring& title, const std::wstring& body) {
     auto& p = c.P();
@@ -92,7 +101,7 @@ public:
             if (std::find(types.begin(), types.end(), t) != types.end()) continue;
             types.push_back(t);
             componentInfos_.push_back(c.item);
-            if (c.item->onNewEntities) newEntityTypes_.push_back(t);
+            if (c.item->onNewEntities) newEntityInfos_.push_back(c.item);
             if (c.item->multiple) multiple.push_back(t);
             if (c.item->placement) placementTypes_.push_back(t->name);
         }
@@ -129,7 +138,7 @@ public:
     // "inspectorModes": [[entity id, mode], ...] - how each entity's Transform is shown (switched by the user).
     void LoadView(const json::Value& view) override {
         view_ = view.IsObject() ? view : json::Value::MakeObject();
-        if (sceneView_) sceneView_->LoadState(view_.Get("sceneView"));
+        for (View& v : views_) v.scene->LoadState(ViewState(v));
         modes_.clear();
         for (const auto& pair : view_.Get("inspectorModes").Items()) {
             if (pair.Items().size() == 2) modes_[static_cast<int>(pair.Items()[0].AsInt())] = pair.Items()[1].AsInt() != 0 ? 1 : 0;
@@ -137,8 +146,14 @@ public:
     }
     json::Value SaveView() const override {
         json::Value v = view_.IsObject() ? view_ : json::Value::MakeObject();
-        if (sceneView_) {
-            if (json::Value s = sceneView_->SaveState(); !s.IsNull()) v.Set("sceneView", std::move(s));
+        // "sceneViews": {space: the view's state} - a space whose plugin is not here now keeps its own.
+        if (!views_.empty()) {
+            json::Value states = v.Get("sceneViews").IsObject() ? v.Get("sceneViews") : json::Value::MakeObject();
+            for (const View& view : views_) {
+                if (json::Value s = view.scene->SaveState(); !s.IsNull()) states.Set(view.info->space, std::move(s));
+            }
+            v.Set("sceneViews", std::move(states));
+            v.Erase("sceneView");  // the one view before there were spaces: now in "sceneViews"
         }
         json::Value modes = json::Value::MakeArray();
         std::vector<std::pair<int, int>> sorted(modes_.begin(), modes_.end());
@@ -489,15 +504,74 @@ private:
         host_.Redraw();
     }
 
-    // Both views come from the plugin that knows a space (ゲーム制作 × 3D): asked once.
+    // The views come from the plugins that know a space (ゲーム制作 × 3D / × 2D): asked once. Each
+    // space has a scene view and a game view of its own (each keeps its camera).
     void EnsureViews() {
         if (viewsAsked_) return;
         viewsAsked_ = true;
-        const auto views = host_.Registry().Contributions<SceneViewInfo>(kSceneViewPoint);
-        if (views.empty() || !views[0].item->create) return;
-        sceneView_ = views[0].item->create();
-        gameView_ = views[0].item->create();
-        if (sceneView_) sceneView_->LoadState(view_.Get("sceneView"));
+        for (const auto& info : host_.Registry().Contributions<SceneViewInfo>(kSceneViewPoint)) {
+            if (!info.item->create || !info.item->space) continue;
+            View v{info.item, info.item->create(), info.item->create()};
+            if (!v.scene || !v.game) continue;
+            views_.push_back(std::move(v));
+        }
+        std::stable_sort(views_.begin(), views_.end(), [](const View& a, const View& b) { return a.info->order < b.info->order; });
+        for (View& v : views_) v.scene->LoadState(ViewState(v));
+    }
+
+    // The state kept for a view; before there were spaces it was one "sceneView" (the default view's).
+    json::Value ViewState(const View& v) const {
+        const json::Value& states = view_.Get("sceneViews");
+        if (states.IsObject() && !states.Get(v.info->space).IsNull()) return states.Get(v.info->space);
+        if (!views_.empty() && &v == &views_.front()) return view_.Get("sceneView");
+        return {};
+    }
+
+    // The game's space: the view the game chose, or the default (the first) when it chose none or one
+    // whose plugin is not here now. Null when no plugin brings a view.
+    View* Current() {
+        EnsureViews();
+        for (View& v : views_) {
+            if (settings_.space == v.info->space) return &v;
+        }
+        return views_.empty() ? nullptr : &views_.front();
+    }
+    std::string CurrentSpace() {
+        const View* v = Current();
+        return v ? v->info->space : std::string{};
+    }
+
+    // The strip above the scene view when more than one space is offered: switching is an edit of the
+    // game (GameSettings::space - undo, unsaved): the game view and new entities follow it.
+    void DrawSpaceStrip(ui::Context& c, const Rect& strip) {
+        editor::w::DrawBar(c, strip, theme::Bg);
+        std::vector<std::wstring> labels;
+        for (const View& v : views_) labels.push_back(v.info->label ? Tr(v.info->label) : Utf8ToWide(v.info->space));
+        const std::vector<std::wstring_view> views(labels.begin(), labels.end());
+        const std::wstring tip = Running() ? Tr(L"Play 中は切り替えられません")
+                                           : Tr(L"このゲームの空間。新しいエンティティに付く Transform と、ゲームビューもこれに合わせます");
+        const std::vector<std::wstring_view> tips(labels.size(), tip);
+        const View* now = Current();
+        const int selected = static_cast<int>(now - views_.data());
+        const float w = std::min(strip.w - 16, 64.f * static_cast<float>(labels.size()));
+        const Rect at{strip.x + 8, strip.y + 4, w, strip.h - 8};
+        const int i = editor::w::Segmented(c, "space", at, views, selected, tips);
+        if (i >= 0 && i != selected && !Running()) ChooseSpace(views_[static_cast<size_t>(i)].info->space);
+    }
+
+    void ChooseSpace(const std::string& space) {
+        const reflect::TypeDesc& type = reflect::TypeOf<GameSettings>();
+        for (size_t f = 0; f < type.fields.size(); ++f) {
+            if (std::string_view(type.fields[f].name) != "space") continue;
+            json::Value before = reflect::SaveField(type.fields[f], &settings_, nullptr);
+            json::Value after = json::Value(space);
+            host_.History().Push(std::make_unique<reflect::SetFieldCommand>(
+                                     type, reflect::FieldPath{f}, std::move(before), std::move(after),
+                                     [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, "シーンの空間を切り替え"),
+                                 false);
+            log::Info("シーンの空間を「{}」にしました (新しいエンティティの Transform とゲームビューも)", space);
+            return;
+        }
     }
 
     SceneViewHost ViewHost(bool game) {
@@ -513,16 +587,17 @@ private:
         return h;
     }
 
-    // The scene view comes from a plugin that knows a space (ゲーム制作 × 3D); without one, a note.
-    void DrawSceneView(ui::Context& c, const Rect& r) {
-        EnsureViews();
-        if (!sceneView_) {
-            Placeholder(c, r, Tr(L"シーンビュー"),
+    // The scene view comes from a plugin that knows a space (ゲーム制作 × 3D / × 2D); without one, a note.
+    void DrawSceneView(ui::Context& c, const Rect& panel) {
+        if (!Current()) {
+            Placeholder(c, panel, Tr(L"シーンビュー"),
                         Tr(L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。"));
             return;
         }
+        Rect r = panel;
+        if (views_.size() >= 2 && r.h > 120) DrawSpaceStrip(c, ui::TakeTop(r, kSpaceStripH));
         SceneViewHost h = ViewHost(false);
-        sceneView_->Draw(c, r, h);
+        Current()->scene->Draw(c, r, h);  // (the strip may have just switched it)
         if (play_ == PlayState::Playing) c.RequestAnimation();  // this panel may be in a window of its own
     }
 
@@ -535,12 +610,13 @@ private:
             if (editor::w::Button(c, "settings", button, Tr(L"ゲームの設定を開く"))) InspectSettings();
             return;
         }
-        if (!gameView_) {
+        View* view = Current();
+        if (!view) {
             Placeholder(c, r, Tr(L"ゲームビュー"), Tr(L"3D 空間 / 2D 空間のプラグインが入ると、動いているゲームがここに映ります。"));
             return;
         }
         SceneViewHost h = ViewHost(true);
-        gameView_->Draw(c, r, h);
+        view->game->Draw(c, r, h);
         if (play_ == PlayState::Playing) c.RequestAnimation();
     }
 
@@ -1113,7 +1189,11 @@ private:
         int made = 0;
         Edit("エンティティを作成", [&] {
             made = scene_.Create(TrU8("エンティティ"), parent, index);  // the name it starts with, in the language in use
-            for (const reflect::TypeDesc* t : newEntityTypes_) scene_.AddComponent(made, *t);  // e.g. Transform
+            // e.g. Transform - the one of the game's space
+            const std::string space = CurrentSpace();
+            for (const ComponentInfo* info : newEntityInfos_) {
+                if (!info->space || info->space == space) scene_.AddComponent(made, info->type());
+            }
         });
         if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
     }
@@ -1123,10 +1203,9 @@ private:
     reflect::Unknowns unknowns_;  // keys / enum names of a newer version: written back unchanged
     Scene scene_;
     std::vector<int> selection_;  // the 階層's selection (shown in the scene view)
-    std::unique_ptr<SceneView> sceneView_;
-    std::unique_ptr<SceneView> gameView_;  // the same kind of view, showing the game while it plays
+    std::vector<View> views_;  // one per space offered, the default (smallest order) first
     bool viewsAsked_ = false;
-    std::vector<const reflect::TypeDesc*> newEntityTypes_;  // components every new entity gets
+    std::vector<const ComponentInfo*> newEntityInfos_;  // components new entities get (of the game's space)
     std::vector<const ComponentInfo*> componentInfos_;      // one per component type, as offered
     std::vector<std::string> placementTypes_;               // where a placed prefab is (Transform)
     json::Value view_;  // UserSettings: how the user looks (the scene view's camera ...)

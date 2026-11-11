@@ -464,10 +464,19 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
         p.Text(box.Inset(24, 0, 24, 0), Tr(L"このエンジンにはプラグインが入っていません"), Style(15, theme::Text, true));
         return;
     }
+    // The rows scroll (more plugins than the window is tall).
+    const Rect view{area.x - 4, area.y, area.w + 8, area.h};
+    float& contentH = c.FloatState(c.MakeId("plg.contentH"), 600.f);
+    const float off = w::BeginScroll(c, "plg.scroll", view, contentH);
+    Rect content{area.x, area.y - off, area.w, 100000.f};
+    const float top = content.y;
+    auto outside = [&](const Rect& row) { return row.Bottom() < view.y || row.y > view.Bottom(); };
     for (const Plugins::Entry& e : plugins.Entries()) {
+        if (e.connector) continue;  // below, apart: they are never chosen by hand
         const PluginStatus& st = e.status;
-        const Rect row = ui::TakeTop(area, 72);
-        ui::TakeTop(area, 8);
+        const Rect row = ui::TakeTop(content, 72);
+        ui::TakeTop(content, 8);
+        if (outside(row)) continue;
         w::DrawSurface(c, row, w::Surface::Panel, 8.f);
         p.Text({row.x + 24, row.y + 14, row.w * 0.4f, 24}, Utf8ToWide(TrU8(st.displayName)), Style(15, theme::Text, true));
         p.Text({row.x + 24, row.y + 40, row.w * 0.4f, 20}, TrF(L"作者 {}   名前 {}", Utf8ToWide(st.id.author), Utf8ToWide(st.id.name)),
@@ -521,6 +530,59 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
             p.Text(status, Tr(L"インストールされていません"), Style(13, theme::TextFaint, false, ui::HAlign::Right));
         } else if (LacksRequirement(st.state)) {
             p.Text(status, TrF(L"⚠ 前提が無い: {}", Utf8ToWide(st.reason)), Style(12, theme::Warn, false, ui::HAlign::Right));
+        } else {
+            p.Text(status, TrF(L"⚠ 使えません: {}", Utf8ToWide(st.reason)), Style(12, theme::Danger, false, ui::HAlign::Right));
+        }
+    }
+    DrawConnectors(c, content, view);
+    contentH = content.y - top;
+    w::EndScroll(c, "plg.scroll", view, contentH);
+}
+
+// The connectors (ゲーム制作 × 3D ...): no install / remove buttons - one comes along when everything it
+// joins is installed, and stops when one of them is removed. Only what they join and how they are; a
+// broken one can be copied again.
+void HubScreen::DrawConnectors(ui::Context& c, Rect& area, const Rect& view) {
+    auto& p = c.P();
+    const Plugins& plugins = app_.GetPlugins();
+    const bool any = std::any_of(plugins.Entries().begin(), plugins.Entries().end(), [](const Plugins::Entry& e) { return e.connector; });
+    if (!any) return;
+    ui::TakeTop(area, 10);
+    p.Text(ui::TakeTop(area, 28), Tr(L"つなぎのプラグイン"), Style(16, theme::Text, true));
+    ui::TextStyle note = Style(12, theme::TextDim);
+    note.wrap = true;
+    note.v = ui::VAlign::Top;
+    p.Text(ui::TakeTop(area, 36), Tr(L"2 つのプラグインをつなぐものです。つなぐ両方が入っていると自動で入り、自分で選ぶことはありません。"), note);
+    for (const Plugins::Entry& e : plugins.Entries()) {
+        if (!e.connector) continue;
+        const PluginStatus& st = e.status;
+        const Rect row = ui::TakeTop(area, 44);
+        ui::TakeTop(area, 6);
+        if (row.Bottom() < view.y || row.y > view.Bottom()) continue;
+        w::DrawSurface(c, row, w::Surface::Panel, 8.f);
+        std::wstring joins;
+        for (const PluginId& id : e.joins) joins += (joins.empty() ? L"" : L" + ") + Utf8ToWide(TrU8(plugins.DisplayName(id)));
+        p.Text({row.x + 20, row.y, row.w * 0.3f, row.h}, Utf8ToWide(TrU8(st.displayName)), Style(13, theme::Text, true));
+        p.Text({row.x + 20 + row.w * 0.3f, row.y, row.w * 0.3f, row.h}, TrF(L"つなぐもの: {}", joins), Style(12, theme::TextFaint));
+
+        float textRight = row.Right() - 16;
+        const bool broken = e.installed && st.state != PluginState::Enabled && !LacksRequirement(st.state);
+        if (broken) {
+            c.PushId(st.id.author);
+            c.PushId(st.id.name);
+            const Rect re{row.Right() - 16 - 130, row.y + 7, 130, 30};
+            if (w::Button(c, "reinstall", re, Tr(L"再インストール"), w::ButtonKind::Secondary, e.available)) RunInstall({st.id});
+            c.PopId();
+            c.PopId();
+            textRight = re.x - 12;
+        }
+        const Rect status{row.x + row.w * 0.6f, row.y, textRight - (row.x + row.w * 0.6f), row.h};
+        if (st.state == PluginState::Enabled) {
+            p.Text(status, Tr(L"使用中"), Style(12, theme::TextDim, false, ui::HAlign::Right));
+        } else if (!e.installed) {
+            p.Text(status, Tr(L"つなぐ両方が入ると自動で入ります"), Style(12, theme::TextFaint, false, ui::HAlign::Right));
+        } else if (LacksRequirement(st.state)) {
+            p.Text(status, Tr(L"つなぐものが足りないので休んでいます"), Style(12, theme::TextFaint, false, ui::HAlign::Right));
         } else {
             p.Text(status, TrF(L"⚠ 使えません: {}", Utf8ToWide(st.reason)), Style(12, theme::Danger, false, ui::HAlign::Right));
         }

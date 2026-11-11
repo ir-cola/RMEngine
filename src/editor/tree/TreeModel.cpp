@@ -10,6 +10,8 @@ Icon IconNamed(std::string_view name) {
     if (name == "cube") return Icon::Cube;
     if (name == "camera") return Icon::Camera;
     if (name == "light") return Icon::Light;
+    if (name == "square") return Icon::Square;
+    if (name == "image") return Icon::Image;
     return Icon::None;
 }
 

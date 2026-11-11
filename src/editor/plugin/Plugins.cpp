@@ -122,7 +122,16 @@ void Plugins::Reload() {
                 if (m.id == st.id) st.displayName = m.displayName;  // the installed plugin.json is unreadable
             }
         }
-        entries_.push_back({std::move(st), availableFlags[i], candidates[i].installed});
+        Entry entry{std::move(st), availableFlags[i], candidates[i].installed};
+        const PluginManifest* m = candidates[i].manifest ? &*candidates[i].manifest : nullptr;
+        for (const auto& a : available_) {
+            if (!m && a.id == entry.status.id) m = &a;
+        }
+        if (m && m->connectorFor) {
+            entry.connector = true;
+            entry.joins = m->requirements;
+        }
+        entries_.push_back(std::move(entry));
     }
     for (const size_t i : res.order) {
         if (!builtin[i].registerEditor) continue;  // only a runtime part (e.g. 3D 空間)

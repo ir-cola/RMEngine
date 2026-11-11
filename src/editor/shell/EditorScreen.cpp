@@ -609,7 +609,12 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
             for (const Plugins::Entry& e : app_.GetPlugins().Entries()) {
                 w::MenuItem it;
                 const std::wstring name = Utf8ToWide(TrU8(e.status.displayName));
-                if (e.installed) {
+                if (e.connector && !e.installed) {
+                    // A connector is never chosen: it comes along with what it joins.
+                    it.label = name + L"  (" + Utf8ToWide(e.status.id.Text()) + L")";
+                    it.shortcut = Tr(L"つなぐ両方が入ると自動で入ります");
+                    it.enabled = false;
+                } else if (e.installed) {
                     it.label = name + L"  (" + Utf8ToWide(e.status.id.Text()) + L")";
                     it.shortcut = e.status.state == PluginState::Enabled ? Tr(L"使用中") : Tr(L"⚠ 使えません");
                     it.enabled = false;  // information only

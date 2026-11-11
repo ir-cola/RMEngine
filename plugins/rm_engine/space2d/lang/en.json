@@ -1,0 +1,13 @@
+{
+  "2D 空間": "2D Space",
+  "Transform 2D (位置・回転・大きさ・並び順)": "Transform 2D (position, rotation, scale, order)",
+  "位置": "Position",
+  "回転 (度)": "Rotation (degrees)",
+  "反時計回りが + です": "Counter-clockwise is +",
+  "大きさ": "Scale",
+  "並び順": "Order",
+  "大きいほど手前に描きます (奥行きの代わり)。子は親の並び順に足した所に描きます": "Larger is drawn in front (instead of depth). A child is drawn at its parent's order plus its own",
+  "ワールドでの値 (親を含む)": "In the world (parents included)",
+  "親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です": "When a parent is scaled unevenly and turned, the shape is skewed, so this is an approximation",
+  "親の並び順を足した値です": "Its parents' orders added"
+}

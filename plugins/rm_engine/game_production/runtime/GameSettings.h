@@ -36,6 +36,10 @@ struct GameSettings {
     // References (saved as ids). The icon is used once the game is exported.
     RM_PROPERTY(Edit, Label="アイコン", Tooltip="書き出したゲームのウィンドウとタスクバーの絵 (画像のアセット)", AssetKind="image") AssetRef icon;
     RM_PROPERTY(Edit, Label="最初のカメラ", Tooltip="ゲームビューと Play はこのエンティティのカメラから見ます (カメラの部品を付けたエンティティを選びます)") EntityRef startCamera;
+    // The game's space (a scene view's SceneViewInfo::space: "3d", "2d" - game production does not know
+    // them). Chosen in the scene panel's strip when there is more than one; empty: the default one.
+    // Not in the inspector (the choices come from plugins); kept as written when its plugin is missing.
+    RM_PROPERTY() std::string space;
 };
 
 }  // namespace rm::game_production

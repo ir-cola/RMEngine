@@ -278,6 +278,15 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             }
             break;
         }
+        case Icon::Square: {
+            // A thing on a plane: a square, a little turned (not a box of the UI).
+            const float h = std::min(r.w, r.h) * 0.36f;
+            const float x[4] = {cx, cx + h, cx, cx - h};
+            const float y[4] = {cy - h, cy, cy + h, cy};
+            for (int i = 0; i < 4; ++i) p.Line(x[i], y[i], x[(i + 1) % 4], y[(i + 1) % 4], color, 1.3f);
+            p.FillCircle(cx, cy, h * 0.18f, color);
+            break;
+        }
         case Icon::Cube: {
             // Seen from above a corner: the outline (a hexagon) and the three edges of the near corner.
             const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;

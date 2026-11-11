@@ -66,6 +66,8 @@ private:
     void DrawSidebar(ui::Context& c, ui::Rect r);
     void DrawProjects(ui::Context& c, ui::Rect r);
     void DrawPlugins(ui::Context& c, ui::Rect r);
+    // Below the plugins, in the same scrolled rows (`area` moves down past them).
+    void DrawConnectors(ui::Context& c, ui::Rect& area, const ui::Rect& view);
     void DrawOptions(ui::Context& c, ui::Rect r);
     void DrawUpdates(ui::Context& c, ui::Rect r);
     void DrawIntegrity(ui::Context& c);

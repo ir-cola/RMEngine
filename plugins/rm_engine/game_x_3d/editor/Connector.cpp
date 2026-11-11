@@ -40,7 +40,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::ComponentInfo kTransform{&reflect::TypeOf<space3d::Transform>, true,
                                                            &reflect::TypeOf<space3d::WorldPlacement>, &DeriveWorld,
                                                            &UnderiveWorld, editor::TrKey(L"ローカル"), editor::TrKey(L"ワールド"), "cube",
-                                                           /*multiple*/ false, /*placement*/ true};
+                                                           /*multiple*/ false, /*placement*/ true, /*space*/ "3d"};
     registry.Contribute(game_production::kComponentPoint, kTransform);
     // ... and may be drawn as a 3D model (added by hand: a new entity is a box until it has one).
     static const game_production::ComponentInfo kMesh{&reflect::TypeOf<MeshRenderer>, false};
@@ -56,7 +56,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::SystemInfo kSpinSystem{"回り続ける", game_production::SystemPhase::Frame, 0, &RunSpin};
     registry.Contribute(game_production::kSystemPoint, kSpinSystem);
     // ... and are seen in 3D in the scene view.
-    static const game_production::SceneViewInfo kSceneView{&CreateSceneView3D};
+    static const game_production::SceneViewInfo kSceneView{&CreateSceneView3D, "3d", editor::TrKey(L"3D"), /*order*/ 0};
     registry.Contribute(game_production::kSceneViewPoint, kSceneView);
 }
 

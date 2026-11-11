@@ -156,9 +156,20 @@ std::span<const uint8_t> ResourceBytes(int id) {
     return {static_cast<const uint8_t*>(p), size};
 }
 
-ComPtr<ID2D1Bitmap> LoadBitmapFromMemory(Gfx& gfx, ID2D1DeviceContext* dc, std::span<const uint8_t> data, UINT maxWidth) {
+ComPtr<ID2D1Bitmap> LoadBitmapFromMemory(Gfx& gfx, ID2D1DeviceContext* dc, std::span<const uint8_t> data, UINT maxWidth,
+                                         std::string* error) {
     ComPtr<ID2D1Bitmap> bmp;
-    if (data.empty() || !dc) return bmp;
+    auto fail = [&](const char* why) {
+        if (error) {
+            *error = why;
+        } else {
+            log::Warn("{}", why);
+        }
+    };
+    if (data.empty() || !dc || !gfx.Wic()) {
+        fail(data.empty() ? "画像のファイルが空です" : "画像を読む準備ができていません");
+        return bmp;
+    }
     IWICImagingFactory* wic = gfx.Wic();
     ComPtr<IWICStream> stream;
     ComPtr<IWICBitmapDecoder> decoder;
@@ -167,7 +178,7 @@ ComPtr<ID2D1Bitmap> LoadBitmapFromMemory(Gfx& gfx, ID2D1DeviceContext* dc, std::
         FAILED(stream->InitializeFromMemory(const_cast<BYTE*>(data.data()), static_cast<DWORD>(data.size()))) ||
         FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, &decoder)) ||
         FAILED(decoder->GetFrame(0, &frame))) {
-        log::Warn("画像を読めませんでした");
+        fail("画像を読めませんでした (WIC が知らない形か、壊れたファイル)");
         return bmp;
     }
     ComPtr<IWICBitmapSource> source = frame;
@@ -186,7 +197,8 @@ ComPtr<ID2D1Bitmap> LoadBitmapFromMemory(Gfx& gfx, ID2D1DeviceContext* dc, std::
         FAILED(conv->Initialize(source.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
                                 WICBitmapPaletteTypeMedianCut)) ||
         FAILED(dc->CreateBitmapFromWicBitmap(conv.Get(), nullptr, &bmp))) {
-        log::Warn("画像を変換できませんでした");
+        fail("画像を変換できませんでした");
+        bmp.Reset();
     }
     return bmp;
 }

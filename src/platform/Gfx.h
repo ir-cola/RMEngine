@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 
 namespace rm::platform {
 
@@ -71,7 +72,8 @@ private:
 std::span<const uint8_t> ResourceBytes(int id);
 
 // Decodes an image (PNG/JPEG/BMP...) with WIC. maxWidth > 0 scales down (keeping the aspect).
+// When it fails: the reason (Japanese) goes to `error`, or to the log when `error` is null.
 Microsoft::WRL::ComPtr<ID2D1Bitmap> LoadBitmapFromMemory(Gfx& gfx, ID2D1DeviceContext* dc, std::span<const uint8_t> data,
-                                                         UINT maxWidth = 0);
+                                                         UINT maxWidth = 0, std::string* error = nullptr);
 
 }  // namespace rm::platform

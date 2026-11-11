@@ -50,6 +50,10 @@ struct ComponentInfo {
     // Where a placed prefab is (a Transform): on the root of a placed prefab its values always stay
     // the placed one's own when the prefab changes (Prefab.h).
     bool placement = false;
+    // The space it belongs to (a SceneViewInfo::space, e.g. "3d"): `onNewEntities` then means "every
+    // new entity while the game's space is this one" (a 2D game's new entities get a Transform 2D, not a
+    // 3D Transform). Null: any space.
+    const char* space = nullptr;
 
     bool HasDerived() const { return derivedType && derive && underive && ownLabel && derivedLabel; }
 };

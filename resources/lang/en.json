@@ -284,5 +284,10 @@
   "エクスプローラーで開く": "Open in Explorer",
   "削除 (ごみ箱へ)": "Delete (to the Recycle Bin)",
   "{} 個選んでいます": "{} selected",
-  "{} 個のファイルとフォルダ": "{} files and folders"
+  "{} 個のファイルとフォルダ": "{} files and folders",
+  "つなぎのプラグイン": "Connector plugins",
+  "2 つのプラグインをつなぐものです。つなぐ両方が入っていると自動で入り、自分で選ぶことはありません。": "They join two plugins. A connector is installed automatically when both of the plugins it joins are; you never choose one yourself.",
+  "つなぐもの: {}": "Joins: {}",
+  "つなぐ両方が入ると自動で入ります": "Installed automatically with both of the plugins it joins",
+  "つなぐものが足りないので休んでいます": "Resting: a plugin it joins is missing"
 }

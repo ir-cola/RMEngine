@@ -25,6 +25,10 @@ public:
         PluginStatus status;     // id, display name, state, reason
         bool available = false;  // this engine has its files, so it can be (re)installed
         bool installed = false;
+        // A connector (its plugin.json's connectorFor): never chosen by hand - it comes along when what it
+        // joins is installed. Shown apart (Hub) and not offered for installing (the editor's menu).
+        bool connector = false;
+        std::vector<PluginId> joins;  // what it requires (the two sides it joins)
     };
 
     void Load(const std::filesystem::path& availableDir, const std::filesystem::path& installedDir);

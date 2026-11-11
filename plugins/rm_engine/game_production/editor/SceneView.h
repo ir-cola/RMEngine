@@ -7,7 +7,11 @@
 //   static const game_production::SceneViewInfo kView{&CreateMySceneView};
 //   registry.Contribute(game_production::kSceneViewPoint, kView);
 //
-// The first scene view offered is used. Without one, the panel says which plugins bring it.
+// Each scene view belongs to a space (`space`: "3d", "2d" - only a name to game production). The game
+// chooses one (GameSettings::space - project data: the game view and new entities follow it); when
+// more than one is offered, the scene panel has a strip of their labels to switch (an edit: undo, unsaved).
+// None chosen yet (or a space whose plugin is gone): the one with the smallest `order`. Without any,
+// the panel says which plugins bring one.
 
 #include "core/reflect/FieldCommand.h"
 #include "editor/plugin/Software.h"
@@ -63,6 +67,9 @@ public:
 
 struct SceneViewInfo {
     std::unique_ptr<SceneView> (*create)();
+    const char* space = "";              // e.g. "3d" (ComponentInfo::space names the same)
+    const wchar_t* label = nullptr;      // e.g. 3D (a TrKey string: translated when shown)
+    int order = 0;                       // the smaller is the default
 };
 
 }  // namespace rm::game_production
