@@ -9,6 +9,7 @@
 // (never from inside a window procedure), so a window is never destroyed while one of
 // its own handlers is still running.
 
+#include "editor/app/Worker.h"
 #include "editor/plugin/Plugins.h"
 #include "editor/project/HubSettings.h"
 #include "platform/Gfx.h"
@@ -71,7 +72,12 @@ private:
     void LoadThemes();
     // The plugins read again (after installing / removing), then their themes, then the look.
     void ReloadPlugins();
+    // After the engine was updated: the installed plugins' new copies (worked out on a Worker at start,
+    // applied when no editor is open - right away at the Hub, else when the Hub comes back).
+    void StartEngineRefresh();
+    void ApplyEngineRefreshIfReady();
 
+    std::optional<Plugins::EngineRefreshPlan> engineRefresh_;  // worked out, not applied yet
     platform::Gfx gfx_;
     HubSettings settings_;
     Plugins plugins_;
@@ -84,6 +90,7 @@ private:
     bool running_ = true;
     int graphicsFailures_ = 0;  // Recreate failed this many times in a row
     bool graphicsTold_ = false; // ... and the user was told
+    Worker engineWorker_;       // last: what it posts is dropped once the App is gone
 };
 
 }  // namespace rm::editor

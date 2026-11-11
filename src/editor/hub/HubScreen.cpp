@@ -102,7 +102,7 @@ void HubScreen::OnCloseRequested() { app_.RequestQuit(); }
 
 void HubScreen::OnLookChanged() {
     ScreenWindow::OnLookChanged();
-    Refresh();
+    // Not read again: what a row says in words is made when it is drawn (in the language now).
 }
 
 void HubScreen::ShowError(std::wstring message, fs::path removableFile, std::wstring title) {
@@ -117,28 +117,58 @@ void HubScreen::ShowError(std::wstring message, fs::path removableFile, std::wst
 // Data
 // ---------------------------------------------------------------------------
 
+HubScreen::RowData HubScreen::ReadRow(const fs::path& file) {
+    // On the Worker's thread: files only (no translations, no log, nothing of the screen).
+    RowData d;
+    d.file = file;
+    d.name = file.stem().native();
+    std::error_code ec;
+    d.missing = !fs::exists(file, ec);
+    if (d.missing) return d;
+    if (auto p = LoadProject(file, nullptr)) {
+        d.name = Utf8ToWide(p->Name());
+        if (auto used = ParsePluginIdList(p->doc.Get("plugins"), nullptr)) d.plugins = std::move(*used);
+    }
+    d.modifiedSort = FileModifiedUnix(file);
+    return d;
+}
+
+void HubScreen::ApplyRow(const RowData& d) {
+    for (Row& row : rows_) {
+        if (row.file != d.file) continue;
+        row.name = d.name;
+        row.missing = d.missing;
+        row.modifiedSort = d.modifiedSort;
+        row.plugins = d.plugins;
+        row.loading = false;
+    }
+    Invalidate();
+}
+
 void HubScreen::Refresh() {
     rows_.clear();
+    std::vector<fs::path> files;
     for (const auto& r : app_.Settings().Recent()) {
         Row row;
         row.file = r.file;
         row.folder = r.file.parent_path().native();
-        std::error_code ec;
-        row.missing = !fs::exists(r.file, ec);
-        if (row.missing) {
-            row.name = r.file.stem().native();
-            row.modifiedSort = 0;
-            row.modifiedText = Tr(L"見つかりません");
-        } else {
-            std::string err;
-            auto p = LoadProject(r.file, &err);
-            row.name = p ? Utf8ToWide(p->Name()) : r.file.stem().native();
-            row.modifiedSort = FileModifiedUnix(r.file);
-            row.modifiedText = FormatLocalTime(row.modifiedSort);
-        }
+        row.name = r.file.stem().native();  // until it is read
         rows_.push_back(std::move(row));
+        files.push_back(r.file);
     }
     SortRows();
+    // A project on a slow or unreachable drive takes seconds: read on a Worker, one row at a time.
+    rowsWorker_.Run([this, files](std::stop_token stop, const Worker::Post& post) {
+        for (const fs::path& file : files) {
+            if (stop.stop_requested()) return;
+            RowData d = ReadRow(file);
+            post([this, d = std::move(d)] { ApplyRow(d); });
+        }
+        post([this] {
+            SortRows();  // by the dates now known
+            Invalidate();
+        });
+    });
 }
 
 void HubScreen::SortRows() {
@@ -468,7 +498,8 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
         w::Separator(c, view.x, top + rowH - 1, view.w);
 
         p.Text({xName + 18, rr.y, nameW - 26, rr.h}, row.name, Style(16, row.missing ? theme::TextFaint : theme::Text, true));
-        p.Text({xMod + 18, rr.y, modW - 26, rr.h}, row.modifiedText, Style(14, row.missing ? theme::Danger : theme::TextDim));
+        const std::wstring when = row.loading ? Tr(L"読み込み中…") : row.missing ? Tr(L"見つかりません") : FormatLocalTime(row.modifiedSort);
+        p.Text({xMod + 18, rr.y, modW - 26, rr.h}, when, Style(14, row.missing ? theme::Danger : row.loading ? theme::TextFaint : theme::TextDim));
         p.Text({xPath + 18, rr.y, pathW - 26, rr.h}, row.folder, Style(13, theme::TextFaint));
 
         const Rect more{rr.Right() - 44, rr.y + 10, 34, rr.h - 20};
@@ -695,13 +726,10 @@ std::wstring HubScreen::PluginNames(const std::vector<PluginId>& ids) const {
 }
 
 int HubScreen::RecentProjectsUsing(const PluginId& id) const {
-    // Only the projects the Hub knows (the recent list) - the PC is never searched.
+    // Only the projects the Hub knows (the recent list, as the Worker read it) - the PC is never searched.
     int n = 0;
-    for (const auto& r : app_.Settings().Recent()) {
-        auto project = LoadProject(r.file, nullptr);
-        if (!project) continue;
-        auto used = ParsePluginIdList(project->doc.Get("plugins"), nullptr);
-        if (used && std::find(used->begin(), used->end(), id) != used->end()) ++n;
+    for (const Row& row : rows_) {
+        if (!row.loading && std::find(row.plugins.begin(), row.plugins.end(), id) != row.plugins.end()) ++n;
     }
     return n;
 }
@@ -1069,33 +1097,70 @@ void HubScreen::DrawUpdates(ui::Context& c, Rect area) {
 
 void HubScreen::RunIntegrityCheck() {
     integrityStale_.clear();
-    std::string err;
-    const fs::path listFile = paths::FileList();
-    auto bytes = platform::ReadFileBytes(listFile, &err);
-    auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
-    auto list = doc ? integrity::ParseFileList(*doc, &err) : std::nullopt;
-    if (!list) {
-        integrityText_ = TrF(L"ファイルの一覧 ({}) を読めないので、確かめられません。エンジンをビルドし直すか、入れ直してください。", listFile.native());
-        modal_ = Modal::Integrity;
-        log::Warn("整合性の確認: ファイルの一覧を読めません: {}", PathToUtf8(listFile));
-        return;
-    }
-    const fs::path exeDir = platform::ExeDirectory();
-    const auto problems = integrity::CheckFiles(*list, [&](const std::string& rel) { return platform::Sha256File(exeDir / PathFromUtf8(rel)); });
-
-    // Installed plugins compared with the engine's copies.
+    integrityText_.clear();
+    integrityRunning_ = true;
+    integrityDone_ = integrityTotal_ = 0;
+    modal_ = Modal::Integrity;
+    Invalidate();
+    // What the work needs, copied here (on the UI thread).
     std::vector<PluginId> installed;
     for (const auto& e : app_.GetPlugins().Entries()) {
         if (e.installed) installed.push_back(e.status.id);
     }
-    const fs::path installedDir = paths::InstalledPlugins();
-    integrityStale_ = integrity::StalePlugins(*list, installed, [&](const PluginId& id, const std::string& rel) {
-        return platform::Sha256File(installedDir / PathFromUtf8(id.author) / PathFromUtf8(id.name) / PathFromUtf8(rel));
+    integrityWorker_.Run([this, installed, listFile = paths::FileList(), exeDir = platform::ExeDirectory(),
+                          installedDir = paths::InstalledPlugins()](std::stop_token stop, const Worker::Post& post) {
+        IntegrityResult r;
+        auto bytes = platform::ReadFileBytes(listFile, nullptr);
+        auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
+        auto list = doc ? integrity::ParseFileList(*doc, nullptr) : std::nullopt;
+        if (!list) {
+            post([this, r] { FinishIntegrityCheck(r); });
+            return;
+        }
+        r.listRead = true;
+        r.files = list->size();
+        // How far it is: told now and then (not for every file).
+        size_t done = 0;
+        auto last = std::chrono::steady_clock::now();
+        auto counted = [&] {
+            ++done;
+            if (std::chrono::steady_clock::now() - last < std::chrono::milliseconds(100)) return;
+            last = std::chrono::steady_clock::now();
+            post([this, done, total = r.files] {
+                integrityDone_ = done;
+                integrityTotal_ = total;
+                Invalidate();
+            });
+        };
+        r.problems = integrity::CheckFiles(*list, [&](const std::string& rel) -> std::optional<std::string> {
+            if (stop.stop_requested()) return std::nullopt;
+            counted();
+            return platform::Sha256File(exeDir / PathFromUtf8(rel));
+        });
+        // Installed plugins compared with the engine's copies.
+        r.stale = integrity::StalePlugins(*list, installed, [&](const PluginId& id, const std::string& rel) -> std::optional<std::string> {
+            if (stop.stop_requested()) return std::nullopt;
+            return platform::Sha256File(installedDir / PathFromUtf8(id.author) / PathFromUtf8(id.name) / PathFromUtf8(rel));
+        });
+        if (stop.stop_requested()) return;
+        post([this, r = std::move(r)] { FinishIntegrityCheck(r); });
     });
+}
+
+void HubScreen::FinishIntegrityCheck(const IntegrityResult& r) {
+    integrityRunning_ = false;
+    Invalidate();
+    if (!r.listRead) {
+        integrityText_ = TrF(L"ファイルの一覧 ({}) を読めないので、確かめられません。エンジンをビルドし直すか、入れ直してください。", paths::FileList().native());
+        log::Warn("整合性の確認: ファイルの一覧を読めません: {}", PathToUtf8(paths::FileList()));
+        return;
+    }
+    const auto& problems = r.problems;
+    integrityStale_ = r.stale;
 
     std::wstring text;
     if (problems.empty()) {
-        text = TrF(L"エンジンのファイル {} 個は、すべてそろっていて壊れていません。", list->size());
+        text = TrF(L"エンジンのファイル {} 個は、すべてそろっていて壊れていません。", r.files);
     } else {
         text = TrF(L"エンジンのファイルに問題があります ({} 個)。エンジンをビルドし直すか、入れ直してください。", problems.size());
         const size_t shown = std::min<size_t>(problems.size(), 8);
@@ -1113,7 +1178,6 @@ void HubScreen::RunIntegrityCheck() {
     }
     integrityText_ = std::move(text);
     log::Info("整合性の確認: エンジンのファイルの問題 {} 個 / 違うプラグイン {} 個", problems.size(), integrityStale_.size());
-    modal_ = Modal::Integrity;
 }
 
 void HubScreen::DrawThemePicker(ui::Context& c) {
@@ -1192,8 +1256,24 @@ void HubScreen::DrawIntegrity(ui::Context& c) {
     ui::TextStyle ts = Style(13, theme::Text);
     ts.wrap = true;
     ts.v = ui::VAlign::Top;
-    p.Text({cr.x, cr.y, cr.w, cr.h - 48}, integrityText_, ts);
     const Rect ok{cr.Right() - 110, cr.Bottom() - 36, 110, 36};
+    if (integrityRunning_) {
+        // Hashing on the Worker: how far it is, and a way out.
+        const std::wstring how = integrityTotal_ > 0 ? TrF(L"ファイルを確かめています… {} / {} 個", integrityDone_, integrityTotal_)
+                                                     : Tr(L"ファイルを確かめています…");
+        p.Text({cr.x, cr.y, cr.w, 40}, how, ts);
+        if (integrityTotal_ > 0) {
+            const Rect bar{cr.x, cr.y + 44, cr.w, 8};
+            w::ProgressBar(c, bar, static_cast<float>(integrityDone_) / static_cast<float>(integrityTotal_));
+        }
+        if (w::Button(c, "int.stop", ok, Tr(L"やめる")) || c.KeyPressed(ui::Key::Escape)) {
+            integrityWorker_.Stop();
+            integrityRunning_ = false;
+            modal_ = Modal::None;
+        }
+        return;
+    }
+    p.Text({cr.x, cr.y, cr.w, cr.h - 48}, integrityText_, ts);
     if (!integrityStale_.empty() &&
         w::Button(c, "int.fix", {ok.x - 12 - 220, ok.y, 220, 36}, Tr(L"プラグインを入れ直して直す"), w::ButtonKind::Primary)) {
         const std::vector<PluginId> ids = integrityStale_;

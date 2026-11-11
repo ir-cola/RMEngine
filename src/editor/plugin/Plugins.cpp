@@ -303,39 +303,51 @@ bool Plugins::Install(const std::vector<PluginId>& ids, std::string* error) {
     return true;
 }
 
-std::vector<PluginId> Plugins::RefreshFromEngine(const fs::path& fileList) {
+std::vector<PluginId> Plugins::InstalledAndAvailable() const {
+    std::vector<PluginId> out;
+    for (const Entry& e : entries_) {
+        if (e.installed && e.available) out.push_back(e.status.id);
+    }
+    return out;
+}
+
+Plugins::EngineRefreshPlan Plugins::PlanEngineRefresh(const fs::path& fileList, const fs::path& availableDir, const fs::path& installedDir,
+                                                      const std::vector<PluginId>& candidates) {
+    // Any thread: reads files only (no log, no translations, nothing of the app).
+    EngineRefreshPlan plan;
     std::error_code ec;
-    if (!fs::is_directory(installedDir_, ec)) return {};
-    const fs::path stampFile = installedDir_ / L"engine_files.sha256";
-    const std::optional<std::string> listHash = platform::Sha256File(fileList);
+    if (!fs::is_directory(installedDir, ec)) return plan;
+    plan.listHash = platform::Sha256File(fileList);
     std::string kept;
-    if (auto bytes = platform::ReadFileBytes(stampFile, nullptr)) kept = *bytes;
-    if (!integrity::EngineChanged(listHash, kept)) return {};
+    if (auto bytes = platform::ReadFileBytes(installedDir / L"engine_files.sha256", nullptr)) kept = *bytes;
+    if (!integrity::EngineChanged(plan.listHash, kept)) return plan;
+    plan.looked = true;
 
     std::optional<std::vector<integrity::FileEntry>> list;
-    if (listHash) {
+    if (plan.listHash) {
         std::string err;
         auto bytes = platform::ReadFileBytes(fileList, &err);
         auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
-        if (doc) list = integrity::ParseFileList(*doc, &err);
-        if (!list) log::Warn("ファイルの一覧を読めないので、入れたプラグインは plugin.json だけを比べます: {}", err);
+        if (doc) list = integrity::ParseFileList(*doc, nullptr);  // (no translated message off the UI thread)
+        if (!list) plan.listError = err.empty() ? PathToUtf8(fileList) : err;
     }
-    std::vector<PluginId> candidates;
-    for (const Entry& e : entries_) {
-        if (e.installed && e.available) candidates.push_back(e.status.id);
-    }
-    const auto refresh = integrity::PluginsToRefresh(
+    plan.refresh = integrity::PluginsToRefresh(
         list, candidates,
-        [&](const PluginId& id, const std::string& rel) { return platform::Sha256File(FolderOf(installedDir_, id) / PathFromUtf8(rel)); },
+        [&](const PluginId& id, const std::string& rel) { return platform::Sha256File(FolderOf(installedDir, id) / PathFromUtf8(rel)); },
         [&](const PluginId& id) {
-            const auto engine = platform::ReadFileBytes(FolderOf(availableDir_, id) / L"plugin.json", nullptr);
-            const auto mine = platform::ReadFileBytes(FolderOf(installedDir_, id) / L"plugin.json", nullptr);
+            const auto engine = platform::ReadFileBytes(FolderOf(availableDir, id) / L"plugin.json", nullptr);
+            const auto mine = platform::ReadFileBytes(FolderOf(installedDir, id) / L"plugin.json", nullptr);
             return engine && (!mine || *mine != *engine);  // an unreadable engine copy is never copied
         });
+    return plan;
+}
 
+std::vector<PluginId> Plugins::ApplyEngineRefresh(const EngineRefreshPlan& plan) {
+    if (!plan.looked) return {};
+    if (!plan.listError.empty()) log::Warn("ファイルの一覧を読めないので、入れたプラグインは plugin.json だけを比べました: {}", plan.listError);
     std::vector<PluginId> copied;
     bool allCopied = true;
-    for (const PluginId& id : refresh) {
+    for (const PluginId& id : plan.refresh) {
         std::string err;
         if (CopyIn(id, &err)) {
             copied.push_back(id);
@@ -349,9 +361,11 @@ std::vector<PluginId> Plugins::RefreshFromEngine(const fs::path& fileList) {
         Reload();
     }
     // Looked at again on the next start when something failed (or there is no list to stamp).
-    if (listHash && allCopied) {
+    if (plan.listHash && allCopied) {
         std::string err;
-        if (!platform::WriteFileAtomic(stampFile, *listHash, &err)) log::Warn("プラグインの確認の印を書けませんでした: {}", err);
+        if (!platform::WriteFileAtomic(installedDir_ / L"engine_files.sha256", *plan.listHash, &err)) {
+            log::Warn("プラグインの確認の印を書けませんでした: {}", err);
+        }
     }
     return copied;
 }

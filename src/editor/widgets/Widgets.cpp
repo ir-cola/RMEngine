@@ -368,6 +368,13 @@ int Segmented(ui::Context& c, std::string_view idStr, const Rect& r, std::span<c
     return clicked;
 }
 
+void ProgressBar(ui::Context& c, const Rect& r, float fraction) {
+    const float f = std::clamp(fraction, 0.f, 1.f);
+    const float radius = std::min(r.h * 0.5f, theme::Radius);
+    DrawSurface(c, r, Surface::Sunken, radius);
+    if (f > 0.f) DrawSurface(c, {r.x, r.y, std::max(r.h, r.w * f), r.h}, Surface::Accent, radius);
+}
+
 bool IconButton(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon, bool enabled) {
     ui::Context::ButtonResult b;
     if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);

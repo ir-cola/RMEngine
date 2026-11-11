@@ -37,8 +37,9 @@ int App::Run(const LaunchOptions& options) {
     settings_.Load();
     LoadLanguageCatalogs();
     ApplyOptions();
+    SetUiThread();
     plugins_.Load(paths::EnginePlugins(), paths::InstalledPlugins(), paths::LegacyInstalledPlugins());
-    plugins_.RefreshFromEngine(paths::FileList());  // a new engine: new copies of the installed plugins
+    StartEngineRefresh();  // a new engine: new copies of the installed plugins (hashed off this thread)
     LoadThemes();
     ApplyOptions();  // the theme chosen may be a pack's
     if (!options.projectFile.empty()) {
@@ -58,6 +59,7 @@ int App::Run(const LaunchOptions& options) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
         log::DeliverQueued();
+        RunPostedToUi();  // results of slow disk work (Worker), between frames
         ApplyPending();
     }
     log::SetWake({});
@@ -131,6 +133,30 @@ void App::LoadLanguageCatalogs() {
         count += en.Add(*doc);
     }
     log::Info("英語の表: {} 個", count);
+}
+
+void App::StartEngineRefresh() {
+    const auto candidates = plugins_.InstalledAndAvailable();
+    engineWorker_.Run([this, list = paths::FileList(), available = plugins_.AvailableDir(), installed = plugins_.InstalledDir(),
+                       candidates](std::stop_token, const Worker::Post& post) {
+        Plugins::EngineRefreshPlan plan = Plugins::PlanEngineRefresh(list, available, installed, candidates);
+        if (!plan.looked) return;
+        post([this, plan = std::move(plan)] {
+            engineRefresh_ = plan;
+            ApplyEngineRefreshIfReady();
+        });
+    });
+}
+
+void App::ApplyEngineRefreshIfReady() {
+    // Only while no editor is open: its workspaces point into the plugin registry that Reload makes anew.
+    if (!engineRefresh_ || !dynamic_cast<HubScreen*>(screen_.get())) return;
+    const Plugins::EngineRefreshPlan plan = std::move(*engineRefresh_);
+    engineRefresh_.reset();
+    if (!plugins_.ApplyEngineRefresh(plan).empty()) {
+        LoadThemes();
+        ApplyOptions();
+    }
 }
 
 void App::ReloadPlugins() {
@@ -277,6 +303,7 @@ void App::ShowHub(const std::string& errorMessage) {
     }
     if (!errorMessage.empty()) hub->ShowError(Utf8ToWide(errorMessage));
     Replace(std::move(hub));
+    ApplyEngineRefreshIfReady();  // the editor (if one was open) is gone now
 }
 
 HubScreen* App::EnsureHub() {

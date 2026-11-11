@@ -15,6 +15,7 @@
 #include "editor/project/Templates.h"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -70,9 +71,23 @@ public:
     // Each start, after Load: when the engine was updated (its file list changed since the last start),
     // installed plugins whose files differ from the engine's copies are copied again - what the Hub's
     // 再インストール does, without asking (they are the engine's files, not the user's). Plugins the
-    // user removed stay removed. Reloads when anything was copied. Returns what was copied.
-    // The stamp (SHA-256 of the file list) is kept in <installed>/engine_files.sha256.
-    std::vector<PluginId> RefreshFromEngine(const std::filesystem::path& fileList);
+    // user removed stay removed. The stamp (SHA-256 of the file list) is kept in
+    // <installed>/engine_files.sha256.
+    //   PlanEngineRefresh   any thread (App runs it on a Worker: it hashes every installed file) - reads only
+    //   ApplyEngineRefresh  UI thread, while no editor is open: copies, writes the stamp, reloads when
+    //                       anything was copied. Returns what was copied.
+    struct EngineRefreshPlan {
+        bool looked = false;                  // the engine changed: `refresh` was worked out
+        std::optional<std::string> listHash;  // of the file list (nullopt: none - nothing to stamp)
+        std::string listError;                // the list could not be read (only plugin.json compared)
+        std::vector<PluginId> refresh;
+    };
+    std::vector<PluginId> InstalledAndAvailable() const;
+    const std::filesystem::path& AvailableDir() const { return availableDir_; }
+    const std::filesystem::path& InstalledDir() const { return installedDir_; }
+    static EngineRefreshPlan PlanEngineRefresh(const std::filesystem::path& fileList, const std::filesystem::path& availableDir,
+                                               const std::filesystem::path& installedDir, const std::vector<PluginId>& candidates);
+    std::vector<PluginId> ApplyEngineRefresh(const EngineRefreshPlan& plan);
 
 private:
     bool CopyIn(const PluginId& id, std::string* error);

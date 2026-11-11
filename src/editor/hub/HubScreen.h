@@ -5,6 +5,8 @@
 
 #include "core/PluginId.h"
 #include "editor/app/ScreenWindow.h"
+#include "editor/app/Worker.h"
+#include "editor/app/Integrity.h"
 #include "editor/inspector/Inspector.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Widgets.h"
@@ -56,11 +58,24 @@ private:
         std::filesystem::path file;
         std::wstring name;
         std::wstring folder;
-        std::wstring modifiedText;
         int64_t modifiedSort = 0;
         bool missing = false;
+        bool loading = true;              // not read yet (a Worker reads the file: a slow drive never stops drawing)
+        std::vector<PluginId> plugins;    // what the project records using (for "N 個がこのプラグインを使っています")
     };
+    // What the Worker reads for a row (on its thread: files only).
+    struct RowData {
+        std::filesystem::path file;
+        std::wstring name;
+        int64_t modifiedSort = 0;
+        bool missing = false;
+        std::vector<PluginId> plugins;
+    };
+    static RowData ReadRow(const std::filesystem::path& file);
+    void ApplyRow(const RowData& d);
 
+    // The recent list again, from the disk (start, F5, after a rename / removing from the list).
+    // Rows show at once ("読み込み中…") and fill in as the Worker reads them.
     void Refresh();
     void SortRows();
     std::vector<size_t> FilteredRows() const;
@@ -86,6 +101,7 @@ private:
     void RunInstall(const std::vector<PluginId>& ids);
     std::wstring PluginLine(const PluginId& id) const;
     std::wstring PluginNames(const std::vector<PluginId>& ids) const;
+    // From the rows already read (none of the disk while drawing). Rows still being read are not counted.
     int RecentProjectsUsing(const PluginId& id) const;
     void ShowPrompt(Prompt prompt);
 
@@ -138,9 +154,21 @@ private:
 
     // Options page (the options are drawn by the inspector from their type)
     inspector::State optionsInspector_;
-    // Integrity check result
+    // Integrity check (hashes every file of the engine: on a Worker, with how far it is)
+    struct IntegrityResult {
+        bool listRead = false;
+        size_t files = 0;
+        std::vector<integrity::FileProblem> problems;
+        std::vector<PluginId> stale;
+    };
+    void FinishIntegrityCheck(const IntegrityResult& r);
     std::wstring integrityText_;
     std::vector<PluginId> integrityStale_;  // installed plugins that differ from the engine's copies
+    bool integrityRunning_ = false;
+    size_t integrityDone_ = 0, integrityTotal_ = 0;
+
+    Worker rowsWorker_;       // reads the recent projects
+    Worker integrityWorker_;  // hashes the engine's files
 
     // Error dialog
     std::wstring errorTitle_;

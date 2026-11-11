@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "遅いドライブやネットワークのプロジェクトがあっても Hub が固まらないように (最近のプロジェクトは別のスレッドで読み、読み終わるまで「読み込み中…」。整合性の確認は進み具合を出して別のスレッドで。起動のときのプラグインの確かめも)",
+          "en": "The Hub no longer freezes on projects on slow or network drives (recent projects are read on another thread and show Loading… until read; the integrity check runs on another thread with its progress; so does the plugin check at startup)"
+        },
+        {
           "ja": "大きなプロジェクトで軽く: アセットの見直しは変わった .meta だけを読み、ファイルが多くても照合が重くならない。取り込みの設定は数のドラッグを離したときに 1 回だけ書く。キーの多い JSON の読み込みも速く",
           "en": "Lighter on big projects: looking at the assets again reads only the .meta files that changed, and matching stays quick with many files. An import setting is written once, when a number drag is let go. JSON with many keys reads fast"
         },

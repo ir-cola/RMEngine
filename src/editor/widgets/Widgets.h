@@ -120,6 +120,9 @@ bool CollapsingHeader(ui::Context& c, std::string_view id, const ui::Rect& r, st
 ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view text, bool enabled = true,
                                    std::optional<Icon> icon = std::nullopt);
 
+// How far something is: a sunken track filled with the accent up to `fraction` (0..1).
+void ProgressBar(ui::Context& c, const ui::Rect& r, float fraction);
+
 // --- Lines and tips --------------------------------------------------------------------------
 void Separator(ui::Context& c, float x, float y, float width);
 // A tip next to the mouse, drawn at the end of the frame (over everything).
