@@ -5,6 +5,7 @@
 #include "base/Utf.h"
 #include "base/Version.h"
 #include "editor/app/App.h"
+#include "editor/app/Paths.h"
 #include "editor/plugin/Plugins.h"
 #include "editor/shell/FloatWindow.h"
 #include "editor/widgets/Theme.h"
@@ -356,10 +357,79 @@ void EditorScreen::LoadLayout() {
         ws->dock.SetLayout(std::move(layout));
     }
     if (broken) log::Warn("パネルの配置を一部読めなかったので、最初の配置で開きます: {}", PathToUtf8(file));
+    LoadSharedLayouts();
     const json::Value& active = layoutDoc_.Get("active");
     for (size_t i = 0; i < workspaces_.size(); ++i) {
         if (active.IsObject() && SameKey(active, WorkspaceKey(workspaces_[i]->type))) active_ = i;
     }
+}
+
+// %APPDATA%\RM_Engine\Layouts.json - named layouts every project can use (paths::SharedLayoutsFile):
+//   { "kind": "rm_engine.shared_layouts", "formatVersion": 1,
+//     "softwares": [ { "author": ..., "plugin": ..., "software": ..., "named": [ { "name", "layout" } ] } ] }
+// Read when the editor opens, written as soon as the list changes. Softwares not installed now and
+// unknown keys are written back unchanged (like Layout.json).
+constexpr char kSharedLayoutsKind[] = "rm_engine.shared_layouts";
+constexpr int64_t kSharedLayoutsFormatVersion = 1;
+
+void EditorScreen::LoadSharedLayouts() {
+    sharedDoc_ = json::Value::MakeObject();
+    sharedReadOnly_ = false;
+    const fs::path file = paths::SharedLayoutsFile();
+    std::error_code ec;
+    if (fs::exists(file, ec)) {
+        std::string err;
+        auto bytes = platform::ReadFileBytes(file, &err);
+        auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
+        if (doc && doc->IsObject() && doc->Get("kind").AsString() == kSharedLayoutsKind) {
+            sharedDoc_ = std::move(*doc);
+            sharedReadOnly_ = sharedDoc_.Get("formatVersion").AsInt(0) > kSharedLayoutsFormatVersion;
+            if (sharedReadOnly_) log::Warn("共通の配置は新しい版の RM Engine で保存されています。この版では上書きしません");
+        } else {
+            // Never written over: a file we cannot read may be the user's to fix.
+            sharedReadOnly_ = true;
+            log::Warn("共通の配置を読めませんでした (上書きしません): {}", PathToUtf8(file));
+        }
+    }
+    for (auto& ws : workspaces_) {
+        ws->shared = {};
+        const json::Value key = WorkspaceKey(ws->type);
+        for (const auto& e : sharedDoc_.Get("softwares").Items()) {
+            if (!SameKey(e, key)) continue;
+            reflect::Warnings warnings;
+            ws->shared = dock::NamedLayouts::FromJson(e.Get("named"), &warnings);
+            for (const auto& wmsg : warnings) log::Warn("共通の配置: {}", wmsg);
+        }
+    }
+}
+
+void EditorScreen::SaveSharedLayouts() {
+    if (sharedReadOnly_) {
+        log::Warn("共通の配置はファイルに書きません (新しい版のファイルか、読めなかったファイルのため)");
+        return;
+    }
+    sharedDoc_.Set("kind", kSharedLayoutsKind);
+    sharedDoc_.Set("formatVersion", kSharedLayoutsFormatVersion);
+    json::Value* entries = sharedDoc_.Find("softwares");
+    if (!entries || !entries->IsArray()) entries = &sharedDoc_.Set("softwares", json::Value::MakeArray());
+    for (auto& ws : workspaces_) {
+        const json::Value key = WorkspaceKey(ws->type);
+        json::Value* entry = nullptr;
+        for (auto& e : entries->Items()) {
+            if (SameKey(e, key)) entry = &e;
+        }
+        if (!entry) {
+            if (ws->shared.Empty()) continue;
+            entries->Push(key);
+            entry = &entries->Items().back();
+        }
+        entry->Set("named", ws->shared.ToJson());
+    }
+    const fs::path file = paths::SharedLayoutsFile();
+    std::error_code ec;
+    fs::create_directories(file.parent_path(), ec);
+    std::string err;
+    if (!platform::WriteFileAtomic(file, json::Write(sharedDoc_), &err)) log::Warn("共通の配置を保存できませんでした: {}", err);
 }
 
 void EditorScreen::CaptureFloatingRects() {
@@ -410,6 +480,7 @@ void EditorScreen::ResetLayout() {
     layout.Sanitize(Active().dock.PanelIds());
     Active().dock.SetLayout(std::move(layout));
     Active().namedShown.clear();
+    Active().namedShownShared = false;
     log::Info("パネルの配置を最初の状態に戻しました ({})", WideToUtf8(Active().Title()));
 }
 
@@ -596,16 +667,19 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
                 it.checked = Active().dock.GetLayout().Contains(t.id);
                 items.push_back(std::move(it));
             }
-            // Order read by RunMenu: panels | named layouts (when there are some) | the commands.
+            // Order read by RunMenu: panels | named layouts (this project's, then the shared ones;
+            // when there are some) | the commands.
             items.push_back({L"", L"", true, true});
-            for (const auto& e : Active().named.Entries()) {
-                w::MenuItem it;
-                it.label = Utf8ToWide(e.info.name);
-                it.shortcut = Tr(L"配置");
-                it.checked = e.info.name == Active().namedShown;
-                items.push_back(std::move(it));
+            for (const bool sharedList : {false, true}) {
+                for (const auto& e : Active().Named(sharedList).Entries()) {
+                    w::MenuItem it;
+                    it.label = Utf8ToWide(e.info.name);
+                    it.shortcut = sharedList ? Tr(L"共通の配置") : Tr(L"このプロジェクトの配置");
+                    it.checked = e.info.name == Active().namedShown && sharedList == Active().namedShownShared;
+                    items.push_back(std::move(it));
+                }
             }
-            if (!Active().named.Empty()) items.push_back({L"", L"", true, true});
+            if (!Active().named.Empty() || !Active().shared.Empty()) items.push_back({L"", L"", true, true});
             items.push_back({Tr(L"今の配置に名前を付けて保存…")});
             items.push_back({Tr(L"配置の管理…")});
             items.push_back({Tr(L"最初の配置に戻す")});
@@ -657,13 +731,18 @@ void EditorScreen::RunMenu(Menu m, int index) {
     } else if (m == Menu::Window) {
         const auto& types = Active().dock.PanelTypes();
         const auto& named = Active().named.Entries();
+        const auto& shared = Active().shared.Entries();
         const int panels = static_cast<int>(types.size());
         const int firstNamed = panels + 1;
-        const int commands = firstNamed + (named.empty() ? 0 : static_cast<int>(named.size()) + 1);
+        const int firstShared = firstNamed + static_cast<int>(named.size());
+        const int namedEnd = firstShared + static_cast<int>(shared.size());
+        const int commands = namedEnd + (namedEnd == firstNamed ? 0 : 1);
         if (index >= 0 && index < panels) {
             Active().dock.TogglePanel(types[static_cast<size_t>(index)].id);
-        } else if (index >= firstNamed && index < firstNamed + static_cast<int>(named.size())) {
-            ApplyNamedLayout(named[static_cast<size_t>(index - firstNamed)].info.name);
+        } else if (index >= firstNamed && index < firstShared) {
+            ApplyNamedLayout(named[static_cast<size_t>(index - firstNamed)].info.name, false);
+        } else if (index >= firstShared && index < namedEnd) {
+            ApplyNamedLayout(shared[static_cast<size_t>(index - firstShared)].info.name, true);
         } else if (index == commands) {
             BeginSaveLayoutAs();
         } else if (index == commands + 1) {

@@ -48,6 +48,9 @@ public:
     bool Put(std::string_view name, const Layout& layout);
     bool Rename(std::string_view from, std::string_view to);  // false: missing / refused name
     bool Remove(std::string_view name);
+    // Moves the entry `name` (with its unknown keys) to the end of `to` - between a project's list and
+    // the shared one. False (nothing moved): missing in `from`, or `to` has that name already.
+    static bool Move(NamedLayouts& from, std::string_view name, NamedLayouts& to);
     // The saved layout, cleaned for the panels that exist now. nullopt: missing or unreadable.
     std::optional<Layout> Get(std::string_view name, const std::vector<std::string>& knownPanels) const;
 

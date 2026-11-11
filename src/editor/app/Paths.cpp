@@ -16,6 +16,7 @@ fs::path InstalledPlugins() { return LocalRoot() / L"Plugins"; }
 fs::path LogFolder() { return LocalRoot() / L"Logs"; }
 fs::path LogFile() { return LogFolder() / L"editor.log"; }
 fs::path HubSettingsFile() { return platform::GetKnownFolder(platform::KnownFolder::RoamingAppData) / L"RM_Engine" / L"hub.json"; }
+fs::path SharedLayoutsFile() { return platform::GetKnownFolder(platform::KnownFolder::RoamingAppData) / L"RM_Engine" / L"Layouts.json"; }
 fs::path LangFolder() { return platform::ExeDirectory() / L"Lang"; }
 fs::path FileList() { return platform::ExeDirectory() / L"RM_Engine.files.json"; }
 

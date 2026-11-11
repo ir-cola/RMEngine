@@ -6,6 +6,7 @@
 //   %LOCALAPPDATA%\RM_Engine\Plugins\       installed plugins
 //   %LOCALAPPDATA%\RM_Engine\Logs\          editor.log
 //   %APPDATA%\RM_Engine\hub.json            the Hub's settings (HubSettings)
+//   %APPDATA%\RM_Engine\Layouts.json        panel layouts shared by every project (per software)
 
 #include <filesystem>
 
@@ -17,6 +18,7 @@ std::filesystem::path InstalledPlugins();
 std::filesystem::path LogFolder();
 std::filesystem::path LogFile();
 std::filesystem::path HubSettingsFile();
+std::filesystem::path SharedLayoutsFile();
 std::filesystem::path LangFolder();      // <exe>/Lang (the core's translations)
 std::filesystem::path FileList();        // <exe>/RM_Engine.files.json (for the integrity check)
 

@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "名前を付けた配置を「共通の配置」にすると、どのプロジェクトでも使える (保存のときのチェック、または「配置の管理…」の「共通にする」)",
+          "en": "A named layout can be made a shared layout that every project can use (a check box when saving, or Make shared in Manage Layouts…)"
+        },
+        {
           "ja": "3D: カメラの外の物は描かない (いつもオン。影は残る。シーンビューに描いた数)。止まっているときもゲームビューに最初のカメラから見たシーン。部品「カメラを順に切り替える」で Play 中にゲームのカメラが切り替わる",
           "en": "3D: things outside the camera are not drawn (always on; their shadows stay; the scene view shows how many were drawn). The game view shows the scene from the starting camera even when stopped. New component Cycle Cameras switches the game's camera while playing"
         },

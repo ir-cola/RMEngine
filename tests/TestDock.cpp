@@ -407,3 +407,23 @@ RM_TEST(NamedLayouts_BrokenLayoutIsNotUsed) {
     CHECK(!n.Get("broken", {"x"}));  // ... but never applied
     CHECK(n.ToJson().At(0).Get("layout").AsString() == "not a layout");
 }
+
+RM_TEST(NamedLayouts_MoveBetweenLists) {
+    NamedLayouts project, shared;
+    project.Put("a", Two("x", "y"));
+    project.Put("b", Two("x", "y"));
+    shared.Put("b", Two("y", "x"));
+    json::Value list = project.ToJson();
+    list.At(0).Set("memo", "kept");  // an unknown key travels with the entry
+    project = NamedLayouts::FromJson(list);
+
+    CHECK(NamedLayouts::Move(project, " a ", shared));
+    CHECK(!project.Find("a") && shared.Find("a"));
+    CHECK(shared.Entries().back().info.name == "a");  // at the end
+    CHECK(shared.ToJson().At(1).Get("memo").AsString() == "kept");
+    CHECK(shared.Get("a", {"x", "y"}).has_value());
+    CHECK(!NamedLayouts::Move(project, "b", shared));  // the name is taken there: nothing moves
+    CHECK(project.Find("b") && shared.Entries().size() == 2);
+    CHECK(!NamedLayouts::Move(project, "zzz", shared));
+    CHECK(!NamedLayouts::Move(shared, "a", shared));
+}

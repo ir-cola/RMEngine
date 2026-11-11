@@ -116,7 +116,11 @@ private:
         inspector::State inspectorState;
         tree::State treeState;  // the 階層: selection, open items, search
         dock::NamedLayouts named;  // layouts the user saved under a name (UserSettings)
+        dock::NamedLayouts shared;  // named layouts every project can use (%APPDATA%\RM_Engine\Layouts.json)
         std::string namedShown;    // the named layout switched to / saved last (checked in the menu)
+        bool namedShownShared = false;  // ... and which list it is in
+        dock::NamedLayouts& Named(bool sharedList) { return sharedList ? shared : named; }
+        const dock::NamedLayouts& Named(bool sharedList) const { return sharedList ? shared : named; }
         std::unique_ptr<AssetPanel> assetPanel;  // the アセット panel (made when first drawn)
         float assetThumbnail = 40.f;             // its thumbnails' size (UserSettings: "assets": {"thumbnail"})
 
@@ -137,11 +141,14 @@ private:
     void LoadLayout();
     void SaveLayout();
     void ResetLayout();
-    void CaptureFloatingRects();  // where the user put the panel windows, into the layout
+    void CaptureFloatingRects();
+    void LoadSharedLayouts();
+    void SaveSharedLayouts();  // where the user put the panel windows, into the layout
     // Named layouts (EditorLayouts.cpp)
     void BeginSaveLayoutAs();
-    bool SaveNamedLayout(const std::string& name);
-    void ApplyNamedLayout(const std::string& name);
+    bool SaveNamedLayout(const std::string& name, bool shared);
+    void ApplyNamedLayout(const std::string& name, bool shared);
+    void SaveNamedList(bool shared);  // writes the file the list lives in
     void DrawSaveLayoutAs(ui::Context& c);
     void DrawLayouts(ui::Context& c);
     void RequestSyncFloating();
@@ -171,8 +178,9 @@ private:
     std::vector<PluginId> installPlan_;
     // the named layout dialogs
     std::string layoutName_;      // typed in "save as"
+    bool layoutShared_ = false;   // "save as" into the shared list
     bool focusLayoutName_ = false;
-    std::string renamingLayout_;  // the row being renamed in the list ("" = none)
+    std::string renamingLayout_;  // the row being renamed in the list ("" = none; a row key: list + name)
     std::string renameText_;
     bool focusRename_ = false;
     std::string confirmDelete_;   // the row whose 削除 was pressed once
@@ -187,6 +195,8 @@ private:
     bool syncQueued_ = false;
     json::Value layoutDoc_;        // the whole Layout.json (other softwares and unknown keys are kept)
     bool layoutReadOnly_ = false;  // written by a newer engine: used but never overwritten
+    json::Value sharedDoc_;        // the whole shared Layouts.json (other softwares and unknown keys are kept)
+    bool sharedReadOnly_ = false;
 
     std::unique_ptr<AssetLibrary> assets_;  // the project's Assets/ (ids, file operations) - every software's
     std::unique_ptr<Thumbnails> thumbnails_;  // the assets' small pictures - every software's panel shares them

@@ -91,6 +91,15 @@ bool NamedLayouts::Remove(std::string_view name) {
     return true;
 }
 
+bool NamedLayouts::Move(NamedLayouts& from, std::string_view name, NamedLayouts& to) {
+    const std::string clean = CleanName(name);
+    const auto it = std::find_if(from.entries_.begin(), from.entries_.end(), [&](const Entry& e) { return e.info.name == clean; });
+    if (it == from.entries_.end() || &from == &to || to.Find(clean)) return false;
+    to.entries_.push_back(std::move(*it));
+    from.entries_.erase(it);
+    return true;
+}
+
 std::optional<Layout> NamedLayouts::Get(std::string_view name, const std::vector<std::string>& knownPanels) const {
     const Entry* e = Find(name);
     if (!e) return std::nullopt;
