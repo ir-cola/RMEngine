@@ -42,6 +42,10 @@ std::optional<Image> DecodeImage(IWICImagingFactory* wic, std::span<const uint8_
 std::optional<Image> LoadImageFile(IWICImagingFactory* wic, const std::filesystem::path& file, PixelOrder order, Fit fit,
                                    std::string* error);
 
+// A WIC factory for the calling thread (made the first time, COM started for it): what a worker
+// thread decodes with (the UI's factory, Gfx::Wic, stays on the UI thread). Null when it cannot be made.
+IWICImagingFactory* ThreadImagingFactory();
+
 // A Direct2D bitmap of a PremultipliedBgra image (null when it cannot be made).
 Microsoft::WRL::ComPtr<ID2D1Bitmap> BitmapFromImage(ID2D1DeviceContext* dc, const Image& image);
 

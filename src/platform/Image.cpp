@@ -100,6 +100,23 @@ std::optional<Image> LoadImageFile(IWICImagingFactory* wic, const std::filesyste
     return DecodeImage(wic, bytes, order, fit, error);
 }
 
+IWICImagingFactory* ThreadImagingFactory() {
+    struct Holder {
+        ComPtr<IWICImagingFactory> factory;
+        bool com = false;  // this thread's COM was started here (ended with the thread)
+        ~Holder() {
+            factory.Reset();
+            if (com) CoUninitialize();
+        }
+    };
+    thread_local Holder h;
+    if (!h.factory) {
+        h.com = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));  // a thread that has COM already keeps its own
+        CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&h.factory));
+    }
+    return h.factory.Get();
+}
+
 ComPtr<ID2D1Bitmap> BitmapFromImage(ID2D1DeviceContext* dc, const Image& image) {
     ComPtr<ID2D1Bitmap> bmp;
     if (!dc || image.width == 0 || image.pixels.size() < static_cast<size_t>(image.width) * image.height * 4) return bmp;

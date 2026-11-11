@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "アセットのパネル: サムネイルを別のスレッドで作るので、大きな画像やモデルがあっても画面が止まらない",
+          "en": "Assets panel: thumbnails are made on a thread of their own, so big pictures and models no longer stall the screen"
+        },
+        {
           "ja": "Hub の新規作成でテンプレートを木から選ぶ: 白紙 / ゲーム (3D と 2D の両方) / 3D のゲーム (カメラ・光・床・箱) / 2D のゲーム (カメラ・地面・プレイヤー)。要るプラグインが入っていなければ、作る前にまとめてインストールできる。Hub のプラグイン一覧に「ソフトで絞る」(すべて / ゲーム / 共通)",
           "en": "New projects in the Hub start from a template chosen in a tree: Blank / Game (both 3D and 2D) / 3D game (camera, light, floor, box) / 2D game (camera, ground, player). Missing plugins can be installed together before the project is created. The Hub's plugin list can be filtered by software (All / Game / Common)"
         },

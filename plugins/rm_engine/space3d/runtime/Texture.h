@@ -33,6 +33,18 @@ constexpr uint32_t kMaxTextureSize = 4096;
 std::shared_ptr<const GpuTexture> LoadTexture(Renderer& renderer, IWICImagingFactory* wic, std::span<const uint8_t> bytes, bool srgb,
                                               std::string* error);
 
+// A material's numbers as Render takes them (its pictures not yet: SetPicture).
+DrawMaterial MaterialNumbers(const MeshMaterial& m);
+// Its pictures: which of MeshData::images (-1: none) goes into which slot, and whether it is a colour
+// picture (sRGB). Slots: 0 colour, 1 metal / rough, 2 normal, 3 emission.
+struct PictureSlot {
+    int image = -1;
+    bool srgb = true;
+};
+constexpr size_t kPictureSlots = 4;
+std::array<PictureSlot, kPictureSlots> PictureSlots(const MeshMaterial& m);
+void SetPicture(DrawMaterial& d, size_t slot, const GpuTexture* texture);
+
 class TextureCache {
 public:
     static constexpr double kCheckSeconds = 1.0;  // how often a file is looked at again
@@ -75,9 +87,8 @@ private:
         bool srgb = true;
         bool Used() const { return own || !file.empty(); }
     };
-    enum { kColour, kMetalRough, kNormal, kEmission, kSlots };
     std::vector<DrawMaterial> draw_;
-    std::vector<std::array<Slot, kSlots>> slots_;  // per material
+    std::vector<std::array<Slot, kPictureSlots>> slots_;  // per material
 };
 
 }  // namespace rm::space3d

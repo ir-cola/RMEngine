@@ -55,6 +55,32 @@ void TextureCache::ForgetUnused(double now, double seconds) {
     std::erase_if(entries_, [&](const auto& kv) { return now - kv.second.usedAt > seconds; });
 }
 
+DrawMaterial MaterialNumbers(const MeshMaterial& m) {
+    DrawMaterial d;
+    d.color = m.baseColor;
+    d.alpha = m.alpha;
+    d.alphaCutoff = m.alphaCutoff;
+    d.metallic = m.metallic;
+    d.roughness = m.roughness;
+    d.normalScale = m.normalScale;
+    d.emissive = m.emissive;
+    return d;
+}
+
+std::array<PictureSlot, kPictureSlots> PictureSlots(const MeshMaterial& m) {
+    return {PictureSlot{m.image, true}, PictureSlot{m.metallicRoughnessImage, false}, PictureSlot{m.normalImage, false},
+            PictureSlot{m.emissiveImage, true}};
+}
+
+void SetPicture(DrawMaterial& d, size_t slot, const GpuTexture* texture) {
+    switch (slot) {
+        case 0: d.texture = texture; break;
+        case 1: d.metalRough = texture; break;
+        case 2: d.normal = texture; break;
+        default: d.emission = texture; break;
+    }
+}
+
 void ModelPaint::Load(Renderer& renderer, IWICImagingFactory* wic, const MeshData& mesh, const std::filesystem::path& modelFile,
                       const std::filesystem::path& root, const std::string& modelName) {
     draw_.clear();
@@ -62,11 +88,11 @@ void ModelPaint::Load(Renderer& renderer, IWICImagingFactory* wic, const MeshDat
     // Each picture inside the model goes to the GPU once per way it is read, however many materials use it.
     std::vector<std::shared_ptr<const GpuTexture>> inside(mesh.images.size() * 2);
     std::vector<bool> tried(mesh.images.size() * 2, false);
-    auto slot = [&](int image, bool srgb) {
+    auto slot = [&](PictureSlot ps) {
         Slot out;
-        out.srgb = srgb;
-        if (image < 0 || static_cast<size_t>(image) >= mesh.images.size()) return out;
-        const MeshImage& im = mesh.images[static_cast<size_t>(image)];
+        out.srgb = ps.srgb;
+        if (ps.image < 0 || static_cast<size_t>(ps.image) >= mesh.images.size()) return out;
+        const MeshImage& im = mesh.images[static_cast<size_t>(ps.image)];
         if (!im.file.empty()) {
             out.file = RelatedFile(modelFile, im.file, root);
             if (out.file.empty()) {
@@ -74,39 +100,31 @@ void ModelPaint::Load(Renderer& renderer, IWICImagingFactory* wic, const MeshDat
             }
             return out;
         }
-        const size_t k = static_cast<size_t>(image) * 2 + (srgb ? 1 : 0);
+        const size_t k = static_cast<size_t>(ps.image) * 2 + (ps.srgb ? 1 : 0);
         if (!tried[k]) {
             tried[k] = true;
             std::string error;
-            inside[k] = LoadTexture(renderer, wic, im.bytes, srgb, &error);
+            inside[k] = LoadTexture(renderer, wic, im.bytes, ps.srgb, &error);
             if (!inside[k]) log::Warn("モデル「{}」: 中の画像「{}」を読めないので、その絵なしで描きます: {}", modelName, im.name, error);
         }
         out.own = inside[k];
         return out;
     };
     for (const MeshMaterial& m : mesh.materials) {
-        DrawMaterial d;
-        d.color = m.baseColor;
-        d.alpha = m.alpha;
-        d.alphaCutoff = m.alphaCutoff;
-        d.metallic = m.metallic;
-        d.roughness = m.roughness;
-        d.normalScale = m.normalScale;
-        d.emissive = m.emissive;
-        draw_.push_back(d);
-        slots_.push_back({slot(m.image, true), slot(m.metallicRoughnessImage, false), slot(m.normalImage, false), slot(m.emissiveImage, true)});
+        draw_.push_back(MaterialNumbers(m));
+        std::array<Slot, kPictureSlots> slots;
+        const auto pictures = PictureSlots(m);
+        for (size_t k = 0; k < kPictureSlots; ++k) slots[k] = slot(pictures[k]);
+        slots_.push_back(std::move(slots));
     }
 }
 
 std::span<const DrawMaterial> ModelPaint::Materials(Renderer& renderer, IWICImagingFactory* wic, TextureCache& cache, double now) {
     for (size_t i = 0; i < draw_.size(); ++i) {
-        auto pick = [&](const Slot& sl) -> const GpuTexture* {
-            return sl.own ? sl.own.get() : sl.file.empty() ? nullptr : cache.Get(renderer, wic, sl.file, sl.srgb, now);
-        };
-        draw_[i].texture = pick(slots_[i][kColour]);
-        draw_[i].metalRough = pick(slots_[i][kMetalRough]);
-        draw_[i].normal = pick(slots_[i][kNormal]);
-        draw_[i].emission = pick(slots_[i][kEmission]);
+        for (size_t k = 0; k < kPictureSlots; ++k) {
+            const Slot& sl = slots_[i][k];
+            SetPicture(draw_[i], k, sl.own ? sl.own.get() : sl.file.empty() ? nullptr : cache.Get(renderer, wic, sl.file, sl.srgb, now));
+        }
     }
     return draw_;
 }
