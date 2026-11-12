@@ -146,7 +146,7 @@ private:
     void BuildWorkspaces();
     // .rmpf "softwareData": each software's own part of the project (read once, written on save).
     void LoadSoftwareData();
-    void StoreSoftwareData();
+    void StoreSoftwareData(std::vector<ProjectFileWrite>& files);
     std::vector<dock::PanelType> CorePanels(bool withStart);
     Workspace& Active() { return *workspaces_[active_]; }
     const Workspace& Active() const { return *workspaces_[active_]; }

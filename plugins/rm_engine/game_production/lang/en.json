@@ -75,5 +75,6 @@
   "このゲームの空間。新しいエンティティに付く Transform と、ゲームビューもこれに合わせます": "This game's space. New entities get its Transform, and the game view shows it",
   "Play 中は切り替えられません": "Cannot be switched while playing",
   "Prefab「{}」を置いた物です ({})。Prefab「{}」の中に入っています。Prefab と違う所: {} 個 (名前と置き場所を含む)": "Placed from the prefab \"{}\" ({}), inside the prefab \"{}\". Differences from the prefab: {} (the name and the place included)",
-  "3D と 2D の両方を使えるゲーム。空のシーンから始めます。": "A game that can use both 3D and 2D. Starts from an empty scene."
+  "3D と 2D の両方を使えるゲーム。空のシーンから始めます。": "A game that can use both 3D and 2D. Starts from an empty scene.",
+  "ファイルが Assets に見つかりません": "The file is not in Assets"
 }

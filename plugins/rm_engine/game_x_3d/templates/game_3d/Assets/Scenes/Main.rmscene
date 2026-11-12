@@ -1,0 +1,129 @@
+{
+  "kind": "rm_engine.scene",
+  "format": 1,
+  "nextId": 5,
+  "entities": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "カメラ",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              3,
+              8
+            ],
+            "rotation": [
+              -18,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::Camera",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "name": "光",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              6,
+              0
+            ],
+            "rotation": [
+              -50,
+              -30,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::Light",
+          "data": {
+            "kind": "Directional"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "parent": 0,
+      "name": "床",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              -0.1,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              20,
+              0.2,
+              20
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "parent": 0,
+      "name": "箱",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              0.5,
+              0
+            ],
+            "rotation": [
+              0,
+              30,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

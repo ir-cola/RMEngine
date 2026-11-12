@@ -94,6 +94,12 @@ struct Inspectable {
     }
 };
 
+// A file of the project a software writes when the project is saved (Software::SaveData).
+struct ProjectFileWrite {
+    std::string path;   // from the project folder, "/" between the parts ("Assets/Scenes/Main.rmscene"); never leaves it
+    std::string bytes;
+};
+
 // What the editor gives one software.
 class SoftwareHost {
 public:
@@ -138,13 +144,20 @@ public:
 
     // The software's part of the project file (.rmpf "softwareData"). LoadData is called once after
     // the software is created - with null when the project has nothing yet. SaveData is called when
-    // the project is saved; returning true keeps `data` in the file and records the plugin as used
-    // by the project (it will not be opened without it). Unknown keys are the software's to keep.
+    // the project is saved, with the data as it was read (so unknown keys stay - they are the
+    // software's to keep); returning true keeps `data` in the file and records the plugin as used
+    // by the project (it will not be opened without it).
+    // Data too big for the .rmpf (a game's scenes) goes into files of the project: SaveData puts them
+    // in `files` (only the ones that changed), and the editor writes each one atomically - all of
+    // them before the .rmpf, so the .rmpf never names a file that is not there. Saved() is called
+    // once everything was written (not when the save failed: the next save gives the files again).
     virtual void LoadData(const json::Value& data) { (void)data; }
-    virtual bool SaveData(json::Value& data) const {
+    virtual bool SaveData(json::Value& data, std::vector<ProjectFileWrite>& files) {
         (void)data;
+        (void)files;
         return false;
     }
+    virtual void Saved() {}
 
     // How the user looks at this software (a scene view's camera, the gizmo chosen ...): not project
     // data - it is kept next to the layout in UserSettings/Layout.json, never marks the project

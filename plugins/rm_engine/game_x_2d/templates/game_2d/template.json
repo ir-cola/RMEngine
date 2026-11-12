@@ -2,37 +2,44 @@
   "kind": "rm_engine.template",
   "format": 1,
   "id": "game_2d",
-  "path": ["game", "2d"],
+  "path": [
+    "game",
+    "2d"
+  ],
   "name": "2D のゲーム",
   "description": "カメラ・地面・プレイヤーの四角が置いてある 2D のゲーム。",
   "order": 1,
   "plugins": [
-    { "author": "rm_engine", "name": "game_production" },
-    { "author": "rm_engine", "name": "space2d" }
+    {
+      "author": "rm_engine",
+      "name": "game_production"
+    },
+    {
+      "author": "rm_engine",
+      "name": "space2d"
+    }
   ],
-  "open": { "author": "rm_engine", "plugin": "game_production", "software": "game" },
+  "open": {
+    "author": "rm_engine",
+    "plugin": "game_production",
+    "software": "game"
+  },
   "project": {
     "softwareData": [
       {
-        "author": "rm_engine", "plugin": "game_production", "software": "game",
+        "author": "rm_engine",
+        "plugin": "game_production",
+        "software": "game",
         "data": {
-          "settings": { "space": "2d", "startCamera": 1 },
-          "scene": {
-            "nextId": 4,
-            "entities": [
-              { "id": 1, "parent": 0, "name": "カメラ", "active": true, "components": [
-                { "type": "rm::space2d::Transform2D", "data": { "position": [0, 0], "rotation": 0, "scale": [1, 1], "order": 0 } },
-                { "type": "rm::game_x_2d::Camera2D", "data": { "size": 5 } }
-              ] },
-              { "id": 2, "parent": 0, "name": "地面", "active": true, "components": [
-                { "type": "rm::space2d::Transform2D", "data": { "position": [0, -3.5], "rotation": 0, "scale": [16, 1], "order": 0 } },
-                { "type": "rm::game_x_2d::Sprite", "data": { "color": [0.36, 0.62, 0.32, 1] } }
-              ] },
-              { "id": 3, "parent": 0, "name": "プレイヤー", "active": true, "components": [
-                { "type": "rm::space2d::Transform2D", "data": { "position": [0, -2.5], "rotation": 0, "scale": [1, 1], "order": 1 } },
-                { "type": "rm::game_x_2d::Sprite", "data": { "color": [0.96, 0.74, 0.28, 1] } }
-              ] }
-            ]
+          "settings": {
+            "space": "2d",
+            "startCamera": 1
+          },
+          "sceneList": {
+            "scenes": [
+              "a1c6251840ea57651be8d3d9da343133"
+            ],
+            "open": "a1c6251840ea57651be8d3d9da343133"
           }
         }
       }

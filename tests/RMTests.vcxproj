@@ -76,6 +76,7 @@
     <ClCompile Include="TestAsset.cpp" />
     <ClCompile Include="TestEntityRefs.cpp" />
     <ClCompile Include="TestTemplates.cpp" />
+    <ClCompile Include="TestSceneFile.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />
@@ -96,6 +97,7 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Systems.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Prefab.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\SceneFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Register.cpp" />
     <ClCompile Include="..\plugins\RuntimePlugins.cpp" />

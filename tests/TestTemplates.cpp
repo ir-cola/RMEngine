@@ -9,6 +9,8 @@
 
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/game_production/runtime/SceneFile.h"
+#include "core/asset/AssetIndex.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
@@ -286,6 +288,7 @@ RM_TEST(Template_ThePlugins) {
         if (!t) continue;
         // The plugins it names are in this repository.
         for (const PluginId& id : t->plugins) CHECK(fs::exists(plugins / id.author / id.name / "plugin.json"));
+        t->folder = it->path().parent_path();
         list.push_back(std::move(*t));
     }
     const TemplateTree tree = BuildTemplateTree(std::move(list));
@@ -308,8 +311,25 @@ RM_TEST(Template_ThePlugins) {
                                      &reflect::TypeOf<game_x_3d::Light>(), &reflect::TypeOf<game_x_3d::MeshRenderer>(),
                                      &reflect::TypeOf<space2d::Transform2D>(), &reflect::TypeOf<game_x_2d::Camera2D>(),
                                      &reflect::TypeOf<game_x_2d::Sprite>()});
+            // The new form: the scene in its own file (the template's Assets/, copied into the project),
+            // named in the list by the id in its .meta.
+            CHECK(!data.Find("scene"));
+            SceneList sceneList;
+            reflect::Unknowns listUnknowns;
             reflect::Warnings warnings;
-            scene.Load(data.Get("scene"), &warnings);
+            reflect::Load(sceneList, data.Get("sceneList"), &listUnknowns, &warnings);
+            CHECK(listUnknowns.Empty() && sceneList.scenes.size() == 1);
+            const fs::path sceneFile = t.folder / "Assets" / "Scenes" / "Main.rmscene";
+            std::ifstream metaIn(fs::path(sceneFile) += ".meta", std::ios::binary);
+            const std::string meta{std::istreambuf_iterator<char>(metaIn), std::istreambuf_iterator<char>()};
+            CHECK(asset::GuidInMeta(meta) == OpenScene(sceneList).guid);
+            std::ifstream sceneIn(sceneFile, std::ios::binary);
+            const std::string sceneText{std::istreambuf_iterator<char>(sceneIn), std::istreambuf_iterator<char>()};
+            std::string sceneErr;
+            const auto sceneJson = ReadSceneFile(sceneText, &sceneErr);
+            CHECK(sceneJson.has_value());
+            if (!sceneJson) continue;
+            scene.Load(*sceneJson, &warnings);
             CHECK(warnings.empty());
             CHECK(!scene.Empty());
             for (const SceneEntity& e : scene.Entities()) {

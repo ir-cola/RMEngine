@@ -14,7 +14,9 @@
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Prefab.h"
 #include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/game_production/runtime/SceneFile.h"
 #include "rm_engine/game_production/runtime/Systems.h"
+#include "core/asset/AssetFiles.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -28,6 +30,7 @@ namespace rm::game_production {
 
 namespace {
 
+namespace fs = std::filesystem;
 namespace theme = editor::theme;
 namespace tree = editor::tree;
 using editor::Tr;
@@ -196,14 +199,27 @@ public:
         return v;
     }
 
+    // The game's data in the .rmpf: the settings and the list of scenes; the scene shown is read from
+    // its own file (SceneFile.h). A project of before has its scene inside: read from there, and split
+    // off at the next save.
     void LoadData(const json::Value& data) override {
         hadData_ = data.IsObject();
+        slot_ = {"", NewSceneFile(), 0};
         if (hadData_) {
             reflect::Warnings warnings;
             reflect::Load(settings_, data.Get("settings"), &unknowns_, &warnings);
             for (const auto& w : warnings) log::Warn("ゲームの設定: {}", w);
             warnings.clear();
-            scene_.Load(data.Get("scene"), &warnings);
+            json::Value rest = data;
+            if (std::optional<json::Value> old = TakeOldScene(rest)) {
+                scene_.Load(*old, &warnings);
+                oldForm_ = true;
+                log::Info("このプロジェクトのシーンは .rmpf の中にあります。次に保存するとき {} に分けます (前の .rmpf は {}{} に残します)", slot_.path,
+                          PathToUtf8(host_.GetProject().file.filename()), kOldSceneBackupSuffix);
+            } else {
+                reflect::Load(sceneList_, data.Get("sceneList"), &sceneListUnknowns_, &warnings);
+                ReadOpenScene(warnings);
+            }
             for (const auto& w : warnings) log::Warn("シーン: {}", w);
             RefreshPrefabsOnOpen();
             ++dataVersion_;  // (the scene was made again: no history entry tells it)
@@ -211,19 +227,61 @@ public:
         InspectSettings();
     }
 
-    bool SaveData(json::Value& data) const override {
+    bool SaveData(json::Value& data, std::vector<editor::ProjectFileWrite>& files) override {
+        pending_.reset();
         // Nothing is written (and the plugin is not recorded as used) while everything is as a new
         // project has it - opening a project once must not tie it to this plugin.
         const GameSettings defaults;
         const bool untouched = reflect::Equals(reflect::TypeOf<GameSettings>(), &settings_, &defaults) && unknowns_.Empty();
         if (!hadData_ && untouched && scene_.Empty()) return false;
         data.Set("settings", reflect::Save(settings_, &unknowns_));
+        // A scene whose file could not be read is never written over: an edited one goes to a new file.
+        if (sceneUnread_ && scene_.Empty()) return true;
         // What each placed prefab changed, worked out now against its prefab (kept in the file so a
         // changed prefab can be put under them again when the project is opened).
         Scene saved = scene_;
         UpdateOverrides(saved);
-        data.Set("scene", saved.Save());
+        const SceneSlot slot = SlotNow();
+        ScenePlan plan = PlanSceneSave(saved.Save(), slot, asset::NewGuid());
+        if (oldForm_) {
+            // The .rmpf as it was (the scene inside), kept once next to it before it is written in the new form.
+            const fs::path rmpf = host_.GetProject().file;
+            fs::path backup = rmpf;
+            backup += kOldSceneBackupSuffix;
+            std::error_code ec;
+            std::string err;
+            if (!fs::exists(backup, ec)) {
+                if (auto bytes = platform::ReadFileBytes(rmpf, &err)) files.push_back({PathToUtf8(backup.filename()), std::move(*bytes)});
+            }
+        }
+        for (FileWrite& f : plan.files) files.push_back({std::move(f.path), std::move(f.text)});
+        // The list: the scene's id in it (in the place of the one whose file was gone), shown first.
+        SceneList list = sceneList_;
+        auto& ids = list.scenes;
+        const auto at = std::find(ids.begin(), ids.end(), AssetRef{slot.guid.empty() ? replaces_ : slot.guid});
+        if (at != ids.end() && !at->Empty()) {
+            *at = AssetRef{plan.after.guid};
+        } else if (std::find(ids.begin(), ids.end(), AssetRef{plan.after.guid}) == ids.end()) {
+            ids.push_back(AssetRef{plan.after.guid});
+        }
+        list.open = AssetRef{plan.after.guid};
+        data.Set("sceneList", reflect::Save(list, &sceneListUnknowns_));
+        data.Erase("scene");  // (a project of before: now in the file)
+        pending_ = Pending{plan.after, std::move(list)};
         return true;
+    }
+
+    void Saved() override {
+        if (!pending_) return;
+        const bool newFile = slot_.guid.empty();
+        slot_ = pending_->slot;
+        sceneList_ = std::move(pending_->list);
+        pending_.reset();
+        if (oldForm_) log::Info("シーンを .rmpf から {} に分けました", slot_.path);
+        oldForm_ = false;
+        sceneUnread_ = false;
+        replaces_.clear();
+        if (newFile) host_.AssetOf(FullPath(slot_.path));  // its id is known now (without waiting for a look)
     }
 
     // --- Play --------------------------------------------------------------------------------
@@ -1008,6 +1066,57 @@ private:
     static constexpr size_t kMaxNesting = 16;  // prefabs inside prefabs inside ...
 
     std::filesystem::path FullPath(const std::string& path) const { return host_.GetProject().Root() / PathFromUtf8(path); }
+    // A file's path from the project folder, "/" between the parts.
+    std::string RelativePath(const fs::path& file) const {
+        return PathToUtf8(file.lexically_normal().lexically_relative(host_.GetProject().Root().lexically_normal()).generic_wstring());
+    }
+
+    // --- Scenes (runtime/SceneFile.h) --------------------------------------------------------
+    // Where a new scene's file goes: Assets/Scenes/Main.rmscene ("Main 2" ... when taken).
+    std::string NewSceneFile() const {
+        return NewScenePath("Main", [this](const std::string& p) {
+            std::error_code ec;
+            return fs::exists(FullPath(p), ec);
+        });
+    }
+
+    // Reads the scene the list shows (its file found by its id). One that cannot be read leaves the
+    // scene empty and is never written over (an edited scene goes to a new file at the save).
+    void ReadOpenScene(reflect::Warnings& warnings) {
+        const AssetRef open = OpenScene(sceneList_);
+        if (open.Empty()) return;  // no scene yet: a new file at the first save
+        const fs::path file = host_.AssetFile(open);
+        std::string err;
+        std::optional<json::Value> scene;
+        if (file.empty()) {
+            err = TrU8("ファイルが Assets に見つかりません");
+        } else if (auto bytes = platform::ReadFileBytes(file, &err)) {
+            scene = ReadSceneFile(*bytes, &err);
+            if (scene) slot_ = {open.guid, RelativePath(file), TextSign(*bytes)};
+        }
+        if (!scene) {
+            sceneUnread_ = true;
+            replaces_ = file.empty() ? open.guid : std::string();  // a missing file's place in the list goes to the new one
+            log::Error("シーン ({}) を読めませんでした: {}。空のシーンで開きます。編集して保存すると新しいファイルに書きます (元のファイルは上書きしません)",
+                       file.empty() ? open.guid : PathToUtf8(file), err);
+            return;
+        }
+        scene_.Load(*scene, &warnings);
+    }
+
+    // The scene's slot as it is now: a file moved or renamed since is found by its id; one deleted
+    // since is written again as a new scene (a new file and id, in its place in the list).
+    SceneSlot SlotNow() {
+        if (slot_.guid.empty()) return slot_;
+        if (const fs::path file = host_.AssetFile(AssetRef{slot_.guid}); !file.empty()) {
+            slot_.path = RelativePath(file);
+            return slot_;
+        }
+        log::Warn("シーンのファイルが無くなっていたので、新しいファイルに保存します: {}", slot_.path);
+        replaces_ = slot_.guid;
+        slot_ = {"", NewSceneFile(), 0};
+        return slot_;
+    }
 
     // The prefab's name (its file's, without .rmprefab) and where its file is, for the screen.
     std::string PrefabTitle(const AssetRef& ref) const {
@@ -1475,6 +1584,18 @@ private:
     json::Value view_;  // UserSettings: how the user looks (the scene view's camera ...)
     std::unordered_map<int, int> modes_;  // entity id -> how its component with derived values is shown
     bool hadData_ = false;
+    // The scenes (runtime/SceneFile.h): the list in the .rmpf, and the file of the one shown.
+    SceneList sceneList_;
+    reflect::Unknowns sceneListUnknowns_;  // keys of a newer version: written back unchanged
+    SceneSlot slot_;
+    std::string replaces_;      // the id of a scene whose file was gone: the new file takes its place in the list
+    bool oldForm_ = false;      // read from inside the .rmpf (a project of before): split off at the next save
+    bool sceneUnread_ = false;  // the list's scene could not be read: never written over
+    struct Pending {
+        SceneSlot slot;
+        SceneList list;
+    };
+    std::optional<Pending> pending_;  // what SaveData gave, taken on by Saved()
     bool inspectingEntities_ = false;  // the inspector shows the 階層's selection (not the settings)
 
     // Play

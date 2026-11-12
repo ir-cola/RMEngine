@@ -206,6 +206,7 @@ void Plugins::LoadTemplates() {
                 log::Warn("テンプレートを読めませんでした: {} ({})", PathToUtf8(file), err);
                 continue;
             }
+            t->folder = file.parent_path();
             list.push_back(std::move(*t));
         }
     }

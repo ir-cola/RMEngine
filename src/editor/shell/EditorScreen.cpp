@@ -271,7 +271,7 @@ void EditorScreen::LoadSoftwareData() {
     }
 }
 
-void EditorScreen::StoreSoftwareData() {
+void EditorScreen::StoreSoftwareData(std::vector<ProjectFileWrite>& files) {
     json::Value* entries = project_.doc.Find("softwareData");
     for (auto& ws : workspaces_) {
         if (!ws->software) continue;
@@ -283,7 +283,7 @@ void EditorScreen::StoreSoftwareData() {
             }
         }
         json::Value data = entry ? entry->Get("data") : json::Value::MakeObject();
-        if (!ws->software->SaveData(data)) continue;
+        if (!ws->software->SaveData(data, files)) continue;
         if (!entries || !entries->IsArray()) entries = &project_.doc.Set("softwareData", json::Value::MakeArray());
         if (!entry) {
             entries->Push(key);
@@ -637,13 +637,31 @@ void EditorScreen::FlushAssetEdits(const ui::Context& c) {
 
 bool EditorScreen::Save() {
     assets_->FlushImports();
-    StoreSoftwareData();
-    std::string err;
-    if (!SaveProject(project_, &err)) {
+    std::vector<ProjectFileWrite> files;
+    StoreSoftwareData(files);
+    auto fail = [&](const std::string& err) {
         log::Error("{}", err);
         modalText_ = Utf8ToWide(err);
         modal_ = Modal::Error;
         return false;
+    };
+    // The softwares' own files (a game's scenes) first, each atomically: the .rmpf written after them
+    // never names a file that is not there. A failure stops the save before the .rmpf.
+    for (const ProjectFileWrite& f : files) {
+        const bool inside = !f.path.empty() && f.path.find("..") == std::string::npos && f.path.find(':') == std::string::npos &&
+                            f.path.front() != '/' && f.path.front() != '\\';
+        if (!inside) return fail(TrU8F("プロジェクトの外のファイルには書けません: {}", f.path));
+        const fs::path file = project_.Root() / PathFromUtf8(f.path);
+        std::error_code ec;
+        fs::create_directories(file.parent_path(), ec);
+        std::string err;
+        if (!platform::WriteFileAtomic(file, f.bytes, &err)) return fail(TrU8F("保存できませんでした: {}\n{}", PathToUtf8(file), err));
+        log::Info("保存しました: {}", PathToUtf8(file));
+    }
+    std::string err;
+    if (!SaveProject(project_, &err)) return fail(err);
+    for (auto& ws : workspaces_) {
+        if (ws->software) ws->software->Saved();
     }
     SetDirty(false);
     SaveLayout();

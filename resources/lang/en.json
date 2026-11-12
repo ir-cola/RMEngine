@@ -367,5 +367,7 @@
   "保存するものはありません。エディターを閉じて開き直してください。": "There is nothing to save. Close the editor and open it again.",
   "保存しました。エディターを閉じて開き直してください。": "Saved. Close the editor and open it again.",
   "保存できませんでした。くわしくはコンソールとログを見てください。": "Could not save. See the console and the log for details.",
-  "調べています…": "Looking…"
+  "調べています…": "Looking…",
+  "プロジェクトの外のファイルには書けません: {}": "Cannot write a file outside the project: {}",
+  "テンプレートのファイルを写せませんでした: {}\n{}": "Could not copy the template's files: {}\n{}"
 }

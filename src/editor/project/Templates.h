@@ -15,6 +15,8 @@
 //     "project": { "softwareData": [ … ] },  keys put into the new .rmpf (the first scene: camera, light, floor …)
 //     "userSettings": { "softwares": [ { "author": …, "plugin": …, "software": …, "layout": …, "view": … } ] }
 //   }                                        the first layout / view, put into UserSettings/Layout.json
+//   plugins/<author>/<name>/templates/<id>/Assets/…   files copied into the new project's Assets/ (with
+//                                                      their .meta: a game's first scene, named by its id in "project")
 //
 // The core reads the files of the plugins this engine has - installed or not - so a template is in
 // the tree before its plugins are installed (the Hub then offers to install them). The core knows
@@ -29,6 +31,7 @@
 #include "editor/plugin/PluginManifest.h"
 
 #include <cstddef>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -49,6 +52,9 @@ struct ProjectTemplate {
     json::Value open;                // { author, plugin, software } or null
     json::Value project;             // object or null
     json::Value userSettings;        // object or null
+    // The folder of its template.json (set by the loader, not read from the file): an "Assets" folder
+    // there is copied into the new project (a game's first scene: Assets/Scenes/Main.rmscene + .meta).
+    std::filesystem::path folder;
 };
 
 // The core's own template: a project with nothing in it (no plugin needed).

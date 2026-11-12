@@ -92,6 +92,14 @@ std::optional<Project> CreateProject(const fs::path& parentDir, const std::strin
         if (error) *error = TrU8F("フォルダを作れませんでした: {}\n{}", PathToUtf8(folder), ec.message());
         return std::nullopt;
     }
+    // The template's files (a game's first scene and its .meta) before the project file names them.
+    if (!tmpl.folder.empty() && fs::is_directory(tmpl.folder / L"Assets", ec)) {
+        fs::copy(tmpl.folder / L"Assets", folder / L"Assets", fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
+        if (ec) {
+            if (error) *error = TrU8F("テンプレートのファイルを写せませんでした: {}\n{}", PathToUtf8(tmpl.folder / L"Assets"), ec.message());
+            return std::nullopt;
+        }
+    }
 
     Project p;
     p.file = folder / (PathFromUtf8(nameUtf8).native() + kProjectExtension);
