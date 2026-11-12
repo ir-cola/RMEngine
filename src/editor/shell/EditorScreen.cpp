@@ -294,10 +294,12 @@ void EditorScreen::StoreSoftwareData(std::vector<ProjectFileWrite>& files) {
         // it (and saved without its data). The record is written automatically, never by hand.
         json::Value* used = project_.doc.Find("plugins");
         if (!used || !used->IsArray()) used = &project_.doc.Set("plugins", json::Value::MakeArray());
-        const PluginId& id = ws->type->plugin;
-        bool known = false;
-        for (const auto& u : used->Items()) known |= u.Get("author").AsString() == id.author && u.Get("name").AsString() == id.name;
-        if (!known) {
+        std::vector<PluginId> ids{ws->type->plugin};
+        for (const PluginId& p : ws->software->UsedPlugins()) ids.push_back(p);  // (its components' plugins ...)
+        for (const PluginId& id : ids) {
+            bool known = false;
+            for (const auto& u : used->Items()) known |= u.Get("author").AsString() == id.author && u.Get("name").AsString() == id.name;
+            if (known) continue;
             json::Value rec = json::Value::MakeObject();
             rec.Set("author", id.author);
             rec.Set("name", id.name);

@@ -158,6 +158,10 @@ public:
         return false;
     }
     virtual void Saved() {}
+    // Other plugins the software's data uses (a game: the plugins offering the components of its scenes
+    // and prefabs). Asked after SaveData returned true; recorded in the .rmpf's "plugins" with the
+    // software's own - an exported game links them (design RME_PLATFORM 5-a, condition 1).
+    virtual std::vector<PluginId> UsedPlugins() const { return {}; }
 
     // How the user looks at this software (a scene view's camera, the gizmo chosen ...): not project
     // data - it is kept next to the layout in UserSettings/Layout.json, never marks the project

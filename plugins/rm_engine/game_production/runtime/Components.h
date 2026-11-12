@@ -15,9 +15,11 @@
 #include "base/Json.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/Object.h"
+#include "core/RuntimeRegistry.h"
 
 #include <span>
 #include <string>
+#include <vector>
 
 namespace rm::game_production {
 
@@ -49,5 +51,14 @@ struct Component {
 
     bool Known() const { return !value.Empty(); }
 };
+
+// The component types written in a scene or a prefab file (Scene::Save's form: "entities", each with
+// "components" [{"type": ...}], and a placed prefab's added components), each once, in the order found.
+void ComponentTypesIn(const json::Value& sceneOrPrefab, std::vector<std::string>& out);
+
+// The plugins offering the component types `used` (the record of what a project uses: design
+// RME_PLATFORM 5-a, condition 1 - an exported game links them). Each once, in the order of `offered`.
+// A type nobody offers now (its plugin is missing) gives nothing.
+std::vector<PluginId> PluginsOffering(const std::vector<std::string>& used, const std::vector<Contributed<ComponentInfo>>& offered);
 
 }  // namespace rm::game_production

@@ -90,3 +90,10 @@ inline void RegisterRuntimeParts(RuntimeRegistry& registry, std::span<const Plug
 }
 
 }  // namespace rm
+
+// The C name an exported game's generated main calls a plugin's registration by (editor/export:
+// RuntimeEntryName = "rm_runtime__<author>__<name>"). Written once in the plugin's runtime/Register.cpp,
+// after its RegisterRuntime:   RM_RUNTIME_ENTRY(rm_engine, game_x_3d, rm::game_x_3d::RegisterRuntime)
+// The game links only the plugins it lists, so only theirs are named (a static library's object that
+// nothing names is never linked).
+#define RM_RUNTIME_ENTRY(author, name, fn)     extern "C" void rm_runtime__##author##__##name(::rm::RuntimeRegistry& registry) { fn(registry); }

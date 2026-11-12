@@ -369,5 +369,8 @@
   "保存できませんでした。くわしくはコンソールとログを見てください。": "Could not save. See the console and the log for details.",
   "調べています…": "Looking…",
   "プロジェクトの外のファイルには書けません: {}": "Cannot write a file outside the project: {}",
-  "テンプレートのファイルを写せませんでした: {}\n{}": "Could not copy the template's files: {}\n{}"
+  "テンプレートのファイルを写せませんでした: {}\n{}": "Could not copy the template's files: {}\n{}",
+  "exe の名前を入れてください。": "Enter the exe's name.",
+  "exe の名前が長すぎます (64 文字まで)。": "The exe's name is too long (64 characters at most).",
+  "exe の名前に使えない文字が入っています ( < > : \" / \\ | ? * )。": "The exe's name has a character that cannot be used ( < > : \" / \\ | ? * )."
 }

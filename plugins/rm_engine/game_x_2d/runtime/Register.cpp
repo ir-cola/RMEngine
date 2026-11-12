@@ -36,3 +36,5 @@ void RegisterRuntime(RuntimeRegistry& registry) {
 }
 
 }  // namespace rm::game_x_2d
+
+RM_RUNTIME_ENTRY(rm_engine, game_x_2d, rm::game_x_2d::RegisterRuntime)

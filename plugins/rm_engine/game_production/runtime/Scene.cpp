@@ -550,4 +550,27 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
     }
 }
 
+// --- What a project uses (Components.h) -------------------------------------------------------
+
+void ComponentTypesIn(const json::Value& sceneOrPrefab, std::vector<std::string>& out) {
+    auto add = [&](const json::Value& component) {
+        const std::string& type = component.Get("type").AsString();
+        if (!type.empty() && std::find(out.begin(), out.end(), type) == out.end()) out.push_back(type);
+    };
+    for (const auto& e : sceneOrPrefab.Get("entities").Items()) {
+        for (const auto& c : e.Get("components").Items()) add(c);
+        for (const auto& a : e.Get("prefab").Get("overrides").Get("addedComponents").Items()) add(a.Get("component"));
+    }
+}
+
+std::vector<PluginId> PluginsOffering(const std::vector<std::string>& used, const std::vector<Contributed<ComponentInfo>>& offered) {
+    std::vector<PluginId> out;
+    for (const auto& c : offered) {
+        if (std::find(used.begin(), used.end(), c.item->type().name) == used.end()) continue;
+        if (std::find(out.begin(), out.end(), c.plugin) == out.end()) out.push_back(c.plugin);
+    }
+    return out;
+}
+
 }  // namespace rm::game_production
+

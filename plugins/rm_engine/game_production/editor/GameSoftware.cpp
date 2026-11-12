@@ -300,6 +300,15 @@ public:
         return true;
     }
 
+    // The plugins offering the components of the scene and of the prefabs it places (recorded in the
+    // .rmpf: an exported game links them).
+    std::vector<PluginId> UsedPlugins() const override {
+        std::vector<std::string> types;
+        ComponentTypesIn(scene_.Save(), types);
+        for (const auto& [guid, prefab] : prefabs_) ComponentTypesIn(prefab, types);
+        return PluginsOffering(types, host_.Registry().Contributions<ComponentInfo>(kComponentPoint));
+    }
+
     void Saved() override {
         if (!pending_) return;
         const bool newFile = slot_.guid.empty();

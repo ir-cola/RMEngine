@@ -63,6 +63,8 @@
     <ClCompile Include="core\asset\AssetIndex.cpp" />
     <ClCompile Include="core\asset\AssetFiles.cpp" />
     <ClCompile Include="core\asset\ImportSettings.cpp" />
+    <ClCompile Include="core\pak\Pak.cpp" />
+    <ClCompile Include="editor\export\ExportPlan.cpp" />
     <ClCompile Include="platform\Gfx.cpp" />
     <ClCompile Include="platform\Image.cpp" />
     <ClCompile Include="platform\FileLock.cpp" />
