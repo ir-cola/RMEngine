@@ -10,6 +10,7 @@
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "platform/Shell.h"
+#include "rm_engine/game_production/editor/ComponentLook.h"
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Prefab.h"
@@ -159,12 +160,13 @@ public:
             const reflect::TypeDesc* t = &c.item->type();
             if (std::find(types.begin(), types.end(), t) != types.end()) continue;
             types.push_back(t);
-            componentInfos_.push_back(c.item);
             if (c.item->onNewEntities) newEntityInfos_.push_back(c.item);
             if (c.item->multiple) multiple.push_back(t);
             if (c.item->placement) placementTypes_.push_back(t->name);
         }
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
+        // How the editor shows them (the 階層's pictures, ローカル / ワールド): their plugins' editor parts.
+        for (const auto& l : host.Registry().Contributions<ComponentLook>(kComponentLookPoint)) componentLooks_.push_back(l.item);
         // ... and so do the systems that move them while the game plays.
         runner_.SetSystems(RegisteredSystems(host.Registry()));
     }
@@ -379,8 +381,8 @@ public:
             it.dimmed = !t.activeInHierarchy;
             it.icon = tree::Icon::Object;
             for (const Component& c : t.entity->components) {
-                const ComponentInfo* info = c.Known() ? InfoOf(c.type) : nullptr;
-                if (info && info->icon) it.icon = tree::IconNamed(info->icon);
+                const ComponentLook* look = c.Known() ? LookOf(c.type) : nullptr;
+                if (look && look->icon) it.icon = tree::IconNamed(look->icon);
             }
             out.push_back(std::move(it));
         }
@@ -801,9 +803,9 @@ private:
         };
     }
 
-    const ComponentInfo* InfoOf(const std::string& type) const {
-        for (const ComponentInfo* i : componentInfos_) {
-            if (i->type().name == type) return i;
+    const ComponentLook* LookOf(const std::string& type) const {
+        for (const ComponentLook* l : componentLooks_) {
+            if (l->type().name == type) return l;
         }
         return nullptr;
     }
@@ -826,7 +828,7 @@ private:
 
     // The values a component's plugin works out through the parents: worked out again every time the
     // inspector asks, into a value of their own (edits of it go through EditDerived).
-    std::function<reflect::EditTarget()> Derived(int id, std::string type, const ComponentInfo* info, bool play) {
+    std::function<reflect::EditTarget()> Derived(int id, std::string type, const ComponentLook* info, bool play) {
         auto value = std::make_shared<reflect::Object>(info->derivedType());
         return [this, id, type = std::move(type), info, value, play] {
             const std::vector<const void*> chain = Chain(play ? Shown() : scene_, id, type);
@@ -839,7 +841,7 @@ private:
     // A derived value typed in the inspector: the component's plugin works out the component that
     // gives it; the fields that change are edits of the component (one undo entry; typing one field
     // joins into one entry).
-    void EditDerived(int id, const std::string& type, const ComponentInfo* info, editor::InspectBlock::Change ch) {
+    void EditDerived(int id, const std::string& type, const ComponentLook* info, editor::InspectBlock::Change ch) {
         const std::vector<const void*> chain = Chain(scene_, id, type);
         if (chain.empty()) return;
         const reflect::TypeDesc& dt = info->derivedType();
@@ -950,7 +952,7 @@ private:
                     b.readOnly = play;
                     // A child: ローカル / ワールド (or whatever the plugin calls them), one block shown either way.
                     // At the top level both ways are the same numbers, so there is no switch.
-                    if (const ComponentInfo* info = InfoOf(c.type); info && info->HasDerived() && nth == 0 && e->data.parent != 0) {
+                    if (const ComponentLook* info = LookOf(c.type); info && info->HasDerived() && nth == 0 && e->data.parent != 0) {
                         b.modes = {Tr(info->ownLabel), Tr(info->derivedLabel)};
                         b.mode = ModeOf(*e);
                         b.setMode = [this, id](int m) { modes_[id] = m; };
@@ -1650,7 +1652,7 @@ private:
     std::vector<View> views_;  // one per space offered, the default (smallest order) first
     bool viewsAsked_ = false;
     std::vector<const ComponentInfo*> newEntityInfos_;  // components new entities get (of the game's space)
-    std::vector<const ComponentInfo*> componentInfos_;      // one per component type, as offered
+    std::vector<const ComponentLook*> componentLooks_;      // how the editor shows them (editor parts)
     std::vector<std::string> placementTypes_;               // where a placed prefab is (Transform)
     json::Value view_;  // UserSettings: how the user looks (the scene view's camera ...)
     std::unordered_map<int, int> modes_;  // entity id -> how its component with derived values is shown

@@ -9,8 +9,11 @@
 #include "rm_engine/game_x_3d/runtime/Id.h"
 #include "rm_engine/game_x_3d/runtime/Register.h"
 #include "rm_engine/game_x_3d/runtime/Spin.h"
+#include "rm_engine/game_x_2d/runtime/Id.h"
+#include "rm_engine/game_production/runtime/Components.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -183,8 +186,17 @@ RM_TEST(Systems_RuntimeRegistry_TheGameReadsTheSameList) {
     RegisterRuntimeParts(r, std::span<const PluginId>(&x3d, 1));
     const auto systems = RegisteredSystems(r);
     CHECK(systems.size() == 2 && systems[0]->run == &game_x_3d::RunSpin && systems[1]->run == &game_x_3d::RunCameraCycle);
+    // Every component type of the connector is the runtime part's (Transform, メッシュ, カメラ, 光, 環境光,
+    // 回り続ける, カメラを順に切り替える): the game knows them without the editor.
     const auto comps = r.Contributions<ComponentInfo>(kComponentPoint);
-    CHECK(comps.size() == 2 && comps[0].item->multiple && comps[0].plugin == x3d);
+    CHECK(comps.size() == 7 && comps[0].plugin == x3d);
+    CHECK(comps[0].item->type().name == reflect::TypeOf<space3d::Transform>().name && comps[0].item->onNewEntities && comps[0].item->placement);
+    CHECK(std::count_if(comps.begin(), comps.end(), [](const auto& c) { return c.item->multiple; }) == 1);
+    // The 2D connector's too.
+    RuntimeRegistry r2;
+    const PluginId x2d = game_x_2d::kPluginId.Id();
+    RegisterRuntimeParts(r2, std::span<const PluginId>(&x2d, 1));
+    CHECK(r2.Contributions<ComponentInfo>(kComponentPoint).size() == 5 && RegisteredSystems(r2).size() == 2);
     CHECK(r.Contributions<SystemInfo>(kComponentPoint).empty());  // another type at that point: not read
     // A plugin that is not enabled registers nothing.
     RuntimeRegistry none;

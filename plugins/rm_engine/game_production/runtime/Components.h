@@ -4,7 +4,7 @@
 // types without game production knowing them (design RME_PLATFORM 4-f: game production never
 // includes 3D 空間; "ゲーム制作 × 3D" offers 3D 空間's Transform).
 //
-//   // in a connector's RegisterEditor:
+//   // in a connector's runtime part (runtime/Register.cpp - core/RuntimeRegistry.h):
 //   static const game_production::ComponentInfo kTransform{&reflect::TypeOf<space3d::Transform>, true};
 //   registry.Contribute(game_production::kComponentPoint, kTransform);
 //
@@ -24,27 +24,12 @@ namespace rm::game_production {
 // PluginRegistry point: items are ComponentInfo (static).
 inline constexpr char kComponentPoint[] = "rm_engine.game_production.component";
 
+// What a component type is to the game (the runtime part: an exported game reads the same list).
+// How the editor shows it (the 階層's picture, ローカル / ワールド) is the editor part's: ComponentLook
+// (game_production/editor/ComponentLook.h), offered by the same plugin's RegisterEditor.
 struct ComponentInfo {
     const reflect::TypeDesc& (*type)();  // e.g. &reflect::TypeOf<space3d::Transform>
     bool onNewEntities = false;          // every new entity gets one
-    // Optional: a second way to show a child's component - values worked out from it and the same
-    // component of every parent (a Transform in the world). The inspector puts a switch ownLabel /
-    // derivedLabel above its fields (only for a child: at the top level both are the same); it starts
-    // with its own values (game production does not know what they mean). All five or none.
-    //   derive:   `chain` = the top parent's value first, this entity's last (parents without the
-    //             component are skipped) -> `out`, a value of derivedType().
-    //   underive: the derived values the user typed -> `component` (a copy of chain's last, changed
-    //             so that it derives them).
-    const reflect::TypeDesc& (*derivedType)() = nullptr;
-    void (*derive)(std::span<const void* const> chain, void* out) = nullptr;
-    void (*underive)(std::span<const void* const> chain, const void* derived, void* component) = nullptr;
-    const wchar_t* ownLabel = nullptr;      // e.g. ローカル (a TrKey string: translated when shown)
-    const wchar_t* derivedLabel = nullptr;  // e.g. ワールド
-
-    // The picture of an entity that has this component in the 階層 (a name the core knows: "cube").
-    // When several components have one, the last of the entity's components wins; none: "object".
-    const char* icon = nullptr;
-
     // An entity may have several of it (each its own block in the inspector; they run in order).
     bool multiple = false;
     // Where a placed prefab is (a Transform): on the root of a placed prefab its values always stay
@@ -54,8 +39,6 @@ struct ComponentInfo {
     // new entity while the game's space is this one" (a 2D game's new entities get a Transform 2D, not a
     // 3D Transform). Null: any space.
     const char* space = nullptr;
-
-    bool HasDerived() const { return derivedType && derive && underive && ownLabel && derivedLabel; }
 };
 
 struct Component {

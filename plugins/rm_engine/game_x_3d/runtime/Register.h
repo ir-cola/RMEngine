@@ -1,9 +1,9 @@
 #pragma once
 // The runtime part of ゲーム制作 × 3D: what an exported game needs from it too (listed in
 // plugins/RuntimePlugins.cpp; the editor's loader calls it before RegisterEditor).
-// Today: the components 回り続ける and カメラを順に切り替える, and their systems.
-// ★ The other component types (Transform, メッシュ, カメラ, 光) are still offered by the editor part
-// (editor/Connector.cpp: they carry the inspector's labels); they move here when games are exported.
+// Every component type it offers (Transform, メッシュ, カメラ, 光, 環境光, 回り続ける, カメラを順に切り替える)
+// and the systems. How the editor shows them (ローカル / ワールド, the 階層's pictures) is the editor
+// part's (editor/Connector.cpp: game_production::ComponentLook).
 
 #include "core/RuntimeRegistry.h"
 

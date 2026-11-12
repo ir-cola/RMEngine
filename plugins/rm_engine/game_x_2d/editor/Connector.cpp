@@ -3,11 +3,9 @@
 #include "editor/lang/Lang.h"
 
 #include "rm_engine/game_production/editor/SceneView.h"
-#include "rm_engine/game_production/runtime/Components.h"
-#include "rm_engine/game_production/runtime/Systems.h"
+#include "rm_engine/game_production/editor/ComponentLook.h"
 #include "rm_engine/game_x_2d/editor/SceneView2D.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
-#include "rm_engine/game_x_2d/runtime/Spin2D.h"
 #include "rm_engine/game_x_2d/runtime/SpriteAnimation.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
@@ -48,30 +46,25 @@ void UnderiveWorld(std::span<const void* const> chain, const void* derived, void
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
-    // A 2D game's entities have a place on the plane - shown as it is (ローカル) or in the world (ワールド).
-    // New entities get it while the game's space is 2D (the 3D Transform while it is 3D).
-    static const game_production::ComponentInfo kTransform{&reflect::TypeOf<space2d::Transform2D>, true,
-                                                           &reflect::TypeOf<space2d::WorldPlacement2D>, &DeriveWorld,
-                                                           &UnderiveWorld, editor::TrKey(L"ローカル"), editor::TrKey(L"ワールド"), "square",
-                                                           /*multiple*/ false, /*placement*/ true, /*space*/ "2d"};
-    registry.Contribute(game_production::kComponentPoint, kTransform);
-    // ... and may be drawn as a picture (added by hand).
-    static const game_production::ComponentInfo kSprite{.type = &reflect::TypeOf<Sprite>, .icon = "image"};
-    registry.Contribute(game_production::kComponentPoint, kSprite);
-    // ... a sprite may step through the cells of its image (an atlas) while the game plays.
-    static const game_production::ComponentInfo kAnimation{.type = &reflect::TypeOf<SpriteAnimation>, .icon = "image"};
-    registry.Contribute(game_production::kComponentPoint, kAnimation);
-    static const game_production::SystemInfo kAnimationSystem{"スプライトのアニメーション", game_production::SystemPhase::Frame, 0,
-                                                              &RunSpriteAnimation};
-    registry.Contribute(game_production::kSystemPoint, kAnimationSystem);
-    // ... a camera: what the game sees (the game settings' 最初のカメラ points at one).
-    static const game_production::ComponentInfo kCamera{.type = &reflect::TypeOf<Camera2D>, .icon = "camera"};
-    registry.Contribute(game_production::kComponentPoint, kCamera);
-    // 回り続ける (2D): turns its entity while the game plays (several add up), and the system that does it.
-    static const game_production::ComponentInfo kSpin{.type = &reflect::TypeOf<Spin2D>, .multiple = true};
-    registry.Contribute(game_production::kComponentPoint, kSpin);
-    static const game_production::SystemInfo kSpinSystem{"回り続ける (2D)", game_production::SystemPhase::Frame, 0, &RunSpin2D};
-    registry.Contribute(game_production::kSystemPoint, kSpinSystem);
+    // (The component types and the systems are the runtime part's: runtime/Register.cpp. Here only how
+    // the editor shows them.)
+    using game_production::ComponentLook;
+    using game_production::kComponentLookPoint;
+    // A Transform 2D is shown as it is (ローカル) or in the world (ワールド).
+    static const ComponentLook kTransform{.type = &reflect::TypeOf<space2d::Transform2D>,
+                                          .derivedType = &reflect::TypeOf<space2d::WorldPlacement2D>,
+                                          .derive = &DeriveWorld,
+                                          .underive = &UnderiveWorld,
+                                          .ownLabel = editor::TrKey(L"ローカル"),
+                                          .derivedLabel = editor::TrKey(L"ワールド"),
+                                          .icon = "square"};
+    registry.Contribute(kComponentLookPoint, kTransform);
+    static const ComponentLook kSprite{.type = &reflect::TypeOf<Sprite>, .icon = "image"};
+    registry.Contribute(kComponentLookPoint, kSprite);
+    static const ComponentLook kAnimation{.type = &reflect::TypeOf<SpriteAnimation>, .icon = "image"};
+    registry.Contribute(kComponentLookPoint, kAnimation);
+    static const ComponentLook kCamera{.type = &reflect::TypeOf<Camera2D>, .icon = "camera"};
+    registry.Contribute(kComponentLookPoint, kCamera);
     // ... and are seen on the plane in the 2D scene view (after 3D when both are there).
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView2D, "2d", editor::TrKey(L"2D"), /*order*/ 10};
     registry.Contribute(game_production::kSceneViewPoint, kSceneView);

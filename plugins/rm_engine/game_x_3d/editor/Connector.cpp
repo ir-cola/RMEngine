@@ -2,7 +2,7 @@
 
 #include "editor/lang/Lang.h"
 
-#include "rm_engine/game_production/runtime/Components.h"
+#include "rm_engine/game_production/editor/ComponentLook.h"
 #include "rm_engine/game_x_3d/editor/SceneView3D.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
@@ -33,24 +33,27 @@ void UnderiveWorld(std::span<const void* const> chain, const void* derived, void
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
-    // A 3D game's entities have a place in 3D space - shown as it is (ローカル: in the parent) or in
-    // the world (ワールド: through every parent), switched above its fields in the inspector.
-    static const game_production::ComponentInfo kTransform{&reflect::TypeOf<space3d::Transform>, true,
-                                                           &reflect::TypeOf<space3d::WorldPlacement>, &DeriveWorld,
-                                                           &UnderiveWorld, editor::TrKey(L"ローカル"), editor::TrKey(L"ワールド"), "cube",
-                                                           /*multiple*/ false, /*placement*/ true, /*space*/ "3d"};
-    registry.Contribute(game_production::kComponentPoint, kTransform);
-    // ... and may be drawn as a 3D model (added by hand: a new entity is a box until it has one).
-    static const game_production::ComponentInfo kMesh{&reflect::TypeOf<MeshRenderer>, false};
-    registry.Contribute(game_production::kComponentPoint, kMesh);
-    // カメラ (what the game sees: the game settings' 最初のカメラ) and 光 - each with its own picture in the 階層.
-    static const game_production::ComponentInfo kCamera{.type = &reflect::TypeOf<Camera>, .icon = "camera"};
-    registry.Contribute(game_production::kComponentPoint, kCamera);
-    static const game_production::ComponentInfo kLight{.type = &reflect::TypeOf<Light>, .icon = "light"};
-    registry.Contribute(game_production::kComponentPoint, kLight);
-    static const game_production::ComponentInfo kAmbient{.type = &reflect::TypeOf<AmbientLight>, .icon = "light"};
-    registry.Contribute(game_production::kComponentPoint, kAmbient);
-    // (回り続ける, カメラを順に切り替える and their systems are the runtime part's: runtime/Register.cpp)
+    // (The component types and the systems are the runtime part's: runtime/Register.cpp. Here only how
+    // the editor shows them.)
+    using game_production::ComponentLook;
+    using game_production::kComponentLookPoint;
+    // A Transform is shown as it is (ローカル: in the parent) or in the world (ワールド: through every
+    // parent), switched above its fields in the inspector.
+    static const ComponentLook kTransform{.type = &reflect::TypeOf<space3d::Transform>,
+                                          .derivedType = &reflect::TypeOf<space3d::WorldPlacement>,
+                                          .derive = &DeriveWorld,
+                                          .underive = &UnderiveWorld,
+                                          .ownLabel = editor::TrKey(L"ローカル"),
+                                          .derivedLabel = editor::TrKey(L"ワールド"),
+                                          .icon = "cube"};
+    registry.Contribute(kComponentLookPoint, kTransform);
+    // カメラ and 光 - each with its own picture in the 階層.
+    static const ComponentLook kCamera{.type = &reflect::TypeOf<Camera>, .icon = "camera"};
+    registry.Contribute(kComponentLookPoint, kCamera);
+    static const ComponentLook kLight{.type = &reflect::TypeOf<Light>, .icon = "light"};
+    registry.Contribute(kComponentLookPoint, kLight);
+    static const ComponentLook kAmbient{.type = &reflect::TypeOf<AmbientLight>, .icon = "light"};
+    registry.Contribute(kComponentLookPoint, kAmbient);
     // ... and are seen in 3D in the scene view.
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView3D, "3d", editor::TrKey(L"3D"), /*order*/ 0};
     registry.Contribute(game_production::kSceneViewPoint, kSceneView);
