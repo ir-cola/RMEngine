@@ -2122,3 +2122,33 @@ RM_TEST(Frustum_SameAnswerAsBoxInView) {
     CHECK(agreed == total);
     CHECK(seen > 100 && seen < total - 100);  // both answers were asked for
 }
+
+RM_TEST(SunFitBounds_MovingThingsWidenInSteps) {
+    const Bounds still{{-15, 0, -15}, {15, 3, 15}};  // size ~42.5: steps of 4 (42.5 / 16 = 2.7 -> 4)
+    // Nothing moves, or nothing stays: as it is / nothing at all.
+    CHECK(!SunFitBounds(std::nullopt, std::nullopt).has_value());
+    const auto same = SunFitBounds(still, std::nullopt);
+    CHECK(same && same->min == still.min && same->max == still.max);
+    // Moving inside what stays put: exactly as if nothing moved (the maps, and their layers, stay).
+    const auto inside = SunFitBounds(still, Bounds{{-3, 0, -3}, {-2, 1, -2}});
+    CHECK(inside && inside->min == still.min && inside->max == still.max);
+    // Dragged out past the left side: widened by a whole step...
+    const auto out = SunFitBounds(still, Bounds{{-15.3f, 0, 0}, {-14.3f, 1, 1}});
+    CHECK(out && out->min.x == -19 && out->max == still.max && out->min.y == 0 && out->min.z == -15);
+    // ... and the same box while it goes on within that step (no new matrix every frame).
+    for (float x = -15.3f; x > -18.9f; x -= 0.1f) {
+        const auto again = SunFitBounds(still, Bounds{{x, 0, 0}, {x + 1, 1, 1}});
+        CHECK(again && again->min == out->min && again->max == out->max);
+    }
+    // Past the step: the next one.
+    const auto further = SunFitBounds(still, Bounds{{-19.5f, 0, 0}, {-18.5f, 1, 1}});
+    CHECK(further && further->min.x == -23);
+    // Up and to the right too (each side on its own).
+    const auto up = SunFitBounds(still, Bounds{{0, 0, 0}, {16, 3.5f, 1}});
+    CHECK(up && up->max.x == 19 && up->max.y == 7 && up->max.z == 15 && up->min == still.min);
+    // Everything moving: its own box, out to whole steps (a little move keeps it).
+    const auto all = SunFitBounds(std::nullopt, Bounds{{0.2f, 0, 0.2f}, {1.2f, 1, 1.2f}});
+    const auto allMoved = SunFitBounds(std::nullopt, Bounds{{0.22f, 0, 0.22f}, {1.22f, 1, 1.22f}});
+    CHECK(all && allMoved && all->min == allMoved->min && all->max == allMoved->max);
+    CHECK(all->min.x <= 0.2f && all->max.x >= 1.2f);
+}

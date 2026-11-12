@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "3D の影: 一番外の物をドラッグしている間も、止まっている物の影を毎フレーム描き直さないように。まれに古い影が残ることがあったのを直す",
+          "en": "3D shadows: dragging the outermost object no longer redraws the shadows of everything else every frame. Fixed old shadows that could rarely stay on screen"
+        },
+        {
           "ja": "テクスチャの直し: 絵が付いた後に何もしていなくても描き直し続けていたのを止める。できた絵がマウスを動かすまで出ないことがあったのを直す。sRGB の違う絵が同じキャッシュのファイルを使っていたのを直す",
           "en": "Texture fixes: the view no longer keeps redrawing when idle after the pictures are in; a finished picture no longer waits for the mouse to move to appear; pictures read as sRGB or not no longer share a cache file"
         },

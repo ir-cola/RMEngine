@@ -1,6 +1,6 @@
 # Builds and runs the 3D renderer's CPU benchmark (tools/bench3d/Bench3D.cpp). Needs a GPU.
-#   powershell -NoProfile -ExecutionPolicy Bypass -File tools\bench3d\run.ps1 [-Frames 300] [-Case boxes|mesh]
-param([int]$Frames = 300, [ValidateSet('boxes', 'mesh')][string]$Case = 'boxes')
+#   powershell -NoProfile -ExecutionPolicy Bypass -File tools\bench3d\run.ps1 [-Frames 300] [-Case boxes|mesh|drag]
+param([int]$Frames = 300, [ValidateSet('boxes', 'mesh', 'drag')][string]$Case = 'boxes')
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -20,6 +20,7 @@ $sources = @(
     'plugins\rm_engine\space3d\runtime\Fbx.cpp',
     'plugins\rm_engine\space3d\runtime\Inflate.cpp',
     'plugins\rm_engine\space3d\runtime\TexturePixels.cpp',
+    'plugins\rm_engine\space3d\runtime\TextureFile.cpp',
     'src\platform\Image.cpp',
     'src\base\Json.cpp',
     'src\base\Utf.cpp',

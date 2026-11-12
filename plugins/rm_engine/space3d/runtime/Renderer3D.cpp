@@ -1027,14 +1027,19 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     // under the moving ones.
     ShadowConstants sc{};
     sc.viewForward[0] = forward.x, sc.viewForward[1] = forward.y, sc.viewForward[2] = forward.z;
-    Bounds casters;
-    bool anyCaster = false;
+    // The box the sun's maps are fitted to: what stays put, the moving things widening it only in
+    // steps (Lighting.h's SunFitBounds: dragging one does not change the maps every frame).
+    std::optional<Bounds> stillBox, movingBox;
     for (const uint32_t i : casterOrder_) {
         const Bounds& b = items_[i].bounds;
-        casters.min = anyCaster ? Vec3{std::min(casters.min.x, b.min.x), std::min(casters.min.y, b.min.y), std::min(casters.min.z, b.min.z)} : b.min;
-        casters.max = anyCaster ? Vec3{std::max(casters.max.x, b.max.x), std::max(casters.max.y, b.max.y), std::max(casters.max.z, b.max.z)} : b.max;
-        anyCaster = true;
+        std::optional<Bounds>& box = items_[i].moving ? movingBox : stillBox;
+        box = box ? Bounds{{std::min(box->min.x, b.min.x), std::min(box->min.y, b.min.y), std::min(box->min.z, b.min.z)},
+                           {std::max(box->max.x, b.max.x), std::max(box->max.y, b.max.y), std::max(box->max.z, b.max.z)}}
+                  : b;
     }
+    const std::optional<Bounds> fitted = SunFitBounds(stillBox, movingBox);
+    const bool anyCaster = fitted.has_value();
+    const Bounds casters = fitted.value_or(Bounds{});
     enum class MapMode { Whole, Layer, OverLayer };  // all of it / the kept layer / laid back + the moving ones
     struct MapWork {
         ShadowMaps* maps;
@@ -1044,6 +1049,15 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         MapMode mode;
     };
     std::vector<MapWork> layers, work;
+    // What the tiles will hold once drawn - written to them after the drawing (step 1 below), not
+    // here: a frame that stops before (the frame's numbers could not go to the GPU) leaves the tiles
+    // saying what they really hold, and they are drawn again next time.
+    struct Holds {
+        std::vector<uint64_t>* of;  // ShadowMaps::holds or layerHolds
+        uint32_t tile;
+        uint64_t value;
+    };
+    std::vector<Holds> holds;
     auto emitCasters = [&](const std::vector<uint32_t>& list) {
         for (const uint32_t i : list) Emit(items_[i].mesh, 0, items_[i].mesh->indexCount, AddDraw(items_[i].thing, white), nullptr);
     };
@@ -1068,7 +1082,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             ++stats_.mapsKept;
             return;
         }
-        maps.holds[tile] = whole;
+        holds.push_back({&maps.holds, tile, whole});
         ++stats_.mapsDrawn;
         mergeFloor_ = cmds_.size();
         const size_t first = cmds_.size();
@@ -1079,7 +1093,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             return;
         }
         if (maps.layerHolds[tile] != still) {
-            maps.layerHolds[tile] = still;
+            holds.push_back({&maps.layerHolds, tile, still});
             emitCasters(still_);
             layers.push_back({&maps, tile, lightViewProj, first, cmds_.size(), MapMode::Layer});
             ++stats_.layersDrawn;
@@ -1281,6 +1295,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             drawCasters(w);
         }
     }
+    // The tiles drawn now hold what was planned.
+    for (const Holds& h : holds) (*h.of)[h.tile] = h.value;
     ctx->UpdateSubresource(frameCb, 0, nullptr, &fc, 0, 0);
 
     // 2. The picture.

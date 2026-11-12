@@ -38,6 +38,7 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <cstdint>
 #include <span>
 
@@ -126,5 +127,13 @@ struct SunShadowPlan {
 // camera; `mapSize`: pixels. Cascades are fitted to balls around their part of the view and moved
 // in whole texels, so they do not shimmer when the camera moves.
 SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& view, const Mat4& projection, uint32_t mapSize);
+
+// The box the sun's maps are fitted to (PlanSunShadows' `casters`): what stays put, exactly; the
+// things that move (Box / MeshDraw::moving) only widen it beyond its sides, in steps (a sixteenth of
+// its size, made a power of two). So dragging a thing - even the outermost one - changes the maps'
+// matrices (and with them the kept layer of what stays put) only when it crosses a step, not every
+// frame; and with nothing moving, or the moving things inside, the maps are as if nothing moved.
+// Everything moving: the moving things' box widened to steps of its own size. Neither: nullopt.
+std::optional<Bounds> SunFitBounds(const std::optional<Bounds>& still, const std::optional<Bounds>& moving);
 
 }  // namespace rm::space3d

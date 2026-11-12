@@ -154,6 +154,22 @@ void Measure(const Mat4& m, uint32_t mapSize, float* texel, float* depthRange) {
 
 }  // namespace
 
+std::optional<Bounds> SunFitBounds(const std::optional<Bounds>& still, const std::optional<Bounds>& moving) {
+    if (!moving) return still;
+    // A sixteenth of the box's size, a power of two (at least 1/4): the same while things move inside.
+    auto stepFor = [](const Bounds& b) { return std::exp2(std::ceil(std::log2(std::max(Length(b.max - b.min) / 16.f, 0.25f)))); };
+    if (!still) {
+        const float step = stepFor(*moving);
+        return Bounds{{std::floor(moving->min.x / step) * step, std::floor(moving->min.y / step) * step, std::floor(moving->min.z / step) * step},
+                      {std::ceil(moving->max.x / step) * step, std::ceil(moving->max.y / step) * step, std::ceil(moving->max.z / step) * step}};
+    }
+    const float step = stepFor(*still);
+    auto low = [&](float s, float m) { return m >= s ? s : s - std::ceil((s - m) / step) * step; };
+    auto high = [&](float s, float m) { return m <= s ? s : s + std::ceil((m - s) / step) * step; };
+    return Bounds{{low(still->min.x, moving->min.x), low(still->min.y, moving->min.y), low(still->min.z, moving->min.z)},
+                  {high(still->max.x, moving->max.x), high(still->max.y, moving->max.y), high(still->max.z, moving->max.z)}};
+}
+
 SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& view, const Mat4& projection, uint32_t mapSize) {
     SunShadowPlan plan;
     const Vec3 dir = DirectionOr(direction, {0, -1, 0});

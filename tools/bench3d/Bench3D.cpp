@@ -6,6 +6,8 @@
 //
 //   boxes: 1000 boxes (Box: the renderer's cube)
 //   mesh:  1000 models of the same mesh (MeshDraw: a ball of 480 triangles, one material, uploaded once)
+//   drag:  1000 boxes close together (the sun's one map, not cascades), the camera still, and the
+//          outermost box dragged outwards a little every frame (marked moving): what dragging costs
 //
 // Prints the average and the median of the CPU time spent in Render (the GPU is waited for between
 // frames, outside the measured time).
@@ -30,6 +32,7 @@ using namespace rm::space3d;
 int main(int argc, char** argv) {
     const int frames = argc > 1 && std::atoi(argv[1]) > 0 ? std::atoi(argv[1]) : 300;
     const bool meshCase = argc > 2 && std::string(argv[2]) == "mesh";
+    const bool dragCase = argc > 2 && std::string(argv[2]) == "drag";
     Microsoft::WRL::ComPtr<ID3D11Device> device;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
     // Anywhere after the others: "fl10" = a device of feature level 10.0 only (the least the engine
@@ -98,7 +101,14 @@ int main(int argc, char** argv) {
         m.materials = ballMaterials;
         meshes.push_back(m);
     }
-    const std::span<const Box> drawBoxes = meshCase ? std::span<const Box>() : std::span<const Box>(boxes);
+    // drag: the same 1000 boxes 1 apart in 32 columns (all within the sun's one map), the first one moving.
+    std::vector<Box> close = boxes;
+    for (size_t i = 0; i < close.size(); ++i) {
+        close[i].world.m[3][0] = static_cast<float>(i % 32) - 15.5f;
+        close[i].world.m[3][2] = static_cast<float>(i / 32) - 15.5f;
+    }
+    close[0].moving = true;
+    const std::span<const Box> drawBoxes = meshCase ? std::span<const Box>() : dragCase ? std::span<const Box>(close) : std::span<const Box>(boxes);
     const std::span<const MeshDraw> drawMeshes = meshCase ? std::span<const MeshDraw>(meshes) : std::span<const MeshDraw>();
 
     // 8 lights: the sun, 1 point light and 6 spots, all casting shadows.
@@ -127,13 +137,20 @@ int main(int argc, char** argv) {
         f.clear = {0.75f, 0.75f, 0.78f, 1};  // light: the shadows on the floor show
         f.view = LookAt({0, 18, 30}, {0, 0, 0}, {0, 1, 0});
         f.projection = Perspective(60, 16.f / 9.f, 0.1f, 500);
-        // [moving]: every other box moving (the shadow maps keep a layer of the rest); one is moved
-        // and put back, so the last frame lays the kept layer back and draws only the moving ones -
-        // the picture must be the same as without.
+        // [moving]: every other box inside the rest moving (the shadow maps keep a layer of the rest;
+        // the sun's maps are fitted to what stays put, which still holds them); one is moved and put
+        // back, so the last frame lays the kept layer back and draws only the moving ones - the
+        // picture must be the same as without.
         const bool moving = argc > 3 && std::string(argv[3]) == "moving";
         std::vector<Box> still = boxes;
+        size_t firstMoving = 0;
         if (moving) {
-            for (size_t i = 1; i < still.size(); i += 2) still[i].moving = true;
+            for (size_t i = 1; i < still.size(); i += 2) {
+                const size_t col = i % 40, row = i / 40;
+                if (col == 0 || col == 39 || row == 0 || row == 24 || i % 3 == 2) continue;  // not at an edge, not the tallest
+                still[i].moving = true;
+                if (firstMoving == 0) firstMoving = i;
+            }
         }
         if (argc > 3 && std::string(argv[3]) == "mesh") {
             f.meshes = meshes;
@@ -145,7 +162,7 @@ int main(int argc, char** argv) {
         if (moving) {
             r.Render(ctx.Get(), f);
             std::vector<Box> moved = still;
-            moved[1].world.m[3][0] += 0.5f;
+            moved[firstMoving].world.m[3][0] += 0.5f;
             f.boxes = moved;
             r.Render(ctx.Get(), f);
             f.boxes = still;
@@ -198,35 +215,60 @@ int main(int argc, char** argv) {
     D3D11_QUERY_DESC qd{D3D11_QUERY_EVENT, 0};
     Microsoft::WRL::ComPtr<ID3D11Query> done;
     device->CreateQuery(&qd, &done);
-    std::vector<double> ms;
+    // The GPU's own time for the frame too (timestamps around Render).
+    D3D11_QUERY_DESC dq{D3D11_QUERY_TIMESTAMP_DISJOINT, 0}, tq{D3D11_QUERY_TIMESTAMP, 0};
+    Microsoft::WRL::ComPtr<ID3D11Query> disjoint, t0, t1;
+    device->CreateQuery(&dq, &disjoint);
+    device->CreateQuery(&tq, &t0);
+    device->CreateQuery(&tq, &t1);
+    std::vector<double> ms, gpu;
+    size_t layersAll = 0;
     for (int frame = 0; frame < frames + 20; ++frame) {
         // The camera turns slowly around the middle (the cascades follow it; the lights and boxes stay).
         const float a = static_cast<float>(frame) * 0.01f;
         RenderFrame f;
         f.width = 1280;
         f.height = 720;
-        f.view = LookAt({std::sin(a) * 30.f, 18, std::cos(a) * 30.f}, {0, 0, 0}, {0, 1, 0});
+        f.view = dragCase ? LookAt({0, 25, 35}, {0, 0, 0}, {0, 1, 0}) : LookAt({std::sin(a) * 30.f, 18, std::cos(a) * 30.f}, {0, 0, 0}, {0, 1, 0});
+        if (dragCase) close[0].world.m[3][0] -= 0.01f;  // dragged outwards, 1 cm a frame
         f.projection = Perspective(60, 16.f / 9.f, 0.1f, 500);
         f.boxes = drawBoxes;
         f.meshes = drawMeshes;
         f.lights = lights;
         f.shadows = true;
+        ctx->Begin(disjoint.Get());
+        ctx->End(t0.Get());
         const auto start = std::chrono::steady_clock::now();
         r.Render(ctx.Get(), f);
         const auto end = std::chrono::steady_clock::now();
+        ctx->End(t1.Get());
+        ctx->End(disjoint.Get());
+        if (frame >= 20) layersAll += r.LastStats().layersDrawn;
         // The GPU finishes the frame before the next one (outside the time).
         ctx->End(done.Get());
         while (ctx->GetData(done.Get(), nullptr, 0, 0) == S_FALSE) {
         }
         if (frame >= 20) ms.push_back(std::chrono::duration<double, std::milli>(end - start).count());
+        D3D11_QUERY_DATA_TIMESTAMP_DISJOINT dj{};
+        UINT64 a0 = 0, a1 = 0;
+        while (ctx->GetData(disjoint.Get(), &dj, sizeof(dj), 0) == S_FALSE) {
+        }
+        if (frame >= 20 && !dj.Disjoint && ctx->GetData(t0.Get(), &a0, sizeof(a0), 0) == S_OK && ctx->GetData(t1.Get(), &a1, sizeof(a1), 0) == S_OK &&
+            dj.Frequency > 0) {
+            gpu.push_back(static_cast<double>(a1 - a0) * 1000.0 / static_cast<double>(dj.Frequency));
+        }
     }
     double sum = 0;
     for (const double v : ms) sum += v;
     std::sort(ms.begin(), ms.end());
     std::printf("frames %zu  average %.3f ms  median %.3f ms  (%s, 8 lights, shadows)\n", ms.size(), sum / static_cast<double>(ms.size()),
-                ms[ms.size() / 2], meshCase ? "1000 models of the same mesh" : "1000 boxes");
+                ms[ms.size() / 2], meshCase ? "1000 models of the same mesh" : dragCase ? "1000 boxes, the outermost dragged" : "1000 boxes");
+    if (!gpu.empty()) {
+        std::sort(gpu.begin(), gpu.end());
+        std::printf("GPU: median %.3f ms\n", gpu[gpu.size() / 2]);
+    }
     const Renderer::Stats& st = r.LastStats();
-    std::printf("last frame: %zu drawn of %zu, %zu draws, shadow maps drawn %zu kept %zu\n", st.drawn, st.things, st.drawCalls, st.mapsDrawn,
-                st.mapsKept);
+    std::printf("last frame: %zu drawn of %zu, %zu draws, shadow maps drawn %zu kept %zu, layers drawn %zu (all frames: %zu)\n", st.drawn,
+                st.things, st.drawCalls, st.mapsDrawn, st.mapsKept, st.layersDrawn, layersAll);
     return 0;
 }
