@@ -235,7 +235,11 @@ RM_TEST(Scripts_CoreApiOnTheWorld) {
     ScriptWorld w;
     w.scene = &s;
     bool leftDown = false;
-    w.keyDown = [&](int vk) { return vk == 0x25 && leftDown; };
+    w.readInput = [&] {
+        InputFrame f;
+        f.keys[0x25] = leftDown ? 1 : 0;
+        return f;
+    };
     static const int partTable = 7;
     w.parts.push_back({"test.part", 2, &partTable});
     const RmApi api = MakeScriptApi(w);
@@ -248,11 +252,11 @@ RM_TEST(Scripts_CoreApiOnTheWorld) {
     core.setActive(api.ctx, a, 0);
     CHECK(core.isActive(api.ctx, child) == 0);  // through its parent
     CHECK(core.getScript(api.ctx, child, "test::Counter", 0) != nullptr && core.getScript(api.ctx, child, "test::Counter", 1) == nullptr);
-    w.ReadKeys();
+    w.ReadInput();
     leftDown = true;
-    w.ReadKeys();
+    w.ReadInput();
     CHECK(core.keyDown(api.ctx, 0x25) == 1 && core.keyPressed(api.ctx, 0x25) == 1);
-    w.ReadKeys();
+    w.ReadInput();
     CHECK(core.keyPressed(api.ctx, 0x25) == 0);
     core.setCamera(api.ctx, 9);
     CHECK(w.camera == 9 && core.camera(api.ctx) == 9);

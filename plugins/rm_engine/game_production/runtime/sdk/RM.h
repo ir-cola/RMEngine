@@ -21,7 +21,7 @@
 //   #include "RM3D.h"                              // Transform in 3D (RM2D.h: in 2D)
 //   void Mover::Tick(rm::Entity self, float dt) {
 //       rm::Vec3 p = rm::Transform3D(self).Position();
-//       if (rm::Input::Down(rm::Key::Right)) p.x += speed * dt;
+//       p.x += rm::Input::Axis("MoveX") * speed * dt;   // an action of the game settings' 入力
 //       rm::Transform3D(self).SetPosition(p);
 //   }
 //
@@ -163,12 +163,45 @@ enum : int {
 };
 }  // namespace Key
 
+// A plugin's part of the API (RM3D.h uses it); null when the plugin is not in this engine.
+template <class T>
+const T* Part(const char* name, uint32_t version) {
+    return static_cast<const T*>(Api()->part(Api()->ctx, name, version));
+}
+
+// Input. Read it by ACTION NAME: the game settings' 入力 lists the actions ("MoveX", "Jump" ...) and
+// what drives each (keys, mouse buttons, a game pad) - so a pad works without changing a script, and
+// the keys can be changed without building again. A name that is not in the list is false / 0 (and
+// told once on the console).
 namespace Input {
-// Held down now.
-inline bool Down(int key) { return Api()->core->keyDown(Api()->ctx, key) != 0; }
+namespace detail {
+inline const RmInputApi* Table() { return Part<RmInputApi>(RM_PART_INPUT, RM_PART_INPUT_VERSION); }
+}  // namespace detail
+// Held down now (one of its keys / buttons; a stick pushed more than half way).
+inline bool Down(const char* action) {
+    const RmInputApi* t = detail::Table();
+    return t && t->down(Api()->ctx, action) != 0;
+}
 // Went down this frame (once per press).
-inline bool Pressed(int key) { return Api()->core->keyPressed(Api()->ctx, key) != 0; }
+inline bool Pressed(const char* action) {
+    const RmInputApi* t = detail::Table();
+    return t && t->pressed(Api()->ctx, action) != 0;
+}
 // Went up this frame.
+inline bool Released(const char* action) {
+    const RmInputApi* t = detail::Table();
+    return t && t->released(Api()->ctx, action) != 0;
+}
+// -1..1: its keys / buttons times their 向き (e.g. ← -1, → 1), added, and a stick as far as it is pushed.
+inline float Axis(const char* action) {
+    const RmInputApi* t = detail::Table();
+    return t ? t->axis(Api()->ctx, action) : 0.0f;
+}
+
+// A key itself (rm::Key::Space, or any VK_ value). Prefer the action names above: these never see a
+// game pad.
+inline bool Down(int key) { return Api()->core->keyDown(Api()->ctx, key) != 0; }
+inline bool Pressed(int key) { return Api()->core->keyPressed(Api()->ctx, key) != 0; }
 inline bool Released(int key) { return Api()->core->keyReleased(Api()->ctx, key) != 0; }
 }  // namespace Input
 
@@ -200,12 +233,6 @@ inline std::string SceneName() {
 inline int SceneIndex() { return Api()->core->sceneIndex(Api()->ctx); }
 inline int SceneCount() { return Api()->core->sceneCount(Api()->ctx); }
 }  // namespace Game
-
-// A plugin's part of the API (RM3D.h uses it); null when the plugin is not in this engine.
-template <class T>
-const T* Part(const char* name, uint32_t version) {
-    return static_cast<const T*>(Api()->part(Api()->ctx, name, version));
-}
 
 namespace detail {
 // For rmgen's checks: the number of members of an aggregate.

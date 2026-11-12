@@ -922,6 +922,7 @@ private:
             world.sceneNames.push_back(SceneTitle(playScenes_[i]));
             if (playScenes_[i] == AssetRef{slot_.guid}) world.sceneIndex = static_cast<int>(i);
         }
+        scripts_.World().actions = &settings_.input;  // (edited while playing: read as it is each frame)
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
         EnsureViews();  // the game view sees through the game settings' 最初のカメラ

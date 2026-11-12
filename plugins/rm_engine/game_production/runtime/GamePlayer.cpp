@@ -52,13 +52,10 @@ public:
         }
         world_.parts = ScriptApiParts(host_.Registry());
         world_.log = [this](int level, std::string_view t) { host_.Log(level, t); };
-        // The keyboard: only while the game's window is in front (a key typed into another app never
-        // moves the game - as the editor's Play).
-        world_.keyDown = [](int vk) {
-            DWORD pid = 0;
-            GetWindowThreadProcessId(GetForegroundWindow(), &pid);
-            return pid == GetCurrentProcessId() && (GetAsyncKeyState(vk) & 0x8000) != 0;
-        };
+        // The keys, the mouse buttons and the game pads: only while the game's window is in front (a key
+        // typed into another app never moves the game - as the editor's Play); read by action name.
+        world_.readInput = [this] { return input_.Read(); };
+        world_.actions = &settings_.input;
         api_ = MakeScriptApi(world_);
         const std::filesystem::path dll = host_.Folder() / game::kScriptsDll;
         std::error_code ec;
@@ -200,6 +197,7 @@ private:
     game::Host& host_;
     // The scripts' DLL first: members go in the reverse order, so the scene (holding the scripts'
     // objects, whose code is in the DLL) is gone before the DLL is let go.
+    InputReader input_;
     ScriptWorld world_;
     RmApi api_{};
     ScriptModule scripts_;

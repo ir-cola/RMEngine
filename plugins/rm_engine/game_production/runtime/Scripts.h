@@ -22,6 +22,7 @@
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_production/runtime/DebugDraw.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
+#include "rm_engine/game_production/runtime/Input.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
 
@@ -55,8 +56,11 @@ struct ScriptWorld {
     float dt = 0;
     double time = 0;
     uint64_t camera = 0;  // SystemContext::camera: the game's camera, switched by scripts too
-    // The host's keyboard (a Windows virtual-key code: held down now).
-    std::function<bool(int vk)> keyDown;
+    // The host's input, read once a frame (both hosts: an InputReader - only while one of their windows
+    // is in front; tests give their own). Empty: nothing is ever down.
+    std::function<InputFrame()> readInput;
+    // The game settings' 入力 (the host's GameSettings::input; it lives as long as the world is used).
+    const std::vector<InputAction>* actions = nullptr;
     // A script's message (level 0 info / 1 warning / 2 error).
     std::function<void(int level, std::string_view text)> log;
     // The plugins' parts of the API (what they offered at kScriptApiPoint: ScriptApiParts).
@@ -64,15 +68,18 @@ struct ScriptWorld {
     // Where rm::Debug's lines go: the editor's buffer while it plays (DebugDraw.h). Null - an exported
     // game - and the debug parts do nothing.
     DebugDraw* debug = nullptr;
-    std::array<uint8_t, 256> keysNow{}, keysBefore{};
     // The game's scenes (Game::LoadScene): their names in the list's order, the one playing (-1: not
     // one of them) and the one asked for this frame (-1: none; switched between frames: SwitchAskedScene).
     std::vector<std::string> sceneNames;
     int sceneIndex = -1;
     int sceneAsked = -1;
+    InputFrame inputNow, inputBefore;
+    std::unordered_set<std::string> told;  // names asked for that are not there (told once each)
 
-    // Reads the keyboard once a frame (pressed / released compare with the last frame).
-    void ReadKeys();
+    // Reads the input once a frame (pressed / released compare with the last frame).
+    void ReadInput();
+    // An action of the game settings by name; null (and told once) when there is none.
+    const InputAction* Action(const char* name);
 };
 
 // The engine's table for a world: RmApi::ctx is the world (it must live as long as the table is used).
@@ -142,7 +149,7 @@ std::vector<std::string> SortScriptTypes(std::vector<std::string> types, std::sp
 // --- Running them -------------------------------------------------------------------------------
 class ScriptRunner {
 public:
-    // One frame: the keyboard read; EndPlay of the started scripts switched off since (their entity or a
+    // One frame: the input read; EndPlay of the started scripts switched off since (their entity or a
     // parent made not 有効); BeginPlay of every running script not started yet (new, or switched on
     // again); then Tick of every running one - type by type in the run order; inside a type by entity
     // id, then in the order they are attached. BeginPlay and EndPlay always come in pairs (a script

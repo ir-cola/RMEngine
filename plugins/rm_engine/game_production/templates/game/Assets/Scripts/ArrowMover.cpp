@@ -4,14 +4,16 @@
 #include "RM3D.h"
 
 void ArrowMover::BeginPlay(rm::Entity self) {
-    rm::Log::Info("「" + self.Name() + "」を矢印キーで動かせます (Space で回る)");
+    rm::Log::Info("「" + self.Name() + "」を矢印キー・WASD・ゲームパッドで動かせます (Space / A ボタンで回る)");
 }
 
 void ArrowMover::Tick(rm::Entity self, float dt) {
     ++frames;
-    const float x = (rm::Input::Down(rm::Key::Right) ? 1.0f : 0.0f) - (rm::Input::Down(rm::Key::Left) ? 1.0f : 0.0f);
-    const float y = (rm::Input::Down(rm::Key::Up) ? 1.0f : 0.0f) - (rm::Input::Down(rm::Key::Down) ? 1.0f : 0.0f);
-    const bool turn = rm::Input::Down(rm::Key::Space);
+    // Actions of the game settings' 入力 (not keys): MoveX = ← → / A D / the left stick, MoveY = ↑ ↓ / W S,
+    // Jump = Space / the pad's A. Change what drives them there - this code stays as it is.
+    const float x = rm::Input::Axis("MoveX");
+    const float y = rm::Input::Axis("MoveY");
+    const bool turn = rm::Input::Down("Jump");
 
     // A 3D entity: on the floor (up = farther away). A 2D one: on the screen (up = up).
     if (rm::Transform3D t(self); t.Valid()) {

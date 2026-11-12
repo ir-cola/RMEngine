@@ -131,6 +131,20 @@ typedef struct RmApi {
     const void* (*part)(void* ctx, const char* name, uint32_t version);
 } RmApi;
 
+/* --- Game production's own parts (asked by name with RmApi::part, like a plugin's) -------------
+ * A part has its own version: adding one never changes RmCoreApi nor RM_ABI_VERSION, and an engine
+ * without it gives null (RM.h then answers "nothing"). Change a part -> a new version of that part. */
+
+/* Input by action name (the game settings' 入力): "rm_engine.game_production.input", version 1. */
+#define RM_PART_INPUT "rm_engine.game_production.input"
+#define RM_PART_INPUT_VERSION 1u
+typedef struct RmInputApi {
+    int (*down)(void* ctx, const char* action);     /* held now */
+    int (*pressed)(void* ctx, const char* action);  /* went down this frame */
+    int (*released)(void* ctx, const char* action); /* went up this frame */
+    float (*axis)(void* ctx, const char* action);   /* -1..1 */
+} RmInputApi;
+
 /* The one function a script DLL exports (rmgen writes it). Returns null when `abi` is not the
    version it was built for. */
 typedef const RmModule* (*RmModuleInitFn)(const RmApi* api, uint32_t abi);

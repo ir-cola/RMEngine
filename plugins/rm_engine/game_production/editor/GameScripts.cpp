@@ -29,19 +29,13 @@ namespace {
 
 ScriptBuildRequest RequestFor(const editor::SoftwareHost& host) { return ScriptRequestFor(host); }
 
-// The keyboard of this editor: only while one of its windows is in front (a key pressed in another
-// app never moves the game).
-bool KeyDown(int vk) {
-    DWORD pid = 0;
-    GetWindowThreadProcessId(GetForegroundWindow(), &pid);
-    return pid == GetCurrentProcessId() && (GetAsyncKeyState(vk) & 0x8000) != 0;
-}
-
 }  // namespace
 
 GameScripts::GameScripts(editor::SoftwareHost& host) : host_(host), module_(std::make_unique<ScriptModule>()) {
     world_.parts = ScriptApiParts(host.Registry());
-    world_.keyDown = &KeyDown;
+    // The keys, the mouse buttons and the game pads: only while one of the editor's windows is in front
+    // (the same reader as an exported game's).
+    world_.readInput = [this] { return input_.Read(); };
     world_.log = [](int level, std::string_view text) {
         if (level >= 2) {
             log::Error("スクリプト: {}", text);

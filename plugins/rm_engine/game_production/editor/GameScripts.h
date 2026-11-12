@@ -59,6 +59,7 @@ private:
 
     editor::SoftwareHost& host_;
     std::unique_ptr<ScriptModule> module_;
+    InputReader input_;
     ScriptWorld world_;
     RmApi api_{};
     ScriptRunner runner_;

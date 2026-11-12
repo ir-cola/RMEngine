@@ -64,13 +64,10 @@ RmEntityId ApiParent(void* ctx, RmEntityId e) {
     const SceneEntity* x = EntityOf(ctx, e);
     return x ? static_cast<RmEntityId>(x->data.parent) : 0;
 }
-int ApiKeyDown(void* ctx, int vk) { return vk > 0 && vk < 256 && W(ctx).keysNow[static_cast<size_t>(vk)] ? 1 : 0; }
-int ApiKeyPressed(void* ctx, int vk) {
-    return vk > 0 && vk < 256 && W(ctx).keysNow[static_cast<size_t>(vk)] && !W(ctx).keysBefore[static_cast<size_t>(vk)] ? 1 : 0;
-}
-int ApiKeyReleased(void* ctx, int vk) {
-    return vk > 0 && vk < 256 && !W(ctx).keysNow[static_cast<size_t>(vk)] && W(ctx).keysBefore[static_cast<size_t>(vk)] ? 1 : 0;
-}
+bool KeyIn(const InputFrame& f, int vk) { return vk > 0 && vk < 256 && f.keys[static_cast<size_t>(vk)] != 0; }
+int ApiKeyDown(void* ctx, int vk) { return KeyIn(W(ctx).inputNow, vk) ? 1 : 0; }
+int ApiKeyPressed(void* ctx, int vk) { return KeyIn(W(ctx).inputNow, vk) && !KeyIn(W(ctx).inputBefore, vk) ? 1 : 0; }
+int ApiKeyReleased(void* ctx, int vk) { return !KeyIn(W(ctx).inputNow, vk) && KeyIn(W(ctx).inputBefore, vk) ? 1 : 0; }
 RmEntityId ApiCamera(void* ctx) { return W(ctx).camera; }
 void ApiSetCamera(void* ctx, RmEntityId e) { W(ctx).camera = e; }
 void* ApiGetScript(void* ctx, RmEntityId e, const char* typeName, uint32_t nth) {
@@ -78,7 +75,6 @@ void* ApiGetScript(void* ctx, RmEntityId e, const char* typeName, uint32_t nth) 
     Component* c = x && typeName ? x->FindComponent(typeName, nth) : nullptr;
     return c && c->Known() ? c->value.Get() : nullptr;
 }
-const void* ApiPart(void* ctx, const char* name, uint32_t version) { return FindScriptApiPart(W(ctx).parts, name, version); }
 int ApiLoadSceneAt(void* ctx, int32_t index) {
     ScriptWorld& w = W(ctx);
     if (index < 0 || static_cast<size_t>(index) >= w.sceneNames.size()) {
@@ -112,6 +108,31 @@ uint32_t ApiSceneName(void* ctx, char* buf, uint32_t cap) {
 int32_t ApiSceneIndex(void* ctx) { return W(ctx).sceneIndex; }
 int32_t ApiSceneCount(void* ctx) { return static_cast<int32_t>(W(ctx).sceneNames.size()); }
 
+// --- Game production's own parts (RmApi::part by name, like a plugin's) -------------------------
+// Input by action name: this frame and the last, evaluated on the game settings' 入力.
+int ApiInputDown(void* ctx, const char* name) {
+    const InputAction* a = W(ctx).Action(name);
+    return a && EvaluateAction(*a, W(ctx).inputNow).down ? 1 : 0;
+}
+int ApiInputPressed(void* ctx, const char* name) {
+    const InputAction* a = W(ctx).Action(name);
+    return a && EvaluateAction(*a, W(ctx).inputNow).down && !EvaluateAction(*a, W(ctx).inputBefore).down ? 1 : 0;
+}
+int ApiInputReleased(void* ctx, const char* name) {
+    const InputAction* a = W(ctx).Action(name);
+    return a && !EvaluateAction(*a, W(ctx).inputNow).down && EvaluateAction(*a, W(ctx).inputBefore).down ? 1 : 0;
+}
+float ApiInputAxis(void* ctx, const char* name) {
+    const InputAction* a = W(ctx).Action(name);
+    return a ? EvaluateAction(*a, W(ctx).inputNow).axis : 0.0f;
+}
+constexpr RmInputApi kInput{&ApiInputDown, &ApiInputPressed, &ApiInputReleased, &ApiInputAxis};
+
+const void* ApiPart(void* ctx, const char* name, uint32_t version) {
+    if (name && version == RM_PART_INPUT_VERSION && std::strcmp(name, RM_PART_INPUT) == 0) return &kInput;
+    return FindScriptApiPart(W(ctx).parts, name, version);
+}
+
 constexpr RmCoreApi kCore{&ApiLog,        &ApiDeltaTime,   &ApiTime,        &ApiFindByName,  &ApiExists,
                           &ApiIsActive,   &ApiSetActive,   &ApiGetName,     &ApiParent,      &ApiKeyDown,
                           &ApiKeyPressed, &ApiKeyReleased, &ApiCamera,      &ApiSetCamera,   &ApiGetScript,
@@ -143,9 +164,18 @@ const char* HookName(int hook) { return hook == 0 ? "BeginPlay" : hook == 1 ? "T
 // The module's init, guarded (ScriptGuard.cpp).
 unsigned long CallModuleInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out);
 
-void ScriptWorld::ReadKeys() {
-    keysBefore = keysNow;
-    for (int vk = 1; vk < 256; ++vk) keysNow[static_cast<size_t>(vk)] = keyDown && keyDown(vk) ? 1 : 0;
+void ScriptWorld::ReadInput() {
+    inputBefore = inputNow;
+    inputNow = readInput ? readInput() : InputFrame{};
+}
+
+const InputAction* ScriptWorld::Action(const char* name) {
+    if (!name) return nullptr;
+    if (const InputAction* a = actions ? FindAction(*actions, name) : nullptr) return a;
+    if (told.insert(std::string("input:") + name).second && log) {
+        log(1, std::format("入力のアクション「{}」はゲームの設定の「入力」にありません (いつも押されていない扱いです)", name));
+    }
+    return nullptr;
 }
 
 RmApi MakeScriptApi(ScriptWorld& world) {
@@ -380,7 +410,7 @@ bool ScriptRunner::Call(ScriptWorld& world, const Instance& in, int hook, float 
 void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order, float dt) {
     world.scene = &scene;
     world.dt = dt;
-    world.ReadKeys();
+    world.ReadInput();
     const std::vector<Instance> list = Collect(scene, module, order);
     std::unordered_set<void*> present;
     for (const Instance& in : list) present.insert(in.data);

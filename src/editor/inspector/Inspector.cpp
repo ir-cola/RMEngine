@@ -175,6 +175,9 @@ json::Value RefJson(FieldType t, const std::string& value) {
     return json::Value(id);
 }
 
+// An enum with more items than this opens a list with a search box (scrolled) instead of a menu.
+constexpr size_t kShortEnum = 16;
+
 // A reference: its name in a box (a click opens the list), × to clear it, and a place to drop one.
 template <class Put>
 void DrawRef(Pass& x, const Spot& s, const Put& put) {
@@ -374,19 +377,36 @@ void DrawValue(Pass& x, const Spot& s) {
             if (b.clicked) {
                 x.st.popup.OpenAt(s.r.x, s.r.Bottom() + 2);
                 x.st.popupId = popupId;
+                x.st.pickSearch.clear();
             }
             if (x.st.popup.open && x.st.popupId == popupId) {
                 // The list is drawn at the end of the frame (not cut off by the panel). The choice is
-                // handed back through State and returned by the next Draw.
-                const float width = std::max(s.r.w, 180.f);
+                // handed back through State and returned by the next Draw. A long list (the keys of
+                // an input ...) is one to search in, scrolled.
+                const bool longList = e.items.size() > kShortEnum;
+                const float width = std::max(s.r.w, longList ? 260.f : 180.f);
                 State* st = &x.st;
                 const bool withOthers = !s.others.empty();
-                c.AddOverlay([&c, st, &e, width, withOthers, editFor = s.editFor, wrap = x.wrap] {
-                    std::vector<w::MenuItem> items;
-                    for (const auto& it : e.items) items.push_back({Utf8ToWide(TrU8(it.label))});
+                c.AddOverlay([&c, st, &e, width, withOthers, longList, editFor = s.editFor, wrap = x.wrap] {
                     const bool wasEnabled = c.InputEnabled();
                     c.SetInputEnabled(true);
-                    const int picked = w::MenuPopup(c, st->popup, items, width);
+                    int picked = -1;
+                    if (longList) {
+                        std::vector<size_t> which;
+                        std::vector<w::PickRow> rows;
+                        for (size_t i = 0; i < e.items.size(); ++i) {
+                            const std::string label = TrU8(e.items[i].label);
+                            if (!st->pickSearch.empty() && !tree::NameMatches(label, st->pickSearch) && !tree::NameMatches(e.items[i].name, st->pickSearch)) continue;
+                            rows.push_back({Utf8ToWide(label)});
+                            which.push_back(i);
+                        }
+                        const int row = w::PickerPopup(c, st->popup, "enumpick", st->pickSearch, rows, width);
+                        if (row >= 0) picked = static_cast<int>(which[static_cast<size_t>(row)]);
+                    } else {
+                        std::vector<w::MenuItem> items;
+                        for (const auto& it : e.items) items.push_back({Utf8ToWide(TrU8(it.label))});
+                        picked = w::MenuPopup(c, st->popup, items, width);
+                    }
                     c.SetInputEnabled(wasEnabled);
                     if (picked < 0) return;
                     Edit ed = editFor(json::Value(e.items[static_cast<size_t>(picked)].name));

@@ -15,6 +15,10 @@
           "en": "Scripts can draw debug lines: rm::Debug::Line / Box / Sphere / Ray (3D) and Line / Rect / Circle (2D). They show in the game view and the scene view while playing (fainter when hidden; Debug on the scene view's bar turns them on / off). Exported games ignore them"
         },
         {
+          "ja": "ゲームの設定に「入力」: スクリプトはキーではなく名前 (MoveX・Jump など) で入力を読みます (rm::Input::Down / Pressed / Released / Axis)。キーやマウスのボタン・ゲームパッド (XInput) を割り当てて、スクリプトを変えずにキーを変えられます。選択肢の多い欄は絞り込める一覧になりました",
+          "en": "Input in the game settings: scripts read input by name (MoveX, Jump ...), not by key (rm::Input::Down / Pressed / Released / Axis). Bind keys, mouse buttons and game pads (XInput), and change the keys without touching a script. Fields with many choices open a list you can search"
+        },
+        {
           "ja": "直したもの: スクリプトの文字の欄で Debug のエンジンが壊れることがあった。Debug と Release のスクリプトを混ぜない。スクリプトのビルドが 2 つ同時に走らない。スタックのあふれが 2 回目にエディターを落とした。有効を外したスクリプトに EndPlay が来なかった。置いた Prefab の中の並べ替えが、開き直すと戻った。入れ子の Prefab で「Prefab にする」と開き直したときに戻った",
           "en": "Fixed: a Debug engine could break on scripts' text fields. Debug and Release scripts are never mixed. Two builds of the scripts never run at once. A second stack overflow in a script took the editor down. A script switched off did not get EndPlay. Reordering inside a placed prefab went back when the project was opened again. Making a nested prefab a prefab of its own went back when opened again"
         },

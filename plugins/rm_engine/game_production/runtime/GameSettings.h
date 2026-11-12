@@ -31,6 +31,89 @@ struct ScriptOrderEntry {
     RM_PROPERTY(Edit, Label="順番", Tooltip="小さいほど先に動きます。一覧に無いスクリプトは 0 です") int order = 0;
 };
 
+// --- Input: actions by name (scripts ask rm::Input::Down("Jump"), never a key) ------------------------
+// What can be pressed or moved. A key's or a mouse button's value is its Windows virtual-key code
+// (GetAsyncKeyState); a game pad's starts at 0x100 (runtime/Input.cpp reads them with XInput). Saved
+// by name ("Space", "PadA" ...).
+RM_ENUM(Label="入力")
+enum class InputControl {
+    RM_ITEM(Label="(なし)") None = 0,
+    RM_ITEM(Label="マウスの左ボタン") MouseLeft = 0x01,
+    RM_ITEM(Label="マウスの右ボタン") MouseRight = 0x02,
+    RM_ITEM(Label="マウスの中ボタン") MouseMiddle = 0x04,
+    RM_ITEM(Label="マウスの戻るボタン") MouseX1 = 0x05,
+    RM_ITEM(Label="マウスの進むボタン") MouseX2 = 0x06,
+    Backspace = 0x08,
+    Tab = 0x09,
+    Enter = 0x0D,
+    Shift = 0x10,
+    Ctrl = 0x11,
+    Alt = 0x12,
+    Escape = 0x1B,
+    Space = 0x20,
+    PageUp = 0x21,
+    PageDown = 0x22,
+    End = 0x23,
+    Home = 0x24,
+    RM_ITEM(Label="← (矢印)") Left = 0x25,
+    RM_ITEM(Label="↑ (矢印)") Up = 0x26,
+    RM_ITEM(Label="→ (矢印)") Right = 0x27,
+    RM_ITEM(Label="↓ (矢印)") Down = 0x28,
+    Insert = 0x2D,
+    Delete = 0x2E,
+    RM_ITEM(Label="0") D0 = 0x30,
+    RM_ITEM(Label="1") D1,
+    RM_ITEM(Label="2") D2,
+    RM_ITEM(Label="3") D3,
+    RM_ITEM(Label="4") D4,
+    RM_ITEM(Label="5") D5,
+    RM_ITEM(Label="6") D6,
+    RM_ITEM(Label="7") D7,
+    RM_ITEM(Label="8") D8,
+    RM_ITEM(Label="9") D9,
+    A = 0x41, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+    F1 = 0x70, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    RM_ITEM(Label="パッドの A") PadA = 0x100,
+    RM_ITEM(Label="パッドの B") PadB,
+    RM_ITEM(Label="パッドの X") PadX,
+    RM_ITEM(Label="パッドの Y") PadY,
+    RM_ITEM(Label="パッドの LB") PadLB,
+    RM_ITEM(Label="パッドの RB") PadRB,
+    RM_ITEM(Label="パッドの BACK") PadBack,
+    RM_ITEM(Label="パッドの START") PadStart,
+    RM_ITEM(Label="パッドの左スティックの押し込み") PadLeftThumb,
+    RM_ITEM(Label="パッドの右スティックの押し込み") PadRightThumb,
+    RM_ITEM(Label="パッドの十字キーの上") PadUp,
+    RM_ITEM(Label="パッドの十字キーの下") PadDown,
+    RM_ITEM(Label="パッドの十字キーの左") PadLeft,
+    RM_ITEM(Label="パッドの十字キーの右") PadRight,
+    RM_ITEM(Label="パッドの LT (0〜1)") PadLT,
+    RM_ITEM(Label="パッドの RT (0〜1)") PadRT,
+    RM_ITEM(Label="パッドの左スティックの左右 (-1〜1)") PadLeftStickX,
+    RM_ITEM(Label="パッドの左スティックの上下 (-1〜1)") PadLeftStickY,
+    RM_ITEM(Label="パッドの右スティックの左右 (-1〜1)") PadRightStickX,
+    RM_ITEM(Label="パッドの右スティックの上下 (-1〜1)") PadRightStickY,
+};
+
+// One thing that drives an action. Its value (a button: 0 or 1; a stick: -1..1) times `scale`.
+RM_STRUCT(Label="割り当て")
+struct InputBinding {
+    RM_PROPERTY(Edit, Label="入力") InputControl control = InputControl::None;
+    RM_PROPERTY(Edit, Label="向き", Min=-1, Max=1, Tooltip="軸の値に掛けます。左・下に動かすキーは -1、右・上は 1") float scale = 1;
+};
+
+// An action: a name the scripts use, and what drives it. rm::Input::Down / Pressed / Released: one of
+// the bindings at 0.5 or more (either way); rm::Input::Axis: all of them added, cut to -1..1.
+RM_STRUCT(Label="入力のアクション")
+struct InputAction {
+    RM_PROPERTY(Edit, Label="名前", Tooltip="スクリプトは rm::Input::Down や rm::Input::Axis にこの名前を渡して使います (大文字と小文字は別)") std::string name;
+    RM_PROPERTY(Edit, Label="割り当て", Tooltip="キー・マウスのボタン・ゲームパッドをいくつでも") std::vector<InputBinding> bindings;
+};
+
+// The list a new game starts with (MoveX / MoveY: arrows, WASD, the left stick and the pad's cross;
+// Jump; Fire).
+std::vector<InputAction> DefaultInputActions();
+
 RM_STRUCT(Label="ゲームの設定")
 struct GameSettings {
     RM_PROPERTY(Edit, Label="ゲームの名前", Tooltip="書き出した exe の名前とウィンドウのタイトルに使います") std::string title = "My Game";
@@ -49,6 +132,8 @@ struct GameSettings {
     RM_PROPERTY() std::string space;
     // Which scripts run before which (type by type; the same type: in the order they were attached).
     RM_PROPERTY(Edit, Label="スクリプトの実行順", Tooltip="プレイヤーが動いてからカメラが追う、のように型の順番を決めます。小さいほど先") std::vector<ScriptOrderEntry> scriptOrder;
+    // What the scripts read by name (rm::Input::Down("Jump")): the same in the editor's Play and the game.
+    RM_PROPERTY(Edit, Label="入力", Tooltip="スクリプトはキーではなくアクションの名前で入力を読みます (ゲームパッドもそのまま使えます)") std::vector<InputAction> input = DefaultInputActions();
 };
 
 }  // namespace rm::game_production

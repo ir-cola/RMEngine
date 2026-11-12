@@ -81,7 +81,14 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
     {
         ScriptWorld world;
         world.parts = {game_x_3d::ScriptTransform3DPart(), game_x_2d::ScriptTransform2DPart()};
-        world.keyDown = [](int vk) { return vk == VK_RIGHT; };
+        // → held (the sample reads the action MoveX of the default 入力, not the key).
+        world.readInput = [] {
+            InputFrame f;
+            f.keys[VK_RIGHT] = 1;
+            return f;
+        };
+        const std::vector<InputAction> actions = DefaultInputActions();
+        world.actions = &actions;
         std::string told;
         world.log = [&](int, std::string_view text) { told += std::string(text) + "\n"; };
         const RmApi api = MakeScriptApi(world);
@@ -104,7 +111,7 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
             const auto* t = static_cast<const space3d::Transform*>(scene.Find(e)->FindComponent(tf.name)->value.Get());
             CHECK(t->position.x > 2.99f && t->position.x < 3.01f);  // speed 3 for one second, to the right
             runner.Stop(scene, world, module, {});
-            CHECK(told.find("「Player」を矢印キーで動かせます") != std::string::npos);
+            CHECK(told.find("「Player」を矢印キー・WASD・ゲームパッドで動かせます") != std::string::npos);
             CHECK(told.find("2 コマ動きました") != std::string::npos);
             CHECK(runner.Crashed() == 0);
         }
