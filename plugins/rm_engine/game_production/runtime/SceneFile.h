@@ -92,4 +92,10 @@ struct ScenePlan {
 // (written before the scene, so a look at the folder never gives it another id).
 ScenePlan PlanSceneSave(const json::Value& scene, const SceneSlot& slot, const std::string& newGuid);
 
+// The slot to save into after a save planned `tried` (its `after`) and failed part way - some of its
+// files written, some not, which is not known: the file on disk is not known any more (onDisk 0: the
+// scene is written again), and a new scene whose .meta did get written (`newMetaThere`) keeps that id
+// and file (else it stays without an id: its .meta was written first, so its file is not there either).
+SceneSlot SlotAfterFailedSave(const SceneSlot& slot, const SceneSlot& tried, bool newMetaThere);
+
 }  // namespace rm::game_production

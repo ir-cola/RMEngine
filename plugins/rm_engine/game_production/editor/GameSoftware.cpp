@@ -279,7 +279,18 @@ public:
     }
 
     bool SaveData(json::Value& data, std::vector<editor::ProjectFileWrite>& files) override {
+        // What the last save gave and was never taken on (Saved not called): that save failed part
+        // way. Its scene file may be written or not - the one on disk is not known any more (written
+        // again this time); a new scene whose .meta got written keeps that id and file.
+        if (pending_) {
+            std::error_code ec;
+            const bool metaThere = slot_.guid.empty() && fs::exists(FullPath(pending_->slot.path + std::string(asset::kMetaSuffix)), ec);
+            slot_ = SlotAfterFailedSave(slot_, pending_->slot, metaThere);
+            if (metaThere) host_.AssetOf(FullPath(slot_.path));  // (its id known now: SlotNow finds it)
+            log::Warn("前の保存が途中で失敗したので、シーンをもう一度書きます: {}", slot_.path);
+        }
         pending_.reset();
+        gave_ = false;
         // Nothing is written (and the plugin is not recorded as used) while everything is as a new
         // project has it - opening a project once must not tie it to this plugin.
         const GameSettings defaults;
@@ -287,6 +298,7 @@ public:
         const bool untouched = reflect::Equals(reflect::TypeOf<GameSettings>(), &settings_, &defaults) && unknowns_.Empty() &&
                                reflect::Equals(reflect::TypeOf<ExportSettings>(), &exportSettings_, &exportDefaults) && exportUnknowns_.Empty();
         if (!hadData_ && untouched && scene_.Empty()) return false;
+        gave_ = true;
         data.Set("settings", reflect::Save(settings_, &unknowns_));
         if (data.Find("export") || !reflect::Equals(reflect::TypeOf<ExportSettings>(), &exportSettings_, &exportDefaults) || !exportUnknowns_.Empty()) {
             data.Set("export", reflect::Save(exportSettings_, &exportUnknowns_));
@@ -307,7 +319,16 @@ public:
             std::error_code ec;
             std::string err;
             if (!fs::exists(backup, ec)) {
-                if (auto bytes = platform::ReadFileBytes(rmpf, &err)) files.push_back({PathToUtf8(backup.filename()), std::move(*bytes)});
+                auto bytes = platform::ReadFileBytes(rmpf, &err);
+                if (!bytes) {
+                    // Never split without the .rmpf of before kept: saved as before (the scene inside,
+                    // edits and all), split at a later save.
+                    log::Error("前の .rmpf を控え ({}) に写せないので、シーンはまだ .rmpf の中に保存します (次の保存でもう一度分けます): {}",
+                               PathToUtf8(backup.filename()), err);
+                    data.Set("scene", saved.Save());
+                    return true;
+                }
+                files.push_back({PathToUtf8(backup.filename()), std::move(*bytes)});
             }
         }
         for (FileWrite& f : plan.files) files.push_back({std::move(f.path), std::move(f.text)});
@@ -573,6 +594,8 @@ public:
     }
 
     void Saved() override {
+        if (gave_) hadData_ = true;  // (in the .rmpf now: a save that empties it again writes that too)
+        gave_ = false;
         if (!pending_) return;
         const bool newFile = slot_.guid.empty();
         slot_ = pending_->slot;
@@ -1471,7 +1494,12 @@ private:
     // The scene's slot as it is now: a file moved or renamed since is found by its id; one deleted
     // since is written again as a new scene (a new file and id, in its place in the list).
     SceneSlot SlotNow() {
-        if (slot_.guid.empty()) return slot_;
+        if (slot_.guid.empty()) {
+            // Decided now, not when it was read: a file put there since (Main.rmscene back from the
+            // recycle bin) is never written over.
+            slot_ = {"", NewSceneFile(), 0};
+            return slot_;
+        }
         if (const fs::path file = host_.AssetFile(AssetRef{slot_.guid}); !file.empty()) {
             slot_.path = RelativePath(file);
             return slot_;
@@ -1991,7 +2019,8 @@ private:
     std::vector<std::string> placementTypes_;               // where a placed prefab is (Transform)
     json::Value view_;  // UserSettings: how the user looks (the scene view's camera ...)
     std::unordered_map<int, int> modes_;  // entity id -> how its component with derived values is shown
-    bool hadData_ = false;
+    bool hadData_ = false;  // the .rmpf has the game's data (read from it, or written by a save)
+    bool gave_ = false;     // the last SaveData gave data (Saved: it is in the .rmpf now)
     // The scenes (runtime/SceneFile.h): the list in the .rmpf, and the file of the one shown.
     SceneList sceneList_;
     reflect::Unknowns sceneListUnknowns_;  // keys of a newer version: written back unchanged

@@ -80,4 +80,10 @@ ScenePlan PlanSceneSave(const json::Value& scene, const SceneSlot& slot, const s
     return plan;
 }
 
+SceneSlot SlotAfterFailedSave(const SceneSlot& slot, const SceneSlot& tried, bool newMetaThere) {
+    SceneSlot out = slot.guid.empty() && newMetaThere ? tried : slot;
+    out.onDisk = 0;
+    return out;
+}
+
 }  // namespace rm::game_production

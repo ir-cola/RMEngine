@@ -151,6 +151,26 @@ RM_TEST(SceneFile_OnlyChangedScenesAreWritten) {
     CHECK(PlanSceneSave(loaded.Save(), asRead, "").files.empty());
 }
 
+// A save that failed part way (the scene written, the .rmpf not - or the other way): the next save
+// writes the scene again, even when it is back to what the slot last knew (an undo); a new scene whose
+// .meta got written keeps that id and file.
+RM_TEST(SceneFile_AfterAFailedSave) {
+    const Scene scene = MakeScene();
+    const SceneSlot read{kGuid, "Assets/Scenes/Main.rmscene", TextSign(SceneFileText(scene.Save()))};
+    SceneSlot tried = read;
+    tried.onDisk = 12345;  // (another text was being written)
+    const SceneSlot after = SlotAfterFailedSave(read, tried, false);
+    CHECK(after.guid == kGuid && after.path == read.path && after.onDisk == 0);
+    CHECK(PlanSceneSave(scene.Save(), after, "").files.size() == 1);  // written again, though unchanged
+    // A new scene: its .meta there - its id and file kept; not there - still none (a .meta at the next save).
+    const SceneSlot fresh{"", "Assets/Scenes/Main.rmscene", 0};
+    const SceneSlot triedNew{kGuid, "Assets/Scenes/Main.rmscene", 99};
+    const SceneSlot kept = SlotAfterFailedSave(fresh, triedNew, true);
+    CHECK(kept.guid == kGuid && kept.path == triedNew.path && kept.onDisk == 0);
+    const SceneSlot none = SlotAfterFailedSave(fresh, triedNew, false);
+    CHECK(none.guid.empty() && none.onDisk == 0 && PlanSceneSave(scene.Save(), none, kGuid).files.size() == 2);
+}
+
 RM_TEST(SceneFile_ProjectOfBefore) {
     // 0.0.1: the scene inside the .rmpf's game data, next to the settings (and a key of a newer version).
     json::Value data = Parse(R"({"settings": {"space": "3d"}, "future": 1,
