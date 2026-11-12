@@ -11,6 +11,7 @@
 #include "editor/widgets/Widgets.h"
 #include "platform/Shell.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_production/editor/GameScripts.h"
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Prefab.h"
@@ -153,7 +154,7 @@ enum class PlayState { Stopped, Playing, Paused };
 
 class GameSoftware final : public editor::Software, public tree::Source {
 public:
-    explicit GameSoftware(editor::SoftwareHost& host) : host_(host) {
+    explicit GameSoftware(editor::SoftwareHost& host) : host_(host), scripts_(host) {
         // Component types come from other plugins (the connectors: "ゲーム制作 × 3D" offers Transform).
         std::vector<const reflect::TypeDesc*> types, multiple;
         for (const auto& c : host.Registry().Contributions<ComponentInfo>(kComponentPoint)) {
@@ -164,11 +165,19 @@ public:
             if (c.item->multiple) multiple.push_back(t);
             if (c.item->placement) placementTypes_.push_back(t->name);
         }
+        baseTypes_ = types;
+        baseMultiple_ = multiple;
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
         // How the editor shows them (the 階層's pictures, ローカル / ワールド): their plugins' editor parts.
         for (const auto& l : host.Registry().Contributions<ComponentLook>(kComponentLookPoint)) componentLooks_.push_back(l.item);
         // ... and so do the systems that move them while the game plays.
         runner_.SetSystems(RegisteredSystems(host.Registry()));
+    }
+
+    // The scripts' objects go before their DLL does (scripts_ is destroyed before the scenes).
+    ~GameSoftware() override {
+        playScene_.reset();
+        scene_.Load(json::Value());
     }
 
     // --- Software ---------------------------------------------------------------------------
@@ -232,6 +241,9 @@ public:
     // its own file (SceneFile.h). A project of before has its scene inside: read from there, and split
     // off at the next save.
     void LoadData(const json::Value& data) override {
+        // The scripts first: the scene's scripts are components of their types.
+        scripts_.Open();
+        UseScriptTypes();
         hadData_ = data.IsObject();
         slot_ = {"", NewSceneFile(), 0};
         if (hadData_) {
@@ -324,6 +336,9 @@ public:
 
     // --- Play --------------------------------------------------------------------------------
     void Tick(ui::Context& c) override {
+        // Scripts built again: swapped here, between frames (never while playing: at Stop).
+        scripts_.Poll();
+        if (auto dll = scripts_.TakeReady(Running())) ReloadScripts(*dll);
         if (c.Focused() == 0) {
             if (c.KeyPressed(ui::Key::P, true)) Running() ? StopPlay() : StartPlay(c);
             if (c.KeyPressed(ui::Key::P, true, true) && Running()) TogglePause(c);
@@ -368,13 +383,19 @@ public:
         if (editor::w::IconToggle(c, "stop", next(), editor::w::Icon::Stop, false, running, Tr(L"停止 (Play の前に戻る)"))) {
             StopPlay();
         }
-        if (running && r.Right() - x > 80) {
+        if (r.Right() - x > 80) {
             ui::TextStyle ts;
             ts.size = 12;
             ts.color = theme::Text;
-            const std::wstring text = play_ == PlayState::Paused ? Tr(L"一時停止中 — ■ で止めると Play の前に戻ります")
-                                                                  : Tr(L"Play 中 — 編集はできません。■ で止めると Play の前に戻ります");
-            c.P().Text({x + 8, r.y, r.Right() - x - 8, r.h}, text, ts);
+            std::wstring text;
+            if (running) {
+                text = play_ == PlayState::Paused ? Tr(L"一時停止中 — ■ で止めると Play の前に戻ります")
+                                                  : Tr(L"Play 中 — 編集はできません。■ で止めると Play の前に戻ります");
+            }
+            // Scripts built while playing: used from Stop.
+            if (running && scripts_.WaitingForStop()) text = Tr(L"スクリプトをビルドしました — Stop で反映されます");
+            if (scripts_.Building()) text += (text.empty() ? L"" : L"   ") + Tr(L"スクリプトをビルドしています…");
+            if (!text.empty()) c.P().Text({x + 8, r.y, r.Right() - x - 8, r.h}, text, ts);
         }
     }
 
@@ -599,6 +620,8 @@ private:
         playScene_ = std::make_unique<Scene>(scene_);  // the copy that plays (components are deep copies)
         runner_.Reset();
         runner_.SetCamera(settings_.startCamera.id);  // the systems may switch it (SystemContext::camera)
+        scripts_.Runner().Reset();
+        scripts_.World().time = 0;
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
         EnsureViews();  // the game view sees through the game settings' 最初のカメラ
@@ -610,6 +633,11 @@ private:
     // One frame of the systems; a camera they switched to is told on the console.
     void AdvancePlay(double dt) {
         const uint64_t before = runner_.Camera();
+        // The scripts first (input -> scripts' Tick -> fixed steps ...); they may switch the camera too.
+        ScriptWorld& world = scripts_.World();
+        world.camera = runner_.Camera();
+        scripts_.Runner().Frame(*playScene_, world, scripts_.Module(), settings_.scriptOrder, static_cast<float>(dt));
+        runner_.SetCamera(world.camera);
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
         if (runner_.Camera() != before) {
             const SceneEntity* e = playScene_->Find(static_cast<int>(runner_.Camera()));
@@ -620,7 +648,8 @@ private:
     void StopPlay() {
         if (!Running()) return;
         log::Info("■ 停止 ({:.2f} 秒・{} コマ)。シーンは Play の前に戻りました", runner_.Time(), runner_.Frames());
-        playScene_.reset();
+        scripts_.Runner().Stop(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder);  // EndPlay
+        playScene_.reset();  // (scripts built while playing are taken at the next frame: on the scene from before Play)
         play_ = PlayState::Stopped;
         host_.Redraw();
     }
@@ -707,6 +736,49 @@ private:
         ts.v = ui::VAlign::Center;
         c.P().Text({strip.x + 10, strip.y, button.x - strip.x - 18, strip.h}, Tr(L"止まっています (▶ / Ctrl+P で Play)。最初のカメラから見たシーン"), ts);
         if (editor::w::Button(c, "game_settings", button, Tr(L"ゲームの設定を開く"))) InspectSettings();
+        // The scripts: build now, write them in Visual Studio.
+        const Rect vs{button.x - 6 - kButtonW, button.y, kButtonW, button.h};
+        const Rect build{vs.x - 6 - kButtonW, button.y, kButtonW, button.h};
+        if (build.x > strip.x + 200) {
+            if (editor::w::Button(c, "build_scripts", build, scripts_.Building() ? Tr(L"ビルドしています…") : Tr(L"スクリプトをビルド"),
+                                  editor::w::ButtonKind::Secondary, !scripts_.Building())) {
+                scripts_.Build();
+            }
+            if (editor::w::Button(c, "open_vs", vs, Tr(L"Visual Studio で開く"))) scripts_.OpenVisualStudio();
+        }
+    }
+
+    // The component types: the plugins' and the scripts' (a script may be attached several times).
+    void UseScriptTypes() {
+        std::vector<const reflect::TypeDesc*> types = baseTypes_, multiple = baseMultiple_;
+        for (const reflect::TypeDesc* t : scripts_.Module().Types()) {
+            types.push_back(t);
+            multiple.push_back(t);
+        }
+        scene_.SetComponentTypes(std::move(types), std::move(multiple));
+    }
+
+    // Hot reload (a frame boundary, not playing): the values written out by name, the old DLL's objects
+    // gone, the new DLL loaded, read back - a new field gets its default, a field that went is kept
+    // in the file, a script that went stays as a missing one with its values (Scene: unknown component).
+    void ReloadScripts(const std::filesystem::path& dll) {
+        std::unique_ptr<ScriptModule> next = scripts_.LoadModule(dll);
+        if (!next) return;  // (told) the old DLL goes on
+        const json::Value saved = scene_.Save();
+        scene_.SetComponentTypes(baseTypes_, baseMultiple_);
+        scene_.Load(saved);  // the old scripts' objects gone (kept as read)
+        // The history's edits point at the old types (their code is in the old DLL): they go too.
+        if (host_.History().UndoCount() + host_.History().RedoCount() > 0) {
+            host_.History().Clear();
+            log::Info("スクリプトを読み直したので、元に戻す (Undo) の履歴を消しました");
+        }
+        scripts_.Swap(std::move(next));
+        UseScriptTypes();
+        reflect::Warnings warnings;
+        scene_.Load(saved, &warnings);
+        for (const auto& w : warnings) log::Warn("シーン: {}", w);
+        ++dataVersion_;
+        host_.Redraw();
     }
 
     void ChooseSpace(const std::string& space) {
@@ -957,7 +1029,10 @@ private:
                     for (auto& a : menu) a.enabled = false;
                 }
                 if (c.Known()) {
-                    editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type, nth, play), Utf8ToWide(TrU8(label)) + number, {}, menu};
+                    // A script: where it runs among the others (the game settings' スクリプトの実行順).
+                    std::wstring note;
+                    if (c.value.Type()->kind == reflect::TypeKind::Script) note = TrF(L"スクリプト ・ 実行順 {}", ScriptOrderOf(c.type, settings_.scriptOrder));
+                    editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type, nth, play), Utf8ToWide(TrU8(label)) + number, note, menu};
                     b.readOnly = play;
                     // A child: ローカル / ワールド (or whatever the plugin calls them), one block shown either way.
                     // At the top level both ways are the same numbers, so there is no switch.
@@ -1682,6 +1757,8 @@ private:
 
     // Play
     PlayState play_ = PlayState::Stopped;
+    GameScripts scripts_;  // the game's C++ scripts (built, loaded, swapped; run while playing)
+    std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // the plugins' component types
     std::unique_ptr<Scene> playScene_;  // the copy that plays
     SystemRunner runner_;
     double lastTick_ = 0;

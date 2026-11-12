@@ -82,5 +82,11 @@
   "スクリプトの型の名前 (C++ の名前。例: PlayerController)": "The script type's name (its C++ name, e.g. PlayerController)",
   "順番": "Order",
   "小さいほど先に動きます。一覧に無いスクリプトは 0 です": "Smaller runs first. A script not in the list is 0",
-  "プレイヤーが動いてからカメラが追う、のように型の順番を決めます。小さいほど先": "Sets which script types run first (the player moves, then the camera follows). Smaller first"
+  "プレイヤーが動いてからカメラが追う、のように型の順番を決めます。小さいほど先": "Sets which script types run first (the player moves, then the camera follows). Smaller first",
+  "スクリプトをビルドしました — Stop で反映されます": "Scripts built — they take effect when you stop",
+  "スクリプトをビルドしています…": "Building the scripts…",
+  "ビルドしています…": "Building…",
+  "スクリプトをビルド": "Build scripts",
+  "Visual Studio で開く": "Open in Visual Studio",
+  "スクリプト ・ 実行順 {}": "Script · run order {}"
 }

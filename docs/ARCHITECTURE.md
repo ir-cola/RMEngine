@@ -419,6 +419,32 @@ SystemRunner::Advance(シーン, 前のフレームからの時間, 物理の刻
 - **ゲームビュー**: シーンビューと同じ差し出し (`kSceneViewPoint`) からもう 1 つ作り、`SceneViewHost::game` で描かせる (床・軸・選択・道具の帯・ギズモ・カメラ操作なし、有効でない物は出さない)。ゲームの設定の「最初のカメラ」(`SceneViewHost::camera` = エンティティの ID) のカメラの部品から、ゲームの画面の形 (`SceneViewHost::aspect`) で見る (「カメラと光」の節)。**止まっているときも**シーンそのものを最初のカメラから映す (上に「止まっています」の帯と「ゲームの設定を開く」。2026-11-11)
 - 別ウィンドウに出したシーン / ゲームのパネルも、Play 中は自分の窓に `RequestAnimation` を頼む
 
+### C++ スクリプト (2026-11-12。設計: TestEngine `NewEngineBluePrint.md` §5・§6・§6-b・§20-c、`RME_PLATFORM.md` §4-b)
+
+```
+ユーザー   <プロジェクト>/Assets/Scripts/*.h / *.cpp      (RM_SCRIPT + RM_PROPERTY。#include "RM.h")
+エディター  Library/Scripts/Scripts.vcxproj + Scripts.sln    (開くたびに書く。IntelliSense 用のインクルードパス入り)
+            作業スレッドで MSBuild ── 前に rmgen --scripts (Generated/rm_scripts.cpp: 表と RmModuleInit)
+                                   └→ Library/Scripts/Scripts_0007.dll (毎回別の名前)
+ランタイム  ScriptModule::Load(dll, api) ─ LoadLibrary → RmModuleInit(&api, RM_ABI_VERSION) → スクリプトを reflect::TypeDesc に
+            スクリプト = エンティティの部品 (型の名前で保存。インスペクター・保存・Undo・コピーは部品と同じ道)
+            ScriptRunner::Frame(scene, world, module, 実行順, dt) / Stop (EndPlay)
+```
+
+- **境目** (`game_production/runtime/sdk/RmAbi.h`。C だけ): DLL が export するのは `RmModuleInit(const RmApi*, uint32_t abi)` の 1 本。両方が `RM_ABI_VERSION` を確かめ、違えば弾く (`CheckModule`。整列 16 より大きい型・知らない欄の種類・同じ名前も)。境目で `std::string` を渡さず仮想関数も使わない (`const char*` と関数ポインタ)。スクリプトの欄の `std::string` はエンジンが直接読み書きする (同じツールセット v143・同じ CRT: Release は /MD、Debug のエンジンは /MDd でビルドする)
+- **API の表**: `RmApi{abi, ctx, core, part}`。`core` (`RmCoreApi`) はゲーム制作のもの (ログ・時間・名前で探す・有効・名前・親・キー・カメラ・GetScript)。**空間を知る物はプラグインの部分**: 各プラグインのランタイムが `RuntimeRegistry` の口 `kScriptApiPoint` に `ScriptApiPart{名前, 版, 表}` を差し出し、スクリプトは `api->part(ctx, 名前, 版)` で引く (つなぎ「ゲーム制作 × 3D」= `RM3DAbi.h` の Transform、「× 2D」= `RM2DAbi.h`)。ゲーム制作は 3D / 2D を知らない。`ctx` はゲーム制作の `ScriptWorld` (動いているシーン・dt・時間・カメラ・キー)
+- **配るヘッダー**: `plugins/**/runtime/sdk/*.h` (RM.h・RmAbi.h・RM3D.h・RM3DAbi.h・RM2D.h・RM2DAbi.h) をビルドで `<exe>/Sdk/` に写す。ヘルプは RM.h のコメント (Visual Studio のツールチップ)。ユーザーのヘッダーは生成物を読まない (`rm::Api()` は生成した登録が定義する)
+- **rmgen `--scripts`**: スクリプトのフォルダのヘッダーを読み、`rm_scripts.cpp` を書く (各スクリプトの欄の表・作り方・フック (`requires` で有るものだけ)・コンパイル時の検査 (集成体・欄の数・欄の型)・`RmModuleInit`)。スクリプトでまだ使えない物 (RM_STRUCT / RM_ENUM・一覧・入れ子・AssetRef) は `RM0013`。エンジンのビルドは `--skip-dir templates` (テンプレートの中のスクリプトはゲームのもの。vcxproj・check_layers・check_lang も templates/ のコードを見ない)
+- **実行順** (§5 の決定): 型ごとにまとめて回す。型どうしはゲームの設定の「スクリプトの実行順」(`ScriptOrderEntry{型, 順番}`) の小さい順、無い型は 0、同じ数は型名の辞書順 (`SortScriptTypes`)。同じ型の中はエンティティの ID の順 → 付けた順 (★ 設計の「アタッチごとの安定 ID」は保存形式に足していない。ID と付けた順で代える)。1 フレーム = まだ始まっていない物の BeginPlay を全部 → 全部の Tick (そのフレームに作られた物は次のフレームの最初に BeginPlay)。有効でない (親を含む) 物は回さない。インスペクターのかたまりに「スクリプト ・ 実行順 N」
+- **落ちたとき**: 全部のフックと `RmModuleInit` を `__try` / `__except` で呼ぶ (`ScriptGuard.cpp`: デストラクタを持つ物を置けない関数なので分けた)。落ちたスクリプト (その 1 つ) は止めて、コンソールに 1 回だけ出す
+- **Play の 1 フレーム**: 入力を読む → スクリプトの BeginPlay / Tick → システム (固定の刻み → 毎フレーム)。スクリプトが `rm::Game::SetCamera` で変えたカメラはシステムにも渡る (`SystemContext::camera`)
+- **ビルド** (`editor/ScriptBuild.*`): vswhere で MSBuild を探し (`-requires Microsoft.Component.MSBuild`)、`Scripts.vcxproj` を `-p:TargetName=Scripts_<次の番号> -p:OutDir=Library/Scripts/` でビルド。出力はファイルのログ (UTF-8) から読み、`error` の行をコンソールへ。2 つ前より古い DLL は消す (使っている物は消えない)。作業スレッド (`editor/app/Worker`) で走り、結果は UI のスレッドに戻ってから使う (`GameScripts`)
+- **ホットリロード** (§20-c の決定): `GameScripts::Poll` が 1 秒ごとに Assets/Scripts の更新時刻を見てビルド。**編集中に成功** → 次のフレームの切れ目 (`Tick`) で入れ替え: 新しい DLL を先に読み → シーンを JSON に書き出し → スクリプトの物を壊す (古い型を外して読み直す) → Undo の履歴を消す (古い型の欄を指しているので) → 古い DLL を外す → 新しい型で読み戻す (値は名前で。足した欄 = 既定値、消した欄 = 知らないキーとして残す、型が変わった欄 = 変えられれば変える、消えた型 = 使えない部品として値ごと残す)。**Play 中に成功** → 入れ替えず「Stop で反映されます」、Stop で Play 前のシーンに戻してから (次のフレームで) 入れ替え。失敗 → 前の DLL のまま
+- **読む DLL はホストが決める** (書き出しのセッションへ): ランタイムの入口は `ScriptModule::Load(dll, MakeScriptApi(world), &why)`・`ScriptApiParts(registry)` (`world.parts` に入れる)・`ScriptRunner::Frame` / `Stop`。エディターは `LatestScriptDll(<プロジェクト>/Library/Scripts)` (= `Scripts_<数>.dll` の数が一番大きい物。`ScriptBuildFolder(project)` が Library/Scripts)。**書き出したゲームは exe の横の `Scripts.dll`** (書き出しは最新の DLL を `Scripts.dll` の名前で写すだけ: 同じ DLL がエディターとゲームの両方で動く)。スクリプトの型は `module.Types()` を `Scene::SetComponentTypes` の部品の型と複数可の型に足してから、シーンを読む
+- 書き出したゲームのキー: `ScriptWorld::keyDown` にホストの関数を入れる (エディターは自分のウィンドウが前にあるときだけ `GetAsyncKeyState`)
+- テスト: `TestScripts.cpp` (実行順・ABI の検査・反映する型・BeginPlay が Tick より前・型ごと・落ちても他は動く・値の引き継ぎの表・中心の API・rmgen の登録と RM0013)、`TestScriptBuild.cpp` (生成する vcxproj / sln の文字・エラーの行、**本物の MSBuild で見本 (ArrowMover) をビルドして読み、右キーで 1 秒に 3 動くこと・BeginPlay / EndPlay・2 回目は Scripts_0002.dll**。Visual Studio が無い PC では飛ばす)
+- ★ まだ: スクリプトから部品を足す / 外す・エンティティを作る / 消す、衝突のフック、欄の一覧・列挙・入れ子の構造体・アセットの参照、Play 中の入れ替え、`OnReloaded`、「この値を残す」、エンジンを Debug でビルドしたときの Debug DLL の確認 (Release でだけ本物のビルドを確かめた)、書き出したゲームが読むこと (書き出しのセッション)
+
 ### Prefab (`plugins/rm_engine/game_production/runtime/Prefab.h`)
 
 ```
@@ -698,3 +724,4 @@ GameSettings::space = "2d"   (プロジェクトのデータ。空 = order が�
 7. ECS の残り: ~~カメラの部品~~ (2026-11-11: ゲームビューと Play は「最初のカメラ」から。シーンビューに視錐台とプレビュー。画面は未確認。~~止まっているときのゲームビュー・Play 中にカメラを切り替える口 (`SystemContext::camera`)・カメラのカリング (いつもオンの視錐台カリング。影の絵には全部描く)~~ (2026-11-11 済み。画面は未確認。残り: 物に隠れた物を描かない (オクルージョンカリング)・物が多いときに木で分ける (BVH など)))・~~入れ子の Prefab・Prefab をアセットの参照で指す・書き出したゲームがシステムの一覧を読む口~~ (2026-11-11 済み。画面は未確認) (2026-11-11 に システム・Play・同じ部品を複数・Prefab を作った)
 8. ~~エンジンを新しくしたときに、入れたプラグインの `plugin.json` を写し直す~~ (2026-11-11 済み: 起動のときに、ファイルの一覧が変わっていれば違うプラグインを写し直す。画面は未確認)
 9. ~~つなぎプラグインの残り: 2D 空間と「ゲーム制作 × 2D」。インストール画面でつなぎを見せない~~ (2026-11-11 済み。画面は未確認: `docs/HOW_TO_TRY.md` の 7-7 章)。その後 (2026-11-11) 2D のカメラの回転・中心で回す・刻みの箱・四角で囲んで選ぶ・アトラスとアニメーション・3D の上に 2D・画像の読み込みを 1 本に、も済み (画面は未確認)。残り: 2D のゲームの下に 3D・不ぞろいなアトラス
+10. C++ スクリプトの残り (2026-11-12 に最初の版: 書いて・ビルドして・付けて・Play で動かし・保存で入れ替える): スクリプトから部品を足す / 外す・エンティティを作る / 消す・衝突のフック・欄の一覧 / 列挙 / 入れ子 / アセットの参照・Play 中の入れ替えと `OnReloaded`・「この値を残す」・Visual Studio が無いときの案内の画面 (4 と同じ)

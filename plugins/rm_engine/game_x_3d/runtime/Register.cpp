@@ -6,6 +6,7 @@
 #include "rm_engine/game_x_3d/runtime/CameraCycle.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
 #include "rm_engine/game_x_3d/runtime/Spin.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -38,6 +39,8 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(kComponentPoint, kCycle);
     static const game_production::SystemInfo kCycleSystem{"カメラを順に切り替える", game_production::SystemPhase::Frame, 0, &RunCameraCycle};
     registry.Contribute(game_production::kSystemPoint, kCycleSystem);
+    // Scripts: Transform in 3D (sdk/RM3D.h).
+    registry.Contribute(game_production::kScriptApiPoint, ScriptTransform3DPart());
 }
 
 }  // namespace rm::game_x_3d

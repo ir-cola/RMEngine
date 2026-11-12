@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "C++ スクリプト: Assets/Scripts に書いた RM_SCRIPT の型が、部品と同じように付けられ、Play で BeginPlay / Tick / EndPlay が動く。保存すると裏でビルドして入れ替え (Play 中は Stop で)。落ちてもエディターは止まらない。「Visual Studio で開く」で補完が効く。テンプレート「ゲーム」に見本 (矢印キーで動く)",
+          "en": "C++ scripts: RM_SCRIPT types written in Assets/Scripts are attached like components, and BeginPlay / Tick / EndPlay run while playing. Saving builds them in the background and swaps them in (while playing: on Stop). A crashing script never takes the editor down. Open in Visual Studio gives IntelliSense. The Game template has a sample (move with the arrow keys)"
+        },
+        {
           "ja": "3D のテクスチャを GPU の圧縮形式 (BC1 / BC3 / BC4 / BC5 / BC7) で持ち、圧縮したものをプロジェクトの Cache フォルダに残して次からすぐ読む。画像の取り込みの設定に「圧縮」、モデルに「中の絵の圧縮」「中の絵の大きさの上限」。GPU へ送るのは 1 フレームに 2 ms まで。2D のスプライトの画像も別のスレッドで読む",
           "en": "3D textures are kept in GPU compressed formats (BC1 / BC3 / BC4 / BC5 / BC7); the compressed result is kept in the project's Cache folder and read quickly next time. New import settings: Compression for images, and Compression / Largest size of pictures inside for models. Sending to the GPU takes at most 2 ms per frame. 2D sprite images are read on a thread of their own too"
         },

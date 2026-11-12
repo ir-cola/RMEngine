@@ -172,10 +172,10 @@
   <ItemGroup>
     <!-- one object folder per source folder: two plugins may both have an editor/Register.cpp -->
     <!-- (not the scripts inside templates/: they are a game's, built into its own DLL) -->
-    <ClCompile Include="..\plugins\**\*.cpp" Exclude="..\plugins\**	emplates\**">
+    <ClCompile Include="..\plugins\**\*.cpp" Exclude="..\plugins\**\templates\**">
       <ObjectFileName>$(IntDir)plugins\%(RecursiveDir)</ObjectFileName>
     </ClCompile>
-    <ClInclude Include="..\plugins\**\*.h" Exclude="..\plugins\**	emplates\**" />
+    <ClInclude Include="..\plugins\**\*.h" Exclude="..\plugins\**\templates\**" />
     <None Include="..\plugins\**\plugin.json" />
   </ItemGroup>
   <PropertyGroup>
@@ -189,7 +189,10 @@
     <ItemGroup>
       <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json;$(RMRoot)plugins\**\themes\*.json;$(RMRoot)plugins\**\templates\**\*" />
       <LangFile Include="$(RMRoot)resources\lang\*.json" />
+      <!-- the headers a game's scripts include (RM.h and the plugins' parts): <exe>/Sdk/ -->
+      <ScriptSdk Include="$(RMRoot)plugins\**\runtime\sdk\*.h" />
     </ItemGroup>
+    <Copy SourceFiles="@(ScriptSdk)" DestinationFolder="$(OutDir)Sdk" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(PluginManifest)" DestinationFiles="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <!-- the core's translations: <exe>/Lang/en.json (editor/lang) -->
     <Copy SourceFiles="@(LangFile)" DestinationFolder="$(OutDir)Lang" SkipUnchangedFiles="true" />
