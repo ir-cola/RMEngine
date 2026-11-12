@@ -3,6 +3,7 @@
 #include "editor/lang/Lang.h"
 
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_x_3d/editor/ExportBake.h"
 #include "rm_engine/game_x_3d/editor/SceneView3D.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
@@ -57,6 +58,8 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // ... and are seen in 3D in the scene view.
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView3D, "3d", editor::TrKey(L"3D"), /*order*/ 0};
     registry.Contribute(game_production::kSceneViewPoint, kSceneView);
+    // An exported game gets its models and pictures baked (the game's own form: ExportBake.cpp).
+    RegisterExportBake(registry);
 }
 
 }  // namespace rm::game_x_3d

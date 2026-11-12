@@ -352,6 +352,7 @@ public:
         in.outDir = outDir;
         in.settings = reflect::Save(settings_, &unknowns_);
         in.icon = settings_.icon;
+        in.iconFile = settings_.icon.Empty() ? fs::path() : host_.AssetFile(settings_.icon);
         in.projectRoot = host_.GetProject().Root();
         in.assetFile = [this](const AssetRef& r) { return host_.AssetFile(r); };
         in.scriptsDll = LatestScriptDll(in.projectRoot / L"Library" / L"Scripts");
@@ -407,13 +408,22 @@ public:
         return true;
     }
 
+    // The plugins' bakers (ゲーム用の形に変える: 3D models, pictures) - statics, usable from any thread.
+    std::vector<const ExportBaker*> Bakers() const {
+        std::vector<const ExportBaker*> out;
+        for (const auto& b : host_.Registry().Contributions<ExportBaker>(kExportBakePoint)) out.push_back(b.item);
+        return out;
+    }
+
     // The export check's command line: on this thread, the lines to the log.
     bool ExportNow(const fs::path& outDir, std::string* error) override {
         if (!scripts_.BuildAndWait(error)) return false;  // the newest scripts, built (the game gets them as Scripts.dll)
         GameExportInput in;
         editor::exporter::Request req;
-        if (!ExportInput(outDir, in, error) || !MakeRequest(in, req, error)) return false;
-        return editor::exporter::Run(req, [](float, const std::string& line) { log::Info("書き出し: {}", line); }, error);
+        if (!ExportInput(outDir, in, error)) return false;
+        auto note = [](const std::string& line) { log::Info("書き出し: {}", line); };
+        if (!MakeRequest(in, CollectAssets(in), Bakers(), req, note, error)) return false;
+        return editor::exporter::Run(req, [&](float, const std::string& line) { note(line); }, error);
     }
 
     // The 書き出し button: the request made here (the data as it is now), the work on a worker.
@@ -422,26 +432,29 @@ public:
         auto run = std::make_shared<ExportRun>();
         exportRun_ = run;
         GameExportInput in;
-        editor::exporter::Request req;
         std::string err;
-        if (!ExportInput(OutputNow(), in, &err) || !MakeRequest(in, req, &err)) {
+        if (!ExportInput(OutputNow(), in, &err)) {
             run->lines.push_back(err);
             run->ok = false;
             log::Error("書き出し: {}", err);
             return;
         }
+        // What the editor knows is read here; the rest (baking, linking) on the worker - only files.
+        std::vector<ExportAsset> assets = CollectAssets(in);
+        in.assetFile = nullptr;
         run->running = true;
-        log::Info("書き出しを始めます: {}", PathToUtf8(req.outDir));
-        exportThread_ = std::jthread([run, req = std::move(req)] {
+        log::Info("書き出しを始めます: {}", PathToUtf8(in.outDir));
+        exportThread_ = std::jthread([run, in = std::move(in), assets = std::move(assets), bakers = Bakers()] {
+            auto line = [&](float p, const std::string& text) {
+                std::lock_guard lock(run->mtx);
+                if (p >= 0) run->progress = p;
+                run->lines.push_back(text);
+                log::Info("書き出し: {}", text);
+            };
             std::string error;
-            const bool ok = editor::exporter::Run(req,
-                                                  [&](float p, const std::string& line) {
-                                                      std::lock_guard lock(run->mtx);
-                                                      run->progress = p;
-                                                      run->lines.push_back(line);
-                                                      log::Info("書き出し: {}", line);
-                                                  },
-                                                  &error);
+            editor::exporter::Request req;
+            const bool ok = MakeRequest(in, assets, bakers, req, [&](const std::string& t) { line(-1, t); }, &error) &&
+                            editor::exporter::Run(req, line, &error);
             std::lock_guard lock(run->mtx);
             if (!ok) run->lines.push_back(error);
             run->ok = ok;
@@ -482,13 +495,21 @@ public:
         const editor::inspector::Block b{&reflect::TypeOf<ExportView>(), &v, nullptr, {}, {}, {}};
         const Rect box{area.x - 12, area.y, area.w + 12, std::max(3 * 30.f + 10, exportInspector_.contentHeight)};
         if (auto edit = editor::inspector::Draw(c, exportInspector_, box, std::span(&b, 1))) ApplyExportEdit(*edit);
-        float y = box.Bottom() + 6;
+        float y = box.Bottom() + 4;
+        if (editor::w::Button(c, "export_browse", {area.Right() - 160, y, 160, 26}, Tr(L"出力先を選ぶ…"))) {
+            host_.PickFolder(Tr(L"書き出すフォルダを選ぶ"), OutputNow(), [this](fs::path folder) {
+                json::Value e = view_.Get("export").IsObject() ? view_.Get("export") : json::Value::MakeObject();
+                e.Set("output", PathToUtf8(folder));
+                view_.Set("export", std::move(e));
+            });
+        }
+        y += 32;
         ui::TextStyle ts;
         ts.size = 12;
         ts.color = theme::TextDim;
         // The icon: the game settings' (shown here, chosen there).
         const fs::path icon = settings_.icon.Empty() ? fs::path() : host_.AssetFile(settings_.icon);
-        p.Text({area.x, y, area.w - 170, 26}, TrF(L"アイコン: {}", icon.empty() ? Tr(L"(なし。ゲームの設定の「アイコン」に PNG を選びます)") : icon.filename().native()), ts);
+        p.Text({area.x, y, area.w - 170, 26}, TrF(L"アイコン: {}", icon.empty() ? Tr(L"(なし。ゲームの設定の「アイコン」に PNG か ICO を選びます)") : icon.filename().native()), ts);
         if (editor::w::Button(c, "export_settings", {area.Right() - 160, y, 160, 26}, Tr(L"ゲームの設定を開く"))) InspectSettings();
         y += 34;
         const std::string problem = editor::exporter::ExeNameProblem(v.exeName);

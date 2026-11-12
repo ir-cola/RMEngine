@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace rm::game_production {
 
@@ -31,14 +32,20 @@ struct GameDrawFrame {
     platform::Gfx& gfx;
     ID2D1DeviceContext* dc;      // the window's (its whole client area)
     float width = 0, height = 0;  // DIPs
-    // The bytes of an asset (the game: from its .rmpak); nullopt when it is not there.
+    // The bytes of an asset (the game: from its .rmpak - what the export put in for it, baked or as
+    // its file); nullopt when it is not there.
     std::function<std::optional<std::string>(const AssetRef&)> asset;
+    // A file of the game's own by its path (a baked model's pictures: "Baked/<id>/0.dds").
+    std::function<std::optional<std::string>(std::string_view path)> file;
 };
 
 class GameDrawer {
 public:
     virtual ~GameDrawer() = default;
     virtual void Draw(const GameDrawFrame& f) = 0;
+    // Over another space's picture (a 2D layer over a 3D game: カメラ (2D)「3D の上に重ねる」). Drawn
+    // after the game's own drawer, by the drawers of the other spaces; nothing by default.
+    virtual void DrawOverlay(const GameDrawFrame& f) { (void)f; }
 };
 
 // RuntimeRegistry point: items are GameDrawInfo (static).

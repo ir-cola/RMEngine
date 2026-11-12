@@ -1,9 +1,10 @@
 // The exported game's drawing in 3D (game_production/runtime/GameDraw.h): the scene through the game's
 // camera, by 3D 空間's renderer, into the window.
 //
-// ★ First version: a thing with a 3D model (メッシュ) is drawn as its box (models are not read from the
-// .rmpak yet - MeshFile reads files, and a model's other files are named inside it). Lights, 環境光,
-// shadows, the camera and switched-off things are as in the editor's game view.
+// A thing with a 3D model (メッシュ) is drawn with the model the export baked (MeshBake: read as the editor
+// reads it, in this engine's form) and its pictures as the GPU takes them (DDS: BC7 turned into RGBA on a
+// GPU without it); without one, or when it cannot be read, as a box. Lights, 環境光, shadows, the camera
+// and switched-off things are as in the editor's game view.
 
 #include "rm_engine/game_x_3d/runtime/GameDraw3D.h"
 
@@ -13,7 +14,11 @@
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/space3d/runtime/BlockCompress.h"
+#include "rm_engine/space3d/runtime/MeshBake.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
+#include "rm_engine/space3d/runtime/Texture.h"
+#include "rm_engine/space3d/runtime/TextureFile.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
 
@@ -34,6 +39,7 @@ public:
         if (!renderer_.Ready() || generation_ != f.gfx.Generation()) {
             bitmap_.Reset();
             picture_ = nullptr;
+            models_.clear();  // (made on the devices that are gone)
             generation_ = f.gfx.Generation();
             std::string err;
             if (!renderer_.Init(f.gfx.D3D(), &err)) {
@@ -47,6 +53,7 @@ public:
                           camera = reflect::TypeOf<Camera>().name, light = reflect::TypeOf<Light>().name,
                           ambient = reflect::TypeOf<AmbientLight>().name;
         boxes_.clear();
+        meshes_.clear();
         lights_.clear();
         std::optional<space3d::Ambient> amb;
         std::optional<std::pair<Camera, space3d::Mat4>> eye;
@@ -72,7 +79,12 @@ public:
             if (ac && ac->Known() && !amb) amb = ToRenderAmbient(*static_cast<const AmbientLight*>(ac->value.Get()));
             const bool marker = ((cc && cc->Known()) || (lc && lc->Known()) || (ac && ac->Known())) && !(mc && mc->Known());
             if (marker) continue;
-            const bool shadow = !(mc && mc->Known()) || static_cast<const MeshRenderer*>(mc->value.Get())->castShadows;
+            const MeshRenderer* mr = mc && mc->Known() ? static_cast<const MeshRenderer*>(mc->value.Get()) : nullptr;
+            const bool shadow = !mr || mr->castShadows;
+            if (const Model* model = mr ? ModelOf(f, mr->model) : nullptr) {
+                meshes_.push_back({model->gpu.get(), w, Color{1, 1, 1, 1}, shadow, model->materials});
+                continue;
+            }
             boxes_.push_back({w, Color{0.78f, 0.80f, 0.84f, 1}, shadow});
         }
         if (lights_.size() > space3d::kMaxLights) lights_.resize(space3d::kMaxLights);
@@ -92,6 +104,7 @@ public:
         frame.projection = ProjectionOf(eye->first, f.width / std::max(1.f, f.height));
         frame.clear = BackgroundOf(eye->first, bg);
         frame.boxes = boxes_;
+        frame.meshes = meshes_;
         frame.lights = lights_;
         frame.ambient = amb.value_or(space3d::Ambient{});
         frame.shadows = true;
@@ -111,7 +124,62 @@ public:
     }
 
 private:
+    struct Model {
+        std::shared_ptr<const space3d::GpuMesh> gpu;
+        std::vector<space3d::DrawMaterial> materials;
+    };
+    // The baked model an asset id names, put on the GPU the first time (null: draw a box - told once).
+    const Model* ModelOf(const game_production::GameDrawFrame& f, const AssetRef& ref) {
+        if (ref.Empty()) return nullptr;
+        auto [it, first] = models_.try_emplace(ref.guid);
+        if (!first) return it->second.gpu ? &it->second : nullptr;
+        std::string err;
+        const auto bytes = f.asset(ref);
+        const auto mesh = bytes ? space3d::ReadBakedMesh(*bytes, &err) : std::nullopt;
+        if (!mesh) {
+            log::Warn("モデルを読めないので箱で描きます ({}): {}", ref.guid, bytes ? err : std::string("ゲームに入っていません"));
+            return nullptr;
+        }
+        Model& m = it->second;
+        m.gpu = renderer_.Upload(*mesh, &err);
+        if (!m.gpu) {
+            log::Warn("モデルを GPU に上げられないので箱で描きます ({}): {}", ref.guid, err);
+            return nullptr;
+        }
+        int pictures = 0;
+        for (const space3d::MeshMaterial& mat : mesh->materials) {
+            space3d::DrawMaterial d = space3d::MaterialNumbers(mat);
+            const auto slots = space3d::PictureSlots(mat);
+            for (size_t slot = 0; slot < slots.size(); ++slot) {
+                if (slots[slot].image < 0) continue;
+                const std::string& path = mesh->images[static_cast<size_t>(slots[slot].image)].file;
+                const auto dds = f.file(path);
+                auto pixels = dds ? space3d::ReadDds(std::span(reinterpret_cast<const uint8_t*>(dds->data()), dds->size()), &err) : std::nullopt;
+                if (!pixels) {
+                    log::Warn("モデルの絵を読めません ({}): {}", path, err);
+                    continue;
+                }
+                if (pixels->format == space3d::TextureFormat::BC7 && !renderer_.SupportsBC7()) {
+                    // A GPU without BC7: the picture as plain RGBA.
+                    for (platform::Image& level : pixels->levels) level = space3d::Decompress(level, pixels->format);
+                    pixels->format = space3d::TextureFormat::Rgba8;
+                }
+                if (auto tex = renderer_.UploadTexture(*pixels, &err)) {
+                    space3d::SetPicture(d, slot, std::move(tex));
+                    ++pictures;
+                } else {
+                    log::Warn("モデルの絵を GPU に上げられません ({}): {}", path, err);
+                }
+            }
+            m.materials.push_back(std::move(d));
+        }
+        log::Info("モデルを GPU に上げました: {} (三角形 {}・材質 {}・絵 {})", ref.guid, mesh->indices.size() / 3, mesh->materials.size(), pictures);
+        return &m;
+    }
+
     space3d::Renderer renderer_;
+    std::unordered_map<std::string, Model> models_;
+    std::vector<space3d::MeshDraw> meshes_;
     uint64_t generation_ = 0;
     std::vector<space3d::Box> boxes_;
     std::vector<space3d::Light> lights_;

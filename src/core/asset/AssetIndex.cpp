@@ -48,7 +48,7 @@ std::vector<std::string_view> Keys(std::string_view filter) {
 Kind KindOf(std::string_view fileName, bool folder) {
     if (folder) return Kind::Folder;
     static const std::map<std::string, Kind, std::less<>> kExt = {
-        {".png", Kind::Image},  {".jpg", Kind::Image},  {".jpeg", Kind::Image}, {".bmp", Kind::Image},  {".tga", Kind::Image},
+        {".png", Kind::Image},  {".ico", Kind::Image},  {".jpg", Kind::Image},  {".jpeg", Kind::Image}, {".bmp", Kind::Image},  {".tga", Kind::Image},
         {".gif", Kind::Image},  {".psd", Kind::Image},  {".dds", Kind::Image},  {".hdr", Kind::Image},  {".exr", Kind::Image},
         {".webp", Kind::Image}, {".tif", Kind::Image},  {".tiff", Kind::Image}, {".obj", Kind::Model},  {".fbx", Kind::Model},
         {".gltf", Kind::Model}, {".glb", Kind::Model},  {".dae", Kind::Model},  {".blend", Kind::Model}, {".3ds", Kind::Model},

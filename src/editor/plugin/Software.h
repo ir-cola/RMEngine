@@ -131,6 +131,9 @@ public:
     // The plugins this engine has (their plugin.json): an export adds the requirements and connectors
     // of the plugins a project uses (editor/export ExportPlugins).
     virtual std::vector<PluginManifest> PluginManifests() const = 0;
+    // The OS's folder dialog, opened after this frame (never while drawing); `done` gets the folder
+    // chosen (not called when cancelled).
+    virtual void PickFolder(std::wstring title, std::filesystem::path start, std::function<void(std::filesystem::path)> done) = 0;
 };
 
 // One software inside one open project.

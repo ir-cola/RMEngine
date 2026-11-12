@@ -103,5 +103,9 @@
   "(なし。ゲームの設定の「アイコン」に PNG を選びます)": "(none - choose a PNG as Icon in the game settings)",
   "書き出し中…": "Exporting…",
   "書き出す": "Export",
-  "スクリプトをビルドできませんでした (理由はログに出ています)": "Could not build the scripts (the reason is in the log)"
+  "スクリプトをビルドできませんでした (理由はログに出ています)": "Could not build the scripts (the reason is in the log)",
+  "「{}」を焼けませんでした: {}": "Could not bake \"{}\": {}",
+  "出力先を選ぶ…": "Choose output folder…",
+  "書き出すフォルダを選ぶ": "Choose the folder to export into",
+  "(なし。ゲームの設定の「アイコン」に PNG か ICO を選びます)": "(none - choose a PNG or ICO as Icon in the game settings)"
 }

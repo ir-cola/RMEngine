@@ -96,6 +96,10 @@ public:
             if (!chosen || d.item->order < chosen->order) chosen = d.item;
         }
         if (chosen && chosen->create) drawer_ = chosen->create();
+        // The other spaces' drawers draw their layers over it (2D over a 3D game).
+        for (const auto& d : host_.Registry().Contributions<GameDrawInfo>(kGameDrawPoint)) {
+            if (d.item != chosen && d.item->create) overlays_.push_back(d.item->create());
+        }
         if (!drawer_) host_.Log(1, "このゲームには描くプラグイン (3D / 2D) が入っていないので、背景の色だけを塗ります");
         host_.Log(0, std::format("システム {} 個・エンティティ {} 個", runner_.Systems().size(), scene_.Entities().size()));
         return true;
@@ -133,8 +137,15 @@ public:
                             auto bytes = host_.Read(it->second, &err);
                             if (!bytes) host_.Log(1, err);
                             return bytes;
+                        },
+                        [this](std::string_view path) -> std::optional<std::string> {
+                            std::string err;
+                            auto bytes = host_.Read(path, &err);
+                            if (!bytes) host_.Log(1, err);
+                            return bytes;
                         }};
         drawer_->Draw(f);
+        for (const auto& o : overlays_) o->DrawOverlay(f);
     }
 
     void Stop() override {
@@ -154,6 +165,7 @@ private:
     SystemRunner runner_;
     std::unordered_map<std::string, std::string> assets_;  // asset id -> its path in the .rmpak
     std::unique_ptr<GameDrawer> drawer_;
+    std::vector<std::unique_ptr<GameDrawer>> overlays_;
     ScriptRunner scriptRunner_;
 };
 

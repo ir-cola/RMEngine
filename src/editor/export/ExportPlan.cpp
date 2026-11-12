@@ -205,6 +205,16 @@ std::optional<std::string> IcoFromPng(std::string_view png) {
     return ico;
 }
 
+std::optional<std::string> IconFile(std::string_view bytes) {
+    // An .ico: reserved 0, type 1, at least one picture (and its 16-byte entries there).
+    if (bytes.size() >= 22 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 1 && bytes[3] == 0 && (bytes[4] != 0 || bytes[5] != 0)) {
+        const size_t count = static_cast<unsigned char>(bytes[4]) | (static_cast<size_t>(static_cast<unsigned char>(bytes[5])) << 8);
+        if (bytes.size() >= 6 + 16 * count) return std::string(bytes);
+        return std::nullopt;
+    }
+    return IcoFromPng(bytes);
+}
+
 uint64_t BuildNumber(const std::vector<std::pair<std::string, std::string>>& entries) {
     uint64_t h = 1469598103934665603ull;
     auto mix = [&](std::string_view s) {

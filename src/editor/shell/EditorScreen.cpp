@@ -208,6 +208,16 @@ AssetRef EditorScreen::Workspace::AssetOf(const fs::path& file) {
 
 std::vector<PluginManifest> EditorScreen::Workspace::PluginManifests() const { return editor_.app_.GetPlugins().Available(); }
 
+void EditorScreen::Workspace::PickFolder(std::wstring title, fs::path start, std::function<void(fs::path)> done) {
+    EditorScreen& ed = editor_;
+    ed.Defer([&ed, title = std::move(title), start = std::move(start), done = std::move(done)] {
+        if (auto folder = platform::PickFolder(ed.Hwnd(), title, start.native())) {
+            ed.ctx_.ClearFocus();  // a field being typed into must not write its old text back over the new value
+            done(fs::path(*folder));
+        }
+    });
+}
+
 bool EditorScreen::ExportForCheck(const fs::path& outDir, std::string* error) {
     for (auto& ws : workspaces_) {
         if (ws->software && ws->software->CanExport()) return ws->software->ExportNow(outDir, error);

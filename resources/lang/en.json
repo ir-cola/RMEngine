@@ -414,5 +414,6 @@
   "★ exe の中にこの PC のパスが残っています: {}": "★ The exe still holds a path of this PC: {}",
   "書き出しました: {}": "Exported: {}",
   "書き出せるソフトがありません (ゲーム制作のプラグインが要ります)": "No software can export (the Game Production plugin is needed)",
-  "アセットを暗号化できませんでした (Windows の暗号の機能 (CNG) を使えません)": "Could not encrypt the assets (Windows' cryptography (CNG) cannot be used)"
+  "アセットを暗号化できませんでした (Windows の暗号の機能 (CNG) を使えません)": "Could not encrypt the assets (Windows' cryptography (CNG) cannot be used)",
+  "アイコンの画像が PNG でも ICO でもないので、アイコンなしで書き出します": "The icon is neither a PNG nor an ICO, so the game is exported without an icon"
 }

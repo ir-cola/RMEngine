@@ -39,7 +39,36 @@ std::vector<std::string> AssetIdsIn(const json::Value& v) {
     return out;
 }
 
-bool MakeRequest(const GameExportInput& in, editor::exporter::Request& out, std::string* error) {
+std::vector<ExportAsset> CollectAssets(const GameExportInput& in) {
+    std::vector<std::string> ids;
+    auto add = [&](const json::Value& doc) {
+        for (const std::string& id : AssetIdsIn(doc)) {
+            if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
+        }
+    };
+    for (const auto& s : in.scenes) {
+        if (auto doc = json::Parse(s.second)) add(*doc);
+    }
+    std::vector<ExportAsset> out;
+    for (size_t i = 0; i < ids.size(); ++i) {
+        const fs::path file = in.assetFile(AssetRef{ids[i]});
+        if (file.empty()) continue;  // an id of something else (an entity's), or a file that is gone: the game draws without it
+        const std::string rel = PathToUtf8(file.lexically_normal().lexically_relative(in.projectRoot.lexically_normal()).generic_wstring());
+        if (!editor::exporter::PortablePath(rel)) continue;  // not in the project: never written into the game
+        if (std::any_of(out.begin(), out.end(), [&](const ExportAsset& a) { return a.rel == rel; })) continue;
+        out.push_back({ids[i], file, rel, in.projectRoot});
+        // A prefab places more (its own assets, the prefabs inside it).
+        if (file.extension() == L".rmprefab") {
+            if (const auto bytes = ReadAll(file)) {
+                if (auto doc = json::Parse(*bytes)) add(*doc);
+            }
+        }
+    }
+    return out;
+}
+
+bool MakeRequest(const GameExportInput& in, const std::vector<ExportAsset>& assets, const std::vector<const ExportBaker*>& bakers,
+                 editor::exporter::Request& out, const std::function<void(const std::string&)>& note, std::string* error) {
     auto fail = [&](std::string msg) {
         if (error) *error = std::move(msg);
         return false;
@@ -51,45 +80,44 @@ bool MakeRequest(const GameExportInput& in, editor::exporter::Request& out, std:
     out.plugins = in.plugins;
     out.scriptsDll = in.scriptsDll;
     out.privatePaths = {PathToUtf8(in.projectRoot)};
-
-    // The scenes, and every asset id they write (the prefabs they place bring theirs: followed until
-    // nothing new comes).
-    std::vector<std::string> ids;
+    if (!in.iconFile.empty()) {
+        if (auto bytes = ReadAll(in.iconFile)) out.iconPng = std::move(*bytes);
+    }
+    // The scenes, as they are now.
     for (const auto& [path, text] : in.scenes) {
         if (!editor::exporter::PortablePath(path)) return fail(editor::TrU8F("シーンのファイルがプロジェクトの外にあります: {}", path));
         out.files.push_back({path, text});
-        if (auto doc = json::Parse(text)) {
-            for (const std::string& id : AssetIdsIn(*doc)) {
-                if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
-            }
-        }
     }
-    if (!in.icon.Empty() && std::find(ids.begin(), ids.end(), in.icon.guid) == ids.end()) ids.push_back(in.icon.guid);
-    json::Value assets = json::Value::MakeObject();
-    std::unordered_map<std::string, std::string> taken;  // pak path -> its id (two ids never share a file)
-    for (size_t i = 0; i < ids.size(); ++i) {
-        const fs::path file = in.assetFile(AssetRef{ids[i]});
-        if (file.empty()) continue;  // an id of something else (an entity's), or a file that is gone: the game draws without it
-        const std::string rel = PathToUtf8(file.lexically_normal().lexically_relative(in.projectRoot.lexically_normal()).generic_wstring());
-        if (!editor::exporter::PortablePath(rel)) continue;  // not in the project: never written into the game
-        if (std::any_of(in.scenes.begin(), in.scenes.end(), [&](const auto& s) { return s.first == rel; })) {
-            assets.Set(ids[i], rel);
-            continue;  // a scene: already in (as it is now)
+    auto has = [&](const std::string& path) {
+        return std::any_of(out.files.begin(), out.files.end(), [&](const pak::Entry& e) { return e.path == path; });
+    };
+    // The assets: baked into the game's own form by the first baker that takes each, else as their file.
+    json::Value map = json::Value::MakeObject();
+    for (const ExportAsset& a : assets) {
+        if (std::any_of(in.scenes.begin(), in.scenes.end(), [&](const auto& s) { return s.first == a.rel; })) {
+            map.Set(a.id, a.rel);  // a scene: already in (as it is now)
+            continue;
         }
-        if (!taken.emplace(rel, ids[i]).second) continue;
-        const auto bytes = ReadAll(file);
-        if (!bytes) return fail(editor::TrU8F("アセットを読めません: {}", rel));
-        assets.Set(ids[i], rel);
-        out.files.push_back({rel, *bytes});
-        if (ids[i] == in.icon.guid) out.iconPng = *bytes;
-        // A prefab places more (its own assets, the prefabs inside it).
-        if (fs::path(file).extension() == L".rmprefab") {
-            if (auto doc = json::Parse(*bytes)) {
-                for (const std::string& id : AssetIdsIn(*doc)) {
-                    if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
-                }
+        bool baked = false;
+        for (const ExportBaker* b : bakers) {
+            ExportBaked made;
+            std::string why;
+            const BakeResult r = b->bake(a, made, &why);
+            if (r == BakeResult::NotMine) continue;
+            if (r == BakeResult::Failed) return fail(editor::TrU8F("「{}」を焼けませんでした: {}", a.rel, why));
+            for (pak::Entry& e : made.files) {
+                if (!has(e.path)) out.files.push_back(std::move(e));
             }
+            map.Set(a.id, made.path);
+            if (!made.note.empty() && note) note(made.note);
+            baked = true;
+            break;
         }
+        if (baked) continue;
+        const auto bytes = ReadAll(a.file);
+        if (!bytes) return fail(editor::TrU8F("アセットを読めません: {}", a.rel));
+        map.Set(a.id, a.rel);
+        if (!has(a.rel)) out.files.push_back({a.rel, *bytes});
     }
 
     // game.json: what the game reads first (GamePlayer.h).
@@ -102,7 +130,7 @@ bool MakeRequest(const GameExportInput& in, editor::exporter::Request& out, std:
     for (const auto& s : in.scenes) scenes.Push(s.first);
     game.Set("scenes", std::move(scenes));
     game.Set("open", static_cast<int64_t>(in.open));
-    game.Set("assets", std::move(assets));
+    game.Set("assets", std::move(map));
     // Never a path of this PC in what the game reads.
     if (const auto abs = editor::exporter::AbsolutePathsIn(game); !abs.empty()) {
         return fail(editor::TrU8F("ゲームのデータにこの PC のパスが入っています: {}\n相対パスにしてから書き出してください。", abs.front()));

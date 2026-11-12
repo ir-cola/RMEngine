@@ -57,6 +57,9 @@ std::string GameResourceSource(std::string_view titleUtf8, std::string_view exeN
 // An .ico holding one PNG picture (Windows Vista and later read PNG inside an icon). Nullopt when
 // `png` is not a PNG.
 std::optional<std::string> IcoFromPng(std::string_view png);
+// The .ico of an icon picture: an .ico as it is (its pictures of every size), a PNG put inside one
+// (IcoFromPng). Nullopt for anything else.
+std::optional<std::string> IconFile(std::string_view bytes);
 
 // The export's number (the exe and its .rmpak carry it): from what goes into the .rmpak, so the same
 // game exported again gets the same number (and so the same files). Never 0.

@@ -277,3 +277,18 @@ RM_TEST(Export_AssetIdsOfAScene) {
     CHECK(std::find(ids.begin(), ids.end(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") != ids.end());
     CHECK(std::find(ids.begin(), ids.end(), "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") != ids.end());
 }
+
+RM_TEST(Export_IconFile) {
+    // An .ico as it is (every size in it), a PNG put in one, anything else none.
+    std::string ico("\0\0\x01\0\x01\0", 6);
+    ico += std::string(16, '\x01');
+    ico += "picture";
+    CHECK(IconFile(ico) == ico);
+    CHECK(!IconFile(std::string("\0\0\x01\0\x02\0", 6) + std::string(16, '\x01')));  // says 2 entries, has 1
+    CHECK(!IconFile("BM........................"));
+    std::string png = "\x89PNG\r\n\x1a\n";
+    png += std::string("\0\0\0\x0dIHDR", 8);
+    png += std::string("\0\0\0\x20\0\0\0\x20", 8);
+    const auto made = IconFile(png);
+    CHECK(made && made->substr(22) == png);
+}

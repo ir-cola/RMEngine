@@ -52,7 +52,8 @@ foreach ($t in $templates) {
         continue
     }
     $size = [Math]::Round($exe[0].Length / 1KB)
-    Write-Host "OK  $($t[2]): $($exe[0].Name) ($size KB) を書き出し、--smoke で起動して閉じました"
+    $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB, 1)
+    Write-Host "OK  $($t[2]): $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB) を書き出し、--smoke で起動して閉じました"
 }
 # A game with a script: the template 「ゲーム」 (its sample script ArrowMover), an entity with it put into
 # the scene, the scripts built and the project exported, then the game with --smoke: its game.log must
@@ -98,6 +99,99 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         } else {
             $size = [Math]::Round($exe[0].Length / 1KB)
             Write-Host "OK  game_scripts: $($exe[0].Name) ($size KB) + Scripts.dll を書き出し、--smoke で BeginPlay と Tick ($($ticked.Groups[1].Value) コマ) が回りました"
+        }
+    }
+}
+
+# A 3D game with a model: the template 「3D のゲーム」 with docs/samples/models/house.gltf (and its two
+# pictures) put on an entity. The export bakes it (the engine's form + DDS); the game must put it on the
+# GPU as a model with its pictures (game.log), not draw a box.
+$dir = Join-Path $work 'game_model'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+$p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_3d', 'game_3d', "`"$dir`"") -Wait -PassThru
+$rmpf = Join-Path $dir 'Project\Project.rmpf'
+if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
+    Write-Host "NG  game_model: プロジェクトを作れませんでした。$log を見てください"
+    $failed++
+} else {
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $models = Join-Path $dir 'Project\Assets\Models'
+    New-Item -ItemType Directory -Force $models | Out-Null
+    foreach ($f in 'house.gltf', 'house_walls.png', 'roof_tiles.png') { Copy-Item (Join-Path $root "docs\samples\models\$f") $models }
+    $guid = [Guid]::NewGuid().ToString('N')
+    [IO.File]::WriteAllText((Join-Path $models 'house.gltf.meta'), "{`"guid`": `"$guid`", `"name`": `"house.gltf`"}", $utf8)
+    $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Main.rmscene'
+    $scene = [IO.File]::ReadAllText($sceneFile, $utf8) | ConvertFrom-Json
+    $id = [int]$scene.nextId
+    $house = [ordered]@{ id = $id; parent = 0; name = 'House'; active = $true; components = @(
+        [ordered]@{ type = 'rm::space3d::Transform'; data = [ordered]@{ position = @(3, 0, 0) } },
+        [ordered]@{ type = 'rm::game_x_3d::MeshRenderer'; data = [ordered]@{ model = $guid } }) }
+    $scene.entities = @($scene.entities) + @($house)
+    $scene.nextId = $id + 1
+    [IO.File]::WriteAllText($sceneFile, ($scene | ConvertTo-Json -Depth 20), $utf8)
+    $game = Join-Path $dir 'Game'
+    $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
+    $exe = @(Get-ChildItem $game -Filter *.exe -ErrorAction SilentlyContinue)
+    if ($p.ExitCode -ne 0 -or $exe.Count -ne 1) {
+        Write-Host "NG  game_model: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
+        $failed++
+    } else {
+        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        $up = [regex]::Match($gameLog, "モデルを GPU に上げました: $guid \(三角形 (\d+)・材質 (\d+)・絵 (\d+)\)")
+        if ($r.ExitCode -ne 0 -or -not $up.Success -or [int]$up.Groups[1].Value -lt 1 -or [int]$up.Groups[3].Value -lt 1 -or $gameLog.Contains('箱で描きます')) {
+            Write-Host "NG  game_model: モデルが形で上がっていません (終了コード $($r.ExitCode))"
+            $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+        } else {
+            $size = [Math]::Round($exe[0].Length / 1KB)
+            $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB)
+            Write-Host "OK  game_model: $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB)。モデルを形で GPU に上げました (三角形 $($up.Groups[1].Value)・材質 $($up.Groups[2].Value)・絵 $($up.Groups[3].Value))"
+        }
+    }
+}
+
+# A 2D game with a sprite's image: baked as DDS (BC1 / BC3, read by WIC in the game like any picture).
+$dir = Join-Path $work 'game_sprite'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+$p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_2d', 'game_2d', "`"$dir`"") -Wait -PassThru
+$rmpf = Join-Path $dir 'Project\Project.rmpf'
+if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
+    Write-Host "NG  game_sprite: プロジェクトを作れませんでした。$log を見てください"
+    $failed++
+} else {
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $images = Join-Path $dir 'Project\Assets\Images'
+    New-Item -ItemType Directory -Force $images | Out-Null
+    Copy-Item (Join-Path $root 'docs\samples\models\house_walls.png') $images
+    $guid = [Guid]::NewGuid().ToString('N')
+    [IO.File]::WriteAllText((Join-Path $images 'house_walls.png.meta'), "{`"guid`": `"$guid`", `"name`": `"house_walls.png`"}", $utf8)
+    $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Main.rmscene'
+    $scene = [IO.File]::ReadAllText($sceneFile, $utf8) | ConvertFrom-Json
+    $id = [int]$scene.nextId
+    $wall = [ordered]@{ id = $id; parent = 0; name = 'Wall'; active = $true; components = @(
+        [ordered]@{ type = 'rm::space2d::Transform2D'; data = [ordered]@{ position = @(2, 0) } },
+        [ordered]@{ type = 'rm::game_x_2d::Sprite'; data = [ordered]@{ image = $guid } }) }
+    $scene.entities = @($scene.entities) + @($wall)
+    $scene.nextId = $id + 1
+    [IO.File]::WriteAllText($sceneFile, ($scene | ConvertTo-Json -Depth 20), $utf8)
+    $game = Join-Path $dir 'Game'
+    $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
+    $exe = @(Get-ChildItem $game -Filter *.exe -ErrorAction SilentlyContinue)
+    if ($p.ExitCode -ne 0 -or $exe.Count -ne 1) {
+        Write-Host "NG  game_sprite: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
+        $failed++
+    } else {
+        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        if ($r.ExitCode -ne 0 -or -not $gameLog.Contains("画像を読みました: $guid")) {
+            Write-Host "NG  game_sprite: スプライトの画像を読めていません (終了コード $($r.ExitCode))"
+            $gameLog -split "`n" | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+        } else {
+            $size = [Math]::Round($exe[0].Length / 1KB)
+            $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB)
+            Write-Host "OK  game_sprite: $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB)。焼いた画像 (DDS) を読みました"
         }
     }
 }

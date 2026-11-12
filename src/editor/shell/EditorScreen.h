@@ -118,6 +118,7 @@ private:
         std::filesystem::path AssetFile(const AssetRef& ref) const override;
         AssetRef AssetOf(const std::filesystem::path& file) override;
         std::vector<PluginManifest> PluginManifests() const override;
+        void PickFolder(std::wstring title, std::filesystem::path start, std::function<void(std::filesystem::path)> done) override;
         void SelectInTree(std::vector<tree::ItemId> ids, bool rename) override {
             tree::RequestSelect(treeState, std::move(ids), rename);
             editor_.RedrawAll();

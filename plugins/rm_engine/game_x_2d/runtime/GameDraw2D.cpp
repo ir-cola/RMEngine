@@ -2,7 +2,8 @@
 // カメラ (2D), by 2D 空間's renderer, into the window. The same order and look as the editor's game view:
 // sprites back to front (Transform 2D's 並び順, then the sprite's, then the 階層's), an image's atlas
 // cell, a square of the colour without an image; switched-off things are not drawn.
-// ★ The 2D layer over a 3D game (カメラ (2D)「3D の上に重ねる」) is not drawn by the exported game yet.
+// Over a 3D game (DrawOverlay): through a カメラ (2D) with「3D の上に重ねる」- the 最初のカメラ when it is
+// one, else the first active one - without filling the background (as the editor's game view).
 
 #include "rm_engine/game_x_2d/runtime/GameDraw2D.h"
 
@@ -26,7 +27,11 @@ namespace {
 
 class Draw2D final : public game_production::GameDrawer {
 public:
-    void Draw(const game_production::GameDrawFrame& f) override {
+    void Draw(const game_production::GameDrawFrame& f) override { DrawWith(f, false); }
+    void DrawOverlay(const game_production::GameDrawFrame& f) override { DrawWith(f, true); }
+
+private:
+    void DrawWith(const game_production::GameDrawFrame& f, bool overlay) {
         if (generation_ != f.gfx.Generation() || dc_ != f.dc) {  // the devices were made again: their bitmaps go
             generation_ = f.gfx.Generation();
             dc_ = f.dc;
@@ -40,7 +45,7 @@ public:
             space2d::DrawKey key;
         };
         std::vector<Placed> placed;
-        std::optional<std::pair<Camera2D, space2d::Mat3>> eye;
+        std::optional<std::pair<Camera2D, space2d::Mat3>> eye, firstOverlay;
         struct Parent {
             space2d::Mat3 world;
             int order = 0;
@@ -63,8 +68,10 @@ public:
             parents[e.data.id] = {world, order};
             const size_t tree = index++;
             if (!t.activeInHierarchy) continue;  // switched off: not in the game
-            if (const game_production::Component* cc = e.FindComponent(camera); cc && cc->Known() && static_cast<uint64_t>(e.data.id) == f.camera) {
-                eye.emplace(*static_cast<const Camera2D*>(cc->value.Get()), world);
+            if (const game_production::Component* cc = e.FindComponent(camera); cc && cc->Known()) {
+                const auto& cam = *static_cast<const Camera2D*>(cc->value.Get());
+                if (static_cast<uint64_t>(e.data.id) == f.camera && (!overlay || cam.overlay)) eye.emplace(cam, world);
+                if (overlay && cam.overlay && !firstOverlay) firstOverlay.emplace(cam, world);
             }
             const game_production::Component* sc = e.FindComponent(sprite);
             if (!sc || !sc->Known()) continue;
@@ -85,6 +92,10 @@ public:
             }
             placed.push_back(p);
         }
+        if (overlay) {
+            if (!eye) eye = firstOverlay;
+            if (!eye) return;  // no layer over the 3D picture
+        }
         if (!eye) {
             if (!told_) log::Warn("ゲームの設定の「最初のカメラ」がカメラ (2D) の付いた有効なエンティティを指していないので、背景だけを塗ります");
             told_ = true;
@@ -98,12 +109,11 @@ public:
         space2d::RenderFrame2D frame;
         frame.viewport = {0, 0, f.width, f.height};
         frame.camera = ViewOf(eye->first, eye->second, f.height);
-        frame.clear = BackgroundOf(eye->first, f.background);
+        frame.clear = overlay ? Color{0, 0, 0, 0} : BackgroundOf(eye->first, f.background);
         frame.sprites = sprites_;
         renderer_.Render(f.dc, frame);
     }
 
-private:
     // The image an asset id names, read from the game's assets once (null: a square of the colour).
     ID2D1Bitmap* Image(const game_production::GameDrawFrame& f, const AssetRef& ref) {
         if (ref.Empty()) return nullptr;
@@ -112,7 +122,12 @@ private:
             if (const auto bytes = f.asset(ref)) {
                 std::string err;
                 it->second = platform::LoadBitmapFromMemory(f.gfx, f.dc, std::span(reinterpret_cast<const uint8_t*>(bytes->data()), bytes->size()), 0, &err);
-                if (!it->second) log::Warn("画像を読めないので四角で描きます ({}): {}", ref.guid, err);
+                if (!it->second) {
+                    log::Warn("画像を読めないので四角で描きます ({}): {}", ref.guid, err);
+                } else {
+                    const D2D1_SIZE_U px = it->second->GetPixelSize();
+                    log::Info("画像を読みました: {} ({} x {})", ref.guid, px.width, px.height);
+                }
             } else {
                 log::Warn("画像がゲームに入っていないので四角で描きます ({})", ref.guid);
             }

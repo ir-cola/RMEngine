@@ -209,8 +209,8 @@ bool Run(const Request& r, const Report& report, std::string* error) {
     fs::create_directories(r.outDir, ec);
     if (ec) return fail(TrU8F("書き出し先のフォルダを作れませんでした: {}\n{}", PathToUtf8(r.outDir), ec.message()));
 
-    const std::optional<std::string> ico = r.iconPng ? IcoFromPng(*r.iconPng) : std::nullopt;
-    if (r.iconPng && !ico) report(0.22f, TrU8("アイコンの画像が PNG ではないので、アイコンなしで書き出します (今は PNG だけ使えます)"));
+    const std::optional<std::string> ico = r.iconPng ? IconFile(*r.iconPng) : std::nullopt;
+    if (r.iconPng && !ico) report(0.22f, TrU8("アイコンの画像が PNG でも ICO でもないので、アイコンなしで書き出します"));
     if (!WriteFile(work / L"main.cpp", GameMainSource(libs, r.titleUtf8, build), &err) ||
         !WriteFile(work / L"game.rc", GameResourceSource(r.titleUtf8, r.exeName, ico.has_value()), &err) ||
         (ico && !WriteFile(work / L"game.ico", *ico, &err))) {

@@ -80,6 +80,8 @@
     <ClCompile Include="TestEntityRefs.cpp" />
     <ClCompile Include="TestTemplates.cpp" />
     <ClCompile Include="TestSceneFile.cpp" />
+    <ClCompile Include="TestMeshBake.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
     <ClCompile Include="TestExport.cpp" />
     <ClCompile Include="..\src\core\pak\Pak.cpp" />
     <ClCompile Include="..\src\platform\Crypto.cpp" />
