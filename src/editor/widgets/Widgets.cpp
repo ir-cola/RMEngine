@@ -980,7 +980,9 @@ int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, 
             ts.color = theme::TextFaint;
             p.Text(row.Inset(10, 0, 10, 0), it.shortcut, ts);
         }
-        if (b.clicked) clicked = static_cast<int>(i);
+        // (not on the frame it opened: a quick click or a touchpad tap - press and release in one frame -
+        // would otherwise open it and pick the item that came under the mouse with the same release)
+        if (b.clicked && !fresh) clicked = static_cast<int>(i);
         y += kItemH;
     }
     c.PopId();
@@ -1125,7 +1127,9 @@ int PickerPopup(ui::Context& c, Popup& popup, std::string_view idStr, std::strin
             ts.h = ui::HAlign::Right;
             p.Text({row.Right() - detailW - 6, row.y, detailW, row.h}, it.detail, ts);
         }
-        if (b.clicked) clicked = static_cast<int>(i);
+        // (not on the frame it opened: a quick click or a touchpad tap - press and release in one frame -
+        // would otherwise open it and pick the item that came under the mouse with the same release)
+        if (b.clicked && !fresh) clicked = static_cast<int>(i);
     }
     EndScroll(c, "list", list, content);
     if (clicked < 0 && enter && !rows.empty()) clicked = 0;

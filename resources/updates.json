@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "メニューを素早いクリックやタッチパッドのタップで開いたとき、開いた所にある項目を勝手に選ばない (「＋ 部品を足す」で違う部品が付いた)。スクリプトの入ったテンプレートで作った直後に、ビルドの前の「使えない部品」の警告を出さない。まだ無いセーブを読んでも警告を出さない",
+          "en": "A menu opened with a quick click or a touchpad tap no longer picks the item that ends up under the mouse (Add Component added the wrong part). No more \"unusable part\" warnings right after creating a project from a template with scripts, before they are built. Reading a save that does not exist yet is not warned about"
+        },
+        {
           "ja": "ゲームの設定に「グローバル変数」: ゲーム全体の値 (シーンを切り替えても残る) をスクリプトから Global::score のように使えます (Visual Studio で補完)。rm::Save::Write / Read / Exists / Delete で全部をセーブ (Play は Library/Saves、書き出したゲームは %LOCALAPPDATA%)",
           "en": "Global variables in the game settings: values of the whole game (kept when the scene switches) that scripts use as Global::score (completed in Visual Studio). rm::Save::Write / Read / Exists / Delete saves them all (Play: Library/Saves; an exported game: %LOCALAPPDATA%)"
         },

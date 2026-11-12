@@ -1202,6 +1202,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 
 **入力のアクション** (画面では**未確認**。テストは通っている)
 
+- 2026-11-12 に computer use で確かめたこと: テンプレート「シーンを切り替える見本」のゲームの設定に「入力」の一覧 (MoveX / MoveY / Jump / Fire と割り当て) が出る。Play 中に Space で `rm::Input::Pressed("Jump")` が 1 回押すごとに 1 回だけ真になる。**まだ見ていないこと**: ゲームパッド・割り当ての編集・書き出したゲームでのキー
+
 1. 「ゲームの設定を開く」→ いちばん下の「入力」に 4 つ: `MoveX`・`MoveY`・`Jump`・`Fire`。開くと「割り当て」が並ぶ (`MoveX` は ← (-1)・→ (1)・A (-1)・D (1)・パッドの左スティックの左右 (1)・十字キーの左 (-1)・右 (1))
 2. 割り当ての「入力」の欄を押す → 一覧が開く。上の箱に `space` や `パッド` と打つと絞り込める (項目が多い選択肢は、どれも探せる一覧になった。17 個以上のとき)。選ぶと変わり、Ctrl+Z で戻る (未保存の印が付く)
 3. 「向き」を -1 にすると逆向き。0.5 にすると Axis が半分になる (0.5 未満だと「押されている」にならない)
@@ -1214,6 +1216,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 **スクリプトから**: `rm::Input::Down("Jump")` (押されている)・`rm::Input::Pressed("Jump")` (このフレームで押された。1 回の押しで 1 回)・`rm::Input::Released("Jump")`・`rm::Input::Axis("MoveX")` (-1〜1)
 
 **グローバル変数とセーブ** (画面では**未確認**。テストは通っている。本物の MSBuild で `Global::score += 5` などを書いたスクリプトをビルドして動かすテストも通っている)
+
+- 2026-11-12 に computer use で確かめたこと: ゲームの設定の「グローバル変数」の ＋ で `count` (整数・0) を足す → ビルドされ `Library/Scripts/Globals/RmGlobals.h` に `Global::count` ができる。Play 中に `Global::count += 1` と `rm::Save::Write(0)` → `Library/Saves/save_0.json` に `"count": 2`。■ の後の Play で `rm::Save::Read(0)` が 2 を読む。★ グローバル変数を足すとスクリプトを読み直すので、元に戻す (Undo) の履歴は消える (コンソールに 1 行)
 
 1. 「ゲームの設定を開く」→「グローバル変数」の ＋ で 1 つ足す → 名前 `score`・型「整数 (int)」・初めの値 `0`。もう 1 つ `best` (整数)
 2. 約 1 秒後にコンソールに「スクリプトをビルドしています…」(名前を打ち終えてから 1 回)。`Library/Scripts/Globals/RmGlobals.h` に `inline constexpr ::rm::GlobalVar<int> score{"score"};` ができている。Visual Studio で `Global::` と打つと `score` と `best` が補完に出る
@@ -1276,6 +1280,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 
 **デバッグ描画** (画面では**未確認**。ビルドとテスト (ためる・時間で消える・上限・書き出したゲームでは何もしない) は通っている。スクリプトのヘッダーは cl で実際にコンパイルして確かめた)
 
+- 2026-11-12 に computer use で確かめたこと: 2D の `rm::Debug::Rect` / `Circle` / `Line` が Play 中のゲームビューに出る (赤い四角・緑の丸・青い線)。**まだ見ていないこと**: 3D・シーンビュー・出す / 出さないの切り替え
+
 スクリプトから線を描いて、動きを確かめる。**エディターの Play 中だけ**見える。書き出したゲームでは何もしない (ためない・描かない)。
 
 - 3D (`#include "RM3D.h"`): `rm::Debug::Line(a, b, 色, 秒)` / `rm::Debug::Box(真ん中, 大きさ, 色, 秒)` / `rm::Debug::Sphere(真ん中, 半径, 色, 秒)` / `rm::Debug::Ray(始め, 向き, 長さ, 色, 秒)`
@@ -1307,6 +1313,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 ---
 
 ## 7-8-2. シーンの切り替え (画面では**未確認**。ビルド・テスト・`tools/check_export.ps1` の game_scenes (書き出したゲームで Title → Stage) は通っている)
+
+- 2026-11-12 に computer use で確かめたこと: テンプレート「シーンを切り替える見本」で Play → Enter で Title → Stage (コンソールに「シーンを切り替えました Title → Stage」)→ ■ で Title に戻る。書き出したゲームも 2 つのシーンを持ち Title から始まる (game.log)。新しく作った直後は、スクリプトのビルドが終わるまで「使えない部品」の警告を出さない (ビルドの後もまだ使えない物だけを言う)
 
 **見本で試す**
 

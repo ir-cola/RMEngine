@@ -296,7 +296,15 @@ public:
                 reflect::Load(sceneList_, data.Get("sceneList"), &sceneListUnknowns_, &warnings);
                 ReadOpenScene(warnings);
             }
-            for (const auto& w : warnings) log::Warn("シーン: {}", w);
+            if (scripts_.Building() && !warnings.empty()) {
+                // The first build of a new project (or of sources newer than the DLL) is going on: its
+                // scripts are parts it does not know yet. Told after it, only what is still unknown then
+                // (ReloadScripts reads the scene again with the new types and tells its own).
+                heldSceneWarnings_ = std::move(warnings);
+                log::Info("シーン: スクリプトのビルドが終わってから、使えない部品が残っていないか確かめます");
+            } else {
+                for (const auto& w : warnings) log::Warn("シーン: {}", w);
+            }
             RefreshPrefabsOnOpen();
             ++dataVersion_;  // (the scene was made again: no history entry tells it)
         }
@@ -636,6 +644,11 @@ public:
         scripts_.SetGlobals(settings_.globals);  // (an edit of the list: the header and a build, a second later)
         scripts_.Poll(c);
         if (auto dll = scripts_.TakeReady(Running())) ReloadScripts(*dll);
+        if (!heldSceneWarnings_.empty() && !scripts_.Building()) {
+            // The build failed (no new DLL): what the scene could not use is told now.
+            for (const auto& w : heldSceneWarnings_) log::Warn("シーン: {}", w);
+            heldSceneWarnings_.clear();
+        }
         if (c.Focused() == 0) {
             if (c.KeyPressed(ui::Key::P, true)) Running() ? StopPlay() : StartPlay(c);
             if (c.KeyPressed(ui::Key::P, true, true) && Running()) TogglePause(c);
@@ -1162,6 +1175,7 @@ private:
         UseScriptTypes();
         reflect::Warnings warnings;
         scene_.Load(saved, &warnings);
+        heldSceneWarnings_.clear();  // (read again: what is told now replaces what was held at opening)
         for (const auto& w : warnings) log::Warn("シーン: {}", w);
         ++dataVersion_;
         host_.Redraw();
@@ -2412,6 +2426,7 @@ private:
     // Play
     PlayState play_ = PlayState::Stopped;
     GameScripts scripts_;  // the game's C++ scripts (built, loaded, swapped; run while playing)
+    reflect::Warnings heldSceneWarnings_;  // told after the first build (see LoadData)
     DebugDraw debug_;      // what the scripts draw with rm::Debug while playing (shown by the views; gone at Stop)
     std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // the plugins' component types
     std::unique_ptr<Scene> playScene_;  // the copy that plays

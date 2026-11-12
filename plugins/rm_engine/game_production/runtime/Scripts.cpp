@@ -218,7 +218,9 @@ int ApiSaveRead(void* ctx, const char* slot) {
     const bool ok = ReadSave(w.globals, w.saveFolder, s, &warnings, &why);
     if (w.log) {
         for (const std::string& m : warnings) w.log(1, m);
-        if (!ok) w.log(1, std::format("Save::Read(\"{}\"): 読めませんでした: {}", s, why));
+        // (no save yet is the usual case at a game's first start - the script's false says it; only a
+        // save that is there and cannot be read is told)
+        if (!ok && SaveExists(w.saveFolder, s)) w.log(1, std::format("Save::Read(\"{}\"): 読めませんでした: {}", s, why));
     }
     return ok ? 1 : 0;
 }
