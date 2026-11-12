@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲームの書き出し: ゲーム制作の「書き出し」パネルから、エディターを含まない <exe の名前>.exe を作る。使ったプラグインだけをリンク (2D のゲームに 3D は入らない)、アイコンと名前を埋め込み、アセットは Game.rmpak に詰めて簡単に暗号化、C++ のランタイムも横に置く (エンジンが入っていない PC で遊べる)。exe の名前は欄で変えられる",
+          "en": "Game export: the Export panel of Game Production makes <exe name>.exe without the editor. Only the plugins used are linked (a 2D game has no 3D), the icon and the name are embedded, the assets are packed into Game.rmpak with simple encryption, and the C++ runtime is placed next to it (it plays on a PC without the engine). The exe's name can be changed in its field"
+        },
+        {
           "ja": "C++ スクリプト: Assets/Scripts に書いた RM_SCRIPT の型が、部品と同じように付けられ、Play で BeginPlay / Tick / EndPlay が動く。保存すると裏でビルドして入れ替え (Play 中は Stop で)。落ちてもエディターは止まらない。「Visual Studio で開く」で補完が効く。テンプレート「ゲーム」に見本 (矢印キーで動く)",
           "en": "C++ scripts: RM_SCRIPT types written in Assets/Scripts are attached like components, and BeginPlay / Tick / EndPlay run while playing. Saving builds them in the background and swaps them in (while playing: on Stop). A crashing script never takes the editor down. Open in Visual Studio gives IntelliSense. The Game template has a sample (move with the arrow keys)"
         },
