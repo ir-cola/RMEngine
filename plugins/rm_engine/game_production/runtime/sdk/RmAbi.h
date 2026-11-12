@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-#define RM_ABI_VERSION 2u
+#define RM_ABI_VERSION 3u
 
 #ifdef __cplusplus
 extern "C" {
@@ -109,6 +109,16 @@ typedef struct RmCoreApi {
     void (*setCamera)(void* ctx, RmEntityId e);
     /* The nth script of type `typeName` (RmScriptDesc::name) of the entity; null: none. */
     void* (*getScript)(void* ctx, RmEntityId e, const char* typeName, uint32_t nth);
+    /* Scenes (ABI 3). The game's scenes are the list of the game settings, in its order; a scene's name is
+       its file's name without .rmscene. loadScene / loadSceneAt ask to switch at the end of this frame
+       (EndPlay of this scene, the new one read, its BeginPlay): 1 = asked, 0 = no such scene (told). */
+    int (*loadScene)(void* ctx, const char* nameUtf8);
+    int (*loadSceneAt)(void* ctx, int32_t index);
+    /* The scene playing: its name (copied like getName; the full length returned), its place in the
+       list (-1: not in it) and how many the list has. */
+    uint32_t (*sceneName)(void* ctx, char* buf, uint32_t cap);
+    int32_t (*sceneIndex)(void* ctx);
+    int32_t (*sceneCount)(void* ctx);
 } RmCoreApi;
 
 typedef struct RmApi {

@@ -28,7 +28,7 @@ void RegisterRuntime(RuntimeRegistry& registry) {
                                                               &RunSpriteAnimation};
     registry.Contribute(game_production::kSystemPoint, kAnimationSystem);
     // ... a camera: what the game sees (the game settings' 最初のカメラ points at one).
-    static const ComponentInfo kCamera{.type = &reflect::TypeOf<Camera2D>};
+    static const ComponentInfo kCamera{.type = &reflect::TypeOf<Camera2D>, .camera = true};
     registry.Contribute(kComponentPoint, kCamera);
     // 回り続ける (2D): turns its entity while the game plays (several add up), and the system that does it.
     static const ComponentInfo kSpin{.type = &reflect::TypeOf<Spin2D>, .multiple = true};

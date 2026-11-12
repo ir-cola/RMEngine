@@ -41,6 +41,9 @@ struct ComponentInfo {
     // new entity while the game's space is this one" (a 2D game's new entities get a Transform 2D, not a
     // 3D Transform). Null: any space.
     const char* space = nullptr;
+    // The game can see through an entity with it (a 3D Camera, a Camera 2D): a scene switched to picks
+    // its camera among these (SceneCamera).
+    bool camera = false;
 };
 
 struct Component {

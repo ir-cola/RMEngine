@@ -76,23 +76,23 @@ public:
         }
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
 
-        // The scene shown first.
-        const auto& scenes = doc->Get("scenes").Items();
-        const size_t open = static_cast<size_t>(std::max<int64_t>(0, doc->Get("open").AsInt(0)));
-        if (open < scenes.size()) {
-            const std::string& path = scenes[open].AsString();
-            const auto bytes = host_.Read(path, &err);
-            if (!bytes) return fail(err);
-            const auto scene = ReadSceneFile(*bytes, &err);
-            if (!scene) return fail(std::format("シーン ({}) を読めません: {}", path, err));
-            warnings.clear();
-            scene_.Load(*scene, &warnings);
-            for (const auto& w : warnings) host_.Log(1, "シーン: " + w);
+        // The game's scenes (the list's order: Game::LoadScene counts in it), and the first one.
+        for (const auto& s : doc->Get("scenes").Items()) {
+            scenePaths_.push_back(s.AsString());
+            world_.sceneNames.push_back(SceneNameOf(s.AsString()));
         }
+        const json::Value* firstKey = doc->Find("first");
+        const size_t first = static_cast<size_t>(std::max<int64_t>(0, (firstKey ? *firstKey : doc->Get("open")).AsInt(0)));
+        if (first < scenePaths_.size()) {
+            if (!ReadScene(first, scene_, &err)) return fail(err);
+            world_.sceneIndex = static_cast<int>(first);
+        }
+        host_.Log(0, std::format("シーン {} 個。最初のシーン: {}", scenePaths_.size(), first < scenePaths_.size() ? world_.sceneNames[first] : std::string("(なし)")));
+        cameraTypes_ = CameraTypes(host_.Registry());
 
         // The systems, and the drawer of the game's space.
         runner_.SetSystems(RegisteredSystems(host_.Registry()));
-        runner_.SetCamera(settings_.startCamera.id);
+        runner_.SetCamera(SceneCamera(scene_, cameraTypes_, settings_.startCamera.id));
         const GameDrawInfo* chosen = nullptr;
         for (const auto& d : host_.Registry().Contributions<GameDrawInfo>(kGameDrawPoint)) {
             if (!settings_.space.empty() && settings_.space == d.item->space) {
@@ -135,6 +135,19 @@ public:
             runner_.SetCamera(world_.camera);
         }
         runner_.Advance(scene_, dt, settings_.fixedTimestep);
+        // A scene the scripts asked for (Game::LoadScene): switched here, between frames.
+        const std::string from = world_.sceneIndex >= 0 ? world_.sceneNames[static_cast<size_t>(world_.sceneIndex)] : std::string();
+        std::string err;
+        const SceneSwitch sw = SwitchAskedScene(
+            scene_, world_, scriptRunner_, scripts_, settings_.scriptOrder,
+            [this](size_t index, Scene& into, std::string* why) { return ReadScene(index, into, why); }, &err);
+        if (sw == SceneSwitch::Switched) {
+            runner_.SetCamera(SceneCamera(scene_, cameraTypes_, settings_.startCamera.id));
+            host_.Log(0, std::format("シーンを切り替えました: {} → {} (エンティティ {} 個)", from, world_.sceneNames[static_cast<size_t>(world_.sceneIndex)],
+                                     scene_.Entities().size()));
+        } else if (sw == SceneSwitch::Failed) {
+            host_.Log(2, "シーンを切り替えられません: " + err);
+        }
     }
 
     void Draw(ID2D1DeviceContext* dc, float width, float height) override {
@@ -167,6 +180,23 @@ public:
     }
 
 private:
+    // The scene at `index` of the list, read from the .rmpak into `into` (its component types set).
+    bool ReadScene(size_t index, Scene& into, std::string* error) {
+        if (index >= scenePaths_.size()) return false;
+        const std::string& path = scenePaths_[index];
+        std::string err;
+        const auto bytes = host_.Read(path, &err);
+        const auto scene = bytes ? ReadSceneFile(*bytes, &err) : std::nullopt;
+        if (!scene) {
+            if (error) *error = std::format("シーン ({}) を読めません: {}", path, err);
+            return false;
+        }
+        reflect::Warnings warnings;
+        into.Load(*scene, &warnings);
+        for (const auto& w : warnings) host_.Log(1, "シーン: " + w);
+        return true;
+    }
+
     game::Host& host_;
     // The scripts' DLL first: members go in the reverse order, so the scene (holding the scripts'
     // objects, whose code is in the DLL) is gone before the DLL is let go.
@@ -178,6 +208,8 @@ private:
     Scene scene_;
     SystemRunner runner_;
     std::unordered_map<std::string, std::string> assets_;  // asset id -> its path in the .rmpak
+    std::vector<std::string> scenePaths_;                   // the game's scenes, in the list's order
+    std::vector<std::string> cameraTypes_;                  // what the game sees through (SceneCamera)
     std::unique_ptr<GameDrawer> drawer_;
     std::vector<std::unique_ptr<GameDrawer>> overlays_;
     ScriptRunner scriptRunner_;

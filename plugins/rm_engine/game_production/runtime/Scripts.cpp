@@ -2,12 +2,14 @@
 
 #include "base/Utf.h"
 #include "platform/Win.h"
+#include "rm_engine/game_production/runtime/SceneFile.h"
 
 #include <algorithm>
 #include <cstring>
 #include <format>
 #include <limits>
 #include <system_error>
+#include <utility>
 
 namespace rm::game_production {
 
@@ -77,10 +79,43 @@ void* ApiGetScript(void* ctx, RmEntityId e, const char* typeName, uint32_t nth) 
     return c && c->Known() ? c->value.Get() : nullptr;
 }
 const void* ApiPart(void* ctx, const char* name, uint32_t version) { return FindScriptApiPart(W(ctx).parts, name, version); }
+int ApiLoadSceneAt(void* ctx, int32_t index) {
+    ScriptWorld& w = W(ctx);
+    if (index < 0 || static_cast<size_t>(index) >= w.sceneNames.size()) {
+        if (w.log) w.log(1, std::format("Game::LoadScene({}): その番号のシーンはありません (ゲームのシーンは {} 個)", index, w.sceneNames.size()));
+        return 0;
+    }
+    w.sceneAsked = index;
+    return 1;
+}
+int ApiLoadScene(void* ctx, const char* name) {
+    ScriptWorld& w = W(ctx);
+    const std::string_view n = name ? name : "";
+    if (const auto at = FindSceneByName(w.sceneNames, n)) {
+        w.sceneAsked = static_cast<int>(*at);
+        return 1;
+    }
+    if (w.log) w.log(1, std::format("Game::LoadScene(\"{}\"): そのシーンはゲームのシーンの一覧にありません (シーン パネルで足します)", n));
+    return 0;
+}
+uint32_t ApiSceneName(void* ctx, char* buf, uint32_t cap) {
+    const ScriptWorld& w = W(ctx);
+    static const std::string kNone;
+    const std::string& name = w.sceneIndex >= 0 && static_cast<size_t>(w.sceneIndex) < w.sceneNames.size() ? w.sceneNames[static_cast<size_t>(w.sceneIndex)] : kNone;
+    if (buf && cap > 0) {
+        const size_t n = std::min<size_t>(name.size(), cap - 1);
+        std::memcpy(buf, name.data(), n);
+        buf[n] = '\0';
+    }
+    return static_cast<uint32_t>(name.size());
+}
+int32_t ApiSceneIndex(void* ctx) { return W(ctx).sceneIndex; }
+int32_t ApiSceneCount(void* ctx) { return static_cast<int32_t>(W(ctx).sceneNames.size()); }
 
-constexpr RmCoreApi kCore{&ApiLog,        &ApiDeltaTime, &ApiTime,         &ApiFindByName,  &ApiExists,
-                          &ApiIsActive,   &ApiSetActive, &ApiGetName,      &ApiParent,      &ApiKeyDown,
-                          &ApiKeyPressed, &ApiKeyReleased, &ApiCamera,     &ApiSetCamera,   &ApiGetScript};
+constexpr RmCoreApi kCore{&ApiLog,        &ApiDeltaTime,   &ApiTime,        &ApiFindByName,  &ApiExists,
+                          &ApiIsActive,   &ApiSetActive,   &ApiGetName,     &ApiParent,      &ApiKeyDown,
+                          &ApiKeyPressed, &ApiKeyReleased, &ApiCamera,      &ApiSetCamera,   &ApiGetScript,
+                          &ApiLoadScene,  &ApiLoadSceneAt, &ApiSceneName,   &ApiSceneIndex,  &ApiSceneCount};
 
 // The C++ type of every script, as far as the engine is concerned (a script's own type lives in the DLL).
 struct ScriptTag {};
@@ -380,6 +415,24 @@ void ScriptRunner::Stop(Scene& scene, ScriptWorld& world, const ScriptModule& mo
     // The scene that played is thrown away next: a script's default value that asks the world (a
     // script made when a component is added, or when scripts are swapped) must not see it.
     world.scene = nullptr;
+}
+
+SceneSwitch SwitchAskedScene(Scene& playing, ScriptWorld& world, ScriptRunner& runner, const ScriptModule& module,
+                             std::span<const ScriptOrderEntry> order, const std::function<bool(size_t index, Scene& into, std::string* error)>& load,
+                             std::string* error) {
+    const int asked = std::exchange(world.sceneAsked, -1);
+    if (asked < 0) return SceneSwitch::None;
+    // Read first: a scene that cannot be read leaves the one playing as it is (its scripts go on).
+    Scene next;
+    next.SetComponentTypes(playing.ComponentTypes(), playing.MultipleTypes());
+    if (!load(static_cast<size_t>(asked), next, error)) return SceneSwitch::Failed;
+    if (module.Loaded()) runner.Stop(playing, world, module, order);  // EndPlay of this scene's scripts
+    runner.Reset();
+    playing = std::move(next);
+    world.sceneIndex = asked;
+    world.sceneAsked = -1;  // (asked again in an EndPlay: not taken - the switch is this one)
+    world.scene = &playing;
+    return SceneSwitch::Switched;
 }
 
 void ScriptRunner::Reset() {

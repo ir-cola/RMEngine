@@ -24,7 +24,7 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     static const ComponentInfo kMesh{.type = &reflect::TypeOf<MeshRenderer>};
     registry.Contribute(kComponentPoint, kMesh);
     // カメラ (what the game sees: the game settings' 最初のカメラ), 光 and 環境光.
-    static const ComponentInfo kCamera{.type = &reflect::TypeOf<Camera>};
+    static const ComponentInfo kCamera{.type = &reflect::TypeOf<Camera>, .camera = true};
     registry.Contribute(kComponentPoint, kCamera);
     static const ComponentInfo kLight{.type = &reflect::TypeOf<Light>};
     registry.Contribute(kComponentPoint, kLight);

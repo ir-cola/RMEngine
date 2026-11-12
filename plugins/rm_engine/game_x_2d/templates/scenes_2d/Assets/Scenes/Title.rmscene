@@ -1,0 +1,134 @@
+{
+  "kind": "rm_engine.scene",
+  "format": 1,
+  "nextId": 5,
+  "entities": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "カメラ",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space2d::Transform2D",
+          "data": {
+            "position": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "scale": [
+              1,
+              1
+            ],
+            "order": 0
+          }
+        },
+        {
+          "type": "rm::game_x_2d::Camera2D",
+          "data": {
+            "size": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "name": "タイトルの板",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space2d::Transform2D",
+          "data": {
+            "position": [
+              0,
+              1
+            ],
+            "rotation": 0,
+            "scale": [
+              8,
+              2.5
+            ],
+            "order": 0
+          }
+        },
+        {
+          "type": "rm::game_x_2d::Sprite",
+          "data": {
+            "color": [
+              0.25,
+              0.45,
+              0.85,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "parent": 0,
+      "name": "Enter で始める",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space2d::Transform2D",
+          "data": {
+            "position": [
+              0,
+              -2
+            ],
+            "rotation": 0,
+            "scale": [
+              4,
+              0.6
+            ],
+            "order": 1
+          }
+        },
+        {
+          "type": "rm::game_x_2d::Sprite",
+          "data": {
+            "color": [
+              0.95,
+              0.95,
+              0.95,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "parent": 0,
+      "name": "シーンの切り替え",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space2d::Transform2D",
+          "data": {
+            "position": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "scale": [
+              1,
+              1
+            ],
+            "order": 0
+          }
+        },
+        {
+          "type": "GoToScene",
+          "data": {
+            "next": "Stage",
+            "after": 0
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <map>
 
 using namespace rm;
 using namespace rm::editor;
@@ -293,8 +294,8 @@ RM_TEST(Template_ThePlugins) {
     }
     const TemplateTree tree = BuildTemplateTree(std::move(list));
     CHECK(tree.warnings.empty());
-    CHECK(tree.templates.size() == 4);
-    for (const auto& path : std::vector<std::vector<std::string>>{{"blank"}, {"game"}, {"game", "3d"}, {"game", "2d"}}) {
+    CHECK(tree.templates.size() == 5);
+    for (const auto& path : std::vector<std::vector<std::string>>{{"blank"}, {"game"}, {"game", "3d"}, {"game", "2d"}, {"game", "2d", "scenes"}}) {
         CHECK(tree.At(tree.Find(path)) != nullptr);
     }
     // Choosing ゲーム brings both spaces and both connectors.
@@ -318,11 +319,21 @@ RM_TEST(Template_ThePlugins) {
             reflect::Unknowns listUnknowns;
             reflect::Warnings warnings;
             reflect::Load(sceneList, data.Get("sceneList"), &listUnknowns, &warnings);
-            CHECK(listUnknowns.Empty() && sceneList.scenes.size() == 1);
-            const fs::path sceneFile = t.folder / "Assets" / "Scenes" / "Main.rmscene";
-            std::ifstream metaIn(fs::path(sceneFile) += ".meta", std::ios::binary);
-            const std::string meta{std::istreambuf_iterator<char>(metaIn), std::istreambuf_iterator<char>()};
-            CHECK(asset::GuidInMeta(meta) == OpenScene(sceneList).guid);
+            CHECK(listUnknowns.Empty() && !sceneList.scenes.empty());
+            // Every scene of the list is a file of the template (found by the id in its .meta); the one
+            // read below is the one the project opens with.
+            std::map<std::string, fs::path> files;  // id -> scene file
+            std::error_code dirEc;
+            for (fs::directory_iterator f(t.folder / "Assets" / "Scenes", dirEc), end; !dirEc && f != end; f.increment(dirEc)) {
+                if (f->path().extension() != L".meta") continue;
+                std::ifstream metaIn(f->path(), std::ios::binary);
+                const std::string meta{std::istreambuf_iterator<char>(metaIn), std::istreambuf_iterator<char>()};
+                if (const auto id = asset::GuidInMeta(meta)) files[*id] = fs::path(f->path()).replace_extension();
+            }
+            for (const AssetRef& ref : sceneList.scenes) CHECK(files.contains(ref.guid));
+            CHECK(sceneList.first.Empty() || files.contains(sceneList.first.guid));
+            if (!files.contains(OpenScene(sceneList).guid)) continue;
+            const fs::path sceneFile = files[OpenScene(sceneList).guid];
             std::ifstream sceneIn(sceneFile, std::ios::binary);
             const std::string sceneText{std::istreambuf_iterator<char>(sceneIn), std::istreambuf_iterator<char>()};
             std::string sceneErr;
@@ -330,11 +341,20 @@ RM_TEST(Template_ThePlugins) {
             CHECK(sceneJson.has_value());
             if (!sceneJson) continue;
             scene.Load(*sceneJson, &warnings);
+            // (only the template's own scripts are types not known here)
+            std::erase_if(warnings, [&](const std::string& w) {
+                std::error_code se;
+                for (fs::directory_iterator f(t.folder / "Assets" / "Scripts", se), end; !se && f != end; f.increment(se)) {
+                    if (f->path().extension() == L".h" && w.find(f->path().stem().string()) != std::string::npos) return true;
+                }
+                return false;
+            });
             CHECK(warnings.empty());
             CHECK(!scene.Empty());
             for (const SceneEntity& e : scene.Entities()) {
                 CHECK(e.unknowns.Empty());
-                for (const Component& c : e.components) CHECK(c.Known());
+                // (a script of the template's own Assets/Scripts is a type of its DLL: not known here)
+                for (const Component& c : e.components) CHECK(c.Known() || fs::exists(t.folder / "Assets" / "Scripts" / (c.type + ".h")));
             }
             GameSettings settings;
             reflect::Unknowns unknowns;

@@ -79,7 +79,7 @@ protected:
 private:
     static constexpr UINT_PTR kAutoSaveTimer = 100;
     enum class CloseAction { None, ToHub, Quit };
-    enum class Modal { None, UnsavedChanges, Error, About, InstallPlugin, SaveLayoutAs, Layouts };
+    enum class Modal { None, UnsavedChanges, Error, About, InstallPlugin, SaveLayoutAs, Layouts, Ask };
     enum class Menu { None = -1, File, Edit, Window, Plugins, Help, Debug, Count };
 
     void RequestClose(CloseAction action);
@@ -119,6 +119,15 @@ private:
         AssetRef AssetOf(const std::filesystem::path& file) override;
         std::vector<PluginManifest> PluginManifests() const override;
         void PickFolder(std::wstring title, std::filesystem::path start, std::function<void(std::filesystem::path)> done) override;
+        bool Unsaved() const override { return editor_.dirty_; }
+        bool SaveProject() override { return editor_.Save(); }
+        void Ask(std::wstring title, std::wstring text, std::vector<std::wstring> buttons, std::function<void(int)> done) override;
+        void ClearHistory() override {
+            const bool was = editor_.dirty_;
+            history.Clear();
+            editor_.SetDirty(was);
+        }
+        std::wstring RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) override;
         void SelectInTree(std::vector<tree::ItemId> ids, bool rename) override {
             tree::RequestSelect(treeState, std::move(ids), rename);
             editor_.RedrawAll();
@@ -194,6 +203,10 @@ private:
     CloseAction pendingClose_ = CloseAction::None;
     bool shutdownBlocked_ = false;
     std::wstring modalText_;
+    // Modal::Ask (SoftwareHost::Ask): its title, buttons and what gets the answer.
+    std::wstring askTitle_;
+    std::vector<std::wstring> askButtons_;
+    std::function<void(int)> askDone_;
     std::wstring installName_;
     std::vector<PluginId> installPlan_;
     // the named layout dialogs

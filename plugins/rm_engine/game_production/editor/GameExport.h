@@ -12,6 +12,7 @@
 #include "core/reflect/Reflect.h"
 #include "editor/export/Exporter.h"
 #include "rm_engine/game_production/editor/ScriptBuild.h"
+#include "rm_engine/game_production/runtime/SceneFile.h"
 
 #include <filesystem>
 #include <functional>
@@ -40,9 +41,10 @@ struct GameExportInput {
     std::string exeName;
     std::filesystem::path outDir;
     json::Value settings;  // GameSettings as saved (its unknown keys too)
-    // The scenes: path from the project folder ("Assets/Scenes/Main.rmscene") and the file's text.
+    // The scenes: path from the project folder ("Assets/Scenes/Main.rmscene") and the file's text, in
+    // the list's order (ScenesForExport); the game starts with `first`.
     std::vector<std::pair<std::string, std::string>> scenes;
-    size_t open = 0;
+    size_t first = 0;
     AssetRef icon;
     std::vector<PluginId> plugins;          // ExportPlugins' order
     std::filesystem::path projectRoot;
@@ -52,6 +54,18 @@ struct GameExportInput {
     ScriptBuildRequest scripts;
     std::filesystem::path iconFile;         // the icon's file (empty: none) - found on the UI thread
 };
+
+// The scenes that go into the game (GameScenes: the list's, then the one open when it is not in it)
+// with their files' text: the open one as it is now (`openPath`, `openText`), the others as `read`
+// gives them (path, text; nullopt: left out, its id in `unread`). `first`: the place of the list's first
+// scene (FirstScene) among them - the open one's when that one is left out.
+struct ExportScenes {
+    std::vector<std::pair<std::string, std::string>> scenes;
+    size_t first = 0;
+    std::vector<std::string> unread;
+};
+ExportScenes ScenesForExport(const SceneList& list, const AssetRef& open, const std::string& openPath, const std::string& openText,
+                             const std::function<std::optional<std::pair<std::string, std::string>>(const AssetRef&)>& read);
 
 // The asset ids written in `v` (scenes, prefabs): every string that is an asset id, each once.
 std::vector<std::string> AssetIdsIn(const json::Value& v);

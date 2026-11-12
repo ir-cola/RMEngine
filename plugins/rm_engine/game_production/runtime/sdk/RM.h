@@ -176,6 +176,29 @@ namespace Game {
 // The camera the game sees through now, and switching it (an entity with a camera component).
 inline Entity Camera() { return Entity(Api()->core->camera(Api()->ctx)); }
 inline void SetCamera(Entity camera) { Api()->core->setCamera(Api()->ctx, camera.id); }
+
+// Scenes. The game's scenes are the list in the editor's シーン panel (in its order); a scene's name is
+// its file's name ("Assets/Scenes/Stage.rmscene" -> "Stage"). LoadScene switches at the end of this
+// frame: EndPlay of every script of this scene, the new scene read, then its scripts' BeginPlay.
+// False (and a warning on the console) when there is no such scene.
+inline bool LoadScene(std::string_view name) {
+    const std::string n(name);
+    return Api()->core->loadScene(Api()->ctx, n.c_str()) != 0;
+}
+inline bool LoadScene(int index) { return Api()->core->loadSceneAt(Api()->ctx, index) != 0; }
+// The scene playing now: its name, its place in the list (0 = the first; -1: not in the list) and how
+// many scenes the game has.
+inline std::string SceneName() {
+    char buf[256];
+    const uint32_t n = Api()->core->sceneName(Api()->ctx, buf, sizeof(buf));
+    if (n < sizeof(buf)) return std::string(buf, n);
+    std::string s(n + 1, '\0');
+    Api()->core->sceneName(Api()->ctx, s.data(), n + 1);
+    s.resize(n);
+    return s;
+}
+inline int SceneIndex() { return Api()->core->sceneIndex(Api()->ctx); }
+inline int SceneCount() { return Api()->core->sceneCount(Api()->ctx); }
 }  // namespace Game
 
 // A plugin's part of the API (RM3D.h uses it); null when the plugin is not in this engine.

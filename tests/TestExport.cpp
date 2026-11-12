@@ -302,3 +302,32 @@ RM_TEST(Export_IconFile) {
     const auto made = IconFile(png);
     CHECK(made && made->substr(22) == png);
 }
+
+// The scenes an export puts in: the list's, in its order (the one open as it is now), then the open one
+// when it is not in the list; one that cannot be read left out; the game starts with the list's first.
+RM_TEST(Export_ScenesOfTheGame) {
+    using namespace rm::game_production;
+    const AssetRef a{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, b{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, c{"cccccccccccccccccccccccccccccccc"};
+    SceneList list;
+    list.scenes = {a, b, c};
+    list.first = b;
+    auto read = [&](const AssetRef& ref) -> std::optional<std::pair<std::string, std::string>> {
+        if (ref == c) return std::nullopt;  // (gone)
+        return std::make_pair("Assets/Scenes/" + ref.guid.substr(0, 1) + ".rmscene", "file " + ref.guid.substr(0, 1));
+    };
+    ExportScenes s = ScenesForExport(list, a, "Assets/Scenes/a.rmscene", "now a", read);
+    CHECK(s.scenes.size() == 2 && s.scenes[0].second == "now a" && s.scenes[1].second == "file b");
+    CHECK(s.first == 1 && s.unread == std::vector<std::string>{c.guid});
+    // The open scene not in the list (new): last; the first scene the list's.
+    list.first = {};
+    s = ScenesForExport(list, AssetRef{}, "Assets/Scenes/Scene.rmscene", "new", read);
+    CHECK(s.scenes.size() == 3 && s.scenes[2].first == "Assets/Scenes/Scene.rmscene" && s.first == 0);
+    // The list's first cannot be read: the game starts with the open one.
+    list.first = c;
+    list.scenes = {c, b};
+    s = ScenesForExport(list, b, "Assets/Scenes/b.rmscene", "now b", read);
+    CHECK(s.scenes.size() == 1 && s.first == 0);
+    // An empty list (a project of before): the open scene only.
+    s = ScenesForExport(SceneList{}, a, "Assets/Scenes/Main.rmscene", "main", read);
+    CHECK(s.scenes.size() == 1 && s.first == 0 && s.scenes[0].second == "main");
+}

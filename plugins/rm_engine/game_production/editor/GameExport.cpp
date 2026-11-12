@@ -24,6 +24,30 @@ std::optional<std::string> ReadAll(const fs::path& file) {
 
 }  // namespace
 
+ExportScenes ScenesForExport(const SceneList& list, const AssetRef& open, const std::string& openPath, const std::string& openText,
+                             const std::function<std::optional<std::pair<std::string, std::string>>(const AssetRef&)>& read) {
+    ExportScenes out;
+    const AssetRef first = FirstScene(list);
+    std::optional<size_t> firstAt, openAt;
+    for (const AssetRef& ref : GameScenes(list, open)) {
+        if (ref == open) {
+            openAt = out.scenes.size();
+            if (!first.Empty() && ref == first) firstAt = openAt;
+            out.scenes.push_back({openPath, openText});
+            continue;
+        }
+        auto file = read(ref);
+        if (!file) {
+            out.unread.push_back(ref.guid);
+            continue;
+        }
+        if (ref == first) firstAt = out.scenes.size();
+        out.scenes.push_back(std::move(*file));
+    }
+    out.first = firstAt ? *firstAt : openAt.value_or(0);
+    return out;
+}
+
 std::vector<std::string> AssetIdsIn(const json::Value& v) {
     std::vector<std::string> out;
     auto visit = [&](auto&& self, const json::Value& x) -> void {
@@ -141,7 +165,7 @@ bool MakeRequest(const GameExportInput& in, const std::vector<ExportAsset>& asse
     json::Value scenes = json::Value::MakeArray();
     for (const auto& s : in.scenes) scenes.Push(s.first);
     game.Set("scenes", std::move(scenes));
-    game.Set("open", static_cast<int64_t>(in.open));
+    game.Set("first", static_cast<int64_t>(in.first));
     game.Set("assets", std::move(map));
     // Never a path of this PC in what the game reads.
     if (const auto abs = editor::exporter::AbsolutePathsIn(game); !abs.empty()) {

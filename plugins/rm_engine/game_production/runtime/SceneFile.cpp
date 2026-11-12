@@ -2,6 +2,7 @@
 
 #include "core/asset/AssetIndex.h"
 
+#include <algorithm>
 #include <format>
 
 namespace rm::game_production {
@@ -14,6 +15,41 @@ AssetRef OpenScene(const SceneList& list) {
         if (!s.Empty()) return s;
     }
     return {};
+}
+
+AssetRef FirstScene(const SceneList& list) {
+    for (const AssetRef& s : list.scenes) {
+        if (!list.first.Empty() && s == list.first) return s;
+    }
+    for (const AssetRef& s : list.scenes) {
+        if (!s.Empty()) return s;
+    }
+    return {};
+}
+
+std::vector<AssetRef> GameScenes(const SceneList& list, const AssetRef& open) {
+    std::vector<AssetRef> out;
+    for (const AssetRef& s : list.scenes) {
+        if (!s.Empty() && std::find(out.begin(), out.end(), s) == out.end()) out.push_back(s);
+    }
+    if (open.Empty() || std::find(out.begin(), out.end(), open) == out.end()) out.push_back(open);
+    return out;
+}
+
+std::string SceneNameOf(std::string_view path) {
+    const size_t slash = path.find_last_of("/\\");
+    std::string_view name = slash == std::string_view::npos ? path : path.substr(slash + 1);
+    if (name.size() > std::string_view(kSceneExtension).size() && name.ends_with(kSceneExtension)) {
+        name.remove_suffix(std::string_view(kSceneExtension).size());
+    }
+    return std::string(name);
+}
+
+std::optional<size_t> FindSceneByName(const std::vector<std::string>& names, std::string_view name) {
+    for (size_t i = 0; i < names.size(); ++i) {
+        if (names[i] == name) return i;
+    }
+    return std::nullopt;
 }
 
 std::string SceneFileText(const json::Value& scene) {

@@ -1,6 +1,7 @@
 #include "rm_engine/game_production/runtime/Systems.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace rm::game_production {
 
@@ -20,6 +21,32 @@ void ForEachComponent(Scene& scene, std::string_view type, const std::function<v
             if (!e) break;
         }
     }
+}
+
+std::vector<std::string> CameraTypes(const RuntimeRegistry& registry) {
+    std::vector<std::string> out;
+    for (const auto& c : registry.Contributions<ComponentInfo>(kComponentPoint)) {
+        if (!c.item->camera) continue;
+        std::string name(c.item->type().name);
+        if (std::find(out.begin(), out.end(), name) == out.end()) out.push_back(std::move(name));
+    }
+    return out;
+}
+
+uint64_t SceneCamera(const Scene& scene, const std::vector<std::string>& cameraTypes, uint64_t wanted) {
+    auto isCamera = [&](const SceneEntity& e) {
+        return std::any_of(cameraTypes.begin(), cameraTypes.end(), [&](const std::string& t) {
+            const Component* c = e.FindComponent(t);
+            return c && c->Known();
+        });
+    };
+    if (wanted > 0 && wanted <= static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+        if (const SceneEntity* e = scene.Find(static_cast<int>(wanted)); e && isCamera(*e)) return wanted;
+    }
+    for (const TreeEntry& t : scene.TreeOrder()) {
+        if (t.activeInHierarchy && isCamera(*t.entity)) return static_cast<uint64_t>(t.entity->data.id);
+    }
+    return 0;
 }
 
 std::vector<const SystemInfo*> RegisteredSystems(const RuntimeRegistry& registry) {

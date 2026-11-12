@@ -70,5 +70,7 @@
   "2D のゲーム": "2D game",
   "カメラ・地面・プレイヤーの四角が置いてある 2D のゲーム。": "A 2D game with a camera, the ground and a player square in place.",
   "デバッグ": "Debug",
-  "Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)": "Show in this scene view the lines the scripts draw with rm::Debug while playing (click to switch; the game view always shows them)"
+  "Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)": "Show in this scene view the lines the scripts draw with rm::Debug while playing (click to switch; the game view always shows them)",
+  "シーンを切り替える見本": "Switching scenes (sample)",
+  "タイトルとステージの 2 つのシーン。Enter でタイトル → ステージ → タイトルと切り替わります (スクリプト GoToScene)。": "Two scenes, a title and a stage. Enter switches title → stage → title (the script GoToScene)."
 }

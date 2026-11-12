@@ -8,6 +8,7 @@
 #include "core/reflect/Data.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/SceneFile.h"
+#include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <map>
@@ -201,4 +202,51 @@ RM_TEST(SceneFile_ProjectOfBefore) {
     CHECK(!TakeOldScene(now) && now.Find("scene"));
     json::Value none = Parse(R"({"settings": {}})");
     CHECK(!TakeOldScene(none));
+}
+
+// The game's scenes: the list's order, the one open when it is not in it (last), the first one, the
+// names Game::LoadScene takes.
+RM_TEST(SceneFile_GameScenesAndNames) {
+    const AssetRef a{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, b{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, c{"cccccccccccccccccccccccccccccccc"};
+    SceneList list;
+    list.scenes = {a, b};
+    CHECK(FirstScene(list) == a);  // none chosen: the list's first
+    list.first = b;
+    CHECK(FirstScene(list) == b);
+    list.first = c;  // not in the list (taken out): the list's first
+    CHECK(FirstScene(list) == a);
+    CHECK(FirstScene(SceneList{}).Empty());
+    CHECK((GameScenes(list, b) == std::vector<AssetRef>{a, b}));
+    CHECK((GameScenes(list, c) == std::vector<AssetRef>{a, b, c}));            // open, not in the list: last
+    CHECK((GameScenes(list, AssetRef{}) == std::vector<AssetRef>{a, b, AssetRef{}}));  // a new scene not saved yet
+    list.scenes = {a, a, AssetRef{}, b};
+    CHECK((GameScenes(list, a) == std::vector<AssetRef>{a, b}));  // each once, no empty ids
+    CHECK(SceneNameOf("Assets/Scenes/Title.rmscene") == "Title" && SceneNameOf("Stage 2.rmscene") == "Stage 2" && SceneNameOf("Assets\\x.rmscene") == "x");
+    const std::vector<std::string> names{"Title", "Stage", "Stage"};
+    CHECK(FindSceneByName(names, "Stage") == std::optional<size_t>(1) && !FindSceneByName(names, "stage") && !FindSceneByName(names, ""));
+    // The list keeps "first" (and keys of a newer version) through a save and a load.
+    SceneList saved;
+    saved.scenes = {a, b};
+    saved.first = b;
+    SceneList back;
+    reflect::Load(back, reflect::Save(saved));
+    CHECK(back.first == b && back.scenes == saved.scenes);
+}
+
+// The camera a scene starts with: the game settings' 最初のカメラ when it is a camera of this scene,
+// else the first running entity with a camera component.
+RM_TEST(SceneFile_SceneCamera) {
+    Scene s;
+    s.SetComponentTypes({&reflect::TypeOf<space3d::Transform>()});
+    const std::vector<std::string> cameras{reflect::TypeOf<space3d::Transform>().name};  // (a type standing for a camera)
+    const int box = s.Create("箱");
+    const int off = s.Create("止めたカメラ");
+    s.AddComponent(off, reflect::TypeOf<space3d::Transform>());
+    s.Find(off)->data.active = false;
+    const int cam = s.Create("カメラ");
+    s.AddComponent(cam, reflect::TypeOf<space3d::Transform>());
+    CHECK(SceneCamera(s, cameras, static_cast<uint64_t>(cam)) == static_cast<uint64_t>(cam));
+    CHECK(SceneCamera(s, cameras, static_cast<uint64_t>(box)) == static_cast<uint64_t>(cam));  // not a camera: the first running one
+    CHECK(SceneCamera(s, cameras, 999) == static_cast<uint64_t>(cam));                         // not in this scene
+    CHECK(SceneCamera(s, {}, static_cast<uint64_t>(cam)) == 0);                                // no camera types: none
 }

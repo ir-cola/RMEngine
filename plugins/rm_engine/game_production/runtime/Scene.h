@@ -93,6 +93,7 @@ public:
         multipleTypes_ = std::move(multiple);
     }
     const std::vector<const reflect::TypeDesc*>& ComponentTypes() const { return componentTypes_; }
+    const std::vector<const reflect::TypeDesc*>& MultipleTypes() const { return multipleTypes_; }
     bool AllowsMultiple(std::string_view type) const;
 
     bool Empty() const { return entities_.empty(); }

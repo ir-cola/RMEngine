@@ -134,6 +134,19 @@ public:
     // The OS's folder dialog, opened after this frame (never while drawing); `done` gets the folder
     // chosen (not called when cancelled).
     virtual void PickFolder(std::wstring title, std::filesystem::path start, std::function<void(std::filesystem::path)> done) = 0;
+    // The project has changes not saved (the status bar's ● 未保存).
+    virtual bool Unsaved() const = 0;
+    // Saves the whole project now (as Ctrl+S). False when it failed (the error is shown).
+    virtual bool SaveProject() = 0;
+    // A question in a dialog over the editor: `buttons` from the right (the first is the main one);
+    // `done` gets the one pressed, -1 when it was closed (Esc). Never more than one at a time: a
+    // question asked while another is open answers -1 at once.
+    virtual void Ask(std::wstring title, std::wstring text, std::vector<std::wstring> buttons, std::function<void(int)> done) = 0;
+    // Forgets this software's history (its entries name data that is gone: another scene opened); the
+    // project stays as saved or unsaved as it was.
+    virtual void ClearHistory() = 0;
+    // Renames an asset's file (its .meta follows; its id stays). Empty, or why not (the screen's language).
+    virtual std::wstring RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) = 0;
 };
 
 // One software inside one open project.

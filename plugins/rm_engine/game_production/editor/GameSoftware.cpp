@@ -53,6 +53,7 @@ using ui::Rect;
 constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
 constexpr char kExportPanel[] = "export";
+constexpr char kScenesPanel[] = "scenes";
 constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" rows in the 階層's menu
 constexpr float kSpaceStripH = 34.f;   // the strip of spaces (3D / 2D) above the scene view
 
@@ -141,6 +142,21 @@ private:
     std::string label_;
 };
 
+// An edit of the game's list of scenes (シーンの一覧: added, removed, moved, the first one).
+class SceneListCommand final : public ICommand {
+public:
+    SceneListCommand(SceneList& list, SceneList before, SceneList after, std::string label)
+        : list_(list), before_(std::move(before)), after_(std::move(after)), label_(std::move(label)) {}
+    void Do() override { list_ = after_; }
+    void Undo() override { list_ = before_; }
+    std::string Label() const override { return label_; }
+
+private:
+    SceneList& list_;
+    SceneList before_, after_;
+    std::string label_;
+};
+
 #ifdef _DEBUG
 // The scene as a whole, but for the next id (which undo never takes back: ids are not used again).
 json::Value ShapeOf(const Scene& scene) {
@@ -180,6 +196,7 @@ public:
         for (const auto& l : host.Registry().Contributions<ComponentLook>(kComponentLookPoint)) componentLooks_.push_back(l.item);
         // ... and so do the systems that move them while the game plays.
         runner_.SetSystems(RegisteredSystems(host.Registry()));
+        cameraTypes_ = CameraTypes(host.Registry());
     }
 
     // The scripts' objects go before their DLL does (scripts_ is destroyed before the scenes).
@@ -194,6 +211,7 @@ public:
             {kSceneView, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawSceneView(c, r); }},
             {kGameView, TrKey(L"ゲーム"), [this](ui::Context& c, const Rect& r) { DrawGameView(c, r); }},
             {kExportPanel, TrKey(L"書き出し"), [this](ui::Context& c, const Rect& r) { DrawExportPanel(c, r); }},
+            {kScenesPanel, TrKey(L"シーンの一覧"), [this](ui::Context& c, const Rect& r) { DrawScenesPanel(c, r); }},
         };
     }
 
@@ -201,7 +219,7 @@ public:
         using editor::dock::Axis;
         namespace cp = editor::core_panel;
         editor::dock::Layout l;
-        auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({cp::kHierarchy}),
+        auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({cp::kHierarchy, kScenesPanel}),
                                l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf({kSceneView, kGameView}),
                                            l.MakeLeaf({cp::kInspector})));
         l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets, kExportPanel}));
@@ -377,31 +395,21 @@ public:
         in.projectRoot = host_.GetProject().Root();
         in.assetFile = [this](const AssetRef& r) { return host_.AssetFile(r); };
         in.scripts = ScriptRequestFor(host_);
-        // The scenes of the list (the one shown as it is now), in the list's order.
+        // The scenes of the list (the one shown as it is now), in the list's order; the game starts with
+        // the list's 最初のシーン.
         Scene saved = scene_;
         UpdateOverrides(saved);
-        const std::string openText = SceneFileText(saved.Save());
-        bool openDone = false;
-        for (const AssetRef& ref : sceneList_.scenes) {
-            if (!slot_.guid.empty() && ref.guid == slot_.guid) {
-                in.open = in.scenes.size();
-                in.scenes.push_back({slot_.path, openText});
-                openDone = true;
-                continue;
-            }
-            const fs::path file = host_.AssetFile(ref);
-            std::string err;
-            const auto bytes = file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
-            if (!bytes) {
-                log::Warn("書き出し: シーン ({}) を読めないので入れません", ref.guid);
-                continue;
-            }
-            in.scenes.push_back({RelativePath(file), *bytes});
-        }
-        if (!openDone) {
-            in.open = in.scenes.size();
-            in.scenes.push_back({slot_.path, openText});
-        }
+        ExportScenes scenes = ScenesForExport(sceneList_, AssetRef{slot_.guid}, SlotNow().path, SceneFileText(saved.Save()),
+                                              [this](const AssetRef& ref) -> std::optional<std::pair<std::string, std::string>> {
+                                                  const fs::path file = host_.AssetFile(ref);
+                                                  std::string err;
+                                                  auto bytes = file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
+                                                  if (!bytes) return std::nullopt;
+                                                  return std::make_pair(RelativePath(file), std::move(*bytes));
+                                              });
+        for (const std::string& id : scenes.unread) log::Warn("書き出し: シーン ({}) を読めないので入れません", id);
+        in.scenes = std::move(scenes.scenes);
+        in.first = scenes.first;
         // The plugins: as recorded, what the scenes use, the one drawing the game's space - then their
         // requirements and connectors.
         // Counted from what the game uses - not the project's whole record, which may name plugins of
@@ -413,6 +421,12 @@ public:
         };
         add(game_production::kPluginId.Id());
         for (const PluginId& id : UsedPlugins()) add(id);
+        // ... and every other scene of the game (their components' plugins too).
+        std::vector<std::string> types;
+        for (const auto& s : in.scenes) {
+            if (const auto doc = json::Parse(s.second)) ComponentTypesIn(*doc, types);
+        }
+        for (const PluginId& id : PluginsOffering(types, host_.Registry().Contributions<ComponentInfo>(kComponentPoint))) add(id);
         const Contributed<SceneViewInfo>* space = nullptr;
         const auto views = host_.Registry().Contributions<SceneViewInfo>(kSceneViewPoint);
         for (const auto& v : views) {
@@ -893,11 +907,21 @@ private:
         }
         playScene_ = std::make_unique<Scene>(scene_);  // the copy that plays (components are deep copies)
         runner_.Reset();
-        runner_.SetCamera(settings_.startCamera.id);  // the systems may switch it (SystemContext::camera)
+        runner_.SetCamera(SceneCamera(*playScene_, cameraTypes_, settings_.startCamera.id));  // the systems may switch it (SystemContext::camera)
         scripts_.Runner().Reset();
         scripts_.World().time = 0;
         debug_.Clear();
         scripts_.World().debug = &debug_;  // the editor shows rm::Debug's lines (an exported game has none)
+        // The scenes Game::LoadScene can switch to: the game's (the list, and this one when it is not in it).
+        playScenes_ = GameScenes(sceneList_, AssetRef{slot_.guid});
+        ScriptWorld& world = scripts_.World();
+        world.sceneNames.clear();
+        world.sceneIndex = -1;
+        world.sceneAsked = -1;
+        for (size_t i = 0; i < playScenes_.size(); ++i) {
+            world.sceneNames.push_back(SceneTitle(playScenes_[i]));
+            if (playScenes_[i] == AssetRef{slot_.guid}) world.sceneIndex = static_cast<int>(i);
+        }
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
         EnsureViews();  // the game view sees through the game settings' 最初のカメラ
@@ -916,10 +940,48 @@ private:
         scripts_.Runner().Frame(*playScene_, world, scripts_.Module(), settings_.scriptOrder, static_cast<float>(dt));
         runner_.SetCamera(world.camera);
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
+        // A scene the scripts asked for (Game::LoadScene): switched between frames, inside the copy
+        // that plays - the scene being edited stays (■ comes back to it).
+        const std::string from = world.sceneIndex >= 0 ? world.sceneNames[static_cast<size_t>(world.sceneIndex)] : std::string();
+        std::string err;
+        const SceneSwitch sw = SwitchAskedScene(*playScene_, world, scripts_.Runner(), scripts_.Module(), settings_.scriptOrder,
+                                                [this](size_t index, Scene& into, std::string* why) { return ReadPlayScene(index, into, why); }, &err);
+        if (sw == SceneSwitch::Switched) {
+            runner_.SetCamera(SceneCamera(*playScene_, cameraTypes_, settings_.startCamera.id));
+            log::Info("シーンを切り替えました: {} → {} (Play の中だけ。■ で {} に戻ります)", from, world.sceneNames[static_cast<size_t>(world.sceneIndex)],
+                      SceneTitle(AssetRef{slot_.guid}));
+            host_.SelectInTree({});
+            host_.Redraw();
+            return;
+        }
+        if (sw == SceneSwitch::Failed) log::Error("シーンを切り替えられません: {}", err);
         if (runner_.Camera() != before) {
             const SceneEntity* e = playScene_->Find(static_cast<int>(runner_.Camera()));
             log::Info("ゲームのカメラを「{}」に切り替えました", e ? e->data.name : std::string("(なし)"));
         }
+    }
+
+    // A scene of the game read for Play (Game::LoadScene): the one open as it is now, the others from
+    // their files (as saved).
+    bool ReadPlayScene(size_t index, Scene& into, std::string* error) {
+        if (index >= playScenes_.size()) return false;
+        const AssetRef& ref = playScenes_[index];
+        if (ref == AssetRef{slot_.guid}) {
+            into.Load(scene_.Save());
+            return true;
+        }
+        const fs::path file = host_.AssetFile(ref);
+        std::string err;
+        const auto bytes = file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
+        const auto scene = bytes ? ReadSceneFile(*bytes, &err) : std::nullopt;
+        if (!scene) {
+            if (error) *error = std::format("{}: {}", SceneTitle(ref), file.empty() ? TrU8("ファイルが Assets に見つかりません") : err);
+            return false;
+        }
+        reflect::Warnings warnings;
+        into.Load(*scene, &warnings);
+        for (const auto& w : warnings) log::Warn("シーン: {}", w);
+        return true;
     }
 
     void StopPlay() {
@@ -929,6 +991,7 @@ private:
         playScene_.reset();  // (scripts built while playing are taken at the next frame: on the scene from before Play)
         debug_.Clear();      // Stop: every debug line goes
         play_ = PlayState::Stopped;
+        host_.SelectInTree({});  // (the selection may name entities of a scene switched to)
         host_.Redraw();
     }
 
@@ -1081,7 +1144,7 @@ private:
         h.playing = Running();
         h.game = game;
         h.background = settings_.clearColor;
-        h.camera = Running() ? runner_.Camera() : settings_.startCamera.id;  // in Play: as the systems left it
+        h.camera = Running() ? runner_.Camera() : SceneCamera(scene_, cameraTypes_, settings_.startCamera.id);  // in Play: as the systems left it
         h.aspect = static_cast<float>(std::max(1, settings_.display.width)) / static_cast<float>(std::max(1, settings_.display.height));
         h.openSettings = [this] { InspectSettings(); };
         h.debug = Running() ? &debug_ : nullptr;
@@ -1451,6 +1514,245 @@ private:
         return in;
     }
 
+    // --- シーンの一覧 (the game's scenes) ---------------------------------------------------------
+    // A scene's name for the screen and for Game::LoadScene: its file's (the new one not saved yet: the
+    // file it will be).
+    std::string SceneTitle(const AssetRef& ref) const {
+        if (ref.Empty() || ref.guid == slot_.guid) return SceneNameOf(slot_.path);
+        const fs::path file = host_.AssetFile(ref);
+        return file.empty() ? std::string() : SceneNameOf(PathToUtf8(file.filename()));
+    }
+
+    void EditSceneList(std::string label, const std::function<void(SceneList&)>& change) {
+        SceneList before = sceneList_;
+        change(sceneList_);
+        host_.History().Push(std::make_unique<SceneListCommand>(sceneList_, std::move(before), sceneList_, std::move(label)));
+        host_.Redraw();
+    }
+
+    // Before the scene shown changes: what is not saved is saved (or not) as the user says, then `go`.
+    void AfterAskingToSave(std::wstring what, std::function<void()> go) {
+        if (Running()) {
+            log::Info("Play 中はシーンを開けません (■ で止めてから)");
+            return;
+        }
+        if (!host_.Unsaved()) {
+            go();
+            return;
+        }
+        host_.Ask(Tr(L"保存されていない変更があります"), TrF(L"{}前に、今の変更を保存しますか？\n保存しないと、このシーンの変更は失われます。", what),
+                  {Tr(L"保存する"), Tr(L"保存しない"), Tr(L"キャンセル")}, [this, go = std::move(go)](int answer) {
+                      if (answer == 0 && host_.SaveProject()) go();
+                      if (answer == 1) go();
+                  });
+    }
+
+    // The scene shown becomes another: `ref` read from its file (empty: a new scene, `newPath`). The
+    // history goes (its entries are edits of the scene that was shown).
+    void ShowScene(const AssetRef& ref, const std::string& newPath = {}) {
+        scene_.Load(json::Value());
+        slot_ = {"", newPath.empty() ? NewSceneFile() : newPath, 0};
+        sceneUnread_ = false;
+        replaces_.clear();
+        pending_.reset();
+        reflect::Warnings warnings;
+        if (!ref.Empty()) {
+            sceneList_.open = ref;  // (written with the next save: the scene the project opens with)
+            ReadOpenScene(warnings);
+        }
+        for (const auto& w : warnings) log::Warn("シーン: {}", w);
+        RefreshPrefabsOnOpen();
+        ++dataVersion_;
+        host_.ClearHistory();
+        host_.SelectInTree({});
+        sceneChosen_ = ref;
+        renamingScene_ = false;
+        log::Info("シーン「{}」を開きました (エンティティ {} 個)", SceneTitle(ref), scene_.Entities().size());
+        InspectSettings();
+        host_.Redraw();
+    }
+
+    void OpenSceneAsked(const AssetRef& ref) {
+        if (ref.Empty() || ref.guid == slot_.guid) return;
+        AfterAskingToSave(Tr(L"別のシーンを開く"), [this, ref] { ShowScene(ref); });
+    }
+
+    // A new empty scene (Assets/Scenes/Scene.rmscene ...), saved at once: it is in the list and on disk.
+    void NewSceneAsked() {
+        AfterAskingToSave(Tr(L"新しいシーンを作る"), [this] {
+            ShowScene({}, NewSceneFile("Scene"));
+            if (host_.SaveProject()) sceneChosen_ = AssetRef{slot_.guid};
+        });
+    }
+
+    void DrawScenesPanel(ui::Context& c, const Rect& r) {
+        auto& p = c.P();
+        const std::vector<AssetRef> rows = GameScenes(sceneList_, AssetRef{slot_.guid});
+        const AssetRef first = FirstScene(sceneList_);
+        const AssetRef open{slot_.guid};
+        if (!sceneChosen_) sceneChosen_ = open;
+        const AssetRef chosen = *sceneChosen_;
+        const auto inList = [&](const AssetRef& ref) { return !ref.Empty() && std::find(sceneList_.scenes.begin(), sceneList_.scenes.end(), ref) != sceneList_.scenes.end(); };
+        const auto at = std::find(sceneList_.scenes.begin(), sceneList_.scenes.end(), chosen);
+        const size_t chosenAt = at == sceneList_.scenes.end() ? sceneList_.scenes.size() : static_cast<size_t>(at - sceneList_.scenes.begin());
+        // The scenes Assets has and the list does not (to add).
+        std::vector<AssetRef> others;
+        for (const std::string& path : SceneFiles()) {
+            const AssetRef ref = host_.AssetOf(host_.GetProject().Root() / PathFromUtf8(path));
+            if (!ref.Empty() && ref != open && !inList(ref)) others.push_back(ref);
+        }
+        constexpr float kRow = 28;
+        const float contentH = 40 + kRow * static_cast<float>(rows.size()) + 120 + (others.empty() ? 0 : 30 + kRow * static_cast<float>(others.size())) + 40;
+        const float off = editor::w::BeginScroll(c, "scenes.scroll", r, contentH);
+        const Rect area = Rect{r.x, r.y - off, r.w, std::max(r.h, contentH)}.Inset(10, 8, 10, 8);
+        float y = area.y;
+        ui::TextStyle ts;
+        ts.size = 12;
+        ts.color = theme::TextDim;
+        p.Text({area.x, y, area.w, 20}, Tr(L"ゲームのシーン (この順。ゲームは「最初」から始まります)"), ts);
+        y += 24;
+        ui::TextStyle name;
+        name.size = 13;
+        name.color = theme::Text;
+        for (size_t i = 0; i < rows.size(); ++i) {
+            const AssetRef& ref = rows[i];
+            const Rect row{area.x, y, area.w, kRow - 2};
+            c.PushId(ref.Empty() ? std::string("new") : ref.guid);
+            const auto b = editor::w::Selectable(c, "row", row, ref == chosen);
+            c.PopId();
+            if (b.clicked) {
+                sceneChosen_ = ref;
+                renamingScene_ = false;
+                sceneProblem_.clear();
+            }
+            if (b.doubleClicked && !Running()) OpenSceneAsked(ref);
+            std::wstring label = std::format(L"{}. {}", i, Utf8ToWide(SceneTitle(ref)));
+            if (ref == open) label += Tr(L"  (開いている)");
+            if (ref.Empty()) label += Tr(L"  (未保存)");
+            p.Text(row.Inset(10, 0, 70, 0), label, name);
+            if (!ref.Empty() && ref == first) p.Text(row.Inset(10, 0, 10, 0), Tr(L"最初"), [&] {
+                ui::TextStyle s = ts;
+                s.color = theme::Accent;
+                s.h = ui::HAlign::Right;
+                return s;
+            }());
+            y += kRow;
+        }
+        y += 6;
+        // What to do with the chosen one.
+        const bool chosenListed = inList(chosen);
+        const bool playing = Running();
+        float x = area.x;
+        auto button = [&](const char* id, const std::wstring& text, bool enabled, float width) {
+            const bool pressed = editor::w::Button(c, id, {x, y, width, 26}, text, editor::w::ButtonKind::Secondary, enabled);
+            x += width + 6;
+            return pressed;
+        };
+        if (button("scene_open", Tr(L"開く"), !playing && chosen != open, 70)) OpenSceneAsked(chosen);
+        if (button("scene_first", Tr(L"最初にする"), chosenListed && chosen != first, 100)) {
+            EditSceneList(TrU8("最初のシーンを変える"), [&](SceneList& l) { l.first = chosen; });
+        }
+        if (button("scene_up", L"↑", chosenListed && chosenAt > 0, 32)) {
+            EditSceneList(TrU8("シーンの順を変える"), [&](SceneList& l) { std::swap(l.scenes[chosenAt], l.scenes[chosenAt - 1]); });
+        }
+        if (button("scene_down", L"↓", chosenListed && chosenAt + 1 < sceneList_.scenes.size(), 32)) {
+            EditSceneList(TrU8("シーンの順を変える"), [&](SceneList& l) { std::swap(l.scenes[chosenAt], l.scenes[chosenAt + 1]); });
+        }
+        y += 32;
+        x = area.x;
+        if (button("scene_new", Tr(L"新しいシーン"), !playing, 120)) NewSceneAsked();
+        if (button("scene_rename", Tr(L"名前を変える"), !playing && !chosen.Empty(), 110)) {
+            renamingScene_ = true;
+            sceneNewName_ = SceneTitle(chosen);
+            sceneProblem_.clear();
+        }
+        // (the scene shown is always in the game: it joins the list when saved)
+        if (button("scene_remove", Tr(L"一覧から外す"), chosenListed && chosen != open, 110)) {
+            EditSceneList(TrU8("シーンを一覧から外す"), [&](SceneList& l) {
+                std::erase(l.scenes, chosen);
+                if (l.first == chosen) l.first = {};
+            });
+        }
+        y += 32;
+        if (renamingScene_) {
+            editor::w::TextField(c, "scene_name", {area.x, y, std::max(60.f, area.w - 150), 26}, sceneNewName_);
+            if (editor::w::Button(c, "scene_name_ok", {area.Right() - 140, y, 70, 26}, Tr(L"決める"), editor::w::ButtonKind::Primary) ||
+                (c.KeyPressed(ui::Key::Enter) && !sceneNewName_.empty())) {
+                RenameScene(chosen, sceneNewName_);
+            }
+            if (editor::w::Button(c, "scene_name_cancel", {area.Right() - 64, y, 64, 26}, Tr(L"やめる"))) renamingScene_ = false;
+            y += 32;
+        }
+        if (!sceneProblem_.empty()) {
+            ui::TextStyle es = ts;
+            es.color = theme::Danger;
+            p.Text({area.x, y, area.w, 22}, sceneProblem_, es);
+            y += 26;
+        }
+        if (!others.empty()) {
+            y += 6;
+            p.Text({area.x, y, area.w, 20}, Tr(L"Assets にあって一覧に無いシーン"), ts);
+            y += 24;
+            for (const AssetRef& ref : others) {
+                c.PushId(ref.guid);
+                if (editor::w::Button(c, "add", {area.Right() - 60, y, 60, 24}, Tr(L"足す"))) {
+                    EditSceneList(TrU8("シーンを一覧に足す"), [&](SceneList& l) { l.scenes.push_back(ref); });
+                }
+                c.PopId();
+                p.Text({area.x + 10, y, area.w - 80, 24}, Utf8ToWide(SceneTitle(ref)), name);
+                y += kRow;
+            }
+        }
+        editor::w::EndScroll(c, "scenes.scroll", r, contentH);
+    }
+
+    // A scene's file renamed (its id stays: the list and Game::LoadScene use the new name). The new
+    // scene not saved yet: the file it will be.
+    void RenameScene(const AssetRef& ref, const std::string& to) {
+        sceneProblem_.clear();
+        if (to.empty()) return;
+        if (ValidateFileName(to, 64) != FileNameError::None) {
+            sceneProblem_ = Tr(L"ファイルの名前に使えない文字が入っています");
+            return;
+        }
+        if (ref.Empty()) {
+            std::string path = std::string(kScenesFolder) + "/" + to + kSceneExtension;
+            std::error_code ec;
+            if (fs::exists(FullPath(path), ec)) {
+                sceneProblem_ = Tr(L"その名前のシーンはもうあります");
+                return;
+            }
+            slot_.path = std::move(path);
+        } else {
+            const std::wstring problem = host_.RenameAsset(ref, to + kSceneExtension);
+            if (!problem.empty()) {
+                sceneProblem_ = problem;
+                return;
+            }
+            if (ref.guid == slot_.guid) SlotNow();  // (its file is found by its id)
+        }
+        log::Info("シーンの名前を「{}」にしました", to);
+        renamingScene_ = false;
+        host_.Redraw();
+    }
+
+    // The scene files in Assets/ (from the project folder), looked at now and then.
+    const std::vector<std::string>& SceneFiles() {
+        const double now = platform::NowSeconds();
+        if (now - sceneFilesTime_ < 2.0 && sceneFilesTime_ > 0) return sceneFiles_;
+        sceneFilesTime_ = now;
+        sceneFiles_.clear();
+        const fs::path root = host_.GetProject().Root();
+        std::error_code ec;
+        for (fs::recursive_directory_iterator it(host_.GetProject().AssetsDir(), ec), end; !ec && it != end; it.increment(ec)) {
+            if (!it->is_regular_file(ec) || it->path().extension() != kSceneExtension) continue;
+            sceneFiles_.push_back(PathToUtf8(it->path().lexically_relative(root).generic_wstring()));
+            if (sceneFiles_.size() >= 200) break;
+        }
+        std::sort(sceneFiles_.begin(), sceneFiles_.end());
+        return sceneFiles_;
+    }
+
     // --- Prefabs -------------------------------------------------------------------------------
     // A prefab file is an asset (a .rmprefab in Assets/) and is named by its id (AssetRef): moving or
     // renaming it keeps every placed one linked. Data from before assets had ids names it by a path
@@ -1465,8 +1767,8 @@ private:
 
     // --- Scenes (runtime/SceneFile.h) --------------------------------------------------------
     // Where a new scene's file goes: Assets/Scenes/Main.rmscene ("Main 2" ... when taken).
-    std::string NewSceneFile() const {
-        return NewScenePath("Main", [this](const std::string& p) {
+    std::string NewSceneFile(std::string_view name = "Main") const {
+        return NewScenePath(name, [this](const std::string& p) {
             std::error_code ec;
             return fs::exists(FullPath(p), ec);
         });
@@ -2038,6 +2340,8 @@ private:
         SceneList list;
     };
     std::optional<Pending> pending_;  // what SaveData gave, taken on by Saved()
+    std::vector<std::string> sceneFiles_;  // SceneFiles()
+    double sceneFilesTime_ = 0;
     // 書き出し (GameExport.h): the project's part, the panel, the export running on a worker.
     ExportSettings exportSettings_;
     reflect::Unknowns exportUnknowns_;
@@ -2059,6 +2363,13 @@ private:
     DebugDraw debug_;      // what the scripts draw with rm::Debug while playing (shown by the views; gone at Stop)
     std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // the plugins' component types
     std::unique_ptr<Scene> playScene_;  // the copy that plays
+    std::vector<AssetRef> playScenes_;  // the scenes Play can switch to (GameScenes when it started)
+    std::vector<std::string> cameraTypes_;  // the components the game sees through (SceneCamera)
+    // シーンの一覧 panel: the row chosen (a scene's id; "" = the new scene not saved yet), renaming it.
+    std::optional<AssetRef> sceneChosen_;
+    bool renamingScene_ = false;
+    std::string sceneNewName_;
+    std::wstring sceneProblem_;
     SystemRunner runner_;
     double lastTick_ = 0;
 

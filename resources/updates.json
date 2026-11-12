@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "シーンの切り替え: パネル「シーンの一覧」でシーンを足す・開く・並べる・名前を変える・最初のシーンを決める。スクリプトから rm::Game::LoadScene(\"名前\") で切り替え (Play の中だけ。■ で戻る)。書き出したゲームは全部のシーンを持ち、最初のシーンから始まる。見本のテンプレート「シーンを切り替える見本」",
+          "en": "Switching scenes: in the Scenes panel, add, open, reorder and rename scenes and choose the first one. Scripts switch with rm::Game::LoadScene(\"name\") (inside Play only; Stop comes back). Exported games carry every scene and start with the first. A sample template, Switching scenes (sample)"
+        },
+        {
           "ja": "スクリプトからデバッグ用の線を描ける: rm::Debug::Line / Box / Sphere / Ray (3D)・Line / Rect / Circle (2D)。Play 中のゲームビューとシーンビューに出る (奥は薄く。シーンビューの帯の「デバッグ」で出す・出さない)。書き出したゲームでは何もしない",
           "en": "Scripts can draw debug lines: rm::Debug::Line / Box / Sphere / Ray (3D) and Line / Rect / Circle (2D). They show in the game view and the scene view while playing (fainter when hidden; Debug on the scene view's bar turns them on / off). Exported games ignore them"
         },

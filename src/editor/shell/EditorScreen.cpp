@@ -219,6 +219,24 @@ void EditorScreen::Workspace::PickFolder(std::wstring title, fs::path start, std
     });
 }
 
+void EditorScreen::Workspace::Ask(std::wstring title, std::wstring text, std::vector<std::wstring> buttons, std::function<void(int)> done) {
+    EditorScreen& ed = editor_;
+    if (ed.modal_ != Modal::None || buttons.empty()) {
+        if (done) done(-1);
+        return;
+    }
+    ed.askTitle_ = std::move(title);
+    ed.modalText_ = std::move(text);
+    ed.askButtons_ = std::move(buttons);
+    ed.askDone_ = std::move(done);
+    ed.modal_ = Modal::Ask;
+    ed.RedrawAll();
+}
+
+std::wstring EditorScreen::Workspace::RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) {
+    return editor_.assets_->Rename(ref.guid, newNameUtf8);
+}
+
 bool EditorScreen::ExportForCheck(const fs::path& outDir, std::string* error) {
     for (auto& ws : workspaces_) {
         if (ws->software && ws->software->CanExport()) return ws->software->ExportNow(outDir, error);
@@ -1269,6 +1287,33 @@ void EditorScreen::DrawModal(ui::Context& c) {
             modal_ = Modal::None;
             // A failed save shows its error and the editor stays as it is (nothing is lost).
             if (Save()) app_.RequestInstallAndReopen(installPlan_, project_.file);
+        }
+        return;
+    }
+
+    if (modal_ == Modal::Ask) {
+        // A software's question (SoftwareHost::Ask): the answer goes back after the dialog is gone.
+        const Rect cr = w::BeginModal(c, 600, 220, askTitle_);
+        p.Text({cr.x, cr.y, cr.w, cr.h - 48}, modalText_, body);
+        int answer = -2;
+        float x = cr.Right();
+        for (size_t i = 0; i < askButtons_.size(); ++i) {
+            const float width = std::max(110.f, 24.f + 14.f * static_cast<float>(askButtons_[i].size()));
+            x -= width;
+            if (w::Button(c, "ask." + std::to_string(i), {x, cr.Bottom() - 36, width, 36}, askButtons_[i],
+                          i == 0 ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+                answer = static_cast<int>(i);
+            }
+            x -= 12;
+        }
+        if (answer == -2 && c.KeyPressed(ui::Key::Escape)) answer = -1;
+        if (answer != -2) {
+            modal_ = Modal::None;
+            auto done = std::move(askDone_);
+            askDone_ = nullptr;
+            askButtons_.clear();
+            if (done) done(answer);
+            Invalidate();
         }
         return;
     }

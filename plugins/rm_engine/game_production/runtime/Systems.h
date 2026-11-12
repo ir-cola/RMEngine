@@ -60,6 +60,13 @@ void ForEachComponent(Scene& scene, std::string_view type, const std::function<v
 // runs (SystemRunner::SetSystems sorts them).
 std::vector<const SystemInfo*> RegisteredSystems(const RuntimeRegistry& registry);
 
+// The component types the game sees through (ComponentInfo::camera), each once.
+std::vector<std::string> CameraTypes(const RuntimeRegistry& registry);
+// The camera of a scene that starts playing (Play, the game, a scene switched to): `wanted` (the game
+// settings' 最初のカメラ) when it is an entity of this scene with a camera component, else the first
+// running entity (in the 階層's order) that has one; 0 when there is none.
+uint64_t SceneCamera(const Scene& scene, const std::vector<std::string>& cameraTypes, uint64_t wanted);
+
 // Runs the systems over a scene (the copy that plays). Keeps the game's clock and what is left of
 // the fixed step.
 class SystemRunner {

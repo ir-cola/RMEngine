@@ -374,3 +374,72 @@ RM_TEST(Scripts_BeginAndEndInPairs_WhenSwitchedOffAndOn) {
     r.Stop(s, w, m, {});
     CHECK(g_log.empty());  // nothing started: nothing ended
 }
+
+// Game::LoadScene: asked during a frame, switched between frames - EndPlay of the scene playing, the
+// new one read, its BeginPlay at the next frame. The scene being edited (the copy plays) never changes.
+RM_TEST(Scripts_LoadSceneBetweenFrames) {
+    ScriptModule m;
+    m.Adopt(kModule);
+    Scene edited = SceneWith(m);
+    const int a = edited.Create("タイトル");
+    edited.AddComponent(a, m.Find("test::Counter")->desc);
+    const json::Value editedBefore = edited.Save();
+    Scene stage = SceneWith(m);
+    stage.Create("空");
+    const int b = stage.Create("ステージ");
+    stage.AddComponent(b, m.Find("test::Counter")->desc);
+    const json::Value stageFile = stage.Save();
+
+    Scene playing = edited;  // (Play: the copy plays)
+    ScriptWorld w;
+    std::string warned;
+    w.log = [&](int level, std::string_view text) {
+        if (level == 1) warned += text;
+    };
+    w.sceneNames = {"Title", "Stage"};
+    w.sceneIndex = 0;
+    const RmApi api = MakeScriptApi(w);
+    const RmCoreApi& core = *api.core;
+    ScriptRunner r;
+    const std::vector<ScriptOrderEntry> order;
+    std::vector<size_t> loaded;
+    auto load = [&](size_t index, Scene& into, std::string* error) {
+        loaded.push_back(index);
+        if (index != 1) {
+            if (error) *error = "読めません";
+            return false;
+        }
+        into.Load(stageFile);
+        return true;
+    };
+    std::string err;
+    g_log.clear();
+    r.Frame(playing, w, m, order, 0.1f);
+    CHECK(g_log == "B1T1");
+    // Nothing asked: nothing switched.
+    CHECK(SwitchAskedScene(playing, w, r, m, order, load, &err) == SceneSwitch::None && loaded.empty());
+    // A name not in the list: refused (told), nothing asked.
+    CHECK(core.loadScene(api.ctx, "Nowhere") == 0 && warned.find("Nowhere") != std::string::npos && w.sceneAsked == -1);
+    CHECK(core.loadSceneAt(api.ctx, 5) == 0 && w.sceneAsked == -1);
+    // Asked during the frame (as a script's Tick would): the frame ends, then the switch.
+    char name[16];
+    CHECK(core.sceneName(api.ctx, name, sizeof(name)) == 5 && std::string(name) == "Title" && core.sceneIndex(api.ctx) == 0 && core.sceneCount(api.ctx) == 2);
+    CHECK(core.loadScene(api.ctx, "Stage") == 1 && w.sceneAsked == 1);
+    g_log.clear();
+    CHECK(SwitchAskedScene(playing, w, r, m, order, load, &err) == SceneSwitch::Switched);
+    CHECK(g_log == "E1");  // the old scene's EndPlay; the new one's scripts not started yet
+    CHECK(w.sceneIndex == 1 && w.sceneAsked == -1 && w.scene == &playing && playing.Find(b) && playing.Find(b)->data.name == "ステージ");
+    CHECK(core.sceneName(api.ctx, name, sizeof(name)) == 5 && std::string(name) == "Stage");
+    g_log.clear();
+    r.Frame(playing, w, m, order, 0.1f);
+    CHECK(g_log == "B2T2");  // BeginPlay before the first Tick, in the new scene
+    // A scene that cannot be read: the one playing goes on (no EndPlay).
+    CHECK(core.loadSceneAt(api.ctx, 0) == 1);
+    g_log.clear();
+    CHECK(SwitchAskedScene(playing, w, r, m, order, load, &err) == SceneSwitch::Failed && err == "読めません");
+    CHECK(g_log.empty() && w.sceneIndex == 1 && w.sceneAsked == -1 && playing.Find(b));
+    // Stopped (■): the copy goes; the scene being edited is as it was.
+    r.Stop(playing, w, m, order);
+    CHECK(g_log == "E2");
+    CHECK(edited.Save() == editedBefore);
+}

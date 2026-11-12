@@ -37,15 +37,29 @@ inline constexpr char kSceneExtension[] = ".rmscene";
 inline constexpr char kScenesFolder[] = "Assets/Scenes";  // where a new scene's file goes (from the project folder)
 inline constexpr char kOldSceneBackupSuffix[] = ".before-scenes.bak";  // <名前>.rmpf + this
 
-// The game's scenes, in the .rmpf ("sceneList"): their asset ids, and the one the editor shows.
+// The game's scenes, in the .rmpf ("sceneList"): their asset ids in the game's order (what goes into
+// the exported game; Game::LoadScene(number) counts in it), the one the game starts with, and the one
+// the editor shows.
 RM_STRUCT()
 struct SceneList {
     RM_PROPERTY() std::vector<AssetRef> scenes;
-    RM_PROPERTY() AssetRef open;  // empty: the first
+    RM_PROPERTY() AssetRef open;   // empty: the first
+    RM_PROPERTY() AssetRef first;  // the game starts here (empty, or not in the list: the list's first)
 };
 
 // The scene shown: `open` when it is in the list, else the first. Empty when the list is.
 AssetRef OpenScene(const SceneList& list);
+// The scene the game starts with: `first` when it is in the list, else the list's first. Empty when
+// the list is.
+AssetRef FirstScene(const SceneList& list);
+// The scenes of the game, in order: the list's, then the one open in the editor when it is not in it
+// (a new scene not saved yet: an empty ref) - what Play can switch to and what an export puts in.
+std::vector<AssetRef> GameScenes(const SceneList& list, const AssetRef& open);
+// A scene's name, as Game::LoadScene("…") takes it: its file's name without .rmscene
+// ("Assets/Scenes/Title.rmscene" -> "Title").
+std::string SceneNameOf(std::string_view path);
+// The place of the first scene of that name (nullopt: none).
+std::optional<size_t> FindSceneByName(const std::vector<std::string>& names, std::string_view name);
 
 // A scene's file: kind and format first, then the scene's keys (Scene::Save) - a "kind" / "format"
 // it kept from the file it was read from is replaced by this version's.

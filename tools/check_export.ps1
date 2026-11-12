@@ -212,6 +212,42 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
+# Two scenes (the template 「シーンを切り替える見本」: Title -> Stage by its script GoToScene): both go in,
+# the game starts with the first, and the script's Game::LoadScene switches in the exported game (its
+# 「自動で切り替える (秒)」 set here, so --smoke switches without a key).
+$dir = Join-Path $work 'game_scenes'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+$p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_2d', 'scenes_2d', "`"$dir`"") -Wait -PassThru
+$rmpf = Join-Path $dir 'Project\Project.rmpf'
+if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
+    Write-Host "NG  game_scenes: プロジェクトを作れませんでした。$log を見てください"
+    $failed++
+} else {
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Title.rmscene'
+    $text = [IO.File]::ReadAllText($sceneFile, $utf8) -replace '"after": 0', '"after": 0.000001'
+    [IO.File]::WriteAllText($sceneFile, $text, $utf8)
+    $game = Join-Path $dir 'Game'
+    $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
+    $exe = @(Get-ChildItem $game -Filter *.exe -ErrorAction SilentlyContinue)
+    if ($p.ExitCode -ne 0 -or $exe.Count -ne 1) {
+        Write-Host "NG  game_scenes: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
+        $failed++
+    } else {
+        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        $ok = $r.ExitCode -eq 0 -and $gameLog.Contains('シーン 2 個。最初のシーン: Title') -and $gameLog.Contains('シーンを切り替えました: Title → Stage') -and
+              $gameLog.Contains('シーン「Title」を出ます') -and $gameLog.Contains('シーン「Stage」(2 / 2)')
+        if (-not $ok) {
+            Write-Host "NG  game_scenes: シーンが切り替わっていません (終了コード $($r.ExitCode))"
+            $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+        } else {
+            Write-Host "OK  game_scenes: 2 つのシーンを書き出し、Title から始まって Game::LoadScene で Stage に切り替わりました (EndPlay → BeginPlay)"
+        }
+    }
+}
+
 if ($failed -gt 0) { Write-Host "check_export: $failed 個が失敗しました"; exit 1 }
 Write-Host 'check_export: すべて書き出して起動できました'
 exit 0

@@ -65,6 +65,11 @@ struct ScriptWorld {
     // game - and the debug parts do nothing.
     DebugDraw* debug = nullptr;
     std::array<uint8_t, 256> keysNow{}, keysBefore{};
+    // The game's scenes (Game::LoadScene): their names in the list's order, the one playing (-1: not
+    // one of them) and the one asked for this frame (-1: none; switched between frames: SwitchAskedScene).
+    std::vector<std::string> sceneNames;
+    int sceneIndex = -1;
+    int sceneAsked = -1;
 
     // Reads the keyboard once a frame (pressed / released compare with the last frame).
     void ReadKeys();
@@ -164,6 +169,16 @@ private:
     std::unordered_set<void*> started_;
     std::unordered_set<void*> crashed_;
 };
+
+// --- Switching the scene (Game::LoadScene) -------------------------------------------------------
+enum class SceneSwitch { None, Switched, Failed };
+// Between frames: the scene the scripts asked for during the frame just played. `load` reads it (its
+// place in world.sceneNames) into the scene given (its component types already set); then EndPlay of
+// every started script of `playing`, which becomes the new scene - its scripts get BeginPlay at the next
+// Frame. None: nothing was asked. Failed (*error why): `playing` goes on as it was.
+SceneSwitch SwitchAskedScene(Scene& playing, ScriptWorld& world, ScriptRunner& runner, const ScriptModule& module,
+                             std::span<const ScriptOrderEntry> order, const std::function<bool(size_t index, Scene& into, std::string* error)>& load,
+                             std::string* error);
 
 // The hooks, called inside __try / __except (ScriptGuard.cpp). 0 = fine, else the exception code.
 // hook: 0 = BeginPlay, 1 = Tick, 2 = EndPlay.
