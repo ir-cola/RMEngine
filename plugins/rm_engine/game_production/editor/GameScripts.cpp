@@ -149,11 +149,17 @@ void GameScripts::OpenVisualStudio() {
 void GameScripts::Poll(ui::Context& c) {
     const double now = platform::NowSeconds();
     const std::filesystem::path root = host_.GetProject().Root();
-    if (!watching_ && now - lastLook_ >= 1.0) {
-        // (Assets/Scripts may come later: a first script made in Explorer)
+    if (now - lastAliveCheck_ >= 1.0) {
+        // (Assets/Scripts may come later - a first script made in Explorer - or be deleted and made
+        // again: the watch follows the old folder, so it is started again on the new one)
+        lastAliveCheck_ = now;
+        if (watching_ && watch_.Lost()) {
+            watching_ = false;
+            changedAt_ = now;  // (what is there now is looked at)
+        }
         std::error_code ec;
         const std::filesystem::path folder = ScriptsFolder(root);
-        if (std::filesystem::is_directory(folder, ec)) watching_ = watch_.Start(folder, true, wake_.Signal());
+        if (!watching_ && std::filesystem::is_directory(folder, ec)) watching_ = watch_.Start(folder, true, wake_.Signal());
     }
     if (watching_) {
         if (watch_.Changed()) {

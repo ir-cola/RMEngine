@@ -73,6 +73,7 @@ private:
     editor::UiWake wake_{[this] { host_.Redraw(); }};
     platform::FolderWatch watch_;  // Assets/Scripts, file names and contents (after wake_: it calls it)
     bool watching_ = false;
+    double lastAliveCheck_ = 0;
 };
 
 }  // namespace rm::game_production

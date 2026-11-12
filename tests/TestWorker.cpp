@@ -4,8 +4,11 @@
 #include "Test.h"
 
 #include "editor/app/Worker.h"
+#include "platform/Shell.h"
 
 #include <atomic>
+#include <filesystem>
+#include <fstream>
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -75,4 +78,38 @@ RM_TEST(Worker_GoneWorkerDropsPosts) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     RunPostedToUi();
     CHECK(ran->load() == 0);
+}
+
+// A folder watch wakes the UI thread when a file comes (no one asking), is seen once, and tells when
+// the folder it watched was deleted and made again (its owner then starts it again).
+RM_TEST(FolderWatch_WakesAndTellsWhenTheFolderIsGone) {
+    namespace fs = std::filesystem;
+    SetUiThread();
+    const fs::path dir = fs::temp_directory_path() / L"rm_folder_watch_test";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    auto woken = std::make_shared<std::atomic<int>>(0);
+    {
+        UiWake wake([woken] { ++*woken; });
+        rm::platform::FolderWatch watch;
+        CHECK(watch.Start(dir, true, wake.Signal()));
+        CHECK(!watch.Lost());
+        std::ofstream(dir / L"a.txt") << "a";
+        CHECK(PumpUntil([&] { return woken->load() > 0; }));
+        CHECK(watch.Changed());
+        while (watch.Changed()) {
+        }
+        // Deleted and made again: the watch followed the old folder.
+        fs::remove_all(dir, ec);
+        fs::create_directories(dir, ec);
+        CHECK(watch.Lost());
+        CHECK(watch.Start(dir, true, wake.Signal()));
+        CHECK(!watch.Lost());
+        // Destroyed with changes coming in: no callback outlives it.
+        for (int i = 0; i < 20; ++i) std::ofstream(dir / (L"b" + std::to_wstring(i) + L".txt")) << i;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    RunPostedToUi();  // (what was posted before it went is dropped: the UiWake is gone)
+    fs::remove_all(dir, ec);
 }

@@ -45,6 +45,10 @@ public:
     // false: the folder cannot be watched (Changed() stays false)
     bool Start(const std::filesystem::path& folder, bool contents = false, std::function<void()> onSignal = {});
     bool Changed();
+    // The watch no longer sees the folder at its path: it stopped, or the folder was deleted / moved to
+    // the Recycle Bin / made again (the watch follows the old one). The owner starts it again. Opens the
+    // folder to ask - once a second at most, not every frame.
+    bool Lost() const;
 
 private:
     static void CALLBACK Signaled(void* self, BOOLEAN timedOut);
@@ -54,6 +58,8 @@ private:
     HANDLE handle_ = nullptr;
     HANDLE wait_ = nullptr;
     std::function<void()> onSignal_;
+    std::filesystem::path folder_;
+    std::optional<std::pair<DWORD, uint64_t>> identity_;  // the folder watched (see Lost)
 };
 
 enum class KnownFolder { Documents, RoamingAppData, LocalAppData };

@@ -107,6 +107,10 @@ private:
     platform::FolderWatch watch_;
     bool watching_ = false;
     double changedAt_ = -1;  // when the watch last told of a change not looked at yet
+    double lastAliveCheck_ = 0;  // when the watch was last asked whether it still sees the folder
+    // After writing .meta files here: their news asks for one more look once quiet (not thrown away -
+    // a change made outside at the same moment would go with it).
+    void SettleAfterOwnWrites();
     uint64_t version_ = 0;
     std::set<std::string> lastNotes_;  // what the last look told the console
     std::map<std::string, json::Value> queuedImports_;  // guid -> import settings waiting to be written

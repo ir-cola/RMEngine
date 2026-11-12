@@ -10,6 +10,8 @@
 #include <wrl/client.h>
 
 #include <format>
+
+#pragma comment(lib, "dwmapi.lib")  // (TopLevelWindowAt; also for the tests, which link this file alone)
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
@@ -179,14 +181,41 @@ void FolderWatch::Arm() {
     if (!handle_ || !onSignal_) return;
     // Once only: the handle stays signalled until Changed() sees it, so a repeating wait would run
     // again and again. Changed() arms it again for the next change.
-    if (wait_) UnregisterWaitEx(wait_, nullptr);  // (it already ran - or is running: not waited for)
+    // (waited for: a callback of the last arming that is still running must not outlive this object.
+    // It only posts to the UI thread - never waits for it - so this cannot hang)
+    if (wait_) UnregisterWaitEx(wait_, INVALID_HANDLE_VALUE);
     wait_ = nullptr;
     if (!RegisterWaitForSingleObject(&wait_, handle_, &FolderWatch::Signaled, this, INFINITE, WT_EXECUTEONLYONCE)) wait_ = nullptr;
+}
+
+namespace {
+
+// Which folder is at `path` now (the volume and the file's number): another one after it was deleted
+// and made again, or moved to the Recycle Bin. nullopt when there is none.
+std::optional<std::pair<DWORD, uint64_t>> FolderIdentity(const std::filesystem::path& path) {
+    HANDLE h = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                           OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return std::nullopt;
+    BY_HANDLE_FILE_INFORMATION info{};
+    const bool ok = GetFileInformationByHandle(h, &info) != 0;
+    CloseHandle(h);
+    if (!ok) return std::nullopt;
+    return std::pair{info.dwVolumeSerialNumber, (static_cast<uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow};
+}
+
+}  // namespace
+
+bool FolderWatch::Lost() const {
+    if (!handle_) return true;
+    const auto now = FolderIdentity(folder_);
+    return !now || !identity_ || *now != *identity_;
 }
 
 bool FolderWatch::Start(const std::filesystem::path& folder, bool contents, std::function<void()> onSignal) {
     Close();
     onSignal_ = std::move(onSignal);
+    folder_ = folder;
+    identity_ = FolderIdentity(folder);
     DWORD what = FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME;
     if (contents) what |= FILE_NOTIFY_CHANGE_LAST_WRITE;
     handle_ = FindFirstChangeNotificationW(folder.c_str(), TRUE, what);
@@ -259,7 +288,11 @@ std::string ErrorText(DWORD code) {
 }
 
 std::optional<std::string> ReadFileBytes(const std::filesystem::path& path, std::string* error) {
-    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    // Shared for writing and deleting too: a save of the same file (WriteFileAtomic: a new file renamed
+    // over it) going on in another thread or program is not refused while this reads (the size is
+    // checked against what was read).
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
     if (f == INVALID_HANDLE_VALUE) {
         if (error) *error = ErrorText(GetLastError());
         return std::nullopt;

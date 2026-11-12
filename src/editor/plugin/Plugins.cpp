@@ -85,6 +85,13 @@ void PutBackInterrupted(const fs::path& to) {
     }
 }
 
+// What an uninstall could not delete (<folder>.removing): tried again.
+void RemoveLeftovers(const fs::path& folder) {
+    const fs::path aside = WithSuffix(folder, L".removing");
+    std::error_code ec;
+    if (fs::exists(aside, ec)) fs::remove_all(aside, ec);
+}
+
 }  // namespace
 
 void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir, const fs::path& legacyDir) {
@@ -127,6 +134,7 @@ void Plugins::Reload() {
         PluginCandidate cand;
         cand.id = b.id.Id();
         PutBackInterrupted(FolderOf(installedDir_, cand.id));
+        RemoveLeftovers(FolderOf(installedDir_, cand.id));
         const ReadResult engineCopy = ReadManifest(FolderOf(availableDir_, cand.id));
         if (engineCopy.manifest) available_.push_back(*engineCopy.manifest);
         availableFlags.push_back(engineCopy.manifest.has_value());
@@ -372,12 +380,20 @@ std::vector<PluginId> Plugins::ApplyEngineRefresh(const EngineRefreshPlan& plan)
 }
 
 bool Plugins::Uninstall(const PluginId& id, std::string* error) {
+    // Renamed out of the way first: if that fails (a file of it open elsewhere) nothing has changed -
+    // deleting in place could stop half-way and leave a plugin without its plugin.json. What cannot be
+    // deleted of the renamed folder is tried again at the next start (RemoveLeftovers).
+    const fs::path folder = FolderOf(installedDir_, id);
+    const fs::path aside = WithSuffix(folder, L".removing");
     std::error_code ec;
-    fs::remove_all(FolderOf(installedDir_, id), ec);
+    fs::remove_all(aside, ec);
+    fs::rename(folder, aside, ec);
     if (ec) {
         if (error) *error = TrU8F("「{}」を削除できませんでした: {}", DisplayName(id), FsError(ec));
         return false;
     }
+    fs::remove_all(aside, ec);
+    if (ec) log::Warn("削除したプラグインのファイルが一部残りました (次の起動で消します): {} ({})", PathToUtf8(aside), FsError(ec));
     log::Info("プラグインを削除しました: {} ({})", DisplayName(id), id.Text());
     return true;
 }

@@ -98,12 +98,16 @@ void AssetLibrary::FlushImports() {
         if (!asset::WriteImportJson(FullPath(*e), import)) log::Warn("取り込みの設定を {}.meta に書けませんでした (開けない・壊れている)", e->path);
     }
     queuedImports_.clear();
-    // Only .meta files changed (no file came or went): the watch's news of them needs no look at the
-    // whole folder. Whoever reads those assets sees the .meta's new time and reads them again.
-    if (watching_) {
-        while (watch_.Changed()) {
-        }
+    // The watch's news of these .meta files: one more look after it is quiet (it finds nothing new from
+    // them - the cache keeps it cheap - but a file added outside at the same moment is not lost).
+    SettleAfterOwnWrites();
+}
+
+void AssetLibrary::SettleAfterOwnWrites() {
+    if (!watching_ || !watch_.Changed()) return;
+    while (watch_.Changed()) {
     }
+    changedAt_ = platform::NowSeconds();
 }
 
 void AssetLibrary::Refresh() {
@@ -155,11 +159,9 @@ void AssetLibrary::ApplyLook(uint64_t number, asset::Plan plan) {
     const bool wrote = !plan.writes.empty() || !plan.moves.empty();
     asset::ApplyPlan(root_, plan, notes);
     for (auto& n : plan.notes) notes.push_back(std::move(n));
-    // The .meta files it wrote itself: the watch would only bring them back as news.
-    if (wrote && watching_) {
-        while (watch_.Changed()) {
-        }
-    }
+    // The .meta files it wrote itself: one more look once quiet. That look writes nothing (the ids are
+    // in their .meta files now), so it ends there - and a file added outside meanwhile is seen.
+    if (wrote) SettleAfterOwnWrites();
     // (a note that stays true - a .meta that still cannot be read - is told once, not at every look)
     std::set<std::string> told;
     for (std::string& n : notes) {
@@ -211,8 +213,17 @@ std::string AssetLibrary::AdoptFile(const std::string& path) {
 }
 
 bool AssetLibrary::Poll() {
-    if (!watching_) return false;
     const double now = platform::NowSeconds();
+    // The folder deleted / made again / not watchable at first: watched again, and looked at.
+    if (now - lastAliveCheck_ >= 1.0) {
+        lastAliveCheck_ = now;
+        if (!watching_ || watch_.Lost()) {
+            const bool was = watching_;
+            watching_ = watch_.Start(root_, false, onChange_);
+            if (was || watching_) changedAt_ = now;
+        }
+    }
+    if (!watching_) return false;
     if (watch_.Changed()) {
         while (watch_.Changed()) {
         }
