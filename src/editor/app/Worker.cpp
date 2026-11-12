@@ -36,6 +36,16 @@ void PostToUi(std::function<void()> fn) {
     if (const DWORD ui = g_uiThread.load()) PostThreadMessageW(ui, WM_NULL, 0, 0);
 }
 
+UiWake::UiWake(std::function<void()> onUi) : onUi_(std::make_shared<std::function<void()>>(std::move(onUi))) {}
+
+std::function<void()> UiWake::Signal() const {
+    return [weak = std::weak_ptr<std::function<void()>>(onUi_)] {
+        PostToUi([weak] {
+            if (auto fn = weak.lock()) (*fn)();  // (on the UI thread: it is gone only if destroyed before)
+        });
+    };
+}
+
 void RunPostedToUi() {
     std::vector<std::function<void()>> list;
     {

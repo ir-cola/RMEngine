@@ -42,7 +42,8 @@ std::string_view FileNameOf(std::string_view path);
 std::string Extension(std::string_view name);
 std::string Join(std::string_view folder, std::string_view name);
 // Files the asset list leaves out: names starting with '.', desktop.ini, Thumbs.db, .meta files and
-// .meta files being written ("X.meta.tmp").
+// .meta files being written ("X.meta.tmp"), and the files other programs keep while saving: names
+// starting or ending with '~' and ".tmp" files.
 bool Ignored(std::string_view name);
 
 // What a .meta says. Ok: JSON with a valid "guid" (+ "name": the file name it was written for).

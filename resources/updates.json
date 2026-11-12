@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "スクリプトを保存したときや、エクスプローラーでアセットを足したときに、エディターに触っていなくてもすぐ気づく (前はマウスを動かすまで待っていた)。Visual Studio などが保存のときに作る一時ファイルをアセットに数えない。書き出しのパネルが低いときはスクロールする",
+          "en": "Saving a script or adding an asset in Explorer is noticed at once, even while the editor is left alone (it used to wait for the mouse to move). Temporary files that Visual Studio and others write while saving are not counted as assets. The Export panel scrolls when it is low"
+        },
+        {
           "ja": "書き出したゲームで 3D モデルが形と色と絵で出る (書き出すときにエンジンの形と GPU の圧縮形式の絵に焼く。エディターのテクスチャのキャッシュも使う)。スプライトの画像も焼く。アセットの暗号化を AES に。2D を 3D の上に重ねる表示・アイコンに .ico・出力先を選ぶダイアログ",
           "en": "Exported games show 3D models with their shape, colours and pictures (baked at export into the engine's own form and GPU-compressed pictures, using the editor's texture cache). Sprite images are baked too. Assets are encrypted with AES. 2D over 3D, .ico icons and a dialog to choose the output folder"
         },

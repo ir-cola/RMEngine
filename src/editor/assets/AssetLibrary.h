@@ -38,7 +38,9 @@ namespace rm::editor {
 
 class AssetLibrary {
 public:
-    explicit AssetLibrary(std::filesystem::path root);
+    // `onChange`: called (from any thread) when something changes in the folder while no one asks -
+    // the owner wakes the UI thread with it (editor::UiWake) so a change made in Explorer shows at once.
+    explicit AssetLibrary(std::filesystem::path root, std::function<void()> onChange = {});
     ~AssetLibrary();  // writes the import settings still waiting
 
     const std::filesystem::path& Root() const { return root_; }
@@ -63,8 +65,11 @@ public:
     // Called on the UI thread after a look's result was put in place (redraw what shows the ids).
     std::function<void()> onChanged;
     // Asks for a look when something under the folder was added, removed or renamed since the last
-    // one. True when it asked.
+    // one - once it has been quiet for a moment (a program saving through a file of its own for a
+    // moment is seen after it is done). True when it asked.
     bool Poll();
+    // A change was seen and the folder is not quiet yet: the owner asks for the next frames.
+    bool Settling() const { return changedAt_ >= 0; }
     // The id of a file the editor has just written inside Assets/ (`path` relative to it): given at
     // once - its .meta written now - without waiting for a look. "" when it cannot be given.
     std::string AdoptFile(const std::string& path);
@@ -98,8 +103,10 @@ private:
     std::filesystem::path root_;
     asset::Index index_;
     std::vector<size_t> order_;
+    std::function<void()> onChange_;
     platform::FolderWatch watch_;
     bool watching_ = false;
+    double changedAt_ = -1;  // when the watch last told of a change not looked at yet
     uint64_t version_ = 0;
     std::set<std::string> lastNotes_;  // what the last look told the console
     std::map<std::string, json::Value> queuedImports_;  // guid -> import settings waiting to be written

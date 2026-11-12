@@ -212,6 +212,7 @@ private:
     // Declared BEFORE the workspaces, so they are destroyed AFTER them (members go in reverse order):
     // every workspace's AssetPanel, its ImportCommands in the undo history and Workspace::AssetFile
     // point at them while the workspaces are being torn down.
+    UiWake assetsWake_{[this] { RedrawAll(); }};
     std::unique_ptr<AssetLibrary> assets_;    // the project's Assets/ (ids, file operations) - every software's
     std::unique_ptr<Thumbnails> thumbnails_;  // the assets' small pictures - every software's panel shares them (its thread ends here)
 

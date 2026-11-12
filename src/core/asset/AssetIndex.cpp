@@ -122,6 +122,10 @@ bool Ignored(std::string_view name) {
     const std::string lower = LowerText(name);
     if (lower == "desktop.ini" || lower == "thumbs.db") return true;
     if (lower.ends_with(".meta.tmp")) return true;  // a .meta being written (or left by a failed write)
+    // Files another program keeps for a moment while it saves (written next to the file, then renamed
+    // onto it - Visual Studio's "~RF1a2b.TMP", Office's "~$a.docx", backups "a.txt~"): never assets
+    // (the same as Unity's rule). Seen as one, each would leave a .meta behind for a file gone at once.
+    if (name.front() == '~' || name.back() == '~' || lower.ends_with(".tmp")) return true;
     return lower.size() > kMetaSuffix.size() && lower.ends_with(kMetaSuffix);
 }
 

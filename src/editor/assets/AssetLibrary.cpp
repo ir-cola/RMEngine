@@ -78,7 +78,7 @@ std::wstring MoveWithMeta(const fs::path& from, const fs::path& to, const std::w
 
 }  // namespace
 
-AssetLibrary::AssetLibrary(fs::path root) : root_(std::move(root)) {}
+AssetLibrary::AssetLibrary(fs::path root, std::function<void()> onChange) : root_(std::move(root)), onChange_(std::move(onChange)) {}
 
 AssetLibrary::~AssetLibrary() { FlushImports(); }
 
@@ -109,7 +109,7 @@ void AssetLibrary::FlushImports() {
 void AssetLibrary::Refresh() {
     std::error_code ec;
     fs::create_directories(root_, ec);
-    if (!watching_) watching_ = watch_.Start(root_);
+    if (!watching_) watching_ = watch_.Start(root_, false, onChange_);
     const uint64_t number = looks_.Next();
     looking_ = true;
     // The look gets copies only (the Worker's rule): the folder, the last ids, the shared cache.
@@ -128,7 +128,7 @@ void AssetLibrary::Refresh() {
 void AssetLibrary::LookNow() {
     std::error_code ec;
     fs::create_directories(root_, ec);
-    if (!watching_) watching_ = watch_.Start(root_);
+    if (!watching_) watching_ = watch_.Start(root_, false, onChange_);
     worker_.Stop();  // (a look still going is overtaken)
     const uint64_t number = looks_.Next();
     looking_ = true;
@@ -211,9 +211,16 @@ std::string AssetLibrary::AdoptFile(const std::string& path) {
 }
 
 bool AssetLibrary::Poll() {
-    if (!watching_ || !watch_.Changed()) return false;
-    while (watch_.Changed()) {
+    if (!watching_) return false;
+    const double now = platform::NowSeconds();
+    if (watch_.Changed()) {
+        while (watch_.Changed()) {
+        }
+        changedAt_ = now;
     }
+    constexpr double kQuietSeconds = 0.3;
+    if (changedAt_ < 0 || now - changedAt_ < kQuietSeconds) return false;
+    changedAt_ = -1;
     Refresh();
     return true;
 }

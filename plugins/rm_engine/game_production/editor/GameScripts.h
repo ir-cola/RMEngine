@@ -11,6 +11,7 @@
 
 #include "editor/app/Worker.h"
 #include "editor/plugin/Software.h"
+#include "platform/Shell.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 
 #include <filesystem>
@@ -35,8 +36,10 @@ public:
     bool BuildAndWait(std::string* why);
     // Opens Scripts.sln (Visual Studio), after this frame.
     void OpenVisualStudio();
-    // Every frame: watches Assets/Scripts (once a second) and builds when something changed.
-    void Poll();
+    // Every frame: builds when something in Assets/Scripts changed. A save is seen at once - even while
+    // the editor is idle (the folder watch wakes it) - and built half a second later (a few saves in a
+    // row are one build); it asks for frames until then.
+    void Poll(ui::Context& c);
     // A built DLL waiting to be used, given once - not while `playing` (it waits for Stop). An empty
     // path: the scripts are all gone (use none).
     std::optional<std::filesystem::path> TakeReady(bool playing);
@@ -66,6 +69,10 @@ private:
     std::optional<std::filesystem::path> ready_;
     long long seenSources_ = -1;
     double lastLook_ = 0;
+    double changedAt_ = -1;  // when the watch last told of a change (-1: none waiting)
+    editor::UiWake wake_{[this] { host_.Redraw(); }};
+    platform::FolderWatch watch_;  // Assets/Scripts, file names and contents (after wake_: it calls it)
+    bool watching_ = false;
 };
 
 }  // namespace rm::game_production

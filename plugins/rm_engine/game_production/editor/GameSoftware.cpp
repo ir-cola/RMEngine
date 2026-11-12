@@ -490,7 +490,11 @@ public:
 
     void DrawExportPanel(ui::Context& c, const Rect& r) {
         auto& p = c.P();
-        const Rect area = r.Inset(14, 10, 14, 10);
+        // The panel scrolls when it is low (the 書き出す button and the log stay reachable).
+        float& contentH = c.FloatState(c.MakeId("export.contentH"), 300.f);
+        const float off = editor::w::BeginScroll(c, "export.scroll", r, contentH);
+        const Rect area = Rect{r.x, r.y - off, r.w, std::max(r.h, contentH)}.Inset(14, 10, 14, 10);
+        const float top = area.y;
         ExportView v{settings_.title, ExeNameNow(), PathToUtf8(OutputNow())};
         const editor::inspector::Block b{&reflect::TypeOf<ExportView>(), &v, nullptr, {}, {}, {}};
         const Rect box{area.x - 12, area.y, area.w + 12, std::max(3 * 30.f + 10, exportInspector_.contentHeight)};
@@ -526,17 +530,16 @@ public:
                               !running && problem.empty())) {
             lock.unlock();
             StartExport();
+            editor::w::EndScroll(c, "export.scroll", r, contentH);
             return;
         }
         if (running || run.ok) {
             editor::w::ProgressBar(c, {area.x + 172, y + 11, std::max(10.f, area.w - 172), 10}, run.ok ? 1.f : run.progress);
         }
         y += 42;
-        // The log of this export (the newest lines that fit).
+        // The log of this export (scrolled to with the rest of the panel).
         ts.wrap = false;
-        const size_t fit = static_cast<size_t>(std::max(0.f, (area.Bottom() - y) / 20));
-        const size_t from = run.lines.size() > fit ? run.lines.size() - fit : 0;
-        for (size_t i = from; i < run.lines.size(); ++i) {
+        for (size_t i = 0; i < run.lines.size(); ++i) {
             const bool last = i + 1 == run.lines.size();
             ui::TextStyle ls = ts;
             if (last && run.ok == false) ls.color = theme::Danger;
@@ -544,6 +547,8 @@ public:
             y += 20;
         }
         if (running) c.RequestAnimation();
+        contentH = y - top + 20;
+        editor::w::EndScroll(c, "export.scroll", r, contentH);
     }
 
     // The plugins offering the components of the scene and of the prefabs it places (recorded in the
@@ -571,7 +576,7 @@ public:
     // --- Play --------------------------------------------------------------------------------
     void Tick(ui::Context& c) override {
         // Scripts built again: swapped here, between frames (never while playing: at Stop).
-        scripts_.Poll();
+        scripts_.Poll(c);
         if (auto dll = scripts_.TakeReady(Running())) ReloadScripts(*dll);
         if (c.Focused() == 0) {
             if (c.KeyPressed(ui::Key::P, true)) Running() ? StopPlay() : StartPlay(c);

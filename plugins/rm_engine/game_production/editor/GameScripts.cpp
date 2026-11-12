@@ -146,11 +146,32 @@ void GameScripts::OpenVisualStudio() {
     });
 }
 
-void GameScripts::Poll() {
+void GameScripts::Poll(ui::Context& c) {
     const double now = platform::NowSeconds();
-    if (now - lastLook_ < 1.0) return;
+    const std::filesystem::path root = host_.GetProject().Root();
+    if (!watching_ && now - lastLook_ >= 1.0) {
+        // (Assets/Scripts may come later: a first script made in Explorer)
+        std::error_code ec;
+        const std::filesystem::path folder = ScriptsFolder(root);
+        if (std::filesystem::is_directory(folder, ec)) watching_ = watch_.Start(folder, true, wake_.Signal());
+    }
+    if (watching_) {
+        if (watch_.Changed()) {
+            while (watch_.Changed()) {
+            }
+            changedAt_ = now;
+        }
+        if (changedAt_ < 0) return;
+        if (now - changedAt_ < 0.5) {
+            c.RequestAnimation();  // (the next frames come without input until it is looked at)
+            return;
+        }
+        changedAt_ = -1;
+    } else if (now - lastLook_ < 1.0) {
+        return;  // (no watch: looked at once a second while frames come)
+    }
     lastLook_ = now;
-    const long long sources = ScriptSourcesTime(host_.GetProject().Root());
+    const long long sources = ScriptSourcesTime(root);
     if (sources == seenSources_) return;
     seenSources_ = sources;
     Build();

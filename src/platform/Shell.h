@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -29,20 +30,30 @@ void OpenFolder(const std::filesystem::path& folder);
 // true). False when any of them was not moved; *error (UTF-8) says why.
 bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string* error, bool* notRecyclable = nullptr);
 
-// Tells when something under a folder was added, removed or renamed (Windows' change notification).
-// Asked without waiting: Changed() is true once after each change (the .meta files the editor writes
-// count too - looking again then finds nothing new).
+// Tells when something under a folder was added, removed or renamed (Windows' change notification) -
+// and, with `contents`, when a file in it was written. Asked without waiting: Changed() is true once
+// after each change (the .meta files the editor writes count too - looking again then finds nothing new).
+// `onSignal`, when given, is called once when a change comes and nobody has asked yet - on a thread of
+// the system's pool, so it must only wake the UI thread (editor::PostToUi), which then asks Changed().
+// Without it, a change made while the editor is idle would wait for the next mouse move.
 class FolderWatch {
 public:
     FolderWatch() = default;
     FolderWatch(const FolderWatch&) = delete;
     FolderWatch& operator=(const FolderWatch&) = delete;
-    ~FolderWatch();
-    bool Start(const std::filesystem::path& folder);  // false: the folder cannot be watched (Changed() stays false)
+    ~FolderWatch();  // (waits for an onSignal still running)
+    // false: the folder cannot be watched (Changed() stays false)
+    bool Start(const std::filesystem::path& folder, bool contents = false, std::function<void()> onSignal = {});
     bool Changed();
 
 private:
+    static void CALLBACK Signaled(void* self, BOOLEAN timedOut);
+    void Arm();
+    void Close();
+
     HANDLE handle_ = nullptr;
+    HANDLE wait_ = nullptr;
+    std::function<void()> onSignal_;
 };
 
 enum class KnownFolder { Documents, RoamingAppData, LocalAppData };

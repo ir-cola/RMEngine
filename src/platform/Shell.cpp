@@ -160,14 +160,38 @@ bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string*
     return true;
 }
 
-FolderWatch::~FolderWatch() {
+FolderWatch::~FolderWatch() { Close(); }
+
+void FolderWatch::Close() {
+    // (waits for a callback still running: after this, onSignal_ is never called again)
+    if (wait_) UnregisterWaitEx(wait_, INVALID_HANDLE_VALUE);
+    wait_ = nullptr;
     if (handle_) FindCloseChangeNotification(handle_);
+    handle_ = nullptr;
 }
 
-bool FolderWatch::Start(const std::filesystem::path& folder) {
-    if (handle_) FindCloseChangeNotification(handle_);
-    handle_ = FindFirstChangeNotificationW(folder.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME);
+void CALLBACK FolderWatch::Signaled(void* self, BOOLEAN /*timedOut*/) {
+    // On a thread of the system's pool: only the owner's onSignal (which must be safe from any thread).
+    static_cast<FolderWatch*>(self)->onSignal_();
+}
+
+void FolderWatch::Arm() {
+    if (!handle_ || !onSignal_) return;
+    // Once only: the handle stays signalled until Changed() sees it, so a repeating wait would run
+    // again and again. Changed() arms it again for the next change.
+    if (wait_) UnregisterWaitEx(wait_, nullptr);  // (it already ran - or is running: not waited for)
+    wait_ = nullptr;
+    if (!RegisterWaitForSingleObject(&wait_, handle_, &FolderWatch::Signaled, this, INFINITE, WT_EXECUTEONLYONCE)) wait_ = nullptr;
+}
+
+bool FolderWatch::Start(const std::filesystem::path& folder, bool contents, std::function<void()> onSignal) {
+    Close();
+    onSignal_ = std::move(onSignal);
+    DWORD what = FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME;
+    if (contents) what |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+    handle_ = FindFirstChangeNotificationW(folder.c_str(), TRUE, what);
     if (handle_ == INVALID_HANDLE_VALUE) handle_ = nullptr;
+    Arm();
     return handle_ != nullptr;
 }
 
@@ -175,9 +199,10 @@ bool FolderWatch::Changed() {
     if (!handle_ || WaitForSingleObject(handle_, 0) != WAIT_OBJECT_0) return false;
     // Several changes in a row are one: wait for the next only after this one is seen.
     if (!FindNextChangeNotification(handle_)) {
-        FindCloseChangeNotification(handle_);
-        handle_ = nullptr;
+        Close();
+        return true;
     }
+    Arm();
     return true;
 }
 

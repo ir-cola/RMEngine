@@ -29,6 +29,19 @@ void PostToUi(std::function<void()> fn);
 void RunPostedToUi();      // UI thread only
 void SetUiThread();        // the thread that runs RunPostedToUi (App::Run, once)
 
+// A wake-up any thread may call (a folder watch's signal): runs `onUi` on the UI thread soon - unless
+// this UiWake is gone by then (the screen closed meanwhile), then nothing happens.
+class UiWake {
+public:
+    explicit UiWake(std::function<void()> onUi);
+    UiWake(const UiWake&) = delete;
+    UiWake& operator=(const UiWake&) = delete;
+    std::function<void()> Signal() const;  // (copies are safe to call from any thread)
+
+private:
+    std::shared_ptr<std::function<void()>> onUi_;
+};
+
 class Worker {
 public:
     using Post = std::function<void(std::function<void()>)>;

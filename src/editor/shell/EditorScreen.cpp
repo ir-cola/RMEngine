@@ -90,7 +90,8 @@ public:
 }  // namespace
 
 EditorScreen::EditorScreen(App& app, Project project) : ScreenWindow(app), project_(std::move(project)) {
-    assets_ = std::make_unique<AssetLibrary>(project_.AssetsDir());
+    // (a file added in Explorer while the editor is idle: the watch wakes it, the frame looks again)
+    assets_ = std::make_unique<AssetLibrary>(project_.AssetsDir(), assetsWake_.Signal());
     // The ids before the softwares read their data (a scene finds its prefabs by id). Only this first
     // look waits; every later one runs on a Worker (AssetLibrary).
     assets_->LookNow();
@@ -916,6 +917,7 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     auto& p = c.P();
     // Files added / moved / renamed outside (Explorer): the ids follow, the names shown too.
     if (assets_->Poll()) RedrawAll();
+    if (assets_->Settling()) c.RequestAnimation();  // (frames until it has been quiet a moment)
     FlushAssetEdits(c);
     p.Clear(theme::Bg);
     w::DrawBackdrop(c, false);  // the theme's picture, behind everything (again on each panel and bar)

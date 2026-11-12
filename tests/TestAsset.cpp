@@ -315,7 +315,10 @@ RM_TEST(Asset_ReadMeta_OkDamagedUnreadable) {
     // The name is written with the id; other keys stay.
     const std::string t = MetaText(R"({"guid": "0000000000000abc0000000000000001", "memo": 1})", G(1), "b.png");
     CHECK(ReadMeta(t).name == "b.png" && t.find("\"memo\"") != std::string::npos);
-    CHECK(Ignored("a.png.meta.tmp") && Ignored("A.PNG.META.TMP") && !Ignored("a.tmp"));
+    CHECK(Ignored("a.png.meta.tmp") && Ignored("A.PNG.META.TMP"));
+    // What other programs keep for a moment while they save (Visual Studio, Office, backups)
+    CHECK(Ignored("a.tmp") && Ignored("~RF1a2b.TMP") && Ignored("~$a.docx") && Ignored("a.cpp~"));
+    CHECK(!Ignored("a.cpp") && !Ignored("tmp.png") && !Ignored("a~b.png"));
 }
 
 RM_TEST(Asset_Reconcile_UnreadableMetaIsNeverReplaced) {
