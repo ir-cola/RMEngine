@@ -11,6 +11,7 @@
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
+#include "rm_engine/space3d/runtime/DrawOrder.h"
 #include "rm_engine/space3d/runtime/Fbx.h"
 #include "rm_engine/space3d/runtime/Inflate.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
@@ -1872,4 +1873,71 @@ RM_TEST(Lighting_ChoosesNearAndBright) {
     }
     const LightSetup sp = MakeLights(points, {0, -1, 0}, {}, {0, 0, 0});
     CHECK(NearF(sp.block.position[0][0], 0) && NearF(sp.block.shadow[0][0], 0) && NearF(sp.block.shadow[1][0], -1) && sp.shadowsLeftOut == 2);
+}
+
+// --- Draw order (instancing) and many boxes against one view -------------------------------------
+
+RM_TEST(DrawOrder_SortsShaderMaterialMesh) {
+    // Given mixed: shader 1 last, then by pictures, then by mesh; equal keys keep their order.
+    const std::vector<DrawKey> keys{
+        {0, 2, 10, 0},  // 0
+        {1, 0, 5, 0},   // 1
+        {0, 0, 10, 0},  // 2
+        {0, 2, 7, 0},   // 3
+        {0, 0, 10, 0},  // 4 (same as 2)
+        {0, 0, 10, 1},  // 5 (another part of mesh 10)
+        {0, 2, 10, 0},  // 6 (same as 0)
+    };
+    std::vector<uint32_t> order;
+    SortDraws(keys, order);
+    CHECK(order == std::vector<uint32_t>({2, 4, 5, 3, 0, 6, 1}));
+    CHECK(CountRuns(keys, order) == 5);  // {2,4} {5} {3} {0,6} {1}
+    // Already in order: left as it is; nothing to draw: nothing.
+    const std::vector<DrawKey> sorted{{0, 0, 1, 0}, {0, 0, 1, 0}, {0, 0, 2, 0}};
+    SortDraws(sorted, order);
+    CHECK(order == std::vector<uint32_t>({0, 1, 2}) && CountRuns(sorted, order) == 2);
+    SortDraws({}, order);
+    CHECK(order.empty() && CountRuns({}, order) == 0);
+}
+
+RM_TEST(DrawOrder_ThousandOfOneMeshIsOneDraw) {
+    // 1000 things of one mesh and no pictures, listed with 3 other meshes in between: 4 draws.
+    std::vector<DrawKey> keys;
+    for (uint32_t i = 0; i < 1000; ++i) keys.push_back({0, 0, i % 250 == 0 ? 100u + i / 250 : 1u, 0});
+    std::vector<uint32_t> order;
+    SortDraws(keys, order);
+    CHECK(CountRuns(keys, order) == 5);  // mesh 1, and meshes 100, 101, 102, 103
+    // Stable: the things of mesh 1 keep the order they were given in.
+    bool increasing = true;
+    for (size_t i = 1; i < order.size(); ++i) {
+        if (keys[order[i]].mesh == 1 && keys[order[i - 1]].mesh == 1 && order[i] < order[i - 1]) increasing = false;
+    }
+    CHECK(increasing);
+}
+
+RM_TEST(Frustum_SameAnswerAsBoxInView) {
+    // Many boxes all around a camera and a light's orthographic view: the plane test agrees with
+    // the corner test everywhere.
+    const Mat4 cameras[] = {Perspective(60, 16.f / 9.f, 0.1f, 100) * LookAt({3, 5, 12}, {0, 0, 0}, {0, 1, 0}),
+                            Orthographic(-10, 10, -6, 6, 1, 40) * LookAt({5, 20, 5}, {0, 0, 0}, {0, 0, 1})};
+    int seen = 0, agreed = 0, total = 0;
+    uint32_t seed = 12345;
+    auto rnd = [&] {
+        seed = seed * 1664525u + 1013904223u;
+        return static_cast<float>(seed >> 8) / static_cast<float>(1u << 24);  // 0 .. 1
+    };
+    for (const Mat4& vp : cameras) {
+        const Frustum f = FrustumOf(vp);
+        for (int i = 0; i < 4000; ++i) {
+            const Vec3 c{rnd() * 80 - 40, rnd() * 80 - 40, rnd() * 80 - 40};
+            const Vec3 h{rnd() * 3 + 0.01f, rnd() * 3 + 0.01f, rnd() * 3 + 0.01f};
+            const Bounds b{c - h, c + h};
+            const bool a = BoxInView(vp, b);
+            if (a == BoxInFrustum(f, b)) ++agreed;
+            if (a) ++seen;
+            ++total;
+        }
+    }
+    CHECK(agreed == total);
+    CHECK(seen > 100 && seen < total - 100);  // both answers were asked for
 }

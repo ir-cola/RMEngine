@@ -33,9 +33,16 @@
 // spot's one, a point light's six); each pixel then looks there to see whether something is between
 // it and the light, at 3 x 3 places with the GPU's comparing filter (PCF: soft edges).
 // The floor (y = 0) is an invisible plane that only shows the shadows falling on it.
+//
+// What it costs the CPU (tools/bench3d): draws with the same mesh, part and pictures become one
+// instanced draw (DrawOrder.h sorts them: shaders, pictures, mesh); each shadow map is tested against
+// its own view (a light's, a cascade's: Frustum) and drawn again only when what it holds changed. A
+// map with things that move (Box / MeshDraw::moving) keeps a layer of what stays put and lays it back
+// before drawing only the moving ones.
 
 #include "base/Math.h"
 #include "platform/Image.h"
+#include "rm_engine/space3d/runtime/DrawOrder.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/TexturePixels.h"
@@ -49,6 +56,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace rm::space3d {
@@ -63,6 +71,10 @@ struct Box {
     Mat4 world;
     Color color;
     bool castShadow = true;
+    // It has moved lately (dragged, played): drawn into the shadow maps over a kept layer of what
+    // stays put. Only a hint - a thing that moves without it is still drawn right, the maps it is in
+    // are just drawn whole again.
+    bool moving = false;
 };
 
 // A model's shape on the GPU (Renderer::Upload). Whoever draws it keeps it; it lives as long as
@@ -118,6 +130,7 @@ struct MeshDraw {
     bool castShadow = true;
     std::span<const DrawMaterial> materials;  // by MeshPart::material; a part without one here is white
     Color highlight{0, 0, 0, 0};              // a glow at the edges (selected): its colour, alpha = how strong
+    bool moving = false;                      // as Box::moving
 };
 
 struct RenderFrame {
@@ -164,6 +177,8 @@ public:
         size_t drawn = 0;      // ... drawn in the picture (the rest were culled)
         size_t mapsDrawn = 0;  // shadow maps drawn
         size_t mapsKept = 0;   // ... and not drawn again: they already held the same (nothing moved)
+        size_t layersDrawn = 0;  // kept layers (what stays put, under the moving things) drawn again
+        size_t drawCalls = 0;    // draws given to the GPU (instancing: one per run of the same mesh, part and pictures)
     };
     // Per device (shared by every renderer on it: the scene view, the camera preview, the
     // thumbnails): the shaders and states, the cube and the floor, the constant buffers and the
@@ -183,6 +198,8 @@ private:
         Bounds bounds;     // in the world
         uint32_t thing = 0;          // where its numbers are in things_ (in float4s)
         uint32_t firstMaterial = 0;  // ... and its parts' materials, one after another
+        bool moving = false;         // Box / MeshDraw::moving
+        uint64_t hash = 0;           // its mesh and place (what a shadow map remembers of it)
     };
     // One draw: some triangles of a mesh, with the numbers of a thing and a material (`slot`: its
     // place in draws_, read by the shader as the instance's data).
@@ -191,6 +208,7 @@ private:
         uint32_t firstIndex, indexCount;
         uint32_t slot;
         const DrawMaterial* material;  // its pictures (null: none - a shadow map, the floor)
+        uint32_t instances = 1;        // slots slot .. slot + instances - 1: one instanced draw
     };
 
     bool Resize(uint32_t width, uint32_t height);
@@ -200,6 +218,11 @@ private:
     uint32_t AddThing(const Mat4& world, Color color, Color highlight);
     uint32_t AddMaterial(const DrawMaterial& m);
     uint32_t AddDraw(uint32_t thing, uint32_t material);
+    // A draw added to cmds_ - or, when it is the last one's next instance (the same mesh, part and
+    // pictures, the next slot), added to it. Never merged with draws before mergeFloor_.
+    void Emit(const GpuMesh* mesh, uint32_t firstIndex, uint32_t indexCount, uint32_t slot, const DrawMaterial* material);
+    // A number for each different set of pictures (0: none), for DrawKey::material.
+    uint32_t PictureSet(const DrawMaterial* material);
 
     template <class T>
     using Ptr = Microsoft::WRL::ComPtr<T>;
@@ -216,6 +239,18 @@ private:
     size_t thingsCapacity_ = 0, drawsCapacity_ = 0;
     std::vector<Item> items_;
     std::vector<Cmd> cmds_;
+    size_t mergeFloor_ = 0;
+    std::vector<DrawKey> keys_;
+    std::vector<uint32_t> order_, casterOrder_, still_, moving_;
+    std::vector<std::pair<uint32_t, uint32_t>> refs_;  // (item, part) of each key
+    struct PictureSetHash {
+        size_t operator()(const std::array<const void*, 5>& a) const noexcept {
+            size_t h = 0;
+            for (const void* p : a) h = h * 1000003u ^ std::hash<const void*>()(p);
+            return h;
+        }
+    };
+    std::unordered_map<std::array<const void*, 5>, uint32_t, PictureSetHash> pictureSets_;  // this frame's (4 pictures, the sampler's kind)
     std::vector<std::pair<size_t, const MeshPart*>> seeThrough_;  // (item, part) drawn last, back to front
     std::vector<Vec3> centers_;
     Stats stats_;

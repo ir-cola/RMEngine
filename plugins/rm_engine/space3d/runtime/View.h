@@ -64,6 +64,16 @@ Bounds WorldBounds(const Mat4& world, Vec3 min, Vec3 max);
 // Never says false for a box that shows; a box just outside a corner of the frustum may still be true.
 bool BoxInView(const Mat4& viewProjection, const Bounds& box);
 
+// The same test for many boxes against one view: the 6 sides worked out once, as planes (inside:
+// a x + b y + c z + d >= 0), and each box tested by its corner farthest inside each plane - 6 dot
+// products instead of 8 corners through the matrix. Gives BoxInView's answer (a box is out when its
+// best corner - so every corner - is outside one side).
+struct Frustum {
+    std::array<std::array<float, 4>, 6> planes{};
+};
+Frustum FrustumOf(const Mat4& viewProjection);
+bool BoxInFrustum(const Frustum& frustum, const Bounds& box);
+
 // The order to draw see-through things in: the farthest from the eye first (each one's colour is laid
 // over what is behind it). Indices into `centers`; the same distance keeps the given order.
 std::vector<size_t> BackToFront(std::span<const Vec3> centers, Vec3 eye);

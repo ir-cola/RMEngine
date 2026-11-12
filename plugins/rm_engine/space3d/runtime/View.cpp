@@ -210,6 +210,32 @@ bool BoxInView(const Mat4& viewProjection, const Bounds& box) {
     return false;
 }
 
+Frustum FrustumOf(const Mat4& m) {
+    // Clip space c = M p: row k of M is (m[0][k], m[1][k], m[2][k], m[3][k]). Inside: -w <= x <= w,
+    // -w <= y <= w, 0 <= z <= w (BoxInView's sides, in its order).
+    auto row = [&](int k) { return std::array<float, 4>{m.m[0][k], m.m[1][k], m.m[2][k], m.m[3][k]}; };
+    const auto x = row(0), y = row(1), z = row(2), w = row(3);
+    Frustum f;
+    for (int i = 0; i < 4; ++i) {
+        f.planes[0][i] = w[i] + x[i];  // x >= -w
+        f.planes[1][i] = w[i] - x[i];  // x <= w
+        f.planes[2][i] = w[i] + y[i];
+        f.planes[3][i] = w[i] - y[i];
+        f.planes[4][i] = z[i];         // z >= 0 (depth 0..1)
+        f.planes[5][i] = w[i] - z[i];
+    }
+    return f;
+}
+
+bool BoxInFrustum(const Frustum& f, const Bounds& b) {
+    for (const auto& p : f.planes) {
+        // The corner farthest inside this plane: if even it is outside, every corner is.
+        const float x = p[0] >= 0 ? b.max.x : b.min.x, y = p[1] >= 0 ? b.max.y : b.min.y, z = p[2] >= 0 ? b.max.z : b.min.z;
+        if (p[0] * x + p[1] * y + p[2] * z + p[3] < 0) return false;
+    }
+    return true;
+}
+
 Mat4 DirectionalShadowMatrix(Vec3 direction, const Bounds& casters) {
     Vec3 dir = Normalize(direction);
     if (Length(dir) == 0) dir = {0, -1, 0};

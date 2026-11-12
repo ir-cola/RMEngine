@@ -292,6 +292,11 @@ float4 ShadowVS(MeshIn i) : SV_Position {
     return mul(lightViewProj, mul(world, float4(i.pos, 1)));
 }
 
+// A tile of a shadow map laid back from its kept layer (what stays put: the same tile of another
+// texture), exactly, before the moving things are drawn over it. Drawn with ClearVS's triangle.
+Texture2D layerMap : register(t7);
+float CopyDepthPS(float4 pos : SV_Position) : SV_Depth { return layerMap.Load(int3(pos.xy, 0)).r; }
+
 // A tile of a shadow map cleared: one triangle over the whole viewport at depth 1 (drawn with the
 // depth test off). ClearDepthStencilView would clear every tile.
 float4 ClearVS(uint id : SV_VertexID) : SV_Position {
@@ -401,6 +406,12 @@ struct ShadowMaps {
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> dsv;
     uint32_t tiles = 0, cols = 0, rows = 0, size = 0;
     std::vector<uint64_t> holds;  // per tile (0: nothing known)
+    // The kept layer: the same tiles holding only what stays put (Box / MeshDraw::moving false), made
+    // when a map first has moving things in it.
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> layerTexture;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> layerSrv;
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilView> layerDsv;
+    std::vector<uint64_t> layerHolds;
 };
 
 }  // namespace
@@ -410,7 +421,7 @@ struct Renderer::Shared {
     using Ptr = Microsoft::WRL::ComPtr<T>;
     Ptr<ID3D11Device> device;
     Ptr<ID3D11VertexShader> lineVs, meshVs, shadowVs, clearVs;
-    Ptr<ID3D11PixelShader> linePs, meshPs, floorPs;
+    Ptr<ID3D11PixelShader> linePs, meshPs, floorPs, copyPs;
     Ptr<ID3D11InputLayout> lineLayout, meshLayout;
     Ptr<ID3D11Buffer> frame, lights, shadows;  // the constant buffers (b0, b1, b2)
     std::shared_ptr<const GpuMesh> cube, floor;
@@ -427,6 +438,7 @@ struct Renderer::Shared {
 
     bool Init(Renderer& owner, std::string* error);
     bool EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size);
+    bool EnsureLayer(ShadowMaps& maps);
 };
 
 namespace {
@@ -439,23 +451,49 @@ std::unordered_map<ID3D11Device*, std::weak_ptr<Renderer::Shared>>& SharedByDevi
     return map;
 }
 
-// A fingerprint (FNV-1a, 64 bits) of some bytes, added to `h`.
-uint64_t Mix(uint64_t h, const void* data, size_t size) {
+// A fingerprint (64 bits) of some 4-byte words (matrices, serials), added to `h`: a word at a time
+// (multiply and fold), not a byte - it runs for every thing in every shadow map.
+uint64_t HashWords(uint64_t h, const void* data, size_t size) {
     const auto* p = static_cast<const uint8_t*>(data);
-    for (size_t i = 0; i < size; ++i) h = (h ^ p[i]) * 1099511628211ull;
+    for (size_t i = 0; i + 4 <= size; i += 4) {
+        uint32_t w;
+        std::memcpy(&w, p + i, 4);
+        h = (h ^ w) * 0x9E3779B97F4A7C15ull;
+        h ^= h >> 29;
+    }
     return h;
 }
 constexpr uint64_t kFingerprintStart = 14695981039346656037ull;
+
+// Whether two materials are drawn with the same pictures (null: none) - then they can be one draw.
+bool SamePictures(const DrawMaterial* a, const DrawMaterial* b) {
+    if (a == b) return true;
+    auto texture = [](const DrawMaterial* m, int k) -> const void* {
+        if (!m) return nullptr;
+        switch (k) {
+            case 0: return m->texture.get();
+            case 1: return m->metalRough.get();
+            case 2: return m->normal.get();
+            default: return m->emission.get();
+        }
+    };
+    for (int k = 0; k < 4; ++k) {
+        if (texture(a, k) != texture(b, k)) return false;
+    }
+    return true;  // (the sampler follows the colour picture, the same one)
+}
+
+const char kSharp = 0;  // PictureSet's mark for a くっきり colour picture
 
 std::atomic<uint64_t> g_meshSerial{0};  // GpuMesh::serial: never the same twice
 
 }  // namespace
 
 bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
-    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs, cvs;
+    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs, cvs, cps;
     if (!Compile("LineVS", "vs_4_0", lvs, error) || !Compile("LinePS", "ps_4_0", lps, error) || !Compile("MeshVS", "vs_4_0", mvs, error) ||
         !Compile("MeshPS", "ps_4_0", mps, error) || !Compile("FloorPS", "ps_4_0", fps, error) || !Compile("ShadowVS", "vs_4_0", svs, error) ||
-        !Compile("ClearVS", "vs_4_0", cvs, error)) {
+        !Compile("ClearVS", "vs_4_0", cvs, error) || !Compile("CopyDepthPS", "ps_4_0", cps, error)) {
         return false;
     }
     auto fail = [&](const char* what) {
@@ -468,6 +506,7 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
         FAILED(device->CreatePixelShader(fps->GetBufferPointer(), fps->GetBufferSize(), nullptr, &floorPs)) ||
         FAILED(device->CreateVertexShader(svs->GetBufferPointer(), svs->GetBufferSize(), nullptr, &shadowVs)) ||
         FAILED(device->CreateVertexShader(cvs->GetBufferPointer(), cvs->GetBufferSize(), nullptr, &clearVs)) ||
+        FAILED(device->CreatePixelShader(cps->GetBufferPointer(), cps->GetBufferSize(), nullptr, &copyPs)) ||
         FAILED(device->CreateVertexShader(mvs->GetBufferPointer(), mvs->GetBufferSize(), nullptr, &meshVs))) {
         return fail("シェーダー");
     }
@@ -594,6 +633,30 @@ bool Renderer::Shared::EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t siz
     maps.rows = rows;
     maps.size = size;
     maps.holds.assign(tiles, 0);
+    return true;
+}
+
+bool Renderer::Shared::EnsureLayer(ShadowMaps& maps) {
+    if (maps.layerSrv) return true;
+    if (!maps.texture) return false;
+    D3D11_TEXTURE2D_DESC td{};
+    maps.texture->GetDesc(&td);  // the same tiles, the same way (written as D32, read as R32)
+    D3D11_DEPTH_STENCIL_VIEW_DESC dv{};
+    dv.Format = DXGI_FORMAT_D32_FLOAT;
+    dv.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+    D3D11_SHADER_RESOURCE_VIEW_DESC sv{};
+    sv.Format = DXGI_FORMAT_R32_FLOAT;
+    sv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    sv.Texture2D.MipLevels = 1;
+    if (FAILED(device->CreateTexture2D(&td, nullptr, &maps.layerTexture)) ||
+        FAILED(device->CreateDepthStencilView(maps.layerTexture.Get(), &dv, &maps.layerDsv)) ||
+        FAILED(device->CreateShaderResourceView(maps.layerTexture.Get(), &sv, &maps.layerSrv))) {
+        maps.layerTexture.Reset();
+        maps.layerDsv.Reset();
+        maps.layerSrv.Reset();
+        return false;
+    }
+    maps.layerHolds.assign(maps.tiles, 0);
     return true;
 }
 
@@ -849,22 +912,48 @@ bool Renderer::UploadFrame(ID3D11DeviceContext* ctx) {
     return Fill(ctx, thingsBuffer_.Get(), things_.data(), thingBytes) && (draws_.empty() || Fill(ctx, drawsBuffer_.Get(), draws_.data(), drawBytes));
 }
 
+void Renderer::Emit(const GpuMesh* mesh, uint32_t firstIndex, uint32_t indexCount, uint32_t slot, const DrawMaterial* material) {
+    if (cmds_.size() > mergeFloor_) {
+        Cmd& last = cmds_.back();
+        if (last.mesh == mesh && last.firstIndex == firstIndex && last.indexCount == indexCount && last.slot + last.instances == slot &&
+            SamePictures(last.material, material)) {
+            ++last.instances;  // the next instance of the same draw
+            return;
+        }
+    }
+    cmds_.push_back({mesh, firstIndex, indexCount, slot, material, 1});
+}
+
+uint32_t Renderer::PictureSet(const DrawMaterial* m) {
+    if (!m || (!m->texture && !m->metalRough && !m->normal && !m->emission)) return 0;
+    const std::array<const void*, 5> key{m->texture.get(), m->metalRough.get(), m->normal.get(), m->emission.get(),
+                                         m->texture && m->texture->sharp ? static_cast<const void*>(&kSharp) : nullptr};
+    const auto [it, added] = pictureSets_.try_emplace(key, static_cast<uint32_t>(pictureSets_.size() + 1));
+    return it->second;
+}
+
 ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f) {
     if (!Ready() || f.width == 0 || f.height == 0 || !Resize(f.width, f.height)) return nullptr;
     Shared& s = *shared_;
 
     // Everything filled: the boxes and the models (each with its own place and colour).
     items_.clear();
-    for (const Box& b : f.boxes) items_.push_back({s.cube.get(), &b.world, b.color, b.castShadow, {}, {0, 0, 0, 0}});
+    for (const Box& b : f.boxes) {
+        items_.push_back({s.cube.get(), &b.world, b.color, b.castShadow, {}, {0, 0, 0, 0}});
+        items_.back().moving = b.moving;
+    }
     for (const MeshDraw& m : f.meshes) {
-        if (m.mesh && m.mesh->indexCount > 0) items_.push_back({m.mesh, &m.world, m.color, m.castShadow, m.materials, m.highlight});
+        if (!m.mesh || m.mesh->indexCount == 0) continue;
+        items_.push_back({m.mesh, &m.world, m.color, m.castShadow, m.materials, m.highlight});
+        items_.back().moving = m.moving;
     }
     // Culling (always): what lies wholly outside the camera's view is left out of the picture.
     const Mat4 viewProj = f.projection * f.view;
-    stats_ = {items_.size(), 0, 0, 0};
+    stats_ = {items_.size(), 0, 0, 0, 0, 0};
+    const Frustum camera = FrustumOf(viewProj);
     for (Item& it : items_) {
         it.bounds = WorldBounds(*it.world, it.mesh->min, it.mesh->max);
-        it.seen = BoxInView(viewProj, it.bounds);
+        it.seen = BoxInFrustum(camera, it.bounds);
         if (it.seen) ++stats_.drawn;
     }
     Vec3 eye{0, 0, 0}, forward{0, 0, -1};
@@ -880,6 +969,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     things_.clear();
     draws_.clear();
     cmds_.clear();
+    mergeFloor_ = 0;
     static const DrawMaterial kWhite;
     const uint32_t white = AddMaterial(kWhite);
     for (Item& it : items_) {
@@ -899,47 +989,92 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     };
     auto partDraw = [&](const Item& it, const MeshPart& part) {
         const auto k = static_cast<uint32_t>(&part - it.mesh->parts.data());
-        cmds_.push_back({it.mesh, part.firstIndex, part.indexCount, AddDraw(it.thing, it.firstMaterial + k * 4), &materialOf(it, part)});
+        Emit(it.mesh, part.firstIndex, part.indexCount, AddDraw(it.thing, it.firstMaterial + k * 4), &materialOf(it, part));
     };
 
+    // What casts, grouped by mesh (stable: DrawOrder.h) once for all the maps - a map's things of one
+    // mesh become one instanced draw - each with a fingerprint of its mesh and place.
+    keys_.clear();
+    still_.clear();
+    for (uint32_t i = 0; i < items_.size(); ++i) {
+        Item& it = items_[i];
+        if (!it.castShadow) continue;
+        it.hash = HashWords(HashWords(kFingerprintStart, &it.mesh->serial, sizeof(it.mesh->serial)), it.world, sizeof(Mat4));
+        keys_.push_back({0, 0, it.mesh->serial, 0});
+        still_.push_back(i);
+    }
+    SortDraws(keys_, order_);
+    casterOrder_.clear();
+    for (const uint32_t k : order_) casterOrder_.push_back(still_[k]);
+
     // 1. The shadow maps to draw: what casts, seen from each light. Only what lies in a map is drawn
-    // into it (the same test as the camera's culling), and a map that would hold the same as it does
-    // (the same matrix, the same things where they were) is not drawn again.
+    // into it (each map's own view: a light's, a cascade's), and a map that would hold the same as it
+    // does (the same matrix, the same things where they were) is not drawn again. A map with things
+    // that move keeps a layer of what stays put (drawn again only when that changes) and lays it back
+    // under the moving ones.
     ShadowConstants sc{};
     sc.viewForward[0] = forward.x, sc.viewForward[1] = forward.y, sc.viewForward[2] = forward.z;
     Bounds casters;
     bool anyCaster = false;
-    for (const Item& it : items_) {
-        if (!it.castShadow) continue;
-        const Bounds& b = it.bounds;
+    for (const uint32_t i : casterOrder_) {
+        const Bounds& b = items_[i].bounds;
         casters.min = anyCaster ? Vec3{std::min(casters.min.x, b.min.x), std::min(casters.min.y, b.min.y), std::min(casters.min.z, b.min.z)} : b.min;
         casters.max = anyCaster ? Vec3{std::max(casters.max.x, b.max.x), std::max(casters.max.y, b.max.y), std::max(casters.max.z, b.max.z)} : b.max;
         anyCaster = true;
     }
+    enum class MapMode { Whole, Layer, OverLayer };  // all of it / the kept layer / laid back + the moving ones
     struct MapWork {
         ShadowMaps* maps;
         uint32_t tile;
         Mat4 viewProj;
         size_t first, end;  // its draws in cmds_
+        MapMode mode;
     };
-    std::vector<MapWork> work;
+    std::vector<MapWork> layers, work;
+    auto emitCasters = [&](const std::vector<uint32_t>& list) {
+        for (const uint32_t i : list) Emit(items_[i].mesh, 0, items_[i].mesh->indexCount, AddDraw(items_[i].thing, white), nullptr);
+    };
     auto planMap = [&](ShadowMaps& maps, uint32_t tile, const Mat4& lightViewProj) {
-        uint64_t fingerprint = Mix(kFingerprintStart, &lightViewProj, sizeof(Mat4));
-        const size_t first = cmds_.size();
-        for (const Item& it : items_) {
-            if (!it.castShadow || !BoxInView(lightViewProj, it.bounds)) continue;
-            fingerprint = Mix(fingerprint, &it.mesh->serial, sizeof(it.mesh->serial));
-            fingerprint = Mix(fingerprint, it.world, sizeof(Mat4));
-            cmds_.push_back({it.mesh, 0, it.mesh->indexCount, AddDraw(it.thing, white), nullptr});
+        const Frustum view = FrustumOf(lightViewProj);
+        uint64_t still = HashWords(kFingerprintStart, &lightViewProj, sizeof(Mat4)), moving = kFingerprintStart;
+        still_.clear();
+        moving_.clear();
+        for (const uint32_t i : casterOrder_) {
+            const Item& it = items_[i];
+            if (!BoxInFrustum(view, it.bounds)) continue;
+            if (it.moving) {
+                moving = HashWords(moving, &it.hash, sizeof(it.hash));
+                moving_.push_back(i);
+            } else {
+                still = HashWords(still, &it.hash, sizeof(it.hash));
+                still_.push_back(i);
+            }
         }
-        if (maps.holds[tile] == fingerprint) {  // drawn already (this frame's, the last's, or another renderer's)
-            cmds_.resize(first);
+        const uint64_t whole = moving_.empty() ? still : HashWords(still, &moving, sizeof(moving));
+        if (maps.holds[tile] == whole) {  // drawn already (this frame's, the last's, or another renderer's)
             ++stats_.mapsKept;
             return;
         }
-        maps.holds[tile] = fingerprint;
-        work.push_back({&maps, tile, lightViewProj, first, cmds_.size()});
+        maps.holds[tile] = whole;
         ++stats_.mapsDrawn;
+        mergeFloor_ = cmds_.size();
+        const size_t first = cmds_.size();
+        if (moving_.empty() || !s.EnsureLayer(maps)) {
+            emitCasters(still_);
+            emitCasters(moving_);
+            work.push_back({&maps, tile, lightViewProj, first, cmds_.size(), MapMode::Whole});
+            return;
+        }
+        if (maps.layerHolds[tile] != still) {
+            maps.layerHolds[tile] = still;
+            emitCasters(still_);
+            layers.push_back({&maps, tile, lightViewProj, first, cmds_.size(), MapMode::Layer});
+            ++stats_.layersDrawn;
+        }
+        mergeFloor_ = cmds_.size();
+        const size_t movingFirst = cmds_.size();
+        emitCasters(moving_);
+        work.push_back({&maps, tile, lightViewProj, movingFirst, cmds_.size(), MapMode::OverLayer});
     };
     // The sun: one map fitted to what casts, or the cascades along the view.
     int sunMaps = 0;
@@ -978,21 +1113,34 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     }
     const bool shadows = sunMaps > 0 || localMaps;
 
-    // 2. The picture's draws: what is not see-through (any order: the depth test sorts it out), the
-    // floor's shadows, then what is see-through, the farthest first (by the middle of its part).
+    // 2. The picture's draws: what is not see-through (sorted: pictures, then mesh and part - the
+    // depth test sorts out what is in front), the floor's shadows, then what is see-through, the
+    // farthest first (by the middle of its part).
     const size_t opaqueFirst = cmds_.size();
-    for (const Item& it : items_) {
+    mergeFloor_ = opaqueFirst;
+    keys_.clear();
+    refs_.clear();
+    pictureSets_.clear();
+    for (uint32_t i = 0; i < items_.size(); ++i) {
+        const Item& it = items_[i];
         if (!it.seen) continue;
-        for (const MeshPart& part : it.mesh->parts) {
-            if (!isSeeThrough(it, part)) partDraw(it, part);
+        for (uint32_t k = 0; k < it.mesh->parts.size(); ++k) {
+            const MeshPart& part = it.mesh->parts[k];
+            if (isSeeThrough(it, part)) continue;
+            keys_.push_back({0, PictureSet(&materialOf(it, part)), it.mesh->serial, k});
+            refs_.push_back({i, k});
         }
     }
+    SortDraws(keys_, order_);
+    for (const uint32_t o : order_) partDraw(items_[refs_[o].first], items_[refs_[o].first].mesh->parts[refs_[o].second]);
     const size_t opaqueEnd = cmds_.size();
+    mergeFloor_ = cmds_.size();
     if (shadows) {
         const uint32_t floorThing = AddThing(Mat4{}, f.shadowColor, {0, 0, 0, 0});
-        cmds_.push_back({s.floor.get(), 0, s.floor->indexCount, AddDraw(floorThing, white), nullptr});
+        Emit(s.floor.get(), 0, s.floor->indexCount, AddDraw(floorThing, white), nullptr);
     }
     const size_t floorEnd = cmds_.size();
+    mergeFloor_ = cmds_.size();
     seeThrough_.clear();
     for (size_t i = 0; i < items_.size(); ++i) {
         if (!items_[i].seen) continue;
@@ -1006,9 +1154,11 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             const GpuMesh& m = *items_[i].mesh;
             centers_.push_back(TransformPoint(*items_[i].world, m.partCenters[static_cast<size_t>(part - m.parts.data())]));
         }
+        // (the same mesh, part and pictures one after another in this order still become one draw)
         for (const size_t k : BackToFront(centers_, eye)) partDraw(items_[seeThrough_[k].first], *seeThrough_[k].second);
     }
     const size_t seeThroughEnd = cmds_.size();
+    stats_.drawCalls = cmds_.size();
 
     // The frame's numbers go to the GPU at once.
     if (!UploadFrame(ctx)) return nullptr;
@@ -1021,8 +1171,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ID3D11Buffer* cbs[3] = {frameCb, s.lights.Get(), s.shadows.Get()};
     ctx->VSSetConstantBuffers(0, 1, &frameCb);
     ctx->PSSetConstantBuffers(0, 3, cbs);
-    ID3D11ShaderResourceView* noSrvs[7] = {};
-    ctx->PSSetShaderResources(0, 7, noSrvs);  // the maps may still be bound for reading: they are written first
+    ID3D11ShaderResourceView* noSrvs[8] = {};
+    ctx->PSSetShaderResources(0, 8, noSrvs);  // the maps may still be bound for reading: they are written first
     ID3D11ShaderResourceView* thingsView = thingsView_.Get();
     ctx->VSSetShaderResources(6, 1, &thingsView);
     ctx->PSSetShaderResources(6, 1, &thingsView);
@@ -1036,16 +1186,19 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     const float factor[4] = {0, 0, 0, 0};
     ctx->OMSetBlendState(s.blend.Get(), factor, 0xFFFFFFFF);
 
-    // Runs draws: the mesh bound when it changes, the pictures when the material has them.
+    // Runs draws: the mesh bound when it changes, the pictures when they change; each draw is all
+    // its instances at once.
     const GpuMesh* bound = nullptr;
     auto run = [&](size_t first, size_t end, bool painted) {
+        const DrawMaterial* pictures = nullptr;
+        bool any = false;
         for (size_t k = first; k < end; ++k) {
             const Cmd& cmd = cmds_[k];
             if (cmd.mesh != bound) {
                 BindMesh(ctx, cmd.mesh->vertices.Get(), cmd.mesh->indices.Get());
                 bound = cmd.mesh;
             }
-            if (painted) {
+            if (painted && (!any || !SamePictures(pictures, cmd.material))) {
                 const DrawMaterial& mat = cmd.material ? *cmd.material : kWhite;
                 auto view = [](const GpuTexture* t) -> ID3D11ShaderResourceView* { return t ? t->view.Get() : nullptr; };
                 ID3D11ShaderResourceView* views[4] = {view(mat.texture.get()), view(mat.metalRough.get()), view(mat.normal.get()),
@@ -1054,32 +1207,65 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
                 // (the colour picture decides: くっきり is the image's import setting)
                 ID3D11SamplerState* sampler = mat.texture && mat.texture->sharp ? s.sharpSampler.Get() : s.textureSampler.Get();
                 ctx->PSSetSamplers(1, 1, &sampler);
+                pictures = cmd.material;
+                any = true;
             }
-            ctx->DrawIndexedInstanced(cmd.indexCount, 1, cmd.firstIndex, 0, cmd.slot);
+            ctx->DrawIndexedInstanced(cmd.indexCount, cmd.instances, cmd.firstIndex, 0, cmd.slot);
         }
     };
 
-    // 1. The shadow maps that changed: each tile cleared (depth 1) and drawn.
-    if (!work.empty()) {
+    // 1. The shadow maps that changed: the kept layers first (what stays put), then each map's tile -
+    // cleared (depth 1) and drawn whole, or laid back from its layer with the moving things on top.
+    if (!layers.empty() || !work.empty()) {
         ctx->RSSetState(s.shadowRaster.Get());
         ctx->PSSetShader(nullptr, nullptr, 0);  // depth only
-        const ShadowMaps* target = nullptr;
-        for (const MapWork& w : work) {
-            if (w.maps != target) {
-                ctx->OMSetRenderTargets(0, nullptr, w.maps->dsv.Get());
-                target = w.maps;
+        ID3D11DepthStencilView* target = nullptr;
+        auto begin = [&](ID3D11DepthStencilView* dsv, const MapWork& w) {
+            if (dsv != target) {
+                ctx->OMSetRenderTargets(0, nullptr, dsv);
+                target = dsv;
             }
             const float size = static_cast<float>(w.maps->size);
             const D3D11_VIEWPORT svp{static_cast<float>(w.tile % w.maps->cols) * size, static_cast<float>(w.tile / w.maps->cols) * size, size, size, 0, 1};
             ctx->RSSetViewports(1, &svp);
+        };
+        auto clearTile = [&] {
             ctx->OMSetDepthStencilState(s.depthClear.Get(), 0);
             ctx->VSSetShader(s.clearVs.Get(), nullptr, 0);
             ctx->Draw(3, 0);
             ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+        };
+        auto drawCasters = [&](const MapWork& w) {
             CopyMatrix(fc.lightViewProj, w.viewProj);
             ctx->UpdateSubresource(frameCb, 0, nullptr, &fc, 0, 0);
             ctx->VSSetShader(s.shadowVs.Get(), nullptr, 0);
             run(w.first, w.end, false);
+        };
+        for (const MapWork& w : layers) {
+            begin(w.maps->layerDsv.Get(), w);
+            clearTile();
+            drawCasters(w);
+        }
+        for (const MapWork& w : work) {
+            begin(w.maps->dsv.Get(), w);
+            if (w.mode == MapMode::OverLayer) {
+                // The layer's depths, exactly (CopyDepthPS), then the moving things over them. (The
+                // whole texture cannot be copied: the tiles of other maps lie in it too.)
+                ID3D11ShaderResourceView* layer = w.maps->layerSrv.Get();
+                ctx->RSSetState(s.raster.Get());  // no depth bias on the copied depths
+                ctx->OMSetDepthStencilState(s.depthClear.Get(), 0);
+                ctx->VSSetShader(s.clearVs.Get(), nullptr, 0);
+                ctx->PSSetShader(s.copyPs.Get(), nullptr, 0);
+                ctx->PSSetShaderResources(7, 1, &layer);
+                ctx->Draw(3, 0);
+                ctx->PSSetShaderResources(7, 1, noSrvs);
+                ctx->PSSetShader(nullptr, nullptr, 0);
+                ctx->RSSetState(s.shadowRaster.Get());
+                ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+            } else {
+                clearTile();
+            }
+            drawCasters(w);
         }
     }
     ctx->UpdateSubresource(frameCb, 0, nullptr, &fc, 0, 0);
@@ -1147,7 +1333,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     if (samples_ > 1) ctx->ResolveSubresource(picture_.Get(), 0, multisample_.Get(), 0, DXGI_FORMAT_B8G8R8A8_UNORM);
     // Nothing of ours stays bound (Direct2D draws the picture next).
     ctx->OMSetRenderTargets(0, nullptr, nullptr);
-    ctx->PSSetShaderResources(0, 7, noSrvs);
+    ctx->PSSetShaderResources(0, 8, noSrvs);
     ctx->VSSetShaderResources(6, 1, noSrvs);
     ID3D11Buffer* noCbs[3] = {};
     ctx->PSSetConstantBuffers(0, 3, noCbs);

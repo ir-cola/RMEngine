@@ -1,6 +1,6 @@
 # Builds and runs the 3D renderer's CPU benchmark (tools/bench3d/Bench3D.cpp). Needs a GPU.
-#   powershell -NoProfile -ExecutionPolicy Bypass -File tools\bench3d\run.ps1 [-Frames 300]
-param([int]$Frames = 300)
+#   powershell -NoProfile -ExecutionPolicy Bypass -File tools\bench3d\run.ps1 [-Frames 300] [-Case boxes|mesh]
+param([int]$Frames = 300, [ValidateSet('boxes', 'mesh')][string]$Case = 'boxes')
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -12,6 +12,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 $sources = @(
     'tools\bench3d\Bench3D.cpp',
     'plugins\rm_engine\space3d\runtime\Renderer3D.cpp',
+    'plugins\rm_engine\space3d\runtime\DrawOrder.cpp',
     'plugins\rm_engine\space3d\runtime\Lighting.cpp',
     'plugins\rm_engine\space3d\runtime\View.cpp',
     'plugins\rm_engine\space3d\runtime\Transform.cpp',
@@ -30,5 +31,5 @@ $cmd = "`"$vcvars`" >nul && cl /nologo /std:c++20 /O2 /EHsc /MT /utf-8 /DNOMINMA
        "/link d3d11.lib dxgi.lib d3dcompiler.lib d2d1.lib windowscodecs.lib ole32.lib"
 cmd /c $cmd
 if ($LASTEXITCODE -ne 0) { Write-Host 'BENCH BUILD FAILED'; exit $LASTEXITCODE }
-& (Join-Path $out 'Bench3D.exe') $Frames
+& (Join-Path $out 'Bench3D.exe') $Frames $Case
 exit $LASTEXITCODE

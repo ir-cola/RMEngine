@@ -31,6 +31,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <cstring>
 #include <unordered_map>
 #include <utility>
 
@@ -701,6 +702,27 @@ private:
         return std::find(host.selection.begin(), host.selection.end(), id) != host.selection.end();
     }
 
+    // Which things moved lately (dragged with the gizmo, turned by Play's systems): the renderer keeps
+    // a layer of the shadow maps without them and draws only them again while they move. A thing
+    // still for a second counts as staying put again (its maps' layers are then drawn once more).
+    void NoteMotion() {
+        constexpr double kStillSeconds = 1.0;
+        std::unordered_map<int, Motion> next;
+        next.reserve(placed_.size());
+        for (const Placed& p : placed_) {
+            Motion m{p.world, -kStillSeconds - 1};
+            if (const auto it = motion_.find(p.id); it != motion_.end()) {
+                m.movedAt = std::memcmp(&it->second.world, &p.world, sizeof(Mat4)) != 0 ? now_ : it->second.movedAt;
+            }
+            next.emplace(p.id, m);
+        }
+        motion_ = std::move(next);
+    }
+    bool Moving(int id) const {
+        const auto it = motion_.find(id);
+        return it != motion_.end() && now_ - it->second.movedAt < 1.0;
+    }
+
     // What is drawn this frame: the grid and the axes, the things (boxes, models), the lights; the
     // shapes of the cameras and lights and the selection's outlines. `gameLook`: as the game sees it
     // (the game view, the camera preview) - only the things that are on, nothing of the editor's.
@@ -723,6 +745,7 @@ private:
         }
         if (!gameLook) line({0, 0, 0}, {0, 1.5f, 0}, theme::AxisY());
 
+        NoteMotion();
         for (const Placed& p : placed_) {
             if (p.light && p.active) lights_.push_back(ToRenderLight(*p.light, p.world));  // a light switched off is dark
             if (gameLook && !p.active) continue;  // switched off: not in the game
@@ -734,10 +757,10 @@ private:
                 // A model keeps its own colours: the selected one glows at its edges (and has the frame).
                 const ui::Color glow = theme::SceneSelectedGlow();
                 meshes_.push_back({p.mesh, p.world, p.active ? theme::SceneModel() : theme::SceneModelInactive(), p.castShadow, p.materials,
-                                   selected ? glow : glow.Alpha(0)});
+                                   selected ? glow : glow.Alpha(0), Moving(p.id)});
             } else {
                 const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
-                boxes_.push_back({p.world, col, p.castShadow});
+                boxes_.push_back({p.world, col, p.castShadow, Moving(p.id)});
             }
             if (selected) Outline(p.world, p.min, p.max, theme::Accent);
         }
@@ -1215,6 +1238,11 @@ private:
     space3d::MeshLoader loader_;                          // reads the model files on its own thread
     space3d::TextureCache textures_;                      // the models' picture files, by full path
     double now_ = 0;
+    struct Motion {
+        Mat4 world;
+        double movedAt;  // when its place last changed (c.Time())
+    };
+    std::unordered_map<int, Motion> motion_;  // by entity
 
     Drag drag_ = Drag::None;
     float pressX_ = 0, pressY_ = 0;

@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "3D の描画をさらに軽く: 同じ形の物をまとめて 1 回で描き、影の地図は止まっている物の分を取っておいて動く物だけを描き足す (1000 個・光 8 個で 1 フレームの CPU の時間が約 3 分の 1)",
+          "en": "3D drawing is lighter again: things of the same shape are drawn together in one go, and shadow maps keep what stands still and redraw only what moves (about a third of the CPU time per frame with 1000 objects and 8 lights)"
+        },
+        {
           "ja": "元に戻す (Undo) が、形を変える操作 (作る・消す・移す・貼り付け・複製・部品・Prefab) で、シーン全体ではなく触った物だけを覚えるように (大きなシーンでも軽い)",
           "en": "Undo now keeps only the objects an edit of the scene's shape touched (create, delete, move, paste, duplicate, components, prefabs), not the whole scene - light even for big scenes"
         },
