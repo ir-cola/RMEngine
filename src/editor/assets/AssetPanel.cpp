@@ -355,6 +355,8 @@ void AssetPanel::Draw(ui::Context& c, const Rect& r) {
     } else {
         text = TrF(L"{} 個のファイルとフォルダ", lib_.Index().Entries().size());
     }
+    // A look at the folder going on (on the Worker): what is shown is the last look's until it ends.
+    if (lib_.Looking()) text += L"  ·  " + Tr(L"調べています…");
     w::Separator(c, info.x + 8, info.y, info.w - 16);
     float textRight = 12;
     if (thumbnails_ && info.w > 260) {

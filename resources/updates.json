@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "アセットのフォルダの見直しを裏のスレッドで: ファイルが多くても画面は止まらず、その間はパネルの下に「調べています…」。見直しの途中でまた変わったら、古い結果は使わずに調べ直す。開いた直後の Prefab がアセットの ID を引けなかったのも直した",
+          "en": "The Assets folder is looked at again on a background thread: the screen never stops, however many files there are, and the panel says \"Looking…\" meanwhile. If the folder changes again during a look, the old result is dropped and it looks again. Prefabs now find their files by ID right after a project is opened"
+        },
+        {
           "ja": "3D の描画が軽く: 1 フレームの CPU の時間がおよそ半分 (物 1000 個・光 8 個)。光が 9 個以上のときは、カメラに近くて明るい光から 8 個を使う",
           "en": "Lighter 3D drawing: about half the CPU time per frame (1000 objects, 8 lights). With more than 8 lights, the 8 nearest and brightest to the camera are used"
         },

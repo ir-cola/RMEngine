@@ -366,5 +366,6 @@
   "GPU (グラフィックス) が使えなくなり、作り直せませんでした。画面が正しく出ないことがあります。\n\n今の作業を保存しますか? 保存したら、エディターを閉じて開き直してください (PC の再起動が要ることもあります)。": "The GPU (graphics) stopped working and could not be started again. The screen may not show correctly.\n\nSave your work now? After saving, close the editor and open it again (restarting the PC may be needed).",
   "保存するものはありません。エディターを閉じて開き直してください。": "There is nothing to save. Close the editor and open it again.",
   "保存しました。エディターを閉じて開き直してください。": "Saved. Close the editor and open it again.",
-  "保存できませんでした。くわしくはコンソールとログを見てください。": "Could not save. See the console and the log for details."
+  "保存できませんでした。くわしくはコンソールとログを見てください。": "Could not save. See the console and the log for details.",
+  "調べています…": "Looking…"
 }

@@ -5,17 +5,30 @@
 //
 // The ids follow the files: an operation here moves / renames the .meta with its file, and a change
 // made outside (Explorer) is seen the next time the editor draws (platform::FolderWatch) and
-// reconciled (asset::Reconcile). File operations are not project data: they happen on the disk at
+// reconciled (asset::Reconcile).
+//
+// Looking at the folder runs on a Worker (editor/app/Worker): reading the folder and the .meta files
+// and working out the plan (asset::Look) never stop the drawing. The plan comes back to the UI thread,
+// which writes its .meta files and puts the new ids in place in one go (ApplyLook). Every look and every
+// change made here takes a new number (asset::LookNumber): a result whose number is no longer the
+// newest - the folder changed again, or the editor renamed / moved / deleted something meanwhile - is
+// thrown away, and a look is asked again. Meanwhile the panel and the インスペクター go on with the
+// last result (Looking(): the panel says 調べています). An operation here puts its own change into the
+// ids at once (the panel follows without waiting), then asks for a look. File operations are not project data: they happen on the disk at
 // once, are not undone with Ctrl+Z and do not make the project unsaved (deleting goes to the
 // Recycle Bin - that is the way back).
 
 #include "base/Json.h"
 #include "core/asset/AssetFiles.h"
 #include "core/asset/AssetIndex.h"
+#include "editor/app/Worker.h"
 #include "platform/Shell.h"
 
 #include <filesystem>
+#include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <set>
 #include <span>
 #include <string>
@@ -35,13 +48,26 @@ public:
     // Changes every time the ids or paths may have changed (a refresh).
     uint64_t Version() const { return version_; }
 
-    // Looks at the folder again (creating it when it is missing). A .meta that did not change since the
-    // last look (same size and time) is not read again. The folder watch's news of the .meta files it
-    // wrote itself is dropped (one look, not a second one for its own writes).
+    // Asks for a look at the folder (creating it when it is missing), on the Worker; a look still going
+    // is dropped. A .meta that did not change since the last look (same size and time) is not read
+    // again. The folder watch's news of the .meta files it writes itself is dropped.
     void Refresh();
-    // Refresh when something under the folder was added, removed or renamed since the last look.
-    // True when it refreshed.
+    // The first look, here and now (on the UI thread), when the project is opened: the softwares read
+    // their data right after and find their prefabs, models ... by id - with no ids yet, every one of
+    // them would be "missing". Every later look runs on the Worker.
+    void LookNow();
+    // A look is going on (or none has finished yet): the ids are the last look's.
+    bool Looking() const { return looking_; }
+    // A look has been used (the ids are the folder's, not empty for not having looked yet).
+    bool Ready() const { return ready_; }
+    // Called on the UI thread after a look's result was put in place (redraw what shows the ids).
+    std::function<void()> onChanged;
+    // Asks for a look when something under the folder was added, removed or renamed since the last
+    // one. True when it asked.
     bool Poll();
+    // The id of a file the editor has just written inside Assets/ (`path` relative to it): given at
+    // once - its .meta written now - without waiting for a look. "" when it cannot be given.
+    std::string AdoptFile(const std::string& path);
 
     // An asset's import settings as they are now - with a change of the インスペクター that is still
     // waiting to be written.
@@ -76,8 +102,26 @@ private:
     bool watching_ = false;
     uint64_t version_ = 0;
     std::set<std::string> lastNotes_;  // what the last look told the console
-    asset::MetaCache metaCache_;       // the .meta files as the last look read them
     std::map<std::string, json::Value> queuedImports_;  // guid -> import settings waiting to be written
+
+    // The result of a look, on the UI thread: used only while `number` is the newest.
+    void ApplyLook(uint64_t number, asset::Plan plan);
+    // Ids changed here (an operation): put in place now; the look asked afterwards confirms them.
+    void SetEntries(std::vector<asset::Entry> entries);
+    void MovedInIndex(const std::string& from, const std::string& to);  // `from` and what is under it
+    void RemovedFromIndex(const std::string& path);                     // `path` and what is under it
+
+    // The .meta files as the last look read them. Shared with the look on the Worker (only one look
+    // reads it at a time: an older one still running holds the lock until it sees it was stopped).
+    struct CacheBox {
+        std::mutex mutex;
+        asset::MetaCache cache;
+    };
+    std::shared_ptr<CacheBox> cache_ = std::make_shared<CacheBox>();
+    asset::LookNumber looks_;
+    bool looking_ = false;
+    bool ready_ = false;
+    Worker worker_;  // last: destroyed first - what a look still posts is dropped, never applied to a gone library
 };
 
 }  // namespace rm::editor

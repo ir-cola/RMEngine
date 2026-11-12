@@ -8,6 +8,7 @@
 #include "core/asset/AssetFiles.h"
 #include "core/asset/AssetIndex.h"
 #include "core/asset/ImportSettings.h"
+#include "editor/app/Worker.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "core/reflect/Reflect.h"
 
@@ -16,6 +17,8 @@
 #include <chrono>
 #include <format>
 #include <filesystem>
+#include <stop_token>
+#include <thread>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -517,5 +520,97 @@ RM_TEST(Asset_ScanReadsOnlyChangedMeta) {
     fs::remove(root / L"f3.png.meta", ec);
     const std::vector<Entry> fourth = Update(root, third, notes, &cache, &wrote);
     CHECK(fourth.size() == 49 && cache.byPath.size() == 49);
+    fs::remove_all(root.parent_path(), ec);
+}
+
+// --- Looking at the folder on a Worker --------------------------------------------------------------
+
+RM_TEST(Asset_LookNumber_OnlyTheNewestCounts) {
+    LookNumber looks;
+    const uint64_t a = looks.Next();
+    CHECK(looks.Current(a));
+    const uint64_t b = looks.Next();  // asked again (or the editor renamed something)
+    CHECK(!looks.Current(a) && looks.Current(b) && looks.Now() == b);
+}
+
+RM_TEST(Asset_Look_WritesNothingAndStops) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path root = fs::temp_directory_path() / L"rm_asset_look" / L"Assets";
+    fs::remove_all(root.parent_path(), ec);
+    fs::create_directories(root, ec);
+    for (int i = 0; i < 600; ++i) std::ofstream(root / std::format(L"f{}.png", i), std::ios::binary) << "x";
+    // A look only works the plan out: the new ids are in it, no .meta is written yet.
+    MetaCache cache;
+    bool stopped = true;
+    const Plan plan = Look(root, {}, &cache, {}, &stopped);
+    CHECK(!stopped && plan.entries.size() == 600 && plan.writes.size() == 600);
+    CHECK(!fs::exists(root / L"f0.png.meta"));
+    // The thread that owns the ids writes them.
+    std::vector<std::string> errors;
+    ApplyPlan(root, plan, errors);
+    CHECK(errors.empty() && fs::exists(root / L"f0.png.meta"));
+    // Asked to stop: it ends part way, with nothing to use.
+    std::stop_source source;
+    source.request_stop();
+    const Plan none = Look(root, plan.entries, &cache, source.get_token(), &stopped);
+    CHECK(stopped && none.entries.empty() && none.writes.empty());
+    CHECK(ScanFolder(root, nullptr, source.get_token()).stopped);
+    fs::remove_all(root.parent_path(), ec);
+}
+
+RM_TEST(Asset_LookOnWorker_OvertakenResultIsDropped) {
+    // As AssetLibrary does: the look runs on a Worker, its plan comes back to the UI thread and is used
+    // only while its number is the newest.
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path root = fs::temp_directory_path() / L"rm_asset_look_worker" / L"Assets";
+    fs::remove_all(root.parent_path(), ec);
+    fs::create_directories(root, ec);
+    std::ofstream(root / L"a.png", std::ios::binary) << "a";
+    rm::editor::SetUiThread();
+    rm::editor::Worker worker;
+    LookNumber looks;
+    std::vector<Entry> applied;
+    int arrived = 0;
+    auto ask = [&] {
+        const uint64_t number = looks.Next();
+        worker.Run([&, number, root](std::stop_token stop, const rm::editor::Worker::Post& post) {
+            bool stopped = false;
+            Plan plan = Look(root, {}, nullptr, stop, &stopped);
+            if (stopped) return;
+            post([&, number, plan = std::move(plan)] {
+                ++arrived;
+                if (looks.Current(number)) applied = plan.entries;  // (else: overtaken - thrown away)
+            });
+        });
+    };
+    auto pump = [&](auto done) {
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < end && !done()) {
+            rm::editor::RunPostedToUi();
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        return done();
+    };
+    // The editor changes the folder while a look runs (a new number, no new look yet): the look's
+    // result arrives, and is not used.
+    ask();
+    looks.Next();
+    CHECK(pump([&] { return arrived == 1; }));
+    CHECK(applied.empty());
+    // A look asked after the change is used - and sees the folder as it is now.
+    std::ofstream(root / L"b.png", std::ios::binary) << "b";
+    ask();
+    CHECK(pump([&] { return !applied.empty(); }));
+    CHECK(applied.size() == 2);
+    // Two asked one after the other: only the newest is used (the Worker drops the first, too).
+    applied.clear();
+    std::ofstream(root / L"c.png", std::ios::binary) << "c";
+    ask();
+    ask();
+    CHECK(pump([&] { return !applied.empty() && !worker.Busy(); }));
+    CHECK(applied.size() == 3);
+    worker.Stop();
     fs::remove_all(root.parent_path(), ec);
 }

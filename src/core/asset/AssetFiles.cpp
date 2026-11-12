@@ -6,6 +6,7 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <random>
 #include <sstream>
 
@@ -115,8 +116,15 @@ bool ReadMetaCached(const fs::path& meta, uintmax_t size, fs::file_time_type tim
 
 }  // namespace
 
-Scan ScanFolder(const fs::path& root, MetaCache* cache) {
+Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
     Scan out;
+    size_t step = 0;
+    auto stopping = [&] {
+        if ((++step & 255) != 0 || !stop.stop_requested()) return false;
+        out = {};
+        out.stopped = true;
+        return true;
+    };
     if (cache) cache->reads = 0;
     std::error_code ec;
     struct MetaFile {
@@ -128,6 +136,7 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache) {
     std::vector<std::pair<fs::path, bool>> items;       // every file / folder (not ignored)
     for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
          it.increment(ec)) {
+        if (stopping()) return out;
         const fs::path& p = it->path();
         const std::string name = PathToUtf8(p.filename());
         std::error_code e2;
@@ -153,6 +162,7 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache) {
     std::unordered_map<std::wstring, bool> seen;  // the .meta files used by this look (the rest leave the cache)
 
     for (const auto& [p, folder] : items) {
+        if (stopping()) return out;
         Found f;
         f.path = Rel(root, p);
         f.folder = folder;
@@ -179,6 +189,7 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache) {
         out.found.push_back(std::move(f));
     }
     for (const auto& [metaPath, m] : metas) {
+        if (stopping()) return out;
         fs::path target(metaPath);
         target.replace_extension();  // "a.png.meta" -> "a.png"
         if (itemSet.contains(target.native())) continue;
@@ -228,6 +239,29 @@ void ApplyPlan(const fs::path& root, const Plan& plan, std::vector<std::string>&
     }
 }
 
+Plan Look(const fs::path& root, std::span<const Entry> previous, MetaCache* cache, std::stop_token stop, bool* stopped) {
+    const Scan scan = ScanFolder(root, cache, stop);
+    if (stopped) *stopped = scan.stopped || stop.stop_requested();
+    if (scan.stopped || stop.stop_requested()) return {};
+    return Reconcile(previous, scan.found, scan.orphans, NewGuid);
+}
+
+std::string GiveId(const fs::path& root, std::string_view path, const std::string& guid) {
+    const fs::path meta = MetaPath(root, path);
+    std::string old, why;
+    if (!SafeToWrite(meta, old, why)) {
+        // There, but not readable whole: its id when one can be picked out, never written over.
+        std::string text;
+        if (ReadText(meta, text)) {
+            if (const MetaInfo info = ReadMeta(text); info.state == MetaState::Damaged) return info.guid;
+        }
+        return {};
+    }
+    if (!old.empty()) return ReadMeta(old).guid;  // it has one already
+    if (!WriteText(meta, MetaText(old, guid, FileNameOf(path)))) return {};
+    return guid;
+}
+
 std::vector<Entry> Update(const fs::path& root, std::span<const Entry> previous, std::vector<std::string>& notes, MetaCache* cache,
                           bool* wrote) {
     const Scan scan = ScanFolder(root, cache);
@@ -258,6 +292,8 @@ std::vector<Entry> ReadIndex(const fs::path& root) {
 }
 
 std::string NewGuid() {
+    static std::mutex mutex;  // (looks run on the editor's Worker; the UI thread makes ids too)
+    std::lock_guard lock(mutex);
     static std::mt19937_64 rng = [] {
         std::random_device rd;
         std::seed_seq seq{rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd()};

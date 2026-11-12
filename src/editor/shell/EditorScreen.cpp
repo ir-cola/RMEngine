@@ -91,6 +91,9 @@ public:
 
 EditorScreen::EditorScreen(App& app, Project project) : ScreenWindow(app), project_(std::move(project)) {
     assets_ = std::make_unique<AssetLibrary>(project_.AssetsDir());
+    // The ids before the softwares read their data (a scene finds its prefabs by id). Only this first
+    // look waits; every later one runs on a Worker (AssetLibrary).
+    assets_->LookNow();
     thumbnails_ = std::make_unique<Thumbnails>(app_.Gfx(), app_.GetPlugins().Registry(), project_.AssetsDir());
     BuildWorkspaces();
     LoadSoftwareData();
@@ -108,7 +111,7 @@ bool EditorScreen::Open() {
     d.heightDip = 900;
     d.minWidthDip = 960;
     d.minHeightDip = 560;
-    assets_->Refresh();  // ids for the files that have none yet (written next to them as .meta)
+    assets_->onChanged = [this] { RedrawAll(); };  // a look's result was put in place (from the Worker)
     LoadLayout();  // before the callbacks below: nothing to sync yet
     if (!CreateScreenWindow(d, SW_SHOWMAXIMIZED)) return false;
     for (auto& ws : workspaces_) {
@@ -198,10 +201,9 @@ AssetRef EditorScreen::Workspace::AssetOf(const fs::path& file) {
     const fs::path rel = file.lexically_normal().lexically_relative(lib.Root().lexically_normal());
     if (rel.empty() || rel.native().starts_with(L"..")) return {};  // not inside Assets/
     const std::string path = PathToUtf8(rel.generic_wstring());
-    if (const asset::Entry* e = lib.Index().ByPath(path)) return {e->guid};
-    lib.Refresh();  // a file just written: it gets its id (.meta) now
-    const asset::Entry* e = lib.Index().ByPath(path);
-    return e ? AssetRef{e->guid} : AssetRef{};
+    // (a file just written - a prefab saved: it gets its id now, without waiting for a look)
+    const std::string guid = lib.AdoptFile(path);
+    return guid.empty() ? AssetRef{} : AssetRef{guid};
 }
 
 dock::Layout EditorScreen::Workspace::DefaultLayout() const {

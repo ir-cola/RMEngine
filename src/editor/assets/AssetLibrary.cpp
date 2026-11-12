@@ -110,10 +110,51 @@ void AssetLibrary::Refresh() {
     std::error_code ec;
     fs::create_directories(root_, ec);
     if (!watching_) watching_ = watch_.Start(root_);
+    const uint64_t number = looks_.Next();
+    looking_ = true;
+    // The look gets copies only (the Worker's rule): the folder, the last ids, the shared cache.
+    std::vector<asset::Entry> previous(index_.Entries().begin(), index_.Entries().end());
+    worker_.Run([this, number, root = root_, previous = std::move(previous), box = cache_](std::stop_token stop, const Worker::Post& post) {
+        std::lock_guard lock(box->mutex);
+        if (stop.stop_requested()) return;
+        bool stopped = false;
+        asset::Plan plan = asset::Look(root, previous, &box->cache, stop, &stopped);
+        if (stopped) return;
+        // (`this` is used only inside post: on the UI thread, and dropped if the library is gone)
+        post([this, number, plan = std::move(plan)]() mutable { ApplyLook(number, std::move(plan)); });
+    });
+}
+
+void AssetLibrary::LookNow() {
+    std::error_code ec;
+    fs::create_directories(root_, ec);
+    if (!watching_) watching_ = watch_.Start(root_);
+    worker_.Stop();  // (a look still going is overtaken)
+    const uint64_t number = looks_.Next();
+    looking_ = true;
+    asset::Plan plan;
+    {
+        std::lock_guard lock(cache_->mutex);
+        const std::vector<asset::Entry> previous(index_.Entries().begin(), index_.Entries().end());
+        plan = asset::Look(root_, previous, &cache_->cache, {}, nullptr);
+    }
+    ApplyLook(number, std::move(plan));
+}
+
+void AssetLibrary::ApplyLook(uint64_t number, asset::Plan plan) {
+    if (!looks_.Current(number)) return;  // overtaken: a newer look was asked (or an operation changed the ids)
+    // The folder changed while it was looked at: this look may have missed it - look again.
+    if (watching_ && watch_.Changed()) {
+        while (watch_.Changed()) {
+        }
+        Refresh();
+        return;
+    }
+    looking_ = false;
     std::vector<std::string> notes;
-    std::vector<asset::Entry> before(index_.Entries().begin(), index_.Entries().end());
-    bool wrote = false;
-    std::vector<asset::Entry> now = asset::Update(root_, before, notes, &metaCache_, &wrote);
+    const bool wrote = !plan.writes.empty() || !plan.moves.empty();
+    asset::ApplyPlan(root_, plan, notes);
+    for (auto& n : plan.notes) notes.push_back(std::move(n));
     // The .meta files it wrote itself: the watch would only bring them back as news.
     if (wrote && watching_) {
         while (watch_.Changed()) {
@@ -126,9 +167,47 @@ void AssetLibrary::Refresh() {
         told.insert(std::move(n));
     }
     lastNotes_ = std::move(told);
-    index_.Set(std::move(now));
+    ready_ = true;
+    SetEntries(std::move(plan.entries));
+    if (onChanged) onChanged();
+}
+
+void AssetLibrary::SetEntries(std::vector<asset::Entry> entries) {
+    index_.Set(std::move(entries));
     order_ = asset::DisplayOrder(index_.Entries());
     ++version_;
+}
+
+void AssetLibrary::MovedInIndex(const std::string& from, const std::string& to) {
+    std::vector<asset::Entry> entries(index_.Entries().begin(), index_.Entries().end());
+    for (asset::Entry& e : entries) {
+        if (e.path == from) {
+            e.path = to;
+        } else if (e.path.starts_with(from + "/")) {
+            e.path = to + e.path.substr(from.size());
+        }
+    }
+    SetEntries(std::move(entries));
+}
+
+void AssetLibrary::RemovedFromIndex(const std::string& path) {
+    std::vector<asset::Entry> entries(index_.Entries().begin(), index_.Entries().end());
+    std::erase_if(entries, [&](const asset::Entry& e) { return e.path == path || e.path.starts_with(path + "/"); });
+    SetEntries(std::move(entries));
+}
+
+std::string AssetLibrary::AdoptFile(const std::string& path) {
+    if (const asset::Entry* e = index_.ByPath(path)) return e->guid;
+    std::error_code ec;
+    const fs::path full = asset::FullPath(root_, path);
+    if (!fs::exists(full, ec)) return {};
+    std::string guid = asset::GiveId(root_, path, asset::NewGuid());
+    if (guid.empty() || index_.ByGuid(guid)) return {};  // (a .meta copied with another file's id: the look sorts it out)
+    std::vector<asset::Entry> entries(index_.Entries().begin(), index_.Entries().end());
+    entries.push_back({path, guid, fs::is_directory(full, ec)});
+    SetEntries(std::move(entries));
+    Refresh();  // (and an older look that did not see it is dropped)
+    return guid;
 }
 
 bool AssetLibrary::Poll() {
@@ -163,6 +242,8 @@ std::wstring AssetLibrary::Rename(const std::string& guid, const std::string& ne
         return problem;
     }
     log::Info("アセットの名前を変えました: {} → {}", e->path, newName);
+    const std::string oldPath = e->path;
+    MovedInIndex(oldPath, asset::Join(asset::ParentOf(oldPath), newName));  // shown at once; the look confirms it
     Refresh();
     return {};
 }
@@ -197,6 +278,7 @@ std::wstring AssetLibrary::Move(std::span<const std::string> guids, const std::s
             problem = std::move(p);
             continue;
         }
+        MovedInIndex(e.path, asset::Join(folder, asset::FileNameOf(e.path)));
         ++moved;
     }
     if (moved > 0) log::Info("アセットを {} 個、{} へ動かしました", moved, folder.empty() ? std::string("Assets") : "Assets/" + folder);
@@ -218,11 +300,8 @@ std::wstring AssetLibrary::NewFolder(const std::string& whereGuid, std::string* 
         return Problem(TrKey(L"フォルダを作れませんでした: {}"), Why(ec));
     }
     log::Info("フォルダを作りました: {}", path);
-    Refresh();
-    if (made) {
-        const asset::Entry* e = index_.ByPath(path);
-        *made = e ? e->guid : std::string();
-    }
+    const std::string guid = AdoptFile(path);  // its id now (the panel selects it to be named)
+    if (made) *made = guid;
     return {};
 }
 
@@ -259,6 +338,7 @@ std::wstring AssetLibrary::Delete(std::span<const std::string> guids) {
         bool notRecyclable = false;
         if (platform::MoveToRecycleBin(one.paths, &why, &notRecyclable)) {
             log::Info("ごみ箱へ移しました: {}", one.name);
+            RemovedFromIndex(one.name);
         } else if (notRecyclable) {
             // Never deleted for good (no Recycle Bin there, or it is too big for it).
             problem = Problem(TrKey(L"「{}」はごみ箱に入れられない場所にある (USB メモリ・ネットワーク・ごみ箱より大きい) ので、消していません。消すならエクスプローラーで消してください。"),
