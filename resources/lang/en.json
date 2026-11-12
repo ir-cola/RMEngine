@@ -413,5 +413,6 @@
   "C++ のランタイム: {} 個": "C++ runtime: {} files",
   "★ exe の中にこの PC のパスが残っています: {}": "★ The exe still holds a path of this PC: {}",
   "書き出しました: {}": "Exported: {}",
-  "書き出せるソフトがありません (ゲーム制作のプラグインが要ります)": "No software can export (the Game Production plugin is needed)"
+  "書き出せるソフトがありません (ゲーム制作のプラグインが要ります)": "No software can export (the Game Production plugin is needed)",
+  "アセットを暗号化できませんでした (Windows の暗号の機能 (CNG) を使えません)": "Could not encrypt the assets (Windows' cryptography (CNG) cannot be used)"
 }

@@ -3,6 +3,7 @@
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "core/pak/Pak.h"
+#include "platform/Crypto.h"
 #include "platform/Shell.h"
 #include "platform/Window.h"
 
@@ -147,7 +148,7 @@ private:
                 in->read(out, static_cast<std::streamsize>(n));
                 return static_cast<size_t>(in->gcount()) == n;
             },
-            size, image_.build, &error_);
+            size, image_.build, platform::PakCipher(image_.build), &error_);
     }
 
     bool DrawFrame() {

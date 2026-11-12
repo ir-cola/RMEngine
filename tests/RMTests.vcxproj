@@ -82,6 +82,7 @@
     <ClCompile Include="TestSceneFile.cpp" />
     <ClCompile Include="TestExport.cpp" />
     <ClCompile Include="..\src\core\pak\Pak.cpp" />
+    <ClCompile Include="..\src\platform\Crypto.cpp" />
     <ClCompile Include="..\src\editor\export\ExportPlan.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\editor\GameExport.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->

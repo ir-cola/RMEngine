@@ -71,6 +71,7 @@
     <ClCompile Include="platform\Shell.cpp" />
     <ClCompile Include="platform\Window.cpp" />
     <ClCompile Include="platform\Process.cpp" />
+    <ClCompile Include="platform\Crypto.cpp" />
     <ClCompile Include="editor\export\Exporter.cpp" />
     <ClCompile Include="ui\Context.cpp" />
     <ClCompile Include="ui\Painter.cpp" />

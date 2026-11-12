@@ -12,9 +12,9 @@
 // another export is refused ("混ぜない" - design 5-a, rule 3). `sign` is the FNV-1a of the plain bytes:
 // a broken or changed file is found when it is read.
 //
-// ★ The scrambling is the first version's simple one (a keystream from a fixed key, the build number
-// and the entry's place: XOR). It only keeps the files from being opened as they are. The design's
-// AES (Windows' BCrypt) replaces it later (the format number goes up then).
+// The entries and the index are encrypted by the Cipher given (format 2: AES-256-CTR of Windows' CNG,
+// platform/Crypto PakCipher - the design's decision; the core stays plain C++). Entry i is stream i, the
+// index the stream ~0. ★ The key is in the exe: TECHNOLOGIES.md says what this does and does not keep.
 
 #include <cstdint>
 #include <functional>
@@ -26,7 +26,7 @@
 
 namespace rm::pak {
 
-inline constexpr uint32_t kFormat = 1;
+inline constexpr uint32_t kFormat = 2;  // 2: AES (1 was the first version's XOR - never read again)
 inline constexpr char kExtension[] = ".rmpak";
 
 struct Entry {
@@ -34,8 +34,12 @@ struct Entry {
     std::string bytes;
 };
 
-// The whole pak for these entries (paths must be unique; the order is kept).
-std::string Write(std::span<const Entry> entries, uint64_t build);
+// XORs `size` bytes of stream `stream` (from its start) with the keystream: the same call encrypts and
+// decrypts. False when it could not.
+using Cipher = std::function<bool(char* data, size_t size, uint64_t stream)>;
+
+// The whole pak for these entries (paths must be unique; the order is kept). Empty when the cipher failed.
+std::string Write(std::span<const Entry> entries, uint64_t build, const Cipher& cipher);
 
 struct IndexEntry {
     std::string path;
@@ -49,7 +53,7 @@ public:
     using ReadFn = std::function<bool(uint64_t offset, size_t size, char* out)>;
     // False (and *error, Japanese) when it is not a pak, a newer format, broken, or of another build
     // (`build` != 0 and different).
-    bool Open(ReadFn read, uint64_t fileSize, uint64_t build, std::string* error);
+    bool Open(ReadFn read, uint64_t fileSize, uint64_t build, Cipher cipher, std::string* error);
     const std::vector<IndexEntry>& Entries() const { return entries_; }
     const IndexEntry* Find(std::string_view path) const;
     // The plain bytes of an entry; nullopt (and *error) when it cannot be read or its sign is wrong.
@@ -59,6 +63,7 @@ public:
 
 private:
     ReadFn read_;
+    Cipher cipher_;
     uint64_t build_ = 0;
     std::vector<IndexEntry> entries_;
 };

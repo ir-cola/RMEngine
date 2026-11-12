@@ -5,6 +5,7 @@
 #include "Test.h"
 
 #include "core/pak/Pak.h"
+#include "platform/Crypto.h"
 #include "editor/export/ExportPlan.h"
 #include "rm_engine/game_production/editor/GameExport.h"
 #include "rm_engine/game_production/runtime/Components.h"
@@ -14,6 +15,8 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <algorithm>
+#include <array>
+#include <vector>
 
 using namespace rm;
 using namespace rm::editor;
@@ -64,13 +67,13 @@ RM_TEST(Pak_RoundTrip) {
                                              {"Assets/Scenes/Main.rmscene", std::string("{\"kind\": \"rm_engine.scene\"}\n")},
                                              {"Assets/empty.txt", ""},
                                              {"Assets/bin.dat", std::string("\0\x01\xff\x80", 4)}};
-    const std::string bytes = pak::Write(entries, 1234);
+    const std::string bytes = pak::Write(entries, 1234, platform::PakCipher(1234));
     // Nothing is there as it was written (the files cannot be read by opening the pak as text).
     CHECK(bytes.find("My Game") == std::string::npos && bytes.find("rm_engine.scene") == std::string::npos);
     CHECK(bytes.find("Main.rmscene") == std::string::npos);  // the index too
     pak::Reader r;
     std::string err;
-    CHECK(r.Open(FromMemory(bytes), bytes.size(), 1234, &err));
+    CHECK(r.Open(FromMemory(bytes), bytes.size(), 1234, platform::PakCipher(1234), &err));
     CHECK(r.Entries().size() == 4 && r.Build() == 1234);
     for (const auto& e : entries) {
         const auto read = r.Read(e.path, &err);
@@ -79,29 +82,54 @@ RM_TEST(Pak_RoundTrip) {
     CHECK(!r.Read("Assets/none.png", &err) && !err.empty());
     // Build 0: any build is read.
     pak::Reader any;
-    CHECK(any.Open(FromMemory(bytes), bytes.size(), 0, &err));
+    CHECK(any.Open(FromMemory(bytes), bytes.size(), 0, platform::PakCipher(1234), &err));
+}
+
+// AES-256-CTR by Windows' CNG: the NIST SP 800-38A test vector (F.5.5), and back again.
+RM_TEST(Pak_AesCtrVector) {
+    auto hex = [](const char* h) {
+        std::vector<uint8_t> out;
+        for (size_t i = 0; h[i] && h[i + 1]; i += 2) out.push_back(static_cast<uint8_t>(std::stoi(std::string(h + i, 2), nullptr, 16)));
+        return out;
+    };
+    const auto k = hex("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4");
+    const auto v = hex("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff");
+    platform::AesKey key{};
+    std::array<uint8_t, 16> iv{};
+    std::copy(k.begin(), k.end(), key.begin());
+    std::copy(v.begin(), v.end(), iv.begin());
+    auto data = hex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51");
+    CHECK(platform::AesCtr(key, iv, data.data(), data.size()));
+    CHECK(data == hex("601ec313775789a5b7a7f504bbf3d228f443e3ca4d62b59aca84e990cacaf5c5"));
+    CHECK(platform::AesCtr(key, iv, data.data(), data.size()));
+    CHECK(data == hex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51"));
+    // The pak's cipher: another build, another key.
+    std::string a(40, 'x'), b(40, 'x');
+    platform::PakCipher(1)(a.data(), a.size(), 0);
+    platform::PakCipher(2)(b.data(), b.size(), 0);
+    CHECK(a != b && a != std::string(40, 'x'));
 }
 
 RM_TEST(Pak_Refused) {
     const std::vector<pak::Entry> entries = {{"a.txt", "hello world"}};
-    std::string bytes = pak::Write(entries, 7);
+    std::string bytes = pak::Write(entries, 7, platform::PakCipher(7));
     std::string err;
     pak::Reader r;
     // Of another export: refused with the reason.
-    CHECK(!r.Open(FromMemory(bytes), bytes.size(), 8, &err) && !err.empty());
+    CHECK(!r.Open(FromMemory(bytes), bytes.size(), 8, platform::PakCipher(8), &err) && !err.empty());
     // Not a pak / too short.
     const std::string text = "not a pak at all, just some text....................";
-    CHECK(!r.Open(FromMemory(text), text.size(), 0, &err));
+    CHECK(!r.Open(FromMemory(text), text.size(), 0, platform::PakCipher(0), &err));
     const std::string tiny = "RMPAK";
-    CHECK(!r.Open(FromMemory(tiny), tiny.size(), 0, &err));
+    CHECK(!r.Open(FromMemory(tiny), tiny.size(), 0, platform::PakCipher(0), &err));
     // A changed byte in an entry: found when it is read.
-    CHECK(r.Open(FromMemory(bytes), bytes.size(), 7, &err));
+    CHECK(r.Open(FromMemory(bytes), bytes.size(), 7, platform::PakCipher(7), &err));
     bytes[r.Entries()[0].at + 3] ^= 0x10;
     CHECK(!r.Read("a.txt", &err) && !err.empty());
     // A broken index (a size past the end): refused at Open.
-    std::string cut = pak::Write(entries, 7);
+    std::string cut = pak::Write(entries, 7, platform::PakCipher(7));
     cut.resize(cut.size() - 4);
-    CHECK(!r.Open(FromMemory(cut), cut.size(), 7, &err));
+    CHECK(!r.Open(FromMemory(cut), cut.size(), 7, platform::PakCipher(7), &err));
 }
 
 RM_TEST(Export_ExeName) {

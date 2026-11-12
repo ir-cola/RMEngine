@@ -5,6 +5,7 @@
 #include "base/Utf.h"
 #include "editor/export/ExportPlan.h"
 #include "editor/lang/Lang.h"
+#include "platform/Crypto.h"
 #include "platform/Process.h"
 #include "platform/Shell.h"
 
@@ -241,7 +242,8 @@ bool Run(const Request& r, const Report& report, std::string* error) {
 
     // 4. The rest of the folder.
     report(0.75f, TrU8F("アセットを詰めています ({} 個)", r.files.size()));
-    const std::string pakBytes = pak::Write(r.files, build);
+    const std::string pakBytes = pak::Write(r.files, build, platform::PakCipher(build));
+    if (pakBytes.empty()) return fail(TrU8("アセットを暗号化できませんでした (Windows の暗号の機能 (CNG) を使えません)"));
     if (!WriteFile(r.outDir / L"Game.rmpak", pakBytes, &err)) return fail(err);
     if (!r.scriptsDll.empty()) {
         fs::copy_file(r.scriptsDll, r.outDir / L"Scripts.dll", fs::copy_options::overwrite_existing, ec);
