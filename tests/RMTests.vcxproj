@@ -118,7 +118,6 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\ScriptGuard.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\editor\ScriptBuild.cpp" />
     <ClCompile Include="..\src\platform\Process.cpp" />
-    <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Register.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\ScriptTransform3D.cpp" />
