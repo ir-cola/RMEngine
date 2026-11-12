@@ -24,7 +24,9 @@ rm::editor::LaunchOptions ParseCommandLine() {
     if (!argv) return opt;
     for (int i = 1; i < argc; ++i) {
         const std::wstring a = argv[i];
-        if (a == L"--project" && i + 1 < argc) {
+        if (a == L"--export-template" && i + 4 < argc) {
+            for (int k = 0; k < 4; ++k) opt.exportTemplate.push_back(argv[++i]);
+        } else if (a == L"--project" && i + 1 < argc) {
             opt.projectFile = argv[++i];
         } else if (a.size() > 5 && _wcsicmp(a.c_str() + a.size() - 5, L".rmpf") == 0) {
             opt.projectFile = a;  // a .rmpf passed directly (e.g. opened from Explorer)

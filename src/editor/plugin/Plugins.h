@@ -42,6 +42,8 @@ public:
     void Reload();
 
     const std::vector<Entry>& Entries() const { return entries_; }
+    // The plugin.json of every plugin this engine has (installed or not).
+    const std::vector<PluginManifest>& Available() const { return available_; }
     const Entry* Find(const PluginId& id) const;
     bool IsEnabled(const PluginId& id) const;
     std::string DisplayName(const PluginId& id) const;  // the ID text for an unknown plugin

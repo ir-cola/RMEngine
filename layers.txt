@@ -10,6 +10,7 @@ base        0      yes    # L0 types, strings, JSON, log (pure, std only)
 core        2      yes    # L2 engine core that is not tied to a software (undo history, reflect/, asset/ = asset ids)
 platform    3      yes    # L3 Windows: windows, D3D11 / D2D, dialogs, files
 ui          4      yes    # core UI foundation (layout, input, text editing, drawing) - no colors
+game        5      yes    # L5 the exported game's frame: its window, the .rmpak, the frame loop (knows no software or plugin)
 editor      6      no     # L6 Hub + editor shell + editor widgets (assets/ = the assets panel ...)
 
 # plugins/ (outside src/) is checked by the same script: plugins/<author>/<name>/runtime/ ships in games

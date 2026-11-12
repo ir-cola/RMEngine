@@ -1,4 +1,6 @@
 #include "editor/app/App.h"
+#include "editor/project/Templates.h"
+#include "editor/project/Project.h"
 #include "editor/app/Paths.h"
 
 #include "base/Log.h"
@@ -27,6 +29,55 @@ void WakeMessageLoop() { PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0)
 }  // namespace
 
 App::App() = default;
+
+int App::RunExportCheck(const std::vector<std::wstring>& args) {
+    if (args.size() != 4) {
+        log::Error("書き出しの確かめ: --export-template <作者> <プラグイン> <テンプレートの id> <作業フォルダ>");
+        return 2;
+    }
+    const std::string author = WideToUtf8(args[0]), plugin = WideToUtf8(args[1]), id = WideToUtf8(args[2]);
+    const std::filesystem::path work = args[3];
+    const TemplateTree& tree = plugins_.Templates();
+    size_t node = static_cast<size_t>(-1);
+    for (size_t i = 0; i < tree.nodes.size(); ++i) {
+        const ProjectTemplate* t = tree.At(i);
+        if (t && t->id == id && ((!t->plugin && author.empty()) || (t->plugin && t->plugin->author == author && t->plugin->name == plugin))) node = i;
+    }
+    if (node == static_cast<size_t>(-1)) {
+        log::Error("書き出しの確かめ: テンプレートがありません: {} / {} / {}", author, plugin, id);
+        return 2;
+    }
+    std::vector<PluginId> unavailable;
+    if (const auto plan = plugins_.TemplateInstallPlan(node, &unavailable); !plan.empty()) {
+        std::string err;
+        if (!InstallPlugins(plan, &err)) {
+            log::Error("書き出しの確かめ: プラグインを入れられません: {}", err);
+            return 2;
+        }
+    }
+    std::error_code ec;
+    std::filesystem::remove_all(work / L"Project", ec);
+    std::filesystem::create_directories(work, ec);
+    std::string err;
+    const ProjectTemplate* t = plugins_.Templates().At(node);
+    auto project = CreateProject(work, "Project", *t, &err);
+    if (!project) {
+        log::Error("書き出しの確かめ: プロジェクトを作れません: {}", err);
+        return 2;
+    }
+    project = LoadProject(project->file, &err);
+    if (!project) {
+        log::Error("書き出しの確かめ: {}", err);
+        return 2;
+    }
+    EditorScreen editor(*this, std::move(*project));  // no window: only its softwares and their data
+    if (!editor.ExportForCheck(work / L"Game", &err)) {
+        log::Error("書き出しの確かめ: 書き出せませんでした: {}", err);
+        return 1;
+    }
+    log::Info("書き出しの確かめ: 書き出しました: {}", PathToUtf8(work / L"Game"));
+    return 0;
+}
 App::~App() = default;
 
 int App::Run(const LaunchOptions& options) {
@@ -42,6 +93,7 @@ int App::Run(const LaunchOptions& options) {
     StartEngineRefresh();  // a new engine: new copies of the installed plugins (hashed off this thread)
     LoadThemes();
     ApplyOptions();  // the theme chosen may be a pack's
+    if (!options.exportTemplate.empty()) return RunExportCheck(options.exportTemplate);
     if (!options.projectFile.empty()) {
         RequestOpenProject(options.projectFile);
     } else {

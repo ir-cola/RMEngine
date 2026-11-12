@@ -88,5 +88,19 @@
   "ビルドしています…": "Building…",
   "スクリプトをビルド": "Build scripts",
   "Visual Studio で開く": "Open in Visual Studio",
-  "スクリプト ・ 実行順 {}": "Script · run order {}"
+  "スクリプト ・ 実行順 {}": "Script · run order {}",
+  "シーンのファイルがプロジェクトの外にあります: {}": "A scene's file is outside the project: {}",
+  "アセットを読めません: {}": "Cannot read the asset: {}",
+  "ゲームのデータにこの PC のパスが入っています: {}\n相対パスにしてから書き出してください。": "The game's data holds a path of this PC: {}\nMake it relative before exporting.",
+  "書き出し": "Export",
+  "ウィンドウのタイトルと exe の説明に使います (ゲームの設定の「ゲームの名前」と同じもの)": "Used for the window's title and the exe's description (the same as Game name in the game settings)",
+  "exe の名前": "Exe name",
+  "書き出す exe のファイルの名前 (.exe は付けない)。空にするとゲームの名前から作ります": "The file name of the exported exe (without .exe). Empty: made from the game's name",
+  "出力先": "Output folder",
+  "書き出すフォルダ。この PC の設定で、プロジェクトのデータには入りません": "The folder to export into. A setting of this PC, not project data",
+  "このエンジンに無いプラグインを使っています: {}": "The project uses a plugin this engine does not have: {}",
+  "アイコン: {}": "Icon: {}",
+  "(なし。ゲームの設定の「アイコン」に PNG を選びます)": "(none - choose a PNG as Icon in the game settings)",
+  "書き出し中…": "Exporting…",
+  "書き出す": "Export"
 }

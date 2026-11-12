@@ -15,6 +15,7 @@
 #include "base/Json.h"
 #include "core/PluginId.h"
 #include "core/RuntimeRegistry.h"
+#include "editor/plugin/PluginManifest.h"
 #include "core/UndoHistory.h"
 #include "core/reflect/FieldCommand.h"
 #include "editor/dock/DockLayout.h"
@@ -127,6 +128,9 @@ public:
     // The asset id of a file inside the project's Assets/ (a file the software just wrote gets its
     // .meta now); empty when the file is not there or not inside Assets/.
     virtual AssetRef AssetOf(const std::filesystem::path& file) = 0;
+    // The plugins this engine has (their plugin.json): an export adds the requirements and connectors
+    // of the plugins a project uses (editor/export ExportPlugins).
+    virtual std::vector<PluginManifest> PluginManifests() const = 0;
 };
 
 // One software inside one open project.
@@ -162,6 +166,17 @@ public:
     // and prefabs). Asked after SaveData returned true; recorded in the .rmpf's "plugins" with the
     // software's own - an exported game links them (design RME_PLATFORM 5-a, condition 1).
     virtual std::vector<PluginId> UsedPlugins() const { return {}; }
+
+    // A software that makes a program of its own from the project (a game: an exe, editor/export).
+    // ExportNow does it on the calling thread into `outDir`, with the software's own settings (the
+    // export check's command line: RM_Engine.exe --export-template ...); the software's own screen
+    // does it on a worker.
+    virtual bool CanExport() const { return false; }
+    virtual bool ExportNow(const std::filesystem::path& outDir, std::string* error) {
+        (void)outDir;
+        (void)error;
+        return false;
+    }
 
     // How the user looks at this software (a scene view's camera, the gizmo chosen ...): not project
     // data - it is kept next to the layout in UserSettings/Layout.json, never marks the project

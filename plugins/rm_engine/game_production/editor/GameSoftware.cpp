@@ -9,11 +9,16 @@
 #include "editor/project/Project.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
+#include "editor/export/ExportPlan.h"
+#include "editor/inspector/Inspector.h"
+#include "rm_engine/game_production/editor/GameExport.h"
+#include "rm_engine/game_production/runtime/Scripts.h"
 #include "platform/Shell.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
 #include "rm_engine/game_production/editor/GameScripts.h"
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
+#include "rm_engine/game_production/runtime/Id.h"
 #include "rm_engine/game_production/runtime/Prefab.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/SceneFile.h"
@@ -26,6 +31,8 @@
 #include <filesystem>
 #include <format>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <optional>
 #include <system_error>
 #include <unordered_map>
@@ -45,6 +52,7 @@ using ui::Rect;
 
 constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
+constexpr char kExportPanel[] = "export";
 constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" rows in the 階層's menu
 constexpr float kSpaceStripH = 34.f;   // the strip of spaces (3D / 2D) above the scene view
 
@@ -185,6 +193,7 @@ public:
         return {
             {kSceneView, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawSceneView(c, r); }},
             {kGameView, TrKey(L"ゲーム"), [this](ui::Context& c, const Rect& r) { DrawGameView(c, r); }},
+            {kExportPanel, TrKey(L"書き出し"), [this](ui::Context& c, const Rect& r) { DrawExportPanel(c, r); }},
         };
     }
 
@@ -195,7 +204,7 @@ public:
         auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({cp::kHierarchy}),
                                l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf({kSceneView, kGameView}),
                                            l.MakeLeaf({cp::kInspector})));
-        l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets}));
+        l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets, kExportPanel}));
         return l;
     }
 
@@ -249,6 +258,7 @@ public:
         if (hadData_) {
             reflect::Warnings warnings;
             reflect::Load(settings_, data.Get("settings"), &unknowns_, &warnings);
+            if (data.Find("export")) reflect::Load(exportSettings_, data.Get("export"), &exportUnknowns_, &warnings);
             for (const auto& w : warnings) log::Warn("ゲームの設定: {}", w);
             warnings.clear();
             json::Value rest = data;
@@ -273,9 +283,14 @@ public:
         // Nothing is written (and the plugin is not recorded as used) while everything is as a new
         // project has it - opening a project once must not tie it to this plugin.
         const GameSettings defaults;
-        const bool untouched = reflect::Equals(reflect::TypeOf<GameSettings>(), &settings_, &defaults) && unknowns_.Empty();
+        const ExportSettings exportDefaults;
+        const bool untouched = reflect::Equals(reflect::TypeOf<GameSettings>(), &settings_, &defaults) && unknowns_.Empty() &&
+                               reflect::Equals(reflect::TypeOf<ExportSettings>(), &exportSettings_, &exportDefaults) && exportUnknowns_.Empty();
         if (!hadData_ && untouched && scene_.Empty()) return false;
         data.Set("settings", reflect::Save(settings_, &unknowns_));
+        if (data.Find("export") || !reflect::Equals(reflect::TypeOf<ExportSettings>(), &exportSettings_, &exportDefaults) || !exportUnknowns_.Empty()) {
+            data.Set("export", reflect::Save(exportSettings_, &exportUnknowns_));
+        }
         // A scene whose file could not be read is never written over: an edited one goes to a new file.
         if (sceneUnread_ && scene_.Empty()) return true;
         // What each placed prefab changed, worked out now against its prefab (kept in the file so a
@@ -310,6 +325,203 @@ public:
         data.Erase("scene");  // (a project of before: now in the file)
         pending_ = Pending{plan.after, std::move(list)};
         return true;
+    }
+
+    // --- 書き出し (GameExport.h) -------------------------------------------------------------------
+    bool CanExport() const override { return true; }
+
+    // The exe's name: the one typed, else made from the game's name (shown in the field as it is).
+    std::string ExeNameNow() const {
+        return exportSettings_.exeName.empty() ? editor::exporter::ExeNameFrom(settings_.title) : exportSettings_.exeName;
+    }
+    // Where to: this PC's choice (the view, not project data); first <project>/Build/<exe name>.
+    fs::path OutputNow() const {
+        const std::string& o = view_.Get("export").Get("output").AsString();
+        if (!o.empty()) return PathFromUtf8(o);
+        return host_.GetProject().Root() / L"Build" / PathFromUtf8(ExeNameNow());
+    }
+
+    // What an export is made from: the project as it is now (the scene as edited, not only as saved).
+    bool ExportInput(const fs::path& outDir, GameExportInput& in, std::string* error) {
+        in.title = settings_.title;
+        in.exeName = ExeNameNow();
+        if (const std::string p = editor::exporter::ExeNameProblem(in.exeName); !p.empty()) {
+            if (error) *error = p;
+            return false;
+        }
+        in.outDir = outDir;
+        in.settings = reflect::Save(settings_, &unknowns_);
+        in.icon = settings_.icon;
+        in.projectRoot = host_.GetProject().Root();
+        in.assetFile = [this](const AssetRef& r) { return host_.AssetFile(r); };
+        in.scriptsDll = LatestScriptDll(in.projectRoot / L"Library" / L"Scripts");
+        // The scenes of the list (the one shown as it is now), in the list's order.
+        Scene saved = scene_;
+        UpdateOverrides(saved);
+        const std::string openText = SceneFileText(saved.Save());
+        bool openDone = false;
+        for (const AssetRef& ref : sceneList_.scenes) {
+            if (!slot_.guid.empty() && ref.guid == slot_.guid) {
+                in.open = in.scenes.size();
+                in.scenes.push_back({slot_.path, openText});
+                openDone = true;
+                continue;
+            }
+            const fs::path file = host_.AssetFile(ref);
+            std::string err;
+            const auto bytes = file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
+            if (!bytes) {
+                log::Warn("書き出し: シーン ({}) を読めないので入れません", ref.guid);
+                continue;
+            }
+            in.scenes.push_back({RelativePath(file), *bytes});
+        }
+        if (!openDone) {
+            in.open = in.scenes.size();
+            in.scenes.push_back({slot_.path, openText});
+        }
+        // The plugins: as recorded, what the scenes use, the one drawing the game's space - then their
+        // requirements and connectors.
+        std::vector<PluginId> used;
+        if (auto rec = editor::ParsePluginIdList(host_.GetProject().doc.Get("plugins"), nullptr)) used = *rec;
+        auto add = [&](const PluginId& id) {
+            if (std::find(used.begin(), used.end(), id) == used.end()) used.push_back(id);
+        };
+        add(game_production::kPluginId.Id());
+        for (const PluginId& id : UsedPlugins()) add(id);
+        const Contributed<SceneViewInfo>* space = nullptr;
+        const auto views = host_.Registry().Contributions<SceneViewInfo>(kSceneViewPoint);
+        for (const auto& v : views) {
+            if (settings_.space == v.item->space) space = &v;
+        }
+        for (const auto& v : views) {
+            if (!space || (settings_.space != space->item->space && v.item->order < space->item->order)) space = &v;
+        }
+        if (space) add(space->plugin);
+        std::vector<PluginId> missing;
+        in.plugins = editor::exporter::ExportPlugins(used, host_.PluginManifests(), &missing);
+        if (!missing.empty()) {
+            if (error) *error = editor::TrU8F("このエンジンに無いプラグインを使っています: {}", missing.front().Text());
+            return false;
+        }
+        return true;
+    }
+
+    // The export check's command line: on this thread, the lines to the log.
+    bool ExportNow(const fs::path& outDir, std::string* error) override {
+        GameExportInput in;
+        editor::exporter::Request req;
+        if (!ExportInput(outDir, in, error) || !MakeRequest(in, req, error)) return false;
+        return editor::exporter::Run(req, [](float, const std::string& line) { log::Info("書き出し: {}", line); }, error);
+    }
+
+    // The 書き出し button: the request made here (the data as it is now), the work on a worker.
+    void StartExport() {
+        if (exportRun_->running) return;
+        auto run = std::make_shared<ExportRun>();
+        exportRun_ = run;
+        GameExportInput in;
+        editor::exporter::Request req;
+        std::string err;
+        if (!ExportInput(OutputNow(), in, &err) || !MakeRequest(in, req, &err)) {
+            run->lines.push_back(err);
+            run->ok = false;
+            log::Error("書き出し: {}", err);
+            return;
+        }
+        run->running = true;
+        log::Info("書き出しを始めます: {}", PathToUtf8(req.outDir));
+        exportThread_ = std::jthread([run, req = std::move(req)] {
+            std::string error;
+            const bool ok = editor::exporter::Run(req,
+                                                  [&](float p, const std::string& line) {
+                                                      std::lock_guard lock(run->mtx);
+                                                      run->progress = p;
+                                                      run->lines.push_back(line);
+                                                      log::Info("書き出し: {}", line);
+                                                  },
+                                                  &error);
+            std::lock_guard lock(run->mtx);
+            if (!ok) run->lines.push_back(error);
+            run->ok = ok;
+            run->running = false;
+        });
+    }
+
+    // An edit of the panel goes where the value lives: the game's name to the game settings, the exe's
+    // name to the project's export settings (both undone), where to into the view (this PC's).
+    void ApplyExportEdit(editor::inspector::Edit& edit) {
+        const auto& fields = reflect::TypeOf<ExportView>().fields;
+        if (edit.path.empty() || edit.path[0] >= fields.size()) return;
+        const std::string_view name = fields[edit.path[0]].name;
+        if (name == "output") {
+            json::Value e = view_.Get("export").IsObject() ? view_.Get("export") : json::Value::MakeObject();
+            e.Set("output", edit.after.AsString());
+            view_.Set("export", std::move(e));
+            return;
+        }
+        auto push = [&](const reflect::TypeDesc& type, std::string_view field, void* object, reflect::Unknowns* unknowns) {
+            for (size_t i = 0; i < type.fields.size(); ++i) {
+                if (type.fields[i].name != field) continue;
+                json::Value before = reflect::SaveField(type.fields[i], object, unknowns);
+                host_.History().Push(std::make_unique<reflect::SetFieldCommand>(type, reflect::FieldPath{i}, std::move(before), edit.after,
+                                                                                [object, unknowns] { return reflect::EditTarget{object, unknowns}; },
+                                                                                edit.label, edit.merge),
+                                      false);
+            }
+        };
+        if (name == "title") push(reflect::TypeOf<GameSettings>(), "title", &settings_, &unknowns_);
+        if (name == "exeName") push(reflect::TypeOf<ExportSettings>(), "exeName", &exportSettings_, &exportUnknowns_);
+    }
+
+    void DrawExportPanel(ui::Context& c, const Rect& r) {
+        auto& p = c.P();
+        const Rect area = r.Inset(14, 10, 14, 10);
+        ExportView v{settings_.title, ExeNameNow(), PathToUtf8(OutputNow())};
+        const editor::inspector::Block b{&reflect::TypeOf<ExportView>(), &v, nullptr, {}, {}, {}};
+        const Rect box{area.x - 12, area.y, area.w + 12, std::max(3 * 30.f + 10, exportInspector_.contentHeight)};
+        if (auto edit = editor::inspector::Draw(c, exportInspector_, box, std::span(&b, 1))) ApplyExportEdit(*edit);
+        float y = box.Bottom() + 6;
+        ui::TextStyle ts;
+        ts.size = 12;
+        ts.color = theme::TextDim;
+        // The icon: the game settings' (shown here, chosen there).
+        const fs::path icon = settings_.icon.Empty() ? fs::path() : host_.AssetFile(settings_.icon);
+        p.Text({area.x, y, area.w - 170, 26}, TrF(L"アイコン: {}", icon.empty() ? Tr(L"(なし。ゲームの設定の「アイコン」に PNG を選びます)") : icon.filename().native()), ts);
+        if (editor::w::Button(c, "export_settings", {area.Right() - 160, y, 160, 26}, Tr(L"ゲームの設定を開く"))) InspectSettings();
+        y += 34;
+        const std::string problem = editor::exporter::ExeNameProblem(v.exeName);
+        if (!problem.empty()) {
+            ui::TextStyle es = ts;
+            es.color = theme::Danger;
+            p.Text({area.x, y, area.w, 22}, Utf8ToWide(problem), es);
+            y += 26;
+        }
+        ExportRun& run = *exportRun_;
+        std::unique_lock lock(run.mtx);
+        const bool running = run.running;
+        if (editor::w::Button(c, "export_go", {area.x, y, 160, 32}, running ? Tr(L"書き出し中…") : Tr(L"書き出す"), editor::w::ButtonKind::Primary,
+                              !running && problem.empty())) {
+            lock.unlock();
+            StartExport();
+            return;
+        }
+        if (running || run.ok) {
+            editor::w::ProgressBar(c, {area.x + 172, y + 11, std::max(10.f, area.w - 172), 10}, run.ok ? 1.f : run.progress);
+        }
+        y += 42;
+        // The log of this export (the newest lines that fit).
+        ts.wrap = false;
+        const size_t fit = static_cast<size_t>(std::max(0.f, (area.Bottom() - y) / 20));
+        const size_t from = run.lines.size() > fit ? run.lines.size() - fit : 0;
+        for (size_t i = from; i < run.lines.size(); ++i) {
+            const bool last = i + 1 == run.lines.size();
+            ui::TextStyle ls = ts;
+            if (last && run.ok == false) ls.color = theme::Danger;
+            p.Text({area.x, y, area.w, 20}, Utf8ToWide(run.lines[i]), ls);
+            y += 20;
+        }
+        if (running) c.RequestAnimation();
     }
 
     // The plugins offering the components of the scene and of the prefabs it places (recorded in the
@@ -1753,6 +1965,19 @@ private:
         SceneList list;
     };
     std::optional<Pending> pending_;  // what SaveData gave, taken on by Saved()
+    // 書き出し (GameExport.h): the project's part, the panel, the export running on a worker.
+    ExportSettings exportSettings_;
+    reflect::Unknowns exportUnknowns_;
+    editor::inspector::State exportInspector_;
+    struct ExportRun {
+        std::mutex mtx;
+        float progress = 0;
+        std::vector<std::string> lines;
+        bool running = false;
+        std::optional<bool> ok;  // set when it ended
+    };
+    std::shared_ptr<ExportRun> exportRun_ = std::make_shared<ExportRun>();
+    std::jthread exportThread_;
     bool inspectingEntities_ = false;  // the inspector shows the 階層's selection (not the settings)
 
     // Play

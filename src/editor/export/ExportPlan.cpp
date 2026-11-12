@@ -5,6 +5,8 @@
 #include "editor/project/Templates.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <format>
 
 namespace rm::editor::exporter {
@@ -146,6 +148,78 @@ void ReadSymbols(std::string_view text, std::vector<std::string>& types, std::ve
             }
         }
     }
+}
+
+std::string GameResourceSource(std::string_view title, std::string_view exeName, bool icon) {
+    // A string of the script: " doubled, nothing else changes (UTF-8 with /c65001).
+    auto quoted = [](std::string_view s) {
+        std::string out = "\"";
+        for (const char c : s) {
+            if (c == '"') out += '"';
+            if (static_cast<unsigned char>(c) >= 0x20 || c < 0) out += c;
+        }
+        return out + "\"";
+    };
+    std::string s = "// RM Engine が書き出しのときに作りました。\n";
+    if (icon) s += "1 ICON \"game.ico\"\n";
+    s += "1 VERSIONINFO\n";
+    s += "FILEVERSION 1,0,0,0\nPRODUCTVERSION 1,0,0,0\nFILEOS 0x40004\nFILETYPE 0x1\n";
+    s += "BEGIN\n  BLOCK \"StringFileInfo\"\n  BEGIN\n    BLOCK \"041104B0\"\n    BEGIN\n";
+    s += "      VALUE \"FileDescription\", " + quoted(title) + "\n";
+    s += "      VALUE \"ProductName\", " + quoted(title) + "\n";
+    s += "      VALUE \"OriginalFilename\", " + quoted(std::string(exeName) + ".exe") + "\n";
+    s += "      VALUE \"FileVersion\", \"1.0.0.0\"\n      VALUE \"ProductVersion\", \"1.0.0.0\"\n";
+    s += "    END\n  END\n  BLOCK \"VarFileInfo\"\n  BEGIN\n    VALUE \"Translation\", 0x411, 1200\n  END\nEND\n";
+    return s;
+}
+
+std::optional<std::string> IcoFromPng(std::string_view png) {
+    static constexpr unsigned char kSig[8] = {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a};
+    if (png.size() < 24 || std::memcmp(png.data(), kSig, 8) != 0 || png.substr(12, 4) != "IHDR") return std::nullopt;
+    auto be32 = [&](size_t at) {
+        return (static_cast<uint32_t>(static_cast<unsigned char>(png[at])) << 24) | (static_cast<uint32_t>(static_cast<unsigned char>(png[at + 1])) << 16) |
+               (static_cast<uint32_t>(static_cast<unsigned char>(png[at + 2])) << 8) | static_cast<uint32_t>(static_cast<unsigned char>(png[at + 3]));
+    };
+    const uint32_t w = be32(16), h = be32(20);
+    std::string ico;
+    auto put16 = [&](uint32_t v) {
+        ico += static_cast<char>(v & 0xff);
+        ico += static_cast<char>((v >> 8) & 0xff);
+    };
+    auto put32 = [&](uint32_t v) {
+        put16(v & 0xffff);
+        put16(v >> 16);
+    };
+    put16(0);  // reserved
+    put16(1);  // an icon
+    put16(1);  // one picture
+    ico += static_cast<char>(w >= 256 ? 0 : w);  // 0 = 256 (or more)
+    ico += static_cast<char>(h >= 256 ? 0 : h);
+    ico += '\0';  // no palette
+    ico += '\0';
+    put16(1);   // planes
+    put16(32);  // bits
+    put32(static_cast<uint32_t>(png.size()));
+    put32(6 + 16);  // where the picture starts
+    ico.append(png);
+    return ico;
+}
+
+uint64_t BuildNumber(const std::vector<std::pair<std::string, std::string>>& entries) {
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&](std::string_view s) {
+        for (const unsigned char c : s) {
+            h ^= c;
+            h *= 1099511628211ull;
+        }
+        h ^= 0xff;
+        h *= 1099511628211ull;
+    };
+    for (const auto& [path, bytes] : entries) {
+        mix(path);
+        mix(bytes);
+    }
+    return h != 0 ? h : 1;
 }
 
 bool PortablePath(std::string_view p) {

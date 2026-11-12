@@ -206,6 +206,16 @@ AssetRef EditorScreen::Workspace::AssetOf(const fs::path& file) {
     return guid.empty() ? AssetRef{} : AssetRef{guid};
 }
 
+std::vector<PluginManifest> EditorScreen::Workspace::PluginManifests() const { return editor_.app_.GetPlugins().Available(); }
+
+bool EditorScreen::ExportForCheck(const fs::path& outDir, std::string* error) {
+    for (auto& ws : workspaces_) {
+        if (ws->software && ws->software->CanExport()) return ws->software->ExportNow(outDir, error);
+    }
+    if (error) *error = TrU8("書き出せるソフトがありません (ゲーム制作のプラグインが要ります)");
+    return false;
+}
+
 dock::Layout EditorScreen::Workspace::DefaultLayout() const {
     return software ? software->DefaultLayout() : CoreDefaultLayout();
 }

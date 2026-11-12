@@ -6,6 +6,7 @@
 
 #include "core/pak/Pak.h"
 #include "editor/export/ExportPlan.h"
+#include "rm_engine/game_production/editor/GameExport.h"
 #include "rm_engine/game_production/runtime/Components.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
@@ -206,4 +207,45 @@ RM_TEST(Export_PortablePaths) {
     const auto abs = AbsolutePathsIn(data);
     CHECK(abs.size() == 3);
     CHECK(AbsolutePathsIn(Parse(R"({"a": "Assets/x.png", "b": "1:2"})")).empty());
+}
+
+RM_TEST(Export_ResourceIconAndNumber) {
+    // The resource: the name in the file's details ("" doubled), the icon only when there is one.
+    const std::string rc = GameResourceSource("ぼくの \"ゲーム\"", "MyGame", true);
+    CHECK(rc.find("1 ICON \"game.ico\"") != std::string::npos);
+    CHECK(rc.find("VALUE \"FileDescription\", \"ぼくの \"\"ゲーム\"\"\"") != std::string::npos);
+    CHECK(rc.find("\"MyGame.exe\"") != std::string::npos);
+    CHECK(GameResourceSource("G", "G", false).find("ICON") == std::string::npos);
+    // An icon holding the PNG as it is: header, one entry (256 -> 0), the PNG after 22 bytes.
+    std::string png = "\x89PNG\r\n\x1a\n";
+    png += std::string("\0\0\0\x0dIHDR", 8);
+    png += std::string("\0\0\x01\0\0\0\0\x30", 8);  // 256 x 48
+    png += "rest of the picture";
+    const auto ico = IcoFromPng(png);
+    CHECK(ico.has_value());
+    if (ico) {
+        CHECK(ico->size() == 22 + png.size() && ico->substr(22) == png);
+        CHECK((*ico)[2] == 1 && (*ico)[4] == 1 && (*ico)[6] == 0 && (*ico)[7] == 48);
+    }
+    CHECK(!IcoFromPng("GIF89a....................."));
+    // The build number: the same files, the same number; another file, another; never 0.
+    const std::vector<std::pair<std::string, std::string>> a{{"game.json", "{}"}, {"Assets/a.png", "x"}};
+    auto b = a;
+    CHECK(BuildNumber(a) == BuildNumber(b) && BuildNumber(a) != 0);
+    b[1].second = "y";
+    CHECK(BuildNumber(a) != BuildNumber(b));
+    const std::vector<std::pair<std::string, std::string>> joined{{"ab", "c"}}, split{{"a", "bc"}};
+    CHECK(BuildNumber(joined) != BuildNumber(split));
+}
+
+RM_TEST(Export_AssetIdsOfAScene) {
+    const json::Value scene = Parse(R"({"entities": [
+        {"id": 1, "name": "0123456789abcdef0123456789abcdef", "components": [{"type": "rm::game_x_2d::Sprite", "data": {"image": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}]},
+        {"id": 2, "prefab": {"source": 1, "asset": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, "components": [{"type": "x", "data": {"image": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "n": "ABCDEF0123456789abcdef0123456789"}}]}]})");
+    const auto ids = game_production::AssetIdsIn(scene);
+    // Every asset id, each once (an upper-case one is not an id); a name that looks like one is found
+    // too - the export then finds no asset of it and leaves it out.
+    CHECK(ids.size() == 3);
+    CHECK(std::find(ids.begin(), ids.end(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") != ids.end());
+    CHECK(std::find(ids.begin(), ids.end(), "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") != ids.end());
 }

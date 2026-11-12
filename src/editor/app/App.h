@@ -15,6 +15,8 @@
 #include "platform/Gfx.h"
 
 #include <filesystem>
+#include <string>
+#include <vector>
 #include <memory>
 #include <string>
 
@@ -24,6 +26,10 @@ class ScreenWindow;
 
 struct LaunchOptions {
     std::filesystem::path projectFile;  // --project <file.rmpf>: skip the Hub (used to restart into a project)
+    // --export-template <author> <plugin> <id> <work folder>: the export check (tools/check_export.ps1), no
+    // window: a project made from that template in <work folder>/Project, exported into <work folder>/Game.
+    // The exit code is 0 when the game was written.
+    std::vector<std::wstring> exportTemplate;
 };
 
 class App {
@@ -32,6 +38,8 @@ public:
     ~App();
 
     int Run(const LaunchOptions& options);
+    // The export check (LaunchOptions::exportTemplate): the exit code.
+    int RunExportCheck(const std::vector<std::wstring>& args);
 
     platform::Gfx& Gfx() { return gfx_; }
     HubSettings& Settings() { return settings_; }

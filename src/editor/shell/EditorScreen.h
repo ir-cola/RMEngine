@@ -48,6 +48,8 @@ public:
     EditorScreen(App& app, Project project);
     ~EditorScreen() override;
     bool Open();
+    // The export check's command line (no window): the first software that exports does it into `outDir`.
+    bool ExportForCheck(const std::filesystem::path& outDir, std::string* error);
     // The project's lock (ProjectLockFile), held while this editor is open.
     void AdoptLock(std::unique_ptr<platform::FileLock> lock) { lock_ = std::move(lock); }
     void Close() override;  // closes the floating panel windows first
@@ -115,6 +117,7 @@ private:
         std::string Clipboard() override;
         std::filesystem::path AssetFile(const AssetRef& ref) const override;
         AssetRef AssetOf(const std::filesystem::path& file) override;
+        std::vector<PluginManifest> PluginManifests() const override;
         void SelectInTree(std::vector<tree::ItemId> ids, bool rename) override {
             tree::RequestSelect(treeState, std::move(ids), rename);
             editor_.RedrawAll();

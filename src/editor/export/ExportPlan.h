@@ -51,6 +51,17 @@ std::string GameMainSource(const std::vector<GameLib>& libs, std::string_view ti
 // "extern const ::rm::reflect::TypeDesc T_x = {" / "... EnumDesc E_x = {").
 void ReadSymbols(std::string_view generatedCpp, std::vector<std::string>& types, std::vector<std::string>& enums);
 
+// The resource script (rc /c65001: UTF-8) of the game's exe: its icon (game.ico next to it, when
+// `icon`) and its name in the file's details (説明 / 製品名 / 元のファイル名).
+std::string GameResourceSource(std::string_view titleUtf8, std::string_view exeName, bool icon);
+// An .ico holding one PNG picture (Windows Vista and later read PNG inside an icon). Nullopt when
+// `png` is not a PNG.
+std::optional<std::string> IcoFromPng(std::string_view png);
+
+// The export's number (the exe and its .rmpak carry it): from what goes into the .rmpak, so the same
+// game exported again gets the same number (and so the same files). Never 0.
+uint64_t BuildNumber(const std::vector<std::pair<std::string, std::string>>& entries);
+
 // A path of the exported game: relative to its folder, "/" or "\" between the parts, never leaving it.
 bool PortablePath(std::string_view path);
 // Strings in `v` that look like a path of the PC it was made on (a drive "C:\", "\\server", or a
