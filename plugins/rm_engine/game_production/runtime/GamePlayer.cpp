@@ -143,15 +143,17 @@ public:
 
 private:
     game::Host& host_;
+    // The scripts' DLL first: members go in the reverse order, so the scene (holding the scripts'
+    // objects, whose code is in the DLL) is gone before the DLL is let go.
+    ScriptWorld world_;
+    RmApi api_{};
+    ScriptModule scripts_;
     GameSettings settings_;
     reflect::Unknowns unknowns_;
     Scene scene_;
     SystemRunner runner_;
     std::unordered_map<std::string, std::string> assets_;  // asset id -> its path in the .rmpak
     std::unique_ptr<GameDrawer> drawer_;
-    ScriptWorld world_;
-    RmApi api_{};
-    ScriptModule scripts_;
     ScriptRunner scriptRunner_;
 };
 

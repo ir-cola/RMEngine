@@ -29,6 +29,10 @@ public:
     void Open();
     // A build now (again after the one running, when one is).
     void Build();
+    // The export without a window (its check's command line, on the UI thread): builds when the DLL is
+    // older than the sources (or there is none) and waits, running what the build posts to the UI
+    // thread. True when there are no scripts or a DLL is there; false and *why (Japanese) when not.
+    bool BuildAndWait(std::string* why);
     // Opens Scripts.sln (Visual Studio), after this frame.
     void OpenVisualStudio();
     // Every frame: watches Assets/Scripts (once a second) and builds when something changed.

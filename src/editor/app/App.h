@@ -26,10 +26,11 @@ class ScreenWindow;
 
 struct LaunchOptions {
     std::filesystem::path projectFile;  // --project <file.rmpf>: skip the Hub (used to restart into a project)
-    // --export-template <author> <plugin> <id> <work folder>: the export check (tools/check_export.ps1), no
-    // window: a project made from that template in <work folder>/Project, exported into <work folder>/Game.
-    // The exit code is 0 when the game was written.
-    std::vector<std::wstring> exportTemplate;
+    // The export check's command lines (tools/check_export.ps1), no window; the exit code is 0 when it was done:
+    //   --new-from-template <author> <plugin> <id> <folder>   a project made from that template: <folder>/Project/Project.rmpf
+    //   --export <file.rmpf> <folder>                          the project exported into <folder> (its scripts built first)
+    //   --export-template <author> <plugin> <id> <folder>     both: <folder>/Project, exported into <folder>/Game
+    std::vector<std::wstring> newFromTemplate, exportProject, exportTemplate;
 };
 
 class App {
@@ -39,7 +40,7 @@ public:
 
     int Run(const LaunchOptions& options);
     // The export check (LaunchOptions::exportTemplate): the exit code.
-    int RunExportCheck(const std::vector<std::wstring>& args);
+    int RunExportCheck(const LaunchOptions& options);
 
     platform::Gfx& Gfx() { return gfx_; }
     HubSettings& Settings() { return settings_; }

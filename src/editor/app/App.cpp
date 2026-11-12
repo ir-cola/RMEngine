@@ -30,53 +30,67 @@ void WakeMessageLoop() { PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0)
 
 App::App() = default;
 
-int App::RunExportCheck(const std::vector<std::wstring>& args) {
-    if (args.size() != 4) {
-        log::Error("書き出しの確かめ: --export-template <作者> <プラグイン> <テンプレートの id> <作業フォルダ>");
-        return 2;
-    }
-    const std::string author = WideToUtf8(args[0]), plugin = WideToUtf8(args[1]), id = WideToUtf8(args[2]);
-    const std::filesystem::path work = args[3];
-    const TemplateTree& tree = plugins_.Templates();
-    size_t node = static_cast<size_t>(-1);
-    for (size_t i = 0; i < tree.nodes.size(); ++i) {
-        const ProjectTemplate* t = tree.At(i);
-        if (t && t->id == id && ((!t->plugin && author.empty()) || (t->plugin && t->plugin->author == author && t->plugin->name == plugin))) node = i;
-    }
-    if (node == static_cast<size_t>(-1)) {
-        log::Error("書き出しの確かめ: テンプレートがありません: {} / {} / {}", author, plugin, id);
-        return 2;
-    }
-    std::vector<PluginId> unavailable;
-    if (const auto plan = plugins_.TemplateInstallPlan(node, &unavailable); !plan.empty()) {
-        std::string err;
-        if (!InstallPlugins(plan, &err)) {
-            log::Error("書き出しの確かめ: プラグインを入れられません: {}", err);
-            return 2;
+int App::RunExportCheck(const LaunchOptions& options) {
+    // A project from a template (--new-from-template / --export-template).
+    auto makeProject = [&](const std::vector<std::wstring>& args, std::filesystem::path* file) {
+        const std::string author = WideToUtf8(args[0]), plugin = WideToUtf8(args[1]), id = WideToUtf8(args[2]);
+        const std::filesystem::path work = args[3];
+        const TemplateTree& tree = plugins_.Templates();
+        size_t node = static_cast<size_t>(-1);
+        for (size_t i = 0; i < tree.nodes.size(); ++i) {
+            const ProjectTemplate* t = tree.At(i);
+            if (t && t->id == id && ((!t->plugin && author.empty()) || (t->plugin && t->plugin->author == author && t->plugin->name == plugin))) node = i;
         }
+        if (node == static_cast<size_t>(-1)) {
+            log::Error("書き出しの確かめ: テンプレートがありません: {} / {} / {}", author, plugin, id);
+            return false;
+        }
+        std::vector<PluginId> unavailable;
+        if (const auto plan = plugins_.TemplateInstallPlan(node, &unavailable); !plan.empty()) {
+            std::string err;
+            if (!InstallPlugins(plan, &err)) {
+                log::Error("書き出しの確かめ: プラグインを入れられません: {}", err);
+                return false;
+            }
+        }
+        std::error_code ec;
+        std::filesystem::remove_all(work / L"Project", ec);
+        std::filesystem::create_directories(work, ec);
+        std::string err;
+        auto project = CreateProject(work, "Project", *plugins_.Templates().At(node), &err);
+        if (!project) {
+            log::Error("書き出しの確かめ: プロジェクトを作れません: {}", err);
+            return false;
+        }
+        *file = project->file;
+        log::Info("書き出しの確かめ: プロジェクトを作りました: {}", PathToUtf8(*file));
+        return true;
+    };
+    // A project exported (--export / --export-template): opened without a window, its softwares' data read.
+    auto exportProject = [&](const std::filesystem::path& file, const std::filesystem::path& out) {
+        std::string err;
+        auto project = LoadProject(file, &err);
+        if (!project) {
+            log::Error("書き出しの確かめ: {}", err);
+            return false;
+        }
+        EditorScreen editor(*this, std::move(*project));
+        if (!editor.ExportForCheck(out, &err)) {
+            log::Error("書き出しの確かめ: 書き出せませんでした: {}", err);
+            return false;
+        }
+        log::Info("書き出しの確かめ: 書き出しました: {}", PathToUtf8(out));
+        return true;
+    };
+    std::filesystem::path file;
+    if (options.newFromTemplate.size() == 4) return makeProject(options.newFromTemplate, &file) ? 0 : 1;
+    if (options.exportProject.size() == 2) return exportProject(options.exportProject[0], options.exportProject[1]) ? 0 : 1;
+    if (options.exportTemplate.size() == 4) {
+        if (!makeProject(options.exportTemplate, &file)) return 1;
+        return exportProject(file, std::filesystem::path(options.exportTemplate[3]) / L"Game") ? 0 : 1;
     }
-    std::error_code ec;
-    std::filesystem::remove_all(work / L"Project", ec);
-    std::filesystem::create_directories(work, ec);
-    std::string err;
-    const ProjectTemplate* t = plugins_.Templates().At(node);
-    auto project = CreateProject(work, "Project", *t, &err);
-    if (!project) {
-        log::Error("書き出しの確かめ: プロジェクトを作れません: {}", err);
-        return 2;
-    }
-    project = LoadProject(project->file, &err);
-    if (!project) {
-        log::Error("書き出しの確かめ: {}", err);
-        return 2;
-    }
-    EditorScreen editor(*this, std::move(*project));  // no window: only its softwares and their data
-    if (!editor.ExportForCheck(work / L"Game", &err)) {
-        log::Error("書き出しの確かめ: 書き出せませんでした: {}", err);
-        return 1;
-    }
-    log::Info("書き出しの確かめ: 書き出しました: {}", PathToUtf8(work / L"Game"));
-    return 0;
+    log::Error("書き出しの確かめ: 引数が足りません");
+    return 2;
 }
 App::~App() = default;
 
@@ -93,7 +107,7 @@ int App::Run(const LaunchOptions& options) {
     StartEngineRefresh();  // a new engine: new copies of the installed plugins (hashed off this thread)
     LoadThemes();
     ApplyOptions();  // the theme chosen may be a pack's
-    if (!options.exportTemplate.empty()) return RunExportCheck(options.exportTemplate);
+    if (!options.exportTemplate.empty() || !options.newFromTemplate.empty() || !options.exportProject.empty()) return RunExportCheck(options);
     if (!options.projectFile.empty()) {
         RequestOpenProject(options.projectFile);
     } else {

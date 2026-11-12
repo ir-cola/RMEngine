@@ -26,6 +26,10 @@ rm::editor::LaunchOptions ParseCommandLine() {
         const std::wstring a = argv[i];
         if (a == L"--export-template" && i + 4 < argc) {
             for (int k = 0; k < 4; ++k) opt.exportTemplate.push_back(argv[++i]);
+        } else if (a == L"--new-from-template" && i + 4 < argc) {
+            for (int k = 0; k < 4; ++k) opt.newFromTemplate.push_back(argv[++i]);
+        } else if (a == L"--export" && i + 2 < argc) {
+            for (int k = 0; k < 2; ++k) opt.exportProject.push_back(argv[++i]);
         } else if (a == L"--project" && i + 1 < argc) {
             opt.projectFile = argv[++i];
         } else if (a.size() > 5 && _wcsicmp(a.c_str() + a.size() - 5, L".rmpf") == 0) {

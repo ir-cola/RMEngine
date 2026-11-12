@@ -409,6 +409,7 @@ public:
 
     // The export check's command line: on this thread, the lines to the log.
     bool ExportNow(const fs::path& outDir, std::string* error) override {
+        if (!scripts_.BuildAndWait(error)) return false;  // the newest scripts, built (the game gets them as Scripts.dll)
         GameExportInput in;
         editor::exporter::Request req;
         if (!ExportInput(outDir, in, error) || !MakeRequest(in, req, error)) return false;

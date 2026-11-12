@@ -54,6 +54,54 @@ foreach ($t in $templates) {
     $size = [Math]::Round($exe[0].Length / 1KB)
     Write-Host "OK  $($t[2]): $($exe[0].Name) ($size KB) を書き出し、--smoke で起動して閉じました"
 }
+# A game with a script: the template 「ゲーム」 (its sample script ArrowMover), an entity with it put into
+# the scene, the scripts built and the project exported, then the game with --smoke: its game.log must
+# show the script's BeginPlay and its EndPlay with the frames it ticked (Scripts.dll read and run).
+$dir = Join-Path $work 'game_scripts'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+$p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_production', 'game', "`"$dir`"") -Wait -PassThru
+$rmpf = Join-Path $dir 'Project\Project.rmpf'
+if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
+    Write-Host "NG  game_scripts: プロジェクトを作れませんでした。$log を見てください"
+    $failed++
+} else {
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $guid = [Guid]::NewGuid().ToString('N')
+    $scenes = Join-Path $dir 'Project\Assets\Scenes'
+    New-Item -ItemType Directory -Force $scenes | Out-Null
+    $scene = '{"kind": "rm_engine.scene", "format": 1, "nextId": 2, "entities": [{"id": 1, "parent": 0, "name": "Player", "active": true, "components": [' +
+             '{"type": "rm::space3d::Transform", "data": {}}, {"type": "ArrowMover", "data": {"speed": 3}}]}]}'
+    [IO.File]::WriteAllText((Join-Path $scenes 'Main.rmscene'), $scene, $utf8)
+    [IO.File]::WriteAllText((Join-Path $scenes 'Main.rmscene.meta'), "{`"guid`": `"$guid`", `"name`": `"Main.rmscene`"}", $utf8)
+    $doc = [IO.File]::ReadAllText($rmpf, $utf8) | ConvertFrom-Json
+    $entry = [ordered]@{ author = 'rm_engine'; plugin = 'game_production'; software = 'game';
+                         data = [ordered]@{ settings = @{ space = '3d' }; sceneList = [ordered]@{ scenes = @($guid); open = $guid } } }
+    $doc | Add-Member -NotePropertyName softwareData -NotePropertyValue @($entry) -Force
+    [IO.File]::WriteAllText($rmpf, ($doc | ConvertTo-Json -Depth 20), $utf8)
+    $game = Join-Path $dir 'Game'
+    $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
+    $exe = @(Get-ChildItem $game -Filter *.exe -ErrorAction SilentlyContinue)
+    if ($p.ExitCode -ne 0 -or $exe.Count -ne 1) {
+        Write-Host "NG  game_scripts: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
+        $failed++
+    } elseif (-not (Test-Path (Join-Path $game 'Scripts.dll'))) {
+        Write-Host 'NG  game_scripts: Scripts.dll が書き出しに入っていません'
+        $failed++
+    } else {
+        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        $ticked = [regex]::Match($gameLog, '「Player」: (\d+) コマ動きました')
+        if ($r.ExitCode -ne 0 -or -not $gameLog.Contains('「Player」を矢印キーで動かせます') -or -not $ticked.Success -or [int]$ticked.Groups[1].Value -lt 1) {
+            Write-Host "NG  game_scripts: スクリプトが回っていません (終了コード $($r.ExitCode))"
+            $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+        } else {
+            $size = [Math]::Round($exe[0].Length / 1KB)
+            Write-Host "OK  game_scripts: $($exe[0].Name) ($size KB) + Scripts.dll を書き出し、--smoke で BeginPlay と Tick ($($ticked.Groups[1].Value) コマ) が回りました"
+        }
+    }
+}
+
 if ($failed -gt 0) { Write-Host "check_export: $failed 個が失敗しました"; exit 1 }
 Write-Host 'check_export: すべて書き出して起動できました'
 exit 0

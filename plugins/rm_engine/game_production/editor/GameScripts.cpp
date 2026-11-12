@@ -1,6 +1,7 @@
 #include "rm_engine/game_production/editor/GameScripts.h"
 
 #include "base/Log.h"
+#include "editor/lang/Lang.h"
 #include "base/Utf.h"
 #include "editor/project/Project.h"
 #include "platform/Shell.h"
@@ -82,6 +83,32 @@ void GameScripts::Build() {
         ScriptBuildResult result = BuildScripts(r);
         post([this, result = std::move(result)] { Finished(result); });
     });
+}
+
+bool GameScripts::BuildAndWait(std::string* why) {
+    const std::filesystem::path root = host_.GetProject().Root();
+    const long long sources = ScriptSourcesTime(root);
+    if (sources == 0) return true;  // no scripts
+    auto wait = [&] {
+        while (building_) {
+            editor::RunPostedToUi();
+            Sleep(50);
+        }
+    };
+    wait();  // (the one opening the project started)
+    std::filesystem::path dll = LatestScriptDll(ScriptBuildFolder(root));
+    std::error_code ec;
+    const auto built = dll.empty() ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(dll, ec);
+    if (dll.empty() || ec || built.time_since_epoch().count() < sources - 1000) {
+        Build();
+        wait();
+        dll = LatestScriptDll(ScriptBuildFolder(root));
+    }
+    if (dll.empty()) {
+        if (why) *why = editor::TrU8("スクリプトをビルドできませんでした (理由はログに出ています)");
+        return false;
+    }
+    return true;
 }
 
 void GameScripts::Finished(const ScriptBuildResult& r) {

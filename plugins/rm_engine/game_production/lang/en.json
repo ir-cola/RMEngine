@@ -102,5 +102,6 @@
   "アイコン: {}": "Icon: {}",
   "(なし。ゲームの設定の「アイコン」に PNG を選びます)": "(none - choose a PNG as Icon in the game settings)",
   "書き出し中…": "Exporting…",
-  "書き出す": "Export"
+  "書き出す": "Export",
+  "スクリプトをビルドできませんでした (理由はログに出ています)": "Could not build the scripts (the reason is in the log)"
 }
