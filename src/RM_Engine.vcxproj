@@ -184,7 +184,7 @@
   <!-- plugin.json files (+ their English, theme and template files) go next to the exe as Plugins/<author>/<name>/... (read at start-up). -->
   <Target Name="CopyPluginManifests" AfterTargets="Build">
     <ItemGroup>
-      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json;$(RMRoot)plugins\**\themes\*.json" />
+      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json;$(RMRoot)plugins\**\themes\*.json;$(RMRoot)plugins\**\templates\**\*" />
       <LangFile Include="$(RMRoot)resources\lang\*.json" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginManifest)" DestinationFiles="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
