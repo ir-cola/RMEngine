@@ -1044,4 +1044,148 @@ std::string EmitAll(const std::vector<Header>& all) {
     return o;
 }
 
+// --- Scripts (a game's DLL: RM.h, not core/reflect) ---------------------------------------------
+
+void ValidateScripts(const std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
+    for (const Header& h : headers) {
+        for (const Enum& e : h.enums) {
+            diags.push_back({h.file, e.line, 1, "RM0013", std::format("スクリプトの中では RM_ENUM ({}) はまだ使えません", e.name)});
+        }
+        for (const Struct& s : h.structs) {
+            if (s.macro != "RM_SCRIPT") {
+                diags.push_back({h.file, s.line, 1, "RM0013",
+                                 std::format("スクリプトの中では {} ({}) はまだ使えません。RM_SCRIPT にしてください", s.macro, s.name)});
+                continue;
+            }
+            for (const Field& f : s.fields) {
+                if (f.transient) continue;
+                const auto k = f.type.kind;
+                if (k == TypeRef::Kind::AssetRef || k == TypeRef::Kind::Named || k == TypeRef::Kind::Vector) {
+                    diags.push_back({h.file, f.line, f.col, "RM0013",
+                                     std::format("スクリプトの欄 {} の型はまだ使えません (使えるのは bool / int / float / std::string / rm::Vec2 / "
+                                                 "rm::Vec3 / rm::Color / rm::EntityRef)",
+                                                 f.name)});
+                }
+            }
+        }
+    }
+}
+
+std::string EmitScripts(const std::vector<Header>& all) {
+    std::string o;
+    o += "// rmgen がスクリプトのヘッダーから作りました (スクリプトの DLL の登録)。手で直さないでください (ビルドのたびに作り直されます)。\n\n";
+    o += "#include \"RM.h\"\n";
+    for (const Header& h : all) o += std::format("#include \"{}\"\n", h.includePath);
+    o += "\n#include <memory>\n#include <new>\n#include <string>\n#include <type_traits>\n\n";
+    o += R"(namespace {
+const RmApi* g_rmApi = nullptr;
+template <class T> concept RmHasBegin = requires(T& t, ::rm::Entity e) { t.BeginPlay(e); };
+template <class T> concept RmHasTick = requires(T& t, ::rm::Entity e, float dt) { t.Tick(e, dt); };
+template <class T> concept RmHasEnd = requires(T& t, ::rm::Entity e) { t.EndPlay(e); };
+template <class T> void RmBegin(void* s, RmEntityId e) { static_cast<T*>(s)->BeginPlay(::rm::Entity(e)); }
+template <class T> void RmTick(void* s, RmEntityId e, float dt) { static_cast<T*>(s)->Tick(::rm::Entity(e), dt); }
+template <class T> void RmEnd(void* s, RmEntityId e) { static_cast<T*>(s)->EndPlay(::rm::Entity(e)); }
+template <class T> constexpr void (*RmBeginOf())(void*, RmEntityId) { if constexpr (RmHasBegin<T>) return &RmBegin<T>; else return nullptr; }
+template <class T> constexpr void (*RmTickOf())(void*, RmEntityId, float) { if constexpr (RmHasTick<T>) return &RmTick<T>; else return nullptr; }
+template <class T> constexpr void (*RmEndOf())(void*, RmEntityId) { if constexpr (RmHasEnd<T>) return &RmEnd<T>; else return nullptr; }
+}  // namespace
+
+const RmApi* rm::Api() { return g_rmApi; }
+
+)";
+    std::vector<const Struct*> scripts;
+    for (const Header& h : all) {
+        for (const Struct& s : h.structs) {
+            if (s.macro == "RM_SCRIPT") scripts.push_back(&s);
+        }
+    }
+    auto headerOf = [&](const Struct* s) -> std::string {
+        for (const Header& h : all) {
+            for (const Struct& x : h.structs) {
+                if (&x == s) return h.includePath;
+            }
+        }
+        return {};
+    };
+    std::string table;
+    for (const Struct* s : scripts) {
+        const std::string q = s->Qualified(), id = Id(q), cpp = Cpp(q);
+        o += std::format("static_assert(std::is_aggregate_v<{0}>, \"{1}: スクリプトは集成体 (コンストラクタも private も基底クラスも無い struct) にしてください\");\n",
+                         cpp, q);
+        o += std::format("static_assert(::rm::detail::CountFields<{0}>() == {1}, \"{2} の欄の数が変わっています。ビルドし直してください\");\n", cpp,
+                         s->fields.size(), q);
+        size_t props = 0;
+        std::string fields;
+        for (const Field& f : s->fields) {
+            if (f.transient) continue;
+            ++props;
+            o += std::format("static_assert(std::is_same_v<decltype({0}::{1}), {2}>, \"{3}::{1} の型が変わっています。ビルドし直してください\");\n", cpp,
+                             f.name, CppTypeOf(f.type), q);
+            auto attr = [&](const char* key) -> const Attr* {
+                for (const auto& a : f.attrs) {
+                    if (a.key == key) return &a;
+                }
+                return nullptr;
+            };
+            const Attr* label = attr("Label");
+            const Attr* tip = attr("Tooltip");
+            const Attr* mn = attr("Min");
+            const Attr* mx = attr("Max");
+            const Attr* st = attr("Step");
+            auto num = [](const Attr* a) { return a && a->kind == Attr::Kind::Number ? NumberLiteral(a->value) : std::string("0.0"); };
+            std::string flags;
+            auto flag = [&](bool on, const char* name) {
+                if (!on) return;
+                flags += (flags.empty() ? "" : " | ") + std::string(name);
+            };
+            flag(attr("Edit") != nullptr, "RmFieldFlag_Edit");
+            flag(attr("ReadOnly") != nullptr, "RmFieldFlag_ReadOnly");
+            flag(mn && mn->kind == Attr::Kind::Number, "RmFieldFlag_HasMin");
+            flag(mx && mx->kind == Attr::Kind::Number, "RmFieldFlag_HasMax");
+            flag(st && st->kind == Attr::Kind::Number, "RmFieldFlag_HasStep");
+            const char* kind = "RmField_Int";
+            switch (f.type.kind) {
+                case TypeRef::Kind::Bool: kind = "RmField_Bool"; break;
+                case TypeRef::Kind::Int: kind = "RmField_Int"; break;
+                case TypeRef::Kind::Float: kind = "RmField_Float"; break;
+                case TypeRef::Kind::String: kind = "RmField_String"; break;
+                case TypeRef::Kind::Vec2: kind = "RmField_Vec2"; break;
+                case TypeRef::Kind::Vec3: kind = "RmField_Vec3"; break;
+                case TypeRef::Kind::Color: kind = "RmField_Color"; break;
+                case TypeRef::Kind::EntityRef: kind = "RmField_EntityRef"; break;
+                default: break;
+            }
+            fields += std::format(
+                "    {{\"{}\", {}, {}, [](void* o) -> void* {{ return &static_cast<{}*>(o)->{}; }}, {}, {}, {}, {}, {}, {}}},\n", f.name, kind,
+                flags.empty() ? "0" : "static_cast<uint32_t>(" + flags + ")", cpp, f.name,
+                label ? "\"" + label->value + "\"" : std::string("nullptr"), tip ? "\"" + tip->value + "\"" : std::string("nullptr"), num(mn),
+                num(mx), num(st), f.line);
+        }
+        if (props > 0) o += std::format("static const RmFieldDesc F_{}[] = {{\n{}}};\n", id, fields);
+        o += "\n";
+        table += std::format(
+            "    {{\"{0}\", \"{1}\", \"{2}\", sizeof({3}), alignof({3}), {4}, {5},\n"
+            "     [](void* p) {{ new (p) {3}(); }}, [](void* p) {{ std::destroy_at(static_cast<{3}*>(p)); }},\n"
+            "     [](void* d, const void* s) {{ *static_cast<{3}*>(d) = *static_cast<const {3}*>(s); }},\n"
+            "     RmBeginOf<{3}>(), RmTickOf<{3}>(), RmEndOf<{3}>()}},\n",
+            q, s->label.empty() ? s->name : s->label, headerOf(s), cpp, props > 0 ? "F_" + id : std::string("nullptr"), props);
+    }
+    if (scripts.empty()) {
+        o += "static const RmScriptDesc* const kRmScripts = nullptr;\n";
+    } else {
+        o += "static const RmScriptDesc kRmScripts[] = {\n" + table + "};\n";
+    }
+    o += std::format(R"(
+extern "C" __declspec(dllexport) const RmModule* RmModuleInit(const RmApi* api, uint32_t abi) {{
+    // The engine and this DLL must agree on the boundary (RmAbi.h); another version is refused.
+    if (abi != RM_ABI_VERSION || !api || api->abi != RM_ABI_VERSION) return nullptr;
+    g_rmApi = api;
+    static const RmModule module{{RM_ABI_VERSION, {}u, kRmScripts}};
+    return &module;
+}}
+)",
+                     scripts.size());
+    return o;
+}
+
 }  // namespace rmgen

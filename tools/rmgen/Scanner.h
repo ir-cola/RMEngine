@@ -19,6 +19,8 @@
 //   RM0010  more than 64 fields
 //   RM0011  private / protected / base classes (reflected types are plain public structs)
 //   RM0012  two headers that would make the same generated file (or have the same include path)
+//   RM0013  (scripts) something a script DLL cannot have yet: RM_STRUCT / RM_ENUM, a field of a list,
+//           an enum, a struct or an AssetRef
 
 #include <string>
 #include <string_view>
@@ -95,6 +97,11 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags);
 // The generated .cpp of one header, and the table of every type.
 std::string EmitHeader(const std::vector<Header>& all, const Header& h);
 std::string EmitAll(const std::vector<Header>& all);
+// Scripts (rmgen --scripts: the headers of a game's Assets/Scripts): only RM_SCRIPT, with the field
+// types RM.h has. The one generated .cpp of the script DLL: the scripts' tables (RmAbi.h) and
+// RmModuleInit.
+void ValidateScripts(const std::vector<Header>& headers, std::vector<Diagnostic>& diags);
+std::string EmitScripts(const std::vector<Header>& all);
 // File name of the generated .cpp for an include path: readable, plus a hash of the whole path so two
 // paths never meet ("a/b_c/D.h" and "a/b/c/D.h" both read a_b_c_D): "a/b/C.h" -> "a_b_C.<8 hex>.reflect.cpp".
 // Validate still checks every pair (RM0012), ignoring case as Windows does.

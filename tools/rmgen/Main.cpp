@@ -1,4 +1,9 @@
-// rmgen --out <dir> --root <dir> [--root <dir> ...]
+// rmgen --out <dir> --root <dir> [--root <dir> ...] [--skip-dir <name>] [--scripts]
+//
+// --skip-dir: folders of that name are not read (the engine skips plugins' templates/: the scripts in
+//             a template are a game's, not the engine's).
+// --scripts:  the roots are a game's scripts (Assets/Scripts): writes <out>/rm_scripts.cpp, the
+//             registration of the script DLL (RM.h), instead of the engine's tables.
 //
 // Reads every .h under the roots, and writes <out>/<header>.reflect.cpp for each header with
 // reflected types plus <out>/rm_all_types.cpp. A file is written only when its text changes
@@ -10,6 +15,7 @@
 
 #include "Scanner.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -111,7 +117,7 @@ bool WriteIfChanged(const fs::path& p, const std::string& text, bool& wrote, std
 
 // Every .h under `base`. An entry that vanishes while the folder is listed (a temporary file of
 // another program) is skipped; a folder that cannot be listed is tried again before giving up.
-bool ListHeaders(const fs::path& base, std::vector<fs::path>& out, std::string& why) {
+bool ListHeaders(const fs::path& base, std::vector<fs::path>& out, std::string& why, const std::vector<std::wstring>& skip) {
     std::error_code exists;
     if (!fs::is_directory(base, exists)) {
         why = ErrorText(ERROR_PATH_NOT_FOUND);
@@ -124,6 +130,10 @@ bool ListHeaders(const fs::path& base, std::vector<fs::path>& out, std::string& 
         for (fs::recursive_directory_iterator it(base, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
              it.increment(ec)) {
             std::error_code entryEc;
+            if (it->is_directory(entryEc) && std::find(skip.begin(), skip.end(), it->path().filename().native()) != skip.end()) {
+                it.disable_recursion_pending();
+                continue;
+            }
             if (it->path().extension() == L".h" && it->is_regular_file(entryEc)) out.push_back(it->path());
         }
         if (!ec) return true;
@@ -144,12 +154,18 @@ int wmain(int argc, wchar_t** argv) {
     SetConsoleOutputCP(CP_UTF8);
     fs::path out;
     std::vector<fs::path> roots;
+    std::vector<std::wstring> skip;
+    bool scripts = false;
     for (int i = 1; i < argc; ++i) {
         const std::wstring a = argv[i];
         if (a == L"--out" && i + 1 < argc) {
             out = argv[++i];
         } else if (a == L"--root" && i + 1 < argc) {
             roots.emplace_back(argv[++i]);
+        } else if (a == L"--skip-dir" && i + 1 < argc) {
+            skip.emplace_back(argv[++i]);
+        } else if (a == L"--scripts") {
+            scripts = true;
         } else {
             std::printf("rmgen: 使い方: rmgen --out <フォルダ> --root <フォルダ> [--root <フォルダ> ...]\n");
             return 2;
@@ -167,7 +183,7 @@ int wmain(int argc, wchar_t** argv) {
         const fs::path base = fs::absolute(root, ec).lexically_normal();
         std::vector<fs::path> files;
         std::string why;
-        if (!ListHeaders(base, files, why)) {
+        if (!ListHeaders(base, files, why, skip)) {
             std::printf("rmgen: error RM0007: フォルダの中を読めませんでした: %s (%s)\n", U8(base).c_str(), why.c_str());
             return 2;
         }
@@ -189,6 +205,7 @@ int wmain(int argc, wchar_t** argv) {
             if (!h.structs.empty() || !h.enums.empty()) headers.push_back(std::move(h));
         }
     }    rmgen::Validate(headers, diags);
+    if (scripts) rmgen::ValidateScripts(headers, diags);
     if (!diags.empty()) {
         for (const auto& d : diags) std::printf("%s\n", d.Text().c_str());
         std::printf("rmgen: %zu 個のエラー。反映するコードは作り直していません\n", diags.size());
@@ -212,10 +229,14 @@ int wmain(int argc, wchar_t** argv) {
         written += wrote ? 1 : 0;
         return true;
     };
-    for (const auto& h : headers) {
-        if (!emit(rmgen::OutputName(h.includePath), rmgen::EmitHeader(headers, h))) return 2;
+    if (scripts) {
+        if (!emit("rm_scripts.cpp", rmgen::EmitScripts(headers))) return 2;
+    } else {
+        for (const auto& h : headers) {
+            if (!emit(rmgen::OutputName(h.includePath), rmgen::EmitHeader(headers, h))) return 2;
+        }
+        if (!emit("rm_all_types.cpp", rmgen::EmitAll(headers))) return 2;
     }
-    if (!emit("rm_all_types.cpp", rmgen::EmitAll(headers))) return 2;
     for (fs::directory_iterator it(out, ec), end; !ec && it != end; it.increment(ec)) {
         if (it->path().extension() == L".cpp" && !produced.count(it->path().filename())) fs::remove(it->path(), ec);
     }

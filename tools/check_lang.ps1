@@ -52,7 +52,8 @@ function Need([string]$rel, [int]$line, [string]$text) {
 }
 
 $lit = '"((?:[^"\\]|\\.)*)"'
-$files = Get-ChildItem (Join-Path $Root 'src'), (Join-Path $Root 'plugins') -Recurse -Include *.h, *.cpp
+# (not a template's scripts: they are a game's, in its own words)
+$files = Get-ChildItem (Join-Path $Root 'src'), (Join-Path $Root 'plugins') -Recurse -Include *.h, *.cpp | Where-Object { $_.FullName -notmatch '[\\/]templates[\\/]' }
 foreach ($f in $files) {
     $rel = $f.FullName.Substring($Root.Length + 1) -replace '\\', '/'
     $lines = [IO.File]::ReadAllLines($f.FullName, $utf8)

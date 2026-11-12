@@ -74,6 +74,7 @@
     <ClCompile Include="TestSystems.cpp" />
     <ClCompile Include="TestPrefab.cpp" />
     <ClCompile Include="TestSceneRecord.cpp" />
+    <ClCompile Include="TestScripts.cpp" />
     <ClCompile Include="TestAsset.cpp" />
     <ClCompile Include="TestEntityRefs.cpp" />
     <ClCompile Include="TestTemplates.cpp" />
@@ -100,6 +101,8 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Prefab.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\SceneFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\SceneRecord.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scripts.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\ScriptGuard.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Register.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\Register.cpp">

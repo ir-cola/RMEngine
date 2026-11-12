@@ -123,6 +123,7 @@ if (Test-Path $pluginsRoot) {
     }
     Get-ChildItem $pluginsRoot -Recurse -Include *.h, *.cpp | ForEach-Object {
         $rel = $_.FullName.Substring($pluginsRoot.Length + 1) -replace '\\', '/'
+        if ($rel -match '(^|/)templates/') { return }  # a template's scripts are a game's (built into its own DLL)
         if ($rel -eq 'BuiltinPlugins.cpp') { return }  # the list of every plugin
         if ($rel -eq 'RuntimePlugins.cpp') {
             # The list of runtime parts: goes into games, so only what ships in games.

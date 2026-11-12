@@ -24,6 +24,13 @@ struct DisplaySettings {
     RM_PROPERTY(Edit, Label="垂直同期", Tooltip="画面の書き換えに合わせて描きます (ちらつきを防ぐ)") bool vsync = true;
 };
 
+// One line of the scripts' run order: smaller numbers run first; a type not listed is 0 (then by name).
+RM_STRUCT(Label="スクリプトの実行順")
+struct ScriptOrderEntry {
+    RM_PROPERTY(Edit, Label="スクリプト", Tooltip="スクリプトの型の名前 (C++ の名前。例: PlayerController)") std::string type;
+    RM_PROPERTY(Edit, Label="順番", Tooltip="小さいほど先に動きます。一覧に無いスクリプトは 0 です") int order = 0;
+};
+
 RM_STRUCT(Label="ゲームの設定")
 struct GameSettings {
     RM_PROPERTY(Edit, Label="ゲームの名前", Tooltip="書き出した exe の名前とウィンドウのタイトルに使います") std::string title = "My Game";
@@ -40,6 +47,8 @@ struct GameSettings {
     // them). Chosen in the scene panel's strip when there is more than one; empty: the default one.
     // Not in the inspector (the choices come from plugins); kept as written when its plugin is missing.
     RM_PROPERTY() std::string space;
+    // Which scripts run before which (type by type; the same type: in the order they were attached).
+    RM_PROPERTY(Edit, Label="スクリプトの実行順", Tooltip="プレイヤーが動いてからカメラが追う、のように型の順番を決めます。小さいほど先") std::vector<ScriptOrderEntry> scriptOrder;
 };
 
 }  // namespace rm::game_production

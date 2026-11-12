@@ -76,5 +76,11 @@
   "Play 中は切り替えられません": "Cannot be switched while playing",
   "Prefab「{}」を置いた物です ({})。Prefab「{}」の中に入っています。Prefab と違う所: {} 個 (名前と置き場所を含む)": "Placed from the prefab \"{}\" ({}), inside the prefab \"{}\". Differences from the prefab: {} (the name and the place included)",
   "3D と 2D の両方を使えるゲーム。空のシーンから始めます。": "A game that can use both 3D and 2D. Starts from an empty scene.",
-  "ファイルが Assets に見つかりません": "The file is not in Assets"
+  "ファイルが Assets に見つかりません": "The file is not in Assets",
+  "スクリプトの実行順": "Script run order",
+  "スクリプト": "Script",
+  "スクリプトの型の名前 (C++ の名前。例: PlayerController)": "The script type's name (its C++ name, e.g. PlayerController)",
+  "順番": "Order",
+  "小さいほど先に動きます。一覧に無いスクリプトは 0 です": "Smaller runs first. A script not in the list is 0",
+  "プレイヤーが動いてからカメラが追う、のように型の順番を決めます。小さいほど先": "Sets which script types run first (the player moves, then the camera follows). Smaller first"
 }
