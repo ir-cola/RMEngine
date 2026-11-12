@@ -170,7 +170,7 @@ std::string ScriptVcxproj(const ScriptBuildRequest& r) {
   <PropertyGroup>
     <OutDir Condition="'$(OutDir)' == '' Or '$(OutDir)' == '$(SolutionDir)$(Platform)\$(Configuration)\'">$(MSBuildThisFileDirectory)Build\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)Obj\$(Configuration)\</IntDir>
-    <IncludePath>$(RmScriptsDir);$(RmSdkDirs);$(IncludePath)</IncludePath>
+    <IncludePath>$(RmScriptsDir);$(MSBuildThisFileDirectory)Globals\;$(RmSdkDirs);$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -195,6 +195,7 @@ std::string ScriptVcxproj(const ScriptBuildRequest& r) {
     <ClCompile Include="$(RmScriptsDir)**\*.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)Generated\rm_scripts.cpp" />
     <ClInclude Include="$(RmScriptsDir)**\*.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)Globals\RmGlobals.h" />
   </ItemGroup>
   <!-- rmgen reads the scripts' headers (RM_SCRIPT / RM_PROPERTY) and writes their registration. -->
   <Target Name="RmGenScripts" BeforeTargets="ClCompile">
@@ -229,11 +230,41 @@ std::string ScriptSln() {
            "EndGlobal\r\n";
 }
 
+fs::path GlobalsHeaderFile(const fs::path& project) { return ScriptBuildFolder(project) / L"Globals" / L"RmGlobals.h"; }
+
+std::string GlobalsHeader(const std::vector<GlobalVariable>& globals, std::vector<std::string>* skipped) {
+    std::string o;
+    o += "// RmGlobals.h - RM Engine が書きます (ゲームの設定の「グローバル変数」から。書き換えても次のビルドで戻ります)。\n";
+    o += "// Written by RM Engine from the game settings' global variables (do not edit: written again).\n";
+    o += "// RM.h includes it: a script writes Global::score.\n";
+    o += "#pragma once\n\n";
+    o += "namespace Global {\n";
+    std::vector<std::string> seen;
+    for (const GlobalVariable& g : globals) {
+        if (!IsGlobalName(g.name) || std::find(seen.begin(), seen.end(), g.name) != seen.end()) {
+            if (skipped && !g.name.empty()) skipped->push_back(g.name);
+            continue;
+        }
+        seen.push_back(g.name);
+        const char* type = g.type == GlobalType::Bool     ? "bool"
+                           : g.type == GlobalType::Int    ? "int"
+                           : g.type == GlobalType::Float  ? "float"
+                           : g.type == GlobalType::String ? "std::string"
+                           : g.type == GlobalType::Vec2   ? "::rm::Vec2"
+                                                          : "::rm::Vec3";
+        // (names and types only: a 初めの値 is read at Play - changing one never builds again)
+        o += std::format("inline constexpr ::rm::GlobalVar<{}> {}{{\"{}\"}};\n", type, g.name, g.name);
+    }
+    o += "}  // namespace Global\n";
+    return o;
+}
+
 bool WriteScriptProject(const ScriptBuildRequest& r, std::string* why) {
     std::error_code ec;
     fs::create_directories(ScriptsFolder(r.project), ec);
+    fs::create_directories(GlobalsHeaderFile(r.project).parent_path(), ec);
     return WriteIfChanged(ScriptBuildFolder(r.project) / L"Scripts.vcxproj", ScriptVcxproj(r), why) &&
-           WriteIfChanged(ScriptSolution(r.project), ScriptSln(), why);
+           WriteIfChanged(ScriptSolution(r.project), ScriptSln(), why) && WriteIfChanged(GlobalsHeaderFile(r.project), GlobalsHeader(r.globals), why);
 }
 
 fs::path FindMSBuild() {

@@ -105,7 +105,7 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
         $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
         $ticked = [regex]::Match($gameLog, '「Player」: (\d+) コマ動きました')
-        if ($r.ExitCode -ne 0 -or -not $gameLog.Contains('「Player」を矢印キーで動かせます') -or -not $ticked.Success -or [int]$ticked.Groups[1].Value -lt 1) {
+        if ($r.ExitCode -ne 0 -or -not $gameLog.Contains('「Player」を矢印キー・WASD・ゲームパッドで動かせます') -or -not $ticked.Success -or [int]$ticked.Groups[1].Value -lt 1) {
             Write-Host "NG  game_scripts: スクリプトが回っていません (終了コード $($r.ExitCode))"
             $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
             $failed++

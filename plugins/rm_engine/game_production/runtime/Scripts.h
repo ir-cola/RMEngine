@@ -22,6 +22,7 @@
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_production/runtime/DebugDraw.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
+#include "rm_engine/game_production/runtime/Globals.h"
 #include "rm_engine/game_production/runtime/Input.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
@@ -75,11 +76,20 @@ struct ScriptWorld {
     int sceneAsked = -1;
     InputFrame inputNow, inputBefore;
     std::unordered_set<std::string> told;  // names asked for that are not there (told once each)
+    // The game's global variables (one store for the whole game: switching the scene keeps them; the
+    // host Resets them from the settings at Play / Stop / when the game starts) and where rm::Save
+    // writes them (empty: rm::Save does nothing).
+    GlobalStore globals;
+    std::filesystem::path saveFolder;
 
     // Reads the input once a frame (pressed / released compare with the last frame).
     void ReadInput();
     // An action of the game settings by name; null (and told once) when there is none.
     const InputAction* Action(const char* name);
+    // A global variable by name; null (and told once) when there is none.
+    GlobalValue* Global(const char* name);
+    // Tells a script's mistake once (a warning on the console): `key` says which.
+    void TellOnce(const std::string& key, std::string_view text);
 };
 
 // The engine's table for a world: RmApi::ctx is the world (it must live as long as the table is used).

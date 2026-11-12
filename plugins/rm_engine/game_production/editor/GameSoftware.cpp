@@ -5,6 +5,7 @@
 #include "base/Utf.h"
 #include "core/asset/AssetIndex.h"
 #include "core/reflect/Data.h"
+#include "editor/app/Worker.h"
 #include "editor/lang/Lang.h"
 #include "editor/project/Project.h"
 #include "editor/widgets/Theme.h"
@@ -268,7 +269,13 @@ public:
     // its own file (SceneFile.h). A project of before has its scene inside: read from there, and split
     // off at the next save.
     void LoadData(const json::Value& data) override {
-        // The scripts first: the scene's scripts are components of their types.
+        // The scripts first: the scene's scripts are components of their types. (The global variables
+        // before: the header of their names is written with the project.)
+        {
+            GameSettings peek;
+            reflect::Load(peek, data.Get("settings"));
+            scripts_.SetGlobals(peek.globals);
+        }
         scripts_.Open();
         UseScriptTypes();
         hadData_ = data.IsObject();
@@ -395,6 +402,7 @@ public:
         in.projectRoot = host_.GetProject().Root();
         in.assetFile = [this](const AssetRef& r) { return host_.AssetFile(r); };
         in.scripts = ScriptRequestFor(host_);
+        in.scripts.globals = settings_.globals;
         // The scenes of the list (the one shown as it is now), in the list's order; the game starts with
         // the list's 最初のシーン.
         Scene saved = scene_;
@@ -625,6 +633,7 @@ public:
     // --- Play --------------------------------------------------------------------------------
     void Tick(ui::Context& c) override {
         // Scripts built again: swapped here, between frames (never while playing: at Stop).
+        scripts_.SetGlobals(settings_.globals);  // (an edit of the list: the header and a build, a second later)
         scripts_.Poll(c);
         if (auto dll = scripts_.TakeReady(Running())) ReloadScripts(*dll);
         if (c.Focused() == 0) {
@@ -923,6 +932,7 @@ private:
             if (playScenes_[i] == AssetRef{slot_.guid}) world.sceneIndex = static_cast<int>(i);
         }
         scripts_.World().actions = &settings_.input;  // (edited while playing: read as it is each frame)
+        ResetGlobals(true);  // every global variable at its 初めの値; rm::Save into Library/Saves
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
         EnsureViews();  // the game view sees through the game settings' 最初のカメラ
@@ -991,9 +1001,43 @@ private:
         scripts_.Runner().Stop(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder);  // EndPlay
         playScene_.reset();  // (scripts built while playing are taken at the next frame: on the scene from before Play)
         debug_.Clear();      // Stop: every debug line goes
+        ResetGlobals(false);  // as before Play (what was saved stays in Library/Saves)
         play_ = PlayState::Stopped;
         host_.SelectInTree({});  // (the selection may name entities of a scene switched to)
         host_.Redraw();
+    }
+
+    // The editor's saves (Library/Saves/save_*.json) to the Recycle Bin.
+    void DeleteSaves() {
+        const fs::path folder = ProjectSaveFolder(host_.GetProject().Root());
+        std::vector<fs::path> files;
+        std::error_code ec;
+        for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+            const std::wstring name = it->path().filename().native();
+            if (name.starts_with(L"save_") && it->path().extension() == L".json") files.push_back(it->path());
+        }
+        if (files.empty()) {
+            log::Info("消すセーブはありません ({})", PathToUtf8(folder));
+            return;
+        }
+        std::string err;
+        if (platform::MoveToRecycleBin(files, &err)) {
+            log::Info("セーブを {} 個ごみ箱へ移しました ({})", files.size(), PathToUtf8(folder));
+        } else {
+            log::Error("セーブを消せませんでした: {}", err);
+        }
+    }
+
+    // The game's global variables back to their 初めの値 (Play and Stop); a 初めの値 that does not fit
+    // its type is told at Play.
+    void ResetGlobals(bool tell) {
+        std::vector<std::string> warnings;
+        ScriptWorld& world = scripts_.World();
+        world.globals.Reset(settings_.globals, &warnings);
+        world.saveFolder = ProjectSaveFolder(host_.GetProject().Root());
+        if (tell) {
+            for (const std::string& w : warnings) log::Warn("{}", w);
+        }
     }
 
     void TogglePause(ui::Context& c) {
@@ -1204,6 +1248,13 @@ private:
             editor::InspectBlock b{&reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, {}, {}, {}};
             b.readOnly = Running();
             blocks.push_back(std::move(b));
+            // Where rm::Save writes, and taking those saves away (to the Recycle Bin).
+            editor::w::Action clear;
+            clear.label = Tr(L"セーブを消す (Library/Saves)");
+            clear.run = [this] { editor::PostToUi([this] { DeleteSaves(); }); };
+            blocks.push_back({nullptr, {}, Tr(L"セーブ"),
+                              Tr(L"Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)。⋮ の「セーブを消す」で Play のセーブを全部ごみ箱へ移します"),
+                              {clear}});
             return blocks;
         };
         host_.Inspect(std::move(in));

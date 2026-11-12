@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲームの設定に「グローバル変数」: ゲーム全体の値 (シーンを切り替えても残る) をスクリプトから Global::score のように使えます (Visual Studio で補完)。rm::Save::Write / Read / Exists / Delete で全部をセーブ (Play は Library/Saves、書き出したゲームは %LOCALAPPDATA%)",
+          "en": "Global variables in the game settings: values of the whole game (kept when the scene switches) that scripts use as Global::score (completed in Visual Studio). rm::Save::Write / Read / Exists / Delete saves them all (Play: Library/Saves; an exported game: %LOCALAPPDATA%)"
+        },
+        {
           "ja": "シーンの切り替え: パネル「シーンの一覧」でシーンを足す・開く・並べる・名前を変える・最初のシーンを決める。スクリプトから rm::Game::LoadScene(\"名前\") で切り替え (Play の中だけ。■ で戻る)。書き出したゲームは全部のシーンを持ち、最初のシーンから始まる。見本のテンプレート「シーンを切り替える見本」",
           "en": "Switching scenes: in the Scenes panel, add, open, reorder and rename scenes and choose the first one. Scripts switch with rm::Game::LoadScene(\"name\") (inside Play only; Stop comes back). Exported games carry every scene and start with the first. A sample template, Switching scenes (sample)"
         },

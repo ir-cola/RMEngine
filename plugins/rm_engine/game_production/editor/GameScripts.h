@@ -36,6 +36,10 @@ public:
     void Build();
     // Opens Scripts.sln (Visual Studio), after this frame.
     void OpenVisualStudio();
+    // The game settings' グローバル変数 (RmGlobals.h is written from them: Global::<name>). Set before
+    // Open, and every frame: a change of the names or types writes the header again and builds - once
+    // the list has been still for a second (typing a name is one build).
+    void SetGlobals(const std::vector<GlobalVariable>& globals);
     // Every frame: builds when something in Assets/Scripts changed. A save is seen at once - even while
     // the editor is idle (the folder watch wakes it) - and built half a second later (a few saves in a
     // row are one build); it asks for frames until then.
@@ -56,10 +60,13 @@ public:
 
 private:
     void Finished(const struct ScriptBuildResult& r);
+    ScriptBuildRequest Request() const;
 
     editor::SoftwareHost& host_;
     std::unique_ptr<ScriptModule> module_;
     InputReader input_;
+    std::vector<GlobalVariable> globals_;
+    double globalsChangedAt_ = -1;  // a change waiting to be written (-1: none)
     ScriptWorld world_;
     RmApi api_{};
     ScriptRunner runner_;

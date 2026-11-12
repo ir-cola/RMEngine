@@ -27,7 +27,6 @@ ScriptBuildRequest ScriptRequestFor(const editor::SoftwareHost& host) {
 
 namespace {
 
-ScriptBuildRequest RequestFor(const editor::SoftwareHost& host) { return ScriptRequestFor(host); }
 
 }  // namespace
 
@@ -48,8 +47,27 @@ GameScripts::GameScripts(editor::SoftwareHost& host) : host_(host), module_(std:
     api_ = MakeScriptApi(world_);
 }
 
+ScriptBuildRequest GameScripts::Request() const {
+    ScriptBuildRequest r = ScriptRequestFor(host_);
+    r.globals = globals_;
+    return r;
+}
+
+void GameScripts::SetGlobals(const std::vector<GlobalVariable>& globals) {
+    // Only what the header has counts (names and types: a 初めの値 is read at Play, never compiled).
+    auto same = [](const std::vector<GlobalVariable>& a, const std::vector<GlobalVariable>& b) {
+        return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](const GlobalVariable& x, const GlobalVariable& y) {
+                   return x.name == y.name && x.type == y.type;
+               });
+    };
+    if (same(globals, globals_)) return;
+    globals_ = globals;
+    globalsChangedAt_ = platform::NowSeconds();
+}
+
 void GameScripts::Open() {
-    const ScriptBuildRequest r = RequestFor(host_);
+    globalsChangedAt_ = -1;  // (Open writes the header with the list as it is)
+    const ScriptBuildRequest r = Request();
     std::string why;
     if (!WriteScriptProject(r, &why)) log::Warn("スクリプトの Visual Studio のプロジェクト: {}", why);
     const long long sources = ScriptSourcesTime(r.project);
@@ -74,7 +92,7 @@ void GameScripts::Build() {
     building_ = true;
     again_ = false;
     log::Info("スクリプトをビルドしています…");
-    const ScriptBuildRequest r = RequestFor(host_);
+    const ScriptBuildRequest r = Request();
     worker_.Run([this, r](std::stop_token, const editor::Worker::Post& post) {
         ScriptBuildResult result = BuildScripts(r);
         post([this, result = std::move(result)] { Finished(result); });
@@ -105,7 +123,7 @@ void GameScripts::Finished(const ScriptBuildResult& r) {
 void GameScripts::OpenVisualStudio() {
     const std::filesystem::path sln = ScriptSolution(host_.GetProject().Root());
     std::string why;
-    if (!WriteScriptProject(RequestFor(host_), &why)) {
+    if (!WriteScriptProject(Request(), &why)) {
         log::Error("Visual Studio のプロジェクトを書けませんでした: {}", why);
         return;
     }
@@ -119,6 +137,23 @@ void GameScripts::OpenVisualStudio() {
 void GameScripts::Poll(ui::Context& c) {
     const double now = platform::NowSeconds();
     const std::filesystem::path root = host_.GetProject().Root();
+    // The global variables' names or types changed: RmGlobals.h again (Visual Studio sees the new names),
+    // and a build when there are scripts - once the list is still for a second.
+    if (globalsChangedAt_ >= 0) {
+        if (now - globalsChangedAt_ < 1.0) {
+            c.RequestAnimation();
+        } else {
+            globalsChangedAt_ = -1;
+            std::string why;
+            if (!WriteScriptProject(Request(), &why)) log::Warn("グローバル変数のヘッダー (RmGlobals.h): {}", why);
+            std::vector<std::string> skipped;
+            GlobalsHeader(globals_, &skipped);
+            for (const std::string& n : skipped) {
+                log::Warn("グローバル変数「{}」は Global::{} では使えない名前です (英字・数字・_。数字から始めない。同じ名前は 1 つ目だけ)", n, n);
+            }
+            if (ScriptSourcesTime(root) != 0) Build();
+        }
+    }
     if (now - lastAliveCheck_ >= 1.0) {
         // (Assets/Scripts may come later - a first script made in Explorer - or be deleted and made
         // again: the watch follows the old folder, so it is started again on the new one)

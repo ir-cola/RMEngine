@@ -114,6 +114,25 @@ struct InputAction {
 // Jump; Fire).
 std::vector<InputAction> DefaultInputActions();
 
+// --- Global variables: values of the whole game (they stay when the scene is switched; rm::Save writes
+// them). Scripts use them as Global::score (a header written from this list: GlobalsHeader).
+RM_ENUM(Label="変数の型")
+enum class GlobalType {
+    RM_ITEM(Label="真偽 (bool)") Bool,
+    RM_ITEM(Label="整数 (int)") Int,
+    RM_ITEM(Label="小数 (float)") Float,
+    RM_ITEM(Label="文字 (std::string)") String,
+    RM_ITEM(Label="Vec2") Vec2,
+    RM_ITEM(Label="Vec3") Vec3,
+};
+
+RM_STRUCT(Label="グローバル変数")
+struct GlobalVariable {
+    RM_PROPERTY(Edit, Label="名前", Tooltip="スクリプトからは Global::名前 で使います (英字・数字・_。数字から始めない)") std::string name;
+    RM_PROPERTY(Edit, Label="型") GlobalType type = GlobalType::Int;
+    RM_PROPERTY(Edit, Label="初めの値", Tooltip="型に合わせて書きます: 真偽は true / false、数は 0 や 1.5、文字はそのまま、Vec2 / Vec3 は 1, 2, 3。空なら 0 (空の文字)") std::string initial;
+};
+
 RM_STRUCT(Label="ゲームの設定")
 struct GameSettings {
     RM_PROPERTY(Edit, Label="ゲームの名前", Tooltip="書き出した exe の名前とウィンドウのタイトルに使います") std::string title = "My Game";
@@ -134,6 +153,8 @@ struct GameSettings {
     RM_PROPERTY(Edit, Label="スクリプトの実行順", Tooltip="プレイヤーが動いてからカメラが追う、のように型の順番を決めます。小さいほど先") std::vector<ScriptOrderEntry> scriptOrder;
     // What the scripts read by name (rm::Input::Down("Jump")): the same in the editor's Play and the game.
     RM_PROPERTY(Edit, Label="入力", Tooltip="スクリプトはキーではなくアクションの名前で入力を読みます (ゲームパッドもそのまま使えます)") std::vector<InputAction> input = DefaultInputActions();
+    // Values of the whole game: back to these at every Play (and when it stops); rm::Save writes them.
+    RM_PROPERTY(Edit, Label="グローバル変数", Tooltip="ゲーム全体の値 (シーンを切り替えても残る)。スクリプトからは Global::名前。rm::Save::Write で保存できます") std::vector<GlobalVariable> globals;
 };
 
 }  // namespace rm::game_production

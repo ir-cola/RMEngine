@@ -49,6 +49,7 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 // --- Annotations (read by rmgen; they expand to nothing) ------------------------------------
 #ifndef RM_SCRIPT
@@ -234,6 +235,134 @@ inline int SceneIndex() { return Api()->core->sceneIndex(Api()->ctx); }
 inline int SceneCount() { return Api()->core->sceneCount(Api()->ctx); }
 }  // namespace Game
 
+// A global variable of the game settings' グローバル変数, by name. The engine writes a header from the
+// list (RmGlobals.h, included at the end of this file), so a script writes
+//
+//   Global::score += 10;                 // an int of the list
+//   if (Global::cleared) ...             // a bool
+//   Global::playerName = "A";            // a std::string
+//
+// (Visual Studio completes the names.) GlobalVar<int>("score") is the same by a name of your own.
+// Values stay when the scene is switched; at every Play they start again from 初めの値.
+template <class T>
+struct GlobalVar {
+    const char* name;
+    constexpr explicit GlobalVar(const char* n) : name(n) {}
+
+    T Get() const {
+        T v{};
+        if (const RmGlobalsApi* t = Table()) {
+            if constexpr (std::is_same_v<T, std::string>) {
+                char buf[256];
+                const uint64_t n = t->getString(Api()->ctx, name, buf, sizeof(buf));
+                if (n < sizeof(buf)) return std::string(buf, static_cast<size_t>(n));
+                v.assign(static_cast<size_t>(n) + 1, '\0');
+                t->getString(Api()->ctx, name, v.data(), n + 1);
+                v.resize(static_cast<size_t>(n));
+            } else if constexpr (std::is_same_v<T, bool>) {
+                int32_t b = 0;
+                t->get(Api()->ctx, name, RmField_Bool, &b);
+                v = b != 0;
+            } else {
+                t->get(Api()->ctx, name, Kind(), &v);
+            }
+        }
+        return v;
+    }
+    void Set(const T& v) const {
+        const RmGlobalsApi* t = Table();
+        if (!t) return;
+        if constexpr (std::is_same_v<T, std::string>) {
+            t->setString(Api()->ctx, name, v.data(), v.size());
+        } else if constexpr (std::is_same_v<T, bool>) {
+            const int32_t b = v ? 1 : 0;
+            t->set(Api()->ctx, name, RmField_Bool, &b);
+        } else {
+            t->set(Api()->ctx, name, Kind(), &v);
+        }
+    }
+    operator T() const { return Get(); }
+    const GlobalVar& operator=(const T& v) const {
+        Set(v);
+        return *this;
+    }
+    // Numbers (and += on a text).
+    const GlobalVar& operator+=(const T& d) const requires(std::is_arithmetic_v<T> || std::is_same_v<T, std::string>) {
+        Set(Get() + d);
+        return *this;
+    }
+    const GlobalVar& operator-=(const T& d) const requires std::is_arithmetic_v<T> {
+        Set(Get() - d);
+        return *this;
+    }
+    const GlobalVar& operator*=(const T& d) const requires std::is_arithmetic_v<T> {
+        Set(Get() * d);
+        return *this;
+    }
+    const GlobalVar& operator/=(const T& d) const requires std::is_arithmetic_v<T> {
+        Set(Get() / d);
+        return *this;
+    }
+    const GlobalVar& operator++() const requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
+        Set(Get() + 1);
+        return *this;
+    }
+    T operator++(int) const requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
+        const T old = Get();
+        Set(old + 1);
+        return old;
+    }
+    const GlobalVar& operator--() const requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
+        Set(Get() - 1);
+        return *this;
+    }
+    T operator--(int) const requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
+        const T old = Get();
+        Set(old - 1);
+        return old;
+    }
+
+private:
+    static const RmGlobalsApi* Table() { return Part<RmGlobalsApi>(RM_PART_GLOBALS, RM_PART_GLOBALS_VERSION); }
+    static constexpr uint32_t Kind() {
+        if constexpr (std::is_same_v<T, int>) return RmField_Int;
+        else if constexpr (std::is_same_v<T, float>) return RmField_Float;
+        else if constexpr (std::is_same_v<T, Vec2>) return RmField_Vec2;
+        else if constexpr (std::is_same_v<T, Vec3>) return RmField_Vec3;
+        else static_assert(sizeof(T) == 0, "GlobalVar は bool / int / float / std::string / rm::Vec2 / rm::Vec3 だけです");
+    }
+};
+
+// Saving the game: every global variable to a slot (a number, or a name: "auto"), as a file of the
+// player's PC (the editor's Play: <project>/Library/Saves; a game: %LOCALAPPDATA%\<exe>\Saves). Read
+// puts the saved values back into the global variables. false: not done (told on the console).
+namespace Save {
+namespace detail {
+inline const RmSaveApi* Table() { return Part<RmSaveApi>(RM_PART_SAVE, RM_PART_SAVE_VERSION); }
+inline std::string Slot(int slot) { return std::to_string(slot); }
+}  // namespace detail
+inline bool Write(const char* slot) {
+    const RmSaveApi* t = detail::Table();
+    return t && t->write(Api()->ctx, slot) != 0;
+}
+inline bool Read(const char* slot) {
+    const RmSaveApi* t = detail::Table();
+    return t && t->read(Api()->ctx, slot) != 0;
+}
+inline bool Exists(const char* slot) {
+    const RmSaveApi* t = detail::Table();
+    return t && t->exists(Api()->ctx, slot) != 0;
+}
+inline bool Delete(const char* slot) {
+    const RmSaveApi* t = detail::Table();
+    return t && t->remove(Api()->ctx, slot) != 0;
+}
+inline bool Write(int slot = 0) { return Write(detail::Slot(slot).c_str()); }
+inline bool Read(int slot = 0) { return Read(detail::Slot(slot).c_str()); }
+inline bool Exists(int slot = 0) { return Exists(detail::Slot(slot).c_str()); }
+inline bool Delete(int slot = 0) { return Delete(detail::Slot(slot).c_str()); }
+}  // namespace Save
+
 namespace detail {
 // For rmgen's checks: the number of members of an aggregate.
 struct AnyField {
@@ -251,3 +380,9 @@ constexpr size_t CountFields() {
 }  // namespace detail
 
 }  // namespace rm
+
+// The game's global variables as Global::<name> (written by the engine from the game settings'
+// グローバル変数 into Library/Scripts/Globals/RmGlobals.h - before every build of the scripts).
+#if __has_include("RmGlobals.h")
+#include "RmGlobals.h"
+#endif

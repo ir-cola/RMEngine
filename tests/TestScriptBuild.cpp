@@ -15,6 +15,7 @@
 #include <windows.h>
 
 #include <cstdio>
+#include <fstream>
 #include <thread>
 #include <filesystem>
 
@@ -64,8 +65,29 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
     fs::create_directories(ScriptsFolder(project), ec);
     fs::copy(Repo() / L"plugins/rm_engine/game_production/templates/game/Assets/Scripts", ScriptsFolder(project), fs::copy_options::recursive, ec);
     CHECK(!ec);
+    // A script of the global variables and saves (Global::<name> from the header the build writes).
+    {
+        std::ofstream h(ScriptsFolder(project) / L"Scorer.h", std::ios::binary);
+        h << "#pragma once\n#include \"RM.h\"\nRM_SCRIPT()\nstruct Scorer {\n    RM_PROPERTY() int n = 0;\n    void Tick(rm::Entity self, float dt);\n};\n";
+        std::ofstream c(ScriptsFolder(project) / L"Scorer.cpp", std::ios::binary);
+        c << "#include \"Scorer.h\"\n"
+             "void Scorer::Tick(rm::Entity, float) {\n"
+             "    Global::score += 5;\n"
+             "    ++Global::score;\n"
+             "    Global::player = Global::player.Get() + \"!\";\n"
+             "    Global::home = rm::Vec3{1, 2, 3};\n"
+             "    if (!Global::cleared) Global::cleared = true;\n"
+             "    rm::GlobalVar<float>(\"speed\") *= 2.0f;\n"
+             "    if (!rm::Save::Exists(1)) rm::Save::Write(1);\n"
+             "}\n";
+    }
 
     ScriptBuildRequest req;
+    req.globals = {{"score", GlobalType::Int, "10"},
+                   {"speed", GlobalType::Float, "1.5"},
+                   {"cleared", GlobalType::Bool, "false"},
+                   {"player", GlobalType::String, "P"},
+                   {"home", GlobalType::Vec3, ""}};
     req.project = project;
     req.engine = ExeFolder();  // rmgen.exe is built next to the tests
     req.sdk = {Repo() / L"plugins/rm_engine/game_production/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_3d/runtime/sdk",
@@ -89,6 +111,8 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
         };
         const std::vector<InputAction> actions = DefaultInputActions();
         world.actions = &actions;
+        world.globals.Reset(req.globals);
+        world.saveFolder = ProjectSaveFolder(project);
         std::string told;
         world.log = [&](int, std::string_view text) { told += std::string(text) + "\n"; };
         const RmApi api = MakeScriptApi(world);
@@ -114,6 +138,26 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
             CHECK(told.find("「Player」を矢印キー・WASD・ゲームパッドで動かせます") != std::string::npos);
             CHECK(told.find("2 コマ動きました") != std::string::npos);
             CHECK(runner.Crashed() == 0);
+        }
+        {
+            // The global variables from a script: Global::score += 5, ++, a text, a vector, a bool, by
+            // name; rm::Save into Library/Saves.
+            const ScriptType* scorer = module.Find("Scorer");
+            CHECK(scorer != nullptr);
+            if (scorer) {
+                Scene scene;
+                scene.SetComponentTypes({&scorer->desc}, {&scorer->desc});
+                scene.AddComponent(scene.Create("Game"), scorer->desc);
+                ScriptRunner runner;
+                runner.Frame(scene, world, module, {}, 0.1f);
+                runner.Frame(scene, world, module, {}, 0.1f);
+                runner.Stop(scene, world, module, {});
+                CHECK(world.globals.Find("score")->v[0] == 22 && world.globals.Find("player")->s == "P!!");
+                CHECK(world.globals.Find("home")->v[1] == 2 && world.globals.Find("cleared")->v[0] == 1);
+                CHECK(world.globals.Find("speed")->v[0] == 6);
+                CHECK(SaveExists(ProjectSaveFolder(project), "1"));
+                CHECK(runner.Crashed() == 0);
+            }
         }
         // Built again: another name (the loaded one cannot be written over).
         const ScriptBuildResult again = BuildScripts(req);

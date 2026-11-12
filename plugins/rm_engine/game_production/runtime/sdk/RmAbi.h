@@ -145,6 +145,33 @@ typedef struct RmInputApi {
     float (*axis)(void* ctx, const char* action);   /* -1..1 */
 } RmInputApi;
 
+/* Global variables (the game settings' グローバル変数) by name: "rm_engine.game_production.globals", 1.
+ * `type` is how the script holds it: RmField_Bool (int32_t 0 / 1), RmField_Int (int32_t), RmField_Float
+ * (float), RmField_Vec2 (float[2]), RmField_Vec3 (float[3]); the engine converts from / to the
+ * variable's own type (a text variable is read / written only as text). 0 = no such variable (told
+ * once; `out` untouched). */
+#define RM_PART_GLOBALS "rm_engine.game_production.globals"
+#define RM_PART_GLOBALS_VERSION 1u
+typedef struct RmGlobalsApi {
+    int (*get)(void* ctx, const char* name, uint32_t type, void* out);
+    int (*set)(void* ctx, const char* name, uint32_t type, const void* value);
+    /* As text (a number variable: its text, "3" / "1.5" / "true" / "1, 2"): copied like getName, the
+       full length returned. */
+    uint64_t (*getString)(void* ctx, const char* name, char* buf, uint64_t cap);
+    int (*setString)(void* ctx, const char* name, const char* utf8, uint64_t len);
+} RmGlobalsApi;
+
+/* Saving every global variable to a slot ("0", "auto": letters, digits, _ and -): "rm_engine.
+ * game_production.save", 1. 1 = done; 0 = not (told on the console). */
+#define RM_PART_SAVE "rm_engine.game_production.save"
+#define RM_PART_SAVE_VERSION 1u
+typedef struct RmSaveApi {
+    int (*write)(void* ctx, const char* slot);
+    int (*read)(void* ctx, const char* slot);
+    int (*exists)(void* ctx, const char* slot);
+    int (*remove)(void* ctx, const char* slot);
+} RmSaveApi;
+
 /* The one function a script DLL exports (rmgen writes it). Returns null when `abi` is not the
    version it was built for. */
 typedef const RmModule* (*RmModuleInitFn)(const RmApi* api, uint32_t abi);

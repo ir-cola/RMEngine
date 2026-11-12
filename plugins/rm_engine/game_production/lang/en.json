@@ -174,5 +174,19 @@
   "入力のアクション": "Input action",
   "スクリプトは rm::Input::Down や rm::Input::Axis にこの名前を渡して使います (大文字と小文字は別)": "Scripts pass this name to rm::Input::Down or rm::Input::Axis (case-sensitive)",
   "キー・マウスのボタン・ゲームパッドをいくつでも": "Any number of keys, mouse buttons and game pad inputs",
-  "スクリプトはキーではなくアクションの名前で入力を読みます (ゲームパッドもそのまま使えます)": "Scripts read input by action name, not by key (game pads work as they are)"
+  "スクリプトはキーではなくアクションの名前で入力を読みます (ゲームパッドもそのまま使えます)": "Scripts read input by action name, not by key (game pads work as they are)",
+  "変数の型": "Variable type",
+  "真偽 (bool)": "True/false (bool)",
+  "整数 (int)": "Whole number (int)",
+  "小数 (float)": "Decimal (float)",
+  "文字 (std::string)": "Text (std::string)",
+  "グローバル変数": "Global variables",
+  "スクリプトからは Global::名前 で使います (英字・数字・_。数字から始めない)": "Scripts use it as Global::name (letters, digits and _; not starting with a digit)",
+  "型": "Type",
+  "初めの値": "Initial value",
+  "型に合わせて書きます: 真偽は true / false、数は 0 や 1.5、文字はそのまま、Vec2 / Vec3 は 1, 2, 3。空なら 0 (空の文字)": "Written to fit the type: true / false, a number like 0 or 1.5, text as it is, Vec2 / Vec3 as 1, 2, 3. Empty is 0 (empty text)",
+  "ゲーム全体の値 (シーンを切り替えても残る)。スクリプトからは Global::名前。rm::Save::Write で保存できます": "Values of the whole game (kept when the scene switches). Scripts use Global::name. rm::Save::Write saves them",
+  "セーブを消す (Library/Saves)": "Delete saves (Library/Saves)",
+  "セーブ": "Saves",
+  "Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)。⋮ の「セーブを消す」で Play のセーブを全部ごみ箱へ移します": "rm::Save in Play writes to this project's Library/Saves (an exported game: \"exe name/Saves\" under %LOCALAPPDATA%). \"Delete saves\" in ⋮ moves every Play save to the Recycle Bin"
 }

@@ -76,6 +76,7 @@
     <ClCompile Include="TestSystems.cpp" />
     <ClCompile Include="TestPrefab.cpp" />
     <ClCompile Include="TestSceneRecord.cpp" />
+    <ClCompile Include="TestGlobals.cpp" />
     <ClCompile Include="TestInput.cpp" />
     <ClCompile Include="TestScripts.cpp" />
     <ClCompile Include="TestDebugDraw.cpp" />
@@ -116,6 +117,7 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Prefab.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\SceneFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\SceneRecord.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Globals.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Input.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scripts.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\ScriptGuard.cpp" />

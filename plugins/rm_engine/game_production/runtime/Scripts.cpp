@@ -128,8 +128,115 @@ float ApiInputAxis(void* ctx, const char* name) {
 }
 constexpr RmInputApi kInput{&ApiInputDown, &ApiInputPressed, &ApiInputReleased, &ApiInputAxis};
 
+// Global variables by name: numbers convert between the script's type and the variable's; a text
+// variable is read and written only as text.
+int Components(uint32_t type) { return type == RmField_Vec3 ? 3 : type == RmField_Vec2 ? 2 : 1; }
+bool NumberKind(uint32_t type) {
+    return type == RmField_Bool || type == RmField_Int || type == RmField_Float || type == RmField_Vec2 || type == RmField_Vec3;
+}
+int ApiGlobalGet(void* ctx, const char* name, uint32_t type, void* out) {
+    ScriptWorld& w = W(ctx);
+    const GlobalValue* g = w.Global(name);
+    if (!g || !out || !NumberKind(type)) return 0;
+    if (g->type == GlobalType::String) {
+        w.TellOnce(std::string("global-text:") + name, std::format("グローバル変数「{}」は文字です。GlobalVar<std::string> で読みます", name));
+        return 0;
+    }
+    if (type == RmField_Bool) {
+        *static_cast<int32_t*>(out) = g->v[0] != 0 ? 1 : 0;
+    } else if (type == RmField_Int) {
+        *static_cast<int32_t*>(out) = static_cast<int32_t>(g->v[0]);
+    } else {
+        for (int i = 0; i < Components(type); ++i) static_cast<float*>(out)[i] = static_cast<float>(g->v[i]);
+    }
+    return 1;
+}
+int ApiGlobalSet(void* ctx, const char* name, uint32_t type, const void* value) {
+    ScriptWorld& w = W(ctx);
+    GlobalValue* g = w.Global(name);
+    if (!g || !value || !NumberKind(type)) return 0;
+    if (g->type == GlobalType::String) {
+        w.TellOnce(std::string("global-text:") + name, std::format("グローバル変数「{}」は文字です。GlobalVar<std::string> で書きます", name));
+        return 0;
+    }
+    double in[3]{};
+    const int n = Components(type);
+    if (type == RmField_Bool || type == RmField_Int) {
+        in[0] = static_cast<double>(*static_cast<const int32_t*>(value));
+    } else {
+        for (int i = 0; i < n; ++i) in[i] = static_cast<double>(static_cast<const float*>(value)[i]);
+    }
+    // Into the variable's type: a plain number takes x; a vector takes what the script gives (the rest kept).
+    GlobalValue next = *g;
+    if (g->type == GlobalType::Vec2 || g->type == GlobalType::Vec3) {
+        for (int i = 0; i < n && i < (g->type == GlobalType::Vec3 ? 3 : 2); ++i) next.v[i] = in[i];
+    } else if (auto fitted = GlobalFromJson(g->type, json::Value(in[0]))) {
+        next = std::move(*fitted);
+    }
+    *g = next;
+    return 1;
+}
+uint64_t ApiGlobalGetString(void* ctx, const char* name, char* buf, uint64_t cap) {
+    const GlobalValue* g = W(ctx).Global(name);
+    const std::string text = g ? FormatGlobalValue(*g) : std::string();
+    if (buf && cap > 0) {
+        const size_t n = std::min<size_t>(text.size(), static_cast<size_t>(cap - 1));
+        std::memcpy(buf, text.data(), n);
+        buf[n] = '\0';
+    }
+    return text.size();
+}
+int ApiGlobalSetString(void* ctx, const char* name, const char* utf8, uint64_t len) {
+    ScriptWorld& w = W(ctx);
+    GlobalValue* g = w.Global(name);
+    if (!g) return 0;
+    const std::string_view text = utf8 ? std::string_view(utf8, static_cast<size_t>(len)) : std::string_view();
+    auto v = ParseGlobalValue(g->type, text);
+    if (!v) {
+        w.TellOnce(std::string("global-parse:") + name, std::format("グローバル変数「{}」に「{}」は入りません (型が違います)", name, text));
+        return 0;
+    }
+    *g = std::move(*v);
+    return 1;
+}
+constexpr RmGlobalsApi kGlobals{&ApiGlobalGet, &ApiGlobalSet, &ApiGlobalGetString, &ApiGlobalSetString};
+
+// Saving: every global variable to <saveFolder>/save_<slot>.json.
+int ApiSaveWrite(void* ctx, const char* slot) {
+    ScriptWorld& w = W(ctx);
+    std::string why;
+    const std::string s = slot ? slot : "";
+    if (WriteSave(w.globals, w.saveFolder, s, &why)) return 1;
+    if (w.log) w.log(1, std::format("Save::Write(\"{}\"): 書けませんでした: {}", s, why));
+    return 0;
+}
+int ApiSaveRead(void* ctx, const char* slot) {
+    ScriptWorld& w = W(ctx);
+    std::string why;
+    std::vector<std::string> warnings;
+    const std::string s = slot ? slot : "";
+    const bool ok = ReadSave(w.globals, w.saveFolder, s, &warnings, &why);
+    if (w.log) {
+        for (const std::string& m : warnings) w.log(1, m);
+        if (!ok) w.log(1, std::format("Save::Read(\"{}\"): 読めませんでした: {}", s, why));
+    }
+    return ok ? 1 : 0;
+}
+int ApiSaveExists(void* ctx, const char* slot) { return SaveExists(W(ctx).saveFolder, slot ? slot : "") ? 1 : 0; }
+int ApiSaveRemove(void* ctx, const char* slot) {
+    ScriptWorld& w = W(ctx);
+    std::string why;
+    const std::string s = slot ? slot : "";
+    if (DeleteSave(w.saveFolder, s, &why)) return 1;
+    if (w.log) w.log(1, std::format("Save::Delete(\"{}\"): 消せませんでした: {}", s, why));
+    return 0;
+}
+constexpr RmSaveApi kSave{&ApiSaveWrite, &ApiSaveRead, &ApiSaveExists, &ApiSaveRemove};
+
 const void* ApiPart(void* ctx, const char* name, uint32_t version) {
     if (name && version == RM_PART_INPUT_VERSION && std::strcmp(name, RM_PART_INPUT) == 0) return &kInput;
+    if (name && version == RM_PART_GLOBALS_VERSION && std::strcmp(name, RM_PART_GLOBALS) == 0) return &kGlobals;
+    if (name && version == RM_PART_SAVE_VERSION && std::strcmp(name, RM_PART_SAVE) == 0) return &kSave;
     return FindScriptApiPart(W(ctx).parts, name, version);
 }
 
@@ -167,6 +274,17 @@ unsigned long CallModuleInit(RmModuleInitFn init, const RmApi* api, uint32_t abi
 void ScriptWorld::ReadInput() {
     inputBefore = inputNow;
     inputNow = readInput ? readInput() : InputFrame{};
+}
+
+GlobalValue* ScriptWorld::Global(const char* name) {
+    if (!name) return nullptr;
+    if (GlobalValue* g = globals.Find(name)) return g;
+    TellOnce(std::string("global:") + name, std::format("グローバル変数「{}」はゲームの設定の「グローバル変数」にありません", name));
+    return nullptr;
+}
+
+void ScriptWorld::TellOnce(const std::string& key, std::string_view text) {
+    if (told.insert(key).second && log) log(1, text);
 }
 
 const InputAction* ScriptWorld::Action(const char* name) {

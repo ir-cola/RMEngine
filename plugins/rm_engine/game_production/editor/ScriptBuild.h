@@ -14,6 +14,8 @@
 // same DLL runs in the editor and in an exported game. Building runs a process and waits for it: call
 // it on a worker thread (editor/app/Worker), never while drawing.
 
+#include "rm_engine/game_production/runtime/GameSettings.h"
+
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -29,6 +31,8 @@ struct ScriptBuildRequest {
     // debug information (no .pdb, no path of this PC in the DLL), into Library/Scripts/Export/Scripts.dll
     // (apart from the editor's DLLs and objects). `debug` is not used then.
     bool forExport = false;
+    // The game settings' グローバル変数: written as Library/Scripts/Globals/RmGlobals.h (Global::<name>).
+    std::vector<GlobalVariable> globals;
 };
 
 struct ScriptBuildResult {
@@ -52,12 +56,17 @@ std::filesystem::path ScriptDllFolder(const std::filesystem::path& project, bool
 // The newest time a script file (.h / .cpp under Assets/Scripts) was written; 0 when there is none.
 long long ScriptSourcesTime(const std::filesystem::path& project);
 
-// Writes Library/Scripts/Scripts.vcxproj and Scripts.sln (only when their text changes). False with
-// the reason when they cannot be written.
+// Writes Library/Scripts/Scripts.vcxproj, Scripts.sln and Globals/RmGlobals.h (only when their text
+// changes). False with the reason when they cannot be written.
 bool WriteScriptProject(const ScriptBuildRequest& r, std::string* why);
 // The text of the two (pure: tested).
 std::string ScriptVcxproj(const ScriptBuildRequest& r);
 std::string ScriptSln();
+// Library/Scripts/Globals/RmGlobals.h: the global variables as Global::<name> (RM.h includes it).
+std::filesystem::path GlobalsHeaderFile(const std::filesystem::path& project);
+// Its text (pure: tested). A name a script cannot use (not a C++ name, twice) is left out and told in
+// `skipped` (its value is still there by name: rm::GlobalVar<int>("名前")).
+std::string GlobalsHeader(const std::vector<GlobalVariable>& globals, std::vector<std::string>* skipped = nullptr);
 
 // Visual Studio's MSBuild.exe (vswhere: the newest installation with MSBuild); empty when there is none.
 std::filesystem::path FindMSBuild();

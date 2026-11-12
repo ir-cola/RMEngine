@@ -1213,6 +1213,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 
 **スクリプトから**: `rm::Input::Down("Jump")` (押されている)・`rm::Input::Pressed("Jump")` (このフレームで押された。1 回の押しで 1 回)・`rm::Input::Released("Jump")`・`rm::Input::Axis("MoveX")` (-1〜1)
 
+**グローバル変数とセーブ** (画面では**未確認**。テストは通っている。本物の MSBuild で `Global::score += 5` などを書いたスクリプトをビルドして動かすテストも通っている)
+
+1. 「ゲームの設定を開く」→「グローバル変数」の ＋ で 1 つ足す → 名前 `score`・型「整数 (int)」・初めの値 `0`。もう 1 つ `best` (整数)
+2. 約 1 秒後にコンソールに「スクリプトをビルドしています…」(名前を打ち終えてから 1 回)。`Library/Scripts/Globals/RmGlobals.h` に `inline constexpr ::rm::GlobalVar<int> score{"score"};` ができている。Visual Studio で `Global::` と打つと `score` と `best` が補完に出る
+3. 初めの値だけを変えても、ビルドは始まらない (Play のときに読むだけ)
+4. 名前を `2nd` や `スコア` にする → コンソールに「グローバル変数「2nd」は Global::2nd では使えない名前です …」。ヘッダーには入らない
+5. `ArrowMover.cpp` の `Tick` に次を書いて保存 (ビルドされる):
+   ```cpp
+   if (rm::Input::Pressed("Fire")) {
+       Global::score += 10;
+       rm::Log::Info("score = " + std::to_string(Global::score.Get()));
+       if (Global::score > Global::best) Global::best = Global::score;
+   }
+   if (rm::Input::Pressed("Jump")) rm::Log::Info(rm::Save::Write(1) ? "セーブしました" : "セーブできません");
+   ```
+6. Play → マウスの左 (か Ctrl) を押すたびに「score = 10」「score = 20」…。Space で「セーブしました」→ `<プロジェクト>/Library/Saves/save_1.json` ができる (中は `"globals": {"score": 20, "best": 20}` など)
+7. ■ で止めて、もう一度 Play → score は 0 から (Play のたびに初めの値に戻る)
+8. 読むのを試す: BeginPlay に `if (rm::Save::Exists(1)) rm::Save::Read(1);` を足す → Play すると、セーブした値から続く
+9. `save_1.json` をメモ帳で開き、`"globals"` に `"old": 1` を、外に `"note": "x"` を足して保存 → Play でまた Write → 2 つとも消えずに残っている
+10. ゲームの設定の下の「セーブ」の ⋮ →「セーブを消す (Library/Saves)」→ コンソールに「セーブを 1 個ごみ箱へ移しました」(ごみ箱から戻せる)。無いときは「消すセーブはありません」
+11. 書き出したゲーム: セーブは `%LOCALAPPDATA%\<exe の名前>\Saves\save_1.json` (エクスプローラーのアドレス欄に `%LOCALAPPDATA%` と打つと開く)。ゲームを閉じて開き直すと、Read で続きから
+12. シーンを切り替える (`rm::Game::LoadScene`) スクリプトと一緒に使う → 切り替えた後も `Global::score` はそのまま
+
+**スクリプトから**: `Global::名前` (読む・`=`・`+=`・`-=`・`*=`・`/=`・`++`・`--`。文字は `+=`。`.Get()` で値)、`rm::GlobalVar<int>("名前")` (名前で)、`rm::Save::Write(1)` / `Read(1)` / `Exists(1)` / `Delete(1)` (`Write("auto")` のように名前でも。false はできなかった: 理由はコンソール)
+
 **書き換える (ホットリロード)**
 
 1. ゲームビューの帯の「Visual Studio で開く」(または `Scripts.sln` をダブルクリック) → Visual Studio が開き、`ArrowMover.cpp` で `rm::` と打つと補完が出る。名前にマウスを乗せると説明 (RM.h のコメント)

@@ -56,6 +56,16 @@ public:
         // typed into another app never moves the game - as the editor's Play); read by action name.
         world_.readInput = [this] { return input_.Read(); };
         world_.actions = &settings_.input;
+        // The global variables at their 初めの値 (the whole game: a scene switched keeps them); rm::Save
+        // into %LOCALAPPDATA%\<exe name>\Saves.
+        {
+            std::vector<std::string> told;
+            world_.globals.Reset(settings_.globals, &told);
+            for (const auto& w : told) host_.Log(1, w);
+            wchar_t exe[MAX_PATH] = {};
+            const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+            world_.saveFolder = GameSaveFolder(std::filesystem::path(std::wstring(exe, n)).stem().native());
+        }
         api_ = MakeScriptApi(world_);
         const std::filesystem::path dll = host_.Folder() / game::kScriptsDll;
         std::error_code ec;
