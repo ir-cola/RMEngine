@@ -46,6 +46,9 @@ std::filesystem::path ScriptsFolder(const std::filesystem::path& project);
 std::filesystem::path ScriptBuildFolder(const std::filesystem::path& project);
 // <project>/Scripts.sln
 std::filesystem::path ScriptSolution(const std::filesystem::path& project);
+// Where the DLLs are built: Library/Scripts (Release) / Library/Scripts/Debug (an engine built as Debug).
+// A DLL is used only by an engine of its kind (RmModuleFlag_Debug); an export takes the Release ones.
+std::filesystem::path ScriptDllFolder(const std::filesystem::path& project, bool debug);
 // The newest time a script file (.h / .cpp under Assets/Scripts) was written; 0 when there is none.
 long long ScriptSourcesTime(const std::filesystem::path& project);
 
@@ -58,7 +61,8 @@ std::string ScriptSln();
 
 // Visual Studio's MSBuild.exe (vswhere: the newest installation with MSBuild); empty when there is none.
 std::filesystem::path FindMSBuild();
-// Builds the scripts into Library/Scripts/Scripts_<next number>.dll. Blocks until MSBuild is done.
+// Builds the scripts into ScriptDllFolder/Scripts_<next number>.dll. Blocks until MSBuild is done; one
+// build of a project at a time on this PC (the next waits for it: a named mutex).
 ScriptBuildResult BuildScripts(const ScriptBuildRequest& r);
 // The lines of MSBuild's output that are errors (", error " / ": error "), without the project path at the end.
 std::vector<std::string> ErrorLines(const std::string& output);

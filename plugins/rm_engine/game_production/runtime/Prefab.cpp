@@ -120,7 +120,7 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
 
 json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, std::span<const std::string> placement) {
     json::Value fields = json::Value::MakeArray(), added = json::Value::MakeArray(), removedComps = json::Value::MakeArray(),
-                removedEntities = json::Value::MakeArray();
+                removedEntities = json::Value::MakeArray(), componentOrder = json::Value::MakeArray(), childOrder = json::Value::MakeArray();
     std::unordered_map<int, const SceneEntity*> bySource;
     for (const int m : scene.PrefabMembers(root)) {
         const SceneEntity* e = scene.Find(m);
@@ -186,12 +186,58 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
             o.Set("component", Scene::SaveComponent(ec));
             added.Push(std::move(o));
         }
+        // The order of the components both have, when the placed one has them in another order.
+        auto key = [](const std::string& type, size_t nth) { return type + "#" + std::to_string(nth); };
+        std::vector<std::string> mine, theirs;
+        json::Value order = json::Value::MakeArray();
+        for (const Component& ec : e.components) {
+            const size_t nth = e.NthOf(ec);
+            if (!pe.FindComponent(ec.type, nth)) continue;
+            mine.push_back(key(ec.type, nth));
+            json::Value k = json::Value::MakeObject();
+            k.Set("component", ec.type);
+            k.Set("index", static_cast<int64_t>(nth));
+            order.Push(std::move(k));
+        }
+        for (const Component& pc : pe.components) {
+            if (e.FindComponent(pc.type, pe.NthOf(pc))) theirs.push_back(key(pc.type, pe.NthOf(pc)));
+        }
+        if (mine != theirs) {
+            json::Value o = json::Value::MakeObject();
+            o.Set("source", src);
+            o.Set("order", std::move(order));
+            componentOrder.Push(std::move(o));
+        }
+        // The order of its children of the prefab (the order of siblings), when it is another.
+        std::vector<int> placedKids, fileKids;
+        for (const int c : scene.Children(e.data.id)) {
+            const SceneEntity* ce = scene.Find(c);
+            if (!ce->prefab.Linked() || (ce->prefab.Root() && ce->prefab.outer == 0)) continue;  // not one of the prefab's
+            const int k = KeyOf(*ce, root);
+            if (bySource.contains(k) && bySource.at(k) == ce) placedKids.push_back(k);
+        }
+        for (const json::Value& c : list) {
+            const int k = static_cast<int>(c.Get("id").AsInt(0));
+            if (&c != &list[0] && c.Get("parent").AsInt(0) == src && std::find(placedKids.begin(), placedKids.end(), k) != placedKids.end()) {
+                fileKids.push_back(k);
+            }
+        }
+        if (placedKids != fileKids) {
+            json::Value o = json::Value::MakeObject();
+            o.Set("source", src);
+            json::Value kids = json::Value::MakeArray();
+            for (const int k : placedKids) kids.Push(k);
+            o.Set("children", std::move(kids));
+            childOrder.Push(std::move(o));
+        }
     }
     json::Value o = json::Value::MakeObject();
     o.Set("fields", std::move(fields));
     o.Set("addedComponents", std::move(added));
     o.Set("removedComponents", std::move(removedComps));
     o.Set("removedEntities", std::move(removedEntities));
+    o.Set("componentOrder", std::move(componentOrder));
+    o.Set("childOrder", std::move(childOrder));
     return o;
 }
 
@@ -207,7 +253,9 @@ std::vector<std::string> NestedAssets(const json::Value& prefab) {
 
 size_t CountOverrides(const json::Value& overrides) {
     size_t n = 0;
-    for (const char* key : {"fields", "addedComponents", "removedComponents", "removedEntities"}) n += overrides.Get(key).Items().size();
+    for (const char* key : {"fields", "addedComponents", "removedComponents", "removedEntities", "componentOrder", "childOrder"}) {
+        n += overrides.Get(key).Items().size();
+    }
     return n;
 }
 
@@ -257,7 +305,6 @@ std::vector<int> Scene::PrefabRoots(std::string_view asset) const {
 bool Scene::LinkPrefab(int root, const AssetRef& asset, const std::unordered_map<int, int>& sources) {
     SceneEntity* r = Find(root);
     if (!r || asset.Empty()) return false;
-    const int outer = r->prefab.Root() ? r->prefab.outer : 0;  // a nested root made its own prefab stays nested
     const std::unordered_set<int> under = Subtree(std::span<const int>(&root, 1));
     for (auto& e : entities_) {
         if (!under.contains(e.data.id)) continue;
@@ -273,7 +320,9 @@ bool Scene::LinkPrefab(int root, const AssetRef& asset, const std::unordered_map
     r = Find(root);
     r->prefab.asset = asset;
     r->prefab.overrides = json::Value::MakeObject();
-    r->prefab.outer = outer;
+    // A prefab nested in another one made a prefab of its own leaves that one (placed by hand now, as
+    // when it is moved out): the outer prefab's file would make it its old prefab again.
+    r->prefab.outer = 0;
     return r->prefab.Root();
 }
 
@@ -405,6 +454,7 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
 
     std::vector<SceneEntity> built;
     std::unordered_map<int, int> builtId;  // id in the file -> scene id
+    std::vector<int> builtKeys;            // built[i]'s id in the file
     for (size_t i = 0; i < list.size(); ++i) {
         const json::Value& p = list[i];
         const int src = static_cast<int>(p.Get("id").AsInt(0));
@@ -467,8 +517,51 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
             const std::string type = cj.Get("type").AsString();
             e.components.push_back(LoadComponent(cj, !e.FindComponent(type) || AllowsMultiple(type), e.data.name, warnings));
         }
+        // The placed one's order of the components (the slots they hold, filled in its order).
+        for (const auto& o : overrides.Get("componentOrder").Items()) {
+            if (o.Get("source").AsInt(0) != key) continue;
+            std::vector<size_t> slots;
+            std::vector<Component*> inOrder;
+            for (const auto& k : o.Get("order").Items()) {
+                Component* c = e.FindComponent(k.Get("component").AsString(), static_cast<size_t>(k.Get("index").AsInt(0)));
+                if (!c || std::find(inOrder.begin(), inOrder.end(), c) != inOrder.end()) continue;
+                inOrder.push_back(c);
+                slots.push_back(static_cast<size_t>(c - e.components.data()));
+            }
+            std::vector<Component> moved;
+            for (Component* c : inOrder) moved.push_back(std::move(*c));
+            std::sort(slots.begin(), slots.end());
+            for (size_t k = 0; k < slots.size(); ++k) e.components[slots[k]] = std::move(moved[k]);
+        }
         builtId[key] = e.data.id;
+        builtKeys.push_back(key);
         built.push_back(std::move(e));
+    }
+    // The placed one's order of siblings (the places they hold in the list, filled in its order).
+    for (const auto& o : overrides.Get("childOrder").Items()) {
+        const auto parentIt = builtId.find(static_cast<int>(o.Get("source").AsInt(0)));
+        if (parentIt == builtId.end()) continue;
+        std::vector<size_t> slots;
+        std::vector<size_t> inOrder;
+        for (const auto& k : o.Get("children").Items()) {
+            for (size_t b = 0; b < built.size(); ++b) {
+                if (builtKeys[b] == k.AsInt(0) && built[b].data.parent == parentIt->second &&
+                    std::find(inOrder.begin(), inOrder.end(), b) == inOrder.end()) {
+                    inOrder.push_back(b);
+                    slots.push_back(b);
+                    break;
+                }
+            }
+        }
+        std::vector<SceneEntity> moved;
+        for (const size_t b : inOrder) moved.push_back(std::move(built[b]));
+        std::vector<int> movedKeys;
+        for (const size_t b : inOrder) movedKeys.push_back(builtKeys[b]);
+        std::sort(slots.begin(), slots.end());
+        for (size_t k = 0; k < slots.size(); ++k) {
+            built[slots[k]] = std::move(moved[k]);
+            builtKeys[slots[k]] = movedKeys[k];
+        }
     }
 
     // What goes: the members not made again - a nested prefab that went with everything in it.

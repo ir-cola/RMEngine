@@ -400,3 +400,54 @@ RM_TEST(Scene_IdsAreNeverUsedAgain) {
     for (const auto& e : t.Entities()) CHECK(e.data.id > 0 && e.data.id <= Scene::kMaxId);
     CHECK(t.Create("d") > 0);
 }
+
+RM_TEST(Prefab_OrderOfSiblingsAndComponentsIsAnOverride) {
+    const std::vector<std::string> placement{T().name};
+    int cube = 0, lid = 0;
+    Scene s = WithCube(&cube, &lid);
+    const int handle = s.Create("Handle", cube);
+    s.AddComponent(handle, T());
+    std::unordered_map<int, int> sources;
+    const json::Value v1 = MakePrefab(s, cube, &sources);
+    const int placed = s.PlacePrefab(v1, kCube);
+    const std::vector<int> kids = s.Children(placed);  // Lid, Handle
+    CHECK(kids.size() == 2 && s.Find(kids[0])->data.name == "Lid");
+    CHECK(CountOverrides(Overrides(s, placed, v1, placement)) == CountOverrides(Overrides(s, placed, v1, placement)));
+    const size_t before = CountOverrides(Overrides(s, placed, v1, placement));
+    // On the placed one: Handle before Lid, and its Spin before its Transform.
+    CHECK(s.Move(std::vector<int>{kids[1]}, placed, 0));
+    CHECK(s.Find(kids[1])->prefab.Linked());  // (only the order: still a part)
+    CHECK(s.MoveComponent(placed, Sp().name, -1));
+    const json::Value ov = Overrides(s, placed, v1, placement);
+    CHECK(ov.Get("childOrder").Items().size() == 1 && ov.Get("componentOrder").Items().size() == 1);
+    CHECK(CountOverrides(ov) == before + 2);  // seen in the inspector's count
+    // Made again from the prefab (opened again, or another placed one applied): the order stays.
+    CHECK(s.ApplyPrefab(placed, v1, ov));
+    const std::vector<int> after = s.Children(placed);
+    CHECK(after.size() == 2 && s.Find(after[0])->data.name == "Handle" && s.Find(after[1])->data.name == "Lid");
+    CHECK(s.Find(placed)->components[0].type == Sp().name && s.Find(placed)->components[1].type == T().name);
+    // Nothing changed: no order overrides.
+    const int fresh = s.PlacePrefab(v1, kCube);
+    const json::Value none = Overrides(s, fresh, v1, placement);
+    CHECK(none.Get("childOrder").Items().empty() && none.Get("componentOrder").Items().empty());
+}
+
+RM_TEST(Prefab_NestedRootMadeAPrefabOfItsOwn_LeavesTheOuter) {
+    int cube = 0, lid = 0;
+    Scene s = WithCube(&cube, &lid);
+    std::unordered_map<int, int> sources;
+    const json::Value cubeFile = MakePrefab(s, cube, &sources);
+    const int room = s.Create("Room");
+    const int inRoom = s.PlacePrefab(cubeFile, kCube, room);
+    std::unordered_map<int, int> roomSources;
+    MakePrefab(s, room, &roomSources);
+    s.LinkPrefab(room, kRoom, roomSources);
+    CHECK(s.Find(inRoom)->prefab.outer > 0);
+    // 「Prefab にする」 on the nested cube: a prefab of its own, placed by hand in the room now.
+    const AssetRef kOwn{"00000000000000000000000000000001"};
+    std::unordered_map<int, int> own;
+    MakePrefab(s, inRoom, &own);
+    CHECK(s.LinkPrefab(inRoom, kOwn, own));
+    CHECK(s.Find(inRoom)->prefab.asset == kOwn && s.Find(inRoom)->prefab.outer == 0);
+    CHECK(s.NestedPrefabs(room).empty());
+}

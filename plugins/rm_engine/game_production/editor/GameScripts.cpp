@@ -61,7 +61,7 @@ void GameScripts::Open() {
     const long long sources = ScriptSourcesTime(r.project);
     seenSources_ = sources;
     lastLook_ = platform::NowSeconds();
-    const std::filesystem::path dll = LatestScriptDll(ScriptBuildFolder(r.project));
+    const std::filesystem::path dll = LatestScriptDll(ScriptDllFolder(r.project, r.debug));
     if (sources != 0 && !dll.empty()) {
         if (auto m = LoadModule(dll)) Swap(std::move(m));
     }

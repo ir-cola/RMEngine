@@ -9,15 +9,16 @@
  *     each frame: the hooks of every script (BeginPlay / Tick / EndPlay), through function pointers;
  *     the scripts call back through api->core (and the plugins' parts: api->part(...))
  *
- * The script DLL and the engine are built with the same toolset and the same C runtime (/MD), so a
- * script's std::string field can be read and written by the engine; but no function here takes one.
+ * The engine never touches a script's std::string itself: the DLL has its own C runtime (it is a DLL,
+ * /MD; the engine may be /MT), so its strings are read and written through the DLL's own two functions
+ * (RmModule::stringGet / stringSet). Nothing else here allocates on one side and frees on the other.
  *
  * You do not include this file yourself: RM.h does. Change anything here -> raise RM_ABI_VERSION. */
 #pragma once
 
 #include <stdint.h>
 
-#define RM_ABI_VERSION 1u
+#define RM_ABI_VERSION 2u
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,10 +74,19 @@ typedef struct RmScriptDesc {
     void (*endPlay)(void* self, RmEntityId self_entity);
 } RmScriptDesc;
 
+enum RmModuleFlags {
+    RmModuleFlag_Debug = 1 /* built as Debug (the debug C runtime): only a Debug engine takes it */
+};
+
 typedef struct RmModule {
-    uint32_t abi; /* RM_ABI_VERSION the DLL was built with */
+    uint32_t abi;   /* RM_ABI_VERSION the DLL was built with */
+    uint32_t flags; /* RmModuleFlags */
     uint32_t scriptCount;
     const RmScriptDesc* scripts;
+    /* A script's std::string field (the pointer RmFieldDesc::access gives), by the DLL itself:
+       get copies what fits into buf (0-terminated) and returns the full length in bytes. */
+    uint64_t (*stringGet)(const void* field, char* buf, uint64_t cap);
+    void (*stringSet)(void* field, const char* utf8, uint64_t len);
 } RmModule;
 
 /* What every engine gives (game production's part). `ctx` is the engine's: pass it back as it is. */

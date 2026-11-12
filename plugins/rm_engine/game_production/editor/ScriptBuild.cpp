@@ -1,6 +1,7 @@
 #include "rm_engine/game_production/editor/ScriptBuild.h"
 
 #include "base/Utf.h"
+#include "platform/Process.h"
 #include "platform/Win.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 
@@ -8,6 +9,7 @@
 #include <format>
 #include <fstream>
 #include <sstream>
+#include <cwctype>
 #include <system_error>
 
 namespace rm::game_production {
@@ -62,49 +64,40 @@ bool WriteIfChanged(const fs::path& p, const std::string& text, std::string* why
     return true;
 }
 
-// Runs a command line and waits; its exit code (-1: it could not start). `output`: what it printed
-// (null: thrown away - MSBuild's is read from its log file instead: its console text is in the
-// console's code page, and its helper processes could hold a pipe open after it ends).
+// Runs a command line and waits (platform::RunProcess: only its own pipe is handed down); its exit
+// code, -1 when it could not start.
 int Run(const std::wstring& commandLine, const fs::path& folder, std::string* output) {
-    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
-    HANDLE readEnd = nullptr, writeEnd = nullptr;
-    if (output) {
-        if (!CreatePipe(&readEnd, &writeEnd, &sa, 0)) return -1;
-        SetHandleInformation(readEnd, HANDLE_FLAG_INHERIT, 0);
-    } else {
-        writeEnd = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
-        if (writeEnd == INVALID_HANDLE_VALUE) return -1;
-    }
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdOutput = writeEnd;
-    si.hStdError = writeEnd;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    PROCESS_INFORMATION pi{};
-    std::wstring cmd = commandLine;
-    const BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
-                                        folder.empty() ? nullptr : folder.c_str(), &si, &pi);
-    CloseHandle(writeEnd);
-    if (!started) {
-        if (readEnd) CloseHandle(readEnd);
-        return -1;
-    }
-    std::string bytes;
-    if (readEnd) {
-        char buf[4096];
-        DWORD got = 0;
-        while (ReadFile(readEnd, buf, sizeof(buf), &got, nullptr) && got > 0) bytes.append(buf, got);
-        CloseHandle(readEnd);
-    }
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD code = 0;
-    GetExitCodeProcess(pi.hProcess, &code);
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
-    if (output) *output = std::move(bytes);
-    return static_cast<int>(code);
+    std::string error;
+    const platform::ProcessResult r = platform::RunProcess(commandLine, folder, {}, &error);
+    if (!r.started) return -1;
+    if (output) *output = r.output;
+    return static_cast<int>(r.exitCode);
 }
+
+// One build of a project at a time, in every process of this PC (an editor closed while building
+// leaves MSBuild running; opened again, a second build would take the same number and the same
+// Obj folder). A named mutex: let go when the build ends, or when its process ends.
+class ProjectLock {
+public:
+    explicit ProjectLock(const fs::path& project) {
+        std::wstring key = fs::absolute(project).lexically_normal().native();
+        for (wchar_t& c : key) c = static_cast<wchar_t>(towlower(c));
+        const size_t hash = std::hash<std::wstring>{}(key);
+        mutex_ = CreateMutexW(nullptr, FALSE, (L"Local\\RmEngineScriptBuild_" + std::to_wstring(hash)).c_str());
+        if (!mutex_) return;
+        const DWORD w = WaitForSingleObject(mutex_, 10 * 60 * 1000);  // a build of this project still running elsewhere: wait for it
+        held_ = w == WAIT_OBJECT_0 || w == WAIT_ABANDONED;
+    }
+    ~ProjectLock() {
+        if (held_) ReleaseMutex(mutex_);
+        if (mutex_) CloseHandle(mutex_);
+    }
+    bool Held() const { return held_; }
+
+private:
+    HANDLE mutex_ = nullptr;
+    bool held_ = false;
+};
 
 std::wstring Quote(const fs::path& p) { return L"\"" + p.native() + L"\""; }
 
@@ -125,6 +118,9 @@ std::string ReadText(const fs::path& p) {
 fs::path ScriptsFolder(const fs::path& project) { return project / L"Assets" / L"Scripts"; }
 fs::path ScriptBuildFolder(const fs::path& project) { return project / L"Library" / L"Scripts"; }
 fs::path ScriptSolution(const fs::path& project) { return project / L"Scripts.sln"; }
+fs::path ScriptDllFolder(const fs::path& project, bool debug) {
+    return debug ? ScriptBuildFolder(project) / L"Debug" : ScriptBuildFolder(project);
+}
 
 long long ScriptSourcesTime(const fs::path& project) {
     long long newest = 0, count = 0;
@@ -284,12 +280,21 @@ ScriptBuildResult BuildScripts(const ScriptBuildRequest& r) {
         res.summary = "Visual Studio 2022 (「C++ によるデスクトップ開発」) が見つからないので、スクリプトをビルドできません";
         return res;
     }
+    const ProjectLock lock(r.project);
+    if (!lock.Held()) {
+        res.summary = "ほかのスクリプトのビルドが終わらないので、ビルドしませんでした (もう一度ためしてください)";
+        return res;
+    }
     std::string why;
     if (!WriteScriptProject(r, &why)) {
         res.summary = why;
         return res;
     }
-    const fs::path folder = ScriptBuildFolder(r.project);
+    // Release and Debug apart (a DLL of the other one is never loaded: RmModuleFlag_Debug). An export is
+    // always Release: under the Release folder.
+    const fs::path folder = ScriptDllFolder(r.project, r.debug && !r.forExport);
+    std::error_code mk;
+    fs::create_directories(folder, mk);
     // A new name every time (Scripts_0007.dll): the one the editor has loaded cannot be written over.
     // For an export: always Scripts.dll in Export/, built apart (its own objects).
     const int number = r.forExport ? 0 : std::max(0, ScriptDllNumber(LatestScriptDll(folder).filename().native())) + 1;
@@ -298,7 +303,7 @@ ScriptBuildResult BuildScripts(const ScriptBuildRequest& r) {
     const fs::path log = folder / (r.forExport ? L"build_export.log" : L"build.log");
     // (A folder ends with a backslash, which would escape the closing quote: doubled inside quotes.)
     auto folderArg = [](const char* key, const fs::path& p) { return L" \"" + Utf8ToWide(key) + Utf8ToWide(Dir(p)) + L"\\\""; };
-    std::wstring cmd = Quote(msbuild) + L" " + Quote(folder / L"Scripts.vcxproj") + L" -nologo -v:quiet -m -nodeReuse:false -p:Configuration=" +
+    std::wstring cmd = Quote(msbuild) + L" " + Quote(ScriptBuildFolder(r.project) / L"Scripts.vcxproj") + L" -nologo -v:quiet -m -nodeReuse:false -p:Configuration=" +
                        (r.debug && !r.forExport ? L"Debug" : L"Release") + L" -p:Platform=x64 -p:TargetName=" + name + folderArg("-p:OutDir=", outFolder) +
                        folderArg("-p:RmEngineDir=", r.engine) + L" \"-flp:LogFile=" + log.native() + L";Encoding=UTF-8;Verbosity=minimal\"";
     if (r.forExport) {

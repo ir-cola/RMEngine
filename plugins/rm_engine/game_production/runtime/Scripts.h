@@ -77,10 +77,18 @@ struct ScriptType {
     reflect::TypeDesc desc{};
     std::vector<reflect::FieldDesc> fields;
     const RmScriptDesc* script = nullptr;  // its hooks (in the DLL)
+    reflect::StringAccess strings{};        // its std::string fields: through the DLL (RmModule::stringGet / stringSet)
 };
-// Why a module cannot be used (empty = fine): another ABI, a type too strictly aligned, a field of a
-// kind this version does not know, two scripts of one name.
-std::string CheckModule(const RmModule* module, uint32_t engineAbi = RM_ABI_VERSION);
+// This engine is a Debug build (its scripts must be too: RmModuleFlag_Debug).
+#ifdef _DEBUG
+inline constexpr bool kEngineDebug = true;
+#else
+inline constexpr bool kEngineDebug = false;
+#endif
+// Why a module cannot be used (empty = fine): another ABI, built as Debug for a Release engine (or the
+// other way), no string functions, a type too strictly aligned, a field of a kind this version does
+// not know, two scripts of one name.
+std::string CheckModule(const RmModule* module, uint32_t engineAbi = RM_ABI_VERSION, bool engineDebug = kEngineDebug);
 std::vector<std::unique_ptr<ScriptType>> MakeScriptTypes(const RmModule& module);
 
 // --- A loaded script DLL --------------------------------------------------------------------------
@@ -125,11 +133,14 @@ std::vector<std::string> SortScriptTypes(std::vector<std::string> types, std::sp
 // --- Running them -------------------------------------------------------------------------------
 class ScriptRunner {
 public:
-    // One frame: the keyboard read, BeginPlay of every script not started yet (also the ones made
-    // during the last frame), then Tick of every script - type by type in the run order; inside a
-    // type by entity id, then in the order they are attached. A script that crashed is not run again.
+    // One frame: the keyboard read; EndPlay of the started scripts switched off since (their entity or a
+    // parent made not 有効); BeginPlay of every running script not started yet (new, or switched on
+    // again); then Tick of every running one - type by type in the run order; inside a type by entity
+    // id, then in the order they are attached. BeginPlay and EndPlay always come in pairs (a script
+    // whose entity was deleted is gone with it). A script that crashed is not run again.
     void Frame(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order, float dt);
-    // EndPlay of every started script (Stop), then all forgotten.
+    // EndPlay of every started script (Stop), then all forgotten - and the world no longer points at the
+    // scene (it is about to go).
     void Stop(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);
     void Reset();
     size_t Crashed() const { return crashed_.size(); }
@@ -139,7 +150,9 @@ private:
         int entity;
         const ScriptType* type;
         void* data;
+        bool active;  // it and every parent 有効
     };
+    // Every script of the scene (the switched-off ones too), in the run order.
     std::vector<Instance> Collect(Scene& scene, const ScriptModule& module, std::span<const ScriptOrderEntry> order) const;
     // Runs a hook guarded; false (and the script stopped, told once) when it crashed.
     bool Call(ScriptWorld& world, const Instance& in, int hook, float dt);

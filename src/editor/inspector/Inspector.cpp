@@ -305,8 +305,8 @@ void DrawValue(Pass& x, const Spot& s) {
             break;
         }
         case FieldType::String: {
-            const std::string& cur = *static_cast<const std::string*>(s.value);
-            const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return *static_cast<const std::string*>(o) != cur; });
+            const std::string cur = reflect::ReadString(s.f, s.value);
+            const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return reflect::ReadString(s.f, o) != cur; });
             if (auto typed = LiveField(x, "v", s.r, differ ? std::string(kMixed) : cur, s.enabled, merge)) put(json::Value(*typed), merge);
             break;
         }

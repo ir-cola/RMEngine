@@ -7,9 +7,20 @@
 
 #include "platform/Win.h"
 
+#include <malloc.h>  // _resetstkoflw
+
 namespace rm::game_production {
 
-unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt) {
+namespace {
+
+// After a stack overflow is caught, the stack has no guard page any more: the next one would end the
+// program at once. _resetstkoflw puts it back - outside the __except block, where the stack is unwound.
+unsigned long Recovered(unsigned long code) {
+    if (code == EXCEPTION_STACK_OVERFLOW) _resetstkoflw();
+    return code;
+}
+
+unsigned long CallHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt) {
     __try {
         switch (hook) {
             case 0:
@@ -28,7 +39,7 @@ unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, R
     }
 }
 
-unsigned long CallModuleInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out) {
+unsigned long CallInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out) {
     __try {
         *out = init(api, abi);
         return 0;
@@ -36,6 +47,16 @@ unsigned long CallModuleInit(RmModuleInitFn init, const RmApi* api, uint32_t abi
         *out = nullptr;
         return GetExceptionCode();
     }
+}
+
+}  // namespace
+
+unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt) {
+    return Recovered(CallHook(script, hook, self, entity, dt));
+}
+
+unsigned long CallModuleInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out) {
+    return Recovered(CallInit(init, api, abi, out));
 }
 
 }  // namespace rm::game_production

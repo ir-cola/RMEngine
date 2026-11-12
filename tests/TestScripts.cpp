@@ -8,6 +8,9 @@
 #include "../tools/rmgen/Scanner.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 
+#include <windows.h>
+
+#include <algorithm>
 #include <cstring>
 #include <new>
 
@@ -62,7 +65,25 @@ const RmScriptDesc kScripts[] = {
     {"Crasher", "落ちる", "Crasher.h", sizeof(Crasher), alignof(Crasher), kCrasherFields, 1, &Construct<Crasher>, &Destruct<Crasher>,
      &Copy<Crasher>, nullptr, &CrasherTick, nullptr},
 };
-const RmModule kModule{RM_ABI_VERSION, 2, kScripts};
+// The module's string functions (in a real DLL: rmgen writes them, with the DLL's C runtime). Counted:
+// the engine must go through them for every string field.
+int g_stringCalls = 0;
+uint64_t StringGet(const void* field, char* buf, uint64_t cap) {
+    ++g_stringCalls;
+    const std::string& s = *static_cast<const std::string*>(field);
+    if (buf && cap > 0) {
+        const size_t n = std::min<size_t>(s.size(), static_cast<size_t>(cap - 1));
+        std::memcpy(buf, s.data(), n);
+        buf[n] = '\0';
+    }
+    return s.size();
+}
+void StringSet(void* field, const char* utf8, uint64_t len) {
+    ++g_stringCalls;
+    static_cast<std::string*>(field)->assign(utf8, static_cast<size_t>(len));
+}
+constexpr uint32_t kFlags = kEngineDebug ? RmModuleFlag_Debug : 0;
+const RmModule kModule{RM_ABI_VERSION, kFlags, 2, kScripts, &StringGet, &StringSet};
 
 Scene SceneWith(const ScriptModule& m) {
     Scene s;
@@ -83,22 +104,27 @@ RM_TEST(Scripts_OrderByListThenName) {
 RM_TEST(Scripts_CheckModule) {
     CHECK(!CheckModule(nullptr).empty());
     CHECK(CheckModule(&kModule).empty());
-    const RmModule other{RM_ABI_VERSION + 1, 2, kScripts};
+    const RmModule other{RM_ABI_VERSION + 1, kFlags, 2, kScripts, &StringGet, &StringSet};
     CHECK(!CheckModule(&other).empty());  // built with another RM.h
     RmScriptDesc twice[] = {kScripts[0], kScripts[0]};
-    const RmModule dup{RM_ABI_VERSION, 2, twice};
+    const RmModule dup{RM_ABI_VERSION, kFlags, 2, twice, &StringGet, &StringSet};
     CHECK(!CheckModule(&dup).empty());
     RmScriptDesc aligned[] = {kScripts[0]};
     aligned[0].align = 64;
-    const RmModule big{RM_ABI_VERSION, 1, aligned};
+    const RmModule big{RM_ABI_VERSION, kFlags, 1, aligned, &StringGet, &StringSet};
     CHECK(!CheckModule(&big).empty());
     RmFieldDesc unknownKind[] = {kCounterFields[0]};
     unknownKind[0].type = 99;
     RmScriptDesc strange[] = {kScripts[0]};
     strange[0].fields = unknownKind;
     strange[0].fieldCount = 1;
-    const RmModule odd{RM_ABI_VERSION, 1, strange};
+    const RmModule odd{RM_ABI_VERSION, kFlags, 1, strange, &StringGet, &StringSet};
     CHECK(!CheckModule(&odd).empty());
+    // Built as Debug for a Release engine (or the other way): never read (another C runtime).
+    const RmModule otherKind{RM_ABI_VERSION, kFlags ^ RmModuleFlag_Debug, 2, kScripts, &StringGet, &StringSet};
+    CHECK(!CheckModule(&otherKind).empty());
+    const RmModule noStrings{RM_ABI_VERSION, kFlags, 2, kScripts, nullptr, nullptr};
+    CHECK(!CheckModule(&noStrings).empty());
     CHECK(ScriptDllNumber(L"Scripts_0007.dll") == 7 && ScriptDllNumber(L"Scripts_.dll") == -1 && ScriptDllNumber(L"Other_1.dll") == -1);
 }
 
@@ -164,7 +190,7 @@ RM_TEST(Scripts_ValuesCarriedOverWhenBuiltAgain) {
     };
     static const RmScriptDesc scripts2[] = {{"test::Counter", "数える", "Counter.h", sizeof(Counter2), alignof(Counter2), fields2, 3,
                                              &Construct<Counter2>, &Destruct<Counter2>, &Copy<Counter2>, nullptr, nullptr, nullptr}};
-    static const RmModule module2{RM_ABI_VERSION, 1, scripts2};
+    static const RmModule module2{RM_ABI_VERSION, kFlags, 1, scripts2, &StringGet, &StringSet};
 
     ScriptModule m;
     m.Adopt(kModule);
@@ -273,4 +299,78 @@ struct Data {
     CHECK(d2.size() == 2 && d2[0].code == "RM0013" && d2[1].code == "RM0013");
     // No scripts at all: still a module (empty).
     CHECK(rmgen::EmitScripts({}).find("kRmScripts = nullptr") != std::string::npos);
+}
+
+RM_TEST(Scripts_StringsOnlyThroughTheModule) {
+    ScriptModule m;
+    m.Adopt(kModule);
+    const ScriptType* c = m.Find("test::Counter");
+    reflect::Object o(c->desc);
+    g_stringCalls = 0;
+    // Read, written, compared: always through the DLL's own functions (its C runtime owns the memory).
+    json::Value data = reflect::Save(c->desc, o.Get());
+    CHECK(data.Get("note").AsString() == "hello" && g_stringCalls > 0);
+    const int afterSave = g_stringCalls;
+    data.Set("note", std::string(100, 'x'));  // longer than the small-string buffer: a heap allocation
+    reflect::Load(c->desc, o.Get(), data);
+    CHECK(g_stringCalls > afterSave && static_cast<Counter*>(o.Get())->note == std::string(100, 'x'));
+    reflect::Object copy(c->desc);
+    CHECK(!reflect::Equals(c->desc, o.Get(), copy.Get()));
+    CHECK(reflect::ReadString(c->desc.fields[2], &static_cast<Counter*>(o.Get())->note) == std::string(100, 'x'));
+}
+
+namespace {
+int g_deep = 0;
+#pragma optimize("", off)
+#pragma warning(push)
+#pragma warning(disable : 4717)  // (recursing for ever is what this is for)
+int Deep(int n) {
+    volatile char buf[4096];
+    buf[0] = static_cast<char>(n);
+    ++g_deep;
+    return Deep(n + 1) + buf[0];  // never returns: the stack runs out
+}
+#pragma warning(pop)
+#pragma optimize("", on)
+void OverflowTick(void*, RmEntityId, float) { Deep(0); }
+}  // namespace
+
+RM_TEST(Scripts_StackOverflowTwice_TheEditorGoesOn) {
+    RmScriptDesc d = kScripts[1];
+    d.tick = &OverflowTick;
+    // Twice: after the first, the stack's guard page must be back (or the second ends the program).
+    CHECK(CallScriptHook(d, 1, nullptr, 1, 0) == EXCEPTION_STACK_OVERFLOW);
+    CHECK(CallScriptHook(d, 1, nullptr, 1, 0) == EXCEPTION_STACK_OVERFLOW);
+    CHECK(g_deep > 10);
+}
+
+RM_TEST(Scripts_BeginAndEndInPairs_WhenSwitchedOffAndOn) {
+    ScriptModule m;
+    m.Adopt(kModule);
+    Scene s = SceneWith(m);
+    const int a = s.Create("a");
+    s.AddComponent(a, m.Find("test::Counter")->desc);
+    ScriptWorld w;
+    ScriptRunner r;
+    g_log.clear();
+    r.Frame(s, w, m, {}, 0.1f);
+    CHECK(g_log == "B1T1");
+    g_log.clear();
+    s.Find(a)->data.active = false;  // switched off: EndPlay, no Tick
+    r.Frame(s, w, m, {}, 0.1f);
+    CHECK(g_log == "E1");
+    g_log.clear();
+    r.Frame(s, w, m, {}, 0.1f);
+    CHECK(g_log.empty());
+    s.Find(a)->data.active = true;  // on again: BeginPlay again, then Tick
+    r.Frame(s, w, m, {}, 0.1f);
+    CHECK(g_log == "B1!T1");  // (the same object: its ticks kept)
+    g_log.clear();
+    // Stop: EndPlay of every started one, also one switched off just now; the world lets the scene go.
+    s.Find(a)->data.active = false;
+    r.Stop(s, w, m, {});
+    CHECK(g_log == "E1" && w.scene == nullptr);
+    g_log.clear();
+    r.Stop(s, w, m, {});
+    CHECK(g_log.empty());  // nothing started: nothing ended
 }

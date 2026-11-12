@@ -136,11 +136,16 @@ std::vector<ScriptApiPart> ScriptApiParts(const RuntimeRegistry& registry) {
     return out;
 }
 
-std::string CheckModule(const RmModule* m, uint32_t engineAbi) {
+std::string CheckModule(const RmModule* m, uint32_t engineAbi, bool engineDebug) {
     if (!m) return "スクリプトの DLL がスクリプトを返しませんでした (RmModuleInit)。エンジンと RM.h の版が違うかもしれません。ビルドし直してください";
     if (m->abi != engineAbi) {
         return std::format("スクリプトの DLL の版 ({}) がエンジン ({}) と違います。ビルドし直してください", m->abi, engineAbi);
     }
+    if (((m->flags & RmModuleFlag_Debug) != 0) != engineDebug) {
+        return engineDebug ? "スクリプトの DLL が Release でビルドされています。このエンジン (Debug) ではビルドし直してから使います"
+                           : "スクリプトの DLL が Debug でビルドされています。このエンジン (Release) ではビルドし直してから使います";
+    }
+    if (!m->stringGet || !m->stringSet) return "スクリプトの DLL に文字の欄を読み書きする関数がありません。ビルドし直してください";
     if (m->scriptCount > 0 && !m->scripts) return "スクリプトの DLL のスクリプトの一覧が空です";
     std::unordered_set<std::string> names;
     for (uint32_t i = 0; i < m->scriptCount; ++i) {
@@ -165,6 +170,14 @@ std::vector<std::unique_ptr<ScriptType>> MakeScriptTypes(const RmModule& m) {
         const RmScriptDesc& s = m.scripts[i];
         auto t = std::make_unique<ScriptType>();
         t->script = &s;
+        // Strings: only through the DLL (its C runtime owns their memory).
+        t->strings.ctx = &m;
+        t->strings.get = [](const void* ctx, const void* field, char* buf, size_t cap) -> size_t {
+            return static_cast<size_t>(static_cast<const RmModule*>(ctx)->stringGet(field, buf, cap));
+        };
+        t->strings.set = [](const void* ctx, void* field, const char* utf8, size_t len) {
+            static_cast<const RmModule*>(ctx)->stringSet(field, utf8, len);
+        };
         for (uint32_t f = 0; f < s.fieldCount; ++f) {
             const RmFieldDesc& in = s.fields[f];
             reflect::FieldDesc fd{};
@@ -183,6 +196,7 @@ std::vector<std::unique_ptr<ScriptType>> MakeScriptTypes(const RmModule& m) {
             fd.max = in.max;
             fd.step = in.step;
             fd.line = in.line;
+            if (in.type == RmField_String) fd.stringAccess = &t->strings;
             t->fields.push_back(fd);
         }
         t->desc = reflect::TypeDesc{s.name,
@@ -297,12 +311,11 @@ std::vector<ScriptRunner::Instance> ScriptRunner::Collect(Scene& scene, const Sc
     std::vector<Instance> out;
     std::vector<std::string> present;
     for (const TreeEntry& t : scene.TreeOrder()) {
-        if (!t.activeInHierarchy) continue;
         SceneEntity* e = scene.Find(t.entity->data.id);
         for (Component& c : e->components) {
             if (!c.Known()) continue;
             if (const ScriptType* type = module.Find(c.type)) {
-                out.push_back({e->data.id, type, c.value.Get()});
+                out.push_back({e->data.id, type, c.value.Get(), t.activeInHierarchy});
                 present.push_back(c.type);
             }
         }
@@ -334,18 +347,25 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
     world.dt = dt;
     world.ReadKeys();
     const std::vector<Instance> list = Collect(scene, module, order);
-    // Forget what is gone (a deleted entity, a switched-off one: started again when it comes back).
     std::unordered_set<void*> present;
     for (const Instance& in : list) present.insert(in.data);
+    // Switched off since the last frame: EndPlay (BeginPlay again when switched on).
+    for (const Instance& in : list) {
+        if (in.active || !started_.contains(in.data)) continue;
+        if (!crashed_.contains(in.data)) Call(world, in, 2, 0);
+        started_.erase(in.data);
+    }
+    // Gone with its entity: its object is gone too (nothing left to call).
     std::erase_if(started_, [&](void* p) { return !present.contains(p); });
+    std::erase_if(crashed_, [&](void* p) { return !present.contains(p); });
     // BeginPlay of the new ones first (also what the last frame made), then every Tick.
     for (const Instance& in : list) {
-        if (started_.contains(in.data) || crashed_.contains(in.data)) continue;
+        if (!in.active || started_.contains(in.data) || crashed_.contains(in.data)) continue;
         started_.insert(in.data);
         Call(world, in, 0, 0);
     }
     for (const Instance& in : list) {
-        if (crashed_.contains(in.data) || !started_.contains(in.data)) continue;
+        if (!in.active || crashed_.contains(in.data) || !started_.contains(in.data)) continue;
         Call(world, in, 1, dt);
     }
     world.time += dt;
@@ -357,6 +377,9 @@ void ScriptRunner::Stop(Scene& scene, ScriptWorld& world, const ScriptModule& mo
         if (started_.contains(in.data) && !crashed_.contains(in.data)) Call(world, in, 2, 0);
     }
     Reset();
+    // The scene that played is thrown away next: a script's default value that asks the world (a
+    // script made when a component is added, or when scripts are swapped) must not see it.
+    world.scene = nullptr;
 }
 
 void ScriptRunner::Reset() {

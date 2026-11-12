@@ -79,6 +79,15 @@ struct ArrayOps {
     void* (*at)(void* vec, size_t i);
 };
 
+// A std::string that lives in another module (a script DLL, built with its own C runtime): read and
+// written only through that module's functions - this program never assigns to it or frees it (its
+// memory is the other runtime's).
+struct StringAccess {
+    const void* ctx;
+    size_t (*get)(const void* ctx, const void* field, char* buf, size_t cap);  // the full length; copies what fits (0-terminated)
+    void (*set)(const void* ctx, void* field, const char* utf8, size_t len);
+};
+
 struct FieldDesc {
     const char* name;  // C++ name = key in files
     ValueType value;
@@ -93,6 +102,7 @@ struct FieldDesc {
     double min = 0, max = 0, step = 0;
     int line = 0;  // in the header (for messages)
     const char* assetKinds = nullptr;  // AssetRef: AssetKind="..." (null: any file)
+    const StringAccess* stringAccess = nullptr;  // String of another module (scripts): ReadString / WriteString
 
     const void* Get(const void* object) const { return access(const_cast<void*>(object)); }
     void* Get(void* object) const { return access(object); }

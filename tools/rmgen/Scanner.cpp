@@ -1076,7 +1076,7 @@ std::string EmitScripts(const std::vector<Header>& all) {
     o += "// rmgen がスクリプトのヘッダーから作りました (スクリプトの DLL の登録)。手で直さないでください (ビルドのたびに作り直されます)。\n\n";
     o += "#include \"RM.h\"\n";
     for (const Header& h : all) o += std::format("#include \"{}\"\n", h.includePath);
-    o += "\n#include <memory>\n#include <new>\n#include <string>\n#include <type_traits>\n\n";
+    o += "\n#include <cstring>\n#include <memory>\n#include <new>\n#include <string>\n#include <type_traits>\n\n";
     o += R"(namespace {
 const RmApi* g_rmApi = nullptr;
 template <class T> concept RmHasBegin = requires(T& t, ::rm::Entity e) { t.BeginPlay(e); };
@@ -1175,12 +1175,30 @@ const RmApi* rm::Api() { return g_rmApi; }
     } else {
         o += "static const RmScriptDesc kRmScripts[] = {\n" + table + "};\n";
     }
+    o += R"(
+// The scripts' std::string fields, read and written here (with this DLL's C runtime) for the engine.
+static uint64_t RmStringGet(const void* field, char* buf, uint64_t cap) {
+    const std::string& s = *static_cast<const std::string*>(field);
+    if (buf && cap > 0) {
+        const size_t n = s.size() < cap - 1 ? s.size() : static_cast<size_t>(cap - 1);
+        std::memcpy(buf, s.data(), n);
+        buf[n] = '\0';
+    }
+    return s.size();
+}
+static void RmStringSet(void* field, const char* utf8, uint64_t len) { static_cast<std::string*>(field)->assign(utf8, static_cast<size_t>(len)); }
+#ifdef _DEBUG
+static constexpr uint32_t kRmModuleFlags = RmModuleFlag_Debug;
+#else
+static constexpr uint32_t kRmModuleFlags = 0;
+#endif
+)";
     o += std::format(R"(
 extern "C" __declspec(dllexport) const RmModule* RmModuleInit(const RmApi* api, uint32_t abi) {{
     // The engine and this DLL must agree on the boundary (RmAbi.h); another version is refused.
     if (abi != RM_ABI_VERSION || !api || api->abi != RM_ABI_VERSION) return nullptr;
     g_rmApi = api;
-    static const RmModule module{{RM_ABI_VERSION, {}u, kRmScripts}};
+    static const RmModule module{{RM_ABI_VERSION, kRmModuleFlags, {}u, kRmScripts, &RmStringGet, &RmStringSet}};
     return &module;
 }}
 )",

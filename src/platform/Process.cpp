@@ -45,13 +45,31 @@ ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem:
         return r;
     }
     SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
+    // Only the pipe is handed down (PROC_THREAD_ATTRIBUTE_HANDLE_LIST): a child must not get every
+    // inheritable handle of this process - another run's pipe, held by this child, would keep that
+    // run waiting for its end until this child ends too (an export and a script build at once).
+    SIZE_T attrSize = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+    std::vector<unsigned char> attrBuf(attrSize);
+    auto* attrs = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrBuf.data());
+    HANDLE inherit[] = {writePipe};
+    const bool listed = InitializeProcThreadAttributeList(attrs, 1, 0, &attrSize) &&
+                        UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherit, sizeof(inherit), nullptr, nullptr);
+    if (!listed) {
+        if (error) *error = ErrorText(GetLastError());
+        CloseHandle(readPipe);
+        CloseHandle(writePipe);
+        return r;
+    }
+    STARTUPINFOEXW six{};
+    six.StartupInfo.cb = sizeof(six);
+    STARTUPINFOW& si = six.StartupInfo;
     si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     si.hStdOutput = writePipe;
     si.hStdError = writePipe;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdInput = nullptr;  // (not in the list: nothing to read)
+    six.lpAttributeList = attrs;
     std::vector<wchar_t> env;
     if (!environment.empty()) {
         for (const auto& [k, v] : environment) {
@@ -63,8 +81,10 @@ ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem:
     }
     std::wstring cmd = commandLine;
     PROCESS_INFORMATION pi{};
-    const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
-                                   env.empty() ? nullptr : env.data(), workingDir.empty() ? nullptr : workingDir.c_str(), &si, &pi);
+    const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE,
+                                   CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT, env.empty() ? nullptr : env.data(),
+                                   workingDir.empty() ? nullptr : workingDir.c_str(), &si, &pi);
+    DeleteProcThreadAttributeList(attrs);
     CloseHandle(writePipe);
     if (!ok) {
         if (error) *error = ErrorText(GetLastError());

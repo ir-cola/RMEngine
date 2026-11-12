@@ -6,6 +6,7 @@
 #include "Test.h"
 
 #include "rm_engine/game_production/editor/ScriptBuild.h"
+#include "platform/Process.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_x_2d/runtime/ScriptTransform2D.h"
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
@@ -14,6 +15,7 @@
 #include <windows.h>
 
 #include <cstdio>
+#include <thread>
 #include <filesystem>
 
 using namespace rm;
@@ -109,7 +111,34 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
         // Built again: another name (the loaded one cannot be written over).
         const ScriptBuildResult again = BuildScripts(req);
         CHECK(again.ok && again.dll.filename() == L"Scripts_0002.dll");
-        CHECK(LatestScriptDll(ScriptBuildFolder(project)).filename() == L"Scripts_0002.dll");
+        CHECK(LatestScriptDll(ScriptDllFolder(project, req.debug)).filename() == L"Scripts_0002.dll");
+        // Two builds of one project at once (an editor closed while building, opened again): one waits
+        // for the other - two numbers, both built.
+        ScriptBuildResult first, second;
+        std::thread a([&] { first = BuildScripts(req); });
+        std::thread b([&] { second = BuildScripts(req); });
+        a.join();
+        b.join();
+        CHECK(first.ok && second.ok && first.dll != second.dll);
     }
     fs::remove_all(project, ec);
+}
+
+RM_TEST(Process_HandsDownOnlyItsOwnPipe) {
+    // Another inheritable pipe of this process (an export's, say): the child must not hold it, or the
+    // one reading it would wait for the child's end.
+    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+    HANDLE readEnd = nullptr, writeEnd = nullptr;
+    CHECK(CreatePipe(&readEnd, &writeEnd, &sa, 0));
+    std::thread child([] {
+        std::string error;
+        platform::RunProcess(L"cmd.exe /c ping -n 3 127.0.0.1", {}, {}, &error);  // about 2 seconds
+    });
+    Sleep(500);
+    CloseHandle(writeEnd);  // our only write end: the pipe is broken unless the child has one too
+    DWORD avail = 0;
+    const BOOL peek = PeekNamedPipe(readEnd, nullptr, 0, nullptr, &avail, nullptr);
+    CHECK(!peek && GetLastError() == ERROR_BROKEN_PIPE);
+    child.join();
+    CloseHandle(readEnd);
 }

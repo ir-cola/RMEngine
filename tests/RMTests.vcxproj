@@ -36,6 +36,8 @@
   <ItemDefinitionGroup>
     <Link>
       <SubSystem>Console</SubSystem>
+      <!-- (platform/Shell.cpp: the scripts' build runs programs through platform/Process) -->
+      <AdditionalDependencies>dwmapi.lib;bcrypt.lib;shcore.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <ClCompile>
       <!-- src\editor\widgets, src\editor\dock: their reflected types (ThemeFile.h, NamedLayouts.h) are generated with paths from there -->
@@ -115,6 +117,8 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scripts.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\ScriptGuard.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\editor\ScriptBuild.cpp" />
+    <ClCompile Include="..\src\platform\Process.cpp" />
+    <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Register.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\ScriptTransform3D.cpp" />

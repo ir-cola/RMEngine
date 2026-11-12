@@ -42,6 +42,11 @@ struct Unknowns::Nested {
 // Messages for the console (Japanese, UTF-8), e.g. a value out of range or an unknown enum name.
 using Warnings = std::vector<std::string>;
 
+// A String field's text, and setting it - through FieldDesc::stringAccess when the string is another
+// module's (every string field goes through these two).
+std::string ReadString(const FieldDesc& f, const void* field);
+void WriteString(const FieldDesc& f, void* field, std::string_view text);
+
 json::Value Save(const TypeDesc& type, const void* object, const Unknowns* unknowns = nullptr);
 // Fields missing from the file keep their current value (so: default-construct, then Load).
 void Load(const TypeDesc& type, void* object, const json::Value& v, Unknowns* unknowns = nullptr,
