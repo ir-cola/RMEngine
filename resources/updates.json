@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "テクスチャの直し: 絵が付いた後に何もしていなくても描き直し続けていたのを止める。できた絵がマウスを動かすまで出ないことがあったのを直す。sRGB の違う絵が同じキャッシュのファイルを使っていたのを直す",
+          "en": "Texture fixes: the view no longer keeps redrawing when idle after the pictures are in; a finished picture no longer waits for the mouse to move to appear; pictures read as sRGB or not no longer share a cache file"
+        },
+        {
           "ja": "スクリプトを保存したときや、エクスプローラーでアセットを足したときに、エディターに触っていなくてもすぐ気づく (前はマウスを動かすまで待っていた)。Visual Studio などが保存のときに作る一時ファイルをアセットに数えない。書き出しのパネルが低いときはスクロールする",
           "en": "Saving a script or adding an asset in Explorer is noticed at once, even while the editor is left alone (it used to wait for the mouse to move). Temporary files that Visual Studio and others write while saving are not counted as assets. The Export panel scrolls when it is low"
         },

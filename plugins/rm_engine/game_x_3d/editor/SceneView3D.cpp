@@ -186,7 +186,7 @@ public:
         Place(host);
         ForgetUnusedModels();
         // Drawn again until the models (and their pictures) being read on the other threads arrive.
-        if (loader_.Pending() > 0 || textures_.Waiting() > 0) c.RequestAnimation();
+        if (loader_.Pending() > 0 || textures_.Waiting(now_) > 0) c.RequestAnimation();
         if (host.game) {  // the game view: only the picture, through the game's camera
             DrawGame(c, r, host);
             return;

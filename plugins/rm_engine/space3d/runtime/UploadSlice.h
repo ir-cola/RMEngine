@@ -7,6 +7,8 @@
 //
 // The first copy of a frame always may (so pictures keep coming, however big one is); after it,
 // copies stop when the frame has spent the budget. `frame` is any value that changes every frame.
+// Deferred(frame) counts the copies put off in that frame only: a frame that asked for none (nothing
+// is waiting any more) has none - so nobody draws again for copies that were made long ago.
 
 #include <algorithm>
 #include <cstddef>
@@ -27,8 +29,8 @@ public:
         spent_ += std::max(seconds, 0.0);
         ++copies_;
     }
-    // Copies put off (in this frame or the one before): draw again until 0.
-    size_t Deferred() const { return std::max(deferred_, deferredBefore_); }
+    // Copies put off in `frame` (each of them asks again in the next frame): draw again until 0.
+    size_t Deferred(double frame) const { return frame == frame_ ? deferred_ : 0; }
     double SpentThisFrame() const { return spent_; }
 
 private:
@@ -37,7 +39,6 @@ private:
         frame_ = frame;
         spent_ = 0;
         copies_ = 0;
-        deferredBefore_ = deferred_;
         deferred_ = 0;
     }
 
@@ -45,7 +46,7 @@ private:
     double frame_ = -1;
     double spent_ = 0;
     size_t copies_ = 0;
-    size_t deferred_ = 0, deferredBefore_ = 0;
+    size_t deferred_ = 0;
 };
 
 }  // namespace rm::space3d

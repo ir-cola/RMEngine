@@ -30,7 +30,8 @@ PictureDecoder::~PictureDecoder() {
 std::shared_ptr<PictureDecoder::Job> PictureDecoder::Request(Source source) {
     auto job = std::make_shared<Job>();
     job->source_ = std::move(source);
-    ++waiting_;
+    ++*waiting_;
+    job->counter_ = waiting_;
     {
         std::lock_guard lock(mu_);
         queue_.push_back(job);
@@ -66,7 +67,7 @@ void PictureDecoder::Run(std::stop_token stop) {
             }
             job->done_.store(true, std::memory_order_release);
         }
-        --waiting_;
+        // (no longer waiting when it is taken or let go: Job::Taken)
     }
 }
 
@@ -166,7 +167,7 @@ void PictureDecoder::Make(Job& job) {
     // Made before (the same bytes, settings and use): the cache's .dds, as the GPU takes it.
     std::filesystem::path cached;
     if (!s.cacheFolder.empty()) {
-        cached = s.cacheFolder / PathFromUtf8(TextureCacheName(id, HashBytes(data), settings, s.use, s.canBC7));
+        cached = s.cacheFolder / PathFromUtf8(TextureCacheName(id, HashBytes(data), settings, s.use, s.srgb, s.canBC7));
         if (const auto bytes = ReadAll(cached)) {
             std::string ignored;  // a broken cache file is just made again
             if (auto p = ReadDds(*bytes, &ignored)) {
@@ -193,12 +194,14 @@ bool TextureCache::Upload(Renderer& renderer, PictureDecoder::Job& job, double n
     if (!job.pixels) {
         out = nullptr;
         if (error) *error = job.error;
+        job.Taken();
         return true;
     }
     if (!slice_.May(now)) return false;  // this frame has copied for long enough: the next one
     const double start = platform::NowSeconds();
     out = renderer.UploadTexture(*job.pixels, error, job.sharp);
     slice_.Spent(platform::NowSeconds() - start);
+    job.Taken();
     return true;
 }
 

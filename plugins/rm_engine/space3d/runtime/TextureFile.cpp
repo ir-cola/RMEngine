@@ -122,14 +122,16 @@ uint64_t HashBytes(std::span<const uint8_t> bytes) {
     return h;
 }
 
-std::string TextureCacheName(std::string_view assetId, uint64_t contentHash, std::string_view settings, TextureUse use, bool canBC7) {
+std::string TextureCacheName(std::string_view assetId, uint64_t contentHash, std::string_view settings, TextureUse use, bool srgb,
+                             bool canBC7) {
     std::string id;
     for (const char c : assetId) {
         if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '#' || c == '-') id += c;
     }
     if (id.empty()) id = "noid";
     // Everything the picture depends on, in one hash.
-    const std::string key = std::format("{}|{:016x}|{}|{}|{}|{}", id, contentHash, settings, static_cast<int>(use), canBC7 ? 1 : 0, kCacheVersion);
+    const std::string key = std::format("{}|{:016x}|{}|{}|{}|{}|{}", id, contentHash, settings, static_cast<int>(use), srgb ? 1 : 0,
+                                        canBC7 ? 1 : 0, kCacheVersion);
     const uint64_t h = HashBytes({reinterpret_cast<const uint8_t*>(key.data()), key.size()});
     return std::format("{}_{:016x}.dds", id, h);
 }

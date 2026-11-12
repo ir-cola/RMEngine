@@ -6,8 +6,8 @@
 //   <project>/Cache/Textures/<asset id>_<16 hex digits>.dds
 //
 // The name is made from what the picture depends on: the asset's id, a hash of the file's (or the
-// embedded picture's) bytes, the import settings as written, what it is used for, whether the GPU
-// has BC7, and kCacheVersion (bumped when the compression changes). Anything else changed = another
+// embedded picture's) bytes, the import settings as written, what it is used for, whether it is read
+// as sRGB, whether the GPU has BC7, and kCacheVersion (bumped when the compression changes). Anything else changed = another
 // name: an old file is never read by mistake. The folder can be deleted at any time - everything is
 // made again (it is not shared: it is not in git).
 //
@@ -26,7 +26,7 @@
 
 namespace rm::space3d {
 
-inline constexpr uint32_t kCacheVersion = 1;
+inline constexpr uint32_t kCacheVersion = 2;  // 2: sRGB in the name
 
 std::vector<uint8_t> WriteDds(const TexturePixels& pixels);
 // nullopt: not a DDS this engine wrote (or cut short): *error says why (Japanese).
@@ -38,6 +38,7 @@ uint32_t DxgiFormatOf(TextureFormat f, bool srgb);
 // FNV-1a, 64 bits (quick; not for security - only to see that the bytes changed).
 uint64_t HashBytes(std::span<const uint8_t> bytes);
 // The cache file's name (see above). `assetId` other than [0-9a-zA-Z_#-] is left out.
-std::string TextureCacheName(std::string_view assetId, uint64_t contentHash, std::string_view settings, TextureUse use, bool canBC7);
+std::string TextureCacheName(std::string_view assetId, uint64_t contentHash, std::string_view settings, TextureUse use, bool srgb,
+                             bool canBC7);
 
 }  // namespace rm::space3d

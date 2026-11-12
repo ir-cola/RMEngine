@@ -1026,17 +1026,20 @@ RM_TEST(TextureFile_CacheName) {
     const uint8_t a[] = {'a'};
     CHECK(HashBytes(a) == 0xaf63dc4c8601ec8cull);
     const std::string id = "0123456789abcdef0123456789abcdef";
-    const std::string n = TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Color, true);
+    const std::string n = TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Color, true, true);
     CHECK(n.starts_with(id + "_") && n.ends_with(".dds") && n.size() == id.size() + 1 + 16 + 4);
-    CHECK(n == TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Color, true));  // the same: the same file
+    CHECK(n == TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Color, true, true));  // the same: the same file
     // Anything it depends on changed: another file (an old one is never read by mistake).
-    CHECK(n != TextureCacheName(id, 43, R"({"compression":"Auto"})", TextureUse::Color, true));
-    CHECK(n != TextureCacheName(id, 42, R"({"compression":"BC7"})", TextureUse::Color, true));
-    CHECK(n != TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Normal, true));
-    CHECK(n != TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Color, false));
-    CHECK(n != TextureCacheName(id + "#1", 42, R"({"compression":"Auto"})", TextureUse::Color, true));
-    CHECK(TextureCacheName("../x:y", 1, "", TextureUse::Data, true).starts_with("xy_"));  // only safe letters in the name
-    CHECK(TextureCacheName("", 1, "", TextureUse::Data, true).starts_with("noid_"));
+    CHECK(n != TextureCacheName(id, 43, R"({"compression":"Auto"})", TextureUse::Color, true, true));
+    CHECK(n != TextureCacheName(id, 42, R"({"compression":"BC7"})", TextureUse::Color, true, true));
+    CHECK(n != TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Normal, true, true));
+    CHECK(n != TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Color, true, false));
+    CHECK(n != TextureCacheName(id + "#1", 42, R"({"compression":"Auto"})", TextureUse::Color, true, true));
+    // Read as sRGB or as numbers (a 3D colour on a GPU without BC7, and a sprite baked for the game:
+    // the same use and BC7 - they must not share a file).
+    CHECK(TextureCacheName(id, 42, "", TextureUse::Color, true, false) != TextureCacheName(id, 42, "", TextureUse::Color, false, false));
+    CHECK(TextureCacheName("../x:y", 1, "", TextureUse::Data, false, true).starts_with("xy_"));  // only safe letters in the name
+    CHECK(TextureCacheName("", 1, "", TextureUse::Data, false, true).starts_with("noid_"));
 }
 
 RM_TEST(UploadSlice_TimePerFrame) {
@@ -1045,14 +1048,23 @@ RM_TEST(UploadSlice_TimePerFrame) {
     s.Spent(0.0015);
     CHECK(s.May(1));  // 1.5 ms of 2: one more
     s.Spent(0.001);
-    CHECK(!s.May(1) && !s.May(1) && s.Deferred() == 2);  // 2.5 ms: the rest wait
-    CHECK(s.May(2) && s.Deferred() == 2);                 // a new frame (still counts the put-off ones once)
+    CHECK(!s.May(1) && !s.May(1) && s.Deferred(1) == 2);  // 2.5 ms: the rest wait
+    CHECK(s.May(2) && s.Deferred(2) == 0);                // a new frame: what was put off goes now
     s.Spent(0.05);                                        // one big copy: longer than the budget ...
-    CHECK(!s.May(2));
+    CHECK(!s.May(2) && s.Deferred(2) == 1);
     CHECK(s.May(3));  // ... but the first copy of every frame always goes (nothing gets stuck)
-    CHECK(s.Deferred() == 1);
     s.Spent(0);
-    CHECK(s.May(4) && s.Deferred() == 0);
+    CHECK(s.Deferred(3) == 0);
+    // The case of the review: frame 10 sends A (over the budget) and puts B off; frame 11 sends B;
+    // then nothing waits, so no frame asks (May is not called). Nothing may be said to be put off in
+    // those frames (or the view would draw again for ever, doing nothing).
+    UploadSlice t(0.002);
+    CHECK(t.May(10));
+    t.Spent(0.01);
+    CHECK(!t.May(10) && t.Deferred(10) == 1);
+    CHECK(t.May(11));
+    t.Spent(0.001);
+    CHECK(t.Deferred(11) == 0 && t.Deferred(12) == 0 && t.Deferred(13) == 0);
 }
 
 RM_TEST(Space3d_BoundsAndShadowMatrix) {

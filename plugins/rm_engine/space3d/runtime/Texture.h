@@ -78,10 +78,17 @@ public:
         bool canBC7 = false;
     };
     // One picture asked for. Shared with the thread: once Done(), the rest is the answer.
-    // Dropped by whoever asked before it was started: never made.
+    // Dropped by whoever asked before it was started: never made. It counts as waiting (Waiting)
+    // until it is taken (Taken: put on the GPU, or found unreadable) or let go - not only until it is
+    // made, or a picture made between two frames would never be drawn (nothing asks for a frame).
     class Job {
     public:
+        ~Job() { Taken(); }
         bool Done() const { return done_.load(std::memory_order_acquire); }
+        void Taken() {
+            if (counter_) --*counter_;
+            counter_.reset();
+        }
         std::optional<TexturePixels> pixels;  // nullopt: `error` says why (Japanese)
         std::string error;
         bool sharp = false;      // the image's import setting (くっきり)
@@ -92,6 +99,7 @@ public:
         friend class PictureDecoder;
         Source source_;
         std::atomic<bool> done_{false};
+        std::shared_ptr<std::atomic<size_t>> counter_;  // the decoder's (kept alive by its jobs)
     };
 
     PictureDecoder() = default;
@@ -100,7 +108,7 @@ public:
     PictureDecoder& operator=(const PictureDecoder&) = delete;
 
     std::shared_ptr<Job> Request(Source source);  // the thread starts with the first one
-    size_t Waiting() const { return waiting_.load(); }  // asked for and not done
+    size_t Waiting() const { return waiting_->load(); }  // asked for and not taken yet
 
 private:
     void Run(std::stop_token stop);
@@ -109,7 +117,7 @@ private:
     std::mutex mu_;
     std::condition_variable_any wake_;
     std::deque<std::shared_ptr<Job>> queue_;
-    std::atomic<size_t> waiting_{0};
+    std::shared_ptr<std::atomic<size_t>> waiting_ = std::make_shared<std::atomic<size_t>>(0);
     std::jthread worker_;  // last: stopped and joined first
 };
 
@@ -127,15 +135,15 @@ public:
     // the picture is used.
     TextureRef Get(Renderer& renderer, const std::filesystem::path& file, TextureUse use, bool srgb, double now);
     // Puts a finished job on the GPU if the frame `now` still has time; true when it was taken (made,
-    // or failed - `out` null and *error why).
+    // or failed - `out` null and *error why). A taken job no longer counts as waiting.
     bool Upload(Renderer& renderer, PictureDecoder::Job& job, double now, TextureRef& out, std::string* error);
     // Pictures nobody asked for in `seconds` leave the GPU.
     void ForgetUnused(double now, double seconds);
     // Everything goes (the GPU's devices were made again: read again when asked).
     void Clear() { entries_.clear(); }
     size_t Size() const { return entries_.size(); }
-    // Pictures being made or waiting for their copy to the GPU (draw again until 0).
-    size_t Waiting() const { return decoder_.Waiting() + slice_.Deferred(); }
+    // Pictures being made or waiting for their copy to the GPU in the frame `now` (draw again until 0).
+    size_t Waiting(double now) const { return decoder_.Waiting() + slice_.Deferred(now); }
     PictureDecoder& Decoder() { return decoder_; }
 
 private:
