@@ -187,8 +187,12 @@ std::string ScriptVcxproj(const ScriptBuildRequest& r) {
       <RuntimeLibrary Condition="'$(Configuration)' == 'Release'">MultiThreadedDLL</RuntimeLibrary>
       <Optimization Condition="'$(Configuration)' == 'Release'">MaxSpeed</Optimization>
     </ClCompile>
+    <ClCompile Condition="'$(RmForExport)' == 'true'">
+      <DebugInformationFormat>None</DebugInformationFormat>
+    </ClCompile>
     <Link>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation Condition="'$(RmForExport)' != 'true'">true</GenerateDebugInformation>
+      <GenerateDebugInformation Condition="'$(RmForExport)' == 'true'">false</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -287,18 +291,25 @@ ScriptBuildResult BuildScripts(const ScriptBuildRequest& r) {
     }
     const fs::path folder = ScriptBuildFolder(r.project);
     // A new name every time (Scripts_0007.dll): the one the editor has loaded cannot be written over.
-    const int number = std::max(0, ScriptDllNumber(LatestScriptDll(folder).filename().native())) + 1;
-    const std::wstring name = Utf8ToWide(std::format("Scripts_{:04}", number));
-    const fs::path log = folder / L"build.log";
+    // For an export: always Scripts.dll in Export/, built apart (its own objects).
+    const int number = r.forExport ? 0 : std::max(0, ScriptDllNumber(LatestScriptDll(folder).filename().native())) + 1;
+    const std::wstring name = r.forExport ? std::wstring(L"Scripts") : Utf8ToWide(std::format("Scripts_{:04}", number));
+    const fs::path outFolder = r.forExport ? folder / L"Export" : folder;
+    const fs::path log = folder / (r.forExport ? L"build_export.log" : L"build.log");
     // (A folder ends with a backslash, which would escape the closing quote: doubled inside quotes.)
     auto folderArg = [](const char* key, const fs::path& p) { return L" \"" + Utf8ToWide(key) + Utf8ToWide(Dir(p)) + L"\\\""; };
-    const std::wstring cmd = Quote(msbuild) + L" " + Quote(folder / L"Scripts.vcxproj") + L" -nologo -v:quiet -m -nodeReuse:false -p:Configuration=" +
-                             (r.debug ? L"Debug" : L"Release") + L" -p:Platform=x64 -p:TargetName=" + name + folderArg("-p:OutDir=", folder) +
-                             folderArg("-p:RmEngineDir=", r.engine) + L" \"-flp:LogFile=" + log.native() + L";Encoding=UTF-8;Verbosity=minimal\"";
+    std::wstring cmd = Quote(msbuild) + L" " + Quote(folder / L"Scripts.vcxproj") + L" -nologo -v:quiet -m -nodeReuse:false -p:Configuration=" +
+                       (r.debug && !r.forExport ? L"Debug" : L"Release") + L" -p:Platform=x64 -p:TargetName=" + name + folderArg("-p:OutDir=", outFolder) +
+                       folderArg("-p:RmEngineDir=", r.engine) + L" \"-flp:LogFile=" + log.native() + L";Encoding=UTF-8;Verbosity=minimal\"";
+    if (r.forExport) {
+        std::error_code e0;
+        fs::remove(outFolder / L"Scripts.dll", e0);  // (never the one of an earlier export, if this one fails)
+        cmd += L" -p:RmForExport=true" + folderArg("-p:IntDir=", folder / L"ObjExport");
+    }
     const int code = Run(cmd, folder, nullptr);
     const std::string text = ReadText(log);
     res.errors = ErrorLines(text);
-    const fs::path dll = folder / (name + L".dll");
+    const fs::path dll = outFolder / (name + L".dll");
     std::error_code ec;
     if (code != 0 || !fs::exists(dll, ec)) {
         res.summary = std::format("スクリプトのビルドに失敗しました (エラー {} 個)。前のスクリプトのまま動きます", res.errors.size());
@@ -308,6 +319,7 @@ ScriptBuildResult BuildScripts(const ScriptBuildRequest& r) {
     res.ok = true;
     res.dll = dll;
     res.summary = std::format("スクリプトをビルドしました ({})", WideToUtf8(name + L".dll"));
+    if (r.forExport) return res;
     // The older DLLs (two back and before) are not needed: removed when they can be (one in use stays).
     for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
         const fs::path p = it->path();

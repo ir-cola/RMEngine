@@ -186,9 +186,9 @@ void SwapTarget::SetDpi(float dpi) {
     if (dc_) dc_->SetDpi(dpi, dpi);
 }
 
-bool SwapTarget::Present() {
+bool SwapTarget::Present(UINT syncInterval) {
     if (!swap_) return false;
-    const HRESULT hr = swap_->Present(1, 0);
+    const HRESULT hr = swap_->Present(syncInterval, 0);
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
         log::Error("GPU のデバイスが失われました (0x{:08X})", static_cast<uint32_t>(hr));
         return false;

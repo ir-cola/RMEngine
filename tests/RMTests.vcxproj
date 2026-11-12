@@ -82,6 +82,8 @@
     <ClCompile Include="TestSceneFile.cpp" />
     <ClCompile Include="TestMeshBake.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
+    <ClCompile Include="TestBakedImage.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\BakedImage.cpp" />
     <ClCompile Include="TestExport.cpp" />
     <ClCompile Include="..\src\core\pak\Pak.cpp" />
     <ClCompile Include="..\src\platform\Crypto.cpp" />

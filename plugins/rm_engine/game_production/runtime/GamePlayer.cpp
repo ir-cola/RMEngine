@@ -52,7 +52,13 @@ public:
         }
         world_.parts = ScriptApiParts(host_.Registry());
         world_.log = [this](int level, std::string_view t) { host_.Log(level, t); };
-        world_.keyDown = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
+        // The keyboard: only while the game's window is in front (a key typed into another app never
+        // moves the game - as the editor's Play).
+        world_.keyDown = [](int vk) {
+            DWORD pid = 0;
+            GetWindowThreadProcessId(GetForegroundWindow(), &pid);
+            return pid == GetCurrentProcessId() && (GetAsyncKeyState(vk) & 0x8000) != 0;
+        };
         api_ = MakeScriptApi(world_);
         const std::filesystem::path dll = host_.Folder() / game::kScriptsDll;
         std::error_code ec;
@@ -105,9 +111,17 @@ public:
         return true;
     }
 
-    void PreferredSize(int& width, int& height) const override {
-        width = std::clamp(settings_.display.width, 320, 7680);
-        height = std::clamp(settings_.display.height, 240, 4320);
+    // The game settings' 画面 (幅 / 高さ / 表示のしかた / 垂直同期) and 目標 FPS.
+    Display GetDisplay() const override {
+        Display d;
+        d.width = settings_.display.width;
+        d.height = settings_.display.height;
+        d.mode = settings_.display.mode == ScreenMode::Fullscreen   ? Display::Mode::Fullscreen
+                 : settings_.display.mode == ScreenMode::Borderless ? Display::Mode::Borderless
+                                                                    : Display::Mode::Windowed;
+        d.vsync = settings_.display.vsync;
+        d.targetFps = settings_.targetFps;
+        return d;
     }
 
     void Update(double dt) override {

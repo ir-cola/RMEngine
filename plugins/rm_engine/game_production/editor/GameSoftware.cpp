@@ -355,7 +355,7 @@ public:
         in.iconFile = settings_.icon.Empty() ? fs::path() : host_.AssetFile(settings_.icon);
         in.projectRoot = host_.GetProject().Root();
         in.assetFile = [this](const AssetRef& r) { return host_.AssetFile(r); };
-        in.scriptsDll = LatestScriptDll(in.projectRoot / L"Library" / L"Scripts");
+        in.scripts = ScriptRequestFor(host_);
         // The scenes of the list (the one shown as it is now), in the list's order.
         Scene saved = scene_;
         UpdateOverrides(saved);
@@ -383,8 +383,10 @@ public:
         }
         // The plugins: as recorded, what the scenes use, the one drawing the game's space - then their
         // requirements and connectors.
+        // Counted from what the game uses - not the project's whole record, which may name plugins of
+        // other softwares (an illustration's): those never go into the game, and one that is missing
+        // does not stop it.
         std::vector<PluginId> used;
-        if (auto rec = editor::ParsePluginIdList(host_.GetProject().doc.Get("plugins"), nullptr)) used = *rec;
         auto add = [&](const PluginId& id) {
             if (std::find(used.begin(), used.end(), id) == used.end()) used.push_back(id);
         };
@@ -405,6 +407,14 @@ public:
             if (error) *error = editor::TrU8F("このエンジンに無いプラグインを使っています: {}", missing.front().Text());
             return false;
         }
+        // The record's plugins this engine does not have: only told (the game does not use them).
+        if (auto rec = editor::ParsePluginIdList(host_.GetProject().doc.Get("plugins"), nullptr)) {
+            const auto manifests = host_.PluginManifests();
+            for (const PluginId& id : *rec) {
+                const bool here = std::any_of(manifests.begin(), manifests.end(), [&](const editor::PluginManifest& m) { return m.id == id; });
+                if (!here) log::Warn("書き出し: プロジェクトが記録しているプラグイン {} はこのエンジンにありませんが、ゲームは使わないので続けます", id.Text());
+            }
+        }
         return true;
     }
 
@@ -417,7 +427,6 @@ public:
 
     // The export check's command line: on this thread, the lines to the log.
     bool ExportNow(const fs::path& outDir, std::string* error) override {
-        if (!scripts_.BuildAndWait(error)) return false;  // the newest scripts, built (the game gets them as Scripts.dll)
         GameExportInput in;
         editor::exporter::Request req;
         if (!ExportInput(outDir, in, error)) return false;
@@ -428,7 +437,10 @@ public:
 
     // The 書き出し button: the request made here (the data as it is now), the work on a worker.
     void StartExport() {
-        if (exportRun_->running) return;
+        {
+            std::lock_guard lock(exportRun_->mtx);  // (the worker sets it under the lock)
+            if (exportRun_->running) return;
+        }
         auto run = std::make_shared<ExportRun>();
         exportRun_ = run;
         GameExportInput in;

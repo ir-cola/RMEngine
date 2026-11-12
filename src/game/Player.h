@@ -67,8 +67,15 @@ public:
     virtual ~Game() = default;
     // Reads its data (before the window shows). False and *error (Japanese) stops the game.
     virtual bool Load(std::string* error) = 0;
-    // The window's size the game wants (DIPs of the client area).
-    virtual void PreferredSize(int& width, int& height) const = 0;
+    // How the game wants its window (the game settings' 画面).
+    struct Display {
+        int width = 1280, height = 720;  // DIPs of the client area, in a window
+        // Fullscreen is shown as a borderless window over the whole monitor (★ not the exclusive mode).
+        enum class Mode { Windowed, Fullscreen, Borderless } mode = Mode::Windowed;
+        bool vsync = true;   // in step with the screen's refresh
+        int targetFps = 60;  // without vsync: at most this many frames a second
+    };
+    virtual Display GetDisplay() const = 0;
     // One frame: the input read, the systems (and their fixed steps), the scripts.
     virtual void Update(double dt) = 0;
     // Draws into the window (the whole of it).

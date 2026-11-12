@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "書き出したゲームの直し: スプライトの画像がエディターと同じ大きさ・くっきりで出る (画像は圧縮し直さない)。3D モデルの絵の「くっきり」もゲームに出る。スクリプトは書き出しのたびに Release でビルドし直し、失敗したら書き出さない。ゲームの設定の「表示のしかた」「垂直同期」「目標 FPS」が効く。最小化の間は CPU を使わない。ほかのアプリでのキーに反応しない。窓の大きさを変えている間も描く。GPU を失っても作り直して続ける",
+          "en": "Fixes to exported games: sprites' images appear at the same size and crispness as in the editor (images are not compressed again). The 3D models' pictures keep their crisp setting too. Scripts are built again in Release for every export, and nothing is exported when they fail. The game settings' display mode, vertical sync and target FPS take effect. A minimized game uses no CPU. Keys pressed in other apps are ignored. The window is drawn while it is resized. A lost GPU is made again and the game goes on"
+        },
+        {
           "ja": "3D の影: 一番外の物をドラッグしている間も、止まっている物の影を毎フレーム描き直さないように。まれに古い影が残ることがあったのを直す",
           "en": "3D shadows: dragging the outermost object no longer redraws the shadows of everything else every frame. Fixed old shadows that could rarely stay on screen"
         },

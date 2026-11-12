@@ -4,8 +4,7 @@
 //              written in this engine's form (MeshBake: Baked/<id>.rmmesh); each picture of their
 //              materials as the GPU takes it (Baked/<id>/<n>.dds) - the texture cache's DDS when it is
 //              there, else made by the same code (PictureDecoder) and kept in the cache too
-//   images     as DDS by the same code (Baked/<id>.dds): the 2D game reads it with WIC like any picture,
-//              so they are made without BC7 (WIC reads BC1 / BC3) and as plain numbers (no sRGB format)
+// (Sprites' images are ゲーム制作 × 2D's: game_x_2d/editor/ExportBake2D.)
 // The readers of glTF / OBJ / FBX and the compression never go into the game.
 
 #include "rm_engine/game_x_3d/editor/ExportBake.h"
@@ -34,10 +33,11 @@ using game_production::BakeResult;
 
 // One picture made by the texture cache's own code (and kept in its folder), waited for.
 std::optional<space3d::TexturePixels> MakePicture(space3d::PictureDecoder& decoder, space3d::PictureDecoder::Source source, bool* fromCache,
-                                                  std::string* error) {
+                                                  std::string* error, bool* sharp = nullptr) {
     auto job = decoder.Request(std::move(source));
     while (!job->Done()) std::this_thread::sleep_for(std::chrono::milliseconds(2));
     if (fromCache) *fromCache = job->fromCache;
+    if (sharp) *sharp = job->sharp;  // (the image's import setting くっきり)
     if (!job->pixels && error) *error = job->error;
     return std::move(job->pixels);
 }
@@ -49,27 +49,10 @@ std::string DdsText(const space3d::TexturePixels& p) {
 
 BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBaked& out, std::string* error) {
     const asset::Kind kind = asset::KindOf(PathToUtf8(a.file.filename()), false);
-    if (kind != asset::Kind::Model && kind != asset::Kind::Image) return BakeResult::NotMine;
+    if (kind != asset::Kind::Model) return BakeResult::NotMine;
     const fs::path cache = a.projectRoot / L"Cache" / L"Textures";
     space3d::PictureDecoder decoder;
     std::string why;
-    if (kind == asset::Kind::Image) {
-        // An image (a sprite's): for WIC, no BC7 and no sRGB format.
-        space3d::PictureDecoder::Source s;
-        s.file = a.file;
-        s.use = space3d::TextureUse::Color;
-        s.srgb = false;
-        s.cacheFolder = cache;
-        s.canBC7 = false;
-        bool cached = false;
-        const auto pixels = MakePicture(decoder, s, &cached, &why);
-        if (!pixels) return BakeResult::NotMine;  // (a picture it cannot make goes in as its file)
-        out.path = "Baked/" + a.id + ".dds";
-        out.files.push_back({out.path, DdsText(*pixels)});
-        out.note = std::format("画像を焼きました: {} ({} x {}{})", a.rel, pixels->levels.empty() ? 0 : pixels->levels[0].width,
-                               pixels->levels.empty() ? 0 : pixels->levels[0].height, cached ? "・キャッシュから" : "");
-        return BakeResult::Done;
-    }
     // A model: as the editor reads it.
     const auto mesh = space3d::LoadMeshFile(a.file, &why);
     if (!mesh) {
@@ -78,7 +61,7 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
     }
     // Its materials' pictures, one DDS per picture and way it is read (as ModelPaint finds them).
     const fs::path assets = a.projectRoot / L"Assets";
-    std::map<std::tuple<int, int, bool>, std::string> made;  // (image, use, srgb) -> its path
+    std::map<std::tuple<int, int, bool>, std::pair<std::string, bool>> made;  // (image, use, srgb) -> its path, くっきり
     std::vector<space3d::BakedPictures> pictures(mesh->materials.size());
     int fromCache = 0, total = 0;
     for (size_t m = 0; m < mesh->materials.size(); ++m) {
@@ -88,7 +71,8 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
             if (ps.image < 0 || ps.image >= static_cast<int>(mesh->images.size())) continue;
             const auto key = std::make_tuple(ps.image, static_cast<int>(ps.use), ps.srgb);
             if (const auto it = made.find(key); it != made.end()) {
-                pictures[m][slot] = it->second;
+                pictures[m].path[slot] = it->second.first;
+                pictures[m].sharp[slot] = it->second.second;
                 continue;
             }
             const space3d::MeshImage& img = mesh->images[static_cast<size_t>(ps.image)];
@@ -105,14 +89,15 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
             s.srgb = ps.srgb;
             s.cacheFolder = cache;
             s.canBC7 = true;  // as the editor's cache (a GPU without BC7: the game turns it into RGBA)
-            bool cached = false;
+            bool cached = false, sharp = false;
             std::string pwhy;
-            const auto pixels = MakePicture(decoder, s, &cached, &pwhy);
+            const auto pixels = MakePicture(decoder, s, &cached, &pwhy, &sharp);
             if (!pixels) continue;  // drawn without it (as in the editor)
             const std::string path = std::format("Baked/{}/{}.dds", a.id, made.size());
             out.files.push_back({path, DdsText(*pixels)});
-            made[key] = path;
-            pictures[m][slot] = path;
+            made[key] = {path, sharp};
+            pictures[m].path[slot] = path;
+            pictures[m].sharp[slot] = sharp;
             ++total;
             fromCache += cached ? 1 : 0;
         }

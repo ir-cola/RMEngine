@@ -8,6 +8,8 @@
 #include "rm_engine/game_x_2d/runtime/GameDraw2D.h"
 
 #include "base/Log.h"
+#include "platform/Image.h"
+#include "rm_engine/game_x_2d/runtime/BakedImage.h"
 #include "rm_engine/game_x_2d/runtime/Register.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
@@ -16,6 +18,7 @@
 #include "rm_engine/space2d/runtime/Transform2D.h"
 
 #include <algorithm>
+#include <format>
 #include <optional>
 #include <span>
 #include <unordered_map>
@@ -82,13 +85,16 @@ private:
             p.draw.color = sp.color;
             p.draw.flipX = sp.flipX;
             p.draw.flipY = sp.flipY;
-            p.draw.crisp = sp.crisp;
-            if (ID2D1Bitmap* bmp = Image(f, sp.image)) {
-                const D2D1_SIZE_U px = bmp->GetPixelSize();
-                p.draw.image = bmp;
+            const Loaded* img = Image(f, sp.image);
+            p.draw.crisp = sp.crisp || (img && img->sharp);  // the sprite's own, or the image's import setting (as the editor)
+            if (img) {
+                // The cell in the bitmap's pixels; its size in the world from the file's (as the 2D scene view).
+                const D2D1_SIZE_U px = img->bitmap->GetPixelSize();
+                p.draw.image = img->bitmap.Get();
                 p.draw.part = space2d::CellOf(px.width, px.height, sp.columns, sp.rows, sp.cell);
+                const space2d::PixelRect file = space2d::CellOf(img->width, img->height, sp.columns, sp.rows, sp.cell);
                 const float ppu = std::max(sp.pixelsPerUnit, 0.01f);
-                p.draw.size = {static_cast<float>(p.draw.part.w) / ppu, static_cast<float>(p.draw.part.h) / ppu};
+                p.draw.size = {static_cast<float>(file.w) / ppu, static_cast<float>(file.h) / ppu};
             }
             placed.push_back(p);
         }
@@ -114,31 +120,51 @@ private:
         renderer_.Render(f.dc, frame);
     }
 
+    // An image read from the game's assets: the bitmap, the file's own size, its くっきり.
+    struct Loaded {
+        Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
+        uint32_t width = 0, height = 0;
+        bool sharp = false;
+    };
+
     // The image an asset id names, read from the game's assets once (null: a square of the colour).
-    ID2D1Bitmap* Image(const game_production::GameDrawFrame& f, const AssetRef& ref) {
+    // Baked (BakedImage: the file with its size and import settings) or a picture file as it is.
+    const Loaded* Image(const game_production::GameDrawFrame& f, const AssetRef& ref) {
         if (ref.Empty()) return nullptr;
         auto [it, made] = images_.try_emplace(ref.guid);
+        Loaded& m = it->second;
         if (made) {
-            if (const auto bytes = f.asset(ref)) {
-                std::string err;
-                it->second = platform::LoadBitmapFromMemory(f.gfx, f.dc, std::span(reinterpret_cast<const uint8_t*>(bytes->data()), bytes->size()), 0, &err);
-                if (!it->second) {
-                    log::Warn("画像を読めないので四角で描きます ({}): {}", ref.guid, err);
-                } else {
-                    const D2D1_SIZE_U px = it->second->GetPixelSize();
-                    log::Info("画像を読みました: {} ({} x {})", ref.guid, px.width, px.height);
+            std::string err;
+            const auto bytes = f.asset(ref);
+            const auto baked = bytes ? ReadBakedImage(*bytes, &err) : std::nullopt;
+            if (baked) {
+                const BakedImageInfo& info = baked->info;
+                const uint32_t most = info.maxSize > 0 ? std::min(info.maxSize, kMaxImageSize) : kMaxImageSize;
+                const auto pixels = platform::DecodeImage(f.gfx.Wic(), std::span(reinterpret_cast<const uint8_t*>(baked->picture.data()), baked->picture.size()),
+                                                          platform::PixelOrder::PremultipliedBgra, {most, most}, &err);
+                if (pixels) m.bitmap = platform::BitmapFromImage(f.dc, *pixels);
+                if (pixels && !m.bitmap) err = "Direct2D のビットマップにできませんでした";
+                if (m.bitmap) {
+                    m.width = info.width > 0 ? info.width : pixels->width;  // (a picture not baked: its pixels)
+                    m.height = info.height > 0 ? info.height : pixels->height;
+                    m.sharp = info.sharp;
+                    log::Info("画像を読みました: {} ({} x {}{}{})", ref.guid, m.width, m.height, m.sharp ? "・くっきり" : "",
+                              pixels->width != m.width ? std::format("・{} x {} に縮めて", pixels->width, pixels->height) : std::string());
                 }
-            } else {
+            }
+            if (!bytes) {
                 log::Warn("画像がゲームに入っていないので四角で描きます ({})", ref.guid);
+            } else if (!m.bitmap) {
+                log::Warn("画像を読めないので四角で描きます ({}): {}", ref.guid, err);
             }
         }
-        return it->second.Get();
+        return m.bitmap ? &m : nullptr;
     }
 
     space2d::Renderer2D renderer_;
     uint64_t generation_ = 0;
     ID2D1DeviceContext* dc_ = nullptr;
-    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID2D1Bitmap>> images_;
+    std::unordered_map<std::string, Loaded> images_;
     std::vector<space2d::SpriteDraw> sprites_;
     bool told_ = false;
 };

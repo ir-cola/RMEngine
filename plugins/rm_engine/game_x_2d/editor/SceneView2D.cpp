@@ -12,6 +12,7 @@
 #include "platform/Gfx.h"
 #include "platform/Image.h"
 #include "rm_engine/game_x_2d/editor/SceneViewState2D.h"
+#include "rm_engine/game_x_2d/runtime/BakedImage.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/space2d/editor/Gizmo2D.h"
@@ -52,7 +53,6 @@ constexpr float kMarkRadius = 7.f;    // the ring of an entity without a sprite 
 constexpr float kBarH = 28.f;         // the tool strip at the top left
 constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kGridW = 56.f, kBarGap = 8.f;
 constexpr float kSnapBoxW = 280.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
-constexpr uint32_t kMaxImageSize = 16384;     // what Direct2D can hold in one bitmap (bigger: scaled down)
 constexpr double kImageCheckSeconds = 1.0;    // how often an image file is looked at again (changed on disk?)
 constexpr double kImageForgetSeconds = 10.0;  // an image no entity uses for this long is let go
 

@@ -87,7 +87,7 @@ public:
             }
             boxes_.push_back({w, Color{0.78f, 0.80f, 0.84f, 1}, shadow});
         }
-        if (lights_.size() > space3d::kMaxLights) lights_.resize(space3d::kMaxLights);
+        // (More than kMaxLights: the renderer's MakeLights chooses - the sun with shadows is never cut by the order.)
         if (!eye) {
             // No camera to see through (the game settings' 最初のカメラ): the background only.
             if (!told_) log::Warn("ゲームの設定の「最初のカメラ」がカメラの付いた有効なエンティティを指していないので、背景だけを塗ります");
@@ -135,7 +135,8 @@ private:
         if (!first) return it->second.gpu ? &it->second : nullptr;
         std::string err;
         const auto bytes = f.asset(ref);
-        const auto mesh = bytes ? space3d::ReadBakedMesh(*bytes, &err) : std::nullopt;
+        std::vector<bool> sharp;  // per image: drawn くっきり (its import setting)
+        const auto mesh = bytes ? space3d::ReadBakedMesh(*bytes, &err, &sharp) : std::nullopt;
         if (!mesh) {
             log::Warn("モデルを読めないので箱で描きます ({}): {}", ref.guid, bytes ? err : std::string("ゲームに入っていません"));
             return nullptr;
@@ -164,7 +165,8 @@ private:
                     for (platform::Image& level : pixels->levels) level = space3d::Decompress(level, pixels->format);
                     pixels->format = space3d::TextureFormat::Rgba8;
                 }
-                if (auto tex = renderer_.UploadTexture(*pixels, &err)) {
+                const size_t image = static_cast<size_t>(slots[slot].image);
+                if (auto tex = renderer_.UploadTexture(*pixels, &err, image < sharp.size() && sharp[image])) {
                     space3d::SetPicture(d, slot, std::move(tex));
                     ++pictures;
                 } else {

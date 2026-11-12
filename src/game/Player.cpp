@@ -12,6 +12,8 @@
 #include <format>
 #include <fstream>
 #include <mutex>
+#include <thread>
+#include <algorithm>
 
 namespace rm::game {
 
@@ -55,15 +57,19 @@ public:
         std::string err;
         if (!game_ || !game_->Load(&err)) return Fail(err.empty() ? std::string("ゲームを読めませんでした") : err);
 
+        display_ = game_->GetDisplay();
         platform::WindowDesc d;
         d.title = Utf8ToWide(title_.empty() ? std::string(image_.title ? image_.title : "Game") : title_);
-        game_->PreferredSize(d.widthDip, d.heightDip);
+        d.widthDip = std::clamp(display_.width, 320, 7680);
+        d.heightDip = std::clamp(display_.height, 240, 4320);
         d.minWidthDip = 320;
         d.minHeightDip = 240;
         d.captionRgb = 0x000000;
         if (!window_.Create(d, this)) return Fail("ウィンドウを作れませんでした");
+        if (display_.mode != Game::Display::Mode::Windowed) CoverMonitor();
         if (!target_.Create(gfx_, window_.Handle(), window_.Dpi())) return Fail("描く場所 (スワップチェーン) を作れませんでした");
         ShowWindow(window_.Handle(), smoke_ ? SW_SHOWNOACTIVATE : SW_SHOWNORMAL);
+        started_ = true;
 
         auto last = std::chrono::steady_clock::now();
         int frames = 0;
@@ -75,11 +81,28 @@ public:
                 DispatchMessageW(&msg);
             }
             if (quit_) break;
+            // Minimized: nothing is shown, so nothing is drawn or played - wait for a message (no core
+            // spent on a loop), and the time away does not count.
+            if (IsIconic(window_.Handle()) && !smoke_) {
+                WaitMessage();
+                last = std::chrono::steady_clock::now();
+                continue;
+            }
             const auto now = std::chrono::steady_clock::now();
-            const double dt = std::chrono::duration<double>(now - last).count();
+            // At most a quarter of a second (as the editor's Play): a frame that took long - the window
+            // dragged, the PC busy - never makes things jump.
+            const double dt = std::min(std::chrono::duration<double>(now - last).count(), 0.25);
             last = now;
             game_->Update(dt);
-            if (!DrawFrame()) return Fail("描けませんでした (GPU が失われた可能性があります)");
+            if (!DrawFrame()) {
+                if (!Recover()) return Fail("描けませんでした (GPU が失われ、作り直せませんでした)");
+                continue;
+            }
+            // Without vsync: no more than the target frames a second.
+            if (!display_.vsync && display_.targetFps > 0) {
+                const auto next = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / display_.targetFps));
+                std::this_thread::sleep_until(next);
+            }
             if (smoke_ && ++frames >= 5) break;
         }
         game_->Stop();
@@ -108,10 +131,14 @@ public:
     }
 
     // --- Window -----------------------------------------------------------------------------------
-    LRESULT OnMessage(HWND, UINT msg, WPARAM, LPARAM lp, bool& handled) override {
+    LRESULT OnMessage(HWND, UINT msg, WPARAM wp, LPARAM lp, bool& handled) override {
         switch (msg) {
             case WM_SIZE:
-                if (target_.Context()) target_.Resize(LOWORD(lp), HIWORD(lp));
+                if (target_.Context()) {
+                    target_.Resize(LOWORD(lp), HIWORD(lp));
+                    // Drawn again at once (while the edge is dragged the loop above does not run).
+                    if (started_ && wp != SIZE_MINIMIZED && !drawing_) DrawFrame();
+                }
                 return 0;
             case WM_CLOSE:
                 quit_ = true;
@@ -151,20 +178,49 @@ private:
             size, image_.build, platform::PakCipher(image_.build), &error_);
     }
 
+    // False when the GPU was lost (Recover makes it again).
     bool DrawFrame() {
         ID2D1DeviceContext* dc = target_.Context();
         if (!dc) return true;
+        drawing_ = true;
         dc->BeginDraw();
         dc->SetTransform(D2D1::Matrix3x2F::Identity());
         dc->Clear(D2D1::ColorF(0, 0, 0, 1));
         const float scale = target_.Dpi() / 96.f;
         game_->Draw(dc, static_cast<float>(target_.Width()) / scale, static_cast<float>(target_.Height()) / scale);
         const HRESULT hr = dc->EndDraw();
-        if (FAILED(hr)) log::Warn("描画が失敗しました (0x{:08X})", static_cast<uint32_t>(hr));
-        return target_.Present();
+        drawing_ = false;
+        if (hr == D2DERR_RECREATE_TARGET) return false;
+        if (FAILED(hr) && !toldDraw_) {
+            log::Warn("描画が失敗しました (0x{:08X})。この後は書きません", static_cast<uint32_t>(hr));
+            toldDraw_ = true;
+        }
+        if (target_.Present(display_.vsync ? 1u : 0u)) return true;
+        return !gfx_.Lost();  // (a Present that failed for another reason: the next frame tries again)
+    }
+
+    // The GPU was lost (a driver updated, the GPU reset): the devices and the window's target made
+    // again; the game's drawers see Gfx::Generation change and make theirs again.
+    bool Recover() {
+        log::Warn("GPU が失われたので作り直します ({:08X})", static_cast<uint32_t>(gfx_.LostReason()));
+        target_.Reset();
+        if (!gfx_.Recreate()) return false;
+        return target_.Create(gfx_, window_.Handle(), window_.Dpi());
+    }
+
+    // Fullscreen / borderless: a window without its frame over the whole monitor it is on.
+    void CoverMonitor() {
+        const HWND hwnd = window_.Handle();
+        MONITORINFO mi{sizeof(mi)};
+        if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi)) return;
+        SetWindowLongPtrW(hwnd, GWL_STYLE, WS_POPUP);
+        const RECT& r = mi.rcMonitor;
+        SetWindowPos(hwnd, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_FRAMECHANGED | SWP_NOACTIVATE);
     }
 
     int Fail(const std::string& why) {
+        if (game_ && started_) game_->Stop();  // (the scripts' EndPlay ...)
+        started_ = false;
         log::Error("{}", why);
         if (!smoke_) MessageBoxW(window_.Handle(), Utf8ToWide(why).c_str(), Utf8ToWide(image_.title ? image_.title : "Game").c_str(), MB_ICONERROR);
         return 1;
@@ -181,7 +237,11 @@ private:
     platform::Window window_;
     platform::SwapTarget target_;
     std::unique_ptr<Game> game_;
+    Game::Display display_;
     bool quit_ = false;
+    bool started_ = false;   // the window is there and the game runs
+    bool drawing_ = false;   // inside DrawFrame (WM_SIZE does not draw again inside it)
+    bool toldDraw_ = false;  // a failed EndDraw was told (once)
 };
 
 }  // namespace

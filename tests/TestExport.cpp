@@ -244,6 +244,8 @@ RM_TEST(Export_ResourceIconAndNumber) {
     CHECK(rc.find("VALUE \"FileDescription\", \"ぼくの \"\"ゲーム\"\"\"") != std::string::npos);
     CHECK(rc.find("\"MyGame.exe\"") != std::string::npos);
     CHECK(GameResourceSource("G", "G", false).find("ICON") == std::string::npos);
+    // A \ doubled too (rc reads it as the start of an escape: "C:\new" would get a line break).
+    CHECK(GameResourceSource("a\\new", "G", false).find("\"a\\\\new\"") != std::string::npos);
     // An icon holding the PNG as it is: header, one entry (256 -> 0), the PNG after 22 bytes.
     std::string png = "\x89PNG\r\n\x1a\n";
     png += std::string("\0\0\0\x0dIHDR", 8);
@@ -280,11 +282,19 @@ RM_TEST(Export_AssetIdsOfAScene) {
 
 RM_TEST(Export_IconFile) {
     // An .ico as it is (every size in it), a PNG put in one, anything else none.
-    std::string ico("\0\0\x01\0\x01\0", 6);
-    ico += std::string(16, '\x01');
-    ico += "picture";
+    auto icoWith = [](uint32_t size, uint32_t offset) {
+        std::string ico("\0\0\x01\0\x01\0", 6);
+        ico += std::string(8, '\x01');  // width, height, colours, reserved, planes, bits
+        ico.append(reinterpret_cast<const char*>(&size), 4);
+        ico.append(reinterpret_cast<const char*>(&offset), 4);
+        return ico + "picture";
+    };
+    const std::string ico = icoWith(7, 22);
     CHECK(IconFile(ico) == ico);
     CHECK(!IconFile(std::string("\0\0\x01\0\x02\0", 6) + std::string(16, '\x01')));  // says 2 entries, has 1
+    // An entry's picture outside the file, inside the header, or of no size: not an icon.
+    CHECK(!IconFile(icoWith(8, 22)) && !IconFile(icoWith(7, 23)) && !IconFile(icoWith(7, 0)) && !IconFile(icoWith(0, 22)));
+    CHECK(!IconFile(icoWith(0xFFFFFFFFu, 22)) && !IconFile(icoWith(7, 0xFFFFFFF0u)));
     CHECK(!IconFile("BM........................"));
     std::string png = "\x89PNG\r\n\x1a\n";
     png += std::string("\0\0\0\x0dIHDR", 8);

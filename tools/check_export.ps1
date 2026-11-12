@@ -1,7 +1,7 @@
 ﻿# The export check (design NewEngineBluePrint 11-b-2, rule 5): makes a project from each template,
 # exports it (RM_Engine.exe --export-template: no window) and starts the game with --smoke (a few frames,
 # exit code 0). Also checks the exported folder: the exe, Game.rmpak, no .pdb, and no path of this PC in
-# the exe. Exit code 0 = every game was exported and ran.
+# the exe and the scripts' DLL. Exit code 0 = every game was exported and ran.
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\check_export.ps1 [-Config Release]
 # Needs Visual Studio (the export links with it) and a built engine (tools\build.ps1).
 # Another PC without the engine (Windows Sandbox): docs/HOW_TO_TRY.md, "書き出したゲームを別の PC で".
@@ -21,6 +21,18 @@ $templates = @(
     @('rm_engine', 'game_x_3d', 'game_3d')
 )
 $failed = 0
+# A path of this PC (the repository's, the export's folder, the user's) in a file written, as UTF-8 or
+# UTF-16: the path, else $null.
+function Find-PcPath([string]$file, [string]$dir) {
+    $bytes = [IO.File]::ReadAllBytes($file)
+    $text8 = [Text.Encoding]::UTF8.GetString($bytes)
+    $text16 = [Text.Encoding]::Unicode.GetString($bytes)
+    foreach ($path in @($root, $dir, $env:USERPROFILE)) {
+        if ($text8.IndexOf($path, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $text16.IndexOf($path, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $path }
+    }
+    return $null
+}
+
 foreach ($t in $templates) {
     $dir = Join-Path $work $t[2]
     if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
@@ -36,13 +48,7 @@ foreach ($t in $templates) {
     if (-not (Test-Path (Join-Path $game 'Game.rmpak'))) { Write-Host "NG  $($t[2]): Game.rmpak がありません"; $failed++; continue }
     if (@(Get-ChildItem $game -Filter *.pdb).Count -gt 0) { Write-Host "NG  $($t[2]): .pdb が入っています"; $failed++; continue }
     # No path of this PC in the exe (the project's, the engine's), as UTF-8 or UTF-16.
-    $bytes = [IO.File]::ReadAllBytes($exe[0].FullName)
-    $text8 = [Text.Encoding]::UTF8.GetString($bytes)
-    $text16 = [Text.Encoding]::Unicode.GetString($bytes)
-    $leak = $null
-    foreach ($path in @($root, $dir, $env:USERPROFILE)) {
-        if ($text8.IndexOf($path, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $text16.IndexOf($path, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $leak = $path }
-    }
+    $leak = Find-PcPath $exe[0].FullName $dir
     if ($leak) { Write-Host "NG  $($t[2]): exe にこの PC のパスが残っています: $leak"; $failed++; continue }
     $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
     if ($r.ExitCode -ne 0) {
@@ -87,6 +93,13 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         $failed++
     } elseif (-not (Test-Path (Join-Path $game 'Scripts.dll'))) {
         Write-Host 'NG  game_scripts: Scripts.dll が書き出しに入っていません'
+        $failed++
+    } elseif (($leak = Find-PcPath (Join-Path $game 'Scripts.dll') $dir) -or ($leak = Find-PcPath $exe[0].FullName $dir)) {
+        # (the scripts are built for the export: Release, no debug info - no .pdb path in the DLL)
+        Write-Host "NG  game_scripts: Scripts.dll か exe にこの PC のパスが残っています: $leak"
+        $failed++
+    } elseif (@(Get-ChildItem $game -Filter *.pdb).Count -gt 0) {
+        Write-Host 'NG  game_scripts: .pdb が入っています'
         $failed++
     } else {
         $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
@@ -151,7 +164,8 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
-# A 2D game with a sprite's image: baked as DDS (BC1 / BC3, read by WIC in the game like any picture).
+# A 2D game with a sprite's image: the file as it is with its size and import settings in front (くっきり
+# and 大きさの上限 64 here): the game reads it smaller, くっきり, and knows the file's own size.
 $dir = Join-Path $work 'game_sprite'
 if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 $p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_2d', 'game_2d', "`"$dir`"") -Wait -PassThru
@@ -165,7 +179,7 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     New-Item -ItemType Directory -Force $images | Out-Null
     Copy-Item (Join-Path $root 'docs\samples\models\house_walls.png') $images
     $guid = [Guid]::NewGuid().ToString('N')
-    [IO.File]::WriteAllText((Join-Path $images 'house_walls.png.meta'), "{`"guid`": `"$guid`", `"name`": `"house_walls.png`"}", $utf8)
+    [IO.File]::WriteAllText((Join-Path $images 'house_walls.png.meta'), "{`"guid`": `"$guid`", `"name`": `"house_walls.png`", `"import`": {`"sharp`": true, `"maxSize`": 64}}", $utf8)
     $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Main.rmscene'
     $scene = [IO.File]::ReadAllText($sceneFile, $utf8) | ConvertFrom-Json
     $id = [int]$scene.nextId
@@ -184,14 +198,16 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     } else {
         $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
         $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
-        if ($r.ExitCode -ne 0 -or -not $gameLog.Contains("画像を読みました: $guid")) {
+        $read = [regex]::Match($gameLog, "画像を読みました: $guid \((\d+) x (\d+)・くっきり・(\d+) x (\d+) に縮めて\)")
+        $fits = $read.Success -and [int]$read.Groups[1].Value -gt 64 -and [Math]::Max([int]$read.Groups[3].Value, [int]$read.Groups[4].Value) -le 64
+        if ($r.ExitCode -ne 0 -or -not $fits) {
             Write-Host "NG  game_sprite: スプライトの画像を読めていません (終了コード $($r.ExitCode))"
             $gameLog -split "`n" | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" }
             $failed++
         } else {
             $size = [Math]::Round($exe[0].Length / 1KB)
             $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB)
-            Write-Host "OK  game_sprite: $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB)。焼いた画像 (DDS) を読みました"
+            Write-Host "OK  game_sprite: $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB)。画像 ($($read.Groups[1].Value) x $($read.Groups[2].Value)) を上限 64 に縮めて・くっきりで読みました"
         }
     }
 }

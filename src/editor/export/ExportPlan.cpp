@@ -151,11 +151,13 @@ void ReadSymbols(std::string_view text, std::vector<std::string>& types, std::ve
 }
 
 std::string GameResourceSource(std::string_view title, std::string_view exeName, bool icon) {
-    // A string of the script: " doubled, nothing else changes (UTF-8 with /c65001).
+    // A string of the script: " doubled and \ doubled (rc reads \ as the start of an escape), nothing
+    // else changes (UTF-8 with /c65001).
     auto quoted = [](std::string_view s) {
         std::string out = "\"";
         for (const char c : s) {
             if (c == '"') out += '"';
+            if (c == '\\') out += '\\';
             if (static_cast<unsigned char>(c) >= 0x20 || c < 0) out += c;
         }
         return out + "\"";
@@ -209,8 +211,18 @@ std::optional<std::string> IconFile(std::string_view bytes) {
     // An .ico: reserved 0, type 1, at least one picture (and its 16-byte entries there).
     if (bytes.size() >= 22 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 1 && bytes[3] == 0 && (bytes[4] != 0 || bytes[5] != 0)) {
         const size_t count = static_cast<unsigned char>(bytes[4]) | (static_cast<size_t>(static_cast<unsigned char>(bytes[5])) << 8);
-        if (bytes.size() >= 6 + 16 * count) return std::string(bytes);
-        return std::nullopt;
+        if (bytes.size() < 6 + 16 * count) return std::nullopt;
+        // Each picture (its size at +8, where it is at +12) inside the file.
+        auto u32 = [&](size_t at) {
+            uint32_t v = 0;
+            for (size_t i = 0; i < 4; ++i) v |= static_cast<uint32_t>(static_cast<unsigned char>(bytes[at + i])) << (8 * i);
+            return v;
+        };
+        for (size_t i = 0; i < count; ++i) {
+            const uint64_t size = u32(6 + 16 * i + 8), at = u32(6 + 16 * i + 12);
+            if (size == 0 || at < 6 + 16 * count || at + size > bytes.size()) return std::nullopt;
+        }
+        return std::string(bytes);
     }
     return IcoFromPng(bytes);
 }

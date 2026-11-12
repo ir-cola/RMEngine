@@ -105,13 +105,19 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
             o.Put(m.roughness);
             o.Put(m.normalScale);
             o.Color4(m.emissive);
-            for (size_t s = 0; s < 4; ++s) o.Str(i < pictures.size() ? pictures[i][s] : std::string());
+            for (size_t s = 0; s < 4; ++s) o.Str(i < pictures.size() ? pictures[i].path[s] : std::string());
+        }
+    });
+    o.Chunk("SHRP", [&] {
+        o.Put<uint32_t>(static_cast<uint32_t>(mesh.materials.size()));
+        for (size_t i = 0; i < mesh.materials.size(); ++i) {
+            for (size_t s = 0; s < 4; ++s) o.Put<uint8_t>(i < pictures.size() && pictures[i].sharp[s] ? 1 : 0);
         }
     });
     return o.bytes;
 }
 
-std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error) {
+std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error, std::vector<bool>* sharpOfImage) {
     auto fail = [&](std::string msg) -> std::optional<MeshData> {
         if (error) *error = std::move(msg);
         return std::nullopt;
@@ -122,6 +128,7 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
     in.Get(format);
     if (format > kBakedMeshFormat) return fail(std::format("新しい版で焼いたモデルです (形式 {} / この版は {} まで)", format, kBakedMeshFormat));
     MeshData m;
+    std::vector<std::array<uint8_t, 4>> sharp;  // per material (SHRP)
     std::string_view rest = in.Rest();
     while (!rest.empty()) {
         if (rest.size() < 12) return fail("焼いたモデルが壊れています (途中で切れています)");
@@ -180,6 +187,12 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
                     *slot = found;
                 }
             }
+        } else if (tag == "SHRP") {
+            ok = c.Count(n, 4);
+            sharp.resize(ok ? n : 0);
+            for (auto& sm : sharp) {
+                for (uint8_t& b : sm) ok = ok && c.Get(b);
+            }
         }  // (a tag this version does not know: skipped)
         if (!ok) return fail(std::format("焼いたモデルの {} が壊れています", std::string(tag)));
     }
@@ -189,6 +202,16 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
     for (const MeshPart& p : m.parts) {
         if (static_cast<uint64_t>(p.firstIndex) + p.indexCount > m.indices.size() || p.material >= static_cast<int>(m.materials.size())) {
             return fail("焼いたモデルの部分が壊れています");
+        }
+    }
+    if (sharpOfImage) {
+        sharpOfImage->assign(m.images.size(), false);
+        for (size_t i = 0; i < m.materials.size() && i < sharp.size(); ++i) {
+            const MeshMaterial& mat = m.materials[i];
+            const int slots[4] = {mat.image, mat.metallicRoughnessImage, mat.normalImage, mat.emissiveImage};
+            for (size_t s = 0; s < 4; ++s) {
+                if (slots[s] >= 0 && sharp[i][s]) (*sharpOfImage)[static_cast<size_t>(slots[s])] = true;
+            }
         }
     }
     return m;

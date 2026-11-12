@@ -4,6 +4,7 @@
 
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_x_2d/editor/ExportBake2D.h"
 #include "rm_engine/game_x_2d/editor/SceneView2D.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/SpriteAnimation.h"
@@ -68,6 +69,8 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // ... and are seen on the plane in the 2D scene view (after 3D when both are there).
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView2D, "2d", editor::TrKey(L"2D"), /*order*/ 10};
     registry.Contribute(game_production::kSceneViewPoint, kSceneView);
+    // Sprites' images for the exported game: the file with its size and import settings.
+    RegisterExportBake(registry);
 }
 
 }  // namespace rm::game_x_2d

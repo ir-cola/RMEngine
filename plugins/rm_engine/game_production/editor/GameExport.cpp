@@ -78,7 +78,19 @@ bool MakeRequest(const GameExportInput& in, const std::vector<ExportAsset>& asse
     out.exeName = in.exeName;
     out.titleUtf8 = in.title;
     out.plugins = in.plugins;
-    out.scriptsDll = in.scriptsDll;
+    // The scripts: built now from the sources as they are (never an older DLL).
+    if (ScriptSourcesTime(in.scripts.project) != 0) {
+        if (note) note(editor::TrU8("スクリプトをビルドしています (書き出し用: Release・デバッグ情報なし)"));
+        ScriptBuildRequest r = in.scripts;
+        r.forExport = true;
+        const ScriptBuildResult built = BuildScripts(r);
+        if (!built.ok) {
+            std::string why = built.summary;
+            for (const std::string& e : built.errors) why += "\n" + e;
+            return fail(editor::TrU8F("スクリプトをビルドできないので書き出しません:\n{}", why));
+        }
+        out.scriptsDll = built.dll;
+    }
     out.privatePaths = {PathToUtf8(in.projectRoot)};
     if (!in.iconFile.empty()) {
         if (auto bytes = ReadAll(in.iconFile)) out.iconPng = std::move(*bytes);

@@ -13,6 +13,7 @@
 //   MATL  count u32, then per material: name, baseColor (4), alpha u8, alphaCutoff, metallic, roughness,
 //         normalScale, emissive (4), and its 4 pictures (color, metal / rough, normal, emission) as
 //         paths of the exported game's files (empty: none) - the pictures are baked apart (DDS)
+//   SHRP  per material 4 bytes: each picture drawn with the nearest texel (くっきり: its import setting)
 // A chunk of a tag this version does not know is skipped (keys, as the design's rule for binary data).
 
 #include "rm_engine/space3d/runtime/Mesh.h"
@@ -27,14 +28,19 @@ namespace rm::space3d {
 
 inline constexpr uint32_t kBakedMeshFormat = 1;
 
-// A material's 4 pictures (the slots of Texture.h: colour, metal / rough, normal, emission) as paths.
-using BakedPictures = std::array<std::string, 4>;
+// A material's 4 pictures (the slots of Texture.h: colour, metal / rough, normal, emission) as paths,
+// and whether each is drawn くっきり (the nearest texel: the picture's import setting).
+struct BakedPictures {
+    std::array<std::string, 4> path;
+    std::array<bool, 4> sharp{};
+};
 
 // `pictures`: one per material of `mesh` (missing ones: none).
 std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures>& pictures);
 
-// The mesh, its materials' pictures given as images whose `file` is the path (one image per path).
-// nullopt and *error (Japanese) when it is not a baked mesh, of a newer format, or broken.
-std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error);
+// The mesh, its materials' pictures given as images whose `file` is the path (one image per path);
+// `sharpOfImage` (optional) gets, per image, whether it is drawn くっきり. nullopt and *error (Japanese)
+// when it is not a baked mesh, of a newer format, or broken.
+std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error, std::vector<bool>* sharpOfImage = nullptr);
 
 }  // namespace rm::space3d

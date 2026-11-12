@@ -260,16 +260,24 @@ bool Run(const Request& r, const Report& report, std::string* error) {
     report(0.85f, dlls.empty() ? TrU8("★ Visual Studio の C++ ランタイム (Redist) が見つからないので、横に置いていません")
                                : TrU8F("C++ のランタイム: {} 個", dlls.size()));
 
-    // 5. No path of this PC in the exe.
-    if (const auto exeBytes = ReadFile(exe)) {
-        for (const std::string& p : r.privatePaths) {
+    // 5. No path of this PC in anything written: the exe, the scripts' DLL, every file of the .rmpak
+    // (before it was encrypted) - the project's folder, the engine's, the user's.
+    std::vector<std::string> privatePaths = r.privatePaths;
+    privatePaths.push_back(PathToUtf8(platform::ExeDirectory()));
+    wchar_t home[MAX_PATH] = {};
+    if (const DWORD n = GetEnvironmentVariableW(L"USERPROFILE", home, MAX_PATH); n > 0 && n < MAX_PATH) privatePaths.push_back(WideToUtf8(home));
+    auto check = [&](const std::string& bytes, const std::string& what) {
+        for (const std::string& p : privatePaths) {
             const std::wstring wide = Utf8ToWide(p);
             const std::string utf16(reinterpret_cast<const char*>(wide.data()), wide.size() * sizeof(wchar_t));
-            if (Contains(*exeBytes, p) || Contains(*exeBytes, utf16)) {
-                report(0.9f, TrU8F("★ exe の中にこの PC のパスが残っています: {}", p));
-            }
+            if (Contains(bytes, p) || Contains(bytes, utf16)) report(0.9f, TrU8F("★ {} の中にこの PC のパスが残っています: {}", what, p));
         }
+    };
+    if (const auto exeBytes = ReadFile(exe)) check(*exeBytes, PathToUtf8(exe.filename()));
+    if (!r.scriptsDll.empty()) {
+        if (const auto dllBytes = ReadFile(r.outDir / L"Scripts.dll")) check(*dllBytes, "Scripts.dll");
     }
+    for (const pak::Entry& e : r.files) check(e.bytes, e.path);
     fs::remove_all(work, ec);
     report(1.f, TrU8F("書き出しました: {}", PathToUtf8(exe)));
     return true;

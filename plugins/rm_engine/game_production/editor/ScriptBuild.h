@@ -25,6 +25,10 @@ struct ScriptBuildRequest {
     std::filesystem::path engine;           // where rmgen.exe is
     std::vector<std::filesystem::path> sdk;  // folders of RM.h & co. (the engine's Sdk/; the tests: the sources)
     bool debug = false;                     // the engine is a Debug build (/MDd)
+    // For an exported game: always Release (/MD - the runtime the export puts next to the game), no
+    // debug information (no .pdb, no path of this PC in the DLL), into Library/Scripts/Export/Scripts.dll
+    // (apart from the editor's DLLs and objects). `debug` is not used then.
+    bool forExport = false;
 };
 
 struct ScriptBuildResult {

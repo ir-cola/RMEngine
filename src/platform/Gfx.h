@@ -77,7 +77,8 @@ public:
     void Reset();
     void Resize(UINT width, UINT height);
     void SetDpi(float dpi);
-    bool Present();
+    // syncInterval 1: in step with the screen (vsync), 0: at once.
+    bool Present(UINT syncInterval = 1);
 
     ID2D1DeviceContext* Context() const { return dc_.Get(); }
     // The Gfx::Generation it was made in (0: not made).

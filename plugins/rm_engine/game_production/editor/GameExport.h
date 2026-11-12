@@ -11,6 +11,7 @@
 #include "core/PluginId.h"
 #include "core/reflect/Reflect.h"
 #include "editor/export/Exporter.h"
+#include "rm_engine/game_production/editor/ScriptBuild.h"
 
 #include <filesystem>
 #include <functional>
@@ -46,7 +47,9 @@ struct GameExportInput {
     std::vector<PluginId> plugins;          // ExportPlugins' order
     std::filesystem::path projectRoot;
     std::function<std::filesystem::path(const AssetRef&)> assetFile;  // an asset's file now (empty: not there)
-    std::filesystem::path scriptsDll;       // the newest built (empty: none)
+    // The game's scripts, built for it on the export's worker (Release, no debug information:
+    // ScriptBuildRequest::forExport). No sources: no Scripts.dll; a build that fails stops the export.
+    ScriptBuildRequest scripts;
     std::filesystem::path iconFile;         // the icon's file (empty: none) - found on the UI thread
 };
 

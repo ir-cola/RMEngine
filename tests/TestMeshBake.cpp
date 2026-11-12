@@ -43,12 +43,15 @@ bool SameMaterialNumbers(const MeshMaterial& x, const MeshMaterial& y) {
            x.roughness == y.roughness && x.normalScale == y.normalScale && x.emissive == y.emissive;
 }
 
-std::vector<BakedPictures> PicturesOf(const MeshData& m) {
+std::vector<BakedPictures> PicturesOf(const MeshData& m, const std::vector<bool>& sharp) {
     std::vector<BakedPictures> out;
     for (const MeshMaterial& mat : m.materials) {
         BakedPictures p;
         const int slots[4] = {mat.image, mat.metallicRoughnessImage, mat.normalImage, mat.emissiveImage};
-        for (size_t s = 0; s < 4; ++s) p[s] = slots[s] >= 0 ? m.images[static_cast<size_t>(slots[s])].file : std::string();
+        for (size_t s = 0; s < 4; ++s) {
+            p.path[s] = slots[s] >= 0 ? m.images[static_cast<size_t>(slots[s])].file : std::string();
+            p.sharp[s] = slots[s] >= 0 && sharp[static_cast<size_t>(slots[s])];
+        }
         out.push_back(p);
     }
     return out;
@@ -58,10 +61,15 @@ std::vector<BakedPictures> PicturesOf(const MeshData& m) {
 
 RM_TEST(MeshBake_RoundTrip) {
     const MeshData m = Sample();
-    const std::vector<BakedPictures> pictures = {{"Baked/a/0.dds", "", "Baked/a/1.dds", ""}, {"Baked/a/0.dds", "", "", "Baked/a/2.dds"}};
+    std::vector<BakedPictures> pictures(2);
+    pictures[0].path = {"Baked/a/0.dds", "", "Baked/a/1.dds", ""};
+    pictures[0].sharp = {true, false, false, false};
+    pictures[1].path = {"Baked/a/0.dds", "", "", "Baked/a/2.dds"};
+    pictures[1].sharp = {true, false, false, false};
     const std::string bytes = WriteBakedMesh(m, pictures);
     std::string err;
-    const auto back = ReadBakedMesh(bytes, &err);
+    std::vector<bool> sharp;
+    const auto back = ReadBakedMesh(bytes, &err, &sharp);
     CHECK(back.has_value());
     if (!back) return;
     CHECK(back->indices == m.indices && back->parts == m.parts && back->min == m.min && back->max == m.max);
@@ -76,8 +84,10 @@ RM_TEST(MeshBake_RoundTrip) {
     CHECK(back->materials[0].image == back->materials[1].image && back->materials[0].image >= 0);
     CHECK(back->materials[0].normalImage >= 0 && back->materials[0].metallicRoughnessImage == -1 && back->materials[1].emissiveImage >= 0);
     CHECK(back->images[static_cast<size_t>(back->materials[0].normalImage)].file == "Baked/a/1.dds");
+    // くっきり, per picture: the colour picture only.
+    CHECK(sharp.size() == 3 && sharp[static_cast<size_t>(back->materials[0].image)] && !sharp[static_cast<size_t>(back->materials[0].normalImage)]);
     // Written again from what was read: the same bytes.
-    CHECK(WriteBakedMesh(*back, PicturesOf(*back)) == bytes);
+    CHECK(WriteBakedMesh(*back, PicturesOf(*back, sharp)) == bytes);
 }
 
 RM_TEST(MeshBake_UnknownChunksAndBroken) {
@@ -112,7 +122,7 @@ RM_TEST(MeshBake_ARealModel) {
     if (!mesh) return;
     std::vector<BakedPictures> pictures(mesh->materials.size());
     for (size_t i = 0; i < pictures.size(); ++i) {
-        if (mesh->materials[i].image >= 0) pictures[i][0] = "Baked/house/" + std::to_string(mesh->materials[i].image) + ".dds";
+        if (mesh->materials[i].image >= 0) pictures[i].path[0] = "Baked/house/" + std::to_string(mesh->materials[i].image) + ".dds";
     }
     const auto back = ReadBakedMesh(WriteBakedMesh(*mesh, pictures), &err);
     CHECK(back && back->vertices.size() == mesh->vertices.size() && back->indices == mesh->indices && back->parts == mesh->parts);

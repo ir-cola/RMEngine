@@ -664,6 +664,21 @@ bool Renderer::Shared::EnsureLayer(ShadowMaps& maps) {
 }
 
 bool Renderer::Init(ID3D11Device* device, std::string* error) {
+    // Called again (the GPU's devices made again): nothing of the device before is kept.
+    lineVb_.Reset();
+    lineCapacity_ = 0;
+    thingsBuffer_.Reset();
+    drawsBuffer_.Reset();
+    thingsView_.Reset();
+    thingsCapacity_ = drawsCapacity_ = 0;
+    pictureSets_.clear();
+    picture_.Reset();
+    multisample_.Reset();
+    rtv_.Reset();
+    depthTex_.Reset();
+    dsv_.Reset();
+    width_ = height_ = 0;
+    samples_ = 1;
     device_ = device;
     static std::atomic<uint64_t> next{0};
     id_ = ++next;
