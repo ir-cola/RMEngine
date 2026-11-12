@@ -17,7 +17,10 @@
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/MeshLoader.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
+#include "rm_engine/space3d/runtime/BlockCompress.h"
+#include "rm_engine/space3d/runtime/TextureFile.h"
 #include "rm_engine/space3d/runtime/TexturePixels.h"
+#include "rm_engine/space3d/runtime/UploadSlice.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
 
@@ -884,6 +887,172 @@ RM_TEST(TexturePixels_MipmapsAveragedAsLight) {
     CHECK(!numbers.srgb && numbers.levels.size() == 3 && std::abs(int(numbers.levels[2].pixels[0]) - 128) <= 1);
     // An empty picture: nothing to put on the GPU.
     CHECK(MakeTexturePixels(platform::Image{}, true).levels.empty());
+}
+
+// --- Texture compression (BlockCompress / TextureFile / UploadSlice) ---------------------------
+
+namespace {
+
+// A w x h picture: smooth gradients of a few levels per texel (what photos and painted pictures
+// mostly are) and a soft alpha.
+platform::Image Gradient(uint32_t w, uint32_t h, bool alpha) {
+    platform::Image img;
+    img.width = w;
+    img.height = h;
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+            img.pixels.push_back(static_cast<uint8_t>(x * 255 / (w - 1)));
+            img.pixels.push_back(static_cast<uint8_t>(y * 255 / (h - 1)));
+            img.pixels.push_back(static_cast<uint8_t>(128 + 60 * std::sin(x * 0.1 + y * 0.07)));
+            img.pixels.push_back(alpha ? static_cast<uint8_t>((x + y) * 255 / (w + h - 2)) : 255);
+        }
+    }
+    return img;
+}
+
+// Root of the mean squared error over `channels` of each texel, and the largest error.
+struct Error {
+    double rms = 0;
+    int most = 0;
+};
+Error Compare(const platform::Image& a, const platform::Image& b, int channels) {
+    Error e;
+    double sum = 0;
+    size_t n = 0;
+    for (size_t i = 0; i + 3 < a.pixels.size() && i + 3 < b.pixels.size(); i += 4) {
+        for (int k = 0; k < channels; ++k) {
+            const int d = std::abs(int(a.pixels[i + k]) - int(b.pixels[i + k]));
+            sum += d * d;
+            e.most = std::max(e.most, d);
+            ++n;
+        }
+    }
+    e.rms = n ? std::sqrt(sum / n) : 0;
+    return e;
+}
+
+Error RoundTrip(const platform::Image& img, TextureFormat f, int channels) {
+    TexturePixels p;
+    p.levels.push_back(img);
+    const TexturePixels c = Compress(p, f);
+    CHECK(c.format == f && c.levels.size() == 1 && c.levels[0].pixels.size() == LevelBytes(f, img.width, img.height));
+    return Compare(img, Decompress(c.levels[0], f), channels);
+}
+
+}  // namespace
+
+RM_TEST(TextureFormat_SizesOfLevels) {
+    CHECK(RowPitch(TextureFormat::Rgba8, 5) == 20 && LevelBytes(TextureFormat::Rgba8, 5, 3) == 60);
+    CHECK(RowPitch(TextureFormat::BC1, 5) == 16 && LevelBytes(TextureFormat::BC1, 5, 3) == 16);  // 2 x 1 blocks of 8
+    CHECK(LevelBytes(TextureFormat::BC7, 1, 1) == 16 && LevelBytes(TextureFormat::BC5, 8, 8) == 64);
+    CHECK(ChannelsOf(TextureFormat::BC4) == 1 && ChannelsOf(TextureFormat::BC5) == 2 && ChannelsOf(TextureFormat::BC1) == 3);
+}
+
+RM_TEST(TextureFormat_ChosenByUseAndSettings) {
+    using C = asset::TextureCompression;
+    const PictureTraits opaque{false, false}, alpha{true, false}, gray{false, true};
+    // Automatic.
+    CHECK(ChooseFormat(TextureUse::Color, C::Auto, opaque, true, 256, 256) == TextureFormat::BC1);
+    CHECK(ChooseFormat(TextureUse::Color, C::Auto, alpha, true, 256, 256) == TextureFormat::BC7);
+    CHECK(ChooseFormat(TextureUse::Color, C::Auto, alpha, false, 256, 256) == TextureFormat::BC3);  // feature level 10.0
+    CHECK(ChooseFormat(TextureUse::Normal, C::Auto, opaque, true, 256, 256) == TextureFormat::BC5);
+    CHECK(ChooseFormat(TextureUse::Data, C::Auto, gray, true, 256, 256) == TextureFormat::BC4);
+    CHECK(ChooseFormat(TextureUse::Data, C::Auto, opaque, true, 256, 256) == TextureFormat::BC1);
+    // Not whole blocks at the top: kept as it is.
+    CHECK(ChooseFormat(TextureUse::Color, C::Auto, opaque, true, 250, 256) == TextureFormat::Rgba8);
+    // As set; BC7 on an old GPU is BC3; a setting the use cannot read is taken as automatic.
+    CHECK(ChooseFormat(TextureUse::Color, C::None, opaque, true, 256, 256) == TextureFormat::Rgba8);
+    CHECK(ChooseFormat(TextureUse::Color, C::BC7, opaque, true, 256, 256) == TextureFormat::BC7);
+    CHECK(ChooseFormat(TextureUse::Color, C::BC7, opaque, false, 256, 256) == TextureFormat::BC3);
+    CHECK(ChooseFormat(TextureUse::Color, C::BC4, opaque, true, 256, 256) == TextureFormat::BC1);
+    CHECK(ChooseFormat(TextureUse::Color, C::BC5, alpha, true, 256, 256) == TextureFormat::BC7);
+    CHECK(ChooseFormat(TextureUse::Data, C::BC4, opaque, true, 256, 256) == TextureFormat::BC1);  // not grey
+    CHECK(ChooseFormat(TextureUse::Normal, C::BC1, opaque, true, 256, 256) == TextureFormat::BC1);
+    // What a picture is.
+    const PictureTraits t = TraitsOf(Gradient(8, 8, true));
+    CHECK(t.alpha && !t.gray);
+    platform::Image g;
+    g.width = g.height = 1;
+    g.pixels = {9, 9, 9, 255};
+    CHECK(TraitsOf(g).gray && !TraitsOf(g).alpha);
+}
+
+RM_TEST(BlockCompress_ErrorsAreSmall) {
+    const platform::Image smooth = Gradient(64, 64, false);
+    const Error bc1 = RoundTrip(smooth, TextureFormat::BC1, 3);
+    CHECK(bc1.rms < 4.5 && bc1.most < 16);
+    // BC4: 8 steps between the block's lowest and highest: within half a step.
+    const Error bc4 = RoundTrip(smooth, TextureFormat::BC4, 1);
+    CHECK(bc4.rms < 1.5 && bc4.most <= 2);
+    const Error bc5 = RoundTrip(smooth, TextureFormat::BC5, 2);
+    CHECK(bc5.rms < 1.5 && bc5.most <= 2);
+    const platform::Image soft = Gradient(64, 64, true);
+    const Error bc3 = RoundTrip(soft, TextureFormat::BC3, 4);
+    CHECK(bc3.rms < 4.0);
+    const Error bc7 = RoundTrip(soft, TextureFormat::BC7, 4);
+    CHECK(bc7.rms < 3.5 && bc7.most < 14);
+    // One colour: BC4 exactly; BC1 within its 5 / 6 / 5 bits; BC7 within its 7 + 1 bits.
+    platform::Image flat;
+    flat.width = flat.height = 4;
+    for (int i = 0; i < 16; ++i) flat.pixels.insert(flat.pixels.end(), {200, 100, 50, 77});
+    CHECK(RoundTrip(flat, TextureFormat::BC4, 1).most == 0);
+    CHECK(RoundTrip(flat, TextureFormat::BC1, 3).most <= 4);
+    CHECK(RoundTrip(flat, TextureFormat::BC7, 4).most <= 1);
+    // The edge blocks of a size that is not a multiple of 4 are made whole (the last texels again).
+    const Error odd = RoundTrip(Gradient(30, 22, false), TextureFormat::BC1, 3);
+    CHECK(odd.rms < 8.0);
+}
+
+RM_TEST(TextureFile_DdsRoundTrip) {
+    TexturePixels p = Compress(MakeTexturePixels(Gradient(8, 8, true), true), TextureFormat::BC7);
+    CHECK(p.levels.size() == 4);  // 8, 4, 2, 1
+    const std::vector<uint8_t> dds = WriteDds(p);
+    CHECK(dds.size() == 148 + 4 * 16 + 16 + 16 + 16);
+    std::string error;
+    const auto back = ReadDds(dds, &error);
+    CHECK(back.has_value());
+    if (!back) return;
+    CHECK(back->format == TextureFormat::BC7 && back->srgb && back->levels.size() == 4);
+    for (size_t i = 0; i < 4; ++i) CHECK(back->levels[i].pixels == p.levels[i].pixels && back->levels[i].width == p.levels[i].width);
+    CHECK(DxgiFormatOf(TextureFormat::BC7, true) == 99 && DxgiFormatOf(TextureFormat::BC5, true) == 83);  // BC5 has no sRGB form
+    // Cut short / not a DDS: told, not read past the end.
+    std::vector<uint8_t> cut(dds.begin(), dds.end() - 10);
+    CHECK(!ReadDds(cut, &error) && !error.empty());
+    CHECK(!ReadDds(std::vector<uint8_t>(10, 0), &error));
+}
+
+RM_TEST(TextureFile_CacheName) {
+    CHECK(HashBytes({}) == 14695981039346656037ull);
+    const uint8_t a[] = {'a'};
+    CHECK(HashBytes(a) == 0xaf63dc4c8601ec8cull);
+    const std::string id = "0123456789abcdef0123456789abcdef";
+    const std::string n = TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Color, true);
+    CHECK(n.starts_with(id + "_") && n.ends_with(".dds") && n.size() == id.size() + 1 + 16 + 4);
+    CHECK(n == TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Color, true));  // the same: the same file
+    // Anything it depends on changed: another file (an old one is never read by mistake).
+    CHECK(n != TextureCacheName(id, 43, R"({"compression":"Auto"})", TextureUse::Color, true));
+    CHECK(n != TextureCacheName(id, 42, R"({"compression":"BC7"})", TextureUse::Color, true));
+    CHECK(n != TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Normal, true));
+    CHECK(n != TextureCacheName(id, 42, R"({"compression":"Auto"})", TextureUse::Color, false));
+    CHECK(n != TextureCacheName(id + "#1", 42, R"({"compression":"Auto"})", TextureUse::Color, true));
+    CHECK(TextureCacheName("../x:y", 1, "", TextureUse::Data, true).starts_with("xy_"));  // only safe letters in the name
+    CHECK(TextureCacheName("", 1, "", TextureUse::Data, true).starts_with("noid_"));
+}
+
+RM_TEST(UploadSlice_TimePerFrame) {
+    UploadSlice s(0.002);
+    CHECK(s.May(1));
+    s.Spent(0.0015);
+    CHECK(s.May(1));  // 1.5 ms of 2: one more
+    s.Spent(0.001);
+    CHECK(!s.May(1) && !s.May(1) && s.Deferred() == 2);  // 2.5 ms: the rest wait
+    CHECK(s.May(2) && s.Deferred() == 2);                 // a new frame (still counts the put-off ones once)
+    s.Spent(0.05);                                        // one big copy: longer than the budget ...
+    CHECK(!s.May(2));
+    CHECK(s.May(3));  // ... but the first copy of every frame always goes (nothing gets stuck)
+    CHECK(s.Deferred() == 1);
+    s.Spent(0);
+    CHECK(s.May(4) && s.Deferred() == 0);
 }
 
 RM_TEST(Space3d_BoundsAndShadowMatrix) {

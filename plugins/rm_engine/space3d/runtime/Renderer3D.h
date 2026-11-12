@@ -99,6 +99,7 @@ public:
     bool srgb = false;  // read as colours (sRGB -> linear) or as numbers
     bool sharp = false;  // drawn with the nearest pixel (no smoothing): the image's import setting
     size_t bytes = 0;    // on the GPU, its mipmaps included
+    TextureFormat format = TextureFormat::Rgba8;  // how it is kept (BC: compressed)
     uint64_t madeBy = 0;  // the Renderer::Id that made it (another one - a GPU made again - cannot use it)
 
 private:
@@ -165,6 +166,8 @@ public:
     std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, bool sharp = false);
     // The same with the mipmaps already made (the quick part: only the copy to the GPU).
     std::shared_ptr<const GpuTexture> UploadTexture(const TexturePixels& pixels, std::string* error, bool sharp = false);
+    // Whether this GPU reads BC7 (feature level 11.0): without it colours with alpha are kept as BC3.
+    bool SupportsBC7() const;
     // Draws the frame and returns the finished picture (B8G8R8A8, usable by Direct2D); null on failure.
     // The picture is kept until the next Render (its size follows the frame's).
     ID3D11Texture2D* Render(ID3D11DeviceContext* ctx, const RenderFrame& f);

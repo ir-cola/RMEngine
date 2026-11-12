@@ -131,6 +131,8 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Lighting.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\TexturePixels.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\BlockCompress.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\TextureFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshLoader.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\editor\Gizmo.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space2d\runtime\Transform2D.cpp" />

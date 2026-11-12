@@ -1,6 +1,7 @@
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 
 #include "rm_engine/space3d/runtime/Lighting.h"
+#include "rm_engine/space3d/runtime/TextureFile.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <d3dcompiler.h>
@@ -226,6 +227,7 @@ float3 Shade(float3 albedo, float metal, float rough, float3 n, float3 v, float3
 // from pixel to pixel (a "cotangent frame"): no tangents are needed in the vertices.
 float3 Bend(float3 n, MeshOut i) {
     float3 t = normalMap.Sample(baseSampler, i.uv).xyz * 2 - 1;  // (sampled before any branch)
+    if (paint.w > 1.5) t.z = sqrt(saturate(1 - dot(t.xy, t.xy)));  // two channels (BC5): z from x and y
     float3 dp1 = ddx(i.wpos), dp2 = ddy(i.wpos);
     float2 du1 = ddx(i.uv), du2 = ddy(i.uv);
     if (paint.w < 0.5) return n;
@@ -261,6 +263,7 @@ float4 MeshPS(MeshOut i) : SV_Target {
     float rim = pow(1 - saturate(dot(n, toEye)), 2.5) * highlight.a;  // (by the shape, not the normal map)
     n = Bend(n, i);
     float4 mr = metalRoughMap.Sample(baseSampler, i.uv);
+    if (pbr.w > 1.5) mr = mr.rrrr;  // one channel (BC4): the grey value is both
     float metal = pbr.x * (pbr.w > 0.5 ? mr.b : 1);
     float rough = clamp(pbr.y * (pbr.w > 0.5 ? mr.g : 1), 0.04, 1);
     float3 glow = emissive.rgb * (emissive.w > 0.5 ? emissionMap.Sample(baseSampler, i.uv).rgb : float3(1, 1, 1));
@@ -747,14 +750,19 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const TexturePixels& p
     if (top.width > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION || top.height > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION) {
         return fail("画像が大きすぎて GPU に載せられません");
     }
+    if (pixels.format == TextureFormat::BC7 && !SupportsBC7()) return fail("この GPU は BC7 を読めません");
     std::vector<D3D11_SUBRESOURCE_DATA> init;
-    for (const platform::Image& l : pixels.levels) init.push_back({l.pixels.data(), l.width * 4, 0});
+    for (const platform::Image& l : pixels.levels) {
+        if (l.pixels.size() < LevelBytes(pixels.format, l.width, l.height)) return fail("画像のデータが足りません");
+        init.push_back({l.pixels.data(), static_cast<UINT>(RowPitch(pixels.format, l.width)), 0});
+    }
     D3D11_TEXTURE2D_DESC td{};
     td.Width = top.width;
     td.Height = top.height;
     td.MipLevels = static_cast<UINT>(pixels.levels.size());
     td.ArraySize = 1;
-    td.Format = pixels.srgb ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;  // sRGB: the GPU reads linear light
+    // sRGB forms: the GPU reads linear light. The numbers are DXGI_FORMAT's (TextureFile.h).
+    td.Format = static_cast<DXGI_FORMAT>(DxgiFormatOf(pixels.format, pixels.srgb));
     td.SampleDesc.Count = 1;
     td.Usage = D3D11_USAGE_IMMUTABLE;
     td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -767,10 +775,13 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const TexturePixels& p
     gpu->width = top.width;
     gpu->height = top.height;
     gpu->srgb = pixels.srgb;
+    gpu->format = pixels.format;
     gpu->madeBy = id_;
     for (const platform::Image& l : pixels.levels) gpu->bytes += l.pixels.size();
     return gpu;
 }
+
+bool Renderer::SupportsBC7() const { return device_ && device_->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0; }
 
 bool Renderer::Resize(uint32_t width, uint32_t height) {
     if (width == width_ && height == height_ && picture_) return true;
@@ -880,8 +891,10 @@ uint32_t Renderer::AddMaterial(const DrawMaterial& m) {
     const float mode = m.alpha == AlphaMode::Mask ? 1.f : m.alpha == AlphaMode::Blend ? 2.f : 0.f;
     things_.emplace_back();
     Put(things_.back(), m.color);
-    things_.push_back({m.texture ? 1.f : 0.f, mode, m.alphaCutoff, m.normal ? 1.f : 0.f});
-    things_.push_back({m.metallic, m.roughness, m.normalScale, m.metalRough ? 1.f : 0.f});
+    // A picture's flag: 0 none, 1 a picture, 2 a picture with fewer channels (BC5 normals, BC4 numbers).
+    auto flag = [](const TextureRef& t, int fewer) { return !t ? 0.f : ChannelsOf(t->format) == fewer ? 2.f : 1.f; };
+    things_.push_back({m.texture ? 1.f : 0.f, mode, m.alphaCutoff, flag(m.normal, 2)});
+    things_.push_back({m.metallic, m.roughness, m.normalScale, flag(m.metalRough, 1)});
     things_.push_back({m.emissive.r, m.emissive.g, m.emissive.b, m.emission ? 1.f : 0.f});
     return at;
 }

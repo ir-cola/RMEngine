@@ -271,6 +271,7 @@ private:
                     bool loading = false;
                     if (ModelEntry* m = Model(mr.model, host, loading)) {
                         p.mesh = m->gpu.get();
+                        textures_.SetCacheFolder(host.host.GetProject().CacheDir() / L"Textures");
                         p.materials = m->paint.Materials(main_.renderer, textures_, now_);
                         p.min = p.mesh->min;
                         p.max = p.mesh->max;

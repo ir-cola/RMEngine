@@ -5,6 +5,7 @@
 #include "core/asset/ImportSettings.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
+#include "editor/app/Worker.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
@@ -92,6 +93,17 @@ struct ImageEntry {
     bool looked = false, loaded = false, told = false;
     std::filesystem::file_time_type time{};
     double checkedAt = 0, usedAt = 0;
+    // Read on a thread of its own (the file and WIC); only the bitmap is made on the UI thread, when
+    // it arrives. Dropping the entry drops the worker and what it would still bring.
+    std::unique_ptr<editor::Worker> worker;
+    bool reading = false;
+    struct Arrived {
+        std::optional<platform::Image> image;  // nullopt: `error` says why
+        std::string error;
+        uint32_t width = 0, height = 0;
+        bool sharp = false;
+    };
+    std::optional<Arrived> arrived;
 };
 
 // One thing being dragged: as it was when the drag began, and as the drag last left it.
@@ -244,6 +256,25 @@ private:
         if (ref.Empty()) return nullptr;
         ImageEntry& m = images_[ref.guid];
         m.usedAt = now_;
+        if (m.arrived) {
+            // Read on the worker: the bitmap is made here (Direct2D belongs to the UI thread).
+            const bool again = m.bitmap != nullptr;
+            ImageEntry::Arrived got = std::move(*m.arrived);
+            m.arrived.reset();
+            m.reading = false;
+            const std::string name = PathToUtf8(host.host.AssetFile(ref).filename());
+            m.bitmap = got.image ? platform::BitmapFromImage(c.P().DC(), *got.image) : nullptr;
+            if (got.image && !m.bitmap) got.error = "Direct2D のビットマップにできませんでした";
+            if (m.bitmap) {
+                m.width = got.width;
+                m.height = got.height;
+                m.sharp = got.sharp;
+                log::Info("2D のシーンビュー: 画像「{}」を{}読みました ({} x {} ピクセル)", name, again ? "もう一度" : "", m.width, m.height);
+            } else {
+                log::Warn("2D のシーンビュー: 画像「{}」を読めないので四角で描きます: {}", name, got.error);
+            }
+        }
+        if (m.reading) c.RequestAnimation();  // drawn again until the picture being read arrives
         if (m.looked && now_ - m.checkedAt < kImageCheckSeconds) return m.bitmap ? &m : nullptr;
         m.looked = true;
         m.checkedAt = now_;
@@ -263,32 +294,34 @@ private:
         }
         m.told = false;
         if (m.loaded && time == m.time) return m.bitmap ? &m : nullptr;  // not changed
-        const bool again = m.bitmap != nullptr;
         m.loaded = true;
         m.time = time;
-        m.bitmap.Reset();
-        std::string error;
-        // The image's import settings (its .meta): くっきり, and how big it may be.
-        const auto imp = asset::ReadImport<asset::ImageImport>(file);
-        m.sharp = imp.sharp;
-        const uint32_t most = std::min<uint32_t>(kMaxImageSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
-        // (the file's own size first: a picture bigger than a bitmap is scaled down, the sprite keeps its size)
-        const auto whole = platform::LoadImageFile(host.host.Graphics().Wic(), file, platform::PixelOrder::PremultipliedBgra, {}, &error);
-        if (whole) {
-            m.width = whole->width;
-            m.height = whole->height;
-            const bool big = whole->width > most || whole->height > most;
-            const auto fitted = big ? platform::LoadImageFile(host.host.Graphics().Wic(), file, platform::PixelOrder::PremultipliedBgra,
-                                                              {most, most}, &error)
-                                    : std::nullopt;
-            m.bitmap = platform::BitmapFromImage(c.P().DC(), big && fitted ? *fitted : *whole);
-            if (!m.bitmap && error.empty()) error = "Direct2D のビットマップにできませんでした";
-        }
-        if (m.bitmap) {
-            log::Info("2D のシーンビュー: 画像「{}」を{}読みました ({} x {} ピクセル)", name, again ? "もう一度" : "", m.width, m.height);
-        } else {
-            log::Warn("2D のシーンビュー: 画像「{}」を読めないので四角で描きます: {}", name, error);
-        }
+        // To the worker; the old bitmap stays until the new picture is here.
+        if (!m.worker) m.worker = std::make_unique<editor::Worker>();
+        m.reading = true;
+        ImageEntry* entry = &m;  // (the entry outlives its worker's posts: they are dropped with it)
+        m.worker->Run([file, entry](std::stop_token stop, const editor::Worker::Post& post) {
+            ImageEntry::Arrived got;
+            // The image's import settings (its .meta): くっきり, and how big it may be.
+            const auto imp = asset::ReadImport<asset::ImageImport>(file);
+            got.sharp = imp.sharp;
+            const uint32_t most = std::min<uint32_t>(kMaxImageSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
+            IWICImagingFactory* wic = platform::ThreadImagingFactory();
+            // (the file's own size first: a picture bigger than a bitmap is scaled down, the sprite keeps its size)
+            auto whole = platform::LoadImageFile(wic, file, platform::PixelOrder::PremultipliedBgra, {}, &got.error);
+            if (whole) {
+                got.width = whole->width;
+                got.height = whole->height;
+                const bool big = whole->width > most || whole->height > most;
+                if (big && !stop.stop_requested()) {
+                    auto fitted = platform::LoadImageFile(wic, file, platform::PixelOrder::PremultipliedBgra, {most, most}, &got.error);
+                    if (fitted) whole = std::move(fitted);
+                }
+                got.image = std::move(whole);
+            }
+            if (stop.stop_requested()) return;
+            post([entry, got = std::move(got)]() mutable { entry->arrived = std::move(got); });
+        });
         return m.bitmap ? &m : nullptr;
     }
 

@@ -46,6 +46,9 @@ struct Project {
 
     std::filesystem::path Root() const { return file.parent_path(); }
     std::filesystem::path AssetsDir() const { return Root() / L"Assets"; }
+    // What the engine makes from the assets to be quick next time (compressed textures ...). Not the
+    // project's data: deleting it is safe (it is made again), it is not shared (keep it out of git).
+    std::filesystem::path CacheDir() const { return Root() / L"Cache"; }
     std::filesystem::path LayoutFile() const { return Root() / L"UserSettings" / L"Layout.json"; }
     std::string Name() const;  // UTF-8
 };

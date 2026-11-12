@@ -3,13 +3,18 @@
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "core/asset/ImportSettings.h"
+#include "core/reflect/Data.h"
 #include "platform/Image.h"
+#include "platform/Shell.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
+#include "rm_engine/space3d/runtime/TextureFile.h"
 
 #include <algorithm>
 #include <exception>
 #include <format>
+#include <fstream>
 #include <new>
+#include <string>
 
 namespace rm::space3d {
 
@@ -48,12 +53,7 @@ void PictureDecoder::Run(std::stop_token stop) {
             // Nothing thrown may leave the thread (that would end the program): a broken picture
             // that makes the decoding run out of memory is just "cannot be read".
             try {
-                const Source& s = job->source_;
-                IWICImagingFactory* wic = platform::ThreadImagingFactory();
-                std::optional<platform::Image> image =
-                    s.bytes ? platform::DecodeImage(wic, *s.bytes, platform::PixelOrder::Rgba, {s.maxSize, s.maxSize}, &job->error)
-                            : platform::LoadImageFile(wic, s.file, platform::PixelOrder::Rgba, {s.maxSize, s.maxSize}, &job->error);
-                if (image) job->pixels = MakeTexturePixels(std::move(*image), s.srgb);
+                Make(*job);
             } catch (const std::bad_alloc&) {
                 job->pixels.reset();
                 job->error = "メモリーが足りなくなりました (壊れているか、大きすぎる画像)";
@@ -70,35 +70,140 @@ void PictureDecoder::Run(std::stop_token stop) {
     }
 }
 
-// --- TextureCache --------------------------------------------------------------------------------
-
 namespace {
 
-size_t BytesOf(const TexturePixels& p) {
-    size_t n = 0;
-    for (const platform::Image& l : p.levels) n += l.pixels.size();
-    return n;
+constexpr uintmax_t kMaxFileBytes = 512ull << 20;
+
+std::optional<std::vector<uint8_t>> ReadAll(const std::filesystem::path& file) {
+    std::error_code ec;
+    const uintmax_t size = std::filesystem::file_size(file, ec);
+    if (ec || size > kMaxFileBytes) return std::nullopt;
+    std::ifstream in(file, std::ios::binary);
+    if (!in) return std::nullopt;
+    std::vector<uint8_t> bytes(static_cast<size_t>(size));
+    if (size > 0 && !in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(size))) return std::nullopt;
+    return bytes;
+}
+
+// The asset id in `file`'s .meta ("" when it has none yet).
+std::string GuidOf(const std::filesystem::path& file) {
+    std::filesystem::path meta = file;
+    meta += L".meta";
+    const auto bytes = ReadAll(meta);
+    if (!bytes) return {};
+    return asset::GuidInMeta({reinterpret_cast<const char*>(bytes->data()), bytes->size()}).value_or(std::string());
+}
+
+uint32_t Most(int setting) { return std::min(kMaxTextureSize, static_cast<uint32_t>(std::max(setting, 1))); }
+
+// Into the cache folder: written beside and then put in place (a half-written file is never read).
+void WriteCache(const std::filesystem::path& file, const std::vector<uint8_t>& bytes) {
+    std::error_code ec;
+    std::filesystem::create_directories(file.parent_path(), ec);
+    std::filesystem::path tmp = file;
+    tmp += L".tmp";
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out) return;
+        out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        if (!out) return;
+    }
+    std::filesystem::rename(tmp, file, ec);
+    if (ec) std::filesystem::remove(tmp, ec);
+}
+
+const char* FormatName(TextureFormat f) {
+    switch (f) {
+        case TextureFormat::BC1: return "BC1";
+        case TextureFormat::BC3: return "BC3";
+        case TextureFormat::BC4: return "BC4";
+        case TextureFormat::BC5: return "BC5";
+        case TextureFormat::BC7: return "BC7";
+        case TextureFormat::Rgba8: break;
+    }
+    return "RGBA";
+}
+
+std::wstring EntryKey(TextureUse use, bool srgb, const std::filesystem::path& file) {
+    std::wstring key = std::to_wstring(static_cast<int>(use));
+    key += srgb ? L"c:" : L"n:";
+    key += file.native();
+    return key;
 }
 
 }  // namespace
 
-bool TextureCache::MayUpload(size_t bytes, double now) {
-    if (now != frame_) {
-        frame_ = now;
-        uploaded_ = 0;
-        deferredBefore_ = deferred_;
-        deferred_ = 0;
+void PictureDecoder::Make(Job& job) {
+    const Source& s = job.source_;
+    const double start = platform::NowSeconds();
+    // The bytes, whose they are, and how they are to be read (the import settings in the .meta).
+    std::optional<std::vector<uint8_t>> owned;
+    std::span<const uint8_t> data;
+    asset::TextureCompression compression = asset::TextureCompression::Auto;
+    uint32_t most = kMaxTextureSize;
+    std::string settings, id;
+    if (s.bytes) {
+        data = *s.bytes;
+        const auto imp = asset::ReadImport<asset::ModelImport>(s.file);
+        compression = imp.textureCompression;
+        most = Most(imp.textureMaxSize);
+        settings = json::Write(reflect::Save(imp));
+        id = GuidOf(s.file) + "#" + std::to_string(s.image);
+    } else {
+        owned = ReadAll(s.file);
+        if (!owned) {
+            job.error = std::format("「{}」を開けません (ファイルが無いか、使われているか、大きすぎます)", PathToUtf8(s.file.filename()));
+            return;
+        }
+        data = *owned;
+        const auto imp = asset::ReadImport<asset::ImageImport>(s.file);
+        compression = imp.compression;
+        most = Most(imp.maxSize);
+        job.sharp = imp.sharp;
+        settings = json::Write(reflect::Save(imp));
+        id = GuidOf(s.file);
     }
-    if (uploaded_ > 0 && uploaded_ + bytes > kUploadBytesPerFrame) {
-        ++deferred_;
-        return false;
+    // Made before (the same bytes, settings and use): the cache's .dds, as the GPU takes it.
+    std::filesystem::path cached;
+    if (!s.cacheFolder.empty()) {
+        cached = s.cacheFolder / PathFromUtf8(TextureCacheName(id, HashBytes(data), settings, s.use, s.canBC7));
+        if (const auto bytes = ReadAll(cached)) {
+            std::string ignored;  // a broken cache file is just made again
+            if (auto p = ReadDds(*bytes, &ignored)) {
+                job.pixels = std::move(*p);
+                job.fromCache = true;
+                job.seconds = platform::NowSeconds() - start;
+                return;
+            }
+        }
     }
-    uploaded_ += bytes;
+    auto image = platform::DecodeImage(platform::ThreadImagingFactory(), data, platform::PixelOrder::Rgba, {most, most}, &job.error);
+    if (!image) return;
+    const TextureFormat format = ChooseFormat(s.use, compression, TraitsOf(*image), s.canBC7, image->width, image->height);
+    TexturePixels pixels = Compress(MakeTexturePixels(std::move(*image), s.srgb), format);
+    if (!cached.empty() && format != TextureFormat::Rgba8) WriteCache(cached, WriteDds(pixels));
+    job.pixels = std::move(pixels);
+    job.seconds = platform::NowSeconds() - start;
+}
+
+// --- TextureCache --------------------------------------------------------------------------------
+
+bool TextureCache::Upload(Renderer& renderer, PictureDecoder::Job& job, double now, TextureRef& out, std::string* error) {
+    if (!job.Done()) return false;
+    if (!job.pixels) {
+        out = nullptr;
+        if (error) *error = job.error;
+        return true;
+    }
+    if (!slice_.May(now)) return false;  // this frame has copied for long enough: the next one
+    const double start = platform::NowSeconds();
+    out = renderer.UploadTexture(*job.pixels, error, job.sharp);
+    slice_.Spent(platform::NowSeconds() - start);
     return true;
 }
 
-TextureRef TextureCache::Get(Renderer& renderer, const std::filesystem::path& file, bool srgb, double now) {
-    Entry& e = entries_[(srgb ? L"c:" : L"n:") + file.native()];
+TextureRef TextureCache::Get(Renderer& renderer, const std::filesystem::path& file, TextureUse use, bool srgb, double now) {
+    Entry& e = entries_[EntryKey(use, srgb, file)];
     e.usedAt = now;
     const std::string name = PathToUtf8(file.filename());
     if (e.gpu && e.gpu->madeBy != renderer.Id()) {
@@ -107,15 +212,18 @@ TextureRef TextureCache::Get(Renderer& renderer, const std::filesystem::path& fi
         e.job.reset();
         e.loaded = false;
     }
-    if (e.job && e.job->Done() && (!e.job->pixels || MayUpload(BytesOf(*e.job->pixels), now))) {
-        // Decoded: only the copy to the GPU is left (put off to a later frame when this one has copied enough).
-        std::string error = e.job->error;
-        TextureRef gpu = e.job->pixels ? renderer.UploadTexture(*e.job->pixels, &error, e.sharp) : nullptr;
+    TextureRef made;
+    std::string error;
+    if (e.job && Upload(renderer, *e.job, now, made, &error)) {
+        // Made: on the GPU now (or it could not be).
         const bool again = e.gpu != nullptr;
+        const bool cached = e.job->fromCache;
+        const double seconds = e.job->seconds;
         e.job.reset();
-        if (gpu) {
-            e.gpu = std::move(gpu);
-            log::Info("テクスチャ「{}」を{}読みました ({} x {})", name, again ? "もう一度" : "", e.gpu->width, e.gpu->height);
+        if (made) {
+            e.gpu = std::move(made);
+            log::Info("テクスチャ「{}」を{}読みました ({} x {}・{}{}・{:.0f} ms)", name, again ? "もう一度" : "", e.gpu->width, e.gpu->height,
+                      FormatName(e.gpu->format), cached ? "・キャッシュから" : "", seconds * 1000);
         } else {
             e.gpu.reset();
             log::Warn("テクスチャ「{}」を読めないので、その絵なしで描きます: {}", name, error);
@@ -134,15 +242,12 @@ TextureRef TextureCache::Get(Renderer& renderer, const std::filesystem::path& fi
         e.told = true;
         return nullptr;
     }
-    if (e.loaded && time == e.time) return e.gpu;  // not changed (ready, being read, or could not be read)
+    if (e.loaded && time == e.time) return e.gpu;  // not changed (ready, being made, or could not be read)
     e.loaded = true;
     e.time = time;
     e.told = false;
-    // To the decoder; the old picture stays until the new one is ready.
-    const auto imp = asset::ReadImport<asset::ImageImport>(file);
-    e.sharp = imp.sharp;
-    const uint32_t most = std::min(kMaxTextureSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
-    e.job = decoder_.Request({nullptr, file, srgb, most});
+    // To the thread; the old picture stays until the new one is ready.
+    e.job = decoder_.Request({nullptr, file, -1, use, srgb, cacheFolder_, renderer.SupportsBC7()});
     return e.gpu;
 }
 
@@ -165,8 +270,8 @@ DrawMaterial MaterialNumbers(const MeshMaterial& m) {
 }
 
 std::array<PictureSlot, kPictureSlots> PictureSlots(const MeshMaterial& m) {
-    return {PictureSlot{m.image, true}, PictureSlot{m.metallicRoughnessImage, false}, PictureSlot{m.normalImage, false},
-            PictureSlot{m.emissiveImage, true}};
+    return {PictureSlot{m.image, true, TextureUse::Color}, PictureSlot{m.metallicRoughnessImage, false, TextureUse::Data},
+            PictureSlot{m.normalImage, false, TextureUse::Normal}, PictureSlot{m.emissiveImage, true, TextureUse::Color}};
 }
 
 void SetPicture(DrawMaterial& d, size_t slot, TextureRef texture) {
@@ -181,15 +286,18 @@ void SetPicture(DrawMaterial& d, size_t slot, TextureRef texture) {
 void ModelPaint::Load(const MeshData& mesh, const std::filesystem::path& modelFile, const std::filesystem::path& root,
                       const std::string& modelName) {
     name_ = modelName;
+    modelFile_ = modelFile;
     inside_.clear();
     draw_.clear();
     slots_.clear();
-    // Each picture inside the model is decoded once per way it is read, however many materials use it.
-    std::vector<int> insideOf(mesh.images.size() * 2, -1);
+    // Each picture inside the model is made once per use, however many materials use it.
+    constexpr size_t kUses = 3;
+    std::vector<int> insideOf(mesh.images.size() * kUses, -1);
     std::vector<std::shared_ptr<const std::vector<uint8_t>>> bytes(mesh.images.size());
     auto slot = [&](PictureSlot ps) {
         Slot out;
         out.srgb = ps.srgb;
+        out.use = ps.use;
         if (ps.image < 0 || static_cast<size_t>(ps.image) >= mesh.images.size()) return out;
         const size_t i = static_cast<size_t>(ps.image);
         const MeshImage& im = mesh.images[i];
@@ -200,11 +308,11 @@ void ModelPaint::Load(const MeshData& mesh, const std::filesystem::path& modelFi
             }
             return out;
         }
-        int& at = insideOf[i * 2 + (ps.srgb ? 1 : 0)];
+        int& at = insideOf[i * kUses + static_cast<size_t>(ps.use)];
         if (at < 0) {
             if (!bytes[i]) bytes[i] = std::make_shared<const std::vector<uint8_t>>(im.bytes);
             at = static_cast<int>(inside_.size());
-            inside_.push_back({bytes[i], im.name, ps.srgb, nullptr, nullptr, false});
+            inside_.push_back({bytes[i], im.name, ps.image, ps.use, ps.srgb, nullptr, nullptr, false});
         }
         out.inside = at;
         return out;
@@ -219,17 +327,16 @@ void ModelPaint::Load(const MeshData& mesh, const std::filesystem::path& modelFi
 }
 
 std::span<const DrawMaterial> ModelPaint::Materials(Renderer& renderer, TextureCache& cache, double now) {
-    // The pictures inside the model: asked for once, put on the GPU when decoded (and the frame has room).
+    // The pictures inside the model: asked for once, put on the GPU when made (and the frame has time).
     for (Inside& in : inside_) {
         if (in.gpu && in.gpu->madeBy != renderer.Id()) in.gpu.reset();  // the GPU was made again: read again
         if (in.gpu || in.failed) continue;
         if (!in.job) {
-            in.job = cache.Decoder().Request({in.bytes, {}, in.srgb, kMaxTextureSize});
+            in.job = cache.Decoder().Request({in.bytes, modelFile_, in.image, in.use, in.srgb, cache.CacheFolder(), renderer.SupportsBC7()});
             continue;
         }
-        if (!in.job->Done() || (in.job->pixels && !cache.MayUpload(BytesOf(*in.job->pixels), now))) continue;
-        std::string error = in.job->error;
-        if (in.job->pixels) in.gpu = renderer.UploadTexture(*in.job->pixels, &error);
+        std::string error;
+        if (!cache.Upload(renderer, *in.job, now, in.gpu, &error)) continue;
         in.job.reset();
         if (!in.gpu) {
             in.failed = true;
@@ -241,7 +348,7 @@ std::span<const DrawMaterial> ModelPaint::Materials(Renderer& renderer, TextureC
             const Slot& sl = slots_[i][k];
             TextureRef t = sl.inside >= 0 ? inside_[static_cast<size_t>(sl.inside)].gpu
                            : sl.file.empty() ? nullptr
-                                             : cache.Get(renderer, sl.file, sl.srgb, now);
+                                             : cache.Get(renderer, sl.file, sl.use, sl.srgb, now);
             SetPicture(draw_[i], k, std::move(t));
         }
     }

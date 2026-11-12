@@ -26,16 +26,30 @@ enum class UpAxis {
     RM_ITEM(Label="Z が上 (Blender の OBJ・3ds Max など)") Z,
 };
 
+RM_ENUM(Label="圧縮")
+enum class TextureCompression {
+    RM_ITEM(Label="自動") Auto,
+    RM_ITEM(Label="なし") None,
+    RM_ITEM(Label="BC1 (不透明な色)") BC1,
+    RM_ITEM(Label="BC3 (透明のある色)") BC3,
+    RM_ITEM(Label="BC4 (1 チャンネル)") BC4,
+    RM_ITEM(Label="BC5 (ノーマルマップ)") BC5,
+    RM_ITEM(Label="BC7 (きれいな色と透明)") BC7,
+};
+
 RM_STRUCT(Label="3D モデルの取り込み")
 struct ModelImport {
     RM_PROPERTY(Edit, Label="大きさ", Tooltip="読み込んだ形に掛ける倍率 (センチメートルで作ったモデルなら 0.01)", Min=0.0001, Max=10000) float scale = 1;
     RM_PROPERTY(Edit, Label="上の向き", Tooltip="作ったソフトで上だった軸。Z なら Y が上になるように起こして読みます") UpAxis up = UpAxis::Y;
+    RM_PROPERTY(Edit, Label="中の絵の圧縮", Tooltip="モデルの中 (.glb など) の絵を GPU でどの形で持つか。自動: 不透明な色は BC1、透明のある色は BC7、ノーマルマップは BC5") TextureCompression textureCompression = TextureCompression::Auto;
+    RM_PROPERTY(Edit, Label="中の絵の大きさの上限 (ピクセル)", Tooltip="モデルの中の絵がこれより大きければ縮めて読みます", Min=16, Max=8192) int textureMaxSize = 4096;
 };
 
 RM_STRUCT(Label="画像の取り込み")
 struct ImageImport {
     RM_PROPERTY(Edit, Label="くっきり (ドット絵)", Tooltip="拡大してもぼかさず、ピクセルをそのまま大きくします (3D のテクスチャと 2D のスプライト)") bool sharp = false;
     RM_PROPERTY(Edit, Label="大きさの上限 (ピクセル)", Tooltip="これより大きい画像は縮めて読みます (GPU のメモリを減らす)。ファイルはそのまま", Min=16, Max=8192) int maxSize = 4096;
+    RM_PROPERTY(Edit, Label="圧縮", Tooltip="3D のテクスチャとして GPU でどの形で持つか。自動: 不透明な色は BC1、透明のある色は BC7 (古い GPU では BC3)、ノーマルマップは BC5、1 チャンネルの数は BC4。なし: 圧縮しない (メモリは 4〜8 倍)") TextureCompression compression = TextureCompression::Auto;
 };
 
 // The settings type of a kind of asset (null: it has none).

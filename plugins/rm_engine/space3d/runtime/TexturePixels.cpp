@@ -7,6 +7,39 @@
 
 namespace rm::space3d {
 
+bool IsBlockCompressed(TextureFormat f) { return f != TextureFormat::Rgba8; }
+
+size_t BlockBytes(TextureFormat f) {
+    switch (f) {
+        case TextureFormat::BC1:
+        case TextureFormat::BC4: return 8;
+        case TextureFormat::BC3:
+        case TextureFormat::BC5:
+        case TextureFormat::BC7: return 16;
+        case TextureFormat::Rgba8: break;
+    }
+    return 0;
+}
+
+size_t RowPitch(TextureFormat f, uint32_t width) {
+    if (!IsBlockCompressed(f)) return static_cast<size_t>(width) * 4;
+    return static_cast<size_t>(std::max(1u, (width + 3) / 4)) * BlockBytes(f);
+}
+
+size_t LevelBytes(TextureFormat f, uint32_t width, uint32_t height) {
+    const size_t rows = IsBlockCompressed(f) ? std::max(1u, (height + 3) / 4) : height;
+    return RowPitch(f, width) * rows;
+}
+
+int ChannelsOf(TextureFormat f) {
+    switch (f) {
+        case TextureFormat::BC1: return 3;
+        case TextureFormat::BC4: return 1;
+        case TextureFormat::BC5: return 2;
+        default: return 4;
+    }
+}
+
 TexturePixels MakeTexturePixels(platform::Image rgba, bool srgb) {
     TexturePixels out;
     out.srgb = srgb;
