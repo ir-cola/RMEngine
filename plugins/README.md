@@ -26,7 +26,7 @@ plugins/
 | 差し出し | 別のプラグインへ物を渡すときは `registry.Contribute(口の名前, static な物)`。受け取る側が口の名前と物の型を決めて `Contributions<型>(口)` で読む |
 | テーマパック | `themes/*.json` に 1 テーマ 1 ファイル (形は `src/editor/widgets/ThemeFile.h`)。核がプラグインを読むたびに、使えるプラグインのインストール先の `themes/` を読む。名前の英語はそのプラグインの `lang/en.json` (`check_lang.ps1` が確かめる)。絵が要るなら、コードで `w::OrnamentInfo` を口 `w::kOrnamentPoint` に差し出し、テーマのファイルの `"ornament"` にその名前を書く (同じプラグインの物だけを探す) |
 | ランタイムの登録 | ゲームにも要る物 (システムなど) は `runtime/Register.cpp` の `RegisterRuntime(RuntimeRegistry&)` で差し出し、`RuntimePlugins.cpp` に 1 行足す (`src/core/RuntimeRegistry.h`)。エディターはランタイムの部分 → `RegisterEditor` の順に呼ぶ |
-| テンプレート | `templates/<id>/template.json` に 1 テンプレート 1 ファイル (形は `src/editor/project/Templates.h`): 木の場所 `path` (ID の配列。a-z 0-9 _)・`name` / `description`・`plugins` (中身が使うもの。自分は書かなくてよい)・`open` (最初に開くソフト)・`project` (新しい `.rmpf` に入れるキー。ゲームなら `softwareData` に最初のシーン)・`userSettings` (`Layout.json` の `softwares` に入れる最初の配置)。核は**エンジンが持つ方**の `templates/` を読むので、入っていなくても木に出る。名前と説明の英語はそのプラグインの `lang/en.json` (`check_lang.ps1` が確かめる)。テンプレートが使わないプラグインは `plugin.json` に `"software": ["game"]` を書くと、Hub の「ソフトで絞る」でそのソフトに出る (書かなければ「共通」) |
+| テンプレート | `templates/<id>/template.json` に 1 テンプレート 1 ファイル (形は `src/editor/project/Templates.h`): 木の場所 `path` (ID の配列。a-z 0-9 _)・`name` / `description`・`plugins` (中身が使うもの。自分は書かなくてよい)・`open` (最初に開くソフト)・`project` (新しい `.rmpf` に入れるキー。ゲームなら `softwareData` に設定とシーンの一覧)・横の `Assets/` (新しいプロジェクトの `Assets/` に写す。ゲームなら `Scenes/Main.rmscene` と `.meta`)・`userSettings` (`Layout.json` の `softwares` に入れる最初の配置)。核は**エンジンが持つ方**の `templates/` を読むので、入っていなくても木に出る。名前と説明の英語はそのプラグインの `lang/en.json` (`check_lang.ps1` が確かめる)。テンプレートが使わないプラグインは `plugin.json` に `"software": ["game"]` を書くと、Hub の「ソフトで絞る」でそのソフトに出る (書かなければ「共通」) |
 | ランタイムだけ | エディターの部分が無いプラグインも `BuiltinPlugins.cpp` に `RegisterEditor` 無し (`nullptr`) で載せる |
 | ビルド | 全部 `RM_Engine.exe` に静的リンク。ソースはワイルドカードで拾うので vcxproj を書き直さなくてよい。`plugin.json` はビルドで `build/bin/.../Plugins/<作者>/<名前>/` へ写る (= このエンジンが持っているもの) |
 | インストール | Hub で入れると `%LOCALAPPDATA%\RM_Engine\Engines\<エンジン>\Plugins\<作者>\<名前>\` へフォルダごと写る。入っていないプラグインは初期化されない。最初の起動では全部入る |
@@ -44,7 +44,7 @@ plugins/
 
 | プラグイン | 中身 |
 |---|---|
-| `rm_engine` / `game_production` (ゲーム制作) | ソフト「ゲーム」。テンプレート「ゲーム」(`templates/game`: 空のシーン。3D と 2D の両方が入る)。ゲームの設定・シーン (エンティティの親子)・部品 (コンポーネント) の仕組み。**つなぎが要る** (空間を知らない)。部品の種類は口 `rm_engine.game_production.component`、システム (毎フレーム動く処理) は口 `rm_engine.game_production.system` で受け取る。Play (シーンのコピーを動かす・ゲームビュー)・同じ部品を複数・Prefab (`.rmprefab`) |
+| `rm_engine` / `game_production` (ゲーム制作) | ソフト「ゲーム」。シーンは 1 つずつ `Assets/Scenes/*.rmscene` (`runtime/SceneFile`。`.rmpf` にはシーンの一覧だけ)。テンプレート「ゲーム」(`templates/game`: 空のシーン。3D と 2D の両方が入る)。ゲームの設定・シーン (エンティティの親子)・部品 (コンポーネント) の仕組み。**つなぎが要る** (空間を知らない)。部品の種類は口 `rm_engine.game_production.component`、システム (毎フレーム動く処理) は口 `rm_engine.game_production.system` で受け取る。Play (シーンのコピーを動かす・ゲームビュー)・同じ部品を複数・Prefab (`.rmprefab`) |
 | `rm_engine` / `space3d` (3D 空間) | Transform と行列の計算・カメラとレイ・Direct3D 11 での 3D の描画 (線と箱)。ランタイムだけ |
 | `rm_engine` / `theme_colors` (基本カラーテーマパック) | テーマのファイルだけ: 青・緑 (`themes/*.json`)。コードは `runtime/Id.h` だけ |
 | `rm_engine` / `theme_seasons` (季節テーマパック) | テーマのファイル (スプリング・サマー・フォール・ウィンター) と、その絵を描くコード (`editor/Seasons.cpp`。口 `core.theme_ornament` に差し出す。形は `editor/Ornament.*`、テストあり) |
