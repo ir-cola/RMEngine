@@ -3,6 +3,7 @@
 #include "rm_engine/game_production/runtime/Components.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
+#include "rm_engine/game_x_2d/runtime/ScriptDebug2D.h"
 #include "rm_engine/game_x_2d/runtime/ScriptTransform2D.h"
 #include "rm_engine/game_x_2d/runtime/Spin2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
@@ -36,6 +37,8 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kSystemPoint, kSpinSystem);
     // Scripts: Transform 2D (sdk/RM2D.h).
     registry.Contribute(game_production::kScriptApiPoint, ScriptTransform2DPart());
+    // ... and debug drawing (rm::Debug: lines the editor shows while playing; nothing in a game).
+    registry.Contribute(game_production::kScriptApiPoint, ScriptDebug2DPart());
 }
 
 }  // namespace rm::game_x_2d

@@ -15,6 +15,7 @@
 
 #include "core/reflect/FieldCommand.h"
 #include "editor/plugin/Software.h"
+#include "rm_engine/game_production/runtime/DebugDraw.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 
 #include <cstdint>
@@ -53,6 +54,9 @@ struct SceneViewHost {
     float aspect = 16.f / 9.f;
     // Shows the game settings in the inspector (the game view's way to choose 最初のカメラ).
     std::function<void()> openSettings;
+    // Play: the lines the scripts drew with rm::Debug (DebugDraw.h) - each view draws the ones of its
+    // space (the scene view only while its toolbar's デバッグ is on). Null when not playing.
+    const DebugDraw* debug = nullptr;
 };
 
 // One per open game and view (the scene view, the game view): keeps its own camera.

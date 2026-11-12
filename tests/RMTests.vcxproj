@@ -77,6 +77,7 @@
     <ClCompile Include="TestPrefab.cpp" />
     <ClCompile Include="TestSceneRecord.cpp" />
     <ClCompile Include="TestScripts.cpp" />
+    <ClCompile Include="TestDebugDraw.cpp" />
     <ClCompile Include="TestScriptBuild.cpp" />
     <ClCompile Include="TestAsset.cpp" />
     <ClCompile Include="TestEntityRefs.cpp" />
@@ -121,6 +122,9 @@
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Register.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\ScriptTransform3D.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\ScriptDebug3D.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\ScriptDebug2D.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\DebugDraw.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\ScriptTransform2D.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\Register.cpp">
       <!-- (two Register.cpp: one object each) -->

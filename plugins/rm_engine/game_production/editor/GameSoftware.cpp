@@ -896,6 +896,8 @@ private:
         runner_.SetCamera(settings_.startCamera.id);  // the systems may switch it (SystemContext::camera)
         scripts_.Runner().Reset();
         scripts_.World().time = 0;
+        debug_.Clear();
+        scripts_.World().debug = &debug_;  // the editor shows rm::Debug's lines (an exported game has none)
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
         EnsureViews();  // the game view sees through the game settings' 最初のカメラ
@@ -910,6 +912,7 @@ private:
         // The scripts first (input -> scripts' Tick -> fixed steps ...); they may switch the camera too.
         ScriptWorld& world = scripts_.World();
         world.camera = runner_.Camera();
+        debug_.BeginFrame(dt);  // last frame's lines go (and the ones whose seconds are up), then the scripts draw this one's
         scripts_.Runner().Frame(*playScene_, world, scripts_.Module(), settings_.scriptOrder, static_cast<float>(dt));
         runner_.SetCamera(world.camera);
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
@@ -924,6 +927,7 @@ private:
         log::Info("■ 停止 ({:.2f} 秒・{} コマ)。シーンは Play の前に戻りました", runner_.Time(), runner_.Frames());
         scripts_.Runner().Stop(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder);  // EndPlay
         playScene_.reset();  // (scripts built while playing are taken at the next frame: on the scene from before Play)
+        debug_.Clear();      // Stop: every debug line goes
         play_ = PlayState::Stopped;
         host_.Redraw();
     }
@@ -1080,6 +1084,7 @@ private:
         h.camera = Running() ? runner_.Camera() : settings_.startCamera.id;  // in Play: as the systems left it
         h.aspect = static_cast<float>(std::max(1, settings_.display.width)) / static_cast<float>(std::max(1, settings_.display.height));
         h.openSettings = [this] { InspectSettings(); };
+        h.debug = Running() ? &debug_ : nullptr;
         return h;
     }
 
@@ -2051,6 +2056,7 @@ private:
     // Play
     PlayState play_ = PlayState::Stopped;
     GameScripts scripts_;  // the game's C++ scripts (built, loaded, swapped; run while playing)
+    DebugDraw debug_;      // what the scripts draw with rm::Debug while playing (shown by the views; gone at Stop)
     std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // the plugins' component types
     std::unique_ptr<Scene> playScene_;  // the copy that plays
     SystemRunner runner_;

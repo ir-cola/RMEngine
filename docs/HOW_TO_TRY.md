@@ -1236,6 +1236,36 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 - 使える API: `rm::Log::Info` / `rm::DeltaTime()` / `rm::Time()` / `rm::Find("名前")` / `self.Name()` / `self.Active()` / `self.SetActive(b)` / `self.Parent()` / `self.GetScript<T>()` / `rm::Input::Down(rm::Key::Left)` / `Pressed` / `Released` / `rm::Game::Camera()` / `rm::Game::SetCamera(e)` / `rm::Transform3D(self).Position()` 他 (`RM3D.h`) / `rm::Transform2D(self)` (`RM2D.h`)
 - `static` の変数に状態を持たない (ビルドし直すと消える)
 
+**デバッグ描画** (画面では**未確認**。ビルドとテスト (ためる・時間で消える・上限・書き出したゲームでは何もしない) は通っている。スクリプトのヘッダーは cl で実際にコンパイルして確かめた)
+
+スクリプトから線を描いて、動きを確かめる。**エディターの Play 中だけ**見える。書き出したゲームでは何もしない (ためない・描かない)。
+
+- 3D (`#include "RM3D.h"`): `rm::Debug::Line(a, b, 色, 秒)` / `rm::Debug::Box(真ん中, 大きさ, 色, 秒)` / `rm::Debug::Sphere(真ん中, 半径, 色, 秒)` / `rm::Debug::Ray(始め, 向き, 長さ, 色, 秒)`
+- 2D (`#include "RM2D.h"`): `rm::Debug::Line(a, b, 色, 秒)` / `rm::Debug::Rect(真ん中, 大きさ, 色, 秒)` / `rm::Debug::Circle(真ん中, 半径, 色, 秒)` (平面の単位)
+- 色は `{r, g, b, a}` (0〜1。書かなければ白)。**秒を書かない (0) と、そのフレームだけ**。2.0f なら 2 秒残る
+- 3D の線は、手前に何も無い所はそのまま、物の奥に隠れた所は**薄く** (4 分の 1) 見える。2D の線は全部の上
+- 試し方: 箱のエンティティに次のスクリプトを付けて Play
+  ```cpp
+  // Assets/Scripts/Aim.h:  RM_SCRIPT() struct Aim { void Tick(rm::Entity self, float dt); };
+  #include "Aim.h"
+  #include "RM3D.h"
+  void Aim::Tick(rm::Entity self, float dt) {
+      const rm::Vec3 p = rm::Transform3D(self).WorldPosition();
+      rm::Debug::Ray(p, {0, 0, -1}, 5.0f, {1, 0, 0, 1});                     // 前へ赤い線 (毎フレーム描き直す)
+      rm::Debug::Sphere(p, 0.8f, {0, 1, 0, 1});                              // 緑の球
+      if (rm::Input::Pressed(rm::Key::Space)) rm::Debug::Box(p, {1, 1, 1}, {1, 1, 0, 1}, 2.0f);  // Space で黄色い箱が 2 秒残る
+  }
+  ```
+  1. **ゲームビュー**と**シーンビュー**の両方に、赤い線・緑の球が見える。箱を「回り続ける」で動かすと付いていく
+  2. Space を押すと、その場所に黄色い箱が 2 秒だけ残る (何度も押すと何個も)
+  3. 床や物の奥に入った所は薄く見える
+  4. シーンビューの左上の帯の「**デバッグ**」(アクセントの色 = オン) を押すと、シーンビューから消える (ゲームビューには出たまま)。もう一度押すと出る。オン / オフはシーンビューの見え方として覚える (`UserSettings`)
+  5. ‖ で止めると、最後のフレームの線が出たまま。▶ で続ける
+  6. ■ で止めると全部消える
+  7. 1 フレームに数千本描いても重くならない (3D はまとめて 1 回の描画、2D は同じ色ごとに 1 回)。たまった線が **5 万本**を超えると、それより多い分は捨てて、コンソールに「デバッグ描画の線が多すぎます (50000 本まで)…」が 1 回だけ出る (秒を長くして毎フレーム描き続けるとたまる)
+  8. 2D のゲームなら `RM2D.h` の `rm::Debug::Rect` / `Circle` で同じことを。2D のシーンビューの帯にも「デバッグ」がある
+- `RM3D.h` と `RM2D.h` を両方入れたときは、`rm::Debug::Line({0, 0}, {1, 1})` のように波かっこだけで書くと 2D と 3D のどちらか決まらない (`rm::Vec2{…}` と型を書く)
+
 ---
 
 ## 7-9. ゲームの書き出し (画面では**未確認**。ビルド・テスト・`tools/check_export.ps1` (3 つのテンプレートを書き出して起動) は通っている)

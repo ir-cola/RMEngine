@@ -139,6 +139,9 @@ struct RenderFrame {
     Mat4 view, projection;
     Color clear{0, 0, 0, 1};
     std::span<const LineVertex> lines;  // pairs: 0-1, 2-3, ...
+    // Pairs drawn last, over everything: as given where nothing is in front of them, faint where
+    // something is (a game's rm::Debug lines while it plays). One copy to the GPU, two draws.
+    std::span<const LineVertex> debugLines;
     std::span<const Box> boxes;
     std::span<const MeshDraw> meshes;
     // The lights (Lighting.h: at most kMaxLights). None: one white directional light going

@@ -20,6 +20,7 @@
 #include "base/Json.h"
 #include "core/RuntimeRegistry.h"
 #include "core/reflect/Reflect.h"
+#include "rm_engine/game_production/runtime/DebugDraw.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
@@ -60,6 +61,9 @@ struct ScriptWorld {
     std::function<void(int level, std::string_view text)> log;
     // The plugins' parts of the API (what they offered at kScriptApiPoint: ScriptApiParts).
     std::vector<ScriptApiPart> parts;
+    // Where rm::Debug's lines go: the editor's buffer while it plays (DebugDraw.h). Null - an exported
+    // game - and the debug parts do nothing.
+    DebugDraw* debug = nullptr;
     std::array<uint8_t, 256> keysNow{}, keysBefore{};
 
     // Reads the keyboard once a frame (pressed / released compare with the last frame).

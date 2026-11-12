@@ -8,6 +8,12 @@
 //   t.SetRotation(t.Rotation() + 90.0f * dt);   // degrees, counter-clockwise +
 //
 // An entity without a Transform 2D: the getters give zeros (scale: ones), the setters do nothing.
+//
+// Debug drawing - lines in the plane to see what a script does. The editor shows them over the game
+// view and the scene view while the game plays; an exported game does nothing with them.
+//   rm::Debug::Line(a, b, {1, 0, 0, 1});             // this frame only
+//   rm::Debug::Rect(center, {2, 1}, color, 2.0f);    // for 2 seconds
+//   rm::Debug::Circle(center, 0.5f, color);
 #pragma once
 
 #include "RM.h"
@@ -46,5 +52,29 @@ private:
     Entity entity_;
     const RmTransform2DApi* api_;
 };
+
+namespace Debug {
+namespace detail {
+inline const RmDebug2DApi* Api2D() {
+    static const RmDebug2DApi* api = Part<RmDebug2DApi>(RM_PART_DEBUG2D, RM_PART_DEBUG2D_VERSION);  // the engine's, for good
+    return api;
+}
+}  // namespace detail
+
+// A line from a to b (units of the plane), for `seconds` (0: this frame only).
+inline void Line(Vec2 a, Vec2 b, Color color = {}, float seconds = 0) {
+    const float pa[2] = {a.x, a.y}, pb[2] = {b.x, b.y}, c[4] = {color.r, color.g, color.b, color.a};
+    if (const RmDebug2DApi* d = detail::Api2D()) d->line(Api()->ctx, pa, pb, c, seconds);
+}
+// The edges of a rectangle along the plane's axes: its middle and its size.
+inline void Rect(Vec2 center, Vec2 size, Color color = {}, float seconds = 0) {
+    const float p[2] = {center.x, center.y}, s[2] = {size.x, size.y}, c[4] = {color.r, color.g, color.b, color.a};
+    if (const RmDebug2DApi* d = detail::Api2D()) d->rect(Api()->ctx, p, s, c, seconds);
+}
+inline void Circle(Vec2 center, float radius, Color color = {}, float seconds = 0) {
+    const float p[2] = {center.x, center.y}, c[4] = {color.r, color.g, color.b, color.a};
+    if (const RmDebug2DApi* d = detail::Api2D()) d->circle(Api()->ctx, p, radius, c, seconds);
+}
+}  // namespace Debug
 
 }  // namespace rm

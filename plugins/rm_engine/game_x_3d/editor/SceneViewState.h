@@ -21,6 +21,8 @@ struct SceneViewState {
     RM_PROPERTY() bool snapAlways = false;
     // Shadows of the light (on the floor and on things): the 影 button.
     RM_PROPERTY() bool shadows = true;
+    // While playing: the lines the game's scripts draw (rm::Debug) - the デバッグ button.
+    RM_PROPERTY() bool debugDraw = true;
 };
 
 }  // namespace rm::game_x_3d

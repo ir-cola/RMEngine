@@ -429,7 +429,7 @@ struct Renderer::Shared {
     Ptr<ID3D11Buffer> frame, lights, shadows;  // the constant buffers (b0, b1, b2)
     std::shared_ptr<const GpuMesh> cube, floor;
     Ptr<ID3D11RasterizerState> raster, shadowRaster;
-    Ptr<ID3D11DepthStencilState> depth, depthNoWrite, depthClear;
+    Ptr<ID3D11DepthStencilState> depth, depthNoWrite, depthClear, depthBehind;
     Ptr<ID3D11BlendState> blend;
     Ptr<ID3D11SamplerState> textureSampler;  // pictures: repeat, smooth, mipmapped
     Ptr<ID3D11SamplerState> sharpSampler;    // pictures set to くっきり (import setting): the nearest pixel
@@ -558,6 +558,8 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     dd.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
     D3D11_DEPTH_STENCIL_DESC dn = dd;
     dn.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+    D3D11_DEPTH_STENCIL_DESC db = dn;  // only where something is in front (debug lines' hidden parts)
+    db.DepthFunc = D3D11_COMPARISON_GREATER;
     D3D11_DEPTH_STENCIL_DESC dc = dd;  // a tile of a shadow map cleared (ClearVS: depth 1 everywhere)
     dc.DepthFunc = D3D11_COMPARISON_ALWAYS;
     D3D11_BLEND_DESC bl{};
@@ -588,6 +590,7 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     ss.MaxLOD = D3D11_FLOAT32_MAX;
     if (FAILED(device->CreateRasterizerState(&rd, &raster)) || FAILED(device->CreateRasterizerState(&sd, &shadowRaster)) ||
         FAILED(device->CreateDepthStencilState(&dd, &depth)) || FAILED(device->CreateDepthStencilState(&dn, &depthNoWrite)) ||
+        FAILED(device->CreateDepthStencilState(&db, &depthBehind)) ||
         FAILED(device->CreateDepthStencilState(&dc, &depthClear)) || FAILED(device->CreateBlendState(&bl, &blend)) ||
         FAILED(device->CreateSamplerState(&ts, &textureSampler)) || FAILED(device->CreateSamplerState(&tp, &sharpSampler))) {
         return fail("描画の設定");
@@ -1372,6 +1375,34 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->PSSetShader(s.meshPs.Get(), nullptr, 0);
         run(floorEnd, seeThroughEnd, true);
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+    }
+
+    // 4. Debug lines over everything: the parts nothing hides as given, the hidden parts faint (the
+    // same lines again, a quarter as strong, where the depth test says something is in front).
+    if (const size_t n = f.debugLines.size() & ~size_t{1}; n > 0 && LineCapacity(n * 2)) {
+        D3D11_MAPPED_SUBRESOURCE map{};
+        if (SUCCEEDED(ctx->Map(lineVb_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) {
+            auto* out = static_cast<LineVertex*>(map.pData);
+            std::memcpy(out, f.debugLines.data(), n * sizeof(LineVertex));
+            for (size_t k = 0; k < n; ++k) {
+                out[n + k] = f.debugLines[k];
+                out[n + k].color.a *= 0.25f;
+            }
+            ctx->Unmap(lineVb_.Get(), 0);
+            ctx->IASetInputLayout(s.lineLayout.Get());
+            ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+            const UINT stride = sizeof(LineVertex), offset = 0;
+            ID3D11Buffer* vb = lineVb_.Get();
+            ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+            bound = nullptr;
+            ctx->VSSetShader(s.lineVs.Get(), nullptr, 0);
+            ctx->PSSetShader(s.linePs.Get(), nullptr, 0);
+            ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
+            ctx->Draw(static_cast<UINT>(n), 0);
+            ctx->OMSetDepthStencilState(s.depthBehind.Get(), 0);
+            ctx->Draw(static_cast<UINT>(n), static_cast<UINT>(n));
+            ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+        }
     }
 
     if (samples_ > 1) ctx->ResolveSubresource(picture_.Get(), 0, multisample_.Get(), 0, DXGI_FORMAT_B8G8R8A8_UNORM);

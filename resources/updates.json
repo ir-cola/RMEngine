@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "スクリプトからデバッグ用の線を描ける: rm::Debug::Line / Box / Sphere / Ray (3D)・Line / Rect / Circle (2D)。Play 中のゲームビューとシーンビューに出る (奥は薄く。シーンビューの帯の「デバッグ」で出す・出さない)。書き出したゲームでは何もしない",
+          "en": "Scripts can draw debug lines: rm::Debug::Line / Box / Sphere / Ray (3D) and Line / Rect / Circle (2D). They show in the game view and the scene view while playing (fainter when hidden; Debug on the scene view's bar turns them on / off). Exported games ignore them"
+        },
+        {
           "ja": "直したもの: スクリプトの文字の欄で Debug のエンジンが壊れることがあった。Debug と Release のスクリプトを混ぜない。スクリプトのビルドが 2 つ同時に走らない。スタックのあふれが 2 回目にエディターを落とした。有効を外したスクリプトに EndPlay が来なかった。置いた Prefab の中の並べ替えが、開き直すと戻った。入れ子の Prefab で「Prefab にする」と開き直したときに戻った",
           "en": "Fixed: a Debug engine could break on scripts' text fields. Debug and Release scripts are never mixed. Two builds of the scripts never run at once. A second stack overflow in a script took the editor down. A script switched off did not get EndPlay. Reordering inside a placed prefab went back when the project was opened again. Making a nested prefab a prefab of its own went back when opened again"
         },

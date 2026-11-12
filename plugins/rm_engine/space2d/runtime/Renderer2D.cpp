@@ -33,6 +33,29 @@ void Renderer2D::DrawLines(ID2D1DeviceContext* dc, const RenderFrame2D& f, std::
     }
 }
 
+void Renderer2D::DrawBatched(ID2D1DeviceContext* dc, const RenderFrame2D& f, std::span<const Line2D> lines) {
+    Microsoft::WRL::ComPtr<ID2D1Factory> factory;
+    dc->GetFactory(&factory);
+    if (!factory) return DrawLines(dc, f, lines);
+    for (size_t first = 0; first < lines.size();) {
+        size_t end = first + 1;
+        while (end < lines.size() && lines[end].color == lines[first].color && lines[end].width == lines[first].width) ++end;
+        Microsoft::WRL::ComPtr<ID2D1PathGeometry> path;
+        Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+        ID2D1SolidColorBrush* br = Brush(dc, lines[first].color);
+        if (br && SUCCEEDED(factory->CreatePathGeometry(&path)) && SUCCEEDED(path->Open(&sink))) {
+            for (size_t k = first; k < end; ++k) {
+                const Vec2 a = ToScreen(f.camera, f.viewport, lines[k].a), b = ToScreen(f.camera, f.viewport, lines[k].b);
+                sink->BeginFigure({a.x, a.y}, D2D1_FIGURE_BEGIN_HOLLOW);
+                sink->AddLine({b.x, b.y});
+                sink->EndFigure(D2D1_FIGURE_END_OPEN);
+            }
+            if (SUCCEEDED(sink->Close())) dc->DrawGeometry(path.Get(), br, lines[first].width);
+        }
+        first = end;
+    }
+}
+
 void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
     if (!dc || f.viewport.w <= 0 || f.viewport.h <= 0) return;
     D2D1_MATRIX_3X2_F old;
@@ -98,6 +121,7 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
     }
     dc->SetTransform(old);
     DrawLines(dc, f, f.overlay);
+    DrawBatched(dc, f, f.debug);
 }
 
 }  // namespace rm::space2d

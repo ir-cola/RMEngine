@@ -51,13 +51,13 @@ using ui::Rect;
 constexpr float kClickSlop = 4.f;     // a press that moves less than this is a click
 constexpr float kMarkRadius = 7.f;    // the ring of an entity without a sprite (DIPs)
 constexpr float kBarH = 28.f;         // the tool strip at the top left
-constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kGridW = 56.f, kBarGap = 8.f;
+constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kGridW = 56.f, kDebugW = 84.f, kBarGap = 8.f;
 constexpr float kSnapBoxW = 280.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
 constexpr double kImageCheckSeconds = 1.0;    // how often an image file is looked at again (changed on disk?)
 constexpr double kImageForgetSeconds = 10.0;  // an image no entity uses for this long is let go
 
 struct BarLayout {
-    Rect tool, space, pivot, snap, grid, all;
+    Rect tool, space, pivot, snap, grid, debug, all;
 };
 
 // An entity with a Transform 2D, as it is this frame.
@@ -425,8 +425,9 @@ private:
         b.pivot = place(kPivotW);
         b.snap = place(kSnapW);
         b.grid = place(kGridW);
-        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.grid.Right()});
-        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.grid.Bottom() - (r.y + 8)};
+        b.debug = place(kDebugW);
+        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.grid.Right(), b.debug.Right()});
+        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.debug.Bottom() - (r.y + 8)};
         return b;
     }
 
@@ -438,7 +439,7 @@ private:
 
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (!bar) return false;
-        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->grid}) {
+        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->grid, bar->debug}) {
             if (part.Contains(x, y)) return true;
         }
         return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
@@ -476,6 +477,11 @@ private:
             state_.grid = !state_.grid;
         }
         if (c.IsHovered(bar.grid)) w::Tooltip(c, Tr(L"格子を出す・消す"));
+        // デバッグ: the lines the game's scripts draw while it plays (rm::Debug), in this view.
+        if (w::Button(c, "scene2d_debug_draw", bar.debug, Tr(L"デバッグ"), state_.debugDraw ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+            state_.debugDraw = !state_.debugDraw;
+        }
+        if (c.IsHovered(bar.debug)) w::Tooltip(c, Tr(L"Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)"));
     }
 
     // The steps: how far a move, a turn and a scale go at a time; and whether always. View state like the
@@ -820,6 +826,14 @@ private:
         f.lines = lines_;
         f.sprites = sprites_;
         f.overlay = overlay_;
+        // Play: the lines the scripts drew with rm::Debug in 2D (this scene view only while デバッグ is on).
+        debug_.clear();
+        if (host.debug && (game || state_.debugDraw)) {
+            for (const game_production::DebugLine& l : host.debug->Lines()) {
+                if (l.space == game_production::DebugSpace::Space2D) debug_.push_back({{l.a.x, l.a.y}, {l.b.x, l.b.y}, l.color, 1.5f});
+            }
+        }
+        f.debug = debug_;
         renderer_.Render(c.P().DC(), f);
     }
 
@@ -961,7 +975,7 @@ private:
     uint64_t generation_ = 0;  // the GPU's devices renderer_ and images_ were made on
     std::string transformType_, spriteType_, cameraType_;
     std::vector<Placed> placed_;
-    std::vector<space2d::Line2D> lines_, overlay_;
+    std::vector<space2d::Line2D> lines_, overlay_, debug_;
     std::vector<space2d::SpriteDraw> sprites_;
     std::unordered_map<std::string, ImageEntry> images_;  // by Sprite::image (the asset's id)
     double now_ = 0;

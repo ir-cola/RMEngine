@@ -79,5 +79,7 @@
   "下を向いた面に当たる光 (地面からの照り返し)": "The light on faces turned down (bounced off the ground)",
   "光の影を床と物に落とす (光の部品の「影を落とす」に従う。光の部品が無いときは上からの光。押すと切り替え)": "Cast shadows on the floor and objects (as each light's Cast shadows says; from above when there are no lights. Click to switch)",
   "3D のゲーム": "3D game",
-  "カメラ・光・床・箱が置いてある 3D のゲーム。": "A 3D game with a camera, a light, a floor and a box in place."
+  "カメラ・光・床・箱が置いてある 3D のゲーム。": "A 3D game with a camera, a light, a floor and a box in place.",
+  "デバッグ": "Debug",
+  "Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)": "Show in this scene view the lines the scripts draw with rm::Debug while playing (click to switch; the game view always shows them)"
 }

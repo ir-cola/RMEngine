@@ -6,6 +6,8 @@
 //   lines    (in the plane: the grid)                        under everything
 //   sprites  (an image, or a square of one colour)            back to front, as given
 //   overlay  (in the plane: outlines of what is selected)     over everything
+//   debug    (in the plane: a game's rm::Debug lines)          over that: many at once, one draw per
+//                                                              run of the same colour and width
 //
 // Images are read by the core's one way (platform/Image: WIC) into Direct2D bitmaps (BitmapFromImage).
 // Bitmaps belong to the Direct2D device, which every window shares, so a panel moved to a window of its
@@ -44,6 +46,7 @@ struct RenderFrame2D {
     std::span<const Line2D> lines;
     std::span<const SpriteDraw> sprites;
     std::span<const Line2D> overlay;
+    std::span<const Line2D> debug;
 };
 
 class Renderer2D {
@@ -53,6 +56,8 @@ public:
 
 private:
     void DrawLines(ID2D1DeviceContext* dc, const RenderFrame2D& f, std::span<const Line2D> lines);
+    // Lines in runs of the same colour and width, each run one path drawn at once (thousands stay cheap).
+    void DrawBatched(ID2D1DeviceContext* dc, const RenderFrame2D& f, std::span<const Line2D> lines);
     ID2D1SolidColorBrush* Brush(ID2D1DeviceContext* dc, Color c);
 
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
