@@ -442,8 +442,8 @@ SystemRunner::Advance(シーン, 前のフレームからの時間, 物理の刻
 - **ホットリロード** (§20-c の決定): `GameScripts::Poll` が 1 秒ごとに Assets/Scripts の更新時刻を見てビルド。**編集中に成功** → 次のフレームの切れ目 (`Tick`) で入れ替え: 新しい DLL を先に読み → シーンを JSON に書き出し → スクリプトの物を壊す (古い型を外して読み直す) → Undo の履歴を消す (古い型の欄を指しているので) → 古い DLL を外す → 新しい型で読み戻す (値は名前で。足した欄 = 既定値、消した欄 = 知らないキーとして残す、型が変わった欄 = 変えられれば変える、消えた型 = 使えない部品として値ごと残す)。**Play 中に成功** → 入れ替えず「Stop で反映されます」、Stop で Play 前のシーンに戻してから (次のフレームで) 入れ替え。失敗 → 前の DLL のまま
 - **読む DLL はホストが決める** (書き出しのセッションへ): ランタイムの入口は `ScriptModule::Load(dll, MakeScriptApi(world), &why)`・`ScriptApiParts(registry)` (`world.parts` に入れる)・`ScriptRunner::Frame` / `Stop`。エディターは `LatestScriptDll(<プロジェクト>/Library/Scripts)` (= `Scripts_<数>.dll` の数が一番大きい物。`ScriptBuildFolder(project)` が Library/Scripts)。**書き出したゲームは exe の横の `Scripts.dll`** (書き出しは最新の DLL を `Scripts.dll` の名前で写すだけ: 同じ DLL がエディターとゲームの両方で動く)。スクリプトの型は `module.Types()` を `Scene::SetComponentTypes` の部品の型と複数可の型に足してから、シーンを読む
 - 書き出したゲームのキー: `ScriptWorld::keyDown` にホストの関数を入れる (エディターは自分のウィンドウが前にあるときだけ `GetAsyncKeyState`)
-- テスト: `TestScripts.cpp` (実行順・ABI の検査・反映する型・BeginPlay が Tick より前・型ごと・落ちても他は動く・値の引き継ぎの表・中心の API・rmgen の登録と RM0013)、`TestScriptBuild.cpp` (生成する vcxproj / sln の文字・エラーの行、**本物の MSBuild で見本 (ArrowMover) をビルドして読み、右キーで 1 秒に 3 動くこと・BeginPlay / EndPlay・2 回目は Scripts_0002.dll**。Visual Studio が無い PC では飛ばす)
-- ★ まだ: スクリプトから部品を足す / 外す・エンティティを作る / 消す、衝突のフック、欄の一覧・列挙・入れ子の構造体・アセットの参照、Play 中の入れ替え、`OnReloaded`、「この値を残す」、エンジンを Debug でビルドしたときの Debug DLL の確認 (Release でだけ本物のビルドを確かめた)、書き出したゲームが読むこと (書き出しのセッション)
+- テスト: `TestScripts.cpp` (実行順・ABI の検査・反映する型・BeginPlay が Tick より前・型ごと・落ちても他は動く・値の引き継ぎの表・中心の API・rmgen の登録と RM0013)、`TestScriptBuild.cpp` (生成する vcxproj / sln の文字・エラーの行、**本物の MSBuild で見本 (ArrowMover) をビルドして読み、右キーで 1 秒に 3 動くこと・BeginPlay / EndPlay・2 回目は Scripts_0002.dll**。Visual Studio が無い PC では飛ばす。Release と Debug (/MDd の DLL) の両方で通ることを確かめた)
+- ★ まだ: スクリプトから部品を足す / 外す・エンティティを作る / 消す、衝突のフック、欄の一覧・列挙・入れ子の構造体・アセットの参照、Play 中の入れ替え、`OnReloaded`、「この値を残す」、書き出したゲームが読むこと (書き出しのセッション)
 
 ### Prefab (`plugins/rm_engine/game_production/runtime/Prefab.h`)
 
