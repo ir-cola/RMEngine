@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "元に戻す (Undo) が、形を変える操作 (作る・消す・移す・貼り付け・複製・部品・Prefab) で、シーン全体ではなく触った物だけを覚えるように (大きなシーンでも軽い)",
+          "en": "Undo now keeps only the objects an edit of the scene's shape touched (create, delete, move, paste, duplicate, components, prefabs), not the whole scene - light even for big scenes"
+        },
+        {
           "ja": "ゲームのシーンを .rmpf から分けて、1 つずつ Assets/Scenes/*.rmscene に保存する (アセットとして ID を持つ)。保存は変わったシーンだけ書く。前の版のプロジェクトは次に保存するときに分け、分ける前の .rmpf を .before-scenes.bak に残す。テンプレートで作るプロジェクトも新しい形",
           "en": "Game scenes are no longer kept inside the .rmpf: each is saved to its own Assets/Scenes/*.rmscene (an asset with an id). Saving writes only the scenes that changed. Projects from earlier versions are split at their next save, keeping the old .rmpf as .before-scenes.bak. Projects made from templates use the new form too"
         },

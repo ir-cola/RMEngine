@@ -360,6 +360,39 @@ json::Value Scene::SaveEntity(const SceneEntity& e) const {
     return ej;
 }
 
+std::vector<Scene::EntityState> Scene::CaptureStates(std::span<const int> ids) const {
+    std::vector<EntityState> out;
+    out.reserve(ids.size());
+    for (const int id : ids) {
+        EntityState s;
+        s.id = id;
+        if (const size_t i = IndexOf(id); i != npos) {
+            s.present = true;
+            s.index = i;
+            s.data = SaveEntity(entities_[i]);
+        }
+        out.push_back(std::move(s));
+    }
+    return out;
+}
+
+void Scene::RestoreStates(std::span<const int> ids, std::span<const EntityState> states) {
+    const std::unordered_set<int> taken(ids.begin(), ids.end());
+    std::erase_if(entities_, [&](const SceneEntity& e) { return taken.contains(e.data.id); });
+    std::vector<const EntityState*> back;
+    for (const EntityState& s : states) {
+        if (s.present) back.push_back(&s);
+    }
+    // In the order of their places: each goes where it was, the ones before it being back already.
+    std::sort(back.begin(), back.end(), [](const EntityState* a, const EntityState* b) { return a->index < b->index; });
+    for (const EntityState* s : back) {
+        SceneEntity e = LoadEntity(s->data, nullptr);
+        e.data.id = s->id;
+        entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(std::min(s->index, entities_.size())), std::move(e));
+    }
+    Touch();
+}
+
 SceneEntity Scene::LoadEntity(const json::Value& item, reflect::Warnings* warnings) const {
     SceneEntity e;
     // "components" and "prefab" are the scene's to read (not unknown keys of the entity).

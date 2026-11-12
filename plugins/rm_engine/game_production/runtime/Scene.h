@@ -194,6 +194,22 @@ public:
 
     // One entity as it is in the file (and on the clipboard, in a prefab), and back.
     json::Value SaveEntity(const SceneEntity& e) const;
+
+    // --- The state of some entities, for undo (SceneRecord.h) ----------------------------------
+    // One entity as it is: there or not, where it is in the list (the list's order is the order of
+    // siblings), and everything else about it (SaveEntity: its fields, parent, components, prefab link).
+    struct EntityState {
+        int id = 0;
+        bool present = false;
+        size_t index = 0;
+        json::Value data;
+        bool operator==(const EntityState&) const = default;
+    };
+    std::vector<EntityState> CaptureStates(std::span<const int> ids) const;
+    // The entities `ids` become as `states` says (each of them taken out, then the ones there put back
+    // at their places, in order). Every other entity must be as it was when the states were captured
+    // (so the places are right): SceneRecord undoes in order, newest first.
+    void RestoreStates(std::span<const int> ids, std::span<const EntityState> states);
     SceneEntity LoadEntity(const json::Value& item, reflect::Warnings* warnings) const;
     // One component as it is in the file ({"type": ..., "data": {...}}), and back (unknown: kept as read).
     // `allowed`: the entity has none of the type yet, or the type allows several.

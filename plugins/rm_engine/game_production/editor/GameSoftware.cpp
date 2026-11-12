@@ -15,10 +15,12 @@
 #include "rm_engine/game_production/runtime/Prefab.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/SceneFile.h"
+#include "rm_engine/game_production/runtime/SceneRecord.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "core/asset/AssetFiles.h"
 
 #include <algorithm>
+#include <cassert>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -112,6 +114,31 @@ private:
     std::function<void(const std::string&)> write_;
     std::string before_, after_, label_;
 };
+
+// A change of the scene's shape kept as the entities it touched, before and after (SceneRecord) -
+// not the whole scene twice. Undo / redo put back only those entities.
+class RecordCommand final : public ICommand {
+public:
+    RecordCommand(Scene& scene, SceneRecord record, std::string label) : scene_(scene), record_(std::move(record)), label_(std::move(label)) {}
+    void Do() override { record_.Redo(scene_); }
+    void Undo() override { record_.Undo(scene_); }
+    std::string Label() const override { return label_; }
+    size_t Bytes() const override { return record_.Bytes(); }
+
+private:
+    Scene& scene_;
+    SceneRecord record_;
+    std::string label_;
+};
+
+#ifdef _DEBUG
+// The scene as a whole, but for the next id (which undo never takes back: ids are not used again).
+json::Value ShapeOf(const Scene& scene) {
+    json::Value v = scene.Save();
+    v.Erase("nextId");
+    return v;
+}
+#endif
 
 std::vector<int> ToEntityIds(std::span<const tree::ItemId> ids) {
     std::vector<int> out;
@@ -387,7 +414,7 @@ public:
     void Move(std::span<const tree::ItemId> items, tree::ItemId parent, size_t index) override {
         if (Running()) return;
         const std::vector<int> ids = ToEntityIds(items);
-        Edit(ids.size() == 1 ? std::format("「{}」を移動", NameOf(ids[0])) : std::format("{} 個のエンティティを移動", ids.size()),
+        EditTouching(ids, ids.size() == 1 ? std::format("「{}」を移動", NameOf(ids[0])) : std::format("{} 個のエンティティを移動", ids.size()),
              [&] { scene_.Move(ids, static_cast<int>(parent), index); });
     }
 
@@ -465,7 +492,7 @@ private:
         if (cut.enabled) {
             cut.run = [this, sel] {
                 if (!CopyEntities(sel)) return;
-                Edit(sel.size() == 1 ? std::format("「{}」を切り取り", NameOf(sel[0])) : std::format("{} 個のエンティティを切り取り", sel.size()),
+                EditTouching(sel, sel.size() == 1 ? std::format("「{}」を切り取り", NameOf(sel[0])) : std::format("{} 個のエンティティを切り取り", sel.size()),
                      [&] { scene_.Delete(sel); });
             };
         }
@@ -499,7 +526,7 @@ private:
         dup.ctrl = true;
         dup.run = [this, sel] {
             std::vector<int> made;
-            Edit(sel.size() == 1 ? std::format("「{}」を複製", NameOf(sel[0])) : std::format("{} 個のエンティティを複製", sel.size()),
+            EditTouching({}, sel.size() == 1 ? std::format("「{}」を複製", NameOf(sel[0])) : std::format("{} 個のエンティティを複製", sel.size()),
                  [&] { made = scene_.Duplicate(sel); });
             host_.SelectInTree({made.begin(), made.end()});
         };
@@ -514,7 +541,7 @@ private:
         unparent.enabled = anyParent;
         if (anyParent) {
             unparent.run = [this, sel] {
-                Edit(std::format("{} 個のエンティティを一番上に出す", scene_.Roots(sel).size()),
+                EditTouching(sel, std::format("{} 個のエンティティを一番上に出す", scene_.Roots(sel).size()),
                      [&] { scene_.Move(sel, 0, Scene::kEnd); });
             };
         }
@@ -525,7 +552,7 @@ private:
         del.label = Tr(L"削除");
         del.key = ui::Key::Delete;
         del.run = [this, sel] {
-            Edit(sel.size() == 1 ? std::format("「{}」を削除", NameOf(sel[0])) : std::format("{} 個のエンティティを削除", sel.size()),
+            EditTouching(sel, sel.size() == 1 ? std::format("「{}」を削除", NameOf(sel[0])) : std::format("{} 個のエンティティを削除", sel.size()),
                  [&] { scene_.Delete(sel); });
         };
         list.push_back(std::move(del));
@@ -896,7 +923,7 @@ private:
                 editor::w::Action remove;
                 remove.label = Tr(L"外す");
                 remove.run = [this, id, type, nth, label] {
-                    Edit(std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type, nth); });
+                    EditTouching({id}, std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type, nth); });
                 };
                 // Its place among the entity's components (the order they are shown - and run).
                 const size_t at = static_cast<size_t>(&c - e->components.data());
@@ -904,13 +931,13 @@ private:
                 up.label = Tr(L"上へ移動");
                 up.enabled = at > 0;
                 up.run = [this, id, type, nth, label] {
-                    Edit(std::format("「{}」を上へ移動", label), [&] { scene_.MoveComponent(id, type, -1, nth); });
+                    EditTouching({id}, std::format("「{}」を上へ移動", label), [&] { scene_.MoveComponent(id, type, -1, nth); });
                 };
                 editor::w::Action down;
                 down.label = Tr(L"下へ移動");
                 down.enabled = at + 1 < e->components.size();
                 down.run = [this, id, type, nth, label] {
-                    Edit(std::format("「{}」を下へ移動", label), [&] { scene_.MoveComponent(id, type, 1, nth); });
+                    EditTouching({id}, std::format("「{}」を下へ移動", label), [&] { scene_.MoveComponent(id, type, 1, nth); });
                 };
                 editor::w::Action sep;
                 sep.separator = true;
@@ -958,7 +985,7 @@ private:
                 add.label = Utf8ToWide(TrU8(t->label));
                 if (e->FindComponent(t->name)) add.label += Tr(L" (もう 1 つ)");
                 add.run = [this, id, t] {
-                    Edit(std::format("「{}」を足す", t->label), [&] { scene_.AddComponent(id, *t); });
+                    EditTouching({id}, std::format("「{}」を足す", t->label), [&] { scene_.AddComponent(id, *t); });
                 };
                 list.push_back(std::move(add));
             }
@@ -1010,7 +1037,7 @@ private:
                 remove.label = Tr(L"外す");
                 remove.enabled = !play;
                 remove.run = [this, here, type, label] {
-                    Edit(std::format("{} 個のエンティティから「{}」を外す", here.size(), label), [&] {
+                    EditTouching(here, std::format("{} 個のエンティティから「{}」を外す", here.size(), label), [&] {
                         for (const int id : here) scene_.RemoveComponent(id, type);
                     });
                 };
@@ -1041,7 +1068,7 @@ private:
                 editor::w::Action add;
                 add.label = Utf8ToWide(TrU8(t->label));
                 add.run = [this, ids, t] {
-                    Edit(std::format("{} 個のエンティティに「{}」を足す", ids.size(), t->label), [&] {
+                    EditTouching(ids, std::format("{} 個のエンティティに「{}」を足す", ids.size(), t->label), [&] {
                         for (const int id : ids) scene_.AddComponent(id, *t);
                     });
                 };
@@ -1380,7 +1407,7 @@ private:
                 tree::Action unlink;
                 unlink.label = TrF(L"Prefab「{}」から切り離す", name);
                 unlink.run = [this, root] {
-                    Edit(std::format("「{}」を Prefab から切り離す", NameOf(root)), [&] { scene_.UnlinkPrefab(root); });
+                    EditTouching({root}, std::format("「{}」を Prefab から切り離す", NameOf(root)), [&] { scene_.UnlinkPrefab(root); });
                 };
                 list.push_back(std::move(unlink));
             }
@@ -1422,7 +1449,7 @@ private:
         }
         prefabs_[ref.guid] = prefab;
         ++dataVersion_;
-        Edit(std::format("「{}」を Prefab にする", name), [&] { scene_.LinkPrefab(id, ref, sources); });
+        EditTouching({id}, std::format("「{}」を Prefab にする", name), [&] { scene_.LinkPrefab(id, ref, sources); });
         log::Info("Prefab を作りました: {}", path);
     }
 
@@ -1459,7 +1486,7 @@ private:
         // Undo writes the file back as it was (and the placed ones with it); redo writes it again.
         auto fileCmd = std::make_unique<FileCommand>([this, ref](const std::string& text) { WriteBytes(ref, text); }, *onDisk, nextText,
                                                    std::format("Prefab「{}」のファイル", PrefabTitle(ref)));
-        Edit(
+        EditTouching(scene_.PrefabRoots(ref.guid), 
             std::format("Prefab「{}」に反映", PrefabTitle(ref)),
             [&] {
                 scene_.LinkPrefab(root, ref, sources);
@@ -1480,7 +1507,7 @@ private:
         const json::Value* read = ReadPrefab(ref);
         if (!read) return;
         const json::Value next = *read;
-        Edit(std::format("Prefab「{}」を読み直す", PrefabTitle(ref)), [&] { ReapplyPrefab(ref, IsPrefab(before) ? before : next, next, 0); });
+        EditTouching(scene_.PrefabRoots(ref.guid), std::format("Prefab「{}」を読み直す", PrefabTitle(ref)), [&] { ReapplyPrefab(ref, IsPrefab(before) ? before : next, next, 0); });
     }
 
     void PlacePrefabFile(const std::string& path, const std::vector<int>& sel) {
@@ -1495,7 +1522,7 @@ private:
         const auto [parent, index] = After(sel);
         int made = 0;
         reflect::Warnings warnings;
-        Edit(std::format("Prefab「{}」を置く", PrefabTitle(ref)), [&] {
+        EditTouching({}, std::format("Prefab「{}」を置く", PrefabTitle(ref)), [&] {
             made = scene_.PlacePrefab(copy, ref, parent, index, &warnings);
             if (!made) return;
             std::vector<std::string> chain = ChainOf(made);
@@ -1513,7 +1540,51 @@ private:
 
     // Runs a change of the scene's shape and puts it in the history (edit = undo entry = unsaved).
     // A change that changes nothing leaves no entry. Never while playing (the copy plays).
-    // `also`: something done with it, outside the scene (a file written), undone with it in one entry.
+    // THE way a change of the scene's shape goes into the history (edit = undo entry = unsaved):
+    // `touched` names the entities the change alters (with everything below them - SceneRecord.h);
+    // the ones it makes are found by themselves. Only those are kept, before and after. `also`:
+    // something done with it outside the scene (a file written), undone with it in one entry.
+    // A change that changes nothing leaves no entry. Never while playing (the copy plays).
+    // Debug build: every edit is checked against the whole scene before and after (a touched entity
+    // left out would make undo wrong - this finds it at once, while the record is still small).
+    template <class Fn>
+    void EditTouching(std::vector<int> touched, std::string label, Fn&& change, std::unique_ptr<ICommand> also = nullptr) {
+        if (Running()) {
+            log::Info("Play 中は編集できません (■ で止めてから)");
+            return;
+        }
+#ifdef _DEBUG
+        const json::Value wholeBefore = ShapeOf(scene_);
+#endif
+        SceneRecord record = SceneRecord::Begin(scene_, touched);
+        change();
+        record.End(scene_);
+#ifdef _DEBUG
+        {
+            const json::Value wholeAfter = ShapeOf(scene_);
+            Scene check = scene_;
+            record.Undo(check);
+            const bool undoOk = ShapeOf(check) == wholeBefore;
+            record.Redo(check);
+            const bool redoOk = ShapeOf(check) == wholeAfter;
+            if (!undoOk || !redoOk) log::Error("SceneRecord:「{}」で、触ると言っていない物が変わりました (Undo が正しく戻せません)", label);
+            assert(undoOk && redoOk && "SceneRecord: the edit changed an entity it did not name as touched");
+        }
+#endif
+        if (!record.Changed() && !also) return;
+        auto cmd = std::make_unique<RecordCommand>(scene_, std::move(record), label);
+        if (!also) {
+            host_.History().Push(std::move(cmd));
+            return;
+        }
+        auto group = std::make_unique<CommandGroup>(label);
+        group->Add(std::move(cmd));
+        group->Add(std::move(also));
+        host_.History().Push(std::move(group));
+    }
+
+    // (The whole scene before and after: no edit uses it now - every one names what it touches.
+    // Kept for a change whose touched entities cannot be named.)
     template <class Fn>
     void Edit(std::string label, Fn&& change, std::unique_ptr<ICommand> also = nullptr) {
         if (Running()) {
@@ -1552,7 +1623,7 @@ private:
         }
         std::vector<int> made;
         reflect::Warnings warnings;
-        Edit(std::format("{} 個のエンティティを貼り付け", clip->Get("entities").Items().size()),
+        EditTouching({}, std::format("{} 個のエンティティを貼り付け", clip->Get("entities").Items().size()),
              [&] { made = scene_.Paste(*clip, parent, index, &warnings); });
         for (const auto& w : warnings) log::Warn("貼り付け: {}", w);
         host_.SelectInTree({made.begin(), made.end()});
@@ -1560,7 +1631,7 @@ private:
 
     void CreateEntity(int parent, size_t index) {
         int made = 0;
-        Edit("エンティティを作成", [&] {
+        EditTouching({}, "エンティティを作成", [&] {
             made = scene_.Create(TrU8("エンティティ"), parent, index);  // the name it starts with, in the language in use
             // e.g. Transform - the one of the game's space
             const std::string space = CurrentSpace();
