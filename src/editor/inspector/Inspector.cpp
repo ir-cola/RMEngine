@@ -159,8 +159,8 @@ struct Spot {
 };
 
 // The id a reference holds, as text ("" = none).
-std::string RefValue(FieldType t, const void* v) {
-    if (t == FieldType::AssetRef) return static_cast<const AssetRef*>(v)->guid;
+std::string RefValue(const FieldDesc& f, FieldType t, const void* v) {
+    if (t == FieldType::AssetRef) return reflect::ReadAssetId(f, v);
     const uint64_t id = static_cast<const EntityRef*>(v)->id;
     return id == 0 ? std::string() : std::to_string(id);
 }
@@ -184,8 +184,8 @@ void DrawRef(Pass& x, const Spot& s, const Put& put) {
     ui::Context& c = x.c;
     const bool isAsset = s.vt.type == FieldType::AssetRef;
     const std::string kinds = isAsset && s.f.assetKinds ? s.f.assetKinds : "";
-    const std::string cur = RefValue(s.vt.type, s.value);
-    const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return RefValue(s.vt.type, o) != cur; });
+    const std::string cur = RefValue(s.f, s.vt.type, s.value);
+    const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return RefValue(s.f, s.vt.type, o) != cur; });
     std::optional<RefChoice> found;
     if (!cur.empty() && x.refs) {
         if (isAsset && x.refs->asset) found = x.refs->asset(cur);
@@ -216,7 +216,7 @@ void DrawRef(Pass& x, const Spot& s, const Put& put) {
         if (t.kind != "asset" || !refs->asset) return false;
         const auto a = refs->asset(t.values[0]);
         const auto k = a ? asset::KindFromKey(a->kind) : std::nullopt;
-        return k && asset::KindMatches(*k, kinds);
+        return k && asset::KindMatches(*k, kinds, a->file);
     };
     if (const w::DragThing* t = w::DropTarget(c, s.r, accepts)) put(RefJson(s.vt.type, t->values[0]), 0, -1);
 
@@ -231,7 +231,7 @@ void DrawRef(Pass& x, const Spot& s, const Put& put) {
     if (isAsset && refs->assets) {
         for (RefChoice& r : refs->assets()) {
             const auto k = asset::KindFromKey(r.kind);
-            if (k && asset::KindMatches(*k, kinds)) choices.push_back(std::move(r));
+            if (k && asset::KindMatches(*k, kinds, r.file)) choices.push_back(std::move(r));
         }
     } else if (!isAsset && refs->items) {
         choices = refs->items();

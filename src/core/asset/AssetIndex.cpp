@@ -75,14 +75,18 @@ std::optional<Kind> KindFromKey(std::string_view key) {
     return std::nullopt;
 }
 
-bool KindMatches(Kind k, std::string_view filter) {
+bool KindMatches(Kind k, std::string_view filter, std::string_view fileName) {
     const std::vector<std::string_view> keys = Keys(filter);
     if (keys.empty()) return k != Kind::Folder;
-    return std::any_of(keys.begin(), keys.end(), [&](std::string_view key) { return KindFromKey(key) == k; });
+    return std::any_of(keys.begin(), keys.end(), [&](std::string_view key) {
+        if (key.starts_with('.')) return k != Kind::Folder && Extension(fileName) == key;
+        return KindFromKey(key) == k;
+    });
 }
 
 bool ValidKindFilter(std::string_view filter) {
     for (const std::string_view key : Keys(filter)) {
+        if (key.starts_with('.') && key.size() > 1) continue;
         if (!KindFromKey(key)) return false;
     }
     return true;

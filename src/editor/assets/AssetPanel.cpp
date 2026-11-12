@@ -74,6 +74,7 @@ inspector::RefChoice ChoiceOf(const AssetLibrary& lib, const asset::Entry& e) {
     r.detail = lib.FolderOf(e);
     r.icon = IconOf(kind);
     r.kind = std::string(asset::KindKey(kind));
+    r.file = e.path;
     return r;
 }
 

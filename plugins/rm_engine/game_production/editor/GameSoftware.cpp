@@ -945,6 +945,7 @@ private:
             if (playScenes_[i] == AssetRef{slot_.guid}) world.sceneIndex = static_cast<int>(i);
         }
         scripts_.World().actions = &settings_.input;  // (edited while playing: read as it is each frame)
+        scripts_.World().prefab = [this](const AssetRef& r) { return Cached(r); };  // rm::Spawn(prefab): the files as last read
         ResetGlobals(true);  // every global variable at its 初めの値; rm::Save into Library/Saves
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
@@ -1823,7 +1824,7 @@ private:
     // A prefab file is an asset (a .rmprefab in Assets/) and is named by its id (AssetRef): moving or
     // renaming it keeps every placed one linked. Data from before assets had ids names it by a path
     // from the project folder - read the same way (SoftwareHost::AssetFile), made an id when opened.
-    static constexpr size_t kMaxNesting = 16;  // prefabs inside prefabs inside ...
+    static constexpr size_t kMaxNesting = kMaxPrefabNesting;  // (runtime/Prefab.h)
 
     std::filesystem::path FullPath(const std::string& path) const { return host_.GetProject().Root() / PathFromUtf8(path); }
     // A file's path from the project folder, "/" between the parts.
@@ -1973,24 +1974,8 @@ private:
     // Fills the prefabs nested in the placed prefab `root` from their own files (each with its own
     // overrides), and the ones nested in those ...
     void FillNested(int root, std::vector<std::string>& chain, reflect::Warnings& warnings) {
-        if (chain.size() > kMaxNesting) return;
-        for (const int n : scene_.NestedPrefabs(root)) {
-            const SceneEntity* e = scene_.Find(n);
-            if (!e) continue;
-            const AssetRef ref = e->prefab.asset;
-            if (std::find(chain.begin(), chain.end(), ref.guid) != chain.end()) {
-                warnings.push_back(std::format("Prefab「{}」が自分の中に入っているので、中を作りません", PrefabTitle(ref)));
-                continue;
-            }
-            const json::Value* prefab = Cached(ref);
-            if (!prefab) continue;  // as it was saved
-            const json::Value copy = *prefab;
-            const json::Value overrides = e->prefab.overrides;
-            scene_.ApplyPrefab(n, copy, overrides, &warnings);
-            chain.push_back(ref.guid);
-            FillNested(n, chain, warnings);
-            chain.pop_back();
-        }
+        FillNestedPrefabs(
+            scene_, root, chain, [this](const AssetRef& r) { return Cached(r); }, warnings, [this](const AssetRef& r) { return PrefabTitle(r); });
     }
 
     // The placed prefab `root` made again from `prefab` with `overrides`, then what is nested in it.

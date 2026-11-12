@@ -46,6 +46,10 @@ using Warnings = std::vector<std::string>;
 // module's (every string field goes through these two).
 std::string ReadString(const FieldDesc& f, const void* field);
 void WriteString(const FieldDesc& f, void* field, std::string_view text);
+// An AssetRef field's id ("" = none), and setting it - through FieldDesc::stringAccess when it is kept
+// in another form (a script's).
+std::string ReadAssetId(const FieldDesc& f, const void* field);
+void WriteAssetId(const FieldDesc& f, void* field, std::string_view id);
 
 json::Value Save(const TypeDesc& type, const void* object, const Unknowns* unknowns = nullptr);
 // Fields missing from the file keep their current value (so: default-construct, then Load).

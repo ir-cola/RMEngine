@@ -137,6 +137,19 @@ void WriteString(const FieldDesc& f, void* field, std::string_view text) {
     }
 }
 
+std::string ReadAssetId(const FieldDesc& f, const void* field) {
+    if (!f.stringAccess) return static_cast<const AssetRef*>(field)->guid;
+    return ReadString(f, field);
+}
+
+void WriteAssetId(const FieldDesc& f, void* field, std::string_view id) {
+    if (!f.stringAccess) {
+        static_cast<AssetRef*>(field)->guid.assign(id);
+        return;
+    }
+    WriteString(f, field, id);
+}
+
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -199,7 +212,7 @@ json::Value SaveValue(const FieldDesc& f, const ValueType& vt, const void* p, co
         case FieldType::Int: return json::Value(static_cast<int64_t>(*static_cast<const int*>(p)));
         case FieldType::Float: return json::Value(FloatForFile(*static_cast<const float*>(p)));
         case FieldType::String: return json::Value(ReadString(f, p));
-        case FieldType::AssetRef: return json::Value(static_cast<const AssetRef*>(p)->guid);
+        case FieldType::AssetRef: return json::Value(ReadAssetId(f, p));
         case FieldType::EntityRef: return json::Value(static_cast<const EntityRef*>(p)->id);
         case FieldType::Vec2:
         case FieldType::Vec3:
@@ -271,9 +284,9 @@ void LoadValue(const FieldDesc& f, const ValueType& vt, void* p, const json::Val
         case FieldType::AssetRef:
             // Kept as written even when it is not an id this version knows (written back unchanged).
             if (v.IsString()) {
-                static_cast<AssetRef*>(p)->guid = v.AsString();
+                WriteAssetId(f, p, v.AsString());
             } else if (v.IsNull()) {
-                static_cast<AssetRef*>(p)->guid.clear();
+                WriteAssetId(f, p, "");
             } else {
                 wrongType();
             }
@@ -352,7 +365,7 @@ bool ValueEquals(const FieldDesc& f, const ValueType& vt, const void* a, const v
         case FieldType::Int: return *static_cast<const int*>(a) == *static_cast<const int*>(b);
         case FieldType::Float: return *static_cast<const float*>(a) == *static_cast<const float*>(b);
         case FieldType::String: return ReadString(f, a) == ReadString(f, b);
-        case FieldType::AssetRef: return *static_cast<const AssetRef*>(a) == *static_cast<const AssetRef*>(b);
+        case FieldType::AssetRef: return ReadAssetId(f, a) == ReadAssetId(f, b);
         case FieldType::EntityRef: return *static_cast<const EntityRef*>(a) == *static_cast<const EntityRef*>(b);
         case FieldType::Vec2:
         case FieldType::Vec3:

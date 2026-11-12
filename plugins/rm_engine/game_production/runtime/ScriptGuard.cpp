@@ -29,6 +29,9 @@ unsigned long CallHook(const RmScriptDesc& script, int hook, void* self, RmEntit
             case 1:
                 if (script.tick) script.tick(self, entity, dt);
                 break;
+            case 3:
+                if (script.onReloaded) script.onReloaded(self, entity);
+                break;
             default:
                 if (script.endPlay) script.endPlay(self, entity);
                 break;

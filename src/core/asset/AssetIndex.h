@@ -27,9 +27,11 @@ enum class Kind : uint8_t { Folder, Image, Model, Audio, Font, Text, Other };
 Kind KindOf(std::string_view fileName, bool folder);
 std::string_view KindKey(Kind k);  // "folder" "image" "model" "audio" "font" "text" "other"
 std::optional<Kind> KindFromKey(std::string_view key);
-// `filter`: comma-separated keys; empty = any file (never a folder unless "folder" is listed).
-bool KindMatches(Kind k, std::string_view filter);
-// True when every key of `filter` is a kind (empty is fine).
+// `filter`: comma-separated keys; empty = any file (never a folder unless "folder" is listed). A key
+// starting with "." is an extension (".rmprefab": a file a software makes, which has no kind of its
+// own): it matches `fileName`'s.
+bool KindMatches(Kind k, std::string_view filter, std::string_view fileName = {});
+// True when every key of `filter` is a kind or an extension (empty is fine).
 bool ValidKindFilter(std::string_view filter);
 
 inline constexpr std::string_view kMetaSuffix = ".meta";

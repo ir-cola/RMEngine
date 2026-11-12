@@ -5,8 +5,11 @@
 
 #include "Test.h"
 
+#include "core/reflect/Data.h"
+
 #include "rm_engine/game_production/editor/ScriptBuild.h"
 #include "platform/Process.h"
+#include "rm_engine/game_production/runtime/Prefab.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_x_2d/runtime/ScriptTransform2D.h"
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
@@ -14,6 +17,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <thread>
@@ -81,6 +85,37 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
              "    if (!rm::Save::Exists(1)) rm::Save::Write(1);\n"
              "}\n";
     }
+    // A script that makes and destroys, adds the engine's Transform, and has every new kind of field.
+    {
+        std::ofstream h(ScriptsFolder(project) / L"Shooter.h", std::ios::binary);
+        h << "#pragma once\n#include \"RM.h\"\n"
+             "RM_ENUM() enum class Shot { RM_ITEM(Label=\"一発\") Single, Burst };\n"
+             "RM_STRUCT() struct Pattern { RM_PROPERTY(Edit) int count = 2; RM_PROPERTY(Edit) std::vector<std::string> tags; };\n"
+             "RM_SCRIPT()\nstruct Shooter {\n"
+             "    RM_PROPERTY(Edit) Shot shot = Shot::Burst;\n"
+             "    RM_PROPERTY(Edit) Pattern pattern;\n"
+             "    RM_PROPERTY(Edit) std::vector<Pattern> extra;\n"
+             "    RM_PROPERTY(Edit) std::vector<int> numbers;\n"
+             "    RM_PROPERTY(Edit) rm::PrefabRef enemy;\n"
+             "    RM_PROPERTY() int fired = 0;\n"
+             "    void Tick(rm::Entity self, float dt);\n};\n";
+        std::ofstream c(ScriptsFolder(project) / L"Shooter.cpp", std::ios::binary);
+        c << "#include \"Shooter.h\"\n#include \"RM3D.h\"\n"
+             "void Shooter::Tick(rm::Entity, float) {\n"
+             "    if (fired > 0) return;\n"
+             "    const int n = pattern.count + (shot == Shot::Burst ? 1 : 0);\n"
+             "    for (int i = 0; i < n; ++i) {\n"
+             "        rm::Entity b = rm::Spawn(\"Bullet\");\n"
+             "        b.Add<rm::Transform3D>().SetPosition({static_cast<float>(i), 0, 0});\n"
+             "        numbers.push_back(i);\n"
+             "        ++fired;\n"
+             "    }\n"
+             "    pattern.tags.push_back(std::string(30, 's'));\n"
+             "    extra.push_back(Pattern{5, {\"x\"}});\n"
+             "    if (rm::Entity old = rm::Find(\"Old\"); old.Valid()) old.Destroy();\n"
+             "    if (!enemy.Empty()) rm::Spawn(enemy);\n"
+             "}\n";
+    }
 
     ScriptBuildRequest req;
     req.globals = {{"score", GlobalType::Int, "10"},
@@ -138,6 +173,47 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
             CHECK(told.find("「Player」を矢印キー・WASD・ゲームパッドで動かせます") != std::string::npos);
             CHECK(told.find("2 コマ動きました") != std::string::npos);
             CHECK(runner.Crashed() == 0);
+        }
+        {
+            // Making and destroying, the engine's Transform added, the new kinds of fields - in a real DLL.
+            const ScriptType* shooter = module.Find("Shooter");
+            CHECK(shooter != nullptr);
+            if (shooter) {
+                const reflect::TypeDesc& tf = reflect::TypeOf<space3d::Transform>();
+                Scene src;
+                src.SetComponentTypes({&tf}, {});
+                const int enemyRoot = src.Create("Enemy");
+                const json::Value enemyPrefab = MakePrefab(src, enemyRoot);
+                const std::string guid = "0123456789abcdef0123456789abcdef";
+                world.prefab = [&](const AssetRef& r) -> const json::Value* { return r.guid == guid ? &enemyPrefab : nullptr; };
+                Scene scene;
+                scene.SetComponentTypes({&tf, &shooter->desc}, {&shooter->desc});
+                const int gun = scene.Create("Gun");
+                scene.AddComponent(gun, shooter->desc);
+                json::Value set = json::Value::MakeObject();
+                set.Set("enemy", json::Value(guid));
+                reflect::Load(shooter->desc, scene.Find(gun)->FindComponent("Shooter")->value.Get(), set, nullptr, nullptr);
+                const int old = scene.Create("Old");
+                scene.Create("Under the old", old);
+                ScriptRunner runner;
+                runner.Frame(scene, world, module, {}, 0.1f);
+                std::vector<float> xs;
+                for (const SceneEntity& e : scene.Entities()) {
+                    if (e.data.name != "Bullet") continue;
+                    const Component* t = e.FindComponent(tf.name);
+                    if (t) xs.push_back(static_cast<const space3d::Transform*>(t->value.Get())->position.x);
+                }
+                CHECK((xs == std::vector<float>{0, 1, 2}));  // count 2 + Burst
+                CHECK(!scene.Find(old) && scene.Entities().size() == 5);  // Gun, 3 bullets, the enemy (the old one and its child gone)
+                CHECK(std::any_of(scene.Entities().begin(), scene.Entities().end(), [](const SceneEntity& e) { return e.data.name == "Enemy" && e.prefab.Root(); }));
+                const json::Value data = reflect::Save(shooter->desc, scene.Find(gun)->FindComponent("Shooter")->value.Get());
+                CHECK(data.Get("shot").AsString() == "Burst" && data.Get("numbers").Size() == 3 && data.Get("pattern").Get("count").AsInt() == 2);
+                CHECK(data.Get("pattern").Get("tags").At(0).AsString() == std::string(30, 's') && data.Get("extra").At(0).Get("count").AsInt() == 5);
+                CHECK(data.Get("enemy").AsString() == guid && data.Get("fired").AsInt() == 3);
+                runner.Stop(scene, world, module, {});
+                CHECK(runner.Crashed() == 0);
+                world.prefab = nullptr;
+            }
         }
         {
             // The global variables from a script: Global::score += 5, ++, a text, a vector, a bool, by

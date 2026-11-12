@@ -42,6 +42,7 @@
 #include "base/Json.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -75,6 +76,18 @@ std::vector<std::string> NestedAssets(const json::Value& prefab);
 json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, std::span<const std::string> placement = {});
 // How many changes `overrides` holds (shown in the inspector).
 size_t CountOverrides(const json::Value& overrides);
+
+// A prefab file's content by its asset id (the editor's files, an exported game's .rmpak); null: none.
+using PrefabReader = std::function<const json::Value*(const AssetRef& asset)>;
+inline constexpr size_t kMaxPrefabNesting = 16;  // prefabs inside prefabs inside ...
+// The prefabs nested in the placed prefab `root` filled from their own files (each with its own
+// overrides), and the ones nested in those. `chain`: the prefabs `root` is inside, itself included -
+// one that would end up inside itself is not filled (told in `warnings`; `title` names it).
+void FillNestedPrefabs(Scene& scene, int root, std::vector<std::string>& chain, const PrefabReader& read, reflect::Warnings& warnings,
+                       const std::function<std::string(const AssetRef&)>& title);
+// A copy of the prefab `asset` with everything nested in it, under `parent` (0: the top) - what
+// rm::Spawn(prefab) makes while the game plays. 0: no such prefab (or it has no entities).
+int SpawnPrefab(Scene& scene, const AssetRef& asset, int parent, const PrefabReader& read, reflect::Warnings& warnings);
 
 // The file name's stem (no folder, no extension): "Assets/Enemies/Bat.rmprefab" -> "Bat".
 std::string PrefabName(std::string_view path);

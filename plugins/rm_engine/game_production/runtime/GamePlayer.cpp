@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <unordered_map>
 
 namespace rm::game_production {
@@ -56,6 +57,21 @@ public:
         // typed into another app never moves the game - as the editor's Play); read by action name.
         world_.readInput = [this] { return input_.Read(); };
         world_.actions = &settings_.input;
+        // rm::Spawn(prefab): the prefab files in the .rmpak (read once each).
+        world_.prefab = [this](const AssetRef& ref) -> const json::Value* {
+            if (const auto it = prefabs_.find(ref.guid); it != prefabs_.end()) return it->second ? &*it->second : nullptr;
+            std::optional<json::Value> doc;
+            if (const auto at = assets_.find(ref.guid); at != assets_.end()) {
+                std::string err;
+                if (const auto bytes = host_.Read(at->second, &err)) {
+                    doc = json::Parse(*bytes);
+                    if (doc && !IsPrefab(*doc)) doc.reset();
+                }
+                if (!doc) host_.Log(1, std::format("Prefab ({}) を読めません {}", at->second, err));
+            }
+            const std::optional<json::Value>& slot = prefabs_.emplace(ref.guid, std::move(doc)).first->second;
+            return slot ? &*slot : nullptr;
+        };
         // The global variables at their 初めの値 (the whole game: a scene switched keeps them); rm::Save
         // into %LOCALAPPDATA%\<exe name>\Saves.
         {
@@ -216,6 +232,7 @@ private:
     Scene scene_;
     SystemRunner runner_;
     std::unordered_map<std::string, std::string> assets_;  // asset id -> its path in the .rmpak
+    std::unordered_map<std::string, std::optional<json::Value>> prefabs_;  // rm::Spawn's prefabs, read (nullopt: not one)
     std::vector<std::string> scenePaths_;                   // the game's scenes, in the list's order
     std::vector<std::string> cameraTypes_;                  // what the game sees through (SceneCamera)
     std::unique_ptr<GameDrawer> drawer_;

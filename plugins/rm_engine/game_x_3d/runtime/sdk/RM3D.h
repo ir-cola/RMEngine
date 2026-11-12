@@ -26,6 +26,8 @@ namespace rm {
 
 class Transform3D {
 public:
+    // The engine's component (Entity::Add / Get / Remove<rm::Transform3D>()).
+    static constexpr const char* kComponentType = "rm::space3d::Transform";
     explicit Transform3D(Entity entity)
         : entity_(entity), api_(Part<RmTransform3DApi>(RM_PART_TRANSFORM3D, RM_PART_TRANSFORM3D_VERSION)) {}
 

@@ -78,6 +78,7 @@
     <ClCompile Include="TestSceneRecord.cpp" />
     <ClCompile Include="TestGlobals.cpp" />
     <ClCompile Include="TestInput.cpp" />
+    <ClCompile Include="TestScriptsMore.cpp" />
     <ClCompile Include="TestScripts.cpp" />
     <ClCompile Include="TestDebugDraw.cpp" />
     <ClCompile Include="TestScriptBuild.cpp" />

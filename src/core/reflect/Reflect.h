@@ -81,7 +81,8 @@ struct ArrayOps {
 
 // A std::string that lives in another module (a script DLL, built with its own C runtime): read and
 // written only through that module's functions - this program never assigns to it or frees it (its
-// memory is the other runtime's).
+// memory is the other runtime's). On an AssetRef field: the id kept in another form (a script's
+// char guid[...]) - read and written as text the same way.
 struct StringAccess {
     const void* ctx;
     size_t (*get)(const void* ctx, const void* field, char* buf, size_t cap);  // the full length; copies what fits (0-terminated)

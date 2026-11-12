@@ -632,10 +632,16 @@ private:
                 {"AssetRef", TypeRef::Kind::AssetRef}, {"rm::AssetRef", TypeRef::Kind::AssetRef},
                 {"EntityRef", TypeRef::Kind::EntityRef}, {"rm::EntityRef", TypeRef::Kind::EntityRef},
             };
+            // A script's asset references (RM.h: plain bytes, not core's AssetRef).
+            static const std::set<std::string> kScriptAssets = {"PrefabRef", "ImageRef", "ModelRef"};
             static const std::set<std::string> kRefused = {"double", "long", "short", "char", "unsigned", "signed", "int8_t",
                                                            "uint8_t", "int16_t", "uint16_t", "uint32_t", "int64_t", "uint64_t",
                                                            "size_t", "std::size_t", "wchar_t", "std::wstring", "auto"};
-            if (auto it = kBuiltin.find(name); it != kBuiltin.end()) {
+            const std::string bare = name.starts_with("rm::") ? name.substr(4) : name;
+            if (kScriptAssets.count(bare)) {
+                out.kind = TypeRef::Kind::AssetRef;
+                out.assetType = bare;
+            } else if (auto it = kBuiltin.find(name); it != kBuiltin.end()) {
                 out.kind = it->second;
             } else if (kRefused.count(name)) {
                 return fail(first, std::format("{} は使えません (使える数の型は int と float です)", name));
@@ -700,7 +706,7 @@ std::string CppTypeOf(const TypeRef& t) {
         case TypeRef::Kind::Vec2: return "::rm::Vec2";
         case TypeRef::Kind::Vec3: return "::rm::Vec3";
         case TypeRef::Kind::Color: return "::rm::Color";
-        case TypeRef::Kind::AssetRef: return "::rm::AssetRef";
+        case TypeRef::Kind::AssetRef: return t.assetType.empty() ? "::rm::AssetRef" : "::rm::" + t.assetType;
         case TypeRef::Kind::EntityRef: return "::rm::EntityRef";
         case TypeRef::Kind::Named: return Cpp(t.resolved);
         case TypeRef::Kind::Vector: return "std::vector<" + CppTypeOf(t.element[0]) + ">";
@@ -1046,25 +1052,123 @@ std::string EmitAll(const std::vector<Header>& all) {
 
 // --- Scripts (a game's DLL: RM.h, not core/reflect) ---------------------------------------------
 
+namespace {
+
+// The struct named `qualified` among the headers (null: none).
+const Struct* FindStruct(const std::vector<Header>& all, const std::string& qualified) {
+    for (const Header& h : all) {
+        for (const Struct& s : h.structs) {
+            if (s.Qualified() == qualified) return &s;
+        }
+    }
+    return nullptr;
+}
+
+// What a script's field may be: the types of RmAbi.h (a vector of them, one level).
+std::string ScriptFieldProblem(const std::vector<Header>& all, const TypeRef& t) {
+    const TypeRef& base = t.kind == TypeRef::Kind::Vector ? t.element[0] : t;
+    if (base.kind == TypeRef::Kind::AssetRef && base.assetType.empty()) {
+        return "アセットの参照は rm::PrefabRef / rm::ImageRef / rm::ModelRef で書きます";
+    }
+    if (base.kind == TypeRef::Kind::Named && !base.isEnum) {
+        const Struct* s = FindStruct(all, base.resolved);
+        if (s && s->macro != "RM_STRUCT") return std::format("{} は {} です (欄に入れられるのは RM_STRUCT の構造体です)", base.resolved, s->macro);
+    }
+    return {};
+}
+
+const char* ScriptKind(const TypeRef& t) {
+    switch (t.kind) {
+        case TypeRef::Kind::Bool: return "RmField_Bool";
+        case TypeRef::Kind::Int: return "RmField_Int";
+        case TypeRef::Kind::Float: return "RmField_Float";
+        case TypeRef::Kind::String: return "RmField_String";
+        case TypeRef::Kind::Vec2: return "RmField_Vec2";
+        case TypeRef::Kind::Vec3: return "RmField_Vec3";
+        case TypeRef::Kind::Color: return "RmField_Color";
+        case TypeRef::Kind::EntityRef: return "RmField_EntityRef";
+        case TypeRef::Kind::AssetRef: return "RmField_Asset";
+        case TypeRef::Kind::Named: return t.isEnum ? "RmField_Enum" : "RmField_Struct";
+        case TypeRef::Kind::Vector: return "RmField_List";
+    }
+    return "RmField_Int";
+}
+
+// The kinds of file an asset field takes (core/asset's keys, or an extension).
+const char* AssetKinds(const std::string& assetType) {
+    if (assetType == "PrefabRef") return ".rmprefab";
+    if (assetType == "ImageRef") return "image";
+    if (assetType == "ModelRef") return "model";
+    return "";
+}
+
+// The RmFieldDesc lines of a struct (a script's or an RM_STRUCT's), and the list descriptions they need.
+std::string ScriptFields(const Struct& s, std::string& before, size_t& count) {
+    const std::string q = s.Qualified(), id = Id(q), cpp = Cpp(q);
+    std::string fields;
+    count = 0;
+    for (const Field& f : s.fields) {
+        if (f.transient) continue;
+        ++count;
+        before += std::format("static_assert(std::is_same_v<decltype({0}::{1}), {2}>, \"{3}::{1} の型が変わっています。ビルドし直してください\");\n", cpp,
+                              f.name, CppTypeOf(f.type), q);
+        auto attr = [&](const char* key) -> const Attr* {
+            for (const auto& a : f.attrs) {
+                if (a.key == key) return &a;
+            }
+            return nullptr;
+        };
+        const Attr* label = attr("Label");
+        const Attr* tip = attr("Tooltip");
+        const Attr* mn = attr("Min");
+        const Attr* mx = attr("Max");
+        const Attr* st = attr("Step");
+        auto num = [](const Attr* a) { return a && a->kind == Attr::Kind::Number ? NumberLiteral(a->value) : std::string("0.0"); };
+        std::string flags;
+        auto flag = [&](bool on, const char* name) {
+            if (!on) return;
+            flags += (flags.empty() ? "" : " | ") + std::string(name);
+        };
+        flag(attr("Edit") != nullptr, "RmFieldFlag_Edit");
+        flag(attr("ReadOnly") != nullptr, "RmFieldFlag_ReadOnly");
+        flag(mn && mn->kind == Attr::Kind::Number, "RmFieldFlag_HasMin");
+        flag(mx && mx->kind == Attr::Kind::Number, "RmFieldFlag_HasMax");
+        flag(st && st->kind == Attr::Kind::Number, "RmFieldFlag_HasStep");
+        const TypeRef& base = f.type.kind == TypeRef::Kind::Vector ? f.type.element[0] : f.type;
+        std::string enumDesc = "nullptr", structDesc = "nullptr", list = "nullptr", kinds = "nullptr";
+        if (base.kind == TypeRef::Kind::Named) {
+            (base.isEnum ? enumDesc : structDesc) = std::format("&rmgen_scripts::{}_{}", base.isEnum ? "E" : "S", Id(base.resolved));
+        }
+        if (base.kind == TypeRef::Kind::AssetRef) kinds = std::format("\"{}\"", AssetKinds(base.assetType));
+        if (f.type.kind == TypeRef::Kind::Vector) {
+            const std::string vec = CppTypeOf(f.type);
+            before += std::format("static const RmListDesc L_{}_{} = {{{}, 0, &RmVecSize<{}>, &RmVecResize<{}>, &RmVecAt<{}>}};\n", id, f.name,
+                                  ScriptKind(base), vec, vec, vec);
+            list = std::format("&L_{}_{}", id, f.name);
+        }
+        fields += std::format(
+            "    {{\"{}\", {}, {}, [](void* o) -> void* {{ return &static_cast<{}*>(o)->{}; }}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}}},\n", f.name,
+            ScriptKind(f.type), flags.empty() ? "0" : "static_cast<uint32_t>(" + flags + ")", cpp, f.name,
+            label ? "\"" + label->value + "\"" : std::string("nullptr"), tip ? "\"" + tip->value + "\"" : std::string("nullptr"), num(mn), num(mx),
+            num(st), f.line, enumDesc, structDesc, list, kinds);
+    }
+    return fields;
+}
+
+}  // namespace
+
 void ValidateScripts(const std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
     for (const Header& h : headers) {
-        for (const Enum& e : h.enums) {
-            diags.push_back({h.file, e.line, 1, "RM0013", std::format("スクリプトの中では RM_ENUM ({}) はまだ使えません", e.name)});
-        }
         for (const Struct& s : h.structs) {
-            if (s.macro != "RM_SCRIPT") {
+            if (s.macro != "RM_SCRIPT" && s.macro != "RM_STRUCT") {
                 diags.push_back({h.file, s.line, 1, "RM0013",
-                                 std::format("スクリプトの中では {} ({}) はまだ使えません。RM_SCRIPT にしてください", s.macro, s.name)});
+                                 std::format("スクリプトの中では {} ({}) は使えません。RM_SCRIPT か RM_STRUCT にしてください", s.macro, s.name)});
                 continue;
             }
             for (const Field& f : s.fields) {
                 if (f.transient) continue;
-                const auto k = f.type.kind;
-                if (k == TypeRef::Kind::AssetRef || k == TypeRef::Kind::Named || k == TypeRef::Kind::Vector) {
-                    diags.push_back({h.file, f.line, f.col, "RM0013",
-                                     std::format("スクリプトの欄 {} の型はまだ使えません (使えるのは bool / int / float / std::string / rm::Vec2 / "
-                                                 "rm::Vec3 / rm::Color / rm::EntityRef)",
-                                                 f.name)});
+                if (const std::string why = ScriptFieldProblem(headers, f.type); !why.empty()) {
+                    diags.push_back({h.file, f.line, f.col, "RM0013", std::format("スクリプトの欄 {}: {}", f.name, why)});
                 }
             }
         }
@@ -1076,28 +1180,35 @@ std::string EmitScripts(const std::vector<Header>& all) {
     o += "// rmgen がスクリプトのヘッダーから作りました (スクリプトの DLL の登録)。手で直さないでください (ビルドのたびに作り直されます)。\n\n";
     o += "#include \"RM.h\"\n";
     for (const Header& h : all) o += std::format("#include \"{}\"\n", h.includePath);
-    o += "\n#include <cstring>\n#include <memory>\n#include <new>\n#include <string>\n#include <type_traits>\n\n";
+    o += "\n#include <cstring>\n#include <memory>\n#include <new>\n#include <string>\n#include <type_traits>\n#include <vector>\n\n";
     o += R"(namespace {
 const RmApi* g_rmApi = nullptr;
 template <class T> concept RmHasBegin = requires(T& t, ::rm::Entity e) { t.BeginPlay(e); };
 template <class T> concept RmHasTick = requires(T& t, ::rm::Entity e, float dt) { t.Tick(e, dt); };
 template <class T> concept RmHasEnd = requires(T& t, ::rm::Entity e) { t.EndPlay(e); };
+template <class T> concept RmHasReload = requires(T& t, ::rm::Entity e) { t.OnReloaded(e); };
 template <class T> void RmBegin(void* s, RmEntityId e) { static_cast<T*>(s)->BeginPlay(::rm::Entity(e)); }
 template <class T> void RmTick(void* s, RmEntityId e, float dt) { static_cast<T*>(s)->Tick(::rm::Entity(e), dt); }
 template <class T> void RmEnd(void* s, RmEntityId e) { static_cast<T*>(s)->EndPlay(::rm::Entity(e)); }
+template <class T> void RmReload(void* s, RmEntityId e) { static_cast<T*>(s)->OnReloaded(::rm::Entity(e)); }
 template <class T> constexpr void (*RmBeginOf())(void*, RmEntityId) { if constexpr (RmHasBegin<T>) return &RmBegin<T>; else return nullptr; }
 template <class T> constexpr void (*RmTickOf())(void*, RmEntityId, float) { if constexpr (RmHasTick<T>) return &RmTick<T>; else return nullptr; }
 template <class T> constexpr void (*RmEndOf())(void*, RmEntityId) { if constexpr (RmHasEnd<T>) return &RmEnd<T>; else return nullptr; }
+template <class T> constexpr void (*RmReloadOf())(void*, RmEntityId) { if constexpr (RmHasReload<T>) return &RmReload<T>; else return nullptr; }
+// A std::vector field, worked here (this DLL's C runtime owns its memory).
+template <class V> uint64_t RmVecSize(const void* v) { return static_cast<const V*>(v)->size(); }
+template <class V> void RmVecResize(void* v, uint64_t n) { static_cast<V*>(v)->resize(static_cast<size_t>(n)); }
+template <class V> void* RmVecAt(void* v, uint64_t i) { return &(*static_cast<V*>(v))[static_cast<size_t>(i)]; }
 }  // namespace
 
 const RmApi* rm::Api() { return g_rmApi; }
 
 )";
-    std::vector<const Struct*> scripts;
+    std::vector<const Struct*> scripts, structs;
+    std::vector<std::pair<const Enum*, const Header*>> enums;
     for (const Header& h : all) {
-        for (const Struct& s : h.structs) {
-            if (s.macro == "RM_SCRIPT") scripts.push_back(&s);
-        }
+        for (const Struct& s : h.structs) (s.macro == "RM_SCRIPT" ? scripts : structs).push_back(&s);
+        for (const Enum& e : h.enums) enums.push_back({&e, &h});
     }
     auto headerOf = [&](const Struct* s) -> std::string {
         for (const Header& h : all) {
@@ -1107,6 +1218,45 @@ const RmApi* rm::Api() { return g_rmApi; }
         }
         return {};
     };
+    // Enums and structs refer to each other by address: declared first.
+    o += "namespace rmgen_scripts {\n";
+    for (const auto& [e, h] : enums) o += std::format("extern const RmEnumDesc E_{};\n", Id(e->Qualified()));
+    for (const Struct* s : structs) o += std::format("extern const RmStructDesc S_{};\n", Id(s->Qualified()));
+    o += "}  // namespace rmgen_scripts\n\n";
+
+    for (const auto& [e, h] : enums) {
+        const std::string q = e->Qualified(), id = Id(q), cpp = Cpp(q);
+        o += std::format("static_assert(std::is_enum_v<{}>, \"{} は enum class にしてください\");\n", cpp, q);
+        o += std::format("static const RmEnumItem EI_{}[] = {{\n", id);
+        for (const auto& it : e->items) {
+            o += std::format("    {{\"{}\", \"{}\", static_cast<int64_t>({}::{})}},\n", it.name, it.label.empty() ? it.name : it.label, cpp, it.name);
+        }
+        o += "};\n";
+        o += std::format(
+            "const RmEnumDesc rmgen_scripts::E_{0} = {{\"{1}\", EI_{0}, {3}u,\n"
+            "    [](const void* p) -> int64_t {{ return static_cast<int64_t>(*static_cast<const {2}*>(p)); }},\n"
+            "    [](void* p, int64_t v) {{ *static_cast<{2}*>(p) = static_cast<{2}>(v); }}}};\n\n",
+            id, q, cpp, e->items.size());
+    }
+
+    for (const Struct* s : structs) {
+        const std::string q = s->Qualified(), id = Id(q), cpp = Cpp(q);
+        o += std::format("static_assert(std::is_aggregate_v<{0}>, \"{1}: RM_STRUCT は集成体 (コンストラクタも private も基底クラスも無い struct) にしてください\");\n",
+                         cpp, q);
+        o += std::format("static_assert(::rm::detail::CountFields<{0}>() == {1}, \"{2} の欄の数が変わっています。ビルドし直してください\");\n", cpp,
+                         s->fields.size(), q);
+        size_t props = 0;
+        std::string before;
+        const std::string fields = ScriptFields(*s, before, props);
+        o += before;
+        if (props > 0) o += std::format("static const RmFieldDesc F_{}[] = {{\n{}}};\n", id, fields);
+        o += std::format(
+            "const RmStructDesc rmgen_scripts::S_{0} = {{\"{1}\", \"{2}\", sizeof({3}), alignof({3}), {4}, {5}u,\n"
+            "    [](void* p) {{ new (p) {3}(); }}, [](void* p) {{ std::destroy_at(static_cast<{3}*>(p)); }},\n"
+            "    [](void* d, const void* s) {{ *static_cast<{3}*>(d) = *static_cast<const {3}*>(s); }}}};\n\n",
+            id, q, s->label.empty() ? s->name : s->label, cpp, props > 0 ? "F_" + id : std::string("nullptr"), props);
+    }
+
     std::string table;
     for (const Struct* s : scripts) {
         const std::string q = s->Qualified(), id = Id(q), cpp = Cpp(q);
@@ -1115,59 +1265,16 @@ const RmApi* rm::Api() { return g_rmApi; }
         o += std::format("static_assert(::rm::detail::CountFields<{0}>() == {1}, \"{2} の欄の数が変わっています。ビルドし直してください\");\n", cpp,
                          s->fields.size(), q);
         size_t props = 0;
-        std::string fields;
-        for (const Field& f : s->fields) {
-            if (f.transient) continue;
-            ++props;
-            o += std::format("static_assert(std::is_same_v<decltype({0}::{1}), {2}>, \"{3}::{1} の型が変わっています。ビルドし直してください\");\n", cpp,
-                             f.name, CppTypeOf(f.type), q);
-            auto attr = [&](const char* key) -> const Attr* {
-                for (const auto& a : f.attrs) {
-                    if (a.key == key) return &a;
-                }
-                return nullptr;
-            };
-            const Attr* label = attr("Label");
-            const Attr* tip = attr("Tooltip");
-            const Attr* mn = attr("Min");
-            const Attr* mx = attr("Max");
-            const Attr* st = attr("Step");
-            auto num = [](const Attr* a) { return a && a->kind == Attr::Kind::Number ? NumberLiteral(a->value) : std::string("0.0"); };
-            std::string flags;
-            auto flag = [&](bool on, const char* name) {
-                if (!on) return;
-                flags += (flags.empty() ? "" : " | ") + std::string(name);
-            };
-            flag(attr("Edit") != nullptr, "RmFieldFlag_Edit");
-            flag(attr("ReadOnly") != nullptr, "RmFieldFlag_ReadOnly");
-            flag(mn && mn->kind == Attr::Kind::Number, "RmFieldFlag_HasMin");
-            flag(mx && mx->kind == Attr::Kind::Number, "RmFieldFlag_HasMax");
-            flag(st && st->kind == Attr::Kind::Number, "RmFieldFlag_HasStep");
-            const char* kind = "RmField_Int";
-            switch (f.type.kind) {
-                case TypeRef::Kind::Bool: kind = "RmField_Bool"; break;
-                case TypeRef::Kind::Int: kind = "RmField_Int"; break;
-                case TypeRef::Kind::Float: kind = "RmField_Float"; break;
-                case TypeRef::Kind::String: kind = "RmField_String"; break;
-                case TypeRef::Kind::Vec2: kind = "RmField_Vec2"; break;
-                case TypeRef::Kind::Vec3: kind = "RmField_Vec3"; break;
-                case TypeRef::Kind::Color: kind = "RmField_Color"; break;
-                case TypeRef::Kind::EntityRef: kind = "RmField_EntityRef"; break;
-                default: break;
-            }
-            fields += std::format(
-                "    {{\"{}\", {}, {}, [](void* o) -> void* {{ return &static_cast<{}*>(o)->{}; }}, {}, {}, {}, {}, {}, {}}},\n", f.name, kind,
-                flags.empty() ? "0" : "static_cast<uint32_t>(" + flags + ")", cpp, f.name,
-                label ? "\"" + label->value + "\"" : std::string("nullptr"), tip ? "\"" + tip->value + "\"" : std::string("nullptr"), num(mn),
-                num(mx), num(st), f.line);
-        }
+        std::string before;
+        const std::string fields = ScriptFields(*s, before, props);
+        o += before;
         if (props > 0) o += std::format("static const RmFieldDesc F_{}[] = {{\n{}}};\n", id, fields);
         o += "\n";
         table += std::format(
             "    {{\"{0}\", \"{1}\", \"{2}\", sizeof({3}), alignof({3}), {4}, {5},\n"
             "     [](void* p) {{ new (p) {3}(); }}, [](void* p) {{ std::destroy_at(static_cast<{3}*>(p)); }},\n"
             "     [](void* d, const void* s) {{ *static_cast<{3}*>(d) = *static_cast<const {3}*>(s); }},\n"
-            "     RmBeginOf<{3}>(), RmTickOf<{3}>(), RmEndOf<{3}>()}},\n",
+            "     RmBeginOf<{3}>(), RmTickOf<{3}>(), RmEndOf<{3}>(), RmReloadOf<{3}>()}},\n",
             q, s->label.empty() ? s->name : s->label, headerOf(s), cpp, props > 0 ? "F_" + id : std::string("nullptr"), props);
     }
     if (scripts.empty()) {

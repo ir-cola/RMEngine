@@ -50,6 +50,39 @@ json::Value FieldOverride(int source, const std::string& component, size_t index
 bool IsPrefab(const json::Value& v) { return v.IsObject() && v.Get("kind").AsString() == kPrefabKind; }
 bool NewerPrefab(const json::Value& v) { return IsPrefab(v) && v.Get("format").AsInt(1) > kPrefabFormat; }
 
+void FillNestedPrefabs(Scene& scene, int root, std::vector<std::string>& chain, const PrefabReader& read, reflect::Warnings& warnings,
+                       const std::function<std::string(const AssetRef&)>& title) {
+    if (chain.size() > kMaxPrefabNesting || !read) return;
+    for (const int n : scene.NestedPrefabs(root)) {
+        const SceneEntity* e = scene.Find(n);
+        if (!e) continue;
+        const AssetRef ref = e->prefab.asset;
+        if (std::find(chain.begin(), chain.end(), ref.guid) != chain.end()) {
+            warnings.push_back(std::format("Prefab「{}」が自分の中に入っているので、中を作りません", title ? title(ref) : ref.guid));
+            continue;
+        }
+        const json::Value* prefab = read(ref);
+        if (!prefab) continue;  // as it was saved
+        const json::Value copy = *prefab;
+        const json::Value overrides = e->prefab.overrides;
+        scene.ApplyPrefab(n, copy, overrides, &warnings);
+        chain.push_back(ref.guid);
+        FillNestedPrefabs(scene, n, chain, read, warnings, title);
+        chain.pop_back();
+    }
+}
+
+int SpawnPrefab(Scene& scene, const AssetRef& asset, int parent, const PrefabReader& read, reflect::Warnings& warnings) {
+    const json::Value* prefab = read ? read(asset) : nullptr;
+    if (!prefab) return 0;
+    const json::Value copy = *prefab;
+    const int made = scene.PlacePrefab(copy, asset, parent, Scene::kEnd, &warnings);
+    if (!made) return 0;
+    std::vector<std::string> chain{asset.guid};
+    FillNestedPrefabs(scene, made, chain, read, warnings, {});
+    return made;
+}
+
 std::string PrefabName(std::string_view path) {
     const size_t slash = path.find_last_of("/\\");
     std::string_view name = slash == std::string_view::npos ? path : path.substr(slash + 1);

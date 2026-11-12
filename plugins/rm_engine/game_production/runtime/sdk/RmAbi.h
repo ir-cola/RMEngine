@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-#define RM_ABI_VERSION 3u
+#define RM_ABI_VERSION 4u
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,8 +35,17 @@ enum RmFieldType {
     RmField_Vec2 = 4,
     RmField_Vec3 = 5,
     RmField_Color = 6,
-    RmField_EntityRef = 7
+    RmField_EntityRef = 7,
+    /* ABI 4 */
+    RmField_Enum = 8,   /* an RM_ENUM enum class (RmFieldDesc::enumDesc) */
+    RmField_Struct = 9, /* an RM_STRUCT struct (RmFieldDesc::structDesc) */
+    RmField_List = 10,  /* std::vector of one of the others (RmFieldDesc::list; the element's enumDesc /
+                           structDesc / assetKinds are the field's) */
+    RmField_Asset = 11  /* rm::PrefabRef / rm::ImageRef / rm::ModelRef: char guid[RM_ASSET_ID_SIZE]
+                           (32 hex digits; "" = none) - plain bytes, read and written by the engine */
 };
+
+#define RM_ASSET_ID_SIZE 40
 
 enum RmFieldFlags {
     RmFieldFlag_Edit = 1,      /* shown in the inspector */
@@ -56,7 +65,47 @@ typedef struct RmFieldDesc {
     const char* tooltip;
     double min, max, step;
     int32_t line; /* in the header */
+    /* ABI 4: what the kinds above need (null for the others) */
+    const struct RmEnumDesc* enumDesc;
+    const struct RmStructDesc* structDesc;
+    const struct RmListDesc* list;
+    const char* assetKinds; /* RmField_Asset: "image" / "model" / ".rmprefab" (core/asset's kinds, or an extension) */
 } RmFieldDesc;
+
+typedef struct RmEnumItem {
+    const char* name;  /* saved in files */
+    const char* label; /* shown; null: the name */
+    int64_t value;
+} RmEnumItem;
+
+typedef struct RmEnumDesc {
+    const char* name; /* C++ name */
+    const RmEnumItem* items;
+    uint32_t itemCount;
+    int64_t (*get)(const void* p);
+    void (*set)(void* p, int64_t v);
+} RmEnumDesc;
+
+/* An RM_STRUCT inside a script (a value: no hooks). */
+typedef struct RmStructDesc {
+    const char* name;
+    const char* label;
+    uint64_t size, align;
+    const struct RmFieldDesc* fields;
+    uint32_t fieldCount;
+    void (*construct)(void* p);
+    void (*destruct)(void* p);
+    void (*copy)(void* dst, const void* src);
+} RmStructDesc;
+
+/* A std::vector field, worked by the DLL (its C runtime owns the memory). */
+typedef struct RmListDesc {
+    uint32_t element; /* RmFieldType of an element (never RmField_List) */
+    uint32_t reserved;
+    uint64_t (*size)(const void* vec);
+    void (*resize)(void* vec, uint64_t n);
+    void* (*at)(void* vec, uint64_t i);
+} RmListDesc;
 
 typedef struct RmScriptDesc {
     const char* name;   /* C++ name ("Mover", "game::Mover") = what the scene saves */
@@ -72,6 +121,9 @@ typedef struct RmScriptDesc {
     void (*beginPlay)(void* self, RmEntityId self_entity);
     void (*tick)(void* self, RmEntityId self_entity, float dt);
     void (*endPlay)(void* self, RmEntityId self_entity);
+    /* ABI 4: after the scripts were built again while the game plays (the values carried over by
+       name; BeginPlay is not called again). Null when the script does not have it. */
+    void (*onReloaded)(void* self, RmEntityId self_entity);
 } RmScriptDesc;
 
 enum RmModuleFlags {
@@ -119,6 +171,19 @@ typedef struct RmCoreApi {
     uint32_t (*sceneName)(void* ctx, char* buf, uint32_t cap);
     int32_t (*sceneIndex)(void* ctx);
     int32_t (*sceneCount)(void* ctx);
+    /* Entities and components (ABI 4). spawn / spawnPrefab make the entity now (under `parent`, 0: the
+       top) and return it; its scripts start at the next frame (BeginPlay before their first Tick).
+       destroy / removeComponent take effect at the end of this frame: EndPlay first, the entity's
+       children with it; an id of something gone is never used again (exists() says 0). */
+    RmEntityId (*spawn)(void* ctx, const char* nameUtf8, RmEntityId parent);
+    RmEntityId (*spawnPrefab)(void* ctx, const char* assetId, RmEntityId parent); /* 0: not a prefab of the game (told) */
+    void (*destroy)(void* ctx, RmEntityId e);
+    /* A component by its type's name (a script's RmScriptDesc::name, or an engine one's, e.g.
+       "rm::space3d::Transform"): added with its default values (one that cannot be twice: the one there)
+       and returned; null: no such type / no such entity. */
+    void* (*addComponent)(void* ctx, RmEntityId e, const char* typeName);
+    int (*removeComponent)(void* ctx, RmEntityId e, const char* typeName, uint32_t nth); /* 1: will go */
+    uint32_t (*countComponents)(void* ctx, RmEntityId e, const char* typeName);
 } RmCoreApi;
 
 typedef struct RmApi {

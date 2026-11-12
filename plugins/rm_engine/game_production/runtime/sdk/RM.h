@@ -13,7 +13,8 @@
 //
 //       void BeginPlay(rm::Entity self);           // when the game starts (or the entity is made)
 //       void Tick(rm::Entity self, float dt);      // every frame; dt = seconds since the last one
-//       void EndPlay(rm::Entity self);             // when the game stops
+//       void EndPlay(rm::Entity self);             // when the game stops (or it is destroyed / removed)
+//       void OnReloaded(rm::Entity self);          // the scripts were built again while playing
 //   };
 //
 //   // Assets/Scripts/Mover.cpp
@@ -28,7 +29,17 @@
 // ■ Rules
 //   * A script is a plain struct (no constructor, no base class, no private). Every member is
 //     RM_PROPERTY(...) or RM_TRANSIENT(). Field types: bool, int, float, std::string, rm::Vec2,
-//     rm::Vec3, rm::Color, rm::EntityRef. (Lists, enums and nested structs: later.)
+//     rm::Vec3, rm::Color, rm::EntityRef, rm::PrefabRef / rm::ImageRef / rm::ModelRef (an asset),
+//     an enum class with RM_ENUM, a struct with RM_STRUCT (its members RM_PROPERTY too), and
+//     std::vector of any of those (not of a vector).
+//
+//       RM_ENUM() enum class Mode { RM_ITEM(Label="歩く") Walk, Run };
+//       RM_STRUCT() struct Wave { RM_PROPERTY(Edit) int count = 3; RM_PROPERTY(Edit) float gap = 1; };
+//       RM_SCRIPT() struct Spawner {
+//           RM_PROPERTY(Edit) rm::PrefabRef enemy;            // pick a .rmprefab in the inspector
+//           RM_PROPERTY(Edit) std::vector<Wave> waves;
+//           RM_PROPERTY(Edit) Mode mode = Mode::Walk;
+//       };
 //   * RM_PROPERTY: Edit (shown), ReadOnly, Label="...", Tooltip="...", Min=, Max=, Step=.
 //   * The hooks are optional: write only the ones you need. Do not keep state in `static` variables:
 //     when the scripts are built again they are thrown away (fields keep their values, by name).
@@ -37,6 +48,10 @@
 //     order they were attached. Things made during a frame get BeginPlay before their first Tick.
 //   * A script that crashes (a null pointer ...) is stopped alone and told on the console; the
 //     editor and the other scripts go on.
+//   * Making and destroying: rm::Spawn("Bullet") / rm::Spawn(enemyPrefab) make an entity at once
+//     (set it up right away); its scripts start at the next frame. self.Destroy() and Remove<T>()
+//     take effect at the end of the frame (EndPlay first; the children go too). An Entity of
+//     something destroyed is not Valid() any more - every call on it does nothing.
 //   * Your headers never include anything generated: rmgen reads them and writes the registration.
 //
 // The engine gives these headers only: RM.h (this), RmAbi.h (the boundary, C) and the plugins' parts
@@ -50,6 +65,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>  // (a field may be a std::vector)
 
 // --- Annotations (read by rmgen; they expand to nothing) ------------------------------------
 #ifndef RM_SCRIPT
@@ -60,6 +76,15 @@
 #endif
 #ifndef RM_TRANSIENT
 #define RM_TRANSIENT(...)
+#endif
+#ifndef RM_STRUCT
+#define RM_STRUCT(...)
+#endif
+#ifndef RM_ENUM
+#define RM_ENUM(...)
+#endif
+#ifndef RM_ITEM
+#define RM_ITEM(...)
 #endif
 
 namespace rm {
@@ -81,7 +106,37 @@ struct EntityRef {
     uint64_t id = 0;
 };
 
+// An asset chosen in the inspector (drag it from the アセット panel), by its id - moving or renaming
+// the file keeps it. Plain bytes (the engine reads and writes them): copy freely.
+struct PrefabRef {  // a .rmprefab: rm::Spawn(ref)
+    char guid[RM_ASSET_ID_SIZE] = {};
+    bool Empty() const { return guid[0] == 0; }
+};
+struct ImageRef {  // a picture
+    char guid[RM_ASSET_ID_SIZE] = {};
+    bool Empty() const { return guid[0] == 0; }
+};
+struct ModelRef {  // a 3D model
+    char guid[RM_ASSET_ID_SIZE] = {};
+    bool Empty() const { return guid[0] == 0; }
+};
+
+struct Entity;
 namespace detail {
+// An engine component's handle (RM3D.h's Transform3D ...): it names its type and is made from an Entity.
+template <class T>
+concept EngineComponent = requires { T::kComponentType; };
+template <class T>
+std::string TypeName();
+template <class T>
+const char* ComponentName() {
+    if constexpr (EngineComponent<T>) {
+        return T::kComponentType;
+    } else {
+        static const std::string name = TypeName<T>();
+        return name.c_str();
+    }
+}
 template <class T>
 std::string TypeName() {
     // The C++ name of T, as the engine saves it ("Mover", "game::Mover").
@@ -119,14 +174,61 @@ struct Entity {
         return s;
     }
     Entity Parent() const { return Entity(Api()->core->parent(Api()->ctx, id)); }
-    // A script of this entity (the nth of that type); nullptr when it has none.
+
+    // Gone at the end of this frame, with everything below it (their EndPlay first).
+    void Destroy() const { Api()->core->destroy(Api()->ctx, id); }
+
+    // Components. T is a script (Add / Get give T*; null when there is none) or one of the engine's in
+    // RM3D.h / RM2D.h (rm::Transform3D, rm::Transform2D: they give that, Valid() when it is there).
+    //   auto* hp = self.Add<Health>();          hp->max = 10;     // a script: BeginPlay next frame
+    //   self.Add<rm::Transform3D>().SetPosition({0, 1, 0});
+    //   if (auto* h = other.Get<Health>()) h->hp -= 1;
+    //   self.Remove<Health>();                                    // at the end of the frame (EndPlay)
+    template <class T>
+    auto Add() const {
+        void* p = Api()->core->addComponent(Api()->ctx, id, detail::ComponentName<T>());
+        if constexpr (detail::EngineComponent<T>) {
+            (void)p;
+            return T(*this);
+        } else {
+            return static_cast<T*>(p);
+        }
+    }
+    template <class T>
+    auto Get(uint32_t nth = 0) const {
+        if constexpr (detail::EngineComponent<T>) {
+            return T(*this);
+        } else {
+            return static_cast<T*>(Api()->core->getScript(Api()->ctx, id, detail::ComponentName<T>(), nth));
+        }
+    }
+    template <class T>
+    bool Remove(uint32_t nth = 0) const {
+        return Api()->core->removeComponent(Api()->ctx, id, detail::ComponentName<T>(), nth) != 0;
+    }
+    template <class T>
+    uint32_t Count() const {
+        return Api()->core->countComponents(Api()->ctx, id, detail::ComponentName<T>());
+    }
+    // (the older name of Get for scripts)
     template <class T>
     T* GetScript(uint32_t nth = 0) const {
-        static const std::string name = detail::TypeName<T>();
-        return static_cast<T*>(Api()->core->getScript(Api()->ctx, id, name.c_str(), nth));
+        return static_cast<T*>(Api()->core->getScript(Api()->ctx, id, detail::ComponentName<T>(), nth));
     }
     bool operator==(const Entity&) const = default;
 };
+
+// A new entity named `name` (under `parent`; none: at the top), empty - add what it needs. It is
+// there at once; its scripts start at the next frame.
+inline Entity Spawn(std::string_view name, Entity parent = Entity()) {
+    const std::string n(name);
+    return Entity(Api()->core->spawn(Api()->ctx, n.c_str(), parent.id));
+}
+// A copy of a prefab (with what is nested in it). Invalid when the field is empty or the file is gone.
+inline Entity Spawn(const PrefabRef& prefab, Entity parent = Entity()) {
+    if (prefab.Empty()) return Entity();
+    return Entity(Api()->core->spawnPrefab(Api()->ctx, prefab.guid, parent.id));
+}
 
 // The first entity with this name (in the 階層's order); an invalid Entity when there is none.
 inline Entity Find(std::string_view name) {

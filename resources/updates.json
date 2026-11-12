@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "スクリプトからエンティティを作る・消す (rm::Spawn・Destroy。Prefab からも)、部品を付ける・取る・外す (Add / Get / Remove)。スクリプトの欄に列挙・一覧・構造体・アセットの参照 (Prefab・画像・モデル) が使えるようになりました",
+          "en": "Scripts can make and destroy entities (rm::Spawn, Destroy; from a prefab too) and add, get and remove components (Add / Get / Remove). Script fields can be enums, lists, structs and asset references (prefab, image, model)"
+        },
+        {
           "ja": "メニューを素早いクリックやタッチパッドのタップで開いたとき、開いた所にある項目を勝手に選ばない (「＋ 部品を足す」で違う部品が付いた)。スクリプトの入ったテンプレートで作った直後に、ビルドの前の「使えない部品」の警告を出さない。まだ無いセーブを読んでも警告を出さない",
           "en": "A menu opened with a quick click or a touchpad tap no longer picks the item that ends up under the mouse (Add Component added the wrong part). No more \"unusable part\" warnings right after creating a project from a template with scripts, before they are built. Reading a save that does not exist yet is not warned about"
         },

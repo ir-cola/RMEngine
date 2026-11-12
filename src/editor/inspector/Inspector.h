@@ -64,6 +64,7 @@ struct RefChoice {
     std::wstring detail;  // where it is (its folder / its parent), shown faint
     w::Icon icon = w::Icon::File;
     std::string kind;     // an asset's kind ("image", "model" ... core/asset KindKey)
+    std::string file;     // an asset's path in Assets/ (an AssetKind of an extension, ".rmprefab", looks at it)
 };
 struct Refs {
     std::function<std::optional<RefChoice>(std::string_view guid)> asset;  // nullopt: not in the project

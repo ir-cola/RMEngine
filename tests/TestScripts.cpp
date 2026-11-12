@@ -285,22 +285,55 @@ struct Mover {
     CHECK(cpp.find("{\"speed\", RmField_Float") != std::string::npos && cpp.find("RmFieldFlag_HasMin") != std::string::npos);
     CHECK(cpp.find("{\"dir\", RmField_Vec3") != std::string::npos && cpp.find("\"time\"") == std::string::npos);
     CHECK(cpp.find("\"動く\"") != std::string::npos);
-    // What a script cannot have yet: told, not skipped.
+    // ABI 4: lists, enums, nested structs, asset references, OnReloaded.
+    const char* more = R"(#include "RM.h"
+RM_ENUM() enum class Mode { RM_ITEM(Label="歩く") Walk, Run };
+RM_STRUCT(Label="波") struct Wave { RM_PROPERTY(Edit) int count = 3; RM_PROPERTY(Edit) std::vector<std::string> tags; };
+RM_SCRIPT()
+struct Spawner {
+    RM_PROPERTY(Edit) std::vector<int> list;
+    RM_PROPERTY(Edit) Mode mode = Mode::Run;
+    RM_PROPERTY(Edit) Wave wave;
+    RM_PROPERTY(Edit) std::vector<Wave> waves;
+    RM_PROPERTY(Edit) rm::PrefabRef enemy;
+    RM_PROPERTY(Edit) std::vector<rm::ImageRef> pictures;
+    void OnReloaded(rm::Entity self);
+};
+)";
+    std::vector<rmgen::Diagnostic> d1;
+    std::vector<rmgen::Header> h1{rmgen::Scan(more, "Spawner.h", "Spawner.h", d1)};
+    rmgen::Validate(h1, d1);
+    rmgen::ValidateScripts(h1, d1);
+    CHECK(d1.empty());
+    const std::string c1 = rmgen::EmitScripts(h1);
+    CHECK(c1.find("{\"list\", RmField_List") != std::string::npos && c1.find("RmVecSize<std::vector<int>>") != std::string::npos);
+    CHECK(c1.find("{\"mode\", RmField_Enum") != std::string::npos && c1.find("rmgen_scripts::E_Mode") != std::string::npos);
+    CHECK(c1.find("{\"wave\", RmField_Struct") != std::string::npos && c1.find("const RmStructDesc rmgen_scripts::S_Wave") != std::string::npos);
+    CHECK(c1.find("\"歩く\"") != std::string::npos && c1.find("\"波\"") != std::string::npos);
+    CHECK(c1.find("{\"enemy\", RmField_Asset") != std::string::npos && c1.find("\".rmprefab\"") != std::string::npos);
+    CHECK(c1.find("RmVecSize<std::vector<::rm::ImageRef>>") != std::string::npos && c1.find("\"image\"") != std::string::npos);
+    CHECK(c1.find("RmReloadOf<::Spawner>()") != std::string::npos);
+    // What a script cannot have: told, not skipped.
     const char* bad = R"(#include "RM.h"
+RM_COMPONENT()
+struct Engine {
+    RM_PROPERTY() int x = 0;
+};
+RM_SCRIPT()
+struct Other {
+    RM_PROPERTY() int y = 0;
+};
 RM_SCRIPT()
 struct Bad {
-    RM_PROPERTY() std::vector<int> list;
-};
-RM_STRUCT()
-struct Data {
-    RM_PROPERTY() int x = 0;
+    RM_PROPERTY() rm::AssetRef any;
+    RM_PROPERTY() Other inside;
 };
 )";
     std::vector<rmgen::Diagnostic> d2;
     std::vector<rmgen::Header> h2{rmgen::Scan(bad, "Bad.h", "Bad.h", d2)};
     rmgen::Validate(h2, d2);
     rmgen::ValidateScripts(h2, d2);
-    CHECK(d2.size() == 2 && d2[0].code == "RM0013" && d2[1].code == "RM0013");
+    CHECK(d2.size() == 3 && std::all_of(d2.begin(), d2.end(), [](const rmgen::Diagnostic& d) { return d.code == "RM0013"; }));
     // No scripts at all: still a module (empty).
     CHECK(rmgen::EmitScripts({}).find("kRmScripts = nullptr") != std::string::npos);
 }

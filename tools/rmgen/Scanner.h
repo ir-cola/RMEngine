@@ -49,6 +49,7 @@ struct TypeRef {
     std::vector<TypeRef> element;   // Vector: exactly one
     std::string resolved;           // Named, after Validate: qualified name ("rm::game::Quality")
     bool isEnum = false;            // Named, after Validate
+    std::string assetType;          // AssetRef of a script: "PrefabRef" / "ImageRef" / "ModelRef" (RM.h's)
 };
 
 struct Field {

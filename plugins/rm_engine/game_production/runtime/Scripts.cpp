@@ -242,16 +242,72 @@ const void* ApiPart(void* ctx, const char* name, uint32_t version) {
     return FindScriptApiPart(W(ctx).parts, name, version);
 }
 
+// Entities and components (ABI 4).
+RmEntityId ApiSpawn(void* ctx, const char* name, RmEntityId parent) {
+    ScriptWorld& w = W(ctx);
+    if (!w.scene) return 0;
+    const int under = EntityOf(ctx, parent) ? static_cast<int>(parent) : 0;
+    return static_cast<RmEntityId>(w.scene->Create(name && *name ? name : "エンティティ", under));
+}
+RmEntityId ApiSpawnPrefab(void* ctx, const char* assetId, RmEntityId parent) {
+    ScriptWorld& w = W(ctx);
+    if (!w.scene || !assetId) return 0;
+    const int under = EntityOf(ctx, parent) ? static_cast<int>(parent) : 0;
+    reflect::Warnings warnings;
+    const int made = SpawnPrefab(*w.scene, AssetRef{assetId}, under, w.prefab, warnings);
+    for (const std::string& m : warnings) w.TellOnce("spawn:" + m, m);
+    if (!made) w.TellOnce(std::string("prefab:") + assetId, std::format("rm::Spawn: Prefab ({}) がゲームにありません (消されたか、書き出しに入っていません)", assetId));
+    return static_cast<RmEntityId>(made);
+}
+void ApiDestroy(void* ctx, RmEntityId e) {
+    if (EntityOf(ctx, e)) W(ctx).destroyAsked.push_back(static_cast<int>(e));
+}
+const reflect::TypeDesc* ComponentType(const ScriptWorld& w, const char* typeName) {
+    if (!w.scene || !typeName) return nullptr;
+    for (const reflect::TypeDesc* t : w.scene->ComponentTypes()) {
+        if (std::strcmp(t->name, typeName) == 0) return t;
+    }
+    return nullptr;
+}
+void* ApiAddComponent(void* ctx, RmEntityId e, const char* typeName) {
+    ScriptWorld& w = W(ctx);
+    SceneEntity* x = EntityOf(ctx, e);
+    const reflect::TypeDesc* type = ComponentType(w, typeName);
+    if (!x || !type) {
+        if (x && typeName) w.TellOnce(std::string("add:") + typeName, std::format("Add: 部品「{}」はこのゲームにありません", typeName));
+        return nullptr;
+    }
+    if (!w.scene->AllowsMultiple(type->name)) {
+        if (Component* there = x->FindComponent(type->name)) return there->Known() ? there->value.Get() : nullptr;  // (one at most: the one there)
+    }
+    if (!w.scene->AddComponent(x->data.id, *type)) return nullptr;
+    Component* made = EntityOf(ctx, e)->FindComponent(type->name, EntityOf(ctx, e)->CountComponents(type->name) - 1);
+    return made ? made->value.Get() : nullptr;
+}
+int ApiRemoveComponent(void* ctx, RmEntityId e, const char* typeName, uint32_t nth) {
+    SceneEntity* x = EntityOf(ctx, e);
+    Component* c = x && typeName ? x->FindComponent(typeName, nth) : nullptr;
+    if (!c) return 0;
+    W(ctx).removeAsked.push_back({x->data.id, c->value.Get()});
+    return 1;
+}
+uint32_t ApiCountComponents(void* ctx, RmEntityId e, const char* typeName) {
+    const SceneEntity* x = EntityOf(ctx, e);
+    return x && typeName ? static_cast<uint32_t>(x->CountComponents(typeName)) : 0;
+}
+
 constexpr RmCoreApi kCore{&ApiLog,        &ApiDeltaTime,   &ApiTime,        &ApiFindByName,  &ApiExists,
                           &ApiIsActive,   &ApiSetActive,   &ApiGetName,     &ApiParent,      &ApiKeyDown,
                           &ApiKeyPressed, &ApiKeyReleased, &ApiCamera,      &ApiSetCamera,   &ApiGetScript,
-                          &ApiLoadScene,  &ApiLoadSceneAt, &ApiSceneName,   &ApiSceneIndex,  &ApiSceneCount};
+                          &ApiLoadScene,  &ApiLoadSceneAt, &ApiSceneName,   &ApiSceneIndex,  &ApiSceneCount,
+                          &ApiSpawn,      &ApiSpawnPrefab, &ApiDestroy,     &ApiAddComponent, &ApiRemoveComponent,
+                          &ApiCountComponents};
 
 // The C++ type of every script, as far as the engine is concerned (a script's own type lives in the DLL).
 struct ScriptTag {};
 const std::type_info& ScriptCppType() { return typeid(ScriptTag); }
 
-bool KnownField(uint32_t type) { return type <= RmField_EntityRef; }
+bool KnownField(uint32_t type) { return type <= RmField_Asset; }
 
 reflect::FieldType FieldTypeOf(uint32_t t) {
     switch (t) {
@@ -262,11 +318,147 @@ reflect::FieldType FieldTypeOf(uint32_t t) {
         case RmField_Vec2: return reflect::FieldType::Vec2;
         case RmField_Vec3: return reflect::FieldType::Vec3;
         case RmField_Color: return reflect::FieldType::Color;
+        case RmField_Enum: return reflect::FieldType::Enum;
+        case RmField_Struct: return reflect::FieldType::Struct;
+        case RmField_List: return reflect::FieldType::Array;
+        case RmField_Asset: return reflect::FieldType::AssetRef;
         default: return reflect::FieldType::EntityRef;
     }
 }
 
-const char* HookName(int hook) { return hook == 0 ? "BeginPlay" : hook == 1 ? "Tick" : "EndPlay"; }
+const char* HookName(int hook) { return hook == 0 ? "BeginPlay" : hook == 1 ? "Tick" : hook == 3 ? "OnReloaded" : "EndPlay"; }
+
+// A script's asset field: char guid[RM_ASSET_ID_SIZE], read and written here (plain bytes).
+size_t AssetGet(const void*, const void* field, char* buf, size_t cap) {
+    const char* g = static_cast<const char*>(field);
+    const size_t n = strnlen(g, RM_ASSET_ID_SIZE - 1);
+    if (buf && cap > 0) {
+        const size_t k = std::min(n, cap - 1);
+        std::memcpy(buf, g, k);
+        buf[k] = '\0';
+    }
+    return n;
+}
+void AssetSet(const void*, void* field, const char* utf8, size_t len) {
+    char* g = static_cast<char*>(field);
+    const size_t n = std::min<size_t>(utf8 ? len : 0, RM_ASSET_ID_SIZE - 1);
+    if (n > 0) std::memcpy(g, utf8, n);
+    std::memset(g + n, 0, RM_ASSET_ID_SIZE - n);
+}
+
+// Why the fields `fields` (of a script or a struct) cannot be used; `seen`: structs already looked at.
+std::string FieldsProblem(const RmFieldDesc* fields, uint32_t count, std::unordered_set<const RmStructDesc*>& seen, int depth) {
+    if (count > 0 && !fields) return "欄の一覧が空です";
+    if (depth > 16) return "構造体の入れ子が深すぎます";
+    auto element = [&](uint32_t type, const RmFieldDesc& f) -> std::string {
+        if (type == RmField_Enum && (!f.enumDesc || !f.enumDesc->get || !f.enumDesc->set || (f.enumDesc->itemCount > 0 && !f.enumDesc->items))) {
+            return std::format("欄 {} の列挙の説明がありません", f.name);
+        }
+        if (type == RmField_Struct) {
+            const RmStructDesc* s = f.structDesc;
+            if (!s || !s->name || s->size == 0 || !s->construct || !s->destruct || !s->copy) return std::format("欄 {} の構造体の説明がありません", f.name);
+            if (s->align > 16) return std::format("構造体 {} は alignas が大きすぎます (16 まで)", s->name);
+            if (seen.insert(s).second) {
+                if (std::string why = FieldsProblem(s->fields, s->fieldCount, seen, depth + 1); !why.empty()) return why;
+            }
+        }
+        return {};
+    };
+    for (uint32_t i = 0; i < count; ++i) {
+        const RmFieldDesc& f = fields[i];
+        if (!f.name || !f.access || !KnownField(f.type)) return "この版のエンジンが知らない欄があります";
+        if (f.type == RmField_List) {
+            if (!f.list || !f.list->size || !f.list->resize || !f.list->at || !KnownField(f.list->element) || f.list->element == RmField_List) {
+                return std::format("欄 {} の一覧の説明がありません", f.name);
+            }
+            if (std::string why = element(f.list->element, f); !why.empty()) return why;
+        } else if (std::string why = element(f.type, f); !why.empty()) {
+            return why;
+        }
+    }
+    return {};
+}
+
+const reflect::TypeDesc* StructOf(ScriptType& t, const RmStructDesc* s);
+const reflect::EnumDesc* EnumOf(ScriptType& t, const RmEnumDesc* e);
+
+// The value of a field (or of a list's elements: `type` is the element's).
+reflect::ValueType ValueOf(ScriptType& t, uint32_t type, const RmFieldDesc& in) {
+    reflect::ValueType v{FieldTypeOf(type), nullptr, nullptr};
+    if (type == RmField_Struct) v.structType = StructOf(t, in.structDesc);
+    if (type == RmField_Enum) v.enumType = EnumOf(t, in.enumDesc);
+    return v;
+}
+
+reflect::FieldDesc MakeField(ScriptType& t, const RmFieldDesc& in) {
+    reflect::FieldDesc fd{};
+    fd.name = in.name;
+    fd.access = in.access;
+    fd.transient = (in.flags & RmFieldFlag_Transient) != 0;
+    fd.edit = (in.flags & RmFieldFlag_Edit) != 0;
+    fd.readOnly = (in.flags & RmFieldFlag_ReadOnly) != 0;
+    fd.label = in.label;
+    fd.tooltip = in.tooltip;
+    fd.hasMin = (in.flags & RmFieldFlag_HasMin) != 0;
+    fd.hasMax = (in.flags & RmFieldFlag_HasMax) != 0;
+    fd.hasStep = (in.flags & RmFieldFlag_HasStep) != 0;
+    fd.min = in.min;
+    fd.max = in.max;
+    fd.step = in.step;
+    fd.line = in.line;
+    const uint32_t base = in.type == RmField_List ? in.list->element : in.type;
+    if (in.type == RmField_List) {
+        auto ops = std::make_unique<reflect::ArrayOps>();
+        ops->element = ValueOf(t, base, in);
+        ops->size = in.list->size;  // (the DLL's: it owns the vector's memory)
+        ops->resize = in.list->resize;
+        ops->at = in.list->at;
+        fd.value = {reflect::FieldType::Array, nullptr, nullptr};
+        fd.array = ops.get();
+        t.lists.push_back(std::move(ops));
+    } else {
+        fd.value = ValueOf(t, base, in);
+    }
+    // Text: a std::string only through the DLL; an asset's id as plain bytes.
+    if (base == RmField_String) fd.stringAccess = &t.strings;
+    if (base == RmField_Asset) {
+        fd.stringAccess = &t.assets;
+        fd.assetKinds = in.assetKinds && *in.assetKinds ? in.assetKinds : nullptr;
+    }
+    return fd;
+}
+
+const reflect::TypeDesc* StructOf(ScriptType& t, const RmStructDesc* s) {
+    if (auto it = t.structs.find(s); it != t.structs.end()) return &it->second->desc;
+    auto n = std::make_unique<ScriptType::Nested>();
+    ScriptType::Nested* at = n.get();
+    t.structs.emplace(s, std::move(n));  // first: a struct with a list of itself finds it
+    for (uint32_t f = 0; f < s->fieldCount; ++f) at->fields.push_back(MakeField(t, s->fields[f]));
+    at->desc = reflect::TypeDesc{s->name,
+                                 s->label && *s->label ? s->label : s->name,
+                                 reflect::TypeKind::Struct,
+                                 static_cast<size_t>(s->size),
+                                 std::span<const reflect::FieldDesc>(at->fields),
+                                 s->construct,
+                                 s->destruct,
+                                 s->copy,
+                                 &ScriptCppType,
+                                 ""};
+    return &at->desc;
+}
+
+const reflect::EnumDesc* EnumOf(ScriptType& t, const RmEnumDesc* e) {
+    if (auto it = t.enums.find(e); it != t.enums.end()) return &it->second->desc;
+    auto n = std::make_unique<ScriptType::EnumType>();
+    for (uint32_t i = 0; i < e->itemCount; ++i) {
+        const RmEnumItem& it = e->items[i];
+        n->items.push_back({it.name, it.label ? it.label : it.name, it.value});
+    }
+    n->desc = reflect::EnumDesc{e->name, std::span<const reflect::EnumItem>(n->items), e->get, e->set, &ScriptCppType};
+    const reflect::EnumDesc* out = &n->desc;
+    t.enums.emplace(e, std::move(n));
+    return out;
+}
 
 }  // namespace
 
@@ -340,10 +532,9 @@ std::string CheckModule(const RmModule* m, uint32_t engineAbi, bool engineDebug)
         if (s.size == 0 || !s.construct || !s.destruct || !s.copy) return std::format("スクリプト「{}」の作り方がありません", s.name);
         if (s.align > 16) return std::format("スクリプト「{}」は alignas が大きすぎます (16 まで)", s.name);
         if (s.fieldCount > 0 && !s.fields) return std::format("スクリプト「{}」の欄の一覧が空です", s.name);
-        for (uint32_t f = 0; f < s.fieldCount; ++f) {
-            if (!s.fields[f].name || !s.fields[f].access || !KnownField(s.fields[f].type)) {
-                return std::format("スクリプト「{}」に、この版のエンジンが知らない欄があります", s.name);
-            }
+        std::unordered_set<const RmStructDesc*> seen;
+        if (std::string why = FieldsProblem(s.fields, s.fieldCount, seen, 0); !why.empty()) {
+            return std::format("スクリプト「{}」: {}", s.name, why);
         }
     }
     return {};
@@ -363,27 +554,8 @@ std::vector<std::unique_ptr<ScriptType>> MakeScriptTypes(const RmModule& m) {
         t->strings.set = [](const void* ctx, void* field, const char* utf8, size_t len) {
             static_cast<const RmModule*>(ctx)->stringSet(field, utf8, len);
         };
-        for (uint32_t f = 0; f < s.fieldCount; ++f) {
-            const RmFieldDesc& in = s.fields[f];
-            reflect::FieldDesc fd{};
-            fd.name = in.name;
-            fd.value = {FieldTypeOf(in.type), nullptr, nullptr};
-            fd.access = in.access;
-            fd.transient = (in.flags & RmFieldFlag_Transient) != 0;
-            fd.edit = (in.flags & RmFieldFlag_Edit) != 0;
-            fd.readOnly = (in.flags & RmFieldFlag_ReadOnly) != 0;
-            fd.label = in.label;
-            fd.tooltip = in.tooltip;
-            fd.hasMin = (in.flags & RmFieldFlag_HasMin) != 0;
-            fd.hasMax = (in.flags & RmFieldFlag_HasMax) != 0;
-            fd.hasStep = (in.flags & RmFieldFlag_HasStep) != 0;
-            fd.min = in.min;
-            fd.max = in.max;
-            fd.step = in.step;
-            fd.line = in.line;
-            if (in.type == RmField_String) fd.stringAccess = &t->strings;
-            t->fields.push_back(fd);
-        }
+        t->assets = {nullptr, &AssetGet, &AssetSet};
+        for (uint32_t f = 0; f < s.fieldCount; ++f) t->fields.push_back(MakeField(*t, s.fields[f]));
         t->desc = reflect::TypeDesc{s.name,
                                     s.label && *s.label ? s.label : s.name,
                                     reflect::TypeKind::Script,
@@ -553,7 +725,41 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
         if (!in.active || crashed_.contains(in.data) || !started_.contains(in.data)) continue;
         Call(world, in, 1, dt);
     }
+    ApplyAsked(scene, world, module, order);  // the frame's end: what was destroyed / removed goes
     world.time += dt;
+}
+
+void ScriptRunner::ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order) {
+    for (int round = 0; round < 8 && (!world.destroyAsked.empty() || !world.removeAsked.empty()); ++round) {
+        const std::vector<int> destroy = std::exchange(world.destroyAsked, {});
+        const std::vector<std::pair<int, const void*>> remove = std::exchange(world.removeAsked, {});
+        std::vector<int> roots;
+        for (const int id : destroy) {
+            if (scene.Find(id) && std::find(roots.begin(), roots.end(), id) == roots.end()) roots.push_back(id);
+        }
+        const std::unordered_set<int> gone = scene.Subtree(roots);
+        std::unordered_set<const void*> goneObjects;
+        for (const auto& [id, object] : remove) goneObjects.insert(object);
+        // EndPlay of the scripts that go (a script started only: BeginPlay and EndPlay in pairs).
+        for (const Instance& in : Collect(scene, module, order)) {
+            if (!gone.contains(in.entity) && !goneObjects.contains(in.data)) continue;
+            if (started_.contains(in.data) && !crashed_.contains(in.data)) Call(world, in, 2, 0);
+            started_.erase(in.data);  // (its memory may hold a new script next: never taken for this one)
+            crashed_.erase(in.data);
+        }
+        for (const auto& [id, object] : remove) {
+            SceneEntity* e = scene.Find(id);
+            if (!e || gone.contains(id)) continue;
+            for (const Component& c : e->components) {
+                if (c.value.Get() != object) continue;
+                scene.RemoveComponent(id, c.type, e->NthOf(c));
+                break;
+            }
+        }
+        if (!roots.empty()) scene.Delete(roots);
+    }
+    world.destroyAsked.clear();
+    world.removeAsked.clear();
 }
 
 void ScriptRunner::Stop(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order) {
@@ -562,6 +768,8 @@ void ScriptRunner::Stop(Scene& scene, ScriptWorld& world, const ScriptModule& mo
         if (started_.contains(in.data) && !crashed_.contains(in.data)) Call(world, in, 2, 0);
     }
     Reset();
+    world.destroyAsked.clear();  // (the scene goes as a whole)
+    world.removeAsked.clear();
     // The scene that played is thrown away next: a script's default value that asks the world (a
     // script made when a component is added, or when scripts are swapped) must not see it.
     world.scene = nullptr;

@@ -24,6 +24,7 @@
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Globals.h"
 #include "rm_engine/game_production/runtime/Input.h"
+#include "rm_engine/game_production/runtime/Prefab.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
 
@@ -81,6 +82,12 @@ struct ScriptWorld {
     // writes them (empty: rm::Save does nothing).
     GlobalStore globals;
     std::filesystem::path saveFolder;
+    // rm::Spawn(prefab): the prefab files (the host's: the editor's Assets, the game's .rmpak). Empty:
+    // spawning a prefab gives nothing.
+    PrefabReader prefab;
+    // Asked during the frame, done at its end (ScriptRunner::Frame): EndPlay first, then away.
+    std::vector<int> destroyAsked;                            // entities (with what is below them)
+    std::vector<std::pair<int, const void*>> removeAsked;     // components: their entity and object
 
     // Reads the input once a frame (pressed / released compare with the last frame).
     void ReadInput();
@@ -104,6 +111,20 @@ struct ScriptType {
     std::vector<reflect::FieldDesc> fields;
     const RmScriptDesc* script = nullptr;  // its hooks (in the DLL)
     reflect::StringAccess strings{};        // its std::string fields: through the DLL (RmModule::stringGet / stringSet)
+    reflect::StringAccess assets{};         // its asset fields (char guid[RM_ASSET_ID_SIZE]: plain bytes)
+    // What its fields need, owned here (their addresses stay): the RM_STRUCTs, the RM_ENUMs and the
+    // lists (worked by the DLL's functions).
+    struct Nested {
+        reflect::TypeDesc desc{};
+        std::vector<reflect::FieldDesc> fields;
+    };
+    struct EnumType {
+        reflect::EnumDesc desc{};
+        std::vector<reflect::EnumItem> items;
+    };
+    std::unordered_map<const RmStructDesc*, std::unique_ptr<Nested>> structs;
+    std::unordered_map<const RmEnumDesc*, std::unique_ptr<EnumType>> enums;
+    std::vector<std::unique_ptr<reflect::ArrayOps>> lists;
 };
 // This engine is a Debug build (its scripts must be too: RmModuleFlag_Debug).
 #ifdef _DEBUG
@@ -113,7 +134,7 @@ inline constexpr bool kEngineDebug = false;
 #endif
 // Why a module cannot be used (empty = fine): another ABI, built as Debug for a Release engine (or the
 // other way), no string functions, a type too strictly aligned, a field of a kind this version does
-// not know, two scripts of one name.
+// not know (or an enum / struct / list without its description), two scripts of one name.
 std::string CheckModule(const RmModule* module, uint32_t engineAbi = RM_ABI_VERSION, bool engineDebug = kEngineDebug);
 std::vector<std::unique_ptr<ScriptType>> MakeScriptTypes(const RmModule& module);
 
@@ -165,6 +186,10 @@ public:
     // id, then in the order they are attached. BeginPlay and EndPlay always come in pairs (a script
     // whose entity was deleted is gone with it). A script that crashed is not run again.
     void Frame(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order, float dt);
+    // What was asked during the frame (Entity::Destroy, Remove<T>): the EndPlay of the scripts that go
+    // (in the run order; a script started only), then the components and entities removed. Asked
+    // again in those EndPlays: done too (a few rounds at most). Frame does it at its end.
+    void ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);
     // EndPlay of every started script (Stop), then all forgotten - and the world no longer points at the
     // scene (it is about to go).
     void Stop(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);

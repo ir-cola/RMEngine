@@ -1242,6 +1242,59 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 
 **スクリプトから**: `Global::名前` (読む・`=`・`+=`・`-=`・`*=`・`/=`・`++`・`--`。文字は `+=`。`.Get()` で値)、`rm::GlobalVar<int>("名前")` (名前で)、`rm::Save::Write(1)` / `Read(1)` / `Exists(1)` / `Delete(1)` (`Write("auto")` のように名前でも。false はできなかった: 理由はコンソール)
 
+**作る・消す・部品・新しい欄の型** (画面では**未確認**。テストは通っている。本物の MSBuild で、作る・消す・Transform を足す・列挙・一覧・構造体・PrefabRef の欄を持つスクリプトをビルドして動かすテストも通っている)
+
+1. 弾の Prefab を作る: 階層で「Bullet」を作り (3D なら Transform 付き)、右クリック →「Prefab にする」→ `Assets/Bullet.rmprefab` ができる。階層の Bullet は消してよい
+2. `Assets/Scripts/Gun.h` / `Gun.cpp` を作って保存:
+   ```cpp
+   // Gun.h
+   #pragma once
+   #include "RM.h"
+   RM_ENUM() enum class Fire { RM_ITEM(Label="1 発ずつ") Single, RM_ITEM(Label="3 発") Burst };
+   RM_STRUCT(Label="撃ち方") struct Shot { RM_PROPERTY(Edit, Label="速さ") float speed = 5; RM_PROPERTY(Edit, Label="名前") std::vector<std::string> tags; };
+   RM_SCRIPT(Label="鉄砲")
+   struct Gun {
+       RM_PROPERTY(Edit, Label="弾") rm::PrefabRef bullet;
+       RM_PROPERTY(Edit, Label="撃ち方") Fire fire = Fire::Single;
+       RM_PROPERTY(Edit) Shot shot;
+       RM_PROPERTY(Edit) std::vector<Shot> more;
+       RM_TRANSIENT() std::vector<rm::Entity> alive;
+       void Tick(rm::Entity self, float dt);
+   };
+   // Gun.cpp
+   #include "Gun.h"
+   #include "RM3D.h"
+   void Gun::Tick(rm::Entity self, float dt) {
+       if (rm::Input::Pressed("Fire")) {
+           const int n = fire == Fire::Burst ? 3 : 1;
+           for (int i = 0; i < n; ++i) {
+               rm::Entity b = rm::Spawn(bullet);                       // Prefab から (空なら rm::Spawn("Bullet") で空のエンティティ)
+               b.Add<rm::Transform3D>().SetPosition({static_cast<float>(i), 0, 0});   // あれば今のを返す
+               alive.push_back(b);
+           }
+       }
+       for (rm::Entity b : alive) {
+           rm::Transform3D t = b.Get<rm::Transform3D>();
+           if (!t.Valid()) continue;                                  // 消えた物は Valid でない
+           rm::Vec3 p = t.Position();
+           p.z += shot.speed * dt;
+           t.SetPosition(p);
+           if (p.z > 10) b.Destroy();                                 // このフレームの終わりに消える (EndPlay の後)
+       }
+   }
+   ```
+3. ビルドされたら、エンティティに「鉄砲」を付ける。インスペクターに:
+   - 「弾」: 押すと一覧に `.rmprefab` だけが出る (画像やモデルは出ない)。アセット パネルから Bullet.rmprefab をドラッグしても入る。× で空に
+   - 「撃ち方」: 「1 発ずつ」「3 発」の選択肢
+   - 「撃ち方」(構造体) は字下げされた「速さ」「名前」(一覧: ＋ で足す・× で消す・つまみで並べ替え)
+   - 「more」: 構造体の一覧。＋ で「撃ち方」が 1 つずつ増える
+   - どれも Ctrl+Z で戻り、未保存の印が付き、保存して開き直すと残る。スクリプトを書き換えてビルドし直しても値は残る (欄の名前で引き継ぐ)
+4. Play → マウスの左 (か Ctrl) で弾が出て、奥へ飛び、z が 10 を超えると消える。階層 (Play 中は動いているコピー) に Bullet が増えて減る。出た弾の BeginPlay は次のフレーム
+5. 弾の中にスクリプトがあれば、消えるときに EndPlay (コンソールで確かめるなら弾の Prefab に `EndPlay` でログを出すスクリプトを付ける)。子も一緒に消える
+6. ■ で止めると、作った弾は全部無くなる (Play の前に戻る)
+7. 部品: `self.Add<Health>()` (スクリプト) は Health* を返し、そのフレームのうちに値を決められる。`self.Remove<Health>()` はフレームの終わりに EndPlay の後で外れる。`self.Count<Health>()` は数。`other.Get<Health>()` は無ければ nullptr
+8. 書き出したゲームでも同じ (弾の Prefab は、欄から指されているので書き出しに入る)
+
 **書き換える (ホットリロード)**
 
 1. ゲームビューの帯の「Visual Studio で開く」(または `Scripts.sln` をダブルクリック) → Visual Studio が開き、`ArrowMover.cpp` で `rm::` と打つと補完が出る。名前にマウスを乗せると説明 (RM.h のコメント)
@@ -1274,8 +1327,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 **書き方** (くわしくは `<エンジン>/Sdk/RM.h` の先頭のコメント)
 
 - `RM_SCRIPT(Label="…") struct 名前 { RM_PROPERTY(Edit, Label="…") float 欄 = 1; void Tick(rm::Entity self, float dt); };` — フックは `BeginPlay` / `Tick` / `EndPlay`、要るものだけ
-- 欄に使える型: bool / int / float / std::string / rm::Vec2 / rm::Vec3 / rm::Color / rm::EntityRef (★ 一覧・列挙・入れ子の構造体・アセットの参照はまだ。書くとビルドで `error RM0013`)
-- 使える API: `rm::Log::Info` / `rm::DeltaTime()` / `rm::Time()` / `rm::Find("名前")` / `self.Name()` / `self.Active()` / `self.SetActive(b)` / `self.Parent()` / `self.GetScript<T>()` / `rm::Input::Down(rm::Key::Left)` / `Pressed` / `Released` / `rm::Game::Camera()` / `rm::Game::SetCamera(e)` / `rm::Transform3D(self).Position()` 他 (`RM3D.h`) / `rm::Transform2D(self)` (`RM2D.h`)
+- 欄に使える型: bool / int / float / std::string / rm::Vec2 / rm::Vec3 / rm::Color / rm::EntityRef / rm::PrefabRef / rm::ImageRef / rm::ModelRef / `RM_ENUM` の enum class / `RM_STRUCT` の構造体 / それらの `std::vector` (一覧の一覧は不可。RM_COMPONENT・`rm::AssetRef`・スクリプトをスクリプトの欄にすると `error RM0013`)
+- 使える API: `rm::Log::Info` / `rm::DeltaTime()` / `rm::Time()` / `rm::Find("名前")` / `self.Name()` / `self.Active()` / `self.SetActive(b)` / `self.Parent()` / `self.GetScript<T>()` / `rm::Input::Down(rm::Key::Left)` / `Pressed` / `Released` / `rm::Game::Camera()` / `rm::Game::SetCamera(e)` / `rm::Transform3D(self).Position()` 他 (`RM3D.h`) / `rm::Transform2D(self)` (`RM2D.h`) / `rm::Spawn("名前")` / `rm::Spawn(prefab)` / `self.Destroy()` / `self.Add<T>()` / `self.Get<T>()` / `self.Remove<T>()` / `self.Count<T>()`
 - `static` の変数に状態を持たない (ビルドし直すと消える)
 
 **デバッグ描画** (画面では**未確認**。ビルドとテスト (ためる・時間で消える・上限・書き出したゲームでは何もしない) は通っている。スクリプトのヘッダーは cl で実際にコンパイルして確かめた)

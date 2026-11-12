@@ -23,6 +23,8 @@ namespace rm {
 
 class Transform2D {
 public:
+    // The engine's component (Entity::Add / Get / Remove<rm::Transform2D>()).
+    static constexpr const char* kComponentType = "rm::space2d::Transform2D";
     explicit Transform2D(Entity entity)
         : entity_(entity), api_(Part<RmTransform2DApi>(RM_PART_TRANSFORM2D, RM_PART_TRANSFORM2D_VERSION)) {}
 
