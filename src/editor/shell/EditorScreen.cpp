@@ -943,11 +943,6 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     c.SetInputEnabled(!overlay);
 
     if (!overlay) HandleShortcuts(c);
-    // ★ 見張り (一時的): Play 中、フレームの始めに入力があれば 1 行。
-    if (Active().software && Active().software->Running() && (c.In().wheel != 0.f || c.In().pressed[1])) {
-        log::Info("[見張り] {:.3f} フレームの始め: ホイール {} / 右 押す {} / 入力 {} / マウス {:.0f},{:.0f}", c.Time(), c.In().wheel, c.In().pressed[1],
-                  c.InputEnabled(), c.In().mouseX, c.In().mouseY);
-    }
 
     Rect full{0, 0, width, height};
     const Rect menuBar = ui::TakeTop(full, 30);
@@ -1137,25 +1132,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     w::Separator(c, title.x + 8, title.Bottom() - 1, title.w - 16);
     // (a choice made in a drop-down arrives a frame later: the list may have changed since)
     const inspector::Refs refs = MakeRefs();
-    // ★ 見張り (一時的。Play 中にインスペクターがホイールと右クリックを受けない件の原因が分かったら消す):
-    // Play 中にここでホイールか右クリックがあったとき、その後 0.5 秒のあいだ毎フレーム、インスペクターに見えて
-    // いる入力とスクロールの位置 (描く前と後) を 1 行ずつ出す。
-    static double probeUntil = 0;
-    const bool running = Active().software && Active().software->Running();
-    const bool asked = c.In().wheel != 0.f || c.In().pressed[1] || c.In().released[1];
-    if (running && asked) probeUntil = c.Time() + 0.5;
-    const bool probe = running && c.Time() < probeUntil;
-    const float offBefore = c.FloatState(c.MakeId("inspector"));
-    const float heightBefore = ws.inspectorState.contentHeight;
-    auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu, &refs);
-    if (probe) {
-        log::Info("[見張り] {:.3f} インスペクター: 入力 {} / マウスが上 {} / ホイール {} / 右 押す {} 離す {} / 位置 {:.0f} → {:.0f} / 中身の高さ {:.0f} → {:.0f} / 見える高さ {:.0f} / "
-                  "メニュー {} {} / かたまり {}",
-                  c.Time(), c.InputEnabled(), c.IsHovered(r), c.In().wheel, c.In().pressed[1], c.In().released[1], offBefore,
-                  c.FloatState(c.MakeId("inspector")), heightBefore, ws.inspectorState.contentHeight, r.h, ws.inspectorState.popup.open,
-                  ws.inspectorState.menu.open, shown.size());
-    }
-    if (edit && edit->block < source.size()) {
+    if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu, &refs); edit && edit->block < source.size()) {
         // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly.
         const InspectBlock& b = blocks[source[edit->block]];
         if (b.readOnly) {
@@ -1207,10 +1184,6 @@ void EditorScreen::DrawStart(ui::Context& c, Rect r) {
 
 void EditorScreen::DrawConsole(ui::Context& c, Rect r) {
     auto& p = c.P();
-    // ★ 見張り (一時的): Play 中、コンソールの所で入力があれば 1 行。
-    if (Active().software && Active().software->Running() && (c.In().wheel != 0.f || c.In().pressed[1])) {
-        log::Info("[見張り] {:.3f} コンソール: ホイール {} / 右 押す {} / 入力 {}", c.Time(), c.In().wheel, c.In().pressed[1], c.InputEnabled());
-    }
     const std::vector<log::Entry> entries = log::Snapshot();
     const float lineH = 20;
     const float content = lineH * static_cast<float>(entries.size()) + 8;

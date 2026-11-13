@@ -21,7 +21,6 @@
 // (Window menu: save / switch / manage - EditorLayouts.cpp).
 
 #include "base/Log.h"
-#include "base/Utf.h"
 #include "core/UndoHistory.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/assets/AssetLibrary.h"
@@ -116,8 +115,6 @@ private:
                 inspectSince_ = now;
                 inspectCount_ = 0;
             }
-            // ★ 見張り (一時的): Play 中の Inspect は全部ログに出す。
-            if (software && software->Running()) log::Info("[見張り] Inspect: {}", WideToUtf8(target.title));
             if (++inspectCount_ == 20 && !inspectTold_) {
                 inspectTold_ = true;
                 log::Warn("インスペクターが 1 秒に 20 回以上作り直されています (スクロールとメニューが戻ります。直すべき不具合です)");

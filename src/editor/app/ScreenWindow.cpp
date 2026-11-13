@@ -326,10 +326,6 @@ void ScreenWindow::UpdateIme() {
 LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& handled) {
     if (!alive_) return 0;  // not handled -> DefWindowProc
     handled = true;
-    // ★ 見張り (一時的): ホイールと右ボタンのメッセージが来たら、来た時刻とフレームを描いている途中かを出す。
-    if (m == WM_MOUSEWHEEL || m == WM_RBUTTONDOWN) {
-        log::Info("[見張り] {:.3f} メッセージ 0x{:X} が来ました (フレームの途中 {})", platform::NowSeconds(), m, inFrame_);
-    }
     switch (m) {
         case WM_PAINT: {
             PAINTSTRUCT ps;
