@@ -81,5 +81,8 @@
   "3D のゲーム": "3D game",
   "カメラ・光・床・箱が置いてある 3D のゲーム。": "A 3D game with a camera, a light, a floor and a box in place.",
   "デバッグ": "Debug",
-  "Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)": "Show in this scene view the lines the scripts draw with rm::Debug while playing (click to switch; the game view always shows them)"
+  "Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)": "Show in this scene view the lines the scripts draw with rm::Debug while playing (click to switch; the game view always shows them)",
+  "形: 全部": "Shapes: all",
+  "形: 選択": "Shapes: selected",
+  "コライダー (物理の当たりの形) などの線を、選んだ物だけに出すか、全部の物に出すか (押すと切り替え)": "Show the lines of colliders (physics shapes) and the like for the selected objects only, or for all (click to switch)"
 }

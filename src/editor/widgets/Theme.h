@@ -221,6 +221,11 @@ inline Color SceneSelectedGlow() { return Accent.Alpha(0.85f); }
 inline Color ThumbnailBack() { return Text.Alpha(IsLight ? 0.06f : 0.08f); }
 // Shadows falling on the floor (laid over the background: darker on the dark theme to still show).
 inline Color SceneShadow() { return Color{0, 0, 0, IsLight ? 0.30f : 0.55f}; }
+// Physics shapes drawn over the scene (物理: colliders, characters): a solid one, a trigger (things pass
+// through it - it only tells), and one switched off (faint).
+inline Color SceneCollider() { return IsLight ? Color::Hex(0x1F9D55) : Color::Hex(0x5EE08F); }
+inline Color SceneTrigger() { return IsLight ? Color::Hex(0x8E44C9) : Color::Hex(0xC79BF2); }
+inline Color SceneColliderInactive() { return Mix(SceneCollider(), SceneBackground(), 0.6f); }
 
 // --- A software running (a game in Play): its tab row is tinted with the accent -----------------
 inline Color RunningBar() { return Mix(Bg, Accent, IsLight ? 0.22f : 0.28f); }

@@ -115,6 +115,16 @@ public:
 
         // The systems, and the drawer of the game's space.
         runner_.SetSystems(RegisteredSystems(host_.Registry()));
+        // Systems read assets from the .rmpak as the export put them in (a mesh collider: the baked model).
+        runner_.SetAssets({[this](const AssetRef& ref) -> std::optional<std::string> {
+                               const auto it = assets_.find(ref.guid);
+                               if (it == assets_.end()) return std::nullopt;
+                               std::string err;
+                               auto bytes = host_.Read(it->second, &err);
+                               if (!bytes) host_.Log(1, err);
+                               return bytes;
+                           },
+                           nullptr});
         runner_.SetCamera(SceneCamera(scene_, cameraTypes_, settings_.startCamera.id));
         const GameDrawInfo* chosen = nullptr;
         for (const auto& d : host_.Registry().Contributions<GameDrawInfo>(kGameDrawPoint)) {
@@ -157,7 +167,10 @@ public:
             scriptRunner_.Frame(scene_, world_, scripts_, settings_.scriptOrder, static_cast<float>(dt));
             runner_.SetCamera(world_.camera);
         }
+        runner_.SetGravity(settings_.gravity);
         runner_.Advance(scene_, dt, settings_.fixedTimestep);
+        // What the systems' fixed steps tell the scripts (the physics' contacts ...).
+        if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, runner_.Hooks());
         // A scene the scripts asked for (Game::LoadScene): switched here, between frames.
         const std::string from = world_.sceneIndex >= 0 ? world_.sceneNames[static_cast<size_t>(world_.sceneIndex)] : std::string();
         std::string err;

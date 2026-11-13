@@ -20,7 +20,10 @@
 #include "rm_engine/game_production/runtime/Scene.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
+#include <optional>
+#include <string>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -32,6 +35,23 @@ inline constexpr char kSystemPoint[] = "rm_engine.game_production.system";
 
 enum class SystemPhase { Fixed, Frame };
 
+// The content of assets, for systems that need it (a mesh collider's model): the host's way to it.
+struct AssetAccess {
+    // The bytes as the game has them (an exported game: from its .rmpak - baked); nullopt: none.
+    std::function<std::optional<std::string>(const AssetRef&)> bytes;
+    // The file on disk (the editor: the project's Assets/...); empty: none.
+    std::function<std::filesystem::path(const AssetRef&)> file;
+};
+
+// A script hook a system asks for (a physics contact ...): called on every started script of `entity`
+// after the fixed steps of the frame, in the scripts' order (ScriptRunner::Deliver), with `other`.
+// The hook's number is RmAbi.h's RM_HOOK_* (game production does not know what the systems are).
+struct HookCall {
+    int entity = 0;
+    int hook = 0;
+    int other = 0;
+};
+
 // What a system gets each time it runs.
 struct SystemContext {
     Scene& scene;
@@ -42,6 +62,12 @@ struct SystemContext {
     // 最初のカメラ when Play starts; a system switches the game's camera by setting it to another
     // entity (what makes an entity a camera is the space's business: a 3D Camera component ...).
     uint64_t camera = 0;
+    // The game settings' 重力 (m/s², the world's axes; a 2D game uses its x and y).
+    Vec3 gravity{0, -9.81f, 0};
+    // Where hooks for the scripts go (null: nobody delivers them - nothing to ask).
+    std::vector<HookCall>* hooks = nullptr;
+    // The host's assets (null: none).
+    const AssetAccess* assets = nullptr;
 };
 
 struct SystemInfo {
@@ -90,6 +116,12 @@ public:
     // systems. Reset makes it 0.
     void SetCamera(uint64_t entity) { camera_ = entity; }
     uint64_t Camera() const { return camera_; }
+    // The game settings' 重力 (SystemContext::gravity).
+    void SetGravity(Vec3 g) { gravity_ = g; }
+    // How the systems read assets (SystemContext::assets).
+    void SetAssets(AssetAccess a) { assets_ = std::move(a); }
+    // The hooks the systems asked for in the last Advance (for ScriptRunner::Deliver).
+    const std::vector<HookCall>& Hooks() const { return hooks_; }
 
 private:
     std::vector<const SystemInfo*> systems_;  // Fixed first, then Frame; by order inside each
@@ -98,6 +130,9 @@ private:
     double carry_ = 0;      // time not yet covered by a Fixed step
     uint64_t frames_ = 0;
     uint64_t camera_ = 0;
+    Vec3 gravity_{0, -9.81f, 0};
+    std::vector<HookCall> hooks_;
+    AssetAccess assets_;
 };
 
 }  // namespace rm::game_production

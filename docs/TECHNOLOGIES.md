@@ -741,6 +741,30 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - このエンジンは何も起きていないときは描かない (CPU を使わない)。カメラで飛ぶときは「キーを押している間ずっと動く」必要があるので、**キーが押されているか** (`WM_KEYDOWN` / `WM_KEYUP` で覚える) と、**頼まれている間は次のフレームをすぐ描く** (`RequestAnimation`) を足した。キーを離せばまた止まる
 - **どこ** — `src/ui/Context.h`、`src/editor/app/ScreenWindow.cpp`
 
+### Jolt Physics (物理エンジン)
+- **何か** — 剛体 (重さのある物が落ちる・ぶつかる・跳ねる・転がる) と当たり判定を計算する C++ のライブラリ。Horizon Forbidden West などのゲームで使われている。MIT ライセンス (無料・商用可。ライセンスの文を一緒に置けばよい)。版は v5.6.0
+- **入れ方** — ソースをそのまま `src/third_party/JoltPhysics/` に置き (`LICENSE` も)、静的ライブラリ `src/RMJolt.vcxproj` でビルドする。エンジンと同じ Visual Studio・同じ設定 (Release / Debug) で作るので、ライブラリの版やコンパイラの違いで困らない。書き出したゲームには、使うときだけ GameKit の `core.lib` に入る (`tools/make_gamekit.ps1` の `-ExtraCoreLibs`)
+- **警告** — 外のコードの警告はこちらで直せないので、`RMJolt.vcxproj` だけ警告を切る (`TurnOffAllWarnings`)。エンジンのコードは `/W4` で 0 のまま。Jolt のヘッダーを読む所 (`PhysicsWorld.cpp`) では `#pragma warning(push, 0)` で囲む
+- **決定論** — `JPH_CROSS_PLATFORM_DETERMINISTIC` を Release と Debug の両方で定義する (`src/RM.Common.props`。Jolt とエンジンで同じでないと、構造体の形が変わって壊れる)。同じ入力なら同じ結果 (浮動小数の計算の順を固定し、FMA などの速い命令を使わない)。リプレイや通信対戦の土台になる
+- **使い方の形** — `PhysicsSystem` (世界) に `Body` (剛体) を `BodyInterface` で足す。形は `BoxShape`・`SphereShape`・`CapsuleShape`・`MeshShape` (三角形の集まり。動かない物だけ)・`ScaledShape` (大きさ)・`RotatedTranslatedShape` (ずらし)。動き方は `Dynamic` (重力で落ちる)・`Static` (床や壁)・`Kinematic` (位置を外から動かす)。「層」(object layer) で、動かない物どうしは比べない。ぶつかった・離れたは `ContactListener` が教える (計算は複数のスレッドなので `mutex` で守る)。光線 (`RayCast`) で一番手前の物を調べる
+- **キャラクター** — `CharacterVirtual`: 剛体ではなく「形を動かして、ぶつかる所で止める」方式の人。坂 (登れる角度)・段差 (`ExtendedUpdate` の上がれる高さ)・地面に立っているか、を Jolt が計算する。ほかの物 (弾・トリガー) が当たれるように中に剛体を 1 つ持つ (`mInnerBodyShape`)
+- **壁** — Jolt の型はプラグイン「物理」の `.cpp` の中だけ (`PhysicsWorld.cpp`)。外 (エディター・スクリプト・テスト) は `PhysicsWorld` の関数と、自分の型 (`Vec3`・部品の構造体) だけを見る。Jolt を替えるときはこのファイルだけ
+- **どこ** — `plugins/rm_engine/physics/runtime/PhysicsWorld.*` (テスト: `tests/TestPhysics.cpp`。1000 個の箱で 1 回の計算の時間を測って出す)
+
+### 物理の固定の刻みとフレームの順番
+- **何か** — 物理は「ゲームの設定」の「物理の刻み (秒)」ずつ進める (上の「固定の刻み」の仕組みのシステム「物理」)。刻みが毎回同じなので、PC の速さで落ち方やぶつかり方が変わらない
+- **1 フレームの順番** — 入力 → スクリプトの Tick → 固定の刻み 0〜n 回 (固定の刻みのシステムと物理) → 位置を Transform に書き戻す → OnHit / OnTriggerEnter / OnTriggerExit → 描く
+- **Transform と剛体の行き来** — 刻みの始めに Transform を読み、スクリプトが動かしていたら剛体をそこへ移す (前に書いた値と比べる)。計算の後、動いた剛体の位置と向きを Transform に書き戻す (親があるときは親から見た値に直す)。寝ている (止まって動かない) 剛体は書かない
+- **フックの届け方** — 物理は「誰に・どのフックを・相手は誰か」を一覧 (`HookCall`) にためるだけ。ゲーム制作がスクリプトの順番どおりに呼ぶ (`ScriptRunner::Deliver`)。ぶつかりは始めの 1 回だけ (離れるまで出さない)。同じ刻みで出た・入ったが両方あれば、出たが先
+- **Play の中だけ** — 物理の世界はシーンの「Play の間の持ち物」(`Scene::PlayState`) に置く。Play はシーンのコピーを動かすので、■ でコピーごと世界も捨てる。コピーし直したシーンは空から作る (前の世界を持ち越さない)
+- **どこ** — `plugins/rm_engine/game_production/runtime/Systems.*` (`HookCall`・重力)、`Scripts.*` (`Deliver`)、`Scene.h` (`PlayStates`)
+
+### 2D の物理を 3D の物理で (AllowedDOFs)
+- **何か** — 物の動ける向き (自由度 = DOF) は 6 つ: X・Y・Z へ動く、X・Y・Z の周りに回る。Jolt では剛体ごとに「どれを使ってよいか」を決められる (`EAllowedDOFs`)
+- **2D** — 2D の物は「X と Y へ動く・Z の周りに回る」の 3 つだけにする。これで平面 (z = 0) から出ず、横に倒れない。形は厚さ 1 (前後 0.5 ずつ) の箱・円柱の代わりの球・カプセルにする。全部の 2D の物が同じ平面にいるので、平らな物どうしとしてぶつかる
+- **良い所** — 2D 専用の物理エンジン (Box2D など) を別に入れずにすむ。3D と同じ部品の仕組み (剛体・トリガー・光線・フック) とスクリプトの関数がそのまま使える
+- **どこ** — `PhysicsWorld.cpp` (`flat` の剛体)。テスト `Physics_World_2DStaysOnThePlane` (押しても Z が 0 のまま、Z の周りにだけ回る)
+
 ## 9. これから使う予定の技術
 
 設計書 (`TestEngine/docs/RME_PLATFORM.md` など) で決めてあるもの。使い始めたら上の章へ移す。
@@ -748,7 +772,6 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 | 技術 | 使う所 | 状態 |
 |---|---|---|
 | テクスチャ・材質 (glTF の色と画像) | 3D 空間プラグイン | 予定 (形と影は 8 章へ。いまは色が 1 つ) |
-| Jolt Physics | 剛体・当たり判定などの物理 (物理プラグイン) | 予定 |
 | 自作の TGA 読み込み | アセットの画像 (WIC は TGA を読めないので小さく自作) | WIC は 2D のスプライト (8 章「Direct2D で画像を回す・色を掛ける」) と 3D のテクスチャ・サムネイル (3 章の WIC) で使っている。TGA はまだ |
 | Media Foundation + XAudio2 (+ OGG の読み込み) | 音の読み込みと再生 | 予定 (細かくは後で決める) |
 
@@ -758,6 +781,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-13 | Jolt Physics (外のソースの取り込み・警告を切る・決定論・CharacterVirtual)・物理の固定の刻みとフレームの順番 (Transform との行き来・フックの届け方・Play の中だけの世界)・2D の物理を 3D の物理で (AllowedDOFs) を足した。予定の表から Jolt を消した |
 | 2026-11-13 | 動いている間の入れ替え を足した |
 | 2026-11-13 | フレームの終わりにまとめて消す・DLL の中の一覧を関数で扱う を足した |
 | 2026-11-12 | 生成するヘッダー (グローバル変数の Global::名前)・セーブのファイル を足した |

@@ -74,6 +74,7 @@ void SystemRunner::Reset() {
 
 int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
     dt = std::max(0.0, dt);
+    hooks_.clear();
     int steps = 0;
     if (fixedStep > 0) {
         carry_ += dt;
@@ -82,7 +83,7 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
         while (carry_ + eps >= fixedStep && steps < kMaxFixedSteps) {
             for (const SystemInfo* s : systems_) {
                 if (s->phase != SystemPhase::Fixed) continue;
-                SystemContext ctx{scene, fixedStep, fixedTime_, frames_, camera_};
+                SystemContext ctx{scene, fixedStep, fixedTime_, frames_, camera_, gravity_, &hooks_, &assets_};
                 s->run(ctx);
                 camera_ = ctx.camera;
             }
@@ -95,7 +96,7 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
     }
     for (const SystemInfo* s : systems_) {
         if (s->phase != SystemPhase::Frame) continue;
-        SystemContext ctx{scene, static_cast<float>(dt), time_, frames_, camera_};
+        SystemContext ctx{scene, static_cast<float>(dt), time_, frames_, camera_, gravity_, &hooks_, &assets_};
         s->run(ctx);
         camera_ = ctx.camera;
     }

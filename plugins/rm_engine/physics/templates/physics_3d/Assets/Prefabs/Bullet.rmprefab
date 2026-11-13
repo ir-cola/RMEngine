@@ -1,0 +1,52 @@
+{
+  "kind": "rm_engine.game_production.prefab",
+  "format": 1,
+  "entities": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "弾",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.3,
+              0.3,
+              0.3
+            ]
+          }
+        },
+        {
+          "type": "rm::physics::Collider",
+          "data": {}
+        },
+        {
+          "type": "rm::physics::Rigidbody",
+          "data": {
+            "motion": "Dynamic",
+            "mass": 0.2,
+            "gravityScale": 0
+          }
+        },
+        {
+          "type": "Bullet",
+          "data": {
+            "life": 3
+          }
+        }
+      ]
+    }
+  ]
+}

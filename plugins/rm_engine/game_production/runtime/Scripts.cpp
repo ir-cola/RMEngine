@@ -1,5 +1,7 @@
 #include "rm_engine/game_production/runtime/Scripts.h"
 
+#include "rm_engine/game_production/runtime/Systems.h"
+
 #include "base/Utf.h"
 #include "platform/Win.h"
 #include "rm_engine/game_production/runtime/SceneFile.h"
@@ -326,7 +328,17 @@ reflect::FieldType FieldTypeOf(uint32_t t) {
     }
 }
 
-const char* HookName(int hook) { return hook == 0 ? "BeginPlay" : hook == 1 ? "Tick" : hook == 3 ? "OnReloaded" : "EndPlay"; }
+const char* HookName(int hook) {
+    switch (hook) {
+        case RM_HOOK_BEGIN_PLAY: return "BeginPlay";
+        case RM_HOOK_TICK: return "Tick";
+        case RM_HOOK_RELOADED: return "OnReloaded";
+        case RM_HOOK_HIT: return "OnHit";
+        case RM_HOOK_TRIGGER_ENTER: return "OnTriggerEnter";
+        case RM_HOOK_TRIGGER_EXIT: return "OnTriggerExit";
+        default: return "EndPlay";
+    }
+}
 
 // A script's asset field: char guid[RM_ASSET_ID_SIZE], read and written here (plain bytes).
 size_t AssetGet(const void*, const void* field, char* buf, size_t cap) {
@@ -687,8 +699,9 @@ std::vector<ScriptRunner::Instance> ScriptRunner::Collect(Scene& scene, const Sc
     return out;
 }
 
-bool ScriptRunner::Call(ScriptWorld& world, const Instance& in, int hook, float dt) {
-    const unsigned long code = CallScriptHook(*in.type->script, hook, in.data, static_cast<RmEntityId>(in.entity), dt);
+bool ScriptRunner::Call(ScriptWorld& world, const Instance& in, int hook, float dt, int other) {
+    const unsigned long code =
+        CallScriptHook(*in.type->script, hook, in.data, static_cast<RmEntityId>(in.entity), dt, static_cast<RmEntityId>(std::max(other, 0)));
     if (code == 0) return true;
     crashed_.insert(in.data);
     if (world.log) {
@@ -727,6 +740,21 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
     }
     ApplyAsked(scene, world, module, order);  // the frame's end: what was destroyed / removed goes
     world.time += dt;
+}
+
+void ScriptRunner::Deliver(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
+                           std::span<const HookCall> calls) {
+    if (calls.empty() || !module.Loaded()) return;
+    world.scene = &scene;
+    const std::vector<Instance> list = Collect(scene, module, order);
+    for (const HookCall& h : calls) {
+        for (const Instance& in : list) {
+            // Only what BeginPlay was called on (and EndPlay was not): the hooks come between the two.
+            if (in.entity != h.entity || !in.active || !started_.contains(in.data) || crashed_.contains(in.data)) continue;
+            Call(world, in, h.hook, 0, h.other);
+        }
+    }
+    ApplyAsked(scene, world, module, order);
 }
 
 void ScriptRunner::ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order) {

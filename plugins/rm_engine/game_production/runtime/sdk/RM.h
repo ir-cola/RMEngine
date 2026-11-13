@@ -15,6 +15,10 @@
 //       void Tick(rm::Entity self, float dt);      // every frame; dt = seconds since the last one
 //       void EndPlay(rm::Entity self);             // when the game stops (or it is destroyed / removed)
 //       void OnReloaded(rm::Entity self);          // the scripts were built again while playing
+//       // with the physics (RMPhysics.h: a Collider on the entity) - after the frame's fixed steps:
+//       void OnHit(rm::Entity self, rm::Entity other);           // began touching `other` (once until they part)
+//       void OnTriggerEnter(rm::Entity self, rm::Entity other);  // `other` came into a trigger (or this into one)
+//       void OnTriggerExit(rm::Entity self, rm::Entity other);   // ... and went out
 //   };
 //
 //   // Assets/Scripts/Mover.cpp

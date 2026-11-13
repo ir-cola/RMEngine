@@ -54,6 +54,9 @@
     <ProjectReference Include="RMBase.vcxproj">
       <Project>{6F1C2A41-8B3E-4E1D-9A55-2C7D1E0B3A11}</Project>
     </ProjectReference>
+    <ProjectReference Include="RMJolt.vcxproj">
+      <Project>{B31C7F8A-3629-44F3-8AFD-E51A26C76E5B}</Project>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="core\UndoHistory.cpp" />

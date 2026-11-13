@@ -51,13 +51,13 @@ using ui::Rect;
 constexpr float kClickSlop = 4.f;     // a press that moves less than this is a click
 constexpr float kMarkRadius = 7.f;    // the ring of an entity without a sprite (DIPs)
 constexpr float kBarH = 28.f;         // the tool strip at the top left
-constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kGridW = 56.f, kDebugW = 84.f, kBarGap = 8.f;
+constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kGridW = 56.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
 constexpr float kSnapBoxW = 280.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
 constexpr double kImageCheckSeconds = 1.0;    // how often an image file is looked at again (changed on disk?)
 constexpr double kImageForgetSeconds = 10.0;  // an image no entity uses for this long is let go
 
 struct BarLayout {
-    Rect tool, space, pivot, snap, grid, debug, all;
+    Rect tool, space, pivot, snap, grid, debug, shapes, all;
 };
 
 // An entity with a Transform 2D, as it is this frame.
@@ -426,8 +426,9 @@ private:
         b.snap = place(kSnapW);
         b.grid = place(kGridW);
         b.debug = place(kDebugW);
-        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.grid.Right(), b.debug.Right()});
-        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.debug.Bottom() - (r.y + 8)};
+        b.shapes = place(kShapesW);
+        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.grid.Right(), b.debug.Right(), b.shapes.Right()});
+        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.shapes.Bottom() - (r.y + 8)};
         return b;
     }
 
@@ -439,7 +440,7 @@ private:
 
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (!bar) return false;
-        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->grid, bar->debug}) {
+        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->grid, bar->debug, bar->shapes}) {
             if (part.Contains(x, y)) return true;
         }
         return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
@@ -482,6 +483,11 @@ private:
             state_.debugDraw = !state_.debugDraw;
         }
         if (c.IsHovered(bar.debug)) w::Tooltip(c, Tr(L"Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)"));
+        // 形: the lines plugins show over the scene (物理: the colliders) - of the selected things or of all.
+        if (w::Button(c, "scene2d_shapes", bar.shapes, state_.allShapes ? Tr(L"形: 全部") : Tr(L"形: 選択"), w::ButtonKind::Secondary)) {
+            state_.allShapes = !state_.allShapes;
+        }
+        if (c.IsHovered(bar.shapes)) w::Tooltip(c, Tr(L"コライダー (物理の当たりの形) などの線を、選んだ物だけに出すか、全部の物に出すか (押すと切り替え)"));
     }
 
     // The steps: how far a move, a turn and a scale go at a time; and whether always. View state like the
@@ -833,6 +839,16 @@ private:
                 if (l.space == game_production::DebugSpace::Space2D) debug_.push_back({{l.a.x, l.a.y}, {l.b.x, l.b.y}, l.color, 1.5f});
             }
         }
+        // The lines plugins show over the scene (物理: the colliders' shapes): the scene view only.
+        if (!game) {
+            sceneLines_.Clear();
+            for (const auto& l : host.host.Registry().Contributions<game_production::SceneLinesInfo>(game_production::kSceneLinesPoint)) {
+                l.item->lines(host.scene, host.selection, state_.allShapes, sceneLines_);
+            }
+            for (const game_production::DebugLine& l : sceneLines_.Lines()) {
+                if (l.space == game_production::DebugSpace::Space2D) debug_.push_back({{l.a.x, l.a.y}, {l.b.x, l.b.y}, l.color, 1.5f});
+            }
+        }
         f.debug = debug_;
         renderer_.Render(c.P().DC(), f);
     }
@@ -976,6 +992,7 @@ private:
     std::string transformType_, spriteType_, cameraType_;
     std::vector<Placed> placed_;
     std::vector<space2d::Line2D> lines_, overlay_, debug_;
+    game_production::DebugDraw sceneLines_;  // the plugins' scene lines of this frame (SceneLinesInfo)
     std::vector<space2d::SpriteDraw> sprites_;
     std::unordered_map<std::string, ImageEntry> images_;  // by Sprite::image (the asset's id)
     double now_ = 0;

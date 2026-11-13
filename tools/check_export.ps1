@@ -18,7 +18,8 @@ $log = Join-Path $env:LOCALAPPDATA 'RM_Engine\Logs\editor.log'
 $templates = @(
     @('rm_engine', 'game_production', 'game'),
     @('rm_engine', 'game_x_2d', 'game_2d'),
-    @('rm_engine', 'game_x_3d', 'game_3d')
+    @('rm_engine', 'game_x_3d', 'game_3d'),
+    @('rm_engine', 'physics', 'physics_3d')
 )
 $failed = 0
 # A path of this PC (the repository's, the export's folder, the user's) in a file written, as UTF-8 or

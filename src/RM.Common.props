@@ -19,8 +19,11 @@
       <SDLCheck>true</SDLCheck>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
-      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory);$(RMRoot)plugins;$(RMRoot)resources;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- JPH_*: Jolt Physics' settings (RMJolt.vcxproj), the same for every project and both configurations
+           (Jolt checks that its library and the code using it agree). Results that do not depend on the CPU
+           (the same steps give the same positions on every PC): replays and tests stay true. -->
+      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;UNICODE;_UNICODE;JPH_CROSS_PLATFORM_DETERMINISTIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory);$(MSBuildThisFileDirectory)third_party\JoltPhysics;$(RMRoot)plugins;$(RMRoot)resources;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>

@@ -16,6 +16,7 @@
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/physics/runtime/Components.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -294,8 +295,8 @@ RM_TEST(Template_ThePlugins) {
     }
     const TemplateTree tree = BuildTemplateTree(std::move(list));
     CHECK(tree.warnings.empty());
-    CHECK(tree.templates.size() == 5);
-    for (const auto& path : std::vector<std::vector<std::string>>{{"blank"}, {"game"}, {"game", "3d"}, {"game", "2d"}, {"game", "2d", "scenes"}}) {
+    CHECK(tree.templates.size() == 6);
+    for (const auto& path : std::vector<std::vector<std::string>>{{"blank"}, {"game"}, {"game", "3d"}, {"game", "3d", "physics"}, {"game", "2d"}, {"game", "2d", "scenes"}}) {
         CHECK(tree.At(tree.Find(path)) != nullptr);
     }
     // Choosing ゲーム brings both spaces and both connectors.
@@ -311,7 +312,8 @@ RM_TEST(Template_ThePlugins) {
             scene.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<game_x_3d::Camera>(),
                                      &reflect::TypeOf<game_x_3d::Light>(), &reflect::TypeOf<game_x_3d::MeshRenderer>(),
                                      &reflect::TypeOf<space2d::Transform2D>(), &reflect::TypeOf<game_x_2d::Camera2D>(),
-                                     &reflect::TypeOf<game_x_2d::Sprite>()});
+                                     &reflect::TypeOf<game_x_2d::Sprite>(), &reflect::TypeOf<physics::Rigidbody>(),
+                                     &reflect::TypeOf<physics::Collider>(), &reflect::TypeOf<physics::Collider2D>()});
             // The new form: the scene in its own file (the template's Assets/, copied into the project),
             // named in the list by the id in its .meta.
             CHECK(!data.Find("scene"));

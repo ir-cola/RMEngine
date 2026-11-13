@@ -17,6 +17,8 @@ struct SceneViewState2D {
     RM_PROPERTY() bool grid = true;
     // While playing: the lines the game's scripts draw (rm::Debug) - the デバッグ button.
     RM_PROPERTY() bool debugDraw = true;
+    // The lines plugins show over the scene (物理: the colliders) of every thing, not only the selected - 形.
+    RM_PROPERTY() bool allShapes = false;
     // The steps of a drag (Ctrl held, or always when snapAlways - then Ctrl moves smoothly).
     RM_PROPERTY() bool snapToGrid = true;                     // moves by the grid's step (finer when nearer)
     RM_PROPERTY(Min=0.001, Max=100000) float snapMove = 0.25f;  // ... or by this (units)

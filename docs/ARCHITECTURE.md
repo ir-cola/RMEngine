@@ -408,7 +408,7 @@ SystemRunner::Advance(シーン, 前のフレームからの時間, 物理の刻
    └ Frame: 1 回 (dt = フレームの時間)
 ```
 
-- **ランタイム** (ゲームに入る層。エディターを知らない)。純粋でテストあり (`tests/TestSystems.cpp`)。システムは `SystemContext{scene, dt, time, frame, camera}` を受け取り、`ForEachComponent(scene, 型, fn)` で動いている (自分と親が全部有効な) エンティティの部品を順に触る
+- **ランタイム** (ゲームに入る層。エディターを知らない)。純粋でテストあり (`tests/TestSystems.cpp`)。システムは `SystemContext{scene, dt, time, frame, camera, gravity, hooks, assets}` を受け取り、`ForEachComponent(scene, 型, fn)` で動いている (自分と親が全部有効な) エンティティの部品を順に触る
 - **差し出すのはプラグインのランタイムの部分** (`runtime/Register.cpp` の `RegisterRuntime(RuntimeRegistry&)`)。口の土台 `RuntimeRegistry` (`core/RuntimeRegistry.h`: 口の名前と物の型で差し出す・受け取る。核は中身を知らない) はゲームに入る層。ランタイムの部分を持つプラグインの一覧は `plugins/RuntimePlugins.cpp` (ランタイムのヘッダーだけを読む。`check_layers.ps1` が見る)。**書き出したゲーム**は入っているプラグインの ID を前提が先の順に `RegisterRuntimeParts(registry, ids)` に渡し、`RegisteredSystems(registry)` で同じシステムの一覧を読む。**エディター**の `PluginRegistry` は `RuntimeRegistry` を受け継いだもので、ローダーが使えるプラグインごとに ランタイムの部分 → `RegisterEditor` の順に同じ登録へ呼ぶ (Play も `RegisteredSystems(host.Registry())`)。テストあり (`Systems_RuntimeRegistry_TheGameReadsTheSameList`)
 - **部品の型もランタイムの部分** (2026-11-12): ゲーム制作 × 3D / × 2D の部品 (Transform・メッシュ・カメラ・光・環境光・回り続ける・カメラを順に切り替える / Transform 2D・スプライト・スプライトのアニメーション・カメラ (2D)・回り続ける (2D)) の `ComponentInfo` (型・新しいエンティティに付くか・複数・置いた Prefab の場所・空間) は `runtime/Register.cpp` が差し出す。エディターだけの見せ方 (階層の絵・ローカル / ワールドの切り替えと計算・その言葉 `TrKey`) は `ComponentLook` (`game_production/editor/ComponentLook.h`、口 `rm_engine.game_production.component_look`) にして `RegisterEditor` が差し出す。書き出したゲームは `RegisterRuntimeParts` だけで部品の型がそろう
 - 組み込みのシステムは「回り続ける」だけ (`game_x_3d/runtime/Spin.*`: 部品 `Spin{1 秒に回る角度}` (複数可・足し算) と、Transform の回転に足すシステム (Frame)。角度は ±360 に収める)。Transform を知るのでつなぎに置いた
@@ -439,7 +439,7 @@ SystemRunner::Advance(シーン, 前のフレームからの時間, 物理の刻
             ScriptRunner::Frame(scene, world, module, 実行順, dt) / Stop (EndPlay)
 ```
 
-- **境目** (`game_production/runtime/sdk/RmAbi.h`。C だけ。`RM_ABI_VERSION` = 4): DLL が export するのは `RmModuleInit(const RmApi*, uint32_t abi)` の 1 本。両方が版を確かめ、違えば弾く (`CheckModule`。整列 16 より大きい型・知らない欄の種類・同じ名前も)。境目で `std::string` を渡さず仮想関数も使わない (`const char*` と関数ポインタ)
+- **境目** (`game_production/runtime/sdk/RmAbi.h`。C だけ。`RM_ABI_VERSION` = 5): DLL が export するのは `RmModuleInit(const RmApi*, uint32_t abi)` の 1 本。両方が版を確かめ、違えば弾く (`CheckModule`。整列 16 より大きい型・知らない欄の種類・同じ名前も)。境目で `std::string` を渡さず仮想関数も使わない (`const char*` と関数ポインタ)
 - **C のランタイムが違ってもよい形** (2026-11-12 の点検で直した): エンジンは /MT (Debug は /MTd。`RM.Common.props` の `RmCrt`)、スクリプトの DLL は /MD (/MDd)。だから**エンジンは DLL の `std::string` を自分で代入・解放しない**: 文字の欄は DLL の 2 つの関数 (`RmModule::stringGet` / `stringSet`。rmgen が DLL の中に書く) を通して読み書きする。反映の側は `FieldDesc::stringAccess` (`reflect::StringAccess`) があれば、保存・読み込み・比べる・インスペクターが `reflect::ReadString` / `WriteString` を通る。DLL の物の作り方・壊し方・写し方も DLL の関数。エンジンが確保するのは物の入れ物 (`reflect::Object` の `operator new`) だけで、それはエンジンが解放する
 - **Debug と Release を混ぜない**: DLL は `RmModule::flags` に `RmModuleFlag_Debug` (Debug でビルドした) を持ち、エンジンの種類と違えば読まない (`std::string` の大きさが 40 と 32 で違う)。ビルドの出力先も分ける: Release = `Library/Scripts/`、Debug = `Library/Scripts/Debug/` (`ScriptDllFolder(project, debug)`。書き出しは Release の方を使う)
 - **API の表**: `RmApi{abi, ctx, core, part}`。`core` (`RmCoreApi`) はゲーム制作のもの (ログ・時間・名前で探す・有効・名前・親・キー・カメラ・GetScript)。**空間を知る物はプラグインの部分**: 各プラグインのランタイムが `RuntimeRegistry` の口 `kScriptApiPoint` に `ScriptApiPart{名前, 版, 表}` を差し出し、スクリプトは `api->part(ctx, 名前, 版)` で引く (つなぎ「ゲーム制作 × 3D」= `RM3DAbi.h` の Transform、「× 2D」= `RM2DAbi.h`)。ゲーム制作は 3D / 2D を知らない。`ctx` はゲーム制作の `ScriptWorld` (動いているシーン・dt・時間・カメラ・キー)
@@ -476,7 +476,32 @@ SystemRunner::Advance(シーン, 前のフレームからの時間, 物理の刻
   - インスペクターの選択肢は 17 個以上なら絞り込める一覧 (入力のキーと同じ)
 - **Play 中の入れ替え** (2026-11-13。§20-c の「決めてほしいこと」1・2): ゲームの設定の「Play 中のビルド」(`GameSettings::scriptReload`) で選ぶ。**既定は「Stop で反映」** (今までどおり。§20-c の 11/04 の決定)。「すぐ入れ替える」にすると、Play 中にビルドが成功した次のフレームの切れ目で `GameSoftware::ReloadScripts` が編集中のシーンと**動いているコピーの両方**を名前で書き出し → 古い DLL の物を消し → 新しい DLL で読み戻す。どのスクリプトが始まっていたか (落ちていたか) は物のアドレスではなく (エンティティ・型・その型の何番目) で覚え (`ScriptRunner::Remember`)、読み戻した物に付け直す (`Resume`)。始まっていた物には **BeginPlay ではなく `OnReloaded(self)`** (任意のフック。`RmScriptDesc::onReloaded`) を実行順で呼ぶ。RM_TRANSIENT の欄は既定値に戻る。Undo の履歴は止まっているときの入れ替えと同じく消える
 - **この値を残す** (2026-11-13。§20-b の 3): Play 中のインスペクター (動いているコピーを見せるだけ) で欄を右クリック →「この値を残す」(`inspector::Block::fieldMenu`: 読むだけのかたまりでも右クリックは効く)。どの欄かを `SceneField{エンティティ, 部品の型と何番目 ("" = エンティティ自身), 欄の道}` で覚え、■ のとき**スクリプトの EndPlay より前**の値を動いているコピーから読み (`ReadSceneField`)、Play の前のシーンに戻した後で書き戻す (`WriteSceneField`)。何個でも **Undo 1 回分** (`EditTouching` = 未保存になる)。Play の中で作った物の欄は残せない (コンソールに出す)。「Stop で反映」のビルドは次のフレームで読むので、書き戻した値もそのまま新しい DLL に引き継がれる
-- ★ まだ: 衝突のフック (物理を入れるとき)、音のアセットの参照、エンジンの部品の取っ手は Transform 3D / 2D だけ (スプライトなどは RM2D / RM3D に出したときに)
+- **物理のフック** (2026-11-13。ABI 5): `OnHit(self, other)`・`OnTriggerEnter(self, other)`・`OnTriggerExit(self, other)` (`RmScriptDesc` の末尾 `onHit` / `onTriggerEnter` / `onTriggerExit`、`RmHook` の 4〜6)。下の「物理」
+- ★ まだ: 音のアセットの参照、エンジンの部品の取っ手は Transform 3D / 2D だけ (スプライトなどは RM2D / RM3D に出したときに)
+
+### 物理 (`plugins/rm_engine/physics`。2026-11-13)
+
+設計 NewEngineBluePrint §9 (Jolt・ソースを vcxproj に・CharacterVirtual)・§5 (剛体とコライダーの部品)・§20-a 2 (フレームの順番)。
+
+```
+1 フレーム   入力 → スクリプトの Tick (ScriptRunner::Frame) → ApplyAsked
+             → SystemRunner::Advance: 固定の刻み 0〜8 回 (システム「物理」= PhysicsWorld::Step) → 毎フレームのシステム
+             → ScriptRunner::Deliver(フックの一覧) → 描く
+Step         Transform を読む (作る・作り直す・消す・スクリプトが動かした物を移す) → 重力 → キャラクター
+             → Jolt の Update (1 刻み) → 動いた剛体とキャラクターを Transform に書き戻す → HookCall をためる
+```
+
+- **Jolt** (`src/third_party/JoltPhysics`、`src/RMJolt.vcxproj` で静的ライブラリ。警告は切る。`JPH_CROSS_PLATFORM_DETERMINISTIC` を `RM.Common.props` で全部に)。層 `third_party` (`layers.txt`) は外のコードだけ: `<Jolt/...>` で読む。Jolt の型は `physics/runtime/PhysicsWorld.cpp` の中だけ (`PhysicsWorld` は pimpl)
+- **部品** (`runtime/Components.h`。RM_STRUCT なので保存・インスペクター・Undo は今の道): 剛体 `Rigidbody{動き方 (動く / 動かない / キネマティック), 質量, 摩擦, 跳ね返り, 重力の倍率, 回転の固定 X/Y/Z}`・コライダー `Collider{箱 / 球 / カプセル / メッシュ, 大きさ, 半径, 高さ, ずらし, トリガー}`・`Collider2D{箱 / 円 / カプセル, ...}`・キャラクター `Character{半径, 高さ, 登れる坂, 登れる段差, 重力の倍率, 質量}`。剛体が無いコライダーは動かない物。メッシュは動かない物だけ (同じエンティティの `rm::game_x_3d::MeshRenderer` の `model` を型と欄の名前で読む: 物理はゲーム制作 × 3D を前提にしない)
+- **大きさと場所は 1 か所** (`runtime/Shapes.*`、純粋・テストあり): `PlaceUnder` (親から順にワールドの行列)・`PoseOf` (行列 → 位置・回転・大きさ)・`DimsOf` (部品と大きさ → 形の寸法)・`Outline` (寸法 → 線)。物理の世界の剛体も、シーンビューの線も、これだけから作る
+- **世界の置き場所**: `Scene::PlayState<PhysicsWorld>("rm_engine.physics.world")`。`PlayStates` (`Scene.h`) はシーンの持ち物で、**コピーしない** (コピーは空から) し保存もしない。Play はシーンのコピーを動かすので、■ でコピーと一緒に世界も消える。シーンを切り替えると新しいシーンに新しい世界
+- **2D**: Transform 2D とコライダー (2D) の物は、厚さ 1 (`kPlaneHalfDepth`) の形で、`EAllowedDOFs` を X・Y の移動と Z の回転だけにした Jolt の剛体。3D と同じ世界・同じ API
+- **フック**: Step は `SystemContext::hooks` (`std::vector<HookCall{entity, hook, other}>`。`SystemRunner` が Advance ごとに空にする) にためるだけ。`ScriptRunner::Deliver` が始まっている・有効なスクリプトに、スクリプトの実行順で呼び、最後に `ApplyAsked` (OnHit の中の Destroy はそのフレームの終わりに)。ぶつかりは始まった時だけ (`ContactListener` の added / removed を、剛体の組ごとに形の組を数えて 0 ↔ 1 のときだけ)。トリガーは出た → 入ったの順。両方の物に (other を入れ替えて) 1 つずつ
+- **アセット** (メッシュのコライダー): `SystemContext::assets` (`AssetAccess{bytes, file}`)。エディターはファイル (`host_.AssetFile` → `LoadMeshFile`。取り込みの設定どおり)、書き出したゲームは .rmpak の焼いたメッシュ (`ReadBakedMesh`)
+- **スクリプト** (部分 `rm_engine.physics.physics` 版 1、`runtime/sdk/RMPhysicsAbi.h` / `RMPhysics.h`): `rm::Physics::AddForce / AddImpulse / Velocity / SetVelocity / Raycast`、`rm::Character::Move / Jump / Grounded / GroundNormal`。まだ剛体の無い物 (このフレームに Spawn した弾) はその場で作る (`SyncOne`)
+- **エディター** (`editor/Connector.cpp`): 口 `rm_engine.game_production.scene_lines` (`SceneLinesInfo`、`game_production/editor/SceneView.h`) にコライダーとキャラクターの線を差し出す。3D / 2D のシーンビューは帯の「形: 選択 / 全部」(`SceneViewState(2D)::allShapes`) で、選んだ物だけか全部か。トリガーは別の色、無効な物は薄く (`theme::SceneCollider` / `SceneTrigger` / `SceneColliderInactive`)
+- **書き出し**: 物理のランタイムは GameKit の `lib/rm_engine/physics/runtime.lib`、Jolt は `core.lib` に入る (`make_gamekit.ps1 -ExtraCoreLibs`)。ゲームが物理の部品を使うときだけプラグインが入る (今までの「使う部品から選ぶ」)
+- テスト: `tests/TestPhysics.cpp` (落ちて止まる・トリガーの出入り・OnHit は 1 回・2D は Z が動かない・Play のコピーを捨てる・保存と読み込み・光線・キャラクター・1000 個の箱の時間)。見本: テンプレート「物理の見本 (3D)」(`physics/templates/physics_3d`。`check_export.ps1` が書き出して起動する)
 
 ### Prefab (`plugins/rm_engine/game_production/runtime/Prefab.h`)
 

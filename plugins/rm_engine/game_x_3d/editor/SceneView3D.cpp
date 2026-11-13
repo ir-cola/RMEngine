@@ -56,7 +56,7 @@ constexpr float kOrbitDegreesPerDip = 0.4f;
 constexpr float kClickSlop = 4.f;  // a press that moves less than this is a click
 constexpr int kGridHalf = 20;      // the grid goes from -20 to 20 (1 per line, darker every 10)
 constexpr float kBarH = 28.f;      // the tool strip at the top left
-constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kShadowW = 56.f, kDebugW = 84.f, kBarGap = 8.f;
+constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kShadowW = 56.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
 constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
 constexpr double kModelCheckSeconds = 1.0;    // how often a model file is looked at again (changed on disk?)
 constexpr double kModelForgetSeconds = 10.0;  // a model no entity uses for this long leaves the GPU
@@ -68,7 +68,7 @@ constexpr float kPreviewMaxW = 360.f;  // the camera preview at the bottom right
 // The tool strip's parts: 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心, 刻み, 影; they go on a
 // second row when the view is too narrow for one. `all` = round all of them.
 struct BarLayout {
-    Rect tool, space, pivot, snap, shadow, debug, all;
+    Rect tool, space, pivot, snap, shadow, debug, shapes, all;
 };
 
 struct Placed {
@@ -429,8 +429,9 @@ private:
         b.snap = place(kSnapW);
         b.shadow = place(kShadowW);
         b.debug = place(kDebugW);
-        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.shadow.Right(), b.debug.Right()});
-        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.debug.Bottom() - (r.y + 8)};
+        b.shapes = place(kShapesW);
+        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.shadow.Right(), b.debug.Right(), b.shapes.Right()});
+        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.shapes.Bottom() - (r.y + 8)};
         return b;
     }
 
@@ -443,7 +444,7 @@ private:
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (previewAt_ && previewAt_->Inset(-4, -24, -4, -4).Contains(x, y)) return true;  // the camera preview
         if (!bar) return false;
-        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->shadow, bar->debug}) {
+        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->shadow, bar->debug, bar->shapes}) {
             if (part.Contains(x, y)) return true;
         }
         return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
@@ -750,6 +751,18 @@ private:
         debugLines_.clear();
         if (host.debug && (gameLook || state_.debugDraw)) {
             for (const game_production::DebugLine& l : host.debug->Lines()) {
+                if (l.space != game_production::DebugSpace::Space3D) continue;
+                debugLines_.push_back({l.a, l.color});
+                debugLines_.push_back({l.b, l.color});
+            }
+        }
+        // The lines plugins show over the scene (物理: the colliders' shapes): the scene view only.
+        if (!gameLook) {
+            sceneLines_.Clear();
+            for (const auto& l : host.host.Registry().Contributions<game_production::SceneLinesInfo>(game_production::kSceneLinesPoint)) {
+                l.item->lines(host.scene, host.selection, state_.allShapes, sceneLines_);
+            }
+            for (const game_production::DebugLine& l : sceneLines_.Lines()) {
                 if (l.space != game_production::DebugSpace::Space3D) continue;
                 debugLines_.push_back({l.a, l.color});
                 debugLines_.push_back({l.b, l.color});
@@ -1171,6 +1184,11 @@ private:
             state_.debugDraw = !state_.debugDraw;
         }
         if (c.IsHovered(bar.debug)) w::Tooltip(c, Tr(L"Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)"));
+        // 形: the lines plugins show over the scene (物理: the colliders) - of the selected things or of all.
+        if (w::Button(c, "scene_shapes", bar.shapes, state_.allShapes ? Tr(L"形: 全部") : Tr(L"形: 選択"), w::ButtonKind::Secondary)) {
+            state_.allShapes = !state_.allShapes;
+        }
+        if (c.IsHovered(bar.shapes)) w::Tooltip(c, Tr(L"コライダー (物理の当たりの形) などの線を、選んだ物だけに出すか、全部の物に出すか (押すと切り替え)"));
     }
 
     // The steps of the gizmo: how far a move, a turn and a scale go at a time; and whether always.
@@ -1247,7 +1265,8 @@ private:
     size_t warnedShadows_ = 0;  // lights told about that have no shadow map left
     std::vector<Placed> placed_;
     std::vector<space3d::LineVertex> lines_;
-    std::vector<space3d::LineVertex> debugLines_;  // Play: the scripts' rm::Debug lines (3D)
+    std::vector<space3d::LineVertex> debugLines_;  // Play: the scripts' rm::Debug lines (3D); and the plugins' scene lines
+    game_production::DebugDraw sceneLines_;          // the plugins' scene lines of this frame (SceneLinesInfo)
     std::vector<space3d::Box> boxes_;
     std::vector<space3d::MeshDraw> meshes_;
     std::vector<space3d::Light> lights_;

@@ -12,6 +12,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rmgen", "tools\rmgen\rmgen.
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RMGameKit", "src\RMGameKit.vcxproj", "{E5B2C3D4-7A81-4F62-9B0C-3D4E5F6A7B55}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RMJolt", "src\RMJolt.vcxproj", "{B31C7F8A-3629-44F3-8AFD-E51A26C76E5B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -38,6 +40,10 @@ Global
 		{E5B2C3D4-7A81-4F62-9B0C-3D4E5F6A7B55}.Debug|x64.Build.0 = Debug|x64
 		{E5B2C3D4-7A81-4F62-9B0C-3D4E5F6A7B55}.Release|x64.ActiveCfg = Release|x64
 		{E5B2C3D4-7A81-4F62-9B0C-3D4E5F6A7B55}.Release|x64.Build.0 = Release|x64
+		{B31C7F8A-3629-44F3-8AFD-E51A26C76E5B}.Debug|x64.ActiveCfg = Debug|x64
+		{B31C7F8A-3629-44F3-8AFD-E51A26C76E5B}.Debug|x64.Build.0 = Debug|x64
+		{B31C7F8A-3629-44F3-8AFD-E51A26C76E5B}.Release|x64.ActiveCfg = Release|x64
+		{B31C7F8A-3629-44F3-8AFD-E51A26C76E5B}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

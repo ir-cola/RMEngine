@@ -53,6 +53,9 @@
     <ProjectReference Include="..\src\RMBase.vcxproj">
       <Project>{6F1C2A41-8B3E-4E1D-9A55-2C7D1E0B3A11}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\src\RMJolt.vcxproj">
+      <Project>{B31C7F8A-3629-44F3-8AFD-E51A26C76E5B}</Project>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TestMain.cpp" />
@@ -74,6 +77,7 @@
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
     <ClCompile Include="TestSystems.cpp" />
+    <ClCompile Include="TestPhysics.cpp" />
     <ClCompile Include="TestPrefab.cpp" />
     <ClCompile Include="TestSceneRecord.cpp" />
     <ClCompile Include="TestGlobals.cpp" />
@@ -141,6 +145,12 @@
       <ObjectFileName>$(IntDir)game_x_2d\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="..\plugins\RuntimePlugins.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\physics\runtime\Shapes.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\physics\runtime\PhysicsWorld.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\physics\runtime\ScriptPhysics.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\physics\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)physics\</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Camera.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Light.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\CameraCycle.cpp" />

@@ -26,6 +26,7 @@
 #include "rm_engine/game_production/runtime/Input.h"
 #include "rm_engine/game_production/runtime/Prefab.h"
 #include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
 
 #include <array>
@@ -190,6 +191,11 @@ public:
     // (in the run order; a script started only), then the components and entities removed. Asked
     // again in those EndPlays: done too (a few rounds at most). Frame does it at its end.
     void ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);
+    // The hooks the systems asked for this frame (SystemRunner::Hooks: OnHit, OnTriggerEnter / Exit ...),
+    // in the order asked; for each, every started script of its entity that is on, in the scripts'
+    // order (the same as Tick's). Then what they destroyed / removed goes (ApplyAsked).
+    void Deliver(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
+                 std::span<const HookCall> calls);
     // The scripts built again while the game plays (design BluePrint 20-c): before, which scripts of the
     // scene had started / crashed (by entity, type and place among that type's - their objects are
     // made again); after the scene was read back with the new types, the same taken again and
@@ -219,7 +225,7 @@ private:
     // Every script of the scene (the switched-off ones too), in the run order.
     std::vector<Instance> Collect(Scene& scene, const ScriptModule& module, std::span<const ScriptOrderEntry> order) const;
     // Runs a hook guarded; false (and the script stopped, told once) when it crashed.
-    bool Call(ScriptWorld& world, const Instance& in, int hook, float dt);
+    bool Call(ScriptWorld& world, const Instance& in, int hook, float dt, int other = 0);
 
     std::unordered_set<void*> started_;
     std::unordered_set<void*> crashed_;
@@ -237,6 +243,6 @@ SceneSwitch SwitchAskedScene(Scene& playing, ScriptWorld& world, ScriptRunner& r
 
 // The hooks, called inside __try / __except (ScriptGuard.cpp). 0 = fine, else the exception code.
 // hook: 0 = BeginPlay, 1 = Tick, 2 = EndPlay.
-unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt);
+unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other = 0);
 
 }  // namespace rm::game_production

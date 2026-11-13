@@ -80,4 +80,16 @@ struct SceneViewInfo {
     int order = 0;                       // the smaller is the default
 };
 
+// PluginRegistry point: items are SceneLinesInfo (static). Lines a plugin shows over the scene in the
+// scene view while editing and playing (物理: the colliders' shapes). Each view takes the lines of its
+// own space (DebugSpace) and draws them like the scripts' debug lines (3D: hidden parts faint). Not in
+// the game view.
+inline constexpr char kSceneLinesPoint[] = "rm_engine.game_production.scene_lines";
+
+struct SceneLinesInfo {
+    // Adds the lines of the selected entities (`all`: of every entity) to `out` (seconds: 0).
+    // The view's toolbar has the switch 形: 選択 / 全部 (`all`).
+    void (*lines)(const Scene& scene, std::span<const int> selection, bool all, DebugDraw& out);
+};
+
 }  // namespace rm::game_production

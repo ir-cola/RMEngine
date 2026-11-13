@@ -1,6 +1,7 @@
 ﻿# Makes <exe folder>/GameKit/ from RMGameKit's objects (src/RMGameKit.vcxproj runs it after its build):
 #   kit.json                               what is here, how it was built (the C++ runtime), the system libraries
-#   lib/core.lib  + lib/core/reflect/       the layers that ship in games (base core platform ui game)
+#   lib/core.lib  + lib/core/reflect/       the layers that ship in games (base core platform ui game), and the
+#                                           outside libraries built on their own (-ExtraCoreLibs: Jolt Physics)
 #   lib/<author>/<name>/runtime.lib  + reflect/   one per plugin with a runtime part
 # reflect/ holds rmgen's files of the lib's headers: the export reads the reflected types' names from them
 # (editor/export ExportPlan: ReadSymbols) to list them in the game's generated main.
@@ -11,7 +12,8 @@ param(
     [Parameter(Mandatory = $true)][string]$GenDir,
     [Parameter(Mandatory = $true)][string]$Out,
     [Parameter(Mandatory = $true)][string]$LibExe,
-    [Parameter(Mandatory = $true)][string]$Crt
+    [Parameter(Mandatory = $true)][string]$Crt,
+    [string[]]$ExtraCoreLibs = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -57,6 +59,11 @@ $corePrefixes = @('base_', 'core_', 'platform_', 'ui_', 'game_')
 $coreObjs = @(Get-ChildItem (Join-Path $ObjDir 'k') -Recurse -Filter *.obj | Where-Object { $_.FullName -notlike "*\k\..\plugins\*" } | ForEach-Object FullName)
 $coreObjs = @($coreObjs | Where-Object { -not $_.StartsWith((Join-Path $ObjDir 'plugins')) })
 $coreObjs += @(Generated-For $corePrefixes | ForEach-Object FullName)
+# lib.exe takes .lib files as inputs too: their members go into core.lib (a game links only what it uses of them)
+foreach ($x in $ExtraCoreLibs) {
+    if (-not (Test-Path $x)) { Write-Host "make_gamekit: $x がありません"; exit 1 }
+    $coreObjs += (Resolve-Path $x).Path
+}
 Make-Lib (Join-Path $lib 'core.lib') $coreObjs | Out-Null
 Copy-Reflect (Join-Path $lib 'core') $corePrefixes
 

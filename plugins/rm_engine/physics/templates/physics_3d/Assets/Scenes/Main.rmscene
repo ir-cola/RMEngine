@@ -1,0 +1,250 @@
+{
+  "kind": "rm_engine.scene",
+  "format": 1,
+  "nextId": 8,
+  "entities": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "カメラ",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              3,
+              9
+            ],
+            "rotation": [
+              -15,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::Camera",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "name": "光",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              6,
+              0
+            ],
+            "rotation": [
+              -50,
+              -30,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::Light",
+          "data": {
+            "kind": "Directional"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "parent": 0,
+      "name": "床",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              -0.1,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              20,
+              0.2,
+              20
+            ]
+          }
+        },
+        {
+          "type": "rm::physics::Collider",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "parent": 0,
+      "name": "箱",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              4,
+              0
+            ],
+            "rotation": [
+              20,
+              30,
+              10
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::physics::Collider",
+          "data": {}
+        },
+        {
+          "type": "rm::physics::Rigidbody",
+          "data": {
+            "motion": "Dynamic"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "parent": 0,
+      "name": "箱 2",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0.4,
+              6.5,
+              -0.3
+            ],
+            "rotation": [
+              -15,
+              10,
+              40
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::physics::Collider",
+          "data": {}
+        },
+        {
+          "type": "rm::physics::Rigidbody",
+          "data": {
+            "motion": "Dynamic",
+            "mass": 2,
+            "bounciness": 0.3
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "parent": 0,
+      "name": "壁",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              1.5,
+              -5
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              8,
+              3,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::physics::Collider",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "parent": 0,
+      "name": "砲台",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              0.5,
+              5
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.5,
+              0.5,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "Shooter",
+          "data": {
+            "bullet": "78d74a3bfc3b49f394708a711c8b4f8a",
+            "speed": 15
+          }
+        }
+      ]
+    }
+  ]
+}

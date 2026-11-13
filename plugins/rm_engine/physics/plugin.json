@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "physics",
+  "displayName": "物理",
+  "version": 1,
+  "requires": [
+    { "author": "rm_engine", "name": "game_production" },
+    { "author": "rm_engine", "name": "space3d" },
+    { "author": "rm_engine", "name": "space2d" }
+  ]
+}

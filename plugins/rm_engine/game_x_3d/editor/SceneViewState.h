@@ -23,6 +23,8 @@ struct SceneViewState {
     RM_PROPERTY() bool shadows = true;
     // While playing: the lines the game's scripts draw (rm::Debug) - the デバッグ button.
     RM_PROPERTY() bool debugDraw = true;
+    // The lines plugins show over the scene (物理: the colliders) of every thing, not only the selected - 形.
+    RM_PROPERTY() bool allShapes = false;
 };
 
 }  // namespace rm::game_x_3d

@@ -28,6 +28,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <memory>
 #include <vector>
 
 namespace rm::game_production {
@@ -82,9 +83,39 @@ struct TreeEntry {
     bool activeInHierarchy = true;  // it and every parent are active
 };
 
+// What systems keep for a scene while it plays (a physics world ...), by a name of their own. It lives
+// and dies with the Scene object: never copied (Play's copy starts with none - and ■ throws the copy
+// away with all of it), never saved. Moved with the scene.
+class PlayStates {
+public:
+    PlayStates() = default;
+    PlayStates(const PlayStates&) {}
+    PlayStates& operator=(const PlayStates&) {
+        map_.clear();
+        return *this;
+    }
+    PlayStates(PlayStates&&) noexcept = default;
+    PlayStates& operator=(PlayStates&&) noexcept = default;
+    // The slot `key` (empty until a system puts something there).
+    std::shared_ptr<void>& Slot(const std::string& key) { return map_[key]; }
+    void Clear() { map_.clear(); }
+
+private:
+    std::unordered_map<std::string, std::shared_ptr<void>> map_;
+};
+
 class Scene {
 public:
     static constexpr size_t kEnd = static_cast<size_t>(-1);
+
+    // What systems keep for this scene while it plays (PlayStates): `T` made the first time.
+    template <class T>
+    T& PlayState(const std::string& key) {
+        std::shared_ptr<void>& slot = playStates_.Slot(key);
+        if (!slot) slot = std::make_shared<T>();
+        return *static_cast<T*>(slot.get());
+    }
+    PlayStates& PlayStatesOf() { return playStates_; }
 
     // The component types offered now (by the plugins), and those of them an entity may have several
     // of. Loading reads the others as unknown and keeps them (so a second one of a type that allows
@@ -243,6 +274,7 @@ private:
     std::vector<const reflect::TypeDesc*> multipleTypes_;
     int nextId_ = 1;
     json::Value extra_ = json::Value::MakeObject();  // the scene object as loaded (its unknown keys are kept)
+    PlayStates playStates_;
 };
 
 // One field of an entity of a scene: the entity's own (component "") or one of its components (its type

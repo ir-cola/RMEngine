@@ -50,6 +50,12 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
+    <!-- Jolt Physics: built first, put into the kit's core.lib (make_gamekit.ps1 -ExtraCoreLibs) -->
+    <ProjectReference Include="RMJolt.vcxproj">
+      <Project>{B31C7F8A-3629-44F3-8AFD-E51A26C76E5B}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
   </ItemGroup>
   <!-- The layers that ship in games (layers.txt: "yes"): one object folder per source folder under k\ -->
   <ItemGroup>
@@ -78,6 +84,6 @@
     </ItemGroup>
   </Target>
   <Target Name="MakeGameKit" AfterTargets="Build">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(RMRoot)tools\make_gamekit.ps1&quot; -Root &quot;$(RMRoot).&quot; -ObjDir &quot;$(IntDir).&quot; -GenDir &quot;$(RmGenOut).&quot; -Out &quot;$(OutDir)GameKit&quot; -LibExe &quot;$(VCToolsInstallDir)bin\Hostx64\x64\lib.exe&quot; -Crt $(RmCrt)" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(RMRoot)tools\make_gamekit.ps1&quot; -Root &quot;$(RMRoot).&quot; -ObjDir &quot;$(IntDir).&quot; -GenDir &quot;$(RmGenOut).&quot; -Out &quot;$(OutDir)GameKit&quot; -LibExe &quot;$(VCToolsInstallDir)bin\Hostx64\x64\lib.exe&quot; -Crt $(RmCrt) -ExtraCoreLibs &quot;$(OutDir)RMJolt.lib&quot;" />
   </Target>
 </Project>

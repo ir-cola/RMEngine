@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-#define RM_ABI_VERSION 4u
+#define RM_ABI_VERSION 5u
 
 #ifdef __cplusplus
 extern "C" {
@@ -124,7 +124,23 @@ typedef struct RmScriptDesc {
     /* ABI 4: after the scripts were built again while the game plays (the values carried over by
        name; BeginPlay is not called again). Null when the script does not have it. */
     void (*onReloaded)(void* self, RmEntityId self_entity);
+    /* ABI 5: what the physics tells (RMPhysics.h). `other` is the other entity. Null when the script
+       does not have the hook. Called after the frame's fixed steps, on started scripts only. */
+    void (*onHit)(void* self, RmEntityId self_entity, RmEntityId other);          /* began touching (not a trigger) */
+    void (*onTriggerEnter)(void* self, RmEntityId self_entity, RmEntityId other); /* one of the two is a trigger */
+    void (*onTriggerExit)(void* self, RmEntityId self_entity, RmEntityId other);
 } RmScriptDesc;
+
+/* The hooks by number (a system asks for them by these: game_production::HookCall::hook). */
+enum RmHook {
+    RM_HOOK_BEGIN_PLAY = 0,
+    RM_HOOK_TICK = 1,
+    RM_HOOK_END_PLAY = 2,
+    RM_HOOK_RELOADED = 3,
+    RM_HOOK_HIT = 4,
+    RM_HOOK_TRIGGER_ENTER = 5,
+    RM_HOOK_TRIGGER_EXIT = 6
+};
 
 enum RmModuleFlags {
     RmModuleFlag_Debug = 1 /* built as Debug (the debug C runtime): only a Debug engine takes it */

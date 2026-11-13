@@ -197,6 +197,8 @@ public:
         for (const auto& l : host.Registry().Contributions<ComponentLook>(kComponentLookPoint)) componentLooks_.push_back(l.item);
         // ... and so do the systems that move them while the game plays.
         runner_.SetSystems(RegisteredSystems(host.Registry()));
+        // Systems read assets from the project's files (a mesh collider: the model, as the scene view reads it).
+        runner_.SetAssets({nullptr, [this](const AssetRef& ref) { return host_.AssetFile(ref); }});
         cameraTypes_ = CameraTypes(host.Registry());
     }
 
@@ -968,7 +970,10 @@ private:
         debug_.BeginFrame(dt);  // last frame's lines go (and the ones whose seconds are up), then the scripts draw this one's
         scripts_.Runner().Frame(*playScene_, world, scripts_.Module(), settings_.scriptOrder, static_cast<float>(dt));
         runner_.SetCamera(world.camera);
+        runner_.SetGravity(settings_.gravity);
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
+        // What the systems' fixed steps tell the scripts (the physics' contacts ...).
+        scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, runner_.Hooks());
         // A scene the scripts asked for (Game::LoadScene): switched between frames, inside the copy
         // that plays - the scene being edited stays (■ comes back to it).
         const std::string from = world.sceneIndex >= 0 ? world.sceneNames[static_cast<size_t>(world.sceneIndex)] : std::string();

@@ -20,9 +20,18 @@ unsigned long Recovered(unsigned long code) {
     return code;
 }
 
-unsigned long CallHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt) {
+unsigned long CallHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other) {
     __try {
         switch (hook) {
+            case RM_HOOK_HIT:
+                if (script.onHit) script.onHit(self, entity, other);
+                break;
+            case RM_HOOK_TRIGGER_ENTER:
+                if (script.onTriggerEnter) script.onTriggerEnter(self, entity, other);
+                break;
+            case RM_HOOK_TRIGGER_EXIT:
+                if (script.onTriggerExit) script.onTriggerExit(self, entity, other);
+                break;
             case 0:
                 if (script.beginPlay) script.beginPlay(self, entity);
                 break;
@@ -54,8 +63,8 @@ unsigned long CallInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, cons
 
 }  // namespace
 
-unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt) {
-    return Recovered(CallHook(script, hook, self, entity, dt));
+unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other) {
+    return Recovered(CallHook(script, hook, self, entity, dt, other));
 }
 
 unsigned long CallModuleInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out) {
