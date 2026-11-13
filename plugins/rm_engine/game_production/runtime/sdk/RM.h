@@ -33,7 +33,7 @@
 // ■ Rules
 //   * A script is a plain struct (no constructor, no base class, no private). Every member is
 //     RM_PROPERTY(...) or RM_TRANSIENT(). Field types: bool, int, float, std::string, rm::Vec2,
-//     rm::Vec3, rm::Color, rm::EntityRef, rm::PrefabRef / rm::ImageRef / rm::ModelRef (an asset),
+//     rm::Vec3, rm::Color, rm::EntityRef, rm::PrefabRef / rm::ImageRef / rm::ModelRef / rm::SoundRef (an asset),
 //     an enum class with RM_ENUM, a struct with RM_STRUCT (its members RM_PROPERTY too), and
 //     std::vector of any of those (not of a vector).
 //
@@ -121,6 +121,10 @@ struct ImageRef {  // a picture
     bool Empty() const { return guid[0] == 0; }
 };
 struct ModelRef {  // a 3D model
+    char guid[RM_ASSET_ID_SIZE] = {};
+    bool Empty() const { return guid[0] == 0; }
+};
+struct SoundRef {  // a sound (WAV / OGG ...): rm::Audio::Play(ref) - RMAudio.h
     char guid[RM_ASSET_ID_SIZE] = {};
     bool Empty() const { return guid[0] == 0; }
 };

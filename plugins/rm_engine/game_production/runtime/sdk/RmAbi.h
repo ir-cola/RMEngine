@@ -41,7 +41,7 @@ enum RmFieldType {
     RmField_Struct = 9, /* an RM_STRUCT struct (RmFieldDesc::structDesc) */
     RmField_List = 10,  /* std::vector of one of the others (RmFieldDesc::list; the element's enumDesc /
                            structDesc / assetKinds are the field's) */
-    RmField_Asset = 11  /* rm::PrefabRef / rm::ImageRef / rm::ModelRef: char guid[RM_ASSET_ID_SIZE]
+    RmField_Asset = 11  /* rm::PrefabRef / rm::ImageRef / rm::ModelRef / rm::SoundRef: char guid[RM_ASSET_ID_SIZE]
                            (32 hex digits; "" = none) - plain bytes, read and written by the engine */
 };
 
@@ -69,7 +69,7 @@ typedef struct RmFieldDesc {
     const struct RmEnumDesc* enumDesc;
     const struct RmStructDesc* structDesc;
     const struct RmListDesc* list;
-    const char* assetKinds; /* RmField_Asset: "image" / "model" / ".rmprefab" (core/asset's kinds, or an extension) */
+    const char* assetKinds; /* RmField_Asset: "image" / "model" / "audio" / ".rmprefab" (core/asset's kinds, or an extension) */
 } RmFieldDesc;
 
 typedef struct RmEnumItem {

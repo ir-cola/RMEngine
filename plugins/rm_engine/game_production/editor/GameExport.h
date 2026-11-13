@@ -91,6 +91,10 @@ struct ExportBaked {
 inline constexpr char kExportBakePoint[] = "rm_engine.game_production.export_bake";
 struct ExportBaker {
     BakeResult (*bake)(const ExportAsset& asset, ExportBaked& out, std::string* error) = nullptr;
+    // True for an asset the game needs this baker's plugin for (音: a sound - the game plays it with
+    // that plugin even when no scene has its component: a script's field). Its plugin then goes into
+    // the game. Null: never (a plugin the game has anyway: the space's). On the UI thread.
+    bool (*needsPlugin)(const ExportAsset& asset) = nullptr;
 };
 
 // Every asset the scenes use (the prefabs they place, followed, bring theirs), with its file now -

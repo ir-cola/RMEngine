@@ -7,6 +7,7 @@
 #include "rm_engine/game_production/runtime/Components.h"
 #include "rm_engine/game_production/runtime/GameDraw.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
+#include "rm_engine/game_production/runtime/PlayServices.h"
 #include "rm_engine/game_production/runtime/SceneFile.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_production/runtime/Systems.h"
@@ -141,6 +142,19 @@ public:
         }
         if (!drawer_) host_.Log(1, "このゲームには描くプラグイン (3D / 2D) が入っていないので、背景の色だけを塗ります");
         host_.Log(0, std::format("システム {} 個・エンティティ {} 個", runner_.Systems().size(), scene_.Entities().size()));
+
+        // What the plugins keep while the game plays (音: PlayServices.h) - until the game ends.
+        PlayHost play;
+        play.registry = &host_.Registry();
+        play.settings = &settings_;
+        play.asset = [this](const AssetRef& ref) { return ReadAsset(ref); };
+        play.name = [this](const AssetRef& ref) {
+            const auto it = assets_.find(ref.guid);
+            return it == assets_.end() ? std::string() : PathToUtf8(PathFromUtf8(it->second).filename());
+        };
+        play.log = [this](int level, std::string_view t) { host_.Log(level, t); };
+        services_.Start(std::move(play));
+        world_.services = &services_;
         return true;
     }
 
@@ -171,6 +185,7 @@ public:
         runner_.Advance(scene_, dt, settings_.fixedTimestep);
         // What the systems' fixed steps tell the scripts (the physics' contacts ...).
         if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, runner_.Hooks());
+        services_.Frame({scene_, runner_.Camera(), static_cast<float>(dt)});
         // A scene the scripts asked for (Game::LoadScene): switched here, between frames.
         const std::string from = world_.sceneIndex >= 0 ? world_.sceneNames[static_cast<size_t>(world_.sceneIndex)] : std::string();
         std::string err;
@@ -178,6 +193,7 @@ public:
             scene_, world_, scriptRunner_, scripts_, settings_.scriptOrder,
             [this](size_t index, Scene& into, std::string* why) { return ReadScene(index, into, why); }, &err);
         if (sw == SceneSwitch::Switched) {
+            services_.SceneSwitched();
             runner_.SetCamera(SceneCamera(scene_, cameraTypes_, settings_.startCamera.id));
             host_.Log(0, std::format("シーンを切り替えました: {} → {} (エンティティ {} 個)", from, world_.sceneNames[static_cast<size_t>(world_.sceneIndex)],
                                      scene_.Entities().size()));
@@ -193,14 +209,7 @@ public:
             return;
         }
         GameDrawFrame f{scene_, runner_.Camera(), settings_.clearColor, host_.Graphics(), dc, width, height,
-                        [this](const AssetRef& ref) -> std::optional<std::string> {
-                            const auto it = assets_.find(ref.guid);
-                            if (it == assets_.end()) return std::nullopt;
-                            std::string err;
-                            auto bytes = host_.Read(it->second, &err);
-                            if (!bytes) host_.Log(1, err);
-                            return bytes;
-                        },
+                        [this](const AssetRef& ref) { return ReadAsset(ref); },
                         [this](std::string_view path) -> std::optional<std::string> {
                             std::string err;
                             auto bytes = host_.Read(path, &err);
@@ -213,9 +222,21 @@ public:
 
     void Stop() override {
         if (scripts_.Loaded()) scriptRunner_.Stop(scene_, world_, scripts_, settings_.scriptOrder);
+        world_.services = nullptr;
+        services_.Stop();  // (every sound stops)
     }
 
 private:
+    // The bytes of an asset: what the export put in the .rmpak for it (baked, or as its file).
+    std::optional<std::string> ReadAsset(const AssetRef& ref) {
+        const auto it = assets_.find(ref.guid);
+        if (it == assets_.end()) return std::nullopt;
+        std::string err;
+        auto bytes = host_.Read(it->second, &err);
+        if (!bytes) host_.Log(1, err);
+        return bytes;
+    }
+
     // The scene at `index` of the list, read from the .rmpak into `into` (its component types set).
     bool ReadScene(size_t index, Scene& into, std::string* error) {
         if (index >= scenePaths_.size()) return false;
@@ -244,6 +265,7 @@ private:
     reflect::Unknowns unknowns_;
     Scene scene_;
     SystemRunner runner_;
+    PlayServices services_;
     std::unordered_map<std::string, std::string> assets_;  // asset id -> its path in the .rmpak
     std::unordered_map<std::string, std::optional<json::Value>> prefabs_;  // rm::Spawn's prefabs, read (nullopt: not one)
     std::vector<std::string> scenePaths_;                   // the game's scenes, in the list's order

@@ -633,7 +633,7 @@ private:
                 {"EntityRef", TypeRef::Kind::EntityRef}, {"rm::EntityRef", TypeRef::Kind::EntityRef},
             };
             // A script's asset references (RM.h: plain bytes, not core's AssetRef).
-            static const std::set<std::string> kScriptAssets = {"PrefabRef", "ImageRef", "ModelRef"};
+            static const std::set<std::string> kScriptAssets = {"PrefabRef", "ImageRef", "ModelRef", "SoundRef"};
             static const std::set<std::string> kRefused = {"double", "long", "short", "char", "unsigned", "signed", "int8_t",
                                                            "uint8_t", "int16_t", "uint16_t", "uint32_t", "int64_t", "uint64_t",
                                                            "size_t", "std::size_t", "wchar_t", "std::wstring", "auto"};
@@ -1068,7 +1068,7 @@ const Struct* FindStruct(const std::vector<Header>& all, const std::string& qual
 std::string ScriptFieldProblem(const std::vector<Header>& all, const TypeRef& t) {
     const TypeRef& base = t.kind == TypeRef::Kind::Vector ? t.element[0] : t;
     if (base.kind == TypeRef::Kind::AssetRef && base.assetType.empty()) {
-        return "アセットの参照は rm::PrefabRef / rm::ImageRef / rm::ModelRef で書きます";
+        return "アセットの参照は rm::PrefabRef / rm::ImageRef / rm::ModelRef / rm::SoundRef で書きます";
     }
     if (base.kind == TypeRef::Kind::Named && !base.isEnum) {
         const Struct* s = FindStruct(all, base.resolved);
@@ -1099,6 +1099,7 @@ const char* AssetKinds(const std::string& assetType) {
     if (assetType == "PrefabRef") return ".rmprefab";
     if (assetType == "ImageRef") return "image";
     if (assetType == "ModelRef") return "model";
+    if (assetType == "SoundRef") return "audio";
     return "";
 }
 

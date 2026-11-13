@@ -11,6 +11,14 @@
           "en": "Physics (the Physics plugin, Jolt Physics): the Rigidbody, Collider, Collider (2D) and Character components make things fall, collide, bounce and walk up slopes and steps (3D and 2D). Scripts get AddForce / AddImpulse / Velocity / SetVelocity / Raycast and the hooks OnHit / OnTriggerEnter / OnTriggerExit. The scene view's \"Shapes: selected / all\" button shows collider shapes as lines. New template \"Physics sample (3D)\""
         },
         {
+          "ja": "音: アセットの音 (WAV・OGG・MP3 など) の長さを出し、右クリックか ⋮ の「鳴らしてみる」で聞けます。取り込みの設定に音量・ストリーミング・ループの点",
+          "en": "Audio: sound assets (WAV, OGG, MP3 ...) show their length, and \"Play\" in the right-click or ⋮ menu lets you hear them. Their import settings have volume, streaming and loop points"
+        },
+        {
+          "ja": "ゲームに音: 部品「音源」(音量・ピッチ・ループ・始めから鳴らす・BGM のクロスフェード・距離で小さくする)、スクリプトの rm::Audio::Play / PlayMusic と rm::AudioSource、ゲームの設定の音量 (全体・BGM・効果音)。書き出したゲームでも鳴ります。テンプレートに見本の音",
+          "en": "Sound in games: the \"Audio source\" component (volume, pitch, loop, play on start, BGM cross-fades, quieter with distance), rm::Audio::Play / PlayMusic and rm::AudioSource in scripts, and the game settings' volumes (master, BGM, effects). Exported games play them too. The templates have sample sounds"
+        },
+        {
           "ja": "エディターの Play では、マウスのボタンはゲームビューの上でだけゲームに渡します (階層やインスペクターのクリックで弾が出ない)。既定の入力の「Fire」は Ctrl の代わりに Z (Ctrl+P で弾が出ていた)",
           "en": "In the editor's Play, mouse buttons reach the game only over the game view (a click on the hierarchy or the inspector no longer fires). The default \"Fire\" input uses Z instead of Ctrl (Ctrl+P used to fire)"
         },

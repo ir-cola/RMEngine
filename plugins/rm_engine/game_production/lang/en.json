@@ -194,5 +194,12 @@
   "Play 中にスクリプトのビルドが終わったとき。すぐ入れ替えると、欄の値は名前で引き継ぎ、BeginPlay は呼ばずに OnReloaded を呼びます (RM_TRANSIENT の欄は既定の値に戻ります)": "When the scripts finish building during Play. Swapped at once: field values are carried over by name, and OnReloaded is called instead of BeginPlay (RM_TRANSIENT fields go back to their defaults)",
   "Play 中のスクリプト": "Scripts during Play",
   "Stop で反映 (Play 中は前のまま)": "At Stop (the old ones run until then)",
-  "すぐ入れ替える (値は引き継ぎ、OnReloaded を呼ぶ)": "Swap at once (values carried over, OnReloaded called)"
+  "すぐ入れ替える (値は引き継ぎ、OnReloaded を呼ぶ)": "Swap at once (values carried over, OnReloaded called)",
+  "音量": "Volume",
+  "全体": "Master",
+  "ゲームの音すべてに掛かります": "Applies to every sound of the game",
+  "BGM として鳴らす音 (音源の「鳴らす先」が BGM・rm::Audio::PlayMusic)": "Sounds played as music (an audio source whose output is BGM, rm::Audio::PlayMusic)",
+  "効果音": "Sound effects",
+  "BGM でない音すべて": "Every sound that is not music",
+  "全体・BGM・効果音の大きさ。Play 中に変えるとすぐ聞こえ方が変わります": "How loud the whole game, the music and the sound effects are. Changed while playing, it is heard at once"
 }

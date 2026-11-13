@@ -140,6 +140,15 @@ struct GlobalVariable {
     RM_PROPERTY(Edit, Label="初めの値", Tooltip="型に合わせて書きます: 真偽は true / false、数は 0 や 1.5、文字はそのまま、Vec2 / Vec3 は 1, 2, 3。空なら 0 (空の文字)") std::string initial;
 };
 
+// How loud the game is (each 0..1 - more makes it louder than the sounds are). The 音 plugin uses
+// them (rm_engine/game_x_audio); scripts may change them while the game plays (rm::Audio::SetVolume).
+RM_STRUCT(Label="音量")
+struct AudioVolumes {
+    RM_PROPERTY(Edit, Label="全体", Min=0, Max=2, Step=0.01, Tooltip="ゲームの音すべてに掛かります") float master = 1;
+    RM_PROPERTY(Edit, Label="BGM", Min=0, Max=2, Step=0.01, Tooltip="BGM として鳴らす音 (音源の「鳴らす先」が BGM・rm::Audio::PlayMusic)") float music = 1;
+    RM_PROPERTY(Edit, Label="効果音", Min=0, Max=2, Step=0.01, Tooltip="BGM でない音すべて") float effects = 1;
+};
+
 RM_STRUCT(Label="ゲームの設定")
 struct GameSettings {
     RM_PROPERTY(Edit, Label="ゲームの名前", Tooltip="書き出した exe の名前とウィンドウのタイトルに使います") std::string title = "My Game";
@@ -163,6 +172,7 @@ struct GameSettings {
     RM_PROPERTY(Edit, Label="入力", Tooltip="スクリプトはキーではなくアクションの名前で入力を読みます (ゲームパッドもそのまま使えます)") std::vector<InputAction> input = DefaultInputActions();
     // Values of the whole game: back to these at every Play (and when it stops); rm::Save writes them.
     RM_PROPERTY(Edit, Label="グローバル変数", Tooltip="ゲーム全体の値 (シーンを切り替えても残る)。スクリプトからは Global::名前。rm::Save::Write で保存できます") std::vector<GlobalVariable> globals;
+    RM_PROPERTY(Edit, Label="音量", Tooltip="全体・BGM・効果音の大きさ。Play 中に変えるとすぐ聞こえ方が変わります") AudioVolumes volume;
 };
 
 }  // namespace rm::game_production

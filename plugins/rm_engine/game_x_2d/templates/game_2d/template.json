@@ -17,6 +17,10 @@
     {
       "author": "rm_engine",
       "name": "space2d"
+    },
+    {
+      "author": "rm_engine",
+      "name": "audio"
     }
   ],
   "open": {

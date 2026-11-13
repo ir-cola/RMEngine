@@ -88,6 +88,7 @@
     <ClCompile Include="TestScriptBuild.cpp" />
     <ClCompile Include="TestAsset.cpp" />
     <ClCompile Include="TestAudio.cpp" />
+    <ClCompile Include="TestAudioGame.cpp" />
     <ClCompile Include="TestEntityRefs.cpp" />
     <ClCompile Include="TestTemplates.cpp" />
     <ClCompile Include="TestSceneFile.cpp" />
@@ -151,6 +152,12 @@
     <ClCompile Include="..\plugins\rm_engine\physics\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)physics\</ObjectFileName>
     </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\PlayServices.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_audio\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)game_x_audio\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\game_x_audio\runtime\AudioService.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_audio\runtime\SoundPack.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Camera.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Light.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\CameraCycle.cpp" />

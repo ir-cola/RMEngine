@@ -10,3 +10,5 @@
 *.ico  binary
 *.glb  binary
 *.fbx  binary
+*.wav  binary
+*.ogg  binary

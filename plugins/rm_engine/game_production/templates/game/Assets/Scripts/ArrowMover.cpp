@@ -14,6 +14,7 @@ void ArrowMover::Tick(rm::Entity self, float dt) {
     const float x = rm::Input::Axis("MoveX");
     const float y = rm::Input::Axis("MoveY");
     const bool turn = rm::Input::Down("Jump");
+    if (rm::Input::Pressed("Jump")) rm::Audio::Play(jumpSound);  // (RMAudio.h: once, the moment it is pressed)
 
     // A 3D entity: on the floor (up = farther away). A 2D one: on the screen (up = up).
     if (rm::Transform3D t(self); t.Valid()) {

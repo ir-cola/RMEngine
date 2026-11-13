@@ -58,9 +58,22 @@ foreach ($t in $templates) {
         $failed++
         continue
     }
+    # The 3D / 2D templates have a BGM (an 音源 of Assets/Sounds/bgm.wav): it went in (baked as .rmsound,
+    # with its import settings) and the game read it (game.log) - heard or not (a PC without sound).
+    $sound = ''
+    if ($t[2] -eq 'game_2d' -or $t[2] -eq 'game_3d') {
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), (New-Object System.Text.UTF8Encoding $false))
+        if ($gameLog -notmatch '音: 「bgm\.wav」を鳴らします' -or $gameLog -match '音: .*がありません') {
+            Write-Host "NG  $($t[2]): BGM (bgm.wav) を鳴らしていません"
+            Get-Content (Join-Path $game 'game.log') -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+            continue
+        }
+        $sound = '。BGM (bgm.wav) を読んで鳴らしました'
+    }
     $size = [Math]::Round($exe[0].Length / 1KB)
     $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB, 1)
-    Write-Host "OK  $($t[2]): $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB) を書き出し、--smoke で起動して閉じました"
+    Write-Host "OK  $($t[2]): $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB) を書き出し、--smoke で起動して閉じました$sound"
 }
 # A game with a script: the template 「ゲーム」 (its sample script ArrowMover), an entity with it put into
 # the scene, the scripts built and the project exported, then the game with --smoke: its game.log must

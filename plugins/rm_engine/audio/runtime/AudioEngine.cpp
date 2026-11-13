@@ -25,6 +25,15 @@ using Microsoft::WRL::ComPtr;
 
 namespace rm::audio {
 
+void ApplyImport(SoundSource& sound, const asset::SoundImport& import) {
+    sound.assetVolume = import.volume;
+    sound.stream = import.stream == asset::SoundStream::Always  ? StreamMode::Always
+                   : import.stream == asset::SoundStream::Never ? StreamMode::Never
+                                                                : StreamMode::Auto;
+    sound.loopStart = import.loopStart;
+    sound.loopEnd = import.loopEnd;
+}
+
 namespace {
 
 constexpr int kStreamBuffers = 4;   // queued pieces of a stream (at most kStreamBuffers - 1 at once)

@@ -127,10 +127,7 @@ void PlaySound(const fs::path& file, const json::Value& importJson) {
     s.bytes = std::make_shared<const std::string>(std::move(*bytes));
     s.key = PathToUtf8(file);
     s.name = PathToUtf8(file.filename());
-    s.assetVolume = imp.volume;
-    s.stream = imp.stream == asset::SoundStream::Always ? StreamMode::Always : imp.stream == asset::SoundStream::Never ? StreamMode::Never : StreamMode::Auto;
-    s.loopStart = imp.loopStart;
-    s.loopEnd = imp.loopEnd;
+    ApplyImport(s, imp);
     PlayParams params;
     params.loop = imp.loopEnd > 0 || imp.loopStart > 0;  // (a preview loops only when its loop is set)
     engine.Play(s, params);

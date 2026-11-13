@@ -21,6 +21,7 @@
 // (TakeMessages): Japanese, once per sound.
 
 #include "base/Math.h"
+#include "core/asset/ImportSettings.h"
 #include "rm_engine/audio/runtime/Decoder.h"
 
 #include <cstdint>
@@ -44,6 +45,9 @@ struct SoundSource {
     StreamMode stream = StreamMode::Auto;
     double loopStart = 0, loopEnd = 0;  // seconds (loopEnd 0: the end)
 };
+
+// A sound's import settings (its .meta: 音量・ストリーミング・ループの点) onto it.
+void ApplyImport(SoundSource& sound, const asset::SoundImport& import);
 
 struct PlayParams {
     Bus bus = Bus::Effects;

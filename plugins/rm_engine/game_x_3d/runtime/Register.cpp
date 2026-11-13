@@ -44,6 +44,9 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kScriptApiPoint, ScriptTransform3DPart());
     // ... and debug drawing (rm::Debug: lines the editor shows while playing; nothing in a game).
     registry.Contribute(game_production::kScriptApiPoint, ScriptDebug3DPart());
+    // Where an entity is (the sounds of a 3D game are heard from there: PlayServices.h).
+    static const game_production::PlaceInfo kPlace{"3d", &Pose3D};
+    registry.Contribute(game_production::kPlacePoint, kPlace);
 }
 
 }  // namespace rm::game_x_3d

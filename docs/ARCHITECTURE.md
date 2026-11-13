@@ -728,6 +728,34 @@ GameSettings::space = "2d"   (プロジェクトのデータ。空 = order が�
     - 書き出し: `ScenesForExport` (一覧の全部、読めないものは外して警告、`first` の位置を game.json の `"first"` に)。プラグインも全部のシーンの部品から数える。テストあり (TestSceneFile・TestScripts・TestExport)
     - ★ まだ: エンティティを残す形 (DontDestroyOnLoad)・非同期の読み込み・追加読み込み
 
+### 音 (2026-11-13。設計: TestEngine `RME_PLATFORM.md` の音・`AUDIO_V2.md`)
+
+```
+plugins/rm_engine/audio          音 (ゲーム制作を知らない。イラストや作曲のソフトも使える)
+  runtime/Sound       純粋: WAV を読む (自作)・流す区切り・ループの点・音量 / フェード / 距離の式 (テストあり)
+  runtime/Decoder     WAV (自作) / OGG (stb_vorbis) / それ以外 (Media Foundation。DLL を後から読み、無ければ理由)
+  runtime/AudioEngine XAudio2: 全体 → BGM / 効果音のサブミックス → 声。作業スレッドが読み・声を作り・流す。X3DAudio
+  editor/Preview      アセットのパネル (核の口 core.asset_preview): 長さの行・「鳴らしてみる」/「止める」
+plugins/rm_engine/game_x_audio   つなぎ「ゲーム制作 × 音」(前提 = ゲーム制作・音)
+  runtime/AudioSource 部品「音源」
+  runtime/AudioService ゲーム制作の PlayService: Play の間の音 (部品・BGM・スクリプト)
+  runtime/SoundPack   書き出したゲームの音 (.rmsound = 頭の JSON + 元のファイル)
+  runtime/sdk/RMAudio.h スクリプトの rm::Audio / rm::AudioSource (部分 RM_PART_AUDIO 版 1)
+  editor/Connector    階層の絵・書き出しの焼き手 (needsPlugin: 音があればこのプラグインがゲームに入る)
+```
+
+- **読み込み**: 音のファイルのバイト列 (`Bytes` = `shared_ptr<const string>`) を `OpenDecoder` が見分ける (先頭が RIFF → WAV、OggS → Vorbis、ほか → Media Foundation)。壊れた・大きすぎる (`SoundBudget`: ファイル 1 GB・8 チャンネル・1000〜384000 Hz・全部解くのは 10 分まで・長さ 6 時間まで) ものは理由を付けて止める。取り込みの設定 (核の `asset::SoundImport`: 音量・ストリーミング・ループの点) は `.meta` に
+- **鳴らす**: `AudioEngine` はゲームのスレッドからは「こうしてほしい」と印を付けるだけ (待たない)。作業スレッドが読み (短い音は全部解いて 1 回だけ持つ・256 MB まで、長い音は 0.25 秒 × 4 個のバッファで流す)、XAudio2 の声を作り、毎フレームの `Update` でフェード・3D (X3DAudio の行列 + 自前の距離の曲線)・終わった声を片付ける。`Stop` は XAudio2 では一時停止なので、本当の停止は `Stop` + `FlushSourceBuffers` + `DestroyVoice` (作業スレッドで)。`MaxFrequencyRatio` は 8 (ピッチの上限)。音の出る機器が無ければ「無音」で動く (時間だけ進む。テストもこれ)
+- **Play の間だけ生きるもの** (ゲーム制作 `runtime/PlayServices.h`): 口 `rm_engine.game_production.play_service` に `PlayServiceInfo{名前, create}`。エディターの Play (`GameSoftware::StartServices`) と書き出したゲーム (`GamePlayer::Load`) が同じように作り、スクリプトとシステムの後に `Frame`、⏸ で `SetPaused`、`Game::LoadScene` の後に `SceneSwitched`、■ / 終わりで消す (消えると音のエンジンも消える = ■ で全部止まる)。資産は `PlayHost::asset` (エディター: ファイル、ゲーム: `.rmpak`) と `PlayHost::import` (エディター: `.meta`、ゲーム: 無し = 焼いたものに入っている)。スクリプトは `ScriptWorld::services->Find(名前)` で届く
+- **物理の `Scene::PlayState` との違い**: 物理の世界は**シーン 1 つ**の持ち物 (シーンのコピーと一緒に捨て、シーンを切り替えれば作り直す。システムが持つ)。音は**プレイ全体**の持ち物 (シーンを切り替えても BGM が続く・⏸ で止める・資産をホストから読む) なので PlayService にした。シーンに付く物は PlayState、プレイ全体に 1 つの物は PlayService
+- **エンティティの場所** (同じ `PlayServices.h`): ゲーム制作は空間を知らないので、口 `rm_engine.game_production.place` に `PlaceInfo{空間, pose}` を 3D・2D のつなぎが差し出す (`Pose3D`: 親の Transform も掛けた場所と、-Z (カメラと同じ) の向き。`Pose2D`: 画面の x y、z = 0)。聞く人はゲームのカメラ
+- **音源の部品** (`AudioSource`): 毎フレーム、走っているエンティティの音源を見る。新しく現れた物 (Play・切り替えて来たシーン・有効にした・作った) は「始めから鳴らす」なら鳴らし、消えた物 (消した・無効にした) はフェードで止め、ほかは音量・ピッチ・場所を追う (Play 中にインスペクターで変えるとすぐ聞こえる)。部品は (オブジェクトのアドレス, エンティティの ID) で見分け、シーンを切り替えたら全部忘れる (同じアドレスが別の物に使われるので)
+- **BGM**: 1 つずつ。次の BGM を始めると前の BGM はフェードで消え、新しい方がフェードで入る (クロスフェード: cos / sin で合わせた大きさが凹まない)。**同じ音が既に BGM で鳴っていればそのまま続ける** (同じ BGM のシーンへ切り替えても頭から鳴り直さない。シーンの切り替えでは BGM を 1 フレームだけ待って、新しいシーンが同じ音を BGM にしなければ止める)
+- **音量**: ゲームの設定の「音量」(全体・BGM・効果音。`GameSettings::volume`) を毎フレーム読む。スクリプトが `rm::Audio::SetVolume` で変えたら、そのプレイの間はそちら。1 つの声の大きさ = 全体 × BGM か効果音 × 取り込みの音量 × 頼まれた音量 (`Gain`。それぞれ 0〜4)
+- **スクリプト** (`RMAudio.h`): `rm::Audio::Play / PlayAt / Stop / IsPlaying / PlayMusic / StopMusic / SetVolume / Volume`、`rm::AudioSource(entity).Play / Stop / Pause / Resume / IsPlaying / SetVolume / SetPitch`。欄の型 `rm::SoundRef` (RM.h。rmgen はアセットの種類 "audio")。**新しい部分** `RM_PART_AUDIO` 版 1 で足したので `RM_ABI_VERSION` は変えていない (古いスクリプトはそのまま。RmAbi.h はコメントだけ変えた)
+- **書き出し**: 音は**作り直さない** (焼き直すと音が悪くなり、時間もかかる)。元のファイルの前に取り込みの設定と名前の JSON を付けて `Baked/<id>.rmsound` (`SoundPack`。往復と壊れたもののテストあり)。WAV / OGG 以外は書き出しのログに「Media Foundation の無い PC では鳴りません」。音を使うと、つなぎ「ゲーム制作 × 音」と「音」がゲームに入る (`ExportBaker::needsPlugin`: シーンに音源が無くてもスクリプトの欄の音で)。ゲームの exe は `xaudio2.lib` と `mfuuid.lib` をリンクする (`make_gamekit.ps1` の systemLibs)。Media Foundation の DLL は後から読むので、無い PC でもゲームは起動する
+- ★ まだ: OGG を本物のファイルで鳴らすテスト (この PC に OGG を作る道具が無い。壊れた OGG を断るテストだけ)・ドップラー効果・リバーブなどの効果・音のアセットの波形の絵・MIDI (`.mid` はアセットの種類が音だが鳴らせない)
+
 ## 7-9. ゲームの書き出し (`src/game` + `editor/export` + `tools/make_gamekit.ps1`。2026-11-12)
 
 設計: TestEngine NewEngineBluePrint 11-b / 11-b-2 (書き出したゲームはそれだけで完全に遊べる)、RME_PLATFORM 5-a「書き出しの条件」「書き出しを作り直す」流れ 1〜7、「書き出したゲームのアセットとコードを読めないようにする」(.rmpak)。

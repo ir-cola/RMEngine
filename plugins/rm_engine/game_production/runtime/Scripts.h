@@ -24,6 +24,7 @@
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Globals.h"
 #include "rm_engine/game_production/runtime/Input.h"
+#include "rm_engine/game_production/runtime/PlayServices.h"
 #include "rm_engine/game_production/runtime/Prefab.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/Systems.h"
@@ -86,6 +87,9 @@ struct ScriptWorld {
     // rm::Spawn(prefab): the prefab files (the host's: the editor's Assets, the game's .rmpak). Empty:
     // spawning a prefab gives nothing.
     PrefabReader prefab;
+    // What plugins keep while the game plays (音 ...: PlayServices.h) - the host's; null when none
+    // (a test): the parts that use one do nothing.
+    PlayServices* services = nullptr;
     // Asked during the frame, done at its end (ScriptRunner::Frame): EndPlay first, then away.
     std::vector<int> destroyAsked;                            // entities (with what is below them)
     std::vector<std::pair<int, const void*>> removeAsked;     // components: their entity and object

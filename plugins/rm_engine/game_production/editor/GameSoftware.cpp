@@ -26,6 +26,8 @@
 #include "rm_engine/game_production/runtime/SceneRecord.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "core/asset/AssetFiles.h"
+#include "core/asset/ImportSettings.h"
+#include "rm_engine/game_production/runtime/PlayServices.h"
 
 #include <algorithm>
 #include <cassert>
@@ -445,6 +447,11 @@ public:
             if (const auto doc = json::Parse(s.second)) ComponentTypesIn(*doc, types);
         }
         for (const PluginId& id : PluginsOffering(types, host_.Registry().Contributions<ComponentInfo>(kComponentPoint))) add(id);
+        // ... and the plugins an asset the game uses needs (音: a sound a script plays, with no 音源 in any scene).
+        const std::vector<ExportAsset> assets = CollectAssets(in);
+        for (const auto& b : host_.Registry().Contributions<ExportBaker>(kExportBakePoint)) {
+            if (b.item->needsPlugin && std::any_of(assets.begin(), assets.end(), [&](const ExportAsset& a) { return b.item->needsPlugin(a); })) add(b.plugin);
+        }
         const Contributed<SceneViewInfo>* space = nullptr;
         const auto views = host_.Registry().Contributions<SceneViewInfo>(kSceneViewPoint);
         for (const auto& v : views) {
@@ -953,6 +960,7 @@ private:
         scripts_.World().prefab = [this](const AssetRef& r) { return Cached(r); };  // rm::Spawn(prefab): the files as last read
         ResetGlobals(true);  // every global variable at its 初めの値; rm::Save into Library/Saves
         kept_.clear();       // (この値を残す: from this Play only)
+        StartServices();     // 音 ... (the plugins' PlayServices): until ■
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
         EnsureViews();  // the game view sees through the game settings' 最初のカメラ
@@ -974,6 +982,7 @@ private:
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
         // What the systems' fixed steps tell the scripts (the physics' contacts ...).
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, runner_.Hooks());
+        services_.Frame({*playScene_, runner_.Camera(), static_cast<float>(dt)});
         // A scene the scripts asked for (Game::LoadScene): switched between frames, inside the copy
         // that plays - the scene being edited stays (■ comes back to it).
         const std::string from = world.sceneIndex >= 0 ? world.sceneNames[static_cast<size_t>(world.sceneIndex)] : std::string();
@@ -981,6 +990,7 @@ private:
         const SceneSwitch sw = SwitchAskedScene(*playScene_, world, scripts_.Runner(), scripts_.Module(), settings_.scriptOrder,
                                                 [this](size_t index, Scene& into, std::string* why) { return ReadPlayScene(index, into, why); }, &err);
         if (sw == SceneSwitch::Switched) {
+            services_.SceneSwitched();
             runner_.SetCamera(SceneCamera(*playScene_, cameraTypes_, settings_.startCamera.id));
             log::Info("シーンを切り替えました: {} → {} (Play の中だけ。■ で {} に戻ります)", from, world.sceneNames[static_cast<size_t>(world.sceneIndex)],
                       SceneTitle(AssetRef{slot_.guid}));
@@ -1023,6 +1033,8 @@ private:
         log::Info("■ 停止 ({:.2f} 秒・{} コマ)。シーンは Play の前に戻りました", runner_.Time(), runner_.Frames());
         const auto kept = TakeKept();  // (as they were shown: before the scripts' EndPlay)
         scripts_.Runner().Stop(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder);  // EndPlay
+        scripts_.World().services = nullptr;
+        services_.Stop();    // every sound stops (■: nothing of the game is heard after it)
         playScene_.reset();  // (scripts built while playing are taken at the next frame: on the scene from before Play)
         debug_.Clear();      // Stop: every debug line goes
         ResetGlobals(false);  // as before Play (what was saved stays in Library/Saves)
@@ -1030,6 +1042,38 @@ private:
         KeepValues(kept);  // この値を残す: into the scene from before Play (one undo entry)
         host_.SelectInTree({});  // (the selection may name entities of a scene switched to)
         host_.Redraw();
+    }
+
+    // The plugins' PlayServices for this Play: assets from their files (as they are now) with their
+    // .meta's import settings.
+    void StartServices() {
+        PlayHost play;
+        play.registry = &host_.Registry();
+        play.settings = &settings_;
+        play.asset = [this](const AssetRef& ref) -> std::optional<std::string> {
+            const fs::path file = host_.AssetFile(ref);
+            if (file.empty()) return std::nullopt;
+            std::string err;
+            auto bytes = platform::ReadFileBytes(file, &err);
+            if (!bytes) log::Warn("アセット ({}) を読めません: {}", PathToUtf8(file.filename()), err);
+            return bytes;
+        };
+        play.import = [this](const AssetRef& ref) {
+            const fs::path file = host_.AssetFile(ref);
+            return file.empty() ? json::Value::MakeObject() : asset::ReadImportJson(file);
+        };
+        play.name = [this](const AssetRef& ref) { return PathToUtf8(host_.AssetFile(ref).filename()); };
+        play.log = [](int level, std::string_view t) {
+            if (level >= 2) {
+                log::Error("{}", t);
+            } else if (level == 1) {
+                log::Warn("{}", t);
+            } else {
+                log::Info("{}", t);
+            }
+        };
+        services_.Start(std::move(play));
+        scripts_.World().services = &services_;
     }
 
     // The editor's saves (Library/Saves/save_*.json) to the Recycle Bin.
@@ -1068,6 +1112,7 @@ private:
     void TogglePause(ui::Context& c) {
         if (!Running()) return;
         play_ = play_ == PlayState::Paused ? PlayState::Playing : PlayState::Paused;
+        services_.SetPaused(play_ == PlayState::Paused);  // (sounds keep their place)
         lastTick_ = c.Time();  // the paused time does not count
         c.RequestAnimation();
     }
@@ -1076,6 +1121,7 @@ private:
     void StepFrame(ui::Context& c) {
         if (!Running() || !playScene_) return;
         play_ = PlayState::Paused;
+        services_.SetPaused(true);
         AdvancePlay(1.0 / std::max(1, settings_.targetFps));
         lastTick_ = c.Time();
         host_.Redraw();
@@ -2508,6 +2554,7 @@ private:
     std::string sceneNewName_;
     std::wstring sceneProblem_;
     SystemRunner runner_;
+    PlayServices services_;  // the plugins' (音 ...): from ▶ to ■
     double lastTick_ = 0;
 
     // Prefabs: the files as last read or written (path -> content)

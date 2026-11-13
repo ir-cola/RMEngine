@@ -126,7 +126,7 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
     req.project = project;
     req.engine = ExeFolder();  // rmgen.exe is built next to the tests
     req.sdk = {Repo() / L"plugins/rm_engine/game_production/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_3d/runtime/sdk",
-               Repo() / L"plugins/rm_engine/game_x_2d/runtime/sdk"};
+               Repo() / L"plugins/rm_engine/game_x_2d/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_audio/runtime/sdk"};
 #ifdef _DEBUG
     req.debug = true;
 #endif
@@ -164,6 +164,8 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
             const int e = scene.Create("Player");
             scene.AddComponent(e, tf);
             scene.AddComponent(e, mover->desc);
+            // Its ジャンプの音 (rm::SoundRef) starts as the template's jump.wav, saved as the asset's id.
+            CHECK(json::Write(scene.Save(), false).find("a7d0c3f1e2b54c6d8e9f0a1b2c3d4e51") != std::string::npos);
             ScriptRunner runner;
             runner.Frame(scene, world, module, {}, 0.5f);
             runner.Frame(scene, world, module, {}, 0.5f);

@@ -13,6 +13,7 @@
 #include "core/asset/AssetIndex.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
+#include "rm_engine/game_x_audio/runtime/AudioSource.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
@@ -302,6 +303,8 @@ RM_TEST(Template_ThePlugins) {
     // Choosing ゲーム brings both spaces and both connectors.
     const auto game = TemplatePlugins(tree, tree.Find({"game"}));
     for (const char* n : {"game_production", "space3d", "space2d", "game_x_3d", "game_x_2d"}) CHECK(Has(game, n));
+    // ... and 音 (the sample's jump sound, the 3D / 2D templates' BGM; its connector comes with it).
+    for (const auto& path : std::vector<std::vector<std::string>>{{"game"}, {"game", "3d"}, {"game", "2d"}}) CHECK(Has(TemplatePlugins(tree, tree.Find(path)), "audio"));
 
     using namespace rm::game_production;
     for (const ProjectTemplate& t : tree.templates) {
@@ -313,7 +316,7 @@ RM_TEST(Template_ThePlugins) {
                                      &reflect::TypeOf<game_x_3d::Light>(), &reflect::TypeOf<game_x_3d::MeshRenderer>(),
                                      &reflect::TypeOf<space2d::Transform2D>(), &reflect::TypeOf<game_x_2d::Camera2D>(),
                                      &reflect::TypeOf<game_x_2d::Sprite>(), &reflect::TypeOf<physics::Rigidbody>(),
-                                     &reflect::TypeOf<physics::Collider>(), &reflect::TypeOf<physics::Collider2D>()});
+                                     &reflect::TypeOf<physics::Collider>(), &reflect::TypeOf<physics::Collider2D>(), &reflect::TypeOf<game_x_audio::AudioSource>()});
             // The new form: the scene in its own file (the template's Assets/, copied into the project),
             // named in the list by the id in its .meta.
             CHECK(!data.Find("scene"));

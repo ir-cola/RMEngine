@@ -49,6 +49,27 @@ constexpr RmTransform2DApi kTable{&Get, &Set};
 
 }  // namespace
 
+bool Pose2D(const game_production::Scene& scene, int entity, game_production::Pose& out) {
+    auto transformIn = [&](int id) -> const space2d::Transform2D* {
+        const game_production::SceneEntity* e = scene.Find(id);
+        const game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<space2d::Transform2D>().name) : nullptr;
+        return c && c->Known() ? static_cast<const space2d::Transform2D*>(c->value.Get()) : nullptr;
+    };
+    if (!transformIn(entity)) return false;
+    std::vector<const space2d::Transform2D*> chain;
+    size_t steps = 0;
+    for (const game_production::SceneEntity* e = scene.Find(entity); e && steps++ <= scene.Entities().size(); e = scene.Find(e->data.parent)) {
+        if (const space2d::Transform2D* t = transformIn(e->data.id)) chain.push_back(t);
+    }
+    space2d::Mat3 m;
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it) m = space2d::WorldMatrix(m, **it);
+    const Vec2 p = space2d::TransformPoint(m, {0, 0});
+    out.position = {p.x, p.y, 0};
+    out.forward = {0, 0, -1};  // into the screen: left is left, right is right
+    out.up = {0, 1, 0};
+    return true;
+}
+
 const game_production::ScriptApiPart& ScriptTransform2DPart() {
     static const game_production::ScriptApiPart part{RM_PART_TRANSFORM2D, RM_PART_TRANSFORM2D_VERSION, &kTable};
     return part;
