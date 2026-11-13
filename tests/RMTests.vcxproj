@@ -95,7 +95,7 @@
     <ClCompile Include="TestMeshBake.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
     <ClCompile Include="TestBakedImage.cpp" />
-    <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\BakedImage.cpp" />
+    <ClCompile Include="..\src\core\asset\BakedImage.cpp" />
     <ClCompile Include="TestExport.cpp" />
     <ClCompile Include="..\src\core\pak\Pak.cpp" />
     <ClCompile Include="..\src\platform\Crypto.cpp" />
@@ -187,6 +187,13 @@
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\Camera2D.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\SpriteAnimation.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space2d\runtime\Atlas.cpp" />
+    <ClCompile Include="TestGameUi.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)game_ui\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiLayout.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiService.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\ScriptUi.cpp" />
     <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
   </ItemGroup>
   <ItemGroup>

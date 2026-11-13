@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-#define RM_ABI_VERSION 5u
+#define RM_ABI_VERSION 6u
 
 #ifdef __cplusplus
 extern "C" {
@@ -129,6 +129,9 @@ typedef struct RmScriptDesc {
     void (*onHit)(void* self, RmEntityId self_entity, RmEntityId other);          /* began touching (not a trigger) */
     void (*onTriggerEnter)(void* self, RmEntityId self_entity, RmEntityId other); /* one of the two is a trigger */
     void (*onTriggerExit)(void* self, RmEntityId self_entity, RmEntityId other);
+    /* ABI 6: a game UI button of the entity was pressed (RMUI.h: the mouse, or 決定 on the focused one).
+       Called after the frame's systems, on started scripts only. Null when the script does not have it. */
+    void (*onClick)(void* self, RmEntityId self_entity);
 } RmScriptDesc;
 
 /* The hooks by number (a system asks for them by these: game_production::HookCall::hook). */
@@ -139,7 +142,8 @@ enum RmHook {
     RM_HOOK_RELOADED = 3,
     RM_HOOK_HIT = 4,
     RM_HOOK_TRIGGER_ENTER = 5,
-    RM_HOOK_TRIGGER_EXIT = 6
+    RM_HOOK_TRIGGER_EXIT = 6,
+    RM_HOOK_CLICK = 7 /* ABI 6 */
 };
 
 enum RmModuleFlags {

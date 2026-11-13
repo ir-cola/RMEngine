@@ -32,6 +32,9 @@ unsigned long CallHook(const RmScriptDesc& script, int hook, void* self, RmEntit
             case RM_HOOK_TRIGGER_EXIT:
                 if (script.onTriggerExit) script.onTriggerExit(self, entity, other);
                 break;
+            case RM_HOOK_CLICK:
+                if (script.onClick) script.onClick(self, entity);
+                break;
             case 0:
                 if (script.beginPlay) script.beginPlay(self, entity);
                 break;

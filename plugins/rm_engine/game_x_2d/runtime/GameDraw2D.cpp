@@ -9,7 +9,7 @@
 
 #include "base/Log.h"
 #include "platform/Image.h"
-#include "rm_engine/game_x_2d/runtime/BakedImage.h"
+#include "core/asset/BakedImage.h"
 #include "rm_engine/game_x_2d/runtime/Register.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
@@ -25,6 +25,11 @@
 #include <vector>
 
 namespace rm::game_x_2d {
+
+using asset::BakedImageInfo;
+using asset::kMaxImageSize;
+using asset::ReadBakedImage;
+using asset::WriteBakedImage;
 
 namespace {
 

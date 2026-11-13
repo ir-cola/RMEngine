@@ -11,7 +11,7 @@
 #include "platform/Image.h"
 #include "platform/Shell.h"
 #include "rm_engine/game_production/editor/GameExport.h"
-#include "rm_engine/game_x_2d/runtime/BakedImage.h"
+#include "core/asset/BakedImage.h"
 
 #include <algorithm>
 #include <format>
@@ -19,6 +19,11 @@
 #include <thread>
 
 namespace rm::game_x_2d {
+
+using asset::BakedImageInfo;
+using asset::kMaxImageSize;
+using asset::ReadBakedImage;
+using asset::WriteBakedImage;
 
 namespace {
 

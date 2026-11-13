@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "game_ui",
+  "displayName": "ゲーム UI",
+  "version": 1,
+  "requires": [
+    { "author": "rm_engine", "name": "game_production" }
+  ]
+}

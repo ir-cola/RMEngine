@@ -21,6 +21,8 @@
 #include "rm_engine/physics/runtime/Id.h"
 #include "rm_engine/game_x_audio/editor/Connector.h"
 #include "rm_engine/game_x_audio/runtime/Id.h"
+#include "rm_engine/game_ui/editor/Connector.h"
+#include "rm_engine/game_ui/runtime/Id.h"
 #include "rm_engine/space2d/runtime/Id.h"
 #include "rm_engine/space3d/editor/Thumbnail.h"
 #include "rm_engine/space3d/runtime/Id.h"
@@ -41,6 +43,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {game_x_2d::kPluginId, &game_x_2d::RegisterEditor},
         {physics::kPluginId, &physics::RegisterEditor},
         {game_x_audio::kPluginId, &game_x_audio::RegisterEditor},
+        {game_ui::kPluginId, &game_ui::RegisterEditor},
         {theme_colors::kPluginId, nullptr},  // theme files only (themes/*.json)
         {theme_paper::kPluginId, nullptr},
         {theme_seasons::kPluginId, &theme_seasons::RegisterEditor},

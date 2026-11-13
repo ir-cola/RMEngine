@@ -1,5 +1,5 @@
 #pragma once
-// ゲーム制作 × 2D - a sprite's image as the exported game gets it: the picture file as it is (PNG /
+// An image as the exported game gets it (a sprite's - ゲーム制作 × 2D bakes it -, a game UI's image): the picture file as it is (PNG /
 // JPEG ... read by WIC in the game, never compressed further) with what the editor knows of it in
 // front - the file's own size (a sprite's size in the world comes from it, even when the picture is
 // read smaller), the import settings くっきり and 大きさの上限. Pure - tested in tests/TestBakedImage.cpp.
@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace rm::game_x_2d {
+namespace rm::asset {
 
 // What Direct2D can hold in one bitmap: a bigger picture is read smaller (the sprite keeps its size).
 inline constexpr uint32_t kMaxImageSize = 16384;
@@ -34,4 +34,4 @@ std::string WriteBakedImage(const BakedImageInfo& info, std::string_view picture
 // (Japanese) when the header is broken.
 std::optional<BakedImage> ReadBakedImage(std::string_view bytes, std::string* error);
 
-}  // namespace rm::game_x_2d
+}  // namespace rm::asset

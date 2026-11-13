@@ -22,6 +22,10 @@ struct DisplaySettings {
     RM_PROPERTY(Edit, Label="高さ", Min=240, Max=4320) int height = 720;
     RM_PROPERTY(Edit, Label="表示のしかた") ScreenMode mode = ScreenMode::Windowed;
     RM_PROPERTY(Edit, Label="垂直同期", Tooltip="画面の書き換えに合わせて描きます (ちらつきを防ぐ)") bool vsync = true;
+    // Where the game's UI should keep away from (the edge of a TV, a notch): DIPs of the 画面 from each edge.
+    // A guide in the UI view; a canvas may lay itself out inside it (キャンバス「セーフエリアの中に」).
+    RM_PROPERTY(Edit, Label="セーフエリア (左・上)", Tooltip="画面の左と上の縁から内側へ、UI を置かない幅 (DIP)。UI のビューに補助線が出ます", Min=0, Max=4000) Vec2 safeAreaTopLeft{0, 0};
+    RM_PROPERTY(Edit, Label="セーフエリア (右・下)", Tooltip="画面の右と下の縁から内側へ、UI を置かない幅 (DIP)", Min=0, Max=4000) Vec2 safeAreaBottomRight{0, 0};
 };
 
 // When scripts built while the game plays are used (design BluePrint 20-c).

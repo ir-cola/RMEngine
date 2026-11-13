@@ -141,6 +141,14 @@ public:
             if (d.item != chosen && d.item->create) overlays_.push_back(d.item->create());
         }
         if (!drawer_) host_.Log(1, "このゲームには描くプラグイン (3D / 2D) が入っていないので、背景の色だけを塗ります");
+        // Over the whole screen, after the spaces (the game UI), in their order.
+        std::vector<const ScreenDrawInfo*> screens;
+        for (const auto& d : host_.Registry().Contributions<ScreenDrawInfo>(kScreenDrawPoint)) screens.push_back(d.item);
+        std::stable_sort(screens.begin(), screens.end(), [](const ScreenDrawInfo* a, const ScreenDrawInfo* b) { return a->order < b->order; });
+        for (const ScreenDrawInfo* s : screens) {
+            if (s->create) screenDrawers_.push_back(s->create());
+        }
+        screen_ = {static_cast<float>(settings_.display.width), static_cast<float>(settings_.display.height)};
         host_.Log(0, std::format("システム {} 個・エンティティ {} 個", runner_.Systems().size(), scene_.Entities().size()));
 
         // What the plugins keep while the game plays (音: PlayServices.h) - until the game ends.
@@ -180,12 +188,25 @@ public:
             world_.camera = runner_.Camera();
             scriptRunner_.Frame(scene_, world_, scripts_, settings_.scriptOrder, static_cast<float>(dt));
             runner_.SetCamera(world_.camera);
+        } else {
+            world_.ReadInput();  // (the game UI reads it too)
         }
         runner_.SetGravity(settings_.gravity);
         runner_.Advance(scene_, dt, settings_.fixedTimestep);
         // What the systems' fixed steps tell the scripts (the physics' contacts ...).
         if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, runner_.Hooks());
-        services_.Frame({scene_, runner_.Camera(), static_cast<float>(dt)});
+        // The services (音, the game UI ...) - with the screen, the mouse and the input; the hooks they ask
+        // for (a button's OnClick) go to the scripts now.
+        std::vector<HookCall> asked;
+        PlayFrame pf{scene_, runner_.Camera(), static_cast<float>(dt)};
+        pf.screen = screen_;
+        pf.pointer = host_.Pointer();
+        pf.input = &world_.inputNow;
+        pf.inputBefore = &world_.inputBefore;
+        pf.actions = &settings_.input;
+        pf.hooks = &asked;
+        services_.Frame(pf);
+        if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, asked);
         // A scene the scripts asked for (Game::LoadScene): switched here, between frames.
         const std::string from = world_.sceneIndex >= 0 ? world_.sceneNames[static_cast<size_t>(world_.sceneIndex)] : std::string();
         std::string err;
@@ -206,6 +227,7 @@ public:
         if (!drawer_) {
             const Color c = settings_.clearColor;
             dc->Clear(D2D1::ColorF(c.r, c.g, c.b, 1));
+            DrawScreen(dc, width, height);
             return;
         }
         GameDrawFrame f{scene_, runner_.Camera(), settings_.clearColor, host_.Graphics(), dc, width, height,
@@ -218,6 +240,16 @@ public:
                         }};
         drawer_->Draw(f);
         for (const auto& o : overlays_) o->DrawOverlay(f);
+        DrawScreen(dc, width, height);
+    }
+
+    // The game UI ... over everything: the window is the game's screen.
+    void DrawScreen(ID2D1DeviceContext* dc, float width, float height) {
+        screen_ = {width, height};
+        if (screenDrawers_.empty()) return;
+        ScreenDrawFrame f{scene_, settings_, host_.Graphics(), dc, 0, 0, width, height, screen_,
+                          [this](const AssetRef& ref) { return ReadAsset(ref); }, true};
+        for (const auto& s : screenDrawers_) s->Draw(f);
     }
 
     void Stop() override {
@@ -272,6 +304,8 @@ private:
     std::vector<std::string> cameraTypes_;                  // what the game sees through (SceneCamera)
     std::unique_ptr<GameDrawer> drawer_;
     std::vector<std::unique_ptr<GameDrawer>> overlays_;
+    std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // over everything (the game UI)
+    Vec2 screen_{1280, 720};                                    // the window's size at the last Draw (DIPs)
     ScriptRunner scriptRunner_;
 };
 

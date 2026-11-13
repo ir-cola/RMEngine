@@ -1,11 +1,11 @@
-#include "rm_engine/game_x_2d/runtime/BakedImage.h"
+#include "core/asset/BakedImage.h"
 
 #include "base/Json.h"
 
 #include <algorithm>
 #include <cstring>
 
-namespace rm::game_x_2d {
+namespace rm::asset {
 
 namespace {
 
@@ -53,4 +53,4 @@ std::optional<BakedImage> ReadBakedImage(std::string_view bytes, std::string* er
     return out;
 }
 
-}  // namespace rm::game_x_2d
+}  // namespace rm::asset

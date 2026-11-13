@@ -336,6 +336,7 @@ const char* HookName(int hook) {
         case RM_HOOK_HIT: return "OnHit";
         case RM_HOOK_TRIGGER_ENTER: return "OnTriggerEnter";
         case RM_HOOK_TRIGGER_EXIT: return "OnTriggerExit";
+        case RM_HOOK_CLICK: return "OnClick";
         default: return "EndPlay";
     }
 }

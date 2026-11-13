@@ -1,0 +1,124 @@
+#pragma once
+// ゲーム UI - where every UI thing is on the screen, and what the mouse and the keys do to it. Pure (no
+// drawing, no files): the editor's game view, the UI view and the exported game lay the UI out with
+// this, so what is drawn is what is clicked (rule 3). Tested in tests/TestGameUi.cpp.
+//
+//   screen (DIPs, Y down) ─ safe area ─▶ a canvas's box ─ ÷ scale ─▶ the canvas's units (基準の解像度)
+//   a UI thing: its box in its parent's units (アンカー + 位置 + 大きさ + 中心), turned about its 中心
+//   (its children turn with it) - toScreen maps its units to the screen.
+
+#include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/game_ui/runtime/UiComponents.h"
+
+#include <optional>
+#include <span>
+#include <vector>
+
+namespace rm::game_ui {
+
+struct UiBox {
+    float x = 0, y = 0, w = 0, h = 0;
+    float Right() const { return x + w; }
+    float Bottom() const { return y + h; }
+    bool Contains(Vec2 p) const { return p.x >= x && p.y >= y && p.x <= x + w && p.y <= y + h; }
+};
+
+// A 2D affine map of the screen (Y down): p' = (a x + c y + tx, b x + d y + ty).
+struct Affine {
+    float a = 1, b = 0, c = 0, d = 1, tx = 0, ty = 0;
+};
+Affine operator*(const Affine& m, const Affine& n);  // m after n
+Vec2 Apply(const Affine& m, Vec2 p);
+std::optional<Affine> Invert(const Affine& m);
+Affine Translate(Vec2 t);
+Affine Scaling(float sx, float sy);
+Affine Rotation(float degrees);  // clockwise on the screen
+// Turned by `degrees` and scaled by `scale` about `pivot`.
+Affine About(Vec2 pivot, float degrees, float scale);
+
+// The anchor's place in the parent, 0..1 from its top left: min = max for a point.
+void AnchorRange(UiAnchor anchor, Vec2& min, Vec2& max);
+// A UI thing's box in its parent's box (both in the parent's units).
+UiBox PlaceBox(const UiRect& r, const UiBox& parent);
+// Its 中心 in its parent's units (where it turns).
+Vec2 PivotPoint(const UiRect& r, const UiBox& box);
+// How many screen DIPs one canvas unit is, for a canvas of `reference` units in an area of `area` DIPs.
+float CanvasScale(UiScaleMode mode, Vec2 reference, Vec2 area);
+// The screen without the safe area's margins (never less than nothing).
+UiBox SafeBox(Vec2 screen, Vec2 topLeft, Vec2 bottomRight);
+
+// One UI thing laid out.
+struct UiNode {
+    int entity = 0;
+    int canvas = 0;       // its canvas's entity
+    int parent = -1;      // index in UiTree::nodes; -1 for a canvas
+    UiBox box;            // in its parent's units (a canvas: its own whole box)
+    Affine toScreen;      // the units its box is in -> screen DIPs (the canvas's scale, the parents' turns)
+    Affine self;          // its own units (for its children: box with its turn) -> screen DIPs
+    const UiCanvas* canvasPart = nullptr;  // a canvas
+    const UiRect* place = nullptr;
+    const UiText* text = nullptr;
+    const UiImage* image = nullptr;
+    const UiButton* button = nullptr;
+    const UiBar* bar = nullptr;
+};
+
+// Everything shown, back to front: canvases by 手前の順 (then the 階層's order), each canvas then its
+// things (depth first; siblings by 手前の順, then the 階層's order).
+struct UiTree {
+    std::vector<UiNode> nodes;
+    const UiNode* Find(int entity) const;
+};
+
+struct UiScreen {
+    Vec2 size{1280, 720};  // the game's screen (DIPs)
+    Vec2 safeTopLeft{0, 0}, safeBottomRight{0, 0};
+};
+
+// The UI of `scene` on `screen`: the canvases switched on (with their parents), and what is switched on
+// under them. `alsoShow`: a canvas holding one of these entities is laid out even when it (or what holds
+// it) is switched off - the UI view shows the window being made. A canvas under another canvas is one of
+// its things (not a window of its own).
+UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std::span<const int> alsoShow = {});
+
+// --- The mouse, the keys --------------------------------------------------------------------
+// The point (screen DIPs) is on the node's box (turns included).
+bool Hits(const UiNode& n, Vec2 screenPoint);
+// The entity of the frontmost thing under `p` that takes the mouse (an image, a bar or a button - a text
+// does not: a label never hides its button); 0: none.
+int TopAt(const UiTree& tree, Vec2 p);
+// The button that is `entity` or holds it (its nearest), 0: none.
+int ButtonOf(const UiTree& tree, int entity);
+// The button the mouse is on: TopAt's, when it can be pressed; 0: none (a button that cannot be pressed
+// still hides what is under it).
+int ButtonAt(const UiTree& tree, Vec2 p);
+
+struct PointerState {
+    int pressed = 0;  // the button the left button went down on (0: none)
+};
+struct PointerResult {
+    int hovered = 0;  // under the mouse
+    int held = 0;     // pressed and still under it (drawn pressed)
+    int clicked = 0;  // let go on the button it went down on: OnClick
+};
+// One frame of the mouse: `down` held now, `wentDown` / `wentUp` this frame.
+PointerResult StepPointer(const UiTree& tree, std::optional<Vec2> p, bool down, bool wentDown, bool wentUp, PointerState& state);
+
+// The canvas the keys work in: the frontmost with キーとパッドで選ぶ and a button that can be pressed; 0: none.
+int NavigationCanvas(const UiTree& tree);
+// The button to start from in `canvas`: `preferred` when it is one of its buttons that can be pressed,
+// else the one at the top left (top first). 0: none.
+int FirstFocus(const UiTree& tree, int canvas, int preferred);
+// The next button of `canvas` from `current` in a direction (dx, dy: -1 / 0 / 1, screen Y down): the
+// nearest one whose middle lies that way (going straight counts more than going aside). `current` itself
+// when there is none.
+int MoveFocus(const UiTree& tree, int canvas, int current, int dx, int dy);
+
+// --- How a button looks -----------------------------------------------------------------------
+Color ButtonColor(const UiButton& b);   // by its state (focused looks as Hover)
+float ButtonScale(const UiButton& b);
+Color Multiply(Color a, Color b);
+// The filled part of a bar inside its box (padding taken off).
+UiBox BarFill(const UiBar& bar, const UiBox& box);
+
+}  // namespace rm::game_ui

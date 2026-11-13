@@ -16,6 +16,7 @@
 #include "core/reflect/FieldCommand.h"
 #include "editor/plugin/Software.h"
 #include "rm_engine/game_production/runtime/DebugDraw.h"
+#include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 
 #include <cstdint>
@@ -57,6 +58,8 @@ struct SceneViewHost {
     // Play: the lines the scripts drew with rm::Debug (DebugDraw.h) - each view draws the ones of its
     // space (the scene view only while its toolbar's デバッグ is on). Null when not playing.
     const DebugDraw* debug = nullptr;
+    // The game settings (read only: the 画面's size and safe area - the UI view).
+    const GameSettings* settings = nullptr;
 };
 
 // One per open game and view (the scene view, the game view): keeps its own camera.
@@ -71,6 +74,39 @@ public:
     // How the user looks (camera, tool ...): kept with the panel layout, not in the project.
     virtual void LoadState(const json::Value& state) { (void)state; }
     virtual json::Value SaveState() const { return {}; }
+};
+
+// The game screen's rectangle in a panel: the largest of `aspect` (width / height) in its middle (the game
+// view draws the game there; bands around it). One place for every view (rule 2).
+inline ui::Rect GameScreenRect(const ui::Rect& panel, float aspect) {
+    const float a = aspect > 1e-3f ? aspect : 1e-3f;
+    float w = panel.w, h = panel.w / a;
+    if (h > panel.h) {
+        h = panel.h;
+        w = h * a;
+    }
+    return {panel.x + (panel.w - w) * 0.5f, panel.y + (panel.h - h) * 0.5f, w, h};
+}
+
+// PluginRegistry point: items are ViewPanelInfo (static). A panel of the game software that a plugin
+// adds (ゲーム UI: the UI view). It gets the same SceneViewHost as the scene view (game = false) and is
+// not of a space: shown whatever the game's space is.
+inline constexpr char kViewPanelPoint[] = "rm_engine.game_production.view_panel";
+struct ViewPanelInfo {
+    const char* id = "";             // the panel's id in the layout (unique among the game's panels)
+    const wchar_t* title = nullptr;  // a TrKey string
+    std::unique_ptr<SceneView> (*create)() = nullptr;
+};
+
+// PluginRegistry point: items are CreateItemInfo (static). Rows a plugin adds to the 階層's right-click
+// menu under エンティティを作る (ゲーム UI: キャンバス / ボタン / 文字 ...: entities that get no Transform).
+// `make` makes the entity (and what is under it) in `scene` under `parent` at `index` and returns it (0:
+// nothing); it is one undo entry, then selected with its name being typed.
+inline constexpr char kCreateItemPoint[] = "rm_engine.game_production.create_item";
+struct CreateItemInfo {
+    const wchar_t* label = nullptr;  // a TrKey string
+    int (*make)(Scene& scene, int parent, size_t index) = nullptr;
+    bool child = true;  // under the one selected entity (else - and with none selected - after the selection)
 };
 
 struct SceneViewInfo {

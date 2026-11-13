@@ -15,6 +15,7 @@
 // `<ゲーム>.exe --smoke` draws a few frames and closes with exit code 0 (the export's check); with
 // any problem it closes with 1 and writes why into game.log next to the exe.
 
+#include "base/Math.h"
 #include "core/RuntimeRegistry.h"
 #include "platform/Gfx.h"
 
@@ -59,6 +60,9 @@ public:
     virtual std::filesystem::path Folder() const = 0;  // the exe's folder (Scripts.dll)
     virtual void Log(int level, std::string_view textUtf8) = 0;  // 0 info / 1 warning / 2 error
     virtual void SetTitle(std::string_view titleUtf8) = 0;
+    // The mouse on the window's client area (DIPs, as Draw's size); nullopt when it is outside it or the
+    // game is not in front.
+    virtual std::optional<Vec2> Pointer() const { return std::nullopt; }
 };
 
 // One game (made by the plugin that offers it).

@@ -20,6 +20,9 @@ std::vector<InputAction> DefaultInputActions() {
         axis("MoveY", {{C::Down, -1}, {C::Up, 1}, {C::S, -1}, {C::W, 1}, {C::PadLeftStickY, 1}, {C::PadDown, -1}, {C::PadUp, 1}}),
         axis("Jump", {{C::Space, 1}, {C::PadA, 1}}),
         axis("Fire", {{C::MouseLeft, 1}, {C::Z, 1}, {C::PadX, 1}, {C::PadRT, 1}}),  // (not Ctrl: the editor's Ctrl+P would fire)
+        // The game UI's (rm_engine/game_ui): press the focused button / go back.
+        axis("Submit", {{C::Enter, 1}, {C::Space, 1}, {C::PadA, 1}}),
+        axis("Cancel", {{C::Escape, 1}, {C::PadB, 1}}),
     };
 }
 

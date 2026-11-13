@@ -4,12 +4,12 @@
 
 #include "Test.h"
 
-#include "rm_engine/game_x_2d/runtime/BakedImage.h"
+#include "core/asset/BakedImage.h"
 
 #include <cstring>
 
 using namespace rm;
-using namespace rm::game_x_2d;
+using namespace rm::asset;
 
 RM_TEST(BakedImage_RoundTrip) {
     const std::string png = std::string("\x89PNG\r\n\x1a\n", 8) + std::string("\0\x01\x02 the picture", 16);

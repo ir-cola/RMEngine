@@ -129,6 +129,17 @@ public:
         title_ = std::string(title);
         if (window_.Handle()) window_.SetTitle(Utf8ToWide(title_));
     }
+    // The mouse on the client area in DIPs (the size Draw is given) - only while this window is in front.
+    std::optional<Vec2> Pointer() const override {
+        const HWND hwnd = window_.Handle();
+        if (!hwnd || GetForegroundWindow() != hwnd) return std::nullopt;
+        POINT p{};
+        RECT client{};
+        if (!GetCursorPos(&p) || !ScreenToClient(hwnd, &p) || !GetClientRect(hwnd, &client)) return std::nullopt;
+        if (p.x < client.left || p.y < client.top || p.x >= client.right || p.y >= client.bottom) return std::nullopt;
+        const float scale = target_.Dpi() / 96.f;
+        return Vec2{static_cast<float>(p.x) / scale, static_cast<float>(p.y) / scale};
+    }
 
     // --- Window -----------------------------------------------------------------------------------
     LRESULT OnMessage(HWND, UINT msg, WPARAM wp, LPARAM lp, bool& handled) override {

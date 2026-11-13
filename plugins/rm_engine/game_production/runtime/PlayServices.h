@@ -23,7 +23,9 @@
 #include "base/Ref.h"
 #include "core/RuntimeRegistry.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
+#include "rm_engine/game_production/runtime/Input.h"
 #include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/game_production/runtime/Systems.h"
 
 #include <cstdint>
 #include <functional>
@@ -58,6 +60,18 @@ struct PlayFrame {
     Scene& scene;
     uint64_t camera = 0;  // the entity the game sees through (SystemContext::camera)
     float dt = 0;
+    // The game's screen (DIPs: the exported game's window; the editor's game view as if it were the game
+    // settings' 画面) and the mouse on it (nullopt: not over it - another panel, outside the window).
+    Vec2 screen{1280, 720};
+    std::optional<Vec2> pointer;
+    // The input of this frame and the last (pressed / released compare them; the mouse buttons too),
+    // and the game settings' 入力. Null in a test that gives none: nothing is down.
+    const InputFrame* input = nullptr;
+    const InputFrame* inputBefore = nullptr;
+    const std::vector<InputAction>* actions = nullptr;
+    // Script hooks a service asks for (a game UI's OnClick): the host gives them to the scripts after
+    // every service's Frame (ScriptRunner::Deliver). Null: none can be asked.
+    std::vector<HookCall>* hooks = nullptr;
 };
 
 class PlayService {

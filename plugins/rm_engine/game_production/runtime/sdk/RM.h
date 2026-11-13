@@ -19,6 +19,8 @@
 //       void OnHit(rm::Entity self, rm::Entity other);           // began touching `other` (once until they part)
 //       void OnTriggerEnter(rm::Entity self, rm::Entity other);  // `other` came into a trigger (or this into one)
 //       void OnTriggerExit(rm::Entity self, rm::Entity other);   // ... and went out
+//       // with the game UI (RMUI.h: a ボタン on the entity) - after the frame's systems:
+//       void OnClick(rm::Entity self);                           // the button was pressed (mouse / 決定)
 //   };
 //
 //   // Assets/Scripts/Mover.cpp

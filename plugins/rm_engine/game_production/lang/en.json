@@ -201,5 +201,9 @@
   "BGM として鳴らす音 (音源の「鳴らす先」が BGM・rm::Audio::PlayMusic)": "Sounds played as music (an audio source whose output is BGM, rm::Audio::PlayMusic)",
   "効果音": "Sound effects",
   "BGM でない音すべて": "Every sound that is not music",
-  "全体・BGM・効果音の大きさ。Play 中に変えるとすぐ聞こえ方が変わります": "How loud the whole game, the music and the sound effects are. Changed while playing, it is heard at once"
+  "全体・BGM・効果音の大きさ。Play 中に変えるとすぐ聞こえ方が変わります": "How loud the whole game, the music and the sound effects are. Changed while playing, it is heard at once",
+  "セーフエリア (左・上)": "Safe area (left, top)",
+  "画面の左と上の縁から内側へ、UI を置かない幅 (DIP)。UI のビューに補助線が出ます": "How far in from the screen's left and top edges no UI should be (DIPs). The UI view shows a guide",
+  "セーフエリア (右・下)": "Safe area (right, bottom)",
+  "画面の右と下の縁から内側へ、UI を置かない幅 (DIP)": "How far in from the screen's right and bottom edges no UI should be (DIPs)"
 }

@@ -27,15 +27,18 @@
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "core/asset/AssetFiles.h"
 #include "core/asset/ImportSettings.h"
+#include "rm_engine/game_production/runtime/GameDraw.h"
 #include "rm_engine/game_production/runtime/PlayServices.h"
 
 #include <algorithm>
 #include <cassert>
 #include <filesystem>
 #include <format>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <tuple>
 #include <optional>
 #include <system_error>
 #include <unordered_map>
@@ -212,21 +215,47 @@ public:
 
     // --- Software ---------------------------------------------------------------------------
     std::vector<editor::dock::PanelType> Panels() override {
-        return {
+        std::vector<editor::dock::PanelType> panels{
             {kSceneView, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawSceneView(c, r); }},
             {kGameView, TrKey(L"ゲーム"), [this](ui::Context& c, const Rect& r) { DrawGameView(c, r); }},
             {kExportPanel, TrKey(L"書き出し"), [this](ui::Context& c, const Rect& r) { DrawExportPanel(c, r); }},
             {kScenesPanel, TrKey(L"シーンの一覧"), [this](ui::Context& c, const Rect& r) { DrawScenesPanel(c, r); }},
         };
+        // Panels the plugins add (ゲーム UI: the UI view) - not of a space.
+        for (const auto& p : host_.Registry().Contributions<ViewPanelInfo>(kViewPanelPoint)) {
+            const ViewPanelInfo* info = p.item;
+            if (!info->create || !info->id || !*info->id) continue;
+            panels.push_back({info->id, info->title ? info->title : L"", [this, info](ui::Context& c, const Rect& r) { DrawViewPanel(c, r, *info); }});
+        }
+        return panels;
+    }
+
+    // A panel a plugin added: its view, made the first time it is drawn (its state kept like the scene
+    // views': "viewPanels": {id: state}).
+    void DrawViewPanel(ui::Context& c, const Rect& r, const ViewPanelInfo& info) {
+        auto it = viewPanels_.find(info.id);
+        if (it == viewPanels_.end()) {
+            std::unique_ptr<SceneView> made = info.create();
+            if (!made) return;
+            made->LoadState(view_.Get("viewPanels").Get(info.id));
+            it = viewPanels_.emplace(info.id, std::move(made)).first;
+        }
+        SceneViewHost h = ViewHost(false);
+        it->second->Draw(c, r, h);
+        if (play_ == PlayState::Playing) c.RequestAnimation();
     }
 
     editor::dock::Layout DefaultLayout() const override {
         using editor::dock::Axis;
         namespace cp = editor::core_panel;
         editor::dock::Layout l;
+        // The plugins' panels (the UI view) are tabs next to the scene and the game.
+        std::vector<std::string> views{kSceneView, kGameView};
+        for (const auto& p : host_.Registry().Contributions<ViewPanelInfo>(kViewPanelPoint)) {
+            if (p.item->create && p.item->id && *p.item->id) views.push_back(p.item->id);
+        }
         auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({cp::kHierarchy, kScenesPanel}),
-                               l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf({kSceneView, kGameView}),
-                                           l.MakeLeaf({cp::kInspector})));
+                               l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf(views), l.MakeLeaf({cp::kInspector})));
         l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets, kExportPanel}));
         return l;
     }
@@ -254,6 +283,13 @@ public:
             }
             v.Set("sceneViews", std::move(states));
             v.Erase("sceneView");  // the one view before there were spaces: now in "sceneViews"
+        }
+        if (!viewPanels_.empty()) {
+            json::Value states = v.Get("viewPanels").IsObject() ? v.Get("viewPanels") : json::Value::MakeObject();
+            for (const auto& [id, panel] : viewPanels_) {
+                if (json::Value s = panel->SaveState(); !s.IsNull()) states.Set(id, std::move(s));
+            }
+            v.Set("viewPanels", std::move(states));
         }
         json::Value modes = json::Value::MakeArray();
         std::vector<std::pair<int, int>> sorted(modes_.begin(), modes_.end());
@@ -825,6 +861,27 @@ private:
         if (child.enabled) child.run = [this, sel] { CreateEntity(sel[0], Scene::kEnd); };
         list.push_back(std::move(child));
 
+        // What the plugins make (ゲーム UI: キャンバス, ボタン ...): no Transform of the game's space.
+        for (const auto& ci : host_.Registry().Contributions<CreateItemInfo>(kCreateItemPoint)) {
+            const CreateItemInfo* info = ci.item;
+            if (!info->make || !info->label) continue;
+            tree::Action make;
+            make.label = Tr(info->label);
+            make.run = [this, sel, info] {
+                int parent = 0;
+                size_t index = Scene::kEnd;
+                if (info->child && sel.size() == 1) {
+                    parent = sel[0];
+                } else {
+                    std::tie(parent, index) = After(sel);
+                }
+                int made = 0;
+                EditTouching({}, WideToUtf8(info->label) + "を作成", [&] { made = info->make(scene_, parent, index); });
+                if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
+            };
+            list.push_back(std::move(make));
+        }
+
         tree::Action sep;
         sep.separator = true;
         list.push_back(sep);
@@ -982,7 +1039,18 @@ private:
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
         // What the systems' fixed steps tell the scripts (the physics' contacts ...).
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, runner_.Hooks());
-        services_.Frame({*playScene_, runner_.Camera(), static_cast<float>(dt)});
+        // The services (音, the game UI ...): the game screen as the game settings' 画面, the mouse over the
+        // game view; the hooks they ask for (a button's OnClick) go to the scripts now.
+        std::vector<HookCall> asked;
+        PlayFrame pf{*playScene_, runner_.Camera(), static_cast<float>(dt)};
+        pf.screen = GameScreen();
+        pf.pointer = pointer_;
+        pf.input = &world.inputNow;
+        pf.inputBefore = &world.inputBefore;
+        pf.actions = &settings_.input;
+        pf.hooks = &asked;
+        services_.Frame(pf);
+        scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, asked);
         // A scene the scripts asked for (Game::LoadScene): switched between frames, inside the copy
         // that plays - the scene being edited stays (■ comes back to it).
         const std::string from = world.sceneIndex >= 0 ? world.sceneNames[static_cast<size_t>(world.sceneIndex)] : std::string();
@@ -1280,6 +1348,7 @@ private:
         h.camera = Running() ? runner_.Camera() : SceneCamera(scene_, cameraTypes_, settings_.startCamera.id);  // in Play: as the systems left it
         h.aspect = static_cast<float>(std::max(1, settings_.display.width)) / static_cast<float>(std::max(1, settings_.display.height));
         h.openSettings = [this] { InspectSettings(); };
+        h.settings = &settings_;
         h.debug = Running() ? &debug_ : nullptr;
         return h;
     }
@@ -1318,7 +1387,45 @@ private:
         for (View& other : views_) {
             if (&other != view) other.game->DrawLayer(c, r, h);
         }
+        // Over everything: the game UI ... - on the game screen's rectangle, as the game settings' 画面.
+        const Rect game = GameScreenRect(r, h.aspect);
+        const Vec2 screen = GameScreen();
+        const ui::Input& in = c.In();
+        pointer_.reset();
+        if (mouseInGame_ && game.Contains(in.mouseX, in.mouseY) && game.w > 0 && game.h > 0) {
+            pointer_ = Vec2{(in.mouseX - game.x) / game.w * screen.x, (in.mouseY - game.y) / game.h * screen.y};
+        }
+        DrawScreen(c, game, screen);
         if (play_ == PlayState::Playing) c.RequestAnimation();
+    }
+
+    // The game's screen as the game settings' 画面 (DIPs).
+    Vec2 GameScreen() const {
+        return {static_cast<float>(std::max(1, settings_.display.width)), static_cast<float>(std::max(1, settings_.display.height))};
+    }
+
+    // What the plugins draw over the whole game screen (ScreenDrawInfo: the game UI), into `game`.
+    void DrawScreen(ui::Context& c, const Rect& game, Vec2 screen) {
+        if (!screensAsked_) {
+            screensAsked_ = true;
+            std::vector<const ScreenDrawInfo*> list;
+            for (const auto& d : host_.Registry().Contributions<ScreenDrawInfo>(kScreenDrawPoint)) list.push_back(d.item);
+            std::stable_sort(list.begin(), list.end(), [](const ScreenDrawInfo* a, const ScreenDrawInfo* b) { return a->order < b->order; });
+            for (const ScreenDrawInfo* s : list) {
+                if (s->create) screenDrawers_.push_back(s->create());
+            }
+        }
+        if (screenDrawers_.empty() || game.w < 1 || game.h < 1) return;
+        ScreenDrawFrame f{Shown(), settings_, host_.Graphics(), c.P().DC(), game.x, game.y, game.w, game.h, screen,
+                          [this](const AssetRef& ref) -> std::optional<std::string> {
+                              const std::filesystem::path file = host_.AssetFile(ref);
+                              if (file.empty()) return std::nullopt;
+                              return platform::ReadFileBytes(file, nullptr);
+                          },
+                          Running()};
+        c.P().PushClip(game);
+        for (const auto& s : screenDrawers_) s->Draw(f);
+        c.P().PopClip();
     }
 
     // --- Inspector -----------------------------------------------------------------------------
@@ -2546,6 +2653,10 @@ private:
     std::unique_ptr<Scene> playScene_;  // the copy that plays
     std::vector<Kept> kept_;            // この値を残す: written back at Stop
     bool mouseInGame_ = false;          // the mouse over the game view (its last drawing)
+    std::optional<Vec2> pointer_;       // ... on the game screen (DIPs of the game settings' 画面); nullopt: not over it
+    std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // over the game view (the game UI)
+    std::map<std::string, std::unique_ptr<SceneView>> viewPanels_;  // the plugins' panels (ViewPanelInfo), by id
+    bool screensAsked_ = false;
     std::vector<AssetRef> playScenes_;  // the scenes Play can switch to (GameScenes when it started)
     std::vector<std::string> cameraTypes_;  // the components the game sees through (SceneCamera)
     // シーンの一覧 panel: the row chosen (a scene's id; "" = the new scene not saved yet), renaming it.

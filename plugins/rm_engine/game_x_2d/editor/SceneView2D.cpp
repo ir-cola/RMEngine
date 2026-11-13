@@ -12,7 +12,7 @@
 #include "platform/Gfx.h"
 #include "platform/Image.h"
 #include "rm_engine/game_x_2d/editor/SceneViewState2D.h"
-#include "rm_engine/game_x_2d/runtime/BakedImage.h"
+#include "core/asset/BakedImage.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/space2d/editor/Gizmo2D.h"
@@ -33,6 +33,11 @@
 #include <utility>
 
 namespace rm::game_x_2d {
+
+using asset::BakedImageInfo;
+using asset::kMaxImageSize;
+using asset::ReadBakedImage;
+using asset::WriteBakedImage;
 
 namespace {
 
