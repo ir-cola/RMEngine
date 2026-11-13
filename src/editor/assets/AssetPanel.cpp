@@ -112,6 +112,11 @@ bool AssetPanel::DrawPicture(ui::Context& c, const tree::Item& item, const Rect&
     return true;
 }
 
+void AssetPanel::SetPreviews(const PluginRegistry* registry, std::function<void()> redraw) {
+    registry_ = registry;
+    described_ = redraw ? std::make_unique<UiWake>(std::move(redraw)) : nullptr;
+}
+
 const AssetPreview* PreviewFor(const PluginRegistry& registry, asset::Kind kind) {
     for (const auto& p : registry.Contributions<AssetPreview>(kAssetPreviewPoint)) {
         if (p.item->kind == kind) return p.item;
@@ -344,7 +349,8 @@ void AssetPanel::InspectSelected() {
     std::shared_ptr<ImportView> view = view_;
     auto push = push_;
     const AssetPreview* preview = registry_ ? PreviewFor(*registry_, kind) : nullptr;
-    target.blocks = [lib, view, guid, type, push, preview] {
+    std::function<void()> known = described_ ? described_->Signal() : std::function<void()>();
+    target.blocks = [lib, view, guid, type, push, preview, known] {
         std::vector<InspectBlock> blocks;
         const asset::Entry* now = lib->Index().ByGuid(guid);
         if (!now) return blocks;  // deleted: nothing is shown
@@ -352,7 +358,7 @@ void AssetPanel::InspectSelected() {
         info.note = KindLabel(asset::KindOf(now->path, now->folder)) + L"  ·  Assets/" + Utf8ToWide(now->path) + L"\nID " + Utf8ToWide(guid);
         if (preview && preview->describe) {
             // (a sound: its length and form - and 「鳴らしてみる」 in the block's ⋮ menu)
-            if (const std::wstring line = preview->describe(lib->FullPath(*now)); !line.empty()) info.note += L"\n" + line;
+            if (const std::wstring line = preview->describe(lib->FullPath(*now), known); !line.empty()) info.note += L"\n" + line;
             info.title = KindLabel(asset::KindOf(now->path, now->folder));
             info.menu = PreviewActions(*lib, preview, guid);
         }
@@ -399,7 +405,8 @@ void AssetPanel::Draw(ui::Context& c, const Rect& r) {
             text = KindLabel(kind) + L"  ·  Assets/" + Utf8ToWide(e->path);
             const AssetPreview* preview = registry_ ? PreviewFor(*registry_, kind) : nullptr;
             if (preview && preview->describe) {
-                if (const std::wstring line = preview->describe(lib_.FullPath(*e)); !line.empty()) text += L"  ·  " + line;
+                const std::function<void()> known = described_ ? described_->Signal() : std::function<void()>();
+                if (const std::wstring line = preview->describe(lib_.FullPath(*e), known); !line.empty()) text += L"  ·  " + line;
             }
         }
     } else if (sel.size() > 1) {

@@ -1213,7 +1213,7 @@ void EditorScreen::DrawAssets(ui::Context& c, Rect r) {
         ws.assetPanel = std::make_unique<AssetPanel>(*assets_, thumbnails_.get(), ws.assetThumbnail,
                                                      [this](std::wstring problem) { ShowError(std::move(problem)); });
         Workspace* wp = &ws;
-        ws.assetPanel->SetPreviews(&app_.GetPlugins().Registry());
+        ws.assetPanel->SetPreviews(&app_.GetPlugins().Registry(), [this] { RedrawAll(); });
         ws.assetPanel->SetInspector([wp](Inspectable i) { wp->Inspect(std::move(i)); },
                                     [wp](std::unique_ptr<ICommand> cmd) { wp->history.Push(std::move(cmd), false); });
     }

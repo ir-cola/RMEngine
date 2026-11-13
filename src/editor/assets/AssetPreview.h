@@ -11,6 +11,7 @@
 #include "core/asset/AssetIndex.h"
 
 #include <filesystem>
+#include <functional>
 #include <string>
 
 namespace rm::editor {
@@ -21,9 +22,10 @@ inline constexpr char kAssetPreviewPoint[] = "core.asset_preview";
 
 struct AssetPreview {
     asset::Kind kind = asset::Kind::Audio;
-    // A short line about the file (in the language in use); "" while it is not known yet (the plugin
-    // reads it on a thread of its own - the panel asks again when it draws) or when it cannot be read.
-    std::wstring (*describe)(const std::filesystem::path& file) = nullptr;
+    // A short line about the file (in the language in use; "" when there is none). The plugin may read
+    // it on a thread of its own: until then it gives a line saying so, and calls `known` (from any
+    // thread) once the real line is there - the panel then has the windows drawn again.
+    std::wstring (*describe)(const std::filesystem::path& file, const std::function<void()>& known) = nullptr;
     // Plays it with its import settings (`import`: its .meta's "import"); what played before stops.
     void (*play)(const std::filesystem::path& file, const json::Value& import) = nullptr;
     void (*stop)() = nullptr;

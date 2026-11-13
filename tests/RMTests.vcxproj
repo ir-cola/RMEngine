@@ -124,6 +124,7 @@
     <ClCompile Include="..\plugins\rm_engine\audio\runtime\Decoder.cpp" />
     <ClCompile Include="..\plugins\rm_engine\audio\runtime\StbVorbis.cpp" />
     <ClCompile Include="..\plugins\rm_engine\audio\runtime\AudioEngine.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\audio\editor\Describer.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Systems.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Prefab.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\SceneFile.cpp" />

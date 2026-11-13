@@ -4,11 +4,18 @@
 
 #include "Test.h"
 
+#include "editor/lang/Lang.h"
+#include "platform/Win.h"
+#include "rm_engine/audio/editor/Describer.h"
 #include "rm_engine/audio/runtime/AudioEngine.h"
 #include "rm_engine/audio/runtime/Decoder.h"
 #include "rm_engine/audio/runtime/Sound.h"
 
+#include <atomic>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <functional>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -255,4 +262,46 @@ RM_TEST(Audio_Engine_StopsWhenAsked) {
     CHECK(Within([&] { return engine.Voices() == 0; }));
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     CHECK(engine.TakeMessages().size() == 1);
+}
+
+RM_TEST(Audio_Describer_TellsWhenTheLineIsKnown) {
+    // The アセット panel's line: read on the describer's thread; `known` is called once it is there (the
+    // panel then has the windows drawn again - before, a broken file showed 「長さを調べています…」 until
+    // the mouse moved).
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / (L"rm_describe_test_" + std::to_wstring(GetCurrentProcessId()));
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    const fs::path broken = dir / L"broken.wav", good = dir / L"good.wav";
+    std::ofstream(broken, std::ios::binary) << "not a sound";
+    {
+        const std::string wav = WriteWav16(std::vector<float>(4000, 0.1f), {8000, 1});  // 0.5 s
+        std::ofstream(good, std::ios::binary).write(wav.data(), static_cast<std::streamsize>(wav.size()));
+    }
+    const std::wstring reading = editor::Tr(L"長さを調べています…");
+    std::wstring cannot = editor::Tr(L"鳴らせません: {}");
+    cannot = cannot.substr(0, cannot.find(L"{}"));
+    std::atomic<int> told{0};
+    const std::function<void()> known = [&told] { ++told; };
+    auto waitFor = [&](int n) { return Within([&] { return told.load() >= n; }); };
+    {
+        Describer d;
+        CHECK(d.Line(broken, known) == reading);
+        CHECK(d.Line(broken, known) == reading || told.load() == 1);  // (asked again every frame: told once)
+        CHECK(waitFor(1));
+        CHECK(d.Line(broken, known).starts_with(cannot));
+        CHECK(d.Line(good, known) == reading);
+        CHECK(waitFor(2));
+        const std::wstring line = d.Line(good, known);
+        CHECK(line.find(L"0:00.5") != std::wstring::npos && line.find(L"8000 Hz") != std::wstring::npos);
+        // Known: no more telling. Changed on the disk: read again, told again.
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        CHECK(told.load() == 2);
+        fs::last_write_time(good, fs::last_write_time(good, ec) + std::chrono::seconds(2), ec);
+        CHECK(d.Line(good, known) == reading);
+        CHECK(waitFor(3));
+        CHECK(told.load() == 3);
+    }
+    fs::remove_all(dir, ec);
 }
