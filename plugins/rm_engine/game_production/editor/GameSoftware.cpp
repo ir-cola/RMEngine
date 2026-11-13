@@ -609,7 +609,10 @@ public:
         if (auto edit = editor::inspector::Draw(c, exportInspector_, box, std::span(&b, 1))) ApplyExportEdit(*edit);
         float y = box.Bottom() + 4;
         if (editor::w::Button(c, "export_browse", {area.Right() - 160, y, 160, 26}, Tr(L"出力先を選ぶ…"))) {
-            host_.PickFolder(Tr(L"書き出すフォルダを選ぶ"), OutputNow(), [this](fs::path folder) {
+            // In the output folder (not there yet: the nearest one above it; on a drive that is not there:
+            // the project's folder).
+            const fs::path start = platform::ExistingFolderAtOrAbove(OutputNow()).empty() ? host_.GetProject().Root() : OutputNow();
+            host_.PickFolder(Tr(L"書き出すフォルダを選ぶ"), start, [this](fs::path folder) {
                 json::Value e = view_.Get("export").IsObject() ? view_.Get("export") : json::Value::MakeObject();
                 e.Set("output", PathToUtf8(folder));
                 view_.Set("export", std::move(e));

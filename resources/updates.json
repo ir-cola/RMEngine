@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "書き出しの直し: 「出力先を選ぶ…」が今の出力先 (まだ無ければその親) で開く (前は前に使ったフォルダで開いていた)。スクリプトのビルドの後に MSBuild のプロセスが残らないので、試したプロジェクトのフォルダをすぐ消せる",
+          "en": "Export fixes: Choose output folder… opens in the current output folder (or its parent when it is not there yet) instead of the last folder used. MSBuild no longer stays running after a script build, so a project's folder can be deleted at once"
+        },
+        {
           "ja": "ゲーム UI: 素早いクリックやタッチパッドのタップでボタンが押されなかったのを直す (押すと離すが 1 フレームの間に入っても押される)。キーやパッドで選んでいるボタンに白と黒の枠を付けて、乗ったボタンと見分けられるように",
           "en": "Game UI: fixed buttons not being pressed by a quick click or a touch pad tap (a press and release within one frame now counts). The button chosen with the keys or a pad gets a white and black frame, so it stands apart from the one under the mouse"
         },

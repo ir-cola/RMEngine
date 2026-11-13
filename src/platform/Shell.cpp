@@ -30,9 +30,11 @@ std::optional<std::wstring> ShowOpenDialog(HWND owner, FILEOPENDIALOGOPTIONS ext
     const std::wstring t(title);
     dlg->SetTitle(t.c_str());
     if (filter) dlg->SetFileTypes(1, filter);
-    if (!initialFolder.empty()) {
+    // (a folder that is not there yet - an export's output - opens the nearest one above it: never the
+    // folder the dialog remembers from another project)
+    if (const std::filesystem::path start = ExistingFolderAtOrAbove(std::filesystem::path(initialFolder)); !start.empty()) {
         ComPtr<IShellItem> folder;
-        if (SUCCEEDED(SHCreateItemFromParsingName(std::wstring(initialFolder).c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
+        if (SUCCEEDED(SHCreateItemFromParsingName(start.c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
             dlg->SetFolder(folder.Get());
         }
     }
@@ -47,6 +49,19 @@ std::optional<std::wstring> ShowOpenDialog(HWND owner, FILEOPENDIALOGOPTIONS ext
 }
 
 }  // namespace
+
+std::filesystem::path ExistingFolderAtOrAbove(const std::filesystem::path& path) {
+    if (path.empty()) return {};
+    std::filesystem::path p = path.lexically_normal();
+    for (int i = 0; i < 256 && !p.empty(); ++i) {
+        std::error_code ec;
+        if (std::filesystem::is_directory(p, ec)) return p;
+        std::filesystem::path up = p.parent_path();
+        if (up == p) break;
+        p = std::move(up);
+    }
+    return {};
+}
 
 std::optional<std::wstring> PickFolder(HWND owner, std::wstring_view title, std::wstring_view initialFolder) {
     return ShowOpenDialog(owner, FOS_PICKFOLDERS, title, initialFolder, nullptr);

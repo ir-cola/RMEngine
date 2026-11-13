@@ -17,6 +17,9 @@ struct ProcessResult {
 
 // `commandLine`: the program (quoted when it has spaces) and its arguments. `environment`: the whole
 // environment it gets (empty: this process's). No window is shown.
+// Everything it starts goes with it (a job object): when it ends, what it left running - MSBuild's
+// worker nodes, a program started in the background - is ended too, so nothing keeps a folder of the
+// project open (it could not be deleted) or this call waiting. If this process ends first, they end too.
 ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem::path& workingDir,
                          const std::map<std::wstring, std::wstring>& environment, std::string* error);
 

@@ -3,6 +3,7 @@
 #include "platform/Shell.h"
 #include "platform/Win.h"
 
+#include <thread>
 #include <vector>
 
 namespace rm::platform {
@@ -79,25 +80,54 @@ ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem:
         }
         env.push_back(L'\0');
     }
+    // A job for it and everything it starts: closed when it ends (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE).
+    HANDLE job = CreateJobObjectW(nullptr, nullptr);
+    if (job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) {
+            CloseHandle(job);
+            job = nullptr;
+        }
+    }
     std::wstring cmd = commandLine;
     PROCESS_INFORMATION pi{};
     const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE,
-                                   CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT, env.empty() ? nullptr : env.data(),
-                                   workingDir.empty() ? nullptr : workingDir.c_str(), &si, &pi);
+                                   CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED,
+                                   env.empty() ? nullptr : env.data(), workingDir.empty() ? nullptr : workingDir.c_str(), &si, &pi);
     DeleteProcThreadAttributeList(attrs);
     CloseHandle(writePipe);
     if (!ok) {
         if (error) *error = ErrorText(GetLastError());
         CloseHandle(readPipe);
+        if (job) CloseHandle(job);
         return r;
     }
+    // In the job before it runs (so whatever it starts is in it too); a job that cannot take it: it runs
+    // without one.
+    if (job && !AssignProcessToJobObject(job, pi.hProcess)) {
+        CloseHandle(job);
+        job = nullptr;
+    }
+    ResumeThread(pi.hThread);
     r.started = true;
-    char buf[4096];
-    DWORD got = 0;
-    while (ReadFile(readPipe, buf, sizeof(buf), &got, nullptr) && got > 0) r.output.append(buf, got);
-    CloseHandle(readPipe);
+    // Its output is read on a thread of its own, so a process it left running with the pipe (a
+    // background child) never keeps this waiting: the pipe closes when the job is closed below.
+    std::thread reader([&r, readPipe] {
+        char buf[4096];
+        DWORD got = 0;
+        while (ReadFile(readPipe, buf, sizeof(buf), &got, nullptr) && got > 0) r.output.append(buf, got);
+    });
     WaitForSingleObject(pi.hProcess, INFINITE);
     GetExitCodeProcess(pi.hProcess, &r.exitCode);
+    if (job) {
+        TerminateJobObject(job, 1);  // what it left running ends now
+        CloseHandle(job);
+    } else {
+        CancelIoEx(readPipe, nullptr);  // (no job: what it left keeps the pipe - stop reading anyway)
+    }
+    reader.join();
+    CloseHandle(readPipe);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
     return r;

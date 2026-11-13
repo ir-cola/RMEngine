@@ -15,7 +15,12 @@
 
 namespace rm::platform {
 
+// The dialog opens in `initialFolder` - or, when it is not there (yet), in the nearest folder above it
+// that is (never in the one Windows remembers from before, unless none of them is there).
 std::optional<std::wstring> PickFolder(HWND owner, std::wstring_view title, std::wstring_view initialFolder);
+// `path` when it is a folder that is there, else the nearest folder above it that is; empty: none (a
+// drive that is not there, an empty path).
+std::filesystem::path ExistingFolderAtOrAbove(const std::filesystem::path& path);
 // filterSpec example: L"*.rmpf"
 std::optional<std::wstring> PickOpenFile(HWND owner, std::wstring_view title, std::wstring_view filterName,
                                          std::wstring_view filterSpec);

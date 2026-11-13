@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <cwctype>
 #include <system_error>
@@ -68,7 +69,15 @@ bool WriteIfChanged(const fs::path& p, const std::string& text, std::string* why
 // code, -1 when it could not start.
 int Run(const std::wstring& commandLine, const fs::path& folder, std::string* output) {
     std::string error;
-    const platform::ProcessResult r = platform::RunProcess(commandLine, folder, {}, &error);
+    // MSBuild's worker nodes are never kept for later builds (they would keep the project's folder
+    // open: it could not be deleted) - with -nodeReuse:false on the command line, and the job of
+    // RunProcess ends whatever is left.
+    static const std::map<std::wstring, std::wstring> env = [] {
+        auto e = platform::CurrentEnvironment();
+        e[L"MSBUILDDISABLENODEREUSE"] = L"1";
+        return e;
+    }();
+    const platform::ProcessResult r = platform::RunProcess(commandLine, folder, env, &error);
     if (!r.started) return -1;
     if (output) *output = r.output;
     return static_cast<int>(r.exitCode);

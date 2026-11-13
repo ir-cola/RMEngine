@@ -100,6 +100,7 @@ std::optional<VisualStudio> FindVisualStudio(std::string* error) {
     };
     // The tools' messages in English (plain ASCII: never garbled by a code page) - shown as they are.
     vs.env[L"VSLANG"] = L"1033";
+    vs.env[L"MSBUILDDISABLENODEREUSE"] = L"1";  // (nothing it starts is kept running after it)
     vs.tools = fs::path(envOf(L"VCToolsInstallDir")) / L"bin" / L"Hostx64" / L"x64";
     vs.rc = fs::path(envOf(L"WindowsSdkVerBinPath")) / L"x64" / L"rc.exe";
     if (!fs::exists(vs.tools / L"link.exe", ec) || !fs::exists(vs.rc, ec)) {

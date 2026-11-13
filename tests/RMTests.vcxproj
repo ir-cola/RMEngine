@@ -73,6 +73,7 @@
     <ClCompile Include="TestProject.cpp" />
     <ClCompile Include="TestFileLock.cpp" />
     <ClCompile Include="TestWorker.cpp" />
+    <ClCompile Include="TestProcess.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
