@@ -13,6 +13,7 @@
 #include <fstream>
 #include <mutex>
 #include <thread>
+#include <utility>
 #include <algorithm>
 
 namespace rm::game {
@@ -129,6 +130,7 @@ public:
         title_ = std::string(title);
         if (window_.Handle()) window_.SetTitle(Utf8ToWide(title_));
     }
+    PointerPresses TakePointerPresses() override { return std::exchange(presses_, PointerPresses{}); }
     // The mouse on the client area in DIPs (the size Draw is given) - only while this window is in front.
     std::optional<Vec2> Pointer() const override {
         const HWND hwnd = window_.Handle();
@@ -150,6 +152,13 @@ public:
                     // Drawn again at once (while the edge is dragged the loop above does not run).
                     if (started_ && wp != SIZE_MINIMIZED && !drawing_) DrawFrame();
                 }
+                return 0;
+            case WM_LBUTTONDOWN:
+            case WM_LBUTTONDBLCLK:
+                ++presses_.down;
+                return 0;
+            case WM_LBUTTONUP:
+                ++presses_.up;
                 return 0;
             case WM_CLOSE:
                 quit_ = true;
@@ -250,6 +259,7 @@ private:
     std::unique_ptr<Game> game_;
     Game::Display display_;
     bool quit_ = false;
+    PointerPresses presses_;  // the left button since the last frame (TakePointerPresses)
     bool started_ = false;   // the window is there and the game runs
     bool drawing_ = false;   // inside DrawFrame (WM_SIZE does not draw again inside it)
     bool toldDraw_ = false;  // a failed EndDraw was told (once)

@@ -201,6 +201,9 @@ public:
         PlayFrame pf{scene_, runner_.Camera(), static_cast<float>(dt)};
         pf.screen = screen_;
         pf.pointer = host_.Pointer();
+        const game::Host::PointerPresses presses = host_.TakePointerPresses();
+        pf.pointerWentDown = presses.down > 0;
+        pf.pointerWentUp = presses.up > 0;
         pf.input = &world_.inputNow;
         pf.inputBefore = &world_.inputBefore;
         pf.actions = &settings_.input;

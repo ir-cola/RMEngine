@@ -251,6 +251,21 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
     dc_->SetTransform(old);
 }
 
+void UiRenderer::DrawFocus(const UiNode& n, const Affine& full) {
+    // The button chosen by the keys / a pad: a frame round it, light outside and dark inside, so it shows
+    // on any colour of button and of what is behind it (the colours of the frame are not the button's).
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(ToD2D(full) * old);
+    auto ring = [&](float out, float width, Color c) {
+        const D2D1_ROUNDED_RECT rr{D2D1::RectF(n.box.x - out, n.box.y - out, n.box.Right() + out, n.box.Bottom() + out), 6 + out, 6 + out};
+        if (ID2D1SolidColorBrush* b = Brush(c)) dc_->DrawRoundedRectangle(rr, b, width);
+    };
+    ring(7, 5, Color{1, 1, 1, 0.95f});
+    ring(3.5f, 2, Color{0.05f, 0.05f, 0.1f, 0.85f});
+    dc_->SetTransform(old);
+}
+
 void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& tree, const Affine& toDc, const AssetReader& asset) {
     if (!dc) return;
     Begin(dc);
@@ -270,6 +285,7 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
             dc->SetTransform(old);
         }
         if (n.text) DrawText(n, full, gfx, asset);
+        if (n.button && n.button->focused && n.button->interactable) DrawFocus(n, full);
     }
     dc->SetTextAntialiasMode(aa);
 }

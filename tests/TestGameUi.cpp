@@ -447,3 +447,28 @@ RM_TEST(GameUi_Scripts_TheirPart) {
     // The hook a button calls is OnClick (ABI 6).
     static_assert(RM_ABI_VERSION >= 6u && RM_HOOK_CLICK == 7);
 }
+
+RM_TEST(GameUi_QuickClick_InOneFrame) {
+    // A click quicker than a frame (computer use, a tap of a touch pad): the button is up at both looks,
+    // but the window was told it went down and up - that is a click.
+    Scene s = UiScene();
+    const int canvas = s.Create("UI");
+    Add<UiCanvas>(s, canvas)->reference = {1280, 720};
+    const int b = MakeButton(s, canvas, {0, 0}, {200, 100});
+    const UiTree t = BuildUi(s, {});
+    PointerState ps;
+    PointerResult r = StepPointer(t, Vec2{640, 360}, false, true, true, ps);
+    CHECK(r.clicked == b && ps.pressed == 0 && r.held == 0);
+    // ... off the button: nothing; and nothing left pressed for the next frame.
+    r = StepPointer(t, Vec2{50, 50}, false, true, true, ps);
+    CHECK(r.clicked == 0 && ps.pressed == 0);
+    // Through a whole frame of the UI (what the service does with the window's presses).
+    UiFocus state;
+    InputFrame none;
+    const auto actions = game_production::DefaultInputActions();
+    const UiStep step = StepUi(s, t, Vec2{640, 360}, false, true, true, actions, &none, &none, 0.016f, state);
+    CHECK((step.clicked == std::vector<int>{b}));
+    // The button looks normal afterwards (not left pressed).
+    const auto* button = static_cast<const UiButton*>(s.Find(b)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get());
+    CHECK(button->state != static_cast<int>(UiButtonState::Pressed));
+}

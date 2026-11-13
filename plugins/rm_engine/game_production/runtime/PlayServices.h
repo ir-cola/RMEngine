@@ -64,6 +64,10 @@ struct PlayFrame {
     // settings' 画面) and the mouse on it (nullopt: not over it - another panel, outside the window).
     Vec2 screen{1280, 720};
     std::optional<Vec2> pointer;
+    // The left button went down / up since the last frame, as the host's window was told (its messages,
+    // not a look at the button once a frame): a click shorter than a frame - a tap of a touch pad, a quick
+    // click - has both, though the button is up at both frames.
+    bool pointerWentDown = false, pointerWentUp = false;
     // The input of this frame and the last (pressed / released compare them; the mouse buttons too),
     // and the game settings' 入力. Null in a test that gives none: nothing is down.
     const InputFrame* input = nullptr;

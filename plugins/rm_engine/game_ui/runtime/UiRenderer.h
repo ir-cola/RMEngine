@@ -70,6 +70,7 @@ private:
     void DrawImage(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, Color tint);
     void DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const UiBox& dst, const Affine& full, Color color);
     void DrawText(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset);
+    void DrawFocus(const UiNode& n, const Affine& full);
 
     ID2D1DeviceContext* dc_ = nullptr;
     ID2D1DeviceContext* owner_ = nullptr;  // the context brush_ and tint_ were made for

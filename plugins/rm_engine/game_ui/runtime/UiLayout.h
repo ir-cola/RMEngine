@@ -101,7 +101,8 @@ struct PointerResult {
     int held = 0;     // pressed and still under it (drawn pressed)
     int clicked = 0;  // let go on the button it went down on: OnClick
 };
-// One frame of the mouse: `down` held now, `wentDown` / `wentUp` this frame.
+// One frame of the mouse: `down` held now, `wentDown` / `wentUp` this frame. Both in one frame (a click
+// quicker than a frame: a tap) is a click on the button under the mouse.
 PointerResult StepPointer(const UiTree& tree, std::optional<Vec2> p, bool down, bool wentDown, bool wentUp, PointerState& state);
 
 // The canvas the keys work in: the frontmost with キーとパッドで選ぶ and a button that can be pressed; 0: none.

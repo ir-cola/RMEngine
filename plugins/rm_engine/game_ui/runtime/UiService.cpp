@@ -185,7 +185,11 @@ void UiService::Frame(const game_production::PlayFrame& f) {
     const bool down = f.input && game_production::ControlValue(*f.input, InputControl::MouseLeft) >= 0.5f;
     const bool before = f.inputBefore && game_production::ControlValue(*f.inputBefore, InputControl::MouseLeft) >= 0.5f;
     const std::span<const InputAction> actions = f.actions ? std::span<const InputAction>(*f.actions) : std::span<const InputAction>();
-    const UiStep step = StepUi(f.scene, tree, f.pointer, down, down && !before, !down && before, actions, f.input, f.inputBefore, f.dt, state_);
+    // Went down / up: what the window was told, or what changed since the last frame. A quick click has
+    // both in one frame (the button up at both looks): StepPointer takes that as a click.
+    const bool wentDown = f.pointerWentDown || (down && !before);
+    const bool wentUp = f.pointerWentUp || (!down && before);
+    const UiStep step = StepUi(f.scene, tree, f.pointer, down, wentDown, wentUp, actions, f.input, f.inputBefore, f.dt, state_);
     for (const int id : step.clicked) {
         if (f.hooks) f.hooks->push_back({id, RM_HOOK_CLICK, 0});
         const game_production::SceneEntity* e = f.scene.Find(id);

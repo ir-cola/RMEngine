@@ -63,6 +63,12 @@ public:
     // The mouse on the window's client area (DIPs, as Draw's size); nullopt when it is outside it or the
     // game is not in front.
     virtual std::optional<Vec2> Pointer() const { return std::nullopt; }
+    // How often the left button went down / up on the window since the last call (its messages - a click
+    // shorter than a frame has both), and back to 0.
+    struct PointerPresses {
+        int down = 0, up = 0;
+    };
+    virtual PointerPresses TakePointerPresses() { return {}; }
 };
 
 // One game (made by the plugin that offers it).

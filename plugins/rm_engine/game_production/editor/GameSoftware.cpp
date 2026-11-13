@@ -705,6 +705,10 @@ public:
             // a window dragged, the software switched - does not make the game jump).
             const double dt = std::clamp(c.Time() - lastTick_, 0.0, 0.25);
             lastTick_ = c.Time();
+            // The left button's presses of this frame (the window's messages: a click shorter than a frame
+            // too) - a press only over the game view.
+            pointerWentDown_ = mouseInGame_ && c.In().pressed[0];
+            pointerWentUp_ = c.In().released[0];
             AdvancePlay(dt);
             mouseInGame_ = false;  // (the game view says it again when it is drawn)
             c.RequestAnimation();
@@ -1045,6 +1049,8 @@ private:
         PlayFrame pf{*playScene_, runner_.Camera(), static_cast<float>(dt)};
         pf.screen = GameScreen();
         pf.pointer = pointer_;
+        pf.pointerWentDown = pointerWentDown_;
+        pf.pointerWentUp = pointerWentUp_;
         pf.input = &world.inputNow;
         pf.inputBefore = &world.inputBefore;
         pf.actions = &settings_.input;
@@ -2654,6 +2660,7 @@ private:
     std::vector<Kept> kept_;            // この値を残す: written back at Stop
     bool mouseInGame_ = false;          // the mouse over the game view (its last drawing)
     std::optional<Vec2> pointer_;       // ... on the game screen (DIPs of the game settings' 画面); nullopt: not over it
+    bool pointerWentDown_ = false, pointerWentUp_ = false;  // this frame's left button presses (PlayFrame)
     std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // over the game view (the game UI)
     std::map<std::string, std::unique_ptr<SceneView>> viewPanels_;  // the plugins' panels (ViewPanelInfo), by id
     bool screensAsked_ = false;

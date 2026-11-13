@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI: 素早いクリックやタッチパッドのタップでボタンが押されなかったのを直す (押すと離すが 1 フレームの間に入っても押される)。キーやパッドで選んでいるボタンに白と黒の枠を付けて、乗ったボタンと見分けられるように",
+          "en": "Game UI: fixed buttons not being pressed by a quick click or a touch pad tap (a press and release within one frame now counts). The button chosen with the keys or a pad gets a white and black frame, so it stands apart from the one under the mouse"
+        },
+        {
           "ja": "英語にしたときの言葉の取り違えを直す: 「ウィンドウ」のメニューが Windowed と出ていた・シーンビューの「影」のボタンが切れていた。同じ日本語に違う英語が付いていた所をそろえ、意味が違う物は日本語を分けた (UI の「幅と高さ」「回す中心」「文字の大きさ」、コライダーの「箱の大きさ」、表示のしかたの「ウィンドウで表示」)",
           "en": "Fixed mixed-up words in English: the Window menu showed as Windowed and the scene view's Shadows button was cut off. Words that had two different English texts now agree, and labels with different meanings got different Japanese (UI Size / Pivot / Font size, collider Box size, display mode Windowed)"
         },
