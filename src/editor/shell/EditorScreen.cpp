@@ -1132,6 +1132,13 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     w::Separator(c, title.x + 8, title.Bottom() - 1, title.w - 16);
     // (a choice made in a drop-down arrives a frame later: the list may have changed since)
     const inspector::Refs refs = MakeRefs();
+    // ★ 見張り (一時的。Play 中にインスペクターがホイールと右クリックを受けない件の原因が分かったら消す):
+    // Play 中にここでホイールか右クリックがあったとき、インスペクターに見えている入力を 1 行出す。
+    if (Active().software && Active().software->Running() && (c.In().wheel != 0.f || c.In().pressed[1])) {
+        log::Info("[見張り] インスペクター: 入力 {} / マウスが上 {} / 中に {} / ホイール {} / 右クリック {} / 中身の高さ {:.0f} / 見える高さ {:.0f} / 開いている {} {}",
+                  c.InputEnabled(), c.IsHovered(r), r.Contains(c.In().mouseX, c.In().mouseY), c.In().wheel, c.In().pressed[1],
+                  ws.inspectorState.contentHeight, r.h, ws.inspectorState.popup.open, ws.inspectorState.menu.open);
+    }
     if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu, &refs); edit && edit->block < source.size()) {
         // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly.
         const InspectBlock& b = blocks[source[edit->block]];
