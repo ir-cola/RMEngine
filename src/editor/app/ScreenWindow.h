@@ -71,7 +71,8 @@ protected:
     platform::SwapTarget target_;
     ui::Painter painter_;
     ui::Context ctx_;
-    ui::Input input_;
+    ui::Input input_;       // what the messages bring, gathered until the next frame takes it
+    ui::Input frameInput_;  // what the frame being drawn sees (taken from input_ at its start)
 
 private:
     LRESULT OnMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, bool& handled) override;

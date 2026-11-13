@@ -243,7 +243,13 @@ void ScreenWindow::RunFrame() {
 
     dc->BeginDraw();
     painter_.Begin(dc);
-    ctx_.BeginFrame(&painter_, &input_, {0, 0, w, h}, platform::NowSeconds());
+    // The input of this frame is taken now, and what lives one frame (presses, the wheel, keys typed) is
+    // cleared from the window's own record at once: a message that arrives while the frame is drawn (a
+    // call in it may let the message queue run) counts in the next frame - it is never cleared unseen
+    // with this one.
+    frameInput_ = input_;
+    input_.EndFrame();
+    ctx_.BeginFrame(&painter_, &frameInput_, {0, 0, w, h}, platform::NowSeconds());
     OnFrame(ctx_, w, h);
     ctx_.RunOverlays();
     ctx_.EndFrame();
@@ -257,9 +263,8 @@ void ScreenWindow::RunFrame() {
     }
     // Clicks and keys may change state after the widgets that show it were drawn
     // (Esc closing a dialog, a click opening a menu). Such a frame is always followed by one more.
-    bool hadInput = !input_.keys.empty() || !input_.chars.empty() || !input_.imeResult.empty() || input_.wheel != 0.f;
-    for (int i = 0; i < 3; ++i) hadInput = hadInput || input_.pressed[i] || input_.released[i];
-    input_.EndFrame();
+    bool hadInput = !frameInput_.keys.empty() || !frameInput_.chars.empty() || !frameInput_.imeResult.empty() || frameInput_.wheel != 0.f;
+    for (int i = 0; i < 3; ++i) hadInput = hadInput || frameInput_.pressed[i] || frameInput_.released[i];
     inFrame_ = false;
 
     if (!alive_) return;  // OnFrame may have closed the screen
@@ -321,6 +326,10 @@ void ScreenWindow::UpdateIme() {
 LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& handled) {
     if (!alive_) return 0;  // not handled -> DefWindowProc
     handled = true;
+    // ★ 見張り (一時的): ホイールと右ボタンのメッセージが来たら、来た時刻とフレームを描いている途中かを出す。
+    if (m == WM_MOUSEWHEEL || m == WM_RBUTTONDOWN) {
+        log::Info("[見張り] {:.3f} メッセージ 0x{:X} が来ました (フレームの途中 {})", platform::NowSeconds(), m, inFrame_);
+    }
     switch (m) {
         case WM_PAINT: {
             PAINTSTRUCT ps;
