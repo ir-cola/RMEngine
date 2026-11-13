@@ -41,6 +41,18 @@ struct ActionValue {
 ActionValue EvaluateAction(const InputAction& a, const InputFrame& f);
 // The action of that name (the first; names are compared as they are, case and all); null: none.
 const InputAction* FindAction(std::span<const InputAction> actions, std::string_view name);
+// ... or, when the game settings have none of that name (a game made before it was standard), the
+// standard one of DefaultInputActions; null when neither has it.
+const InputAction* ActionOrStandard(std::span<const InputAction> actions, std::string_view name);
+
+// The game UI's actions (in every new game's 入力; the UI reads only these - never a pad or a key itself).
+// Up / Down / Left / Right: the axis at 0.5 or more (a stick pushed that way).
+inline constexpr char kUiUp[] = "UIUp";
+inline constexpr char kUiDown[] = "UIDown";
+inline constexpr char kUiLeft[] = "UILeft";
+inline constexpr char kUiRight[] = "UIRight";
+inline constexpr char kUiSubmit[] = "UISubmit";  // press the chosen button
+inline constexpr char kUiCancel[] = "UICancel";  // go back (close the window opened last)
 
 // The mouse buttons let go of in a frame (the editor's Play: a click on the 階層 or the インスペクター is
 // not the game's - only one over the game view is).

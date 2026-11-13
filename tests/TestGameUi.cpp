@@ -224,6 +224,7 @@ RM_TEST(GameUi_Buttons_StatesAndClicks) {
 }
 
 RM_TEST(GameUi_Keys_MoveTheFocusAndPress) {
+    using game_production::InputControl;
     Scene s = UiScene();
     const int canvas = s.Create("Menu");
     Add<UiCanvas>(s, canvas)->reference = {1280, 720};
@@ -236,45 +237,148 @@ RM_TEST(GameUi_Keys_MoveTheFocusAndPress) {
     CHECK(NavigationCanvas(t) == canvas);
     CHECK(FirstFocus(t, canvas, 0) == tl);
     CHECK(FirstFocus(t, canvas, br) == br);  // the canvas's 最初に選ぶボタン
-    CHECK(MoveFocus(t, canvas, tl, 1, 0) == tr);
-    CHECK(MoveFocus(t, canvas, tl, 0, 1) == bl);
-    CHECK(MoveFocus(t, canvas, tr, 0, 1) == br);
-    CHECK(MoveFocus(t, canvas, tl, -1, 0) == tl);  // nothing that way: stays
-    // The keys of two frames: Enter went down = 決定; the right arrow = a step to the right.
-    InputFrame before, now;
-    now.keys[0x0D] = 1;
-    now.keys[0x27] = 1;  // VK_RIGHT
-    const std::vector<game_production::InputAction> actions = game_production::DefaultInputActions();
-    const UiKeys k = ReadUiKeys(UiCanvas{}, actions, now, before);
-    CHECK(k.submit && k.dx == 1 && k.dy == 0 && !k.cancel);
-    // A game made before the UI's actions (no Submit in its 入力): Enter still works.
-    const UiKeys old = ReadUiKeys(UiCanvas{}, {}, now, before);
-    CHECK(old.submit && old.dx == 1);
-    // Up (MoveY +) is a step up the screen.
-    InputFrame up;
-    up.keys[0x26] = 1;  // VK_UP
-    CHECK(ReadUiKeys(UiCanvas{}, actions, up, before).dy == -1);
+    // By itself: the nearest button that way on the screen (nothing set on the buttons).
+    CHECK(NextButton(t, canvas, tl, 1, 0) == tr);
+    CHECK(NextButton(t, canvas, tl, 0, 1) == bl);
+    CHECK(NextButton(t, canvas, tr, 0, 1) == br);
+    CHECK(NextButton(t, canvas, tl, -1, 0) == tl);  // nothing that way: stays
 
-    // A whole frame: the first step shows the focus on the first button, the next moves it, 決定 presses it.
-    UiFocus state;
+    // Read only through the actions (UIUp ... UICancel): the pad's cross, the left stick, the arrows.
+    const std::vector<game_production::InputAction> actions = game_production::DefaultInputActions();
+    auto pad = [](InputControl c, float v) {
+        InputFrame f;
+        f.pad[static_cast<size_t>(static_cast<int>(c) - game_production::kPadControlBase)] = v;
+        return f;
+    };
     InputFrame none;
-    InputFrame right;
-    right.keys[0x27] = 1;
-    InputFrame enter;
-    enter.keys[0x0D] = 1;
-    std::vector<int> clicked = StepUi(s, t, std::nullopt, false, false, false, actions, &right, &none, state);
-    CHECK(clicked.empty() && state.focus == tl && state.keyboard);
-    clicked = StepUi(s, t, std::nullopt, false, false, false, actions, &right, &none, state);
+    CHECK(ReadUiKeys(actions, pad(InputControl::PadRight, 1), none).dx == 1);
+    CHECK(ReadUiKeys(actions, pad(InputControl::PadLeftStickY, 0.9f), none).dy == -1);  // the stick up: up the screen
+    CHECK(ReadUiKeys(actions, pad(InputControl::PadLeftStickX, -0.8f), none).dx == -1);
+    CHECK(ReadUiKeys(actions, pad(InputControl::PadLeftStickX, 0.3f), none).dx == 0);  // (not far enough)
+    CHECK(ReadUiKeys(actions, pad(InputControl::PadA, 1), none).submit && ReadUiKeys(actions, pad(InputControl::PadB, 1), none).cancel);
+    InputFrame keys;
+    keys.keys[0x0D] = 1;  // Enter
+    keys.keys[0x27] = 1;  // the right arrow
+    UiKeys k = ReadUiKeys(actions, keys, none);
+    CHECK(k.submit && k.dx == 1 && k.dy == 0);
+    CHECK(ReadUiKeys(actions, keys, keys).dx == 0 && ReadUiKeys(actions, keys, keys).holdDx == 1);  // held, not pressed again
+    // A stick aslant goes the stronger way only.
+    InputFrame aslant = pad(InputControl::PadLeftStickX, 0.9f);
+    aslant.pad[static_cast<size_t>(static_cast<int>(InputControl::PadLeftStickY) - game_production::kPadControlBase)] = 0.6f;
+    k = ReadUiKeys(actions, aslant, none);
+    CHECK(k.dx == 1 && k.dy == 0);
+    // A game made before the UI's actions (none in its 入力): their standard ones.
+    CHECK(ReadUiKeys({}, keys, none).submit && ReadUiKeys({}, keys, none).dx == 1);
+    // Bindings changed: the UI follows them (UISubmit on Z only - Enter does nothing now).
+    std::vector<game_production::InputAction> changed = actions;
+    for (auto& a : changed) {
+        if (a.name == game_production::kUiSubmit) a.bindings = {{InputControl::Z, 1}};
+    }
+    CHECK(!ReadUiKeys(changed, keys, none).submit);
+    InputFrame z;
+    z.keys['Z'] = 1;
+    CHECK(ReadUiKeys(changed, z, none).submit);
+
+    // Whole frames, the pad only: the window always has a chosen button, shown from the start - A presses it.
+    UiFocus state;
+    const InputFrame a = pad(InputControl::PadA, 1), right = pad(InputControl::PadRight, 1);
+    UiStep step = StepUi(s, t, std::nullopt, false, false, false, actions, &a, &none, 0.016f, state);
+    CHECK((step.clicked == std::vector<int>{tl}));
+    const auto* tlButton = static_cast<const UiButton*>(s.Find(tl)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get());
+    CHECK(tlButton->focused);
+    step = StepUi(s, t, std::nullopt, false, false, false, actions, &right, &none, 0.016f, state);
+    CHECK(state.focus == tr && step.clicked.empty());
+    // Held: no step at once, one after kRepeatDelay, then every kRepeatEvery (here back and forth on 2 buttons).
+    const InputFrame down = pad(InputControl::PadDown, 1);
+    StepUi(s, t, std::nullopt, false, false, false, actions, &down, &none, 0.016f, state);
+    CHECK(state.focus == br);
+    const InputFrame up = pad(InputControl::PadUp, 1);
+    StepUi(s, t, std::nullopt, false, false, false, actions, &up, &none, 0.016f, state);
     CHECK(state.focus == tr);
-    clicked = StepUi(s, t, std::nullopt, false, false, false, actions, &enter, &none, state);
-    CHECK((clicked == std::vector<int>{tr}));
-    // The buttons' states were written for the drawing: tr focused.
-    const auto* trButton = static_cast<const UiButton*>(s.Find(tr)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get());
-    CHECK(trButton->focused);
-    // The mouse moved: the focus is no longer shown.
-    StepUi(s, t, Vec2{10, 10}, false, false, false, actions, &none, &none, state);
-    StepUi(s, t, Vec2{20, 20}, false, false, false, actions, &none, &none, state);
-    CHECK(!state.keyboard && !trButton->focused);
+    StepUi(s, t, std::nullopt, false, false, false, actions, &up, &up, 0.2f, state);
+    CHECK(state.focus == tr);  // (0.2 s: not yet; and nothing above tr anyway)
+    StepUi(s, t, std::nullopt, false, false, false, actions, &down, &up, 0.016f, state);
+    CHECK(state.focus == br);
+    StepUi(s, t, std::nullopt, false, false, false, actions, &down, &down, 0.3f, state);
+    CHECK(state.focus == br);  // held 0.3 s
+    // The mouse moved: the choice is hidden; the next step only shows it again.
+    StepUi(s, t, Vec2{10, 10}, false, false, false, actions, &none, &none, 0.016f, state);
+    StepUi(s, t, Vec2{20, 20}, false, false, false, actions, &none, &none, 0.016f, state);
+    const auto* brButton = static_cast<const UiButton*>(s.Find(br)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get());
+    CHECK(!state.keyboard && !brButton->focused);
+    StepUi(s, t, std::nullopt, false, false, false, actions, &right, &none, 0.016f, state);
+    CHECK(state.keyboard && state.focus == br && brButton->focused);
+}
+
+RM_TEST(GameUi_Keys_RepeatWhileHeld) {
+    using game_production::InputControl;
+    Scene s = UiScene();
+    const int canvas = s.Create("List");
+    Add<UiCanvas>(s, canvas)->reference = {1280, 720};
+    std::vector<int> rows;
+    for (int i = 0; i < 6; ++i) rows.push_back(MakeButton(s, canvas, {0, -250.f + 100.f * static_cast<float>(i)}, {200, 60}));
+    const UiTree t = BuildUi(s, {});
+    const auto actions = game_production::DefaultInputActions();
+    InputFrame none, down;
+    down.keys[0x28] = 1;  // VK_DOWN
+    UiFocus state;
+    StepUi(s, t, std::nullopt, false, false, false, actions, &down, &none, 0.016f, state);
+    CHECK(state.focus == rows[1]);  // the first press: a step
+    float held = 0;
+    int steps = 0;
+    int last = state.focus;
+    while (held < kRepeatDelay + 2.5f * kRepeatEvery) {  // ~0.7 s of holding, 10 ms a frame
+        StepUi(s, t, std::nullopt, false, false, false, actions, &down, &down, 0.01f, state);
+        held += 0.01f;
+        if (state.focus != last) {
+            ++steps;
+            last = state.focus;
+            CHECK(held >= kRepeatDelay - 1e-3f);  // nothing before the delay
+        }
+    }
+    CHECK(steps == 3);  // at the delay, then 2 more
+}
+
+RM_TEST(GameUi_Cancel_ClosesTheWindowOpenedLast) {
+    Scene s = UiScene();
+    const int hud = s.Create("HUD");
+    Add<UiCanvas>(s, hud);
+    MakeButton(s, hud, {0, 0}, {100, 50});
+    const int pause = s.Create("Pause");
+    Add<UiCanvas>(s, pause)->order = 1;
+    const int resume = MakeButton(s, pause, {0, 0}, {100, 50});
+    s.Find(pause)->data.active = false;
+    const int options = s.Create("Options");
+    Add<UiCanvas>(s, options)->order = 2;
+    MakeButton(s, options, {0, 0}, {100, 50});
+    s.Find(options)->data.active = false;
+    const auto actions = game_production::DefaultInputActions();
+    InputFrame none, esc;
+    esc.keys[0x1B] = 1;
+    UiFocus state;
+    auto frame = [&](const InputFrame& now) { return StepUi(s, BuildUi(s, {}), std::nullopt, false, false, false, actions, &now, &none, 0.016f, state); };
+    // At the start only HUD: 戻る closes nothing (it is not a window opened over another).
+    CHECK(frame(esc).closed == 0 && s.Find(hud)->data.active);
+    // Pause shown over HUD (a script's Show): 戻る closes Pause, HUD stays.
+    s.Find(pause)->data.active = true;
+    frame(none);
+    CHECK(state.focus == resume);  // the new window's first button is chosen
+    CHECK(frame(esc).closed == pause && !s.Find(pause)->data.active && s.Find(hud)->data.active);
+    frame(none);
+    CHECK(frame(esc).closed == 0);  // back at the start: nothing more to close
+    // Options instead of HUD (SwitchTo): 戻る closes Options and shows HUD again.
+    s.Find(hud)->data.active = false;
+    s.Find(options)->data.active = true;
+    frame(none);
+    CHECK(frame(esc).closed == options && s.Find(hud)->data.active && !s.Find(options)->data.active);
+    frame(none);
+    CHECK(state.visits.empty());
+    // A window with 戻るで押すボタン: 戻る presses it instead.
+    s.Find(pause)->data.active = true;
+    static_cast<UiCanvas*>(s.Find(pause)->FindComponent(reflect::TypeOf<UiCanvas>().name)->value.Get())->cancelButton.id = resume;
+    frame(none);
+    const UiStep st = frame(esc);
+    CHECK((st.clicked == std::vector<int>{resume}) && st.closed == 0 && s.Find(pause)->data.active);
 }
 
 RM_TEST(GameUi_Parts_SaveAndLoad) {

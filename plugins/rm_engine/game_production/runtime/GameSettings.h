@@ -122,7 +122,7 @@ struct InputAction {
 };
 
 // The list a new game starts with (MoveX / MoveY: arrows, WASD, the left stick and the pad's cross;
-// Jump; Fire).
+// Jump; Fire; and the game UI's UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel - Input.h).
 std::vector<InputAction> DefaultInputActions();
 
 // --- Global variables: values of the whole game (they stay when the scene is switched; rm::Save writes

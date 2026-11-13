@@ -3,43 +3,75 @@
 // run it the same way). Each frame, after the scripts and the systems:
 //
 //   the mouse      over a button: 乗った; the left button down on it: 押した; let go on the same one: OnClick
-//   the keys / pad the frontmost canvas with キーとパッドで選ぶ: its 上下左右 actions move the focus between
-//                  its buttons (MoveFocus), 決定 presses the focused one, 戻る its 戻るで押すボタン
+//   the keys / pad standard in every game, nothing to set: the frontmost window (canvas) with
+//                  キーとパッドで選ぶ always has a chosen button (its 最初に選ぶボタン, or the top left one) -
+//                  shown from the start, hidden while the mouse is used. UIUp / UIDown / UILeft / UIRight
+//                  (the arrows, the pad's cross, the left stick) step to the nearest button that way
+//                  (NextButton); held, they go on stepping. UISubmit presses the chosen button. UICancel
+//                  presses the window's 戻るで押すボタン, or else closes the window opened last and shows
+//                  again what it hid (Show / SwitchTo by a script, or a canvas switched on).
 //   then           every button's state (UiButton::state / focused: not saved) for the drawing, and the
 //                  OnClick hooks for the scripts of the pressed buttons' entities (PlayFrame::hooks)
+//
+// The keys and the pad are read only through the game settings' 入力 (game production's actions, a
+// game without them: their standard ones) - never a key or a pad itself: changing the bindings (or
+// another kind of controller) changes the UI's too.
 
 #include "rm_engine/game_production/runtime/PlayServices.h"
 #include "rm_engine/game_ui/runtime/UiLayout.h"
 
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace rm::game_ui {
 
 inline constexpr char kUiServiceName[] = "rm_engine.game_ui";
+inline constexpr float kRepeatDelay = 0.4f;  // a direction held this long ...
+inline constexpr float kRepeatEvery = 0.12f;  // ... steps again this often
 
-// What the keys did this frame (pure: tests give their own).
+// What the actions say this frame (pure: tests give their own frames).
 struct UiKeys {
-    int dx = 0, dy = 0;     // a step of the focus (screen Y down)
-    bool submit = false;    // 決定 went down
-    bool cancel = false;    // 戻る went down
+    int dx = 0, dy = 0;          // a direction pressed this frame (screen Y down; the stronger way only)
+    int holdDx = 0, holdDy = 0;  // the direction held now
+    bool submit = false;         // UISubmit went down
+    bool cancel = false;         // UICancel went down
 };
-// The canvas's actions on two frames (an action not in the game settings: the usual keys - Enter / Space /
-// Escape / the arrows and the pad's - so a game made before the UI's actions works too).
-UiKeys ReadUiKeys(const UiCanvas& canvas, std::span<const game_production::InputAction> actions, const game_production::InputFrame& now,
+UiKeys ReadUiKeys(std::span<const game_production::InputAction> actions, const game_production::InputFrame& now,
                   const game_production::InputFrame& before);
 
-// The focus and the mouse of one Play (kept between frames).
+// A window shown over others (or instead of them): what 戻る closes, and what it shows again.
+struct UiVisit {
+    int window = 0;
+    std::vector<int> hid;
+};
+
+// The focus, the mouse and the windows of one Play (kept between frames).
 struct UiFocus {
     PointerState pointer;
-    int focus = 0;           // the button chosen by the keys (0: none yet)
-    bool keyboard = false;   // the focus is shown (the keys were used since the mouse last moved)
+    int window = 0;          // the window the keys worked in last frame
+    int focus = 0;           // its chosen button
+    bool keyboard = true;    // the choice is shown (hidden while the mouse is used)
     std::optional<Vec2> lastPointer;
+    int heldDx = 0, heldDy = 0;  // a direction held: it repeats
+    float heldFor = 0, repeatAt = 0;
+    bool started = false;        // the windows shown at first are known (none of them is closed by 戻る)
+    std::vector<int> shown;      // the windows shown last frame
+    std::vector<UiVisit> visits; // windows opened since, oldest first
 };
-// One frame (pure: the scene's buttons get their state; the pressed buttons are returned, in order).
-std::vector<int> StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<Vec2> pointer, bool down, bool wentDown,
-                        bool wentUp, std::span<const game_production::InputAction> actions, const game_production::InputFrame* now,
-                        const game_production::InputFrame* before, UiFocus& state);
+
+// What one frame did.
+struct UiStep {
+    std::vector<int> clicked;  // buttons pressed, in order (OnClick)
+    int closed = 0;            // the window 戻る closed (0: none)
+};
+
+// One frame (pure: the scene's buttons get their state, a window closed by 戻る is switched off and what it
+// hid switched on again).
+UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<Vec2> pointer, bool down, bool wentDown, bool wentUp,
+              std::span<const game_production::InputAction> actions, const game_production::InputFrame* now,
+              const game_production::InputFrame* before, float dt, UiFocus& state);
 
 class UiService final : public game_production::PlayService {
 public:

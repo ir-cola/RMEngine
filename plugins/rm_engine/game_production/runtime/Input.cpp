@@ -20,10 +20,21 @@ std::vector<InputAction> DefaultInputActions() {
         axis("MoveY", {{C::Down, -1}, {C::Up, 1}, {C::S, -1}, {C::W, 1}, {C::PadLeftStickY, 1}, {C::PadDown, -1}, {C::PadUp, 1}}),
         axis("Jump", {{C::Space, 1}, {C::PadA, 1}}),
         axis("Fire", {{C::MouseLeft, 1}, {C::Z, 1}, {C::PadX, 1}, {C::PadRT, 1}}),  // (not Ctrl: the editor's Ctrl+P would fire)
-        // The game UI's (rm_engine/game_ui): press the focused button / go back.
-        axis("Submit", {{C::Enter, 1}, {C::Space, 1}, {C::PadA, 1}}),
-        axis("Cancel", {{C::Escape, 1}, {C::PadB, 1}}),
+        // The game UI's (rm_engine/game_ui): choose a button (the arrows, the pad's cross and left stick),
+        // press it, go back. Every game has them; their bindings may be changed like any action's.
+        axis(kUiUp, {{C::Up, 1}, {C::PadUp, 1}, {C::PadLeftStickY, 1}}),
+        axis(kUiDown, {{C::Down, 1}, {C::PadDown, 1}, {C::PadLeftStickY, -1}}),
+        axis(kUiLeft, {{C::Left, 1}, {C::PadLeft, 1}, {C::PadLeftStickX, -1}}),
+        axis(kUiRight, {{C::Right, 1}, {C::PadRight, 1}, {C::PadLeftStickX, 1}}),
+        axis(kUiSubmit, {{C::Enter, 1}, {C::Space, 1}, {C::PadA, 1}}),
+        axis(kUiCancel, {{C::Escape, 1}, {C::PadB, 1}}),
     };
+}
+
+const InputAction* ActionOrStandard(std::span<const InputAction> actions, std::string_view name) {
+    if (const InputAction* a = FindAction(actions, name)) return a;
+    static const std::vector<InputAction> standard = DefaultInputActions();
+    return FindAction(standard, name);
 }
 
 float ControlValue(const InputFrame& f, InputControl c) {

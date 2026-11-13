@@ -14,17 +14,8 @@
   "セーフエリアの中に": "Inside the safe area",
   "ゲームの設定の「画面」のセーフエリアを除いた所に UI を並べます": "Lays the UI out inside the safe area of the game settings' Display",
   "キーとパッドで選ぶ": "Keys and pad navigation",
-  "上下左右のアクションでボタンの間を動き、決定で押します (表に出ているいちばん手前のキャンバスだけ)": "Move between buttons with the direction actions and press with Submit (only the frontmost shown canvas)",
   "最初に選ぶボタン": "First button",
-  "キーかパッドで動き始めたときに選ぶボタン。無ければ左上のボタン": "The button chosen when the keys or a pad start moving. Without one, the top-left button",
   "戻るで押すボタン": "Cancel button",
-  "「戻る」のアクションでこのボタンを押します (無ければ何もしない)": "The Cancel action presses this button (none: nothing happens)",
-  "決定のアクション": "Submit action",
-  "ゲームの設定の「入力」のアクションの名前": "The name of an action in the game settings' Input",
-  "戻るのアクション": "Cancel action",
-  "横に動くアクション": "Horizontal action",
-  "縦に動くアクション": "Vertical action",
-  "上が +": "Up is +",
   "固定する場所": "Anchor",
   "左上": "Top left",
   "上": "Top",
@@ -123,5 +114,8 @@
   "クリック: 選ぶ   ドラッグ: 動かす   角の四角: 大きさを変える   Esc: ドラッグをやめる   階層の右クリック →「キャンバスを作る」などで UI を作れます": "Click: select   Drag: move   Corner squares: resize   Esc: cancel the drag   Right-click the hierarchy -> \"Create canvas\" and so on to make UI",
   "UI はまだありません。階層を右クリックして「キャンバスを作る」→ その下に「ボタンを作る」「文字を作る」などで作ります。": "No UI yet. Right-click the hierarchy and choose \"Create canvas\", then \"Create button\", \"Create text\" and so on under it.",
   "ゲーム UI の見本": "Game UI sample",
-  "タイトル画面 (はじめる ボタン) → ゲーム (スコアの文字と HP のバー)。ボタンの OnClick でシーンを切り替え、スコアと HP はグローバル変数。": "A title screen (a Start button) -> the game (a score text and an HP bar). The button's OnClick switches the scene; the score and the HP are global variables."
+  "タイトル画面 (はじめる ボタン) → ゲーム (スコアの文字と HP のバー)。ボタンの OnClick でシーンを切り替え、スコアと HP はグローバル変数。": "A title screen (a Start button) -> the game (a score text and an HP bar). The button's OnClick switches the scene; the score and the HP are global variables.",
+  "十字キー・左スティック・矢印キーでボタンを選び、決定で押し、戻るでウィンドウを戻ります (表に出ているいちばん手前のキャンバスだけ。割り当てはゲームの設定の「入力」の UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel)": "Choose buttons with the pad's cross, the left stick or the arrow keys, press with Submit, go back a window with Cancel (only the frontmost shown canvas; the bindings are the game settings' Input actions UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel)",
+  "このウィンドウが出たときに選んでいるボタン。無ければ左上のボタン": "The button chosen when this window shows. Without one, the top-left button",
+  "「戻る」でこのボタンを押します。無ければ、このウィンドウを閉じて前のウィンドウに戻ります": "Cancel presses this button. Without one, Cancel closes this window and goes back to the one before"
 }

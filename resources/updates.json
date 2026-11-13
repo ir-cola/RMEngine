@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI をコントローラーとキーボードで: どのゲームでも、十字キー・左スティック・矢印キーで近いボタンへ移り (押し続けると続けて)、決定で押し、戻るで後から出したウィンドウを閉じる。始めからボタンが選ばれているので、パッドだけで遊べる。割り当てはゲームの設定の「入力」の UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel",
+          "en": "Game UI with a controller or the keyboard: in every game, the pad's cross, the left stick or the arrow keys move to the nearest button (repeating while held), Submit presses it and Cancel closes the window opened last. A button is chosen from the start, so a pad alone plays. The bindings are the game settings' Input actions UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel"
+        },
+        {
           "ja": "ゲーム UI (プラグイン「ゲーム UI」): ゲームの画面にキャンバス・文字・画像 (9 スライス)・ボタン・バーを置く (全部エンティティ。階層の右クリック「キャンバスを作る」など)。アンカーと基準の解像度で画面の大きさに合わせ、セーフエリアの補助線も。新しい「UI」タブで選ぶ・動かす・大きさを変える。ゲームビューと書き出したゲームで 3D / 2D の上に出て、マウス・キー・ゲームパッドでボタンを押せる。スクリプトから文字・バー・ウィンドウの切り替え (RMUI.h) とフック OnClick (スクリプトの版が 6 に: 前のスクリプトはビルドし直し)。テンプレート「ゲーム UI の見本」",
           "en": "Game UI (the Game UI plugin): canvases, texts, images (9-slice), buttons and bars on the game's screen (all entities; right-click the hierarchy -> \"Create canvas\" and so on). Anchors and a reference resolution fit them to any screen size, with a safe-area guide. The new \"UI\" tab selects, moves and resizes them. They show over the 3D / 2D picture in the game view and the exported game, and buttons are pressed with the mouse, the keys or a game pad. Scripts set texts and bars and switch windows (RMUI.h) and get the OnClick hook (the script version is now 6: older scripts are built again). New template \"Game UI sample\""
         },

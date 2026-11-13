@@ -320,6 +320,8 @@ int MoveFocus(const UiTree& tree, int canvas, int current, int dx, int dy) {
     return best;
 }
 
+int NextButton(const UiTree& tree, int canvas, int current, int dx, int dy) { return MoveFocus(tree, canvas, current, dx, dy); }
+
 // --- How a button looks --------------------------------------------------------------------------
 
 Color ButtonColor(const UiButton& b) {

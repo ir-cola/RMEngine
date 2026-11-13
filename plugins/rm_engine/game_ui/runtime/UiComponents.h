@@ -34,13 +34,9 @@ struct UiCanvas {
     RM_PROPERTY(Edit, Label="大きさの合わせ方") UiScaleMode scale = UiScaleMode::Fit;
     RM_PROPERTY(Edit, Label="手前の順", Tooltip="キャンバスどうしで、大きいほど手前に描き、ボタンも先に押されます", Min=-100000, Max=100000) int order = 0;
     RM_PROPERTY(Edit, Label="セーフエリアの中に", Tooltip="ゲームの設定の「画面」のセーフエリアを除いた所に UI を並べます") bool safeArea = true;
-    RM_PROPERTY(Edit, Label="キーとパッドで選ぶ", Tooltip="上下左右のアクションでボタンの間を動き、決定で押します (表に出ているいちばん手前のキャンバスだけ)") bool navigation = true;
-    RM_PROPERTY(Edit, Label="最初に選ぶボタン", Tooltip="キーかパッドで動き始めたときに選ぶボタン。無ければ左上のボタン") EntityRef firstButton;
-    RM_PROPERTY(Edit, Label="戻るで押すボタン", Tooltip="「戻る」のアクションでこのボタンを押します (無ければ何もしない)") EntityRef cancelButton;
-    RM_PROPERTY(Edit, Label="決定のアクション", Tooltip="ゲームの設定の「入力」のアクションの名前") std::string submitAction = "Submit";
-    RM_PROPERTY(Edit, Label="戻るのアクション") std::string cancelAction = "Cancel";
-    RM_PROPERTY(Edit, Label="横に動くアクション") std::string moveXAction = "MoveX";
-    RM_PROPERTY(Edit, Label="縦に動くアクション", Tooltip="上が +") std::string moveYAction = "MoveY";
+    RM_PROPERTY(Edit, Label="キーとパッドで選ぶ", Tooltip="十字キー・左スティック・矢印キーでボタンを選び、決定で押し、戻るでウィンドウを戻ります (表に出ているいちばん手前のキャンバスだけ。割り当てはゲームの設定の「入力」の UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel)") bool navigation = true;
+    RM_PROPERTY(Edit, Label="最初に選ぶボタン", Tooltip="このウィンドウが出たときに選んでいるボタン。無ければ左上のボタン") EntityRef firstButton;
+    RM_PROPERTY(Edit, Label="戻るで押すボタン", Tooltip="「戻る」でこのボタンを押します。無ければ、このウィンドウを閉じて前のウィンドウに戻ります") EntityRef cancelButton;
 };
 
 RM_ENUM(Label="固定する場所")
