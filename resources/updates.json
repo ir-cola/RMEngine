@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI (プラグイン「ゲーム UI」): ゲームの画面にキャンバス・文字・画像 (9 スライス)・ボタン・バーを置く (全部エンティティ。階層の右クリック「キャンバスを作る」など)。アンカーと基準の解像度で画面の大きさに合わせ、セーフエリアの補助線も。新しい「UI」タブで選ぶ・動かす・大きさを変える。ゲームビューと書き出したゲームで 3D / 2D の上に出て、マウス・キー・ゲームパッドでボタンを押せる。スクリプトから文字・バー・ウィンドウの切り替え (RMUI.h) とフック OnClick (スクリプトの版が 6 に: 前のスクリプトはビルドし直し)。テンプレート「ゲーム UI の見本」",
+          "en": "Game UI (the Game UI plugin): canvases, texts, images (9-slice), buttons and bars on the game's screen (all entities; right-click the hierarchy -> \"Create canvas\" and so on). Anchors and a reference resolution fit them to any screen size, with a safe-area guide. The new \"UI\" tab selects, moves and resizes them. They show over the 3D / 2D picture in the game view and the exported game, and buttons are pressed with the mouse, the keys or a game pad. Scripts set texts and bars and switch windows (RMUI.h) and get the OnClick hook (the script version is now 6: older scripts are built again). New template \"Game UI sample\""
+        },
+        {
           "ja": "物理 (プラグイン「物理」。Jolt Physics): 部品「剛体」「コライダー」「コライダー (2D)」「キャラクター」で、物が落ちる・ぶつかる・跳ねる・坂と段差を歩く (3D と 2D)。スクリプトから AddForce / AddImpulse / Velocity / SetVelocity / Raycast とフック OnHit / OnTriggerEnter / OnTriggerExit。シーンビューの帯の「形: 選択 / 全部」で当たりの形を線で見る。テンプレート「物理の見本 (3D)」",
           "en": "Physics (the Physics plugin, Jolt Physics): the Rigidbody, Collider, Collider (2D) and Character components make things fall, collide, bounce and walk up slopes and steps (3D and 2D). Scripts get AddForce / AddImpulse / Velocity / SetVelocity / Raycast and the hooks OnHit / OnTriggerEnter / OnTriggerExit. The scene view's \"Shapes: selected / all\" button shows collider shapes as lines. New template \"Physics sample (3D)\""
         },

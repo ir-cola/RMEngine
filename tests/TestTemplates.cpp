@@ -12,8 +12,10 @@
 #include "rm_engine/game_production/runtime/SceneFile.h"
 #include "core/asset/AssetIndex.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
+#include "rm_engine/game_x_2d/runtime/Spin2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
 #include "rm_engine/game_x_audio/runtime/AudioSource.h"
+#include "rm_engine/game_ui/runtime/UiComponents.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
@@ -296,13 +298,16 @@ RM_TEST(Template_ThePlugins) {
     }
     const TemplateTree tree = BuildTemplateTree(std::move(list));
     CHECK(tree.warnings.empty());
-    CHECK(tree.templates.size() == 6);
-    for (const auto& path : std::vector<std::vector<std::string>>{{"blank"}, {"game"}, {"game", "3d"}, {"game", "3d", "physics"}, {"game", "2d"}, {"game", "2d", "scenes"}}) {
+    CHECK(tree.templates.size() == 7);
+    for (const auto& path : std::vector<std::vector<std::string>>{{"blank"}, {"game"}, {"game", "3d"}, {"game", "3d", "physics"}, {"game", "2d"}, {"game", "2d", "scenes"}, {"game", "2d", "ui"}}) {
         CHECK(tree.At(tree.Find(path)) != nullptr);
     }
     // Choosing ゲーム brings both spaces and both connectors.
     const auto game = TemplatePlugins(tree, tree.Find({"game"}));
-    for (const char* n : {"game_production", "space3d", "space2d", "game_x_3d", "game_x_2d"}) CHECK(Has(game, n));
+    for (const char* n : {"game_production", "space3d", "space2d", "game_x_3d", "game_x_2d", "game_ui"}) CHECK(Has(game, n));
+    // The UI sample brings the game UI (and the 2D space it is made in), not 3D.
+    const auto ui = TemplatePlugins(tree, tree.Find({"game", "2d", "ui"}));
+    CHECK(Has(ui, "game_ui") && Has(ui, "space2d") && !Has(ui, "space3d"));
     // ... and 音 (the sample's jump sound, the 3D / 2D templates' BGM; its connector comes with it).
     for (const auto& path : std::vector<std::vector<std::string>>{{"game"}, {"game", "3d"}, {"game", "2d"}}) CHECK(Has(TemplatePlugins(tree, tree.Find(path)), "audio"));
 
@@ -316,7 +321,10 @@ RM_TEST(Template_ThePlugins) {
                                      &reflect::TypeOf<game_x_3d::Light>(), &reflect::TypeOf<game_x_3d::MeshRenderer>(),
                                      &reflect::TypeOf<space2d::Transform2D>(), &reflect::TypeOf<game_x_2d::Camera2D>(),
                                      &reflect::TypeOf<game_x_2d::Sprite>(), &reflect::TypeOf<physics::Rigidbody>(),
-                                     &reflect::TypeOf<physics::Collider>(), &reflect::TypeOf<physics::Collider2D>(), &reflect::TypeOf<game_x_audio::AudioSource>()});
+                                     &reflect::TypeOf<physics::Collider>(), &reflect::TypeOf<physics::Collider2D>(), &reflect::TypeOf<game_x_audio::AudioSource>(),
+                                     &reflect::TypeOf<game_x_2d::Spin2D>(), &reflect::TypeOf<game_ui::UiCanvas>(), &reflect::TypeOf<game_ui::UiRect>(),
+                                     &reflect::TypeOf<game_ui::UiText>(), &reflect::TypeOf<game_ui::UiImage>(), &reflect::TypeOf<game_ui::UiButton>(),
+                                     &reflect::TypeOf<game_ui::UiBar>()});
             // The new form: the scene in its own file (the template's Assets/, copied into the project),
             // named in the list by the id in its .meta.
             CHECK(!data.Find("scene"));

@@ -262,6 +262,43 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
+# The game UI (the template 「ゲーム UI の見本」: Title's はじめる button -> Game with the score text and the HP
+# bar): the UI plugin goes in (its parts are in the scenes), the scripts build with RMUI.h and OnClick, the UI
+# is drawn over the 2D picture, and はじめる switches Title -> Game (its 「自動で押す (秒)」 set here: --smoke
+# presses no key, so the script calls its own OnClick).
+$dir = Join-Path $work 'game_ui'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+$p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_ui', 'ui_sample', "`"$dir`"") -Wait -PassThru
+$rmpf = Join-Path $dir 'Project\Project.rmpf'
+if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
+    Write-Host "NG  game_ui: プロジェクトを作れませんでした。$log を見てください"
+    $failed++
+} else {
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Title.rmscene'
+    $text = [IO.File]::ReadAllText($sceneFile, $utf8) -replace '"after": 0', '"after": 0.000001'
+    [IO.File]::WriteAllText($sceneFile, $text, $utf8)
+    $game = Join-Path $dir 'Game'
+    $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
+    $exe = @(Get-ChildItem $game -Filter *.exe -ErrorAction SilentlyContinue)
+    if ($p.ExitCode -ne 0 -or $exe.Count -ne 1) {
+        Write-Host "NG  game_ui: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
+        $failed++
+    } else {
+        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        $ok = $r.ExitCode -eq 0 -and $gameLog.Contains('シーン 2 個。最初のシーン: Title') -and $gameLog.Contains('「はじめる」が押されました') -and
+              $gameLog.Contains('シーンを切り替えました: Title → Game') -and -not $gameLog.Contains('rm::game_ui::')
+        if (-not $ok) {
+            Write-Host "NG  game_ui: UI の見本が動いていません (終了コード $($r.ExitCode))"
+            $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+        } else {
+            Write-Host "OK  game_ui: UI の見本を書き出し、UI の部品が読めて、はじめるの OnClick で Title から Game に切り替わりました"
+        }
+    }
+}
+
 if ($failed -gt 0) { Write-Host "check_export: $failed 個が失敗しました"; exit 1 }
 Write-Host 'check_export: すべて書き出して起動できました'
 exit 0

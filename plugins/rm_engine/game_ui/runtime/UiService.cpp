@@ -131,8 +131,10 @@ void UiService::Frame(const game_production::PlayFrame& f) {
     const bool before = f.inputBefore && game_production::ControlValue(*f.inputBefore, InputControl::MouseLeft) >= 0.5f;
     const std::span<const InputAction> actions = f.actions ? std::span<const InputAction>(*f.actions) : std::span<const InputAction>();
     const std::vector<int> clicked = StepUi(f.scene, tree, f.pointer, down, down && !before, !down && before, actions, f.input, f.inputBefore, state_);
-    if (f.hooks) {
-        for (const int id : clicked) f.hooks->push_back({id, RM_HOOK_CLICK, 0});
+    for (const int id : clicked) {
+        if (f.hooks) f.hooks->push_back({id, RM_HOOK_CLICK, 0});
+        const game_production::SceneEntity* e = f.scene.Find(id);
+        if (host_.log && e) host_.log(0, "ゲーム UI: 「" + e->data.name + "」を押しました");
     }
 }
 

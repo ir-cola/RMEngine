@@ -1,0 +1,318 @@
+{
+  "kind": "rm_engine.scene",
+  "format": 1,
+  "nextId": 10,
+  "entities": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "カメラ",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space2d::Transform2D",
+          "data": {
+            "position": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "scale": [
+              1,
+              1
+            ],
+            "order": 0
+          }
+        },
+        {
+          "type": "rm::game_x_2d::Camera2D",
+          "data": {
+            "size": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "name": "回る四角",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space2d::Transform2D",
+          "data": {
+            "position": [
+              0,
+              -0.5
+            ],
+            "rotation": 0,
+            "scale": [
+              2,
+              2
+            ],
+            "order": 0
+          }
+        },
+        {
+          "type": "rm::game_x_2d::Sprite",
+          "data": {
+            "color": [
+              0.95,
+              0.75,
+              0.25,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_2d::Spin2D",
+          "data": {
+            "degreesPerSecond": 60
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "parent": 0,
+      "name": "HUD",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiCanvas",
+          "data": {
+            "firstButton": 7,
+            "cancelButton": 7
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "parent": 3,
+      "name": "スコア",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "TopLeft",
+            "position": [
+              48,
+              36
+            ],
+            "size": [
+              800,
+              90
+            ],
+            "pivot": [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "スコア 0",
+            "size": 64,
+            "bold": true,
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "alignX": "Left",
+            "outline": 3,
+            "outlineColor": [
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "parent": 3,
+      "name": "HP の文字",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "TopRight",
+            "position": [
+              -548,
+              36
+            ],
+            "size": [
+              120,
+              52
+            ],
+            "pivot": [
+              1,
+              0
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "HP",
+            "size": 44,
+            "bold": true,
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "alignX": "Right"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "parent": 3,
+      "name": "HP のバー",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "TopRight",
+            "position": [
+              -48,
+              42
+            ],
+            "size": [
+              480,
+              44
+            ],
+            "pivot": [
+              1,
+              0
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiBar",
+          "data": {
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "parent": 3,
+      "name": "タイトルへ",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "BottomRight",
+            "position": [
+              -48,
+              -40
+            ],
+            "size": [
+              360,
+              96
+            ],
+            "pivot": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiImage",
+          "data": {
+            "color": [
+              0.3,
+              0.3,
+              0.36,
+              0.95
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiButton",
+          "data": {}
+        },
+        {
+          "type": "StartButton",
+          "data": {
+            "next": "Title",
+            "after": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "parent": 7,
+      "name": "文字",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Stretch",
+            "position": [
+              0,
+              0
+            ],
+            "size": [
+              0,
+              0
+            ],
+            "pivot": [
+              0.5,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "タイトルへ",
+            "size": 44,
+            "bold": false,
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "alignX": "Center"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "parent": 0,
+      "name": "ゲームの進み",
+      "active": true,
+      "components": [
+        {
+          "type": "HudDemo",
+          "data": {
+            "scoreText": 4,
+            "hpBar": 6,
+            "scorePerSecond": 10,
+            "hpPerSecond": 0.1
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,277 @@
+{
+  "kind": "rm_engine.scene",
+  "format": 1,
+  "nextId": 8,
+  "entities": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "カメラ",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space2d::Transform2D",
+          "data": {
+            "position": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "scale": [
+              1,
+              1
+            ],
+            "order": 0
+          }
+        },
+        {
+          "type": "rm::game_x_2d::Camera2D",
+          "data": {
+            "size": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "name": "Title",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiCanvas",
+          "data": {
+            "firstButton": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "parent": 2,
+      "name": "タイトル",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Top",
+            "position": [
+              0,
+              170
+            ],
+            "size": [
+              1600,
+              200
+            ],
+            "pivot": [
+              0.5,
+              0
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "UI の見本",
+            "size": 120,
+            "bold": true,
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "alignX": "Center",
+            "outline": 4,
+            "outlineColor": [
+              0.05,
+              0.08,
+              0.22,
+              1
+            ],
+            "shadow": [
+              6,
+              6
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "parent": 2,
+      "name": "はじめる",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Center",
+            "position": [
+              0,
+              60
+            ],
+            "size": [
+              520,
+              128
+            ],
+            "pivot": [
+              0.5,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiImage",
+          "data": {
+            "color": [
+              0.2,
+              0.45,
+              0.9,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiButton",
+          "data": {}
+        },
+        {
+          "type": "StartButton",
+          "data": {
+            "next": "Game",
+            "after": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "parent": 4,
+      "name": "文字",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Stretch",
+            "position": [
+              0,
+              0
+            ],
+            "size": [
+              0,
+              0
+            ],
+            "pivot": [
+              0.5,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "はじめる",
+            "size": 60,
+            "bold": true,
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "alignX": "Center"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "parent": 2,
+      "name": "前回のスコア",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Center",
+            "position": [
+              0,
+              250
+            ],
+            "size": [
+              1200,
+              80
+            ],
+            "pivot": [
+              0.5,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "前回のスコア 0",
+            "size": 44,
+            "bold": false,
+            "color": [
+              0.85,
+              0.9,
+              1,
+              1
+            ],
+            "alignX": "Center"
+          }
+        },
+        {
+          "type": "ShowScore",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "parent": 2,
+      "name": "説明",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Bottom",
+            "position": [
+              0,
+              -60
+            ],
+            "size": [
+              1600,
+              70
+            ],
+            "pivot": [
+              0.5,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "クリック・Enter・パッドの A で始めます",
+            "size": 36,
+            "bold": false,
+            "color": [
+              0.8,
+              0.85,
+              0.95,
+              1
+            ],
+            "alignX": "Center"
+          }
+        }
+      ]
+    }
+  ]
+}

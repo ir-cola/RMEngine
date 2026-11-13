@@ -121,5 +121,7 @@
   "アンカー": "Anchors",
   "選んだ物が親のどこに固定されているかの印を出す・消す": "Show or hide where the selected object is fixed in its parent",
   "クリック: 選ぶ   ドラッグ: 動かす   角の四角: 大きさを変える   Esc: ドラッグをやめる   階層の右クリック →「キャンバスを作る」などで UI を作れます": "Click: select   Drag: move   Corner squares: resize   Esc: cancel the drag   Right-click the hierarchy -> \"Create canvas\" and so on to make UI",
-  "UI はまだありません。階層を右クリックして「キャンバスを作る」→ その下に「ボタンを作る」「文字を作る」などで作ります。": "No UI yet. Right-click the hierarchy and choose \"Create canvas\", then \"Create button\", \"Create text\" and so on under it."
+  "UI はまだありません。階層を右クリックして「キャンバスを作る」→ その下に「ボタンを作る」「文字を作る」などで作ります。": "No UI yet. Right-click the hierarchy and choose \"Create canvas\", then \"Create button\", \"Create text\" and so on under it.",
+  "ゲーム UI の見本": "Game UI sample",
+  "タイトル画面 (はじめる ボタン) → ゲーム (スコアの文字と HP のバー)。ボタンの OnClick でシーンを切り替え、スコアと HP はグローバル変数。": "A title screen (a Start button) -> the game (a score text and an HP bar). The button's OnClick switches the scene; the score and the HP are global variables."
 }
