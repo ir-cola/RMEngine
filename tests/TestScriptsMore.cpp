@@ -105,6 +105,7 @@ void CounterTick(void* s, RmEntityId e, float) {
     g_log += "T" + std::to_string(e);
 }
 void CounterEnd(void*, RmEntityId e) { g_log += "E" + std::to_string(e); }
+void CounterReloaded(void*, RmEntityId e) { g_log += "R" + std::to_string(e); }
 const RmFieldDesc kCounterFields[] = {
     {"ticks", RmField_Int, RmFieldFlag_Edit, [](void* o) -> void* { return &static_cast<Counter*>(o)->ticks; }, nullptr, nullptr, 0, 0, 0, 1}};
 
@@ -132,7 +133,7 @@ const RmFieldDesc kSpawnerFields[] = {
 const RmScriptDesc kScripts[] = {
     {"test::Rich", "いろいろ", "Rich.h", sizeof(Rich), alignof(Rich), kRichFields, 6, &Construct<Rich>, &Destruct<Rich>, &Copy<Rich>},
     {"test::Counter", "数える", "Counter.h", sizeof(Counter), alignof(Counter), kCounterFields, 1, &Construct<Counter>, &Destruct<Counter>,
-     &Copy<Counter>, &CounterBegin, &CounterTick, &CounterEnd},
+     &Copy<Counter>, &CounterBegin, &CounterTick, &CounterEnd, &CounterReloaded},
     {"Spawner", "作る", "Spawner.h", sizeof(Spawner), alignof(Spawner), kSpawnerFields, 1, &Construct<Spawner>, &Destruct<Spawner>, &Copy<Spawner>,
      nullptr, &SpawnerTick, nullptr},
 };
@@ -350,4 +351,71 @@ RM_TEST(ScriptsMore_SpawnAPrefab) {
     CHECK(api.core->spawnPrefab(api.ctx, guid.c_str(), 0) != made);
     // Not a prefab of the game: nothing, told once.
     CHECK(api.core->spawnPrefab(api.ctx, "ffffffffffffffffffffffffffffffff", 0) == 0 && told.find("ffff") != std::string::npos);
+}
+
+RM_TEST(ScriptsMore_SwappedWhilePlaying_StartedStayStarted_OnReloaded) {
+    ScriptModule m, m2;  // (before the scene: its objects go before the types they are made of)
+    m.Adopt(kModule);
+    Scene s = SceneWith(m);
+    const int a = s.Create("A");
+    s.AddComponent(a, m.Find("test::Counter")->desc);
+    const int b = s.Create("B");
+    s.AddComponent(b, m.Find("test::Counter")->desc);
+    s.Find(b)->data.active = false;  // not started
+    ScriptWorld w;
+    ScriptRunner r;
+    r.Frame(s, w, m, {}, 0.1f);
+    r.Frame(s, w, m, {}, 0.1f);
+    // The scripts built again: which ones had started, the values out by name, the old objects gone, the
+    // new module's read back - as the editor does it (GameSoftware::ReloadScripts while playing).
+    const auto running = r.Remember(s);
+    CHECK(running.size() == 1 && running[0].entity == a && running[0].started);
+    const json::Value saved = s.Save();
+    s.SetComponentTypes({}, {});
+    s.Load(saved);
+    m2.Adopt(kModule);
+    s.SetComponentTypes(m2.Types(), m2.Types());
+    s.Load(saved);
+    g_log.clear();
+    r.Resume(s, w, m2, {}, running);
+    CHECK(g_log == "R" + Id(a));  // OnReloaded, no BeginPlay again
+    CHECK(static_cast<const Counter*>(s.Find(a)->FindComponent("test::Counter")->value.Get())->ticks == 2);  // carried over
+    g_log.clear();
+    r.Frame(s, w, m2, {}, 0.1f);
+    CHECK(g_log == "T" + Id(a));
+    s.Find(b)->data.active = true;
+    g_log.clear();
+    r.Frame(s, w, m2, {}, 0.1f);
+    CHECK(g_log == "B" + Id(b) + "T" + Id(a) + "T" + Id(b));
+    g_log.clear();
+    r.Stop(s, w, m2, {});
+    CHECK(g_log == "E" + Id(a) + "E" + Id(b));  // pairs kept across the swap
+}
+
+RM_TEST(ScriptsMore_KeepThisValue_ReadFromThePlayCopy_WrittenBack) {
+    ScriptModule m;
+    m.Adopt(kModule);
+    Scene before = SceneWith(m);
+    const int e = before.Create("Hero");
+    before.AddComponent(e, m.Find("test::Rich")->desc);
+    Scene playing = before;  // the copy that plays
+    // In Play: the name, a nested struct's field, a list changed.
+    playing.Find(e)->data.name = "Hero (played)";
+    Rich& r = *static_cast<Rich*>(playing.Find(e)->FindComponent("test::Rich")->value.Get());
+    r.wave.count = 42;
+    r.numbers = {7, 8, 9};
+    const SceneField name{e, "", 0, {2}};                // Entity::name
+    const SceneField count{e, "test::Rich", 0, {3, 0}};  // wave.count
+    const SceneField numbers{e, "test::Rich", 0, {1}};
+    const auto vName = ReadSceneField(playing, name);
+    const auto vCount = ReadSceneField(playing, count);
+    const auto vNumbers = ReadSceneField(playing, numbers);
+    CHECK(vName && vName->AsString() == "Hero (played)" && vCount && vCount->AsInt() == 42 && vNumbers && vNumbers->Size() == 3);
+    // Written into the scene from before Play; what was not kept stays as it was.
+    CHECK(WriteSceneField(before, name, *vName) && WriteSceneField(before, count, *vCount));
+    const Rich& kept = *static_cast<const Rich*>(before.Find(e)->FindComponent("test::Rich")->value.Get());
+    CHECK(before.Find(e)->data.name == "Hero (played)" && kept.wave.count == 42 && (kept.numbers == std::vector<int>{1, 2}));
+    // Not there (an entity made while playing, a component gone, a path too long): nothing.
+    CHECK(!ReadSceneField(before, SceneField{999, "", 0, {2}}) && !ReadSceneField(before, SceneField{e, "test::Counter", 0, {0}}));
+    CHECK(!WriteSceneField(before, SceneField{999, "", 0, {2}}, *vName));
 }

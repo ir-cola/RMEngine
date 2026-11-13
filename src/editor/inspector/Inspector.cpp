@@ -49,6 +49,9 @@ struct Pass {
     std::wstring tooltip;
     Wrap wrap;  // inside an array element (null: the edit is the field's own)
     const Refs* refs = nullptr;
+    // The block's menu for a field (Block::fieldMenu), and whether a right click may open it now.
+    const std::function<std::vector<w::Action>(const reflect::FieldPath&, std::string_view)>* fieldMenu = nullptr;
+    bool menusOk = false;
 
     void Put(Edit e) {
         if (!wrap) {
@@ -609,6 +612,19 @@ void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t in
 
     p.Text(labelR, Utf8ToWide(TrU8(f.Label())), Text(12, enabled ? theme::TextDim : theme::TextFaint, f.value.type == FieldType::Struct));
     if (f.tooltip && c.IsHovered(labelR)) x.tooltip = Utf8ToWide(TrU8(f.tooltip));
+    // A right click on the line: the block's menu for this field (read straight from the input: the
+    // fields of a block that only shows take no input, but this still works).
+    if (x.fieldMenu && *x.fieldMenu && x.menusOk && !x.wrap) {
+        const ui::Input& in = c.In();
+        if (in.pressed[static_cast<int>(ui::Mouse::Right)] && row.Contains(in.mouseX, in.mouseY) && x.view.Contains(in.mouseX, in.mouseY)) {
+            std::vector<w::Action> actions = (*x.fieldMenu)(path, f.Label());
+            if (!actions.empty()) {
+                x.st.menuActions = std::move(actions);
+                x.st.menu.OpenAt(in.mouseX, in.mouseY);
+                x.menusOk = false;  // (one menu)
+            }
+        }
+    }
 
     c.PushId("field");
     for (const size_t i : path) c.PushId(static_cast<uint64_t>(i));
@@ -688,6 +704,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
     x.labelW = std::clamp(area.w * 0.38f, 96.f, 220.f);
     // While a drop-down or a menu is open, the fields under it only show.
     const bool inputWas = c.InputEnabled();
+    x.menusOk = inputWas && !st.popup.open && !st.menu.open;
     if (st.popup.open || st.menu.open) c.SetInputEnabled(false);
     for (size_t bi = 0; bi < blocks.size(); ++bi) {
         const Block& b = blocks[bi];
@@ -720,6 +737,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 x.y += 34;
             }
             if (b.type && b.object) {
+                x.fieldMenu = b.fieldMenu ? &b.fieldMenu : nullptr;
                 FieldPath prefix;
                 const bool inputBefore = c.InputEnabled();
                 if (b.readOnly) c.SetInputEnabled(false);  // shown only: no field takes a click or a key

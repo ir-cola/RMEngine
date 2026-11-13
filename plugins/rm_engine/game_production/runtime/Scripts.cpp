@@ -762,6 +762,34 @@ void ScriptRunner::ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModu
     world.removeAsked.clear();
 }
 
+std::vector<ScriptRunner::RunState> ScriptRunner::Remember(const Scene& scene) const {
+    std::vector<RunState> out;
+    for (const SceneEntity& e : scene.Entities()) {
+        for (const Component& c : e.components) {
+            void* data = const_cast<void*>(c.value.Get());
+            const bool started = data && started_.contains(data), crashed = data && crashed_.contains(data);
+            if (started || crashed) out.push_back({e.data.id, c.type, e.NthOf(c), started, crashed});
+        }
+    }
+    return out;
+}
+
+void ScriptRunner::Resume(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
+                          std::span<const RunState> before) {
+    Reset();
+    world.scene = &scene;
+    for (const RunState& r : before) {
+        SceneEntity* e = scene.Find(r.entity);
+        Component* c = e ? e->FindComponent(r.type, r.nth) : nullptr;
+        if (!c || !c->Known() || !module.Find(r.type)) continue;  // (a script that went: kept as a missing one)
+        if (r.started) started_.insert(c->value.Get());
+        if (r.crashed) crashed_.insert(c->value.Get());
+    }
+    for (const Instance& in : Collect(scene, module, order)) {
+        if (started_.contains(in.data) && !crashed_.contains(in.data)) Call(world, in, 3, 0);
+    }
+}
+
 void ScriptRunner::Stop(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order) {
     world.scene = &scene;
     for (const Instance& in : Collect(scene, module, order)) {

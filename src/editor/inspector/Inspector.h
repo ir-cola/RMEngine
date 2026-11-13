@@ -94,6 +94,9 @@ struct Block {
     std::vector<const void*> others;
     // Shown, not edited (a game in Play shows the copy that plays): the fields take no input.
     bool readOnly = false;
+    // A right click on a field's line (also on a block that only shows): this menu for that field
+    // (e.g. Play's この値を残す). Null / empty: no menu.
+    std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
 };
 
 // Per inspector: text being typed, the open drop-down / menu, folded blocks.

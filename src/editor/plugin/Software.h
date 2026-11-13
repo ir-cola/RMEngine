@@ -78,6 +78,8 @@ struct InspectBlock {
     std::vector<std::function<reflect::EditTarget()>> also;
     // Shown, not edited (a game in Play shows the copy that plays): the fields take no input.
     bool readOnly = false;
+    // A right click on a field (also on a read-only block): a menu for it (inspector::Block::fieldMenu).
+    std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
 };
 
 struct Inspectable {

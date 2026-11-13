@@ -643,7 +643,8 @@ public:
         // Scripts built again: swapped here, between frames (never while playing: at Stop).
         scripts_.SetGlobals(settings_.globals);  // (an edit of the list: the header and a build, a second later)
         scripts_.Poll(c);
-        if (auto dll = scripts_.TakeReady(Running())) ReloadScripts(*dll);
+        // (while playing: at Stop, or now - the game settings' Play 中のビルド)
+        if (auto dll = scripts_.TakeReady(Running() && settings_.scriptReload == ScriptReload::AtStop)) ReloadScripts(*dll);
         if (!heldSceneWarnings_.empty() && !scripts_.Building()) {
             // The build failed (no new DLL): what the scene could not use is told now.
             for (const auto& w : heldSceneWarnings_) log::Warn("シーン: {}", w);
@@ -947,6 +948,7 @@ private:
         scripts_.World().actions = &settings_.input;  // (edited while playing: read as it is each frame)
         scripts_.World().prefab = [this](const AssetRef& r) { return Cached(r); };  // rm::Spawn(prefab): the files as last read
         ResetGlobals(true);  // every global variable at its 初めの値; rm::Save into Library/Saves
+        kept_.clear();       // (この値を残す: from this Play only)
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
         EnsureViews();  // the game view sees through the game settings' 最初のカメラ
@@ -1012,11 +1014,13 @@ private:
     void StopPlay() {
         if (!Running()) return;
         log::Info("■ 停止 ({:.2f} 秒・{} コマ)。シーンは Play の前に戻りました", runner_.Time(), runner_.Frames());
+        const auto kept = TakeKept();  // (as they were shown: before the scripts' EndPlay)
         scripts_.Runner().Stop(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder);  // EndPlay
         playScene_.reset();  // (scripts built while playing are taken at the next frame: on the scene from before Play)
         debug_.Clear();      // Stop: every debug line goes
         ResetGlobals(false);  // as before Play (what was saved stays in Library/Saves)
         play_ = PlayState::Stopped;
+        KeepValues(kept);  // この値を残す: into the scene from before Play (one undo entry)
         host_.SelectInTree({});  // (the selection may name entities of a scene switched to)
         host_.Redraw();
     }
@@ -1158,15 +1162,25 @@ private:
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
     }
 
-    // Hot reload (a frame boundary, not playing): the values written out by name, the old DLL's objects
-    // gone, the new DLL loaded, read back - a new field gets its default, a field that went is kept
-    // in the file, a script that went stays as a missing one with its values (Scene: unknown component).
+    // Hot reload (a frame boundary): the values written out by name, the old DLL's objects gone, the
+    // new DLL loaded, read back - a new field gets its default, a field that went is kept in the file,
+    // a script that went stays as a missing one with its values (Scene: unknown component). While
+    // playing (Play 中のビルド = すぐ入れ替える) the copy that plays the same way: its scripts that had
+    // started stay started and get OnReloaded instead of BeginPlay.
     void ReloadScripts(const std::filesystem::path& dll) {
         std::unique_ptr<ScriptModule> next = scripts_.LoadModule(dll);
         if (!next) return;  // (told) the old DLL goes on
         const json::Value saved = scene_.Save();
         scene_.SetComponentTypes(baseTypes_, baseMultiple_);
         scene_.Load(saved);  // the old scripts' objects gone (kept as read)
+        std::vector<ScriptRunner::RunState> running;
+        json::Value playing;
+        if (playScene_) {
+            running = scripts_.Runner().Remember(*playScene_);
+            playing = playScene_->Save();
+            playScene_->SetComponentTypes(baseTypes_, baseMultiple_);
+            playScene_->Load(playing);
+        }
         // The history's edits point at the old types (their code is in the old DLL): they go too.
         if (host_.History().UndoCount() + host_.History().RedoCount() > 0) {
             host_.History().Clear();
@@ -1178,6 +1192,12 @@ private:
         scene_.Load(saved, &warnings);
         heldSceneWarnings_.clear();  // (read again: what is told now replaces what was held at opening)
         for (const auto& w : warnings) log::Warn("シーン: {}", w);
+        if (playScene_) {
+            playScene_->SetComponentTypes(scene_.ComponentTypes(), scene_.MultipleTypes());
+            playScene_->Load(playing);
+            scripts_.Runner().Resume(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder, running);
+            log::Info("Play 中にスクリプトを入れ替えました (値は名前で引き継ぎ、OnReloaded を呼びました)");
+        }
         ++dataVersion_;
         host_.Redraw();
     }
@@ -1250,7 +1270,60 @@ private:
     // --- Inspector -----------------------------------------------------------------------------
     // A note on top of the inspector while playing (its blocks are shown, not edited).
     static editor::InspectBlock PlayNote() {
-        return {nullptr, {}, {}, Tr(L"Play 中です。ここに出ているのは動いているコピーで、変えられません。■ で止めると Play の前に戻ります。"), {}};
+        return {nullptr, {}, {}, Tr(L"Play 中です。ここに出ているのは動いているコピーで、変えられません。■ で止めると Play の前に戻ります。欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻します。"), {}};
+    }
+
+    // Play: a right click on a field → この値を残す (design BluePrint 20-b 3). The field is remembered by
+    // entity, component (its type and place; "" = the entity's own fields) and path; at Stop its value
+    // then is written into the scene from before Play (KeepValues).
+    struct Kept {
+        SceneField field;
+        std::string label;
+    };
+    std::function<std::vector<editor::w::Action>(const reflect::FieldPath&, std::string_view)> KeepMenu(int id, std::string component, size_t nth) {
+        return [this, id, component = std::move(component), nth](const reflect::FieldPath& path, std::string_view label) {
+            editor::w::Action keep;
+            keep.label = Tr(L"この値を残す");
+            keep.run = [this, id, component, nth, path, label = std::string(label)] {
+                const SceneField f{id, component, nth, path};
+                std::erase_if(kept_, [&](const Kept& k) {
+                    return k.field.entity == f.entity && k.field.component == f.component && k.field.nth == f.nth && k.field.path == f.path;
+                });
+                kept_.push_back({f, label});
+                log::Info("「{}」の値を、止めたときに Play の前のシーンへ書き戻します", label);
+            };
+            return std::vector<editor::w::Action>{keep};
+        };
+    }
+
+    // At Stop: the kept values as they are in the copy that plays (before its EndPlay) ...
+    std::vector<std::pair<Kept, json::Value>> TakeKept() {
+        std::vector<std::pair<Kept, json::Value>> out;
+        for (const Kept& k : std::exchange(kept_, {})) {
+            if (auto v = ReadSceneField(*playScene_, k.field)) out.push_back({k, std::move(*v)});
+        }
+        return out;
+    }
+    // ... written into the scene from before Play: one undo entry (unsaved). One the scene does not have
+    // (made while playing) is told.
+    void KeepValues(const std::vector<std::pair<Kept, json::Value>>& values) {
+        if (values.empty()) return;
+        std::vector<int> touched;
+        for (const auto& [k, v] : values) {
+            if (!scene_.Find(k.field.entity)) {
+                log::Warn("「{}」は Play の中で作られた物の欄なので、残せません", k.label);
+                continue;
+            }
+            if (std::find(touched.begin(), touched.end(), k.field.entity) == touched.end()) touched.push_back(k.field.entity);
+        }
+        if (touched.empty()) return;
+        size_t done = 0;
+        EditTouching(touched, values.size() == 1 ? std::format("Play の値を残す (「{}」)", values[0].first.label) : std::format("Play の値を残す ({} 個)", values.size()), [&] {
+            for (const auto& [k, v] : values) {
+                if (WriteSceneField(scene_, k.field, v)) ++done;
+            }
+        });
+        log::Info("Play の値を {} 個残しました (Ctrl+Z で戻せます)", done);
     }
 
     void InspectSettings() {
@@ -1404,6 +1477,7 @@ private:
             if (play) blocks.push_back(PlayNote());
             editor::InspectBlock entity{&reflect::TypeOf<Entity>(), ResolveEntity(id, play), {}, PrefabNote(id), {}};
             entity.readOnly = play;
+            if (play) entity.fieldMenu = KeepMenu(id, "", 0);
             blocks.push_back(std::move(entity));
             for (const Component& c : e->components) {
                 const std::string type = c.type;
@@ -1443,6 +1517,7 @@ private:
                     if (c.value.Type()->kind == reflect::TypeKind::Script) note = TrF(L"スクリプト ・ 実行順 {}", ScriptOrderOf(c.type, settings_.scriptOrder));
                     editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type, nth, play), Utf8ToWide(TrU8(label)) + number, note, menu};
                     b.readOnly = play;
+                    if (play) b.fieldMenu = KeepMenu(id, type, nth);
                     // A child: ローカル / ワールド (or whatever the plugin calls them), one block shown either way.
                     // At the top level both ways are the same numbers, so there is no switch.
                     if (const ComponentLook* info = LookOf(c.type); info && info->HasDerived() && nth == 0 && e->data.parent != 0) {
@@ -2415,6 +2490,7 @@ private:
     DebugDraw debug_;      // what the scripts draw with rm::Debug while playing (shown by the views; gone at Stop)
     std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // the plugins' component types
     std::unique_ptr<Scene> playScene_;  // the copy that plays
+    std::vector<Kept> kept_;            // この値を残す: written back at Stop
     std::vector<AssetRef> playScenes_;  // the scenes Play can switch to (GameScenes when it started)
     std::vector<std::string> cameraTypes_;  // the components the game sees through (SceneCamera)
     // シーンの一覧 panel: the row chosen (a scene's id; "" = the new scene not saved yet), renaming it.

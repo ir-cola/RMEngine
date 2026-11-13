@@ -55,7 +55,6 @@
   "Play 中は編集できません (■ で止めてから)": "Cannot edit while playing (stop with ■ first)",
   "3D 空間 / 2D 空間のプラグインが入ると、ゲームがここに映ります。": "With a 3D or 2D space plugin, the game shows here.",
   "止まっています (▶ / Ctrl+P で Play)。最初のカメラから見たシーン": "Stopped (▶ / Ctrl+P to play). The scene seen from the starting camera",
-  "Play 中です。ここに出ているのは動いているコピーで、変えられません。■ で止めると Play の前に戻ります。": "Playing. This is the running copy and cannot be changed. Stop with ■ to go back to before Play.",
   "Prefab「{}」の一部です": "Part of the prefab \"{}\"",
   "Prefab「{}」を置いた物です (ファイル {} が読めません)": "Placed from the prefab \"{}\" (the file {} cannot be read)",
   "Prefab「{}」を置いた物です ({})。Prefab と違う所: {} 個 (名前と置き場所を含む)": "Placed from the prefab \"{}\" ({}). Differences from the prefab: {} (the name and the place included)",
@@ -188,5 +187,12 @@
   "ゲーム全体の値 (シーンを切り替えても残る)。スクリプトからは Global::名前。rm::Save::Write で保存できます": "Values of the whole game (kept when the scene switches). Scripts use Global::name. rm::Save::Write saves them",
   "セーブを消す (Library/Saves)": "Delete saves (Library/Saves)",
   "セーブ": "Saves",
-  "Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)。⋮ の「セーブを消す」で Play のセーブを全部ごみ箱へ移します": "rm::Save in Play writes to this project's Library/Saves (an exported game: \"exe name/Saves\" under %LOCALAPPDATA%). \"Delete saves\" in ⋮ moves every Play save to the Recycle Bin"
+  "Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)。⋮ の「セーブを消す」で Play のセーブを全部ごみ箱へ移します": "rm::Save in Play writes to this project's Library/Saves (an exported game: \"exe name/Saves\" under %LOCALAPPDATA%). \"Delete saves\" in ⋮ moves every Play save to the Recycle Bin",
+  "Play 中です。ここに出ているのは動いているコピーで、変えられません。■ で止めると Play の前に戻ります。欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻します。": "Playing. This is the running copy and cannot be changed. Stop with ■ to go back to before Play. Right-click a field → \"Keep this value\" to write its value at Stop back into the scene from before Play.",
+  "この値を残す": "Keep this value",
+  "Play 中のビルド": "Build during Play",
+  "Play 中にスクリプトのビルドが終わったとき。すぐ入れ替えると、欄の値は名前で引き継ぎ、BeginPlay は呼ばずに OnReloaded を呼びます (RM_TRANSIENT の欄は既定の値に戻ります)": "When the scripts finish building during Play. Swapped at once: field values are carried over by name, and OnReloaded is called instead of BeginPlay (RM_TRANSIENT fields go back to their defaults)",
+  "Play 中のスクリプト": "Scripts during Play",
+  "Stop で反映 (Play 中は前のまま)": "At Stop (the old ones run until then)",
+  "すぐ入れ替える (値は引き継ぎ、OnReloaded を呼ぶ)": "Swap at once (values carried over, OnReloaded called)"
 }

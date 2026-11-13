@@ -190,6 +190,19 @@ public:
     // (in the run order; a script started only), then the components and entities removed. Asked
     // again in those EndPlays: done too (a few rounds at most). Frame does it at its end.
     void ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);
+    // The scripts built again while the game plays (design BluePrint 20-c): before, which scripts of the
+    // scene had started / crashed (by entity, type and place among that type's - their objects are
+    // made again); after the scene was read back with the new types, the same taken again and
+    // OnReloaded called on each started one (in the run order; BeginPlay is not called again).
+    struct RunState {
+        int entity = 0;
+        std::string type;
+        size_t nth = 0;
+        bool started = false, crashed = false;
+    };
+    std::vector<RunState> Remember(const Scene& scene) const;
+    void Resume(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
+                std::span<const RunState> before);
     // EndPlay of every started script (Stop), then all forgotten - and the world no longer points at the
     // scene (it is about to go).
     void Stop(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);

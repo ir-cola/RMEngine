@@ -1116,7 +1116,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
         for (const auto& resolveOther : b.also) {
             if (const reflect::EditTarget o = resolveOther ? resolveOther() : reflect::EditTarget{}; o.object) others.push_back(o.object);
         }
-        shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode, std::move(others), b.readOnly});
+        shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode, std::move(others), b.readOnly, b.fieldMenu});
         source.push_back(i);
     }
     const bool gone = target.blocks && shown.empty();

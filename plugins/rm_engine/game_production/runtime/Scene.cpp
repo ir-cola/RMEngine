@@ -572,5 +572,32 @@ std::vector<PluginId> PluginsOffering(const std::vector<std::string>& used, cons
     return out;
 }
 
+namespace {
+
+// The field `f` names: its description and the struct holding it (field null: not there).
+reflect::PathTarget SceneFieldTarget(Scene& scene, const SceneField& f) {
+    SceneEntity* e = scene.Find(f.entity);
+    if (!e) return {};
+    if (f.component.empty()) return reflect::Resolve(reflect::TypeOf<Entity>(), &e->data, &e->unknowns, f.path);
+    Component* c = e->FindComponent(f.component, f.nth);
+    if (!c || !c->Known()) return {};
+    return reflect::Resolve(*c->value.Type(), c->value.Get(), &c->unknowns, f.path);
+}
+
+}  // namespace
+
+std::optional<json::Value> ReadSceneField(Scene& scene, const SceneField& f) {
+    const reflect::PathTarget t = SceneFieldTarget(scene, f);
+    if (!t.field) return std::nullopt;
+    return reflect::SaveField(*t.field, t.owner, t.unknowns);
+}
+
+bool WriteSceneField(Scene& scene, const SceneField& f, const json::Value& value, reflect::Warnings* warnings) {
+    const reflect::PathTarget t = SceneFieldTarget(scene, f);
+    if (!t.field) return false;
+    reflect::LoadField(*t.field, t.owner, value, t.unknowns, warnings);
+    return true;
+}
+
 }  // namespace rm::game_production
 

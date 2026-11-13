@@ -24,6 +24,13 @@ struct DisplaySettings {
     RM_PROPERTY(Edit, Label="垂直同期", Tooltip="画面の書き換えに合わせて描きます (ちらつきを防ぐ)") bool vsync = true;
 };
 
+// When scripts built while the game plays are used (design BluePrint 20-c).
+RM_ENUM(Label="Play 中のスクリプト")
+enum class ScriptReload {
+    RM_ITEM(Label="Stop で反映 (Play 中は前のまま)") AtStop,
+    RM_ITEM(Label="すぐ入れ替える (値は引き継ぎ、OnReloaded を呼ぶ)") AtOnce,
+};
+
 // One line of the scripts' run order: smaller numbers run first; a type not listed is 0 (then by name).
 RM_STRUCT(Label="スクリプトの実行順")
 struct ScriptOrderEntry {
@@ -151,6 +158,7 @@ struct GameSettings {
     RM_PROPERTY() std::string space;
     // Which scripts run before which (type by type; the same type: in the order they were attached).
     RM_PROPERTY(Edit, Label="スクリプトの実行順", Tooltip="プレイヤーが動いてからカメラが追う、のように型の順番を決めます。小さいほど先") std::vector<ScriptOrderEntry> scriptOrder;
+    RM_PROPERTY(Edit, Label="Play 中のビルド", Tooltip="Play 中にスクリプトのビルドが終わったとき。すぐ入れ替えると、欄の値は名前で引き継ぎ、BeginPlay は呼ばずに OnReloaded を呼びます (RM_TRANSIENT の欄は既定の値に戻ります)") ScriptReload scriptReload = ScriptReload::AtStop;
     // What the scripts read by name (rm::Input::Down("Jump")): the same in the editor's Play and the game.
     RM_PROPERTY(Edit, Label="入力", Tooltip="スクリプトはキーではなくアクションの名前で入力を読みます (ゲームパッドもそのまま使えます)") std::vector<InputAction> input = DefaultInputActions();
     // Values of the whole game: back to these at every Play (and when it stops); rm::Save writes them.

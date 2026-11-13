@@ -22,6 +22,7 @@
 #include "rm_engine/game_production/runtime/Components.h"
 
 #include <algorithm>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <string>
@@ -243,5 +244,19 @@ private:
     int nextId_ = 1;
     json::Value extra_ = json::Value::MakeObject();  // the scene object as loaded (its unknown keys are kept)
 };
+
+// One field of an entity of a scene: the entity's own (component "") or one of its components (its type
+// and place among that type's), by the path inside it. What Play's この値を残す reads in the copy that
+// plays and writes into the scene from before Play.
+struct SceneField {
+    int entity = 0;
+    std::string component;
+    size_t nth = 0;
+    reflect::FieldPath path;
+};
+// Its value as saved; nullopt: the entity, the component or the field is not there.
+std::optional<json::Value> ReadSceneField(Scene& scene, const SceneField& f);
+// Sets it (as loading would: range, unknown names kept). False: not there.
+bool WriteSceneField(Scene& scene, const SceneField& f, const json::Value& value, reflect::Warnings* warnings = nullptr);
 
 }  // namespace rm::game_production

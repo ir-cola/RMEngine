@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "Play 中にインスペクターの欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻せます (Undo 1 回分)。ゲームの設定の「Play 中のビルド」で、Play 中にスクリプトをすぐ入れ替えられます (値は引き継ぎ、OnReloaded を呼ぶ。既定は今までどおり Stop で反映)",
+          "en": "During Play, right-click a field in the inspector → \"Keep this value\" to write its value at Stop back into the scene from before Play (one undo). The game settings' \"Build during Play\" can swap scripts at once while playing (values carried over, OnReloaded called; the default is still at Stop)"
+        },
+        {
           "ja": "スクリプトからエンティティを作る・消す (rm::Spawn・Destroy。Prefab からも)、部品を付ける・取る・外す (Add / Get / Remove)。スクリプトの欄に列挙・一覧・構造体・アセットの参照 (Prefab・画像・モデル) が使えるようになりました",
           "en": "Scripts can make and destroy entities (rm::Spawn, Destroy; from a prefab too) and add, get and remove components (Add / Get / Remove). Script fields can be enums, lists, structs and asset references (prefab, image, model)"
         },

@@ -466,7 +466,9 @@ SystemRunner::Advance(シーン, 前のフレームからの時間, 物理の刻
 - **欄の型 (ABI 4)**: 列挙 (`RM_ENUM`)・入れ子の構造体 (`RM_STRUCT`)・一覧 (`std::vector`。一覧の一覧は不可)・アセットの参照 (`rm::PrefabRef` / `ImageRef` / `ModelRef` = `char guid[40]`)。rmgen が DLL の中に `RmEnumDesc` (名前・ラベル・値・get / set)・`RmStructDesc` (作り方・壊し方・写し方・欄)・`RmListDesc` (大きさ・大きさを変える・n 番目: **DLL の関数**。DLL の C のランタイムが中身を持つ) を書き、エンジンは `MakeScriptTypes` でそれを `reflect::TypeDesc` / `EnumDesc` / `ArrayOps` にする (`ScriptType` が持つ。アドレスは動かない)。一覧の中の文字も `stringAccess` (DLL の関数) を通る。アセットの参照は `FieldType::AssetRef` に `stringAccess` (エンジンの、40 バイトの文字を読み書きする関数) を付けたもの (`reflect::ReadAssetId` / `WriteAssetId`)。だから保存・読み込み・比べる・インスペクター・Undo・値の引き継ぎは今の部品と同じ道
   - アセットの種類の絞り込みに拡張子も書ける (`AssetKind=".rmprefab"`: 核は Prefab を知らないので、種類ではなく拡張子で。`asset::KindMatches(kind, filter, fileName)`)
   - インスペクターの選択肢は 17 個以上なら絞り込める一覧 (入力のキーと同じ)
-- ★ まだ: 衝突のフック (物理を入れるとき)、Play 中の入れ替え、`OnReloaded` (ABI の欄 `RmScriptDesc::onReloaded` と `CallScriptHook` の 3 は入れてある)、「この値を残す」、音のアセットの参照
+- **Play 中の入れ替え** (2026-11-13。§20-c の「決めてほしいこと」1・2): ゲームの設定の「Play 中のビルド」(`GameSettings::scriptReload`) で選ぶ。**既定は「Stop で反映」** (今までどおり。§20-c の 11/04 の決定)。「すぐ入れ替える」にすると、Play 中にビルドが成功した次のフレームの切れ目で `GameSoftware::ReloadScripts` が編集中のシーンと**動いているコピーの両方**を名前で書き出し → 古い DLL の物を消し → 新しい DLL で読み戻す。どのスクリプトが始まっていたか (落ちていたか) は物のアドレスではなく (エンティティ・型・その型の何番目) で覚え (`ScriptRunner::Remember`)、読み戻した物に付け直す (`Resume`)。始まっていた物には **BeginPlay ではなく `OnReloaded(self)`** (任意のフック。`RmScriptDesc::onReloaded`) を実行順で呼ぶ。RM_TRANSIENT の欄は既定値に戻る。Undo の履歴は止まっているときの入れ替えと同じく消える
+- **この値を残す** (2026-11-13。§20-b の 3): Play 中のインスペクター (動いているコピーを見せるだけ) で欄を右クリック →「この値を残す」(`inspector::Block::fieldMenu`: 読むだけのかたまりでも右クリックは効く)。どの欄かを `SceneField{エンティティ, 部品の型と何番目 ("" = エンティティ自身), 欄の道}` で覚え、■ のとき**スクリプトの EndPlay より前**の値を動いているコピーから読み (`ReadSceneField`)、Play の前のシーンに戻した後で書き戻す (`WriteSceneField`)。何個でも **Undo 1 回分** (`EditTouching` = 未保存になる)。Play の中で作った物の欄は残せない (コンソールに出す)。「Stop で反映」のビルドは次のフレームで読むので、書き戻した値もそのまま新しい DLL に引き継がれる
+- ★ まだ: 衝突のフック (物理を入れるとき)、音のアセットの参照、エンジンの部品の取っ手は Transform 3D / 2D だけ (スプライトなどは RM2D / RM3D に出したときに)
 
 ### Prefab (`plugins/rm_engine/game_production/runtime/Prefab.h`)
 
