@@ -45,6 +45,23 @@ struct ModelImport {
     RM_PROPERTY(Edit, Label="中の絵の大きさの上限 (ピクセル)", Tooltip="モデルの中の絵がこれより大きければ縮めて読みます", Min=16, Max=8192) int textureMaxSize = 4096;
 };
 
+RM_ENUM(Label="ストリーミング")
+enum class SoundStream {
+    RM_ITEM(Label="自動 (10 秒より長ければ)") Auto,
+    RM_ITEM(Label="する (少しずつ解いて流す)") Always,
+    RM_ITEM(Label="しない (全部解いて持つ)") Never,
+};
+
+// A sound (音: WAV / OGG / MP3 ...). Read by the 音 plugin (rm_engine/audio) - the core knows the
+// settings, not the sound.
+RM_STRUCT(Label="音の取り込み")
+struct SoundImport {
+    RM_PROPERTY(Edit, Label="音量", Tooltip="この音をいつも何倍の大きさで鳴らすか (音源の部品・スクリプトの音量にさらに掛かります)", Min=0, Max=4, Step=0.01) float volume = 1;
+    RM_PROPERTY(Edit, Label="ストリーミング", Tooltip="長い BGM は全部を解かずに少しずつ解いて流します (メモリを使わない)。短い効果音は全部解いて持つ方が速く鳴ります") SoundStream stream = SoundStream::Auto;
+    RM_PROPERTY(Edit, Label="ループの始め (秒)", Tooltip="繰り返すとき、終わりからここへ戻ります (イントロの後から繰り返す BGM)", Min=0, Step=0.01) float loopStart = 0;
+    RM_PROPERTY(Edit, Label="ループの終わり (秒)", Tooltip="繰り返すとき、ここで始めへ戻ります。0: 音の最後まで", Min=0, Step=0.01) float loopEnd = 0;
+};
+
 RM_STRUCT(Label="画像の取り込み")
 struct ImageImport {
     RM_PROPERTY(Edit, Label="くっきり (ドット絵)", Tooltip="拡大してもぼかさず、ピクセルをそのまま大きくします (3D のテクスチャと 2D のスプライト)") bool sharp = false;

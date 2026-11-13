@@ -112,6 +112,39 @@ bool AssetPanel::DrawPicture(ui::Context& c, const tree::Item& item, const Rect&
     return true;
 }
 
+const AssetPreview* PreviewFor(const PluginRegistry& registry, asset::Kind kind) {
+    for (const auto& p : registry.Contributions<AssetPreview>(kAssetPreviewPoint)) {
+        if (p.item->kind == kind) return p.item;
+    }
+    return nullptr;
+}
+
+namespace {
+
+// 「鳴らしてみる」 / 「止める」 for an asset whose kind has a preview (none: nothing).
+std::vector<w::Action> PreviewActions(const AssetLibrary& lib, const AssetPreview* preview, const std::string& guid) {
+    std::vector<w::Action> list;
+    const asset::Entry* e = lib.Index().ByGuid(guid);
+    if (!preview || !e || !preview->play) return list;
+    const AssetLibrary* l = &lib;
+    w::Action play;
+    play.label = Tr(L"鳴らしてみる");
+    play.run = [l, preview, guid] {
+        if (const asset::Entry* now = l->Index().ByGuid(guid)) preview->play(l->FullPath(*now), l->Import(guid));
+    };
+    list.push_back(std::move(play));
+    w::Action stop;
+    stop.label = Tr(L"止める");
+    stop.enabled = preview->playing && preview->playing();
+    stop.run = [preview] {
+        if (preview->stop) preview->stop();
+    };
+    list.push_back(std::move(stop));
+    return list;
+}
+
+}  // namespace
+
 ID2D1Bitmap* AssetThumbnail(ui::Context& c, const AssetLibrary& lib, Thumbnails& thumbnails, std::string_view guid, float size) {
     const asset::Entry* e = lib.Index().ByGuid(guid);
     if (!e) return nullptr;
@@ -200,6 +233,12 @@ std::vector<tree::Action> AssetPanel::Actions(std::span<const tree::ItemId> sele
         open.run = [this] { platform::OpenFolder(lib_.Root()); };
         list.push_back(std::move(open));
         return list;
+    }
+    if (registry_ && guids.size() == 1) {
+        // A sound: heard from here (the 音 plugin's preview).
+        if (const asset::Entry* e = lib_.Index().ByGuid(guids[0])) {
+            for (tree::Action& a : PreviewActions(lib_, PreviewFor(*registry_, asset::KindOf(e->path, e->folder)), guids[0])) list.push_back(std::move(a));
+        }
     }
     tree::Action show;
     show.label = Tr(L"エクスプローラーで表示");
@@ -304,12 +343,19 @@ void AssetPanel::InspectSelected() {
     AssetLibrary* lib = &lib_;
     std::shared_ptr<ImportView> view = view_;
     auto push = push_;
-    target.blocks = [lib, view, guid, type, push] {
+    const AssetPreview* preview = registry_ ? PreviewFor(*registry_, kind) : nullptr;
+    target.blocks = [lib, view, guid, type, push, preview] {
         std::vector<InspectBlock> blocks;
         const asset::Entry* now = lib->Index().ByGuid(guid);
         if (!now) return blocks;  // deleted: nothing is shown
         InspectBlock info;
         info.note = KindLabel(asset::KindOf(now->path, now->folder)) + L"  ·  Assets/" + Utf8ToWide(now->path) + L"\nID " + Utf8ToWide(guid);
+        if (preview && preview->describe) {
+            // (a sound: its length and form - and 「鳴らしてみる」 in the block's ⋮ menu)
+            if (const std::wstring line = preview->describe(lib->FullPath(*now)); !line.empty()) info.note += L"\n" + line;
+            info.title = KindLabel(asset::KindOf(now->path, now->folder));
+            info.menu = PreviewActions(*lib, preview, guid);
+        }
         blocks.push_back(std::move(info));
         if (!type) return blocks;
         InspectBlock settings;
@@ -349,7 +395,12 @@ void AssetPanel::Draw(ui::Context& c, const Rect& r) {
     const std::vector<std::string> sel = GuidsOf(state_.sel.ids);
     if (sel.size() == 1) {
         if (const asset::Entry* e = lib_.Index().ByGuid(sel[0])) {
-            text = KindLabel(asset::KindOf(e->path, e->folder)) + L"  ·  Assets/" + Utf8ToWide(e->path);
+            const asset::Kind kind = asset::KindOf(e->path, e->folder);
+            text = KindLabel(kind) + L"  ·  Assets/" + Utf8ToWide(e->path);
+            const AssetPreview* preview = registry_ ? PreviewFor(*registry_, kind) : nullptr;
+            if (preview && preview->describe) {
+                if (const std::wstring line = preview->describe(lib_.FullPath(*e)); !line.empty()) text += L"  ·  " + line;
+            }
         }
     } else if (sel.size() > 1) {
         text = TrF(L"{} 個選んでいます", sel.size());

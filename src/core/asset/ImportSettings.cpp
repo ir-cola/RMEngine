@@ -13,6 +13,7 @@ const reflect::TypeDesc* ImportTypeOf(Kind kind) {
     switch (kind) {
         case Kind::Model: return &reflect::TypeOf<ModelImport>();
         case Kind::Image: return &reflect::TypeOf<ImageImport>();
+        case Kind::Audio: return &reflect::TypeOf<SoundImport>();
         default: return nullptr;
     }
 }

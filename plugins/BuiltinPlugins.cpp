@@ -9,6 +9,8 @@
 // Order does not matter: the loader enables requirements first.
 
 #include "editor/plugin/Software.h"
+#include "rm_engine/audio/editor/Preview.h"
+#include "rm_engine/audio/runtime/Id.h"
 #include "rm_engine/game_production/editor/GameSoftware.h"
 #include "rm_engine/game_production/runtime/Id.h"
 #include "rm_engine/game_x_3d/editor/Connector.h"
@@ -28,6 +30,7 @@ namespace rm::editor {
 std::span<const BuiltinPlugin> BuiltinPlugins() {
     static constexpr BuiltinPlugin kPlugins[] = {
         {game_production::kPluginId, &game_production::RegisterEditor},
+        {audio::kPluginId, &audio::RegisterEditor},
         {space3d::kPluginId, &space3d::RegisterEditor},
         {game_x_3d::kPluginId, &game_x_3d::RegisterEditor},
         {space2d::kPluginId, nullptr},

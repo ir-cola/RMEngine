@@ -15,6 +15,7 @@
 
 #include "core/reflect/Object.h"
 #include "editor/assets/AssetLibrary.h"
+#include "editor/assets/AssetPreview.h"
 #include "editor/assets/Thumbnails.h"
 #include "editor/inspector/Inspector.h"
 #include "editor/plugin/Software.h"
@@ -48,6 +49,8 @@ public:
     // value back. Shown when the button is let go without a drag (dragging an asset to a field of the
     // インスペクター does not take the インスペクター away from what it shows).
     void SetInspector(std::function<void(Inspectable)> inspect, std::function<void(std::unique_ptr<ICommand>)> push);
+    // Where the plugins' previews are (AssetPreview.h: a sound's length, 「鳴らしてみる」).
+    void SetPreviews(const PluginRegistry* registry) { registry_ = registry; }
 
     // tree::Source
     void Items(std::vector<tree::Item>& out) override;
@@ -77,6 +80,7 @@ private:
     std::function<void(Inspectable)> inspect_;
     std::function<void(std::unique_ptr<ICommand>)> push_;
     bool pendingInspect_ = false;
+    const PluginRegistry* registry_ = nullptr;
     friend class ImportCommand;
 
     AssetLibrary& lib_;

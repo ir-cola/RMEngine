@@ -54,6 +54,7 @@ Kind KindOf(std::string_view fileName, bool folder) {
         {".gltf", Kind::Model}, {".glb", Kind::Model},  {".dae", Kind::Model},  {".blend", Kind::Model}, {".3ds", Kind::Model},
         {".ply", Kind::Model},  {".stl", Kind::Model},  {".wav", Kind::Audio},  {".ogg", Kind::Audio},  {".mp3", Kind::Audio},
         {".flac", Kind::Audio}, {".aif", Kind::Audio},  {".aiff", Kind::Audio}, {".mid", Kind::Audio},  {".midi", Kind::Audio},
+        {".m4a", Kind::Audio},  {".aac", Kind::Audio},  {".wma", Kind::Audio},
         {".ttf", Kind::Font},   {".otf", Kind::Font},   {".txt", Kind::Text},   {".md", Kind::Text},    {".json", Kind::Text},
         {".csv", Kind::Text},   {".xml", Kind::Text},   {".yaml", Kind::Text},  {".yml", Kind::Text},   {".lua", Kind::Text},
     };

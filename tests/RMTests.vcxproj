@@ -83,6 +83,7 @@
     <ClCompile Include="TestDebugDraw.cpp" />
     <ClCompile Include="TestScriptBuild.cpp" />
     <ClCompile Include="TestAsset.cpp" />
+    <ClCompile Include="TestAudio.cpp" />
     <ClCompile Include="TestEntityRefs.cpp" />
     <ClCompile Include="TestTemplates.cpp" />
     <ClCompile Include="TestSceneFile.cpp" />
@@ -114,6 +115,10 @@
     <ClCompile Include="..\src\editor\widgets\ThemeFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\theme_seasons\editor\Ornament.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\audio\runtime\Sound.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\audio\runtime\Decoder.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\audio\runtime\StbVorbis.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\audio\runtime\AudioEngine.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Systems.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Prefab.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\SceneFile.cpp" />

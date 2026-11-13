@@ -416,5 +416,19 @@
   "書き出せるソフトがありません (ゲーム制作のプラグインが要ります)": "No software can export (the Game Production plugin is needed)",
   "アセットを暗号化できませんでした (Windows の暗号の機能 (CNG) を使えません)": "Could not encrypt the assets (Windows' cryptography (CNG) cannot be used)",
   "アイコンの画像が PNG でも ICO でもないので、アイコンなしで書き出します": "The icon is neither a PNG nor an ICO, so the game is exported without an icon",
-  "★ {} の中にこの PC のパスが残っています: {}": "★ A path of this PC is left in {}: {}"
+  "★ {} の中にこの PC のパスが残っています: {}": "★ A path of this PC is left in {}: {}",
+  "ストリーミング": "Streaming",
+  "自動 (10 秒より長ければ)": "Auto (when longer than 10 seconds)",
+  "する (少しずつ解いて流す)": "On (decode a little at a time)",
+  "しない (全部解いて持つ)": "Off (decode it all and keep it)",
+  "音の取り込み": "Sound import",
+  "音量": "Volume",
+  "この音をいつも何倍の大きさで鳴らすか (音源の部品・スクリプトの音量にさらに掛かります)": "How loud this sound always plays (multiplied with the audio source's and the script's volume)",
+  "長い BGM は全部を解かずに少しずつ解いて流します (メモリを使わない)。短い効果音は全部解いて持つ方が速く鳴ります": "Long music is decoded a little at a time instead of all at once (less memory). Short sound effects start faster when decoded whole",
+  "ループの始め (秒)": "Loop start (seconds)",
+  "繰り返すとき、終わりからここへ戻ります (イントロの後から繰り返す BGM)": "When repeating, it comes back here from the end (music that repeats after its intro)",
+  "ループの終わり (秒)": "Loop end (seconds)",
+  "繰り返すとき、ここで始めへ戻ります。0: 音の最後まで": "When repeating, it goes back to the start here. 0: the end of the sound",
+  "鳴らしてみる": "Play",
+  "止める": "Stop"
 }

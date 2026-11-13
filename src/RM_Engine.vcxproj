@@ -143,6 +143,7 @@
     <ClInclude Include="editor\inspector\Inspector.h" />
     <ClInclude Include="editor\assets\AssetLibrary.h" />
     <ClInclude Include="editor\assets\AssetPanel.h" />
+    <ClInclude Include="editor\assets\AssetPreview.h" />
     <ClInclude Include="editor\assets\Thumbnails.h" />
     <ClInclude Include="editor\plugin\PluginManifest.h" />
     <ClInclude Include="editor\plugin\Plugins.h" />

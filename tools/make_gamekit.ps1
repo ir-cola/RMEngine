@@ -90,7 +90,7 @@ $kit = [ordered]@{
     core = 'lib/core.lib'
     systemLibs = @('kernel32.lib', 'user32.lib', 'gdi32.lib', 'advapi32.lib', 'shell32.lib', 'ole32.lib', 'oleaut32.lib', 'uuid.lib',
                    'comdlg32.lib', 'shlwapi.lib', 'd3d11.lib', 'dxgi.lib', 'd2d1.lib', 'dwrite.lib', 'windowscodecs.lib', 'dwmapi.lib',
-                   'imm32.lib', 'shcore.lib', 'bcrypt.lib', 'd3dcompiler.lib', 'dxguid.lib')
+                   'imm32.lib', 'shcore.lib', 'bcrypt.lib', 'd3dcompiler.lib', 'dxguid.lib', 'xaudio2.lib', 'mfuuid.lib')
     plugins = @($plugins)
 }
 [IO.File]::WriteAllText((Join-Path $Out 'kit.json'), ($kit | ConvertTo-Json -Depth 5), $utf8)

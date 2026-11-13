@@ -1,0 +1,11 @@
+{
+  "音": "Audio",
+  "長さを調べています…": "Reading its length…",
+  "読めません: {}": "Cannot read: {}",
+  "鳴らせません: {}": "Cannot play: {}",
+  "ステレオ": "stereo",
+  "モノラル": "mono",
+  "{} チャンネル": "{} channels",
+  "長さ {}  ·  {} Hz {}  ·  {}": "Length {}  ·  {} Hz {}  ·  {}",
+  "ゲームには WAV か OGG を勧めます (N 版の Windows では鳴りません)": "WAV or OGG is recommended for games (this does not play on the N editions of Windows)"
+}

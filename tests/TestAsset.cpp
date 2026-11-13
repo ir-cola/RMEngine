@@ -242,7 +242,8 @@ RM_TEST(Asset_ImportSettingsInMeta) {
     reflect::Load(m, *json::Parse(R"({"scale": 0, "up": "Z"})"));
     CHECK(m.scale == 0.0001f && m.up == UpAxis::Z);
     CHECK(ImportTypeOf(Kind::Model) == &reflect::TypeOf<ModelImport>() && ImportTypeOf(Kind::Image) == &reflect::TypeOf<ImageImport>());
-    CHECK(ImportTypeOf(Kind::Audio) == nullptr && ImportTypeOf(Kind::Folder) == nullptr);
+    CHECK(ImportTypeOf(Kind::Audio) == &reflect::TypeOf<SoundImport>());
+    CHECK(ImportTypeOf(Kind::Text) == nullptr && ImportTypeOf(Kind::Folder) == nullptr);
 }
 
 RM_TEST(Asset_ImportSettingsOnDisk) {
