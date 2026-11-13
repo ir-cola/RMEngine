@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "エディターの Play では、マウスのボタンはゲームビューの上でだけゲームに渡します (階層やインスペクターのクリックで弾が出ない)。既定の入力の「Fire」は Ctrl の代わりに Z (Ctrl+P で弾が出ていた)",
+          "en": "In the editor's Play, mouse buttons reach the game only over the game view (a click on the hierarchy or the inspector no longer fires). The default \"Fire\" input uses Z instead of Ctrl (Ctrl+P used to fire)"
+        },
+        {
           "ja": "Play 中にインスペクターの欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻せます (Undo 1 回分)。ゲームの設定の「Play 中のビルド」で、Play 中にスクリプトをすぐ入れ替えられます (値は引き継ぎ、OnReloaded を呼ぶ。既定は今までどおり Stop で反映)",
           "en": "During Play, right-click a field in the inspector → \"Keep this value\" to write its value at Stop back into the scene from before Play (one undo). The game settings' \"Build during Play\" can swap scripts at once while playing (values carried over, OnReloaded called; the default is still at Stop)"
         },

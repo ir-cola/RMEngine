@@ -9,6 +9,7 @@
 #include "rm_engine/game_production/runtime/Input.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 
+#include <algorithm>
 #include <cmath>
 
 using namespace rm;
@@ -141,4 +142,16 @@ RM_TEST(Input_SavedByName_AnUnknownInputKept) {
     CHECK(back.input.size() == 1 && back.input[0].name == "Shoot" && back.input[0].bindings.size() == 1);
     const json::Value again = reflect::Save(back, &u);
     CHECK(again.Get("input").Items()[0].Get("bindings").Items()[0].Get("control").AsString() == "PadPaddle1");
+}
+
+RM_TEST(Input_MouseButtonsDropped_DefaultFireHasNoCtrl) {
+    // The editor's Play: a click outside the game view is not the game's (the keys stay).
+    InputFrame f = Keys({0x01, 0x02, 0x20});
+    DropMouseButtons(f);
+    CHECK(ControlValue(f, InputControl::MouseLeft) == 0 && ControlValue(f, InputControl::MouseRight) == 0 && ControlValue(f, InputControl::Space) == 1);
+    // Ctrl is the editor's (Ctrl+P): not in the default Fire.
+    const std::vector<InputAction> list = DefaultInputActions();
+    const InputAction* fire = FindAction(list, "Fire");
+    CHECK(fire && std::none_of(fire->bindings.begin(), fire->bindings.end(), [](const InputBinding& b) { return b.control == InputControl::Ctrl; }));
+    CHECK(fire && EvaluateAction(*fire, Keys({'Z'})).down);
 }

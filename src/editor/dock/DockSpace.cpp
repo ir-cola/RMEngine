@@ -1,6 +1,7 @@
 #include "editor/lang/Lang.h"
 #include "editor/dock/DockSpace.h"
 
+#include "base/Log.h"
 #include "base/Utf.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
@@ -227,11 +228,25 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
     }
     const PanelType* type = FindPanel(leaf.tabs[static_cast<size_t>(leaf.active)]);
     if (!type || !type->draw) return;
+    // A panel leaves the context as it found it: the input switched on or off, the ids and the clips.
+    // One that does not (an early return between a push and its pop) is put right here - else every
+    // panel drawn after it in this window would take no mouse, or have other ids - and told once.
+    const bool inputWas = c.InputEnabled();
+    const size_t ids = c.IdDepth(), clips = c.ClipDepth();
     c.PushId(type->id);
     c.PushClip(body);
     type->draw(c, body);
     c.PopClip();
     c.PopId();
+    if (c.InputEnabled() != inputWas || c.IdDepth() != ids || c.ClipDepth() != clips) {
+        static std::vector<std::string> told;
+        if (std::find(told.begin(), told.end(), type->id) == told.end()) {
+            told.push_back(type->id);
+            log::Warn("パネル「{}」が描いた後に入力・ID・切り抜きを元に戻していません (戻しました。直すべき不具合です)", type->id);
+        }
+        c.SetInputEnabled(inputWas);
+        c.RestoreDepths(ids, clips);
+    }
 }
 
 void DockSpace::DrawTabStrip(ui::Context& c, const Node& leaf, const Rect& strip, uint32_t siteId, LeafGeo& geo) {

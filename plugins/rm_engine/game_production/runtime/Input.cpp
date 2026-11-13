@@ -19,7 +19,7 @@ std::vector<InputAction> DefaultInputActions() {
         axis("MoveX", {{C::Left, -1}, {C::Right, 1}, {C::A, -1}, {C::D, 1}, {C::PadLeftStickX, 1}, {C::PadLeft, -1}, {C::PadRight, 1}}),
         axis("MoveY", {{C::Down, -1}, {C::Up, 1}, {C::S, -1}, {C::W, 1}, {C::PadLeftStickY, 1}, {C::PadDown, -1}, {C::PadUp, 1}}),
         axis("Jump", {{C::Space, 1}, {C::PadA, 1}}),
-        axis("Fire", {{C::MouseLeft, 1}, {C::Ctrl, 1}, {C::PadX, 1}, {C::PadRT, 1}}),
+        axis("Fire", {{C::MouseLeft, 1}, {C::Z, 1}, {C::PadX, 1}, {C::PadRT, 1}}),  // (not Ctrl: the editor's Ctrl+P would fire)
     };
 }
 
@@ -47,6 +47,12 @@ const InputAction* FindAction(std::span<const InputAction> actions, std::string_
         if (a.name == name) return &a;
     }
     return nullptr;
+}
+
+void DropMouseButtons(InputFrame& f) {
+    for (const InputControl b : {InputControl::MouseLeft, InputControl::MouseRight, InputControl::MouseMiddle, InputControl::MouseX1, InputControl::MouseX2}) {
+        f.keys[static_cast<size_t>(b)] = 0;
+    }
 }
 
 std::array<float, 2> StickValue(int x, int y, int deadZone) {

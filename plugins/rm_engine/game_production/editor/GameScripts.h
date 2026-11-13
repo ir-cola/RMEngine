@@ -65,6 +65,11 @@ private:
     editor::SoftwareHost& host_;
     std::unique_ptr<ScriptModule> module_;
     InputReader input_;
+public:
+    // Whether the mouse is over the game view now (the game takes the mouse buttons only then).
+    std::function<bool()> mouseInGame;
+
+private:
     std::vector<GlobalVariable> globals_;
     double globalsChangedAt_ = -1;  // a change waiting to be written (-1: none)
     ScriptWorld world_;

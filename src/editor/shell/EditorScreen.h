@@ -20,6 +20,7 @@
 // plus which software was shown last). Layouts saved under a name are kept there too, per software
 // (Window menu: save / switch / manage - EditorLayouts.cpp).
 
+#include "base/Log.h"
 #include "core/UndoHistory.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/assets/AssetLibrary.h"
@@ -107,6 +108,17 @@ private:
         const Project& GetProject() const override { return editor_.project_; }
         void Redraw() override { editor_.RedrawAll(); }
         void Inspect(Inspectable target) override {
+            // A software that asks again and again (every frame) throws the inspector's scroll and menus
+            // away each time: told once (a bug to fix in it).
+            const double now = platform::NowSeconds();
+            if (now - inspectSince_ > 1.0) {
+                inspectSince_ = now;
+                inspectCount_ = 0;
+            }
+            if (++inspectCount_ == 20 && !inspectTold_) {
+                inspectTold_ = true;
+                log::Warn("インスペクターが 1 秒に 20 回以上作り直されています (スクロールとメニューが戻ります。直すべき不具合です)");
+            }
             inspected = std::move(target);
             inspectorState = {};
             editor_.RedrawAll();
@@ -141,6 +153,9 @@ private:
         std::unique_ptr<Software> software;
         Inspectable inspected;  // what the インスペクター shows
         inspector::State inspectorState;
+        double inspectSince_ = 0;  // Inspect asked in this second: how often (told once when too often)
+        int inspectCount_ = 0;
+        bool inspectTold_ = false;
         tree::State treeState;  // the 階層: selection, open items, search
         dock::NamedLayouts named;  // layouts the user saved under a name (UserSettings)
         dock::NamedLayouts shared;  // named layouts every project can use (%APPDATA%\RM_Engine\Layouts.json)

@@ -82,6 +82,11 @@ public:
     void PushClip(const Rect& r);
     void PopClip();
     const Rect& CurrentClip() const { return clips_.back(); }
+    // How deep the id and clip stacks are, and taking them back to that (a part that pushed and did not
+    // pop - its own early return - would change every later part's ids and hovering).
+    size_t IdDepth() const { return idStack_.size(); }
+    size_t ClipDepth() const { return clips_.size(); }
+    void RestoreDepths(size_t ids, size_t clips);
 
     // --- Small per-widget state (scroll offsets ...) ---
     float& FloatState(Id id, float init = 0.f);

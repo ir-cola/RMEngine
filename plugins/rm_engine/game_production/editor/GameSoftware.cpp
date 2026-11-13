@@ -654,12 +654,14 @@ public:
             if (c.KeyPressed(ui::Key::P, true)) Running() ? StopPlay() : StartPlay(c);
             if (c.KeyPressed(ui::Key::P, true, true) && Running()) TogglePause(c);
         }
+        scripts_.mouseInGame = [this] { return mouseInGame_; };
         if (play_ == PlayState::Playing && playScene_) {
             // The time since the last frame (at most a quarter of a second: a frame that took long -
             // a window dragged, the software switched - does not make the game jump).
             const double dt = std::clamp(c.Time() - lastTick_, 0.0, 0.25);
             lastTick_ = c.Time();
             AdvancePlay(dt);
+            mouseInGame_ = false;  // (the game view says it again when it is drawn)
             c.RequestAnimation();
         }
     }
@@ -1258,6 +1260,7 @@ private:
         }
         Rect r = panel;
         if (!Running() && r.h > 120) DrawStoppedStrip(c, ui::TakeTop(r, kSpaceStripH));
+        mouseInGame_ = c.IsHovered(r);  // (the game's mouse buttons: only over here - read by the next frame)
         SceneViewHost h = ViewHost(true);
         view->game->Draw(c, r, h);
         // The other spaces over it, in their order (2D over a 3D game, when it has a camera to show it).
@@ -2491,6 +2494,7 @@ private:
     std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // the plugins' component types
     std::unique_ptr<Scene> playScene_;  // the copy that plays
     std::vector<Kept> kept_;            // この値を残す: written back at Stop
+    bool mouseInGame_ = false;          // the mouse over the game view (its last drawing)
     std::vector<AssetRef> playScenes_;  // the scenes Play can switch to (GameScenes when it started)
     std::vector<std::string> cameraTypes_;  // the components the game sees through (SceneCamera)
     // シーンの一覧 panel: the row chosen (a scene's id; "" = the new scene not saved yet), renaming it.

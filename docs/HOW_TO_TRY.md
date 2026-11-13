@@ -1213,6 +1213,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 7. 書き出したゲームでも同じ (ゲームの設定の「入力」がそのまま入る)
 8. 前に作ったプロジェクト: 保存した設定に「入力」が無いので、開くと既定の 4 つが入る。スクリプトがキーで書いてあればそのまま動く (`rm::Input::Down(rm::Key::Space)` は残してある)
 
+- **マウスのボタンはゲームビューの上でだけ** (エディターの Play。画面では**未確認**): Play 中に階層やインスペクターをクリックしても、ゲームの「Fire」(マウスの左) にはならない。ゲームビューの上で押したときだけゲームに渡る。キーとゲームパッドは今までどおり (エディターのウィンドウが前にあれば)。書き出したゲームは窓全体がゲームなので、いつも渡る
+- 既定の「Fire」は マウスの左・**Z**・パッドの X・RT (前は Ctrl だった: エディターの Ctrl+P / Ctrl+Shift+P で弾が出たため)。前に作ったプロジェクトは保存した割り当てのまま (ゲームの設定の「入力」で Ctrl の行を消せる)
+
 **スクリプトから**: `rm::Input::Down("Jump")` (押されている)・`rm::Input::Pressed("Jump")` (このフレームで押された。1 回の押しで 1 回)・`rm::Input::Released("Jump")`・`rm::Input::Axis("MoveX")` (-1〜1)
 
 **グローバル変数とセーブ** (画面では**未確認**。テストは通っている。本物の MSBuild で `Global::score += 5` などを書いたスクリプトをビルドして動かすテストも通っている)
@@ -1232,7 +1235,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
    }
    if (rm::Input::Pressed("Jump")) rm::Log::Info(rm::Save::Write(1) ? "セーブしました" : "セーブできません");
    ```
-6. Play → マウスの左 (か Ctrl) を押すたびに「score = 10」「score = 20」…。Space で「セーブしました」→ `<プロジェクト>/Library/Saves/save_1.json` ができる (中は `"globals": {"score": 20, "best": 20}` など)
+6. Play → ゲームビューの上でマウスの左 (か Z) を押すたびに「score = 10」「score = 20」…。Space で「セーブしました」→ `<プロジェクト>/Library/Saves/save_1.json` ができる (中は `"globals": {"score": 20, "best": 20}` など)
 7. ■ で止めて、もう一度 Play → score は 0 から (Play のたびに初めの値に戻る)
 8. 読むのを試す: BeginPlay に `if (rm::Save::Exists(1)) rm::Save::Read(1);` を足す → Play すると、セーブした値から続く
 9. `save_1.json` をメモ帳で開き、`"globals"` に `"old": 1` を、外に `"note": "x"` を足して保存 → Play でまた Write → 2 つとも消えずに残っている
@@ -1289,7 +1292,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
    - 「撃ち方」(構造体) は字下げされた「速さ」「名前」(一覧: ＋ で足す・× で消す・つまみで並べ替え)
    - 「more」: 構造体の一覧。＋ で「撃ち方」が 1 つずつ増える
    - どれも Ctrl+Z で戻り、未保存の印が付き、保存して開き直すと残る。スクリプトを書き換えてビルドし直しても値は残る (欄の名前で引き継ぐ)
-4. Play → マウスの左 (か Ctrl) で弾が出て、奥へ飛び、z が 10 を超えると消える。階層 (Play 中は動いているコピー) に Bullet が増えて減る。出た弾の BeginPlay は次のフレーム
+4. Play → ゲームビューの上でマウスの左 (か Z) を押すと弾が出て、奥へ飛び、z が 10 を超えると消える。階層 (Play 中は動いているコピー) に Bullet が増えて減る。出た弾の BeginPlay は次のフレーム
 5. 弾の中にスクリプトがあれば、消えるときに EndPlay (コンソールで確かめるなら弾の Prefab に `EndPlay` でログを出すスクリプトを付ける)。子も一緒に消える
 6. ■ で止めると、作った弾は全部無くなる (Play の前に戻る)
 7. 部品: `self.Add<Health>()` (スクリプト) は Health* を返し、そのフレームのうちに値を決められる。`self.Remove<Health>()` はフレームの終わりに EndPlay の後で外れる。`self.Count<Health>()` は数。`other.Get<Health>()` は無ければ nullptr

@@ -126,6 +126,11 @@ void Context::PushClip(const Rect& r) {
     painter_->PushClip(c);
 }
 
+void Context::RestoreDepths(size_t ids, size_t clips) {
+    while (idStack_.size() > ids) idStack_.pop_back();
+    while (clips_.size() > clips && clips_.size() > 1) PopClip();
+}
+
 void Context::PopClip() {
     if (clips_.size() <= 1) return;
     clips_.pop_back();

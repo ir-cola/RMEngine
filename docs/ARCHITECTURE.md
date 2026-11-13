@@ -80,6 +80,12 @@
 - 文字入力 (`ui/TextEdit` + `editor/widgets` の `TextField`): キャレット・選択・Ctrl+A/C/X/V・単語移動・サロゲートペア。**日本語 IME は変換中の文字を入力欄の中に自前で描き**、候補ウィンドウをキャレットに合わせる。変換中に別の場所をクリックすると、先に確定してから移る
 - 文字は DirectWrite (`Yu Gothic UI`)。日本語の組版は自作しない
 
+### パネルは描いた後に元に戻す (2026-11-13)
+
+- ドッキングは、パネルを描く前と後で「入力が効くか」「ID の積み」「切り抜きの積み」を比べ、違えば戻してコンソール (とログ) に 1 回だけ「パネル「…」が描いた後に … 元に戻していません」と出す (`DockSpace::DrawLeaf`、`ui::Context::IdDepth` / `ClipDepth` / `RestoreDepths`)。途中で return したパネルのせいで、後に描くパネルがマウスを受けなくなるのを防ぐ
+- ソフトがインスペクターを 1 秒に 20 回以上 `Inspect` し直すと、1 回だけ警告 (作り直すたびにスクロールと開いたメニューが戻るため)
+- ★ 2026-11-13 の時点で、Play 中 (進めている間だけ) にインスペクターのスクロールと右クリックが効かないことが computer use で分かっている。原因はまだ分かっていない (上の 2 つは、その見分けのために入れた)
+
 ### 部品の決まり (`editor/widgets`)
 
 - **ImGui のように 1 回の呼び出しで描いて、何をされたかを返す**: `w::Button` / `w::IconButton` / `w::Selectable` / `w::NavItem` / `w::CollapsingHeader` / `w::ComboBox` / `w::TextField` / `w::Checkbox` / `w::MenuPopup` / `w::BeginModal` / `w::Tooltip` / `w::BeginScroll` …
@@ -445,12 +451,13 @@ SystemRunner::Advance(シーン, 前のフレームからの時間, 物理の刻
 - **ビルド** (`editor/ScriptBuild.*`): 1 つのプロジェクトのビルドは PC の中で 1 本だけ (名前付きミューテックス `Local\RmEngineScriptBuild_<パスのハッシュ>`。閉じた後も動いている MSBuild があれば待つ。番号はミューテックスを取ってから決める)。プログラムは `platform::RunProcess` で走らせ、子に渡すハンドルは自分のパイプだけ (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`。書き出しのパイプを MSBuild が持って書き出しが止まる、を防ぐ。テストあり)。vswhere で MSBuild を探し (`-requires Microsoft.Component.MSBuild`)、`Scripts.vcxproj` を `-p:TargetName=Scripts_<次の番号> -p:OutDir=Library/Scripts/` でビルド。出力はファイルのログ (UTF-8) から読み、`error` の行をコンソールへ。2 つ前より古い DLL は消す (使っている物は消えない)。作業スレッド (`editor/app/Worker`) で走り、結果は UI のスレッドに戻ってから使う (`GameScripts`)
 - **ホットリロード** (§20-c の決定): `GameScripts::Poll` が 1 秒ごとに Assets/Scripts の更新時刻を見てビルド。**編集中に成功** → 次のフレームの切れ目 (`Tick`) で入れ替え: 新しい DLL を先に読み → シーンを JSON に書き出し → スクリプトの物を壊す (古い型を外して読み直す) → Undo の履歴を消す (古い型の欄を指しているので) → 古い DLL を外す → 新しい型で読み戻す (値は名前で。足した欄 = 既定値、消した欄 = 知らないキーとして残す、型が変わった欄 = 変えられれば変える、消えた型 = 使えない部品として値ごと残す)。**Play 中に成功** → 入れ替えず「Stop で反映されます」、Stop で Play 前のシーンに戻してから (次のフレームで) 入れ替え。失敗 → 前の DLL のまま
 - **読む DLL はホストが決める** (書き出しのセッションへ): ランタイムの入口は `ScriptModule::Load(dll, MakeScriptApi(world), &why)`・`ScriptApiParts(registry)` (`world.parts` に入れる)・`ScriptRunner::Frame` / `Stop`。エディターは `LatestScriptDll(<プロジェクト>/Library/Scripts)` (= `Scripts_<数>.dll` の数が一番大きい物。`ScriptBuildFolder(project)` が Library/Scripts)。**書き出したゲームは exe の横の `Scripts.dll`** (書き出しは最新の DLL を `Scripts.dll` の名前で写すだけ: 同じ DLL がエディターとゲームの両方で動く)。スクリプトの型は `module.Types()` を `Scene::SetComponentTypes` の部品の型と複数可の型に足してから、シーンを読む
-- **入力はアクションの名前で** (2026-11-12。BluePrint §5「入力はアクション名で受ける。VK コードを持たない」): ゲームの設定の「入力」(`GameSettings::input` = `InputAction{名前, 割り当て[]}`、割り当ては `InputBinding{入力 (InputControl), 向き}`。`GameSettings.h`) をスクリプトが `rm::Input::Down("Jump")` / `Pressed` / `Released` / `Axis("MoveX")` で読む。新しいゲームは `DefaultInputActions()` (MoveX / MoveY: 矢印・WASD・左スティック・十字キー、Jump: Space・A ボタン、Fire: マウスの左・Ctrl・X ボタン・RT) から始まる
+- **入力はアクションの名前で** (2026-11-12。BluePrint §5「入力はアクション名で受ける。VK コードを持たない」): ゲームの設定の「入力」(`GameSettings::input` = `InputAction{名前, 割り当て[]}`、割り当ては `InputBinding{入力 (InputControl), 向き}`。`GameSettings.h`) をスクリプトが `rm::Input::Down("Jump")` / `Pressed` / `Released` / `Axis("MoveX")` で読む。新しいゲームは `DefaultInputActions()` (MoveX / MoveY: 矢印・WASD・左スティック・十字キー、Jump: Space・A ボタン、Fire: マウスの左・Z・X ボタン・RT (Ctrl はエディターの Ctrl+P と重なるので入れない)) から始まる
   - `InputControl` はキーとマウスのボタンが Windows の仮想キーコードの値、ゲームパッドが 0x100 から。**保存は名前** (`"Space"`、`"PadA"`)。知らない名前は捨てずに書き戻す
   - 判定は純粋 (`runtime/Input.*`): `EvaluateAction(action, frame)` = 割り当ての値 × 向き を足して -1〜1 に切ったものが軸、どれか 1 つが 0.5 以上 (どちら向きでも) なら押されている。`Pressed` / `Released` はこのフレームと前のフレームの比べ
   - 読むのは `InputReader::Read()` (エディターの Play も書き出したゲームも同じ。前に出ているのが自分のウィンドウのときだけ): キーとマウスは `GetAsyncKeyState` (左右を入れ替えたマウスは入れ替え直す)、パッドは **XInput** で 4 台 (各入力は一番大きく動いている台の値)。つながっていない台は 1 秒に 1 回だけ聞く (XInput は空の台に聞くのが遅い)。スティックは丸い不感帯 (`StickValue`)、トリガーは閾値 (`TriggerValue`)
   - **API はゲーム制作の「部分」**: `api->part("rm_engine.game_production.input", 1)` (`RmInputApi`。`RmAbi.h`)。`RmCoreApi` と `RM_ABI_VERSION` は変えない (部分は自分の版を持つ。ほかのセッションが core に足しても重ならない)。一覧に無い名前は false / 0 で、コンソールに 1 回だけ出す
   - キーそのものの `rm::Input::Down(rm::Key::Space)` も残す (ゲームパッドは届かない)
+  - エディターの Play では、マウスのボタンはマウスがゲームビューの上にあるときだけゲームに渡す (`GameScripts::mouseInGame` → `DropMouseButtons`。前のフレームにゲームビューが描かれたときの位置で決める)。階層やインスペクターのクリックが「Fire」にならない
 - **グローバル変数とセーブ** (2026-11-12。BluePrint §6「名前空間付きのアクセサ。#define で配らない」・RME_PLATFORM §4-b): ゲームの設定の「グローバル変数」(`GameSettings::globals` = `GlobalVariable{名前, 型 (bool / int / float / 文字 / Vec2 / Vec3), 初めの値 (文字で書く)}`)
   - 値は `ScriptWorld::globals` (`GlobalStore`。`runtime/Globals.*`) に 1 つ。**シーンを切り替えても残る** (ワールドはゲームに 1 つ)。エディターは Play と ■ で、書き出したゲームは始めに、初めの値に戻す (`Reset`。型に合わない初めの値は 0 にしてコンソールに出す)
   - スクリプトからは **`Global::score`** (`rm::GlobalVar<int>`。`+=`・`++`・代入・読むときは `int` などに変わる)。名前は**生成するヘッダー** `Library/Scripts/Globals/RmGlobals.h` (`GlobalsHeader`。名前と型だけ) にあり、`RM.h` の最後が `__has_include` で読むので、ユーザーは何も include しない。Visual Studio で補完が出る。名前空間を `Game` にしなかったのは、`using namespace rm;` と書くと `rm::Game` (カメラ・シーン) とあいまいになるから。C++ の名前にできない名前 (数字から・キーワード・日本語) はヘッダーに入らず、コンソールに出る (`rm::GlobalVar<int>("名前")` なら使える)

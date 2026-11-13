@@ -34,7 +34,11 @@ GameScripts::GameScripts(editor::SoftwareHost& host) : host_(host), module_(std:
     world_.parts = ScriptApiParts(host.Registry());
     // The keys, the mouse buttons and the game pads: only while one of the editor's windows is in front
     // (the same reader as an exported game's).
-    world_.readInput = [this] { return input_.Read(); };
+    world_.readInput = [this] {
+        InputFrame f = input_.Read();
+        if (!mouseInGame || !mouseInGame()) DropMouseButtons(f);  // (a click on another panel is not the game's)
+        return f;
+    };
     world_.log = [](int level, std::string_view text) {
         if (level >= 2) {
             log::Error("スクリプト: {}", text);

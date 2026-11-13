@@ -42,6 +42,10 @@ ActionValue EvaluateAction(const InputAction& a, const InputFrame& f);
 // The action of that name (the first; names are compared as they are, case and all); null: none.
 const InputAction* FindAction(std::span<const InputAction> actions, std::string_view name);
 
+// The mouse buttons let go of in a frame (the editor's Play: a click on the 階層 or the インスペクター is
+// not the game's - only one over the game view is).
+void DropMouseButtons(InputFrame& f);
+
 // A stick (XInput's -32768..32767 per axis) with a round dead zone: 0 inside it; outside, the length
 // is scaled so the edge of the dead zone is 0 and the full push 1 (the direction kept).
 std::array<float, 2> StickValue(int x, int y, int deadZone);
