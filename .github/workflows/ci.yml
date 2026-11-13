@@ -1,8 +1,10 @@
 name: ci
 
+# Runs only when started by hand (Actions tab -> ci -> Run workflow). Not on every push / pull request:
+# GitHub Actions minutes on a private repository are limited, and the owner does not want anything
+# that could be billed to run by itself. Every change is checked locally with tools/build.ps1 instead.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:

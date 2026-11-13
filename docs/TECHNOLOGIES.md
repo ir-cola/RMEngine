@@ -46,8 +46,8 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **設定** — `/W4` (警告を多めに出す) で警告 0 を保つ / `/utf-8` (ソースは UTF-8) / 静的 CRT (配るときに追加のランタイムが要らない) / x64
 
 ### Git と GitHub Actions (CI)
-- **何か** — 変更の記録 (Git) と、プッシュのたびに自動でビルドする仕組み (CI)
-- **何に使っているか** — https://github.com/ir-cola/RMEngine (非公開)。プッシュすると Windows のマシンで Debug と Release をビルドし、テストと層の検査まで通るか確かめる
+- **何か** — 変更の記録 (Git) と、GitHub のマシンでビルドする仕組み (CI)
+- **何に使っているか** — https://github.com/ir-cola/RMEngine (非公開)。**CI は手で始めたときだけ動く** (2026-11-13 から。Actions の画面の ci →「Run workflow」)。非公開のリポジトリの Actions は無料の分に限りがあり、料金が掛かりうるものを勝手に動かさないため。ふだんの確かめは手元の `tools/build.ps1` (ビルド・テスト・層・言語) で行う
 - **どこ** — `.github/workflows/ci.yml`、`tools/build.ps1`
 
 ### PowerShell
