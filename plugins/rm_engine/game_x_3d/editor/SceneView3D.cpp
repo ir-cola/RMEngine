@@ -56,7 +56,7 @@ constexpr float kOrbitDegreesPerDip = 0.4f;
 constexpr float kClickSlop = 4.f;  // a press that moves less than this is a click
 constexpr int kGridHalf = 20;      // the grid goes from -20 to 20 (1 per line, darker every 10)
 constexpr float kBarH = 28.f;      // the tool strip at the top left
-constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kShadowW = 56.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
+constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kShadowW = 84.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
 constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
 constexpr double kModelCheckSeconds = 1.0;    // how often a model file is looked at again (changed on disk?)
 constexpr double kModelForgetSeconds = 10.0;  // a model no entity uses for this long leaves the GPU

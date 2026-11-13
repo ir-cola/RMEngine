@@ -38,9 +38,9 @@
   "親 (キャンバスか親の UI) のどこに付くか。伸ばすと、親の大きさが変わると一緒に伸びます": "Where it is fixed in its parent (the canvas or the parent UI). Stretched, it grows with the parent",
   "位置": "Position",
   "固定する場所からのずれ (基準の解像度の DIP)。右と下が +": "Offset from the anchor (DIPs of the reference resolution). Right and down are +",
-  "大きさ": "Size",
+  "幅と高さ": "Size",
   "幅と高さ。伸ばす向きでは、親の幅 (高さ) より大きい (+) / 小さい (-) 分": "Width and height. Along a stretched axis: how much larger (+) or smaller (-) than the parent",
-  "中心": "Pivot",
+  "回す中心": "Pivot",
   "位置と回転の中心 (0〜1。左上が 0, 0、真ん中が 0.5, 0.5)": "The point it is placed and turned by (0..1: the top left is 0, 0, the middle 0.5, 0.5)",
   "回転 (度)": "Rotation (degrees)",
   "時計回りが +。子も一緒に回ります": "Clockwise is +. Its children turn with it",
@@ -117,5 +117,6 @@
   "タイトル画面 (はじめる ボタン) → ゲーム (スコアの文字と HP のバー)。ボタンの OnClick でシーンを切り替え、スコアと HP はグローバル変数。": "A title screen (a Start button) -> the game (a score text and an HP bar). The button's OnClick switches the scene; the score and the HP are global variables.",
   "十字キー・左スティック・矢印キーでボタンを選び、決定で押し、戻るでウィンドウを戻ります (表に出ているいちばん手前のキャンバスだけ。割り当てはゲームの設定の「入力」の UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel)": "Choose buttons with the pad's cross, the left stick or the arrow keys, press with Submit, go back a window with Cancel (only the frontmost shown canvas; the bindings are the game settings' Input actions UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel)",
   "このウィンドウが出たときに選んでいるボタン。無ければ左上のボタン": "The button chosen when this window shows. Without one, the top-left button",
-  "「戻る」でこのボタンを押します。無ければ、このウィンドウを閉じて前のウィンドウに戻ります": "Cancel presses this button. Without one, Cancel closes this window and goes back to the one before"
+  "「戻る」でこのボタンを押します。無ければ、このウィンドウを閉じて前のウィンドウに戻ります": "Cancel presses this button. Without one, Cancel closes this window and goes back to the one before",
+  "文字の大きさ": "Font size"
 }

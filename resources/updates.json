@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "英語にしたときの言葉の取り違えを直す: 「ウィンドウ」のメニューが Windowed と出ていた・シーンビューの「影」のボタンが切れていた。同じ日本語に違う英語が付いていた所をそろえ、意味が違う物は日本語を分けた (UI の「幅と高さ」「回す中心」「文字の大きさ」、コライダーの「箱の大きさ」、表示のしかたの「ウィンドウで表示」)",
+          "en": "Fixed mixed-up words in English: the Window menu showed as Windowed and the scene view's Shadows button was cut off. Words that had two different English texts now agree, and labels with different meanings got different Japanese (UI Size / Pivot / Font size, collider Box size, display mode Windowed)"
+        },
+        {
           "ja": "ゲーム UI をコントローラーとキーボードで: どのゲームでも、十字キー・左スティック・矢印キーで近いボタンへ移り (押し続けると続けて)、決定で押し、戻るで後から出したウィンドウを閉じる。始めからボタンが選ばれているので、パッドだけで遊べる。割り当てはゲームの設定の「入力」の UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel",
           "en": "Game UI with a controller or the keyboard: in every game, the pad's cross, the left stick or the arrow keys move to the nearest button (repeating while held), Submit presses it and Cancel closes the window opened last. A button is chosen from the start, so a pad alone plays. The bindings are the game settings' Input actions UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel"
         },

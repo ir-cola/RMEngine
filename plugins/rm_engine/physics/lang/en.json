@@ -24,7 +24,7 @@
   "メッシュ": "Mesh",
   "コライダー": "Collider",
   "メッシュ: 同じエンティティのメッシュ (3D モデル) の形。動かない物だけ (剛体が無いか「動かない」)": "Mesh: the shape of the same entity's mesh (3D model). Static objects only (no Rigidbody, or Static)",
-  "大きさ": "Size",
+  "箱の大きさ": "Box size",
   "箱の幅・高さ・奥行き (Transform の大きさを掛けます)": "The box's width, height and depth (multiplied by the Transform's scale)",
   "半径": "Radius",
   "球とカプセル": "Sphere and capsule",

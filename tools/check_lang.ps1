@@ -83,6 +83,21 @@ foreach ($tf in Get-ChildItem (Join-Path $Root 'plugins') -Recurse -Filter *.jso
     if ($n) { Need $rel 1 $n }
 }
 
+# The English tables are merged into one at run time (the core's and every plugin's): the same
+# Japanese with two different English texts shows the wrong one somewhere (the ウィンドウ menu came
+# out as "Windowed", the display mode's word). Different meanings need different Japanese.
+$firstOf = @{}
+$tableFiles = @((Join-Path $Root 'resources/lang/en.json')) + @(Get-ChildItem (Join-Path $Root 'plugins') -Recurse -Filter en.json | Where-Object { $_.Directory.Name -eq 'lang' } | ForEach-Object { $_.FullName })
+foreach ($tf in $tableFiles) {
+    $table = Read-Catalog $tf
+    foreach ($k in $table.Keys) {
+        if (-not $firstOf.ContainsKey($k)) { $firstOf[$k] = @($tf, $table[$k]); continue }
+        if ($firstOf[$k][1] -cne $table[$k]) {
+            $missing.Add("${tf}: 「$k」の英語が $($firstOf[$k][0]) と違います (`"$($table[$k])`" / `"$($firstOf[$k][1])`")。意味が違うなら日本語を変えてください")
+        }
+    }
+}
+
 foreach ($m in $missing) { Write-Host $m }
 # Entries nobody uses any more are only reported (not an error).
 foreach ($file in $catalogs.Keys) {

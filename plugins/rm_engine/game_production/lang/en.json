@@ -2,7 +2,7 @@
   " (使えない部品)": " (unusable component)",
   "3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。": "With a 3D or 2D space plugin, the scene shows here and you can place and move entities.",
   "この部品のプラグインが入っていないか、形が読めません。データはそのまま残り、保存しても消えません。": "The plugin of this component is not installed, or its data cannot be read. The data is kept and saved as it is.",
-  "ウィンドウ": "Windowed",
+  "ウィンドウで表示": "Windowed",
   "エンティティ": "Entity",
   "エンティティはまだありません。\nここを右クリックして「エンティティを作る」で作れます。": "No entities yet.\nRight-click here and choose \"Create entity\".",
   "エンティティを作る": "Create entity",

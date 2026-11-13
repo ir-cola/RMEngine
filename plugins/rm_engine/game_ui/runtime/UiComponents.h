@@ -64,8 +64,8 @@ struct UiRect {
     RM_PROPERTY(Edit, Label="固定する場所 (アンカー)", Tooltip="親 (キャンバスか親の UI) のどこに付くか。伸ばすと、親の大きさが変わると一緒に伸びます")
     UiAnchor anchor = UiAnchor::Center;
     RM_PROPERTY(Edit, Label="位置", Tooltip="固定する場所からのずれ (基準の解像度の DIP)。右と下が +") Vec2 position{0, 0};
-    RM_PROPERTY(Edit, Label="大きさ", Tooltip="幅と高さ。伸ばす向きでは、親の幅 (高さ) より大きい (+) / 小さい (-) 分") Vec2 size{240, 64};
-    RM_PROPERTY(Edit, Label="中心", Tooltip="位置と回転の中心 (0〜1。左上が 0, 0、真ん中が 0.5, 0.5)", Min=0, Max=1) Vec2 pivot{0.5f, 0.5f};
+    RM_PROPERTY(Edit, Label="幅と高さ", Tooltip="幅と高さ。伸ばす向きでは、親の幅 (高さ) より大きい (+) / 小さい (-) 分") Vec2 size{240, 64};
+    RM_PROPERTY(Edit, Label="回す中心", Tooltip="位置と回転の中心 (0〜1。左上が 0, 0、真ん中が 0.5, 0.5)", Min=0, Max=1) Vec2 pivot{0.5f, 0.5f};
     RM_PROPERTY(Edit, Label="回転 (度)", Tooltip="時計回りが +。子も一緒に回ります", Min=-100000, Max=100000) float rotation = 0;
     RM_PROPERTY(Edit, Label="手前の順", Tooltip="兄弟の中で大きいほど手前に描きます (同じなら階層で後ろの物が手前)", Min=-100000, Max=100000) int order = 0;
 };
@@ -91,7 +91,7 @@ struct UiText {
     std::string font = "Yu Gothic UI";
     RM_PROPERTY(Edit, Label="フォントのファイル", Tooltip="Assets の .ttf / .otf。書き出したゲームに入るので、Windows に無いフォントも出ます", AssetKind="font")
     AssetRef fontFile;
-    RM_PROPERTY(Edit, Label="大きさ", Tooltip="文字の高さ (基準の解像度の DIP)", Min=1, Max=1000) float size = 36;
+    RM_PROPERTY(Edit, Label="文字の大きさ", Tooltip="文字の高さ (基準の解像度の DIP)", Min=1, Max=1000) float size = 36;
     RM_PROPERTY(Edit, Label="太字") bool bold = false;
     RM_PROPERTY(Edit, Label="色", Min=0, Max=1) Color color{1, 1, 1, 1};
     RM_PROPERTY(Edit, Label="横の揃え") UiAlignX alignX = UiAlignX::Center;

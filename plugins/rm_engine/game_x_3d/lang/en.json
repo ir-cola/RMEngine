@@ -19,7 +19,7 @@
   "選んだ物全部の真ん中にギズモを出し、そこを中心に回す・大きさを変える (Z で切り替え)": "Put the gizmo in the middle of all selected objects and turn / scale them about it (Z to switch)",
   "刻み": "Snap",
   "ギズモの刻む幅 (Ctrl を押しながらドラッグすると刻んで動く)": "The gizmo's snap steps (drag with Ctrl held to move in steps)",
-  "回転 (度)": "Rotate (degrees)",
+  "回転 (度)": "Rotation (degrees)",
   "大きさ": "Scale",
   "見える大きさ": "View size",
   "いつも刻む (Ctrl を押すとなめらか)": "Always snap (Ctrl for smooth)",

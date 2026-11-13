@@ -11,7 +11,7 @@ namespace rm::game_production {
 
 RM_ENUM(Label="表示のしかた")
 enum class ScreenMode {
-    RM_ITEM(Label="ウィンドウ") Windowed,
+    RM_ITEM(Label="ウィンドウで表示") Windowed,
     RM_ITEM(Label="フルスクリーン") Fullscreen,
     RM_ITEM(Label="枠なしの全画面") Borderless,
 };
