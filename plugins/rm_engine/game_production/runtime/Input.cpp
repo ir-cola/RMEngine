@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 // XInput 1.4 (in Windows 8 and later). A static library carries this into the exported game's link too.
 #pragma comment(lib, "xinput.lib")
@@ -85,7 +86,59 @@ float TriggerValue(int v, int threshold) {
     return std::min(1.0f, static_cast<float>(v - t) / static_cast<float>(255 - t));
 }
 
+void AddMissedPresses(InputFrame& f, const KeyPresses& now, const KeyPresses& seen) {
+    for (size_t vk = 1; vk < f.keys.size(); ++vk) {
+        if (now.count[vk] != seen.count[vk]) f.keys[vk] = 1;
+    }
+}
+
 namespace {
+
+// Counts the key-down messages of the thread it is made on (one per thread: the first Read makes it).
+class PressHook {
+public:
+    PressHook() : hook_(SetWindowsHookExW(WH_GETMESSAGE, &PressHook::Proc, nullptr, GetCurrentThreadId())) {}
+    ~PressHook() {
+        if (hook_) UnhookWindowsHookEx(hook_);
+    }
+    PressHook(const PressHook&) = delete;
+    PressHook& operator=(const PressHook&) = delete;
+
+    static PressHook& OfThisThread() {
+        thread_local PressHook hook;
+        return hook;
+    }
+    const KeyPresses& Presses() const { return presses_; }
+
+private:
+    static LRESULT CALLBACK Proc(int code, WPARAM wp, LPARAM lp) {
+        if (code == HC_ACTION && wp == PM_REMOVE) OfThisThread().Count(*reinterpret_cast<const MSG*>(lp));
+        return CallNextHookEx(nullptr, code, wp, lp);
+    }
+    void Count(const MSG& m) {
+        auto add = [&](WPARAM vk) {
+            if (vk > 0 && vk < presses_.count.size()) ++presses_.count[vk];
+        };
+        switch (m.message) {
+        case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
+            if (!(m.lParam & (LPARAM{1} << 30))) add(m.wParam);  // (not the repeats of a key held)
+            break;
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONDBLCLK: add(VK_LBUTTON); break;
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONDBLCLK: add(VK_RBUTTON); break;
+        case WM_MBUTTONDOWN:
+        case WM_MBUTTONDBLCLK: add(VK_MBUTTON); break;
+        case WM_XBUTTONDOWN:
+        case WM_XBUTTONDBLCLK: add(GET_XBUTTON_WPARAM(m.wParam) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2); break;
+        default: break;
+        }
+    }
+
+    HHOOK hook_ = nullptr;
+    KeyPresses presses_;
+};
 
 // A window of this process is in front (another app's keys are not the game's).
 bool InFront() {
@@ -118,10 +171,14 @@ std::array<float, kPadControls> PadValues(const XINPUT_GAMEPAD& g) {
 
 InputFrame InputReader::Read() {
     InputFrame f;
+    const KeyPresses& presses = PressHook::OfThisThread().Presses();
+    const KeyPresses seen = std::exchange(seen_, presses);
     if (!InFront()) return f;
     for (int vk = 1; vk < 256; ++vk) f.keys[static_cast<size_t>(vk)] = (GetAsyncKeyState(vk) & 0x8000) ? 1 : 0;
-    // GetAsyncKeyState reads the mouse's physical buttons: swapped (left-handed) -> the logical ones.
+    // GetAsyncKeyState reads the mouse's physical buttons: swapped (left-handed) -> the logical ones
+    // (the messages are already logical).
     if (GetSystemMetrics(SM_SWAPBUTTON)) std::swap(f.keys[VK_LBUTTON], f.keys[VK_RBUTTON]);
+    AddMissedPresses(f, presses, seen);
     const uint64_t now = GetTickCount64();
     for (DWORD slot = 0; slot < 4; ++slot) {
         if (now < nextLook_[slot]) continue;

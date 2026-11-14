@@ -119,7 +119,8 @@ RM_TEST(AudioGame_SoundPack_RoundTripAndBroken) {
     notJson[12] = '!';
     CHECK(!UnpackSound(notJson));
     // No import settings: an empty object.
-    const auto plain = UnpackSound(PackSound("a.ogg", json::Value(), "OggS"));
+    const std::string plainPacked = PackSound("a.ogg", json::Value(), "OggS");  // (kept: file points into it)
+    const auto plain = UnpackSound(plainPacked);
     CHECK(plain && plain->import.IsObject() && plain->file == "OggS");
 }
 

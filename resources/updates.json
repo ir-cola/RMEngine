@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "入力: 押してすぐ離したキーやボタンが効かないことがあったのを直す (押して離すのがフレームの間に入ると見えなかった)。ゲーム UI の決定・戻るや、スクリプトの Pressed も同じ",
+          "en": "Input: fixed keys and buttons tapped very quickly sometimes being missed (a press and release between two frames was not seen). The game UI's submit and back, and Pressed in scripts, get it too"
+        },
+        {
           "ja": "書き出しの直し: 「出力先を選ぶ…」が今の出力先 (まだ無ければその親) で開く (前は前に使ったフォルダで開いていた)。スクリプトのビルドの後に MSBuild のプロセスが残らないので、試したプロジェクトのフォルダをすぐ消せる",
           "en": "Export fixes: Choose output folder… opens in the current output folder (or its parent when it is not there yet) instead of the last folder used. MSBuild no longer stays running after a script build, so a project's folder can be deleted at once"
         },

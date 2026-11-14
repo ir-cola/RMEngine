@@ -155,3 +155,18 @@ RM_TEST(Input_MouseButtonsDropped_DefaultFireHasNoCtrl) {
     CHECK(fire && std::none_of(fire->bindings.begin(), fire->bindings.end(), [](const InputBinding& b) { return b.control == InputControl::Ctrl; }));
     CHECK(fire && EvaluateAction(*fire, Keys({'Z'})).down);
 }
+
+RM_TEST(Input_KeyTappedBetweenFrames_IsDownForOneFrame) {
+    // Backspace pressed and let go before the frame looked: not held now, but its count went up.
+    KeyPresses seen;
+    KeyPresses now = seen;
+    ++now.count[0x08];
+    InputFrame f = Keys({0x20});  // Space held
+    AddMissedPresses(f, now, seen);
+    CHECK(ControlValue(f, InputControl::Backspace) == 1 && ControlValue(f, InputControl::Space) == 1);
+    CHECK(ControlValue(f, InputControl::Escape) == 0);
+    // The next frame: nothing new pressed -> up again (Released sees it).
+    InputFrame next;
+    AddMissedPresses(next, now, now);
+    CHECK(ControlValue(next, InputControl::Backspace) == 0);
+}

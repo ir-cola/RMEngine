@@ -64,15 +64,28 @@ std::array<float, 2> StickValue(int x, int y, int deadZone);
 // A trigger (0..255) with its threshold: 0 below, then 0..1.
 float TriggerValue(int v, int threshold);
 
+// The key-down messages this program's thread took, counted per virtual key (the mouse buttons too).
+// A key pressed and let go between two frames (a quick tap, a computer that types for you, a slow
+// frame) is not down when the frame looks: its count still went up.
+struct KeyPresses {
+    std::array<uint32_t, 256> count{};
+};
+// The keys pressed since `seen` are down in this frame (up again in the next, if let go: Pressed and
+// Released both see it once).
+void AddMissedPresses(InputFrame& f, const KeyPresses& now, const KeyPresses& seen);
+
 // Reads the keyboard, the mouse buttons and the game pads (all four: each control takes the pad that
 // pushes it most). A pad slot found empty is asked again only after a second (XInput is slow on an
-// empty slot: asking all four every frame costs time).
+// empty slot: asking all four every frame costs time). The keys held now (GetAsyncKeyState) and those
+// pressed since the last frame (KeyPresses, from a WH_GETMESSAGE hook on the thread that reads: the
+// editor's UI thread, the exported game's only one).
 class InputReader {
 public:
     InputFrame Read();
 
 private:
     std::array<uint64_t, 4> nextLook_{};  // GetTickCount64 when an empty slot is asked again
+    KeyPresses seen_;                     // the counts at the last Read
 };
 
 }  // namespace rm::game_production
