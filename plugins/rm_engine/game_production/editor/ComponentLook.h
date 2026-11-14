@@ -15,6 +15,9 @@
 
 namespace rm::game_production {
 
+class Scene;
+struct GameSettings;
+
 // PluginRegistry point: items are ComponentLook (static).
 inline constexpr char kComponentLookPoint[] = "rm_engine.game_production.component_look";
 
@@ -36,6 +39,12 @@ struct ComponentLook {
     // The picture of an entity that has this component in the 階層 (a name the core knows: "cube").
     // When several components have one, the last of the entity's components wins; none: "object".
     const char* icon = nullptr;
+    // Optional: a field of the component typed in the inspector (one entity's, its own values). `after`
+    // is the component with that field changed, `before` as it was; the plugin may change its other
+    // fields so that they go together (UI の配置: a new アンカー keeps the thing where it is on the
+    // screen). Everything that changes is one undo entry. `scene` is as it was before the edit.
+    void (*adjust)(const Scene& scene, const GameSettings& settings, int entity, const reflect::FieldPath& path, const void* before,
+                   void* after) = nullptr;
 
     bool HasDerived() const { return derivedType && derive && underive && ownLabel && derivedLabel; }
 };

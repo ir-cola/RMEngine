@@ -55,6 +55,31 @@ int MakeButton(Scene& s, int parent, Vec2 pos, Vec2 size, const char* name = "�
 
 }  // namespace
 
+RM_TEST(GameUi_Reanchored_KeepsTheBox) {
+    // The inspector's アンカー: the thing stays where it is on the screen (to every preset and back).
+    const UiBox parent{0, 0, 1920, 1080};
+    UiRect r;  // the middle
+    r.position = {174, 366};
+    r.size = {1200, 80};
+    r.pivot = {0.3f, 0.5f};
+    r.rotation = 15;
+    const UiBox box = PlaceBox(r, parent);
+    for (int a = 0; a <= static_cast<int>(UiAnchor::Stretch); ++a) {
+        const UiRect moved = Reanchored(r, static_cast<UiAnchor>(a), parent);
+        CHECK(moved.anchor == static_cast<UiAnchor>(a));
+        CHECK(Near(PlaceBox(moved, parent), box));
+        CHECK(Near(moved.pivot.x, 0.3f) && Near(moved.rotation, 15));  // (the rest as it was)
+        const UiRect back = Reanchored(moved, UiAnchor::Center, parent);
+        CHECK(Near(back.position.x, 174) && Near(back.position.y, 366) && Near(back.size.x, 1200) && Near(back.size.y, 80));
+    }
+    // To the bottom right: the 位置 is measured from that corner now (left of it and above it: -).
+    const UiRect corner = Reanchored(r, UiAnchor::BottomRight, parent);
+    CHECK(corner.position.x < 0 && corner.position.y < 0 && Near(corner.size.x, 1200));
+    // To stretched: the size is what the box differs from the parent by.
+    const UiRect wide = Reanchored(r, UiAnchor::Stretch, parent);
+    CHECK(Near(wide.size.x, 1200 - 1920) && Near(wide.size.y, 80 - 1080));
+}
+
 RM_TEST(GameUi_Anchors_PlaceTheBox) {
     const UiBox parent{0, 0, 1920, 1080};
     UiRect r;  // the middle, 240 x 64

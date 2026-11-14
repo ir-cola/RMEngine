@@ -40,6 +40,9 @@ Affine About(Vec2 pivot, float degrees, float scale);
 void AnchorRange(UiAnchor anchor, Vec2& min, Vec2& max);
 // A UI thing's box in its parent's box (both in the parent's units).
 UiBox PlaceBox(const UiRect& r, const UiBox& parent);
+// The same box with another anchor: 位置 and 大きさ worked out again (the inspector's アンカー keeps the
+// thing where it is on the screen, as the parent is now).
+UiRect Reanchored(const UiRect& r, UiAnchor to, const UiBox& parent);
 // Its 中心 in its parent's units (where it turns).
 Vec2 PivotPoint(const UiRect& r, const UiBox& box);
 // How many screen DIPs one canvas unit is, for a canvas of `reference` units in an area of `area` DIPs.

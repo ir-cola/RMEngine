@@ -96,6 +96,20 @@ UiBox PlaceBox(const UiRect& r, const UiBox& parent) {
     return {px - w * r.pivot.x, py - h * r.pivot.y, w, h};
 }
 
+UiRect Reanchored(const UiRect& r, UiAnchor to, const UiBox& parent) {
+    const UiBox box = PlaceBox(r, parent);
+    UiRect out = r;
+    out.anchor = to;
+    Vec2 mn, mx;
+    AnchorRange(to, mn, mx);
+    // PlaceBox backwards: the anchors' box of the new anchor, the size that adds to it, the 中心 from it.
+    const float ax = parent.x + parent.w * mn.x, ay = parent.y + parent.h * mn.y;
+    const float aw = parent.w * (mx.x - mn.x), ah = parent.h * (mx.y - mn.y);
+    out.size = {box.w - aw, box.h - ah};
+    out.position = {box.x + box.w * r.pivot.x - (ax + aw * r.pivot.x), box.y + box.h * r.pivot.y - (ay + ah * r.pivot.y)};
+    return out;
+}
+
 Vec2 PivotPoint(const UiRect& r, const UiBox& box) { return {box.x + box.w * r.pivot.x, box.y + box.h * r.pivot.y}; }
 
 float CanvasScale(UiScaleMode mode, Vec2 reference, Vec2 area) {

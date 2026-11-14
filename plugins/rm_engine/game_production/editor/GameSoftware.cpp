@@ -1606,6 +1606,40 @@ private:
         host_.History().Push(std::move(group), false);
     }
 
+    // A field typed in the inspector of a component whose plugin keeps its fields together
+    // (ComponentLook::adjust): the field as typed, then what the plugin changed with it - one undo entry
+    // (typing into one field still joins into one entry while the plugin changes nothing else).
+    void EditAdjusted(int id, const std::string& type, size_t nth, const ComponentLook* info, editor::InspectBlock::Change ch) {
+        SceneEntity* e = scene_.Find(id);
+        const Component* c = e ? e->FindComponent(type, nth) : nullptr;
+        if (!c || !c->Known()) return;
+        const reflect::TypeDesc& ct = *c->value.Type();
+        const auto resolve = ResolveComponent(id, type, nth);
+        auto typedCmd = std::make_unique<reflect::SetFieldCommand>(ct, ch.path, ch.before, ch.after, resolve, ch.label, ch.merge);
+        reflect::Object typed(ct);
+        ct.copy(typed.Get(), c->value.Get());
+        const reflect::PathTarget pt = reflect::Resolve(ct, typed.Get(), nullptr, ch.path);
+        if (!pt.field) return;
+        reflect::LoadField(*pt.field, pt.owner, ch.after, nullptr, nullptr);
+        reflect::Object next(ct);
+        ct.copy(next.Get(), typed.Get());
+        info->adjust(scene_, settings_, id, ch.path, c->value.Get(), next.Get());
+        const uint64_t diff = reflect::Diff(ct, typed.Get(), next.Get());
+        if (diff == 0) {
+            host_.History().Push(std::move(typedCmd), false);
+            return;
+        }
+        auto group = std::make_unique<CommandGroup>(ch.label);
+        group->Add(std::move(typedCmd));
+        for (size_t i = 0; i < ct.fields.size() && i < 64; ++i) {
+            if (!(diff >> i & 1)) continue;
+            const reflect::FieldDesc& f = ct.fields[i];
+            group->Add(std::make_unique<reflect::SetFieldCommand>(ct, reflect::FieldPath{i}, reflect::SaveField(f, typed.Get(), nullptr),
+                                                                  reflect::SaveField(f, next.Get(), nullptr), resolve, ch.label, 0));
+        }
+        host_.History().Push(std::move(group), false);
+    }
+
     // How a child's component with derived values is shown: 0 = its own (as it starts), 1 = derived.
     // Once switched it stays (kept in UserSettings).
     int ModeOf(const SceneEntity& e) const {
@@ -1699,6 +1733,9 @@ private:
                             b.resolve = Derived(id, c.type, info, play);
                             b.onEdit = [this, id, type, info](editor::InspectBlock::Change ch) { EditDerived(id, type, info, std::move(ch)); };
                         }
+                    }
+                    if (const ComponentLook* info = LookOf(c.type); info && info->adjust && !play && !b.onEdit) {
+                        b.onEdit = [this, id, type, nth, info](editor::InspectBlock::Change ch) { EditAdjusted(id, type, nth, info, std::move(ch)); };
                     }
                     blocks.push_back(std::move(b));
                 } else {

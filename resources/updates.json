@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI: インスペクターでアンカー (固定する場所) を変えても、画面の上の場所が変わらないように (位置と大きさを計算し直す。Undo 1 回で一緒に戻る)",
+          "en": "Game UI: changing the anchor in the inspector keeps the thing where it is on the screen (its position and size are worked out again; one undo puts all of it back)"
+        },
+        {
           "ja": "入力: 押してすぐ離したキーやボタンが効かないことがあったのを直す (押して離すのがフレームの間に入ると見えなかった)。ゲーム UI の決定・戻るや、スクリプトの Pressed も同じ",
           "en": "Input: fixed keys and buttons tapped very quickly sometimes being missed (a press and release between two frames was not seen). The game UI's submit and back, and Pressed in scripts, get it too"
         },

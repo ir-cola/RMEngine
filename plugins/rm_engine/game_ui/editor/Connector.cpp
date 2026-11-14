@@ -6,6 +6,10 @@
 #include "rm_engine/game_ui/editor/UiView.h"
 #include "rm_engine/game_ui/runtime/UiScreenDraw.h"
 #include "rm_engine/game_ui/runtime/UiComponents.h"
+#include "rm_engine/game_ui/runtime/UiLayout.h"
+#include "rm_engine/game_ui/runtime/UiService.h"
+
+#include <algorithm>
 
 namespace rm::game_ui {
 
@@ -66,6 +70,23 @@ int MakeBar(Scene& scene, int parent, size_t index) {
     return id;
 }
 
+// UI の配置's アンカー changed in the inspector: 位置 and 大きさ worked out again so that the thing stays
+// where it is (as laid out on the game settings' 画面). Not laid out (switched off): left as typed.
+void KeepPlace(const Scene& scene, const game_production::GameSettings& settings, int entity, const reflect::FieldPath&, const void* before,
+               void* after) {
+    const UiRect& was = *static_cast<const UiRect*>(before);
+    UiRect& now = *static_cast<UiRect*>(after);
+    if (now.anchor == was.anchor) return;
+    const Vec2 screen{static_cast<float>(std::max(1, settings.display.width)), static_cast<float>(std::max(1, settings.display.height))};
+    const int show[] = {entity};
+    const UiTree tree = BuildUi(scene, ScreenOf(settings, screen), show);
+    const UiNode* n = tree.Find(entity);
+    if (!n || n->parent < 0 || n->parent >= static_cast<int>(tree.nodes.size())) return;
+    const UiRect moved = Reanchored(was, now.anchor, tree.nodes[static_cast<size_t>(n->parent)].box);
+    now.position = moved.position;
+    now.size = moved.size;
+}
+
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
@@ -87,6 +108,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::ComponentLook kLooks[] = {
         {.type = &reflect::TypeOf<UiCanvas>, .icon = "square"},
         {.type = &reflect::TypeOf<UiImage>, .icon = "image"},
+        {.type = &reflect::TypeOf<UiRect>, .adjust = &KeepPlace},
     };
     for (const auto& look : kLooks) registry.Contribute(game_production::kComponentLookPoint, look);
 }
