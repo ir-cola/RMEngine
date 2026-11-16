@@ -13,6 +13,7 @@
 // changes).
 
 #include "base/Ref.h"
+#include "core/RuntimeRegistry.h"
 #include "platform/Gfx.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
@@ -44,6 +45,8 @@ struct WorldDrawFrame {
     std::function<std::optional<std::string>(const AssetRef&)> asset;
     // An asset's name for messages (the editor: its file's name); null: its id is used.
     std::function<std::string(const AssetRef&)> name;
+    // What the plugins offer (a drawer may ask other plugins for more: パーティクル the collision shapes).
+    const RuntimeRegistry* registry = nullptr;
 };
 
 class WorldDrawer {

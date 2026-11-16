@@ -126,7 +126,7 @@ public:
                                         const auto it = shown_.find(id);
                                         return it != shown_.end() ? &it->second : nullptr;
                                     },
-                                    f.dt, true, {}, f.asset};
+                                    f.dt, true, {}, f.asset, nullptr, f.registry};
             for (const auto& d : drawers_) d->Prepare(wf, extras_);
         }
         frame.extras = extras_;

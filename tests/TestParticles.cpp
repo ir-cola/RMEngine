@@ -6,6 +6,9 @@
 
 #include "core/reflect/Data.h"
 #include "rm_engine/game_production/editor/GameExport.h"
+#include "rm_engine/particles_x_physics/runtime/Register.h"
+#include "rm_engine/physics/runtime/Components.h"
+#include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/particles/runtime/BuiltinModules.h"
 #include "rm_engine/particles/runtime/ModuleSource.h"
 #include "rm_engine/particles/runtime/ParticleEffect.h"
@@ -18,6 +21,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -117,7 +121,7 @@ RM_TEST(Particles_Shader_PutTogetherAndCompiles) {
     for (const ParticleEmitter& e : {all, NewEffect().emitters[0]}) {
         const std::vector<ModuleInput> in = Inputs(e);
         const EmitterShader s = AssembleShader(in);
-        CHECK(s.errors.empty() && s.stride == 88);
+        CHECK(s.errors.empty() && s.stride == 96);
         const std::string spawn = Compile(s.hlsl, "SpawnMain", "cs_5_0");
         const std::string update = Compile(s.hlsl, "UpdateMain", "cs_5_0");
         const std::string vs = Compile(s.hlsl, "ParticleVS", "vs_5_0");
@@ -136,7 +140,7 @@ RM_TEST(Particles_Shader_ParamsAttrsAndErrorsByFile) {
     const std::vector<ModuleInput> in{{&a, "A.rmfx", values}, {&b, "B.rmfx", {}}};
     const EmitterShader s = AssembleShader(in);
     CHECK(s.errors.empty());
-    CHECK(s.stride == 88 + 4 + 12);  // heat once (both have it), wind
+    CHECK(s.stride == 96 + 4 + 12);  // heat once (both have it), wind
     CHECK(s.paramSlots == 3);
     // Two params named speed: one per module's namespace.
     CHECK(s.hlsl.find("M0::speed = P[0].x") != std::string::npos && s.hlsl.find("M1::speed = P[2].x") != std::string::npos);
@@ -233,4 +237,63 @@ RM_TEST(Particles_Export_TakesTheModulesAnEffectNames) {
     CHECK(assets.size() == 2);
     CHECK(assets.size() == 2 && assets[0].rel == "Assets/fire.rmparticle" && assets[1].rel == "Assets/Wind.rmfx");
     fs::remove_all(root, ec);
+}
+
+RM_TEST(Particles_Physics_CollidersBecomeShapes) {
+    // A box turned and scaled, a sphere, a trigger (left out) and a mesh (left out): shapes in the world.
+    game_production::Scene scene;
+    scene.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<physics::Collider>()});
+    auto add = [&](const char* name, Vec3 pos, Vec3 scale, physics::Shape shape, bool trigger) {
+        const int id = scene.Create(name);
+        scene.AddComponent(id, reflect::TypeOf<space3d::Transform>());
+        scene.AddComponent(id, reflect::TypeOf<physics::Collider>());
+        auto* e = scene.Find(id);
+        auto* t = static_cast<space3d::Transform*>(e->FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get());
+        t->position = pos;
+        t->scale = scale;
+        auto* c = static_cast<physics::Collider*>(e->FindComponent(reflect::TypeOf<physics::Collider>().name)->value.Get());
+        c->shape = shape;
+        c->trigger = trigger;
+        return id;
+    };
+    const int box = add("箱", {1, 2, 3}, {2, 1, 1}, physics::Shape::Box, false);
+    add("球", {0, 0, 0}, {3, 3, 3}, physics::Shape::Sphere, false);
+    add("トリガー", {0, 0, 0}, {1, 1, 1}, physics::Shape::Box, true);
+    add("メッシュ", {0, 0, 0}, {1, 1, 1}, physics::Shape::Mesh, false);
+    std::map<int, space3d::Mat4> worlds;
+    for (const auto& e : scene.Entities()) {
+        const auto* t = static_cast<const space3d::Transform*>(e.FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get());
+        worlds[e.data.id] = space3d::WorldMatrix(space3d::Mat4{}, *t);
+    }
+    std::vector<CollisionShape> shapes;
+    particles_x_physics::GatherShapes(scene, [&](int id) -> const space3d::Mat4* { return id == box || worlds.count(id) ? &worlds[id] : nullptr; }, shapes);
+    CHECK(shapes.size() == 2);
+    if (shapes.size() != 2) return;
+    CHECK(shapes[0].type == CollisionType::Box && shapes[0].center[0] == 1 && shapes[0].center[1] == 2 && shapes[0].center[2] == 3);
+    CHECK(shapes[0].sizeX == 1 && shapes[0].sizeY == 0.5f && shapes[0].sizeZ == 0.5f);  // half of 1 x scale
+    CHECK(shapes[0].axisX[0] == 1 && shapes[0].axisY[1] == 1 && shapes[0].axisZ[2] == 1);  // the axes stay unit
+    CHECK(shapes[1].type == CollisionType::Sphere && shapes[1].sizeX == 1.5f);  // 0.5 x the largest scale
+    // Switched off (no place): nothing.
+    std::vector<CollisionShape> none;
+    particles_x_physics::GatherShapes(scene, [](int) -> const space3d::Mat4* { return nullptr; }, none);
+    CHECK(none.empty());
+}
+
+RM_TEST(Particles_Shader_CollisionTrailsAndStretchCompile) {
+    // The 当たる modules with a trail: the kernels and both kinds of drawing compile.
+    ParticleEmitter e = NewEffect().emitters[0];
+    ParticleModule shapes, depth;
+    shapes.builtin = "collide_shapes";
+    depth.builtin = "collide_depth";
+    e.modules.push_back(shapes);
+    e.modules.push_back(depth);
+    const std::vector<ModuleInput> in = Inputs(e);
+    const EmitterShader s = AssembleShader(in);
+    CHECK(s.errors.empty());
+    for (const auto& [entry, target] : {std::pair{"SpawnMain", "cs_5_0"}, std::pair{"UpdateMain", "cs_5_0"}, std::pair{"ParticleVS", "vs_5_0"},
+                                        std::pair{"ParticlePS", "ps_5_0"}, std::pair{"TrailVS", "vs_5_0"}, std::pair{"TrailPS", "ps_5_0"}}) {
+        const std::string err = Compile(s.hlsl, entry, target);
+        CHECK(err.empty());
+        if (!err.empty()) std::printf("%s: %s\n", entry, err.c_str());
+    }
 }

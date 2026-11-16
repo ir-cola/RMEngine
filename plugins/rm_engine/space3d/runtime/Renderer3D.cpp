@@ -680,6 +680,7 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     rtv_.Reset();
     depthTex_.Reset();
     dsv_.Reset();
+    depthSrv_.Reset();
     width_ = height_ = 0;
     samples_ = 1;
     device_ = device;
@@ -808,6 +809,7 @@ bool Renderer::Resize(uint32_t width, uint32_t height) {
     rtv_.Reset();
     depthTex_.Reset();
     dsv_.Reset();
+    depthSrv_.Reset();
     width_ = height_ = 0;
     D3D11_TEXTURE2D_DESC td{};
     td.Width = width;
@@ -828,11 +830,27 @@ bool Renderer::Resize(uint32_t width, uint32_t height) {
         target = multisample_.Get();
     }
     if (FAILED(device_->CreateRenderTargetView(target, nullptr, &rtv_))) return false;
-    td.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    // The depth: typeless, so shaders can read it too (particles collide with what is drawn).
+    td.Format = DXGI_FORMAT_R24G8_TYPELESS;
+    td.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
     td.SampleDesc.Count = samples_;
-    if (FAILED(device_->CreateTexture2D(&td, nullptr, &depthTex_)) || FAILED(device_->CreateDepthStencilView(depthTex_.Get(), nullptr, &dsv_))) {
-        return false;
+    D3D11_DEPTH_STENCIL_VIEW_DESC dd{};
+    dd.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    dd.ViewDimension = samples_ > 1 ? D3D11_DSV_DIMENSION_TEXTURE2DMS : D3D11_DSV_DIMENSION_TEXTURE2D;
+    if (FAILED(device_->CreateTexture2D(&td, nullptr, &depthTex_)) || FAILED(device_->CreateDepthStencilView(depthTex_.Get(), &dd, &dsv_))) {
+        // (a GPU that cannot read a depth buffer: one only for the depth test)
+        td.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+        depthTex_.Reset();
+        if (FAILED(device_->CreateTexture2D(&td, nullptr, &depthTex_)) || FAILED(device_->CreateDepthStencilView(depthTex_.Get(), nullptr, &dsv_))) {
+            return false;
+        }
+    } else {
+        D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
+        sd.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+        sd.ViewDimension = samples_ > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
+        sd.Texture2D.MipLevels = 1;
+        if (FAILED(device_->CreateShaderResourceView(depthTex_.Get(), &sd, &depthSrv_))) depthSrv_.Reset();
     }
     width_ = width;
     height_ = height;
@@ -1361,7 +1379,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             bound = nullptr;
             ctx->VSSetShader(s.lineVs.Get(), nullptr, 0);
             ctx->PSSetShader(s.linePs.Get(), nullptr, 0);
+            // (depth-tested, but writing none: what reads the depth - particles colliding - sees no grid)
+            ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
             ctx->Draw(static_cast<UINT>(f.lines.size() & ~size_t{1}), 0);
+            ctx->OMSetDepthStencilState(s.depth.Get(), 0);
         }
     }
 
@@ -1381,7 +1402,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     // ours is set again for the lines.
     if (!f.extras.empty()) {
         ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
-        const ExtraDrawContext ec{ctx, f.view, f.projection, eye, f.width, f.height};
+        const ExtraDrawContext ec{ctx, f.view, f.projection, eye, f.width, f.height, depthSrv_.Get(), samples_};
         for (const ExtraDraw& draw : f.extras) {
             if (draw) draw(ec);
         }

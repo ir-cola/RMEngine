@@ -8,7 +8,7 @@ namespace rm::particles {
 
 namespace {
 
-// The standard values of a particle (88 bytes; a structured buffer packs them as written).
+// The standard values of a particle (96 bytes; a structured buffer packs them as written).
 constexpr char kParticle[] = R"(struct Particle {
     float3 position;
     float age;
@@ -22,8 +22,10 @@ constexpr char kParticle[] = R"(struct Particle {
     float spin;
     uint seed;
     uint alive;
+    uint trailHead;
+    float trailTimer;
 )";
-constexpr uint32_t kStandardBytes = 88;
+constexpr uint32_t kStandardBytes = 96;
 
 // What every module may use (above the modules).
 constexpr char kCommon[] = R"(
@@ -39,6 +41,10 @@ cbuffer EmitterCB : register(b0) {
     float EmitterAge;
     uint DotShape;
     float EmitterPad_;
+    uint TrailPoints;
+    float TrailInterval;
+    float TrailWidth;
+    float Stretch;
 };
 
 cbuffer ViewCB : register(b2) {
@@ -47,6 +53,33 @@ cbuffer ViewCB : register(b2) {
     float ViewPad0_;
     float3 CamUp;
     float ViewPad1_;
+    float3 CamPos;
+    float ViewPad2_;
+};
+
+// What particles collide with (CollideShapes / CollideDepth).
+struct CollisionShape {
+    float3 center;
+    uint type;  // 0 sphere (sizeX: radius), 1 box (axes, half sizes), 2 capsule (axisY, sizeY: half the line, sizeX: radius), 3 plane (axisY: normal)
+    float3 axisX;
+    float sizeX;
+    float3 axisY;
+    float sizeY;
+    float3 axisZ;
+    float sizeZ;
+};
+StructuredBuffer<CollisionShape> Colliders : register(t1);
+Texture2D<float> SceneDepth : register(t2);
+Texture2DMS<float> SceneDepthMS : register(t3);
+
+cbuffer CollideCB : register(b3) {
+    float4x4 DepthViewProj;  // the picture's camera (last frame)
+    float4x4 DepthInverse;   // its clip space -> the world
+    float3 DepthEye;
+    uint ColliderCount;
+    float2 DepthSize;  // pixels
+    uint DepthMode;    // 0 none, 1 SceneDepth, 2 SceneDepthMS
+    float CollidePad_;
 };
 
 uint Hash(uint x) {
@@ -89,10 +122,119 @@ float3 EmitterDirection(float3 local) {
 }
 // 0 when born .. 1 at the end of its life
 float LifeRatio(Particle p) { return saturate(p.age / max(p.lifetime, 1e-6)); }
+
+// Turns the part of the velocity going into a surface (normal n) around: `bounce` of it back, and slows
+// the part along the surface by `friction`.
+void Bounce(inout Particle p, float3 n, float bounce, float friction) {
+    float vn = dot(p.velocity, n);
+    if (vn < 0) {
+        float3 along = p.velocity - n * vn;
+        p.velocity = along * (1 - friction) - n * vn * bounce;
+    }
+}
+
+// How far q is outside a shape (inside: less than 0), and the way out (n).
+float ShapeDistance(CollisionShape s, float3 q, out float3 n) {
+    float3 d = q - s.center;
+    if (s.type == 0) {
+        float len = length(d);
+        n = len > 1e-6 ? d / len : float3(0, 1, 0);
+        return len - s.sizeX;
+    }
+    if (s.type == 1) {
+        float3 l = float3(dot(d, s.axisX), dot(d, s.axisY), dot(d, s.axisZ));
+        float3 o = abs(l) - float3(s.sizeX, s.sizeY, s.sizeZ);
+        float3 out3 = max(o, 0);
+        float outside = length(out3);
+        float3 ln;
+        if (outside > 0) {
+            ln = out3 * sign(l) / outside;
+        } else if (o.x > o.y && o.x > o.z) {
+            ln = float3(l.x < 0 ? -1 : 1, 0, 0);
+        } else if (o.y > o.z) {
+            ln = float3(0, l.y < 0 ? -1 : 1, 0);
+        } else {
+            ln = float3(0, 0, l.z < 0 ? -1 : 1);
+        }
+        n = normalize(ln.x * s.axisX + ln.y * s.axisY + ln.z * s.axisZ);
+        return outside + min(max(o.x, max(o.y, o.z)), 0);
+    }
+    if (s.type == 2) {
+        float t = clamp(dot(d, s.axisY), -s.sizeY, s.sizeY);
+        float3 e = d - s.axisY * t;
+        float len = length(e);
+        n = len > 1e-6 ? e / len : s.axisX;
+        return len - s.sizeX;
+    }
+    n = s.axisY;
+    return dot(d, s.axisY);
+}
+
+// The particle bounces off (or with `vanish`, goes on touching) the colliders' shapes; `radius`: its own
+// size added to them. True when it touched one.
+bool CollideShapes(inout Particle p, float dt, float bounce, float friction, bool vanish, float radius) {
+    bool hit = false;
+    for (uint i = 0; i < ColliderCount; ++i) {
+        float3 n;
+        float dist = ShapeDistance(Colliders[i], p.position + p.velocity * dt, n) - radius;
+        if (dist >= 0) continue;
+        hit = true;
+        if (vanish) {
+            p.alive = 0;
+            return true;
+        }
+        p.position += n * -dist;
+        Bounce(p, n, bounce, friction);
+    }
+    return hit;
+}
+
+// The depth of the picture at a pixel (0 near .. 1 far), and the point of the world it shows.
+float DepthAt(int2 px) {
+    px = clamp(px, int2(0, 0), int2(DepthSize) - 1);
+    return DepthMode == 2 ? SceneDepthMS.Load(px, 0) : SceneDepth.Load(int3(px, 0));
+}
+float3 DepthPoint(int2 px, float d) {
+    float2 ndc = (float2(px) + 0.5) / DepthSize * float2(2, -2) + float2(-1, 1);
+    float4 w = mul(DepthInverse, float4(ndc, d, 1));
+    return w.xyz / w.w;
+}
+
+// The particle bounces off (or goes on touching) what the camera sees - the picture's depth: no shapes
+// needed, but nothing out of the picture or hidden is there. `thickness`: how deep behind a surface a
+// particle still counts as touching it (thin walls: small).
+bool CollideDepth(inout Particle p, float dt, float bounce, float friction, bool vanish, float thickness) {
+    if (DepthMode == 0) return false;
+    float3 q = p.position + p.velocity * dt;
+    float4 c = mul(DepthViewProj, float4(q, 1));
+    if (c.w <= 1e-4) return false;
+    float3 ndc = c.xyz / c.w;
+    if (abs(ndc.x) > 1 || abs(ndc.y) > 1 || ndc.z < 0 || ndc.z > 1) return false;
+    int2 px = int2((ndc.xy * float2(0.5, -0.5) + 0.5) * DepthSize);
+    float d = DepthAt(px);
+    if (d >= 1) return false;  // nothing drawn there
+    float3 surface = DepthPoint(px, d);
+    float behind = distance(q, DepthEye) - distance(surface, DepthEye);
+    if (behind < 0 || behind > thickness) return false;
+    if (vanish) {
+        p.alive = 0;
+        return true;
+    }
+    float3 a = DepthPoint(px + int2(1, 0), DepthAt(px + int2(1, 0)));
+    float3 b = DepthPoint(px + int2(0, 1), DepthAt(px + int2(0, 1)));
+    float3 n = cross(b - surface, a - surface);
+    float len = length(n);
+    n = len > 1e-9 ? n / len : normalize(DepthEye - surface);
+    if (dot(n, DepthEye - surface) < 0) n = -n;
+    p.position = surface + n * 0.01;
+    Bounce(p, n, bounce, friction);
+    return true;
+}
 )";
 
 constexpr char kKernelsHead[] = R"(
 RWStructuredBuffer<Particle> Particles : register(u0);
+RWStructuredBuffer<float4> Trails : register(u1);  // TrailPoints per particle (a ring: trailHead the newest)
 
 [numthreads(64, 1, 1)]
 void SpawnMain(uint3 id : SV_DispatchThreadID) {
@@ -111,7 +253,9 @@ void SpawnMain(uint3 id : SV_DispatchThreadID) {
     rnd.state = p.seed;
 )";
 
-constexpr char kUpdateHead[] = R"(    Particles[(SpawnStart + id.x) % Capacity] = p;
+constexpr char kUpdateHead[] = R"(    uint slot = (SpawnStart + id.x) % Capacity;
+    for (uint k = 0; k < TrailPoints; ++k) Trails[slot * TrailPoints + k] = float4(p.position, 0);
+    Particles[slot] = p;
 }
 
 [numthreads(64, 1, 1)]
@@ -130,11 +274,20 @@ constexpr char kDrawing[] = R"(    if (p.alive != 0) {
         p.rotation += p.spin * dt;
         p.age += dt;
         if (p.age >= p.lifetime) p.alive = 0;
+        if (TrailPoints > 0) {
+            p.trailTimer += dt;
+            if (p.trailTimer >= TrailInterval) {
+                p.trailTimer = 0;
+                p.trailHead = (p.trailHead + 1) % TrailPoints;
+                Trails[id.x * TrailPoints + p.trailHead] = float4(p.position, 1);
+            }
+        }
     }
     Particles[id.x] = p;
 }
 
 StructuredBuffer<Particle> Drawn : register(t0);
+StructuredBuffer<float4> DrawnTrails : register(t4);
 
 struct ParticleOut {
     float4 position : SV_Position;
@@ -142,21 +295,36 @@ struct ParticleOut {
     float2 uv : TEXCOORD0;
 };
 
-ParticleOut ParticleVS(uint vertex : SV_VertexID, uint instance : SV_InstanceID) {
+ParticleOut Hidden() {
     ParticleOut o;
+    o.position = float4(0, 0, 2, 1);  // outside the picture: nothing drawn
+    o.color = 0;
+    o.uv = 0;
+    return o;
+}
+
+// A square facing the camera (or, with Stretch, long along the velocity: sparks).
+ParticleOut ParticleVS(uint vertex : SV_VertexID, uint instance : SV_InstanceID) {
     Particle p = Drawn[instance];
-    if (p.alive == 0 || !(p.size > 0)) {
-        o.position = float4(0, 0, 2, 1);  // outside the picture: nothing drawn
-        o.color = 0;
-        o.uv = 0;
-        return o;
-    }
+    if (p.alive == 0 || !(p.size > 0)) return Hidden();
     const float2 corners[6] = {float2(-1, -1), float2(-1, 1), float2(1, 1), float2(-1, -1), float2(1, 1), float2(1, -1)};
     float2 c = corners[vertex];
-    float s, k;
-    sincos(p.rotation, s, k);
-    float2 r = float2(c.x * k - c.y * s, c.x * s + c.y * k) * (p.size * 0.5);
-    float3 world = p.position + CamRight * r.x + CamUp * r.y;
+    float3 world;
+    float speed = length(p.velocity);
+    if (Stretch > 0 && speed > 1e-4) {
+        float3 along = p.velocity / speed;
+        float3 side = cross(along, CamPos - p.position);
+        float sl = length(side);
+        side = sl > 1e-8 ? side / sl : CamRight;
+        float len = p.size + speed * Stretch;
+        world = p.position + along * (c.y * len * 0.5) + side * (c.x * p.size * 0.5);
+    } else {
+        float s, k;
+        sincos(p.rotation, s, k);
+        float2 r = float2(c.x * k - c.y * s, c.x * s + c.y * k) * (p.size * 0.5);
+        world = p.position + CamRight * r.x + CamUp * r.y;
+    }
+    ParticleOut o;
     o.position = mul(ViewProj, float4(world, 1));
     o.color = p.color;
     o.uv = c;
@@ -173,6 +341,41 @@ float4 ParticlePS(ParticleOut i) : SV_Target {
         float w = max(fwidth(d2), 1e-4);
         a = saturate((1 - d2) / w);
     }
+    return float4(i.color.rgb, saturate(i.color.a * a));
+}
+
+// The trail: where the particle has been (newest first; 0 is where it is now).
+float3 TrailPoint(Particle p, uint instance, uint i) {
+    if (i == 0) return p.position;
+    uint k = (p.trailHead + TrailPoints - (i - 1)) % TrailPoints;
+    return DrawnTrails[instance * TrailPoints + k].xyz;
+}
+
+// A band through the trail's points, facing the camera, thinner and fainter to its end.
+ParticleOut TrailVS(uint vertex : SV_VertexID, uint instance : SV_InstanceID) {
+    Particle p = Drawn[instance];
+    uint seg = vertex / 6;
+    if (p.alive == 0 || TrailPoints == 0 || seg >= TrailPoints) return Hidden();
+    const float2 corners[6] = {float2(0, -1), float2(0, 1), float2(1, 1), float2(0, -1), float2(1, 1), float2(1, -1)};
+    float2 c = corners[vertex % 6];
+    float3 a = TrailPoint(p, instance, seg);
+    float3 b = TrailPoint(p, instance, seg + 1);
+    float3 pos = lerp(a, b, c.x);
+    float3 dir = b - a;
+    if (dot(dir, dir) < 1e-12) dir = CamUp;
+    float3 side = cross(dir, CamPos - pos);
+    float sl = length(side);
+    side = sl > 1e-8 ? side / sl : CamRight;
+    float f = (seg + c.x) / TrailPoints;  // 0 at the particle .. 1 at the trail's end
+    ParticleOut o;
+    o.position = mul(ViewProj, float4(pos + side * (c.y * p.size * TrailWidth * (1 - f) * 0.5), 1));
+    o.color = float4(p.color.rgb, p.color.a * (1 - f));
+    o.uv = float2(c.y, f);
+    return o;
+}
+
+float4 TrailPS(ParticleOut i) : SV_Target {
+    float a = saturate(1 - i.uv.x * i.uv.x);
     return float4(i.color.rgb, saturate(i.color.a * a));
 }
 )";

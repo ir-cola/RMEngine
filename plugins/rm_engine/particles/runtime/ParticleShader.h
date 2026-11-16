@@ -6,8 +6,14 @@
 //   namespace M0 { static <params>; <module 0's code> }    each module in its own namespace: its names
 //   namespace M1 { ... }                                   never meet another's (two "first"s are fine)
 //   SpawnMain   (cs_5_0)  a new particle: the standard start, then every module's Spawn in order
-//   UpdateMain  (cs_5_0)  every module's Update in order, then the engine moves it (velocity, spin) and ages it
-//   ParticleVS / ParticlePS  a square facing the camera, the dot's shape, its colour
+//   UpdateMain  (cs_5_0)  every module's Update in order, then the engine moves it (velocity, spin), ages it
+//                         and keeps its trail (TrailPoints places, a ring)
+//   ParticleVS / ParticlePS  a square facing the camera (or long along its velocity: Stretch), the dot's
+//                         shape, its colour
+//   TrailVS / TrailPS     a band through the trail's places, thinner and fainter to its end
+//
+// Modules may call the engine's CollideShapes (the colliders' shapes: CollisionShape) and CollideDepth (the
+// picture's depth) - the built-in 当たる modules do.
 //
 // A module's params live in one constant buffer (one float4 per param, in order): changing a value only
 // changes the buffer (PackParams) - the shaders are made again only when the modules change.
@@ -54,8 +60,12 @@ struct EmitterConstants {
     float age;             // seconds into this round (duration)
     uint32_t shape;        // ParticleShape
     float pad = 0;
+    uint32_t trailPoints;  // 0: no trail
+    float trailInterval;   // seconds between two of its places
+    float trailWidth;      // times the particle's size
+    float stretch;         // seconds: a particle is long by its speed times this (0: a square)
 };
-static_assert(sizeof(EmitterConstants) % 16 == 0);
+static_assert(sizeof(EmitterConstants) == 128);
 
 struct ViewConstants {
     float viewProj[16];  // column-major: mul(ViewProj, v)
@@ -63,7 +73,35 @@ struct ViewConstants {
     float pad0 = 0;
     float up[3];
     float pad1 = 0;
+    float eye[3];  // where the camera is
+    float pad2 = 0;
 };
-static_assert(sizeof(ViewConstants) % 16 == 0);
+static_assert(sizeof(ViewConstants) == 112);
+
+// A shape particles collide with (CollideShapes), in the world, as the shaders read it.
+enum class CollisionType : uint32_t { Sphere = 0, Box = 1, Capsule = 2, Plane = 3 };
+struct CollisionShape {
+    float center[3];
+    CollisionType type;
+    float axisX[3];  // a box's axes (unit); a capsule's line goes along axisY; a plane's normal is axisY
+    float sizeX;     // a box's half sizes; a sphere's / a capsule's radius
+    float axisY[3];
+    float sizeY;     // a capsule: half its line's length
+    float axisZ[3];
+    float sizeZ;
+};
+static_assert(sizeof(CollisionShape) == 64);
+
+// What a picture's last frame drew (CollideDepth reads its depth).
+struct CollideConstants {
+    float viewProj[16];
+    float inverse[16];  // clip -> world
+    float eye[3];
+    uint32_t count;     // shapes
+    float size[2];      // pixels
+    uint32_t depthMode;  // 0 none, 1 one sample, 2 multisampled
+    float pad = 0;
+};
+static_assert(sizeof(CollideConstants) == 160);
 
 }  // namespace rm::particles

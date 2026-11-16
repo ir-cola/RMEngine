@@ -63,8 +63,8 @@ namespace {
 // The shaders of one text on one device (shared by every player that has the same modules).
 struct Programs {
     ComPtr<ID3D11ComputeShader> spawn, update;
-    ComPtr<ID3D11VertexShader> vs;
-    ComPtr<ID3D11PixelShader> ps;
+    ComPtr<ID3D11VertexShader> vs, trailVs;
+    ComPtr<ID3D11PixelShader> ps, trailPs;
     std::string error;  // the compiler's words (then nothing above is made)
 };
 
@@ -92,13 +92,16 @@ std::shared_ptr<const Programs> ProgramsFor(ID3D11Device* device, const std::str
     auto& slot = made[{device, hlsl}];
     if (auto p = slot.lock()) return p;
     auto p = std::make_shared<Programs>();
-    ComPtr<ID3DBlob> spawn, update, vs, ps;
+    ComPtr<ID3DBlob> spawn, update, vs, ps, trailVs, trailPs;
     if (Compile(hlsl, "SpawnMain", "cs_5_0", spawn, p->error) && Compile(hlsl, "UpdateMain", "cs_5_0", update, p->error) &&
-        Compile(hlsl, "ParticleVS", "vs_5_0", vs, p->error) && Compile(hlsl, "ParticlePS", "ps_5_0", ps, p->error)) {
+        Compile(hlsl, "ParticleVS", "vs_5_0", vs, p->error) && Compile(hlsl, "ParticlePS", "ps_5_0", ps, p->error) &&
+        Compile(hlsl, "TrailVS", "vs_5_0", trailVs, p->error) && Compile(hlsl, "TrailPS", "ps_5_0", trailPs, p->error)) {
         if (FAILED(device->CreateComputeShader(spawn->GetBufferPointer(), spawn->GetBufferSize(), nullptr, &p->spawn)) ||
             FAILED(device->CreateComputeShader(update->GetBufferPointer(), update->GetBufferSize(), nullptr, &p->update)) ||
             FAILED(device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &p->vs)) ||
-            FAILED(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &p->ps))) {
+            FAILED(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &p->ps)) ||
+            FAILED(device->CreateVertexShader(trailVs->GetBufferPointer(), trailVs->GetBufferSize(), nullptr, &p->trailVs)) ||
+            FAILED(device->CreatePixelShader(trailPs->GetBufferPointer(), trailPs->GetBufferSize(), nullptr, &p->trailPs))) {
             p->error = "シェーダーを GPU に作れません";
         }
     }
@@ -173,6 +176,11 @@ struct EffectPlayer::Emitter {
     bool cleared = false;
     ComPtr<ID3D11Buffer> emitterCb, paramsCb, viewCb;
     uint32_t paramsCbSlots = 0;
+    // The trail: TrailPoints float4 per particle (made with the particles when the emitter has a trail).
+    ComPtr<ID3D11Buffer> trails;
+    ComPtr<ID3D11UnorderedAccessView> trailsUav;
+    ComPtr<ID3D11ShaderResourceView> trailsSrv;
+    uint32_t trailPoints = 0;  // of the buffer made
 
     EmitterClock clock;
     uint32_t head = 0, serial = 0;
@@ -261,9 +269,48 @@ void EffectPlayer::Restart() {
     }
 }
 
-void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const float world[16], float dt) {
+void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const float world[16], float dt, const CollisionWorld* collide) {
     if (!device || !ctx) return;
     time_ += dt;
+    // What the emitters collide with: the shapes (one buffer, grown when needed) and the depth's camera.
+    CollideConstants cc{};
+    const size_t shapeCount = collide ? std::min<size_t>(collide->shapes.size(), 4096) : 0;
+    if (shapeCount > shapesCapacity_ || !shapes_) {
+        shapes_.Reset();
+        shapesView_.Reset();
+        shapesCapacity_ = std::max<size_t>({shapeCount, shapesCapacity_ * 2, 16});
+        D3D11_BUFFER_DESC bd{};
+        bd.ByteWidth = static_cast<UINT>(shapesCapacity_ * sizeof(CollisionShape));
+        bd.Usage = D3D11_USAGE_DEFAULT;
+        bd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+        bd.StructureByteStride = sizeof(CollisionShape);
+        if (FAILED(device->CreateBuffer(&bd, nullptr, &shapes_)) || FAILED(device->CreateShaderResourceView(shapes_.Get(), nullptr, &shapesView_))) {
+            shapes_.Reset();
+            shapesView_.Reset();
+            shapesCapacity_ = 0;
+        }
+    }
+    if (shapes_ && shapeCount > 0) {
+        const D3D11_BOX box{0, 0, 0, static_cast<UINT>(shapeCount * sizeof(CollisionShape)), 1, 1};
+        ctx->UpdateSubresource(shapes_.Get(), 0, &box, collide->shapes.data(), 0, 0);
+        cc.count = static_cast<uint32_t>(shapeCount);
+    }
+    if (collide && collide->depth && collide->width > 0 && collide->height > 0) {
+        std::copy(collide->viewProj, collide->viewProj + 16, cc.viewProj);
+        std::copy(collide->inverse, collide->inverse + 16, cc.inverse);
+        std::copy(collide->eye, collide->eye + 3, cc.eye);
+        cc.size[0] = static_cast<float>(collide->width);
+        cc.size[1] = static_cast<float>(collide->height);
+        cc.depthMode = collide->samples > 1 ? 2u : 1u;
+    }
+    if (!collideCb_) collideCb_ = ConstantBuffer(device, sizeof(CollideConstants));
+    if (collideCb_) ctx->UpdateSubresource(collideCb_.Get(), 0, nullptr, &cc, 0, 0);
+    ID3D11ShaderResourceView* collideViews[3] = {cc.count > 0 ? shapesView_.Get() : nullptr, cc.depthMode == 1 ? collide->depth : nullptr,
+                                                 cc.depthMode == 2 ? collide->depth : nullptr};
+    ctx->CSSetShaderResources(1, 3, collideViews);
+    ID3D11Buffer* collideCb = collideCb_.Get();
+    ctx->CSSetConstantBuffers(3, 1, &collideCb);
     for (auto& ptr : emitters_) {
         Emitter& e = *ptr;
         if (!e.data->enabled || e.broken) continue;
@@ -297,6 +344,34 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
             e.capacity = capacity;
             e.cleared = false;
             e.head = 0;
+            e.trails.Reset();
+            e.trailPoints = 0;
+        }
+        // The trail's places (made again when the number of points or of particles changes).
+        const uint32_t points = e.data->trail ? static_cast<uint32_t>(std::clamp(e.data->trailPoints, 2, 64)) : 0;
+        if (points != e.trailPoints) {
+            e.trails.Reset();
+            e.trailsUav.Reset();
+            e.trailsSrv.Reset();
+            e.trailPoints = 0;
+            if (points > 0) {
+                D3D11_BUFFER_DESC bd{};
+                bd.ByteWidth = e.capacity * points * 16u;
+                bd.Usage = D3D11_USAGE_DEFAULT;
+                bd.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+                bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+                bd.StructureByteStride = 16;
+                if (SUCCEEDED(device->CreateBuffer(&bd, nullptr, &e.trails)) && SUCCEEDED(device->CreateUnorderedAccessView(e.trails.Get(), nullptr, &e.trailsUav)) &&
+                    SUCCEEDED(device->CreateShaderResourceView(e.trails.Get(), nullptr, &e.trailsSrv))) {
+                    e.trailPoints = points;
+                    e.cleared = false;  // (the particles from the start: their trails are new)
+                } else {
+                    problems_.push_back(std::format("パーティクル「{}」: GPU にトレイルの場所を作れません", e.data->name));
+                    e.trails.Reset();
+                    e.trailsUav.Reset();
+                    e.trailsSrv.Reset();
+                }
+            }
         }
         if (!e.emitterCb) e.emitterCb = ConstantBuffer(device, sizeof(EmitterConstants));
         if (!e.viewCb) e.viewCb = ConstantBuffer(device, sizeof(ViewConstants));
@@ -326,6 +401,10 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
         ec.spawnSerial = e.serial;
         ec.age = e.clock.age;
         ec.shape = static_cast<uint32_t>(e.data->shape);
+        ec.trailPoints = e.trailPoints;
+        ec.trailInterval = e.trailPoints > 1 ? std::max(e.data->trailTime, 0.01f) / static_cast<float>(e.trailPoints) : 1.f;
+        ec.trailWidth = std::max(e.data->trailWidth, 0.f);
+        ec.stretch = std::max(e.data->stretch, 0.f);
         ctx->UpdateSubresource(e.emitterCb.Get(), 0, nullptr, &ec, 0, 0);
         std::vector<float> params(static_cast<size_t>(e.shader.paramSlots) * 4, 0.f);
         std::copy_n(e.params.begin(), std::min(e.params.size(), params.size()), params.begin());
@@ -333,20 +412,23 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
 
         ID3D11Buffer* cbs[2] = {e.emitterCb.Get(), e.paramsCb.Get()};
         ctx->CSSetConstantBuffers(0, 2, cbs);
-        ID3D11UnorderedAccessView* uav = e.uav.Get();
-        ctx->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+        ID3D11UnorderedAccessView* uavs[2] = {e.uav.Get(), e.trailsUav.Get()};
+        ctx->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
         if (born > 0) {
             ctx->CSSetShader(e.programs->spawn.Get(), nullptr, 0);
             ctx->Dispatch((born + kThreads - 1) / kThreads, 1, 1);
         }
         ctx->CSSetShader(e.programs->update.Get(), nullptr, 0);
         ctx->Dispatch((e.capacity + kThreads - 1) / kThreads, 1, 1);
-        ID3D11UnorderedAccessView* noUav = nullptr;
-        ctx->CSSetUnorderedAccessViews(0, 1, &noUav, nullptr);
+        ID3D11UnorderedAccessView* noUavs[2] = {};
+        ctx->CSSetUnorderedAccessViews(0, 2, noUavs, nullptr);
         ctx->CSSetShader(nullptr, nullptr, 0);
         e.head = (e.head + born) % e.capacity;
         e.serial += born;
     }
+    // (nothing of ours stays bound to the compute stage: the depth is the renderer's next frame)
+    ID3D11ShaderResourceView* noViews[3] = {};
+    ctx->CSSetShaderResources(1, 3, noViews);
 }
 
 void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view) {
@@ -364,14 +446,26 @@ void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view) {
         ID3D11Buffer* viewCb = e.viewCb.Get();
         ID3D11Buffer* emitterCb = e.emitterCb.Get();
         ctx->VSSetConstantBuffers(2, 1, &viewCb);
+        ctx->VSSetConstantBuffers(0, 1, &emitterCb);  // (Stretch, the trail's numbers)
         ctx->PSSetConstantBuffers(0, 1, &emitterCb);
         const float factor[4] = {};
         ctx->OMSetBlendState(e.data->blend == ParticleBlend::Add ? e.states->add.Get() : e.states->alpha.Get(), factor, 0xFFFFFFFF);
         ctx->RSSetState(e.states->raster.Get());
-        ctx->DrawInstanced(6, e.capacity, 0, 0);
+        if (e.data->dots) ctx->DrawInstanced(6, e.capacity, 0, 0);
+        // The trails: a band of TrailPoints pieces per particle.
+        if (e.trailPoints > 0 && e.trailsSrv) {
+            ID3D11ShaderResourceView* trails = e.trailsSrv.Get();
+            ctx->VSSetShaderResources(4, 1, &trails);
+            ctx->VSSetConstantBuffers(0, 1, &emitterCb);
+            ctx->VSSetShader(e.programs->trailVs.Get(), nullptr, 0);
+            ctx->PSSetShader(e.programs->trailPs.Get(), nullptr, 0);
+            ctx->DrawInstanced(6 * e.trailPoints, e.capacity, 0, 0);
+        }
         ID3D11ShaderResourceView* noSrv = nullptr;
         ID3D11Buffer* noCb = nullptr;
         ctx->VSSetShaderResources(0, 1, &noSrv);
+        ctx->VSSetShaderResources(4, 1, &noSrv);
+        ctx->VSSetConstantBuffers(0, 1, &noCb);
         ctx->VSSetConstantBuffers(2, 1, &noCb);
     }
 }

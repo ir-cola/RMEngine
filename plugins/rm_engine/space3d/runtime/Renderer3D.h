@@ -144,6 +144,11 @@ struct ExtraDrawContext {
     const Mat4& projection;
     Vec3 eye;
     uint32_t width = 0, height = 0;
+    // The picture's depth (0 near .. 1 far) as a shader reads it - after this frame it holds this frame's
+    // depth until the next Render (a particle's compute shader reads it then: collisions). Null when the
+    // GPU cannot read it. A multisampled one (Texture2DMS) when samples > 1.
+    ID3D11ShaderResourceView* depth = nullptr;
+    uint32_t samples = 1;
 };
 using ExtraDraw = std::function<void(const ExtraDrawContext&)>;
 
@@ -282,6 +287,7 @@ private:
     Ptr<ID3D11RenderTargetView> rtv_;
     Ptr<ID3D11Texture2D> depthTex_;
     Ptr<ID3D11DepthStencilView> dsv_;
+    Ptr<ID3D11ShaderResourceView> depthSrv_;  // the depth for shaders (ExtraDrawContext::depth); null: none
 };
 
 }  // namespace rm::space3d

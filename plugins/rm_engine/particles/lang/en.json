@@ -56,5 +56,21 @@
   "跳ね返り": "Bounciness",
   "すべりにくさ": "Friction",
   "当たったら消す": "Vanish on hit",
-  "エフェクトのファイル": "Effect file"
+  "エフェクトのファイル": "Effect file",
+  "粒を描く": "Draw the dots",
+  "外すと、粒は描かずトレイルだけを描きます": "When off, only the trails are drawn, not the dots",
+  "速さの向きに伸ばす (秒)": "Stretch along the velocity (seconds)",
+  "粒を、速さ × この秒だけ動く向きに長くします (火花・雨)。0 で丸いまま": "Makes a particle longer along its motion by its speed times this (sparks, rain). 0 keeps it round",
+  "トレイル": "Trail",
+  "粒が通った跡を帯で描きます (剣の軌跡・流れ星)": "Draws a band where the particle has been (a sword's swing, a shooting star)",
+  "トレイルの長さ (秒)": "Trail length (seconds)",
+  "どれだけ前までの跡を描くか": "How far back the trail goes",
+  "トレイルの点の数": "Trail points",
+  "多いほどなめらか (GPU のメモリ: 粒の数 × 点の数 × 16 バイト)": "More is smoother (GPU memory: particles × points × 16 bytes)",
+  "トレイルの太さ": "Trail width",
+  "粒の大きさに掛けます。先へ行くほど細く・薄くなります": "Times the particle's size. It gets thinner and fainter toward its end",
+  "当たる: コライダー": "Collide: colliders",
+  "粒の半径 (m)": "Particle radius (m)",
+  "当たる: 見えている物": "Collide: what is seen",
+  "表面の厚さ (m)": "Surface thickness (m)"
 }

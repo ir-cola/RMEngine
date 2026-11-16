@@ -2,7 +2,9 @@
 
 #include "base/Log.h"
 #include "core/reflect/Reflect.h"
+#include "rm_engine/game_x_particles/runtime/CollisionShapes.h"
 #include "rm_engine/game_x_particles/runtime/ParticleSystem.h"
+#include "rm_engine/space3d/runtime/View.h"
 #include "rm_engine/particles/runtime/ParticleEffect.h"
 #include "rm_engine/particles/runtime/ParticlePlayer.h"
 
@@ -28,6 +30,7 @@ public:
         animating_ = false;
         if (f.gfx.Generation() != generation_ || f.playing != playing_) {
             running_.clear();  // (new devices; Play started or stopped: everything from the start)
+            view_ = {};
             generation_ = f.gfx.Generation();
             playing_ = f.playing;
         }
@@ -37,6 +40,21 @@ public:
         const std::string type = reflect::TypeOf<ParticleSystem>().name;
         const double now = NowSeconds();
         for (auto& [id, r] : running_) r.seen = false;
+        // What they collide with: the shapes (gathered at the first particle that runs) and the depth of
+        // this picture's last frame (taken while it was drawn: ViewTaker below).
+        bool gathered = false;
+        particles::CollisionWorld collide;
+        if (view_.depth) {
+            collide.depth = view_.depth.Get();
+            collide.samples = view_.samples;
+            std::copy(std::begin(view_.viewProj), std::end(view_.viewProj), collide.viewProj);
+            std::copy(std::begin(view_.inverse), std::end(view_.inverse), collide.inverse);
+            std::copy(std::begin(view_.eye), std::end(view_.eye), collide.eye);
+            collide.width = view_.width;
+            collide.height = view_.height;
+        }
+        viewTaken_ = false;
+        out.push_back([this](const space3d::ExtraDrawContext& dc) { TakeView(dc); });
         for (const auto& t : f.scene.TreeOrder()) {
             const auto& e = *t.entity;
             const game_production::Component* c = e.FindComponent(type);
@@ -55,7 +73,17 @@ public:
             Running& r = running_[e.data.id];
             r.seen = true;
             r.player.Set(effect, [&](const particles::ParticleModule& m, std::string& file) { return modules_.Find(m, file, f.asset, f.name, !f.playing); });
-            r.player.Advance(device, ctx, &world->m[0][0], f.dt * std::max(ps.speed, 0.f));
+            if (!gathered) {
+                gathered = true;
+                shapes_.clear();
+                if (f.registry) {
+                    for (const auto& s : f.registry->Contributions<CollisionShapesInfo>(kCollisionShapesPoint)) {
+                        if (s.item->gather) s.item->gather(f.scene, f.world, shapes_);
+                    }
+                }
+                collide.shapes = shapes_;
+            }
+            r.player.Advance(device, ctx, &world->m[0][0], f.dt * std::max(ps.speed, 0.f), &collide);
             for (const std::string& p : r.player.TakeProblems()) Tell(p);
             out.push_back([player = &r.player](const space3d::ExtraDrawContext& dc) { player->Draw(dc.ctx, ViewOf(dc)); });
             animating_ = true;
@@ -66,6 +94,35 @@ public:
     bool Animating() const override { return animating_; }
 
 private:
+    // The camera and the depth of this picture's frame (read by the next frame's collisions).
+    struct View {
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depth;
+        uint32_t samples = 1;
+        float viewProj[16]{};
+        float inverse[16]{};
+        float eye[3]{};
+        uint32_t width = 0, height = 0;
+    };
+    void TakeView(const space3d::ExtraDrawContext& dc) {
+        if (viewTaken_) return;
+        viewTaken_ = true;
+        const space3d::Mat4 viewProj = dc.projection * dc.view;
+        const std::optional<space3d::Mat4> inverse = space3d::Inverse(viewProj);
+        if (!dc.depth || !inverse) {
+            view_ = {};
+            return;
+        }
+        view_.depth = dc.depth;
+        view_.samples = dc.samples;
+        std::memcpy(view_.viewProj, &viewProj.m[0][0], sizeof(view_.viewProj));
+        std::memcpy(view_.inverse, &inverse->m[0][0], sizeof(view_.inverse));
+        view_.eye[0] = dc.eye.x;
+        view_.eye[1] = dc.eye.y;
+        view_.eye[2] = dc.eye.z;
+        view_.width = dc.width;
+        view_.height = dc.height;
+    }
+
     struct Running {
         EffectPlayer player;
         bool seen = false;
@@ -110,6 +167,9 @@ private:
     std::unordered_map<int, Running> running_;  // by entity
     std::unordered_map<std::string, Loaded> effects_;  // by asset id
     ModuleFiles modules_;
+    std::vector<particles::CollisionShape> shapes_;
+    View view_;
+    bool viewTaken_ = false;
     std::set<std::string> told_;
     uint64_t generation_ = 0;
     bool playing_ = false;
@@ -151,6 +211,9 @@ particles::ViewConstants ViewOf(const space3d::ExtraDrawContext& c) {
         v.right[i] = c.view.m[i][0];
         v.up[i] = c.view.m[i][1];
     }
+    v.eye[0] = c.eye.x;
+    v.eye[1] = c.eye.y;
+    v.eye[2] = c.eye.z;
     return v;
 }
 

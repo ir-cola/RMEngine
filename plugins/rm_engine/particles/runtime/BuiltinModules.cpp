@@ -100,6 +100,26 @@ void Update(inout Particle p, float dt, inout Random rnd) {
     p.size = p.startSize * lerp(first, last, LifeRatio(p));
 }
 )"},
+    {"collide_shapes", R"(module "当たる: コライダー"
+param float bounce = 0.4 [0, 1]; // 跳ね返り
+param float friction = 0.1 [0, 1]; // すべりにくさ
+param float radius = 0 [0, 100]; // 粒の半径 (m)
+param bool vanish = false; // 当たったら消す
+
+void Update(inout Particle p, float dt, inout Random rnd) {
+    CollideShapes(p, dt, bounce, friction, vanish, radius);
+}
+)"},
+    {"collide_depth", R"(module "当たる: 見えている物"
+param float bounce = 0.3 [0, 1]; // 跳ね返り
+param float friction = 0.1 [0, 1]; // すべりにくさ
+param float thickness = 0.5 [0.01, 100]; // 表面の厚さ (m)
+param bool vanish = false; // 当たったら消す
+
+void Update(inout Particle p, float dt, inout Random rnd) {
+    CollideDepth(p, dt, bounce, friction, vanish, thickness);
+}
+)"},
     {"floor", R"(module "床で跳ねる"
 param float height = 0; // 床の高さ (Y)
 param float bounce = 0.5 [0, 1]; // 跳ね返り

@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "パーティクル: 当たり判定 (コライダーの箱・球・カプセルと、カメラに見えている物) とトレイル (通った跡の帯)、速さの向きに伸びる粒 (火花・雨)",
+          "en": "Particles: collisions (with colliders - boxes, spheres, capsules - and with what the camera sees), trails (a band where a particle has been) and particles stretched along their motion (sparks, rain)"
+        },
+        {
           "ja": "パーティクル: 自作モジュール (.rmfx) を HLSL で書ける。「新しいモジュールを作る」で見本ができ、param の行がタブの欄になる。保存するとすぐ作り直し、書き間違いはファイル名と行で出る。書き出すとゲームにも入る",
           "en": "Particles: write your own modules (.rmfx) in HLSL. Make a new module gives an example, and its param lines become fields in the tab. Saving rebuilds at once, and mistakes show the file and the line. Exporting takes them into the game"
         },

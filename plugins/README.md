@@ -60,3 +60,4 @@ plugins/
 | `rm_engine` / `game_x_audio` (ゲーム制作 × 音) | つなぎ。前提 = ゲーム制作・音。部品「音源」・Play の間の音 (ゲーム制作の口 `rm_engine.game_production.play_service`)・スクリプトの `RMAudio.h` (`rm::Audio` / `rm::AudioSource`)・書き出しで音を `.rmsound` に (取り込みの設定付き、作り直さない) |
 | `rm_engine` / `particles` (パーティクル) | 前提なし。エフェクト `.rmparticle` (エミッターとモジュールの並び)・モジュール `.rmfx` (HLSL + `param` / `attr`。用意したモジュールも同じ形: `runtime/BuiltinModules`)・モジュールから 1 本のシェーダーを組み立てる (`runtime/ParticleShader`)・GPU で動かして描く (`runtime/ParticlePlayer`: Compute Shader)。ゲーム制作を知らない |
 | `rm_engine` / `game_x_particles` (ゲーム制作 × パーティクル) | つなぎ。前提 = ゲーム制作・パーティクル・ゲーム制作 × 3D・3D 空間。部品「パーティクル」・3D の絵への描き込み (ゲーム制作 × 3D の口 `rm_engine.game_x_3d.world_draw`)・「パーティクル」タブ (`editor/ParticleTab`: 並び・値・プレビュー) |
+| `rm_engine` / `particles_x_physics` (パーティクル × 物理) | つなぎ。前提 = ゲーム制作 × パーティクル・物理 (ほか)。物理のコライダー (箱・球・カプセル。トリガーとメッシュは除く) とキャラクターを、粒が当たる形にして渡す (ゲーム制作 × パーティクルの口 `rm_engine.game_x_particles.collision_shapes`) |

@@ -43,6 +43,19 @@ using ModuleLookup = std::function<std::shared_ptr<const ModuleSource>(const Par
 // Built-in modules only (a module of a file is left out).
 std::shared_ptr<const ModuleSource> BuiltinLookup(const ParticleModule& m, std::string& file);
 
+// What particles collide with this frame (CollideShapes / CollideDepth); null: nothing.
+struct CollisionWorld {
+    std::span<const CollisionShape> shapes;  // the colliders' shapes in the world
+    // The picture's depth from its last frame (the renderer's ExtraDrawContext::depth) and the camera it
+    // was drawn with; null: no depth to collide with.
+    ID3D11ShaderResourceView* depth = nullptr;
+    uint32_t samples = 1;
+    float viewProj[16]{};
+    float inverse[16]{};  // clip -> world
+    float eye[3]{};
+    uint32_t width = 0, height = 0;
+};
+
 class EffectPlayer {
 public:
     EffectPlayer();
@@ -59,7 +72,7 @@ public:
     // From the start again (no particles, the clocks at 0).
     void Restart();
     // Moves it on by dt (lets out new particles where `world` puts the emitter - a column-major 4x4).
-    void Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const float world[16], float dt);
+    void Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const float world[16], float dt, const CollisionWorld* collide = nullptr);
     // Draws its particles: the caller has bound the picture's render target and depth buffer.
     void Draw(ID3D11DeviceContext* ctx, const ViewConstants& view);
 
@@ -77,6 +90,11 @@ private:
     std::vector<std::unique_ptr<Emitter>> emitters_;
     std::vector<std::string> problems_;
     float time_ = 0;
+    // What the emitters collide with (shared by them): the shapes and the camera of the depth.
+    Microsoft::WRL::ComPtr<ID3D11Buffer> shapes_;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shapesView_;
+    size_t shapesCapacity_ = 0;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> collideCb_;
 };
 
 // Direct3D can run the particles (feature level 11_0 or later).

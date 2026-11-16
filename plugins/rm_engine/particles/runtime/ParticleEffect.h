@@ -68,6 +68,13 @@ struct ParticleEmitter {
     RM_PROPERTY(Edit, Label="くり返す") bool loop = true;
     RM_PROPERTY(Edit, Label="重ね方") ParticleBlend blend = ParticleBlend::Add;
     RM_PROPERTY(Edit, Label="粒の形") ParticleShape shape = ParticleShape::SoftCircle;
+    RM_PROPERTY(Edit, Label="粒を描く", Tooltip="外すと、粒は描かずトレイルだけを描きます") bool dots = true;
+    RM_PROPERTY(Edit, Label="速さの向きに伸ばす (秒)", Tooltip="粒を、速さ × この秒だけ動く向きに長くします (火花・雨)。0 で丸いまま", Min=0, Max=10, Step=0.005)
+    float stretch = 0;
+    RM_PROPERTY(Edit, Label="トレイル", Tooltip="粒が通った跡を帯で描きます (剣の軌跡・流れ星)") bool trail = false;
+    RM_PROPERTY(Edit, Label="トレイルの長さ (秒)", Tooltip="どれだけ前までの跡を描くか", Min=0.01, Max=60, Step=0.01) float trailTime = 0.5f;
+    RM_PROPERTY(Edit, Label="トレイルの点の数", Tooltip="多いほどなめらか (GPU のメモリ: 粒の数 × 点の数 × 16 バイト)", Min=2, Max=64) int trailPoints = 12;
+    RM_PROPERTY(Edit, Label="トレイルの太さ", Tooltip="粒の大きさに掛けます。先へ行くほど細く・薄くなります", Min=0, Max=100, Step=0.05) float trailWidth = 1;
     RM_PROPERTY() std::vector<ParticleModule> modules;  // run from the top (shown and edited in the パーティクル tab)
 };
 
