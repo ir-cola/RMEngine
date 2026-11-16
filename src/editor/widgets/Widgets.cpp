@@ -1132,7 +1132,10 @@ int PickerPopup(ui::Context& c, Popup& popup, std::string_view idStr, std::strin
         if (b.clicked && !fresh) clicked = static_cast<int>(i);
     }
     EndScroll(c, "list", list, content);
-    if (clicked < 0 && enter && !rows.empty()) clicked = 0;
+    // Enter takes the first row found by what was typed. With nothing typed it only closes: the first
+    // row is then just the top of the list ("(なし)" of a reference - Enter to close would clear it).
+    if (clicked < 0 && enter && !rows.empty() && !search.empty()) clicked = 0;
+    if (clicked < 0 && enter && search.empty()) close();
     if (clicked >= 0) close();
     c.PopId();
     return clicked;

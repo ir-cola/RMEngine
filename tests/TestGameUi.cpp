@@ -829,6 +829,30 @@ RM_TEST(GameUi_ButtonActions_WhatTheyDo) {
     CHECK(s.Find(title)->data.active && (done == std::vector<std::string>{"info"}));
 }
 
+RM_TEST(GameUi_HiddenButton_StartsAgainFromNormal) {
+    // A button under the mouse whose window is hidden, then shown again under the mouse: its 乗った sound
+    // comes again (not lost), its look starts from normal.
+    Scene s = UiScene();
+    const int canvas = s.Create("UI");
+    Add<UiCanvas>(s, canvas)->reference = {1280, 720};
+    const int b = MakeButton(s, canvas, {0, 0}, {200, 100});
+    const auto* part = static_cast<const UiButton*>(s.Find(b)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get());
+    InputFrame none;
+    const auto actions = game_production::DefaultInputActions();
+    UiFocus state;
+    state.keyboard = false;
+    const Vec2 on{640, 360};
+    StepUi(s, BuildUi(s, {}), std::nullopt, false, false, false, actions, &none, &none, 0.016f, state);
+    UiStep step = StepUi(s, BuildUi(s, {}), on, false, false, false, actions, &none, &none, 0.016f, state);
+    CHECK((step.hovered == std::vector<int>{b}) && part->hot);
+    s.Find(canvas)->data.active = false;  // (hidden: by a button's action, a script)
+    StepUi(s, BuildUi(s, {}), on, false, false, false, actions, &none, &none, 0.016f, state);
+    CHECK(!part->hot && part->now.scale == 1.f);
+    s.Find(canvas)->data.active = true;
+    step = StepUi(s, BuildUi(s, {}), on, false, false, false, actions, &none, &none, 0.016f, state);
+    CHECK((step.hovered == std::vector<int>{b}));
+}
+
 RM_TEST(GameUi_ScriptFocus_KeptWhenItsWindowComesInFront) {
     // A script's rm::UI::Focus in the frame its window is first shown (a Start, a Show then Focus): kept,
     // not replaced by the window's first button.

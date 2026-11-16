@@ -47,6 +47,9 @@ void PictureDecoder::Run(std::stop_token stop) {
         {
             std::unique_lock lock(mu_);
             if (!wake_.wait(lock, stop, [&] { return !queue_.empty(); })) return;  // stopped
+            // (The wait also returns true when stopped with jobs still queued: the picture being made is
+            // finished, the rest are dropped - not all made while the view that closed waits.)
+            if (stop.stop_requested()) return;
             job = std::move(queue_.front());
             queue_.pop_front();
         }

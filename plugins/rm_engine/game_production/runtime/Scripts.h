@@ -75,6 +75,9 @@ struct ScriptWorld {
     // The game's scenes (Game::LoadScene): their names in the list's order, the one playing (-1: not
     // one of them) and the one asked for this frame (-1: none; switched between frames: SwitchAskedScene).
     std::vector<std::string> sceneNames;
+    // Their asset ids, in the same order ("" where not known): a scene chosen as an asset (a game UI
+    // button's シーンを切り替える) is found by its id - two scenes of one name in two folders are two.
+    std::vector<std::string> sceneIds;
     int sceneIndex = -1;
     int sceneAsked = -1;
     // The game asked to end (a game UI button's ゲームを終わる): the host ends it after this frame (the

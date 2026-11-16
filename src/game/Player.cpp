@@ -154,6 +154,11 @@ public:
                     if (started_ && wp != SIZE_MINIMIZED && !drawing_) DrawFrame();
                 }
                 return 0;
+            case WM_DPICHANGED:
+                // Moved to a monitor of another scale: drawn in its DIPs (the window then gets the new
+                // size - WM_SIZE - from Window, as Windows suggests).
+                if (target_.Context()) target_.SetDpi(static_cast<float>(HIWORD(wp)));
+                return 0;
             case WM_LBUTTONDOWN:
             case WM_LBUTTONDBLCLK:
                 ++presses_.down;

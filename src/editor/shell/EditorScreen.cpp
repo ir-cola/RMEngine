@@ -324,9 +324,11 @@ void EditorScreen::LoadSoftwareData() {
 }
 
 void EditorScreen::StoreSoftwareData(std::vector<ProjectFileWrite>& files) {
-    json::Value* entries = project_.doc.Find("softwareData");
     for (auto& ws : workspaces_) {
         if (!ws->software) continue;
+        // Found again for each software: the document's members below may have grown since (Set of a new
+        // key moves them) - a pointer from before would point at freed memory.
+        json::Value* entries = project_.doc.Find("softwareData");
         const json::Value key = WorkspaceKey(ws->type);
         json::Value* entry = nullptr;
         if (entries) {

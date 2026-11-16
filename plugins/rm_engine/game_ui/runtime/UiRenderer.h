@@ -61,6 +61,7 @@ private:
         Microsoft::WRL::ComPtr<IDWriteFontCollection> collection;
         std::wstring family;
         bool tried = false;
+        size_t hash = 0;  // of the file's bytes it was made from (Forget: made again only when they changed)
     };
 
     void Begin(ID2D1DeviceContext* dc);
@@ -81,6 +82,7 @@ private:
     std::unordered_map<std::string, Picture> pictures_;  // by asset id
     std::unordered_map<std::string, Font> fonts_;        // by asset id
     std::map<std::tuple<std::wstring, IDWriteFontCollection*, float, bool>, Microsoft::WRL::ComPtr<IDWriteTextFormat>> formats_;
+    uint64_t generation_ = 0;  // platform::Gfx::Generation the bitmaps, the brush and the effect were made in
     Microsoft::WRL::ComPtr<IUnknown> fontLoader_;  // IDWriteInMemoryFontFileLoader (registered on the factory)
     Microsoft::WRL::ComPtr<IDWriteFactory> loaderFactory_;
 };

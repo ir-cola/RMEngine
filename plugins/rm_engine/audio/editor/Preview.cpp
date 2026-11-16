@@ -13,6 +13,8 @@
 
 #include <filesystem>
 #include <format>
+#include <functional>
+#include <string_view>
 
 namespace rm::audio {
 
@@ -58,7 +60,9 @@ void PlaySound(const fs::path& file, const json::Value& importJson) {
     reflect::Load(imp, importJson);
     SoundSource s;
     s.bytes = std::make_shared<const std::string>(std::move(*bytes));
-    s.key = PathToUtf8(file);
+    // The engine keeps what it decoded by this key: the file's contents are in it, so a file written
+    // again (a song exported once more) is decoded again - not the old sound until a restart.
+    s.key = std::format("{}|{}|{:x}", PathToUtf8(file), s.bytes->size(), std::hash<std::string_view>{}(*s.bytes));
     s.name = PathToUtf8(file.filename());
     ApplyImport(s, imp);
     PlayParams params;
@@ -76,7 +80,11 @@ void StopSound() {
 bool SoundPlaying() {
     Previewer& p = ThePreviewer();
     p.TellMessages();
-    return p.engine && p.engine->Voices() > 0;
+    if (!p.engine) return false;
+    // (Voices that finished are let go in Update - the game calls it every frame; the preview here, as
+    // the panel asks. Without a sound device nothing else would ever end them.)
+    p.engine->Update(0);
+    return p.engine->Voices() > 0;
 }
 
 }  // namespace

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 namespace rm::game_ui {
 
@@ -172,6 +173,22 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
         b->hot = hot;
         b->ready = true;
     }
+    // The buttons not shown now (their window hidden): back to normal, so shown again they start from
+    // there - their look not from where it was, their sound when the mouse comes on them (not lost).
+    std::unordered_set<int> shown;
+    for (const UiNode& n : tree.nodes) {
+        if (n.button) shown.insert(n.entity);
+    }
+    // (every entity: the switched off ones too - those are the hidden ones)
+    for (const auto& t : scene.TreeOrder()) {
+        if (shown.contains(t.entity->data.id)) continue;
+        UiButton* b = MutableButton(scene, t.entity->data.id);
+        if (!b || (!b->hot && b->state == static_cast<int>(UiButtonState::Normal) && !b->focused)) continue;
+        b->state = static_cast<int>(UiButtonState::Normal);
+        b->focused = false;
+        b->hot = false;
+        if (b->ready) b->now = ButtonTarget(*b);
+    }
     return step;
 }
 
@@ -328,9 +345,14 @@ void UiService::Frame(const game_production::PlayFrame& f) {
     if (game_production::ScriptWorld* world = f.world) {
         actionHost.globals = &world->globals;
         actionHost.loadScene = [this, world](const AssetRef& scene) {
-            // The scene by its file's name, as Game::LoadScene("…") takes it.
-            const std::string file = host_.name ? host_.name(scene) : std::string();
-            const auto at = file.empty() ? std::nullopt : game_production::FindSceneByName(world->sceneNames, game_production::SceneNameOf(file));
+            // The scene by its id (two of one name in two folders are two); else by its file's name, as
+            // Game::LoadScene("…") takes it.
+            std::optional<size_t> at;
+            for (size_t i = 0; i < world->sceneIds.size() && !at; ++i) {
+                if (world->sceneIds[i] == scene.guid) at = i;
+            }
+            const std::string file = at || !host_.name ? std::string() : host_.name(scene);
+            if (!at && !file.empty()) at = game_production::FindSceneByName(world->sceneNames, game_production::SceneNameOf(file));
             if (!at) return false;
             world->sceneAsked = static_cast<int>(*at);
             return true;

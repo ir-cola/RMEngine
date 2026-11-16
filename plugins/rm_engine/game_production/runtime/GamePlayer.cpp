@@ -105,6 +105,12 @@ public:
         for (const auto& s : doc->Get("scenes").Items()) {
             scenePaths_.push_back(s.AsString());
             world_.sceneNames.push_back(SceneNameOf(s.AsString()));
+            // Its asset id, when the game names it by one (a game UI button's シーンを切り替える).
+            std::string id;
+            for (const auto& [guid, path] : assets_) {
+                if (path == s.AsString()) id = guid;
+            }
+            world_.sceneIds.push_back(std::move(id));
         }
         const json::Value* firstKey = doc->Find("first");
         const size_t first = static_cast<size_t>(std::max<int64_t>(0, (firstKey ? *firstKey : doc->Get("open")).AsInt(0)));

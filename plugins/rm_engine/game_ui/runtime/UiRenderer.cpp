@@ -9,7 +9,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <span>
+#include <string_view>
 
 namespace rm::game_ui {
 
@@ -47,7 +49,9 @@ ID2D1SolidColorBrush* UiRenderer::Brush(Color c) {
 
 void UiRenderer::Forget() {
     pictures_.clear();
-    fonts_.clear();
+    // Fonts are only looked at again: one made again for the same bytes would be one more copy that the
+    // loader keeps for as long as the renderer lives.
+    for (auto& [id, f] : fonts_) f.tried = false;
     formats_.clear();
 }
 
@@ -94,6 +98,11 @@ const UiRenderer::Font* UiRenderer::FontOf(platform::Gfx& gfx, const AssetRef& r
     if (f.tried) return f.collection ? &f : nullptr;
     f.tried = true;
     const auto bytes = asset ? asset(ref) : std::nullopt;
+    const size_t hash = bytes ? std::hash<std::string_view>{}(*bytes) : 0;
+    if (bytes && f.collection && f.hash == hash) return &f;  // the same file: the font made before
+    f.collection.Reset();
+    f.family.clear();
+    f.hash = hash;
     Microsoft::WRL::ComPtr<IDWriteFactory5> factory;
     if (!bytes || bytes->empty() || !gfx.DWrite() || FAILED(gfx.DWrite()->QueryInterface(IID_PPV_ARGS(&factory)))) {
         log::Warn("ゲーム UI: フォントのファイル ({}) を読めないので、フォントの名前で描きます", ref.guid);
@@ -288,6 +297,14 @@ void UiRenderer::DrawFocus(const UiNode& n, const Affine& full) {
 
 void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& tree, const Affine& toDc, const AssetReader& asset) {
     if (!dc) return;
+    if (gfx.Generation() != generation_) {
+        // New devices (the GPU was reset, the driver updated): what was made on the old ones goes.
+        generation_ = gfx.Generation();
+        pictures_.clear();
+        brush_.Reset();
+        tint_.Reset();
+        owner_ = nullptr;
+    }
     Begin(dc);
     // Text turned or scaled cannot be ClearType: greyscale for all of it (put back afterwards).
     const D2D1_TEXT_ANTIALIAS_MODE aa = dc->GetTextAntialiasMode();

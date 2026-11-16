@@ -208,7 +208,8 @@ private:
         const std::string type = reflect::TypeOf<UiCanvas>().name;
         for (const auto& t : host.scene.TreeOrder()) {
             const game_production::Component* comp = t.entity->FindComponent(type);
-            if (comp && comp->Known()) out.emplace_back(t.entity->data.id, t.entity->data.name);
+            // Windows only: a canvas inside another canvas is a part of that window (made with it).
+            if (comp && comp->Known() && IsWindow(host.scene, t.entity->data.id)) out.emplace_back(t.entity->data.id, t.entity->data.name);
         }
         return out;
     }
@@ -461,7 +462,9 @@ private:
     // Moves the selected things (their 位置) so they line up / spread out: one undo entry.
     void LineUp(game_production::SceneViewHost& host, std::optional<UiAlign> align, bool across) {
         edits_.clear();
-        for (const UiNode* n : SelectedNodes(host)) Begin(host, *n);
+        // (One under another selected thing goes with its parent: lined up again by itself, it would
+        // move twice - its parent's shift and its own.)
+        for (const UiNode* n : OutermostSelected(host)) Begin(host, *n);
         if (edits_.size() < 2) {
             edits_.clear();
             return;
@@ -516,6 +519,18 @@ private:
         std::vector<const UiNode*> out;
         for (const UiNode& n : tree_.nodes) {
             if (n.place && n.parent >= 0 && std::find(host.selection.begin(), host.selection.end(), n.entity) != host.selection.end()) out.push_back(&n);
+        }
+        return out;
+    }
+    // The selected things not under another selected thing (they move with their parents).
+    std::vector<const UiNode*> OutermostSelected(const game_production::SceneViewHost& host) const {
+        std::vector<const UiNode*> out;
+        for (const UiNode* n : SelectedNodes(host)) {
+            bool parentSelected = false;
+            for (int k = n->parent; k >= 0 && !parentSelected; k = tree_.nodes[static_cast<size_t>(k)].parent) {
+                parentSelected = std::find(host.selection.begin(), host.selection.end(), tree_.nodes[static_cast<size_t>(k)].entity) != host.selection.end();
+            }
+            if (!parentSelected) out.push_back(n);
         }
         return out;
     }
@@ -617,7 +632,7 @@ private:
         if (drag_ == Drag::None) return;
         const bool editing = drag_ == Drag::Move || drag_ == Drag::Resize || drag_ == Drag::Rotate || drag_ == Drag::Pivot;
         if (editing && HistoryMoved(host)) {
-            edits_.clear();  // undo / redo while dragging: the drag stops (nothing pushed)
+            AbandonDrag();  // undo / redo while dragging: the drag stops (put back; nothing pushed)
             drag_ = Drag::Cancelled;
         }
         if (drag_ == Drag::Marquee) {
@@ -654,14 +669,7 @@ private:
         }
         if (drag_ == Drag::Press && Distance(mouse, press_) >= kClickSlop) {
             // Every selected thing moves (not one under another that moves: it goes with its parent).
-            const std::vector<int> sel(host.selection.begin(), host.selection.end());
-            for (const UiNode* n : SelectedNodes(host)) {
-                bool parentMoves = false;
-                for (int k = n->parent; k >= 0 && !parentMoves; k = tree_.nodes[static_cast<size_t>(k)].parent) {
-                    parentMoves = std::find(sel.begin(), sel.end(), tree_.nodes[static_cast<size_t>(k)].entity) != sel.end();
-                }
-                if (!parentMoves) Begin(host, *n);
-            }
+            for (const UiNode* n : OutermostSelected(host)) Begin(host, *n);
             if (edits_.empty()) {
                 drag_ = Drag::Cancelled;
             } else {
@@ -754,6 +762,7 @@ private:
     struct Edited {
         int entity = 0;
         UiRect start;
+        UiRect last;        // what the drag wrote last (an undo / redo under the drag: AbandonDrag)
         UiBox parentBox;    // the parent's box (in its units: where the anchors are)
         Affine parentToDc;  // the parent's units -> the panel (to turn the mouse's move into 位置)
         Affine selfToDc;    // its own units (turned) -> the panel (handles, the 中心)
@@ -767,8 +776,9 @@ private:
         auto resolve = host.component(n.entity, reflect::TypeOf<UiRect>().name);
         const reflect::EditTarget t = resolve ? resolve() : reflect::EditTarget{};
         if (!t.object) return false;
-        edits_.push_back(Edited{n.entity, *static_cast<const UiRect*>(t.object), tree_.nodes[static_cast<size_t>(n.parent)].box, lastToDc_ * n.toScreen,
-                                lastToDc_ * n.self, n.box, PivotOnPanel(n, lastToDc_), std::move(resolve)});
+        const UiRect& now = *static_cast<const UiRect*>(t.object);
+        edits_.push_back(Edited{n.entity, now, now, tree_.nodes[static_cast<size_t>(n.parent)].box, lastToDc_ * n.toScreen, lastToDc_ * n.self, n.box,
+                                PivotOnPanel(n, lastToDc_), std::move(resolve)});
         history_ = {host.host.History().UndoCount(), host.host.History().RedoCount()};
         return true;
     }
@@ -828,7 +838,7 @@ private:
                     move.y += SnapShift(ey, targetsY_, kSnapReach, &snapY_);
                 }
             }
-            for (const Edited& e : edits_) {
+            for (Edited& e : edits_) {
                 UiRect* t = Target(e);
                 const auto inv = Invert(e.parentToDc);
                 if (!t || !inv) continue;
@@ -842,11 +852,12 @@ private:
                     if (!snapY_) next.position.y += GridShift(box.y, state_.gridStep);
                 }
                 *t = next;
+                e.last = next;
             }
             return;
         }
         if (edits_.empty()) return;
-        const Edited& e = edits_.front();
+        Edited& e = edits_.front();
         UiRect* t = Target(e);
         if (!t) return;
         UiRect next = e.start;
@@ -885,6 +896,24 @@ private:
             next = MovePivot(e.start, e.parentBox, pivot);
         }
         *t = next;
+        e.last = next;
+    }
+
+    // The history moved under a drag (Ctrl+Z while the button is held): each field the drag changed -
+    // and nothing else changed since - goes back to where it started (what the undo / redo set stays).
+    // Nothing is pushed: the scene is as the history says (rule 7).
+    void AbandonDrag() {
+        for (const Edited& e : edits_) {
+            UiRect* t = Target(e);
+            if (!t) continue;  // gone
+            if (t->anchor == e.last.anchor) t->anchor = e.start.anchor;
+            if (t->position == e.last.position) t->position = e.start.position;
+            if (t->size == e.last.size) t->size = e.start.size;
+            if (t->rotation == e.last.rotation) t->rotation = e.start.rotation;
+            if (t->pivot == e.last.pivot) t->pivot = e.start.pivot;
+        }
+        edits_.clear();
+        log::Info("ドラッグ中に元に戻す / やり直しがあったので、ドラッグをやめました");
     }
 
     void End(game_production::SceneViewHost& host) {

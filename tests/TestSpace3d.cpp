@@ -361,6 +361,12 @@ RM_TEST(Gizmo_DragMovesRotatesScales) {
         CHECK(c && std::abs(c->degrees - 90) < 0.5f && c->axis == 2);
         const Transform t = gizmo::Apply({}, Mat4{}, Mat4{}, *c, gizmo::Space::World, {});
         CHECK(NearM(RotationMatrix(t.rotation), AxisAngle({0, 0, 1}, c->degrees)));
+        // Under a mirrored parent (scale -1 on x): it still turns the ring's way in the world.
+        Transform mirror;
+        mirror.scale = {-1, 1, 1};
+        const Mat4 p = LocalMatrix(mirror);
+        const Transform m = gizmo::Apply({}, p, p, *c, gizmo::Space::World, {});
+        CHECK(NearM(p * RotationMatrix(m.rotation), AxisAngle({0, 0, 1}, c->degrees) * p));
         const auto s15 = gizmo::Update(*drag, s, {400 + r + drag->tangent.x * 20, 300 - r + drag->tangent.y * 20}, steps);
         CHECK(s15 && std::abs(s15->degrees - 15) < 1e-3f);  // 12.7 degrees -> 15
     }

@@ -1033,12 +1033,14 @@ private:
         playScenes_ = GameScenes(sceneList_, AssetRef{slot_.guid});
         ScriptWorld& world = scripts_.World();
         world.sceneNames.clear();
+        world.sceneIds.clear();
         world.sceneIndex = -1;
         world.sceneAsked = -1;
         world.quitAsked = false;
         scripts_.StartInput();
         for (size_t i = 0; i < playScenes_.size(); ++i) {
             world.sceneNames.push_back(SceneTitle(playScenes_[i]));
+            world.sceneIds.push_back(playScenes_[i].guid);
             if (playScenes_[i] == AssetRef{slot_.guid}) world.sceneIndex = static_cast<int>(i);
         }
         scripts_.World().actions = &settings_.input;  // (edited while playing: read as it is each frame)

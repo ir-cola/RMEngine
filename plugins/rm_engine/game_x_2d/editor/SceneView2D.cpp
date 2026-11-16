@@ -135,13 +135,7 @@ class SceneView2D final : public game_production::SceneView {
 public:
     void Draw(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) override {
         if (r.w < 8 || r.h < 8) return;
-        // The GPU's devices were made again (platform::Gfx::Generation): Direct2D's things go - the
-        // renderer's brush and effect, the images' bitmaps (read again when needed).
-        if (const uint64_t now = host.host.Graphics().Generation(); now != generation_) {
-            generation_ = now;
-            renderer_ = {};
-            images_.clear();
-        }
+        DropOldGpuThings(host);
         Begin(c, host);
         if (host.game) {  // the game view: only the picture, through the game's camera
             DrawGame(c, r, host);
@@ -164,6 +158,7 @@ public:
     // 最初のカメラ when it is one, else the first active one in the 階層. Nothing without one.
     void DrawLayer(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) override {
         if (r.w < 8 || r.h < 8) return;
+        DropOldGpuThings(host);  // (a 3D game's 2D layer is drawn only here)
         Begin(c, host);
         const Placed* cam = nullptr;
         auto usable = [](const Placed& p) { return p.camera && p.camera->overlay && p.active; };
@@ -178,6 +173,16 @@ public:
         c.P().PushClip(at);
         Render(c, at, host, ViewOf(*cam->camera, cam->world, at.h), Color{0, 0, 0, 0});
         c.P().PopClip();
+    }
+
+    // The GPU's devices were made again (platform::Gfx::Generation): Direct2D's things go - the
+    // renderer's brush and effect, the images' bitmaps (read again when needed).
+    void DropOldGpuThings(game_production::SceneViewHost& host) {
+        if (const uint64_t now = host.host.Graphics().Generation(); now != generation_) {
+            generation_ = now;
+            renderer_ = {};
+            images_.clear();
+        }
     }
 
     void LoadState(const json::Value& s) override {

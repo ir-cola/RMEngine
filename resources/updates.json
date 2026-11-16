@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "全体を調べ直して 31 個の不具合を直した (名前の大文字だけを変えるとアセットの ID が変わる・Debug のエンジンから書き出したゲームがスクリプトを読めない・Play の最初のフレームでキーが押される・参照の一覧で Enter を押すと (なし) になる など)",
+          "en": "Reviewed the whole engine and fixed 31 bugs (renaming only a name's case changed an asset's id, a game exported from a Debug engine could not load its scripts, keys counted as pressed on Play's first frame, Enter in a reference list set it to (none), and more)"
+        },
+        {
           "ja": "ゲーム UI のボタン: スクリプトなしで押したときの動作 (ウィンドウを出す・隠す・切り替える・戻る・シーンの切り替え・変数・音・ゲームを終わる)・キーやパッドで移る先を決める。インスペクターは種類に要る欄だけを出す",
           "en": "Game UI buttons: click actions without scripts (show, hide, switch or go back to windows, switch the scene, change a variable, play a sound, quit) and where the keys / a pad go next. The inspector shows only the fields each kind needs"
         },

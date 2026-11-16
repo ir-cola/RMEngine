@@ -411,7 +411,13 @@ Transform Apply(const Transform& start, const Mat4& parentWorld, const Mat4& sta
             const Vec3 worldAxis = own ? AxesOf(startWorld, Tool::Rotate, space)[c.axis] : Normalize(c.worldAxis);
             const Vec3 axis = Normalize(TransformDirection(*toParent, worldAxis));
             if (Length(axis) == 0) break;
-            t.rotation = EulerFromRotation(AxisAngle(axis, c.degrees) * RotationMatrix(start.rotation), hint);
+            // A mirrored parent (a scale of -1 on one axis: a character turned round so) turns the parent's
+            // space the other way round: there the turn is the other way, to be this way in the world.
+            const float(&m)[4][4] = parentWorld.m;
+            const float det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+                              m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+            const float degrees = det < 0 ? -c.degrees : c.degrees;
+            t.rotation = EulerFromRotation(AxisAngle(axis, degrees) * RotationMatrix(start.rotation), hint);
             placeAt(TransformDirection(AxisAngle(worldAxis, c.degrees), fromPivot));
             break;
         }
