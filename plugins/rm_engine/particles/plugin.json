@@ -4,5 +4,6 @@
   "name": "particles",
   "displayName": "パーティクル",
   "version": 1,
+  "software": ["game"],
   "requires": []
 }

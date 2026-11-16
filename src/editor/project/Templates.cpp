@@ -310,6 +310,20 @@ std::vector<SoftwareGroup> GroupPluginsBySoftware(const TemplateTree& tree, cons
             AppendUnique(it->plugins, m.id);
         }
     }
+    // A connector goes where everything it joins is (2026-11-17 on screen: ゲーム制作 × パーティクル showed
+    // under 共通). Again until none moves: a connector may need another connector ("パーティクル × 物理").
+    for (bool moved = true; moved;) {
+        moved = false;
+        for (const PluginManifest& m : available) {
+            if (!m.connectorFor) continue;
+            for (SoftwareGroup& g : groups) {
+                auto in = [&](const PluginId& id) { return std::find(g.plugins.begin(), g.plugins.end(), id) != g.plugins.end(); };
+                if (in(m.id) || !std::all_of(m.requirements.begin(), m.requirements.end(), in)) continue;
+                g.plugins.push_back(m.id);
+                moved = true;
+            }
+        }
+    }
     std::erase_if(groups, [](const SoftwareGroup& g) { return g.plugins.empty(); });
     return groups;
 }

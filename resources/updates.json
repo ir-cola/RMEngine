@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "Hub の「ソフトで絞る」で、パーティクルとそのつなぎ (ゲーム制作 × パーティクル など) が「共通」でなく「ゲーム」に出るように",
+          "en": "In the Hub's Filter by software, Particles and its connectors (such as Game production × Particles) now show under Game instead of Shared"
+        },
+        {
           "ja": "長いメニュー (部品を足す一覧など) がウィンドウに入りきらないとき、流して選べるように。パーティクルのタブのメニューが隠れたり切れたりしないように",
           "en": "Long menus (such as Add Part) scroll when they do not fit the window. The particles tab's menus are no longer hidden or cut off"
         },

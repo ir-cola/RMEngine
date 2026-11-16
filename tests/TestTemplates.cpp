@@ -264,6 +264,23 @@ RM_TEST(Template_SoftwareGroups) {
     CHECK(!Has(groups[0].plugins, "theme_colors") && !Has(groups[0].plugins, "paint_brushes"));
     CHECK(groups[1].id == "illust" && groups[1].name == "illust" && (groups[1].plugins == std::vector<PluginId>{Id("paint_brushes")}));
 
+    // A connector no template needs: in the software of everything it joins (a connector of a connector
+    // too, listed before it). Joining two softwares' plugins: in neither.
+    PluginManifest sparks = Manifest("sparks");
+    sparks.softwares = {"game"};
+    PluginManifest sparksX = Manifest("sparks_x_physics", {Id("game_x_sparks"), Id("game_production"), Id("sparks")});
+    sparksX.connectorFor = Id("game_x_sparks");
+    PluginManifest gameX = Manifest("game_x_sparks", {Id("game_production"), Id("sparks")});
+    gameX.connectorFor = Id("game_production");
+    PluginManifest mixed = Manifest("paint_x_sparks", {Id("paint_brushes"), Id("sparks")});
+    mixed.connectorFor = Id("paint_brushes");
+    for (PluginManifest m : {sparks, sparksX, gameX, mixed}) world.push_back(std::move(m));
+    std::vector<ProjectTemplate> again{BlankTemplate(), Make("game_production", "game", {"game"})};
+    const auto joined = GroupPluginsBySoftware(BuildTemplateTree(std::move(again)), world);
+    CHECK(joined.size() == 2 && joined[0].id == "game");
+    for (const char* n : {"sparks", "game_x_sparks", "sparks_x_physics"}) CHECK(Has(joined[0].plugins, n));
+    CHECK(!Has(joined[0].plugins, "paint_x_sparks") && !Has(joined[1].plugins, "paint_x_sparks"));
+
     // plugin.json's "software": an array of ids.
     std::string err;
     auto m = ParsePluginManifest(Parse(R"({"author": "rm_engine", "name": "paint_brushes", "software": ["illust", "game"]})"), &err);
