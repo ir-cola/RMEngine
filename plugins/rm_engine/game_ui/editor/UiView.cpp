@@ -204,7 +204,8 @@ private:
     // --- The second row: the canvas being made; for one selected thing its anchor and its order ------
     static std::optional<Rect> Row2(const Rect& r) {
         if (r.w < 640 || r.h < 2 * kBarH + 60) return std::nullopt;
-        return Rect{r.x + 8, r.y + 6 + kBarH, 624, kBarH - 4};
+        // (as wide as its buttons reach - the 道's 点を足す / 点を消す too: a click on them is not the view's)
+        return Rect{r.x + 8, r.y + 6 + kBarH, std::min(824.f, r.w - 16), kBarH - 4};
     }
 
     // The canvases of the scene (switched on or not), in the scene's order.
@@ -1195,7 +1196,7 @@ private:
         ts.v = ui::VAlign::Bottom;
         ts.wrap = true;
         c.P().Text(r.Inset(10, 8, 10, 6),
-                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く   道の点 (黄色): ドラッグで動かす (回す中心と重なったら Shift で中心)"),
+                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く   道の点 (緑): ドラッグで動かす (回す中心と重なったら Shift で中心)"),
                    ts);
         if (tree_.nodes.empty()) {
             ui::TextStyle hint = ts;

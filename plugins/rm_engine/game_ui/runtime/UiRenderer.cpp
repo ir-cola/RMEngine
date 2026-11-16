@@ -513,6 +513,21 @@ void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::
             fx->SetInput(0, nullptr);
         }
     }
+    if (st.glow.enabled) {
+        Color c = Rainbowed(st.glow.color, RainbowFor(n, &UiRainbow::glow));
+        c.a *= n.alpha;
+        if (ID2D1Effect* fx = Effect(glow_, CLSID_D2D1Shadow); fx && c.a > 0) {
+            // A blurred silhouette of its colour, its light added to what is under it - under its body, so
+            // it shines round it (on top, it would whiten the body itself: 2026-11-17 on screen).
+            fx->SetInput(0, list.Get());
+            fx->SetValue(D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, std::max(st.glow.radius, 0.f) * k * 0.5f);
+            fx->SetValue(D2D1_SHADOW_PROP_COLOR, Vector(c));
+            Microsoft::WRL::ComPtr<ID2D1Image> out;
+            fx->GetOutput(&out);
+            dc_->DrawImage(out.Get(), nullptr, nullptr, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_PLUS);
+            fx->SetInput(0, nullptr);
+        }
+    }
     if (st.blur.enabled && st.blur.radius > 0) {
         if (ID2D1Effect* fx = Effect(blur_, CLSID_D2D1GaussianBlur)) {
             fx->SetInput(0, list.Get());
@@ -526,20 +541,6 @@ void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::
         }
     } else {
         dc_->DrawImage(list.Get());
-    }
-    if (st.glow.enabled) {
-        Color c = Rainbowed(st.glow.color, RainbowFor(n, &UiRainbow::glow));
-        c.a *= n.alpha;
-        if (ID2D1Effect* fx = Effect(glow_, CLSID_D2D1Shadow); fx && c.a > 0) {
-            // A blurred silhouette of its colour, its light added to what is under it.
-            fx->SetInput(0, list.Get());
-            fx->SetValue(D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, std::max(st.glow.radius, 0.f) * k * 0.5f);
-            fx->SetValue(D2D1_SHADOW_PROP_COLOR, Vector(c));
-            Microsoft::WRL::ComPtr<ID2D1Image> out;
-            fx->GetOutput(&out);
-            dc_->DrawImage(out.Get(), nullptr, nullptr, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_PLUS);
-            fx->SetInput(0, nullptr);
-        }
     }
     dc_->SetTransform(old);
     keep_.clear();
@@ -620,7 +621,8 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         UiPaint paint = PaintOf(look);
         paint.tint.a *= n.alpha;  // (出る・消える動き / FadeTo: everything it draws)
         if (const auto rb = RainbowFor(n, &UiRainbow::body)) paint.tint = Multiply(paint.tint, *rb);
-        // The order (spec §3-4): 影 - its body (背景, 画像, バー, 文字; ぼかし) - 光 - 立体 - 枠 - the keys' choice.
+        // The order: 影 - 発光 - its body (背景, 画像, バー, 文字; ぼかし) - 立体 - 枠 - the keys' choice (spec §3-4 puts
+        // the glow over the body: it whitened the body itself - 2026-11-17 on screen).
         const UiStyle* st = n.style;
         if (st && (st->shadow.enabled || st->glow.enabled || (st->blur.enabled && st->blur.radius > 0))) {
             DrawWithEffects(n, full, gfx, asset, paint);

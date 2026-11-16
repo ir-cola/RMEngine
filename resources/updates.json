@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI: 発光を付けるとボタンが白く飛んでいたのを直した (光は中身の下に)。UI タブの「点を足す」「点を消す」が押せるように",
+          "en": "Game UI: the glow no longer whitens the button itself (the light goes under it). The UI tab's Add / Remove point buttons can be clicked"
+        },
+        {
           "ja": "スクリプトの Game::Quit (ゲームを終わる)。ゲーム UI の動画の音にゲームの設定の音量が掛かり、⏸ で止まる。UI タブで道の点が回す中心と重なっても掴める",
           "en": "Scripts' Game::Quit (end the game). Game UI videos follow the game settings' volume and stop at pause. In the UI tab a path point on the pivot can be grabbed"
         },
