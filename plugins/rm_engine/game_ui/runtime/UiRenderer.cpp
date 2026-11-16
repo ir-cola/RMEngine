@@ -18,7 +18,8 @@ namespace {
 D2D1_COLOR_F ToD2D(Color c) { return {c.r, c.g, c.b, c.a}; }
 D2D1_MATRIX_3X2_F ToD2D(const Affine& m) { return D2D1::Matrix3x2F(m.a, m.b, m.c, m.d, m.tx, m.ty); }
 D2D1_RECT_F ToD2D(const UiBox& b) { return D2D1::RectF(b.x, b.y, b.x + b.w, b.y + b.h); }
-bool IsWhite(Color c) { return c.r == 1.f && c.g == 1.f && c.b == 1.f; }
+// Only its transparency changes the picture (drawn as it is, faded).
+bool OnlyFades(const UiPaint& p) { return p.tint.r == 1.f && p.tint.g == 1.f && p.tint.b == 1.f && p.amount <= 0; }
 
 }  // namespace
 
@@ -144,19 +145,24 @@ IDWriteTextFormat* UiRenderer::Format(platform::Gfx& gfx, const std::wstring& fa
     return formats_.emplace(key, fmt).first->second.Get();
 }
 
-void UiRenderer::DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const UiBox& dst, const Affine& full, Color color) {
+void UiRenderer::DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const UiBox& dst, const Affine& full, const UiPaint& paint) {
     const float sw = src.right - src.left, sh = src.bottom - src.top;
     if (sw <= 0 || sh <= 0 || dst.w <= 0 || dst.h <= 0) return;
     D2D1_MATRIX_3X2_F old;
     dc_->GetTransform(&old);
-    if (IsWhite(color)) {
+    const Color color = paint.tint;
+    if (OnlyFades(paint)) {
         dc_->SetTransform(ToD2D(full) * old);
         dc_->DrawBitmap(bitmap, ToD2D(dst), color.a, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, &src, nullptr);
     } else {
         if (!tint_ && FAILED(dc_->CreateEffect(CLSID_D2D1ColorMatrix, &tint_))) tint_.Reset();
         if (!tint_) return;
-        // Each colour multiplied by the tint (rows: the input's r g b a and 1; columns: the output's).
-        const D2D1_MATRIX_5X4_F m = D2D1::Matrix5x4F(color.r, 0, 0, 0, 0, color.g, 0, 0, 0, 0, color.b, 0, 0, 0, 0, color.a, 0, 0, 0, 0);
+        // Each colour multiplied by the tint, then moved toward the replacing colour by its amount k (rows:
+        // the input's r g b a and 1; columns: the output's). The effect works on colours not multiplied by
+        // their alpha, so a replaced colour keeps the picture's shape.
+        const float k = std::clamp(paint.amount, 0.f, 1.f), keep = 1 - k;
+        const D2D1_MATRIX_5X4_F m = D2D1::Matrix5x4F(color.r * keep, 0, 0, 0, 0, color.g * keep, 0, 0, 0, 0, color.b * keep, 0, 0, 0, 0, color.a,
+                                                     paint.replace.r * k, paint.replace.g * k, paint.replace.b * k, 0);
         tint_->SetInput(0, bitmap);
         tint_->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
         Microsoft::WRL::ComPtr<ID2D1Image> out;
@@ -171,10 +177,11 @@ void UiRenderer::DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const Ui
     dc_->SetTransform(old);
 }
 
-void UiRenderer::DrawImage(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, Color tint) {
+void UiRenderer::DrawImage(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint) {
     const UiImage& img = *n.image;
-    const Color color = Multiply(img.color, tint);
-    const Picture* p = PictureOf(gfx, img.image, asset);
+    const Color color = Paint(img.color, paint);  // (a box of colour)
+    const UiPaint picture{Multiply(img.color, paint.tint), paint.replace, paint.amount};
+    const Picture* p = PictureOf(gfx, n.button ? ButtonImage(*n.button, img.image) : img.image, asset);
     if (!p) {
         D2D1_MATRIX_3X2_F old;
         dc_->GetTransform(&old);
@@ -187,7 +194,7 @@ void UiRenderer::DrawImage(const UiNode& n, const Affine& full, platform::Gfx& g
     const float kx = p->width ? dip.width / static_cast<float>(p->width) : 1.f, ky = p->height ? dip.height / static_cast<float>(p->height) : 1.f;
     const Vec2 tl = img.sliceTopLeft, br = img.sliceBottomRight;
     if (tl.x <= 0 && tl.y <= 0 && br.x <= 0 && br.y <= 0) {
-        DrawPiece(p->bitmap.Get(), D2D1::RectF(0, 0, dip.width, dip.height), n.box, full, color);
+        DrawPiece(p->bitmap.Get(), D2D1::RectF(0, 0, dip.width, dip.height), n.box, full, picture);
         return;
     }
     // 9 スライス: the borders keep their size (縁の大きさ), shrunk together when the box is smaller.
@@ -209,7 +216,7 @@ void UiRenderer::DrawImage(const UiNode& n, const Affine& full, platform::Gfx& g
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 3; ++col) {
             DrawPiece(p->bitmap.Get(), D2D1::RectF(sx[col], sy[row], sx[col + 1], sy[row + 1]),
-                      {dx[col], dy[row], dx[col + 1] - dx[col], dy[row + 1] - dy[row]}, full, color);
+                      {dx[col], dy[row], dx[col + 1] - dx[col], dy[row + 1] - dy[row]}, full, picture);
         }
     }
 }
@@ -251,6 +258,19 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
     dc_->SetTransform(old);
 }
 
+void UiRenderer::DrawOutline(const UiNode& n, const Affine& full, const UiStroke& stroke) {
+    if (stroke.width <= 0 || stroke.color.a <= 0) return;
+    // Round the box, outside it (the line's middle half its width out).
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(ToD2D(full) * old);
+    const float h = stroke.width / 2;
+    if (ID2D1SolidColorBrush* b = Brush(stroke.color)) {
+        dc_->DrawRectangle(D2D1::RectF(n.box.x - h, n.box.y - h, n.box.Right() + h, n.box.Bottom() + h), b, stroke.width);
+    }
+    dc_->SetTransform(old);
+}
+
 void UiRenderer::DrawFocus(const UiNode& n, const Affine& full) {
     // The button chosen by the keys / a pad: a frame round it, light outside and dark inside, so it shows
     // on any colour of button and of what is behind it (the colours of the frame are not the button's).
@@ -274,16 +294,18 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
     dc->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
     for (const UiNode& n : tree.nodes) {
         const Affine full = toDc * n.self;
-        const Color tint = n.button ? ButtonColor(*n.button) : Color{1, 1, 1, 1};
-        if (n.image) DrawImage(n, full, gfx, asset, tint);
+        const UiButtonLook look = n.button ? ButtonNow(*n.button) : UiButtonLook{};
+        const UiPaint paint = PaintOf(look);
+        if (n.image) DrawImage(n, full, gfx, asset, paint);
         if (n.bar) {
             D2D1_MATRIX_3X2_F old;
             dc->GetTransform(&old);
             dc->SetTransform(ToD2D(full) * old);
-            if (ID2D1SolidColorBrush* b = Brush(Multiply(n.bar->back, tint))) dc->FillRectangle(ToD2D(n.box), b);
-            if (ID2D1SolidColorBrush* b = Brush(Multiply(n.bar->fill, tint))) dc->FillRectangle(ToD2D(BarFill(*n.bar, n.box)), b);
+            if (ID2D1SolidColorBrush* b = Brush(Paint(n.bar->back, paint))) dc->FillRectangle(ToD2D(n.box), b);
+            if (ID2D1SolidColorBrush* b = Brush(Paint(n.bar->fill, paint))) dc->FillRectangle(ToD2D(BarFill(*n.bar, n.box)), b);
             dc->SetTransform(old);
         }
+        if (n.button) DrawOutline(n, full, ButtonOutline(look));
         if (n.text) DrawText(n, full, gfx, asset);
         if (n.button && n.button->focused && n.button->interactable) DrawFocus(n, full);
     }

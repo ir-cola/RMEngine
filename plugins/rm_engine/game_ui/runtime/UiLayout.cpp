@@ -520,23 +520,111 @@ int NextButton(const UiTree& tree, int canvas, int current, int dx, int dy) { re
 
 // --- How a button looks --------------------------------------------------------------------------
 
-Color ButtonColor(const UiButton& b) {
-    if (!b.interactable) return b.disabled;
-    switch (static_cast<UiButtonState>(b.state)) {
-        case UiButtonState::Pressed: return b.pressed;
-        case UiButtonState::Hover: return b.hover;
-        case UiButtonState::Disabled: return b.disabled;
-        default: return b.focused ? b.hover : b.normal;
+namespace {
+
+// The state it looks as: not pressable is 使えない, focused (the keys' choice) looks as 乗った.
+UiButtonState LooksAs(const UiButton& b) {
+    if (!b.interactable) return UiButtonState::Disabled;
+    const auto s = static_cast<UiButtonState>(b.state);
+    if (s == UiButtonState::Normal && b.focused) return UiButtonState::Hover;
+    return s;
+}
+
+}  // namespace
+
+UiButtonLook ButtonTarget(const UiButton& b) {
+    const UiButtonState s = LooksAs(b);
+    Color color = b.normal;
+    float outline = 0;
+    Color outlineColor{1, 1, 1, 1};
+    UiButtonLook l;
+    switch (s) {
+        case UiButtonState::Hover:
+            color = b.hover, l.scale = b.hoverScale, outline = b.hoverOutline, outlineColor = b.hoverOutlineColor;
+            break;
+        case UiButtonState::Pressed:
+            color = b.pressed, l.scale = b.pressedScale, outline = b.pressedOutline, outlineColor = b.pressedOutlineColor;
+            break;
+        case UiButtonState::Disabled: color = b.disabled; break;
+        default: break;
+    }
+    if (b.colorMode == UiButtonColorMode::Replace && s != UiButtonState::Normal) {
+        // The state's colour itself (its r g b); its transparency still multiplies.
+        l.tint = b.normal.Alpha(color.a);
+        l.replace = color.Alpha(1);
+        l.replaceAmount = 1;
+    } else {
+        l.tint = color;
+    }
+    if (outline > 0) {
+        l.outline = outline;
+        l.outlineColor = outlineColor;
+        l.outlineAmount = 1;
+    }
+    return l;
+}
+
+float EaseAmount(float dt, float seconds) {
+    if (!(seconds > 1e-4f)) return 1;
+    if (!(dt > 0)) return 0;
+    return 1 - std::exp(-dt / seconds);
+}
+
+UiButtonLook EaseLook(const UiButtonLook& now, const UiButtonLook& target, float amount) {
+    UiButtonLook goal = target;
+    // A state with no outline: the last one fades (never thinner, never toward white). One not seen yet
+    // (its amount 0): the new one's width and colour at once - only its amount grows.
+    if (goal.outlineAmount <= 0) goal.outline = now.outline, goal.outlineColor = now.outlineColor;
+    if (goal.replaceAmount <= 0) goal.replace = now.replace;
+    UiButtonLook from = now;
+    if (from.outlineAmount <= 0) from.outline = goal.outline, from.outlineColor = goal.outlineColor;
+    if (from.replaceAmount <= 0) from.replace = goal.replace;
+    const float a = std::clamp(amount, 0.f, 1.f);
+    auto go = [a](float c, float g) {
+        const float v = c + (g - c) * a;
+        return std::abs(g - v) < 1e-4f ? g : v;
+    };
+    auto goColor = [&](Color c, Color g) { return Color{go(c.r, g.r), go(c.g, g.g), go(c.b, g.b), go(c.a, g.a)}; };
+    UiButtonLook out;
+    out.tint = goColor(from.tint, goal.tint);
+    out.replace = goColor(from.replace, goal.replace);
+    out.replaceAmount = go(from.replaceAmount, goal.replaceAmount);
+    out.scale = go(from.scale, goal.scale);
+    out.outline = go(from.outline, goal.outline);
+    out.outlineColor = goColor(from.outlineColor, goal.outlineColor);
+    out.outlineAmount = go(from.outlineAmount, goal.outlineAmount);
+    return out;
+}
+
+UiButtonLook ButtonNow(const UiButton& b) { return b.ready ? b.now : ButtonTarget(b); }
+
+float ButtonScale(const UiButton& b) { return ButtonNow(b).scale; }
+
+const AssetRef& ButtonImage(const UiButton& b, const AssetRef& own) {
+    switch (LooksAs(b)) {
+        case UiButtonState::Pressed:
+            if (!b.pressedImage.Empty()) return b.pressedImage;
+            return b.hoverImage.Empty() ? own : b.hoverImage;
+        case UiButtonState::Hover: return b.hoverImage.Empty() ? own : b.hoverImage;
+        case UiButtonState::Disabled: return b.disabledImage.Empty() ? own : b.disabledImage;
+        default: return own;
     }
 }
 
-float ButtonScale(const UiButton& b) {
-    if (!b.interactable) return 1;
-    switch (static_cast<UiButtonState>(b.state)) {
-        case UiButtonState::Pressed: return b.pressedScale;
-        case UiButtonState::Hover: return b.hoverScale;
-        default: return b.focused ? b.hoverScale : 1.f;
-    }
+UiPaint PaintOf(const UiButtonLook& look) { return {look.tint, look.replace, look.replaceAmount}; }
+
+Color Paint(Color c, const UiPaint& p) {
+    const Color m = Multiply(c, p.tint);
+    if (p.amount <= 0) return m;
+    return Mix(m, p.replace.Alpha(m.a), std::min(p.amount, 1.f));
+}
+
+bool IsPlain(const UiPaint& p) { return p.tint == Color{1, 1, 1, 1} && p.amount <= 0; }
+
+UiStroke ButtonOutline(const UiButtonLook& look, UiStroke own) {
+    const float a = std::clamp(look.outlineAmount, 0.f, 1.f);
+    if (own.width <= 0) return {look.outline, look.outlineColor.Alpha(look.outlineColor.a * a)};
+    return {own.width + (look.outline - own.width) * a, Mix(own.color, look.outlineColor, a)};
 }
 
 Color Multiply(Color a, Color b) { return {a.r * b.r, a.g * b.g, a.b * b.b, a.a * b.a}; }

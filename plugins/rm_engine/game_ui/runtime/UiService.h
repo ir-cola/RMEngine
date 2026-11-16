@@ -10,8 +10,10 @@
 //                  (NextButton); held, they go on stepping. UISubmit presses the chosen button. UICancel
 //                  presses the window's 戻るで押すボタン, or else closes the window opened last and shows
 //                  again what it hid (Show / SwitchTo by a script, or a canvas switched on).
-//   then           every button's state (UiButton::state / focused: not saved) for the drawing, and the
-//                  OnClick hooks for the scripts of the pressed buttons' entities (PlayFrame::hooks)
+//   then           every button's state (UiButton::state / focused: not saved) and its look eased toward
+//                  the state's (UiButton::now: 変わる速さ), for the drawing; the buttons' sounds (乗った /
+//                  押した: whichever service plays sounds - PlayServices::Sounds); then the OnClick hooks
+//                  for the scripts of the pressed buttons' entities (PlayFrame::hooks)
 //
 // The keys and the pad are read only through the game settings' 入力 (game production's actions, a
 // game without them: their standard ones) - never a key or a pad itself: changing the bindings (or
@@ -64,6 +66,7 @@ struct UiFocus {
 // What one frame did.
 struct UiStep {
     std::vector<int> clicked;  // buttons pressed, in order (OnClick)
+    std::vector<int> hovered;  // buttons that became 乗った (or pressed, or chosen) this frame: their 乗ったときの音
     int closed = 0;            // the window 戻る closed (0: none)
 };
 

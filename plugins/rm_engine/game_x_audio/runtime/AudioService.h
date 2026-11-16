@@ -31,7 +31,7 @@ namespace rm::game_x_audio {
 
 inline constexpr char kAudioServiceName[] = "rm_engine.game_x_audio.audio";
 
-class AudioService final : public game_production::PlayService {
+class AudioService final : public game_production::PlayService, public game_production::SoundPlayer {
 public:
     using VoiceId = audio::AudioEngine::VoiceId;
     enum class BusVolume { Master = 0, Music = 1, Effects = 2 };
@@ -44,6 +44,9 @@ public:
     // The scene switched: every 音源 of the scene before stops (with its フェード); its music goes on
     // only when the new scene starts the same sound as its music (the next Frame decides).
     void SceneSwitched() override;
+
+    // The other services' sounds (game UI's buttons): once, on the effects' bus.
+    void PlaySound(const AssetRef& sound, float volume) override { PlayOnce(sound, volume, 1, nullptr); }
 
     // --- What scripts ask (RMAudio.h) ---
     VoiceId PlayOnce(const AssetRef& sound, float volume, float pitch, const Vec3* position);

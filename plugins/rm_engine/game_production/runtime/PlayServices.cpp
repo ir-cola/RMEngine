@@ -13,7 +13,16 @@ void PlayServices::Start(PlayHost host) {
 }
 
 void PlayServices::Frame(const PlayFrame& f) {
-    for (auto& [name, s] : list_) s->Frame(f);
+    PlayFrame mine = f;
+    mine.services = this;
+    for (auto& [name, s] : list_) s->Frame(mine);
+}
+
+SoundPlayer* PlayServices::Sounds() const {
+    for (const auto& [name, s] : list_) {
+        if (auto* p = dynamic_cast<SoundPlayer*>(s.get())) return p;
+    }
+    return nullptr;
 }
 
 void PlayServices::SetPaused(bool paused) {

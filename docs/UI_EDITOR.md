@@ -85,6 +85,7 @@
 - **UI-1b** (2026-11-16。画面は未確認): 補助線 (ほかの物と親の端・真ん中。パネルの上の 6 DIP。`SnapShift`) と格子 (キャンバスの単位の間隔。`GridShift`)。動かすと大きさ (回していない物の動かした辺)。Alt で吸い付かない。テスト `GameUi_Snap_ToTheNearestEdgeOrGrid`
 - **UI-1c** (2026-11-16。画面は未確認): 複数を選ぶ (Shift・Ctrl クリック・空いた所から囲む)・一緒に動かす (親が動く子は除く・補助線は全体の箱で)・揃えの帯 (`AlignShifts` / `DistributeShifts`。テスト `GameUi_AlignAndDistribute`)。ドラッグの編集は `edits_` (何個でも) にして、Undo は 1 回分
 - **UI-1d** (2026-11-16。画面は未確認): 2 段目の帯 (作るキャンバスの一覧・ほかも見る・アンカーの図 `AnchorAt` / `AnchorCell`・一番前へ / 後ろへ)・Ctrl で離すと子に (`Rehomed`: 中心と向きを保つ)・文字のダブルクリックでその場の入力欄・アセットの画像のドロップ。ゲーム制作の `SceneViewHost::editScene` (ビューがシーンの形を変える道: `EditTouching` と同じ 1 回分の Undo) を足した。`OnlyCanvas`。テスト `GameUi_AnchorGrid_RehomeAndOneCanvas`。**これで UI-1 は全部** (画面で試すのはこれから)
+- **UI-2** (2026-11-16。画面は未確認): ボタンに 変わる速さ (秒・既定 0.08)・色の変え方 (掛ける / 置き換える)・乗った / 押したときの縁 (太さと色。既定は仕様 §6-3 の白い 2 DIP)・乗った / 押した / 使えないときの画像・乗った / 押したときの音と大きさ。見た目の「今」(`UiButtonLook`、保存しない) を UI サービスが `EaseLook` (指数・1e-4 で目標に乗せる) で寄せる。色は乗算と置き換えの 2 本 (`UiPaint`、画像は Direct2D の色の行列の 5 行目で置き換え)。縁は「自分の枠」(今は無し → 太さはそのまま薄くなる) と混ぜる (`ButtonOutline`)。音はゲーム制作の `SoundPlayer` (音を鳴らすサービスを、どのプラグインか知らずに `PlayServices::Sounds` で探す。`PlayFrame::services`) を音のプラグインの `AudioService` が引き受ける。順は 音 → OnClick (仕様 §6-6。UI-3 の動作はこの間に入る)。テスト `GameUi_ButtonLook_EasedOutlineAndSounds`・`AudioGame_OtherServicesPlaySounds`
 
 ## 3. 前のエンジンから守ること (仕様書より)
 

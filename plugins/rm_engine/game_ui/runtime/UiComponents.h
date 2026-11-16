@@ -116,6 +116,27 @@ struct UiImage {
 // The state a button is in this frame (written by the UI service while the game plays; not saved).
 enum class UiButtonState : int { Normal = 0, Hover = 1, Pressed = 2, Disabled = 3 };
 
+RM_ENUM(Label="ボタンの色の変え方")
+enum class UiButtonColorMode {
+    RM_ITEM(Label="掛ける") Multiply,
+    RM_ITEM(Label="置き換える") Replace,
+};
+
+// How a button looks now, on its way to its state's look (UiLayout: ButtonTarget / EaseLook). The colours
+// go two ways at once (spec §6-4): multiplied by `tint`, then moved toward `replace` by `replaceAmount` -
+// what is replaced differs (the picture, the bar's back, its fill), so one colour would not do. The
+// outline is the state's, mixed in by `outlineAmount` (0: the thing's own - none yet): a state without
+// one keeps the last width and colour while the amount falls, so it fades and never gets thinner.
+struct UiButtonLook {
+    Color tint{1, 1, 1, 1};
+    Color replace{1, 1, 1, 1};  // (r g b)
+    float replaceAmount = 0;
+    float scale = 1;
+    float outline = 0;
+    Color outlineColor{1, 1, 1, 1};
+    float outlineAmount = 0;
+};
+
 RM_STRUCT(Label="ボタン (UI)")
 struct UiButton {
     RM_PROPERTY(Edit, Label="押せる", Tooltip="外すと薄くなり、押せません") bool interactable = true;
@@ -125,8 +146,26 @@ struct UiButton {
     RM_PROPERTY(Edit, Label="使えないときの色", Min=0, Max=1) Color disabled{0.6f, 0.6f, 0.6f, 0.5f};
     RM_PROPERTY(Edit, Label="乗ったときの大きさ", Tooltip="1 でそのまま (子も一緒に)", Min=0.1, Max=4) float hoverScale = 1.04f;
     RM_PROPERTY(Edit, Label="押したときの大きさ", Min=0.1, Max=4) float pressedScale = 0.96f;
+    RM_PROPERTY(Edit, Label="色の変え方", Tooltip="掛ける: 画像とバーの色に掛けます (暗くするだけで、明るくはできません)。置き換える: 乗った・押した・使えないときは、その色そのものになります")
+    UiButtonColorMode colorMode = UiButtonColorMode::Multiply;
+    RM_PROPERTY(Edit, Label="乗ったときの縁", Tooltip="ボタンの周りの縁の太さ (DIP)。0 なら縁なし", Min=0, Max=32) float hoverOutline = 2;
+    RM_PROPERTY(Edit, Label="乗ったときの縁の色", Min=0, Max=1) Color hoverOutlineColor{1, 1, 1, 0.55f};
+    RM_PROPERTY(Edit, Label="押したときの縁", Tooltip="0 なら縁なし", Min=0, Max=32) float pressedOutline = 2;
+    RM_PROPERTY(Edit, Label="押したときの縁の色", Min=0, Max=1) Color pressedOutlineColor{1, 1, 1, 0.35f};
+    RM_PROPERTY(Edit, Label="乗ったときの画像", Tooltip="同じエンティティの画像をこれに差し替えます。空ならそのまま", AssetKind="image") AssetRef hoverImage;
+    RM_PROPERTY(Edit, Label="押したときの画像", Tooltip="空なら乗ったときの画像", AssetKind="image") AssetRef pressedImage;
+    RM_PROPERTY(Edit, Label="使えないときの画像", Tooltip="空ならそのまま", AssetKind="image") AssetRef disabledImage;
+    RM_PROPERTY(Edit, Label="変わる速さ (秒)", Tooltip="乗った・押したとき、色・大きさ・縁がこの秒でなめらかに変わります (およそ 3 倍の時間で落ち着きます)。0 ですぐ", Min=0, Max=2, Step=0.01)
+    float transition = 0.08f;
+    RM_PROPERTY(Edit, Label="乗ったときの音", Tooltip="マウスが乗ったとき・キーやパッドで選んだときに 1 回鳴ります (音のプラグインがあるとき)", AssetKind="audio") AssetRef hoverSound;
+    RM_PROPERTY(Edit, Label="乗ったときの音の大きさ", Min=0, Max=1) float hoverVolume = 0.8f;
+    RM_PROPERTY(Edit, Label="押したときの音", Tooltip="押したときに鳴ります (スクリプトの OnClick より先)", AssetKind="audio") AssetRef clickSound;
+    RM_PROPERTY(Edit, Label="押したときの音の大きさ", Min=0, Max=1) float clickVolume = 1;
     RM_TRANSIENT() int state = 0;         // UiButtonState, this frame (the UI service)
     RM_TRANSIENT() bool focused = false;  // chosen by the keys / a pad (looks as Hover)
+    RM_TRANSIENT() UiButtonLook now;      // how it looks now (the UI service eases it toward its state's look)
+    RM_TRANSIENT() bool ready = false;    // `now` is set (else it looks as its state: the editor, the first frame)
+    RM_TRANSIENT() bool hot = false;      // 乗った or pressed last frame (its sound once, when it becomes so)
 };
 
 RM_ENUM(Label="伸びる向き")

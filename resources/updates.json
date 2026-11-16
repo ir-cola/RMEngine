@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI のボタン: 乗った・押したときに色・大きさ・縁がなめらかに変わる (秒で決める)・縁・色の置き換え・画像の差し替え・乗ったときと押したときの音",
+          "en": "Game UI buttons: color, size and outline change smoothly when hovered or pressed (set in seconds), outlines, replacing colors, swapping images, hover and click sounds"
+        },
+        {
           "ja": "UI タブ: 作るキャンバスを選ぶ (そのキャンバスだけ / ほかも重ねて)・アンカーを図から選ぶ・一番前へ / 後ろへ・Ctrl で離すと子にする・文字をダブルクリックでその場で打つ・アセットの画像をドロップで置く",
           "en": "UI tab: choose the canvas to make (alone or with the others), pick the anchor from pictures, to front / back, let go with Ctrl to make a child, double click a text to type it in place, drop an image from Assets to place it"
         },

@@ -163,6 +163,15 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
                                                                                     : UiButtonState::Normal;
         b->state = static_cast<int>(s);
         b->focused = state.keyboard && state.focus == n.entity && n.canvas == window;
+        // Its look eased toward the state's (the first frame: as it is).
+        const UiButtonLook target = ButtonTarget(*b);
+        b->now = b->ready ? EaseLook(b->now, target, EaseAmount(dt, b->transition)) : target;
+        // 乗った (the mouse, the keys' choice) or pressed: its sound once when it becomes so - pressed on it
+        // and let go is one sound, not two. Not on the first frame (the choice shown from the start).
+        const bool hot = b->interactable && (s == UiButtonState::Hover || s == UiButtonState::Pressed || b->focused);
+        if (hot && !b->hot && b->ready) step.hovered.push_back(n.entity);
+        b->hot = hot;
+        b->ready = true;
     }
     return step;
 }
@@ -190,6 +199,17 @@ void UiService::Frame(const game_production::PlayFrame& f) {
     const bool wentDown = f.pointerWentDown || (down && !before);
     const bool wentUp = f.pointerWentUp || (!down && before);
     const UiStep step = StepUi(f.scene, tree, f.pointer, down, wentDown, wentUp, actions, f.input, f.inputBefore, f.dt, state_);
+    // The sounds first (spec §6-6: the sound, then what it does, then the scripts' OnClick).
+    if (game_production::SoundPlayer* sounds = f.services ? f.services->Sounds() : nullptr) {
+        auto play = [&](int id, bool click) {
+            const UiButton* b = MutableButton(f.scene, id);
+            if (!b) return;
+            const AssetRef& sound = click ? b->clickSound : b->hoverSound;
+            if (!sound.Empty()) sounds->PlaySound(sound, click ? b->clickVolume : b->hoverVolume);
+        };
+        for (const int id : step.hovered) play(id, false);
+        for (const int id : step.clicked) play(id, true);
+    }
     for (const int id : step.clicked) {
         if (f.hooks) f.hooks->push_back({id, RM_HOOK_CLICK, 0});
         const game_production::SceneEntity* e = f.scene.Find(id);

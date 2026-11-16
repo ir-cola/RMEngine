@@ -10,8 +10,9 @@
 //   文字  DirectWrite: a font of Windows by name, or a font file of the game (an asset: .ttf / .otf,
 //         read from memory into a font collection of its own); its shadow, outline (drawn round it) and itself
 //
-// A button tints the picture and the bar of its own entity (ButtonColor) and scales them with their
-// children (in the layout).
+// A button paints the picture and the bar of its own entity (its look now: ButtonNow - multiplied, and
+// moved toward a replacing colour by a colour matrix), swaps its picture by state (ButtonImage), draws
+// its outline round its box (ButtonOutline) and scales them with their children (in the layout).
 
 #include "base/Ref.h"
 #include "platform/Gfx.h"
@@ -67,8 +68,9 @@ private:
     const Picture* PictureOf(platform::Gfx& gfx, const AssetRef& ref, const AssetReader& asset);
     const Font* FontOf(platform::Gfx& gfx, const AssetRef& ref, const AssetReader& asset);
     IDWriteTextFormat* Format(platform::Gfx& gfx, const std::wstring& family, IDWriteFontCollection* collection, float size, bool bold);
-    void DrawImage(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, Color tint);
-    void DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const UiBox& dst, const Affine& full, Color color);
+    void DrawImage(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint);
+    void DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const UiBox& dst, const Affine& full, const UiPaint& paint);
+    void DrawOutline(const UiNode& n, const Affine& full, const UiStroke& stroke);
     void DrawText(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset);
     void DrawFocus(const UiNode& n, const Affine& full);
 

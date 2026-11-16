@@ -353,12 +353,12 @@ RM_TEST(GameUi_Buttons_StatesAndClicks) {
     // Its look: the colour and the size by state; focused looks as 乗った.
     button->interactable = true;
     button->state = static_cast<int>(UiButtonState::Pressed);
-    CHECK(ButtonColor(*button) == button->pressed && Near(ButtonScale(*button), button->pressedScale));
+    CHECK(ButtonTarget(*button).tint == button->pressed && Near(ButtonScale(*button), button->pressedScale));
     button->state = static_cast<int>(UiButtonState::Normal);
     button->focused = true;
-    CHECK(ButtonColor(*button) == button->hover && Near(ButtonScale(*button), button->hoverScale));
+    CHECK(ButtonTarget(*button).tint == button->hover && Near(ButtonScale(*button), button->hoverScale));
     button->interactable = false;
-    CHECK(ButtonColor(*button) == button->disabled && Near(ButtonScale(*button), 1));
+    CHECK(ButtonTarget(*button).tint == button->disabled && Near(ButtonScale(*button), 1));
     // A bar's filled part.
     UiBar bar;
     bar.value = 0.25f;
@@ -620,4 +620,86 @@ RM_TEST(GameUi_QuickClick_InOneFrame) {
     // The button looks normal afterwards (not left pressed).
     const auto* button = static_cast<const UiButton*>(s.Find(b)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get());
     CHECK(button->state != static_cast<int>(UiButtonState::Pressed));
+}
+
+RM_TEST(GameUi_ButtonLook_EasedOutlineAndSounds) {
+    UiButton b;
+    // The ease does not depend on the frame rate: ten frames of 0.01 s = one of 0.1 s.
+    UiButtonLook a, c;
+    b.state = static_cast<int>(UiButtonState::Hover);
+    const UiButtonLook hover = ButtonTarget(b);
+    CHECK(Near(hover.scale, b.hoverScale) && Near(hover.outlineAmount, 1) && Near(hover.outline, b.hoverOutline));
+    for (int i = 0; i < 10; ++i) a = EaseLook(a, hover, EaseAmount(0.01f, 0.08f));
+    c = EaseLook(c, hover, EaseAmount(0.1f, 0.08f));
+    CHECK(Near(a.scale, c.scale, 1e-4f) && Near(a.outlineAmount, c.outlineAmount, 1e-4f) && Near(a.tint.r, c.tint.r, 1e-4f));
+    CHECK(a.scale > 1 && a.scale < b.hoverScale);
+    // 0 s: at once; near enough: on the target (no hair-thin line left).
+    CHECK(EaseLook({}, hover, EaseAmount(0.016f, 0)).scale == hover.scale);
+    UiButtonLook almost = hover;
+    almost.outlineAmount = 0.99995f;
+    CHECK(EaseLook(almost, hover, 0.5f).outlineAmount == 1.f);
+    // The outline seen at once at its own width (only its amount grows) ...
+    CHECK(Near(a.outline, b.hoverOutline));
+    // ... and back to normal it fades out, never thinner, never toward white.
+    b.hoverOutlineColor = {1, 0, 0, 1};
+    UiButtonLook now = ButtonTarget(b);
+    b.state = static_cast<int>(UiButtonState::Normal);
+    const UiButtonLook normal = ButtonTarget(b);
+    CHECK(normal.outlineAmount == 0);
+    float lastAlpha = 1;
+    for (int i = 0; i < 60; ++i) {  // (about 12 times 変わる速さ: on the target)
+        now = EaseLook(now, normal, EaseAmount(0.016f, 0.08f));
+        const UiStroke s = ButtonOutline(now);
+        CHECK(Near(s.width, b.hoverOutline));
+        CHECK(s.color.r == 1 && s.color.g == 0 && s.color.a <= lastAlpha);
+        lastAlpha = s.color.a;
+    }
+    CHECK(now.outlineAmount == 0 && ButtonOutline(now).color.a == 0);
+    // A thing with its own outline: mixed with it (3 wide: between 3 and the state's 2).
+    now.outlineAmount = 0.5f;
+    CHECK(Near(ButtonOutline(now, {3, {0, 0, 0, 1}}).width, 2.5f));
+
+    // 掛ける cannot make it lighter; 置き換える gives the colour itself.
+    b.state = static_cast<int>(UiButtonState::Hover);
+    b.hover = {0.2f, 0.9f, 1, 1};
+    const Color red{1, 0, 0, 1};
+    CHECK(Paint(red, PaintOf(ButtonTarget(b))) == Color(0.2f, 0, 0, 1));
+    b.colorMode = UiButtonColorMode::Replace;
+    const Color replaced = Paint(red, PaintOf(ButtonTarget(b)));
+    CHECK(Near(replaced.r, 0.2f) && Near(replaced.g, 0.9f) && Near(replaced.b, 1) && Near(replaced.a, 1));
+    b.state = static_cast<int>(UiButtonState::Normal);
+    CHECK(IsPlain(PaintOf(ButtonTarget(b))) && Paint(red, PaintOf(ButtonTarget(b))) == red);
+    // A swapped picture: hover's; pressed without one: the hover's too; normal: its own.
+    const AssetRef own{"0123456789abcdef0123456789abcd01"}, lit{"0123456789abcdef0123456789abcd02"};
+    b.hoverImage = lit;
+    CHECK(ButtonImage(b, own) == own);
+    b.state = static_cast<int>(UiButtonState::Pressed);
+    CHECK(ButtonImage(b, own) == lit);
+    b.interactable = false;
+    CHECK(ButtonImage(b, own) == own);
+
+    // Whole frames: the look eased by the service, the sound's moment once (not on the first frame).
+    Scene s = UiScene();
+    const int canvas = s.Create("UI");
+    Add<UiCanvas>(s, canvas)->reference = {1280, 720};
+    const int id = MakeButton(s, canvas, {0, 0}, {200, 100});
+    const UiTree t = BuildUi(s, {});
+    UiFocus state;
+    state.keyboard = false;
+    InputFrame none;
+    const auto actions = game_production::DefaultInputActions();
+    const Vec2 on{640, 360}, off{50, 50};
+    UiStep step = StepUi(s, t, off, false, false, false, actions, &none, &none, 0.016f, state);
+    const auto* part = static_cast<const UiButton*>(s.Find(id)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get());
+    CHECK(step.hovered.empty() && part->ready && Near(part->now.scale, 1));
+    step = StepUi(s, t, on, false, false, false, actions, &none, &none, 0.016f, state);
+    CHECK((step.hovered == std::vector<int>{id}));
+    CHECK(part->now.scale > 1 && part->now.scale < part->hoverScale);  // on its way
+    step = StepUi(s, t, on, true, true, false, actions, &none, &none, 0.016f, state);
+    CHECK(step.hovered.empty());  // pressed on it: no second sound
+    step = StepUi(s, t, on, false, false, true, actions, &none, &none, 0.016f, state);
+    CHECK(step.hovered.empty() && (step.clicked == std::vector<int>{id}));
+    StepUi(s, t, off, false, false, false, actions, &none, &none, 0.016f, state);
+    step = StepUi(s, t, on, false, false, false, actions, &none, &none, 0.016f, state);
+    CHECK((step.hovered == std::vector<int>{id}));  // left and came back: again
 }

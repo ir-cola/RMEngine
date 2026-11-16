@@ -38,6 +38,8 @@
 
 namespace rm::game_production {
 
+class PlayServices;
+
 // What the host gives the services (it lives as long as they do).
 struct PlayHost {
     const RuntimeRegistry* registry = nullptr;
@@ -76,6 +78,9 @@ struct PlayFrame {
     // Script hooks a service asks for (a game UI's OnClick): the host gives them to the scripts after
     // every service's Frame (ScriptRunner::Deliver). Null: none can be asked.
     std::vector<HookCall>* hooks = nullptr;
+    // The other services of this Play (set by PlayServices::Frame): to ask one that does what any plugin
+    // may offer (Sounds) without knowing which plugin it is.
+    const PlayServices* services = nullptr;
 };
 
 class PlayService {
@@ -85,6 +90,18 @@ public:
     virtual void SetPaused(bool paused) { (void)paused; }
     // Game::LoadScene switched the scene (its entities are other ones now - the same ids may come again).
     virtual void SceneSwitched() {}
+};
+
+// What a service that plays sounds offers the others (音: game_x_audio's AudioService) - game UI's
+// 乗った / 押したときの音 ask it through PlayServices::Sounds, knowing nothing of the sound plugin. None
+// (the plugin not in the game): nothing is heard, nothing else changes.
+class SoundPlayer {
+public:
+    // Once, as an effect (not music), at `volume` (0..1).
+    virtual void PlaySound(const AssetRef& sound, float volume) = 0;
+
+protected:
+    ~SoundPlayer() = default;
 };
 
 // RuntimeRegistry point: items are PlayServiceInfo (static).
@@ -111,6 +128,8 @@ public:
     void Stop();
     bool Running() const { return host_ != nullptr; }
     PlayService* Find(std::string_view name) const;
+    // The first service that plays sounds (SoundPlayer); null: none.
+    SoundPlayer* Sounds() const;
 
 private:
     std::unique_ptr<PlayHost> host_;

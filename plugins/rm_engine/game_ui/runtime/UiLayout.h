@@ -161,8 +161,39 @@ int MoveFocus(const UiTree& tree, int canvas, int current, int dx, int dy);
 int NextButton(const UiTree& tree, int canvas, int current, int dx, int dy);
 
 // --- How a button looks -----------------------------------------------------------------------
-Color ButtonColor(const UiButton& b);   // by its state (focused looks as Hover)
-float ButtonScale(const UiButton& b);
+// The look of its state (focused looks as Hover; not pressable: 使えない). A state with no outline has
+// outlineAmount 0 (its width and colour are the state's own - EaseLook keeps the last ones).
+UiButtonLook ButtonTarget(const UiButton& b);
+// How much of the way to the target one frame of `dt` goes, for a change taking `seconds` (exponential:
+// the same after one frame of 0.1 s as after ten of 0.01 s). seconds <= 1e-4: all of it.
+float EaseAmount(float dt, float seconds);
+// One frame toward `target`: every value moved by `amount`, put on the target when nearer than 1e-4 (no
+// hair-thin outline left over). A target with no outline (or no replacing colour) keeps the outline's
+// (the colour's) width and colour as they are, its amount alone falling - a fade, never a thinner line.
+UiButtonLook EaseLook(const UiButtonLook& now, const UiButtonLook& target, float amount);
+// What is drawn now: the service's eased look while the game plays, else its state's own.
+UiButtonLook ButtonNow(const UiButton& b);
+float ButtonScale(const UiButton& b);  // ButtonNow's
+// The picture of the button's own image for its state (ボタンの画像の差し替え; pressed without one: the hover's);
+// `own` when the state has none.
+const AssetRef& ButtonImage(const UiButton& b, const AssetRef& own);
+
+// How a colour is painted by a button: multiplied, then moved toward the replacing colour (r g b).
+struct UiPaint {
+    Color tint{1, 1, 1, 1};
+    Color replace{1, 1, 1, 1};
+    float amount = 0;
+};
+UiPaint PaintOf(const UiButtonLook& look);
+Color Paint(Color c, const UiPaint& p);
+bool IsPlain(const UiPaint& p);  // changes nothing
+// The outline drawn round a button: the state's mixed with the thing's own (`ownWidth` 0: none - then the
+// state's width stays and its colour fades out).
+struct UiStroke {
+    float width = 0;
+    Color color{0, 0, 0, 0};
+};
+UiStroke ButtonOutline(const UiButtonLook& look, UiStroke own = {});
 Color Multiply(Color a, Color b);
 // The filled part of a bar inside its box (padding taken off).
 UiBox BarFill(const UiBar& bar, const UiBox& box);

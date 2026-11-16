@@ -98,6 +98,19 @@ struct Play {
 
 }  // namespace
 
+RM_TEST(AudioGame_OtherServicesPlaySounds) {
+    // Game UI's button sounds: the other services find the one that plays sounds without knowing it.
+    Play p;
+    SoundPlayer* sounds = p.services.Sounds();
+    CHECK(sounds == static_cast<SoundPlayer*>(&p.Audio()));
+    sounds->PlaySound(AssetRef{kBeep}, 0.5f);
+    sounds->PlaySound(AssetRef{"0123456789abcdef0123456789abcdef"}, 1);  // (not there: nothing)
+    p.Frame();
+    // No service plays sounds: none.
+    PlayServices none;
+    CHECK(none.Sounds() == nullptr);
+}
+
 RM_TEST(AudioGame_SoundPack_RoundTripAndBroken) {
     json::Value imp = json::Value::MakeObject();
     imp.Set("volume", 0.5);
