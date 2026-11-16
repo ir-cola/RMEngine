@@ -99,6 +99,7 @@ struct UiNode {
     const UiImage* image = nullptr;
     const UiButton* button = nullptr;
     const UiBar* bar = nullptr;
+    const UiStyle* style = nullptr;  // 見た目 (UI-5)
     float alpha = 1;       // faded (its own UiLive and its parents'): what it draws is multiplied by it
     bool closing = false;  // switched off and going (消えるとき) - or under one that is: drawn, never clicked
 };
@@ -196,6 +197,12 @@ struct UiStroke {
 };
 UiStroke ButtonOutline(const UiButtonLook& look, UiStroke own = {});
 Color Multiply(Color a, Color b);
+// The 立体 is drawn (one place decides it: spec §2-9) - and pressed in (へこませる, or 押すとへこむ on a
+// button pressed now).
+bool BevelShown(const UiStyle& s);
+bool BevelInset(const UiStyle& s, const UiButton* button);
+// The corner of a box as drawn (never more than half its side).
+float Rounding(const UiStyle& s, const UiBox& box);
 // The filled part of a bar inside its box (padding taken off).
 UiBox BarFill(const UiBar& bar, const UiBox& box);
 

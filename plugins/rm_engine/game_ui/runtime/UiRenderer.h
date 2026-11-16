@@ -72,6 +72,14 @@ private:
     void DrawImage(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint);
     void DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const UiBox& dst, const Affine& full, const UiPaint& paint);
     void DrawOutline(const UiNode& n, const Affine& full, const UiStroke& stroke);
+    // UI-5 (見た目): what makes its shape - 背景, 画像, バー, 文字 - drawn as it is, or into a command list
+    // that the 影, the ぼかし and the 光 are made from (Direct2D's Shadow and GaussianBlur effects).
+    void DrawBody(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint);
+    void DrawWithEffects(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint);
+    void FillShape(const UiNode& n, const Affine& full, Color color);
+    void DrawBorder(const UiNode& n, const Affine& full, const UiStroke& stroke);
+    void DrawBevel(const UiNode& n, const Affine& full, bool inset);
+    ID2D1Effect* Effect(Microsoft::WRL::ComPtr<ID2D1Effect>& slot, const CLSID& id);
     void DrawText(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset);
     void DrawFocus(const UiNode& n, const Affine& full);
 
@@ -79,6 +87,11 @@ private:
     ID2D1DeviceContext* owner_ = nullptr;  // the context brush_ and tint_ were made for
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
     Microsoft::WRL::ComPtr<ID2D1Effect> tint_;
+    Microsoft::WRL::ComPtr<ID2D1Effect> shadow_, glow_, blur_;
+    // Recording a command list: it keeps the brushes and effects it was drawn with - not copies - so each
+    // draw then gets one of its own (kept here until the list is drawn).
+    bool fresh_ = false;
+    std::vector<Microsoft::WRL::ComPtr<IUnknown>> keep_;
     std::unordered_map<std::string, Picture> pictures_;  // by asset id
     std::unordered_map<std::string, Font> fonts_;        // by asset id
     std::map<std::tuple<std::wstring, IDWriteFontCollection*, float, bool>, Microsoft::WRL::ComPtr<IDWriteTextFormat>> formats_;

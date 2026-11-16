@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI: 部品「見た目」で背景 (角丸)・枠・影・発光・ぼかし・立体 (押すとへこむ) を付けられる。画像が無くてもボタンや下敷きが作れる",
+          "en": "Game UI: the Style part adds a background (rounded), border, shadow, glow, blur and bevel (pressed in while held), so buttons and panels need no image"
+        },
+        {
           "ja": "ゲーム UI: 出る・消えるときの動き (フェード・すべる・大きさ・回る・速さの曲線・待ち)・道に沿って動く (UI タブで点を置く)・スクリプトの MoveTo / ScaleTo / RotateTo / FadeTo / PlayPath",
           "en": "Game UI: show and hide motion (fade, slide, scale, turn, easing, delay), following a path (place its points in the UI tab), and the scripts' MoveTo / ScaleTo / RotateTo / FadeTo / PlayPath"
         },

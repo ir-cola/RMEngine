@@ -84,6 +84,59 @@ struct UiRect {
     RM_TRANSIENT() UiLive live;  // moved now while the game plays
 };
 
+// --- How it looks, more (UI-5): 背景・枠・影・光・ぼかし・立体 -----------------------------------------
+// One struct for each kind (never one set of numbers meaning other things for each kind: spec §2-7).
+// Each draws nothing until it is used (a thing without them looks as before, to the bit).
+RM_STRUCT(Label="背景")
+struct UiBackground {
+    RM_PROPERTY(Edit, Label="使う", Tooltip="画像が無くても、この色の (角の丸い) 四角を描きます。ボタンや下敷きが画像なしで作れます") bool enabled = true;
+    RM_PROPERTY(Edit, Label="色", Min=0, Max=1, ShowIf="enabled") Color color{0.16f, 0.17f, 0.20f, 1};
+};
+RM_STRUCT(Label="枠")
+struct UiBorder {
+    RM_PROPERTY(Edit, Label="使う") bool enabled = false;
+    RM_PROPERTY(Edit, Label="太さ", Tooltip="箱の内側に描きます (DIP)。ボタンの「乗ったときの縁」はこの枠と混ざります", Min=0, Max=64, ShowIf="enabled") float width = 2;
+    RM_PROPERTY(Edit, Label="色", Min=0, Max=1, ShowIf="enabled") Color color{1, 1, 1, 0.9f};
+};
+RM_STRUCT(Label="影")
+struct UiShadow {
+    RM_PROPERTY(Edit, Label="使う") bool enabled = false;
+    RM_PROPERTY(Edit, Label="ずれ", Tooltip="右と下が + (DIP)", Min=-500, Max=500, ShowIf="enabled") Vec2 offset{4, 6};
+    RM_PROPERTY(Edit, Label="ぼかし", Tooltip="0 でくっきりした影 (DIP)", Min=0, Max=200, ShowIf="enabled") float blur = 8;
+    RM_PROPERTY(Edit, Label="色", Min=0, Max=1, ShowIf="enabled") Color color{0, 0, 0, 0.5f};
+};
+RM_STRUCT(Label="発光")
+struct UiGlow {
+    RM_PROPERTY(Edit, Label="使う") bool enabled = false;
+    RM_PROPERTY(Edit, Label="広がり", Tooltip="形の周りに光がにじむ幅 (DIP)", Min=0, Max=200, ShowIf="enabled") float radius = 12;
+    RM_PROPERTY(Edit, Label="色", Tooltip="明るさを足します (暗い色ほど弱い)", Min=0, Max=1, ShowIf="enabled") Color color{1, 0.85f, 0.35f, 0.9f};
+};
+RM_STRUCT(Label="ぼかし")
+struct UiBlur {
+    RM_PROPERTY(Edit, Label="使う") bool enabled = false;
+    RM_PROPERTY(Edit, Label="強さ", Tooltip="中身 (背景・画像・バー・文字) をぼかす幅 (DIP)", Min=0, Max=200, ShowIf="enabled") float radius = 4;
+};
+RM_STRUCT(Label="立体")
+struct UiBevel {
+    RM_PROPERTY(Edit, Label="使う") bool enabled = false;
+    RM_PROPERTY(Edit, Label="幅", Tooltip="縁の明るい側と暗い側の幅 (DIP)", Min=0, Max=64, ShowIf="enabled") float width = 3;
+    RM_PROPERTY(Edit, Label="へこませる", Tooltip="明るい側と暗い側を入れ替えて、へこんで見せる", ShowIf="enabled") bool inset = false;
+    RM_PROPERTY(Edit, Label="押すとへこむ", Tooltip="ボタンを押している間だけ、へこんで見せる", ShowIf="enabled") bool pressInset = true;
+    RM_PROPERTY(Edit, Label="明るい側", Min=0, Max=1, ShowIf="enabled") Color highlight{1, 1, 1, 0.45f};
+    RM_PROPERTY(Edit, Label="暗い側", Min=0, Max=1, ShowIf="enabled") Color shade{0, 0, 0, 0.35f};
+};
+
+RM_STRUCT(Label="見た目 (UI)")
+struct UiStyle {
+    RM_PROPERTY(Edit, Label="角の丸さ", Tooltip="背景・枠・立体の角 (DIP)。画像の形はそのまま", Min=0, Max=1000) float rounding = 8;
+    RM_PROPERTY(Edit, Label="背景") UiBackground background;
+    RM_PROPERTY(Edit, Label="枠") UiBorder border;
+    RM_PROPERTY(Edit, Label="影", Tooltip="背景・画像・バー・文字の形の影") UiShadow shadow;
+    RM_PROPERTY(Edit, Label="発光", Tooltip="背景・画像・バー・文字の形の周りに光") UiGlow glow;
+    RM_PROPERTY(Edit, Label="ぼかし") UiBlur blur;
+    RM_PROPERTY(Edit, Label="立体", Tooltip="縁に明るい側と暗い側を付けて、浮き出して (へこんで) 見せる") UiBevel bevel;
+};
+
 // --- Motion (UI-4) ------------------------------------------------------------------------------------
 RM_ENUM(Label="速さの曲線")
 enum class UiEase {

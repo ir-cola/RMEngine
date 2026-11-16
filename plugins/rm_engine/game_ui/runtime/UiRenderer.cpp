@@ -5,6 +5,7 @@
 #include "core/asset/BakedImage.h"
 #include "platform/Image.h"
 
+#include <d2d1effects.h>
 #include <dwrite_3.h>
 
 #include <algorithm>
@@ -37,11 +38,20 @@ void UiRenderer::Begin(ID2D1DeviceContext* dc) {
     if (owner_ != dc) {
         brush_.Reset();
         tint_.Reset();
+        shadow_.Reset();
+        glow_.Reset();
+        blur_.Reset();
         owner_ = dc;
     }
 }
 
 ID2D1SolidColorBrush* UiRenderer::Brush(Color c) {
+    if (fresh_) {
+        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> own;
+        if (FAILED(dc_->CreateSolidColorBrush(ToD2D(c), &own))) return nullptr;
+        keep_.push_back(own);
+        return own.Get();
+    }
     if (!brush_ && FAILED(dc_->CreateSolidColorBrush(ToD2D(c), &brush_))) return nullptr;
     brush_->SetColor(ToD2D(c));
     return brush_.Get();
@@ -164,24 +174,27 @@ void UiRenderer::DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const Ui
         dc_->SetTransform(ToD2D(full) * old);
         dc_->DrawBitmap(bitmap, ToD2D(dst), color.a, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, &src, nullptr);
     } else {
-        if (!tint_ && FAILED(dc_->CreateEffect(CLSID_D2D1ColorMatrix, &tint_))) tint_.Reset();
-        if (!tint_) return;
+        Microsoft::WRL::ComPtr<ID2D1Effect> own;  // (recording: one of its own)
+        Microsoft::WRL::ComPtr<ID2D1Effect>& tint = fresh_ ? own : tint_;
+        if (!tint && FAILED(dc_->CreateEffect(CLSID_D2D1ColorMatrix, &tint))) tint.Reset();
+        if (!tint) return;
+        if (fresh_) keep_.push_back(tint);
         // Each colour multiplied by the tint, then moved toward the replacing colour by its amount k (rows:
         // the input's r g b a and 1; columns: the output's). The effect works on colours not multiplied by
         // their alpha, so a replaced colour keeps the picture's shape.
         const float k = std::clamp(paint.amount, 0.f, 1.f), keep = 1 - k;
         const D2D1_MATRIX_5X4_F m = D2D1::Matrix5x4F(color.r * keep, 0, 0, 0, 0, color.g * keep, 0, 0, 0, 0, color.b * keep, 0, 0, 0, 0, color.a,
                                                      paint.replace.r * k, paint.replace.g * k, paint.replace.b * k, 0);
-        tint_->SetInput(0, bitmap);
-        tint_->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
+        tint->SetInput(0, bitmap);
+        tint->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
         Microsoft::WRL::ComPtr<ID2D1Image> out;
-        tint_->GetOutput(&out);
+        tint->GetOutput(&out);
         // The piece drawn at (0, 0) and scaled onto dst.
         const Affine place = full * Translate({dst.x, dst.y}) * Scaling(dst.w / sw, dst.h / sh);
         dc_->SetTransform(ToD2D(place) * old);
         const D2D1_POINT_2F at{0, 0};
         dc_->DrawImage(out.Get(), &at, &src, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
-        tint_->SetInput(0, nullptr);
+        if (!fresh_) tint->SetInput(0, nullptr);
     }
     dc_->SetTransform(old);
 }
@@ -296,6 +309,173 @@ void UiRenderer::DrawFocus(const UiNode& n, const Affine& full) {
     dc_->SetTransform(old);
 }
 
+// --- UI-5: 背景・枠・立体・影・光・ぼかし ---------------------------------------------------------------
+
+namespace {
+
+// The transform it is drawn with (the node's, then the device context's own).
+D2D1_MATRIX_3X2_F Whole(const Affine& full, const D2D1_MATRIX_3X2_F& old) { return ToD2D(full) * old; }
+// How many device DIPs one of its units is (for radii: its turn does not count).
+float UnitsToDips(const D2D1_MATRIX_3X2_F& m) { return std::sqrt(std::abs(m._11 * m._22 - m._12 * m._21)); }
+D2D1_VECTOR_4F Vector(Color c) { return {c.r, c.g, c.b, std::clamp(c.a, 0.f, 1.f)}; }
+
+}  // namespace
+
+ID2D1Effect* UiRenderer::Effect(Microsoft::WRL::ComPtr<ID2D1Effect>& slot, const CLSID& id) {
+    if (!slot && FAILED(dc_->CreateEffect(id, &slot))) slot.Reset();
+    return slot.Get();
+}
+
+void UiRenderer::FillShape(const UiNode& n, const Affine& full, Color color) {
+    if (color.a <= 0) return;
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(Whole(full, old));
+    const float r = n.style ? Rounding(*n.style, n.box) : 0.f;
+    if (ID2D1SolidColorBrush* b = Brush(color)) dc_->FillRoundedRectangle(D2D1::RoundedRect(ToD2D(n.box), r, r), b);
+    dc_->SetTransform(old);
+}
+
+void UiRenderer::DrawBorder(const UiNode& n, const Affine& full, const UiStroke& stroke) {
+    if (stroke.width <= 0 || stroke.color.a <= 0) return;
+    // Inside the box (its line's middle half its width in), the corners as the 背景's.
+    const float w = std::min({stroke.width, n.box.w * 0.5f, n.box.h * 0.5f}), h = w * 0.5f;
+    if (w <= 0) return;
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(Whole(full, old));
+    const float r = std::max(0.f, (n.style ? Rounding(*n.style, n.box) : 0.f) - h);
+    if (ID2D1SolidColorBrush* b = Brush(stroke.color)) {
+        dc_->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(n.box.x + h, n.box.y + h, n.box.Right() - h, n.box.Bottom() - h), r, r), b, w);
+    }
+    dc_->SetTransform(old);
+}
+
+void UiRenderer::DrawBevel(const UiNode& n, const Affine& full, bool inset) {
+    const UiBevel& bv = n.style->bevel;
+    const float w = std::min({bv.width, n.box.w * 0.5f, n.box.h * 0.5f}), h = w * 0.5f;
+    if (w <= 0) return;
+    Microsoft::WRL::ComPtr<ID2D1Factory> factory;
+    dc_->GetFactory(&factory);
+    if (!factory) return;
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(Whole(full, old));
+    const float r = std::max(0.f, Rounding(*n.style, n.box) - h);
+    const D2D1_ROUNDED_RECT ring = D2D1::RoundedRect(D2D1::RectF(n.box.x + h, n.box.y + h, n.box.Right() - h, n.box.Bottom() - h), r, r);
+    // The ring of its edge: the top left half lit, the bottom right half in shade (the other way pressed in),
+    // split along the line from its top right corner to its bottom left one.
+    const UiBox& b = n.box;
+    auto half = [&](bool topLeft, Color color) {
+        if (color.a <= 0) return;
+        Microsoft::WRL::ComPtr<ID2D1PathGeometry> tri;
+        Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+        if (FAILED(factory->CreatePathGeometry(&tri)) || FAILED(tri->Open(&sink))) return;
+        const D2D1_POINT_2F corner = topLeft ? D2D1::Point2F(b.x - w, b.y - w) : D2D1::Point2F(b.Right() + w, b.Bottom() + w);
+        sink->BeginFigure(D2D1::Point2F(b.Right() + w, b.y - w), D2D1_FIGURE_BEGIN_FILLED);
+        sink->AddLine(corner);
+        sink->AddLine(D2D1::Point2F(b.x - w, b.Bottom() + w));
+        sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+        if (FAILED(sink->Close())) return;
+        dc_->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), tri.Get()), nullptr);
+        if (ID2D1SolidColorBrush* br = Brush(color)) dc_->DrawRoundedRectangle(ring, br, w);
+        dc_->PopLayer();
+        if (fresh_) keep_.push_back(tri);
+    };
+    Color lit = bv.highlight, dark = bv.shade;
+    if (inset) std::swap(lit, dark);
+    lit.a *= n.alpha;
+    dark.a *= n.alpha;
+    half(true, lit);
+    half(false, dark);
+    dc_->SetTransform(old);
+}
+
+void UiRenderer::DrawBody(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint) {
+    if (n.style && n.style->background.enabled) FillShape(n, full, Paint(n.style->background.color, paint));
+    if (n.image) DrawImage(n, full, gfx, asset, paint);
+    if (n.bar) {
+        D2D1_MATRIX_3X2_F old;
+        dc_->GetTransform(&old);
+        dc_->SetTransform(Whole(full, old));
+        if (ID2D1SolidColorBrush* b = Brush(Paint(n.bar->back, paint))) dc_->FillRectangle(ToD2D(n.box), b);
+        if (ID2D1SolidColorBrush* b = Brush(Paint(n.bar->fill, paint))) dc_->FillRectangle(ToD2D(BarFill(*n.bar, n.box)), b);
+        dc_->SetTransform(old);
+    }
+    if (n.text) DrawText(n, full, gfx, asset);
+}
+
+void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint) {
+    const UiStyle& st = *n.style;
+    // Its shape, recorded once: the 影 and the 光 are made from it, the ぼかし blurs it.
+    Microsoft::WRL::ComPtr<ID2D1Image> target;
+    dc_->GetTarget(&target);
+    Microsoft::WRL::ComPtr<ID2D1CommandList> list;
+    if (!target || FAILED(dc_->CreateCommandList(&list))) {
+        DrawBody(n, full, gfx, asset, paint);
+        return;
+    }
+    dc_->SetTarget(list.Get());
+    fresh_ = true;
+    DrawBody(n, full, gfx, asset, paint);
+    fresh_ = false;
+    dc_->SetTarget(target.Get());
+    if (FAILED(list->Close())) {
+        keep_.clear();
+        return;
+    }
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    const D2D1_MATRIX_3X2_F m = Whole(full, old);
+    const float k = UnitsToDips(m);
+    dc_->SetTransform(D2D1::Matrix3x2F::Identity());  // (the list holds where it was drawn)
+    if (st.shadow.enabled) {
+        Color c = st.shadow.color;
+        c.a *= n.alpha;
+        if (ID2D1Effect* fx = Effect(shadow_, CLSID_D2D1Shadow); fx && c.a > 0) {
+            fx->SetInput(0, list.Get());
+            fx->SetValue(D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, std::max(st.shadow.blur, 0.f) * k * 0.5f);
+            fx->SetValue(D2D1_SHADOW_PROP_COLOR, Vector(c));
+            Microsoft::WRL::ComPtr<ID2D1Image> out;
+            fx->GetOutput(&out);
+            // Its offset turns and scales with it.
+            const D2D1_POINT_2F at{st.shadow.offset.x * m._11 + st.shadow.offset.y * m._21, st.shadow.offset.x * m._12 + st.shadow.offset.y * m._22};
+            dc_->DrawImage(out.Get(), &at);
+            fx->SetInput(0, nullptr);
+        }
+    }
+    if (st.blur.enabled && st.blur.radius > 0) {
+        if (ID2D1Effect* fx = Effect(blur_, CLSID_D2D1GaussianBlur)) {
+            fx->SetInput(0, list.Get());
+            fx->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, st.blur.radius * k * 0.5f);
+            Microsoft::WRL::ComPtr<ID2D1Image> out;
+            fx->GetOutput(&out);
+            dc_->DrawImage(out.Get());
+            fx->SetInput(0, nullptr);
+        } else {
+            dc_->DrawImage(list.Get());
+        }
+    } else {
+        dc_->DrawImage(list.Get());
+    }
+    if (st.glow.enabled) {
+        Color c = st.glow.color;
+        c.a *= n.alpha;
+        if (ID2D1Effect* fx = Effect(glow_, CLSID_D2D1Shadow); fx && c.a > 0) {
+            // A blurred silhouette of its colour, its light added to what is under it.
+            fx->SetInput(0, list.Get());
+            fx->SetValue(D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, std::max(st.glow.radius, 0.f) * k * 0.5f);
+            fx->SetValue(D2D1_SHADOW_PROP_COLOR, Vector(c));
+            Microsoft::WRL::ComPtr<ID2D1Image> out;
+            fx->GetOutput(&out);
+            dc_->DrawImage(out.Get(), nullptr, nullptr, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_PLUS);
+            fx->SetInput(0, nullptr);
+        }
+    }
+    dc_->SetTransform(old);
+    keep_.clear();
+}
+
 void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& tree, const Affine& toDc, const AssetReader& asset) {
     if (!dc) return;
     if (gfx.Generation() != generation_) {
@@ -304,6 +484,9 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         pictures_.clear();
         brush_.Reset();
         tint_.Reset();
+        shadow_.Reset();
+        glow_.Reset();
+        blur_.Reset();
         owner_ = nullptr;
     }
     Begin(dc);
@@ -316,21 +499,25 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         const UiButtonLook look = n.button ? ButtonNow(*n.button) : UiButtonLook{};
         UiPaint paint = PaintOf(look);
         paint.tint.a *= n.alpha;  // (出る・消える動き / FadeTo: everything it draws)
-        if (n.image) DrawImage(n, full, gfx, asset, paint);
-        if (n.bar) {
-            D2D1_MATRIX_3X2_F old;
-            dc->GetTransform(&old);
-            dc->SetTransform(ToD2D(full) * old);
-            if (ID2D1SolidColorBrush* b = Brush(Paint(n.bar->back, paint))) dc->FillRectangle(ToD2D(n.box), b);
-            if (ID2D1SolidColorBrush* b = Brush(Paint(n.bar->fill, paint))) dc->FillRectangle(ToD2D(BarFill(*n.bar, n.box)), b);
-            dc->SetTransform(old);
+        // The order (spec §3-4): 影 - its body (背景, 画像, バー, 文字; ぼかし) - 光 - 立体 - 枠 - the keys' choice.
+        const UiStyle* st = n.style;
+        if (st && (st->shadow.enabled || st->glow.enabled || (st->blur.enabled && st->blur.radius > 0))) {
+            DrawWithEffects(n, full, gfx, asset, paint);
+        } else {
+            DrawBody(n, full, gfx, asset, paint);
         }
-        if (n.button) {
+        if (st && BevelShown(*st)) DrawBevel(n, full, BevelInset(*st, n.button));
+        if (st && st->border.enabled) {
+            // Its own 枠, mixed with a button's state outline (UI-2: toward its own frame, never thinner).
+            const UiStroke own{st->border.width, st->border.color};
+            UiStroke stroke = n.button ? ButtonOutline(look, own) : own;
+            stroke.color.a *= n.alpha;
+            DrawBorder(n, full, stroke);
+        } else if (n.button) {
             UiStroke stroke = ButtonOutline(look);
             stroke.color.a *= n.alpha;
             DrawOutline(n, full, stroke);
         }
-        if (n.text) DrawText(n, full, gfx, asset);
         if (n.button && n.button->focused && n.button->interactable) DrawFocus(n, full);
     }
     dc->SetTextAntialiasMode(aa);

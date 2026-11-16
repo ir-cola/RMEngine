@@ -385,6 +385,7 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
         root.text = PartOf<UiText>(*ca.e);
         root.image = PartOf<UiImage>(*ca.e);
         root.bar = PartOf<UiBar>(*ca.e);
+        root.style = PartOf<UiStyle>(*ca.e);
         tree.nodes.push_back(root);
         // Depth first; a thing without UI の配置 passes its parent's box to its children.
         struct Step {
@@ -425,6 +426,7 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
             n.image = PartOf<UiImage>(*s.e);
             n.button = PartOf<UiButton>(*s.e);
             n.bar = PartOf<UiBar>(*s.e);
+            n.style = PartOf<UiStyle>(*s.e);
             n.box = PlaceBox(*place, parent.box);
             // Moved now (出る・消える動き, 道, the scripts' tweens): its box moves, its turn and size about its 中心.
             n.box.x += live.offset.x;
@@ -451,7 +453,7 @@ int TopAt(const UiTree& tree, Vec2 p) {
     for (auto it = tree.nodes.rbegin(); it != tree.nodes.rend(); ++it) {
         if (it->parent < 0) continue;  // a canvas itself takes nothing (a window may be partly empty)
         if (it->closing) continue;     // going away (消えるとき): seen, not touched
-        if (!(it->image || it->bar || it->button)) continue;
+        if (!(it->image || it->bar || it->button || (it->style && it->style->background.enabled))) continue;
         if (Hits(*it, p)) return it->entity;
     }
     return 0;
@@ -655,6 +657,18 @@ UiStroke ButtonOutline(const UiButtonLook& look, UiStroke own) {
 }
 
 Color Multiply(Color a, Color b) { return {a.r * b.r, a.g * b.g, a.b * b.b, a.a * b.a}; }
+
+bool BevelShown(const UiStyle& s) { return s.bevel.enabled && s.bevel.width > 0; }
+
+bool BevelInset(const UiStyle& s, const UiButton* button) {
+    const bool pressed = button && s.bevel.pressInset && button->interactable && button->state == static_cast<int>(UiButtonState::Pressed);
+    return s.bevel.inset != pressed;
+}
+
+float Rounding(const UiStyle& s, const UiBox& box) {
+    const float r = std::isfinite(s.rounding) ? std::max(s.rounding, 0.f) : 0.f;
+    return std::min({r, std::max(box.w, 0.f) * 0.5f, std::max(box.h, 0.f) * 0.5f});
+}
 
 UiBox BarFill(const UiBar& bar, const UiBox& box) {
     const float pad = std::max(0.f, bar.padding);

@@ -1028,3 +1028,38 @@ RM_TEST(GameUi_Motion_ShowHideAndTweens) {
     StepMotion(s, 0.25f, fresh);
     CHECK(Near(rect->live.offset.x, 25));
 }
+
+RM_TEST(GameUi_Style_BevelRoundingAndTheMouse) {
+    // 見た目 (UI-5): one place decides each thing - the 立体 drawn only when used and with a width; pressed
+    // in when へこませる, or while its button is held (押すとへこむ); the corners never past half a side.
+    UiStyle st;
+    CHECK(!BevelShown(st));
+    st.bevel.enabled = true;
+    CHECK(BevelShown(st) && !BevelInset(st, nullptr));
+    st.bevel.width = 0;
+    CHECK(!BevelShown(st));
+    st.bevel.width = 3;
+    UiButton b;
+    b.state = static_cast<int>(UiButtonState::Pressed);
+    CHECK(BevelInset(st, &b));
+    st.bevel.inset = true;
+    CHECK(!BevelInset(st, &b) && BevelInset(st, nullptr));  // (pressed: out again)
+    st.rounding = 50;
+    CHECK(Near(Rounding(st, {0, 0, 200, 40}), 20) && Near(Rounding(st, {0, 0, 200, 400}), 50));
+    st.rounding = -3;
+    CHECK(Near(Rounding(st, {0, 0, 10, 10}), 0));
+    // A thing with only a 背景 (no image) takes the mouse - and hides what is under it.
+    Scene s = UiScene();
+    s.SetComponentTypes({&reflect::TypeOf<UiCanvas>(), &reflect::TypeOf<UiRect>(), &reflect::TypeOf<UiImage>(), &reflect::TypeOf<UiButton>(),
+                         &reflect::TypeOf<UiStyle>()},
+                        {});
+    const int canvas = s.Create("UI");
+    Add<UiCanvas>(s, canvas)->reference = {1280, 720};
+    const int b1 = MakeButton(s, canvas, {0, 0}, {200, 100});
+    const int panel = s.Create("下敷き", canvas);
+    Add<UiRect>(s, panel)->size = {400, 300};
+    Add<UiStyle>(s, panel);
+    const UiTree t = BuildUi(s, {});
+    CHECK(t.Find(panel)->style && TopAt(t, {640, 360}) == panel && ButtonAt(t, {640, 360}) == 0);
+    (void)b1;
+}
