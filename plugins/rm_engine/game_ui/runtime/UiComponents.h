@@ -126,6 +126,20 @@ struct UiBevel {
     RM_PROPERTY(Edit, Label="暗い側", Min=0, Max=1, ShowIf="enabled") Color shade{0, 0, 0, 0.35f};
 };
 
+RM_STRUCT(Label="虹色")
+struct UiRainbow {
+    RM_PROPERTY(Edit, Label="使う", Tooltip="色が虹のように回ります") bool enabled = false;
+    RM_PROPERTY(Edit, Label="回る速さ", Tooltip="1 秒に何周するか", Min=0, Max=20, Step=0.05, ShowIf="enabled") float speed = 0.25f;
+    RM_PROPERTY(Edit, Label="鮮やかさ", Min=0, Max=1, ShowIf="enabled") float saturation = 0.8f;
+    RM_PROPERTY(Edit, Label="明るさ", Min=0, Max=1, ShowIf="enabled") float brightness = 1;
+    RM_PROPERTY(Edit, Label="ずらし", Tooltip="始めの色 (0〜1)。並んだ物を少しずつずらすと虹が流れて見えます", Min=0, Max=1, ShowIf="enabled") float phase = 0;
+    RM_PROPERTY(Edit, Label="画像・バー", Tooltip="画像とバー (と動画) の色に掛けます", ShowIf="enabled") bool body = true;
+    RM_PROPERTY(Edit, Label="背景", Tooltip="色を虹色に置き換えます (透明度はそのまま)", ShowIf="enabled") bool background = false;
+    RM_PROPERTY(Edit, Label="文字", ShowIf="enabled") bool text = false;
+    RM_PROPERTY(Edit, Label="枠", ShowIf="enabled") bool border = false;
+    RM_PROPERTY(Edit, Label="発光", ShowIf="enabled") bool glow = false;
+};
+
 RM_STRUCT(Label="見た目 (UI)")
 struct UiStyle {
     RM_PROPERTY(Edit, Label="角の丸さ", Tooltip="背景・枠・立体の角 (DIP)。画像の形はそのまま", Min=0, Max=1000) float rounding = 8;
@@ -135,6 +149,20 @@ struct UiStyle {
     RM_PROPERTY(Edit, Label="発光", Tooltip="背景・画像・バー・文字の形の周りに光") UiGlow glow;
     RM_PROPERTY(Edit, Label="ぼかし") UiBlur blur;
     RM_PROPERTY(Edit, Label="立体", Tooltip="縁に明るい側と暗い側を付けて、浮き出して (へこんで) 見せる") UiBevel bevel;
+    RM_PROPERTY(Edit, Label="虹色") UiRainbow rainbow;
+};
+
+RM_STRUCT(Label="動画 (UI)")
+struct UiVideo {
+    RM_PROPERTY(Edit, Label="動画", Tooltip="Assets の動画 (.mp4 を勧めます)。箱いっぱいに出ます。音も出ます (ゲームの設定の音量は効きません)",
+                AssetKind=".mp4,.m4v,.mov,.wmv,.avi") AssetRef video;
+    RM_PROPERTY(Edit, Label="色", Tooltip="動画の色に掛けます (白でそのまま)", Min=0, Max=1) Color color{1, 1, 1, 1};
+    RM_PROPERTY(Edit, Label="始めから流す", Tooltip="外すと最初の絵で止まっています") bool playOnStart = true;
+    RM_PROPERTY(Edit, Label="くり返す") bool loop = true;
+    RM_PROPERTY(Edit, Label="速さ", Min=0.1, Max=8, Step=0.05) float speed = 1;
+    RM_PROPERTY(Edit, Label="音の大きさ", Min=0, Max=1) float volume = 1;
+    RM_PROPERTY(Edit, Label="始める所 (秒)", Min=0, Max=100000) float start = 0;
+    RM_PROPERTY(Edit, Label="終わる所 (秒)", Tooltip="0 なら最後まで", Min=0, Max=100000) float end = 0;
 };
 
 // --- Motion (UI-4) ------------------------------------------------------------------------------------
@@ -223,6 +251,28 @@ enum class UiAlignY {
     RM_ITEM(Label="下") Bottom,
 };
 
+// A part of a text styled on its own (spec §2-5 部分スタイル): the characters from `start` (0: the first;
+// a line break is one too), `length` of them. A later run wins where two meet.
+RM_ENUM(Label="部分の切り替え")
+enum class UiRunSwitch {
+    RM_ITEM(Label="そのまま") Keep,
+    RM_ITEM(Label="オン") On,
+    RM_ITEM(Label="オフ") Off,
+};
+RM_STRUCT(Label="部分のスタイル")
+struct UiTextRun {
+    RM_PROPERTY(Edit, Label="何文字目から", Tooltip="0 から数えます (改行も 1 文字)", Min=0, Max=1000000) int start = 0;
+    RM_PROPERTY(Edit, Label="文字数", Min=0, Max=1000000) int length = 1;
+    RM_PROPERTY(Edit, Label="太字") UiRunSwitch bold = UiRunSwitch::Keep;
+    RM_PROPERTY(Edit, Label="斜体") UiRunSwitch italic = UiRunSwitch::Keep;
+    RM_PROPERTY(Edit, Label="下線") UiRunSwitch underline = UiRunSwitch::Keep;
+    RM_PROPERTY(Edit, Label="打ち消し線") UiRunSwitch strike = UiRunSwitch::Keep;
+    RM_PROPERTY(Edit, Label="色を変える") bool setColor = false;
+    RM_PROPERTY(Edit, Label="色", Min=0, Max=1, ShowIf="setColor") Color color{1, 0.85f, 0.3f, 1};
+    RM_PROPERTY(Edit, Label="大きさを変える") bool setSize = false;
+    RM_PROPERTY(Edit, Label="大きさ", Min=1, Max=1000, ShowIf="setSize") float size = 48;
+};
+
 RM_STRUCT(Label="文字 (UI)")
 struct UiText {
     RM_PROPERTY(Edit, Label="文字", Tooltip="出す文字。改行もそのまま出ます") std::string text = "文字";
@@ -240,6 +290,15 @@ struct UiText {
     RM_PROPERTY(Edit, Label="縁取りの色", Min=0, Max=1) Color outlineColor{0, 0, 0, 1};
     RM_PROPERTY(Edit, Label="影のずれ", Tooltip="0, 0 なら影なし (右と下が +)", Min=-64, Max=64) Vec2 shadow{0, 0};
     RM_PROPERTY(Edit, Label="影の色", Min=0, Max=1) Color shadowColor{0, 0, 0, 0.5f};
+    RM_PROPERTY(Edit, Label="斜体") bool italic = false;
+    RM_PROPERTY(Edit, Label="下線") bool underline = false;
+    RM_PROPERTY(Edit, Label="打ち消し線") bool strike = false;
+    RM_PROPERTY(Edit, Label="字間", Tooltip="文字と文字の間に足す幅 (DIP。- で詰める)", Min=-100, Max=500) float letterSpacing = 0;
+    RM_PROPERTY(Edit, Label="行の高さ", Tooltip="行と行の間 (DIP)。0 ならフォントのまま", Min=0, Max=2000) float lineHeight = 0;
+    RM_PROPERTY(Edit, Label="縦書き", Tooltip="上から下へ、行は右から左へ") bool vertical = false;
+    RM_PROPERTY(Edit, Label="はみ出したら縮める", Tooltip="枠に入りきらないとき、入るまで文字を小さくします") bool shrinkToFit = false;
+    RM_PROPERTY(Edit, Label="文字だけずらす", Tooltip="見た目だけ文字をずらします (枠・折り返し・マウスの当たりは動かない)", Min=-1000, Max=1000) Vec2 offset{0, 0};
+    RM_PROPERTY(Edit, Label="部分のスタイル", Tooltip="一部の文字だけ太字・色・大きさなどを変えます (後ろの物が勝つ)") std::vector<UiTextRun> runs;
 };
 
 RM_STRUCT(Label="画像 (UI)")
@@ -250,6 +309,9 @@ struct UiImage {
     Vec2 sliceTopLeft{0, 0};
     RM_PROPERTY(Edit, Label="9 スライス (右・下)", Tooltip="画像の右と下の縁の幅 (画像のピクセル)", Min=0, Max=16384) Vec2 sliceBottomRight{0, 0};
     RM_PROPERTY(Edit, Label="縁の大きさ", Tooltip="9 スライスの縁を描く大きさ (1 で画像のピクセル = 1 DIP)", Min=0.01, Max=100) float sliceScale = 1;
+    RM_PROPERTY(Edit, Label="切り出し (左上)", Tooltip="画像のこの点 (ピクセル) から切り出します", Min=0, Max=100000) Vec2 cropOffset{0, 0};
+    RM_PROPERTY(Edit, Label="切り出し (大きさ)", Tooltip="切り出す幅と高さ (ピクセル)。0 なら右 / 下の端まで。9 スライスは切り出した中で数えます", Min=0, Max=100000)
+    Vec2 cropSize{0, 0};
 };
 
 // The state a button is in this frame (written by the UI service while the game plays; not saved).

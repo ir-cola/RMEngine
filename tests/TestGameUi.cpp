@@ -1063,3 +1063,47 @@ RM_TEST(GameUi_Style_BevelRoundingAndTheMouse) {
     CHECK(t.Find(panel)->style && TopAt(t, {640, 360}) == panel && ButtonAt(t, {640, 360}) == 0);
     (void)b1;
 }
+
+RM_TEST(GameUi_Text_RunRanges) {
+    // 部分のスタイル counts characters as they are seen: one outside the BMP (two UTF-16 units) is one.
+    const std::wstring plain = L"スコア 100";
+    UiTextRange r = TextRange(plain, 4, 3);
+    CHECK(r.start == 4 && r.length == 3);
+    r = TextRange(plain, 5, 100);  // (kept inside the text)
+    CHECK(r.start == 5 && r.length == 2);
+    r = TextRange(plain, 50, 2);
+    CHECK(r.start == static_cast<uint32_t>(plain.size()) && r.length == 0);
+    const std::wstring wide = L"a\U0001F600b";  // a, an emoji (a surrogate pair), b
+    r = TextRange(wide, 1, 1);
+    CHECK(r.start == 1 && r.length == 2);
+    r = TextRange(wide, 2, 1);
+    CHECK(r.start == 3 && r.length == 1);
+    r = TextRange(wide, -3, 1);
+    CHECK(r.start == 0 && r.length == 1);
+}
+
+RM_TEST(GameUi_CropAndRainbow) {
+    // 切り出し: kept inside the picture; a size of 0 goes to its edge.
+    CHECK(Near(CropRect({100, 50}, {0, 0}, {0, 0}), {0, 0, 100, 50}));
+    CHECK(Near(CropRect({100, 50}, {20, 10}, {0, 0}), {20, 10, 80, 40}));
+    CHECK(Near(CropRect({100, 50}, {20, 10}, {30, 300}), {20, 10, 30, 40}));
+    CHECK(Near(CropRect({100, 50}, {500, -5}, {10, 10}), {100, 0, 0, 10}));
+    // 虹色: red at its start, going round once in 1 / speed seconds; ずらし moves the start.
+    UiRainbow r;
+    r.saturation = 1;
+    r.brightness = 1;
+    r.speed = 0.5f;
+    Color c = RainbowColor(r, 0);
+    CHECK(Near(c.r, 1) && Near(c.g, 0) && Near(c.b, 0) && Near(c.a, 1));
+    c = RainbowColor(r, 2.0 / 3.0);  // a third of the way round: green
+    CHECK(Near(c.r, 0) && Near(c.g, 1) && Near(c.b, 0));
+    c = RainbowColor(r, 2.0);  // once round: red again
+    CHECK(Near(c.r, 1) && Near(c.g, 0));
+    r.phase = 2.f / 3.f;  // blue first
+    c = RainbowColor(r, 0);
+    CHECK(Near(c.b, 1) && Near(c.r, 0) && Near(c.g, 0));
+    r.saturation = 0;  // grey: as bright as it says
+    r.brightness = 0.5f;
+    c = RainbowColor(r, 1.234);
+    CHECK(Near(c.r, 0.5f) && Near(c.g, 0.5f) && Near(c.b, 0.5f));
+}

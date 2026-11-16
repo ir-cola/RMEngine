@@ -10,6 +10,7 @@ void UiScreenDrawer::Draw(const game_production::ScreenDrawFrame& f) {
     const UiTree tree = BuildUi(f.scene, ScreenOf(f.settings, f.screen));
     if (tree.nodes.empty()) return;
     const Affine toDc = Translate({f.x, f.y}) * Scaling(f.width / f.screen.x, f.height / f.screen.y);
+    renderer_.SetPlaying(f.playing);  // (動画 play while the game runs)
     renderer_.Draw(f.dc, f.gfx, tree, toDc, f.asset);
 }
 

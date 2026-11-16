@@ -386,6 +386,7 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
         root.image = PartOf<UiImage>(*ca.e);
         root.bar = PartOf<UiBar>(*ca.e);
         root.style = PartOf<UiStyle>(*ca.e);
+        root.video = PartOf<UiVideo>(*ca.e);
         tree.nodes.push_back(root);
         // Depth first; a thing without UI の配置 passes its parent's box to its children.
         struct Step {
@@ -427,6 +428,7 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
             n.button = PartOf<UiButton>(*s.e);
             n.bar = PartOf<UiBar>(*s.e);
             n.style = PartOf<UiStyle>(*s.e);
+            n.video = PartOf<UiVideo>(*s.e);
             n.box = PlaceBox(*place, parent.box);
             // Moved now (出る・消える動き, 道, the scripts' tweens): its box moves, its turn and size about its 中心.
             n.box.x += live.offset.x;
@@ -453,7 +455,7 @@ int TopAt(const UiTree& tree, Vec2 p) {
     for (auto it = tree.nodes.rbegin(); it != tree.nodes.rend(); ++it) {
         if (it->parent < 0) continue;  // a canvas itself takes nothing (a window may be partly empty)
         if (it->closing) continue;     // going away (消えるとき): seen, not touched
-        if (!(it->image || it->bar || it->button || (it->style && it->style->background.enabled))) continue;
+        if (!(it->image || it->bar || it->button || it->video || (it->style && it->style->background.enabled))) continue;
         if (Hits(*it, p)) return it->entity;
     }
     return 0;
@@ -657,6 +659,45 @@ UiStroke ButtonOutline(const UiButtonLook& look, UiStroke own) {
 }
 
 Color Multiply(Color a, Color b) { return {a.r * b.r, a.g * b.g, a.b * b.b, a.a * b.a}; }
+
+UiBox CropRect(Vec2 imagePx, Vec2 offset, Vec2 size) {
+    const float w = std::max(imagePx.x, 0.f), h = std::max(imagePx.y, 0.f);
+    const float x = std::clamp(std::isfinite(offset.x) ? offset.x : 0.f, 0.f, w), y = std::clamp(std::isfinite(offset.y) ? offset.y : 0.f, 0.f, h);
+    const float cw = size.x > 0 ? std::min(size.x, w - x) : w - x, ch = size.y > 0 ? std::min(size.y, h - y) : h - y;
+    return {x, y, std::max(cw, 0.f), std::max(ch, 0.f)};
+}
+
+Color RainbowColor(const UiRainbow& r, double seconds) {
+    double hue = std::fmod(static_cast<double>(r.phase) + seconds * r.speed, 1.0);
+    if (!std::isfinite(hue)) hue = 0;
+    if (hue < 0) hue += 1;
+    const float s = std::clamp(r.saturation, 0.f, 1.f), v = std::clamp(r.brightness, 0.f, 1.f);
+    // HSV to RGB: six sectors of the colour wheel.
+    const float h6 = static_cast<float>(hue) * 6, f = h6 - std::floor(h6);
+    const float p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
+    switch (static_cast<int>(h6) % 6) {
+        case 0: return {v, t, p, 1};
+        case 1: return {q, v, p, 1};
+        case 2: return {p, v, t, 1};
+        case 3: return {p, q, v, 1};
+        case 4: return {t, p, v, 1};
+        default: return {v, p, q, 1};
+    }
+}
+
+UiTextRange TextRange(std::wstring_view text, int start, int length) {
+    auto unitAt = [&](int chars) {
+        size_t i = 0;
+        for (int c = 0; c < chars && i < text.size(); ++c) {
+            const bool pair = text[i] >= 0xD800 && text[i] <= 0xDBFF && i + 1 < text.size() && text[i + 1] >= 0xDC00 && text[i + 1] <= 0xDFFF;
+            i += pair ? 2 : 1;
+        }
+        return i;
+    };
+    const size_t a = unitAt(std::max(start, 0));
+    const size_t b = unitAt(std::max(start, 0) + std::max(length, 0));
+    return {static_cast<uint32_t>(a), static_cast<uint32_t>(b - a)};
+}
 
 bool BevelShown(const UiStyle& s) { return s.bevel.enabled && s.bevel.width > 0; }
 

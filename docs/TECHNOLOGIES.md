@@ -797,6 +797,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 技術 | 使う所 | 状態 |
 |---|---|---|
+| 2026-11-16 | 文字の細かい見た目 (DirectWrite のテキストレイアウト)・動画を流す (Media Engine と GPU のテクスチャ) を足した |
 | 2026-11-16 | 影・発光・ぼかしを Direct2D の効果で (コマンドリスト) を足した |
 | 2026-11-16 | 動きの曲線 (イージング)・Catmull-Rom の道と長さでの位置・スクリプトの窓口の版を上げても前のスクリプトを動かす を足した |
 | 2026-11-16 | 条件で欄を出す (リフレクションの ShowIf) を足した |
@@ -872,6 +873,16 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **何か** — 物の中身 (背景・画像・バー・文字) を一度「コマンドリスト」(描く命令を貯める入れ物) に記録して、それを Direct2D の効果 (Shadow = 形の影を色付きでぼかす、GaussianBlur = ぼかす) の入力にする。影はずらして下に、発光は同じ形を明るさを足す合成 (PLUS) で上に描く。どれも GPU が描くたびに計算する
 - **工夫** — コマンドリストはブラシや効果を「そのもの」で持つ (写しを取らない) ので、記録の間だけは描くたびに新しいブラシと効果を作って持っておく (同じブラシの色を後で変えると、記録した中身まで変わってしまう)。ぼかしの幅は、物の大きさ (行列の行列式の平方根) を掛けて画面の DIP に直す
 - **どこ** — `plugins/rm_engine/game_ui/runtime/UiRenderer.cpp` (`DrawWithEffects`)
+
+### 文字の細かい見た目 (DirectWrite のテキストレイアウト)
+- **何か** — DirectWrite のテキストレイアウト (文字を並べた結果) に、範囲ごとの設定ができる: 太さ・斜体・下線・打ち消し線・大きさ (`SetFontWeight` など)、字間 (`IDWriteTextLayout1::SetCharacterSpacing`)、行の高さ (`SetLineSpacing`)、縦書き (流れる向きを右から左に、読む向きを上から下に)。一部の文字の色は「描く効果」(`SetDrawingEffect`) にブラシを入れると Direct2D がその色で描く
+- **工夫** — 範囲は UTF-16 の位置で数えるので、絵文字のような 2 つで 1 文字の物を 1 文字と数えて直す (`TextRange`)。はみ出したら縮めるは、大きさを半分ずつ探して (二分探索) 入る一番大きい大きさにする。縁取りと影を描いてから色を付けるので、縁取りには色が付かない
+- **どこ** — `plugins/rm_engine/game_ui/runtime/UiRenderer.cpp` (`DrawText`)・`UiLayout.cpp` (`TextRange`)
+
+### 動画を流す (Media Foundation の Media Engine と GPU のテクスチャ)
+- **何か** — Windows の Media Engine に動画のファイルの中身 (メモリ) を渡すと、読み・GPU での絵の展開・音を全部してくれる。毎フレーム「新しい絵があるか」を聞いて (`OnVideoStreamTick`)、あれば同じ Direct3D の装置のテクスチャに写してもらい (`TransferVideoFrame`)、そのテクスチャを Direct2D のビットマップとして描く (CPU を通らない)
+- **工夫** — Media Engine は自分のスレッドから装置を使うので、装置を「複数のスレッドから使ってよい」にする (`ID3D10Multithread::SetMultithreadProtected`)。動画の 1 つの絵を UI タブとゲームビューの両方で流すと音が 2 つ鳴るので、流すのはゲームが動いている画面だけ
+- **どこ** — `plugins/rm_engine/game_ui/runtime/UiVideo.cpp`
 
 ## 追記の記録
 

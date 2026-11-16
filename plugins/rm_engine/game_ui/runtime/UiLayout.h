@@ -10,8 +10,10 @@
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_ui/runtime/UiComponents.h"
 
+#include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace rm::game_ui {
@@ -100,6 +102,7 @@ struct UiNode {
     const UiButton* button = nullptr;
     const UiBar* bar = nullptr;
     const UiStyle* style = nullptr;  // 見た目 (UI-5)
+    const UiVideo* video = nullptr;  // 動画 (UI-5)
     float alpha = 1;       // faded (its own UiLive and its parents'): what it draws is multiplied by it
     bool closing = false;  // switched off and going (消えるとき) - or under one that is: drawn, never clicked
 };
@@ -197,6 +200,17 @@ struct UiStroke {
 };
 UiStroke ButtonOutline(const UiButtonLook& look, UiStroke own = {});
 Color Multiply(Color a, Color b);
+// Characters `start`, `length` of them (as the user counts them: one outside the BMP - two UTF-16 units -
+// is one) as UTF-16 units of `text`, kept inside it.
+struct UiTextRange {
+    uint32_t start = 0, length = 0;
+};
+UiTextRange TextRange(std::wstring_view text, int start, int length);
+// The part of a picture of `imagePx` pixels that 切り出し takes (pixels; a size of 0: to its edge; kept
+// inside the picture).
+UiBox CropRect(Vec2 imagePx, Vec2 offset, Vec2 size);
+// 虹色 at `seconds`: its hue going round `speed` times a second from `phase`; alpha 1.
+Color RainbowColor(const UiRainbow& r, double seconds);
 // The 立体 is drawn (one place decides it: spec §2-9) - and pressed in (へこませる, or 押すとへこむ on a
 // button pressed now).
 bool BevelShown(const UiStyle& s);

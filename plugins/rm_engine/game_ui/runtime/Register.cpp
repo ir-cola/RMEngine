@@ -21,7 +21,10 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     static const ComponentInfo kMotion{.type = &reflect::TypeOf<UiMotion>};  // 出る・消える動き (UI-4)
     static const ComponentInfo kPath{.type = &reflect::TypeOf<UiPath>};      // 道に沿って動く (UI-4)
     static const ComponentInfo kStyle{.type = &reflect::TypeOf<UiStyle>};    // 見た目 (UI-5)
-    for (const ComponentInfo* c : {&kCanvas, &kRect, &kText, &kImage, &kButton, &kBar, &kMotion, &kPath, &kStyle}) registry.Contribute(kComponentPoint, *c);
+    static const ComponentInfo kVideo{.type = &reflect::TypeOf<UiVideo>};    // 動画 (UI-5)
+    for (const ComponentInfo* c : {&kCanvas, &kRect, &kText, &kImage, &kButton, &kBar, &kMotion, &kPath, &kStyle, &kVideo}) {
+        registry.Contribute(kComponentPoint, *c);
+    }
     // While the game plays: the mouse, the keys, the buttons' OnClick.
     static const game_production::PlayServiceInfo kService{kUiServiceName, &CreateUiService};
     registry.Contribute(game_production::kPlayServicePoint, kService);

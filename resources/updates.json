@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI: 文字に斜体・下線・打ち消し線・字間・行の高さ・縦書き・はみ出したら縮める・一部だけ色や大きさを変える。虹色・画像の切り出し・動画 (音も出る)",
+          "en": "Game UI: text gets italic, underline, strikethrough, letter spacing, line height, vertical writing, shrink to fit and partial colors and sizes; rainbow colors, image cropping and videos (with sound)"
+        },
+        {
           "ja": "ゲーム UI: 部品「見た目」で背景 (角丸)・枠・影・発光・ぼかし・立体 (押すとへこむ) を付けられる。画像が無くてもボタンや下敷きが作れる",
           "en": "Game UI: the Style part adds a background (rounded), border, shadow, glow, blur and bevel (pressed in while held), so buttons and panels need no image"
         },

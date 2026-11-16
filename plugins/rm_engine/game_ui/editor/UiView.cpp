@@ -115,7 +115,11 @@ public:
         if (editCanvas_) show.push_back(editCanvas_);
         tree_ = BuildUi(host.scene, ScreenOf(gs, screen), show);
         if (editCanvas_ && !state_.otherCanvases) tree_ = OnlyCanvas(tree_, editCanvas_);
+        // (動画 never play here - the game view plays them, one sound - only their first picture; 虹色
+        // goes round: drawn again each frame while there is one)
+        renderer_.SetPlaying(false);
         renderer_.Draw(dc, host.host.Graphics(), tree_, toDc, [&host](const AssetRef& ref) { return host.host.AssetContent(ref); });
+        if (UiRenderer::Animates(tree_)) c.RequestAnimation();
         const std::optional<Rect> strip = Strip(r);
         const std::optional<Rect> row2 = Row2(r);
         const std::optional<Rect> alignBar = AlignBar(r, host);

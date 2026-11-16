@@ -4,6 +4,7 @@
 #include "base/Utf.h"
 #include "core/asset/BakedImage.h"
 #include "platform/Image.h"
+#include "platform/Shell.h"
 
 #include <d2d1effects.h>
 #include <dwrite_3.h>
@@ -152,12 +153,13 @@ const UiRenderer::Font* UiRenderer::FontOf(platform::Gfx& gfx, const AssetRef& r
     return &f;
 }
 
-IDWriteTextFormat* UiRenderer::Format(platform::Gfx& gfx, const std::wstring& family, IDWriteFontCollection* collection, float size, bool bold) {
-    const auto key = std::make_tuple(family, collection, size, bold);
+IDWriteTextFormat* UiRenderer::Format(platform::Gfx& gfx, const std::wstring& family, IDWriteFontCollection* collection, float size, bool bold, bool italic) {
+    const auto key = std::make_tuple(family, collection, size, bold, italic);
     if (const auto it = formats_.find(key); it != formats_.end()) return it->second.Get();
     Microsoft::WRL::ComPtr<IDWriteTextFormat> fmt;
     if (!gfx.DWrite() || FAILED(gfx.DWrite()->CreateTextFormat(family.c_str(), collection, bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
-                                                                DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size, L"ja-jp", &fmt))) {
+                                                                italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size,
+                                                                L"ja-jp", &fmt))) {
         return nullptr;
     }
     if (formats_.size() > 256) formats_.clear();  // (sizes animated by a script: never without end)
@@ -214,9 +216,13 @@ void UiRenderer::DrawImage(const UiNode& n, const Affine& full, platform::Gfx& g
     }
     const D2D1_SIZE_F dip = p->bitmap->GetSize();  // (the bitmap's own DIPs: the file may have been read smaller)
     const float kx = p->width ? dip.width / static_cast<float>(p->width) : 1.f, ky = p->height ? dip.height / static_cast<float>(p->height) : 1.f;
+    // 切り出し: the part of the picture used (its pixels -> the bitmap's DIPs); 9 スライス counts inside it.
+    const UiBox crop = CropRect({static_cast<float>(p->width), static_cast<float>(p->height)}, img.cropOffset, img.cropSize);
+    const float cx = crop.x * kx, cy = crop.y * ky, cw = crop.w * kx, ch = crop.h * ky;
+    if (cw <= 0 || ch <= 0) return;
     const Vec2 tl = img.sliceTopLeft, br = img.sliceBottomRight;
     if (tl.x <= 0 && tl.y <= 0 && br.x <= 0 && br.y <= 0) {
-        DrawPiece(p->bitmap.Get(), D2D1::RectF(0, 0, dip.width, dip.height), n.box, full, picture);
+        DrawPiece(p->bitmap.Get(), D2D1::RectF(cx, cy, cx + cw, cy + ch), n.box, full, picture);
         return;
     }
     // 9 スライス: the borders keep their size (縁の大きさ), shrunk together when the box is smaller.
@@ -231,8 +237,8 @@ void UiRenderer::DrawImage(const UiNode& n, const Affine& full, platform::Gfx& g
         const float f = n.box.h / (dt + db);
         dt *= f, db *= f;
     }
-    const float sx[4] = {0, l * kx, dip.width - r * kx, dip.width};
-    const float sy[4] = {0, t * ky, dip.height - b * ky, dip.height};
+    const float sx[4] = {cx, cx + l * kx, cx + cw - r * kx, cx + cw};
+    const float sy[4] = {cy, cy + t * ky, cy + ch - b * ky, cy + ch};
     const float dx[4] = {n.box.x, n.box.x + dl, n.box.Right() - dr, n.box.Right()};
     const float dy[4] = {n.box.y, n.box.y + dt, n.box.Bottom() - db, n.box.Bottom()};
     for (int row = 0; row < 3; ++row) {
@@ -248,12 +254,61 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
     if (t.text.empty() || n.box.w <= 0 || n.box.h <= 0) return;
     const Font* font = FontOf(gfx, t.fontFile, asset);
     const std::wstring family = font ? font->family : Utf8ToWide(t.font.empty() ? std::string("Yu Gothic UI") : t.font);
-    IDWriteTextFormat* fmt = Format(gfx, family, font ? font->collection.Get() : nullptr, std::max(t.size, 1.f), t.bold);
+    const float size = std::max(t.size, 1.f);
+    IDWriteTextFormat* fmt = Format(gfx, family, font ? font->collection.Get() : nullptr, size, t.bold, t.italic);
     if (!fmt) return;
     const std::wstring text = Utf8ToWide(t.text);
     Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
     if (FAILED(gfx.DWrite()->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), fmt, n.box.w, n.box.h, &layout))) return;
+    const DWRITE_TEXT_RANGE all{0, static_cast<UINT32>(text.size())};
+    if (t.vertical) {
+        // 縦書き: lines go down, the next one to the left (the flow first: the two must agree).
+        layout->SetFlowDirection(DWRITE_FLOW_DIRECTION_RIGHT_TO_LEFT);
+        layout->SetReadingDirection(DWRITE_READING_DIRECTION_TOP_TO_BOTTOM);
+    }
     layout->SetWordWrapping(t.wrap ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP);
+    if (t.underline) layout->SetUnderline(TRUE, all);
+    if (t.strike) layout->SetStrikethrough(TRUE, all);
+    if (t.letterSpacing != 0) {
+        Microsoft::WRL::ComPtr<IDWriteTextLayout1> spaced;
+        if (SUCCEEDED(layout.As(&spaced))) spaced->SetCharacterSpacing(0, t.letterSpacing, 0, all);
+    }
+    if (t.lineHeight > 0) layout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, t.lineHeight, t.lineHeight * 0.8f);
+    // 部分のスタイル (all but the colour - that is for the text itself, not its outline and shadow).
+    for (const UiTextRun& run : t.runs) {
+        const UiTextRange r = TextRange(text, run.start, run.length);
+        if (r.length == 0) continue;
+        const DWRITE_TEXT_RANGE range{r.start, r.length};
+        if (run.bold != UiRunSwitch::Keep) layout->SetFontWeight(run.bold == UiRunSwitch::On ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL, range);
+        if (run.italic != UiRunSwitch::Keep) layout->SetFontStyle(run.italic == UiRunSwitch::On ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL, range);
+        if (run.underline != UiRunSwitch::Keep) layout->SetUnderline(run.underline == UiRunSwitch::On, range);
+        if (run.strike != UiRunSwitch::Keep) layout->SetStrikethrough(run.strike == UiRunSwitch::On, range);
+    }
+    // The sizes (the text's and the runs'), all scaled by `k`: はみ出したら縮める finds the largest that fits.
+    auto sizes = [&](float k) {
+        layout->SetFontSize(size * k, all);
+        for (const UiTextRun& run : t.runs) {
+            const UiTextRange r = TextRange(text, run.start, run.length);
+            if (run.setSize && r.length > 0) layout->SetFontSize(std::max(run.size, 1.f) * k, {r.start, r.length});
+        }
+    };
+    if (std::any_of(t.runs.begin(), t.runs.end(), [](const UiTextRun& r) { return r.setSize; })) sizes(1);
+    if (t.shrinkToFit) {
+        auto fits = [&] {
+            DWRITE_TEXT_METRICS m{};
+            if (FAILED(layout->GetMetrics(&m))) return true;
+            return m.widthIncludingTrailingWhitespace <= n.box.w + 0.5f && m.height <= n.box.h + 0.5f;
+        };
+        if (!fits()) {
+            float lo = 0.05f, hi = 1;
+            for (int i = 0; i < 10; ++i) {
+                const float mid = (lo + hi) * 0.5f;
+                sizes(mid);
+                (fits() ? lo : hi) = mid;
+            }
+            sizes(lo);
+        }
+    }
     layout->SetTextAlignment(t.alignX == UiAlignX::Left ? DWRITE_TEXT_ALIGNMENT_LEADING
                              : t.alignX == UiAlignX::Right ? DWRITE_TEXT_ALIGNMENT_TRAILING
                                                            : DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -266,7 +321,9 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
     auto draw = [&](float ox, float oy, Color c) {
         c.a *= n.alpha;  // (faded with what it is in)
         if (c.a <= 0) return;
-        if (ID2D1SolidColorBrush* b = Brush(c)) dc_->DrawTextLayout({n.box.x + ox, n.box.y + oy}, layout.Get(), b, D2D1_DRAW_TEXT_OPTIONS_NONE);
+        // (文字だけずらす: only where it is drawn - its box, its wrapping and the mouse stay)
+        const D2D1_POINT_2F at{n.box.x + t.offset.x + ox, n.box.y + t.offset.y + oy};
+        if (ID2D1SolidColorBrush* b = Brush(c)) dc_->DrawTextLayout(at, layout.Get(), b, D2D1_DRAW_TEXT_OPTIONS_NONE);
     };
     if (t.shadow.x != 0 || t.shadow.y != 0) draw(t.shadow.x, t.shadow.y, t.shadowColor);
     if (t.outline > 0) {
@@ -277,7 +334,18 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
             draw(std::cos(a) * t.outline, std::sin(a) * t.outline, t.outlineColor);
         }
     }
-    draw(0, 0, t.color);
+    // The runs' colours, for the text itself (each its own brush: the layout holds it until drawn).
+    for (const UiTextRun& run : t.runs) {
+        const UiTextRange r = TextRange(text, run.start, run.length);
+        if (!run.setColor || r.length == 0) continue;
+        Color c = run.color;
+        c.a *= n.alpha;
+        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
+        if (FAILED(dc_->CreateSolidColorBrush(ToD2D(c), &brush))) continue;
+        layout->SetDrawingEffect(brush.Get(), {r.start, r.length});
+        if (fresh_) keep_.push_back(brush);
+    }
+    draw(0, 0, Rainbowed(t.color, RainbowFor(n, &UiRainbow::text)));
     dc_->SetTransform(old);
 }
 
@@ -392,8 +460,9 @@ void UiRenderer::DrawBevel(const UiNode& n, const Affine& full, bool inset) {
 }
 
 void UiRenderer::DrawBody(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint) {
-    if (n.style && n.style->background.enabled) FillShape(n, full, Paint(n.style->background.color, paint));
+    if (n.style && n.style->background.enabled) FillShape(n, full, Paint(Rainbowed(n.style->background.color, RainbowFor(n, &UiRainbow::background)), paint));
     if (n.image) DrawImage(n, full, gfx, asset, paint);
+    if (n.video) DrawVideo(n, full, gfx, asset, paint);
     if (n.bar) {
         D2D1_MATRIX_3X2_F old;
         dc_->GetTransform(&old);
@@ -459,7 +528,7 @@ void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::
         dc_->DrawImage(list.Get());
     }
     if (st.glow.enabled) {
-        Color c = st.glow.color;
+        Color c = Rainbowed(st.glow.color, RainbowFor(n, &UiRainbow::glow));
         c.a *= n.alpha;
         if (ID2D1Effect* fx = Effect(glow_, CLSID_D2D1Shadow); fx && c.a > 0) {
             // A blurred silhouette of its colour, its light added to what is under it.
@@ -476,6 +545,54 @@ void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::
     keep_.clear();
 }
 
+std::optional<Color> UiRenderer::RainbowFor(const UiNode& n, bool UiRainbow::* part) const {
+    if (!n.style || !n.style->rainbow.enabled || !(n.style->rainbow.*part)) return std::nullopt;
+    return RainbowColor(n.style->rainbow, time_);
+}
+
+Color UiRenderer::Rainbowed(Color c, const std::optional<Color>& rainbow) { return rainbow ? Color{rainbow->r, rainbow->g, rainbow->b, c.a} : c; }
+
+void UiRenderer::DrawVideo(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint) {
+    const UiVideo& v = *n.video;
+    if (v.video.Empty()) return;
+    Video& slot = videos_[std::to_string(n.entity) + "/" + v.video.guid];
+    slot.seen = true;
+    if (!slot.player && !slot.failed) {
+        std::string why;
+        const auto bytes = asset ? asset(v.video) : std::nullopt;
+        slot.player = bytes ? VideoPlayer::Open(gfx, *bytes, &why) : nullptr;
+        if (!slot.player) {
+            slot.failed = true;
+            log::Warn("ゲーム UI: 動画 ({}) を流せません: {}", v.video.guid, bytes ? why : std::string("ファイルが見つかりません"));
+        }
+    }
+    if (!slot.player) return;
+    if (slot.player->Failed()) {
+        if (!slot.failed) log::Warn("ゲーム UI: 動画 ({}) を流せません (この PC で読めない形式か、壊れています)", v.video.guid);
+        slot.failed = true;
+        slot.player.reset();
+        return;
+    }
+    // Played only while the game plays (the editor: its first picture, silent).
+    slot.player->Set(playing_ && v.playOnStart, v.loop, std::clamp(v.speed, 0.1f, 8.f), playing_ ? v.volume : 0.f, v.start, v.end);
+    ID2D1Bitmap1* frame = slot.player->Frame(dc_);
+    if (!frame) return;
+    const D2D1_SIZE_F size = frame->GetSize();
+    UiPaint p = paint;
+    p.tint = Multiply(v.color, paint.tint);
+    DrawPiece(frame, D2D1::RectF(0, 0, size.width, size.height), n.box, full, p);
+    if (fresh_) keep_.push_back(Microsoft::WRL::ComPtr<IUnknown>(frame));
+}
+
+void UiRenderer::SetPlaying(bool playing) { playing_ = playing; }
+
+bool UiRenderer::Animates(const UiTree& tree) {
+    for (const UiNode& n : tree.nodes) {
+        if (n.video || (n.style && n.style->rainbow.enabled)) return true;
+    }
+    return false;
+}
+
 void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& tree, const Affine& toDc, const AssetReader& asset) {
     if (!dc) return;
     if (gfx.Generation() != generation_) {
@@ -487,9 +604,12 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         shadow_.Reset();
         glow_.Reset();
         blur_.Reset();
+        videos_.clear();
         owner_ = nullptr;
     }
     Begin(dc);
+    time_ = platform::NowSeconds();  // (虹色 goes round with the clock)
+    for (auto& [key, v] : videos_) v.seen = false;
     // Text turned or scaled cannot be ClearType: greyscale for all of it (put back afterwards).
     const D2D1_TEXT_ANTIALIAS_MODE aa = dc->GetTextAntialiasMode();
     dc->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
@@ -499,6 +619,7 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         const UiButtonLook look = n.button ? ButtonNow(*n.button) : UiButtonLook{};
         UiPaint paint = PaintOf(look);
         paint.tint.a *= n.alpha;  // (出る・消える動き / FadeTo: everything it draws)
+        if (const auto rb = RainbowFor(n, &UiRainbow::body)) paint.tint = Multiply(paint.tint, *rb);
         // The order (spec §3-4): 影 - its body (背景, 画像, バー, 文字; ぼかし) - 光 - 立体 - 枠 - the keys' choice.
         const UiStyle* st = n.style;
         if (st && (st->shadow.enabled || st->glow.enabled || (st->blur.enabled && st->blur.radius > 0))) {
@@ -509,7 +630,7 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         if (st && BevelShown(*st)) DrawBevel(n, full, BevelInset(*st, n.button));
         if (st && st->border.enabled) {
             // Its own 枠, mixed with a button's state outline (UI-2: toward its own frame, never thinner).
-            const UiStroke own{st->border.width, st->border.color};
+            const UiStroke own{st->border.width, Rainbowed(st->border.color, RainbowFor(n, &UiRainbow::border))};
             UiStroke stroke = n.button ? ButtonOutline(look, own) : own;
             stroke.color.a *= n.alpha;
             DrawBorder(n, full, stroke);
@@ -521,6 +642,7 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         if (n.button && n.button->focused && n.button->interactable) DrawFocus(n, full);
     }
     dc->SetTextAntialiasMode(aa);
+    std::erase_if(videos_, [](const auto& kv) { return !kv.second.seen; });  // (not drawn: stopped - its sound too)
 }
 
 }  // namespace rm::game_ui
