@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "UI タブ: 吸い付き。ほかの物や親の端・真ん中への補助線と、格子 (間隔を選べる)。Alt を押すと吸い付かない",
+          "en": "UI tab: snapping. Guides to the sides and middles of other things and the parent, and a grid (with its step). Hold Alt not to snap"
+        },
+        {
           "ja": "UI タブ: 8 つの四角で大きさ (Shift で比を保つ)・上の丸で回す・中の輪で回す中心を動かす。ホイールで拡大、右ドラッグで画面を動かす",
           "en": "UI tab: eight squares change the size (Shift keeps the shape), the top dot turns, the ring moves the pivot. The wheel zooms and a right drag moves the view"
         },

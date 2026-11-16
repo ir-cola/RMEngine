@@ -82,6 +82,7 @@
 ## 2-2. できたもの
 
 - **UI-1a** (2026-11-16。画面は未確認): 8 つのハンドル (`ResizeByHandle`: 回した物も向きのまま・反対側は動かない・Shift で比)・回す丸 (`RotateByDrag`: Shift で 15 度)・回す中心の輪 (`MovePivot`: 物は動かない)・ホイールで拡大 (マウスの所を中心に)・右 / 中ドラッグで動かす・「全体を見る」。純粋な計算は `UiLayout` (テスト `GameUi_Handles_ResizeRotateAndPivot`)
+- **UI-1b** (2026-11-16。画面は未確認): 補助線 (ほかの物と親の端・真ん中。パネルの上の 6 DIP。`SnapShift`) と格子 (キャンバスの単位の間隔。`GridShift`)。動かすと大きさ (回していない物の動かした辺)。Alt で吸い付かない。テスト `GameUi_Snap_ToTheNearestEdgeOrGrid`
 
 ## 3. 前のエンジンから守ること (仕様書より)
 

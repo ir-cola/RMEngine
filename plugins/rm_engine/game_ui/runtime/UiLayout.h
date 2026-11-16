@@ -59,6 +59,12 @@ float RotateByDrag(float startDegrees, Vec2 center, Vec2 from, Vec2 to, float st
 // Its 中心 (pivot) moved to `pivot` (0..1 of its box), the thing staying where it is on the screen
 // (its 位置 worked out again: the turn is about the new 中心).
 UiRect MovePivot(const UiRect& r, const UiBox& parent, Vec2 pivot);
+// Snapping along one axis: the shift that puts one of `edges` (a moving box's sides and middle) on the
+// nearest of `targets` (other things' sides and middles) within `reach`; 0 when none is that near.
+// `line`: the target it snapped to.
+float SnapShift(std::span<const float> edges, std::span<const float> targets, float reach, std::optional<float>* line = nullptr);
+// The shift that puts `value` on the nearest multiple of `step` (step <= 0: none).
+float GridShift(float value, float step);
 // Its 中心 in its parent's units (where it turns).
 Vec2 PivotPoint(const UiRect& r, const UiBox& box);
 // How many screen DIPs one canvas unit is, for a canvas of `reference` units in an area of `area` DIPs.

@@ -22,6 +22,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace rm::game_ui {
 
@@ -41,6 +42,7 @@ constexpr float kKnob = 26.f;        // the turning knob: this far above the box
 constexpr float kKnobRadius = 5.f;
 constexpr float kClickSlop = 4.f;    // a press that moves less than this is a click
 constexpr float kMinZoom = 0.1f, kMaxZoom = 10.f;
+constexpr float kSnapReach = 6.f;    // DIPs on the panel: how near a side must come to snap
 constexpr double kForgetSeconds = 2.0;  // pictures and fonts read again this often (their files may change)
 
 UiBox ToBox(const Rect& r) { return {r.x, r.y, r.w, r.h}; }
@@ -91,6 +93,7 @@ public:
         fit_ = fit;
         if (!host.playing) HandleInput(c, r, host, toDc, strip);
         DrawGuides(c, game, toDc, gs, screen);
+        DrawSnapping(c, r, toDc);
         DrawSelection(c, host, toDc);
         DrawHints(c, r);
         c.P().PopClip();
@@ -109,8 +112,8 @@ public:
 private:
     // --- The strip: セーフエリア / アンカー on or off, the zoom ----------------------------------------
     static std::optional<Rect> Strip(const Rect& r) {
-        if (r.w < 420 || r.h < kBarH + 40) return std::nullopt;
-        return Rect{r.x + 8, r.y + 6, 404, kBarH - 4};
+        if (r.w < 640 || r.h < kBarH + 40) return std::nullopt;
+        return Rect{r.x + 8, r.y + 6, 624, kBarH - 4};
     }
 
     void DrawStrip(ui::Context& c, const Rect& s) {
@@ -133,6 +136,17 @@ private:
         ts.color = theme::TextDim;
         ts.h = ui::HAlign::Center;
         c.P().Text(zoom, std::format(L"{}%", static_cast<int>(std::round(std::clamp(state_.zoom, kMinZoom, kMaxZoom) * 100))), ts);
+        // Snapping: to other things (補助線) and to the grid (格子, with its step).
+        const Rect guides{s.x + 412, s.y, 84, s.h}, grid{s.x + 502, s.y, 60, s.h}, step{s.x + 566, s.y, 58, s.h};
+        if (w::Button(c, "ui_snap_guides", guides, Tr(L"補助線"), state_.snapGuides ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+            state_.snapGuides = !state_.snapGuides;
+        }
+        if (c.IsHovered(guides)) w::Tooltip(c, Tr(L"動かす・大きさを変える物を、ほかの物や親の端と真ん中に吸い付ける (Alt を押している間は吸い付かない)"));
+        if (w::Button(c, "ui_snap_grid", grid, Tr(L"格子"), state_.snapGrid ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+            state_.snapGrid = !state_.snapGrid;
+        }
+        if (c.IsHovered(grid)) w::Tooltip(c, Tr(L"格子に吸い付ける。右の数が格子の間隔 (キャンバスの基準の解像度の単位)"));
+        w::NumberField(c, "ui_grid_step", step, state_.gridStep, 1, 1000, gridText_);
     }
 
     // --- Where things are on the panel ---------------------------------------------------------------
@@ -238,6 +252,8 @@ private:
         if (!in.down[0]) {
             if (editing) End(host);
             drag_ = Drag::None;
+            snapX_.reset();
+            snapY_.reset();
             return;
         }
         if (drag_ == Drag::Press && pressed_ && Distance(mouse, press_) >= kClickSlop) {
@@ -251,7 +267,7 @@ private:
                 drag_ = Drag::Cancelled;
                 return;
             }
-            ApplyDrag(mouse, in.shift);
+            ApplyDrag(mouse, in.shift, in.alt);
         }
     }
 
@@ -275,6 +291,9 @@ private:
         UiBox box;          // its box at the start (in its parent's units)
         Vec2 pivotOnPanel;  // where it turns, on the panel
         std::function<reflect::EditTarget()> resolve;
+        // What it may snap to: the sides and middles of everything else (not its own children) and of
+        // its parent, on the panel.
+        std::vector<float> targetsX, targetsY;
     };
 
     bool Begin(game_production::SceneViewHost& host, const UiNode& n) {
@@ -289,10 +308,42 @@ private:
                          lastToDc_ * n.self,
                          n.box,
                          PivotOnPanel(n, lastToDc_),
-                         std::move(resolve)};
+                         std::move(resolve),
+                         {},
+                         {}};
+        const int self = static_cast<int>(&n - tree_.nodes.data());
+        for (size_t i = 0; i < tree_.nodes.size(); ++i) {
+            // (itself and what is under it move with it)
+            bool mine = false;
+            for (int k = static_cast<int>(i); k >= 0 && !mine; k = tree_.nodes[static_cast<size_t>(k)].parent) mine = k == self;
+            if (mine) continue;
+            const UiBox b = PanelBox(Corners(tree_.nodes[i], lastToDc_));
+            edited_->targetsX.insert(edited_->targetsX.end(), {b.x, b.x + b.w * 0.5f, b.Right()});
+            edited_->targetsY.insert(edited_->targetsY.end(), {b.y, b.y + b.h * 0.5f, b.Bottom()});
+        }
         history_ = {host.host.History().UndoCount(), host.host.History().RedoCount()};
         return true;
     }
+
+    // The box around corners on the panel (a turned thing's: the box that holds it).
+    static UiBox PanelBox(const std::array<Vec2, 4>& k) {
+        float x0 = k[0].x, y0 = k[0].y, x1 = k[0].x, y1 = k[0].y;
+        for (const Vec2& v : k) {
+            x0 = std::min(x0, v.x);
+            y0 = std::min(y0, v.y);
+            x1 = std::max(x1, v.x);
+            y1 = std::max(y1, v.y);
+        }
+        return {x0, y0, x1 - x0, y1 - y0};
+    }
+    // Where a UI の配置 would be on the panel (the box that holds it, turned), with the edit's parent.
+    UiBox PanelBoxOf(const UiRect& r) const {
+        const UiBox b = PlaceBox(r, edited_->parentBox);
+        const Affine m = edited_->parentToDc * About(PivotPoint(r, b), r.rotation, 1);
+        return PanelBox({Apply(m, {b.x, b.y}), Apply(m, {b.Right(), b.y}), Apply(m, {b.Right(), b.Bottom()}), Apply(m, {b.x, b.Bottom()})});
+    }
+    // The parent's units are not turned on the panel (the snapping of a resize works then).
+    bool ParentUpright() const { return std::abs(edited_->parentToDc.b) < 1e-5f && std::abs(edited_->parentToDc.c) < 1e-5f; }
 
     UiRect* Target() const {
         if (!edited_) return nullptr;
@@ -306,22 +357,57 @@ private:
 
     // While dragging, UI の配置 is changed directly (the inspector follows); one undo entry at the end.
     // Shift: a corner keeps the shape; the turn goes in steps of 15 degrees.
-    void ApplyDrag(Vec2 mouse, bool shift) {
+    void ApplyDrag(Vec2 mouse, bool shift, bool noSnap) {
         UiRect* t = Target();
         if (!t) return;
         const Edited& e = *edited_;
         const Vec2 d{mouse.x - press_.x, mouse.y - press_.y};
         UiRect next = e.start;
+        snapX_.reset();
+        snapY_.reset();
         if (drag_ == Drag::Move) {
             const auto inv = Invert(e.parentToDc);
             if (!inv) return;
             const Vec2 m = Linear(*inv, d);
             next.position = {e.start.position.x + m.x, e.start.position.y + m.y};
+            if (!noSnap) {
+                // To another thing's side or middle (on the panel); else to the grid (in the parent's units).
+                const UiBox pb = PanelBoxOf(next);
+                const float ex[] = {pb.x, pb.x + pb.w * 0.5f, pb.Right()}, ey[] = {pb.y, pb.y + pb.h * 0.5f, pb.Bottom()};
+                const float sx = state_.snapGuides ? SnapShift(ex, e.targetsX, kSnapReach, &snapX_) : 0.f;
+                const float sy = state_.snapGuides ? SnapShift(ey, e.targetsY, kSnapReach, &snapY_) : 0.f;
+                const Vec2 shiftPanel = Linear(*inv, {sx, sy});
+                next.position = {next.position.x + shiftPanel.x, next.position.y + shiftPanel.y};
+                if (state_.snapGrid) {
+                    const UiBox box = PlaceBox(next, e.parentBox);
+                    if (!snapX_) next.position.x += GridShift(box.x, state_.gridStep);
+                    if (!snapY_) next.position.y += GridShift(box.y, state_.gridStep);
+                }
+            }
         } else if (drag_ == Drag::Resize) {
             // The move in its own (turned) units: what the handle pulls.
             const auto inv = Invert(e.selfToDc);
             if (!inv) return;
-            next = ResizeByHandle(e.start, e.parentBox, handle_, Linear(*inv, d), shift);
+            Vec2 along = Linear(*inv, d);
+            next = ResizeByHandle(e.start, e.parentBox, handle_, along, shift);
+            // The sides it moves snap (an upright thing, its shape free): to another thing, else to the grid.
+            if (!noSnap && !shift && std::abs(e.start.rotation) < 1e-4f && ParentUpright()) {
+                const Vec2 sides = HandleSides(handle_);
+                const UiBox pb = PanelBoxOf(next);
+                const float ex[] = {sides.x > 0 ? pb.Right() : pb.x}, ey[] = {sides.y > 0 ? pb.Bottom() : pb.y};
+                float sx = sides.x != 0 && state_.snapGuides ? SnapShift(ex, e.targetsX, kSnapReach, &snapX_) : 0.f;
+                float sy = sides.y != 0 && state_.snapGuides ? SnapShift(ey, e.targetsY, kSnapReach, &snapY_) : 0.f;
+                if (!sides.x) snapX_.reset();
+                if (!sides.y) snapY_.reset();
+                const Vec2 own = Linear(*inv, {sx, sy});
+                along = {along.x + own.x, along.y + own.y};
+                if (state_.snapGrid) {
+                    const UiBox box = PlaceBox(ResizeByHandle(e.start, e.parentBox, handle_, along, false), e.parentBox);
+                    if (sides.x != 0 && !snapX_) along.x += GridShift(sides.x > 0 ? box.Right() : box.x, state_.gridStep);
+                    if (sides.y != 0 && !snapY_) along.y += GridShift(sides.y > 0 ? box.Bottom() : box.y, state_.gridStep);
+                }
+                next = ResizeByHandle(e.start, e.parentBox, handle_, along, false);
+            }
         } else if (drag_ == Drag::Rotate) {
             next.rotation = RotateByDrag(e.start.rotation, e.pivotOnPanel, press_, mouse, shift ? 15.f : 0.f);
         } else if (drag_ == Drag::Pivot) {
@@ -373,6 +459,31 @@ private:
                 p.StrokeRect({a.x, a.y, b.x - a.x, b.y - a.y}, theme::AxisY().Alpha(0.8f), 1.f);
             }
         }
+    }
+
+    // The grid (when snapping to it: over each canvas, while its lines are far enough apart) and the
+    // lines a drag snapped to.
+    void DrawSnapping(ui::Context& c, const Rect& r, const Affine& toDc) {
+        auto& p = c.P();
+        if (state_.snapGrid && state_.gridStep >= 1) {
+            for (const UiNode& n : tree_.nodes) {
+                if (n.parent >= 0) continue;
+                const Affine m = toDc * n.self;
+                const float stepOnPanel = state_.gridStep * std::hypot(m.a, m.b);
+                if (stepOnPanel < 8) continue;
+                const ui::Color col = theme::SceneGrid();
+                for (float x = n.box.x; x <= n.box.Right() + 1e-3f; x += state_.gridStep) {
+                    const Vec2 a = Apply(m, {x, n.box.y}), b = Apply(m, {x, n.box.Bottom()});
+                    p.Line(a.x, a.y, b.x, b.y, col, 1.f);
+                }
+                for (float y = n.box.y; y <= n.box.Bottom() + 1e-3f; y += state_.gridStep) {
+                    const Vec2 a = Apply(m, {n.box.x, y}), b = Apply(m, {n.box.Right(), y});
+                    p.Line(a.x, a.y, b.x, b.y, col, 1.f);
+                }
+            }
+        }
+        if (snapX_) p.Line(*snapX_, r.y, *snapX_, r.Bottom(), theme::GizmoHot(), 1.f);
+        if (snapY_) p.Line(r.x, *snapY_, r.Right(), *snapY_, theme::GizmoHot(), 1.f);
     }
 
     void DrawSelection(ui::Context& c, const game_production::SceneViewHost& host, const Affine& toDc) {
@@ -441,7 +552,7 @@ private:
         ts.v = ui::VAlign::Bottom;
         ts.wrap = true;
         c.P().Text(r.Inset(10, 8, 10, 6),
-                   Tr(L"クリック: 選ぶ   ドラッグ: 動かす   四角: 大きさ (Shift で形を保つ)   上の丸: 回す (Shift で 15 度ずつ)   中の輪: 回す中心   ホイール: 拡大   右ドラッグ: 動かす   Esc: やめる"),
+                   Tr(L"クリック: 選ぶ   ドラッグ: 動かす   四角: 大きさ (Shift で形を保つ)   上の丸: 回す (Shift で 15 度ずつ)   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 動かす   Esc: やめる"),
                    ts);
         if (tree_.nodes.empty()) {
             ui::TextStyle hint = ts;
@@ -470,6 +581,8 @@ private:
     UiHandle handle_ = UiHandle::TopLeft;
     std::optional<Edited> edited_;
     std::pair<size_t, size_t> history_{0, 0};
+    std::optional<float> snapX_, snapY_;  // the lines the drag snapped to (on the panel)
+    std::string gridText_;                // the grid's step while typed
 };
 
 }  // namespace

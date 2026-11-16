@@ -174,6 +174,29 @@ UiRect MovePivot(const UiRect& r, const UiBox& parent, Vec2 pivot) {
     return out;
 }
 
+float SnapShift(std::span<const float> edges, std::span<const float> targets, float reach, std::optional<float>* line) {
+    float best = 0;
+    float bestDistance = reach;
+    std::optional<float> at;
+    for (const float e : edges) {
+        for (const float t : targets) {
+            const float d = std::abs(t - e);
+            if (d <= bestDistance && (!at || d < bestDistance)) {
+                bestDistance = d;
+                best = t - e;
+                at = t;
+            }
+        }
+    }
+    if (line) *line = at;
+    return at ? best : 0.f;
+}
+
+float GridShift(float value, float step) {
+    if (!(step > 0)) return 0;
+    return std::round(value / step) * step - value;
+}
+
 Vec2 PivotPoint(const UiRect& r, const UiBox& box) { return {box.x + box.w * r.pivot.x, box.y + box.h * r.pivot.y}; }
 
 float CanvasScale(UiScaleMode mode, Vec2 reference, Vec2 area) {

@@ -110,6 +110,20 @@ RM_TEST(GameUi_Handles_ResizeRotateAndPivot) {
     CHECK(Near(RotateByDrag(170, {0, 0}, {1, 0}, {-1, -0.01f}), 170 - 179.427f, 0.01f));  // (the short way round)
 }
 
+RM_TEST(GameUi_Snap_ToTheNearestEdgeOrGrid) {
+    // A box at 10..110 (middle 60): the nearest target within reach wins - any of its sides or its middle.
+    const float edges[] = {10, 60, 110};
+    const float targets[] = {0, 57, 200};
+    std::optional<float> line;
+    CHECK(Near(SnapShift(edges, targets, 5, &line), -3) && line && Near(*line, 57));  // middle 60 -> 57
+    const float far[] = {300, 400};
+    CHECK(SnapShift(edges, far, 5, &line) == 0 && !line);  // nothing near: no shift
+    const float exact[] = {110};
+    CHECK(SnapShift(edges, exact, 5, &line) == 0 && line && Near(*line, 110));  // already on it: stays, the line shows
+    // The grid: to the nearest multiple.
+    CHECK(Near(GridShift(23, 10), -3) && Near(GridShift(26, 10), 4) && Near(GridShift(-14, 10), 4) && Near(GridShift(-16, 10), -4) && GridShift(7, 0) == 0);
+}
+
 RM_TEST(GameUi_Reanchored_KeepsTheBox) {
     // The inspector's アンカー: the thing stays where it is on the screen (to every preset and back).
     const UiBox parent{0, 0, 1920, 1080};

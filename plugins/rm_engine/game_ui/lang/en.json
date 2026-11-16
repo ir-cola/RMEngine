@@ -120,5 +120,9 @@
   "文字の大きさ": "Font size",
   "全体を見る": "Fit",
   "ゲームの画面全体が入る大きさに戻す (ホイールで拡大・縮小、右か中のドラッグで動かす)": "Back to the whole game screen (wheel: zoom, right or middle drag: move the view)",
-  "クリック: 選ぶ   ドラッグ: 動かす   四角: 大きさ (Shift で形を保つ)   上の丸: 回す (Shift で 15 度ずつ)   中の輪: 回す中心   ホイール: 拡大   右ドラッグ: 動かす   Esc: やめる": "Click: select   Drag: move   Squares: size (Shift keeps the shape)   Top dot: turn (Shift: 15° steps)   Ring: pivot   Wheel: zoom   Right drag: move the view   Esc: cancel"
+  "クリック: 選ぶ   ドラッグ: 動かす   四角: 大きさ (Shift で形を保つ)   上の丸: 回す (Shift で 15 度ずつ)   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 動かす   Esc: やめる": "Click: select   Drag: move   Squares: size (Shift keeps the shape)   Top dot: turn (Shift: 15° steps)   Ring: pivot   Alt: no snapping   Wheel: zoom   Right drag: move the view   Esc: cancel",
+  "補助線": "Guides",
+  "動かす・大きさを変える物を、ほかの物や親の端と真ん中に吸い付ける (Alt を押している間は吸い付かない)": "Snap what you move or resize to the sides and middles of other things and the parent (not while Alt is held)",
+  "格子": "Grid",
+  "格子に吸い付ける。右の数が格子の間隔 (キャンバスの基準の解像度の単位)": "Snap to the grid. The number on its right is its step (in the canvas's reference resolution)"
 }
