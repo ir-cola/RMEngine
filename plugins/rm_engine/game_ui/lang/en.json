@@ -124,7 +124,6 @@
   "動かす・大きさを変える物を、ほかの物や親の端と真ん中に吸い付ける (Alt を押している間は吸い付かない)": "Snap what you move or resize to the sides and middles of other things and the parent (not while Alt is held)",
   "格子": "Grid",
   "格子に吸い付ける。右の数が格子の間隔 (キャンバスの基準の解像度の単位)": "Snap to the grid. The number on its right is its step (in the canvas's reference resolution)",
-  "クリック: 選ぶ (Shift・Ctrl で足す)   空いた所のドラッグ: 囲んで選ぶ   ドラッグ: 動かす   四角: 大きさ (Shift で形を保つ)   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす": "Click: select (Shift / Ctrl adds)   Drag on empty space: box select   Drag: move   Squares: size (Shift keeps the shape)   Top dot: turn   Ring: pivot   Alt: no snapping   Wheel: zoom   Right drag: move the view",
   "左揃え": "Align left",
   "選んだ物の左の端を、一番左の物にそろえる": "Line up the left sides with the leftmost one",
   "左右の真ん中": "Center across",
@@ -140,5 +139,18 @@
   "横に等間隔": "Space across",
   "選んだ物 (3 つ以上) の横の間を同じにする (両端の物は動かない)": "Make the gaps across equal (three or more; the two at the ends stay)",
   "縦に等間隔": "Space up-down",
-  "選んだ物 (3 つ以上) の縦の間を同じにする (両端の物は動かない)": "Make the gaps up and down equal (three or more; the two at the ends stay)"
+  "選んだ物 (3 つ以上) の縦の間を同じにする (両端の物は動かない)": "Make the gaps up and down equal (three or more; the two at the ends stay)",
+  "クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く": "Click: select (Shift / Ctrl adds)   Box select: drag from empty space   Drag: move (let go with Ctrl: make it that thing's child)   Double click: type the text   Squares: size   Top dot: turn   Ring: pivot   Alt: no snapping   Wheel: zoom   Right drag: move the view   Drop an image from Assets: place it",
+  "キャンバス: 全部": "Canvas: all",
+  "キャンバス: {}": "Canvas: {}",
+  "作るキャンバス (ウィンドウ) を選ぶ。選んだキャンバスは、有効を外していてもここに出ます": "Choose the canvas (window) to make. The chosen one shows here even when switched off",
+  "全部": "All",
+  "ほかも見る": "Show others",
+  "選んだキャンバスのほかに、有効なキャンバスも重ねて見る (HUD の上のポーズ画面など)": "Show the other switched-on canvases too, over or under the chosen one (a pause screen over the HUD ...)",
+  "アンカー …": "Anchor…",
+  "固定する場所を図から選ぶ (場所は変わらない)。Shift: 回す中心もそこへ。Alt: 位置もそこへ (伸ばす向きは親いっぱい)": "Choose where it is fixed from the pictures (it stays where it is). Shift: the pivot too. Alt: the position too (stretched ways fill the parent)",
+  "一番前へ": "To front",
+  "兄弟の中で一番手前に描く (手前の順)": "Draw it in front of its brothers (draw order)",
+  "一番後ろへ": "To back",
+  "兄弟の中で一番奥に描く (手前の順)": "Draw it behind its brothers (draw order)"
 }

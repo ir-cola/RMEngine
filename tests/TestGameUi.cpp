@@ -143,6 +143,42 @@ RM_TEST(GameUi_AlignAndDistribute) {
     CHECK(DistributeShifts(std::span(boxes, 2), true)[1].x == 0);
 }
 
+RM_TEST(GameUi_AnchorGrid_RehomeAndOneCanvas) {
+    // Every anchor has its cell, and the cell gives it back.
+    for (int a = 0; a <= static_cast<int>(UiAnchor::Stretch); ++a) {
+        int row = -1, col = -1;
+        AnchorCell(static_cast<UiAnchor>(a), row, col);
+        CHECK(row >= 0 && row < 4 && col >= 0 && col < 4 && AnchorAt(row, col) == static_cast<UiAnchor>(a));
+    }
+    CHECK(AnchorAt(0, 0) == UiAnchor::TopLeft && AnchorAt(3, 3) == UiAnchor::Stretch && AnchorAt(2, 3) == UiAnchor::StretchBottom);
+    // Under another parent: as big as it was, its 中心 where asked.
+    UiRect r;
+    r.anchor = UiAnchor::StretchTop;
+    r.size = {-100, 50};
+    r.pivot = {0.5f, 0.5f};
+    const UiBox oldParent{0, 0, 800, 600}, newParent{100, 100, 300, 200};
+    const UiRect moved = Rehomed(r, oldParent, newParent, {200, 150}, 12);
+    const UiBox before = PlaceBox(r, oldParent), after = PlaceBox(moved, newParent);
+    CHECK(Near(after.w, before.w) && Near(after.h, before.h) && moved.anchor == UiAnchor::StretchTop && Near(moved.rotation, 12));
+    const Vec2 pv = PivotPoint(moved, after);
+    CHECK(Near(pv.x, 200) && Near(pv.y, 150));
+    // One canvas alone: its things, their parents found again in the smaller list.
+    Scene s = UiScene();
+    const int a = s.Create("A");
+    Add<UiCanvas>(s, a);
+    const int b = s.Create("B");
+    Add<UiCanvas>(s, b);
+    const int inB = s.Create("in B", b);
+    Add<UiRect>(s, inB);
+    const int deep = s.Create("deep", inB);
+    Add<UiRect>(s, deep);
+    const UiTree all = BuildUi(s, UiScreen{});
+    const UiTree only = OnlyCanvas(all, b);
+    CHECK(only.nodes.size() == 3 && only.nodes[0].entity == b && only.nodes[0].parent == -1);
+    CHECK(only.Find(deep) && only.Find(deep)->parent >= 0 && only.nodes[static_cast<size_t>(only.Find(deep)->parent)].entity == inB);
+    CHECK(!only.Find(a));
+}
+
 RM_TEST(GameUi_Reanchored_KeepsTheBox) {
     // The inspector's アンカー: the thing stays where it is on the screen (to every preset and back).
     const UiBox parent{0, 0, 1920, 1080};

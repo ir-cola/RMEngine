@@ -60,6 +60,11 @@ struct SceneViewHost {
     const DebugDraw* debug = nullptr;
     // The game settings (read only: the 画面's size and safe area - the UI view).
     const GameSettings* settings = nullptr;
+    // Changes the scene's shape (a view makes entities or moves them: the UI view drops a picture, gives
+    // a UI thing another parent): `touched` the entities the change alters (with what is under them;
+    // the ones it makes are found by themselves - SceneRecord), one undo entry named `label`. `change`
+    // gives the entities to select after it (empty: the selection stays). Nothing while playing.
+    std::function<void(std::vector<int> touched, std::string label, std::function<std::vector<int>(Scene&)> change)> editScene;
 };
 
 // One per open game and view (the scene view, the game view): keeps its own camera.

@@ -84,6 +84,7 @@
 - **UI-1a** (2026-11-16。画面は未確認): 8 つのハンドル (`ResizeByHandle`: 回した物も向きのまま・反対側は動かない・Shift で比)・回す丸 (`RotateByDrag`: Shift で 15 度)・回す中心の輪 (`MovePivot`: 物は動かない)・ホイールで拡大 (マウスの所を中心に)・右 / 中ドラッグで動かす・「全体を見る」。純粋な計算は `UiLayout` (テスト `GameUi_Handles_ResizeRotateAndPivot`)
 - **UI-1b** (2026-11-16。画面は未確認): 補助線 (ほかの物と親の端・真ん中。パネルの上の 6 DIP。`SnapShift`) と格子 (キャンバスの単位の間隔。`GridShift`)。動かすと大きさ (回していない物の動かした辺)。Alt で吸い付かない。テスト `GameUi_Snap_ToTheNearestEdgeOrGrid`
 - **UI-1c** (2026-11-16。画面は未確認): 複数を選ぶ (Shift・Ctrl クリック・空いた所から囲む)・一緒に動かす (親が動く子は除く・補助線は全体の箱で)・揃えの帯 (`AlignShifts` / `DistributeShifts`。テスト `GameUi_AlignAndDistribute`)。ドラッグの編集は `edits_` (何個でも) にして、Undo は 1 回分
+- **UI-1d** (2026-11-16。画面は未確認): 2 段目の帯 (作るキャンバスの一覧・ほかも見る・アンカーの図 `AnchorAt` / `AnchorCell`・一番前へ / 後ろへ)・Ctrl で離すと子に (`Rehomed`: 中心と向きを保つ)・文字のダブルクリックでその場の入力欄・アセットの画像のドロップ。ゲーム制作の `SceneViewHost::editScene` (ビューがシーンの形を変える道: `EditTouching` と同じ 1 回分の Undo) を足した。`OnlyCanvas`。テスト `GameUi_AnchorGrid_RehomeAndOneCanvas`。**これで UI-1 は全部** (画面で試すのはこれから)
 
 ## 3. 前のエンジンから守ること (仕様書より)
 

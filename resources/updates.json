@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "UI タブ: 作るキャンバスを選ぶ (そのキャンバスだけ / ほかも重ねて)・アンカーを図から選ぶ・一番前へ / 後ろへ・Ctrl で離すと子にする・文字をダブルクリックでその場で打つ・アセットの画像をドロップで置く",
+          "en": "UI tab: choose the canvas to make (alone or with the others), pick the anchor from pictures, to front / back, let go with Ctrl to make a child, double click a text to type it in place, drop an image from Assets to place it"
+        },
+        {
           "ja": "UI タブ: 複数を選ぶ (Shift・Ctrl クリック、囲んで選ぶ) と一緒に動かす。揃え (左・真ん中・右・上・下) と等間隔",
           "en": "UI tab: select several (Shift / Ctrl click, box select) and move them together. Align (left, middle, right, top, bottom) and equal spacing"
         },

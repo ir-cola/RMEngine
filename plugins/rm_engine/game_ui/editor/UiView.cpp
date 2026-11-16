@@ -1,12 +1,15 @@
 #include "rm_engine/game_ui/editor/UiView.h"
 
 #include "base/Log.h"
+#include "base/Utf.h"
+#include "core/asset/AssetIndex.h"
 #include "core/UndoHistory.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
+#include "platform/Image.h"
 #include "platform/Shell.h"
 #include "rm_engine/game_ui/editor/UiViewState.h"
 #include "rm_engine/game_ui/runtime/UiLayout.h"
@@ -105,20 +108,37 @@ public:
         ID2D1DeviceContext* dc = c.P().DC();
         renderer_.Fill(dc, ToBox(r), theme::SceneBackground());
         renderer_.Fill(dc, ToBox(game), Color{gs.clearColor.r, gs.clearColor.g, gs.clearColor.b, 1});
-        tree_ = BuildUi(host.scene, ScreenOf(gs, screen), host.selection);
+        // The canvas being made (its window shown even when switched off; alone, unless ほかも見る).
+        if (editCanvas_ && !host.scene.Find(editCanvas_)) editCanvas_ = 0;
+        std::vector<int> show(host.selection.begin(), host.selection.end());
+        if (editCanvas_) show.push_back(editCanvas_);
+        tree_ = BuildUi(host.scene, ScreenOf(gs, screen), show);
+        if (editCanvas_ && !state_.otherCanvases) tree_ = OnlyCanvas(tree_, editCanvas_);
         renderer_.Draw(dc, host.host.Graphics(), tree_, toDc, [&host](const AssetRef& ref) { return host.host.AssetContent(ref); });
         const std::optional<Rect> strip = Strip(r);
+        const std::optional<Rect> row2 = Row2(r);
         const std::optional<Rect> alignBar = AlignBar(r, host);
         lastToDc_ = toDc;
         fit_ = fit;
-        if (!host.playing) HandleInput(c, r, host, toDc, strip, alignBar);
+        std::vector<Rect> bars;
+        for (const auto& b : {strip, row2, alignBar}) {
+            if (b) bars.push_back(*b);
+        }
+        if (anchorMenu_.open) bars.push_back(AnchorMenuRect());
+        if (!host.playing) HandleInput(c, r, host, toDc, bars);
         DrawGuides(c, game, toDc, gs, screen);
         DrawSnapping(c, r, toDc);
         DrawSelection(c, host, toDc);
         DrawHints(c, r);
+        if (!host.playing) {
+            DropPicture(c, r, host, toDc);
+            EditText(c, host, toDc);
+        }
         c.P().PopClip();
         if (strip) DrawStrip(c, *strip);
+        if (row2 && !host.playing) DrawRow2(c, *row2, host);
         if (alignBar && !host.playing) DrawAlignBar(c, *alignBar, host);
+        if (!host.playing) DrawAnchorMenu(c, host);
     }
 
     void LoadState(const json::Value& s) override {
@@ -172,8 +192,245 @@ private:
 
     // --- The align bar (two or more selected): line them up, spread them ------------------------------
     std::optional<Rect> AlignBar(const Rect& r, const game_production::SceneViewHost& host) const {
-        if (r.w < 640 || r.h < 2 * kBarH + 60 || SelectedNodes(host).size() < 2) return std::nullopt;
+        if (r.w < 640 || r.h < 3 * kBarH + 60 || SelectedNodes(host).size() < 2) return std::nullopt;
+        return Rect{r.x + 8, r.y + 6 + 2 * kBarH, 624, kBarH - 4};
+    }
+
+    // --- The second row: the canvas being made; for one selected thing its anchor and its order ------
+    static std::optional<Rect> Row2(const Rect& r) {
+        if (r.w < 640 || r.h < 2 * kBarH + 60) return std::nullopt;
         return Rect{r.x + 8, r.y + 6 + kBarH, 624, kBarH - 4};
+    }
+
+    // The canvases of the scene (switched on or not), in the scene's order.
+    static std::vector<std::pair<int, std::string>> Canvases(const game_production::SceneViewHost& host) {
+        std::vector<std::pair<int, std::string>> out;
+        const std::string type = reflect::TypeOf<UiCanvas>().name;
+        for (const auto& t : host.scene.TreeOrder()) {
+            const game_production::Component* comp = t.entity->FindComponent(type);
+            if (comp && comp->Known()) out.emplace_back(t.entity->data.id, t.entity->data.name);
+        }
+        return out;
+    }
+
+    void DrawRow2(ui::Context& c, const Rect& s, game_production::SceneViewHost& host) {
+        const Rect canvas{s.x, s.y, 220, s.h}, others{s.x + 226, s.y, 110, s.h};
+        std::wstring name = Tr(L"キャンバス: 全部");
+        for (const auto& [id, n] : Canvases(host)) {
+            if (id == editCanvas_) name = TrF(L"キャンバス: {}", Utf8ToWide(n));
+        }
+        if (w::ComboBox(c, "ui_canvas", canvas, name).clicked) canvasMenu_.OpenAt(canvas.x, canvas.Bottom());
+        if (c.IsHovered(canvas)) w::Tooltip(c, Tr(L"作るキャンバス (ウィンドウ) を選ぶ。選んだキャンバスは、有効を外していてもここに出ます"));
+        if (canvasMenu_.open) {
+            const auto list = Canvases(host);
+            std::vector<w::MenuItem> items{{Tr(L"全部")}};
+            for (const auto& [id, n] : list) items.push_back({Utf8ToWide(n), {}, true, false, id == editCanvas_});
+            const int chosen = w::MenuPopup(c, canvasMenu_, items, 240);
+            if (chosen == 0) editCanvas_ = 0;
+            if (chosen > 0 && static_cast<size_t>(chosen) <= list.size()) {
+                editCanvas_ = list[static_cast<size_t>(chosen - 1)].first;
+                host.select({editCanvas_});
+            }
+        }
+        if (editCanvas_) {
+            if (w::Button(c, "ui_other_canvases", others, Tr(L"ほかも見る"), state_.otherCanvases ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+                state_.otherCanvases = !state_.otherCanvases;
+            }
+            if (c.IsHovered(others)) w::Tooltip(c, Tr(L"選んだキャンバスのほかに、有効なキャンバスも重ねて見る (HUD の上のポーズ画面など)"));
+        }
+        // One thing selected: its anchor (a picture to choose from) and its order among its brothers.
+        const UiNode* single = Single(host);
+        if (!single) return;
+        const Rect anchor{s.x + 344, s.y, 120, s.h}, front{s.x + 470, s.y, 74, s.h}, back{s.x + 550, s.y, 74, s.h};
+        if (w::Button(c, "ui_anchor_pick", anchor, Tr(L"アンカー …"))) anchorMenu_.OpenAt(anchor.x, anchor.Bottom() + 2);
+        if (c.IsHovered(anchor)) w::Tooltip(c, Tr(L"固定する場所を図から選ぶ (場所は変わらない)。Shift: 回す中心もそこへ。Alt: 位置もそこへ (伸ばす向きは親いっぱい)"));
+        if (w::Button(c, "ui_front", front, Tr(L"一番前へ"))) Reorder(host, *single, true);
+        if (c.IsHovered(front)) w::Tooltip(c, Tr(L"兄弟の中で一番手前に描く (手前の順)"));
+        if (w::Button(c, "ui_back", back, Tr(L"一番後ろへ"))) Reorder(host, *single, false);
+        if (c.IsHovered(back)) w::Tooltip(c, Tr(L"兄弟の中で一番奥に描く (手前の順)"));
+    }
+
+    // The anchor picker: 4 x 4 pictures (a box in its parent, the dot / lines where it is fixed).
+    Rect AnchorMenuRect() const { return {anchorMenu_.x, anchorMenu_.y, 4 * 40.f + 12, 4 * 40.f + 12}; }
+    void DrawAnchorMenu(ui::Context& c, game_production::SceneViewHost& host) {
+        if (!anchorMenu_.open) return;
+        const UiNode* single = Single(host);
+        if (!single) {
+            anchorMenu_.open = false;
+            return;
+        }
+        const Rect box = AnchorMenuRect();
+        w::DrawSurface(c, box, w::Surface::Popup);
+        int curRow = 1, curCol = 1;
+        AnchorCell(single->place->anchor, curRow, curCol);
+        for (int row = 0; row < 4; ++row) {
+            for (int col = 0; col < 4; ++col) {
+                const Rect cell{box.x + 6 + 40.f * static_cast<float>(col), box.y + 6 + 40.f * static_cast<float>(row), 38, 38};
+                const auto res = w::Selectable(c, std::format("ui_anchor_{}_{}", row, col), cell, row == curRow && col == curCol);
+                // The picture: the parent (outline), and where the thing is fixed (a dot, or lines when stretched).
+                auto& p = c.P();
+                const Rect in = cell.Inset(8);
+                p.StrokeRect(in, theme::TextDim, 1.f);
+                Vec2 mn, mx;
+                AnchorRange(AnchorAt(row, col), mn, mx);
+                const float x0 = in.x + in.w * mn.x, x1 = in.x + in.w * mx.x, y0 = in.y + in.h * mn.y, y1 = in.y + in.h * mx.y;
+                const ui::Color mark = theme::Accent;
+                if (x0 == x1 && y0 == y1) p.FillCircle(x0, y0, 3, mark);
+                if (x0 != x1) p.Line(x0, y0, x1, y0, mark, 2.f);
+                if (y0 != y1) p.Line(x0, y0, x0, y1, mark, 2.f);
+                if (x0 != x1 && y0 != y1) {
+                    p.Line(x1, y0, x1, y1, mark, 2.f);
+                    p.Line(x0, y1, x1, y1, mark, 2.f);
+                }
+                if (res.clicked) {
+                    SetAnchor(host, *single, AnchorAt(row, col), c.In().shift, c.In().alt);
+                    anchorMenu_.open = false;
+                }
+            }
+        }
+        if (c.KeyPressed(ui::Key::Escape) || (c.MousePressed() && !c.IsHovered(box) && !anchorMenu_.fresh)) anchorMenu_.open = false;
+        anchorMenu_.fresh = false;
+    }
+
+    // A new anchor (the place kept: Reanchored); Shift: the 中心 to it too; Alt: 位置 to it too (a
+    // stretched way fills the parent).
+    void SetAnchor(game_production::SceneViewHost& host, const UiNode& n, UiAnchor anchor, bool pivotToo, bool placeToo) {
+        edits_.clear();
+        if (!Begin(host, n)) return;
+        const Edited& e = edits_.front();
+        UiRect next = Reanchored(e.start, anchor, e.parentBox);
+        Vec2 mn, mx;
+        AnchorRange(anchor, mn, mx);
+        if (pivotToo) next = MovePivot(next, e.parentBox, {(mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f});
+        if (placeToo) {
+            next.position = {0, 0};
+            if (mn.x != mx.x) next.size.x = 0;
+            if (mn.y != mx.y) next.size.y = 0;
+        }
+        if (UiRect* t = Target(e)) *t = next;
+        Commit(host, "アンカーを変える");
+    }
+
+    // First / last among its brothers (手前の順: one more than the most / one less than the least).
+    void Reorder(game_production::SceneViewHost& host, const UiNode& n, bool front) {
+        std::optional<int> most;
+        for (const UiNode& o : tree_.nodes) {
+            if (o.parent != n.parent || o.entity == n.entity || !o.place) continue;
+            most = most ? (front ? std::max(*most, o.place->order) : std::min(*most, o.place->order)) : o.place->order;
+        }
+        edits_.clear();
+        if (!Begin(host, n)) return;
+        if (UiRect* t = Target(edits_.front())) t->order = most ? (front ? *most + 1 : *most - 1) : t->order;
+        Commit(host, front ? "一番前へ" : "一番後ろへ");
+    }
+
+    // --- A picture dropped from the アセット panel: an 画像 there (under the thing it is dropped on) ----
+    void DropPicture(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const Affine& toDc) {
+        if (!host.editScene || tree_.nodes.empty()) return;
+        const auto isPicture = [&host](const w::DragThing& t) {
+            if (t.kind != "asset" || t.values.size() != 1) return false;
+            const auto file = host.host.AssetFile(AssetRef{t.values[0]});
+            return !file.empty() && asset::KindOf(PathToUtf8(file.filename().wstring()), false) == asset::Kind::Image;
+        };
+        const w::DragThing* dropped = w::DropTarget(c, r, isPicture);
+        if (!dropped) return;
+        const Vec2 at{c.In().mouseX, c.In().mouseY};
+        // Into the frontmost thing under the mouse, else the canvas under it, else the first canvas.
+        int parentIndex = -1;
+        if (const int picked = PickAt(toDc, at)) {
+            for (size_t i = 0; i < tree_.nodes.size(); ++i) {
+                if (tree_.nodes[i].entity == picked) parentIndex = static_cast<int>(i);
+            }
+        }
+        if (parentIndex < 0) {
+            for (size_t i = 0; i < tree_.nodes.size(); ++i) {
+                const UiNode& n = tree_.nodes[i];
+                if (n.parent < 0 && (parentIndex < 0 || Overlap(PanelBox(Corners(n, toDc)), {at.x, at.y, 0, 0}))) parentIndex = static_cast<int>(i);
+            }
+        }
+        if (parentIndex < 0) return;
+        const UiNode& parent = tree_.nodes[static_cast<size_t>(parentIndex)];
+        const auto inv = Invert(toDc * parent.self);
+        if (!inv) return;
+        const Vec2 inParent = Apply(*inv, at);
+        const AssetRef ref{dropped->values[0]};
+        const std::filesystem::path file = host.host.AssetFile(ref);
+        // As big as the picture is (its pixels as the canvas's units), at most half the parent.
+        Vec2 size{200, 200};
+        std::string err;
+        if (const auto img = platform::LoadImageFile(host.host.Graphics().Wic(), file, platform::PixelOrder::Rgba, {}, &err)) {
+            const float k = std::min({1.f, parent.box.w * 0.5f / std::max(1.f, static_cast<float>(img->width)), parent.box.h * 0.5f / std::max(1.f, static_cast<float>(img->height))});
+            size = {static_cast<float>(img->width) * k, static_cast<float>(img->height) * k};
+        }
+        const std::string name = PathToUtf8(file.stem().wstring());
+        const int parentEntity = parent.entity;
+        const UiBox parentBox = parent.box;
+        host.editScene({parentEntity}, "画像を置く", [&](game_production::Scene& scene) -> std::vector<int> {
+            const int id = scene.Create(name, parentEntity);
+            scene.AddComponent(id, reflect::TypeOf<UiRect>());
+            scene.AddComponent(id, reflect::TypeOf<UiImage>());
+            game_production::SceneEntity* e = scene.Find(id);
+            if (!e) return {};
+            if (auto* rc = e->FindComponent(reflect::TypeOf<UiRect>().name); rc && rc->Known()) {
+                auto& rect = *static_cast<UiRect*>(rc->value.Get());
+                rect.size = size;
+                rect.position = {inParent.x - (parentBox.x + parentBox.w * 0.5f), inParent.y - (parentBox.y + parentBox.h * 0.5f)};
+            }
+            if (auto* ic = e->FindComponent(reflect::TypeOf<UiImage>().name); ic && ic->Known()) static_cast<UiImage*>(ic->value.Get())->image = ref;
+            return {id};
+        });
+    }
+
+    // --- A text typed straight on it (a double click on a thing with 文字) ---------------------------
+    void StartTextEdit(ui::Context& c, game_production::SceneViewHost& host, int entity) {
+        auto resolve = host.component(entity, reflect::TypeOf<UiText>().name);
+        const reflect::EditTarget t = resolve ? resolve() : reflect::EditTarget{};
+        if (!t.object) return;
+        textEntity_ = entity;
+        textResolve_ = std::move(resolve);
+        textBefore_ = static_cast<const UiText*>(t.object)->text;
+        textNow_ = textBefore_;
+        c.FocusText(c.MakeId("ui_text_edit"), Utf8ToWide(textNow_), true);
+        textStarted_ = false;
+    }
+
+    void EditText(ui::Context& c, game_production::SceneViewHost& host, const Affine& toDc) {
+        if (!textEntity_) return;
+        const UiNode* n = tree_.Find(textEntity_);
+        const reflect::EditTarget t = textResolve_ ? textResolve_() : reflect::EditTarget{};
+        auto* text = static_cast<UiText*>(t.object);
+        if (!n || !text) {
+            textEntity_ = 0;
+            return;
+        }
+        const UiBox b = PanelBox(Corners(*n, toDc));
+        const Rect field{b.x, b.y + std::max(0.f, (b.h - 26) * 0.5f), std::max(b.w, 120.f), 26};
+        w::TextField(c, "ui_text_edit", field, textNow_);
+        text->text = textNow_;  // (seen at once; one undo entry when the field is left)
+        bool focused = c.Focused() == c.MakeId("ui_text_edit");
+        // Enter: done; Esc: as it was (the field itself does not take either).
+        if (focused && (c.KeyPressed(ui::Key::Enter) || c.KeyPressed(ui::Key::Escape))) {
+            c.ClearFocus();
+            focused = false;
+        }
+        if (!textStarted_) {
+            textStarted_ = focused;
+            return;
+        }
+        if (focused) return;
+        // Left (Enter, a click elsewhere): the change goes into the history; Esc: as it was.
+        if (c.KeyPressed(ui::Key::Escape)) textNow_ = textBefore_;
+        text->text = textBefore_;
+        if (textNow_ != textBefore_) {
+            const reflect::TypeDesc& type = reflect::TypeOf<UiText>();
+            for (size_t i = 0; i < type.fields.size(); ++i) {
+                if (std::string_view(type.fields[i].name) != "text") continue;
+                host.host.History().Push(std::make_unique<reflect::SetFieldCommand>(type, reflect::FieldPath{i}, json::Value(textBefore_), json::Value(textNow_),
+                                                                                   textResolve_, "文字を変更"),
+                                         false);
+            }
+        }
+        textEntity_ = 0;
     }
 
     void DrawAlignBar(ui::Context& c, const Rect& s, game_production::SceneViewHost& host) {
@@ -291,12 +548,11 @@ private:
     }
 
     // --- Input ---------------------------------------------------------------------------------
-    void HandleInput(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const Affine& toDc, const std::optional<Rect>& strip,
-                     const std::optional<Rect>& alignBar) {
+    void HandleInput(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const Affine& toDc, const std::vector<Rect>& bars) {
         const ui::Input& in = c.In();
         const Vec2 mouse{in.mouseX, in.mouseY};
-        const bool overBars = (strip && strip->Contains(in.mouseX, in.mouseY)) || (alignBar && alignBar->Contains(in.mouseX, in.mouseY));
-        const bool hovered = c.IsHovered(r) && !overBars;
+        const bool overBars = std::any_of(bars.begin(), bars.end(), [&](const Rect& b) { return b.Contains(in.mouseX, in.mouseY); });
+        const bool hovered = c.IsHovered(r) && !overBars && !textEntity_ && !w::DraggedThing() && !canvasMenu_.open && !anchorMenu_.open;
         // The view: the wheel zooms about the mouse, a right or middle drag moves it.
         if (hovered && in.wheel != 0 && drag_ == Drag::None) ZoomAt(mouse, std::pow(1.15f, in.wheel));
         if (drag_ == Drag::None && hovered && (c.MousePressed(ui::Mouse::Right) || c.MousePressed(ui::Mouse::Middle))) {
@@ -328,6 +584,15 @@ private:
                 return;
             }
             pressed_ = PickAt(toDc, mouse);
+            // A double click on a thing with 文字: type it there.
+            const bool twice = pressed_ && pressed_ == lastClicked_ && c.Time() - lastClickAt_ < 0.4;
+            lastClicked_ = pressed_;
+            lastClickAt_ = c.Time();
+            if (twice && host.scene.Find(pressed_) && host.scene.Find(pressed_)->FindComponent(reflect::TypeOf<UiText>().name)) {
+                StartTextEdit(c, host, pressed_);
+                drag_ = Drag::Cancelled;
+                return;
+            }
             const bool adding = in.shift || in.ctrl;
             std::vector<int> sel(host.selection.begin(), host.selection.end());
             if (adding && pressed_) {
@@ -373,9 +638,16 @@ private:
             }
             return;
         }
+        if (drag_ == Drag::Move) dropOn_ = in.ctrl ? DropParent(toDc, mouse) : -1;
         if (!in.down[0]) {
-            if (editing) End(host);
+            // Ctrl held when let go over another thing (or a canvas): it becomes its child, staying where it is.
+            if (drag_ == Drag::Move && dropOn_ >= 0) {
+                Rehome(host, toDc, tree_.nodes[static_cast<size_t>(dropOn_)]);
+            } else if (editing) {
+                End(host);
+            }
             drag_ = Drag::None;
+            dropOn_ = -1;
             snapX_.reset();
             snapY_.reset();
             return;
@@ -408,6 +680,63 @@ private:
             }
             ApplyDrag(mouse, in.shift, in.alt);
         }
+    }
+
+    // The node a Ctrl-drop would put the moving things under: the frontmost under the mouse that is not
+    // one of them (nor under them), else the canvas under it; -1: none.
+    int DropParent(const Affine& toDc, Vec2 at) const {
+        std::vector<int> moving;
+        for (const Edited& e : edits_) moving.push_back(e.entity);
+        const auto inv = Invert(toDc);
+        if (!inv) return -1;
+        const Vec2 s = Apply(*inv, at);
+        for (int i = static_cast<int>(tree_.nodes.size()) - 1; i >= 0; --i) {
+            const UiNode& n = tree_.nodes[static_cast<size_t>(i)];
+            if (Under(static_cast<size_t>(i), moving)) continue;
+            if (n.parent < 0 ? PanelBox(Corners(n, toDc)).Contains(at) : Hits(n, s)) return i;
+        }
+        return -1;
+    }
+
+    // The moved things under `parent`, where they are now on the panel (their 中心, their turn): one undo entry.
+    void Rehome(game_production::SceneViewHost& host, const Affine& toDc, const UiNode& parent) {
+        if (!host.editScene) {
+            End(host);
+            return;
+        }
+        struct Move {
+            int entity;
+            UiRect rect;
+        };
+        std::vector<Move> moves;
+        std::vector<int> touched{parent.entity};
+        const Affine parentSelf = toDc * parent.self;
+        const auto inv = Invert(parentSelf);
+        const float parentTurn = std::atan2(parentSelf.b, parentSelf.a) * 180.f / 3.14159265f;
+        for (const Edited& e : edits_) {
+            UiRect* t = Target(e);
+            if (!t || !inv) continue;
+            const UiBox box = PlaceBox(*t, e.parentBox);
+            const Vec2 pivotOnPanel = Apply(e.parentToDc, PivotPoint(*t, box));
+            const float oldTurn = std::atan2(e.parentToDc.b, e.parentToDc.a) * 180.f / 3.14159265f;
+            moves.push_back({e.entity, Rehomed(*t, e.parentBox, parent.box, Apply(*inv, pivotOnPanel), t->rotation + oldTurn - parentTurn)});
+            *t = e.start;  // (the record sees the scene as it was before the drag)
+            touched.push_back(e.entity);
+            if (const auto* se = host.scene.Find(e.entity)) touched.push_back(se->data.parent);
+        }
+        edits_.clear();
+        host.editScene(touched, "UI の親を変える", [&](game_production::Scene& scene) -> std::vector<int> {
+            std::vector<int> ids;
+            for (const Move& m : moves) {
+                ids.push_back(m.entity);
+                const int one[] = {m.entity};
+                scene.Move(one, parent.entity, game_production::Scene::kEnd);
+                if (auto* se = scene.Find(m.entity)) {
+                    if (auto* rc = se->FindComponent(reflect::TypeOf<UiRect>().name); rc && rc->Known()) *static_cast<UiRect*>(rc->value.Get()) = m.rect;
+                }
+            }
+            return ids;
+        });
     }
 
     // Zooms by `factor` keeping the panel's point `at` over the same place of the game.
@@ -574,7 +903,7 @@ private:
         for (const Edited& e : edits_) {
             const UiRect* t = Target(e);
             if (!t) continue;
-            for (const char* field : {"position", "size", "rotation", "pivot"}) {
+            for (const char* field : {"anchor", "position", "size", "rotation", "pivot", "order"}) {
                 const auto index = FieldIndex(field);
                 if (!index) continue;
                 const reflect::FieldDesc& fd = type.fields[*index];
@@ -624,6 +953,10 @@ private:
         }
         if (snapX_) p.Line(*snapX_, r.y, *snapX_, r.Bottom(), theme::GizmoHot(), 1.f);
         if (snapY_) p.Line(r.x, *snapY_, r.Right(), *snapY_, theme::GizmoHot(), 1.f);
+        if (dropOn_ >= 0 && static_cast<size_t>(dropOn_) < tree_.nodes.size()) {
+            const auto k = Corners(tree_.nodes[static_cast<size_t>(dropOn_)], toDc);
+            for (int i = 0; i < 4; ++i) p.Line(k[i].x, k[i].y, k[(i + 1) % 4].x, k[(i + 1) % 4].y, theme::GizmoHot(), 2.f);
+        }
         if (marquee_) {
             const Rect m{marquee_->x, marquee_->y, marquee_->w, marquee_->h};
             p.FillRect(m, theme::Accent.Alpha(0.12f));
@@ -700,7 +1033,7 @@ private:
         ts.v = ui::VAlign::Bottom;
         ts.wrap = true;
         c.P().Text(r.Inset(10, 8, 10, 6),
-                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   空いた所のドラッグ: 囲んで選ぶ   ドラッグ: 動かす   四角: 大きさ (Shift で形を保つ)   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす"),
+                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く"),
                    ts);
         if (tree_.nodes.empty()) {
             ui::TextStyle hint = ts;
@@ -734,6 +1067,15 @@ private:
     std::optional<UiBox> marquee_;        // the box being dragged to select by (on the panel)
     std::vector<int> marqueeFrom_;        // what was selected before it (Shift / Ctrl: kept)
     std::string gridText_;                // the grid's step while typed
+    int editCanvas_ = 0;                  // the canvas being made (0: all of them)
+    w::Popup canvasMenu_, anchorMenu_;
+    int dropOn_ = -1;                     // a Ctrl-drop's new parent (a node's index), -1: none
+    int lastClicked_ = 0;                 // (a double click)
+    double lastClickAt_ = -1;
+    int textEntity_ = 0;                  // the 文字 being typed on the panel (0: none)
+    std::function<reflect::EditTarget()> textResolve_;
+    std::string textBefore_, textNow_;
+    bool textStarted_ = false;
 };
 
 }  // namespace

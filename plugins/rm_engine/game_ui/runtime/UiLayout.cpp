@@ -197,6 +197,56 @@ float GridShift(float value, float step) {
     return std::round(value / step) * step - value;
 }
 
+namespace {
+constexpr UiAnchor kAnchorGrid[4][4] = {
+    {UiAnchor::TopLeft, UiAnchor::Top, UiAnchor::TopRight, UiAnchor::StretchTop},
+    {UiAnchor::Left, UiAnchor::Center, UiAnchor::Right, UiAnchor::StretchMiddle},
+    {UiAnchor::BottomLeft, UiAnchor::Bottom, UiAnchor::BottomRight, UiAnchor::StretchBottom},
+    {UiAnchor::StretchLeft, UiAnchor::StretchCenter, UiAnchor::StretchRight, UiAnchor::Stretch},
+};
+}  // namespace
+
+UiAnchor AnchorAt(int row, int column) { return kAnchorGrid[std::clamp(row, 0, 3)][std::clamp(column, 0, 3)]; }
+
+void AnchorCell(UiAnchor anchor, int& row, int& column) {
+    for (int r = 0; r < 4; ++r) {
+        for (int c = 0; c < 4; ++c) {
+            if (kAnchorGrid[r][c] == anchor) {
+                row = r;
+                column = c;
+                return;
+            }
+        }
+    }
+    row = column = 1;  // (a value of a newer version: the middle)
+}
+
+UiRect Rehomed(const UiRect& r, const UiBox& oldParent, const UiBox& newParent, Vec2 pivotAt, float rotation) {
+    const UiBox box = PlaceBox(r, oldParent);
+    Vec2 mn, mx;
+    AnchorRange(r.anchor, mn, mx);
+    const float ax = newParent.x + newParent.w * mn.x, ay = newParent.y + newParent.h * mn.y;
+    const float aw = newParent.w * (mx.x - mn.x), ah = newParent.h * (mx.y - mn.y);
+    UiRect out = r;
+    out.size = {box.w - aw, box.h - ah};
+    out.position = {pivotAt.x - (ax + aw * r.pivot.x), pivotAt.y - (ay + ah * r.pivot.y)};
+    out.rotation = rotation;
+    return out;
+}
+
+UiTree OnlyCanvas(const UiTree& tree, int canvas) {
+    UiTree out;
+    std::vector<int> moved(tree.nodes.size(), -1);  // old index -> new index
+    for (size_t i = 0; i < tree.nodes.size(); ++i) {
+        if (tree.nodes[i].canvas != canvas) continue;
+        UiNode n = tree.nodes[i];
+        n.parent = n.parent >= 0 ? moved[static_cast<size_t>(n.parent)] : -1;
+        moved[i] = static_cast<int>(out.nodes.size());
+        out.nodes.push_back(n);
+    }
+    return out;
+}
+
 std::vector<Vec2> AlignShifts(std::span<const UiBox> boxes, UiAlign how) {
     std::vector<Vec2> out(boxes.size(), Vec2{0, 0});
     if (boxes.empty()) return out;

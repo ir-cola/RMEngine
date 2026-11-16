@@ -65,6 +65,13 @@ UiRect MovePivot(const UiRect& r, const UiBox& parent, Vec2 pivot);
 float SnapShift(std::span<const float> edges, std::span<const float> targets, float reach, std::optional<float>* line = nullptr);
 // The shift that puts `value` on the nearest multiple of `step` (step <= 0: none).
 float GridShift(float value, float step);
+// The anchor picker (4 x 4, as Unity's): rows top / middle / bottom / stretched up-down, columns left /
+// middle / right / stretched across.
+UiAnchor AnchorAt(int row, int column);
+void AnchorCell(UiAnchor anchor, int& row, int& column);
+// The same box under another parent: 位置 and 大きさ (its anchor kept) so that its 中心 is at `pivotAt`
+// (in the new parent's units), as big as it was, turned `rotation`.
+UiRect Rehomed(const UiRect& r, const UiBox& oldParent, const UiBox& newParent, Vec2 pivotAt, float rotation);
 // Lining several things up (their boxes in one space): how far each moves.
 enum class UiAlign { Left, CenterX, Right, Top, CenterY, Bottom };
 // To the outermost side of them all (Left: the leftmost ...), or to the middle of them all.
@@ -111,6 +118,8 @@ struct UiScreen {
 // it) is switched off - the UI view shows the window being made. A canvas under another canvas is one of
 // its things (not a window of its own).
 UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std::span<const int> alsoShow = {});
+// Only one canvas of a tree (and what is in it): the UI tab shows the window being made alone.
+UiTree OnlyCanvas(const UiTree& tree, int canvas);
 
 // --- The mouse, the keys --------------------------------------------------------------------
 // The point (screen DIPs) is on the node's box (turns included).

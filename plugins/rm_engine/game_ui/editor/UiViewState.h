@@ -16,6 +16,7 @@ struct UiViewState {
     RM_PROPERTY() bool snapGuides = true;          // to other things' sides and middles (補助線)
     RM_PROPERTY() bool snapGrid = false;           // to the grid (格子)
     RM_PROPERTY(Min=1, Max=1000) float gridStep = 10;  // the grid's step (the canvas's units)
+    RM_PROPERTY() bool otherCanvases = true;       // a canvas being made: the other (switched on) ones shown too
 };
 
 }  // namespace rm::game_ui

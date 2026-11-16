@@ -1359,6 +1359,11 @@ private:
         h.openSettings = [this] { InspectSettings(); };
         h.settings = &settings_;
         h.debug = Running() ? &debug_ : nullptr;
+        h.editScene = [this](std::vector<int> touched, std::string label, std::function<std::vector<int>(Scene&)> change) {
+            std::vector<int> select;
+            EditTouching(std::move(touched), std::move(label), [&] { select = change(scene_); });
+            if (!select.empty()) host_.SelectInTree(std::vector<tree::ItemId>(select.begin(), select.end()));
+        };
         return h;
     }
 
