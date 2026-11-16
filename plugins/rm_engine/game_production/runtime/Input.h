@@ -82,6 +82,9 @@ void AddMissedPresses(InputFrame& f, const KeyPresses& now, const KeyPresses& se
 class InputReader {
 public:
     InputFrame Read();
+    // The presses counted so far are not the game's (the editor's typing between two Plays): the next
+    // Read sees only those made after this.
+    void Forget();
 
 private:
     std::array<uint64_t, 4> nextLook_{};  // GetTickCount64 when an empty slot is asked again

@@ -274,8 +274,13 @@ bool AudioService::SourcePause(gp::Scene& scene, int entity, bool paused) {
 }
 
 bool AudioService::SourcePlaying(gp::Scene& scene, int entity) {
-    const auto [a, s] = SourceOf(scene, entity);
-    return a && s->voice != 0 && engine_->IsPlaying(s->voice);
+    // Only asked: nothing is made (a source made here would no longer be "new" at the next Frame, and
+    // its 始めから鳴らす would never start - a script asking in its BeginPlay silenced it).
+    gp::SceneEntity* e = scene.Find(entity);
+    gp::Component* c = e ? e->FindComponent(reflect::TypeOf<AudioSource>().name) : nullptr;
+    if (!c || !c->Known()) return false;
+    const auto it = sources_.find(SourceKey{static_cast<AudioSource*>(c->value.Get()), entity});
+    return it != sources_.end() && it->second.voice != 0 && engine_->IsPlaying(it->second.voice);
 }
 
 // --- The scripts' part (RMAudioAbi.h): RmApi::ctx is game production's ScriptWorld --------------------

@@ -164,6 +164,16 @@ RM_TEST(AudioGame_Source_SavedAndReadBack) {
     CHECK(found);
 }
 
+RM_TEST(AudioGame_AskingDoesNotStopPlayOnStart) {
+    // A script asking IsPlaying in its BeginPlay (before the service's first Frame for it): the source's
+    // 始めから鳴らす still starts.
+    Play p;
+    const int s = p.Source(kBeep, true);
+    CHECK(!p.Audio().SourcePlaying(p.scene, s));  // (not started yet)
+    p.Frame();
+    CHECK(p.Audio().SourcePlaying(p.scene, s));
+}
+
 RM_TEST(AudioGame_SourcesStartAndStopWithTheirEntity) {
     Play p;
     CHECK(p.services.Running() && p.services.Find(kAudioServiceName) != nullptr);

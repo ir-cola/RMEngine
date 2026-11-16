@@ -461,6 +461,15 @@ public:
                                                   std::string err;
                                                   auto bytes = file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
                                                   if (!bytes) return std::nullopt;
+                                                  // Its placed prefabs as their files are now (as when it is opened).
+                                                  if (const auto doc = ReadSceneFile(*bytes, &err)) {
+                                                      Scene other = scene_;
+                                                      reflect::Warnings warnings;
+                                                      other.Load(*doc, &warnings);
+                                                      RefreshPrefabsIn(other, warnings);
+                                                      for (const auto& w : warnings) log::Warn("書き出し: {}: {}", RelativePath(file), w);
+                                                      return std::make_pair(RelativePath(file), SceneFileText(other.Save()));
+                                                  }
                                                   return std::make_pair(RelativePath(file), std::move(*bytes));
                                               });
         for (const std::string& id : scenes.unread) log::Warn("書き出し: シーン ({}) を読めないので入れません", id);
@@ -485,6 +494,16 @@ public:
         for (const PluginId& id : PluginsOffering(types, host_.Registry().Contributions<ComponentInfo>(kComponentPoint))) add(id);
         // ... and the plugins an asset the game uses needs (音: a sound a script plays, with no 音源 in any scene).
         const std::vector<ExportAsset> assets = CollectAssets(in);
+        // ... and the components of every prefab the game may place (a script's rm::Spawn of one that no
+        // scene places: read from its file - the prefabs read in this session are not all of them).
+        std::vector<std::string> prefabTypes;
+        for (const ExportAsset& a : assets) {
+            if (PathToUtf8(a.file.extension()) != kPrefabExtension) continue;
+            std::string err;
+            const auto bytes = platform::ReadFileBytes(a.file, &err);
+            if (const auto doc = bytes ? json::Parse(*bytes) : std::nullopt) ComponentTypesIn(*doc, prefabTypes);
+        }
+        for (const PluginId& id : PluginsOffering(prefabTypes, host_.Registry().Contributions<ComponentInfo>(kComponentPoint))) add(id);
         for (const auto& b : host_.Registry().Contributions<ExportBaker>(kExportBakePoint)) {
             if (b.item->needsPlugin && std::any_of(assets.begin(), assets.end(), [&](const ExportAsset& a) { return b.item->needsPlugin(a); })) add(b.plugin);
         }
@@ -1017,6 +1036,7 @@ private:
         world.sceneIndex = -1;
         world.sceneAsked = -1;
         world.quitAsked = false;
+        scripts_.StartInput();
         for (size_t i = 0; i < playScenes_.size(); ++i) {
             world.sceneNames.push_back(SceneTitle(playScenes_[i]));
             if (playScenes_[i] == AssetRef{slot_.guid}) world.sceneIndex = static_cast<int>(i);
@@ -1116,7 +1136,10 @@ private:
         }
         reflect::Warnings warnings;
         into.Load(*scene, &warnings);
+        reflect::Warnings prefabWarnings;
+        RefreshPrefabsIn(into, prefabWarnings);  // (its prefabs as their files are now, as when it is opened)
         for (const auto& w : warnings) log::Warn("シーン: {}", w);
+        for (const auto& w : prefabWarnings) log::Warn("Prefab: {}", w);
         return true;
     }
 
@@ -2274,10 +2297,11 @@ private:
     }
 
     // The prefabs `root` is inside (and its own): a prefab is never filled inside itself.
-    std::vector<std::string> ChainOf(int root) const {
+    std::vector<std::string> ChainOf(int root) const { return ChainOf(scene_, root); }
+    static std::vector<std::string> ChainOf(const Scene& s, int root) {
         std::vector<std::string> chain;
         size_t steps = 0;
-        for (const SceneEntity* e = scene_.Find(root); e && steps++ <= scene_.Entities().size(); e = scene_.Find(e->data.parent)) {
+        for (const SceneEntity* e = s.Find(root); e && steps++ <= s.Entities().size(); e = s.Find(e->data.parent)) {
             if (e->prefab.Root()) chain.push_back(e->prefab.asset.guid);
         }
         return chain;
@@ -2331,21 +2355,28 @@ private:
             }
         }
         reflect::Warnings warnings;
-        for (const int root : scene_.PrefabRoots()) {
-            const SceneEntity* r = scene_.Find(root);
+        RefreshPrefabsIn(scene_, warnings);
+        for (const auto& w : warnings) log::Warn("Prefab: {}", w);
+    }
+
+    // Every placed prefab of `s` made from its file again (with what it changed), outermost first: the
+    // scene opened, and the other scenes of the game as Play switches to them and as they are exported
+    // (their files keep the prefabs as of their last save - a prefab changed since shows in them too).
+    void RefreshPrefabsIn(Scene& s, reflect::Warnings& warnings) {
+        for (const int root : s.PrefabRoots()) {
+            const SceneEntity* r = s.Find(root);
             if (!r) continue;  // went with a prefab around it
-            if (r->prefab.outer > 0 && scene_.PrefabRootOf(r->data.parent) != 0) continue;  // filled with the one around it
+            if (r->prefab.outer > 0 && s.PrefabRootOf(r->data.parent) != 0) continue;  // filled with the one around it
             const AssetRef ref = r->prefab.asset;
             const json::Value overrides = r->prefab.overrides;
             if (const json::Value* prefab = Cached(ref)) {
                 const json::Value copy = *prefab;
-                Remake(root, copy, overrides, warnings);
-            } else {
-                std::vector<std::string> chain = ChainOf(root);
-                FillNested(root, chain, warnings);  // kept as saved; the ones inside still follow their files
-            }
+                s.ApplyPrefab(root, copy, overrides, &warnings);
+            }  // (else kept as saved; the ones inside still follow their files)
+            std::vector<std::string> chain = ChainOf(s, root);
+            FillNestedPrefabs(
+                s, root, chain, [this](const AssetRef& a) { return Cached(a); }, warnings, [this](const AssetRef& a) { return PrefabTitle(a); });
         }
-        for (const auto& w : warnings) log::Warn("Prefab: {}", w);
     }
 
     // Every placed prefab of `ref` made again from `next`, keeping what each changed from `before`

@@ -29,7 +29,8 @@ uint32_t AdvanceClock(EmitterClock& c, const ParticleEmitter& e, float dt) {
     float left = std::max(dt, 0.f);
     // (A long dt runs through several rounds; each round starts with its burst.)
     for (int rounds = 0; left > 0 && rounds < 1000; ++rounds) {
-        const float span = std::min(left, duration - c.age);
+        // (Never below 0: 長さ made shorter than the time already played - the round ends now.)
+        const float span = std::max(0.f, std::min(left, duration - c.age));
         c.owed += rate * span;
         c.age += span;
         left -= span;
@@ -174,6 +175,9 @@ struct EffectPlayer::Emitter {
     std::shared_ptr<const Programs> programs;
     std::shared_ptr<const States> states;
     bool broken = false;  // its modules or its shaders cannot run (told once)
+    // The GPU could not give it room for this many particles / trail points (told once): tried again
+    // when 粒の数の上限 / トレイルの点 change - not every frame, and not never (it is not broken).
+    uint32_t failedCapacity = 0, failedTrail = 0;
 
     ComPtr<ID3D11Buffer> particles;
     ComPtr<ID3D11UnorderedAccessView> uav;
@@ -332,6 +336,7 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
             e.states = StatesFor(device);
         }
         const uint32_t capacity = static_cast<uint32_t>(std::clamp(e.data->capacity, 1, 1000000));
+        if (!e.particles && e.failedCapacity == capacity) continue;
         if (!e.particles || e.capacity != capacity) {
             e.particles.Reset();
             e.uav.Reset();
@@ -345,9 +350,13 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
             if (FAILED(device->CreateBuffer(&bd, nullptr, &e.particles)) || FAILED(device->CreateUnorderedAccessView(e.particles.Get(), nullptr, &e.uav)) ||
                 FAILED(device->CreateShaderResourceView(e.particles.Get(), nullptr, &e.srv))) {
                 problems_.push_back(std::format("パーティクル「{}」: GPU に粒 {} 個ぶんの場所を作れません", e.data->name, capacity));
-                e.broken = true;
+                e.particles.Reset();
+                e.uav.Reset();
+                e.srv.Reset();
+                e.failedCapacity = capacity;
                 continue;
             }
+            e.failedCapacity = 0;
             e.capacity = capacity;
             e.cleared = false;
             e.head = 0;
@@ -356,7 +365,7 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
         }
         // The trail's places (made again when the number of points or of particles changes).
         const uint32_t points = e.data->trail ? static_cast<uint32_t>(std::clamp(e.data->trailPoints, 2, 64)) : 0;
-        if (points != e.trailPoints) {
+        if (points != e.trailPoints && !(points > 0 && e.failedTrail == points)) {
             e.trails.Reset();
             e.trailsUav.Reset();
             e.trailsSrv.Reset();
@@ -371,9 +380,11 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
                 if (SUCCEEDED(device->CreateBuffer(&bd, nullptr, &e.trails)) && SUCCEEDED(device->CreateUnorderedAccessView(e.trails.Get(), nullptr, &e.trailsUav)) &&
                     SUCCEEDED(device->CreateShaderResourceView(e.trails.Get(), nullptr, &e.trailsSrv))) {
                     e.trailPoints = points;
+                    e.failedTrail = 0;
                     e.cleared = false;  // (the particles from the start: their trails are new)
                 } else {
                     problems_.push_back(std::format("パーティクル「{}」: GPU にトレイルの場所を作れません", e.data->name));
+                    e.failedTrail = points;
                     e.trails.Reset();
                     e.trailsUav.Reset();
                     e.trailsSrv.Reset();

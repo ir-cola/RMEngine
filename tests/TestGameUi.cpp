@@ -829,6 +829,26 @@ RM_TEST(GameUi_ButtonActions_WhatTheyDo) {
     CHECK(s.Find(title)->data.active && (done == std::vector<std::string>{"info"}));
 }
 
+RM_TEST(GameUi_ScriptFocus_KeptWhenItsWindowComesInFront) {
+    // A script's rm::UI::Focus in the frame its window is first shown (a Start, a Show then Focus): kept,
+    // not replaced by the window's first button.
+    Scene s = UiScene();
+    const int canvas = s.Create("Menu");
+    Add<UiCanvas>(s, canvas)->reference = {1280, 720};
+    const int a = MakeButton(s, canvas, {0, -100}, {100, 50}, "A");
+    const int b = MakeButton(s, canvas, {0, 100}, {100, 50}, "B");
+    InputFrame none;
+    const auto actions = game_production::DefaultInputActions();
+    UiFocus chosen;
+    chosen.focus = b;  // (what UiService::Focus does)
+    chosen.scriptChose = true;
+    StepUi(s, BuildUi(s, {}), std::nullopt, false, false, false, actions, &none, &none, 0.016f, chosen);
+    CHECK(chosen.focus == b && !chosen.scriptChose);
+    UiFocus plain;
+    StepUi(s, BuildUi(s, {}), std::nullopt, false, false, false, actions, &none, &none, 0.016f, plain);
+    CHECK(plain.focus == a);  // (none chosen: the top left one)
+}
+
 RM_TEST(GameUi_NextButton_LinksFirst) {
     // 上 / 下 / 左 / 右で移る先: the link when it can be pressed in the same window; else the nearest that way.
     Scene s = UiScene();

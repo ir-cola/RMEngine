@@ -57,11 +57,24 @@ public:
         }
         viewTaken_ = false;
         out.push_back([this](const space3d::ExtraDrawContext& dc) { TakeView(dc); });
+        // Each パーティクル of each entity (several on one: several effects, each with its own player).
+        struct Found {
+            const game_production::SceneEntity* entity;
+            size_t nth;
+            const ParticleSystem* system;
+        };
+        std::vector<Found> found;
         for (const auto& t : f.scene.TreeOrder()) {
-            const auto& e = *t.entity;
-            const game_production::Component* c = e.FindComponent(type);
-            if (!c || !c->Known()) continue;
-            const auto& ps = *static_cast<const ParticleSystem*>(c->value.Get());
+            for (size_t nth = 0;; ++nth) {
+                const game_production::Component* c = t.entity->FindComponent(type, nth);
+                if (!c) break;
+                if (c->Known()) found.push_back({t.entity, nth, static_cast<const ParticleSystem*>(c->value.Get())});
+            }
+        }
+        for (const Found& one : found) {
+            const auto& e = *one.entity;
+            const size_t nth = one.nth;
+            const auto& ps = *one.system;
             if (f.playing ? !ps.playOnStart : std::find(f.selection.begin(), f.selection.end(), e.data.id) == f.selection.end()) continue;
             const space3d::Mat4* world = f.world ? f.world(e.data.id) : nullptr;
             if (!world) continue;  // no Transform, or switched off
@@ -72,7 +85,7 @@ public:
             }
             std::shared_ptr<const ParticleEffect> effect = EffectOf(ps.effect, f, now);
             if (!effect) continue;
-            Running& r = running_[e.data.id];
+            Running& r = running_[RunKey(e.data.id, nth)];
             r.seen = true;
             r.player.Set(effect, [&](const particles::ParticleModule& m, std::string& file) { return modules_.Find(m, file, f.asset, f.name, !f.playing); });
             if (!gathered) {
@@ -168,7 +181,8 @@ private:
         if (told_.insert(text).second) log::Warn("{}", text);
     }
 
-    std::unordered_map<int, Running> running_;  // by entity
+    static uint64_t RunKey(int entity, size_t nth) { return (static_cast<uint64_t>(static_cast<uint32_t>(entity)) << 32) | static_cast<uint32_t>(nth); }
+    std::unordered_map<uint64_t, Running> running_;  // by entity and which of its パーティクル (RunKey)
     std::unordered_map<std::string, Loaded> effects_;  // by asset id
     ModuleFiles modules_;
     ParticleImages images_;

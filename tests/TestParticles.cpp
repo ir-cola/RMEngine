@@ -195,6 +195,23 @@ RM_TEST(Particles_Clock_RateBurstDurationLoop) {
     e.capacity = 7;
     EmitterClock m;
     CHECK(AdvanceClock(m, e, 10) == 7);
+    // 長さ made shorter than the time already played (an edit while it plays): the round ends now -
+    // never a negative count (it was read as about 4 billion particles).
+    e.capacity = 100;
+    e.loop = false;
+    EmitterClock s;
+    AdvanceClock(s, e, 0);
+    AdvanceClock(s, e, 0.8f);
+    e.duration = 0.2f;
+    CHECK(AdvanceClock(s, e, 0.1f) == 0 && s.finished);
+    e.loop = true;
+    e.duration = 1;
+    EmitterClock t;
+    AdvanceClock(t, e, 0);
+    AdvanceClock(t, e, 0.8f);
+    e.duration = 0.2f;
+    const uint32_t looped = AdvanceClock(t, e, 0.1f);
+    CHECK(looped >= 5 && looped <= 7 && !t.finished);  // (the next round: its burst, then a frame of rate)
 }
 
 RM_TEST(Particles_EffectFile_KeepsWhatItDoesNotKnow) {

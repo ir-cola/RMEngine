@@ -107,7 +107,7 @@
   "出力先を選ぶ…": "Choose output folder…",
   "書き出すフォルダを選ぶ": "Choose the folder to export into",
   "(なし。ゲームの設定の「アイコン」に PNG か ICO を選びます)": "(none - choose a PNG or ICO as Icon in the game settings)",
-  "スクリプトをビルドしています (書き出し用: Release・デバッグ情報なし)": "Building the scripts (for the export: Release, no debug info)",
+  "スクリプトをビルドしています (書き出し用。エンジンと同じ Release か Debug)": "Building the scripts (for the export: Release or Debug, as the engine is)",
   "スクリプトをビルドできないので書き出しません:\n{}": "The scripts cannot be built, so the game is not exported:\n{}",
   "シーンの一覧": "Scenes",
   "保存されていない変更があります": "There are unsaved changes",

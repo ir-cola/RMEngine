@@ -58,6 +58,7 @@ struct UiFocus {
     int window = 0;          // the window the keys worked in last frame
     int focus = 0;           // its chosen button
     bool keyboard = true;    // the choice is shown (hidden while the mouse is used)
+    bool scriptChose = false;  // a script chose `focus` since the last frame (kept when its window comes in front)
     std::optional<Vec2> lastPointer;
     int heldDx = 0, heldDy = 0;  // a direction held: it repeats
     float heldFor = 0, repeatAt = 0;
@@ -113,6 +114,7 @@ public:
     void Focus(int entity) {
         state_.focus = entity;
         state_.keyboard = true;
+        state_.scriptChose = true;
     }
 
 private:

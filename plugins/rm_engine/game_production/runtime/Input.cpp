@@ -169,6 +169,8 @@ std::array<float, kPadControls> PadValues(const XINPUT_GAMEPAD& g) {
 
 }  // namespace
 
+void InputReader::Forget() { seen_ = PressHook::OfThisThread().Presses(); }
+
 InputFrame InputReader::Read() {
     InputFrame f;
     const KeyPresses& presses = PressHook::OfThisThread().Presses();

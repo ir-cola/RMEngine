@@ -331,8 +331,9 @@ ScriptBuildResult BuildScripts(const ScriptBuildRequest& r) {
         return res;
     }
     // Release and Debug apart (a DLL of the other one is never loaded: RmModuleFlag_Debug). An export is
-    // always Release: under the Release folder.
-    const fs::path folder = ScriptDllFolder(r.project, r.debug && !r.forExport);
+    // built as the engine is: its game is made from the game kit next to this engine, built the same way
+    // (a Debug engine's game is a Debug one - a Release Scripts.dll would not be loaded by it).
+    const fs::path folder = ScriptDllFolder(r.project, r.debug);
     std::error_code mk;
     fs::create_directories(folder, mk);
     // A new name every time (Scripts_0007.dll): the one the editor has loaded cannot be written over.
@@ -344,7 +345,7 @@ ScriptBuildResult BuildScripts(const ScriptBuildRequest& r) {
     // (A folder ends with a backslash, which would escape the closing quote: doubled inside quotes.)
     auto folderArg = [](const char* key, const fs::path& p) { return L" \"" + Utf8ToWide(key) + Utf8ToWide(Dir(p)) + L"\\\""; };
     std::wstring cmd = Quote(msbuild) + L" " + Quote(ScriptBuildFolder(r.project) / L"Scripts.vcxproj") + L" -nologo -v:quiet -m -nodeReuse:false -p:Configuration=" +
-                       (r.debug && !r.forExport ? L"Debug" : L"Release") + L" -p:Platform=x64 -p:TargetName=" + name + folderArg("-p:OutDir=", outFolder) +
+                       (r.debug ? L"Debug" : L"Release") + L" -p:Platform=x64 -p:TargetName=" + name + folderArg("-p:OutDir=", outFolder) +
                        folderArg("-p:RmEngineDir=", r.engine) + L" \"-flp:LogFile=" + log.native() + L";Encoding=UTF-8;Verbosity=minimal\"";
     if (r.forExport) {
         std::error_code e0;

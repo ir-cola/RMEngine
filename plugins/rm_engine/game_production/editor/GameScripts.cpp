@@ -30,6 +30,12 @@ namespace {
 
 }  // namespace
 
+void GameScripts::StartInput() {
+    input_.Forget();
+    world_.inputNow = world_.readInput ? world_.readInput() : InputFrame{};
+    world_.inputBefore = world_.inputNow;
+}
+
 GameScripts::GameScripts(editor::SoftwareHost& host) : host_(host), module_(std::make_unique<ScriptModule>()) {
     world_.parts = ScriptApiParts(host.Registry());
     // The keys, the mouse buttons and the game pads: only while one of the editor's windows is in front

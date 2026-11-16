@@ -103,10 +103,15 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
     const UiNode* wn = window ? tree.Find(window) : nullptr;
     if (window != state.window) {
         state.window = window;
-        state.focus = wn ? FirstFocus(tree, window, static_cast<int>(wn->canvasPart->firstButton.id)) : 0;
+        // A button a script chose this frame (rm::UI::Focus - after Show of its window, in a Start) stays
+        // chosen; else the window's 最初に選ぶボタン.
+        if (!(state.scriptChose && PressableIn(tree, window, state.focus))) {
+            state.focus = wn ? FirstFocus(tree, window, static_cast<int>(wn->canvasPart->firstButton.id)) : 0;
+        }
     } else if (wn && !PressableIn(tree, window, state.focus)) {
         state.focus = FirstFocus(tree, window, static_cast<int>(wn->canvasPart->firstButton.id));
     }
+    state.scriptChose = false;
     if (wn && now && before) {
         UiKeys keys = ReadUiKeys(actions, *now, *before);
         // Held: a step after kRepeatDelay, then every kRepeatEvery.
