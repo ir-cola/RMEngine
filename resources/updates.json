@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "階層で選んでいる行をもう一度押すと、インスペクターに出し直す (パーティクルのエミッターを見た後でも、エンティティに戻れる)",
+          "en": "Clicking the selected row in the Hierarchy again shows it in the Inspector again (back to the entity after viewing a particle emitter)"
+        },
+        {
           "ja": "Hub の「ソフトで絞る」で、パーティクルとそのつなぎ (ゲーム制作 × パーティクル など) が「共通」でなく「ゲーム」に出るように",
           "en": "In the Hub's Filter by software, Particles and its connectors (such as Game production × Particles) now show under Game instead of Shared"
         },

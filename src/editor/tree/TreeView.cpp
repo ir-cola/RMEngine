@@ -151,6 +151,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     // The picture: the Icon's width in a short row, square and as tall as the row allows in a tall one.
     const float pictureW = std::max(kIconW, kRowH - 6.f);
     const std::vector<ItemId> before = st.sel.ids;
+    bool reselected = false;  // the selected row pressed again (below)
     const ItemIndex index(items);  // finding by id, all frame long (thousands of items stay light)
     // Closed items that are gone (deleted) are forgotten, so the kept list does not grow forever.
     std::erase_if(st.collapsed, [&](ItemId id) { return !index.Has(id); });
@@ -325,6 +326,10 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             } else if (selected && !in.ctrl && !in.shift) {
                 st.pressDeferred = st.sel.ids.size() > 1;  // keep the others for a drag
                 st.sel.focus = it.id;
+                // The one selected row pressed again: told as a choice all the same, so the インスペクター
+                // shows it again after showing something else (2026-11-17 on screen: an emitter of the
+                // パーティクル tab stayed there when the selected entity was clicked).
+                reselected = !st.pressDeferred;
             } else {
                 Click(st.sel, items, rows, it.id, in.ctrl, in.shift);
             }
@@ -482,7 +487,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     // --- The right-click menu (at the end of the frame: not cut off by the panel) -----------------
     w::ActionMenu(c, st.menu, st.menuActions);
 
-    if (st.sel.ids != before) src.SelectionChanged(st.sel.ids);
+    if (st.sel.ids != before || reselected) src.SelectionChanged(st.sel.ids);
 }
 
 }  // namespace rm::editor::tree
