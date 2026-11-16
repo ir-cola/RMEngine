@@ -160,6 +160,10 @@
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\game_x_audio\runtime\AudioService.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_audio\runtime\SoundPack.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\particles\runtime\ModuleSource.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\particles\runtime\BuiltinModules.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\particles\runtime\ParticleShader.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\particles\runtime\ParticleEffect.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Camera.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Light.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\CameraCycle.cpp" />
@@ -190,6 +194,7 @@
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\SpriteAnimation.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space2d\runtime\Atlas.cpp" />
     <ClCompile Include="TestGameUi.cpp" />
+    <ClCompile Include="TestParticles.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)game_ui\</ObjectFileName>
     </ClCompile>

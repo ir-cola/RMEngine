@@ -848,9 +848,14 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
                     }
                     if (a.key == "AssetKind") {
                         // The names themselves (image, model ...) are core/asset's; a test checks every one is known.
-                        const bool words = !a.value.empty() && a.value.front() != ',' && a.value.back() != ',' &&
-                                           a.value.find(",,") == std::string::npos &&
-                                           std::all_of(a.value.begin(), a.value.end(), [](char ch) { return (ch >= 'a' && ch <= 'z') || ch == ','; });
+                        // A key may also be a file's extension (".rmfx": core/asset KindMatches).
+                        bool words = !a.value.empty() && a.value.front() != ',' && a.value.back() != ',' && a.value.find(",,") == std::string::npos;
+                        for (size_t k = 0; words && k < a.value.size(); ++k) {
+                            const char ch = a.value[k];
+                            const bool keyStart = k == 0 || a.value[k - 1] == ',';
+                            const bool extension = ch == '.' && keyStart && k + 1 < a.value.size() && a.value[k + 1] != ',';
+                            words = (ch >= 'a' && ch <= 'z') || ch == ',' || extension || (ch >= '0' && ch <= '9' && !keyStart);
+                        }
                         if (base.kind != TypeRef::Kind::AssetRef) {
                             diags.push_back({h.file, a.line, a.col, "RM0003", "AssetKind は AssetRef (とその配列) だけに付けられます"});
                         } else if (!words) {
