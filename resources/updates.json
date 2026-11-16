@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "パーティクル: 自作モジュール (.rmfx) を HLSL で書ける。「新しいモジュールを作る」で見本ができ、param の行がタブの欄になる。保存するとすぐ作り直し、書き間違いはファイル名と行で出る。書き出すとゲームにも入る",
+          "en": "Particles: write your own modules (.rmfx) in HLSL. Make a new module gives an example, and its param lines become fields in the tab. Saving rebuilds at once, and mistakes show the file and the line. Exporting takes them into the game"
+        },
+        {
           "ja": "パーティクル (最初の版): 部品「パーティクル」で光や煙の粒を GPU で出す。「パーティクル」タブでエフェクトを作り、モジュール (形・はじめの値・力・ゆらぎ・色と大きさの変わり方・床で跳ねる) を並べて値を変える。プレビュー付き。止まっているときは選んだ物が動き、Play と書き出したゲームでは全部が動く",
           "en": "Particles (first version): the Particles component puts out glows and smoke on the GPU. Make an effect in the Particles tab, arrange modules (shape, start values, force, turbulence, color and size over life, floor bounce) and change their values, with a preview. While stopped the selected one plays; in Play and in the exported game all of them do"
         },

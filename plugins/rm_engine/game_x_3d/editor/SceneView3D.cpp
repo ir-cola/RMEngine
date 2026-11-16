@@ -887,7 +887,8 @@ private:
                                 },
                                 dt, host.playing, host.selection,
                                 // (as the editor has it: an edit of the パーティクル tab shows at once)
-                                [&host](const AssetRef& ref) { return host.host.AssetContent(ref); }};
+                                [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
+                                [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); }};
         bool moving = false;
         for (const auto& d : pic.drawers) {
             d->Prepare(wf, pic.extras);

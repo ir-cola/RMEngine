@@ -21,9 +21,6 @@ namespace {
 using particles::EffectPlayer;
 using particles::ParticleEffect;
 
-constexpr double kLookAgainSeconds = 1.5;  // an effect's file is read again this often (saved meanwhile?)
-
-double Now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
 class ParticleDraw final : public game_x_3d::WorldDrawer {
 public:
@@ -38,7 +35,7 @@ public:
         ID3D11DeviceContext* ctx = f.gfx.D3DContext();
         if (!device || !ctx) return;
         const std::string type = reflect::TypeOf<ParticleSystem>().name;
-        const double now = Now();
+        const double now = NowSeconds();
         for (auto& [id, r] : running_) r.seen = false;
         for (const auto& t : f.scene.TreeOrder()) {
             const auto& e = *t.entity;
@@ -57,7 +54,7 @@ public:
             if (!effect) continue;
             Running& r = running_[e.data.id];
             r.seen = true;
-            r.player.Set(effect, &particles::BuiltinLookup);
+            r.player.Set(effect, [&](const particles::ParticleModule& m, std::string& file) { return modules_.Find(m, file, f.asset, f.name, !f.playing); });
             r.player.Advance(device, ctx, &world->m[0][0], f.dt * std::max(ps.speed, 0.f));
             for (const std::string& p : r.player.TakeProblems()) Tell(p);
             out.push_back([player = &r.player](const space3d::ExtraDrawContext& dc) { player->Draw(dc.ctx, ViewOf(dc)); });
@@ -86,8 +83,8 @@ private:
             return sample;
         }
         Loaded& l = effects_[ref.guid];
-        // (Not playing - the editor: looked at every frame, so an edit of the パーティクル tab shows at once.)
-        if (f.playing && now - l.lookedAt < kLookAgainSeconds) return l.effect;
+        // (Not playing - the editor: looked at often, so an edit of the パーティクル tab shows at once.)
+        if (now - l.lookedAt < (f.playing ? kLookSeldom : kLookOften)) return l.effect;
         l.lookedAt = now;
         const auto bytes = f.asset ? f.asset(ref) : std::nullopt;
         if (!bytes) {
@@ -112,6 +109,7 @@ private:
 
     std::unordered_map<int, Running> running_;  // by entity
     std::unordered_map<std::string, Loaded> effects_;  // by asset id
+    ModuleFiles modules_;
     std::set<std::string> told_;
     uint64_t generation_ = 0;
     bool playing_ = false;
@@ -122,6 +120,27 @@ private:
 }  // namespace
 
 std::unique_ptr<game_x_3d::WorldDrawer> CreateParticleDraw() { return std::make_unique<ParticleDraw>(); }
+
+double NowSeconds() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+std::shared_ptr<const particles::ModuleSource> ModuleFiles::Find(const particles::ParticleModule& m, std::string& file, const Read& read, const Name& name,
+                                                                 bool often) {
+    if (!m.builtin.empty()) return particles::BuiltinLookup(m, file);
+    if (m.file.Empty()) return nullptr;
+    Entry& e = files_[m.file.guid];
+    const double now = NowSeconds();
+    if (now - e.lookedAt >= (often ? kLookOften : kLookSeldom)) {
+        e.lookedAt = now;
+        if (e.name.empty()) e.name = name ? name(m.file) : std::string();
+        if (e.name.empty()) e.name = m.file.guid;
+        if (const auto bytes = read ? read(m.file) : std::nullopt; bytes && (!e.source || *bytes != e.bytes)) {
+            e.bytes = *bytes;
+            e.source = std::make_shared<const particles::ModuleSource>(particles::ParseModule(*bytes));
+        }
+    }
+    file = e.name;
+    return e.source;
+}
 
 particles::ViewConstants ViewOf(const space3d::ExtraDrawContext& c) {
     particles::ViewConstants v{};

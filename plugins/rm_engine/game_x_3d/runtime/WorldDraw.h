@@ -42,6 +42,8 @@ struct WorldDrawFrame {
     std::span<const int> selection;
     // The bytes of an asset (the editor: its file; the game: what the export put in for it).
     std::function<std::optional<std::string>(const AssetRef&)> asset;
+    // An asset's name for messages (the editor: its file's name); null: its id is used.
+    std::function<std::string(const AssetRef&)> name;
 };
 
 class WorldDrawer {

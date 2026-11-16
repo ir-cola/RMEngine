@@ -37,10 +37,11 @@ struct EmitterClock {
 uint32_t AdvanceClock(EmitterClock& c, const ParticleEmitter& e, float dt);
 
 // Finds a module's source: a built-in one, or the .rmfx a module names (null: none; `file` its name for
-// the compiler's messages).
-using ModuleLookup = std::function<const ModuleSource*(const ParticleModule& m, std::string& file)>;
+// the compiler's messages). A file read again (saved meanwhile) is a new source: the player that sees it
+// makes its shaders again.
+using ModuleLookup = std::function<std::shared_ptr<const ModuleSource>(const ParticleModule& m, std::string& file)>;
 // Built-in modules only (a module of a file is left out).
-const ModuleSource* BuiltinLookup(const ParticleModule& m, std::string& file);
+std::shared_ptr<const ModuleSource> BuiltinLookup(const ParticleModule& m, std::string& file);
 
 class EffectPlayer {
 public:
@@ -49,8 +50,9 @@ public:
     EffectPlayer(const EffectPlayer&) = delete;
     EffectPlayer& operator=(const EffectPlayer&) = delete;
 
-    // The effect to play (kept as given until Set again: the owner keeps it alive). Emitters whose modules
-    // are the same keep their particles; values only change the constant buffers.
+    // The effect to play (kept as given until Set again: the owner keeps it alive). Asked every frame: the
+    // modules are looked up again, and made again only when the effect or a module's source changed.
+    // Emitters whose shaders stay the same keep their particles; values only change the constant buffers.
     void Set(std::shared_ptr<const ParticleEffect> effect, const ModuleLookup& lookup);
     const std::shared_ptr<const ParticleEffect>& Effect() const { return effect_; }
 
@@ -61,6 +63,8 @@ public:
     // Draws its particles: the caller has bound the picture's render target and depth buffer.
     void Draw(ID3D11DeviceContext* ctx, const ViewConstants& view);
 
+    // Why an emitter cannot run (its shaders did not compile: the compiler's words); empty: it runs.
+    std::string Error(size_t emitter) const;
     // Every emitter has finished (not looping, and its particles have had time to die).
     bool Finished() const;
     // What went wrong since the last call (a module that cannot be read, a shader that does not compile:

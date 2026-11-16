@@ -20,6 +20,20 @@
   "{} (使わない)": "{} (off)",
   "＋ モジュール": "+ Module",
   "3D の描画を始められませんでした。くわしくはコンソールを見てください。": "Could not start 3D drawing. See the console for details.",
-  "このモジュールは読めません (ファイルのモジュールは、まだ使えません)": "This module cannot be read (modules in files cannot be used yet)",
-  "モジュールを選ぶと、その値をここで変えられます。エミッターの行を選ぶと、出す数や重ね方をインスペクターで変えられます。": "Choose a module to change its values here. Choose an emitter's row to change its rate, blending and more in the inspector."
+  "モジュールを選ぶと、その値をここで変えられます。エミッターの行を選ぶと、出す数や重ね方をインスペクターで変えられます。": "Choose a module to change its values here. Choose an emitter's row to change its rate, blending and more in the inspector.",
+  "モジュール": "Module",
+  "HLSL で書いたモジュール (.rmfx) を選びます。値は「パーティクル」のタブで変えます": "Choose a module written in HLSL (.rmfx). Its values are changed in the Particles tab",
+  "この行を読めません (param 型 名前 = 値; / attr 型 名前; / module \"名前\")": "Cannot read this line (param type name = value; / attr type name; / module \"name\")",
+  "「{}」という型はありません": "There is no type \"{}\"",
+  "「{}」は名前に使えません (英字・数字・_ で、数字から始めない)": "\"{}\" cannot be a name (letters, digits and _, not starting with a digit)",
+  "「{}」が 2 つあります": "There are two \"{}\"",
+  "値「{}」を読めません": "Cannot read the value \"{}\"",
+  "Spawn も Update もありません (どちらかを書きます)": "There is neither Spawn nor Update (write one of them)",
+  "{} 行目: {}": "Line {}: {}",
+  "ファイルのモジュール (.rmfx) …": "Module in a file (.rmfx)…",
+  "新しいモジュールを作る": "Make a new module",
+  "ファイルを開く": "Open the file",
+  "インスペクターの「モジュールのファイル」で .rmfx を選びます (アセットのパネルからドラッグもできます)": "Choose a .rmfx in Module file in the inspector (or drag it from the Assets panel)",
+  "シェーダーを作れません: {}": "Cannot make the shaders: {}",
+  "(ファイルを選んでいないモジュール)": "(module without a file)"
 }

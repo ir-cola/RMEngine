@@ -48,10 +48,12 @@ uint32_t AdvanceClock(EmitterClock& c, const ParticleEmitter& e, float dt) {
     return static_cast<uint32_t>(std::min(out, cap));
 }
 
-const ModuleSource* BuiltinLookup(const ParticleModule& m, std::string& file) {
+std::shared_ptr<const ModuleSource> BuiltinLookup(const ParticleModule& m, std::string& file) {
     if (m.builtin.empty()) return nullptr;
     file = m.builtin;
-    return FindBuiltin(m.builtin);
+    const ModuleSource* src = FindBuiltin(m.builtin);
+    // (the built-in ones live for the whole program: a pointer that owns nothing)
+    return src ? std::shared_ptr<const ModuleSource>(std::shared_ptr<const ModuleSource>(), src) : nullptr;
 }
 
 bool CanRunParticles(ID3D11Device* device) { return device && device->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0; }
@@ -153,8 +155,10 @@ constexpr float kForgetDeadAfter = 30;  // a finished emitter's particles are su
 
 struct EffectPlayer::Emitter {
     const ParticleEmitter* data = nullptr;  // inside effect_
-    std::vector<const ModuleSource*> sources;
+    std::vector<std::shared_ptr<const ModuleSource>> looked;  // every module in use, as looked up (null: none)
+    std::vector<std::shared_ptr<const ModuleSource>> sources;  // the ones that run
     std::vector<std::string> files;
+    std::string error;  // the compiler's words when its shaders did not compile
     std::vector<ModuleInput> inputs;
     EmitterShader shader;
     std::vector<float> params;
@@ -179,18 +183,41 @@ EffectPlayer::EffectPlayer() = default;
 EffectPlayer::~EffectPlayer() = default;
 
 void EffectPlayer::Set(std::shared_ptr<const ParticleEffect> effect, const ModuleLookup& lookup) {
-    if (effect == effect_) return;
+    // The modules each emitter uses now.
+    struct Found {
+        const ParticleModule* module;
+        std::shared_ptr<const ModuleSource> source;
+        std::string file;
+    };
+    const size_t count = effect ? effect->emitters.size() : 0;
+    std::vector<std::vector<Found>> found(count);
+    for (size_t i = 0; i < count; ++i) {
+        for (const ParticleModule& m : effect->emitters[i].modules) {
+            if (!m.enabled) continue;
+            Found f{&m, nullptr, {}};
+            if (lookup) f.source = lookup(m, f.file);
+            found[i].push_back(std::move(f));
+        }
+    }
+    if (effect == effect_ && emitters_.size() == count) {
+        bool same = true;
+        for (size_t i = 0; same && i < count; ++i) {
+            same = emitters_[i]->looked.size() == found[i].size();
+            for (size_t j = 0; same && j < found[i].size(); ++j) same = emitters_[i]->looked[j] == found[i][j].source;
+        }
+        if (same) return;
+    }
     effect_ = std::move(effect);
     std::vector<std::unique_ptr<Emitter>> next;
-    const size_t count = effect_ ? effect_->emitters.size() : 0;
     for (size_t i = 0; i < count; ++i) {
         const ParticleEmitter& data = effect_->emitters[i];
         auto e = std::make_unique<Emitter>();
         e->data = &data;
-        for (const ParticleModule& m : data.modules) {
-            if (!m.enabled) continue;
-            std::string file;
-            const ModuleSource* src = lookup ? lookup(m, file) : nullptr;
+        for (Found& f : found[i]) {
+            const ParticleModule& m = *f.module;
+            const std::string& file = f.file;
+            e->looked.push_back(f.source);
+            const std::shared_ptr<const ModuleSource>& src = f.source;
             if (!src) {
                 problems_.push_back(std::format("パーティクル「{}」: モジュール「{}」が見つからないので飛ばします", data.name, m.builtin.empty() ? m.file.guid : m.builtin));
                 continue;
@@ -201,7 +228,7 @@ void EffectPlayer::Set(std::shared_ptr<const ParticleEffect> effect, const Modul
             }
             e->sources.push_back(src);
             e->files.push_back(file);
-            e->inputs.push_back({src, file, m.values});
+            e->inputs.push_back({src.get(), file, m.values});
         }
         e->shader = AssembleShader(e->inputs);
         e->params = PackParams(e->inputs);
@@ -211,6 +238,7 @@ void EffectPlayer::Set(std::shared_ptr<const ParticleEffect> effect, const Modul
         if (i < emitters_.size() && emitters_[i] && emitters_[i]->shader.hlsl == e->shader.hlsl && !e->broken) {
             Emitter& old = *emitters_[i];
             old.data = e->data;
+            old.looked = std::move(e->looked);
             old.sources = std::move(e->sources);
             old.files = std::move(e->files);
             old.inputs = std::move(e->inputs);
@@ -243,6 +271,7 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
             e.programs = ProgramsFor(device, e.shader.hlsl);
             if (!e.programs->error.empty()) {
                 problems_.push_back(std::format("パーティクル「{}」のシェーダーを作れません:\n{}", e.data->name, e.programs->error));
+                e.error = e.programs->error;
                 e.broken = true;
                 continue;
             }
@@ -346,6 +375,8 @@ void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view) {
         ctx->VSSetConstantBuffers(2, 1, &noCb);
     }
 }
+
+std::string EffectPlayer::Error(size_t emitter) const { return emitter < emitters_.size() ? emitters_[emitter]->error : std::string(); }
 
 bool EffectPlayer::Finished() const {
     for (const auto& e : emitters_) {

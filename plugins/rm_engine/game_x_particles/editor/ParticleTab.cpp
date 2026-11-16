@@ -4,11 +4,13 @@
 #include "base/Utf.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
+#include "editor/app/Worker.h"
 #include "editor/lang/Lang.h"
 #include "editor/project/Project.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "platform/Shell.h"
+#include "platform/Win.h"
 #include "rm_engine/game_x_particles/runtime/ParticleDraw.h"
 #include "rm_engine/game_x_particles/runtime/ParticleSystem.h"
 #include "rm_engine/particles/runtime/BuiltinModules.h"
@@ -26,6 +28,8 @@
 #include <set>
 #include <string>
 #include <vector>
+
+#include <shellapi.h>
 
 namespace rm::game_x_particles {
 
@@ -136,10 +140,85 @@ std::array<float, 4> ValueOf(const ParticleModule& m, const ModuleParam& p) {
     return p.value;
 }
 
-std::wstring Title(const ParticleModule& m) {
-    if (const ModuleSource* s = particles::FindBuiltin(m.builtin)) return Utf8ToWide(TrU8(s->title));
-    return Tr(L"(読めないモジュール)");
+// A module of a file shown in the インスペクター (its file and 使う: the reference field picks a .rmfx).
+struct ModuleInspect {
+    editor::SoftwareHost* host = nullptr;
+    AssetRef ref;
+    size_t emitter = 0, module = 0;
+    std::string bytes;
+    ParticleModule copy;
+};
+
+editor::Inspectable ModuleInspectable(std::shared_ptr<ModuleInspect> s) {
+    editor::Inspectable in;
+    in.title = Tr(L"モジュール");
+    in.blocks = [s] {
+        editor::InspectBlock b{&reflect::TypeOf<ParticleModule>(),
+                               [s]() -> reflect::EditTarget {
+                                   const auto bytes = s->host->AssetContent(s->ref);
+                                   if (!bytes) return {};
+                                   if (*bytes != s->bytes) {
+                                       std::string err;
+                                       const auto e = particles::ReadEffect(*bytes, &err);
+                                       if (!e || s->emitter >= e->emitters.size() || s->module >= e->emitters[s->emitter].modules.size()) return {};
+                                       s->copy = e->emitters[s->emitter].modules[s->module];
+                                       s->bytes = *bytes;
+                                   }
+                                   return {&s->copy, nullptr};
+                               },
+                               {}, Tr(L"HLSL で書いたモジュール (.rmfx) を選びます。値は「パーティクル」のタブで変えます"), {}};
+        b.onEdit = [s](editor::InspectBlock::Change ch) {
+            EditEffect(*s->host, s->ref, ch.label, ch.merge, [&](ParticleEffect& e) {
+                if (s->emitter >= e.emitters.size() || s->module >= e.emitters[s->emitter].modules.size()) return;
+                const reflect::PathTarget pt = reflect::Resolve(reflect::TypeOf<ParticleModule>(), &e.emitters[s->emitter].modules[s->module], nullptr, ch.path);
+                if (pt.field) reflect::LoadField(*pt.field, pt.owner, ch.after, nullptr, nullptr);
+            });
+        };
+        return std::vector<editor::InspectBlock>{std::move(b)};
+    };
+    return in;
 }
+
+// What is wrong with a line of a module (in the screen's language).
+std::wstring ErrorText(const particles::ModuleError& e) {
+    using K = particles::ModuleErrorKind;
+    std::wstring what;
+    const std::wstring detail = Utf8ToWide(e.detail);
+    switch (e.kind) {
+        case K::BadLine: what = Tr(L"この行を読めません (param 型 名前 = 値; / attr 型 名前; / module \"名前\")"); break;
+        case K::UnknownType: what = TrF(L"「{}」という型はありません", detail); break;
+        case K::BadName: what = TrF(L"「{}」は名前に使えません (英字・数字・_ で、数字から始めない)", detail); break;
+        case K::SameName: what = TrF(L"「{}」が 2 つあります", detail); break;
+        case K::BadValue: what = TrF(L"値「{}」を読めません", detail); break;
+        case K::NoFunction: what = Tr(L"Spawn も Update もありません (どちらかを書きます)"); break;
+    }
+    return e.line > 0 ? TrF(L"{} 行目: {}", e.line, what) : what;
+}
+
+// Opens a file in the program Windows has for it (else asks which one) - after this frame.
+void OpenOutside(const fs::path& file) {
+    editor::PostToUi([file] {
+        auto r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", file.c_str(), nullptr, file.parent_path().c_str(), SW_SHOWNORMAL));
+        if (r <= 32) r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"openas", file.c_str(), nullptr, file.parent_path().c_str(), SW_SHOWNORMAL));
+        if (r <= 32) log::Error("ファイルを開けませんでした: {}", PathToUtf8(file.wstring()));
+    });
+}
+
+// A new module's file: a short example to start from.
+constexpr char kNewModule[] = R"(module "新しいモジュール"
+// 欄になる値: param 型 名前 = 初めの値 [いちばん小さい, いちばん大きい]; // 欄の名前
+// 型: float float2 float3 float4 color int bool
+param float strength = 1 [0, 100]; // 強さ
+
+// 粒が生まれたとき 1 回 (要らなければ消す):
+// void Spawn(inout Particle p, inout Random rnd) { }
+
+// 毎フレーム。p の値: position velocity color size rotation spin age lifetime alive (0 で消える)
+// 使えるもの: Rand(rnd) RandRange(rnd, a, b) RandOnSphere(rnd) LifeRatio(p) Time EmitterPosition
+void Update(inout Particle p, float dt, inout Random rnd) {
+    p.velocity.y += strength * dt;
+}
+)";
 
 class ParticleTab final : public game_production::SceneView {
 public:
@@ -303,7 +382,7 @@ private:
             const double now = c.Time();
             const float dt = drawnAt_ < 0 ? 0.f : static_cast<float>(std::clamp(now - drawnAt_, 0.0, 0.1));
             drawnAt_ = now;
-            player_->Set(effect_, &particles::BuiltinLookup);
+            player_->Set(effect_, [&](const ParticleModule& m, std::string& file) { return Source(host, m, file); });
             static constexpr float kIdentity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
             player_->Advance(gfx.D3D(), gfx.D3DContext(), kIdentity, dt);
             for (const std::string& p : player_->TakeProblems()) {
@@ -359,9 +438,13 @@ private:
                 if (w::Selectable(c, mkey, label, emitter_ == i && module_ == static_cast<int>(j)).clicked) {
                     emitter_ = i;
                     module_ = static_cast<int>(j);
+                    if (m.builtin.empty()) InspectModule(host, i, j);
                 }
-                ts.color = m.enabled ? theme::Text : theme::TextFaint;
-                c.P().Text(label.Inset(6, 0, 4, 0), Title(m), ts);
+                std::string file;
+                const auto src = Source(host, m, file);
+                const bool wrong = m.enabled && (!src || !src->errors.empty() || !player_->Error(i).empty());
+                ts.color = wrong ? theme::Danger : m.enabled ? theme::Text : theme::TextFaint;
+                c.P().Text(label.Inset(6, 0, 4, 0), Title(m, src.get(), file), ts);
                 ts.color = theme::Text;
                 const float bx = mrow.Right() - 3 * kRow;
                 if (w::IconButton(c, mkey + ".up", {bx, mrow.y, kRow, kRow}, w::Icon::ChevronUp, j > 0)) Move(host, i, j, -1);
@@ -393,8 +476,15 @@ private:
                 items.push_back({Utf8ToWide(s ? TrU8(s->title) : std::string(b.id))});
                 ids.emplace_back(b.id);
             }
-            const int chosen = w::MenuPopup(c, addMenu_, items, 220);
-            if (chosen >= 0 && static_cast<size_t>(chosen) < ids.size()) {
+            items.push_back({{}, {}, true, true});
+            items.push_back({Tr(L"ファイルのモジュール (.rmfx) …")});
+            items.push_back({Tr(L"新しいモジュールを作る")});
+            const int chosen = w::MenuPopup(c, addMenu_, items, 240);
+            if (chosen == static_cast<int>(ids.size()) + 1) {
+                AddFileModule(host, addTo_, {});
+            } else if (chosen == static_cast<int>(ids.size()) + 2) {
+                CreateModule(host, addTo_);
+            } else if (chosen >= 0 && static_cast<size_t>(chosen) < ids.size()) {
                 const size_t to = addTo_;
                 const std::string id = ids[static_cast<size_t>(chosen)];
                 EditEffect(host.host, ref_, "モジュールを足す", 0, [to, id](ParticleEffect& ef) {
@@ -407,6 +497,67 @@ private:
                 module_ = effect_ && to < effect_->emitters.size() ? static_cast<int>(effect_->emitters[to].modules.size()) : -1;
             }
         }
+    }
+
+    // A module's source (built in, or its file as the editor has it - read again now and then).
+    std::shared_ptr<const ModuleSource> Source(game_production::SceneViewHost& host, const ParticleModule& m, std::string& file) {
+        return modules_.Find(
+            m, file, [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
+            [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); }, true);
+    }
+
+    static std::wstring Title(const ParticleModule& m, const ModuleSource* src, const std::string& file) {
+        if (src && !src->title.empty()) return Utf8ToWide(m.builtin.empty() ? src->title : TrU8(src->title));
+        if (!m.builtin.empty()) return Tr(L"(読めないモジュール)");
+        return m.file.Empty() ? Tr(L"(ファイルを選んでいないモジュール)") : Utf8ToWide(file);
+    }
+
+    void InspectModule(game_production::SceneViewHost& host, size_t emitter, size_t module) {
+        auto s = std::make_shared<ModuleInspect>();
+        s->host = &host.host;
+        s->ref = ref_;
+        s->emitter = emitter;
+        s->module = module;
+        host.host.Inspect(ModuleInspectable(std::move(s)));
+    }
+
+    // A module of a file at the end of emitter `to` (none chosen yet: the インスペクター picks it).
+    void AddFileModule(game_production::SceneViewHost& host, size_t to, const AssetRef& file) {
+        const size_t at = effect_ && to < effect_->emitters.size() ? effect_->emitters[to].modules.size() : 0;
+        EditEffect(host.host, ref_, "モジュールを足す", 0, [to, file](ParticleEffect& ef) {
+            if (to >= ef.emitters.size()) return;
+            ParticleModule m;
+            m.file = file;
+            ef.emitters[to].modules.push_back(std::move(m));
+        });
+        emitter_ = to;
+        module_ = static_cast<int>(at);
+        InspectModule(host, to, at);
+    }
+
+    // A new .rmfx in Assets/Particles/Modules (an example to start from), added to emitter `to` and opened.
+    void CreateModule(game_production::SceneViewHost& host, size_t to) {
+        const fs::path dir = host.host.GetProject().AssetsDir() / L"Particles" / L"Modules";
+        std::error_code ec;
+        fs::create_directories(dir, ec);
+        fs::path file;
+        for (int n = 1; n < 1000; ++n) {
+            file = dir / (n == 1 ? std::wstring(L"NewModule.rmfx") : std::format(L"NewModule {}.rmfx", n));
+            if (!fs::exists(file, ec)) break;
+        }
+        std::string err;
+        if (!platform::WriteFileAtomic(file, kNewModule, &err)) {
+            log::Error("モジュールを作れません ({}): {}", PathToUtf8(file.wstring()), err);
+            return;
+        }
+        const AssetRef ref = host.host.AssetOf(file);
+        if (ref.Empty()) {
+            log::Warn("モジュールを作りましたが、アセットとして読めません: {}", PathToUtf8(file.wstring()));
+            return;
+        }
+        log::Info("パーティクルのモジュールを作りました: {}", PathToUtf8(file.wstring()));
+        AddFileModule(host, to, ref);
+        OpenOutside(file);
     }
 
     void Move(game_production::SceneViewHost& host, size_t i, size_t j, int by) {
@@ -425,20 +576,45 @@ private:
         if (emitter_ < effect_->emitters.size() && module_ >= 0 && static_cast<size_t>(module_) < effect_->emitters[emitter_].modules.size()) {
             m = &effect_->emitters[emitter_].modules[static_cast<size_t>(module_)];
         }
-        const ModuleSource* src = m ? particles::FindBuiltin(m->builtin) : nullptr;
-        if (!m || !src) {
-            Note(c, r, m ? Tr(L"このモジュールは読めません (ファイルのモジュールは、まだ使えません)")
-                         : Tr(L"モジュールを選ぶと、その値をここで変えられます。エミッターの行を選ぶと、出す数や重ね方をインスペクターで変えられます。"));
+        if (!m) {
+            Note(c, r, Tr(L"モジュールを選ぶと、その値をここで変えられます。エミッターの行を選ぶと、出す数や重ね方をインスペクターで変えられます。"));
             return;
         }
+        std::string file;
+        const auto src = Source(host, *m, file);
         ui::TextStyle ts;
         ts.color = theme::Text;
         ts.bold = true;
-        c.P().Text({r.x, r.y, r.w, kRow}, Utf8ToWide(TrU8(src->title)), ts);
+        c.P().Text({r.x, r.y, r.w - 110, kRow}, Title(*m, src.get(), file), ts);
         ts.bold = false;
+        float top = r.y + kRow + 4;
+        // A module of a file: open it (to write it), and what is wrong with it.
+        if (m->builtin.empty()) {
+            const fs::path path = m->file.Empty() ? fs::path() : host.host.AssetFile(m->file);
+            if (!path.empty() && w::Button(c, "particles.open", {r.Right() - 104, r.y, 104, kRow}, Tr(L"ファイルを開く"))) OpenOutside(path);
+            std::vector<std::wstring> problems;
+            if (m->file.Empty()) problems.push_back(Tr(L"インスペクターの「モジュールのファイル」で .rmfx を選びます (アセットのパネルからドラッグもできます)"));
+            else if (!src) problems.push_back(Tr(L"ファイルが見つかりません"));
+            if (src) {
+                for (const particles::ModuleError& e : src->errors) problems.push_back(ErrorText(e));
+            }
+            if (const std::string err = player_->Error(emitter_); !err.empty() && src && src->errors.empty()) problems.push_back(TrF(L"シェーダーを作れません: {}", Utf8ToWide(err)));
+            if (!problems.empty()) {
+                ui::TextStyle es;
+                es.wrap = true;
+                es.v = ui::VAlign::Top;
+                es.color = theme::Danger;
+                std::wstring all;
+                for (const std::wstring& p : problems) all += (all.empty() ? L"" : L"\n") + p;
+                const float h = std::min(r.Bottom() - top, 18.f * (2.f + static_cast<float>(problems.size())) + 40.f);
+                c.P().Text({r.x, top, r.w, h}, all, es);
+                top += h + 4;
+            }
+        }
+        if (!src || !src->errors.empty()) return;
         ts.color = theme::TextDim;
         const float content = (kRow + 4) * static_cast<float>(src->params.size() + 1);
-        const ui::Rect body{r.x, r.y + kRow + 4, r.w, r.h - kRow - 4};
+        const ui::Rect body{r.x, top, r.w, r.Bottom() - top};
         const float scroll = w::BeginScroll(c, "particles.values", body, content);
         float y = body.y - scroll;
         const float labelW = std::floor(body.w * 0.45f);
@@ -504,6 +680,7 @@ private:
     w::Popup addMenu_;
     size_t addTo_ = 0;
     std::set<std::string> told_;
+    ModuleFiles modules_;
 };
 
 }  // namespace

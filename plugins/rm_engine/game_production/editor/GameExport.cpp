@@ -81,8 +81,9 @@ std::vector<ExportAsset> CollectAssets(const GameExportInput& in) {
         if (!editor::exporter::PortablePath(rel)) continue;  // not in the project: never written into the game
         if (std::any_of(out.begin(), out.end(), [&](const ExportAsset& a) { return a.rel == rel; })) continue;
         out.push_back({ids[i], file, rel, in.projectRoot});
-        // A prefab places more (its own assets, the prefabs inside it).
-        if (file.extension() == L".rmprefab") {
+        // A prefab places more (its own assets, the prefabs inside it); a file of another of the engine's
+        // own kinds (.rm..., JSON) may name more too (a particle effect: its modules' .rmfx files).
+        if (const std::wstring ext = file.extension().wstring(); ext.size() > 3 && ext.starts_with(L".rm")) {
             if (const auto bytes = ReadAll(file)) {
                 if (auto doc = json::Parse(*bytes)) add(*doc);
             }

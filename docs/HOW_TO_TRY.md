@@ -1738,9 +1738,35 @@ rm::UI::SetInteractable(button, false);  rm::UI::Focus(button);
 7. 変えたエフェクトは、手を離したとき (数を打ち終えたとき) にファイルへ書かれる。プロジェクトは「未保存」になる (インスペクターの取り込みの設定と同じ)
 8. 書き出す → 書き出したゲームでも同じ粒が出る (`.rmparticle` がゲームに入る)
 
+**自作モジュール (`.rmfx`。2026-11-16。画面は未確認)**
+
+1. 「パーティクル」タブの「＋ モジュール」→「**新しいモジュールを作る**」→ `Assets/Particles/Modules/NewModule.rmfx` ができ、エミッターの並びの一番下に入り、Windows がそのファイルを開く (開くプログラムが決まっていなければ「どのアプリで開くか」を聞かれる: メモ帳・VS Code・Visual Studio など)
+2. 見本は「粒が毎フレーム上へ加速する」(`strength` = 強さ)。タブでそのモジュールを選ぶと右に「強さ」の欄。変えると粒がすぐ変わる
+3. ファイルを書き換えて保存 → 1 秒以内にプレビューとシーンビューの粒が新しいコードで動く (作り直し)。値は名前で残る
+4. 書き間違える (例: `p.nothing = 1;`) → モジュールの行が赤くなり、右に「シェーダーを作れません: NewModule.rmfx(12,5): error ...」(ファイル名と行)。コンソールにも 1 回。直して保存すると戻る
+5. `param` の行の間違い (`param vec3 a = 1;` など) → 右に「1 行目: 「vec3」という型はありません」のように日本語で
+6. 「＋ モジュール」→「ファイルのモジュール (.rmfx) …」→ 空のモジュールが入り、インスペクターに「モジュールのファイル」。そこで .rmfx を選ぶ (アセットのパネルからドラッグも)
+7. 書き出すと、エフェクトが使う .rmfx もゲームに入る (書き出したゲームでも同じ粒)
+
+**`.rmfx` の書き方** (HLSL。`plugins/rm_engine/particles/runtime/ModuleSource.h`)
+
+```hlsl
+module "風で曲げる"                                       // タブに出る名前 (無ければファイル名)
+param float  strength = 1.0 [0, 10];  // 強さ             // 欄: 型 名前 = 初めの値 [最小, 最大]; // 欄の名前
+param float3 direction = (1, 0, 0);   // 向き             // 型: float float2 float3 float4 color int bool
+attr  float  heat;                                        // 粒ごとに持つ値を足す (p.heat)
+
+void Spawn(inout Particle p, inout Random rnd) { ... }            // 生まれたとき 1 回 (無くてもよい)
+void Update(inout Particle p, float dt, inout Random rnd) { ... } // 毎フレーム (無くてもよい。どちらかは要る)
+```
+
+- 粒 `p` の値: `position` `velocity` (m/秒) `color` (float4) `size` (直径) `rotation` `spin` (ラジアン/秒) `age` `lifetime` (秒) `alive` (0 にすると消える) `startColor` `startSize`。位置は Update の後にエンジンが `velocity * dt` で動かす
+- 使えるもの: `Rand(rnd)` (0〜1)・`RandRange(rnd, a, b)`・`RandInDisc(rnd)`・`RandOnSphere(rnd)`・`RandInSphere(rnd)`・`EmitterPoint(ローカルの点)`・`EmitterDirection(ローカルの向き)`・`LifeRatio(p)` (0〜1)・`Time`・`DeltaTime`・`EmitterPosition`・`EmitterAge`
+- モジュールは 1 つずつ別の名前空間に入るので、ほかのモジュールと同じ名前の `param` や関数を使ってよい。並びの上から順に動く
+
 **決まり**: 粒の数の上限を超えると古い粒から消える。重ね方「足して光らせる」は暗い所で光る (並べ替えなし)、「普通に重ねる」は半透明。GPU が Direct3D 11 の機能レベル 11_0 より古いと出ない (コンソールに 1 回)。
 
-**まだ無いもの** (設計の 3-6 の続き): HLSL で書く自分のモジュール (`.rmfx` のファイル)・当たり判定 (コライダーの形・画面の深度)・トレイル・伸びる粒・サブエミッター・絵 (画像) の粒・2D・プリセット (炎・煙・火花・電撃・レーザー)・スクリプトから出す / 止める
+**まだ無いもの** (設計の 3-6 の続き): 当たり判定 (コライダーの形・画面の深度)・トレイル・伸びる粒・サブエミッター・絵 (画像) の粒・2D・プリセット (炎・煙・火花・電撃・レーザー)・スクリプトから出す / 止める
 
 ## 8. リフレクションとインスペクター
 

@@ -5,6 +5,7 @@
 #include "Test.h"
 
 #include "core/reflect/Data.h"
+#include "rm_engine/game_production/editor/GameExport.h"
 #include "rm_engine/particles/runtime/BuiltinModules.h"
 #include "rm_engine/particles/runtime/ModuleSource.h"
 #include "rm_engine/particles/runtime/ParticleEffect.h"
@@ -16,6 +17,8 @@
 #include <wrl/client.h>
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -202,4 +205,32 @@ RM_TEST(Particles_EffectFile_KeepsWhatItDoesNotKnow) {
     CHECK(back && back->emitters[0].modules.size() == 1 && back->emitters[0].modules[0].builtin == "initial");
     CHECK(!ReadEffect(R"({"kind": "other"})", &err) && !err.empty());
     CHECK(!ReadEffect("{", &err));
+}
+
+RM_TEST(Particles_Export_TakesTheModulesAnEffectNames) {
+    // A scene names an effect; the effect names a module of a file: both go into the game.
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "rm_particles_export_test";
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "Assets", ec);
+    const std::string effectId(32, 'a'), moduleId(32, 'b');
+    ParticleEffect e = NewEffect();
+    ParticleModule m;
+    m.file = AssetRef{moduleId};
+    e.emitters[0].modules.push_back(m);
+    std::ofstream(root / "Assets" / "fire.rmparticle", std::ios::binary) << WriteEffect(e);
+    std::ofstream(root / "Assets" / "Wind.rmfx", std::ios::binary) << "void Update(inout Particle p, float dt, inout Random rnd) {}\n";
+    game_production::GameExportInput in;
+    in.projectRoot = root;
+    in.scenes.push_back({"Assets/Scenes/Main.rmscene", "{\"entities\": [{\"components\": [{\"effect\": \"" + effectId + "\"}]}]}"});
+    in.assetFile = [&](const AssetRef& ref) -> fs::path {
+        if (ref.guid == effectId) return root / "Assets" / "fire.rmparticle";
+        if (ref.guid == moduleId) return root / "Assets" / "Wind.rmfx";
+        return {};
+    };
+    const auto assets = game_production::CollectAssets(in);
+    CHECK(assets.size() == 2);
+    CHECK(assets.size() == 2 && assets[0].rel == "Assets/fire.rmparticle" && assets[1].rel == "Assets/Wind.rmfx");
+    fs::remove_all(root, ec);
 }
