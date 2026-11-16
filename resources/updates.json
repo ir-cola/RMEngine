@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "パーティクル: プリセット (炎・煙・火花・爆発・キラキラ・雨・雪・魔法の光) からエフェクトを作る・エミッターを足す。粒に絵 (画像) を貼れる (コマ割りの連番も)。粒の形に星と煙",
+          "en": "Particles: make an effect or add emitters from presets (fire, smoke, sparks, explosion, sparkle, rain, snow, magic light). Particles can show a picture (an image, sheets of frames too). Star and smoke dot shapes"
+        },
+        {
           "ja": "パーティクル: 当たり判定 (コライダーの箱・球・カプセルと、カメラに見えている物) とトレイル (通った跡の帯)、速さの向きに伸びる粒 (火花・雨)",
           "en": "Particles: collisions (with colliders - boxes, spheres, capsules - and with what the camera sees), trails (a band where a particle has been) and particles stretched along their motion (sparks, rain)"
         },

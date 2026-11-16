@@ -45,6 +45,10 @@ cbuffer EmitterCB : register(b0) {
     float TrailInterval;
     float TrailWidth;
     float Stretch;
+    uint HasImage;   // the dots show DotImage (else DotShape)
+    uint SheetCols;  // the picture's frames: columns and rows
+    uint SheetRows;
+    uint SheetMode;  // 0: through the frames over its life, 1: one frame for each particle
 };
 
 cbuffer ViewCB : register(b2) {
@@ -112,6 +116,14 @@ float3 RandOnSphere(inout Random r) {
     return float3(s * cos(a), s * sin(a), z);
 }
 float3 RandInSphere(inout Random r) { return RandOnSphere(r) * pow(Rand(r), 1.0 / 3.0); }
+
+// A smooth noise of a point (0..1): smoke's look.
+float Hash2(float2 p) { return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
+float Noise2(float2 x) {
+    float2 i = floor(x), f = frac(x);
+    float2 u = f * f * (3 - 2 * f);
+    return lerp(lerp(Hash2(i), Hash2(i + float2(1, 0)), u.x), lerp(Hash2(i + float2(0, 1)), Hash2(i + float2(1, 1)), u.x), u.y);
+}
 
 // A point / a direction of the emitter's own space in the world.
 float3 EmitterPoint(float3 local) { return mul(EmitterWorld, float4(local, 1)).xyz; }
@@ -288,11 +300,15 @@ constexpr char kDrawing[] = R"(    if (p.alive != 0) {
 
 StructuredBuffer<Particle> Drawn : register(t0);
 StructuredBuffer<float4> DrawnTrails : register(t4);
+Texture2D DotImage : register(t5);
+SamplerState DotSampler : register(s0);
 
 struct ParticleOut {
     float4 position : SV_Position;
     float4 color : COLOR0;
     float2 uv : TEXCOORD0;
+    float life : TEXCOORD1;                // 0..1 of its life (the picture's frame)
+    nointerpolation uint seed : TEXCOORD2;  // its own (a frame of its own, its smoke)
 };
 
 ParticleOut Hidden() {
@@ -300,6 +316,8 @@ ParticleOut Hidden() {
     o.position = float4(0, 0, 2, 1);  // outside the picture: nothing drawn
     o.color = 0;
     o.uv = 0;
+    o.life = 0;
+    o.seed = 0;
     return o;
 }
 
@@ -328,18 +346,35 @@ ParticleOut ParticleVS(uint vertex : SV_VertexID, uint instance : SV_InstanceID)
     o.position = mul(ViewProj, float4(world, 1));
     o.color = p.color;
     o.uv = c;
+    o.life = LifeRatio(p);
+    o.seed = p.seed;
     return o;
 }
 
 float4 ParticlePS(ParticleOut i) : SV_Target {
+    // A picture (with its frames: a sheet of columns x rows, left to right, top to bottom).
+    if (HasImage != 0) {
+        uint cols = max(SheetCols, 1), rows = max(SheetRows, 1), frames = cols * rows;
+        uint f = SheetMode == 0 ? min((uint)(i.life * frames), frames - 1) : i.seed % frames;
+        float2 cell = float2(f % cols, f / cols);
+        float2 uv = (cell + float2(i.uv.x * 0.5 + 0.5, 0.5 - i.uv.y * 0.5)) / float2(cols, rows);
+        float4 t = DotImage.Sample(DotSampler, uv);
+        return float4(i.color.rgb * t.rgb, saturate(i.color.a * t.a));
+    }
     float d2 = dot(i.uv, i.uv);
     float a = 1;
-    if (DotShape == 0) {
+    if (DotShape == 0) {  // soft
         a = saturate(1 - d2);
         a *= a;
-    } else if (DotShape == 1) {
+    } else if (DotShape == 1) {  // sharp
         float w = max(fwidth(d2), 1e-4);
         a = saturate((1 - d2) / w);
+    } else if (DotShape == 3) {  // a star: a cross of light and its middle
+        float glow = 0.015 / (abs(i.uv.x * i.uv.y) + 0.015);
+        a = saturate(max(glow * saturate(1 - d2), saturate(1 - d2 * 6)));
+    } else if (DotShape == 4) {  // smoke: soft, uneven
+        float n = Noise2(i.uv * 2.5 + float(i.seed % 997) * 0.37) * 0.6 + Noise2(i.uv * 5 + float(i.seed % 331)) * 0.4;
+        a = saturate(1 - d2) * saturate(n * 1.4 - 0.15);
     }
     return float4(i.color.rgb, saturate(i.color.a * a));
 }
@@ -371,6 +406,8 @@ ParticleOut TrailVS(uint vertex : SV_VertexID, uint instance : SV_InstanceID) {
     o.position = mul(ViewProj, float4(pos + side * (c.y * p.size * TrailWidth * (1 - f) * 0.5), 1));
     o.color = float4(p.color.rgb, p.color.a * (1 - f));
     o.uv = float2(c.y, f);
+    o.life = 0;
+    o.seed = 0;
     return o;
 }
 

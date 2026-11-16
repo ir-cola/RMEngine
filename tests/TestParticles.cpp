@@ -13,6 +13,7 @@
 #include "rm_engine/particles/runtime/ModuleSource.h"
 #include "rm_engine/particles/runtime/ParticleEffect.h"
 #include "rm_engine/particles/runtime/ParticlePlayer.h"
+#include "rm_engine/particles/runtime/Presets.h"
 #include "rm_engine/particles/runtime/ParticleShader.h"
 
 #include <Windows.h>
@@ -295,5 +296,37 @@ RM_TEST(Particles_Shader_CollisionTrailsAndStretchCompile) {
         const std::string err = Compile(s.hlsl, entry, target);
         CHECK(err.empty());
         if (!err.empty()) std::printf("%s: %s\n", entry, err.c_str());
+    }
+}
+
+RM_TEST(Particles_Presets_UseModulesThatExistAndCompile) {
+    // Every preset: built-in modules only, every value names a param of its module, and its emitters'
+    // shaders compile (all six entries); it saves and loads as it is.
+    CHECK(EffectPresets().size() >= 8 && EffectPresets()[0].id == "glow");
+    for (const EffectPreset& p : EffectPresets()) {
+        const ParticleEffect e = p.make();
+        CHECK(!e.emitters.empty() && !p.title.empty());
+        for (const ParticleEmitter& em : e.emitters) {
+            for (const ParticleModule& m : em.modules) {
+                const ModuleSource* src = FindBuiltin(m.builtin);
+                CHECK(src != nullptr);
+                if (!src) continue;
+                for (const ParticleValue& v : m.values) {
+                    CHECK(FindParam(*src, v.name) != nullptr);
+                    if (!FindParam(*src, v.name)) std::printf("%s: %s has no %s\n", std::string(p.id).c_str(), m.builtin.c_str(), v.name.c_str());
+                }
+            }
+            const EmitterShader s = AssembleShader(Inputs(em));
+            CHECK(s.errors.empty());
+            for (const auto& [entry, target] : {std::pair{"SpawnMain", "cs_5_0"}, std::pair{"UpdateMain", "cs_5_0"}, std::pair{"ParticleVS", "vs_5_0"},
+                                                std::pair{"ParticlePS", "ps_5_0"}, std::pair{"TrailVS", "vs_5_0"}, std::pair{"TrailPS", "ps_5_0"}}) {
+                const std::string err = Compile(s.hlsl, entry, target);
+                CHECK(err.empty());
+                if (!err.empty()) std::printf("%s %s: %s\n", std::string(p.id).c_str(), entry, err.c_str());
+            }
+        }
+        std::string err;
+        const auto back = ReadEffect(WriteEffect(e), &err);
+        CHECK(back && back->emitters.size() == e.emitters.size());
     }
 }

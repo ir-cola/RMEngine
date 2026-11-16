@@ -72,6 +72,7 @@ struct Programs {
 struct States {
     ComPtr<ID3D11BlendState> add, alpha;
     ComPtr<ID3D11RasterizerState> raster;
+    ComPtr<ID3D11SamplerState> sampler;  // the pictures: smooth, clamped at the edges
 };
 
 bool Compile(const std::string& hlsl, const char* entry, const char* target, ComPtr<ID3DBlob>& code, std::string& error) {
@@ -138,6 +139,11 @@ std::shared_ptr<const States> StatesFor(ID3D11Device* device) {
     rd.CullMode = D3D11_CULL_NONE;
     rd.DepthClipEnable = TRUE;
     device->CreateRasterizerState(&rd, &s->raster);
+    D3D11_SAMPLER_DESC sd{};
+    sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sd.MaxLOD = D3D11_FLOAT32_MAX;
+    device->CreateSamplerState(&sd, &s->sampler);
     slot = s;
     return s;
 }
@@ -182,6 +188,7 @@ struct EffectPlayer::Emitter {
     ComPtr<ID3D11ShaderResourceView> trailsSrv;
     uint32_t trailPoints = 0;  // of the buffer made
 
+    EmitterConstants constants{};  // as last written to emitterCb (Draw changes hasImage when the picture is not there)
     EmitterClock clock;
     uint32_t head = 0, serial = 0;
     float sinceFinished = 0;
@@ -405,6 +412,11 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
         ec.trailInterval = e.trailPoints > 1 ? std::max(e.data->trailTime, 0.01f) / static_cast<float>(e.trailPoints) : 1.f;
         ec.trailWidth = std::max(e.data->trailWidth, 0.f);
         ec.stretch = std::max(e.data->stretch, 0.f);
+        ec.hasImage = e.data->image.Empty() ? 0u : 1u;
+        ec.sheetCols = static_cast<uint32_t>(std::clamp(e.data->sheetColumns, 1, 64));
+        ec.sheetRows = static_cast<uint32_t>(std::clamp(e.data->sheetRows, 1, 64));
+        ec.sheetMode = static_cast<uint32_t>(e.data->sheet);
+        e.constants = ec;
         ctx->UpdateSubresource(e.emitterCb.Get(), 0, nullptr, &ec, 0, 0);
         std::vector<float> params(static_cast<size_t>(e.shader.paramSlots) * 4, 0.f);
         std::copy_n(e.params.begin(), std::min(e.params.size(), params.size()), params.begin());
@@ -431,11 +443,20 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
     ctx->CSSetShaderResources(1, 3, noViews);
 }
 
-void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view) {
+void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view, const ImageLookup& images) {
     if (!ctx) return;
     for (auto& ptr : emitters_) {
         Emitter& e = *ptr;
         if (!e.data->enabled || e.broken || !e.programs || !e.srv || !e.cleared || !e.states) continue;
+        // The emitter's picture (not there yet - being read - or gone: the dot's shape instead).
+        ID3D11ShaderResourceView* image = !e.data->image.Empty() && images ? images(e.data->image) : nullptr;
+        if ((image ? 1u : 0u) != e.constants.hasImage) {
+            e.constants.hasImage = image ? 1u : 0u;
+            ctx->UpdateSubresource(e.emitterCb.Get(), 0, nullptr, &e.constants, 0, 0);
+        }
+        ctx->PSSetShaderResources(5, 1, &image);
+        ID3D11SamplerState* sampler = e.states->sampler.Get();
+        ctx->PSSetSamplers(0, 1, &sampler);
         ctx->UpdateSubresource(e.viewCb.Get(), 0, nullptr, &view, 0, 0);
         ctx->IASetInputLayout(nullptr);
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -465,6 +486,9 @@ void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view) {
         ID3D11Buffer* noCb = nullptr;
         ctx->VSSetShaderResources(0, 1, &noSrv);
         ctx->VSSetShaderResources(4, 1, &noSrv);
+        ctx->PSSetShaderResources(5, 1, &noSrv);
+        ID3D11SamplerState* noSampler = nullptr;
+        ctx->PSSetSamplers(0, 1, &noSampler);
         ctx->VSSetConstantBuffers(0, 1, &noCb);
         ctx->VSSetConstantBuffers(2, 1, &noCb);
     }

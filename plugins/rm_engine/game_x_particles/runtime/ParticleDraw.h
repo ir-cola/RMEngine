@@ -14,8 +14,12 @@
 #include "rm_engine/particles/runtime/ParticleEffect.h"
 #include "rm_engine/particles/runtime/ParticleShader.h"
 
+#include <d3d11.h>
+#include <wrl/client.h>
+
 #include <functional>
 #include <memory>
+#include <set>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -42,6 +46,23 @@ private:
         double lookedAt = -1e9;
     };
     std::unordered_map<std::string, Entry> files_;  // by asset id
+};
+
+// The pictures emitters show (their 絵) on the GPU: read through `read` (a picture file, or the game's
+// baked one), looked at again now and then; one that cannot be read is told once.
+class ParticleImages {
+public:
+    ID3D11ShaderResourceView* Find(const AssetRef& ref, platform::Gfx& gfx, const ModuleFiles::Read& read, bool often);
+
+private:
+    struct Entry {
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
+        std::string bytes;
+        double lookedAt = -1e9;
+        uint64_t generation = 0;
+    };
+    std::unordered_map<std::string, Entry> images_;  // by asset id
+    std::set<std::string> told_;
 };
 
 // How often an asset is read again (seconds): the editor while stopped, else.

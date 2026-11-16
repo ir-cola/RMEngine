@@ -16,6 +16,7 @@
 #include "rm_engine/particles/runtime/BuiltinModules.h"
 #include "rm_engine/particles/runtime/ParticleEffect.h"
 #include "rm_engine/particles/runtime/ParticlePlayer.h"
+#include "rm_engine/particles/runtime/Presets.h"
 #include "rm_engine/space3d/editor/Preview3D.h"
 
 #include <algorithm>
@@ -232,7 +233,9 @@ public:
         if (target->effect.Empty()) {
             const ui::Rect box = r.Inset(24);
             Note(c, {box.x, box.y, box.w, 60}, Tr(L"この「パーティクル」には、まだエフェクトのファイルがありません (見本の光が出ています)。作ると Assets/Particles に入り、ここで変えられます。"));
-            if (w::Button(c, "particles.create", {box.x, box.y + 70, 180, 30}, Tr(L"エフェクトを作る"), w::ButtonKind::Primary)) CreateEffect(host, *target);
+            const ui::Rect create{box.x, box.y + 70, 200, 30};
+            if (w::Button(c, "particles.create", create, Tr(L"エフェクトを作る …"), w::ButtonKind::Primary)) createMenu_.OpenAt(create.x, create.Bottom());
+            if (const int chosen = PresetMenu(c, createMenu_); chosen >= 0) CreateEffect(host, *target, particles::EffectPresets()[static_cast<size_t>(chosen)]);
             return;
         }
         if (target->effect != ref_) {
@@ -257,7 +260,9 @@ public:
         ts.bold = true;
         c.P().Text({top.x, top.y, top.w - 250, top.h}, host.host.AssetFile(ref_).filename().wstring(), ts);
         if (w::Button(c, "particles.restart", {top.Right() - 240, top.y, 110, top.h}, Tr(L"始めから"))) player_->Restart();
-        if (w::Button(c, "particles.add_emitter", {top.Right() - 122, top.y, 122, top.h}, Tr(L"＋ エミッター"))) AddEmitter(host);
+        const ui::Rect addEmitter{top.Right() - 122, top.y, 122, top.h};
+        if (w::Button(c, "particles.add_emitter", addEmitter, Tr(L"＋ エミッター"))) emitterMenu_.OpenAt(addEmitter.x, addEmitter.Bottom());
+        if (const int chosen = PresetMenu(c, emitterMenu_); chosen >= 0) AddEmitters(host, particles::EffectPresets()[static_cast<size_t>(chosen)]);
 
         const float previewH = std::max(120.f, (r.h - top.h - 3 * kPad) * 0.45f);
         const ui::Rect preview{r.x + kPad, top.Bottom() + 6, r.w - 2 * kPad, previewH};
@@ -319,7 +324,22 @@ private:
 
     // A new file Assets/Particles/<the entity's name>.rmparticle (the sample effect), put in the
     // component's エフェクト (one undo entry; the file stays).
-    void CreateEffect(game_production::SceneViewHost& host, const Target& t) {
+    // The presets (炎・煙 ...) to choose from; the one chosen (-1: none yet).
+    static int PresetMenu(ui::Context& c, w::Popup& popup) {
+        if (!popup.open) return -1;
+        std::vector<w::MenuItem> items;
+        for (const particles::EffectPreset& p : particles::EffectPresets()) items.push_back({Utf8ToWide(TrU8(p.title))});
+        return w::MenuPopup(c, popup, items, 220);
+    }
+
+    // A preset's effect, its emitters' names in the screen's language.
+    static ParticleEffect Made(const particles::EffectPreset& preset) {
+        ParticleEffect e = preset.make();
+        for (ParticleEmitter& em : e.emitters) em.name = TrU8(em.name);
+        return e;
+    }
+
+    void CreateEffect(game_production::SceneViewHost& host, const Target& t, const particles::EffectPreset& preset) {
         const fs::path dir = host.host.GetProject().AssetsDir() / L"Particles";
         std::error_code ec;
         fs::create_directories(dir, ec);
@@ -333,7 +353,7 @@ private:
             if (!fs::exists(file, ec)) break;
         }
         std::string err;
-        if (!platform::WriteFileAtomic(file, particles::WriteEffect(particles::NewEffect()), &err)) {
+        if (!platform::WriteFileAtomic(file, particles::WriteEffect(Made(preset)), &err)) {
             log::Error("パーティクルのエフェクトを作れません ({}): {}", PathToUtf8(file.wstring()), err);
             return;
         }
@@ -352,12 +372,10 @@ private:
         log::Info("パーティクルのエフェクトを作りました: {}", PathToUtf8(file.wstring()));
     }
 
-    void AddEmitter(game_production::SceneViewHost& host) {
-        EditEffect(host.host, ref_, "エミッターを足す", 0, [](ParticleEffect& e) {
-            ParticleEmitter add = particles::NewEffect().emitters[0];
-            add.name = std::format("{} {}", TrU8("エミッター"), e.emitters.size() + 1);
-            e.emitters.push_back(std::move(add));
-        });
+    // A preset's emitters at the end of the effect (a fire with smoke: two).
+    void AddEmitters(game_production::SceneViewHost& host, const particles::EffectPreset& preset) {
+        const ParticleEffect add = Made(preset);
+        EditEffect(host.host, ref_, "エミッターを足す", 0, [&add](ParticleEffect& e) { e.emitters.insert(e.emitters.end(), add.emitters.begin(), add.emitters.end()); });
         emitter_ = effect_ ? effect_->emitters.size() : 0;
         module_ = -1;
     }
@@ -388,7 +406,11 @@ private:
             for (const std::string& p : player_->TakeProblems()) {
                 if (told_.insert(p).second) log::Warn("{}", p);
             }
-            extras.push_back([this](const space3d::ExtraDrawContext& dc) { player_->Draw(dc.ctx, ViewOf(dc)); });
+            extras.push_back([this, &host, &gfx](const space3d::ExtraDrawContext& dc) {
+                player_->Draw(dc.ctx, ViewOf(dc), [&](const AssetRef& ref) {
+                    return images_.Find(ref, gfx, [&host](const AssetRef& r) { return host.host.AssetContent(r); }, true);
+                });
+            });
             c.RequestAnimation();
         }
         if (!preview_.Draw(c, r, gfx, "particles.preview", {{}, extras})) Note(c, r.Inset(12), Tr(L"3D の描画を始められませんでした。くわしくはコンソールを見てください。"));
@@ -678,9 +700,11 @@ private:
     double drawnAt_ = -1;
     std::map<std::string, std::string> texts_;  // the number fields' text while typed
     w::Popup addMenu_;
+    w::Popup createMenu_, emitterMenu_;  // the presets: a new effect / its emitters added
     size_t addTo_ = 0;
     std::set<std::string> told_;
     ModuleFiles modules_;
+    ParticleImages images_;
 };
 
 }  // namespace

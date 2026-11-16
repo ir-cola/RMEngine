@@ -73,8 +73,10 @@ public:
     void Restart();
     // Moves it on by dt (lets out new particles where `world` puts the emitter - a column-major 4x4).
     void Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const float world[16], float dt, const CollisionWorld* collide = nullptr);
-    // Draws its particles: the caller has bound the picture's render target and depth buffer.
-    void Draw(ID3D11DeviceContext* ctx, const ViewConstants& view);
+    // Draws its particles: the caller has bound the picture's render target and depth buffer. `images`:
+    // the picture an emitter's 絵 names on the GPU (null: not there - the dot's shape is drawn instead).
+    using ImageLookup = std::function<ID3D11ShaderResourceView*(const AssetRef&)>;
+    void Draw(ID3D11DeviceContext* ctx, const ViewConstants& view, const ImageLookup& images = {});
 
     // Why an emitter cannot run (its shaders did not compile: the compiler's words); empty: it runs.
     std::string Error(size_t emitter) const;

@@ -64,8 +64,11 @@ struct EmitterConstants {
     float trailInterval;   // seconds between two of its places
     float trailWidth;      // times the particle's size
     float stretch;         // seconds: a particle is long by its speed times this (0: a square)
+    uint32_t hasImage;     // the dots show the emitter's picture
+    uint32_t sheetCols, sheetRows;  // its frames
+    uint32_t sheetMode;    // ParticleSheet
 };
-static_assert(sizeof(EmitterConstants) == 128);
+static_assert(sizeof(EmitterConstants) == 144);
 
 struct ViewConstants {
     float viewProj[16];  // column-major: mul(ViewProj, v)

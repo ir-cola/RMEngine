@@ -1,6 +1,8 @@
 #include "rm_engine/game_x_particles/runtime/ParticleDraw.h"
 
 #include "base/Log.h"
+#include "core/asset/BakedImage.h"
+#include "platform/Image.h"
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_x_particles/runtime/CollisionShapes.h"
 #include "rm_engine/game_x_particles/runtime/ParticleSystem.h"
@@ -85,7 +87,9 @@ public:
             }
             r.player.Advance(device, ctx, &world->m[0][0], f.dt * std::max(ps.speed, 0.f), &collide);
             for (const std::string& p : r.player.TakeProblems()) Tell(p);
-            out.push_back([player = &r.player](const space3d::ExtraDrawContext& dc) { player->Draw(dc.ctx, ViewOf(dc)); });
+            out.push_back([this, player = &r.player, gfx = &f.gfx, read = f.asset, often = !f.playing](const space3d::ExtraDrawContext& dc) {
+                player->Draw(dc.ctx, ViewOf(dc), [&](const AssetRef& ref) { return images_.Find(ref, *gfx, read, often); });
+            });
             animating_ = true;
         }
         std::erase_if(running_, [](const auto& kv) { return !kv.second.seen; });
@@ -167,6 +171,7 @@ private:
     std::unordered_map<int, Running> running_;  // by entity
     std::unordered_map<std::string, Loaded> effects_;  // by asset id
     ModuleFiles modules_;
+    ParticleImages images_;
     std::vector<particles::CollisionShape> shapes_;
     View view_;
     bool viewTaken_ = false;
@@ -200,6 +205,47 @@ std::shared_ptr<const particles::ModuleSource> ModuleFiles::Find(const particles
     }
     file = e.name;
     return e.source;
+}
+
+ID3D11ShaderResourceView* ParticleImages::Find(const AssetRef& ref, platform::Gfx& gfx, const ModuleFiles::Read& read, bool often) {
+    if (ref.Empty()) return nullptr;
+    Entry& e = images_[ref.guid];
+    if (e.generation != gfx.Generation()) {
+        e = {};  // (made on devices that are gone)
+        e.generation = gfx.Generation();
+    }
+    const double now = NowSeconds();
+    if (now - e.lookedAt < (often ? kLookOften : kLookSeldom)) return e.view.Get();
+    e.lookedAt = now;
+    const auto bytes = read ? read(ref) : std::nullopt;
+    if (!bytes || (e.view && *bytes == e.bytes)) return e.view.Get();
+    e.bytes = *bytes;
+    e.view.Reset();
+    auto tell = [&](const std::string& why) {
+        if (told_.insert(ref.guid + why).second) log::Warn("パーティクルの絵 ({}) を読めません: {}", ref.guid, why);
+    };
+    std::string err;
+    const auto baked = asset::ReadBakedImage(*bytes, &err);  // (the game's: baked; the editor's: the file)
+    if (!baked) return tell(err), nullptr;
+    const auto* data = reinterpret_cast<const uint8_t*>(baked->picture.data());
+    const auto image = platform::DecodeImage(gfx.Wic(), std::span(data, baked->picture.size()), platform::PixelOrder::Rgba, {1024, 1024}, &err);
+    if (!image) return tell(err), nullptr;
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = image->width;
+    td.Height = image->height;
+    td.MipLevels = 1;
+    td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_IMMUTABLE;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    const D3D11_SUBRESOURCE_DATA init{image->pixels.data(), image->width * 4, 0};
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    if (!gfx.D3D() || FAILED(gfx.D3D()->CreateTexture2D(&td, &init, &texture)) || FAILED(gfx.D3D()->CreateShaderResourceView(texture.Get(), nullptr, &e.view))) {
+        tell("GPU に上げられません");
+        return nullptr;
+    }
+    return e.view.Get();
 }
 
 particles::ViewConstants ViewOf(const space3d::ExtraDrawContext& c) {

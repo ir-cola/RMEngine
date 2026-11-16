@@ -35,6 +35,14 @@ enum class ParticleShape {
     RM_ITEM(Label="ぼんやりした丸") SoftCircle,
     RM_ITEM(Label="くっきりした丸") Circle,
     RM_ITEM(Label="四角") Square,
+    RM_ITEM(Label="星 (キラキラ)") Star,
+    RM_ITEM(Label="煙 (むら)") Smoke,
+};
+
+RM_ENUM(Label="コマの進め方")
+enum class ParticleSheet {
+    RM_ITEM(Label="寿命に合わせて進める") OverLife,
+    RM_ITEM(Label="粒ごとにランダムな 1 コマ") Random,
 };
 
 // One param's value (a float uses x; float3 x y z; a colour x y z w = r g b a; a bool x != 0).
@@ -68,6 +76,10 @@ struct ParticleEmitter {
     RM_PROPERTY(Edit, Label="くり返す") bool loop = true;
     RM_PROPERTY(Edit, Label="重ね方") ParticleBlend blend = ParticleBlend::Add;
     RM_PROPERTY(Edit, Label="粒の形") ParticleShape shape = ParticleShape::SoftCircle;
+    RM_PROPERTY(Edit, Label="絵", Tooltip="粒に貼る画像 (無ければ「粒の形」)。白っぽい絵なら、色がそのまま付きます", AssetKind="image") AssetRef image;
+    RM_PROPERTY(Edit, Label="絵のコマ (横の数)", Tooltip="1 枚の画像にコマが並んでいるとき (煙や炎の連番): 横に並んだ数", Min=1, Max=64) int sheetColumns = 1;
+    RM_PROPERTY(Edit, Label="絵のコマ (縦の数)", Min=1, Max=64) int sheetRows = 1;
+    RM_PROPERTY(Edit, Label="コマの進め方") ParticleSheet sheet = ParticleSheet::OverLife;
     RM_PROPERTY(Edit, Label="粒を描く", Tooltip="外すと、粒は描かずトレイルだけを描きます") bool dots = true;
     RM_PROPERTY(Edit, Label="速さの向きに伸ばす (秒)", Tooltip="粒を、速さ × この秒だけ動く向きに長くします (火花・雨)。0 で丸いまま", Min=0, Max=10, Step=0.005)
     float stretch = 0;
