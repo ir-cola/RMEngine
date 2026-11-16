@@ -928,6 +928,7 @@ Rect MenuRect(const ui::Context& c, const Popup& popup, const std::vector<MenuIt
     float h = kPad * 2;
     for (const auto& it : items) h += it.separator ? kSepH : kItemH;
     const Rect& vp = c.Viewport();
+    h = std::min(h, std::max(kPad * 2 + kItemH, vp.h - 8));  // (taller than the window: it scrolls - MenuPopup)
     const float x = std::clamp(popup.x, vp.x + 4, std::max(vp.x + 4, vp.Right() - width - 4));
     const float y = std::clamp(popup.y, vp.y + 4, std::max(vp.y + 4, vp.Bottom() - h - 4));
     return {x, y, width, h};
@@ -955,7 +956,13 @@ int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, 
     DrawSurface(c, box, Surface::Popup, 6.f);
 
     int clicked = -1;
-    float y = box.y + kPad;
+    // A list taller than the window (MenuRect keeps the box inside it): its rows scroll (the wheel, the bar).
+    float content = 0;
+    for (const auto& it : items) content += it.separator ? kSepH : kItemH;
+    const Rect view{box.x, box.y + kPad, box.w, box.h - kPad * 2};
+    const bool scrolls = content > view.h + 0.5f;
+    const float off = scrolls ? BeginScroll(c, "menu_scroll", view, content) : 0.f;
+    float y = view.y - off;
     const bool checks = std::any_of(items.begin(), items.end(), [](const MenuItem& it) { return it.checked; });
     c.PushId("menu");
     for (size_t i = 0; i < items.size(); ++i) {
@@ -965,9 +972,10 @@ int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, 
             y += kSepH;
             continue;
         }
-        const Rect row{box.x + kPad, y, box.w - kPad * 2, kItemH};
+        const Rect row{box.x + kPad, y, box.w - kPad * 2 - (scrolls ? 10.f : 0.f), kItemH};
+        const bool seen = row.Bottom() > view.y && row.y < view.Bottom();  // (scrolled out: not pressed)
         c.PushId(static_cast<uint64_t>(i));
-        const auto b = it.enabled ? c.ButtonBehavior(c.MakeId("item"), row) : ui::Context::ButtonResult{};
+        const auto b = it.enabled && seen ? c.ButtonBehavior(c.MakeId("item"), row) : ui::Context::ButtonResult{};
         c.PopId();
         DrawRow(c, row, {false, b.hovered, true});
         ui::TextStyle ts;
@@ -986,6 +994,7 @@ int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, 
         y += kItemH;
     }
     c.PopId();
+    if (scrolls) EndScroll(c, "menu_scroll", view, content);
     if (clicked >= 0) {
         popup.open = false;
         c.RequestRedraw();

@@ -28,6 +28,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <shellapi.h>
@@ -235,7 +236,10 @@ public:
             Note(c, {box.x, box.y, box.w, 60}, Tr(L"この「パーティクル」には、まだエフェクトのファイルがありません (見本の光が出ています)。作ると Assets/Particles に入り、ここで変えられます。"));
             const ui::Rect create{box.x, box.y + 70, 200, 30};
             if (w::Button(c, "particles.create", create, Tr(L"エフェクトを作る …"), w::ButtonKind::Primary)) createMenu_.OpenAt(create.x, create.Bottom());
-            if (const int chosen = PresetMenu(c, createMenu_); chosen >= 0) CreateEffect(host, *target, particles::EffectPresets()[static_cast<size_t>(chosen)]);
+            if (const int chosen = std::exchange(chosenCreate_, -1); chosen >= 0) {
+                CreateEffect(host, *target, particles::EffectPresets()[static_cast<size_t>(chosen)]);
+            }
+            Menus(c);
             return;
         }
         if (target->effect != ref_) {
@@ -262,17 +266,52 @@ public:
         if (w::Button(c, "particles.restart", {top.Right() - 240, top.y, 110, top.h}, Tr(L"始めから"))) player_->Restart();
         const ui::Rect addEmitter{top.Right() - 122, top.y, 122, top.h};
         if (w::Button(c, "particles.add_emitter", addEmitter, Tr(L"＋ エミッター"))) emitterMenu_.OpenAt(addEmitter.x, addEmitter.Bottom());
-        if (const int chosen = PresetMenu(c, emitterMenu_); chosen >= 0) AddEmitters(host, particles::EffectPresets()[static_cast<size_t>(chosen)]);
 
         const float previewH = std::max(120.f, (r.h - top.h - 3 * kPad) * 0.45f);
         const ui::Rect preview{r.x + kPad, top.Bottom() + 6, r.w - 2 * kPad, previewH};
         DrawPreview(c, preview, host);
         const float lowerY = preview.Bottom() + kPad;
         const float lowerH = r.Bottom() - kPad - lowerY;
-        if (lowerH < 30) return;
-        const float listW = std::floor((r.w - 3 * kPad) * 0.5f);
-        DrawList(c, {r.x + kPad, lowerY, listW, lowerH}, host);
-        DrawValues(c, {r.x + 2 * kPad + listW, lowerY, r.w - 3 * kPad - listW, lowerH}, host);
+        if (lowerH >= 30) {
+            const float listW = std::floor((r.w - 3 * kPad) * 0.5f);
+            DrawList(c, {r.x + kPad, lowerY, listW, lowerH}, host);
+            DrawValues(c, {r.x + 2 * kPad + listW, lowerY, r.w - 3 * kPad - listW, lowerH}, host);
+        }
+        // What a menu chose last frame (its overlay ran after this view had drawn: nothing of the scene then).
+        if (const int chosen = std::exchange(chosenEmitter_, -1); chosen >= 0) AddEmitters(host, particles::EffectPresets()[static_cast<size_t>(chosen)]);
+        if (const int chosen = std::exchange(chosenModule_, -1); chosen >= 0) AddModule(host, chosen);
+        Menus(c);
+    }
+
+    // The menus: drawn over everything, without the tab's clip (2026-11-17 on screen: drawn in the tab,
+    // ＋ エミッター's was hidden under the preview and ＋ モジュール's cut off at the tab's bottom edge). They
+    // only remember what was chosen - Draw acts on it in the next frame.
+    void Menus(ui::Context& c) {
+        if (!createMenu_.open && !emitterMenu_.open && !addMenu_.open) return;
+        c.AddOverlay([this, &c] {
+            const bool was = c.InputEnabled();
+            c.SetInputEnabled(true);
+            if (const int chosen = PresetMenu(c, createMenu_); chosen >= 0) chosenCreate_ = chosen;
+            if (const int chosen = PresetMenu(c, emitterMenu_); chosen >= 0) chosenEmitter_ = chosen;
+            if (addMenu_.open) {
+                if (const int chosen = w::MenuPopup(c, addMenu_, AddMenuItems(), 240); chosen >= 0) chosenModule_ = chosen;
+            }
+            c.SetInputEnabled(was);
+            if (chosenCreate_ >= 0 || chosenEmitter_ >= 0 || chosenModule_ >= 0) c.RequestRedraw();
+        });
+    }
+
+    // ＋ モジュール's rows: the modules the engine has (in their order), then a file's, then a new file.
+    static std::vector<w::MenuItem> AddMenuItems() {
+        std::vector<w::MenuItem> items;
+        for (const particles::BuiltinModule& b : particles::BuiltinModules()) {
+            const ModuleSource* s = particles::FindBuiltin(b.id);
+            items.push_back({Utf8ToWide(s ? TrU8(s->title) : std::string(b.id))});
+        }
+        items.push_back({{}, {}, true, true});
+        items.push_back({Tr(L"ファイルのモジュール (.rmfx) …")});
+        items.push_back({Tr(L"新しいモジュールを作る")});
+        return items;
     }
 
 private:
@@ -488,20 +527,13 @@ private:
             y += kRow + 8;
         }
         w::EndScroll(c, "particles.list", r, content);
+    }
 
-        // The modules the engine has (in their order).
-        if (addMenu_.open) {
-            std::vector<w::MenuItem> items;
+    // ＋ モジュール's row `chosen` (AddMenuItems) done to the emitter it was opened for.
+    void AddModule(game_production::SceneViewHost& host, int chosen) {
+        if (effect_) {
             std::vector<std::string> ids;
-            for (const particles::BuiltinModule& b : particles::BuiltinModules()) {
-                const ModuleSource* s = particles::FindBuiltin(b.id);
-                items.push_back({Utf8ToWide(s ? TrU8(s->title) : std::string(b.id))});
-                ids.emplace_back(b.id);
-            }
-            items.push_back({{}, {}, true, true});
-            items.push_back({Tr(L"ファイルのモジュール (.rmfx) …")});
-            items.push_back({Tr(L"新しいモジュールを作る")});
-            const int chosen = w::MenuPopup(c, addMenu_, items, 240);
+            for (const particles::BuiltinModule& b : particles::BuiltinModules()) ids.emplace_back(b.id);
             if (chosen == static_cast<int>(ids.size()) + 1) {
                 AddFileModule(host, addTo_, {});
             } else if (chosen == static_cast<int>(ids.size()) + 2) {
@@ -701,6 +733,7 @@ private:
     std::map<std::string, std::string> texts_;  // the number fields' text while typed
     w::Popup addMenu_;
     w::Popup createMenu_, emitterMenu_;  // the presets: a new effect / its emitters added
+    int chosenCreate_ = -1, chosenEmitter_ = -1, chosenModule_ = -1;  // what a menu chose (done at the next Draw)
     size_t addTo_ = 0;
     std::set<std::string> told_;
     ModuleFiles modules_;

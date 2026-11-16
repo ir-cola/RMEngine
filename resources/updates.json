@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "長いメニュー (部品を足す一覧など) がウィンドウに入りきらないとき、流して選べるように。パーティクルのタブのメニューが隠れたり切れたりしないように",
+          "en": "Long menus (such as Add Part) scroll when they do not fit the window. The particles tab's menus are no longer hidden or cut off"
+        },
+        {
           "ja": "ゲーム UI: 発光を付けるとボタンが白く飛んでいたのを直した (光は中身の下に)。UI タブの「点を足す」「点を消す」が押せるように",
           "en": "Game UI: the glow no longer whitens the button itself (the light goes under it). The UI tab's Add / Remove point buttons can be clicked"
         },
