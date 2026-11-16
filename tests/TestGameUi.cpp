@@ -124,6 +124,25 @@ RM_TEST(GameUi_Snap_ToTheNearestEdgeOrGrid) {
     CHECK(Near(GridShift(23, 10), -3) && Near(GridShift(26, 10), 4) && Near(GridShift(-14, 10), 4) && Near(GridShift(-16, 10), -4) && GridShift(7, 0) == 0);
 }
 
+RM_TEST(GameUi_AlignAndDistribute) {
+    const UiBox boxes[] = {{10, 0, 20, 10}, {50, 30, 40, 20}, {200, 5, 10, 10}};
+    const auto left = AlignShifts(boxes, UiAlign::Left);
+    CHECK(Near(left[0].x, 0) && Near(left[1].x, -40) && Near(left[2].x, -190) && Near(left[1].y, 0));
+    const auto right = AlignShifts(boxes, UiAlign::Right);  // to 210
+    CHECK(Near(right[0].x, 180) && Near(right[1].x, 120) && Near(right[2].x, 0));
+    const auto mid = AlignShifts(boxes, UiAlign::CenterY);  // all from 0 to 50: middle 25
+    CHECK(Near(mid[0].y, 20) && Near(mid[1].y, -15) && Near(mid[2].y, 15) && Near(mid[0].x, 0));
+    // Equal gaps: from 10 to 210 with 70 filled -> gaps of 65; the first and last stay.
+    const auto spread = DistributeShifts(boxes, true);
+    CHECK(Near(spread[0].x, 0) && Near(spread[2].x, 0) && Near(boxes[1].x + spread[1].x, 10 + 20 + 65));
+    // In their order along the axis, whatever order they were given in.
+    const UiBox mixed[] = {{200, 0, 10, 10}, {10, 0, 10, 10}, {50, 0, 10, 10}};
+    const auto m = DistributeShifts(mixed, true);
+    CHECK(Near(m[0].x, 0) && Near(m[1].x, 0) && Near(mixed[2].x + m[2].x, 105));
+    // Two or fewer: nothing to spread.
+    CHECK(DistributeShifts(std::span(boxes, 2), true)[1].x == 0);
+}
+
 RM_TEST(GameUi_Reanchored_KeepsTheBox) {
     // The inspector's アンカー: the thing stays where it is on the screen (to every preset and back).
     const UiBox parent{0, 0, 1920, 1080};

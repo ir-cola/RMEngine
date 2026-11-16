@@ -197,6 +197,51 @@ float GridShift(float value, float step) {
     return std::round(value / step) * step - value;
 }
 
+std::vector<Vec2> AlignShifts(std::span<const UiBox> boxes, UiAlign how) {
+    std::vector<Vec2> out(boxes.size(), Vec2{0, 0});
+    if (boxes.empty()) return out;
+    float x0 = boxes[0].x, y0 = boxes[0].y, x1 = boxes[0].Right(), y1 = boxes[0].Bottom();
+    for (const UiBox& b : boxes) {
+        x0 = std::min(x0, b.x);
+        y0 = std::min(y0, b.y);
+        x1 = std::max(x1, b.Right());
+        y1 = std::max(y1, b.Bottom());
+    }
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        const UiBox& b = boxes[i];
+        switch (how) {
+            case UiAlign::Left: out[i].x = x0 - b.x; break;
+            case UiAlign::CenterX: out[i].x = (x0 + x1) * 0.5f - (b.x + b.w * 0.5f); break;
+            case UiAlign::Right: out[i].x = x1 - b.Right(); break;
+            case UiAlign::Top: out[i].y = y0 - b.y; break;
+            case UiAlign::CenterY: out[i].y = (y0 + y1) * 0.5f - (b.y + b.h * 0.5f); break;
+            case UiAlign::Bottom: out[i].y = y1 - b.Bottom(); break;
+        }
+    }
+    return out;
+}
+
+std::vector<Vec2> DistributeShifts(std::span<const UiBox> boxes, bool across) {
+    std::vector<Vec2> out(boxes.size(), Vec2{0, 0});
+    if (boxes.size() < 3) return out;
+    auto lo = [&](size_t i) { return across ? boxes[i].x : boxes[i].y; };
+    auto len = [&](size_t i) { return across ? boxes[i].w : boxes[i].h; };
+    std::vector<size_t> order(boxes.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return lo(a) + len(a) * 0.5f < lo(b) + len(b) * 0.5f; });
+    // The room from the first's start to the last's end, less what they fill: equal gaps between them.
+    float filled = 0;
+    for (const size_t i : order) filled += len(i);
+    const float start = lo(order.front()), end = lo(order.back()) + len(order.back());
+    const float gap = (end - start - filled) / static_cast<float>(order.size() - 1);
+    float at = start;
+    for (const size_t i : order) {
+        (across ? out[i].x : out[i].y) = at - lo(i);
+        at += len(i) + gap;
+    }
+    return out;
+}
+
 Vec2 PivotPoint(const UiRect& r, const UiBox& box) { return {box.x + box.w * r.pivot.x, box.y + box.h * r.pivot.y}; }
 
 float CanvasScale(UiScaleMode mode, Vec2 reference, Vec2 area) {

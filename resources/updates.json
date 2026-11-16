@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "UI タブ: 複数を選ぶ (Shift・Ctrl クリック、囲んで選ぶ) と一緒に動かす。揃え (左・真ん中・右・上・下) と等間隔",
+          "en": "UI tab: select several (Shift / Ctrl click, box select) and move them together. Align (left, middle, right, top, bottom) and equal spacing"
+        },
+        {
           "ja": "UI タブ: 吸い付き。ほかの物や親の端・真ん中への補助線と、格子 (間隔を選べる)。Alt を押すと吸い付かない",
           "en": "UI tab: snapping. Guides to the sides and middles of other things and the parent, and a grid (with its step). Hold Alt not to snap"
         },

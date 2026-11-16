@@ -62,6 +62,25 @@ std::optional<size_t> FieldIndex(std::string_view name) {
 constexpr std::array<std::pair<float, float>, 8> kHandleAt{
     {{0.f, 0.f}, {0.5f, 0.f}, {1.f, 0.f}, {1.f, 0.5f}, {1.f, 1.f}, {0.5f, 1.f}, {0.f, 1.f}, {0.f, 0.5f}}};
 
+// The box around corners on the panel (a turned thing's: the box that holds it).
+UiBox PanelBox(const std::array<Vec2, 4>& k) {
+    float x0 = k[0].x, y0 = k[0].y, x1 = k[0].x, y1 = k[0].y;
+    for (const Vec2& v : k) {
+        x0 = std::min(x0, v.x);
+        y0 = std::min(y0, v.y);
+        x1 = std::max(x1, v.x);
+        y1 = std::max(y1, v.y);
+    }
+    return {x0, y0, x1 - x0, y1 - y0};
+}
+
+UiBox Union(const UiBox& a, const UiBox& b) {
+    const float x0 = std::min(a.x, b.x), y0 = std::min(a.y, b.y);
+    return {x0, y0, std::max(a.Right(), b.Right()) - x0, std::max(a.Bottom(), b.Bottom()) - y0};
+}
+
+bool Overlap(const UiBox& a, const UiBox& b) { return a.x <= b.Right() && b.x <= a.Right() && a.y <= b.Bottom() && b.y <= a.Bottom(); }
+
 class UiView final : public game_production::SceneView {
 public:
     void Draw(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) override {
@@ -89,15 +108,17 @@ public:
         tree_ = BuildUi(host.scene, ScreenOf(gs, screen), host.selection);
         renderer_.Draw(dc, host.host.Graphics(), tree_, toDc, [&host](const AssetRef& ref) { return host.host.AssetContent(ref); });
         const std::optional<Rect> strip = Strip(r);
+        const std::optional<Rect> alignBar = AlignBar(r, host);
         lastToDc_ = toDc;
         fit_ = fit;
-        if (!host.playing) HandleInput(c, r, host, toDc, strip);
+        if (!host.playing) HandleInput(c, r, host, toDc, strip, alignBar);
         DrawGuides(c, game, toDc, gs, screen);
         DrawSnapping(c, r, toDc);
         DrawSelection(c, host, toDc);
         DrawHints(c, r);
         c.P().PopClip();
         if (strip) DrawStrip(c, *strip);
+        if (alignBar && !host.playing) DrawAlignBar(c, *alignBar, host);
     }
 
     void LoadState(const json::Value& s) override {
@@ -110,7 +131,7 @@ public:
     json::Value SaveState() const override { return reflect::Save(state_, &unknowns_); }
 
 private:
-    // --- The strip: セーフエリア / アンカー on or off, the zoom ----------------------------------------
+    // --- The strip: セーフエリア / アンカー on or off, the zoom, snapping ------------------------------
     static std::optional<Rect> Strip(const Rect& r) {
         if (r.w < 640 || r.h < kBarH + 40) return std::nullopt;
         return Rect{r.x + 8, r.y + 6, 624, kBarH - 4};
@@ -149,6 +170,58 @@ private:
         w::NumberField(c, "ui_grid_step", step, state_.gridStep, 1, 1000, gridText_);
     }
 
+    // --- The align bar (two or more selected): line them up, spread them ------------------------------
+    std::optional<Rect> AlignBar(const Rect& r, const game_production::SceneViewHost& host) const {
+        if (r.w < 640 || r.h < 2 * kBarH + 60 || SelectedNodes(host).size() < 2) return std::nullopt;
+        return Rect{r.x + 8, r.y + 6 + kBarH, 624, kBarH - 4};
+    }
+
+    void DrawAlignBar(ui::Context& c, const Rect& s, game_production::SceneViewHost& host) {
+        struct Item {
+            const wchar_t* label;
+            const wchar_t* tip;
+            std::optional<UiAlign> align;
+            bool across = true;
+        };
+        const Item items[] = {
+            {L"左揃え", L"選んだ物の左の端を、一番左の物にそろえる", UiAlign::Left},
+            {L"左右の真ん中", L"選んだ物の左右の真ん中を、全体の真ん中にそろえる", UiAlign::CenterX},
+            {L"右揃え", L"選んだ物の右の端を、一番右の物にそろえる", UiAlign::Right},
+            {L"上揃え", L"選んだ物の上の端を、一番上の物にそろえる", UiAlign::Top},
+            {L"上下の真ん中", L"選んだ物の上下の真ん中を、全体の真ん中にそろえる", UiAlign::CenterY},
+            {L"下揃え", L"選んだ物の下の端を、一番下の物にそろえる", UiAlign::Bottom},
+            {L"横に等間隔", L"選んだ物 (3 つ以上) の横の間を同じにする (両端の物は動かない)", std::nullopt, true},
+            {L"縦に等間隔", L"選んだ物 (3 つ以上) の縦の間を同じにする (両端の物は動かない)", std::nullopt, false},
+        };
+        const float bw = (s.w - 4 * 7) / 8;
+        for (size_t i = 0; i < std::size(items); ++i) {
+            const Rect b{s.x + (bw + 4) * static_cast<float>(i), s.y, bw, s.h};
+            if (w::Button(c, std::format("ui_align_{}", i), b, Tr(items[i].label))) LineUp(host, items[i].align, items[i].across);
+            if (c.IsHovered(b)) w::Tooltip(c, Tr(items[i].tip));
+        }
+    }
+
+    // Moves the selected things (their 位置) so they line up / spread out: one undo entry.
+    void LineUp(game_production::SceneViewHost& host, std::optional<UiAlign> align, bool across) {
+        edits_.clear();
+        for (const UiNode* n : SelectedNodes(host)) Begin(host, *n);
+        if (edits_.size() < 2) {
+            edits_.clear();
+            return;
+        }
+        std::vector<UiBox> boxes;
+        for (const Edited& e : edits_) boxes.push_back(PanelBoxOf(e, e.start));
+        const std::vector<Vec2> shifts = align ? AlignShifts(boxes, *align) : DistributeShifts(boxes, across);
+        for (size_t i = 0; i < edits_.size(); ++i) {
+            const auto inv = Invert(edits_[i].parentToDc);
+            UiRect* t = Target(edits_[i]);
+            if (!inv || !t) continue;
+            const Vec2 m = Linear(*inv, shifts[i]);
+            t->position = {edits_[i].start.position.x + m.x, edits_[i].start.position.y + m.y};
+        }
+        Commit(host, align ? "UI をそろえる" : "UI を等間隔にする");
+    }
+
     // --- Where things are on the panel ---------------------------------------------------------------
     // A point of a node's box (fx, fy: 0..1) on the panel, turned with it.
     static Vec2 BoxPoint(const UiNode& n, const Affine& toDc, float fx, float fy) {
@@ -181,12 +254,24 @@ private:
         return 0;
     }
 
-    const UiNode* Selected(const game_production::SceneViewHost& host) const {
-        for (auto it = host.selection.rbegin(); it != host.selection.rend(); ++it) {
-            const UiNode* n = tree_.Find(*it);
-            if (n && n->place) return n;
+    // The selected UI things (not canvases), in the tree's order; and the one the gizmo is for (only one selected).
+    std::vector<const UiNode*> SelectedNodes(const game_production::SceneViewHost& host) const {
+        std::vector<const UiNode*> out;
+        for (const UiNode& n : tree_.nodes) {
+            if (n.place && n.parent >= 0 && std::find(host.selection.begin(), host.selection.end(), n.entity) != host.selection.end()) out.push_back(&n);
         }
-        return nullptr;
+        return out;
+    }
+    const UiNode* Single(const game_production::SceneViewHost& host) const {
+        const auto nodes = SelectedNodes(host);
+        return nodes.size() == 1 ? nodes.front() : nullptr;
+    }
+    // Whether node i is under (or is) one of `entities`.
+    bool Under(size_t i, const std::vector<int>& entities) const {
+        for (int k = static_cast<int>(i); k >= 0; k = tree_.nodes[static_cast<size_t>(k)].parent) {
+            if (std::find(entities.begin(), entities.end(), tree_.nodes[static_cast<size_t>(k)].entity) != entities.end()) return true;
+        }
+        return false;
     }
 
     // What of the selected thing's gizmo is under the mouse.
@@ -206,10 +291,12 @@ private:
     }
 
     // --- Input ---------------------------------------------------------------------------------
-    void HandleInput(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const Affine& toDc, const std::optional<Rect>& strip) {
+    void HandleInput(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const Affine& toDc, const std::optional<Rect>& strip,
+                     const std::optional<Rect>& alignBar) {
         const ui::Input& in = c.In();
         const Vec2 mouse{in.mouseX, in.mouseY};
-        const bool hovered = c.IsHovered(r) && !(strip && strip->Contains(in.mouseX, in.mouseY));
+        const bool overBars = (strip && strip->Contains(in.mouseX, in.mouseY)) || (alignBar && alignBar->Contains(in.mouseX, in.mouseY));
+        const bool hovered = c.IsHovered(r) && !overBars;
         // The view: the wheel zooms about the mouse, a right or middle drag moves it.
         if (hovered && in.wheel != 0 && drag_ == Drag::None) ZoomAt(mouse, std::pow(1.15f, in.wheel));
         if (drag_ == Drag::None && hovered && (c.MousePressed(ui::Mouse::Right) || c.MousePressed(ui::Mouse::Middle))) {
@@ -226,28 +313,65 @@ private:
             state_.pan = {panFrom_.x + mouse.x - press_.x, panFrom_.y + mouse.y - press_.y};
             return;
         }
-        const UiNode* sel = Selected(host);
+        const UiNode* single = Single(host);
         if (drag_ == Drag::None) {
-            hot_ = hovered && sel ? HotAt(*sel, toDc, mouse) : Hot{};
+            hot_ = hovered && single ? HotAt(*single, toDc, mouse) : Hot{};
             if (hot_.part != Part::None) c.SetCursor(ui::Cursor::Hand);
         }
         if (drag_ == Drag::None && hovered && c.MousePressed()) {
             press_ = mouse;
-            if (hot_.part != Part::None && sel && Begin(host, *sel)) {
+            edits_.clear();
+            if (hot_.part != Part::None && single && Begin(host, *single)) {
+                FindTargets();
                 drag_ = hot_.part == Part::Handle ? Drag::Resize : hot_.part == Part::Knob ? Drag::Rotate : Drag::Pivot;
                 handle_ = hot_.handle;
-            } else {
-                pressed_ = PickAt(toDc, mouse);
-                host.select(pressed_ ? std::vector<int>{pressed_} : std::vector<int>{});
+                return;
+            }
+            pressed_ = PickAt(toDc, mouse);
+            const bool adding = in.shift || in.ctrl;
+            std::vector<int> sel(host.selection.begin(), host.selection.end());
+            if (adding && pressed_) {
+                // Shift / Ctrl: add it, or take it out.
+                const auto it = std::find(sel.begin(), sel.end(), pressed_);
+                if (it != sel.end()) sel.erase(it);
+                else sel.push_back(pressed_);
+                host.select(sel);
+                drag_ = Drag::Cancelled;
+            } else if (pressed_) {
+                // On one of the selected: keep them (a drag moves them all); else that one alone.
+                if (std::find(sel.begin(), sel.end(), pressed_) == sel.end()) host.select({pressed_});
                 drag_ = Drag::Press;
+            } else {
+                // On nothing: a box to select by (Shift / Ctrl: adding to what is selected).
+                marqueeFrom_ = adding ? sel : std::vector<int>{};
+                if (!adding) host.select({});
+                drag_ = Drag::Marquee;
             }
             return;
         }
         if (drag_ == Drag::None) return;
         const bool editing = drag_ == Drag::Move || drag_ == Drag::Resize || drag_ == Drag::Rotate || drag_ == Drag::Pivot;
         if (editing && HistoryMoved(host)) {
-            edited_.reset();  // undo / redo while dragging: the drag stops (nothing pushed)
+            edits_.clear();  // undo / redo while dragging: the drag stops (nothing pushed)
             drag_ = Drag::Cancelled;
+        }
+        if (drag_ == Drag::Marquee) {
+            // Everything (not a canvas) whose box touches the dragged box.
+            const UiBox box{std::min(press_.x, mouse.x), std::min(press_.y, mouse.y), std::abs(mouse.x - press_.x), std::abs(mouse.y - press_.y)};
+            marquee_ = box;
+            if (!in.down[0]) {
+                std::vector<int> sel = marqueeFrom_;
+                if (box.w >= kClickSlop || box.h >= kClickSlop) {
+                    for (const UiNode& n : tree_.nodes) {
+                        if (n.parent < 0 || !n.place || !Overlap(PanelBox(Corners(n, toDc)), box)) continue;
+                        if (std::find(sel.begin(), sel.end(), n.entity) == sel.end()) sel.push_back(n.entity);
+                    }
+                }
+                host.select(sel);
+                marquee_.reset();
+                drag_ = Drag::None;
+            }
+            return;
         }
         if (!in.down[0]) {
             if (editing) End(host);
@@ -256,14 +380,29 @@ private:
             snapY_.reset();
             return;
         }
-        if (drag_ == Drag::Press && pressed_ && Distance(mouse, press_) >= kClickSlop) {
-            const UiNode* n = tree_.Find(pressed_);
-            drag_ = n && n->place && Begin(host, *n) ? Drag::Move : Drag::Cancelled;
+        if (drag_ == Drag::Press && Distance(mouse, press_) >= kClickSlop) {
+            // Every selected thing moves (not one under another that moves: it goes with its parent).
+            const std::vector<int> sel(host.selection.begin(), host.selection.end());
+            for (const UiNode* n : SelectedNodes(host)) {
+                bool parentMoves = false;
+                for (int k = n->parent; k >= 0 && !parentMoves; k = tree_.nodes[static_cast<size_t>(k)].parent) {
+                    parentMoves = std::find(sel.begin(), sel.end(), tree_.nodes[static_cast<size_t>(k)].entity) != sel.end();
+                }
+                if (!parentMoves) Begin(host, *n);
+            }
+            if (edits_.empty()) {
+                drag_ = Drag::Cancelled;
+            } else {
+                FindTargets();
+                drag_ = Drag::Move;
+            }
         }
-        if (editing && edited_) {
+        if (editing && !edits_.empty()) {
             if (c.KeyPressed(ui::Key::Escape)) {
-                if (UiRect* t = Target()) *t = edited_->start;
-                edited_.reset();
+                for (const Edited& e : edits_) {
+                    if (UiRect* t = Target(e)) *t = e.start;
+                }
+                edits_.clear();
                 drag_ = Drag::Cancelled;
                 return;
             }
@@ -282,6 +421,7 @@ private:
         state_.zoom = after;
     }
 
+    // --- Editing -------------------------------------------------------------------------------
     struct Edited {
         int entity = 0;
         UiRect start;
@@ -291,9 +431,6 @@ private:
         UiBox box;          // its box at the start (in its parent's units)
         Vec2 pivotOnPanel;  // where it turns, on the panel
         std::function<reflect::EditTarget()> resolve;
-        // What it may snap to: the sides and middles of everything else (not its own children) and of
-        // its parent, on the panel.
-        std::vector<float> targetsX, targetsY;
     };
 
     bool Begin(game_production::SceneViewHost& host, const UiNode& n) {
@@ -301,53 +438,38 @@ private:
         auto resolve = host.component(n.entity, reflect::TypeOf<UiRect>().name);
         const reflect::EditTarget t = resolve ? resolve() : reflect::EditTarget{};
         if (!t.object) return false;
-        edited_ = Edited{n.entity,
-                         *static_cast<const UiRect*>(t.object),
-                         tree_.nodes[static_cast<size_t>(n.parent)].box,
-                         lastToDc_ * n.toScreen,
-                         lastToDc_ * n.self,
-                         n.box,
-                         PivotOnPanel(n, lastToDc_),
-                         std::move(resolve),
-                         {},
-                         {}};
-        const int self = static_cast<int>(&n - tree_.nodes.data());
-        for (size_t i = 0; i < tree_.nodes.size(); ++i) {
-            // (itself and what is under it move with it)
-            bool mine = false;
-            for (int k = static_cast<int>(i); k >= 0 && !mine; k = tree_.nodes[static_cast<size_t>(k)].parent) mine = k == self;
-            if (mine) continue;
-            const UiBox b = PanelBox(Corners(tree_.nodes[i], lastToDc_));
-            edited_->targetsX.insert(edited_->targetsX.end(), {b.x, b.x + b.w * 0.5f, b.Right()});
-            edited_->targetsY.insert(edited_->targetsY.end(), {b.y, b.y + b.h * 0.5f, b.Bottom()});
-        }
+        edits_.push_back(Edited{n.entity, *static_cast<const UiRect*>(t.object), tree_.nodes[static_cast<size_t>(n.parent)].box, lastToDc_ * n.toScreen,
+                                lastToDc_ * n.self, n.box, PivotOnPanel(n, lastToDc_), std::move(resolve)});
         history_ = {host.host.History().UndoCount(), host.host.History().RedoCount()};
         return true;
     }
 
-    // The box around corners on the panel (a turned thing's: the box that holds it).
-    static UiBox PanelBox(const std::array<Vec2, 4>& k) {
-        float x0 = k[0].x, y0 = k[0].y, x1 = k[0].x, y1 = k[0].y;
-        for (const Vec2& v : k) {
-            x0 = std::min(x0, v.x);
-            y0 = std::min(y0, v.y);
-            x1 = std::max(x1, v.x);
-            y1 = std::max(y1, v.y);
+    // What the edited things may snap to: the sides and middles of everything else (not what moves, not
+    // what is under it) - its parents and canvases too - on the panel.
+    void FindTargets() {
+        targetsX_.clear();
+        targetsY_.clear();
+        std::vector<int> moving;
+        for (const Edited& e : edits_) moving.push_back(e.entity);
+        for (size_t i = 0; i < tree_.nodes.size(); ++i) {
+            if (Under(i, moving)) continue;
+            const UiBox b = PanelBox(Corners(tree_.nodes[i], lastToDc_));
+            targetsX_.insert(targetsX_.end(), {b.x, b.x + b.w * 0.5f, b.Right()});
+            targetsY_.insert(targetsY_.end(), {b.y, b.y + b.h * 0.5f, b.Bottom()});
         }
-        return {x0, y0, x1 - x0, y1 - y0};
     }
-    // Where a UI の配置 would be on the panel (the box that holds it, turned), with the edit's parent.
-    UiBox PanelBoxOf(const UiRect& r) const {
-        const UiBox b = PlaceBox(r, edited_->parentBox);
-        const Affine m = edited_->parentToDc * About(PivotPoint(r, b), r.rotation, 1);
+
+    // Where a UI の配置 would be on the panel (the box that holds it, turned), with an edit's parent.
+    static UiBox PanelBoxOf(const Edited& e, const UiRect& r) {
+        const UiBox b = PlaceBox(r, e.parentBox);
+        const Affine m = e.parentToDc * About(PivotPoint(r, b), r.rotation, 1);
         return PanelBox({Apply(m, {b.x, b.y}), Apply(m, {b.Right(), b.y}), Apply(m, {b.Right(), b.Bottom()}), Apply(m, {b.x, b.Bottom()})});
     }
     // The parent's units are not turned on the panel (the snapping of a resize works then).
-    bool ParentUpright() const { return std::abs(edited_->parentToDc.b) < 1e-5f && std::abs(edited_->parentToDc.c) < 1e-5f; }
+    static bool ParentUpright(const Edited& e) { return std::abs(e.parentToDc.b) < 1e-5f && std::abs(e.parentToDc.c) < 1e-5f; }
 
-    UiRect* Target() const {
-        if (!edited_) return nullptr;
-        const reflect::EditTarget t = edited_->resolve();
+    static UiRect* Target(const Edited& e) {
+        const reflect::EditTarget t = e.resolve();
         return static_cast<UiRect*>(t.object);
     }
 
@@ -356,47 +478,62 @@ private:
     }
 
     // While dragging, UI の配置 is changed directly (the inspector follows); one undo entry at the end.
-    // Shift: a corner keeps the shape; the turn goes in steps of 15 degrees.
+    // Shift: a corner keeps the shape; the turn goes in steps of 15 degrees. Alt: no snapping.
     void ApplyDrag(Vec2 mouse, bool shift, bool noSnap) {
-        UiRect* t = Target();
-        if (!t) return;
-        const Edited& e = *edited_;
         const Vec2 d{mouse.x - press_.x, mouse.y - press_.y};
-        UiRect next = e.start;
         snapX_.reset();
         snapY_.reset();
         if (drag_ == Drag::Move) {
-            const auto inv = Invert(e.parentToDc);
-            if (!inv) return;
-            const Vec2 m = Linear(*inv, d);
-            next.position = {e.start.position.x + m.x, e.start.position.y + m.y};
-            if (!noSnap) {
-                // To another thing's side or middle (on the panel); else to the grid (in the parent's units).
-                const UiBox pb = PanelBoxOf(next);
-                const float ex[] = {pb.x, pb.x + pb.w * 0.5f, pb.Right()}, ey[] = {pb.y, pb.y + pb.h * 0.5f, pb.Bottom()};
-                const float sx = state_.snapGuides ? SnapShift(ex, e.targetsX, kSnapReach, &snapX_) : 0.f;
-                const float sy = state_.snapGuides ? SnapShift(ey, e.targetsY, kSnapReach, &snapY_) : 0.f;
-                const Vec2 shiftPanel = Linear(*inv, {sx, sy});
-                next.position = {next.position.x + shiftPanel.x, next.position.y + shiftPanel.y};
-                if (state_.snapGrid) {
+            // All of them by the same move on the panel; snapping looks at the box around them all.
+            Vec2 move = d;
+            if (!noSnap && state_.snapGuides) {
+                std::optional<UiBox> all;
+                for (const Edited& e : edits_) {
+                    const UiBox b = PanelBoxOf(e, e.start);
+                    all = all ? Union(*all, b) : b;
+                }
+                if (all) {
+                    const UiBox pb{all->x + d.x, all->y + d.y, all->w, all->h};
+                    const float ex[] = {pb.x, pb.x + pb.w * 0.5f, pb.Right()}, ey[] = {pb.y, pb.y + pb.h * 0.5f, pb.Bottom()};
+                    move.x += SnapShift(ex, targetsX_, kSnapReach, &snapX_);
+                    move.y += SnapShift(ey, targetsY_, kSnapReach, &snapY_);
+                }
+            }
+            for (const Edited& e : edits_) {
+                UiRect* t = Target(e);
+                const auto inv = Invert(e.parentToDc);
+                if (!t || !inv) continue;
+                const Vec2 m = Linear(*inv, move);
+                UiRect next = e.start;
+                next.position = {e.start.position.x + m.x, e.start.position.y + m.y};
+                // The grid (one thing moved: its top left, in its parent's units).
+                if (!noSnap && state_.snapGrid && edits_.size() == 1) {
                     const UiBox box = PlaceBox(next, e.parentBox);
                     if (!snapX_) next.position.x += GridShift(box.x, state_.gridStep);
                     if (!snapY_) next.position.y += GridShift(box.y, state_.gridStep);
                 }
+                *t = next;
             }
-        } else if (drag_ == Drag::Resize) {
+            return;
+        }
+        if (edits_.empty()) return;
+        const Edited& e = edits_.front();
+        UiRect* t = Target(e);
+        if (!t) return;
+        UiRect next = e.start;
+        if (drag_ == Drag::Resize) {
             // The move in its own (turned) units: what the handle pulls.
             const auto inv = Invert(e.selfToDc);
             if (!inv) return;
             Vec2 along = Linear(*inv, d);
             next = ResizeByHandle(e.start, e.parentBox, handle_, along, shift);
             // The sides it moves snap (an upright thing, its shape free): to another thing, else to the grid.
-            if (!noSnap && !shift && std::abs(e.start.rotation) < 1e-4f && ParentUpright()) {
+            if (!noSnap && !shift && std::abs(e.start.rotation) < 1e-4f && ParentUpright(e)) {
                 const Vec2 sides = HandleSides(handle_);
-                const UiBox pb = PanelBoxOf(next);
+                const UiBox pb = PanelBoxOf(e, next);
                 const float ex[] = {sides.x > 0 ? pb.Right() : pb.x}, ey[] = {sides.y > 0 ? pb.Bottom() : pb.y};
-                float sx = sides.x != 0 && state_.snapGuides ? SnapShift(ex, e.targetsX, kSnapReach, &snapX_) : 0.f;
-                float sy = sides.y != 0 && state_.snapGuides ? SnapShift(ey, e.targetsY, kSnapReach, &snapY_) : 0.f;
+                const float sx = sides.x != 0 && state_.snapGuides ? SnapShift(ex, targetsX_, kSnapReach, &snapX_) : 0.f;
+                const float sy = sides.y != 0 && state_.snapGuides ? SnapShift(ey, targetsY_, kSnapReach, &snapY_) : 0.f;
                 if (!sides.x) snapX_.reset();
                 if (!sides.y) snapY_.reset();
                 const Vec2 own = Linear(*inv, {sx, sy});
@@ -421,31 +558,34 @@ private:
         *t = next;
     }
 
-    // Edit = undo entry = unsaved (rule 7).
     void End(game_production::SceneViewHost& host) {
-        UiRect* t = Target();
-        if (!edited_ || !t) {
-            edited_.reset();
-            return;
-        }
         const char* label = drag_ == Drag::Resize   ? "UI の大きさを変更"
                             : drag_ == Drag::Rotate ? "UI を回転"
                             : drag_ == Drag::Pivot  ? "UI の回す中心を移動"
                                                     : "UI を移動";
+        Commit(host, label);
+    }
+
+    // What the edits changed (already applied) goes into the history as one entry. Edit = undo entry =
+    // unsaved (rule 7).
+    void Commit(game_production::SceneViewHost& host, const char* label) {
         auto group = std::make_unique<CommandGroup>(label);
         const reflect::TypeDesc& type = reflect::TypeOf<UiRect>();
-        for (const char* field : {"position", "size", "rotation", "pivot"}) {
-            const auto index = FieldIndex(field);
-            if (!index) continue;
-            const reflect::FieldDesc& fd = type.fields[*index];
-            json::Value before = reflect::SaveField(fd, &edited_->start, nullptr);
-            json::Value after = reflect::SaveField(fd, t, nullptr);
-            if (before == after) continue;
-            group->Add(std::make_unique<reflect::SetFieldCommand>(type, reflect::FieldPath{*index}, std::move(before), std::move(after),
-                                                                  edited_->resolve, label));
+        for (const Edited& e : edits_) {
+            const UiRect* t = Target(e);
+            if (!t) continue;
+            for (const char* field : {"position", "size", "rotation", "pivot"}) {
+                const auto index = FieldIndex(field);
+                if (!index) continue;
+                const reflect::FieldDesc& fd = type.fields[*index];
+                json::Value before = reflect::SaveField(fd, &e.start, nullptr);
+                json::Value after = reflect::SaveField(fd, t, nullptr);
+                if (before == after) continue;
+                group->Add(std::make_unique<reflect::SetFieldCommand>(type, reflect::FieldPath{*index}, std::move(before), std::move(after), e.resolve, label));
+            }
         }
-        if (!group->Empty()) host.host.History().Push(std::move(group));  // already applied while dragging
-        edited_.reset();
+        if (!group->Empty()) host.host.History().Push(std::move(group));  // already applied
+        edits_.clear();
     }
 
     // --- Drawing over the UI ---------------------------------------------------------------------
@@ -484,15 +624,23 @@ private:
         }
         if (snapX_) p.Line(*snapX_, r.y, *snapX_, r.Bottom(), theme::GizmoHot(), 1.f);
         if (snapY_) p.Line(r.x, *snapY_, r.Right(), *snapY_, theme::GizmoHot(), 1.f);
+        if (marquee_) {
+            const Rect m{marquee_->x, marquee_->y, marquee_->w, marquee_->h};
+            p.FillRect(m, theme::Accent.Alpha(0.12f));
+            p.StrokeRect(m, theme::Accent, 1.f);
+        }
     }
 
     void DrawSelection(ui::Context& c, const game_production::SceneViewHost& host, const Affine& toDc) {
-        const UiNode* n = Selected(host);
-        if (!n) return;
         auto& p = c.P();
-        const auto k = Corners(*n, toDc);
-        for (int i = 0; i < 4; ++i) p.Line(k[i].x, k[i].y, k[(i + 1) % 4].x, k[(i + 1) % 4].y, theme::Accent, 1.5f);
-        if (!host.playing && n->parent >= 0) {
+        const auto selected = SelectedNodes(host);
+        for (const UiNode* s : selected) {
+            const auto k = Corners(*s, toDc);
+            for (int i = 0; i < 4; ++i) p.Line(k[i].x, k[i].y, k[(i + 1) % 4].x, k[(i + 1) % 4].y, theme::Accent, 1.5f);
+        }
+        const UiNode* n = selected.size() == 1 ? selected.front() : nullptr;
+        if (!n) return;
+        if (!host.playing) {
             auto hot = [&](Part part, UiHandle h = UiHandle::TopLeft) {
                 const bool dragging = (part == Part::Handle && drag_ == Drag::Resize && handle_ == h) || (part == Part::Knob && drag_ == Drag::Rotate) ||
                                       (part == Part::Pivot && drag_ == Drag::Pivot);
@@ -552,7 +700,7 @@ private:
         ts.v = ui::VAlign::Bottom;
         ts.wrap = true;
         c.P().Text(r.Inset(10, 8, 10, 6),
-                   Tr(L"クリック: 選ぶ   ドラッグ: 動かす   四角: 大きさ (Shift で形を保つ)   上の丸: 回す (Shift で 15 度ずつ)   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 動かす   Esc: やめる"),
+                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   空いた所のドラッグ: 囲んで選ぶ   ドラッグ: 動かす   四角: 大きさ (Shift で形を保つ)   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす"),
                    ts);
         if (tree_.nodes.empty()) {
             ui::TextStyle hint = ts;
@@ -564,7 +712,7 @@ private:
         }
     }
 
-    enum class Drag { None, Press, Move, Resize, Rotate, Pivot, Pan, Cancelled };
+    enum class Drag { None, Press, Move, Resize, Rotate, Pivot, Pan, Marquee, Cancelled };
 
     UiViewState state_;
     reflect::Unknowns unknowns_;
@@ -579,9 +727,12 @@ private:
     int pressed_ = 0;
     Hot hot_;
     UiHandle handle_ = UiHandle::TopLeft;
-    std::optional<Edited> edited_;
+    std::vector<Edited> edits_;            // what a drag (or a line-up) changes
+    std::vector<float> targetsX_, targetsY_;  // what they may snap to (FindTargets)
     std::pair<size_t, size_t> history_{0, 0};
     std::optional<float> snapX_, snapY_;  // the lines the drag snapped to (on the panel)
+    std::optional<UiBox> marquee_;        // the box being dragged to select by (on the panel)
+    std::vector<int> marqueeFrom_;        // what was selected before it (Shift / Ctrl: kept)
     std::string gridText_;                // the grid's step while typed
 };
 
