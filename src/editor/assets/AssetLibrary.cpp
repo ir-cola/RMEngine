@@ -112,7 +112,7 @@ void AssetLibrary::FlushImports() {
     for (auto& [guid, import] : queuedImports_) {
         const asset::Entry* e = index_.ByGuid(guid);
         if (!e) continue;  // (deleted meanwhile)
-        if (!asset::WriteImportJson(FullPath(*e), import)) log::Warn("取り込みの設定を {}.meta に書けませんでした (開けない・壊れている)", e->path);
+        if (!asset::WriteImportJson(FullPath(*e), import, e->guid)) log::Warn("取り込みの設定を {}.meta に書けませんでした (開けない・壊れている)", e->path);
     }
     queuedImports_.clear();
     // The watch's news of these .meta files: one more look after it is quiet (it finds nothing new from
@@ -139,7 +139,13 @@ void AssetLibrary::Refresh() {
         std::lock_guard lock(box->mutex);
         if (stop.stop_requested()) return;
         bool stopped = false;
-        asset::Plan plan = asset::Look(root, previous, &box->cache, stop, &stopped);
+        std::string problem;
+        asset::Plan plan = asset::Look(root, previous, &box->cache, stop, &stopped, &problem);
+        if (!problem.empty()) {
+            // Not the whole folder: the ids stay as they are (looked at again when the folder changes).
+            post([problem] { log::Warn("アセットのフォルダを最後まで読めませんでした (今のままにします): {}", problem); });
+            return;
+        }
         if (stopped) return;
         // (`this` is used only inside post: on the UI thread, and dropped if the library is gone)
         post([this, number, plan = std::move(plan)]() mutable { ApplyLook(number, std::move(plan)); });
@@ -157,7 +163,14 @@ void AssetLibrary::LookNow() {
     {
         std::lock_guard lock(cache_->mutex);
         const std::vector<asset::Entry> previous(index_.Entries().begin(), index_.Entries().end());
-        plan = asset::Look(root_, previous, &cache_->cache, {}, nullptr);
+        bool stopped = false;
+        std::string problem;
+        plan = asset::Look(root_, previous, &cache_->cache, {}, &stopped, &problem);
+        if (stopped) {
+            looking_ = false;
+            log::Warn("アセットのフォルダを最後まで読めませんでした (今のままにします): {}", problem);
+            return;
+        }
     }
     ApplyLook(number, std::move(plan));
 }

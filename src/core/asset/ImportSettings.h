@@ -79,8 +79,9 @@ std::string MetaWithImport(std::string_view metaText, const json::Value& import)
 
 // Files: the import settings of `file` (an asset's full path; read from "<file>.meta").
 json::Value ReadImportJson(const std::filesystem::path& file);
-// Writes them into its .meta (made when missing - it gets its id at the next look). False: could not.
-bool WriteImportJson(const std::filesystem::path& file, const json::Value& import);
+// Writes them into its .meta. A .meta that is not there is made with `guid` (the asset's id, when it is
+// known); one that is locked or broken is never written over. False: could not.
+bool WriteImportJson(const std::filesystem::path& file, const json::Value& import, const std::string& guid = {});
 template <class T>
 T ReadImport(const std::filesystem::path& file) {
     T t;

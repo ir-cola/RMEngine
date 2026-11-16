@@ -13,6 +13,7 @@
 #ifdef _WIN32
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <windows.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -28,10 +29,31 @@ bool ReadText(const fs::path& p, std::string& out) {
     return !f.bad();
 }
 
-// Written next to the file and moved in place, so a crash never leaves half a .meta.
-bool WriteText(const fs::path& p, const std::string& text) {
+}  // namespace
+
+bool WriteMetaFile(const fs::path& p, const std::string& text) {
     fs::path tmp = p;
     tmp += L".tmp";
+#ifdef _WIN32
+    {
+        const HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) return false;
+        DWORD wrote = 0;
+        const bool ok = WriteFile(h, text.data(), static_cast<DWORD>(text.size()), &wrote, nullptr) && wrote == text.size() && FlushFileBuffers(h);
+        CloseHandle(h);
+        if (!ok) {
+            std::error_code ec;
+            fs::remove(tmp, ec);
+            return false;
+        }
+    }
+    if (!MoveFileExW(tmp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        std::error_code ec;
+        fs::remove(tmp, ec);
+        return false;
+    }
+    return true;
+#else
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
         if (!f) return false;
@@ -42,6 +64,25 @@ bool WriteText(const fs::path& p, const std::string& text) {
     fs::rename(tmp, p, ec);
     if (ec) fs::remove(tmp, ec);
     return !ec;
+#endif
+}
+
+namespace {
+
+bool WriteText(const fs::path& p, const std::string& text) { return WriteMetaFile(p, text); }
+
+// Windows' words for an error (UTF-8; std::error_code::message is in the ANSI code page).
+std::string ErrorWords(const std::error_code& ec) {
+#ifdef _WIN32
+    wchar_t* buf = nullptr;
+    const DWORD n = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+                                   static_cast<DWORD>(ec.value()), 0, reinterpret_cast<wchar_t*>(&buf), 0, nullptr);
+    std::wstring w = n && buf ? std::wstring(buf, n) : std::wstring();
+    if (buf) LocalFree(buf);
+    while (!w.empty() && (w.back() == L'\n' || w.back() == L'\r' || w.back() == L' ')) w.pop_back();
+    if (!w.empty()) return std::format("{} ({})", WideToUtf8(w), ec.value());
+#endif
+    return std::format("エラー {}", ec.value());
 }
 
 // When a file was made (Windows: the creation time; a copy gets a new one, a move keeps it). 0 = unknown.
@@ -81,6 +122,15 @@ std::string Rel(const fs::path& root, const fs::path& p) {
 }
 
 }  // namespace
+
+std::wstring FoldCase(std::wstring_view path) {
+    std::wstring s(path);
+#ifdef _WIN32
+    // Upper case, as the file system compares names (not the user's language's rules).
+    if (!s.empty()) CharUpperBuffW(s.data(), static_cast<DWORD>(s.size()));
+#endif
+    return s;
+}
 
 fs::path FullPath(const fs::path& root, std::string_view path) { return path.empty() ? root : root / PathFromUtf8(path); }
 
@@ -131,8 +181,11 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
         uintmax_t size = 0;
         fs::file_time_type time{};
         bool known = false;  // size and time could be read from the listing
+        fs::path path;       // as it is spelled in the folder
     };
-    std::unordered_map<std::wstring, MetaFile> metas;  // every .meta under root
+    // Every .meta under root, by its path with the case folded: Windows sees "tree.png.meta" as the
+    // .meta of "Tree.png" too (a file renamed only in its case keeps its .meta - and its id).
+    std::unordered_map<std::wstring, MetaFile> metas;
     std::vector<std::pair<fs::path, bool>> items;       // every file / folder (not ignored)
     for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
          it.increment(ec)) {
@@ -148,7 +201,8 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
             m.size = it->file_size(e3);
             m.time = it->last_write_time(e4);
             m.known = !e3 && !e4;
-            metas.emplace(p.native(), m);
+            m.path = p;
+            metas.emplace(FoldCase(p.native()), m);
             continue;
         }
         if (Ignored(name)) {
@@ -157,8 +211,16 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
         }
         items.emplace_back(p, folder);
     }
+    if (ec) {
+        // Listed only in part (not a folder it may not enter: those are skipped). Without the rest, the
+        // files after it would look gone and a folder without its .meta would get a new id: not used.
+        out = {};
+        out.stopped = true;
+        out.problem = ErrorWords(ec);
+        return out;
+    }
     std::unordered_map<std::wstring, bool> itemSet;
-    for (const auto& [p, folder] : items) itemSet.emplace(p.native(), folder);
+    for (const auto& [p, folder] : items) itemSet.emplace(FoldCase(p.native()), folder);
     std::unordered_map<std::wstring, bool> seen;  // the .meta files used by this look (the rest leave the cache)
 
     for (const auto& [p, folder] : items) {
@@ -168,10 +230,11 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
         f.folder = folder;
         fs::path meta = p;
         meta += PathFromUtf8(kMetaSuffix);
-        const auto m = metas.find(meta.native());
+        const auto m = metas.find(FoldCase(meta.native()));
         if (m == metas.end()) {
             f.meta = MetaState::None;
         } else {
+            meta = m->second.path;  // (its own spelling: the cache's key)
             seen[meta.native()] = true;
             MetaInfo info;
             int64_t created = 0;
@@ -188,11 +251,12 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
         }
         out.found.push_back(std::move(f));
     }
-    for (const auto& [metaPath, m] : metas) {
+    for (const auto& [folded, m] : metas) {
         if (stopping()) return out;
+        const std::wstring& metaPath = m.path.native();
         fs::path target(metaPath);
         target.replace_extension();  // "a.png.meta" -> "a.png"
-        if (itemSet.contains(target.native())) continue;
+        if (itemSet.contains(FoldCase(target.native()))) continue;
         std::error_code e2;
         if (fs::exists(target, e2)) continue;  // (an ignored file's .meta)
         seen[metaPath] = true;
@@ -239,9 +303,10 @@ void ApplyPlan(const fs::path& root, const Plan& plan, std::vector<std::string>&
     }
 }
 
-Plan Look(const fs::path& root, std::span<const Entry> previous, MetaCache* cache, std::stop_token stop, bool* stopped) {
+Plan Look(const fs::path& root, std::span<const Entry> previous, MetaCache* cache, std::stop_token stop, bool* stopped, std::string* problem) {
     const Scan scan = ScanFolder(root, cache, stop);
     if (stopped) *stopped = scan.stopped || stop.stop_requested();
+    if (problem) *problem = scan.problem;
     if (scan.stopped || stop.stop_requested()) return {};
     return Reconcile(previous, scan.found, scan.orphans, NewGuid);
 }

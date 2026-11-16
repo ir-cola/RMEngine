@@ -17,6 +17,9 @@ struct Scan {
     std::vector<Found> found;
     std::vector<Orphan> orphans;
     bool stopped = false;  // asked to stop part way: what it has is not the whole folder - not to be used
+    // The folder could not be listed to its end (a folder of OneDrive's that is only online while
+    // OneDrive is not running ...): not the whole folder either - not to be used (stopped is set too).
+    std::string problem;
 };
 // What the last look read from each .meta, with its size and time: a .meta that is the same size
 // and has the same time is not read again (looking at a big folder again reads only what changed).
@@ -37,8 +40,15 @@ Scan ScanFolder(const std::filesystem::path& root, MetaCache* cache = nullptr, s
 
 // One look at the folder: ScanFolder + Reconcile, WITHOUT writing anything - safe on a thread of its
 // own (the editor's Worker). The plan's .meta writes are made afterwards by ApplyPlan, on the thread
-// that owns the folder's ids. *stopped: it was asked to stop (the plan is empty - not to be used).
-Plan Look(const std::filesystem::path& root, std::span<const Entry> previous, MetaCache* cache, std::stop_token stop, bool* stopped);
+// that owns the folder's ids. *stopped: it was asked to stop, or the folder could not be listed whole
+// (*problem says why) - the plan is empty, not to be used: the ids stay as they were.
+Plan Look(const std::filesystem::path& root, std::span<const Entry> previous, MetaCache* cache, std::stop_token stop, bool* stopped,
+          std::string* problem = nullptr);
+// Writes a .meta: next to it first, on the disk (flushed), then moved in place - neither a crash of the
+// program nor of Windows (a power cut) leaves half a .meta, or an empty one with its id lost.
+bool WriteMetaFile(const std::filesystem::path& p, const std::string& text);
+// A path as Windows compares it (letters' case does not count): "Tree.png" and "tree.png" are one file.
+std::wstring FoldCase(std::wstring_view path);
 
 // Which look's result may be used. Asking for a look - or changing the folder from the editor (a
 // rename, a move ...) - takes a new number; a result is used only while its number is the newest. A

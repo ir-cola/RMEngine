@@ -1025,6 +1025,7 @@ private:
         scripts_.World().prefab = [this](const AssetRef& r) { return Cached(r); };  // rm::Spawn(prefab): the files as last read
         ResetGlobals(true);  // every global variable at its 初めの値; rm::Save into Library/Saves
         kept_.clear();       // (この値を残す: from this Play only)
+        keptLeft_.clear();
         StartServices();     // 音 ... (the plugins' PlayServices): until ■
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
@@ -1072,9 +1073,15 @@ private:
         // that plays - the scene being edited stays (■ comes back to it).
         const std::string from = world.sceneIndex >= 0 ? world.sceneNames[static_cast<size_t>(world.sceneIndex)] : std::string();
         std::string err;
+        // この値を残す of the scene from before Play: their values as it leaves (its entities' ids are
+        // another scene's after the switch).
+        std::vector<std::pair<Kept, json::Value>> leaving;
+        if (world.sceneAsked >= 0 && PlayingOwnScene()) leaving = ReadKept();
         const SceneSwitch sw = SwitchAskedScene(*playScene_, world, scripts_.Runner(), scripts_.Module(), settings_.scriptOrder,
                                                 [this](size_t index, Scene& into, std::string* why) { return ReadPlayScene(index, into, why); }, &err);
         if (sw == SceneSwitch::Switched) {
+            for (auto& kv : leaving) keptLeft_.push_back(std::move(kv));
+            kept_.clear();
             services_.SceneSwitched();
             runner_.SetCamera(SceneCamera(*playScene_, cameraTypes_, settings_.startCamera.id));
             log::Info("シーンを切り替えました: {} → {} (Play の中だけ。■ で {} に戻ります)", from, world.sceneNames[static_cast<size_t>(world.sceneIndex)],
@@ -1468,6 +1475,10 @@ private:
             editor::w::Action keep;
             keep.label = Tr(L"この値を残す");
             keep.run = [this, id, component, nth, path, label = std::string(label)] {
+                if (!PlayingOwnScene()) {
+                    log::Warn("「{}」: 今動いているのは Play の前のシーンではない (シーンを切り替えた) ので、値を残せません", label);
+                    return;
+                }
                 const SceneField f{id, component, nth, path};
                 std::erase_if(kept_, [&](const Kept& k) {
                     return k.field.entity == f.entity && k.field.component == f.component && k.field.nth == f.nth && k.field.path == f.path;
@@ -1479,12 +1490,28 @@ private:
         };
     }
 
-    // At Stop: the kept values as they are in the copy that plays (before its EndPlay) ...
-    std::vector<std::pair<Kept, json::Value>> TakeKept() {
+    // The scene playing is the one from before Play (not one Game::LoadScene switched to): only its
+    // entities are the edited scene's.
+    bool PlayingOwnScene() {
+        const int i = scripts_.World().sceneIndex;
+        return i < 0 || static_cast<size_t>(i) >= playScenes_.size() || playScenes_[static_cast<size_t>(i)] == AssetRef{slot_.guid};
+    }
+    // The kept values as they are now in the copy that plays.
+    std::vector<std::pair<Kept, json::Value>> ReadKept() {
         std::vector<std::pair<Kept, json::Value>> out;
-        for (const Kept& k : std::exchange(kept_, {})) {
+        for (const Kept& k : kept_) {
             if (auto v = ReadSceneField(*playScene_, k.field)) out.push_back({k, std::move(*v)});
         }
+        return out;
+    }
+    // At Stop: the kept values - as they were when the scene from before Play was left, then as they
+    // are in the copy that plays (before its EndPlay) when it is that scene ...
+    std::vector<std::pair<Kept, json::Value>> TakeKept() {
+        std::vector<std::pair<Kept, json::Value>> out = std::exchange(keptLeft_, {});
+        if (PlayingOwnScene()) {
+            for (auto& kv : ReadKept()) out.push_back(std::move(kv));
+        }
+        kept_.clear();
         return out;
     }
     // ... written into the scene from before Play: one undo entry (unsaved). One the scene does not have
@@ -2711,6 +2738,7 @@ private:
     std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // the plugins' component types
     std::unique_ptr<Scene> playScene_;  // the copy that plays
     std::vector<Kept> kept_;            // この値を残す: written back at Stop
+    std::vector<std::pair<Kept, json::Value>> keptLeft_;  // ... their values when the scene from before Play was left (Game::LoadScene)
     bool mouseInGame_ = false;          // the mouse over the game view (its last drawing)
     std::optional<Vec2> pointer_;       // ... on the game screen (DIPs of the game settings' 画面); nullopt: not over it
     bool pointerWentDown_ = false, pointerWentUp_ = false;  // this frame's left button presses (PlayFrame)

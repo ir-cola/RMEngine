@@ -338,6 +338,8 @@ std::vector<int> Scene::PrefabRoots(std::string_view asset) const {
 bool Scene::LinkPrefab(int root, const AssetRef& asset, const std::unordered_map<int, int>& sources) {
     SceneEntity* r = Find(root);
     if (!r || asset.Empty()) return false;
+    // 反映 (the same prefab again): a nested one stays inside the prefab around it.
+    const int outer = r->prefab.Root() && r->prefab.asset == asset ? r->prefab.outer : 0;
     const std::unordered_set<int> under = Subtree(std::span<const int>(&root, 1));
     for (auto& e : entities_) {
         if (!under.contains(e.data.id)) continue;
@@ -347,15 +349,18 @@ bool Scene::LinkPrefab(int root, const AssetRef& asset, const std::unordered_map
             e.prefab.outer = it->second;  // a prefab placed inside: nested now
             continue;
         }
+        json::Value extra = std::move(e.prefab.extra);  // (a newer version's keys stay)
         e.prefab = {};
         e.prefab.source = it->second;
+        e.prefab.extra = std::move(extra);
     }
     r = Find(root);
     r->prefab.asset = asset;
     r->prefab.overrides = json::Value::MakeObject();
-    // A prefab nested in another one made a prefab of its own leaves that one (placed by hand now, as
-    // when it is moved out): the outer prefab's file would make it its old prefab again.
-    r->prefab.outer = 0;
+    // A prefab nested in another one made a prefab of its OWN leaves that one (placed by hand now, as
+    // when it is moved out): the outer prefab's file would make it its old prefab again. Applied to the
+    // prefab it already is, it stays where it was.
+    r->prefab.outer = outer;
     return r->prefab.Root();
 }
 

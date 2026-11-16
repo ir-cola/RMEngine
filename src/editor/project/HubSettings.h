@@ -46,6 +46,8 @@ public:
 private:
     json::Value doc_ = json::Value::MakeObject();
     std::vector<RecentProject> recent_;
+    // Taken out of the list by the user (削除, a rename's old path): not brought back from the file at Save.
+    std::vector<std::filesystem::path> forgotten_;
     Options options_;
     reflect::Unknowns optionsUnknowns_;
 };

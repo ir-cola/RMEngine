@@ -451,3 +451,27 @@ RM_TEST(Prefab_NestedRootMadeAPrefabOfItsOwn_LeavesTheOuter) {
     CHECK(s.Find(inRoom)->prefab.asset == kOwn && s.Find(inRoom)->prefab.outer == 0);
     CHECK(s.NestedPrefabs(room).empty());
 }
+
+RM_TEST(Prefab_NestedRootAppliedToItsPrefab_StaysInTheOuter) {
+    // 「Prefab に反映」 on a nested cube (its own prefab again): still inside the room's prefab, and the
+    // keys of a newer version on its link stay.
+    int cube = 0, lid = 0;
+    Scene s = WithCube(&cube, &lid);
+    std::unordered_map<int, int> sources;
+    const json::Value cubeFile = MakePrefab(s, cube, &sources);
+    const int room = s.Create("Room");
+    const int inRoom = s.PlacePrefab(cubeFile, kCube, room);
+    std::unordered_map<int, int> roomSources;
+    MakePrefab(s, room, &roomSources);
+    s.LinkPrefab(room, kRoom, roomSources);
+    const int outer = s.Find(inRoom)->prefab.outer;
+    CHECK(outer > 0);
+    s.Find(inRoom)->prefab.extra = json::Value::MakeObject();
+    s.Find(inRoom)->prefab.extra.Set("future", true);
+    std::unordered_map<int, int> again;
+    MakePrefab(s, inRoom, &again);
+    CHECK(s.LinkPrefab(inRoom, kCube, again));
+    CHECK(s.Find(inRoom)->prefab.asset == kCube && s.Find(inRoom)->prefab.outer == outer);
+    CHECK((s.NestedPrefabs(room) == std::vector<int>{inRoom}));
+    CHECK(s.Find(inRoom)->prefab.extra.Get("future").AsBool());
+}

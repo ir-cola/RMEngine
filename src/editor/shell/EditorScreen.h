@@ -193,6 +193,11 @@ private:
     bool SaveNamedLayout(const std::string& name, bool shared);
     void ApplyNamedLayout(const std::string& name, bool shared);
     void SaveNamedList(bool shared);  // writes the file the list lives in
+    // Before a named list is changed: the shared one read again from its file (another RM Engine open at
+    // the same time may have changed it - what it did is kept). False (told): the file it lives in is not
+    // written by this version (a newer one's, or one that could not be read) - the change is not made,
+    // or it would be gone at the next start.
+    bool BeginNamedEdit(bool shared);
     void DrawSaveLayoutAs(ui::Context& c);
     void DrawLayouts(ui::Context& c);
     void RequestSyncFloating();

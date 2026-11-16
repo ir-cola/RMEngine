@@ -1,6 +1,8 @@
 #include "core/asset/ImportSettings.h"
 
 #include "base/Utf.h"
+#include "core/asset/AssetFiles.h"
+#include "core/asset/AssetIndex.h"
 
 #include <fstream>
 #include <iterator>
@@ -56,26 +58,18 @@ json::Value ReadImportJson(const fs::path& file) {
     return ImportInMeta(text);
 }
 
-bool WriteImportJson(const fs::path& file, const json::Value& import) {
+bool WriteImportJson(const fs::path& file, const json::Value& import, const std::string& guid) {
     const fs::path meta = MetaOf(file);
     std::string old;
+    std::error_code ec;
+    if (!fs::exists(meta, ec) && !ec && IsGuid(guid)) {
+        // Gone (it could not be written when the asset got its id): made again with that id.
+        return WriteMetaFile(meta, MetaWithImport(MetaText({}, guid), import));
+    }
     // Only into a .meta that is there and can be read whole (with its id): one that is locked or
     // broken is never written over, and one without an id would lose the asset its id.
     if (!ReadText(meta, old) || ReadMeta(old).state != MetaState::Ok) return false;
-    const std::string text = MetaWithImport(old, import);
-    // Next to it first, then in place (a crash never leaves half a .meta).
-    fs::path tmp = meta;
-    tmp += L".tmp";
-    {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (!f) return false;
-        f.write(text.data(), static_cast<std::streamsize>(text.size()));
-        if (!f) return false;
-    }
-    std::error_code ec;
-    fs::rename(tmp, meta, ec);
-    if (ec) fs::remove(tmp, ec);
-    return !ec;
+    return WriteMetaFile(meta, MetaWithImport(old, import));
 }
 
 fs::file_time_type ChangedAt(const fs::path& file, std::error_code& ec) {

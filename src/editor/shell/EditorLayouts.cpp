@@ -56,7 +56,17 @@ void EditorScreen::SaveNamedList(bool shared) {
     }
 }
 
+bool EditorScreen::BeginNamedEdit(bool shared) {
+    if (shared) LoadSharedLayouts();
+    if (shared ? sharedReadOnly_ : layoutReadOnly_) {
+        log::Warn("{}の配置は変えません (新しい版の RM Engine のファイルか、読めなかったファイルのため)", WideToUtf8(ListName(shared)));
+        return false;
+    }
+    return true;
+}
+
 bool EditorScreen::SaveNamedLayout(const std::string& name, bool shared) {
+    if (!BeginNamedEdit(shared)) return false;
     Workspace& ws = Active();
     CaptureFloatingRects();
     dock::NamedLayouts& list = ws.Named(shared);
@@ -250,7 +260,7 @@ void EditorScreen::DrawLayouts(ui::Context& c) {
             break;
         case Do::Rename: {
             const std::string to = dock::NamedLayouts::CleanName(renameText_);
-            if (list.Rename(target.name, to)) {
+            if (BeginNamedEdit(target.shared) && list.Rename(target.name, to)) {
                 if (targetShown) ws.namedShown = to;
                 log::Info("配置の名前を変えました: 「{}」→「{}」", target.name, to);
                 SaveNamedList(target.shared);
@@ -260,7 +270,7 @@ void EditorScreen::DrawLayouts(ui::Context& c) {
             break;
         }
         case Do::Delete:
-            if (list.Remove(target.name)) {
+            if (BeginNamedEdit(target.shared) && list.Remove(target.name)) {
                 if (targetShown) ws.namedShown.clear();
                 log::Info("配置「{}」を削除しました", target.name);
                 SaveNamedList(target.shared);
@@ -269,7 +279,7 @@ void EditorScreen::DrawLayouts(ui::Context& c) {
             break;
         case Do::Move:
             confirmDelete_.clear();
-            if (dock::NamedLayouts::Move(list, target.name, ws.Named(!target.shared))) {
+            if (BeginNamedEdit(false) && BeginNamedEdit(true) && dock::NamedLayouts::Move(list, target.name, ws.Named(!target.shared))) {
                 if (targetShown) ws.namedShownShared = !target.shared;
                 log::Info("配置「{}」を{}へ移しました", target.name, WideToUtf8(ListName(!target.shared)));
                 SaveNamedList(false);

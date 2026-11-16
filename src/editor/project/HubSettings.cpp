@@ -67,6 +67,29 @@ void HubSettings::Load() {
 }
 
 bool HubSettings::Save() {
+    // Another RM Engine open at the same time may have opened projects since this one read the file:
+    // those stay in the list (newest first), unless this one took them out.
+    {
+        std::string err;
+        const auto bytes = platform::ReadFileBytes(paths::HubSettingsFile(), &err);
+        const auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
+        if (doc && doc->IsObject()) {
+            for (const auto& item : doc->Get("recent").Items()) {
+                const std::string& path = item.Get("path").AsString();
+                if (path.empty()) continue;
+                const fs::path file = PathFromUtf8(path);
+                auto same = [&](const fs::path& f) { return SamePath(f, file); };
+                const auto mine = std::find_if(recent_.begin(), recent_.end(), [&](const RecentProject& r) { return same(r.file); });
+                if (mine != recent_.end()) {
+                    mine->lastOpened = std::max(mine->lastOpened, item.Get("lastOpened").AsInt(0));
+                } else if (std::none_of(forgotten_.begin(), forgotten_.end(), same)) {
+                    recent_.push_back({file, item.Get("lastOpened").AsInt(0)});
+                }
+            }
+            std::stable_sort(recent_.begin(), recent_.end(), [](const RecentProject& a, const RecentProject& b) { return a.lastOpened > b.lastOpened; });
+            if (recent_.size() > kMaxRecent) recent_.resize(kMaxRecent);
+        }
+    }
     json::Value list = json::Value::MakeArray();
     for (const auto& r : recent_) {
         json::Value item = json::Value::MakeObject();
@@ -90,13 +113,15 @@ bool HubSettings::Save() {
 }
 
 void HubSettings::Touch(const fs::path& file) {
-    Remove(file);
+    std::erase_if(recent_, [&](const RecentProject& r) { return SamePath(r.file, file); });
+    std::erase_if(forgotten_, [&](const fs::path& f) { return SamePath(f, file); });
     recent_.insert(recent_.begin(), {file, NowUnix()});
     if (recent_.size() > kMaxRecent) recent_.resize(kMaxRecent);
 }
 
 void HubSettings::Remove(const fs::path& file) {
     std::erase_if(recent_, [&](const RecentProject& r) { return SamePath(r.file, file); });
+    forgotten_.push_back(file);
 }
 
 void HubSettings::Replace(const fs::path& from, const fs::path& to) {
@@ -105,6 +130,7 @@ void HubSettings::Replace(const fs::path& from, const fs::path& to) {
     for (auto& r : recent_) {
         if (SamePath(r.file, from)) r.file = to;
     }
+    if (!SamePath(from, to)) forgotten_.push_back(from);
 }
 
 bool HubSettings::LimitedNoticeHidden(const std::vector<PluginId>& limited) const {

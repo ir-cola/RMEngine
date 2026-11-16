@@ -618,3 +618,36 @@ RM_TEST(Asset_LookOnWorker_OvertakenResultIsDropped) {
     worker.Stop();
     fs::remove_all(root.parent_path(), ec);
 }
+
+RM_TEST(Asset_Look_CaseOfANameDoesNotCount) {
+    // Renamed only in its case outside the editor (tree.png -> Tree.png): Windows sees one file, and its
+    // .meta (tree.png.meta) is still its own - the id stays, nothing is written over it.
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path root = fs::temp_directory_path() / L"rm_asset_case" / L"Assets";
+    fs::remove_all(root.parent_path(), ec);
+    fs::create_directories(root, ec);
+    std::ofstream(root / L"Tree.png", std::ios::binary) << "x";
+    const std::string guid = "0123456789abcdef0123456789abcdef";
+    std::ofstream(root / L"tree.png.meta", std::ios::binary) << MetaText({}, guid);
+    const Plan plan = Look(root, {}, nullptr, {}, nullptr);
+    CHECK(plan.entries.size() == 1 && plan.entries[0].guid == guid && plan.writes.empty());
+    std::vector<std::string> errors;
+    ApplyPlan(root, plan, errors);
+    std::ifstream in(root / L"tree.png.meta", std::ios::binary);
+    const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    CHECK(GuidInMeta(text) == guid);
+    CHECK(FoldCase(L"Tree.PNG.meta") == FoldCase(L"tree.png.META"));
+    in.close();
+    // The import settings of an asset whose .meta is gone: made again with its id (not lost).
+    fs::remove(root / L"tree.png.meta", ec);
+    json::Value imp = json::Value::MakeObject();
+    imp.Set("scale", 2.0);
+    CHECK(!WriteImportJson(root / L"Tree.png", imp));  // (no id given: never one without)
+    CHECK(WriteImportJson(root / L"Tree.png", imp, guid));
+    CHECK(ReadImportJson(root / L"Tree.png").Get("scale").AsDouble() == 2.0);
+    std::ifstream again(root / L"Tree.png.meta", std::ios::binary);
+    CHECK(GuidInMeta(std::string{std::istreambuf_iterator<char>(again), std::istreambuf_iterator<char>()}) == guid);
+    again.close();
+    fs::remove_all(root.parent_path(), ec);
+}
