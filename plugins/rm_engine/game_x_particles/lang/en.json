@@ -1,0 +1,10 @@
+{
+  "ゲーム制作 × パーティクル": "Game production × Particles",
+  "パーティクル": "Particles",
+  "エフェクト": "Effect",
+  "パーティクルのエフェクト (.rmparticle)。空なら、見本の光が出ます": "A particle effect (.rmparticle). When empty, a sample glow comes out",
+  "始めから出す": "Play on start",
+  "外すと、ゲームでは出しません (止まっているときのシーンビューでは、選ぶと出ます)": "When off, it does not play in the game (in the scene view while stopped it plays when selected)",
+  "速さ": "Speed",
+  "時間の進み方の倍率 (2 で倍の速さ)": "How fast its time runs (2 is twice as fast)"
+}

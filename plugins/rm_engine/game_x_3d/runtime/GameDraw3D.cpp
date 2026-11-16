@@ -14,6 +14,7 @@
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/game_x_3d/runtime/WorldDraw.h"
 #include "rm_engine/space3d/runtime/BlockCompress.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
@@ -24,6 +25,7 @@
 
 #include <dxgi.h>
 
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -58,6 +60,7 @@ public:
         std::optional<space3d::Ambient> amb;
         std::optional<std::pair<Camera, space3d::Mat4>> eye;
         std::unordered_map<int, space3d::Mat4> world;  // parents come before their children in TreeOrder
+        shown_.clear();                                 // the places of what is switched on (WorldDrawFrame::world)
         for (const auto& t : f.scene.TreeOrder()) {
             const auto& e = *t.entity;
             const auto it = world.find(e.data.parent);
@@ -70,6 +73,7 @@ public:
             const space3d::Mat4 w = space3d::WorldMatrix(parent, *static_cast<const space3d::Transform*>(tc->value.Get()));
             world[e.data.id] = w;
             if (!t.activeInHierarchy) continue;  // switched off: not in the game
+            shown_[e.data.id] = w;
             const game_production::Component* cc = e.FindComponent(camera);
             const game_production::Component* lc = e.FindComponent(light);
             const game_production::Component* ac = e.FindComponent(ambient);
@@ -108,6 +112,24 @@ public:
         frame.lights = lights_;
         frame.ambient = amb.value_or(space3d::Ambient{});
         frame.shadows = true;
+        // What other plugins draw into the world themselves (パーティクル: WorldDraw.h).
+        if (!drawersMade_ && f.registry) {
+            drawersMade_ = true;
+            for (const auto& d : f.registry->Contributions<WorldDrawInfo>(kWorldDrawPoint)) {
+                if (d.item->create) drawers_.push_back(d.item->create());
+            }
+        }
+        extras_.clear();
+        if (!drawers_.empty()) {
+            const WorldDrawFrame wf{f.scene, f.gfx,
+                                    [this](int id) -> const space3d::Mat4* {
+                                        const auto it = shown_.find(id);
+                                        return it != shown_.end() ? &it->second : nullptr;
+                                    },
+                                    f.dt, true, {}, f.asset};
+            for (const auto& d : drawers_) d->Prepare(wf, extras_);
+        }
+        frame.extras = extras_;
         f.dc->Flush();  // Direct2D's drawing first, then Direct3D's picture
         ID3D11Texture2D* picture = renderer_.Render(f.gfx.D3DContext(), frame);
         if (!picture) return;
@@ -188,6 +210,11 @@ private:
     ID3D11Texture2D* picture_ = nullptr;
     Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap_;
     bool told_ = false;
+    // Other plugins' drawing into the world (WorldDraw.h), made at the first frame.
+    std::vector<std::unique_ptr<WorldDrawer>> drawers_;
+    bool drawersMade_ = false;
+    std::vector<space3d::ExtraDraw> extras_;
+    std::unordered_map<int, space3d::Mat4> shown_;
 };
 
 }  // namespace

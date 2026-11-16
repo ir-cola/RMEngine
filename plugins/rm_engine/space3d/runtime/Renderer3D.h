@@ -53,6 +53,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -134,6 +135,18 @@ struct MeshDraw {
     bool moving = false;                      // as Box::moving
 };
 
+// What a plugin draws itself into the picture (particles): after the see-through parts, before the
+// debug lines, with its own shaders and states. The picture's render target and depth buffer are bound
+// (MSAA; the depth test is on and nothing should write depth); whatever it changes is set back after.
+struct ExtraDrawContext {
+    ID3D11DeviceContext* ctx = nullptr;
+    const Mat4& view;
+    const Mat4& projection;
+    Vec3 eye;
+    uint32_t width = 0, height = 0;
+};
+using ExtraDraw = std::function<void(const ExtraDrawContext&)>;
+
 struct RenderFrame {
     uint32_t width = 0, height = 0;  // pixels
     Mat4 view, projection;
@@ -151,6 +164,7 @@ struct RenderFrame {
     Ambient ambient;       // the light every face gets (環境光)
     bool shadows = false;  // the lights' shadows (Lighting.h says which lights have them)
     Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
+    std::span<const ExtraDraw> extras;  // in this order (ExtraDraw)
 };
 
 class Renderer {

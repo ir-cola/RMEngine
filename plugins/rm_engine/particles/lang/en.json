@@ -55,5 +55,6 @@
   "床の高さ (Y)": "Floor height (Y)",
   "跳ね返り": "Bounciness",
   "すべりにくさ": "Friction",
-  "当たったら消す": "Vanish on hit"
+  "当たったら消す": "Vanish on hit",
+  "エフェクトのファイル": "Effect file"
 }

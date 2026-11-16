@@ -1377,6 +1377,24 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
     }
 
+    // 3-2. What plugins draw themselves (particles: see-through, depth-tested, writing no depth); then
+    // ours is set again for the lines.
+    if (!f.extras.empty()) {
+        ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
+        const ExtraDrawContext ec{ctx, f.view, f.projection, eye, f.width, f.height};
+        for (const ExtraDraw& draw : f.extras) {
+            if (draw) draw(ec);
+        }
+        ctx->OMSetRenderTargets(1, rtv_.GetAddressOf(), dsv_.Get());
+        ctx->OMSetBlendState(s.blend.Get(), factor, 0xFFFFFFFF);
+        ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+        ctx->RSSetState(s.raster.Get());
+        ctx->VSSetConstantBuffers(0, 1, &frameCb);
+        ctx->PSSetConstantBuffers(0, 3, cbs);
+        ctx->GSSetShader(nullptr, nullptr, 0);
+        bound = nullptr;
+    }
+
     // 4. Debug lines over everything: the parts nothing hides as given, the hidden parts faint (the
     // same lines again, a quarter as strong, where the depth test says something is in front).
     if (const size_t n = f.debugLines.size() & ~size_t{1}; n > 0 && LineCapacity(n * 2)) {

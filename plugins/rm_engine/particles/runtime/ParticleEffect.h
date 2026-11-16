@@ -14,9 +14,12 @@
 // has is kept as written (it comes back if the param does).
 
 #include "base/Ref.h"
+#include "core/reflect/Data.h"
 #include "core/reflect/Reflect.h"
 
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace rm::particles {
@@ -73,8 +76,24 @@ struct ParticleEffect {
     RM_PROPERTY() std::vector<ParticleEmitter> emitters;
 };
 
+// The whole file (kind and format around the effect: what ReadEffect / WriteEffect read and write).
+RM_STRUCT(Label="エフェクトのファイル")
+struct EffectFile {
+    RM_PROPERTY() std::string kind;
+    RM_PROPERTY() int format = 1;
+    RM_PROPERTY() ParticleEffect effect;
+};
+
 // What a new effect starts with: one emitter of a soft, rising glow (形: 円すい, はじめの値, 力,
 // 色の変わり方, 大きさの変わり方).
 ParticleEffect NewEffect();
+
+// The file (.rmparticle): {"kind": "rm_engine.particle_effect", "format": 1, "effect": {...}}.
+inline constexpr char kEffectExtension[] = ".rmparticle";
+inline constexpr char kEffectKind[] = "rm_engine.particle_effect";
+// nullopt (and *error, Japanese) when it is not one. Keys this version does not know go to `unknowns`
+// (written back by WriteEffect: rule 6).
+std::optional<ParticleEffect> ReadEffect(std::string_view bytes, std::string* error, reflect::Unknowns* unknowns = nullptr);
+std::string WriteEffect(const ParticleEffect& effect, const reflect::Unknowns* unknowns = nullptr);
 
 }  // namespace rm::particles

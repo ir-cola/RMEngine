@@ -8,6 +8,7 @@
 #include "rm_engine/particles/runtime/BuiltinModules.h"
 #include "rm_engine/particles/runtime/ModuleSource.h"
 #include "rm_engine/particles/runtime/ParticleEffect.h"
+#include "rm_engine/particles/runtime/ParticlePlayer.h"
 #include "rm_engine/particles/runtime/ParticleShader.h"
 
 #include <Windows.h>
@@ -162,4 +163,43 @@ RM_TEST(Particles_Effect_SavesAndLoads) {
     CHECK(back.emitters[0].modules[1].builtin == "initial" && back.emitters[0].modules[1].values.size() == 1);
     CHECK(back.emitters[0].modules[1].values[0].name == "life" && back.emitters[0].modules[1].values[0].y == 3);
     CHECK(back.emitters[0].blend == ParticleBlend::Add && back.emitters[0].rate == 40);
+}
+
+RM_TEST(Particles_Clock_RateBurstDurationLoop) {
+    ParticleEmitter e;
+    e.rate = 10;
+    e.burst = 5;
+    e.duration = 1;
+    e.loop = false;
+    e.capacity = 100;
+    EmitterClock c;
+    CHECK(AdvanceClock(c, e, 0) == 5);       // the burst at once
+    CHECK(AdvanceClock(c, e, 0.25f) == 2);   // 2.5 owed: 2 now ...
+    CHECK(AdvanceClock(c, e, 0.25f) == 3);   // ... and the half later
+    CHECK(AdvanceClock(c, e, 1.0f) == 5 && c.finished);  // to the end of the round, then nothing
+    CHECK(AdvanceClock(c, e, 1.0f) == 0);
+    // Looping: each round starts with its burst again; a long frame runs through rounds.
+    e.loop = true;
+    EmitterClock l;
+    CHECK(AdvanceClock(l, e, 0) == 5);
+    CHECK(AdvanceClock(l, e, 2.5f) == 25 + 10 && !l.finished && l.age > 0.49f && l.age < 0.51f);
+    // Never more than the capacity at once.
+    e.capacity = 7;
+    EmitterClock m;
+    CHECK(AdvanceClock(m, e, 10) == 7);
+}
+
+RM_TEST(Particles_EffectFile_KeepsWhatItDoesNotKnow) {
+    const std::string text = R"({"kind": "rm_engine.particle_effect", "format": 1, "later": 3,
+        "effect": {"emitters": [{"name": "火", "rate": 12, "glow": true, "modules": [{"builtin": "initial"}]}]}})";
+    std::string err;
+    reflect::Unknowns u;
+    const auto e = ReadEffect(text, &err, &u);
+    CHECK(e && e->emitters.size() == 1 && e->emitters[0].name == "火" && e->emitters[0].rate == 12);
+    const std::string again = WriteEffect(*e, &u);
+    CHECK(again.find("\"later\"") != std::string::npos && again.find("\"glow\"") != std::string::npos);
+    const auto back = ReadEffect(again, &err);
+    CHECK(back && back->emitters[0].modules.size() == 1 && back->emitters[0].modules[0].builtin == "initial");
+    CHECK(!ReadEffect(R"({"kind": "other"})", &err) && !err.empty());
+    CHECK(!ReadEffect("{", &err));
 }

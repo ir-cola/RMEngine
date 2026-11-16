@@ -17,6 +17,7 @@
 #include <format>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 
 namespace rm::game_production {
 
@@ -180,6 +181,7 @@ public:
     }
 
     void Update(double dt) override {
+        movedFor_ += static_cast<float>(dt);
         // The scripts (they read the keys), then the systems and their fixed steps.
         if (scripts_.Loaded()) {
             world_.scene = &scene_;
@@ -241,6 +243,8 @@ public:
                             if (!bytes) host_.Log(1, err);
                             return bytes;
                         }};
+        f.registry = &host_.Registry();
+        f.dt = std::exchange(movedFor_, 0.f);
         drawer_->Draw(f);
         for (const auto& o : overlays_) o->DrawOverlay(f);
         DrawScreen(dc, width, height);
@@ -309,6 +313,7 @@ private:
     std::vector<std::unique_ptr<GameDrawer>> overlays_;
     std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // over everything (the game UI)
     Vec2 screen_{1280, 720};                                    // the window's size at the last Draw (DIPs)
+    float movedFor_ = 0;  // seconds Update moved the game on since the last Draw (GameDrawFrame::dt)
     ScriptRunner scriptRunner_;
 };
 

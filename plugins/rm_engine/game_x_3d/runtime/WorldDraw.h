@@ -1,0 +1,60 @@
+#pragma once
+// ゲーム制作 × 3D - what other plugins draw into the game's 3D world themselves (パーティクル): the
+// scene view, the game view (the editor's Play) and the exported game each make one drawer of every
+// contribution and ask it once a frame what to draw into their picture (space3d::ExtraDraw: after the
+// see-through parts, depth-tested).
+//
+//   // in a connector's runtime/Register.cpp:
+//   static const game_x_3d::WorldDrawInfo kDraw{&CreateParticleDraw};
+//   registry.Contribute(game_x_3d::kWorldDrawPoint, kDraw);
+//
+// A drawer keeps what it needs between frames (one per picture: the scene view's picture and its camera
+// preview each have their own) and makes its GPU things on `gfx` (made again when gfx.Generation()
+// changes).
+
+#include "base/Ref.h"
+#include "platform/Gfx.h"
+#include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/space3d/runtime/Renderer3D.h"
+#include "rm_engine/space3d/runtime/Transform.h"
+
+#include <functional>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace rm::game_x_3d {
+
+// RuntimeRegistry point: items are WorldDrawInfo (static).
+inline constexpr char kWorldDrawPoint[] = "rm_engine.game_x_3d.world_draw";
+
+struct WorldDrawFrame {
+    const game_production::Scene& scene;
+    platform::Gfx& gfx;
+    // Where an entity is in the world (its Transform with its parents'); null: it has none (or it is
+    // switched off: nothing of it is drawn).
+    std::function<const space3d::Mat4*(int entity)> world;
+    float dt = 0;          // seconds since this picture's last frame (0: it did not move on - paused)
+    bool playing = false;  // the game plays (the editor's Play, the exported game): everything runs
+    // Not playing (the editor): what is selected - what a drawer may show moving to be looked at.
+    std::span<const int> selection;
+    // The bytes of an asset (the editor: its file; the game: what the export put in for it).
+    std::function<std::optional<std::string>(const AssetRef&)> asset;
+};
+
+class WorldDrawer {
+public:
+    virtual ~WorldDrawer() = default;
+    // Once a frame, before the picture is drawn: what to draw into it (in `out`).
+    virtual void Prepare(const WorldDrawFrame& f, std::vector<space3d::ExtraDraw>& out) = 0;
+    // Something of it moves by itself: the editor draws the view again next frame.
+    virtual bool Animating() const { return false; }
+};
+
+struct WorldDrawInfo {
+    std::unique_ptr<WorldDrawer> (*create)() = nullptr;
+};
+
+}  // namespace rm::game_x_3d

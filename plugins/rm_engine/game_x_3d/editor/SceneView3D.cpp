@@ -13,6 +13,8 @@
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/game_x_3d/runtime/WorldDraw.h"
+#include "platform/Shell.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
@@ -34,6 +36,7 @@
 #include <cstring>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace rm::game_x_3d {
 
@@ -100,6 +103,12 @@ struct Picture {
     Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
     ID3D11Texture2D* texture = nullptr;
     ID2D1DeviceContext* dc = nullptr;
+    // What other plugins draw into the world (WorldDraw.h: パーティクル), made at the first frame; and when
+    // this picture was drawn last (their time moves on by the difference).
+    std::vector<std::unique_ptr<WorldDrawer>> drawers;
+    bool drawersMade = false;
+    std::optional<double> drawnAt;
+    std::vector<space3d::ExtraDraw> extras;
 };
 
 // The largest rectangle of `aspect` (width / height) in the middle of r.
@@ -838,6 +847,8 @@ private:
         f.meshes = meshes_;
         f.lights = lights_;
         f.ambient = ambient_.value_or(space3d::Ambient{});
+        PrepareExtras(c, host, pic);
+        f.extras = pic.extras;
 
         // Direct2D's drawing so far goes to the GPU first; then Direct3D draws into its own picture.
         dc->Flush();
@@ -854,6 +865,40 @@ private:
             pic.dc = dc;
         }
         c.P().Image(pic.bitmap.Get(), r);
+    }
+
+    // What other plugins draw into this picture (パーティクル): asked once a frame, with the places of
+    // what is switched on. Not playing, a drawer shows what is selected moving; the view is drawn again
+    // while something of it moves.
+    void PrepareExtras(ui::Context& c, game_production::SceneViewHost& host, Picture& pic) {
+        pic.extras.clear();
+        if (!pic.drawersMade) {
+            pic.drawersMade = true;
+            for (const auto& d : host.host.Registry().Contributions<WorldDrawInfo>(kWorldDrawPoint)) {
+                if (d.item->create) pic.drawers.push_back(d.item->create());
+            }
+        }
+        if (pic.drawers.empty()) return;
+        const float dt = pic.drawnAt ? static_cast<float>(std::clamp(now_ - *pic.drawnAt, 0.0, 0.1)) : 0.f;
+        pic.drawnAt = now_;
+        const WorldDrawFrame wf{host.scene, host.host.Graphics(),
+                                [this](int id) -> const Mat4* {
+                                    const Placed* p = FindPlaced(id);
+                                    return p && p->active ? &p->world : nullptr;
+                                },
+                                dt, host.playing, host.selection,
+                                [&host](const AssetRef& ref) -> std::optional<std::string> {
+                                    const std::filesystem::path file = host.host.AssetFile(ref);
+                                    if (file.empty()) return std::nullopt;
+                                    std::string err;
+                                    return platform::ReadFileBytes(file, &err);
+                                }};
+        bool moving = false;
+        for (const auto& d : pic.drawers) {
+            d->Prepare(wf, pic.extras);
+            moving = moving || d->Animating();
+        }
+        if (moving) c.RequestAnimation();
     }
 
     // --- The game view -------------------------------------------------------------------------

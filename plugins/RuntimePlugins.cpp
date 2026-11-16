@@ -14,6 +14,8 @@
 #include "rm_engine/game_x_audio/runtime/Register.h"
 #include "rm_engine/game_ui/runtime/Id.h"
 #include "rm_engine/game_ui/runtime/Register.h"
+#include "rm_engine/game_x_particles/runtime/Id.h"
+#include "rm_engine/game_x_particles/runtime/Register.h"
 
 namespace rm {
 
@@ -24,6 +26,7 @@ std::span<const RuntimePlugin> RuntimePlugins() {
         {physics::kPluginId, &physics::RegisterRuntime},
         {game_x_audio::kPluginId, &game_x_audio::RegisterRuntime},
         {game_ui::kPluginId, &game_ui::RegisterRuntime},
+        {game_x_particles::kPluginId, &game_x_particles::RegisterRuntime},
     };
     return kPlugins;
 }

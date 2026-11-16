@@ -10,6 +10,7 @@
 
 #include "base/Math.h"
 #include "base/Ref.h"
+#include "core/RuntimeRegistry.h"
 #include "platform/Gfx.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/Scene.h"
@@ -38,6 +39,9 @@ struct GameDrawFrame {
     std::function<std::optional<std::string>(const AssetRef&)> asset;
     // A file of the game's own by its path (a baked model's pictures: "Baked/<id>/0.dds").
     std::function<std::optional<std::string>(std::string_view path)> file;
+    // What the plugins offer (a drawer asks it for things other plugins draw into its picture).
+    const RuntimeRegistry* registry = nullptr;
+    float dt = 0;  // seconds the game moved on since the last frame drawn (0 while it is paused)
 };
 
 class GameDrawer {
