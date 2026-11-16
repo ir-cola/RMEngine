@@ -111,12 +111,14 @@
   "ゲームの設定の「画面」のセーフエリアを補助線で出す・消す": "Show or hide the guide of the safe area of the game settings' Display",
   "アンカー": "Anchors",
   "選んだ物が親のどこに固定されているかの印を出す・消す": "Show or hide where the selected object is fixed in its parent",
-  "クリック: 選ぶ   ドラッグ: 動かす   角の四角: 大きさを変える   Esc: ドラッグをやめる   階層の右クリック →「キャンバスを作る」などで UI を作れます": "Click: select   Drag: move   Corner squares: resize   Esc: cancel the drag   Right-click the hierarchy -> \"Create canvas\" and so on to make UI",
   "UI はまだありません。階層を右クリックして「キャンバスを作る」→ その下に「ボタンを作る」「文字を作る」などで作ります。": "No UI yet. Right-click the hierarchy and choose \"Create canvas\", then \"Create button\", \"Create text\" and so on under it.",
   "ゲーム UI の見本": "Game UI sample",
   "タイトル画面 (はじめる ボタン) → ゲーム (スコアの文字と HP のバー)。ボタンの OnClick でシーンを切り替え、スコアと HP はグローバル変数。": "A title screen (a Start button) -> the game (a score text and an HP bar). The button's OnClick switches the scene; the score and the HP are global variables.",
   "十字キー・左スティック・矢印キーでボタンを選び、決定で押し、戻るでウィンドウを戻ります (表に出ているいちばん手前のキャンバスだけ。割り当てはゲームの設定の「入力」の UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel)": "Choose buttons with the pad's cross, the left stick or the arrow keys, press with Submit, go back a window with Cancel (only the frontmost shown canvas; the bindings are the game settings' Input actions UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel)",
   "このウィンドウが出たときに選んでいるボタン。無ければ左上のボタン": "The button chosen when this window shows. Without one, the top-left button",
   "「戻る」でこのボタンを押します。無ければ、このウィンドウを閉じて前のウィンドウに戻ります": "Cancel presses this button. Without one, Cancel closes this window and goes back to the one before",
-  "文字の大きさ": "Font size"
+  "文字の大きさ": "Font size",
+  "全体を見る": "Fit",
+  "ゲームの画面全体が入る大きさに戻す (ホイールで拡大・縮小、右か中のドラッグで動かす)": "Back to the whole game screen (wheel: zoom, right or middle drag: move the view)",
+  "クリック: 選ぶ   ドラッグ: 動かす   四角: 大きさ (Shift で形を保つ)   上の丸: 回す (Shift で 15 度ずつ)   中の輪: 回す中心   ホイール: 拡大   右ドラッグ: 動かす   Esc: やめる": "Click: select   Drag: move   Squares: size (Shift keeps the shape)   Top dot: turn (Shift: 15° steps)   Ring: pivot   Wheel: zoom   Right drag: move the view   Esc: cancel"
 }

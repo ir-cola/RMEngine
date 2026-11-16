@@ -55,6 +55,61 @@ int MakeButton(Scene& s, int parent, Vec2 pos, Vec2 size, const char* name = "�
 
 }  // namespace
 
+namespace {
+
+// Where a thing's box corners are in its parent (turned about its 中心), as drawn.
+std::array<Vec2, 4> SeenCorners(const UiRect& r, const UiBox& parent) {
+    const UiBox b = PlaceBox(r, parent);
+    const Affine m = About(PivotPoint(r, b), r.rotation, 1);
+    return {Apply(m, {b.x, b.y}), Apply(m, {b.Right(), b.y}), Apply(m, {b.Right(), b.Bottom()}), Apply(m, {b.x, b.Bottom()})};
+}
+bool NearV(Vec2 a, Vec2 b) { return Near(a.x, b.x, 1e-2f) && Near(a.y, b.y, 1e-2f); }
+
+}  // namespace
+
+RM_TEST(GameUi_Handles_ResizeRotateAndPivot) {
+    const UiBox parent{0, 0, 1000, 800};
+    UiRect r;
+    r.size = {200, 100};
+    r.position = {30, -20};
+    // The right handle: wider by 50, the left side stays.
+    UiRect w = ResizeByHandle(r, parent, UiHandle::Right, {50, 0}, false);
+    CHECK(Near(PlaceBox(w, parent).x, PlaceBox(r, parent).x) && Near(PlaceBox(w, parent).w, 250));
+    // The top left corner pulled up and left: the bottom right corner stays.
+    UiRect tl = ResizeByHandle(r, parent, UiHandle::TopLeft, {-20, -10}, false);
+    CHECK(Near(PlaceBox(tl, parent).Right(), PlaceBox(r, parent).Right()) && Near(PlaceBox(tl, parent).Bottom(), PlaceBox(r, parent).Bottom()));
+    CHECK(Near(PlaceBox(tl, parent).w, 220) && Near(PlaceBox(tl, parent).h, 110));
+    // A corner keeping its shape: 200 x 100 -> 300 x 150 (the bigger change decides).
+    UiRect a = ResizeByHandle(r, parent, UiHandle::BottomRight, {100, 10}, true);
+    CHECK(Near(PlaceBox(a, parent).w, 300) && Near(PlaceBox(a, parent).h, 150));
+    // Never below the least size.
+    UiRect tiny = ResizeByHandle(r, parent, UiHandle::Left, {500, 0}, false, 4);
+    CHECK(Near(PlaceBox(tiny, parent).w, 4));
+    // Turned 30 degrees, a 中心 off the middle, stretched across the top: the side opposite the handle
+    // stays where it is seen.
+    UiRect t = r;
+    t.rotation = 30;
+    t.pivot = {0.2f, 0.7f};
+    t.anchor = UiAnchor::StretchTop;
+    t.size = {-600, 120};
+    const auto before = SeenCorners(t, parent);
+    const UiRect right = ResizeByHandle(t, parent, UiHandle::Right, {40, 0}, false);
+    const auto afterRight = SeenCorners(right, parent);
+    CHECK(NearV(afterRight[0], before[0]) && NearV(afterRight[3], before[3]));
+    const UiRect bottom = ResizeByHandle(t, parent, UiHandle::Bottom, {0, 25}, false);
+    const auto afterBottom = SeenCorners(bottom, parent);
+    CHECK(NearV(afterBottom[0], before[0]) && NearV(afterBottom[1], before[1]));
+    // Moving its 中心 keeps it where it is seen (only the 中心 and 位置 change).
+    const UiRect moved = MovePivot(t, parent, {0.9f, 0.1f});
+    const auto afterPivot = SeenCorners(moved, parent);
+    for (size_t i = 0; i < 4; ++i) CHECK(NearV(afterPivot[i], before[i]));
+    CHECK(Near(moved.pivot.x, 0.9f) && Near(moved.size.x, t.size.x) && Near(moved.rotation, 30));
+    // Turning by a drag around the 中心: a quarter clockwise (Y down) is +90; steps round it.
+    CHECK(Near(RotateByDrag(10, {0, 0}, {1, 0}, {0, 1}), 100));
+    CHECK(Near(RotateByDrag(0, {0, 0}, {1, 0}, {1, 0.4f}, 15), 15));
+    CHECK(Near(RotateByDrag(170, {0, 0}, {1, 0}, {-1, -0.01f}), 170 - 179.427f, 0.01f));  // (the short way round)
+}
+
 RM_TEST(GameUi_Reanchored_KeepsTheBox) {
     // The inspector's アンカー: the thing stays where it is on the screen (to every preset and back).
     const UiBox parent{0, 0, 1920, 1080};

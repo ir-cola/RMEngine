@@ -110,6 +110,70 @@ UiRect Reanchored(const UiRect& r, UiAnchor to, const UiBox& parent) {
     return out;
 }
 
+Vec2 HandleSides(UiHandle h) {
+    switch (h) {
+        case UiHandle::TopLeft: return {-1, -1};
+        case UiHandle::Top: return {0, -1};
+        case UiHandle::TopRight: return {1, -1};
+        case UiHandle::Right: return {1, 0};
+        case UiHandle::BottomRight: return {1, 1};
+        case UiHandle::Bottom: return {0, 1};
+        case UiHandle::BottomLeft: return {-1, 1};
+        case UiHandle::Left: return {-1, 0};
+    }
+    return {0, 0};
+}
+
+UiRect ResizeByHandle(const UiRect& r, const UiBox& parent, UiHandle h, Vec2 along, bool keepAspect, float minSize) {
+    const UiBox box = PlaceBox(r, parent);
+    const Vec2 sides = HandleSides(h);
+    // How much wider / taller (the visible box), never below minSize.
+    float dw = along.x * sides.x, dh = along.y * sides.y;
+    if (keepAspect && sides.x != 0 && sides.y != 0 && box.w > 1e-4f && box.h > 1e-4f) {
+        // (the bigger change decides; the other follows the ratio)
+        const float kx = (box.w + dw) / box.w, ky = (box.h + dh) / box.h;
+        const float k = std::abs(kx - 1) >= std::abs(ky - 1) ? kx : ky;
+        dw = box.w * k - box.w;
+        dh = box.h * k - box.h;
+    }
+    dw = std::max(dw, minSize - box.w);
+    dh = std::max(dh, minSize - box.h);
+    UiRect out = r;
+    out.size = {r.size.x + dw, r.size.y + dh};
+    // The 中心 moves with the side that moves (by its share of the change), turned into the parent's units.
+    const Vec2 shiftOwn{sides.x > 0 ? dw * r.pivot.x : sides.x < 0 ? -dw * (1 - r.pivot.x) : 0,
+                        sides.y > 0 ? dh * r.pivot.y : sides.y < 0 ? -dh * (1 - r.pivot.y) : 0};
+    const Affine turn = Rotation(r.rotation);
+    out.position = {r.position.x + turn.a * shiftOwn.x + turn.c * shiftOwn.y, r.position.y + turn.b * shiftOwn.x + turn.d * shiftOwn.y};
+    return out;
+}
+
+float RotateByDrag(float startDegrees, Vec2 center, Vec2 from, Vec2 to, float step) {
+    const float a0 = std::atan2(from.y - center.y, from.x - center.x), a1 = std::atan2(to.y - center.y, to.x - center.x);
+    float d = (a1 - a0) * 180.f / kPi;
+    while (d > 180) d -= 360;
+    while (d < -180) d += 360;
+    float deg = startDegrees + d;
+    if (step > 0) deg = std::round(deg / step) * step;
+    return deg;
+}
+
+UiRect MovePivot(const UiRect& r, const UiBox& parent, Vec2 pivot) {
+    const UiBox box = PlaceBox(r, parent);
+    Vec2 mn, mx;
+    AnchorRange(r.anchor, mn, mx);
+    const float aw = parent.w * (mx.x - mn.x), ah = parent.h * (mx.y - mn.y);
+    // The new 中心 is the old one plus the (turned) move inside the box; 位置 also measures from the
+    // anchors' box at the 中心's fraction, which moves with it.
+    const Vec2 inside{(pivot.x - r.pivot.x) * box.w, (pivot.y - r.pivot.y) * box.h};
+    const Affine turn = Rotation(r.rotation);
+    const Vec2 turned{turn.a * inside.x + turn.c * inside.y, turn.b * inside.x + turn.d * inside.y};
+    UiRect out = r;
+    out.pivot = pivot;
+    out.position = {r.position.x + turned.x - aw * (pivot.x - r.pivot.x), r.position.y + turned.y - ah * (pivot.y - r.pivot.y)};
+    return out;
+}
+
 Vec2 PivotPoint(const UiRect& r, const UiBox& box) { return {box.x + box.w * r.pivot.x, box.y + box.h * r.pivot.y}; }
 
 float CanvasScale(UiScaleMode mode, Vec2 reference, Vec2 area) {

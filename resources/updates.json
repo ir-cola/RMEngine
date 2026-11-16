@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "UI タブ: 8 つの四角で大きさ (Shift で比を保つ)・上の丸で回す・中の輪で回す中心を動かす。ホイールで拡大、右ドラッグで画面を動かす",
+          "en": "UI tab: eight squares change the size (Shift keeps the shape), the top dot turns, the ring moves the pivot. The wheel zooms and a right drag moves the view"
+        },
+        {
           "ja": "パーティクル: プリセット (炎・煙・火花・爆発・キラキラ・雨・雪・魔法の光) からエフェクトを作る・エミッターを足す。粒に絵 (画像) を貼れる (コマ割りの連番も)。粒の形に星と煙",
           "en": "Particles: make an effect or add emitters from presets (fire, smoke, sparks, explosion, sparkle, rain, snow, magic light). Particles can show a picture (an image, sheets of frames too). Star and smoke dot shapes"
         },

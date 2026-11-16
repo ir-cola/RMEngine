@@ -43,6 +43,22 @@ UiBox PlaceBox(const UiRect& r, const UiBox& parent);
 // The same box with another anchor: 位置 and 大きさ worked out again (the inspector's アンカー keeps the
 // thing where it is on the screen, as the parent is now).
 UiRect Reanchored(const UiRect& r, UiAnchor to, const UiBox& parent);
+
+// --- The UI tab's handles (pure: what a drag does to UI の配置) --------------------------------
+// The 8 handles of a box: its corners and the middles of its sides (clockwise from the top left).
+enum class UiHandle { TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left };
+// Which way a handle moves the box's sides: -1 the left / top side, 1 the right / bottom one, 0 none.
+Vec2 HandleSides(UiHandle h);
+// A handle dragged by `along` (in the thing's own units, along its own - turned - axes): the sides it
+// holds move, the opposite ones stay where they are (its turn too). `keepAspect` (a corner): the width
+// and height keep their ratio. The box never goes below `minSize`.
+UiRect ResizeByHandle(const UiRect& r, const UiBox& parent, UiHandle h, Vec2 along, bool keepAspect, float minSize = 1.f);
+// The turn after dragging the mouse from `from` to `to` around `center` (all in one space, Y down: a
+// clockwise sweep is +). `step` > 0: rounded to steps of it (degrees).
+float RotateByDrag(float startDegrees, Vec2 center, Vec2 from, Vec2 to, float step = 0);
+// Its 中心 (pivot) moved to `pivot` (0..1 of its box), the thing staying where it is on the screen
+// (its 位置 worked out again: the turn is about the new 中心).
+UiRect MovePivot(const UiRect& r, const UiBox& parent, Vec2 pivot);
 // Its 中心 in its parent's units (where it turns).
 Vec2 PivotPoint(const UiRect& r, const UiBox& box);
 // How many screen DIPs one canvas unit is, for a canvas of `reference` units in an area of `area` DIPs.
