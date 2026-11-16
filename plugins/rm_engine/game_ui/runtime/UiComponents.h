@@ -15,6 +15,7 @@
 #include "core/reflect/Reflect.h"
 
 #include <string>
+#include <vector>
 
 namespace rm::game_ui {
 
@@ -137,6 +138,49 @@ struct UiButtonLook {
     float outlineAmount = 0;
 };
 
+// What a button does when pressed, without a script (配置と配線; spec §6-7). In order, after its sound and
+// before the scripts' OnClick - so an OnClick of the same frame reads what they did. Only while the game
+// plays (the editor's Play, the exported game). Each kind shows only its own fields (ShowIf).
+RM_ENUM(Label="押したときの動作の種類")
+enum class UiActionKind {
+    RM_ITEM(Label="ウィンドウを出す") ShowWindow,
+    RM_ITEM(Label="ウィンドウを隠す") HideWindow,
+    RM_ITEM(Label="ウィンドウを切り替える") SwitchWindow,
+    RM_ITEM(Label="前のウィンドウに戻る") Back,
+    RM_ITEM(Label="シーンを切り替える") LoadScene,
+    RM_ITEM(Label="変数を変える") SetVariable,
+    RM_ITEM(Label="音を鳴らす") PlaySound,
+    RM_ITEM(Label="ゲームを終わる") Quit,
+};
+
+RM_ENUM(Label="変数の変え方")
+enum class UiVariableChange {
+    RM_ITEM(Label="ON にする") On,
+    RM_ITEM(Label="OFF にする") Off,
+    RM_ITEM(Label="ON / OFF を入れ替える") Toggle,
+    RM_ITEM(Label="足す") Add,
+    RM_ITEM(Label="入れる") Set,
+};
+
+RM_STRUCT(Label="押したときの動作")
+struct UiAction {
+    RM_PROPERTY(Edit, Label="動作") UiActionKind kind = UiActionKind::ShowWindow;
+    RM_PROPERTY(Edit, Label="ウィンドウ", Tooltip="キャンバスのエンティティ。切り替える: ほかのウィンドウは全部隠れます", ShowIf="kind=ShowWindow|HideWindow|SwitchWindow")
+    EntityRef window;
+    RM_PROPERTY(Edit, Label="シーン", Tooltip="ゲームのシーンの一覧 (シーン パネル) にあるシーン。このフレームの終わりに切り替わります", AssetKind=".rmscene", ShowIf="kind=LoadScene")
+    AssetRef scene;
+    RM_PROPERTY(Edit, Label="変数", Tooltip="ゲームの設定の「グローバル変数」の名前", ShowIf="kind=SetVariable") std::string variable;
+    RM_PROPERTY(Edit, Label="変え方", Tooltip="ON / OFF は ON / OFF の変数 (数の変数なら 1 / 0)。足す・入れるは数の変数", ShowIf="kind=SetVariable")
+    UiVariableChange change = UiVariableChange::Toggle;
+    RM_PROPERTY(Edit, Label="数", Tooltip="足す数 / 入れる数 (整数の変数は四捨五入)", ShowIf="kind=SetVariable&change=Add|Set") float amount = 1;
+    RM_PROPERTY(Edit, Label="下限を使う", ShowIf="kind=SetVariable&change=Add|Set") bool useMin = false;
+    RM_PROPERTY(Edit, Label="下限", Tooltip="これより小さくならない", ShowIf="kind=SetVariable&change=Add|Set&useMin") float min = 0;
+    RM_PROPERTY(Edit, Label="上限を使う", ShowIf="kind=SetVariable&change=Add|Set") bool useMax = false;
+    RM_PROPERTY(Edit, Label="上限", Tooltip="これより大きくならない", ShowIf="kind=SetVariable&change=Add|Set&useMax") float max = 10;
+    RM_PROPERTY(Edit, Label="音", AssetKind="audio", ShowIf="kind=PlaySound") AssetRef sound;
+    RM_PROPERTY(Edit, Label="音の大きさ", Min=0, Max=1, ShowIf="kind=PlaySound") float volume = 1;
+};
+
 RM_STRUCT(Label="ボタン (UI)")
 struct UiButton {
     RM_PROPERTY(Edit, Label="押せる", Tooltip="外すと薄くなり、押せません") bool interactable = true;
@@ -161,6 +205,12 @@ struct UiButton {
     RM_PROPERTY(Edit, Label="乗ったときの音の大きさ", Min=0, Max=1) float hoverVolume = 0.8f;
     RM_PROPERTY(Edit, Label="押したときの音", Tooltip="押したときに鳴ります (スクリプトの OnClick より先)", AssetKind="audio") AssetRef clickSound;
     RM_PROPERTY(Edit, Label="押したときの音の大きさ", Min=0, Max=1) float clickVolume = 1;
+    RM_PROPERTY(Edit, Label="押したときの動作", Tooltip="スクリプトを書かずに、押したときに上から順に行います (押したときの音の後、スクリプトの OnClick の前)。Play とゲームの中だけ")
+    std::vector<UiAction> actions;
+    RM_PROPERTY(Edit, Label="上で移る先", Tooltip="キーやパッドで上へ移るときのボタン (同じウィンドウの押せるもの)。空なら画面の上で一番近いボタン") EntityRef up;
+    RM_PROPERTY(Edit, Label="下で移る先", Tooltip="空なら画面の下で一番近いボタン") EntityRef down;
+    RM_PROPERTY(Edit, Label="左で移る先", Tooltip="空なら画面の左で一番近いボタン") EntityRef left;
+    RM_PROPERTY(Edit, Label="右で移る先", Tooltip="空なら画面の右で一番近いボタン") EntityRef right;
     RM_TRANSIENT() int state = 0;         // UiButtonState, this frame (the UI service)
     RM_TRANSIENT() bool focused = false;  // chosen by the keys / a pad (looks as Hover)
     RM_TRANSIENT() UiButtonLook now;      // how it looks now (the UI service eases it toward its state's look)

@@ -9,7 +9,8 @@
 //   RM0001  a field without RM_PROPERTY / RM_TRANSIENT
 //   RM0002  unknown attribute key
 //   RM0003  attribute value of the wrong form (numbers must be literals), or Min > Max, or Min on a non-number,
-//           or AssetKind on something that is not an AssetRef / not a list of lower-case words
+//           or AssetKind on something that is not an AssetRef / not a list of lower-case words,
+//           or ShowIf naming no other field of the struct
 //   RM0004  a type that cannot be reflected (pointer, double, const, C array ...)
 //   RM0005  an annotation in a place where it does nothing
 //   RM0006  a type name that is not RM_STRUCT / RM_ENUM

@@ -703,3 +703,149 @@ RM_TEST(GameUi_ButtonLook_EasedOutlineAndSounds) {
     step = StepUi(s, t, on, false, false, false, actions, &none, &none, 0.016f, state);
     CHECK((step.hovered == std::vector<int>{id}));  // left and came back: again
 }
+
+namespace {
+
+const reflect::FieldDesc& UiField(const reflect::TypeDesc& t, std::string_view name) {
+    for (const reflect::FieldDesc& f : t.fields) {
+        if (name == f.name) return f;
+    }
+    return t.fields[0];
+}
+
+}  // namespace
+
+RM_TEST(GameUi_ButtonActions_WhatTheyDo) {
+    // Each kind shows its own fields only (ShowIf).
+    const reflect::TypeDesc& at = reflect::TypeOf<UiAction>();
+    UiAction a;
+    a.kind = UiActionKind::ShowWindow;
+    CHECK(reflect::FieldShown(at, UiField(at, "window"), &a) && !reflect::FieldShown(at, UiField(at, "scene"), &a));
+    a.kind = UiActionKind::SetVariable;
+    a.change = UiVariableChange::Toggle;
+    CHECK(reflect::FieldShown(at, UiField(at, "variable"), &a) && !reflect::FieldShown(at, UiField(at, "amount"), &a));
+    a.change = UiVariableChange::Add;
+    CHECK(reflect::FieldShown(at, UiField(at, "amount"), &a) && !reflect::FieldShown(at, UiField(at, "min"), &a));
+    a.useMin = true;
+    CHECK(reflect::FieldShown(at, UiField(at, "min"), &a) && reflect::ShowIfProblem(at, UiField(at, "min")).empty());
+
+    // A variable changed: ON / OFF / 入れ替える, 足す with 下限 / 上限, an int rounded.
+    using game_production::GlobalType;
+    using game_production::GlobalValue;
+    GlobalValue flag{GlobalType::Bool};
+    a.change = UiVariableChange::Toggle;
+    CHECK(ChangeVariable(flag, a, nullptr) && flag.v[0] == 1);
+    CHECK(ChangeVariable(flag, a, nullptr) && flag.v[0] == 0);
+    a.change = UiVariableChange::Add;
+    CHECK(!ChangeVariable(flag, a, nullptr));  // (足す on ON / OFF: no)
+    GlobalValue n{GlobalType::Int};
+    a.amount = 2.6f;
+    a.useMin = false;
+    a.useMax = true;
+    a.max = 5;
+    CHECK(ChangeVariable(n, a, nullptr) && n.v[0] == 3);
+    CHECK(ChangeVariable(n, a, nullptr) && n.v[0] == 5);  // (kept to the 上限)
+    a.change = UiVariableChange::Set;
+    a.amount = -4;
+    a.useMin = true;
+    a.min = 7;  // both used the wrong way round: turned round (5..7)
+    CHECK(ChangeVariable(n, a, nullptr) && n.v[0] == 5);
+    a.useMax = false;  // only 下限 7: never turned round
+    CHECK(ChangeVariable(n, a, nullptr) && n.v[0] == 7);
+    GlobalValue text{GlobalType::String};
+    std::string why;
+    CHECK(!ChangeVariable(text, a, &why) && !why.empty());
+
+    // Whole buttons: two windows (one with a canvas inside it), a button doing everything in order.
+    Scene s = UiScene();
+    const int title = s.Create("Title");
+    Add<UiCanvas>(s, title);
+    const int inner = s.Create("Inner", title);
+    Add<UiCanvas>(s, inner);
+    const int menu = s.Create("Menu");
+    Add<UiCanvas>(s, menu);
+    s.Find(menu)->data.active = false;
+    const int b = MakeButton(s, title, {0, 0}, {200, 100});
+    auto* button = static_cast<UiButton*>(s.Find(b)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get());
+    CHECK(IsWindow(s, title) && IsWindow(s, menu) && !IsWindow(s, inner) && !IsWindow(s, b));
+
+    game_production::GlobalStore globals;
+    const game_production::GlobalVariable vars[] = {{"paused", GlobalType::Bool, "false"}};
+    globals.Reset(vars);
+    const AssetRef stage{"0123456789abcdef0123456789abcd11"}, beep{"0123456789abcdef0123456789abcd12"};
+    std::vector<std::string> done;
+    UiActionHost host;
+    host.globals = &globals;
+    host.loadScene = [&](const AssetRef& r) {
+        done.push_back("scene");
+        return r == stage;
+    };
+    host.quit = [&] { done.push_back("quit"); };
+    host.playSound = [&](const AssetRef& r, float v) { done.push_back(r == beep && v == 0.5f ? "beep" : "?"); };
+    host.log = [&](int level, std::string_view) { done.push_back(level == 1 ? "warn" : "info"); };
+    auto add = [&](UiActionKind kind) -> UiAction& {
+        button->actions.push_back({});
+        button->actions.back().kind = kind;
+        return button->actions.back();
+    };
+    add(UiActionKind::ShowWindow).window.id = static_cast<uint64_t>(menu);
+    UiAction& v = add(UiActionKind::SetVariable);
+    v.variable = "paused";
+    v.change = UiVariableChange::On;
+    add(UiActionKind::LoadScene).scene = stage;
+    UiAction& snd = add(UiActionKind::PlaySound);
+    snd.sound = beep;
+    snd.volume = 0.5f;
+    add(UiActionKind::Quit);
+    add(UiActionKind::SetVariable).variable = "nothing";  // (not there: told)
+    UiFocus state;
+    RunActions(s, b, title, *button, state, host);
+    CHECK(s.Find(menu)->data.active && globals.Find("paused")->v[0] == 1);
+    CHECK((done == std::vector<std::string>{"scene", "beep", "quit", "warn"}));
+    // 切り替える: only that window (the canvas inside Title is a part of it - left as it is).
+    button->actions.clear();
+    add(UiActionKind::SwitchWindow).window.id = static_cast<uint64_t>(menu);
+    RunActions(s, b, title, *button, state, host);
+    CHECK(!s.Find(title)->data.active && s.Find(menu)->data.active && s.Find(inner)->data.active);
+
+    // 前のウィンドウに戻る: Menu opened over Title (seen by a frame), its button closes it - Title again.
+    s.Find(title)->data.active = true;
+    s.Find(menu)->data.active = false;
+    const int back = MakeButton(s, menu, {0, 0}, {100, 50}, "戻る");
+    auto* backButton = static_cast<UiButton*>(s.Find(back)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get());
+    backButton->actions.push_back({});
+    backButton->actions.back().kind = UiActionKind::Back;
+    InputFrame none;
+    const auto actions = game_production::DefaultInputActions();
+    UiFocus play;
+    StepUi(s, BuildUi(s, {}), std::nullopt, false, false, false, actions, &none, &none, 0.016f, play);
+    s.Find(title)->data.active = false;  // (switched: Title hidden, Menu shown)
+    s.Find(menu)->data.active = true;
+    StepUi(s, BuildUi(s, {}), std::nullopt, false, false, false, actions, &none, &none, 0.016f, play);
+    RunActions(s, back, menu, *backButton, play, host);
+    CHECK(!s.Find(menu)->data.active && s.Find(title)->data.active);
+    done.clear();
+    RunActions(s, back, title, *backButton, play, host);  // (Title was there from the start: nothing)
+    CHECK(s.Find(title)->data.active && (done == std::vector<std::string>{"info"}));
+}
+
+RM_TEST(GameUi_NextButton_LinksFirst) {
+    // 上 / 下 / 左 / 右で移る先: the link when it can be pressed in the same window; else the nearest that way.
+    Scene s = UiScene();
+    const int canvas = s.Create("UI");
+    Add<UiCanvas>(s, canvas)->reference = {1280, 720};
+    const int a = MakeButton(s, canvas, {-300, 0}, {100, 50}, "A");
+    const int b = MakeButton(s, canvas, {0, 0}, {100, 50}, "B");
+    const int c = MakeButton(s, canvas, {300, 0}, {100, 50}, "C");
+    auto part = [&](int id) { return static_cast<UiButton*>(s.Find(id)->FindComponent(reflect::TypeOf<UiButton>().name)->value.Get()); };
+    UiTree t = BuildUi(s, {});
+    CHECK(NextButton(t, canvas, a, 1, 0) == b);
+    part(a)->right.id = static_cast<uint64_t>(c);
+    CHECK(NextButton(t, canvas, a, 1, 0) == c);
+    CHECK(NextButton(t, canvas, a, 0, 1) == a);  // (no link down, no button below)
+    part(a)->down.id = static_cast<uint64_t>(b);
+    CHECK(NextButton(t, canvas, a, 0, 1) == b);  // (a link goes any way it says)
+    part(c)->interactable = false;
+    t = BuildUi(s, {});
+    CHECK(NextButton(t, canvas, a, 1, 0) == b);  // (the link cannot be pressed: the nearest)
+}

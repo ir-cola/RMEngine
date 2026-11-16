@@ -154,10 +154,9 @@ int FirstFocus(const UiTree& tree, int canvas, int preferred);
 // nearest one whose middle lies that way (going straight counts more than going aside). `current` itself
 // when there is none.
 int MoveFocus(const UiTree& tree, int canvas, int current, int dx, int dy);
-// Where the keys' / a pad's step from `current` goes - what the UI service asks. Today it is MoveFocus (the
-// nearest button that way on the screen, found by itself: nothing to set). The place for buttons wired by
-// hand later (配置と配線): their links come first here, MoveFocus stays the rule for the rest - so the
-// buttons and the service need not change.
+// Where the keys' / a pad's step from `current` goes - what the UI service asks: the button's own link that
+// way (上 / 下 / 左 / 右で移る先: 配置と配線), when it is a button of `canvas` that can be pressed; else
+// MoveFocus (the nearest button that way on the screen, found by itself: nothing to set).
 int NextButton(const UiTree& tree, int canvas, int current, int dx, int dy);
 
 // --- How a button looks -----------------------------------------------------------------------

@@ -797,6 +797,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 技術 | 使う所 | 状態 |
 |---|---|---|
+| 2026-11-16 | 条件で欄を出す (リフレクションの ShowIf) を足した |
 | 2026-11-16 | なめらかに追いかける (指数の平滑化)・色を置き換える (色の行列の定数の行)・プラグインを知らずにほかのサービスに頼む (インターフェースと dynamic_cast) を足した |
 | テクスチャ・材質 (glTF の色と画像) | 3D 空間プラグイン | 予定 (形と影は 8 章へ。いまは色が 1 つ) |
 | 自作の TGA 読み込み | アセットの画像 (WIC は TGA を読めないので小さく自作) | WIC は 2D のスプライト (8 章「Direct2D で画像を回す・色を掛ける」) と 3D のテクスチャ・サムネイル (3 章の WIC) で使っている。TGA はまだ |
@@ -849,6 +850,11 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 ### プラグインを知らずにほかのサービスに頼む (インターフェースと dynamic_cast)
 - **何か** — ゲーム UI のボタンの音は、音のプラグインを知らずに鳴らしたい (核やゲーム UI が音のプラグインに依存しないため)。ゲーム制作に「音を鳴らすもの」の形だけ (`SoundPlayer`: 仮想関数 1 つ) を置き、音のプラグインのサービスがそれも継ぐ (多重継承)。頼む側は Play の全サービスから `dynamic_cast` (実行時の型情報で「その形も持っているか」を調べる) で探す。音のプラグインが無いゲームでは見つからず、何も鳴らないだけ
 - **どこ** — `plugins/rm_engine/game_production/runtime/PlayServices.h` (`SoundPlayer` / `PlayServices::Sounds`)・`game_x_audio/runtime/AudioService.h`・`game_ui/runtime/UiService.cpp`
+
+### 条件で欄を出す (リフレクションの ShowIf)
+- **何か** — データの型の 1 か所 (`RM_PROPERTY(..., ShowIf="kind=LoadScene")`) に「この欄は、同じ構造体の別の欄がこの値のときだけ出す」と書く。rmgen (ヘッダーを読んで表を作る道具) がその文字を表 (`FieldDesc::showIf`) に入れ、インスペクターが描く前に `FieldShown` で調べる。書き方は `欄=項目|項目` (列挙の項目のどれか)・`欄` / `!欄` (bool が ON / OFF)・`&` で両方
+- **工夫** — 隠れた欄も保存と読み込みはそのまま (種類を戻すと前の値が出る)。名前の間違いは 2 段で止める: rmgen がビルドのときに「その欄が同じ構造体にあるか」を、テストが全部の型について「列挙にその項目があるか」を調べる (`ShowIfProblem`)
+- **どこ** — `tools/rmgen/Scanner.cpp`・`src/core/reflect/Data.cpp` (`FieldShown`)・`src/editor/inspector/Inspector.cpp`・使っている所 `plugins/rm_engine/game_ui/runtime/UiComponents.h` (`UiAction`)
 
 ## 追記の記録
 

@@ -111,12 +111,7 @@ int ShowWindow(void* ctx, const char* name, int shown) {
 int SwitchWindow(void* ctx, const char* name) {
     game_production::SceneEntity* target = Window(ctx, name);
     if (!target) return 0;
-    ScriptWorld& w = World(ctx);
-    const int keep = target->data.id;
-    for (const auto& t : w.scene->TreeOrder()) {
-        if (!t.entity->FindComponent(reflect::TypeOf<UiCanvas>().name)) continue;
-        if (game_production::SceneEntity* e = w.scene->Find(t.entity->data.id)) e->data.active = e->data.id == keep;
-    }
+    SwitchToWindow(*World(ctx).scene, target->data.id);  // (as a button's ウィンドウを切り替える)
     return 1;
 }
 

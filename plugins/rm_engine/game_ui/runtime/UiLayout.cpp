@@ -516,7 +516,17 @@ int MoveFocus(const UiTree& tree, int canvas, int current, int dx, int dy) {
     return best;
 }
 
-int NextButton(const UiTree& tree, int canvas, int current, int dx, int dy) { return MoveFocus(tree, canvas, current, dx, dy); }
+int NextButton(const UiTree& tree, int canvas, int current, int dx, int dy) {
+    // Its own link that way first (上 / 下 / 左 / 右で移る先), when it is a button of the window that can be
+    // pressed; else the nearest that way on the screen.
+    if (const UiNode* from = tree.Find(current); from && from->button && (dx != 0) != (dy != 0)) {
+        const UiButton& b = *from->button;
+        const EntityRef& link = dy < 0 ? b.up : dy > 0 ? b.down : dx < 0 ? b.left : b.right;
+        const UiNode* to = link.id ? tree.Find(static_cast<int>(link.id)) : nullptr;
+        if (to && to->canvas == canvas && to->button && to->button->interactable) return to->entity;
+    }
+    return MoveFocus(tree, canvas, current, dx, dy);
+}
 
 // --- How a button looks --------------------------------------------------------------------------
 

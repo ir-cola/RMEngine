@@ -43,6 +43,74 @@ const EnumItem* FindItem(const EnumDesc& e, std::string_view name) {
 }
 
 // ---------------------------------------------------------------------------
+// ShowIf
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// One term of a ShowIf ("kind=A|B", "flag", "!flag") against `object` (null: only checked - *problem
+// says what is wrong).
+bool ShowIfTerm(const TypeDesc& owner, std::string_view term, const void* object, std::string* problem) {
+    const bool negate = term.starts_with('!');
+    if (negate) term.remove_prefix(1);
+    const size_t eq = term.find('=');
+    const std::string_view name = term.substr(0, eq);
+    const FieldDesc* g = nullptr;
+    for (const FieldDesc& x : owner.fields) {
+        if (name == x.name) g = &x;
+    }
+    auto bad = [&](std::string why) {
+        if (problem && problem->empty()) *problem = std::move(why);
+        return false;
+    };
+    if (!g) return bad(std::format("ShowIf: {} にフィールド {} がありません", owner.name, name));
+    bool on = false;
+    if (eq == std::string_view::npos) {
+        if (g->value.type != FieldType::Bool) return bad(std::format("ShowIf: {} は bool ではありません (項目なら {}=項目)", name, name));
+        on = object && *static_cast<const bool*>(g->Get(object));
+    } else {
+        if (g->value.type != FieldType::Enum || !g->value.enumType) return bad(std::format("ShowIf: {} は RM_ENUM ではありません", name));
+        const EnumDesc& e = *g->value.enumType;
+        const int64_t now = object ? e.get(g->Get(object)) : 0;
+        std::string_view items = term.substr(eq + 1);
+        for (;;) {
+            const size_t bar = items.find('|');
+            const std::string_view item = items.substr(0, bar);
+            const EnumItem* it = FindItem(e, item);
+            if (!it) return bad(std::format("ShowIf: {} に項目 {} がありません", e.name, item));
+            if (it->value == now) on = true;
+            if (bar == std::string_view::npos) break;
+            items = items.substr(bar + 1);
+        }
+    }
+    return negate ? !on : on;
+}
+
+template <class F>
+bool EveryTerm(std::string_view showIf, F&& f) {
+    bool all = true;
+    for (;;) {
+        const size_t amp = showIf.find('&');
+        if (!f(showIf.substr(0, amp))) all = false;
+        if (amp == std::string_view::npos) return all;
+        showIf = showIf.substr(amp + 1);
+    }
+}
+
+}  // namespace
+
+bool FieldShown(const TypeDesc& owner, const FieldDesc& f, const void* object) {
+    if (!f.showIf) return true;
+    return EveryTerm(f.showIf, [&](std::string_view t) { return ShowIfTerm(owner, t, object, nullptr); });
+}
+
+std::string ShowIfProblem(const TypeDesc& owner, const FieldDesc& f) {
+    std::string problem;
+    if (f.showIf) EveryTerm(f.showIf, [&](std::string_view t) { return ShowIfTerm(owner, t, nullptr, &problem); });
+    return problem;
+}
+
+// ---------------------------------------------------------------------------
 // Unknowns
 // ---------------------------------------------------------------------------
 

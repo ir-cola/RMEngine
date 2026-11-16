@@ -39,6 +39,7 @@
 namespace rm::game_production {
 
 class PlayServices;
+struct ScriptWorld;
 
 // What the host gives the services (it lives as long as they do).
 struct PlayHost {
@@ -81,6 +82,10 @@ struct PlayFrame {
     // The other services of this Play (set by PlayServices::Frame): to ask one that does what any plugin
     // may offer (Sounds) without knowing which plugin it is.
     const PlayServices* services = nullptr;
+    // The game itself (Scripts.h: its scenes - sceneAsked switches between frames -, its global
+    // variables, quitAsked): what a service may ask of it as a script may (game UI's 押したときの動作).
+    // Null in a test that gives none.
+    ScriptWorld* world = nullptr;
 };
 
 class PlayService {

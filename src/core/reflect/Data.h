@@ -88,6 +88,11 @@ PathTarget Resolve(const TypeDesc& type, void* object, Unknowns* unknowns, const
 std::string PathText(const TypeDesc& type, const FieldPath& path);  // "window.width"
 
 const EnumItem* FindItem(const EnumDesc& e, int64_t value);
+// Whether the inspector shows `f` of `object` (a `owner`): its ShowIf holds (no ShowIf: true). A term
+// naming no field, or an item its enum has not: false (ShowIfProblem says what).
+bool FieldShown(const TypeDesc& owner, const FieldDesc& f, const void* object);
+// What is wrong with a ShowIf (empty: nothing) - the tests check every table.
+std::string ShowIfProblem(const TypeDesc& owner, const FieldDesc& f);
 const EnumItem* FindItem(const EnumDesc& e, std::string_view name);
 
 template <class T>

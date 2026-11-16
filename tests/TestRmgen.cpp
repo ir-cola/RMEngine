@@ -206,3 +206,29 @@ struct A {
     CHECK(Has(bad, "RM0003", 6));
     CHECK(Has(bad, "RM0003", 7));
 }
+
+RM_TEST(Rmgen_ShowIf) {
+    // ShowIf names other fields of the same struct ("kind=A|B", "flag", "!flag", & for both).
+    const Result ok = Run(R"(#pragma once
+RM_ENUM() enum class K { A, B };
+RM_STRUCT()
+struct S {
+    RM_PROPERTY(Edit) K kind = K::A;
+    RM_PROPERTY(Edit) bool on = false;
+    RM_PROPERTY(Edit, ShowIf="kind=A|B&!on") float x = 0;
+};
+)");
+    CHECK(ok.diags.empty());
+    CHECK(EmitHeader(ok.headers, ok.headers[0]).find(".showIf = \"kind=A|B&!on\"") != std::string::npos);
+    const Result bad = Run(R"(#pragma once
+RM_STRUCT()
+struct S {
+    RM_PROPERTY(Edit) bool on = false;
+    RM_PROPERTY(Edit, ShowIf="nothing") float x = 0;
+    RM_PROPERTY(Edit, ShowIf="on=") float y = 0;
+    RM_PROPERTY(Edit, ShowIf="on&") float z = 0;
+    RM_PROPERTY(Edit, ShowIf="w") float w = 0;
+};
+)");
+    CHECK(Has(bad, "RM0003", 5) && Has(bad, "RM0003", 6) && Has(bad, "RM0003", 7) && Has(bad, "RM0003", 8));  // (w: itself)
+}

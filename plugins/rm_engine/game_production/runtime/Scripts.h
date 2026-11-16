@@ -77,6 +77,9 @@ struct ScriptWorld {
     std::vector<std::string> sceneNames;
     int sceneIndex = -1;
     int sceneAsked = -1;
+    // The game asked to end (a game UI button's ゲームを終わる): the host ends it after this frame (the
+    // exported game closes its window; the editor's Play stops, as ■).
+    bool quitAsked = false;
     InputFrame inputNow, inputBefore;
     std::unordered_set<std::string> told;  // names asked for that are not there (told once each)
     // The game's global variables (one store for the whole game: switching the scene keeps them; the

@@ -590,6 +590,7 @@ void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const voi
 void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t index, const void* owner, Others others, const Unknowns* u,
                FieldPath& prefix, float indent) {
     if (!f.edit && !f.readOnly) return;  // saved, not shown
+    if (!reflect::FieldShown(ownerType, f, owner)) return;  // ShowIf: not for what it is now (still saved)
     ui::Context& c = x.c;
     auto& p = c.P();
     const bool enabled = f.edit && !f.readOnly;

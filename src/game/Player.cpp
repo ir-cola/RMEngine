@@ -131,6 +131,7 @@ public:
         if (window_.Handle()) window_.SetTitle(Utf8ToWide(title_));
     }
     PointerPresses TakePointerPresses() override { return std::exchange(presses_, PointerPresses{}); }
+    void Quit() override { quit_ = true; }
     // The mouse on the client area in DIPs (the size Draw is given) - only while this window is in front.
     std::optional<Vec2> Pointer() const override {
         const HWND hwnd = window_.Handle();

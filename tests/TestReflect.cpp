@@ -398,3 +398,14 @@ RM_TEST(Reflect_Object_OwnsAValueOfAnyType) {
     CHECK(FindTypeNamed(AllTypes(), t.name) == &t);
     CHECK(FindTypeNamed(AllTypes(), "rmtest::Nothing") == nullptr);
 }
+
+RM_TEST(Reflect_ShowIf_EveryTable) {
+    // Every ShowIf of every reflected type names a field of its struct and items its enum has (rmgen
+    // checks only the names of the fields).
+    for (const TypeDesc* t : AllTypes()) {
+        for (const FieldDesc& f : t->fields) {
+            const std::string problem = ShowIfProblem(*t, f);
+            if (!problem.empty()) CHECK(!"ShowIf names something that is not there");
+        }
+    }
+}

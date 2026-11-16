@@ -1016,6 +1016,7 @@ private:
         world.sceneNames.clear();
         world.sceneIndex = -1;
         world.sceneAsked = -1;
+        world.quitAsked = false;
         for (size_t i = 0; i < playScenes_.size(); ++i) {
             world.sceneNames.push_back(SceneTitle(playScenes_[i]));
             if (playScenes_[i] == AssetRef{slot_.guid}) world.sceneIndex = static_cast<int>(i);
@@ -1058,8 +1059,15 @@ private:
         pf.inputBefore = &world.inputBefore;
         pf.actions = &settings_.input;
         pf.hooks = &asked;
+        pf.world = &world;
         services_.Frame(pf);
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, asked);
+        if (std::exchange(world.quitAsked, false)) {
+            // ゲームを終わる: the game would close - Play stops (as ■).
+            log::Info("ゲームを終わる → Play を止めます (書き出したゲームではウィンドウが閉じます)");
+            StopPlay();
+            return;
+        }
         // A scene the scripts asked for (Game::LoadScene): switched between frames, inside the copy
         // that plays - the scene being edited stays (■ comes back to it).
         const std::string from = world.sceneIndex >= 0 ? world.sceneNames[static_cast<size_t>(world.sceneIndex)] : std::string();

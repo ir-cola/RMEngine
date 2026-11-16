@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI のボタン: スクリプトなしで押したときの動作 (ウィンドウを出す・隠す・切り替える・戻る・シーンの切り替え・変数・音・ゲームを終わる)・キーやパッドで移る先を決める。インスペクターは種類に要る欄だけを出す",
+          "en": "Game UI buttons: click actions without scripts (show, hide, switch or go back to windows, switch the scene, change a variable, play a sound, quit) and where the keys / a pad go next. The inspector shows only the fields each kind needs"
+        },
+        {
           "ja": "ゲーム UI のボタン: 乗った・押したときに色・大きさ・縁がなめらかに変わる (秒で決める)・縁・色の置き換え・画像の差し替え・乗ったときと押したときの音",
           "en": "Game UI buttons: color, size and outline change smoothly when hovered or pressed (set in seconds), outlines, replacing colors, swapping images, hover and click sounds"
         },

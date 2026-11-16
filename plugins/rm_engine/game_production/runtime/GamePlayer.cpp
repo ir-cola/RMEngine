@@ -210,8 +210,13 @@ public:
         pf.inputBefore = &world_.inputBefore;
         pf.actions = &settings_.input;
         pf.hooks = &asked;
+        pf.world = &world_;
         services_.Frame(pf);
         if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, asked);
+        if (std::exchange(world_.quitAsked, false)) {
+            host_.Log(0, "ゲームを終わります");
+            host_.Quit();
+        }
         // A scene the scripts asked for (Game::LoadScene): switched here, between frames.
         const std::string from = world_.sceneIndex >= 0 ? world_.sceneNames[static_cast<size_t>(world_.sceneIndex)] : std::string();
         std::string err;

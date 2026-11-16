@@ -1,5 +1,8 @@
 #include "rm_engine/game_ui/runtime/UiService.h"
 
+#include "rm_engine/game_production/runtime/SceneFile.h"
+#include "rm_engine/game_production/runtime/Scripts.h"
+
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
 
 #include <algorithm>
@@ -137,16 +140,7 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
             const int cancelButton = static_cast<int>(wn->canvasPart->cancelButton.id);
             if (PressableIn(tree, window, cancelButton)) {
                 step.clicked.push_back(cancelButton);
-            } else if (const auto it = std::find_if(state.visits.rbegin(), state.visits.rend(), [&](const UiVisit& v) { return v.window == window; });
-                       it != state.visits.rend()) {
-                // Back: this window off, what it hid on again (and remembered so: no new visit next frame).
-                if (game_production::SceneEntity* e = scene.Find(window)) e->data.active = false;
-                std::erase(state.shown, window);
-                for (const int h : it->hid) {
-                    if (game_production::SceneEntity* e = scene.Find(h)) e->data.active = true;
-                    if (!Contains(state.shown, h)) state.shown.push_back(h);
-                }
-                state.visits.erase(std::next(it).base());
+            } else if (CloseWindow(scene, state, window)) {
                 step.closed = window;
             }
         }
@@ -176,6 +170,122 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
     return step;
 }
 
+bool IsWindow(const game_production::Scene& scene, int entity) {
+    const game_production::SceneEntity* e = scene.Find(entity);
+    if (!e || !e->FindComponent(reflect::TypeOf<UiCanvas>().name)) return false;
+    for (const game_production::SceneEntity* p = scene.Find(e->data.parent); p; p = scene.Find(p->data.parent)) {
+        if (p->FindComponent(reflect::TypeOf<UiCanvas>().name)) return false;
+    }
+    return true;
+}
+
+void SwitchToWindow(game_production::Scene& scene, int window) {
+    for (const auto& t : scene.TreeOrder()) {
+        const int id = t.entity->data.id;
+        if (!IsWindow(scene, id)) continue;
+        if (game_production::SceneEntity* e = scene.Find(id)) e->data.active = id == window;
+    }
+}
+
+bool CloseWindow(game_production::Scene& scene, UiFocus& state, int window) {
+    const auto it = std::find_if(state.visits.rbegin(), state.visits.rend(), [&](const UiVisit& v) { return v.window == window; });
+    if (it == state.visits.rend()) return false;
+    // This window off, what it hid on again (and remembered so: no new visit next frame).
+    if (game_production::SceneEntity* e = scene.Find(window)) e->data.active = false;
+    std::erase(state.shown, window);
+    for (const int h : it->hid) {
+        if (game_production::SceneEntity* e = scene.Find(h)) e->data.active = true;
+        if (!Contains(state.shown, h)) state.shown.push_back(h);
+    }
+    state.visits.erase(std::next(it).base());
+    return true;
+}
+
+bool ChangeVariable(game_production::GlobalValue& v, const UiAction& a, std::string* why) {
+    using game_production::GlobalType;
+    auto fail = [&](std::string text) {
+        if (why) *why = std::move(text);
+        return false;
+    };
+    const bool number = v.type == GlobalType::Int || v.type == GlobalType::Float;
+    if (v.type != GlobalType::Bool && !number) return fail("文字や Vec2 / Vec3 の変数は変えられません (ON / OFF か数の変数)");
+    double x = v.v[0];
+    switch (a.change) {
+        case UiVariableChange::On: x = 1; break;
+        case UiVariableChange::Off: x = 0; break;
+        case UiVariableChange::Toggle: x = x != 0 ? 0 : 1; break;
+        case UiVariableChange::Add:
+        case UiVariableChange::Set:
+            if (!number) return fail("ON / OFF の変数には足せません (ON にする・OFF にする・入れ替える を使います)");
+            x = a.change == UiVariableChange::Add ? x + a.amount : a.amount;
+            {
+                // 下限 / 上限, each on its own (turned round only when both are used and the wrong way).
+                double lo = a.min, hi = a.max;
+                if (a.useMin && a.useMax && lo > hi) std::swap(lo, hi);
+                if (a.useMin) x = std::max(x, lo);
+                if (a.useMax) x = std::min(x, hi);
+            }
+            break;
+    }
+    if (!std::isfinite(x)) return fail("数になりません");
+    v.v[0] = v.type == GlobalType::Int ? std::round(x) : v.type == GlobalType::Bool ? (x != 0 ? 1.0 : 0.0) : x;
+    return true;
+}
+
+void RunActions(game_production::Scene& scene, int button, int window, const UiButton& b, UiFocus& state, const UiActionHost& host) {
+    const game_production::SceneEntity* self = scene.Find(button);
+    const std::string who = self ? self->data.name : std::string();
+    auto tell = [&](int level, const std::string& text) {
+        if (host.log) host.log(level, "ゲーム UI: 「" + who + "」の押したときの動作: " + text);
+    };
+    for (const UiAction& a : b.actions) {
+        switch (a.kind) {
+            case UiActionKind::ShowWindow:
+            case UiActionKind::HideWindow:
+            case UiActionKind::SwitchWindow: {
+                const int w = static_cast<int>(a.window.id);
+                game_production::SceneEntity* e = w ? scene.Find(w) : nullptr;
+                if (!e || !IsWindow(scene, w)) {
+                    tell(1, "ウィンドウ (キャンバスのエンティティ) が選ばれていません");
+                    break;
+                }
+                if (a.kind == UiActionKind::SwitchWindow) {
+                    SwitchToWindow(scene, w);
+                } else {
+                    e->data.active = a.kind == UiActionKind::ShowWindow;
+                }
+                break;
+            }
+            case UiActionKind::Back:
+                if (!CloseWindow(scene, state, window)) tell(0, "戻る先がありません (このウィンドウは始めから出ていました)");
+                break;
+            case UiActionKind::LoadScene:
+                if (a.scene.Empty()) {
+                    tell(1, "シーンが選ばれていません");
+                } else if (!host.loadScene || !host.loadScene(a.scene)) {
+                    tell(1, "そのシーンはゲームのシーンの一覧にありません (シーン パネルで足します)");
+                }
+                break;
+            case UiActionKind::SetVariable: {
+                game_production::GlobalValue* v = host.globals ? host.globals->Find(a.variable) : nullptr;
+                std::string why;
+                if (!v) {
+                    tell(1, "「" + a.variable + "」というグローバル変数がありません (ゲームの設定の「グローバル変数」)");
+                } else if (!ChangeVariable(*v, a, &why)) {
+                    tell(1, "「" + a.variable + "」: " + why);
+                }
+                break;
+            }
+            case UiActionKind::PlaySound:
+                if (!a.sound.Empty() && host.playSound) host.playSound(a.sound, a.volume);
+                break;
+            case UiActionKind::Quit:
+                if (host.quit) host.quit();
+                break;
+        }
+    }
+}
+
 UiScreen ScreenOf(const game_production::GameSettings& settings, Vec2 size) {
     UiScreen s;
     s.size = size;
@@ -199,16 +309,36 @@ void UiService::Frame(const game_production::PlayFrame& f) {
     const bool wentDown = f.pointerWentDown || (down && !before);
     const bool wentUp = f.pointerWentUp || (!down && before);
     const UiStep step = StepUi(f.scene, tree, f.pointer, down, wentDown, wentUp, actions, f.input, f.inputBefore, f.dt, state_);
-    // The sounds first (spec §6-6: the sound, then what it does, then the scripts' OnClick).
-    if (game_production::SoundPlayer* sounds = f.services ? f.services->Sounds() : nullptr) {
-        auto play = [&](int id, bool click) {
-            const UiButton* b = MutableButton(f.scene, id);
-            if (!b) return;
-            const AssetRef& sound = click ? b->clickSound : b->hoverSound;
-            if (!sound.Empty()) sounds->PlaySound(sound, click ? b->clickVolume : b->hoverVolume);
+    // For each button pressed: its sound, then what it does, then the scripts' OnClick (spec §6-6: an
+    // OnClick reads what the actions did; the scene and the end are asked, done after the frame).
+    game_production::SoundPlayer* sounds = f.services ? f.services->Sounds() : nullptr;
+    auto play = [&](int id, bool click) {
+        const UiButton* b = MutableButton(f.scene, id);
+        if (!b || !sounds) return;
+        const AssetRef& sound = click ? b->clickSound : b->hoverSound;
+        if (!sound.Empty()) sounds->PlaySound(sound, click ? b->clickVolume : b->hoverVolume);
+    };
+    for (const int id : step.hovered) play(id, false);
+    UiActionHost actionHost;
+    if (game_production::ScriptWorld* world = f.world) {
+        actionHost.globals = &world->globals;
+        actionHost.loadScene = [this, world](const AssetRef& scene) {
+            // The scene by its file's name, as Game::LoadScene("…") takes it.
+            const std::string file = host_.name ? host_.name(scene) : std::string();
+            const auto at = file.empty() ? std::nullopt : game_production::FindSceneByName(world->sceneNames, game_production::SceneNameOf(file));
+            if (!at) return false;
+            world->sceneAsked = static_cast<int>(*at);
+            return true;
         };
-        for (const int id : step.hovered) play(id, false);
-        for (const int id : step.clicked) play(id, true);
+        actionHost.quit = [world] { world->quitAsked = true; };
+    }
+    if (sounds) actionHost.playSound = [sounds](const AssetRef& s, float v) { sounds->PlaySound(s, v); };
+    actionHost.log = host_.log;
+    for (const int id : step.clicked) {
+        play(id, true);
+        const UiButton* b = MutableButton(f.scene, id);
+        const UiNode* n = tree.Find(id);
+        if (b && !b->actions.empty()) RunActions(f.scene, id, n ? n->canvas : 0, *b, state_, actionHost);
     }
     for (const int id : step.clicked) {
         if (f.hooks) f.hooks->push_back({id, RM_HOOK_CLICK, 0});

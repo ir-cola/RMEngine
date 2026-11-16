@@ -21,7 +21,10 @@
 //
 // Every field of a reflected struct must be RM_PROPERTY or RM_TRANSIENT (error RM0001).
 // RM_PROPERTY attributes: Edit, ReadOnly, Label="", Tooltip="", Min=, Max=, Step= (numbers only),
-// AssetKind="model" / "image,model" (AssetRef only: the kinds of file it takes - core/asset).
+// AssetKind="model" / "image,model" (AssetRef only: the kinds of file it takes - core/asset),
+// ShowIf="kind=Show|Hide" / "useMin" / "!loop" (& for both): the inspector shows the field only when
+// another field of the same struct is one of those items / on / off (FieldShown, Data.h) - the fields
+// of one kind of a list's element shown for that kind alone. Hidden is still saved and loaded.
 //
 // Types: bool, int, float, std::string, Vec2, Vec3, Color, AssetRef, EntityRef (base/Ref.h: saved
 // as the id), RM_ENUM enums (saved by NAME), RM_STRUCT structs (nested), std::vector<one of those>.
@@ -104,6 +107,7 @@ struct FieldDesc {
     int line = 0;  // in the header (for messages)
     const char* assetKinds = nullptr;  // AssetRef: AssetKind="..." (null: any file)
     const StringAccess* stringAccess = nullptr;  // String of another module (scripts): ReadString / WriteString
+    const char* showIf = nullptr;  // ShowIf="..." (null: always shown)
 
     const void* Get(const void* object) const { return access(const_cast<void*>(object)); }
     void* Get(void* object) const { return access(object); }

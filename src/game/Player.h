@@ -69,6 +69,8 @@ public:
         int down = 0, up = 0;
     };
     virtual PointerPresses TakePointerPresses() { return {}; }
+    // The game asks to end: the window closes after this frame (as its × was pressed).
+    virtual void Quit() {}
 };
 
 // One game (made by the plugin that offers it).

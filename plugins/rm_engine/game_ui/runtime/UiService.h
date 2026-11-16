@@ -10,6 +10,8 @@
 //                  (NextButton); held, they go on stepping. UISubmit presses the chosen button. UICancel
 //                  presses the window's 戻るで押すボタン, or else closes the window opened last and shows
 //                  again what it hid (Show / SwitchTo by a script, or a canvas switched on).
+//   pressed        its 押したときの音, then its 押したときの動作 in order (RunActions: windows, the scene,
+//                  a variable, a sound, the end of the game), then the scripts' OnClick
 //   then           every button's state (UiButton::state / focused: not saved) and its look eased toward
 //                  the state's (UiButton::now: 変わる速さ), for the drawing; the buttons' sounds (乗った /
 //                  押した: whichever service plays sounds - PlayServices::Sounds); then the OnClick hooks
@@ -19,6 +21,7 @@
 // game without them: their standard ones) - never a key or a pad itself: changing the bindings (or
 // another kind of controller) changes the UI's too.
 
+#include "rm_engine/game_production/runtime/Globals.h"
 #include "rm_engine/game_production/runtime/PlayServices.h"
 #include "rm_engine/game_ui/runtime/UiLayout.h"
 
@@ -75,6 +78,31 @@ struct UiStep {
 UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<Vec2> pointer, bool down, bool wentDown, bool wentUp,
               std::span<const game_production::InputAction> actions, const game_production::InputFrame* now,
               const game_production::InputFrame* before, float dt, UiFocus& state);
+
+// --- The windows (canvases): shared by the buttons' actions and the scripts' rm::UI -------------
+// A window: a canvas not inside another canvas (one inside is a part of its window).
+bool IsWindow(const game_production::Scene& scene, int entity);
+// Only `window` shown of the windows (every other one hidden; what is inside it stays as it is).
+void SwitchToWindow(game_production::Scene& scene, int window);
+// 戻る: `window` hidden and what it hid shown again, when it was opened over others since (state.visits);
+// false (nothing changes) when it was not - a window of the start is never closed so.
+bool CloseWindow(game_production::Scene& scene, UiFocus& state, int window);
+
+// --- 押したときの動作 -------------------------------------------------------------------------
+// What the actions reach: the game's (the service gives them from PlayFrame::world and the host), a
+// test its own. One left empty: that kind of action does nothing (told).
+struct UiActionHost {
+    game_production::GlobalStore* globals = nullptr;
+    std::function<bool(const AssetRef& scene)> loadScene;           // asked; switched between frames (false: not a scene of the game)
+    std::function<void()> quit;                                    // asked; the game ends after this frame
+    std::function<void(const AssetRef& sound, float volume)> playSound;
+    std::function<void(int level, std::string_view text)> log;
+};
+// A global variable changed as `a` says (変え方, 数, 下限 / 上限). False (*why) when it cannot be so
+// (a text, a Vec2 - or 足す on ON / OFF).
+bool ChangeVariable(game_production::GlobalValue& v, const UiAction& a, std::string* why);
+// The actions of the button `button` (in the window `window`), in order.
+void RunActions(game_production::Scene& scene, int button, int window, const UiButton& b, UiFocus& state, const UiActionHost& host);
 
 class UiService final : public game_production::PlayService {
 public:

@@ -336,7 +336,8 @@ private:
         static const Rule kProperty[] = {{"Edit", Attr::Kind::Flag},       {"ReadOnly", Attr::Kind::Flag},
                                          {"Label", Attr::Kind::String},    {"Tooltip", Attr::Kind::String},
                                          {"Min", Attr::Kind::Number},      {"Max", Attr::Kind::Number},
-                                         {"Step", Attr::Kind::Number},     {"AssetKind", Attr::Kind::String}};
+                                         {"Step", Attr::Kind::Number},     {"AssetKind", Attr::Kind::String},
+                                         {"ShowIf", Attr::Kind::String}};
         static const Rule kLabelOnly[] = {{"Label", Attr::Kind::String}};
         std::span<const Rule> rules;
         if (macro == "RM_PROPERTY") {
@@ -863,6 +864,28 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
                                              std::format("AssetKind=\"{}\": 種類の名前 (小文字) をコンマで区切って書いてください (例: \"image,model\")", a.value)});
                         }
                     }
+                    if (a.key == "ShowIf") {
+                        // "kind=A|B", "flag", "!flag", joined by & - each naming another field of this struct
+                        // (whether A, B are its items: a test of the tables, tests/TestReflect.cpp).
+                        std::string_view rest = a.value;
+                        bool ok = !rest.empty();
+                        while (ok && !rest.empty()) {
+                            const size_t amp = rest.find('&');
+                            std::string_view term = rest.substr(0, amp);
+                            rest = amp == std::string_view::npos ? std::string_view() : rest.substr(amp + 1);
+                            if (amp != std::string_view::npos && rest.empty()) ok = false;
+                            if (term.starts_with('!')) term.remove_prefix(1);
+                            const size_t eq = term.find('=');
+                            const std::string_view name = term.substr(0, eq);
+                            if (eq != std::string_view::npos && (eq + 1 >= term.size() || term.back() == '|' || term.find("||") != std::string_view::npos)) ok = false;
+                            const bool named = std::any_of(s.fields.begin(), s.fields.end(), [&](const auto& g) { return g.name == name && &g != &f && !g.transient; });
+                            if (name.empty() || !named) ok = false;
+                        }
+                        if (!ok) {
+                            diags.push_back({h.file, a.line, a.col, "RM0003",
+                                             std::format("ShowIf=\"{}\": 同じ構造体のフィールドの名前で書いてください (例: \"kind=Show|Hide\"・\"useMin\"・\"!loop\"。& で両方)", a.value)});
+                        }
+                    }
                     if (a.kind != Attr::Kind::Number) continue;
                     try {
                         const double v = std::stod(a.value);
@@ -989,17 +1012,19 @@ std::string EmitHeader(const std::vector<Header>& all, const Header& h) {
                 const Attr* mx = attr("Max");
                 const Attr* st = attr("Step");
                 const Attr* kinds = attr("AssetKind");
+                const Attr* showIf = attr("ShowIf");
                 auto num = [](const Attr* a) { return a && a->kind == Attr::Kind::Number ? NumberLiteral(a->value) : std::string("0.0"); };
                 o += std::format(
                     "    {{.name = \"{}\", .value = {}, .access = [](void* o) -> void* {{ return &static_cast<{}*>(o)->{}; }}, .array = {},\n"
                     "     .edit = {}, .readOnly = {}, .label = {}, .tooltip = {},\n"
-                    "     .hasMin = {}, .hasMax = {}, .hasStep = {}, .min = {}, .max = {}, .step = {}, .line = {}, .assetKinds = {}}},\n",
+                    "     .hasMin = {}, .hasMax = {}, .hasStep = {}, .min = {}, .max = {}, .step = {}, .line = {}, .assetKinds = {}, .showIf = {}}},\n",
                     f.name, ValueTypeInit(f.type), cpp, f.name, f.type.kind == TypeRef::Kind::Vector ? "&A_" + id + "_" + f.name : "nullptr",
                     attr("Edit") ? "true" : "false", attr("ReadOnly") ? "true" : "false",
                     label ? "\"" + label->value + "\"" : "nullptr", tip ? "\"" + tip->value + "\"" : "nullptr",
                     mn && mn->kind == Attr::Kind::Number ? "true" : "false", mx && mx->kind == Attr::Kind::Number ? "true" : "false",
                     st && st->kind == Attr::Kind::Number ? "true" : "false", num(mn), num(mx), num(st), f.line,
-                    kinds && kinds->kind == Attr::Kind::String ? "\"" + kinds->value + "\"" : std::string("nullptr"));
+                    kinds && kinds->kind == Attr::Kind::String ? "\"" + kinds->value + "\"" : std::string("nullptr"),
+                    showIf && showIf->kind == Attr::Kind::String ? "\"" + showIf->value + "\"" : std::string("nullptr"));
             }
             o += "};\n";
         }
