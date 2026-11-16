@@ -29,6 +29,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <span>
 #include <string>
@@ -80,8 +81,13 @@ public:
     // A change of them: kept, and written to the .meta by FlushImports - when the edit is finished (a
     // drag let go, typing done), not at every step of it. Whoever reads the asset reads it again then.
     void QueueImport(const std::string& guid, json::Value import);
-    bool HasQueuedImports() const { return !queuedImports_.empty(); }
-    // Writes what waits, into each .meta only (the folder is not looked at again for it).
+    // An asset's contents as the editor has them now (a software's own kind of file - a particle
+    // effect - edited and not written yet), else its file; nullopt when it is not there.
+    std::optional<std::string> Content(const std::string& guid) const;
+    // An edit of them: kept, and written to the file by FlushImports (as an import setting is).
+    void QueueContent(const std::string& guid, std::string bytes);
+    bool HasQueuedImports() const { return !queuedImports_.empty() || !queuedContents_.empty(); }
+    // Writes what waits, into each .meta and file (the folder is not looked at again for it).
     void FlushImports();
 
     std::filesystem::path FullPath(const asset::Entry& e) const;
@@ -113,7 +119,8 @@ private:
     void SettleAfterOwnWrites();
     uint64_t version_ = 0;
     std::set<std::string> lastNotes_;  // what the last look told the console
-    std::map<std::string, json::Value> queuedImports_;  // guid -> import settings waiting to be written
+    std::map<std::string, json::Value> queuedImports_;
+    std::map<std::string, std::string> queuedContents_;  // guid -> the file's contents waiting to be written  // guid -> import settings waiting to be written
 
     // The result of a look, on the UI thread: used only while `number` is the newest.
     void ApplyLook(uint64_t number, asset::Plan plan);

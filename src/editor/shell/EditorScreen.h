@@ -129,6 +129,8 @@ private:
         std::string Clipboard() override;
         std::filesystem::path AssetFile(const AssetRef& ref) const override;
         AssetRef AssetOf(const std::filesystem::path& file) override;
+        std::optional<std::string> AssetContent(const AssetRef& ref) override;
+        void SetAssetContent(const AssetRef& ref, std::string bytes) override;
         std::vector<PluginManifest> PluginManifests() const override;
         void PickFolder(std::wstring title, std::filesystem::path start, std::function<void(std::filesystem::path)> done) override;
         bool Unsaved() const override { return editor_.dirty_; }

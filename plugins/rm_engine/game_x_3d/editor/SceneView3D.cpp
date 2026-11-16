@@ -14,7 +14,6 @@
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/WorldDraw.h"
-#include "platform/Shell.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
@@ -887,12 +886,8 @@ private:
                                     return p && p->active ? &p->world : nullptr;
                                 },
                                 dt, host.playing, host.selection,
-                                [&host](const AssetRef& ref) -> std::optional<std::string> {
-                                    const std::filesystem::path file = host.host.AssetFile(ref);
-                                    if (file.empty()) return std::nullopt;
-                                    std::string err;
-                                    return platform::ReadFileBytes(file, &err);
-                                }};
+                                // (as the editor has it: an edit of the パーティクル tab shows at once)
+                                [&host](const AssetRef& ref) { return host.host.AssetContent(ref); }};
         bool moving = false;
         for (const auto& d : pic.drawers) {
             d->Prepare(wf, pic.extras);

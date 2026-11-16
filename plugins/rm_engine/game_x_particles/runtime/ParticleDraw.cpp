@@ -25,18 +25,6 @@ constexpr double kLookAgainSeconds = 1.5;  // an effect's file is read again thi
 
 double Now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
-particles::ViewConstants ViewOf(const space3d::ExtraDrawContext& c) {
-    particles::ViewConstants v{};
-    const space3d::Mat4 viewProj = c.projection * c.view;
-    std::memcpy(v.viewProj, &viewProj.m[0][0], sizeof(v.viewProj));
-    // The camera's right and up in the world: the rows of the view's turn (m[column][row]).
-    for (int i = 0; i < 3; ++i) {
-        v.right[i] = c.view.m[i][0];
-        v.up[i] = c.view.m[i][1];
-    }
-    return v;
-}
-
 class ParticleDraw final : public game_x_3d::WorldDrawer {
 public:
     void Prepare(const game_x_3d::WorldDrawFrame& f, std::vector<space3d::ExtraDraw>& out) override {
@@ -98,7 +86,8 @@ private:
             return sample;
         }
         Loaded& l = effects_[ref.guid];
-        if (now - l.lookedAt < kLookAgainSeconds) return l.effect;
+        // (Not playing - the editor: looked at every frame, so an edit of the パーティクル tab shows at once.)
+        if (f.playing && now - l.lookedAt < kLookAgainSeconds) return l.effect;
         l.lookedAt = now;
         const auto bytes = f.asset ? f.asset(ref) : std::nullopt;
         if (!bytes) {
@@ -133,5 +122,17 @@ private:
 }  // namespace
 
 std::unique_ptr<game_x_3d::WorldDrawer> CreateParticleDraw() { return std::make_unique<ParticleDraw>(); }
+
+particles::ViewConstants ViewOf(const space3d::ExtraDrawContext& c) {
+    particles::ViewConstants v{};
+    const space3d::Mat4 viewProj = c.projection * c.view;
+    std::memcpy(v.viewProj, &viewProj.m[0][0], sizeof(v.viewProj));
+    // The camera's right and up in the world: the rows of the view's turn (m[column][row]).
+    for (int i = 0; i < 3; ++i) {
+        v.right[i] = c.view.m[i][0];
+        v.up[i] = c.view.m[i][1];
+    }
+    return v;
+}
 
 }  // namespace rm::game_x_particles

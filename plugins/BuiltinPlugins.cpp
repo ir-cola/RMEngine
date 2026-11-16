@@ -12,6 +12,7 @@
 #include "rm_engine/audio/editor/Preview.h"
 #include "rm_engine/audio/runtime/Id.h"
 #include "rm_engine/particles/runtime/Id.h"
+#include "rm_engine/game_x_particles/editor/Connector.h"
 #include "rm_engine/game_x_particles/runtime/Id.h"
 #include "rm_engine/game_production/editor/GameSoftware.h"
 #include "rm_engine/game_production/runtime/Id.h"
@@ -40,7 +41,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {game_production::kPluginId, &game_production::RegisterEditor},
         {audio::kPluginId, &audio::RegisterEditor},
         {particles::kPluginId, nullptr},
-        {game_x_particles::kPluginId, nullptr},
+        {game_x_particles::kPluginId, &game_x_particles::RegisterEditor},
         {space3d::kPluginId, &space3d::RegisterEditor},
         {game_x_3d::kPluginId, &game_x_3d::RegisterEditor},
         {space2d::kPluginId, nullptr},

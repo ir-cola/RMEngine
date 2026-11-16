@@ -6,5 +6,20 @@
   "始めから出す": "Play on start",
   "外すと、ゲームでは出しません (止まっているときのシーンビューでは、選ぶと出ます)": "When off, it does not play in the game (in the scene view while stopped it plays when selected)",
   "速さ": "Speed",
-  "時間の進み方の倍率 (2 で倍の速さ)": "How fast its time runs (2 is twice as fast)"
+  "時間の進み方の倍率 (2 で倍の速さ)": "How fast its time runs (2 is twice as fast)",
+  "「パーティクル」の部品を付けたエンティティを選ぶと、そのエフェクトをここで作れます。部品はインスペクターの「部品を足す」から付けます。": "Select an entity with a Particles component to make its effect here. Add the component with Add component in the inspector.",
+  "この「パーティクル」には、まだエフェクトのファイルがありません (見本の光が出ています)。作ると Assets/Particles に入り、ここで変えられます。": "This Particles component has no effect file yet (a sample glow comes out). Make one: it goes into Assets/Particles and can be changed here.",
+  "エフェクトを作る": "Make an effect",
+  "エフェクトのファイルを読めません: {}": "Cannot read the effect file: {}",
+  "始めから": "From the start",
+  "＋ エミッター": "+ Emitter",
+  "エミッター": "Emitter",
+  "エフェクトのモジュールは「パーティクル」のタブで並べます": "The effect's modules are arranged in the Particles tab",
+  "(読めないモジュール)": "(unreadable module)",
+  "ファイルが見つかりません": "The file is not there",
+  "{} (使わない)": "{} (off)",
+  "＋ モジュール": "+ Module",
+  "3D の描画を始められませんでした。くわしくはコンソールを見てください。": "Could not start 3D drawing. See the console for details.",
+  "このモジュールは読めません (ファイルのモジュールは、まだ使えません)": "This module cannot be read (modules in files cannot be used yet)",
+  "モジュールを選ぶと、その値をここで変えられます。エミッターの行を選ぶと、出す数や重ね方をインスペクターで変えられます。": "Choose a module to change its values here. Choose an emitter's row to change its rate, blending and more in the inspector."
 }

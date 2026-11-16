@@ -22,10 +22,12 @@
 #include "editor/dock/DockSpace.h"
 #include "editor/tree/TreeView.h"
 #include "platform/Gfx.h"
+#include "platform/Shell.h"
 
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -127,6 +129,21 @@ public:
     // empty when it is not there. A value that is not an id but a path inside the project (data made
     // before references: "Assets/Models/robot.glb") is taken as that path, so old data still works.
     virtual std::filesystem::path AssetFile(const AssetRef& ref) const = 0;
+    // An asset's contents as the editor has them now: an edit not written yet (SetAssetContent), else
+    // its file; nullopt when it is not there.
+    virtual std::optional<std::string> AssetContent(const AssetRef& ref) {
+        const std::filesystem::path file = AssetFile(ref);
+        std::string err;
+        return file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
+    }
+    // An edit of an asset's contents (a software's own kind of file: a particle effect). Readers through
+    // AssetContent see it at once; it is written to the file when the edit is finished (as the
+    // インスペクター's import settings are). Its undo is the caller's: a command that sets the old back.
+    virtual void SetAssetContent(const AssetRef& ref, std::string bytes) {
+        const std::filesystem::path file = AssetFile(ref);
+        std::string err;
+        if (!file.empty()) platform::WriteFileAtomic(file, bytes, &err);
+    }
     // The asset id of a file inside the project's Assets/ (a file the software just wrote gets its
     // .meta now); empty when the file is not there or not inside Assets/.
     virtual AssetRef AssetOf(const std::filesystem::path& file) = 0;

@@ -90,8 +90,25 @@ json::Value AssetLibrary::Import(const std::string& guid) const {
 
 void AssetLibrary::QueueImport(const std::string& guid, json::Value import) { queuedImports_[guid] = std::move(import); }
 
+std::optional<std::string> AssetLibrary::Content(const std::string& guid) const {
+    if (const auto it = queuedContents_.find(guid); it != queuedContents_.end()) return it->second;
+    const asset::Entry* e = index_.ByGuid(guid);
+    if (!e) return std::nullopt;
+    std::string err;
+    return platform::ReadFileBytes(FullPath(*e), &err);
+}
+
+void AssetLibrary::QueueContent(const std::string& guid, std::string bytes) { queuedContents_[guid] = std::move(bytes); }
+
 void AssetLibrary::FlushImports() {
-    if (queuedImports_.empty()) return;
+    if (queuedImports_.empty() && queuedContents_.empty()) return;
+    for (auto& [guid, bytes] : queuedContents_) {
+        const asset::Entry* e = index_.ByGuid(guid);
+        if (!e) continue;  // (deleted meanwhile)
+        std::string err;
+        if (!platform::WriteFileAtomic(FullPath(*e), bytes, &err)) log::Warn("{} に書けませんでした: {}", e->path, err);
+    }
+    queuedContents_.clear();
     for (auto& [guid, import] : queuedImports_) {
         const asset::Entry* e = index_.ByGuid(guid);
         if (!e) continue;  // (deleted meanwhile)

@@ -10,11 +10,15 @@
 // shader that does not compile) is told once in the console.
 
 #include "rm_engine/game_x_3d/runtime/WorldDraw.h"
+#include "rm_engine/particles/runtime/ParticleShader.h"
 
 #include <memory>
 
 namespace rm::game_x_particles {
 
 std::unique_ptr<game_x_3d::WorldDrawer> CreateParticleDraw();
+
+// The camera of a 3D picture as the particles' shaders take it.
+particles::ViewConstants ViewOf(const space3d::ExtraDrawContext& c);
 
 }  // namespace rm::game_x_particles

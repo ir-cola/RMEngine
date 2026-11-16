@@ -207,6 +207,19 @@ AssetRef EditorScreen::Workspace::AssetOf(const fs::path& file) {
     return guid.empty() ? AssetRef{} : AssetRef{guid};
 }
 
+std::optional<std::string> EditorScreen::Workspace::AssetContent(const AssetRef& ref) {
+    if (asset::IsGuid(ref.guid)) return editor_.assets_->Content(ref.guid);
+    const fs::path file = AssetFile(ref);  // (a path of data made before references)
+    std::string err;
+    return file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
+}
+
+void EditorScreen::Workspace::SetAssetContent(const AssetRef& ref, std::string bytes) {
+    if (!asset::IsGuid(ref.guid) || !editor_.assets_->Index().ByGuid(ref.guid)) return;
+    editor_.assets_->QueueContent(ref.guid, std::move(bytes));
+    editor_.RedrawAll();
+}
+
 std::vector<PluginManifest> EditorScreen::Workspace::PluginManifests() const { return editor_.app_.GetPlugins().Available(); }
 
 void EditorScreen::Workspace::PickFolder(std::wstring title, fs::path start, std::function<void(fs::path)> done) {
