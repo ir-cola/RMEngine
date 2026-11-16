@@ -574,7 +574,7 @@ void UiRenderer::DrawVideo(const UiNode& n, const Affine& full, platform::Gfx& g
         return;
     }
     // Played only while the game plays (the editor: its first picture, silent).
-    slot.player->Set(playing_ && v.playOnStart, v.loop, std::clamp(v.speed, 0.1f, 8.f), playing_ ? v.volume : 0.f, v.start, v.end);
+    slot.player->Set(playing_ && v.playOnStart, v.loop, std::clamp(v.speed, 0.1f, 8.f), playing_ ? v.volume * std::clamp(v.gain, 0.f, 2.f) : 0.f, v.start, v.end);
     ID2D1Bitmap1* frame = slot.player->Frame(dc_);
     if (!frame) return;
     const D2D1_SIZE_F size = frame->GetSize();

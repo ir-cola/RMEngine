@@ -104,6 +104,9 @@ class SoundPlayer {
 public:
     // Once, as an effect (not music), at `volume` (0..1).
     virtual void PlaySound(const AssetRef& sound, float volume) = 0;
+    // How loud music is now: 全体 × 音楽 (the game settings' 音量, or what a script set) - for a sound that
+    // plays elsewhere (a game UI 動画's).
+    virtual float MusicVolume() const = 0;
 
 protected:
     ~SoundPlayer() = default;

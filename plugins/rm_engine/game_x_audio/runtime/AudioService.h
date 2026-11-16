@@ -47,6 +47,7 @@ public:
 
     // The other services' sounds (game UI's buttons): once, on the effects' bus.
     void PlaySound(const AssetRef& sound, float volume) override { PlayOnce(sound, volume, 1, nullptr); }
+    float MusicVolume() const override { return Volume(BusVolume::Master) * Volume(BusVolume::Music); }
 
     // --- What scripts ask (RMAudio.h) ---
     VoiceId PlayOnce(const AssetRef& sound, float volume, float pitch, const Vec3* position);

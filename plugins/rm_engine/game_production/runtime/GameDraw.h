@@ -66,6 +66,7 @@ struct ScreenDrawFrame {
     Vec2 screen{1280, 720};                    // the game's screen it stands for (DIPs)
     std::function<std::optional<std::string>(const AssetRef&)> asset;  // as GameDrawFrame::asset
     bool playing = false;  // the game runs (the editor: Play) - else the scene as it is being made
+    bool paused = false;   // ... and is paused (the editor's ⏸): what moves by itself (a 動画) waits
 };
 
 class ScreenDrawer {

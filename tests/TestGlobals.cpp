@@ -117,6 +117,17 @@ RM_TEST(Globals_SaveWrittenAndReadBack_UnknownKeysKept) {
     fs::remove_all(folder, ec);
 }
 
+RM_TEST(Game_QuitThroughTheScriptsPart) {
+    // Game::Quit asks for the end: the host ends the game after this frame (ScriptWorld::quitAsked).
+    ScriptWorld w;
+    const RmApi api = MakeScriptApi(w);
+    const auto* game = static_cast<const RmGameApi*>(api.part(api.ctx, RM_PART_GAME, RM_PART_GAME_VERSION));
+    CHECK(game && !w.quitAsked);
+    if (!game) return;
+    game->quit(api.ctx);
+    CHECK(w.quitAsked);
+}
+
 RM_TEST(Globals_ThroughTheScriptsParts) {
     ScriptWorld w;
     std::string told;

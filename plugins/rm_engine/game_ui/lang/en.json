@@ -226,7 +226,6 @@
   "道の最後に点を 1 つ足す (点はドラッグで動かせます)": "Add a point at the end of the path (drag the points to move them)",
   "点を消す": "Remove a point",
   "選んだ点 (無ければ最後の点) を消す。2 つは残ります": "Remove the chosen point (or else the last one). Two always stay",
-  "クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く   道の点 (黄色): ドラッグで動かす": "Click: select (Shift / Ctrl: add)   Box: drag from an empty spot   Drag: move (let go with Ctrl: make it a child of what is under it)   Double click: type the text   Squares: size   Top circle: rotate   Ring in the middle: pivot   Alt: no snapping   Wheel: zoom   Right drag: pan   Drop an image from Assets: place it   Path points (yellow): drag to move",
   "速さの曲線": "Easing",
   "一定": "Linear",
   "ゆっくり始まる": "Ease in",
@@ -310,7 +309,6 @@
   "0 から数えます (改行も 1 文字)": "Counted from 0 (a line break is one character too)",
   "0 なら最後まで": "0: to its end",
   "1 秒に何周するか": "How many times round in a second",
-  "Assets の動画 (.mp4 を勧めます)。箱いっぱいに出ます。音も出ます (ゲームの設定の音量は効きません)": "A video in Assets (.mp4 recommended). It fills the box. Its sound plays too (the game settings' volume does not apply)",
   "ずらし": "Offset",
   "そのまま": "Keep",
   "はみ出したら縮める": "Shrink to fit",
@@ -354,5 +352,7 @@
   "見た目だけ文字をずらします (枠・折り返し・マウスの当たりは動かない)": "Moves only how the text is drawn (its box, wrapping and where the mouse hits stay)",
   "部分のスタイル": "Partial styles",
   "部分の切り替え": "Partial switch",
-  "鮮やかさ": "Saturation"
+  "鮮やかさ": "Saturation",
+  "Assets の動画 (.mp4 を勧めます)。箱いっぱいに出ます。音も出ます (ゲームの設定の音量の 全体 × 音楽 が掛かります)": "A video in Assets (.mp4 recommended). It fills the box. Its sound plays too (the game settings' master x music volume applies)",
+  "クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く   道の点 (黄色): ドラッグで動かす (回す中心と重なったら Shift で中心)": "Click: select (Shift / Ctrl: add)   Box: drag from an empty spot   Drag: move (let go with Ctrl: make it a child of what is under it)   Double click: type the text   Squares: size   Top circle: rotate   Ring in the middle: pivot   Alt: no snapping   Wheel: zoom   Right drag: pan   Drop an image from Assets: place it   Path points (yellow): drag to move (on the pivot: Shift takes the pivot)"
 }

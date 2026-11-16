@@ -237,10 +237,15 @@ int ApiSaveRemove(void* ctx, const char* slot) {
 }
 constexpr RmSaveApi kSave{&ApiSaveWrite, &ApiSaveRead, &ApiSaveExists, &ApiSaveRemove};
 
+// The game itself: Game::Quit asks for the end (the host ends the game after this frame).
+void ApiQuit(void* ctx) { W(ctx).quitAsked = true; }
+constexpr RmGameApi kGame{&ApiQuit};
+
 const void* ApiPart(void* ctx, const char* name, uint32_t version) {
     if (name && version == RM_PART_INPUT_VERSION && std::strcmp(name, RM_PART_INPUT) == 0) return &kInput;
     if (name && version == RM_PART_GLOBALS_VERSION && std::strcmp(name, RM_PART_GLOBALS) == 0) return &kGlobals;
     if (name && version == RM_PART_SAVE_VERSION && std::strcmp(name, RM_PART_SAVE) == 0) return &kSave;
+    if (name && version == RM_PART_GAME_VERSION && std::strcmp(name, RM_PART_GAME) == 0) return &kGame;
     return FindScriptApiPart(W(ctx).parts, name, version);
 }
 

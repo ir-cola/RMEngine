@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "スクリプトの Game::Quit (ゲームを終わる)。ゲーム UI の動画の音にゲームの設定の音量が掛かり、⏸ で止まる。UI タブで道の点が回す中心と重なっても掴める",
+          "en": "Scripts' Game::Quit (end the game). Game UI videos follow the game settings' volume and stop at pause. In the UI tab a path point on the pivot can be grabbed"
+        },
+        {
           "ja": "ゲーム UI: 文字に斜体・下線・打ち消し線・字間・行の高さ・縦書き・はみ出したら縮める・一部だけ色や大きさを変える。虹色・画像の切り出し・動画 (音も出る)",
           "en": "Game UI: text gets italic, underline, strikethrough, letter spacing, line height, vertical writing, shrink to fit and partial colors and sizes; rainbow colors, image cropping and videos (with sound)"
         },

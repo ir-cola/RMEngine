@@ -1477,6 +1477,7 @@ private:
                               return platform::ReadFileBytes(file, nullptr);
                           },
                           Running()};
+        f.paused = play_ == PlayState::Paused;
         c.P().PushClip(game);
         for (const auto& s : screenDrawers_) s->Draw(f);
         c.P().PopClip();

@@ -615,14 +615,18 @@ private:
         UiHandle handle = UiHandle::TopLeft;
         int point = -1;  // PathPoint: which
     };
-    Hot HotAt(const UiNode& n, const Affine& toDc, Vec2 mouse, const UiPath* path) const {
+    // `pivotFirst` (Shift): the 中心 before a point of its 道 - the first point is usually on it (where the
+    // thing is), and a point is what is moved more often there.
+    Hot HotAt(const UiNode& n, const Affine& toDc, Vec2 mouse, const UiPath* path, bool pivotFirst) const {
         if (Distance(mouse, Knob(n, toDc)) <= kKnobRadius + 4) return {Part::Knob};
-        if (Distance(mouse, PivotOnPanel(n, toDc)) <= 6) return {Part::Pivot};
+        const bool onPivot = Distance(mouse, PivotOnPanel(n, toDc)) <= 6;
+        if (onPivot && pivotFirst) return {Part::Pivot};
         if (path) {
             for (size_t i = path->points.size(); i-- > 0;) {
                 if (Distance(mouse, PathPointOnPanel(n, toDc, path->points[i])) <= 7) return {Part::PathPoint, UiHandle::TopLeft, static_cast<int>(i)};
             }
         }
+        if (onPivot) return {Part::Pivot};
         for (size_t i = 0; i < kHandleAt.size(); ++i) {
             const Vec2 h = BoxPoint(n, toDc, kHandleAt[i].first, kHandleAt[i].second);
             if (std::abs(mouse.x - h.x) <= kHandleSlop && std::abs(mouse.y - h.y) <= kHandleSlop) return {Part::Handle, static_cast<UiHandle>(i)};
@@ -654,7 +658,7 @@ private:
         }
         const UiNode* single = Single(host);
         if (drag_ == Drag::None) {
-            hot_ = hovered && single ? HotAt(*single, toDc, mouse, PathOf(host, single->entity)) : Hot{};
+            hot_ = hovered && single ? HotAt(*single, toDc, mouse, PathOf(host, single->entity), in.shift) : Hot{};
             if (hot_.part != Part::None) c.SetCursor(ui::Cursor::Hand);
         }
         if (drag_ == Drag::None && hovered && c.MousePressed()) {
@@ -1191,7 +1195,7 @@ private:
         ts.v = ui::VAlign::Bottom;
         ts.wrap = true;
         c.P().Text(r.Inset(10, 8, 10, 6),
-                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く   道の点 (黄色): ドラッグで動かす"),
+                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く   道の点 (黄色): ドラッグで動かす (回す中心と重なったら Shift で中心)"),
                    ts);
         if (tree_.nodes.empty()) {
             ui::TextStyle hint = ts;

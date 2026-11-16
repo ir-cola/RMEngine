@@ -257,6 +257,14 @@ typedef struct RmSaveApi {
     int (*remove)(void* ctx, const char* slot);
 } RmSaveApi;
 
+/* The game itself: "rm_engine.game_production.game", 1. quit: the game ends after this frame (the
+ * exported game's window closes; the editor's Play stops, as ■). */
+#define RM_PART_GAME "rm_engine.game_production.game"
+#define RM_PART_GAME_VERSION 1u
+typedef struct RmGameApi {
+    void (*quit)(void* ctx);
+} RmGameApi;
+
 /* The one function a script DLL exports (rmgen writes it). Returns null when `abi` is not the
    version it was built for. */
 typedef const RmModule* (*RmModuleInitFn)(const RmApi* api, uint32_t abi);

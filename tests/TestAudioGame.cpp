@@ -103,6 +103,12 @@ RM_TEST(AudioGame_OtherServicesPlaySounds) {
     Play p;
     SoundPlayer* sounds = p.services.Sounds();
     CHECK(sounds == static_cast<SoundPlayer*>(&p.Audio()));
+    // How loud music is (a game UI 動画's sound): 全体 × 音楽, a script's change too.
+    p.settings.volume.master = 0.5f;
+    p.settings.volume.music = 0.8f;
+    CHECK(Near(sounds->MusicVolume(), 0.4f));
+    p.Audio().SetVolume(AudioService::BusVolume::Music, 0.2f);
+    CHECK(Near(sounds->MusicVolume(), 0.1f));
     sounds->PlaySound(AssetRef{kBeep}, 0.5f);
     sounds->PlaySound(AssetRef{"0123456789abcdef0123456789abcdef"}, 1);  // (not there: nothing)
     p.Frame();

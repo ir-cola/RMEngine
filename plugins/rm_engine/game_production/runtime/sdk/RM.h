@@ -332,6 +332,10 @@ inline bool LoadScene(std::string_view name) {
     return Api()->core->loadScene(Api()->ctx, n.c_str()) != 0;
 }
 inline bool LoadScene(int index) { return Api()->core->loadSceneAt(Api()->ctx, index) != 0; }
+// Ends the game after this frame (the exported game's window closes; the editor's Play stops, as ■).
+inline void Quit() {
+    if (const RmGameApi* g = Part<RmGameApi>(RM_PART_GAME, RM_PART_GAME_VERSION)) g->quit(Api()->ctx);
+}
 // The scene playing now: its name, its place in the list (0 = the first; -1: not in the list) and how
 // many scenes the game has.
 inline std::string SceneName() {

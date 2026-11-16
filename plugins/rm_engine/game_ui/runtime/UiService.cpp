@@ -454,6 +454,13 @@ void UiService::Frame(const game_production::PlayFrame& f) {
         if (!sound.Empty()) sounds->PlaySound(sound, click ? b->clickVolume : b->hoverVolume);
     };
     for (const int id : step.hovered) play(id, false);
+    // 動画 play their sound themselves: as loud as music is now (全体 × 音楽).
+    const float musicGain = sounds ? sounds->MusicVolume() : host_.settings->volume.master * host_.settings->volume.music;
+    for (const auto& t : f.scene.TreeOrder()) {
+        game_production::SceneEntity* e = f.scene.Find(t.entity->data.id);
+        game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<UiVideo>().name) : nullptr;
+        if (c && c->Known()) static_cast<UiVideo*>(c->value.Get())->gain = musicGain;
+    }
     UiActionHost actionHost;
     if (game_production::ScriptWorld* world = f.world) {
         actionHost.globals = &world->globals;

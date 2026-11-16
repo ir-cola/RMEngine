@@ -154,7 +154,7 @@ struct UiStyle {
 
 RM_STRUCT(Label="動画 (UI)")
 struct UiVideo {
-    RM_PROPERTY(Edit, Label="動画", Tooltip="Assets の動画 (.mp4 を勧めます)。箱いっぱいに出ます。音も出ます (ゲームの設定の音量は効きません)",
+    RM_PROPERTY(Edit, Label="動画", Tooltip="Assets の動画 (.mp4 を勧めます)。箱いっぱいに出ます。音も出ます (ゲームの設定の音量の 全体 × 音楽 が掛かります)",
                 AssetKind=".mp4,.m4v,.mov,.wmv,.avi") AssetRef video;
     RM_PROPERTY(Edit, Label="色", Tooltip="動画の色に掛けます (白でそのまま)", Min=0, Max=1) Color color{1, 1, 1, 1};
     RM_PROPERTY(Edit, Label="始めから流す", Tooltip="外すと最初の絵で止まっています") bool playOnStart = true;
@@ -163,6 +163,7 @@ struct UiVideo {
     RM_PROPERTY(Edit, Label="音の大きさ", Min=0, Max=1) float volume = 1;
     RM_PROPERTY(Edit, Label="始める所 (秒)", Min=0, Max=100000) float start = 0;
     RM_PROPERTY(Edit, Label="終わる所 (秒)", Tooltip="0 なら最後まで", Min=0, Max=100000) float end = 0;
+    RM_TRANSIENT() float gain = 1;  // 全体 × 音楽 now (the UI service; 1 outside the game)
 };
 
 // --- Motion (UI-4) ------------------------------------------------------------------------------------
