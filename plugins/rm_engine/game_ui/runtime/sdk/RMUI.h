@@ -7,6 +7,9 @@
 //   rm::UI::SwitchTo("Pause");     // that UI window (a キャンバス entity, by name) shown, the others hidden
 //   rm::UI::Show("HUD"); rm::UI::Hide("HUD"); rm::UI::IsShown("HUD");
 //   rm::UI::SetInteractable(button, false);
+//   rm::UI::MoveTo(panel, {0, 40}, 0.3f);              // 位置 there over 0.3 s (rm::UI::Ease::Out)
+//   rm::UI::ScaleTo(icon, 1.2f, 0.2f, rm::UI::Ease::Back); rm::UI::RotateTo(arrow, 90, 0.5f); rm::UI::FadeTo(hint, 0, 1);
+//   rm::UI::PlayPath(bird); rm::UI::StopPath(bird);    // its 道に沿って動く
 //
 // A button calls the scripts of its own entity:
 //   void OnClick(rm::Entity self);   // pressed with the mouse, or 決定 (the keys / a pad) on the chosen one
@@ -85,6 +88,32 @@ inline bool IsShown(const char* window) {
 // The keys' focus on this button (shown as chosen until the mouse moves).
 inline void Focus(Entity button) {
     if (const RmUiApi* u = detail::Get()) u->focus(Api()->ctx, button.id);
+}
+// How a tween goes over its time (as the inspector's 速さの曲線).
+enum class Ease : int { Linear = 0, In = 1, Out = 2, InOut = 3, Bounce = 4, Back = 5 };
+// From where it is now to there, over `seconds` (0: at once). Another of the same kind takes over.
+inline void MoveTo(Entity e, Vec2 position, float seconds, Ease ease = Ease::Out) {
+    if (const RmUiApi* u = detail::Get()) u->moveTo(Api()->ctx, e.id, position.x, position.y, seconds, static_cast<int>(ease));
+}
+inline void ScaleTo(Entity e, float scale, float seconds, Ease ease = Ease::Out) {
+    if (const RmUiApi* u = detail::Get()) u->scaleTo(Api()->ctx, e.id, scale, seconds, static_cast<int>(ease));
+}
+inline void RotateTo(Entity e, float degrees, float seconds, Ease ease = Ease::Out) {
+    if (const RmUiApi* u = detail::Get()) u->rotateTo(Api()->ctx, e.id, degrees, seconds, static_cast<int>(ease));
+}
+// 0: unseen .. 1: as it is (its children fade with it).
+inline void FadeTo(Entity e, float alpha, float seconds, Ease ease = Ease::Out) {
+    if (const RmUiApi* u = detail::Get()) u->fadeTo(Api()->ctx, e.id, alpha, seconds, static_cast<int>(ease));
+}
+// Its 道に沿って動く: on from where it is / stopped / from the start.
+inline void PlayPath(Entity e) {
+    if (const RmUiApi* u = detail::Get()) u->playPath(Api()->ctx, e.id, 1);
+}
+inline void StopPath(Entity e) {
+    if (const RmUiApi* u = detail::Get()) u->playPath(Api()->ctx, e.id, 0);
+}
+inline void RestartPath(Entity e) {
+    if (const RmUiApi* u = detail::Get()) u->playPath(Api()->ctx, e.id, 2);
 }
 }  // namespace UI
 }  // namespace rm

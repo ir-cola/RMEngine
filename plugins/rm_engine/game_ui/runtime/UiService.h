@@ -24,6 +24,9 @@
 #include "rm_engine/game_production/runtime/Globals.h"
 #include "rm_engine/game_production/runtime/PlayServices.h"
 #include "rm_engine/game_ui/runtime/UiLayout.h"
+#include "rm_engine/game_ui/runtime/UiMotion.h"
+
+#include <unordered_map>
 
 #include <memory>
 #include <optional>
@@ -80,6 +83,33 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
               std::span<const game_production::InputAction> actions, const game_production::InputFrame* now,
               const game_production::InputFrame* before, float dt, UiFocus& state);
 
+// --- Motion (UI-4): 出る・消える動き, 道, the scripts' tweens ------------------------------------------
+// A script's tween (rm::UI::MoveTo ...): from where it was asked to where it goes, over `seconds`.
+struct UiTween {
+    bool active = false;
+    Vec2 from{0, 0}, to{0, 0};  // (one value: x)
+    float time = 0, seconds = 0;
+    UiEase ease = UiEase::Out;
+};
+struct UiTweens {
+    UiTween move, scale, turn, fade;  // 位置, the size, 回転, the transparency
+    float scaleNow = 1, alphaNow = 1;  // what ScaleTo / FadeTo left (kept after they end)
+};
+// What moves while the game plays, kept between frames (the UI service's; made new at a scene switch).
+struct UiMotionWorld {
+    bool started = false;  // the first frame was stepped (ゲームの始めにも)
+    std::unordered_map<int, UiTweens> tweens;  // by entity
+};
+// One frame of every motion of `scene`: each 出る・消える動き started / stepped / ended as its entity is
+// switched on and off, each 道 walked, each tween stepped - then UiLive written (UI の配置's, a window's
+// UiCanvas's) for the layout.
+void StepMotion(game_production::Scene& scene, float dt, UiMotionWorld& world);
+// A tween asked (seconds <= 0: at once). False: the entity has no UI の配置.
+enum class UiTweenKind { Move, Scale, Turn, Fade };
+bool StartTween(game_production::Scene& scene, UiMotionWorld& world, int entity, UiTweenKind kind, Vec2 to, float seconds, UiEase ease);
+// A 道: 1 plays on from where it is, 0 stops, 2 plays from its start. False: no 道に沿って動く.
+bool PlayPath(game_production::Scene& scene, int entity, int how);
+
 // --- The windows (canvases): shared by the buttons' actions and the scripts' rm::UI -------------
 // A window: a canvas not inside another canvas (one inside is a part of its window).
 bool IsWindow(const game_production::Scene& scene, int entity);
@@ -109,7 +139,11 @@ class UiService final : public game_production::PlayService {
 public:
     explicit UiService(const game_production::PlayHost& host) : host_(host) {}
     void Frame(const game_production::PlayFrame& f) override;
-    void SceneSwitched() override { state_ = {}; }
+    void SceneSwitched() override {
+        state_ = {};
+        motion_ = {};
+    }
+    UiMotionWorld& Motion() { return motion_; }
     // A script chose a button (rm::UI::Focus): shown as chosen until the mouse moves.
     void Focus(int entity) {
         state_.focus = entity;
@@ -120,6 +154,7 @@ public:
 private:
     const game_production::PlayHost& host_;
     UiFocus state_;
+    UiMotionWorld motion_;
 };
 
 std::unique_ptr<game_production::PlayService> CreateUiService(const game_production::PlayHost& host);

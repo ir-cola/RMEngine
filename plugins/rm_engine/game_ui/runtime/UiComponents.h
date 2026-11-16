@@ -28,6 +28,17 @@ enum class UiScaleMode {
     RM_ITEM(Label="合わせない (DIP のまま)") None,
 };
 
+// How a UI thing is moved now while the game plays, on top of its UI の配置 (not saved): 出る・消える動き,
+// 道に沿って動く and the scripts' ScaleTo / FadeTo (UiService writes it each frame; the layout uses it).
+// Its children move, turn, grow and fade with it.
+struct UiLive {
+    Vec2 offset{0, 0};  // moved by (its parent's units)
+    float scale = 1;    // about its 中心
+    float turn = 0;     // degrees, clockwise
+    float alpha = 1;    // 0: unseen .. 1
+    bool operator==(const UiLive&) const = default;
+};
+
 RM_STRUCT(Label="キャンバス (UI の画面)")
 struct UiCanvas {
     RM_PROPERTY(Edit, Label="基準の解像度", Tooltip="この大きさの画面で UI を作ります。実際の画面の大きさには「大きさの合わせ方」で合わせます", Min=1, Max=16384)
@@ -38,6 +49,7 @@ struct UiCanvas {
     RM_PROPERTY(Edit, Label="キーとパッドで選ぶ", Tooltip="十字キー・左スティック・矢印キーでボタンを選び、決定で押し、戻るでウィンドウを戻ります (表に出ているいちばん手前のキャンバスだけ。割り当てはゲームの設定の「入力」の UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel)") bool navigation = true;
     RM_PROPERTY(Edit, Label="最初に選ぶボタン", Tooltip="このウィンドウが出たときに選んでいるボタン。無ければ左上のボタン") EntityRef firstButton;
     RM_PROPERTY(Edit, Label="戻るで押すボタン", Tooltip="「戻る」でこのボタンを押します。無ければ、このウィンドウを閉じて前のウィンドウに戻ります") EntityRef cancelButton;
+    RM_TRANSIENT() UiLive live;  // the window moved now (its 出る・消える動き)
 };
 
 RM_ENUM(Label="固定する場所")
@@ -69,6 +81,79 @@ struct UiRect {
     RM_PROPERTY(Edit, Label="回す中心", Tooltip="位置と回転の中心 (0〜1。左上が 0, 0、真ん中が 0.5, 0.5)", Min=0, Max=1) Vec2 pivot{0.5f, 0.5f};
     RM_PROPERTY(Edit, Label="回転 (度)", Tooltip="時計回りが +。子も一緒に回ります", Min=-100000, Max=100000) float rotation = 0;
     RM_PROPERTY(Edit, Label="手前の順", Tooltip="兄弟の中で大きいほど手前に描きます (同じなら階層で後ろの物が手前)", Min=-100000, Max=100000) int order = 0;
+    RM_TRANSIENT() UiLive live;  // moved now while the game plays
+};
+
+// --- Motion (UI-4) ------------------------------------------------------------------------------------
+RM_ENUM(Label="速さの曲線")
+enum class UiEase {
+    RM_ITEM(Label="一定") Linear,
+    RM_ITEM(Label="ゆっくり始まる") In,
+    RM_ITEM(Label="ゆっくり終わる") Out,
+    RM_ITEM(Label="ゆっくり始まって終わる") InOut,
+    RM_ITEM(Label="はねる") Bounce,
+    RM_ITEM(Label="行き過ぎて戻る") Back,
+};
+
+RM_ENUM(Label="すべる向き")
+enum class UiSlide {
+    RM_ITEM(Label="すべらない") None,
+    RM_ITEM(Label="左") Left,
+    RM_ITEM(Label="右") Right,
+    RM_ITEM(Label="上") Up,
+    RM_ITEM(Label="下") Down,
+};
+
+// One way of appearing (出るとき: from these values to the thing as it is) or of going (消えるとき: from it
+// as it is to these values).
+RM_STRUCT(Label="出る・消える動き")
+struct UiTransition {
+    RM_PROPERTY(Edit, Label="使う") bool enabled = true;
+    RM_PROPERTY(Edit, Label="長さ (秒)", Min=0, Max=10, Step=0.05, ShowIf="enabled") float duration = 0.25f;
+    RM_PROPERTY(Edit, Label="待ち (秒)", Tooltip="動き出すまで (並んだ物を少しずつずらして出すとき)", Min=0, Max=10, Step=0.05, ShowIf="enabled") float delay = 0;
+    RM_PROPERTY(Edit, Label="速さの曲線", ShowIf="enabled") UiEase ease = UiEase::Out;
+    RM_PROPERTY(Edit, Label="フェード", Tooltip="透明から出る / 透明になって消える", ShowIf="enabled") bool fade = true;
+    RM_PROPERTY(Edit, Label="すべる向き", Tooltip="出るときはその向きから来て、消えるときはその向きへ去ります", ShowIf="enabled") UiSlide slide = UiSlide::None;
+    RM_PROPERTY(Edit, Label="すべる長さ", Tooltip="親の単位 (基準の解像度の DIP)", Min=0, Max=100000, ShowIf="enabled&slide=Left|Right|Up|Down") float distance = 80;
+    RM_PROPERTY(Edit, Label="大きさ", Tooltip="この大きさから出る / この大きさになって消える (1 でそのまま。0.8 で少し小さく、0 で点から)", Min=0, Max=10, Step=0.05, ShowIf="enabled")
+    float scale = 1;
+    RM_PROPERTY(Edit, Label="回る (度)", Tooltip="この角度から回って出る / 回りながら消える (時計回りが +)", Min=-3600, Max=3600, ShowIf="enabled") float turn = 0;
+};
+
+RM_STRUCT(Label="出る・消える動き (UI)")
+struct UiMotion {
+    RM_PROPERTY(Edit, Label="出るとき", Tooltip="有効になったとき (ボタンの動作・スクリプトの Show・SetActive)") UiTransition show;
+    RM_PROPERTY(Edit, Label="消えるとき", Tooltip="有効を外されたとき。動き終わるまで見えています (ボタンは押せません)") UiTransition hide;
+    RM_PROPERTY(Edit, Label="ゲームの始めにも", Tooltip="ゲーム (シーン) の始めから出ている物も、出るときの動きで出します") bool atStart = true;
+    RM_TRANSIENT() int phase = 0;      // UiMotionPhase (the UI service)
+    RM_TRANSIENT() float time = 0;     // seconds since it began
+    RM_TRANSIENT() bool seen = false;  // shown last frame
+};
+// What a UiMotion is doing (UiMotion::phase).
+enum class UiMotionPhase : int { Still = 0, Showing = 1, Hiding = 2 };
+
+RM_ENUM(Label="道の走り方")
+enum class UiPathLoop {
+    RM_ITEM(Label="1 回") Once,
+    RM_ITEM(Label="くり返す") Loop,
+    RM_ITEM(Label="往復") PingPong,
+};
+
+RM_STRUCT(Label="道に沿って動く (UI)")
+struct UiPath {
+    RM_PROPERTY(Edit, Label="点", Tooltip="道の点。この物の位置からのずれ (親の単位)。UI タブでこの物を選ぶと点が出て、ドラッグで動かせます")
+    std::vector<Vec2> points{{0, 0}, {200, 0}, {200, -120}};
+    RM_PROPERTY(Edit, Label="なめらか", Tooltip="点を曲線でつなぐ (外すと直線)") bool smooth = true;
+    RM_PROPERTY(Edit, Label="輪にする", Tooltip="最後の点から最初の点へもつなぐ") bool closed = false;
+    RM_PROPERTY(Edit, Label="速さ", Tooltip="1 秒に進む長さ (親の単位)", Min=0, Max=100000) float speed = 120;
+    RM_PROPERTY(Edit, Label="走り方") UiPathLoop loop = UiPathLoop::Loop;
+    RM_PROPERTY(Edit, Label="速さの曲線", Tooltip="1 回・往復の片道ごとに") UiEase ease = UiEase::Linear;
+    RM_PROPERTY(Edit, Label="向きを合わせる", Tooltip="進む向きに回します (右向きが 0 度)") bool orient = false;
+    RM_PROPERTY(Edit, Label="始めから動く", Tooltip="外すとスクリプトの rm::UI::PlayPath で動き出します") bool playOnStart = true;
+    RM_TRANSIENT() float travelled = 0;  // along the path (the UI service)
+    RM_TRANSIENT() bool playing = false;
+    RM_TRANSIENT() bool backward = false;  // 往復: on the way back
+    RM_TRANSIENT() bool started = false;
 };
 
 RM_ENUM(Label="横の揃え")

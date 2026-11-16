@@ -52,7 +52,7 @@ bool Contains(const std::vector<int>& v, int x) { return std::find(v.begin(), v.
 void FollowWindows(const UiTree& tree, UiFocus& state) {
     std::vector<int> now;
     for (const UiNode& n : tree.nodes) {
-        if (n.parent < 0) now.push_back(n.entity);
+        if (n.parent < 0 && !n.closing) now.push_back(n.entity);  // (one going away is closed already)
     }
     if (!state.started) {
         state.started = true;  // (the windows of the start: nothing to go back to)
@@ -308,6 +308,118 @@ void RunActions(game_production::Scene& scene, int button, int window, const UiB
     }
 }
 
+namespace {
+
+template <class T>
+T* Part(game_production::SceneEntity& e) {
+    game_production::Component* c = e.FindComponent(reflect::TypeOf<T>().name);
+    return c && c->Known() ? static_cast<T*>(c->value.Get()) : nullptr;
+}
+
+// One tween's value now (and whether it has ended).
+Vec2 TweenAt(UiTween& t, float dt) {
+    t.time += std::max(dt, 0.f);
+    const float f = t.seconds > 1e-4f ? t.time / t.seconds : 1.f;
+    if (f >= 1) t.active = false;
+    const float e = Ease(t.ease, f);
+    return {t.from.x + (t.to.x - t.from.x) * e, t.from.y + (t.to.y - t.from.y) * e};
+}
+
+}  // namespace
+
+void StepMotion(game_production::Scene& scene, float dt, UiMotionWorld& world) {
+    const bool first = !world.started;
+    world.started = true;
+    for (const auto& t : scene.TreeOrder()) {
+        const int id = t.entity->data.id;
+        game_production::SceneEntity* e = scene.Find(id);
+        if (!e) continue;
+        UiRect* place = Part<UiRect>(*e);
+        UiCanvas* canvas = Part<UiCanvas>(*e);
+        if (!place && !canvas) continue;
+        UiLive live;
+        // 出る・消える動き: started when it comes on (or at the start), ended - and its window let go - at its end.
+        if (UiMotion* m = Part<UiMotion>(*e)) {
+            const bool shown = t.activeInHierarchy;
+            auto phase = static_cast<UiMotionPhase>(m->phase);
+            if (shown && !m->seen) {
+                phase = first && !m->atStart ? UiMotionPhase::Still : UiMotionPhase::Showing;
+                m->time = 0;
+            } else if (!shown && m->seen) {
+                // Switched off itself (not with a parent): it goes as its 消えるとき says.
+                phase = !e->data.active && m->hide.enabled ? UiMotionPhase::Hiding : UiMotionPhase::Still;
+                m->time = 0;
+            } else if (!shown && phase == UiMotionPhase::Hiding && e->data.active) {
+                phase = UiMotionPhase::Still;  // (a parent switched off meanwhile: gone with it)
+            }
+            m->seen = shown;
+            if (phase != UiMotionPhase::Still) {
+                m->time += std::max(dt, 0.f);
+                const bool showing = phase == UiMotionPhase::Showing;
+                const UiTransition& tr = showing ? m->show : m->hide;
+                live = TransitionAt(tr, showing, m->time);
+                if (TransitionDone(tr, m->time)) {
+                    phase = UiMotionPhase::Still;
+                    if (showing) live = {};
+                }
+            }
+            m->phase = static_cast<int>(phase);
+        }
+        // 道に沿って動く: walked while it is shown.
+        if (UiPath* p = Part<UiPath>(*e); p && place && t.activeInHierarchy) {
+            const UiPathPose pose = StepPath(*p, PathLine(*p), dt);
+            UiLive along;
+            along.offset = pose.offset;
+            if (p->orient) along.turn = pose.angle;
+            live = Combine(live, along);
+        }
+        // The scripts' tweens: 位置 and 回転 themselves; the size and the transparency kept here.
+        if (const auto it = world.tweens.find(id); it != world.tweens.end()) {
+            UiTweens& tw = it->second;
+            if (tw.move.active && place) place->position = TweenAt(tw.move, dt);
+            if (tw.turn.active && place) place->rotation = TweenAt(tw.turn, dt).x;
+            if (tw.scale.active) tw.scaleNow = std::max(0.f, TweenAt(tw.scale, dt).x);
+            if (tw.fade.active) tw.alphaNow = std::clamp(TweenAt(tw.fade, dt).x, 0.f, 1.f);
+            UiLive tl;
+            tl.scale = tw.scaleNow;
+            tl.alpha = tw.alphaNow;
+            live = Combine(live, tl);
+        }
+        if (place) place->live = live;
+        if (canvas) canvas->live = live;
+    }
+}
+
+bool StartTween(game_production::Scene& scene, UiMotionWorld& world, int entity, UiTweenKind kind, Vec2 to, float seconds, UiEase ease) {
+    game_production::SceneEntity* e = scene.Find(entity);
+    UiRect* place = e ? Part<UiRect>(*e) : nullptr;
+    if (!place && !(e && Part<UiCanvas>(*e) && (kind == UiTweenKind::Scale || kind == UiTweenKind::Fade))) return false;
+    UiTweens& tw = world.tweens[entity];
+    UiTween* t = nullptr;
+    Vec2 from{0, 0};
+    switch (kind) {
+        case UiTweenKind::Move: t = &tw.move, from = place->position; break;
+        case UiTweenKind::Turn: t = &tw.turn, from = {place->rotation, 0}; break;
+        case UiTweenKind::Scale: t = &tw.scale, from = {tw.scaleNow, 0}; break;
+        case UiTweenKind::Fade: t = &tw.fade, from = {tw.alphaNow, 0}; break;
+    }
+    *t = {true, from, to, 0, std::isfinite(seconds) ? std::max(seconds, 0.f) : 0.f, ease};
+    return true;
+}
+
+bool PlayPath(game_production::Scene& scene, int entity, int how) {
+    game_production::SceneEntity* e = scene.Find(entity);
+    UiPath* p = e ? Part<UiPath>(*e) : nullptr;
+    if (!p) return false;
+    p->started = true;
+    if (how == 2) {
+        p->travelled = 0;
+        p->backward = false;
+    }
+    p->playing = how != 0;
+    return true;
+}
+
 UiScreen ScreenOf(const game_production::GameSettings& settings, Vec2 size) {
     UiScreen s;
     s.size = size;
@@ -321,6 +433,7 @@ UiScreen ScreenOf(const game_production::GameSettings& settings, Vec2 size) {
 
 void UiService::Frame(const game_production::PlayFrame& f) {
     if (!host_.settings) return;
+    StepMotion(f.scene, f.dt, motion_);  // (first: what is going away is still laid out - not clicked)
     const UiTree tree = BuildUi(f.scene, ScreenOf(*host_.settings, f.screen));
     // (the mouse is the pointer - not a binding of an action)
     const bool down = f.input && game_production::ControlValue(*f.input, InputControl::MouseLeft) >= 0.5f;

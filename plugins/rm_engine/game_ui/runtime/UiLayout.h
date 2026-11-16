@@ -99,6 +99,8 @@ struct UiNode {
     const UiImage* image = nullptr;
     const UiButton* button = nullptr;
     const UiBar* bar = nullptr;
+    float alpha = 1;       // faded (its own UiLive and its parents'): what it draws is multiplied by it
+    bool closing = false;  // switched off and going (消えるとき) - or under one that is: drawn, never clicked
 };
 
 // Everything shown, back to front: canvases by 手前の順 (then the 階層's order), each canvas then its

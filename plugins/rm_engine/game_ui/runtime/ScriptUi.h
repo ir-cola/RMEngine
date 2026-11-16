@@ -7,5 +7,7 @@
 namespace rm::game_ui {
 
 const game_production::ScriptApiPart& ScriptUiPart();
+// The same table as version 1 (its start): scripts built before the tweens still find it.
+const game_production::ScriptApiPart& ScriptUiPartVersion1();
 
 }  // namespace rm::game_ui

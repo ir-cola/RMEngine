@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム UI: 出る・消えるときの動き (フェード・すべる・大きさ・回る・速さの曲線・待ち)・道に沿って動く (UI タブで点を置く)・スクリプトの MoveTo / ScaleTo / RotateTo / FadeTo / PlayPath",
+          "en": "Game UI: show and hide motion (fade, slide, scale, turn, easing, delay), following a path (place its points in the UI tab), and the scripts' MoveTo / ScaleTo / RotateTo / FadeTo / PlayPath"
+        },
+        {
           "ja": "全体を調べ直して 31 個の不具合を直した (名前の大文字だけを変えるとアセットの ID が変わる・Debug のエンジンから書き出したゲームがスクリプトを読めない・Play の最初のフレームでキーが押される・参照の一覧で Enter を押すと (なし) になる など)",
           "en": "Reviewed the whole engine and fixed 31 bugs (renaming only a name's case changed an asset's id, a game exported from a Debug engine could not load its scripts, keys counted as pressed on Play's first frame, Enter in a reference list set it to (none), and more)"
         },

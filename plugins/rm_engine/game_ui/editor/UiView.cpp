@@ -13,6 +13,7 @@
 #include "platform/Shell.h"
 #include "rm_engine/game_ui/editor/UiViewState.h"
 #include "rm_engine/game_ui/runtime/UiLayout.h"
+#include "rm_engine/game_ui/runtime/UiMotion.h"
 #include "rm_engine/game_ui/runtime/UiRenderer.h"
 #include "rm_engine/game_ui/runtime/UiService.h"
 #include "ui/Path.h"
@@ -249,6 +250,63 @@ private:
         if (c.IsHovered(front)) w::Tooltip(c, Tr(L"兄弟の中で一番手前に描く (手前の順)"));
         if (w::Button(c, "ui_back", back, Tr(L"一番後ろへ"))) Reorder(host, *single, false);
         if (c.IsHovered(back)) w::Tooltip(c, Tr(L"兄弟の中で一番奥に描く (手前の順)"));
+        // Its 道 (道に沿って動く): a point more, one less.
+        if (const UiPath* path = PathOf(host, single->entity); path && !host.playing) {
+            const Rect add{s.x + 636, s.y, 90, s.h}, remove{s.x + 732, s.y, 90, s.h};
+            if (w::Button(c, "ui_path_add", add, Tr(L"点を足す"))) {
+                std::vector<Vec2> pts = path->points;
+                const Vec2 last = pts.empty() ? Vec2{0, 0} : pts.back();
+                const Vec2 before = pts.size() >= 2 ? pts[pts.size() - 2] : Vec2{last.x - 80, last.y};
+                pts.push_back({last.x + (last.x - before.x), last.y + (last.y - before.y)});  // (on the way it went)
+                pathPoint_ = static_cast<int>(pts.size()) - 1;
+                SetPath(host, single->entity, path->points, pts, "道に点を足す");
+            }
+            if (c.IsHovered(add)) w::Tooltip(c, Tr(L"道の最後に点を 1 つ足す (点はドラッグで動かせます)"));
+            const bool canRemove = path->points.size() > 2;
+            if (w::Button(c, "ui_path_remove", remove, Tr(L"点を消す"), w::ButtonKind::Secondary, canRemove)) {
+                std::vector<Vec2> pts = path->points;
+                const size_t i = pathPoint_ >= 0 && static_cast<size_t>(pathPoint_) < pts.size() ? static_cast<size_t>(pathPoint_) : pts.size() - 1;
+                pts.erase(pts.begin() + static_cast<std::ptrdiff_t>(i));
+                pathPoint_ = -1;
+                SetPath(host, single->entity, path->points, pts, "道の点を消す");
+            }
+            if (c.IsHovered(remove)) w::Tooltip(c, Tr(L"選んだ点 (無ければ最後の点) を消す。2 つは残ります"));
+        }
+    }
+
+    // --- 道に沿って動く (UI-4): its points on the panel, dragged ------------------------------------
+    static const UiPath* PathOf(const game_production::SceneViewHost& host, int entity) {
+        const game_production::SceneEntity* e = host.scene.Find(entity);
+        const game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<UiPath>().name) : nullptr;
+        return c && c->Known() ? static_cast<const UiPath*>(c->value.Get()) : nullptr;
+    }
+    // A point of its 道 on the panel: from its 中心 (where its 位置 is), in its parent's units.
+    static Vec2 PathPointOnPanel(const UiNode& n, const Affine& toDc, Vec2 p) {
+        const Vec2 pv = PivotPoint(*n.place, n.box);
+        return Apply(toDc * n.toScreen, {pv.x + p.x, pv.y + p.y});
+    }
+    // The points changed (already, or to be written now): one undo entry.
+    void SetPath(game_production::SceneViewHost& host, int entity, const std::vector<Vec2>& before, const std::vector<Vec2>& after, const char* label) {
+        if (!host.component) return;
+        auto resolve = host.component(entity, reflect::TypeOf<UiPath>().name);
+        const reflect::TypeDesc& type = reflect::TypeOf<UiPath>();
+        std::optional<size_t> index;
+        for (size_t i = 0; i < type.fields.size(); ++i) {
+            if (std::string_view(type.fields[i].name) == "points") index = i;
+        }
+        const reflect::EditTarget t = resolve ? resolve() : reflect::EditTarget{};
+        if (!index || !t.object) return;
+        auto* path = static_cast<UiPath*>(t.object);
+        UiPath was = *path, now = *path;
+        was.points = before;
+        now.points = after;
+        json::Value b = reflect::SaveField(type.fields[*index], &was, nullptr);
+        json::Value a = reflect::SaveField(type.fields[*index], &now, nullptr);
+        if (a == b) return;
+        path->points = after;
+        auto group = std::make_unique<CommandGroup>(label);
+        group->Add(std::make_unique<reflect::SetFieldCommand>(type, reflect::FieldPath{*index}, std::move(b), std::move(a), resolve, label));
+        host.host.History().Push(std::move(group));  // already applied
     }
 
     // The anchor picker: 4 x 4 pictures (a box in its parent, the dot / lines where it is fixed).
@@ -547,14 +605,20 @@ private:
     }
 
     // What of the selected thing's gizmo is under the mouse.
-    enum class Part { None, Handle, Knob, Pivot };
+    enum class Part { None, Handle, Knob, Pivot, PathPoint };
     struct Hot {
         Part part = Part::None;
         UiHandle handle = UiHandle::TopLeft;
+        int point = -1;  // PathPoint: which
     };
-    Hot HotAt(const UiNode& n, const Affine& toDc, Vec2 mouse) const {
+    Hot HotAt(const UiNode& n, const Affine& toDc, Vec2 mouse, const UiPath* path) const {
         if (Distance(mouse, Knob(n, toDc)) <= kKnobRadius + 4) return {Part::Knob};
         if (Distance(mouse, PivotOnPanel(n, toDc)) <= 6) return {Part::Pivot};
+        if (path) {
+            for (size_t i = path->points.size(); i-- > 0;) {
+                if (Distance(mouse, PathPointOnPanel(n, toDc, path->points[i])) <= 7) return {Part::PathPoint, UiHandle::TopLeft, static_cast<int>(i)};
+            }
+        }
         for (size_t i = 0; i < kHandleAt.size(); ++i) {
             const Vec2 h = BoxPoint(n, toDc, kHandleAt[i].first, kHandleAt[i].second);
             if (std::abs(mouse.x - h.x) <= kHandleSlop && std::abs(mouse.y - h.y) <= kHandleSlop) return {Part::Handle, static_cast<UiHandle>(i)};
@@ -586,12 +650,26 @@ private:
         }
         const UiNode* single = Single(host);
         if (drag_ == Drag::None) {
-            hot_ = hovered && single ? HotAt(*single, toDc, mouse) : Hot{};
+            hot_ = hovered && single ? HotAt(*single, toDc, mouse, PathOf(host, single->entity)) : Hot{};
             if (hot_.part != Part::None) c.SetCursor(ui::Cursor::Hand);
         }
         if (drag_ == Drag::None && hovered && c.MousePressed()) {
             press_ = mouse;
             edits_.clear();
+            if (hot_.part == Part::PathPoint && single) {
+                // A point of its 道: dragged (one undo entry at the end).
+                const UiPath* path = PathOf(host, single->entity);
+                if (path && hot_.point >= 0 && static_cast<size_t>(hot_.point) < path->points.size()) {
+                    pathEntity_ = single->entity;
+                    pathPoint_ = hot_.point;
+                    pathStart_ = pathLast_ = path->points;
+                    pathToDc_ = toDc * single->toScreen;
+                    history_ = {host.host.History().UndoCount(), host.host.History().RedoCount()};
+                    drag_ = Drag::PathPoint;
+                }
+                return;
+            }
+            pathPoint_ = -1;  // (a press elsewhere: no point chosen)
             if (hot_.part != Part::None && single && Begin(host, *single)) {
                 FindTargets();
                 drag_ = hot_.part == Part::Handle ? Drag::Resize : hot_.part == Part::Knob ? Drag::Rotate : Drag::Pivot;
@@ -630,6 +708,10 @@ private:
             return;
         }
         if (drag_ == Drag::None) return;
+        if (drag_ == Drag::PathPoint) {
+            DragPathPoint(host, mouse, in.down[0]);
+            return;
+        }
         const bool editing = drag_ == Drag::Move || drag_ == Drag::Resize || drag_ == Drag::Rotate || drag_ == Drag::Pivot;
         if (editing && HistoryMoved(host)) {
             AbandonDrag();  // undo / redo while dragging: the drag stops (put back; nothing pushed)
@@ -899,6 +981,35 @@ private:
         e.last = next;
     }
 
+    // A point of the 道 follows the mouse (in its parent's units); let go: one undo entry. The history
+    // moved under it: put back (what the undo / redo set stays).
+    void DragPathPoint(game_production::SceneViewHost& host, Vec2 mouse, bool held) {
+        auto resolve = host.component ? host.component(pathEntity_, reflect::TypeOf<UiPath>().name) : nullptr;
+        const reflect::EditTarget t = resolve ? resolve() : reflect::EditTarget{};
+        auto* path = static_cast<UiPath*>(t.object);
+        if (!path || static_cast<size_t>(pathPoint_) >= path->points.size() || path->points.size() != pathStart_.size()) {
+            drag_ = Drag::Cancelled;
+            return;
+        }
+        if (HistoryMoved(host)) {
+            if (path->points == pathLast_) path->points = pathStart_;
+            drag_ = Drag::Cancelled;
+            return;
+        }
+        const auto inv = Invert(pathToDc_);
+        if (!inv) return;
+        const Vec2 m = Linear(*inv, {mouse.x - press_.x, mouse.y - press_.y});
+        const Vec2 start = pathStart_[static_cast<size_t>(pathPoint_)];
+        path->points[static_cast<size_t>(pathPoint_)] = {start.x + m.x, start.y + m.y};
+        pathLast_ = path->points;
+        if (!held) {
+            const std::vector<Vec2> now = path->points;
+            path->points = pathStart_;
+            SetPath(host, pathEntity_, pathStart_, now, "道の点を動かす");
+            drag_ = Drag::None;
+        }
+    }
+
     // The history moved under a drag (Ctrl+Z while the button is held): each field the drag changed -
     // and nothing else changed since - goes back to where it started (what the undo / redo set stays).
     // Nothing is pushed: the scene is as the history says (rule 7).
@@ -1002,6 +1113,20 @@ private:
         }
         const UiNode* n = selected.size() == 1 ? selected.front() : nullptr;
         if (!n) return;
+        // Its 道: the line it walks and its points (the chosen one, the one under the mouse brighter).
+        if (const UiPath* path = n->place ? PathOf(host, n->entity) : nullptr) {
+            const UiPathLine line = PathLine(*path);
+            for (size_t i = 1; i < line.points.size(); ++i) {
+                const Vec2 a = PathPointOnPanel(*n, toDc, line.points[i - 1]), b = PathPointOnPanel(*n, toDc, line.points[i]);
+                p.Line(a.x, a.y, b.x, b.y, theme::AxisY().Alpha(0.9f), 1.5f);
+            }
+            for (size_t i = 0; i < path->points.size(); ++i) {
+                const Vec2 pt = PathPointOnPanel(*n, toDc, path->points[i]);
+                const bool lit = static_cast<int>(i) == pathPoint_ || (drag_ == Drag::None && hot_.part == Part::PathPoint && hot_.point == static_cast<int>(i));
+                p.FillCircle(pt.x, pt.y, 5.5f, lit ? theme::GizmoHot() : theme::AxisY());
+                p.FillCircle(pt.x, pt.y, 2.5f, theme::SceneBackground());
+            }
+        }
         if (!host.playing) {
             auto hot = [&](Part part, UiHandle h = UiHandle::TopLeft) {
                 const bool dragging = (part == Part::Handle && drag_ == Drag::Resize && handle_ == h) || (part == Part::Knob && drag_ == Drag::Rotate) ||
@@ -1062,7 +1187,7 @@ private:
         ts.v = ui::VAlign::Bottom;
         ts.wrap = true;
         c.P().Text(r.Inset(10, 8, 10, 6),
-                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く"),
+                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く   道の点 (黄色): ドラッグで動かす"),
                    ts);
         if (tree_.nodes.empty()) {
             ui::TextStyle hint = ts;
@@ -1074,7 +1199,7 @@ private:
         }
     }
 
-    enum class Drag { None, Press, Move, Resize, Rotate, Pivot, Pan, Marquee, Cancelled };
+    enum class Drag { None, Press, Move, Resize, Rotate, Pivot, Pan, Marquee, PathPoint, Cancelled };
 
     UiViewState state_;
     reflect::Unknowns unknowns_;
@@ -1090,6 +1215,9 @@ private:
     Hot hot_;
     UiHandle handle_ = UiHandle::TopLeft;
     std::vector<Edited> edits_;            // what a drag (or a line-up) changes
+    int pathEntity_ = 0, pathPoint_ = -1;  // the 道 whose point is dragged / chosen (点を消す)
+    std::vector<Vec2> pathStart_, pathLast_;
+    Affine pathToDc_;
     std::vector<float> targetsX_, targetsY_;  // what they may snap to (FindTargets)
     std::pair<size_t, size_t> history_{0, 0};
     std::optional<float> snapX_, snapY_;  // the lines the drag snapped to (on the panel)

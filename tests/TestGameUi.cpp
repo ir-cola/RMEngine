@@ -10,6 +10,7 @@
 #include "rm_engine/game_ui/runtime/ScriptUi.h"
 #include "rm_engine/game_ui/runtime/UiComponents.h"
 #include "rm_engine/game_ui/runtime/UiLayout.h"
+#include "rm_engine/game_ui/runtime/UiMotion.h"
 #include "rm_engine/game_ui/runtime/UiService.h"
 #include "rm_engine/game_ui/runtime/sdk/RMUIAbi.h"
 
@@ -37,7 +38,7 @@ T* Add(Scene& s, int id) {
 Scene UiScene() {
     Scene s;
     s.SetComponentTypes({&reflect::TypeOf<UiCanvas>(), &reflect::TypeOf<UiRect>(), &reflect::TypeOf<UiText>(), &reflect::TypeOf<UiImage>(),
-                         &reflect::TypeOf<UiButton>(), &reflect::TypeOf<UiBar>()},
+                         &reflect::TypeOf<UiButton>(), &reflect::TypeOf<UiBar>(), &reflect::TypeOf<UiMotion>(), &reflect::TypeOf<UiPath>()},
                         {});
     return s;
 }
@@ -892,4 +893,138 @@ RM_TEST(GameUi_NextButton_LinksFirst) {
     part(c)->interactable = false;
     t = BuildUi(s, {});
     CHECK(NextButton(t, canvas, a, 1, 0) == b);  // (the link cannot be pressed: the nearest)
+}
+
+RM_TEST(GameUi_Motion_EaseTransitionAndPath) {
+    // Every curve starts at 0 and ends at 1; 行き過ぎて戻る goes past 1 on the way.
+    for (const UiEase e : {UiEase::Linear, UiEase::In, UiEase::Out, UiEase::InOut, UiEase::Bounce, UiEase::Back}) {
+        CHECK(Near(Ease(e, 0), 0, 1e-4f) && Near(Ease(e, 1), 1, 1e-4f));
+    }
+    CHECK(Ease(UiEase::In, 0.5f) < 0.5f && Ease(UiEase::Out, 0.5f) > 0.5f);
+    bool past = false;
+    for (int i = 1; i < 20; ++i) past |= Ease(UiEase::Back, static_cast<float>(i) / 20) > 1.f;
+    CHECK(past);
+    // 出るとき: from its values (transparent, 80 to the left, half the size) to the thing as it is.
+    UiTransition t;
+    t.duration = 1;
+    t.delay = 0.5f;
+    t.ease = UiEase::Linear;
+    t.slide = UiSlide::Left;
+    t.distance = 80;
+    t.scale = 0.5f;
+    UiLive l = TransitionAt(t, true, 0.25f);  // (still waiting: as at its beginning)
+    CHECK(Near(l.alpha, 0) && Near(l.offset.x, -80) && Near(l.scale, 0.5f));
+    l = TransitionAt(t, true, 1.0f);
+    CHECK(Near(l.alpha, 0.5f) && Near(l.offset.x, -40) && Near(l.scale, 0.75f) && !TransitionDone(t, 1.0f));
+    CHECK(TransitionAt(t, true, 1.5f) == UiLive{} && TransitionDone(t, 1.5f));
+    // 消えるとき: the other way.
+    l = TransitionAt(t, false, 1.5f);
+    CHECK(Near(l.alpha, 0) && Near(l.offset.x, -80));
+    t.enabled = false;
+    CHECK(TransitionDone(t, 0) && TransitionAt(t, true, 0) == UiLive{});
+    // A path: straight, its length and where it is along it.
+    UiPath p;
+    p.points = {{0, 0}, {100, 0}, {100, 50}};
+    p.smooth = false;
+    UiPathLine line = PathLine(p);
+    CHECK(Near(line.Length(), 150));
+    UiPathPose pose = PathPoseAt(line, 125);
+    CHECK(Near(pose.offset.x, 100) && Near(pose.offset.y, 25) && Near(pose.angle, 90));
+    p.closed = true;
+    CHECK(Near(PathLine(p).Length(), 150 + std::hypot(100.f, 50.f)));
+    // Curved: through every point.
+    p.closed = false;
+    p.smooth = true;
+    line = PathLine(p);
+    CHECK(line.Length() > 150 * 0.95f);
+    bool throughMiddle = false;
+    for (const Vec2 v : line.points) throughMiddle |= Near(v.x, 100, 1e-3f) && Near(v.y, 0, 1e-3f);
+    CHECK(throughMiddle);
+    // Walked: 1 回 stops at the end, くり返す goes round, 往復 comes back facing the other way.
+    p.smooth = false;
+    line = PathLine(p);
+    p.speed = 100;
+    p.loop = UiPathLoop::Once;
+    pose = StepPath(p, line, 1.0f);
+    CHECK(p.playing && Near(pose.offset.x, 100));
+    pose = StepPath(p, line, 5.0f);
+    CHECK(!p.playing && Near(pose.offset.y, 50));
+    UiPath loop = p;
+    loop.started = false;
+    loop.loop = UiPathLoop::Loop;
+    StepPath(loop, line, 1.0f);
+    pose = StepPath(loop, line, 1.0f);  // 200 along a 150 line: 50 into the next round
+    CHECK(loop.playing && Near(pose.offset.x, 50));
+    UiPath back = p;
+    back.started = false;
+    back.loop = UiPathLoop::PingPong;
+    pose = StepPath(back, line, 1.75f);  // 175: 150 there, 25 back (up the last piece)
+    CHECK(back.backward && Near(pose.offset.x, 100) && Near(pose.offset.y, 25) && Near(pose.angle, 180 + 90, 1e-2f));
+    // Stopped until a script plays it.
+    UiPath waits = p;
+    waits.started = false;
+    waits.playOnStart = false;
+    pose = StepPath(waits, line, 1.0f);
+    CHECK(!waits.playing && Near(pose.offset.x, 0));
+}
+
+RM_TEST(GameUi_Motion_ShowHideAndTweens) {
+    // A window with 出る・消える動き: it comes in at the start; switched off, it stays laid out (not
+    // clicked, not chosen) until its 消えるとき ends.
+    Scene s = UiScene();
+    const int canvas = s.Create("Menu");
+    Add<UiCanvas>(s, canvas)->reference = {1280, 720};
+    UiMotion* m = Add<UiMotion>(s, canvas);
+    m->show.duration = m->hide.duration = 0.2f;
+    m->show.ease = m->hide.ease = UiEase::Linear;
+    const int b = MakeButton(s, canvas, {0, 0}, {200, 100});
+    UiMotionWorld world;
+    StepMotion(s, 0.1f, world);
+    UiTree t = BuildUi(s, {});
+    CHECK(Near(t.Find(canvas)->alpha, 0.5f) && Near(t.Find(b)->alpha, 0.5f));
+    StepMotion(s, 0.2f, world);
+    t = BuildUi(s, {});
+    CHECK(Near(t.Find(b)->alpha, 1) && m->phase == static_cast<int>(UiMotionPhase::Still));
+    CHECK(ButtonAt(t, {640, 360}) == b);
+    s.Find(canvas)->data.active = false;
+    StepMotion(s, 0.05f, world);
+    t = BuildUi(s, {});
+    CHECK(t.Find(b) && t.Find(b)->closing && Near(t.Find(b)->alpha, 0.75f));
+    CHECK(ButtonAt(t, {640, 360}) == 0 && NavigationCanvas(t) == 0);
+    StepMotion(s, 0.2f, world);
+    t = BuildUi(s, {});
+    CHECK(!t.Find(b) && m->phase == static_cast<int>(UiMotionPhase::Still));
+    // Shown again: it comes in again.
+    s.Find(canvas)->data.active = true;
+    StepMotion(s, 0.1f, world);
+    CHECK(m->phase == static_cast<int>(UiMotionPhase::Showing));
+    // ゲームの始めにも off: there at once at the start.
+    UiMotionWorld fresh;
+    m->seen = false;
+    m->atStart = false;
+    StepMotion(s, 0.01f, fresh);
+    CHECK(m->phase == static_cast<int>(UiMotionPhase::Still) && Near(BuildUi(s, {}).Find(b)->alpha, 1));
+    // The scripts' tweens: 位置 and 回転 themselves, the size and the transparency kept after they end.
+    CHECK(StartTween(s, fresh, b, UiTweenKind::Move, {100, 0}, 1, UiEase::Linear));
+    CHECK(StartTween(s, fresh, b, UiTweenKind::Fade, {0.2f, 0}, 0, UiEase::Linear));  // (at once)
+    StepMotion(s, 0.5f, fresh);
+    auto* rect = static_cast<UiRect*>(s.Find(b)->FindComponent(reflect::TypeOf<UiRect>().name)->value.Get());
+    CHECK(Near(rect->position.x, 50) && Near(rect->live.alpha, 0.2f));
+    StepMotion(s, 1.0f, fresh);
+    CHECK(Near(rect->position.x, 100) && Near(rect->live.alpha, 0.2f) && !fresh.tweens[b].move.active);
+    CHECK(!StartTween(s, fresh, canvas, UiTweenKind::Move, {0, 0}, 1, UiEase::Linear));  // (a window without UI の配置: no 位置)
+    // A path walked moves it (its box), a script stops it.
+    UiPath* path = Add<UiPath>(s, b);
+    path->points = {{0, 0}, {100, 0}};
+    path->smooth = false;
+    path->speed = 100;
+    path->loop = UiPathLoop::Once;
+    StepMotion(s, 0.5f, fresh);
+    CHECK(Near(rect->live.offset.x, 50));
+    CHECK(PlayPath(s, b, 0) && !path->playing);
+    StepMotion(s, 0.5f, fresh);
+    CHECK(Near(rect->live.offset.x, 50));
+    CHECK(PlayPath(s, b, 2));
+    StepMotion(s, 0.25f, fresh);
+    CHECK(Near(rect->live.offset.x, 25));
 }

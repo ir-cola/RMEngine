@@ -251,6 +251,7 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
     dc_->GetTransform(&old);
     dc_->SetTransform(ToD2D(full) * old);
     auto draw = [&](float ox, float oy, Color c) {
+        c.a *= n.alpha;  // (faded with what it is in)
         if (c.a <= 0) return;
         if (ID2D1SolidColorBrush* b = Brush(c)) dc_->DrawTextLayout({n.box.x + ox, n.box.y + oy}, layout.Get(), b, D2D1_DRAW_TEXT_OPTIONS_NONE);
     };
@@ -290,8 +291,8 @@ void UiRenderer::DrawFocus(const UiNode& n, const Affine& full) {
         const D2D1_ROUNDED_RECT rr{D2D1::RectF(n.box.x - out, n.box.y - out, n.box.Right() + out, n.box.Bottom() + out), 6 + out, 6 + out};
         if (ID2D1SolidColorBrush* b = Brush(c)) dc_->DrawRoundedRectangle(rr, b, width);
     };
-    ring(7, 5, Color{1, 1, 1, 0.95f});
-    ring(3.5f, 2, Color{0.05f, 0.05f, 0.1f, 0.85f});
+    ring(7, 5, Color{1, 1, 1, 0.95f * n.alpha});
+    ring(3.5f, 2, Color{0.05f, 0.05f, 0.1f, 0.85f * n.alpha});
     dc_->SetTransform(old);
 }
 
@@ -311,8 +312,10 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
     dc->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
     for (const UiNode& n : tree.nodes) {
         const Affine full = toDc * n.self;
+        if (n.alpha <= 0.001f) continue;  // faded out whole (its children too: their alpha is under it)
         const UiButtonLook look = n.button ? ButtonNow(*n.button) : UiButtonLook{};
-        const UiPaint paint = PaintOf(look);
+        UiPaint paint = PaintOf(look);
+        paint.tint.a *= n.alpha;  // (出る・消える動き / FadeTo: everything it draws)
         if (n.image) DrawImage(n, full, gfx, asset, paint);
         if (n.bar) {
             D2D1_MATRIX_3X2_F old;
@@ -322,7 +325,11 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
             if (ID2D1SolidColorBrush* b = Brush(Paint(n.bar->fill, paint))) dc->FillRectangle(ToD2D(BarFill(*n.bar, n.box)), b);
             dc->SetTransform(old);
         }
-        if (n.button) DrawOutline(n, full, ButtonOutline(look));
+        if (n.button) {
+            UiStroke stroke = ButtonOutline(look);
+            stroke.color.a *= n.alpha;
+            DrawOutline(n, full, stroke);
+        }
         if (n.text) DrawText(n, full, gfx, asset);
         if (n.button && n.button->focused && n.button->interactable) DrawFocus(n, full);
     }

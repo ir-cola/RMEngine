@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define RM_PART_UI "rm_engine.game_ui.ui"
-#define RM_PART_UI_VERSION 1u
+#define RM_PART_UI_VERSION 2u /* 2: the tweens and the paths (1 is the same table without them: still given) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +30,14 @@ typedef struct RmUiApi {
     int (*windowShown)(void* ctx, const char* nameUtf8);
     /* The keys' focus on a button (its window must take the keys). */
     int (*focus)(void* ctx, uint64_t entity);
+    /* --- version 2 --- Tweens: from where it is now to there over `seconds` (0: at once). ease: 0 一定,
+       1 ゆっくり始まる, 2 ゆっくり終わる, 3 両方, 4 はねる, 5 行き過ぎて戻る. 0: no UI の配置. */
+    int (*moveTo)(void* ctx, uint64_t entity, float x, float y, float seconds, int ease); /* its 位置 */
+    int (*scaleTo)(void* ctx, uint64_t entity, float scale, float seconds, int ease);     /* 1: as it is */
+    int (*rotateTo)(void* ctx, uint64_t entity, float degrees, float seconds, int ease);  /* its 回転 */
+    int (*fadeTo)(void* ctx, uint64_t entity, float alpha, float seconds, int ease);      /* 0 unseen .. 1 */
+    /* Its 道に沿って動く: 1 plays on, 0 stops, 2 plays from the start. 0: it has none. */
+    int (*playPath)(void* ctx, uint64_t entity, int how);
 } RmUiApi;
 
 #ifdef __cplusplus

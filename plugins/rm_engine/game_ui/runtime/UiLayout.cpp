@@ -327,9 +327,14 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
     // The 階層: each entity's children in its order (the last tie-break of 手前の順).
     std::unordered_map<int, std::vector<const game_production::SceneEntity*>> children;
     for (const auto& t : scene.TreeOrder()) children[t.entity->data.parent].push_back(t.entity);
+    // Switched off but still going (its 消えるとき not over): drawn as if on.
+    auto going = [&](const game_production::SceneEntity* e) {
+        const UiMotion* m = PartOf<UiMotion>(*e);
+        return m && m->phase == static_cast<int>(UiMotionPhase::Hiding);
+    };
     auto shownFully = [&](const game_production::SceneEntity* e) {
         for (size_t steps = 0; e && steps <= scene.Entities().size(); ++steps, e = scene.Find(e->data.parent)) {
-            if (!e->data.active) return false;
+            if (!e->data.active && !going(e)) return false;
         }
         return true;
     };
@@ -369,7 +374,12 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
         root.entity = ca.e->data.id;
         root.canvas = root.entity;
         root.box = {0, 0, area.w / k, area.h / k};
-        root.toScreen = root.self = Translate({area.x, area.y}) * Scaling(k, k);
+        // The window as its 出る・消える動き moves it now: about its middle.
+        const UiLive& wl = ca.c->live;
+        const Vec2 middle{root.box.w * 0.5f, root.box.h * 0.5f};
+        root.toScreen = root.self = Translate({area.x, area.y}) * Scaling(k, k) * Translate(wl.offset) * About(middle, wl.turn, wl.scale);
+        root.alpha = std::clamp(wl.alpha, 0.f, 1.f);
+        root.closing = going(ca.e);
         root.canvasPart = ca.c;
         root.place = PartOf<UiRect>(*ca.e);
         root.text = PartOf<UiText>(*ca.e);
@@ -398,13 +408,14 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
         while (!stack.empty() && guard++ <= scene.Entities().size() * 2 + 8) {
             const Step s = stack.back();
             stack.pop_back();
-            if (!s.e->data.active) continue;  // switched off: with what is under it
+            if (!s.e->data.active && !going(s.e)) continue;  // switched off: with what is under it
             const UiNode& parent = tree.nodes[static_cast<size_t>(s.parentNode)];
             const UiRect* place = PartOf<UiRect>(*s.e);
             if (!place) {
                 push(s.e->data.id, s.parentNode);  // (not one: its children go into the same box)
                 continue;
             }
+            const UiLive& live = place->live;
             UiNode n;
             n.entity = s.e->data.id;
             n.canvas = root.entity;
@@ -415,8 +426,13 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
             n.button = PartOf<UiButton>(*s.e);
             n.bar = PartOf<UiBar>(*s.e);
             n.box = PlaceBox(*place, parent.box);
+            // Moved now (出る・消える動き, 道, the scripts' tweens): its box moves, its turn and size about its 中心.
+            n.box.x += live.offset.x;
+            n.box.y += live.offset.y;
             n.toScreen = parent.self;
-            n.self = parent.self * About(PivotPoint(*place, n.box), place->rotation, n.button ? ButtonScale(*n.button) : 1.f);
+            n.self = parent.self * About(PivotPoint(*place, n.box), place->rotation + live.turn, (n.button ? ButtonScale(*n.button) : 1.f) * live.scale);
+            n.alpha = parent.alpha * std::clamp(live.alpha, 0.f, 1.f);
+            n.closing = parent.closing || going(s.e);
             tree.nodes.push_back(n);
             push(n.entity, static_cast<int>(tree.nodes.size()) - 1);
         }
@@ -434,6 +450,7 @@ bool Hits(const UiNode& n, Vec2 p) {
 int TopAt(const UiTree& tree, Vec2 p) {
     for (auto it = tree.nodes.rbegin(); it != tree.nodes.rend(); ++it) {
         if (it->parent < 0) continue;  // a canvas itself takes nothing (a window may be partly empty)
+        if (it->closing) continue;     // going away (消えるとき): seen, not touched
         if (!(it->image || it->bar || it->button)) continue;
         if (Hits(*it, p)) return it->entity;
     }
@@ -470,7 +487,7 @@ PointerResult StepPointer(const UiTree& tree, std::optional<Vec2> p, bool down, 
 
 int NavigationCanvas(const UiTree& tree) {
     for (auto it = tree.nodes.rbegin(); it != tree.nodes.rend(); ++it) {
-        if (!Pressable(it->button)) continue;
+        if (!Pressable(it->button) || it->closing) continue;  // (a window going away takes no keys)
         const UiNode* c = tree.Find(it->canvas);
         if (!c || !c->canvasPart || !c->canvasPart->navigation) continue;
         // The frontmost canvas with one: its own, since nodes go back to front by canvas.
@@ -483,7 +500,7 @@ int FirstFocus(const UiTree& tree, int canvas, int preferred) {
     int best = 0;
     Vec2 bestAt{};
     for (const UiNode& n : tree.nodes) {
-        if (n.canvas != canvas || !Pressable(n.button)) continue;
+        if (n.canvas != canvas || !Pressable(n.button) || n.closing) continue;
         if (n.entity == preferred) return preferred;
         const Vec2 c = Center(n);
         if (!best || c.y < bestAt.y - 0.5f || (std::abs(c.y - bestAt.y) <= 0.5f && c.x < bestAt.x)) {
@@ -501,7 +518,7 @@ int MoveFocus(const UiTree& tree, int canvas, int current, int dx, int dy) {
     int best = current;
     float bestScore = std::numeric_limits<float>::max();
     for (const UiNode& n : tree.nodes) {
-        if (n.canvas != canvas || n.entity == current || !Pressable(n.button)) continue;
+        if (n.canvas != canvas || n.entity == current || !Pressable(n.button) || n.closing) continue;
         const Vec2 c = Center(n);
         const float ax = c.x - o.x, ay = c.y - o.y;
         const float along = ax * static_cast<float>(dx) + ay * static_cast<float>(dy);

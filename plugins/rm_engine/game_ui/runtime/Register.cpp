@@ -18,12 +18,15 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     static const ComponentInfo kImage{.type = &reflect::TypeOf<UiImage>};
     static const ComponentInfo kButton{.type = &reflect::TypeOf<UiButton>};
     static const ComponentInfo kBar{.type = &reflect::TypeOf<UiBar>};
-    for (const ComponentInfo* c : {&kCanvas, &kRect, &kText, &kImage, &kButton, &kBar}) registry.Contribute(kComponentPoint, *c);
+    static const ComponentInfo kMotion{.type = &reflect::TypeOf<UiMotion>};  // 出る・消える動き (UI-4)
+    static const ComponentInfo kPath{.type = &reflect::TypeOf<UiPath>};      // 道に沿って動く (UI-4)
+    for (const ComponentInfo* c : {&kCanvas, &kRect, &kText, &kImage, &kButton, &kBar, &kMotion, &kPath}) registry.Contribute(kComponentPoint, *c);
     // While the game plays: the mouse, the keys, the buttons' OnClick.
     static const game_production::PlayServiceInfo kService{kUiServiceName, &CreateUiService};
     registry.Contribute(game_production::kPlayServicePoint, kService);
     // Scripts: sdk/RMUI.h.
     registry.Contribute(game_production::kScriptApiPoint, ScriptUiPart());
+    registry.Contribute(game_production::kScriptApiPoint, ScriptUiPartVersion1());  // (scripts built before the tweens)
 }
 
 }  // namespace rm::game_ui

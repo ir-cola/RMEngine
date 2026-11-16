@@ -133,13 +133,39 @@ int Focus(void* ctx, uint64_t id) {
     return 1;
 }
 
-constexpr RmUiApi kTable{&SetText, &GetText, &SetTextColor, &SetImage, &SetImageColor, &SetBar, &GetBar, &SetInteractable,
-                         &ShowWindow, &SwitchWindow, &WindowShown, &Focus};
+// The tweens go through the UI service (it steps them each frame).
+UiService* Service(void* ctx) {
+    ScriptWorld& w = World(ctx);
+    return w.services ? dynamic_cast<UiService*>(w.services->Find(kUiServiceName)) : nullptr;
+}
+UiEase EaseOf(int ease) { return ease >= 0 && ease <= static_cast<int>(UiEase::Back) ? static_cast<UiEase>(ease) : UiEase::Out; }
+int Tween(void* ctx, uint64_t id, UiTweenKind kind, Vec2 to, float seconds, int ease) {
+    ScriptWorld& w = World(ctx);
+    UiService* ui = Service(ctx);
+    return ui && w.scene && StartTween(*w.scene, ui->Motion(), static_cast<int>(id), kind, to, seconds, EaseOf(ease)) ? 1 : 0;
+}
+int MoveTo(void* ctx, uint64_t id, float x, float y, float seconds, int ease) { return Tween(ctx, id, UiTweenKind::Move, {x, y}, seconds, ease); }
+int ScaleTo(void* ctx, uint64_t id, float scale, float seconds, int ease) { return Tween(ctx, id, UiTweenKind::Scale, {scale, 0}, seconds, ease); }
+int RotateTo(void* ctx, uint64_t id, float degrees, float seconds, int ease) { return Tween(ctx, id, UiTweenKind::Turn, {degrees, 0}, seconds, ease); }
+int FadeTo(void* ctx, uint64_t id, float alpha, float seconds, int ease) { return Tween(ctx, id, UiTweenKind::Fade, {alpha, 0}, seconds, ease); }
+int PlayPathOf(void* ctx, uint64_t id, int how) {
+    ScriptWorld& w = World(ctx);
+    return w.scene && PlayPath(*w.scene, static_cast<int>(id), how) ? 1 : 0;
+}
+
+constexpr RmUiApi kTable{&SetText, &GetText,      &SetTextColor, &SetImage, &SetImageColor, &SetBar,  &GetBar,  &SetInteractable,
+                         &ShowWindow, &SwitchWindow, &WindowShown, &Focus,  &MoveTo,        &ScaleTo, &RotateTo, &FadeTo, &PlayPathOf};
 
 }  // namespace
 
 const game_production::ScriptApiPart& ScriptUiPart() {
     static const game_production::ScriptApiPart part{RM_PART_UI, RM_PART_UI_VERSION, &kTable};
+    return part;
+}
+
+const game_production::ScriptApiPart& ScriptUiPartVersion1() {
+    // Version 1's table is the start of version 2's (the same functions in the same places).
+    static const game_production::ScriptApiPart part{RM_PART_UI, 1u, &kTable};
     return part;
 }
 
