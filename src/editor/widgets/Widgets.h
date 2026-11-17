@@ -219,8 +219,8 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
 // A panel to pick one action from (the インスペクター's 部品を足す): `title` and × on top, a search box,
 // then the actions in their folders (Action::folder), each folder opened and closed by its row. Like
 // ActionMenu it is drawn at the end of the frame, runs the picked action and closes; × / Esc / a click
-// outside close it. Enter runs the first one found by what was typed. The search and which folders are
-// open are the caller's (kept from one opening to the next).
+// outside close it. Enter runs the first one found by what was typed. Which folders are open is the
+// caller's (kept from one opening to the next); the search starts empty each time it opens.
 struct PickerState {
     std::string search;
     std::set<std::wstring> open;  // folder paths shown open (all closed at first)

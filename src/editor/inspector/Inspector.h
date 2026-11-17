@@ -118,8 +118,8 @@ struct State {
     std::optional<Edit> pending;  // chosen in the drop-down (drawn at the end of the frame)
     w::Popup menu;                // a block's ⋮ menu
     std::vector<w::Action> menuActions;
-    // The add button's panel (w::ActionPicker): × / search / the choices in folders. Its search and open
-    // folders stay from one opening to the next.
+    // The add button's panel (w::ActionPicker): × / search / the choices in folders. Its open folders
+    // stay from one opening to the next (and when something else is shown: EditorScreen's Inspect).
     w::Popup addPopup;
     std::vector<w::Action> addActions;
     w::PickerState addPicker;

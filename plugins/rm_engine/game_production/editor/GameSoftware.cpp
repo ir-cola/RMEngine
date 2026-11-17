@@ -1752,6 +1752,27 @@ private:
         return out;
     }
 
+    // Where a type's folder comes in 部品を足す: 3D, 2D, UI, 物理, 音, エフェクト, then other plugins'
+    // folders, スクリプト, その他 (the list is sorted by this; the folders come in the order of their first row).
+    int FolderRank(const reflect::TypeDesc& t) const {
+        if (t.kind == reflect::TypeKind::Script) return 100;
+        const auto it = componentFolders_.find(t.name);
+        if (it == componentFolders_.end()) return 101;
+        static constexpr std::string_view kOrder[] = {"3D", "2D", "UI", "物理", "音", "エフェクト"};
+        const std::string_view top = std::string_view(it->second).substr(0, std::string_view(it->second).find('/'));
+        for (size_t i = 0; i < std::size(kOrder); ++i) {
+            if (kOrder[i] == top) return static_cast<int>(i);
+        }
+        return 50;
+    }
+
+    // The component types in 部品を足す's order (FolderRank; in a folder, as the plugins give them).
+    std::vector<const reflect::TypeDesc*> TypesForAdding() const {
+        std::vector<const reflect::TypeDesc*> types = scene_.ComponentTypes();
+        std::stable_sort(types.begin(), types.end(), [this](const reflect::TypeDesc* a, const reflect::TypeDesc* b) { return FolderRank(*a) < FolderRank(*b); });
+        return types;
+    }
+
     // The inspector of one entity: the entity itself, then its components (each with ⋮ → 外す), and
     // "部品を足す" under them. Asked again every time it is drawn (undo may add or take components;
     // Play shows the copy that plays).
@@ -1841,7 +1862,7 @@ private:
                 return list;
             }
             const SceneEntity* e = scene_.Find(id);
-            for (const reflect::TypeDesc* t : scene_.ComponentTypes()) {
+            for (const reflect::TypeDesc* t : TypesForAdding()) {
                 if (!e || (e->FindComponent(t->name) && !scene_.AllowsMultiple(t->name))) continue;
                 editor::w::Action add;
                 add.label = Utf8ToWide(TrU8(t->label));
@@ -1921,7 +1942,7 @@ private:
                 list.push_back(std::move(none));
                 return list;
             }
-            for (const reflect::TypeDesc* t : scene_.ComponentTypes()) {
+            for (const reflect::TypeDesc* t : TypesForAdding()) {
                 // Offered while at least one of them lacks it (or may have more); added where it can be.
                 const bool someCan = scene_.AllowsMultiple(t->name) || std::any_of(ids.begin(), ids.end(), [&](int id) {
                                          const SceneEntity* e = scene_.Find(id);

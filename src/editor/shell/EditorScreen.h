@@ -120,7 +120,11 @@ private:
                 log::Warn("インスペクターが 1 秒に 20 回以上作り直されています (スクロールとメニューが戻ります。直すべき不具合です)");
             }
             inspected = std::move(target);
+            // A new thing shown: the scroll, the fields' typing and the menus start over. The 部品を足す
+            // panel's open folders stay (opened once, found open again on the next entity).
+            auto openFolders = std::move(inspectorState.addPicker.open);
             inspectorState = {};
+            inspectorState.addPicker.open = std::move(openFolders);
             editor_.RedrawAll();
         }
         const PluginRegistry& Registry() const override;

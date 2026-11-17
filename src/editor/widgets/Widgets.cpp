@@ -1181,7 +1181,12 @@ void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::v
         };
         const bool fresh = pop.fresh;
         pop.fresh = false;
-        if (fresh) c.FocusText(searchId, Utf8ToWide(st.search), true);
+        if (fresh) {
+            // Opened: an empty search (what was typed last time would hide most of the list); the
+            // folders stay as they were left.
+            st.search.clear();
+            c.FocusText(searchId, L"", true);
+        }
         if ((!fresh && (in.pressed[0] || in.pressed[1]) && !box.Contains(in.mouseX, in.mouseY)) || c.KeyPressed(ui::Key::Escape)) close();
         const bool enter = c.KeyPressed(ui::Key::Enter);
         int run = -1;
@@ -1246,6 +1251,8 @@ void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::v
                     p.Text({row.Right() - countW - 6, row.y, countW, row.h}, count, cs);
                     if (b.clicked && !fresh) toggle = r.path;
                 } else {
+                    // Inside a folder: under the folder's name (past its ▸ and picture); at the top: at the edge.
+                    if (r.depth > 0) x += 40 - kIndent;
                     p.Text({x + 4, row.y, row.Right() - x - 10, row.h}, r.label, ts);
                     // (not on the frame it opened: a quick click would pick the row that came under the mouse)
                     if (b.clicked && !fresh) run = static_cast<int>(index[static_cast<size_t>(r.item)]);
