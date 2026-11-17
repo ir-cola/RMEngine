@@ -146,7 +146,7 @@ constexpr char kEarth[] = R"(
 float3 Sky(SkyInput i) {
     float3 d = i.dir;
     float3 sunLight = skyParam[0].rgb;
-    float cover = skyParam[1].x, dark = skyParam[1].y, haze = skyParam[1].z, storm = skyParam[1].w;
+    float cover = skyParam[1].x, dark = skyParam[1].y, haze = skyParam[1].z, flash = skyParam[1].w;
     float3 zenith = skyParam[2].rgb;
     float stars = skyParam[2].a;
     float3 horizon = skyParam[3].rgb;
@@ -187,13 +187,11 @@ float3 Sky(SkyInput i) {
         float3 lit = sunLight * 0.85 + zenith * 0.7 + horizon * 0.35;
         float3 shade = (zenith + horizon) * 0.3;
         float3 cloud = lerp(lit, shade, saturate(dark + (through - n) * 1.5 + 0.25)) * (1 - dark * 0.6);
-        if (storm > 0.5) {  // lightning: now and then the clouds flash
-            float t = floor(i.time * 6);
-            cloud += step(0.97, SkyHash(float3(t, 1.7, 3.1))) * SkyHash(float3(t, 9.2, 0.4)) * float3(0.8, 0.85, 1.0) * 2.5;
-        }
+        cloud += flash * float3(0.8, 0.85, 1.0) * 2.5;  // lightning (when it flashes: the CPU says)
         c = lerp(c, cloud, density);
     }
-    // Haze (霧): all towards the horizon's colour, most of all low.
+    c += flash * float3(0.25, 0.27, 0.32) * up;  // the flash lights the whole sky a little
+    // Haze: all towards the horizon's colour, most of all low (rain and snow).
     c = lerp(c, horizon, saturate(haze * (1 - up * 0.6)));
     // Below the horizon: the ground's colour.
     return lerp(c, ground, saturate(-d.y * 6));
@@ -302,5 +300,11 @@ const char* BuiltinSkyName(BuiltinSky sky) {
 }
 
 std::string_view NewSkyCode() { return kNewSky; }
+
+uint32_t PrecipitationCount(const Precipitation& p) {
+    const float amount = p.amount > 1.f ? 1.f : p.amount < 0.f ? 0.f : p.amount;
+    const uint32_t most = p.kind == Precipitation::Kind::Rain ? kMaxRaindrops : kMaxSnowflakes;
+    return static_cast<uint32_t>(amount * static_cast<float>(most) + 0.5f);
+}
 
 }  // namespace rm::space3d

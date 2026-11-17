@@ -12,7 +12,10 @@
 // The numbers it gets (SkyConstants, the constant buffer b3) are set by whoever draws the sky (the
 // game's 空: game_x_3d/runtime/Sky.h). Pure (text only) - tests/TestSky.cpp compiles every sky.
 
+#include "base/Math.h"
+
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -41,7 +44,7 @@ std::string AssembleSky(std::string_view code, std::string_view fileName);
 
 // The skies that come with the engine (code of the same form as a .rmsky).
 //   Earth     param[0] rgb: the sun's light; a: day (0 night .. 1)
-//             param[1] x: clouds' cover 0..1, y: their darkness, z: haze (霧), w: 1 = lightning (雷雨)
+//             param[1] x: clouds' cover 0..1, y: their darkness, z: haze, w: a lightning flash now (0 .. 1)
 //             param[2] rgb: the sky straight up; a: the stars (0 .. 1)
 //             param[3] rgb: the sky at the horizon; a: the moon's light
 //             param[4] rgb: the ground below the horizon; a: the sunset's glow (0 .. 1)
@@ -53,6 +56,24 @@ std::string AssembleSky(std::string_view code, std::string_view fileName);
 enum class BuiltinSky { Earth, Space, Panorama, SixFaces };
 std::string_view BuiltinSkyCode(BuiltinSky sky);
 const char* BuiltinSkyName(BuiltinSky sky);  // the "file name" its messages give ("地球の空")
+
+// Rain or snow falling around the eye (RenderFrame::precipitation): drops / flakes in a box that moves
+// with the eye (each keeps its place in the world while it falls; out of one side, in at the other),
+// drawn after the solid things with the depth test (in front of things, hidden behind them), each
+// one made by the vertex shader from its number (no buffer). Fainter near the eye and the box's edge.
+struct Precipitation {
+    enum class Kind : uint8_t { Rain, Snow };
+    Kind kind = Kind::Rain;
+    float amount = 0;              // 0 .. 1: none .. kMaxRaindrops / kMaxSnowflakes
+    float seconds = 0;             // the time they fall by (still: they hang where they are)
+    Color light{1, 1, 1, 1};       // what lights them (linear)
+};
+inline constexpr uint32_t kMaxRaindrops = 16000;
+inline constexpr uint32_t kMaxSnowflakes = 10000;
+inline constexpr float kRainBox = 24.f;  // the box's side (world units)
+inline constexpr float kSnowBox = 18.f;
+// How many are drawn for an amount (0 .. the most).
+uint32_t PrecipitationCount(const Precipitation& p);
 
 // What a new .rmsky file holds: a short sky to start from, with what can be used in comments.
 std::string_view NewSkyCode();

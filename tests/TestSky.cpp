@@ -91,12 +91,46 @@ RM_TEST(Sky_LookOfDayAndNight) {
     const SkyLook evening = LookOf(Earth(17.8f), 0);
     CHECK(evening.lightColor.r > evening.lightColor.b);
     CHECK(evening.constants.param[4][3] > 0.f);  // the sunset's glow
-    // Weather: less sunlight, more cloud; a storm flashes.
+    // Weather: less sunlight, more cloud - the more cloudy, the more so.
     const SkyLook rain = LookOf(Earth(12, Weather::Rain), 0);
     CHECK(rain.lightStrength < noon.lightStrength * 0.5f);
     CHECK(rain.constants.param[1][0] > noon.constants.param[1][0]);
-    CHECK(LookOf(Earth(12, Weather::Storm), 0).constants.param[1][3] == 1.f);
-    CHECK(LookOf(Earth(12, Weather::Fog), 0).constants.param[1][2] > 0.5f);
+    Sky thin = Earth(12, Weather::Cloudy), thick = thin;
+    thin.cloudiness = 0.1f;
+    thick.cloudiness = 1.f;
+    CHECK(LookOf(thick, 0).constants.param[1][0] > LookOf(thin, 0).constants.param[1][0]);
+    CHECK(LookOf(thick, 0).lightStrength < LookOf(thin, 0).lightStrength);
+    CHECK(Near(LookOf(Earth(12), 0).constants.param[1][0], 0.15f));  // 晴れ: a few clouds, whatever 雲の量 says
+    // 雨 / 雪: what falls (none in clear or cloudy weather), as much as asked, lit.
+    CHECK(rain.precipitation.amount == 0.5f && rain.precipitation.kind == space3d::Precipitation::Kind::Rain);
+    CHECK(rain.precipitation.light.r > 0.f);
+    Sky snow = Earth(12, Weather::Snow);
+    snow.snow = 1;
+    CHECK(LookOf(snow, 3).precipitation.kind == space3d::Precipitation::Kind::Snow && LookOf(snow, 3).precipitation.amount == 1.f &&
+          Near(LookOf(snow, 3).precipitation.seconds, 3));
+    CHECK(LookOf(thick, 0).precipitation.amount == 0.f && noon.precipitation.amount == 0.f);
+    CHECK(space3d::PrecipitationCount(LookOf(snow, 0).precipitation) == space3d::kMaxSnowflakes);
+    CHECK(space3d::PrecipitationCount(rain.precipitation) == space3d::kMaxRaindrops / 2);
+    // 雷: now and then a flash, only while the time goes on (and only in cloudy or rainy weather).
+    Sky storm = Earth(12, Weather::Rain);
+    storm.lightning = true;
+    int flashes = 0, dark = 0;
+    for (int k = 1; k < 4000; ++k) {
+        const SkyLook l = LookOf(storm, k * 0.125);
+        if (l.flash > 0) {
+            ++flashes;
+            CHECK(l.flash <= 1.f && l.constants.param[1][3] == l.flash);
+        } else {
+            ++dark;
+        }
+    }
+    CHECK(flashes > 20 && dark > flashes * 10);
+    CHECK(LookOf(storm, 0).flash == 0.f);
+    Sky snowStorm = Earth(12, Weather::Snow);
+    snowStorm.lightning = true;
+    bool any = false;
+    for (int k = 1; k < 4000; ++k) any = any || LookOf(snowStorm, k * 0.125).flash > 0;
+    CHECK(!any);
     // Brightness; 光を空に合わせる off.
     Sky dim = Earth(12);
     dim.brightness = 0.5f;

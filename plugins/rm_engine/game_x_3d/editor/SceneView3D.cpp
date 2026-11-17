@@ -896,7 +896,8 @@ private:
         const game_x_3d::Sky* sky = host.scene.Setting<game_x_3d::Sky>();
         const bool ownCamera = &pic == &main_ && !host.game;
         if (sky && sky->kind != game_x_3d::SkyKind::None) {
-            const game_x_3d::SkyLook look = game_x_3d::LookOf(*sky, skySeconds_);
+            skyLook_ = game_x_3d::LookOf(*sky, skySeconds_);
+            const game_x_3d::SkyLook& look = skyLook_;
             if (!ownCamera || state_.sky) {
                 game_x_3d::SkyPainter::Sources sources;
                 sources.picture = [&](const AssetRef& ref) {
@@ -908,6 +909,7 @@ private:
                 sources.name = [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); };
                 sources.now = now_;
                 f.sky = pic.sky.Prepare(pic.renderer, *sky, look, sources);
+                if (look.precipitation.amount > 0) f.precipitation = &look.precipitation;  // 雨 / 雪 (with the sky)
             }
             game_x_3d::FollowSky(look, frameLights_, f.ambient);
         }
@@ -1377,7 +1379,8 @@ private:
     std::string transformType_, meshType_, cameraType_, lightType_, ambientType_;
     std::unordered_map<std::string, w::Icon> markOf_;  // component type -> its mark (MakeLooks)
     std::vector<space3d::Light> frameLights_;          // lights_ as a picture draws them (the sky's light)
-    double skySeconds_ = 0;                            // the sky's time (SkyLook): the game's while it plays
+    double skySeconds_ = 0;
+    game_x_3d::SkyLook skyLook_;  // the picture being drawn's (the renderer reads its rain / snow)                            // the sky's time (SkyLook): the game's while it plays
     bool looksMade_ = false;
     std::optional<space3d::Ambient> ambient_;  // the scene's 環境光 (none: the default)
     size_t warnedShadows_ = 0;  // lights told about that have no shadow map left

@@ -6,7 +6,9 @@
 //
 //   なし                  the camera's background colour, as before
 //   地球の空              the air, the sun, the moon and the stars, clouds - by the 時刻 (0 .. 24; it goes on
-//                         while the game plays when 1 日の長さ is set) and the 天気
+//                         while the game plays when 1 日の長さ is set) and the 天気 (晴れ / くもり / 雨 / 雪:
+//                         how cloudy, lightning, how much rain or snow - drops and flakes that really fall
+//                         around the camera, in front of things and hidden behind them)
 //   宇宙                  stars, nebulae, the Milky Way and a sun
 //   画像 (パノラマ 1 枚)  one picture around (equirectangular: 360 x 180 degrees)
 //   画像 (6 枚)           a picture for each side of a cube around the eye
@@ -45,12 +47,9 @@ enum class SkyKind {
 RM_ENUM(Label="天気")
 enum class Weather {
     RM_ITEM(Label="晴れ") Clear,
-    RM_ITEM(Label="晴れ時々くもり") PartlyCloudy,
     RM_ITEM(Label="くもり") Cloudy,
     RM_ITEM(Label="雨") Rain,
-    RM_ITEM(Label="雷雨") Storm,
     RM_ITEM(Label="雪") Snow,
-    RM_ITEM(Label="霧") Fog,
 };
 
 RM_STRUCT(Label="空")
@@ -61,7 +60,11 @@ struct Sky {
     // 地球の空
     RM_PROPERTY(Edit, Label="時刻", Tooltip="0〜24 時。6 時に東 (+X) から昇り、12 時に一番高く、18 時に西へ沈みます", Min=0, Max=24, Step=0.25, ShowIf="kind=Earth") float hour = 12.f;
     RM_PROPERTY(Edit, Label="1 日の長さ (秒)", Tooltip="Play 中、この秒数で 24 時間すすみます (0: 時刻は止まったまま)。書き出したゲームでも同じ", Min=0, Max=1000000, ShowIf="kind=Earth") float dayLength = 0.f;
-    RM_PROPERTY(Edit, Label="天気", Tooltip="雲の量と暗さ、もや。雷雨はときどき雲が光ります", ShowIf="kind=Earth") Weather weather = Weather::Clear;
+    RM_PROPERTY(Edit, Label="天気", Tooltip="晴れ: 雲が少し / くもり: 雲の量を選べる / 雨・雪: 雲に加えて、カメラのまわりに雨粒・雪が降ります", ShowIf="kind=Earth") Weather weather = Weather::Clear;
+    RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲がまばら 〜 1: 空一面の厚い雲 (暗くなり、日の光も弱まります)", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Cloudy|Rain|Snow") float cloudiness = 0.7f;
+    RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中)", ShowIf="kind=Earth&weather=Cloudy|Rain") bool lightning = false;
+    RM_PROPERTY(Edit, Label="雨の量", Tooltip="0: 降らない 〜 1: どしゃぶり", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Rain") float rain = 0.5f;
+    RM_PROPERTY(Edit, Label="雪の量", Tooltip="0: 降らない 〜 1: 大雪", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Snow") float snow = 0.5f;
     RM_PROPERTY(Edit, Label="太陽の高さ (度)", Tooltip="地球の空: 真昼の高さ / 宇宙・自分のシェーダー: 太陽のある高さ (0 で地平線、90 で真上)", Min=-90, Max=90, ShowIf="kind=Earth|Space|Custom") float sunHeight = 60.f;
     RM_PROPERTY(Edit, Label="太陽の向き (度)", Tooltip="真上から見て、太陽の通り道 (地球の空) / 太陽 (宇宙など) を回します。0: 真昼の太陽は後ろ (+Z) の空", Min=-360, Max=360, ShowIf="kind=Earth|Space|Custom") float sunDirection = 0.f;
     RM_PROPERTY(Edit, Label="光を空に合わせる", Tooltip="シーンの 1 つ目の平行光 (無ければ足します) の向き・色・強さと、環境光の色を、空の太陽 (夜は月) に合わせます。光の部品の「強さ」は倍率として残ります", ShowIf="kind=Earth|Space") bool driveLight = true;
@@ -102,13 +105,16 @@ struct SkyLook {
     Color lightColor{1, 1, 1, 1};       // linear
     float lightStrength = 1.f;          // multiplies the light component's own 強さ
     Color ambientSky{0.16f, 0.16f, 0.16f, 1}, ambientGround{0.08f, 0.08f, 0.08f, 1};
+    // 雨 / 雪: what falls around the camera (amount 0: nothing).
+    space3d::Precipitation precipitation;
+    float flash = 0;  // 雷: a flash now (0 .. 1; it lights the clouds, the ambient light and the drops)
 };
 // `seconds`: the time the clouds drift and the stars twinkle by (the game's: 0 in the editor until Play).
 SkyLook LookOf(const Sky& sky, double seconds);
 
 // 光を空に合わせる: the first directional light takes the look's direction and colour, and its strength
 // times the look's (none: one is added); the ambient light's colours become the sky's (its strength
-// stays). Nothing when the look does not drive the light.
+// stays; a lightning flash brightens it). Nothing when the look does not drive the light.
 void FollowSky(const SkyLook& look, std::vector<space3d::Light>& lights, space3d::Ambient& ambient);
 
 // The system 空の時刻: while the game plays, 地球の空's 時刻 goes on (1 日の長さ seconds a day).

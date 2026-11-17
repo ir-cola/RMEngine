@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 
 namespace rm::game_x_3d {
@@ -38,22 +39,35 @@ void Set(float out[4], Vec3 rgb, float a) {
     out[3] = a;
 }
 
-// What each weather does: the clouds' cover and darkness, haze, how much sunlight gets through, lightning.
+// What the weather does: the clouds' cover and darkness, haze, how much sunlight gets through.
 struct WeatherLook {
     float cover, dark, haze, through;
-    bool storm;
 };
-WeatherLook WeatherOf(Weather w) {
-    switch (w) {
-        case Weather::Clear: return {0.15f, 0.f, 0.f, 1.f, false};
-        case Weather::PartlyCloudy: return {0.45f, 0.05f, 0.02f, 0.9f, false};
-        case Weather::Cloudy: return {0.85f, 0.3f, 0.1f, 0.45f, false};
-        case Weather::Rain: return {0.95f, 0.55f, 0.3f, 0.3f, false};
-        case Weather::Storm: return {1.f, 0.75f, 0.35f, 0.22f, true};
-        case Weather::Snow: return {0.9f, 0.25f, 0.4f, 0.5f, false};
-        case Weather::Fog: return {0.6f, 0.15f, 0.85f, 0.5f, false};
+WeatherLook WeatherOf(const Sky& sky) {
+    const float c = std::clamp(sky.cloudiness, 0.f, 1.f);
+    switch (sky.weather) {
+        case Weather::Clear: return {0.15f, 0.f, 0.f, 1.f};
+        case Weather::Cloudy: return {0.15f + 0.85f * c, 0.35f * c, 0.12f * c, 1 - 0.6f * c};
+        case Weather::Rain: {
+            const float r = std::clamp(sky.rain, 0.f, 1.f);
+            return {0.4f + 0.6f * c, 0.25f + 0.45f * c, 0.1f + 0.25f * r, 0.65f - 0.4f * c};
+        }
+        case Weather::Snow: {
+            const float s = std::clamp(sky.snow, 0.f, 1.f);
+            return {0.4f + 0.6f * c, 0.1f + 0.2f * c, 0.15f + 0.4f * s, 0.75f - 0.3f * c};
+        }
     }
-    return {0.15f, 0.f, 0.f, 1.f, false};
+    return {0.15f, 0.f, 0.f, 1.f};
+}
+
+// 0 .. 1 from a number, the same every time (lightning's when and how bright).
+float Hash01(uint32_t x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return static_cast<float>(x & 0xFFFFFFu) / 16777216.f;
 }
 
 // The air's colours (linear) for the sun's height e (the sine of its angle above the horizon).
@@ -96,7 +110,7 @@ SkyLook LookOf(const Sky& sky, double seconds) {
         case SkyKind::None: break;
         case SkyKind::Earth: {
             look.builtin = space3d::BuiltinSky::Earth;
-            const WeatherLook w = WeatherOf(sky.weather);
+            const WeatherLook w = WeatherOf(sky);
             Vec3 zenith, horizon;
             float day = 0, glow = 0;
             EarthAir(sun.y, w, zenith, horizon, day, glow);
@@ -107,7 +121,12 @@ SkyLook LookOf(const Sky& sky, double seconds) {
             const float moonUp = Smooth(-0.02f, 0.1f, moon.y);
             const Vec3 ground = Add(Scale(horizon, 0.25f), Scale(Vec3{0.02f, 0.018f, 0.015f}, day));
             Set(k.param[0], sunLight, day);
-            Set(k.param[1], {w.cover, w.dark, w.haze}, w.storm ? 1.f : 0.f);
+            // 雷: now and then (an eighth of a second at a time) a flash - only while the time goes on.
+            if (sky.lightning && (sky.weather == Weather::Cloudy || sky.weather == Weather::Rain) && seconds > 0) {
+                const auto tick = static_cast<uint32_t>(seconds * 8);
+                if (Hash01(tick * 2u) > 0.975f) look.flash = 0.5f + 0.5f * Hash01(tick * 2u + 1u);
+            }
+            Set(k.param[1], {w.cover, w.dark, w.haze}, look.flash);
             Set(k.param[2], zenith, night * night * (1 - w.cover));
             Set(k.param[3], horizon, night * moonUp);
             Set(k.param[4], ground, glow * up);
@@ -128,6 +147,15 @@ SkyLook LookOf(const Sky& sky, double seconds) {
             const Vec3 skyLight = Add(Scale(Add(Scale(zenith, 0.6f), Scale(horizon, 0.4f)), 0.35f), Scale(Vec3{0.02f, 0.025f, 0.045f}, night));
             look.ambientSky = ToColor(skyLight);
             look.ambientGround = ToColor(Add(Scale(ground, 0.6f), Scale(sunLight, 0.04f * w.through)));
+            // 雨 / 雪: lit by the sky and a little by the sun (and the flash).
+            if (sky.weather == Weather::Rain || sky.weather == Weather::Snow) {
+                const bool rain = sky.weather == Weather::Rain;
+                look.precipitation.kind = rain ? space3d::Precipitation::Kind::Rain : space3d::Precipitation::Kind::Snow;
+                look.precipitation.amount = std::clamp(rain ? sky.rain : sky.snow, 0.f, 1.f);
+                look.precipitation.seconds = static_cast<float>(seconds);
+                const Vec3 lit = Add(Add(Scale(skyLight, 2.0f), Scale(Rgb(look.lightColor), look.lightStrength * 0.35f)), Vec3{look.flash, look.flash, look.flash});
+                look.precipitation.light = ToColor(lit);
+            }
             break;
         }
         case SkyKind::Space: {
@@ -173,8 +201,9 @@ void FollowSky(const SkyLook& look, std::vector<space3d::Light>& lights, space3d
     sun->direction = look.lightGoes;
     sun->color = look.lightColor;
     sun->intensity *= look.lightStrength;
-    ambient.sky = look.ambientSky;
-    ambient.ground = look.ambientGround;
+    const float f = look.flash * 0.8f;
+    ambient.sky = {look.ambientSky.r + f, look.ambientSky.g + f, look.ambientSky.b + f * 1.1f, 1};
+    ambient.ground = {look.ambientGround.r + f * 0.5f, look.ambientGround.g + f * 0.5f, look.ambientGround.b + f * 0.55f, 1};
 }
 
 void RunSkyClock(game_production::SystemContext& ctx) {

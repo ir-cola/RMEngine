@@ -302,6 +302,61 @@ float4 ClearVS(uint id : SV_VertexID) : SV_Position {
 }
 )";
 
+// (a literal of its own: one may hold at most 16 KB)
+constexpr char kPrecipShaders[] = R"(
+// Rain and snow (SkyShader.h's Precipitation): 6 corners (2 triangles) per drop / flake, each made from
+// its number - where it is in the box around the eye, how fast it falls - by a hash (no buffer).
+cbuffer Weather : register(b4) {
+    float4 precipInfo;   // x: 0 rain / 1 snow, y: seconds, z: the box's side
+    float4 precipLight;  // rgb: what lights them (linear)
+    float4 camRight;     // xyz: the camera's right (world)
+    float4 camUp;        // xyz: the camera's up
+};
+uint PrecipHash(uint x) {
+    x ^= x >> 16; x *= 0x7feb352d; x ^= x >> 15; x *= 0x846ca68b; x ^= x >> 16;
+    return x;
+}
+float PrecipRand(uint id, uint k) { return (PrecipHash(id * 4 + k) & 0xFFFFFF) / 16777216.0; }
+struct PrecipOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; float fade : TEXCOORD1; };
+PrecipOut PrecipVS(uint vid : SV_VertexID) {
+    static const float2 corners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1), float2(-1, -1), float2(1, 1), float2(-1, 1)};
+    uint id = vid / 6;
+    float2 q = corners[vid % 6];
+    bool snow = precipInfo.x > 0.5;
+    float t = precipInfo.y, box = precipInfo.z;
+    float3 seed = float3(PrecipRand(id, 0), PrecipRand(id, 1), PrecipRand(id, 2));
+    float3 p = seed * box * 7.31;  // where it is in the world (the box repeats)
+    p.y -= t * (snow ? 0.9 + seed.x * 0.6 : 9.0 + seed.y * 3.0);
+    if (snow) {  // flakes sway
+        p.x += sin(t * 0.9 + seed.z * 40) * 0.35;
+        p.z += cos(t * 0.7 + seed.x * 40) * 0.35;
+    }
+    float3 rel = (frac((p - eye.xyz) / box + 0.5) - 0.5) * box;  // the copy nearest the eye
+    float dist = length(rel);
+    float3 w = eye.xyz + rel;
+    PrecipOut o;
+    o.fade = saturate((dist - 0.4) / 1.2) * saturate((box * 0.5 - dist) / (box * 0.25));
+    if (snow) {
+        float size = 0.02 + seed.z * 0.025;
+        w += (camRight.xyz * q.x + camUp.xyz * q.y) * size;
+    } else {
+        // A thin streak along its fall, turned to face the eye.
+        float3 down = float3(0, -1, 0);
+        float3 side = normalize(cross(down, rel + float3(1e-4, 0, 1e-4)));
+        float len = 0.35 + seed.x * 0.25;
+        w += side * q.x * (0.004 + dist * 0.0006) + down * (q.y * 0.5 + 0.5) * len;
+    }
+    o.pos = mul(viewProj, float4(w, 1));
+    o.uv = q;
+    return o;
+}
+float4 PrecipPS(PrecipOut i) : SV_Target {
+    bool snow = precipInfo.x > 0.5;
+    float a = snow ? saturate((1 - length(i.uv)) * 2.5) * 0.9 : (1 - abs(i.uv.x)) * (0.55 - 0.25 * i.uv.y * i.uv.y) * 0.45;
+    return float4(ToScreen(precipLight.rgb * (snow ? 1.0 : 0.85)), saturate(a) * i.fade);
+}
+)";
+
 // The constant buffer `Frame`.
 struct FrameConstants {
     float viewProj[16];
@@ -337,7 +392,7 @@ Mat4 NormalMatrix(const Mat4& world) {
 
 // The renderer's shaders with ToScreen / ToLinear (SkyShader.h: the sky's are the same) in front.
 const std::string& ShaderText() {
-    static const std::string text = std::string(kColorHlsl) + kShaders;
+    static const std::string text = std::string(kColorHlsl) + kShaders + kPrecipShaders;
     return text;
 }
 
@@ -398,8 +453,8 @@ struct Renderer::Shared {
     template <class T>
     using Ptr = Microsoft::WRL::ComPtr<T>;
     Ptr<ID3D11Device> device;
-    Ptr<ID3D11VertexShader> lineVs, meshVs, shadowVs, clearVs;
-    Ptr<ID3D11PixelShader> linePs, meshPs, floorPs, copyPs;
+    Ptr<ID3D11VertexShader> lineVs, meshVs, shadowVs, clearVs, precipVs;
+    Ptr<ID3D11PixelShader> linePs, meshPs, floorPs, copyPs, precipPs;
     Ptr<ID3D11InputLayout> lineLayout, meshLayout;
     Ptr<ID3D11Buffer> frame, lights, shadows;  // the constant buffers (b0, b1, b2)
     std::shared_ptr<const GpuMesh> cube, floor;
@@ -412,7 +467,7 @@ struct Renderer::Shared {
     Ptr<ID3D11SamplerState> shadowSampler;
     // The sky: its constant buffer (b3), a sampler stopping at the edges (one of six pictures), the
     // depth test off (drawn first, writing nothing), and the programs made so far by their text.
-    Ptr<ID3D11Buffer> skyFrame;
+    Ptr<ID3D11Buffer> skyFrame, weather;
     Ptr<ID3D11SamplerState> edgeSampler;
     Ptr<ID3D11DepthStencilState> depthOff;
     std::mutex skyMutex;
@@ -476,10 +531,11 @@ std::atomic<uint64_t> g_meshSerial{0};  // GpuMesh::serial: never the same twice
 }  // namespace
 
 bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
-    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs, cvs, cps;
+    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs, cvs, cps, pvs, pps;
     if (!Compile("LineVS", "vs_4_0", lvs, error) || !Compile("LinePS", "ps_4_0", lps, error) || !Compile("MeshVS", "vs_4_0", mvs, error) ||
         !Compile("MeshPS", "ps_4_0", mps, error) || !Compile("FloorPS", "ps_4_0", fps, error) || !Compile("ShadowVS", "vs_4_0", svs, error) ||
-        !Compile("ClearVS", "vs_4_0", cvs, error) || !Compile("CopyDepthPS", "ps_4_0", cps, error)) {
+        !Compile("ClearVS", "vs_4_0", cvs, error) || !Compile("CopyDepthPS", "ps_4_0", cps, error) || !Compile("PrecipVS", "vs_4_0", pvs, error) ||
+        !Compile("PrecipPS", "ps_4_0", pps, error)) {
         return false;
     }
     auto fail = [&](const char* what) {
@@ -493,6 +549,8 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
         FAILED(device->CreateVertexShader(svs->GetBufferPointer(), svs->GetBufferSize(), nullptr, &shadowVs)) ||
         FAILED(device->CreateVertexShader(cvs->GetBufferPointer(), cvs->GetBufferSize(), nullptr, &clearVs)) ||
         FAILED(device->CreatePixelShader(cps->GetBufferPointer(), cps->GetBufferSize(), nullptr, &copyPs)) ||
+        FAILED(device->CreateVertexShader(pvs->GetBufferPointer(), pvs->GetBufferSize(), nullptr, &precipVs)) ||
+        FAILED(device->CreatePixelShader(pps->GetBufferPointer(), pps->GetBufferSize(), nullptr, &precipPs)) ||
         FAILED(device->CreateVertexShader(mvs->GetBufferPointer(), mvs->GetBufferSize(), nullptr, &meshVs))) {
         return fail("シェーダー");
     }
@@ -592,7 +650,10 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     off.DepthEnable = FALSE;
     off.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
     off.DepthFunc = D3D11_COMPARISON_ALWAYS;
-    if (FAILED(device->CreateBuffer(&cd, nullptr, &skyFrame)) || FAILED(device->CreateSamplerState(&es, &edgeSampler)) ||
+    D3D11_BUFFER_DESC wd = cd;
+    wd.ByteWidth = sizeof(float) * 16;
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &skyFrame)) || FAILED(device->CreateBuffer(&wd, nullptr, &weather)) ||
+        FAILED(device->CreateSamplerState(&es, &edgeSampler)) ||
         FAILED(device->CreateDepthStencilState(&off, &depthOff))) {
         return fail("空");
     }
@@ -1449,6 +1510,31 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->PSSetShader(s.meshPs.Get(), nullptr, 0);
         run(floorEnd, seeThroughEnd, true);
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+    }
+
+    // 3-1. Rain / snow around the eye: see-through, depth-tested, writing no depth.
+    if (f.precipitation) {
+        const uint32_t count = PrecipitationCount(*f.precipitation);
+        if (count > 0) {
+            const bool snow = f.precipitation->kind == Precipitation::Kind::Snow;
+            const Color& l = f.precipitation->light;
+            // The camera's right and up: the view's first two rows (m[column][row]).
+            const float wc[16] = {snow ? 1.f : 0.f, f.precipitation->seconds, snow ? kSnowBox : kRainBox, 0, l.r, l.g, l.b, 0,
+                                  f.view.m[0][0], f.view.m[1][0], f.view.m[2][0], 0, f.view.m[0][1], f.view.m[1][1], f.view.m[2][1], 0};
+            ID3D11Buffer* weatherCb = s.weather.Get();
+            ctx->UpdateSubresource(weatherCb, 0, nullptr, wc, 0, 0);
+            ctx->VSSetConstantBuffers(4, 1, &weatherCb);
+            ctx->PSSetConstantBuffers(4, 1, &weatherCb);
+            ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
+            ctx->VSSetShader(s.precipVs.Get(), nullptr, 0);
+            ctx->PSSetShader(s.precipPs.Get(), nullptr, 0);
+            ctx->Draw(count * 6, 0);
+            ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+            ID3D11Buffer* none = nullptr;
+            ctx->VSSetConstantBuffers(4, 1, &none);
+            ctx->PSSetConstantBuffers(4, 1, &none);
+        }
     }
 
     // 3-2. What plugins draw themselves (particles: see-through, depth-tested, writing no depth); then

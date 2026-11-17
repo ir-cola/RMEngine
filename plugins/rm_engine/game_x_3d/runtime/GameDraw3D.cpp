@@ -126,7 +126,8 @@ public:
         // The scene's 空, behind everything (its time: the game's, as the clouds drift); 光を空に合わせる.
         seconds_ += f.dt;
         if (const Sky* sky = f.scene.Setting<Sky>(); sky && sky->kind != SkyKind::None) {
-            const SkyLook look = LookOf(*sky, seconds_);
+            look_ = LookOf(*sky, seconds_);
+            const SkyLook& look = look_;
             SkyPainter::Sources sources;
             sources.picture = [&](const AssetRef& ref) { return PictureOf(f, ref); };
             sources.code = [&](const AssetRef& ref) { return f.asset(ref); };
@@ -134,6 +135,7 @@ public:
             sources.readEvery = -1;  // the game's files do not change
             frame.sky = sky_.Prepare(renderer_, *sky, look, sources);
             FollowSky(look, lights_, frame.ambient);
+            if (look.precipitation.amount > 0) frame.precipitation = &look.precipitation;  // 雨 / 雪
         }
         frame.lights = lights_;
         // What other plugins draw into the world themselves (パーティクル: WorldDraw.h).
@@ -248,6 +250,7 @@ private:
     std::unordered_map<std::string, Model> models_;
     std::unordered_map<std::string, space3d::TextureRef> pictures_;  // the sky's, by asset id
     SkyPainter sky_;
+    SkyLook look_;  // this frame's (the renderer reads its rain / snow)
     double seconds_ = 0;  // the game's time the sky moves by
     std::vector<space3d::MeshDraw> meshes_;
     uint64_t generation_ = 0;

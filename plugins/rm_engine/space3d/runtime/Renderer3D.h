@@ -184,6 +184,7 @@ struct RenderFrame {
     Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
     std::span<const ExtraDraw> extras;  // in this order (ExtraDraw)
     const SkyDraw* sky = nullptr;       // null (or no program): only the clear colour behind
+    const Precipitation* precipitation = nullptr;  // rain / snow around the eye (SkyShader.h); null: none
 };
 
 class Renderer {
