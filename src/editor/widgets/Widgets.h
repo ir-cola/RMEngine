@@ -70,7 +70,9 @@ void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 enum class Icon {
     Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Dash, Object, Cube, Square, Plus, Grip, Play, Pause, Step, Stop,
     // what an entity is (the 階層, the scene view's marks)
-    Camera, Light,
+    // Point: a thing with only a place (a ring with a dot - the scene view's mark of an empty entity);
+    // Effect: a sparkle (パーティクル)
+    Camera, Light, Point, Effect,
     // what a file is (the アセット panel, reference fields)
     Folder, File, Image, Audio, Font, Text,
 };

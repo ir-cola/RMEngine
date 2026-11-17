@@ -212,6 +212,8 @@ inline Color SceneObjectInactive() { return Mix(SceneObject(), SceneBackground()
 // A camera's shape (the lines of what it sees) and a light's (its direction, its reach) and their marks.
 inline Color SceneCamera() { return Text.Alpha(IsLight ? 0.70f : 0.75f); }
 inline Color SceneLight() { return IsLight ? Color::Hex(0xC08A12) : Color::Hex(0xF2D16B); }
+// The mark of a thing with no shape of its own (an empty entity, パーティクル, 音源): as a camera's.
+inline Color SceneMark() { return SceneCamera(); }
 // A model is drawn in its own colours (materials and pictures) times this: as it is, or faint and
 // see-through when switched off. The selected one glows at its edges instead of being recoloured.
 inline Color SceneModel() { return Color{1, 1, 1, 1}; }

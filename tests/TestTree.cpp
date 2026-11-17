@@ -154,6 +154,7 @@ RM_TEST(Tree_IconNamed) {
     CHECK(IconNamed("object") == Icon::Object);
     CHECK(IconNamed("camera") == Icon::Camera);
     CHECK(IconNamed("light") == Icon::Light);
+    CHECK(IconNamed("effect") == Icon::Effect);
     CHECK(IconNamed("teapot") == Icon::None);
     CHECK(IconNamed("") == Icon::None);
 }

@@ -29,6 +29,12 @@
           }
         },
         {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
+        },
+        {
           "type": "rm::physics::Collider",
           "data": {}
         },

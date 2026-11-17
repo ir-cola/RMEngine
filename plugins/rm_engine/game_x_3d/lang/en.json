@@ -1,6 +1,6 @@
 {
   "3D の描画を始められませんでした。くわしくはコンソールを見てください。": "Could not start 3D drawing. See the console for details.",
-  "Transform の付いたエンティティが、ここに箱で出ます。メッシュ (3D モデル) の部品を付けると、そのモデルで描きます。": "Entities with a Transform show here as boxes. Add a Mesh (3D model) component to draw them with that model.",
+  "Transform の付いたエンティティが、ここに印で出ます。メッシュ (3D モデル) の部品を付けると、その形やモデルで描きます。": "Entities with a Transform show here as marks. Add a Mesh (3D model) component to draw them with its shape or model.",
   "ゲーム制作 × 3D": "Game Production × 3D",
   "移動": "Move",
   "回転": "Rotate",

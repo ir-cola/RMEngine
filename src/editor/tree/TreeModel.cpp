@@ -11,6 +11,7 @@ Icon IconNamed(std::string_view name) {
     if (name == "camera") return Icon::Camera;
     if (name == "light") return Icon::Light;
     if (name == "square") return Icon::Square;
+    if (name == "effect") return Icon::Effect;
     if (name == "image") return Icon::Image;
     if (name == "audio") return Icon::Audio;
     return Icon::None;

@@ -96,6 +96,12 @@
           }
         },
         {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
+        },
+        {
           "type": "rm::physics::Collider",
           "data": {}
         }
@@ -125,6 +131,12 @@
               1,
               1
             ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
           }
         },
         {
@@ -163,6 +175,12 @@
               1,
               1
             ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
           }
         },
         {
@@ -206,6 +224,12 @@
           }
         },
         {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
+        },
+        {
           "type": "rm::physics::Collider",
           "data": {}
         }
@@ -235,6 +259,12 @@
               0.5,
               0.5
             ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
           }
         },
         {

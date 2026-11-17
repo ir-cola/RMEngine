@@ -284,6 +284,36 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             }
             break;
         }
+        case Icon::Point: {
+            // A place and nothing else: a ring, a dot in it and four short ticks around (a sight).
+            const float h = std::min(r.w, r.h) * 0.38f, ring = h * 0.62f;
+            p.StrokeRoundRect({cx - ring, cy - ring, ring * 2, ring * 2}, ring, color, 1.3f);
+            p.FillCircle(cx, cy, h * 0.16f, color);
+            p.Line(cx, cy - h, cx, cy - ring, color, 1.3f);
+            p.Line(cx, cy + ring, cx, cy + h, color, 1.3f);
+            p.Line(cx - h, cy, cx - ring, cy, color, 1.3f);
+            p.Line(cx + ring, cy, cx + h, cy, color, 1.3f);
+            break;
+        }
+        case Icon::Effect: {
+            // A sparkle: a big four-pointed star (its sides pulled in) and a small one at its upper right.
+            auto star = [&](float sx, float sy, float big, float waist) {
+                ui::Path s;
+                s.Begin({sx, sy - big});
+                s.Line({sx + waist, sy - waist});
+                s.Line({sx + big, sy});
+                s.Line({sx + waist, sy + waist});
+                s.Line({sx, sy + big});
+                s.Line({sx - waist, sy + waist});
+                s.Line({sx - big, sy});
+                s.Line({sx - waist, sy - waist});
+                p.FillPath(s, color);
+            };
+            const float h = std::min(r.w, r.h) * 0.38f;
+            star(cx - h * 0.2f, cy + h * 0.15f, h * 0.85f, h * 0.2f);
+            star(cx + h * 0.65f, cy - h * 0.6f, h * 0.38f, h * 0.1f);
+            break;
+        }
         case Icon::Square: {
             // A thing on a plane: a square, a little turned (not a box of the UI).
             const float h = std::min(r.w, r.h) * 0.36f;

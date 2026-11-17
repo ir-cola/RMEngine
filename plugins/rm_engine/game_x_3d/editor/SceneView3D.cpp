@@ -7,8 +7,11 @@
 #include "core/reflect/FieldCommand.h"
 #include "editor/lang/Lang.h"
 #include "editor/project/Project.h"
+#include "editor/tree/TreeModel.h"
+#include "editor/tree/TreeView.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
+#include "rm_engine/game_production/editor/ComponentLook.h"
 #include "rm_engine/game_x_3d/editor/SceneViewState.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
@@ -63,7 +66,7 @@ constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // the box of the steps (u
 constexpr double kModelCheckSeconds = 1.0;    // how often a model file is looked at again (changed on disk?)
 constexpr double kModelForgetSeconds = 10.0;  // a model no entity uses for this long leaves the GPU
 constexpr float kFrustumShown = 10.f;  // a camera's shape is drawn this far at most (its far plane may be at 1000)
-constexpr float kMarkSize = 18.f;      // the mark of a camera / a light (pixels)
+constexpr float kMarkSize = 18.f;      // the mark of a camera / a light / an empty entity ... (pixels)
 constexpr float kMarkPick = 11.f;      // a click this near a mark selects its entity
 constexpr float kPreviewMaxW = 360.f;  // the camera preview at the bottom right
 
@@ -78,20 +81,25 @@ struct Placed {
     Mat4 world;
     Mat4 parentWorld;
     bool active;
-    // What is drawn: the model (null: the unit cube) and its bounds in its own space - what a click
-    // hits and what F frames.
+    // What is drawn: the model (null: the unit cube - a メッシュ whose file is missing) and its bounds
+    // in its own space - what a click hits and what F frames.
     const space3d::GpuMesh* mesh = nullptr;
     bool plain = false;  // `mesh` is a simple shape (メッシュ's 形), coloured like the box
     std::span<const space3d::DrawMaterial> materials;  // the model's colours and pictures
     bool castShadow = true;
     Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
     bool loading = false;  // its model is being read (a box until then, with 読み込み中 over it)
-    // A camera / a light on it (copies for this frame). `marker`: it has one and no model - nothing
-    // of its own is drawn; it is seen (and clicked) by its mark and its lines.
+    // A camera / a light on it (copies for this frame). `marker`: it has no メッシュ - nothing of its
+    // own is drawn (an empty entity, a camera, a light, パーティクル, 音源 ...); it is seen (and clicked)
+    // by its mark (`mark`: the 階層's picture of it) and a camera's / a light's lines.
     std::optional<Camera> camera;
     std::optional<Light> light;
     bool ambient = false;  // it has a 環境光 (shown by the light's mark)
     bool marker = false;
+    editor::w::Icon mark = editor::w::Icon::Point;
+
+    // A camera or a light with a メッシュ keeps its mark too.
+    bool HasMark() const { return marker || camera || light || ambient; }
 };
 
 // One picture drawn by Direct3D and shown by Direct2D: the view itself, or the camera preview in its
@@ -192,6 +200,7 @@ public:
         lightType_ = reflect::TypeOf<Light>().name;
         ambientType_ = reflect::TypeOf<AmbientLight>().name;
         now_ = c.Time();
+        if (!looksMade_) MakeLooks(host);
         Place(host);
         ForgetUnusedModels();
         // Drawn again until the models (and their pictures) being read on the other threads arrive.
@@ -252,8 +261,19 @@ private:
         return pic.renderer.Ready();
     }
 
+    // The marks of the component types (their 階層 pictures), once. A place and nothing else (the
+    // Transform's "cube") is no mark of its own: an empty entity's is the ring.
+    void MakeLooks(game_production::SceneViewHost& host) {
+        looksMade_ = true;
+        for (const auto& l : host.host.Registry().Contributions<game_production::ComponentLook>(game_production::kComponentLookPoint)) {
+            if (!l.item->icon) continue;
+            const w::Icon icon = editor::tree::PictureOf(editor::tree::IconNamed(l.item->icon));
+            if (icon != w::Icon::Cube && icon != w::Icon::Object) markOf_[l.item->type().name] = icon;
+        }
+    }
+
     // Where every entity with a Transform is in the world (its parents' Transforms included), and
-    // what it looks like (its model, or a box).
+    // what it looks like (its model or shape; a mark when it has no メッシュ).
     void Place(game_production::SceneViewHost& host) {
         const game_production::Scene& scene = host.scene;
         placed_.clear();
@@ -303,7 +323,11 @@ private:
                     p.light = *static_cast<const Light*>(lc->value.Get());
                 }
                 p.ambient = hasAmbient;
-                p.marker = (p.camera || p.light || p.ambient) && !(mc && mc->Known());
+                p.marker = !(mc && mc->Known());
+                for (const game_production::Component& other : e.components) {  // as the 階層: the last one with a picture
+                    if (!other.Known()) continue;
+                    if (const auto m = markOf_.find(other.type); m != markOf_.end()) p.mark = m->second;
+                }
                 placed_.push_back(p);
             } else {
                 world[e.data.id] = parent;  // no place of its own: its children follow the parent
@@ -675,12 +699,13 @@ private:
         if (!inv) return;
         const float ndcX = (pressX_ - r.x) / r.w * 2.f - 1.f;
         const float ndcY = 1.f - (pressY_ - r.y) / r.h * 2.f;
-        // A mark (a camera, a light) is drawn over everything: the nearest one under the mouse first.
+        // A mark (a camera, a light, an empty entity ...) is drawn over everything: the nearest one under
+        // the mouse first.
         if (const auto screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h)) {
             float nearest = kMarkPick;
             int mark = 0;
             for (const Placed& p : placed_) {
-                if (!p.camera && !p.light && !p.ambient) continue;
+                if (!p.HasMark()) continue;
                 const auto at = screen->ToScreen(space3d::TransformPoint(p.world, {0, 0, 0}));
                 if (!at) continue;
                 const float d = std::hypot(at->x - pressX_, at->y - pressY_);
@@ -710,7 +735,7 @@ private:
 
     void FrameSelection(game_production::SceneViewHost& host) {
         if (const Placed* p = Primary(host); p && p->marker) {
-            space3d::Frame(state_.camera, space3d::TransformPoint(p->world, {0, 0, 0}), 1.f);  // a camera / a light
+            space3d::Frame(state_.camera, space3d::TransformPoint(p->world, {0, 0, 0}), 1.f);  // a mark
         } else if (p) {
             // The middle of its bounds (a model's origin may be at its feet), as far as they reach.
             const Vec3 center = space3d::TransformPoint(p->world, (p->min + p->max) * 0.5f);
@@ -1023,7 +1048,8 @@ private:
         }
     }
 
-    // The marks of the cameras and the lights where they are (a click on one selects it).
+    // The marks where the things without a メッシュ are - the cameras, the lights, the empty entities,
+    // パーティクル ... (a click on one selects it; the gizmo moves it).
     void DrawMarks(ui::Context& c, const Rect& r, const game_production::SceneViewHost& host) {
         const auto screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h);
         if (!screen) return;
@@ -1040,15 +1066,15 @@ private:
             if (at) c.P().Text({at->x - 80, at->y - 22, 160, 18}, Tr(L"読み込み中…"), loadingStyle);
         }
         for (const Placed& p : placed_) {
-            if (!p.camera && !p.light && !p.ambient) continue;
+            if (!p.HasMark()) continue;
             const auto at = screen->ToScreen(space3d::TransformPoint(p.world, {0, 0, 0}));
             if (!at) continue;
-            const ui::Color col = IsSelected(host, p.id) ? theme::Accent
-                                  : !p.active        ? theme::TextFaint
-                                  : p.camera         ? theme::SceneCamera()
-                                                     : theme::SceneLight();
-            w::DrawIcon(c, {at->x - kMarkSize * 0.5f, at->y - kMarkSize * 0.5f, kMarkSize, kMarkSize},
-                        p.camera ? w::Icon::Camera : w::Icon::Light, col);
+            const ui::Color col = IsSelected(host, p.id)      ? theme::Accent
+                                  : !p.active                 ? theme::TextFaint
+                                  : p.mark == w::Icon::Light  ? theme::SceneLight()
+                                  : p.mark == w::Icon::Camera ? theme::SceneCamera()
+                                                              : theme::SceneMark();
+            w::DrawIcon(c, {at->x - kMarkSize * 0.5f, at->y - kMarkSize * 0.5f, kMarkSize, kMarkSize}, p.mark, col);
         }
         c.P().PopClip();
     }
@@ -1304,7 +1330,7 @@ private:
             hint.size = 12;
             hint.v = ui::VAlign::Top;
             hint.color = theme::TextFaint;
-            c.P().Text(r.Inset(10, bar ? bar->all.Bottom() - r.y + 10 : 8, 10, 8), Tr(L"Transform の付いたエンティティが、ここに箱で出ます。メッシュ (3D モデル) の部品を付けると、そのモデルで描きます。"), hint);
+            c.P().Text(r.Inset(10, bar ? bar->all.Bottom() - r.y + 10 : 8, 10, 8), Tr(L"Transform の付いたエンティティが、ここに印で出ます。メッシュ (3D モデル) の部品を付けると、その形やモデルで描きます。"), hint);
         }
     }
 
@@ -1317,6 +1343,8 @@ private:
     Picture preview_;  // the selected camera's picture (started when first needed)
     std::optional<Rect> previewAt_;
     std::string transformType_, meshType_, cameraType_, lightType_, ambientType_;
+    std::unordered_map<std::string, w::Icon> markOf_;  // component type -> its mark (MakeLooks)
+    bool looksMade_ = false;
     std::optional<space3d::Ambient> ambient_;  // the scene's 環境光 (none: the default)
     size_t warnedShadows_ = 0;  // lights told about that have no shadow map left
     std::vector<Placed> placed_;

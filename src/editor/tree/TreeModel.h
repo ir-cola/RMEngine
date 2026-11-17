@@ -28,6 +28,7 @@ enum class Icon : uint8_t {
     Camera,  // a thing that looks (a game's camera)
     Light,   // a thing that lights the others
     Square,  // a thing on a 2D plane
+    Effect,  // a sparkle (パーティクル)
     // files (the アセット panel)
     Folder,
     File,
@@ -38,7 +39,7 @@ enum class Icon : uint8_t {
     Text,
 };
 // By name, for plugins that cannot see this header (a component's ComponentInfo::icon): "object",
-// "cube", "camera", "light", "square", "image"; anything else is None.
+// "cube", "camera", "light", "square", "effect", "image", "audio"; anything else is None.
 Icon IconNamed(std::string_view name);
 
 struct Item {

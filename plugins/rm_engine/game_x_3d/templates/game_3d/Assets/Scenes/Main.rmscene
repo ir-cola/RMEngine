@@ -94,6 +94,12 @@
               20
             ]
           }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
         }
       ]
     },
@@ -121,6 +127,12 @@
               1,
               1
             ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
           }
         }
       ]

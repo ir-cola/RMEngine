@@ -3,8 +3,9 @@
 //
 // A thing with a 3D model (メッシュ) is drawn with the model the export baked (MeshBake: read as the editor
 // reads it, in this engine's form) and its pictures as the GPU takes them (DDS: BC7 turned into RGBA on a
-// GPU without it); without one, or when it cannot be read, as a box. Lights, 環境光, shadows, the camera
-// and switched-off things are as in the editor's game view.
+// GPU without it), or as its 形 (箱, 球 ...); when its model cannot be read, as a box. A thing without a
+// メッシュ is not drawn (the editor shows it as a mark). Lights, 環境光, shadows, the camera and
+// switched-off things are as in the editor's game view.
 
 #include "rm_engine/game_x_3d/runtime/GameDraw3D.h"
 
@@ -81,16 +82,15 @@ public:
             if (cc && cc->Known() && static_cast<uint64_t>(e.data.id) == f.camera) eye.emplace(*static_cast<const Camera*>(cc->value.Get()), w);
             if (lc && lc->Known()) lights_.push_back(ToRenderLight(*static_cast<const Light*>(lc->value.Get()), w));
             if (ac && ac->Known() && !amb) amb = ToRenderAmbient(*static_cast<const AmbientLight*>(ac->value.Get()));
-            const bool marker = ((cc && cc->Known()) || (lc && lc->Known()) || (ac && ac->Known())) && !(mc && mc->Known());
-            if (marker) continue;
-            const MeshRenderer* mr = mc && mc->Known() ? static_cast<const MeshRenderer*>(mc->value.Get()) : nullptr;
-            const bool shadow = !mr || mr->castShadows;
-            constexpr Color kPlain{0.78f, 0.80f, 0.84f, 1};  // a box (no model) and a simple shape
-            if (const auto shape = mr ? ShapeOf(mr->shape) : std::nullopt) {
+            if (!mc || !mc->Known()) continue;  // no メッシュ: nothing to see (an empty entity, a camera, パーティクル ...)
+            const MeshRenderer* mr = static_cast<const MeshRenderer*>(mc->value.Get());
+            const bool shadow = mr->castShadows;
+            constexpr Color kPlain{0.78f, 0.80f, 0.84f, 1};  // a box (its model is missing) and a simple shape
+            if (const auto shape = ShapeOf(mr->shape)) {
                 if (const space3d::GpuMesh* g = renderer_.ShapeOf(*shape)) meshes_.push_back({g, w, kPlain, shadow, {}});
                 continue;
             }
-            if (const Model* model = mr ? ModelOf(f, mr->model) : nullptr) {
+            if (const Model* model = ModelOf(f, mr->model)) {
                 meshes_.push_back({model->gpu.get(), w, Color{1, 1, 1, 1}, shadow, model->materials});
                 continue;
             }

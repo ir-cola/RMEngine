@@ -94,6 +94,7 @@ w::Icon PictureOf(Icon icon) {
         case Icon::Camera: return w::Icon::Camera;
         case Icon::Light: return w::Icon::Light;
         case Icon::Square: return w::Icon::Square;
+        case Icon::Effect: return w::Icon::Effect;
         case Icon::Folder: return w::Icon::Folder;
         case Icon::File: return w::Icon::File;
         case Icon::Image: return w::Icon::Image;
