@@ -16,6 +16,7 @@
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "platform/Shell.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_production/editor/SceneSettingLook.h"
 #include "rm_engine/game_production/editor/GameScripts.h"
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
@@ -199,8 +200,14 @@ public:
         baseTypes_ = types;
         baseMultiple_ = multiple;
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
+        // The scene's own values (重力, 空 ...): the インスペクター shows them when the scene is chosen.
+        scene_.SetSettingTypes(SettingTypes(host.Registry()));
+        for (const auto& s : host.Registry().Contributions<SceneSettingInfo>(kSceneSettingPoint)) {
+            if (s.item->space) settingSpaces_[s.item->type().name] = s.item->space;
+        }
         // How the editor shows them (the 階層's pictures, ローカル / ワールド): their plugins' editor parts.
         for (const auto& l : host.Registry().Contributions<ComponentLook>(kComponentLookPoint)) componentLooks_.push_back(l.item);
+        for (const auto& l : host.Registry().Contributions<SceneSettingLook>(kSceneSettingLookPoint)) settingLooks_.push_back(l.item);
         // ... and so do the systems that move them while the game plays.
         runner_.SetSystems(RegisteredSystems(host.Registry()));
         // Systems read assets from the project's files (a mesh collider: the model, as the scene view reads it).
@@ -803,6 +810,13 @@ public:
         }
     }
 
+    // The top row: the open scene (its name); choosing it shows the scene's own values (InspectScene).
+    std::optional<TopRow> Top() const override {
+        std::string name = SceneNameOf(slot_.path);
+        return TopRow{name.empty() ? Tr(L"シーン") : Utf8ToWide(name), editor::w::Icon::Scene, inspectingScene_};
+    }
+    void TopClicked() override { InspectScene(); }
+
     std::wstring EmptyText() const override {
         return Tr(L"エンティティはまだありません。\nここを右クリックして「追加」から作れます。");
     }
@@ -838,6 +852,7 @@ public:
     void SelectionChanged(std::span<const tree::ItemId> ids) override {
         selection_.clear();
         for (const tree::ItemId id : ids) selection_.push_back(static_cast<int>(id));
+        if (!ids.empty()) inspectingScene_ = false;
         if (ids.size() == 1) {
             host_.Inspect(EntityInspectable(static_cast<int>(ids[0])));
             inspectingEntities_ = true;
@@ -1073,7 +1088,6 @@ private:
         debug_.BeginFrame(dt);  // last frame's lines go (and the ones whose seconds are up), then the scripts draw this one's
         scripts_.Runner().Frame(*playScene_, world, scripts_.Module(), settings_.scriptOrder, static_cast<float>(dt));
         runner_.SetCamera(world.camera);
-        runner_.SetGravity(settings_.gravity);
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
         // What the systems' fixed steps tell the scripts (the physics' contacts ...).
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, runner_.Hooks());
@@ -1569,8 +1583,61 @@ private:
         log::Info("Play の値を {} 個残しました (Ctrl+Z で戻せます)", done);
     }
 
+    // The scene's own values (SceneSettingInfo: 物理's 重力, 3D's 空 ...), one block each - those of
+    // another space than the game's left out. In Play: the copy that plays, shown, not edited.
+    void InspectScene() {
+        inspectingEntities_ = false;
+        inspectingScene_ = true;
+        editor::Inspectable in;
+        std::string name = SceneNameOf(slot_.path);
+        in.title = name.empty() ? Tr(L"シーン") : TrF(L"シーン「{}」", Utf8ToWide(name));
+        in.blocks = [this] {
+            std::vector<editor::InspectBlock> blocks;
+            const bool play = Running();
+            if (play) blocks.push_back(PlayNote());
+            const std::string space = CurrentSpace();
+            for (const Component& c : Shown().Settings()) {
+                if (!c.Known()) continue;  // its plugin is not here: kept in the file as it was
+                if (const auto it = settingSpaces_.find(c.type); it != settingSpaces_.end() && !space.empty() && it->second != space) continue;
+                const std::string type = c.type;
+                editor::InspectBlock b{c.value.Type(), [this, type, play] {
+                                           Component* s = (play ? Shown() : scene_).FindSetting(type);
+                                           return s && s->Known() ? reflect::EditTarget{s->value.Get(), &s->unknowns} : reflect::EditTarget{};
+                                       },
+                                       Utf8ToWide(TrU8(c.value.Type()->label)), {}, {}};
+                b.readOnly = play;
+                if (const SceneSettingLook* look = SettingLookOf(type); look && look->menu) {
+                    SceneSettingMenuHost mh;
+                    mh.host = &host_;
+                    mh.play = play;
+                    mh.edit = [this, type](std::string label, std::function<void(void*)> change) {
+                        Edit(std::move(label), [&] {
+                            if (Component* s = scene_.FindSetting(type); s && s->Known()) change(s->value.Get());
+                        });
+                    };
+                    b.menu = look->menu(mh);
+                }
+                blocks.push_back(std::move(b));
+            }
+            if (blocks.empty() || (play && blocks.size() == 1)) {
+                blocks.push_back({nullptr, {}, {}, Tr(L"このシーンの設定はまだありません (物理・3D 空間 などのプラグインで増えます)"), {}});
+            }
+            return blocks;
+        };
+        host_.Inspect(std::move(in));
+        host_.SelectInTree({});
+    }
+
+    const SceneSettingLook* SettingLookOf(const std::string& type) const {
+        for (const SceneSettingLook* l : settingLooks_) {
+            if (l->type().name == type) return l;
+        }
+        return nullptr;
+    }
+
     void InspectSettings() {
         inspectingEntities_ = false;
+        inspectingScene_ = false;
         editor::Inspectable in;
         in.title = Tr(L"ゲームの設定");
         in.blocks = [this] {
@@ -2861,6 +2928,9 @@ private:
     std::shared_ptr<ExportRun> exportRun_ = std::make_shared<ExportRun>();
     std::jthread exportThread_;
     bool inspectingEntities_ = false;  // the inspector shows the 階層's selection (not the settings)
+    bool inspectingScene_ = false;     // ... the scene's own values (the 階層's top row is drawn chosen)
+    std::vector<const SceneSettingLook*> settingLooks_;              // how the editor shows them (editor parts)
+    std::unordered_map<std::string, std::string> settingSpaces_;    // setting type -> the game's space it is for
 
     // Play
     PlayState play_ = PlayState::Stopped;

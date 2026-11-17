@@ -295,6 +295,16 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.Line(cx + ring, cy, cx + h, cy, color, 1.3f);
             break;
         }
+        case Icon::Scene: {
+            // A scene: two layers (flat squares seen at a slant), one over the other.
+            const float h = std::min(r.w, r.h) * 0.36f;
+            for (const float dy : {-h * 0.3f, h * 0.3f}) {
+                const float x[4] = {cx, cx + h, cx, cx - h};
+                const float y[4] = {cy + dy - h * 0.5f, cy + dy, cy + dy + h * 0.5f, cy + dy};
+                for (int i = 0; i < 4; ++i) p.Line(x[i], y[i], x[(i + 1) % 4], y[(i + 1) % 4], color, 1.3f);
+            }
+            break;
+        }
         case Icon::Effect: {
             // A sparkle: a big four-pointed star (its sides pulled in) and a small one at its upper right.
             auto star = [&](float sx, float sy, float big, float waist) {

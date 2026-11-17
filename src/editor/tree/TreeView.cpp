@@ -186,6 +186,10 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         c.ClearFocus();
     }
     w::TextField(c, "tree.search", search, st.filter, Tr(L"検索"));
+    // The top row (Source::Top): under the search box, outside the scrolled rows.
+    const std::optional<Source::TopRow> top = src.Top();
+    std::optional<Rect> topRect;
+    if (top) topRect = ui::TakeTop(body, kRowH).Inset(4, 0, 4, 0);
     const Rect view = body.Inset(0, 2, 0, 2);
 
     std::vector<Row> rows = VisibleRows(items, st.collapsed, st.filter);
@@ -384,6 +388,32 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         st.renaming = 0;
     }
 
+    // --- The top row ------------------------------------------------------------------------------
+    bool topClicked = false;
+    if (topRect) {
+        const bool hovered = c.IsHovered(*topRect);
+        if (hovered && c.MousePressed()) {
+            st.sel.ids.clear();
+            st.sel.anchor = st.sel.focus = 0;
+            st.hasKeys = true;
+            topClicked = true;
+            c.RequestRedraw();
+        }
+        if (hovered && c.MousePressed(ui::Mouse::Right)) {
+            rowRightClicked = true;
+            st.sel.ids.clear();
+            st.sel.anchor = st.sel.focus = 0;
+            st.menuActions = MenuFor(src, st, items);
+            if (!st.menuActions.empty()) st.menu.OpenAt(in.mouseX, in.mouseY);
+        }
+        w::DrawRow(c, *topRect, {top->selected, hovered && !st.dragging, st.hasKeys});
+        const float x = topRect->x + 4;
+        w::DrawIcon(c, {x + (kArrow - kIconW) * 0.5f + 2, topRect->y, kIconW, topRect->h}, top->icon, theme::TextDim);
+        ui::TextStyle name = Style(theme::FontSize, theme::Text);
+        name.bold = true;
+        p.Text({x + kArrow + 6, topRect->y + (topRect->h - kLineH) * 0.5f, topRect->Right() - x - kArrow - 10, kLineH}, top->name, name);
+    }
+
     // --- Clicks on empty space ------------------------------------------------------------------
     const Rect emptyArea{view.x, view.y, view.w - 12, view.h};  // not the scroll bar
     if (!rowPressed && c.IsHovered(emptyArea) && c.MousePressed() && !in.ctrl && !in.shift) {
@@ -417,7 +447,10 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     }
     // Out of the tree, the rows can be dropped on another panel (a reference field).
     if (st.dragging) w::SetDragThing(src.DragOut(st.moving));
-    if (st.dragging && in.mouseInside && view.Contains(in.mouseX, in.mouseY)) {
+    const bool dropOnTop = st.dragging && in.mouseInside && topRect && topRect->Contains(in.mouseX, in.mouseY);
+    if (dropOnTop) {
+        drop = DropAtEnd(items, st.moving);  // the top level, at the end
+    } else if (st.dragging && in.mouseInside && view.Contains(in.mouseX, in.mouseY)) {
         const float rel = in.mouseY - rowsTop;
         if (rel < 0) {
             drop = DropOnRow(items, rows, 0, 0.f, st.moving);
@@ -427,7 +460,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             drop = r < rows.size() ? DropOnRow(items, rows, r, frac, st.moving) : DropAtEnd(items, st.moving);
         }
     }
-    if (st.dragging && drop) {
+    if (st.dragging && drop && !dropOnTop) {
         // Where it goes: a line between rows, or a frame around the row it goes into.
         if (drop->mark == Drop::Mark::Inside) {
             const size_t r = RowOf(items, rows, drop->target);
@@ -449,6 +482,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         }
     }
     w::EndScroll(c, kScrollId, view, content);
+    if (dropOnTop) p.StrokeRoundRect(*topRect, 4, theme::Accent, 1.5f);  // into the top row: a frame around it
 
     if (st.pressItem != 0 && !in.down[0]) {
         // Released.
@@ -489,6 +523,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     w::ActionMenu(c, st.menu, st.menuActions);
 
     if (st.sel.ids != before || reselected) src.SelectionChanged(st.sel.ids);
+    if (topClicked) src.TopClicked();
 }
 
 }  // namespace rm::editor::tree

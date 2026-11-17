@@ -84,13 +84,6 @@ SamplerState baseSampler : register(s1);
 
 static const float PI = 3.14159265;
 
-// The screen's numbers (sRGB) <-> linear light, per component.
-float3 ToLinear(float3 c) { return c <= 0.04045 ? c / 12.92 : pow(abs((c + 0.055) / 1.055), 2.4); }
-float3 ToScreen(float3 c) {
-    c = saturate(c);
-    return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(abs(c), 1.0 / 2.4) - 0.055;
-}
-
 struct LineIn  { float3 pos : POSITION; float4 col : COLOR; };
 struct LineOut { float4 pos : SV_Position; float4 col : COLOR; };
 LineOut LineVS(LineIn i) {
@@ -342,9 +335,16 @@ Mat4 NormalMatrix(const Mat4& world) {
     return t;
 }
 
-bool Compile(const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DBlob>& out, std::string* error) {
+// The renderer's shaders with ToScreen / ToLinear (SkyShader.h: the sky's are the same) in front.
+const std::string& ShaderText() {
+    static const std::string text = std::string(kColorHlsl) + kShaders;
+    return text;
+}
+
+bool Compile(const std::string& text, const char* name, const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DBlob>& out,
+             std::string* error) {
     Microsoft::WRL::ComPtr<ID3DBlob> messages;
-    const HRESULT hr = D3DCompile(kShaders, sizeof(kShaders) - 1, "space3d", nullptr, nullptr, entry, target,
+    const HRESULT hr = D3DCompile(text.data(), text.size(), name, nullptr, nullptr, entry, target,
                                   D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &out, &messages);
     if (FAILED(hr)) {
         if (error) {
@@ -354,6 +354,9 @@ bool Compile(const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DB
         return false;
     }
     return true;
+}
+bool Compile(const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DBlob>& out, std::string* error) {
+    return Compile(ShaderText(), "space3d", entry, target, out, error);
 }
 
 // The floor's plane (y = 0), far wider than any scene (it only shows where shadows fall).
@@ -386,6 +389,11 @@ struct ShadowMaps {
 
 }  // namespace
 
+struct SkyProgram {
+    Microsoft::WRL::ComPtr<ID3D11VertexShader> vs;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> ps;
+};
+
 struct Renderer::Shared {
     template <class T>
     using Ptr = Microsoft::WRL::ComPtr<T>;
@@ -402,6 +410,13 @@ struct Renderer::Shared {
     Ptr<ID3D11SamplerState> textureSampler;  // pictures: repeat, smooth, mipmapped
     Ptr<ID3D11SamplerState> sharpSampler;    // pictures set to くっきり (import setting): the nearest pixel
     Ptr<ID3D11SamplerState> shadowSampler;
+    // The sky: its constant buffer (b3), a sampler stopping at the edges (one of six pictures), the
+    // depth test off (drawn first, writing nothing), and the programs made so far by their text.
+    Ptr<ID3D11Buffer> skyFrame;
+    Ptr<ID3D11SamplerState> edgeSampler;
+    Ptr<ID3D11DepthStencilState> depthOff;
+    std::mutex skyMutex;
+    std::unordered_map<std::string, std::weak_ptr<const SkyProgram>> skies;
     // The shadow maps (depth seen from the lights): the sun's (1, or kCascades) and the point / spot
     // lights' (kLocalShadowSlices). Made when first needed.
     ShadowMaps sun, local;
@@ -568,6 +583,19 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
         return fail("描画の設定");
     }
     if (FAILED(device->CreateSamplerState(&ss, &shadowSampler))) return fail("影");
+    cd.ByteWidth = sizeof(SkyConstants);
+    D3D11_SAMPLER_DESC es = ts;
+    es.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    es.MaxAnisotropy = 1;
+    es.AddressU = es.AddressV = es.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    D3D11_DEPTH_STENCIL_DESC off{};
+    off.DepthEnable = FALSE;
+    off.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+    off.DepthFunc = D3D11_COMPARISON_ALWAYS;
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &skyFrame)) || FAILED(device->CreateSamplerState(&es, &edgeSampler)) ||
+        FAILED(device->CreateDepthStencilState(&off, &depthOff))) {
+        return fail("空");
+    }
 
     UINT quality = 0;
     samples = 1;
@@ -675,6 +703,32 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     map[device] = made;
     shared_ = std::move(made);
     return true;
+}
+
+std::shared_ptr<const SkyProgram> Renderer::MakeSky(const std::string& hlsl, std::string* error) {
+    if (!shared_) {
+        if (error) *error = "3D の描画が始まっていません";
+        return nullptr;
+    }
+    Shared& s = *shared_;
+    {
+        std::lock_guard lock(s.skyMutex);
+        std::erase_if(s.skies, [](const auto& kv) { return kv.second.expired(); });
+        if (const auto it = s.skies.find(hlsl); it != s.skies.end()) {
+            if (auto found = it->second.lock()) return found;
+        }
+    }
+    Microsoft::WRL::ComPtr<ID3DBlob> vs, ps;
+    if (!Compile(hlsl, "sky", "SkyPS", "ps_4_0", ps, error) || !Compile(hlsl, "sky", "SkyVS", "vs_4_0", vs, error)) return nullptr;
+    auto program = std::make_shared<SkyProgram>();
+    if (FAILED(s.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &program->vs)) ||
+        FAILED(s.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &program->ps))) {
+        if (error) *error = "空のシェーダーを GPU に載せられませんでした";
+        return nullptr;
+    }
+    std::lock_guard lock(s.skyMutex);
+    s.skies[hlsl] = program;
+    return program;
 }
 
 std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::string* error) {
@@ -1321,6 +1375,28 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->ClearRenderTargetView(rtv, clear);
     ctx->ClearDepthStencilView(dsv_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.f, 0);
     ctx->RSSetState(s.raster.Get());
+    // The sky, behind everything: one triangle over the picture, the depth test off (nothing written).
+    if (f.sky && f.sky->program) {
+        SkyConstants sc = f.sky->constants;
+        Mat4 turn = f.view;  // the camera's turn only: the sky is infinitely far
+        turn.m[3][0] = turn.m[3][1] = turn.m[3][2] = 0;
+        if (const auto inv = Inverse(f.projection * turn)) {
+            CopyMatrix(sc.invViewProj, *inv);
+            ctx->UpdateSubresource(s.skyFrame.Get(), 0, nullptr, &sc, 0, 0);
+            ID3D11Buffer* skyCb = s.skyFrame.Get();
+            ctx->PSSetConstantBuffers(3, 1, &skyCb);
+            ID3D11ShaderResourceView* views[kSkyTextures] = {};
+            for (size_t k = 0; k < kSkyTextures; ++k) views[k] = f.sky->textures[k] ? f.sky->textures[k]->view.Get() : nullptr;
+            ctx->PSSetShaderResources(0, static_cast<UINT>(kSkyTextures), views);
+            ID3D11SamplerState* samplers[2] = {s.textureSampler.Get(), s.edgeSampler.Get()};
+            ctx->PSSetSamplers(1, 2, samplers);
+            ctx->OMSetDepthStencilState(s.depthOff.Get(), 0);
+            ctx->VSSetShader(f.sky->program->vs.Get(), nullptr, 0);
+            ctx->PSSetShader(f.sky->program->ps.Get(), nullptr, 0);
+            ctx->Draw(3, 0);
+            ctx->PSSetShaderResources(0, static_cast<UINT>(kSkyTextures), noSrvs);
+        }
+    }
     ctx->OMSetDepthStencilState(s.depth.Get(), 0);
     if (shadows) {
         ID3D11ShaderResourceView* sunSrv = s.sun.srv.Get();
@@ -1426,8 +1502,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->OMSetRenderTargets(0, nullptr, nullptr);
     ctx->PSSetShaderResources(0, 8, noSrvs);
     ctx->VSSetShaderResources(6, 1, noSrvs);
-    ID3D11Buffer* noCbs[3] = {};
-    ctx->PSSetConstantBuffers(0, 3, noCbs);
+    ID3D11Buffer* noCbs[4] = {};
+    ctx->PSSetConstantBuffers(0, 4, noCbs);
     ID3D11Buffer* noVb = nullptr;
     const UINT zero = 0;
     ctx->IASetVertexBuffers(1, 1, &noVb, &zero, &zero);

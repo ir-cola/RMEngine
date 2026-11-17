@@ -21,6 +21,8 @@ struct SceneViewState {
     RM_PROPERTY() bool snapAlways = false;
     // Shadows of the light (on the floor and on things): the 影 button.
     RM_PROPERTY() bool shadows = true;
+    // The scene's 空 behind the scene view too (the game view and the preview always show it): 空.
+    RM_PROPERTY() bool sky = true;
     // While playing: the lines the game's scripts draw (rm::Debug) - the デバッグ button.
     RM_PROPERTY() bool debugDraw = true;
     // The lines plugins show over the scene (物理: the colliders) of every thing, not only the selected - 形.

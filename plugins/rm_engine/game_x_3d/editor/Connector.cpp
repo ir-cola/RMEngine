@@ -1,14 +1,21 @@
 #include "rm_engine/game_x_3d/editor/Connector.h"
 
+#include "base/Log.h"
+#include "base/Utf.h"
+#include "editor/app/Worker.h"
 #include "editor/lang/Lang.h"
+#include "editor/project/Project.h"
+#include "platform/Shell.h"
 
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_production/editor/SceneSettingLook.h"
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_x_3d/editor/ExportBake.h"
 #include "rm_engine/game_x_3d/editor/SceneView3D.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
 namespace rm::game_x_3d {
@@ -73,6 +80,47 @@ int MakeAmbient(Scene& scene, int parent, size_t index) {
     return id;
 }
 
+// The 空's ⋮ 新しい空のシェーダーを作る: a .rmsky in Assets/Skies to start from (SkyShader.h's NewSkyCode),
+// chosen as the sky (one undo entry) and opened in the program Windows has for it.
+void CreateSkyShader(const game_production::SceneSettingMenuHost& h) {
+    namespace fs = std::filesystem;
+    const fs::path dir = h.host->GetProject().AssetsDir() / L"Skies";
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    fs::path file;
+    for (int n = 1; n < 1000; ++n) {
+        file = dir / (n == 1 ? std::wstring(L"NewSky.rmsky") : std::format(L"NewSky {}.rmsky", n));
+        if (!fs::exists(file, ec)) break;
+    }
+    std::string err;
+    if (!platform::WriteFileAtomic(file, space3d::NewSkyCode(), &err)) {
+        log::Error("空のシェーダーを作れません ({}): {}", PathToUtf8(file.wstring()), err);
+        return;
+    }
+    const AssetRef ref = h.host->AssetOf(file);
+    if (ref.Empty()) {
+        log::Warn("空のシェーダーを作りましたが、アセットとして読めません: {}", PathToUtf8(file.wstring()));
+        return;
+    }
+    h.edit("新しい空のシェーダーを作る", [ref](void* setting) {
+        auto& sky = *static_cast<Sky*>(setting);
+        sky.kind = SkyKind::Custom;
+        sky.shader = ref;
+    });
+    log::Info("空のシェーダーを作りました: {}", PathToUtf8(file.wstring()));
+    editor::PostToUi([file] {
+        if (!platform::OpenFileOutside(file)) log::Error("ファイルを開けませんでした: {}", PathToUtf8(file.wstring()));
+    });
+}
+
+std::vector<editor::w::Action> SkyMenu(const game_production::SceneSettingMenuHost& h) {
+    editor::w::Action make;
+    make.label = editor::Tr(L"新しい空のシェーダーを作る");
+    make.enabled = !h.play;
+    make.run = [h] { CreateSkyShader(h); };
+    return {make};
+}
+
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
@@ -113,6 +161,9 @@ void RegisterEditor(editor::PluginRegistry& registry) {
         {.label = TrKey(L"環境光"), .folder = TrKey(L"ライト"), .make = &MakeAmbient},
     };
     for (const auto& item : kItems) registry.Contribute(game_production::kCreateItemPoint, item);
+    // The scene's 空: its ⋮ makes a sky shader to start from.
+    static const game_production::SceneSettingLook kSky{.type = &reflect::TypeOf<Sky>, .menu = &SkyMenu};
+    registry.Contribute(game_production::kSceneSettingLookPoint, kSky);
     // An exported game gets its models and pictures baked (the game's own form: ExportBake.cpp).
     RegisterExportBake(registry);
 }

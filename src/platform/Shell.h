@@ -29,6 +29,9 @@ std::optional<std::wstring> PickOpenFile(HWND owner, std::wstring_view title, st
 void ShowInExplorer(const std::filesystem::path& path);
 // Opens a folder in Explorer (its contents, nothing selected).
 void OpenFolder(const std::filesystem::path& folder);
+// Opens a file in the program Windows has for it, else asks which one (a .rmfx, a .rmsky in a text
+// editor). False when neither worked.
+bool OpenFileOutside(const std::filesystem::path& file);
 // Moves files / folders to the Recycle Bin (no question asked, no progress window). NEVER deletes
 // for good: where there is no Recycle Bin (a USB stick, a network folder) or it is too small for the
 // item, the shell would delete it permanently - that item is refused and stays (*notRecyclable =

@@ -26,6 +26,14 @@ enum class Motion {
     RM_ITEM(Label="キネマティック") Kinematic,
 };
 
+// The scene's own (game_production::SceneSettingInfo: the インスペクター shows it when the scene - the
+// 階層's top row - is chosen). Each scene has its own gravity. (It was the game settings' 重力 before
+// 2026-11-17: that value is kept in the project file, not used.)
+RM_STRUCT(Label="物理")
+struct PhysicsSettings {
+    RM_PROPERTY(Edit, Label="重力", Tooltip="m/s²。世界の向きで (Y が上)。2D のゲームは X と Y を使います") Vec3 gravity{0, -9.81f, 0};
+};
+
 RM_STRUCT(Label="剛体")
 struct Rigidbody {
     RM_PROPERTY(Edit, Label="動き方", Tooltip="動く: 重力で落ち、ぶつかると押される / 動かない: 床や壁 / キネマティック: Transform (スクリプト) で動かし、ほかを押す")
@@ -33,7 +41,7 @@ struct Rigidbody {
     RM_PROPERTY(Edit, Label="質量 (kg)", Min=0.001, Max=1000000) float mass = 1.f;
     RM_PROPERTY(Edit, Label="摩擦", Tooltip="0: つるつる 〜 1: すべりにくい (ぶつかった 2 つを掛けた値の平方根)", Min=0, Max=10) float friction = 0.5f;
     RM_PROPERTY(Edit, Label="跳ね返り", Tooltip="0: 跳ねない 〜 1: そのまま跳ね返る (2 つの大きい方)", Min=0, Max=1) float bounciness = 0.f;
-    RM_PROPERTY(Edit, Label="重力の倍率", Tooltip="ゲームの設定の「重力」に掛けます (0: 浮く)", Min=-100, Max=100) float gravityScale = 1.f;
+    RM_PROPERTY(Edit, Label="重力の倍率", Tooltip="シーンの「重力」に掛けます (0: 浮く)", Min=-100, Max=100) float gravityScale = 1.f;
     RM_PROPERTY(Edit, Label="回転の固定 X") bool lockRotationX = false;
     RM_PROPERTY(Edit, Label="回転の固定 Y") bool lockRotationY = false;
     RM_PROPERTY(Edit, Label="回転の固定 Z", Tooltip="2D の物は Z だけが回るので、これで回らなくなります") bool lockRotationZ = false;

@@ -317,22 +317,65 @@ Component Scene::LoadComponent(const json::Value& cj, bool allowed, const std::s
     auto warn = [&](std::string msg) {
         if (warnings) warnings->push_back(std::move(msg));
     };
-    Component c;
-    c.type = cj.Get("type").AsString();
-    c.raw = cj;
-    const reflect::TypeDesc* t = reflect::FindTypeNamed(componentTypes_, c.type);
-    const json::Value& data = cj.Get("data");
-    if (t && data.IsObject() && allowed) {
-        c.value = reflect::Object(*t);
-        reflect::Load(*t, c.value.Get(), data, &c.unknowns, warnings);
-        c.raw.Erase("data");  // written again from the value
-    } else if (!t) {
+    Component c = ReadComponent(cj, componentTypes_, allowed, warnings);
+    if (c.Known()) return c;
+    if (!reflect::FindTypeNamed(componentTypes_, c.type)) {
         warn(std::format("エンティティ「{}」の部品「{}」は、いま入っているプラグインでは使えないので、そのまま残します", entityName, c.type));
     } else {
         warn(std::format("エンティティ「{}」の部品「{}」は読めない (2 つ目か形が違う) ので、そのまま残します", entityName, c.type));
     }
     return c;
 }
+
+Component Scene::ReadComponent(const json::Value& cj, std::span<const reflect::TypeDesc* const> types, bool allowed, reflect::Warnings* warnings) {
+    Component c;
+    c.type = cj.Get("type").AsString();
+    c.raw = cj;
+    const reflect::TypeDesc* t = reflect::FindTypeNamed(types, c.type);
+    const json::Value& data = cj.Get("data");
+    if (t && data.IsObject() && allowed) {
+        c.value = reflect::Object(*t);
+        reflect::Load(*t, c.value.Get(), data, &c.unknowns, warnings);
+        c.raw.Erase("data");  // written again from the value
+    }
+    return c;
+}
+
+// --- The scene's own values -------------------------------------------------------------------
+
+void Scene::SetSettingTypes(std::vector<const reflect::TypeDesc*> types) {
+    settingTypes_ = std::move(types);
+    // Read again with the new list: a setting kept as it was read may be known now (and one known
+    // before but not offered now goes back to being kept).
+    std::vector<Component> was = std::move(settings_);
+    settings_.clear();
+    for (const Component& c : was) {
+        const json::Value saved = SaveComponent(c);
+        if (std::none_of(settings_.begin(), settings_.end(), [&](const Component& s) { return s.type == c.type; })) {
+            settings_.push_back(ReadComponent(saved, settingTypes_, true, nullptr));
+        }
+    }
+    AddMissingSettings();
+}
+
+void Scene::AddMissingSettings() {
+    for (const reflect::TypeDesc* t : settingTypes_) {
+        if (FindSetting(t->name)) continue;
+        Component c;
+        c.type = t->name;
+        c.value = reflect::Object(*t);
+        settings_.push_back(std::move(c));
+    }
+}
+
+Component* Scene::FindSetting(std::string_view type) {
+    for (Component& c : settings_) {
+        if (c.type == type) return &c;
+    }
+    return nullptr;
+}
+
+const Component* Scene::FindSetting(std::string_view type) const { return const_cast<Scene*>(this)->FindSetting(type); }
 
 json::Value Scene::SaveEntity(const SceneEntity& e) const {
     json::Value ej = reflect::Save(e.data, &e.unknowns);
@@ -426,6 +469,13 @@ json::Value Scene::Save() const {
     json::Value list = json::Value::MakeArray();
     for (const auto& e : entities_) list.Push(SaveEntity(e));
     o.Set("entities", std::move(list));
+    if (settings_.empty()) {
+        o.Erase("settings");
+    } else {
+        json::Value settings = json::Value::MakeArray();
+        for (const Component& c : settings_) settings.Push(SaveComponent(c));
+        o.Set("settings", std::move(settings));
+    }
     return o;
 }
 
@@ -501,10 +551,21 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
     Touch();
     extra_ = json::Value::MakeObject();
     nextId_ = 1;
-    if (!v.IsObject()) return;
-    extra_ = v;  // every key in its place; Save replaces "nextId" and "entities" in place
+    settings_.clear();
+    if (!v.IsObject()) {
+        AddMissingSettings();
+        return;
+    }
+    extra_ = v;  // every key in its place; Save replaces "nextId", "entities" and "settings" in place
     for (const auto& item : v.Get("entities").Items()) entities_.push_back(LoadEntity(item, warnings));
     Touch();
+    // The scene's own values: the first of each type (a type not offered now is kept as read, quietly:
+    // a 2D game's scene keeps the 3D sky it does not use).
+    for (const auto& item : v.Get("settings").Items()) {
+        if (!item.IsObject() || FindSetting(item.Get("type").AsString())) continue;
+        settings_.push_back(ReadComponent(item, settingTypes_, true, warnings));
+    }
+    AddMissingSettings();
 
     // Ids: positive and unique. Repeated or missing ones get new ids (never one in use).
     // (An id or a nextId too big to count on from - a broken file - is not used: no overflow.)

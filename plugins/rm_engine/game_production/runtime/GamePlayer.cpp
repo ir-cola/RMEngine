@@ -100,6 +100,7 @@ public:
             }
         }
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
+        scene_.SetSettingTypes(SettingTypes(host_.Registry()));
 
         // The game's scenes (the list's order: Game::LoadScene counts in it), and the first one.
         for (const auto& s : doc->Get("scenes").Items()) {
@@ -199,7 +200,6 @@ public:
         } else {
             world_.ReadInput();  // (the game UI reads it too)
         }
-        runner_.SetGravity(settings_.gravity);
         runner_.Advance(scene_, dt, settings_.fixedTimestep);
         // What the systems' fixed steps tell the scripts (the physics' contacts ...).
         if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, runner_.Hooks());

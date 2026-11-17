@@ -200,9 +200,7 @@ std::wstring ErrorText(const particles::ModuleError& e) {
 // Opens a file in the program Windows has for it (else asks which one) - after this frame.
 void OpenOutside(const fs::path& file) {
     editor::PostToUi([file] {
-        auto r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", file.c_str(), nullptr, file.parent_path().c_str(), SW_SHOWNORMAL));
-        if (r <= 32) r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"openas", file.c_str(), nullptr, file.parent_path().c_str(), SW_SHOWNORMAL));
-        if (r <= 32) log::Error("ファイルを開けませんでした: {}", PathToUtf8(file.wstring()));
+        if (!platform::OpenFileOutside(file)) log::Error("ファイルを開けませんでした: {}", PathToUtf8(file.wstring()));
     });
 }
 

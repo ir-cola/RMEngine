@@ -34,7 +34,6 @@
   "親から外す (一番上に出す)": "Unparent (move to the top level)",
   "足せる部品がありません (3D 空間 などのプラグインで増えます)": "No components to add (plugins such as 3D Space add them)",
   "足せる部品は全部付いています": "Every component is already added",
-  "重力": "Gravity",
   "高さ": "Height",
   "＋ 部品を足す": "＋ Add component",
   "コピー": "Copy",
@@ -207,5 +206,7 @@
   "画面の右と下の縁から内側へ、UI を置かない幅 (DIP)": "How far in from the screen's right and bottom edges no UI should be (DIPs)",
   "追加": "Add",
   "空のエンティティ": "Empty entity",
-  "空の子エンティティ": "Empty child entity"
+  "空の子エンティティ": "Empty child entity",
+  "シーン「{}」": "Scene \"{}\"",
+  "このシーンの設定はまだありません (物理・3D 空間 などのプラグインで増えます)": "This scene has no settings yet (plugins such as Physics and 3D Space add them)"
 }

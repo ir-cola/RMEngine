@@ -16,6 +16,8 @@
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/game_x_3d/runtime/Sky.h"
+#include "rm_engine/game_x_3d/runtime/SkyPaint.h"
 #include "rm_engine/game_x_3d/runtime/WorldDraw.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
@@ -61,7 +63,7 @@ constexpr float kOrbitDegreesPerDip = 0.4f;
 constexpr float kClickSlop = 4.f;  // a press that moves less than this is a click
 constexpr int kGridHalf = 20;      // the grid goes from -20 to 20 (1 per line, darker every 10)
 constexpr float kBarH = 28.f;      // the tool strip at the top left
-constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kShadowW = 84.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
+constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kShadowW = 84.f, kSkyW = 64.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
 constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
 constexpr double kModelCheckSeconds = 1.0;    // how often a model file is looked at again (changed on disk?)
 constexpr double kModelForgetSeconds = 10.0;  // a model no entity uses for this long leaves the GPU
@@ -73,7 +75,7 @@ constexpr float kPreviewMaxW = 360.f;  // the camera preview at the bottom right
 // The tool strip's parts: 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心, 刻み, 影; they go on a
 // second row when the view is too narrow for one. `all` = round all of them.
 struct BarLayout {
-    Rect tool, space, pivot, snap, shadow, debug, shapes, all;
+    Rect tool, space, pivot, snap, shadow, sky, debug, shapes, all;
 };
 
 struct Placed {
@@ -117,6 +119,7 @@ struct Picture {
     bool drawersMade = false;
     std::optional<double> drawnAt;
     std::vector<space3d::ExtraDraw> extras;
+    game_x_3d::SkyPainter sky;  // the scene's 空 as this picture draws it
 };
 
 // The largest rectangle of `aspect` (width / height) in the middle of r.
@@ -199,6 +202,8 @@ public:
         cameraType_ = reflect::TypeOf<Camera>().name;
         lightType_ = reflect::TypeOf<Light>().name;
         ambientType_ = reflect::TypeOf<AmbientLight>().name;
+        // The sky's time goes on while the game plays (clouds drift, stars twinkle); still otherwise.
+        skySeconds_ = host.playing ? skySeconds_ + std::clamp(c.Time() - now_, 0.0, 0.1) : 0.0;
         now_ = c.Time();
         if (!looksMade_) MakeLooks(host);
         Place(host);
@@ -470,9 +475,10 @@ private:
         b.pivot = place(kPivotW);
         b.snap = place(kSnapW);
         b.shadow = place(kShadowW);
+        b.sky = place(kSkyW);
         b.debug = place(kDebugW);
         b.shapes = place(kShapesW);
-        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.shadow.Right(), b.debug.Right(), b.shapes.Right()});
+        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.shadow.Right(), b.sky.Right(), b.debug.Right(), b.shapes.Right()});
         b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.shapes.Bottom() - (r.y + 8)};
         return b;
     }
@@ -486,7 +492,7 @@ private:
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (previewAt_ && previewAt_->Inset(-4, -24, -4, -4).Contains(x, y)) return true;  // the camera preview
         if (!bar) return false;
-        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->shadow, bar->debug, bar->shapes}) {
+        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->shadow, bar->sky, bar->debug, bar->shapes}) {
             if (part.Contains(x, y)) return true;
         }
         return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
@@ -883,8 +889,29 @@ private:
         f.debugLines = debugLines_;
         f.boxes = boxes_;
         f.meshes = meshes_;
-        f.lights = lights_;
         f.ambient = ambient_.value_or(space3d::Ambient{});
+        // The scene's 空 behind everything (the scene view's own camera: when 空 is on) and the light
+        // that follows it - the same in the scene view as in the game.
+        frameLights_ = lights_;
+        const game_x_3d::Sky* sky = host.scene.Setting<game_x_3d::Sky>();
+        const bool ownCamera = &pic == &main_ && !host.game;
+        if (sky && sky->kind != game_x_3d::SkyKind::None) {
+            const game_x_3d::SkyLook look = game_x_3d::LookOf(*sky, skySeconds_);
+            if (!ownCamera || state_.sky) {
+                game_x_3d::SkyPainter::Sources sources;
+                sources.picture = [&](const AssetRef& ref) {
+                    textures_.SetCacheFolder(host.host.GetProject().CacheDir() / L"Textures");
+                    return textures_.Get(main_.renderer, host.host.AssetFile(ref), space3d::TextureUse::Color, true, now_);
+                };
+                // (as the editor has it: a saved edit of the .rmsky shows at once)
+                sources.code = [&host](const AssetRef& ref) { return host.host.AssetContent(ref); };
+                sources.name = [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); };
+                sources.now = now_;
+                f.sky = pic.sky.Prepare(pic.renderer, *sky, look, sources);
+            }
+            game_x_3d::FollowSky(look, frameLights_, f.ambient);
+        }
+        f.lights = frameLights_;
         PrepareExtras(c, host, pic);
         f.extras = pic.extras;
 
@@ -1261,6 +1288,11 @@ private:
             state_.shadows = !state_.shadows;
         }
         if (c.IsHovered(bar.shadow)) w::Tooltip(c, Tr(L"光の影を床と物に落とす (光の部品の「影を落とす」に従う。光の部品が無いときは上からの光。押すと切り替え)"));
+        // 空: the scene's sky behind this view too (the game view always shows it).
+        if (w::Button(c, "scene_sky", bar.sky, Tr(L"空"), state_.sky ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+            state_.sky = !state_.sky;
+        }
+        if (c.IsHovered(bar.sky)) w::Tooltip(c, Tr(L"シーンの「空」をこのシーンビューの後ろにも描く (階層の一番上の行を選ぶと設定できます。ゲームビューにはいつも出る。押すと切り替え)"));
         // デバッグ: the lines the game's scripts draw while it plays (rm::Debug), in this view.
         if (w::Button(c, "scene_debug_draw", bar.debug, Tr(L"デバッグ"), state_.debugDraw ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.debugDraw = !state_.debugDraw;
@@ -1344,6 +1376,8 @@ private:
     std::optional<Rect> previewAt_;
     std::string transformType_, meshType_, cameraType_, lightType_, ambientType_;
     std::unordered_map<std::string, w::Icon> markOf_;  // component type -> its mark (MakeLooks)
+    std::vector<space3d::Light> frameLights_;          // lights_ as a picture draws them (the sky's light)
+    double skySeconds_ = 0;                            // the sky's time (SkyLook): the game's while it plays
     bool looksMade_ = false;
     std::optional<space3d::Ambient> ambient_;  // the scene's 環境光 (none: the default)
     size_t warnedShadows_ = 0;  // lights told about that have no shadow map left

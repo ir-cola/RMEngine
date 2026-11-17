@@ -85,6 +85,12 @@ void OpenFolder(const std::filesystem::path& folder) {
     ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+bool OpenFileOutside(const std::filesystem::path& file) {
+    auto r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", file.c_str(), nullptr, file.parent_path().c_str(), SW_SHOWNORMAL));
+    if (r <= 32) r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"openas", file.c_str(), nullptr, file.parent_path().c_str(), SW_SHOWNORMAL));
+    return r > 32;
+}
+
 namespace {
 
 // Told by the shell before each item is deleted. When it would not go to the Recycle Bin (the flag

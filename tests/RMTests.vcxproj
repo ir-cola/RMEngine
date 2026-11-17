@@ -76,6 +76,7 @@
     <ClCompile Include="TestWorker.cpp" />
     <ClCompile Include="TestProcess.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
+    <ClCompile Include="TestSky.cpp" />
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
     <ClCompile Include="TestSystems.cpp" />
@@ -140,6 +141,8 @@
     <ClCompile Include="..\src\platform\Process.cpp" />
     <ClCompile Include="..\src\platform\Image.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Sky.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\SkyShader.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Register.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\ScriptTransform3D.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\ScriptDebug3D.cpp" />

@@ -158,7 +158,6 @@ struct GameSettings {
     RM_PROPERTY(Edit, Label="ゲームの名前", Tooltip="書き出した exe の名前とウィンドウのタイトルに使います") std::string title = "My Game";
     RM_PROPERTY(Edit, Label="目標 FPS", Min=1, Max=240) int targetFps = 60;
     RM_PROPERTY(Edit, Label="物理の刻み (秒)", Min=0.001, Max=0.1, Step=0.001) float fixedTimestep = 0.02f;
-    RM_PROPERTY(Edit, Label="重力") Vec3 gravity{0, -9.81f, 0};
     RM_PROPERTY(Edit, Label="背景の色", Min=0, Max=1) Color clearColor{0.10f, 0.10f, 0.12f, 1};
     RM_PROPERTY(Edit, Label="画面") DisplaySettings display;
     RM_PROPERTY(Edit, Label="タグ") std::vector<std::string> tags;

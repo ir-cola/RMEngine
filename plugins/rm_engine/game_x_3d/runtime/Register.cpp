@@ -8,6 +8,7 @@
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/ScriptDebug3D.h"
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
+#include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/Spin.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -40,6 +41,11 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(kComponentPoint, kCycle);
     static const game_production::SystemInfo kCycleSystem{"カメラを順に切り替える", game_production::SystemPhase::Frame, 0, &RunCameraCycle};
     registry.Contribute(game_production::kSystemPoint, kCycleSystem);
+    // The scene's 空 (a scene setting: shown in a 3D game), and the system that moves 地球の空's 時刻 on.
+    static const game_production::SceneSettingInfo kSky{.type = &reflect::TypeOf<Sky>, .space = "3d"};
+    registry.Contribute(game_production::kSceneSettingPoint, kSky);
+    static const game_production::SystemInfo kSkyClock{"空の時刻", game_production::SystemPhase::Frame, 0, &RunSkyClock};
+    registry.Contribute(game_production::kSystemPoint, kSkyClock);
     // Scripts: Transform in 3D (sdk/RM3D.h).
     registry.Contribute(game_production::kScriptApiPoint, ScriptTransform3DPart());
     // ... and debug drawing (rm::Debug: lines the editor shows while playing; nothing in a game).

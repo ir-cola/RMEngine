@@ -674,7 +674,7 @@ void PhysicsWorld::Step(Scene& scene, float dt, Vec3 gravity, std::vector<HookCa
     w.SyncAll(scene, dt);
     if (dt <= 0) return;
     if (gravity.x != w.gravityNow.x || gravity.y != w.gravityNow.y || gravity.z != w.gravityNow.z) {
-        // A new gravity (the game settings changed it, a script): bodies at rest wake up to feel it.
+        // A new gravity (the scene's 重力 changed): bodies at rest wake up to feel it.
         w.gravityNow = gravity;
         w.system.SetGravity(J(gravity));
         JPH::BodyInterface& bi = w.system.GetBodyInterface();
@@ -782,6 +782,9 @@ size_t PhysicsWorld::Characters() const { return impl_->chars.size(); }
 
 PhysicsWorld& WorldOf(Scene& scene) { return scene.PlayState<PhysicsWorld>("rm_engine.physics.world"); }
 
-void RunPhysics(game_production::SystemContext& ctx) { WorldOf(ctx.scene).Step(ctx.scene, ctx.dt, ctx.gravity, ctx.hooks, ctx.assets); }
+void RunPhysics(game_production::SystemContext& ctx) {
+    const PhysicsSettings* settings = ctx.scene.Setting<PhysicsSettings>();
+    WorldOf(ctx.scene).Step(ctx.scene, ctx.dt, settings ? settings->gravity : PhysicsSettings{}.gravity, ctx.hooks, ctx.assets);
+}
 
 }  // namespace rm::physics

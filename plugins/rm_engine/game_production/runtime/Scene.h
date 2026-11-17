@@ -128,6 +128,27 @@ public:
     const std::vector<const reflect::TypeDesc*>& MultipleTypes() const { return multipleTypes_; }
     bool AllowsMultiple(std::string_view type) const;
 
+    // The scene's own values (SceneSettingInfo: 重力, 空 ...): one of each type offered, in this order.
+    // Saved as "settings": [{ "type", "data" }] (as components); a type not offered now is kept as it
+    // was read. Setting the types (before or after Load) gives the scene each one it has not got yet,
+    // with its defaults.
+    void SetSettingTypes(std::vector<const reflect::TypeDesc*> types);
+    const std::vector<const reflect::TypeDesc*>& SettingTypes() const { return settingTypes_; }
+    const std::vector<Component>& Settings() const { return settings_; }
+    Component* FindSetting(std::string_view type);
+    const Component* FindSetting(std::string_view type) const;
+    // The setting of type T (null: its type is not offered to this scene).
+    template <class T>
+    T* Setting() {
+        Component* c = FindSetting(reflect::TypeOf<T>().name);
+        return c && c->Known() ? static_cast<T*>(c->value.Get()) : nullptr;
+    }
+    template <class T>
+    const T* Setting() const {
+        const Component* c = FindSetting(reflect::TypeOf<T>().name);
+        return c && c->Known() ? static_cast<const T*>(c->value.Get()) : nullptr;
+    }
+
     bool Empty() const { return entities_.empty(); }
     const std::vector<SceneEntity>& Entities() const { return entities_; }
     SceneEntity* Find(int id);
@@ -248,6 +269,11 @@ public:
     // `allowed`: the entity has none of the type yet, or the type allows several.
     static json::Value SaveComponent(const Component& c);
     Component LoadComponent(const json::Value& cj, bool allowed, const std::string& entityName, reflect::Warnings* warnings) const;
+    // A component (or a setting) as SaveComponent wrote it: its value when its type is one of `types`
+    // (and `allowed`), else kept as read (raw).
+    static Component ReadComponent(const json::Value& cj, std::span<const reflect::TypeDesc* const> types, bool allowed,
+                                   reflect::Warnings* warnings);
+    void AddMissingSettings();
 
 private:
     size_t IndexOf(int id) const;
@@ -272,6 +298,8 @@ private:
     mutable bool indexStale_ = true;
     std::vector<const reflect::TypeDesc*> componentTypes_;
     std::vector<const reflect::TypeDesc*> multipleTypes_;
+    std::vector<const reflect::TypeDesc*> settingTypes_;
+    std::vector<Component> settings_;
     int nextId_ = 1;
     json::Value extra_ = json::Value::MakeObject();  // the scene object as loaded (its unknown keys are kept)
     PlayStates playStates_;

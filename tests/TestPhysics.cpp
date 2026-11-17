@@ -258,7 +258,7 @@ RM_TEST(Physics_World_PlayCopyIsThrownAway) {
 }
 
 RM_TEST(Physics_World_SystemAndRaycast) {
-    // The system 物理 runs in the fixed steps with the runner's gravity.
+    // The system 物理 runs in the fixed steps with the scene's gravity.
     Scene s = NewScene();
     Box3(s, "floor", {0, -0.5f, 0}, {20, 1, 20}, std::nullopt);
     const int box = Box3(s, "box", {0, 2, 0}, {1, 1, 1}, Motion::Dynamic);
@@ -266,12 +266,15 @@ RM_TEST(Physics_World_SystemAndRaycast) {
     const game_production::SystemInfo* list[] = {&kPhysics};
     game_production::SystemRunner r;
     r.SetSystems(list);
+    // The scene's own 重力 (a scene setting): every scene has one, with the defaults.
+    s.SetSettingTypes({&reflect::TypeOf<PhysicsSettings>()});
+    CHECK(s.Setting<PhysicsSettings>() && Near(s.Setting<PhysicsSettings>()->gravity.y, -9.81f));
     // A second with no gravity: it stays - and goes to sleep (at rest for more than half a second).
-    r.SetGravity({0, 0, 0});
+    s.Setting<PhysicsSettings>()->gravity = {0, 0, 0};
     for (int i = 0; i < 60; ++i) r.Advance(s, kStep, kStep);
     CHECK(Near(Get<space3d::Transform>(s, box).position.y, 2, 1e-3f));
     // Gravity again: the sleeping body wakes up and falls (half a second: about 1.2 m).
-    r.SetGravity(kGravity);
+    s.Setting<PhysicsSettings>()->gravity = kGravity;
     for (int i = 0; i < 30; ++i) r.Advance(s, kStep, kStep);
     CHECK(Get<space3d::Transform>(s, box).position.y < 1.0f);
     // A ray down from above hits the box first; a trigger is not hit.

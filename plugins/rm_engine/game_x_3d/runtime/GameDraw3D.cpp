@@ -4,17 +4,22 @@
 // A thing with a 3D model (メッシュ) is drawn with the model the export baked (MeshBake: read as the editor
 // reads it, in this engine's form) and its pictures as the GPU takes them (DDS: BC7 turned into RGBA on a
 // GPU without it), or as its 形 (箱, 球 ...); when its model cannot be read, as a box. A thing without a
-// メッシュ is not drawn (the editor shows it as a mark). Lights, 環境光, shadows, the camera and
-// switched-off things are as in the editor's game view.
+// メッシュ is not drawn (the editor shows it as a mark). Lights, 環境光, shadows, the camera, the scene's
+// 空 (SkyPaint.h: the same painter as the editor's) and switched-off things are as in the editor's game
+// view.
 
 #include "rm_engine/game_x_3d/runtime/GameDraw3D.h"
 
 #include "base/Log.h"
+#include "core/asset/BakedImage.h"
+#include "platform/Image.h"
 #include "rm_engine/game_x_3d/runtime/Register.h"
 #include "rm_engine/game_production/runtime/GameDraw.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/game_x_3d/runtime/Sky.h"
+#include "rm_engine/game_x_3d/runtime/SkyPaint.h"
 #include "rm_engine/game_x_3d/runtime/WorldDraw.h"
 #include "rm_engine/space3d/runtime/BlockCompress.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
@@ -43,6 +48,8 @@ public:
             bitmap_.Reset();
             picture_ = nullptr;
             models_.clear();  // (made on the devices that are gone)
+            pictures_.clear();
+            sky_ = SkyPainter{};
             generation_ = f.gfx.Generation();
             std::string err;
             if (!renderer_.Init(f.gfx.D3D(), &err)) {
@@ -114,9 +121,21 @@ public:
         frame.clear = BackgroundOf(eye->first, bg);
         frame.boxes = boxes_;
         frame.meshes = meshes_;
-        frame.lights = lights_;
         frame.ambient = amb.value_or(space3d::Ambient{});
         frame.shadows = true;
+        // The scene's 空, behind everything (its time: the game's, as the clouds drift); 光を空に合わせる.
+        seconds_ += f.dt;
+        if (const Sky* sky = f.scene.Setting<Sky>(); sky && sky->kind != SkyKind::None) {
+            const SkyLook look = LookOf(*sky, seconds_);
+            SkyPainter::Sources sources;
+            sources.picture = [&](const AssetRef& ref) { return PictureOf(f, ref); };
+            sources.code = [&](const AssetRef& ref) { return f.asset(ref); };
+            sources.name = [](const AssetRef& ref) { return ref.guid; };
+            sources.readEvery = -1;  // the game's files do not change
+            frame.sky = sky_.Prepare(renderer_, *sky, look, sources);
+            FollowSky(look, lights_, frame.ambient);
+        }
+        frame.lights = lights_;
         // What other plugins draw into the world themselves (パーティクル: WorldDraw.h).
         if (!drawersMade_ && f.registry) {
             drawersMade_ = true;
@@ -206,8 +225,30 @@ private:
         return &m;
     }
 
+    // A picture of the sky (an image asset: baked as it was, or the file) on the GPU, read the first
+    // time (null: it cannot be read - told once).
+    space3d::TextureRef PictureOf(const game_production::GameDrawFrame& f, const AssetRef& ref) {
+        auto [it, first] = pictures_.try_emplace(ref.guid);
+        if (!first) return it->second;
+        std::string err;
+        const auto bytes = f.asset(ref);
+        const auto baked = bytes ? asset::ReadBakedImage(*bytes, &err) : std::nullopt;
+        std::optional<platform::Image> image;
+        if (baked) {
+            const auto* data = reinterpret_cast<const uint8_t*>(baked->picture.data());
+            image = platform::DecodeImage(f.gfx.Wic(), std::span(data, baked->picture.size()), platform::PixelOrder::Rgba,
+                                          {space3d::kMaxTextureSize, space3d::kMaxTextureSize}, &err);
+        }
+        if (image) it->second = renderer_.UploadTexture(*image, true, &err);
+        if (!it->second) log::Warn("空の画像を読めません ({}): {}", ref.guid, bytes ? err : std::string("ゲームに入っていません"));
+        return it->second;
+    }
+
     space3d::Renderer renderer_;
     std::unordered_map<std::string, Model> models_;
+    std::unordered_map<std::string, space3d::TextureRef> pictures_;  // the sky's, by asset id
+    SkyPainter sky_;
+    double seconds_ = 0;  // the game's time the sky moves by
     std::vector<space3d::MeshDraw> meshes_;
     uint64_t generation_ = 0;
     std::vector<space3d::Box> boxes_;

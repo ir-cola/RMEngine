@@ -23,6 +23,7 @@
 #include "ui/Context.h"
 
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <unordered_set>
@@ -44,6 +45,18 @@ public:
     virtual void Items(std::vector<Item>& out) = 0;
     // Shown when there are no items.
     virtual std::wstring EmptyText() const { return Tr(L"まだ何もありません。"); }
+
+    // Optional: a row above the items that is not one of them (the 階層's scene): always there, not
+    // scrolled, not searched. Clicking it clears the selection and calls TopClicked (after
+    // SelectionChanged); a right click opens the menu of empty space (Actions with nothing); rows
+    // dropped on it go to the top level, at the end.
+    struct TopRow {
+        std::wstring name;
+        w::Icon icon = w::Icon::Object;
+        bool selected = false;  // drawn as chosen (what it stands for is in the インスペクター)
+    };
+    virtual std::optional<TopRow> Top() const { return std::nullopt; }
+    virtual void TopClicked() {}
 
     virtual bool CanRename(ItemId id) const {
         (void)id;

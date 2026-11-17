@@ -46,6 +46,7 @@
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Primitives.h"
+#include "rm_engine/space3d/runtime/SkyShader.h"
 #include "rm_engine/space3d/runtime/TexturePixels.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -153,6 +154,17 @@ struct ExtraDrawContext {
 };
 using ExtraDraw = std::function<void(const ExtraDrawContext&)>;
 
+// A sky's shaders on the GPU (Renderer::MakeSky). Renderer3D.cpp.
+struct SkyProgram;
+
+// The sky behind everything (SkyShader.h): drawn over the whole picture before anything else, in
+// place of the clear colour (whose alpha the picture keeps).
+struct SkyDraw {
+    std::shared_ptr<const SkyProgram> program;
+    std::array<TextureRef, kSkyTextures> textures;  // sky0 .. sky5 (null: none - they read black)
+    SkyConstants constants{};  // invViewProj is the Renderer's (set when drawn)
+};
+
 struct RenderFrame {
     uint32_t width = 0, height = 0;  // pixels
     Mat4 view, projection;
@@ -171,6 +183,7 @@ struct RenderFrame {
     bool shadows = false;  // the lights' shadows (Lighting.h says which lights have them)
     Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
     std::span<const ExtraDraw> extras;  // in this order (ExtraDraw)
+    const SkyDraw* sky = nullptr;       // null (or no program): only the clear colour behind
 };
 
 class Renderer {
@@ -189,6 +202,10 @@ public:
     std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, bool sharp = false);
     // The same with the mipmaps already made (the quick part: only the copy to the GPU).
     std::shared_ptr<const GpuTexture> UploadTexture(const TexturePixels& pixels, std::string* error, bool sharp = false);
+    // A sky's shaders from its whole HLSL (AssembleSky): compiled once per device and text - the same
+    // text gives the same program (every renderer on the device shares it while it is used). Null and
+    // *error (the compiler's messages: the file and line of the sky's code) when it cannot be made.
+    std::shared_ptr<const SkyProgram> MakeSky(const std::string& hlsl, std::string* error);
     // A simple shape (Primitives.h: 箱, 球, 円柱 ...), put on the GPU by Init. Null before Init.
     const GpuMesh* ShapeOf(Shape shape) const;
     // Whether this GPU reads BC7 (feature level 11.0): without it colours with alpha are kept as BC3.

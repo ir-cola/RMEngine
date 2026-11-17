@@ -49,6 +49,20 @@ struct ComponentInfo {
     const char* folder = nullptr;
 };
 
+// PluginRegistry point: items are SceneSettingInfo (static).
+inline constexpr char kSceneSettingPoint[] = "rm_engine.game_production.scene_setting";
+
+// A value the scene itself has, not one of its entities (物理's 重力, 3D's 空): every scene has one of
+// each type offered (its defaults until changed), saved in the scene's file. The インスペクター shows
+// them when the scene (the 階層's top row) is chosen; systems and drawers read them with
+// Scene::Setting<T>().
+struct SceneSettingInfo {
+    const reflect::TypeDesc& (*type)();
+    // The game's space it is for (a SceneViewInfo::space, e.g. "3d": the sky): the インスペクター shows
+    // it only in a game of that space (it is kept, and saved, either way). Null: any space.
+    const char* space = nullptr;
+};
+
 struct Component {
     std::string type;          // TypeDesc::name, e.g. "rm::space3d::Transform"
     reflect::Object value;     // empty when the type is not offered now

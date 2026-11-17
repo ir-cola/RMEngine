@@ -845,6 +845,7 @@ SceneSwitch SwitchAskedScene(Scene& playing, ScriptWorld& world, ScriptRunner& r
     // Read first: a scene that cannot be read leaves the one playing as it is (its scripts go on).
     Scene next;
     next.SetComponentTypes(playing.ComponentTypes(), playing.MultipleTypes());
+    next.SetSettingTypes(playing.SettingTypes());
     if (!load(static_cast<size_t>(asked), next, error)) return SceneSwitch::Failed;
     if (module.Loaded()) runner.Stop(playing, world, module, order);  // EndPlay of this scene's scripts
     runner.Reset();

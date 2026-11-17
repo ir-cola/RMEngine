@@ -71,8 +71,8 @@ enum class Icon {
     Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Dash, Object, Cube, Square, Plus, Grip, Play, Pause, Step, Stop,
     // what an entity is (the 階層, the scene view's marks)
     // Point: a thing with only a place (a ring with a dot - the scene view's mark of an empty entity);
-    // Effect: a sparkle (パーティクル)
-    Camera, Light, Point, Effect,
+    // Effect: a sparkle (パーティクル); Scene: layers (a scene - the 階層's top row)
+    Camera, Light, Point, Effect, Scene,
     // what a file is (the アセット panel, reference fields)
     Folder, File, Image, Audio, Font, Text,
 };

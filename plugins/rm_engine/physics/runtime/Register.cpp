@@ -20,6 +20,9 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(kComponentPoint, kCollider2D);
     static const ComponentInfo kCharacter{.type = &reflect::TypeOf<Character>, .folder = "物理"};
     registry.Contribute(kComponentPoint, kCharacter);
+    // The scene's 重力 (each scene its own).
+    static const game_production::SceneSettingInfo kSettings{.type = &reflect::TypeOf<PhysicsSettings>};
+    registry.Contribute(game_production::kSceneSettingPoint, kSettings);
     // The world steps in the game settings' 物理の刻み (after the scripts' Tick; the hooks after it).
     static const game_production::SystemInfo kSystem{"物理", game_production::SystemPhase::Fixed, 0, &RunPhysics};
     registry.Contribute(game_production::kSystemPoint, kSystem);

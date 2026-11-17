@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "空 (スカイボックス): 階層の一番上のシーンの行を押すと、インスペクターにシーンの設定 (重力・空)。空は 地球の空 (24 時間・天気 7 種類・光も空に合わせる)・宇宙・画像 (パノラマ / 6 枚)・自分のシェーダー (.rmsky)。重力はゲームの設定からシーンへ移った",
+          "en": "Sky (skybox): click the scene row at the top of the hierarchy to see the scene's settings (gravity, sky) in the inspector. Skies: Earth sky (24 hours, 7 kinds of weather, the light follows it), Space, images (a panorama / six) and your own shader (.rmsky). Gravity moved from the game settings to the scene"
+        },
+        {
           "ja": "3D のシーンビューで、メッシュの無い物 (空のエンティティ・パーティクル・音源) は箱で描かず、カメラのような印だけに。印をクリックで選び、ギズモで動かせる。パーティクルの印はきらきら",
           "en": "In the 3D scene view, things without a Mesh (empty entities, particles, audio sources) are no longer drawn as boxes: only a mark, like a camera's. Click a mark to select it and move it with the gizmo. Particles have a sparkle mark"
         },

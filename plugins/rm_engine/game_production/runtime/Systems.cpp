@@ -33,6 +33,15 @@ std::vector<std::string> CameraTypes(const RuntimeRegistry& registry) {
     return out;
 }
 
+std::vector<const reflect::TypeDesc*> SettingTypes(const RuntimeRegistry& registry) {
+    std::vector<const reflect::TypeDesc*> out;
+    for (const auto& s : registry.Contributions<SceneSettingInfo>(kSceneSettingPoint)) {
+        const reflect::TypeDesc* t = &s.item->type();
+        if (std::find(out.begin(), out.end(), t) == out.end()) out.push_back(t);
+    }
+    return out;
+}
+
 uint64_t SceneCamera(const Scene& scene, const std::vector<std::string>& cameraTypes, uint64_t wanted) {
     auto isCamera = [&](const SceneEntity& e) {
         return std::any_of(cameraTypes.begin(), cameraTypes.end(), [&](const std::string& t) {
@@ -83,7 +92,7 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
         while (carry_ + eps >= fixedStep && steps < kMaxFixedSteps) {
             for (const SystemInfo* s : systems_) {
                 if (s->phase != SystemPhase::Fixed) continue;
-                SystemContext ctx{scene, fixedStep, fixedTime_, frames_, camera_, gravity_, &hooks_, &assets_};
+                SystemContext ctx{scene, fixedStep, fixedTime_, frames_, camera_, &hooks_, &assets_};
                 s->run(ctx);
                 camera_ = ctx.camera;
             }
@@ -96,7 +105,7 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
     }
     for (const SystemInfo* s : systems_) {
         if (s->phase != SystemPhase::Frame) continue;
-        SystemContext ctx{scene, static_cast<float>(dt), time_, frames_, camera_, gravity_, &hooks_, &assets_};
+        SystemContext ctx{scene, static_cast<float>(dt), time_, frames_, camera_, &hooks_, &assets_};
         s->run(ctx);
         camera_ = ctx.camera;
     }

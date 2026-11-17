@@ -8,6 +8,7 @@
 #include "rm_engine/game_x_3d/runtime/CameraCycle.h"
 #include "rm_engine/game_x_3d/runtime/Id.h"
 #include "rm_engine/game_x_3d/runtime/Register.h"
+#include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/Spin.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
 #include "rm_engine/game_production/runtime/Components.h"
@@ -185,7 +186,11 @@ RM_TEST(Systems_RuntimeRegistry_TheGameReadsTheSameList) {
     const PluginId x3d = game_x_3d::kPluginId.Id();
     RegisterRuntimeParts(r, std::span<const PluginId>(&x3d, 1));
     const auto systems = RegisteredSystems(r);
-    CHECK(systems.size() == 2 && systems[0]->run == &game_x_3d::RunSpin && systems[1]->run == &game_x_3d::RunCameraCycle);
+    CHECK(systems.size() == 3 && systems[0]->run == &game_x_3d::RunSpin && systems[1]->run == &game_x_3d::RunCameraCycle &&
+          systems[2]->run == &game_x_3d::RunSkyClock);
+    // ... and the scene's 空 (a scene setting of a 3D game).
+    const auto settings = SettingTypes(r);
+    CHECK(settings.size() == 1 && settings[0] == &reflect::TypeOf<game_x_3d::Sky>());
     // Every component type of the connector is the runtime part's (Transform, メッシュ, カメラ, 光, 環境光,
     // 回り続ける, カメラを順に切り替える): the game knows them without the editor.
     const auto comps = r.Contributions<ComponentInfo>(kComponentPoint);

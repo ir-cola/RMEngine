@@ -12,7 +12,6 @@
   "跳ね返り": "Bounciness",
   "0: 跳ねない 〜 1: そのまま跳ね返る (2 つの大きい方)": "0: no bounce to 1: bounces back fully (the larger of the two)",
   "重力の倍率": "Gravity scale",
-  "ゲームの設定の「重力」に掛けます (0: 浮く)": "Multiplies the game settings' Gravity (0: floats)",
   "回転の固定 X": "Lock rotation X",
   "回転の固定 Y": "Lock rotation Y",
   "回転の固定 Z": "Lock rotation Z",
@@ -49,5 +48,8 @@
   "この高さまでの段は歩いて上がります": "Steps up to this height are walked up",
   "ほかの物を押す強さ": "How strongly it pushes other objects",
   "物理の見本 (3D)": "Physics sample (3D)",
-  "箱が落ちて床で止まります。Space で砲台から弾を撃ち、何かに当たると弾が消えます (スクリプト Shooter と Bullet。OnHit)。": "Boxes fall and come to rest on the floor. Press Space to fire a bullet from the turret; it disappears when it hits something (scripts Shooter and Bullet, OnHit)."
+  "箱が落ちて床で止まります。Space で砲台から弾を撃ち、何かに当たると弾が消えます (スクリプト Shooter と Bullet。OnHit)。": "Boxes fall and come to rest on the floor. Press Space to fire a bullet from the turret; it disappears when it hits something (scripts Shooter and Bullet, OnHit).",
+  "重力": "Gravity",
+  "m/s²。世界の向きで (Y が上)。2D のゲームは X と Y を使います": "m/s², in world axes (Y is up). A 2D game uses X and Y",
+  "シーンの「重力」に掛けます (0: 浮く)": "Multiplies the scene's Gravity (0: floats)"
 }

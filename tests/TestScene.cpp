@@ -410,3 +410,51 @@ RM_TEST(Scene_IndexStaysRightAfterEveryChange) {
     Scene copy = s;
     CHECK(allFound(copy) && copy.Find(1) != s.Find(1));
 }
+
+RM_TEST(Scene_Settings) {
+    // The scene's own values (SceneSettingInfo): one of each type offered, with its defaults until changed.
+    const reflect::TypeDesc& spin = reflect::TypeOf<game_x_3d::Spin>();
+    Scene s = Sample();
+    CHECK(s.Settings().empty());
+    CHECK(!s.Save().Find("settings"));  // none offered: the file is as before
+    s.SetSettingTypes({&spin});
+    CHECK(s.Settings().size() == 1 && s.Setting<game_x_3d::Spin>() != nullptr);
+    s.Setting<game_x_3d::Spin>()->degreesPerSecond.y = 45;
+    const json::Value saved = s.Save();
+    CHECK(saved.Get("settings").Size() == 1 && saved.Get("settings").At(0).Get("type").AsString() == spin.name);
+
+    // Read back (the types set before or after Load: the same).
+    Scene a;
+    a.SetSettingTypes({&spin});
+    a.Load(saved);
+    CHECK(a.Setting<game_x_3d::Spin>() && a.Setting<game_x_3d::Spin>()->degreesPerSecond.y == 45);
+    Scene b;
+    b.Load(saved);
+    CHECK(b.Settings().size() == 1 && !b.Settings()[0].Known());  // not offered: kept as read
+    CHECK(b.Save().Get("settings") == saved.Get("settings"));     // ... and written back the same
+    b.SetSettingTypes({&spin});
+    CHECK(b.Setting<game_x_3d::Spin>() && b.Setting<game_x_3d::Spin>()->degreesPerSecond.y == 45);
+
+    // A file without settings: the defaults. Unknown keys inside a setting stay; a second of a type is dropped.
+    json::Value v = saved;
+    json::Value list = json::Value::MakeArray();
+    json::Value one = saved.Get("settings").At(0);
+    json::Value data = one.Get("data");
+    data.Set("future", 7);
+    one.Set("data", data);
+    list.Push(one);
+    list.Push(saved.Get("settings").At(0));
+    v.Set("settings", list);
+    Scene c;
+    c.SetSettingTypes({&spin});
+    c.Load(v);
+    CHECK(c.Settings().size() == 1);
+    CHECK(c.Save().Get("settings").At(0).Get("data").Get("future").AsInt() == 7);
+    v.Erase("settings");
+    c.Load(v);
+    CHECK(c.Setting<game_x_3d::Spin>() && c.Setting<game_x_3d::Spin>()->degreesPerSecond.y == game_x_3d::Spin{}.degreesPerSecond.y);
+    // A copy (Play) has its own.
+    Scene d = c;
+    d.Setting<game_x_3d::Spin>()->degreesPerSecond.y = 1;
+    CHECK(c.Setting<game_x_3d::Spin>()->degreesPerSecond.y != 1);
+}

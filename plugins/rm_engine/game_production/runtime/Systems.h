@@ -62,8 +62,6 @@ struct SystemContext {
     // 最初のカメラ when Play starts; a system switches the game's camera by setting it to another
     // entity (what makes an entity a camera is the space's business: a 3D Camera component ...).
     uint64_t camera = 0;
-    // The game settings' 重力 (m/s², the world's axes; a 2D game uses its x and y).
-    Vec3 gravity{0, -9.81f, 0};
     // Where hooks for the scripts go (null: nobody delivers them - nothing to ask).
     std::vector<HookCall>* hooks = nullptr;
     // The host's assets (null: none).
@@ -88,6 +86,8 @@ std::vector<const SystemInfo*> RegisteredSystems(const RuntimeRegistry& registry
 
 // The component types the game sees through (ComponentInfo::camera), each once.
 std::vector<std::string> CameraTypes(const RuntimeRegistry& registry);
+// The scene settings' types (SceneSettingInfo), each once, in the order offered (Scene::SetSettingTypes).
+std::vector<const reflect::TypeDesc*> SettingTypes(const RuntimeRegistry& registry);
 // The camera of a scene that starts playing (Play, the game, a scene switched to): `wanted` (the game
 // settings' 最初のカメラ) when it is an entity of this scene with a camera component, else the first
 // running entity (in the 階層's order) that has one; 0 when there is none.
@@ -116,8 +116,6 @@ public:
     // systems. Reset makes it 0.
     void SetCamera(uint64_t entity) { camera_ = entity; }
     uint64_t Camera() const { return camera_; }
-    // The game settings' 重力 (SystemContext::gravity).
-    void SetGravity(Vec3 g) { gravity_ = g; }
     // How the systems read assets (SystemContext::assets).
     void SetAssets(AssetAccess a) { assets_ = std::move(a); }
     // The hooks the systems asked for in the last Advance (for ScriptRunner::Deliver).
@@ -130,7 +128,6 @@ private:
     double carry_ = 0;      // time not yet covered by a Fixed step
     uint64_t frames_ = 0;
     uint64_t camera_ = 0;
-    Vec3 gravity_{0, -9.81f, 0};
     std::vector<HookCall> hooks_;
     AssetAccess assets_;
 };
