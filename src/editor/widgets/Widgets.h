@@ -219,11 +219,17 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
 // A panel to pick one action from (the インスペクター's 部品を足す): `title` and × on top, a search box,
 // then the actions in their folders (Action::folder), each folder opened and closed by its row. Like
 // ActionMenu it is drawn at the end of the frame, runs the picked action and closes; × / Esc / a click
-// outside close it. Enter runs the first one found by what was typed. Which folders are open is the
-// caller's (kept from one opening to the next); the search starts empty each time it opens.
+// outside close it. Enter runs the first one found by what was typed. Its top (where the title is)
+// drags it somewhere else. Which folders are open and where it was moved to are the caller's (kept from
+// one opening to the next); the search starts empty each time it opens. It is wider than a menu and
+// covers other panels: while it is open the screen under it should take no input (EditorScreen does).
 struct PickerState {
     std::string search;
     std::set<std::wstring> open;  // folder paths shown open (all closed at first)
+    bool placed = false;          // moved by its top: opens at x, y (else where the caller opens it)
+    float x = 0, y = 0;
+    bool dragging = false;        // its top held: the mouse's place in it
+    float grabX = 0, grabY = 0;
 };
 void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::vector<Action>& actions, std::wstring title,
                   float width = 320.f);

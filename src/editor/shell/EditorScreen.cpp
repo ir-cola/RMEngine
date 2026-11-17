@@ -612,8 +612,8 @@ void EditorScreen::CloseFloats() {
 void EditorScreen::DrawFloating(ui::Context& c, float width, float height, FloatWindow& window) {
     c.P().Clear(theme::Bg);
     w::DrawBackdrop(c, true);  // the theme's picture, behind everything
-    // While the editor shows a dialog, the panel windows only show.
-    const bool blocked = modal_ != Modal::None;
+    // While the editor shows a dialog (or the 部品を足す panel: OnFrame), the panel windows only show.
+    const bool blocked = modal_ != Modal::None || Active().inspectorState.addPopup.open;
     c.SetInputEnabled(!blocked);
     if (!blocked) HandleShortcuts(c);
     Active().dock.Draw(c, Rect{0, 0, width, height}.Inset(4), window.Id(), window.Hwnd(), window.Scale());
@@ -954,7 +954,10 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     FlushAssetEdits(c);
     p.Clear(theme::Bg);
     w::DrawBackdrop(c, false);  // the theme's picture, behind everything (again on each panel and bar)
-    const bool overlay = modal_ != Modal::None || menuPopup_.open;
+    // A menu, a dialog - or the インスペクター's 部品を足す panel, wider than its panel: what is under them
+    // takes no input (2026-11-17 on screen: a click on the panel's folder row over the scene view also
+    // reached the scene view, which chose nothing - the inspector was rebuilt and the panel closed).
+    const bool overlay = modal_ != Modal::None || menuPopup_.open || Active().inspectorState.addPopup.open;
     c.SetInputEnabled(!overlay);
 
     if (!overlay) HandleShortcuts(c);

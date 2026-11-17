@@ -1183,20 +1183,44 @@ void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::v
         pop.fresh = false;
         if (fresh) {
             // Opened: an empty search (what was typed last time would hide most of the list); the
-            // folders stay as they were left.
+            // folders stay as they were left, and so does the place it was moved to.
             st.search.clear();
+            st.dragging = false;
             c.FocusText(searchId, L"", true);
+            if (st.placed) {
+                pop.x = st.x;
+                pop.y = st.y;
+            }
         }
         if ((!fresh && (in.pressed[0] || in.pressed[1]) && !box.Contains(in.mouseX, in.mouseY)) || c.KeyPressed(ui::Key::Escape)) close();
         const bool enter = c.KeyPressed(ui::Key::Enter);
         int run = -1;
         if (!closing) {
             DrawSurface(c, box, Surface::Popup, 6.f);
-            // The top: what it is for, and × to close.
+            // The top: a grip, what it is for, and × to close. Held and dragged, it moves the panel (kept
+            // inside the window: the box above is clamped every frame).
+            const Rect top{box.x, box.y, box.w - kPad - 34, kPad + kHeadH};
+            const auto grab = c.ButtonBehavior(c.MakeId("top"), top);
+            if (grab.held) {
+                if (!st.dragging) {
+                    st.dragging = true;
+                    st.grabX = in.mouseX - box.x;
+                    st.grabY = in.mouseY - box.y;
+                }
+                pop.x = in.mouseX - st.grabX;
+                pop.y = in.mouseY - st.grabY;
+                st.x = pop.x;
+                st.y = pop.y;
+                st.placed = true;
+                c.RequestRedraw();
+            } else {
+                st.dragging = false;
+            }
+            DrawIcon(c, {box.x + kPad + 4, box.y + kPad, 16, kHeadH}, Icon::Grip, grab.hovered || grab.held ? theme::TextDim : theme::TextFaint);
             ui::TextStyle head;
             head.size = 12;
             head.color = theme::TextDim;
-            p.Text({box.x + kPad + 8, box.y + kPad, box.w - kPad * 2 - 48, kHeadH}, title, head);
+            p.Text({box.x + kPad + 24, box.y + kPad, box.w - kPad * 2 - 64, kHeadH}, title, head);
             if (IconButton(c, "close", {box.Right() - kPad - 30, box.y + kPad + 3, 28, 28}, Icon::Close)) close();
         }
         if (!closing) {

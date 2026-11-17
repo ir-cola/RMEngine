@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "「部品を足す」の窓を上の帯のドラッグで動かせるように (動かした所に開く)。フォルダを開け閉めすると窓が閉じてしまうことがあったのを直した",
+          "en": "The Add component panel can be moved by dragging its top bar (it opens where it was left). Opening or closing a folder no longer sometimes closes the panel"
+        },
+        {
           "ja": "インスペクターの「部品を足す」が窓に: × と検索と、3D / 2D / UI / 物理 / 音 / エフェクト / スクリプト のフォルダに分かれた一覧 (フォルダは開いたり閉じたりできる)",
           "en": "The Inspector's Add component opens a panel: a close button, a search box, and the components in folders (3D / 2D / UI / Physics / Sound / Effect / Script) that open and close"
         },

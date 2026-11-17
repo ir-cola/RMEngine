@@ -121,10 +121,10 @@ private:
             }
             inspected = std::move(target);
             // A new thing shown: the scroll, the fields' typing and the menus start over. The 部品を足す
-            // panel's open folders stay (opened once, found open again on the next entity).
-            auto openFolders = std::move(inspectorState.addPicker.open);
+            // panel's open folders and the place it was moved to stay (found again on the next entity).
+            auto picker = std::move(inspectorState.addPicker);
             inspectorState = {};
-            inspectorState.addPicker.open = std::move(openFolders);
+            inspectorState.addPicker = std::move(picker);
             editor_.RedrawAll();
         }
         const PluginRegistry& Registry() const override;
