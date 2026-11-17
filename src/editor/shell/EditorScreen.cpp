@@ -993,9 +993,13 @@ void EditorScreen::BeginInstallPlugin(const PluginId& id) {
 }
 
 void EditorScreen::HandleShortcuts(ui::Context& c) {
-    // Shared by the editor window and the panel windows: Ctrl+S works wherever the focus is.
-    if (c.Focused() != 0) return;
+    // Shared by the editor window and the panel windows: Ctrl+S works wherever the focus is - in a text
+    // field too (what is typed there is already in the data: the fields apply each key). Before, the check
+    // below came first and a focused field kept Ctrl+S from saving (2026-11-17 on screen: typed in the
+    // アセット search, Ctrl+S left the title's "*").
     if (c.KeyPressed(ui::Key::S, true)) Save();
+    // Ctrl+Z / Ctrl+Y in a field are the field's own (its text), not the history's.
+    if (c.Focused() != 0) return;
     if (c.KeyPressed(ui::Key::Z, true)) UndoRedo(false);
     if (c.KeyPressed(ui::Key::Y, true) || c.KeyPressed(ui::Key::Z, true, true)) UndoRedo(true);
 }

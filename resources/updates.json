@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "文字の欄 (アセットの検索など) に入力している途中でも Ctrl+S で保存できるように",
+          "en": "Ctrl+S now saves even while typing in a text field (such as the asset search)"
+        },
+        {
           "ja": "階層で選んでいる行をもう一度押すと、インスペクターに出し直す (パーティクルのエミッターを見た後でも、エンティティに戻れる)",
           "en": "Clicking the selected row in the Hierarchy again shows it in the Inspector again (back to the entity after viewing a particle emitter)"
         },
