@@ -276,6 +276,32 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             c.RequestRedraw();
         }
     }
+    // --- The top row (before the rows' scroll: outside their clip, 2026-11-18 on screen it was cut off) ---
+    bool topClicked = false, topRightClicked = false;
+    if (topRect) {
+        const bool hovered = c.IsHovered(*topRect);
+        if (hovered && c.MousePressed()) {
+            st.sel.ids.clear();
+            st.sel.anchor = st.sel.focus = 0;
+            st.hasKeys = true;
+            topClicked = true;
+            c.RequestRedraw();
+        }
+        if (hovered && c.MousePressed(ui::Mouse::Right)) {
+            topRightClicked = true;
+            st.sel.ids.clear();
+            st.sel.anchor = st.sel.focus = 0;
+            st.menuActions = MenuFor(src, st, items);
+            if (!st.menuActions.empty()) st.menu.OpenAt(in.mouseX, in.mouseY);
+        }
+        w::DrawRow(c, *topRect, {top->selected, hovered && !st.dragging, st.hasKeys});
+        const float x = topRect->x + 4;
+        w::DrawIcon(c, {x + (kArrow - kIconW) * 0.5f + 2, topRect->y, kIconW, topRect->h}, top->icon, theme::TextDim);
+        ui::TextStyle name = Style(theme::FontSize, theme::Text);
+        name.bold = true;
+        p.Text({x + kArrow + 6, topRect->y + (topRect->h - kLineH) * 0.5f, topRect->Right() - x - kArrow - 10, kLineH}, top->name, name);
+    }
+
     const float off = w::BeginScroll(c, kScrollId, view, content);
     const float rowsTop = view.y + kTop - off;
     auto rowRect = [&](size_t r) { return Rect{view.x + 4, rowsTop + kRowH * static_cast<float>(r), view.w - 8, kRowH}; };
@@ -291,7 +317,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     }
 
     // --- Rows ------------------------------------------------------------------------------------
-    bool rowPressed = false, rowRightClicked = false, renameDrawn = false;
+    bool rowPressed = false, rowRightClicked = topRightClicked, renameDrawn = false;
     const std::unordered_set<ItemId> selectedSet = st.sel.Set();  // once, not per row
     for (size_t r = 0; r < rows.size(); ++r) {
         const Rect row = rowRect(r);
@@ -386,32 +412,6 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         const size_t i = Find(items, st.renaming);
         if (i != npos && !st.renameText.empty() && st.renameText != items[i].name) src.Rename(st.renaming, st.renameText);
         st.renaming = 0;
-    }
-
-    // --- The top row ------------------------------------------------------------------------------
-    bool topClicked = false;
-    if (topRect) {
-        const bool hovered = c.IsHovered(*topRect);
-        if (hovered && c.MousePressed()) {
-            st.sel.ids.clear();
-            st.sel.anchor = st.sel.focus = 0;
-            st.hasKeys = true;
-            topClicked = true;
-            c.RequestRedraw();
-        }
-        if (hovered && c.MousePressed(ui::Mouse::Right)) {
-            rowRightClicked = true;
-            st.sel.ids.clear();
-            st.sel.anchor = st.sel.focus = 0;
-            st.menuActions = MenuFor(src, st, items);
-            if (!st.menuActions.empty()) st.menu.OpenAt(in.mouseX, in.mouseY);
-        }
-        w::DrawRow(c, *topRect, {top->selected, hovered && !st.dragging, st.hasKeys});
-        const float x = topRect->x + 4;
-        w::DrawIcon(c, {x + (kArrow - kIconW) * 0.5f + 2, topRect->y, kIconW, topRect->h}, top->icon, theme::TextDim);
-        ui::TextStyle name = Style(theme::FontSize, theme::Text);
-        name.bold = true;
-        p.Text({x + kArrow + 6, topRect->y + (topRect->h - kLineH) * 0.5f, topRect->Right() - x - kArrow - 10, kLineH}, top->name, name);
     }
 
     // --- Clicks on empty space ------------------------------------------------------------------

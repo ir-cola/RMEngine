@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "画面の確認で見つけた不具合を直した: 階層のシーンの行が出ない・右クリックの「追加」で作った物が選ばれない・シーンのインスペクターのドロップダウンがすぐ変わらない・新しいパーティクルのモジュールが動かない・Hub の一覧から外したプロジェクトが戻る・夜の雪が暗い・シェーダーの間違いの行番号がコンソールに出ない",
+          "en": "Fixed problems found on screen: the scene row of the hierarchy was missing, things made with the right-click Add were not selected, drop-downs in the scene inspector did not update at once, a new particle module did not run, projects removed from the Hub list came back, snow was dark at night, and shader errors showed no line number in the console"
+        },
+        {
           "ja": "地球の空の天気を 晴れ / くもり / 雨 / 雪 に。雲の量・雷 (くもりと雨)・雨の量・雪の量 を選べ、雨粒と雪はカメラのまわりに本当に降る (物の手前にも)",
           "en": "The Earth sky's weather is now Clear / Cloudy / Rain / Snow, with Cloudiness, Lightning (cloudy and rain), Rain amount and Snow amount. Raindrops and snowflakes really fall around the camera (in front of things too)"
         },

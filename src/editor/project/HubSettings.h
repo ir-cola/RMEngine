@@ -26,6 +26,9 @@ public:
     bool Save();
 
     const std::vector<RecentProject>& Recent() const { return recent_; }
+    // The list with what another RM Engine did to the file since (projects it opened come in, ones it
+    // took out go) - without writing. Save does it first; the Hub when it shows the list.
+    void SyncRecent();
     void Touch(const std::filesystem::path& file);  // move to the top, set lastOpened = now
     void Remove(const std::filesystem::path& file);
     // The project moved (renamed): same place in the list, same lastOpened.
@@ -48,6 +51,11 @@ private:
     std::vector<RecentProject> recent_;
     // Taken out of the list by the user (削除, a rename's old path): not brought back from the file at Save.
     std::vector<std::filesystem::path> forgotten_;
+    // The list as the file had it when this one last read or wrote it, and what this one opened since:
+    // a row gone from the file meanwhile was taken out by another RM Engine, and stays out at Save
+    // (2026-11-18 on screen: a Hub still showing the old list brought it back when it opened a project).
+    std::vector<std::filesystem::path> onDisk_;
+    std::vector<std::filesystem::path> opened_;
     Options options_;
     reflect::Unknowns optionsUnknowns_;
 };

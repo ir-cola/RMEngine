@@ -44,6 +44,7 @@ private:
 
     space3d::SkyDraw draw_;
     std::string compiled_;  // the HLSL draw_.program was made from
+    bool failed_ = false;   // compiled_ did not compile: not tried again until the code changes
     // The user's .rmsky as read last, and when.
     std::string codeGuid_;
     std::optional<std::string> code_;

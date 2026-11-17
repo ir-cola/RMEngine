@@ -146,6 +146,9 @@ void HubScreen::ApplyRow(const RowData& d) {
 }
 
 void HubScreen::Refresh() {
+    // What another RM Engine opened or took out meanwhile (2026-11-18 on screen: back from the editor,
+    // the Hub still showed a project removed in the other one, and not the one it made).
+    app_.Settings().SyncRecent();
     rows_.clear();
     std::vector<fs::path> files;
     for (const auto& r : app_.Settings().Recent()) {

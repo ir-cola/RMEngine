@@ -957,7 +957,12 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     // A menu, a dialog - or the インスペクター's 部品を足す panel, wider than its panel: what is under them
     // takes no input (2026-11-17 on screen: a click on the panel's folder row over the scene view also
     // reached the scene view, which chose nothing - the inspector was rebuilt and the panel closed).
-    const bool overlay = modal_ != Modal::None || menuPopup_.open || Active().inspectorState.addPopup.open;
+    // Also the right-click menus of the 階層 / アセット and the インスペクター's ⋮ menus and drop-down lists
+    // (2026-11-18 on screen: 追加 ▸ 3D オブジェクト ▸ 球 picked over the scene view also reached it,
+    // which chose what was under the mouse instead of the new 球).
+    const Workspace& view = Active();
+    const bool overlay = modal_ != Modal::None || menuPopup_.open || view.inspectorState.addPopup.open || view.inspectorState.menu.open ||
+                         view.inspectorState.popup.open || view.treeState.menu.open || (view.assetPanel && view.assetPanel->MenuOpen());
     c.SetInputEnabled(!overlay);
 
     if (!overlay) HandleShortcuts(c);
@@ -1189,6 +1194,9 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
                                                                        std::move(edit->after), b.resolve, std::move(edit->label), edit->merge),
                             false);
         }
+        // The change came after this frame's fields (and the panels before them) were drawn: once more
+        // with it (2026-11-18 on screen: a drop-down's choice in シーン「Main」 showed only when the mouse moved).
+        c.RequestRedraw();
     }
 }
 

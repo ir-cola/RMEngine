@@ -82,6 +82,17 @@ RM_TEST(Particles_ModuleSource_ReadsParamsAttrsAndFunctions) {
     CHECK(lines == 10 && m.code.find("param") == std::string::npos && m.code.find("p.velocity") != std::string::npos);
 }
 
+// A function only in a comment is not there (the new module's "// void Spawn(...) { }").
+RM_TEST(Particles_ModuleSource_CommentsAreNotFunctions) {
+    const ModuleSource m = ParseModule(
+        "module \"x\"\n"
+        "// void Spawn(inout Particle p, inout Random rnd) { }\n"
+        "/* void Update(inout Particle p, float dt, inout Random rnd) { } */\n"
+        "void Update(inout Particle p, float dt, inout Random rnd) { p.age += 0; }\n");
+    CHECK(!m.hasSpawn && m.hasUpdate && m.errors.empty());
+    CHECK(!ParseModule("// void Update(inout Particle p, float dt, inout Random rnd) {}\n").hasUpdate);
+}
+
 RM_TEST(Particles_ModuleSource_SaysWhatIsWrong) {
     const ModuleSource m = ParseModule(
         "param vec3 a = 1;\n"

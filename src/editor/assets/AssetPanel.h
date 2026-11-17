@@ -43,6 +43,8 @@ public:
     AssetPanel(AssetLibrary& library, Thumbnails* thumbnails, float& thumbnailSize, std::function<void(std::wstring)> showError);
 
     void Draw(ui::Context& c, const ui::Rect& r);
+    // Its right-click menu is open (what is under the menu takes no clicks: EditorScreen::OnFrame).
+    bool MenuOpen() const { return state_.menu.open; }
 
     // Selecting one asset shows it in the software's インスペクター (`inspect`): what it is and, for a
     // kind that has them, its import settings (core/asset/ImportSettings.h). A change is written to

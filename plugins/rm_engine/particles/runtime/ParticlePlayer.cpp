@@ -328,7 +328,12 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
         if (!e.programs) {
             e.programs = ProgramsFor(device, e.shader.hlsl);
             if (!e.programs->error.empty()) {
-                problems_.push_back(std::format("パーティクル「{}」のシェーダーを作れません:\n{}", e.data->name, e.programs->error));
+                // On one line: the コンソール shows a message's first line (2026-11-18 on screen).
+                std::string why = e.programs->error;
+                std::replace(why.begin(), why.end(), '\n', ' ');
+                std::erase(why, '\r');
+                while (!why.empty() && why.back() == ' ') why.pop_back();
+                problems_.push_back(std::format("パーティクル「{}」のシェーダーを作れません: {}", e.data->name, why));
                 e.error = e.programs->error;
                 e.broken = true;
                 continue;

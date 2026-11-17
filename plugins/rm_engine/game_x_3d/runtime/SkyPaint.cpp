@@ -32,11 +32,17 @@ const space3d::SkyDraw* SkyPainter::Prepare(space3d::Renderer& renderer, const S
     const std::string code = Code(sky, look, sources, fileName);
     if (code.empty()) return nullptr;
     const std::string hlsl = space3d::AssembleSky(code, fileName);
-    if (hlsl != compiled_ || !draw_.program) {
+    // (a shader with a mistake is not compiled again on every frame - 2026-11-18: it was)
+    if (hlsl != compiled_ || (!draw_.program && !failed_)) {
         compiled_ = hlsl;
         std::string error;
         draw_.program = renderer.MakeSky(hlsl, &error);
-        if (!draw_.program && told_.insert("compile:" + hlsl).second) log::Warn("空のシェーダー「{}」を作れません:\n{}", fileName, error);
+        failed_ = !draw_.program;
+        // On one line: the コンソール shows a message's first line (2026-11-18 on screen: only "…を作れません:").
+        std::replace(error.begin(), error.end(), '\n', ' ');
+        while (!error.empty() && (error.back() == ' ' || error.back() == '\r')) error.pop_back();
+        std::erase(error, '\r');
+        if (!draw_.program && told_.insert("compile:" + hlsl).second) log::Warn("空のシェーダー「{}」を作れません: {}", fileName, error);
     }
     if (!draw_.program) return nullptr;
     // The pictures: one around, six of a cube, or the one a user's shader reads as sky0.

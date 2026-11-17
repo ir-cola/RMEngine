@@ -15,6 +15,28 @@ std::string_view Trim(std::string_view s) {
     return s;
 }
 
+// The code without its comments (// to the end of the line, /* ... */): what is really written. A
+// function only mentioned in a comment is not there (2026-11-18 on screen: the new module's
+// "// void Spawn(...) { }" was taken for a Spawn and the engine called one that did not exist).
+std::string WithoutComments(std::string_view code) {
+    std::string out;
+    out.reserve(code.size());
+    for (size_t i = 0; i < code.size();) {
+        if (code.compare(i, 2, "//") == 0) {
+            i = code.find('\n', i);
+            if (i == std::string_view::npos) break;
+        } else if (code.compare(i, 2, "/*") == 0) {
+            const size_t end = code.find("*/", i + 2);
+            if (end == std::string_view::npos) break;
+            out.push_back(' ');
+            i = end + 2;
+        } else {
+            out.push_back(code[i++]);
+        }
+    }
+    return out;
+}
+
 bool StartsWithWord(std::string_view s, std::string_view word) {
     return s.size() > word.size() && s.substr(0, word.size()) == word && (s[word.size()] == ' ' || s[word.size()] == '\t');
 }
@@ -212,8 +234,9 @@ ModuleSource ParseModule(std::string_view text) {
         at = end + 1;
     }
     static const std::regex kSpawn(R"(\bvoid\s+Spawn\s*\()"), kUpdate(R"(\bvoid\s+Update\s*\()");
-    m.hasSpawn = std::regex_search(m.code, kSpawn);
-    m.hasUpdate = std::regex_search(m.code, kUpdate);
+    const std::string written = WithoutComments(m.code);
+    m.hasSpawn = std::regex_search(written, kSpawn);
+    m.hasUpdate = std::regex_search(written, kUpdate);
     if (!m.hasSpawn && !m.hasUpdate) {
         lineNo = 0;
         error(ModuleErrorKind::NoFunction);

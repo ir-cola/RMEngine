@@ -147,13 +147,15 @@ SkyLook LookOf(const Sky& sky, double seconds) {
             const Vec3 skyLight = Add(Scale(Add(Scale(zenith, 0.6f), Scale(horizon, 0.4f)), 0.35f), Scale(Vec3{0.02f, 0.025f, 0.045f}, night));
             look.ambientSky = ToColor(skyLight);
             look.ambientGround = ToColor(Add(Scale(ground, 0.6f), Scale(sunLight, 0.04f * w.through)));
-            // 雨 / 雪: lit by the sky and a little by the sun (and the flash).
+            // 雨 / 雪: lit by the sky and the sun / moon (and the flash) - about as much as the ground under
+            // them (2026-11-18 on screen: with 0.35 of the moonlight, snow at night was darker than the
+            // moonlit ground, like dark spots).
             if (sky.weather == Weather::Rain || sky.weather == Weather::Snow) {
                 const bool rain = sky.weather == Weather::Rain;
                 look.precipitation.kind = rain ? space3d::Precipitation::Kind::Rain : space3d::Precipitation::Kind::Snow;
                 look.precipitation.amount = std::clamp(rain ? sky.rain : sky.snow, 0.f, 1.f);
                 look.precipitation.seconds = static_cast<float>(seconds);
-                const Vec3 lit = Add(Add(Scale(skyLight, 2.0f), Scale(Rgb(look.lightColor), look.lightStrength * 0.35f)), Vec3{look.flash, look.flash, look.flash});
+                const Vec3 lit = Add(Add(Scale(skyLight, 2.0f), Scale(Rgb(look.lightColor), look.lightStrength * 0.9f)), Vec3{look.flash, look.flash, look.flash});
                 look.precipitation.light = ToColor(lit);
             }
             break;

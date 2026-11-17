@@ -64,32 +64,13 @@ void HubSettings::Load() {
         if (path.empty()) continue;
         recent_.push_back({PathFromUtf8(path), item.Get("lastOpened").AsInt(0)});
     }
+    onDisk_.clear();
+    for (const auto& r : recent_) onDisk_.push_back(r.file);
+    opened_.clear();
 }
 
 bool HubSettings::Save() {
-    // Another RM Engine open at the same time may have opened projects since this one read the file:
-    // those stay in the list (newest first), unless this one took them out.
-    {
-        std::string err;
-        const auto bytes = platform::ReadFileBytes(paths::HubSettingsFile(), &err);
-        const auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
-        if (doc && doc->IsObject()) {
-            for (const auto& item : doc->Get("recent").Items()) {
-                const std::string& path = item.Get("path").AsString();
-                if (path.empty()) continue;
-                const fs::path file = PathFromUtf8(path);
-                auto same = [&](const fs::path& f) { return SamePath(f, file); };
-                const auto mine = std::find_if(recent_.begin(), recent_.end(), [&](const RecentProject& r) { return same(r.file); });
-                if (mine != recent_.end()) {
-                    mine->lastOpened = std::max(mine->lastOpened, item.Get("lastOpened").AsInt(0));
-                } else if (std::none_of(forgotten_.begin(), forgotten_.end(), same)) {
-                    recent_.push_back({file, item.Get("lastOpened").AsInt(0)});
-                }
-            }
-            std::stable_sort(recent_.begin(), recent_.end(), [](const RecentProject& a, const RecentProject& b) { return a.lastOpened > b.lastOpened; });
-            if (recent_.size() > kMaxRecent) recent_.resize(kMaxRecent);
-        }
-    }
+    SyncRecent();
     json::Value list = json::Value::MakeArray();
     for (const auto& r : recent_) {
         json::Value item = json::Value::MakeObject();
@@ -109,12 +90,52 @@ bool HubSettings::Save() {
         log::Warn("Hub の設定を保存できませんでした: {}", err);
         return false;
     }
+    onDisk_.clear();
+    for (const auto& r : recent_) onDisk_.push_back(r.file);
+    opened_.clear();
     return true;
+}
+
+void HubSettings::SyncRecent() {
+    // Another RM Engine open at the same time may have opened projects since this one read the file:
+    // those stay in the list (newest first), unless this one took them out.
+    {
+        std::string err;
+        const auto bytes = platform::ReadFileBytes(paths::HubSettingsFile(), &err);
+        const auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
+        if (doc && doc->IsObject()) {
+            // Taken out by another RM Engine since this one saw the file (and not opened here since).
+            std::vector<fs::path> disk;
+            for (const auto& item : doc->Get("recent").Items()) {
+                if (!item.Get("path").AsString().empty()) disk.push_back(PathFromUtf8(item.Get("path").AsString()));
+            }
+            auto in = [](const std::vector<fs::path>& list, const fs::path& f) {
+                return std::any_of(list.begin(), list.end(), [&](const fs::path& g) { return SamePath(g, f); });
+            };
+            std::erase_if(recent_, [&](const RecentProject& r) { return in(onDisk_, r.file) && !in(disk, r.file) && !in(opened_, r.file); });
+            for (const auto& item : doc->Get("recent").Items()) {
+                const std::string& path = item.Get("path").AsString();
+                if (path.empty()) continue;
+                const fs::path file = PathFromUtf8(path);
+                auto same = [&](const fs::path& f) { return SamePath(f, file); };
+                const auto mine = std::find_if(recent_.begin(), recent_.end(), [&](const RecentProject& r) { return same(r.file); });
+                if (mine != recent_.end()) {
+                    mine->lastOpened = std::max(mine->lastOpened, item.Get("lastOpened").AsInt(0));
+                } else if (std::none_of(forgotten_.begin(), forgotten_.end(), same)) {
+                    recent_.push_back({file, item.Get("lastOpened").AsInt(0)});
+                }
+            }
+            std::stable_sort(recent_.begin(), recent_.end(), [](const RecentProject& a, const RecentProject& b) { return a.lastOpened > b.lastOpened; });
+            if (recent_.size() > kMaxRecent) recent_.resize(kMaxRecent);
+            onDisk_ = std::move(disk);  // (what the file has now: the next sync compares with it)
+        }
+    }
 }
 
 void HubSettings::Touch(const fs::path& file) {
     std::erase_if(recent_, [&](const RecentProject& r) { return SamePath(r.file, file); });
     std::erase_if(forgotten_, [&](const fs::path& f) { return SamePath(f, file); });
+    opened_.push_back(file);
     recent_.insert(recent_.begin(), {file, NowUnix()});
     if (recent_.size() > kMaxRecent) recent_.resize(kMaxRecent);
 }
@@ -131,6 +152,7 @@ void HubSettings::Replace(const fs::path& from, const fs::path& to) {
         if (SamePath(r.file, from)) r.file = to;
     }
     if (!SamePath(from, to)) forgotten_.push_back(from);
+    opened_.push_back(to);
 }
 
 bool HubSettings::LimitedNoticeHidden(const std::vector<PluginId>& limited) const {
