@@ -75,5 +75,9 @@
   "タイトルとステージの 2 つのシーン。Enter でタイトル → ステージ → タイトルと切り替わります (スクリプト GoToScene)。": "Two scenes, a title and a stage. Enter switches title → stage → title (the script GoToScene).",
   "形: 全部": "Shapes: all",
   "形: 選択": "Shapes: selected",
-  "コライダー (物理の当たりの形) などの線を、選んだ物だけに出すか、全部の物に出すか (押すと切り替え)": "Show the lines of colliders (physics shapes) and the like for the selected objects only, or for all (click to switch)"
+  "コライダー (物理の当たりの形) などの線を、選んだ物だけに出すか、全部の物に出すか (押すと切り替え)": "Show the lines of colliders (physics shapes) and the like for the selected objects only, or for all (click to switch)",
+  "スプライト": "Sprite",
+  "2D オブジェクト": "2D Object",
+  "カメラ": "Camera",
+  "2D カメラ": "2D Camera"
 }

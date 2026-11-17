@@ -1,6 +1,7 @@
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 
 #include "rm_engine/space3d/runtime/Lighting.h"
+#include "rm_engine/space3d/runtime/Primitives.h"
 #include "rm_engine/space3d/runtime/TextureFile.h"
 #include "rm_engine/space3d/runtime/View.h"
 
@@ -355,40 +356,6 @@ bool Compile(const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DB
     return true;
 }
 
-// Every triangle turned so its front (counter-clockwise) faces the way its corners' normals do.
-void FaceOut(MeshData& m) {
-    for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
-        const MeshVertex& a = m.vertices[m.indices[i]];
-        const MeshVertex& b = m.vertices[m.indices[i + 1]];
-        const MeshVertex& c = m.vertices[m.indices[i + 2]];
-        if (Dot(Cross(b.position - a.position, c.position - a.position), a.normal + b.normal + c.normal) < 0) {
-            std::swap(m.indices[i + 1], m.indices[i + 2]);
-        }
-    }
-}
-
-// The unit cube: 6 faces x 4 corners (each face its own normal), 2 triangles per face.
-MeshData UnitCube() {
-    MeshData m;
-    const float n[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
-    for (int f = 0; f < 6; ++f) {
-        // Two axes across the face.
-        const int a = n[f][0] != 0 ? 1 : 0;
-        const int b = n[f][2] != 0 ? 1 : 2;
-        for (int k = 0; k < 4; ++k) {
-            float p[3] = {n[f][0] * 0.5f, n[f][1] * 0.5f, n[f][2] * 0.5f};
-            p[a] = (k == 1 || k == 2) ? 0.5f : -0.5f;
-            p[b] = (k >= 2) ? 0.5f : -0.5f;
-            m.vertices.push_back({{p[0], p[1], p[2]}, {n[f][0], n[f][1], n[f][2]}, {(k == 1 || k == 2) ? 1.f : 0.f, k >= 2 ? 1.f : 0.f}});
-        }
-        const uint32_t base = static_cast<uint32_t>(f * 4);
-        for (const uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u}) m.indices.push_back(base + k);
-    }
-    FaceOut(m);
-    ComputeBounds(m);
-    return m;
-}
-
 // The floor's plane (y = 0), far wider than any scene (it only shows where shadows fall).
 MeshData FloorPlane() {
     constexpr float s = 5000.f;
@@ -428,6 +395,7 @@ struct Renderer::Shared {
     Ptr<ID3D11InputLayout> lineLayout, meshLayout;
     Ptr<ID3D11Buffer> frame, lights, shadows;  // the constant buffers (b0, b1, b2)
     std::shared_ptr<const GpuMesh> cube, floor;
+    std::array<std::shared_ptr<const GpuMesh>, 5> shapes;  // by Shape (the box is `cube`)
     Ptr<ID3D11RasterizerState> raster, shadowRaster;
     Ptr<ID3D11DepthStencilState> depth, depthNoWrite, depthClear, depthBehind;
     Ptr<ID3D11BlendState> blend;
@@ -531,9 +499,13 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     }
 
     std::string why;
-    cube = owner.Upload(UnitCube(), &why);
+    for (size_t k = 0; k < shapes.size(); ++k) {
+        shapes[k] = owner.Upload(ShapeMesh(static_cast<Shape>(k)), &why);
+        if (!shapes[k]) return fail("形");
+    }
+    cube = shapes[static_cast<size_t>(Shape::Box)];
     floor = owner.Upload(FloorPlane(), &why);
-    if (!cube || !floor) return fail("箱");
+    if (!floor) return fail("床");
     D3D11_BUFFER_DESC cd{};
     cd.Usage = D3D11_USAGE_DEFAULT;
     cd.ByteWidth = sizeof(FrameConstants);
@@ -798,6 +770,11 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const TexturePixels& p
     gpu->madeBy = id_;
     for (const platform::Image& l : pixels.levels) gpu->bytes += l.pixels.size();
     return gpu;
+}
+
+const GpuMesh* Renderer::ShapeOf(Shape shape) const {
+    const size_t k = static_cast<size_t>(shape);
+    return shared_ && k < shared_->shapes.size() ? shared_->shapes[k].get() : nullptr;
 }
 
 bool Renderer::SupportsBC7() const { return device_ && device_->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0; }

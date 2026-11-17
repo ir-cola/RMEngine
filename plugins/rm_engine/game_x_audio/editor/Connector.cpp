@@ -7,6 +7,8 @@
 #include "rm_engine/audio/runtime/Sound.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
 #include "rm_engine/game_production/editor/GameExport.h"
+#include "rm_engine/game_production/editor/SceneView.h"
+#include "editor/lang/Lang.h"
 #include "rm_engine/game_x_audio/runtime/AudioSource.h"
 #include "rm_engine/game_x_audio/runtime/SoundPack.h"
 
@@ -41,6 +43,9 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
     return BakeResult::Done;
 }
 
+// 追加 ▸ 音 ▸ 音源: an entity of the game's space with a sound source.
+void FillSource(game_production::Scene& scene, int entity) { game_production::AddComponentTo<AudioSource>(scene, entity); }
+
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
@@ -48,6 +53,8 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     registry.Contribute(game_production::kComponentLookPoint, kSource);
     static const game_production::ExportBaker kBaker{&Bake, &IsSound};
     registry.Contribute(game_production::kExportBakePoint, kBaker);
+    static const game_production::CreateItemInfo kItem{.label = editor::TrKey(L"音源"), .folder = editor::TrKey(L"音"), .fill = &FillSource};
+    registry.Contribute(game_production::kCreateItemPoint, kItem);
 }
 
 }  // namespace rm::game_x_audio

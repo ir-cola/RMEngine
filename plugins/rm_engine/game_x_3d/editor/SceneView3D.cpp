@@ -81,6 +81,7 @@ struct Placed {
     // What is drawn: the model (null: the unit cube) and its bounds in its own space - what a click
     // hits and what F frames.
     const space3d::GpuMesh* mesh = nullptr;
+    bool plain = false;  // `mesh` is a simple shape (メッシュ's 形), coloured like the box
     std::span<const space3d::DrawMaterial> materials;  // the model's colours and pictures
     bool castShadow = true;
     Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
@@ -276,15 +277,24 @@ private:
                 if (mc && mc->Known()) {
                     const auto& mr = *static_cast<const MeshRenderer*>(mc->value.Get());
                     p.castShadow = p.castShadow && mr.castShadows;
-                    bool loading = false;
-                    if (ModelEntry* m = Model(mr.model, host, loading)) {
-                        p.mesh = m->gpu.get();
-                        textures_.SetCacheFolder(host.host.GetProject().CacheDir() / L"Textures");
-                        p.materials = m->paint.Materials(main_.renderer, textures_, now_);
-                        p.min = p.mesh->min;
-                        p.max = p.mesh->max;
+                    if (const auto shape = ShapeOf(mr.shape)) {
+                        if (const space3d::GpuMesh* g = main_.renderer.ShapeOf(*shape)) {
+                            p.mesh = g;
+                            p.plain = true;
+                            p.min = g->min;
+                            p.max = g->max;
+                        }
+                    } else {
+                        bool loading = false;
+                        if (ModelEntry* m = Model(mr.model, host, loading)) {
+                            p.mesh = m->gpu.get();
+                            textures_.SetCacheFolder(host.host.GetProject().CacheDir() / L"Textures");
+                            p.materials = m->paint.Materials(main_.renderer, textures_, now_);
+                            p.min = p.mesh->min;
+                            p.max = p.mesh->max;
+                        }
+                        p.loading = loading;
                     }
-                    p.loading = loading;
                 }
                 if (const game_production::Component* cc = e.FindComponent(cameraType_); cc && cc->Known()) {
                     p.camera = *static_cast<const Camera*>(cc->value.Get());
@@ -785,7 +795,11 @@ private:
             if (!gameLook && p.camera) CameraLines(p, selected, host.aspect);
             if (!gameLook && p.light) LightLines(p, selected);
             if (p.marker) continue;
-            if (p.mesh) {
+            if (p.mesh && p.plain) {
+                // A simple shape: the box's colours.
+                const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
+                meshes_.push_back({p.mesh, p.world, col, p.castShadow, {}, {0, 0, 0, 0}, Moving(p.id)});
+            } else if (p.mesh) {
                 // A model keeps its own colours: the selected one glows at its edges (and has the frame).
                 const ui::Color glow = theme::SceneSelectedGlow();
                 meshes_.push_back({p.mesh, p.world, p.active ? theme::SceneModel() : theme::SceneModelInactive(), p.castShadow, p.materials,

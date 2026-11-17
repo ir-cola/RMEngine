@@ -1204,7 +1204,7 @@ private:
             hint.v = ui::VAlign::Center;
             hint.h = ui::HAlign::Center;
             hint.color = theme::TextFaint;
-            c.P().Text(r.Inset(24), Tr(L"UI はまだありません。階層を右クリックして「キャンバスを作る」→ その下に「ボタンを作る」「文字を作る」などで作ります。"), hint);
+            c.P().Text(r.Inset(24), Tr(L"UI はまだありません。階層を右クリックして「追加」→「UI」→「キャンバス」→ その下に「ボタン」「文字」などで作ります。"), hint);
         }
     }
 

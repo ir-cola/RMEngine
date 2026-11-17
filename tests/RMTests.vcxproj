@@ -189,6 +189,7 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\View.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\DrawOrder.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Mesh.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Primitives.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Fbx.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Inflate.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Lighting.cpp" />

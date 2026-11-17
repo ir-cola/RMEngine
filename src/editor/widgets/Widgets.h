@@ -179,17 +179,20 @@ struct MenuItem {
     bool enabled = true;
     bool separator = false;
     bool checked = false;  // a check mark in front of the label
+    bool submenu = false;  // opens another menu (a ▸ at the right; ActionMenu's folders)
 };
 
 struct Popup {
     bool open = false;
     bool fresh = false;  // opened during this frame: the click that opened it is not an "outside" click
     float x = 0, y = 0;
+    std::wstring sub;  // ActionMenu: the folder whose menu is open now ("追加/3D オブジェクト"; "" = none)
     void OpenAt(float px, float py) {
         open = true;
         fresh = true;
         x = px;
         y = py;
+        sub.clear();
     }
 };
 
@@ -208,12 +211,16 @@ struct Action {
     bool separator = false;
     ui::Key key = ui::Key::None;
     bool ctrl = false, shift = false;
-    // In ActionPicker: the folder it is in ("3D", "UI", "物理/2D"; empty = at the top). Menus ignore it.
+    // The folder it is in ("3D", "UI", "物理/2D"; empty = at the top). ActionPicker: folders that open
+    // and close in the list. ActionMenu: a row of the folder's name opens a menu of what is in it (to the
+    // side, when the mouse is on the row): 追加 ▸ 3D オブジェクト ▸ 箱.
     std::wstring folder;
 };
 std::wstring ShortcutText(const Action& a);  // "Ctrl+D", "Delete", "" (no shortcut)
 // Draws `popup` (when open) with `actions` at the end of the frame (not cut off by a panel) and runs
-// the picked row. The list is kept by the caller until the menu closes.
+// the picked row. The list is kept by the caller until the menu closes. Actions in folders
+// (Action::folder) are in menus of their own (Esc closes the last one opened; a click outside all of
+// them closes them all).
 void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions);
 
 // A panel to pick one action from (the インスペクター's 部品を足す): `title` and × on top, a search box,

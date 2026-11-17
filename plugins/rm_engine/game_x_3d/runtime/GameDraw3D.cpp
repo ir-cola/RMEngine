@@ -85,11 +85,16 @@ public:
             if (marker) continue;
             const MeshRenderer* mr = mc && mc->Known() ? static_cast<const MeshRenderer*>(mc->value.Get()) : nullptr;
             const bool shadow = !mr || mr->castShadows;
+            constexpr Color kPlain{0.78f, 0.80f, 0.84f, 1};  // a box (no model) and a simple shape
+            if (const auto shape = mr ? ShapeOf(mr->shape) : std::nullopt) {
+                if (const space3d::GpuMesh* g = renderer_.ShapeOf(*shape)) meshes_.push_back({g, w, kPlain, shadow, {}});
+                continue;
+            }
             if (const Model* model = mr ? ModelOf(f, mr->model) : nullptr) {
                 meshes_.push_back({model->gpu.get(), w, Color{1, 1, 1, 1}, shadow, model->materials});
                 continue;
             }
-            boxes_.push_back({w, Color{0.78f, 0.80f, 0.84f, 1}, shadow});
+            boxes_.push_back({w, kPlain, shadow});
         }
         // (More than kMaxLights: the renderer's MakeLights chooses - the sun with shadows is never cut by the order.)
         if (!eye) {

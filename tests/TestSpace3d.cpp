@@ -17,6 +17,7 @@
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/MeshLoader.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
+#include "rm_engine/space3d/runtime/Primitives.h"
 #include "rm_engine/space3d/runtime/BlockCompress.h"
 #include "rm_engine/space3d/runtime/TextureFile.h"
 #include "rm_engine/space3d/runtime/TexturePixels.h"
@@ -1121,7 +1122,8 @@ RM_TEST(MeshRenderer_SavesItsModel) {
     game_x_3d::MeshRenderer back;
     reflect::Load(back, j);
     CHECK(back.model == m.model && !back.castShadows);
-    CHECK(std::string_view(reflect::TypeOf<game_x_3d::MeshRenderer>().fields[0].assetKinds) == "model");
+    CHECK(std::string_view(reflect::TypeOf<game_x_3d::MeshRenderer>().fields[1].name) == "model");  // (after 形)
+    CHECK(std::string_view(reflect::TypeOf<game_x_3d::MeshRenderer>().fields[1].assetKinds) == "model");
     // Data from before references (the path as a string) is read as it is (SoftwareHost::AssetFile finds the file).
     json::Value old = j;
     old.Set("model", "Assets/Models/robot.glb");
@@ -2157,4 +2159,58 @@ RM_TEST(SunFitBounds_MovingThingsWidenInSteps) {
     const auto allMoved = SunFitBounds(std::nullopt, Bounds{{0.22f, 0, 0.22f}, {1.22f, 1, 1.22f}});
     CHECK(all && allMoved && all->min == allMoved->min && all->max == allMoved->max);
     CHECK(all->min.x <= 0.2f && all->max.x >= 1.2f);
+}
+
+// The simple shapes (Primitives.h): their sizes, the normals pointing out (unit long), every triangle's
+// front facing out, indices in range; MeshRenderer's 形 names them (モデル: none).
+RM_TEST(Space3d_Shapes) {
+    using rm::space3d::Shape;
+    struct Want {
+        Shape shape;
+        rm::Vec3 min, max;
+    };
+    const Want wants[] = {
+        {Shape::Box, {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}},
+        {Shape::Sphere, {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}},
+        {Shape::Cylinder, {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}},
+        {Shape::Capsule, {-0.5f, -1.f, -0.5f}, {0.5f, 1.f, 0.5f}},
+        {Shape::Plane, {-5.f, 0.f, -5.f}, {5.f, 0.f, 5.f}},
+    };
+    auto near = [](rm::Vec3 a, rm::Vec3 b) { return std::fabs(a.x - b.x) < 1e-4f && std::fabs(a.y - b.y) < 1e-4f && std::fabs(a.z - b.z) < 1e-4f; };
+    for (const Want& w : wants) {
+        const rm::space3d::MeshData m = rm::space3d::ShapeMesh(w.shape);
+        CHECK(!m.vertices.empty() && m.indices.size() >= 6 && m.indices.size() % 3 == 0);
+        CHECK(rm::space3d::IndicesInRange(m, nullptr));
+        CHECK(near(m.min, w.min) && near(m.max, w.max));
+        bool unit = true, out = true, uv = true;
+        for (const auto& v : m.vertices) {
+            const float len = std::sqrt(v.normal.x * v.normal.x + v.normal.y * v.normal.y + v.normal.z * v.normal.z);
+            unit = unit && std::fabs(len - 1.f) < 1e-3f;
+            uv = uv && v.uv.x >= -1e-4f && v.uv.x <= 1.0001f && v.uv.y >= -1e-4f && v.uv.y <= 1.0001f;
+        }
+        for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
+            const auto& a = m.vertices[m.indices[i]];
+            const auto& b = m.vertices[m.indices[i + 1]];
+            const auto& c = m.vertices[m.indices[i + 2]];
+            const rm::Vec3 e1{b.position.x - a.position.x, b.position.y - a.position.y, b.position.z - a.position.z};
+            const rm::Vec3 e2{c.position.x - a.position.x, c.position.y - a.position.y, c.position.z - a.position.z};
+            const rm::Vec3 n{e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x};
+            const rm::Vec3 s{a.normal.x + b.normal.x + c.normal.x, a.normal.y + b.normal.y + c.normal.y, a.normal.z + b.normal.z + c.normal.z};
+            // (every triangle has an area: none at the poles)
+            out = out && n.x * s.x + n.y * s.y + n.z * s.z > 0;
+        }
+        CHECK(unit);
+        CHECK(out);
+        CHECK(uv);
+    }
+    // The round ones are round: every vertex of the sphere is 0.5 from the middle.
+    bool round = true;
+    for (const auto& v : rm::space3d::ShapeMesh(Shape::Sphere).vertices) {
+        round = round && std::fabs(std::sqrt(v.position.x * v.position.x + v.position.y * v.position.y + v.position.z * v.position.z) - 0.5f) < 1e-4f;
+    }
+    CHECK(round);
+    CHECK(!rm::game_x_3d::ShapeOf(rm::game_x_3d::MeshShape::Model));
+    CHECK(rm::game_x_3d::ShapeOf(rm::game_x_3d::MeshShape::Cylinder) == Shape::Cylinder);
+    // A メッシュ written before 形 was there reads as a model (as it was drawn).
+    CHECK(rm::game_x_3d::MeshRenderer{}.shape == rm::game_x_3d::MeshShape::Model);
 }

@@ -108,4 +108,31 @@ std::vector<PickTreeRow> BuildPickTree(std::span<const PickItem> items, std::wst
     return rows;
 }
 
+std::vector<MenuLevelRow> MenuLevel(std::span<const PickItem> items, std::wstring_view folder) {
+    const std::vector<std::wstring> at = Parts(folder);
+    std::vector<MenuLevelRow> rows;
+    std::set<std::wstring> seen;
+    for (size_t i = 0; i < items.size(); ++i) {
+        const std::vector<std::wstring> parts = Parts(items[i].folder);
+        if (parts.size() < at.size() || !std::equal(at.begin(), at.end(), parts.begin())) continue;  // not inside this menu
+        MenuLevelRow r;
+        if (parts.size() == at.size()) {
+            r.separator = items[i].separator;
+            r.label = items[i].label;
+            r.item = static_cast<int>(i);
+        } else {
+            std::wstring path;
+            for (size_t k = 0; k <= at.size(); ++k) path += (k ? L"/" : L"") + parts[k];
+            if (!seen.insert(path).second) continue;
+            r.isFolder = true;
+            r.label = parts[at.size()];
+            r.path = std::move(path);
+        }
+        if (r.separator && (rows.empty() || rows.back().separator)) continue;
+        rows.push_back(std::move(r));
+    }
+    if (!rows.empty() && rows.back().separator) rows.pop_back();
+    return rows;
+}
+
 }  // namespace rm::editor::w

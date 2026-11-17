@@ -45,6 +45,7 @@
 #include "rm_engine/space3d/runtime/DrawOrder.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
+#include "rm_engine/space3d/runtime/Primitives.h"
 #include "rm_engine/space3d/runtime/TexturePixels.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -188,6 +189,8 @@ public:
     std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, bool sharp = false);
     // The same with the mipmaps already made (the quick part: only the copy to the GPU).
     std::shared_ptr<const GpuTexture> UploadTexture(const TexturePixels& pixels, std::string* error, bool sharp = false);
+    // A simple shape (Primitives.h: 箱, 球, 円柱 ...), put on the GPU by Init. Null before Init.
+    const GpuMesh* ShapeOf(Shape shape) const;
     // Whether this GPU reads BC7 (feature level 11.0): without it colours with alpha are kept as BC3.
     bool SupportsBC7() const;
     // Draws the frame and returns the finished picture (B8G8R8A8, usable by Direct2D); null on failure.

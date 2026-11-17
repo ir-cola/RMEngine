@@ -21,10 +21,7 @@ using game_production::Scene;
 
 template <class T>
 T* Add(Scene& scene, int id) {
-    scene.AddComponent(id, reflect::TypeOf<T>());
-    game_production::SceneEntity* e = scene.Find(id);
-    game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<T>().name) : nullptr;
-    return c && c->Known() ? static_cast<T*>(c->value.Get()) : nullptr;
+    return game_production::AddComponentTo<T>(scene, id);
 }
 
 // What each row makes: ready to be seen (a size, a colour, a word) - names in the language in use.
@@ -95,13 +92,13 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // The UI view: a tab next to the scene and the game.
     static const game_production::ViewPanelInfo kView{"ui", TrKey(L"UI"), &CreateUiView};
     registry.Contribute(game_production::kViewPanelPoint, kView);
-    // The 階層's right-click: エンティティを作る's neighbours.
+    // The 階層's 追加 ▸ UI (a canvas after the selection; the rest under the selected one: on its canvas).
     static const game_production::CreateItemInfo kItems[] = {
-        {TrKey(L"キャンバスを作る"), &MakeCanvas, false},
-        {TrKey(L"ボタンを作る"), &MakeButton, true},
-        {TrKey(L"文字を作る"), &MakeText, true},
-        {TrKey(L"画像を作る"), &MakeImage, true},
-        {TrKey(L"バーを作る"), &MakeBar, true},
+        {.label = TrKey(L"キャンバス"), .folder = L"UI", .make = &MakeCanvas},
+        {.label = TrKey(L"ボタン"), .folder = L"UI", .make = &MakeButton, .child = true},
+        {.label = TrKey(L"文字"), .folder = L"UI", .make = &MakeText, .child = true},
+        {.label = TrKey(L"画像"), .folder = L"UI", .make = &MakeImage, .child = true},
+        {.label = TrKey(L"バー"), .folder = L"UI", .make = &MakeBar, .child = true},
     };
     for (const auto& item : kItems) registry.Contribute(game_production::kCreateItemPoint, item);
     // Their pictures in the 階層.

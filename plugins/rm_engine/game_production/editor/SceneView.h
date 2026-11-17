@@ -104,15 +104,33 @@ struct ViewPanelInfo {
 };
 
 // PluginRegistry point: items are CreateItemInfo (static). Rows a plugin adds to the 階層's right-click
-// menu under エンティティを作る (ゲーム UI: キャンバス / ボタン / 文字 ...: entities that get no Transform).
-// `make` makes the entity (and what is under it) in `scene` under `parent` at `index` and returns it (0:
-// nothing); it is one undo entry, then selected with its name being typed.
+// menu 追加 ▸ (ゲーム UI: UI ▸ キャンバス / ボタン ...; ゲーム制作 × 3D: 3D オブジェクト ▸ 箱 / 球 ...),
+// each in its folder - the folders in a fixed order (GameSoftware), then the order of the plugins.
+// The entity is made in one of two ways:
+//   make   makes it (and what is under it) in `scene` under `parent` at `index` and returns it (0:
+//          nothing) - it decides its name and its components (a 3D 箱 gets a 3D Transform whatever the
+//          game's space is);
+//   fill   adds to an entity made like 空のエンティティ (named `label`, with the Transform of the game's
+//          space) - for what is at home in any space (パーティクル, 音源).
+// It is one undo entry, then selected with its name being typed.
 inline constexpr char kCreateItemPoint[] = "rm_engine.game_production.create_item";
 struct CreateItemInfo {
-    const wchar_t* label = nullptr;  // a TrKey string
+    const wchar_t* label = nullptr;   // a TrKey string: what it is (a noun: the undo entry is 「箱」を作成)
+    const wchar_t* folder = nullptr;  // a TrKey string ("3D オブジェクト"; "/" between folders inside folders); null: 追加 itself
     int (*make)(Scene& scene, int parent, size_t index) = nullptr;
-    bool child = true;  // under the one selected entity (else - and with none selected - after the selection)
+    void (*fill)(Scene& scene, int entity) = nullptr;
+    bool child = false;  // under the one selected entity (else - and with none selected - after the selection)
 };
+
+// The component of type T added to entity `id` (or the one it has already, if it may not have two; null:
+// the type is not offered now). For CreateItemInfo's make / fill.
+template <class T>
+T* AddComponentTo(Scene& scene, int id) {
+    scene.AddComponent(id, reflect::TypeOf<T>());
+    SceneEntity* e = scene.Find(id);
+    Component* c = e ? e->FindComponent(reflect::TypeOf<T>().name) : nullptr;
+    return c && c->Known() ? static_cast<T*>(c->value.Get()) : nullptr;
+}
 
 struct SceneViewInfo {
     std::unique_ptr<SceneView> (*create)();

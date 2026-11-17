@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "階層の右クリックが「追加 ▸」に: 空のエンティティ・3D オブジェクト ▸ 箱 / 球 / 円柱 / カプセル / 平面・2D オブジェクト ▸ スプライト・カメラ・ライト・UI・エフェクト・音 を、横に開くメニューで選べる。メッシュに「形」(ファイル無しで箱や球で描く)",
+          "en": "The hierarchy's right-click menu has Add >: Empty entity, 3D Object > Box / Sphere / Cylinder / Capsule / Plane, 2D Object > Sprite, Camera, Lighting, UI, Effects and Sound, in menus that open to the side. A Mesh has a Shape (drawn as a box, a sphere ... without a file)"
+        },
+        {
           "ja": "「部品を足す」の窓を上の帯のドラッグで動かせるように (動かした所に開く)。フォルダを開け閉めすると窓が閉じてしまうことがあったのを直した",
           "en": "The Add component panel can be moved by dragging its top bar (it opens where it was left). Opening or closing a folder no longer sometimes closes the panel"
         },

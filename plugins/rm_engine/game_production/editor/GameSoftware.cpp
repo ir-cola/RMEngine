@@ -804,7 +804,7 @@ public:
     }
 
     std::wstring EmptyText() const override {
-        return Tr(L"エンティティはまだありません。\nここを右クリックして「エンティティを作る」で作れます。");
+        return Tr(L"エンティティはまだありません。\nここを右クリックして「追加」から作れます。");
     }
 
     bool CanRename(tree::ItemId id) const override { return !Running() && scene_.Find(static_cast<int>(id)) != nullptr; }
@@ -872,8 +872,11 @@ private:
     std::vector<tree::Action> EditActions(const std::vector<int>& sel) {
         std::vector<tree::Action> list;
 
+        // 追加 ▸: an empty entity, then what the plugins make, in their folders (3D オブジェクト ▸ 箱 ...).
+        const std::wstring add = Tr(L"追加");
         tree::Action create;
-        create.label = Tr(L"エンティティを作る");
+        create.label = Tr(L"空のエンティティ");
+        create.folder = add;
         create.key = ui::Key::N;
         create.ctrl = create.shift = true;
         create.run = [this, sel] {
@@ -883,29 +886,32 @@ private:
         list.push_back(std::move(create));
 
         tree::Action child;
-        child.label = Tr(L"子エンティティを作る");
+        child.label = Tr(L"空の子エンティティ");
+        child.folder = add;
         child.enabled = sel.size() == 1;
         if (child.enabled) child.run = [this, sel] { CreateEntity(sel[0], Scene::kEnd); };
         list.push_back(std::move(child));
 
-        // What the plugins make (ゲーム UI: キャンバス, ボタン ...): no Transform of the game's space.
+        std::vector<const CreateItemInfo*> items;
         for (const auto& ci : host_.Registry().Contributions<CreateItemInfo>(kCreateItemPoint)) {
-            const CreateItemInfo* info = ci.item;
-            if (!info->make || !info->label) continue;
+            if (ci.item->label && (ci.item->make || ci.item->fill)) items.push_back(ci.item);
+        }
+        std::stable_sort(items.begin(), items.end(), [](const CreateItemInfo* a, const CreateItemInfo* b) { return CreateRank(a->folder) < CreateRank(b->folder); });
+        bool line = false;
+        for (const CreateItemInfo* info : items) {
             tree::Action make;
             make.label = Tr(info->label);
-            make.run = [this, sel, info] {
-                int parent = 0;
-                size_t index = Scene::kEnd;
-                if (info->child && sel.size() == 1) {
-                    parent = sel[0];
-                } else {
-                    std::tie(parent, index) = After(sel);
-                }
-                int made = 0;
-                EditTouching({}, WideToUtf8(info->label) + "を作成", [&] { made = info->make(scene_, parent, index); });
-                if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
-            };
+            make.folder = add;
+            if (info->folder) {
+                for (const std::wstring& part : SplitPath(info->folder)) make.folder += L"/" + Tr(part);
+            } else if (!line) {  // (the line between the empty ones and the rest)
+                tree::Action l;
+                l.separator = true;
+                l.folder = add;
+                list.push_back(std::move(l));
+                line = true;
+            }
+            make.run = [this, sel, info] { CreateItem(*info, sel); };
             list.push_back(std::move(make));
         }
 
@@ -2750,15 +2756,64 @@ private:
         host_.SelectInTree({made.begin(), made.end()});
     }
 
+    // 追加 ▸ ... (a plugin's CreateItemInfo): under the selected one or after the selection.
+    void CreateItem(const CreateItemInfo& info, const std::vector<int>& sel) {
+        int parent = 0;
+        size_t index = Scene::kEnd;
+        if (info.child && sel.size() == 1) {
+            parent = sel[0];
+        } else {
+            std::tie(parent, index) = After(sel);
+        }
+        int made = 0;
+        EditTouching({}, std::format("「{}」を作成", WideToUtf8(info.label)), [&] {
+            if (info.make) {
+                made = info.make(scene_, parent, index);
+                return;
+            }
+            made = MakeEntity(WideToUtf8(Tr(info.label)), parent, index);  // (its name in the language in use)
+            info.fill(scene_, made);
+        });
+        if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
+    }
+
+    // An entity as 空のエンティティ makes it: the components new entities get (e.g. the Transform of the
+    // game's space).
+    int MakeEntity(std::string name, int parent, size_t index) {
+        const int made = scene_.Create(std::move(name), parent, index);
+        const std::string space = CurrentSpace();
+        for (const ComponentInfo* info : newEntityInfos_) {
+            if (!info->space || info->space == space) scene_.AddComponent(made, info->type());
+        }
+        return made;
+    }
+
+    // The order of 追加 ▸'s folders (the key as the plugin wrote it, before it is translated); others
+    // after these, in the order of the plugins.
+    static int CreateRank(const wchar_t* folder) {
+        static constexpr std::wstring_view kOrder[] = {L"3D オブジェクト", L"2D オブジェクト", L"カメラ", L"ライト", L"UI", L"エフェクト", L"音"};
+        if (!folder) return -1;  // (追加 itself: first)
+        const std::wstring_view f(folder);
+        for (size_t i = 0; i < std::size(kOrder); ++i) {
+            if (f == kOrder[i] || f.starts_with(std::wstring(kOrder[i]) + L"/")) return static_cast<int>(i);
+        }
+        return static_cast<int>(std::size(kOrder));
+    }
+
+    static std::vector<std::wstring> SplitPath(std::wstring_view path) {
+        std::vector<std::wstring> parts;
+        for (size_t start = 0; start <= path.size();) {
+            const size_t slash = std::min(path.find(L'/', start), path.size());
+            if (slash > start) parts.emplace_back(path.substr(start, slash - start));
+            start = slash + 1;
+        }
+        return parts;
+    }
+
     void CreateEntity(int parent, size_t index) {
         int made = 0;
         EditTouching({}, "エンティティを作成", [&] {
-            made = scene_.Create(TrU8("エンティティ"), parent, index);  // the name it starts with, in the language in use
-            // e.g. Transform - the one of the game's space
-            const std::string space = CurrentSpace();
-            for (const ComponentInfo* info : newEntityInfos_) {
-                if (!info->space || info->space == space) scene_.AddComponent(made, info->type());
-            }
+            made = MakeEntity(TrU8("エンティティ"), parent, index);  // the name it starts with, in the language in use
         });
         if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
     }

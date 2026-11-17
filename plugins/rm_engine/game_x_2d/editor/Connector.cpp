@@ -44,6 +44,22 @@ void UnderiveWorld(std::span<const void* const> chain, const void* derived, void
     t = space2d::FromWorld(t, parent, order, *static_cast<const space2d::WorldPlacement2D*>(derived));
 }
 
+// 追加 ▸ 2D オブジェクト / カメラ: an entity with a Transform 2D (whatever the game's space is) and what
+// makes it that - names in the language in use.
+using game_production::AddComponentTo;
+using game_production::Scene;
+
+template <class T>
+int MakeWith(Scene& scene, std::string name, int parent, size_t index) {
+    const int id = scene.Create(std::move(name), parent, index);
+    AddComponentTo<space2d::Transform2D>(scene, id);
+    AddComponentTo<T>(scene, id);
+    return id;
+}
+
+int MakeSprite(Scene& scene, int parent, size_t index) { return MakeWith<Sprite>(scene, editor::TrU8("スプライト"), parent, index); }
+int MakeCamera(Scene& scene, int parent, size_t index) { return MakeWith<Camera2D>(scene, editor::TrU8("カメラ"), parent, index); }
+
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
@@ -69,6 +85,12 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // ... and are seen on the plane in the 2D scene view (after 3D when both are there).
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView2D, "2d", editor::TrKey(L"2D"), /*order*/ 10};
     registry.Contribute(game_production::kSceneViewPoint, kSceneView);
+    // The 階層's 追加 ▸.
+    static const game_production::CreateItemInfo kItems[] = {
+        {.label = editor::TrKey(L"スプライト"), .folder = editor::TrKey(L"2D オブジェクト"), .make = &MakeSprite},
+        {.label = editor::TrKey(L"2D カメラ"), .folder = editor::TrKey(L"カメラ"), .make = &MakeCamera},
+    };
+    for (const auto& item : kItems) registry.Contribute(game_production::kCreateItemPoint, item);
     // Sprites' images for the exported game: the file with its size and import settings.
     RegisterExportBake(registry);
 }

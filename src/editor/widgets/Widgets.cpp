@@ -935,26 +935,15 @@ Rect MenuRect(const ui::Context& c, const Popup& popup, const std::vector<MenuIt
     return {x, y, width, h};
 }
 
-int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, float width) {
-    if (!popup.open) return -1;
+namespace {
+
+// The rows of one menu in `box` (drawn, scrolled when taller than the window). Returns the row clicked
+// (not on the frame it opened: `fresh`), -1 if none. `hovered`: the row under the mouse (-1);
+// `openRow`: a row shown as if under the mouse (its menu is open).
+int MenuBox(ui::Context& c, const Rect& box, const std::vector<MenuItem>& items, bool fresh, int openRow = -1, int* hovered = nullptr) {
     auto& p = c.P();
-    const auto& in = c.In();
-    const Rect box = MenuRect(c, popup, items, width);
-
-    const bool fresh = popup.fresh;
-    popup.fresh = false;
-    if (!fresh && (in.pressed[0] || in.pressed[1]) && !box.Contains(in.mouseX, in.mouseY)) {
-        popup.open = false;
-        c.RequestRedraw();
-        return -1;
-    }
-    if (c.KeyPressed(ui::Key::Escape)) {
-        popup.open = false;
-        c.RequestRedraw();
-        return -1;
-    }
-
     DrawSurface(c, box, Surface::Popup, 6.f);
+    if (hovered) *hovered = -1;
 
     int clicked = -1;
     // A list taller than the window (MenuRect keeps the box inside it): its rows scroll (the wheel, the bar).
@@ -978,13 +967,16 @@ int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, 
         c.PushId(static_cast<uint64_t>(i));
         const auto b = it.enabled && seen ? c.ButtonBehavior(c.MakeId("item"), row) : ui::Context::ButtonResult{};
         c.PopId();
-        DrawRow(c, row, {false, b.hovered, true});
+        if (b.hovered && hovered) *hovered = static_cast<int>(i);
+        DrawRow(c, row, {false, b.hovered || static_cast<int>(i) == openRow, true});
         ui::TextStyle ts;
         ts.size = theme::FontSize;
         ts.color = it.enabled ? theme::Text : theme::TextFaint;
         if (it.checked) DrawIcon(c, {row.x + 2, row.y, 24, row.h}, Icon::Check, ts.color);
-        p.Text(row.Inset(checks ? 28.f : 10.f, 0, 10, 0), it.label, ts);
-        if (!it.shortcut.empty()) {
+        p.Text(row.Inset(checks ? 28.f : 10.f, 0, it.submenu ? 28.f : 10.f, 0), it.label, ts);
+        if (it.submenu) {
+            DrawIcon(c, {row.Right() - 26, row.y, 22, row.h}, Icon::ChevronRight, it.enabled ? theme::TextDim : theme::TextFaint);
+        } else if (!it.shortcut.empty()) {
             ts.h = ui::HAlign::Right;
             ts.color = theme::TextFaint;
             p.Text(row.Inset(10, 0, 10, 0), it.shortcut, ts);
@@ -996,6 +988,30 @@ int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, 
     }
     c.PopId();
     if (scrolls) EndScroll(c, "menu_scroll", view, content);
+    return clicked;
+}
+
+}  // namespace
+
+int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, float width) {
+    if (!popup.open) return -1;
+    const auto& in = c.In();
+    const Rect box = MenuRect(c, popup, items, width);
+
+    const bool fresh = popup.fresh;
+    popup.fresh = false;
+    if (!fresh && (in.pressed[0] || in.pressed[1]) && !box.Contains(in.mouseX, in.mouseY)) {
+        popup.open = false;
+        c.RequestRedraw();
+        return -1;
+    }
+    if (c.KeyPressed(ui::Key::Escape)) {
+        popup.open = false;
+        c.RequestRedraw();
+        return -1;
+    }
+
+    const int clicked = MenuBox(c, box, items, fresh);
     if (clicked >= 0) {
         popup.open = false;
         c.RequestRedraw();
@@ -1044,22 +1060,129 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
     Popup* pp = &popup;
     const std::vector<Action>* list = &actions;
     c.AddOverlay([&c, pp, list] {
-        std::vector<MenuItem> rows;
-        float width = 220;
-        for (const Action& a : *list) {
-            MenuItem mi;
-            mi.label = a.label;
-            mi.shortcut = ShortcutText(a);
-            mi.enabled = a.enabled && static_cast<bool>(a.run);
-            mi.separator = a.separator;
-            width = std::max(width, c.P().TextWidth(mi.label, theme::FontSize) + c.P().TextWidth(mi.shortcut, theme::FontSize) + 72);
-            rows.push_back(std::move(mi));
+        Popup& pop = *pp;
+        const auto& in = c.In();
+        const Rect& vp = c.Viewport();
+        std::vector<PickItem> items;
+        items.reserve(list->size());
+        for (const Action& a : *list) items.push_back({a.label, a.folder, a.separator});
+
+        // The menus open now: the first, then one for each folder of `sub` (追加, 追加/3D オブジェクト ...).
+        struct Level {
+            std::wstring folder;
+            std::vector<MenuLevelRow> rows;
+            std::vector<MenuItem> shown;
+            Rect box;
+        };
+        std::vector<Level> levels;
+        auto build = [&](std::wstring folder) {
+            Level l;
+            l.folder = std::move(folder);
+            l.rows = MenuLevel(items, l.folder);
+            float width = 220;
+            for (const MenuLevelRow& r : l.rows) {
+                MenuItem mi;
+                mi.label = r.label;
+                mi.separator = r.separator;
+                mi.submenu = r.isFolder;
+                if (!r.isFolder && !r.separator) {
+                    const Action& a = (*list)[static_cast<size_t>(r.item)];
+                    mi.shortcut = ShortcutText(a);
+                    mi.enabled = a.enabled && static_cast<bool>(a.run);
+                }
+                width = std::max(width, c.P().TextWidth(mi.label, theme::FontSize) + c.P().TextWidth(mi.shortcut, theme::FontSize) + 72);
+                l.shown.push_back(std::move(mi));
+            }
+            l.box = {0, 0, width, 0};
+            return l;
+        };
+        levels.push_back(build({}));
+        for (size_t start = 0; start < pop.sub.size();) {
+            const size_t slash = pop.sub.find(L'/', start);
+            const size_t end = slash == std::wstring::npos ? pop.sub.size() : slash;
+            Level l = build(pop.sub.substr(0, end));
+            if (l.rows.empty()) break;  // (a folder that is not there any more)
+            levels.push_back(std::move(l));
+            start = end + 1;
         }
+        // Where each is: the first where it was opened; the next beside its folder's row in the one
+        // before (on the left when there is no room on the right). Kept inside the window (MenuRect).
+        Popup at;
+        at.x = pop.x;
+        at.y = pop.y;
+        for (size_t k = 0; k < levels.size(); ++k) {
+            Level& l = levels[k];
+            if (k > 0) {
+                const Level& before = levels[k - 1];
+                float y = before.box.y + kPad;  // (its rows as MenuBox draws them, unscrolled)
+                at.y = before.box.y;
+                for (size_t i = 0; i < before.rows.size(); ++i) {
+                    if (before.rows[i].isFolder && before.rows[i].path == l.folder) at.y = y - kPad;
+                    y += before.shown[i].separator ? kSepH : kItemH;
+                }
+                at.x = before.box.Right() - 3;
+                if (at.x + l.box.w > vp.Right() - 4) at.x = std::max(vp.x + 4, before.box.x - l.box.w + 3);
+            }
+            l.box = MenuRect(c, at, l.shown, l.box.w);
+        }
+
+        const bool fresh = pop.fresh;
+        pop.fresh = false;
+        const bool inside = std::any_of(levels.begin(), levels.end(), [&](const Level& l) { return l.box.Contains(in.mouseX, in.mouseY); });
+        if (!fresh && (in.pressed[0] || in.pressed[1]) && !inside) {
+            pop.open = false;
+            c.RequestRedraw();
+            return;
+        }
+        if (c.KeyPressed(ui::Key::Escape)) {
+            // The last menu opened closes (the first: all of them).
+            if (levels.size() <= 1) {
+                pop.open = false;
+            } else {
+                pop.sub = levels[levels.size() - 2].folder;
+            }
+            c.RequestRedraw();
+            return;
+        }
+
         const bool was = c.InputEnabled();
         c.SetInputEnabled(true);
-        const int picked = MenuPopup(c, *pp, rows, width);
+        int picked = -1;
+        std::wstring sub = levels.back().folder;
+        for (size_t k = 0; k < levels.size(); ++k) {
+            const Level& l = levels[k];
+            int openRow = -1;
+            if (k + 1 < levels.size()) {
+                for (size_t i = 0; i < l.rows.size(); ++i) {
+                    if (l.rows[i].isFolder && l.rows[i].path == levels[k + 1].folder) openRow = static_cast<int>(i);
+                }
+            }
+            c.PushId(static_cast<uint64_t>(k));
+            int hovered = -1;
+            const int clicked = MenuBox(c, l.box, l.shown, fresh, openRow, &hovered);
+            c.PopId();
+            // The mouse on a row: a folder's menu opens beside it; another row closes the menus after this one.
+            if (hovered >= 0) {
+                const MenuLevelRow& r = l.rows[static_cast<size_t>(hovered)];
+                sub = r.isFolder ? r.path : l.folder;
+            }
+            if (clicked >= 0) {
+                const MenuLevelRow& r = l.rows[static_cast<size_t>(clicked)];
+                if (r.isFolder) {
+                    sub = r.path;
+                } else if (!r.separator) {
+                    picked = r.item;
+                }
+            }
+        }
         c.SetInputEnabled(was);
+        if (sub != pop.sub) {
+            pop.sub = std::move(sub);
+            c.RequestRedraw();
+        }
         if (picked >= 0 && static_cast<size_t>(picked) < list->size()) {
+            pop.open = false;
+            c.RequestRedraw();
             const auto run = (*list)[static_cast<size_t>(picked)].run;  // a copy: running may rebuild the list
             if (run) run();
         }

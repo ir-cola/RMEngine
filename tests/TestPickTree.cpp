@@ -76,3 +76,39 @@ RM_TEST(PickTree_Matches) {
     CHECK(PickMatches(L"anything", L""));
     CHECK(!PickMatches(L"UI", L"UII") && !PickMatches(L"剛体", L"体剛"));
 }
+
+RM_TEST(PickTree_MenuLevel) {
+    // The 階層's right-click: 追加 ▸ (its own items, a line, its folders), then the rest of the menu.
+    const std::vector<PickItem> items = {
+        {L"空のエンティティ", L"追加"},             // 0
+        {L"", L"追加", true},                       // 1 (a line)
+        {L"箱", L"追加/3D オブジェクト"},           // 2
+        {L"球", L"追加/3D オブジェクト"},           // 3
+        {L"スプライト", L"追加/2D オブジェクト"},   // 4
+        {L"キャンバス", L"追加/UI"},                // 5
+        {L"", L"", true},                           // 6
+        {L"コピー", L""},                           // 7
+        {L"円柱", L"追加/3D オブジェクト"},         // 8 (later in the list: still in its folder)
+        {L"", L"", true},                           // 9 (the end: left out)
+    };
+    auto lines = [](const std::vector<MenuLevelRow>& rows) {
+        std::vector<std::wstring> out;
+        for (const MenuLevelRow& r : rows) out.push_back(r.separator ? L"---" : (r.isFolder ? r.label + L" >" : r.label));
+        return out;
+    };
+    const auto top = MenuLevel(items, L"");
+    CHECK((lines(top) == std::vector<std::wstring>{L"追加 >", L"---", L"コピー"}));
+    CHECK(top[0].path == L"追加" && top[2].item == 7);
+    const auto add = MenuLevel(items, L"追加");
+    CHECK((lines(add) == std::vector<std::wstring>{L"空のエンティティ", L"---", L"3D オブジェクト >", L"2D オブジェクト >", L"UI >"}));
+    CHECK(add[2].path == L"追加/3D オブジェクト" && add[0].item == 0);
+    const auto shapes = MenuLevel(items, L"追加/3D オブジェクト");
+    CHECK((lines(shapes) == std::vector<std::wstring>{L"箱", L"球", L"円柱"}));
+    CHECK(shapes[2].item == 8);
+    // Lines: none at the start, none twice (the folder between them took its rows away).
+    const std::vector<PickItem> lined = {{L"", L"", true}, {L"A", L""}, {L"", L"", true}, {L"B", L"F"}, {L"", L"", true}, {L"C", L""}};
+    CHECK((lines(MenuLevel(lined, L"")) == std::vector<std::wstring>{L"A", L"---", L"F >", L"---", L"C"}));
+    const std::vector<PickItem> doubled = {{L"A", L""}, {L"", L"", true}, {L"B", L"F"}, {L"", L"", true}};
+    CHECK((lines(MenuLevel(doubled, L"")) == std::vector<std::wstring>{L"A", L"---", L"F >"}));
+    CHECK(MenuLevel(items, L"無い").empty());
+}
