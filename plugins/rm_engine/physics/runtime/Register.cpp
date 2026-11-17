@@ -12,13 +12,13 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     using game_production::ComponentInfo;
     using game_production::kComponentPoint;
     // The components: data only - the world reads them each fixed step (added by hand).
-    static const ComponentInfo kRigidbody{.type = &reflect::TypeOf<Rigidbody>};
+    static const ComponentInfo kRigidbody{.type = &reflect::TypeOf<Rigidbody>, .folder = "物理"};
     registry.Contribute(kComponentPoint, kRigidbody);
-    static const ComponentInfo kCollider{.type = &reflect::TypeOf<Collider>};
+    static const ComponentInfo kCollider{.type = &reflect::TypeOf<Collider>, .folder = "物理"};
     registry.Contribute(kComponentPoint, kCollider);
-    static const ComponentInfo kCollider2D{.type = &reflect::TypeOf<Collider2D>};
+    static const ComponentInfo kCollider2D{.type = &reflect::TypeOf<Collider2D>, .folder = "物理"};
     registry.Contribute(kComponentPoint, kCollider2D);
-    static const ComponentInfo kCharacter{.type = &reflect::TypeOf<Character>};
+    static const ComponentInfo kCharacter{.type = &reflect::TypeOf<Character>, .folder = "物理"};
     registry.Contribute(kComponentPoint, kCharacter);
     // The world steps in the game settings' 物理の刻み (after the scripts' Tick; the hooks after it).
     static const game_production::SystemInfo kSystem{"物理", game_production::SystemPhase::Fixed, 0, &RunPhysics};

@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "インスペクターの「部品を足す」が窓に: × と検索と、3D / 2D / UI / 物理 / 音 / エフェクト / スクリプト のフォルダに分かれた一覧 (フォルダは開いたり閉じたりできる)",
+          "en": "The Inspector's Add component opens a panel: a close button, a search box, and the components in folders (3D / 2D / UI / Physics / Sound / Effect / Script) that open and close"
+        },
+        {
           "ja": "文字の欄 (アセットの検索など) に入力している途中でも Ctrl+S で保存できるように",
           "en": "Ctrl+S now saves even while typing in a text field (such as the asset search)"
         },

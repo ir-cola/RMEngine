@@ -194,6 +194,7 @@ public:
             if (c.item->onNewEntities) newEntityInfos_.push_back(c.item);
             if (c.item->multiple) multiple.push_back(t);
             if (c.item->placement) placementTypes_.push_back(t->name);
+            if (c.item->folder) componentFolders_[t->name] = c.item->folder;
         }
         baseTypes_ = types;
         baseMultiple_ = multiple;
@@ -1733,6 +1734,24 @@ private:
         return TrF(L"Prefab「{}」を置いた物です ({})。Prefab と違う所: {} 個 (名前と置き場所を含む)", name, where, n);
     }
 
+    // The folder a component type is listed in by 部品を足す: its plugin's (ComponentInfo::folder, each
+    // part translated), "スクリプト" for a script, else "その他".
+    std::wstring FolderOf(const reflect::TypeDesc& t) const {
+        if (t.kind == reflect::TypeKind::Script) return Tr(L"スクリプト");
+        const auto it = componentFolders_.find(t.name);
+        if (it == componentFolders_.end()) return Tr(L"その他");
+        std::wstring out;
+        std::string_view rest = it->second;
+        while (true) {
+            const size_t slash = rest.find('/');
+            out += Utf8ToWide(TrU8(std::string(rest.substr(0, slash))));
+            if (slash == std::string_view::npos) break;
+            out += L'/';
+            rest.remove_prefix(slash + 1);
+        }
+        return out;
+    }
+
     // The inspector of one entity: the entity itself, then its components (each with ⋮ → 外す), and
     // "部品を足す" under them. Asked again every time it is drawn (undo may add or take components;
     // Play shows the copy that plays).
@@ -1826,6 +1845,7 @@ private:
                 if (!e || (e->FindComponent(t->name) && !scene_.AllowsMultiple(t->name))) continue;
                 editor::w::Action add;
                 add.label = Utf8ToWide(TrU8(t->label));
+                add.folder = FolderOf(*t);
                 if (e->FindComponent(t->name)) add.label += Tr(L" (もう 1 つ)");
                 add.run = [this, id, t] {
                     EditTouching({id}, std::format("「{}」を足す", t->label), [&] { scene_.AddComponent(id, *t); });
@@ -1910,6 +1930,7 @@ private:
                 if (!someCan) continue;
                 editor::w::Action add;
                 add.label = Utf8ToWide(TrU8(t->label));
+                add.folder = FolderOf(*t);
                 add.run = [this, ids, t] {
                     EditTouching(ids, std::format("{} 個のエンティティに「{}」を足す", ids.size(), t->label), [&] {
                         for (const int id : ids) scene_.AddComponent(id, *t);
@@ -2730,7 +2751,8 @@ private:
     bool viewsAsked_ = false;
     std::vector<const ComponentInfo*> newEntityInfos_;  // components new entities get (of the game's space)
     std::vector<const ComponentLook*> componentLooks_;      // how the editor shows them (editor parts)
-    std::vector<std::string> placementTypes_;               // where a placed prefab is (Transform)
+    std::vector<std::string> placementTypes_;
+    std::unordered_map<std::string, const char*> componentFolders_;  // TypeDesc::name -> ComponentInfo::folder               // where a placed prefab is (Transform)
     json::Value view_;  // UserSettings: how the user looks (the scene view's camera ...)
     std::unordered_map<int, int> modes_;  // entity id -> how its component with derived values is shown
     bool hadData_ = false;  // the .rmpf has the game's data (read from it, or written by a save)

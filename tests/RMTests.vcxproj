@@ -69,6 +69,7 @@
     <ClCompile Include="TestScene.cpp" />
     <ClCompile Include="TestLang.cpp" />
     <ClCompile Include="TestTheme.cpp" />
+    <ClCompile Include="TestPickTree.cpp" />
     <ClCompile Include="TestIntegrity.cpp" />
     <ClCompile Include="TestProject.cpp" />
     <ClCompile Include="TestFileLock.cpp" />
@@ -119,6 +120,7 @@
     <ClCompile Include="..\src\editor\app\Worker.cpp" />
     <ClCompile Include="..\src\editor\hub\Updates.cpp" />
     <ClCompile Include="..\src\editor\widgets\ThemeFile.cpp" />
+    <ClCompile Include="..\src\editor\widgets\PickTree.cpp" />
     <ClCompile Include="..\plugins\rm_engine\theme_seasons\editor\Ornament.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
     <ClCompile Include="..\plugins\rm_engine\audio\runtime\Sound.cpp" />

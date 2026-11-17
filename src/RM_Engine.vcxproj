@@ -109,6 +109,7 @@
     <ClCompile Include="editor\shell\EditorScreen.cpp" />
     <ClCompile Include="editor\shell\FloatWindow.cpp" />
     <ClCompile Include="editor\widgets\Widgets.cpp" />
+    <ClCompile Include="editor\widgets\PickTree.cpp" />
     <ClCompile Include="editor\widgets\ThemeFile.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -166,6 +167,7 @@
     <ClInclude Include="editor\widgets\ThemeFile.h" />
     <ClInclude Include="ui\Path.h" />
     <ClInclude Include="editor\widgets\Widgets.h" />
+    <ClInclude Include="editor\widgets\PickTree.h" />
     <ClInclude Include="..\resources\resource.h" />
   </ItemGroup>
   <ItemGroup>

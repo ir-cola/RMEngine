@@ -2,6 +2,7 @@
 
 #include "base/Utf.h"
 #include "editor/lang/Lang.h"
+#include "editor/widgets/PickTree.h"
 #include "editor/widgets/Theme.h"
 #include "ui/Path.h"
 
@@ -1148,6 +1149,135 @@ int PickerPopup(ui::Context& c, Popup& popup, std::string_view idStr, std::strin
     if (clicked >= 0) close();
     c.PopId();
     return clicked;
+}
+
+void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::vector<Action>& actions, std::wstring title, float width) {
+    if (!popup.open) return;
+    Popup* pp = &popup;
+    PickerState* sp = &state;
+    const std::vector<Action>* list = &actions;
+    c.AddOverlay([&c, pp, sp, list, title = std::move(title), width] {
+        Popup& pop = *pp;
+        PickerState& st = *sp;
+        auto& p = c.P();
+        const auto& in = c.In();
+        const bool inputWas = c.InputEnabled();
+        c.SetInputEnabled(true);
+        constexpr float kHeadH = 34.f, kSearchH = 38.f, kRowH = 26.f, kIndent = 16.f;
+        // One height whatever is shown (opening or closing a folder, typing, does not move the panel).
+        const Rect& vp = c.Viewport();
+        const float listH = std::clamp(vp.h - 8 - kPad * 2 - kHeadH - kSearchH, kRowH * 3, kRowH * 14);
+        const float h = kPad * 2 + kHeadH + kSearchH + listH;
+        const Rect box{std::clamp(pop.x, vp.x + 4, std::max(vp.x + 4, vp.Right() - width - 4)),
+                       std::clamp(pop.y, vp.y + 4, std::max(vp.y + 4, vp.Bottom() - h - 4)), width, h};
+        c.PushId("action_picker");
+        const ui::Id searchId = c.MakeId("search");
+        bool closing = false;
+        auto close = [&] {
+            pop.open = false;
+            if (c.Focused() == searchId) c.ClearFocus();
+            c.RequestRedraw();
+            closing = true;
+        };
+        const bool fresh = pop.fresh;
+        pop.fresh = false;
+        if (fresh) c.FocusText(searchId, Utf8ToWide(st.search), true);
+        if ((!fresh && (in.pressed[0] || in.pressed[1]) && !box.Contains(in.mouseX, in.mouseY)) || c.KeyPressed(ui::Key::Escape)) close();
+        const bool enter = c.KeyPressed(ui::Key::Enter);
+        int run = -1;
+        if (!closing) {
+            DrawSurface(c, box, Surface::Popup, 6.f);
+            // The top: what it is for, and × to close.
+            ui::TextStyle head;
+            head.size = 12;
+            head.color = theme::TextDim;
+            p.Text({box.x + kPad + 8, box.y + kPad, box.w - kPad * 2 - 48, kHeadH}, title, head);
+            if (IconButton(c, "close", {box.Right() - kPad - 30, box.y + kPad + 3, 28, 28}, Icon::Close)) close();
+        }
+        if (!closing) {
+            TextField(c, "search", {box.x + kPad + 2, box.y + kPad + kHeadH, box.w - kPad * 2 - 4, kSearchH - 10}, st.search, Tr(L"検索"));
+            // The rows: folders (open / closed) and the actions in them (BuildPickTree).
+            std::vector<PickItem> items;
+            std::vector<size_t> index;  // items[i] is actions[index[i]]
+            for (size_t i = 0; i < list->size(); ++i) {
+                const Action& a = (*list)[i];
+                if (a.separator) continue;
+                items.push_back({a.label, a.folder});
+                index.push_back(i);
+            }
+            const std::wstring search = Utf8ToWide(st.search);
+            const std::vector<PickTreeRow> rows = BuildPickTree(items, search, st.open);
+            const Rect listR{box.x + kPad, box.y + kPad + kHeadH + kSearchH, box.w - kPad * 2, listH};
+            if (rows.empty()) {
+                ui::TextStyle ts;
+                ts.size = 12;
+                ts.color = theme::TextFaint;
+                p.Text({listR.x + 10, listR.y, listR.w - 20, kRowH}, Tr(L"見つかりません。"), ts);
+            }
+            const float content = kRowH * static_cast<float>(rows.size());
+            const float off = BeginScroll(c, "list", listR, content);
+            std::wstring toggle;
+            for (size_t i = 0; i < rows.size(); ++i) {
+                const PickTreeRow& r = rows[i];
+                const Rect row{listR.x, listR.y + kRowH * static_cast<float>(i) - off, listR.w - (content > listR.h ? 12.f : 0.f), kRowH};
+                if (row.Bottom() < listR.y || row.y > listR.Bottom()) continue;
+                const Action* a = r.isFolder ? nullptr : &(*list)[index[static_cast<size_t>(r.item)]];
+                const bool usable = r.isFolder || (a->enabled && static_cast<bool>(a->run));
+                c.PushId(static_cast<uint64_t>(i));
+                const auto b = usable ? c.ButtonBehavior(c.MakeId("row"), row) : ui::Context::ButtonResult{};
+                c.PopId();
+                DrawRow(c, row, {false, b.hovered, true});
+                float x = row.x + 6 + kIndent * static_cast<float>(r.depth);
+                ui::TextStyle ts;
+                ts.size = theme::FontSize;
+                ts.color = usable ? theme::Text : theme::TextFaint;
+                if (r.isFolder) {
+                    DrawIcon(c, {x, row.y, 16, row.h}, r.open ? Icon::ChevronDown : Icon::ChevronRight, theme::TextDim);
+                    x += 18;
+                    DrawIcon(c, {x, row.y, 18, row.h}, Icon::Folder, theme::Folder);
+                    x += 22;
+                    const std::wstring count = std::to_wstring(r.count);
+                    const float countW = p.TextWidth(count, 11) + 10;
+                    p.Text({x, row.y, row.Right() - x - countW - 6, row.h}, r.label, ts);
+                    ui::TextStyle cs;
+                    cs.size = 11;
+                    cs.color = theme::TextFaint;
+                    cs.h = ui::HAlign::Right;
+                    p.Text({row.Right() - countW - 6, row.y, countW, row.h}, count, cs);
+                    if (b.clicked && !fresh) toggle = r.path;
+                } else {
+                    p.Text({x + 4, row.y, row.Right() - x - 10, row.h}, r.label, ts);
+                    // (not on the frame it opened: a quick click would pick the row that came under the mouse)
+                    if (b.clicked && !fresh) run = static_cast<int>(index[static_cast<size_t>(r.item)]);
+                }
+            }
+            EndScroll(c, "list", listR, content);
+            // A folder clicked: opened or closed (while searching, all that hold something found are open).
+            if (!toggle.empty() && search.empty()) {
+                if (!st.open.erase(toggle)) st.open.insert(toggle);
+                c.RequestRedraw();
+            }
+            // Enter: the first usable one found by what was typed; with nothing typed it only closes.
+            if (run < 0 && enter && !search.empty()) {
+                for (const PickTreeRow& r : rows) {
+                    if (r.isFolder) continue;
+                    const Action& a = (*list)[index[static_cast<size_t>(r.item)]];
+                    if (a.enabled && a.run) {
+                        run = static_cast<int>(index[static_cast<size_t>(r.item)]);
+                        break;
+                    }
+                }
+            }
+            if (run < 0 && enter && search.empty()) close();
+            if (run >= 0) close();
+        }
+        c.PopId();
+        c.SetInputEnabled(inputWas);
+        if (run >= 0) {
+            const auto fn = (*list)[static_cast<size_t>(run)].run;  // a copy: running may rebuild the list
+            if (fn) fn();
+        }
+    });
 }
 
 namespace {

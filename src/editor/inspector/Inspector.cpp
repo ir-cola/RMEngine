@@ -705,8 +705,8 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
     x.labelW = std::clamp(area.w * 0.38f, 96.f, 220.f);
     // While a drop-down or a menu is open, the fields under it only show.
     const bool inputWas = c.InputEnabled();
-    x.menusOk = inputWas && !st.popup.open && !st.menu.open;
-    if (st.popup.open || st.menu.open) c.SetInputEnabled(false);
+    x.menusOk = inputWas && !st.popup.open && !st.menu.open && !st.addPopup.open;
+    if (st.popup.open || st.menu.open || st.addPopup.open) c.SetInputEnabled(false);
     for (size_t bi = 0; bi < blocks.size(); ++bi) {
         const Block& b = blocks[bi];
         x.block = bi;
@@ -754,11 +754,15 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
         const float wdt = std::min(260.f, area.w - 24);
         const Rect btn{area.x + (area.w - wdt) * 0.5f, x.y, wdt, 32};
         if (w::Button(c, "inspector.add", btn, addLabel) && addMenu) {
-            st.menuActions = addMenu();
-            st.menu.OpenAt(btn.x, btn.Bottom() + 2);
+            st.addActions = addMenu();
+            st.addPopup.OpenAt(btn.x, btn.Bottom() + 2);
         }
         x.y += 44;
     }
+    // The panel's title: the button's words without its "＋".
+    std::wstring addTitle(addLabel);
+    if (addTitle.starts_with(L"＋")) addTitle.erase(0, 1);
+    while (!addTitle.empty() && addTitle.front() == L' ') addTitle.erase(0, 1);
     c.SetInputEnabled(inputWas);
     st.contentHeight = x.y + off - area.y + 6;
     w::EndScroll(c, "inspector", area, st.contentHeight);
@@ -768,6 +772,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
         w::Tooltip(c, x.tooltip);
     }
     w::ActionMenu(c, st.menu, st.menuActions);
+    w::ActionPicker(c, st.addPopup, st.addPicker, st.addActions, std::move(addTitle));
     if (x.edit) result = std::move(x.edit);
     return result;
 }

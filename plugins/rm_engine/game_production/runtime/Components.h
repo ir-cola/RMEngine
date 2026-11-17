@@ -44,6 +44,9 @@ struct ComponentInfo {
     // The game can see through an entity with it (a 3D Camera, a Camera 2D): a scene switched to picks
     // its camera among these (SceneCamera).
     bool camera = false;
+    // The folder it is listed in by the インスペクター's 部品を足す ("3D", "2D", "UI", "物理" ... UTF-8,
+    // translated when shown; "/" between folders inside folders). Null: "その他". Scripts are in "スクリプト".
+    const char* folder = nullptr;
 };
 
 struct Component {

@@ -12,16 +12,16 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     using game_production::ComponentInfo;
     using game_production::kComponentPoint;
     // The UI's parts (no space: a UI thing has no Transform - it is laid out on the screen).
-    static const ComponentInfo kCanvas{.type = &reflect::TypeOf<UiCanvas>};
-    static const ComponentInfo kRect{.type = &reflect::TypeOf<UiRect>};
-    static const ComponentInfo kText{.type = &reflect::TypeOf<UiText>};
-    static const ComponentInfo kImage{.type = &reflect::TypeOf<UiImage>};
-    static const ComponentInfo kButton{.type = &reflect::TypeOf<UiButton>};
-    static const ComponentInfo kBar{.type = &reflect::TypeOf<UiBar>};
-    static const ComponentInfo kMotion{.type = &reflect::TypeOf<UiMotion>};  // 出る・消える動き (UI-4)
-    static const ComponentInfo kPath{.type = &reflect::TypeOf<UiPath>};      // 道に沿って動く (UI-4)
-    static const ComponentInfo kStyle{.type = &reflect::TypeOf<UiStyle>};    // 見た目 (UI-5)
-    static const ComponentInfo kVideo{.type = &reflect::TypeOf<UiVideo>};    // 動画 (UI-5)
+    static const ComponentInfo kCanvas{.type = &reflect::TypeOf<UiCanvas>, .folder = "UI"};
+    static const ComponentInfo kRect{.type = &reflect::TypeOf<UiRect>, .folder = "UI"};
+    static const ComponentInfo kText{.type = &reflect::TypeOf<UiText>, .folder = "UI"};
+    static const ComponentInfo kImage{.type = &reflect::TypeOf<UiImage>, .folder = "UI"};
+    static const ComponentInfo kButton{.type = &reflect::TypeOf<UiButton>, .folder = "UI"};
+    static const ComponentInfo kBar{.type = &reflect::TypeOf<UiBar>, .folder = "UI"};
+    static const ComponentInfo kMotion{.type = &reflect::TypeOf<UiMotion>, .folder = "UI"};  // 出る・消える動き (UI-4)
+    static const ComponentInfo kPath{.type = &reflect::TypeOf<UiPath>, .folder = "UI"};      // 道に沿って動く (UI-4)
+    static const ComponentInfo kStyle{.type = &reflect::TypeOf<UiStyle>, .folder = "UI"};    // 見た目 (UI-5)
+    static const ComponentInfo kVideo{.type = &reflect::TypeOf<UiVideo>, .folder = "UI"};    // 動画 (UI-5)
     for (const ComponentInfo* c : {&kCanvas, &kRect, &kText, &kImage, &kButton, &kBar, &kMotion, &kPath, &kStyle, &kVideo}) {
         registry.Contribute(kComponentPoint, *c);
     }

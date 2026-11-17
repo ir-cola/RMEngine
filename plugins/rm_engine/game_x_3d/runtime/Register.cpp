@@ -18,25 +18,25 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     using game_production::kComponentPoint;
     // A 3D game's entities have a place in 3D space: every new entity gets one while the game's space is
     // 3D. It is where a placed prefab is (its values stay the placed one's).
-    static const ComponentInfo kTransform{.type = &reflect::TypeOf<space3d::Transform>, .onNewEntities = true, .placement = true, .space = "3d"};
+    static const ComponentInfo kTransform{.type = &reflect::TypeOf<space3d::Transform>, .onNewEntities = true, .placement = true, .space = "3d", .folder = "3D"};
     registry.Contribute(kComponentPoint, kTransform);
     // ... and may be drawn as a 3D model (added by hand: a new entity is a box until it has one).
-    static const ComponentInfo kMesh{.type = &reflect::TypeOf<MeshRenderer>};
+    static const ComponentInfo kMesh{.type = &reflect::TypeOf<MeshRenderer>, .folder = "3D"};
     registry.Contribute(kComponentPoint, kMesh);
     // カメラ (what the game sees: the game settings' 最初のカメラ), 光 and 環境光.
-    static const ComponentInfo kCamera{.type = &reflect::TypeOf<Camera>, .camera = true};
+    static const ComponentInfo kCamera{.type = &reflect::TypeOf<Camera>, .camera = true, .folder = "3D"};
     registry.Contribute(kComponentPoint, kCamera);
-    static const ComponentInfo kLight{.type = &reflect::TypeOf<Light>};
+    static const ComponentInfo kLight{.type = &reflect::TypeOf<Light>, .folder = "3D"};
     registry.Contribute(kComponentPoint, kLight);
-    static const ComponentInfo kAmbient{.type = &reflect::TypeOf<AmbientLight>};
+    static const ComponentInfo kAmbient{.type = &reflect::TypeOf<AmbientLight>, .folder = "3D"};
     registry.Contribute(kComponentPoint, kAmbient);
     // 回り続ける: turns its entity while the game plays (several add up), and the system that does it.
-    static const ComponentInfo kSpin{.type = &reflect::TypeOf<Spin>, .multiple = true};
+    static const ComponentInfo kSpin{.type = &reflect::TypeOf<Spin>, .multiple = true, .folder = "3D"};
     registry.Contribute(kComponentPoint, kSpin);
     static const game_production::SystemInfo kSpinSystem{"回り続ける", game_production::SystemPhase::Frame, 0, &RunSpin};
     registry.Contribute(game_production::kSystemPoint, kSpinSystem);
     // カメラを順に切り替える: a system switching the game's camera while it plays (SystemContext::camera).
-    static const ComponentInfo kCycle{.type = &reflect::TypeOf<CameraCycle>};
+    static const ComponentInfo kCycle{.type = &reflect::TypeOf<CameraCycle>, .folder = "3D"};
     registry.Contribute(kComponentPoint, kCycle);
     static const game_production::SystemInfo kCycleSystem{"カメラを順に切り替える", game_production::SystemPhase::Frame, 0, &RunCameraCycle};
     registry.Contribute(game_production::kSystemPoint, kCycleSystem);

@@ -17,6 +17,7 @@
 
 #include <functional>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -207,11 +208,25 @@ struct Action {
     bool separator = false;
     ui::Key key = ui::Key::None;
     bool ctrl = false, shift = false;
+    // In ActionPicker: the folder it is in ("3D", "UI", "物理/2D"; empty = at the top). Menus ignore it.
+    std::wstring folder;
 };
 std::wstring ShortcutText(const Action& a);  // "Ctrl+D", "Delete", "" (no shortcut)
 // Draws `popup` (when open) with `actions` at the end of the frame (not cut off by a panel) and runs
 // the picked row. The list is kept by the caller until the menu closes.
 void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions);
+
+// A panel to pick one action from (the インスペクター's 部品を足す): `title` and × on top, a search box,
+// then the actions in their folders (Action::folder), each folder opened and closed by its row. Like
+// ActionMenu it is drawn at the end of the frame, runs the picked action and closes; × / Esc / a click
+// outside close it. Enter runs the first one found by what was typed. The search and which folders are
+// open are the caller's (kept from one opening to the next).
+struct PickerState {
+    std::string search;
+    std::set<std::wstring> open;  // folder paths shown open (all closed at first)
+};
+void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::vector<Action>& actions, std::wstring title,
+                  float width = 320.f);
 
 // A list to choose one thing from, with a search box on top (a reference field's choices). Call it at
 // the end of the frame, like MenuPopup. `search` is what is typed (kept by the caller, who lists only

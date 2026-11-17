@@ -16,7 +16,7 @@ std::unique_ptr<game_production::PlayService> CreateService(const game_productio
 
 void RegisterRuntime(RuntimeRegistry& registry) {
     // 音源: in 3D and 2D games alike (an entity may have several: footsteps and a voice).
-    static const game_production::ComponentInfo kSource{.type = &reflect::TypeOf<AudioSource>, .multiple = true};
+    static const game_production::ComponentInfo kSource{.type = &reflect::TypeOf<AudioSource>, .multiple = true, .folder = "音"};
     registry.Contribute(game_production::kComponentPoint, kSource);
     // The sounds while the game plays (the editor's Play and the game).
     static const game_production::PlayServiceInfo kService{kAudioServiceName, &CreateService};

@@ -78,6 +78,7 @@
   "ファイルが Assets に見つかりません": "The file is not in Assets",
   "スクリプトの実行順": "Script run order",
   "スクリプト": "Script",
+  "その他": "Other",
   "スクリプトの型の名前 (C++ の名前。例: PlayerController)": "The script type's name (its C++ name, e.g. PlayerController)",
   "順番": "Order",
   "小さいほど先に動きます。一覧に無いスクリプトは 0 です": "Smaller runs first. A script not in the list is 0",

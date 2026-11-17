@@ -116,14 +116,20 @@ struct State {
     ui::Id arrayDrag = 0;
     size_t arrayDragFrom = 0;
     std::optional<Edit> pending;  // chosen in the drop-down (drawn at the end of the frame)
-    w::Popup menu;                // a block's ⋮ menu or the add button's menu
+    w::Popup menu;                // a block's ⋮ menu
     std::vector<w::Action> menuActions;
+    // The add button's panel (w::ActionPicker): × / search / the choices in folders. Its search and open
+    // folders stay from one opening to the next.
+    w::Popup addPopup;
+    std::vector<w::Action> addActions;
+    w::PickerState addPicker;
     std::unordered_set<std::wstring> folded;  // block titles
     float contentHeight = 0;
 };
 
 // Draws the blocks into `area` (scrolls when needed); `addLabel` non-empty = a button under them
-// that opens the menu `addMenu` returns. Returns a finished change, if any.
+// that opens a panel of what `addMenu` returns (in their folders: w::Action::folder). Returns a
+// finished change, if any.
 // `refs`: what reference fields can show (null: they show only "(なし)" / "(見つかりません)").
 std::optional<Edit> Draw(ui::Context& c, State& st, const ui::Rect& area, std::span<const Block> blocks,
                          std::wstring_view addLabel = {}, const std::function<std::vector<w::Action>()>& addMenu = {},
