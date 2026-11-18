@@ -6,6 +6,7 @@
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_x_particles/runtime/CollisionShapes.h"
 #include "rm_engine/game_x_particles/runtime/ParticleSystem.h"
+#include "rm_engine/space3d/runtime/TexturePixels.h"
 #include "rm_engine/space3d/runtime/View.h"
 #include "rm_engine/particles/runtime/ParticleEffect.h"
 #include "rm_engine/particles/runtime/ParticlePlayer.h"
@@ -244,18 +245,25 @@ ID3D11ShaderResourceView* ParticleImages::Find(const AssetRef& ref, platform::Gf
     const auto* data = reinterpret_cast<const uint8_t*>(baked->picture.data());
     const auto image = platform::DecodeImage(gfx.Wic(), std::span(data, baked->picture.size()), platform::PixelOrder::Rgba, {1024, 1024}, &err);
     if (!image) return tell(err), nullptr;
+    // With its mipmaps (the smaller copies 3D 空間's pictures have, averaged as light): a big picture on
+    // small or far particles does not shimmer (2026-11-18: it had only the one level). The texels stay
+    // as the picture has them (UNORM: the particle shader takes them as they are).
+    const space3d::TexturePixels pixels = space3d::MakeTexturePixels(*image, true);
+    if (pixels.levels.empty() || pixels.format != space3d::TextureFormat::Rgba8) return tell("ミップマップを作れません"), nullptr;
     D3D11_TEXTURE2D_DESC td{};
     td.Width = image->width;
     td.Height = image->height;
-    td.MipLevels = 1;
+    td.MipLevels = static_cast<UINT>(pixels.levels.size());
     td.ArraySize = 1;
     td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     td.SampleDesc.Count = 1;
     td.Usage = D3D11_USAGE_IMMUTABLE;
     td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    const D3D11_SUBRESOURCE_DATA init{image->pixels.data(), image->width * 4, 0};
+    std::vector<D3D11_SUBRESOURCE_DATA> init;
+    for (const platform::Image& level : pixels.levels) init.push_back({level.pixels.data(), level.width * 4, 0});
     Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-    if (!gfx.D3D() || FAILED(gfx.D3D()->CreateTexture2D(&td, &init, &texture)) || FAILED(gfx.D3D()->CreateShaderResourceView(texture.Get(), nullptr, &e.view))) {
+    if (!gfx.D3D() || FAILED(gfx.D3D()->CreateTexture2D(&td, init.data(), &texture)) ||
+        FAILED(gfx.D3D()->CreateShaderResourceView(texture.Get(), nullptr, &e.view))) {
         tell("GPU に上げられません");
         return nullptr;
     }
