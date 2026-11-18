@@ -957,7 +957,8 @@ private:
                                 // (as the editor has it: an edit of the パーティクル tab shows at once)
                                 [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
                                 [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); },
-                                &host.host.Registry()};
+                                &host.host.Registry(),
+                                host.game ? "game" : &pic == &main_ ? "scene" : "preview"};
         bool moving = false;
         for (const auto& d : pic.drawers) {
             d->Prepare(wf, pic.extras);

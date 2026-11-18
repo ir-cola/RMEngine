@@ -35,5 +35,12 @@
   "インスペクターの「モジュールのファイル」で .rmfx を選びます (アセットのパネルからドラッグもできます)": "Choose a .rmfx in Module file in the inspector (or drag it from the Assets panel)",
   "シェーダーを作れません: {}": "Cannot make the shaders: {}",
   "(ファイルを選んでいないモジュール)": "(module without a file)",
-  "エフェクトを作る …": "Make an effect…"
+  "エフェクトを作る …": "Make an effect…",
+  "シーンビュー": "Scene view",
+  "ゲームビュー": "Game view",
+  "プレビュー": "Preview",
+  "粒 {} 個": "{} particles",
+  "粒 (数えています…)": "Particles (counting…)",
+  "{} ・ 上限 {} 個 ・ エフェクト {} 個 ・ エミッター {} 個 ・ 部品 {} 個": "{} · at most {} · {} effects · {} emitters · {} components",
+  "3D のビューにパーティクルが出ていません (止まっているときは、選んだものだけが出ます)": "No particles in the 3D views (while stopped, only the selected ones play)"
 }

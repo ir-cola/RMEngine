@@ -126,6 +126,10 @@ ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view id, const ui
 // How far something is: a sunken track filled with the accent up to `fraction` (0..1).
 void ProgressBar(ui::Context& c, const ui::Rect& r, float fraction);
 
+// One fact of a list (the debug panel): its name dim on the left (`labelWidth`), its value on the right.
+// `lit`: the value in the accent (a button held, something that is on).
+void InfoRow(ui::Context& c, const ui::Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth, bool lit = false);
+
 // --- Lines and tips --------------------------------------------------------------------------
 void Separator(ui::Context& c, float x, float y, float width);
 // A tip next to the mouse, drawn at the end of the frame (over everything).

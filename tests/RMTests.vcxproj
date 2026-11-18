@@ -88,6 +88,7 @@
     <ClCompile Include="TestScriptsMore.cpp" />
     <ClCompile Include="TestScriptsAbi7.cpp" />
     <ClCompile Include="TestScriptMath.cpp" />
+    <ClCompile Include="TestDebugPanel.cpp" />
     <ClCompile Include="TestScripts.cpp" />
     <ClCompile Include="TestDebugDraw.cpp" />
     <ClCompile Include="TestScriptBuild.cpp" />
@@ -104,6 +105,7 @@
     <ClCompile Include="TestExport.cpp" />
     <ClCompile Include="..\src\core\pak\Pak.cpp" />
     <ClCompile Include="..\src\platform\Crypto.cpp" />
+    <ClCompile Include="..\src\platform\SystemInfo.cpp" />
     <ClCompile Include="..\src\editor\export\ExportPlan.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\editor\GameExport.cpp" />
     <!-- Pure files from other layers, compiled directly into the tests. -->
@@ -176,6 +178,7 @@
     <ClCompile Include="..\plugins\rm_engine\particles\runtime\ParticlePlayer.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\ParticleDraw.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\ScriptParticles.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\ParticleStats.cpp" />
     <ClCompile Include="..\plugins\rm_engine\particles_x_physics\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)particles_x_physics\</ObjectFileName>
     </ClCompile>

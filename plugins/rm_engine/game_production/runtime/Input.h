@@ -123,4 +123,21 @@ private:
     KeyPresses seen_;                     // the counts at the last Read
 };
 
+// Every pad as it is now, for the debug panel (not the game's reader: nothing of the game's input is
+// taken). An empty slot is asked again only after a second, as InputReader does.
+struct PadState {
+    bool connected = false;
+    std::array<float, kPadControls> values{};  // by InputControl - PadA (as InputFrame::pad)
+    int battery = -1;                          // 0 empty .. 3 full; -1: wired or not known
+};
+class PadWatcher {
+public:
+    std::array<PadState, kPlayers> Read();
+
+private:
+    std::array<uint64_t, kPlayers> nextLook_{};
+    std::array<uint64_t, kPlayers> batteryAt_{};
+    std::array<int, kPlayers> battery_{-1, -1, -1, -1};
+};
+
 }  // namespace rm::game_production

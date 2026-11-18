@@ -258,6 +258,34 @@ std::array<float, kPadControls> PadValues(const XINPUT_GAMEPAD& g) {
 
 }  // namespace
 
+std::array<PadState, kPlayers> PadWatcher::Read() {
+    std::array<PadState, kPlayers> out;
+    const uint64_t now = GetTickCount64();
+    for (DWORD slot = 0; slot < static_cast<DWORD>(kPlayers); ++slot) {
+        if (now < nextLook_[slot]) continue;
+        XINPUT_STATE s{};
+        if (XInputGetState(slot, &s) != ERROR_SUCCESS) {
+            nextLook_[slot] = now + 1000;
+            battery_[slot] = -1;
+            continue;
+        }
+        nextLook_[slot] = 0;
+        PadState& p = out[slot];
+        p.connected = true;
+        p.values = PadValues(s.Gamepad);
+        if (now >= batteryAt_[slot]) {  // (asked now and then: it changes slowly)
+            batteryAt_[slot] = now + 5000;
+            XINPUT_BATTERY_INFORMATION b{};
+            battery_[slot] = XInputGetBatteryInformation(slot, BATTERY_DEVTYPE_GAMEPAD, &b) == ERROR_SUCCESS &&
+                                     (b.BatteryType == BATTERY_TYPE_ALKALINE || b.BatteryType == BATTERY_TYPE_NIMH)
+                                 ? static_cast<int>(b.BatteryLevel)
+                                 : -1;
+        }
+        p.battery = battery_[slot];
+    }
+    return out;
+}
+
 void InputReader::Forget() {
     seen_ = PressHook::OfThisThread().Presses();
     PressHook::OfThisThread().TakeWheel();

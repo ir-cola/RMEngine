@@ -91,12 +91,23 @@ public:
     std::string Error(size_t emitter) const;
     // Every emitter has finished (not looping, and its particles have had time to die).
     bool Finished() const;
+    // Its emitters that run, the particles they hold at most, and how many are alive (as last read back
+    // from the GPU while CountingAlive; aliveKnown false: not read yet).
+    struct Census {
+        uint32_t emitters = 0;
+        uint64_t capacity = 0;
+        uint64_t alive = 0;
+        bool aliveKnown = true;
+    };
+    Census Count() const;
     // What went wrong since the last call (a module that cannot be read, a shader that does not compile:
     // Japanese, for the console) - each told once.
     std::vector<std::string> TakeProblems();
 
 private:
     struct Emitter;
+    static bool MakeCounter(ID3D11Device* device, Emitter& e);
+    static void ReadBackCount(ID3D11DeviceContext* ctx, Emitter& e);
     std::shared_ptr<const ParticleEffect> effect_;
     std::vector<std::unique_ptr<Emitter>> emitters_;
     std::vector<std::string> problems_;
@@ -109,6 +120,11 @@ private:
     size_t shapesCapacity_ = 0;
     Microsoft::WRL::ComPtr<ID3D11Buffer> collideCb_;
 };
+
+// Counting the particles alive (for the debug panel): each player counts them on the GPU for the next
+// `seconds` and reads the number back a few frames later. Not asked: nothing is counted (no cost).
+void CountAliveFor(double seconds);
+bool CountingAlive();
 
 // Direct3D can run the particles (feature level 11_0 or later).
 bool CanRunParticles(ID3D11Device* device);

@@ -937,10 +937,17 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — Unity の `Mathf` / `Vector3` / `Quaternion` / `Transform.SetParent(parent, worldPositionStays)` / `LookAt` と同じ物が、スクリプトを書く人に一番要るため
 - **どこ** — `plugins/rm_engine/game_production/runtime/sdk/RMMath.h`・`plugins/rm_engine/game_x_3d/runtime/ScriptTransform3D.cpp` (`KeepWorld3D`・`LookAt`)・`plugins/rm_engine/game_x_2d/runtime/ScriptTransform2D.cpp`
 
+### デバッグのパネル: モニターの名前・GPU のメモリ・GPU で数えて読み戻す
+- **何か** — モニターの名前は **DisplayConfig API** (`QueryDisplayConfig` と `DisplayConfigGetDeviceInfo`) で、モニター自身が Windows に伝えている名前 (EDID の名前。「MSI G244F」) を、`EnumDisplayMonitors` の各モニター (「\\.\DISPLAY1」) に結び付けて読む。リフレッシュレートは `EnumDisplaySettings`、拡大率は `GetDpiForMonitor`。GPU は Direct3D のデバイスから **DXGI** のアダプターをたどり、名前・メモリ (`DXGI_ADAPTER_DESC`)、このソフトが使っている量と使える量 (`IDXGIAdapter3::QueryVideoMemoryInfo`)、ドライバーの版 (`CheckInterfaceSupport`) を読む。生きているパーティクルの数は、粒を動かすコンピュートシェーダーの最後で、生きている粒ごとに 4 バイトのカウンターへ `InterlockedAdd` し、そのカウンターを CPU が読める「ステージング」バッファーへコピーして、数フレーム後に読む
+- **工夫** — GPU の値の読み戻しは、`Map` に `D3D11_MAP_FLAG_DO_NOT_WAIT` を付け、3 つのバッファーを順に使う (GPU がまだ終えていなければ待たずに次のフレームへ: 画面が止まらない)。数えるのはデバッグのパネルが開いている間だけ (閉じている時は UAV を付けないので、書き込みは捨てられ、手間はほぼ 0)。パネルの区切りはプラグインが足す (`DebugInfoInfo`): ゲーム制作の核はパーティクルを知らないまま (憲法 10)。フレームの速さは「この 1 秒の印」を持って数える (`FrameMeter`、純粋でテストあり)
+- **なぜそれか** — Unity の Stats (FPS・描画)・Profiler の一部・Input Debugger と同じ役目を、ゲームを作りながら横で見られるように。モニターの名前は GDI の `EnumDisplayDevices` だと「Generic PnP Monitor」になりやすいので、DisplayConfig を使った
+- **どこ** — `src/platform/SystemInfo.cpp`・`plugins/rm_engine/game_production/editor/DebugPanel.cpp`・`plugins/rm_engine/particles/runtime/ParticlePlayer.cpp` (`CountAliveFor`・`ReadBackCount`)・`ParticleShader.cpp` (`AliveCount`)・`plugins/rm_engine/game_x_particles/runtime/ParticleStats.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-18 | デバッグのパネル: DisplayConfig API (モニターの名前)・DXGI のアダプターとメモリの量・GPU で数えた値を待たずに読み戻す (ステージングと DO_NOT_WAIT) を足した |
 | 2026-11-18 | スクリプトのコルーチン (C++20 の co_await)・イベント・時間の速さ・プレイヤーごとの入力とパッドの振動・キーの割り当ての保存・スクリプトの数学 (クォータニオン)・親を変えてもワールドを保つ を足した |
 | 2026-11-18 | ミップマップの設定・透明部分を保つ・ミップマップ・ストリーミング・端の扱い (サンプラーの AddressMode) を足した |
 | 2026-11-17 | 降る雨と雪 (頂点の番号から作る粒・カメラについてくる箱) を足した |

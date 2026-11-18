@@ -76,6 +76,7 @@
     <ClCompile Include="platform\Window.cpp" />
     <ClCompile Include="platform\Process.cpp" />
     <ClCompile Include="platform\Crypto.cpp" />
+    <ClCompile Include="platform\SystemInfo.cpp" />
     <ClCompile Include="editor\export\Exporter.cpp" />
     <ClCompile Include="ui\Context.cpp" />
     <ClCompile Include="ui\Painter.cpp" />
@@ -128,6 +129,7 @@
     <ClInclude Include="platform\FileLock.h" />
     <ClInclude Include="platform\Pixels.h" />
     <ClInclude Include="platform\Shell.h" />
+    <ClInclude Include="platform\SystemInfo.h" />
     <ClInclude Include="platform\Win.h" />
     <ClInclude Include="platform\Window.h" />
     <ClInclude Include="ui\Context.h" />

@@ -5,6 +5,7 @@
 #include "platform/Image.h"
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_x_particles/runtime/CollisionShapes.h"
+#include "rm_engine/game_x_particles/runtime/ParticleStats.h"
 #include "rm_engine/game_x_particles/runtime/ParticleSystem.h"
 #include "rm_engine/space3d/runtime/TexturePixels.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -121,6 +122,21 @@ public:
             animating_ = true;
         }
         std::erase_if(running_, [](const auto& kv) { return !kv.second.seen; });
+        // What this picture plays, for the debug panel.
+        PictureParticles stats;
+        stats.picture = f.picture ? f.picture : "";
+        stats.playing = f.playing;
+        stats.systems = found.size();
+        stats.effects = running_.size();
+        stats.aliveKnown = true;
+        for (const auto& [key, r] : running_) {
+            const EffectPlayer::Census c = r.player.Count();
+            stats.emitters += c.emitters;
+            stats.capacity += c.capacity;
+            stats.alive += c.alive;
+            stats.aliveKnown = stats.aliveKnown && c.aliveKnown;
+        }
+        ReportParticles(this, std::move(stats));
     }
 
     bool Animating() const override { return animating_; }

@@ -5,6 +5,8 @@
 #include <d3dcompiler.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <format>
 #include <map>
@@ -63,6 +65,16 @@ std::shared_ptr<const ModuleSource> BuiltinLookup(const ParticleModule& m, std::
 }
 
 bool CanRunParticles(ID3D11Device* device) { return device && device->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0; }
+
+namespace {
+std::atomic<int64_t> g_countUntil{0};  // steady_clock milliseconds
+int64_t NowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}  // namespace
+
+void CountAliveFor(double seconds) { g_countUntil = NowMs() + static_cast<int64_t>(seconds * 1000.0); }
+bool CountingAlive() { return NowMs() < g_countUntil.load(); }
 
 namespace {
 
@@ -186,6 +198,14 @@ struct EffectPlayer::Emitter {
 
     ComPtr<ID3D11Buffer> particles;
     ComPtr<ID3D11UnorderedAccessView> uav;
+    // Counting the alive ones (CountAliveFor): a 4-byte counter, and copies read back a few frames later.
+    ComPtr<ID3D11Buffer> count;
+    ComPtr<ID3D11UnorderedAccessView> countUav;
+    ComPtr<ID3D11Buffer> readBack[3];
+    bool readBackFilled[3] = {};
+    uint32_t readBackNext = 0;
+    uint64_t alive = 0;
+    bool aliveKnown = false;
     ComPtr<ID3D11ShaderResourceView> srv;
     uint32_t capacity = 0;  // of the buffer made
     bool cleared = false;
@@ -273,6 +293,56 @@ void EffectPlayer::Set(std::shared_ptr<const ParticleEffect> effect, const Modul
         next.push_back(std::move(e));
     }
     emitters_ = std::move(next);
+}
+
+// The counter of the alive particles and its read-back copies (made the first time they are counted).
+bool EffectPlayer::MakeCounter(ID3D11Device* device, Emitter& e) {
+    if (e.countUav) return true;
+    D3D11_BUFFER_DESC bd{};
+    bd.ByteWidth = 4;
+    bd.Usage = D3D11_USAGE_DEFAULT;
+    bd.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+    bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+    D3D11_UNORDERED_ACCESS_VIEW_DESC ud{};
+    ud.Format = DXGI_FORMAT_R32_TYPELESS;
+    ud.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+    ud.Buffer.NumElements = 1;
+    ud.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
+    if (FAILED(device->CreateBuffer(&bd, nullptr, &e.count)) || FAILED(device->CreateUnorderedAccessView(e.count.Get(), &ud, &e.countUav))) {
+        e.count.Reset();
+        e.countUav.Reset();
+        return false;
+    }
+    D3D11_BUFFER_DESC sd{};
+    sd.ByteWidth = 4;
+    sd.Usage = D3D11_USAGE_STAGING;
+    sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    for (auto& rb : e.readBack) {
+        if (FAILED(device->CreateBuffer(&sd, nullptr, &rb))) {
+            e.count.Reset();
+            e.countUav.Reset();
+            return false;
+        }
+    }
+    return true;
+}
+
+// The count of a few frames ago, when the GPU has it ready (never waited for); this frame's copied.
+void EffectPlayer::ReadBackCount(ID3D11DeviceContext* ctx, Emitter& e) {
+    const uint32_t slot = e.readBackNext;
+    if (e.readBackFilled[slot]) {
+        D3D11_MAPPED_SUBRESOURCE m{};
+        const HRESULT hr = ctx->Map(e.readBack[slot].Get(), 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &m);
+        if (hr == DXGI_ERROR_WAS_STILL_DRAWING) return;  // (not yet: this slot is kept, nothing copied this frame)
+        if (SUCCEEDED(hr)) {
+            e.alive = std::min<uint64_t>(*static_cast<const uint32_t*>(m.pData), e.capacity);
+            e.aliveKnown = true;
+            ctx->Unmap(e.readBack[slot].Get(), 0);
+        }
+    }
+    ctx->CopyResource(e.readBack[slot].Get(), e.count.Get());
+    e.readBackFilled[slot] = true;
+    e.readBackNext = (slot + 1) % 3;
 }
 
 void EffectPlayer::SetEmitting(bool on) {
@@ -457,16 +527,24 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
 
         ID3D11Buffer* cbs[2] = {e.emitterCb.Get(), e.paramsCb.Get()};
         ctx->CSSetConstantBuffers(0, 2, cbs);
-        ID3D11UnorderedAccessView* uavs[2] = {e.uav.Get(), e.trailsUav.Get()};
-        ctx->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
+        const bool counting = CountingAlive() && MakeCounter(device, e);
+        if (counting) {
+            const UINT zero[4] = {};
+            ctx->ClearUnorderedAccessViewUint(e.countUav.Get(), zero);
+        } else {
+            e.aliveKnown = false;
+        }
+        ID3D11UnorderedAccessView* uavs[3] = {e.uav.Get(), e.trailsUav.Get(), counting ? e.countUav.Get() : nullptr};
+        ctx->CSSetUnorderedAccessViews(0, 3, uavs, nullptr);
         if (born > 0) {
             ctx->CSSetShader(e.programs->spawn.Get(), nullptr, 0);
             ctx->Dispatch((born + kThreads - 1) / kThreads, 1, 1);
         }
         ctx->CSSetShader(e.programs->update.Get(), nullptr, 0);
         ctx->Dispatch((e.capacity + kThreads - 1) / kThreads, 1, 1);
-        ID3D11UnorderedAccessView* noUavs[2] = {};
-        ctx->CSSetUnorderedAccessViews(0, 2, noUavs, nullptr);
+        ID3D11UnorderedAccessView* noUavs[3] = {};
+        ctx->CSSetUnorderedAccessViews(0, 3, noUavs, nullptr);
+        if (counting) ReadBackCount(ctx, e);
         ctx->CSSetShader(nullptr, nullptr, 0);
         e.head = (e.head + born) % e.capacity;
         e.serial += born;
@@ -528,6 +606,18 @@ void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view, con
 }
 
 std::string EffectPlayer::Error(size_t emitter) const { return emitter < emitters_.size() ? emitters_[emitter]->error : std::string(); }
+
+EffectPlayer::Census EffectPlayer::Count() const {
+    Census c;
+    for (const auto& e : emitters_) {
+        if (!e->data->enabled || e->broken || !e->particles) continue;
+        ++c.emitters;
+        c.capacity += e->capacity;
+        c.alive += e->alive;
+        c.aliveKnown = c.aliveKnown && e->aliveKnown;
+    }
+    return c;
+}
 
 bool EffectPlayer::Finished() const {
     for (const auto& e : emitters_) {

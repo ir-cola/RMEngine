@@ -247,6 +247,7 @@ bool CollideDepth(inout Particle p, float dt, float bounce, float friction, bool
 constexpr char kKernelsHead[] = R"(
 RWStructuredBuffer<Particle> Particles : register(u0);
 RWStructuredBuffer<float4> Trails : register(u1);  // TrailPoints per particle (a ring: trailHead the newest)
+RWByteAddressBuffer AliveCount : register(u2);      // the particles alive after the update (bound only while counted)
 
 [numthreads(64, 1, 1)]
 void SpawnMain(uint3 id : SV_DispatchThreadID) {
@@ -296,6 +297,7 @@ constexpr char kDrawing[] = R"(    if (p.alive != 0) {
         }
     }
     Particles[id.x] = p;
+    if (p.alive != 0) AliveCount.InterlockedAdd(0, 1);
 }
 
 StructuredBuffer<Particle> Drawn : register(t0);

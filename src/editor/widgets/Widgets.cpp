@@ -416,6 +416,18 @@ void ProgressBar(ui::Context& c, const Rect& r, float fraction) {
     if (f > 0.f) DrawSurface(c, {r.x, r.y, std::max(r.h, r.w * f), r.h}, Surface::Accent, radius);
 }
 
+void InfoRow(ui::Context& c, const Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth, bool lit) {
+    ui::TextStyle ls;
+    ls.size = 12;
+    ls.color = theme::TextDim;
+    ls.v = ui::VAlign::Center;
+    const float lw = std::min(labelWidth, r.w * 0.5f);
+    c.P().Text({r.x, r.y, lw - 6, r.h}, label, ls);
+    ui::TextStyle vs = ls;
+    vs.color = lit ? theme::Accent : theme::Text;
+    c.P().Text({r.x + lw, r.y, r.w - lw, r.h}, value, vs);
+}
+
 bool IconButton(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon, bool enabled) {
     ui::Context::ButtonResult b;
     if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);

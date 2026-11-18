@@ -257,9 +257,9 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         const size_t r = RowOf(items, rows, st.scrollTo);
         if (r != npos) {
             float& off = c.FloatState(c.MakeId(kScrollId));
-            const float top = kTop + kRowH * static_cast<float>(r);
-            if (top < off) off = top;
-            if (top + kRowH > off + view.h) off = top + kRowH - view.h + kTop;
+            const float rowTop = kTop + kRowH * static_cast<float>(r);
+            if (rowTop < off) off = rowTop;
+            if (rowTop + kRowH > off + view.h) off = rowTop + kRowH - view.h + kTop;
         }
         st.scrollTo = 0;
     }

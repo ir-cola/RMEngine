@@ -16,6 +16,7 @@
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "platform/Shell.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_production/editor/DebugPanel.h"
 #include "rm_engine/game_production/editor/SceneSettingLook.h"
 #include "rm_engine/game_production/editor/GameScripts.h"
 #include "rm_engine/game_production/editor/SceneView.h"
@@ -61,6 +62,7 @@ constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
 constexpr char kExportPanel[] = "export";
 constexpr char kScenesPanel[] = "scenes";
+constexpr char kDebugPanel[] = "debug";
 constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" rows in the 階層's menu
 constexpr float kSpaceStripH = 34.f;   // the strip of spaces (3D / 2D) above the scene view
 
@@ -224,10 +226,24 @@ public:
     // --- Software ---------------------------------------------------------------------------
     std::vector<editor::dock::PanelType> Panels() override {
         std::vector<editor::dock::PanelType> panels{
-            {kSceneView, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawSceneView(c, r); }},
-            {kGameView, TrKey(L"ゲーム"), [this](ui::Context& c, const Rect& r) { DrawGameView(c, r); }},
+            {kSceneView, TrKey(L"シーン"),
+             [this](ui::Context& c, const Rect& r) {
+                 // (measured for the デバッグ panel: how often, and how long it takes)
+                 const double t0 = platform::NowSeconds();
+                 DrawSceneView(c, r);
+                 sceneMeter_.Frame(t0, (platform::NowSeconds() - t0) * 1000.0);
+                 sceneMouse_.reset();
+                 if (c.IsHovered(r)) sceneMouse_ = Vec2{c.In().mouseX - r.x, c.In().mouseY - r.y};
+             }},
+            {kGameView, TrKey(L"ゲーム"),
+             [this](ui::Context& c, const Rect& r) {
+                 const double t0 = platform::NowSeconds();
+                 DrawGameView(c, r);
+                 gameMeter_.Frame(t0, (platform::NowSeconds() - t0) * 1000.0);
+             }},
             {kExportPanel, TrKey(L"書き出し"), [this](ui::Context& c, const Rect& r) { DrawExportPanel(c, r); }},
             {kScenesPanel, TrKey(L"シーンの一覧"), [this](ui::Context& c, const Rect& r) { DrawScenesPanel(c, r); }},
+            {kDebugPanel, TrKey(L"デバッグ"), [this](ui::Context& c, const Rect& r) { DrawDebugPanel(c, r); }},
         };
         // Panels the plugins add (ゲーム UI: the UI view) - not of a space.
         for (const auto& p : host_.Registry().Contributions<ViewPanelInfo>(kViewPanelPoint)) {
@@ -236,6 +252,29 @@ public:
             panels.push_back({info->id, info->title ? info->title : L"", [this, info](ui::Context& c, const Rect& r) { DrawViewPanel(c, r, *info); }});
         }
         return panels;
+    }
+
+    // デバッグ: the frames of the views and of Play, the mouse, the pads, the scene, the PC (DebugPanel.h).
+    void DrawDebugPanel(ui::Context& c, const Rect& r) {
+        const double now = platform::NowSeconds();
+        DebugView v;
+        v.registry = &host_.Registry();
+        v.gfx = &host_.Graphics();
+        v.scene = &Shown();
+        v.settings = &settings_;
+        v.playing = Running();
+        v.paused = play_ == PlayState::Paused;
+        if (v.playing) {
+            v.world = &scripts_.World();
+            v.runner = &runner_;
+        }
+        v.sceneView = sceneMeter_.Over(now);
+        v.gameView = gameMeter_.Over(now);
+        v.update = updateMeter_.Over(now);
+        v.sceneMouse = sceneMouse_;
+        v.gameMouse = pointer_;
+        v.scriptTypes = scripts_.Module().Types().size();
+        debugPanel_.Draw(c, r, v);
     }
 
     // A panel a plugin added: its view, made the first time it is drawn (its state kept like the scene
@@ -264,7 +303,7 @@ public:
         }
         auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({cp::kHierarchy, kScenesPanel}),
                                l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf(views), l.MakeLeaf({cp::kInspector})));
-        l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets, kExportPanel}));
+        l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets, kExportPanel, kDebugPanel}));
         return l;
     }
 
@@ -739,7 +778,9 @@ public:
             // too) - a press only over the game view.
             pointerWentDown_ = mouseInGame_ && c.In().pressed[0];
             pointerWentUp_ = c.In().released[0];
+            const double t0 = platform::NowSeconds();
             AdvancePlay(dt);
+            updateMeter_.Frame(t0, (platform::NowSeconds() - t0) * 1000.0);
             mouseInGame_ = false;  // (the game view says it again when it is drawn)
             c.RequestAnimation();
         }
@@ -2966,6 +3007,11 @@ private:
     std::vector<Kept> kept_;            // この値を残す: written back at Stop
     std::vector<std::pair<Kept, json::Value>> keptLeft_;  // ... their values when the scene from before Play was left (Game::LoadScene)
     bool mouseInGame_ = false;          // the mouse over the game view (its last drawing)
+    // The デバッグ panel and what it shows: how often the views are drawn and Play's frames run, the mouse
+    // over the scene view.
+    DebugPanel debugPanel_;
+    FrameMeter sceneMeter_, gameMeter_, updateMeter_;
+    std::optional<Vec2> sceneMouse_;
     std::optional<Vec2> pointer_;       // ... on the game screen (DIPs of the game settings' 画面); nullopt: not over it
     bool pointerWentDown_ = false, pointerWentUp_ = false;  // this frame's left button presses (PlayFrame)
     std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // over the game view (the game UI)

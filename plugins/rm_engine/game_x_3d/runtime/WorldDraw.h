@@ -47,6 +47,8 @@ struct WorldDrawFrame {
     std::function<std::string(const AssetRef&)> name;
     // What the plugins offer (a drawer may ask other plugins for more: パーティクル the collision shapes).
     const RuntimeRegistry* registry = nullptr;
+    // Which picture this is, for the debug panel: "scene" / "game" / "preview" (null: the exported game's).
+    const char* picture = nullptr;
 };
 
 class WorldDrawer {

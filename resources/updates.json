@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲーム制作に「デバッグ」のパネル: シーンビューとゲームビューの FPS・マウスの座標・押しているキーとコントローラーのボタン・スティック・入力のアクションの値・エンティティと部品の数・パーティクルの粒の数・モニターの名前と解像度・GPU とメモリ",
+          "en": "Game production has a Debug panel: the FPS of the scene and game views, the mouse position, keys and controller buttons and sticks held, input action values, entity and component counts, the number of particles, monitor names and resolutions, the GPU and memory"
+        },
+        {
           "ja": "スクリプトに コルーチン (co_await で待つ)・タイマー・イベント (OnEvent)・時間の速さ・タグとレイヤー・親子の付け替え・LookAt・数学 (Vec3 の計算・クォータニオン・乱数)・マウス・プレイヤーごとのゲームパッドと振動・遊ぶ人が変えられるキーの割り当て・パーティクルとスプライトのアニメーションの操作 を足した。エンティティに「タグ」「レイヤー」の欄",
           "en": "Scripts now have coroutines (wait with co_await), timers, events (OnEvent), time scale, tags and layers, re-parenting, LookAt, math (vector math, quaternions, random numbers), the mouse, game pads per player with vibration, key bindings the player can change, and control of particles and sprite animations. Entities have Tag and Layer fields"
         },
