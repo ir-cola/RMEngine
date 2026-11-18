@@ -48,6 +48,7 @@
 #include "rm_engine/space3d/runtime/Primitives.h"
 #include "rm_engine/space3d/runtime/SkyShader.h"
 #include "rm_engine/space3d/runtime/TexturePixels.h"
+#include "rm_engine/space3d/runtime/TextureSampling.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <d3d11.h>
@@ -98,16 +99,28 @@ private:
 // A picture on the GPU (Renderer::UploadTexture).
 class GpuTexture {
 public:
-    uint32_t width = 0, height = 0;
+    uint32_t width = 0, height = 0;  // the picture's (its largest level, on the GPU or not)
     bool srgb = false;  // read as colours (sRGB -> linear) or as numbers
-    bool sharp = false;  // drawn with the nearest pixel (no smoothing): the image's import setting
-    size_t bytes = 0;    // on the GPU, its mipmaps included
+    TextureSampling sampling;  // フィルタ・端の扱い・ストリーミング: the image's import settings
+    uint32_t levels = 0;       // its mipmaps (1: none)
+    mutable size_t bytes = 0;  // on the GPU now, its mipmaps included (less while streamed far away)
     TextureFormat format = TextureFormat::Rgba8;  // how it is kept (BC: compressed)
     uint64_t madeBy = 0;  // the Renderer::Id that made it (another one - a GPU made again - cannot use it)
+    // Streamed: the first level on the GPU now (0: all of them).
+    uint32_t TopLevel() const { return stream_ ? stream_->top : 0; }
 
 private:
     friend class Renderer;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
+    mutable Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
+    // ミップマップ・ストリーミング (the Renderer's, on the drawing thread): every level kept here, the
+    // GPU holding levels top .. the last. `want`: the finest level a draw asked for lately, at `wantAt`.
+    struct Stream {
+        std::shared_ptr<const TexturePixels> pixels;
+        uint32_t top = 0;
+        uint32_t want = 0;
+        double wantAt = -1e9;
+    };
+    mutable std::unique_ptr<Stream> stream_;
 };
 
 // How one material of a model is painted (MeshMaterial on the GPU; a null picture: the numbers only).
@@ -199,10 +212,11 @@ public:
     std::shared_ptr<const GpuMesh> Upload(const MeshData& mesh, std::string* error);
     // A picture (PixelOrder::Rgba) goes to the GPU once, with its mipmaps; null (and *error) when it
     // cannot. srgb: a colour picture (read as linear light); false: numbers (metal / rough, normals).
-    // sharp: drawn with the nearest pixel (dot pictures: the image's import setting) instead of smoothed.
-    std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, bool sharp = false);
-    // The same with the mipmaps already made (the quick part: only the copy to the GPU).
-    std::shared_ptr<const GpuTexture> UploadTexture(const TexturePixels& pixels, std::string* error, bool sharp = false);
+    // sampling: the image's import settings (TextureSampling.h: くっきり / 滑らか, the wrap, streamed).
+    std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, const TextureSampling& sampling = {});
+    // The same with the mipmaps already made (the quick part: only the copy to the GPU). Streamed: only
+    // the small levels go now; Render adds finer ones as the picture comes near (and lets them go).
+    std::shared_ptr<const GpuTexture> UploadTexture(const TexturePixels& pixels, std::string* error, const TextureSampling& sampling = {});
     // A sky's shaders from its whole HLSL (AssembleSky): compiled once per device and text - the same
     // text gives the same program (every renderer on the device shares it while it is used). Null and
     // *error (the compiler's messages: the file and line of the sky's code) when it cannot be made.
@@ -269,6 +283,9 @@ private:
     void Emit(const GpuMesh* mesh, uint32_t firstIndex, uint32_t indexCount, uint32_t slot, const DrawMaterial* material);
     // A number for each different set of pictures (0: none), for DrawKey::material.
     uint32_t PictureSet(const DrawMaterial* material);
+    // ミップマップ・ストリーミング: the levels each streamed picture needs for this frame's seen things
+    // (their size on the screen), put on the GPU or let go (after a while) - before anything is drawn.
+    void Stream(const RenderFrame& f, const Vec3& eye);
 
     template <class T>
     using Ptr = Microsoft::WRL::ComPtr<T>;
@@ -284,6 +301,7 @@ private:
     Ptr<ID3D11ShaderResourceView> thingsView_;
     size_t thingsCapacity_ = 0, drawsCapacity_ = 0;
     std::vector<Item> items_;
+    std::unordered_map<const GpuTexture*, uint32_t> streamSeen_;  // Stream: the finest level each is seen at this frame
     std::vector<Cmd> cmds_;
     size_t mergeFloor_ = 0;
     std::vector<DrawKey> keys_;

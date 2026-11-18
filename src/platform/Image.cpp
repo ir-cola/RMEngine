@@ -79,6 +79,18 @@ std::optional<Image> DecodeImage(IWICImagingFactory* wic, std::span<const uint8_
     return img;
 }
 
+std::optional<std::pair<uint32_t, uint32_t>> ImageFileSize(IWICImagingFactory* wic, const std::filesystem::path& file) {
+    if (!wic) return std::nullopt;
+    Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
+    Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+    UINT w = 0, h = 0;
+    if (FAILED(wic->CreateDecoderFromFilename(file.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) ||
+        FAILED(decoder->GetFrame(0, &frame)) || FAILED(frame->GetSize(&w, &h))) {
+        return std::nullopt;
+    }
+    return std::make_pair(static_cast<uint32_t>(w), static_cast<uint32_t>(h));
+}
+
 std::optional<Image> LoadImageFile(IWICImagingFactory* wic, const std::filesystem::path& file, PixelOrder order, Fit fit,
                                    std::string* error) {
     std::error_code ec;

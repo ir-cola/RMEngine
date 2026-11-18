@@ -314,7 +314,7 @@ private:
             ImageEntry::Arrived got;
             // The image's import settings (its .meta): くっきり, and how big it may be.
             const auto imp = asset::ReadImport<asset::ImageImport>(file);
-            got.sharp = imp.sharp;
+            got.sharp = imp.filter == asset::TextureFilter::Sharp;
             const uint32_t most = std::min<uint32_t>(kMaxImageSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
             IWICImagingFactory* wic = platform::ThreadImagingFactory();
             // (the file's own size first: a picture bigger than a bitmap is scaled down, the sprite keeps its size)

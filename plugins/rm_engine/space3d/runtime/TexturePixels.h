@@ -38,6 +38,15 @@ struct TexturePixels {
 
 // Colour pictures are averaged as light (sRGB -> linear -> back, by tables), so smaller copies do not
 // darken; numbers (and alpha) are averaged as they are. Empty levels when the picture is empty.
-TexturePixels MakeTexturePixels(platform::Image rgba, bool srgb);
+// The image's import settings for its smaller copies (ImageImport: ミップマップ・透明部分を保つ).
+struct MipOptions {
+    bool mipmaps = true;     // false: only the picture itself (one level)
+    float keepCoverage = 0;  // > 0: each smaller copy's alpha is scaled so that as many texels as in the
+                             // picture are at least this (cut-out leaves and fences do not fade away)
+};
+TexturePixels MakeTexturePixels(platform::Image rgba, bool srgb, const MipOptions& options = {});
+
+// How much of the picture (0 .. 1) has alpha at least `cutoff` (0 .. 1).
+float AlphaCoverage(const platform::Image& rgba, float cutoff);
 
 }  // namespace rm::space3d

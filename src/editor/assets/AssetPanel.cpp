@@ -6,8 +6,12 @@
 #include "core/reflect/Data.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
+#include "platform/Image.h"
 
 #include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <format>
 #include <cmath>
 
 namespace rm::editor {
@@ -245,6 +249,13 @@ std::vector<tree::Action> AssetPanel::Actions(std::span<const tree::ItemId> sele
             for (tree::Action& a : PreviewActions(lib_, PreviewFor(*registry_, asset::KindOf(e->path, e->folder)), guids[0])) list.push_back(std::move(a));
         }
     }
+    // The asset's details and import settings in the インスペクター (as choosing it shows them - also when
+    // the インスペクター shows something else since).
+    tree::Action details;
+    details.label = Tr(L"詳しく見る (インスペクター)");
+    details.enabled = guids.size() == 1 && static_cast<bool>(inspect_);
+    details.run = [this] { InspectSelected(); };
+    list.push_back(std::move(details));
     tree::Action show;
     show.label = Tr(L"エクスプローラーで表示");
     show.enabled = guids.size() == 1;
@@ -343,6 +354,29 @@ void AssetPanel::InspectSelected() {
     } else {
         view_->object = {};
     }
+    // What the file is: its size on the disk, when it was changed, and a picture's size in pixels.
+    std::wstring facts;
+    if (!e->folder) {
+        const std::filesystem::path full = lib_.FullPath(*e);
+        std::error_code ec;
+        const uintmax_t bytes = std::filesystem::file_size(full, ec);
+        const auto changed = std::filesystem::last_write_time(full, ec);
+        if (!ec) {
+            const auto sys = std::chrono::clock_cast<std::chrono::system_clock>(changed);
+            const std::time_t t = std::chrono::system_clock::to_time_t(sys);
+            std::tm local{};
+            localtime_s(&local, &t);
+            const double kb = static_cast<double>(bytes) / 1024.0;
+            const std::wstring size = kb < 1024.0 ? std::format(L"{:.1f} KB", kb) : std::format(L"{:.1f} MB", kb / 1024.0);
+            facts = TrF(L"ファイル {}  ·  変更 {}", size,
+                        std::format(L"{}/{:02}/{:02} {:02}:{:02}", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min));
+        }
+        if (kind == asset::Kind::Image) {
+            if (const auto px = platform::ImageFileSize(platform::ThreadImagingFactory(), full)) {
+                facts += L"\n" + TrF(L"{} x {} ピクセル", px->first, px->second);
+            }
+        }
+    }
     Inspectable target;
     target.title = lib_.NameOf(*e);
     AssetLibrary* lib = &lib_;
@@ -350,12 +384,13 @@ void AssetPanel::InspectSelected() {
     auto push = push_;
     const AssetPreview* preview = registry_ ? PreviewFor(*registry_, kind) : nullptr;
     std::function<void()> known = described_ ? described_->Signal() : std::function<void()>();
-    target.blocks = [lib, view, guid, type, push, preview, known] {
+    target.blocks = [lib, view, guid, type, push, preview, known, facts] {
         std::vector<InspectBlock> blocks;
         const asset::Entry* now = lib->Index().ByGuid(guid);
         if (!now) return blocks;  // deleted: nothing is shown
         InspectBlock info;
         info.note = KindLabel(asset::KindOf(now->path, now->folder)) + L"  ·  Assets/" + Utf8ToWide(now->path) + L"\nID " + Utf8ToWide(guid);
+        if (!facts.empty()) info.note += L"\n" + facts;
         if (preview && preview->describe) {
             // (a sound: its length and form - and 「鳴らしてみる」 in the block's ⋮ menu)
             if (const std::wstring line = preview->describe(lib->FullPath(*now), known); !line.empty()) info.note += L"\n" + line;

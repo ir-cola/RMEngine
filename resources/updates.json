@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "画像の取り込みの設定に フィルタ (滑らか / くっきり)・端の扱い (繰り返し / 端で止める / 鏡のように反転)・ミップマップのオン・オフ・透明部分を保つ・ミップマップ・ストリーミング を足した。アセットの右クリックの「詳しく見る」とファイルの大きさ・ピクセル数",
+          "en": "Image import settings now have Filter (smooth / crisp), Edges (repeat / clamp / mirror), Mipmaps on/off, Preserve coverage and Mipmap streaming. Assets have Show details in the right-click menu, with the file size and pixel size"
+        },
+        {
           "ja": "パーティクルの絵にもミップマップ: 大きな画像を小さな粒や遠くの粒に使ってもちらつかない",
           "en": "Particle images now have mipmaps too: a big picture on small or far particles no longer shimmers"
         },

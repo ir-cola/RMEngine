@@ -21,6 +21,7 @@
 #include "rm_engine/space3d/runtime/BlockCompress.h"
 #include "rm_engine/space3d/runtime/TextureFile.h"
 #include "rm_engine/space3d/runtime/TexturePixels.h"
+#include "rm_engine/space3d/runtime/TextureSampling.h"
 #include "rm_engine/space3d/runtime/UploadSlice.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -868,6 +869,65 @@ RM_TEST(Space3d_BackToFront) {
     const std::vector<Vec3> centers{{0, 0, 5}, {0, 0, -5}, {0, 0, 0}, {5, 0, 10}, {0, 0, 0}};
     CHECK(BackToFront(centers, eye) == std::vector<size_t>({1, 2, 4, 0, 3}));
     CHECK(BackToFront({}, eye).empty());
+}
+
+namespace {
+
+// A 64 x 64 picture whose alpha is spread over 0 .. 255 (a fixed sequence, not a pattern).
+platform::Image Speckled() {
+    platform::Image img;
+    img.width = img.height = 64;
+    img.pixels.resize(64 * 64 * 4);
+    uint32_t x = 12345;
+    for (size_t i = 0; i < 64 * 64; ++i) {
+        x = x * 1664525u + 1013904223u;
+        img.pixels[i * 4 + 0] = img.pixels[i * 4 + 1] = img.pixels[i * 4 + 2] = 200;
+        img.pixels[i * 4 + 3] = static_cast<uint8_t>(x >> 24);
+    }
+    return img;
+}
+
+}  // namespace
+
+RM_TEST(TexturePixels_NoMipmapsAndKeptCoverage) {
+    // ミップマップ off: the picture alone.
+    const TexturePixels one = MakeTexturePixels(Speckled(), true, {false, 0});
+    CHECK(one.levels.size() == 1 && one.levels[0].width == 64);
+    // 透明部分を保つ: averaged, few texels reach 0.8 in the smaller copies (cut-outs fade away); kept,
+    // each copy covers about as much as the picture.
+    const float cutoff = 0.8f;
+    const float whole = AlphaCoverage(Speckled(), cutoff);
+    CHECK(whole > 0.15f && whole < 0.25f);
+    const TexturePixels plain = MakeTexturePixels(Speckled(), true);
+    const TexturePixels kept = MakeTexturePixels(Speckled(), true, {true, cutoff});
+    CHECK(plain.levels.size() == 7 && kept.levels.size() == 7);
+    CHECK(AlphaCoverage(plain.levels[1], cutoff) < whole * 0.5f);
+    for (size_t i = 1; i <= 3; ++i) CHECK(std::abs(AlphaCoverage(kept.levels[i], cutoff) - whole) < 0.06f);
+    CHECK(kept.levels[0].pixels == plain.levels[0].pixels);  // the picture itself as it is
+    CHECK(kept.levels[1].pixels[0] == plain.levels[1].pixels[0]);  // only the alpha changes
+}
+
+RM_TEST(TextureSampling_PackedInOneByte) {
+    // Every filter / wrap / streamed comes back; a byte of a file from before (0 / 1: くっきり) reads the same.
+    for (const auto filter : {asset::TextureFilter::Smooth, asset::TextureFilter::Sharp}) {
+        for (const auto wrap : {asset::TextureWrap::Repeat, asset::TextureWrap::Clamp, asset::TextureWrap::Mirror}) {
+            for (const bool streamed : {false, true}) {
+                const TextureSampling s{filter, wrap, streamed};
+                CHECK(UnpackSampling(PackSampling(s)) == s);
+                CHECK(SamplerIndex(s) < kSamplerCount);
+            }
+        }
+    }
+    CHECK(UnpackSampling(0) == TextureSampling{});
+    CHECK(UnpackSampling(1) == (TextureSampling{asset::TextureFilter::Sharp, asset::TextureWrap::Repeat, false}));
+    // From the import settings: streaming only with mipmaps; the coverage only when asked.
+    asset::ImageImport imp;
+    imp.streaming = true;
+    imp.mipmaps = false;
+    imp.keepCoverage = true;
+    CHECK(!SamplingOf(imp).streamed && !MipOptionsOf(imp).mipmaps && MipOptionsOf(imp).keepCoverage == 0.f);
+    imp.mipmaps = true;
+    CHECK(SamplingOf(imp).streamed && MipOptionsOf(imp).keepCoverage == 0.5f);
 }
 
 RM_TEST(TexturePixels_MipmapsAveragedAsLight) {

@@ -183,8 +183,8 @@ private:
         if (!first) return it->second.gpu ? &it->second : nullptr;
         std::string err;
         const auto bytes = f.asset(ref);
-        std::vector<bool> sharp;  // per image: drawn くっきり (its import setting)
-        const auto mesh = bytes ? space3d::ReadBakedMesh(*bytes, &err, &sharp) : std::nullopt;
+        std::vector<space3d::TextureSampling> sampling;  // per image: how it is read (its import settings)
+        const auto mesh = bytes ? space3d::ReadBakedMesh(*bytes, &err, &sampling) : std::nullopt;
         if (!mesh) {
             log::Warn("モデルを読めないので箱で描きます ({}): {}", ref.guid, bytes ? err : std::string("ゲームに入っていません"));
             return nullptr;
@@ -214,7 +214,7 @@ private:
                     pixels->format = space3d::TextureFormat::Rgba8;
                 }
                 const size_t image = static_cast<size_t>(slots[slot].image);
-                if (auto tex = renderer_.UploadTexture(*pixels, &err, image < sharp.size() && sharp[image])) {
+                if (auto tex = renderer_.UploadTexture(*pixels, &err, image < sampling.size() ? sampling[image] : space3d::TextureSampling{})) {
                     space3d::SetPicture(d, slot, std::move(tex));
                     ++pictures;
                 } else {

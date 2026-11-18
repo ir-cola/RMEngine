@@ -246,6 +246,21 @@ RM_TEST(Asset_ImportSettingsInMeta) {
     CHECK(ImportTypeOf(Kind::Text) == nullptr && ImportTypeOf(Kind::Folder) == nullptr);
 }
 
+RM_TEST(Asset_ImportSettings_OldSharpIsTheFilter) {
+    // Before 2026-11-18 an image's filter was "sharp": true / false. Read as "filter"; one already
+    // there wins; the old key is gone (written back without it).
+    const json::Value dots = ImportInMeta(R"({"guid": "0000000000000abc0000000000000001", "import": {"sharp": true, "maxSize": 512}})");
+    CHECK(dots.Get("filter").AsString() == "Sharp" && dots.Get("sharp").IsNull() && dots.Get("maxSize").AsInt() == 512);
+    CHECK(ImportInMeta(R"({"import": {"sharp": false}})").Get("filter").AsString() == "Smooth");
+    CHECK(ImportInMeta(R"({"import": {"sharp": false, "filter": "Sharp"}})").Get("filter").AsString() == "Sharp");
+    ImageImport img;
+    reflect::Load(img, dots);
+    CHECK(img.filter == TextureFilter::Sharp && img.wrap == TextureWrap::Repeat && img.mipmaps && !img.keepCoverage && !img.streaming);
+    // The defaults: smooth, repeated, with mipmaps.
+    const ImageImport plain;
+    CHECK(plain.filter == TextureFilter::Smooth && plain.mipmaps && plain.coverageCutoff == 0.5f);
+}
+
 RM_TEST(Asset_ImportSettingsOnDisk) {
     namespace fs = std::filesystem;
     std::error_code ec;

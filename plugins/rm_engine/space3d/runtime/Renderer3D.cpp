@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <cmath>
 #include <cstring>
 #include <format>
 #include <mutex>
@@ -462,14 +464,18 @@ struct Renderer::Shared {
     Ptr<ID3D11RasterizerState> raster, shadowRaster;
     Ptr<ID3D11DepthStencilState> depth, depthNoWrite, depthClear, depthBehind;
     Ptr<ID3D11BlendState> blend;
-    Ptr<ID3D11SamplerState> textureSampler;  // pictures: repeat, smooth, mipmapped
-    Ptr<ID3D11SamplerState> sharpSampler;    // pictures set to くっきり (import setting): the nearest pixel
+    // Pictures: one for each フィルタ and 端の扱い (the image's import settings - TextureSampling.h's
+    // SamplerIndex): 滑らか = smooth, mipmapped and anisotropic; くっきり = the nearest pixel (mipmapped far away).
+    std::array<Ptr<ID3D11SamplerState>, kSamplerCount> samplers;
     Ptr<ID3D11SamplerState> shadowSampler;
     // The sky: its constant buffer (b3), a sampler stopping at the edges (one of six pictures), the
     // depth test off (drawn first, writing nothing), and the programs made so far by their text.
     Ptr<ID3D11Buffer> skyFrame, weather;
     Ptr<ID3D11SamplerState> edgeSampler;
     Ptr<ID3D11DepthStencilState> depthOff;
+    // ミップマップ・ストリーミング: the streamed pictures made on this device (Renderer::Stream).
+    std::mutex streamMutex;
+    std::vector<std::weak_ptr<const GpuTexture>> streamed;
     std::mutex skyMutex;
     std::unordered_map<std::string, std::weak_ptr<const SkyProgram>> skies;
     // The shadow maps (depth seen from the lights): the sun's (1, or kCascades) and the point / spot
@@ -524,7 +530,7 @@ bool SamePictures(const DrawMaterial* a, const DrawMaterial* b) {
     return true;  // (the sampler follows the colour picture, the same one)
 }
 
-const char kSharp = 0;  // PictureSet's mark for a くっきり colour picture
+const char kSamplerMark[kSamplerCount] = {};  // PictureSet's mark for the colour picture's sampler
 
 std::atomic<uint64_t> g_meshSerial{0};  // GpuMesh::serial: never the same twice
 
@@ -622,9 +628,6 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     ts.AddressU = ts.AddressV = ts.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;  // UVs past 0..1 repeat the picture
     ts.ComparisonFunc = D3D11_COMPARISON_NEVER;
     ts.MaxLOD = D3D11_FLOAT32_MAX;
-    D3D11_SAMPLER_DESC tp = ts;  // くっきり: the nearest pixel (the smaller copies still far away)
-    tp.Filter = D3D11_FILTER_MIN_MAG_POINT_MIP_LINEAR;
-    tp.MaxAnisotropy = 1;
     // Compares the pixel's depth with the map's, blending the answers of the 2 x 2 texels around it.
     // Outside the map the depth is 1 (the farthest): nothing there casts a shadow.
     D3D11_SAMPLER_DESC ss{};
@@ -636,9 +639,18 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     if (FAILED(device->CreateRasterizerState(&rd, &raster)) || FAILED(device->CreateRasterizerState(&sd, &shadowRaster)) ||
         FAILED(device->CreateDepthStencilState(&dd, &depth)) || FAILED(device->CreateDepthStencilState(&dn, &depthNoWrite)) ||
         FAILED(device->CreateDepthStencilState(&db, &depthBehind)) ||
-        FAILED(device->CreateDepthStencilState(&dc, &depthClear)) || FAILED(device->CreateBlendState(&bl, &blend)) ||
-        FAILED(device->CreateSamplerState(&ts, &textureSampler)) || FAILED(device->CreateSamplerState(&tp, &sharpSampler))) {
+        FAILED(device->CreateDepthStencilState(&dc, &depthClear)) || FAILED(device->CreateBlendState(&bl, &blend))) {
         return fail("描画の設定");
+    }
+    for (size_t k = 0; k < kSamplerCount; ++k) {
+        D3D11_SAMPLER_DESC d = ts;
+        if (k >= 3) {  // くっきり: the nearest pixel (the smaller copies still far away)
+            d.Filter = D3D11_FILTER_MIN_MAG_POINT_MIP_LINEAR;
+            d.MaxAnisotropy = 1;
+        }
+        static constexpr D3D11_TEXTURE_ADDRESS_MODE kWrap[3] = {D3D11_TEXTURE_ADDRESS_WRAP, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE_ADDRESS_MIRROR};
+        d.AddressU = d.AddressV = d.AddressW = kWrap[k % 3];
+        if (FAILED(device->CreateSamplerState(&d, &samplers[k]))) return fail("描画の設定");
     }
     if (FAILED(device->CreateSamplerState(&ss, &shadowSampler))) return fail("影");
     cd.ByteWidth = sizeof(SkyConstants);
@@ -841,11 +853,67 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     return gpu;
 }
 
-std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, bool sharp) {
-    return UploadTexture(MakeTexturePixels(rgba, srgb), error, sharp);
+std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, const TextureSampling& sampling) {
+    return UploadTexture(MakeTexturePixels(rgba, srgb), error, sampling);
 }
 
-std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const TexturePixels& pixels, std::string* error, bool sharp) {
+namespace {
+
+// ミップマップ・ストリーミング: the levels this small (or smaller) are always on the GPU.
+constexpr uint32_t kStreamAlwaysKept = 64;
+// A finer level asked for is kept this long after the last draw that needed it (seconds); one not
+// needed by any draw that long goes back to the always-kept levels.
+constexpr double kStreamKeepFine = 2.0;
+constexpr double kStreamForget = 5.0;
+// Finer levels put on the GPU in one frame at most (the rest the next frames).
+constexpr int kStreamUploadsPerFrame = 8;
+
+uint32_t SmallestKept(const TexturePixels& p) {
+    uint32_t k = 0;
+    while (k + 1 < p.levels.size() && std::max(p.levels[k].width, p.levels[k].height) > kStreamAlwaysKept) ++k;
+    return k;
+}
+
+double StreamClock() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+// Levels top .. the last of `pixels` as one texture on the GPU. False and *why when it cannot.
+bool MakeTextureView(ID3D11Device* device, const TexturePixels& pixels, uint32_t top, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& view,
+                     size_t& bytes, const char** why) {
+    std::vector<D3D11_SUBRESOURCE_DATA> init;
+    size_t total = 0;
+    for (size_t k = top; k < pixels.levels.size(); ++k) {
+        const platform::Image& l = pixels.levels[k];
+        if (l.pixels.size() < LevelBytes(pixels.format, l.width, l.height)) {
+            *why = "画像のデータが足りません";
+            return false;
+        }
+        init.push_back({l.pixels.data(), static_cast<UINT>(RowPitch(pixels.format, l.width)), 0});
+        total += l.pixels.size();
+    }
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = pixels.levels[top].width;
+    td.Height = pixels.levels[top].height;
+    td.MipLevels = static_cast<UINT>(init.size());
+    td.ArraySize = 1;
+    // sRGB forms: the GPU reads linear light. The numbers are DXGI_FORMAT's (TextureFile.h).
+    td.Format = static_cast<DXGI_FORMAT>(DxgiFormatOf(pixels.format, pixels.srgb));
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_IMMUTABLE;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> made;
+    if (FAILED(device->CreateTexture2D(&td, init.data(), &tex)) || FAILED(device->CreateShaderResourceView(tex.Get(), nullptr, &made))) {
+        *why = "画像を GPU に載せられませんでした (メモリーが足りない?)";
+        return false;
+    }
+    view = std::move(made);
+    bytes = total;
+    return true;
+}
+
+}  // namespace
+
+std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const TexturePixels& pixels, std::string* error, const TextureSampling& sampling) {
     auto fail = [&](const char* why) {
         if (error) *error = why;
         return nullptr;
@@ -857,34 +925,87 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const TexturePixels& p
         return fail("画像が大きすぎて GPU に載せられません");
     }
     if (pixels.format == TextureFormat::BC7 && !SupportsBC7()) return fail("この GPU は BC7 を読めません");
-    std::vector<D3D11_SUBRESOURCE_DATA> init;
-    for (const platform::Image& l : pixels.levels) {
-        if (l.pixels.size() < LevelBytes(pixels.format, l.width, l.height)) return fail("画像のデータが足りません");
-        init.push_back({l.pixels.data(), static_cast<UINT>(RowPitch(pixels.format, l.width)), 0});
-    }
-    D3D11_TEXTURE2D_DESC td{};
-    td.Width = top.width;
-    td.Height = top.height;
-    td.MipLevels = static_cast<UINT>(pixels.levels.size());
-    td.ArraySize = 1;
-    // sRGB forms: the GPU reads linear light. The numbers are DXGI_FORMAT's (TextureFile.h).
-    td.Format = static_cast<DXGI_FORMAT>(DxgiFormatOf(pixels.format, pixels.srgb));
-    td.SampleDesc.Count = 1;
-    td.Usage = D3D11_USAGE_IMMUTABLE;
-    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    Ptr<ID3D11Texture2D> tex;
     auto gpu = std::make_shared<GpuTexture>();
-    gpu->sharp = sharp;
-    if (FAILED(device_->CreateTexture2D(&td, init.data(), &tex)) || FAILED(device_->CreateShaderResourceView(tex.Get(), nullptr, &gpu->view))) {
-        return fail("画像を GPU に載せられませんでした (メモリーが足りない?)");
-    }
+    gpu->sampling = sampling;
     gpu->width = top.width;
     gpu->height = top.height;
     gpu->srgb = pixels.srgb;
     gpu->format = pixels.format;
+    gpu->levels = static_cast<uint32_t>(pixels.levels.size());
     gpu->madeBy = id_;
-    for (const platform::Image& l : pixels.levels) gpu->bytes += l.pixels.size();
+    // Streamed (and with smaller copies): only the always-kept small levels now; Render adds finer ones.
+    const bool streamed = sampling.streamed && pixels.levels.size() > 1;
+    const uint32_t first = streamed ? SmallestKept(pixels) : 0;
+    const char* why = nullptr;
+    if (!MakeTextureView(device_.Get(), pixels, first, gpu->view, gpu->bytes, &why)) return fail(why);
+    if (streamed) {
+        gpu->stream_ = std::make_unique<GpuTexture::Stream>();
+        gpu->stream_->pixels = std::make_shared<const TexturePixels>(pixels);
+        gpu->stream_->top = first;
+        gpu->stream_->want = first;
+        std::lock_guard lock(shared_->streamMutex);
+        shared_->streamed.push_back(gpu);
+    }
     return gpu;
+}
+
+void Renderer::Stream(const RenderFrame& f, const Vec3& eye) {
+    Shared& s = *shared_;
+    std::vector<std::shared_ptr<const GpuTexture>> all;
+    {
+        std::lock_guard lock(s.streamMutex);
+        if (s.streamed.empty()) return;
+        std::erase_if(s.streamed, [](const std::weak_ptr<const GpuTexture>& w) { return w.expired(); });
+        for (const auto& w : s.streamed) {
+            if (auto t = w.lock(); t && t->madeBy == id_) all.push_back(std::move(t));
+        }
+    }
+    if (all.empty()) return;
+    // The finest level each is seen at in this picture: the picture spread over the thing's size on
+    // the screen (its bounds' sphere), one level finer for pictures repeated over it.
+    const bool ortho = f.projection.m[3][3] == 1.f;
+    const float pixelsPerUnit = f.projection.m[1][1] * 0.5f * static_cast<float>(f.height);
+    streamSeen_.clear();
+    for (const Item& it : items_) {
+        if (!it.seen || it.materials.empty()) continue;
+        const Vec3 c = (it.bounds.min + it.bounds.max) * 0.5f;
+        const float r = Length(it.bounds.max - it.bounds.min) * 0.5f;
+        const float d = std::max(Length(c - eye) - r, 0.05f);
+        const float onScreen = std::max(1.f, 2.f * r * pixelsPerUnit / (ortho ? 1.f : d));
+        for (const DrawMaterial& m : it.materials) {
+            for (const GpuTexture* t : {m.texture.get(), m.metalRough.get(), m.normal.get(), m.emission.get()}) {
+                if (!t || !t->stream_) continue;
+                const float ratio = static_cast<float>(std::max(t->width, t->height)) / onScreen;
+                const uint32_t level = ratio <= 2.f ? 0u : static_cast<uint32_t>(std::floor(std::log2(ratio))) - 1u;
+                auto [at, added] = streamSeen_.try_emplace(t, level);
+                if (!added) at->second = std::min(at->second, level);
+            }
+        }
+    }
+    const double now = StreamClock();
+    int uploads = 0;
+    for (const auto& t : all) {
+        GpuTexture::Stream& st = *t->stream_;
+        const uint32_t smallest = SmallestKept(*st.pixels);
+        if (const auto at = streamSeen_.find(t.get()); at != streamSeen_.end()) {
+            const uint32_t level = std::min(at->second, smallest);
+            if (level <= st.want || now - st.wantAt > kStreamKeepFine) {
+                st.want = level;
+                st.wantAt = now;
+            }
+        } else if (now - st.wantAt > kStreamForget) {
+            st.want = smallest;  // not drawn for a while (by any renderer): only the small levels
+        }
+        if (st.want == st.top) continue;
+        if (st.want < st.top && uploads >= kStreamUploadsPerFrame) continue;
+        const char* why = nullptr;
+        size_t bytes = 0;
+        if (MakeTextureView(device_.Get(), *st.pixels, st.want, t->view, bytes, &why)) {
+            st.top = st.want;
+            t->bytes = bytes;
+            uploads += 1;
+        }
+    }
 }
 
 const GpuMesh* Renderer::ShapeOf(Shape shape) const {
@@ -1068,7 +1189,7 @@ void Renderer::Emit(const GpuMesh* mesh, uint32_t firstIndex, uint32_t indexCoun
 uint32_t Renderer::PictureSet(const DrawMaterial* m) {
     if (!m || (!m->texture && !m->metalRough && !m->normal && !m->emission)) return 0;
     const std::array<const void*, 5> key{m->texture.get(), m->metalRough.get(), m->normal.get(), m->emission.get(),
-                                         m->texture && m->texture->sharp ? static_cast<const void*>(&kSharp) : nullptr};
+                                         m->texture ? static_cast<const void*>(&kSamplerMark[SamplerIndex(m->texture->sampling)]) : nullptr};
     const auto [it, added] = pictureSets_.try_emplace(key, static_cast<uint32_t>(pictureSets_.size() + 1));
     return it->second;
 }
@@ -1102,6 +1223,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         eye = TransformPoint(*toWorld, {0, 0, 0});
         forward = Normalize(TransformDirection(*toWorld, {0, 0, -1}));
     }
+    Stream(f, eye);  // ミップマップ・ストリーミング: the levels the streamed pictures need now
     // The lights (none: the one default directional light; more than kMaxLights: the nearest and
     // brightest) and the ambient light.
     LightSetup lights = MakeLights(f.lights, f.lightDirection, f.ambient, eye);
@@ -1359,8 +1481,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
                 ID3D11ShaderResourceView* views[4] = {view(mat.texture.get()), view(mat.metalRough.get()), view(mat.normal.get()),
                                                       view(mat.emission.get())};
                 ctx->PSSetShaderResources(1, 4, views);
-                // (the colour picture decides: くっきり is the image's import setting)
-                ID3D11SamplerState* sampler = mat.texture && mat.texture->sharp ? s.sharpSampler.Get() : s.textureSampler.Get();
+                // (the colour picture decides: フィルタ and 端の扱い are the image's import settings)
+                ID3D11SamplerState* sampler = s.samplers[mat.texture ? SamplerIndex(mat.texture->sampling) : 0].Get();
                 ctx->PSSetSamplers(1, 1, &sampler);
                 pictures = cmd.material;
                 any = true;
@@ -1438,18 +1560,18 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->RSSetState(s.raster.Get());
     // The sky, behind everything: one triangle over the picture, the depth test off (nothing written).
     if (f.sky && f.sky->program) {
-        SkyConstants sc = f.sky->constants;
+        SkyConstants skyK = f.sky->constants;
         Mat4 turn = f.view;  // the camera's turn only: the sky is infinitely far
         turn.m[3][0] = turn.m[3][1] = turn.m[3][2] = 0;
         if (const auto inv = Inverse(f.projection * turn)) {
-            CopyMatrix(sc.invViewProj, *inv);
-            ctx->UpdateSubresource(s.skyFrame.Get(), 0, nullptr, &sc, 0, 0);
+            CopyMatrix(skyK.invViewProj, *inv);
+            ctx->UpdateSubresource(s.skyFrame.Get(), 0, nullptr, &skyK, 0, 0);
             ID3D11Buffer* skyCb = s.skyFrame.Get();
             ctx->PSSetConstantBuffers(3, 1, &skyCb);
             ID3D11ShaderResourceView* views[kSkyTextures] = {};
             for (size_t k = 0; k < kSkyTextures; ++k) views[k] = f.sky->textures[k] ? f.sky->textures[k]->view.Get() : nullptr;
             ctx->PSSetShaderResources(0, static_cast<UINT>(kSkyTextures), views);
-            ID3D11SamplerState* samplers[2] = {s.textureSampler.Get(), s.edgeSampler.Get()};
+            ID3D11SamplerState* samplers[2] = {s.samplers[0].Get(), s.edgeSampler.Get()};
             ctx->PSSetSamplers(1, 2, samplers);
             ctx->OMSetDepthStencilState(s.depthOff.Get(), 0);
             ctx->VSSetShader(f.sky->program->vs.Get(), nullptr, 0);

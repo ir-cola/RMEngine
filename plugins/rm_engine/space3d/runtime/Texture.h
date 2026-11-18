@@ -91,7 +91,7 @@ public:
         }
         std::optional<TexturePixels> pixels;  // nullopt: `error` says why (Japanese)
         std::string error;
-        bool sharp = false;      // the image's import setting (くっきり)
+        TextureSampling sampling;  // the image's import settings (フィルタ・端の扱い・ストリーミング)
         bool fromCache = false;  // read from the cache's .dds (not decoded and compressed again)
         double seconds = 0;      // how long the thread took
 

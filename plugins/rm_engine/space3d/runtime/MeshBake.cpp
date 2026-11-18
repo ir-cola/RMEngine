@@ -111,13 +111,13 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
     o.Chunk("SHRP", [&] {
         o.Put<uint32_t>(static_cast<uint32_t>(mesh.materials.size()));
         for (size_t i = 0; i < mesh.materials.size(); ++i) {
-            for (size_t s = 0; s < 4; ++s) o.Put<uint8_t>(i < pictures.size() && pictures[i].sharp[s] ? 1 : 0);
+            for (size_t s = 0; s < 4; ++s) o.Put<uint8_t>(i < pictures.size() ? PackSampling(pictures[i].sampling[s]) : 0);
         }
     });
     return o.bytes;
 }
 
-std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error, std::vector<bool>* sharpOfImage) {
+std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error, std::vector<TextureSampling>* samplingOfImage) {
     auto fail = [&](std::string msg) -> std::optional<MeshData> {
         if (error) *error = std::move(msg);
         return std::nullopt;
@@ -204,13 +204,13 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
             return fail("焼いたモデルの部分が壊れています");
         }
     }
-    if (sharpOfImage) {
-        sharpOfImage->assign(m.images.size(), false);
+    if (samplingOfImage) {
+        samplingOfImage->assign(m.images.size(), TextureSampling{});
         for (size_t i = 0; i < m.materials.size() && i < sharp.size(); ++i) {
             const MeshMaterial& mat = m.materials[i];
             const int slots[4] = {mat.image, mat.metallicRoughnessImage, mat.normalImage, mat.emissiveImage};
             for (size_t s = 0; s < 4; ++s) {
-                if (slots[s] >= 0 && sharp[i][s]) (*sharpOfImage)[static_cast<size_t>(slots[s])] = true;
+                if (slots[s] >= 0 && sharp[i][s]) (*samplingOfImage)[static_cast<size_t>(slots[s])] = UnpackSampling(sharp[i][s]);
             }
         }
     }

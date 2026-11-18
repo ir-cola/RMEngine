@@ -17,6 +17,7 @@
 // A chunk of a tag this version does not know is skipped (keys, as the design's rule for binary data).
 
 #include "rm_engine/space3d/runtime/Mesh.h"
+#include "rm_engine/space3d/runtime/TextureSampling.h"
 
 #include <array>
 #include <optional>
@@ -29,18 +30,18 @@ namespace rm::space3d {
 inline constexpr uint32_t kBakedMeshFormat = 1;
 
 // A material's 4 pictures (the slots of Texture.h: colour, metal / rough, normal, emission) as paths,
-// and whether each is drawn くっきり (the nearest texel: the picture's import setting).
+// and how each is read (its import settings: フィルタ・端の扱い・ストリーミング - one byte each, PackSampling).
 struct BakedPictures {
     std::array<std::string, 4> path;
-    std::array<bool, 4> sharp{};
+    std::array<TextureSampling, 4> sampling{};
 };
 
 // `pictures`: one per material of `mesh` (missing ones: none).
 std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures>& pictures);
 
 // The mesh, its materials' pictures given as images whose `file` is the path (one image per path);
-// `sharpOfImage` (optional) gets, per image, whether it is drawn くっきり. nullopt and *error (Japanese)
+// `samplingOfImage` (optional) gets, per image, how it is read. nullopt and *error (Japanese)
 // when it is not a baked mesh, of a newer format, or broken.
-std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error, std::vector<bool>* sharpOfImage = nullptr);
+std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error, std::vector<TextureSampling>* samplingOfImage = nullptr);
 
 }  // namespace rm::space3d

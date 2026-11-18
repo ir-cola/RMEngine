@@ -67,7 +67,7 @@ struct Prepared {
     MeshData mesh;
     struct Picture {
         TexturePixels pixels;  // with its mipmaps (made here, off the UI thread)
-        bool sharp = false;
+        TextureSampling sampling;
     };
     std::vector<Picture> pictures;                                         // each picture once per way it is read
     std::vector<std::array<int, kPictureSlots>> slots;                     // per material: into `pictures` (-1: none)
@@ -96,13 +96,16 @@ std::shared_ptr<void> PrepareModelThumbnail(const std::filesystem::path& file, c
             if (at == -2) {
                 const MeshImage& im = p->mesh.images[static_cast<size_t>(ps.image)];
                 std::optional<platform::Image> image;
-                bool sharp = false;
+                TextureSampling sampling;
+                MipOptions mips;
                 std::string ignored;  // a picture that cannot be read: drawn without it (the scene view tells why)
                 if (!im.file.empty()) {
                     const std::filesystem::path at2 = RelatedFile(file, im.file, root);
                     if (!at2.empty()) {
                         const auto imp = asset::ReadImport<asset::ImageImport>(at2);
-                        sharp = imp.sharp;
+                        sampling = SamplingOf(imp);
+                        sampling.streamed = false;  // (a thumbnail: drawn once, all of it)
+                        mips = MipOptionsOf(imp);
                         image = platform::LoadImageFile(wic, at2, platform::PixelOrder::Rgba, {most, most}, &ignored);
                     }
                 } else {
@@ -111,7 +114,7 @@ std::shared_ptr<void> PrepareModelThumbnail(const std::filesystem::path& file, c
                 at = -1;
                 if (image) {
                     at = static_cast<int>(p->pictures.size());
-                    p->pictures.push_back({MakeTexturePixels(std::move(*image), ps.srgb), sharp});
+                    p->pictures.push_back({MakeTexturePixels(std::move(*image), ps.srgb, mips), sampling});
                 }
             }
             slots[k] = at;
@@ -132,7 +135,7 @@ bool DrawModelThumbnail(platform::Gfx& gfx, const void* prepared, uint32_t size,
     std::vector<std::shared_ptr<const GpuTexture>> textures;
     for (const Prepared::Picture& pic : p.pictures) {
         std::string ignored;
-        textures.push_back(renderer.UploadTexture(pic.pixels, &ignored, pic.sharp));
+        textures.push_back(renderer.UploadTexture(pic.pixels, &ignored, pic.sampling));
     }
     std::vector<DrawMaterial> materials;
     for (size_t i = 0; i < mesh.materials.size(); ++i) {

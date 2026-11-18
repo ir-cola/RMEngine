@@ -33,11 +33,11 @@ using game_production::BakeResult;
 
 // One picture made by the texture cache's own code (and kept in its folder), waited for.
 std::optional<space3d::TexturePixels> MakePicture(space3d::PictureDecoder& decoder, space3d::PictureDecoder::Source source, bool* fromCache,
-                                                  std::string* error, bool* sharp = nullptr) {
+                                                  std::string* error, space3d::TextureSampling* sampling = nullptr) {
     auto job = decoder.Request(std::move(source));
     while (!job->Done()) std::this_thread::sleep_for(std::chrono::milliseconds(2));
     if (fromCache) *fromCache = job->fromCache;
-    if (sharp) *sharp = job->sharp;  // (the image's import setting くっきり)
+    if (sampling) *sampling = job->sampling;  // (the image's import settings)
     if (!job->pixels && error) *error = job->error;
     return std::move(job->pixels);
 }
@@ -61,7 +61,7 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
     }
     // Its materials' pictures, one DDS per picture and way it is read (as ModelPaint finds them).
     const fs::path assets = a.projectRoot / L"Assets";
-    std::map<std::tuple<int, int, bool>, std::pair<std::string, bool>> made;  // (image, use, srgb) -> its path, くっきり
+    std::map<std::tuple<int, int, bool>, std::pair<std::string, space3d::TextureSampling>> made;  // (image, use, srgb) -> its path, how it is read
     std::vector<space3d::BakedPictures> pictures(mesh->materials.size());
     int fromCache = 0, total = 0;
     for (size_t m = 0; m < mesh->materials.size(); ++m) {
@@ -72,7 +72,7 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
             const auto key = std::make_tuple(ps.image, static_cast<int>(ps.use), ps.srgb);
             if (const auto it = made.find(key); it != made.end()) {
                 pictures[m].path[slot] = it->second.first;
-                pictures[m].sharp[slot] = it->second.second;
+                pictures[m].sampling[slot] = it->second.second;
                 continue;
             }
             const space3d::MeshImage& img = mesh->images[static_cast<size_t>(ps.image)];
@@ -89,15 +89,16 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
             s.srgb = ps.srgb;
             s.cacheFolder = cache;
             s.canBC7 = true;  // as the editor's cache (a GPU without BC7: the game turns it into RGBA)
-            bool cached = false, sharp = false;
+            bool cached = false;
+            space3d::TextureSampling sampling;
             std::string pwhy;
-            const auto pixels = MakePicture(decoder, s, &cached, &pwhy, &sharp);
+            const auto pixels = MakePicture(decoder, s, &cached, &pwhy, &sampling);
             if (!pixels) continue;  // drawn without it (as in the editor)
             const std::string path = std::format("Baked/{}/{}.dds", a.id, made.size());
             out.files.push_back({path, DdsText(*pixels)});
-            made[key] = {path, sharp};
+            made[key] = {path, sampling};
             pictures[m].path[slot] = path;
-            pictures[m].sharp[slot] = sharp;
+            pictures[m].sampling[slot] = sampling;
             ++total;
             fromCache += cached ? 1 : 0;
         }

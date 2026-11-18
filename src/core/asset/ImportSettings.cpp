@@ -20,10 +20,19 @@ const reflect::TypeDesc* ImportTypeOf(Kind kind) {
     }
 }
 
+void MigrateImport(json::Value& import) {
+    if (!import.IsObject() || !import.Get("sharp").IsBool()) return;
+    if (import.Get("filter").IsNull()) import.Set("filter", json::Value(std::string(import.Get("sharp").AsBool() ? "Sharp" : "Smooth")));
+    import.Erase("sharp");
+}
+
 json::Value ImportInMeta(std::string_view metaText) {
     if (auto v = json::Parse(metaText); v && v->IsObject()) {
-        const json::Value& imp = v->Get("import");
-        if (imp.IsObject()) return imp;
+        json::Value imp = v->Get("import");
+        if (imp.IsObject()) {
+            MigrateImport(imp);
+            return imp;
+        }
     }
     return json::Value::MakeObject();
 }

@@ -3,6 +3,8 @@
 #include "rm_engine/space3d/runtime/Mesh.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
 
 namespace rm::space3d {
@@ -40,10 +42,64 @@ int ChannelsOf(TextureFormat f) {
     }
 }
 
-TexturePixels MakeTexturePixels(platform::Image rgba, bool srgb) {
+float AlphaCoverage(const platform::Image& rgba, float cutoff) {
+    const size_t n = static_cast<size_t>(rgba.width) * rgba.height;
+    if (n == 0 || rgba.pixels.size() < n * 4) return 0;
+    const int at = std::clamp(static_cast<int>(std::ceil(cutoff * 255.f - 1e-4f)), 0, 255);
+    size_t in = 0;
+    for (size_t i = 0; i < n; ++i) in += rgba.pixels[i * 4 + 3] >= at;
+    return static_cast<float>(in) / static_cast<float>(n);
+}
+
+namespace {
+
+// The level's alpha times `scale` (to 255 at most).
+platform::Image ScaledAlpha(const platform::Image& level, float scale) {
+    platform::Image out = level;
+    for (size_t i = 3; i < out.pixels.size(); i += 4) out.pixels[i] = static_cast<uint8_t>(std::min(255.f, out.pixels[i] * scale + 0.5f));
+    return out;
+}
+
+// The scale (found by halving the range) that makes the level cover as much as `target`. Counted on
+// the level's alpha histogram (no copy of the picture per try).
+void KeepCoverage(platform::Image& level, float cutoff, float target) {
+    const size_t n = static_cast<size_t>(level.width) * level.height;
+    if (n == 0) return;
+    std::array<size_t, 256> histogram{};
+    for (size_t i = 3; i < level.pixels.size(); i += 4) ++histogram[level.pixels[i]];
+    const int at = std::clamp(static_cast<int>(std::ceil(cutoff * 255.f - 1e-4f)), 0, 255);
+    auto coverageAt = [&](float scale) {
+        size_t in = 0;
+        for (int a = 0; a < 256; ++a) {
+            if (std::min(255.f, static_cast<float>(a) * scale + 0.5f) >= static_cast<float>(at)) in += histogram[static_cast<size_t>(a)];
+        }
+        return static_cast<float>(in) / static_cast<float>(n);
+    };
+    float lo = 0.f, hi = 8.f, best = 1.f, bestMiss = std::abs(coverageAt(1.f) - target);
+    for (int step = 0; step < 20; ++step) {
+        const float mid = (lo + hi) * 0.5f;
+        const float got = coverageAt(mid);
+        if (std::abs(got - target) < bestMiss) {
+            bestMiss = std::abs(got - target);
+            best = mid;
+        }
+        (got < target ? lo : hi) = mid;
+    }
+    if (best != 1.f) level = ScaledAlpha(level, best);
+}
+
+}  // namespace
+
+TexturePixels MakeTexturePixels(platform::Image rgba, bool srgb, const MipOptions& options) {
     TexturePixels out;
     out.srgb = srgb;
     if (rgba.width == 0 || rgba.height == 0 || rgba.pixels.size() < static_cast<size_t>(rgba.width) * rgba.height * 4) return out;
+    if (!options.mipmaps) {
+        out.levels.push_back(std::move(rgba));
+        return out;
+    }
+    const float cutoff = std::min(options.keepCoverage, 1.f);
+    const float coverage = cutoff > 0 ? AlphaCoverage(rgba, cutoff) : 0.f;
     // sRGB <-> linear by tables (a pow per texel made a 4096 x 4096 picture take seconds).
     static const auto tables = [] {
         struct Tables {
@@ -81,6 +137,10 @@ TexturePixels MakeTexturePixels(platform::Image rgba, bool srgb) {
             }
         }
         out.levels.push_back(std::move(b));
+    }
+    // (each smaller copy from the one before as it was averaged: the scaled alpha is only what is kept)
+    if (cutoff > 0) {
+        for (size_t i = 1; i < out.levels.size(); ++i) KeepCoverage(out.levels[i], cutoff, coverage);
     }
     return out;
 }

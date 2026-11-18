@@ -62,9 +62,28 @@ struct SoundImport {
     RM_PROPERTY(Edit, Label="ループの終わり (秒)", Tooltip="繰り返すとき、ここで始めへ戻ります。0: 音の最後まで", Min=0, Step=0.01) float loopEnd = 0;
 };
 
+RM_ENUM(Label="フィルタ")
+enum class TextureFilter {
+    RM_ITEM(Label="滑らか") Smooth,
+    RM_ITEM(Label="くっきり (ドット絵)") Sharp,
+};
+
+RM_ENUM(Label="端の扱い")
+enum class TextureWrap {
+    RM_ITEM(Label="繰り返し") Repeat,
+    RM_ITEM(Label="端で止める") Clamp,
+    RM_ITEM(Label="鏡のように反転") Mirror,
+};
+
+// (Before 2026-11-18 the filter was a bool "sharp": MigrateImport reads it as `filter`.)
 RM_STRUCT(Label="画像の取り込み")
 struct ImageImport {
-    RM_PROPERTY(Edit, Label="くっきり (ドット絵)", Tooltip="拡大してもぼかさず、ピクセルをそのまま大きくします (3D のテクスチャと 2D のスプライト)") bool sharp = false;
+    RM_PROPERTY(Edit, Label="フィルタ", Tooltip="滑らか: 拡大・縮小をなめらかに / くっきり: 拡大してもぼかさず、ピクセルをそのまま大きくします (ドット絵。3D のテクスチャと 2D のスプライト)") TextureFilter filter = TextureFilter::Smooth;
+    RM_PROPERTY(Edit, Label="端の扱い", Tooltip="3D のテクスチャで、UV が 0〜1 の外に出たとき。繰り返し: 絵を並べる / 端で止める: 端の色を伸ばす (1 枚の看板の縁に反対側の色がにじまない) / 鏡のように反転: 並べるたびに裏返す (つなぎ目が目立たない)") TextureWrap wrap = TextureWrap::Repeat;
+    RM_PROPERTY(Edit, Label="ミップマップ", Tooltip="半分ずつ小さくした絵を作り、遠くの物に使います (ちらつかない)。いつも近くで同じ大きさに見える絵 (UI など) は外すと、GPU のメモリが約 3 割減ります") bool mipmaps = true;
+    RM_PROPERTY(Edit, Label="透明部分を保つ", Tooltip="小さい絵の透明の割合を元の絵とそろえます。葉・草・金網のように透明で切り抜く絵が、遠くで消えたり細ったりしません", ShowIf="mipmaps") bool keepCoverage = false;
+    RM_PROPERTY(Edit, Label="切り抜きの境目", Tooltip="透明部分を保つときの境目のアルファ (マテリアルの「切り抜き」の値と同じにします)", Min=0.01, Max=0.99, Step=0.01, ShowIf="mipmaps&keepCoverage") float coverageCutoff = 0.5f;
+    RM_PROPERTY(Edit, Label="ミップマップ・ストリーミング", Tooltip="画面での大きさに要る細かさの段だけを GPU に置きます (遠くの物の絵は小さい段だけ)。近づくと細かい段を足します。GPU のメモリが減ります (読み込んだ絵はメモリに残ります)", ShowIf="mipmaps") bool streaming = false;
     RM_PROPERTY(Edit, Label="大きさの上限 (ピクセル)", Tooltip="これより大きい画像は縮めて読みます (GPU のメモリを減らす)。ファイルはそのまま", Min=16, Max=8192) int maxSize = 4096;
     RM_PROPERTY(Edit, Label="圧縮", Tooltip="3D のテクスチャとして GPU でどの形で持つか。自動: 不透明な色は BC1、透明のある色は BC7 (古い GPU では BC3)、ノーマルマップは BC5、1 チャンネルの数は BC4。なし: 圧縮しない (メモリは 4〜8 倍)") TextureCompression compression = TextureCompression::Auto;
 };
@@ -72,8 +91,12 @@ struct ImageImport {
 // The settings type of a kind of asset (null: it has none).
 const reflect::TypeDesc* ImportTypeOf(Kind kind);
 
-// Pure: the "import" object of a .meta's text (an empty object when there is none), and the text
-// with another one (every other key kept).
+// Pure: settings written by an older version, as this one names them (in place). Now: an image's
+// "sharp": true/false becomes "filter": "Sharp"/"Smooth" (unless "filter" is there already).
+void MigrateImport(json::Value& import);
+
+// Pure: the "import" object of a .meta's text (an empty object when there is none; migrated), and the
+// text with another one (every other key kept).
 json::Value ImportInMeta(std::string_view metaText);
 std::string MetaWithImport(std::string_view metaText, const json::Value& import);
 

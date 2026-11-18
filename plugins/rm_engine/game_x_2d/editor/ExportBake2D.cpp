@@ -50,7 +50,7 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
     BakedImageInfo info;
     info.width = whole->width;
     info.height = whole->height;
-    info.sharp = imp.sharp;
+    info.sharp = imp.filter == asset::TextureFilter::Sharp;
     info.maxSize = static_cast<uint32_t>(std::max(imp.maxSize, 1));
     out.path = "Baked/" + a.id + ".rmimage";
     out.files.push_back({out.path, WriteBakedImage(info, *bytes)});

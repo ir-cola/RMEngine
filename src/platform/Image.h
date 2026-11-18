@@ -22,6 +22,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace rm::platform {
@@ -32,6 +33,10 @@ std::optional<Image> DecodeImage(IWICImagingFactory* wic, std::span<const uint8_
                                  std::string* error);
 std::optional<Image> LoadImageFile(IWICImagingFactory* wic, const std::filesystem::path& file, PixelOrder order, Fit fit,
                                    std::string* error);
+
+// The picture's size in pixels, read from its header only (nothing decoded); nullopt when it is not
+// a picture WIC reads.
+std::optional<std::pair<uint32_t, uint32_t>> ImageFileSize(IWICImagingFactory* wic, const std::filesystem::path& file);
 
 // A WIC factory for the calling thread (made the first time, COM started for it): what a worker
 // thread decodes with (the UI's factory, Gfx::Wic, stays on the UI thread). Null when it cannot be made.

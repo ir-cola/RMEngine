@@ -43,14 +43,14 @@ bool SameMaterialNumbers(const MeshMaterial& x, const MeshMaterial& y) {
            x.roughness == y.roughness && x.normalScale == y.normalScale && x.emissive == y.emissive;
 }
 
-std::vector<BakedPictures> PicturesOf(const MeshData& m, const std::vector<bool>& sharp) {
+std::vector<BakedPictures> PicturesOf(const MeshData& m, const std::vector<TextureSampling>& sampling) {
     std::vector<BakedPictures> out;
     for (const MeshMaterial& mat : m.materials) {
         BakedPictures p;
         const int slots[4] = {mat.image, mat.metallicRoughnessImage, mat.normalImage, mat.emissiveImage};
         for (size_t s = 0; s < 4; ++s) {
             p.path[s] = slots[s] >= 0 ? m.images[static_cast<size_t>(slots[s])].file : std::string();
-            p.sharp[s] = slots[s] >= 0 && sharp[static_cast<size_t>(slots[s])];
+            if (slots[s] >= 0) p.sampling[s] = sampling[static_cast<size_t>(slots[s])];
         }
         out.push_back(p);
     }
@@ -63,13 +63,14 @@ RM_TEST(MeshBake_RoundTrip) {
     const MeshData m = Sample();
     std::vector<BakedPictures> pictures(2);
     pictures[0].path = {"Baked/a/0.dds", "", "Baked/a/1.dds", ""};
-    pictures[0].sharp = {true, false, false, false};
+    const TextureSampling dots{asset::TextureFilter::Sharp, asset::TextureWrap::Mirror, true};
+    pictures[0].sampling = {dots, {}, {}, {}};
     pictures[1].path = {"Baked/a/0.dds", "", "", "Baked/a/2.dds"};
-    pictures[1].sharp = {true, false, false, false};
+    pictures[1].sampling = {dots, {}, {}, {}};
     const std::string bytes = WriteBakedMesh(m, pictures);
     std::string err;
-    std::vector<bool> sharp;
-    const auto back = ReadBakedMesh(bytes, &err, &sharp);
+    std::vector<TextureSampling> sampling;
+    const auto back = ReadBakedMesh(bytes, &err, &sampling);
     CHECK(back.has_value());
     if (!back) return;
     CHECK(back->indices == m.indices && back->parts == m.parts && back->min == m.min && back->max == m.max);
@@ -84,10 +85,11 @@ RM_TEST(MeshBake_RoundTrip) {
     CHECK(back->materials[0].image == back->materials[1].image && back->materials[0].image >= 0);
     CHECK(back->materials[0].normalImage >= 0 && back->materials[0].metallicRoughnessImage == -1 && back->materials[1].emissiveImage >= 0);
     CHECK(back->images[static_cast<size_t>(back->materials[0].normalImage)].file == "Baked/a/1.dds");
-    // くっきり, per picture: the colour picture only.
-    CHECK(sharp.size() == 3 && sharp[static_cast<size_t>(back->materials[0].image)] && !sharp[static_cast<size_t>(back->materials[0].normalImage)]);
+    // How each picture is read (くっきり・鏡のように反転・ストリーミング): the colour picture only.
+    CHECK(sampling.size() == 3 && sampling[static_cast<size_t>(back->materials[0].image)] == dots &&
+          sampling[static_cast<size_t>(back->materials[0].normalImage)] == TextureSampling{});
     // Written again from what was read: the same bytes.
-    CHECK(WriteBakedMesh(*back, PicturesOf(*back, sharp)) == bytes);
+    CHECK(WriteBakedMesh(*back, PicturesOf(*back, sampling)) == bytes);
 }
 
 RM_TEST(MeshBake_UnknownChunksAndBroken) {

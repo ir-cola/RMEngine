@@ -146,6 +146,7 @@ void PictureDecoder::Make(Job& job) {
     asset::TextureCompression compression = asset::TextureCompression::Auto;
     uint32_t most = kMaxTextureSize;
     std::string settings, id;
+    MipOptions mips;  // (a model's own pictures: always with their mipmaps)
     if (s.bytes) {
         data = *s.bytes;
         const auto imp = asset::ReadImport<asset::ModelImport>(s.file);
@@ -163,7 +164,8 @@ void PictureDecoder::Make(Job& job) {
         const auto imp = asset::ReadImport<asset::ImageImport>(s.file);
         compression = imp.compression;
         most = Most(imp.maxSize);
-        job.sharp = imp.sharp;
+        job.sampling = SamplingOf(imp);
+        mips = MipOptionsOf(imp);
         settings = json::Write(reflect::Save(imp));
         id = GuidOf(s.file);
     }
@@ -184,7 +186,7 @@ void PictureDecoder::Make(Job& job) {
     auto image = platform::DecodeImage(platform::ThreadImagingFactory(), data, platform::PixelOrder::Rgba, {most, most}, &job.error);
     if (!image) return;
     const TextureFormat format = ChooseFormat(s.use, compression, TraitsOf(*image), s.canBC7, image->width, image->height);
-    TexturePixels pixels = Compress(MakeTexturePixels(std::move(*image), s.srgb), format);
+    TexturePixels pixels = Compress(MakeTexturePixels(std::move(*image), s.srgb, mips), format);
     if (!cached.empty() && format != TextureFormat::Rgba8) WriteCache(cached, WriteDds(pixels));
     job.pixels = std::move(pixels);
     job.seconds = platform::NowSeconds() - start;
@@ -202,7 +204,7 @@ bool TextureCache::Upload(Renderer& renderer, PictureDecoder::Job& job, double n
     }
     if (!slice_.May(now)) return false;  // this frame has copied for long enough: the next one
     const double start = platform::NowSeconds();
-    out = renderer.UploadTexture(*job.pixels, error, job.sharp);
+    out = renderer.UploadTexture(*job.pixels, error, job.sampling);
     slice_.Spent(platform::NowSeconds() - start);
     job.Taken();
     return true;

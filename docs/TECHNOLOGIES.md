@@ -913,10 +913,17 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — パーティクルの仕組み (Compute Shader) を使うより軽く、粒の数だけ描くので 16000 粒でも 1 回の Draw。状態を持たないので、書き出したゲームでもエディターでも、同じ時刻なら同じ所に降る
 - **どこ** — `plugins/rm_engine/space3d/runtime/Renderer3D.cpp` (`kPrecipShaders`・3-1 の描画)・`SkyShader.h` (`Precipitation`)・`plugins/rm_engine/game_x_3d/runtime/Sky.cpp` (天気 → 量・明るさ・雷)
 
+### ミップマップの設定・透明部分を保つ・ミップマップ・ストリーミング・端の扱い
+- **何か** — 画像ごとの取り込みの設定で、GPU での絵の持ち方と読み方を決める。**端の扱い** は D3D11 のサンプラーの AddressMode (WRAP / CLAMP / MIRROR)。フィルタ (滑らか / くっきり) と合わせて 6 つのサンプラーを先に作り、絵ごとに選ぶ。**透明部分を保つ** (alpha coverage preservation) は、小さい段ごとにアルファへ掛ける倍率を探し、「切り抜きの境目以上のアルファの割合」を元の絵とそろえる。**ミップマップ・ストリーミング** は、物の大きさ (囲む球) とカメラからの距離で画面での大きさを出し、要る段だけで GPU のテクスチャを作り直す
+- **工夫** — 割合はアルファのヒストグラム (256 個の数) で数えるので、倍率を 20 回試しても絵を写さない。ストリーミングは「細かい段はすぐ足し、要らなくなって 2 秒たってから外す」ので、カメラが揺れても作り直しが続かない。小さい段 (64 ピクセル以下) はいつも置くので、ぼやけはしても消えない。設定は 1 か所 (`ImportSettings.h` と `TextureSampling.h`) で、エディター・書き出し・ゲームが同じものを読む (憲法 1)。前の版の `"sharp": true` は読むときに `"filter": "Sharp"` に直す (憲法 6)
+- **なぜそれか** — Unity の Texture Import Settings の Wrap Mode・Filter Mode・Generate Mip Maps・Mip Maps Preserve Coverage・Mipmap Streaming と同じ役目。D3D11 にはタイル (疎な) テクスチャもあるが、古い GPU でも動くように、作り直す方を選んだ (CPU のメモリには全部の段が残る)
+- **どこ** — `src/core/asset/ImportSettings.h` (設定)・`plugins/rm_engine/space3d/runtime/TextureSampling.h`・`TexturePixels.cpp` (`AlphaCoverage`・透明部分を保つ)・`Renderer3D.cpp` (`samplers`・`Renderer::Stream`)・`MeshBake.cpp` (焼いたモデルの 1 バイト)
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-18 | ミップマップの設定・透明部分を保つ・ミップマップ・ストリーミング・端の扱い (サンプラーの AddressMode) を足した |
 | 2026-11-17 | 降る雨と雪 (頂点の番号から作る粒・カメラについてくる箱) を足した |
 | 2026-11-17 | 空のシェーダー (全画面の三角形・向きの復元・地球の空と宇宙の手続きの空・正距円筒図法・ユーザーの HLSL)・シーンの設定 を足した |
 | 2026-11-17 | 数で作る形 (回転体・ふた・面の向きをそろえる)・横に開くメニュー (入れ子のメニュー) を足した |
