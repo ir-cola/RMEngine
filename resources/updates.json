@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "デバッグのパネルに CPU (名前・コアとスレッド・クロック・使用率) とメモリ (PC の使用中と空き・このソフトの量) を足した",
+          "en": "The Debug panel now shows the CPU (name, cores and threads, clock, usage) and memory (in use and free on the PC, used by this program)"
+        },
+        {
           "ja": "ゲーム制作に「デバッグ」のパネル: シーンビューとゲームビューの FPS・マウスの座標・押しているキーとコントローラーのボタン・スティック・入力のアクションの値・エンティティと部品の数・パーティクルの粒の数・モニターの名前と解像度・GPU とメモリ",
           "en": "Game production has a Debug panel: the FPS of the scene and game views, the mouse position, keys and controller buttons and sticks held, input action values, entity and component counts, the number of particles, monitor names and resolutions, the GPU and memory"
         },

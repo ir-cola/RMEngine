@@ -9,6 +9,7 @@
 //   plugins        add sections (DebugInfoInfo at kDebugInfoPoint): lines asked each time it is drawn
 
 #include "base/Math.h"
+#include "platform/SystemInfo.h"
 #include "rm_engine/game_production/runtime/Input.h"
 
 #include <array>
@@ -21,7 +22,7 @@
 
 namespace rm::platform {
 class Gfx;
-}
+}  // namespace rm::platform
 namespace rm::editor {
 class PluginRegistry;
 }
@@ -127,9 +128,10 @@ private:
     std::vector<bool> open_ = std::vector<bool>(16, true);
     PadWatcher pads_;
     std::array<PadState, kPlayers> padState_{};
-    double systemAt_ = -1e9;  // when the monitors and the GPU were last read
+    double systemAt_ = -1e9;  // when the monitors, the GPU, the CPU and the memory were last read
     struct System;
     std::shared_ptr<System> system_;
+    platform::CpuMeter cpuMeter_;  // how busy the CPU was between two reads (a second apart)
     FrameMeter self_;  // this panel's own drawing (the editor's frames while it is live)
 };
 

@@ -2,12 +2,18 @@
 
 #include <dxgi1_4.h>
 #include <psapi.h>
+#include <tlhelp32.h>
 #include <shellscalingapi.h>
 #include <wrl/client.h>
 
+#include <algorithm>
+#include <cstring>
 #include <format>
+#include <intrin.h>
+#include <vector>
 
-#pragma comment(lib, "shcore.lib")  // GetDpiForMonitor
+#pragma comment(lib, "shcore.lib")    // GetDpiForMonitor
+#pragma comment(lib, "advapi32.lib")  // RegGetValueW
 
 namespace rm::platform {
 
@@ -151,9 +157,112 @@ ProcessMemory MemoryOfThisProcess() {
     ProcessMemory m;
     if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof(pmc))) {
         m.workingSet = pmc.WorkingSetSize;
+        m.peakWorkingSet = pmc.PeakWorkingSetSize;
         m.committed = pmc.PrivateUsage;
     }
+    DWORD handles = 0;
+    if (GetProcessHandleCount(GetCurrentProcess(), &handles)) m.handles = handles;
+    // The threads of this process (the system's list of every thread: one walk).
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap != INVALID_HANDLE_VALUE) {
+        THREADENTRY32 te{};
+        te.dwSize = sizeof(te);
+        const DWORD me = GetCurrentProcessId();
+        for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te)) {
+            if (te.th32OwnerProcessID == me) ++m.threads;
+        }
+        CloseHandle(snap);
+    }
     return m;
+}
+
+MemoryStatus MemoryOfThePc() {
+    MEMORYSTATUSEX ms{};
+    ms.dwLength = sizeof(ms);
+    MemoryStatus s;
+    if (GlobalMemoryStatusEx(&ms)) {
+        s.total = ms.ullTotalPhys;
+        s.available = ms.ullAvailPhys;
+        s.load = ms.dwMemoryLoad;
+        s.commitLimit = ms.ullTotalPageFile;
+        s.commitAvailable = ms.ullAvailPageFile;
+    }
+    return s;
+}
+
+CpuDesc Cpu() {
+    CpuDesc d;
+    // The name the CPU tells itself (CPUID 0x80000002..4), without the spaces around it.
+    int regs[4] = {};
+    __cpuid(regs, static_cast<int>(0x80000000));
+    if (static_cast<unsigned>(regs[0]) >= 0x80000004u) {
+        char brand[49] = {};
+        for (int i = 0; i < 3; ++i) {
+            __cpuid(regs, static_cast<int>(0x80000002 + i));
+            std::memcpy(brand + i * 16, regs, 16);
+        }
+        std::string s(brand);
+        while (!s.empty() && s.back() == ' ') s.pop_back();
+        while (!s.empty() && s.front() == ' ') s.erase(s.begin());
+        d.name.assign(s.begin(), s.end());
+    }
+    constexpr wchar_t kKey[] = L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0";
+    DWORD mhz = 0, bytes = sizeof(mhz);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, kKey, L"~MHz", RRF_RT_REG_DWORD, nullptr, &mhz, &bytes) == ERROR_SUCCESS) d.mhz = mhz;
+    if (d.name.empty()) {
+        wchar_t name[128] = {};
+        DWORD size = sizeof(name);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, kKey, L"ProcessorNameString", RRF_RT_REG_SZ, nullptr, name, &size) == ERROR_SUCCESS) d.name = name;
+    }
+    d.threads = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+    // The cores, and their kinds (a hybrid CPU: the cores of the highest efficiency class are the fast ones).
+    DWORD len = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
+    std::vector<uint8_t> buf(len);
+    if (len > 0 && GetLogicalProcessorInformationEx(RelationProcessorCore, reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buf.data()), &len)) {
+        std::vector<BYTE> classes;
+        for (DWORD at = 0; at < len;) {
+            const auto* info = reinterpret_cast<const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buf.data() + at);
+            if (info->Relationship == RelationProcessorCore) classes.push_back(info->Processor.EfficiencyClass);
+            at += info->Size;
+        }
+        d.cores = static_cast<uint32_t>(classes.size());
+        if (!classes.empty()) {
+            const BYTE top = *std::max_element(classes.begin(), classes.end());
+            const BYTE low = *std::min_element(classes.begin(), classes.end());
+            if (top != low) {
+                for (const BYTE c : classes) ++(c == top ? d.performanceCores : d.efficiencyCores);
+            }
+        }
+    }
+    return d;
+}
+
+namespace {
+uint64_t Ticks(const FILETIME& f) { return (static_cast<uint64_t>(f.dwHighDateTime) << 32) | f.dwLowDateTime; }
+}  // namespace
+
+std::optional<CpuMeter::Usage> CpuMeter::Sample() {
+    FILETIME idle{}, kernel{}, user{}, created{}, exited{}, pk{}, pu{};
+    if (!GetSystemTimes(&idle, &kernel, &user) || !GetProcessTimes(GetCurrentProcess(), &created, &exited, &pk, &pu)) return std::nullopt;
+    const uint64_t i = Ticks(idle), k = Ticks(kernel), u = Ticks(user), p = Ticks(pk) + Ticks(pu);
+    std::optional<Usage> out;
+    if (has_) {
+        // (the system's kernel time counts its idle time too)
+        const double all = static_cast<double>((k - kernel_) + (u - user_));
+        if (all > 0) {
+            Usage use;
+            use.pc = std::clamp(100.0 * (all - static_cast<double>(i - idle_)) / all, 0.0, 100.0);
+            use.thisProcess = std::clamp(100.0 * static_cast<double>(p - process_) / all, 0.0, 100.0);
+            out = use;
+        }
+    }
+    has_ = true;
+    idle_ = i;
+    kernel_ = k;
+    user_ = u;
+    process_ = p;
+    return out;
 }
 
 }  // namespace rm::platform

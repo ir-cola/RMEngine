@@ -35,6 +35,9 @@ struct DebugPanel::System {
     std::vector<platform::MonitorDesc> monitors;
     std::optional<platform::GpuDesc> gpu;
     platform::ProcessMemory memory;
+    platform::MemoryStatus pcMemory;
+    platform::CpuDesc cpu;
+    std::optional<platform::CpuMeter::Usage> usage;  // over the last second
 };
 
 namespace {
@@ -71,6 +74,9 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         s->monitors = platform::Monitors(platform::ThisThreadsWindow());
         if (v.gfx) s->gpu = platform::GpuOf(v.gfx->D3D());
         s->memory = platform::MemoryOfThisProcess();
+        s->pcMemory = platform::MemoryOfThePc();
+        s->cpu = system_ ? system_->cpu : platform::Cpu();  // (it does not change: read once)
+        s->usage = cpuMeter_.Sample();
         system_ = std::move(s);
         systemAt_ = now;
     }
@@ -282,8 +288,47 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The GPU and memory ----------------------------------------------------------------------------
-    if (header(Tr(L"GPU とメモリ"))) {
+    // --- The CPU -------------------------------------------------------------------------------------------
+    if (header(Tr(L"CPU"))) {
+        const platform::CpuDesc& cpu = system_->cpu;
+        row(Tr(L"名前"), cpu.name.empty() ? Tr(L"(読めません)") : cpu.name, true);
+        std::wstring cores = TrF(L"{} コア ・ {} スレッド", cpu.cores, cpu.threads);
+        if (cpu.performanceCores > 0) cores += TrF(L" (P コア {} ・ E コア {})", cpu.performanceCores, cpu.efficiencyCores);
+        row(Tr(L"コアとスレッド"), cores);
+        if (cpu.mhz > 0) row(Tr(L"基本のクロック"), TrF(L"{:.2f} GHz", cpu.mhz / 1000.0));
+        if (const auto& u = system_->usage) {
+            auto usageBar = [&](double percent) {
+                w::ProgressBar(c, {x + 10 + kLabelW, y + 3, std::min(240.f, width - 20 - kLabelW), 8}, static_cast<float>(percent / 100.0));
+                y += 14;
+            };
+            row(Tr(L"使用率 (PC 全体)"), std::format(L"{:.0f} %", u->pc));
+            usageBar(u->pc);
+            row(Tr(L"使用率 (このソフト)"), TrF(L"{:.1f} % (全部のスレッドで 100 %)", u->thisProcess));
+            usageBar(u->thisProcess);
+        } else {
+            row(Tr(L"使用率"), Tr(L"(はかっています…)"));
+        }
+        row(Tr(L"このソフトのスレッド"), TrF(L"{} 個 ・ ハンドル {} 個", system_->memory.threads, system_->memory.handles));
+        gap();
+    }
+
+    // --- The memory ---------------------------------------------------------------------------------------
+    if (header(Tr(L"メモリ"))) {
+        const platform::MemoryStatus& pc = system_->pcMemory;
+        if (pc.total > 0) {
+            row(Tr(L"PC のメモリ"), TrF(L"{} 使用中 / 全部 {} ({} %)", Mb(pc.total - pc.available), Mb(pc.total), pc.load), pc.load >= 90);
+            w::ProgressBar(c, {x + 10 + kLabelW, y + 3, std::min(240.f, width - 20 - kLabelW), 8}, static_cast<float>(pc.load) / 100.f);
+            y += 14;
+            row(Tr(L"空いているメモリ"), Mb(pc.available));
+            row(Tr(L"確保できる量 (ページファイル込み)"), TrF(L"{} 空き / {}", Mb(pc.commitAvailable), Mb(pc.commitLimit)));
+        }
+        row(Tr(L"このソフトのメモリ"), TrF(L"{} (いちばん多かったとき {})", Mb(system_->memory.workingSet), Mb(system_->memory.peakWorkingSet)));
+        row(Tr(L"このソフトが確保した量"), Mb(system_->memory.committed));
+        gap();
+    }
+
+    // --- The GPU ------------------------------------------------------------------------------------------
+    if (header(Tr(L"GPU"))) {
         if (const auto& g = system_->gpu) {
             row(Tr(L"GPU"), g->name, true);
             const std::wstring vendor = platform::GpuVendorName(g->vendorId);
@@ -300,7 +345,6 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         } else {
             row(Tr(L"GPU"), Tr(L"(読めません)"));
         }
-        row(Tr(L"このソフトのメモリ"), TrF(L"{} (確保 {})", Mb(system_->memory.workingSet), Mb(system_->memory.committed)));
         gap();
     }
 

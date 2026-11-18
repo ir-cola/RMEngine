@@ -56,7 +56,24 @@ RM_TEST(DebugPanel_MonitorsAndGpu) {
     CHECK(gpu && !gpu->name.empty() && !gpu->featureLevel.empty() && gpu->featureLevel.find(L'_') != std::wstring::npos);
     CHECK(!platform::GpuOf(nullptr));
     CHECK(platform::GpuVendorName(0x10DE) == L"NVIDIA" && platform::GpuVendorName(0x1234).empty());
-    CHECK(platform::MemoryOfThisProcess().workingSet > 0);
+    const platform::ProcessMemory mine = platform::MemoryOfThisProcess();
+    CHECK(mine.workingSet > 0 && mine.peakWorkingSet >= mine.workingSet && mine.handles > 0 && mine.threads >= 1);
+}
+
+RM_TEST(DebugPanel_CpuAndMemory) {
+    const platform::CpuDesc cpu = platform::Cpu();
+    CHECK(!cpu.name.empty() && cpu.cores >= 1 && cpu.threads >= cpu.cores);
+    CHECK(cpu.performanceCores + cpu.efficiencyCores == 0 || cpu.performanceCores + cpu.efficiencyCores == cpu.cores);
+    const platform::MemoryStatus pc = platform::MemoryOfThePc();
+    CHECK(pc.total > 0 && pc.available <= pc.total && pc.load <= 100 && pc.commitLimit >= pc.total / 2);
+    // Busy for a while between two samples: this program used some of the CPU (never more than all of it).
+    platform::CpuMeter meter;
+    CHECK(!meter.Sample());
+    volatile double sink = 0;
+    const DWORD until = GetTickCount() + 120;
+    while (GetTickCount() < until) sink = sink + 1.0;
+    const auto use = meter.Sample();
+    CHECK(use && use->pc >= 0 && use->pc <= 100 && use->thisProcess > 0 && use->thisProcess <= use->pc + 1e-6);
 }
 
 RM_TEST(DebugPanel_PadNamesAndParticles) {
