@@ -919,10 +919,29 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — Unity の Texture Import Settings の Wrap Mode・Filter Mode・Generate Mip Maps・Mip Maps Preserve Coverage・Mipmap Streaming と同じ役目。D3D11 にはタイル (疎な) テクスチャもあるが、古い GPU でも動くように、作り直す方を選んだ (CPU のメモリには全部の段が残る)
 - **どこ** — `src/core/asset/ImportSettings.h` (設定)・`plugins/rm_engine/space3d/runtime/TextureSampling.h`・`TexturePixels.cpp` (`AlphaCoverage`・透明部分を保つ)・`Renderer3D.cpp` (`samplers`・`Renderer::Stream`)・`MeshBake.cpp` (焼いたモデルの 1 バイト)
 
+### スクリプトのコルーチン (C++20 の co_await を DLL とエンジンの間で)
+- **何か** — C++20 のコルーチン。`co_await` で関数の途中で止まり、あとで続きから動く。スクリプトの関数が `rm::Task` を返すと、コンパイラーが関数の中身 (ローカル変数と、どこまで進んだか) を「フレーム」としてヒープに置く。エンジンは、そのフレームの場所と、DLL の中の 2 つの関数 (続きを動かす `resume`・消す `destroy`) だけを受け取り、「何を待っているか」(何フレーム・ゲームの何秒・本当の何秒・別のコルーチンの終わり) を自分で覚えて、その時が来たら `resume` を呼ぶ
+- **工夫** — フレームは DLL の C ランタイムが作ったので、消すのも DLL の関数で (エンジンが `delete` しない。文字列と同じ決まり)。コルーチンは「始めたスクリプト」の物として覚え、そのスクリプトの EndPlay で必ず止めるので、メンバー関数の `this` が消えた後に動くことが無い。Play 中にスクリプトの DLL を入れ替える前には全部消す (フレームのコードは古い DLL にある)。`resume` と `destroy` も、スクリプトのフックと同じく `__try / __except` の中で呼ぶ (落ちても、そのコルーチンだけ止まる)。`WaitUntil` の条件は DLL の中で毎フレーム聞く (エンジンは関数を持ち出さない)
+- **なぜそれか** — Unity の `StartCoroutine` / `yield return new WaitForSeconds` と同じ書き方を、C++ の標準の機能だけでできる。状態機械を手で書くより短く、タイマー (`rm::After` / `Every`) もこの上に数行で作れた
+- **どこ** — `plugins/rm_engine/game_production/runtime/sdk/RM.h` (`rm::Task`・待ち方・`StartCoroutine`)・`RmAbi.h` (`RmCoroutinesApi`・`RmWait`)・`Scripts.cpp` (`ScriptWorld::StartCoroutine` / `ResumeCoroutines`)・`ScriptGuard.cpp`
+
+### スクリプトのイベント・時間の速さ・プレイヤーごとの入力・パッドの振動・キーの割り当ての保存
+- **何か** — イベントは名前付きの知らせ (数・文字・エンティティを 1 つずつ運べる)。送るとエンジンの列に入り、そのフレームの Tick が全部終わった後に、届く先のスクリプトの `OnEvent` を順に呼ぶ。時間の速さは、ホスト (エディターの Play と書き出したゲーム) が 1 フレームの本当の秒に掛けてから、スクリプト・システム (物理など)・パーティクルに渡す。プレイヤーごとの入力は XInput の 4 つの口を別々に読み、プレイヤー n はパッド n とする。振動は `XInputSetState`。マウスのホイールは、キーの取りこぼしを数えている `WH_GETMESSAGE` フックで `WM_MOUSEWHEEL` も数える
+- **工夫** — イベントを列に入れてから配るので、送った瞬間に相手のスクリプトが動いて自分の状態が変わる、ということが無い (順番がいつも同じ)。OnEvent の中で送った物は同じフレームに届くが、8 回続いたら止める (送り合いで止まらなくなるのを防ぐ)。時間の速さはゲーム UI には掛けない (止めたままメニューを動かせる)。遊ぶ人が変えた割り当ては、ゲームの設定の一覧とは別に持ち、名前で重ねて保存する (ゲームの作り手がアクションを足しても、古い保存は足された物を消さない)
+- **なぜそれか** — Unity の `SendMessage` / `Time.timeScale` / Input System の「プレイヤーごとのデバイス」と「リバインド」と同じ役目。アクションの名前で読む仕組みが前からあったので、割り当てを変えてもスクリプトは書き直さなくてよい
+- **どこ** — `Scripts.h` / `Scripts.cpp` (`QueuedEvent`・`ScriptRunner::DeliverEvents`・`ScriptWorld::timeScale`・`LoadBindings` / `SaveBindings`)・`Input.cpp` (`EvaluateAction` のプレイヤー版・`AnyPressed`・`InputReader::Vibrate`・`BindingsToJson`)・`GamePlayer.cpp` / `GameSoftware.cpp` (時間の速さを掛ける所)
+
+### スクリプトの数学 (クォータニオン) と、親を変えてもワールドの位置を保つ
+- **何か** — `RMMath.h` はスクリプト用の数学 (ベクトル・補間・乱数・クォータニオン)。クォータニオンは回転を 4 つの数 (x, y, z, w) で表す方法で、角度 (オイラー角) と違い、2 つの回転のあいだをなめらかにつなげる (Slerp) し、真上を向いても軸が重ならない (ジンバルロック)。親を変えるときは、今のワールド行列を、新しい親のワールド行列の逆で割った物を自分の値にする (`FromWorld`)
+- **工夫** — `Quat::Euler` はエンジンの Transform と同じ順 (X → Y → Z、行列で Rz * Ry * Rx) にした。テストで `space3d::RotationMatrix` と同じ向きになるのを確かめる。`RMMath.h` はエンジンを呼ばない (純粋) ので、ゲームの DLL にもエンジンのテストにもそのまま入る。ワールドを保つ計算は「空間」を知るプラグイン (3D と 2D) が持ち、ゲーム制作の核は空間を知らないまま (`PlaceInfo::keepWorld`)
+- **なぜそれか** — Unity の `Mathf` / `Vector3` / `Quaternion` / `Transform.SetParent(parent, worldPositionStays)` / `LookAt` と同じ物が、スクリプトを書く人に一番要るため
+- **どこ** — `plugins/rm_engine/game_production/runtime/sdk/RMMath.h`・`plugins/rm_engine/game_x_3d/runtime/ScriptTransform3D.cpp` (`KeepWorld3D`・`LookAt`)・`plugins/rm_engine/game_x_2d/runtime/ScriptTransform2D.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-18 | スクリプトのコルーチン (C++20 の co_await)・イベント・時間の速さ・プレイヤーごとの入力とパッドの振動・キーの割り当ての保存・スクリプトの数学 (クォータニオン)・親を変えてもワールドを保つ を足した |
 | 2026-11-18 | ミップマップの設定・透明部分を保つ・ミップマップ・ストリーミング・端の扱い (サンプラーの AddressMode) を足した |
 | 2026-11-17 | 降る雨と雪 (頂点の番号から作る粒・カメラについてくる箱) を足した |
 | 2026-11-17 | 空のシェーダー (全画面の三角形・向きの復元・地球の空と宇宙の手続きの空・正距円筒図法・ユーザーの HLSL)・シーンの設定 を足した |

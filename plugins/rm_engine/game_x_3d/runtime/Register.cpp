@@ -48,10 +48,11 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kSystemPoint, kSkyClock);
     // Scripts: Transform in 3D (sdk/RM3D.h).
     registry.Contribute(game_production::kScriptApiPoint, ScriptTransform3DPart());
+    registry.Contribute(game_production::kScriptApiPoint, ScriptTransform3DPart2());
     // ... and debug drawing (rm::Debug: lines the editor shows while playing; nothing in a game).
     registry.Contribute(game_production::kScriptApiPoint, ScriptDebug3DPart());
     // Where an entity is (the sounds of a 3D game are heard from there: PlayServices.h).
-    static const game_production::PlaceInfo kPlace{"3d", &Pose3D};
+    static const game_production::PlaceInfo kPlace{"3d", &Pose3D, &KeepWorld3D};
     registry.Contribute(game_production::kPlacePoint, kPlace);
 }
 

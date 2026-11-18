@@ -1222,6 +1222,7 @@ template <class T> concept RmHasHit = requires(T& t, ::rm::Entity e) { t.OnHit(e
 template <class T> concept RmHasEnter = requires(T& t, ::rm::Entity e) { t.OnTriggerEnter(e, e); };
 template <class T> concept RmHasExit = requires(T& t, ::rm::Entity e) { t.OnTriggerExit(e, e); };
 template <class T> concept RmHasClick = requires(T& t, ::rm::Entity e) { t.OnClick(e); };
+template <class T> concept RmHasEvent = requires(T& t, ::rm::Entity e, const ::rm::Event& ev) { t.OnEvent(e, ev); };
 template <class T> void RmBegin(void* s, RmEntityId e) { static_cast<T*>(s)->BeginPlay(::rm::Entity(e)); }
 template <class T> void RmTick(void* s, RmEntityId e, float dt) { static_cast<T*>(s)->Tick(::rm::Entity(e), dt); }
 template <class T> void RmEnd(void* s, RmEntityId e) { static_cast<T*>(s)->EndPlay(::rm::Entity(e)); }
@@ -1230,6 +1231,10 @@ template <class T> void RmHit(void* s, RmEntityId e, RmEntityId o) { static_cast
 template <class T> void RmEnter(void* s, RmEntityId e, RmEntityId o) { static_cast<T*>(s)->OnTriggerEnter(::rm::Entity(e), ::rm::Entity(o)); }
 template <class T> void RmExit(void* s, RmEntityId e, RmEntityId o) { static_cast<T*>(s)->OnTriggerExit(::rm::Entity(e), ::rm::Entity(o)); }
 template <class T> void RmClick(void* s, RmEntityId e) { static_cast<T*>(s)->OnClick(::rm::Entity(e)); }
+template <class T> void RmEventHook(void* s, RmEntityId e, const RmEvent* ev) {
+    const ::rm::Event x{ev->name ? ev->name : "", ::rm::Entity(ev->sender), ev->number, ev->text ? ev->text : "", ::rm::Entity(ev->entity)};
+    static_cast<T*>(s)->OnEvent(::rm::Entity(e), x);
+}
 template <class T> constexpr void (*RmBeginOf())(void*, RmEntityId) { if constexpr (RmHasBegin<T>) return &RmBegin<T>; else return nullptr; }
 template <class T> constexpr void (*RmTickOf())(void*, RmEntityId, float) { if constexpr (RmHasTick<T>) return &RmTick<T>; else return nullptr; }
 template <class T> constexpr void (*RmEndOf())(void*, RmEntityId) { if constexpr (RmHasEnd<T>) return &RmEnd<T>; else return nullptr; }
@@ -1238,6 +1243,7 @@ template <class T> constexpr void (*RmHitOf())(void*, RmEntityId, RmEntityId) { 
 template <class T> constexpr void (*RmEnterOf())(void*, RmEntityId, RmEntityId) { if constexpr (RmHasEnter<T>) return &RmEnter<T>; else return nullptr; }
 template <class T> constexpr void (*RmExitOf())(void*, RmEntityId, RmEntityId) { if constexpr (RmHasExit<T>) return &RmExit<T>; else return nullptr; }
 template <class T> constexpr void (*RmClickOf())(void*, RmEntityId) { if constexpr (RmHasClick<T>) return &RmClick<T>; else return nullptr; }
+template <class T> constexpr void (*RmEventOf())(void*, RmEntityId, const RmEvent*) { if constexpr (RmHasEvent<T>) return &RmEventHook<T>; else return nullptr; }
 // A std::vector field, worked here (this DLL's C runtime owns its memory).
 template <class V> uint64_t RmVecSize(const void* v) { return static_cast<const V*>(v)->size(); }
 template <class V> void RmVecResize(void* v, uint64_t n) { static_cast<V*>(v)->resize(static_cast<size_t>(n)); }
@@ -1318,7 +1324,7 @@ const RmApi* rm::Api() { return g_rmApi; }
             "     [](void* p) {{ new (p) {3}(); }}, [](void* p) {{ std::destroy_at(static_cast<{3}*>(p)); }},\n"
             "     [](void* d, const void* s) {{ *static_cast<{3}*>(d) = *static_cast<const {3}*>(s); }},\n"
             "     RmBeginOf<{3}>(), RmTickOf<{3}>(), RmEndOf<{3}>(), RmReloadOf<{3}>(), RmHitOf<{3}>(), RmEnterOf<{3}>(), RmExitOf<{3}>(),\n"
-            "     RmClickOf<{3}>()}},\n",
+            "     RmClickOf<{3}>(), RmEventOf<{3}>()}},\n",
             q, s->label.empty() ? s->name : s->label, headerOf(s), cpp, props > 0 ? "F_" + id : std::string("nullptr"), props);
     }
     if (scripts.empty()) {

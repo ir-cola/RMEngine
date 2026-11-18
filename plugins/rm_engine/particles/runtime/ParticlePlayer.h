@@ -35,6 +35,10 @@ struct EmitterClock {
 };
 // The particles to let out in the next `dt` seconds (at most the emitter's capacity).
 uint32_t AdvanceClock(EmitterClock& c, const ParticleEmitter& e, float dt);
+// The particles an emitter lets out in the next `dt` seconds when a script may have stopped it (emitting
+// false: none of its own - the clock stays) and asked for `extra` at once (rm::Particles::Emit): at most
+// its capacity.
+uint32_t EmitterBirths(EmitterClock& c, const ParticleEmitter& e, float dt, bool emitting, uint32_t extra);
 
 // Finds a module's source: a built-in one, or the .rmfx a module names (null: none; `file` its name for
 // the compiler's messages). A file read again (saved meanwhile) is a new source: the player that sees it
@@ -71,6 +75,11 @@ public:
 
     // From the start again (no particles, the clocks at 0).
     void Restart();
+    // Letting out new particles (a script's Stop: false - what is out lives on and dies away), and `count`
+    // more of each emitter at the next Advance (a script's Emit).
+    void SetEmitting(bool on);
+    bool Emitting() const { return emitting_; }
+    void Emit(uint32_t count) { pending_ += count; }
     // Moves it on by dt (lets out new particles where `world` puts the emitter - a column-major 4x4).
     void Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const float world[16], float dt, const CollisionWorld* collide = nullptr);
     // Draws its particles: the caller has bound the picture's render target and depth buffer. `images`:
@@ -92,6 +101,8 @@ private:
     std::vector<std::unique_ptr<Emitter>> emitters_;
     std::vector<std::string> problems_;
     float time_ = 0;
+    bool emitting_ = true;
+    uint32_t pending_ = 0;
     // What the emitters collide with (shared by them): the shapes and the camera of the depth.
     Microsoft::WRL::ComPtr<ID3D11Buffer> shapes_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shapesView_;

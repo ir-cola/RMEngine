@@ -946,7 +946,7 @@ private:
             }
         }
         if (pic.drawers.empty()) return;
-        const float dt = pic.drawnAt ? static_cast<float>(std::clamp(now_ - *pic.drawnAt, 0.0, 0.1)) : 0.f;
+        const float dt = (pic.drawnAt ? static_cast<float>(std::clamp(now_ - *pic.drawnAt, 0.0, 0.1)) : 0.f) * (host.playing ? host.timeScale : 1.f);
         pic.drawnAt = now_;
         const WorldDrawFrame wf{host.scene, host.host.Graphics(),
                                 [this](int id) -> const Mat4* {

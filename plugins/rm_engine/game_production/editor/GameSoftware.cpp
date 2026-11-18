@@ -1049,6 +1049,10 @@ private:
         runner_.SetCamera(SceneCamera(*playScene_, cameraTypes_, settings_.startCamera.id));  // the systems may switch it (SystemContext::camera)
         scripts_.Runner().Reset();
         scripts_.World().time = 0;
+        scripts_.World().unscaledTime = 0;
+        scripts_.World().frame = 0;
+        scripts_.World().timeScale = 1;
+        scripts_.World().layers = &settings_.layers;
         debug_.Clear();
         scripts_.World().debug = &debug_;  // the editor shows rm::Debug's lines (an exported game has none)
         // The scenes Game::LoadScene can switch to: the game's (the list, and this one when it is not in it).
@@ -1068,6 +1072,11 @@ private:
         scripts_.World().actions = &settings_.input;  // (edited while playing: read as it is each frame)
         scripts_.World().prefab = [this](const AssetRef& r) { return Cached(r); };  // rm::Spawn(prefab): the files as last read
         ResetGlobals(true);  // every global variable at its 初めの値; rm::Save into Library/Saves
+        {
+            // The player's bindings saved by a script (rm::Input::SaveBindings), as the game reads them.
+            std::string why;
+            if (!world.LoadBindings(&why) && !why.empty()) log::Warn("入力の割り当て (input.json) を読めません: {}", why);
+        }
         kept_.clear();       // (この値を残す: from this Play only)
         keptLeft_.clear();
         StartServices();     // 音 ... (the plugins' PlayServices): until ■
@@ -1085,6 +1094,12 @@ private:
         // The scripts first (input -> scripts' Tick -> fixed steps ...); they may switch the camera too.
         ScriptWorld& world = scripts_.World();
         world.camera = runner_.Camera();
+        // The game's time: the real seconds times the time scale (rm::SetTimeScale); the game UI keeps the real ones.
+        const double realDt = dt;
+        dt *= world.timeScale;
+        world.unscaledDt = static_cast<float>(realDt);
+        world.keyboardPlayer = std::clamp(settings_.keyboardPlayer - 1, 0, kPlayers - 1);  // (edited while playing: read each frame)
+        world.SetPointer(pointer_, GameScreen());
         debug_.BeginFrame(dt);  // last frame's lines go (and the ones whose seconds are up), then the scripts draw this one's
         scripts_.Runner().Frame(*playScene_, world, scripts_.Module(), settings_.scriptOrder, static_cast<float>(dt));
         runner_.SetCamera(world.camera);
@@ -1094,14 +1109,14 @@ private:
         // The services (音, the game UI ...): the game screen as the game settings' 画面, the mouse over the
         // game view; the hooks they ask for (a button's OnClick) go to the scripts now.
         std::vector<HookCall> asked;
-        PlayFrame pf{*playScene_, runner_.Camera(), static_cast<float>(dt)};
+        PlayFrame pf{*playScene_, runner_.Camera(), static_cast<float>(realDt)};
         pf.screen = GameScreen();
         pf.pointer = pointer_;
         pf.pointerWentDown = pointerWentDown_;
         pf.pointerWentUp = pointerWentUp_;
         pf.input = &world.inputNow;
         pf.inputBefore = &world.inputBefore;
-        pf.actions = &settings_.input;
+        pf.actions = &world.Actions();  // (the player's bindings)
         pf.hooks = &asked;
         pf.world = &world;
         services_.Frame(pf);
@@ -1172,6 +1187,9 @@ private:
         const auto kept = TakeKept();  // (as they were shown: before the scripts' EndPlay)
         scripts_.Runner().Stop(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder);  // EndPlay
         scripts_.World().services = nullptr;
+        scripts_.StopInput();  // (every pad still)
+        scripts_.World().playerActions.reset();
+        scripts_.World().timeScale = 1;
         services_.Stop();    // every sound stops (■: nothing of the game is heard after it)
         playScene_.reset();  // (scripts built while playing are taken at the next frame: on the scene from before Play)
         debug_.Clear();      // Stop: every debug line goes
@@ -1361,6 +1379,11 @@ private:
     void ReloadScripts(const std::filesystem::path& dll) {
         std::unique_ptr<ScriptModule> next = scripts_.LoadModule(dll);
         if (!next) return;  // (told) the old DLL goes on
+        // The coroutines' frames are the old DLL's: they stop before it goes (OnReloaded may start them again).
+        if (!scripts_.World().coroutines.empty()) {
+            log::Info("スクリプトを入れ替えたので、動いていたコルーチン {} 個を止めました", scripts_.World().coroutines.size());
+            scripts_.World().ClearCoroutines();
+        }
         const json::Value saved = scene_.Save();
         scene_.SetComponentTypes(baseTypes_, baseMultiple_);
         scene_.Load(saved);  // the old scripts' objects gone (kept as read)
@@ -1413,6 +1436,7 @@ private:
                         [this](std::vector<int> ids) { host_.SelectInTree(std::vector<tree::ItemId>(ids.begin(), ids.end())); },
                         [this](int id, const std::string& type) { return ResolveComponent(id, type); }};
         h.playing = Running();
+        h.timeScale = play_ == PlayState::Playing ? scripts_.World().timeScale : Running() ? 0.f : 1.f;
         h.game = game;
         h.background = settings_.clearColor;
         h.camera = Running() ? runner_.Camera() : SceneCamera(scene_, cameraTypes_, settings_.startCamera.id);  // in Play: as the systems left it

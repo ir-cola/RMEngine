@@ -21,6 +21,8 @@ PixelRect CellOf(uint32_t width, uint32_t height, int columns, int rows, int ind
 
 // An animation's cell after `seconds` playing `framesPerSecond`: the cells in `frames` in turn (empty:
 // 0 .. cellCount - 1). `loop` false stops on the last one.
-int AnimationCell(std::span<const int> frames, int cellCount, float framesPerSecond, double seconds, bool loop);
+int AnimationCell(std::span<const int> frames, int cellCount, float framesPerSecond, double seconds, bool loop, int startStep = 0);
+// The place in the sequence (0 .. its length - 1) the same way: `startStep` steps in, then `seconds` more.
+int AnimationStep(std::span<const int> frames, int cellCount, float framesPerSecond, double seconds, bool loop, int startStep = 0);
 
 }  // namespace rm::space2d

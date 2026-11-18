@@ -1,11 +1,13 @@
 #include "rm_engine/game_production/runtime/Input.h"
 
+#include "core/reflect/Data.h"
 #include "platform/Win.h"
 
 #include <Xinput.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <utility>
 
 // XInput 1.4 (in Windows 8 and later). A static library carries this into the exported game's link too.
@@ -54,6 +56,89 @@ ActionValue EvaluateAction(const InputAction& a, const InputFrame& f) {
         if (std::fabs(v) >= 0.5f) out.down = true;
     }
     out.axis = std::clamp(sum, -1.0f, 1.0f);
+    return out;
+}
+
+float ControlValue(const InputFrame& f, InputControl c, int player, int keyboardPlayer) {
+    if (player < 0 || player >= kPlayers) return ControlValue(f, c);
+    const int v = static_cast<int>(c);
+    if (v > 0 && v < 256) return player == keyboardPlayer && f.keys[static_cast<size_t>(v)] ? 1.0f : 0.0f;
+    if (v >= kPadControlBase && v < kPadControlBase + static_cast<int>(kPadControls)) {
+        return f.pads[static_cast<size_t>(player)][static_cast<size_t>(v - kPadControlBase)];
+    }
+    return 0;
+}
+
+ActionValue EvaluateAction(const InputAction& a, const InputFrame& f, int player, int keyboardPlayer) {
+    if (player < 0) return EvaluateAction(a, f);
+    ActionValue out;
+    float sum = 0;
+    for (const InputBinding& b : a.bindings) {
+        const float v = ControlValue(f, b.control, player, keyboardPlayer) * b.scale;
+        sum += v;
+        if (std::fabs(v) >= 0.5f) out.down = true;
+    }
+    out.axis = std::clamp(sum, -1.0f, 1.0f);
+    return out;
+}
+
+InputControl AnyPressed(const InputFrame& now, const InputFrame& before, int player, int keyboardPlayer, float* direction) {
+    if (direction) *direction = 1;
+    if (player < 0 || player == keyboardPlayer) {
+        for (size_t vk = 1; vk < now.keys.size(); ++vk) {
+            if (now.keys[vk] && !before.keys[vk]) return static_cast<InputControl>(vk);
+        }
+    }
+    auto look = [&](const std::array<float, kPadControls>& n, const std::array<float, kPadControls>& b) -> InputControl {
+        for (size_t i = 0; i < kPadControls; ++i) {
+            if (std::fabs(n[i]) >= 0.5f && std::fabs(b[i]) < 0.5f) {
+                if (direction) *direction = n[i] < 0 ? -1.0f : 1.0f;
+                return static_cast<InputControl>(kPadControlBase + static_cast<int>(i));
+            }
+        }
+        return InputControl::None;
+    };
+    if (player >= 0 && player < kPlayers) return look(now.pads[static_cast<size_t>(player)], before.pads[static_cast<size_t>(player)]);
+    if (player < 0) {
+        for (int p = 0; p < kPlayers; ++p) {
+            if (const InputControl c = look(now.pads[static_cast<size_t>(p)], before.pads[static_cast<size_t>(p)]); c != InputControl::None) return c;
+        }
+    }
+    return InputControl::None;
+}
+
+std::string ControlName(int control) {
+    if (const reflect::EnumDesc* d = reflect::FindEnum(typeid(InputControl))) {
+        for (const reflect::EnumItem& it : d->items) {
+            if (it.value == control && control != 0) return it.name;
+        }
+    }
+    if (control <= 0) return {};
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "Key0x%02X", control);
+    return buf;
+}
+
+json::Value BindingsToJson(std::span<const InputAction> actions) {
+    json::Value doc = json::Value::MakeObject();
+    doc.Set("kind", json::Value(std::string(kBindingsKind)));
+    doc.Set("format", json::Value(int64_t{1}));
+    json::Value list = json::Value::MakeArray();
+    for (const InputAction& a : actions) list.Push(reflect::Save(a));
+    doc.Set("actions", std::move(list));
+    return doc;
+}
+
+std::vector<InputAction> BindingsFromJson(std::span<const InputAction> game, const json::Value& saved) {
+    std::vector<InputAction> out(game.begin(), game.end());
+    if (saved.Get("kind").AsString() != kBindingsKind) return out;
+    for (const json::Value& item : saved.Get("actions").Items()) {
+        InputAction read;
+        reflect::Load(read, item);
+        for (InputAction& a : out) {
+            if (a.name == read.name) a.bindings = std::move(read.bindings);
+        }
+    }
     return out;
 }
 
@@ -109,6 +194,8 @@ public:
         return hook;
     }
     const KeyPresses& Presses() const { return presses_; }
+    // The wheel's notches since the last call.
+    float TakeWheel() { return std::exchange(wheel_, 0.0f); }
 
 private:
     static LRESULT CALLBACK Proc(int code, WPARAM wp, LPARAM lp) {
@@ -130,6 +217,7 @@ private:
         case WM_RBUTTONDBLCLK: add(VK_RBUTTON); break;
         case WM_MBUTTONDOWN:
         case WM_MBUTTONDBLCLK: add(VK_MBUTTON); break;
+        case WM_MOUSEWHEEL: wheel_ += static_cast<float>(GET_WHEEL_DELTA_WPARAM(m.wParam)) / WHEEL_DELTA; break;
         case WM_XBUTTONDOWN:
         case WM_XBUTTONDBLCLK: add(GET_XBUTTON_WPARAM(m.wParam) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2); break;
         default: break;
@@ -138,6 +226,7 @@ private:
 
     HHOOK hook_ = nullptr;
     KeyPresses presses_;
+    float wheel_ = 0;
 };
 
 // A window of this process is in front (another app's keys are not the game's).
@@ -169,19 +258,51 @@ std::array<float, kPadControls> PadValues(const XINPUT_GAMEPAD& g) {
 
 }  // namespace
 
-void InputReader::Forget() { seen_ = PressHook::OfThisThread().Presses(); }
+void InputReader::Forget() {
+    seen_ = PressHook::OfThisThread().Presses();
+    PressHook::OfThisThread().TakeWheel();
+}
+
+InputReader::~InputReader() { StopVibration(); }
+
+void InputReader::Vibrate(int slot, float low, float high, double seconds) {
+    if (slot < 0 || slot >= kPlayers) return;
+    XINPUT_VIBRATION v{};
+    v.wLeftMotorSpeed = static_cast<WORD>(std::clamp(low, 0.0f, 1.0f) * 65535.0f);
+    v.wRightMotorSpeed = static_cast<WORD>(std::clamp(high, 0.0f, 1.0f) * 65535.0f);
+    if (XInputSetState(static_cast<DWORD>(slot), &v) != ERROR_SUCCESS) return;
+    const bool still = v.wLeftMotorSpeed == 0 && v.wRightMotorSpeed == 0;
+    shakeUntil_[static_cast<size_t>(slot)] = still ? 0 : GetTickCount64() + static_cast<uint64_t>(std::max(0.0, seconds) * 1000.0);
+}
+
+void InputReader::StopVibration() {
+    for (DWORD slot = 0; slot < 4; ++slot) {
+        if (shakeUntil_[slot] == 0) continue;
+        XINPUT_VIBRATION v{};
+        XInputSetState(slot, &v);
+        shakeUntil_[slot] = 0;
+    }
+}
 
 InputFrame InputReader::Read() {
     InputFrame f;
     const KeyPresses& presses = PressHook::OfThisThread().Presses();
     const KeyPresses seen = std::exchange(seen_, presses);
-    if (!InFront()) return f;
+    const float wheel = PressHook::OfThisThread().TakeWheel();
+    const uint64_t now = GetTickCount64();
+    for (DWORD slot = 0; slot < 4; ++slot) {
+        if (shakeUntil_[slot] != 0 && now >= shakeUntil_[slot]) Vibrate(static_cast<int>(slot), 0, 0, 0);
+    }
+    if (!InFront()) {
+        StopVibration();  // (the player went to another app)
+        return f;
+    }
+    f.wheel = wheel;
     for (int vk = 1; vk < 256; ++vk) f.keys[static_cast<size_t>(vk)] = (GetAsyncKeyState(vk) & 0x8000) ? 1 : 0;
     // GetAsyncKeyState reads the mouse's physical buttons: swapped (left-handed) -> the logical ones
     // (the messages are already logical).
     if (GetSystemMetrics(SM_SWAPBUTTON)) std::swap(f.keys[VK_LBUTTON], f.keys[VK_RBUTTON]);
     AddMissedPresses(f, presses, seen);
-    const uint64_t now = GetTickCount64();
     for (DWORD slot = 0; slot < 4; ++slot) {
         if (now < nextLook_[slot]) continue;
         XINPUT_STATE s{};
@@ -191,6 +312,8 @@ InputFrame InputReader::Read() {
         }
         nextLook_[slot] = 0;
         const auto v = PadValues(s.Gamepad);
+        f.pads[slot] = v;
+        f.padConnected[slot] = 1;
         for (size_t i = 0; i < kPadControls; ++i) {
             if (std::fabs(v[i]) > std::fabs(f.pad[i])) f.pad[i] = v[i];
         }

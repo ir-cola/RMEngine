@@ -59,6 +59,10 @@ public:
         // typed into another app never moves the game - as the editor's Play); read by action name.
         world_.readInput = [this] { return input_.Read(); };
         world_.actions = &settings_.input;
+        world_.keyboardPlayer = std::clamp(settings_.keyboardPlayer - 1, 0, kPlayers - 1);
+        world_.vibrate = [this](int player, float low, float high, float seconds) { input_.Vibrate(player, low, high, seconds); };
+        world_.registry = &host_.Registry();
+        world_.layers = &settings_.layers;
         // rm::Spawn(prefab): the prefab files in the .rmpak (read once each).
         world_.prefab = [this](const AssetRef& ref) -> const json::Value* {
             if (const auto it = prefabs_.find(ref.guid); it != prefabs_.end()) return it->second ? &*it->second : nullptr;
@@ -83,6 +87,9 @@ public:
             wchar_t exe[MAX_PATH] = {};
             const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
             world_.saveFolder = GameSaveFolder(std::filesystem::path(std::wstring(exe, n)).stem().native());
+            // The player's own bindings (rm::Input::SaveBindings), when there are some.
+            std::string why;
+            if (!world_.LoadBindings(&why) && !why.empty()) host_.Log(1, "入力の割り当て (input.json) を読めません: " + why);
         }
         api_ = MakeScriptApi(world_);
         const std::filesystem::path dll = host_.Folder() / game::kScriptsDll;
@@ -187,8 +194,13 @@ public:
         return d;
     }
 
-    void Update(double dt) override {
+    void Update(double realDt) override {
+        // The game's time: the real seconds times the time scale (rm::SetTimeScale) - for the scripts, the
+        // systems and the particles; the game UI moves on in real time (a pause menu at 0 still moves).
+        const double dt = realDt * world_.timeScale;
         movedFor_ += static_cast<float>(dt);
+        world_.unscaledDt = static_cast<float>(realDt);
+        world_.SetPointer(host_.Pointer(), screen_);
         // The scripts (they read the keys), then the systems and their fixed steps.
         if (scripts_.Loaded()) {
             world_.scene = &scene_;
@@ -206,7 +218,7 @@ public:
         // The services (音, the game UI ...) - with the screen, the mouse and the input; the hooks they ask
         // for (a button's OnClick) go to the scripts now.
         std::vector<HookCall> asked;
-        PlayFrame pf{scene_, runner_.Camera(), static_cast<float>(dt)};
+        PlayFrame pf{scene_, runner_.Camera(), static_cast<float>(realDt)};
         pf.screen = screen_;
         pf.pointer = host_.Pointer();
         const game::Host::PointerPresses presses = host_.TakePointerPresses();
@@ -214,7 +226,7 @@ public:
         pf.pointerWentUp = presses.up > 0;
         pf.input = &world_.inputNow;
         pf.inputBefore = &world_.inputBefore;
-        pf.actions = &settings_.input;
+        pf.actions = &world_.Actions();  // (the player's bindings)
         pf.hooks = &asked;
         pf.world = &world_;
         services_.Frame(pf);
@@ -272,6 +284,7 @@ public:
 
     void Stop() override {
         if (scripts_.Loaded()) scriptRunner_.Stop(scene_, world_, scripts_, settings_.scriptOrder);
+        input_.StopVibration();
         world_.services = nullptr;
         services_.Stop();  // (every sound stops)
     }

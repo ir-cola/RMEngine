@@ -49,6 +49,11 @@ uint32_t AdvanceClock(EmitterClock& c, const ParticleEmitter& e, float dt) {
     return static_cast<uint32_t>(std::min(out, cap));
 }
 
+uint32_t EmitterBirths(EmitterClock& c, const ParticleEmitter& e, float dt, bool emitting, uint32_t extra) {
+    const uint64_t own = emitting ? AdvanceClock(c, e, dt) : 0;
+    return static_cast<uint32_t>(std::min<uint64_t>(own + extra, static_cast<uint64_t>(std::max(e.capacity, 1))));
+}
+
 std::shared_ptr<const ModuleSource> BuiltinLookup(const ParticleModule& m, std::string& file) {
     if (m.builtin.empty()) return nullptr;
     file = m.builtin;
@@ -270,8 +275,16 @@ void EffectPlayer::Set(std::shared_ptr<const ParticleEffect> effect, const Modul
     emitters_ = std::move(next);
 }
 
+void EffectPlayer::SetEmitting(bool on) {
+    if (on && !emitting_) {
+        for (auto& e : emitters_) e->sinceFinished = 0;
+    }
+    emitting_ = on;
+}
+
 void EffectPlayer::Restart() {
     time_ = 0;
+    pending_ = 0;
     for (auto& e : emitters_) {
         e->clock = {};
         e->head = e->serial = 0;
@@ -283,6 +296,10 @@ void EffectPlayer::Restart() {
 void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const float world[16], float dt, const CollisionWorld* collide) {
     if (!device || !ctx) return;
     time_ += dt;
+    struct Used {
+        uint32_t& pending;
+        ~Used() { pending = 0; }  // (each emitter took the asked particles once, at whatever return)
+    } used{pending_};
     // What the emitters collide with: the shapes (one buffer, grown when needed) and the depth's camera.
     CollideConstants cc{};
     const size_t shapeCount = collide ? std::min<size_t>(collide->shapes.size(), 4096) : 0;
@@ -408,8 +425,8 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
             ctx->ClearUnorderedAccessViewUint(e.uav.Get(), zero);
             e.cleared = true;
         }
-        const uint32_t born = AdvanceClock(e.clock, *e.data, dt);
-        if (e.clock.finished) e.sinceFinished += dt;
+        const uint32_t born = EmitterBirths(e.clock, *e.data, dt, emitting_, pending_);
+        if (e.clock.finished || !emitting_) e.sinceFinished += dt;  // (stopped by a script: dying away)
 
         EmitterConstants ec{};
         std::copy(world, world + 16, ec.world);
@@ -514,7 +531,7 @@ std::string EffectPlayer::Error(size_t emitter) const { return emitter < emitter
 
 bool EffectPlayer::Finished() const {
     for (const auto& e : emitters_) {
-        if (e->data->enabled && !e->broken && !(e->clock.finished && e->sinceFinished > kForgetDeadAfter)) return false;
+        if (e->data->enabled && !e->broken && !((e->clock.finished || !emitting_) && e->sinceFinished > kForgetDeadAfter)) return false;
     }
     return true;
 }

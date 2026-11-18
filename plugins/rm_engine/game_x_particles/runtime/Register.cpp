@@ -14,6 +14,8 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     // Drawn into the 3D pictures: the scene view, the game view and the exported game.
     static const game_x_3d::WorldDrawInfo kDraw{&CreateParticleDraw};
     registry.Contribute(game_x_3d::kWorldDrawPoint, kDraw);
+    // Scripts: play / stop / emit (sdk/RMParticles.h).
+    registry.Contribute(game_production::kScriptApiPoint, ScriptParticlesPart());
 }
 
 }  // namespace rm::game_x_particles

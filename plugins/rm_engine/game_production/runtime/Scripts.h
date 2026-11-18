@@ -35,6 +35,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -54,17 +55,66 @@ struct ScriptApiPart {
     const void* table;  // the part's C struct of functions; they get RmApi::ctx = ScriptWorld*
 };
 
+// A coroutine of a script (rm::Task: its frame is the DLL's) and when it runs on (RmCoroutinesApi).
+struct CoroutineSlot {
+    uint64_t id = 0;
+    void* frame = nullptr;
+    int (*resume)(void* frame, RmWait* next) = nullptr;
+    void (*destroy)(void* frame) = nullptr;
+    const void* owner = nullptr;  // the script that started it (null: none - stopped at the game's end only)
+    int ownerEntity = 0;
+    RmWait wait{};
+    uint64_t waitFrom = 0;  // the frame its wait began in (a wait ends in a later frame at the earliest)
+    double until = 0;       // RmWait_Seconds: game time; RmWait_RealSeconds: real time
+    bool dead = false;      // ended or stopped (taken out after the pass)
+    bool running = false;   // inside its resume now (stopping it then frees it after it returns)
+};
+
+// An event sent by a script (rm::Events), delivered after the frame's Ticks (ScriptRunner::DeliverEvents).
+struct QueuedEvent {
+    std::string name;
+    int sender = 0;
+    double number = 0;
+    std::string text;
+    int entity = 0;
+    uint32_t scope = 0;  // 0 every entity, 1 the target only, 2 the target and what is below it
+    int target = 0;
+};
+
 // What the scripts see while they run: RmApi::ctx points at this.
 struct ScriptWorld {
     Scene* scene = nullptr;  // the scene that plays (the copy, in the editor)
-    float dt = 0;
-    double time = 0;
+    float dt = 0;            // this frame's seconds, the time scale applied (Tick's dt)
+    double time = 0;         // game seconds before this frame (the time scale applied)
+    // The time scale (rm::SetTimeScale): the host multiplies its frame's real seconds by it for the scripts,
+    // the systems and what draws (particles). The real ones: unscaledDt / unscaledTime. frame: frames before
+    // this one.
+    float timeScale = 1;
+    float unscaledDt = 0;
+    double unscaledTime = 0;
+    uint64_t frame = 0;
+    // The mouse on the game screen (the game settings' 画面, DIPs): the host sets it each frame
+    // (SetPointer) before the scripts run. nullopt: not over the game.
+    std::optional<Vec2> pointer;
+    Vec2 lastPointer{0, 0};
+    Vec2 pointerDelta{0, 0};
+    Vec2 screen{1280, 720};
+    // The plugins (Entity::SetParent keeping the world place asks the spaces: PlaceInfo::keepWorld). Null: none.
+    const RuntimeRegistry* registry = nullptr;
+    // The game settings' layer names (rm::LayerIndex: 1, 2 ... in this order); null: none.
+    const std::vector<std::string>* layers = nullptr;
     uint64_t camera = 0;  // SystemContext::camera: the game's camera, switched by scripts too
     // The host's input, read once a frame (both hosts: an InputReader - only while one of their windows
     // is in front; tests give their own). Empty: nothing is ever down.
     std::function<InputFrame()> readInput;
     // The game settings' 入力 (the host's GameSettings::input; it lives as long as the world is used).
     const std::vector<InputAction>* actions = nullptr;
+    // ... as the player changed them (rm::Input::SetBinding, read from input.json); nullopt: the settings'.
+    std::optional<std::vector<InputAction>> playerActions;
+    // Who has the keyboard and the mouse (0 = 1P: the game settings' キーボードとマウスのプレイヤー - 1).
+    int keyboardPlayer = 0;
+    // Shakes a player's pad (the host's InputReader::Vibrate); empty: nothing shakes.
+    std::function<void(int player, float low, float high, float seconds)> vibrate;
     // A script's message (level 0 info / 1 warning / 2 error).
     std::function<void(int level, std::string_view text)> log;
     // The plugins' parts of the API (what they offered at kScriptApiPoint: ScriptApiParts).
@@ -99,9 +149,36 @@ struct ScriptWorld {
     // Asked during the frame, done at its end (ScriptRunner::Frame): EndPlay first, then away.
     std::vector<int> destroyAsked;                            // entities (with what is below them)
     std::vector<std::pair<int, const void*>> removeAsked;     // components: their entity and object
+    // The coroutines (rm::StartCoroutine) and the events sent this frame (rm::Events).
+    std::vector<CoroutineSlot> coroutines;
+    uint64_t nextCoroutine = 1;
+    bool inCoroutinePass = false;
+    std::vector<QueuedEvent> events;
+    // The script whose hook (or coroutine) runs now, and its entity (null / 0: none) - what a coroutine
+    // started now belongs to and what an event sent now comes from.
+    const void* currentScript = nullptr;
+    int currentEntity = 0;
 
     // Reads the input once a frame (pressed / released compare with the last frame).
     void ReadInput();
+    // The mouse for this frame (the host's: over the game screen or not) and the screen's size.
+    void SetPointer(std::optional<Vec2> at, Vec2 screenSize);
+    // The input actions in use: the player's (playerActions) or the game settings'.
+    const std::vector<InputAction>& Actions() const;
+    // The player's bindings from <saveFolder>/input.json (nothing there: the settings'); false and *why
+    // when a file is there and cannot be read. Save writes them.
+    bool LoadBindings(std::string* why = nullptr);
+    bool SaveBindings(std::string* why = nullptr);
+    std::filesystem::path BindingsFile() const;
+    // Coroutines: start one (runs it to its first wait now; its id, 0 when it ended at once), stop one /
+    // every one of a script / all of them (before the scripts' DLL is let go). ResumeCoroutines: after the
+    // Ticks, every coroutine whose wait is over runs on.
+    uint64_t StartCoroutine(void* frame, int (*resume)(void*, RmWait*), void (*destroy)(void*));
+    void StopCoroutine(uint64_t id);
+    void StopCoroutinesOf(const void* owner);
+    void ClearCoroutines();
+    void ResumeCoroutines();
+    bool CoroutineRunning(uint64_t id) const;
     // An action of the game settings by name; null (and told once) when there is none.
     const InputAction* Action(const char* name);
     // A global variable by name; null (and told once) when there is none.
@@ -206,6 +283,10 @@ public:
     // order (the same as Tick's). Then what they destroyed / removed goes (ApplyAsked).
     void Deliver(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
                  std::span<const HookCall> calls);
+    // The events sent (rm::Events): each to the started, switched-on scripts with OnEvent it reaches, in the
+    // scripts' order; one sent meanwhile right after (a few rounds at most). Then what they destroyed goes.
+    // Frame and Deliver do it at their ends.
+    void DeliverEvents(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);
     // The scripts built again while the game plays (design BluePrint 20-c): before, which scripts of the
     // scene had started / crashed (by entity, type and place among that type's - their objects are
     // made again); after the scene was read back with the new types, the same taken again and
@@ -234,8 +315,9 @@ private:
     };
     // Every script of the scene (the switched-off ones too), in the run order.
     std::vector<Instance> Collect(Scene& scene, const ScriptModule& module, std::span<const ScriptOrderEntry> order) const;
-    // Runs a hook guarded; false (and the script stopped, told once) when it crashed.
-    bool Call(ScriptWorld& world, const Instance& in, int hook, float dt, int other = 0);
+    // Runs a hook guarded; false (and the script stopped, told once) when it crashed. EndPlay (and a crash)
+    // stops the script's coroutines.
+    bool Call(ScriptWorld& world, const Instance& in, int hook, float dt, int other = 0, const RmEvent* event = nullptr);
 
     std::unordered_set<void*> started_;
     std::unordered_set<void*> crashed_;
@@ -253,6 +335,10 @@ SceneSwitch SwitchAskedScene(Scene& playing, ScriptWorld& world, ScriptRunner& r
 
 // The hooks, called inside __try / __except (ScriptGuard.cpp). 0 = fine, else the exception code.
 // hook: 0 = BeginPlay, 1 = Tick, 2 = EndPlay.
-unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other = 0);
+unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other = 0,
+                             const RmEvent* event = nullptr);
+// A coroutine's resume / destroy, guarded the same way (0 = fine). *alive: resume's answer.
+unsigned long CallCoroutineResume(int (*resume)(void*, RmWait*), void* frame, RmWait* next, int* alive);
+unsigned long CallCoroutineDestroy(void (*destroy)(void*), void* frame);
 
 }  // namespace rm::game_production

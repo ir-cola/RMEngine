@@ -76,7 +76,12 @@ public:
             const auto& e = *one.entity;
             const size_t nth = one.nth;
             const auto& ps = *one.system;
-            if (f.playing ? !ps.playOnStart : std::find(f.selection.begin(), f.selection.end(), e.data.id) == f.selection.end()) continue;
+            // Playing: the ones letting out particles, and those a script stopped while theirs die away.
+            const auto there = running_.find(RunKey(e.data.id, nth));
+            if (f.playing ? !Emitting(ps) && (there == running_.end() || there->second.player.Finished())
+                          : std::find(f.selection.begin(), f.selection.end(), e.data.id) == f.selection.end()) {
+                continue;
+            }
             const space3d::Mat4* world = f.world ? f.world(e.data.id) : nullptr;
             if (!world) continue;  // no Transform, or switched off
             if (!particles::CanRunParticles(device)) {
@@ -99,7 +104,16 @@ public:
                 }
                 collide.shapes = shapes_;
             }
-            r.player.Advance(device, ctx, &world->m[0][0], f.dt * std::max(ps.speed, 0.f), &collide);
+            if (f.playing) {
+                // What scripts asked since the last frame (each once).
+                r.player.SetEmitting(Emitting(ps));
+                if (ps.restarts != r.restarts) r.player.Restart();
+                if (ps.emitted != r.emitted) r.player.Emit(ps.emitted - r.emitted);
+                r.restarts = ps.restarts;
+                r.emitted = ps.emitted;
+            }
+            const float speed = f.playing && ps.paused ? 0.f : std::max(ps.speed, 0.f);
+            r.player.Advance(device, ctx, &world->m[0][0], f.dt * speed, &collide);
             for (const std::string& p : r.player.TakeProblems()) Tell(p);
             out.push_back([this, player = &r.player, gfx = &f.gfx, read = f.asset, often = !f.playing](const space3d::ExtraDrawContext& dc) {
                 player->Draw(dc.ctx, ViewOf(dc), [&](const AssetRef& ref) { return images_.Find(ref, *gfx, read, often); });
@@ -144,6 +158,7 @@ private:
     struct Running {
         EffectPlayer player;
         bool seen = false;
+        uint32_t restarts = 0, emitted = 0;  // the scripts' requests done (ParticleSystem's counts)
     };
     struct Loaded {
         std::shared_ptr<const ParticleEffect> effect;

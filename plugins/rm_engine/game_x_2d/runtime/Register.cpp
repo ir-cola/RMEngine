@@ -37,10 +37,12 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kSystemPoint, kSpinSystem);
     // Scripts: Transform 2D (sdk/RM2D.h).
     registry.Contribute(game_production::kScriptApiPoint, ScriptTransform2DPart());
+    registry.Contribute(game_production::kScriptApiPoint, ScriptTransform2DPart2());
+    registry.Contribute(game_production::kScriptApiPoint, ScriptSpriteAnimationPart());
     // ... and debug drawing (rm::Debug: lines the editor shows while playing; nothing in a game).
     registry.Contribute(game_production::kScriptApiPoint, ScriptDebug2DPart());
     // Where an entity is (the sounds of a 2D game are heard from there: PlayServices.h).
-    static const game_production::PlaceInfo kPlace{"2d", &Pose2D};
+    static const game_production::PlaceInfo kPlace{"2d", &Pose2D, &KeepWorld2D};
     registry.Contribute(game_production::kPlacePoint, kPlace);
 }
 

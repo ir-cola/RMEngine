@@ -57,6 +57,8 @@ public:
     // Play starts: what was typed in the editor since the last Play is not pressed in the game, and the
     // keys held now (Ctrl+P) count as held, not as pressed on its first frame.
     void StartInput();
+    // Every pad's shaking stops (■).
+    void StopInput() { input_.StopVibration(); }
     ScriptRunner& Runner() { return runner_; }
     bool Building() const { return building_; }
     bool WaitingForStop() const { return ready_.has_value(); }

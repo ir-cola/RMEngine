@@ -4,6 +4,7 @@
 // tests/TestSpace2d.cpp.
 
 #include "core/reflect/Reflect.h"
+#include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 
 #include <vector>
@@ -17,7 +18,14 @@ struct SpriteAnimation {
     RM_PROPERTY(Edit, Label="1 秒のコマ数", Tooltip="速さ。0 で止まる", Min=0, Max=240) float framesPerSecond = 8.f;
     RM_PROPERTY(Edit, Label="繰り返す", Tooltip="外すと、最後のコマで止まる") bool loop = true;
     RM_TRANSIENT() double time = 0;  // seconds played (only in the copy that plays)
+    // What scripts asked (RM2D.h's rm::SpriteAnimation): from which step it plays, held still, stopped.
+    RM_TRANSIENT() int startStep = 0;
+    RM_TRANSIENT() bool paused = false;
+    RM_TRANSIENT() bool stopped = false;
 };
+
+// The scripts' part (RM2D.h: rm::SpriteAnimation): play, pause, stop, the speed, the frames.
+const game_production::ScriptApiPart& ScriptSpriteAnimationPart();
 
 // The system (Frame): every スプライトのアニメーション moves on and sets its entity's sprite's コマ.
 void RunSpriteAnimation(game_production::SystemContext& ctx);

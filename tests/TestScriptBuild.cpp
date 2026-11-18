@@ -85,6 +85,65 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
              "    if (!rm::Save::Exists(1)) rm::Save::Write(1);\n"
              "}\n";
     }
+    // A script of ABI 7: a coroutine (frames, seconds, a condition), timers, an event and OnEvent, a tag, a
+    // parent set, the math - and the 2D / 3D / particles parts compiled (they do nothing here).
+    {
+        std::ofstream h(ScriptsFolder(project) / L"Waiter.h", std::ios::binary);
+        h << R"rm(#pragma once
+#include "RM.h"
+RM_SCRIPT()
+struct Waiter {
+    RM_PROPERTY() int steps = 0;
+    RM_PROPERTY() int timers = 0;
+    RM_PROPERTY() int events = 0;
+    RM_PROPERTY() float sum = 0;
+    RM_PROPERTY() std::string log;
+    void BeginPlay(rm::Entity self);
+    void OnEvent(rm::Entity self, const rm::Event& e);
+};
+)rm";
+        std::ofstream c(ScriptsFolder(project) / L"Waiter.cpp", std::ios::binary);
+        c << R"rm(#include "Waiter.h"
+#include "RM2D.h"
+#include "RM3D.h"
+#include "RMParticles.h"
+static rm::Task Count(Waiter* w) {
+    w->log += "a";
+    co_await rm::NextFrame();
+    w->log += "b";
+    co_await rm::WaitSeconds(0.25f);
+    w->log += "c";
+    co_await rm::WaitUntil([w] { return w->events > 0; });
+    w->log += "d";
+}
+void Waiter::BeginPlay(rm::Entity self) {
+    rm::StartCoroutine(Count(this));
+    rm::After(0.15f, [this] { ++timers; });
+    rm::Every(0.1f, [this] { sum += 1; }, 3);
+    self.SetTag("Hero");
+    rm::Entity child = rm::Spawn("Child");
+    child.SetParent(self, true);
+    rm::Events::SendTo(self, "Hello", 2.5, "hi");
+    const rm::Vec3 v = rm::Normalize(rm::Vec3{3, 0, 4}) * 10.0f;
+    steps = static_cast<int>(std::lround(v.x + v.z)) + static_cast<int>(self.Children().size()) * 100 + (rm::FindWithTag("Hero") == self ? 1000 : 0);
+    const rm::Quat q = rm::Quat::Euler({0, 90, 0});
+    (void)q.ToEuler();
+    (void)rm::Mouse::Position();
+    (void)rm::Input::Axis("MoveX", 1);
+    rm::SetTimeScale(1.0f);
+    rm::SpriteAnimation(self).Play();
+    rm::Particles(self).Emit(1);
+    rm::Transform3D(self).LookAt(rm::Vec3{0, 0, -1});
+    rm::Transform2D(self).LookAt(rm::Vec2{1, 0});
+}
+void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
+    if (!e.Is("Hello")) return;
+    ++events;
+    sum += static_cast<float>(e.number);
+    log += std::string(e.text);
+}
+)rm";
+    }
     // A script that makes and destroys, adds the engine's Transform, and has every new kind of field.
     {
         std::ofstream h(ScriptsFolder(project) / L"Shooter.h", std::ios::binary);
@@ -126,7 +185,8 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
     req.project = project;
     req.engine = ExeFolder();  // rmgen.exe is built next to the tests
     req.sdk = {Repo() / L"plugins/rm_engine/game_production/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_3d/runtime/sdk",
-               Repo() / L"plugins/rm_engine/game_x_2d/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_audio/runtime/sdk"};
+               Repo() / L"plugins/rm_engine/game_x_2d/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_audio/runtime/sdk",
+               Repo() / L"plugins/rm_engine/game_x_particles/runtime/sdk"};
 #ifdef _DEBUG
     req.debug = true;
 #endif
@@ -137,7 +197,8 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
     if (!built.ok) return;
     {
         ScriptWorld world;
-        world.parts = {game_x_3d::ScriptTransform3DPart(), game_x_2d::ScriptTransform2DPart()};
+        world.parts = {game_x_3d::ScriptTransform3DPart(), game_x_3d::ScriptTransform3DPart2(), game_x_2d::ScriptTransform2DPart(),
+                       game_x_2d::ScriptTransform2DPart2()};
         // → held (the sample reads the action MoveX of the default 入力, not the key).
         world.readInput = [] {
             InputFrame f;
@@ -235,6 +296,31 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
                 CHECK(world.globals.Find("speed")->v[0] == 6);
                 CHECK(SaveExists(ProjectSaveFolder(project), "1"));
                 CHECK(runner.Crashed() == 0);
+            }
+        }
+        {
+            // ABI 7 in a real DLL: the coroutine ran a, b (next frame), c (0.25 s later), d (the event had
+            // come); the timer once, every 0.1 s three times; the event reached OnEvent; the tag and the
+            // parent were set; the math. Stopped: no coroutine left.
+            const ScriptType* waiter = module.Find("Waiter");
+            CHECK(waiter != nullptr && waiter->script->onEvent != nullptr);
+            if (waiter) {
+                Scene scene;
+                scene.SetComponentTypes({&waiter->desc}, {&waiter->desc});
+                const int e = scene.Create("Hero");
+                scene.AddComponent(e, waiter->desc);
+                ScriptRunner runner;
+                for (int i = 0; i < 10; ++i) runner.Frame(scene, world, module, {}, 0.1f);
+                const json::Value data = reflect::Save(waiter->desc, scene.Find(e)->FindComponent("Waiter")->value.Get());
+                CHECK(data.Get("log").AsString() == "ahibcd");
+                CHECK(data.Get("timers").AsInt() == 1 && data.Get("events").AsInt() == 1);
+                CHECK(data.Get("sum").AsDouble() > 5.49 && data.Get("sum").AsDouble() < 5.51);
+                CHECK(data.Get("steps").AsInt() == 1114);
+                CHECK(scene.Find(e)->data.tag == "Hero");
+                const std::vector<int> kids = scene.Children(e);
+                CHECK(kids.size() == 1 && scene.Find(kids[0])->data.name == "Child");
+                runner.Stop(scene, world, module, {});
+                CHECK(world.coroutines.empty() && runner.Crashed() == 0);
             }
         }
         // Built again: another name (the loaded one cannot be written over).

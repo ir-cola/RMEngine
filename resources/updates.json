@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "スクリプトに コルーチン (co_await で待つ)・タイマー・イベント (OnEvent)・時間の速さ・タグとレイヤー・親子の付け替え・LookAt・数学 (Vec3 の計算・クォータニオン・乱数)・マウス・プレイヤーごとのゲームパッドと振動・遊ぶ人が変えられるキーの割り当て・パーティクルとスプライトのアニメーションの操作 を足した。エンティティに「タグ」「レイヤー」の欄",
+          "en": "Scripts now have coroutines (wait with co_await), timers, events (OnEvent), time scale, tags and layers, re-parenting, LookAt, math (vector math, quaternions, random numbers), the mouse, game pads per player with vibration, key bindings the player can change, and control of particles and sprite animations. Entities have Tag and Layer fields"
+        },
+        {
           "ja": "画像の取り込みの設定に フィルタ (滑らか / くっきり)・端の扱い (繰り返し / 端で止める / 鏡のように反転)・ミップマップのオン・オフ・透明部分を保つ・ミップマップ・ストリーミング を足した。アセットの右クリックの「詳しく見る」とファイルの大きさ・ピクセル数",
           "en": "Image import settings now have Filter (smooth / crisp), Edges (repeat / clamp / mirror), Mipmaps on/off, Preserve coverage and Mipmap streaming. Assets have Show details in the right-click menu, with the file size and pixel size"
         },

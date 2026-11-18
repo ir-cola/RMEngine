@@ -86,6 +86,8 @@
     <ClCompile Include="TestGlobals.cpp" />
     <ClCompile Include="TestInput.cpp" />
     <ClCompile Include="TestScriptsMore.cpp" />
+    <ClCompile Include="TestScriptsAbi7.cpp" />
+    <ClCompile Include="TestScriptMath.cpp" />
     <ClCompile Include="TestScripts.cpp" />
     <ClCompile Include="TestDebugDraw.cpp" />
     <ClCompile Include="TestScriptBuild.cpp" />
@@ -173,6 +175,7 @@
     <ClCompile Include="..\plugins\rm_engine\particles\runtime\Presets.cpp" />
     <ClCompile Include="..\plugins\rm_engine\particles\runtime\ParticlePlayer.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\ParticleDraw.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\ScriptParticles.cpp" />
     <ClCompile Include="..\plugins\rm_engine\particles_x_physics\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)particles_x_physics\</ObjectFileName>
     </ClCompile>

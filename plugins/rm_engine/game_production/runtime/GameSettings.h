@@ -160,7 +160,8 @@ struct GameSettings {
     RM_PROPERTY(Edit, Label="物理の刻み (秒)", Min=0.001, Max=0.1, Step=0.001) float fixedTimestep = 0.02f;
     RM_PROPERTY(Edit, Label="背景の色", Min=0, Max=1) Color clearColor{0.10f, 0.10f, 0.12f, 1};
     RM_PROPERTY(Edit, Label="画面") DisplaySettings display;
-    RM_PROPERTY(Edit, Label="タグ") std::vector<std::string> tags;
+    RM_PROPERTY(Edit, Label="タグ", Tooltip="エンティティに付ける名前の一覧 (スクリプトの rm::FindWithTag で探す)。エンティティのインスペクターの「タグ」に書きます") std::vector<std::string> tags;
+    RM_PROPERTY(Edit, Label="レイヤー", Tooltip="エンティティの分け方の一覧。上から 1, 2, 3 … 番 (空のレイヤーは 0 番の既定)。スクリプトは rm::LayerIndex で番号を読みます") std::vector<std::string> layers;
     // References (saved as ids). The icon is used once the game is exported.
     RM_PROPERTY(Edit, Label="アイコン", Tooltip="書き出したゲームのウィンドウとタスクバーの絵 (画像のアセット)", AssetKind="image") AssetRef icon;
     RM_PROPERTY(Edit, Label="最初のカメラ", Tooltip="ゲームビューと Play はこのエンティティのカメラから見ます (カメラの部品を付けたエンティティを選びます)") EntityRef startCamera;
@@ -173,6 +174,9 @@ struct GameSettings {
     RM_PROPERTY(Edit, Label="Play 中のビルド", Tooltip="Play 中にスクリプトのビルドが終わったとき。すぐ入れ替えると、欄の値は名前で引き継ぎ、BeginPlay は呼ばずに OnReloaded を呼びます (RM_TRANSIENT の欄は既定の値に戻ります)") ScriptReload scriptReload = ScriptReload::AtStop;
     // What the scripts read by name (rm::Input::Down("Jump")): the same in the editor's Play and the game.
     RM_PROPERTY(Edit, Label="入力", Tooltip="スクリプトはキーではなくアクションの名前で入力を読みます (ゲームパッドもそのまま使えます)") std::vector<InputAction> input = DefaultInputActions();
+    // Several players (rm::Input::Axis("MoveX", player)): each has the game pad in its slot; the keyboard and
+    // the mouse go to this one (1 = 1P).
+    RM_PROPERTY(Edit, Label="キーボードとマウスのプレイヤー", Tooltip="何人かで遊ぶとき、キーボードとマウスを使う人 (1 = 1P)。ほかの人はゲームパッドだけ。プレイヤーを指定しない読み方 (rm::Input::Axis(\"MoveX\")) は今までどおり全部を読みます", Min=1, Max=4) int keyboardPlayer = 1;
     // Values of the whole game: back to these at every Play (and when it stops); rm::Save writes them.
     RM_PROPERTY(Edit, Label="グローバル変数", Tooltip="ゲーム全体の値 (シーンを切り替えても残る)。スクリプトからは Global::名前。rm::Save::Write で保存できます") std::vector<GlobalVariable> globals;
     RM_PROPERTY(Edit, Label="音量", Tooltip="全体・BGM・効果音の大きさ。Play 中に変えるとすぐ聞こえ方が変わります") AudioVolumes volume;

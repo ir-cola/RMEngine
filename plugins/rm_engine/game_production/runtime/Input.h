@@ -12,22 +12,31 @@
 //
 // Pressed / Released compare this frame with the last (ScriptWorld keeps both).
 
+#include "base/Json.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace rm::game_production {
 
 inline constexpr int kPadControlBase = 0x100;  // InputControl::PadA
 inline constexpr size_t kPadControls = 20;     // PadA .. PadRightStickY
 
+inline constexpr int kPlayers = 4;  // game pads (XInput's slots) = players 0..3
+
 struct InputFrame {
     std::array<uint8_t, 256> keys{};        // by virtual-key code (the mouse buttons too): 1 = held down
     std::array<float, kPadControls> pad{};  // by InputControl - PadA: buttons 0 / 1, triggers 0..1, sticks -1..1
+                                            // (every pad: each control the one that pushes it most)
+    std::array<std::array<float, kPadControls>, kPlayers> pads{};  // ... each pad on its own (by slot)
+    std::array<uint8_t, kPlayers> padConnected{};                   // 1: a pad is in that slot
+    float wheel = 0;  // the mouse wheel's notches since the last frame (+: away from you)
 };
 
 // The value of one control on a frame: a key or a button 0 / 1, a trigger 0..1, a stick -1..1
@@ -39,6 +48,23 @@ struct ActionValue {
     bool down = false;  // one binding at 0.5 or more (either way: a stick to the left with scale 1 too)
 };
 ActionValue EvaluateAction(const InputAction& a, const InputFrame& f);
+// The same for one player (0..3): pad controls from that player's pad only; keys and mouse buttons only
+// when the player is `keyboardPlayer`. player < 0: everyone (as above).
+float ControlValue(const InputFrame& f, InputControl c, int player, int keyboardPlayer);
+ActionValue EvaluateAction(const InputAction& a, const InputFrame& f, int player, int keyboardPlayer);
+// What went down between `before` and `now` for `player` (< 0: anyone): a key or mouse button, a pad's
+// button or trigger, a stick pushed past half way (*direction -1 when pushed to the - side). None when
+// nothing did. Keys first (low codes first), then the pad's controls in their order.
+InputControl AnyPressed(const InputFrame& now, const InputFrame& before, int player, int keyboardPlayer, float* direction);
+// A control's name as the game settings save it ("Space", "PadA"; a key the list does not name: "Key0x5B").
+std::string ControlName(int control);
+
+// --- The player's bindings (rm::Input::SetBinding ... SaveBindings): input.json on the player's PC ------
+//   { "kind": "rm_engine.input_bindings", "format": 1, "actions": [ { "name": "Jump", "bindings": [...] } ] }
+// Only actions the game has are taken (by name); an action the file does not have keeps the game's.
+inline constexpr char kBindingsKind[] = "rm_engine.input_bindings";
+json::Value BindingsToJson(std::span<const InputAction> actions);
+std::vector<InputAction> BindingsFromJson(std::span<const InputAction> game, const json::Value& saved);
 // The action of that name (the first; names are compared as they are, case and all); null: none.
 const InputAction* FindAction(std::span<const InputAction> actions, std::string_view name);
 // ... or, when the game settings have none of that name (a game made before it was standard), the
@@ -81,13 +107,19 @@ void AddMissedPresses(InputFrame& f, const KeyPresses& now, const KeyPresses& se
 // editor's UI thread, the exported game's only one).
 class InputReader {
 public:
+    ~InputReader();
     InputFrame Read();
+    // Shakes the pad in `slot` (0..3; low: the left heavy motor, high: the right light one, 0..1) for
+    // `seconds` - Read stops it when they are over. StopVibration: every pad still now.
+    void Vibrate(int slot, float low, float high, double seconds);
+    void StopVibration();
     // The presses counted so far are not the game's (the editor's typing between two Plays): the next
     // Read sees only those made after this.
     void Forget();
 
 private:
     std::array<uint64_t, 4> nextLook_{};  // GetTickCount64 when an empty slot is asked again
+    std::array<uint64_t, 4> shakeUntil_{};  // GetTickCount64 when a pad's shaking stops (0: not shaking)
     KeyPresses seen_;                     // the counts at the last Read
 };
 

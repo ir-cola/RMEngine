@@ -43,6 +43,9 @@ struct SceneViewHost {
     std::function<std::function<reflect::EditTarget()>(int id, const std::string& type)> component;
     // Play: `scene` is the copy that plays (it changes every frame, and is not edited - no gizmo).
     bool playing = false;
+    // How fast the game's time goes while playing (rm::SetTimeScale; 0 while paused): what moves by itself
+    // in a picture (the particles) moves by the picture's time times this.
+    float timeScale = 1;
     // The game view: only the picture of the game - no grid, tools or selection, seen through the
     // game's camera (`camera`), the game settings' 背景の色 behind it (unless the camera has its own).
     bool game = false;

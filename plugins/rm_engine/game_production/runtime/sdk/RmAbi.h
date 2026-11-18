@@ -13,12 +13,13 @@
  * /MD; the engine may be /MT), so its strings are read and written through the DLL's own two functions
  * (RmModule::stringGet / stringSet). Nothing else here allocates on one side and frees on the other.
  *
- * You do not include this file yourself: RM.h does. Change anything here -> raise RM_ABI_VERSION. */
+ * You do not include this file yourself: RM.h does. Change anything here -> raise RM_ABI_VERSION
+ * (ABI 7: RmScriptDesc::onEvent; the parts below - time, coroutines, events, entity, mouse, input 2). */
 #pragma once
 
 #include <stdint.h>
 
-#define RM_ABI_VERSION 6u
+#define RM_ABI_VERSION 7u
 
 #ifdef __cplusplus
 extern "C" {
@@ -132,7 +133,20 @@ typedef struct RmScriptDesc {
     /* ABI 6: a game UI button of the entity was pressed (RMUI.h: the mouse, or 決定 on the focused one).
        Called after the frame's systems, on started scripts only. Null when the script does not have it. */
     void (*onClick)(void* self, RmEntityId self_entity);
+    /* ABI 7: an event sent by rm::Events (RM.h) reached the entity. Called after the frame's Ticks (and
+       after the systems' / services' hooks), on started scripts only. Null when the script does not have it. */
+    void (*onEvent)(void* self, RmEntityId self_entity, const struct RmEvent* event);
 } RmScriptDesc;
+
+/* An event (ABI 7): a name, who sent it (0: the engine / nobody) and what it carries. The strings live
+   until the hook returns (copy what you keep). */
+typedef struct RmEvent {
+    const char* name;   /* UTF-8 */
+    RmEntityId sender;  /* the entity whose script sent it (0: none) */
+    double number;
+    const char* text;   /* UTF-8, never null ("" when none) */
+    RmEntityId entity;  /* an entity it carries (0: none) */
+} RmEvent;
 
 /* The hooks by number (a system asks for them by these: game_production::HookCall::hook). */
 enum RmHook {
@@ -143,7 +157,8 @@ enum RmHook {
     RM_HOOK_HIT = 4,
     RM_HOOK_TRIGGER_ENTER = 5,
     RM_HOOK_TRIGGER_EXIT = 6,
-    RM_HOOK_CLICK = 7 /* ABI 6 */
+    RM_HOOK_CLICK = 7, /* ABI 6 */
+    RM_HOOK_EVENT = 8  /* ABI 7 (called with an RmEvent) */
 };
 
 enum RmModuleFlags {
@@ -229,6 +244,120 @@ typedef struct RmInputApi {
     int (*released)(void* ctx, const char* action); /* went up this frame */
     float (*axis)(void* ctx, const char* action);   /* -1..1 */
 } RmInputApi;
+
+/* Input, version 2: the same by player, and what the player may change. `player`: -1 = everyone (every
+ * game pad, the keyboard and the mouse - as version 1); 0..3 = that player: the game pad in that slot,
+ * and the keyboard and the mouse when the game settings' キーボードとマウスのプレイヤー is that one.
+ * The bindings are the player's: the game settings' 入力 until a script changes them (setBinding ...);
+ * saveBindings writes them to the player's PC (input.json next to the saves), loadBindings reads them
+ * back (the game does that by itself when it starts). */
+#define RM_PART_INPUT_VERSION2 2u
+typedef struct RmInputApi2 {
+    int (*down)(void* ctx, const char* action, int32_t player);
+    int (*pressed)(void* ctx, const char* action, int32_t player);
+    int (*released)(void* ctx, const char* action, int32_t player);
+    float (*axis)(void* ctx, const char* action, int32_t player);
+    int (*padConnected)(void* ctx, int32_t player);
+    /* Shakes the player's pad: low = the left (heavy) motor, high = the right (light) one, 0..1. */
+    void (*vibrate)(void* ctx, int32_t player, float low, float high, float seconds);
+    uint32_t (*bindingCount)(void* ctx, const char* action);
+    /* control: the game settings' InputControl value (a key's virtual-key code, a pad's 0x100 + ...). */
+    int (*binding)(void* ctx, const char* action, uint32_t index, int32_t* control, float* scale);
+    int (*setBinding)(void* ctx, const char* action, uint32_t index, int32_t control, float scale); /* index == count: added */
+    int (*removeBinding)(void* ctx, const char* action, uint32_t index);
+    void (*resetBindings)(void* ctx); /* back to the game settings' */
+    int (*saveBindings)(void* ctx);
+    int (*loadBindings)(void* ctx);
+    /* What went down this frame for `player` (a key, a mouse button, a pad's button; a stick or a trigger
+       pushed past half way): its control, and *direction 1 / -1 (a stick to the left: -1); 0: nothing.
+       For "press the key for Jump". */
+    int32_t (*anyPressed)(void* ctx, int32_t player, float* direction);
+    /* A control's name ("Space", "A", "PadA", "MouseLeft" ...), copied like getName. */
+    uint32_t (*controlName)(void* ctx, int32_t control, char* buf, uint32_t cap);
+} RmInputApi2;
+
+/* The mouse on the game's screen: "rm_engine.game_production.mouse", 1. The screen is the game
+ * settings' 画面 (DIPs, (0, 0) at the top left, y down) - the editor's game view is scaled to it. */
+#define RM_PART_MOUSE "rm_engine.game_production.mouse"
+#define RM_PART_MOUSE_VERSION 1u
+typedef struct RmMouseApi {
+    int (*position)(void* ctx, float out[2]); /* 0: not over the game (out: where it was last) */
+    void (*delta)(void* ctx, float out[2]);   /* moved since the last frame (0 while not over the game) */
+    float (*wheel)(void* ctx);                /* the wheel's notches this frame: + turned away from you */
+    void (*screenSize)(void* ctx, float out[2]);
+} RmMouseApi;
+
+/* Time: "rm_engine.game_production.time", 1. The scale multiplies every dt of the game (the scripts'
+ * Tick, the systems, the physics, the particles); 0 stops them (a pause menu) - Tick is still called. */
+#define RM_PART_TIME "rm_engine.game_production.time"
+#define RM_PART_TIME_VERSION 1u
+typedef struct RmTimeApi {
+    float (*scale)(void* ctx);
+    void (*setScale)(void* ctx, float scale);
+    float (*unscaledDeltaTime)(void* ctx);
+    double (*unscaledTime)(void* ctx);
+    uint64_t (*frameCount)(void* ctx);
+} RmTimeApi;
+
+/* Coroutines: "rm_engine.game_production.coroutines", 1. The coroutine's frame is the DLL's (C++20
+ * coroutines: RM.h's rm::Task); the engine keeps when to run it next. resume(frame, &next) runs it to its
+ * next wait and writes the wait; it returns 0 when the coroutine ended. destroy(frame) frees it (ended,
+ * or stopped early). The owner is the script whose hook (or coroutine) is running when it is started:
+ * its EndPlay (or its entity destroyed, the scene switched, the game stopped, the scripts built again)
+ * stops them. */
+enum RmWaitKind {
+    RmWait_Frames = 0,      /* `frames` frames (1: the next frame) */
+    RmWait_Seconds = 1,     /* `seconds` of game time (the time scale counts) */
+    RmWait_RealSeconds = 2, /* `seconds` of real time */
+    RmWait_Coroutine = 3    /* until the coroutine `coroutine` has ended */
+};
+typedef struct RmWait {
+    uint32_t kind;
+    uint32_t frames;
+    double seconds;
+    uint64_t coroutine;
+} RmWait;
+#define RM_PART_COROUTINES "rm_engine.game_production.coroutines"
+#define RM_PART_COROUTINES_VERSION 1u
+typedef struct RmCoroutinesApi {
+    /* Runs it now to its first wait; its id (0: it ended at once - destroy was called). */
+    uint64_t (*start)(void* ctx, void* frame, int (*resume)(void* frame, RmWait* next), void (*destroy)(void* frame));
+    void (*stop)(void* ctx, uint64_t id);
+    void (*stopAll)(void* ctx); /* every coroutine of the script that is running */
+    int (*running)(void* ctx, uint64_t id);
+} RmCoroutinesApi;
+
+/* Events: "rm_engine.game_production.events", 1. Sent now, delivered after this frame's Ticks (the
+ * scripts' OnEvent, in their order); one sent in an OnEvent comes right after. scope: 0 = every entity,
+ * 1 = `target` only, 2 = `target` and everything below it. */
+#define RM_PART_EVENTS "rm_engine.game_production.events"
+#define RM_PART_EVENTS_VERSION 1u
+typedef struct RmEventsApi {
+    void (*send)(void* ctx, uint32_t scope, RmEntityId target, const char* name, double number, const char* text, uint64_t textLen,
+                 RmEntityId entity);
+} RmEventsApi;
+
+/* Entities, more: "rm_engine.game_production.entity", 1. Tags and layers are names (the game settings
+ * list them); "" = none (a layer "": the default one, number 0). */
+#define RM_PART_ENTITY "rm_engine.game_production.entity"
+#define RM_PART_ENTITY_VERSION 1u
+typedef struct RmEntityApi {
+    uint32_t (*getTag)(void* ctx, RmEntityId e, char* buf, uint32_t cap);
+    void (*setTag)(void* ctx, RmEntityId e, const char* utf8);
+    uint32_t (*getLayer)(void* ctx, RmEntityId e, char* buf, uint32_t cap);
+    void (*setLayer)(void* ctx, RmEntityId e, const char* utf8);
+    /* A layer's number: "" 0, the game settings' レイヤー 1, 2 ... in their order; -1: not there. */
+    int32_t (*layerIndex)(void* ctx, const char* name);
+    /* The entities with this tag (in the 階層's order): how many there are, the first `cap` copied. */
+    uint32_t (*findWithTag)(void* ctx, const char* tag, RmEntityId* out, uint32_t cap);
+    /* The children of `e` (0: the top level), in order: how many, the first `cap` copied. */
+    uint32_t (*children)(void* ctx, RmEntityId e, RmEntityId* out, uint32_t cap);
+    /* Moves `e` (with what is below it) under `parent` (0: the top) at `index` among its children
+       (-1: the end). keepWorld: it stays where it is in the world (its Transform changed). 0: refused
+       (into itself, no such entity). */
+    int (*setParent)(void* ctx, RmEntityId e, RmEntityId parent, int keepWorld, int32_t index);
+    void (*setName)(void* ctx, RmEntityId e, const char* utf8);
+} RmEntityApi;
 
 /* Global variables (the game settings' グローバル変数) by name: "rm_engine.game_production.globals", 1.
  * `type` is how the script holds it: RmField_Bool (int32_t 0 / 1), RmField_Int (int32_t), RmField_Float

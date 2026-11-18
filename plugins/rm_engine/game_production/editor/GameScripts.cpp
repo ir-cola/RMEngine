@@ -42,9 +42,14 @@ GameScripts::GameScripts(editor::SoftwareHost& host) : host_(host), module_(std:
     // (the same reader as an exported game's).
     world_.readInput = [this] {
         InputFrame f = input_.Read();
-        if (!mouseInGame || !mouseInGame()) DropMouseButtons(f);  // (a click on another panel is not the game's)
+        if (!mouseInGame || !mouseInGame()) {
+            DropMouseButtons(f);  // (a click on another panel is not the game's)
+            f.wheel = 0;          // (nor the wheel turned over it)
+        }
         return f;
     };
+    world_.vibrate = [this](int player, float low, float high, float seconds) { input_.Vibrate(player, low, high, seconds); };
+    world_.registry = &host.Registry();
     world_.log = [](int level, std::string_view text) {
         if (level >= 2) {
             log::Error("スクリプト: {}", text);

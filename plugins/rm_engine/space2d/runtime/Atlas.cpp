@@ -15,12 +15,16 @@ PixelRect CellOf(uint32_t width, uint32_t height, int columns, int rows, int ind
     return {col * cw, row * ch, cw, ch};
 }
 
-int AnimationCell(std::span<const int> frames, int cellCount, float framesPerSecond, double seconds, bool loop) {
+int AnimationStep(std::span<const int> frames, int cellCount, float framesPerSecond, double seconds, bool loop, int startStep) {
     const int n = frames.empty() ? std::max(cellCount, 1) : static_cast<int>(frames.size());
     const double steps = std::max(0.0, seconds) * std::max(0.f, framesPerSecond);
-    long long k = static_cast<long long>(std::floor(steps));
+    long long k = static_cast<long long>(std::floor(steps)) + std::max(0, startStep);
     k = loop ? k % n : std::min<long long>(k, n - 1);
-    const int at = static_cast<int>(k);
+    return static_cast<int>(k);
+}
+
+int AnimationCell(std::span<const int> frames, int cellCount, float framesPerSecond, double seconds, bool loop, int startStep) {
+    const int at = AnimationStep(frames, cellCount, framesPerSecond, seconds, loop, startStep);
     return frames.empty() ? at : frames[static_cast<size_t>(at)];
 }
 

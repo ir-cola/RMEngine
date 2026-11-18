@@ -8,6 +8,7 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
 
+#include <cmath>
 #include <limits>
 
 namespace rm::game_x_3d {
@@ -65,7 +66,116 @@ int WorldPosition(void* ctx, uint64_t id, float out[3]) {
 
 constexpr RmTransform3DApi kTable{&Get, &Set, &WorldPosition};
 
+// The world matrix of the Transforms from the top down to `id`'s parent (self = false) or `id` (true);
+// parents without a Transform are skipped. Identity for none.
+space3d::Mat4 ChainMatrix(const game_production::Scene& scene, int id, bool self) {
+    std::vector<const space3d::Transform*> chain;
+    size_t steps = 0;
+    const game_production::SceneEntity* start = scene.Find(id);
+    if (start && !self) start = scene.Find(start->data.parent);
+    for (const game_production::SceneEntity* e = start; e && steps++ <= scene.Entities().size(); e = scene.Find(e->data.parent)) {
+        if (const space3d::Transform* t = TransformIn(scene, e->data.id)) chain.push_back(t);
+    }
+    space3d::Mat4 m;
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it) m = space3d::WorldMatrix(m, **it);
+    return m;
+}
+
+// The entity's Transform and world matrix (null: none).
+space3d::Transform* WorldOf(void* ctx, uint64_t id, space3d::Mat4& world) {
+    space3d::Transform* t = TransformOf(ctx, id);
+    if (!t) return nullptr;
+    world = ChainMatrix(*static_cast<ScriptWorld*>(ctx)->scene, static_cast<int>(id), true);
+    return t;
+}
+
+// Puts it at `want` in the world (its Transform made up for its parents').
+void PlaceInWorld(void* ctx, uint64_t id, space3d::Transform& t, const space3d::WorldPlacement& want) {
+    const space3d::Mat4 parent = ChainMatrix(*static_cast<ScriptWorld*>(ctx)->scene, static_cast<int>(id), false);
+    t = space3d::FromWorld(t, parent, want);
+}
+
+int WorldMatrix(void* ctx, uint64_t id, float out[16]) {
+    space3d::Mat4 w;
+    if (!WorldOf(ctx, id, w)) return 0;
+    for (int c = 0; c < 4; ++c) {
+        for (int r = 0; r < 4; ++r) out[c * 4 + r] = w.m[c][r];
+    }
+    return 1;
+}
+
+int SetWorldPosition(void* ctx, uint64_t id, const float p[3]) {
+    space3d::Mat4 w;
+    space3d::Transform* t = WorldOf(ctx, id, w);
+    if (!t) return 0;
+    space3d::WorldPlacement want = space3d::Decompose(w, t->rotation);
+    want.position = Vec3{p[0], p[1], p[2]};
+    PlaceInWorld(ctx, id, *t, want);
+    return 1;
+}
+
+int WorldRotation(void* ctx, uint64_t id, float out[3]) {
+    space3d::Mat4 w;
+    space3d::Transform* t = WorldOf(ctx, id, w);
+    if (!t) return 0;
+    const Vec3 r = space3d::Decompose(w, t->rotation).rotation;
+    out[0] = r.x;
+    out[1] = r.y;
+    out[2] = r.z;
+    return 1;
+}
+
+int SetWorldRotation(void* ctx, uint64_t id, const float d[3]) {
+    space3d::Mat4 w;
+    space3d::Transform* t = WorldOf(ctx, id, w);
+    if (!t) return 0;
+    space3d::WorldPlacement want = space3d::Decompose(w, t->rotation);
+    want.rotation = Vec3{d[0], d[1], d[2]};
+    PlaceInWorld(ctx, id, *t, want);
+    return 1;
+}
+
+int LookAt(void* ctx, uint64_t id, const float target[3], const float up[3]) {
+    space3d::Mat4 w;
+    space3d::Transform* t = WorldOf(ctx, id, w);
+    if (!t) return 0;
+    space3d::WorldPlacement want = space3d::Decompose(w, t->rotation);
+    const Vec3 forward = space3d::Normalize(space3d::operator-(Vec3{target[0], target[1], target[2]}, want.position));
+    if (space3d::Length(forward) == 0) return 1;  // (at the target: no way to look)
+    const Vec3 z = space3d::operator*(forward, -1.f);
+    Vec3 x = space3d::Normalize(space3d::Cross(Vec3{up[0], up[1], up[2]}, z));
+    if (space3d::Length(x) == 0) x = space3d::Normalize(space3d::Cross(std::fabs(z.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0}, z));
+    const Vec3 y = space3d::Cross(z, x);
+    space3d::Mat4 r;
+    const Vec3 cols[3] = {x, y, z};
+    for (int c = 0; c < 3; ++c) {
+        r.m[c][0] = cols[c].x;
+        r.m[c][1] = cols[c].y;
+        r.m[c][2] = cols[c].z;
+    }
+    want.rotation = space3d::EulerFromRotation(r, want.rotation);
+    PlaceInWorld(ctx, id, *t, want);
+    return 1;
+}
+
+constexpr RmTransform3DApi2 kTable2{&Get, &Set, &WorldPosition, &WorldMatrix, &SetWorldPosition, &WorldRotation, &SetWorldRotation, &LookAt};
+
 }  // namespace
+
+void KeepWorld3D(game_production::Scene& scene, int entity, int newParent) {
+    game_production::SceneEntity* e = scene.Find(entity);
+    game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<space3d::Transform>().name) : nullptr;
+    if (!c || !c->Known()) return;
+    auto& t = *static_cast<space3d::Transform*>(c->value.Get());
+    const space3d::Mat4 world = ChainMatrix(scene, entity, true);
+    const space3d::Mat4 parent = newParent != 0 ? ChainMatrix(scene, newParent, true) : space3d::Mat4{};
+    t = space3d::FromWorld(t, parent, space3d::Decompose(world, t.rotation));
+}
+
+const game_production::ScriptApiPart& ScriptTransform3DPart2() {
+    static const game_production::ScriptApiPart part{RM_PART_TRANSFORM3D, RM_PART_TRANSFORM3D_VERSION2, &kTable2};
+    return part;
+}
 
 bool Pose3D(const game_production::Scene& scene, int entity, game_production::Pose& out) {
     if (!TransformIn(scene, entity)) return false;

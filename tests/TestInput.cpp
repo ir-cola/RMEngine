@@ -95,7 +95,8 @@ RM_TEST(Input_ThroughTheScriptsPart_PressedAndReleased) {
     w.readInput = [&] { return space ? Keys({0x20}) : InputFrame{}; };
     const RmApi api = MakeScriptApi(w);
     const auto* in = static_cast<const RmInputApi*>(api.part(api.ctx, RM_PART_INPUT, RM_PART_INPUT_VERSION));
-    CHECK(in != nullptr && api.part(api.ctx, RM_PART_INPUT, RM_PART_INPUT_VERSION + 1) == nullptr);
+    CHECK(in != nullptr && api.part(api.ctx, RM_PART_INPUT, RM_PART_INPUT_VERSION2) != nullptr);
+    CHECK(api.part(api.ctx, RM_PART_INPUT, RM_PART_INPUT_VERSION2 + 1) == nullptr);
     if (!in) return;
     w.ReadInput();
     CHECK(in->down(api.ctx, "Jump") == 0 && in->pressed(api.ctx, "Jump") == 0);

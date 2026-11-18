@@ -20,9 +20,12 @@ unsigned long Recovered(unsigned long code) {
     return code;
 }
 
-unsigned long CallHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other) {
+unsigned long CallHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other, const RmEvent* event) {
     __try {
         switch (hook) {
+            case RM_HOOK_EVENT:
+                if (script.onEvent && event) script.onEvent(self, entity, event);
+                break;
             case RM_HOOK_HIT:
                 if (script.onHit) script.onHit(self, entity, other);
                 break;
@@ -54,6 +57,25 @@ unsigned long CallHook(const RmScriptDesc& script, int hook, void* self, RmEntit
     }
 }
 
+unsigned long CallResume(int (*resume)(void*, RmWait*), void* frame, RmWait* next, int* alive) {
+    __try {
+        *alive = resume(frame, next);
+        return 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *alive = 0;
+        return GetExceptionCode();
+    }
+}
+
+unsigned long CallDestroy(void (*destroy)(void*), void* frame) {
+    __try {
+        destroy(frame);
+        return 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return GetExceptionCode();
+    }
+}
+
 unsigned long CallInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out) {
     __try {
         *out = init(api, abi);
@@ -66,9 +88,16 @@ unsigned long CallInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, cons
 
 }  // namespace
 
-unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other) {
-    return Recovered(CallHook(script, hook, self, entity, dt, other));
+unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other,
+                             const RmEvent* event) {
+    return Recovered(CallHook(script, hook, self, entity, dt, other, event));
 }
+
+unsigned long CallCoroutineResume(int (*resume)(void*, RmWait*), void* frame, RmWait* next, int* alive) {
+    return Recovered(CallResume(resume, frame, next, alive));
+}
+
+unsigned long CallCoroutineDestroy(void (*destroy)(void*), void* frame) { return Recovered(CallDestroy(destroy, frame)); }
 
 unsigned long CallModuleInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out) {
     return Recovered(CallInit(init, api, abi, out));

@@ -39,6 +39,9 @@ struct Entity {
     RM_PROPERTY() int parent = 0;  // the parent's id, 0 = top level
     RM_PROPERTY(Edit, Label="名前") std::string name = "エンティティ";
     RM_PROPERTY(Edit, Label="有効", Tooltip="外すと、このエンティティと中のもの全部がゲームで動きません") bool active = true;
+    // Names to find and sort entities by (scripts: rm::FindWithTag, Entity::Layer); the game settings list them.
+    RM_PROPERTY(Edit, Label="タグ", Tooltip="スクリプトで探すときの名前 (rm::FindWithTag(\"Enemy\"))。ゲームの設定の「タグ」に一覧を書いておけます。空: なし") std::string tag;
+    RM_PROPERTY(Edit, Label="レイヤー", Tooltip="ゲームの設定の「レイヤー」の名前。空: 既定 (0 番)") std::string layer;
 };
 
 // Where an entity of a placed prefab comes from. Saved as the entity's "prefab" key (only when set):

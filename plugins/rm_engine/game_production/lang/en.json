@@ -208,5 +208,12 @@
   "空のエンティティ": "Empty entity",
   "空の子エンティティ": "Empty child entity",
   "シーン「{}」": "Scene \"{}\"",
-  "このシーンの設定はまだありません (物理・3D 空間 などのプラグインで増えます)": "This scene has no settings yet (plugins such as Physics and 3D Space add them)"
+  "このシーンの設定はまだありません (物理・3D 空間 などのプラグインで増えます)": "This scene has no settings yet (plugins such as Physics and 3D Space add them)",
+  "エンティティに付ける名前の一覧 (スクリプトの rm::FindWithTag で探す)。エンティティのインスペクターの「タグ」に書きます": "Names to give entities (scripts find them with rm::FindWithTag). Write one in an entity's Tag in the Inspector",
+  "レイヤー": "Layer",
+  "エンティティの分け方の一覧。上から 1, 2, 3 … 番 (空のレイヤーは 0 番の既定)。スクリプトは rm::LayerIndex で番号を読みます": "The groups entities are sorted into, numbered 1, 2, 3 ... from the top (an empty layer is the default, number 0). Scripts read the number with rm::LayerIndex",
+  "キーボードとマウスのプレイヤー": "Keyboard and mouse player",
+  "何人かで遊ぶとき、キーボードとマウスを使う人 (1 = 1P)。ほかの人はゲームパッドだけ。プレイヤーを指定しない読み方 (rm::Input::Axis(\"MoveX\")) は今までどおり全部を読みます": "With several players, who uses the keyboard and the mouse (1 = player 1). The others use only game pads. Reading without a player (rm::Input::Axis(\"MoveX\")) still reads everything",
+  "スクリプトで探すときの名前 (rm::FindWithTag(\"Enemy\"))。ゲームの設定の「タグ」に一覧を書いておけます。空: なし": "A name scripts find it by (rm::FindWithTag(\"Enemy\")). The game settings' Tags can list them. Empty: none",
+  "ゲームの設定の「レイヤー」の名前。空: 既定 (0 番)": "A name from the game settings' Layers. Empty: the default (number 0)"
 }

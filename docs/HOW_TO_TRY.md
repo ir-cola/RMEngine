@@ -1442,6 +1442,54 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 
 ---
 
+## 7-8-3. スクリプトの道具: コルーチン・タイマー・イベント・時間の速さ・タグとレイヤー・親子・向き・数学・マウス・プレイヤーごとの入力・キーの割り当て・パーティクルとアニメーション (2026-11-18。画面では**未確認**。ビルド・テスト (`tests/TestScriptsAbi7.cpp`・`TestScriptMath.cpp`)・本物の MSBuild でスクリプトの DLL を作って動かすテスト (`ScriptBuild_RealMSBuild_TheSampleRuns` の Waiter) は通っている)
+
+- スクリプトとエンジンの境目の版が **7** に上がった (`RmAbi.h` の `RM_ABI_VERSION`)。前に作ったプロジェクトは、開くと「スクリプトの DLL の版 (6) がエンジン (7) と違います」と出るので、**「スクリプトをビルド」を 1 回押す** (書き直しは要らない)
+- 使い方は `RM.h` の先頭の一覧と、それぞれの場所の説明 (Visual Studio で名前の上にマウスを置くと読める)。下の例を `Assets/Scripts` のスクリプトに書いて ▶ で試す
+- **コルーチン** (`rm::Task` を返す関数の中で `co_await` で待つ):
+  ```cpp
+  static rm::Task Blink(rm::Entity self) {
+      for (int i = 0; i < 5; ++i) {
+          self.SetActive(false);
+          co_await rm::WaitSeconds(0.2f);
+          self.SetActive(true);
+          co_await rm::WaitSeconds(0.2f);
+      }
+  }
+  void Player::BeginPlay(rm::Entity self) { rm::StartCoroutine(Blink(self)); }
+  ```
+  1. ▶ で、その物が 0.2 秒ごとに 5 回点滅する
+  2. 待ち方: `WaitSeconds` (ゲームの時間)・`WaitRealSeconds` (本当の時間: 時間の速さ 0 でも進む)・`NextFrame` / `WaitFrames(n)`・`WaitUntil([&] { return …; })` / `WaitWhile`・`co_await` 別のコルーチン (終わるまで)
+  3. 始めたスクリプトの EndPlay (物を消す・有効を外す・シーンの切り替え・■) で止まる。Play 中にスクリプトを入れ替えると全部止まる (コンソールに「コルーチン N 個を止めました」)
+  4. コルーチンの中で落ちる (`int* p = nullptr; *p = 1;`) と、コンソールに「コルーチンが止まりました (例外 0xC0000005)」。ほかは動き続ける
+- **タイマー**: `rm::After(2.0f, [self] { self.Destroy(); });` (2 秒後に 1 回)・`rm::Coroutine c = rm::Every(0.5f, [this] { … });` (0.5 秒ごと。`c.Stop()` で止める。3 つ目の引数で回数)
+- **イベント**: 送る側 `rm::Events::Send("GameOver")` (全部)・`SendTo(enemy, "Damage", 3)` (その物だけ)・`SendDown(ui, "Show")` (その物と下の物)。受ける側はスクリプトに `void OnEvent(rm::Entity self, const rm::Event& e) { if (e.Is("Damage")) hp -= e.number; }` を書く。そのフレームのすべての Tick の後に届く
+- **時間の速さ**: `rm::SetTimeScale(0.5f)` でスロー (Tick の dt・物理・回り続ける・スプライトのアニメーション・パーティクルが半分の速さ)。0 で止まる (Tick は呼ばれ、dt が 0)。ゲーム UI の動きとボタンは本当の時間で動く (止めたままメニューを出せる)。`rm::UnscaledDeltaTime()`・`rm::UnscaledTime()`・`rm::FrameCount()`。‖ で止めている間はパーティクルも止まる
+- **タグとレイヤー**: エンティティのインスペクターに「**タグ**」「**レイヤー**」の欄が増えた (文字で書く)。ゲームの設定に「**レイヤー**」の一覧が増えた (「タグ」の一覧は前から)。スクリプトは `rm::FindWithTag("Enemy")`・`rm::FindAllWithTag("Enemy")`・`self.CompareTag("Player")`・`self.SetTag(…)`・`self.Layer()`・`rm::LayerIndex("Water")` (一覧の上から 1, 2 …。空は 0)
+- **親子**: `child.SetParent(parent)` (ワールドの位置・回転・大きさを保ったまま親を変える。`SetParent(parent, false)` は自分の値のまま)・`SetParent(rm::Entity())` で一番上へ・`self.Children()`・`self.FindChild("Arm/Hand")`・`self.SetName(…)`。自分の下を親にしようとすると、コンソールに 1 回だけ「自分の下 (子や孫) を親にはできません」
+- **向き** (`RM3D.h`): `rm::Transform3D(self).LookAt(target)` (その物の -Z = カメラが見る向きを相手へ。親が回っていても)・`Forward()` / `Right()` / `Up()`・`Translate({0, 0, -1})` (自分の向きで前へ)・`Rotate({0, 90 * dt, 0})`・`RotateAround(点, 軸, 角度)`・`WorldRotation()` / `SetWorldPosition(…)` / `SetWorldRotation(…)`・`TransformPoint(…)`。2D (`RM2D.h`): `rm::Transform2D(self).LookAt(target)` (右 (+X) を相手へ)・`WorldPosition()`・`SetWorldPosition(…)`・`Right()` / `Up()`・`Translate(…)`
+- **数学** (`RMMath.h`。`RM.h` が読み込む): `Vec2` / `Vec3` の + - * /・`rm::Length` / `Normalize` / `Dot` / `Cross` / `Distance` / `Lerp` / `MoveTowards` / `Reflect` / `Angle` / `SmoothDamp`・`rm::Math::` (`Clamp`・`Lerp`・`InverseLerp`・`SmoothStep`・`Repeat`・`PingPong`・`DeltaAngle`・`PI`・`Deg2Rad` …)・`rm::Quat` (`Euler` (エンジンの角度と同じ X → Y → Z)・`AngleAxis`・`LookRotation`・`FromToRotation`・`Slerp`・`q * v` で回す)・`rm::Random` (`Range(1, 7)` でさいころ・`Value()`・`InsideUnitCircle()`・`OnUnitSphere()`・`Seed(n)`)
+- **マウス**: `rm::Mouse::Position()` (ゲームの画面 = ゲームの設定の「画面」の大きさでの位置。左上が (0, 0)・下が +)・`Delta()`・`Wheel()` (奥へ回すと +)・`OverGame()`・`Pressed(0)` (0 左・1 右・2 中)・`ViewportPosition()` (0〜1)。エディターではゲームビューの上だけ (ほかのパネルの上のホイールやクリックは入らない)
+- **プレイヤーごとの入力**: `rm::Input::Axis("MoveX", 1)` (2P)。プレイヤー n はゲームパッドの n 番目の口 (Windows がつないだ順に番号を付ける)。キーボードとマウスは、ゲームの設定の「**キーボードとマウスのプレイヤー**」(1 = 1P) の人の物。プレイヤーを書かない読み方は今までどおり全部を読む。`rm::Input::PadConnected(1)`・`rm::Input::Vibrate(0, 0.5f, 0.5f, 0.3f)` (パッドが 0.3 秒震える。■ やゲームの窓から離れると止まる)
+- **キーの割り当てを遊ぶ人が変える** (キーコンフィグの画面はゲームの UI とスクリプトで作る):
+  ```cpp
+  // 「ジャンプのキーを押してください」の間、毎フレーム
+  if (int c = rm::Input::AnyPressed(); c != 0) {
+      rm::Input::SetBinding("Jump", 0, c);   // 1 つ目の割り当てを押されたものに
+      rm::Input::SaveBindings();             // 遊ぶ人の PC に残す
+      rm::Log::Info("Jump = " + rm::Input::ControlName(c));
+  }
+  ```
+  1. ▶ で、押したキーが「Jump = J」のように出て、以後そのキーでジャンプする (ゲームの設定の「入力」は変わらない)
+  2. ■ → ▶ でも変えたままになる (`<プロジェクト>/Library/Saves/input.json`。書き出したゲームは `%LOCALAPPDATA%\<exe の名前>\Saves\input.json`)。ゲームは始まるときに自分で読む
+  3. `rm::Input::ResetBindings()` で設定の物に戻る (保存は `SaveBindings` のとき)。ファイルが壊れていると、Play のときにコンソールに「入力の割り当て (input.json) を読めません」
+  4. ほかに `rm::Input::Bindings("Jump")`・`AddBinding`・`RemoveBinding`・`LoadBindings`。キーは `rm::Key::J`、マウスは `rm::Key::MouseLeft`、パッドは `rm::Pad::A`
+- **パーティクル** (`RMParticles.h`): `rm::Particles fx(self); fx.Stop();` (新しい粒を出さない。出た粒は消えていく)・`fx.Stop(true)` (すぐ消す)・`fx.Play()` / `fx.Play(true)` (始めから)・`fx.Emit(30)` (今すぐ 30 個。爆発は「始めから出す」を外して Emit)・`fx.Pause()`・`fx.SetSpeed(2)`・`fx.Playing()`。部品が 2 つ以上なら `rm::Particles(self, 1)` で 2 つ目
+- **スプライトのアニメーション** (`RM2D.h`): `rm::SpriteAnimation anim(self); anim.SetFrames({4, 5, 6, 7}); anim.Play();`・`SetSpeed(12)` (1 秒のコマ数。今のコマから続ける)・`Pause()`・`Stop()` (最初のコマで止まる)・`SetFrame(2)`・`Frame()`・`SetLoop(false)`・`Playing()` (繰り返さないものが最後まで行くと false)
+- 3D の骨のアニメーションはまだ無い (アニメーションのタブの計画: `docs/ANIMATION_PARTICLES.md`)。スクリプトから動かせるアニメーションは、今はスプライトのアニメーションだけ
+
+---
+
 ## 7-8-2. シーンの切り替え (画面では**未確認**。ビルド・テスト・`tools/check_export.ps1` の game_scenes (書き出したゲームで Title → Stage) は通っている)
 
 - 2026-11-12 に computer use で確かめたこと: テンプレート「シーンを切り替える見本」で Play → Enter で Title → Stage (コンソールに「シーンを切り替えました Title → Stage」)→ ■ で Title に戻る。書き出したゲームも 2 つのシーンを持ち Title から始まる (game.log)。新しく作った直後は、スクリプトのビルドが終わるまで「使えない部品」の警告を出さない (ビルドの後もまだ使えない物だけを言う)

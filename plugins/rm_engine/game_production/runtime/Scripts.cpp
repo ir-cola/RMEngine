@@ -3,10 +3,12 @@
 #include "rm_engine/game_production/runtime/Systems.h"
 
 #include "base/Utf.h"
+#include "platform/Shell.h"
 #include "platform/Win.h"
 #include "rm_engine/game_production/runtime/SceneFile.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <format>
 #include <limits>
@@ -237,6 +239,234 @@ int ApiSaveRemove(void* ctx, const char* slot) {
 }
 constexpr RmSaveApi kSave{&ApiSaveWrite, &ApiSaveRead, &ApiSaveExists, &ApiSaveRemove};
 
+// Input, version 2: by player, and the player's bindings.
+int ApiInput2Down(void* ctx, const char* name, int32_t player) {
+    ScriptWorld& w = W(ctx);
+    const InputAction* a = w.Action(name);
+    return a && EvaluateAction(*a, w.inputNow, player, w.keyboardPlayer).down ? 1 : 0;
+}
+int ApiInput2Pressed(void* ctx, const char* name, int32_t player) {
+    ScriptWorld& w = W(ctx);
+    const InputAction* a = w.Action(name);
+    return a && EvaluateAction(*a, w.inputNow, player, w.keyboardPlayer).down && !EvaluateAction(*a, w.inputBefore, player, w.keyboardPlayer).down ? 1 : 0;
+}
+int ApiInput2Released(void* ctx, const char* name, int32_t player) {
+    ScriptWorld& w = W(ctx);
+    const InputAction* a = w.Action(name);
+    return a && !EvaluateAction(*a, w.inputNow, player, w.keyboardPlayer).down && EvaluateAction(*a, w.inputBefore, player, w.keyboardPlayer).down ? 1 : 0;
+}
+float ApiInput2Axis(void* ctx, const char* name, int32_t player) {
+    ScriptWorld& w = W(ctx);
+    const InputAction* a = w.Action(name);
+    return a ? EvaluateAction(*a, w.inputNow, player, w.keyboardPlayer).axis : 0.0f;
+}
+int ApiPadConnected(void* ctx, int32_t player) {
+    const ScriptWorld& w = W(ctx);
+    return player >= 0 && player < kPlayers && w.inputNow.padConnected[static_cast<size_t>(player)] ? 1 : 0;
+}
+void ApiVibrate(void* ctx, int32_t player, float low, float high, float seconds) {
+    ScriptWorld& w = W(ctx);
+    if (w.vibrate && player >= 0 && player < kPlayers) w.vibrate(player, low, high, seconds);
+}
+// The player's own list (made from the settings' the first time a script changes it).
+std::vector<InputAction>& PlayerActions(ScriptWorld& w) {
+    if (!w.playerActions) w.playerActions = w.Actions();
+    return *w.playerActions;
+}
+InputAction* PlayerAction(ScriptWorld& w, const char* name) {
+    if (!name || !w.Action(name)) return nullptr;  // (told once when there is none)
+    for (InputAction& a : PlayerActions(w)) {
+        if (a.name == name) return &a;
+    }
+    return nullptr;
+}
+uint32_t ApiBindingCount(void* ctx, const char* name) {
+    const InputAction* a = W(ctx).Action(name);
+    return a ? static_cast<uint32_t>(a->bindings.size()) : 0;
+}
+int ApiBinding(void* ctx, const char* name, uint32_t index, int32_t* control, float* scale) {
+    const InputAction* a = W(ctx).Action(name);
+    if (!a || index >= a->bindings.size()) return 0;
+    if (control) *control = static_cast<int32_t>(a->bindings[index].control);
+    if (scale) *scale = a->bindings[index].scale;
+    return 1;
+}
+int ApiSetBinding(void* ctx, const char* name, uint32_t index, int32_t control, float scale) {
+    InputAction* a = PlayerAction(W(ctx), name);
+    if (!a || index > a->bindings.size()) return 0;
+    const InputBinding b{static_cast<InputControl>(control), std::clamp(scale, -1.0f, 1.0f)};
+    if (index == a->bindings.size()) {
+        a->bindings.push_back(b);
+    } else {
+        a->bindings[index] = b;
+    }
+    return 1;
+}
+int ApiRemoveBinding(void* ctx, const char* name, uint32_t index) {
+    InputAction* a = PlayerAction(W(ctx), name);
+    if (!a || index >= a->bindings.size()) return 0;
+    a->bindings.erase(a->bindings.begin() + index);
+    return 1;
+}
+void ApiResetBindings(void* ctx) { W(ctx).playerActions.reset(); }
+int ApiSaveBindings(void* ctx) {
+    ScriptWorld& w = W(ctx);
+    std::string why;
+    if (w.SaveBindings(&why)) return 1;
+    if (w.log) w.log(1, std::format("Input::SaveBindings: 書けませんでした: {}", why));
+    return 0;
+}
+int ApiLoadBindings(void* ctx) {
+    ScriptWorld& w = W(ctx);
+    std::string why;
+    if (w.LoadBindings(&why)) return 1;
+    if (w.log && !why.empty()) w.log(1, std::format("Input::LoadBindings: 読めませんでした: {}", why));
+    return 0;
+}
+int32_t ApiAnyPressed(void* ctx, int32_t player, float* direction) {
+    const ScriptWorld& w = W(ctx);
+    return static_cast<int32_t>(AnyPressed(w.inputNow, w.inputBefore, player, w.keyboardPlayer, direction));
+}
+uint32_t CopyText(const std::string& text, char* buf, uint32_t cap) {
+    if (buf && cap > 0) {
+        const size_t n = std::min<size_t>(text.size(), cap - 1);
+        std::memcpy(buf, text.data(), n);
+        buf[n] = '\0';
+    }
+    return static_cast<uint32_t>(text.size());
+}
+uint32_t ApiControlName(void*, int32_t control, char* buf, uint32_t cap) { return CopyText(ControlName(control), buf, cap); }
+constexpr RmInputApi2 kInput2{&ApiInput2Down,    &ApiInput2Pressed, &ApiInput2Released, &ApiInput2Axis,   &ApiPadConnected,
+                              &ApiVibrate,       &ApiBindingCount,  &ApiBinding,        &ApiSetBinding,   &ApiRemoveBinding,
+                              &ApiResetBindings, &ApiSaveBindings,  &ApiLoadBindings,   &ApiAnyPressed,   &ApiControlName};
+
+// The mouse on the game screen.
+int ApiMousePosition(void* ctx, float out[2]) {
+    const ScriptWorld& w = W(ctx);
+    const Vec2 p = w.pointer.value_or(w.lastPointer);
+    out[0] = p.x;
+    out[1] = p.y;
+    return w.pointer ? 1 : 0;
+}
+void ApiMouseDelta(void* ctx, float out[2]) {
+    out[0] = W(ctx).pointerDelta.x;
+    out[1] = W(ctx).pointerDelta.y;
+}
+float ApiMouseWheel(void* ctx) { return W(ctx).inputNow.wheel; }
+void ApiScreenSize(void* ctx, float out[2]) {
+    out[0] = W(ctx).screen.x;
+    out[1] = W(ctx).screen.y;
+}
+constexpr RmMouseApi kMouse{&ApiMousePosition, &ApiMouseDelta, &ApiMouseWheel, &ApiScreenSize};
+
+// Time.
+float ApiTimeScale(void* ctx) { return W(ctx).timeScale; }
+void ApiSetTimeScale(void* ctx, float scale) { W(ctx).timeScale = std::isfinite(scale) ? std::clamp(scale, 0.0f, 100.0f) : 1.0f; }
+float ApiUnscaledDeltaTime(void* ctx) { return W(ctx).unscaledDt; }
+double ApiUnscaledTime(void* ctx) { return W(ctx).unscaledTime; }
+uint64_t ApiFrameCount(void* ctx) { return W(ctx).frame; }
+constexpr RmTimeApi kTime{&ApiTimeScale, &ApiSetTimeScale, &ApiUnscaledDeltaTime, &ApiUnscaledTime, &ApiFrameCount};
+
+// Coroutines.
+uint64_t ApiCoStart(void* ctx, void* frame, int (*resume)(void*, RmWait*), void (*destroy)(void*)) {
+    return W(ctx).StartCoroutine(frame, resume, destroy);
+}
+void ApiCoStop(void* ctx, uint64_t id) { W(ctx).StopCoroutine(id); }
+void ApiCoStopAll(void* ctx) {
+    ScriptWorld& w = W(ctx);
+    if (w.currentScript) w.StopCoroutinesOf(w.currentScript);
+}
+int ApiCoRunning(void* ctx, uint64_t id) { return W(ctx).CoroutineRunning(id) ? 1 : 0; }
+constexpr RmCoroutinesApi kCoroutines{&ApiCoStart, &ApiCoStop, &ApiCoStopAll, &ApiCoRunning};
+
+// Events: queued, delivered after the frame's Ticks (ScriptRunner::DeliverEvents).
+void ApiSendEvent(void* ctx, uint32_t scope, RmEntityId target, const char* name, double number, const char* text, uint64_t textLen,
+                  RmEntityId entity) {
+    ScriptWorld& w = W(ctx);
+    if (!name || !*name || scope > 2) return;
+    if (scope != 0 && !EntityOf(ctx, target)) return;  // (sent to something gone: nobody gets it)
+    if (w.events.size() >= 10000) {
+        w.TellOnce("events:many", "rm::Events: 1 フレームに送るイベントが多すぎます (10000 個まで。OnEvent の中で送り合っていませんか)");
+        return;
+    }
+    QueuedEvent q;
+    q.name = name;
+    q.sender = w.currentEntity;
+    q.number = number;
+    q.text = text ? std::string(text, static_cast<size_t>(textLen)) : std::string();
+    q.entity = EntityOf(ctx, entity) ? static_cast<int>(entity) : 0;
+    q.scope = scope;
+    q.target = scope == 0 ? 0 : static_cast<int>(target);
+    w.events.push_back(std::move(q));
+}
+constexpr RmEventsApi kEvents{&ApiSendEvent};
+
+// Entities: tags, layers, children, parents.
+uint32_t ApiGetTag(void* ctx, RmEntityId e, char* buf, uint32_t cap) {
+    const SceneEntity* x = EntityOf(ctx, e);
+    return CopyText(x ? x->data.tag : std::string(), buf, cap);
+}
+void ApiSetTag(void* ctx, RmEntityId e, const char* tag) {
+    if (SceneEntity* x = EntityOf(ctx, e)) x->data.tag = tag ? tag : "";
+}
+uint32_t ApiGetLayer(void* ctx, RmEntityId e, char* buf, uint32_t cap) {
+    const SceneEntity* x = EntityOf(ctx, e);
+    return CopyText(x ? x->data.layer : std::string(), buf, cap);
+}
+void ApiSetLayer(void* ctx, RmEntityId e, const char* layer) {
+    if (SceneEntity* x = EntityOf(ctx, e)) x->data.layer = layer ? layer : "";
+}
+int32_t ApiLayerIndex(void* ctx, const char* name) {
+    const ScriptWorld& w = W(ctx);
+    const std::string_view n = name ? name : "";
+    if (n.empty()) return 0;
+    for (size_t i = 0; w.layers && i < w.layers->size(); ++i) {
+        if ((*w.layers)[i] == n) return static_cast<int32_t>(i + 1);
+    }
+    return -1;
+}
+uint32_t ApiFindWithTag(void* ctx, const char* tag, RmEntityId* out, uint32_t cap) {
+    ScriptWorld& w = W(ctx);
+    if (!w.scene || !tag) return 0;
+    uint32_t n = 0;
+    for (const TreeEntry& t : w.scene->TreeOrder()) {
+        if (t.entity->data.tag != tag) continue;
+        if (out && n < cap) out[n] = static_cast<RmEntityId>(t.entity->data.id);
+        ++n;
+    }
+    return n;
+}
+uint32_t ApiChildren(void* ctx, RmEntityId e, RmEntityId* out, uint32_t cap) {
+    ScriptWorld& w = W(ctx);
+    if (!w.scene || (e != 0 && !EntityOf(ctx, e))) return 0;
+    const std::vector<int> kids = w.scene->Children(static_cast<int>(e));
+    for (size_t i = 0; i < kids.size() && i < cap && out; ++i) out[i] = static_cast<RmEntityId>(kids[i]);
+    return static_cast<uint32_t>(kids.size());
+}
+int ApiSetParent(void* ctx, RmEntityId e, RmEntityId parent, int keepWorld, int32_t index) {
+    ScriptWorld& w = W(ctx);
+    if (!EntityOf(ctx, e) || (parent != 0 && !EntityOf(ctx, parent))) return 0;
+    const int id = static_cast<int>(e), to = static_cast<int>(parent);
+    if (to != 0 && w.scene->IsUnder(to, id)) {
+        w.TellOnce("parent-loop", "Entity::SetParent: 自分の下 (子や孫) を親にはできません");
+        return 0;
+    }
+    if (keepWorld && w.registry) {
+        for (const auto& c : w.registry->Contributions<PlaceInfo>(kPlacePoint)) {
+            if (c.item->keepWorld) c.item->keepWorld(*w.scene, id, to);
+        }
+    }
+    const int ids[] = {id};
+    const size_t at = index < 0 ? Scene::kEnd : static_cast<size_t>(index);
+    w.scene->Move(ids, to, at);  // (false: already there - nothing to do)
+    return 1;
+}
+void ApiSetName(void* ctx, RmEntityId e, const char* name) {
+    if (SceneEntity* x = EntityOf(ctx, e)) x->data.name = name ? name : "";
+}
+constexpr RmEntityApi kEntity{&ApiGetTag,     &ApiSetTag,   &ApiGetLayer,  &ApiSetLayer, &ApiLayerIndex,
+                              &ApiFindWithTag, &ApiChildren, &ApiSetParent, &ApiSetName};
+
 // The game itself: Game::Quit asks for the end (the host ends the game after this frame).
 void ApiQuit(void* ctx) { W(ctx).quitAsked = true; }
 constexpr RmGameApi kGame{&ApiQuit};
@@ -246,6 +476,12 @@ const void* ApiPart(void* ctx, const char* name, uint32_t version) {
     if (name && version == RM_PART_GLOBALS_VERSION && std::strcmp(name, RM_PART_GLOBALS) == 0) return &kGlobals;
     if (name && version == RM_PART_SAVE_VERSION && std::strcmp(name, RM_PART_SAVE) == 0) return &kSave;
     if (name && version == RM_PART_GAME_VERSION && std::strcmp(name, RM_PART_GAME) == 0) return &kGame;
+    if (name && version == RM_PART_INPUT_VERSION2 && std::strcmp(name, RM_PART_INPUT) == 0) return &kInput2;
+    if (name && version == RM_PART_MOUSE_VERSION && std::strcmp(name, RM_PART_MOUSE) == 0) return &kMouse;
+    if (name && version == RM_PART_TIME_VERSION && std::strcmp(name, RM_PART_TIME) == 0) return &kTime;
+    if (name && version == RM_PART_COROUTINES_VERSION && std::strcmp(name, RM_PART_COROUTINES) == 0) return &kCoroutines;
+    if (name && version == RM_PART_EVENTS_VERSION && std::strcmp(name, RM_PART_EVENTS) == 0) return &kEvents;
+    if (name && version == RM_PART_ENTITY_VERSION && std::strcmp(name, RM_PART_ENTITY) == 0) return &kEntity;
     return FindScriptApiPart(W(ctx).parts, name, version);
 }
 
@@ -342,6 +578,7 @@ const char* HookName(int hook) {
         case RM_HOOK_TRIGGER_ENTER: return "OnTriggerEnter";
         case RM_HOOK_TRIGGER_EXIT: return "OnTriggerExit";
         case RM_HOOK_CLICK: return "OnClick";
+        case RM_HOOK_EVENT: return "OnEvent";
         default: return "EndPlay";
     }
 }
@@ -488,6 +725,172 @@ void ScriptWorld::ReadInput() {
     inputNow = readInput ? readInput() : InputFrame{};
 }
 
+void ScriptWorld::SetPointer(std::optional<Vec2> at, Vec2 screenSize) {
+    screen = screenSize;
+    pointerDelta = at && pointer ? Vec2{at->x - pointer->x, at->y - pointer->y} : Vec2{0, 0};
+    if (pointer) lastPointer = *pointer;
+    pointer = at;
+    if (at) lastPointer = *at;
+}
+
+const std::vector<InputAction>& ScriptWorld::Actions() const {
+    static const std::vector<InputAction> kNone;
+    if (playerActions) return *playerActions;
+    return actions ? *actions : kNone;
+}
+
+std::filesystem::path ScriptWorld::BindingsFile() const { return saveFolder.empty() ? std::filesystem::path() : saveFolder / L"input.json"; }
+
+bool ScriptWorld::LoadBindings(std::string* why) {
+    const std::filesystem::path file = BindingsFile();
+    std::error_code ec;
+    if (file.empty() || !std::filesystem::is_regular_file(file, ec)) {
+        playerActions.reset();  // (none saved: the game settings')
+        return false;
+    }
+    const auto bytes = platform::ReadFileBytes(file, why);
+    const auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
+    if (!doc || doc->Get("kind").AsString() != kBindingsKind) {
+        if (why && bytes) *why = "input.json が壊れています";
+        return false;
+    }
+    playerActions = BindingsFromJson(actions ? std::span<const InputAction>(*actions) : std::span<const InputAction>(), *doc);
+    return true;
+}
+
+bool ScriptWorld::SaveBindings(std::string* why) {
+    const std::filesystem::path file = BindingsFile();
+    if (file.empty()) {
+        if (why) *why = "保存する場所がありません";
+        return false;
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(saveFolder, ec);
+    return platform::WriteFileAtomic(file, json::Write(BindingsToJson(Actions())), why);
+}
+
+namespace {
+// Runs a coroutine on to its next wait (the script that owns it is the one running meanwhile).
+void RunCoroutine(ScriptWorld& w, CoroutineSlot& slot) {
+    const void* script = std::exchange(w.currentScript, slot.owner);
+    const int entity = std::exchange(w.currentEntity, slot.ownerEntity);
+    slot.running = true;
+    RmWait next{};
+    int alive = 0;
+    const void* frame = slot.frame;
+    auto destroy = slot.destroy;
+    const uint64_t id = slot.id;
+    const unsigned long code = CallCoroutineResume(slot.resume, slot.frame, &next, &alive);
+    w.currentScript = script;
+    w.currentEntity = entity;
+    // (the list may have grown meanwhile: find the slot again)
+    CoroutineSlot* s = nullptr;
+    for (CoroutineSlot& c : w.coroutines) {
+        if (c.id == id) s = &c;
+    }
+    if (code != 0) {
+        if (w.log) w.log(2, std::format("コルーチンが止まりました (例外 0x{:08X})。このコルーチンだけを止めます", code));
+        if (s) {
+            s->dead = true;
+            s->running = false;
+        }
+        return;  // (its frame is left as it is: it may be broken)
+    }
+    if (!s) return;
+    s->running = false;
+    if (!alive || s->dead) {
+        s->dead = true;
+        CallCoroutineDestroy(destroy, const_cast<void*>(frame));
+        return;
+    }
+    s->wait = next;
+    s->waitFrom = w.frame;
+    // A wait that begins after this frame's Ticks counts from the frame's end.
+    const double scaled = w.time + (w.inCoroutinePass ? w.dt : 0.0);
+    const double real = w.unscaledTime + (w.inCoroutinePass ? w.unscaledDt : 0.0);
+    s->until = (next.kind == RmWait_RealSeconds ? real : scaled) + std::max(0.0, next.seconds);
+}
+}  // namespace
+
+uint64_t ScriptWorld::StartCoroutine(void* coFrame, int (*resume)(void*, RmWait*), void (*destroy)(void*)) {
+    if (!coFrame || !resume || !destroy) return 0;
+    if (coroutines.size() >= 100000) {
+        TellOnce("coroutines:many", "rm::StartCoroutine: コルーチンが多すぎます (100000 個まで)");
+        CallCoroutineDestroy(destroy, coFrame);
+        return 0;
+    }
+    CoroutineSlot slot;
+    slot.id = nextCoroutine++;
+    slot.frame = coFrame;
+    slot.resume = resume;
+    slot.destroy = destroy;
+    slot.owner = currentScript;
+    slot.ownerEntity = currentEntity;
+    coroutines.push_back(slot);
+    RunCoroutine(*this, coroutines.back());
+    for (const CoroutineSlot& c : coroutines) {
+        if (c.id == slot.id) return c.dead ? 0 : slot.id;
+    }
+    return 0;
+}
+
+void ScriptWorld::StopCoroutine(uint64_t id) {
+    for (CoroutineSlot& c : coroutines) {
+        if (c.id != id || c.dead) continue;
+        c.dead = true;
+        if (!c.running) CallCoroutineDestroy(c.destroy, c.frame);  // (running: freed when it comes back)
+    }
+}
+
+void ScriptWorld::StopCoroutinesOf(const void* owner) {
+    if (!owner) return;
+    for (CoroutineSlot& c : coroutines) {
+        if (c.owner != owner || c.dead) continue;
+        c.dead = true;
+        if (!c.running) CallCoroutineDestroy(c.destroy, c.frame);
+    }
+    if (!inCoroutinePass) std::erase_if(coroutines, [](const CoroutineSlot& c) { return c.dead && !c.running; });
+}
+
+void ScriptWorld::ClearCoroutines() {
+    for (CoroutineSlot& c : coroutines) {
+        if (!c.dead) CallCoroutineDestroy(c.destroy, c.frame);
+    }
+    coroutines.clear();
+}
+
+bool ScriptWorld::CoroutineRunning(uint64_t id) const {
+    for (const CoroutineSlot& c : coroutines) {
+        if (c.id == id) return !c.dead;
+    }
+    return false;
+}
+
+void ScriptWorld::ResumeCoroutines() {
+    inCoroutinePass = true;
+    const double scaled = time + dt, real = unscaledTime + unscaledDt;
+    // (only the ones there now: one started meanwhile has run already)
+    std::vector<uint64_t> ids;
+    for (const CoroutineSlot& c : coroutines) ids.push_back(c.id);
+    for (const uint64_t id : ids) {
+        CoroutineSlot* s = nullptr;
+        for (CoroutineSlot& c : coroutines) {
+            if (c.id == id) s = &c;
+        }
+        if (!s || s->dead || s->waitFrom >= frame) continue;
+        bool ready = false;
+        switch (s->wait.kind) {
+            case RmWait_Seconds: ready = scaled >= s->until; break;
+            case RmWait_RealSeconds: ready = real >= s->until; break;
+            case RmWait_Coroutine: ready = !CoroutineRunning(s->wait.coroutine); break;
+            default: ready = frame >= s->waitFrom + std::max<uint32_t>(1, s->wait.frames); break;
+        }
+        if (ready) RunCoroutine(*this, *s);
+    }
+    inCoroutinePass = false;
+    std::erase_if(coroutines, [](const CoroutineSlot& c) { return c.dead && !c.running; });
+}
+
 GlobalValue* ScriptWorld::Global(const char* name) {
     if (!name) return nullptr;
     if (GlobalValue* g = globals.Find(name)) return g;
@@ -501,7 +904,7 @@ void ScriptWorld::TellOnce(const std::string& key, std::string_view text) {
 
 const InputAction* ScriptWorld::Action(const char* name) {
     if (!name) return nullptr;
-    if (const InputAction* a = actions ? FindAction(*actions, name) : nullptr) return a;
+    if (const InputAction* a = FindAction(Actions(), name)) return a;  // (the player's bindings, when changed)
     if (told.insert(std::string("input:") + name).second && log) {
         log(1, std::format("入力のアクション「{}」はゲームの設定の「入力」にありません (いつも押されていない扱いです)", name));
     }
@@ -705,9 +1108,14 @@ std::vector<ScriptRunner::Instance> ScriptRunner::Collect(Scene& scene, const Sc
     return out;
 }
 
-bool ScriptRunner::Call(ScriptWorld& world, const Instance& in, int hook, float dt, int other) {
-    const unsigned long code =
-        CallScriptHook(*in.type->script, hook, in.data, static_cast<RmEntityId>(in.entity), dt, static_cast<RmEntityId>(std::max(other, 0)));
+bool ScriptRunner::Call(ScriptWorld& world, const Instance& in, int hook, float dt, int other, const RmEvent* event) {
+    const void* script = std::exchange(world.currentScript, in.data);
+    const int entity = std::exchange(world.currentEntity, in.entity);
+    const unsigned long code = CallScriptHook(*in.type->script, hook, in.data, static_cast<RmEntityId>(in.entity), dt,
+                                              static_cast<RmEntityId>(std::max(other, 0)), event);
+    world.currentScript = script;
+    world.currentEntity = entity;
+    if (hook == RM_HOOK_END_PLAY || code != 0) world.StopCoroutinesOf(in.data);  // (its coroutines end with it)
     if (code == 0) return true;
     crashed_.insert(in.data);
     if (world.log) {
@@ -731,7 +1139,10 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
         if (!crashed_.contains(in.data)) Call(world, in, 2, 0);
         started_.erase(in.data);
     }
-    // Gone with its entity: its object is gone too (nothing left to call).
+    // Gone with its entity: its object is gone too (nothing left to call) - and its coroutines.
+    for (void* p : started_) {
+        if (!present.contains(p)) world.StopCoroutinesOf(p);
+    }
     std::erase_if(started_, [&](void* p) { return !present.contains(p); });
     std::erase_if(crashed_, [&](void* p) { return !present.contains(p); });
     // BeginPlay of the new ones first (also what the last frame made), then every Tick.
@@ -744,8 +1155,43 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
         if (!in.active || crashed_.contains(in.data) || !started_.contains(in.data)) continue;
         Call(world, in, 1, dt);
     }
-    ApplyAsked(scene, world, module, order);  // the frame's end: what was destroyed / removed goes
+    ApplyAsked(scene, world, module, order);  // what was destroyed / removed goes (EndPlay stops coroutines)
+    world.ResumeCoroutines();                 // the coroutines whose wait is over
+    DeliverEvents(scene, world, module, order);
+    ApplyAsked(scene, world, module, order);  // the frame's end
     world.time += dt;
+    world.unscaledTime += world.unscaledDt;
+    ++world.frame;
+}
+
+void ScriptRunner::DeliverEvents(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order) {
+    if (!module.Loaded()) {
+        world.events.clear();
+        return;
+    }
+    for (int round = 0; round < 8 && !world.events.empty(); ++round) {
+        const std::vector<QueuedEvent> events = std::exchange(world.events, {});
+        const std::vector<Instance> list = Collect(scene, module, order);
+        for (const QueuedEvent& q : events) {
+            std::unordered_set<int> reach;
+            if (q.scope == 2) {
+                const int roots[] = {q.target};
+                reach = scene.Subtree(roots);
+            }
+            const RmEvent ev{q.name.c_str(), static_cast<RmEntityId>(q.sender), q.number, q.text.c_str(), static_cast<RmEntityId>(q.entity)};
+            for (const Instance& in : list) {
+                if (!in.type->script->onEvent || !in.active || !started_.contains(in.data) || crashed_.contains(in.data)) continue;
+                if ((q.scope == 1 && in.entity != q.target) || (q.scope == 2 && !reach.contains(in.entity))) continue;
+                if (!scene.Find(in.entity)) continue;
+                Call(world, in, RM_HOOK_EVENT, 0, 0, &ev);
+            }
+        }
+        ApplyAsked(scene, world, module, order);
+    }
+    if (!world.events.empty()) {
+        world.TellOnce("events:loop", "rm::Events: OnEvent の中で送ったイベントが 8 回続いたので、残りは捨てました (送り合いが止まらないかもしれません)");
+        world.events.clear();
+    }
 }
 
 void ScriptRunner::Deliver(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
@@ -761,6 +1207,7 @@ void ScriptRunner::Deliver(Scene& scene, ScriptWorld& world, const ScriptModule&
         }
     }
     ApplyAsked(scene, world, module, order);
+    DeliverEvents(scene, world, module, order);  // (what those hooks sent)
 }
 
 void ScriptRunner::ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order) {
@@ -830,6 +1277,8 @@ void ScriptRunner::Stop(Scene& scene, ScriptWorld& world, const ScriptModule& mo
         if (started_.contains(in.data) && !crashed_.contains(in.data)) Call(world, in, 2, 0);
     }
     Reset();
+    world.ClearCoroutines();     // (every one: also those whose script went without EndPlay)
+    world.events.clear();
     world.destroyAsked.clear();  // (the scene goes as a whole)
     world.removeAsked.clear();
     // The scene that played is thrown away next: a script's default value that asks the world (a

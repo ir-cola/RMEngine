@@ -158,6 +158,9 @@ struct PlaceInfo {
     const char* space = "";  // as SceneViewInfo::space ("3d", "2d")
     // False when the entity has nothing of this space (no Transform).
     bool (*pose)(const Scene& scene, int entity, Pose& out) = nullptr;
+    // `entity` is about to be put under `newParent` (0: the top): its Transform of this space is changed so
+    // it stays where it is in the world (Entity::SetParent(p, keepWorld)). Null: nothing to keep.
+    void (*keepWorld)(Scene& scene, int entity, int newParent) = nullptr;
 };
 
 // The first space that knows where `entity` is; false when none does (no such entity, no Transform).
