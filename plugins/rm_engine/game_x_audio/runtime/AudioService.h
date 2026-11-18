@@ -64,6 +64,17 @@ public:
     bool SourcePlaying(game_production::Scene& scene, int entity);
 
     audio::AudioEngine& Engine() { return *engine_; }
+
+    // For the editor's デバッグ panel: the device, the voices sounding, the 音源 known, the music's file
+    // (empty: none) and the volumes now.
+    struct Facts {
+        bool device = false;
+        size_t voices = 0;
+        size_t sources = 0;
+        std::string music;
+        float master = 1, musicVolume = 1, effects = 1;
+    };
+    Facts DebugFacts() const;
     VoiceId Music() const { return music_; }
 
 private:

@@ -13,6 +13,22 @@
 
 namespace rm::game_x_audio {
 
+AudioService::Facts AudioService::DebugFacts() const {
+    Facts f;
+    f.device = engine_ && engine_->HasDevice();
+    f.voices = engine_ ? engine_->Voices() : 0;
+    f.sources = sources_.size();
+    if (music_ != 0 && engine_ && engine_->IsPlaying(music_)) {
+        const AssetRef ref{musicSound_};
+        f.music = host_.name ? host_.name(ref) : std::string();
+        if (f.music.empty()) f.music = musicSound_;
+    }
+    f.master = Volume(BusVolume::Master);
+    f.musicVolume = Volume(BusVolume::Music);
+    f.effects = Volume(BusVolume::Effects);
+    return f;
+}
+
 namespace gp = game_production;
 
 AudioService::AudioService(const gp::PlayHost& host) : host_(host), engine_(std::make_unique<audio::AudioEngine>(host.silent)) {

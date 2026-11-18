@@ -1,6 +1,7 @@
 #include "platform/SystemInfo.h"
 
 #include <dxgi1_4.h>
+#include <mmdeviceapi.h>
 #include <psapi.h>
 #include <tlhelp32.h>
 #include <shellscalingapi.h>
@@ -14,6 +15,7 @@
 
 #pragma comment(lib, "shcore.lib")    // GetDpiForMonitor
 #pragma comment(lib, "advapi32.lib")  // RegGetValueW
+#pragma comment(lib, "ole32.lib")     // CoCreateInstance, PropVariantClear
 
 namespace rm::platform {
 
@@ -149,6 +151,24 @@ std::optional<GpuDesc> GpuOf(ID3D11Device* device) {
     const D3D_FEATURE_LEVEL fl = device->GetFeatureLevel();
     g.featureLevel = std::format(L"{}_{}", (static_cast<int>(fl) >> 12) & 0xF, (static_cast<int>(fl) >> 8) & 0xF);
     return g;
+}
+
+std::wstring DefaultAudioOutput() {
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> devices;
+    Microsoft::WRL::ComPtr<IMMDevice> device;
+    Microsoft::WRL::ComPtr<IPropertyStore> props;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&devices))) ||
+        FAILED(devices->GetDefaultAudioEndpoint(eRender, eConsole, &device)) || FAILED(device->OpenPropertyStore(STGM_READ, &props))) {
+        return {};
+    }
+    // PKEY_Device_FriendlyName (written here: its header wants its definitions linked in from elsewhere)
+    static const PROPERTYKEY kFriendlyName{{0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
+    PROPVARIANT name;
+    PropVariantInit(&name);
+    std::wstring out;
+    if (SUCCEEDED(props->GetValue(kFriendlyName, &name)) && name.vt == VT_LPWSTR && name.pwszVal) out = name.pwszVal;
+    PropVariantClear(&name);
+    return out;
 }
 
 ProcessMemory MemoryOfThisProcess() {

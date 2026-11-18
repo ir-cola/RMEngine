@@ -21,5 +21,16 @@
   "そのままの大きさの距離": "Full volume distance",
   "カメラからこの距離までは小さくなりません": "Not quieter up to this distance from the camera",
   "聞こえなくなる距離": "Silent distance",
-  "カメラからこの距離で音が 0 になります": "At this distance from the camera the sound is gone"
+  "カメラからこの距離で音が 0 になります": "At this distance from the camera the sound is gone",
+  "出力先 (Windows の既定)": "Output (Windows' default)",
+  "(ありません)": "(none)",
+  "Play 中に、鳴っている音が出ます": "While playing, the sounds playing show here",
+  "音を出す装置": "Sound device",
+  "使っています": "In use",
+  "使えません (音は出ません)": "Cannot be used (no sound)",
+  "鳴っている音": "Sounds playing",
+  "{} 個": "{} items",
+  "音源の部品 (動いている)": "Audio sources (running)",
+  "(なし)": "(none)",
+  "全体 {:.2f} ・ BGM {:.2f} ・ 効果音 {:.2f}": "master {:.2f} · music {:.2f} · effects {:.2f}"
 }

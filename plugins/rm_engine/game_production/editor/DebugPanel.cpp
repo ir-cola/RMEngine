@@ -1,5 +1,6 @@
 #include "rm_engine/game_production/editor/DebugPanel.h"
 
+#include "base/Log.h"
 #include "base/Utf.h"
 #include "editor/lang/Lang.h"
 #include "editor/plugin/Software.h"
@@ -15,8 +16,11 @@
 #include "ui/Context.h"
 
 #include <algorithm>
+#include <atomic>
 #include <format>
 #include <map>
+#include <mutex>
+#include <unordered_map>
 
 namespace rm::game_production {
 
@@ -43,6 +47,7 @@ struct DebugPanel::System {
 namespace {
 
 constexpr float kRowH = 20, kHeadH = 26, kLabelW = 170;
+constexpr size_t kGraphSamples = 240;
 
 std::wstring Mb(uint64_t bytes) { return std::format(L"{:.0f} MB", static_cast<double>(bytes) / (1024.0 * 1024.0)); }
 
@@ -65,10 +70,19 @@ bool KeyHeld(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
 void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
     const double now = platform::NowSeconds();
     self_.Frame(now);
+    WantViewReports();  // (the views tell what they drew while this is shown)
     if (live_) {
         c.RequestAnimation();  // (the values move by themselves: the mouse, the pads, the frames)
         padState_ = pads_.Read();
+        // The graph: this frame's interval (the editor's frame while live) and Play's work.
+        if (lastDraw_ > 0) {
+            intervals_.push_back(static_cast<float>(std::min(250.0, (now - lastDraw_) * 1000.0)));
+            work_.push_back(v.playing ? static_cast<float>(v.playTimes.total) : 0.f);
+            if (intervals_.size() > kGraphSamples) intervals_.erase(intervals_.begin());
+            if (work_.size() > kGraphSamples) work_.erase(work_.begin());
+        }
     }
+    lastDraw_ = now;
     if (!system_ || (live_ && now - systemAt_ > 1.0)) {
         auto s = std::make_shared<System>();
         s->monitors = platform::Monitors(platform::ThisThreadsWindow());
@@ -127,6 +141,42 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         const FrameMeter::Summary me = self_.Over(now);
         row(Tr(L"このパネル"), me.frames == 0 ? std::wstring() : TrF(L"{:.0f} FPS", me.fps));
         if (v.settings) row(Tr(L"目標 FPS (ゲームの設定)"), std::to_wstring(v.settings->targetFps));
+        // The graph of the last frames: the editor's frame interval (accent) and Play's work (warning colour).
+        if (!intervals_.empty()) {
+            float graphTop = 34;
+            for (const float f : intervals_) graphTop = std::max(graphTop, std::min(f * 1.15f, 250.f));
+            const float guides[] = {1000.f / 60.f, 1000.f / 30.f, 100.f};
+            w::LineGraph(c, {x + 10, y + 2, width - 10, 90}, intervals_, work_, graphTop, guides);
+            y += 96;
+            row(L"", TrF(L"線: フレームの間隔 (アクセントの色)・Play の処理 (注意の色) ・ 横線: 16.7 ms (60 FPS)・33.3 ms (30 FPS)・100 ms ・ 上端 {:.0f} ms", graphTop));
+        }
+        gap();
+    }
+
+    // --- Where the time of a Play frame goes ---------------------------------------------------------
+    if (header(Tr(L"時間の内訳 (Play の 1 フレーム)"))) {
+        if (!v.playing) {
+            row(L"", Tr(L"Play 中に出ます (スクリプトの種類ごと・システムごとの時間)"));
+        } else {
+            const PlayTimes& t = v.playTimes;
+            auto ms = [](double value) { return std::format(L"{:.2f} ms", value); };
+            row(Tr(L"合計"), ms(t.total), t.total > 1000.0 / 60.0);
+            row(Tr(L"スクリプト"), ms(t.scripts));
+            for (size_t i = 0; i < v.scriptTimes.size() && i < 8; ++i) {
+                const ScriptRunner::ScriptTime& s = v.scriptTimes[i];
+                const std::wstring name = s.type ? Utf8ToWide(TrU8(s.type->desc.label)) : Tr(L"(コルーチン)");
+                row(L"    " + name, s.type ? TrF(L"{:.3f} ms ・ {} 回", s.ms, s.calls) : TrF(L"{:.3f} ms ・ {} 個", s.ms, s.calls));
+            }
+            row(Tr(L"システム (物理など)"), ms(t.systems));
+            std::vector<SystemRunner::SystemTime> systems = v.systemTimes;
+            std::sort(systems.begin(), systems.end(), [](const auto& a, const auto& b) { return a.ms > b.ms; });
+            for (size_t i = 0; i < systems.size() && i < 8; ++i) {
+                if (systems[i].runs == 0) continue;
+                row(L"    " + Utf8ToWide(TrU8(systems[i].system->name)), TrF(L"{:.3f} ms ・ {} 回", systems[i].ms, systems[i].runs));
+            }
+            row(Tr(L"フックを届ける (OnHit ・ OnClick)"), ms(t.hooks));
+            row(Tr(L"サービス (音 ・ ゲーム UI)"), ms(t.services));
+        }
         gap();
     }
 
@@ -145,6 +195,26 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
             }
         }
         row(Tr(L"スクリプトの種類"), TrF(L"{} 種類 (ビルドした DLL の中)", v.scriptTypes));
+        if (v.playing) {
+            // A frame that needed the most fixed steps has fallen behind (the game slows down there).
+            const bool behind = v.fixedSteps >= SystemRunner::kMaxFixedSteps;
+            row(Tr(L"物理の刻み (このフレーム)"),
+                behind ? TrF(L"{} 回 (上限: 追いつけていません)", v.fixedSteps)
+                       : TrF(L"{} 回 (刻み {:.3f} 秒)", v.fixedSteps, v.settings ? v.settings->fixedTimestep : 0.f),
+                behind);
+        }
+        gap();
+    }
+
+    // --- The global variables ---------------------------------------------------------------------------
+    if (header(Tr(L"グローバル変数"))) {
+        if (!v.playing || !v.world) {
+            row(L"", Tr(L"Play 中に、今の値が出ます (ゲームの設定の「グローバル変数」)"));
+        } else if (v.world->globals.Size() == 0) {
+            row(L"", Tr(L"(ありません)"));
+        } else {
+            for (const auto& [name, value] : v.world->globals.Values()) row(Utf8ToWide(name), Utf8ToWide(FormatGlobalValue(value)));
+        }
         gap();
     }
 
@@ -258,7 +328,22 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
+    // --- What the views drew ---------------------------------------------------------------------------
+    if (header(Tr(L"描画とカメラ"))) {
+        const std::vector<ViewReport> views = RecentViews();
+        for (const ViewReport& vr : views) {
+            row(vr.title, L"", true);
+            for (const DebugInfoLine& l : vr.lines) row(L"    " + l.label, l.value, l.lit);
+        }
+        if (views.empty()) row(L"", Tr(L"(この 1 秒に描いたビューはありません)"));
+        gap();
+    }
+
     // --- The plugins' sections (パーティクル ...) ------------------------------------------------------
+    DebugContext ctx;
+    ctx.scene = const_cast<Scene*>(v.scene);
+    ctx.playing = v.playing;
+    ctx.world = v.world;
     if (v.registry) {
         std::vector<const DebugInfoInfo*> infos;
         for (const auto& d : v.registry->Contributions<DebugInfoInfo>(kDebugInfoPoint)) {
@@ -268,8 +353,8 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         for (const DebugInfoInfo* info : infos) {
             if (!header(Tr(info->title))) continue;
             std::vector<DebugInfoLine> lines;
-            info->collect(lines);
-            for (const DebugInfoLine& l : lines) row(l.label, l.value);
+            info->collect(ctx, lines);
+            for (const DebugInfoLine& l : lines) row(l.label, l.value, l.lit);
             if (lines.empty()) row(L"", Tr(L"(なし)"));
             gap();
         }
@@ -285,6 +370,16 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
             if (m.primary) facts += Tr(L" ・ メイン");
             row(m.device, facts);
         }
+        gap();
+    }
+
+    // --- The console ---------------------------------------------------------------------------------------
+    if (header(Tr(L"コンソール"))) {
+        const log::Counts n = log::Counted();
+        row(Tr(L"エラー"), TrF(L"{} 個", n.error), n.error > 0);
+        row(Tr(L"警告"), TrF(L"{} 個", n.warn), n.warn > 0);
+        row(Tr(L"お知らせ"), TrF(L"{} 個", n.info));
+        row(L"", Tr(L"(エディターを起動してからの数)"));
         gap();
     }
 

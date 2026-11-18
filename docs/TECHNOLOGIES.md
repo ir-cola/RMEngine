@@ -942,7 +942,8 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **工夫** — GPU の値の読み戻しは、`Map` に `D3D11_MAP_FLAG_DO_NOT_WAIT` を付け、3 つのバッファーを順に使う (GPU がまだ終えていなければ待たずに次のフレームへ: 画面が止まらない)。数えるのはデバッグのパネルが開いている間だけ (閉じている時は UAV を付けないので、書き込みは捨てられ、手間はほぼ 0)。パネルの区切りはプラグインが足す (`DebugInfoInfo`): ゲーム制作の核はパーティクルを知らないまま (憲法 10)。フレームの速さは「この 1 秒の印」を持って数える (`FrameMeter`、純粋でテストあり)
 - **なぜそれか** — Unity の Stats (FPS・描画)・Profiler の一部・Input Debugger と同じ役目を、ゲームを作りながら横で見られるように。モニターの名前は GDI の `EnumDisplayDevices` だと「Generic PnP Monitor」になりやすいので、DisplayConfig を使った
 - **CPU とメモリ** — CPU の名前は CPU 自身に聞く (`__cpuid` の 0x80000002〜4 番: 48 文字の名前)。コアの数と、P コア / E コア (速いコアと省電力のコア) は `GetLogicalProcessorInformationEx` の各コアの `EfficiencyClass` (いちばん大きい物が P コア)。使用率は `GetSystemTimes` (PC 全体の 待ち・カーネル・ユーザーの時間) と `GetProcessTimes` (このソフトの時間) を 1 秒ごとに読み、前との差で割る (カーネルの時間には待ちの時間も入っているので、それを引く)。メモリは `GlobalMemoryStatusEx` (PC) と `GetProcessMemoryInfo` (このソフト)
-- **どこ** — `src/platform/SystemInfo.cpp`・`plugins/rm_engine/game_production/editor/DebugPanel.cpp`・`plugins/rm_engine/particles/runtime/ParticlePlayer.cpp` (`CountAliveFor`・`ReadBackCount`)・`ParticleShader.cpp` (`AliveCount`)・`plugins/rm_engine/game_x_particles/runtime/ParticleStats.cpp`
+- **時間の内訳・描画の統計・音の出力先** — 時間は `std::chrono::steady_clock` (単調に進む時計) で、スクリプトのフックを呼ぶ前後・システムを 1 つ走らせる前後を測る。パネルが出ている間だけ測る (`SetTiming`) ので、ふだんの Play には手間が増えない。描画の統計は、3D の描き手がドローコールを組み立てた後に、三角形 (インデックスの数 ÷ 3 × インスタンス数) と使った絵 (重複なし) の GPU のメモリを数える。物理は Jolt の `GetNumActiveBodies` (眠っていない剛体)。音の出力先の名前は **MMDevice API** (`IMMDeviceEnumerator::GetDefaultAudioEndpoint` → `PKEY_Device_FriendlyName`)。ビューの報告は「パネルがこの 1 秒に描かれた」ときだけ作る
+- **どこ** — `src/platform/SystemInfo.cpp`・`plugins/rm_engine/game_production/editor/DebugPanel.cpp`・`DebugReports.cpp`・`Systems.cpp` (`SystemRunner::Run`)・`Scripts.cpp` (`ScriptRunner::Times`)・`Renderer3D.cpp` (`Stats`)・`plugins/rm_engine/particles/runtime/ParticlePlayer.cpp` (`CountAliveFor`・`ReadBackCount`)・`ParticleShader.cpp` (`AliveCount`)・`plugins/rm_engine/game_x_particles/runtime/ParticleStats.cpp`
 
 ## 追記の記録
 
@@ -950,6 +951,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 |---|---|
 | 2026-11-18 | デバッグのパネル: DisplayConfig API (モニターの名前)・DXGI のアダプターとメモリの量・GPU で数えた値を待たずに読み戻す (ステージングと DO_NOT_WAIT) を足した |
 | 2026-11-18 | デバッグのパネルに CPU (CPUID の名前・P / E コア・GetSystemTimes での使用率) とメモリ (GlobalMemoryStatusEx) を足した |
+| 2026-11-18 | デバッグのパネルに時間の内訳 (steady_clock で測る)・フレームのグラフ・描画の統計・物理 (Jolt の起きている剛体)・音の出力先 (MMDevice API)・ゲーム UI・コンソールの数を足した |
 | 2026-11-18 | スクリプトのコルーチン (C++20 の co_await)・イベント・時間の速さ・プレイヤーごとの入力とパッドの振動・キーの割り当ての保存・スクリプトの数学 (クォータニオン)・親を変えてもワールドを保つ を足した |
 | 2026-11-18 | ミップマップの設定・透明部分を保つ・ミップマップ・ストリーミング・端の扱い (サンプラーの AddressMode) を足した |
 | 2026-11-17 | 降る雨と雪 (頂点の番号から作る粒・カメラについてくる箱) を足した |

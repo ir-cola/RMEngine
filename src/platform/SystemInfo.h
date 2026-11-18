@@ -41,6 +41,9 @@ std::optional<GpuDesc> GpuOf(ID3D11Device* device);
 // "NVIDIA" / "AMD" / "Intel" / "Microsoft" (the software one) / "" for the PCI vendor id.
 std::wstring GpuVendorName(uint32_t vendorId);
 
+// The sound output Windows plays to now (its default: "スピーカー (Realtek(R) Audio)"); empty: none / not known.
+std::wstring DefaultAudioOutput();
+
 // This program's memory in use (its working set, and the most it has been), what it has committed, and
 // its handles and threads (bytes / counts; 0: not known).
 struct ProcessMemory {

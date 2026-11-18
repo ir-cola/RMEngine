@@ -274,6 +274,13 @@ public:
         v.sceneMouse = sceneMouse_;
         v.gameMouse = pointer_;
         v.scriptTypes = scripts_.Module().Types().size();
+        if (v.playing) {
+            v.playTimes = playTimes_;
+            v.scriptTimes = scriptTimes_;
+            v.systemTimes = systemTimes_;
+            v.fixedSteps = runner_.LastSteps();
+        }
+        debugShownAt_ = now;
         debugPanel_.Draw(c, r, v);
     }
 
@@ -1141,12 +1148,27 @@ private:
         world.unscaledDt = static_cast<float>(realDt);
         world.keyboardPlayer = std::clamp(settings_.keyboardPlayer - 1, 0, kPlayers - 1);  // (edited while playing: read each frame)
         world.SetPointer(pointer_, GameScreen());
+        // (the デバッグ panel shown: each part timed - the scripts by type, the systems one by one)
+        const bool timing = platform::NowSeconds() - debugShownAt_ < 1.0;
+        scripts_.Runner().SetTiming(timing);
+        runner_.SetTiming(timing);
+        PlayTimes times;
+        double mark = platform::NowSeconds();
+        auto lap = [&](double& into) {
+            const double t = platform::NowSeconds();
+            into += (t - mark) * 1000.0;
+            mark = t;
+        };
+        const double start = mark;
         debug_.BeginFrame(dt);  // last frame's lines go (and the ones whose seconds are up), then the scripts draw this one's
         scripts_.Runner().Frame(*playScene_, world, scripts_.Module(), settings_.scriptOrder, static_cast<float>(dt));
+        lap(times.scripts);
         runner_.SetCamera(world.camera);
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
+        lap(times.systems);
         // What the systems' fixed steps tell the scripts (the physics' contacts ...).
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, runner_.Hooks());
+        lap(times.hooks);
         // The services (音, the game UI ...): the game screen as the game settings' 画面, the mouse over the
         // game view; the hooks they ask for (a button's OnClick) go to the scripts now.
         std::vector<HookCall> asked;
@@ -1161,7 +1183,15 @@ private:
         pf.hooks = &asked;
         pf.world = &world;
         services_.Frame(pf);
+        lap(times.services);
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, asked);
+        lap(times.hooks);
+        times.total = (platform::NowSeconds() - start) * 1000.0;
+        playTimes_ = times;
+        if (timing) {
+            scriptTimes_ = scripts_.Runner().Times();
+            systemTimes_ = runner_.Times();
+        }
         if (std::exchange(world.quitAsked, false)) {
             // ゲームを終わる: the game would close - Play stops (as ■).
             log::Info("ゲームを終わる → Play を止めます (書き出したゲームではウィンドウが閉じます)");
@@ -1229,6 +1259,8 @@ private:
         scripts_.Runner().Stop(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder);  // EndPlay
         scripts_.World().services = nullptr;
         scripts_.StopInput();  // (every pad still)
+        scriptTimes_.clear();
+        systemTimes_.clear();
         scripts_.World().playerActions.reset();
         scripts_.World().timeScale = 1;
         services_.Stop();    // every sound stops (■: nothing of the game is heard after it)
@@ -1441,6 +1473,7 @@ private:
             host_.History().Clear();
             log::Info("スクリプトを読み直したので、元に戻す (Undo) の履歴を消しました");
         }
+        scriptTimes_.clear();  // (they point at the old DLL's types)
         scripts_.Swap(std::move(next));
         UseScriptTypes();
         reflect::Warnings warnings;
@@ -3011,6 +3044,10 @@ private:
     // over the scene view.
     DebugPanel debugPanel_;
     FrameMeter sceneMeter_, gameMeter_, updateMeter_;
+    double debugShownAt_ = -1e9;  // the panel was drawn then (Play's parts are timed while it is shown)
+    PlayTimes playTimes_;
+    std::vector<ScriptRunner::ScriptTime> scriptTimes_;
+    std::vector<SystemRunner::SystemTime> systemTimes_;
     std::optional<Vec2> sceneMouse_;
     std::optional<Vec2> pointer_;       // ... on the game screen (DIPs of the game settings' 画面); nullopt: not over it
     bool pointerWentDown_ = false, pointerWentUp_ = false;  // this frame's left button presses (PlayFrame)

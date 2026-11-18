@@ -306,6 +306,16 @@ public:
     void Reset();
     size_t Crashed() const { return crashed_.size(); }
 
+    // How long the scripts took in the last Frame (and the Delivers after it), type by type (the most
+    // first), and the coroutines run on after the Ticks - measured only while asked (the デバッグ panel).
+    struct ScriptTime {
+        const ScriptType* type = nullptr;  // null: the coroutines
+        double ms = 0;
+        int calls = 0;
+    };
+    void SetTiming(bool on) { timing_ = on; }
+    std::vector<ScriptTime> Times() const;
+
 private:
     struct Instance {
         int entity;
@@ -321,6 +331,8 @@ private:
 
     std::unordered_set<void*> started_;
     std::unordered_set<void*> crashed_;
+    bool timing_ = false;
+    std::unordered_map<const ScriptType*, ScriptTime> times_;  // (null key: the coroutines)
 };
 
 // --- Switching the scene (Game::LoadScene) -------------------------------------------------------

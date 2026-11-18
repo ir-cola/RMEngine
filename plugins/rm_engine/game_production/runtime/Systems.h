@@ -121,6 +121,17 @@ public:
     // The hooks the systems asked for in the last Advance (for ScriptRunner::Deliver).
     const std::vector<HookCall>& Hooks() const { return hooks_; }
 
+    // How long each system took in the last Advance (its fixed steps added up) - measured only while
+    // asked (the editor's デバッグ panel). And how many fixed steps the last Advance ran.
+    struct SystemTime {
+        const SystemInfo* system = nullptr;
+        double ms = 0;
+        int runs = 0;
+    };
+    void SetTiming(bool on) { timing_ = on; }
+    const std::vector<SystemTime>& Times() const { return times_; }
+    int LastSteps() const { return lastSteps_; }
+
 private:
     std::vector<const SystemInfo*> systems_;  // Fixed first, then Frame; by order inside each
     double time_ = 0;
@@ -130,6 +141,11 @@ private:
     uint64_t camera_ = 0;
     std::vector<HookCall> hooks_;
     AssetAccess assets_;
+    bool timing_ = false;
+    std::vector<SystemTime> times_;
+    int lastSteps_ = 0;
+    // Runs one system (timed when asked).
+    void Run(size_t index, SystemContext& ctx);
 };
 
 }  // namespace rm::game_production

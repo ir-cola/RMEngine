@@ -1,7 +1,10 @@
 #include "rm_engine/game_ui/editor/Connector.h"
 
 #include "editor/lang/Lang.h"
+#include "base/Utf.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_production/editor/DebugPanel.h"
+#include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_ui/editor/UiView.h"
 #include "rm_engine/game_ui/runtime/UiScreenDraw.h"
@@ -84,9 +87,29 @@ void KeepPlace(const Scene& scene, const game_production::GameSettings& settings
     now.size = moved.size;
 }
 
+// デバッグ ▸ ゲーム UI: which button is chosen, in which window, by the keys or the mouse.
+void UiLines(const game_production::DebugContext& ctx, std::vector<game_production::DebugInfoLine>& out) {
+    const auto* ui = ctx.playing && ctx.world && ctx.world->services ? dynamic_cast<const UiService*>(ctx.world->services->Find(kUiServiceName)) : nullptr;
+    if (!ui || !ctx.scene) {
+        out.push_back({L"", editor::Tr(L"Play 中に、選んでいるボタンが出ます")});
+        return;
+    }
+    const UiFocus& s = ui->State();
+    auto name = [&](int id) -> std::wstring {
+        const game_production::SceneEntity* e = id ? ctx.scene->Find(id) : nullptr;
+        return e ? Utf8ToWide(e->data.name) : editor::Tr(L"(なし)");
+    };
+    out.push_back({editor::Tr(L"選んでいるボタン"), name(s.focus), s.focus != 0});
+    out.push_back({editor::Tr(L"そのボタンの窓"), name(s.window)});
+    out.push_back({editor::Tr(L"操作"), s.keyboard ? editor::Tr(L"キー ・ パッド (選んだボタンを見せる)") : editor::Tr(L"マウス")});
+    out.push_back({editor::Tr(L"出ている窓"), editor::TrF(L"{} 個 (戻るで閉じられるもの {} 個)", s.shown.size(), s.visits.size())});
+}
+
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
+    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"ゲーム UI"), 40, &UiLines};
+    registry.Contribute(game_production::kDebugInfoPoint, kDebug);
     // The UI over the game view (the exported game registers its own: UiScreenDraw.cpp).
     registry.Contribute(game_production::kScreenDrawPoint, ScreenDrawPart());
     // The UI view: a tab next to the scene and the game.

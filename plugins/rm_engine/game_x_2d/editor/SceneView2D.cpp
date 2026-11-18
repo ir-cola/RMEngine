@@ -7,6 +7,7 @@
 #include "core/reflect/FieldCommand.h"
 #include "editor/app/Worker.h"
 #include "editor/lang/Lang.h"
+#include "rm_engine/game_production/editor/DebugPanel.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "platform/Gfx.h"
@@ -861,6 +862,19 @@ private:
         }
         f.debug = debug_;
         renderer_.Render(c.P().DC(), f);
+        // デバッグ ▸ 描画とカメラ: what was drawn, and where the camera is.
+        if (game_production::ViewReportsWanted()) {
+            using editor::Tr;
+            using editor::TrF;
+            game_production::ViewReport rep;
+            rep.title = game ? Tr(L"ゲームビュー (2D)") : Tr(L"シーンビュー (2D)");
+            rep.lines.push_back({Tr(L"スプライト"), TrF(L"{} 個", f.sprites.size())});
+            rep.lines.push_back({Tr(L"線"), TrF(L"{} 本", f.lines.size() + f.overlay.size() + f.debug.size())});
+            rep.lines.push_back({Tr(L"大きさ"), TrF(L"{:.0f} x {:.0f} DIP", f.viewport.w, f.viewport.h)});
+            rep.lines.push_back({Tr(L"カメラの中心"), std::format(L"({:.2f}, {:.2f})", f.camera.center.x, f.camera.center.y)});
+            rep.lines.push_back({Tr(L"カメラの拡大"), TrF(L"1 単位 = {:.1f} DIP ・ 回転 {:.1f} 度", f.camera.zoom, f.camera.rotation)});
+            game_production::ReportView(this, std::move(rep));
+        }
     }
 
     // The grid over the part of the plane that is seen: a step that keeps lines apart, every 5th / 10th darker.

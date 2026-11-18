@@ -534,3 +534,23 @@ RM_TEST(Abi7_SpriteAnimation_AndParticles_FromScripts) {
     CHECK(particles::EmitterBirths(clock, em, 0.1f, false, 5) == 5 && clock.age > 0.09f && clock.age < 0.11f);  // (the clock stayed)
     CHECK(particles::EmitterBirths(clock, em, 0.1f, true, 1000) == 50);
 }
+
+RM_TEST(Abi7_ScriptTimes_OnlyWhenAsked) {
+    ScriptModule m;
+    m.Adopt(kModule);
+    Scene s = SceneWith(m);
+    s.AddComponent(s.Create("A"), m.Find("ev::Listener")->desc);
+    s.AddComponent(s.Create("B"), m.Find("ev::Listener")->desc);
+    ScriptWorld w;
+    const RmApi api = MakeScriptApi(w);
+    g_api = &api;
+    ScriptRunner r;
+    Step(r, s, w, m, 0.1f);
+    CHECK(r.Times().empty());
+    r.SetTiming(true);
+    Step(r, s, w, m, 0.1f);
+    const auto times = r.Times();
+    CHECK(times.size() == 1 && times[0].type == m.Find("ev::Listener") && times[0].calls == 2 && times[0].ms >= 0);
+    r.Stop(s, w, m, {});
+    g_api = nullptr;
+}

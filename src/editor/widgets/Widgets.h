@@ -129,6 +129,10 @@ void ProgressBar(ui::Context& c, const ui::Rect& r, float fraction);
 // One fact of a list (the debug panel): its name dim on the left (`labelWidth`), its value on the right.
 // `lit`: the value in the accent (a button held, something that is on).
 void InfoRow(ui::Context& c, const ui::Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth, bool lit = false);
+// Values over time, the newest on the right (the debug panel's frame times): `a` a line in the accent,
+// `b` (may be empty) one in the warning colour, 0 at the bottom and `top` at the top (higher ones are cut);
+// `guides`: faint lines across at those values.
+void LineGraph(ui::Context& c, const ui::Rect& r, std::span<const float> a, std::span<const float> b, float top, std::span<const float> guides);
 
 // --- Lines and tips --------------------------------------------------------------------------
 void Separator(ui::Context& c, float x, float y, float width);

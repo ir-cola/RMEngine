@@ -40,6 +40,7 @@
 #pragma warning(pop)
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <format>
@@ -159,6 +160,10 @@ public:
     }
     void OnContactRemoved(const JPH::SubShapeIDPair& pair) override { Count(pair.GetBody1ID(), pair.GetBody2ID(), -1); }
 
+    size_t Touching() {
+        std::lock_guard lock(mu_);
+        return touching_.size();
+    }
     // The pairs (by body) that began / ended touching since the last call.
     void Take(std::vector<std::pair<uint32_t, uint32_t>>& began, std::vector<std::pair<uint32_t, uint32_t>>& ended) {
         std::lock_guard lock(mu_);
@@ -224,6 +229,7 @@ struct PhysicsWorld::Impl {
     JPH::PhysicsSystem system;
     const game_production::AssetAccess* assets = nullptr;
     Vec3 gravityNow{0, 0, 0};  // the gravity the system has (set in Step when it differs)
+    double stepMs = 0;         // how long the last Update took
 
     struct BodyRec {
         JPH::BodyID id;
@@ -684,7 +690,9 @@ void PhysicsWorld::Step(Scene& scene, float dt, Vec3 gravity, std::vector<HookCa
     }
     w.StepCharacters(dt, gravity);
     Jolt& j = JoltOnce();
+    const auto t0 = std::chrono::steady_clock::now();
     w.system.Update(dt, 1, j.temp, j.jobs);
+    w.stepMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     w.WriteBack(scene);
     w.Tell(hooks);
 }
@@ -779,6 +787,11 @@ std::optional<Vec3> PhysicsWorld::GroundNormal(int entity) const {
 
 size_t PhysicsWorld::Bodies() const { return impl_->bodies.size(); }
 size_t PhysicsWorld::Characters() const { return impl_->chars.size(); }
+size_t PhysicsWorld::ActiveBodies() const { return impl_->system.GetNumActiveBodies(JPH::EBodyType::RigidBody); }
+size_t PhysicsWorld::TouchingPairs() const { return impl_->contacts.Touching(); }
+double PhysicsWorld::LastStepMs() const { return impl_->stepMs; }
+
+PhysicsWorld* FindWorldOf(Scene& scene) { return static_cast<PhysicsWorld*>(scene.PlayStatesOf().Slot("rm_engine.physics.world").get()); }
 
 PhysicsWorld& WorldOf(Scene& scene) { return scene.PlayState<PhysicsWorld>("rm_engine.physics.world"); }
 

@@ -56,6 +56,8 @@ public:
     GlobalValue* Find(std::string_view name);
     const GlobalValue* Find(std::string_view name) const;
     size_t Size() const { return values_.size(); }
+    // Every variable (name, value), in the list's order.
+    const std::vector<std::pair<std::string, GlobalValue>>& Values() const { return values_; }
     // A save document: `base` (the file's, or the last read) with "kind", "format" and every variable set.
     json::Value ToSave(json::Value base) const;
     // Takes the variables of a save document (the others stay as they are). False when it is not a save.

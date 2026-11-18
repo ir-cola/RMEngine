@@ -79,5 +79,13 @@
   "スプライト": "Sprite",
   "2D オブジェクト": "2D Object",
   "カメラ": "Camera",
-  "2D カメラ": "2D Camera"
+  "2D カメラ": "2D Camera",
+  "ゲームビュー (2D)": "Game view (2D)",
+  "シーンビュー (2D)": "Scene view (2D)",
+  "{} 個": "{} items",
+  "線": "Lines",
+  "{} 本": "{}",
+  "カメラの中心": "Camera centre",
+  "カメラの拡大": "Camera zoom",
+  "1 単位 = {:.1f} DIP ・ 回転 {:.1f} 度": "1 unit = {:.1f} DIP · turned {:.1f} degrees"
 }

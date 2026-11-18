@@ -11,6 +11,8 @@
 #include "base/Math.h"
 #include "platform/SystemInfo.h"
 #include "rm_engine/game_production/runtime/Input.h"
+#include "rm_engine/game_production/runtime/Scripts.h"
+#include "rm_engine/game_production/runtime/Systems.h"
 
 #include <array>
 #include <cstdint>
@@ -96,11 +98,35 @@ inline constexpr char kDebugInfoPoint[] = "rm_engine.game_production.debug_info"
 struct DebugInfoLine {
     std::wstring label;
     std::wstring value;
+    bool lit = false;  // shown in the accent (something that wants to be seen)
+};
+// What a section may look at: the scene shown (the copy that plays, while playing) and the game.
+struct DebugContext {
+    Scene* scene = nullptr;
+    bool playing = false;
+    const ScriptWorld* world = nullptr;  // while playing (its services: 音, the game UI ...)
 };
 struct DebugInfoInfo {
     const wchar_t* title = L"";  // TrKey(L"...")
     int order = 0;
-    void (*collect)(std::vector<DebugInfoLine>& out) = nullptr;
+    void (*collect)(const DebugContext& ctx, std::vector<DebugInfoLine>& out) = nullptr;
+};
+
+// What a view tells of its last drawing (the 3D / 2D views: what it drew, its camera). Told only while
+// the panel is shown (ViewReportsWanted: the panel asks each time it is drawn); one per view.
+struct ViewReport {
+    std::wstring title;  // "シーンビュー (3D)" ... (Tr'd by the view)
+    std::vector<DebugInfoLine> lines;
+    double at = 0;
+};
+void WantViewReports();
+bool ViewReportsWanted();
+void ReportView(const void* view, ViewReport report);
+std::vector<ViewReport> RecentViews(double maxAge = 1.0);
+
+// How long the parts of one Play frame took (ms).
+struct PlayTimes {
+    double scripts = 0, systems = 0, hooks = 0, services = 0, total = 0;
 };
 
 // What the game software tells the panel each time it is drawn.
@@ -117,6 +143,12 @@ struct DebugView {
     std::optional<Vec2> sceneMouse;  // over the scene view (DIPs from its top left)
     std::optional<Vec2> gameMouse;   // over the game screen (the game settings' 画面)
     size_t scriptTypes = 0;          // the scripts the built DLL has
+    // While playing: how long the last frame's parts took, type by type and system by system (measured
+    // while the panel is shown), and how many fixed steps it ran.
+    PlayTimes playTimes;
+    std::vector<ScriptRunner::ScriptTime> scriptTimes;
+    std::vector<SystemRunner::SystemTime> systemTimes;
+    int fixedSteps = 0;
 };
 
 class DebugPanel {
@@ -133,6 +165,8 @@ private:
     std::shared_ptr<System> system_;
     platform::CpuMeter cpuMeter_;  // how busy the CPU was between two reads (a second apart)
     FrameMeter self_;  // this panel's own drawing (the editor's frames while it is live)
+    double lastDraw_ = 0;
+    std::vector<float> intervals_, work_;  // the graph: the editor's frame intervals and Play's work (ms)
 };
 
 }  // namespace rm::game_production

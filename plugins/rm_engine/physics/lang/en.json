@@ -51,5 +51,12 @@
   "箱が落ちて床で止まります。Space で砲台から弾を撃ち、何かに当たると弾が消えます (スクリプト Shooter と Bullet。OnHit)。": "Boxes fall and come to rest on the floor. Press Space to fire a bullet from the turret; it disappears when it hits something (scripts Shooter and Bullet, OnHit).",
   "重力": "Gravity",
   "m/s²。世界の向きで (Y が上)。2D のゲームは X と Y を使います": "m/s², in world axes (Y is up). A 2D game uses X and Y",
-  "シーンの「重力」に掛けます (0: 浮く)": "Multiplies the scene's Gravity (0: floats)"
+  "シーンの「重力」に掛けます (0: 浮く)": "Multiplies the scene's Gravity (0: floats)",
+  "(このシーンに物理で動く物はありません)": "(nothing in this scene moves by physics)",
+  "Play 中に出ます": "Shown while playing",
+  "{} 個 (動いている {} ・ 眠っている {})": "{} ({} awake · {} asleep)",
+  "{} 個": "{} items",
+  "触れている組": "Pairs touching",
+  "{} 組": "{}",
+  "1 回の刻みの時間": "Time of one step"
 }

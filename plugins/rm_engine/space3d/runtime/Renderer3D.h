@@ -239,6 +239,11 @@ public:
         size_t mapsKept = 0;   // ... and not drawn again: they already held the same (nothing moved)
         size_t layersDrawn = 0;  // kept layers (what stays put, under the moving things) drawn again
         size_t drawCalls = 0;    // draws given to the GPU (instancing: one per run of the same mesh, part and pictures)
+        size_t triangles = 0;    // ... and their triangles (the picture's pass)
+        size_t textures = 0;     // different pictures they use
+        size_t textureBytes = 0; // ... on the GPU now
+        size_t streamed = 0;     // ... of them streamed (ミップマップ・ストリーミング)
+        size_t streamedCut = 0;  // ... and without their finest levels now (far away)
     };
     // Per device (shared by every renderer on it: the scene view, the camera preview, the
     // thumbnails): the shaders and states, the cube and the floor, the constant buffers and the

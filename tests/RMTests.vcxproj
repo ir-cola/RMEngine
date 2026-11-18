@@ -179,6 +179,7 @@
     <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\ParticleDraw.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\ScriptParticles.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\ParticleStats.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\editor\DebugReports.cpp" />
     <ClCompile Include="..\plugins\rm_engine\particles_x_physics\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)particles_x_physics\</ObjectFileName>
     </ClCompile>

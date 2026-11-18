@@ -6,6 +6,7 @@
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
 #include "editor/lang/Lang.h"
+#include "rm_engine/game_production/editor/DebugPanel.h"
 #include "editor/project/Project.h"
 #include "editor/tree/TreeModel.h"
 #include "editor/tree/TreeView.h"
@@ -920,6 +921,7 @@ private:
         // Direct2D's drawing so far goes to the GPU first; then Direct3D draws into its own picture.
         dc->Flush();
         ID3D11Texture2D* picture = pic.renderer.Render(host.host.Graphics().D3DContext(), f);
+        if (game_production::ViewReportsWanted() && (host.game || &pic == &main_)) ReportDrawing(host, pic, f);
         if (!picture) return;
         if (picture != pic.texture || dc != pic.dc || !pic.bitmap) {
             pic.bitmap.Reset();
@@ -932,6 +934,30 @@ private:
             pic.dc = dc;
         }
         c.P().Image(pic.bitmap.Get(), r);
+    }
+
+    // デバッグ ▸ 描画とカメラ: what the last Render drew, and where the camera is.
+    void ReportDrawing(const game_production::SceneViewHost& host, const Picture& pic, const space3d::RenderFrame& f) {
+        using editor::Tr;
+        using editor::TrF;
+        const space3d::Renderer::Stats& st = pic.renderer.LastStats();
+        game_production::ViewReport r;
+        r.title = host.game ? Tr(L"ゲームビュー (3D)") : Tr(L"シーンビュー (3D)");
+        r.lines.push_back({Tr(L"描いた物"), TrF(L"{} 個 / {} 個 (カメラの外で省いた物 {} 個)", st.drawn, st.things, st.things - st.drawn)});
+        r.lines.push_back({Tr(L"ドローコール"), TrF(L"{} 回", st.drawCalls)});
+        r.lines.push_back({Tr(L"三角形"), TrF(L"{} 個", st.triangles)});
+        r.lines.push_back({Tr(L"絵 (テクスチャ)"), TrF(L"{} 枚 ・ GPU のメモリ {:.1f} MB", st.textures, static_cast<double>(st.textureBytes) / (1024.0 * 1024.0))});
+        if (st.streamed > 0) r.lines.push_back({Tr(L"ストリーミング"), TrF(L"{} 枚 (細かい段を外している {} 枚)", st.streamed, st.streamedCut)});
+        r.lines.push_back({Tr(L"影のマップ"), TrF(L"描いた {} 枚 ・ そのまま使った {} 枚", st.mapsDrawn, st.mapsKept)});
+        r.lines.push_back({Tr(L"光"), TrF(L"{} 個", f.lights.size())});
+        r.lines.push_back({Tr(L"大きさ"), TrF(L"{} x {} ピクセル", f.width, f.height)});
+        if (const auto toWorld = space3d::Inverse(f.view)) {
+            const Vec3 eye{toWorld->m[3][0], toWorld->m[3][1], toWorld->m[3][2]};
+            const Vec3 ahead = space3d::Normalize(Vec3{-toWorld->m[2][0], -toWorld->m[2][1], -toWorld->m[2][2]});
+            r.lines.push_back({Tr(L"カメラの位置"), std::format(L"({:.2f}, {:.2f}, {:.2f})", eye.x, eye.y, eye.z)});
+            r.lines.push_back({Tr(L"カメラの向き"), std::format(L"({:.2f}, {:.2f}, {:.2f})", ahead.x, ahead.y, ahead.z)});
+        }
+        game_production::ReportView(&pic, std::move(r));
     }
 
     // What other plugins draw into this picture (パーティクル): asked once a frame, with the places of

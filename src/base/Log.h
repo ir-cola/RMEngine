@@ -47,6 +47,11 @@ void Write(Level level, std::string text);
 // The newest entries (at most 2000 are kept).
 std::vector<Entry> Snapshot();
 uint64_t LastSeq();
+// How many messages of each level were written since the program started (the debug panel).
+struct Counts {
+    uint64_t info = 0, warn = 0, error = 0;
+};
+Counts Counted();
 
 template <class... Args>
 void Info(std::format_string<Args...> fmt, Args&&... args) {

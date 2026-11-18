@@ -32,6 +32,7 @@ struct State {
     std::function<void()> wake;
     int nextSinkId = 1;
     uint64_t seq = 0;
+    Counts counts;
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
 };
 
@@ -101,6 +102,7 @@ void Write(Level level, std::string text) {
         e.level = level;
         e.time = std::chrono::duration<double>(std::chrono::steady_clock::now() - s.start).count();
         e.seq = ++s.seq;
+        (level == Level::Error ? s.counts.error : level == Level::Warn ? s.counts.warn : s.counts.info)++;
         e.text = std::move(text);
         s.ring.push_back(e);
         if (s.ring.size() > kRingMax) s.ring.pop_front();
@@ -133,6 +135,12 @@ std::vector<Entry> Snapshot() {
     auto& s = S();
     std::lock_guard lock(s.mtx);
     return {s.ring.begin(), s.ring.end()};
+}
+
+Counts Counted() {
+    auto& s = S();
+    std::lock_guard lock(s.mtx);
+    return s.counts;
 }
 
 uint64_t LastSeq() {

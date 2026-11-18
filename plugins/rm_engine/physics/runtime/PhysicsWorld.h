@@ -61,6 +61,11 @@ public:
     // How many bodies / characters there are now (tests, the console).
     size_t Bodies() const;
     size_t Characters() const;
+    // For the editor's デバッグ panel: the bodies awake (moving: the others sleep), the pairs touching now,
+    // and how long the last step took.
+    size_t ActiveBodies() const;
+    size_t TouchingPairs() const;
+    double LastStepMs() const;
 
     struct Impl;
 
@@ -70,6 +75,8 @@ private:
 
 // The physics world of a playing scene (made the first time).
 PhysicsWorld& WorldOf(game_production::Scene& scene);
+// The scene's world when it has one (it has stepped while playing); null: none (nothing is made).
+PhysicsWorld* FindWorldOf(game_production::Scene& scene);
 
 // The system 物理 (SystemPhase::Fixed): PhysicsWorld::Step of the scene's world.
 void RunPhysics(game_production::SystemContext& ctx);

@@ -20,7 +20,7 @@ namespace {
 void FillParticles(game_production::Scene& scene, int entity) { game_production::AddComponentTo<ParticleSystem>(scene, entity); }
 
 // デバッグ ▸ パーティクル: each 3D picture's particles (the players count the alive ones while it is shown).
-void ParticleLines(std::vector<game_production::DebugInfoLine>& out) {
+void ParticleLines(const game_production::DebugContext&, std::vector<game_production::DebugInfoLine>& out) {
     particles::CountAliveFor(1.5);
     std::vector<PictureParticles> list = RecentParticles();
     std::sort(list.begin(), list.end(), [](const PictureParticles& a, const PictureParticles& b) { return a.picture > b.picture; });

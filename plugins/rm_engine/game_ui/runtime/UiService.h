@@ -144,6 +144,8 @@ public:
         motion_ = {};
     }
     UiMotionWorld& Motion() { return motion_; }
+    // The focus, the windows and the mouse now (the editor's デバッグ panel).
+    const UiFocus& State() const { return state_; }
     // A script chose a button (rm::UI::Focus): shown as chosen until the mouse moves.
     void Focus(int entity) {
         state_.focus = entity;

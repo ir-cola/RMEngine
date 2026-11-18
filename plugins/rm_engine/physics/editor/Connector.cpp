@@ -1,10 +1,14 @@
 #include "rm_engine/physics/editor/Connector.h"
 
+#include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
+#include "rm_engine/game_production/editor/DebugPanel.h"
+#include "rm_engine/physics/runtime/PhysicsWorld.h"
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/physics/runtime/Shapes.h"
 
 #include <algorithm>
+#include <format>
 #include <unordered_map>
 #include <vector>
 
@@ -66,11 +70,27 @@ void ShapeLines(const Scene& scene, std::span<const int> selection, bool all, De
     }
 }
 
+// デバッグ ▸ 物理: the bodies and what touches, while playing.
+void PhysicsLines(const game_production::DebugContext& ctx, std::vector<game_production::DebugInfoLine>& out) {
+    const PhysicsWorld* w = ctx.playing && ctx.scene ? FindWorldOf(*ctx.scene) : nullptr;
+    if (!w) {
+        out.push_back({L"", ctx.playing ? editor::Tr(L"(このシーンに物理で動く物はありません)") : editor::Tr(L"Play 中に出ます")});
+        return;
+    }
+    const size_t bodies = w->Bodies(), active = w->ActiveBodies();
+    out.push_back({editor::Tr(L"剛体"), editor::TrF(L"{} 個 (動いている {} ・ 眠っている {})", bodies, active, bodies > active ? bodies - active : 0)});
+    out.push_back({editor::Tr(L"キャラクター"), editor::TrF(L"{} 個", w->Characters())});
+    out.push_back({editor::Tr(L"触れている組"), editor::TrF(L"{} 組", w->TouchingPairs())});
+    out.push_back({editor::Tr(L"1 回の刻みの時間"), std::format(L"{:.3f} ms", w->LastStepMs())});
+}
+
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::SceneLinesInfo kLines{&ShapeLines};
     registry.Contribute(game_production::kSceneLinesPoint, kLines);
+    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"物理"), 20, &PhysicsLines};
+    registry.Contribute(game_production::kDebugInfoPoint, kDebug);
 }
 
 }  // namespace rm::physics

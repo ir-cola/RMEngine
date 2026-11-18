@@ -16,6 +16,7 @@
 #include <format>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace rm::space3d {
 
@@ -1211,7 +1212,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     }
     // Culling (always): what lies wholly outside the camera's view is left out of the picture.
     const Mat4 viewProj = f.projection * f.view;
-    stats_ = {items_.size(), 0, 0, 0, 0, 0};
+    stats_ = Stats{};
+    stats_.things = items_.size();
     const Frustum camera = FrustumOf(viewProj);
     for (Item& it : items_) {
         it.bounds = WorldBounds(*it.world, it.mesh->min, it.mesh->max);
@@ -1436,6 +1438,22 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     }
     const size_t seeThroughEnd = cmds_.size();
     stats_.drawCalls = cmds_.size();
+    {
+        std::unordered_set<const GpuTexture*> used;
+        for (const Cmd& cmd : cmds_) {
+            stats_.triangles += static_cast<size_t>(cmd.indexCount / 3) * cmd.instances;
+            if (!cmd.material) continue;
+            for (const TextureRef* t : {&cmd.material->texture, &cmd.material->metalRough, &cmd.material->normal, &cmd.material->emission}) {
+                if (!*t || !used.insert(t->get()).second) continue;
+                ++stats_.textures;
+                stats_.textureBytes += (*t)->bytes;
+                if ((*t)->sampling.streamed) {
+                    ++stats_.streamed;
+                    if ((*t)->TopLevel() > 0) ++stats_.streamedCut;
+                }
+            }
+        }
+    }
 
     // The frame's numbers go to the GPU at once.
     if (!UploadFrame(ctx)) return nullptr;

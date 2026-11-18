@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <limits>
 
+#include <chrono>
+
 namespace rm::game_production {
 
 void ForEachComponent(Scene& scene, std::string_view type, const std::function<void(SceneEntity&, Component&)>& fn) {
@@ -81,19 +83,33 @@ void SystemRunner::Reset() {
     camera_ = 0;
 }
 
+void SystemRunner::Run(size_t index, SystemContext& ctx) {
+    if (!timing_) {
+        systems_[index]->run(ctx);
+        return;
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    systems_[index]->run(ctx);
+    SystemTime& t = times_[index];
+    t.ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    ++t.runs;
+}
+
 int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
     dt = std::max(0.0, dt);
     hooks_.clear();
+    times_.assign(timing_ ? systems_.size() : 0, {});
+    for (size_t i = 0; i < times_.size(); ++i) times_[i].system = systems_[i];
     int steps = 0;
     if (fixedStep > 0) {
         carry_ += dt;
         // A little slack, so 0.1 s of frames with a 0.02 s step is 5 steps (not 4 and a rounding error).
         const double eps = fixedStep * 1e-6;
         while (carry_ + eps >= fixedStep && steps < kMaxFixedSteps) {
-            for (const SystemInfo* s : systems_) {
-                if (s->phase != SystemPhase::Fixed) continue;
+            for (size_t i = 0; i < systems_.size(); ++i) {
+                if (systems_[i]->phase != SystemPhase::Fixed) continue;
                 SystemContext ctx{scene, fixedStep, fixedTime_, frames_, camera_, &hooks_, &assets_};
-                s->run(ctx);
+                Run(i, ctx);
                 camera_ = ctx.camera;
             }
             carry_ -= fixedStep;
@@ -103,14 +119,15 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
         if (steps == kMaxFixedSteps) carry_ = std::min(carry_, static_cast<double>(fixedStep));  // let the rest go
         carry_ = std::max(0.0, carry_);
     }
-    for (const SystemInfo* s : systems_) {
-        if (s->phase != SystemPhase::Frame) continue;
+    for (size_t i = 0; i < systems_.size(); ++i) {
+        if (systems_[i]->phase != SystemPhase::Frame) continue;
         SystemContext ctx{scene, static_cast<float>(dt), time_, frames_, camera_, &hooks_, &assets_};
-        s->run(ctx);
+        Run(i, ctx);
         camera_ = ctx.camera;
     }
     time_ += dt;
     ++frames_;
+    lastSteps_ = steps;
     return steps;
 }
 

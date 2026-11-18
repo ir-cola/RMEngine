@@ -4,6 +4,7 @@
 
 #include "Test.h"
 
+#include "base/Log.h"
 #include "platform/SystemInfo.h"
 #include "rm_engine/game_production/editor/DebugPanel.h"
 #include "rm_engine/game_x_particles/runtime/ParticleStats.h"
@@ -94,4 +95,52 @@ RM_TEST(DebugPanel_PadNamesAndParticles) {
     }
     CHECK(mine == 1);
     CHECK(game_x_particles::RecentParticles(-1).empty());  // (nothing is newer than now)
+}
+
+RM_TEST(DebugPanel_SystemsTimed_FixedSteps) {
+    using namespace rm::game_production;
+    static int fixedRuns = 0;
+    static const SystemInfo kFixed{"fixed", SystemPhase::Fixed, 0, [](SystemContext&) { ++fixedRuns; }};
+    static const SystemInfo kFrame{"frame", SystemPhase::Frame, 0, [](SystemContext&) {}};
+    SystemRunner r;
+    const SystemInfo* list[] = {&kFrame, &kFixed};
+    r.SetSystems(list);
+    Scene s;
+    r.Advance(s, 0.1, 0.02f);
+    CHECK(r.Times().empty() && r.LastSteps() == 5);  // (not timed unless asked)
+    r.SetTiming(true);
+    r.Advance(s, 0.04, 0.02f);
+    // In the systems' order (Fixed first): the fixed one ran twice, the frame one once.
+    CHECK(r.Times().size() == 2 && r.Times()[0].system == &kFixed && r.Times()[0].runs == 2 && r.Times()[1].runs == 1 && r.LastSteps() == 2);
+    CHECK(r.Times()[0].ms >= 0);
+    r.Advance(s, 1.0, 0.02f);  // far behind: the most steps, no more
+    CHECK(r.LastSteps() == SystemRunner::kMaxFixedSteps);
+}
+
+RM_TEST(DebugPanel_LogCountsAndViewReports) {
+    using namespace rm::game_production;
+    const log::Counts before = log::Counted();
+    log::Warn("デバッグのテスト {}", 1);
+    log::Info("デバッグのテスト {}", 2);
+    const log::Counts after = log::Counted();
+    CHECK(after.warn == before.warn + 1 && after.info == before.info + 1 && after.error == before.error);
+    WantViewReports();
+    CHECK(ViewReportsWanted());
+    int a = 0, b = 0;
+    ViewReport r;
+    r.title = L"zz test B";
+    r.lines.push_back({L"x", L"1"});
+    ReportView(&a, r);
+    r.title = L"zz test A";
+    ReportView(&b, r);
+    ReportView(&b, r);  // (one per view)
+    size_t mine = 0;
+    std::wstring order;
+    for (const ViewReport& v : RecentViews()) {
+        if (v.title.starts_with(L"zz test")) {
+            ++mine;
+            order += v.title.back();
+        }
+    }
+    CHECK(mine == 2 && order == L"AB");  // sorted by title
 }

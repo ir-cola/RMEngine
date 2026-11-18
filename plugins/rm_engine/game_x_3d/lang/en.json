@@ -155,5 +155,22 @@
   "雨の量": "Rain amount",
   "0: 降らない 〜 1: どしゃぶり": "0: none to 1: a downpour",
   "雪の量": "Snow amount",
-  "0: 降らない 〜 1: 大雪": "0: none to 1: heavy snow"
+  "0: 降らない 〜 1: 大雪": "0: none to 1: heavy snow",
+  "ゲームビュー (3D)": "Game view (3D)",
+  "シーンビュー (3D)": "Scene view (3D)",
+  "描いた物": "Things drawn",
+  "{} 個 / {} 個 (カメラの外で省いた物 {} 個)": "{} / {} ({} outside the camera left out)",
+  "ドローコール": "Draw calls",
+  "{} 回": "{}",
+  "三角形": "Triangles",
+  "{} 個": "{} items",
+  "絵 (テクスチャ)": "Pictures (textures)",
+  "{} 枚 ・ GPU のメモリ {:.1f} MB": "{} · {:.1f} MB of GPU memory",
+  "ストリーミング": "Streaming",
+  "{} 枚 (細かい段を外している {} 枚)": "{} ({} without their finest levels)",
+  "影のマップ": "Shadow maps",
+  "描いた {} 枚 ・ そのまま使った {} 枚": "{} drawn · {} kept as they were",
+  "{} x {} ピクセル": "{} x {} pixels",
+  "カメラの位置": "Camera position",
+  "カメラの向き": "Camera direction"
 }

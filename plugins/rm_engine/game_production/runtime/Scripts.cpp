@@ -8,6 +8,7 @@
 #include "rm_engine/game_production/runtime/SceneFile.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <format>
@@ -1111,8 +1112,15 @@ std::vector<ScriptRunner::Instance> ScriptRunner::Collect(Scene& scene, const Sc
 bool ScriptRunner::Call(ScriptWorld& world, const Instance& in, int hook, float dt, int other, const RmEvent* event) {
     const void* script = std::exchange(world.currentScript, in.data);
     const int entity = std::exchange(world.currentEntity, in.entity);
+    const auto t0 = timing_ ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point();
     const unsigned long code = CallScriptHook(*in.type->script, hook, in.data, static_cast<RmEntityId>(in.entity), dt,
                                               static_cast<RmEntityId>(std::max(other, 0)), event);
+    if (timing_) {
+        ScriptTime& t = times_[in.type];
+        t.type = in.type;
+        t.ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        ++t.calls;
+    }
     world.currentScript = script;
     world.currentEntity = entity;
     if (hook == RM_HOOK_END_PLAY || code != 0) world.StopCoroutinesOf(in.data);  // (its coroutines end with it)
@@ -1126,7 +1134,15 @@ bool ScriptRunner::Call(ScriptWorld& world, const Instance& in, int hook, float 
     return false;
 }
 
+std::vector<ScriptRunner::ScriptTime> ScriptRunner::Times() const {
+    std::vector<ScriptTime> out;
+    for (const auto& [type, t] : times_) out.push_back(t);
+    std::sort(out.begin(), out.end(), [](const ScriptTime& a, const ScriptTime& b) { return a.ms > b.ms; });
+    return out;
+}
+
 void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order, float dt) {
+    times_.clear();
     world.scene = &scene;
     world.dt = dt;
     world.ReadInput();
@@ -1156,7 +1172,15 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
         Call(world, in, 1, dt);
     }
     ApplyAsked(scene, world, module, order);  // what was destroyed / removed goes (EndPlay stops coroutines)
-    world.ResumeCoroutines();                 // the coroutines whose wait is over
+    {
+        const auto t0 = std::chrono::steady_clock::now();
+        world.ResumeCoroutines();  // the coroutines whose wait is over
+        if (timing_ && !world.coroutines.empty()) {
+            ScriptTime& t = times_[nullptr];
+            t.ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+            t.calls = static_cast<int>(world.coroutines.size());
+        }
+    }
     DeliverEvents(scene, world, module, order);
     ApplyAsked(scene, world, module, order);  // the frame's end
     world.time += dt;

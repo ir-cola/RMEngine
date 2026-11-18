@@ -428,6 +428,25 @@ void InfoRow(ui::Context& c, const Rect& r, std::wstring_view label, std::wstrin
     c.P().Text({r.x + lw, r.y, r.w - lw, r.h}, value, vs);
 }
 
+void LineGraph(ui::Context& c, const Rect& r, std::span<const float> a, std::span<const float> b, float top, std::span<const float> guides) {
+    DrawSurface(c, r, Surface::Sunken, 4.f);
+    if (top <= 0 || r.w < 4 || r.h < 4) return;
+    const Rect in = r.Inset(2, 3, 2, 3);
+    auto yOf = [&](float v) { return in.Bottom() - std::clamp(v / top, 0.f, 1.f) * in.h; };
+    for (const float g : guides) {
+        if (g > 0 && g < top) c.P().Line(in.x, yOf(g), in.Right(), yOf(g), theme::TextFaint.Alpha(0.5f), 1.f);
+    }
+    auto series = [&](std::span<const float> v, ui::Color color) {
+        if (v.size() < 2) return;
+        const float step = in.w / static_cast<float>(v.size() - 1);
+        for (size_t i = 1; i < v.size(); ++i) {
+            c.P().Line(in.x + step * static_cast<float>(i - 1), yOf(v[i - 1]), in.x + step * static_cast<float>(i), yOf(v[i]), color, 1.5f);
+        }
+    };
+    series(b, theme::Warn);
+    series(a, theme::Accent);
+}
+
 bool IconButton(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon, bool enabled) {
     ui::Context::ButtonResult b;
     if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);
