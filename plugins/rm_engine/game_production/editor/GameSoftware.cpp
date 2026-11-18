@@ -1119,6 +1119,7 @@ private:
         }
         scripts_.World().actions = &settings_.input;  // (edited while playing: read as it is each frame)
         scripts_.World().prefab = [this](const AssetRef& r) { return Cached(r); };  // rm::Spawn(prefab): the files as last read
+        settingsBeforePlay_ = reflect::Save(settings_, &unknowns_);  // (changed in Play's inspector: back at ■)
         ResetGlobals(true);  // every global variable at its 初めの値; rm::Save into Library/Saves
         {
             // The player's bindings saved by a script (rm::Input::SaveBindings), as the game reads them.
@@ -1265,6 +1266,14 @@ private:
         scripts_.World().timeScale = 1;
         services_.Stop();    // every sound stops (■: nothing of the game is heard after it)
         playScene_.reset();  // (scripts built while playing are taken at the next frame: on the scene from before Play)
+        // The game settings as they were before Play (the inspector changes them in place while playing).
+        if (!settingsBeforePlay_.IsNull()) {
+            if (reflect::Save(settings_, &unknowns_) != settingsBeforePlay_) {
+                reflect::Load(settings_, settingsBeforePlay_, &unknowns_);
+                log::Info("Play 中に変えたゲームの設定を、Play の前に戻しました");
+            }
+            settingsBeforePlay_ = json::Value();
+        }
         debug_.Clear();      // Stop: every debug line goes
         ResetGlobals(false);  // as before Play (what was saved stays in Library/Saves)
         play_ = PlayState::Stopped;
@@ -1603,9 +1612,22 @@ private:
     }
 
     // --- Inspector -----------------------------------------------------------------------------
+    // 外す in Play: the copy's component goes at the end of the next frame, a script's EndPlay first (as
+    // rm::Entity::Remove asks). Gone with the copy at ■ anyway.
+    void PlayRemoveComponent(int id, const std::string& type, size_t nth) {
+        SceneEntity* e = playScene_ ? playScene_->Find(id) : nullptr;
+        Component* c = e ? e->FindComponent(type, nth) : nullptr;
+        if (!c) return;
+        if (c->Known()) {
+            scripts_.World().removeAsked.push_back({id, c->value.Get()});
+        } else {
+            playScene_->RemoveComponent(id, type, nth);
+        }
+    }
+
     // A note on top of the inspector while playing (its blocks are shown, not edited).
     static editor::InspectBlock PlayNote() {
-        return {nullptr, {}, {}, Tr(L"Play 中です。ここに出ているのは動いているコピーで、変えられません。■ で止めると Play の前に戻ります。欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻します。"), {}};
+        return {nullptr, {}, {}, Tr(L"Play 中です。ここで変えた値は動いているゲームにすぐ効きますが、保存されず、■ で止めると Play の前に戻ります (元に戻す の履歴にも入りません)。欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻します。"), {}};
     }
 
     // Play: a right click on a field → この値を残す (design BluePrint 20-b 3). The field is remembered by
@@ -1703,7 +1725,7 @@ private:
                                            return s && s->Known() ? reflect::EditTarget{s->value.Get(), &s->unknowns} : reflect::EditTarget{};
                                        },
                                        Utf8ToWide(TrU8(c.value.Type()->label)), {}, {}};
-                b.readOnly = play;
+                b.direct = play;  // (Play: the copy that plays, changed in place)
                 if (const SceneSettingLook* look = SettingLookOf(type); look && look->menu) {
                     SceneSettingMenuHost mh;
                     mh.host = &host_;
@@ -1742,7 +1764,8 @@ private:
             std::vector<editor::InspectBlock> blocks;
             if (Running()) blocks.push_back(PlayNote());
             editor::InspectBlock b{&reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, {}, {}, {}};
-            b.readOnly = Running();
+            // Play: changed in place (the game reads them at once); ■ puts them back as they were (settingsBeforePlay_).
+            b.direct = Running();
             blocks.push_back(std::move(b));
             // Where rm::Save writes, and taking those saves away (to the Recycle Bin).
             editor::w::Action clear;
@@ -1812,8 +1835,8 @@ private:
     // A derived value typed in the inspector: the component's plugin works out the component that
     // gives it; the fields that change are edits of the component (one undo entry; typing one field
     // joins into one entry).
-    void EditDerived(int id, const std::string& type, const ComponentLook* info, editor::InspectBlock::Change ch) {
-        const std::vector<const void*> chain = Chain(scene_, id, type);
+    void EditDerived(int id, const std::string& type, const ComponentLook* info, editor::InspectBlock::Change ch, bool play = false) {
+        const std::vector<const void*> chain = Chain(play ? Shown() : scene_, id, type);
         if (chain.empty()) return;
         const reflect::TypeDesc& dt = info->derivedType();
         const reflect::TypeDesc& ct = info->type();
@@ -1827,13 +1850,17 @@ private:
         info->underive(chain, derived.Get(), next.Get());
         const uint64_t diff = reflect::Diff(ct, chain.back(), next.Get());
         if (diff == 0) return;
-        const auto resolve = ResolveComponent(id, type);
+        const auto resolve = ResolveComponent(id, type, 0, play);
         std::vector<std::unique_ptr<ICommand>> cmds;
         for (size_t i = 0; i < ct.fields.size() && i < 64; ++i) {
             if (!(diff >> i & 1)) continue;
             const reflect::FieldDesc& f = ct.fields[i];
             cmds.push_back(std::make_unique<reflect::SetFieldCommand>(ct, reflect::FieldPath{i}, reflect::SaveField(f, chain.back(), nullptr),
                                                                       reflect::SaveField(f, next.Get(), nullptr), resolve, ch.label, ch.merge));
+        }
+        if (play) {  // (the copy that plays: in place, kept nowhere)
+            for (auto& cmd : cmds) cmd->Do();
+            return;
         }
         if (cmds.size() == 1) {
             host_.History().Push(std::move(cmds.front()), false);
@@ -1847,12 +1874,13 @@ private:
     // A field typed in the inspector of a component whose plugin keeps its fields together
     // (ComponentLook::adjust): the field as typed, then what the plugin changed with it - one undo entry
     // (typing into one field still joins into one entry while the plugin changes nothing else).
-    void EditAdjusted(int id, const std::string& type, size_t nth, const ComponentLook* info, editor::InspectBlock::Change ch) {
-        SceneEntity* e = scene_.Find(id);
+    void EditAdjusted(int id, const std::string& type, size_t nth, const ComponentLook* info, editor::InspectBlock::Change ch, bool play = false) {
+        Scene& scene = play ? Shown() : scene_;
+        SceneEntity* e = scene.Find(id);
         const Component* c = e ? e->FindComponent(type, nth) : nullptr;
         if (!c || !c->Known()) return;
         const reflect::TypeDesc& ct = *c->value.Type();
-        const auto resolve = ResolveComponent(id, type, nth);
+        const auto resolve = ResolveComponent(id, type, nth, play);
         auto typedCmd = std::make_unique<reflect::SetFieldCommand>(ct, ch.path, ch.before, ch.after, resolve, ch.label, ch.merge);
         reflect::Object typed(ct);
         ct.copy(typed.Get(), c->value.Get());
@@ -1861,8 +1889,14 @@ private:
         reflect::LoadField(*pt.field, pt.owner, ch.after, nullptr, nullptr);
         reflect::Object next(ct);
         ct.copy(next.Get(), typed.Get());
-        info->adjust(scene_, settings_, id, ch.path, c->value.Get(), next.Get());
+        info->adjust(scene, settings_, id, ch.path, c->value.Get(), next.Get());
         const uint64_t diff = reflect::Diff(ct, typed.Get(), next.Get());
+        if (play) {  // (the copy that plays: the field and what the plugin changed with it, in place)
+            typedCmd->Do();
+            const Component* now = scene.Find(id) ? scene.Find(id)->FindComponent(type, nth) : nullptr;
+            if (now && now->Known()) ct.copy(const_cast<void*>(now->value.Get()), next.Get());
+            return;
+        }
         if (diff == 0) {
             host_.History().Push(std::move(typedCmd), false);
             return;
@@ -1957,7 +1991,7 @@ private:
             if (!e) return blocks;
             if (play) blocks.push_back(PlayNote());
             editor::InspectBlock entity{&reflect::TypeOf<Entity>(), ResolveEntity(id, play), {}, PrefabNote(id), {}};
-            entity.readOnly = play;
+            entity.direct = play;
             if (play) entity.fieldMenu = KeepMenu(id, "", 0);
             blocks.push_back(std::move(entity));
             for (const Component& c : e->components) {
@@ -1970,6 +2004,10 @@ private:
                 editor::w::Action remove;
                 remove.label = Tr(L"外す");
                 remove.run = [this, id, type, nth, label] {
+                    if (Running()) {
+                        PlayRemoveComponent(id, type, nth);
+                        return;
+                    }
                     EditTouching({id}, std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type, nth); });
                 };
                 // Its place among the entity's components (the order they are shown - and run).
@@ -1978,26 +2016,31 @@ private:
                 up.label = Tr(L"上へ移動");
                 up.enabled = at > 0;
                 up.run = [this, id, type, nth, label] {
+                    if (Running()) {
+                        if (playScene_) playScene_->MoveComponent(id, type, -1, nth);
+                        return;
+                    }
                     EditTouching({id}, std::format("「{}」を上へ移動", label), [&] { scene_.MoveComponent(id, type, -1, nth); });
                 };
                 editor::w::Action down;
                 down.label = Tr(L"下へ移動");
                 down.enabled = at + 1 < e->components.size();
                 down.run = [this, id, type, nth, label] {
+                    if (Running()) {
+                        if (playScene_) playScene_->MoveComponent(id, type, 1, nth);
+                        return;
+                    }
                     EditTouching({id}, std::format("「{}」を下へ移動", label), [&] { scene_.MoveComponent(id, type, 1, nth); });
                 };
                 editor::w::Action sep;
                 sep.separator = true;
                 std::vector<editor::w::Action> menu{up, down, sep, remove};
-                if (play) {
-                    for (auto& a : menu) a.enabled = false;
-                }
                 if (c.Known()) {
                     // A script: where it runs among the others (the game settings' スクリプトの実行順).
                     std::wstring note;
                     if (c.value.Type()->kind == reflect::TypeKind::Script) note = TrF(L"スクリプト ・ 実行順 {}", ScriptOrderOf(c.type, settings_.scriptOrder));
                     editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type, nth, play), Utf8ToWide(TrU8(label)) + number, note, menu};
-                    b.readOnly = play;
+                    b.direct = play;
                     if (play) b.fieldMenu = KeepMenu(id, type, nth);
                     // A child: ローカル / ワールド (or whatever the plugin calls them), one block shown either way.
                     // At the top level both ways are the same numbers, so there is no switch.
@@ -2008,11 +2051,13 @@ private:
                         if (b.mode == 1) {
                             b.type = &info->derivedType();
                             b.resolve = Derived(id, c.type, info, play);
-                            b.onEdit = [this, id, type, info](editor::InspectBlock::Change ch) { EditDerived(id, type, info, std::move(ch)); };
+                            b.onEdit = [this, id, type, info, play](editor::InspectBlock::Change ch) { EditDerived(id, type, info, std::move(ch), play); };
                         }
                     }
-                    if (const ComponentLook* info = LookOf(c.type); info && info->adjust && !play && !b.onEdit) {
-                        b.onEdit = [this, id, type, nth, info](editor::InspectBlock::Change ch) { EditAdjusted(id, type, nth, info, std::move(ch)); };
+                    if (const ComponentLook* info = LookOf(c.type); info && info->adjust && !b.onEdit) {
+                        b.onEdit = [this, id, type, nth, info, play](editor::InspectBlock::Change ch) {
+                            EditAdjusted(id, type, nth, info, std::move(ch), play);
+                        };
                     }
                     blocks.push_back(std::move(b));
                 } else {
@@ -2025,21 +2070,19 @@ private:
         in.addLabel = Tr(L"＋ 部品を足す");
         in.addMenu = [this, id] {
             std::vector<editor::w::Action> list;
-            if (Running()) {
-                editor::w::Action none;
-                none.label = Tr(L"Play 中は部品を足せません");
-                none.enabled = false;
-                list.push_back(std::move(none));
-                return list;
-            }
-            const SceneEntity* e = scene_.Find(id);
+            // (Play: added to the copy that plays - its script starts at the next frame; gone at ■)
+            const SceneEntity* e = Shown().Find(id);
             for (const reflect::TypeDesc* t : TypesForAdding()) {
-                if (!e || (e->FindComponent(t->name) && !scene_.AllowsMultiple(t->name))) continue;
+                if (!e || (e->FindComponent(t->name) && !Shown().AllowsMultiple(t->name))) continue;
                 editor::w::Action add;
                 add.label = Utf8ToWide(TrU8(t->label));
                 add.folder = FolderOf(*t);
                 if (e->FindComponent(t->name)) add.label += Tr(L" (もう 1 つ)");
                 add.run = [this, id, t] {
+                    if (Running()) {
+                        if (playScene_) playScene_->AddComponent(id, *t);
+                        return;
+                    }
                     EditTouching({id}, std::format("「{}」を足す", t->label), [&] { scene_.AddComponent(id, *t); });
                 };
                 list.push_back(std::move(add));
@@ -2076,7 +2119,7 @@ private:
             const std::vector<int> rest(here.begin(), here.end() - 1);
             editor::InspectBlock entity{&reflect::TypeOf<Entity>(), ResolveEntity(main, play), {}, {}, {}};
             for (const int id : rest) entity.also.push_back(ResolveEntity(id, play));
-            entity.readOnly = play;
+            entity.direct = play;
             blocks.push_back(std::move(entity));
             const SceneEntity* me = shown.Find(main);
             for (const Component& c : me->components) {
@@ -2090,15 +2133,18 @@ private:
                 const std::string label = c.value.Type()->label;
                 editor::w::Action remove;
                 remove.label = Tr(L"外す");
-                remove.enabled = !play;
                 remove.run = [this, here, type, label] {
+                    if (Running()) {
+                        for (const int id : here) PlayRemoveComponent(id, type, 0);
+                        return;
+                    }
                     EditTouching(here, std::format("{} 個のエンティティから「{}」を外す", here.size(), label), [&] {
                         for (const int id : here) scene_.RemoveComponent(id, type);
                     });
                 };
                 editor::InspectBlock b{c.value.Type(), ResolveComponent(main, type, 0, play), Utf8ToWide(TrU8(label)), {}, {remove}};
                 for (const int id : rest) b.also.push_back(ResolveComponent(id, type, 0, play));
-                b.readOnly = play;
+                b.direct = play;
                 blocks.push_back(std::move(b));
             }
             return blocks;
@@ -2106,17 +2152,10 @@ private:
         in.addLabel = Tr(L"＋ 部品を足す");
         in.addMenu = [this, ids] {
             std::vector<editor::w::Action> list;
-            if (Running()) {
-                editor::w::Action none;
-                none.label = Tr(L"Play 中は部品を足せません");
-                none.enabled = false;
-                list.push_back(std::move(none));
-                return list;
-            }
             for (const reflect::TypeDesc* t : TypesForAdding()) {
                 // Offered while at least one of them lacks it (or may have more); added where it can be.
-                const bool someCan = scene_.AllowsMultiple(t->name) || std::any_of(ids.begin(), ids.end(), [&](int id) {
-                                         const SceneEntity* e = scene_.Find(id);
+                const bool someCan = Shown().AllowsMultiple(t->name) || std::any_of(ids.begin(), ids.end(), [&](int id) {
+                                         const SceneEntity* e = Shown().Find(id);
                                          return e && !e->FindComponent(t->name);
                                      });
                 if (!someCan) continue;
@@ -2124,6 +2163,12 @@ private:
                 add.label = Utf8ToWide(TrU8(t->label));
                 add.folder = FolderOf(*t);
                 add.run = [this, ids, t] {
+                    if (Running()) {
+                        for (const int id : ids) {
+                            if (playScene_ && playScene_->Find(id)) playScene_->AddComponent(id, *t);
+                        }
+                        return;
+                    }
                     EditTouching(ids, std::format("{} 個のエンティティに「{}」を足す", ids.size(), t->label), [&] {
                         for (const int id : ids) scene_.AddComponent(id, *t);
                     });
@@ -3044,6 +3089,7 @@ private:
     // over the scene view.
     DebugPanel debugPanel_;
     FrameMeter sceneMeter_, gameMeter_, updateMeter_;
+    json::Value settingsBeforePlay_;  // the game settings when Play started (null: not playing)
     double debugShownAt_ = -1e9;  // the panel was drawn then (Play's parts are timed while it is shown)
     PlayTimes playTimes_;
     std::vector<ScriptRunner::ScriptTime> scriptTimes_;

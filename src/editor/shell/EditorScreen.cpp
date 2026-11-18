@@ -1160,8 +1160,17 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     // (a choice made in a drop-down arrives a frame later: the list may have changed since)
     const inspector::Refs refs = MakeRefs();
     if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu, &refs); edit && edit->block < source.size()) {
-        // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly.
+        // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly -
+        // except a block that is edited in place (`direct`: a game's copy in Play), whose command is done
+        // at once and kept nowhere.
         const InspectBlock& b = blocks[source[edit->block]];
+        auto commit = [&](std::unique_ptr<ICommand> cmd) {
+            if (b.direct) {
+                cmd->Do();
+            } else {
+                ws.history.Push(std::move(cmd), false);
+            }
+        };
         if (b.readOnly) {
             // shown only (a drop-down chosen just before Play started): nothing changes
         } else if (b.onEdit) {
@@ -1188,11 +1197,10 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
                 group->Add(std::make_unique<reflect::SetFieldCommand>(*b.type, edit->path, std::move(before), std::move(after), resolveOne,
                                                                       edit->label, edit->merge));
             }
-            if (!group->Empty()) ws.history.Push(std::move(group), false);
+            if (!group->Empty()) commit(std::move(group));
         } else {
-            ws.history.Push(std::make_unique<reflect::SetFieldCommand>(*b.type, std::move(edit->path), std::move(edit->before),
-                                                                       std::move(edit->after), b.resolve, std::move(edit->label), edit->merge),
-                            false);
+            commit(std::make_unique<reflect::SetFieldCommand>(*b.type, std::move(edit->path), std::move(edit->before), std::move(edit->after),
+                                                              b.resolve, std::move(edit->label), edit->merge));
         }
         // The change came after this frame's fields (and the panels before them) were drawn: once more
         // with it (2026-11-18 on screen: a drop-down's choice in シーン「Main」 showed only when the mouse moved).

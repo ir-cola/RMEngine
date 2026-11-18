@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "Play 中にインスペクターで値を変えられるようにした (部品を足す・外すも)。ゲームにすぐ効き、保存されず ■ で Play の前に戻る",
+          "en": "Values can be changed in the Inspector while playing (adding and removing components too). They take effect at once, are not saved, and go back at Stop"
+        },
+        {
           "ja": "デバッグのパネルに フレームのグラフ・時間の内訳 (スクリプトの種類ごと・システムごと)・グローバル変数の値・描画の統計とカメラ (3D / 2D)・物理・音 (出力先と鳴っている音)・ゲーム UI の選んでいるボタン・コンソールのエラーと警告の数 を足した",
           "en": "The Debug panel now has a frame graph, where the time goes (by script type and system), global variable values, drawing statistics and cameras (3D / 2D), physics, sound (output and sounds playing), the chosen game UI button, and the console's error and warning counts"
         },

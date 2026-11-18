@@ -55,7 +55,6 @@
   "Prefab「{}」の一部です": "Part of the prefab \"{}\"",
   "Prefab「{}」を置いた物です (ファイル {} が読めません)": "Placed from the prefab \"{}\" (the file {} cannot be read)",
   "Prefab「{}」を置いた物です ({})。Prefab と違う所: {} 個 (名前と置き場所を含む)": "Placed from the prefab \"{}\" ({}). Differences from the prefab: {} (the name and the place included)",
-  "Play 中は部品を足せません": "Cannot add components while playing",
   " (もう 1 つ)": " (one more)",
   "Prefab にする (Assets に保存)": "Make a prefab (saved in Assets)",
   "Prefab「{}」に反映 (置いたほかの物も変わる)": "Apply to the prefab \"{}\" (the other placed ones change too)",
@@ -186,7 +185,6 @@
   "セーブを消す (Library/Saves)": "Delete saves (Library/Saves)",
   "セーブ": "Saves",
   "Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)。⋮ の「セーブを消す」で Play のセーブを全部ごみ箱へ移します": "rm::Save in Play writes to this project's Library/Saves (an exported game: \"exe name/Saves\" under %LOCALAPPDATA%). \"Delete saves\" in ⋮ moves every Play save to the Recycle Bin",
-  "Play 中です。ここに出ているのは動いているコピーで、変えられません。■ で止めると Play の前に戻ります。欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻します。": "Playing. This is the running copy and cannot be changed. Stop with ■ to go back to before Play. Right-click a field → \"Keep this value\" to write its value at Stop back into the scene from before Play.",
   "この値を残す": "Keep this value",
   "Play 中のビルド": "Build during Play",
   "Play 中にスクリプトのビルドが終わったとき。すぐ入れ替えると、欄の値は名前で引き継ぎ、BeginPlay は呼ばずに OnReloaded を呼びます (RM_TRANSIENT の欄は既定の値に戻ります)": "When the scripts finish building during Play. Swapped at once: field values are carried over by name, and OnReloaded is called instead of BeginPlay (RM_TRANSIENT fields go back to their defaults)",
@@ -329,5 +327,6 @@
   "エラー": "Error",
   "警告": "Warnings",
   "お知らせ": "Notice",
-  "(エディターを起動してからの数)": "(since the editor started)"
+  "(エディターを起動してからの数)": "(since the editor started)",
+  "Play 中です。ここで変えた値は動いているゲームにすぐ効きますが、保存されず、■ で止めると Play の前に戻ります (元に戻す の履歴にも入りません)。欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻します。": "Playing. Values changed here take effect in the running game at once, but they are not saved and go back to how they were before Play when you stop with ■ (nor do they go into the undo history). Right-click a field → Keep this value to write its value at Stop back into the scene from before Play."
 }

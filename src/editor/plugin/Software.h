@@ -78,8 +78,11 @@ struct InspectBlock {
     // `resolve`'s object. Values that differ show "—"; a change goes to all of them (for a vector
     // only the number typed) as one undo entry.
     std::vector<std::function<reflect::EditTarget()>> also;
-    // Shown, not edited (a game in Play shows the copy that plays): the fields take no input.
+    // Shown, not edited: the fields take no input.
     bool readOnly = false;
+    // Edited in place, outside the history (a game in Play: the copy that plays - nothing to save, nothing
+    // to undo; it goes back at ■): a change is applied to the object(s) at once and never marks unsaved.
+    bool direct = false;
     // A right click on a field (also on a read-only block): a menu for it (inspector::Block::fieldMenu).
     std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
 };
