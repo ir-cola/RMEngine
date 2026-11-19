@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "カメラの向きによって影がちらつくのを直した。シーンビューの右ドラッグ移動をもっと遅く (細かく動かせる。Shift で速く)",
+          "en": "Shadows no longer flicker as the camera turns, and flying in the scene view (right drag) is much slower for fine moves (Shift for speed)"
+        },
+        {
           "ja": "濡れの境目をまばらに広げて線に見えないように。影の中でも染みは暗く",
           "en": "The edge of the wet ground spreads out sparsely so no line shows, and wet specks stay darker in shade too"
         },

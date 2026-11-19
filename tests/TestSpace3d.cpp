@@ -1808,6 +1808,21 @@ RM_TEST(Lighting_SunShadowPlan) {
         const float shift = (moved.viewProj[c].m[3][0] - plan.viewProj[c].m[3][0]) * 2048.f / 2.f;
         CHECK(std::abs(shift - std::round(shift)) < 0.01f);
     }
+    // Turned any way, from anywhere, the maps keep their size (their texel): the shadows do not flicker
+    // as the camera turns.
+    const Mat4 wideView = Perspective(60.f, 16.f / 9.f, 0.1f, 2000.f);
+    const SunShadowPlan first = PlanSunShadows(dir, wide, LookAt({0, 2, 10}, {0, 0, 0}, {0, 1, 0}), wideView, 2048);
+    bool sameSize = true;
+    for (int i = 0; i < 360; ++i) {
+        const float a = static_cast<float>(i) * 0.0174533f, b = std::sin(static_cast<float>(i) * 0.37f) * 0.6f;
+        const Vec3 at{std::cos(a) * 37.3f, 3.1f + static_cast<float>(i % 7), std::sin(a) * 41.7f};
+        const Vec3 look = at + Vec3{std::cos(a * 3.f) * std::cos(b), std::sin(b), std::sin(a * 3.f) * std::cos(b)};
+        const SunShadowPlan turned = PlanSunShadows(dir, wide, LookAt(at, look, {0, 1, 0}), wideView, 2048);
+        for (size_t c = 0; c < static_cast<size_t>(kCascades); ++c) {
+            sameSize = sameSize && turned.texel[c] == first.texel[c] && turned.splitFar[c] == first.splitFar[c];
+        }
+    }
+    CHECK(sameSize);
 }
 
 RM_TEST(Light_Ambient_ToRender) {

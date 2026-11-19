@@ -607,8 +607,9 @@ private:
         const float up = (c.KeyDown(ui::Key::Space) || c.KeyDown(ui::Key::E) ? 1.f : 0.f) - (c.In().ctrl || c.KeyDown(ui::Key::Q) ? 1.f : 0.f);
         const Vec3 dir{axis(ui::Key::D, ui::Key::A), up, axis(ui::Key::W, ui::Key::S)};
         if (dir.x == 0 && dir.y == 0 && dir.z == 0) return;
-        // (2026-11-19: a little slower than before - 2 m/s at least, 0.8 x the distance)
-        const float speed = std::max(1.5f, state_.camera.distance * 0.55f) * (c.In().shift ? 4.f : 1.f);
+        // Slow, for fine moves (2026-11-19: a quarter of before - 0.4 m/s at least, 0.15 x the distance);
+        // Shift for the long ways.
+        const float speed = std::max(0.4f, state_.camera.distance * 0.15f) * (c.In().shift ? 4.f : 1.f);
         space3d::Fly(state_.camera, dir * (speed * dt));
         c.RequestAnimation();  // keeps flying while the keys are held, without moving the mouse
     }

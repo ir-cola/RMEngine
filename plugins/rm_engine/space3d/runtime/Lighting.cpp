@@ -182,16 +182,17 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
     };
     if (Length(casters.max - casters.min) * 0.5f <= kSingleMapRadius) return single();
 
-    // What the camera sees, and how far its near and far planes are in front of the eye.
+    // What the camera sees, in view space (the eye at 0, looking along -z), and how far its near and far
+    // planes are in front of the eye. Each cascade's ball is measured there, from the projection alone:
+    // the same numbers whichever way the camera turns (2026-11-19: measured in the world, the rounding
+    // of a ball's size flipped with the camera's angle and the shadows flickered).
     const auto toWorld = Inverse(view);
-    const auto corners = FrustumCorners(projection * view);
+    const auto corners = FrustumCorners(projection);
     if (!toWorld || !corners) return single();
-    const Vec3 eye = TransformPoint(*toWorld, {0, 0, 0});
-    const Vec3 forward = Normalize(TransformDirection(*toWorld, {0, 0, -1}));
-    const float d0 = Dot((*corners)[0] - eye, forward), d1 = Dot((*corners)[4] - eye, forward);
+    const float d0 = -(*corners)[0].z, d1 = -(*corners)[4].z;
     const float reach = std::min(d1, kShadowDistance);
     if (!(d1 > d0) || !(reach > d0 + 1e-3f)) return single();
-    auto at = [&](size_t edge, float d) {  // the point of an edge of the view at distance d
+    auto at = [&](size_t edge, float d) {  // the point of an edge of the view at distance d (view space)
         const Vec3 a = (*corners)[edge], b = (*corners)[edge + 4];
         return a + (b - a) * ((d - d0) / (d1 - d0));
     };
@@ -218,8 +219,8 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
         for (const Vec3& p : pts) center = center + p * 0.125f;
         float radius = 0;
         for (const Vec3& p : pts) radius = std::max(radius, Length(p - center));
-        radius = std::ceil(radius * 16.f) / 16.f + 0.01f;  // the same every frame while the view keeps its shape
-        Vec3 lc = TransformPoint(turn, center);
+        radius = std::ceil(radius * 16.f) / 16.f + 0.01f;  // (a little room, in steps)
+        Vec3 lc = TransformPoint(turn, TransformPoint(*toWorld, center));
         const float texel = radius * 2.f / static_cast<float>(std::max(mapSize, 1u));
         lc.x = std::floor(lc.x / texel) * texel;
         lc.y = std::floor(lc.y / texel) * texel;
