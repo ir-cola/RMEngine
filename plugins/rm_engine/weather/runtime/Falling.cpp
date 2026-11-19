@@ -148,11 +148,11 @@ float WetSpecks(float2 s, float density, float footprint) {
 }
 
 // How much the rain reached a point the way `k` (0 .. 1): the place a little off the surface is not past
-// anything that way - read at 5 x 5 places 30 cm apart (weighted to the middle), so toward a roof's edge
-// it falls off over a metre and more: the specks thin out there, as on real ground (2026-11-19).
+// anything that way - read at 5 x 5 places 45 cm apart (weighted to the middle), so toward a roof's edge
+// it falls off over about two metres: the specks thin out there, as on real ground (2026-11-19).
 float WetOpen(int k, float3 p) {
     float4 c = mul(mapViewProj[k], float4(p, 1));
-    float4 dx = mul(mapViewProj[k], float4(0.3, 0, 0, 0)), dz = mul(mapViewProj[k], float4(0, 0, 0.3, 0));
+    float4 dx = mul(mapViewProj[k], float4(0.45, 0, 0, 0)), dz = mul(mapViewProj[k], float4(0, 0, 0.45, 0));
     float open = 0;
     [unroll] for (int y = -2; y <= 2; ++y) {
         [unroll] for (int x = -2; x <= 2; ++x) {
@@ -188,16 +188,21 @@ float WetAt(float3 wpos, float3 n) {
         wet = m >= 0 && mapInfo[m].x > 0.5 ? max(wet, l * WetOpen(m, p)) : l;  // (no map: nothing to hit, all open)
     }
     if (wet <= 0) return 0;
-    return saturate(level * 1.5) * WetSpecks(s, wet, footprint) * lerp(0.45, 1, saturate(n.y));
+    // Between dry and wet (an edge, the start of the rain) more specks here, fewer there - patches a
+    // metre or two across - so an edge is no even band (nothing changes where it is dry or wet through).
+    const float patch = WetNoise(s * 0.6) * 2 - 1;
+    const float density = saturate(wet + patch * wet * (1 - wet) * 0.9);
+    return saturate(level * 1.5) * WetSpecks(s, density, footprint) * lerp(0.45, 1, saturate(n.y));
 }
 
 
-// 濡れ on every surface (3D 空間's RenderFrame::surface): water in the surface makes it darker, and it is a
-// little smoother - wet ground, not a puddle: never a mirror (2026-11-19: the sun shone in it like water).
+// 濡れ on every surface (3D 空間's RenderFrame::surface): water in the surface makes it darker - and only a
+// touch smoother: wet ground, not a puddle. (2026-11-19: smoother, a wet speck in shade mirrored the sky
+// and looked lighter than the dry ground - the shadow's edge became a line; now a speck is always darker.)
 void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, float3 n) {
     float wet = WetAt(wpos, n);
-    albedo *= 1 - wet * 0.25 * (1 - metal);
-    rough = lerp(rough, min(rough, max(rough * 0.6, 0.35)), wet);
+    albedo *= 1 - wet * 0.3 * (1 - metal);
+    rough = lerp(rough, min(rough, max(rough * 0.85, 0.5)), wet);
 }
 )";
 
