@@ -143,6 +143,12 @@ Counts Counted() {
     return s.counts;
 }
 
+void ResetCounted() {
+    auto& s = S();
+    std::lock_guard lock(s.mtx);
+    s.counts = {};
+}
+
 uint64_t LastSeq() {
     auto& s = S();
     std::lock_guard lock(s.mtx);

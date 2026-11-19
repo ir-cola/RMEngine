@@ -12,6 +12,7 @@
 #include "editor/app/Worker.h"
 #include "editor/plugin/Software.h"
 #include "platform/Shell.h"
+#include "rm_engine/game_production/editor/ScriptBuild.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 
 #include <filesystem>
@@ -32,8 +33,14 @@ public:
     // Opening a project: the Visual Studio project written, the newest DLL built before loaded (so the
     // scene's scripts are known when it is read), a build started when the sources are newer than it.
     void Open();
-    // A build now (again after the one running, when one is).
-    void Build();
+    // A build now (again after the one running, when one is). rebuild: every object made again, not
+    // only what changed (the debug window's ビルドし直す).
+    void Build(bool rebuild = false);
+    // The newest built DLL loaded again (as after a build: at once, or at Stop while playing) - the
+    // scripts' values carried over by name (the debug window's 読み込み直す).
+    void Reload();
+    // What the last build did (None: none since the project was opened).
+    const ScriptBuildOutcome& LastBuild() const { return last_; }
     // Opens Scripts.sln (Visual Studio), after this frame.
     void OpenVisualStudio();
     // The game settings' グローバル変数 (RmGlobals.h is written from them: Global::<name>). Set before
@@ -83,6 +90,8 @@ private:
     editor::Worker worker_;
     bool building_ = false;
     bool again_ = false;
+    bool rebuildNext_ = false;  // the build after the one running makes every object again
+    ScriptBuildOutcome last_;
     bool toldNoVs_ = false;
     std::optional<std::filesystem::path> ready_;
     long long seenSources_ = -1;

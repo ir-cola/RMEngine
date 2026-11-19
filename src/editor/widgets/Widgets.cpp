@@ -416,7 +416,8 @@ void ProgressBar(ui::Context& c, const Rect& r, float fraction) {
     if (f > 0.f) DrawSurface(c, {r.x, r.y, std::max(r.h, r.w * f), r.h}, Surface::Accent, radius);
 }
 
-void InfoRow(ui::Context& c, const Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth, bool lit) {
+namespace {
+void InfoRowIn(ui::Context& c, const Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth, ui::Color valueColor) {
     ui::TextStyle ls;
     ls.size = 12;
     ls.color = theme::TextDim;
@@ -424,8 +425,17 @@ void InfoRow(ui::Context& c, const Rect& r, std::wstring_view label, std::wstrin
     const float lw = std::min(labelWidth, r.w * 0.5f);
     c.P().Text({r.x, r.y, lw - 6, r.h}, label, ls);
     ui::TextStyle vs = ls;
-    vs.color = lit ? theme::Accent : theme::Text;
+    vs.color = valueColor;
     c.P().Text({r.x + lw, r.y, r.w - lw, r.h}, value, vs);
+}
+}  // namespace
+
+void InfoRow(ui::Context& c, const Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth, bool lit) {
+    InfoRowIn(c, r, label, value, labelWidth, lit ? theme::Accent : theme::Text);
+}
+
+void InfoRowDanger(ui::Context& c, const Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth) {
+    InfoRowIn(c, r, label, value, labelWidth, theme::Danger);
 }
 
 bool FolderTab(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view label, bool selected, float radius) {

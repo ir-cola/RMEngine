@@ -347,6 +347,7 @@ ScriptBuildResult BuildScripts(const ScriptBuildRequest& r) {
     std::wstring cmd = Quote(msbuild) + L" " + Quote(ScriptBuildFolder(r.project) / L"Scripts.vcxproj") + L" -nologo -v:quiet -m -nodeReuse:false -p:Configuration=" +
                        (r.debug ? L"Debug" : L"Release") + L" -p:Platform=x64 -p:TargetName=" + name + folderArg("-p:OutDir=", outFolder) +
                        folderArg("-p:RmEngineDir=", r.engine) + L" \"-flp:LogFile=" + log.native() + L";Encoding=UTF-8;Verbosity=minimal\"";
+    if (r.rebuild && !r.forExport) cmd += L" -t:Rebuild";  // (every object again)
     if (r.forExport) {
         std::error_code e0;
         fs::remove(outFolder / L"Scripts.dll", e0);  // (never the one of an earlier export, if this one fails)

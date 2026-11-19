@@ -137,6 +137,10 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         y += kRowH;
     };
     auto gap = [&] { y += 6; };
+    auto dangerRow = [&](std::wstring_view label, std::wstring_view value) {
+        w::InfoRowDanger(c, {x + 10, y, width - 10, kRowH}, label, value, kLabelW);
+        y += kRowH;
+    };
 
     // --- How often things are drawn --------------------------------------------------------------
     if (header(0, Tr(L"フレームの速さ"))) {
@@ -214,6 +218,43 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
                        : TrF(L"{} 回 (刻み {:.3f} 秒)", v.fixedSteps, v.settings ? v.settings->fixedTimestep : 0.f),
                 behind);
         }
+        gap();
+    }
+
+    // --- The scripts: how the last build went, and building / loading them again -----------------------
+    if (header(0, Tr(L"スクリプト"))) {
+        using State = ScriptBuildOutcome::State;
+        const ScriptBuildOutcome& b = v.scriptBuild;
+        const std::wstring ago = b.at > 0 ? TrF(L" ({:.0f} 秒前)", std::max(0.0, now - b.at)) : std::wstring();
+        if (v.scriptsBuilding) {
+            row(Tr(L"ビルド"), Tr(L"ビルドしています…"), true);
+        } else if (b.state == State::Failed) {
+            dangerRow(Tr(L"ビルド"), TrF(L"失敗しました (エラー {} 個)。前のスクリプトのまま動きます{}", b.errors.size(), ago));
+            constexpr size_t kShown = 6;
+            for (size_t i = 0; i < std::min(b.errors.size(), kShown); ++i) dangerRow(L"", Utf8ToWide(b.errors[i]));
+            if (b.errors.size() > kShown) row(L"", TrF(L"ほか {} 個 (全部はコンソールに)", b.errors.size() - kShown));
+        } else if (b.state == State::Ok) {
+            row(Tr(L"ビルド"), Tr(L"できました") + ago);
+        } else if (b.state == State::NoVisualStudio) {
+            dangerRow(Tr(L"ビルド"), Tr(L"Visual Studio 2022 が見つからないので、ビルドできません"));
+        } else if (b.state == State::NothingToBuild) {
+            row(Tr(L"ビルド"), Tr(L"スクリプトはありません (Assets/Scripts)"));
+        } else {
+            row(Tr(L"ビルド"), Tr(L"プロジェクトを開いてからは、まだビルドしていません"));
+        }
+        // ビルドし直す: every object made again (a build that keeps failing on what is already fixed, the
+        // engine's headers changed). 読み込み直す: the newest DLL used again (the scripts' values by name).
+        constexpr float kButtonW = 140, kButtonH = 26;
+        const Rect rebuild{x + 10 + kLabelW, y + 3, kButtonW, kButtonH};
+        const Rect reload{rebuild.Right() + 8, y + 3, kButtonW, kButtonH};
+        if (w::Button(c, "debug.rebuild", rebuild, Tr(L"ビルドし直す"), w::ButtonKind::Secondary, !v.scriptsBuilding && v.rebuildScripts != nullptr)) {
+            v.rebuildScripts();
+        }
+        if (w::Button(c, "debug.reload", reload, Tr(L"読み込み直す"), w::ButtonKind::Secondary, !v.scriptsBuilding && v.reloadScripts != nullptr)) {
+            v.reloadScripts();
+        }
+        y += kButtonH + 8;
+        row(L"", v.playing ? Tr(L"Play 中にビルド・読み込みしたスクリプトは、■ で止めたときに入れ替わります") : Tr(L"ビルドし直す: 全部作り直します ・ 読み込み直す: いちばん新しい DLL をもう一度読みます"));
         gap();
     }
 
@@ -387,10 +428,18 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
     // --- The console ---------------------------------------------------------------------------------------
     if (header(0, Tr(L"コンソール"))) {
         const log::Counts n = log::Counted();
-        row(Tr(L"エラー"), TrF(L"{} 個", n.error), n.error > 0);
+        if (n.error > 0) {
+            dangerRow(Tr(L"エラー"), TrF(L"{} 個", n.error));
+        } else {
+            row(Tr(L"エラー"), TrF(L"{} 個", n.error));
+        }
         row(Tr(L"警告"), TrF(L"{} 個", n.warn), n.warn > 0);
         row(Tr(L"お知らせ"), TrF(L"{} 個", n.info));
-        row(L"", Tr(L"(エディターを起動してからの数)"));
+        row(L"", Tr(L"(エディターを起動してから、または 0 に戻してからの数。コンソールの中身は消えません)"));
+        if (w::Button(c, "debug.resetCounts", {x + 10 + kLabelW, y + 3, 140, 26}, Tr(L"数を 0 に戻す"), w::ButtonKind::Secondary, n.error + n.warn + n.info > 0)) {
+            log::ResetCounted();
+        }
+        y += 34;
         gap();
     }
 

@@ -33,6 +33,8 @@ struct ScriptBuildRequest {
     bool forExport = false;
     // The game settings' グローバル変数: written as Library/Scripts/Globals/RmGlobals.h (Global::<name>).
     std::vector<GlobalVariable> globals;
+    // Every object made again (MSBuild's Rebuild target), not only what changed (ビルドし直す).
+    bool rebuild = false;
 };
 
 struct ScriptBuildResult {
@@ -42,6 +44,14 @@ struct ScriptBuildResult {
     std::filesystem::path dll;       // ok: the new DLL
     std::vector<std::string> errors; // the compiler's / rmgen's lines with "error" (UTF-8)
     std::string summary;             // one line for the console (Japanese)
+};
+
+// What the editor's last build did (the debug window's スクリプト shows it).
+struct ScriptBuildOutcome {
+    enum class State { None, Ok, Failed, NoVisualStudio, NothingToBuild } state = State::None;
+    std::string summary;              // as on the console (Japanese)
+    std::vector<std::string> errors;  // the compiler's lines
+    double at = 0;                    // when it ended (platform::NowSeconds)
 };
 
 // <project>/Assets/Scripts

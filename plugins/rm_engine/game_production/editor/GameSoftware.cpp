@@ -297,6 +297,10 @@ public:
         v.sceneMouse = sceneMouse_;
         v.gameMouse = pointer_;
         v.scriptTypes = scripts_.Module().Types().size();
+        v.scriptBuild = scripts_.LastBuild();
+        v.scriptsBuilding = scripts_.Building();
+        v.rebuildScripts = [this] { scripts_.Build(true); };
+        v.reloadScripts = [this] { scripts_.Reload(); };
         if (v.playing) {
             v.playTimes = playTimes_;
             v.scriptTimes = scriptTimes_;

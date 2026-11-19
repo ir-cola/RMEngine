@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲームデバッグの基本情報に、スクリプトのビルドの結果と「ビルドし直す」「読み込み直す」ボタン、コンソールの「数を 0 に戻す」を足した",
+          "en": "Game debug, Basic: the scripts' last build, Rebuild and Reload buttons, and Reset to 0 for the console counts"
+        },
+        {
           "ja": "エンジンに新しく入ったつなぎのプラグインは、つなぐ両方が入っていれば起動したときに自動で入るように (雨がコライダーを突き抜けていたのを直した)",
           "en": "A connector plugin new in the engine is now installed at start-up when everything it joins is installed (rain no longer passes through colliders)"
         },

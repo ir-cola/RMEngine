@@ -310,7 +310,6 @@
   "エラー": "Error",
   "警告": "Warnings",
   "お知らせ": "Notice",
-  "(エディターを起動してからの数)": "(since the editor started)",
   "Play 中です。ここで変えた値は動いているゲームにすぐ効きますが、保存されず、■ で止めると Play の前に戻ります (元に戻す の履歴にも入りません)。欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻します。": "Playing. Values changed here take effect in the running game at once, but they are not saved and go back to how they were before Play when you stop with ■ (nor do they go into the undo history). Right-click a field → Keep this value to write its value at Stop back into the scene from before Play.",
   "基本情報": "Basics",
   "コントローラー": "Controllers",
@@ -341,5 +340,18 @@
   "初期シーンを変える": "Change the start scene",
   "書き出したゲームはこのシーンから始まります (エディターの Play は開いているシーンから)。シーンごとの値 (重力・空) は、ヒエラルキーの一番上のシーンの行を押すとインスペクターに出ます": "The exported game starts with this scene (the editor's Play starts with the open one). Each scene's own values (gravity, sky) show in the Inspector when you click the scene row at the top of the Hierarchy",
   "グローバル変数はゲーム全体の値で、rm::Save で保存できます。Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)": "Global variables are values of the whole game; rm::Save saves them. While playing in the editor rm::Save writes to this project's Library/Saves (an exported game: %LOCALAPPDATA%\\<exe name>\\Saves)",
-  "ゲームデバッグ": "Game debug"
+  "ゲームデバッグ": "Game debug",
+  " ({:.0f} 秒前)": " ({:.0f} s ago)",
+  "失敗しました (エラー {} 個)。前のスクリプトのまま動きます{}": "Failed ({} errors). The previous scripts keep running{}",
+  "ほか {} 個 (全部はコンソールに)": "{} more (all of them on the console)",
+  "できました": "Done",
+  "Visual Studio 2022 が見つからないので、ビルドできません": "Visual Studio 2022 was not found, so the scripts cannot be built",
+  "スクリプトはありません (Assets/Scripts)": "There are no scripts (Assets/Scripts)",
+  "プロジェクトを開いてからは、まだビルドしていません": "Not built since the project was opened",
+  "ビルドし直す": "Rebuild",
+  "読み込み直す": "Reload",
+  "Play 中にビルド・読み込みしたスクリプトは、■ で止めたときに入れ替わります": "Scripts built or reloaded during Play take over when you stop with ■",
+  "ビルドし直す: 全部作り直します ・ 読み込み直す: いちばん新しい DLL をもう一度読みます": "Rebuild: makes everything again ・ Reload: reads the newest DLL again",
+  "(エディターを起動してから、または 0 に戻してからの数。コンソールの中身は消えません)": "(Counted since the editor started or since reset to 0. The console keeps its messages)",
+  "数を 0 に戻す": "Reset to 0"
 }

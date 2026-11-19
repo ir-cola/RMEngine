@@ -99,15 +99,22 @@ void GameScripts::Open() {
     if (dll.empty() || ec || built.time_since_epoch().count() < sources - 1000) Build();
 }
 
-void GameScripts::Build() {
+void GameScripts::Build(bool rebuild) {
     if (building_) {
         again_ = true;
+        rebuildNext_ = rebuildNext_ || rebuild;
         return;
     }
     building_ = true;
     again_ = false;
-    log::Info("スクリプトをビルドしています…");
-    const ScriptBuildRequest r = Request();
+    ScriptBuildRequest r = Request();
+    r.rebuild = rebuild || rebuildNext_;
+    rebuildNext_ = false;
+    if (r.rebuild) {
+        log::Info("スクリプトをビルドし直しています (全部作り直します)…");
+    } else {
+        log::Info("スクリプトをビルドしています…");
+    }
     worker_.Run([this, r](std::stop_token, const editor::Worker::Post& post) {
         ScriptBuildResult result = BuildScripts(r);
         post([this, result = std::move(result)] { Finished(result); });
@@ -116,6 +123,11 @@ void GameScripts::Build() {
 
 void GameScripts::Finished(const ScriptBuildResult& r) {
     building_ = false;
+    using State = ScriptBuildOutcome::State;
+    last_.state = r.noVisualStudio ? State::NoVisualStudio : r.nothingToBuild ? State::NothingToBuild : r.ok ? State::Ok : State::Failed;
+    last_.summary = r.summary;
+    last_.errors = r.errors;
+    last_.at = platform::NowSeconds();
     if (r.noVisualStudio) {
         if (!toldNoVs_) log::Warn("{}", r.summary);
         toldNoVs_ = true;
@@ -133,6 +145,18 @@ void GameScripts::Finished(const ScriptBuildResult& r) {
     }
     host_.Redraw();
     if (again_) Build();
+}
+
+void GameScripts::Reload() {
+    const ScriptBuildRequest r = Request();
+    const std::filesystem::path dll = LatestScriptDll(ScriptDllFolder(r.project, r.debug));
+    if (dll.empty()) {
+        log::Warn("読み込み直すスクリプトの DLL がありません (まだビルドしていません)");
+        return;
+    }
+    log::Info("スクリプトを読み込み直します ({})", PathToUtf8(dll.filename()));
+    ready_ = dll;
+    host_.Redraw();
 }
 
 void GameScripts::OpenVisualStudio() {

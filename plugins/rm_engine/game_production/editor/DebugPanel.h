@@ -10,6 +10,7 @@
 
 #include "base/Math.h"
 #include "platform/SystemInfo.h"
+#include "rm_engine/game_production/editor/ScriptBuild.h"
 #include "rm_engine/game_production/runtime/Input.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_production/runtime/Systems.h"
@@ -168,6 +169,11 @@ struct DebugView {
     std::optional<Vec2> sceneMouse;  // over the scene view (DIPs from its top left)
     std::optional<Vec2> gameMouse;   // over the game screen (the game settings' 画面)
     size_t scriptTypes = 0;          // the scripts the built DLL has
+    // The scripts' build: the last one, one running now, and what the buttons do (ビルドし直す: every
+    // object again; 読み込み直す: the newest DLL used again).
+    ScriptBuildOutcome scriptBuild;
+    bool scriptsBuilding = false;
+    std::function<void()> rebuildScripts, reloadScripts;
     // While playing: how long the last frame's parts took, type by type and system by system (measured
     // while the panel is shown), and how many fixed steps it ran.
     PlayTimes playTimes;
