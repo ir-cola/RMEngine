@@ -60,8 +60,10 @@ struct Sky {
     // 地球の空
     RM_PROPERTY(Edit, Label="時刻", Tooltip="0〜24 時。6 時に東 (+X) から昇り、12 時に一番高く、18 時に西へ沈みます", Min=0, Max=24, Step=0.25, ShowIf="kind=Earth") float hour = 12.f;
     RM_PROPERTY(Edit, Label="1 日の長さ (秒)", Tooltip="Play 中、この秒数で 24 時間すすみます (0: 時刻は止まったまま)。書き出したゲームでも同じ", Min=0, Max=1000000, ShowIf="kind=Earth") float dayLength = 0.f;
-    RM_PROPERTY(Edit, Label="天気", Tooltip="晴れ: 雲が少し / くもり: 雲の量を選べる / 雨・雪: 雲に加えて、カメラのまわりに雨粒・雪が降ります", ShowIf="kind=Earth") Weather weather = Weather::Clear;
-    RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲がまばら 〜 1: 空一面の厚い雲 (暗くなり、日の光も弱まります)", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Cloudy|Rain|Snow") float cloudiness = 0.7f;
+    RM_PROPERTY(Edit, Label="天気", Tooltip="晴れ: 日の差す空に雲を少し (量を選べる) / くもり: 雲の多い暗い空 / 雨・雪: 厚い雲に加えて、カメラのまわりに雨粒・雪が降ります", ShowIf="kind=Earth") Weather weather = Weather::Clear;
+    // (晴れ has its own 雲の量: 0.2 is the few clouds it always had)
+    RM_PROPERTY(Edit, Label="雲の量", Tooltip="晴れの空の雲。0: 雲ひとつ無い 〜 1: 雲が多い (日の光はほとんど弱まりません)", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Clear") float clearClouds = 0.2f;
+    RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲が多め 〜 1: 空一面の厚い雲 (暗くなり、日の光も弱まります)", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Cloudy|Rain|Snow") float cloudiness = 0.7f;
     RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中)", ShowIf="kind=Earth&weather=Cloudy|Rain") bool lightning = false;
     RM_PROPERTY(Edit, Label="雨の量", Tooltip="0: 降らない 〜 1: どしゃぶり", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Rain") float rain = 0.5f;
     RM_PROPERTY(Edit, Label="雪の量", Tooltip="0: 降らない 〜 1: 大雪", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Snow") float snow = 0.5f;

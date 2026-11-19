@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "地球の空の晴れにも雲の量を足した。くもりと雨は雲を増やし、日の光を弱めて暗めに",
+          "en": "Clear weather of the earth sky now has its own cloud amount. Cloudy and rainy skies have more clouds and less sunlight, and are darker"
+        },
+        {
           "ja": "ゲームの設定を、エディターから離れた窓に (デバッグと同じフォルダーの形・5 つのタブ: ゲーム設定・シーン設定・セーブ設定・入力設定・ビルド)。初期シーンを選べる。ビルドに入れるシーンを選べる。出力先を選ぶボタンは出力先の右に",
           "en": "Game settings are now a window of their own (the same folder shape as Debug, five tabs: Game, Scenes, Saves, Input, Build). The start scene can be chosen, and so can the scenes that go into a build. Choose output sits right of the output field"
         },

@@ -147,9 +147,7 @@
   "値": "Value",
   "シェーダーで i.value として読めます": "Read as i.value in the shader",
   "シェーダーで i.color として読めます": "Read as i.color in the shader",
-  "晴れ: 雲が少し / くもり: 雲の量を選べる / 雨・雪: 雲に加えて、カメラのまわりに雨粒・雪が降ります": "Clear: a few clouds / Cloudy: choose how cloudy / Rain, Snow: clouds, and raindrops or snow falling around the camera",
   "雲の量": "Cloudiness",
-  "0: 雲がまばら 〜 1: 空一面の厚い雲 (暗くなり、日の光も弱まります)": "0: scattered clouds to 1: thick clouds over the whole sky (darker, with weaker sunlight)",
   "雷": "Lightning",
   "ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中)": "Now and then the clouds flash and light up the scene for a moment (while playing)",
   "雨の量": "Rain amount",
@@ -172,5 +170,8 @@
   "描いた {} 枚 ・ そのまま使った {} 枚": "{} drawn · {} kept as they were",
   "{} x {} ピクセル": "{} x {} pixels",
   "カメラの位置": "Camera position",
-  "カメラの向き": "Camera direction"
+  "カメラの向き": "Camera direction",
+  "晴れ: 日の差す空に雲を少し (量を選べる) / くもり: 雲の多い暗い空 / 雨・雪: 厚い雲に加えて、カメラのまわりに雨粒・雪が降ります": "Clear: a sunny sky with a few clouds (how many can be chosen) / Cloudy: a dark sky full of clouds / Rain, Snow: thick clouds, and raindrops or snowflakes falling around the camera",
+  "晴れの空の雲。0: 雲ひとつ無い 〜 1: 雲が多い (日の光はほとんど弱まりません)": "The clouds of a clear sky. 0: not a cloud to 1: many clouds (the sunlight hardly weakens)",
+  "0: 雲が多め 〜 1: 空一面の厚い雲 (暗くなり、日の光も弱まります)": "0: rather many clouds to 1: thick clouds over the whole sky (darker, and the sunlight weakens)"
 }

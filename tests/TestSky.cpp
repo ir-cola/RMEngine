@@ -100,7 +100,19 @@ RM_TEST(Sky_LookOfDayAndNight) {
     thick.cloudiness = 1.f;
     CHECK(LookOf(thick, 0).constants.param[1][0] > LookOf(thin, 0).constants.param[1][0]);
     CHECK(LookOf(thick, 0).lightStrength < LookOf(thin, 0).lightStrength);
-    CHECK(Near(LookOf(Earth(12), 0).constants.param[1][0], 0.15f));  // 晴れ: a few clouds, whatever 雲の量 says
+    CHECK(Near(LookOf(Earth(12), 0).constants.param[1][0], 0.15f));  // 晴れ: a few clouds, as before (its own 雲の量: 0.2)
+    // 晴れ's own 雲の量: none to many, the sun hardly dimmed - and always less cloud, more sun than くもり.
+    Sky fair = Earth(12), cloudyFair = fair, few = Earth(12, Weather::Cloudy);
+    fair.clearClouds = 0;
+    cloudyFair.clearClouds = 1;
+    few.cloudiness = 0;
+    CHECK(Near(LookOf(fair, 0).constants.param[1][0], 0.f) && LookOf(cloudyFair, 0).constants.param[1][0] > 0.6f);
+    CHECK(LookOf(cloudyFair, 0).lightStrength > noon.lightStrength * 0.75f);
+    CHECK(LookOf(few, 0).constants.param[1][0] >= LookOf(cloudyFair, 0).constants.param[1][0] * 0.5f);
+    CHECK(LookOf(few, 0).lightStrength < LookOf(cloudyFair, 0).lightStrength);
+    // くもり / 雨 darker than before (2026-11-19): little sunlight, the sky's own light dimmer.
+    CHECK(LookOf(Earth(12, Weather::Cloudy), 0).lightStrength < noon.lightStrength * 0.45f);
+    CHECK(rain.lightStrength < noon.lightStrength * 0.25f && rain.ambientSky.b < noon.ambientSky.b * 0.6f);
     // 雨 / 雪: what falls (none in clear or cloudy weather), as much as asked, lit.
     CHECK(rain.precipitation.amount == 0.5f && rain.precipitation.kind == space3d::Precipitation::Kind::Rain);
     CHECK(rain.precipitation.light.r > 0.f);
@@ -221,5 +233,5 @@ RM_TEST(Sky_ShadersCompile) {
     // No Sky function at all: it does not compile (the engine's part asks for it).
     CHECK(!Compiles(space3d::AssembleSky("float3 Other() { return 0; }", "x.rmsky"), "SkyPS", "ps_4_0"));
     // The constants as the GPU reads them.
-    CHECK(sizeof(space3d::SkyConstants) == (16 + 4 * 3 + 4 * space3d::kSkyParams) * sizeof(float));
+    static_assert(sizeof(space3d::SkyConstants) == (16 + 4 * 3 + 4 * space3d::kSkyParams) * sizeof(float));
 }

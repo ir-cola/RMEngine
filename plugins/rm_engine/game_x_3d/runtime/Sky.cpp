@@ -46,18 +46,23 @@ struct WeatherLook {
 WeatherLook WeatherOf(const Sky& sky) {
     const float c = std::clamp(sky.cloudiness, 0.f, 1.f);
     switch (sky.weather) {
-        case Weather::Clear: return {0.15f, 0.f, 0.f, 1.f};
-        case Weather::Cloudy: return {0.15f + 0.85f * c, 0.35f * c, 0.12f * c, 1 - 0.6f * c};
+        case Weather::Clear: {
+            // A fair sky: the clouds as asked, the sun hardly dimmed (0.2: the few clouds of before).
+            const float f = std::clamp(sky.clearClouds, 0.f, 1.f);
+            return {0.75f * f, 0.12f * f * f, 0.03f * f, 1.f - 0.2f * f * f};
+        }
+        // くもり / 雨: more cloud and less sunlight than a fair sky ever has (2026-11-19: darker than before).
+        case Weather::Cloudy: return {0.4f + 0.6f * c, 0.2f + 0.45f * c, 0.08f + 0.12f * c, 0.7f - 0.5f * c};
         case Weather::Rain: {
             const float r = std::clamp(sky.rain, 0.f, 1.f);
-            return {0.4f + 0.6f * c, 0.25f + 0.45f * c, 0.1f + 0.25f * r, 0.65f - 0.4f * c};
+            return {0.65f + 0.35f * c, 0.42f + 0.45f * c, 0.12f + 0.25f * r, 0.42f - 0.3f * c};
         }
         case Weather::Snow: {
             const float s = std::clamp(sky.snow, 0.f, 1.f);
             return {0.4f + 0.6f * c, 0.1f + 0.2f * c, 0.15f + 0.4f * s, 0.75f - 0.3f * c};
         }
     }
-    return {0.15f, 0.f, 0.f, 1.f};
+    return {0.15f, 0.f, 0.f, 1.f};  // (a value of a newer version: as a fair sky)
 }
 
 // 0 .. 1 from a number, the same every time (lightning's when and how bright).
