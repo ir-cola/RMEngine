@@ -274,7 +274,7 @@ std::vector<dock::PanelType> EditorScreen::CorePanels(bool withStart) {
         return dock::PanelType{id, title, [this, draw](ui::Context& c, const Rect& r) { (this->*draw)(c, r); }};
     };
     std::vector<dock::PanelType> list;
-    list.push_back(panel(core_panel::kHierarchy, TrKey(L"階層"), &EditorScreen::DrawHierarchy));
+    list.push_back(panel(core_panel::kHierarchy, TrKey(L"ヒエラルキー"), &EditorScreen::DrawHierarchy));
     if (withStart) list.push_back(panel(kStart, TrKey(L"スタート"), &EditorScreen::DrawStart));
     list.push_back(panel(core_panel::kInspector, TrKey(L"インスペクター"), &EditorScreen::DrawInspector));
     list.push_back(panel(core_panel::kConsole, TrKey(L"コンソール"), &EditorScreen::DrawConsole));

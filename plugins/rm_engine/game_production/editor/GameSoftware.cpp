@@ -225,7 +225,7 @@ public:
     // --- Software ---------------------------------------------------------------------------
     std::vector<editor::dock::PanelType> Panels() override {
         std::vector<editor::dock::PanelType> panels{
-            {kSceneView, TrKey(L"シーン"),
+            {kSceneView, TrKey(L"シーンビュー"),
              [this](ui::Context& c, const Rect& r) {
                  // (measured for the デバッグ panel: how often, and how long it takes)
                  const double t0 = platform::NowSeconds();
@@ -235,14 +235,14 @@ public:
                  sceneMouse_.reset();
                  if (c.IsHovered(r)) sceneMouse_ = Vec2{c.In().mouseX - r.x, c.In().mouseY - r.y};
              }},
-            {kGameView, TrKey(L"ゲーム"),
+            {kGameView, TrKey(L"ゲームビュー"),
              [this](ui::Context& c, const Rect& r) {
                  const double t0 = platform::NowSeconds();
                  DrawGameView(c, r);
                  gameMeter_.Frame(t0, (platform::NowSeconds() - t0) * 1000.0);
              }},
-            {kExportPanel, TrKey(L"書き出し"), [this](ui::Context& c, const Rect& r) { DrawExportPanel(c, r); }},
-            {kScenesPanel, TrKey(L"シーンの一覧"), [this](ui::Context& c, const Rect& r) { DrawScenesPanel(c, r); }},
+            {kExportPanel, TrKey(L"ビルド"), [this](ui::Context& c, const Rect& r) { DrawExportPanel(c, r); }},
+            {kScenesPanel, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawScenesPanel(c, r); }},
         };
         // Panels the plugins add (ゲーム UI: the UI view) - not of a space.
         for (const auto& p : host_.Registry().Contributions<ViewPanelInfo>(kViewPanelPoint)) {
@@ -2295,125 +2295,160 @@ private:
         });
     }
 
-    void DrawScenesPanel(ui::Context& c, const Rect& r) {
-        auto& p = c.P();
-        const std::vector<AssetRef> rows = GameScenes(sceneList_, AssetRef{slot_.guid});
-        const AssetRef first = FirstScene(sceneList_);
+    // シーン: the game's scenes as the ヒエラルキー shows its entities (the same tree view): a click opens
+    // one (the open one is the chosen row), dragging puts them in another order (the game's order), F2 /
+    // double-click / the menu renames, a right click: 開く, 新しいシーン (+ 一覧に足す for a scene of
+    // Assets the list does not have). Which one the game starts with: ゲームの設定 ▸ シーン設定.
+    class SceneListSource final : public editor::tree::Source {
+    public:
+        explicit SceneListSource(GameSoftware& g) : g_(g) {}
+
+        static editor::tree::ItemId IdOf(const AssetRef& ref) {
+            return ref.Empty() ? 1 : (std::hash<std::string>()(ref.guid) | 2);
+        }
+        std::optional<AssetRef> RefOf(editor::tree::ItemId id) const {
+            for (const AssetRef& r : refs_) {
+                if (IdOf(r) == id) return r;
+            }
+            return std::nullopt;
+        }
+
+        void Items(std::vector<editor::tree::Item>& out) override {
+            refs_ = GameScenes(g_.sceneList_, AssetRef{g_.slot_.guid});
+            listed_ = refs_.size();
+            for (const AssetRef& r : g_.ScenesNotListed()) refs_.push_back(r);
+            for (size_t i = 0; i < refs_.size(); ++i) {
+                const AssetRef& r = refs_[i];
+                editor::tree::Item it;
+                it.id = IdOf(r);
+                it.name = g_.SceneTitle(r);
+                it.canHaveChildren = false;
+                it.icon = editor::tree::Icon::Scene;
+                if (r.Empty()) it.badge = Tr(L"未保存");
+                if (i >= listed_) {
+                    it.dimmed = true;
+                    it.badge = Tr(L"一覧に無い");
+                }
+                out.push_back(std::move(it));
+            }
+        }
+        std::wstring EmptyText() const override { return Tr(L"シーンがありません。右クリック →「新しいシーン」"); }
+        bool CanRename(editor::tree::ItemId id) const override { return !g_.Running() && RefOf(id).has_value(); }
+        void Rename(editor::tree::ItemId id, const std::string& name) override {
+            if (const auto r = RefOf(id)) {
+                g_.RenameScene(*r, name);
+                if (!g_.sceneProblem_.empty()) log::Warn("シーンの名前を変えられません: {}", WideToUtf8(g_.sceneProblem_));
+            }
+        }
+        bool CanMove() const override { return !g_.Running(); }
+        // A new order: what is in the list (and a scene of Assets dragged in among them) as the rows now stand.
+        void Move(std::span<const editor::tree::ItemId> items, editor::tree::ItemId parent, size_t index) override {
+            std::vector<AssetRef> moved;
+            for (const editor::tree::ItemId id : items) {
+                if (const auto r = RefOf(id); r && !r->Empty()) moved.push_back(*r);
+            }
+            if (moved.empty()) return;
+            std::vector<AssetRef> order;
+            for (const AssetRef& r : refs_) {
+                if (std::find(moved.begin(), moved.end(), r) == moved.end()) order.push_back(r);
+            }
+            // (no scene holds another: dropped on a row's middle = right after it)
+            size_t at = std::min(index, order.size());
+            if (parent != 0) {
+                if (const auto p = RefOf(parent)) {
+                    const auto it = std::find(order.begin(), order.end(), *p);
+                    at = it == order.end() ? order.size() : static_cast<size_t>(it - order.begin()) + 1;
+                }
+            }
+            order.insert(order.begin() + static_cast<std::ptrdiff_t>(at), moved.begin(), moved.end());
+            const std::vector<AssetRef>& listed = g_.sceneList_.scenes;
+            std::vector<AssetRef> next;
+            for (const AssetRef& r : order) {
+                const bool inList = std::find(listed.begin(), listed.end(), r) != listed.end();
+                const bool dragged = std::find(moved.begin(), moved.end(), r) != moved.end();
+                if (!r.Empty() && (inList || dragged)) next.push_back(r);
+            }
+            if (next == listed) return;
+            g_.EditSceneList(TrU8("シーンの順を変える"), [&](SceneList& l) { l.scenes = next; });
+            g_.KeepOpenSceneChosen();
+        }
+        // A row chosen: opened when the button is let go (not when a drag starts on it).
+        void SelectionChanged(std::span<const editor::tree::ItemId> ids) override {
+            if (ids.size() != 1) return;
+            const auto r = RefOf(ids[0]);
+            if (r && *r != AssetRef{g_.slot_.guid}) g_.sceneToOpen_ = *r;
+        }
+        std::vector<editor::tree::Action> Actions(std::span<const editor::tree::ItemId> selection) override {
+            std::vector<editor::tree::Action> list;
+            const bool playing = g_.Running();
+            if (!selection.empty()) {
+                if (const auto r = RefOf(selection.front())) {
+                    const AssetRef ref = *r;
+                    const bool listed = std::find(g_.sceneList_.scenes.begin(), g_.sceneList_.scenes.end(), ref) != g_.sceneList_.scenes.end();
+                    editor::tree::Action open;
+                    open.label = Tr(L"開く");
+                    open.enabled = !playing && ref != AssetRef{g_.slot_.guid};
+                    open.run = [this, ref] { g_.OpenSceneAsked(ref); };
+                    list.push_back(std::move(open));
+                    if (!listed && !ref.Empty()) {
+                        editor::tree::Action add;
+                        add.label = Tr(L"一覧に足す");
+                        add.run = [this, ref] { g_.EditSceneList(TrU8("シーンを一覧に足す"), [&](SceneList& l) { l.scenes.push_back(ref); }); };
+                        list.push_back(std::move(add));
+                    }
+                    editor::tree::Action sep;
+                    sep.separator = true;
+                    list.push_back(std::move(sep));
+                }
+            }
+            editor::tree::Action make;
+            make.label = Tr(L"新しいシーン");
+            make.enabled = !playing;
+            make.run = [this] { g_.NewSceneAsked(); };
+            list.push_back(std::move(make));
+            return list;
+        }
+
+    private:
+        GameSoftware& g_;
+        std::vector<AssetRef> refs_;  // the rows as listed last
+        size_t listed_ = 0;           // ... the game's (the rest: scenes of Assets not in the list)
+    };
+
+    // The scenes Assets has and the game's list does not (the open one aside).
+    std::vector<AssetRef> ScenesNotListed() {
+        std::vector<AssetRef> out;
         const AssetRef open{slot_.guid};
-        if (!sceneChosen_) sceneChosen_ = open;
-        const AssetRef chosen = *sceneChosen_;
-        const auto inList = [&](const AssetRef& ref) { return !ref.Empty() && std::find(sceneList_.scenes.begin(), sceneList_.scenes.end(), ref) != sceneList_.scenes.end(); };
-        const auto at = std::find(sceneList_.scenes.begin(), sceneList_.scenes.end(), chosen);
-        const size_t chosenAt = at == sceneList_.scenes.end() ? sceneList_.scenes.size() : static_cast<size_t>(at - sceneList_.scenes.begin());
-        // The scenes Assets has and the list does not (to add).
-        std::vector<AssetRef> others;
         for (const std::string& path : SceneFiles()) {
             const AssetRef ref = host_.AssetOf(host_.GetProject().Root() / PathFromUtf8(path));
-            if (!ref.Empty() && ref != open && !inList(ref)) others.push_back(ref);
+            if (ref.Empty() || ref == open || std::find(sceneList_.scenes.begin(), sceneList_.scenes.end(), ref) != sceneList_.scenes.end()) continue;
+            out.push_back(ref);
         }
-        constexpr float kRow = 28;
-        const float contentH = 40 + kRow * static_cast<float>(rows.size()) + 120 + (others.empty() ? 0 : 30 + kRow * static_cast<float>(others.size())) + 40;
-        const float off = editor::w::BeginScroll(c, "scenes.scroll", r, contentH);
-        const Rect area = Rect{r.x, r.y - off, r.w, std::max(r.h, contentH)}.Inset(10, 8, 10, 8);
-        float y = area.y;
-        ui::TextStyle ts;
-        ts.size = 12;
-        ts.color = theme::TextDim;
-        p.Text({area.x, y, area.w, 20}, Tr(L"ゲームのシーン (この順。ゲームは「最初」から始まります)"), ts);
-        y += 24;
-        ui::TextStyle name;
-        name.size = 13;
-        name.color = theme::Text;
-        for (size_t i = 0; i < rows.size(); ++i) {
-            const AssetRef& ref = rows[i];
-            const Rect row{area.x, y, area.w, kRow - 2};
-            c.PushId(ref.Empty() ? std::string("new") : ref.guid);
-            const auto b = editor::w::Selectable(c, "row", row, ref == chosen);
-            c.PopId();
-            if (b.clicked) {
-                sceneChosen_ = ref;
-                renamingScene_ = false;
-                sceneProblem_.clear();
-            }
-            if (b.doubleClicked && !Running()) OpenSceneAsked(ref);
-            std::wstring label = std::format(L"{}. {}", i, Utf8ToWide(SceneTitle(ref)));
-            if (ref == open) label += Tr(L"  (開いている)");
-            if (ref.Empty()) label += Tr(L"  (未保存)");
-            p.Text(row.Inset(10, 0, 70, 0), label, name);
-            if (!ref.Empty() && ref == first) p.Text(row.Inset(10, 0, 10, 0), Tr(L"最初"), [&] {
-                ui::TextStyle s = ts;
-                s.color = theme::Accent;
-                s.h = ui::HAlign::Right;
-                return s;
-            }());
-            y += kRow;
+        return out;
+    }
+
+    // The open scene is the chosen row (after a click that asked first, a drag, another scene opened).
+    void KeepOpenSceneChosen() { editor::tree::RequestSelect(sceneTree_, {SceneListSource::IdOf(AssetRef{slot_.guid})}); }
+
+    void DrawScenesPanel(ui::Context& c, const Rect& r) {
+        if (!sceneSource_) sceneSource_ = std::make_unique<SceneListSource>(*this);
+        const AssetRef open{slot_.guid};
+        if (shownInList_ != open) {
+            shownInList_ = open;
+            KeepOpenSceneChosen();
         }
-        y += 6;
-        // What to do with the chosen one.
-        const bool chosenListed = inList(chosen);
-        const bool playing = Running();
-        float x = area.x;
-        auto button = [&](const char* id, const std::wstring& text, bool enabled, float width) {
-            const bool pressed = editor::w::Button(c, id, {x, y, width, 26}, text, editor::w::ButtonKind::Secondary, enabled);
-            x += width + 6;
-            return pressed;
-        };
-        if (button("scene_open", Tr(L"開く"), !playing && chosen != open, 70)) OpenSceneAsked(chosen);
-        if (button("scene_first", Tr(L"最初にする"), chosenListed && chosen != first, 100)) {
-            EditSceneList(TrU8("最初のシーンを変える"), [&](SceneList& l) { l.first = chosen; });
-        }
-        if (button("scene_up", L"↑", chosenListed && chosenAt > 0, 32)) {
-            EditSceneList(TrU8("シーンの順を変える"), [&](SceneList& l) { std::swap(l.scenes[chosenAt], l.scenes[chosenAt - 1]); });
-        }
-        if (button("scene_down", L"↓", chosenListed && chosenAt + 1 < sceneList_.scenes.size(), 32)) {
-            EditSceneList(TrU8("シーンの順を変える"), [&](SceneList& l) { std::swap(l.scenes[chosenAt], l.scenes[chosenAt + 1]); });
-        }
-        y += 32;
-        x = area.x;
-        if (button("scene_new", Tr(L"新しいシーン"), !playing, 120)) NewSceneAsked();
-        if (button("scene_rename", Tr(L"名前を変える"), !playing && !chosen.Empty(), 110)) {
-            renamingScene_ = true;
-            sceneNewName_ = SceneTitle(chosen);
-            sceneProblem_.clear();
-        }
-        // (the scene shown is always in the game: it joins the list when saved)
-        if (button("scene_remove", Tr(L"一覧から外す"), chosenListed && chosen != open, 110)) {
-            EditSceneList(TrU8("シーンを一覧から外す"), [&](SceneList& l) {
-                std::erase(l.scenes, chosen);
-                if (l.first == chosen) l.first = {};
-            });
-        }
-        y += 32;
-        if (renamingScene_) {
-            editor::w::TextField(c, "scene_name", {area.x, y, std::max(60.f, area.w - 150), 26}, sceneNewName_);
-            if (editor::w::Button(c, "scene_name_ok", {area.Right() - 140, y, 70, 26}, Tr(L"決める"), editor::w::ButtonKind::Primary) ||
-                (c.KeyPressed(ui::Key::Enter) && !sceneNewName_.empty())) {
-                RenameScene(chosen, sceneNewName_);
-            }
-            if (editor::w::Button(c, "scene_name_cancel", {area.Right() - 64, y, 64, 26}, Tr(L"やめる"))) renamingScene_ = false;
-            y += 32;
-        }
-        if (!sceneProblem_.empty()) {
-            ui::TextStyle es = ts;
-            es.color = theme::Danger;
-            p.Text({area.x, y, area.w, 22}, sceneProblem_, es);
-            y += 26;
-        }
-        if (!others.empty()) {
-            y += 6;
-            p.Text({area.x, y, area.w, 20}, Tr(L"Assets にあって一覧に無いシーン"), ts);
-            y += 24;
-            for (const AssetRef& ref : others) {
-                c.PushId(ref.guid);
-                if (editor::w::Button(c, "add", {area.Right() - 60, y, 60, 24}, Tr(L"足す"))) {
-                    EditSceneList(TrU8("シーンを一覧に足す"), [&](SceneList& l) { l.scenes.push_back(ref); });
-                }
-                c.PopId();
-                p.Text({area.x + 10, y, area.w - 80, 24}, Utf8ToWide(SceneTitle(ref)), name);
-                y += kRow;
+        editor::tree::Draw(c, sceneTree_, *sceneSource_, r);
+        // A row clicked: opened once the button is up and no drag came of it (the save asked first).
+        if (sceneTree_.dragging) sceneToOpen_.reset();
+        if (sceneToOpen_ && !c.In().down[0]) {
+            const AssetRef ref = *std::exchange(sceneToOpen_, std::nullopt);
+            KeepOpenSceneChosen();  // (stays on the open one until the other is open)
+            if (Running()) {
+                log::Info("Play 中はシーンを切り替えられません (■ で止めてから)");
+            } else {
+                OpenSceneAsked(ref);
             }
         }
-        editor::w::EndScroll(c, "scenes.scroll", r, contentH);
     }
 
     // A scene's file renamed (its id stays: the list and Game::LoadScene use the new name). The new
@@ -3146,6 +3181,11 @@ private:
     bool renamingScene_ = false;
     std::string sceneNewName_;
     std::wstring sceneProblem_;
+    // The シーン panel: its tree (as the ヒエラルキー's), the row clicked to open, the scene shown last.
+    editor::tree::State sceneTree_;
+    std::unique_ptr<SceneListSource> sceneSource_;
+    std::optional<AssetRef> sceneToOpen_;
+    std::optional<AssetRef> shownInList_;
     SystemRunner runner_;
     PlayServices services_;  // the plugins' (音 ...): from ▶ to ■
     double lastTick_ = 0;

@@ -29,6 +29,7 @@ enum class Icon : uint8_t {
     Light,   // a thing that lights the others
     Square,  // a thing on a 2D plane
     Effect,  // a sparkle (パーティクル)
+    Scene,   // layers (a game's scene: the シーン list)
     // files (the アセット panel)
     Folder,
     File,
@@ -49,6 +50,7 @@ struct Item {
     bool canHaveChildren = true;
     bool dimmed = false;   // drawn faint (e.g. a disabled entity)
     Icon icon = Icon::None;
+    std::wstring badge;    // a word on the row's right, in the accent (the シーン list's 最初); empty: none
 };
 // A software lists its items in display order: a parent before its children, siblings in order.
 

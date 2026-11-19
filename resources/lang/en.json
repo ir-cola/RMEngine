@@ -449,5 +449,6 @@
   "画面での大きさに要る細かさの段だけを GPU に置きます (遠くの物の絵は小さい段だけ)。近づくと細かい段を足します。GPU のメモリが減ります (読み込んだ絵はメモリに残ります)": "Keeps on the GPU only the levels as fine as the size on screen needs (only the small levels for far things) and adds finer ones as things come near. Saves GPU memory (the loaded picture stays in memory)",
   "詳しく見る (インスペクター)": "Show details (Inspector)",
   "ファイル {}  ·  変更 {}": "File {}  ·  modified {}",
-  "{} x {} ピクセル": "{} x {} pixels"
+  "{} x {} ピクセル": "{} x {} pixels",
+  "ヒエラルキー": "Hierarchy"
 }

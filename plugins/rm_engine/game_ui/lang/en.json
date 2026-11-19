@@ -358,5 +358,6 @@
   "キー ・ パッド (選んだボタンを見せる)": "Keys · pad (the chosen button shown)",
   "マウス": "Mouse",
   "出ている窓": "Windows shown",
-  "{} 個 (戻るで閉じられるもの {} 個)": "{} ({} can be closed with Back)"
+  "{} 個 (戻るで閉じられるもの {} 個)": "{} ({} can be closed with Back)",
+  "UI ビュー": "UI view"
 }

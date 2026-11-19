@@ -95,6 +95,7 @@ w::Icon PictureOf(Icon icon) {
         case Icon::Light: return w::Icon::Light;
         case Icon::Square: return w::Icon::Square;
         case Icon::Effect: return w::Icon::Effect;
+        case Icon::Scene: return w::Icon::Scene;
         case Icon::Folder: return w::Icon::Folder;
         case Icon::File: return w::Icon::File;
         case Icon::Image: return w::Icon::Image;
@@ -403,7 +404,9 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
                 if (!st.renameText.empty() && st.renameText != it.name) src.Rename(id, st.renameText);
             }
         } else {
-            p.Text(label, Utf8ToWide(it.name), Style(theme::FontSize, it.dimmed ? theme::TextFaint : theme::Text));
+            const float badgeW = it.badge.empty() ? 0.f : p.TextWidth(it.badge, 11) + 12;
+            p.Text(label.Inset(0, 0, badgeW, 0), Utf8ToWide(it.name), Style(theme::FontSize, it.dimmed ? theme::TextFaint : theme::Text));
+            if (!it.badge.empty()) p.Text(label.Inset(0, 0, 6, 0), it.badge, Style(11, theme::Accent, ui::HAlign::Right));
         }
         c.PopId();
     }

@@ -113,7 +113,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // The UI over the game view (the exported game registers its own: UiScreenDraw.cpp).
     registry.Contribute(game_production::kScreenDrawPoint, ScreenDrawPart());
     // The UI view: a tab next to the scene and the game.
-    static const game_production::ViewPanelInfo kView{"ui", TrKey(L"UI"), &CreateUiView};
+    static const game_production::ViewPanelInfo kView{"ui", TrKey(L"UI ビュー"), &CreateUiView};
     registry.Contribute(game_production::kViewPanelPoint, kView);
     // The 階層's 追加 ▸ UI (a canvas after the selection; the rest under the selected one: on its canvas).
     static const game_production::CreateItemInfo kItems[] = {
