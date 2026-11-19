@@ -73,11 +73,15 @@ cbuffer Shadows : register(b2) {
     float4 shadowInfo;          // x: how many sun maps (0: none); y: a texel of a sun's map (its uv); z: ... of the others
     float4 viewForward;         // xyz: where the camera looks
     float4 atlas;               // how the maps lie side by side in their texture: xy: the sun's columns, rows; zw: the others'
+    float4x4 coverViewProj;     // world -> the map from above (Lighting.h's PlanCover)
+    float4 coverInfo;           // x: 1 = there is one; y: its size (pixels); z: its depth range; w: its top (world y)
+    float4 wetInfo;             // x: 濡れ (0 .. 1)
 };
 // Each kind of shadow map lies side by side (tiles) in one texture (an array of maps would need
 // ps_4_1 to be compared by the sampler).
 Texture2D sunMaps : register(t0);
 Texture2D localMaps : register(t5);
+Texture2D coverMap : register(t8);
 SamplerComparisonState shadowSampler : register(s0);
 Texture2D baseMap : register(t1);        // sRGB: read as linear
 Texture2D metalRoughMap : register(t2);  // b: metal, g: rough
@@ -163,6 +167,26 @@ float LocalShadow(int l, float3 wpos, float3 n) {
 }
 
 float ShadowOf(int l, float3 wpos, float3 n) { return lightColor[l].w > 0.5 ? SunShadow(wpos, n) : LocalShadow(l, wpos, n); }
+
+// The height of the highest thing over a place (the map from above: what rain and snow fall on).
+// Nothing there, or out of the map: far below (open sky).
+float CoverTop(float3 w) {
+    if (coverInfo.x < 0.5) return -1e30;
+    float4 p = mul(coverViewProj, float4(w, 1));
+    float2 uv = p.xy * float2(0.5, -0.5) + 0.5;
+    if (uv.x < 0 || uv.x >= 1 || uv.y < 0 || uv.y >= 1) return -1e30;
+    float d = coverMap.Load(int3(uv * coverInfo.y, 0)).r;
+    return d >= 1 ? -1e30 : coverInfo.w - d * coverInfo.z;
+}
+
+// How wet a surface looks (0 .. 1): where the rain reaches it - nothing over the place a little off
+// it (so walls get wet too, under a roof stays dry) - most on what faces up, none facing down.
+float WetAt(float3 wpos, float3 n) {
+    if (wetInfo.x <= 0 || n.y < -0.3) return 0;
+    float3 p = wpos + n * 0.12;
+    float open = saturate((p.y + 0.06 - CoverTop(p)) / 0.06);
+    return wetInfo.x * open * lerp(0.45, 1, saturate(n.y));
+}
 
 // How much of a light is left at a point (its fade with distance / out of the cone), and from where
 // (toLight).
@@ -258,11 +282,15 @@ float4 MeshPS(MeshOut i) : SV_Target {
     float3 toEye = normalize(eye.xyz - i.wpos);
     if (dot(n, toEye) < 0) n = -n;
     float rim = pow(1 - saturate(dot(n, toEye)), 2.5) * highlight.a;  // (by the shape, not the normal map)
+    float wet = WetAt(i.wpos, n);  // (by the shape too)
     n = Bend(n, i);
     float4 mr = metalRoughMap.Sample(baseSampler, i.uv);
     if (pbr.w > 1.5) mr = mr.rrrr;  // one channel (BC4): the grey value is both
     float metal = pbr.x * (pbr.w > 0.5 ? mr.b : 1);
     float rough = clamp(pbr.y * (pbr.w > 0.5 ? mr.g : 1), 0.04, 1);
+    // 濡れ: water in the surface makes it darker, a film on it makes it shine.
+    base.rgb *= 1 - wet * 0.45 * (1 - metal);
+    rough = lerp(rough, 0.1, wet * 0.85);
     float3 glow = emissive.rgb * (emissive.w > 0.5 ? emissionMap.Sample(baseSampler, i.uv).rgb : float3(1, 1, 1));
     float3 rgb = ToScreen(Shade(base.rgb, metal, rough, n, toEye, i.wpos) + glow);
     // Selected: the edges (where the surface turns away from the eye) glow, the colours stay.
@@ -314,13 +342,14 @@ cbuffer Weather : register(b4) {
     float4 precipLight;  // rgb: what lights them (linear)
     float4 camRight;     // xyz: the camera's right (world)
     float4 camUp;        // xyz: the camera's up
+    float4 precipWind;   // xy: the wind now (m/s, world x z); zw: how far it has carried them
 };
 uint PrecipHash(uint x) {
     x ^= x >> 16; x *= 0x7feb352d; x ^= x >> 15; x *= 0x846ca68b; x ^= x >> 16;
     return x;
 }
 float PrecipRand(uint id, uint k) { return (PrecipHash(id * 4 + k) & 0xFFFFFF) / 16777216.0; }
-struct PrecipOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; float fade : TEXCOORD1; };
+struct PrecipOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; float fade : TEXCOORD1; float splash : TEXCOORD2; };
 PrecipOut PrecipVS(uint vid : SV_VertexID) {
     static const float2 corners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1), float2(-1, -1), float2(1, 1), float2(-1, 1)};
     uint id = vid / 6;
@@ -328,8 +357,11 @@ PrecipOut PrecipVS(uint vid : SV_VertexID) {
     bool snow = precipInfo.x > 0.5;
     float t = precipInfo.y, box = precipInfo.z;
     float3 seed = float3(PrecipRand(id, 0), PrecipRand(id, 1), PrecipRand(id, 2));
+    float fall = snow ? 0.9 + seed.x * 0.6 : 9.0 + seed.y * 3.0;  // m/s
+    float carried = snow ? 1.0 : 0.9;                           // how much the wind takes it
     float3 p = seed * box * 7.31;  // where it is in the world (the box repeats)
-    p.y -= t * (snow ? 0.9 + seed.x * 0.6 : 9.0 + seed.y * 3.0);
+    p.y -= t * fall;
+    p.xz += precipWind.zw * carried;  // the wind so far
     if (snow) {  // flakes sway
         p.x += sin(t * 0.9 + seed.z * 40) * 0.35;
         p.z += cos(t * 0.7 + seed.x * 40) * 0.35;
@@ -338,24 +370,54 @@ PrecipOut PrecipVS(uint vid : SV_VertexID) {
     float dist = length(rel);
     float3 w = eye.xyz + rel;
     PrecipOut o;
+    o.uv = q;
+    o.splash = 0;
     o.fade = saturate((dist - 0.4) / 1.2) * saturate((box * 0.5 - dist) / (box * 0.25));
+    // What it falls on (the map from above): how far under its top it would be now. Under a roof, in a
+    // house: nothing falls there.
+    float top = CoverTop(w);
+    float below = top - w.y;
     if (snow) {
-        float size = 0.02 + seed.z * 0.025;
+        if (below > 0) {
+            o.pos = float4(0, 0, -1, 1);  // (all six corners: nothing drawn)
+            return o;
+        }
+        // Melts as it touches: smaller and fainter in its last 30 cm.
+        float melt = saturate(-below / 0.3);
+        o.fade *= melt;
+        float size = (0.02 + seed.z * 0.025) * lerp(0.35, 1, melt);
         w += (camRight.xyz * q.x + camUp.xyz * q.y) * size;
+    } else if (below > 0) {
+        // It has hit: a splash on the surface for a moment (a ring that grows and fades), then nothing.
+        float since = below / fall;
+        if (since > 0.14) {
+            o.pos = float4(0, 0, -1, 1);
+            return o;
+        }
+        float k = since / 0.14;
+        float r = 0.025 + 0.1 * k;
+        w = float3(w.x, top + 0.015, w.z) + (camRight.xyz * q.x + float3(0, 0.45, 0) * (q.y + 1)) * r;
+        o.fade *= 1 - k;
+        o.splash = 1;
     } else {
-        // A thin streak along its fall, turned to face the eye.
-        float3 down = float3(0, -1, 0);
-        float3 side = normalize(cross(down, rel + float3(1e-4, 0, 1e-4)));
+        // A thin streak behind it along the way it falls (the wind slants it), turned to face the eye.
+        float3 dir = normalize(float3(precipWind.x * carried, -fall, precipWind.y * carried));
+        float3 side = normalize(cross(dir, rel + float3(1e-4, 0, 1e-4)));
         float len = 0.35 + seed.x * 0.25;
-        w += side * q.x * (0.004 + dist * 0.0006) + down * (q.y * 0.5 + 0.5) * len;
+        w += side * q.x * (0.004 + dist * 0.0006) - dir * (q.y * 0.5 + 0.5) * len;
     }
     o.pos = mul(viewProj, float4(w, 1));
-    o.uv = q;
     return o;
 }
 float4 PrecipPS(PrecipOut i) : SV_Target {
     bool snow = precipInfo.x > 0.5;
-    float a = snow ? saturate((1 - length(i.uv)) * 2.5) * 0.9 : (1 - abs(i.uv.x)) * (0.55 - 0.25 * i.uv.y * i.uv.y) * 0.45;
+    float a;
+    if (i.splash > 0.5) {
+        float r = length(i.uv * float2(1, 1.6) - float2(0, 0.6));  // a flat ring, seen from the side
+        a = saturate(1 - abs(r - 0.65) * 4) * 0.55 + saturate(1 - r * 3) * 0.25;
+    } else {
+        a = snow ? saturate((1 - length(i.uv)) * 2.5) * 0.9 : (1 - abs(i.uv.x)) * (0.55 - 0.25 * i.uv.y * i.uv.y) * 0.45;
+    }
     return float4(ToScreen(precipLight.rgb * (snow ? 1.0 : 0.85)), saturate(a) * i.fade);
 }
 )";
@@ -376,6 +438,9 @@ struct ShadowConstants {
     float shadowInfo[4];
     float viewForward[4];
     float atlas[4];
+    float coverViewProj[16];
+    float coverInfo[4];
+    float wetInfo[4];
 };
 static_assert(sizeof(ShadowConstants) % 16 == 0);
 static_assert(sizeof(MeshVertex) == 32, "MeshVertex goes to the GPU as it is (POSITION, NORMAL, TEXCOORD)");
@@ -480,8 +545,9 @@ struct Renderer::Shared {
     std::mutex skyMutex;
     std::unordered_map<std::string, std::weak_ptr<const SkyProgram>> skies;
     // The shadow maps (depth seen from the lights): the sun's (1, or kCascades) and the point / spot
-    // lights' (kLocalShadowSlices). Made when first needed.
-    ShadowMaps sun, local;
+    // lights' (kLocalShadowSlices). Made when first needed. And the map from above (雨・雪・濡れ:
+    // Lighting.h's PlanCover).
+    ShadowMaps sun, local, cover;
     UINT samples = 1;
 
     bool Init(Renderer& owner, std::string* error);
@@ -664,7 +730,7 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     off.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
     off.DepthFunc = D3D11_COMPARISON_ALWAYS;
     D3D11_BUFFER_DESC wd = cd;
-    wd.ByteWidth = sizeof(float) * 16;
+    wd.ByteWidth = sizeof(float) * 20;
     if (FAILED(device->CreateBuffer(&cd, nullptr, &skyFrame)) || FAILED(device->CreateBuffer(&wd, nullptr, &weather)) ||
         FAILED(device->CreateSamplerState(&es, &edgeSampler)) ||
         FAILED(device->CreateDepthStencilState(&off, &depthOff))) {
@@ -1391,6 +1457,20 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         if (!localMaps) lights.block.shadow[i][0] = -1;
     }
     const bool shadows = sunMaps > 0 || localMaps;
+    // The map from above: what rain and snow fall on, what the rain makes wet.
+    const bool falling = (f.precipitation[0] && f.precipitation[0]->amount > 0) || (f.precipitation[1] && f.precipitation[1]->amount > 0);
+    bool cover = false;
+    if ((falling || f.wetness > 0) && anyCaster && s.EnsureMaps(s.cover, 1, kCoverSize)) {
+        cover = true;
+        const CoverPlan plan = PlanCover(eye);
+        CopyMatrix(sc.coverViewProj, plan.viewProj);
+        sc.coverInfo[0] = 1;
+        sc.coverInfo[1] = static_cast<float>(kCoverSize);
+        sc.coverInfo[2] = plan.range;
+        sc.coverInfo[3] = plan.top;
+        planMap(s.cover, 0, plan.viewProj);
+    }
+    sc.wetInfo[0] = std::clamp(f.wetness, 0.f, 1.f);
 
     // 2. The picture's draws: what is not see-through (sorted: pictures, then mesh and part - the
     // depth test sorts out what is in front), the floor's shadows, then what is see-through, the
@@ -1468,6 +1548,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->PSSetConstantBuffers(0, 3, cbs);
     ID3D11ShaderResourceView* noSrvs[8] = {};
     ctx->PSSetShaderResources(0, 8, noSrvs);  // the maps may still be bound for reading: they are written first
+    ctx->PSSetShaderResources(8, 1, noSrvs);
+    ctx->VSSetShaderResources(8, 1, noSrvs);
     ID3D11ShaderResourceView* thingsView = thingsView_.Get();
     ctx->VSSetShaderResources(6, 1, &thingsView);
     ctx->PSSetShaderResources(6, 1, &thingsView);
@@ -1607,6 +1689,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->PSSetShaderResources(5, 1, &localSrv);
         ctx->PSSetSamplers(0, 1, &sampler);
     }
+    ID3D11ShaderResourceView* coverSrv = cover ? s.cover.srv.Get() : nullptr;
+    ctx->PSSetShaderResources(8, 1, &coverSrv);
     ctx->VSSetShader(s.meshVs.Get(), nullptr, 0);
     ctx->PSSetShader(s.meshPs.Get(), nullptr, 0);
     run(opaqueFirst, opaqueEnd, true);
@@ -1652,29 +1736,35 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
     }
 
-    // 3-1. Rain / snow around the eye: see-through, depth-tested, writing no depth.
-    if (f.precipitation) {
-        const uint32_t count = PrecipitationCount(*f.precipitation);
-        if (count > 0) {
-            const bool snow = f.precipitation->kind == Precipitation::Kind::Snow;
-            const Color& l = f.precipitation->light;
-            // The camera's right and up: the view's first two rows (m[column][row]).
-            const float wc[16] = {snow ? 1.f : 0.f, f.precipitation->seconds, snow ? kSnowBox : kRainBox, 0, l.r, l.g, l.b, 0,
-                                  f.view.m[0][0], f.view.m[1][0], f.view.m[2][0], 0, f.view.m[0][1], f.view.m[1][1], f.view.m[2][1], 0};
-            ID3D11Buffer* weatherCb = s.weather.Get();
-            ctx->UpdateSubresource(weatherCb, 0, nullptr, wc, 0, 0);
-            ctx->VSSetConstantBuffers(4, 1, &weatherCb);
-            ctx->PSSetConstantBuffers(4, 1, &weatherCb);
-            ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
-            ctx->VSSetShader(s.precipVs.Get(), nullptr, 0);
-            ctx->PSSetShader(s.precipPs.Get(), nullptr, 0);
-            ctx->Draw(count * 6, 0);
-            ctx->OMSetDepthStencilState(s.depth.Get(), 0);
-            ID3D11Buffer* none = nullptr;
-            ctx->VSSetConstantBuffers(4, 1, &none);
-            ctx->PSSetConstantBuffers(4, 1, &none);
-        }
+    // 3-1. Rain / snow around the eye: see-through, depth-tested, writing no depth. They read the map
+    // from above (b2, t8) in the vertex shader: where they hit, under a roof.
+    for (const Precipitation* fall : f.precipitation) {
+        const uint32_t count = fall ? PrecipitationCount(*fall) : 0;
+        if (count == 0) continue;
+        const bool snow = fall->kind == Precipitation::Kind::Snow;
+        const Color& l = fall->light;
+        // The camera's right and up: the view's first two rows (m[column][row]).
+        const float wc[20] = {snow ? 1.f : 0.f, fall->seconds, snow ? kSnowBox : kRainBox, 0, l.r, l.g, l.b, 0,
+                              f.view.m[0][0], f.view.m[1][0], f.view.m[2][0], 0, f.view.m[0][1], f.view.m[1][1], f.view.m[2][1], 0,
+                              fall->windX, fall->windZ, fall->driftX, fall->driftZ};
+        ID3D11Buffer* weatherCb = s.weather.Get();
+        ID3D11Buffer* shadowCb = s.shadows.Get();
+        ctx->UpdateSubresource(weatherCb, 0, nullptr, wc, 0, 0);
+        ctx->VSSetConstantBuffers(4, 1, &weatherCb);
+        ctx->PSSetConstantBuffers(4, 1, &weatherCb);
+        ctx->VSSetConstantBuffers(2, 1, &shadowCb);
+        ctx->VSSetShaderResources(8, 1, &coverSrv);
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
+        ctx->VSSetShader(s.precipVs.Get(), nullptr, 0);
+        ctx->PSSetShader(s.precipPs.Get(), nullptr, 0);
+        ctx->Draw(count * 6, 0);
+        ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+        ID3D11Buffer* none = nullptr;
+        ctx->VSSetConstantBuffers(4, 1, &none);
+        ctx->PSSetConstantBuffers(4, 1, &none);
+        ctx->VSSetConstantBuffers(2, 1, &none);
+        ctx->VSSetShaderResources(8, 1, noSrvs);
     }
 
     // 3-2. What plugins draw themselves (particles: see-through, depth-tested, writing no depth); then
@@ -1727,6 +1817,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     // Nothing of ours stays bound (Direct2D draws the picture next).
     ctx->OMSetRenderTargets(0, nullptr, nullptr);
     ctx->PSSetShaderResources(0, 8, noSrvs);
+    ctx->PSSetShaderResources(8, 1, noSrvs);
     ctx->VSSetShaderResources(6, 1, noSrvs);
     ID3D11Buffer* noCbs[4] = {};
     ctx->PSSetConstantBuffers(0, 4, noCbs);

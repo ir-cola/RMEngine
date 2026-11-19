@@ -173,5 +173,9 @@
   "カメラの向き": "Camera direction",
   "晴れ: 日の差す空に雲を少し (量を選べる) / くもり: 雲の多い暗い空 / 雨・雪: 厚い雲に加えて、カメラのまわりに雨粒・雪が降ります": "Clear: a sunny sky with a few clouds (how many can be chosen) / Cloudy: a dark sky full of clouds / Rain, Snow: thick clouds, and raindrops or snowflakes falling around the camera",
   "晴れの空の雲。0: 雲ひとつ無い 〜 1: 雲が多い (日の光はほとんど弱まりません)": "The clouds of a clear sky. 0: not a cloud to 1: many clouds (the sunlight hardly weakens)",
-  "0: 雲が多め 〜 1: 空一面の厚い雲 (暗くなり、日の光も弱まります)": "0: rather many clouds to 1: thick clouds over the whole sky (darker, and the sunlight weakens)"
+  "0: 雲が多め 〜 1: 空一面の厚い雲 (暗くなり、日の光も弱まります)": "0: rather many clouds to 1: thick clouds over the whole sky (darker, and the sunlight weakens)",
+  "風の向き (度)": "Wind direction (degrees)",
+  "風の吹いていく向き (真上から見て)。0: 前 (-Z) へ / 90: 左 (-X) へ / -90: 右 (+X) へ。雲・雨粒・雪が流されます": "Where the wind blows to (seen from above). 0: to the front (-Z) / 90: to the left (-X) / -90: to the right (+X). Clouds, raindrops and snow are carried along",
+  "風の強さ (m/秒)": "Wind strength (m/s)",
+  "0: 無風 〜 30: 嵐。雲の流れる速さと、雨粒・雪の傾き": "0: no wind to 30: a storm. How fast the clouds drift, and how much rain and snow slant"
 }

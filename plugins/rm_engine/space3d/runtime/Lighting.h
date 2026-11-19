@@ -136,4 +136,17 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
 // Everything moving: the moving things' box widened to steps of its own size. Neither: nullopt.
 std::optional<Bounds> SunFitBounds(const std::optional<Bounds>& still, const std::optional<Bounds>& moving);
 
+// The map seen from straight above (雨・雪 and 濡れ: RenderFrame::precipitation / wetness): the depth
+// of the highest thing that casts shadows over each place around the eye - what the rain and the
+// snow fall on (under a roof nothing falls; what is under it stays dry). kCoverSide wide, its texels
+// fixed in the world (it does not shimmer as the eye moves); from kCoverAbove over the eye,
+// kCoverDepth deep. Depth 0 is `top`, 1 is `top - range`.
+inline constexpr uint32_t kCoverSize = 1024;
+inline constexpr float kCoverSide = 80.f, kCoverAbove = 80.f, kCoverDepth = 300.f;
+struct CoverPlan {
+    Mat4 viewProj;  // world -> x, y -1..1 (x: world x, y: world z), depth 0..1
+    float top = 0, range = kCoverDepth;
+};
+CoverPlan PlanCover(Vec3 eye);
+
 }  // namespace rm::space3d

@@ -910,7 +910,10 @@ private:
                 sources.name = [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); };
                 sources.now = now_;
                 f.sky = pic.sky.Prepare(pic.renderer, *sky, look, sources);
-                if (look.precipitation.amount > 0) f.precipitation = &look.precipitation;  // 雨 / 雪 (with the sky)
+                // 雨 / 雪 (with the sky; both while one fades into the other) and what the rain has made wet.
+                if (look.rain.amount > 0) f.precipitation[0] = &look.rain;
+                if (look.snow.amount > 0) f.precipitation[1] = &look.snow;
+                f.wetness = look.wetness;
             }
             game_x_3d::FollowSky(look, frameLights_, f.ambient);
         }

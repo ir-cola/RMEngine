@@ -340,5 +340,6 @@
   "初期シーン": "Start scene",
   "初期シーンを変える": "Change the start scene",
   "書き出したゲームはこのシーンから始まります (エディターの Play は開いているシーンから)。シーンごとの値 (重力・空) は、ヒエラルキーの一番上のシーンの行を押すとインスペクターに出ます": "The exported game starts with this scene (the editor's Play starts with the open one). Each scene's own values (gravity, sky) show in the Inspector when you click the scene row at the top of the Hierarchy",
-  "グローバル変数はゲーム全体の値で、rm::Save で保存できます。Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)": "Global variables are values of the whole game; rm::Save saves them. While playing in the editor rm::Save writes to this project's Library/Saves (an exported game: %LOCALAPPDATA%\\<exe name>\\Saves)"
+  "グローバル変数はゲーム全体の値で、rm::Save で保存できます。Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)": "Global variables are values of the whole game; rm::Save saves them. While playing in the editor rm::Save writes to this project's Library/Saves (an exported game: %LOCALAPPDATA%\\<exe name>\\Saves)",
+  "ゲームデバッグ": "Game debug"
 }

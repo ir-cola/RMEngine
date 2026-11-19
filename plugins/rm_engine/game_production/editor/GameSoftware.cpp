@@ -886,15 +886,7 @@ public:
         if (editor::w::IconToggle(c, "stop", next(), editor::w::Icon::Stop, false, running, Tr(L"停止 (Play の前に戻る)"))) {
             StopPlay();
         }
-        // デバッグ: its window, at the right end of the bar.
-        constexpr float kDebugW = 92;
-        const bool debugOpen = debugWindow_ && debugWindow_->IsOpen();
-        const Rect debugButton{r.Right() - kDebugW - 8, y, kDebugW, 26};
-        if (debugButton.x > x + 8 &&
-            editor::w::Button(c, "debug_window", debugButton, Tr(L"デバッグ"), debugOpen ? editor::w::ButtonKind::Primary : editor::w::ButtonKind::Secondary)) {
-            ToggleDebugWindow();
-        }
-        if (debugButton.x - x > 80) {
+        if (r.Right() - x > 80) {
             ui::TextStyle ts;
             ts.size = 12;
             ts.color = theme::Text;
@@ -906,11 +898,20 @@ public:
             // Scripts built while playing: used from Stop.
             if (running && scripts_.WaitingForStop()) text = Tr(L"スクリプトをビルドしました — Stop で反映されます");
             if (scripts_.Building()) text += (text.empty() ? L"" : L"   ") + Tr(L"スクリプトをビルドしています…");
-            if (!text.empty()) c.P().Text({x + 8, r.y, debugButton.x - x - 16, r.h}, text, ts);
+            if (!text.empty()) c.P().Text({x + 8, r.y, r.Right() - x - 16, r.h}, text, ts);
         }
     }
 
     bool Running() const override { return play_ != PlayState::Stopped; }
+
+    // The editor's デバッグ menu: ゲームデバッグ opens / closes the debug window.
+    std::vector<DebugMenuItem> DebugMenu() override {
+        DebugMenuItem item;
+        item.label = Tr(L"ゲームデバッグ");
+        item.checked = debugWindow_ && debugWindow_->IsOpen();
+        item.run = [this] { ToggleDebugWindow(); };
+        return {std::move(item)};
+    }
 
     // --- tree::Source (the 階層) ----------------------------------------------------------------
     void Items(std::vector<tree::Item>& out) override {

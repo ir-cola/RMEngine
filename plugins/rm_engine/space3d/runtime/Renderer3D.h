@@ -197,7 +197,12 @@ struct RenderFrame {
     Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
     std::span<const ExtraDraw> extras;  // in this order (ExtraDraw)
     const SkyDraw* sky = nullptr;       // null (or no program): only the clear colour behind
-    const Precipitation* precipitation = nullptr;  // rain / snow around the eye (SkyShader.h); null: none
+    // Rain and / or snow around the eye (SkyShader.h; both while one fades into the other); null: none.
+    // They fall on what casts shadows (Lighting.h's PlanCover): rain splashes there, snow melts, and
+    // under a roof nothing falls.
+    const Precipitation* precipitation[2] = {};
+    // 濡れ (0 .. 1): what the rain reaches (nothing above it) looks wet - darker, and smooth.
+    float wetness = 0;
 };
 
 class Renderer {

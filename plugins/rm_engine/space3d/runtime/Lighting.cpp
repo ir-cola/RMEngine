@@ -235,4 +235,24 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
     return plan;
 }
 
+CoverPlan PlanCover(Vec3 eye) {
+    constexpr float texel = kCoverSide / static_cast<float>(kCoverSize);
+    const float cx = std::floor(eye.x / texel) * texel, cz = std::floor(eye.z / texel) * texel;  // whole texels
+    const float half = kCoverSide * 0.5f;
+    CoverPlan c;
+    c.top = std::floor((eye.y + kCoverAbove) / 4.f) * 4.f;  // (in steps: a map kept while the eye bobs)
+    c.range = kCoverDepth;
+    Mat4& m = c.viewProj;
+    m = Mat4{};
+    m.m[0][0] = 1 / half;  // x' = (x - cx) / half
+    m.m[3][0] = -cx / half;
+    m.m[1][1] = 0;
+    m.m[2][1] = 1 / half;  // y' = (z - cz) / half
+    m.m[3][1] = -cz / half;
+    m.m[1][2] = -1 / c.range;  // depth = (top - y) / range
+    m.m[2][2] = 0;
+    m.m[3][2] = c.top / c.range;
+    return c;
+}
+
 }  // namespace rm::space3d

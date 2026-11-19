@@ -48,6 +48,7 @@ std::string AssembleSky(std::string_view code, std::string_view fileName);
 //             param[2] rgb: the sky straight up; a: the stars (0 .. 1)
 //             param[3] rgb: the sky at the horizon; a: the moon's light
 //             param[4] rgb: the ground below the horizon; a: the sunset's glow (0 .. 1)
+//             param[5] xy: how far the wind has carried the clouds (world x, z), zw: the wind now (m/s)
 //   Space     param[0] x: the stars, y: the nebulae, z: the Milky Way, w: 1 = the sun is drawn
 //             param[1] rgb: the nebulae's first colour; param[2] rgb: their second colour
 //   Panorama  sky0: one picture around (equirectangular: 360 x 180 degrees); param[0] x: turned (radians)
@@ -67,6 +68,8 @@ struct Precipitation {
     float amount = 0;              // 0 .. 1: none .. kMaxRaindrops / kMaxSnowflakes
     float seconds = 0;             // the time they fall by (still: they hang where they are)
     Color light{1, 1, 1, 1};       // what lights them (linear)
+    float windX = 0, windZ = 0;    // the wind now (m/s, world): drops slant along it
+    float driftX = 0, driftZ = 0;  // how far the wind has carried them (world units)
 };
 inline constexpr uint32_t kMaxRaindrops = 16000;
 inline constexpr uint32_t kMaxSnowflakes = 10000;

@@ -7,6 +7,7 @@
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/ScriptDebug3D.h"
+#include "rm_engine/game_x_3d/runtime/ScriptSky3D.h"
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/Spin.h"
@@ -51,6 +52,8 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kScriptApiPoint, ScriptTransform3DPart2());
     // ... and debug drawing (rm::Debug: lines the editor shows while playing; nothing in a game).
     registry.Contribute(game_production::kScriptApiPoint, ScriptDebug3DPart());
+    // ... and the sky (rm::Sky: the weather and the wind, at once or faded).
+    registry.Contribute(game_production::kScriptApiPoint, ScriptSky3DPart());
     // Where an entity is (the sounds of a 3D game are heard from there: PlayServices.h).
     static const game_production::PlaceInfo kPlace{"3d", &Pose3D, &KeepWorld3D};
     registry.Contribute(game_production::kPlacePoint, kPlace);

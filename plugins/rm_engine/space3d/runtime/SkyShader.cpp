@@ -179,7 +179,7 @@ float3 Sky(SkyInput i) {
     c += sunLight * (sunDisk * 40 + pow(saturate(toSun), 600) * 1.5 + pow(saturate(toSun), 12) * 0.1) * (1 - cover * 0.85) * smoothstep(-0.02, 0.02, d.y);
     // Clouds: a layer high above, seen at a slant (thinner towards the horizon), drifting.
     if (d.y > 0 && cover > 0.001) {
-        float2 p = d.xz / (d.y + 0.08) * 0.8 + float2(i.time * 0.006, i.time * 0.002);
+        float2 p = d.xz / (d.y + 0.08) * 0.8 - skyParam[5].xy * 0.003;  // carried by the wind
         float n = SkyFbm(float3(p, i.time * 0.004), 6);
         float edge = lerp(0.78, 0.22, cover);
         float density = smoothstep(edge, edge + 0.18, n) * smoothstep(0.0, 0.1, d.y);

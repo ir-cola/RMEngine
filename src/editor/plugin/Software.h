@@ -279,6 +279,14 @@ public:
     // Play: it plays a copy, and goes back when stopped). The editor tints the tab row and does not
     // undo / redo meanwhile.
     virtual bool Running() const { return false; }
+    // Rows the software adds to the editor's デバッグ menu (a game's ゲームデバッグ: its debug window).
+    // Asked when the menu opens and again when a row is chosen - keep the order the same.
+    struct DebugMenuItem {
+        std::wstring label;
+        bool checked = false;
+        std::function<void()> run;
+    };
+    virtual std::vector<DebugMenuItem> DebugMenu() { return {}; }
 };
 
 struct SoftwareType {

@@ -897,8 +897,24 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
         }
         case Menu::Help:
             return {{Tr(L"RM Engine について")}};
-        case Menu::Debug:
-            return {{Tr(L"未保存の変更を作る (テスト用)")}};
+        case Menu::Debug: {
+            // The shown software's rows first (RunMenu counts them), then the editor's own tests.
+            std::vector<w::MenuItem> items;
+            if (Active().software) {
+                for (const Software::DebugMenuItem& d : Active().software->DebugMenu()) {
+                    w::MenuItem it;
+                    it.label = d.label;
+                    it.checked = d.checked;
+                    items.push_back(std::move(it));
+                }
+            }
+#ifdef _DEBUG
+            if (!items.empty()) items.push_back({L"", L"", true, true});
+            items.push_back({Tr(L"未保存の変更を作る (テスト用)")});
+#endif
+            if (items.empty()) items.push_back({Tr(L"このソフトにはデバッグの項目がありません"), L"", false});
+            return items;
+        }
         default:
             return {};
     }
@@ -942,9 +958,17 @@ void EditorScreen::RunMenu(Menu m, int index) {
     } else if (m == Menu::Help) {
         modal_ = Modal::About;
     } else if (m == Menu::Debug) {
+        std::vector<Software::DebugMenuItem> rows;
+        if (Active().software) rows = Active().software->DebugMenu();
+        if (index >= 0 && index < static_cast<int>(rows.size())) {
+            if (rows[static_cast<size_t>(index)].run) rows[static_cast<size_t>(index)].run();
+            return;
+        }
 #ifdef _DEBUG
-        Active().history.Push(std::make_unique<TestCommand>());
-        log::Info("テスト用の変更を履歴に積みました");
+        if (index == static_cast<int>(rows.size()) + (rows.empty() ? 0 : 1)) {
+            Active().history.Push(std::make_unique<TestCommand>());
+            log::Info("テスト用の変更を履歴に積みました");
+        }
 #endif
     }
 }
@@ -1037,11 +1061,7 @@ void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
     auto& p = c.P();
     w::DrawBar(c, r, theme::Sidebar);
     static const wchar_t* kTitles[] = {TrKey(L"ファイル"), TrKey(L"編集"), TrKey(L"ウィンドウ"), TrKey(L"プラグイン"), TrKey(L"ヘルプ"), TrKey(L"デバッグ")};
-#ifdef _DEBUG
-    const int count = static_cast<int>(Menu::Count);
-#else
-    const int count = static_cast<int>(Menu::Debug);
-#endif
+    const int count = static_cast<int>(Menu::Count);  // (デバッグ too: a game's ゲームデバッグ is there)
     float x = r.x + 6;
     for (int i = 0; i < count; ++i) {
         const std::wstring menuTitle = Tr(kTitles[i]);

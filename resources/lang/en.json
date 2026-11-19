@@ -450,5 +450,6 @@
   "詳しく見る (インスペクター)": "Show details (Inspector)",
   "ファイル {}  ·  変更 {}": "File {}  ·  modified {}",
   "{} x {} ピクセル": "{} x {} pixels",
-  "ヒエラルキー": "Hierarchy"
+  "ヒエラルキー": "Hierarchy",
+  "このソフトにはデバッグの項目がありません": "This software has nothing in the debug menu"
 }

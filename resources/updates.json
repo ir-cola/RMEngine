@@ -7,6 +7,18 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "地球の空に風を足した (雲が流れ、雨と雪が斜めに)。雨は物に当たって撥ね、雪は溶け、屋根の下には降らない。雨の当たる所が濡れて見える",
+          "en": "The earth sky has wind (clouds drift, rain and snow slant). Rain splashes on things, snow melts on them, nothing falls under a roof, and what the rain reaches looks wet"
+        },
+        {
+          "ja": "スクリプトから天気・雲・雨・雪・風を変えられる (rm::Sky。秒を書くとフェードで)",
+          "en": "Scripts can change the weather, clouds, rain, snow and wind (rm::Sky; with seconds, it fades)"
+        },
+        {
+          "ja": "デバッグの窓は上のメニューの「デバッグ」→「ゲームデバッグ」で開くように",
+          "en": "The debug window now opens from the Debug menu at the top (Game debug)"
+        },
+        {
           "ja": "地球の空の晴れにも雲の量を足した。くもりと雨は雲を増やし、日の光を弱めて暗めに",
           "en": "Clear weather of the earth sky now has its own cloud amount. Cloudy and rainy skies have more clouds and less sunlight, and are darker"
         },

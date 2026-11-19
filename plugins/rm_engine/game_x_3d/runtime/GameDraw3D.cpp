@@ -135,7 +135,10 @@ public:
             sources.readEvery = -1;  // the game's files do not change
             frame.sky = sky_.Prepare(renderer_, *sky, look, sources);
             FollowSky(look, lights_, frame.ambient);
-            if (look.precipitation.amount > 0) frame.precipitation = &look.precipitation;  // 雨 / 雪
+            // 雨 / 雪 (both while one fades into the other) and what the rain has made wet.
+            if (look.rain.amount > 0) frame.precipitation[0] = &look.rain;
+            if (look.snow.amount > 0) frame.precipitation[1] = &look.snow;
+            frame.wetness = look.wetness;
         }
         frame.lights = lights_;
         // What other plugins draw into the world themselves (パーティクル: WorldDraw.h).

@@ -12,6 +12,9 @@ namespace rm::game_x_3d {
 namespace {
 
 constexpr float kDegrees = std::numbers::pi_v<float> / 180.f;
+// The wind's drift starts again from 0 this far (world units): a multiple of the rain's and the snow's
+// boxes (they look the same there), and far enough that the clouds' jump is seldom (a big storm: hours).
+constexpr float kDriftWrap = space3d::kRainBox * space3d::kSnowBox * 400.f;
 
 float Smooth(float edge0, float edge1, float x) {
     const float t = std::clamp((x - edge0) / (edge1 - edge0), 0.f, 1.f);
@@ -43,27 +46,42 @@ void Set(float out[4], Vec3 rgb, float a) {
 struct WeatherLook {
     float cover, dark, haze, through;
 };
-WeatherLook WeatherOf(const Sky& sky) {
-    const float c = std::clamp(sky.cloudiness, 0.f, 1.f);
-    switch (sky.weather) {
+WeatherLook OneWeather(Weather kind, const WeatherNow& n) {
+    const float c = std::clamp(n.cloudiness, 0.f, 1.f);
+    switch (kind) {
         case Weather::Clear: {
             // A fair sky: the clouds as asked, the sun hardly dimmed (0.2: the few clouds of before).
-            const float f = std::clamp(sky.clearClouds, 0.f, 1.f);
+            const float f = std::clamp(n.clearClouds, 0.f, 1.f);
             return {0.75f * f, 0.12f * f * f, 0.03f * f, 1.f - 0.2f * f * f};
         }
         // くもり / 雨: more cloud and less sunlight than a fair sky ever has (2026-11-19: darker than before).
         case Weather::Cloudy: return {0.4f + 0.6f * c, 0.2f + 0.45f * c, 0.08f + 0.12f * c, 0.7f - 0.5f * c};
         case Weather::Rain: {
-            const float r = std::clamp(sky.rain, 0.f, 1.f);
+            const float r = std::clamp(n.rain, 0.f, 1.f);
             return {0.65f + 0.35f * c, 0.42f + 0.45f * c, 0.12f + 0.25f * r, 0.42f - 0.3f * c};
         }
         case Weather::Snow: {
-            const float s = std::clamp(sky.snow, 0.f, 1.f);
+            const float s = std::clamp(n.snow, 0.f, 1.f);
             return {0.4f + 0.6f * c, 0.1f + 0.2f * c, 0.15f + 0.4f * s, 0.75f - 0.3f * c};
         }
     }
     return {0.15f, 0.f, 0.f, 1.f};  // (a value of a newer version: as a fair sky)
 }
+// The weather now: each of the four's look by its share (one alone, or a mix while it fades).
+WeatherLook WeatherOf(const WeatherNow& n) {
+    WeatherLook sum{0, 0, 0, 0};
+    for (int k = 0; k < 4; ++k) {
+        const float wk = n.weight[k];
+        if (!(wk > 0)) continue;
+        const WeatherLook one = OneWeather(static_cast<Weather>(k), n);
+        sum.cover += one.cover * wk;
+        sum.dark += one.dark * wk;
+        sum.haze += one.haze * wk;
+        sum.through += one.through * wk;
+    }
+    return sum;
+}
+float Lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 // 0 .. 1 from a number, the same every time (lightning's when and how bright).
 float Hash01(uint32_t x) {
@@ -91,6 +109,57 @@ void EarthAir(float e, const WeatherLook& w, Vec3& zenith, Vec3& horizon, float&
 
 }  // namespace
 
+WeatherNow TargetOf(const Sky& sky) {
+    WeatherNow n;
+    const int k = static_cast<int>(sky.weather);
+    n.weight[0] = 0;
+    n.weight[k >= 0 && k < 4 ? k : 0] = 1;  // (a value of a newer version: as a fair sky)
+    n.clearClouds = sky.clearClouds;
+    n.cloudiness = sky.cloudiness;
+    n.rain = sky.rain;
+    n.snow = sky.snow;
+    const Vec3 wind = WindOf(sky.windDirection, sky.windStrength);
+    n.windX = wind.x;
+    n.windZ = wind.z;
+    return n;
+}
+
+WeatherNow NowOf(const Sky& sky) {
+    WeatherNow to = TargetOf(sky);
+    if (!(sky.fadeSeconds > 0) || !(sky.fadeElapsed < sky.fadeSeconds)) return to;
+    const float t = Smooth(0.f, 1.f, std::max(sky.fadeElapsed, 0.f) / sky.fadeSeconds);  // eased in and out
+    const WeatherNow& a = sky.fadeFrom;
+    for (int k = 0; k < 4; ++k) to.weight[k] = Lerp(a.weight[k], to.weight[k], t);
+    to.clearClouds = Lerp(a.clearClouds, to.clearClouds, t);
+    to.cloudiness = Lerp(a.cloudiness, to.cloudiness, t);
+    to.rain = Lerp(a.rain, to.rain, t);
+    to.snow = Lerp(a.snow, to.snow, t);
+    to.windX = Lerp(a.windX, to.windX, t);  // (the wind as a vector: it turns the short way)
+    to.windZ = Lerp(a.windZ, to.windZ, t);
+    return to;
+}
+
+void BeginFade(Sky& sky, float seconds) {
+    sky.fadeFrom = NowOf(sky);
+    sky.fadeSeconds = std::isfinite(seconds) && seconds > 0 ? seconds : 0.f;
+    sky.fadeElapsed = 0;
+}
+
+float RainNow(const WeatherNow& w) { return std::clamp(w.weight[static_cast<int>(Weather::Rain)] * std::clamp(w.rain, 0.f, 1.f), 0.f, 1.f); }
+float SnowNow(const WeatherNow& w) { return std::clamp(w.weight[static_cast<int>(Weather::Snow)] * std::clamp(w.snow, 0.f, 1.f), 0.f, 1.f); }
+
+Vec3 WindOf(float directionDegrees, float strength) {
+    if (!std::isfinite(directionDegrees) || !(strength > 0) || !std::isfinite(strength)) return {0, 0, 0};
+    return Scale(TurnY(Vec3{0, 0, -1}, directionDegrees), strength);  // 0: to the front (-Z), + to the left
+}
+
+float NextWetness(float wetness, const WeatherNow& now, float dt) {
+    const float target = std::min(RainNow(now) * 2.f, 1.f);
+    if (wetness < 0) return target;
+    const float step = std::max(dt, 0.f) * (target > wetness ? 1.f / 8.f : 1.f / 90.f);
+    return target > wetness ? std::min(wetness + step, target) : std::max(wetness - step, target);
+}
+
 Vec3 SunDirection(const Sky& sky) {
     const float a = std::clamp(sky.sunHeight, -90.f, 90.f) * kDegrees;
     const Vec3 noon{0, std::sin(a), std::cos(a)};  // the +Z side, sunHeight up
@@ -115,7 +184,8 @@ SkyLook LookOf(const Sky& sky, double seconds) {
         case SkyKind::None: break;
         case SkyKind::Earth: {
             look.builtin = space3d::BuiltinSky::Earth;
-            const WeatherLook w = WeatherOf(sky);
+            const WeatherNow now = NowOf(sky);
+            const WeatherLook w = WeatherOf(now);
             Vec3 zenith, horizon;
             float day = 0, glow = 0;
             EarthAir(sun.y, w, zenith, horizon, day, glow);
@@ -127,7 +197,7 @@ SkyLook LookOf(const Sky& sky, double seconds) {
             const Vec3 ground = Add(Scale(horizon, 0.25f), Scale(Vec3{0.02f, 0.018f, 0.015f}, day));
             Set(k.param[0], sunLight, day);
             // 雷: now and then (an eighth of a second at a time) a flash - only while the time goes on.
-            if (sky.lightning && (sky.weather == Weather::Cloudy || sky.weather == Weather::Rain) && seconds > 0) {
+            if (sky.lightning && now.weight[static_cast<int>(Weather::Cloudy)] + now.weight[static_cast<int>(Weather::Rain)] > 0.5f && seconds > 0) {
                 const auto tick = static_cast<uint32_t>(seconds * 8);
                 if (Hash01(tick * 2u) > 0.975f) look.flash = 0.5f + 0.5f * Hash01(tick * 2u + 1u);
             }
@@ -135,6 +205,11 @@ SkyLook LookOf(const Sky& sky, double seconds) {
             Set(k.param[2], zenith, night * night * (1 - w.cover));
             Set(k.param[3], horizon, night * moonUp);
             Set(k.param[4], ground, glow * up);
+            // 風: how far it has carried the clouds (xy), how it blows now (zw: m/s, world).
+            k.param[5][0] = sky.driftX;
+            k.param[5][1] = sky.driftZ;
+            k.param[5][2] = now.windX;
+            k.param[5][3] = now.windZ;
             // The light: the sun while it is up, the moon (faint, blue) after.
             look.drivesLight = sky.driveLight;
             const float sunStrength = up * w.through;
@@ -155,14 +230,22 @@ SkyLook LookOf(const Sky& sky, double seconds) {
             // 雨 / 雪: lit by the sky and the sun / moon (and the flash) - about as much as the ground under
             // them (2026-11-18 on screen: with 0.35 of the moonlight, snow at night was darker than the
             // moonlit ground, like dark spots).
-            if (sky.weather == Weather::Rain || sky.weather == Weather::Snow) {
-                const bool rain = sky.weather == Weather::Rain;
-                look.precipitation.kind = rain ? space3d::Precipitation::Kind::Rain : space3d::Precipitation::Kind::Snow;
-                look.precipitation.amount = std::clamp(rain ? sky.rain : sky.snow, 0.f, 1.f);
-                look.precipitation.seconds = static_cast<float>(seconds);
-                const Vec3 lit = Add(Add(Scale(skyLight, 2.0f), Scale(Rgb(look.lightColor), look.lightStrength * 0.9f)), Vec3{look.flash, look.flash, look.flash});
-                look.precipitation.light = ToColor(lit);
+            // Both while 雨 fades into 雪 (or back), each as much as its share; blown by the wind.
+            const Color lit = ToColor(Add(Add(Scale(skyLight, 2.0f), Scale(Rgb(look.lightColor), look.lightStrength * 0.9f)), Vec3{look.flash, look.flash, look.flash}));
+            look.rain.kind = space3d::Precipitation::Kind::Rain;
+            look.snow.kind = space3d::Precipitation::Kind::Snow;
+            look.rain.amount = RainNow(now);
+            look.snow.amount = SnowNow(now);
+            for (space3d::Precipitation* p : {&look.rain, &look.snow}) {
+                p->seconds = static_cast<float>(seconds);
+                p->light = lit;
+                p->windX = now.windX;
+                p->windZ = now.windZ;
+                p->driftX = sky.driftX;
+                p->driftZ = sky.driftZ;
             }
+            // 濡れ: as the game has counted it (Play), or as wet as the rain now makes things.
+            look.wetness = sky.wetness >= 0 ? std::clamp(sky.wetness, 0.f, 1.f) : NextWetness(-1, now, 0);
             break;
         }
         case SkyKind::Space: {
@@ -215,8 +298,14 @@ void FollowSky(const SkyLook& look, std::vector<space3d::Light>& lights, space3d
 
 void RunSkyClock(game_production::SystemContext& ctx) {
     Sky* sky = ctx.scene.Setting<Sky>();
-    if (!sky || sky->kind != SkyKind::Earth || sky->dayLength <= 0) return;
-    sky->hour = std::fmod(std::fmod(sky->hour, 24.f) + ctx.dt * 24.f / sky->dayLength + 24.f, 24.f);
+    if (!sky || sky->kind != SkyKind::Earth) return;
+    if (sky->dayLength > 0) sky->hour = std::fmod(std::fmod(sky->hour, 24.f) + ctx.dt * 24.f / sky->dayLength + 24.f, 24.f);
+    if (sky->fadeSeconds > 0 && sky->fadeElapsed < sky->fadeSeconds) sky->fadeElapsed = std::min(sky->fadeElapsed + std::max(ctx.dt, 0.f), sky->fadeSeconds);
+    const WeatherNow now = NowOf(*sky);
+    sky->wetness = NextWetness(sky->wetness, now, ctx.dt);
+    const float dt = std::max(ctx.dt, 0.f);
+    sky->driftX = std::fmod(sky->driftX + now.windX * dt, kDriftWrap);
+    sky->driftZ = std::fmod(sky->driftZ + now.windZ * dt, kDriftWrap);
 }
 
 }  // namespace rm::game_x_3d
