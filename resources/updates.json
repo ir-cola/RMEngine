@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "風の強さを変えると屋根の下の乾いた所が影のように伸び縮みしたのを直した (濡れる所は風で変わらない)",
+          "en": "Fixed the dry place under a roof growing and shrinking like a shadow when the wind changed (where it is wet no longer depends on the wind)"
+        },
+        {
           "ja": "ゲームデバッグの基本情報に、スクリプトのビルドの結果と「ビルドし直す」「読み込み直す」ボタン、コンソールの「数を 0 に戻す」を足した",
           "en": "Game debug, Basic: the scripts' last build, Rebuild and Reload buttons, and Reset to 0 for the console counts"
         },

@@ -73,9 +73,9 @@ cbuffer Shadows : register(b2) {
     float4 shadowInfo;          // x: how many sun maps (0: none); y: a texel of a sun's map (its uv); z: ... of the others
     float4 viewForward;         // xyz: where the camera looks
     float4 atlas;               // how the maps lie side by side in their texture: xy: the sun's columns, rows; zw: the others'
-    float4x4 coverViewProj[2];  // world -> the maps the way rain (0) and snow (1) fall (Lighting.h's PlanCover)
-    float4 coverInfo[2];        // x: 1 = there is one; y: its size (pixels); z: its depth range (world); w: its tile's left (pixels)
-    float4 wetInfo;             // x: 濡れ (0 .. 1); yzw: the way the rain falls
+    float4x4 coverViewProj[3];  // world -> the maps the way rain (0) and snow (1) fall, and straight down (2: 濡れ) (Lighting.h's PlanCover)
+    float4 coverInfo[3];        // x: 1 = there is one; y: its size (pixels); z: its depth range (world); w: its tile's left (pixels)
+    float4 wetInfo;             // x: 濡れ (0 .. 1)
 };
 // Each kind of shadow map lies side by side (tiles) in one texture (an array of maps would need
 // ps_4_1 to be compared by the sampler).
@@ -179,14 +179,13 @@ float CoverPast(int k, float3 w) {
     return d >= 1 ? -1e30 : (p.z - d) * coverInfo[k].z;
 }
 
-// How wet a surface looks (0 .. 1): where the rain reaches it - the place a little off it is not past
-// anything the way it falls (walls the wind drives it at get wet too, under a roof stays dry unless it
-// blows in) - most on what faces the rain, none turned away from it.
+// How wet a surface looks (0 .. 1): where the rain reaches it - nothing over the place a little off it
+// (map 2: straight down, never by the wind - wet ground does not dry the moment the wind turns, so the
+// dry place under a roof stays where it is) - most on what faces up, none facing down.
 float WetAt(float3 wpos, float3 n) {
-    float facing = dot(n, -wetInfo.yzw);
-    if (wetInfo.x <= 0 || facing < -0.3) return 0;
-    float open = saturate((0.06 - CoverPast(0, wpos + n * 0.12)) / 0.06);
-    return wetInfo.x * open * lerp(0.45, 1, saturate(facing));
+    if (wetInfo.x <= 0 || n.y < -0.3) return 0;
+    float open = saturate((0.06 - CoverPast(2, wpos + n * 0.12)) / 0.06);
+    return wetInfo.x * open * lerp(0.45, 1, saturate(n.y));
 }
 
 // How much of a light is left at a point (its fade with distance / out of the cone), and from where
@@ -448,8 +447,8 @@ struct ShadowConstants {
     float shadowInfo[4];
     float viewForward[4];
     float atlas[4];
-    float coverViewProj[2][16];
-    float coverInfo[2][4];
+    float coverViewProj[3][16];
+    float coverInfo[3][4];
     float wetInfo[4];
 };
 static_assert(sizeof(ShadowConstants) % 16 == 0);
@@ -1481,22 +1480,24 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         if (!localMaps) lights.block.shadow[i][0] = -1;
     }
     const bool shadows = sunMaps > 0 || localMaps;
-    // The maps the way rain (tile 0: it falls, or it has made things wet) and snow (1) fall: what is in
-    // their way. Nothing to hit: none (everything open).
+    // The maps the way rain (tile 0) and snow (1) fall - what is in the drops' way (slanted by the wind)
+    // - and straight down (2): what the rain has made wet (2026-11-19: not by the wind - with the rain's
+    // map the dry place under a roof grew and shrank with the wind, like a shadow). Nothing to hit: none
+    // (everything open).
     auto fallsNow = [&](Precipitation::Kind kind) {
         for (const Precipitation* p : f.precipitation) {
             if (p && p->kind == kind && p->amount > 0) return true;
         }
         return false;
     };
-    const Vec3 rainGoes = FallDirection(Precipitation::Kind::Rain, f.wind);
-    const bool needs[2] = {fallsNow(Precipitation::Kind::Rain) || f.wetness > 0, fallsNow(Precipitation::Kind::Snow)};
+    const bool needs[3] = {fallsNow(Precipitation::Kind::Rain), fallsNow(Precipitation::Kind::Snow), f.wetness > 0};
+    const Vec3 ways[3] = {FallDirection(Precipitation::Kind::Rain, f.wind), FallDirection(Precipitation::Kind::Snow, f.wind), {0, -1, 0}};
     bool cover = false;
-    if ((needs[0] || needs[1]) && !blockOrder_.empty() && s.EnsureMaps(s.cover, 2, kCoverSize)) {
+    if ((needs[0] || needs[1] || needs[2]) && !blockOrder_.empty() && s.EnsureMaps(s.cover, 3, kCoverSize)) {
         cover = true;
-        for (uint32_t k = 0; k < 2; ++k) {
+        for (uint32_t k = 0; k < 3; ++k) {
             if (!needs[k]) continue;
-            const CoverPlan plan = PlanCover(eye, k == 0 ? rainGoes : FallDirection(Precipitation::Kind::Snow, f.wind));
+            const CoverPlan plan = PlanCover(eye, ways[k]);
             CopyMatrix(sc.coverViewProj[k], plan.viewProj);
             sc.coverInfo[k][0] = 1;
             sc.coverInfo[k][1] = static_cast<float>(kCoverSize);
@@ -1506,7 +1507,6 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         }
     }
     sc.wetInfo[0] = std::clamp(f.wetness, 0.f, 1.f);
-    sc.wetInfo[1] = rainGoes.x, sc.wetInfo[2] = rainGoes.y, sc.wetInfo[3] = rainGoes.z;
 
     // 2. The picture's draws: what is not see-through (sorted: pictures, then mesh and part - the
     // depth test sorts out what is in front), the floor's shadows, then what is see-through, the
