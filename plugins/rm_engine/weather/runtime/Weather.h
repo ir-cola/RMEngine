@@ -99,8 +99,12 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds);
 // rains). Not raining: all dry - in the sun in a minute and a half, in shade over five minutes - and
 // go when dry. At most kWetWays (a new way takes the place of the least wet one).
 inline constexpr float kWetWayDegrees = 8.f;
+// Snow wets too, where it melts - a little: at most this (rain: 1), more slowly. Nothing dries while
+// rain or snow falls.
+inline constexpr float kSnowWet = 0.45f;
 void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt);
-// What is wet now, as the editor shows it before Play: the rain falling now, its way, wet through. (Play
+// What is wet now, as the editor shows it before Play: what falls now (rain, snow), its way, as wet as it
+// makes things. (Play
 // starts dry and gets wet as it rains: RunWeather.)
 std::vector<WetWay> WetAtOnce(const WeatherNow& now);
 // How wet it is (the scripts' rm::Sky::Wetness): the wettest way in the sun.

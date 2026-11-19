@@ -93,7 +93,8 @@ RM_TEST(Weather_SkyLook) {
     // 濡れ before Play: as wet as the rain now makes things (twice its amount, at most 1); dry without rain.
     const std::vector<WetWay> wet = WetNow(rainy);
     CHECK(wet.size() == 1 && Near(wet[0].sun, 1.f) && Near(wet[0].shade, 1.f) && wet[0].way.y < -0.9f);
-    CHECK(WetNow(Of(WeatherKind::Clear)).empty() && WetNow(snow).empty());
+    CHECK(WetNow(Of(WeatherKind::Clear)).empty());
+    CHECK(WetNow(snow).size() == 1 && Near(WetNow(snow)[0].sun, kSnowWet));  // (snow: a little, where it melts)
 }
 
 // 雷: now and then a flash, only while the time goes on (and only in cloudy or rainy weather).
@@ -216,6 +217,32 @@ RM_TEST(Weather_Wind) {
 
 // 濡れ: the ways the rain fell - wetter quickly while it rains, what it reached stays wet while it
 // rains (the wind turning starts another way), dry again slowly in game time, slower in shade.
+// Snow wets a little where it melts - slowly, at most kSnowWet; nothing dries while it falls; rain and
+// snow falling alike (no wind) are one way, as wet as the wetter makes it.
+RM_TEST(Weather_SnowWets) {
+    WeatherNow snowy;
+    snowy.weight[0] = 0;
+    snowy.weight[3] = 1;
+    snowy.snow = 0.5f;
+    std::vector<WetWay> s;
+    StepWet(s, snowy, 1);  // (0.005 + 0.5 x 0.03 a second)
+    CHECK(s.size() == 1 && Near(s[0].sun, 0.02f) && Near(s[0].way, {0, -1, 0}));
+    StepWet(s, snowy, 1000);
+    CHECK(Near(s[0].sun, kSnowWet) && Near(s[0].shade, kSnowWet));
+    std::vector<WetWay> rained = {{{0, -1, 0}, 1, 1}};
+    StepWet(rained, snowy, 100);
+    CHECK(Near(rained[0].sun, 1.f));  // (the rain's wet stays while it snows)
+    CHECK(WetAtOnce(snowy).size() == 1 && Near(WetAtOnce(snowy)[0].sun, kSnowWet));
+    WeatherNow both = snowy;
+    both.weight[2] = 0.5f;
+    both.weight[3] = 0.5f;
+    both.rain = 1;
+    CHECK(WetAtOnce(both).size() == 1 && Near(WetAtOnce(both)[0].sun, 1.f));
+    WeatherNow fair;
+    StepWet(s, fair, 9);
+    CHECK(Near(s[0].sun, kSnowWet - 0.1f));  // (dries as the rain's does)
+}
+
 RM_TEST(Weather_Wetness) {
     WeatherNow rain;
     rain.weight[0] = 0;

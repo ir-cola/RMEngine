@@ -138,35 +138,63 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds) {
     return s;
 }
 
+namespace {
+
+// What falls now that wets (rain: all of it in the end; snow, where it melts: a little), each with the
+// way it falls, how wet it makes things at most and how fast (a second).
+struct Wetting {
+    Vec3 way;
+    float most, speed;
+};
+std::vector<Wetting> WettingNow(const WeatherNow& now) {
+    std::vector<Wetting> out;
+    const Vec3 wind{now.windX, 0, now.windZ};
+    // Rain: all of it wet in the end - sooner the harder it rains (a downpour: about 10 s; a drizzle:
+    // about a minute).
+    if (const float rain = RainNow(now); rain > 0) out.push_back({FallDirection(Precipitation::Kind::Rain, wind), 1.f, 0.01f + rain * 0.08f});
+    // Snow: where it melts, a little wet - slower (2026-11-19).
+    if (const float snow = SnowNow(now); snow > 0) out.push_back({FallDirection(Precipitation::Kind::Snow, wind), kSnowWet, 0.005f + snow * 0.03f});
+    return out;
+}
+
+}  // namespace
+
 std::vector<WetWay> WetAtOnce(const WeatherNow& now) {
-    if (!(RainNow(now) > 0)) return {};
-    return {{FallDirection(Precipitation::Kind::Rain, {now.windX, 0, now.windZ}), 1, 1}};  // (as after a while of rain)
+    // (as after a while of it: each falling thing's way as wet as it makes things)
+    std::vector<WetWay> out;
+    const float close = std::cos(kWetWayDegrees * kDegrees);
+    for (const Wetting& w : WettingNow(now)) {
+        auto same = std::find_if(out.begin(), out.end(), [&](const WetWay& o) { return o.way.x * w.way.x + o.way.y * w.way.y + o.way.z * w.way.z >= close; });
+        if (same != out.end()) {
+            same->sun = same->shade = std::max(same->sun, w.most);
+        } else {
+            out.push_back({w.way, w.most, w.most});
+        }
+    }
+    return out;
 }
 
 void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt) {
     dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
-    const float rain = RainNow(now);
-    if (rain > 0) {
-        // All of it wet in the end - sooner the harder it rains (2026-11-19: before, up to twice the
-        // amount only: a light rain never wet everything).
-        constexpr float target = 1.f;
-        const float speed = 0.01f + rain * 0.08f;  // per second (a downpour: about 10 s; a drizzle: about a minute)
-        const Vec3 way = FallDirection(Precipitation::Kind::Rain, {now.windX, 0, now.windZ});
+    const std::vector<Wetting> wetting = WettingNow(now);
+    if (!wetting.empty()) {
         const float close = std::cos(kWetWayDegrees * kDegrees);
         auto dot = [](Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
-        auto it = std::find_if(ways.begin(), ways.end(), [&](const WetWay& w) { return dot(w.way, way) >= close; });
-        if (it == ways.end()) {
-            if (ways.size() < kWetWays) {
-                ways.push_back({way, 0, 0});
-                it = ways.end() - 1;
-            } else {
-                it = std::min_element(ways.begin(), ways.end(), [](const WetWay& a, const WetWay& b) { return a.sun + a.shade < b.sun + b.shade; });
-                *it = {way, 0, 0};
+        for (const Wetting& w : wetting) {
+            auto it = std::find_if(ways.begin(), ways.end(), [&](const WetWay& o) { return dot(o.way, w.way) >= close; });
+            if (it == ways.end()) {
+                if (ways.size() < kWetWays) {
+                    ways.push_back({w.way, 0, 0});
+                    it = ways.end() - 1;
+                } else {
+                    it = std::min_element(ways.begin(), ways.end(), [](const WetWay& a, const WetWay& b) { return a.sun + a.shade < b.sun + b.shade; });
+                    *it = {w.way, 0, 0};
+                }
             }
-        }
-        // Wetter (never drier while it rains).
-        for (float* level : {&it->sun, &it->shade}) {
-            if (*level < target) *level = std::min(target, *level + dt * speed);
+            // Wetter, up to what it makes (never drier while anything falls).
+            for (float* level : {&it->sun, &it->shade}) {
+                if (*level < w.most) *level = std::min(w.most, *level + dt * w.speed);
+            }
         }
         return;
     }
