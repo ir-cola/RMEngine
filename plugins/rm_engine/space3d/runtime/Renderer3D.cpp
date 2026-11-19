@@ -1,7 +1,9 @@
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 
 #include "rm_engine/space3d/runtime/Lighting.h"
+#include "base/Log.h"
 #include "rm_engine/space3d/runtime/Primitives.h"
+#include "rm_engine/space3d/runtime/RendererShaders.h"
 #include "rm_engine/space3d/runtime/TextureFile.h"
 #include "rm_engine/space3d/runtime/View.h"
 
@@ -22,466 +24,6 @@ namespace rm::space3d {
 
 namespace {
 
-// Matrices are stored column by column (m[column][row]), which is HLSL's default packing, so they
-// go to the GPU as they are and mul(matrix, vector) means matrix * vector.
-constexpr char kShaders[] = R"(
-cbuffer Frame : register(b0) {
-    float4x4 viewProj;
-    float4x4 lightViewProj;  // ShadowVS: world -> the shadow map being drawn (x, y -1..1, depth 0..1)
-    float4 eye;              // xyz: where the camera is (world)
-};
-// Every thing's and material's numbers of the frame, written once a frame (Renderer3D.cpp's things_).
-// A draw says where its thing and its material are (DRAW: x, y, in float4s):
-//   a thing:    world (4 columns), normalWorld (3 columns: the inverse transpose of world - normals
-//               stay at right angles), color (the screen's), highlight (a glow at the edges: rgb, a = how strong)
-//   a material: material (its colour, linear: times `color`), paint (x: 1 = a colour picture; y: alpha
-//               0 opaque / 1 mask / 2 blend; z: mask's cutoff; w: 1 = a normal map), pbr (x: metallic,
-//               y: roughness, z: the normal map's strength; w: 1 = a metal / rough picture), emissive
-//               (rgb: the light it gives, linear; w: 1 = an emission picture)
-Buffer<float4> things : register(t6);
-static float4x4 world;
-static float3x3 normalWorld;
-static float4 color, highlight, material, paint, pbr, emissive;
-void LoadPlace(uint at) {
-    world = transpose(float4x4(things.Load(at), things.Load(at + 1), things.Load(at + 2), things.Load(at + 3)));
-    normalWorld = transpose(float3x3(things.Load(at + 4).xyz, things.Load(at + 5).xyz, things.Load(at + 6).xyz));
-}
-void LoadLook(uint2 draw) {
-    color = things.Load(draw.x + 7);
-    highlight = things.Load(draw.x + 8);
-    material = things.Load(draw.y);
-    paint = things.Load(draw.y + 1);
-    pbr = things.Load(draw.y + 2);
-    emissive = things.Load(draw.y + 3);
-}
-// The lights of the frame (Lighting.h's LightBlock: set once per frame).
-cbuffer Lights : register(b1) {
-    float4 lightInfo;         // x: how many
-    float4 ambientSky;        // rgb: the ambient light on faces turned up
-    float4 ambientGround;     // rgb: ... turned down
-    float4 lightPos[8];       // xyz: where (point, spot); w: 0 directional, 1 point, 2 spot
-    float4 lightDir[8];       // xyz: where the light goes; w: the range
-    float4 lightColor[8];     // rgb: colour x strength; w: 1 = its shadows are the sun's maps
-    float4 lightSpot[8];      // x: cos of the cone's edge, y: cos where it starts to fade
-    float4 lightShadow[8];    // point / spot: x: its first map (-1: none); y: normal offset per distance; z: depth bias at distance 1
-};
-// The shadow maps of the frame (Renderer3D.cpp's ShadowConstants).
-cbuffer Shadows : register(b2) {
-    float4x4 sunViewProj[3];    // world -> the sun's maps (one, or the cascades)
-    float4x4 localViewProj[8];  // world -> the point / spot lights' maps
-    float4 sunInfo[3];          // x: where the map ends in front of the eye; y: normal offset (world); z: depth bias
-    float4 shadowInfo;          // x: how many sun maps (0: none); y: a texel of a sun's map (its uv); z: ... of the others
-    float4 viewForward;         // xyz: where the camera looks
-    float4 atlas;               // how the maps lie side by side in their texture: xy: the sun's columns, rows; zw: the others'
-    float4x4 coverViewProj[6];  // world -> the maps the way rain (0) and snow (1) fall, and the ways the rain fell (2.. : 濡れ) (Lighting.h's PlanCover)
-    float4 coverInfo[6];        // x: 1 = there is one; y, z: its tile's left, top (pixels); w: its depth range (world)
-    float4 wetInfo;             // x: how many ways the rain fell (濡れ); y: a map's size (pixels)
-    float4 wetLevels[4];        // each way's: x: how wet in the sun, y: in shade
-};
-// Each kind of shadow map lies side by side (tiles) in one texture (an array of maps would need
-// ps_4_1 to be compared by the sampler).
-Texture2D sunMaps : register(t0);
-Texture2D localMaps : register(t5);
-Texture2D coverMap : register(t8);
-SamplerComparisonState shadowSampler : register(s0);
-Texture2D baseMap : register(t1);        // sRGB: read as linear
-Texture2D metalRoughMap : register(t2);  // b: metal, g: rough
-Texture2D normalMap : register(t3);      // tangent space (x right, y up, z out)
-Texture2D emissionMap : register(t4);    // sRGB
-SamplerState baseSampler : register(s1);
-
-static const float PI = 3.14159265;
-
-struct LineIn  { float3 pos : POSITION; float4 col : COLOR; };
-struct LineOut { float4 pos : SV_Position; float4 col : COLOR; };
-LineOut LineVS(LineIn i) {
-    LineOut o;
-    o.pos = mul(viewProj, float4(i.pos, 1));
-    o.col = i.col;
-    return o;
-}
-float4 LinePS(LineOut i) : SV_Target { return i.col; }
-
-struct MeshIn  { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; uint2 draw : DRAW; };
-struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float3 wpos : TEXCOORD2; nointerpolation uint2 draw : DRAW; };
-MeshOut MeshVS(MeshIn i) {
-    LoadPlace(i.draw.x);
-    MeshOut o;
-    float4 w = mul(world, float4(i.pos, 1));
-    o.pos = mul(viewProj, w);
-    o.nrm = mul(normalWorld, i.nrm);
-    o.wpos = w.xyz;
-    o.uv = i.uv;
-    o.draw = i.draw;
-    return o;
-}
-
-// 1 = in the light, 0 = in shadow: the map `tile` of `maps` (tiles lie `grid` columns x rows) at p
-// (after the divide: x, y -1..1, depth 0..1). 3 x 3 looks, each already a blend of 2 x 2 texels
-// (PCF), kept inside the tile. Outside the map: lit.
-float ShadowLook(Texture2D maps, float2 grid, float3 p, float tile, float texel, float bias) {
-    float2 uv = p.xy * float2(0.5, -0.5) + 0.5;
-    if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1) return 1;
-    float d = min(p.z, 1) - bias;  // beyond the map's depth: behind everything
-    float2 corner = float2(tile - grid.x * floor(tile / grid.x), floor(tile / grid.x));
-    float sum = 0;
-    [unroll] for (int y = -1; y <= 1; ++y) {
-        [unroll] for (int x = -1; x <= 1; ++x) {
-            float2 t = clamp(uv + float2(x, y) * texel, texel, 1 - texel);
-            sum += maps.SampleCmpLevelZero(shadowSampler, (corner + t) / grid, d);
-        }
-    }
-    return sum / 9;
-}
-
-// The sun: the first of its maps that reaches as far as the point is in front of the eye (one map,
-// or the cascades: near ones sharp). Looked up a little off the surface (normal offset): a surface
-// does not shadow itself. Beyond the last: lit.
-float SunShadow(float3 wpos, float3 n) {
-    int count = (int)shadowInfo.x;
-    float ahead = dot(wpos - eye.xyz, viewForward.xyz);
-    [loop] for (int c = 0; c < count; ++c) {
-        if (ahead <= sunInfo[c].x) {
-            float4 p = mul(sunViewProj[c], float4(wpos + n * sunInfo[c].y, 1));
-            return ShadowLook(sunMaps, atlas.xy, p.xyz / p.w, c, shadowInfo.y, sunInfo[c].z);
-        }
-    }
-    return 1;
-}
-
-// A point light (the side of its cube the point is on: the largest of |x| |y| |z|, in the order
-// +X -X +Y -Y +Z -Z) or a spot (its one map). The depth of a perspective map is not even: the bias
-// shrinks with the distance.
-float LocalShadow(int l, float3 wpos, float3 n) {
-    float slice = lightShadow[l].x;
-    if (slice < 0) return 1;
-    float3 from = wpos - lightPos[l].xyz;
-    if (lightPos[l].w < 1.5) {
-        float3 a = abs(from);
-        if (a.x >= a.y && a.x >= a.z) slice += from.x > 0 ? 0 : 1;
-        else if (a.y >= a.z) slice += from.y > 0 ? 2 : 3;
-        else slice += from.z > 0 ? 4 : 5;
-    }
-    float4 p = mul(localViewProj[(int)slice], float4(wpos + n * (lightShadow[l].y * length(from)), 1));
-    if (p.w <= 1e-4) return 1;
-    return ShadowLook(localMaps, atlas.zw, p.xyz / p.w, slice, shadowInfo.z, lightShadow[l].z / p.w);
-}
-
-float ShadowOf(int l, float3 wpos, float3 n) { return lightColor[l].w > 0.5 ? SunShadow(wpos, n) : LocalShadow(l, wpos, n); }
-)"
-// (the weather's part: a literal of its own - one may hold at most 16 KB)
-R"(
-// How far a point is past the first thing in the way rain (k = 0) or snow (1) falls there - or the
-// rain fell (2..: 濡れ) - in world units (< 0: before it). Its place on the map: `p` (the map's
-// matrix times the point). Nothing in the way, or out of the map: far before (the open sky).
-float CoverPastAt(int k, float4 p) {
-    float2 uv = p.xy * float2(0.5, -0.5) + 0.5;
-    if (uv.x < 0 || uv.x >= 1 || uv.y < 0 || uv.y >= 1) return -1e30;
-    float d = coverMap.Load(int3(uv * wetInfo.y + coverInfo[k].yz, 0)).r;
-    return d >= 1 ? -1e30 : (p.z - d) * coverInfo[k].w;
-}
-float CoverPast(int k, float3 w) {
-    if (coverInfo[k].x < 0.5) return -1e30;
-    return CoverPastAt(k, mul(coverViewProj[k], float4(w, 1)));
-}
-
-// Round wet spots where drops landed: each cell of a grid (on the surface, `p` in cells) holds one at a
-// place of its own, full in its middle and fading outward; they grow with how wet it is and run into
-// each other (never a whole even sheet: always a little round).
-float WetHash(float2 c) { return frac(sin(dot(c, float2(127.1, 311.7))) * 43758.5453); }
-float WetSpots(float2 p, float wet) {
-    float2 cell = floor(p);
-    float most = 0;
-    [unroll] for (int y = -1; y <= 1; ++y) {
-        [unroll] for (int x = -1; x <= 1; ++x) {
-            float2 c = cell + float2(x, y);
-            float2 center = c + float2(WetHash(c), WetHash(c + 17.31));
-            float r = (0.35 + 0.45 * WetHash(c + 41.7)) * (0.25 + 0.95 * wet);
-            most = max(most, 1 - smoothstep(r * 0.25, r, length(p - center)));
-        }
-    }
-    return most;
-}
-
-// How much the rain reached a point the way `k` (0 .. 1): the place a little off the surface is not past
-// anything that way - read at 3 x 3 places around it, so the edge is soft and round, not the map's squares.
-float WetOpen(int k, float3 p) {
-    float4 c = mul(coverViewProj[k], float4(p, 1));
-    float4 dx = mul(coverViewProj[k], float4(0.09, 0, 0, 0)), dz = mul(coverViewProj[k], float4(0, 0, 0.09, 0));
-    float open = 0;
-    [unroll] for (int y = -1; y <= 1; ++y) {
-        [unroll] for (int x = -1; x <= 1; ++x) {
-            open += saturate((0.06 - CoverPastAt(k, c + dx * x + dz * y)) / 0.06) * ((x == 0 ? 2 : 1) * (y == 0 ? 2 : 1));
-        }
-    }
-    return open / 16;
-}
-
-// How wet a surface looks (0 .. 1): the wettest of the ways the rain fell that reached it (a place it
-// reached stays wet while it rains, whatever the wind does after), in the sun or in its shadow (shade
-// dries slower) - in round spots, most on what faces up, none facing down.
-float WetAt(float3 wpos, float3 n) {
-    int count = (int)wetInfo.x;
-    if (count <= 0 || n.y < -0.3) return 0;
-    float lit = shadowInfo.x > 0 ? SunShadow(wpos, n) : 1;
-    float3 p = wpos + n * 0.12;
-    float wet = 0;
-    [loop] for (int k = 0; k < count; ++k) {
-        float level = lerp(wetLevels[k].y, wetLevels[k].x, lit);
-        if (level > wet && coverInfo[2 + k].x > 0.5) wet = max(wet, level * WetOpen(2 + k, p));
-        else if (level > wet) wet = level;  // (nothing to hit: everything open)
-    }
-    if (wet <= 0) return 0;
-    // The surface's own two axes (the plane it mostly lies in): spots lie flat on it.
-    float3 a = abs(n);
-    float2 s = a.y >= a.x && a.y >= a.z ? wpos.xz : a.x >= a.z ? wpos.zy : wpos.xy;
-    float spots = max(WetSpots(s / 0.22, wet), WetSpots(s / 0.07 + 31.7, wet) * 0.8);
-    return saturate(wet * 1.4) * spots * lerp(0.45, 1, saturate(n.y));
-}
-
-// How much of a light is left at a point (its fade with distance / out of the cone), and from where
-// (toLight).
-float FadeAt(int l, float3 wpos, out float3 toLight) {
-    toLight = -lightDir[l].xyz;
-    float fade = 1;
-    if (lightPos[l].w > 0.5) {
-        float3 d = lightPos[l].xyz - wpos;
-        float dist = length(d);
-        toLight = d / max(dist, 1e-4);
-        float x = saturate(1 - dist / lightDir[l].w);
-        fade = x * x;
-        if (lightPos[l].w > 1.5) fade *= smoothstep(lightSpot[l].x, lightSpot[l].y, dot(-toLight, lightDir[l].xyz));
-    }
-    return fade;
-}
-
-// One light at a point: what comes (colour x strength x its fade) and from where (toLight). The
-// light's numbers are made by Lighting.h.
-float3 LightAt(int l, float3 wpos, out float3 toLight) { return lightColor[l].rgb * FadeAt(l, wpos, toLight); }
-
-// The light leaving a surface towards the eye (linear): the ambient light (from everywhere, the sky's
-// from above - even in shadow) and each light (diffuse + GGX highlight; its shadow if it has one).
-float3 Shade(float3 albedo, float metal, float rough, float3 n, float3 v, float3 wpos) {
-    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metal);  // how much a surface mirrors, head on
-    float3 diffuse = albedo * (1 - metal);                       // metal has no diffuse colour
-    float a = rough * rough;
-    float a2 = a * a;
-    float nv = max(dot(n, v), 1e-4);
-    float k = (rough + 1) * (rough + 1) / 8;
-    // The sky: diffuse from the normal's side, and a dim reflection of it (Fresnel by the angle).
-    float sky = 0.5 + 0.5 * n.y;
-    float skyMirror = 0.5 + 0.5 * reflect(-v, n).y;
-    float3 fSky = f0 + (max(float3(1 - rough, 1 - rough, 1 - rough), f0) - f0) * pow(1 - nv, 5);
-    // The ambient light (環境光, linear): the ground's from below .. the sky's from above.
-    float3 c = diffuse * lerp(ambientGround.rgb, ambientSky.rgb, sky) + fSky * lerp(ambientGround.rgb, ambientSky.rgb, skyMirror) * (1 - 0.6 * rough);
-    int count = (int)lightInfo.x;
-    [loop] for (int l = 0; l < count; ++l) {
-        float3 toLight;
-        float3 e = LightAt(l, wpos, toLight);
-        float nl = saturate(dot(n, toLight));
-        if (nl <= 0 || all(e <= 0)) continue;
-        e *= ShadowOf(l, wpos, n);  // 1 for a light without shadows
-        float3 h = normalize(toLight + v);
-        float nh = saturate(dot(n, h));
-        float vh = saturate(dot(v, h));
-        float dd = nh * nh * (a2 - 1) + 1;
-        float D = a2 / (PI * dd * dd);                                     // GGX: how many tiny faces turn to h
-        float G = nl / (nl * (1 - k) + k) * (nv / (nv * (1 - k) + k));     // Smith: the ones not hidden
-        float3 F = f0 + (1 - f0) * pow(1 - vh, 5);                         // Schlick: more mirror at a slant
-        float3 spec = D * G * F / max(4 * nl * nv, 1e-4);
-        // Strength 1 on a white face head on = 0.85 (the look the scene had before lights).
-        c += ((1 - F) * diffuse + PI * spec) * e * (nl * 0.85);
-    }
-    return c;
-}
-
-// The normal bent by the normal map. The tangents come from how the position and the UV change
-// from pixel to pixel (a "cotangent frame"): no tangents are needed in the vertices.
-float3 Bend(float3 n, MeshOut i) {
-    float3 t = normalMap.Sample(baseSampler, i.uv).xyz * 2 - 1;  // (sampled before any branch)
-    if (paint.w > 1.5) t.z = sqrt(saturate(1 - dot(t.xy, t.xy)));  // two channels (BC5): z from x and y
-    float3 dp1 = ddx(i.wpos), dp2 = ddy(i.wpos);
-    float2 du1 = ddx(i.uv), du2 = ddy(i.uv);
-    if (paint.w < 0.5) return n;
-    float3 dp2perp = cross(dp2, n), dp1perp = cross(n, dp1);
-    float3 T = dp2perp * du1.x + dp1perp * du2.x;
-    float3 B = dp2perp * du1.y + dp1perp * du2.y;  // where V grows: down the picture
-    float m = max(dot(T, T), dot(B, B));
-    if (m < 1e-20) return n;  // no UVs to follow
-    float s = rsqrt(m);
-    t.xy *= pbr.z;
-    return normalize(T * (s * t.x) - B * (s * t.y) + n * t.z);  // the map's +Y is up the picture
-}
-
-// The surface's own colour: the draw's x the material's x the picture. Alpha by the material's mode
-// (opaque: a picture's alpha is no hole; mask: a hole below the cutoff; blend: see-through).
-float4 Paint(MeshOut i) {
-    float4 c = float4(ToLinear(color.rgb), color.a) * material;
-    if (paint.x > 0.5) c *= baseMap.Sample(baseSampler, i.uv);
-    if (paint.y > 0.5 && paint.y < 1.5) clip(c.a - paint.z);  // mask: a hole, or not
-    if (paint.y < 1.5) c.a = color.a;                          // only blend sees through by its alpha
-    return c;
-}
-
-float4 MeshPS(MeshOut i) : SV_Target {
-    LoadLook(i.draw);
-    float4 base = Paint(i);
-    // The side seen is the side facing the eye (the back of an open model is lit as its own side).
-    // Told from the eye, not from the triangle's winding on the screen, so a mirrored model or a
-    // flipped projection never lights the wrong side.
-    float3 n = normalize(i.nrm);
-    float3 toEye = normalize(eye.xyz - i.wpos);
-    if (dot(n, toEye) < 0) n = -n;
-    float rim = pow(1 - saturate(dot(n, toEye)), 2.5) * highlight.a;  // (by the shape, not the normal map)
-    float wet = WetAt(i.wpos, n);  // (by the shape too)
-    n = Bend(n, i);
-    float4 mr = metalRoughMap.Sample(baseSampler, i.uv);
-    if (pbr.w > 1.5) mr = mr.rrrr;  // one channel (BC4): the grey value is both
-    float metal = pbr.x * (pbr.w > 0.5 ? mr.b : 1);
-    float rough = clamp(pbr.y * (pbr.w > 0.5 ? mr.g : 1), 0.04, 1);
-    // 濡れ: water in the surface makes it darker (2026-11-19: lighter than before), a film on it makes it shine.
-    base.rgb *= 1 - wet * 0.25 * (1 - metal);
-    rough = lerp(rough, 0.12, wet * 0.75);
-    float3 glow = emissive.rgb * (emissive.w > 0.5 ? emissionMap.Sample(baseSampler, i.uv).rgb : float3(1, 1, 1));
-    float3 rgb = ToScreen(Shade(base.rgb, metal, rough, n, toEye, i.wpos) + glow);
-    // Selected: the edges (where the surface turns away from the eye) glow, the colours stay.
-    return float4(lerp(rgb, highlight.rgb, rim), base.a);
-}
-
-// The floor: nothing of its own, only the shadows (seen from above) - the darkest one of a light
-// that reaches it.
-float4 FloorPS(MeshOut i) : SV_Target {
-    LoadLook(i.draw);
-    if (eye.y < 0) discard;  // seen from below the floor
-    float3 up = float3(0, 1, 0);
-    float dark = 0;
-    int count = (int)lightInfo.x;
-    [loop] for (int l = 0; l < count; ++l) {
-        if (lightColor[l].w < 0.5 && lightShadow[l].x < 0) continue;  // no shadows
-        float3 toLight;
-        float fade = FadeAt(l, i.wpos, toLight);
-        float r = saturate(saturate(dot(up, toLight)) * fade * 4);
-        if (r > 0) dark = max(dark, (1 - ShadowOf(l, i.wpos, up)) * r);
-    }
-    return float4(color.rgb, color.a * dark);
-}
-
-float4 ShadowVS(MeshIn i) : SV_Position {
-    LoadPlace(i.draw.x);
-    return mul(lightViewProj, mul(world, float4(i.pos, 1)));
-}
-
-// A tile of a shadow map laid back from its kept layer (what stays put: the same tile of another
-// texture), exactly, before the moving things are drawn over it. Drawn with ClearVS's triangle.
-Texture2D layerMap : register(t7);
-float CopyDepthPS(float4 pos : SV_Position) : SV_Depth { return layerMap.Load(int3(pos.xy, 0)).r; }
-
-// A tile of a shadow map cleared: one triangle over the whole viewport at depth 1 (drawn with the
-// depth test off). ClearDepthStencilView would clear every tile.
-float4 ClearVS(uint id : SV_VertexID) : SV_Position {
-    float2 p = float2((id << 1) & 2, id & 2);
-    return float4(p * float2(2, -2) + float2(-1, 1), 1, 1);
-}
-)";
-
-// (a literal of its own: one may hold at most 16 KB)
-constexpr char kPrecipShaders[] = R"(
-// Rain and snow (SkyShader.h's Precipitation): 6 corners (2 triangles) per drop / flake, each made from
-// its number - where it is in the box around the eye, how fast it falls - by a hash (no buffer).
-cbuffer Weather : register(b4) {
-    float4 precipInfo;   // x: 0 rain / 1 snow, y: seconds, z: the box's side
-    float4 precipLight;  // rgb: what lights them (linear)
-    float4 camRight;     // xyz: the camera's right (world)
-    float4 camUp;        // xyz: the camera's up
-    float4 precipWind;   // xy: the wind now (m/s, world x z); zw: how far it has carried them
-    float4 precipFall;   // x: the least fall (m/s), y: how much faster each may be, z: how much of the wind takes it (SkyShader.h's FallOf)
-};
-uint PrecipHash(uint x) {
-    x ^= x >> 16; x *= 0x7feb352d; x ^= x >> 15; x *= 0x846ca68b; x ^= x >> 16;
-    return x;
-}
-float PrecipRand(uint id, uint k) { return (PrecipHash(id * 4 + k) & 0xFFFFFF) / 16777216.0; }
-struct PrecipOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; float fade : TEXCOORD1; float splash : TEXCOORD2; };
-PrecipOut PrecipVS(uint vid : SV_VertexID) {
-    static const float2 corners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1), float2(-1, -1), float2(1, 1), float2(-1, 1)};
-    uint id = vid / 6;
-    float2 q = corners[vid % 6];
-    bool snow = precipInfo.x > 0.5;
-    float t = precipInfo.y, box = precipInfo.z;
-    float3 seed = float3(PrecipRand(id, 0), PrecipRand(id, 1), PrecipRand(id, 2));
-    float fall = precipFall.x + (snow ? seed.x : seed.y) * precipFall.y;  // m/s
-    float carried = precipFall.z;                                           // how much the wind takes it
-    float3 v = float3(precipWind.x * carried, -fall, precipWind.y * carried);  // how it moves now
-    float speed = length(v);
-    float3 dir = v / speed;
-    float3 p = seed * box * 7.31;  // where it is in the world (the box repeats)
-    p.y -= t * fall;
-    p.xz += precipWind.zw * carried;  // the wind so far
-    float3 rel = (frac((p - eye.xyz) / box + 0.5) - 0.5) * box;  // the copy nearest the eye
-    float3 w = eye.xyz + rel;
-    // Flakes sway (drawn so; what they hit is by the line they fall along).
-    float3 sway = snow ? float3(sin(t * 0.9 + seed.z * 40), 0, cos(t * 0.7 + seed.x * 40)) * 0.35 : float3(0, 0, 0);
-    float dist = length(rel + sway);
-    PrecipOut o;
-    o.uv = q;
-    o.splash = 0;
-    o.fade = saturate((dist - 0.4) / 1.2) * saturate((box * 0.5 - dist) / (box * 0.25));
-    // What is in its way (the map the way it falls, slanted by the wind): how far past it it is now.
-    // Past it: it has hit (a roof, a wall, the ground) - from then on nothing falls there.
-    float past = CoverPast((int)precipInfo.w, w);
-    float since = past / speed;  // seconds since it hit
-    float3 hit = w - dir * past;  // where
-    if (snow) {
-        float size = 0.02 + seed.z * 0.025;
-        if (past > 0) {
-            // It stops where it touched, stays a little, then melts: smaller and fainter.
-            if (since > 2.6) {
-                o.pos = float4(0, 0, -1, 1);  // (all six corners: nothing drawn)
-                return o;
-            }
-            float melt = saturate((since - 1.4) / 1.2);
-            size *= 1 - 0.75 * melt;
-            o.fade *= 1 - melt;
-            float3 at = hit - dir * size;  // (resting on it, not in it)
-            float3 swayThen = float3(sin((t - since) * 0.9 + seed.z * 40), 0, cos((t - since) * 0.7 + seed.x * 40)) * 0.35;
-            w = at + swayThen;
-        } else {
-            w += sway;
-        }
-        w += (camRight.xyz * q.x + camUp.xyz * q.y) * size;
-    } else if (past > 0) {
-        // It has hit: a splash where it did for a moment (a ring that grows and fades), then nothing.
-        if (since > 0.14) {
-            o.pos = float4(0, 0, -1, 1);
-            return o;
-        }
-        float k = since / 0.14;
-        float r = 0.02 + 0.06 * k;  // (small: a drop's splash, wind or not)
-        w = hit - dir * 0.015 + (camRight.xyz * q.x + float3(0, 0.45, 0) * (q.y + 1)) * r;
-        o.fade *= 1 - k;
-        o.splash = 1;
-    } else {
-        // A thin streak behind it along the way it falls (the wind slants it), turned to face the eye.
-        float3 side = normalize(cross(dir, rel + float3(1e-4, 0, 1e-4)));
-        float len = 0.35 + seed.x * 0.25;
-        w += side * q.x * (0.004 + dist * 0.0006) - dir * (q.y * 0.5 + 0.5) * len;
-    }
-    o.pos = mul(viewProj, float4(w, 1));
-    return o;
-}
-float4 PrecipPS(PrecipOut i) : SV_Target {
-    bool snow = precipInfo.x > 0.5;
-    float a;
-    if (i.splash > 0.5) {
-        float r = length(i.uv * float2(1, 1.6) - float2(0, 0.6));  // a flat ring, seen from the side
-        a = saturate(1 - abs(r - 0.65) * 4) * 0.45 + saturate(1 - r * 3) * 0.2;
-    } else {
-        a = snow ? saturate((1 - length(i.uv)) * 2.5) * 0.9 : (1 - abs(i.uv.x)) * (0.55 - 0.25 * i.uv.y * i.uv.y) * 0.45;
-    }
-    return float4(ToScreen(precipLight.rgb * (snow ? 1.0 : 0.85)), saturate(a) * i.fade);
-}
-)";
-
 // The constant buffer `Frame`.
 struct FrameConstants {
     float viewProj[16];
@@ -498,10 +40,6 @@ struct ShadowConstants {
     float shadowInfo[4];
     float viewForward[4];
     float atlas[4];
-    float coverViewProj[2 + kWetWays][16];
-    float coverInfo[2 + kWetWays][4];
-    float wetInfo[4];
-    float wetLevels[kWetWays][4];
 };
 static_assert(sizeof(ShadowConstants) % 16 == 0);
 static_assert(sizeof(MeshVertex) == 32, "MeshVertex goes to the GPU as it is (POSITION, NORMAL, TEXCOORD)");
@@ -521,7 +59,7 @@ Mat4 NormalMatrix(const Mat4& world) {
 
 // The renderer's shaders with ToScreen / ToLinear (SkyShader.h: the sky's are the same) in front.
 const std::string& ShaderText() {
-    static const std::string text = std::string(kColorHlsl) + kShaders + kPrecipShaders;
+    static const std::string text = RendererShaderText();
     return text;
 }
 
@@ -582,8 +120,10 @@ struct Renderer::Shared {
     template <class T>
     using Ptr = Microsoft::WRL::ComPtr<T>;
     Ptr<ID3D11Device> device;
-    Ptr<ID3D11VertexShader> lineVs, meshVs, shadowVs, clearVs, precipVs;
-    Ptr<ID3D11PixelShader> linePs, meshPs, floorPs, copyPs, precipPs;
+    Ptr<ID3D11VertexShader> lineVs, meshVs, shadowVs, clearVs;
+    Ptr<ID3D11PixelShader> linePs, meshPs, floorPs, copyPs;
+    // MeshPS with a plugin's touch (RenderFrame::surface), by its code (null: it would not compile - told once).
+    std::unordered_map<std::string, Ptr<ID3D11PixelShader>> surfaces;
     Ptr<ID3D11InputLayout> lineLayout, meshLayout;
     Ptr<ID3D11Buffer> frame, lights, shadows;  // the constant buffers (b0, b1, b2)
     std::shared_ptr<const GpuMesh> cube, floor;
@@ -597,7 +137,8 @@ struct Renderer::Shared {
     Ptr<ID3D11SamplerState> shadowSampler;
     // The sky: its constant buffer (b3), a sampler stopping at the edges (one of six pictures), the
     // depth test off (drawn first, writing nothing), and the programs made so far by their text.
-    Ptr<ID3D11Buffer> skyFrame, weather;
+    Ptr<ID3D11Buffer> skyFrame;
+    Ptr<ID3D11Buffer> directionCb, surfaceCb;  // 向きの地図 (b6) and a plugin's surface numbers (b5)
     Ptr<ID3D11SamplerState> edgeSampler;
     Ptr<ID3D11DepthStencilState> depthOff;
     // ミップマップ・ストリーミング: the streamed pictures made on this device (Renderer::Stream).
@@ -608,12 +149,13 @@ struct Renderer::Shared {
     // The shadow maps (depth seen from the lights): the sun's (1, or kCascades) and the point / spot
     // lights' (kLocalShadowSlices). Made when first needed. And the map from above (雨・雪・濡れ:
     // Lighting.h's PlanCover).
-    ShadowMaps sun, local, cover;
+    ShadowMaps sun, local, directionMaps;
     UINT samples = 1;
 
     bool Init(Renderer& owner, std::string* error);
     bool EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size);
     bool EnsureLayer(ShadowMaps& maps);
+    ID3D11PixelShader* MeshPsFor(std::string_view surface);
 };
 
 namespace {
@@ -665,11 +207,10 @@ std::atomic<uint64_t> g_meshSerial{0};  // GpuMesh::serial: never the same twice
 }  // namespace
 
 bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
-    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs, cvs, cps, pvs, pps;
+    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs, cvs, cps;
     if (!Compile("LineVS", "vs_4_0", lvs, error) || !Compile("LinePS", "ps_4_0", lps, error) || !Compile("MeshVS", "vs_4_0", mvs, error) ||
         !Compile("MeshPS", "ps_4_0", mps, error) || !Compile("FloorPS", "ps_4_0", fps, error) || !Compile("ShadowVS", "vs_4_0", svs, error) ||
-        !Compile("ClearVS", "vs_4_0", cvs, error) || !Compile("CopyDepthPS", "ps_4_0", cps, error) || !Compile("PrecipVS", "vs_4_0", pvs, error) ||
-        !Compile("PrecipPS", "ps_4_0", pps, error)) {
+        !Compile("ClearVS", "vs_4_0", cvs, error) || !Compile("CopyDepthPS", "ps_4_0", cps, error)) {
         return false;
     }
     auto fail = [&](const char* what) {
@@ -683,8 +224,6 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
         FAILED(device->CreateVertexShader(svs->GetBufferPointer(), svs->GetBufferSize(), nullptr, &shadowVs)) ||
         FAILED(device->CreateVertexShader(cvs->GetBufferPointer(), cvs->GetBufferSize(), nullptr, &clearVs)) ||
         FAILED(device->CreatePixelShader(cps->GetBufferPointer(), cps->GetBufferSize(), nullptr, &copyPs)) ||
-        FAILED(device->CreateVertexShader(pvs->GetBufferPointer(), pvs->GetBufferSize(), nullptr, &precipVs)) ||
-        FAILED(device->CreatePixelShader(pps->GetBufferPointer(), pps->GetBufferSize(), nullptr, &precipPs)) ||
         FAILED(device->CreateVertexShader(mvs->GetBufferPointer(), mvs->GetBufferSize(), nullptr, &meshVs))) {
         return fail("シェーダー");
     }
@@ -722,6 +261,10 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     if (FAILED(device->CreateBuffer(&cd, nullptr, &lights))) return fail("光");
     cd.ByteWidth = sizeof(ShadowConstants);
     if (FAILED(device->CreateBuffer(&cd, nullptr, &shadows))) return fail("影");
+    cd.ByteWidth = sizeof(DirectionMapConstants);
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &directionCb))) return fail("向きの地図");
+    cd.ByteWidth = sizeof(float) * 4 * kSurfaceData;
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &surfaceCb))) return fail("面の塗り");
 
     D3D11_RASTERIZER_DESC rd{};
     rd.FillMode = D3D11_FILL_SOLID;
@@ -790,9 +333,7 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     off.DepthEnable = FALSE;
     off.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
     off.DepthFunc = D3D11_COMPARISON_ALWAYS;
-    D3D11_BUFFER_DESC wd = cd;
-    wd.ByteWidth = sizeof(float) * 24;
-    if (FAILED(device->CreateBuffer(&cd, nullptr, &skyFrame)) || FAILED(device->CreateBuffer(&wd, nullptr, &weather)) ||
+    if (FAILED(device->CreateBuffer(&cd, nullptr, &skyFrame)) ||
         FAILED(device->CreateSamplerState(&es, &edgeSampler)) ||
         FAILED(device->CreateDepthStencilState(&off, &depthOff))) {
         return fail("空");
@@ -841,6 +382,22 @@ bool Renderer::Shared::EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t siz
     maps.size = size;
     maps.holds.assign(tiles, 0);
     return true;
+}
+
+ID3D11PixelShader* Renderer::Shared::MeshPsFor(std::string_view surface) {
+    if (surface.empty()) return meshPs.Get();
+    const std::string key(surface);
+    if (const auto it = surfaces.find(key); it != surfaces.end()) return it->second ? it->second.Get() : meshPs.Get();
+    Ptr<ID3D11PixelShader>& ps = surfaces[key];  // (null if it fails: not tried again)
+    Ptr<ID3DBlob> code;
+    std::string error;
+    if (!Compile(RendererShaderText(surface), "surface", "MeshPS", "ps_4_0", code, &error) ||
+        FAILED(device->CreatePixelShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr, &ps))) {
+        log::Error("面の塗りに足すシェーダーを作れません (塗りはそのまま): {}", error);
+        ps.Reset();
+        return meshPs.Get();
+    }
+    return ps.Get();
 }
 
 bool Renderer::Shared::EnsureLayer(ShadowMaps& maps) {
@@ -1347,13 +904,13 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         it.seen = BoxInFrustum(camera, it.bounds);
         if (it.seen) ++stats_.drawn;
     }
-    // What rain and snow hit (the colliders): never in the picture, only in their maps.
-    for (const WeatherBlock& b : f.weatherBlocks) {
+    // The shapes of the 向きの地図 (a plugin's: 天候's colliders): never in the picture, only in those maps.
+    for (const MapShape& b : f.mapShapes) {
         if (!b.mesh || b.mesh->indexCount == 0) continue;
         items_.push_back({b.mesh, &b.world, {1, 1, 1, 1}, false, {}, {0, 0, 0, 0}});
         Item& it = items_.back();
         it.moving = b.moving;
-        it.block = true;
+        it.mapOnly = true;
         it.seen = false;
         it.bounds = WorldBounds(b.world, b.mesh->min, b.mesh->max);
     }
@@ -1396,19 +953,19 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
 
     // What casts, grouped by mesh (stable: DrawOrder.h) once for all the maps - a map's things of one
     // mesh become one instanced draw - each with a fingerprint of its mesh and place.
-    // The same for what rain and snow hit (blockOrder_).
+    // The same for the 向きの地図's shapes (mapOrder_).
     for (const bool blocks : {false, true}) {
         keys_.clear();
         still_.clear();
         for (uint32_t i = 0; i < items_.size(); ++i) {
             Item& it = items_[i];
-            if (blocks ? !it.block : !it.castShadow) continue;
+            if (blocks ? !it.mapOnly : !it.castShadow) continue;
             it.hash = HashWords(HashWords(kFingerprintStart, &it.mesh->serial, sizeof(it.mesh->serial)), it.world, sizeof(Mat4));
             keys_.push_back({0, 0, it.mesh->serial, 0});
             still_.push_back(i);
         }
         SortDraws(keys_, order_);
-        std::vector<uint32_t>& list = blocks ? blockOrder_ : casterOrder_;
+        std::vector<uint32_t>& list = blocks ? mapOrder_ : casterOrder_;
         list.clear();
         for (const uint32_t k : order_) list.push_back(still_[k]);
     }
@@ -1532,39 +1089,23 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         if (!localMaps) lights.block.shadow[i][0] = -1;
     }
     const bool shadows = sunMaps > 0 || localMaps;
-    // The maps the way rain (tile 0) and snow (1) fall - what is in the drops' way (slanted by the wind)
-    // - and the ways the rain fell (2..): what it has made wet. Nothing to hit: none (everything open).
-    auto fallsNow = [&](Precipitation::Kind kind) {
-        for (const Precipitation* p : f.precipitation) {
-            if (p && p->kind == kind && p->amount > 0) return true;
-        }
-        return false;
-    };
-    constexpr size_t kTiles = 2 + kWetWays;
-    const size_t wetCount = std::min(f.wetWays.size(), kWetWays);
-    bool needs[kTiles] = {fallsNow(Precipitation::Kind::Rain), fallsNow(Precipitation::Kind::Snow)};
-    Vec3 ways[kTiles] = {FallDirection(Precipitation::Kind::Rain, f.wind), FallDirection(Precipitation::Kind::Snow, f.wind)};
-    for (size_t k = 0; k < wetCount; ++k) {
-        needs[2 + k] = true;
-        ways[2 + k] = f.wetWays[k].way;
-        sc.wetLevels[k][0] = std::clamp(f.wetWays[k].sun, 0.f, 1.f);
-        sc.wetLevels[k][1] = std::clamp(f.wetWays[k].shade, 0.f, 1.f);
-    }
-    sc.wetInfo[0] = static_cast<float>(wetCount);
-    sc.wetInfo[1] = static_cast<float>(kCoverSize);
-    bool cover = false;
-    if (std::any_of(std::begin(needs), std::end(needs), [](bool b) { return b; }) && !blockOrder_.empty() &&
-        s.EnsureMaps(s.cover, static_cast<uint32_t>(kTiles), kCoverSize)) {
-        cover = true;
-        for (uint32_t k = 0; k < kTiles; ++k) {
-            if (!needs[k]) continue;
-            const CoverPlan plan = PlanCover(eye, ways[k]);
-            CopyMatrix(sc.coverViewProj[k], plan.viewProj);
-            sc.coverInfo[k][0] = 1;
-            sc.coverInfo[k][1] = static_cast<float>((k % s.cover.cols) * kCoverSize);
-            sc.coverInfo[k][2] = static_cast<float>((k / s.cover.cols) * kCoverSize);
-            sc.coverInfo[k][3] = plan.range;
-            planMap(s.cover, k, plan.viewProj, blockOrder_);
+    // 向きの地図: the hidden shapes seen along each direction asked for (a plugin's: 天候's rain, snow
+    // and what got wet). No shapes: none (everything open, MapPast says).
+    DirectionMapConstants dm{};
+    const uint32_t mapCount = static_cast<uint32_t>(std::min<size_t>(f.mapDirections.size(), kDirectionMaps));
+    dm.size[0] = static_cast<float>(kCoverSize);
+    dm.size[1] = static_cast<float>(mapCount);
+    bool directionMaps = false;
+    if (mapCount > 0 && !mapOrder_.empty() && s.EnsureMaps(s.directionMaps, kDirectionMaps, kCoverSize)) {
+        directionMaps = true;
+        for (uint32_t k = 0; k < mapCount; ++k) {
+            const CoverPlan plan = PlanCover(eye, f.mapDirections[k]);
+            CopyMatrix(dm.viewProj[k], plan.viewProj);
+            dm.info[k][0] = 1;
+            dm.info[k][1] = static_cast<float>((k % s.directionMaps.cols) * kCoverSize);
+            dm.info[k][2] = static_cast<float>((k / s.directionMaps.cols) * kCoverSize);
+            dm.info[k][3] = plan.range;
+            planMap(s.directionMaps, k, plan.viewProj, mapOrder_);
         }
     }
 
@@ -1638,6 +1179,13 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     fc.eye[0] = eye.x, fc.eye[1] = eye.y, fc.eye[2] = eye.z;
     ctx->UpdateSubresource(s.lights.Get(), 0, nullptr, &lights.block, 0, 0);
     ctx->UpdateSubresource(s.shadows.Get(), 0, nullptr, &sc, 0, 0);
+    ctx->UpdateSubresource(s.directionCb.Get(), 0, nullptr, &dm, 0, 0);
+    if (f.surface) {
+        float data[4 * kSurfaceData] = {};
+        std::copy_n(f.surface->data.begin(), std::min<size_t>(f.surface->data.size(), std::size(data)), data);
+        ctx->UpdateSubresource(s.surfaceCb.Get(), 0, nullptr, data, 0, 0);
+    }
+    ID3D11PixelShader* meshPs = s.MeshPsFor(f.surface ? std::string_view(f.surface->code) : std::string_view());
     ID3D11Buffer* frameCb = s.frame.Get();
     ID3D11Buffer* cbs[3] = {frameCb, s.lights.Get(), s.shadows.Get()};
     ctx->VSSetConstantBuffers(0, 1, &frameCb);
@@ -1645,7 +1193,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ID3D11ShaderResourceView* noSrvs[8] = {};
     ctx->PSSetShaderResources(0, 8, noSrvs);  // the maps may still be bound for reading: they are written first
     ctx->PSSetShaderResources(8, 1, noSrvs);
-    ctx->VSSetShaderResources(8, 1, noSrvs);
+    ctx->VSSetShaderResources(8, 1, noSrvs);  // (a plugin's draw may have read the 向きの地図 there)
     ID3D11ShaderResourceView* thingsView = thingsView_.Get();
     ctx->VSSetShaderResources(6, 1, &thingsView);
     ctx->PSSetShaderResources(6, 1, &thingsView);
@@ -1785,10 +1333,13 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->PSSetShaderResources(5, 1, &localSrv);
         ctx->PSSetSamplers(0, 1, &sampler);
     }
-    ID3D11ShaderResourceView* coverSrv = cover ? s.cover.srv.Get() : nullptr;
-    ctx->PSSetShaderResources(8, 1, &coverSrv);
+    // 向きの地図 (b6, t8) and a plugin's surface numbers (b5): for the models, and for what plugins draw.
+    ID3D11ShaderResourceView* mapsSrv = directionMaps ? s.directionMaps.srv.Get() : nullptr;
+    ID3D11Buffer* extraCbs[2] = {s.surfaceCb.Get(), s.directionCb.Get()};
+    ctx->PSSetShaderResources(8, 1, &mapsSrv);
+    ctx->PSSetConstantBuffers(5, 2, extraCbs);
     ctx->VSSetShader(s.meshVs.Get(), nullptr, 0);
-    ctx->PSSetShader(s.meshPs.Get(), nullptr, 0);
+    ctx->PSSetShader(meshPs, nullptr, 0);
     run(opaqueFirst, opaqueEnd, true);
     // The shadows on the floor: see-through, over what is already drawn (the depth test still hides
     // the floor behind things), and writing no depth (the grid lies on it).
@@ -1827,48 +1378,16 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
         ctx->VSSetShader(s.meshVs.Get(), nullptr, 0);
-        ctx->PSSetShader(s.meshPs.Get(), nullptr, 0);
+        ctx->PSSetShader(meshPs, nullptr, 0);
         run(floorEnd, seeThroughEnd, true);
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
-    }
-
-    // 3-1. Rain / snow around the eye: see-through, depth-tested, writing no depth. They read the map
-    // from above (b2, t8) in the vertex shader: where they hit, under a roof.
-    for (const Precipitation* fall : f.precipitation) {
-        const uint32_t count = fall ? PrecipitationCount(*fall) : 0;
-        if (count == 0) continue;
-        const bool snow = fall->kind == Precipitation::Kind::Snow;
-        const Color& l = fall->light;
-        const FallSpeed speed = FallOf(fall->kind);
-        // The camera's right and up: the view's first two rows (m[column][row]). Its map: tile 1 for snow.
-        const float wc[24] = {snow ? 1.f : 0.f, fall->seconds, snow ? kSnowBox : kRainBox, snow ? 1.f : 0.f, l.r, l.g, l.b, 0,
-                              f.view.m[0][0], f.view.m[1][0], f.view.m[2][0], 0, f.view.m[0][1], f.view.m[1][1], f.view.m[2][1], 0,
-                              f.wind.x, f.wind.z, fall->driftX, fall->driftZ, speed.least, speed.spread, speed.carried, 0};
-        ID3D11Buffer* weatherCb = s.weather.Get();
-        ID3D11Buffer* shadowCb = s.shadows.Get();
-        ctx->UpdateSubresource(weatherCb, 0, nullptr, wc, 0, 0);
-        ctx->VSSetConstantBuffers(4, 1, &weatherCb);
-        ctx->PSSetConstantBuffers(4, 1, &weatherCb);
-        ctx->VSSetConstantBuffers(2, 1, &shadowCb);
-        ctx->VSSetShaderResources(8, 1, &coverSrv);
-        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
-        ctx->VSSetShader(s.precipVs.Get(), nullptr, 0);
-        ctx->PSSetShader(s.precipPs.Get(), nullptr, 0);
-        ctx->Draw(count * 6, 0);
-        ctx->OMSetDepthStencilState(s.depth.Get(), 0);
-        ID3D11Buffer* none = nullptr;
-        ctx->VSSetConstantBuffers(4, 1, &none);
-        ctx->PSSetConstantBuffers(4, 1, &none);
-        ctx->VSSetConstantBuffers(2, 1, &none);
-        ctx->VSSetShaderResources(8, 1, noSrvs);
     }
 
     // 3-2. What plugins draw themselves (particles: see-through, depth-tested, writing no depth); then
     // ours is set again for the lines.
     if (!f.extras.empty()) {
         ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
-        const ExtraDrawContext ec{ctx, f.view, f.projection, eye, f.width, f.height, depthSrv_.Get(), samples_};
+        const ExtraDrawContext ec{ctx, f.view, f.projection, eye, f.width, f.height, depthSrv_.Get(), samples_, s.directionCb.Get(), mapsSrv};
         for (const ExtraDraw& draw : f.extras) {
             if (draw) draw(ec);
         }
@@ -1916,8 +1435,9 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->PSSetShaderResources(0, 8, noSrvs);
     ctx->PSSetShaderResources(8, 1, noSrvs);
     ctx->VSSetShaderResources(6, 1, noSrvs);
-    ID3D11Buffer* noCbs[4] = {};
-    ctx->PSSetConstantBuffers(0, 4, noCbs);
+    ID3D11Buffer* noCbs[7] = {};
+    ctx->PSSetConstantBuffers(0, 7, noCbs);
+    ctx->VSSetShaderResources(8, 1, noSrvs);
     ID3D11Buffer* noVb = nullptr;
     const UINT zero = 0;
     ctx->IASetVertexBuffers(1, 1, &noVb, &zero, &zero);

@@ -1,6 +1,6 @@
 #pragma once
-// The sky part of the scripts' API (sdk/RM3D.h: rm::Sky): the scene's 空 - its weather, amounts and
-// wind, at once or faded (Sky.h's BeginFade). Offered at kScriptApiPoint by RegisterRuntime.
+// The sky part of the scripts' API (sdk/RM3D.h: rm::Sky): the scene's 空 - its 時刻.
+// Offered at kScriptApiPoint by RegisterRuntime.
 
 #include "rm_engine/game_production/runtime/Scripts.h"
 

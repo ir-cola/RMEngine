@@ -19,7 +19,6 @@
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/SkyPaint.h"
-#include "rm_engine/game_x_3d/runtime/WeatherBlocks.h"
 #include "rm_engine/game_x_3d/runtime/WorldDraw.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
@@ -901,7 +900,7 @@ private:
         const game_x_3d::Sky* sky = host.scene.Setting<game_x_3d::Sky>();
         const bool ownCamera = &pic == &main_ && !host.game;
         if (sky && sky->kind != game_x_3d::SkyKind::None) {
-            skyLook_ = game_x_3d::LookOf(*sky, skySeconds_);
+            skyLook_ = game_x_3d::LookOf(*sky, skySeconds_, game_x_3d::SkyWeatherOf(&host.host.Registry(), host.scene, skySeconds_));
             const game_x_3d::SkyLook& look = skyLook_;
             if (!ownCamera || state_.sky) {
                 game_x_3d::SkyPainter::Sources sources;
@@ -914,32 +913,12 @@ private:
                 sources.name = [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); };
                 sources.now = now_;
                 f.sky = pic.sky.Prepare(pic.renderer, *sky, look, sources);
-                // 雨 / 雪 (with the sky; both while one fades into the other) and what the rain has made wet.
-                if (look.rain.amount > 0) f.precipitation[0] = &look.rain;
-                if (look.snow.amount > 0) f.precipitation[1] = &look.snow;
-                f.wetWays = look.wetWays;
-                f.wind = look.wind;
-                // What they hit (the colliders: WeatherBlocks.h) - the places as this view shows them.
-                if (f.precipitation[0] || f.precipitation[1] || !look.wetWays.empty()) {
-                    MakeWeatherBlocks(
-                        host.scene, host.host.Registry(),
-                        [this](int id) -> const Mat4* {
-                            const Placed* p = FindPlaced(id);
-                            return p && p->active ? &p->world : nullptr;
-                        },
-                        [&pic](space3d::Shape s) { return pic.renderer.ShapeOf(s); },
-                        [this](int id) -> const space3d::GpuMesh* {
-                            const Placed* p = FindPlaced(id);
-                            return p && p->active ? p->mesh : nullptr;
-                        },
-                        weatherBlocks_, weatherBlockers_);
-                    f.weatherBlocks = weatherBlocks_;
-                }
             }
             game_x_3d::FollowSky(look, frameLights_, f.ambient);
         }
         f.lights = frameLights_;
-        PrepareExtras(c, host, pic);
+        // (天候 with the sky: the scene view's own camera shows it when 空 is on)
+        PrepareExtras(c, host, pic, f, sky && sky->kind != game_x_3d::SkyKind::None ? &skyLook_ : nullptr, !ownCamera || state_.sky);
         f.extras = pic.extras;
 
         // Direct2D's drawing so far goes to the GPU first; then Direct3D draws into its own picture.
@@ -987,7 +966,8 @@ private:
     // What other plugins draw into this picture (パーティクル): asked once a frame, with the places of
     // what is switched on. Not playing, a drawer shows what is selected moving; the view is drawn again
     // while something of it moves.
-    void PrepareExtras(ui::Context& c, game_production::SceneViewHost& host, Picture& pic) {
+    void PrepareExtras(ui::Context& c, game_production::SceneViewHost& host, Picture& pic, space3d::RenderFrame& frame, const SkyLook* sky,
+                       bool atmosphere) {
         pic.extras.clear();
         if (!pic.drawersMade) {
             pic.drawersMade = true;
@@ -998,17 +978,35 @@ private:
         if (pic.drawers.empty()) return;
         const float dt = (pic.drawnAt ? static_cast<float>(std::clamp(now_ - *pic.drawnAt, 0.0, 0.1)) : 0.f) * (host.playing ? host.timeScale : 1.f);
         pic.drawnAt = now_;
-        const WorldDrawFrame wf{host.scene, host.host.Graphics(),
-                                [this](int id) -> const Mat4* {
-                                    const Placed* p = FindPlaced(id);
-                                    return p && p->active ? &p->world : nullptr;
-                                },
-                                dt, host.playing, host.selection,
-                                // (as the editor has it: an edit of the パーティクル tab shows at once)
-                                [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
-                                [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); },
-                                &host.host.Registry(),
-                                host.game ? "game" : &pic == &main_ ? "scene" : "preview"};
+        WorldDrawFrame wf{host.scene, host.host.Graphics(),
+                          [this](int id) -> const Mat4* {
+                              const Placed* p = FindPlaced(id);
+                              return p && p->active ? &p->world : nullptr;
+                          },
+                          dt, host.playing, host.selection,
+                          // (as the editor has it: an edit of the パーティクル tab shows at once)
+                          [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
+                          [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); },
+                          &host.host.Registry(),
+                          host.game ? "game" : &pic == &main_ ? "scene" : "preview"};
+        wf.seconds = skySeconds_;
+        wf.sky = sky;
+        wf.atmosphere = atmosphere;
+        wf.model = [this](int id) -> const space3d::GpuMesh* {
+            const Placed* p = FindPlaced(id);
+            return p && p->active ? p->mesh : nullptr;
+        };
+        wf.shape = [&pic](space3d::Shape s) { return pic.renderer.ShapeOf(s); };
+        // What they add to the frame (天候: the 向きの地図, 濡れ), then what they draw.
+        for (const auto& d : pic.drawers) {
+            FrameAdditions add;
+            d->PrepareFrame(wf, add);
+            if (frame.mapDirections.empty() && !add.mapDirections.empty()) {
+                frame.mapDirections = add.mapDirections;
+                frame.mapShapes = add.mapShapes;
+            }
+            if (!frame.surface) frame.surface = add.surface;
+        }
         bool moving = false;
         for (const auto& d : pic.drawers) {
             d->Prepare(wf, pic.extras);
@@ -1430,8 +1428,8 @@ private:
     std::string transformType_, meshType_, cameraType_, lightType_, ambientType_;
     std::unordered_map<std::string, w::Icon> markOf_;  // component type -> its mark (MakeLooks)
     std::vector<space3d::Light> frameLights_;          // lights_ as a picture draws them (the sky's light)
-    double skySeconds_ = 0;
-    game_x_3d::SkyLook skyLook_;  // the picture being drawn's (the renderer reads its rain / snow)                            // the sky's time (SkyLook): the game's while it plays
+    double skySeconds_ = 0;       // the sky's time (SkyLook): the game's while it plays
+    game_x_3d::SkyLook skyLook_;  // the picture being drawn's (天候's drops are lit by it)
     bool looksMade_ = false;
     std::optional<space3d::Ambient> ambient_;  // the scene's 環境光 (none: the default)
     size_t warnedShadows_ = 0;  // lights told about that have no shadow map left
@@ -1441,8 +1439,6 @@ private:
     game_production::DebugDraw sceneLines_;          // the plugins' scene lines of this frame (SceneLinesInfo)
     std::vector<space3d::Box> boxes_;
     std::vector<space3d::MeshDraw> meshes_;
-    std::vector<WeatherBlocker> weatherBlockers_;     // what rain and snow hit (the colliders) ...
-    std::vector<space3d::WeatherBlock> weatherBlocks_;  // ... as the renderer takes them
     std::vector<space3d::Light> lights_;
     size_t warnedLights_ = 0;  // the number of lights told about (too many)
     std::unordered_map<std::string, ModelEntry> models_;  // by MeshRenderer::model (the asset's id)

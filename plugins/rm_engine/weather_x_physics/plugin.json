@@ -1,12 +1,12 @@
 {
   "format": 1,
   "author": "rm_engine",
-  "name": "game_x_3d_x_physics",
-  "displayName": "ゲーム制作 × 3D × 物理",
+  "name": "weather_x_physics",
+  "displayName": "天候 × 物理",
   "version": 1,
-  "connectorFor": { "author": "rm_engine", "name": "game_x_3d" },
+  "connectorFor": { "author": "rm_engine", "name": "weather" },
   "requires": [
-    { "author": "rm_engine", "name": "game_x_3d" },
+    { "author": "rm_engine", "name": "weather" },
     { "author": "rm_engine", "name": "physics" },
     { "author": "rm_engine", "name": "game_production" },
     { "author": "rm_engine", "name": "space3d" }

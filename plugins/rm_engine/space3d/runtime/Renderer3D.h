@@ -150,12 +150,20 @@ struct MeshDraw {
     bool moving = false;                      // as Box::moving
 };
 
-// What rain and snow hit (RenderFrame::weatherBlocks): a shape, not drawn - a collider as a box, a
-// ball, a cylinder (ShapeOf) or a model.
-struct WeatherBlock {
+// A shape of the 向きの地図 (RenderFrame::mapShapes): never drawn, only seen by those maps (天候: a
+// collider - a box, a ball, a cylinder (ShapeOf) or a model - that rain and snow hit).
+struct MapShape {
     const GpuMesh* mesh = nullptr;
     Mat4 world;
     bool moving = false;  // as Box::moving
+};
+
+// A plugin's touch on every surface (RenderFrame::surface; RendererShaders.h): its HLSL defining
+// Surface(...) - compiled once per device and text - and its numbers (cbuffer SurfaceData: at most
+// kSurfaceData float4s).
+struct SurfaceTouch {
+    std::string code;
+    std::vector<float> data;
 };
 
 // What a plugin draws itself into the picture (particles): after the see-through parts, before the
@@ -172,6 +180,10 @@ struct ExtraDrawContext {
     // GPU cannot read it. A multisampled one (Texture2DMS) when samples > 1.
     ID3D11ShaderResourceView* depth = nullptr;
     uint32_t samples = 1;
+    // The 向きの地図 of the frame (RendererShaders.h's kDirectionMapHlsl: bind them at b6 and t8, unbind
+    // after). Null texture: none (MapPast then says nothing is in the way when its cbuffer is bound).
+    ID3D11Buffer* directionMapsCb = nullptr;
+    ID3D11ShaderResourceView* directionMaps = nullptr;
 };
 using ExtraDraw = std::function<void(const ExtraDrawContext&)>;
 
@@ -205,17 +217,11 @@ struct RenderFrame {
     Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
     std::span<const ExtraDraw> extras;  // in this order (ExtraDraw)
     const SkyDraw* sky = nullptr;       // null (or no program): only the clear colour behind
-    // Rain and / or snow around the eye (SkyShader.h; both while one fades into the other); null: none.
-    // They hit `weatherBlocks` (seen the way they fall: Lighting.h's PlanCover): rain splashes there,
-    // a flake stops there and melts a moment later; past it nothing falls (under a roof, unless the
-    // wind blows it in from the side).
-    const Precipitation* precipitation[2] = {};
-    Vec3 wind{0, 0, 0};  // m/s, world: rain and snow slant along it
-    // 濡れ: what the rain reached (any of these ways: SkyShader.h's WetWay; at most kWetWays) looks wet -
-    // a little darker, and smooth - in round spots; in shade (the sun's shadow) as wet as `shade` says.
-    std::span<const WetWay> wetWays;
-    // What rain and snow hit (the colliders), not drawn.
-    std::span<const WeatherBlock> weatherBlocks;
+    // 向きの地図 (RendererShaders.h): the depth of `mapShapes` (not drawn) seen along each of these
+    // directions (at most kDirectionMaps; map k is the k-th) - read by `surface` and by `extras`.
+    std::span<const Vec3> mapDirections;
+    std::span<const MapShape> mapShapes;
+    const SurfaceTouch* surface = nullptr;  // a plugin's touch on every surface (null: none)
 };
 
 class Renderer {
@@ -283,7 +289,7 @@ private:
         uint32_t firstMaterial = 0;  // ... and its parts' materials, one after another
         bool moving = false;         // Box / MeshDraw::moving
         uint64_t hash = 0;           // its mesh and place (what a shadow map remembers of it)
-        bool block = false;          // a WeatherBlock: only in the map rain and snow fall by
+        bool mapOnly = false;        // a MapShape: only in the 向きの地図
     };
     // One draw: some triangles of a mesh, with the numbers of a thing and a material (`slot`: its
     // place in draws_, read by the shader as the instance's data).
@@ -329,7 +335,7 @@ private:
     std::vector<Cmd> cmds_;
     size_t mergeFloor_ = 0;
     std::vector<DrawKey> keys_;
-    std::vector<uint32_t> order_, casterOrder_, blockOrder_, still_, moving_;
+    std::vector<uint32_t> order_, casterOrder_, mapOrder_, still_, moving_;
     std::vector<std::pair<uint32_t, uint32_t>> refs_;  // (item, part) of each key
     struct PictureSetHash {
         size_t operator()(const std::array<const void*, 5>& a) const noexcept {

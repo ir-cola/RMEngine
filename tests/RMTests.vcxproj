@@ -77,6 +77,7 @@
     <ClCompile Include="TestProcess.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestSky.cpp" />
+    <ClCompile Include="TestWeather.cpp" />
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
     <ClCompile Include="TestSystems.cpp" />
@@ -184,10 +185,18 @@
     <ClCompile Include="..\plugins\rm_engine\particles_x_physics\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)particles_x_physics\</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="..\plugins\rm_engine\game_x_3d_x_physics\runtime\Register.cpp">
-      <ObjectFileName>$(IntDir)game_x_3d_x_physics\</ObjectFileName>
+    <ClCompile Include="..\plugins\rm_engine\weather_x_physics\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)weather_x_physics\</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\WeatherBlocks.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\weather\runtime\Weather.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\weather\runtime\Falling.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\weather\runtime\WeatherBlocks.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\weather\runtime\WeatherDraw.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\weather\runtime\ScriptWeather.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\weather\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)weather\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\RendererShaders.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)game_x_particles\</ObjectFileName>
     </ClCompile>

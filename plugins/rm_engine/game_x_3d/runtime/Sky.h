@@ -6,9 +6,9 @@
 //
 //   なし                  the camera's background colour, as before
 //   地球の空              the air, the sun, the moon and the stars, clouds - by the 時刻 (0 .. 24; it goes on
-//                         while the game plays when 1 日の長さ is set) and the 天気 (晴れ / くもり / 雨 / 雪:
-//                         how cloudy, lightning, how much rain or snow - drops and flakes that really fall
-//                         around the camera, in front of things and hidden behind them)
+//                         while the game plays when 1 日の長さ is set); how cloudy, lightning and the wind
+//                         the clouds drift with are the weather's (the plugin 天候: SkyWeather - without
+//                         it, a fair sky with a few clouds)
 //   宇宙                  stars, nebulae, the Milky Way and a sun
 //   画像 (パノラマ 1 枚)  one picture around (equirectangular: 360 x 180 degrees)
 //   画像 (6 枚)           a picture for each side of a cube around the eye
@@ -21,6 +21,7 @@
 
 #include "base/Math.h"
 #include "base/Ref.h"
+#include "core/RuntimeRegistry.h"
 #include "core/reflect/Reflect.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/SkyShader.h"
@@ -30,6 +31,7 @@
 
 namespace rm::game_production {
 struct SystemContext;
+class Scene;
 }
 
 namespace rm::game_x_3d {
@@ -44,23 +46,6 @@ enum class SkyKind {
     RM_ITEM(Label="自分のシェーダー") Custom,
 };
 
-RM_ENUM(Label="天気")
-enum class Weather {
-    RM_ITEM(Label="晴れ") Clear,
-    RM_ITEM(Label="くもり") Cloudy,
-    RM_ITEM(Label="雨") Rain,
-    RM_ITEM(Label="雪") Snow,
-};
-
-// The weather as it is at a moment: how much of each of the four (晴れ くもり 雨 雪: they add up to 1 -
-// one of them, or a mix while one fades into another) and the amounts. Not saved (Sky keeps what it
-// was when a fade began: fadeFrom).
-struct WeatherNow {
-    float weight[4] = {1, 0, 0, 0};  // by Weather
-    float clearClouds = 0.2f, cloudiness = 0.7f, rain = 0.5f, snow = 0.5f;
-    float windX = 0, windZ = 0;  // where the wind goes, seen from above (m/s, world)
-};
-
 RM_STRUCT(Label="空")
 struct Sky {
     RM_PROPERTY(Edit, Label="種類", Tooltip="シーンの後ろに描く空。なし: カメラの背景の色 / 地球の空: 時刻と天気で変わる空 / 宇宙: 星と星雲 / 画像: パノラマ 1 枚か 6 枚 / 自分のシェーダー: .rmsky のファイル")
@@ -69,15 +54,6 @@ struct Sky {
     // 地球の空
     RM_PROPERTY(Edit, Label="時刻", Tooltip="0〜24 時。6 時に東 (+X) から昇り、12 時に一番高く、18 時に西へ沈みます", Min=0, Max=24, Step=0.25, ShowIf="kind=Earth") float hour = 12.f;
     RM_PROPERTY(Edit, Label="1 日の長さ (秒)", Tooltip="Play 中、この秒数で 24 時間すすみます (0: 時刻は止まったまま)。書き出したゲームでも同じ", Min=0, Max=1000000, ShowIf="kind=Earth") float dayLength = 0.f;
-    RM_PROPERTY(Edit, Label="天気", Tooltip="晴れ: 日の差す空に雲を少し (量を選べる) / くもり: 雲の多い暗い空 / 雨・雪: 厚い雲に加えて、カメラのまわりに雨粒・雪が降ります", ShowIf="kind=Earth") Weather weather = Weather::Clear;
-    // (晴れ has its own 雲の量: 0.2 is the few clouds it always had)
-    RM_PROPERTY(Edit, Label="雲の量", Tooltip="晴れの空の雲。0: 雲ひとつ無い 〜 1: 雲が多い (日の光はほとんど弱まりません)", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Clear") float clearClouds = 0.2f;
-    RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲が多め 〜 1: 空一面の厚い雲 (暗くなり、日の光も弱まります)", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Cloudy|Rain|Snow") float cloudiness = 0.7f;
-    RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中)", ShowIf="kind=Earth&weather=Cloudy|Rain") bool lightning = false;
-    RM_PROPERTY(Edit, Label="雨の量", Tooltip="0: 降らない 〜 1: どしゃぶり", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Rain") float rain = 0.5f;
-    RM_PROPERTY(Edit, Label="雪の量", Tooltip="0: 降らない 〜 1: 大雪", Min=0, Max=1, Step=0.05, ShowIf="kind=Earth&weather=Snow") float snow = 0.5f;
-    RM_PROPERTY(Edit, Label="風の向き (度)", Tooltip="風の吹いていく向き (真上から見て)。0: 前 (-Z) へ / 90: 左 (-X) へ / -90: 右 (+X) へ。雲・雨粒・雪が流されます", Min=-360, Max=360, ShowIf="kind=Earth") float windDirection = 0.f;
-    RM_PROPERTY(Edit, Label="風の強さ (m/秒)", Tooltip="0: 無風 〜 30: 嵐。雲の流れる速さと、雨粒・雪の傾き", Min=0, Max=40, Step=0.5, ShowIf="kind=Earth") float windStrength = 2.f;
     RM_PROPERTY(Edit, Label="太陽の高さ (度)", Tooltip="地球の空: 真昼の高さ / 宇宙・自分のシェーダー: 太陽のある高さ (0 で地平線、90 で真上)", Min=-90, Max=90, ShowIf="kind=Earth|Space|Custom") float sunHeight = 60.f;
     RM_PROPERTY(Edit, Label="太陽の向き (度)", Tooltip="真上から見て、太陽の通り道 (地球の空) / 太陽 (宇宙など) を回します。0: 真昼の太陽は後ろ (+Z) の空", Min=-360, Max=360, ShowIf="kind=Earth|Space|Custom") float sunDirection = 0.f;
     RM_PROPERTY(Edit, Label="光を空に合わせる", Tooltip="シーンの 1 つ目の平行光 (無ければ足します) の向き・色・強さと、環境光の色を、空の太陽 (夜は月) に合わせます。光の部品の「強さ」は倍率として残ります", ShowIf="kind=Earth|Space") bool driveLight = true;
@@ -101,49 +77,29 @@ struct Sky {
     RM_PROPERTY(Edit, Label="シェーダー", Tooltip="空のシェーダーのファイル (.rmsky)。⋮ の「新しい空のシェーダーを作る」で例から作れます", AssetKind=".rmsky", ShowIf="kind=Custom") AssetRef shader;
     RM_PROPERTY(Edit, Label="値", Tooltip="シェーダーで i.value として読めます", ShowIf="kind=Custom") Vec3 value{0, 0, 0};
     RM_PROPERTY(Edit, Label="色", Tooltip="シェーダーで i.color として読めます", Min=0, Max=1, ShowIf="kind=Custom") Color color{1, 1, 1, 1};
-    // A fade of the weather (scripts: rm::Sky's SetWeather / SetRain ... with seconds): the weather
-    // when it began, how long it takes, how far it has come. The fields above are where it goes.
-    RM_TRANSIENT() WeatherNow fadeFrom{};
-    RM_TRANSIENT() float fadeSeconds = 0;
-    RM_TRANSIENT() float fadeElapsed = 0;
-    // 濡れ while the game plays (StepWet): the ways the rain fell and how wet each made things - they
-    // grow while it rains, dry in game time after. Not counted yet (the editor before Play): LookOf
-    // takes the rain falling now.
-    RM_TRANSIENT() std::vector<space3d::WetWay> wetWays;
-    RM_TRANSIENT() bool wetCounted = false;
-    // How far the wind has carried the clouds, the drops and the flakes while the game played (world
-    // units: the wind added up - a wind that changes never makes them jump).
-    RM_TRANSIENT() float driftX = 0;
-    RM_TRANSIENT() float driftZ = 0;
 };
-
-// The weather the fields say (where a fade goes) / the weather now (a fade's way there: eased).
-WeatherNow TargetOf(const Sky& sky);
-WeatherNow NowOf(const Sky& sky);
-// Starts a fade of `seconds` from the weather now: change the fields after it (0 seconds: at once).
-// A fade begun during another starts from where that one has come.
-void BeginFade(Sky& sky, float seconds);
-// How much rain / snow falls now (the weather's share x its amount: 0 .. 1).
-float RainNow(const WeatherNow& w);
-float SnowNow(const WeatherNow& w);
-// The wind of 風の向き / 風の強さ (m/s, world: y is 0).
-Vec3 WindOf(float directionDegrees, float strength);
-// 濡れ `dt` game seconds later. While it rains: the way it falls now (slanted by the wind) gets wetter
-// (in a few seconds, up to twice the rain's amount, at most 1) - a way within kWetWayDegrees of one
-// kept is that one; the others stay as wet as they were (what the rain reached stays wet while it
-// rains). Not raining: all dry - in the sun in a minute and a half, in shade over five minutes - and
-// go when dry. At most kWetWays (a new way takes the place of the least wet one).
-inline constexpr float kWetWayDegrees = 8.f;
-void StepWet(std::vector<space3d::WetWay>& ways, const WeatherNow& now, float dt);
-// What is wet now, as the editor shows it before Play: the rain falling now, its way, at once.
-std::vector<space3d::WetWay> WetAtOnce(const WeatherNow& now);
-// How wet it is (the scripts' rm::Sky::Wetness): the wettest way in the sun.
-float WetnessOf(const std::vector<space3d::WetWay>& ways);
 
 // Towards the sun (length 1). 地球の空: by the hour - up in the east (+X) at 6, highest (sunHeight, on
 // the +Z side) at 12, down in the west at 18, as low below at 0; the path turned by sunDirection.
 // The others: where the 地球の空's sun is at 12.
 Vec3 SunDirection(const Sky& sky);
+
+// What the weather does to the sky (the plugin 天候 tells it: SkyWeatherInfo). As it is: a fair sky
+// with a few clouds, no wind.
+struct SkyWeather {
+    float cover = 0.15f, dark = 0.0048f, haze = 0.006f;  // the clouds' cover, their darkness, haze (0 .. 1)
+    float through = 0.992f;                              // how much of the sun's light gets through
+    float flash = 0;                                      // 雷: a flash now (0 .. 1)
+    float driftX = 0, driftZ = 0;  // how far the wind has carried the clouds (world units)
+    float windX = 0, windZ = 0;    // the wind now (m/s, world)
+};
+// RuntimeRegistry point: items are SkyWeatherInfo (static); the first that tells is used.
+inline constexpr char kSkyWeatherPoint[] = "rm_engine.game_x_3d.sky_weather";
+struct SkyWeatherInfo {
+    // The scene's weather as the sky shows it at `seconds` (the game's time); false: it has none.
+    bool (*of)(const game_production::Scene& scene, double seconds, SkyWeather& out) = nullptr;
+};
+SkyWeather SkyWeatherOf(const RuntimeRegistry* registry, const game_production::Scene& scene, double seconds);
 
 // What the sky is this frame: the code it is drawn with (a built-in one; nullopt: the user's .rmsky
 // or none), its numbers, and the light that follows it.
@@ -155,23 +111,18 @@ struct SkyLook {
     Color lightColor{1, 1, 1, 1};       // linear
     float lightStrength = 1.f;          // multiplies the light component's own 強さ
     Color ambientSky{0.16f, 0.16f, 0.16f, 1}, ambientGround{0.08f, 0.08f, 0.08f, 1};
-    // 雨 / 雪: what falls around the camera (amount 0: nothing) - both while one fades into the other.
-    space3d::Precipitation rain, snow;
-    // 濡れ: the ways the rain fell and how wet they made things (RenderFrame::wetWays).
-    std::vector<space3d::WetWay> wetWays;
-    Vec3 wind{0, 0, 0};  // 風 now (m/s, world; RenderFrame::wind)
-    float flash = 0;  // 雷: a flash now (0 .. 1; it lights the clouds, the ambient light and the drops)
+    float flash = 0;  // 雷: a flash now (0 .. 1; it lights the clouds and the ambient light)
 };
-// `seconds`: the time the clouds drift and the stars twinkle by (the game's: 0 in the editor until Play).
-SkyLook LookOf(const Sky& sky, double seconds);
+// `seconds`: the time the stars twinkle by (the game's: 0 in the editor until Play); `weather`: what
+// the weather does to it (地球の空).
+SkyLook LookOf(const Sky& sky, double seconds, const SkyWeather& weather = {});
 
 // 光を空に合わせる: the first directional light takes the look's direction and colour, and its strength
 // times the look's (none: one is added); the ambient light's colours become the sky's (its strength
 // stays; a lightning flash brightens it). Nothing when the look does not drive the light.
 void FollowSky(const SkyLook& look, std::vector<space3d::Light>& lights, space3d::Ambient& ambient);
 
-// The system 空の時刻: while the game plays, 地球の空's 時刻 goes on (1 日の長さ seconds a day), a fade
-// of the weather goes on, and what the rain reaches gets wet (and dries).
+// The system 空の時刻: while the game plays, 地球の空's 時刻 goes on (1 日の長さ seconds a day).
 void RunSkyClock(game_production::SystemContext& ctx);
 
 }  // namespace rm::game_x_3d

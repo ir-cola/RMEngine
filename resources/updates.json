@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "天候 (天気・雨・雪・風・濡れ) をプラグイン「天候」に分けた。Hub の「プラグイン」で入れる。スクリプトは RMWeather.h",
+          "en": "The weather (rain, snow, wind, wetness) is now the plugin Weather. Install it from Plugins in the Hub. Scripts use RMWeather.h"
+        },
+        {
           "ja": "濡れは雨粒と同じく風の向きで当たり、雨の間は一度濡れた所が乾かない。やむとゲームの時間で乾き、影の所は乾きにくい",
           "en": "Rain wets along the wind like the drops; what got wet stays wet while it rains. After the rain it dries in game time, slower in shade"
         },

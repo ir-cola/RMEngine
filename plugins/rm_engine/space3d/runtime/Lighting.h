@@ -136,11 +136,10 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
 // Everything moving: the moving things' box widened to steps of its own size. Neither: nullopt.
 std::optional<Bounds> SunFitBounds(const std::optional<Bounds>& still, const std::optional<Bounds>& moving);
 
-// The map seen the way the rain (or the snow) falls (RenderFrame::precipitation / wetWays): around the
-// eye, the depth of the first thing in their way (RenderFrame::weatherBlocks: the colliders) - a drop
-// past it has hit it, a surface it does not reach stays dry. Slanted with the wind, so it comes in
-// under a roof from the side. kCoverSide wide, its texels fixed in the world (it does not shimmer as
-// the eye moves); from kCoverAbove before the eye (along the way) to kCoverDepth after that.
+// A 向きの地図 (RenderFrame::mapDirections; 天候: the way rain and snow fall): around the eye, the depth
+// of the first shape (RenderFrame::mapShapes) on each line along `direction` - a drop past it has hit
+// it. kCoverSide wide, its texels fixed in the world (it does not shimmer as the eye moves); from
+// kCoverAbove before the eye (along the way) to kCoverDepth after that.
 inline constexpr uint32_t kCoverSize = 1024;
 inline constexpr float kCoverSide = 80.f, kCoverAbove = 80.f, kCoverDepth = 300.f;
 struct CoverPlan {

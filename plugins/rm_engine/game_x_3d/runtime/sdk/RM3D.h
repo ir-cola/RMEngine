@@ -22,11 +22,9 @@
 //   rm::Debug::Sphere(center, 0.5f, color);
 //   rm::Debug::Ray(origin, forward, 10.0f, color);
 //
-// The scene's sky (空 → 地球の空): change the weather, at once or faded over some seconds.
-//   rm::Sky::SetWeather(rm::Weather::Rain, 10.0f);   // clouds come, then the rain, over 10 seconds
-//   rm::Sky::SetRain(1.0f, 5.0f);                     // heavier rain, over 5 seconds
-//   rm::Sky::SetWind(90.0f, 12.0f, 3.0f);              // to the left (-X), 12 m/s, over 3 seconds
-//   float falling = rm::Sky::RainNow();               // how much rain falls this moment (0 .. 1)
+// The scene's sky (空 → 地球の空): its 時刻.
+//   rm::Sky::SetHour(18.0f);                          // evening
+// (The weather - rain, snow, wind - is the plugin 天候's: #include "RMWeather.h".)
 #pragma once
 
 #include "RM.h"
@@ -172,66 +170,27 @@ inline void Ray(Vec3 origin, Vec3 direction, float length, Color color = {}, flo
 }
 }  // namespace Debug
 
-// The four weathers of 地球の空 (the inspector's 天気).
-enum class Weather { Clear = 0, Cloudy = 1, Rain = 2, Snow = 3 };
-
-// The scene's 空 (it works on 地球の空; other kinds keep the values for when it is one). seconds: how
-// long the change takes (0: at once) - eased in and out, from the weather of the moment.
+// The scene's 空 (地球の空): its 時刻 (0 .. 24), at once.
 namespace Sky {
 namespace detail {
-inline const RmSky3DApi* ApiSky() {
-    static const RmSky3DApi* api = Part<RmSky3DApi>(RM_PART_SKY3D, RM_PART_SKY3D_VERSION);
+inline const RmSky3DApi2* ApiSky() {
+    static const RmSky3DApi2* api = Part<RmSky3DApi2>(RM_PART_SKY3D, RM_PART_SKY3D_VERSION2);
     return api;
-}
-inline void Set(int which, float value, float seconds) {
-    if (const RmSky3DApi* s = ApiSky()) s->set(Api()->ctx, which, value, seconds);
-}
-inline float Get(int which, int now, float fallback) {
-    float v = fallback;
-    if (const RmSky3DApi* s = ApiSky()) s->get(Api()->ctx, which, now, &v);
-    return v;
 }
 }  // namespace detail
 
 // The scene has a sky (and this engine has the 3D plugin).
-inline bool Valid() { return detail::ApiSky() && detail::ApiSky()->weather(Api()->ctx) >= 0; }
-inline void SetWeather(Weather weather, float seconds = 0) {
-    if (const RmSky3DApi* s = detail::ApiSky()) s->setWeather(Api()->ctx, static_cast<int>(weather), seconds);
+inline bool Valid() {
+    float h = 0;
+    return detail::ApiSky() && detail::ApiSky()->hour(Api()->ctx, &h) != 0;
 }
-inline Weather GetWeather() {
-    const RmSky3DApi* s = detail::ApiSky();
-    const int w = s ? s->weather(Api()->ctx) : 0;
-    return w >= 0 && w <= 3 ? static_cast<Weather>(w) : Weather::Clear;
+inline void SetHour(float hour) {
+    if (const RmSky3DApi2* s = detail::ApiSky()) s->setHour(Api()->ctx, hour);
 }
-// 雲の量 of the weather set (晴れ has its own): 0 .. 1.
-inline void SetClouds(float amount, float seconds = 0) { detail::Set(0, amount, seconds); }
-inline float Clouds() { return detail::Get(0, 0, 0); }
-// 雨の量 / 雪の量 (0 .. 1): how much falls while it rains / snows.
-inline void SetRain(float amount, float seconds = 0) { detail::Set(1, amount, seconds); }
-inline void SetSnow(float amount, float seconds = 0) { detail::Set(2, amount, seconds); }
-inline float Rain() { return detail::Get(1, 0, 0); }
-inline float Snow() { return detail::Get(2, 0, 0); }
-// What falls this moment (0 .. 1: none while the weather is another, part of it during a fade).
-inline float RainNow() { return detail::Get(1, 1, 0); }
-inline float SnowNow() { return detail::Get(2, 1, 0); }
-// 風: where it blows to (degrees, seen from above: 0 to the front -Z, 90 to the left -X) and how
-// strong (m/s). The clouds drift with it, the rain and the snow slant.
-inline void SetWind(float directionDegrees, float strength, float seconds = 0) {
-    detail::Set(3, directionDegrees, seconds);
-    detail::Set(4, strength, seconds);
-}
-inline float WindDirection() { return detail::Get(3, 0, 0); }
-inline float WindStrength() { return detail::Get(4, 0, 0); }
-// 時刻 (0 .. 24) and 雷: at once.
-inline void SetHour(float hour) { detail::Set(5, hour, 0); }
-inline float Hour() { return detail::Get(5, 0, 12); }
-inline void SetLightning(bool on) { detail::Set(6, on ? 1.0f : 0.0f, 0); }
-// 濡れ: how wet what the rain reaches is now (0 .. 1; wetter while it rains, dries after).
-inline float Wetness() { return detail::Get(7, 1, 0); }
-// A fade is going on (0 .. 1 how far it has come; 1: none).
-inline float Fading() {
-    const RmSky3DApi* s = detail::ApiSky();
-    return s ? s->fading(Api()->ctx) : 1.0f;
+inline float Hour() {
+    float h = 12;
+    if (const RmSky3DApi2* s = detail::ApiSky()) s->hour(Api()->ctx, &h);
+    return h;
 }
 }  // namespace Sky
 

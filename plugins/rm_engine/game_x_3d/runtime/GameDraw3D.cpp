@@ -20,7 +20,6 @@
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/SkyPaint.h"
-#include "rm_engine/game_x_3d/runtime/WeatherBlocks.h"
 #include "rm_engine/game_x_3d/runtime/WorldDraw.h"
 #include "rm_engine/space3d/runtime/BlockCompress.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
@@ -70,7 +69,7 @@ public:
         std::optional<std::pair<Camera, space3d::Mat4>> eye;
         std::unordered_map<int, space3d::Mat4> world;  // parents come before their children in TreeOrder
         shown_.clear();                                 // the places of what is switched on (WorldDrawFrame::world)
-        drawnWith_.clear();                             // ... and the models they are drawn with (a mesh collider's)
+        drawnWith_.clear();                             // ... and the models they are drawn with (WorldDrawFrame::model)
         for (const auto& t : f.scene.TreeOrder()) {
             const auto& e = *t.entity;
             const auto it = world.find(e.data.parent);
@@ -131,8 +130,9 @@ public:
         frame.shadows = true;
         // The scene's 空, behind everything (its time: the game's, as the clouds drift); 光を空に合わせる.
         seconds_ += f.dt;
-        if (const Sky* sky = f.scene.Setting<Sky>(); sky && sky->kind != SkyKind::None) {
-            look_ = LookOf(*sky, seconds_);
+        const Sky* sky = f.scene.Setting<Sky>();
+        if (sky && sky->kind != SkyKind::None) {
+            look_ = LookOf(*sky, seconds_, SkyWeatherOf(f.registry, f.scene, seconds_));  // (its clouds: the weather's)
             const SkyLook& look = look_;
             SkyPainter::Sources sources;
             sources.picture = [&](const AssetRef& ref) { return PictureOf(f, ref); };
@@ -141,27 +141,6 @@ public:
             sources.readEvery = -1;  // the game's files do not change
             frame.sky = sky_.Prepare(renderer_, *sky, look, sources);
             FollowSky(look, lights_, frame.ambient);
-            // 雨 / 雪 (both while one fades into the other) and what the rain has made wet.
-            if (look.rain.amount > 0) frame.precipitation[0] = &look.rain;
-            if (look.snow.amount > 0) frame.precipitation[1] = &look.snow;
-            frame.wetWays = look.wetWays;
-            frame.wind = look.wind;
-            // What they hit (the colliders: WeatherBlocks.h).
-            if ((frame.precipitation[0] || frame.precipitation[1] || !look.wetWays.empty()) && f.registry) {
-                MakeWeatherBlocks(
-                    f.scene, *f.registry,
-                    [this](int id) -> const space3d::Mat4* {
-                        const auto it = shown_.find(id);
-                        return it != shown_.end() ? &it->second : nullptr;
-                    },
-                    [this](space3d::Shape s) { return renderer_.ShapeOf(s); },
-                    [this](int id) -> const space3d::GpuMesh* {
-                        const auto it = drawnWith_.find(id);
-                        return it != drawnWith_.end() ? it->second : nullptr;
-                    },
-                    blocks_, blockers_);
-                frame.weatherBlocks = blocks_;
-            }
         }
         frame.lights = lights_;
         // What other plugins draw into the world themselves (パーティクル: WorldDraw.h).
@@ -173,12 +152,29 @@ public:
         }
         extras_.clear();
         if (!drawers_.empty()) {
-            const WorldDrawFrame wf{f.scene, f.gfx,
-                                    [this](int id) -> const space3d::Mat4* {
-                                        const auto it = shown_.find(id);
-                                        return it != shown_.end() ? &it->second : nullptr;
-                                    },
-                                    f.dt, true, {}, f.asset, nullptr, f.registry};
+            WorldDrawFrame wf{f.scene, f.gfx,
+                              [this](int id) -> const space3d::Mat4* {
+                                  const auto it = shown_.find(id);
+                                  return it != shown_.end() ? &it->second : nullptr;
+                              },
+                              f.dt, true, {}, f.asset, nullptr, f.registry};
+            wf.seconds = seconds_;
+            wf.sky = sky && sky->kind != SkyKind::None ? &look_ : nullptr;
+            wf.model = [this](int id) -> const space3d::GpuMesh* {
+                const auto it = drawnWith_.find(id);
+                return it != drawnWith_.end() ? it->second : nullptr;
+            };
+            wf.shape = [this](space3d::Shape s) { return renderer_.ShapeOf(s); };
+            // What they add to the frame (天候: the 向きの地図, 濡れ), then what they draw.
+            for (const auto& d : drawers_) {
+                FrameAdditions add;
+                d->PrepareFrame(wf, add);
+                if (frame.mapDirections.empty() && !add.mapDirections.empty()) {
+                    frame.mapDirections = add.mapDirections;
+                    frame.mapShapes = add.mapShapes;
+                }
+                if (!frame.surface) frame.surface = add.surface;
+            }
             for (const auto& d : drawers_) d->Prepare(wf, extras_);
         }
         frame.extras = extras_;
@@ -290,9 +286,7 @@ private:
     bool drawersMade_ = false;
     std::vector<space3d::ExtraDraw> extras_;
     std::unordered_map<int, space3d::Mat4> shown_;
-    std::unordered_map<int, const space3d::GpuMesh*> drawnWith_;
-    std::vector<WeatherBlocker> blockers_;
-    std::vector<space3d::WeatherBlock> blocks_;
+    std::unordered_map<int, const space3d::GpuMesh*> drawnWith_;  // the model each entity is drawn with
 };
 
 }  // namespace

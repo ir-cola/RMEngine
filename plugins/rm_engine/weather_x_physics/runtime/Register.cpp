@@ -1,4 +1,4 @@
-#include "rm_engine/game_x_3d_x_physics/runtime/Register.h"
+#include "rm_engine/weather_x_physics/runtime/Register.h"
 
 #include "core/reflect/Reflect.h"
 #include "rm_engine/physics/runtime/Components.h"
@@ -7,11 +7,11 @@
 
 #include <string>
 
-namespace rm::game_x_3d_x_physics {
+namespace rm::weather_x_physics {
 
 namespace {
 
-using game_x_3d::WeatherBlocker;
+using weather::WeatherBlocker;
 using space3d::Mat4;
 
 // The unit shape turned by `turn`, `size` big on its own axes, its middle at `center`.
@@ -74,10 +74,10 @@ void GatherBlockers(const game_production::Scene& scene, const std::function<con
 }
 
 void RegisterRuntime(RuntimeRegistry& registry) {
-    static const game_x_3d::WeatherBlockersInfo kBlockers{&GatherBlockers};
-    registry.Contribute(game_x_3d::kWeatherBlockersPoint, kBlockers);
+    static const weather::WeatherBlockersInfo kBlockers{&GatherBlockers};
+    registry.Contribute(weather::kWeatherBlockersPoint, kBlockers);
 }
 
-}  // namespace rm::game_x_3d_x_physics
+}  // namespace rm::weather_x_physics
 
-RM_RUNTIME_ENTRY(rm_engine, game_x_3d_x_physics, rm::game_x_3d_x_physics::RegisterRuntime)
+RM_RUNTIME_ENTRY(rm_engine, weather_x_physics, rm::weather_x_physics::RegisterRuntime)

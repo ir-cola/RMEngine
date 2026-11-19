@@ -7,7 +7,7 @@
 #include "core/reflect/Data.h"
 #include "rm_engine/game_production/editor/GameExport.h"
 #include "rm_engine/particles_x_physics/runtime/Register.h"
-#include "rm_engine/game_x_3d_x_physics/runtime/Register.h"
+#include "rm_engine/weather_x_physics/runtime/Register.h"
 #include "rm_engine/physics/runtime/Components.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/particles/runtime/BuiltinModules.h"
@@ -295,16 +295,16 @@ RM_TEST(Particles_Physics_CollidersBecomeShapes) {
         const auto* t = static_cast<const space3d::Transform*>(e.FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get());
         worlds[e.data.id] = space3d::WorldMatrix(space3d::Mat4{}, *t);
     }
-    // What rain and snow hit (ゲーム制作 × 3D × 物理): the same colliders as the renderer's simple shapes.
+    // What rain and snow hit (天候 × 物理): the same colliders as the renderer's simple shapes.
     {
-        using game_x_3d::WeatherBlocker;
+        using weather::WeatherBlocker;
         const int capsule = add("カプセル", {0, 5, 0}, {1, 1, 1}, physics::Shape::Capsule, false);
         auto* cc = static_cast<physics::Collider*>(scene.Find(capsule)->FindComponent(reflect::TypeOf<physics::Collider>().name)->value.Get());
         cc->radius = 0.5f;
         cc->height = 3;
         worlds[capsule] = space3d::WorldMatrix(space3d::Mat4{}, space3d::Transform{{0, 5, 0}, {0, 0, 0}, {1, 1, 1}});
         std::vector<WeatherBlocker> blocks;
-        game_x_3d_x_physics::GatherBlockers(scene, [&](int id) -> const space3d::Mat4* { return worlds.count(id) ? &worlds[id] : nullptr; }, blocks);
+        weather_x_physics::GatherBlockers(scene, [&](int id) -> const space3d::Mat4* { return worlds.count(id) ? &worlds[id] : nullptr; }, blocks);
         // 箱, 球, (トリガー: no), メッシュ, カプセル (a cylinder and two balls).
         CHECK(blocks.size() == 6);
         if (blocks.size() == 6) {

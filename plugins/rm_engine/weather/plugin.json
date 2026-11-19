@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "weather",
+  "displayName": "天候",
+  "version": 1,
+  "requires": [
+    { "author": "rm_engine", "name": "game_production" },
+    { "author": "rm_engine", "name": "game_x_3d" },
+    { "author": "rm_engine", "name": "space3d" }
+  ]
+}

@@ -58,42 +58,6 @@ enum class BuiltinSky { Earth, Space, Panorama, SixFaces };
 std::string_view BuiltinSkyCode(BuiltinSky sky);
 const char* BuiltinSkyName(BuiltinSky sky);  // the "file name" its messages give ("地球の空")
 
-// Rain or snow falling around the eye (RenderFrame::precipitation): drops / flakes in a box that moves
-// with the eye (each keeps its place in the world while it falls; out of one side, in at the other),
-// drawn after the solid things with the depth test (in front of things, hidden behind them), each
-// one made by the vertex shader from its number (no buffer). Fainter near the eye and the box's edge.
-struct Precipitation {
-    enum class Kind : uint8_t { Rain, Snow };
-    Kind kind = Kind::Rain;
-    float amount = 0;              // 0 .. 1: none .. kMaxRaindrops / kMaxSnowflakes
-    float seconds = 0;             // the time they fall by (still: they hang where they are)
-    Color light{1, 1, 1, 1};       // what lights them (linear)
-    float driftX = 0, driftZ = 0;  // how far the wind has carried them (world units; the wind now: RenderFrame::wind)
-};
-// 濡れ: a way the rain fell while it rained (slanted by the wind) and how wet what it reached that way
-// is - in the sun and in shade (shade dries slower). What the rain reached any of the ways is wet: a
-// place it reached stays wet while it rains, whatever the wind does after (RenderFrame::wetWays).
-struct WetWay {
-    Vec3 way{0, -1, 0};  // length 1
-    float sun = 0, shade = 0;  // 0 .. 1
-};
-inline constexpr size_t kWetWays = 4;  // the most kept (the renderer has a map for each)
-
-// How they fall: down at least `least` m/s (each drop / flake up to `spread` faster), and `carried` of
-// the wind's speed sideways. The shader is given these (Renderer3D.cpp's Weather).
-struct FallSpeed {
-    float least, spread, carried;
-};
-FallSpeed FallOf(Precipitation::Kind kind);
-// The way they go on average in a wind (length 1): what they hit is seen from there (Lighting.h's PlanCover).
-Vec3 FallDirection(Precipitation::Kind kind, Vec3 wind);
-inline constexpr uint32_t kMaxRaindrops = 16000;
-inline constexpr uint32_t kMaxSnowflakes = 10000;
-inline constexpr float kRainBox = 24.f;  // the box's side (world units)
-inline constexpr float kSnowBox = 18.f;
-// How many are drawn for an amount (0 .. the most).
-uint32_t PrecipitationCount(const Precipitation& p);
-
 // What a new .rmsky file holds: a short sky to start from, with what can be used in comments.
 std::string_view NewSkyCode();
 inline constexpr char kSkyExtension[] = ".rmsky";
