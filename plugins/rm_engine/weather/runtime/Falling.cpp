@@ -23,7 +23,8 @@ uint PrecipHash(uint x) {
     return x;
 }
 float PrecipRand(uint id, uint k) { return (PrecipHash(id * 4 + k) & 0xFFFFFF) / 16777216.0; }
-struct PrecipOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; float fade : TEXCOORD1; float splash : TEXCOORD2; };
+// splash: 0 falling, 1 a raindrop's splash, 2 a flake lying where it landed (melt: 0 .. 1, seed: its own)
+struct PrecipOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; float fade : TEXCOORD1; float splash : TEXCOORD2; float melt : TEXCOORD3; float seed : TEXCOORD4; };
 PrecipOut FallVS(uint vid : SV_VertexID) {
     static const float2 corners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1), float2(-1, -1), float2(1, 1), float2(-1, 1)};
     uint id = vid / 6;
@@ -32,7 +33,10 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
     float t = precipInfo.y, box = precipInfo.z;
     float3 seed = float3(PrecipRand(id, 0), PrecipRand(id, 1), PrecipRand(id, 2));
     float fall = precipFall.x + (snow ? seed.x : seed.y) * precipFall.y;  // m/s
-    float carried = precipFall.z;                                           // how much the wind takes it
+    // Each one along the same line as the map of what it hits (Falling.h's FallDirection: the average
+    // fall): one that falls faster is carried as much faster - so where it hit stays where it is
+    // (2026-11-19: before, a flake slid on under the surface and its resting place moved).
+    float carried = precipFall.z * fall / (precipFall.x + precipFall.y * 0.5);
     float3 v = float3(precipWind.x * carried, -fall, precipWind.y * carried);  // how it moves now
     float speed = length(v);
     float3 dir = v / speed;
@@ -42,11 +46,13 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
     float3 rel = (frac((p - eye.xyz) / box + 0.5) - 0.5) * box;  // the copy nearest the eye
     float3 w = eye.xyz + rel;
     // Flakes sway (drawn so; what they hit is by the line they fall along).
-    float3 sway = snow ? float3(sin(t * 0.9 + seed.z * 40), 0, cos(t * 0.7 + seed.x * 40)) * 0.35 : float3(0, 0, 0);
+    float3 sway = snow ? float3(sin(t * 0.9 + seed.z * 40), 0, cos(t * 0.7 + seed.x * 40)) * 0.2 : float3(0, 0, 0);
     float dist = length(rel + sway);
     PrecipOut o;
     o.uv = q;
     o.splash = 0;
+    o.melt = 0;
+    o.seed = seed.z;
     o.fade = saturate((dist - 0.4) / 1.2) * saturate((box * 0.5 - dist) / (box * 0.25));
     // What is in its way (the map the way it falls, slanted by the wind): how far past it it is now.
     // Past it: it has hit (a roof, a wall, the ground) - from then on nothing falls there.
@@ -56,21 +62,23 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
     if (snow) {
         float size = 0.02 + seed.z * 0.025;
         if (past > 0) {
-            // It stops where it touched, stays a little, then melts: smaller and fainter.
-            if (since > 2.6) {
+            // It stops where it touched and lies flat on it (a little above: never in it), stays a
+            // moment, then melts like a fried egg: the wet edge spreads thin and uneven while the white
+            // middle shrinks, all of it fading (FallPS).
+            if (since > 3.4) {
                 o.pos = float4(0, 0, -1, 1);  // (all six corners: nothing drawn)
                 return o;
             }
-            float melt = saturate((since - 1.4) / 1.2);
-            size *= 1 - 0.75 * melt;
-            o.fade *= 1 - melt;
-            float3 at = hit - dir * size;  // (resting on it, not in it)
-            float3 swayThen = float3(sin((t - since) * 0.9 + seed.z * 40), 0, cos((t - since) * 0.7 + seed.x * 40)) * 0.35;
-            w = at + swayThen;
+            o.melt = saturate((since - 1.4) / 2.0);
+            o.splash = 2;
+            float3 n = -dir;  // (the side it came from: up, slanted by the wind)
+            float3 a = normalize(abs(n.z) < 0.99 ? cross(n, float3(0, 0, 1)) : cross(n, float3(1, 0, 0)));
+            float3 b = cross(n, a);
+            float3 swayThen = float3(sin((t - since) * 0.9 + seed.z * 40), 0, cos((t - since) * 0.7 + seed.x * 40)) * 0.2;
+            w = hit + n * 0.01 + swayThen + (a * q.x + b * q.y) * size * 2.6;
         } else {
-            w += sway;
+            w += sway + (camRight.xyz * q.x + camUp.xyz * q.y) * size;
         }
-        w += (camRight.xyz * q.x + camUp.xyz * q.y) * size;
     } else if (past > 0) {
         // It has hit: a splash where it did for a moment (a ring that grows and fades), then nothing.
         if (since > 0.14) {
@@ -94,7 +102,20 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
 float4 FallPS(PrecipOut i) : SV_Target {
     bool snow = precipInfo.x > 0.5;
     float a;
-    if (i.splash > 0.5) {
+    if (i.splash > 1.5) {
+        // A flake lying where it landed (the quad is 2.6 times its size): first round as it fell; as it
+        // melts, the edge spreads thin and uneven (the white of an egg) while the middle shrinks (the
+        // yolk), all fading out.
+        float r = length(i.uv);
+        float ang = atan2(i.uv.y, i.uv.x);
+        float m = i.melt;
+        const float core = 1.0 / 2.6;
+        float yolk = core * (1 - 0.7 * m);
+        float white = core * (1 + 1.4 * m) * (1 + (0.12 * sin(ang * 5 + i.seed * 40) + 0.08 * sin(ang * 3 + i.seed * 17)) * m);
+        float aYolk = (1 - smoothstep(yolk * 0.55, yolk, r)) * 0.9;
+        float aWhite = (1 - smoothstep(white * 0.7, white, r)) * lerp(0.9, 0.3, m);
+        a = max(aYolk, aWhite) * (1 - m * m);
+    } else if (i.splash > 0.5) {
         float r = length(i.uv * float2(1, 1.6) - float2(0, 0.6));  // a flat ring, seen from the side
         a = saturate(1 - abs(r - 0.65) * 4) * 0.45 + saturate(1 - r * 3) * 0.2;
     } else {
