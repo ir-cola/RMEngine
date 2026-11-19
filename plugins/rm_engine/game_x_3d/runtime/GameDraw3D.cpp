@@ -144,10 +144,10 @@ public:
             // 雨 / 雪 (both while one fades into the other) and what the rain has made wet.
             if (look.rain.amount > 0) frame.precipitation[0] = &look.rain;
             if (look.snow.amount > 0) frame.precipitation[1] = &look.snow;
-            frame.wetness = look.wetness;
+            frame.wetWays = look.wetWays;
             frame.wind = look.wind;
             // What they hit (the colliders: WeatherBlocks.h).
-            if ((frame.precipitation[0] || frame.precipitation[1] || frame.wetness > 0) && f.registry) {
+            if ((frame.precipitation[0] || frame.precipitation[1] || !look.wetWays.empty()) && f.registry) {
                 MakeWeatherBlocks(
                     f.scene, *f.registry,
                     [this](int id) -> const space3d::Mat4* {

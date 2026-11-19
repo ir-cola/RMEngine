@@ -73,9 +73,10 @@ cbuffer Shadows : register(b2) {
     float4 shadowInfo;          // x: how many sun maps (0: none); y: a texel of a sun's map (its uv); z: ... of the others
     float4 viewForward;         // xyz: where the camera looks
     float4 atlas;               // how the maps lie side by side in their texture: xy: the sun's columns, rows; zw: the others'
-    float4x4 coverViewProj[3];  // world -> the maps the way rain (0) and snow (1) fall, and straight down (2: 濡れ) (Lighting.h's PlanCover)
-    float4 coverInfo[3];        // x: 1 = there is one; y: its size (pixels); z: its depth range (world); w: its tile's left (pixels)
-    float4 wetInfo;             // x: 濡れ (0 .. 1)
+    float4x4 coverViewProj[6];  // world -> the maps the way rain (0) and snow (1) fall, and the ways the rain fell (2.. : 濡れ) (Lighting.h's PlanCover)
+    float4 coverInfo[6];        // x: 1 = there is one; y, z: its tile's left, top (pixels); w: its depth range (world)
+    float4 wetInfo;             // x: how many ways the rain fell (濡れ); y: a map's size (pixels)
+    float4 wetLevels[4];        // each way's: x: how wet in the sun, y: in shade
 };
 // Each kind of shadow map lies side by side (tiles) in one texture (an array of maps would need
 // ps_4_1 to be compared by the sampler).
@@ -167,25 +168,75 @@ float LocalShadow(int l, float3 wpos, float3 n) {
 }
 
 float ShadowOf(int l, float3 wpos, float3 n) { return lightColor[l].w > 0.5 ? SunShadow(wpos, n) : LocalShadow(l, wpos, n); }
-
-// How far a point is past the first thing in the way rain (k = 0) or snow (1) falls there (world
-// units; < 0: before it). Nothing in the way, or out of the map: far before (the open sky).
-float CoverPast(int k, float3 w) {
-    if (coverInfo[k].x < 0.5) return -1e30;
-    float4 p = mul(coverViewProj[k], float4(w, 1));
+)"
+// (the weather's part: a literal of its own - one may hold at most 16 KB)
+R"(
+// How far a point is past the first thing in the way rain (k = 0) or snow (1) falls there - or the
+// rain fell (2..: 濡れ) - in world units (< 0: before it). Its place on the map: `p` (the map's
+// matrix times the point). Nothing in the way, or out of the map: far before (the open sky).
+float CoverPastAt(int k, float4 p) {
     float2 uv = p.xy * float2(0.5, -0.5) + 0.5;
     if (uv.x < 0 || uv.x >= 1 || uv.y < 0 || uv.y >= 1) return -1e30;
-    float d = coverMap.Load(int3(uv * coverInfo[k].y + float2(coverInfo[k].w, 0), 0)).r;
-    return d >= 1 ? -1e30 : (p.z - d) * coverInfo[k].z;
+    float d = coverMap.Load(int3(uv * wetInfo.y + coverInfo[k].yz, 0)).r;
+    return d >= 1 ? -1e30 : (p.z - d) * coverInfo[k].w;
+}
+float CoverPast(int k, float3 w) {
+    if (coverInfo[k].x < 0.5) return -1e30;
+    return CoverPastAt(k, mul(coverViewProj[k], float4(w, 1)));
 }
 
-// How wet a surface looks (0 .. 1): where the rain reaches it - nothing over the place a little off it
-// (map 2: straight down, never by the wind - wet ground does not dry the moment the wind turns, so the
-// dry place under a roof stays where it is) - most on what faces up, none facing down.
+// Round wet spots where drops landed: each cell of a grid (on the surface, `p` in cells) holds one at a
+// place of its own, full in its middle and fading outward; they grow with how wet it is and run into
+// each other (never a whole even sheet: always a little round).
+float WetHash(float2 c) { return frac(sin(dot(c, float2(127.1, 311.7))) * 43758.5453); }
+float WetSpots(float2 p, float wet) {
+    float2 cell = floor(p);
+    float most = 0;
+    [unroll] for (int y = -1; y <= 1; ++y) {
+        [unroll] for (int x = -1; x <= 1; ++x) {
+            float2 c = cell + float2(x, y);
+            float2 center = c + float2(WetHash(c), WetHash(c + 17.31));
+            float r = (0.35 + 0.45 * WetHash(c + 41.7)) * (0.25 + 0.95 * wet);
+            most = max(most, 1 - smoothstep(r * 0.25, r, length(p - center)));
+        }
+    }
+    return most;
+}
+
+// How much the rain reached a point the way `k` (0 .. 1): the place a little off the surface is not past
+// anything that way - read at 3 x 3 places around it, so the edge is soft and round, not the map's squares.
+float WetOpen(int k, float3 p) {
+    float4 c = mul(coverViewProj[k], float4(p, 1));
+    float4 dx = mul(coverViewProj[k], float4(0.09, 0, 0, 0)), dz = mul(coverViewProj[k], float4(0, 0, 0.09, 0));
+    float open = 0;
+    [unroll] for (int y = -1; y <= 1; ++y) {
+        [unroll] for (int x = -1; x <= 1; ++x) {
+            open += saturate((0.06 - CoverPastAt(k, c + dx * x + dz * y)) / 0.06) * ((x == 0 ? 2 : 1) * (y == 0 ? 2 : 1));
+        }
+    }
+    return open / 16;
+}
+
+// How wet a surface looks (0 .. 1): the wettest of the ways the rain fell that reached it (a place it
+// reached stays wet while it rains, whatever the wind does after), in the sun or in its shadow (shade
+// dries slower) - in round spots, most on what faces up, none facing down.
 float WetAt(float3 wpos, float3 n) {
-    if (wetInfo.x <= 0 || n.y < -0.3) return 0;
-    float open = saturate((0.06 - CoverPast(2, wpos + n * 0.12)) / 0.06);
-    return wetInfo.x * open * lerp(0.45, 1, saturate(n.y));
+    int count = (int)wetInfo.x;
+    if (count <= 0 || n.y < -0.3) return 0;
+    float lit = shadowInfo.x > 0 ? SunShadow(wpos, n) : 1;
+    float3 p = wpos + n * 0.12;
+    float wet = 0;
+    [loop] for (int k = 0; k < count; ++k) {
+        float level = lerp(wetLevels[k].y, wetLevels[k].x, lit);
+        if (level > wet && coverInfo[2 + k].x > 0.5) wet = max(wet, level * WetOpen(2 + k, p));
+        else if (level > wet) wet = level;  // (nothing to hit: everything open)
+    }
+    if (wet <= 0) return 0;
+    // The surface's own two axes (the plane it mostly lies in): spots lie flat on it.
+    float3 a = abs(n);
+    float2 s = a.y >= a.x && a.y >= a.z ? wpos.xz : a.x >= a.z ? wpos.zy : wpos.xy;
+    float spots = max(WetSpots(s / 0.22, wet), WetSpots(s / 0.07 + 31.7, wet) * 0.8);
+    return saturate(wet * 1.4) * spots * lerp(0.45, 1, saturate(n.y));
 }
 
 // How much of a light is left at a point (its fade with distance / out of the cone), and from where
@@ -288,9 +339,9 @@ float4 MeshPS(MeshOut i) : SV_Target {
     if (pbr.w > 1.5) mr = mr.rrrr;  // one channel (BC4): the grey value is both
     float metal = pbr.x * (pbr.w > 0.5 ? mr.b : 1);
     float rough = clamp(pbr.y * (pbr.w > 0.5 ? mr.g : 1), 0.04, 1);
-    // 濡れ: water in the surface makes it darker, a film on it makes it shine.
-    base.rgb *= 1 - wet * 0.45 * (1 - metal);
-    rough = lerp(rough, 0.1, wet * 0.85);
+    // 濡れ: water in the surface makes it darker (2026-11-19: lighter than before), a film on it makes it shine.
+    base.rgb *= 1 - wet * 0.25 * (1 - metal);
+    rough = lerp(rough, 0.12, wet * 0.75);
     float3 glow = emissive.rgb * (emissive.w > 0.5 ? emissionMap.Sample(baseSampler, i.uv).rgb : float3(1, 1, 1));
     float3 rgb = ToScreen(Shade(base.rgb, metal, rough, n, toEye, i.wpos) + glow);
     // Selected: the edges (where the surface turns away from the eye) glow, the colours stay.
@@ -447,9 +498,10 @@ struct ShadowConstants {
     float shadowInfo[4];
     float viewForward[4];
     float atlas[4];
-    float coverViewProj[3][16];
-    float coverInfo[3][4];
+    float coverViewProj[2 + kWetWays][16];
+    float coverInfo[2 + kWetWays][4];
     float wetInfo[4];
+    float wetLevels[kWetWays][4];
 };
 static_assert(sizeof(ShadowConstants) % 16 == 0);
 static_assert(sizeof(MeshVertex) == 32, "MeshVertex goes to the GPU as it is (POSITION, NORMAL, TEXCOORD)");
@@ -1481,32 +1533,40 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     }
     const bool shadows = sunMaps > 0 || localMaps;
     // The maps the way rain (tile 0) and snow (1) fall - what is in the drops' way (slanted by the wind)
-    // - and straight down (2): what the rain has made wet (2026-11-19: not by the wind - with the rain's
-    // map the dry place under a roof grew and shrank with the wind, like a shadow). Nothing to hit: none
-    // (everything open).
+    // - and the ways the rain fell (2..): what it has made wet. Nothing to hit: none (everything open).
     auto fallsNow = [&](Precipitation::Kind kind) {
         for (const Precipitation* p : f.precipitation) {
             if (p && p->kind == kind && p->amount > 0) return true;
         }
         return false;
     };
-    const bool needs[3] = {fallsNow(Precipitation::Kind::Rain), fallsNow(Precipitation::Kind::Snow), f.wetness > 0};
-    const Vec3 ways[3] = {FallDirection(Precipitation::Kind::Rain, f.wind), FallDirection(Precipitation::Kind::Snow, f.wind), {0, -1, 0}};
+    constexpr size_t kTiles = 2 + kWetWays;
+    const size_t wetCount = std::min(f.wetWays.size(), kWetWays);
+    bool needs[kTiles] = {fallsNow(Precipitation::Kind::Rain), fallsNow(Precipitation::Kind::Snow)};
+    Vec3 ways[kTiles] = {FallDirection(Precipitation::Kind::Rain, f.wind), FallDirection(Precipitation::Kind::Snow, f.wind)};
+    for (size_t k = 0; k < wetCount; ++k) {
+        needs[2 + k] = true;
+        ways[2 + k] = f.wetWays[k].way;
+        sc.wetLevels[k][0] = std::clamp(f.wetWays[k].sun, 0.f, 1.f);
+        sc.wetLevels[k][1] = std::clamp(f.wetWays[k].shade, 0.f, 1.f);
+    }
+    sc.wetInfo[0] = static_cast<float>(wetCount);
+    sc.wetInfo[1] = static_cast<float>(kCoverSize);
     bool cover = false;
-    if ((needs[0] || needs[1] || needs[2]) && !blockOrder_.empty() && s.EnsureMaps(s.cover, 3, kCoverSize)) {
+    if (std::any_of(std::begin(needs), std::end(needs), [](bool b) { return b; }) && !blockOrder_.empty() &&
+        s.EnsureMaps(s.cover, static_cast<uint32_t>(kTiles), kCoverSize)) {
         cover = true;
-        for (uint32_t k = 0; k < 3; ++k) {
+        for (uint32_t k = 0; k < kTiles; ++k) {
             if (!needs[k]) continue;
             const CoverPlan plan = PlanCover(eye, ways[k]);
             CopyMatrix(sc.coverViewProj[k], plan.viewProj);
             sc.coverInfo[k][0] = 1;
-            sc.coverInfo[k][1] = static_cast<float>(kCoverSize);
-            sc.coverInfo[k][2] = plan.range;
-            sc.coverInfo[k][3] = static_cast<float>((k % s.cover.cols) * kCoverSize);
+            sc.coverInfo[k][1] = static_cast<float>((k % s.cover.cols) * kCoverSize);
+            sc.coverInfo[k][2] = static_cast<float>((k / s.cover.cols) * kCoverSize);
+            sc.coverInfo[k][3] = plan.range;
             planMap(s.cover, k, plan.viewProj, blockOrder_);
         }
     }
-    sc.wetInfo[0] = std::clamp(f.wetness, 0.f, 1.f);
 
     // 2. The picture's draws: what is not see-through (sorted: pictures, then mesh and part - the
     // depth test sorts out what is in front), the floor's shadows, then what is see-through, the

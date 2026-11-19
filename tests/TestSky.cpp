@@ -124,7 +124,8 @@ RM_TEST(Sky_LookOfDayAndNight) {
     CHECK(space3d::PrecipitationCount(LookOf(snow, 0).snow) == space3d::kMaxSnowflakes);
     CHECK(space3d::PrecipitationCount(rain.rain) == space3d::kMaxRaindrops / 2);
     // 濡れ before Play: as wet as the rain now makes things (twice its amount, at most 1); dry without rain.
-    CHECK(Near(rain.wetness, 1.f) && noon.wetness == 0.f && LookOf(snow, 0).wetness == 0.f);
+    CHECK(rain.wetWays.size() == 1 && Near(rain.wetWays[0].sun, 1.f) && Near(rain.wetWays[0].shade, 1.f) && rain.wetWays[0].way.y < -0.9f);
+    CHECK(noon.wetWays.empty() && LookOf(snow, 0).wetWays.empty());
     // 雷: now and then a flash, only while the time goes on (and only in cloudy or rainy weather).
     Sky storm = Earth(12, Weather::Rain);
     storm.lightning = true;
@@ -250,11 +251,12 @@ RM_TEST(Sky_Wind) {
     game_production::SystemContext ctx{scene, 0.5f};
     RunSkyClock(ctx);
     CHECK(Near(s.driftX, -2.f) && Near(s.driftZ, 0.f));
-    CHECK(Near(s.wetness, 1.f));  // (raining from the start: wet from the start)
+    CHECK(s.wetCounted && s.wetWays.size() == 1 && Near(s.wetWays[0].sun, 1.f));  // (raining from the start: wet from the start)
     s.weather = Weather::Clear;
     RunSkyClock(ctx);
-    CHECK(s.wetness < 1.f && s.wetness > 0.9f);  // dries slowly
-    CHECK(Near(LookOf(s, 0).wetness, s.wetness));
+    CHECK(s.wetWays.size() == 1 && s.wetWays[0].sun < 1.f && s.wetWays[0].sun > 0.9f);  // dries slowly
+    CHECK(s.wetWays[0].shade > s.wetWays[0].sun);                                       // shade slower
+    CHECK(LookOf(s, 0).wetWays.size() == 1 && Near(LookOf(s, 0).wetWays[0].sun, s.wetWays[0].sun));
     BeginFade(s, 1);
     s.weather = Weather::Snow;
     RunSkyClock(ctx);
@@ -264,18 +266,52 @@ RM_TEST(Sky_Wind) {
     CHECK(Near(s.fadeElapsed, 1.f) && NowOf(s).weight[3] == 1.f);
 }
 
-// 濡れ: wetter quickly while it rains, dry again slowly.
+// 濡れ: the ways the rain fell - wetter quickly while it rains, what it reached stays wet while it
+// rains (the wind turning starts another way), dry again slowly in game time, slower in shade.
 RM_TEST(Sky_Wetness) {
     WeatherNow rain;
     rain.weight[0] = 0;
     rain.weight[2] = 1;
     rain.rain = 0.25f;
     WeatherNow fair;
-    CHECK(Near(NextWetness(-1, rain, 0), 0.5f) && NextWetness(-1, fair, 0) == 0.f);
-    CHECK(Near(NextWetness(0, rain, 1), 1.f / 8.f));
-    CHECK(Near(NextWetness(0.4f, rain, 100), 0.5f));  // never past what the rain makes
-    CHECK(Near(NextWetness(1, fair, 9), 0.9f));
-    CHECK(NextWetness(0.05f, fair, 100) == 0.f);
+    CHECK(WetAtOnce(fair).empty() && WetAtOnce(rain).size() == 1 && Near(WetAtOnce(rain)[0].sun, 0.5f));
+    std::vector<space3d::WetWay> ways;
+    StepWet(ways, rain, 1);
+    CHECK(ways.size() == 1 && Near(ways[0].sun, 1.f / 8.f) && Near(ways[0].shade, 1.f / 8.f) && Near(ways[0].way, {0, -1, 0}));
+    StepWet(ways, rain, 100);
+    CHECK(Near(ways[0].sun, 0.5f));  // never past what the rain makes
+    // The wind turns: a way of its own; the first stays as wet as it was while it rains.
+    WeatherNow windy = rain;
+    windy.windX = 10;
+    StepWet(ways, windy, 2);
+    CHECK(ways.size() == 2 && Near(ways[0].sun, 0.5f) && Near(ways[1].sun, 0.25f) && ways[1].way.x > 0.3f);
+    // A little wind (within kWetWayDegrees): the same way.
+    WeatherNow breeze = rain;
+    breeze.windX = 0.5f;
+    StepWet(ways, breeze, 1);
+    CHECK(ways.size() == 2);
+    // Less rain: nothing dries while it rains.
+    WeatherNow drizzle = rain;
+    drizzle.rain = 0.05f;
+    StepWet(ways, drizzle, 50);
+    CHECK(Near(ways[0].sun, 0.5f) && Near(ways[1].sun, 0.25f));
+    // It stops: dries in game time, shade slower; gone when dry.
+    StepWet(ways, fair, 9);
+    CHECK(Near(ways[0].sun, 0.4f) && Near(ways[0].shade, 0.47f));
+    StepWet(ways, fair, 0);  // (paused: no time, no drying)
+    CHECK(Near(ways[0].sun, 0.4f));
+    StepWet(ways, fair, 100);
+    CHECK(ways.size() == 1 && ways[0].sun == 0.f && ways[0].shade > 0.f);  // (the second way: dry in shade too, gone)
+    StepWet(ways, fair, 1000);
+    CHECK(ways.empty());
+    // At most kWetWays: a new way takes the least wet one's place.
+    for (int k = 0; k < 6; ++k) {
+        WeatherNow w = rain;
+        w.windX = static_cast<float>(k) * 6.f;
+        StepWet(ways, w, 1);
+    }
+    CHECK(ways.size() == space3d::kWetWays);
+    CHECK(Near(WetnessOf(ways), 0.25f) && WetnessOf({}) == 0.f);  // (24 and 30 m/s: within kWetWayDegrees - one way, wetter twice)
 }
 
 RM_TEST(Sky_FollowSky) {

@@ -7,8 +7,16 @@
       "date": "2026-11-05",
       "items": [
         {
-          "ja": "風の強さを変えると屋根の下の乾いた所が影のように伸び縮みしたのを直した (濡れる所は風で変わらない)",
-          "en": "Fixed the dry place under a roof growing and shrinking like a shadow when the wind changed (where it is wet no longer depends on the wind)"
+          "ja": "濡れは雨粒と同じく風の向きで当たり、雨の間は一度濡れた所が乾かない。やむとゲームの時間で乾き、影の所は乾きにくい",
+          "en": "Rain wets along the wind like the drops; what got wet stays wet while it rains. After the rain it dries in game time, slower in shade"
+        },
+        {
+          "ja": "濡れた所を丸い染みに (中心から外へ薄く。境目も角ばらない)、濡れの色を薄めに",
+          "en": "Wet places are round spots now (fading outward, soft edges), and a little lighter"
+        },
+        {
+          "ja": "シーンビューの飛行を少し遅くし、Space で上・Ctrl で下へ (Shift で速く)",
+          "en": "Flying in the scene view is a little slower; Space goes up and Ctrl goes down (faster with Shift)"
         },
         {
           "ja": "ゲームデバッグの基本情報に、スクリプトのビルドの結果と「ビルドし直す」「読み込み直す」ボタン、コンソールの「数を 0 に戻す」を足した",

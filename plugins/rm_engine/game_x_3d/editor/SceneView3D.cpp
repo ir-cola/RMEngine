@@ -601,12 +601,15 @@ private:
     void ToggleSpace() { state_.space = state_.space == gizmo::Space::Local ? gizmo::Space::World : gizmo::Space::Local; }
     void TogglePivot() { state_.pivot = state_.pivot == gizmo::Pivot::Each ? gizmo::Pivot::Center : gizmo::Pivot::Each; }
 
-    // While looking around (right button held): W A S D forward / left / back / right, E Q up / down.
+    // While looking around (right button held): W A S D forward / left / back / right, Space (or E) up,
+    // Ctrl (or Q) down - all faster with Shift.
     void Fly(ui::Context& c, float dt) {
         auto axis = [&](ui::Key plus, ui::Key minus) { return (c.KeyDown(plus) ? 1.f : 0.f) - (c.KeyDown(minus) ? 1.f : 0.f); };
-        const Vec3 dir{axis(ui::Key::D, ui::Key::A), axis(ui::Key::E, ui::Key::Q), axis(ui::Key::W, ui::Key::S)};
+        const float up = (c.KeyDown(ui::Key::Space) || c.KeyDown(ui::Key::E) ? 1.f : 0.f) - (c.In().ctrl || c.KeyDown(ui::Key::Q) ? 1.f : 0.f);
+        const Vec3 dir{axis(ui::Key::D, ui::Key::A), up, axis(ui::Key::W, ui::Key::S)};
         if (dir.x == 0 && dir.y == 0 && dir.z == 0) return;
-        const float speed = std::max(2.f, state_.camera.distance * 0.8f) * (c.In().shift ? 4.f : 1.f);
+        // (2026-11-19: a little slower than before - 2 m/s at least, 0.8 x the distance)
+        const float speed = std::max(1.5f, state_.camera.distance * 0.55f) * (c.In().shift ? 4.f : 1.f);
         space3d::Fly(state_.camera, dir * (speed * dt));
         c.RequestAnimation();  // keeps flying while the keys are held, without moving the mouse
     }
@@ -914,10 +917,10 @@ private:
                 // 雨 / 雪 (with the sky; both while one fades into the other) and what the rain has made wet.
                 if (look.rain.amount > 0) f.precipitation[0] = &look.rain;
                 if (look.snow.amount > 0) f.precipitation[1] = &look.snow;
-                f.wetness = look.wetness;
+                f.wetWays = look.wetWays;
                 f.wind = look.wind;
                 // What they hit (the colliders: WeatherBlocks.h) - the places as this view shows them.
-                if (f.precipitation[0] || f.precipitation[1] || f.wetness > 0) {
+                if (f.precipitation[0] || f.precipitation[1] || !look.wetWays.empty()) {
                     MakeWeatherBlocks(
                         host.scene, host.host.Registry(),
                         [this](int id) -> const Mat4* {

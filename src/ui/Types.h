@@ -53,6 +53,7 @@ enum class Key : uint8_t {
     None, Left, Right, Up, Down, Home, End, PageUp, PageDown,
     Backspace, Delete, Enter, Escape, Tab, F2, F5,
     A, C, D, E, F, N, O, P, Q, R, S, V, W, X, Y, Z,
+    Space,  // (held: the 3D scene view flies up; typed text still comes as characters)
     Count,  // the number of keys (for KeyDown)
 };
 

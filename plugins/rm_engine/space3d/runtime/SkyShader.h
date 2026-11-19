@@ -70,6 +70,15 @@ struct Precipitation {
     Color light{1, 1, 1, 1};       // what lights them (linear)
     float driftX = 0, driftZ = 0;  // how far the wind has carried them (world units; the wind now: RenderFrame::wind)
 };
+// 濡れ: a way the rain fell while it rained (slanted by the wind) and how wet what it reached that way
+// is - in the sun and in shade (shade dries slower). What the rain reached any of the ways is wet: a
+// place it reached stays wet while it rains, whatever the wind does after (RenderFrame::wetWays).
+struct WetWay {
+    Vec3 way{0, -1, 0};  // length 1
+    float sun = 0, shade = 0;  // 0 .. 1
+};
+inline constexpr size_t kWetWays = 4;  // the most kept (the renderer has a map for each)
+
 // How they fall: down at least `least` m/s (each drop / flake up to `spread` faster), and `carried` of
 // the wind's speed sideways. The shader is given these (Renderer3D.cpp's Weather).
 struct FallSpeed {

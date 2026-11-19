@@ -1155,6 +1155,7 @@ const wchar_t* KeyName(ui::Key k) {
         case ui::Key::X: return L"X";
         case ui::Key::Y: return L"Y";
         case ui::Key::Z: return L"Z";
+        case ui::Key::Space: return L"Space";
         default: return L"";
     }
 }

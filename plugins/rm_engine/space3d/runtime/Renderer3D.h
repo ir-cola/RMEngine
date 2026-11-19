@@ -211,8 +211,9 @@ struct RenderFrame {
     // wind blows it in from the side).
     const Precipitation* precipitation[2] = {};
     Vec3 wind{0, 0, 0};  // m/s, world: rain and snow slant along it
-    // 濡れ (0 .. 1): what the rain reaches (nothing above it: never by the wind) looks wet - darker, and smooth.
-    float wetness = 0;
+    // 濡れ: what the rain reached (any of these ways: SkyShader.h's WetWay; at most kWetWays) looks wet -
+    // a little darker, and smooth - in round spots; in shade (the sun's shadow) as wet as `shade` says.
+    std::span<const WetWay> wetWays;
     // What rain and snow hit (the colliders), not drawn.
     std::span<const WeatherBlock> weatherBlocks;
 };

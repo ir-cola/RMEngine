@@ -153,11 +153,48 @@ Vec3 WindOf(float directionDegrees, float strength) {
     return Scale(TurnY(Vec3{0, 0, -1}, directionDegrees), strength);  // 0: to the front (-Z), + to the left
 }
 
-float NextWetness(float wetness, const WeatherNow& now, float dt) {
-    const float target = std::min(RainNow(now) * 2.f, 1.f);
-    if (wetness < 0) return target;
-    const float step = std::max(dt, 0.f) * (target > wetness ? 1.f / 8.f : 1.f / 90.f);
-    return target > wetness ? std::min(wetness + step, target) : std::max(wetness - step, target);
+std::vector<space3d::WetWay> WetAtOnce(const WeatherNow& now) {
+    const float rain = RainNow(now);
+    if (!(rain > 0)) return {};
+    const float target = std::min(rain * 2.f, 1.f);
+    return {{space3d::FallDirection(space3d::Precipitation::Kind::Rain, {now.windX, 0, now.windZ}), target, target}};
+}
+
+void StepWet(std::vector<space3d::WetWay>& ways, const WeatherNow& now, float dt) {
+    dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
+    const float rain = RainNow(now);
+    if (rain > 0) {
+        const float target = std::min(rain * 2.f, 1.f);
+        const Vec3 way = space3d::FallDirection(space3d::Precipitation::Kind::Rain, {now.windX, 0, now.windZ});
+        const float close = std::cos(kWetWayDegrees * kDegrees);
+        auto dot = [](Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+        auto it = std::find_if(ways.begin(), ways.end(), [&](const space3d::WetWay& w) { return dot(w.way, way) >= close; });
+        if (it == ways.end()) {
+            if (ways.size() < space3d::kWetWays) {
+                ways.push_back({way, 0, 0});
+                it = ways.end() - 1;
+            } else {
+                it = std::min_element(ways.begin(), ways.end(), [](const space3d::WetWay& a, const space3d::WetWay& b) { return a.sun + a.shade < b.sun + b.shade; });
+                *it = {way, 0, 0};
+            }
+        }
+        // Wetter (never drier while it rains).
+        for (float* level : {&it->sun, &it->shade}) {
+            if (*level < target) *level = std::min(target, *level + dt / 8.f);
+        }
+        return;
+    }
+    for (space3d::WetWay& w : ways) {
+        w.sun = std::max(0.f, w.sun - dt / 90.f);
+        w.shade = std::max(0.f, w.shade - dt / 300.f);
+    }
+    std::erase_if(ways, [](const space3d::WetWay& w) { return w.sun <= 0 && w.shade <= 0; });
+}
+
+float WetnessOf(const std::vector<space3d::WetWay>& ways) {
+    float most = 0;
+    for (const space3d::WetWay& w : ways) most = std::max(most, w.sun);
+    return most;
 }
 
 Vec3 SunDirection(const Sky& sky) {
@@ -244,7 +281,7 @@ SkyLook LookOf(const Sky& sky, double seconds) {
             }
             look.wind = {now.windX, 0, now.windZ};
             // 濡れ: as the game has counted it (Play), or as wet as the rain now makes things.
-            look.wetness = sky.wetness >= 0 ? std::clamp(sky.wetness, 0.f, 1.f) : NextWetness(-1, now, 0);
+            look.wetWays = sky.wetCounted ? sky.wetWays : WetAtOnce(now);
             break;
         }
         case SkyKind::Space: {
@@ -301,7 +338,11 @@ void RunSkyClock(game_production::SystemContext& ctx) {
     if (sky->dayLength > 0) sky->hour = std::fmod(std::fmod(sky->hour, 24.f) + ctx.dt * 24.f / sky->dayLength + 24.f, 24.f);
     if (sky->fadeSeconds > 0 && sky->fadeElapsed < sky->fadeSeconds) sky->fadeElapsed = std::min(sky->fadeElapsed + std::max(ctx.dt, 0.f), sky->fadeSeconds);
     const WeatherNow now = NowOf(*sky);
-    sky->wetness = NextWetness(sky->wetness, now, ctx.dt);
+    if (!sky->wetCounted) {
+        sky->wetWays = WetAtOnce(now);  // (raining from the start: wet from the start)
+        sky->wetCounted = true;
+    }
+    StepWet(sky->wetWays, now, ctx.dt);
     const float dt = std::max(ctx.dt, 0.f);
     sky->driftX = std::fmod(sky->driftX + now.windX * dt, kDriftWrap);
     sky->driftZ = std::fmod(sky->driftZ + now.windZ * dt, kDriftWrap);

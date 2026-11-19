@@ -106,9 +106,11 @@ struct Sky {
     RM_TRANSIENT() WeatherNow fadeFrom{};
     RM_TRANSIENT() float fadeSeconds = 0;
     RM_TRANSIENT() float fadeElapsed = 0;
-    // 濡れ while the game plays: grows while it rains, dries after (< 0: not counted yet - LookOf takes
-    // the rain falling now, as the editor does before Play).
-    RM_TRANSIENT() float wetness = -1;
+    // 濡れ while the game plays (StepWet): the ways the rain fell and how wet each made things - they
+    // grow while it rains, dry in game time after. Not counted yet (the editor before Play): LookOf
+    // takes the rain falling now.
+    RM_TRANSIENT() std::vector<space3d::WetWay> wetWays;
+    RM_TRANSIENT() bool wetCounted = false;
     // How far the wind has carried the clouds, the drops and the flakes while the game played (world
     // units: the wind added up - a wind that changes never makes them jump).
     RM_TRANSIENT() float driftX = 0;
@@ -126,9 +128,17 @@ float RainNow(const WeatherNow& w);
 float SnowNow(const WeatherNow& w);
 // The wind of 風の向き / 風の強さ (m/s, world: y is 0).
 Vec3 WindOf(float directionDegrees, float strength);
-// 濡れ a moment later: towards how wet the rain now makes things (twice its amount, at most 1) -
-// wetter in a few seconds, dry again in a minute or two.
-float NextWetness(float wetness, const WeatherNow& now, float dt);
+// 濡れ `dt` game seconds later. While it rains: the way it falls now (slanted by the wind) gets wetter
+// (in a few seconds, up to twice the rain's amount, at most 1) - a way within kWetWayDegrees of one
+// kept is that one; the others stay as wet as they were (what the rain reached stays wet while it
+// rains). Not raining: all dry - in the sun in a minute and a half, in shade over five minutes - and
+// go when dry. At most kWetWays (a new way takes the place of the least wet one).
+inline constexpr float kWetWayDegrees = 8.f;
+void StepWet(std::vector<space3d::WetWay>& ways, const WeatherNow& now, float dt);
+// What is wet now, as the editor shows it before Play: the rain falling now, its way, at once.
+std::vector<space3d::WetWay> WetAtOnce(const WeatherNow& now);
+// How wet it is (the scripts' rm::Sky::Wetness): the wettest way in the sun.
+float WetnessOf(const std::vector<space3d::WetWay>& ways);
 
 // Towards the sun (length 1). 地球の空: by the hour - up in the east (+X) at 6, highest (sunHeight, on
 // the +Z side) at 12, down in the west at 18, as low below at 0; the path turned by sunDirection.
@@ -147,8 +157,8 @@ struct SkyLook {
     Color ambientSky{0.16f, 0.16f, 0.16f, 1}, ambientGround{0.08f, 0.08f, 0.08f, 1};
     // 雨 / 雪: what falls around the camera (amount 0: nothing) - both while one fades into the other.
     space3d::Precipitation rain, snow;
-    // 濡れ: how wet what the rain reaches looks (0 .. 1; RenderFrame::wetness).
-    float wetness = 0;
+    // 濡れ: the ways the rain fell and how wet they made things (RenderFrame::wetWays).
+    std::vector<space3d::WetWay> wetWays;
     Vec3 wind{0, 0, 0};  // 風 now (m/s, world; RenderFrame::wind)
     float flash = 0;  // 雷: a flash now (0 .. 1; it lights the clouds, the ambient light and the drops)
 };

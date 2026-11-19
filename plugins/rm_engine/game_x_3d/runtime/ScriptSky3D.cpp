@@ -92,7 +92,7 @@ int GetValue(void* ctx, int which, int now, float* out) {
         case 4: *out = now ? std::sqrt(n.windX * n.windX + n.windZ * n.windZ) : sky->windStrength; return 1;
         case 5: *out = sky->hour; return 1;
         case 6: *out = sky->lightning ? 1.f : 0.f; return 1;
-        case 7: *out = sky->wetness >= 0 ? sky->wetness : NextWetness(-1, NowOf(*sky), 0); return 1;
+        case 7: *out = WetnessOf(sky->wetCounted ? sky->wetWays : WetAtOnce(NowOf(*sky))); return 1;
         default: return 0;
     }
 }
