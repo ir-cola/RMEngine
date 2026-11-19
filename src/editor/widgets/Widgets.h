@@ -129,6 +129,13 @@ void ProgressBar(ui::Context& c, const ui::Rect& r, float fraction);
 // One fact of a list (the debug panel): its name dim on the left (`labelWidth`), its value on the right.
 // `lit`: the value in the accent (a button held, something that is on).
 void InfoRow(ui::Context& c, const ui::Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth, bool lit = false);
+// A window shaped like a file folder (ゲーム制作's デバッグ): tabs standing on a sheet. Draw the tabs not
+// chosen, then the sheet, then the chosen tab - it is the sheet's colour and joins it (no line between).
+// FolderTab: true when clicked. squareTopLeft: the first tab is chosen (the sheet's corner under it is
+// its side, not round).
+bool FolderTab(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label, bool selected, float radius);
+void DrawFolderSheet(ui::Context& c, const ui::Rect& r, float radius, bool squareTopLeft);
+
 // Values over time, the newest on the right (the debug panel's frame times): `a` a line in the accent,
 // `b` (may be empty) one in the warning colour, 0 at the bottom and `top` at the top (higher ones are cut);
 // `guides`: faint lines across at those values.

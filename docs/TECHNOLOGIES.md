@@ -945,10 +945,17 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **時間の内訳・描画の統計・音の出力先** — 時間は `std::chrono::steady_clock` (単調に進む時計) で、スクリプトのフックを呼ぶ前後・システムを 1 つ走らせる前後を測る。パネルが出ている間だけ測る (`SetTiming`) ので、ふだんの Play には手間が増えない。描画の統計は、3D の描き手がドローコールを組み立てた後に、三角形 (インデックスの数 ÷ 3 × インスタンス数) と使った絵 (重複なし) の GPU のメモリを数える。物理は Jolt の `GetNumActiveBodies` (眠っていない剛体)。音の出力先の名前は **MMDevice API** (`IMMDeviceEnumerator::GetDefaultAudioEndpoint` → `PKEY_Device_FriendlyName`)。ビューの報告は「パネルがこの 1 秒に描かれた」ときだけ作る
 - **どこ** — `src/platform/SystemInfo.cpp`・`plugins/rm_engine/game_production/editor/DebugPanel.cpp`・`DebugReports.cpp`・`Systems.cpp` (`SystemRunner::Run`)・`Scripts.cpp` (`ScriptRunner::Times`)・`Renderer3D.cpp` (`Stats`)・`plugins/rm_engine/particles/runtime/ParticlePlayer.cpp` (`CountAliveFor`・`ReadBackCount`)・`ParticleShader.cpp` (`AliveCount`)・`plugins/rm_engine/game_x_particles/runtime/ParticleStats.cpp`
 
+### 枠の無い、形のある窓 (ゲーム制作のデバッグの窓)
+- **何か** — Windows の枠 (タイトルバーと縁) の無い窓。`WS_POPUP | WS_THICKFRAME` で作り、`WM_NCCALCSIZE` で枠の場所を 0 にして、窓全体を自分で描く。形は **ウィンドウ リージョン** (`SetWindowRgn`): 角の丸い四角 (`CreateRoundRectRgn`) を重ねた (`CombineRgn` の OR) 形の外は、窓ではなくなる (描かれず、クリックも後ろへ行く)。動かす所と大きさを変える縁は、`WM_NCHITTEST` に「ここはタイトルバー (HTCAPTION)」「ここは右下の角 (HTBOTTOMRIGHT)」と答えると、Windows がドラッグを引き受けてくれる
+- **工夫** — 形・当たり判定・描画が同じ配置の計算 (`LayoutDebugWindow`。純粋でテストあり) を使うので、ずれない。大きさが変わるたびにリージョンを作り直す。描き直しはタイマー (1 秒に 30 回) で、フレームごとの `InvalidateRect` はしない: Windows は「描き直し待ち」の窓を順に描くので、ずっと描き直し待ちの窓が 1 つあると、ほかの窓 (エディター本体) が描かれなくなる (前のデバッグのパネルを別の窓にしたときに固まった原因)。窓はエディターの窓が持ち主 (上に出て、タスクバーに出ず、一緒に閉じる)
+- **なぜそれか** — 頼まれた「フォルダーの形」を、DirectComposition の透明な窓を使わずに、どの Windows でも動く一番簡単な方法で。リージョンの縁はなめらかにならない (アンチエイリアス無し) が、枠の線を窓の色で描いて目立たないようにした
+- **どこ** — `src/editor/shell/ShapedWindow.cpp`・`src/editor/plugin/Software.h` (`ToolWindowSpec`・`SoftwareHost::OpenToolWindow`)・`src/platform/Window.cpp` (`frameless`)・`plugins/rm_engine/game_production/editor/DebugPanel.cpp` (`LayoutDebugWindow`・`DebugWindowShape`・`HitDebugWindow`)・`src/editor/widgets/Widgets.cpp` (`FolderTab`・`DrawFolderSheet`)
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-19 | 枠の無い形のある窓 (WS_POPUP・WM_NCCALCSIZE・SetWindowRgn・WM_NCHITTEST) を足し、デバッグを 5 つのタブの窓にした |
 | 2026-11-18 | デバッグのパネル: DisplayConfig API (モニターの名前)・DXGI のアダプターとメモリの量・GPU で数えた値を待たずに読み戻す (ステージングと DO_NOT_WAIT) を足した |
 | 2026-11-18 | デバッグのパネルに CPU (CPUID の名前・P / E コア・GetSystemTimes での使用率) とメモリ (GlobalMemoryStatusEx) を足した |
 | 2026-11-18 | デバッグのパネルに時間の内訳 (steady_clock で測る)・フレームのグラフ・描画の統計・物理 (Jolt の起きている剛体)・音の出力先 (MMDevice API)・ゲーム UI・コンソールの数を足した |

@@ -428,6 +428,38 @@ void InfoRow(ui::Context& c, const Rect& r, std::wstring_view label, std::wstrin
     c.P().Text({r.x + lw, r.y, r.w - lw, r.h}, value, vs);
 }
 
+bool FolderTab(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view label, bool selected, float radius) {
+    const auto b = c.ButtonBehavior(c.MakeId(idStr), r);
+    auto& p = c.P();
+    const ui::Corners top{radius, radius, 0, 0};
+    if (selected) {
+        // The sheet's own fill, reaching a little down into it (so no line shows where they meet).
+        const theme::Gradient fill = theme::Gentle(theme::Panel);
+        const Rect joined{r.x, r.y, r.w, r.h + 2};
+        p.StrokeRoundRectGradient(joined.Inset(-1, -1, -1, 0), {radius + 1, radius + 1, 0, 0}, theme::EdgeOuter(), theme::EdgeOuter());
+        p.FillRoundRectGradient(joined, top, fill.top, fill.top);
+        p.StrokeRoundRectGradient(joined, top, theme::EdgeInner().top, fill.top);
+        p.FillRect({r.x + 1, r.Bottom() - 1, r.w - 2, 4}, fill.top);
+    } else {
+        const Color base = b.hovered ? theme::Hover : theme::Sidebar;
+        const theme::Gradient fill = theme::Gentle(base);
+        p.FillRoundRectGradient(r, top, fill.top, fill.bottom);
+        p.StrokeRoundRectGradient(r, top, theme::Border, theme::Border);
+    }
+    ui::TextStyle ts;
+    ts.size = 12;
+    ts.bold = selected;
+    ts.color = selected ? theme::Text : b.hovered ? theme::Text : theme::TextDim;
+    ts.h = ui::HAlign::Center;
+    ts.v = ui::VAlign::Center;
+    p.Text(r.Inset(6, 2, 6, 0), label, ts);
+    return b.clicked;
+}
+
+void DrawFolderSheet(ui::Context& c, const Rect& r, float radius, bool squareTopLeft) {
+    DrawPanelFrame(c, r, {squareTopLeft ? 0.f : radius, radius, radius, radius});
+}
+
 void LineGraph(ui::Context& c, const Rect& r, std::span<const float> a, std::span<const float> b, float top, std::span<const float> guides) {
     DrawSurface(c, r, Surface::Sunken, 4.f);
     if (top <= 0 || r.w < 4 || r.h < 4) return;

@@ -108,7 +108,7 @@ void UiLines(const game_production::DebugContext& ctx, std::vector<game_producti
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
-    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"ゲーム UI"), 40, &UiLines};
+    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"ゲーム UI"), 40, game_production::DebugTab::Game, &UiLines};
     registry.Contribute(game_production::kDebugInfoPoint, kDebug);
     // The UI over the game view (the exported game registers its own: UiScreenDraw.cpp).
     registry.Contribute(game_production::kScreenDrawPoint, ScreenDrawPart());

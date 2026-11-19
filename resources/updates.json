@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "デバッグをエディターから離れた窓にした: 枠の無いフォルダーの形・5 つのタブ (基本情報・コントローラー・PC 情報・パフォーマンス・ゲームの中身)。ツールバーの「デバッグ」で開く。別のタブにするとエディターが固まった不具合も直した",
+          "en": "Debug is now a window of its own, apart from the editor: a frameless folder shape with five tabs (Basics, Controllers, PC, Performance, Game state), opened with Debug on the toolbar. Fixed the editor freezing when Debug was in a separate window"
+        },
+        {
           "ja": "Play 中にインスペクターで値を変えられるようにした (部品を足す・外すも)。ゲームにすぐ効き、保存されず ■ で Play の前に戻る",
           "en": "Values can be changed in the Inspector while playing (adding and removing components too). They take effect at once, are not saved, and go back at Stop"
         },

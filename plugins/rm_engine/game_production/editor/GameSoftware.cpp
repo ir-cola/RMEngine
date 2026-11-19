@@ -62,7 +62,6 @@ constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
 constexpr char kExportPanel[] = "export";
 constexpr char kScenesPanel[] = "scenes";
-constexpr char kDebugPanel[] = "debug";
 constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" rows in the 階層's menu
 constexpr float kSpaceStripH = 34.f;   // the strip of spaces (3D / 2D) above the scene view
 
@@ -232,6 +231,7 @@ public:
                  const double t0 = platform::NowSeconds();
                  DrawSceneView(c, r);
                  sceneMeter_.Frame(t0, (platform::NowSeconds() - t0) * 1000.0);
+                 sceneGraph_.Push(t0, (platform::NowSeconds() - t0) * 1000.0);
                  sceneMouse_.reset();
                  if (c.IsHovered(r)) sceneMouse_ = Vec2{c.In().mouseX - r.x, c.In().mouseY - r.y};
              }},
@@ -243,7 +243,6 @@ public:
              }},
             {kExportPanel, TrKey(L"書き出し"), [this](ui::Context& c, const Rect& r) { DrawExportPanel(c, r); }},
             {kScenesPanel, TrKey(L"シーンの一覧"), [this](ui::Context& c, const Rect& r) { DrawScenesPanel(c, r); }},
-            {kDebugPanel, TrKey(L"デバッグ"), [this](ui::Context& c, const Rect& r) { DrawDebugPanel(c, r); }},
         };
         // Panels the plugins add (ゲーム UI: the UI view) - not of a space.
         for (const auto& p : host_.Registry().Contributions<ViewPanelInfo>(kViewPanelPoint)) {
@@ -254,8 +253,34 @@ public:
         return panels;
     }
 
-    // デバッグ: the frames of the views and of Play, the mouse, the pads, the scene, the PC (DebugPanel.h).
-    void DrawDebugPanel(ui::Context& c, const Rect& r) {
+    // デバッグ: a window of its own (not docked in the editor): no Windows frame, shaped as a file folder with
+    // five tabs (DebugPanel.h). Drawn by a timer - never frame after frame (that kept the editor's own
+    // window from being drawn while the panel floated).
+    void ToggleDebugWindow() {
+        if (debugWindow_ && debugWindow_->IsOpen()) {
+            debugWindow_->Close();
+            return;
+        }
+        editor::ToolWindowSpec spec;
+        spec.title = Tr(L"デバッグ");
+        spec.widthDip = 620;
+        spec.heightDip = 720;
+        spec.minWidthDip = 420;
+        spec.minHeightDip = 260;
+        spec.refreshSeconds = 1.0 / 30.0;
+        spec.shape = [](float w, float h) { return DebugWindowShape(w, h); };
+        spec.hit = [](float x, float y, float w, float h) { return HitDebugWindow(LayoutDebugWindow(w, h), x, y); };
+        spec.draw = [this](ui::Context& c, float w, float h) {
+            debugPanel_.DrawWindow(c, w, h, MakeDebugView(), [this] {
+                if (debugWindow_) debugWindow_->Close();
+            });
+        };
+        debugWindow_ = host_.OpenToolWindow(std::move(spec));
+        if (!debugWindow_) log::Warn("デバッグの窓を作れませんでした");
+    }
+
+    // What the デバッグ window shows now.
+    DebugView MakeDebugView() {
         const double now = platform::NowSeconds();
         DebugView v;
         v.registry = &host_.Registry();
@@ -280,8 +305,10 @@ public:
             v.systemTimes = systemTimes_;
             v.fixedSteps = runner_.LastSteps();
         }
+        v.playGraph = playGraph_;
+        v.sceneGraph = sceneGraph_;
         debugShownAt_ = now;
-        debugPanel_.Draw(c, r, v);
+        return v;
     }
 
     // A panel a plugin added: its view, made the first time it is drawn (its state kept like the scene
@@ -310,7 +337,7 @@ public:
         }
         auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({cp::kHierarchy, kScenesPanel}),
                                l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf(views), l.MakeLeaf({cp::kInspector})));
-        l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets, kExportPanel, kDebugPanel}));
+        l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets, kExportPanel}));
         return l;
     }
 
@@ -764,6 +791,7 @@ public:
         // Scripts built again: swapped here, between frames (never while playing: at Stop).
         scripts_.SetGlobals(settings_.globals);  // (an edit of the list: the header and a build, a second later)
         scripts_.Poll(c);
+        if (debugWindow_ && !debugWindow_->IsOpen()) debugWindow_.reset();  // (closed by its × / Alt+F4)
         // (while playing: at Stop, or now - the game settings' Play 中のビルド)
         if (auto dll = scripts_.TakeReady(Running() && settings_.scriptReload == ScriptReload::AtStop)) ReloadScripts(*dll);
         if (!heldSceneWarnings_.empty() && !scripts_.Building()) {
@@ -788,6 +816,7 @@ public:
             const double t0 = platform::NowSeconds();
             AdvancePlay(dt);
             updateMeter_.Frame(t0, (platform::NowSeconds() - t0) * 1000.0);
+            playGraph_.Push(t0, (platform::NowSeconds() - t0) * 1000.0);
             mouseInGame_ = false;  // (the game view says it again when it is drawn)
             c.RequestAnimation();
         }
@@ -823,19 +852,27 @@ public:
         if (editor::w::IconToggle(c, "stop", next(), editor::w::Icon::Stop, false, running, Tr(L"停止 (Play の前に戻る)"))) {
             StopPlay();
         }
-        if (r.Right() - x > 80) {
+        // デバッグ: its window, at the right end of the bar.
+        constexpr float kDebugW = 92;
+        const bool debugOpen = debugWindow_ && debugWindow_->IsOpen();
+        const Rect debugButton{r.Right() - kDebugW - 8, y, kDebugW, 26};
+        if (debugButton.x > x + 8 &&
+            editor::w::Button(c, "debug_window", debugButton, Tr(L"デバッグ"), debugOpen ? editor::w::ButtonKind::Primary : editor::w::ButtonKind::Secondary)) {
+            ToggleDebugWindow();
+        }
+        if (debugButton.x - x > 80) {
             ui::TextStyle ts;
             ts.size = 12;
             ts.color = theme::Text;
             std::wstring text;
             if (running) {
                 text = play_ == PlayState::Paused ? Tr(L"一時停止中 — ■ で止めると Play の前に戻ります")
-                                                  : Tr(L"Play 中 — 編集はできません。■ で止めると Play の前に戻ります");
+                                                  : Tr(L"Play 中 — インスペクターで変えた値も、■ で止めると Play の前に戻ります");
             }
             // Scripts built while playing: used from Stop.
             if (running && scripts_.WaitingForStop()) text = Tr(L"スクリプトをビルドしました — Stop で反映されます");
             if (scripts_.Building()) text += (text.empty() ? L"" : L"   ") + Tr(L"スクリプトをビルドしています…");
-            if (!text.empty()) c.P().Text({x + 8, r.y, r.Right() - x - 8, r.h}, text, ts);
+            if (!text.empty()) c.P().Text({x + 8, r.y, debugButton.x - x - 16, r.h}, text, ts);
         }
     }
 
@@ -3088,9 +3125,11 @@ private:
     // The デバッグ panel and what it shows: how often the views are drawn and Play's frames run, the mouse
     // over the scene view.
     DebugPanel debugPanel_;
+    std::unique_ptr<editor::ToolWindow> debugWindow_;  // the デバッグ window while it is open
     FrameMeter sceneMeter_, gameMeter_, updateMeter_;
     json::Value settingsBeforePlay_;  // the game settings when Play started (null: not playing)
-    double debugShownAt_ = -1e9;  // the panel was drawn then (Play's parts are timed while it is shown)
+    double debugShownAt_ = -1e9;  // the window was drawn then (Play's parts are timed while it is shown)
+    FrameGraph playGraph_, sceneGraph_;
     PlayTimes playTimes_;
     std::vector<ScriptRunner::ScriptTime> scriptTimes_;
     std::vector<SystemRunner::SystemTime> systemTimes_;

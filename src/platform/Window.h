@@ -30,6 +30,9 @@ struct WindowDesc {
     // Panels taken out of the editor: owned by the editor window (stays above it, no taskbar button).
     HWND owner = nullptr;
     bool tool = false;
+    // No Windows frame at all (a shaped window draws its own and says where it is dragged and sized
+    // through WM_NCHITTEST): the size given is the whole window.
+    bool frameless = false;
     // Window rectangle in physical pixels of the virtual screen. Ignored (centered instead)
     // when it is not on any monitor any more (a saved position from an unplugged screen).
     bool hasRect = false;

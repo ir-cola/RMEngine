@@ -46,7 +46,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::ComponentLook kLook{.type = &reflect::TypeOf<ParticleSystem>, .icon = "effect"};
     registry.Contribute(game_production::kComponentLookPoint, kLook);
     // デバッグ: how many particles each view plays.
-    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"パーティクル"), 10, &ParticleLines};
+    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"パーティクル"), 10, game_production::DebugTab::Performance, &ParticleLines};
     registry.Contribute(game_production::kDebugInfoPoint, kDebug);
 }
 

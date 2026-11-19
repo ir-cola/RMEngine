@@ -34,6 +34,7 @@ void RegisterClassOnce(WNDPROC proc) {
 }
 
 DWORD StyleFor(const WindowDesc& d) {
+    if (d.frameless) return WS_POPUP | WS_THICKFRAME;  // (THICKFRAME: sizing by its edges; the frame itself is taken away: WM_NCCALCSIZE)
     if (d.tool) return WS_OVERLAPPEDWINDOW & ~WS_MINIMIZEBOX;
     return d.resizable ? WS_OVERLAPPEDWINDOW : (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX);
 }
@@ -59,7 +60,7 @@ bool Window::Create(const WindowDesc& desc, WindowListener* listener) {
     const DWORD exStyle = ExStyleFor(desc);
     const float s = dpiX / 96.f;
     RECT r{0, 0, static_cast<LONG>(desc.widthDip * s), static_cast<LONG>(desc.heightDip * s)};
-    AdjustWindowRectExForDpi(&r, style, FALSE, exStyle, dpiX);
+    if (!desc.frameless) AdjustWindowRectExForDpi(&r, style, FALSE, exStyle, dpiX);
     const RECT& wa = mi.rcWork;
     int w = std::min<int>(r.right - r.left, wa.right - wa.left);
     int h = std::min<int>(r.bottom - r.top, wa.bottom - wa.top);

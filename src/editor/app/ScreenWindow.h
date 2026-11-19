@@ -60,6 +60,15 @@ protected:
     // The GPU's devices were made again (it was lost): Direct2D things the screen keeps (bitmaps ...)
     // are made again here. The swap chain and the painter are already new.
     virtual void OnDeviceChanged() {}
+    // Any message before the screen window looks at it: true (and `result`) to answer it here (a shaped
+    // window's WM_NCHITTEST / WM_NCCALCSIZE).
+    virtual bool OnWindowMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) {
+        (void)msg;
+        (void)wp;
+        (void)lp;
+        (void)result;
+        return false;
+    }
     virtual void OnOtherMessage(UINT msg, WPARAM wp, LPARAM lp) {
         (void)msg;
         (void)wp;

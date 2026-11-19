@@ -89,7 +89,7 @@ void PhysicsLines(const game_production::DebugContext& ctx, std::vector<game_pro
 void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::SceneLinesInfo kLines{&ShapeLines};
     registry.Contribute(game_production::kSceneLinesPoint, kLines);
-    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"物理"), 20, &PhysicsLines};
+    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"物理"), 20, game_production::DebugTab::Game, &PhysicsLines};
     registry.Contribute(game_production::kDebugInfoPoint, kDebug);
 }
 

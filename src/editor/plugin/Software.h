@@ -108,6 +108,37 @@ struct ProjectFileWrite {
     std::string bytes;
 };
 
+// A window of its own a software opens (ゲーム制作's デバッグ): not part of the editor's docking -
+// no Windows frame, shaped as the software says (the union of rounded rectangles), owned by the editor's
+// window (above it, no taskbar button, gone with it). Drawn when something happens in it and every
+// `refreshSeconds` (by a timer - never a frame after frame of its own: the editor's window keeps
+// drawing too).
+enum class ToolHit { Client, Caption, Left, Right, Top, Bottom, TopLeft, TopRight, BottomLeft, BottomRight, Nowhere };
+struct ToolRoundRect {
+    ui::Rect rect;  // DIPs from the window's top left
+    float radius = 0;
+};
+struct ToolWindowSpec {
+    std::wstring title;  // Alt+Tab's name
+    int widthDip = 560, heightDip = 640;
+    int minWidthDip = 320, minHeightDip = 240;
+    double refreshSeconds = 0;  // drawn again this often while open (0: only when something happens)
+    // Its shape for a size (DIPs); empty: the whole rectangle.
+    std::function<std::vector<ToolRoundRect>(float w, float h)> shape;
+    // What a point (DIPs) of the window is: its UI's, a handle to move it by, an edge to size it by.
+    std::function<ToolHit(float x, float y, float w, float h)> hit;
+    std::function<void(ui::Context& c, float w, float h)> draw;
+};
+class ToolWindow {
+public:
+    virtual ~ToolWindow() = default;  // closes it
+    virtual bool IsOpen() const = 0;  // false once closed (its X, Alt+F4, Close)
+    // Closed after this frame (safe from its own drawing: its X button).
+    virtual void Close() = 0;
+    virtual void Redraw() = 0;
+    virtual void BringToFront() = 0;
+};
+
 // What the editor gives one software.
 class SoftwareHost {
 public:
@@ -169,6 +200,11 @@ public:
     virtual void ClearHistory() = 0;
     // Renames an asset's file (its .meta follows; its id stays). Empty, or why not (the screen's language).
     virtual std::wstring RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) = 0;
+    // A window of the software's own (ToolWindow), shown at once; null when it cannot be made.
+    virtual std::unique_ptr<ToolWindow> OpenToolWindow(ToolWindowSpec spec) {
+        (void)spec;
+        return nullptr;
+    }
 };
 
 // One software inside one open project.

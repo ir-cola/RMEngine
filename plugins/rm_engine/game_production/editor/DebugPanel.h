@@ -14,7 +14,12 @@
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 
+#include "editor/plugin/Software.h"
+
+#include <algorithm>
 #include <array>
+#include <functional>
+#include <map>
 #include <cstdint>
 #include <deque>
 #include <memory>
@@ -106,9 +111,12 @@ struct DebugContext {
     bool playing = false;
     const ScriptWorld* world = nullptr;  // while playing (its services: 音, the game UI ...)
 };
+// The デバッグ window's tabs.
+enum class DebugTab { Basic = 0, Controller = 1, Pc = 2, Performance = 3, Game = 4 };
 struct DebugInfoInfo {
     const wchar_t* title = L"";  // TrKey(L"...")
     int order = 0;
+    DebugTab tab = DebugTab::Game;
     void (*collect)(const DebugContext& ctx, std::vector<DebugInfoLine>& out) = nullptr;
 };
 
@@ -123,6 +131,22 @@ void WantViewReports();
 bool ViewReportsWanted();
 void ReportView(const void* view, ViewReport report);
 std::vector<ViewReport> RecentViews(double maxAge = 1.0);
+
+// The last frames for the graph: the interval between two (ms) and the work of each (ms), oldest first.
+struct FrameGraph {
+    static constexpr size_t kSamples = 240;
+    std::vector<float> intervals, work;
+    double last = 0;
+    void Push(double now, double workMs) {
+        if (last > 0) {
+            intervals.push_back(static_cast<float>(std::min(250.0, (now - last) * 1000.0)));
+            work.push_back(static_cast<float>(workMs));
+            if (intervals.size() > kSamples) intervals.erase(intervals.begin());
+            if (work.size() > kSamples) work.erase(work.begin());
+        }
+        last = now;
+    }
+};
 
 // How long the parts of one Play frame took (ms).
 struct PlayTimes {
@@ -149,24 +173,37 @@ struct DebugView {
     std::vector<ScriptRunner::ScriptTime> scriptTimes;
     std::vector<SystemRunner::SystemTime> systemTimes;
     int fixedSteps = 0;
+    FrameGraph playGraph, sceneGraph;  // Play's frames; the scene view's drawing
 };
+
+// The デバッグ window (a software's tool window: no Windows frame): five folder tabs over a sheet with a
+// strip to move it by and its ×. Pure layout - the shape, the hit test and the drawing use the same.
+inline constexpr int kDebugTabs = 5;
+inline constexpr float kDebugTabH = 32, kDebugTabGap = 4, kDebugTabRadius = 9, kDebugBodyRadius = 12;
+struct DebugWindowLayout {
+    ui::Rect tabs[kDebugTabs];
+    ui::Rect body, close, grip, content;
+};
+DebugWindowLayout LayoutDebugWindow(float w, float h);
+std::vector<editor::ToolRoundRect> DebugWindowShape(float w, float h);
+editor::ToolHit HitDebugWindow(const DebugWindowLayout& l, float x, float y);
 
 class DebugPanel {
 public:
+    // The whole window (its tabs, its sheet, its ×: `close`) - and what the chosen tab shows, in `r`.
+    void DrawWindow(ui::Context& c, float width, float height, const DebugView& v, const std::function<void()>& close);
     void Draw(ui::Context& c, const ui::Rect& r, const DebugView& v);
 
 private:
-    bool live_ = true;  // drawn again every frame (off: the values stay as they are)
-    std::vector<bool> open_ = std::vector<bool>(16, true);
+    int tab_ = 0;
+    std::map<std::wstring, bool> open_;  // the sections folded or open, by title
     PadWatcher pads_;
     std::array<PadState, kPlayers> padState_{};
     double systemAt_ = -1e9;  // when the monitors, the GPU, the CPU and the memory were last read
     struct System;
     std::shared_ptr<System> system_;
     platform::CpuMeter cpuMeter_;  // how busy the CPU was between two reads (a second apart)
-    FrameMeter self_;  // this panel's own drawing (the editor's frames while it is live)
-    double lastDraw_ = 0;
-    std::vector<float> intervals_, work_;  // the graph: the editor's frame intervals and Play's work (ms)
+
 };
 
 }  // namespace rm::game_production

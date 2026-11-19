@@ -109,6 +109,7 @@
     <ClCompile Include="editor\shell\EditorLayouts.cpp" />
     <ClCompile Include="editor\shell\EditorScreen.cpp" />
     <ClCompile Include="editor\shell\FloatWindow.cpp" />
+    <ClCompile Include="editor\shell\ShapedWindow.cpp" />
     <ClCompile Include="editor\widgets\Widgets.cpp" />
     <ClCompile Include="editor\widgets\PickTree.cpp" />
     <ClCompile Include="editor\widgets\ThemeFile.cpp" />
@@ -165,6 +166,7 @@
     <ClInclude Include="editor\project\Templates.h" />
     <ClInclude Include="editor\shell\EditorScreen.h" />
     <ClInclude Include="editor\shell\FloatWindow.h" />
+    <ClInclude Include="editor\shell\ShapedWindow.h" />
     <ClInclude Include="editor\widgets\Theme.h" />
     <ClInclude Include="editor\widgets\ThemeFile.h" />
     <ClInclude Include="ui\Path.h" />

@@ -8,6 +8,7 @@
 #include "editor/app/Paths.h"
 #include "editor/plugin/Plugins.h"
 #include "editor/shell/FloatWindow.h"
+#include "editor/shell/ShapedWindow.h"
 #include "editor/widgets/Theme.h"
 #include "platform/Shell.h"
 
@@ -230,6 +231,12 @@ void EditorScreen::Workspace::PickFolder(std::wstring title, fs::path start, std
             done(fs::path(*folder));
         }
     });
+}
+
+std::unique_ptr<ToolWindow> EditorScreen::Workspace::OpenToolWindow(ToolWindowSpec spec) {
+    auto w = std::make_unique<ShapedWindow>(editor_.app_, std::move(spec));
+    if (!w->Open(editor_.Hwnd())) return nullptr;
+    return w;
 }
 
 void EditorScreen::Workspace::Ask(std::wstring title, std::wstring text, std::vector<std::wstring> buttons, std::function<void(int)> done) {

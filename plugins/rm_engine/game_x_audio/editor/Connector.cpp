@@ -79,7 +79,7 @@ void SoundLines(const game_production::DebugContext& ctx, std::vector<game_produ
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
-    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"音"), 30, &SoundLines};
+    static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"音"), 30, game_production::DebugTab::Game, &SoundLines};
     registry.Contribute(game_production::kDebugInfoPoint, kDebug);
     static const game_production::ComponentLook kSource{.type = &reflect::TypeOf<AudioSource>, .icon = "audio"};
     registry.Contribute(game_production::kComponentLookPoint, kSource);

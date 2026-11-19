@@ -325,6 +325,13 @@ void ScreenWindow::UpdateIme() {
 
 LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& handled) {
     if (!alive_) return 0;  // not handled -> DefWindowProc
+    {
+        LRESULT result = 0;
+        if (OnWindowMessage(m, wp, lp, result)) {
+            handled = true;
+            return result;
+        }
+    }
     handled = true;
     switch (m) {
         case WM_PAINT: {
