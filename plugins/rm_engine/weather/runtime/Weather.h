@@ -94,7 +94,7 @@ Vec3 WindOf(float directionDegrees, float strength);
 game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds);
 
 // 濡れ `dt` game seconds later. While it rains: the way it falls now (slanted by the wind) gets wetter
-// (all of it in the end: in a few seconds in a downpour, half a minute in a drizzle) - a way within kWetWayDegrees of one
+// (all of it in the end: in about 10 seconds in a downpour, a minute in a drizzle) - a way within kWetWayDegrees of one
 // kept is that one; the others stay as wet as they were (what the rain reached stays wet while it
 // rains). Not raining: all dry - in the sun in a minute and a half, in shade over five minutes - and
 // go when dry. At most kWetWays (a new way takes the place of the least wet one).

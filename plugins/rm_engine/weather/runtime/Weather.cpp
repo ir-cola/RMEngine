@@ -150,7 +150,7 @@ void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt) {
         // All of it wet in the end - sooner the harder it rains (2026-11-19: before, up to twice the
         // amount only: a light rain never wet everything).
         constexpr float target = 1.f;
-        const float speed = 0.02f + rain * 0.2f;  // per second
+        const float speed = 0.01f + rain * 0.08f;  // per second (a downpour: about 10 s; a drizzle: about a minute)
         const Vec3 way = FallDirection(Precipitation::Kind::Rain, {now.windX, 0, now.windZ});
         const float close = std::cos(kWetWayDegrees * kDegrees);
         auto dot = [](Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; };

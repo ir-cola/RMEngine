@@ -144,12 +144,21 @@ float WetSpots(float2 p, float wet) {
     return most;
 }
 
+// Smooth noise (0 .. 1) over the plane: what bends the edge under a roof.
+float WetNoise(float2 p) {
+    float2 i = floor(p), f = frac(p);
+    f = f * f * (3 - 2 * f);
+    float a = WetHash(i), b = WetHash(i + float2(1, 0)), c = WetHash(i + float2(0, 1)), d = WetHash(i + float2(1, 1));
+    return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+}
+
 // How much the rain reached a point the way `k` (0 .. 1): the place a little off the surface is not past
-// anything that way - read at 3 x 3 places a quarter of a metre apart, so the edge under a roof fades
-// over half a metre (the spots break it up: no straight seam) - 2026-11-19, it was a sharp line.
+// anything that way - read at 3 x 3 places 35 cm apart around a point moved a little by smooth noise,
+// so the edge under a roof fades over most of a metre and wanders: no line to see (2026-11-19).
 float WetOpen(int k, float3 p) {
+    p.xz += (float2(WetNoise(p.xz * 0.8), WetNoise(p.xz * 0.8 + 19.3)) - 0.5) * 0.7;
     float4 c = mul(mapViewProj[k], float4(p, 1));
-    float4 dx = mul(mapViewProj[k], float4(0.25, 0, 0, 0)), dz = mul(mapViewProj[k], float4(0, 0, 0.25, 0));
+    float4 dx = mul(mapViewProj[k], float4(0.35, 0, 0, 0)), dz = mul(mapViewProj[k], float4(0, 0, 0.35, 0));
     float open = 0;
     [unroll] for (int y = -1; y <= 1; ++y) {
         [unroll] for (int x = -1; x <= 1; ++x) {
@@ -168,13 +177,18 @@ float WetAt(float3 wpos, float3 n) {
     if (count <= 0 || n.y < -0.3) return 0;
     float lit = shadowInfo.x > 0 ? SunShadow(wpos, n) : 1;
     float3 p = wpos + n * 0.12;
-    float wet = 0;
+    // How wet it has got (by time: `level`) and how much of that reaches here (`wet`: the level times how
+    // open the place is, over most of a metre at an edge, wandering). The spots go by `wet`: toward a
+    // roof's edge they get smaller and fewer, as dark as the rest - the edge is spots, not a line
+    // (2026-11-19).
+    float wet = 0, level = 0;
     [loop] for (int k = 0; k < count; ++k) {
         float4 way = surfaceData[1 + k];  // x: how wet in the sun, y: in shade, z: its 向きの地図 (-1: none)
-        float level = lerp(way.y, way.x, lit);
-        if (level <= wet) continue;
+        float l = lerp(way.y, way.x, lit);
+        level = max(level, l);
+        if (l <= wet) continue;
         int m = (int)way.z;
-        wet = m >= 0 && mapInfo[m].x > 0.5 ? max(wet, level * WetOpen(m, p)) : level;  // (no map: nothing to hit, all open)
+        wet = m >= 0 && mapInfo[m].x > 0.5 ? max(wet, l * WetOpen(m, p)) : l;  // (no map: nothing to hit, all open)
     }
     if (wet <= 0) return 0;
     // The surface's own two axes (the plane it mostly lies in): spots lie flat on it.
@@ -182,7 +196,7 @@ float WetAt(float3 wpos, float3 n) {
     float2 s = a.y >= a.x && a.y >= a.z ? wpos.xz : a.x >= a.z ? wpos.zy : wpos.xy;
     float spots = max(WetSpots(s / 0.22, wet), WetSpots(s / 0.07 + 31.7, wet) * 0.8);
     float cover = lerp(spots, 1, smoothstep(0.55, 1.0, wet));  // (wet through: no dry gaps left)
-    return saturate(wet * 1.5) * cover * lerp(0.45, 1, saturate(n.y));
+    return saturate(level * 1.5) * cover * lerp(0.45, 1, saturate(n.y));
 }
 
 
