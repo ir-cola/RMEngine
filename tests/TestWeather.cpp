@@ -199,10 +199,10 @@ RM_TEST(Weather_Wind) {
     game_production::SystemContext ctx{scene, 0.5f};
     RunWeather(ctx);
     CHECK(Near(s.driftX, -2.f) && Near(s.driftZ, 0.f));
-    CHECK(s.wetCounted && s.wetWays.size() == 1 && Near(s.wetWays[0].sun, 1.f));  // (raining from the start: wet from the start)
+    CHECK(s.wetCounted && s.wetWays.size() == 1 && Near(s.wetWays[0].sun, 0.06f));  // (Play starts dry: wetter as it rains - 0.5 s x (0.02 + 0.5 x 0.2))
     s.kind = WeatherKind::Clear;
     RunWeather(ctx);
-    CHECK(s.wetWays.size() == 1 && s.wetWays[0].sun < 1.f && s.wetWays[0].sun > 0.9f);  // dries slowly
+    CHECK(s.wetWays.size() == 1 && s.wetWays[0].sun < 0.06f && s.wetWays[0].sun > 0.05f);  // dries slowly
     CHECK(s.wetWays[0].shade > s.wetWays[0].sun);                                       // shade slower
     CHECK(WetNow(s).size() == 1 && Near(WetNow(s)[0].sun, s.wetWays[0].sun));
     BeginFade(s, 1);
@@ -222,17 +222,22 @@ RM_TEST(Weather_Wetness) {
     rain.weight[2] = 1;
     rain.rain = 0.25f;
     WeatherNow fair;
-    CHECK(WetAtOnce(fair).empty() && WetAtOnce(rain).size() == 1 && Near(WetAtOnce(rain)[0].sun, 0.5f));
+    CHECK(WetAtOnce(fair).empty() && WetAtOnce(rain).size() == 1 && Near(WetAtOnce(rain)[0].sun, 1.f));  // (the editor: wet through)
     std::vector<WetWay> ways;
-    StepWet(ways, rain, 1);
-    CHECK(ways.size() == 1 && Near(ways[0].sun, 1.f / 8.f) && Near(ways[0].shade, 1.f / 8.f) && Near(ways[0].way, {0, -1, 0}));
+    StepWet(ways, rain, 1);  // (0.02 + 0.25 x 0.2 a second)
+    CHECK(ways.size() == 1 && Near(ways[0].sun, 0.07f) && Near(ways[0].shade, 0.07f) && Near(ways[0].way, {0, -1, 0}));
     StepWet(ways, rain, 100);
-    CHECK(Near(ways[0].sun, 0.5f));  // never past what the rain makes
+    CHECK(Near(ways[0].sun, 1.f));  // all of it wet in the end, even in a light rain
+    WeatherNow downpour = rain;
+    downpour.rain = 1;
+    std::vector<WetWay> fast;
+    StepWet(fast, downpour, 1);
+    CHECK(fast[0].sun > 0.07f * 2);  // (sooner the harder it rains: 0.22 a second)
     // The wind turns: a way of its own; the first stays as wet as it was while it rains.
     WeatherNow windy = rain;
     windy.windX = 10;
     StepWet(ways, windy, 2);
-    CHECK(ways.size() == 2 && Near(ways[0].sun, 0.5f) && Near(ways[1].sun, 0.25f) && ways[1].way.x > 0.3f);
+    CHECK(ways.size() == 2 && Near(ways[0].sun, 1.f) && Near(ways[1].sun, 0.14f) && ways[1].way.x > 0.3f);
     // A little wind (within kWetWayDegrees): the same way.
     WeatherNow breeze = rain;
     breeze.windX = 0.5f;
@@ -242,12 +247,12 @@ RM_TEST(Weather_Wetness) {
     WeatherNow drizzle = rain;
     drizzle.rain = 0.05f;
     StepWet(ways, drizzle, 50);
-    CHECK(Near(ways[0].sun, 0.5f) && Near(ways[1].sun, 0.25f));
+    CHECK(Near(ways[0].sun, 1.f) && Near(ways[1].sun, 0.14f));
     // It stops: dries in game time, shade slower; gone when dry.
     StepWet(ways, fair, 9);
-    CHECK(Near(ways[0].sun, 0.4f) && Near(ways[0].shade, 0.47f));
+    CHECK(Near(ways[0].sun, 0.9f) && Near(ways[0].shade, 0.97f));
     StepWet(ways, fair, 0);  // (paused: no time, no drying)
-    CHECK(Near(ways[0].sun, 0.4f));
+    CHECK(Near(ways[0].sun, 0.9f));
     StepWet(ways, fair, 100);
     CHECK(ways.size() == 1 && ways[0].sun == 0.f && ways[0].shade > 0.f);  // (the second way: dry in shade too, gone)
     StepWet(ways, fair, 1000);
@@ -259,7 +264,7 @@ RM_TEST(Weather_Wetness) {
         StepWet(ways, w, 1);
     }
     CHECK(ways.size() == kWetWays);
-    CHECK(Near(WetnessOf(ways), 0.25f) && WetnessOf({}) == 0.f);  // (24 and 30 m/s: within kWetWayDegrees - one way, wetter twice)
+    CHECK(Near(WetnessOf(ways), 0.14f) && WetnessOf({}) == 0.f);  // (24 and 30 m/s: within kWetWayDegrees - one way, wetter twice)
 }
 
 // What falls: how many for an amount, the way it goes in a wind, the numbers 濡れ's touch gets.

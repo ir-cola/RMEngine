@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "濡れた地面をマットに (水たまりのように光らない)。雨が続くと全体が濡れ、Play は乾いた状態から始まる。屋根の端の境目を自然に",
+          "en": "Wet ground is matte now (no puddle-like glare). Long rain wets everything, Play starts dry, and the edge under a roof blends in"
+        },
+        {
           "ja": "2 回目の全体の調べ直しで見つけた不具合を 32 件直した (飛行中の Ctrl+S・Alt のあとキーが押されたまま・パーティクルで雨が光る・Play 中の設定の変更・シーンの番号のずれ・物理の体の作り直しなど)",
           "en": "Fixed 32 bugs found in the second review of the whole code (Ctrl+S while flying, keys stuck after Alt, rain glowing with particles, settings changed during Play, scene numbers, physics bodies made again and more)"
         },

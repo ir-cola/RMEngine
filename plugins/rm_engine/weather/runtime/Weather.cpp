@@ -139,17 +139,18 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds) {
 }
 
 std::vector<WetWay> WetAtOnce(const WeatherNow& now) {
-    const float rain = RainNow(now);
-    if (!(rain > 0)) return {};
-    const float target = std::min(rain * 2.f, 1.f);
-    return {{FallDirection(Precipitation::Kind::Rain, {now.windX, 0, now.windZ}), target, target}};
+    if (!(RainNow(now) > 0)) return {};
+    return {{FallDirection(Precipitation::Kind::Rain, {now.windX, 0, now.windZ}), 1, 1}};  // (as after a while of rain)
 }
 
 void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt) {
     dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
     const float rain = RainNow(now);
     if (rain > 0) {
-        const float target = std::min(rain * 2.f, 1.f);
+        // All of it wet in the end - sooner the harder it rains (2026-11-19: before, up to twice the
+        // amount only: a light rain never wet everything).
+        constexpr float target = 1.f;
+        const float speed = 0.02f + rain * 0.2f;  // per second
         const Vec3 way = FallDirection(Precipitation::Kind::Rain, {now.windX, 0, now.windZ});
         const float close = std::cos(kWetWayDegrees * kDegrees);
         auto dot = [](Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
@@ -165,7 +166,7 @@ void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt) {
         }
         // Wetter (never drier while it rains).
         for (float* level : {&it->sun, &it->shade}) {
-            if (*level < target) *level = std::min(target, *level + dt / 8.f);
+            if (*level < target) *level = std::min(target, *level + dt * speed);
         }
         return;
     }
@@ -191,7 +192,7 @@ void RunWeather(game_production::SystemContext& ctx) {
     if (w->fadeSeconds > 0 && w->fadeElapsed < w->fadeSeconds) w->fadeElapsed = std::min(w->fadeElapsed + dt, w->fadeSeconds);
     const WeatherNow now = NowOf(*w);
     if (!w->wetCounted) {
-        w->wetWays = WetAtOnce(now);  // (raining from the start: wet from the start)
+        w->wetWays.clear();  // (the game starts dry: the rain wets it as it plays - 2026-11-19)
         w->wetCounted = true;
     }
     StepWet(w->wetWays, now, dt);

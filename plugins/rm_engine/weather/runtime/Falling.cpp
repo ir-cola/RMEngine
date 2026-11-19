@@ -124,10 +124,11 @@ float WetSpots(float2 p, float wet) {
 }
 
 // How much the rain reached a point the way `k` (0 .. 1): the place a little off the surface is not past
-// anything that way - read at 3 x 3 places around it, so the edge is soft and round, not the map's squares.
+// anything that way - read at 3 x 3 places a quarter of a metre apart, so the edge under a roof fades
+// over half a metre (the spots break it up: no straight seam) - 2026-11-19, it was a sharp line.
 float WetOpen(int k, float3 p) {
     float4 c = mul(mapViewProj[k], float4(p, 1));
-    float4 dx = mul(mapViewProj[k], float4(0.09, 0, 0, 0)), dz = mul(mapViewProj[k], float4(0, 0, 0.09, 0));
+    float4 dx = mul(mapViewProj[k], float4(0.25, 0, 0, 0)), dz = mul(mapViewProj[k], float4(0, 0, 0.25, 0));
     float open = 0;
     [unroll] for (int y = -1; y <= 1; ++y) {
         [unroll] for (int x = -1; x <= 1; ++x) {
@@ -139,7 +140,8 @@ float WetOpen(int k, float3 p) {
 
 // How wet a surface looks (0 .. 1): the wettest of the ways the rain fell that reached it (a place it
 // reached stays wet while it rains, whatever the wind does after), in the sun or in its shadow (shade
-// dries slower) - in round spots, most on what faces up, none facing down.
+// dries slower) - round spots at first that grow into each other, all of it wet in the end; most on
+// what faces up, none facing down.
 float WetAt(float3 wpos, float3 n) {
     int count = (int)surfaceData[0].x;
     if (count <= 0 || n.y < -0.3) return 0;
@@ -158,16 +160,17 @@ float WetAt(float3 wpos, float3 n) {
     float3 a = abs(n);
     float2 s = a.y >= a.x && a.y >= a.z ? wpos.xz : a.x >= a.z ? wpos.zy : wpos.xy;
     float spots = max(WetSpots(s / 0.22, wet), WetSpots(s / 0.07 + 31.7, wet) * 0.8);
-    return saturate(wet * 1.4) * spots * lerp(0.45, 1, saturate(n.y));
+    float cover = lerp(spots, 1, smoothstep(0.55, 1.0, wet));  // (wet through: no dry gaps left)
+    return saturate(wet * 1.5) * cover * lerp(0.45, 1, saturate(n.y));
 }
 
 
-// 濡れ on every surface (3D 空間's RenderFrame::surface): water in the surface makes it darker, a film on it
-// makes it shine.
+// 濡れ on every surface (3D 空間's RenderFrame::surface): water in the surface makes it darker, and it is a
+// little smoother - wet ground, not a puddle: never a mirror (2026-11-19: the sun shone in it like water).
 void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, float3 n) {
     float wet = WetAt(wpos, n);
     albedo *= 1 - wet * 0.25 * (1 - metal);
-    rough = lerp(rough, 0.12, wet * 0.75);
+    rough = lerp(rough, min(rough, max(rough * 0.6, 0.35)), wet);
 }
 )";
 
