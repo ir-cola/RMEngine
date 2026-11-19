@@ -18,6 +18,8 @@
 #include "rm_engine/game_x_particles/runtime/Register.h"
 #include "rm_engine/particles_x_physics/runtime/Id.h"
 #include "rm_engine/particles_x_physics/runtime/Register.h"
+#include "rm_engine/game_x_3d_x_physics/runtime/Id.h"
+#include "rm_engine/game_x_3d_x_physics/runtime/Register.h"
 
 namespace rm {
 
@@ -30,6 +32,7 @@ std::span<const RuntimePlugin> RuntimePlugins() {
         {game_ui::kPluginId, &game_ui::RegisterRuntime},
         {game_x_particles::kPluginId, &game_x_particles::RegisterRuntime},
         {particles_x_physics::kPluginId, &particles_x_physics::RegisterRuntime},
+        {game_x_3d_x_physics::kPluginId, &game_x_3d_x_physics::RegisterRuntime},
     };
     return kPlugins;
 }

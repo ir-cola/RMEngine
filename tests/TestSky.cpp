@@ -228,7 +228,7 @@ RM_TEST(Sky_Wind) {
     sky.windDirection = -90;
     sky.windStrength = 10;
     const SkyLook look = LookOf(sky, 0);
-    CHECK(Near(look.rain.windX, 10) && Near(look.rain.windZ, 0) && Near(look.constants.param[5][2], 10));
+    CHECK(Near(look.wind, {10, 0, 0}) && Near(look.constants.param[5][2], 10));
     // From 350 to 10 degrees: through 0, not round the back.
     Sky turn = Earth(12);
     turn.windDirection = 350;

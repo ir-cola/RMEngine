@@ -7,6 +7,14 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "雨と雪はコライダー (箱・球・カプセル・メッシュ) に当たるように。風で斜めに降ると屋根の下にも入り込む。雪は当たった所で止まり、少しして溶ける",
+          "en": "Rain and snow now hit colliders (box, sphere, capsule, mesh). Slanted by the wind, they get in under a roof. Snow stops where it lands and melts a moment later"
+        },
+        {
+          "ja": "雨の飛沫を小さく、雨と雪が風に流される量を半分に",
+          "en": "Smaller rain splashes, and rain and snow are carried half as much by the wind"
+        },
+        {
           "ja": "地球の空に風を足した (雲が流れ、雨と雪が斜めに)。雨は物に当たって撥ね、雪は溶け、屋根の下には降らない。雨の当たる所が濡れて見える",
           "en": "The earth sky has wind (clouds drift, rain and snow slant). Rain splashes on things, snow melts on them, nothing falls under a roof, and what the rain reaches looks wet"
         },

@@ -239,11 +239,10 @@ SkyLook LookOf(const Sky& sky, double seconds) {
             for (space3d::Precipitation* p : {&look.rain, &look.snow}) {
                 p->seconds = static_cast<float>(seconds);
                 p->light = lit;
-                p->windX = now.windX;
-                p->windZ = now.windZ;
                 p->driftX = sky.driftX;
                 p->driftZ = sky.driftZ;
             }
+            look.wind = {now.windX, 0, now.windZ};
             // 濡れ: as the game has counted it (Play), or as wet as the rain now makes things.
             look.wetness = sky.wetness >= 0 ? std::clamp(sky.wetness, 0.f, 1.f) : NextWetness(-1, now, 0);
             break;

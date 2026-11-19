@@ -1760,20 +1760,25 @@ RM_TEST(Lighting_SunShadowPlan) {
     // A small scene: one map fitted to what casts (as before cascades).
     const Bounds small{{-2, 0, -2}, {2, 3, 2}};
     {
-        // The map from above (雨・雪・濡れ): a place under the eye in the middle, higher things nearer 0.
+        // The map the way rain / snow falls (雨・雪・濡れ). Straight down: a place under the eye in the
+        // middle, higher things nearer 0 (in their way first), the depth in world units / range.
         const Vec3 eye{100.03f, 5, -40.02f};
-        const CoverPlan cover = PlanCover(eye);
+        const CoverPlan cover = PlanCover(eye, {0, -1, 0});
         const Vec3 under = TransformPoint(cover.viewProj, {eye.x, 0, eye.z});
         CHECK(std::fabs(under.x) < 0.01f && std::fabs(under.y) < 0.01f);
-        CHECK(cover.top >= eye.y + kCoverAbove - 4.f && cover.top <= eye.y + kCoverAbove);
-        CHECK(std::fabs(TransformPoint(cover.viewProj, {eye.x, cover.top, eye.z}).z) < 1e-4f);
-        CHECK(std::fabs(TransformPoint(cover.viewProj, {eye.x, cover.top - cover.range, eye.z}).z - 1.f) < 1e-4f);
+        const float high = TransformPoint(cover.viewProj, {eye.x, eye.y + kCoverAbove - 4.f, eye.z}).z;
+        CHECK(high >= 0.f && high < 0.05f);  // (from kCoverAbove over the eye, in steps of 4)
         CHECK(TransformPoint(cover.viewProj, {eye.x, 3, eye.z}).z < TransformPoint(cover.viewProj, {eye.x, 1, eye.z}).z);
-        // The edges: half the side away; +x right, +z up the map.
-        const Vec3 edge = TransformPoint(cover.viewProj, {eye.x + kCoverSide * 0.5f, 0, eye.z + kCoverSide * 0.5f});
-        CHECK(std::fabs(edge.x - 1.f) < 0.01f && std::fabs(edge.y - 1.f) < 0.01f);
+        CHECK(std::fabs((TransformPoint(cover.viewProj, {eye.x, -5, eye.z}).z - TransformPoint(cover.viewProj, {eye.x, 5, eye.z}).z) * cover.range - 10.f) < 1e-3f);
+        // The edge: half the side away.
+        CHECK(std::fabs(std::fabs(TransformPoint(cover.viewProj, {eye.x + kCoverSide * 0.5f, 0, eye.z}).x) - 1.f) < 0.01f);
+        // Slanted by the wind: points along the way fall on the same place of the map, deeper by how far.
+        const Vec3 way = Normalize(Vec3{1, -2, 0.5f});
+        const CoverPlan slant = PlanCover(eye, way);
+        const Vec3 p0 = TransformPoint(slant.viewProj, {eye.x, 2, eye.z}), p1 = TransformPoint(slant.viewProj, Vec3{eye.x, 2, eye.z} + way * 6.f);
+        CHECK(std::fabs(p0.x - p1.x) < 1e-4f && std::fabs(p0.y - p1.y) < 1e-4f && std::fabs((p1.z - p0.z) * slant.range - 6.f) < 1e-3f);
         // A step smaller than a texel keeps the map where it was.
-        const CoverPlan same = PlanCover({eye.x + 0.001f, eye.y + 0.5f, eye.z});
+        const CoverPlan same = PlanCover({eye.x + 0.001f, eye.y + 0.5f, eye.z}, {0, -1, 0});
         CHECK(std::memcmp(&same.viewProj, &cover.viewProj, sizeof(Mat4)) == 0);
     }
     const SunShadowPlan one = PlanSunShadows(dir, small, view, projection, 2048);

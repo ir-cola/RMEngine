@@ -1,5 +1,6 @@
 #include "rm_engine/space3d/runtime/SkyShader.h"
 
+#include <cmath>
 #include <format>
 
 namespace rm::space3d {
@@ -300,6 +301,18 @@ const char* BuiltinSkyName(BuiltinSky sky) {
 }
 
 std::string_view NewSkyCode() { return kNewSky; }
+
+FallSpeed FallOf(Precipitation::Kind kind) {
+    // (2026-11-19: half the wind they took before - they slanted too much)
+    return kind == Precipitation::Kind::Rain ? FallSpeed{9.f, 3.f, 0.45f} : FallSpeed{0.9f, 0.6f, 0.5f};
+}
+
+Vec3 FallDirection(Precipitation::Kind kind, Vec3 wind) {
+    const FallSpeed f = FallOf(kind);
+    const float x = wind.x * f.carried, y = -(f.least + f.spread * 0.5f), z = wind.z * f.carried;
+    const float len = std::sqrt(x * x + y * y + z * z);
+    return {x / len, y / len, z / len};
+}
 
 uint32_t PrecipitationCount(const Precipitation& p) {
     const float amount = p.amount > 1.f ? 1.f : p.amount < 0.f ? 0.f : p.amount;

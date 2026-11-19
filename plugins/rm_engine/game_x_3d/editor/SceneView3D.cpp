@@ -19,6 +19,7 @@
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/SkyPaint.h"
+#include "rm_engine/game_x_3d/runtime/WeatherBlocks.h"
 #include "rm_engine/game_x_3d/runtime/WorldDraw.h"
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
@@ -914,6 +915,23 @@ private:
                 if (look.rain.amount > 0) f.precipitation[0] = &look.rain;
                 if (look.snow.amount > 0) f.precipitation[1] = &look.snow;
                 f.wetness = look.wetness;
+                f.wind = look.wind;
+                // What they hit (the colliders: WeatherBlocks.h) - the places as this view shows them.
+                if (f.precipitation[0] || f.precipitation[1] || f.wetness > 0) {
+                    MakeWeatherBlocks(
+                        host.scene, host.host.Registry(),
+                        [this](int id) -> const Mat4* {
+                            const Placed* p = FindPlaced(id);
+                            return p && p->active ? &p->world : nullptr;
+                        },
+                        [&pic](space3d::Shape s) { return pic.renderer.ShapeOf(s); },
+                        [this](int id) -> const space3d::GpuMesh* {
+                            const Placed* p = FindPlaced(id);
+                            return p && p->active ? p->mesh : nullptr;
+                        },
+                        weatherBlocks_, weatherBlockers_);
+                    f.weatherBlocks = weatherBlocks_;
+                }
             }
             game_x_3d::FollowSky(look, frameLights_, f.ambient);
         }
@@ -1420,6 +1438,8 @@ private:
     game_production::DebugDraw sceneLines_;          // the plugins' scene lines of this frame (SceneLinesInfo)
     std::vector<space3d::Box> boxes_;
     std::vector<space3d::MeshDraw> meshes_;
+    std::vector<WeatherBlocker> weatherBlockers_;     // what rain and snow hit (the colliders) ...
+    std::vector<space3d::WeatherBlock> weatherBlocks_;  // ... as the renderer takes them
     std::vector<space3d::Light> lights_;
     size_t warnedLights_ = 0;  // the number of lights told about (too many)
     std::unordered_map<std::string, ModelEntry> models_;  // by MeshRenderer::model (the asset's id)

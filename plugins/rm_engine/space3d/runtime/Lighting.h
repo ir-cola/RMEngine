@@ -136,17 +136,18 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
 // Everything moving: the moving things' box widened to steps of its own size. Neither: nullopt.
 std::optional<Bounds> SunFitBounds(const std::optional<Bounds>& still, const std::optional<Bounds>& moving);
 
-// The map seen from straight above (雨・雪 and 濡れ: RenderFrame::precipitation / wetness): the depth
-// of the highest thing that casts shadows over each place around the eye - what the rain and the
-// snow fall on (under a roof nothing falls; what is under it stays dry). kCoverSide wide, its texels
-// fixed in the world (it does not shimmer as the eye moves); from kCoverAbove over the eye,
-// kCoverDepth deep. Depth 0 is `top`, 1 is `top - range`.
+// The map seen the way the rain (or the snow) falls (RenderFrame::precipitation / wetness): around the
+// eye, the depth of the first thing in their way (RenderFrame::weatherBlocks: the colliders) - a drop
+// past it has hit it, a surface it does not reach stays dry. Slanted with the wind, so it comes in
+// under a roof from the side. kCoverSide wide, its texels fixed in the world (it does not shimmer as
+// the eye moves); from kCoverAbove before the eye (along the way) to kCoverDepth after that.
 inline constexpr uint32_t kCoverSize = 1024;
 inline constexpr float kCoverSide = 80.f, kCoverAbove = 80.f, kCoverDepth = 300.f;
 struct CoverPlan {
-    Mat4 viewProj;  // world -> x, y -1..1 (x: world x, y: world z), depth 0..1
-    float top = 0, range = kCoverDepth;
+    Mat4 viewProj;  // world -> x, y -1..1 (across the way), depth 0..1 (along it)
+    float range = kCoverDepth;  // the depth's 0..1 in world units
 };
-CoverPlan PlanCover(Vec3 eye);
+// `direction`: the way they fall (any length; none: straight down).
+CoverPlan PlanCover(Vec3 eye, Vec3 direction);
 
 }  // namespace rm::space3d

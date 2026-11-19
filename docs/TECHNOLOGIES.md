@@ -951,19 +951,21 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — 頼まれた「フォルダーの形」を、DirectComposition の透明な窓を使わずに、どの Windows でも動く一番簡単な方法で。リージョンの縁はなめらかにならない (アンチエイリアス無し) が、枠の線を窓の色で描いて目立たないようにした
 - **どこ** — `src/editor/shell/ShapedWindow.cpp`・`src/editor/plugin/Software.h` (`ToolWindowSpec`・`SoftwareHost::OpenToolWindow`)・`src/platform/Window.cpp` (`frameless`)・`plugins/rm_engine/game_production/editor/DebugPanel.cpp` (`LayoutDebugWindow`・`DebugWindowShape`・`HitDebugWindow`)・`src/editor/widgets/Widgets.cpp` (`FolderTab`・`DrawFolderSheet`)
 
-### 雨と雪が物に当たる・濡れる (上から見た深度の地図)・天気のフェード・風
-- **何か** — 雨や雪の粒は 1 つ 1 つの当たり判定をせず、**上から真下を見た深度の地図** (影の地図と同じ作り方: 物を光から見る代わりに真上から正射影で描き、深さだけを書く) を 1 枚作り、「この場所の一番高い物の高さ」を読む。粒の頂点シェーダーがその高さと粒の高さを比べ、下にあれば当たった後: 雨はその面の高さに小さな輪を一瞬描き (撥ね)、雪は触れる手前の 30 cm で小さく薄くして消す (溶ける)。上に物がある所 (屋根の下) は、粒がいつもその物より下なので降らない。**濡れ**は、物を描くピクセルシェーダーが同じ地図を読み、面から少し外の場所の上に何も無ければ「雨が当たる」として、色を暗く・ざらざらを小さく (つやつや) する
+### 雨と雪がコライダーに当たる・濡れる (降る向きから見た深度の地図)・天気のフェード・風
+- **何か** — 雨や雪の粒は 1 つ 1 つの当たり判定をせず、**降ってくる向きから見た深度の地図** (影の地図と同じ作り方: 光から見る代わりに、雨の降る向き (風で傾く) から正射影でコライダーの形を描き、深さだけを書く) を雨用・雪用に 1 枚ずつ作り、「この線の上で最初にぶつかる物までの深さ」を読む。粒の頂点シェーダーが自分の深さと比べ、それより先にいれば当たった後: どれだけ先か ÷ 速さ = 当たってからの時間。雨は当たった点に小さな輪を一瞬描き (撥ね)、雪は当たった点で止まって、少しして小さく薄くなって消える (溶ける)。地図が降る向きに傾いているので、風があれば屋根の下にも横から入り込む。**濡れ**は、物を描くピクセルシェーダーが雨の地図を読み、面から少し外の点が最初の物より手前なら「雨が当たる」として、色を暗く・ざらざらを小さく (つやつや) する
+- **コライダーを渡す口** — 描き手 (ゲーム制作 × 3D) は物理を知らないので、口 `rm_engine.game_x_3d.weather_blockers` を作り、つなぎプラグイン「ゲーム制作 × 3D × 物理」が物理のコライダー (箱・球・カプセル (円柱と両端の球)・メッシュ) とキャラクターを形と行列にして渡す。形の大きさは物理が剛体を作るのと同じ計算 (`physics::DimsOf`) を使う (憲法 2)。描き手はそれを描画の「描かない物」(`RenderFrame::weatherBlocks`) として地図にだけ描く
 - **天気のフェード** — 4 つの天気を「それぞれの割合 (足して 1)」と量で表し (`WeatherNow`)、雲の量・暗さ・日の光の通り方は 4 つの見た目を割合で足し合わせる。フェードは始めた時の割合と量から目的の値へ、なめらかな曲線 (smoothstep) で混ぜる。途中で次のフェードを始めると、その時の混ざった値から始めるので、とびはねない。雨と雪はそれぞれの割合 × 量で、両方を同時に描く
 - **風** — 向きと強さを横向きのベクトルにして、混ぜるときはベクトルのまま混ぜる (角度で混ぜると 350 度 → 10 度で反対回りになる)。雲・雨・雪をずらす量は「風 × 時間」ではなく、毎フレームの風を**足し合わせた距離**にする: 風が変わった瞬間に、それまでの時間全部が掛かって雲や粒が飛ぶのを防ぐ。雨の筋は (風, -落ちる速さ) の向きに傾ける
 - **工夫** — 地図はカメラのまわり 80 m 四方・1024 ピクセルで、中心を 1 ピクセルの幅に合わせて動かす (カメラが動いても地図がちらつかない)。影の地図の仕組み (中身の指紋が同じなら描き直さない・動かない物の層) をそのまま使うので、物が動かなければ毎フレーム描かない。読むのは Load (1 ピクセルそのまま) で、比べるだけ
 - **なぜそれか** — 粒は数万あり、1 つ 1 つ物理の当たり判定 (コライダー) をすると重い。GPU が既に持っている「物の形」を 1 枚の地図にすれば、粒の数に関係なく 1 回の描画で済み、屋根の下・家の中も自然に分かる。その代わり、当たるのは「上から見えている面」だけ (横から吹き込む雨が壁の下に入る、などは無い)
-- **どこ** — `plugins/rm_engine/space3d/runtime/Lighting.cpp` (`PlanCover`)・`Renderer3D.cpp` (`CoverTop`・`WetAt`・`kPrecipShaders`・`s.cover`)・`plugins/rm_engine/game_x_3d/runtime/Sky.cpp` (`WeatherNow`・`NowOf`・`BeginFade`・`WindOf`・`NextWetness`)・`ScriptSky3D.cpp`・`sdk/RM3D.h` (`rm::Sky`)・テスト `tests/TestSky.cpp` (`Sky_WeatherFade`・`Sky_Wind`・`Sky_Wetness`)・`tests/TestSpace3d.cpp` (`PlanCover`)
+- **どこ** — `plugins/rm_engine/space3d/runtime/Lighting.cpp` (`PlanCover`)・`SkyShader.cpp` (`FallOf`・`FallDirection`)・`Renderer3D.cpp` (`CoverPast`・`WetAt`・`kPrecipShaders`・`s.cover`・`blockOrder_`)・`plugins/rm_engine/game_x_3d/runtime/WeatherBlocks.cpp`・`plugins/rm_engine/game_x_3d_x_physics/runtime/Register.cpp`・`plugins/rm_engine/game_x_3d/runtime/Sky.cpp` (`WeatherNow`・`NowOf`・`BeginFade`・`WindOf`・`NextWetness`)・`ScriptSky3D.cpp`・`sdk/RM3D.h` (`rm::Sky`)・テスト `tests/TestSky.cpp` (`Sky_WeatherFade`・`Sky_Wind`・`Sky_Wetness`)・`tests/TestSpace3d.cpp` (`PlanCover`)
 
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
 | 2026-11-19 | 雨と雪が物に当たる・濡れる (上から見た深度の地図)、天気のフェード (割合で混ぜる)、風 (足し合わせた距離でずらす) を足した |
+| 2026-11-19 | 雨と雪の当たりを、降る向きから見たコライダーの地図に変えた (風で屋根の下にも入る・雪は止まってから溶ける)。つなぎプラグイン「ゲーム制作 × 3D × 物理」を足した |
 | 2026-11-19 | 枠の無い形のある窓 (WS_POPUP・WM_NCCALCSIZE・SetWindowRgn・WM_NCHITTEST) を足し、デバッグを 5 つのタブの窓にした |
 | 2026-11-18 | デバッグのパネル: DisplayConfig API (モニターの名前)・DXGI のアダプターとメモリの量・GPU で数えた値を待たずに読み戻す (ステージングと DO_NOT_WAIT) を足した |
 | 2026-11-18 | デバッグのパネルに CPU (CPUID の名前・P / E コア・GetSystemTimes での使用率) とメモリ (GlobalMemoryStatusEx) を足した |

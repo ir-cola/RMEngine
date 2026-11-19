@@ -68,9 +68,16 @@ struct Precipitation {
     float amount = 0;              // 0 .. 1: none .. kMaxRaindrops / kMaxSnowflakes
     float seconds = 0;             // the time they fall by (still: they hang where they are)
     Color light{1, 1, 1, 1};       // what lights them (linear)
-    float windX = 0, windZ = 0;    // the wind now (m/s, world): drops slant along it
-    float driftX = 0, driftZ = 0;  // how far the wind has carried them (world units)
+    float driftX = 0, driftZ = 0;  // how far the wind has carried them (world units; the wind now: RenderFrame::wind)
 };
+// How they fall: down at least `least` m/s (each drop / flake up to `spread` faster), and `carried` of
+// the wind's speed sideways. The shader is given these (Renderer3D.cpp's Weather).
+struct FallSpeed {
+    float least, spread, carried;
+};
+FallSpeed FallOf(Precipitation::Kind kind);
+// The way they go on average in a wind (length 1): what they hit is seen from there (Lighting.h's PlanCover).
+Vec3 FallDirection(Precipitation::Kind kind, Vec3 wind);
 inline constexpr uint32_t kMaxRaindrops = 16000;
 inline constexpr uint32_t kMaxSnowflakes = 10000;
 inline constexpr float kRainBox = 24.f;  // the box's side (world units)

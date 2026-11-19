@@ -149,6 +149,7 @@ struct SkyLook {
     space3d::Precipitation rain, snow;
     // 濡れ: how wet what the rain reaches looks (0 .. 1; RenderFrame::wetness).
     float wetness = 0;
+    Vec3 wind{0, 0, 0};  // 風 now (m/s, world; RenderFrame::wind)
     float flash = 0;  // 雷: a flash now (0 .. 1; it lights the clouds, the ambient light and the drops)
 };
 // `seconds`: the time the clouds drift and the stars twinkle by (the game's: 0 in the editor until Play).

@@ -235,23 +235,27 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
     return plan;
 }
 
-CoverPlan PlanCover(Vec3 eye) {
+CoverPlan PlanCover(Vec3 eye, Vec3 direction) {
+    const Vec3 d = DirectionOr(direction, {0, -1, 0});
+    // Across the way: two axes at right angles to it (the first level when it falls straight).
+    const Vec3 a = Normalize(std::fabs(d.z) < 0.99f ? Cross(d, {0, 0, 1}) : Cross(d, {1, 0, 0}));
+    const Vec3 b = Cross(a, d);
     constexpr float texel = kCoverSide / static_cast<float>(kCoverSize);
-    const float cx = std::floor(eye.x / texel) * texel, cz = std::floor(eye.z / texel) * texel;  // whole texels
+    const float u = std::floor(Dot(eye, a) / texel) * texel, v = std::floor(Dot(eye, b) / texel) * texel;  // whole texels
+    const float start = std::floor((Dot(eye, d) - kCoverAbove) / 4.f) * 4.f;  // (in steps: kept while the eye bobs)
     const float half = kCoverSide * 0.5f;
     CoverPlan c;
-    c.top = std::floor((eye.y + kCoverAbove) / 4.f) * 4.f;  // (in steps: a map kept while the eye bobs)
     c.range = kCoverDepth;
     Mat4& m = c.viewProj;
     m = Mat4{};
-    m.m[0][0] = 1 / half;  // x' = (x - cx) / half
-    m.m[3][0] = -cx / half;
-    m.m[1][1] = 0;
-    m.m[2][1] = 1 / half;  // y' = (z - cz) / half
-    m.m[3][1] = -cz / half;
-    m.m[1][2] = -1 / c.range;  // depth = (top - y) / range
-    m.m[2][2] = 0;
-    m.m[3][2] = c.top / c.range;
+    const Vec3 rows[3] = {a * (1 / half), b * (1 / half), d * (1 / c.range)};
+    const float ends[3] = {-u / half, -v / half, -start / c.range};
+    for (int r = 0; r < 3; ++r) {
+        m.m[0][r] = rows[r].x;
+        m.m[1][r] = rows[r].y;
+        m.m[2][r] = rows[r].z;
+        m.m[3][r] = ends[r];
+    }
     return c;
 }
 

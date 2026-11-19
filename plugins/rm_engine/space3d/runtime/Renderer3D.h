@@ -150,6 +150,14 @@ struct MeshDraw {
     bool moving = false;                      // as Box::moving
 };
 
+// What rain and snow hit (RenderFrame::weatherBlocks): a shape, not drawn - a collider as a box, a
+// ball, a cylinder (ShapeOf) or a model.
+struct WeatherBlock {
+    const GpuMesh* mesh = nullptr;
+    Mat4 world;
+    bool moving = false;  // as Box::moving
+};
+
 // What a plugin draws itself into the picture (particles): after the see-through parts, before the
 // debug lines, with its own shaders and states. The picture's render target and depth buffer are bound
 // (MSAA; the depth test is on and nothing should write depth); whatever it changes is set back after.
@@ -198,11 +206,15 @@ struct RenderFrame {
     std::span<const ExtraDraw> extras;  // in this order (ExtraDraw)
     const SkyDraw* sky = nullptr;       // null (or no program): only the clear colour behind
     // Rain and / or snow around the eye (SkyShader.h; both while one fades into the other); null: none.
-    // They fall on what casts shadows (Lighting.h's PlanCover): rain splashes there, snow melts, and
-    // under a roof nothing falls.
+    // They hit `weatherBlocks` (seen the way they fall: Lighting.h's PlanCover): rain splashes there,
+    // a flake stops there and melts a moment later; past it nothing falls (under a roof, unless the
+    // wind blows it in from the side).
     const Precipitation* precipitation[2] = {};
-    // 濡れ (0 .. 1): what the rain reaches (nothing above it) looks wet - darker, and smooth.
+    Vec3 wind{0, 0, 0};  // m/s, world: rain and snow slant along it
+    // 濡れ (0 .. 1): what the rain reaches looks wet - darker, and smooth.
     float wetness = 0;
+    // What rain and snow hit (the colliders), not drawn.
+    std::span<const WeatherBlock> weatherBlocks;
 };
 
 class Renderer {
@@ -270,6 +282,7 @@ private:
         uint32_t firstMaterial = 0;  // ... and its parts' materials, one after another
         bool moving = false;         // Box / MeshDraw::moving
         uint64_t hash = 0;           // its mesh and place (what a shadow map remembers of it)
+        bool block = false;          // a WeatherBlock: only in the map rain and snow fall by
     };
     // One draw: some triangles of a mesh, with the numbers of a thing and a material (`slot`: its
     // place in draws_, read by the shader as the instance's data).
@@ -315,7 +328,7 @@ private:
     std::vector<Cmd> cmds_;
     size_t mergeFloor_ = 0;
     std::vector<DrawKey> keys_;
-    std::vector<uint32_t> order_, casterOrder_, still_, moving_;
+    std::vector<uint32_t> order_, casterOrder_, blockOrder_, still_, moving_;
     std::vector<std::pair<uint32_t, uint32_t>> refs_;  // (item, part) of each key
     struct PictureSetHash {
         size_t operator()(const std::array<const void*, 5>& a) const noexcept {

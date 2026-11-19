@@ -20,6 +20,7 @@
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/SkyPaint.h"
+#include "rm_engine/game_x_3d/runtime/WeatherBlocks.h"
 #include "rm_engine/game_x_3d/runtime/WorldDraw.h"
 #include "rm_engine/space3d/runtime/BlockCompress.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
@@ -69,6 +70,7 @@ public:
         std::optional<std::pair<Camera, space3d::Mat4>> eye;
         std::unordered_map<int, space3d::Mat4> world;  // parents come before their children in TreeOrder
         shown_.clear();                                 // the places of what is switched on (WorldDrawFrame::world)
+        drawnWith_.clear();                             // ... and the models they are drawn with (a mesh collider's)
         for (const auto& t : f.scene.TreeOrder()) {
             const auto& e = *t.entity;
             const auto it = world.find(e.data.parent);
@@ -94,11 +96,15 @@ public:
             const bool shadow = mr->castShadows;
             constexpr Color kPlain{0.78f, 0.80f, 0.84f, 1};  // a box (its model is missing) and a simple shape
             if (const auto shape = ShapeOf(mr->shape)) {
-                if (const space3d::GpuMesh* g = renderer_.ShapeOf(*shape)) meshes_.push_back({g, w, kPlain, shadow, {}});
+                if (const space3d::GpuMesh* g = renderer_.ShapeOf(*shape)) {
+                    meshes_.push_back({g, w, kPlain, shadow, {}});
+                    drawnWith_[e.data.id] = g;
+                }
                 continue;
             }
             if (const Model* model = ModelOf(f, mr->model)) {
                 meshes_.push_back({model->gpu.get(), w, Color{1, 1, 1, 1}, shadow, model->materials});
+                drawnWith_[e.data.id] = model->gpu.get();
                 continue;
             }
             boxes_.push_back({w, kPlain, shadow});
@@ -139,6 +145,23 @@ public:
             if (look.rain.amount > 0) frame.precipitation[0] = &look.rain;
             if (look.snow.amount > 0) frame.precipitation[1] = &look.snow;
             frame.wetness = look.wetness;
+            frame.wind = look.wind;
+            // What they hit (the colliders: WeatherBlocks.h).
+            if ((frame.precipitation[0] || frame.precipitation[1] || frame.wetness > 0) && f.registry) {
+                MakeWeatherBlocks(
+                    f.scene, *f.registry,
+                    [this](int id) -> const space3d::Mat4* {
+                        const auto it = shown_.find(id);
+                        return it != shown_.end() ? &it->second : nullptr;
+                    },
+                    [this](space3d::Shape s) { return renderer_.ShapeOf(s); },
+                    [this](int id) -> const space3d::GpuMesh* {
+                        const auto it = drawnWith_.find(id);
+                        return it != drawnWith_.end() ? it->second : nullptr;
+                    },
+                    blocks_, blockers_);
+                frame.weatherBlocks = blocks_;
+            }
         }
         frame.lights = lights_;
         // What other plugins draw into the world themselves (パーティクル: WorldDraw.h).
@@ -267,6 +290,9 @@ private:
     bool drawersMade_ = false;
     std::vector<space3d::ExtraDraw> extras_;
     std::unordered_map<int, space3d::Mat4> shown_;
+    std::unordered_map<int, const space3d::GpuMesh*> drawnWith_;
+    std::vector<WeatherBlocker> blockers_;
+    std::vector<space3d::WeatherBlock> blocks_;
 };
 
 }  // namespace
