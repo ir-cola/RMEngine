@@ -126,25 +126,8 @@ float4 FallPS(PrecipOut i) : SV_Target {
 )";
 
 const char kWetSurfaceHlsl[] = R"(
-// Round wet spots where drops landed: each cell of a grid (on the surface, `p` in cells) holds one at a
-// place of its own, full in its middle and fading outward; they grow with how wet it is and run into
-// each other (never a whole even sheet: always a little round).
 float WetHash(float2 c) { return frac(sin(dot(c, float2(127.1, 311.7))) * 43758.5453); }
-float WetSpots(float2 p, float wet) {
-    float2 cell = floor(p);
-    float most = 0;
-    [unroll] for (int y = -1; y <= 1; ++y) {
-        [unroll] for (int x = -1; x <= 1; ++x) {
-            float2 c = cell + float2(x, y);
-            float2 center = c + float2(WetHash(c), WetHash(c + 17.31));
-            float r = (0.35 + 0.45 * WetHash(c + 41.7)) * (0.25 + 0.95 * wet);
-            most = max(most, 1 - smoothstep(r * 0.25, r, length(p - center)));
-        }
-    }
-    return most;
-}
-
-// Smooth noise (0 .. 1) over the plane: what bends the edge under a roof.
+// Smooth noise (0 .. 1) over the plane.
 float WetNoise(float2 p) {
     float2 i = floor(p), f = frac(p);
     f = f * f * (3 - 2 * f);
@@ -152,35 +135,49 @@ float WetNoise(float2 p) {
     return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
 }
 
+// Small wet specks where drops landed (a few centimetres, uneven), as many as `density` says (0: none
+// .. 1: all of it wet): the parts of a fine noise under a threshold. Far away (a speck smaller than a
+// pixel or two) the specks melt into their average, so they do not shimmer. `s`: the place on the
+// surface (metres); `footprint`: how far it goes across a pixel (fwidth, taken where every pixel runs).
+float WetSpecks(float2 s, float density, float footprint) {
+    float n = 0.55 * WetNoise(s * 22) + 0.3 * WetNoise(s * 55 + 7.1) + 0.15 * WetNoise(s * 120 + 3.3);
+    float threshold = lerp(0.18, 0.86, density);
+    float specks = 1 - smoothstep(threshold - 0.04, threshold + 0.04, n);
+    specks = lerp(specks, density, saturate(footprint * 22 * 1.2 - 0.2));
+    return max(specks, smoothstep(0.85, 1.0, density));  // (wet through: no dry gaps left)
+}
+
 // How much the rain reached a point the way `k` (0 .. 1): the place a little off the surface is not past
-// anything that way - read at 3 x 3 places 35 cm apart around a point moved a little by smooth noise,
-// so the edge under a roof fades over most of a metre and wanders: no line to see (2026-11-19).
+// anything that way - read at 5 x 5 places 30 cm apart (weighted to the middle), so toward a roof's edge
+// it falls off over a metre and more: the specks thin out there, as on real ground (2026-11-19).
 float WetOpen(int k, float3 p) {
-    p.xz += (float2(WetNoise(p.xz * 0.8), WetNoise(p.xz * 0.8 + 19.3)) - 0.5) * 0.7;
     float4 c = mul(mapViewProj[k], float4(p, 1));
-    float4 dx = mul(mapViewProj[k], float4(0.35, 0, 0, 0)), dz = mul(mapViewProj[k], float4(0, 0, 0.35, 0));
+    float4 dx = mul(mapViewProj[k], float4(0.3, 0, 0, 0)), dz = mul(mapViewProj[k], float4(0, 0, 0.3, 0));
     float open = 0;
-    [unroll] for (int y = -1; y <= 1; ++y) {
-        [unroll] for (int x = -1; x <= 1; ++x) {
-            open += saturate((0.06 - MapPastAt(k, c + dx * x + dz * y)) / 0.06) * ((x == 0 ? 2 : 1) * (y == 0 ? 2 : 1));
+    [unroll] for (int y = -2; y <= 2; ++y) {
+        [unroll] for (int x = -2; x <= 2; ++x) {
+            open += saturate((0.06 - MapPastAt(k, c + dx * x + dz * y)) / 0.06) * ((3 - abs(x)) * (3 - abs(y)));
         }
     }
-    return open / 16;
+    return open / 81;
 }
 
 // How wet a surface looks (0 .. 1): the wettest of the ways the rain fell that reached it (a place it
 // reached stays wet while it rains, whatever the wind does after), in the sun or in its shadow (shade
-// dries slower) - round spots at first that grow into each other, all of it wet in the end; most on
-// what faces up, none facing down.
+// dries slower) - small specks, more and more of them until all of it is wet; toward a roof's edge
+// fewer and fewer (no line, no wave: as many specks as it is wet there); most on what faces up, none
+// facing down.
 float WetAt(float3 wpos, float3 n) {
+    // The surface's own two axes (the plane it mostly lies in): the specks lie flat on it.
+    float3 a = abs(n);
+    float2 s = a.y >= a.x && a.y >= a.z ? wpos.xz : a.x >= a.z ? wpos.zy : wpos.xy;
+    float footprint = max(fwidth(s.x), fwidth(s.y));  // (before any return: derivatives want every pixel)
     int count = (int)surfaceData[0].x;
     if (count <= 0 || n.y < -0.3) return 0;
     float lit = shadowInfo.x > 0 ? SunShadow(wpos, n) : 1;
     float3 p = wpos + n * 0.12;
     // How wet it has got (by time: `level`) and how much of that reaches here (`wet`: the level times how
-    // open the place is, over most of a metre at an edge, wandering). The spots go by `wet`: toward a
-    // roof's edge they get smaller and fewer, as dark as the rest - the edge is spots, not a line
-    // (2026-11-19).
+    // open the place is). How many specks: `wet`; how dark they are: `level`.
     float wet = 0, level = 0;
     [loop] for (int k = 0; k < count; ++k) {
         float4 way = surfaceData[1 + k];  // x: how wet in the sun, y: in shade, z: its 向きの地図 (-1: none)
@@ -191,12 +188,7 @@ float WetAt(float3 wpos, float3 n) {
         wet = m >= 0 && mapInfo[m].x > 0.5 ? max(wet, l * WetOpen(m, p)) : l;  // (no map: nothing to hit, all open)
     }
     if (wet <= 0) return 0;
-    // The surface's own two axes (the plane it mostly lies in): spots lie flat on it.
-    float3 a = abs(n);
-    float2 s = a.y >= a.x && a.y >= a.z ? wpos.xz : a.x >= a.z ? wpos.zy : wpos.xy;
-    float spots = max(WetSpots(s / 0.22, wet), WetSpots(s / 0.07 + 31.7, wet) * 0.8);
-    float cover = lerp(spots, 1, smoothstep(0.55, 1.0, wet));  // (wet through: no dry gaps left)
-    return saturate(level * 1.5) * cover * lerp(0.45, 1, saturate(n.y));
+    return saturate(level * 1.5) * WetSpecks(s, wet, footprint) * lerp(0.45, 1, saturate(n.y));
 }
 
 

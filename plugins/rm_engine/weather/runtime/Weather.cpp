@@ -149,11 +149,11 @@ struct Wetting {
 std::vector<Wetting> WettingNow(const WeatherNow& now) {
     std::vector<Wetting> out;
     const Vec3 wind{now.windX, 0, now.windZ};
-    // Rain: all of it wet in the end - sooner the harder it rains (a downpour: about 10 s; a drizzle:
-    // about a minute).
-    if (const float rain = RainNow(now); rain > 0) out.push_back({FallDirection(Precipitation::Kind::Rain, wind), 1.f, 0.01f + rain * 0.08f});
+    // Rain: all of it wet in the end - sooner the harder it rains (a downpour: about 25 s; a drizzle:
+    // about two minutes).
+    if (const float rain = RainNow(now); rain > 0) out.push_back({FallDirection(Precipitation::Kind::Rain, wind), 1.f, 0.004f + rain * 0.036f});
     // Snow: where it melts, a little wet - slower (2026-11-19).
-    if (const float snow = SnowNow(now); snow > 0) out.push_back({FallDirection(Precipitation::Kind::Snow, wind), kSnowWet, 0.005f + snow * 0.03f});
+    if (const float snow = SnowNow(now); snow > 0) out.push_back({FallDirection(Precipitation::Kind::Snow, wind), kSnowWet, 0.002f + snow * 0.012f});
     return out;
 }
 
