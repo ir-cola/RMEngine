@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "エンジンに新しく入ったつなぎのプラグインは、つなぐ両方が入っていれば起動したときに自動で入るように (雨がコライダーを突き抜けていたのを直した)",
+          "en": "A connector plugin new in the engine is now installed at start-up when everything it joins is installed (rain no longer passes through colliders)"
+        },
+        {
           "ja": "雨と雪はコライダー (箱・球・カプセル・メッシュ) に当たるように。風で斜めに降ると屋根の下にも入り込む。雪は当たった所で止まり、少しして溶ける",
           "en": "Rain and snow now hit colliders (box, sphere, capsule, mesh). Slanted by the wind, they get in under a roof. Snow stops where it lands and melts a moment later"
         },

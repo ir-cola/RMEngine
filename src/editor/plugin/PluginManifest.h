@@ -112,6 +112,11 @@ std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed,
 // else everything the engine has. In the engine's order; only plugins the engine has.
 std::vector<PluginId> FirstStartInstalls(const std::vector<PluginId>& available, const std::vector<PluginId>& legacyInstalled);
 
+// The connectors this engine has that are not installed though everything they join is (a connector a
+// newer engine added - ゲーム制作 × 3D × 物理 - for plugins installed before): installed at start-up, as
+// they would have come along with the plugins. In the engine's order.
+std::vector<PluginId> ConnectorsToBring(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available);
+
 struct Dependent {
     PluginId id;
     std::optional<PluginId> via;  // empty: needs it directly; else needs it through this plugin

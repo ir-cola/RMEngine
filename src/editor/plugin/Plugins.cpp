@@ -119,6 +119,13 @@ void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir, c
         }
         Reload();
     }
+    // A connector this engine brought for plugins installed before (a newer engine's): it comes along
+    // now, as it would have when they were installed.
+    if (const std::vector<PluginId> bring = ConnectorsToBring(installed_, available_); !bring.empty()) {
+        std::string err;
+        if (!Install(bring, &err)) log::Error("{}", err);
+        Reload();
+    }
 }
 
 void Plugins::Reload() {

@@ -301,6 +301,23 @@ std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed,
     return ready;
 }
 
+std::vector<PluginId> ConnectorsToBring(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available) {
+    std::vector<PluginId> out;
+    auto have = [&](const PluginId& p) { return FindManifest(installed, p) != nullptr || Contains(out, p); };
+    // (again until nothing more: a connector may join another connector)
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (const PluginManifest& m : available) {
+            if (!m.connectorFor || have(m.id)) continue;
+            if (std::all_of(m.requirements.begin(), m.requirements.end(), have)) {
+                out.push_back(m.id);
+                changed = true;
+            }
+        }
+    }
+    return out;
+}
+
 std::vector<PluginId> FirstStartInstalls(const std::vector<PluginId>& available, const std::vector<PluginId>& legacyInstalled) {
     if (legacyInstalled.empty()) return available;
     std::vector<PluginId> out;

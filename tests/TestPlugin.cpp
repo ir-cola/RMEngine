@@ -291,6 +291,25 @@ RM_TEST(Plugins_InstallPlanBringsConnectors) {
     CHECK(InstallPlan(Id("game_ui"), w, {Id("game_production"), Id("space3d"), Id("game_x_3d"), Id("game_ui")}, nullptr).empty());
 }
 
+// A connector a newer engine added for plugins installed before: brought at start-up.
+RM_TEST(Plugins_ConnectorsToBring) {
+    const auto w = ConnectorWorld();
+    // Both sides installed, the connector not: it comes.
+    const std::vector<PluginManifest> both = {w[0], w[1]};
+    CHECK(ConnectorsToBring(both, w) == std::vector<PluginId>({Id("game_x_3d")}));
+    // Installed already, or a side missing: nothing.
+    CHECK(ConnectorsToBring(w, w).empty());
+    CHECK(ConnectorsToBring({w[0]}, w).empty());
+    // A connector joining a connector (ゲーム制作 × 3D × 物理): it follows the one it joins.
+    PluginManifest phys = Manifest("physics");
+    PluginManifest x3dPhys = Manifest("game_x_3d_x_physics", {Id("game_x_3d"), Id("physics")});
+    x3dPhys.connectorFor = Id("game_x_3d");
+    std::vector<PluginManifest> all = w;
+    all.push_back(phys);
+    all.push_back(x3dPhys);
+    CHECK(ConnectorsToBring({w[0], w[1], phys}, all) == std::vector<PluginId>({Id("game_x_3d"), Id("game_x_3d_x_physics")}));
+}
+
 RM_TEST(Plugins_DependentsThroughConnector) {
     const auto w = ConnectorWorld();
     // Removing 3D 空間: the connector goes, so game production (its last connector) and game_ui go too.
