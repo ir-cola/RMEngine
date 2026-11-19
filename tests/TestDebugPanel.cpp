@@ -148,26 +148,26 @@ RM_TEST(DebugPanel_LogCountsAndViewReports) {
 RM_TEST(DebugPanel_WindowLayoutShapeAndHits) {
     using namespace rm::game_production;
     using rm::editor::ToolHit;
-    const DebugWindowLayout l = LayoutDebugWindow(620, 720);
+    const FolderWindowLayout l = LayoutFolderWindow(620, 720);
     // Five tabs side by side on top, the sheet under them, the × in the sheet's top right.
-    for (int i = 1; i < kDebugTabs; ++i) CHECK(l.tabs[i].x > l.tabs[i - 1].Right() && l.tabs[i].y == 0);
-    CHECK(l.tabs[0].x == 0 && l.body.y == kDebugTabH && l.body.Bottom() == 720 && l.close.Right() < 620 && l.close.y > l.body.y);
+    for (int i = 1; i < kFolderTabs; ++i) CHECK(l.tabs[i].x > l.tabs[i - 1].Right() && l.tabs[i].y == 0);
+    CHECK(l.tabs[0].x == 0 && l.body.y == kFolderTabH && l.body.Bottom() == 720 && l.close.Right() < 620 && l.close.y > l.body.y);
     CHECK(l.content.y >= l.grip.Bottom() && l.content.Bottom() <= l.body.Bottom());
     // The shape: the sheet and a rounded rectangle for each tab.
-    const auto shape = DebugWindowShape(620, 720);
-    CHECK(shape.size() == 1 + kDebugTabs && shape[0].rect.y == kDebugTabH);
+    const auto shape = FolderWindowShape(620, 720);
+    CHECK(shape.size() == 1 + kFolderTabs && shape[0].rect.y == kFolderTabH);
     // What a point is: a tab and the × are the UI's; the strip moves the window; the edges size it;
     // right of the tabs is not the window at all.
-    CHECK(HitDebugWindow(l, l.tabs[2].x + 5, 10) == ToolHit::Client);
-    CHECK(HitDebugWindow(l, l.close.x + 5, l.close.y + 5) == ToolHit::Client);
-    CHECK(HitDebugWindow(l, 200, l.body.y + 15) == ToolHit::Caption);
-    CHECK(HitDebugWindow(l, 300, 400) == ToolHit::Client);
-    CHECK(HitDebugWindow(l, 619, 719) == ToolHit::BottomRight && HitDebugWindow(l, 1, 719) == ToolHit::BottomLeft);
-    CHECK(HitDebugWindow(l, 619, 400) == ToolHit::Right && HitDebugWindow(l, 300, 719) == ToolHit::Bottom);
+    CHECK(HitFolderWindow(l, l.tabs[2].x + 5, 10) == ToolHit::Client);
+    CHECK(HitFolderWindow(l, l.close.x + 5, l.close.y + 5) == ToolHit::Client);
+    CHECK(HitFolderWindow(l, 200, l.body.y + 15) == ToolHit::Caption);
+    CHECK(HitFolderWindow(l, 300, 400) == ToolHit::Client);
+    CHECK(HitFolderWindow(l, 619, 719) == ToolHit::BottomRight && HitFolderWindow(l, 1, 719) == ToolHit::BottomLeft);
+    CHECK(HitFolderWindow(l, 619, 400) == ToolHit::Right && HitFolderWindow(l, 300, 719) == ToolHit::Bottom);
     // Wide: the tabs stop at their widest; right of them is not the window at all.
-    const DebugWindowLayout wide = LayoutDebugWindow(1000, 600);
-    CHECK(wide.tabs[kDebugTabs - 1].Right() < 900 && HitDebugWindow(wide, 950, 10) == ToolHit::Nowhere);
+    const FolderWindowLayout wide = LayoutFolderWindow(1000, 600);
+    CHECK(wide.tabs[kFolderTabs - 1].Right() < 900 && HitFolderWindow(wide, 950, 10) == ToolHit::Nowhere);
     // Narrow: the tabs shrink but stay five in the window.
-    const DebugWindowLayout n = LayoutDebugWindow(420, 300);
-    CHECK(n.tabs[kDebugTabs - 1].Right() <= 420);
+    const FolderWindowLayout n = LayoutFolderWindow(420, 300);
+    CHECK(n.tabs[kFolderTabs - 1].Right() <= 420);
 }

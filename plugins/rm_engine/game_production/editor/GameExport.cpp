@@ -30,6 +30,7 @@ ExportScenes ScenesForExport(const SceneList& list, const AssetRef& open, const 
     const AssetRef first = FirstScene(list);
     std::optional<size_t> firstAt, openAt;
     for (const AssetRef& ref : GameScenes(list, open)) {
+        if (!ref.Empty() && !SceneBuilt(list, ref)) continue;  // (left out of the build: ゲームの設定 ▸ ビルド)
         if (ref == open) {
             openAt = out.scenes.size();
             if (!first.Empty() && ref == first) firstAt = openAt;

@@ -326,5 +326,19 @@
   "未保存": "Not saved",
   "一覧に無い": "Not in the list",
   "シーンがありません。右クリック →「新しいシーン」": "No scenes. Right-click → New scene",
-  "一覧に足す": "Add to the list"
+  "一覧に足す": "Add to the list",
+  "(なし。「ゲーム設定」のタブの「アイコン」で PNG か ICO を選びます)": "(none; choose a PNG or ICO in Icon on the Game tab)",
+  "ビルドに入れるシーン": "Scenes in the build",
+  " (初期シーン: いつも入る)": " (start scene: always in)",
+  "シーンをビルドに入れる": "Put a scene in the build",
+  "シーンをビルドから外す": "Leave a scene out of the build",
+  "ゲーム設定": "Game",
+  "シーン設定": "Scenes",
+  "セーブ設定": "Saves",
+  "入力設定": "Input",
+  "ゲームの設定 ・ Play 中 (変えた値は ■ で Play の前に戻ります)": "Game settings · playing (values changed go back at ■)",
+  "初期シーン": "Start scene",
+  "初期シーンを変える": "Change the start scene",
+  "書き出したゲームはこのシーンから始まります (エディターの Play は開いているシーンから)。シーンごとの値 (重力・空) は、ヒエラルキーの一番上のシーンの行を押すとインスペクターに出ます": "The exported game starts with this scene (the editor's Play starts with the open one). Each scene's own values (gravity, sky) show in the Inspector when you click the scene row at the top of the Hierarchy",
+  "グローバル変数はゲーム全体の値で、rm::Save で保存できます。Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)": "Global variables are values of the whole game; rm::Save saves them. While playing in the editor rm::Save writes to this project's Library/Saves (an exported game: %LOCALAPPDATA%\\<exe name>\\Saves)"
 }

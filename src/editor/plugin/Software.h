@@ -108,6 +108,10 @@ struct ProjectFileWrite {
     std::string bytes;
 };
 
+namespace inspector {
+struct Refs;
+}  // namespace inspector
+
 // A window of its own a software opens (ゲーム制作's デバッグ): not part of the editor's docking -
 // no Windows frame, shaped as the software says (the union of rounded rectangles), owned by the editor's
 // window (above it, no taskbar button, gone with it). Drawn when something happens in it and every
@@ -200,6 +204,9 @@ public:
     virtual void ClearHistory() = 0;
     // Renames an asset's file (its .meta follows; its id stays). Empty, or why not (the screen's language).
     virtual std::wstring RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) = 0;
+    // What reference fields list (the project's files, the 階層's items) for an inspector a software draws
+    // itself (in a window of its own): filled into `out`; nothing filled: they show only "(なし)".
+    virtual void FillInspectorRefs(inspector::Refs& out) { (void)out; }
     // A window of the software's own (ToolWindow), shown at once; null when it cannot be made.
     virtual std::unique_ptr<ToolWindow> OpenToolWindow(ToolWindowSpec spec) {
         (void)spec;

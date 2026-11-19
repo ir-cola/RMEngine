@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <span>
 #include <optional>
 #include <string>
 #include <vector>
@@ -176,17 +177,22 @@ struct DebugView {
     FrameGraph playGraph, sceneGraph;  // Play's frames; the scene view's drawing
 };
 
-// The デバッグ window (a software's tool window: no Windows frame): five folder tabs over a sheet with a
-// strip to move it by and its ×. Pure layout - the shape, the hit test and the drawing use the same.
-inline constexpr int kDebugTabs = 5;
-inline constexpr float kDebugTabH = 32, kDebugTabGap = 4, kDebugTabRadius = 9, kDebugBodyRadius = 12;
-struct DebugWindowLayout {
-    ui::Rect tabs[kDebugTabs];
+// A window shaped as a file folder (a software's tool window: no Windows frame) - the デバッグ window and
+// the ゲームの設定 window: five tabs over a sheet with a strip to move it by and its ×. Pure layout - the
+// shape, the hit test and the drawing use the same.
+inline constexpr int kFolderTabs = 5;
+inline constexpr float kFolderTabH = 32, kFolderTabGap = 4, kFolderTabRadius = 9, kFolderBodyRadius = 12;
+struct FolderWindowLayout {
+    ui::Rect tabs[kFolderTabs];
     ui::Rect body, close, grip, content;
 };
-DebugWindowLayout LayoutDebugWindow(float w, float h);
-std::vector<editor::ToolRoundRect> DebugWindowShape(float w, float h);
-editor::ToolHit HitDebugWindow(const DebugWindowLayout& l, float x, float y);
+FolderWindowLayout LayoutFolderWindow(float w, float h);
+std::vector<editor::ToolRoundRect> FolderWindowShape(float w, float h);
+editor::ToolHit HitFolderWindow(const FolderWindowLayout& l, float x, float y);
+// Draws the window: the tabs (`titles`; a click on one changes `tab`), the sheet, `status` on its strip
+// and its × (`close`). Returns where things are (what the chosen tab shows goes in `content`).
+FolderWindowLayout DrawFolderWindow(ui::Context& c, float width, float height, std::span<const std::wstring> titles, int& tab, std::wstring_view status,
+                                    const std::function<void()>& close);
 
 class DebugPanel {
 public:

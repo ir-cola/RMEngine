@@ -330,4 +330,12 @@ RM_TEST(Export_ScenesOfTheGame) {
     // An empty list (a project of before): the open scene only.
     s = ScenesForExport(SceneList{}, a, "Assets/Scenes/Main.rmscene", "main", read);
     CHECK(s.scenes.size() == 1 && s.first == 0 && s.scenes[0].second == "main");
+    // Left out of the build (ゲームの設定 ▸ ビルド): not in it - but the one the game starts with always is.
+    SceneList some;
+    some.scenes = {a, b};
+    some.first = b;
+    some.notBuilt = {a, b};
+    CHECK(!SceneBuilt(some, a) && SceneBuilt(some, b));
+    s = ScenesForExport(some, a, "Assets/Scenes/a.rmscene", "now a", read);
+    CHECK(s.scenes.size() == 1 && s.scenes[0].second == "file b" && s.first == 0);
 }

@@ -67,26 +67,36 @@ bool KeyHeld(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
 
 }  // namespace
 
-void DebugPanel::DrawWindow(ui::Context& c, float width, float height, const DebugView& v, const std::function<void()>& close) {
-    const DebugWindowLayout l = LayoutDebugWindow(width, height);
+FolderWindowLayout DrawFolderWindow(ui::Context& c, float width, float height, std::span<const std::wstring> titles, int& tab, std::wstring_view status,
+                                    const std::function<void()>& close) {
+    const FolderWindowLayout l = LayoutFolderWindow(width, height);
     w::DrawBar(c, {0, 0, width, height}, theme::Sidebar);  // (under the shape's edges)
-    static const wchar_t* kTitles[kDebugTabs] = {TrKey(L"基本情報"), TrKey(L"コントローラー"), TrKey(L"PC 情報"), TrKey(L"パフォーマンス"),
-                                                 TrKey(L"ゲームの中身")};
+    tab = std::clamp(tab, 0, kFolderTabs - 1);
+    auto title = [&](int i) { return i < static_cast<int>(titles.size()) ? titles[static_cast<size_t>(i)] : std::wstring(); };
     // The tabs not chosen, the sheet, then the chosen tab on it (joined: no line between them).
-    for (int i = 0; i < kDebugTabs; ++i) {
-        if (i != tab_ && w::FolderTab(c, std::format("debug.tab{}", i), l.tabs[i], Tr(kTitles[i]), false, kDebugTabRadius)) tab_ = i;
+    int chosen = tab;
+    for (int i = 0; i < kFolderTabs; ++i) {
+        if (i != tab && w::FolderTab(c, std::format("folder.tab{}", i), l.tabs[i], title(i), false, kFolderTabRadius)) chosen = i;
     }
-    w::DrawFolderSheet(c, l.body, kDebugBodyRadius, tab_ == 0);
-    w::FolderTab(c, std::format("debug.tab{}", tab_), l.tabs[tab_], Tr(kTitles[tab_]), true, kDebugTabRadius);
-    {
-        ui::TextStyle ts;
-        ts.size = 12;
-        ts.color = theme::TextDim;
-        ts.v = ui::VAlign::Center;
-        const std::wstring state = !v.playing ? Tr(L"止まっています") : v.paused ? Tr(L"一時停止しています") : Tr(L"Play 中");
-        c.P().Text(l.grip.Inset(14, 0, 4, 0), TrF(L"デバッグ ・ {}", state), ts);
-    }
-    if (w::IconButton(c, "debug.close", l.close, w::Icon::Close) && close) close();
+    w::DrawFolderSheet(c, l.body, kFolderBodyRadius, tab == 0);
+    w::FolderTab(c, std::format("folder.tab{}", tab), l.tabs[tab], title(tab), true, kFolderTabRadius);
+    ui::TextStyle ts;
+    ts.size = 12;
+    ts.color = theme::TextDim;
+    ts.v = ui::VAlign::Center;
+    c.P().Text(l.grip.Inset(14, 0, 4, 0), status, ts);
+    if (w::IconButton(c, "folder.close", l.close, w::Icon::Close) && close) close();
+    tab = chosen;
+    return l;
+}
+
+void DebugPanel::DrawWindow(ui::Context& c, float width, float height, const DebugView& v, const std::function<void()>& close) {
+    static const wchar_t* kTitles[kFolderTabs] = {TrKey(L"基本情報"), TrKey(L"コントローラー"), TrKey(L"PC 情報"), TrKey(L"パフォーマンス"),
+                                                 TrKey(L"ゲームの中身")};
+    std::vector<std::wstring> titles;
+    for (const wchar_t* t : kTitles) titles.push_back(Tr(t));
+    const std::wstring state = !v.playing ? Tr(L"止まっています") : v.paused ? Tr(L"一時停止しています") : Tr(L"Play 中");
+    const FolderWindowLayout l = DrawFolderWindow(c, width, height, titles, tab_, TrF(L"デバッグ ・ {}", state), close);
     Draw(c, l.content, v);
 }
 

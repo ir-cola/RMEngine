@@ -45,7 +45,12 @@ struct SceneList {
     RM_PROPERTY() std::vector<AssetRef> scenes;
     RM_PROPERTY() AssetRef open;   // empty: the first
     RM_PROPERTY() AssetRef first;  // the game starts here (empty, or not in the list: the list's first)
+    // Scenes of the list an export leaves out (ゲームの設定 ▸ ビルド); the one the game starts with is
+    // always in. Play in the editor has every one.
+    RM_PROPERTY() std::vector<AssetRef> notBuilt;
 };
+// The scene goes into an export (not left out - or the one the game starts with).
+bool SceneBuilt(const SceneList& list, const AssetRef& scene);
 
 // The scene shown: `open` when it is in the list, else the first. Empty when the list is.
 AssetRef OpenScene(const SceneList& list);

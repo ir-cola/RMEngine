@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "ゲームの設定を、エディターから離れた窓に (デバッグと同じフォルダーの形・5 つのタブ: ゲーム設定・シーン設定・セーブ設定・入力設定・ビルド)。初期シーンを選べる。ビルドに入れるシーンを選べる。出力先を選ぶボタンは出力先の右に",
+          "en": "Game settings are now a window of their own (the same folder shape as Debug, five tabs: Game, Scenes, Saves, Input, Build). The start scene can be chosen, and so can the scenes that go into a build. Choose output sits right of the output field"
+        },
+        {
           "ja": "タブの名前を ヒエラルキー・ビルド・シーン・シーンビュー・ゲームビュー・UI ビュー に。シーンのパネルをヒエラルキーと同じ操作に (クリックで切り替え・ドラッグで並べ替え・右クリックのメニュー・F2 で名前)",
           "en": "Tabs are now named Hierarchy, Build, Scenes, Scene view, Game view and UI view. The Scenes panel works like the Hierarchy (click to switch, drag to reorder, right-click menu, F2 to rename)"
         },

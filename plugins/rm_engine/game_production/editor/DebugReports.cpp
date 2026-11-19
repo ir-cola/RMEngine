@@ -52,26 +52,26 @@ std::vector<ViewReport> RecentViews(double maxAge) {
 
 using ui::Rect;
 
-DebugWindowLayout LayoutDebugWindow(float w, float h) {
-    DebugWindowLayout l;
-    const float tabW = std::clamp((w - kDebugTabGap * (kDebugTabs - 1)) / kDebugTabs, 60.f, 150.f);
-    for (int i = 0; i < kDebugTabs; ++i) l.tabs[i] = {(tabW + kDebugTabGap) * static_cast<float>(i), 0, tabW, kDebugTabH};
-    l.body = {0, kDebugTabH, w, std::max(0.f, h - kDebugTabH)};
+FolderWindowLayout LayoutFolderWindow(float w, float h) {
+    FolderWindowLayout l;
+    const float tabW = std::clamp((w - kFolderTabGap * (kFolderTabs - 1)) / kFolderTabs, 60.f, 150.f);
+    for (int i = 0; i < kFolderTabs; ++i) l.tabs[i] = {(tabW + kFolderTabGap) * static_cast<float>(i), 0, tabW, kFolderTabH};
+    l.body = {0, kFolderTabH, w, std::max(0.f, h - kFolderTabH)};
     l.close = {l.body.Right() - 34, l.body.y + 6, 26, 24};
     l.grip = {l.body.x, l.body.y, std::max(0.f, l.close.x - l.body.x - 4), 34};
     l.content = {l.body.x + 4, l.grip.Bottom(), std::max(0.f, l.body.w - 8), std::max(0.f, l.body.Bottom() - l.grip.Bottom() - 8)};
     return l;
 }
 
-std::vector<editor::ToolRoundRect> DebugWindowShape(float w, float h) {
-    const DebugWindowLayout l = LayoutDebugWindow(w, h);
-    std::vector<editor::ToolRoundRect> parts{{l.body, kDebugBodyRadius}};
+std::vector<editor::ToolRoundRect> FolderWindowShape(float w, float h) {
+    const FolderWindowLayout l = LayoutFolderWindow(w, h);
+    std::vector<editor::ToolRoundRect> parts{{l.body, kFolderBodyRadius}};
     // (each tab reaches well into the sheet: its own round bottom corners stay hidden there)
-    for (const Rect& t : l.tabs) parts.push_back({{t.x, t.y, t.w, t.h + kDebugBodyRadius * 2}, kDebugTabRadius});
+    for (const Rect& t : l.tabs) parts.push_back({{t.x, t.y, t.w, t.h + kFolderBodyRadius * 2}, kFolderTabRadius});
     return parts;
 }
 
-editor::ToolHit HitDebugWindow(const DebugWindowLayout& l, float x, float y) {
+editor::ToolHit HitFolderWindow(const FolderWindowLayout& l, float x, float y) {
     using editor::ToolHit;
     constexpr float kEdge = 6;
     if (l.close.Contains(x, y)) return ToolHit::Client;
@@ -80,7 +80,7 @@ editor::ToolHit HitDebugWindow(const DebugWindowLayout& l, float x, float y) {
     }
     if (y < l.body.y) return ToolHit::Nowhere;  // (between and right of the tabs: not the window)
     const bool left = x < l.body.x + kEdge, right = x >= l.body.Right() - kEdge, bottom = y >= l.body.Bottom() - kEdge;
-    const bool top = y < l.body.y + 4 && x > l.tabs[kDebugTabs - 1].Right();
+    const bool top = y < l.body.y + 4 && x > l.tabs[kFolderTabs - 1].Right();
     if (bottom && left) return ToolHit::BottomLeft;
     if (bottom && right) return ToolHit::BottomRight;
     if (top && right) return ToolHit::TopRight;

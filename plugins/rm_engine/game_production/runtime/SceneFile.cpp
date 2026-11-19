@@ -17,6 +17,11 @@ AssetRef OpenScene(const SceneList& list) {
     return {};
 }
 
+bool SceneBuilt(const SceneList& list, const AssetRef& scene) {
+    if (scene == FirstScene(list)) return true;
+    return std::find(list.notBuilt.begin(), list.notBuilt.end(), scene) == list.notBuilt.end();
+}
+
 AssetRef FirstScene(const SceneList& list) {
     for (const AssetRef& s : list.scenes) {
         if (!list.first.Empty() && s == list.first) return s;

@@ -742,7 +742,14 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 FieldPath prefix;
                 const bool inputBefore = c.InputEnabled();
                 if (b.readOnly) c.SetInputEnabled(false);  // shown only: no field takes a click or a key
-                DrawStruct(x, *b.type, b.object, b.others, b.unknowns, prefix, 0);
+                if (b.fields.empty()) {
+                    DrawStruct(x, *b.type, b.object, b.others, b.unknowns, prefix, 0);
+                } else {
+                    for (size_t i = 0; i < b.type->fields.size(); ++i) {
+                        if (std::find(b.fields.begin(), b.fields.end(), b.type->fields[i].name) == b.fields.end()) continue;
+                        DrawField(x, *b.type, b.type->fields[i], i, b.object, b.others, b.unknowns, prefix, 0);
+                    }
+                }
                 c.SetInputEnabled(inputBefore);
             }
             x.y += 8;

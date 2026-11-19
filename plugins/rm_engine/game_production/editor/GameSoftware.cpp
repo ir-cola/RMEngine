@@ -60,7 +60,6 @@ using ui::Rect;
 
 constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
-constexpr char kExportPanel[] = "export";
 constexpr char kScenesPanel[] = "scenes";
 constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" rows in the 階層's menu
 constexpr float kSpaceStripH = 34.f;   // the strip of spaces (3D / 2D) above the scene view
@@ -241,7 +240,6 @@ public:
                  DrawGameView(c, r);
                  gameMeter_.Frame(t0, (platform::NowSeconds() - t0) * 1000.0);
              }},
-            {kExportPanel, TrKey(L"ビルド"), [this](ui::Context& c, const Rect& r) { DrawExportPanel(c, r); }},
             {kScenesPanel, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawScenesPanel(c, r); }},
         };
         // Panels the plugins add (ゲーム UI: the UI view) - not of a space.
@@ -268,8 +266,8 @@ public:
         spec.minWidthDip = 420;
         spec.minHeightDip = 260;
         spec.refreshSeconds = 1.0 / 30.0;
-        spec.shape = [](float w, float h) { return DebugWindowShape(w, h); };
-        spec.hit = [](float x, float y, float w, float h) { return HitDebugWindow(LayoutDebugWindow(w, h), x, y); };
+        spec.shape = [](float w, float h) { return FolderWindowShape(w, h); };
+        spec.hit = [](float x, float y, float w, float h) { return HitFolderWindow(LayoutFolderWindow(w, h), x, y); };
         spec.draw = [this](ui::Context& c, float w, float h) {
             debugPanel_.DrawWindow(c, w, h, MakeDebugView(), [this] {
                 if (debugWindow_) debugWindow_->Close();
@@ -337,7 +335,7 @@ public:
         }
         auto top = l.MakeSplit(Axis::Horizontal, 0.17f, l.MakeLeaf({cp::kHierarchy, kScenesPanel}),
                                l.MakeSplit(Axis::Horizontal, 0.78f, l.MakeLeaf(views), l.MakeLeaf({cp::kInspector})));
-        l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets, kExportPanel}));
+        l.main = l.MakeSplit(Axis::Vertical, 0.72f, std::move(top), l.MakeLeaf({cp::kConsole, cp::kAssets}));
         return l;
     }
 
@@ -429,7 +427,7 @@ public:
             RefreshPrefabsOnOpen();
             ++dataVersion_;  // (the scene was made again: no history entry tells it)
         }
-        InspectSettings();
+        host_.Inspect({});  // (the game settings are a window of their own: opened when asked)
     }
 
     bool SaveData(json::Value& data, std::vector<editor::ProjectFileWrite>& files) override {
@@ -696,19 +694,30 @@ public:
         if (name == "exeName") push(reflect::TypeOf<ExportSettings>(), "exeName", &exportSettings_, &exportUnknowns_);
     }
 
-    void DrawExportPanel(ui::Context& c, const Rect& r) {
+    // ゲームの設定 ▸ ビルド: the game's name, the exe's name, where to (with 出力先を選ぶ on its right - under it
+    // when the window is narrow), which scenes go in, then 書き出す and what it did.
+    void DrawBuildTab(ui::Context& c, const Rect& r) {
         auto& p = c.P();
-        // The panel scrolls when it is low (the 書き出す button and the log stay reachable).
+        // The tab scrolls when it is low (the 書き出す button and the log stay reachable).
         float& contentH = c.FloatState(c.MakeId("export.contentH"), 300.f);
         const float off = editor::w::BeginScroll(c, "export.scroll", r, contentH);
         const Rect area = Rect{r.x, r.y - off, r.w, std::max(r.h, contentH)}.Inset(14, 10, 14, 10);
         const float top = area.y;
         ExportView v{settings_.title, ExeNameNow(), PathToUtf8(OutputNow())};
-        const editor::inspector::Block b{&reflect::TypeOf<ExportView>(), &v, nullptr, {}, {}, {}};
-        const Rect box{area.x - 12, area.y, area.w + 12, std::max(3 * 30.f + 10, exportInspector_.contentHeight)};
-        if (auto edit = editor::inspector::Draw(c, exportInspector_, box, std::span(&b, 1))) ApplyExportEdit(*edit);
-        float y = box.Bottom() + 4;
-        if (editor::w::Button(c, "export_browse", {area.Right() - 160, y, 160, 26}, Tr(L"出力先を選ぶ…"))) {
+        constexpr float kBrowseW = 150;
+        const bool browseBeside = area.w >= 460;  // (narrow: the button goes under the field)
+        // The names (as the inspector draws them), then 出力先 with its button.
+        editor::inspector::Block names{&reflect::TypeOf<ExportView>(), &v, nullptr, {}, {}, {}};
+        names.fields = {"title", "exeName"};
+        const Rect box{area.x - 12, area.y, area.w + 12, std::max(2 * 30.f + 10, exportInspector_.contentHeight)};
+        if (auto edit = editor::inspector::Draw(c, exportInspector_, box, std::span(&names, 1))) ApplyExportEdit(*edit);
+        float y = box.Bottom() + 2;
+        editor::inspector::Block where{&reflect::TypeOf<ExportView>(), &v, nullptr, {}, {}, {}};
+        where.fields = {"output"};
+        const Rect whereBox{area.x - 12, y, (browseBeside ? area.w - kBrowseW - 8 : area.w) + 12, std::max(30.f + 10, outputInspector_.contentHeight)};
+        if (auto edit = editor::inspector::Draw(c, outputInspector_, whereBox, std::span(&where, 1))) ApplyExportEdit(*edit);
+        const Rect browse = browseBeside ? Rect{area.Right() - kBrowseW, y + 4, kBrowseW, 26} : Rect{area.Right() - kBrowseW, whereBox.Bottom() + 2, kBrowseW, 26};
+        if (editor::w::Button(c, "export_browse", browse, Tr(L"出力先を選ぶ…"))) {
             // In the output folder (not there yet: the nearest one above it; on a drive that is not there:
             // the project's folder).
             const fs::path start = platform::ExistingFolderAtOrAbove(OutputNow()).empty() ? host_.GetProject().Root() : OutputNow();
@@ -718,15 +727,39 @@ public:
                 view_.Set("export", std::move(e));
             });
         }
-        y += 32;
+        y = std::max(whereBox.Bottom(), browse.Bottom()) + 8;
         ui::TextStyle ts;
         ts.size = 12;
         ts.color = theme::TextDim;
-        // The icon: the game settings' (shown here, chosen there).
+        // The icon: the game settings' (shown here, chosen in ゲーム設定).
         const fs::path icon = settings_.icon.Empty() ? fs::path() : host_.AssetFile(settings_.icon);
-        p.Text({area.x, y, area.w - 170, 26}, TrF(L"アイコン: {}", icon.empty() ? Tr(L"(なし。ゲームの設定の「アイコン」に PNG か ICO を選びます)") : icon.filename().native()), ts);
-        if (editor::w::Button(c, "export_settings", {area.Right() - 160, y, 160, 26}, Tr(L"ゲームの設定を開く"))) InspectSettings();
-        y += 34;
+        p.Text({area.x, y, area.w, 22}, TrF(L"アイコン: {}", icon.empty() ? Tr(L"(なし。「ゲーム設定」のタブの「アイコン」で PNG か ICO を選びます)") : icon.filename().native()), ts);
+        y += 28;
+        // The scenes that go in (the one the game starts with always does).
+        ui::TextStyle head = ts;
+        head.color = theme::Text;
+        head.bold = true;
+        p.Text({area.x, y, area.w, 22}, Tr(L"ビルドに入れるシーン"), head);
+        y += 26;
+        const AssetRef first = FirstScene(sceneList_);
+        for (const AssetRef& ref : GameScenes(sceneList_, AssetRef{slot_.guid})) {
+            bool built = ref.Empty() || SceneBuilt(sceneList_, ref);
+            const bool always = ref.Empty() || ref == first || (first.Empty() && ref == AssetRef{slot_.guid});
+            std::wstring label = Utf8ToWide(SceneTitle(ref));
+            if (always) label += Tr(L" (初期シーン: いつも入る)");
+            c.PushId(ref.Empty() ? std::string("new") : ref.guid);
+            const bool was = built;
+            editor::w::Checkbox(c, "built", {area.x + 4, y, area.w - 4, 24}, built, label);
+            c.PopId();
+            if (built != was && !always && !Running()) {
+                EditSceneList(built ? TrU8("シーンをビルドに入れる") : TrU8("シーンをビルドから外す"), [&](SceneList& l) {
+                    std::erase(l.notBuilt, ref);
+                    if (!built) l.notBuilt.push_back(ref);
+                });
+            }
+            y += 26;
+        }
+        y += 8;
         const std::string problem = editor::exporter::ExeNameProblem(v.exeName);
         if (!problem.empty()) {
             ui::TextStyle es = ts;
@@ -747,6 +780,7 @@ public:
         if (running || run.ok) {
             editor::w::ProgressBar(c, {area.x + 172, y + 11, std::max(10.f, area.w - 172), 10}, run.ok ? 1.f : run.progress);
         }
+        (void)running;  // (its progress is drawn again by the window's timer)
         y += 42;
         // The log of this export (scrolled to with the rest of the panel).
         ts.wrap = false;
@@ -757,7 +791,6 @@ public:
             p.Text({area.x, y, area.w, 20}, Utf8ToWide(run.lines[i]), ls);
             y += 20;
         }
-        if (running) c.RequestAnimation();
         contentH = y - top + 20;
         editor::w::EndScroll(c, "export.scroll", r, contentH);
     }
@@ -792,6 +825,7 @@ public:
         scripts_.SetGlobals(settings_.globals);  // (an edit of the list: the header and a build, a second later)
         scripts_.Poll(c);
         if (debugWindow_ && !debugWindow_->IsOpen()) debugWindow_.reset();  // (closed by its × / Alt+F4)
+        if (settingsWindow_ && !settingsWindow_->IsOpen()) settingsWindow_.reset();
         // (while playing: at Stop, or now - the game settings' Play 中のビルド)
         if (auto dll = scripts_.TakeReady(Running() && settings_.scriptReload == ScriptReload::AtStop)) ReloadScripts(*dll);
         if (!heldSceneWarnings_.empty() && !scripts_.Building()) {
@@ -1792,29 +1826,123 @@ private:
         return nullptr;
     }
 
-    void InspectSettings() {
-        inspectingEntities_ = false;
-        inspectingScene_ = false;
-        editor::Inspectable in;
-        in.title = Tr(L"ゲームの設定");
-        in.blocks = [this] {
-            std::vector<editor::InspectBlock> blocks;
-            if (Running()) blocks.push_back(PlayNote());
-            editor::InspectBlock b{&reflect::TypeOf<GameSettings>(), [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, {}, {}, {}};
-            // Play: changed in place (the game reads them at once); ■ puts them back as they were (settingsBeforePlay_).
-            b.direct = Running();
-            blocks.push_back(std::move(b));
-            // Where rm::Save writes, and taking those saves away (to the Recycle Bin).
-            editor::w::Action clear;
-            clear.label = Tr(L"セーブを消す (Library/Saves)");
-            clear.run = [this] { editor::PostToUi([this] { DeleteSaves(); }); };
-            blocks.push_back({nullptr, {}, Tr(L"セーブ"),
-                              Tr(L"Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)。⋮ の「セーブを消す」で Play のセーブを全部ごみ箱へ移します"),
-                              {clear}});
-            return blocks;
-        };
-        host_.Inspect(std::move(in));
-        host_.SelectInTree({});
+    // ゲームの設定: a window of its own (not docked in the editor), shaped as the デバッグ window: ゲーム設定,
+    // シーン設定 (the scene the game starts with, tags, layers), セーブ設定 (global variables, the saves),
+    // 入力設定, ビルド. An edit is an undo entry (in Play: in place, put back at ■).
+    void InspectSettings() { OpenSettingsWindow(-1); }
+
+    void OpenSettingsWindow(int tab) {
+        if (tab >= 0) settingsTab_ = tab;
+        if (settingsWindow_ && settingsWindow_->IsOpen()) {
+            settingsWindow_->BringToFront();
+            settingsWindow_->Redraw();
+            return;
+        }
+        editor::ToolWindowSpec spec;
+        spec.title = Tr(L"ゲームの設定");
+        spec.widthDip = 640;
+        spec.heightDip = 720;
+        spec.minWidthDip = 420;
+        spec.minHeightDip = 300;
+        spec.refreshSeconds = 0.25;  // (a build's progress, Play starting / stopping)
+        spec.shape = [](float w, float h) { return FolderWindowShape(w, h); };
+        spec.hit = [](float x, float y, float w, float h) { return HitFolderWindow(LayoutFolderWindow(w, h), x, y); };
+        spec.draw = [this](ui::Context& c, float w, float h) { DrawSettingsWindow(c, w, h); };
+        settingsWindow_ = host_.OpenToolWindow(std::move(spec));
+        if (!settingsWindow_) log::Warn("ゲームの設定の窓を作れませんでした");
+    }
+
+    void DrawSettingsWindow(ui::Context& c, float width, float height) {
+        static const wchar_t* kTitles[kFolderTabs] = {TrKey(L"ゲーム設定"), TrKey(L"シーン設定"), TrKey(L"セーブ設定"), TrKey(L"入力設定"), TrKey(L"ビルド")};
+        std::vector<std::wstring> titles;
+        for (const wchar_t* t : kTitles) titles.push_back(Tr(t));
+        const std::wstring status = Running() ? Tr(L"ゲームの設定 ・ Play 中 (変えた値は ■ で Play の前に戻ります)") : Tr(L"ゲームの設定");
+        const FolderWindowLayout l = DrawFolderWindow(c, width, height, titles, settingsTab_, status, [this] {
+            if (settingsWindow_) settingsWindow_->Close();
+        });
+        if (settingsTab_ == 4) {
+            DrawBuildTab(c, l.content);
+        } else {
+            DrawSettingsTab(c, l.content, settingsTab_);
+        }
+    }
+
+    // One tab of the game settings: some of their fields (the inspector draws them) and what goes with them.
+    void DrawSettingsTab(ui::Context& c, const Rect& r, int tab) {
+        auto& p = c.P();
+        editor::inspector::Block b{&reflect::TypeOf<GameSettings>(), &settings_, &unknowns_, {}, {}, {}};
+        switch (tab) {
+            case 0: b.fields = {"title", "icon", "targetFps", "fixedTimestep", "clearColor", "display", "volume", "startCamera", "scriptOrder", "scriptReload"}; break;
+            case 1: b.fields = {"tags", "layers"}; break;
+            case 2: b.fields = {"globals"}; break;
+            default: b.fields = {"input", "keyboardPlayer"}; break;
+        }
+        ui::TextStyle ts;
+        ts.size = 12;
+        ts.color = theme::TextDim;
+        ts.wrap = true;
+        float y = r.y + 6;
+        if (tab == 1) {
+            // The scene the game starts with (書き出したゲーム; the editor's Play starts with the one open).
+            ui::TextStyle label = ts;
+            label.wrap = false;
+            label.color = theme::Text;
+            label.v = ui::VAlign::Center;
+            p.Text({r.x + 14, y, 120, 26}, Tr(L"初期シーン"), label);
+            const AssetRef first = FirstScene(sceneList_);
+            const Rect combo{r.x + 140, y, std::max(80.f, r.w - 160), 26};
+            if (editor::w::ComboBox(c, "first_scene", combo, first.Empty() ? Tr(L"(なし)") : Utf8ToWide(SceneTitle(first)), !Running()).clicked) {
+                firstScenePopup_.OpenAt(combo.x, combo.Bottom());
+            }
+            if (firstScenePopup_.open) {
+                std::vector<editor::w::MenuItem> items;
+                for (const AssetRef& ref : sceneList_.scenes) {
+                    editor::w::MenuItem it;
+                    it.label = Utf8ToWide(SceneTitle(ref));
+                    it.checked = ref == first;
+                    items.push_back(std::move(it));
+                }
+                const int chosen = editor::w::MenuPopup(c, firstScenePopup_, items, combo.w);
+                if (chosen >= 0 && static_cast<size_t>(chosen) < sceneList_.scenes.size()) {
+                    const AssetRef ref = sceneList_.scenes[static_cast<size_t>(chosen)];
+                    EditSceneList(TrU8("初期シーンを変える"), [&](SceneList& l) { l.first = ref; });
+                }
+            }
+            y += 30;
+            const std::wstring note = Tr(L"書き出したゲームはこのシーンから始まります (エディターの Play は開いているシーンから)。シーンごとの値 (重力・空) は、ヒエラルキーの一番上のシーンの行を押すとインスペクターに出ます");
+            const float h = p.TextHeight(note, 12, r.w - 28);
+            p.Text({r.x + 14, y, r.w - 28, h}, note, ts);
+            y += h + 10;
+        }
+        if (tab == 2) {
+            const std::wstring note = Tr(L"グローバル変数はゲーム全体の値で、rm::Save で保存できます。Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)");
+            const float h = p.TextHeight(note, 12, r.w - 28);
+            p.Text({r.x + 14, y, r.w - 28, h}, note, ts);
+            y += h + 6;
+            if (editor::w::Button(c, "delete_saves", {r.x + 14, y, 230, 26}, Tr(L"セーブを消す (Library/Saves)"))) {
+                editor::PostToUi([this] { DeleteSaves(); });
+            }
+            y += 34;
+        }
+        editor::inspector::Refs refs;
+        host_.FillInspectorRefs(refs);
+        if (auto edit = editor::inspector::Draw(c, settingsInspectors_[static_cast<size_t>(tab)], {r.x, y, r.w, std::max(0.f, r.Bottom() - y)},
+                                                std::span(&b, 1), {}, {}, &refs)) {
+            ApplySettingsEdit(*edit);
+        }
+    }
+
+    // A field of the game settings changed in their window: an undo entry - in Play, in place (put back at ■).
+    void ApplySettingsEdit(editor::inspector::Edit& edit) {
+        const reflect::TypeDesc& type = reflect::TypeOf<GameSettings>();
+        auto cmd = std::make_unique<reflect::SetFieldCommand>(type, std::move(edit.path), std::move(edit.before), std::move(edit.after),
+                                                              [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, std::move(edit.label), edit.merge);
+        if (Running()) {
+            cmd->Do();
+        } else {
+            host_.History().Push(std::move(cmd), false);
+        }
+        host_.Redraw();
     }
 
     // Where an entity is now (the list may have been rebuilt by undo since): found by id each time.
@@ -2278,7 +2406,7 @@ private:
         sceneChosen_ = ref;
         renamingScene_ = false;
         log::Info("シーン「{}」を開きました (エンティティ {} 個)", SceneTitle(ref), scene_.Entities().size());
-        InspectSettings();
+        host_.Inspect({});  // (the game settings are a window of their own: opened when asked)
         host_.Redraw();
     }
 
@@ -3161,6 +3289,13 @@ private:
     // over the scene view.
     DebugPanel debugPanel_;
     std::unique_ptr<editor::ToolWindow> debugWindow_;  // the デバッグ window while it is open
+    // The ゲームの設定 window while it is open: its tab, an inspector for each tab of settings, the second
+    // one of the ビルド tab (出力先), the list of 初期シーン.
+    std::unique_ptr<editor::ToolWindow> settingsWindow_;
+    int settingsTab_ = 0;
+    std::array<editor::inspector::State, 4> settingsInspectors_;
+    editor::inspector::State outputInspector_;
+    editor::w::Popup firstScenePopup_;
     FrameMeter sceneMeter_, gameMeter_, updateMeter_;
     json::Value settingsBeforePlay_;  // the game settings when Play started (null: not playing)
     double debugShownAt_ = -1e9;  // the window was drawn then (Play's parts are timed while it is shown)

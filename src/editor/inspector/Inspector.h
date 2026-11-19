@@ -97,6 +97,8 @@ struct Block {
     // A right click on a field's line (also on a block that only shows): this menu for that field
     // (e.g. Play's この値を残す). Null / empty: no menu.
     std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
+    // Only these fields of the type (by their names; a window that shows a big type in tabs); empty: all.
+    std::vector<std::string> fields;
 };
 
 // Per inspector: text being typed, the open drop-down / menu, folded blocks.
