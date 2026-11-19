@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "2 回目の全体の調べ直しで見つけた不具合を 32 件直した (飛行中の Ctrl+S・Alt のあとキーが押されたまま・パーティクルで雨が光る・Play 中の設定の変更・シーンの番号のずれ・物理の体の作り直しなど)",
+          "en": "Fixed 32 bugs found in the second review of the whole code (Ctrl+S while flying, keys stuck after Alt, rain glowing with particles, settings changed during Play, scene numbers, physics bodies made again and more)"
+        },
+        {
           "ja": "天候 (天気・雨・雪・風・濡れ) をプラグイン「天候」に分けた。Hub の「プラグイン」で入れる。スクリプトは RMWeather.h",
           "en": "The weather (rain, snow, wind, wetness) is now the plugin Weather. Install it from Plugins in the Hub. Scripts use RMWeather.h"
         },

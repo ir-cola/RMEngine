@@ -295,6 +295,10 @@ InputReader::~InputReader() { StopVibration(); }
 
 void InputReader::Vibrate(int slot, float low, float high, double seconds) {
     if (slot < 0 || slot >= kPlayers) return;
+    // (NaN: still - a NaN would become any number on its way to a WORD; a day at most)
+    if (!std::isfinite(low)) low = 0;
+    if (!std::isfinite(high)) high = 0;
+    seconds = std::isfinite(seconds) ? std::min(seconds, 86400.0) : 0.0;
     XINPUT_VIBRATION v{};
     v.wLeftMotorSpeed = static_cast<WORD>(std::clamp(low, 0.0f, 1.0f) * 65535.0f);
     v.wRightMotorSpeed = static_cast<WORD>(std::clamp(high, 0.0f, 1.0f) * 65535.0f);

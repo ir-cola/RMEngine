@@ -23,6 +23,7 @@ struct Token {
     Tok kind = Tok::End;
     std::string text;  // String: the content between the quotes, as written
     int line = 0, col = 0;
+    int cond = 0;  // how many #if / #ifdef / #ifndef it is inside (#if 0's skipped part: not read at all)
     bool Is(std::string_view s) const { return (kind == Tok::Ident || kind == Tok::Punct) && text == s; }
 };
 
@@ -31,6 +32,8 @@ bool IsIdentChar(char c) { return IsIdentStart(c) || (c >= '0' && c <= '9'); }
 
 std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::vector<Diagnostic>& diags) {
     std::vector<Token> out;
+    enum class Cond { Counted, Off };
+    std::vector<Cond> conds;  // the #if / #ifdef the reading is inside
     size_t i = 0;
     int line = 1, col = 1;
     bool lineStart = true;
@@ -56,11 +59,47 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
             advance(1);
             continue;
         }
-        if (c == '#' && lineStart) {  // preprocessor line (with \ continuations)
+        if (c == '#' && lineStart) {  // preprocessor line (with \ continuations - LF or CRLF)
+            std::string directive;
             while (i < s.size() && s[i] != '\n') {
-                if (s[i] == '\\' && i + 1 < s.size() && (s[i + 1] == '\n' || s[i + 1] == '\r')) advance(1);
+                if (s[i] == '\\' && i + 2 < s.size() && s[i + 1] == '\r' && s[i + 2] == '\n') {
+                    advance(3);  // (CRLF: 2026-11-19 - before, the \r ended the line and the next was read as code)
+                    directive += ' ';
+                    continue;
+                }
+                if (s[i] == '\\' && i + 1 < s.size() && s[i + 1] == '\n') {
+                    advance(2);
+                    directive += ' ';
+                    continue;
+                }
+                directive += s[i];
                 advance(1);
             }
+            // #if 0 ... (#else ...) #endif: the part not compiled is not read; any other #if / #ifdef is
+            // counted (Token::cond) - a field inside one is an error (RM0014).
+            std::string_view d(directive);
+            d.remove_prefix(1);
+            while (!d.empty() && (d.front() == ' ' || d.front() == '\t')) d.remove_prefix(1);
+            size_t w = 0;
+            while (w < d.size() && IsIdentChar(d[w])) ++w;
+            const std::string_view word = d.substr(0, w);
+            std::string_view rest = d.substr(w);
+            while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) rest.remove_prefix(1);
+            while (!rest.empty() && (rest.back() == ' ' || rest.back() == '\t' || rest.back() == '\r')) rest.remove_suffix(1);
+            if (word == "if" && (rest == "0" || rest.starts_with("0 ") || rest.starts_with("0/"))) {
+                conds.push_back(Cond::Off);
+            } else if (word == "if" || word == "ifdef" || word == "ifndef") {
+                conds.push_back(Cond::Counted);
+            } else if ((word == "else" || word == "elif") && !conds.empty() && conds.back() == Cond::Off) {
+                conds.back() = Cond::Counted;  // (#if 0's other part: compiled, maybe)
+            } else if (word == "endif" && !conds.empty()) {
+                conds.pop_back();
+            }
+            continue;
+        }
+        if (std::find(conds.begin(), conds.end(), Cond::Off) != conds.end()) {  // #if 0: not read
+            advance(1);
+            lineStart = false;
             continue;
         }
         lineStart = false;
@@ -99,6 +138,7 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
             } else {
                 advance(1);
             }
+            t.cond = static_cast<int>(conds.size());
             out.push_back(std::move(t));
             continue;
         }
@@ -110,6 +150,7 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
             }
             advance(1);
             t.kind = Tok::Char;
+            t.cond = static_cast<int>(conds.size());
             out.push_back(std::move(t));
             continue;
         }
@@ -118,6 +159,7 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
             while (i < s.size() && IsIdentChar(s[i])) advance(1);
             t.kind = Tok::Ident;
             t.text = std::string(s.substr(start, i - start));
+            t.cond = static_cast<int>(conds.size());
             out.push_back(std::move(t));
             continue;
         }
@@ -129,6 +171,7 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
             }
             t.kind = Tok::Number;
             t.text = std::string(s.substr(start, i - start));
+            t.cond = static_cast<int>(conds.size());
             out.push_back(std::move(t));
             continue;
         }
@@ -140,6 +183,7 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
             t.text = std::string(1, c);
             advance(1);
         }
+        t.cond = static_cast<int>(conds.size());
         out.push_back(std::move(t));
     }
     Token end;
@@ -463,6 +507,7 @@ private:
     }
 
     void ParseBody(Struct& s) {
+        const int bodyCond = p_ > 0 ? t_[p_ - 1].cond : 0;  // (the body's {: a field must be in no other #if)
         std::vector<Attr> pending;
         std::string pendingMacro;
         Token pendingAt;
@@ -486,6 +531,9 @@ private:
                 continue;
             }
             if (IsFieldMacro(tk)) {
+                if (tk.cond != bodyCond) {
+                    Error(tk, "RM0014", "型の中の #if / #ifdef の中にはフィールドを書けません (ビルドによってフィールドが変わるため。#if 0 は使えます)");
+                }
                 if (!pendingMacro.empty()) dropPending("もう一度注釈が来ています");
                 pendingMacro = tk.text;
                 pendingAt = tk;

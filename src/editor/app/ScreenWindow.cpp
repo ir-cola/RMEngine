@@ -418,11 +418,19 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             }
             return 0;
         }
-        case WM_SYSKEYUP:
+        case WM_SYSKEYUP: {
+            // A key let go while Alt is held (Alt+Space, Alt+W ...) comes here, not as WM_KEYUP: it is up
+            // too (2026-11-19: before, it stayed held and the 3D scene view flew on by itself).
+            UpdateModifiers();
+            if (const ui::Key k = MapKey(wp); k != ui::Key::None) {
+                input_.keyDown[static_cast<int>(k)] = false;
+                OnInput();
+            }
             // A lone Alt / F10 would enter the (empty) system menu mode and swallow the next keys.
             if (wp == VK_MENU || wp == VK_F10) return 0;
             handled = false;
             return 0;
+        }
         case WM_CHAR: {
             const wchar_t ch = static_cast<wchar_t>(wp);
             if (ch >= 0x20 && ch != 0x7F) {

@@ -1,5 +1,7 @@
 #include "editor/plugin/Plugins.h"
 
+#include <fstream>
+
 #include "editor/app/Integrity.h"
 
 #include "base/Log.h"
@@ -98,20 +100,32 @@ void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir, c
     availableDir_ = availableDir;
     installedDir_ = installedDir;
     std::error_code ec;
-    const bool firstStart = !fs::exists(installedDir_, ec);
+    // (a first start that could not install everything is one again next time - 2026-11-19: before, the
+    // folder was there and the rest never came)
+    const fs::path unfinished = installedDir_ / L".first-start-unfinished";
+    const bool firstStart = !fs::exists(installedDir_, ec) || fs::exists(unfinished, ec);
     Reload();  // the engine's copies are known (names in the log) before anything is installed
     if (firstStart) {
         // First start of this engine for this user: what was installed in the folder every engine
         // shared before (the user's choice carries over), else everything that comes with it.
         fs::create_directories(installedDir_, ec);
+        { std::ofstream mark(unfinished); }
         std::vector<PluginId> available, legacy;
         for (const BuiltinPlugin& b : BuiltinPlugins()) {
             if (fs::exists(FolderOf(availableDir_, b.id.Id()) / L"plugin.json", ec)) available.push_back(b.id.Id());
             if (!legacyDir.empty() && fs::exists(FolderOf(legacyDir, b.id.Id()) / L"plugin.json", ec)) legacy.push_back(b.id.Id());
         }
         const std::vector<PluginId> first = FirstStartInstalls(available, legacy);
-        std::string err;
-        if (!Install(first, &err)) log::Error("{}", err);
+        // Each on its own: one that cannot be copied (a folder held by another program) does not stop the rest.
+        bool all = true;
+        for (const PluginId& id : first) {
+            std::string err;
+            if (!CopyIn(id, &err)) {
+                log::Error("{}", err);
+                all = false;
+            }
+        }
+        if (all) fs::remove(unfinished, ec);
         if (legacy.empty()) {
             log::Info("このエンジンの最初の起動なので、エンジンに入っているプラグインをすべてインストールしました ({} 個)", first.size());
         } else {

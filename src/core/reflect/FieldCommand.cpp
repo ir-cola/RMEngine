@@ -34,7 +34,10 @@ void SetFieldCommand::Apply(const json::Value& v) {
     if (!t.field) return;
     // A value the user chose replaces an unknown enum name that was kept (the user's own choice).
     // Undo brings the kept name back, because `before` holds it.
-    if (t.unknowns) t.unknowns->ForgetEnum(t.field->name);
+    if (t.unknowns) {
+        t.unknowns->ForgetEnum(t.field->name);
+        t.unknowns->ForgetKept(t.field->name);  // (a value of another kind kept from the file: the user's choice replaces it)
+    }
     LoadField(*t.field, t.owner, v, t.unknowns, nullptr);
 }
 

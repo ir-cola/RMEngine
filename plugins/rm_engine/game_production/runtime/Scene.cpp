@@ -47,11 +47,12 @@ bool Scene::AllowsMultiple(std::string_view type) const {
 }
 
 bool Scene::AddComponent(int id, const reflect::TypeDesc& type) {
-    SceneEntity* e = Find(id);
-    if (!e || (e->FindComponent(type.name) && !AllowsMultiple(type.name))) return false;
+    if (const SceneEntity* e = Find(id); !e || (e->FindComponent(type.name) && !AllowsMultiple(type.name))) return false;
     Component c;
     c.type = type.name;
-    c.value = reflect::Object(type);
+    c.value = reflect::Object(type);  // (a script's default value may make entities: looked up again after)
+    SceneEntity* e = Find(id);
+    if (!e) return false;
     e->components.push_back(std::move(c));
     return true;
 }

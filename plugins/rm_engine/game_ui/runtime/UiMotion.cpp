@@ -155,12 +155,15 @@ UiPathPose StepPath(UiPath& path, const UiPathLine& line, float dt) {
                 }
                 break;
             case UiPathLoop::Loop: path.travelled = std::fmod(path.travelled, length); break;
-            case UiPathLoop::PingPong:
-                while (path.travelled >= length) {
-                    path.travelled -= length;
-                    path.backward = !path.backward;
-                }
+            case UiPathLoop::PingPong: {
+                // (how many ends were passed, at once: a loop that takes `length` off each time never ends
+                // when `travelled` is far more than a float can tell from it)
+                const double ends = std::floor(static_cast<double>(path.travelled) / length);
+                path.travelled = static_cast<float>(static_cast<double>(path.travelled) - ends * length);
+                if (!std::isfinite(path.travelled) || path.travelled >= length || path.travelled < 0) path.travelled = 0;
+                if (std::fmod(ends, 2.0) != 0) path.backward = !path.backward;
                 break;
+            }
         }
     }
     const float f = length > 1e-6f ? path.travelled / length : 0.f;

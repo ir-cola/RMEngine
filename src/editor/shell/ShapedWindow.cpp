@@ -71,7 +71,7 @@ void ShapedWindow::ApplyShape() {
         CombineRgn(all, all, one, RGN_OR);
         DeleteObject(one);
     }
-    SetWindowRgn(h, all, TRUE);  // (the window owns the region from here)
+    if (!SetWindowRgn(h, all, TRUE)) DeleteObject(all);  // (taken: the window owns it; not: still ours)
 }
 
 bool ShapedWindow::OnWindowMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) {

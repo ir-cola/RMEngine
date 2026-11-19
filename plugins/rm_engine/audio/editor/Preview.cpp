@@ -11,6 +11,7 @@
 #include "rm_engine/audio/editor/Describer.h"
 #include "rm_engine/audio/runtime/AudioEngine.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -28,6 +29,7 @@ using editor::TrF;
 struct Previewer {
     Describer describer;
     std::unique_ptr<AudioEngine> engine;
+    double lastUpdate = 0;  // when SoundPlaying last moved the engine on (its voices end by the time since)
 
     AudioEngine& Engine() {
         if (!engine) engine = std::make_unique<AudioEngine>();
@@ -82,8 +84,12 @@ bool SoundPlaying() {
     p.TellMessages();
     if (!p.engine) return false;
     // (Voices that finished are let go in Update - the game calls it every frame; the preview here, as
-    // the panel asks. Without a sound device nothing else would ever end them.)
-    p.engine->Update(0);
+    // the panel asks, with the time since it last did: without a sound device a voice ends only as its
+    // time goes by - 2026-11-19, Update(0) never ended one.)
+    const double now = platform::NowSeconds();
+    const double dt = p.lastUpdate > 0 ? std::clamp(now - p.lastUpdate, 0.0, 0.25) : 0.0;
+    p.lastUpdate = now;
+    p.engine->Update(static_cast<float>(dt));
     return p.engine->Voices() > 0;
 }
 

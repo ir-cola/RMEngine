@@ -945,6 +945,11 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **時間の内訳・描画の統計・音の出力先** — 時間は `std::chrono::steady_clock` (単調に進む時計) で、スクリプトのフックを呼ぶ前後・システムを 1 つ走らせる前後を測る。パネルが出ている間だけ測る (`SetTiming`) ので、ふだんの Play には手間が増えない。描画の統計は、3D の描き手がドローコールを組み立てた後に、三角形 (インデックスの数 ÷ 3 × インスタンス数) と使った絵 (重複なし) の GPU のメモリを数える。物理は Jolt の `GetNumActiveBodies` (眠っていない剛体)。音の出力先の名前は **MMDevice API** (`IMMDeviceEnumerator::GetDefaultAudioEndpoint` → `PKEY_Device_FriendlyName`)。ビューの報告は「パネルがこの 1 秒に描かれた」ときだけ作る
 - **どこ** — `src/platform/SystemInfo.cpp`・`plugins/rm_engine/game_production/editor/DebugPanel.cpp`・`DebugReports.cpp`・`Systems.cpp` (`SystemRunner::Run`)・`Scripts.cpp` (`ScriptRunner::Times`)・`Renderer3D.cpp` (`Stats`)・`plugins/rm_engine/particles/runtime/ParticlePlayer.cpp` (`CountAliveFor`・`ReadBackCount`)・`ParticleShader.cpp` (`AliveCount`)・`plugins/rm_engine/game_x_particles/runtime/ParticleStats.cpp`
 
+### スクリプトの型の「作る・消す・写す」も守る (決まった数の中継の関数) と、物理の体をその場で変える
+- **何か** — 核 (リフレクション) はスクリプトの型を、DLL の関数のポインタ (`construct` / `destruct` / `copy`) で作る・消す・写す。そこで落ちると (初めの値が null を読むなど) エディターごと落ちていた。ポインタには「どの型か」を渡せないので、テンプレートで 512 個の中継の関数 (`GuardedConstruct<N>` …) を作っておき、型を読むときに空いた番号を 1 つ割り当て、その番号の表に DLL の元の関数を入れる。中継の関数は `__try` / `__except` (構造化例外処理) の中で元の関数を呼び、落ちたらその物を 0 で埋めてコンソールに出す。型が要らなくなると番号を返す
+- **物理** — Jolt の体を、形・摩擦・重さなどが変わるたびに作り直すと、触れたことの知らせがまた来て、速さも 0 に戻っていた。種類 (動く・動かない・トリガー・平面) が変わるときだけ作り直し、形は `BodyInterface::SetShape`、摩擦・跳ね返り・重力の倍率は `SetFriction` など、重さと回転の固定は `MotionProperties::SetMassProperties` で、その場で変える
+- **どこ** — `plugins/rm_engine/game_production/runtime/Scripts.cpp` (`Guard`・`GuardedConstruct`)・`ScriptGuard.cpp` (`CallScriptConstruct`)・`plugins/rm_engine/physics/runtime/PhysicsWorld.cpp` (`Sync`)
+
 ### 枠の無い、形のある窓 (ゲーム制作のデバッグの窓)
 - **何か** — Windows の枠 (タイトルバーと縁) の無い窓。`WS_POPUP | WS_THICKFRAME` で作り、`WM_NCCALCSIZE` で枠の場所を 0 にして、窓全体を自分で描く。形は **ウィンドウ リージョン** (`SetWindowRgn`): 角の丸い四角 (`CreateRoundRectRgn`) を重ねた (`CombineRgn` の OR) 形の外は、窓ではなくなる (描かれず、クリックも後ろへ行く)。動かす所と大きさを変える縁は、`WM_NCHITTEST` に「ここはタイトルバー (HTCAPTION)」「ここは右下の角 (HTBOTTOMRIGHT)」と答えると、Windows がドラッグを引き受けてくれる
 - **工夫** — 形・当たり判定・描画が同じ配置の計算 (`LayoutDebugWindow`。純粋でテストあり) を使うので、ずれない。大きさが変わるたびにリージョンを作り直す。描き直しはタイマー (1 秒に 30 回) で、フレームごとの `InvalidateRect` はしない: Windows は「描き直し待ち」の窓を順に描くので、ずっと描き直し待ちの窓が 1 つあると、ほかの窓 (エディター本体) が描かれなくなる (前のデバッグのパネルを別の窓にしたときに固まった原因)。窓はエディターの窓が持ち主 (上に出て、タスクバーに出ず、一緒に閉じる)
@@ -965,6 +970,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-19 | スクリプトの型の作る・消す・写すを構造化例外処理で守る中継の関数 (テンプレートの番号の表) と、Jolt の体をその場で変える方法を足した |
 | 2026-11-19 | 雨と雪が物に当たる・濡れる (上から見た深度の地図)、天気のフェード (割合で混ぜる)、風 (足し合わせた距離でずらす) を足した |
 | 2026-11-19 | 雨と雪の当たりを、降る向きから見たコライダーの地図に変えた (風で屋根の下にも入る・雪は止まってから溶ける)。つなぎプラグイン「ゲーム制作 × 3D × 物理」を足した |
 | 2026-11-19 | 天候をプラグイン「天候」に分けた。3D 空間の描画に「向きの地図」と「面の塗りに足す口」(プラグインの HLSL を差し込む) を作った |

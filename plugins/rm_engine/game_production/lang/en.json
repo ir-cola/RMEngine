@@ -353,5 +353,6 @@
   "Play 中にビルド・読み込みしたスクリプトは、■ で止めたときに入れ替わります": "Scripts built or reloaded during Play take over when you stop with ■",
   "ビルドし直す: 全部作り直します ・ 読み込み直す: いちばん新しい DLL をもう一度読みます": "Rebuild: makes everything again ・ Reload: reads the newest DLL again",
   "(エディターを起動してから、または 0 に戻してからの数。コンソールの中身は消えません)": "(Counted since the editor started or since reset to 0. The console keeps its messages)",
-  "数を 0 に戻す": "Reset to 0"
+  "数を 0 に戻す": "Reset to 0",
+  " (保存していないシーン: いつも入る)": " (not saved yet: always in)"
 }

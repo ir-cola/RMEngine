@@ -1032,6 +1032,9 @@ void EditorScreen::BeginInstallPlugin(const PluginId& id) {
 }
 
 void EditorScreen::HandleShortcuts(ui::Context& c) {
+    // While the right button is held (the 3D scene view flies: Ctrl goes down, S back) no shortcut runs -
+    // Ctrl + S there is flying, not saving (2026-11-19).
+    if (c.In().down[static_cast<int>(ui::Mouse::Right)]) return;
     // Shared by the editor window and the panel windows: Ctrl+S works wherever the focus is - in a text
     // field too (what is typed there is already in the data: the fields apply each key). Before, the check
     // below came first and a focused field kept Ctrl+S from saving (2026-11-17 on screen: typed in the

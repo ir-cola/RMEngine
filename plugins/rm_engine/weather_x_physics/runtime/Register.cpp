@@ -67,7 +67,10 @@ void GatherBlockers(const game_production::Scene& scene, const std::function<con
                 if (c.trigger) continue;  // (passed through)
                 Add(physics::DimsOf(c, pose.scale), pose, e.data.id, *w, out);
             } else if (comp.type == character) {
-                Add(physics::DimsOf(*static_cast<const physics::Character*>(comp.value.Get())), pose, e.data.id, *w, out);
+                // (the body stands up on the entity's place as the physics has it: not turned, not scaled)
+                physics::Pose upright;
+                upright.position = pose.position;
+                Add(physics::DimsOf(*static_cast<const physics::Character*>(comp.value.Get())), upright, e.data.id, *w, out);
             }
         }
     }

@@ -25,6 +25,14 @@ struct Unknowns {
     struct Nested;
     std::vector<json::Value::Member> keys;                   // unknown keys, in file order
     std::vector<std::pair<std::string, std::string>> enums;  // field -> enum name not in this version
+    // field -> a value of another kind than this version's field (a newer version changed it: a number
+    // that became a list ...): the field runs with its default and the value is written back as it was,
+    // until the field is set (design R1 4-f: what cannot be read is kept).
+    std::vector<json::Value::Member> kept;
+    // array field -> how many elements it had when read: its elements' unknowns ("field[3]") belong to
+    // those places - when the count has changed since (a tool added or removed some), they are not
+    // written to other elements.
+    std::vector<std::pair<std::string, size_t>> lengths;
     std::vector<Nested> children;                            // "field" (struct) / "field[3]" (array element)
 
     bool Empty() const;
@@ -32,6 +40,8 @@ struct Unknowns {
     const Unknowns* Child(const std::string& key) const;
     const std::string* Enum(std::string_view field) const;
     void ForgetEnum(std::string_view field);
+    const json::Value* Kept(std::string_view field) const;
+    void ForgetKept(std::string_view field);
 };
 
 struct Unknowns::Nested {

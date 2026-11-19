@@ -76,6 +76,33 @@ unsigned long CallDestroy(void (*destroy)(void*), void* frame) {
     }
 }
 
+unsigned long CallConstruct(void (*construct)(void*), void* p) {
+    __try {
+        construct(p);
+        return 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return GetExceptionCode();
+    }
+}
+
+unsigned long CallDestruct(void (*destruct)(void*), void* p) {
+    __try {
+        destruct(p);
+        return 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return GetExceptionCode();
+    }
+}
+
+unsigned long CallCopy(void (*copy)(void*, const void*), void* dst, const void* src) {
+    __try {
+        copy(dst, src);
+        return 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return GetExceptionCode();
+    }
+}
+
 unsigned long CallInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out) {
     __try {
         *out = init(api, abi);
@@ -98,6 +125,10 @@ unsigned long CallCoroutineResume(int (*resume)(void*, RmWait*), void* frame, Rm
 }
 
 unsigned long CallCoroutineDestroy(void (*destroy)(void*), void* frame) { return Recovered(CallDestroy(destroy, frame)); }
+
+unsigned long CallScriptConstruct(void (*construct)(void*), void* p) { return Recovered(CallConstruct(construct, p)); }
+unsigned long CallScriptDestruct(void (*destruct)(void*), void* p) { return Recovered(CallDestruct(destruct, p)); }
+unsigned long CallScriptCopy(void (*copy)(void*, const void*), void* dst, const void* src) { return Recovered(CallCopy(copy, dst, src)); }
 
 unsigned long CallModuleInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out) {
     return Recovered(CallInit(init, api, abi, out));

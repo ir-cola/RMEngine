@@ -504,7 +504,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
     }
 
     contentH = y - top + 10;
-    w::EndScroll(c, "debug.scroll", view, contentH);
+    w::EndScroll(c, scrollId, view, contentH);  // (the tab's own: 2026-11-19, the thumb was another's)
 }
 
 }  // namespace rm::game_production

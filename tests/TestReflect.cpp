@@ -186,6 +186,51 @@ RM_TEST(Reflect_WrongTypesKeepTheValue) {
     CHECK(s.gravity.y == -9.8f);
     CHECK(s.window.width == 1280);
     CHECK(w.size() == 3);
+    // Kept and written back as they were (a newer version's value of another kind: design R1 4-f) -
+    // until the field is set (2026-11-19: before, the next save dropped them).
+    Settings k;
+    Unknowns u;
+    Load(k, v, &u, nullptr);
+    json::Value back = Save(k, &u);
+    CHECK(back.Get("speed").AsString() == "fast" && back.Get("gravity").IsArray() && back.Get("gravity").Size() == 0 && back.Get("window").AsInt() == 3);
+    const TypeDesc& t = TypeOf<Settings>();
+    for (size_t i = 0; i < t.fields.size(); ++i) {
+        if (std::string_view(t.fields[i].name) != "speed") continue;
+        SetFieldCommand set(t, FieldPath{i}, SaveField(t.fields[i], &k, &u), json::Value(7), [&] { return EditTarget{&k, &u}; }, "速さ", false);
+        set.Do();
+    }
+    back = Save(k, &u);
+    CHECK(back.Get("speed").AsDouble() == 7 && back.Get("window").AsInt() == 3);  // (chosen: the choice; the rest as they were)
+    // A number beyond what a float holds: as one that is not finite (it would become null, then the default).
+    Settings big;
+    json::Value bv = Save(big);
+    bv.Set("gravity", json::Value::MakeArray());
+    json::Value g = json::Value::MakeArray();
+    g.Push(1e39);
+    g.Push(2.0);
+    g.Push(0.0);
+    bv.Set("gravity", g);
+    Load(big, bv);
+    CHECK(big.gravity.x == -0.f || big.gravity.x == 0.f);
+    CHECK(big.gravity.y == 2.f);
+    CHECK(SanitizeNumber(FieldNamed(t, "speed"), 1e39, 4) == 4);
+    // An array's elements' unknowns stay with their places - not put on others when the count changed.
+    Settings arr;
+    json::Value av = Save(arr);
+    json::Value mons = json::Value::MakeArray();
+    for (int m = 0; m < 2; ++m) {
+        json::Value one = json::Value::MakeObject();
+        one.Set("width", 800 + m);
+        one.Set("hz", 60 + m);  // (a newer version's key)
+        mons.Push(one);
+    }
+    av.Set("monitors", mons);
+    Unknowns au;
+    Load(arr, av, &au, nullptr);
+    CHECK(Save(arr, &au).Get("monitors").At(1).Get("hz").AsInt() == 61);
+    arr.monitors.erase(arr.monitors.begin());  // (a tool takes the first out directly)
+    const json::Value after = Save(arr, &au);
+    CHECK(after.Get("monitors").Size() == 1 && after.Get("monitors").At(0).Find("hz") == nullptr && after.Get("monitors").At(0).Get("width").AsInt() == 801);
 }
 
 RM_TEST(Reflect_EqualsDiffCopy) {

@@ -46,7 +46,7 @@ struct SceneList {
     RM_PROPERTY() AssetRef open;   // empty: the first
     RM_PROPERTY() AssetRef first;  // the game starts here (empty, or not in the list: the list's first)
     // Scenes of the list an export leaves out (ゲームの設定 ▸ ビルド); the one the game starts with is
-    // always in. Play in the editor has every one.
+    // always in. Play in the editor leaves them out too (PlayScenes: the same numbers as the game).
     RM_PROPERTY() std::vector<AssetRef> notBuilt;
 };
 // The scene goes into an export (not left out - or the one the game starts with).
@@ -60,6 +60,10 @@ AssetRef FirstScene(const SceneList& list);
 // The scenes of the game, in order: the list's, then the one open in the editor when it is not in it
 // (a new scene not saved yet: an empty ref) - what Play can switch to and what an export puts in.
 std::vector<AssetRef> GameScenes(const SceneList& list, const AssetRef& open);
+// What Play in the editor can switch to, numbered as the exported game numbers its scenes: GameScenes
+// without the ones left out of the build - and the one open, when it is left out, last (it plays, but
+// the scenes after it keep the exported game's numbers).
+std::vector<AssetRef> PlayScenes(const SceneList& list, const AssetRef& open);
 // A scene's name, as Game::LoadScene("…") takes it: its file's name without .rmscene
 // ("Assets/Scenes/Title.rmscene" -> "Title").
 std::string SceneNameOf(std::string_view path);

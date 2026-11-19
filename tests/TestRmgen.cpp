@@ -106,6 +106,21 @@ RM_TEST(Rmgen_OutputNamesNeverMeet) {
     CHECK(diags.empty());
 }
 
+// #if 0 is skipped; a field in another #if / #ifdef inside a struct is an error (its count would differ
+// by build); a macro's \ continuation works with CRLF too (2026-11-19).
+RM_TEST(Rmgen_Preprocessor) {
+    const Result off = Run("RM_STRUCT()\nstruct A {\n    RM_PROPERTY() int a = 0;\n#if 0\n    RM_PROPERTY() int b = 0;\n    junk }{ ;\n#endif\n};\n");
+    CHECK(off.diags.empty() && off.headers[0].structs.size() == 1 && off.headers[0].structs[0].fields.size() == 1);
+    const Result debug = Run("RM_STRUCT()\nstruct A {\n    RM_PROPERTY() int a = 0;\n#ifdef _DEBUG\n    RM_PROPERTY() int b = 0;\n#endif\n};\n");
+    CHECK(Has(debug, "RM0014", 5));
+    // A struct wholly inside a guard is fine.
+    const Result guard = Run("#ifndef A_H\n#define A_H\nRM_STRUCT()\nstruct A {\n    RM_PROPERTY() int a = 0;\n};\n#endif\n");
+    CHECK(guard.diags.empty() && guard.headers[0].structs.size() == 1);
+    // CRLF: the continued line of a macro is the macro's, not code.
+    const Result crlf = Run("#define TWO(a) \\\r\n    struct a { int x; };\r\nRM_STRUCT()\r\nstruct B {\r\n    RM_PROPERTY() int b = 0;\r\n};\r\n");
+    CHECK(crlf.diags.empty() && crlf.headers[0].structs.size() == 1 && crlf.headers[0].structs[0].name == "B");
+}
+
 RM_TEST(Rmgen_T4_UnannotatedFieldIsAnError) {
     const Result r = Run("RM_STRUCT()\nstruct A {\n    RM_PROPERTY() int a = 0;\n    float forgot = 1;\n};\n");
     CHECK(Has(r, "RM0001", 4));

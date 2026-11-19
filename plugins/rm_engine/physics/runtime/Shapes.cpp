@@ -91,7 +91,9 @@ ShapeDims DimsOf(const Collider& c, Vec3 scale) {
     const Vec3 s = Abs(scale);
     ShapeDims d;
     d.offset = {c.offset.x * scale.x, c.offset.y * scale.y, c.offset.z * scale.z};
-    d.meshScale = scale;
+    // (a scale of 0 would make Jolt's inverse scale infinite: at least 0.001, its sign kept)
+    auto least = [](float k) { return std::fabs(k) < 0.001f ? (k < 0 ? -0.001f : 0.001f) : k; };
+    d.meshScale = {least(scale.x), least(scale.y), least(scale.z)};
     switch (c.shape) {
         case Shape::Box:
             d.kind = ShapeDims::Kind::Box;

@@ -3,6 +3,8 @@
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_x_particles/runtime/CollisionShapes.h"
 #include "rm_engine/physics/runtime/Components.h"
+#include "rm_engine/physics/runtime/Shapes.h"
+#include "rm_engine/space3d/runtime/View.h"
 
 #include <algorithm>
 #include <cmath>
@@ -22,61 +24,55 @@ void Put(float (&to)[3], Vec3 v) {
     to[2] = v.z;
 }
 
-// A column of the matrix (m[column][row]): an axis of the entity in the world, with its scale.
+// A column of a turn (m[column][row]): one of the entity's axes in the world (length 1).
 Vec3 Column(const Mat4& m, int c) { return {m.m[c][0], m.m[c][1], m.m[c][2]}; }
-float Length(Vec3 v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
-Vec3 Unit(Vec3 v, Vec3 otherwise) {
-    const float l = Length(v);
-    return l > 1e-8f ? Vec3{v.x / l, v.y / l, v.z / l} : otherwise;
-}
 
 }  // namespace
 
 void GatherShapes(const game_production::Scene& scene, const std::function<const Mat4*(int)>& world, std::vector<CollisionShape>& out) {
+    // The shapes as the physics makes its bodies (physics::DimsOf / PoseOf: the same sizes, minimums and
+    // the character standing up, not turned or scaled - written once there, 2026-11-19).
     const std::string collider = reflect::TypeOf<physics::Collider>().name, character = reflect::TypeOf<physics::Character>().name;
+    auto add = [&](const physics::ShapeDims& d, const physics::Pose& pose) {
+        CollisionShape s{};
+        Put(s.axisX, Column(pose.turn, 0));
+        Put(s.axisY, Column(pose.turn, 1));
+        Put(s.axisZ, Column(pose.turn, 2));
+        const Vec3 at = space3d::TransformDirection(pose.turn, d.offset);
+        Put(s.center, {pose.position.x + at.x, pose.position.y + at.y, pose.position.z + at.z});
+        switch (d.kind) {
+            case physics::ShapeDims::Kind::Box:
+                s.type = CollisionType::Box;
+                s.sizeX = d.half.x;
+                s.sizeY = d.half.y;
+                s.sizeZ = d.half.z;
+                break;
+            case physics::ShapeDims::Kind::Sphere:
+                s.type = CollisionType::Sphere;
+                s.sizeX = d.radius;
+                break;
+            case physics::ShapeDims::Kind::Capsule:
+                s.type = CollisionType::Capsule;
+                s.sizeX = d.radius;
+                s.sizeY = d.halfHeight;
+                break;
+            case physics::ShapeDims::Kind::Mesh: return;  // (a mesh's shape is the model's: not here)
+        }
+        out.push_back(s);
+    };
     for (const game_production::SceneEntity& e : scene.Entities()) {
         const Mat4* w = world ? world(e.data.id) : nullptr;
         if (!w) continue;
-        const Vec3 ax = Column(*w, 0), ay = Column(*w, 1), az = Column(*w, 2);
-        const float sx = Length(ax), sy = Length(ay), sz = Length(az);
-        const Vec3 ux = Unit(ax, {1, 0, 0}), uy = Unit(ay, {0, 1, 0}), uz = Unit(az, {0, 0, 1});
+        const physics::Pose pose = physics::PoseOf(*w);
         for (const game_production::Component& comp : e.components) {
             if (!comp.Known()) continue;
-            CollisionShape s{};
-            Put(s.axisX, ux);
-            Put(s.axisY, uy);
-            Put(s.axisZ, uz);
             if (comp.type == collider) {
                 const auto& c = *static_cast<const physics::Collider*>(comp.value.Get());
-                if (c.trigger || c.shape == physics::Shape::Mesh) continue;  // (a mesh's shape is the model's: not here)
-                Put(s.center, space3d::TransformPoint(*w, c.offset));
-                switch (c.shape) {
-                    case physics::Shape::Box:
-                        s.type = CollisionType::Box;
-                        s.sizeX = c.size.x * sx * 0.5f;
-                        s.sizeY = c.size.y * sy * 0.5f;
-                        s.sizeZ = c.size.z * sz * 0.5f;
-                        break;
-                    case physics::Shape::Sphere:
-                        s.type = CollisionType::Sphere;
-                        s.sizeX = c.radius * std::max({sx, sy, sz});
-                        break;
-                    case physics::Shape::Capsule:
-                        s.type = CollisionType::Capsule;
-                        s.sizeX = c.radius * std::max(sx, sz);
-                        s.sizeY = std::max(0.f, c.height * sy * 0.5f - s.sizeX);
-                        break;
-                    default: continue;
-                }
-                out.push_back(s);
+                if (!c.trigger) add(physics::DimsOf(c, pose.scale), pose);
             } else if (comp.type == character) {
-                // The body: a capsule standing on the entity's place.
-                const auto& c = *static_cast<const physics::Character*>(comp.value.Get());
-                Put(s.center, space3d::TransformPoint(*w, Vec3{0, c.height * 0.5f, 0}));
-                s.type = CollisionType::Capsule;
-                s.sizeX = c.radius;
-                s.sizeY = std::max(0.f, c.height * 0.5f - c.radius);
-                out.push_back(s);
+                physics::Pose upright;
+                upright.position = pose.position;
+                add(physics::DimsOf(*static_cast<const physics::Character*>(comp.value.Get())), upright);
             }
         }
     }

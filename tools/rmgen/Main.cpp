@@ -238,7 +238,8 @@ int wmain(int argc, wchar_t** argv) {
         if (!emit("rm_all_types.cpp", rmgen::EmitAll(headers))) return 2;
     }
     for (fs::directory_iterator it(out, ec), end; !ec && it != end; it.increment(ec)) {
-        if (it->path().extension() == L".cpp" && !produced.count(it->path().filename())) fs::remove(it->path(), ec);
+        std::error_code removeEc;  // (its own: one that cannot be removed does not stop the walk)
+        if (it->path().extension() == L".cpp" && !produced.count(it->path().filename())) fs::remove(it->path(), removeEc);
     }
     size_t types = 0;
     for (const auto& h : headers) types += h.structs.size() + h.enums.size();

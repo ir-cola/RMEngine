@@ -74,7 +74,8 @@ bool Context::IsHovered(const Rect& r) const {
 bool Context::KeyPressed(Key k, bool ctrl, bool shift) const {
     if (!inputEnabled_) return false;
     for (const auto& e : in_->keys) {
-        if (e.key == k && e.ctrl == ctrl && e.shift == shift) return true;
+        // (no shortcut has Alt: Ctrl+Alt is AltGr on many keyboards - a letter typed, not Ctrl+S)
+        if (e.key == k && e.ctrl == ctrl && e.shift == shift && !e.alt) return true;
     }
     return false;
 }

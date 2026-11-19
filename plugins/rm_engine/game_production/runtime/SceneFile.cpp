@@ -32,6 +32,15 @@ AssetRef FirstScene(const SceneList& list) {
     return {};
 }
 
+std::vector<AssetRef> PlayScenes(const SceneList& list, const AssetRef& open) {
+    std::vector<AssetRef> out;
+    for (const AssetRef& s : GameScenes(list, open)) {
+        if (s.Empty() || SceneBuilt(list, s)) out.push_back(s);
+    }
+    if (std::find(out.begin(), out.end(), open) == out.end()) out.push_back(open);  // (left out, but open: it plays)
+    return out;
+}
+
 std::vector<AssetRef> GameScenes(const SceneList& list, const AssetRef& open) {
     std::vector<AssetRef> out;
     for (const AssetRef& s : list.scenes) {

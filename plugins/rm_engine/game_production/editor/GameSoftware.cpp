@@ -684,14 +684,25 @@ public:
             view_.Set("export", std::move(e));
             return;
         }
+        // While playing (2026-11-19): the game's name changes in place - the game settings go back at Stop,
+        // as ゲーム設定's edits do - and never into the history; the exe's name (the project's export
+        // settings: not put back at Stop) is not changed then.
+        if (Running() && name == "exeName") {
+            log::Info("Play 中は exe の名前を変えられません (止めてから)");
+            return;
+        }
         auto push = [&](const reflect::TypeDesc& type, std::string_view field, void* object, reflect::Unknowns* unknowns) {
             for (size_t i = 0; i < type.fields.size(); ++i) {
                 if (type.fields[i].name != field) continue;
                 json::Value before = reflect::SaveField(type.fields[i], object, unknowns);
-                host_.History().Push(std::make_unique<reflect::SetFieldCommand>(type, reflect::FieldPath{i}, std::move(before), edit.after,
-                                                                                [object, unknowns] { return reflect::EditTarget{object, unknowns}; },
-                                                                                edit.label, edit.merge),
-                                      false);
+                auto cmd = std::make_unique<reflect::SetFieldCommand>(type, reflect::FieldPath{i}, std::move(before), edit.after,
+                                                                      [object, unknowns] { return reflect::EditTarget{object, unknowns}; }, edit.label,
+                                                                      edit.merge);
+                if (Running()) {
+                    cmd->Do();
+                } else {
+                    host_.History().Push(std::move(cmd), false);
+                }
             }
         };
         if (name == "title") push(reflect::TypeOf<GameSettings>(), "title", &settings_, &unknowns_);
@@ -748,9 +759,14 @@ public:
         const AssetRef first = FirstScene(sceneList_);
         for (const AssetRef& ref : GameScenes(sceneList_, AssetRef{slot_.guid})) {
             bool built = ref.Empty() || SceneBuilt(sceneList_, ref);
-            const bool always = ref.Empty() || ref == first || (first.Empty() && ref == AssetRef{slot_.guid});
+            const bool initial = ref == first || (first.Empty() && ref == AssetRef{slot_.guid});
+            const bool always = initial || ref.Empty();  // (a scene not saved yet: the open one - always in)
             std::wstring label = Utf8ToWide(SceneTitle(ref));
-            if (always) label += Tr(L" (初期シーン: いつも入る)");
+            if (initial) {
+                label += Tr(L" (初期シーン: いつも入る)");
+            } else if (always) {
+                label += Tr(L" (保存していないシーン: いつも入る)");
+            }
             c.PushId(ref.Empty() ? std::string("new") : ref.guid);
             const bool was = built;
             editor::w::Checkbox(c, "built", {area.x + 4, y, area.w - 4, 24}, built, label);
@@ -826,7 +842,9 @@ public:
     // --- Play --------------------------------------------------------------------------------
     void Tick(ui::Context& c) override {
         // Scripts built again: swapped here, between frames (never while playing: at Stop).
-        scripts_.SetGlobals(settings_.globals);  // (an edit of the list: the header and a build, a second later)
+        // (an edit of the list: the header and a build, a second later - never from Play's own values: they
+        // go back at Stop)
+        if (!Running()) scripts_.SetGlobals(settings_.globals);
         scripts_.Poll(c);
         if (debugWindow_ && !debugWindow_->IsOpen()) debugWindow_.reset();  // (closed by its × / Alt+F4)
         if (settingsWindow_ && !settingsWindow_->IsOpen()) settingsWindow_.reset();
@@ -1180,7 +1198,8 @@ private:
         debug_.Clear();
         scripts_.World().debug = &debug_;  // the editor shows rm::Debug's lines (an exported game has none)
         // The scenes Game::LoadScene can switch to: the game's (the list, and this one when it is not in it).
-        playScenes_ = GameScenes(sceneList_, AssetRef{slot_.guid});
+        // (numbered as the exported game numbers them: the ones left out of the build are not there either)
+        playScenes_ = PlayScenes(sceneList_, AssetRef{slot_.guid});
         ScriptWorld& world = scripts_.World();
         world.sceneNames.clear();
         world.sceneIds.clear();
@@ -1899,6 +1918,7 @@ private:
             if (editor::w::ComboBox(c, "first_scene", combo, first.Empty() ? Tr(L"(なし)") : Utf8ToWide(SceneTitle(first)), !Running()).clicked) {
                 firstScenePopup_.OpenAt(combo.x, combo.Bottom());
             }
+            if (firstScenePopup_.open && Running()) firstScenePopup_.open = false;  // (Play began while it was open)
             if (firstScenePopup_.open) {
                 std::vector<editor::w::MenuItem> items;
                 for (const AssetRef& ref : sceneList_.scenes) {
@@ -2526,6 +2546,7 @@ private:
                     if (!listed && !ref.Empty()) {
                         editor::tree::Action add;
                         add.label = Tr(L"一覧に足す");
+                        add.enabled = !playing;
                         add.run = [this, ref] { g_.EditSceneList(TrU8("シーンを一覧に足す"), [&](SceneList& l) { l.scenes.push_back(ref); }); };
                         list.push_back(std::move(add));
                     }
@@ -3314,7 +3335,7 @@ private:
     std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // over the game view (the game UI)
     std::map<std::string, std::unique_ptr<SceneView>> viewPanels_;  // the plugins' panels (ViewPanelInfo), by id
     bool screensAsked_ = false;
-    std::vector<AssetRef> playScenes_;  // the scenes Play can switch to (GameScenes when it started)
+    std::vector<AssetRef> playScenes_;  // the scenes Play can switch to (PlayScenes when it started)
     std::vector<std::string> cameraTypes_;  // the components the game sees through (SceneCamera)
     // シーンの一覧 panel: the row chosen (a scene's id; "" = the new scene not saved yet), renaming it.
     std::optional<AssetRef> sceneChosen_;

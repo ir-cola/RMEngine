@@ -115,7 +115,7 @@ std::string ShowIfProblem(const TypeDesc& owner, const FieldDesc& f) {
 // ---------------------------------------------------------------------------
 
 bool Unknowns::Empty() const {
-    if (!keys.empty() || !enums.empty()) return false;
+    if (!keys.empty() || !enums.empty() || !kept.empty()) return false;
     return std::all_of(children.begin(), children.end(), [](const Nested& c) { return c.value.Empty(); });
 }
 
@@ -146,12 +146,27 @@ void Unknowns::ForgetEnum(std::string_view field) {
     std::erase_if(enums, [&](const auto& e) { return e.first == field; });
 }
 
+const json::Value* Unknowns::Kept(std::string_view field) const {
+    for (const auto& [f, value] : kept) {
+        if (f == field) return &value;
+    }
+    return nullptr;
+}
+
+void Unknowns::ForgetKept(std::string_view field) {
+    std::erase_if(kept, [&](const auto& k) { return k.first == field; });
+}
+
 // ---------------------------------------------------------------------------
 // Numbers
 // ---------------------------------------------------------------------------
 
 double SanitizeNumber(const FieldDesc& f, double v, double fallback) {
-    if (!std::isfinite(v)) v = fallback;
+    // Not finite, or more than a float field holds (1e39: it would become infinity, then null on the
+    // next save, then the default - 2026-11-19): the current value.
+    const FieldType t = f.array ? f.array->element.type : f.value.type;
+    const bool floats = t == FieldType::Float || t == FieldType::Vec2 || t == FieldType::Vec3 || t == FieldType::Color;
+    if (!std::isfinite(v) || (floats && std::fabs(v) > static_cast<double>(std::numeric_limits<float>::max()))) v = fallback;
     if (f.hasMin) v = std::max(v, f.min);
     if (f.hasMax) v = std::min(v, f.max);
     if (f.value.type == FieldType::Int || (f.array && f.array->element.type == FieldType::Int)) {
@@ -275,6 +290,9 @@ void LoadValue(const FieldDesc& f, const ValueType& vt, void* p, const json::Val
                Warnings* w, const char* typeName);
 
 json::Value SaveValue(const FieldDesc& f, const ValueType& vt, const void* p, const Unknowns* parent, const std::string& key) {
+    if (parent) {
+        if (const json::Value* kept = parent->Kept(key)) return *kept;  // (a value of another kind: as it was read)
+    }
     switch (vt.type) {
         case FieldType::Bool: return json::Value(*static_cast<const bool*>(p));
         case FieldType::Int: return json::Value(static_cast<int64_t>(*static_cast<const int*>(p)));
@@ -301,8 +319,16 @@ json::Value SaveValue(const FieldDesc& f, const ValueType& vt, const void* p, co
             json::Value a = json::Value::MakeArray();
             const ArrayOps& ops = *f.array;
             const size_t n = ops.size(p);
+            // The elements' unknowns go with the places they were read at: not when the count has
+            // changed since (elements added or removed directly: they would land on other elements).
+            const Unknowns* elements = parent;
+            if (parent) {
+                for (const auto& [k, count] : parent->lengths) {
+                    if (k == key && count != n) elements = nullptr;
+                }
+            }
             for (size_t i = 0; i < n; ++i) {
-                a.Push(SaveValue(f, ops.element, ops.at(const_cast<void*>(p), i), parent, std::format("{}[{}]", key, i)));
+                a.Push(SaveValue(f, ops.element, ops.at(const_cast<void*>(p), i), elements, std::format("{}[{}]", key, i)));
             }
             return a;
         }
@@ -312,8 +338,12 @@ json::Value SaveValue(const FieldDesc& f, const ValueType& vt, const void* p, co
 
 void LoadValue(const FieldDesc& f, const ValueType& vt, void* p, const json::Value& v, Unknowns* parent, const std::string& key,
                Warnings* w, const char* typeName) {
+    if (parent) parent->ForgetKept(key);
     auto wrongType = [&] {
-        Warn(w, std::format("{}{}: {} が必要なところに別の種類の値があったので、読み飛ばしました", Where(typeName), key, TypeWord(vt.type)));
+        // Run with the default, but keep the value and write it back (a newer version's: design R1 4-f).
+        Warn(w, std::format("{}{}: {} が必要なところに別の種類の値があったので、既定の値で動かします (保存すると元のまま残ります)",
+                            Where(typeName), key, TypeWord(vt.type)));
+        if (parent) parent->kept.emplace_back(key, v);
     };
     auto number = [&](double current, double& out) -> bool {
         if (!v.IsNumber()) {
@@ -419,6 +449,10 @@ void LoadValue(const FieldDesc& f, const ValueType& vt, void* p, const json::Val
             }
             const ArrayOps& ops = *f.array;
             ops.resize(p, v.Size());
+            if (parent) {
+                std::erase_if(parent->lengths, [&](const auto& l) { return l.first == key; });
+                parent->lengths.emplace_back(key, v.Size());
+            }
             for (size_t i = 0; i < v.Size(); ++i) {
                 LoadValue(f, ops.element, ops.at(p, i), v.At(i), parent, std::format("{}[{}]", key, i), w, typeName);
             }

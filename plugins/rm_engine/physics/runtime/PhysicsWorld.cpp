@@ -186,6 +186,9 @@ private:
         uint32_t a = Key(x), b = Key(y);
         if (a > b) std::swap(a, b);
         std::lock_guard lock(mu_);
+        // (a parting told for a pair not known - its body has gone, Jolt tells after - makes no entry:
+        // before, an entry of 0 stayed for ever)
+        if (d < 0 && !touching_.contains({a, b})) return;
         int& n = touching_[{a, b}];
         const int before = n;
         n = std::max(0, n + d);
@@ -233,7 +236,8 @@ struct PhysicsWorld::Impl {
 
     struct BodyRec {
         JPH::BodyID id;
-        uint64_t settings = 0;
+        uint64_t settings = 0;           // what it was made as (another: made again)
+        uint64_t shape = 0, numbers = 0;  // its shape and numbers (another: changed in place)
         Motion motion = Motion::Static;
         bool flat = false, trigger = false;
         Vec3 wrotePosition{0, 0, 0};  // the pose last written into (or read from) the Transform
@@ -382,11 +386,22 @@ struct PhysicsWorld::Impl {
             TellOnce(id, std::format("「{}」のメッシュのコライダーは動かない物だけです (動かない物として扱います)", e.data.name));
             motion = Motion::Static;
         }
+        // What makes the body again (another kind of body) / what changes in it as it is - its shape, its
+        // numbers (2026-11-19: before, any change made it again: OnHit / OnTriggerEnter came again without
+        // an exit, and a moving body stopped).
         Fingerprint fp;
-        fp.Add(flat).Add(static_cast<int>(dims.kind)).Add(dims.half).Add(dims.radius).Add(dims.halfHeight).Add(dims.offset).Add(dims.meshScale);
-        fp.Add(trigger).Add(static_cast<int>(motion));
-        if (rb) fp.Add(rb->mass).Add(rb->friction).Add(rb->bounciness).Add(rb->gravityScale).Add(rb->lockRotationX).Add(rb->lockRotationY).Add(rb->lockRotationZ);
-        if (dims.kind == ShapeDims::Kind::Mesh) fp.Add(ModelOf(e).guid);
+        fp.Add(flat).Add(trigger).Add(static_cast<int>(motion));
+        Fingerprint shapeFp;
+        shapeFp.Add(static_cast<int>(dims.kind)).Add(dims.half).Add(dims.radius).Add(dims.halfHeight).Add(dims.offset).Add(dims.meshScale);
+        if (dims.kind == ShapeDims::Kind::Mesh) shapeFp.Add(ModelOf(e).guid);
+        Fingerprint numbersFp;
+        if (rb) numbersFp.Add(rb->mass).Add(rb->friction).Add(rb->bounciness).Add(rb->gravityScale).Add(rb->lockRotationX).Add(rb->lockRotationY).Add(rb->lockRotationZ);
+        // On the plane: X, Y and the turn about Z only. In 3D: the turns not locked.
+        JPH::EAllowedDOFs dofs = flat ? (JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY | JPH::EAllowedDOFs::RotationZ)
+                                      : JPH::EAllowedDOFs::All;
+        if (rb && rb->lockRotationX) dofs = dofs & ~JPH::EAllowedDOFs::RotationX;
+        if (rb && rb->lockRotationY) dofs = dofs & ~JPH::EAllowedDOFs::RotationY;
+        if (rb && rb->lockRotationZ) dofs = dofs & ~JPH::EAllowedDOFs::RotationZ;
         JPH::BodyInterface& bi = system.GetBodyInterface();
         const JPH::RVec3 position = J(pose.position);
         const JPH::Quat turn = QuatOf(pose.turn);
@@ -414,12 +429,6 @@ struct PhysicsWorld::Impl {
                 s.mMassPropertiesOverride.mMass = std::max(rb->mass, 0.001f);
                 s.mMotionQuality = JPH::EMotionQuality::LinearCast;  // a fast thing (a bullet) does not go through a wall
             }
-            // On the plane: X, Y and the turn about Z only. In 3D: the turns not locked.
-            JPH::EAllowedDOFs dofs = flat ? (JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY | JPH::EAllowedDOFs::RotationZ)
-                                          : JPH::EAllowedDOFs::All;
-            if (rb && rb->lockRotationX) dofs = dofs & ~JPH::EAllowedDOFs::RotationX;
-            if (rb && rb->lockRotationY) dofs = dofs & ~JPH::EAllowedDOFs::RotationY;
-            if (rb && rb->lockRotationZ) dofs = dofs & ~JPH::EAllowedDOFs::RotationZ;
             if (type == JPH::EMotionType::Dynamic) s.mAllowedDOFs = dofs;
             const JPH::BodyID body = bi.CreateAndAddBody(s, type == JPH::EMotionType::Static ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
             if (body.IsInvalid()) {
@@ -429,6 +438,8 @@ struct PhysicsWorld::Impl {
             BodyRec r;
             r.id = body;
             r.settings = fp.h;
+            r.shape = shapeFp.h;
+            r.numbers = numbersFp.h;
             r.motion = motion;
             r.flat = flat;
             r.trigger = trigger;
@@ -441,6 +452,33 @@ struct PhysicsWorld::Impl {
         }
         BodyRec& r = found->second;
         r.seen = true;
+        // Its shape or its numbers changed (a size that pulses, a friction set while playing): in place -
+        // what it touches and how it moves stay.
+        if (r.shape != shapeFp.h) {
+            JPH::RefConst<JPH::Shape> shape = ShapeOf(dims, e);
+            if (!shape) {
+                Remove(id);
+                return false;
+            }
+            bi.SetShape(r.id, shape, true, r.motion == Motion::Static ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
+            r.shape = shapeFp.h;
+            r.numbers = ~numbersFp.h;  // (its mass is the shape's now: set again below)
+        }
+        if (r.numbers != numbersFp.h) {
+            bi.SetFriction(r.id, rb ? rb->friction : 0.5f);
+            bi.SetRestitution(r.id, rb ? rb->bounciness : 0.f);
+            bi.SetGravityFactor(r.id, rb ? rb->gravityScale : 1.f);
+            if (rb && bi.GetMotionType(r.id) == JPH::EMotionType::Dynamic) {
+                JPH::BodyLockWrite lock(system.GetBodyLockInterface(), r.id);
+                if (lock.Succeeded()) {
+                    JPH::Body& body = lock.GetBody();
+                    JPH::MassProperties mass = body.GetShape()->GetMassProperties();
+                    mass.ScaleToMass(std::max(rb->mass, 0.001f));
+                    body.GetMotionProperties()->SetMassProperties(dofs, mass);
+                }
+            }
+            r.numbers = numbersFp.h;
+        }
         // Where the Transform says now: a script (or the inspector) moved it -> the body goes there.
         // (the Transform keeps what was written give or take the float noise of going through its angles)
         const bool moved = std::fabs(pose.position.x - r.wrotePosition.x) + std::fabs(pose.position.y - r.wrotePosition.y) +

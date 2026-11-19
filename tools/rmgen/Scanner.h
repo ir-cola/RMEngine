@@ -22,6 +22,8 @@
 //   RM0012  two headers that would make the same generated file (or have the same include path)
 //   RM0013  (scripts) something a script DLL cannot have yet: RM_STRUCT / RM_ENUM, a field of a list,
 //           an enum, a struct or an AssetRef
+//   RM0014  a field inside #if / #ifdef within a reflected struct (the fields would differ by build;
+//           #if 0 ... #endif is skipped and fine)
 
 #include <string>
 #include <string_view>

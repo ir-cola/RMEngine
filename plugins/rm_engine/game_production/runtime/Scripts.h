@@ -213,6 +213,13 @@ struct ScriptType {
     std::unordered_map<const RmStructDesc*, std::unique_ptr<Nested>> structs;
     std::unordered_map<const RmEnumDesc*, std::unique_ptr<EnumType>> enums;
     std::vector<std::unique_ptr<reflect::ArrayOps>> lists;
+    // The guarded stand-ins its TypeDescs use for the DLL's construct / destruct / copy (a crash there
+    // stops that object, not the editor or the game), given back when it goes.
+    std::vector<size_t> guards;
+    ScriptType() = default;
+    ScriptType(const ScriptType&) = delete;
+    ScriptType& operator=(const ScriptType&) = delete;
+    ~ScriptType();
 };
 // This engine is a Debug build (its scripts must be too: RmModuleFlag_Debug).
 #ifdef _DEBUG
@@ -352,5 +359,9 @@ unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, R
 // A coroutine's resume / destroy, guarded the same way (0 = fine). *alive: resume's answer.
 unsigned long CallCoroutineResume(int (*resume)(void*, RmWait*), void* frame, RmWait* next, int* alive);
 unsigned long CallCoroutineDestroy(void (*destroy)(void*), void* frame);
+// A script's (or its RM_STRUCT's) object made, destroyed, copied by the DLL's code - guarded the same way.
+unsigned long CallScriptConstruct(void (*construct)(void*), void* p);
+unsigned long CallScriptDestruct(void (*destruct)(void*), void* p);
+unsigned long CallScriptCopy(void (*copy)(void*, const void*), void* dst, const void* src);
 
 }  // namespace rm::game_production

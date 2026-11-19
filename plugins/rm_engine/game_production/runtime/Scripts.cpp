@@ -2,6 +2,7 @@
 
 #include "rm_engine/game_production/runtime/Systems.h"
 
+#include "base/Log.h"
 #include "base/Utf.h"
 #include "platform/Shell.h"
 #include "platform/Win.h"
@@ -14,6 +15,8 @@
 #include <format>
 #include <limits>
 #include <system_error>
+#include <array>
+#include <mutex>
 #include <utility>
 
 namespace rm::game_production {
@@ -294,7 +297,7 @@ int ApiBinding(void* ctx, const char* name, uint32_t index, int32_t* control, fl
 }
 int ApiSetBinding(void* ctx, const char* name, uint32_t index, int32_t control, float scale) {
     InputAction* a = PlayerAction(W(ctx), name);
-    if (!a || index > a->bindings.size()) return 0;
+    if (!a || index > a->bindings.size() || !std::isfinite(scale)) return 0;  // (NaN would stay in the action, and in input.json)
     const InputBinding b{static_cast<InputControl>(control), std::clamp(scale, -1.0f, 1.0f)};
     if (index == a->bindings.size()) {
         a->bindings.push_back(b);
@@ -684,6 +687,73 @@ reflect::FieldDesc MakeField(ScriptType& t, const RmFieldDesc& in) {
     return fd;
 }
 
+// --- Guarded construct / destruct / copy ---------------------------------------------------------
+// A TypeDesc's construct / destruct / copy are plain function pointers called by the core (a scene
+// adding a script, deleting one, copying the scene for Play): for a script's types they are stand-ins
+// from a fixed pool, each calling the DLL's own inside __try (ScriptGuard.cpp). A crash there (a
+// default value that reads a null pointer, a destructor that throws) is told and the object is left
+// zeroed - that object, not the editor or the game, goes wrong (2026-11-19). The pool full: the DLL's
+// own, unguarded.
+struct GuardSlot {
+    void (*construct)(void*) = nullptr;
+    void (*destruct)(void*) = nullptr;
+    void (*copy)(void*, const void*) = nullptr;
+    size_t size = 0;
+    const char* name = "";
+    bool used = false;
+};
+constexpr size_t kGuardSlots = 512;
+GuardSlot g_guards[kGuardSlots];
+std::mutex g_guardsMutex;
+
+void TellGuardCrash(const char* what, const char* name, unsigned long code) {
+    log::Error("スクリプト「{}」の{}で例外が起きました (0x{:08X})。その物は空のまま動きます", name, what, code);
+}
+template <size_t N>
+void GuardedConstruct(void* p) {
+    const GuardSlot& s = g_guards[N];
+    if (const unsigned long code = CallScriptConstruct(s.construct, p); code != 0) {
+        std::memset(p, 0, s.size);
+        TellGuardCrash("初めの値 (作るとき)", s.name, code);
+    }
+}
+template <size_t N>
+void GuardedDestruct(void* p) {
+    const GuardSlot& s = g_guards[N];
+    if (const unsigned long code = CallScriptDestruct(s.destruct, p); code != 0) TellGuardCrash("後片付け (消すとき)", s.name, code);
+}
+template <size_t N>
+void GuardedCopy(void* dst, const void* src) {
+    const GuardSlot& s = g_guards[N];
+    if (const unsigned long code = CallScriptCopy(s.copy, dst, src); code != 0) {
+        std::memset(dst, 0, s.size);
+        TellGuardCrash("写し (Play を始めるときなど)", s.name, code);
+    }
+}
+template <size_t... I>
+constexpr std::array<void (*)(void*), sizeof...(I)> Constructs(std::index_sequence<I...>) { return {&GuardedConstruct<I>...}; }
+template <size_t... I>
+constexpr std::array<void (*)(void*), sizeof...(I)> Destructs(std::index_sequence<I...>) { return {&GuardedDestruct<I>...}; }
+template <size_t... I>
+constexpr std::array<void (*)(void*, const void*), sizeof...(I)> Copies(std::index_sequence<I...>) { return {&GuardedCopy<I>...}; }
+constexpr auto kConstructs = Constructs(std::make_index_sequence<kGuardSlots>{});
+constexpr auto kDestructs = Destructs(std::make_index_sequence<kGuardSlots>{});
+constexpr auto kCopies = Copies(std::make_index_sequence<kGuardSlots>{});
+
+// `desc`'s functions become guarded stand-ins (kept in `t`, given back with it).
+void Guard(ScriptType& t, reflect::TypeDesc& desc) {
+    std::lock_guard lock(g_guardsMutex);
+    for (size_t i = 0; i < kGuardSlots; ++i) {
+        if (g_guards[i].used) continue;
+        g_guards[i] = {desc.construct, desc.destruct, desc.copy, desc.size, desc.name, true};
+        desc.construct = kConstructs[i];
+        desc.destruct = kDestructs[i];
+        desc.copy = kCopies[i];
+        t.guards.push_back(i);
+        return;
+    }
+}
+
 const reflect::TypeDesc* StructOf(ScriptType& t, const RmStructDesc* s) {
     if (auto it = t.structs.find(s); it != t.structs.end()) return &it->second->desc;
     auto n = std::make_unique<ScriptType::Nested>();
@@ -700,6 +770,7 @@ const reflect::TypeDesc* StructOf(ScriptType& t, const RmStructDesc* s) {
                                  s->copy,
                                  &ScriptCppType,
                                  ""};
+    Guard(t, at->desc);
     return &at->desc;
 }
 
@@ -988,9 +1059,15 @@ std::vector<std::unique_ptr<ScriptType>> MakeScriptTypes(const RmModule& m) {
                                     s.copy,
                                     &ScriptCppType,
                                     s.header ? s.header : ""};
+        Guard(*t, t->desc);
         out.push_back(std::move(t));
     }
     return out;
+}
+
+ScriptType::~ScriptType() {
+    std::lock_guard lock(g_guardsMutex);
+    for (const size_t i : guards) g_guards[i].used = false;
 }
 
 bool ScriptModule::Load(const std::filesystem::path& dll, const RmApi& api, std::string* why) {
@@ -1242,15 +1319,29 @@ void ScriptRunner::ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModu
         for (const int id : destroy) {
             if (scene.Find(id) && std::find(roots.begin(), roots.end(), id) == roots.end()) roots.push_back(id);
         }
-        const std::unordered_set<int> gone = scene.Subtree(roots);
+        std::unordered_set<int> gone = scene.Subtree(roots);
         std::unordered_set<const void*> goneObjects;
         for (const auto& [id, object] : remove) goneObjects.insert(object);
         // EndPlay of the scripts that go (a script started only: BeginPlay and EndPlay in pairs).
-        for (const Instance& in : Collect(scene, module, order)) {
-            if (!gone.contains(in.entity) && !goneObjects.contains(in.data)) continue;
-            if (started_.contains(in.data) && !crashed_.contains(in.data)) Call(world, in, 2, 0);
-            started_.erase(in.data);  // (its memory may hold a new script next: never taken for this one)
-            crashed_.erase(in.data);
+        auto endPlay = [&](const std::unordered_set<int>& entities) {
+            for (const Instance& in : Collect(scene, module, order)) {
+                if (!entities.contains(in.entity) && !goneObjects.contains(in.data)) continue;
+                if (started_.contains(in.data) && !crashed_.contains(in.data)) Call(world, in, 2, 0);
+                started_.erase(in.data);  // (its memory may hold a new script next: never taken for this one)
+                crashed_.erase(in.data);
+            }
+        };
+        endPlay(gone);
+        // An EndPlay may have put another entity under one that goes (Entity::SetParent): it goes with it,
+        // so its scripts' EndPlay comes too (2026-11-19: before, they went without one).
+        for (int pass = 0; pass < 8; ++pass) {
+            std::unordered_set<int> joined;
+            for (const int id : scene.Subtree(roots)) {
+                if (!gone.contains(id)) joined.insert(id);
+            }
+            if (joined.empty()) break;
+            gone.insert(joined.begin(), joined.end());
+            endPlay(joined);
         }
         for (const auto& [id, object] : remove) {
             SceneEntity* e = scene.Find(id);
@@ -1262,6 +1353,9 @@ void ScriptRunner::ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModu
             }
         }
         if (!roots.empty()) scene.Delete(roots);
+    }
+    if (!world.destroyAsked.empty() || !world.removeAsked.empty()) {
+        world.TellOnce("destroy:loop", "Destroy / Remove: EndPlay の中で消す依頼が 8 回続いたので、残りは捨てました (消し合いが止まらないかもしれません)");
     }
     world.destroyAsked.clear();
     world.removeAsked.clear();

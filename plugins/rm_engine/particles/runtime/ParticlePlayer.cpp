@@ -556,6 +556,25 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
 
 void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view, const ImageLookup& images) {
     if (!ctx) return;
+    // What is set now goes back after (an ExtraDraw sets back what it changes: what draws next - 天候's
+    // rain - is not drawn added up like a glowing emitter).
+    Microsoft::WRL::ComPtr<ID3D11BlendState> blendBefore;
+    Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterBefore;
+    float factorBefore[4] = {};
+    UINT maskBefore = 0xFFFFFFFF;
+    ctx->OMGetBlendState(&blendBefore, factorBefore, &maskBefore);
+    ctx->RSGetState(&rasterBefore);
+    struct SetBack {
+        ID3D11DeviceContext* ctx;
+        ID3D11BlendState* blend;
+        ID3D11RasterizerState* raster;
+        const float* factor;
+        UINT mask;
+        ~SetBack() {
+            ctx->OMSetBlendState(blend, factor, mask);
+            ctx->RSSetState(raster);
+        }
+    } setBack{ctx, blendBefore.Get(), rasterBefore.Get(), factorBefore, maskBefore};
     for (auto& ptr : emitters_) {
         Emitter& e = *ptr;
         if (!e.data->enabled || e.broken || !e.programs || !e.srv || !e.cleared || !e.states) continue;

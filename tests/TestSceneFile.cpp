@@ -219,6 +219,16 @@ RM_TEST(SceneFile_GameScenesAndNames) {
     CHECK((GameScenes(list, b) == std::vector<AssetRef>{a, b}));
     CHECK((GameScenes(list, c) == std::vector<AssetRef>{a, b, c}));            // open, not in the list: last
     CHECK((GameScenes(list, AssetRef{}) == std::vector<AssetRef>{a, b, AssetRef{}}));  // a new scene not saved yet
+    // Play numbers them as the exported game: without the ones left out of the build; the open one, left
+    // out, last (2026-11-19: Game::LoadScene(2) went to another scene in the game).
+    SceneList three;
+    three.scenes = {a, b, c};
+    three.notBuilt = {b};
+    CHECK((PlayScenes(three, a) == std::vector<AssetRef>{a, c}));
+    CHECK((PlayScenes(three, b) == std::vector<AssetRef>{a, c, b}));
+    CHECK((PlayScenes(three, AssetRef{}) == std::vector<AssetRef>{a, c, AssetRef{}}));
+    three.notBuilt = {a};  // (the first is always built)
+    CHECK((PlayScenes(three, c) == std::vector<AssetRef>{a, b, c}));
     list.scenes = {a, a, AssetRef{}, b};
     CHECK((GameScenes(list, a) == std::vector<AssetRef>{a, b}));  // each once, no empty ids
     CHECK(SceneNameOf("Assets/Scenes/Title.rmscene") == "Title" && SceneNameOf("Stage 2.rmscene") == "Stage 2" && SceneNameOf("Assets\\x.rmscene") == "x");

@@ -21,6 +21,9 @@ bool Gfx::CreateDevices() {
 #ifdef _DEBUG
     hr = create(D3D_DRIVER_TYPE_HARDWARE, flags | D3D11_CREATE_DEVICE_DEBUG);  // fails when the SDK layers are missing
 #endif
+    // (VIDEO_SUPPORT: the UI's video decoded on the GPU - Media Engine's DXVA; without it, when the driver
+    // will not make such a device)
+    if (FAILED(hr)) hr = create(D3D_DRIVER_TYPE_HARDWARE, flags | D3D11_CREATE_DEVICE_VIDEO_SUPPORT);
     if (FAILED(hr)) hr = create(D3D_DRIVER_TYPE_HARDWARE, flags);
     if (FAILED(hr)) {
         log::Warn("ハードウェアの Direct3D 11 を作れませんでした (0x{:08X})。WARP (ソフトウェア) で続けます", static_cast<uint32_t>(hr));

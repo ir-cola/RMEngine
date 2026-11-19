@@ -68,7 +68,11 @@ public:
         }
         if (directions_.empty()) return;
         // What they hit: the colliders (the connector 天候 × 物理), never drawn.
-        if (f.registry) MakeWeatherBlocks(f.scene, *f.registry, f.world, f.shape, f.model, shapes_, blockers_);
+        if (f.registry) {
+            MakeWeatherBlocks(f.scene, *f.registry, f.world, f.shape, f.model, shapes_, blockers_);
+        } else {
+            shapes_.clear();  // (never the last frame's: their models may be gone)
+        }
         if (shapes_.empty()) {
             for (Precipitation& p : falls_) p.map = -1;  // (nothing to hit: no maps - all open)
             std::fill(wetMaps_.begin(), wetMaps_.end(), -1);
@@ -110,6 +114,8 @@ private:
         vs_.Reset();
         ps_.Reset();
         cb_.Reset();
+        blend_.Reset();
+        raster_.Reset();
         failed_ = false;
         ID3D11Device* device = gfx.D3D();
         if (!device) return false;
@@ -120,10 +126,26 @@ private:
         cd.Usage = D3D11_USAGE_DEFAULT;
         cd.ByteWidth = sizeof(FallConstants);
         cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        // Its own states (an ExtraDraw gets what the last one left: a glowing particle's adding up).
+        D3D11_BLEND_DESC bl{};
+        bl.RenderTarget[0].BlendEnable = TRUE;
+        bl.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+        bl.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+        bl.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+        bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+        bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+        bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        D3D11_RASTERIZER_DESC rd{};
+        rd.FillMode = D3D11_FILL_SOLID;
+        rd.CullMode = D3D11_CULL_NONE;
+        rd.DepthClipEnable = TRUE;
+        rd.MultisampleEnable = TRUE;
         if (!Compile(text, "FallVS", "vs_4_0", vs, error) || !Compile(text, "FallPS", "ps_4_0", ps, error) ||
             FAILED(device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &vs_)) ||
             FAILED(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &ps_)) ||
-            FAILED(device->CreateBuffer(&cd, nullptr, &cb_))) {
+            FAILED(device->CreateBuffer(&cd, nullptr, &cb_)) || FAILED(device->CreateBlendState(&bl, &blend_)) ||
+            FAILED(device->CreateRasterizerState(&rd, &raster_))) {
             log::Error("雨・雪を描く準備ができません: {}", error);
             vs_.Reset();
             failed_ = true;
@@ -160,6 +182,16 @@ private:
         ctx->PSSetConstantBuffers(4, 1, &cb);
         ctx->VSSetConstantBuffers(6, 1, &maps);
         ctx->VSSetShaderResources(8, 1, &mapTexture);
+        // Its own blend and rasterizer, set back after (the depth: as an ExtraDraw gets it - tested, not written).
+        Ptr<ID3D11BlendState> blendBefore;
+        Ptr<ID3D11RasterizerState> rasterBefore;
+        float factorBefore[4] = {};
+        UINT maskBefore = 0xFFFFFFFF;
+        ctx->OMGetBlendState(&blendBefore, factorBefore, &maskBefore);
+        ctx->RSGetState(&rasterBefore);
+        const float factor[4] = {};
+        ctx->OMSetBlendState(blend_.Get(), factor, 0xFFFFFFFF);
+        ctx->RSSetState(raster_.Get());
         ctx->IASetInputLayout(nullptr);  // (each corner made from its number)
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(vs_.Get(), nullptr, 0);
@@ -171,6 +203,8 @@ private:
         ctx->PSSetConstantBuffers(4, 1, &none);
         ctx->VSSetConstantBuffers(6, 1, &none);
         ctx->VSSetShaderResources(8, 1, &noTexture);
+        ctx->OMSetBlendState(blendBefore.Get(), factorBefore, maskBefore);
+        ctx->RSSetState(rasterBefore.Get());
     }
 
     std::vector<Vec3> directions_;
@@ -183,6 +217,8 @@ private:
     Ptr<ID3D11VertexShader> vs_;
     Ptr<ID3D11PixelShader> ps_;
     Ptr<ID3D11Buffer> cb_;
+    Ptr<ID3D11BlendState> blend_;
+    Ptr<ID3D11RasterizerState> raster_;
     uint64_t generation_ = ~uint64_t{0};
     bool failed_ = false;
     bool animating_ = false;

@@ -134,7 +134,8 @@ LRESULT CALLBACK Window::WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             const UINT dpi = GetDpiForWindow(h);
             const float s = dpi / 96.f;
             RECT r{0, 0, static_cast<LONG>(self->desc_.minWidthDip * s), static_cast<LONG>(self->desc_.minHeightDip * s)};
-            AdjustWindowRectExForDpi(&r, StyleFor(self->desc_), FALSE, ExStyleFor(self->desc_), dpi);
+            // (no frame: the window is all client area - as it is made)
+            if (!self->desc_.frameless) AdjustWindowRectExForDpi(&r, StyleFor(self->desc_), FALSE, ExStyleFor(self->desc_), dpi);
             mmi->ptMinTrackSize = {r.right - r.left, r.bottom - r.top};
             return 0;
         }
