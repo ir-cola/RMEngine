@@ -27,7 +27,7 @@ Vec3 Normalized(Vec3 v) {
     const float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
     return len > 1e-8f ? Scale(v, 1.f / len) : Vec3{0, 1, 0};
 }
-// Turned about the up axis (degrees; + to the left seen from above) - as RotateY in the sky's shader.
+// 上の軸のまわりに回す (度。上から見て左回りが +) - 空のシェーダーの RotateY と同じ。
 Vec3 TurnY(Vec3 d, float degrees) {
     const float c = std::cos(degrees * kDegrees), s = std::sin(degrees * kDegrees);
     return {c * d.x + s * d.z, d.y, -s * d.x + c * d.z};
@@ -39,15 +39,15 @@ void Set(float out[4], Vec3 rgb, float a) {
     out[3] = a;
 }
 
-// The air's colours (linear) for the sun's height e (the sine of its angle above the horizon).
+// 太陽の高さ e (水平線からの角度の sin) に対する空気の色 (リニア)。
 void EarthAir(float e, const SkyWeather& w, Vec3& zenith, Vec3& horizon, float& day, float& glow) {
     day = Smooth(-0.1f, 0.15f, e);
-    glow = e > -0.25f ? std::exp(-(e / 0.18f) * (e / 0.18f)) : 0.f;  // sunrise / sunset
+    glow = e > -0.25f ? std::exp(-(e / 0.18f) * (e / 0.18f)) : 0.f;  // 日の出 / 日の入り
     zenith = Mix(Vec3{0.003f, 0.006f, 0.016f}, Vec3{0.16f, 0.36f, 0.85f}, day);
     zenith = Mix(zenith, Vec3{0.10f, 0.12f, 0.30f}, glow * 0.6f);
     horizon = Mix(Vec3{0.012f, 0.018f, 0.035f}, Vec3{0.55f, 0.70f, 0.92f}, day);
     horizon = Mix(horizon, Vec3{1.0f, 0.48f, 0.20f}, glow * 0.8f);
-    // Clouds and rain: greyer and darker.
+    // 雲と雨: より灰色に、より暗く。
     const float grey = w.cover * 0.8f;
     zenith = Scale(Mix(zenith, Scale(Vec3{1, 1, 1}, Luminance(zenith)), grey), 1 - w.dark * 0.6f);
     horizon = Scale(Mix(horizon, Scale(Vec3{1, 1, 1}, Luminance(horizon)), grey), 1 - w.dark * 0.5f);
@@ -66,10 +66,10 @@ SkyWeather SkyWeatherOf(const RuntimeRegistry* registry, const game_production::
 
 Vec3 SunDirection(const Sky& sky) {
     const float a = std::clamp(sky.sunHeight, -90.f, 90.f) * kDegrees;
-    const Vec3 noon{0, std::sin(a), std::cos(a)};  // the +Z side, sunHeight up
+    const Vec3 noon{0, std::sin(a), std::cos(a)};  // +Z 側、sunHeight の分だけ上
     Vec3 d = noon;
     if (sky.kind == SkyKind::Earth) {
-        // Round a circle through the east (+X, at 6), noon and the west (-X, at 18).
+        // 東 (+X、6 時)、正午、西 (-X、18 時) を通る円のまわり。
         const float s = (std::fmod(sky.hour, 24.f) - 12.f) / 24.f * 2.f * std::numbers::pi_v<float>;
         d = Add(Scale(noon, std::cos(s)), Scale(Vec3{-1, 0, 0}, std::sin(s)));
     }
@@ -80,7 +80,7 @@ SkyLook LookOf(const Sky& sky, double seconds, const SkyWeather& weather) {
     SkyLook look;
     space3d::SkyConstants& k = look.constants;
     const Vec3 sun = SunDirection(sky);
-    const Vec3 moon = Scale(sun, -1);  // a full moon, opposite the sun
+    const Vec3 moon = Scale(sun, -1);  // 満月。太陽の反対側
     Set(k.sun, sun, static_cast<float>(seconds));
     Set(k.moon, moon, sky.kind == SkyKind::Earth ? std::fmod(std::max(sky.hour, 0.f), 24.f) : 12.f);
     k.info[0] = std::max(sky.brightness, 0.f);
@@ -104,12 +104,12 @@ SkyLook LookOf(const Sky& sky, double seconds, const SkyWeather& weather) {
             Set(k.param[2], zenith, night * night * (1 - w.cover));
             Set(k.param[3], horizon, night * moonUp);
             Set(k.param[4], ground, glow * up);
-            // 風: how far it has carried the clouds (xy), how it blows now (zw: m/s, world).
+            // 風: 雲をどれだけ運んだか (xy)、今どう吹いているか (zw: m/s、ワールド)。
             k.param[5][0] = w.driftX;
             k.param[5][1] = w.driftZ;
             k.param[5][2] = w.windX;
             k.param[5][3] = w.windZ;
-            // The light: the sun while it is up, the moon (faint, blue) after.
+            // 光: 太陽が出ている間は太陽、そのあとは月 (弱い青)。
             look.drivesLight = sky.driveLight;
             const float sunStrength = up * w.through;
             const float moonStrength = 0.15f * moonUp * night * w.through;
@@ -122,7 +122,7 @@ SkyLook LookOf(const Sky& sky, double seconds, const SkyWeather& weather) {
                 look.lightColor = {0.55f, 0.65f, 1.0f, 1};
                 look.lightStrength = moonStrength;
             }
-            // The light from the whole sky (環境光): its colours, a little moonlight at night.
+            // 空全体からの光 (環境光): その色。夜は少しだけ月の光。
             const Vec3 skyLight = Add(Scale(Add(Scale(zenith, 0.6f), Scale(horizon, 0.4f)), 0.35f), Scale(Vec3{0.02f, 0.025f, 0.045f}, night));
             look.ambientSky = ToColor(skyLight);
             look.ambientGround = ToColor(Add(Scale(ground, 0.6f), Scale(sunLight, 0.04f * w.through)));
@@ -165,7 +165,7 @@ void FollowSky(const SkyLook& look, std::vector<space3d::Light>& lights, space3d
     if (!look.drivesLight) return;
     auto sun = std::find_if(lights.begin(), lights.end(), [](const space3d::Light& l) { return l.type == space3d::LightType::Directional; });
     if (sun == lights.end()) {
-        lights.insert(lights.begin(), space3d::Light{});  // (a directional light first: it may cast the sun's shadows)
+        lights.insert(lights.begin(), space3d::Light{});  // (平行光を先頭に: 太陽の影を落とすことがある)
         sun = lights.begin();
     }
     sun->direction = look.lightGoes;

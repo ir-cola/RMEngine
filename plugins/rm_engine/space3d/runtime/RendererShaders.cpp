@@ -1,4 +1,4 @@
-// The renderer's shaders (HLSL text): see RendererShaders.h.
+// レンダラーのシェーダー (HLSL のテキスト): RendererShaders.h を見ること。
 
 #include "rm_engine/space3d/runtime/RendererShaders.h"
 
@@ -8,29 +8,29 @@ namespace rm::space3d {
 
 namespace {
 
-// Matrices are stored column by column (m[column][row]), which is HLSL's default packing, so they
-// go to the GPU as they are and mul(matrix, vector) means matrix * vector.
-// (each a literal of its own: one may hold at most 16 KB)
+// 行列は列ごとに (m[column][row]) 並べて持つ。これは HLSL の標準の詰め方なので、そのまま
+// GPU に渡せて、mul(matrix, vector) は matrix * vector の意味になる。
+// (それぞれ別のリテラルにする: 1 つは最大 16 KB まで)
 constexpr char kShadersFirst[] = R"(
 cbuffer Frame : register(b0) {
     float4x4 viewProj;
-    float4x4 lightViewProj;  // ShadowVS: world -> the shadow map being drawn (x, y -1..1, depth 0..1)
-    float4 eye;              // xyz: where the camera is (world)
-    float4 fog;              // rgb: its colour (linear); a: how thick (per metre; 0: none) - RenderFrame::fog
+    float4x4 lightViewProj;  // ShadowVS: ワールド -> 描いている途中のシャドウマップ (x, y -1..1、深度 0..1)
+    float4 eye;              // xyz: カメラの位置 (ワールド)
+    float4 fog;              // rgb: 色 (線形)、a: 濃さ (1 m あたり。0: 無し) - RenderFrame::fog
 };
-// The fog (RenderFrame::fog): the farther, the more of its colour (linear, before ToScreen).
+// 霧 (RenderFrame::fog): 遠いほどその色 (線形。ToScreen の前) が増える。
 float3 Fogged(float3 c, float3 wpos) {
     if (fog.a <= 0) return c;
     return lerp(fog.rgb, c, exp(-fog.a * distance(wpos, eye.xyz)));
 }
-// Every thing's and material's numbers of the frame, written once a frame (Renderer3D.cpp's things_).
-// A draw says where its thing and its material are (DRAW: x, y, in float4s):
-//   a thing:    world (4 columns), normalWorld (3 columns: the inverse transpose of world - normals
-//               stay at right angles), color (the screen's), highlight (a glow at the edges: rgb, a = how strong)
-//   a material: material (its colour, linear: times `color`), paint (x: 1 = a colour picture; y: alpha
-//               0 opaque / 1 mask / 2 blend; z: mask's cutoff; w: 1 = a normal map), pbr (x: metallic,
-//               y: roughness, z: the normal map's strength; w: 1 = a metal / rough picture), emissive
-//               (rgb: the light it gives, linear; w: 1 = an emission picture)
+// フレームの全部の物と材質の数値。1 フレームに 1 回書く (Renderer3D.cpp の things_)。
+// 描画は、その物と材質がどこにあるかを持つ (DRAW: x, y。float4 単位):
+//   物:   world (4 列)、normalWorld (3 列: world の逆行列の転置 - 法線が直角のまま保たれる)、
+//         color (画面の色)、highlight (縁の光: rgb、a = 強さ)
+//   材質: material (その色。線形: `color` を掛ける)、paint (x: 1 = 色の絵あり、y: アルファ
+//         0 不透明 / 1 マスク / 2 ブレンド、z: マスクのしきい値、w: 1 = 法線マップあり)、
+//         pbr (x: 金属度、y: 粗さ、z: 法線マップの強さ、w: 1 = 金属 / 粗さの絵あり)、
+//         emissive (rgb: 出す光。線形、w: 1 = 発光の絵あり)
 Buffer<float4> things : register(t6);
 static float4x4 world;
 static float3x3 normalWorld;
@@ -47,34 +47,34 @@ void LoadLook(uint2 draw) {
     pbr = things.Load(draw.y + 2);
     emissive = things.Load(draw.y + 3);
 }
-// The lights of the frame (Lighting.h's LightBlock: set once per frame).
+// フレームの光 (Lighting.h の LightBlock: 1 フレームに 1 回入れる)。
 cbuffer Lights : register(b1) {
-    float4 lightInfo;         // x: how many
-    float4 ambientSky;        // rgb: the ambient light on faces turned up
-    float4 ambientGround;     // rgb: ... turned down
-    float4 lightPos[8];       // xyz: where (point, spot); w: 0 directional, 1 point, 2 spot
-    float4 lightDir[8];       // xyz: where the light goes; w: the range
-    float4 lightColor[8];     // rgb: colour x strength; w: 1 = its shadows are the sun's maps
-    float4 lightSpot[8];      // x: cos of the cone's edge, y: cos where it starts to fade
-    float4 lightShadow[8];    // point / spot: x: its first map (-1: none); y: normal offset per distance; z: depth bias at distance 1
+    float4 lightInfo;         // x: 数
+    float4 ambientSky;        // rgb: 上を向いた面の環境光
+    float4 ambientGround;     // rgb: ... 下を向いた面の
+    float4 lightPos[8];       // xyz: 位置 (点光源・スポット)、w: 0 向きのある光、1 点光源、2 スポット
+    float4 lightDir[8];       // xyz: 光が進む向き、w: 届く距離
+    float4 lightColor[8];     // rgb: 色 x 強さ、w: 1 = その影は太陽のマップ
+    float4 lightSpot[8];      // x: 円錐の縁の cos、y: 弱まり始める所の cos
+    float4 lightShadow[8];    // 点光源 / スポット: x: 最初のマップ (-1: 無し)、y: 距離あたりの法線のずらし、z: 距離 1 での深度のバイアス
 };
-// The shadow maps of the frame (Renderer3D.cpp's ShadowConstants).
+// フレームのシャドウマップ (Renderer3D.cpp の ShadowConstants)。
 cbuffer Shadows : register(b2) {
-    float4x4 sunViewProj[3];    // world -> the sun's maps (one, or the cascades)
-    float4x4 localViewProj[8];  // world -> the point / spot lights' maps
-    float4 sunInfo[3];          // x: where the map ends in front of the eye; y: normal offset (world); z: depth bias
-    float4 shadowInfo;          // x: how many sun maps (0: none); y: a texel of a sun's map (its uv); z: ... of the others
-    float4 viewForward;         // xyz: where the camera looks
-    float4 atlas;               // how the maps lie side by side in their texture: xy: the sun's columns, rows; zw: the others'
+    float4x4 sunViewProj[3];    // ワールド -> 太陽のマップ (1 枚、またはカスケード)
+    float4x4 localViewProj[8];  // ワールド -> 点光源 / スポットのマップ
+    float4 sunInfo[3];          // x: 目の前でマップが終わる所、y: 法線のずらし (ワールド)、z: 深度のバイアス
+    float4 shadowInfo;          // x: 太陽のマップの数 (0: 無し)、y: 太陽のマップの 1 テクセル (uv)、z: ... 他のもの
+    float4 viewForward;         // xyz: カメラが向く方向
+    float4 atlas;               // マップがテクスチャの中で並ぶ様子。xy: 太陽の列、行。zw: 他のものの列、行
 };
-// Each kind of shadow map lies side by side (tiles) in one texture (an array of maps would need
-// ps_4_1 to be compared by the sampler).
+// シャドウマップは種類ごとに、1 枚のテクスチャの中に並べる (タイル)。(マップの配列だと、
+// サンプラーで比較するのに ps_4_1 が要る。)
 Texture2D sunMaps : register(t0);
 Texture2D localMaps : register(t5);
 SamplerComparisonState shadowSampler : register(s0);
-Texture2D baseMap : register(t1);        // sRGB: read as linear
-Texture2D metalRoughMap : register(t2);  // b: metal, g: rough
-Texture2D normalMap : register(t3);      // tangent space (x right, y up, z out)
+Texture2D baseMap : register(t1);        // sRGB: 線形として読む
+Texture2D metalRoughMap : register(t2);  // b: 金属、g: 粗さ
+Texture2D normalMap : register(t3);      // 接線空間 (x 右、y 上、z 手前)
 Texture2D emissionMap : register(t4);    // sRGB
 SamplerState baseSampler : register(s1);
 
@@ -104,13 +104,13 @@ MeshOut MeshVS(MeshIn i) {
     return o;
 }
 
-// 1 = in the light, 0 = in shadow: the map `tile` of `maps` (tiles lie `grid` columns x rows) at p
-// (after the divide: x, y -1..1, depth 0..1). 3 x 3 looks, each already a blend of 2 x 2 texels
-// (PCF), kept inside the tile. Outside the map: lit.
+// 1 = 光が当たる、0 = 影: `maps` のマップ `tile` (タイルは `grid` 列 x 行に並ぶ) の p での値
+// (割り算の後: x, y -1..1、深度 0..1)。3 x 3 回見る。1 回ごとに 2 x 2 テクセルをすでに混ぜている
+// (PCF)。タイルの中に収める。マップの外: 光が当たる。
 float ShadowLook(Texture2D maps, float2 grid, float3 p, float tile, float texel, float bias) {
     float2 uv = p.xy * float2(0.5, -0.5) + 0.5;
     if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1) return 1;
-    float d = min(p.z, 1) - bias;  // beyond the map's depth: behind everything
+    float d = min(p.z, 1) - bias;  // マップの深度より奥: 全部の後ろ
     float2 corner = float2(tile - grid.x * floor(tile / grid.x), floor(tile / grid.x));
     float sum = 0;
     [unroll] for (int y = -1; y <= 1; ++y) {
@@ -122,9 +122,9 @@ float ShadowLook(Texture2D maps, float2 grid, float3 p, float tile, float texel,
     return sum / 9;
 }
 
-// The sun: the first of its maps that reaches as far as the point is in front of the eye (one map,
-// or the cascades: near ones sharp). Looked up a little off the surface (normal offset): a surface
-// does not shadow itself. Beyond the last: lit.
+// 太陽: 点が目の前にある範囲まで届く、最初のマップ (1 枚か、カスケード: 近いものはくっきり)。
+// 面から少しずらして引く (法線のずらし): 面が自分に影を落とさないように。最後のマップより奥:
+// 光が当たる。
 float SunShadow(float3 wpos, float3 n) {
     int count = (int)shadowInfo.x;
     float ahead = dot(wpos - eye.xyz, viewForward.xyz);
@@ -137,9 +137,8 @@ float SunShadow(float3 wpos, float3 n) {
     return 1;
 }
 
-// A point light (the side of its cube the point is on: the largest of |x| |y| |z|, in the order
-// +X -X +Y -Y +Z -Z) or a spot (its one map). The depth of a perspective map is not even: the bias
-// shrinks with the distance.
+// 点光源 (点がある立方体の面: |x| |y| |z| の一番大きいもの。順は +X -X +Y -Y +Z -Z) か、
+// スポット (マップ 1 枚)。透視のマップの深度は均等ではない: バイアスは距離とともに縮む。
 float LocalShadow(int l, float3 wpos, float3 n) {
     float slice = lightShadow[l].x;
     if (slice < 0) return 1;
@@ -159,8 +158,7 @@ float ShadowOf(int l, float3 wpos, float3 n) { return lightColor[l].w > 0.5 ? Su
 )";
 
 constexpr char kShadersLast[] = R"(
-// How much of a light is left at a point (its fade with distance / out of the cone), and from where
-// (toLight).
+// 点で、光がどれだけ残っているか (距離による弱まり / 円錐の外)と、どこから来るか (toLight)。
 float FadeAt(int l, float3 wpos, out float3 toLight) {
     toLight = -lightDir[l].xyz;
     float fade = 1;
@@ -175,24 +173,24 @@ float FadeAt(int l, float3 wpos, out float3 toLight) {
     return fade;
 }
 
-// One light at a point: what comes (colour x strength x its fade) and from where (toLight). The
-// light's numbers are made by Lighting.h.
+// 点での光 1 つ: 届くもの (色 x 強さ x 弱まり) と、どこから来るか (toLight)。光の数値は
+// Lighting.h が作る。
 float3 LightAt(int l, float3 wpos, out float3 toLight) { return lightColor[l].rgb * FadeAt(l, wpos, toLight); }
 
-// The light leaving a surface towards the eye (linear): the ambient light (from everywhere, the sky's
-// from above - even in shadow) and each light (diffuse + GGX highlight; its shadow if it has one).
+// 面から目へ向かう光 (線形): 環境光 (全方向から。空のものは上から - 影の中でも) と、各光
+// (拡散 + GGX のハイライト。影があればその影)。
 float3 Shade(float3 albedo, float metal, float rough, float3 n, float3 v, float3 wpos) {
-    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metal);  // how much a surface mirrors, head on
-    float3 diffuse = albedo * (1 - metal);                       // metal has no diffuse colour
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metal);  // 正面から見たとき、面がどれだけ映すか
+    float3 diffuse = albedo * (1 - metal);                       // 金属に拡散の色はない
     float a = rough * rough;
     float a2 = a * a;
     float nv = max(dot(n, v), 1e-4);
     float k = (rough + 1) * (rough + 1) / 8;
-    // The sky: diffuse from the normal's side, and a dim reflection of it (Fresnel by the angle).
+    // 空: 法線の側からの拡散と、そのうす暗い反射 (角度による Fresnel)。
     float sky = 0.5 + 0.5 * n.y;
     float skyMirror = 0.5 + 0.5 * reflect(-v, n).y;
     float3 fSky = f0 + (max(float3(1 - rough, 1 - rough, 1 - rough), f0) - f0) * pow(1 - nv, 5);
-    // The ambient light (環境光, linear): the ground's from below .. the sky's from above.
+    // 環境光 (線形): 下からの地面のもの .. 上からの空のもの。
     float3 c = diffuse * lerp(ambientGround.rgb, ambientSky.rgb, sky) + fSky * lerp(ambientGround.rgb, ambientSky.rgb, skyMirror) * (1 - 0.6 * rough);
     int count = (int)lightInfo.x;
     [loop] for (int l = 0; l < count; ++l) {
@@ -200,83 +198,82 @@ float3 Shade(float3 albedo, float metal, float rough, float3 n, float3 v, float3
         float3 e = LightAt(l, wpos, toLight);
         float nl = saturate(dot(n, toLight));
         if (nl <= 0 || all(e <= 0)) continue;
-        e *= ShadowOf(l, wpos, n);  // 1 for a light without shadows
+        e *= ShadowOf(l, wpos, n);  // 影の無い光は 1
         float3 h = normalize(toLight + v);
         float nh = saturate(dot(n, h));
         float vh = saturate(dot(v, h));
         float dd = nh * nh * (a2 - 1) + 1;
-        float D = a2 / (PI * dd * dd);                                     // GGX: how many tiny faces turn to h
-        float G = nl / (nl * (1 - k) + k) * (nv / (nv * (1 - k) + k));     // Smith: the ones not hidden
-        float3 F = f0 + (1 - f0) * pow(1 - vh, 5);                         // Schlick: more mirror at a slant
+        float D = a2 / (PI * dd * dd);                                     // GGX: h を向く微小な面がどれだけあるか
+        float G = nl / (nl * (1 - k) + k) * (nv / (nv * (1 - k) + k));     // Smith: 隠れていないものの割合
+        float3 F = f0 + (1 - f0) * pow(1 - vh, 5);                         // Schlick: 斜めから見るほどよく映す
         float3 spec = D * G * F / max(4 * nl * nv, 1e-4);
-        // Strength 1 on a white face head on = 0.85 (the look the scene had before lights).
+        // 強さ 1 の光が、白い面に正面から当たると 0.85 (光が入る前のシーンの見た目)。
         c += ((1 - F) * diffuse + PI * spec) * e * (nl * 0.85);
     }
     return c;
 }
 
-// The normal bent by the normal map. The tangents come from how the position and the UV change
-// from pixel to pixel (a "cotangent frame"): no tangents are needed in the vertices.
+// 法線マップで曲げた法線。接線は、位置と UV がピクセルごとにどう変わるかから作る
+// (「余接フレーム」): 頂点に接線は要らない。
 float3 Bend(float3 n, MeshOut i) {
-    float3 t = normalMap.Sample(baseSampler, i.uv).xyz * 2 - 1;  // (sampled before any branch)
-    if (paint.w > 1.5) t.z = sqrt(saturate(1 - dot(t.xy, t.xy)));  // two channels (BC5): z from x and y
+    float3 t = normalMap.Sample(baseSampler, i.uv).xyz * 2 - 1;  // (どの分岐よりも前にサンプルする)
+    if (paint.w > 1.5) t.z = sqrt(saturate(1 - dot(t.xy, t.xy)));  // 2 チャンネル (BC5): z は x と y から作る
     float3 dp1 = ddx(i.wpos), dp2 = ddy(i.wpos);
     float2 du1 = ddx(i.uv), du2 = ddy(i.uv);
     if (paint.w < 0.5) return n;
     float3 dp2perp = cross(dp2, n), dp1perp = cross(n, dp1);
     float3 T = dp2perp * du1.x + dp1perp * du2.x;
-    float3 B = dp2perp * du1.y + dp1perp * du2.y;  // where V grows: down the picture
+    float3 B = dp2perp * du1.y + dp1perp * du2.y;  // V が増える向き: 絵の下へ
     float m = max(dot(T, T), dot(B, B));
-    if (m < 1e-20) return n;  // no UVs to follow
+    if (m < 1e-20) return n;  // 追うべき UV が無い
     float s = rsqrt(m);
     t.xy *= pbr.z;
-    return normalize(T * (s * t.x) - B * (s * t.y) + n * t.z);  // the map's +Y is up the picture
+    return normalize(T * (s * t.x) - B * (s * t.y) + n * t.z);  // マップの +Y は絵の上
 }
 
-// The surface's own colour: the draw's x the material's x the picture. Alpha by the material's mode
-// (opaque: a picture's alpha is no hole; mask: a hole below the cutoff; blend: see-through).
+// 面自身の色: 描く色 x 材質の色 x 絵。アルファは材質のモードで決まる
+// (opaque: 絵のアルファで穴は開かない。mask: しきい値より下は穴。blend: 透ける)。
 float4 Paint(MeshOut i) {
     float4 c = float4(ToLinear(color.rgb), color.a) * material;
     if (paint.x > 0.5) c *= baseMap.Sample(baseSampler, i.uv);
-    if (paint.y > 0.5 && paint.y < 1.5) clip(c.a - paint.z);  // mask: a hole, or not
-    if (paint.y < 1.5) c.a = color.a;                          // only blend sees through by its alpha
+    if (paint.y > 0.5 && paint.y < 1.5) clip(c.a - paint.z);  // mask: 穴にするか、しないか
+    if (paint.y < 1.5) c.a = color.a;                          // blend だけが、アルファで透ける
     return c;
 }
 
 float4 MeshPS(MeshOut i) : SV_Target {
     LoadLook(i.draw);
     float4 base = Paint(i);
-    // The side seen is the side facing the eye (the back of an open model is lit as its own side).
-    // Told from the eye, not from the triangle's winding on the screen, so a mirrored model or a
-    // flipped projection never lights the wrong side.
+    // 見える側は、目に向いている側 (開いたモデルの裏側は、その側の面として光を受ける)。
+    // 画面上の三角形の巻き方ではなく目から判断するので、鏡写しのモデルや反転した射影でも
+    // 逆の側に光が当たることはない。
     float3 n = normalize(i.nrm);
     float3 toEye = normalize(eye.xyz - i.wpos);
     if (dot(n, toEye) < 0) n = -n;
-    float rim = pow(1 - saturate(dot(n, toEye)), 2.5) * highlight.a;  // (by the shape, not the normal map)
-    float3 shape = n;  // (a plugin's touch goes by the shape too)
+    float rim = pow(1 - saturate(dot(n, toEye)), 2.5) * highlight.a;  // (形から。法線マップは使わない)
+    float3 shape = n;  // (プラグインの手も、形から判断する)
     n = Bend(n, i);
     float4 mr = metalRoughMap.Sample(baseSampler, i.uv);
-    if (pbr.w > 1.5) mr = mr.rrrr;  // one channel (BC4): the grey value is both
+    if (pbr.w > 1.5) mr = mr.rrrr;  // 1 チャンネル (BC4): 灰色の値が両方になる
     float metal = pbr.x * (pbr.w > 0.5 ? mr.b : 1);
     float rough = clamp(pbr.y * (pbr.w > 0.5 ? mr.g : 1), 0.04, 1);
     Surface(base.rgb, rough, metal, i.wpos, shape);  // a plugin's touch (RenderFrame::surface: 天候's 濡れ)
     rough = clamp(rough, 0.04, 1);
     float3 glow = emissive.rgb * (emissive.w > 0.5 ? emissionMap.Sample(baseSampler, i.uv).rgb : float3(1, 1, 1));
     float3 rgb = ToScreen(Fogged(Shade(base.rgb, metal, rough, n, toEye, i.wpos) + glow, i.wpos));
-    // Selected: the edges (where the surface turns away from the eye) glow, the colours stay.
+    // 選択中: 縁 (面が目から背を向ける所) が光り、色は変わらない。
     return float4(lerp(rgb, highlight.rgb, rim), base.a);
 }
 
-// The floor: nothing of its own, only the shadows (seen from above) - the darkest one of a light
-// that reaches it.
+// 床: 自分の色は無く、影だけ (上から見た) - 届いている光のうち一番暗いもの。
 float4 FloorPS(MeshOut i) : SV_Target {
     LoadLook(i.draw);
-    if (eye.y < 0) discard;  // seen from below the floor
+    if (eye.y < 0) discard;  // 床の下から見ている
     float3 up = float3(0, 1, 0);
     float dark = 0;
     int count = (int)lightInfo.x;
     [loop] for (int l = 0; l < count; ++l) {
-        if (lightColor[l].w < 0.5 && lightShadow[l].x < 0) continue;  // no shadows
+        if (lightColor[l].w < 0.5 && lightShadow[l].x < 0) continue;  // 影なし
         float3 toLight;
         float fade = FadeAt(l, i.wpos, toLight);
         float r = saturate(saturate(dot(up, toLight)) * fade * 4);
@@ -290,20 +287,20 @@ float4 ShadowVS(MeshIn i) : SV_Position {
     return mul(lightViewProj, mul(world, float4(i.pos, 1)));
 }
 
-// A tile of a shadow map laid back from its kept layer (what stays put: the same tile of another
-// texture), exactly, before the moving things are drawn over it. Drawn with ClearVS's triangle.
+// シャドウマップのタイルを、残しておいた層 (動かないもの: 別のテクスチャの同じタイル) から
+// そのまま敷き戻す。動くものを上に描く前に行う。ClearVS の三角形で描く。
 Texture2D layerMap : register(t7);
 float CopyDepthPS(float4 pos : SV_Position) : SV_Depth { return layerMap.Load(int3(pos.xy, 0)).r; }
 
-// A tile of a shadow map cleared: one triangle over the whole viewport at depth 1 (drawn with the
-// depth test off). ClearDepthStencilView would clear every tile.
+// シャドウマップのタイルを消す: ビューポート全体を覆う三角形を深度 1 で描く (深度テストは
+// オフ)。ClearDepthStencilView だと全タイルが消えてしまう。
 float4 ClearVS(uint id : SV_VertexID) : SV_Position {
     float2 p = float2((id << 1) & 2, id & 2);
     return float4(p * float2(2, -2) + float2(-1, 1), 1, 1);
 }
 )";
 
-// No plugin's touch: the surface as it is.
+// プラグインの手は無し: 面はそのまま。
 constexpr char kNoSurface[] = R"(
 void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, float3 n) {}
 )";
@@ -311,18 +308,18 @@ void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, f
 }  // namespace
 
 const char kDirectionMapHlsl[] = R"(
-// 向きの地図 (RenderFrame::mapDirections): the depth of the hidden shapes (RenderFrame::mapShapes) seen
-// along each direction, tiles side by side in one texture (Lighting.h's PlanCover; RendererShaders.h's
-// DirectionMapConstants).
+// 向きの地図 (RenderFrame::mapDirections): 隠れた形 (RenderFrame::mapShapes) の深度を、各向きから
+// 見たもの。タイルを 1 枚のテクスチャに並べる (Lighting.h の PlanCover、RendererShaders.h の
+// DirectionMapConstants)。
 cbuffer DirectionMaps : register(b6) {
-    float4x4 mapViewProj[8];  // world -> a map (x, y -1..1 across the way, depth 0..1 along it)
-    float4 mapInfo[8];        // x: 1 = there is one; y, z: its tile's left, top (pixels); w: its depth range (world)
-    float4 mapSize;           // x: a map's size (pixels); y: how many
+    float4x4 mapViewProj[8];  // ワールド -> 地図 (x, y -1..1 は向きに直角、深度 0..1 は向きに沿う)
+    float4 mapInfo[8];        // x: 1 = ある、y, z: そのタイルの左、上 (ピクセル)、w: 深度の範囲 (ワールド)
+    float4 mapSize;           // x: 地図 1 枚の大きさ (ピクセル)、y: 数
 };
 Texture2D directionMaps : register(t8);
 
-// How far a point is past the first hidden shape on its line along map `k` (world units; < 0: before
-// it). `p`: the map's matrix times the point. Nothing on the line, or out of the map: far before.
+// 地図 `k` の線に沿って、最初の隠れた形から点がどれだけ先にあるか (ワールドの単位。< 0: その
+// 手前)。`p`: 地図の行列を点に掛けたもの。線上に何もない、または地図の外: ずっと手前。
 float MapPastAt(int k, float4 p) {
     float2 uv = p.xy * float2(0.5, -0.5) + 0.5;
     if (uv.x < 0 || uv.x >= 1 || uv.y < 0 || uv.y >= 1) return -1e30;
@@ -336,10 +333,11 @@ float MapPast(int k, float3 w) {
 )";
 
 const char kSurfaceHlsl[] = R"(
-// A plugin's touch on every surface (RenderFrame::surface), before it is lit: its code defines
+// プラグインが全部の面に加える手 (RenderFrame::surface)。光を当てる前に働く。そのコードが
 //   void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, float3 n)
-// (albedo: linear; rough 0.04 .. 1; wpos: where in the world; n: the surface's normal, by its shape)
-// and reads its numbers here. It may use SunShadow(wpos, n), MapPast(k, w) and shadowInfo.
+// を定義する
+// (albedo: 線形、rough 0.04 .. 1、wpos: ワールドでの位置、n: 面の法線 (形から))
+// し、数値はここから読む。SunShadow(wpos, n)・MapPast(k, w)・shadowInfo が使える。
 cbuffer SurfaceData : register(b5) {
     float4 surfaceData[16];
 };

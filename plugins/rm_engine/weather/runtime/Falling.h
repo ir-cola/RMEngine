@@ -1,8 +1,8 @@
 #pragma once
-// 天候 - what falls (rain and snow) and 濡れ, as the GPU draws them (WeatherDraw.h): the numbers, and
-// the HLSL - the drops and flakes (an ExtraDraw of their own) and the touch on every surface that makes
-// what the rain reached look wet (3D 空間's RenderFrame::surface). Both read 3D 空間's 向きの地図 (the
-// colliders seen the way they fall: RendererShaders.h's MapPast).
+// 天候 - 降るもの (雨と雪) と 濡れ を、GPU が描く形で (WeatherDraw.h): 数値と HLSL - 粒と雪片
+// (それ専用の ExtraDraw) と、雨が届いた所を濡れて見せる、すべての面への働き (3D 空間の
+// RenderFrame::surface)。どちらも 3D 空間の 向きの地図 (落ちる向きから見たコライダー:
+// RendererShaders.h の MapPast) を読む。
 
 #include "base/Math.h"
 #include "rm_engine/weather/runtime/Weather.h"
@@ -14,69 +14,68 @@
 
 namespace rm::weather {
 
-// Rain or snow falling around the eye: drops / flakes in a box that moves with the eye (each keeps its
-// place in the world while it falls; out of one side, in at the other), drawn after the solid things
-// with the depth test, each made by the vertex shader from its number (no buffer). Fainter near the eye
-// and the box's edge.
+// 目のまわりに降る雨か雪: 目と一緒に動く箱の中の粒 / 雪片 (落ちる間、それぞれが世界での場所を
+// 保つ。一方の面から出て、反対側から入る)。ソリッドなものの後に深度テストつきで描く。
+// それぞれ頂点シェーダーが自分の番号から作る (バッファなし)。目の近くと箱の端では薄い。
 struct Precipitation {
     enum class Kind : uint8_t { Rain, Snow };
     Kind kind = Kind::Rain;
-    float amount = 0;              // 0 .. 1: none .. kMaxRaindrops / kMaxSnowflakes (rain: also how heavy each drop looks)
-    float seconds = 0;             // the time they fall by (still: they hang where they are)
-    Color light{1, 1, 1, 1};       // what lights them (linear)
-    float windX = 0, windZ = 0;    // the wind now (m/s, world)
-    float driftX = 0, driftZ = 0;  // how far the wind has carried them (world units)
-    int map = -1;                  // the 向きの地図 of the way they fall (-1: none - nothing to hit)
+    float amount = 0;              // 0 .. 1: なし .. kMaxRaindrops / kMaxSnowflakes (雨は、各粒がどれだけ重く見えるかも)
+    float seconds = 0;             // 落ちる時間 (止まっているとき: そこで宙に浮く)
+    Color light{1, 1, 1, 1};       // それらを照らす光 (リニア)
+    float windX = 0, windZ = 0;    // 今の風 (m/s、ワールド)
+    float driftX = 0, driftZ = 0;  // 風が運んだ距離 (ワールド単位)
+    int map = -1;                  // 落ちる向きの 向きの地図 (-1: なし - 当たるものがない)
 };
-// (2026-11-20: four times as many - the heaviest rain felt light; a storm is a wall of rain)
-// (2026-11-20 again: rain less - a downpour is its fog more than its drops; snow far more)
+// (2026-11-20: 4 倍に - 一番強い雨が軽く感じた。嵐は雨の壁)
+// (2026-11-20 また: 雨は減らす - どしゃぶりは粒より霧。雪はずっと多く)
 inline constexpr uint32_t kMaxRaindrops = 40000;
 inline constexpr uint32_t kMaxSnowflakes = 90000;
-inline constexpr float kRainBox = 24.f;  // the box's side (world units)
+inline constexpr float kRainBox = 24.f;  // 箱の一辺 (ワールド単位)
 inline constexpr float kSnowBox = 18.f;
-// The wind's drift starts again from 0 this far (world units): a multiple of both boxes (they look
-// the same there), and far enough that the clouds' jump is seldom (a big storm: hours).
+// 風の流れはここまで来ると 0 からやり直す (ワールド単位): 両方の箱の倍数 (そこでは見た目が
+// 同じ) で、雲の飛びがめったに起きないほど遠く (大きな嵐で: 何時間も)。
 inline constexpr float kDriftWrap = kRainBox * kSnowBox * 400.f;
-// How many are drawn for an amount (0 .. the most): few for a little (a few drops: ぽつぽつ), growing
-// faster than the amount towards a storm.
+// 量に応じて何個描くか (0 .. 最大): 少しなら少なく (数粒: ぽつぽつ)、嵐に向かって量より
+// 速く増える。
 uint32_t PrecipitationCount(const Precipitation& p);
 
-// How they fall: down at least `least` m/s (each drop / flake up to `spread` faster), and `carried` of
-// the wind's speed sideways. The shader is given these.
+// どう落ちるか: 少なくとも `least` m/s で下へ (各粒 / 雪片はさらに最大 `spread` 速く)、横には
+// 風の速さの `carried` だけ。シェーダーにこれらを渡す。
 struct FallSpeed {
     float least, spread, carried;
 };
 FallSpeed FallOf(Precipitation::Kind kind);
-// The way they go on average in a wind (length 1): what they hit is seen from there.
+// 風の中で平均してどちらへ行くか (長さ 1): 当たるものはそこから見る。
 Vec3 FallDirection(Precipitation::Kind kind, Vec3 wind);
 
-// The drops' and flakes' shaders: FallVS / FallPS (vs_4_0 / ps_4_0), after 3D 空間's kColorHlsl and
-// kDirectionMapHlsl. Their numbers: FallConstants (b4).
+// 粒と雪片のシェーダー: FallVS / FallPS (vs_4_0 / ps_4_0)。3D 空間の kColorHlsl と
+// kDirectionMapHlsl の後。その数値: FallConstants (b4)。
 extern const char kFallHlsl[];
 struct FallConstants {
     float viewProj[16];
     float eye[4];
-    float info[4];   // x: 0 rain / 1 snow, y: seconds, z: the box's side, w: its 向きの地図 (-1: none)
-    float light[4];  // rgb: what lights them (linear)
-    float right[4];  // xyz: the camera's right (world); w: how heavy the rain is (0 .. 1: the drops' look)
-    float up[4];     // xyz: the camera's up
-    float wind[4];   // xy: the wind now (m/s, world x z); zw: how far it has carried them
-    float fall[4];   // x: the least fall (m/s), y: how much faster each may be, z: how much of the wind takes it
+    float info[4];   // x: 0 雨 / 1 雪、y: 秒、z: 箱の一辺、w: その 向きの地図 (-1: なし)
+    float light[4];  // rgb: それらを照らす光 (リニア)
+    float right[4];  // xyz: カメラの右 (ワールド)、w: 雨の強さ (0 .. 1: 粒の見た目)
+    float up[4];     // xyz: カメラの上
+    float wind[4];   // xy: 今の風 (m/s、ワールドの x z)、zw: 風が運んだ距離
+    float fall[4];   // x: 最小の落下 (m/s)、y: それぞれがさらに速くなれる量、z: 風がどれだけ運ぶか
 };
 static_assert(sizeof(FallConstants) % 16 == 0);
 
-// 濡れ and 積雪: the touch on every surface (3D 空間's RenderFrame::surface: Surface(...)) and its numbers -
-// the ways the rain and snow fell, each with the 向きの地図 it is seen by (`maps`, -1: none - everything
-// open), how far it seeps under what covers and how deep its snow lies (float4 1 + k: sun, shade, map,
-// seep; float4 1 + kWetWays + k: x snow).
+// 濡れ と 積雪: すべての面への働き (3D 空間の RenderFrame::surface: Surface(...)) とその数値 -
+// 雨と雪の降り方ごとに、それを見る 向きの地図 (`maps`、-1: なし - 全部開いている)、覆うものの
+// 下へどれだけしみこむか、雪がどれだけ深く積もるか (float4 1 + k: 日なた、日陰、地図、
+// しみこみ。float4 1 + kWetWays + k: x が雪)。
 extern const char kWetSurfaceHlsl[];
 std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps);
 
-// 積雪 with its height (RenderFrame::solids): SnowLayerVS / SnowLayerPS, after
-// RendererShaderText(kWetSurfaceHlsl) - one grid of kSnowCells x kSnowCells cells of kSnowCell around the
-// eye, seen straight from above, drawn with an index buffer and no vertex buffer.
-// 足跡: SnowTrailVS / SnowTrailPS (the same way): a picture of kTrailCells x kTrailCells cells of
-// kTrailCell around the eye, drawn each frame from the last (two of them; R32G32B32A32_FLOAT).
+// 高さのある 積雪 (RenderFrame::solids): SnowLayerVS / SnowLayerPS。
+// RendererShaderText(kWetSurfaceHlsl) の後 - 目のまわりに、kSnowCell のマスを kSnowCells x
+// kSnowCells 並べた格子 1 つを真上から見て、インデックスバッファで描く (頂点バッファなし)。
+// 足跡: SnowTrailVS / SnowTrailPS (同じ方法): 目のまわりに、kTrailCell のマスを kTrailCells x
+// kTrailCells 並べた絵。各フレームで前のフレームから描く (2 枚。R32G32B32A32_FLOAT)。
 extern const char kSnowLayerHlsl[];
 extern const char kSnowTrailHlsl[];
 inline constexpr uint32_t kSnowCells = 384;
@@ -84,22 +83,22 @@ inline constexpr float kSnowCell = 0.125f;  // (48 m)
 inline constexpr uint32_t kTrailCells = 512;
 inline constexpr float kTrailCell = 0.09375f;  // (48 m)
 struct SnowLayerConstants {
-    float grid[4];       // xy: the grid's corner (world x z, in whole cells); z: a cell (m); w: cells a side
-    float info[4];       // x: the map straight down; y: where its lines start (world y: the eye)
-    float snow[4][4];    // each way: x: its snow (m), y: its 向きの地図 (-1: none)
-    float trail[4];      // the footprints: xy: the first cell (world x z); z: a cell (m); w: cells a side (0: none)
-    float trailMore[4];  // x: which count of footprints
+    float grid[4];       // xy: 格子の角 (ワールドの x z、ちょうどのマス単位)、z: 1 マス (m)、w: 1 辺のマス数
+    float info[4];       // x: まっすぐ下の地図、y: その線が始まる所 (ワールドの y: 目)
+    float snow[4][4];    // 各降り方: x: その雪 (m)、y: その 向きの地図 (-1: なし)
+    float trail[4];      // 足跡: xy: 最初のマス (ワールドの x z)、z: 1 マス (m)、w: 1 辺のマス数 (0: なし)
+    float trailMore[4];  // x: 足跡の数のうちどれか
 };
 static_assert(sizeof(SnowLayerConstants) % 16 == 0);
 struct SnowTrailConstants {
-    float trail[4];  // as SnowLayerConstants::trail
-    float more[4];   // x: which count; y: how much it fills up now (m); z: where the lines up start (world y); w: the map from below
+    float trail[4];  // SnowLayerConstants::trail と同じ
+    float more[4];   // x: 数のうちどれか、y: 今どれだけ埋まるか (m)、z: 上向きの線が始まる所 (ワールドの y)、w: 下からの地図
 };
 static_assert(sizeof(SnowTrailConstants) % 16 == 0);
-// The snow lying around `eye`: on what `downMap` (straight down) sees, as deep as `ways` (seen by `maps`)
-// left; footprints read when `trails`.
+// `eye` のまわりに積もる雪: `downMap` (まっすぐ下) が見るものの上に、`ways` (`maps` で見る) が
+// 残した分の深さで。`trails` のとき足跡を読む。
 SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, int downMap, uint32_t trailCount, bool trails);
-// The footprints' frame: `fill` m filled up since the last; `upMap`: the map of the moving shapes from below.
+// 足跡のフレーム: 前から `fill` m 埋まった。`upMap`: 動く形を下から見た地図。
 SnowTrailConstants SnowTrailOf(Vec3 eye, uint32_t count, float fill, int upMap);
 
 }  // namespace rm::weather

@@ -16,8 +16,8 @@ namespace rm::space3d {
 
 namespace {
 
-// More than this many vertices or indices in one accessor / file is taken as a broken file (an
-// accessor without data can ask for any count, and nothing would stop it filling the memory).
+// 1 つのアクセサー / ファイルの頂点やインデックスがこれより多いと、壊れたファイルとみなす
+// (データの無いアクセサーは好きな個数を要求できてしまい、止めないとメモリを埋めてしまう)。
 constexpr size_t kMaxCount = 50'000'000;
 constexpr int kMaxNodeDepth = 256;
 
@@ -45,14 +45,14 @@ constexpr uint32_t kChunkBin = 0x004E4942;   // "BIN\0"
 uint32_t ReadU32(const uint8_t* p) {
     uint32_t v;
     std::memcpy(&v, p, 4);
-    return v;  // little-endian, as Windows on x64 / ARM64
+    return v;  // リトルエンディアン。x64 / ARM64 の Windows と同じ
 }
 
 int ComponentSize(int64_t componentType) {
     switch (componentType) {
-        case 5120: case 5121: return 1;  // byte, unsigned byte
-        case 5122: case 5123: return 2;  // short, unsigned short
-        case 5125: case 5126: return 4;  // unsigned int, float
+        case 5120: case 5121: return 1;  // byte、unsigned byte
+        case 5122: case 5123: return 2;  // short、unsigned short
+        case 5125: case 5126: return 4;  // unsigned int、float
         default: return 0;
     }
 }
@@ -62,10 +62,10 @@ int ComponentCount(std::string_view type) {
     if (type == "VEC2") return 2;
     if (type == "VEC3") return 3;
     if (type == "VEC4") return 4;
-    return 0;  // matrices: never used for what is read here
+    return 0;  // 行列: ここで読むものには使わない
 }
 
-// Where the numbers of one accessor are (base null: all zero, an accessor without a buffer view).
+// 1 つのアクセサーの数がある場所 (base が null: すべて 0。バッファービューの無いアクセサー)。
 struct Accessor {
     const uint8_t* base = nullptr;
     size_t stride = 0;
@@ -109,7 +109,7 @@ Mat4 FromQuaternion(float x, float y, float z, float w) {
     return r;
 }
 
-// arr[i] as a number (scalar: the value itself), or def.
+// arr[i] を数として (スカラー: その値そのもの)。無ければ def。
 float Number(const json::Value& arr, size_t i, float def, bool scalar = false) {
     if (scalar) return arr.IsNumber() ? static_cast<float>(arr.AsDouble()) : def;
     return arr.IsArray() && i < arr.Size() && arr.At(i).IsNumber() ? static_cast<float>(arr.At(i).AsDouble()) : def;
@@ -143,7 +143,7 @@ public:
                 if (!Node(n.AsInt(-1), Mat4{}, 0)) return std::nullopt;
             }
         } else if (nodes.IsArray() && nodes.Size() > 0) {
-            // No scene: every node that is nobody's child.
+            // シーンが無い: 誰の子でもないノードすべて。
             std::vector<bool> child(nodes.Size(), false);
             for (const json::Value& n : nodes.Items()) {
                 for (const json::Value& c : n.Get("children").Items()) {
@@ -155,7 +155,7 @@ public:
                 if (!child[i] && !Node(static_cast<int64_t>(i), Mat4{}, 0)) return std::nullopt;
             }
         } else {
-            // Not even nodes: the meshes as they are.
+            // ノードすらない: メッシュをそのまま。
             for (size_t i = 0; i < doc_.Get("meshes").Size(); ++i) {
                 if (!Mesh(static_cast<int64_t>(i), Mat4{})) return std::nullopt;
             }
@@ -206,7 +206,7 @@ private:
         return true;
     }
 
-    // Every material's colour and picture (pbrMetallicRoughness: baseColorFactor x baseColorTexture).
+    // 各マテリアルの色と絵 (pbrMetallicRoughness: baseColorFactor x baseColorTexture)。
     bool LoadMaterials() {
         const json::Value& materials = doc_.Get("materials");
         for (size_t i = 0; i < materials.Size(); ++i) {
@@ -216,13 +216,13 @@ private:
             if (mat.name.empty()) mat.name = std::format("材質 {}", i);
             const json::Value& pbr = m.Get("pbrMetallicRoughness");
             const json::Value& f = pbr.Get("baseColorFactor");
-            // Linear light, as glTF writes it (the renderer works in linear light).
+            // glTF の書き方のままリニアの光 (レンダラーはリニアの光で動く)。
             mat.baseColor = {Unit(Number(f, 0, 1)), Unit(Number(f, 1, 1)), Unit(Number(f, 2, 1)), Unit(Number(f, 3, 1))};
-            // glTF's defaults: a rough metal (most files write both).
+            // glTF の既定値: 粗い金属 (ほとんどのファイルは両方を書く)。
             mat.metallic = Unit(Number(pbr.Get("metallicFactor"), 0, 1.f, true));
             mat.roughness = Unit(Number(pbr.Get("roughnessFactor"), 0, 1.f, true));
             const json::Value& e = m.Get("emissiveFactor");
-            // KHR_materials_emissive_strength: brighter than 1.
+            // KHR_materials_emissive_strength: 1 より明るい。
             const float strength = std::max(0.f, Number(m.Get("extensions").Get("KHR_materials_emissive_strength").Get("emissiveStrength"), 0, 1.f, true));
             mat.emissive = {std::max(0.f, Number(e, 0, 0)) * strength, std::max(0.f, Number(e, 1, 0)) * strength,
                             std::max(0.f, Number(e, 2, 0)) * strength, 1};
@@ -241,8 +241,8 @@ private:
 
     static constexpr int kBroken = -2;
 
-    // A material's textureInfo ({"index": texture}) -> one of out_.images in `out` (left as it is when
-    // there is none, or the texture has no picture). False: told why.
+    // マテリアルの textureInfo ({"index": texture}) -> `out` の out_.images の 1 つ (無いとき、
+    // またはテクスチャに絵が無いときはそのまま)。false: 理由を知らせる。
     bool TextureImage(const json::Value* info, int& out) {
         if (!info) return true;
         const int64_t t = info->Get("index").AsInt(-1);
@@ -256,7 +256,7 @@ private:
         return true;
     }
 
-    // glTF image `index` as one of out_.images (each read once); -1: it has no picture; kBroken: told why.
+    // glTF の画像 `index` を out_.images の 1 つとして (各 1 回だけ読む)。-1: 絵が無い。kBroken: 理由を知らせる。
     int Image(int64_t index) {
         const json::Value& images = doc_.Get("images");
         if (index < 0 || static_cast<size_t>(index) >= images.Size()) {
@@ -290,7 +290,7 @@ private:
             if (!bytes) return kBroken;
             out.bytes.assign(bytes->begin(), bytes->end());
         } else {
-            known = -1;  // nothing to paint with
+            known = -1;  // 塗るものが無い
             return known;
         }
         if (out.name.empty()) out.name = std::format("画像 {}", index);
@@ -299,7 +299,7 @@ private:
         return known;
     }
 
-    // The bytes of a buffer view, checked to lie inside its buffer.
+    // バッファービューのバイト列。バッファーの中に収まるか確かめる。
     std::optional<std::span<const uint8_t>> View(int64_t vi) {
         const json::Value& views = doc_.Get("bufferViews");
         if (vi < 0 || static_cast<size_t>(vi) >= views.Size()) {
@@ -322,7 +322,7 @@ private:
     }
 
     bool Node(int64_t index, const Mat4& parent, int depth) {
-        // Every visit counts: a node may name the same child twice at every level (2^depth walks).
+        // 訪れるたびに数える: ノードは、どの階層でも同じ子を 2 回名指しできる (2^深さ 回の探索)。
         if (!budget_.Step(error_)) return false;
         const json::Value& nodes = doc_.Get("nodes");
         if (index < 0 || static_cast<size_t>(index) >= nodes.Size()) return Fail(error_, std::format("ノード {} がありません", index));
@@ -364,7 +364,7 @@ private:
     bool Primitive(const json::Value& prim, const Mat4& world) {
         const int64_t mode = prim.Get("mode").AsInt(4);
         if (mode != 4 && mode != 5 && mode != 6) {
-            ++skipped_;  // points and lines: nothing to fill
+            ++skipped_;  // 点と線: 塗るものが無い
             return true;
         }
         int material = -1;
@@ -378,7 +378,7 @@ private:
         if (!posIndex) return Fail(error_, "頂点の位置 (POSITION) のないプリミティブがあります");
         Accessor pos;
         if (!Open(posIndex->AsInt(-1), 3, pos)) return false;
-        // The part and its copy in the model (an accessor without data names its count for free).
+        // パーツと、モデルの中でのそのコピー (データの無いアクセサーは、個数を無料で名指しできる)。
         if (!budget_.Take(pos.count, uint64_t{pos.count} * sizeof(MeshVertex) * 2, error_)) return false;
         MeshData part;
         part.vertices.resize(pos.count);
@@ -398,7 +398,7 @@ private:
             for (size_t i = 0; i < pos.count; ++i) part.vertices[i].uv = {uv.Float(i, 0), uv.Float(i, 1)};
         }
 
-        // The corners in order, then cut into triangles by the mode.
+        // 角を順に並べ、モードに従って三角形に切る。
         std::vector<uint32_t> corners;
         if (const json::Value* ind = prim.Find("indices")) {
             Accessor ix;
@@ -422,10 +422,10 @@ private:
             part.indices = std::move(corners);
         } else {
             for (size_t i = 2; i < corners.size(); ++i) {
-                if (mode == 5) {  // strip: every other triangle turns the other way
+                if (mode == 5) {  // ストリップ: 1 つおきの三角形は逆向きになる
                     const bool odd = (i % 2) == 1;
                     part.indices.insert(part.indices.end(), {corners[i - 2], odd ? corners[i] : corners[i - 1], odd ? corners[i - 1] : corners[i]});
-                } else {  // fan
+                } else {  // ファン
                     part.indices.insert(part.indices.end(), {corners[0], corners[i - 1], corners[i]});
                 }
             }
@@ -436,10 +436,10 @@ private:
         return true;
     }
 
-    // The node's place is put into the vertices (one mesh in the model's space).
+    // ノードの位置を頂点に反映する (モデルの空間での 1 つのメッシュ)。
     void Append(const MeshData& part, const Mat4& world) { AppendPlaced(out_, part, world); }
 
-    // An accessor's numbers, checked to lie inside its buffer.
+    // アクセサーの数。バッファーの中に収まるか確かめる。
     bool Open(int64_t index, int wantComponents, Accessor& out) {
         const json::Value& accessors = doc_.Get("accessors");
         if (index < 0 || static_cast<size_t>(index) >= accessors.Size()) return Fail(error_, std::format("アクセサー {} がありません", index));
@@ -457,7 +457,7 @@ private:
         out.count = static_cast<size_t>(count);
         const size_t element = static_cast<size_t>(size) * static_cast<size_t>(out.components);
         const json::Value* viewIndex = a.Find("bufferView");
-        if (!viewIndex) return true;  // all zero
+        if (!viewIndex) return true;  // すべて 0
         const int64_t vi = viewIndex->AsInt(-1);
         const auto view = View(vi);
         if (!view) return false;
@@ -480,8 +480,8 @@ private:
     ReadBudget& budget_;
     std::vector<std::vector<uint8_t>> buffers_;
     MeshData out_;
-    std::vector<int> triangleMaterial_;  // one per triangle of out_
-    std::vector<int> imageOf_;           // glTF image -> out_.images (kBroken: not yet)
+    std::vector<int> triangleMaterial_;  // out_ の三角形 1 つにつき 1 つ
+    std::vector<int> imageOf_;           // glTF の画像 -> out_.images (kBroken: まだ)
     int skipped_ = 0;
 };
 
@@ -509,28 +509,28 @@ bool ParseInt(std::string_view t, int64_t& out) {
     return ec == std::errc{} && end == t.data() + t.size();
 }
 
-// The rest of the line without the spaces around it (names with spaces: "newmtl red brick").
+// 行の残りから、前後の空白を取ったもの (空白を含む名前: "newmtl red brick")。
 std::string_view Rest(std::string_view s) {
     while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
     while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.remove_suffix(1);
     return s;
 }
 
-// A path written in a model's text file, with '/' between folders (Windows tools write '\').
+// モデルのテキストファイルに書かれたパス。フォルダの区切りは '/' にする (Windows のツールは '\' で書く)。
 std::string Slashes(std::string_view s) {
     std::string out(s);
     std::replace(out.begin(), out.end(), '\\', '/');
     return out;
 }
 
-// The folder part of a relative path, with its '/' ("mats/a.mtl" -> "mats/"; "a.mtl" -> "").
+// 相対パスのフォルダ部分。末尾の '/' を含む ("mats/a.mtl" -> "mats/"、"a.mtl" -> "")。
 std::string_view FolderOf(std::string_view path) {
     const size_t slash = path.rfind('/');
     return slash == std::string_view::npos ? std::string_view{} : path.substr(0, slash + 1);
 }
 
 struct Corner {
-    int64_t v = 0, t = -1, n = -1;  // 0-based, -1: none
+    int64_t v = 0, t = -1, n = -1;  // 0 始まり、-1: なし
     bool operator==(const Corner&) const = default;
 };
 struct CornerHash {
@@ -580,7 +580,7 @@ std::optional<MeshData> ParseGltf(std::span<const uint8_t> bytes, const ReadRela
     } else {
         jsonText = {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
     }
-    // The JSON's tree takes a few times the text (counted as 4).
+    // JSON の木は、テキストの数倍になる (4 倍として数える)。
     if (!b.Take(0, uint64_t{jsonText.size()} * 4, error)) return std::nullopt;
     json::ParseError pe;
     const auto doc = json::Parse(jsonText, &pe);
@@ -597,9 +597,9 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
     std::vector<Vec3> positions, normals;
     std::vector<Vec2> uvs;
     MeshData mesh;
-    // Materials: the names used (usemtl), in order, and what the .mtl files say about each name.
+    // マテリアル: 使われた名前 (usemtl) を順に、と、各名前について .mtl ファイルが言っていること。
     std::vector<std::string> used;
-    int current = -1;  // into `used`; -1 before the first usemtl
+    int current = -1;  // `used` の中の番号。最初の usemtl の前は -1
     std::vector<int> triangleMaterial;
     std::vector<MeshMaterial> library;
     std::unordered_map<Corner, uint32_t, CornerHash> made;
@@ -636,7 +636,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
                 return std::nullopt;
             }
             if (!b.Take(0, sizeof(Vec2), error)) return std::nullopt;
-            uvs.push_back({t[0], 1.f - t[1]});  // OBJ's V goes up
+            uvs.push_back({t[0], 1.f - t[1]});  // OBJ の V は上向き
         } else if (key == "vn") {
             float n[3] = {0, 0, 0};
             if (!numbers(3, 3, n)) {
@@ -648,7 +648,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
         } else if (key == "f") {
             std::vector<uint32_t> poly;
             for (std::string_view t = NextToken(line); !t.empty(); t = NextToken(line)) {
-                // a, a/b, a//c, a/b/c (1-based; negative counts back from the last so far)
+                // a、a/b、a//c、a/b/c (1 始まり。負の数は、そこまでの最後から数える)
                 Corner c;
                 std::string_view parts[3];
                 int count = 0;
@@ -675,7 +675,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
                 if (c.n < 0) missingNormal = true;
                 auto [it, added] = made.try_emplace(c, static_cast<uint32_t>(mesh.vertices.size()));
                 if (added) {
-                    // The vertex and its entry in the table of corners.
+                    // 頂点と、角の表でのその項目。
                     if (!b.Take(1, sizeof(MeshVertex) + 48, error)) return std::nullopt;
                     MeshVertex v;
                     v.position = positions[static_cast<size_t>(c.v)];
@@ -685,7 +685,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
                 }
                 poly.push_back(it->second);
             }
-            // A fan from the first corner (polygons in OBJ files are flat and convex).
+            // 最初の角からのファン (OBJ のポリゴンは平らで凸)。
             for (size_t i = 2; i < poly.size(); ++i) {
                 if (!b.Take(0, 3 * sizeof(uint32_t) + sizeof(int), error)) return std::nullopt;
                 mesh.indices.insert(mesh.indices.end(), {poly[0], poly[i - 1], poly[i]});
@@ -697,7 +697,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
             current = static_cast<int>(it - used.begin());
             if (it == used.end()) used.push_back(name);
         } else if (key == "mtllib") {
-            // One file, or several separated by spaces (a name with spaces is tried whole first).
+            // ファイル 1 つ、または空白で区切った複数 (空白を含む名前は、まず全体で試す)。
             const std::string_view rest = Rest(line);
             std::vector<std::string> files{Slashes(rest)};
             if (rest.find(' ') != std::string_view::npos) {
@@ -706,16 +706,16 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
             for (size_t k = 0; k < files.size(); ++k) {
                 auto bytes = read ? read(files[k]) : std::nullopt;
                 if (!bytes) {
-                    if (k == 0 && files.size() > 1) continue;  // not one name with spaces: the names one by one
+                    if (k == 0 && files.size() > 1) continue;  // 空白を含む 1 つの名前ではない: 名前を 1 つずつ
                     mesh.warnings.push_back(std::format("材質のファイル「{}」を読めませんでした (色なしで描きます)", files[k]));
                     continue;
                 }
                 auto mats = ParseMtl({reinterpret_cast<const char*>(bytes->data()), bytes->size()}, FolderOf(files[k]), mesh.images);
                 library.insert(library.end(), std::make_move_iterator(mats.begin()), std::make_move_iterator(mats.end()));
-                if (k == 0) break;  // the whole line was one file
+                if (k == 0) break;  // 行全体が 1 つのファイルだった
             }
         }
-        // Everything else (o, g, s, l, p ...) is not needed for the shape.
+        // それ以外 (o, g, s, l, p ...) は形には要らない。
     }
     if (mesh.indices.empty()) {
         Fail(error, "三角形の面 (f) がありません");
@@ -723,7 +723,7 @@ std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read,
     }
     if (missingNormal) ComputeNormals(mesh);
     ComputeBounds(mesh);
-    // The materials used, by name (a name no .mtl has is drawn white).
+    // 使われているマテリアルを名前で (どの .mtl にも無い名前は白で描く)。
     for (const std::string& name : used) {
         const auto it = std::find_if(library.begin(), library.end(), [&](const MeshMaterial& m) { return m.name == name; });
         if (it != library.end()) {
@@ -754,7 +754,7 @@ std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folde
             out.push_back(std::move(m));
             continue;
         }
-        if (out.empty()) continue;  // before the first material: nothing to give it to
+        if (out.empty()) continue;  // 最初のマテリアルの前: 渡す先が無い
         MeshMaterial& m = out.back();
         if (key == "Kd") {
             float rgb[3] = {1, 1, 1};
@@ -763,8 +763,8 @@ std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folde
                 if (!ParseFloat(t, rgb[n])) break;
                 ++n;
             }
-            if (n == 1) rgb[1] = rgb[2] = rgb[0];  // one number: grey
-            // The screen's colours (as in every paint tool) into linear light.
+            if (n == 1) rgb[1] = rgb[2] = rgb[0];  // 数が 1 つ: グレー
+            // 画面の色 (どのペイントツールもこれ) をリニアの光に。
             if (n == 1 || n == 3) m.baseColor = {ScreenToLinear(rgb[0]), ScreenToLinear(rgb[1]), ScreenToLinear(rgb[2]), m.baseColor.a};
         } else if (key == "Ke") {
             float rgb[3] = {0, 0, 0};
@@ -776,11 +776,11 @@ std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folde
             if (n == 1) rgb[1] = rgb[2] = rgb[0];
             if (n == 1 || n == 3) m.emissive = {ScreenToLinear(rgb[0]), ScreenToLinear(rgb[1]), ScreenToLinear(rgb[2]), 1};
         } else if (key == "Ns") {
-            // The shininess (0 .. 1000) as a roughness, as Blender reads it back (it writes (1 - roughness)² x 1000).
+            // シャイネス (0 .. 1000) をラフネスに。Blender が読み戻すのと同じ (Blender は (1 - roughness)² x 1000 で書く)。
             float ns = 0;
             if (ParseFloat(NextToken(line), ns)) m.roughness = 1.f - std::sqrt(std::clamp(ns, 0.f, 1000.f) / 1000.f);
         } else if (key == "Pr" || key == "Pm") {
-            // The PBR additions to .mtl: roughness / metallic.
+            // .mtl への PBR の追加分: roughness / metallic。
             float v = 0;
             if (ParseFloat(NextToken(line), v)) (key == "Pr" ? m.roughness : m.metallic) = std::clamp(v, 0.f, 1.f);
         } else if (key == "d" || key == "Tr") {
@@ -790,14 +790,14 @@ std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folde
                 m.alpha = m.baseColor.a < 1.f ? AlphaMode::Blend : AlphaMode::Opaque;
             }
         } else if (key == "map_Kd" || key == "map_Ke" || key == "norm" || key == "map_Bump" || key == "bump") {
-            // Options (-s 1 1 1, -clamp on, -bm 0.5 ...) come before the file's name, which is the rest.
-            // A bump map is taken as a normal map (what Blender writes for one); -bm is its strength.
+            // オプション (-s 1 1 1、-clamp on、-bm 0.5 ...) はファイル名の前に来て、ファイル名は残りの部分。
+            // バンプマップは法線マップとして扱う (Blender が書き出すのがそれ)。-bm はその強さ。
             std::string_view rest = Rest(line);
             float bm = 1.f;
             while (rest.starts_with("-")) {
                 std::string_view probe = rest;
                 const std::string_view option = NextToken(probe);
-                const bool numbers = option == "-o" || option == "-s" || option == "-t";  // 1 to 3 numbers
+                const bool numbers = option == "-o" || option == "-s" || option == "-t";  // 1 〜 3 個の数
                 int args = numbers ? 3 : option == "-mm" ? 2 : 1;
                 for (; args > 0; --args) {
                     std::string_view look = probe;
@@ -823,7 +823,7 @@ std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folde
                 m.image = image;
             } else if (key == "map_Ke") {
                 m.emissiveImage = image;
-                if (m.emissive.r == 0 && m.emissive.g == 0 && m.emissive.b == 0) m.emissive = {1, 1, 1, 1};  // the picture as it is
+                if (m.emissive.r == 0 && m.emissive.g == 0 && m.emissive.b == 0) m.emissive = {1, 1, 1, 1};  // 絵をそのまま
             } else {
                 m.normalImage = image;
                 m.normalScale = bm;
@@ -841,7 +841,7 @@ float ScreenToLinear(float screen) {
 
 float LinearToScreen(float linear) {
     const float c = std::clamp(linear, 0.f, 1.f);
-    if (c >= 1.f) return 1.f;  // exactly (the curve's float sum may miss it by a hair)
+    if (c >= 1.f) return 1.f;  // ちょうど (カーブの float の合計は、わずかに届かないことがある)
     return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.f / 2.4f) - 0.055f;
 }
 
@@ -851,7 +851,7 @@ void SortByMaterial(MeshData& mesh, std::span<const int> materialOfTriangle) {
         const int m = t < materialOfTriangle.size() ? materialOfTriangle[t] : -1;
         return m >= 0 && static_cast<size_t>(m) < mesh.materials.size() ? m : -1;
     };
-    // Each material's place in the order they first appear (slot 0: no material).
+    // 各マテリアルの、最初に現れた順での位置 (スロット 0: マテリアル無し)。
     std::vector<int> rank(mesh.materials.size() + 1, -1);
     std::vector<int> order;
     for (size_t t = 0; t < triangles; ++t) {
@@ -861,7 +861,7 @@ void SortByMaterial(MeshData& mesh, std::span<const int> materialOfTriangle) {
             order.push_back(materialOf(t));
         }
     }
-    // Counted, then each triangle to its run (the order inside a run stays).
+    // 数えてから、各三角形をその区間へ (区間の中の順序は保つ)。
     std::vector<uint32_t> start(order.size() + 1, 0);
     for (size_t t = 0; t < triangles; ++t) start[static_cast<size_t>(rank[static_cast<size_t>(materialOf(t) + 1)]) + 1] += 3;
     for (size_t k = 1; k < start.size(); ++k) start[k] += start[k - 1];
@@ -921,7 +921,7 @@ void AppendPlaced(MeshData& out, const MeshData& part, const Mat4& world) {
     const uint32_t base = static_cast<uint32_t>(out.vertices.size());
     for (MeshVertex v : part.vertices) {
         v.position = TransformPoint(world, v.position);
-        // Normals go by the inverse transpose (stays at right angles to a surface scaled unevenly).
+        // 法線は逆転置行列で変換する (不均等に拡大した面に対しても直角のまま)。
         const Vec3 n = v.normal;
         v.normal = Normalize({normalM.m[0][0] * n.x + normalM.m[0][1] * n.y + normalM.m[0][2] * n.z,
                               normalM.m[1][0] * n.x + normalM.m[1][1] * n.y + normalM.m[1][2] * n.z,
@@ -948,7 +948,7 @@ void ComputeNormals(MeshData& mesh) {
         MeshVertex& a = mesh.vertices[mesh.indices[i]];
         MeshVertex& b = mesh.vertices[mesh.indices[i + 1]];
         MeshVertex& c = mesh.vertices[mesh.indices[i + 2]];
-        const Vec3 n = Cross(b.position - a.position, c.position - a.position);  // twice the area long
+        const Vec3 n = Cross(b.position - a.position, c.position - a.position);  // 面積の 2 倍の長さ
         a.normal = a.normal + n, b.normal = b.normal + n, c.normal = c.normal + n;
     }
     for (MeshVertex& v : mesh.vertices) {
@@ -966,7 +966,7 @@ void ApplyModelImport(MeshData& mesh, float scale, bool zUp) {
         }
         v.position = {v.position.x * scale, v.position.y * scale, v.position.z * scale};
     }
-    // (a turn keeps the triangles' winding; a scale is never negative - Min of the setting)
+    // (回転は三角形の巻き方向を保つ。拡大は負にならない - 設定の Min)
     ComputeBounds(mesh);
 }
 
@@ -1004,7 +1004,7 @@ std::optional<std::vector<uint8_t>> DecodeBase64(std::string_view text) {
         }
         if (ch == '\r' || ch == '\n' || ch == ' ') continue;
         const int v = value(ch);
-        if (v < 0 || ended) return std::nullopt;  // not base64, or something after the padding
+        if (v < 0 || ended) return std::nullopt;  // base64 ではない、またはパディングの後に何かある
         acc = (acc << 6) | static_cast<uint32_t>(v);
         bits += 6;
         if (bits >= 8) {
@@ -1012,7 +1012,7 @@ std::optional<std::vector<uint8_t>> DecodeBase64(std::string_view text) {
             out.push_back(static_cast<uint8_t>((acc >> bits) & 0xFF));
         }
     }
-    if (bits >= 6) return std::nullopt;  // one character alone cannot make a byte
+    if (bits >= 6) return std::nullopt;  // 1 文字だけではバイトにならない
     return out;
 }
 

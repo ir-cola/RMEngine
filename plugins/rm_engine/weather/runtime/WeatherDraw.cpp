@@ -47,9 +47,9 @@ public:
         if (!w || !f.atmosphere) return;
         const WeatherNow now = NowOf(*w);
         const Vec3 wind{now.windX, 0, now.windZ};
-        // What falls (each with the 向きの地図 of its way) and what got wet (a map for each way).
+        // 降るもの (それぞれの向きの向きの地図つき) と、濡れたもの (向きごとの地図)。
         const Color light = LightOf(f.sky);
-        // 霧 (and a downpour's, a snowstorm's): its colour by the weather, from the light in the air.
+        // 霧 (と、どしゃぶり・吹雪のぶん): 色は天候から、空気中の光で決まる。
         if (const float fog = FogOf(now); fog > 0) {
             const Color c = FogColorOf(now, light);
             out.fog = {c.r, c.g, c.b, fog};
@@ -76,17 +76,17 @@ public:
             wetMaps_.push_back(static_cast<int>(directions_.size()));
             directions_.push_back(way.way);
         }
-        // 積雪 lies on what each way's map sees. Footprints (only while the game plays): the moving
-        // shapes seen from below (a map of their own, of them only).
+        // 積雪は、各向きの地図が見ている所に積もる。足跡 (ゲームが動いている間だけ): 動く形を
+        // 下から見たもの (それだけの専用の地図)。
         for (const WetWay& way : wet_) anySnow_ = anySnow_ || way.snow > 0.0005f;
         if (!f.playing) {
             trailsOn_ = false;
         } else if (!trailsOn_) {
             trailsOn_ = true;
-            ++trailCount_;  // (a new Play: no footprints yet)
+            ++trailCount_;  // (新しい Play: まだ足跡なし)
         }
         trailFill_ = trailsOn_ ? SnowFallRate(now, SnowMostOf(*w)) * std::max(f.dt, 0.f) : 0.f;
-        if (anySnow_) {  // (what the snow lies on: the tops, straight down)
+        if (anySnow_) {  // (雪が積もる先: 上の面、真下に向けて)
             downMap_ = static_cast<int>(directions_.size());
             directions_.push_back({0, -1, 0});
         }
@@ -97,14 +97,14 @@ public:
         movingOnly_.assign(directions_.size(), 0);
         if (upMap_ >= 0) movingOnly_[static_cast<size_t>(upMap_)] = 1;
         if (directions_.empty()) return;
-        // What they hit: the colliders (the connector 天候 × 物理), never drawn.
+        // それらが当たるもの: コライダー (コネクター 天候 × 物理)。描かない。
         if (f.registry) {
             MakeWeatherBlocks(f.scene, *f.registry, f.world, f.shape, f.model, shapes_, blockers_);
         } else {
-            shapes_.clear();  // (never the last frame's: their models may be gone)
+            shapes_.clear();  // (前のフレームのは使わない: モデルが消えているかもしれない)
         }
         if (shapes_.empty()) {
-            for (Precipitation& p : falls_) p.map = -1;  // (nothing to hit: no maps - all open)
+            for (Precipitation& p : falls_) p.map = -1;  // (当たるものなし: 地図なし - すべて開いている)
             std::fill(wetMaps_.begin(), wetMaps_.end(), -1);
             upMap_ = -1;
             downMap_ = -1;
@@ -118,7 +118,7 @@ public:
             surface_.data = WetSurfaceData(wet_, wetMaps_);
             out.surface = &surface_;
         }
-        // The snow lying with its height (on what the ways' maps see; thin: in lumps), and its footprints.
+        // 高さのある積もった雪 (向きの地図が見ている所に。薄いうちはまだらに) と、その足跡。
         if (anySnow_ && downMap_ >= 0 && LayerReady(f.gfx)) {
             solids_.push_back([this](const space3d::ExtraDrawContext& dc) { DrawSnow(dc); });
             out.solids = solids_;
@@ -136,8 +136,7 @@ public:
     bool Animating() const override { return animating_; }
 
 private:
-    // What lights the drops: the sky and the sun / moon (and a lightning flash) - about as much as the
-    // ground under them. No sky: a dull grey.
+    // 粒を照らすもの: 空と太陽 / 月 (と雷の光) - 下の地面と同じくらい。空がなければ鈍い灰色。
     static Color LightOf(const game_x_3d::SkyLook* sky) {
         if (!sky) return {0.6f, 0.6f, 0.65f, 1};
         const float s = sky->lightStrength * 0.9f, f = sky->flash;
@@ -145,7 +144,7 @@ private:
                 sky->ambientSky.b * 2 + sky->lightColor.b * s + f, 1};
     }
 
-    // The shaders and the constant buffer, on the picture's device (made again with new devices).
+    // 絵のデバイスの上のシェーダーと定数バッファ (新しいデバイスのたびに作り直す)。
     bool Ready(platform::Gfx& gfx) {
         if (generation_ == gfx.Generation() && (vs_ || failed_)) return vs_ != nullptr;
         generation_ = gfx.Generation();
@@ -164,7 +163,7 @@ private:
         cd.Usage = D3D11_USAGE_DEFAULT;
         cd.ByteWidth = sizeof(FallConstants);
         cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        // Its own states (an ExtraDraw gets what the last one left: a glowing particle's adding up).
+        // 専用のステート (ExtraDraw は前の描画が残したものを受け取る: 光る粒は加算になる)。
         D3D11_BLEND_DESC bl{};
         bl.RenderTarget[0].BlendEnable = TRUE;
         bl.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
@@ -192,8 +191,8 @@ private:
         return true;
     }
 
-    // The snow lying's shaders (made from the renderer's text: lit as the models are), its grid's
-    // corners and the footprints' two pictures - once per device.
+    // 積もった雪のシェーダー (レンダラーの文から作る: モデルと同じように照らす)、その格子の
+    // 頂点、足跡の 2 枚の絵 - デバイスごとに 1 回。
     bool LayerReady(platform::Gfx& gfx) {
         if (layerGeneration_ == gfx.Generation() && (layerVs_ || layerFailed_)) return layerVs_ != nullptr;
         layerGeneration_ = gfx.Generation();
@@ -219,7 +218,7 @@ private:
             cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
             return SUCCEEDED(device->CreateBuffer(&cd, nullptr, &out));
         };
-        // The grid's two triangles a cell (its corners are numbered row by row: SnowLayerVS).
+        // 1 マスにつき三角形 2 つの格子 (頂点は行ごとに番号を振る: SnowLayerVS)。
         std::vector<uint32_t> indices;
         indices.reserve(size_t{kSnowCells} * kSnowCells * 6);
         const uint32_t side = kSnowCells + 1;
@@ -242,7 +241,7 @@ private:
              SUCCEEDED(device->CreatePixelShader(tps->GetBufferPointer(), tps->GetBufferSize(), nullptr, &trailPs_)) &&
              cbuffer(sizeof(SnowLayerConstants), layerCb_) && cbuffer(sizeof(SnowTrailConstants), trailCb_) &&
              SUCCEEDED(device->CreateBuffer(&id, &idata, &layerIndices_));
-        // The footprints: two pictures, each frame drawn from the other.
+        // 足跡: 2 枚の絵。フレームごとに、一方からもう一方へ描く。
         for (TrailPicture& t : trails_) {
             if (!ok) break;
             D3D11_TEXTURE2D_DESC td{};
@@ -265,8 +264,8 @@ private:
         return true;
     }
 
-    // 積雪 (RenderFrame::solids: after the models, writing depth, lit as they are): the footprints move
-    // on a frame (while the game plays), then a layer for each way with snow.
+    // 積雪 (RenderFrame::solids: モデルのあと、深度を書き、モデルと同じように照らす): まず足跡が
+    // 1 フレーム進み (ゲームが動いている間)、そのあと雪のある向きごとに 1 層。
     void DrawSnow(const space3d::ExtraDrawContext& dc) {
         if (!layerVs_ || !dc.directionMaps) return;
         ID3D11DeviceContext* ctx = dc.ctx;
@@ -274,7 +273,7 @@ private:
         ID3D11ShaderResourceView* noTexture = nullptr;
         ID3D11Buffer* maps = dc.directionMapsCb;
         ID3D11ShaderResourceView* mapTexture = dc.directionMaps;
-        if (!trailsCleared_) {  // (a new picture holds anything: no world cell matches what it says)
+        if (!trailsCleared_) {  // (新しい絵は何かを持っている: 言っていることに合うワールドのマスはない)
             const float nothing[4] = {1e30f, 1e30f, 1e30f, -1};
             for (TrailPicture& t : trails_) ctx->ClearRenderTargetView(t.rtv.Get(), nothing);
             trailsCleared_ = true;
@@ -284,7 +283,7 @@ private:
             TrailPicture& to = trails_[1 - trailNow_];
             const SnowTrailConstants tk = SnowTrailOf(dc.eye, trailCount_, trailFill_, upMap_);
             ctx->UpdateSubresource(trailCb_.Get(), 0, nullptr, &tk, 0, 0);
-            // Its own target and size; the picture's are set back after.
+            // 専用のターゲットとサイズ。絵のものはあとで戻す。
             Ptr<ID3D11RenderTargetView> rtvBefore;
             Ptr<ID3D11DepthStencilView> dsvBefore;
             ctx->OMGetRenderTargets(1, &rtvBefore, &dsvBefore);
@@ -316,8 +315,8 @@ private:
             ctx->OMSetBlendState(blendBefore.Get(), factorBefore, maskBefore);
             trailNow_ = 1 - trailNow_;
         }
-        // The layers (corners read the maps and the footprints in the vertex shader; the pixel shader the
-        // maps again - which way draws a place - and the models' lighting, still bound).
+        // 層 (頂点シェーダーで、頂点が地図と足跡を読む。ピクセルシェーダーは地図をもう一度 -
+        // どの向きがその場所を描くか - そしてモデルのライティングを、そのまま使う)。
         ID3D11Buffer* cb = layerCb_.Get();
         ID3D11ShaderResourceView* trail = trails_[trailNow_].srv.Get();
         ctx->VSSetConstantBuffers(4, 1, &cb);
@@ -325,7 +324,7 @@ private:
         ctx->VSSetConstantBuffers(6, 1, &maps);
         ctx->VSSetShaderResources(8, 1, &mapTexture);
         ctx->VSSetShaderResources(9, 1, &trail);
-        ctx->IASetInputLayout(nullptr);  // (each corner made from its number)
+        ctx->IASetInputLayout(nullptr);  // (頂点は番号から作る)
         ctx->IASetIndexBuffer(layerIndices_.Get(), DXGI_FORMAT_R32_UINT, 0);
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(layerVs_.Get(), nullptr, 0);
@@ -340,8 +339,8 @@ private:
         ctx->VSSetShaderResources(9, 1, &noTexture);
     }
 
-    // Rain or snow around the eye: see-through, depth-tested, writing no depth (as an ExtraDraw is
-    // drawn). They read the 向きの地図 of their way in the vertex shader: where they hit.
+    // 目のまわりの雨や雪: 透けて、深度テストをし、深度は書かない (ExtraDraw の描き方と同じ)。
+    // 頂点シェーダーで、その向きの向きの地図を読む: どこで当たるか。
     void DrawFall(const space3d::ExtraDrawContext& dc, const Precipitation& p) {
         const uint32_t count = PrecipitationCount(p);
         if (count == 0 || !vs_) return;
@@ -354,9 +353,9 @@ private:
         k.info[0] = snow ? 1.f : 0.f, k.info[1] = p.seconds, k.info[2] = snow ? kSnowBox : kRainBox;
         k.info[3] = dc.directionMaps ? static_cast<float>(p.map) : -1.f;
         k.light[0] = p.light.r, k.light[1] = p.light.g, k.light[2] = p.light.b;
-        // The camera's right and up: the view's first two rows (m[column][row]).
+        // カメラの右と上: ビューの最初の 2 行 (m[column][row])。
         k.right[0] = dc.view.m[0][0], k.right[1] = dc.view.m[1][0], k.right[2] = dc.view.m[2][0];
-        k.right[3] = snow ? 0.f : std::clamp(p.amount, 0.f, 1.f);  // (how heavy: the drops' look)
+        k.right[3] = snow ? 0.f : std::clamp(p.amount, 0.f, 1.f);  // (どれだけ強いか: 粒の見た目)
         k.up[0] = dc.view.m[0][1], k.up[1] = dc.view.m[1][1], k.up[2] = dc.view.m[2][1];
         k.wind[0] = p.windX, k.wind[1] = p.windZ, k.wind[2] = p.driftX, k.wind[3] = p.driftZ;
         k.fall[0] = speed.least, k.fall[1] = speed.spread, k.fall[2] = speed.carried;
@@ -369,7 +368,7 @@ private:
         ctx->PSSetConstantBuffers(4, 1, &cb);
         ctx->VSSetConstantBuffers(6, 1, &maps);
         ctx->VSSetShaderResources(8, 1, &mapTexture);
-        // Its own blend and rasterizer, set back after (the depth: as an ExtraDraw gets it - tested, not written).
+        // 専用のブレンドとラスタライザー、あとで戻す (深度: ExtraDraw が受け取るとおり - テストする、書かない)。
         Ptr<ID3D11BlendState> blendBefore;
         Ptr<ID3D11RasterizerState> rasterBefore;
         float factorBefore[4] = {};
@@ -379,7 +378,7 @@ private:
         const float factor[4] = {};
         ctx->OMSetBlendState(blend_.Get(), factor, 0xFFFFFFFF);
         ctx->RSSetState(raster_.Get());
-        ctx->IASetInputLayout(nullptr);  // (each corner made from its number)
+        ctx->IASetInputLayout(nullptr);  // (頂点は番号から作る)
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(vs_.Get(), nullptr, 0);
         ctx->PSSetShader(ps_.Get(), nullptr, 0);
@@ -402,12 +401,12 @@ private:
     std::vector<WeatherBlocker> blockers_;
     space3d::SurfaceTouch surface_;
     std::vector<space3d::ExtraDraw> solids_;
-    std::vector<uint8_t> movingOnly_;  // RenderFrame::mapMovingOnly: the map from below
-    int upMap_ = -1;                   // the moving shapes from below (footprints; -1: none)
-    int downMap_ = -1;                 // what the snow lies on: the tops, straight down (-1: none)
+    std::vector<uint8_t> movingOnly_;  // RenderFrame::mapMovingOnly: 下から見た地図
+    int upMap_ = -1;                   // 動く形を下から見たもの (足跡。-1: なし)
+    int downMap_ = -1;                 // 雪が積もる先: 上の面、真下に向けて (-1: なし)
     bool anySnow_ = false;
-    // 積雪's GPU things (LayerReady) and the footprints: two pictures, the one drawn last (trailNow_);
-    // trailCount_ goes up with each Play (each its own footprints); trailFill_: m to fill up this frame.
+    // 積雪の GPU のもの (LayerReady) と足跡: 2 枚の絵と、最後に描いた方 (trailNow_)。
+    // trailCount_ は Play のたびに増える (それぞれ自分の足跡)。trailFill_: このフレームで埋める m。
     struct TrailPicture {
         Ptr<ID3D11Texture2D> texture;
         Ptr<ID3D11ShaderResourceView> srv;

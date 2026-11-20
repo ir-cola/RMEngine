@@ -8,7 +8,7 @@ namespace rm::game_x_3d {
 
 namespace {
 
-// Kept between -360 and 360 (the same turn; the numbers in the inspector do not grow without end).
+// -360 から 360 の間に収める (同じ回転。インスペクターの数字が際限なく大きくならない)。
 float Wrap(float degrees) { return std::fmod(degrees, 360.f); }
 
 }  // namespace

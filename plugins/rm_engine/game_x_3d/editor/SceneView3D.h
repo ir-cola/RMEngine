@@ -1,29 +1,28 @@
 #pragma once
-// The 3D scene view of a game (the connector ゲーム制作 × 3D): the floor grid and axes, every
-// entity that has a Transform as a box where it is (parents included), the selection outlined.
-// The camera moves like Unity's:
+// ゲームの 3D シーンビュー (コネクター ゲーム制作 × 3D): 床の格子と軸、Transform を持つ
+// すべてのエンティティをその場所の箱で (親も含める)、選んだものは輪郭付き。
+// カメラは Unity と同じように動く:
 //
-//   right drag          look around (the eye stays);  + W A S D / Q E: fly (Shift: faster)
-//   middle drag         slide (the picture follows the mouse)
-//   wheel               nearer / farther
-//   Alt + left drag     go around the point looked at
-//   F                   come to the selected entity
-//   left click          select the entity under the mouse (nothing there: none)
+//   右ドラッグ          見回す (目は動かない);  + W A S D / Q E: 飛ぶ (Shift: 速く)
+//   中ボタンドラッグ    スライド (絵がマウスに付いてくる)
+//   ホイール            近づく / 遠ざかる
+//   Alt + 左ドラッグ    見ている点のまわりを回る
+//   F                   選んだエンティティに寄る
+//   左クリック          マウスの下のエンティティを選ぶ (何も無ければ選択なし)
 //
-// The selected entity has a gizmo (3D 空間's space3d::gizmo): drag its arrows / rings / boxes to move,
-// turn or scale it - every selected entity with it, one undo entry per drag. W / E / R or the strip at
-// the top left choose the tool, X (or the strip) the thing's own axes or the world's, Z (or the strip)
-// each in its own place or all about their middle (中心: the gizmo there). Rotating also has an outer
-// ring facing the eye and a free turn inside the ball. Ctrl moves in steps (their sizes, and "always
-// in steps", in the strip's 刻み box), Esc puts everything back while dragging. The camera, the tool
-// and the steps are kept in UserSettings.
+// 選んだエンティティにはギズモがある (3D 空間の space3d::gizmo): 矢印 / 輪 / 箱をドラッグして
+// 動かし、回し、拡大縮小する - 選んだエンティティすべてに効き、ドラッグごとに Undo は 1 つ。
+// W / E / R か左上の帯でツールを選び、X (か帯) でその物自身の軸かワールドの軸を、Z (か帯)
+// でそれぞれ自分の場所か、全体の真ん中のまわり (中心: ギズモはそこ) を選ぶ。回転には、目の
+// 方を向く外側の輪と、球の中の自由な回転もある。Ctrl で刻みで動く (その大きさと「常に刻み」
+// は、帯の 刻み の箱)。ドラッグ中に Esc を押すとすべて元に戻る。カメラとツールと刻みは
+// UserSettings に残る。
 //
-// Cameras and lights (Camera.h / Light.h) show as marks with their lines (what a camera sees, where a
-// light goes); a selected camera's picture is shown small at the bottom right. The lights light the
-// scene (none: one white light from above). The game view (SceneViewHost::game) is the picture
-// through the game settings' 最初のカメラ.
+// カメラとライト (Camera.h / Light.h) は線付きの印で出る (カメラが見るもの、ライトが向かう所)。
+// 選んだカメラの絵は右下に小さく出る。ライトがシーンを照らす (無ければ、上からの白い光が 1 つ)。
+// ゲームビュー (SceneViewHost::game) は、ゲーム設定の 最初のカメラ 越しの絵。
 //
-// Drawn by 3D 空間's renderer into a picture that the panel shows (Direct3D and Direct2D share one GPU).
+// 3D 空間のレンダラーが、パネルに出す絵に描く (Direct3D と Direct2D は 1 つの GPU を共有する)。
 
 #include "rm_engine/game_production/editor/SceneView.h"
 

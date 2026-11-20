@@ -19,12 +19,12 @@ namespace rm::space3d {
 
 namespace {
 
-constexpr float kFovDegrees = 30.f;  // narrow: little bending at the edges of a small picture
+constexpr float kFovDegrees = 30.f;  // 狭く: 小さい画面の端で歪みが少ない
 
-// One renderer for every thumbnail (made again when the GPU changes).
+// 全部のサムネイルに 1 つのレンダラー (GPU が変わったら作り直す)。
 Renderer& ThumbnailRenderer(platform::Gfx& gfx, std::string* error, bool* ready) {
     static Renderer renderer;
-    static uint64_t madeIn = 0;  // the GPU's devices it was made on (made again when they are: Gfx::Generation)
+    static uint64_t madeIn = 0;  // 作ったときの GPU のデバイス (それらが作り直されたら作り直す: Gfx::Generation)
     if (madeIn != gfx.Generation()) {
         renderer = Renderer{};
         madeIn = gfx.Generation();
@@ -34,7 +34,7 @@ Renderer& ThumbnailRenderer(platform::Gfx& gfx, std::string* error, bool* ready)
     return renderer;
 }
 
-// The picture the renderer drew, copied out of the GPU (rows from the top, no gaps).
+// レンダラーが描いた画面を、GPU から取り出したもの (行は上から、隙間なし)。
 bool ReadBack(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Texture2D* picture, platform::Image& out) {
     D3D11_TEXTURE2D_DESC td{};
     picture->GetDesc(&td);
@@ -62,15 +62,15 @@ bool ReadBack(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Texture2D* p
 
 namespace {
 
-// What the worker made: the shape, and each material's pictures decoded (or not there).
+// ワーカーが作ったもの: 形と、各マテリアルの画像 (読み込んだもの、または無いもの)。
 struct Prepared {
     MeshData mesh;
     struct Picture {
-        TexturePixels pixels;  // with its mipmaps (made here, off the UI thread)
+        TexturePixels pixels;  // ミップマップ込み (ここで作る。UI スレッドの外)
         TextureSampling sampling;
     };
-    std::vector<Picture> pictures;                                         // each picture once per way it is read
-    std::vector<std::array<int, kPictureSlots>> slots;                     // per material: into `pictures` (-1: none)
+    std::vector<Picture> pictures;                                         // 画像は、読み方ごとに 1 つ
+    std::vector<std::array<int, kPictureSlots>> slots;                     // マテリアルごと: `pictures` への添字 (-1: 無し)
 };
 
 }  // namespace
@@ -82,9 +82,9 @@ std::shared_ptr<void> PrepareModelThumbnail(const std::filesystem::path& file, c
     auto p = std::make_shared<Prepared>();
     p->mesh = std::move(*mesh);
     IWICImagingFactory* wic = platform::ThreadImagingFactory();
-    // Pictures a little bigger than the thumbnail are enough (and quick to decode).
+    // サムネイルより少し大きい画像で足りる (読み込みも速い)。
     const uint32_t most = std::clamp<uint32_t>(size * 2, 64, 1024);
-    std::vector<int> made(p->mesh.images.size() * 2, -2);  // -2: not tried; -1: could not be read
+    std::vector<int> made(p->mesh.images.size() * 2, -2);  // -2: 試していない。-1: 読めなかった
     for (const MeshMaterial& m : p->mesh.materials) {
         std::array<int, kPictureSlots> slots;
         const auto pictures = PictureSlots(m);
@@ -98,13 +98,13 @@ std::shared_ptr<void> PrepareModelThumbnail(const std::filesystem::path& file, c
                 std::optional<platform::Image> image;
                 TextureSampling sampling;
                 MipOptions mips;
-                std::string ignored;  // a picture that cannot be read: drawn without it (the scene view tells why)
+                std::string ignored;  // 読めない画像: それ無しで描く (理由はシーンビューが出す)
                 if (!im.file.empty()) {
                     const std::filesystem::path at2 = RelatedFile(file, im.file, root);
                     if (!at2.empty()) {
                         const auto imp = asset::ReadImport<asset::ImageImport>(at2);
                         sampling = SamplingOf(imp);
-                        sampling.streamed = false;  // (a thumbnail: drawn once, all of it)
+                        sampling.streamed = false;  // (サムネイル: 1 回だけ、全部を描く)
                         mips = MipOptionsOf(imp);
                         image = platform::LoadImageFile(wic, at2, platform::PixelOrder::Rgba, {most, most}, &ignored);
                     }
@@ -147,16 +147,16 @@ bool DrawModelThumbnail(platform::Gfx& gfx, const void* prepared, uint32_t size,
         materials.push_back(d);
     }
 
-    // Framed by its bounds: the ball around them fits the narrow view.
+    // 範囲で枠に収める: それを囲む球が、狭いビューに収まる。
     const Vec3 center = (mesh.min + mesh.max) * 0.5f;
     const float radius = std::max(Length(mesh.max - mesh.min) * 0.5f, 1e-4f);
     const float distance = radius / std::sin(kFovDegrees * 0.5f * 3.14159265f / 180.f) * 1.02f;
-    const Vec3 from = Normalize({0.75f, 0.6f, 1.f});  // the front (+Z), a little from the right and above
+    const Vec3 from = Normalize({0.75f, 0.6f, 1.f});  // 正面 (+Z)、少し右と上から
     RenderFrame f;
     f.width = f.height = size;
     f.view = LookAt(center + from * distance, center, {0, 1, 0});
     f.projection = Perspective(kFovDegrees, 1.f, std::max(distance - radius * 1.5f, distance * 0.01f), distance + radius * 1.5f);
-    f.clear = {0, 0, 0, 0};  // see-through around the model
+    f.clear = {0, 0, 0, 0};  // モデルのまわりは透ける
     const MeshDraw draw{gpu.get(), Mat4{}, {1, 1, 1, 1}, false, materials, {0, 0, 0, 0}};
     f.meshes = std::span<const MeshDraw>(&draw, 1);
     ID3D11Texture2D* picture = renderer.Render(gfx.D3DContext(), f);
@@ -174,7 +174,7 @@ bool MakeModelThumbnail(platform::Gfx& gfx, const std::filesystem::path& file, c
 }
 
 void RegisterEditor(editor::PluginRegistry& registry) {
-    // The アセット panel shows a 3D model as a small picture of itself (read on the thumbnails' worker thread).
+    // アセット パネルは、3D モデルを自分の小さな絵として見せる (サムネイルのワーカースレッドで読む)。
     static const editor::ThumbnailMaker kModel{asset::Kind::Model, &PrepareModelThumbnail, &DrawModelThumbnail};
     registry.Contribute(editor::kThumbnailPoint, kModel);
 }

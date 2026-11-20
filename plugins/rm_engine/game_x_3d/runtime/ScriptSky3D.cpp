@@ -1,6 +1,6 @@
-// The sky part of the scripts' API (RM3D.h's rm::Sky: the 時刻). RmApi::ctx is game production's
-// ScriptWorld: its scene is the one that plays (the copy, in the editor), and its 空 is that scene's
-// setting. (The weather is the plugin 天候's: RMWeather.h.)
+// スクリプト API の空の部分 (RM3D.h の rm::Sky: 時刻)。RmApi::ctx はゲーム制作の
+// ScriptWorld: そのシーンは遊んでいるもの (エディターではコピー) で、空はそのシーンの設定。
+// (天気はプラグイン 天候 のもの: RMWeather.h。)
 
 #include "rm_engine/game_x_3d/runtime/ScriptSky3D.h"
 

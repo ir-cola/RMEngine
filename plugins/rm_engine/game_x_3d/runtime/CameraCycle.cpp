@@ -14,7 +14,7 @@ void RunCameraCycle(game_production::SystemContext& ctx) {
         if (seconds <= 0) seconds = std::max(static_cast<const CameraCycle*>(c.value.Get())->seconds, 0.1f);
     });
     if (seconds <= 0) return;
-    // Did the clock pass a multiple of the interval in this run?
+    // この実行で、時計が間隔の倍数を通ったか。
     if (std::floor((ctx.time + ctx.dt) / seconds) <= std::floor(ctx.time / seconds)) return;
     std::vector<uint64_t> cameras;
     game_production::ForEachComponent(ctx.scene, reflect::TypeOf<Camera>().name, [&](game_production::SceneEntity& e, game_production::Component&) {

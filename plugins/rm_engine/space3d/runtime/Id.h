@@ -1,5 +1,5 @@
 #pragma once
-// The ID of the 3D space plugin - written here once (and in plugin.json, compared at start-up).
+// 3D 空間プラグインの ID - ここに 1 回だけ書く (plugin.json にもあり、起動時に比べる)。
 
 #include "core/PluginId.h"
 

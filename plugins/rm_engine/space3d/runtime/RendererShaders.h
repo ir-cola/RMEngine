@@ -1,13 +1,13 @@
 #pragma once
-// The renderer's shaders (HLSL text, compiled by Renderer3D.cpp; tested by tests/TestRendererShaders.cpp):
-// the lines, the models (MeshVS / MeshPS), the floor's shadows, the shadow maps - and what plugins
-// may join:
+// レンダラーのシェーダー (HLSL のテキスト。Renderer3D.cpp がコンパイルする。
+// tests/TestRendererShaders.cpp でテストする):
+// 線、モデル (MeshVS / MeshPS)、床の影、シャドウマップ - と、プラグインが加われるもの:
 //
-//   向きの地図   RenderFrame::mapDirections / mapShapes: the depth of shapes that are not drawn (天候: the
-//                colliders) seen along a direction, read with MapPast (kDirectionMapHlsl: a plugin's
-//                own shaders put it in front of theirs - an ExtraDraw gets its cbuffer and texture)
-//   面の塗り     RenderFrame::surface: a plugin's HLSL that touches every surface before it is lit
-//                (天候: 濡れ) - its `Surface` function and its numbers (cbuffer SurfaceData, b5)
+//   向きの地図   RenderFrame::mapDirections / mapShapes: 描かれない形 (天候: コライダー) の深度を
+//                ある向きから見たもの。MapPast で読む (kDirectionMapHlsl: プラグイン自身の
+//                シェーダーが自分のものの前に置く - ExtraDraw はその cbuffer とテクスチャを受け取る)
+//   面の塗り     RenderFrame::surface: 光を当てる前に全部の面に触るプラグインの HLSL
+//                (天候: 濡れ) - その `Surface` 関数と数値 (cbuffer SurfaceData, b5)
 
 #include <cstdint>
 #include <string>
@@ -15,22 +15,22 @@
 
 namespace rm::space3d {
 
-// 向きの地図: at most this many in a frame.
+// 向きの地図: 1 フレームにこの数まで。
 inline constexpr uint32_t kDirectionMaps = 8;
-// The cbuffer DirectionMaps (b6) as the GPU reads it.
+// cbuffer DirectionMaps (b6) を GPU が読む形にしたもの。
 struct DirectionMapConstants {
     float viewProj[kDirectionMaps][16];
-    float info[kDirectionMaps][4];  // x: 1 = there is one; y, z: its tile's left, top (pixels); w: its depth range (world)
-    float size[4];                  // x: a map's size (pixels); y: how many
+    float info[kDirectionMaps][4];  // x: 1 = ある、y, z: そのタイルの左、上 (ピクセル)、w: 深度の範囲 (ワールド)
+    float size[4];                  // x: 地図 1 枚の大きさ (ピクセル)、y: 数
 };
 static_assert(sizeof(DirectionMapConstants) % 16 == 0);
-// The cbuffer SurfaceData (b5): this many float4s.
+// cbuffer SurfaceData (b5): この数の float4。
 inline constexpr uint32_t kSurfaceData = 16;
 
-// The cbuffer, the texture (t8) and MapPast / MapPastAt.
+// cbuffer、テクスチャ (t8)、MapPast / MapPastAt。
 extern const char kDirectionMapHlsl[];
-// The renderer's whole text: ToScreen / ToLinear, its shaders, the maps' part, and `surface` - a
-// plugin's code defining Surface(...) (empty: none, the surface as it is).
+// レンダラーのテキスト全体: ToScreen / ToLinear、そのシェーダー、地図の部分、そして `surface` -
+// Surface(...) を定義するプラグインのコード (空: 無し。面はそのまま)。
 std::string RendererShaderText(std::string_view surface = {});
 
 }  // namespace rm::space3d

@@ -1,16 +1,16 @@
 #pragma once
-// 3D 空間: the sky behind everything (スカイボックス) as a pixel shader. Every sky - the ones that come
-// with the engine (地球の空, 宇宙, a panorama picture, six pictures) and one the user writes (a .rmsky
-// file) - is the same thing: HLSL code with a function
+// 3D 空間: 一番奥の空 (スカイボックス) をピクセルシェーダーで描く。どの空も - エンジン付属の
+// もの (地球の空、宇宙、パノラマ画像、6 枚の絵) も、ユーザーが書くもの (.rmsky ファイル) も - 同じ
+// もので、次の関数を持つ HLSL のコードになる。
 //
-//   float3 Sky(SkyInput i)   // the light seen looking `i.dir` (linear, as a light's colour)
+//   float3 Sky(SkyInput i)   // `i.dir` の向きを見たときの光 (線形。光の色として)
 //
-// put together with the engine's part (AssembleSky) and drawn by the Renderer behind everything
-// (RenderFrame::sky). What the code can use (SkyInput, the helpers) is written in kSkyPrelude
-// (SkyShader.cpp) and in the file a new sky starts from (NewSkyCode).
+// これをエンジンの部分 (AssembleSky) とつなぎ、Renderer が一番奥に描く (RenderFrame::sky)。
+// コードが使えるもの (SkyInput、補助関数) は kSkyPrelude (SkyShader.cpp) と、新しい空の元になる
+// ファイル (NewSkyCode) に書いてある。
 //
-// The numbers it gets (SkyConstants, the constant buffer b3) are set by whoever draws the sky (the
-// game's 空: game_x_3d/runtime/Sky.h). Pure (text only) - tests/TestSky.cpp compiles every sky.
+// 渡される数値 (SkyConstants、定数バッファ b3) は、空を描く側が入れる (ゲームの 空:
+// game_x_3d/runtime/Sky.h)。純粋 (テキストだけ)。tests/TestSky.cpp が全部の空をコンパイルする。
 
 #include "base/Math.h"
 
@@ -21,44 +21,44 @@
 
 namespace rm::space3d {
 
-// The constant buffer `SkyFrame` (b3) as the GPU reads it. The Renderer fills invViewProj (the
-// camera's turn only: clip space -> a direction in the world); the rest is the sky's.
+// 定数バッファ `SkyFrame` (b3) を GPU が読む形にしたもの。Renderer が invViewProj
+// (カメラの回転だけ: クリップ空間 -> ワールドでの向き) を入れ、残りは空のもの。
 struct SkyConstants {
     float invViewProj[16];
-    float sun[4];       // xyz: towards the sun (length 1); w: seconds (SkyInput::time)
-    float moon[4];      // xyz: towards the moon; w: the hour 0..24 (SkyInput::hour)
-    float info[4];      // x: brightness (Sky's result is multiplied by it); yzw: not used
-    float param[8][4];  // the sky's own numbers (a built-in sky's colours, a user's 値 and 色)
+    float sun[4];       // xyz: 太陽の向き (長さ 1)、w: 秒 (SkyInput::time)
+    float moon[4];      // xyz: 月の向き、w: 時刻 0..24 (SkyInput::hour)
+    float info[4];      // x: 明るさ (Sky の結果に掛ける)、yzw: 使わない
+    float param[8][4];  // 空自身の数値 (組み込みの空の色、ユーザーの 値 と 色)
 };
 static_assert(sizeof(SkyConstants) % 16 == 0);
 inline constexpr size_t kSkyParams = 8;
 inline constexpr size_t kSkyTextures = 6;  // sky0 .. sky5 (t0 .. t5)
 
-// Light <-> the screen's numbers (sRGB), the same in the renderer's shaders and the sky's.
+// 光 <-> 画面の数値 (sRGB)。レンダラーのシェーダーと空のもので同じ。
 extern const char kColorHlsl[];
 
-// The whole HLSL of a sky: the engine's part, then `code` (with `#line 1 "<fileName>"`: the compiler's
-// messages name the file and its own lines), then the vertex shader SkyVS and the pixel shader SkyPS
-// (ps_4_0 / vs_4_0).
+// 空の HLSL 全体: エンジンの部分、次に `code` (`#line 1 "<fileName>"` 付き: コンパイラの
+// メッセージがそのファイルと自分の行を示す)、そして頂点シェーダー SkyVS とピクセルシェーダー
+// SkyPS (ps_4_0 / vs_4_0)。
 std::string AssembleSky(std::string_view code, std::string_view fileName);
 
-// The skies that come with the engine (code of the same form as a .rmsky).
-//   Earth     param[0] rgb: the sun's light; a: day (0 night .. 1)
-//             param[1] x: clouds' cover 0..1, y: their darkness, z: haze, w: a lightning flash now (0 .. 1)
-//             param[2] rgb: the sky straight up; a: the stars (0 .. 1)
-//             param[3] rgb: the sky at the horizon; a: the moon's light
-//             param[4] rgb: the ground below the horizon; a: the sunset's glow (0 .. 1)
-//             param[5] xy: how far the wind has carried the clouds (world x, z), zw: the wind now (m/s)
-//   Space     param[0] x: the stars, y: the nebulae, z: the Milky Way, w: 1 = the sun is drawn
-//             param[1] rgb: the nebulae's first colour; param[2] rgb: their second colour
-//   Panorama  sky0: one picture around (equirectangular: 360 x 180 degrees); param[0] x: turned (radians)
-//   SixFaces  sky0 .. sky5: +X (right), -X (left), +Y (up), -Y (down), +Z (behind), -Z (in front);
-//             param[0] x: turned (radians)
+// エンジン付属の空 (.rmsky と同じ形のコード)。
+//   Earth     param[0] rgb: 太陽の光、a: 昼 (0 夜 .. 1)
+//             param[1] x: 雲の量 0..1、y: その暗さ、z: もや、w: 今の雷の光 (0 .. 1)
+//             param[2] rgb: 真上の空、a: 星 (0 .. 1)
+//             param[3] rgb: 地平線の空、a: 月の光
+//             param[4] rgb: 地平線より下の地面、a: 夕焼けのにじみ (0 .. 1)
+//             param[5] xy: 風が雲をどれだけ運んだか (ワールド x, z)、zw: 今の風 (m/s)
+//   Space     param[0] x: 星、y: 星雲、z: 天の川、w: 1 = 太陽を描く
+//             param[1] rgb: 星雲の 1 つ目の色、param[2] rgb: その 2 つ目の色
+//   Panorama  sky0: 周り 1 周の絵 (正距円筒: 360 x 180 度)、param[0] x: 回した量 (ラジアン)
+//   SixFaces  sky0 .. sky5: +X (右)、-X (左)、+Y (上)、-Y (下)、+Z (後ろ)、-Z (前)、
+//             param[0] x: 回した量 (ラジアン)
 enum class BuiltinSky { Earth, Space, Panorama, SixFaces };
 std::string_view BuiltinSkyCode(BuiltinSky sky);
-const char* BuiltinSkyName(BuiltinSky sky);  // the "file name" its messages give ("地球の空")
+const char* BuiltinSkyName(BuiltinSky sky);  // メッセージに出す「ファイル名」 ("地球の空")
 
-// What a new .rmsky file holds: a short sky to start from, with what can be used in comments.
+// 新しい .rmsky ファイルの中身: 出発点になる短い空。コメントに、使えるものを書いてある。
 std::string_view NewSkyCode();
 inline constexpr char kSkyExtension[] = ".rmsky";
 

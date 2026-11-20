@@ -1,6 +1,6 @@
 #pragma once
-// The editor part of 天候 (listed in plugins/BuiltinPlugins.cpp): how the editor shows the scene setting
-// 天候 - its テンプレート (快晴 / 雨 / 嵐 / 大雪 ...: a row above its fields that sets them at once).
+// 天候のエディター側 (plugins/BuiltinPlugins.cpp に並ぶ): エディターがシーン設定の 天候 を
+// どう見せるか - そのテンプレート (快晴 / 雨 / 嵐 / 大雪 ...: 欄の上の行で、まとめて設定する)。
 
 #include "editor/plugin/Software.h"
 

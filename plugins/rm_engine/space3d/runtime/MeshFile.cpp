@@ -10,7 +10,7 @@ namespace rm::space3d {
 
 namespace {
 
-// More than this is not a model the scene view should try to read whole.
+// これより大きいものは、シーンビューが丸ごと読もうとするモデルではない。
 constexpr uintmax_t kMaxFileBytes = 1ull << 30;
 
 std::optional<std::vector<uint8_t>> ReadAll(const std::filesystem::path& file) {
@@ -25,7 +25,7 @@ std::optional<std::vector<uint8_t>> ReadAll(const std::filesystem::path& file) {
 }
 
 std::optional<MeshData> Load(const std::filesystem::path& file, const std::string& name, std::string* error, ReadBudget& budget) {
-    // The file itself is in memory while it is read.
+    // 読んでいる間、ファイルそのものはメモリに載っている。
     std::error_code ec;
     const uintmax_t size = std::filesystem::file_size(file, ec);
     std::string why;
@@ -39,7 +39,7 @@ std::optional<MeshData> Load(const std::filesystem::path& file, const std::strin
         return std::nullopt;
     }
     const ReadRelated related = [&](std::string_view uri) -> std::optional<std::vector<uint8_t>> {
-        const std::filesystem::path at = RelatedFile(file, uri, file.parent_path());  // stays inside the model's folder
+        const std::filesystem::path at = RelatedFile(file, uri, file.parent_path());  // モデルのフォルダの中に収まる
         if (at.empty()) return std::nullopt;
         return ReadAll(at);
     };

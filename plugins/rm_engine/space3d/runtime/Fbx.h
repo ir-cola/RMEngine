@@ -1,20 +1,20 @@
 #pragma once
-// 3D 空間 - reading FBX (Autodesk's format, written by Blender, Maya, 3ds Max, many asset stores).
-// Pure: the bytes are given - tested in tests/TestSpace3d.cpp. Written here without the FBX SDK
-// (its licence does not allow it to ship inside the engine freely, and only the shape is needed).
+// 3D 空間 - FBX を読む (Autodesk の形式。Blender、Maya、3ds Max、多くのアセットストアが書く)。
+// 純粋: バイト列を渡す - tests/TestSpace3d.cpp でテストする。FBX SDK を使わずここで書く
+// (そのライセンスではエンジンに自由に同梱できず、必要なのは形だけだから)。
 //
-//   Binary FBX 7.x (7100 .. 7700; what Blender and the FBX SDK write) and ASCII FBX 7.x. Both are a
-//   tree of nodes (a name, properties, children); the big arrays of binary files are often zlib-
-//   compressed (Inflate.h).
-//   Read: every mesh (Geometry) placed by its models (Model: Lcl Translation / Rotation / Scaling,
-//   pre / post rotation, pivots, rotation order, the geometric offset) and their parents, turned to
-//   this engine's axes (GlobalSettings: UpAxis / FrontAxis / CoordAxis) and metres (UnitScaleFactor
-//   is centimetres per unit); normals and the first UV set (by polygon vertex / by control point,
-//   direct / by index); materials (DiffuseColor x DiffuseFactor, Opacity, EmissiveColor x
-//   EmissiveFactor - taken as linear light, as Blender writes them) and the picture on their diffuse
-//   colour (a file next to the model, or the picture written inside: Video's Content).
-//   Polygons are cut into triangles from their first corner.
-//   Not read: skins, blend shapes, animation, cameras and lights, NURBS, FBX 6 and older.
+//   バイナリ FBX 7.x (7100 .. 7700。Blender と FBX SDK が書くもの) と ASCII FBX 7.x。どちらも
+//   ノードのツリー (名前、プロパティ、子) で、バイナリの大きな配列はたいてい zlib で圧縮されている
+//   (Inflate.h)。
+//   読むもの: 全てのメッシュ (Geometry) を、それを置くモデル (Model: Lcl Translation / Rotation /
+//   Scaling、前 / 後の回転、ピボット、回転の順、ジオメトリのオフセット) とその親で置き、このエンジンの
+//   軸 (GlobalSettings: UpAxis / FrontAxis / CoordAxis) とメートル (UnitScaleFactor は 1 単位あたりの
+//   センチメートル) に直す。法線と最初の UV セット (ポリゴン頂点ごと / コントロール点ごと、直接 /
+//   添字で)。マテリアル (DiffuseColor x DiffuseFactor、Opacity、EmissiveColor x EmissiveFactor -
+//   Blender が書くとおり、リニアの光として扱う) と、その拡散色に付いた画像 (モデルの隣のファイル、
+//   またはファイルの中に書かれた画像: Video の Content)。
+//   ポリゴンは最初の角から三角形に切る。
+//   読まないもの: スキン、ブレンドシェイプ、アニメーション、カメラとライト、NURBS、FBX 6 以前。
 
 #include "rm_engine/space3d/runtime/Mesh.h"
 
@@ -27,16 +27,16 @@
 
 namespace rm::space3d {
 
-// `budget`: what the reading may take (Mesh.h's ReadBudget; null = its limits).
+// `budget`: 読むときに使ってよいもの (Mesh.h の ReadBudget。null = その上限)。
 std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* error, ReadBudget* budget = nullptr);
 
-// The node tree (both kinds of FBX read into this), tested on its own.
+// ノードのツリー (両方の FBX がこれに読み込まれる)。単独でテストする。
 struct FbxProperty {
-    char type = 0;               // binary's letter: Y C I L (whole numbers) F D (numbers) S R (text / bytes) f d i l b (arrays)
-    int64_t integer = 0;         // a whole number (ids are 64-bit)
-    double number = 0;           // any number (whole numbers too)
-    std::string text;            // S (a name "Model::Cube": binary's "Cube\0\1Model" is turned around) and R (bytes)
-    std::vector<double> numbers; // arrays
+    char type = 0;               // バイナリの文字: Y C I L (整数) F D (数) S R (文字 / バイト) f d i l b (配列)
+    int64_t integer = 0;         // 整数 (id は 64 ビット)
+    double number = 0;           // どんな数でも (整数も)
+    std::string text;            // S (名前 "Model::Cube": バイナリの "Cube\0\1Model" は入れ替える) と R (バイト)
+    std::vector<double> numbers; // 配列
 };
 
 struct FbxNode {
@@ -47,7 +47,7 @@ struct FbxNode {
     const FbxNode* Child(std::string_view n) const;
 };
 
-// The top-level nodes; nullopt (and *error, Japanese) when the file is broken. `version`: 7400 etc.
+// 一番上のノード。ファイルが壊れていれば nullopt (と *error、日本語)。`version`: 7400 など。
 std::optional<std::vector<FbxNode>> ParseFbxNodes(std::span<const uint8_t> bytes, int* version, std::string* error, ReadBudget* budget = nullptr);
 
 }  // namespace rm::space3d

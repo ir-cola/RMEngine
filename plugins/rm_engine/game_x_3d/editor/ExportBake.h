@@ -1,5 +1,5 @@
 #pragma once
-// The exported game's baking of 3D models, their pictures and images (ExportBake.cpp).
+// 書き出すゲームの、3D モデルとその画像の焼き込み (ExportBake.cpp)。
 
 #include "editor/plugin/Software.h"
 

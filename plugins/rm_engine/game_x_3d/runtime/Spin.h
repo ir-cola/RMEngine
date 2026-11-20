@@ -1,8 +1,8 @@
 #pragma once
-// 回り続ける: a component that keeps turning its entity's Transform while the game plays - the
-// simplest thing to see that Play and the systems work. An entity may have several (they add up:
-// one about Y and one about X turns it both ways).
-// Pure - tested in tests/TestSystems.cpp.
+// 回り続ける: ゲームが動いている間、エンティティの Transform を回し続ける部品。Play とシステムが
+// 動いていることを見るのに一番簡単なもの。1 つのエンティティに複数付けてもよい (足し合わさる:
+// Y まわりと X まわりを 1 つずつ付ければ、両方向に回る)。
+// 純粋 (I/O も描画もしない)。tests/TestSystems.cpp でテストする。
 
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_production/runtime/Systems.h"
@@ -15,7 +15,7 @@ struct Spin {
     Vec3 degreesPerSecond{0, 90, 0};
 };
 
-// The system (Frame): every 回り続ける adds its turn for this frame to the entity's first Transform.
+// システム (Frame): 回り続ける 1 つごとに、このフレーム分の回転を、エンティティの最初の Transform に足す。
 void RunSpin(game_production::SystemContext& ctx);
 
 }  // namespace rm::game_x_3d

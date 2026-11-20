@@ -1,6 +1,6 @@
 #pragma once
-// 3D 空間 - reading a model file from disk (the I/O around Mesh.h's pure reading).
-// A .gltf's buffer files are looked for next to it (only below its folder).
+// 3D 空間 - ディスクからモデルファイルを読む (Mesh.h の純粋な読み込みを包む I/O)。
+// .gltf のバッファーファイルは、その隣で探す (そのフォルダの下だけ)。
 
 #include "rm_engine/space3d/runtime/Mesh.h"
 
@@ -11,14 +11,14 @@
 
 namespace rm::space3d {
 
-// nullopt: *error says why (Japanese, with the file's name). What the model points to (a .gltf's
-// buffers, an OBJ's .mtl) is read only from the model's folder and below. The asset's import settings
-// (its .meta: size, which way is up - core/asset/ImportSettings.h) are applied. `budget`: what the
-// reading may take (null: Mesh.h's limits). Never throws: running out of memory is "not readable" too.
+// nullopt: *error が理由を言う (日本語、ファイル名つき)。モデルが指すもの (.gltf のバッファー、
+// OBJ の .mtl) は、モデルのフォルダとその下からだけ読む。アセットの取り込みの設定 (その .meta:
+// 大きさ、どちらが上か - core/asset/ImportSettings.h) を適用する。`budget`: 読むのに使ってよい量
+// (null: Mesh.h の上限)。例外は投げない: メモリ不足も「読めない」になる。
 std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::string* error, ReadBudget* budget = nullptr);
 
-// The file a model names by a relative path ("tex/wood.png", "../Textures/wood.png"), as a full
-// path - empty when it is not inside `root` (or is written as a full path). Pure (no disk).
+// モデルが相対パスで名指すファイル ("tex/wood.png"、"../Textures/wood.png") を、フルパスで。
+// `root` の中でない (またはフルパスで書かれている) ときは空。純粋 (ディスクは使わない)。
 std::filesystem::path RelatedFile(const std::filesystem::path& model, std::string_view relative, const std::filesystem::path& root);
 
 }  // namespace rm::space3d

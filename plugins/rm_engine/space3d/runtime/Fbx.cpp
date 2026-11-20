@@ -35,8 +35,8 @@ bool Fail(std::string* error, std::string message) {
     return false;
 }
 
-// Numbers from the file go through these: a NaN or a huge number never reaches a cast that has no
-// answer for it (converting those to an integer, or past float's range, is undefined in C++).
+// ファイルから来た数はここを通す: NaN や巨大な数が、答えの無いキャスト (それらを整数や float の範囲の外へ
+// 変換するのは C++ では未定義) に届かないようにする。
 int64_t ToInteger(double d, int64_t def = 0) {
     return std::isfinite(d) && std::fabs(d) < 9.0e18 ? static_cast<int64_t>(d) : def;
 }
@@ -45,16 +45,16 @@ float ToFloat(double d) {
     return static_cast<float>(std::clamp(d, -static_cast<double>(std::numeric_limits<float>::max()), static_cast<double>(std::numeric_limits<float>::max())));
 }
 
-// Binary names are "Name\0\1Class"; ASCII writes "Class::Name". Both become the second.
+// バイナリの名前は "Name\0\1Class"、ASCII は "Class::Name" と書く。どちらも後者にそろえる。
 std::string ClassName(std::string_view s) {
     const size_t sep = s.find(std::string_view("\0\1", 2));
     if (sep == std::string_view::npos) return std::string(s);
     return std::string(s.substr(sep + 2)) + "::" + std::string(s.substr(0, sep));
 }
 
-// --- Binary ---------------------------------------------------------------------------------
+// --- バイナリ -------------------------------------------------------------------------------
 
-constexpr char kBinaryMagic[] = "Kaydara FBX Binary  ";  // + '\0', 0x1A, 0x00, then the version
+constexpr char kBinaryMagic[] = "Kaydara FBX Binary  ";  // + '\0', 0x1A, 0x00、そのあとに版
 
 class BinaryReader {
 public:
@@ -92,7 +92,7 @@ private:
         const uint64_t count = wide_ ? Get<uint64_t>(at + 8) : Get<uint32_t>(at + 4);
         const uint64_t listLen = wide_ ? Get<uint64_t>(at + 16) : Get<uint32_t>(at + 8);
         const size_t nameLen = b_[at + Header() - 1];
-        if (endAt == 0) {  // the empty record that ends a list
+        if (endAt == 0) {  // リストを終わらせる空のレコード
             at += Header();
             end = true;
             return true;
@@ -129,7 +129,7 @@ private:
         auto scalar = [&](auto v) {
             out.number = static_cast<double>(v);
             out.integer = ToInteger(out.number);
-            if constexpr (std::is_same_v<decltype(v), int64_t>) out.integer = v;  // exact (ids)
+            if constexpr (std::is_same_v<decltype(v), int64_t>) out.integer = v;  // 正確 (id)
         };
         switch (out.type) {
             case 'Y': if (!need(2)) break; scalar(Get<int16_t>(p)); p += 2; return true;
@@ -156,7 +156,7 @@ private:
                 if (!need(stored)) break;
                 const size_t elem = out.type == 'd' || out.type == 'l' ? 8 : out.type == 'b' ? 1 : 4;
                 const uint64_t bytes = uint64_t{count} * elem;
-                // Kept as doubles (8 bytes each, whatever the file's type), and unpacked first when compressed.
+                // double で持つ (ファイルの型によらず 1 つ 8 バイト)。圧縮されていれば先に展開する。
                 const uint64_t kept = uint64_t{count} * sizeof(double);
                 if (kept > kMaxArrayBytes) return Fail(error_, "FBX の配列が大きすぎます");
                 if (encoding == 0 && stored != bytes) return Fail(error_, std::format("FBX の配列 ({} バイト目) の長さが合いません", p));
@@ -199,9 +199,9 @@ private:
 };
 
 // --- ASCII ----------------------------------------------------------------------------------
-//   Name: value, value, ... { children }      (values: numbers, "text", bare words like T / Y)
-//   Vertices: *24 { a: 1,2,3, ... }          (an array: becomes one array property)
-//   ; a comment
+//   Name: value, value, ... { children }      (値: 数、"text"、T / Y のような裸の単語)
+//   Vertices: *24 { a: 1,2,3, ... }          (配列: 1 つの配列プロパティになる)
+//   ; コメント
 
 class AsciiReader {
 public:
@@ -259,10 +259,10 @@ private:
                     if (!List(depth + 1, n.children)) return false;
                     break;
                 }
-                if (c == '}') break;  // "a: 1,2,3 }" on one line: the list ends here
+                if (c == '}') break;  // "a: 1,2,3 }" が 1 行に: ここで値のリストが終わる
                 if (c == ',') {
                     ++i_;
-                    SkipBlank(true);  // a value list goes on to the next line after a comma
+                    SkipBlank(true);  // 値のリストはカンマのあと、次の行へ続く
                     continue;
                 }
                 FbxProperty p;
@@ -273,7 +273,7 @@ private:
                     p.text = std::string(s_.substr(i_ + 1, close - i_ - 1));
                     i_ = close + 1;
                 } else if (c == '*') {
-                    ++i_;  // "*24": the count of the array that follows in { a: ... }
+                    ++i_;  // "*24": 続く { a: ... } の配列の個数
                     while (!AtEnd() && std::isdigit(static_cast<unsigned char>(s_[i_]))) ++i_;
                     isArray = true;
                     continue;
@@ -286,14 +286,14 @@ private:
                     const std::string_view tok = s_.substr(t, i_ - t);
                     if (!Number(tok, p)) {
                         p.type = 'S';
-                        p.text = std::string(tok);  // a bare word (Shading: T)
+                        p.text = std::string(tok);  // 裸の単語 (Shading: T)
                     }
                 }
                 if (!budget_.Take(0, sizeof(FbxProperty), error_)) return false;
                 n.props.push_back(std::move(p));
             }
             if (isArray) {
-                // The values are in the child "a": one array property, as the binary file has.
+                // 値は子の "a" に入る: バイナリのファイルと同じく、1 つの配列プロパティ。
                 FbxProperty arr;
                 arr.type = 'd';
                 if (const FbxNode* a = n.Child("a")) {
@@ -336,7 +336,7 @@ private:
     ReadBudget& budget_;
 };
 
-// --- From the tree to a mesh --------------------------------------------------------------------
+// --- ツリーからメッシュへ ----------------------------------------------------------------------
 
 Mat4 Translation(Vec3 t) {
     Mat4 m;
@@ -353,7 +353,7 @@ Mat4 Inv(const Mat4& m) {
     return i ? *i : Mat4{};
 }
 
-// FBX's rotation orders (0 = XYZ: X first, then Y, then Z - the same as Transform's).
+// FBX の回転の順 (0 = XYZ: X が先、次に Y、次に Z - Transform と同じ)。
 Mat4 Euler(Vec3 d, int64_t order) {
     const Mat4 x = RotationMatrix({d.x, 0, 0}), y = RotationMatrix({0, d.y, 0}), z = RotationMatrix({0, 0, d.z});
     switch (order) {
@@ -362,7 +362,7 @@ Mat4 Euler(Vec3 d, int64_t order) {
         case 3: return z * x * y;  // YXZ
         case 4: return y * x * z;  // ZXY
         case 5: return x * y * z;  // ZYX
-        default: return z * y * x;  // XYZ (and spheric XYZ)
+        default: return z * y * x;  // XYZ (と spheric XYZ)
     }
 }
 
@@ -385,7 +385,7 @@ public:
             if (!o.props.empty()) byId_[o.props[0].integer] = &o;
         }
         if (connections_) {
-            // The same link written twice counts once (it would put the same mesh in twice).
+            // 同じリンクが 2 回書かれていても 1 回と数える (同じメッシュを 2 回入れてしまうから)。
             std::set<std::tuple<std::string, int64_t, int64_t, std::string>> seen;
             for (const FbxNode& c : connections_->children) {
                 if (c.name != "C" || c.props.size() < 3) continue;
@@ -422,12 +422,12 @@ public:
 
 private:
     struct Link {
-        std::string kind;  // "OO": object to object, "OP": object to an object's property
+        std::string kind;  // "OO": オブジェクトからオブジェクト、"OP": オブジェクトから、あるオブジェクトのプロパティ
         int64_t child, parent;
         std::string property;
     };
 
-    // The links to `id` (what is connected to it: its materials, its pictures ...).
+    // `id` へのリンク (つながっているもの: そのマテリアル、その画像 ...)。
     template <class F>
     void ForChildren(int64_t id, F&& f) const {
         const auto it = childrenOf_.find(id);
@@ -442,7 +442,7 @@ private:
         return it != byId_.end() && it->second->name == name ? it->second : nullptr;
     }
 
-    // A property in Properties70 (P: "name", "type", "type2", "flags", values...).
+    // Properties70 の中のプロパティ (P: "name", "type", "type2", "flags", values...)。
     static const FbxNode* P(const FbxNode* obj, std::string_view name) {
         const FbxNode* props = obj ? obj->Child("Properties70") : nullptr;
         if (!props) return nullptr;
@@ -461,7 +461,7 @@ private:
         return {ToFloat(p->props[4].number), ToFloat(p->props[5].number), ToFloat(p->props[6].number)};
     }
 
-    // The file's axes and units to this engine's (Y up, X right, Z towards the viewer; metres).
+    // ファイルの軸と単位を、このエンジンのものへ (Y が上、X が右、Z が見る人の方、メートル)。
     Mat4 Axes() const {
         const auto axis = [&](std::string_view n, int64_t def) {
             return static_cast<int>(std::clamp<int64_t>(ToInteger(PNumber(settings_, n, static_cast<double>(def)), def), -8, 8));
@@ -469,23 +469,23 @@ private:
         const int up = axis("UpAxis", 1), front = axis("FrontAxis", 2), coord = axis("CoordAxis", 0);
         const float upSign = axis("UpAxisSign", 1) < 0 ? -1.f : 1.f, frontSign = axis("FrontAxisSign", 1) < 0 ? -1.f : 1.f,
                     coordSign = axis("CoordAxisSign", 1) < 0 ? -1.f : 1.f;
-        const float scale = ToFloat(PNumber(settings_, "UnitScaleFactor", 1.0) / 100.0);  // centimetres per unit
+        const float scale = ToFloat(PNumber(settings_, "UnitScaleFactor", 1.0) / 100.0);  // 1 単位あたりのセンチメートル
         Mat4 m;
         if (up >= 0 && up < 3 && front >= 0 && front < 3 && coord >= 0 && coord < 3 && up != front && up != coord && front != coord) {
             m = {};
             for (int c = 0; c < 4; ++c) {
                 for (int r = 0; r < 4; ++r) m.m[c][r] = 0;
             }
-            m.m[coord][0] = coordSign;  // our X <- the file's right
-            m.m[up][1] = upSign;        // our Y <- the file's up
-            m.m[front][2] = frontSign;  // our Z <- the file's front
+            m.m[coord][0] = coordSign;  // こちらの X <- ファイルの右
+            m.m[up][1] = upSign;        // こちらの Y <- ファイルの上
+            m.m[front][2] = frontSign;  // こちらの Z <- ファイルの前
             m.m[3][3] = 1;
         }
         const float s = scale > 0 && std::isfinite(scale) ? scale : 1.f;
         return Scaling({s, s, s}) * m;
     }
 
-    // A model's place under its parents (FBX SDK: T * Roff * Rp * Rpre * R * Rpost^-1 * Rp^-1 * Soff * Sp * S * Sp^-1).
+    // モデルの、親の下での位置 (FBX SDK: T * Roff * Rp * Rpre * R * Rpost^-1 * Rp^-1 * Soff * Sp * S * Sp^-1)。
     Mat4 World(int64_t id, int depth = 0) {
         const FbxNode* model = Object(id, "Model");
         if (!model || depth > kMaxDepth) return Mat4{};
@@ -499,15 +499,14 @@ private:
         return parent != parentOf_.end() ? World(parent->second, depth + 1) * local : local;
     }
 
-    // Moves the mesh inside its model only (not passed on to children).
+    // メッシュをそのモデルの中だけで動かす (子には伝えない)。
     static Mat4 Geometric(const FbxNode& model) {
         return Translation(PVec(&model, "GeometricTranslation", {})) * Euler(PVec(&model, "GeometricRotation", {}), 0) *
                Scaling(PVec(&model, "GeometricScaling", {1, 1, 1}));
     }
 
-    // One value of a layer (normals, UVs, materials): by polygon vertex / by control point / by
-    // polygon / all the same, directly or through an index list (`indexName`; empty: never). False
-    // when it is not there.
+    // レイヤーの 1 つの値 (法線、UV、マテリアル): ポリゴン頂点ごと / コントロール点ごと / ポリゴンごと /
+    // 全部同じ、のどれかで、直接か、添字のリスト (`indexName`。空: 使わない) を通して。値が無ければ false。
     static bool LayerValue(const FbxNode& layer, std::string_view dataName, std::string_view indexName, int comps, size_t polyVertex, size_t point,
                            size_t polygon, float* out) {
         const FbxNode* data = layer.Child(dataName);
@@ -521,13 +520,13 @@ private:
         if (mapping == "ByVertice" || mapping == "ByVertex" || mapping == "ByControlPoint") k = point;
         else if (mapping == "ByPolygon") k = polygon;
         else if (mapping == "AllSame") k = 0;
-        // (Materials say IndexToDirect too, but their numbers are already the index: no index list.)
+        // (マテリアルも IndexToDirect と言うが、その数がすでに添字なので、添字のリストは無い。)
         const std::vector<double>& v = data->props[0].numbers;
-        const size_t values = v.size() / static_cast<size_t>(comps);  // how many there are to point at
+        const size_t values = v.size() / static_cast<size_t>(comps);  // 指す先がいくつあるか
         if (!indexName.empty() && (reference == "IndexToDirect" || reference == "Index")) {
             const FbxNode* index = layer.Child(indexName);
             if (!index || index->props.empty() || k >= index->props[0].numbers.size()) return false;
-            // Compared as a double first: a NaN, a negative or a huge number points at nothing.
+            // 先に double として比べる: NaN、負の数、巨大な数は何も指さない。
             const double ix = index->props[0].numbers[k];
             if (!(ix >= 0 && ix < static_cast<double>(values))) return false;
             k = static_cast<size_t>(ix);
@@ -537,7 +536,7 @@ private:
         return true;
     }
 
-    // The materials of a model, in the order they were connected (what LayerElementMaterial counts).
+    // モデルのマテリアル。つないだ順 (LayerElementMaterial が数えるもの)。
     std::vector<int> ModelMaterials(int64_t modelId) {
         std::vector<int> list;
         ForChildren(modelId, [&](const Link& l) {
@@ -560,10 +559,10 @@ private:
         const float opacity = ToFloat(std::clamp(PNumber(m, "Opacity", 1.0 - PNumber(m, "TransparencyFactor", 0.0)), 0.0, 1.0));
         mat.baseColor = {std::clamp(diffuse.x * factor, 0.f, 1.f), std::clamp(diffuse.y * factor, 0.f, 1.f), std::clamp(diffuse.z * factor, 0.f, 1.f), opacity};
         if (opacity < 0.999f) mat.alpha = AlphaMode::Blend;
-        // Light of its own (linear, may be more than 1).
+        // 自分で出す光 (リニア。1 より大きくてもよい)。
         const Vec3 emissive = PVec(m, "EmissiveColor", PVec(m, "Emissive", {0, 0, 0})) * ToFloat(PNumber(m, "EmissiveFactor", 1.0));
         mat.emissive = {std::max(emissive.x, 0.f), std::max(emissive.y, 0.f), std::max(emissive.z, 0.f), 1};
-        // The picture on its diffuse colour (or, when none says so, any picture on it).
+        // 拡散色に付いた画像 (どれもそう言っていなければ、付いているどれか)。
         int64_t texture = 0;
         ForChildren(id, [&](const Link& l) {
             if (!Object(l.child, "Texture")) return true;
@@ -591,12 +590,12 @@ private:
         std::replace(file.begin(), file.end(), '\\', '/');
         const bool absolute = file.empty() || file[0] == '/' || (file.size() > 1 && file[1] == ':');
         if (absolute) {
-            // Only an absolute path (someone else's PC): the picture is looked for next to the model.
+            // 絶対パスだけ (他の人の PC のもの): 画像はモデルの隣から探す。
             std::string full = text("FileName").empty() ? file : text("FileName");
             std::replace(full.begin(), full.end(), '\\', '/');
             file = full.substr(full.find_last_of('/') + 1);
         }
-        // The picture written inside the file (Video's Content) wins over the file.
+        // ファイルの中に書かれた画像 (Video の Content) は、ファイルより優先する。
         ForChildren(textureId, [&](const Link& l) {
             const FbxNode* video = Object(l.child, "Video");
             const FbxNode* content = video ? video->Child("Content") : nullptr;
@@ -615,7 +614,7 @@ private:
     bool Geometry(const FbxNode& geo, int64_t modelId, const Mat4& world) {
         const FbxNode* verts = geo.Child("Vertices");
         const FbxNode* poly = geo.Child("PolygonVertexIndex");
-        if (!verts || verts->props.empty() || !poly || poly->props.empty()) return true;  // not a polygon mesh (NURBS, a line ...)
+        if (!verts || verts->props.empty() || !poly || poly->props.empty()) return true;  // ポリゴンメッシュではない (NURBS、線 ...)
         const std::vector<double>& pos = verts->props[0].numbers;
         const std::vector<double>& corners = poly->props[0].numbers;
         if (corners.size() > kMaxCorners) return Fail(error_, "FBX のメッシュの頂点が多すぎます");
@@ -624,7 +623,7 @@ private:
         const FbxNode* uvs = geo.Child("LayerElementUV");
         const FbxNode* mats = geo.Child("LayerElementMaterial");
         const std::vector<int> modelMaterials = ModelMaterials(modelId);
-        // One vertex per corner, in the part and in the model; a triangle per corner at most.
+        // 1 つの角に頂点 1 つ (パートにもモデルにも)。三角形は角ごとに多くて 1 つ。
         if (!budget_.Take(corners.size(), uint64_t{corners.size()} * (sizeof(MeshVertex) * 2 + sizeof(uint32_t) * 6 + sizeof(int) * 2), error_)) {
             return false;
         }
@@ -648,10 +647,10 @@ private:
             if (normals && !LayerValue(*normals, "Normals", "NormalsIndex", 3, k, cp, polygon, n)) missingNormal = true;
             if (uvs) LayerValue(*uvs, "UV", "UVIndex", 2, k, cp, polygon, uv);
             v.normal = {n[0], n[1], n[2]};
-            v.uv = {uv[0], 1.f - uv[1]};  // FBX's V goes up
+            v.uv = {uv[0], 1.f - uv[1]};  // FBX の V は上向き
             part.vertices.push_back(v);
             if (!last) continue;
-            // The polygon is complete: a fan from its first corner.
+            // ポリゴンがそろった: 最初の角から扇形に。
             const uint32_t base = static_cast<uint32_t>(first);
             const size_t count = k + 1 - first;
             int material = -1;
@@ -680,8 +679,8 @@ private:
     const FbxNode* settings_ = nullptr;
     std::unordered_map<int64_t, const FbxNode*> byId_;
     std::vector<Link> links_;
-    std::unordered_map<int64_t, std::vector<size_t>> childrenOf_;  // parent -> its links (into links_)
-    std::unordered_map<int64_t, int64_t> parentOf_;                // a model -> its parent model
+    std::unordered_map<int64_t, std::vector<size_t>> childrenOf_;  // 親 -> そのリンク (links_ の中の)
+    std::unordered_map<int64_t, int64_t> parentOf_;                // モデル -> その親のモデル
     std::unordered_map<int64_t, int> materials_, images_;
     MeshData out_;
     std::vector<int> triangleMaterial_;

@@ -1,28 +1,26 @@
 #pragma once
-// 3D 空間 - the pictures models are painted with, on the GPU.
+// 3D 空間 - モデルを塗る絵 (テクスチャ) を GPU に載せる。
 //
-//   PictureDecoder a thread of its own that does the slow part of a picture: reads the file, looks
-//                  in the disk cache (TextureFile.h: <project>/Cache/Textures/*.dds); when it is not
-//                  there, decodes it (WIC), makes its mipmaps (MakeTexturePixels), compresses them
-//                  (BlockCompress.h: BC1 / BC3 / BC4 / BC5 / BC7 by its use and the import
-//                  settings) and writes the cache file. Only the copy to the GPU (UploadTexture) is
-//                  on the drawing thread, so a model with big pictures never stops the screen
-//   TextureCache   a picture file by its full path: read and put on the GPU the first time it is
-//                  asked for, shared by every model that uses it, looked at again now and then and
-//                  read again when the file (or its .meta) changed - the old picture stays until the
-//                  new one is ready
-//   ModelPaint     one model's materials as Renderer::Render takes them (DrawMaterial): the pictures
-//                  written inside the model (.glb / data: URI) are decoded by the cache's decoder (the
-//                  model's import settings: 中の絵の圧縮 / 大きさの上限); the pictures in files next to it
-//                  come from the cache
+//   PictureDecoder 絵の重い所をやる専用スレッド。ファイルを読み、ディスクキャッシュ
+//                  (TextureFile.h: <project>/Cache/Textures/*.dds) を見て、無ければ
+//                  デコードし (WIC)、ミップマップを作り (MakeTexturePixels)、圧縮して
+//                  (BlockCompress.h: 使い道と取り込みの設定で BC1 / BC3 / BC4 / BC5 / BC7)
+//                  キャッシュファイルを書く。GPU へのコピー (UploadTexture) だけが描画
+//                  スレッドなので、大きな絵のモデルでも画面は止まらない
+//   TextureCache   絵のファイルをフルパスで持つ。最初に頼まれたときに読んで GPU に載せ、
+//                  それを使うモデル全部で共有する。ときどき見直し、ファイル (か .meta) が
+//                  変わったら読み直す。新しい絵ができるまで古い絵は残る
+//   ModelPaint     1 つのモデルのマテリアルを Renderer::Render が受け取る形 (DrawMaterial)
+//                  で持つ。モデルの中に書かれた絵 (.glb / data: URI) はキャッシュの
+//                  デコーダーが読む (モデルの取り込みの設定: 中の絵の圧縮 / 大きさの上限)。
+//                  横のファイルにある絵はキャッシュから来る
 //
-// Until a picture is ready its material is drawn without it (the drawer asks for more frames while
-// TextureCache::Waiting). The copies to the GPU of one frame stop when they have taken
-// kUploadSecondsPerFrame (measured with QueryPerformanceCounter; the first copy of a frame always
-// goes): the rest go on the next frames. A picture made by another renderer (the GPU was made again)
-// is never used: it is read again. A picture that cannot be read is told once in the console
-// (Japanese, with why) and the material is drawn without it. Pictures bigger than kMaxTextureSize (or
-// the import setting) are made smaller.
+// 絵ができるまでは、そのマテリアルは絵なしで描く (TextureCache::Waiting の間、描画側は
+// フレームを何度も頼む)。1 フレームの GPU へのコピーは、kUploadSecondsPerFrame かかった
+// 所で止める (QueryPerformanceCounter で測る。1 フレームの最初の 1 つは必ず通す)。残りは
+// 次のフレームへ回す。別のレンダラーが作った絵 (GPU を作り直した後) は決して使わず、
+// 読み直す。読めない絵はコンソールに 1 回だけ (日本語で、理由つきで) 出し、マテリアルは
+// 絵なしで描く。kMaxTextureSize (か取り込みの設定) より大きい絵は小さくする。
 
 #include "rm_engine/space3d/runtime/BlockCompress.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
@@ -48,13 +46,13 @@
 namespace rm::space3d {
 
 constexpr uint32_t kMaxTextureSize = 4096;
-// How long one frame may spend copying pictures to the GPU (the one place this number is written).
+// 1 フレームが GPU への絵のコピーに使ってよい時間 (この数を書く唯一の場所)。
 inline constexpr double kUploadSecondsPerFrame = 0.002;
 
-// A material's numbers as Render takes them (its pictures not yet: SetPicture).
+// Render が受け取るマテリアルの数値 (絵はまだ入らない: SetPicture)。
 DrawMaterial MaterialNumbers(const MeshMaterial& m);
-// Its pictures: which of MeshData::images (-1: none) goes into which slot, whether it is a colour
-// picture (sRGB) and what it is used for. Slots: 0 colour, 1 metal / rough, 2 normal, 3 emission.
+// その絵。MeshData::images のどれ (-1: なし) をどのスロットに入れるか、色の絵 (sRGB) か、
+// 何に使うか。スロット: 0 色、1 金属 / 粗さ、2 法線、3 発光。
 struct PictureSlot {
     int image = -1;
     bool srgb = true;
@@ -66,21 +64,21 @@ void SetPicture(DrawMaterial& d, size_t slot, TextureRef texture);
 
 class PictureDecoder {
 public:
-    // What to make: a picture file, or bytes (a picture written inside a model - `file` is then the
-    // model: its .meta gives the id and the import settings, `image` which of its pictures).
+    // 何を作るか。絵のファイル、またはバイト列 (モデルの中に書かれた絵。その場合 `file` は
+    // モデルで、その .meta が id と取り込みの設定を、`image` がモデルの何番目の絵かを与える)。
     struct Source {
         std::shared_ptr<const std::vector<uint8_t>> bytes;
         std::filesystem::path file;
         int image = -1;
         TextureUse use = TextureUse::Color;
         bool srgb = true;
-        std::filesystem::path cacheFolder;  // empty: nothing kept on disk
+        std::filesystem::path cacheFolder;  // 空: ディスクには残さない
         bool canBC7 = false;
     };
-    // One picture asked for. Shared with the thread: once Done(), the rest is the answer.
-    // Dropped by whoever asked before it was started: never made. It counts as waiting (Waiting)
-    // until it is taken (Taken: put on the GPU, or found unreadable) or let go - not only until it is
-    // made, or a picture made between two frames would never be drawn (nothing asks for a frame).
+    // 頼まれた 1 枚の絵。スレッドと共有する。Done() になったら、残りは答え。
+    // 始まる前に頼んだ側が手放したら作らない。取られる (Taken: GPU に載せた、または読めないと
+    // 分かった) か手放されるまでは待ち (Waiting) に数える。できるまでだけではない。そうしないと
+    // フレームの合間にできた絵は、フレームを頼む者がいなくて描かれないままになる。
     class Job {
     public:
         ~Job() { Taken(); }
@@ -89,26 +87,26 @@ public:
             if (counter_) --*counter_;
             counter_.reset();
         }
-        std::optional<TexturePixels> pixels;  // nullopt: `error` says why (Japanese)
+        std::optional<TexturePixels> pixels;  // nullopt: `error` に理由 (日本語)
         std::string error;
         TextureSampling sampling;  // the image's import settings (フィルタ・端の扱い・ストリーミング)
-        bool fromCache = false;  // read from the cache's .dds (not decoded and compressed again)
-        double seconds = 0;      // how long the thread took
+        bool fromCache = false;  // キャッシュの .dds から読んだ (デコードも圧縮もやり直していない)
+        double seconds = 0;      // スレッドがかかった時間
 
     private:
         friend class PictureDecoder;
         Source source_;
         std::atomic<bool> done_{false};
-        std::shared_ptr<std::atomic<size_t>> counter_;  // the decoder's (kept alive by its jobs)
+        std::shared_ptr<std::atomic<size_t>> counter_;  // デコーダーのもの (ジョブが生かしておく)
     };
 
     PictureDecoder() = default;
-    ~PictureDecoder();  // the picture being made is finished; the rest are dropped
+    ~PictureDecoder();  // 作っている絵は終わらせ、残りは捨てる
     PictureDecoder(const PictureDecoder&) = delete;
     PictureDecoder& operator=(const PictureDecoder&) = delete;
 
-    std::shared_ptr<Job> Request(Source source);  // the thread starts with the first one
-    size_t Waiting() const { return waiting_->load(); }  // asked for and not taken yet
+    std::shared_ptr<Job> Request(Source source);  // 最初の 1 つでスレッドが始まる
+    size_t Waiting() const { return waiting_->load(); }  // 頼まれて、まだ取られていない数
 
 private:
     void Run(std::stop_token stop);
@@ -118,63 +116,60 @@ private:
     std::condition_variable_any wake_;
     std::deque<std::shared_ptr<Job>> queue_;
     std::shared_ptr<std::atomic<size_t>> waiting_ = std::make_shared<std::atomic<size_t>>(0);
-    std::jthread worker_;  // last: stopped and joined first
+    std::jthread worker_;  // 最後: 最初に止めて待つ
 };
 
 class TextureCache {
 public:
-    static constexpr double kCheckSeconds = 1.0;  // how often a file is looked at again
+    static constexpr double kCheckSeconds = 1.0;  // ファイルを見直す間隔
 
-    // Where compressed pictures are kept (the project's Cache/Textures; empty: not kept).
+    // 圧縮した絵を置く所 (プロジェクトの Cache/Textures。空: 残さない)。
     void SetCacheFolder(std::filesystem::path folder) { cacheFolder_ = std::move(folder); }
     const std::filesystem::path& CacheFolder() const { return cacheFolder_; }
 
-    // The picture of `file` (a full path) for `use` (colours are read as sRGB) - kept apart by use;
-    // null when it is not ready yet or cannot be read (told once - again only after the file changed).
-    // `now`: seconds, any clock that goes forward - a new value is a new frame. Call it every frame
-    // the picture is used.
+    // `use` 用の `file` (フルパス) の絵。使い道ごとに別に持つ (色は sRGB で読む)。
+    // まだ用意できていない、または読めないときは null (1 回だけ知らせ、ファイルが変わった後にまた)。
+    // `now`: 秒。進む時計ならどれでもよく、新しい値は新しいフレーム。絵を使う間は毎フレーム呼ぶ。
     TextureRef Get(Renderer& renderer, const std::filesystem::path& file, TextureUse use, bool srgb, double now);
-    // Puts a finished job on the GPU if the frame `now` still has time; true when it was taken (made,
-    // or failed - `out` null and *error why). A taken job no longer counts as waiting.
+    // フレーム `now` にまだ時間があれば、できたジョブを GPU に載せる。取った (できた、または
+    // 失敗した: `out` は null で *error に理由) なら true。取ったジョブはもう待ちに数えない。
     bool Upload(Renderer& renderer, PictureDecoder::Job& job, double now, TextureRef& out, std::string* error);
-    // Pictures nobody asked for in `seconds` leave the GPU.
+    // `seconds` の間だれも頼まなかった絵を GPU から外す。
     void ForgetUnused(double now, double seconds);
-    // Everything goes (the GPU's devices were made again: read again when asked).
+    // 全部外す (GPU のデバイスを作り直した: 頼まれたら読み直す)。
     void Clear() { entries_.clear(); }
     size_t Size() const { return entries_.size(); }
-    // Pictures being made or waiting for their copy to the GPU in the frame `now` (draw again until 0).
+    // フレーム `now` で作っている最中か、GPU へのコピーを待っている絵の数 (0 になるまで描き直す)。
     size_t Waiting(double now) const { return decoder_.Waiting() + slice_.Deferred(now); }
     PictureDecoder& Decoder() { return decoder_; }
 
 private:
     struct Entry {
         std::shared_ptr<const GpuTexture> gpu;
-        std::shared_ptr<PictureDecoder::Job> job;  // being made
+        std::shared_ptr<PictureDecoder::Job> job;  // 作っている最中
         std::filesystem::file_time_type time{};
-        bool loaded = false;  // read (or asked for) as it is at `time`
-        bool told = false;    // that it is missing was written to the console
+        bool loaded = false;  // `time` の時点の状態で読んだ (か頼んだ)
+        bool told = false;    // 無いことをコンソールに書いた
         double checkedAt = 0, usedAt = 0;
     };
     std::unordered_map<std::wstring, Entry> entries_;
     std::filesystem::path cacheFolder_;
     UploadSlice slice_{kUploadSecondsPerFrame};
-    PictureDecoder decoder_;  // last: its thread stops first
+    PictureDecoder decoder_;  // 最後: スレッドを最初に止める
 };
 
 class ModelPaint {
 public:
-    // The model's materials: pictures inside it are kept to be decoded (by the cache's decoder, the
-    // first time Materials is called); pictures in files are looked for next to `modelFile`, only
-    // inside `root` (the project's Assets/). What could not be used is written to the console
-    // (`modelName`: for the message).
+    // モデルのマテリアル。中の絵はデコード待ちとして持つ (キャッシュのデコーダーが、Materials を
+    // 最初に呼んだときに読む)。ファイルの絵は `modelFile` の横だけを、`root` (プロジェクトの
+    // Assets/) の中だけで探す。使えなかったものはコンソールに書く (`modelName`: メッセージ用)。
     void Load(const MeshData& mesh, const std::filesystem::path& modelFile, const std::filesystem::path& root, const std::string& modelName);
-    // The materials as Render takes them (by MeshPart::material); pictures as they get ready.
+    // Render が受け取る形のマテリアル (MeshPart::material で引く)。絵は用意できたものから入る。
     std::span<const DrawMaterial> Materials(Renderer& renderer, TextureCache& cache, double now);
-    size_t Pictures() const;  // how many pictures the materials use (for the console)
+    size_t Pictures() const;  // マテリアルが使う絵の数 (コンソール用)
 
 private:
-    // A picture written inside the model, once per way it is read (its bytes kept: read again if the
-    // GPU is made again).
+    // モデルの中に書かれた絵。読み方ごとに 1 つ (バイト列を持っておく: GPU を作り直したら読み直す)。
     struct Inside {
         std::shared_ptr<const std::vector<uint8_t>> bytes;
         std::string name;
@@ -185,7 +180,7 @@ private:
         TextureRef gpu;
         bool failed = false;
     };
-    // One picture of a material: inside the model (an index into inside_) or a file (from the cache).
+    // マテリアルの 1 枚の絵。モデルの中 (inside_ の番号) か、ファイル (キャッシュから)。
     struct Slot {
         int inside = -1;
         std::filesystem::path file;
@@ -197,7 +192,7 @@ private:
     std::filesystem::path modelFile_;
     std::vector<Inside> inside_;
     std::vector<DrawMaterial> draw_;
-    std::vector<std::array<Slot, kPictureSlots>> slots_;  // per material
+    std::vector<std::array<Slot, kPictureSlots>> slots_;  // マテリアルごと
 };
 
 }  // namespace rm::space3d

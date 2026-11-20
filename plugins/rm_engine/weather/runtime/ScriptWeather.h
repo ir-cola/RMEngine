@@ -1,6 +1,7 @@
 #pragma once
-// The weather part of the scripts' API (sdk/RMWeather.h: rm::Sky::SetWeather / SetRain / SetWind ...):
-// the scene's 天候, at once or faded (Weather.h's BeginFade). Offered at kScriptApiPoint by RegisterRuntime.
+// スクリプト API の天候の部分 (sdk/RMWeather.h: rm::Sky::SetWeather / SetRain / SetWind ...):
+// シーンの 天候 を、すぐに、またはフェードで (Weather.h の BeginFade)。RegisterRuntime が
+// kScriptApiPoint で提供する。
 
 #include "rm_engine/game_production/runtime/Scripts.h"
 

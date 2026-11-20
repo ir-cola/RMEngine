@@ -1,5 +1,5 @@
 #pragma once
-// The exported game's drawer for 3D (offered at game_production::kGameDrawPoint by runtime/Register.cpp).
+// 書き出したゲームの 3D の描き手 (runtime/Register.cpp が game_production::kGameDrawPoint に出す)。
 
 #include "rm_engine/game_production/runtime/GameDraw.h"
 

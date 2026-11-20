@@ -1,10 +1,10 @@
 #pragma once
-// カメラを順に切り替える: a component that switches the game's camera (SystemContext::camera) to the
-// next camera every few seconds while the game plays - the simplest thing to see that a system can
-// switch cameras (later, scripts will do it their own way through the same SystemContext::camera).
-// The cameras are the entities with a Camera component that run, in the 階層's order; after the last
-// comes the first. The first 有効 entity with this component decides the interval.
-// Pure - tested in tests/TestSystems.cpp.
+// カメラを順に切り替える: ゲームが動く間、数秒ごとにゲームのカメラ (SystemContext::camera) を
+// 次のカメラへ切り替える部品。システムがカメラを切り替えられることを確かめる一番簡単な方法
+// (あとでスクリプトが同じ SystemContext::camera を通して自分のやり方でやる)。
+// カメラは、Camera 部品を持って動いているエンティティで、階層の順。最後のあとは最初に戻る。
+// この部品を持つ最初の 有効 なエンティティが間隔を決める。
+// 純粋 - tests/TestSystems.cpp でテストする。
 
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_production/runtime/Systems.h"
@@ -17,7 +17,7 @@ struct CameraCycle {
     float seconds = 3.f;
 };
 
-// The system (Frame): when the game's clock passes a multiple of the interval, the next camera.
+// システム (Frame): ゲームの時計が間隔の倍数を通ったら、次のカメラへ。
 void RunCameraCycle(game_production::SystemContext& ctx);
 
 }  // namespace rm::game_x_3d

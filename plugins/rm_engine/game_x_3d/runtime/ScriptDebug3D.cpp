@@ -1,5 +1,6 @@
-// The 3D debug drawing part of the scripts' API (RM3D.h's rm::Debug). RmApi::ctx is game
-// production's ScriptWorld; its `debug` is the editor's buffer while it plays, null in a game.
+// スクリプト API の 3D デバッグ描画の部分 (RM3D.h の rm::Debug)。RmApi::ctx は game
+// production の ScriptWorld。その `debug` は、動いている間はエディターのバッファー、
+// ゲームでは null。
 
 #include "rm_engine/game_x_3d/runtime/ScriptDebug3D.h"
 
@@ -20,7 +21,7 @@ bool Finite(Vec3 v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::is
 Vec3 V(const float p[3]) { return {p[0], p[1], p[2]}; }
 Color C(const float c[4]) { return {c[0], c[1], c[2], c[3]}; }
 
-// One line into the buffer (a line that is not a place - NaN, infinity - is left out). Full: told once.
+// バッファーに線を 1 本足す (位置でない線 - NaN、無限大 - は入れない)。いっぱいなら 1 度だけ知らせる。
 void Put(ScriptWorld& w, Vec3 a, Vec3 b, Color color, float seconds) {
     if (!Finite(a) || !Finite(b)) return;
     if (!w.debug->Add(DebugSpace::Space3D, a, b, color, seconds) && w.debug->TakeOverflowNotice() && w.log) {
@@ -28,7 +29,7 @@ void Put(ScriptWorld& w, Vec3 a, Vec3 b, Color color, float seconds) {
     }
 }
 
-// The world the call came from, when it draws (null: an exported game - nothing to do).
+// 呼び出しの元の世界。描くとき (null: 書き出したゲーム - 何もしない)。
 ScriptWorld* Drawing(void* ctx) {
     auto* w = static_cast<ScriptWorld*>(ctx);
     return w && w->debug ? w : nullptr;
@@ -52,7 +53,7 @@ void Sphere(void* ctx, const float center[3], float radius, const float color[4]
     ScriptWorld* w = Drawing(ctx);
     if (!w || !(radius >= 0) || !std::isfinite(radius)) return;
     const Vec3 c = V(center);
-    // Round X (in Y-Z), round Y (in X-Z) and round Z (in X-Y).
+    // X のまわり (Y-Z 面)、Y のまわり (X-Z 面)、Z のまわり (X-Y 面)。
     for (int axis = 0; axis < 3; ++axis) {
         auto at = [&](int i) {
             const float t = 6.2831853f * static_cast<float>(i) / kDebugSphereSegments;
@@ -68,7 +69,7 @@ void Ray(void* ctx, const float origin[3], const float direction[3], float lengt
     if (!w) return;
     const Vec3 d = V(direction);
     const float len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
-    if (!(len > 0) || !std::isfinite(len)) return;  // no direction: nothing
+    if (!(len > 0) || !std::isfinite(len)) return;  // 向きが無い: 何もしない
     const float k = length / len;
     const Vec3 o = V(origin);
     Put(*w, o, {o.x + d.x * k, o.y + d.y * k, o.z + d.z * k}, C(color), seconds);

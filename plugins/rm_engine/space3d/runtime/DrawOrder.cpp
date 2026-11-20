@@ -8,7 +8,7 @@ namespace rm::space3d {
 void SortDraws(std::span<const DrawKey> keys, std::vector<uint32_t>& order) {
     order.resize(keys.size());
     std::iota(order.begin(), order.end(), 0u);
-    // Most frames have long runs already in order (things listed by kind): checked first, as cheap.
+    // たいていのフレームには、すでに順番に並んだ長い並びがある (種類ごとに並べてあるから): 安く済むので先に調べる。
     if (std::is_sorted(order.begin(), order.end(), [&](uint32_t a, uint32_t b) { return keys[a] < keys[b]; })) return;
     std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) { return keys[a] < keys[b]; });
 }

@@ -1,5 +1,5 @@
 #pragma once
-// The ID of the plugin 天候 - written here once (and in plugin.json, compared at start-up).
+// プラグイン 天候 の ID - ここに 1 度だけ書く (と plugin.json にも。起動時に比べる)。
 
 #include "core/PluginId.h"
 

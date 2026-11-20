@@ -1,16 +1,16 @@
 #pragma once
-// ゲーム制作 × 3D - what other plugins draw into the game's 3D world themselves (パーティクル, 天候): the
-// scene view, the game view (the editor's Play) and the exported game each make one drawer of every
-// contribution and ask it once a frame what to draw into their picture (space3d::ExtraDraw: after the
-// see-through parts, depth-tested).
+// ゲーム制作 × 3D - 他のプラグインがゲームの 3D の世界に自分で描くもの (パーティクル, 天候)。
+// シーンビュー・ゲームビュー (エディターの Play)・書き出したゲームが、それぞれ寄せられた物ごとに
+// 描き手を 1 つ作り、1 フレームに 1 回、自分の画面に何を描くか尋ねる (space3d::ExtraDraw:
+// 透ける部分のあとで、深度テストあり)。
 //
-//   // in a connector's runtime/Register.cpp:
+//   // コネクターの runtime/Register.cpp で:
 //   static const game_x_3d::WorldDrawInfo kDraw{&CreateParticleDraw};
 //   registry.Contribute(game_x_3d::kWorldDrawPoint, kDraw);
 //
-// A drawer keeps what it needs between frames (one per picture: the scene view's picture and its camera
-// preview each have their own) and makes its GPU things on `gfx` (made again when gfx.Generation()
-// changes).
+// 描き手はフレームの間に必要なものを持ち続ける (画面ごとに 1 つ: シーンビューの画面とそのカメラの
+// プレビューは、それぞれ別に持つ)。GPU のものは `gfx` の上に作る (gfx.Generation() が変わったら
+// 作り直す)。
 
 #include "base/Ref.h"
 #include "core/RuntimeRegistry.h"
@@ -30,62 +30,61 @@ namespace rm::game_x_3d {
 
 struct SkyLook;
 
-// RuntimeRegistry point: items are WorldDrawInfo (static).
+// RuntimeRegistry の口: 中身は WorldDrawInfo (static)。
 inline constexpr char kWorldDrawPoint[] = "rm_engine.game_x_3d.world_draw";
 
 struct WorldDrawFrame {
     const game_production::Scene& scene;
     platform::Gfx& gfx;
-    // Where an entity is in the world (its Transform with its parents'); null: it has none (or it is
-    // switched off: nothing of it is drawn).
+    // エンティティが世界のどこにあるか (親の Transform も含めた Transform)。null: Transform が無い
+    // (または切ってある: 何も描かない)。
     std::function<const space3d::Mat4*(int entity)> world;
-    float dt = 0;          // seconds since this picture's last frame (0: it did not move on - paused)
-    bool playing = false;  // the game plays (the editor's Play, the exported game): everything runs
-    // Not playing (the editor): what is selected - what a drawer may show moving to be looked at.
+    float dt = 0;          // この画面の前のフレームからの秒数 (0: 進んでいない - 止まっている)
+    bool playing = false;  // ゲームが動いている (エディターの Play、書き出したゲーム): 全部が動く
+    // 動いていない (エディター): 選ばれているもの - 描き手が見やすいように動かして見せてよいもの。
     std::span<const int> selection;
-    // The bytes of an asset (the editor: its file; the game: what the export put in for it).
+    // アセットのバイト列 (エディター: そのファイル。ゲーム: 書き出しが入れたもの)。
     std::function<std::optional<std::string>(const AssetRef&)> asset;
-    // An asset's name for messages (the editor: its file's name); null: its id is used.
+    // メッセージに使うアセットの名前 (エディター: ファイルの名前)。null: id を使う。
     std::function<std::string(const AssetRef&)> name;
-    // What the plugins offer (a drawer may ask other plugins for more: パーティクル the collision shapes).
+    // プラグインが差し出しているもの (描き手は他のプラグインにもっと尋ねてよい: パーティクルならコライダーの形)。
     const RuntimeRegistry* registry = nullptr;
-    // Which picture this is, for the debug panel: "scene" / "game" / "preview" (null: the exported game's).
+    // デバッグパネルに出す、この画面がどれか: "scene" / "game" / "preview" (null: 書き出したゲームのもの)。
     const char* picture = nullptr;
-    // The game's time this picture moves by (the sky's: 0 in the editor until Play).
+    // この画面が動く、ゲームの時間 (空のもの: エディターでは Play まで 0)。
     double seconds = 0;
-    // The scene's 空 as this picture shows it (its light: 天候's drops are lit by it); null: none.
+    // この画面が見せているシーンの 空 (その光: 天候の雨粒はこれで照らされる)。null: 無い。
     const SkyLook* sky = nullptr;
-    // The sky and the weather are shown in this picture (the scene view's own camera: its 空 button).
+    // 空と天候をこの画面に見せる (シーンビュー自身のカメラ: その 空 ボタン)。
     bool atmosphere = true;
-    // The model an entity is drawn with in this picture (null: none - a mark, a box), and the renderer's
-    // simple shapes (箱, 球 ...).
+    // この画面でエンティティを描くモデル (null: 無い - 印や箱)、とレンダラーの簡単な形 (箱, 球 ...)。
     std::function<const space3d::GpuMesh*(int entity)> model;
     std::function<const space3d::GpuMesh*(space3d::Shape)> shape;
 };
 
-// What a drawer adds to the frame itself (WorldDrawer::PrepareFrame): spans into the drawer's own (kept
-// until its next PrepareFrame). Only the first drawer's 向きの地図 and surface touch are used.
+// 描き手が自分でフレームに足すもの (WorldDrawer::PrepareFrame): 描き手自身の span への参照
+// (次の PrepareFrame まで持つ)。使われるのは最初の描き手の 向きの地図 と面の触れ方だけ。
 struct FrameAdditions {
     std::span<const Vec3> mapDirections;
     std::span<const space3d::MapShape> mapShapes;
     std::span<const uint8_t> mapMovingOnly;  // RenderFrame::mapMovingOnly
     const space3d::SurfaceTouch* surface = nullptr;
     std::span<const space3d::ExtraDraw> solids;  // RenderFrame::solids (天候: the snow lying)
-    Color fog{0, 0, 0, 0};                       // RenderFrame::fog (天候: a downpour; a = 0: none)
+    Color fog{0, 0, 0, 0};                       // RenderFrame::fog (天候: 土砂降り。a = 0: 無し)
 };
 
 class WorldDrawer {
 public:
     virtual ~WorldDrawer() = default;
-    // Once a frame, before Prepare: what it adds to the frame (天候: the 向きの地図 of the colliders,
-    // 濡れ on every surface and the snow lying; RenderFrame::mapDirections / mapShapes / surface / solids).
+    // 1 フレームに 1 回、Prepare の前に: フレームに足すもの (天候: コライダーの 向きの地図、
+    // 全部の面の 濡れ、積もった雪。RenderFrame::mapDirections / mapShapes / surface / solids)。
     virtual void PrepareFrame(const WorldDrawFrame& f, FrameAdditions& out) {
         (void)f;
         (void)out;
     }
-    // Once a frame, before the picture is drawn: what to draw into it (in `out`).
+    // 1 フレームに 1 回、画面を描く前に: そこに何を描くか (`out` に入れる)。
     virtual void Prepare(const WorldDrawFrame& f, std::vector<space3d::ExtraDraw>& out) = 0;
-    // Something of it moves by itself: the editor draws the view again next frame.
+    // 自分で動くものがある: エディターは次のフレームにもビューを描き直す。
     virtual bool Animating() const { return false; }
 };
 

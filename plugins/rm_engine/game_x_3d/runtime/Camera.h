@@ -1,10 +1,10 @@
 #pragma once
-// ゲーム制作 × 3D - the camera component: what the game sees, from where its Transform puts it. It
-// looks along its entity's own -Z (as the editing camera; the Transform's rotation turns it), +Y up.
-// Pure values and the numbers made from them - tested in tests/TestSpace3d.cpp.
+// ゲーム制作 × 3D - カメラの部品: ゲームが見るもの。見る位置は Transform が決める。
+// その物自身の -Z の向きを見る (編集用カメラと同じ。Transform の回転で向きが変わる)。+Y が上。
+// 純粋な値と、そこから作る数だけ - tests/TestSpace3d.cpp でテストする。
 //
-// The game sees through the camera chosen in the game settings (最初のカメラ). Its background is the
-// game settings' 背景の色 unless the camera has its own (自分の背景の色を使う).
+// ゲームは、ゲーム設定で選んだカメラ (最初のカメラ) を通して見る。背景は、カメラが自分の
+// ものを持たない限りゲーム設定の 背景の色 (自分の背景の色を使う で持てる)。
 
 #include "core/reflect/Reflect.h"
 #include "rm_engine/space3d/runtime/Transform.h"
@@ -29,13 +29,13 @@ struct Camera {
     RM_PROPERTY(Edit, Label="背景の色", Tooltip="「自分の背景の色を使う」のとき", Min=0, Max=1) Color background{0.10f, 0.10f, 0.12f, 1};
 };
 
-// The camera's projection for a picture of `aspect` (width / height). A far plane not beyond the near
-// one is taken a little beyond it (the picture stays drawable while the numbers are being typed).
+// 縦横比 `aspect` (幅 / 高さ) の絵のためのカメラの射影。near より遠くない far は、少しだけ
+// その先にとる (数字を打っている間も絵は描ける)。
 space3d::Mat4 ProjectionOf(const Camera& camera, float aspect);
-// The same camera with its far plane brought in to at most `farthest` (the scene view draws its shape
-// that far: a far plane at 1000 would be lines across the whole floor).
+// 遠い面を最大 `farthest` までに縮めた同じカメラ (シーンビューはその形をそこまでで描く:
+// 1000 の遠い面だと、床全体に線が走ってしまう)。
 Camera ShownNear(const Camera& camera, float farthest);
-// What the picture is filled with before anything is drawn.
+// 何かを描く前に絵を塗りつぶす色。
 Color BackgroundOf(const Camera& camera, Color gameBackground);
 
 }  // namespace rm::game_x_3d

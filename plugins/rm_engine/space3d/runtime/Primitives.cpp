@@ -11,15 +11,15 @@ namespace rm::space3d {
 
 namespace {
 
-constexpr int kAround = 32;  // segments once around a round shape
-constexpr int kArc = 8;      // rings over a quarter circle (a sphere: 2 x kArc rings from pole to pole)
+constexpr int kAround = 32;  // 丸い形を 1 周する分割数
+constexpr int kArc = 8;      // 4 分の 1 円の輪の数 (球: 極から極まで 2 x kArc 個の輪)
 
-// The box: 6 faces x 4 corners (each face its own normal), 2 triangles per face.
+// 箱: 6 面 x 角 4 つ (各面が自分の法線を持つ)、1 面に三角形 2 つ。
 MeshData Box() {
     MeshData m;
     const float n[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     for (int f = 0; f < 6; ++f) {
-        // Two axes across the face.
+        // 面を横切る 2 つの軸。
         const int a = n[f][0] != 0 ? 1 : 0;
         const int b = n[f][2] != 0 ? 1 : 2;
         for (int k = 0; k < 4; ++k) {
@@ -34,14 +34,14 @@ MeshData Box() {
     return m;
 }
 
-// One ring of a shape turned around Y: its distance from the axis, its height, and the normal there
-// (its part away from the axis, its part up). v: the picture's V on it.
+// Y のまわりに回した形の輪 1 つ: 軸からの距離、高さ、そこでの法線 (軸から離れる向きの成分と、
+// 上向きの成分)。v: 絵の V。
 struct Ring {
     float r, y, nr, ny, v;
 };
 
-// The rings, top to bottom, turned once around Y (the seam has its vertices twice: U 0 and 1).
-// A ring of radius 0 (a pole) gets no triangles that would have no area.
+// 輪を上から下へ、Y のまわりに 1 周させたもの (継ぎ目は頂点を 2 回持つ: U が 0 と 1)。
+// 半径 0 の輪 (極) には、面積の無い三角形はできない。
 void Revolve(MeshData& m, const std::vector<Ring>& rings) {
     const uint32_t base = static_cast<uint32_t>(m.vertices.size());
     for (const Ring& ring : rings) {
@@ -61,7 +61,7 @@ void Revolve(MeshData& m, const std::vector<Ring>& rings) {
     }
 }
 
-// A flat round lid at height y facing up (up) or down.
+// 高さ y にある、上向き (up) または下向きの平らな丸いふた。
 void Lid(MeshData& m, float radius, float y, bool up) {
     const uint32_t center = static_cast<uint32_t>(m.vertices.size());
     const float ny = up ? 1.f : -1.f;
@@ -81,8 +81,8 @@ void Lid(MeshData& m, float radius, float y, bool up) {
     }
 }
 
-// A quarter circle of rings: from angle `from` to `to` (0 = the top pole, pi/2 = the widest), radius
-// 0.5, its centre at height `centerY`; V from v0 to v1.
+// 輪でできた 4 分の 1 円: 角度 `from` から `to` まで (0 = 上の極、pi/2 = 一番広い所)、半径
+// 0.5、中心は高さ `centerY`。V は v0 から v1 まで。
 void Arc(std::vector<Ring>& rings, float from, float to, float centerY, float v0, float v1, bool skipFirst) {
     for (int k = skipFirst ? 1 : 0; k <= kArc; ++k) {
         const float t = static_cast<float>(k) / kArc;
@@ -114,7 +114,7 @@ MeshData Capsule() {
     MeshData m;
     std::vector<Ring> rings;
     const float half = std::numbers::pi_v<float> * 0.5f;
-    // (V over the height: the ends are a quarter each, the straight part half)
+    // (V は高さに沿って: 両端が 4 分の 1 ずつ、まっすぐな部分が半分)
     Arc(rings, 0, half, 0.5f, 0, 0.25f, false);
     Arc(rings, half, 2 * half, -0.5f, 0.75f, 1, false);
     Revolve(m, rings);
@@ -151,7 +151,7 @@ MeshData ShapeMesh(Shape shape) {
         case Shape::Capsule: m = Capsule(); break;
         case Shape::Plane: m = Plane(); break;
     }
-    FaceOut(m);  // (the box's corners are not laid out by their winding)
+    FaceOut(m);  // (箱の角は、巻き方向で並べていない)
     ComputeBounds(m);
     return m;
 }

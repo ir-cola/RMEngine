@@ -9,7 +9,7 @@ namespace rm::game_x_3d {
 
 namespace {
 
-// Near and far as they can be drawn: near > 0, far beyond near.
+// 描ける範囲の near と far: near > 0、far は near より遠く。
 std::pair<float, float> Clip(const Camera& c) {
     const float nearZ = std::max(c.nearClip, 0.0001f);
     return {nearZ, std::max(c.farClip, nearZ * 1.001f + 0.001f)};

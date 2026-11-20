@@ -22,16 +22,17 @@ namespace rm::game_x_3d {
 
 namespace {
 
-// A Transform's place in the world: its parents' Transforms, then its own (shown under it, read-only).
+// Transform のワールドでの位置: 親の Transform を順にたどり、最後に自分のもの
+// (その下に表示。読み取り専用)。
 void DeriveWorld(std::span<const void* const> chain, void* out) {
     space3d::Mat4 world;
     for (const void* p : chain) world = space3d::WorldMatrix(world, *static_cast<const space3d::Transform*>(p));
-    // Near its own angles: a thing at the top level shows the same numbers as its Transform.
+    // 自分の角度に近い値: 一番上の階層にあるものは Transform と同じ数字を表示する。
     const Vec3 hint = static_cast<const space3d::Transform*>(chain.back())->rotation;
     *static_cast<space3d::WorldPlacement*>(out) = space3d::Decompose(world, hint);
 }
 
-// World values typed in the inspector -> the Transform that gives them under its parents.
+// インスペクターで打ったワールドの値 -> 親の下でその値になる Transform。
 void UnderiveWorld(std::span<const void* const> chain, const void* derived, void* component) {
     space3d::Mat4 parent;
     for (size_t i = 0; i + 1 < chain.size(); ++i) parent = space3d::WorldMatrix(parent, *static_cast<const space3d::Transform*>(chain[i]));
@@ -39,8 +40,8 @@ void UnderiveWorld(std::span<const void* const> chain, const void* derived, void
     t = space3d::FromWorld(t, parent, *static_cast<const space3d::WorldPlacement*>(derived));
 }
 
-// 追加 ▸ 3D オブジェクト / カメラ / ライト: an entity with a 3D Transform (whatever the game's space is)
-// and what makes it that - names in the language in use.
+// 追加 ▸ 3D オブジェクト / カメラ / ライト: 3D の Transform を持つエンティティ
+// (ゲームの空間が何であっても) と、それを作る部品。名前は使っている言語で出す。
 using game_production::AddComponentTo;
 using game_production::Scene;
 
@@ -62,14 +63,14 @@ int MakeShape(Scene& scene, int parent, size_t index) {
 }
 
 int MakeCamera(Scene& scene, int parent, size_t index) {
-    // (a little back and up, looking down at the middle: what the 3D template's camera does)
+    // (少し後ろの上から、真ん中を見下ろす: 3D テンプレートのカメラと同じ)
     const int id = MakePlaced(scene, editor::TrU8("カメラ"), parent, index, {0, 3, 8}, {-18, 0, 0});
     AddComponentTo<Camera>(scene, id);
     return id;
 }
 
 int MakeLight(Scene& scene, int parent, size_t index) {
-    const int id = MakePlaced(scene, editor::TrU8("光"), parent, index, {0, 6, 0}, {-50, -30, 0});  // (shining down at a slant)
+    const int id = MakePlaced(scene, editor::TrU8("光"), parent, index, {0, 6, 0}, {-50, -30, 0});  // (斜めに照らす)
     AddComponentTo<Light>(scene, id);
     return id;
 }
@@ -80,8 +81,8 @@ int MakeAmbient(Scene& scene, int parent, size_t index) {
     return id;
 }
 
-// The 空's ⋮ 新しい空のシェーダーを作る: a .rmsky in Assets/Skies to start from (SkyShader.h's NewSkyCode),
-// chosen as the sky (one undo entry) and opened in the program Windows has for it.
+// 空の ⋮ 新しい空のシェーダーを作る: Assets/Skies に元になる .rmsky を作り (SkyShader.h の NewSkyCode)、
+// その空に選び (Undo は 1 つ)、Windows でその種類に割り当てられたプログラムで開く。
 void CreateSkyShader(const game_production::SceneSettingMenuHost& h) {
     namespace fs = std::filesystem;
     const fs::path dir = h.host->GetProject().AssetsDir() / L"Skies";
@@ -124,12 +125,11 @@ std::vector<editor::w::Action> SkyMenu(const game_production::SceneSettingMenuHo
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
-    // (The component types and the systems are the runtime part's: runtime/Register.cpp. Here only how
-    // the editor shows them.)
+    // (部品の型とシステムはランタイム側のもの: runtime/Register.cpp。ここはエディターでの見せ方だけ。)
     using game_production::ComponentLook;
     using game_production::kComponentLookPoint;
-    // A Transform is shown as it is (ローカル: in the parent) or in the world (ワールド: through every
-    // parent), switched above its fields in the inspector.
+    // Transform はそのまま (ローカル: 親から見た値) か、ワールド (ワールド: 親をすべて通した値) で
+    // 表示する。インスペクターの項目の上で切り替える。
     static const ComponentLook kTransform{.type = &reflect::TypeOf<space3d::Transform>,
                                           .derivedType = &reflect::TypeOf<space3d::WorldPlacement>,
                                           .derive = &DeriveWorld,
@@ -138,14 +138,14 @@ void RegisterEditor(editor::PluginRegistry& registry) {
                                           .derivedLabel = editor::TrKey(L"ワールド"),
                                           .icon = "cube"};
     registry.Contribute(kComponentLookPoint, kTransform);
-    // カメラ and 光 - each with its own picture in the 階層.
+    // カメラと光 - どちらも 階層 に専用の絵が出る。
     static const ComponentLook kCamera{.type = &reflect::TypeOf<Camera>, .icon = "camera"};
     registry.Contribute(kComponentLookPoint, kCamera);
     static const ComponentLook kLight{.type = &reflect::TypeOf<Light>, .icon = "light"};
     registry.Contribute(kComponentLookPoint, kLight);
     static const ComponentLook kAmbient{.type = &reflect::TypeOf<AmbientLight>, .icon = "light"};
     registry.Contribute(kComponentLookPoint, kAmbient);
-    // ... and are seen in 3D in the scene view.
+    // ... シーンビューでは 3D で見える。
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView3D, "3d", editor::TrKey(L"3D"), /*order*/ 0};
     registry.Contribute(game_production::kSceneViewPoint, kSceneView);
     // The 階層's 追加 ▸.
@@ -161,10 +161,10 @@ void RegisterEditor(editor::PluginRegistry& registry) {
         {.label = TrKey(L"環境光"), .folder = TrKey(L"ライト"), .make = &MakeAmbient},
     };
     for (const auto& item : kItems) registry.Contribute(game_production::kCreateItemPoint, item);
-    // The scene's 空: its ⋮ makes a sky shader to start from.
+    // シーンの 空: その ⋮ で元になる空のシェーダーを作る。
     static const game_production::SceneSettingLook kSky{.type = &reflect::TypeOf<Sky>, .menu = &SkyMenu};
     registry.Contribute(game_production::kSceneSettingLookPoint, kSky);
-    // An exported game gets its models and pictures baked (the game's own form: ExportBake.cpp).
+    // 書き出したゲームには、モデルと画像を焼き込む (ゲーム用の形: ExportBake.cpp)。
     RegisterExportBake(registry);
 }
 

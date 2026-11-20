@@ -1,16 +1,16 @@
 #pragma once
-// 3D 空間 - the order draws are made in, so that what can be one draw is one (instancing) and the GPU
-// changes its state as seldom as it can. Pure - tested in tests/TestSpace3d.cpp.
+// 3D 空間 - 描く順番。1 回で描けるもの (インスタンシング) は 1 回にし、GPU はできるだけ状態を
+// 変えないようにする。純粋 - tests/TestSpace3d.cpp でテストする。
 //
-// A draw is told by its key: which shaders, which pictures (the material's textures and sampler - its
-// numbers come per instance and may differ), which mesh, which part of it. Sorted shader first, then
-// material, then mesh: the costly changes (shaders, pictures) happen least. Draws with the same key
-// next to each other become one DrawIndexedInstanced (Renderer3D.cpp), each instance with its own
-// place and numbers.
+// 1 つの描画はそのキーで決まる: どのシェーダーか、どの画像か (マテリアルのテクスチャとサンプラー -
+// 数値はインスタンスごとに来るので違ってよい)、どのメッシュか、そのどの部分か。シェーダー、次に
+// マテリアル、次にメッシュの順に並べる: 重い変更 (シェーダー、画像) が一番少なくなる。隣り合った
+// 同じキーの描画は 1 つの DrawIndexedInstanced (Renderer3D.cpp) になり、各インスタンスが自分の場所と
+// 数値を持つ。
 //
 //   std::vector<uint32_t> order;
-//   SortDraws(keys, order);                 // stable: equal keys keep the order they came in
-//   size_t draws = CountRuns(keys, order);  // what it costs: one draw per run of equal keys
+//   SortDraws(keys, order);                 // 安定: 同じキーは来た順のまま
+//   size_t draws = CountRuns(keys, order);  // かかる手間: 同じキーの並び 1 つにつき描画 1 回
 
 #include <compare>
 #include <cstddef>
@@ -21,17 +21,17 @@
 namespace rm::space3d {
 
 struct DrawKey {
-    uint32_t shader = 0;    // which shaders and states
-    uint32_t material = 0;  // which pictures and sampler (0: none)
-    uint64_t mesh = 0;      // which mesh (GpuMesh::serial)
-    uint32_t part = 0;      // which part of the mesh
+    uint32_t shader = 0;    // どのシェーダーと状態か
+    uint32_t material = 0;  // どの画像とサンプラーか (0: 無し)
+    uint64_t mesh = 0;      // どのメッシュか (GpuMesh::serial)
+    uint32_t part = 0;      // メッシュのどの部分か
     auto operator<=>(const DrawKey&) const = default;
 };
 
-// `order` becomes the indices of `keys` sorted by key; equal keys keep their order (stable).
+// `order` は、キーで並べた `keys` の添字になる。同じキーは順番を保つ (安定)。
 void SortDraws(std::span<const DrawKey> keys, std::vector<uint32_t>& order);
 
-// How many runs of equal keys there are, taken in `order` (each run can be one instanced draw).
+// `order` の順で、同じキーの並びがいくつあるか (1 つの並びが、1 回のインスタンス描画になれる)。
 size_t CountRuns(std::span<const DrawKey> keys, std::span<const uint32_t> order);
 
 }  // namespace rm::space3d

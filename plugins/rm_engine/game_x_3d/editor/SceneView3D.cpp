@@ -54,27 +54,27 @@ using editor::Tr;
 using editor::TrF;
 using space3d::Mat4;
 using space3d::Transform;
-using space3d::operator*;  // Vec3 is rm::Vec3: its 3D operators live in space3d
+using space3d::operator*;  // Vec3 は rm::Vec3: 3D の演算子は space3d にある
 using space3d::operator+;
 using space3d::operator-;
 using ui::Rect;
 
 constexpr float kLookDegreesPerDip = 0.25f;
 constexpr float kOrbitDegreesPerDip = 0.4f;
-constexpr float kClickSlop = 4.f;  // a press that moves less than this is a click
-constexpr int kGridHalf = 20;      // the grid goes from -20 to 20 (1 per line, darker every 10)
-constexpr float kBarH = 28.f;      // the tool strip at the top left
+constexpr float kClickSlop = 4.f;  // これより小さくしか動かない押下はクリック
+constexpr int kGridHalf = 20;      // 格子は -20 から 20 まで (1 本ごと、10 本ごとに濃く)
+constexpr float kBarH = 28.f;      // 左上のツール帯
 constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kShadowW = 84.f, kSkyW = 64.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
-constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
-constexpr double kModelCheckSeconds = 1.0;    // how often a model file is looked at again (changed on disk?)
-constexpr double kModelForgetSeconds = 10.0;  // a model no entity uses for this long leaves the GPU
-constexpr float kFrustumShown = 10.f;  // a camera's shape is drawn this far at most (its far plane may be at 1000)
-constexpr float kMarkSize = 18.f;      // the mark of a camera / a light / an empty entity ... (pixels)
-constexpr float kMarkPick = 11.f;      // a click this near a mark selects its entity
-constexpr float kPreviewMaxW = 360.f;  // the camera preview at the bottom right
+constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // 刻みの箱 (刻み の下)
+constexpr double kModelCheckSeconds = 1.0;    // モデルのファイルを調べ直す間隔 (ディスクで変わったか)
+constexpr double kModelForgetSeconds = 10.0;  // この間どのエンティティも使わないモデルは GPU から外す
+constexpr float kFrustumShown = 10.f;  // カメラの形はここまでしか描かない (遠い面が 1000 でもよい)
+constexpr float kMarkSize = 18.f;      // カメラ / ライト / 空のエンティティなどの印 (ピクセル)
+constexpr float kMarkPick = 11.f;      // 印にこれだけ近いクリックで、そのエンティティを選ぶ
+constexpr float kPreviewMaxW = 360.f;  // 右下のカメラプレビュー
 
-// The tool strip's parts: 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心, 刻み, 影; they go on a
-// second row when the view is too narrow for one. `all` = round all of them.
+// ツール帯の部品: 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心, 刻み, 影。
+// ビューが 1 行に収まらないほど狭いと 2 行目に回る。`all` = すべてを丸める。
 struct BarLayout {
     Rect tool, space, pivot, snap, shadow, sky, debug, shapes, all;
 };
@@ -84,46 +84,46 @@ struct Placed {
     Mat4 world;
     Mat4 parentWorld;
     bool active;
-    // What is drawn: the model (null: the unit cube - a メッシュ whose file is missing) and its bounds
-    // in its own space - what a click hits and what F frames.
+    // 描くもの: モデル (null: 単位立方体 - ファイルが無い メッシュ) と、その自分の空間での
+    // 境界 - クリックが当たるものと、F で合わせる範囲。
     const space3d::GpuMesh* mesh = nullptr;
-    bool plain = false;  // `mesh` is a simple shape (メッシュ's 形), coloured like the box
-    std::span<const space3d::DrawMaterial> materials;  // the model's colours and pictures
+    bool plain = false;  // `mesh` が単純な形 (メッシュ の 形) で、箱と同じ色
+    std::span<const space3d::DrawMaterial> materials;  // モデルの色と画像
     bool castShadow = true;
     Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
-    bool loading = false;  // its model is being read (a box until then, with 読み込み中 over it)
-    // A camera / a light on it (copies for this frame). `marker`: it has no メッシュ - nothing of its
-    // own is drawn (an empty entity, a camera, a light, パーティクル, 音源 ...); it is seen (and clicked)
-    // by its mark (`mark`: the 階層's picture of it) and a camera's / a light's lines.
+    bool loading = false;  // モデルを読んでいる最中 (それまでは箱で、上に 読み込み中 を出す)
+    // その上のカメラ / ライト (このフレーム用のコピー)。`marker`: メッシュ が無い - 自分では何も
+    // 描かない (空のエンティティ、カメラ、ライト、パーティクル、音源 ...)。印 (`mark`: 階層での絵)
+    // とカメラ / ライトの線で見え (クリックもできる)。
     std::optional<Camera> camera;
     std::optional<Light> light;
-    bool ambient = false;  // it has a 環境光 (shown by the light's mark)
+    bool ambient = false;  // 環境光がある (ライトの印で示す)
     bool marker = false;
     editor::w::Icon mark = editor::w::Icon::Point;
 
-    // A camera or a light with a メッシュ keeps its mark too.
+    // メッシュ を持つカメラやライトも印を残す。
     bool HasMark() const { return marker || camera || light || ambient; }
 };
 
-// One picture drawn by Direct3D and shown by Direct2D: the view itself, or the camera preview in its
-// corner (a picture of its own: the first is still waiting to be drawn when the second is made).
+// Direct3D で描き、Direct2D で見せる絵 1 枚: ビューそのものか、その隅のカメラプレビュー
+// (別の絵: 2 枚目を作るとき、1 枚目はまだ描かれるのを待っている)。
 struct Picture {
     space3d::Renderer renderer;
     bool tried = false;
-    // The picture as a Direct2D bitmap, made again when the picture or the window's context changes.
+    // Direct2D のビットマップとしての絵。絵かウィンドウのコンテキストが変わると作り直す。
     Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
     ID3D11Texture2D* texture = nullptr;
     ID2D1DeviceContext* dc = nullptr;
-    // What other plugins draw into the world (WorldDraw.h: パーティクル), made at the first frame; and when
-    // this picture was drawn last (their time moves on by the difference).
+    // 他のプラグインが世界に描くもの (WorldDraw.h: パーティクル)。最初のフレームで作る。
+    // それと、この絵を最後に描いた時刻 (彼らの時間はその差だけ進む)。
     std::vector<std::unique_ptr<WorldDrawer>> drawers;
     bool drawersMade = false;
     std::optional<double> drawnAt;
     std::vector<space3d::ExtraDraw> extras;
-    game_x_3d::SkyPainter sky;  // the scene's 空 as this picture draws it
+    game_x_3d::SkyPainter sky;  // この絵が描くシーンの 空
 };
 
-// The largest rectangle of `aspect` (width / height) in the middle of r.
+// r の真ん中にある、縦横比 `aspect` (幅 / 高さ) の最大の長方形。
 Rect Fit(const Rect& r, float aspect) {
     const float a = std::max(aspect, 1e-3f);
     float w = r.w, h = r.w / a;
@@ -134,35 +134,34 @@ Rect Fit(const Rect& r, float aspect) {
     return {r.x + (r.w - w) * 0.5f, r.y + (r.h - h) * 0.5f, w, h};
 }
 
-// Two directions at right angles to d (and to each other): a circle facing d.
+// d に直角な (そして互いに直角な) 2 つの向き: d を向く円。
 std::pair<Vec3, Vec3> Across(Vec3 d) {
     const Vec3 u = space3d::Normalize(space3d::Cross(d, std::fabs(d.y) < 0.99f ? Vec3{0, 1, 0} : Vec3{1, 0, 0}));
     return {u, space3d::Cross(u, d)};
 }
 
-// A model file read once and kept on the GPU, by the path written in the MeshRenderer (several
-// entities with the same model share it). Looked at again now and then: a file changed on disk
-// (exported again from a 3D tool) is read again; a file that cannot be read is told once. Its
-// materials' pictures in files are shared through SceneView3D::textures_ (read again on their own
-// when they change). The file is read on the loader's thread (`ticket`); until it is done the old
-// shape stays (a box the first time).
+// MeshRenderer に書かれたパスで 1 度読んで GPU に置いたままにするモデルファイル (同じモデルの
+// エンティティ複数で共有)。ときどき調べ直す: ディスクで変わったファイル (3D ツールから書き出し
+// 直したもの) は読み直し、読めないファイルは 1 度だけ知らせる。材質の画像ファイルは
+// SceneView3D::textures_ で共有する (変わると自分で読み直す)。ファイルは読み込みスレッド
+// (`ticket`) で読む。終わるまでは古い形のまま (最初は箱)。
 struct ModelEntry {
     std::shared_ptr<const space3d::GpuMesh> gpu;
     space3d::ModelPaint paint;
-    space3d::MeshLoader::Ticket ticket = 0;  // being read
-    std::filesystem::path file;              // ... this file
-    std::string name;                        // its name, for the console
-    bool looked = false;  // the file has been looked for at least once
-    bool loaded = false;  // ... and read (or tried to be) as it is at `time`
-    bool told = false;    // that it is missing / not inside the project was written to the console
+    space3d::MeshLoader::Ticket ticket = 0;  // 読み込み中
+    std::filesystem::path file;              // ... このファイル
+    std::string name;                        // その名前 (コンソール用)
+    bool looked = false;  // ファイルを 1 度は探した
+    bool loaded = false;  // ... そして `time` のときの状態で読んだ (読もうとした)
+    bool told = false;    // 無い / プロジェクトの外にあることをコンソールに書いた
     std::filesystem::file_time_type time{};
     double checkedAt = 0, usedAt = 0;
 };
 
-// One thing being dragged by the gizmo: as it was when the drag began, and where it is now.
+// ギズモでドラッグしている 1 つ: ドラッグを始めたときの状態と、今の状態。
 struct Edited {
     Transform start;
-    Transform last;  // as the drag last left it
+    Transform last;  // 最後にドラッグが残した状態
     Mat4 parentWorld, startWorld;
     std::function<reflect::EditTarget()> resolve;
 };
@@ -203,22 +202,22 @@ public:
         cameraType_ = reflect::TypeOf<Camera>().name;
         lightType_ = reflect::TypeOf<Light>().name;
         ambientType_ = reflect::TypeOf<AmbientLight>().name;
-        // The sky's time goes on while the game plays (clouds drift, stars twinkle); still otherwise.
+        // 空の時間はゲームが動く間進む (雲が流れ、星が瞬く)。それ以外は止まっている。
         skySeconds_ = host.playing ? skySeconds_ + std::clamp(c.Time() - now_, 0.0, 0.1) : 0.0;
         now_ = c.Time();
         if (!looksMade_) MakeLooks(host);
         Place(host);
         ForgetUnusedModels();
-        // Drawn again until the models (and their pictures) being read on the other threads arrive.
+        // 他のスレッドで読み込み中のモデル (と画像) が届くまで描き直す。
         if (loader_.Pending() > 0 || textures_.Waiting(now_) > 0) c.RequestAnimation();
-        if (host.game) {  // the game view: only the picture, through the game's camera
+        if (host.game) {  // ゲームビュー: 絵だけを、ゲームのカメラ越しに
             DrawGame(c, r, host);
             return;
         }
         const std::optional<BarLayout> bar = Bar(r);
         if (!bar) snapOpen_ = false;
-        previewAt_ = PreviewRect(r, host);  // clicks on the preview do not reach the scene
-        if (HandleInput(c, r, host, bar)) Place(host);  // a gizmo drag moved things this frame
+        previewAt_ = PreviewRect(r, host);  // プレビューへのクリックはシーンに届かない
+        if (HandleInput(c, r, host, bar)) Place(host);  // このフレームにギズモのドラッグで物が動いた
         Build(host, false);
         Show(c, r, host, main_, SceneFrame(r));
         DrawMarks(c, r, host);
@@ -242,10 +241,9 @@ public:
 private:
     bool Ready(game_production::SceneViewHost& host) { return Start(main_, host); }
 
-    // The GPU's devices were made again (the GPU was lost: platform::Gfx::Generation): everything made
-    // on the old ones goes - the renderers (shaders, buffers, shadow maps, the pictures and their
-    // bitmaps), the models and the pictures of their materials. All are made again as they are needed
-    // (the model files are read again).
+    // GPU のデバイスが作り直された (GPU が失われた: platform::Gfx::Generation): 古いものの上に
+    // 作ったものはすべて消す - レンダラー (シェーダー、バッファー、影のマップ、画像とそのビット
+    // マップ)、モデル、材質の画像。すべて必要になったときに作り直す (モデルファイルも読み直す)。
     void DropGpuIfNew(game_production::SceneViewHost& host) {
         const uint64_t now = host.host.Graphics().Generation();
         if (now == generation_) return;
@@ -267,8 +265,8 @@ private:
         return pic.renderer.Ready();
     }
 
-    // The marks of the component types (their 階層 pictures), once. A place and nothing else (the
-    // Transform's "cube") is no mark of its own: an empty entity's is the ring.
+    // 部品の型の印 (その 階層 の絵) を 1 度だけ作る。位置だけのもの (Transform の「立方体」) は
+    // 自分の印を持たない: 空のエンティティの印は輪。
     void MakeLooks(game_production::SceneViewHost& host) {
         looksMade_ = true;
         for (const auto& l : host.host.Registry().Contributions<game_production::ComponentLook>(game_production::kComponentLookPoint)) {
@@ -278,16 +276,16 @@ private:
         }
     }
 
-    // Where every entity with a Transform is in the world (its parents' Transforms included), and
-    // what it looks like (its model or shape; a mark when it has no メッシュ).
+    // Transform を持つ全エンティティのワールドでの位置 (親の Transform も含める) と、
+    // その見た目 (モデルか形。メッシュ が無ければ印)。
     void Place(game_production::SceneViewHost& host) {
         const game_production::Scene& scene = host.scene;
         placed_.clear();
         ambient_.reset();
-        std::unordered_map<int, Mat4> world;  // parents come before their children in TreeOrder
+        std::unordered_map<int, Mat4> world;  // 親は TreeOrder で子より先に来る
         for (const auto& t : scene.TreeOrder()) {
             const auto& e = *t.entity;
-            // 環境光: the first that runs decides (its entity needs no place).
+            // 環境光: 最初に動くものが決める (そのエンティティに位置は要らない)。
             const game_production::Component* ac = e.FindComponent(ambientType_);
             const bool hasAmbient = ac && ac->Known();
             if (hasAmbient && t.activeInHierarchy && !ambient_) ambient_ = ToRenderAmbient(*static_cast<const AmbientLight*>(ac->value.Get()));
@@ -298,7 +296,7 @@ private:
                 const Mat4 w = space3d::WorldMatrix(parent, *static_cast<const Transform*>(comp->value.Get()));
                 world[e.data.id] = w;
                 Placed p{e.data.id, w, parent, t.activeInHierarchy};
-                p.castShadow = t.activeInHierarchy;  // a thing switched off shows faintly, without a shadow
+                p.castShadow = t.activeInHierarchy;  // オフのものは薄く出し、影は付けない
                 const game_production::Component* mc = e.FindComponent(meshType_);
                 if (mc && mc->Known()) {
                     const auto& mr = *static_cast<const MeshRenderer*>(mc->value.Get());
@@ -330,19 +328,19 @@ private:
                 }
                 p.ambient = hasAmbient;
                 p.marker = !(mc && mc->Known());
-                for (const game_production::Component& other : e.components) {  // as the 階層: the last one with a picture
+                for (const game_production::Component& other : e.components) {  // 階層と同じ: 絵を持つ最後のもの
                     if (!other.Known()) continue;
                     if (const auto m = markOf_.find(other.type); m != markOf_.end()) p.mark = m->second;
                 }
                 placed_.push_back(p);
             } else {
-                world[e.data.id] = parent;  // no place of its own: its children follow the parent
+                world[e.data.id] = parent;  // 自分の位置は無い: 子は親に付いてくる
             }
         }
     }
 
-    // The model `ref` names (an asset - wherever it is now), read (on the loader's thread) the first
-    // time it is asked for; null: draw a box. `loading`: its file is being read now.
+    // `ref` が指すモデル (アセット - 今どこにあっても)。最初に求められたときに
+    // (読み込みスレッドで) 読む。null: 箱を描く。`loading`: そのファイルを今読んでいる。
     ModelEntry* Model(const AssetRef& ref, game_production::SceneViewHost& host, bool& loading) {
         if (ref.Empty()) return nullptr;
         ModelEntry& m = models_[ref.guid];
@@ -356,10 +354,10 @@ private:
         m.looked = true;
         m.checkedAt = now_;
         const std::filesystem::path file = host.host.AssetFile(ref);
-        // (for the console: the file's name; the id when there is no file)
+        // (コンソール用: ファイルの名前。ファイルが無いときは id)
         const std::string path = file.empty() ? ref.guid : PathToUtf8(file.filename());
         std::error_code ec;
-        // (the model or its import settings in the .meta: changing the size reads it again)
+        // (モデル、または .meta にある取り込みの設定: 大きさを変えると読み直す)
         const auto time = file.empty() ? std::filesystem::file_time_type{} : asset::ChangedAt(file, ec);
         if (file.empty() || ec) {
             loader_.Cancel(m.ticket);
@@ -373,8 +371,8 @@ private:
             return nullptr;
         }
         m.told = false;
-        if (m.loaded && time == m.time) return found();  // not changed
-        // New or changed: read on the loader's thread (a read still going for the old file is dropped).
+        if (m.loaded && time == m.time) return found();  // 変わっていない
+        // 新規か変更あり: 読み込みスレッドで読む (古いファイルの読み込みがまだ続いていれば捨てる)。
         m.loaded = true;
         m.time = time;
         loader_.Cancel(m.ticket);
@@ -384,8 +382,8 @@ private:
         return found();
     }
 
-    // A model the loader has finished: onto the GPU with its pictures (here, on the drawing thread),
-    // in place of the shape drawn until now.
+    // 読み込みスレッドが読み終えたモデル: 画像と一緒に GPU に載せる (ここ、描画スレッドで)。
+    // それまで描いていた形の代わりにする。
     void Arrived(ModelEntry& m, game_production::SceneViewHost& host) {
         if (m.ticket == 0) return;
         std::optional<space3d::MeshLoader::Result> done = loader_.Take(m.ticket);
@@ -411,11 +409,11 @@ private:
                   mesh.vertices.size(), mesh.indices.size() / 3, mesh.materials.size(), m.paint.Pictures(), done->seconds);
     }
 
-    // Models (and pictures) nothing has used for a while leave the GPU (read again if they come back).
+    // しばらくどこからも使われないモデル (と画像) は GPU から外す (戻ってきたら読み直す)。
     void ForgetUnusedModels() {
         std::erase_if(models_, [&](const auto& kv) {
             if (now_ - kv.second.usedAt <= kModelForgetSeconds) return false;
-            loader_.Cancel(kv.second.ticket);  // no longer wanted: not read (or its result dropped)
+            loader_.Cancel(kv.second.ticket);  // もう要らない: 読まない (または結果を捨てる)
             return true;
         });
         textures_.ForgetUnused(now_, kModelForgetSeconds);
@@ -428,7 +426,7 @@ private:
         return nullptr;
     }
 
-    // The gizmo sits on the last selected entity that has a place (the one clicked last).
+    // ギズモは、位置を持つ最後に選んだエンティティ (最後にクリックしたもの) に置く。
     const Placed* Primary(const game_production::SceneViewHost& host) const {
         for (auto it = host.selection.rbegin(); it != host.selection.rend(); ++it) {
             if (const Placed* p = FindPlaced(*it)) return p;
@@ -436,8 +434,8 @@ private:
         return nullptr;
     }
 
-    // The gizmo: on the one selected last (それぞれ), or in the middle of every selected thing (中心) -
-    // the things that move, a child of a selected parent not counted - with the last one's axes.
+    // ギズモ: 最後に選んだ 1 つの上 (それぞれ)、または選んだもの全体の真ん中 (中心) -
+    // 動くもの、つまり選んだ親の子は数えない - に置き、軸は最後のものに合わせる。
     std::optional<gizmo::Frame> GizmoFrame(const Rect& r, const game_production::SceneViewHost& host) const {
         const Placed* p = Primary(host);
         if (!p) return std::nullopt;
@@ -456,8 +454,8 @@ private:
 
     Mat4 ViewProjection(const Rect& r) const { return state_.camera.ProjectionMatrix(r.w / r.h) * state_.camera.ViewMatrix(); }
 
-    // The tool strip (top left): its parts left to right, onto a new row where the view ends; none
-    // when the view is too small even for the first part.
+    // ツール帯 (左上): 部品を左から右へ並べ、ビューの端で次の行へ回す。最初の部品さえ
+    // 入らないほどビューが小さいときは出さない。
     static std::optional<BarLayout> Bar(const Rect& r) {
         if (r.w < kToolW + 16 || r.h < kBarH + 60) return std::nullopt;
         BarLayout b;
@@ -484,14 +482,14 @@ private:
         return b;
     }
 
-    // The box of the steps, under 刻み (kept inside the view).
+    // 刻みの箱。刻み の下 (ビューの中に収める)。
     static Rect SnapBox(const Rect& r, const BarLayout& b) {
         const float h = 10 + 3 * kSnapRowH + 30 + 8;
         return {std::max(r.x + 8, std::min(b.snap.x, r.Right() - 8 - kSnapBoxW)), b.snap.Bottom() + 4, kSnapBoxW, h};
     }
 
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
-        if (previewAt_ && previewAt_->Inset(-4, -24, -4, -4).Contains(x, y)) return true;  // the camera preview
+        if (previewAt_ && previewAt_->Inset(-4, -24, -4, -4).Contains(x, y)) return true;  // カメラプレビュー
         if (!bar) return false;
         for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->shadow, bar->sky, bar->debug, bar->shapes}) {
             if (part.Contains(x, y)) return true;
@@ -499,7 +497,7 @@ private:
         return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
     }
 
-    // Returns true when a gizmo drag changed the scene this frame.
+    // ギズモのドラッグがこのフレームでシーンを変えたときに true を返す。
     bool HandleInput(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const std::optional<BarLayout>& bar) {
         const ui::Input& in = c.In();
         const double now = c.Time();
@@ -507,7 +505,7 @@ private:
         lastTime_ = now;
         const bool overBar = OverBar(r, bar, in.mouseX, in.mouseY);
         bool hovered = c.IsHovered(r) && !overBar;
-        // The box of the steps closes on a click outside it (the click does nothing else) or Esc.
+        // 刻みの箱は、外のクリック (そのクリックは他に何もしない) か Esc で閉じる。
         if (snapOpen_ && drag_ == Drag::None) {
             const bool pressed = c.MousePressed() || c.MousePressed(ui::Mouse::Right) || c.MousePressed(ui::Mouse::Middle);
             if ((pressed && !overBar) || (c.Focused() == 0 && c.KeyPressed(ui::Key::Escape))) {
@@ -515,24 +513,24 @@ private:
                 if (pressed) hovered = false;
             }
         }
-        // How far the mouse moved (still counted while the cursor is held at the drag's start).
+        // マウスがどれだけ動いたか (カーソルがドラッグの始点に留められている間も数える)。
         const float dx = in.mouseDX, dy = in.mouseDY;
         const Vec2 mouse{in.mouseX, in.mouseY};
         bool changed = false;
 
         const std::optional<gizmo::Screen> screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h);
-        // In Play the scene is the copy that plays: shown, not edited (no gizmo).
+        // Play ではシーンは遊ぶ側のコピー: 見せるだけで編集しない (ギズモなし)。
         const std::optional<gizmo::Frame> frame = host.playing ? std::nullopt : GizmoFrame(r, host);
-        // The handle under the mouse (yellow), when nothing else is going on.
+        // マウスの下のハンドル (黄色)。ほかに何も起きていないとき。
         if (drag_ == Drag::None) {
             hot_ = hovered && !in.alt && frame && screen
                        ? gizmo::HitTest(state_.tool, *frame, *screen, state_.camera.Eye(), mouse)
                        : gizmo::Handle::None;
         } else if (drag_ != Drag::Gizmo) {
-            hot_ = gizmo::Handle::None;  // looking around: no handle lights up
+            hot_ = gizmo::Handle::None;  // 見回し中: ハンドルは光らない
         }
 
-        // Start a drag (only inside the view); it goes on outside until the button is let go.
+        // ドラッグを始める (ビューの中だけ)。ボタンを離すまで、外に出ても続く。
         if (drag_ == Drag::None && hovered) {
             if (c.MousePressed(ui::Mouse::Right)) {
                 drag_ = Drag::Look;
@@ -548,8 +546,8 @@ private:
                 pressY_ = in.mouseY;
             }
         } else if (drag_ != Drag::None) {
-            // Undo / redo (Ctrl+Z) while the button is still held: the scene may no longer be what the drag
-            // started from (a thing gone, its Transform back) - the drag stops (nothing is pushed).
+            // ボタンを押したまま Undo / Redo (Ctrl+Z): シーンがドラッグを始めたときのものでなくなる
+            // ことがある (物が消えた、Transform が戻った) - ドラッグを止める (何も積まない)。
             if (drag_ == Drag::Gizmo && HistoryMoved(host)) {
                 AbandonGizmo();
                 drag_ = Drag::Cancelled;
@@ -568,10 +566,10 @@ private:
                 space3d::Orbit(state_.camera, -dx * kOrbitDegreesPerDip, dy * kOrbitDegreesPerDip);
             } else if (drag_ == Drag::Gizmo) {
                 if (c.KeyPressed(ui::Key::Escape)) {
-                    CancelGizmo();  // everything back where it was; the button still has to be let go
+                    CancelGizmo();  // すべて元の場所に戻る。ボタンはまだ離す必要がある
                     drag_ = Drag::Cancelled;
                 } else if (screen) {
-                    // Ctrl: in steps - or smoothly, when it is always in steps.
+                    // Ctrl: 刻みで動く - 常に刻みのときは、なめらかに動く。
                     gizmo::Snap snap;
                     snap.on = in.ctrl != state_.snapAlways;
                     snap.move = state_.snapMove;
@@ -582,8 +580,8 @@ private:
                 changed = true;
             }
         }
-        // Turning / sliding never stops at the edge of the screen: the cursor hides and stays where the
-        // drag started (from its first frame), and comes back there when the button is let go.
+        // 回す / 動かすのは画面の端で止まらない: カーソルは隠れ、ドラッグを始めた所に留まり
+        // (最初のフレームから)、ボタンを離すとそこへ戻る。
         if (drag_ == Drag::Look || drag_ == Drag::Pan || drag_ == Drag::Orbit) c.LockMouse();
         if (hovered && in.wheel != 0.f) space3d::Dolly(state_.camera, in.wheel);
         if (hovered && c.Focused() == 0 && drag_ != Drag::Look && drag_ != Drag::Gizmo) {
@@ -600,23 +598,23 @@ private:
     void ToggleSpace() { state_.space = state_.space == gizmo::Space::Local ? gizmo::Space::World : gizmo::Space::Local; }
     void TogglePivot() { state_.pivot = state_.pivot == gizmo::Pivot::Each ? gizmo::Pivot::Center : gizmo::Pivot::Each; }
 
-    // While looking around (right button held): W A S D forward / left / back / right, Space (or E) up,
-    // Ctrl (or Q) down - all faster with Shift.
+    // 見回している間 (右ボタンを押している): W A S D で前 / 左 / 後ろ / 右、Space (か E) で上、
+    // Ctrl (か Q) で下 - Shift を押すとどれも速くなる。
     void Fly(ui::Context& c, float dt) {
         auto axis = [&](ui::Key plus, ui::Key minus) { return (c.KeyDown(plus) ? 1.f : 0.f) - (c.KeyDown(minus) ? 1.f : 0.f); };
         const float up = (c.KeyDown(ui::Key::Space) || c.KeyDown(ui::Key::E) ? 1.f : 0.f) - (c.In().ctrl || c.KeyDown(ui::Key::Q) ? 1.f : 0.f);
         const Vec3 dir{axis(ui::Key::D, ui::Key::A), up, axis(ui::Key::W, ui::Key::S)};
         if (dir.x == 0 && dir.y == 0 && dir.z == 0) return;
-        // Slow, for fine moves (2026-11-19: a quarter of before - 0.4 m/s at least, 0.15 x the distance);
-        // Shift for the long ways.
+        // ゆっくり。細かく動かすため (2026-11-19: 前の 4 分の 1 - 少なくとも 0.4 m/s、距離の 0.15 倍)。
+        // 長い距離は Shift。
         const float speed = std::max(0.4f, state_.camera.distance * 0.15f) * (c.In().shift ? 4.f : 1.f);
         space3d::Fly(state_.camera, dir * (speed * dt));
-        c.RequestAnimation();  // keeps flying while the keys are held, without moving the mouse
+        c.RequestAnimation();  // キーを押している間は、マウスを動かさなくても飛び続ける
     }
 
-    // --- The gizmo ------------------------------------------------------------------------------
-    // Every selected thing with a place moves with the gizmo - but not one whose parent is selected
-    // too (it moves with its parent already).
+    // --- ギズモ ------------------------------------------------------------------------------
+    // 位置を持つ選んだものはすべてギズモと一緒に動く - ただし親も選ばれているものは別
+    // (もう親と一緒に動く)。
     bool BeginGizmo(game_production::SceneViewHost& host, const gizmo::Frame& frame, const gizmo::Screen& screen, Vec2 mouse) {
         auto drag = gizmo::BeginDrag(state_.tool, hot_, frame, screen, state_.camera.Eye(), mouse);
         if (!drag || !host.component) return false;
@@ -635,34 +633,34 @@ private:
         gizmo_ = std::move(drag);
         dragTool_ = state_.tool;
         dragSpace_ = state_.space;
-        // 中心: everything turns / scales about the middle where the gizmo is.
+        // 中心: すべてが、ギズモのある真ん中を軸に回る / 拡大縮小する。
         pivot_ = state_.pivot == gizmo::Pivot::Center ? std::optional<Vec3>(frame.origin) : std::nullopt;
         return true;
     }
 
-    // While dragging, the Transforms are changed directly (the inspector follows); the history gets
-    // one entry when the button is let go.
+    // ドラッグ中は Transform を直接変える (インスペクターも追従する)。履歴にはボタンを離した
+    // ときに 1 つだけ積む。
     void ApplyGizmo(const gizmo::Change& change) {
         for (Edited& e : edited_) {
             const reflect::EditTarget t = e.resolve();
-            if (!t.object) continue;  // gone (undone while dragging)
+            if (!t.object) continue;  // 消えた (ドラッグ中に Undo された)
             auto* tr = static_cast<Transform*>(t.object);
             *tr = gizmo::Apply(e.start, e.parentWorld, e.startWorld, change, dragSpace_, tr->rotation, pivot_);
             e.last = *tr;
         }
     }
 
-    // The history changed since the drag began (an undo / redo, or an edit from elsewhere).
+    // ドラッグを始めてから履歴が変わった (Undo / Redo、または別の所での編集)。
     bool HistoryMoved(game_production::SceneViewHost& host) const {
         return history_ != std::pair{host.host.History().UndoCount(), host.host.History().RedoCount()};
     }
 
-    // Stops a drag after the history moved under it: each field the drag changed - and nothing else
-    // changed since - goes back to where it started (what the undo / redo set stays). Nothing is pushed.
+    // 履歴が動いたあとでドラッグを止める: ドラッグが変えた項目 - その後ほかに何も変わって
+    // いないもの - は始めた値に戻る (Undo / Redo が設定したものは残る)。何も積まない。
     void AbandonGizmo() {
         for (const Edited& e : edited_) {
             const reflect::EditTarget t = e.resolve();
-            if (!t.object) continue;  // gone
+            if (!t.object) continue;  // 消えた
             auto& tr = *static_cast<Transform*>(t.object);
             if (tr.position == e.last.position) tr.position = e.start.position;
             if (tr.rotation == e.last.rotation) tr.rotation = e.start.rotation;
@@ -682,7 +680,7 @@ private:
         gizmo_.reset();
     }
 
-    // Edit = undo entry = unsaved (rule 7): one entry for the whole drag, whatever was moved.
+    // 編集 = Undo の 1 つ = 未保存 (憲法 7): 何を動かしても、ドラッグ全体で 1 つ。
     void EndGizmo(game_production::SceneViewHost& host) {
         const auto index = FieldIndex(FieldOf(dragTool_));
         const char* label = dragTool_ == gizmo::Tool::Move ? "移動" : dragTool_ == gizmo::Tool::Rotate ? "回転" : "拡大縮小";
@@ -700,7 +698,7 @@ private:
                                                                       e.resolve, label));
             }
         }
-        if (!group->Empty()) host.host.History().Push(std::move(group));  // already applied while dragging
+        if (!group->Empty()) host.host.History().Push(std::move(group));  // ドラッグ中にもう適用済み
         edited_.clear();
         gizmo_.reset();
     }
@@ -710,8 +708,7 @@ private:
         if (!inv) return;
         const float ndcX = (pressX_ - r.x) / r.w * 2.f - 1.f;
         const float ndcY = 1.f - (pressY_ - r.y) / r.h * 2.f;
-        // A mark (a camera, a light, an empty entity ...) is drawn over everything: the nearest one under
-        // the mouse first.
+        // 印 (カメラ、ライト、空のエンティティ ...) は何よりも上に描く: マウスの下の一番近いものが先。
         if (const auto screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h)) {
             float nearest = kMarkPick;
             int mark = 0;
@@ -734,7 +731,7 @@ private:
         std::optional<float> best;
         int hit = 0;
         for (const Placed& p : placed_) {
-            if (p.marker) continue;  // nothing of its own to hit
+            if (p.marker) continue;  // 自分では当たるものが無い
             const auto t = space3d::IntersectPlacedBox(ray, p.world, p.min, p.max);
             if (t && (!best || *t < *best)) {
                 best = t;
@@ -746,9 +743,9 @@ private:
 
     void FrameSelection(game_production::SceneViewHost& host) {
         if (const Placed* p = Primary(host); p && p->marker) {
-            space3d::Frame(state_.camera, space3d::TransformPoint(p->world, {0, 0, 0}), 1.f);  // a mark
+            space3d::Frame(state_.camera, space3d::TransformPoint(p->world, {0, 0, 0}), 1.f);  // 印
         } else if (p) {
-            // The middle of its bounds (a model's origin may be at its feet), as far as they reach.
+            // その境界の真ん中 (モデルの原点は足元にあることがある)。届く範囲まで。
             const Vec3 center = space3d::TransformPoint(p->world, (p->min + p->max) * 0.5f);
             const float size = space3d::Length(space3d::TransformDirection(p->world, p->max - p->min));
             space3d::Frame(state_.camera, center, std::max(size * 0.5f, 0.5f));
@@ -759,9 +756,9 @@ private:
         return std::find(host.selection.begin(), host.selection.end(), id) != host.selection.end();
     }
 
-    // Which things moved lately (dragged with the gizmo, turned by Play's systems): the renderer keeps
-    // a layer of the shadow maps without them and draws only them again while they move. A thing
-    // still for a second counts as staying put again (its maps' layers are then drawn once more).
+    // 最近動いたもの (ギズモでドラッグした、Play のシステムが回した): レンダラーは影のマップの
+    // 1 つの層をそれらなしで持ち、動いている間はそれらだけを描き直す。1 秒間止まっていれば
+    // また止まっているものとみなす (そのマップの層は、もう 1 度描かれる)。
     void NoteMotion() {
         constexpr double kStillSeconds = 1.0;
         std::unordered_map<int, Motion> next;
@@ -780,9 +777,9 @@ private:
         return it != motion_.end() && now_ - it->second.movedAt < 1.0;
     }
 
-    // What is drawn this frame: the grid and the axes, the things (boxes, models), the lights; the
-    // shapes of the cameras and lights and the selection's outlines. `gameLook`: as the game sees it
-    // (the game view, the camera preview) - only the things that are on, nothing of the editor's.
+    // このフレームで描くもの: 格子と軸、物 (箱、モデル)、ライト。カメラとライトの形と、選択の
+    // 輪郭。`gameLook`: ゲームが見るとおり (ゲームビュー、カメラプレビュー) - オンのものだけで、
+    // エディターのものは何も出さない。
     void Build(const game_production::SceneViewHost& host, bool gameLook) {
         lines_.clear();
         boxes_.clear();
@@ -792,16 +789,16 @@ private:
             lines_.push_back({a, col});
             lines_.push_back({b, col});
         };
-        // The grid on the floor (y = 0) and the axes through the middle.
+        // 床 (y = 0) の格子と、真ん中を通る軸。
         const float h = static_cast<float>(kGridHalf);
         for (int i = -kGridHalf; i <= kGridHalf && !gameLook; ++i) {
             const float v = static_cast<float>(i);
             const ui::Color minor = i % 10 == 0 ? theme::SceneGridMajor() : theme::SceneGrid();
-            line({v, 0, -h}, {v, 0, h}, i == 0 ? theme::AxisZ() : minor);  // along Z (the line x = 0 is the Z axis)
-            line({-h, 0, v}, {h, 0, v}, i == 0 ? theme::AxisX() : minor);  // along X
+            line({v, 0, -h}, {v, 0, h}, i == 0 ? theme::AxisZ() : minor);  // Z に沿って (線 x = 0 が Z 軸)
+            line({-h, 0, v}, {h, 0, v}, i == 0 ? theme::AxisX() : minor);  // X に沿って
         }
         if (!gameLook) line({0, 0, 0}, {0, 1.5f, 0}, theme::AxisY());
-        // Play: the lines the scripts drew with rm::Debug in 3D (this scene view only while デバッグ is on).
+        // Play: スクリプトが rm::Debug で 3D に描いた線 (このシーンビューだけ、デバッグ がオンのとき)。
         debugLines_.clear();
         if (host.debug && (gameLook || state_.debugDraw)) {
             for (const game_production::DebugLine& l : host.debug->Lines()) {
@@ -810,7 +807,7 @@ private:
                 debugLines_.push_back({l.b, l.color});
             }
         }
-        // The lines plugins show over the scene (物理: the colliders' shapes): the scene view only.
+        // プラグインがシーンの上に見せる線 (物理: コライダーの形): シーンビューだけ。
         if (!gameLook) {
             sceneLines_.Clear();
             for (const auto& l : host.host.Registry().Contributions<game_production::SceneLinesInfo>(game_production::kSceneLinesPoint)) {
@@ -825,18 +822,18 @@ private:
 
         NoteMotion();
         for (const Placed& p : placed_) {
-            if (p.light && p.active) lights_.push_back(ToRenderLight(*p.light, p.world));  // a light switched off is dark
-            if (gameLook && !p.active) continue;  // switched off: not in the game
+            if (p.light && p.active) lights_.push_back(ToRenderLight(*p.light, p.world));  // オフのライトは暗い
+            if (gameLook && !p.active) continue;  // オフ: ゲームには出ない
             const bool selected = !gameLook && IsSelected(host, p.id);
             if (!gameLook && p.camera) CameraLines(p, selected, host.aspect);
             if (!gameLook && p.light) LightLines(p, selected);
             if (p.marker) continue;
             if (p.mesh && p.plain) {
-                // A simple shape: the box's colours.
+                // 単純な形: 箱の色。
                 const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
                 meshes_.push_back({p.mesh, p.world, col, p.castShadow, {}, {0, 0, 0, 0}, Moving(p.id)});
             } else if (p.mesh) {
-                // A model keeps its own colours: the selected one glows at its edges (and has the frame).
+                // モデルは自分の色を持つ: 選んだものは縁が光る (枠も付く)。
                 const ui::Color glow = theme::SceneSelectedGlow();
                 meshes_.push_back({p.mesh, p.world, p.active ? theme::SceneModel() : theme::SceneModelInactive(), p.castShadow, p.materials,
                                    selected ? glow : glow.Alpha(0), Moving(p.id)});
@@ -850,7 +847,7 @@ private:
             log::Warn("シーンビュー: 光が {} 個あります。描くのは最初の {} 個だけです", lights_.size(), space3d::kMaxLights);
         }
         warnedLights_ = lights_.size() > space3d::kMaxLights ? lights_.size() : 0;
-        // Point lights and spots whose shadows found no map left (told once per number).
+        // 影が使えるマップを見つけられなかった点光源とスポット (番号ごとに 1 度だけ知らせる)。
         const size_t leftOut = gameLook ? warnedShadows_ : space3d::MakeLights(lights_, {}, {}, state_.camera.Eye()).shadowsLeftOut;
         if (leftOut > 0 && leftOut != warnedShadows_) {
             log::Warn("シーンビュー: 影の地図が足りないので、点光源・スポットの {} 個は影を落としません (地図は {} 枚: 点光源は 6 枚、スポットは 1 枚)", leftOut,
@@ -859,7 +856,7 @@ private:
         warnedShadows_ = leftOut;
     }
 
-    // The scene view's own camera (the editing camera).
+    // シーンビュー自身のカメラ (編集用のカメラ)。
     space3d::RenderFrame SceneFrame(const Rect& r) const {
         space3d::RenderFrame f;
         f.view = state_.camera.ViewMatrix();
@@ -870,7 +867,7 @@ private:
         return f;
     }
 
-    // Through a camera of the scene, as the game sees it.
+    // シーンのカメラ越し。ゲームが見るとおり。
     static space3d::RenderFrame CameraFrame(const Placed& cam, const game_production::SceneViewHost& host) {
         space3d::RenderFrame f;
         f.view = space3d::ViewFromWorld(cam.world);
@@ -881,8 +878,8 @@ private:
         return f;
     }
 
-    // Draws what Build made into `pic` and shows it in r (in pixels of this window: sharp on high-DPI
-    // screens).
+    // Build が作ったものを `pic` に描き、r に見せる (このウィンドウのピクセルで: 高 DPI の画面でも
+    // くっきり)。
     void Show(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, Picture& pic, space3d::RenderFrame f) {
         ID2D1DeviceContext* dc = c.P().DC();
         float dpiX = 96, dpiY = 96;
@@ -895,8 +892,8 @@ private:
         f.boxes = boxes_;
         f.meshes = meshes_;
         f.ambient = ambient_.value_or(space3d::Ambient{});
-        // The scene's 空 behind everything (the scene view's own camera: when 空 is on) and the light
-        // that follows it - the same in the scene view as in the game.
+        // シーンの 空 は何よりも後ろ (シーンビュー自身のカメラ: 空 がオンのとき)。それに従う光も
+        // 同じ - シーンビューでもゲームでも同じになる。
         frameLights_ = lights_;
         const game_x_3d::Sky* sky = host.scene.Setting<game_x_3d::Sky>();
         const bool ownCamera = &pic == &main_ && !host.game;
@@ -909,7 +906,7 @@ private:
                     textures_.SetCacheFolder(host.host.GetProject().CacheDir() / L"Textures");
                     return textures_.Get(main_.renderer, host.host.AssetFile(ref), space3d::TextureUse::Color, true, now_);
                 };
-                // (as the editor has it: a saved edit of the .rmsky shows at once)
+                // (エディターが持つとおり: 保存した .rmsky の編集がすぐ出る)
                 sources.code = [&host](const AssetRef& ref) { return host.host.AssetContent(ref); };
                 sources.name = [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); };
                 sources.now = now_;
@@ -918,11 +915,11 @@ private:
             game_x_3d::FollowSky(look, frameLights_, f.ambient);
         }
         f.lights = frameLights_;
-        // (天候 with the sky: the scene view's own camera shows it when 空 is on)
+        // (空と一緒の 天候: シーンビュー自身のカメラは、空 がオンのとき見せる)
         PrepareExtras(c, host, pic, f, sky && sky->kind != game_x_3d::SkyKind::None ? &skyLook_ : nullptr, !ownCamera || state_.sky);
         f.extras = pic.extras;
 
-        // Direct2D's drawing so far goes to the GPU first; then Direct3D draws into its own picture.
+        // Direct2D のここまでの描画をまず GPU に送り、そのあと Direct3D が自分の絵に描く。
         dc->Flush();
         ID3D11Texture2D* picture = pic.renderer.Render(host.host.Graphics().D3DContext(), f);
         if (game_production::ViewReportsWanted() && (host.game || &pic == &main_)) ReportDrawing(host, pic, f);
@@ -940,7 +937,7 @@ private:
         c.P().Image(pic.bitmap.Get(), r);
     }
 
-    // デバッグ ▸ 描画とカメラ: what the last Render drew, and where the camera is.
+    // デバッグ ▸ 描画とカメラ: 最後の Render が描いたものと、カメラの位置。
     void ReportDrawing(const game_production::SceneViewHost& host, const Picture& pic, const space3d::RenderFrame& f) {
         using editor::Tr;
         using editor::TrF;
@@ -964,9 +961,9 @@ private:
         game_production::ReportView(&pic, std::move(r));
     }
 
-    // What other plugins draw into this picture (パーティクル): asked once a frame, with the places of
-    // what is switched on. Not playing, a drawer shows what is selected moving; the view is drawn again
-    // while something of it moves.
+    // 他のプラグインがこの絵に描くもの (パーティクル): オンのものの位置を渡して、1 フレームに
+    // 1 度尋ねる。Play していないときは、描き手は選んだものが動くのを見せる。その動きがある
+    // 間、ビューは描き直される。
     void PrepareExtras(ui::Context& c, game_production::SceneViewHost& host, Picture& pic, space3d::RenderFrame& frame, const SkyLook* sky,
                        bool atmosphere) {
         pic.extras.clear();
@@ -985,7 +982,7 @@ private:
                               return p && p->active ? &p->world : nullptr;
                           },
                           dt, host.playing, host.selection,
-                          // (as the editor has it: an edit of the パーティクル tab shows at once)
+                          // (エディターが持つとおり: パーティクル タブの編集がすぐ出る)
                           [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
                           [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); },
                           &host.host.Registry(),
@@ -998,7 +995,7 @@ private:
             return p && p->active ? p->mesh : nullptr;
         };
         wf.shape = [&pic](space3d::Shape s) { return pic.renderer.ShapeOf(s); };
-        // What they add to the frame (天候: the 向きの地図, 濡れ), then what they draw.
+        // それらがフレームに足すもの (天候: 向きの地図、濡れ)。そのあと、それらが描くもの。
         for (const auto& d : pic.drawers) {
             FrameAdditions add;
             d->PrepareFrame(wf, add);
@@ -1019,9 +1016,9 @@ private:
         if (moving) c.RequestAnimation();
     }
 
-    // --- The game view -------------------------------------------------------------------------
-    // Through the game settings' 最初のカメラ, in the game screen's shape; what is missing when it
-    // cannot (and the way to the settings).
+    // --- ゲームビュー ---------------------------------------------------------------------
+    // ゲーム設定の 最初のカメラ 越しに、ゲーム画面の形で描く。できないときは足りないもの
+    // (と、設定へ行く道) を出す。
     void DrawGame(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) {
         std::wstring problem;
         const Placed* cam = nullptr;
@@ -1053,9 +1050,9 @@ private:
         Show(c, Fit(r, host.aspect), host, main_, CameraFrame(*cam, host));
     }
 
-    // --- Cameras and lights in the scene view --------------------------------------------------
-    // A camera's shape: what it sees (its near and far planes - the far one at most kFrustumShown
-    // away - and the edges between), and a little roof on top (which way is up).
+    // --- シーンビューのカメラとライト ---------------------------------------------------
+    // カメラの形: 見えるもの (近い面と遠い面 - 遠い面は kFrustumShown までしか離さない - と、
+    // その間の辺) と、上にある小さな屋根 (どちらが上か)。
     void CameraLines(const Placed& p, bool selected, float aspect) {
         const ui::Color col = selected ? theme::Accent : p.active ? theme::SceneCamera() : theme::SceneCamera().Alpha(0.3f);
         const Camera shown = ShownNear(*p.camera, kFrustumShown);
@@ -1077,8 +1074,8 @@ private:
         line(apex, b);
     }
 
-    // A light's shape: 平行光 = a ring and its rays going the light's way; スポット = its cone as far as it
-    // reaches; 点光源 = how far it reaches (three rings, while selected).
+    // ライトの形: 平行光 = 輪と、ライトの向きに進む光線。スポット = 届く所までの円錐。
+    // 点光源 = 届く距離 (選んでいる間は輪が 3 つ)。
     void LightLines(const Placed& p, bool selected) {
         const ui::Color col = selected ? theme::Accent : p.active ? theme::SceneLight() : theme::SceneLight().Alpha(0.35f);
         const space3d::Light l = ToRenderLight(*p.light, p.world);
@@ -1130,13 +1127,13 @@ private:
         }
     }
 
-    // The marks where the things without a メッシュ are - the cameras, the lights, the empty entities,
-    // パーティクル ... (a click on one selects it; the gizmo moves it).
+    // メッシュ の無いものがある所の印 - カメラ、ライト、空のエンティティ、パーティクル ...
+    // (クリックで選べる。ギズモで動かせる)。
     void DrawMarks(ui::Context& c, const Rect& r, const game_production::SceneViewHost& host) {
         const auto screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h);
         if (!screen) return;
         c.P().PushClip(r);
-        // A model still being read: its box, and 読み込み中 over it.
+        // まだ読み込み中のモデル: その箱と、上に 読み込み中。
         ui::TextStyle loadingStyle;
         loadingStyle.size = 11;
         loadingStyle.color = theme::TextDim;
@@ -1161,7 +1158,7 @@ private:
         c.P().PopClip();
     }
 
-    // The selected camera's picture, small at the bottom right (in the game screen's shape).
+    // 選んだカメラの絵を、右下に小さく (ゲーム画面の形で)。
     std::optional<Rect> PreviewRect(const Rect& r, const game_production::SceneViewHost& host) const {
         const Placed* p = Primary(host);
         if (!p || !p->camera) return std::nullopt;
@@ -1190,7 +1187,7 @@ private:
         Show(c, at, host, preview_, CameraFrame(*p, host));
     }
 
-    // The 12 edges of a box of the thing's own space (the unit cube, or a model's bounds), placed.
+    // その物自身の空間にある箱 (単位立方体か、モデルの境界) の 12 本の辺を、置いて描く。
     void Outline(const Mat4& w, Vec3 mn, Vec3 mx, ui::Color col) {
         Vec3 k[8];
         for (int i = 0; i < 8; ++i) {
@@ -1203,10 +1200,9 @@ private:
         }
     }
 
-    // The gizmo over the picture, always in front (drawn on the screen from gizmo::'s shapes: what is
-    // drawn is what is grabbed).
+    // 絵の上のギズモ。常に手前 (gizmo:: の形から画面に描く: 描いたものがつかめるもの)。
     void DrawGizmo(ui::Context& c, const Rect& r, const game_production::SceneViewHost& host) {
-        if (host.playing) return;  // Play: not edited
+        if (host.playing) return;  // Play: 編集しない
         const auto frame = GizmoFrame(r, host);
         const auto screen = gizmo::MakeScreen(ViewProjection(r), r.x, r.y, r.w, r.h);
         if (!frame || !screen) return;
@@ -1239,7 +1235,7 @@ private:
 
         p.PushClip(r);
         if (tool == gizmo::Tool::Rotate) {
-            // The ball's outline (a drag inside it turns freely: filled faintly when it would).
+            // 球の輪郭 (その中のドラッグは自由に回す: 回せるときは薄く塗る)。
             const std::vector<Vec3> ball = gizmo::FacingCircle(f, state_.camera.Eye(), 1.f);
             if (active == gizmo::Handle::Free) {
                 ui::Path disc;
@@ -1255,7 +1251,7 @@ private:
                 p.FillPath(disc, theme::GizmoHot().Alpha(0.16f));
             }
             polyline(ball, viewColor.Alpha(active == gizmo::Handle::Free ? 0.6f : 0.25f), 1.f);
-            // The halves behind first and faint (each ring reads as a whole circle), then the front.
+            // 後ろの半分を先に薄く (どの輪も 1 つの円に見える)、そのあと手前を描く。
             for (const bool front : {false, true}) {
                 for (int a = 0; a < 3; ++a) {
                     const bool hot = handleOf(a) == active;
@@ -1264,7 +1260,7 @@ private:
                     for (const auto& arc : gizmo::RingArcs(f, a, state_.camera.Eye(), front)) polyline(arc, col, width);
                 }
             }
-            // The outer ring facing the eye: turns about the line of sight.
+            // 目の方を向く外側の輪: 視線を軸に回す。
             const bool viewHot = active == gizmo::Handle::View;
             polyline(gizmo::FacingCircle(f, state_.camera.Eye(), gizmo::kViewRing), viewHot ? theme::GizmoHot() : viewColor,
                      viewHot ? 3.f : 2.f);
@@ -1287,7 +1283,7 @@ private:
                 const auto tip = s.ToScreen(gizmo::AxisEnd(f, a));
                 if (!tip) continue;
                 if (tool == gizmo::Tool::Move) {
-                    // A shaft and an arrow head (a triangle on the screen, from 0.8 to the end).
+                    // 軸の棒と矢じり (画面上の三角形。0.8 から端まで)。
                     const auto base = s.ToScreen(f.origin + f.axes[a] * (f.size * gizmo::kHeadStart));
                     if (!base) continue;
                     p.Line(o->x, o->y, base->x, base->y, col, 2.f);
@@ -1309,7 +1305,7 @@ private:
         p.PopClip();
     }
 
-    // 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心 and 刻み, floating at the top left of the view.
+    // 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心 と 刻み。ビューの左上に浮かぶ。
     void DrawBar(ui::Context& c, const BarLayout& bar) {
         const std::wstring move = Tr(L"移動"), rotate = Tr(L"回転"), scale = Tr(L"拡大縮小");
         const std::wstring moveTip = Tr(L"矢印で動かす (W)"), rotateTip = Tr(L"輪で回す (E)"), scaleTip = Tr(L"箱で大きさを変える (R)");
@@ -1333,35 +1329,35 @@ private:
         if (const int i = w::Segmented(c, "gizmo_pivot", bar.pivot, pivots, static_cast<int>(state_.pivot), pivotTips); i >= 0) {
             state_.pivot = static_cast<gizmo::Pivot>(i);
         }
-        // 刻み: opens the box of the steps (in the accent while the gizmo always moves in steps).
+        // 刻み: 刻みの箱を開く (ギズモが常に刻みで動くときは強調色)。
         if (w::Button(c, "gizmo_snap", bar.snap, Tr(L"刻み"), state_.snapAlways ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             snapOpen_ = !snapOpen_;
         }
         if (!snapOpen_ && c.IsHovered(bar.snap)) w::Tooltip(c, Tr(L"ギズモの刻む幅 (Ctrl を押しながらドラッグすると刻んで動く)"));
-        // 影: the light's shadows on the floor and on things (in the accent while on).
+        // 影: ライトが床と物に落とす影 (オンの間は強調色)。
         if (w::Button(c, "scene_shadows", bar.shadow, Tr(L"影"), state_.shadows ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.shadows = !state_.shadows;
         }
         if (c.IsHovered(bar.shadow)) w::Tooltip(c, Tr(L"光の影を床と物に落とす (光の部品の「影を落とす」に従う。光の部品が無いときは上からの光。押すと切り替え)"));
-        // 空: the scene's sky behind this view too (the game view always shows it).
+        // 空: シーンの空をこのビューの後ろにも出す (ゲームビューは常に出す)。
         if (w::Button(c, "scene_sky", bar.sky, Tr(L"空"), state_.sky ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.sky = !state_.sky;
         }
         if (c.IsHovered(bar.sky)) w::Tooltip(c, Tr(L"シーンの「空」をこのシーンビューの後ろにも描く (階層の一番上の行を選ぶと設定できます。ゲームビューにはいつも出る。押すと切り替え)"));
-        // デバッグ: the lines the game's scripts draw while it plays (rm::Debug), in this view.
+        // デバッグ: ゲームのスクリプトが動く間に描く線 (rm::Debug) を、このビューに出す。
         if (w::Button(c, "scene_debug_draw", bar.debug, Tr(L"デバッグ"), state_.debugDraw ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.debugDraw = !state_.debugDraw;
         }
         if (c.IsHovered(bar.debug)) w::Tooltip(c, Tr(L"Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)"));
-        // 形: the lines plugins show over the scene (物理: the colliders) - of the selected things or of all.
+        // 形: プラグインがシーンの上に見せる線 (物理: コライダー) - 選んだものか、すべてか。
         if (w::Button(c, "scene_shapes", bar.shapes, state_.allShapes ? Tr(L"形: 全部") : Tr(L"形: 選択"), w::ButtonKind::Secondary)) {
             state_.allShapes = !state_.allShapes;
         }
         if (c.IsHovered(bar.shapes)) w::Tooltip(c, Tr(L"コライダー (物理の当たりの形) などの線を、選んだ物だけに出すか、全部の物に出すか (押すと切り替え)"));
     }
 
-    // The steps of the gizmo: how far a move, a turn and a scale go at a time; and whether always.
-    // View state like the tool (kept in UserSettings, not an edit of the project).
+    // ギズモの刻み: 1 回に移動・回転・拡大縮小がどれだけ進むか。それと、常にそうかどうか。
+    // ツールと同じビューの状態 (UserSettings に残す。プロジェクトの編集ではない)。
     void DrawSnapBox(ui::Context& c, const Rect& box) {
         w::DrawSurface(c, box, w::Surface::Popup);
         ui::TextStyle label;
@@ -1381,7 +1377,7 @@ private:
         for (size_t i = 0; i < std::size(rows); ++i, y += kSnapRowH) {
             Row& row = rows[i];
             c.P().Text({box.x + 12, y, 120, kSnapRowH - 6}, row.name, label);
-            // The text as typed while it is being typed; the value otherwise.
+            // 打っている間は打ったままの文字。それ以外は値。
             std::string& text = snapText_[i];
             if (c.Focused() != c.MakeId(row.id)) text = std::format("{:g}", *row.value);
             if (w::TextField(c, row.id, {box.Right() - 12 - 110, y, 110, kSnapRowH - 6}, text, {}, true, true)) {
@@ -1404,7 +1400,7 @@ private:
                    Tr(L"右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ   W / E / R: 移動・回転・拡大縮小   X: ローカル / ワールド   Z: それぞれ / 中心   回転の球の中をドラッグ: 自由に回す   Ctrl+ギズモ: 刻んで動かす   Esc: ドラッグをやめる"),
                    ts);
         if (!placed_.empty()) {
-            // How many things the camera sees now (the rest are culled: not drawn, their shadows still are).
+            // 今カメラに見えている物の数 (残りは間引く: 描かないが、影は描く)。
             const space3d::Renderer::Stats& st = main_.renderer.LastStats();
             ui::TextStyle faint = ts;
             faint.v = ui::VAlign::Top;
@@ -1423,51 +1419,51 @@ private:
 
     enum class Drag { None, Look, Pan, Orbit, Click, Gizmo, Cancelled };
 
-    SceneViewState state_;       // the camera and the gizmo chosen (kept in UserSettings)
-    reflect::Unknowns unknowns_;  // keys of a newer version: written back unchanged
-    uint64_t generation_ = 0;  // the GPU's devices everything below was made on (platform::Gfx::Generation)
-    Picture main_;     // the view
-    Picture preview_;  // the selected camera's picture (started when first needed)
+    SceneViewState state_;       // 選んだカメラとギズモ (UserSettings に残す)
+    reflect::Unknowns unknowns_;  // 新しい版のキー: そのまま書き戻す
+    uint64_t generation_ = 0;  // 以下のすべてを作った GPU のデバイス (platform::Gfx::Generation)
+    Picture main_;     // ビュー
+    Picture preview_;  // 選んだカメラの絵 (最初に必要になったときに始める)
     std::optional<Rect> previewAt_;
     std::string transformType_, meshType_, cameraType_, lightType_, ambientType_;
-    std::unordered_map<std::string, w::Icon> markOf_;  // component type -> its mark (MakeLooks)
-    std::vector<space3d::Light> frameLights_;          // lights_ as a picture draws them (the sky's light)
-    double skySeconds_ = 0;       // the sky's time (SkyLook): the game's while it plays
-    game_x_3d::SkyLook skyLook_;  // the picture being drawn's (天候's drops are lit by it)
+    std::unordered_map<std::string, w::Icon> markOf_;  // 部品の型 -> その印 (MakeLooks)
+    std::vector<space3d::Light> frameLights_;          // 絵が描くとおりの lights_ (空の光)
+    double skySeconds_ = 0;       // 空の時間 (SkyLook): Play 中はゲームのもの
+    game_x_3d::SkyLook skyLook_;  // 描いている絵のもの (天候の粒はこれで照らされる)
     bool looksMade_ = false;
-    std::optional<space3d::Ambient> ambient_;  // the scene's 環境光 (none: the default)
-    size_t warnedShadows_ = 0;  // lights told about that have no shadow map left
+    std::optional<space3d::Ambient> ambient_;  // シーンの 環境光 (無ければ既定)
+    size_t warnedShadows_ = 0;  // 影のマップが残っていないと知らせたライト
     std::vector<Placed> placed_;
     std::vector<space3d::LineVertex> lines_;
-    std::vector<space3d::LineVertex> debugLines_;  // Play: the scripts' rm::Debug lines (3D); and the plugins' scene lines
-    game_production::DebugDraw sceneLines_;          // the plugins' scene lines of this frame (SceneLinesInfo)
+    std::vector<space3d::LineVertex> debugLines_;  // Play: スクリプトの rm::Debug の線 (3D)。それとプラグインのシーンの線
+    game_production::DebugDraw sceneLines_;          // このフレームのプラグインのシーンの線 (SceneLinesInfo)
     std::vector<space3d::Box> boxes_;
     std::vector<space3d::MeshDraw> meshes_;
     std::vector<space3d::Light> lights_;
-    size_t warnedLights_ = 0;  // the number of lights told about (too many)
-    std::unordered_map<std::string, ModelEntry> models_;  // by MeshRenderer::model (the asset's id)
-    space3d::MeshLoader loader_;                          // reads the model files on its own thread
-    space3d::TextureCache textures_;                      // the models' picture files, by full path
+    size_t warnedLights_ = 0;  // 知らせたライトの数 (多すぎる)
+    std::unordered_map<std::string, ModelEntry> models_;  // MeshRenderer::model (アセットの id) ごと
+    space3d::MeshLoader loader_;                          // モデルファイルを自分のスレッドで読む
+    space3d::TextureCache textures_;                      // モデルの画像ファイル。フルパスごと
     double now_ = 0;
     struct Motion {
         Mat4 world;
-        double movedAt;  // when its place last changed (c.Time())
+        double movedAt;  // 位置が最後に変わった時刻 (c.Time())
     };
-    std::unordered_map<int, Motion> motion_;  // by entity
+    std::unordered_map<int, Motion> motion_;  // エンティティごと
 
     Drag drag_ = Drag::None;
     float pressX_ = 0, pressY_ = 0;
     double lastTime_ = 0;
 
-    gizmo::Handle hot_ = gizmo::Handle::None;  // under the mouse
-    std::optional<gizmo::Drag> gizmo_;          // the gizmo drag going on
-    gizmo::Tool dragTool_ = gizmo::Tool::Move;  // as they were when it began (the keys may change them)
+    gizmo::Handle hot_ = gizmo::Handle::None;  // マウスの下
+    std::optional<gizmo::Drag> gizmo_;          // 今のギズモのドラッグ
+    gizmo::Tool dragTool_ = gizmo::Tool::Move;  // 始めたときの状態 (キーで変わることがある)
     gizmo::Space dragSpace_ = gizmo::Space::Local;
-    std::optional<Vec3> pivot_;                 // 中心: what the drag turns / scales about
+    std::optional<Vec3> pivot_;                 // 中心: ドラッグが回す / 拡大縮小する軸
     std::vector<Edited> edited_;
-    std::pair<size_t, size_t> history_{0, 0};  // the undo / redo counts of the history when the drag began
-    bool snapOpen_ = false;                     // the box of the steps is open
-    std::array<std::string, 3> snapText_;       // its fields' text
+    std::pair<size_t, size_t> history_{0, 0};  // ドラッグを始めたときの履歴の Undo / Redo の数
+    bool snapOpen_ = false;                     // 刻みの箱が開いている
+    std::array<std::string, 3> snapText_;       // その欄の文字
 };
 
 }  // namespace

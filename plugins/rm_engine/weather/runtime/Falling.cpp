@@ -8,24 +8,24 @@
 namespace rm::weather {
 
 const char kFallHlsl[] = R"(
-// Rain and snow (Falling.h's Precipitation): 6 corners (2 triangles) per drop / flake, each made from
-// its number - where it is in the box around the eye, how fast it falls - by a hash (no buffer).
+// 雨と雪 (Falling.h の Precipitation): 1 粒につき 6 つの角 (三角形 2 つ)。それぞれ番号から
+// 作る - 目のまわりの箱の中のどこにあるか、どれだけ速く落ちるか - ハッシュで (バッファなし)。
 cbuffer Fall : register(b4) {
-    float4x4 viewProj;   // world -> the picture
-    float4 eye;          // xyz: where the camera is
-    float4 precipInfo;   // x: 0 rain / 1 snow, y: seconds, z: the box's side, w: its 向きの地図 (-1: none)
-    float4 precipLight;  // rgb: what lights them (linear)
-    float4 camRight;     // xyz: the camera's right (world); w: how heavy the rain is (0 .. 1)
-    float4 camUp;        // xyz: the camera's up
-    float4 precipWind;   // xy: the wind now (m/s, world x z); zw: how far it has carried them
-    float4 precipFall;   // x: the least fall (m/s), y: how much faster each may be, z: how much of the wind takes it (Falling.h's FallOf)
+    float4x4 viewProj;   // ワールド -> 絵
+    float4 eye;          // xyz: カメラの位置
+    float4 precipInfo;   // x: 0 雨 / 1 雪、y: 秒、z: 箱の一辺、w: その 向きの地図 (-1: なし)
+    float4 precipLight;  // rgb: それらを照らす光 (リニア)
+    float4 camRight;     // xyz: カメラの右 (ワールド)、w: 雨の強さ (0 .. 1)
+    float4 camUp;        // xyz: カメラの上
+    float4 precipWind;   // xy: 今の風 (m/s、ワールドの x z)、zw: 風が運んだ距離
+    float4 precipFall;   // x: 最小の落下 (m/s)、y: それぞれがさらに速くなれる量、z: 風がどれだけ運ぶか (Falling.h の FallOf)
 };
 uint PrecipHash(uint x) {
     x ^= x >> 16; x *= 0x7feb352d; x ^= x >> 15; x *= 0x846ca68b; x ^= x >> 16;
     return x;
 }
 float PrecipRand(uint id, uint k) { return (PrecipHash(id * 4 + k) & 0xFFFFFF) / 16777216.0; }
-// splash: 0 falling, 1 a raindrop's splash, 2 a flake lying where it landed (melt: 0 .. 1, seed: its own)
+// splash: 0 落下中、1 雨粒の水しぶき、2 落ちた所に横たわる雪片 (melt: 0 .. 1、seed: 自分の値)
 struct PrecipOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; float fade : TEXCOORD1; float splash : TEXCOORD2; float melt : TEXCOORD3; float seed : TEXCOORD4; };
 PrecipOut FallVS(uint vid : SV_VertexID) {
     static const float2 corners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1), float2(-1, -1), float2(1, 1), float2(-1, 1)};
@@ -35,19 +35,19 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
     float t = precipInfo.y, box = precipInfo.z;
     float3 seed = float3(PrecipRand(id, 0), PrecipRand(id, 1), PrecipRand(id, 2));
     float fall = precipFall.x + (snow ? seed.x : seed.y) * precipFall.y;  // m/s
-    // Each one along the same line as the map of what it hits (Falling.h's FallDirection: the average
-    // fall): one that falls faster is carried as much faster - so where it hit stays where it is
-    // (2026-11-19: before, a flake slid on under the surface and its resting place moved).
+    // どれも、当たるものの地図と同じ線に沿って動く (Falling.h の FallDirection: 落ちる向きの
+    // 平均)。速く落ちるものは、その分だけ速く運ばれる - だから当たった場所は動かない
+    // (2026-11-19: 前は雪片が面の下を滑っていき、止まる場所が動いた)。
     float carried = precipFall.z * fall / (precipFall.x + precipFall.y * 0.5);
-    float3 v = float3(precipWind.x * carried, -fall, precipWind.y * carried);  // how it moves now
+    float3 v = float3(precipWind.x * carried, -fall, precipWind.y * carried);  // 今の動き
     float speed = length(v);
     float3 dir = v / speed;
-    float3 p = seed * box * 7.31;  // where it is in the world (the box repeats)
+    float3 p = seed * box * 7.31;  // ワールドのどこにあるか (箱は繰り返す)
     p.y -= t * fall;
-    p.xz += precipWind.zw * carried;  // the wind so far
-    float3 rel = (frac((p - eye.xyz) / box + 0.5) - 0.5) * box;  // the copy nearest the eye
+    p.xz += precipWind.zw * carried;  // ここまでの風
+    float3 rel = (frac((p - eye.xyz) / box + 0.5) - 0.5) * box;  // 目に一番近いコピー
     float3 w = eye.xyz + rel;
-    // Flakes sway (drawn so; what they hit is by the line they fall along).
+    // 雪片は揺れる (そう描く。当たるものは落ちる線で決まる)。
     float3 sway = snow ? float3(sin(t * 0.9 + seed.z * 40), 0, cos(t * 0.7 + seed.x * 40)) * 0.2 : float3(0, 0, 0);
     float dist = length(rel + sway);
     PrecipOut o;
@@ -56,24 +56,24 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
     o.melt = 0;
     o.seed = seed.z;
     o.fade = saturate((dist - 0.4) / 1.2) * saturate((box * 0.5 - dist) / (box * 0.25));
-    // What is in its way (the map the way it falls, slanted by the wind): how far past it it is now.
-    // Past it: it has hit (a roof, a wall, the ground) - from then on nothing falls there.
+    // 行く手にあるもの (落ちる向きの地図を、風で傾けたもの): 今それをどれだけ過ぎているか。
+    // 過ぎていれば、当たった (屋根、壁、地面)。そのあとそこには何も落ちない。
     float past = MapPast((int)precipInfo.w, w);
-    float since = past / speed;  // seconds since it hit
-    float3 hit = w - dir * past;  // where
+    float since = past / speed;  // 当たってからの秒
+    float3 hit = w - dir * past;  // 当たった場所
     if (snow) {
-        float size = 0.014 + seed.z * 0.017;  // (2026-11-20: a third smaller)
+        float size = 0.014 + seed.z * 0.017;  // (2026-11-20: 3 分の 1 小さく)
         if (past > 0) {
-            // It stops where it touched and lies flat on it (a little above: never in it), stays a
-            // moment, then melts like a fried egg: the wet edge spreads thin and uneven while the white
-            // middle shrinks, all of it fading (FallPS).
+            // 触れた所で止まり、そこに平らに横たわる (少し上: 中には入らない)。しばらくそのままで、
+            // やがて目玉焼きのように溶ける: 濡れた縁が薄く不均一に広がり、白い真ん中は縮み、全体が
+            // 薄れていく (FallPS)。
             if (since > 3.4) {
-                o.pos = float4(0, 0, -1, 1);  // (all six corners: nothing drawn)
+                o.pos = float4(0, 0, -1, 1);  // (6 つの角すべて: 何も描かない)
                 return o;
             }
             o.melt = saturate((since - 1.4) / 2.0);
             o.splash = 2;
-            float3 n = -dir;  // (the side it came from: up, slanted by the wind)
+            float3 n = -dir;  // (来た側: 上。風で傾く)
             float3 a = normalize(abs(n.z) < 0.99 ? cross(n, float3(0, 0, 1)) : cross(n, float3(1, 0, 0)));
             float3 b = cross(n, a);
             float3 swayThen = float3(sin((t - since) * 0.9 + seed.z * 40), 0, cos((t - since) * 0.7 + seed.x * 40)) * 0.2;
@@ -82,20 +82,19 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
             w += sway + (camRight.xyz * q.x + camUp.xyz * q.y) * size;
         }
     } else if (past > 0) {
-        // It has hit: a splash where it did for a moment (a ring that grows and fades), then nothing.
+        // 当たった: そこにしばらく水しぶき (広がって薄れる輪) が出て、そのあとは何もない。
         if (since > 0.14) {
             o.pos = float4(0, 0, -1, 1);
             return o;
         }
         float k = since / 0.14;
-        float r = (0.02 + 0.06 * k) * (0.6 + 0.8 * camRight.w);  // (small: a drop's splash, wind or not; bigger in heavy rain)
+        float r = (0.02 + 0.06 * k) * (0.6 + 0.8 * camRight.w);  // (小さい: 雨粒の水しぶきは風があってもなくても。強い雨では大きい)
         w = hit - dir * 0.015 + (camRight.xyz * q.x + float3(0, 0.45, 0) * (q.y + 1)) * r;
         o.fade *= 1 - k;
         o.splash = 1;
     } else {
-        // A streak behind it along the way it falls (the wind slants it), turned to face the eye. How it
-        // looks goes with how heavy the rain is: a few big drops (ぽつぽつ), short fine ones (小雨), longer
-        // (雨), long heavy streaks (どしゃぶり, 嵐).
+        // 落ちる道に沿って、後ろに引く筋 (風で傾く)。目のほうを向く。見え方は雨の強さで変わる: 大きな
+        // 粒が少し (ぽつぽつ)、短く細いもの (小雨)、もっと長いもの (雨)、長くて太い筋 (どしゃぶり、嵐)。
         float heavy = camRight.w;
         float big = 1 - smoothstep(0.03, 0.12, heavy);
         float3 side = normalize(cross(dir, rel + float3(1e-4, 0, 1e-4)));
@@ -110,9 +109,8 @@ float4 FallPS(PrecipOut i) : SV_Target {
     bool snow = precipInfo.x > 0.5;
     float a;
     if (i.splash > 1.5) {
-        // A flake lying where it landed (the quad is 2.6 times its size): first round as it fell; as it
-        // melts, the edge spreads thin and uneven (the white of an egg) while the middle shrinks (the
-        // yolk), all fading out.
+        // 落ちた所に横たわる雪片 (四角形は大きさの 2.6 倍): 落ちてきたときはまず丸い。溶けると、縁が
+        // 薄く不均一に広がり (卵白)、真ん中は縮み (黄身)、全体が薄れて消える。
         float r = length(i.uv);
         float ang = atan2(i.uv.y, i.uv.x);
         float m = i.melt;
@@ -123,7 +121,7 @@ float4 FallPS(PrecipOut i) : SV_Target {
         float aWhite = (1 - smoothstep(white * 0.7, white, r)) * lerp(0.9, 0.3, m);
         a = max(aYolk, aWhite) * (1 - m * m);
     } else if (i.splash > 0.5) {
-        float r = length(i.uv * float2(1, 1.6) - float2(0, 0.6));  // a flat ring, seen from the side
+        float r = length(i.uv * float2(1, 1.6) - float2(0, 0.6));  // 平らな輪を横から見たもの
         a = saturate(1 - abs(r - 0.65) * 4) * 0.45 + saturate(1 - r * 3) * 0.2;
     } else {
         float heavy = camRight.w, big = 1 - smoothstep(0.03, 0.12, heavy);
@@ -135,7 +133,7 @@ float4 FallPS(PrecipOut i) : SV_Target {
 
 const char kWetSurfaceHlsl[] = R"(
 float WetHash(float2 c) { return frac(sin(dot(c, float2(127.1, 311.7))) * 43758.5453); }
-// Smooth noise (0 .. 1) over the plane.
+// 平面上のなめらかなノイズ (0 .. 1)。
 float WetNoise(float2 p) {
     float2 i = floor(p), f = frac(p);
     f = f * f * (3 - 2 * f);
@@ -143,24 +141,24 @@ float WetNoise(float2 p) {
     return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
 }
 
-// Small wet specks where drops landed (a few centimetres, uneven), as many as `density` says (0: none
-// .. 1: all of it wet): the parts of a fine noise under a threshold. Far away (a speck smaller than a
-// pixel or two) the specks melt into their average, so they do not shimmer. `s`: the place on the
-// surface (metres); `footprint`: how far it goes across a pixel (fwidth, taken where every pixel runs).
+// 雨粒が落ちた所の小さな濡れた点 (数センチ、不均一)。`density` が言う数だけ (0: なし .. 1: 全部
+// 濡れ)。細かいノイズのうち、しきい値より下の部分。遠く (点が 1、2 ピクセルより小さい) では
+// 点を平均に溶かし、ちらつかない。`s`: 面上の場所 (メートル)、`footprint`: 1 ピクセルで
+// どこまで進むか (fwidth。全ピクセルが走る所で取る)。
 float WetSpecks(float2 s, float density, float footprint) {
     float n = 0.55 * WetNoise(s * 22) + 0.3 * WetNoise(s * 55 + 7.1) + 0.15 * WetNoise(s * 120 + 3.3);
     float threshold = lerp(0.18, 0.86, density);
     float specks = 1 - smoothstep(threshold - 0.04, threshold + 0.04, n);
     specks = lerp(specks, density, saturate(footprint * 22 * 1.2 - 0.2));
-    return max(specks, smoothstep(0.85, 1.0, density));  // (wet through: no dry gaps left)
+    return max(specks, smoothstep(0.85, 1.0, density));  // (完全に濡れた: 乾いた隙間は残らない)
 }
 
-// How much the rain reached a point the way `k` (0 .. 1): the place a little off the surface is not past
-// anything that way - read at 32 places on a spiral 75 cm around it (weighted to the middle), so toward a
-// roof's edge the specks thin out over a metre or so, as on real ground. Each place reads "reached or
-// not", so the spiral is turned and moved a little from place to place (slowly, and in speck-sized
-// wobbles): the steps of each reading fall at different places and overlap - no band, no line where the
-// specks stop (2026-11-20: a 5 x 5 grid made 5 straight bands, the specks cut off along each).
+// 雨が、`k` (0 .. 1) の向きで、ある点にどれだけ届いたか: 面から少し離れた場所は、その向きでは
+// 何の向こうにもない - まわり 75 cm の渦巻き上の 32 か所で読む (真ん中を重く)。だから屋根の縁に
+// 向かって、点は 1 m ほどかけて薄くなる。本物の地面のように。それぞれの場所は「届いたか
+// 届かないか」を読むので、渦巻きを場所ごとに少しずつ回して動かす (ゆっくり、点の大きさの
+// ゆらぎで): 各読み取りの段が別の場所に落ちて重なる - 点が止まる所に帯も線も出ない
+// (2026-11-20: 5 x 5 の格子だと 5 本の直線の帯ができ、点がそれぞれの帯に沿って切れた)。
 float WetOpen(int k, float3 p, float2 s) {
     const float2 wobble = float2(WetNoise(s * 7 + 11.3), WetNoise(s * 7 + 27.9)) * 2 - 1;
     const float turn = WetNoise(s * 0.8 + 5.1) * 6.2831853;
@@ -169,7 +167,7 @@ float WetOpen(int k, float3 p, float2 s) {
     float open = 0, total = 0;
     [unroll] for (int i = 0; i < 32; ++i) {
         const float r = 0.75 * sqrt((i + 0.5) / 32.0);
-        const float a = i * 2.3999632 + turn;  // (the golden angle: evenly over the disc)
+        const float a = i * 2.3999632 + turn;  // (黄金角: 円盤に均等に)
         const float w = 1.05 - r / 0.75;
         const float2 o = float2(cos(a), sin(a)) * r;
         open += saturate((0.06 - MapPastAt(k, c + ax * o.x + az * o.y)) / 0.06) * w;
@@ -178,10 +176,10 @@ float WetOpen(int k, float3 p, float2 s) {
     return open / total;
 }
 
-// しみこみ: how much of the wet reaches a covered point from around it - water spreading over the ground
-// (WetWay::seep). Read at 16 places on a spiral `reach` around it: wet when enough of them are open,
-// fewer and fewer specks toward `reach` in. Under a thing smaller than `reach` all of it is open nearby;
-// under a roof only its edge (2026-11-20: the ground right under a ball or a barrel stayed dry).
+// しみこみ: 覆われた点に、まわりから濡れがどれだけ届くか - 地面を広がる水
+// (WetWay::seep)。点のまわり `reach` の渦巻き上の 16 か所で読む: 十分な数が開いていれば濡れる。
+// `reach` の内側に向かって、点は少しずつ減る。`reach` より小さいものの下は、近くが全部開いている。
+// 屋根の下では縁だけ (2026-11-20: 球や樽のすぐ下の地面が乾いたままだった)。
 float WetSeep(int k, float3 p, float2 s, float reach) {
     const float turn = WetNoise(s * 0.8 + 9.7) * 6.2831853;
     const float4 c = mul(mapViewProj[k], float4(p, 1));
@@ -196,31 +194,30 @@ float WetSeep(int k, float3 p, float2 s, float reach) {
     return saturate(open / 16 * 4);
 }
 
-// How wet a surface looks (0 .. 1): the wettest of the ways the rain fell that reached it (a place it
-// reached stays wet while it rains, whatever the wind does after), in the sun or in its shadow (shade
-// dries slower) - small specks, more and more of them until all of it is wet; toward a roof's edge
-// fewer and fewer (no line, no wave: as many specks as it is wet there); most on what faces up, none
-// facing down.
+// 面がどれだけ濡れて見えるか (0 .. 1): それに届いた雨の降り方のうち一番濡れるもの (届いた
+// 場所は、雨が降る間は濡れたまま。その後の風がどうであれ)。日なたか日陰か (日陰は乾くのが
+// 遅い)。小さい点が、どんどん増えて全部濡れるまで。屋根の縁に向かって、少しずつ減る (線も波も
+// なし: 濡れ具合と同じだけの点)。上を向く所が最大で、下を向く所は 0。
 float WetAt(float3 wpos, float3 n) {
-    // The surface's own two axes (the plane it mostly lies in): the specks lie flat on it.
+    // 面の 2 つの軸 (面がだいたい載っている平面): 点はその上に平らに載る。
     float3 a = abs(n);
     float2 s = a.y >= a.x && a.y >= a.z ? wpos.xz : a.x >= a.z ? wpos.zy : wpos.xy;
-    float footprint = max(fwidth(s.x), fwidth(s.y));  // (before any return: derivatives want every pixel)
+    float footprint = max(fwidth(s.x), fwidth(s.y));  // (どの return より前: 微分は全ピクセルが要る)
     int count = (int)surfaceData[0].x;
     if (count <= 0 || n.y < -0.3) return 0;
     float lit = shadowInfo.x > 0 ? SunShadow(wpos, n) : 1;
     float3 p = wpos + n * 0.12;
-    // How wet it has got (by time: `level`) and how much of that reaches here (`wet`: the level times how
-    // open the place is). How many specks: `wet`; how dark they are: `level`.
+    // どれだけ濡れたか (時間で: `level`) と、そのうちここにどれだけ届くか (`wet`: level に場所の
+    // 開き具合を掛けたもの)。点の数は `wet`、点の暗さは `level`。
     float wet = 0, level = 0;
     [loop] for (int k = 0; k < count; ++k) {
-        float4 way = surfaceData[1 + k];  // x: how wet in the sun, y: in shade, z: its 向きの地図 (-1: none), w: しみこみ (m)
+        float4 way = surfaceData[1 + k];  // x: 日なたでの濡れ、y: 日陰での濡れ、z: その 向きの地図 (-1: なし)、w: しみこみ (m)
         float l = lerp(way.y, way.x, lit);
         level = max(level, l);
         if (l <= wet) continue;
         int m = (int)way.z;
         if (m < 0 || mapInfo[m].x < 0.5) {
-            wet = l;  // (no map: nothing to hit, all open)
+            wet = l;  // (地図なし: 当たるものがなく、全部開いている)
             continue;
         }
         float open = WetOpen(m, p, s);
@@ -228,40 +225,39 @@ float WetAt(float3 wpos, float3 n) {
         wet = max(wet, l * open);
     }
     if (wet <= 0) return 0;
-    // Between dry and wet (an edge, the start of the rain) more specks here, fewer there - patches a
-    // metre or two across - so an edge is no even band (nothing changes where it is dry or wet through).
+    // 乾いているのと濡れているのの間 (縁、雨の降り始め) では、ここは点が多く、あそこは少ない -
+    // 1、2 m ほどのまだら - だから縁が一様な帯にならない (乾ききった所や濡れきった所は変わらない)。
     const float patch = WetNoise(s * 0.6) * 2 - 1;
     const float density = saturate(wet + patch * wet * (1 - wet) * 0.9);
     return saturate(level * 1.5) * WetSpecks(s, density, footprint) * lerp(0.45, 1, saturate(n.y));
 }
 
 
-// 濡れ on every surface (3D 空間's RenderFrame::surface): water in the surface makes it darker - and only a
-// touch smoother: wet ground, not a puddle. (2026-11-19: smoother, a wet speck in shade mirrored the sky
-// and looked lighter than the dry ground - the shadow's edge became a line; now a speck is always darker.)
-// 積雪 on a surface (0 .. 1): how white it is - on what faces up and the snow reaches straight down
-// (surfaceData[0].z: its 向きの地図; under a roof: none). Thin snow: white patches growing together, all
-// of it white at 2 cm (deeper, the snow lying - SnowLayerVS - covers it with its height too).
+// すべての面の 濡れ (3D 空間の RenderFrame::surface): 面の中の水で暗くなり - 少しだけなめらかに
+// なる: 水たまりではなく、濡れた地面。(2026-11-19: なめらかにすると、日陰の濡れた点が空を映して
+// 乾いた地面より明るく見え、影の縁が線になった。今は点は必ず暗い。)
+// 面の 積雪 (0 .. 1): どれだけ白いか - 上を向き、雪がまっすぐ下に届く所
+// (surfaceData[0].z: その 向きの地図。屋根の下: なし)。薄い雪: 白いまだらが育ってつながり、
+// 2 cm で全部白くなる (もっと深いと、積もった雪 - SnowLayerVS - が高さでも覆う)。
 static const float3 kSnowWhite = float3(0.82, 0.84, 0.88);
-// How the snow stands at (x, z) where `depth` lies (its height: depth x this; 0: no snow there). Thin:
-// lumps that rise where a slow noise is high - taller than the depth, the snow gathered in them - and
-// grow together; from about 8 cm a blanket with a gentle swell (2026-11-20: thin snow was flat specks,
-// like the rain's).
+// `depth` が積もる (x, z) で、雪がどう立つか (高さ: depth x この値。0: そこに雪なし)。薄いとき:
+// ゆっくりしたノイズが高い所で盛り上がる塊 - 深さより高く、雪が集まっている - が育ってつながる。
+// 約 8 cm からは、ゆるやかなうねりのある一面の雪 (2026-11-20: 薄い雪は、雨のような平らな点だった)。
 float SnowShape(float2 xz, float depth) {
     if (depth <= 0) return 0;
     float n = 0.65 * WetNoise(xz * 2.2 + 1.7) + 0.35 * WetNoise(xz * 5.3 + 4.1);
-    float cover = saturate(depth / 0.015);  // (積もる高さ is 5 cm at most: all of it covered at 1.5 cm)
+    float cover = saturate(depth / 0.015);  // (積もる高さは最大 5 cm: 1.5 cm で全部覆う)
     float lump = saturate((n - (1 - cover)) / 0.3);
     lump = lump * lump * (3 - 2 * lump);
     float thin = lump * lerp(2.5, 1, saturate(depth / 0.03));
     return lerp(thin, 0.8 + 0.4 * n, saturate((depth - 0.015) / 0.02));
 }
-// Is the point open the way map `m` looks (0 .. 1; no map: open)?
+// 点は、地図 `m` が見る向き (0 .. 1) に開いているか (地図なし: 開いている)。
 float OpenFor(int m, float3 p) {
     return m >= 0 && mapInfo[m].x > 0.5 ? saturate((0.06 - MapPastAt(m, mul(mapViewProj[m], float4(p, 1)))) / 0.06) : 1;
 }
-// How deep the snow lies at a point: what each way left (WetWay::snow: surfaceData[5 + k].x) where that
-// way reaches (its 向きの地図) - added up. Slanted by the wind, a way reaches under a roof's edge too.
+// ある点に雪がどれだけ深く積もるか: 各降り方が残したもの (WetWay::snow: surfaceData[5 + k].x) を、
+// その降り方が届く所 (その 向きの地図) で足し合わせる。風で傾くと、降り方は屋根の縁の下にも届く。
 float SnowDepthAt(float3 wpos, float3 n) {
     int count = (int)surfaceData[0].x;
     float depth = 0;
@@ -271,18 +267,18 @@ float SnowDepthAt(float3 wpos, float3 n) {
     }
     return depth;
 }
-// 積雪 on a surface (0 .. 1): white where the snow stands (the foot of the snow lying with its height -
-// SnowLayerVS, the same shape), on what faces up.
+// 面の 積雪 (0 .. 1): 雪が立つ所が白い (積もった雪の足元は高さに合わせる - SnowLayerVS と同じ形)。
+// 上を向く所。
 float SnowAt(float3 wpos, float3 n) {
     if (n.y < 0.3) return 0;
     float depth = SnowDepthAt(wpos, n);
     return depth > 0 ? smoothstep(0.01, 0.03, SnowShape(wpos.xz, depth)) * smoothstep(0.3, 0.5, n.y) : 0;
 }
 
-// 濡れ and 積雪 on every surface (3D 空間's RenderFrame::surface): water in the surface makes it darker
-// - and only a touch smoother: wet ground, not a puddle. (2026-11-19: smoother, a wet speck in shade
-// mirrored the sky and looked lighter than the dry ground - the shadow's edge became a line; now a
-// speck is always darker.) Snow lies over it: white and dull.
+// すべての面の 濡れ と 積雪 (3D 空間の RenderFrame::surface): 面の中の水で暗くなり - 少しだけ
+// なめらかになる: 水たまりではなく、濡れた地面。(2026-11-19: なめらかにすると、日陰の濡れた点が
+// 空を映して乾いた地面より明るく見え、影の縁が線になった。今は点は必ず暗い。)
+// 雪はその上に積もる: 白くて艶がない。
 void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, float3 n) {
     float wet = WetAt(wpos, n);
     float snow = SnowAt(wpos, n);
@@ -295,36 +291,36 @@ void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, f
 )";
 
 const char kSnowLayerHlsl[] = R"(
-// 積雪 with its height (RenderFrame::solids): one grid around the eye, seen straight from above
-// (SnowLayerOf; 2026-11-20: a layer for each slanted way stood up in sheets and went through things).
-// Each corner lies on the top of what is under it (the map straight down) and stands up as high as the
-// snow lies there (every way's snow where that way reaches it, in SnowShape's lumps), never above where
-// something moving pressed it (the footprints, SnowTrailPS). At a step: on its top the snow thins to
-// nothing (a rounded edge); at its foot, on what is too steep and where nothing is under it, the corner
-// is left out (NaN: its triangles are not drawn) - no snow standing up, none inside a thing. What a
-// slanted way blows under a roof is white there (SnowAt) without height. Lit as the models are (Shade),
-// in the fog (Fogged). After RendererShaderText(kWetSurfaceHlsl).
+// 高さのある 積雪 (RenderFrame::solids): 目のまわりの格子 1 つを真上から見る
+// (SnowLayerOf。2026-11-20: 傾いた向きごとの層は、板のように立ち上がって、ものを突き抜けた)。
+// 各角は、その下にあるものの上面に載り (まっすぐ下の地図)、そこに雪が積もった高さまで立ち上がる
+// (各降り方の雪を、その降り方が届く所で、SnowShape の塊の中で)。動くものが押した所
+// (足跡、SnowTrailPS) では、決してその上にはならない。段では、上側で雪が薄くなって
+// なくなる (丸い縁)。根元で、急すぎる所と下に何もない所では、角を除く
+// (NaN: その三角形は描かない) - 雪が立たず、ものの中にもない。傾いた向きの降り方が屋根の下に
+// 吹き込む分は、そこでは白い (SnowAt) が高さはない。モデルと同じ光 (Shade)、霧の中
+// (Fogged)。RendererShaderText(kWetSurfaceHlsl) の後。
 cbuffer SnowLayer : register(b4) {
-    float4 layerGrid;     // xy: the grid's corner (world x z, in whole cells); z: a cell (m); w: cells a side
-    float4 layerInfo;     // x: the map straight down; y: where its lines start (world y: the eye)
-    float4 layerSnow[4];  // each way: x: its snow (m), y: its 向きの地図 (-1: none)
-    float4 trailInfo;     // xy: the footprints' first cell (world x z); z: a cell (m); w: cells a side (0: none)
-    float4 trailMore;     // x: which count of footprints (each Play its own)
+    float4 layerGrid;     // xy: 格子の角 (ワールドの x z、ちょうどのマス単位)、z: 1 マス (m)、w: 1 辺のマス数
+    float4 layerInfo;     // x: まっすぐ下の地図、y: その線が始まる所 (ワールドの y: 目)
+    float4 layerSnow[4];  // 各降り方: x: その雪 (m)、y: その 向きの地図 (-1: なし)
+    float4 trailInfo;     // xy: 足跡の最初のマス (ワールドの x z)、z: 1 マス (m)、w: 1 辺のマス数 (0: なし)
+    float4 trailMore;     // x: 足跡の数のうちどれか (Play ごとに別)
 };
 Texture2D<float4> trailMap : register(t9);
 
-// The highest the snow may stand at (x, z): where something moving pressed it, or 1e30.
+// (x, z) で雪が立てる一番高さ: 動くものが押した所では、その高さ。そうでなければ 1e30。
 float TrailCeiling(float2 xz) {
     if (trailInfo.w < 1) return 1e30;
     float n = trailInfo.w;
     float2 cell = floor(xz / trailInfo.z);
-    int2 t = int2(cell - n * floor(cell / n));  // (the cell's place in the map: it wraps around)
+    int2 t = int2(cell - n * floor(cell / n));  // (マスの地図上の場所: 巻き戻る)
     float4 v = trailMap.Load(int3(t, 0));
     return all(v.yz == cell) && v.w == trailMore.x ? v.x : 1e30;
 }
 
-// One corner at (x, z): the top under it (world y; none: -1e30), how deep the snow lies there, where
-// the snow's top is.
+// (x, z) の 1 つの角: その下の上面 (ワールドの y。なし: -1e30)、そこに雪がどれだけ深く
+// 積もるか、雪の上面はどこか。
 struct SnowCorner {
     float ground;
     float depth;
@@ -353,7 +349,7 @@ struct SnowOut {
     float4 pos : SV_Position;
     float3 nrm : NORMAL;
     float3 wpos : TEXCOORD2;
-    float depth : TEXCOORD4;  // how deep it lies there
+    float depth : TEXCOORD4;  // そこにどれだけ深く積もるか
 };
 
 SnowOut SnowLayerVS(uint id : SV_VertexID) {
@@ -362,17 +358,17 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
     float2 g = float2(id % side, id / side);
     float pace = layerGrid.z;
     float2 xz = layerGrid.xy + g * pace;
-    // (low toward the grid's edge: no wall where it ends)
+    // (格子の端に向かって低く: 終わる所に壁を作らない)
     float fade = saturate((layerGrid.w * 0.5 - max(abs(g.x - layerGrid.w * 0.5), abs(g.y - layerGrid.w * 0.5))) * pace / 4);
     SnowCorner c = CornerAt(xz, fade);
     SnowCorner l = CornerAt(xz - float2(pace, 0), fade), r = CornerAt(xz + float2(pace, 0), fade);
     SnowCorner d = CornerAt(xz - float2(0, pace), fade), u = CornerAt(xz + float2(0, pace), fade);
-    float ledge = 0.12 + pace;  // (a step steeper than about 45 degrees)
+    float ledge = 0.12 + pace;  // (約 45 度より急な段)
     bool foot = (!l.none && l.ground - c.ground > ledge) || (!r.none && r.ground - c.ground > ledge) ||
                 (!d.none && d.ground - c.ground > ledge) || (!u.none && u.ground - c.ground > ledge);
     bool rim = l.none || r.none || d.none || u.none || c.ground - l.ground > ledge || c.ground - r.ground > ledge ||
                c.ground - d.ground > ledge || c.ground - u.ground > ledge;
-    // The slope of what it lies on and of the snow (a neighbour across a step: as if level with this one).
+    // 下の面の傾きと雪の傾き (段の向こうの隣は、これと同じ高さとみなす)。
     float gl = l.none || abs(l.ground - c.ground) > ledge ? c.ground : l.ground, gr = r.none || abs(r.ground - c.ground) > ledge ? c.ground : r.ground;
     float gd = d.none || abs(d.ground - c.ground) > ledge ? c.ground : d.ground, gu = u.none || abs(u.ground - c.ground) > ledge ? c.ground : u.ground;
     float3 groundN = normalize(float3(gl - gr, 2 * pace, gd - gu));
@@ -397,24 +393,24 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
 }
 
 float4 SnowLayerPS(SnowOut i) : SV_Target {
-    clip(SnowShape(i.wpos.xz, i.depth) - 0.02);  // (where no lump stands: none)
+    clip(SnowShape(i.wpos.xz, i.depth) - 0.02);  // (塊が立たない所: なし)
     float3 n = normalize(i.nrm);
     float3 v = normalize(eye.xyz - i.wpos);
-    float grain = (WetNoise(i.wpos.xz * 40) - 0.5) * 0.05;  // (a little uneven: not plastic)
+    float grain = (WetNoise(i.wpos.xz * 40) - 0.5) * 0.05;  // (少し不均一に: プラスチックのようにしない)
     return float4(ToScreen(Fogged(Shade(kSnowWhite + grain, 0, 0.75, n, v, i.wpos), i.wpos)), 1);
 }
 )";
 
 const char kSnowTrailHlsl[] = R"(
-// 足跡: the highest the snow may stand at each cell around the eye (SnowTrailOf), kept from frame to frame
-// (two textures, each frame drawn from the other). Where something moving is (its underside, seen from
-// below: a 向きの地図 of the moving shapes only) the snow can stand no higher than it - it is pressed
-// down, and stays so; while it snows it fills up again as fast as the snow grows. The map wraps around:
-// each cell keeps which world cell it is (a cell come new into the square starts with no footprint).
-// After RendererShaderText(kWetSurfaceHlsl).
+// 足跡: 目のまわりの各マスで雪が立てる一番高さ (SnowTrailOf)。フレームごとに受け継ぐ
+// (テクスチャ 2 枚で、各フレームは片方からもう片方へ描く)。動くものがある所 (その下側、下から
+// 見たもの: 動く形だけの 向きの地図) では、雪はそれより高く立てない - 押されて、そのままになる。
+// 雪が降る間は、雪が育つのと同じ速さでまた埋まる。地図は巻き戻る: 各マスは、自分がどの
+// ワールドのマスかを覚える (四角に新しく入ったマスは、足跡なしで始まる)。
+// RendererShaderText(kWetSurfaceHlsl) の後。
 cbuffer SnowTrail : register(b4) {
-    float4 trailInfo;  // xy: the first cell (world x z); z: a cell (m); w: cells a side
-    float4 trailMore;  // x: which count (each Play its own); y: how much it fills up now (m); z: where the lines up start (world y); w: the map from below
+    float4 trailInfo;  // xy: 最初のマス (ワールドの x z)、z: 1 マス (m)、w: 1 辺のマス数
+    float4 trailMore;  // x: 数のうちどれか (Play ごとに別)、y: 今どれだけ埋まるか (m)、z: 上向きの線が始まる所 (ワールドの y)、w: 下からの地図
 };
 Texture2D<float4> trailBefore : register(t9);
 
@@ -436,7 +432,7 @@ float4 SnowTrailPS(float4 pos : SV_Position) : SV_Target {
         [unroll] for (int y = -1; y <= 1; ++y) {
             [unroll] for (int x = -1; x <= 1; ++x) {
                 float past = MapPastAt(m, mul(mapViewProj[m], float4(c.x + x * trailInfo.z, trailMore.z, c.y + y * trailInfo.z, 1)));
-                if (past > -1e29) ceiling = min(ceiling, trailMore.z - past + 0.03 * (abs(x) + abs(y)));  // (a softer rim)
+                if (past > -1e29) ceiling = min(ceiling, trailMore.z - past + 0.03 * (abs(x) + abs(y)));  // (柔らかい縁)
             }
         }
     }
@@ -460,7 +456,7 @@ SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span
     SnowLayerConstants k{};
     if (!std::isfinite(eye.x) || !std::isfinite(eye.y) || !std::isfinite(eye.z)) eye = {0, 0, 0};
     const float half = kSnowCell * static_cast<float>(kSnowCells) * 0.5f;
-    k.grid[0] = std::floor(eye.x / kSnowCell) * kSnowCell - half;  // (in whole cells: the grid does not swim as the eye moves)
+    k.grid[0] = std::floor(eye.x / kSnowCell) * kSnowCell - half;  // (ちょうどのマス単位: 目が動いても格子が泳がない)
     k.grid[1] = std::floor(eye.z / kSnowCell) * kSnowCell - half;
     k.grid[2] = kSnowCell;
     k.grid[3] = static_cast<float>(kSnowCells);
@@ -481,7 +477,7 @@ SnowTrailConstants SnowTrailOf(Vec3 eye, uint32_t count, float fill, int upMap) 
     TrailFirstCell(eye, k.trail);
     k.more[0] = static_cast<float>(count);
     k.more[1] = std::isfinite(fill) ? std::max(fill, 0.f) : 0.f;
-    k.more[2] = (std::isfinite(eye.y) ? eye.y : 0.f) - 70.f;  // (below what walks: the map from below starts 80 m under the eye)
+    k.more[2] = (std::isfinite(eye.y) ? eye.y : 0.f) - 70.f;  // (歩く所より下: 下からの地図は目の 80 m 下から始まる)
     k.more[3] = static_cast<float>(upMap);
     return k;
 }
@@ -494,7 +490,7 @@ uint32_t PrecipitationCount(const Precipitation& p) {
 }
 
 FallSpeed FallOf(Precipitation::Kind kind) {
-    // (2026-11-19: half the wind they took before - they slanted too much)
+    // (2026-11-19: 前に受けていた風の半分 - 傾きすぎた)
     return kind == Precipitation::Kind::Rain ? FallSpeed{9.f, 3.f, 0.45f} : FallSpeed{0.9f, 0.6f, 0.5f};
 }
 

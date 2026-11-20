@@ -1,7 +1,7 @@
 #pragma once
-// 天候 - what rain and snow hit: whoever knows a kind of collider offers the scene's as shapes (the
-// connector 天候 × 物理: the physics plugin's コライダー and キャラクター). Gathered once a frame by each
-// picture and handed to 3D 空間 as the 向きの地図's shapes (RenderFrame::mapShapes: never drawn).
+// 天候 - 雨と雪が当たるもの: ある種類のコライダーを知っている側が、シーンのものを形として出す
+// (コネクター 天候 × 物理: 物理プラグインの コライダー と キャラクター)。絵ごとにフレームに 1 回集めて、
+// 3D 空間に向きの地図の形として渡す (RenderFrame::mapShapes: 描かない)。
 //
 //   static const weather::WeatherBlockersInfo kBlockers{&Gather};
 //   registry.Contribute(weather::kWeatherBlockersPoint, kBlockers);
@@ -18,28 +18,28 @@
 
 namespace rm::weather {
 
-// RuntimeRegistry point: items are WeatherBlockersInfo (static).
+// RuntimeRegistry の口: 項目は WeatherBlockersInfo (static)。
 inline constexpr char kWeatherBlockersPoint[] = "rm_engine.weather.blockers";
 
-// A shape rain and snow hit. Box / Sphere / Cylinder: `world` takes the renderer's simple shape (a box
-// -0.5 .. 0.5, a ball of radius 0.5, a cylinder of radius 0.5 from y -0.5 to 0.5) where it is. Model:
-// the entity's own model (its メッシュ), `world` its place.
+// 雨と雪が当たる形。Box / Sphere / Cylinder: `world` が、レンダラーの単純な形 (箱は
+// -0.5 .. 0.5、半径 0.5 の球、y が -0.5 から 0.5 の半径 0.5 の円柱) を置き場所へ持っていく。Model:
+// エンティティ自身のモデル (そのメッシュ)、`world` はその置き場所。
 struct WeatherBlocker {
     enum class Kind : uint8_t { Box, Sphere, Cylinder, Model } kind = Kind::Box;
     space3d::Mat4 world;
-    int entity = 0;       // Model: whose
-    bool moving = false;  // it moves (a character, a body that is not 動かない): it leaves footprints in snow
+    int entity = 0;       // Model: だれの
+    bool moving = false;  // 動く (キャラクター、動かない ではない体): 雪に足跡を残す
 };
 
 struct WeatherBlockersInfo {
-    // Adds the scene's shapes to `out`; `world`: where an entity is (null: not shown - switched off).
+    // シーンの形を `out` に足す。`world`: エンティティの場所 (null: 出ていない - 切ってある)。
     void (*gather)(const game_production::Scene& scene, const std::function<const space3d::Mat4*(int entity)>& world,
                    std::vector<WeatherBlocker>& out) = nullptr;
 };
 
-// The picture's shapes: every offered one as the renderer's simple shape (`shapeOf`: Renderer::ShapeOf)
-// or as the model `modelOf` says the entity is drawn with (none: left out). `scratch`: kept between
-// frames (no allocation).
+// 絵の形: 出されたものすべてを、レンダラーの単純な形 (`shapeOf`: Renderer::ShapeOf) にするか、
+// `modelOf` が言うそのエンティティを描くモデルにする (なければ除く)。`scratch`: フレームをまたいで
+// 持つ (確保しない)。
 void MakeWeatherBlocks(const game_production::Scene& scene, const RuntimeRegistry& registry,
                        const std::function<const space3d::Mat4*(int entity)>& world,
                        const std::function<const space3d::GpuMesh*(space3d::Shape)>& shapeOf,

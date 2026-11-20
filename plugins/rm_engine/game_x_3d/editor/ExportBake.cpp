@@ -1,11 +1,11 @@
-// Baking for the exported game (game_production/editor/GameExport.h: ExportBaker), in the 3D connector
-// because the code is 3D 空間's:
-//   3D models  read as the editor reads them (LoadMeshFile: the import settings' size and up axis) and
-//              written in this engine's form (MeshBake: Baked/<id>.rmmesh); each picture of their
-//              materials as the GPU takes it (Baked/<id>/<n>.dds) - the texture cache's DDS when it is
-//              there, else made by the same code (PictureDecoder) and kept in the cache too
-// (Sprites' images are ゲーム制作 × 2D's: game_x_2d/editor/ExportBake2D.)
-// The readers of glTF / OBJ / FBX and the compression never go into the game.
+// 書き出すゲームの焼き込み (game_production/editor/GameExport.h: ExportBaker)。コードが 3D 空間の
+// ものなので 3D コネクターにある:
+//   3D モデル  エディターと同じように読み (LoadMeshFile: 取り込みの設定の大きさと上の軸)、
+//              このエンジンの形で書く (MeshBake: Baked/<id>.rmmesh)。材質の各画像は GPU が
+//              読める形にする (Baked/<id>/<n>.dds) - テクスチャキャッシュの DDS があればそれ、
+//              なければ同じコード (PictureDecoder) で作り、キャッシュにも残す
+// (スプライトの画像は ゲーム制作 × 2D のもの: game_x_2d/editor/ExportBake2D。)
+// glTF / OBJ / FBX の読み込みと圧縮は、ゲームには入らない。
 
 #include "rm_engine/game_x_3d/editor/ExportBake.h"
 
@@ -31,13 +31,13 @@ namespace {
 
 using game_production::BakeResult;
 
-// One picture made by the texture cache's own code (and kept in its folder), waited for.
+// テクスチャキャッシュ自身のコードで作った画像 1 枚 (そのフォルダにも残す)。できるまで待つ。
 std::optional<space3d::TexturePixels> MakePicture(space3d::PictureDecoder& decoder, space3d::PictureDecoder::Source source, bool* fromCache,
                                                   std::string* error, space3d::TextureSampling* sampling = nullptr) {
     auto job = decoder.Request(std::move(source));
     while (!job->Done()) std::this_thread::sleep_for(std::chrono::milliseconds(2));
     if (fromCache) *fromCache = job->fromCache;
-    if (sampling) *sampling = job->sampling;  // (the image's import settings)
+    if (sampling) *sampling = job->sampling;  // (その画像の取り込みの設定)
     if (!job->pixels && error) *error = job->error;
     return std::move(job->pixels);
 }
@@ -53,15 +53,15 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
     const fs::path cache = a.projectRoot / L"Cache" / L"Textures";
     space3d::PictureDecoder decoder;
     std::string why;
-    // A model: as the editor reads it.
+    // モデル: エディターと同じように読む。
     const auto mesh = space3d::LoadMeshFile(a.file, &why);
     if (!mesh) {
         if (error) *error = why;
         return BakeResult::Failed;
     }
-    // Its materials' pictures, one DDS per picture and way it is read (as ModelPaint finds them).
+    // その材質の画像。画像と読み方ごとに DDS を 1 つ (ModelPaint が見つけるのと同じ)。
     const fs::path assets = a.projectRoot / L"Assets";
-    std::map<std::tuple<int, int, bool>, std::pair<std::string, space3d::TextureSampling>> made;  // (image, use, srgb) -> its path, how it is read
+    std::map<std::tuple<int, int, bool>, std::pair<std::string, space3d::TextureSampling>> made;  // (画像, 使い道, srgb) -> そのパスと読み方
     std::vector<space3d::BakedPictures> pictures(mesh->materials.size());
     int fromCache = 0, total = 0;
     for (size_t m = 0; m < mesh->materials.size(); ++m) {
@@ -83,17 +83,17 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
                 s.image = ps.image;
             } else {
                 s.file = space3d::RelatedFile(a.file, img.file, assets);
-                if (s.file.empty()) continue;  // not inside the project's Assets/: drawn without it (as in the editor)
+                if (s.file.empty()) continue;  // プロジェクトの Assets/ の外: それなしで描く (エディターと同じ)
             }
             s.use = ps.use;
             s.srgb = ps.srgb;
             s.cacheFolder = cache;
-            s.canBC7 = true;  // as the editor's cache (a GPU without BC7: the game turns it into RGBA)
+            s.canBC7 = true;  // エディターのキャッシュと同じ (BC7 の無い GPU: ゲームが RGBA にする)
             bool cached = false;
             space3d::TextureSampling sampling;
             std::string pwhy;
             const auto pixels = MakePicture(decoder, s, &cached, &pwhy, &sampling);
-            if (!pixels) continue;  // drawn without it (as in the editor)
+            if (!pixels) continue;  // それなしで描く (エディターと同じ)
             const std::string path = std::format("Baked/{}/{}.dds", a.id, made.size());
             out.files.push_back({path, DdsText(*pixels)});
             made[key] = {path, sampling};

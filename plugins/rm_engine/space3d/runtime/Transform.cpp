@@ -1,6 +1,6 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 
-#include "rm_engine/space3d/runtime/View.h"  // Inverse
+#include "rm_engine/space3d/runtime/View.h"  // 逆行列
 
 #include <algorithm>
 #include <cmath>
@@ -30,10 +30,10 @@ namespace {
 
 constexpr float kDeg = std::numbers::pi_v<float> / 180.f;
 
-// R(row, col) of the stored m[col][row].
+// 保存された m[col][row] の R(row, col)。
 float At(const Mat4& m, int row, int col) { return m.m[col][row]; }
 
-// `a` + some multiple of 360 that is nearest `ref`.
+// `a` に 360 の倍数を足して、`ref` に一番近くしたもの。
 float Wrap(float a, float ref) { return a + 360.f * std::round((ref - a) / 360.f); }
 
 }  // namespace
@@ -62,7 +62,7 @@ Mat4 AxisAngle(Vec3 axis, float degrees) {
     if (len <= 0) return r;
     const float x = axis.x / len, y = axis.y / len, z = axis.z / len;
     const float c = std::cos(degrees * kDeg), s = std::sin(degrees * kDeg), k = 1 - c;
-    // Rodrigues: R(row, col), stored as m[col][row].
+    // ロドリゲス: R(row, col)。m[col][row] として保存する。
     const float R[3][3] = {{c + x * x * k, x * y * k - z * s, x * z * k + y * s},
                            {y * x * k + z * s, c + y * y * k, y * z * k - x * s},
                            {z * x * k - y * s, z * y * k + x * s, c + z * z * k}};
@@ -80,13 +80,13 @@ Vec3 EulerFromRotation(const Mat4& r, Vec3 hint) {
     if (std::fabs(sy) < 0.99999f) {
         a = {std::atan2(At(r, 2, 1), At(r, 2, 2)) / kDeg, y, std::atan2(At(r, 1, 0), At(r, 0, 0)) / kDeg};
     } else {
-        // Straight up or down (gimbal lock): only x - z (y = 90) or x + z (y = -90) is fixed. Keep z.
+        // 真上か真下 (ジンバルロック): 決まるのは x - z (y = 90) か x + z (y = -90) だけ。z は保つ。
         const float z = hint.z;
         const float xz = std::atan2(At(r, 0, 1), At(r, 1, 1)) / kDeg;      // y = +90: x - z
         const float xpz = std::atan2(-At(r, 0, 1), At(r, 1, 1)) / kDeg;    // y = -90: x + z
         a = {sy > 0 ? xz + z : xpz - z, sy > 0 ? 90.f : -90.f, z};
     }
-    // The other set of angles for the same turn.
+    // 同じ回転を表すもう 1 組の角度。
     const Vec3 b{a.x + 180.f, 180.f - a.y, a.z + 180.f};
     auto nearest = [&](Vec3 v) { return Vec3{Wrap(v.x, hint.x), Wrap(v.y, hint.y), Wrap(v.z, hint.z)}; };
     auto cost = [&](Vec3 v) { return std::fabs(v.x - hint.x) + std::fabs(v.y - hint.y) + std::fabs(v.z - hint.z); };
@@ -103,14 +103,14 @@ WorldPlacement Decompose(const Mat4& w, Vec3 hint) {
         col[c] = {w.m[c][0], w.m[c][1], w.m[c][2]};
         len[c] = std::sqrt(col[c].x * col[c].x + col[c].y * col[c].y + col[c].z * col[c].z);
     }
-    // Mirrored (determinant < 0): call it a negative X scale.
+    // 鏡写し (行列式 < 0): X のスケールが負だとみなす。
     const Vec3 c12{col[1].y * col[2].z - col[1].z * col[2].y, col[1].z * col[2].x - col[1].x * col[2].z,
                    col[1].x * col[2].y - col[1].y * col[2].x};
     if (col[0].x * c12.x + col[0].y * c12.y + col[0].z * c12.z < 0) len[0] = -len[0];
     out.scale = {len[0], len[1], len[2]};
     Mat4 r;
     for (int c = 0; c < 3; ++c) {
-        if (len[c] == 0) continue;  // a scale of 0: no direction to read, that axis stays as it is
+        if (len[c] == 0) continue;  // スケール 0: 読める向きがないので、その軸はそのまま
         for (int row = 0; row < 3; ++row) r.m[c][row] = (&col[c].x)[row] / len[c];
     }
     out.rotation = EulerFromRotation(r, hint);
@@ -120,16 +120,16 @@ WorldPlacement Decompose(const Mat4& w, Vec3 hint) {
 Transform FromWorld(const Transform& current, const Mat4& parentWorld, const WorldPlacement& want) {
     Transform t = current;
     const auto toParent = Inverse(parentWorld);
-    if (!toParent) return t;  // a parent of scale 0: nothing can be put anywhere
+    if (!toParent) return t;  // スケール 0 の親: 何もどこにも置けない
     const WorldPlacement now = Decompose(parentWorld * LocalMatrix(current), current.rotation);
     if (!(want.position == now.position)) t.position = TransformPoint(*toParent, want.position);
     if (!(want.rotation == now.rotation)) {
-        // The parent's turn alone (its scale taken out), undone: the turn left is the thing's own.
+        // 親の回転だけ (スケールは抜いた) を元に戻す。残った回転がそのものの回転。
         const auto parentTurn = Inverse(RotationMatrix(Decompose(parentWorld).rotation));
         if (parentTurn) t.rotation = EulerFromRotation(*parentTurn * RotationMatrix(want.rotation), current.rotation);
     }
     if (!(want.scale == now.scale)) {
-        // World scale of an axis = own scale x how much the parent stretches that (turned) axis.
+        // 軸のワールドスケール = 自分のスケール x 親がその (回転した) 軸をどれだけ伸ばすか。
         const Mat4 turned = parentWorld * RotationMatrix(t.rotation);
         const float w[3] = {want.scale.x, want.scale.y, want.scale.z}, n[3] = {now.scale.x, now.scale.y, now.scale.z};
         float* own[3] = {&t.scale.x, &t.scale.y, &t.scale.z};

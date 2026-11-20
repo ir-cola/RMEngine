@@ -10,8 +10,8 @@ namespace {
 constexpr uint32_t kMagic = 0x20534444;  // "DDS "
 constexpr uint32_t kFourCcDx10 = 0x30315844;  // "DX10"
 constexpr uint32_t kHeaderSize = 124, kPixelFormatSize = 32;
-constexpr uint32_t kFlags = 0x1 | 0x2 | 0x4 | 0x1000 | 0x20000;  // caps, height, width, pixel format, mip count
-constexpr uint32_t kCaps = 0x1000 | 0x400000 | 0x8;              // texture, mipmap, complex
+constexpr uint32_t kFlags = 0x1 | 0x2 | 0x4 | 0x1000 | 0x20000;  // caps、高さ、幅、ピクセルフォーマット、ミップ数
+constexpr uint32_t kCaps = 0x1000 | 0x400000 | 0x8;              // テクスチャ、ミップマップ、複合
 constexpr uint32_t kDimensionTexture2D = 3;
 constexpr size_t kAllHeaders = 4 + kHeaderSize + 20;
 constexpr uint32_t kMaxLevels = 16;
@@ -23,7 +23,7 @@ void Put32(std::vector<uint8_t>& out, uint32_t v) {
 uint32_t Get32(std::span<const uint8_t> b, size_t at) {
     uint32_t v = 0;
     std::memcpy(&v, b.data() + at, 4);
-    return v;  // little-endian, as Windows on x64 / ARM64
+    return v;  // リトルエンディアン (x64 / ARM64 の Windows と同じ)
 }
 
 struct Known {
@@ -31,7 +31,7 @@ struct Known {
     bool srgb;
     uint32_t dxgi;
 };
-// DXGI_FORMAT numbers (dxgiformat.h), written here so this file needs no Windows header.
+// DXGI_FORMAT の番号 (dxgiformat.h)。このファイルが Windows のヘッダーを要らないよう、ここに書く。
 constexpr Known kFormats[] = {
     {TextureFormat::Rgba8, false, 28}, {TextureFormat::Rgba8, true, 29}, {TextureFormat::BC1, false, 71}, {TextureFormat::BC1, true, 72},
     {TextureFormat::BC3, false, 77},   {TextureFormat::BC3, true, 78},   {TextureFormat::BC4, false, 80}, {TextureFormat::BC5, false, 83},
@@ -41,7 +41,7 @@ constexpr Known kFormats[] = {
 }  // namespace
 
 uint32_t DxgiFormatOf(TextureFormat f, bool srgb) {
-    // BC4 / BC5 hold numbers only: no sRGB form.
+    // BC4 / BC5 は数値だけを持つ: sRGB の形は無い。
     if (f == TextureFormat::BC4 || f == TextureFormat::BC5) srgb = false;
     for (const Known& k : kFormats) {
         if (k.format == f && k.srgb == srgb) return k.dxgi;
@@ -55,23 +55,23 @@ std::vector<uint8_t> WriteDds(const TexturePixels& p) {
     const platform::Image& top = p.levels[0];
     Put32(out, kMagic);
     Put32(out, kHeaderSize);
-    Put32(out, kFlags | 0x80000);  // + linear size
+    Put32(out, kFlags | 0x80000);  // + リニアサイズ
     Put32(out, top.height);
     Put32(out, top.width);
     Put32(out, static_cast<uint32_t>(LevelBytes(p.format, top.width, top.height)));
-    Put32(out, 0);  // depth
+    Put32(out, 0);  // 奥行き
     Put32(out, static_cast<uint32_t>(p.levels.size()));
     for (int i = 0; i < 11; ++i) Put32(out, 0);
-    Put32(out, kPixelFormatSize);  // the pixel format: "look at the DX10 header"
+    Put32(out, kPixelFormatSize);  // ピクセルフォーマット: 「DX10 ヘッダーを見よ」
     Put32(out, 0x4);               // DDPF_FOURCC
     Put32(out, kFourCcDx10);
     for (int i = 0; i < 5; ++i) Put32(out, 0);
     Put32(out, kCaps);
-    for (int i = 0; i < 4; ++i) Put32(out, 0);  // caps2..4, reserved
+    for (int i = 0; i < 4; ++i) Put32(out, 0);  // caps2..4、予約
     Put32(out, DxgiFormatOf(p.format, p.srgb));
     Put32(out, kDimensionTexture2D);
     Put32(out, 0);  // misc
-    Put32(out, 1);  // array size
+    Put32(out, 1);  // 配列サイズ
     Put32(out, 0);  // misc 2
     for (const platform::Image& l : p.levels) out.insert(out.end(), l.pixels.begin(), l.pixels.end());
     return out;
@@ -129,7 +129,7 @@ std::string TextureCacheName(std::string_view assetId, uint64_t contentHash, std
         if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '#' || c == '-') id += c;
     }
     if (id.empty()) id = "noid";
-    // Everything the picture depends on, in one hash.
+    // 絵が頼るもの全部を 1 つのハッシュにする。
     const std::string key = std::format("{}|{:016x}|{}|{}|{}|{}|{}", id, contentHash, settings, static_cast<int>(use), srgb ? 1 : 0,
                                         canBC7 ? 1 : 0, kCacheVersion);
     const uint64_t h = HashBytes({reinterpret_cast<const uint8_t*>(key.data()), key.size()});

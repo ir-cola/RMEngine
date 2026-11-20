@@ -36,8 +36,8 @@ Vec3 TransformDirection(const Mat4& m, Vec3 d) {
 }
 
 std::optional<Mat4> Inverse(const Mat4& mat) {
-    // Cofactors of the 16 numbers as stored (the inverse of the stored layout is the stored inverse),
-    // in double: a thing 1e-5 across has a determinant of 1e-15, too close to float's floor.
+    // 保存された 16 個の数の余因子 (保存された並びの逆行列は、保存された逆行列)。double で行う:
+    // 1e-5 の幅のものは行列式が 1e-15 になり、float の下限に近すぎる。
     double m[16];
     for (int i = 0; i < 16; ++i) m[i] = (&mat.m[0][0])[i];
     double inv[16];
@@ -58,12 +58,12 @@ std::optional<Mat4> Inverse(const Mat4& mat) {
     inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
     inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
     const double det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
-    // Not invertible = the columns (nearly) lie in a smaller space - told by the determinant against
-    // the largest it could be for columns that long (Hadamard: |det| <= the product of their lengths).
-    // A small thing (all columns short) is fine; only a flattened one is not.
+    // 逆行列がない = 列が (ほぼ) 小さい空間に載っている。行列式を、その長さの列がとりうる最大と
+    // 比べて判断する (Hadamard: |det| <= 列の長さの積)。小さいもの (列が全部短い) は大丈夫。
+    // つぶれたものだけが駄目。
     double longest = 1;
     for (int c = 0; c < 4; ++c) longest *= std::sqrt(m[c * 4] * m[c * 4] + m[c * 4 + 1] * m[c * 4 + 1] + m[c * 4 + 2] * m[c * 4 + 2] + m[c * 4 + 3] * m[c * 4 + 3]);
-    if (!(longest > 0) || !(std::fabs(det) > 1e-7 * longest)) return std::nullopt;  // NaN fails too
+    if (!(longest > 0) || !(std::fabs(det) > 1e-7 * longest)) return std::nullopt;  // NaN も弾く
     Mat4 out;
     float* o = &out.m[0][0];
     for (int i = 0; i < 16; ++i) o[i] = static_cast<float>(inv[i] / det);
@@ -96,7 +96,7 @@ Mat4 Orthographic(float l, float r, float b, float t, float n, float f) {
 Mat4 LookAt(Vec3 eye, Vec3 target, Vec3 up) {
     const Vec3 f = Normalize(target - eye);
     Vec3 s = Normalize(Cross(f, up));
-    if (Length(s) == 0) s = {1, 0, 0};  // looking straight up or down
+    if (Length(s) == 0) s = {1, 0, 0};  // 真上か真下を向いている
     const Vec3 u = Cross(s, f);
     Mat4 v;
     v.m[0][0] = s.x, v.m[1][0] = s.y, v.m[2][0] = s.z;
@@ -110,7 +110,7 @@ Mat4 ViewFromWorld(const Mat4& world) {
     const Vec3 eye = TransformPoint(world, {0, 0, 0});
     Vec3 forward = Normalize(TransformDirection(world, {0, 0, -1}));
     Vec3 up = Normalize(TransformDirection(world, {0, 1, 0}));
-    if (Length(forward) == 0) forward = {0, 0, -1};  // a scale of 0
+    if (Length(forward) == 0) forward = {0, 0, -1};  // スケール 0
     if (Length(up) == 0 || std::fabs(Dot(forward, up)) > 0.9999f) up = std::fabs(forward.y) > 0.99f ? Vec3{0, 0, 1} : Vec3{0, 1, 0};
     return LookAt(eye, eye + forward, up);
 }
@@ -146,7 +146,7 @@ Ray ScreenRay(const Mat4& inv, float ndcX, float ndcY) {
 }
 
 std::optional<float> IntersectBox(const Ray& ray, Vec3 mn, Vec3 mx) {
-    // Slabs: the ray is inside the box between the latest entry and the earliest exit.
+    // スラブ法: レイは、一番遅い入りと一番早い出の間でボックスの中にいる。
     float tMin = 0.f, tMax = std::numeric_limits<float>::infinity();
     const float o[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
     const float d[3] = {ray.dir.x, ray.dir.y, ray.dir.z};
@@ -154,7 +154,7 @@ std::optional<float> IntersectBox(const Ray& ray, Vec3 mn, Vec3 mx) {
     const float hi[3] = {mx.x, mx.y, mx.z};
     for (int a = 0; a < 3; ++a) {
         if (std::fabs(d[a]) < 1e-12f) {
-            if (o[a] < lo[a] || o[a] > hi[a]) return std::nullopt;  // parallel and outside
+            if (o[a] < lo[a] || o[a] > hi[a]) return std::nullopt;  // 平行で外側
             continue;
         }
         float t1 = (lo[a] - o[a]) / d[a], t2 = (hi[a] - o[a]) / d[a];
@@ -173,7 +173,7 @@ std::optional<float> IntersectPlacedCube(const Ray& ray, const Mat4& world) {
 std::optional<float> IntersectPlacedBox(const Ray& ray, const Mat4& world, Vec3 mn, Vec3 mx) {
     const auto inv = Inverse(world);
     if (!inv) return std::nullopt;
-    // In the box's own space the same t reaches the same point (the ray is moved, not re-measured).
+    // ボックス自身の空間でも、同じ t が同じ点に届く (レイは動かしただけで、測り直さない)。
     const Ray local{TransformPoint(*inv, ray.origin), TransformDirection(*inv, ray.dir)};
     return IntersectBox(local, mn, mx);
 }
@@ -193,7 +193,7 @@ Bounds WorldBounds(const Mat4& world, Vec3 mn, Vec3 mx) {
 }
 
 bool BoxInView(const Mat4& viewProjection, const Bounds& box) {
-    unsigned all = 0x3F;  // the sides every corner is outside of so far
+    unsigned all = 0x3F;  // これまでのところ、全部の角が外側にある面
     for (int i = 0; i < 8; ++i) {
         float c[4];
         Transform4(viewProjection, (i & 1) ? box.max.x : box.min.x, (i & 2) ? box.max.y : box.min.y, (i & 4) ? box.max.z : box.min.z, 1.f, c);
@@ -202,7 +202,7 @@ bool BoxInView(const Mat4& viewProjection, const Bounds& box) {
         if (c[0] > c[3]) out |= 2;
         if (c[1] < -c[3]) out |= 4;
         if (c[1] > c[3]) out |= 8;
-        if (c[2] < 0) out |= 16;  // depth 0..1 (Direct3D): nearer than the near plane
+        if (c[2] < 0) out |= 16;  // 深度 0..1 (Direct3D): ニアプレーンより手前
         if (c[2] > c[3]) out |= 32;
         all &= out;
         if (all == 0) return true;
@@ -211,8 +211,8 @@ bool BoxInView(const Mat4& viewProjection, const Bounds& box) {
 }
 
 Frustum FrustumOf(const Mat4& m) {
-    // Clip space c = M p: row k of M is (m[0][k], m[1][k], m[2][k], m[3][k]). Inside: -w <= x <= w,
-    // -w <= y <= w, 0 <= z <= w (BoxInView's sides, in its order).
+    // クリップ空間 c = M p: M の行 k は (m[0][k], m[1][k], m[2][k], m[3][k])。内側: -w <= x <= w、
+    // -w <= y <= w、0 <= z <= w (BoxInView の各面。その順)。
     auto row = [&](int k) { return std::array<float, 4>{m.m[0][k], m.m[1][k], m.m[2][k], m.m[3][k]}; };
     const auto x = row(0), y = row(1), z = row(2), w = row(3);
     Frustum f;
@@ -221,7 +221,7 @@ Frustum FrustumOf(const Mat4& m) {
         f.planes[1][i] = w[i] - x[i];  // x <= w
         f.planes[2][i] = w[i] + y[i];
         f.planes[3][i] = w[i] - y[i];
-        f.planes[4][i] = z[i];         // z >= 0 (depth 0..1)
+        f.planes[4][i] = z[i];         // z >= 0 (深度 0..1)
         f.planes[5][i] = w[i] - z[i];
     }
     return f;
@@ -229,7 +229,7 @@ Frustum FrustumOf(const Mat4& m) {
 
 bool BoxInFrustum(const Frustum& f, const Bounds& b) {
     for (const auto& p : f.planes) {
-        // The corner farthest inside this plane: if even it is outside, every corner is.
+        // この面の一番内側にある角: それすら外なら、全部の角が外。
         const float x = p[0] >= 0 ? b.max.x : b.min.x, y = p[1] >= 0 ? b.max.y : b.min.y, z = p[2] >= 0 ? b.max.z : b.min.z;
         if (p[0] * x + p[1] * y + p[2] * z + p[3] < 0) return false;
     }
@@ -241,10 +241,10 @@ Mat4 DirectionalShadowMatrix(Vec3 direction, const Bounds& casters) {
     if (Length(dir) == 0) dir = {0, -1, 0};
     const Vec3 center = (casters.min + casters.max) * 0.5f;
     const float radius = std::max(Length(casters.max - casters.min) * 0.5f, 0.01f);
-    // Looking straight down (or up) the usual up is the line of sight: another one is taken.
+    // 真下 (か真上) を向くと、普通の上はちょうど視線になる: 別のものを使う。
     const Vec3 up = std::fabs(dir.y) > 0.99f ? Vec3{0, 0, 1} : Vec3{0, 1, 0};
     const Mat4 view = LookAt(center - dir * (radius * 2.f), center, up);
-    // The box's corners as the light sees them: the tightest fit (a little wider, so edges are not cut).
+    // 光から見たボックスの角: 一番ぴったり合わせる (縁が切れないよう少しだけ広げる)。
     float lo[3] = {0, 0, 0}, hi[3] = {0, 0, 0};
     for (int i = 0; i < 8; ++i) {
         const Vec3 p = TransformPoint(view, {(i & 1) ? casters.max.x : casters.min.x, (i & 2) ? casters.max.y : casters.min.y,
@@ -256,7 +256,7 @@ Mat4 DirectionalShadowMatrix(Vec3 direction, const Bounds& casters) {
         }
     }
     const float pad = radius * 0.02f + 0.01f;
-    // View space looks along -z: the nearest corner has the largest z.
+    // ビュー空間は -z を向く: 一番近い角の z が最大。
     return Orthographic(lo[0] - pad, hi[0] + pad, lo[1] - pad, hi[1] + pad, -hi[2] - pad, -lo[2] + pad) * view;
 }
 
@@ -273,7 +273,7 @@ float OrbitView::WorldPerPixel(Vec3 p, float viewHeight) const {
 }
 
 Mat4 OrbitView::ProjectionMatrix(float aspect) const {
-    // The near plane follows the distance, so small and large scenes both keep their depth precision.
+    // ニアプレーンは距離に合わせて動くので、小さいシーンでも大きいシーンでも深度の精度を保つ。
     const float nearZ = std::clamp(distance * 0.01f, 0.01f, 1.f);
     return Perspective(fovY, aspect, nearZ, std::max(1000.f, distance * 50.f));
 }
@@ -291,7 +291,7 @@ void Orbit(OrbitView& v, float dYaw, float dPitch) {
 }
 
 void Pan(OrbitView& v, float dx, float dy, float viewHeight) {
-    // One pixel at the pivot's distance: the picture follows the mouse there.
+    // ピボットの距離での 1 ピクセル: そこでは絵がマウスについてくる。
     const float perPixel = 2.f * v.distance * std::tan(v.fovY * kDeg * 0.5f) / std::max(viewHeight, 1.f);
     v.pivot = v.pivot - v.Right() * (dx * perPixel) + v.Up() * (dy * perPixel);
 }

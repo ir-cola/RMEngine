@@ -1,44 +1,40 @@
 #pragma once
-// 3D 空間 - drawing: 3D lines, lit boxes and models with Direct3D 11 into a picture of its own (a
-// texture), lit by up to 8 lights (Lighting.h) with the shadows of one directional light. The editor shows that picture in a panel (the
-// scene view); the exported game will draw the same way to its window. Knows nothing of games or
-// editors. (The space and its drawing are one plugin: one is never used without the other -
-// decided 2026-11-05.)
+// 3D 空間 - 描画: Direct3D 11 で 3D の線・光を受ける箱・モデルを、専用の絵 (テクスチャ) に描く。
+// 最大 8 個の光 (Lighting.h) と、向きのある光 1 つの影で照らす。エディターはこの絵をパネル
+// (シーンビュー) に出し、書き出したゲームも同じやり方で自分のウィンドウに描く。ゲームもエディターも
+// 知らない。(空間とその描画は 1 つのプラグイン: どちらか片方だけを使うことはない - 2026-11-05 に決めた。)
 //
 //   space3d::Renderer r;   r.Init(device, &error);
-//   auto robot = r.Upload(meshData, &error);          // once: the shape stays on the GPU
+//   auto robot = r.Upload(meshData, &error);          // 1 回だけ: 形は GPU に残る
 //   space3d::RenderFrame f{width, height, view, projection, clearColor, lines, boxes};
 //   f.meshes = draws;   f.shadows = true;             // MeshDraw{robot.get(), world, color, ..., materials}
 //   ID3D11Texture2D* picture = r.Render(context, f);
 //
-// Colour (physically based, metal / roughness as glTF): the light is worked out in linear light and
-// turned into the screen's numbers (sRGB) at the end of each pixel. A surface has a colour (draw's
-// colour x the part's material colour x its picture), a metalness and a roughness (x the metal /
-// rough picture), a normal (bent by the normal map: the tangents are made from the screen's
-// derivatives of the position and the UV - no tangents in the vertices) and an emission (added).
-// Each light gives a diffuse part (Lambert, none on metal) and a highlight (GGX / Smith / Schlick);
-// the sky gives a little of both. A model's parts (MeshPart) are drawn one by one with their own
-// material (DrawMaterial: the numbers and the pictures on the GPU - UploadTexture). Colour and
-// emission pictures are sRGB (the GPU turns them into linear light when it reads them); metal /
-// rough and normal pictures are numbers. The selected thing is shown by a glow at its edges
-// (MeshDraw::highlight), which keeps the material's colours.
-// The colours given to a draw (MeshDraw::color, Box::color, highlight, lines, the floor's shadow)
-// are the screen's colours, as everywhere in the UI; a material's are linear light (Mesh.h).
+// 色 (物理ベース。金属 / 粗さは glTF と同じ): 光は線形の光で計算し、各ピクセルの最後に画面の数値
+// (sRGB) へ直す。面は、色 (描く色 x 部品の材質の色 x その絵)、金属度と粗さ (x 金属 / 粗さの絵)、
+// 法線 (法線マップで曲げる。接線は位置と UV の画面上の変化から作る - 頂点に接線は持たない)、
+// 発光 (足す) を持つ。光 1 つごとに、拡散の部分 (Lambert。金属にはない) とハイライト
+// (GGX / Smith / Schlick) を出す。空はその両方を少しずつ出す。モデルの部品 (MeshPart) は、
+// それぞれの材質 (DrawMaterial: 数値と GPU 上の絵 - UploadTexture) で 1 つずつ描く。色と発光の絵は
+// sRGB (GPU が読むときに線形の光へ直す)。金属 / 粗さと法線の絵は数値として読む。選んだものは
+// 縁の光 (MeshDraw::highlight) で示し、材質の色は変えない。
+// 描く物に渡す色 (MeshDraw::color・Box::color・highlight・線・床の影) は UI と同じく画面の色。
+// 材質の色は線形の光 (Mesh.h)。
 //
-// The shaders are written in Renderer3D.cpp in HLSL and compiled when the renderer starts
-// (D3DCompile, which every Windows 10 / 11 has). Drawn with 4x multisampling when the GPU can.
+// シェーダーは Renderer3D.cpp に HLSL で書き、レンダラーの起動時にコンパイルする (D3DCompile。
+// Windows 10 / 11 なら必ずある)。GPU が対応していれば 4x マルチサンプリングで描く。
 //
-// Shadows: shadow maps - everything that casts a shadow is first drawn from the light into depth
-// pictures (Lighting.h: the sun's one map fitted to what casts or its cascades along the view, a
-// spot's one, a point light's six); each pixel then looks there to see whether something is between
-// it and the light, at 3 x 3 places with the GPU's comparing filter (PCF: soft edges).
-// The floor (y = 0) is an invisible plane that only shows the shadows falling on it.
+// 影: シャドウマップ - 影を落とすものを、まず光から見た深度の絵に描く (Lighting.h: 太陽の 1 枚は
+// 影を落とすものに合わせるか、視点に沿ったカスケードにする。スポットは 1 枚、点光源は 6 枚)。
+// 各ピクセルは、その絵を見て、自分と光の間に何かあるかを調べる。3 x 3 か所を、GPU の比較フィルター
+// (PCF: ふちがやわらかい) で見る。
+// 床 (y = 0) は見えない面で、落ちてきた影だけを映す。
 //
-// What it costs the CPU (tools/bench3d): draws with the same mesh, part and pictures become one
-// instanced draw (DrawOrder.h sorts them: shaders, pictures, mesh); each shadow map is tested against
-// its own view (a light's, a cascade's: Frustum) and drawn again only when what it holds changed. A
-// map with things that move (Box / MeshDraw::moving) keeps a layer of what stays put and lays it back
-// before drawing only the moving ones.
+// CPU のコスト (tools/bench3d): 同じメッシュ・部品・絵の描画は 1 回のインスタンス描画にまとめる
+// (DrawOrder.h が並べ替える: シェーダー、絵、メッシュの順)。シャドウマップは、それぞれ自分の視界
+// (光の、カスケードの: Frustum) で調べ、中身が変わったときだけ描き直す。動くもの
+// (Box / MeshDraw::moving) があるマップは、動かないものの層を残しておき、動くものだけを描く前に
+// それを敷き戻す。
 
 #include "base/Math.h"
 #include "platform/Image.h"
@@ -67,53 +63,53 @@ namespace rm::space3d {
 
 struct LineVertex {
     Vec3 position;
-    Color color;  // alpha blends (a fading grid)
+    Color color;  // アルファで混ぜる (薄れていくグリッド)
 };
 
-// The unit cube (-0.5 .. 0.5) placed by `world`, lit from one direction.
+// 原点中心の単位立方体 (-0.5 .. 0.5) を `world` で置き、1 方向から光を当てる。
 struct Box {
     Mat4 world;
     Color color;
     bool castShadow = true;
-    // It has moved lately (dragged, played): drawn into the shadow maps over a kept layer of what
-    // stays put. Only a hint - a thing that moves without it is still drawn right, the maps it is in
-    // are just drawn whole again.
+    // 最近動いた (ドラッグした・Play で動いた): 動かないものの残した層の上に、シャドウマップへ描く。
+    // ただのヒント - 付けなくても動くものは正しく描かれる。その物が入るマップが、全部描き直される
+    // だけ。
     bool moving = false;
 };
 
-// A model's shape on the GPU (Renderer::Upload). Whoever draws it keeps it; it lives as long as
-// that (the renderer does not need it between frames).
+// モデルの形が GPU にあるもの (Renderer::Upload)。描く側が持っておく。持っている間だけ生きる
+// (フレームの合間にレンダラーは要らない)。
 class GpuMesh {
 public:
-    uint64_t serial = 0;              // never the same for two meshes (what a shadow map holds is told by it)
-    Vec3 min{0, 0, 0}, max{0, 0, 0};  // the bounds in the model's own space
+    uint64_t serial = 0;              // 2 つのメッシュで同じになることはない (シャドウマップの中身はこれで見分ける)
+    Vec3 min{0, 0, 0}, max{0, 0, 0};  // モデル自身の空間での範囲
     uint32_t indexCount = 0;
-    std::vector<MeshPart> parts;      // one draw each, by material (at least one)
-    std::vector<Vec3> partCenters;    // the middle of each part's bounds (see-through parts are sorted by it)
+    std::vector<MeshPart> parts;      // 材質ごとに 1 つずつ描く (最低 1 つ)
+    std::vector<Vec3> partCenters;    // 各部品の範囲の真ん中 (透ける部品はこれで並べる)
 
 private:
     friend class Renderer;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertices, indices;
 };
 
-// A picture on the GPU (Renderer::UploadTexture).
+// GPU 上の絵 (Renderer::UploadTexture)。
 class GpuTexture {
 public:
-    uint32_t width = 0, height = 0;  // the picture's (its largest level, on the GPU or not)
-    bool srgb = false;  // read as colours (sRGB -> linear) or as numbers
+    uint32_t width = 0, height = 0;  // 絵の大きさ (一番大きいレベル。GPU にあるかどうかは問わない)
+    bool srgb = false;  // 色として読む (sRGB -> 線形) か、数値として読む
     TextureSampling sampling;  // フィルタ・端の扱い・ストリーミング: the image's import settings
-    uint32_t levels = 0;       // its mipmaps (1: none)
-    mutable size_t bytes = 0;  // on the GPU now, its mipmaps included (less while streamed far away)
-    TextureFormat format = TextureFormat::Rgba8;  // how it is kept (BC: compressed)
-    uint64_t madeBy = 0;  // the Renderer::Id that made it (another one - a GPU made again - cannot use it)
-    // Streamed: the first level on the GPU now (0: all of them).
+    uint32_t levels = 0;       // ミップマップの数 (1: なし)
+    mutable size_t bytes = 0;  // 今 GPU にある量。ミップマップ込み (遠くでストリーミングされている間は減る)
+    TextureFormat format = TextureFormat::Rgba8;  // 保存の形式 (BC: 圧縮)
+    uint64_t madeBy = 0;  // 作った Renderer::Id (別のもの - 作り直した GPU - では使えない)
+    // ストリーミング: 今 GPU にある最初のレベル (0: 全部)。
     uint32_t TopLevel() const { return stream_ ? stream_->top : 0; }
 
 private:
     friend class Renderer;
     mutable Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
-    // ミップマップ・ストリーミング (the Renderer's, on the drawing thread): every level kept here, the
-    // GPU holding levels top .. the last. `want`: the finest level a draw asked for lately, at `wantAt`.
+    // ミップマップ・ストリーミング (レンダラーのもの。描画スレッドで動く): 全レベルをここに持ち、
+    // GPU には一番上 .. 最後のレベルを置く。`want`: 最近の描画が求めた一番細かいレベル。時刻は `wantAt`。
     struct Stream {
         std::shared_ptr<const TexturePixels> pixels;
         uint32_t top = 0;
@@ -123,119 +119,119 @@ private:
     mutable std::unique_ptr<Stream> stream_;
 };
 
-// How one material of a model is painted (MeshMaterial on the GPU; a null picture: the numbers only).
-// The pictures are shared: a material keeps its pictures alive while it is drawn, even if the cache
-// reads a file again (and lets go of the old picture) meanwhile.
+// モデルの材質 1 つの塗り方 (GPU 上の MeshMaterial。絵が null なら数値だけ)。
+// 絵は共有される: 材質は、描かれている間は自分の絵を生かしておく。その間にキャッシュが
+// ファイルを読み直して古い絵を手放しても同じ。
 using TextureRef = std::shared_ptr<const GpuTexture>;
 struct DrawMaterial {
-    Color color{1, 1, 1, 1};  // linear light
-    TextureRef texture;       // the colour (sRGB)
+    Color color{1, 1, 1, 1};  // 線形の光
+    TextureRef texture;       // 色 (sRGB)
     AlphaMode alpha = AlphaMode::Opaque;
-    float alphaCutoff = 0.5f;  // Mask: less than this is not drawn
+    float alphaCutoff = 0.5f;  // Mask: これより小さいと描かない
     float metallic = 0.f, roughness = 0.8f;
-    TextureRef metalRough;  // blue: metal, green: rough
-    TextureRef normal;      // tangent space
+    TextureRef metalRough;  // 青: 金属、緑: 粗さ
+    TextureRef normal;      // 接線空間
     float normalScale = 1.f;
-    Color emissive{0, 0, 0, 1};  // linear light, may be more than 1
+    Color emissive{0, 0, 0, 1};  // 線形の光。1 より大きくてもよい
     TextureRef emission;         // sRGB
 };
 
 struct MeshDraw {
     const GpuMesh* mesh = nullptr;
     Mat4 world;
-    Color color{1, 1, 1, 1};  // times every material (white: as the model is)
+    Color color{1, 1, 1, 1};  // 全材質に掛ける (白: モデルのまま)
     bool castShadow = true;
-    std::span<const DrawMaterial> materials;  // by MeshPart::material; a part without one here is white
-    Color highlight{0, 0, 0, 0};              // a glow at the edges (selected): its colour, alpha = how strong
-    bool moving = false;                      // as Box::moving
+    std::span<const DrawMaterial> materials;  // MeshPart::material で引く。ここに無い部品は白
+    Color highlight{0, 0, 0, 0};              // 縁の光 (選択中): その色。アルファ = 強さ
+    bool moving = false;                      // Box::moving と同じ
 };
 
-// A shape of the 向きの地図 (RenderFrame::mapShapes): never drawn, only seen by those maps (天候: a
-// collider - a box, a ball, a cylinder (ShapeOf) or a model - that rain and snow hit).
+// 向きの地図 (RenderFrame::mapShapes) の形: 描かれず、その地図にだけ見える (天候: 雨や雪が
+// 当たるコライダー - 箱・球・円柱 (ShapeOf)・モデル)。
 struct MapShape {
     const GpuMesh* mesh = nullptr;
     Mat4 world;
-    bool moving = false;  // as Box::moving
+    bool moving = false;  // Box::moving と同じ
 };
 
-// A plugin's touch on every surface (RenderFrame::surface; RendererShaders.h): its HLSL defining
-// Surface(...) - compiled once per device and text - and its numbers (cbuffer SurfaceData: at most
-// kSurfaceData float4s).
+// プラグインが全部の面に加える手 (RenderFrame::surface。RendererShaders.h): Surface(...) を
+// 定義する HLSL (デバイスとテキストごとに 1 回コンパイルする) と、その数値 (cbuffer SurfaceData。
+// 最大 kSurfaceData 個の float4)。
 struct SurfaceTouch {
     std::string code;
     std::vector<float> data;
 };
 
-// What a plugin draws itself into the picture (particles): after the see-through parts, before the
-// debug lines, with its own shaders and states. The picture's render target and depth buffer are bound
-// (MSAA; the depth test is on and nothing should write depth); whatever it changes is set back after.
+// プラグインが自分で絵に描くもの (パーティクル): 透ける部品の後、デバッグの線の前に、自分の
+// シェーダーと状態で描く。絵のレンダーターゲットと深度バッファは結んである (MSAA。深度テストは
+// オンで、深度は書かないこと)。変えたものは、終わった後で元に戻される。
 struct ExtraDrawContext {
     ID3D11DeviceContext* ctx = nullptr;
     const Mat4& view;
     const Mat4& projection;
     Vec3 eye;
     uint32_t width = 0, height = 0;
-    // The picture's depth (0 near .. 1 far) as a shader reads it - after this frame it holds this frame's
-    // depth until the next Render (a particle's compute shader reads it then: collisions). Null when the
-    // GPU cannot read it. A multisampled one (Texture2DMS) when samples > 1.
+    // シェーダーが読む絵の深度 (0 手前 .. 1 奥)。描いた後は、次の Render まで今回のフレームの深度が
+    // 残る (パーティクルのコンピュートシェーダーが読む: 衝突)。GPU が読めないときは null。
+    // samples > 1 のときはマルチサンプルのもの (Texture2DMS)。
     ID3D11ShaderResourceView* depth = nullptr;
     uint32_t samples = 1;
-    // The 向きの地図 of the frame (RendererShaders.h's kDirectionMapHlsl: bind them at b6 and t8, unbind
-    // after). Null texture: none (MapPast then says nothing is in the way when its cbuffer is bound).
+    // フレームの向きの地図 (RendererShaders.h の kDirectionMapHlsl: b6 と t8 に結び、終わったら外す)。
+    // テクスチャが null: 無い (cbuffer を結んだとき、MapPast は何も邪魔していないと答える)。
     ID3D11Buffer* directionMapsCb = nullptr;
     ID3D11ShaderResourceView* directionMaps = nullptr;
 };
 using ExtraDraw = std::function<void(const ExtraDrawContext&)>;
 
-// A sky's shaders on the GPU (Renderer::MakeSky). Renderer3D.cpp.
+// 空のシェーダーが GPU にあるもの (Renderer::MakeSky)。Renderer3D.cpp。
 struct SkyProgram;
 
-// The sky behind everything (SkyShader.h): drawn over the whole picture before anything else, in
-// place of the clear colour (whose alpha the picture keeps).
+// 一番奥に描く空 (SkyShader.h): 他の何よりも先に絵全体へ描く。クリア色の代わりになる (その
+// アルファは絵に残る)。
 struct SkyDraw {
     std::shared_ptr<const SkyProgram> program;
-    std::array<TextureRef, kSkyTextures> textures;  // sky0 .. sky5 (null: none - they read black)
-    SkyConstants constants{};  // invViewProj is the Renderer's (set when drawn)
+    std::array<TextureRef, kSkyTextures> textures;  // sky0 .. sky5 (null: 無い - 黒として読む)
+    SkyConstants constants{};  // invViewProj はレンダラーのもの (描くときに入れる)
 };
 
 struct RenderFrame {
-    uint32_t width = 0, height = 0;  // pixels
+    uint32_t width = 0, height = 0;  // ピクセル
     Mat4 view, projection;
     Color clear{0, 0, 0, 1};
-    std::span<const LineVertex> lines;  // pairs: 0-1, 2-3, ...
-    // Pairs drawn last, over everything: as given where nothing is in front of them, faint where
-    // something is (a game's rm::Debug lines while it plays). One copy to the GPU, two draws.
+    std::span<const LineVertex> lines;  // 2 つで 1 組: 0-1, 2-3, ...
+    // 一番最後に、全部の上に描く組: 手前に何もない所は指定の色で、何かある所は薄く (Play 中の
+    // ゲームの rm::Debug の線)。GPU へのコピーは 1 回、描画は 2 回。
     std::span<const LineVertex> debugLines;
     std::span<const Box> boxes;
     std::span<const MeshDraw> meshes;
-    // The lights (Lighting.h: at most kMaxLights). None: one white directional light going
-    // `lightDirection` (from above, a little from the front).
+    // 光 (Lighting.h: 最大 kMaxLights)。無いとき: 白い向きのある光が `lightDirection` の向きに
+    // 進む (上から、少し手前から)。
     std::span<const Light> lights;
     Vec3 lightDirection{-0.45f, -1.f, -0.3f};
-    Ambient ambient;       // the light every face gets (環境光)
-    bool shadows = false;  // the lights' shadows (Lighting.h says which lights have them)
-    Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
-    std::span<const ExtraDraw> extras;  // in this order (ExtraDraw)
-    // A fog over the models (天候's downpour / snowstorm): rgb its colour (linear), a how thick (per
-    // metre: exp(-a x distance) of a thing is left; 0: none). A shader made from RendererShaderText
-    // has it as Fogged(colour, wpos).
+    Ambient ambient;       // どの面も受ける光 (環境光)
+    bool shadows = false;  // 光の影 (どの光に影があるかは Lighting.h が決める)
+    Color shadowColor{0, 0, 0, 0.4f};  // 床の影 (アルファ: 濃さ)
+    std::span<const ExtraDraw> extras;  // この順 (ExtraDraw)
+    // モデルにかかる霧 (天候の土砂降り / 吹雪): rgb がその色 (線形)、a が濃さ (1 m あたり。
+    // 距離を使って exp(-a x 距離) だけ残る。0: 無し)。RendererShaderText から作ったシェーダーでは
+    // Fogged(colour, wpos) として使える。
     Color fog{0, 0, 0, 0};
-    // What plugins draw as solid things (天候's snow lying on the ground): right after the models,
-    // depth-tested and writing depth (what is see-through, behind or in front, comes after). The models'
-    // lighting is still bound for the pixel shader - b0 .. b2 (the frame, the lights, the shadows), t0 /
-    // t5 and s0 (the shadow maps), b5 (a plugin's surface numbers), b6 / t8 (向きの地図) - so a shader
-    // made from RendererShaderText can light it with Shade(...) exactly as a model. Leave those bound;
-    // whatever else it changes is set back after. ExtraDrawContext::depth is null here.
+    // プラグインが固体として描くもの (天候の、地面に積もった雪): モデルの直後に、深度テストをして
+    // 深度も書く (透けるもの、後ろや前のものはその後になる)。ピクセルシェーダーには、モデルの
+    // ライティングが結んだままになっている - b0 .. b2 (フレーム・光・影)、t0 / t5 と s0 (シャドウマップ)、
+    // b5 (プラグインの面の数値)、b6 / t8 (向きの地図)。だから RendererShaderText から作った
+    // シェーダーは Shade(...) で、モデルとまったく同じに光を当てられる。これらは結んだままにすること。
+    // 他に変えたものは、終わった後で元に戻される。ここでは ExtraDrawContext::depth は null。
     std::span<const ExtraDraw> solids;
-    const SkyDraw* sky = nullptr;       // null (or no program): only the clear colour behind
-    // 向きの地図 (RendererShaders.h): the depth of `mapShapes` (not drawn) seen along each of these
-    // directions (at most kDirectionMaps; map k is the k-th) - read by `surface` and by `extras`.
+    const SkyDraw* sky = nullptr;       // null (またはプログラム無し): クリア色だけが奥にある
+    // 向きの地図 (RendererShaders.h): `mapShapes` (描かない) の深度を、この向きそれぞれから見たもの
+    // (最大 kDirectionMaps。地図 k は k 番目) - `surface` と `extras` が読む。
     std::span<const Vec3> mapDirections;
     std::span<const MapShape> mapShapes;
-    // Map k sees only the moving shapes when mapMovingOnly[k] is not 0 (天候: the undersides of what
-    // walks through the snow, seen from below). Shorter than mapDirections: the rest see all.
+    // mapMovingOnly[k] が 0 でないとき、地図 k は動く形だけを見る (天候: 雪の中を歩くものの下側。
+    // 下から見る)。mapDirections より短くてよい: 残りは全部を見る。
     std::span<const uint8_t> mapMovingOnly;
-    const SurfaceTouch* surface = nullptr;  // a plugin's touch on every surface (null: none)
+    const SurfaceTouch* surface = nullptr;  // プラグインが全部の面に加える手 (null: 無し)
 };
 
 class Renderer {
@@ -244,48 +240,48 @@ public:
 
     bool Init(ID3D11Device* device, std::string* error);
     bool Ready() const { return shared_ != nullptr; }
-    // Different for every Init (of any renderer): what a GpuTexture remembers as madeBy.
+    // Init のたびに違う (どのレンダラーでも): GpuTexture が madeBy として覚えるもの。
     uint64_t Id() const { return id_; }
-    // The shape goes to the GPU once; null (and *error, Japanese) when it cannot.
+    // 形は GPU に 1 回だけ送る。できないときは null (と *error に日本語)。
     std::shared_ptr<const GpuMesh> Upload(const MeshData& mesh, std::string* error);
-    // A picture (PixelOrder::Rgba) goes to the GPU once, with its mipmaps; null (and *error) when it
-    // cannot. srgb: a colour picture (read as linear light); false: numbers (metal / rough, normals).
-    // sampling: the image's import settings (TextureSampling.h: くっきり / 滑らか, the wrap, streamed).
+    // 絵 (PixelOrder::Rgba) をミップマップ付きで GPU に 1 回だけ送る。できないときは null (と *error)。
+    // srgb: 色の絵 (線形の光として読む)。false: 数値 (金属 / 粗さ、法線)。
+    // sampling: その画像の取り込みの設定 (TextureSampling.h: くっきり / 滑らか、ラップ、ストリーミング)。
     std::shared_ptr<const GpuTexture> UploadTexture(const platform::Image& rgba, bool srgb, std::string* error, const TextureSampling& sampling = {});
-    // The same with the mipmaps already made (the quick part: only the copy to the GPU). Streamed: only
-    // the small levels go now; Render adds finer ones as the picture comes near (and lets them go).
+    // ミップマップを作り終えたものでの同じ処理 (速い方: GPU へのコピーだけ)。ストリーミング: 今は
+    // 小さいレベルだけを送り、Render が絵が近づくにつれて細かいレベルを足す (遠ざかると手放す)。
     std::shared_ptr<const GpuTexture> UploadTexture(const TexturePixels& pixels, std::string* error, const TextureSampling& sampling = {});
-    // A sky's shaders from its whole HLSL (AssembleSky): compiled once per device and text - the same
-    // text gives the same program (every renderer on the device shares it while it is used). Null and
-    // *error (the compiler's messages: the file and line of the sky's code) when it cannot be made.
+    // 空の HLSL 全体 (AssembleSky) から空のシェーダーを作る: デバイスとテキストごとに 1 回
+    // コンパイルし、同じテキストなら同じプログラム (使われている間は、そのデバイスの全レンダラーが
+    // 共有する)。作れないときは null と *error (コンパイラのメッセージ: 空のコードのファイルと行)。
     std::shared_ptr<const SkyProgram> MakeSky(const std::string& hlsl, std::string* error);
-    // A simple shape (Primitives.h: 箱, 球, 円柱 ...), put on the GPU by Init. Null before Init.
+    // 単純な形 (Primitives.h: 箱、球、円柱 ...)。Init が GPU に置く。Init の前は null。
     const GpuMesh* ShapeOf(Shape shape) const;
-    // Whether this GPU reads BC7 (feature level 11.0): without it colours with alpha are kept as BC3.
+    // この GPU が BC7 (フィーチャーレベル 11.0) を読めるか。読めないと、アルファ付きの色は BC3 で持つ。
     bool SupportsBC7() const;
-    // Draws the frame and returns the finished picture (B8G8R8A8, usable by Direct2D); null on failure.
-    // The picture is kept until the next Render (its size follows the frame's).
+    // フレームを描いて、できた絵を返す (B8G8R8A8。Direct2D で使える)。失敗したら null。
+    // 絵は次の Render まで残る (大きさはフレームに合わせる)。
     ID3D11Texture2D* Render(ID3D11DeviceContext* ctx, const RenderFrame& f);
 
-    // What the last Render did with the boxes and models. Culling is always on: a thing wholly outside
-    // what the camera sees (View.h's BoxInView on its world bounds) is not drawn - but still casts its
-    // shadow (it may fall inside the picture).
+    // 最後の Render が箱とモデルをどうしたか。カリングは常にオン: カメラに全く映らない物
+    // (View.h の BoxInView で、ワールドでの範囲を調べる) は描かない - が、影は落とす
+    // (絵の中に落ちるかもしれない)。
     struct Stats {
-        size_t things = 0;     // boxes and models given
-        size_t drawn = 0;      // ... drawn in the picture (the rest were culled)
-        size_t mapsDrawn = 0;  // shadow maps drawn
-        size_t mapsKept = 0;   // ... and not drawn again: they already held the same (nothing moved)
-        size_t layersDrawn = 0;  // kept layers (what stays put, under the moving things) drawn again
-        size_t drawCalls = 0;    // draws given to the GPU (instancing: one per run of the same mesh, part and pictures)
-        size_t triangles = 0;    // ... and their triangles (the picture's pass)
-        size_t textures = 0;     // different pictures they use
-        size_t textureBytes = 0; // ... on the GPU now
-        size_t streamed = 0;     // ... of them streamed (ミップマップ・ストリーミング)
-        size_t streamedCut = 0;  // ... and without their finest levels now (far away)
+        size_t things = 0;     // 渡された箱とモデル
+        size_t drawn = 0;      // ... のうち絵に描いたもの (残りはカリングされた)
+        size_t mapsDrawn = 0;  // 描いたシャドウマップ
+        size_t mapsKept = 0;   // ... と描き直さなかったもの: すでに同じ中身だった (何も動かなかった)
+        size_t layersDrawn = 0;  // 描き直した、残しておいた層 (動かないもの。動くものの下)
+        size_t drawCalls = 0;    // GPU に出した描画の数 (インスタンス描画: 同じメッシュ・部品・絵が続くごとに 1 つ)
+        size_t triangles = 0;    // ... とその三角形の数 (絵のパス)
+        size_t textures = 0;     // 使っている別々の絵
+        size_t textureBytes = 0; // ... 今 GPU にある量
+        size_t streamed = 0;     // ... のうちストリーミングされているもの (ミップマップ・ストリーミング)
+        size_t streamedCut = 0;  // ... と、今は一番細かいレベルを持たないもの (遠い)
     };
-    // Per device (shared by every renderer on it: the scene view, the camera preview, the
-    // thumbnails): the shaders and states, the cube and the floor, the constant buffers and the
-    // shadow maps with what each map holds now. Renderer3D.cpp.
+    // デバイスごと (そのデバイスの全レンダラーで共有: シーンビュー、カメラのプレビュー、
+    // サムネイル): シェーダーと状態、立方体と床、定数バッファ、シャドウマップと各マップが今
+    // 持っている中身。Renderer3D.cpp。
     struct Shared;
     const Stats& LastStats() const { return stats_; }
 
@@ -297,38 +293,38 @@ private:
         bool castShadow;
         std::span<const DrawMaterial> materials;
         Color highlight;
-        bool seen = true;  // inside what the camera sees (frustum culling); drawn into the shadow maps either way
-        Bounds bounds;     // in the world
-        uint32_t thing = 0;          // where its numbers are in things_ (in float4s)
-        uint32_t firstMaterial = 0;  // ... and its parts' materials, one after another
+        bool seen = true;  // カメラに映る範囲の中 (視錐台カリング)。どちらでもシャドウマップには描く
+        Bounds bounds;     // ワールドでの範囲
+        uint32_t thing = 0;          // things_ のどこにその数値があるか (float4 単位)
+        uint32_t firstMaterial = 0;  // ... とその部品の材質。順に並ぶ
         bool moving = false;         // Box / MeshDraw::moving
-        uint64_t hash = 0;           // its mesh and place (what a shadow map remembers of it)
-        bool mapOnly = false;        // a MapShape: only in the 向きの地図
+        uint64_t hash = 0;           // そのメッシュと置き場所 (シャドウマップが覚えるもの)
+        bool mapOnly = false;        // MapShape: 向きの地図にだけある
     };
-    // One draw: some triangles of a mesh, with the numbers of a thing and a material (`slot`: its
-    // place in draws_, read by the shader as the instance's data).
+    // 描画 1 つ: メッシュの三角形のいくつかと、物の数値と材質 (`slot`: draws_ での場所。
+    // シェーダーがインスタンスのデータとして読む)。
     struct Cmd {
         const GpuMesh* mesh;
         uint32_t firstIndex, indexCount;
         uint32_t slot;
-        const DrawMaterial* material;  // its pictures (null: none - a shadow map, the floor)
-        uint32_t instances = 1;        // slots slot .. slot + instances - 1: one instanced draw
+        const DrawMaterial* material;  // その絵 (null: 無し - シャドウマップ、床)
+        uint32_t instances = 1;        // スロット slot .. slot + instances - 1: 1 回のインスタンス描画
     };
 
     bool Resize(uint32_t width, uint32_t height);
     bool LineCapacity(size_t vertices);
-    // The frame's numbers on the GPU (made larger when needed).
+    // フレームの数値が GPU にあるもの (必要なら大きくする)。
     bool UploadFrame(ID3D11DeviceContext* ctx);
     uint32_t AddThing(const Mat4& world, Color color, Color highlight);
     uint32_t AddMaterial(const DrawMaterial& m);
     uint32_t AddDraw(uint32_t thing, uint32_t material);
-    // A draw added to cmds_ - or, when it is the last one's next instance (the same mesh, part and
-    // pictures, the next slot), added to it. Never merged with draws before mergeFloor_.
+    // cmds_ に描画を足す - 直前の描画の次のインスタンスなら (同じメッシュ・部品・絵で、次の
+    // スロット)、それに足す。mergeFloor_ より前の描画とはまとめない。
     void Emit(const GpuMesh* mesh, uint32_t firstIndex, uint32_t indexCount, uint32_t slot, const DrawMaterial* material);
-    // A number for each different set of pictures (0: none), for DrawKey::material.
+    // 別々の絵の組ごとの番号 (0: 無し)。DrawKey::material 用。
     uint32_t PictureSet(const DrawMaterial* material);
-    // ミップマップ・ストリーミング: the levels each streamed picture needs for this frame's seen things
-    // (their size on the screen), put on the GPU or let go (after a while) - before anything is drawn.
+    // ミップマップ・ストリーミング: ストリーミングされる各絵が、このフレームで見えるもの
+    // (画面での大きさ) のために要るレベルを、GPU に置く・(しばらくして) 手放す - 何かを描く前に行う。
     void Stream(const RenderFrame& f, const Vec3& eye);
 
     template <class T>
@@ -338,19 +334,19 @@ private:
     uint64_t id_ = 0;
     Ptr<ID3D11Buffer> lineVb_;
     size_t lineCapacity_ = 0;
-    // Every thing's and material's numbers, and every draw's (thing, material), written once a frame.
+    // 全部の物と材質の数値と、全部の描画 (物、材質) を、1 フレームに 1 回書く。
     std::vector<std::array<float, 4>> things_;
-    std::vector<uint32_t> draws_;  // pairs
+    std::vector<uint32_t> draws_;  // 2 つで 1 組
     Ptr<ID3D11Buffer> thingsBuffer_, drawsBuffer_;
     Ptr<ID3D11ShaderResourceView> thingsView_;
     size_t thingsCapacity_ = 0, drawsCapacity_ = 0;
     std::vector<Item> items_;
-    std::unordered_map<const GpuTexture*, uint32_t> streamSeen_;  // Stream: the finest level each is seen at this frame
+    std::unordered_map<const GpuTexture*, uint32_t> streamSeen_;  // Stream: 各絵がこのフレームで見られている一番細かいレベル
     std::vector<Cmd> cmds_;
     size_t mergeFloor_ = 0;
     std::vector<DrawKey> keys_;
     std::vector<uint32_t> order_, casterOrder_, mapOrder_, mapMovingOrder_, still_, moving_;
-    std::vector<std::pair<uint32_t, uint32_t>> refs_;  // (item, part) of each key
+    std::vector<std::pair<uint32_t, uint32_t>> refs_;  // 各キーの (item, part)
     struct PictureSetHash {
         size_t operator()(const std::array<const void*, 5>& a) const noexcept {
             size_t h = 0;
@@ -358,19 +354,19 @@ private:
             return h;
         }
     };
-    std::unordered_map<std::array<const void*, 5>, uint32_t, PictureSetHash> pictureSets_;  // this frame's (4 pictures, the sampler's kind)
-    std::vector<std::pair<size_t, const MeshPart*>> seeThrough_;  // (item, part) drawn last, back to front
+    std::unordered_map<std::array<const void*, 5>, uint32_t, PictureSetHash> pictureSets_;  // このフレームの分 (絵 4 つ、サンプラーの種類)
+    std::vector<std::pair<size_t, const MeshPart*>> seeThrough_;  // 最後に、奥から手前の順に描く (item, part)
     std::vector<Vec3> centers_;
     Stats stats_;
 
     UINT samples_ = 1;
     uint32_t width_ = 0, height_ = 0;
-    Ptr<ID3D11Texture2D> picture_;      // what is returned (resolved)
-    Ptr<ID3D11Texture2D> multisample_;  // drawn into when samples_ > 1
+    Ptr<ID3D11Texture2D> picture_;      // 返す絵 (リゾルブ済み)
+    Ptr<ID3D11Texture2D> multisample_;  // samples_ > 1 のとき、これに描く
     Ptr<ID3D11RenderTargetView> rtv_;
     Ptr<ID3D11Texture2D> depthTex_;
     Ptr<ID3D11DepthStencilView> dsv_;
-    Ptr<ID3D11ShaderResourceView> depthSrv_;  // the depth for shaders (ExtraDrawContext::depth); null: none
+    Ptr<ID3D11ShaderResourceView> depthSrv_;  // シェーダー用の深度 (ExtraDrawContext::depth)。null: 無し
 };
 
 }  // namespace rm::space3d

@@ -1,19 +1,19 @@
 #pragma once
-// 3D 空間 - reading model files on a thread of their own, so a big model does not stop the screen.
+// 3D 空間 - モデルファイルを専用のスレッドで読む。大きなモデルで画面が止まらないようにする。
 //
-//   MeshLoader loader;                          // the thread starts with the first request
-//   auto ticket = loader.Request(file);         // read in the background (in the order asked)
-//   ...each frame:
-//   if (auto done = loader.Take(ticket)) ...    // nullopt: not yet; then done->mesh or done->error
-//   loader.Cancel(ticket);                      // not wanted any more (never read if not started)
+//   MeshLoader loader;                          // スレッドは最初の要求で始まる
+//   auto ticket = loader.Request(file);         // 裏で読む (頼んだ順)
+//   ...毎フレーム:
+//   if (auto done = loader.Take(ticket)) ...    // nullopt: まだ。そうでなければ done->mesh か done->error
+//   loader.Cancel(ticket);                      // もう要らない (始まっていなければ読まない)
 //
-// Only the reading (file -> MeshData: the slow part) happens on the thread. Putting it on the GPU
-// and decoding its pictures stay with the caller (the drawing thread: Renderer::Upload, ModelPaint),
-// so nothing of Direct3D or WIC is touched from two threads. The destructor cancels the file being
-// read (the reader stops at its next ask of the budget) and drops the rest.
+// スレッドでやるのは読み込み (file -> MeshData: 遅い部分) だけ。GPU に載せることと絵のデコードは
+// 呼び出し側 (描画スレッド: Renderer::Upload、ModelPaint) に残すので、Direct3D も WIC も 2 つの
+// スレッドから触られない。デストラクターは読んでいるファイルを取り消し (リーダーは、budget に
+// 次に確かめるときに止まる)、残りは捨てる。
 //
-// Nothing the reading does can end the editor: what it throws (out of memory, ...) becomes an
-// error, and every reader keeps to Mesh.h's ReadBudget (vertices, memory, nodes walked).
+// 読み込みで起きることでエディターが終わることはない: 投げられるもの (メモリ不足など) はエラーに
+// なり、どのリーダーも Mesh.h の ReadBudget (頂点、メモリ、歩いたノード) を守る。
 
 #include "rm_engine/space3d/runtime/Mesh.h"
 
@@ -33,26 +33,26 @@ namespace rm::space3d {
 
 class MeshLoader {
 public:
-    using Ticket = uint64_t;  // 0 = none
-    // Reads `file`; asks `budget` before making room (it says no when cancelled).
+    using Ticket = uint64_t;  // 0 = なし
+    // `file` を読む。場所を作る前に `budget` に確かめる (取り消されたときは、これが「だめ」と言う)。
     using LoadFn = std::function<std::optional<MeshData>(const std::filesystem::path& file, std::string* error, ReadBudget& budget)>;
 
     struct Result {
-        std::optional<MeshData> mesh;  // nullopt: `error` says why (Japanese)
+        std::optional<MeshData> mesh;  // nullopt: `error` が理由を言う (日本語)
         std::string error;
-        double seconds = 0;  // how long the reading took
+        double seconds = 0;  // 読むのにかかった時間
     };
 
-    // `load`: how a file is read (LoadMeshFile; tests give their own).
+    // `load`: ファイルの読み方 (LoadMeshFile。テストは自前のものを渡す)。
     explicit MeshLoader(LoadFn load = nullptr);
     ~MeshLoader();
     MeshLoader(const MeshLoader&) = delete;
     MeshLoader& operator=(const MeshLoader&) = delete;
 
     Ticket Request(std::filesystem::path file);
-    std::optional<Result> Take(Ticket ticket);  // once, when it is done
+    std::optional<Result> Take(Ticket ticket);  // 終わったとき 1 回だけ
     void Cancel(Ticket ticket);
-    size_t Pending() const;  // asked for and not taken yet (cancelled ones not counted)
+    size_t Pending() const;  // 頼まれて、まだ受け取られていない数 (取り消されたものは数えない)
 
 private:
     void Run(std::stop_token stop);
@@ -62,11 +62,11 @@ private:
     std::condition_variable_any wake_;
     std::deque<std::pair<Ticket, std::filesystem::path>> queue_;
     std::unordered_map<Ticket, Result> done_;
-    Ticket reading_ = 0;     // the one on the thread now
-    bool dropReading_ = false;  // ... cancelled while being read
-    std::atomic<bool> stopReading_{false};  // ... tells its reader to stop (its budget's cancel)
+    Ticket reading_ = 0;     // 今スレッドにあるもの
+    bool dropReading_ = false;  // ... 読んでいる間に取り消された
+    std::atomic<bool> stopReading_{false};  // ... リーダーに止まるよう伝える (その budget の cancel)
     Ticket next_ = 1;
-    std::jthread worker_;  // last: stopped and joined first
+    std::jthread worker_;  // 最後: 最初に止めて join される
 };
 
 }  // namespace rm::space3d

@@ -18,7 +18,7 @@ float Len2(Vec2 a) { return std::sqrt(Dot2(a, a)); }
 
 float Step(float v, float step) { return step > 0 ? std::round(v / step) * step : v; }
 
-// The two axes a plane handle moves along.
+// 面のハンドルが動く 2 つの軸。
 void PlaneAxes(Handle plane, int& a, int& b) {
     a = plane == Handle::YZ ? 1 : plane == Handle::ZX ? 2 : 0;
     b = plane == Handle::YZ ? 2 : plane == Handle::ZX ? 0 : 1;
@@ -35,14 +35,14 @@ bool InsideConvex(Vec2 p, const std::array<Vec2, 4>& q) {
     return sign != 0;
 }
 
-// Two unit vectors across `axis` (the ring's plane).
+// `axis` (輪の面) に垂直な 2 つの単位ベクトル。
 void Across(Vec3 axis, Vec3& u, Vec3& v) {
     const Vec3 helper = std::fabs(axis.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0};
     u = Normalize(Cross(helper, axis));
     v = Cross(axis, u);
 }
 
-// The point of a closed loop nearest the mouse (on the screen), and how far it is.
+// 閉じた輪の、マウス (画面上) に一番近い点と、その距離。
 std::optional<Vec3> NearestOnLoop(const Screen& s, const std::vector<Vec3>& loop, Vec2 mouse, float* distance) {
     std::optional<Vec3> best;
     float bestD = std::numeric_limits<float>::infinity();
@@ -59,7 +59,7 @@ std::optional<Vec3> NearestOnLoop(const Screen& s, const std::vector<Vec3>& loop
     return best;
 }
 
-// Inside a closed loop on the screen (even-odd crossings).
+// 画面上の閉じた輪の内側 (偶奇で数える交差判定)。
 bool InsideLoop(const Screen& s, const std::vector<Vec3>& loop, Vec2 p) {
     bool inside = false;
     for (size_t i = 0; i + 1 < loop.size(); ++i) {
@@ -70,15 +70,15 @@ bool InsideLoop(const Screen& s, const std::vector<Vec3>& loop, Vec2 p) {
     return inside;
 }
 
-// The screen direction in which `grab` (a point of a ring about `axis`) goes when it turns forward
-// (the right hand about the axis). nullopt when it cannot be told.
+// `grab` (`axis` のまわりの輪の上の点) が前向きに回るとき (軸のまわりの右手の向き) に進む画面上の
+// 向き。分からないときは nullopt。
 std::optional<Vec2> TangentAt(const Frame& f, const Screen& s, Vec3 axis, Vec3 grab) {
     const Vec3 forward = Normalize(Cross(axis, grab - f.origin));
     const auto a = s.ToScreen(grab), b = s.ToScreen(grab + forward * (f.size * 0.1f));
     const auto o = s.ToScreen(f.origin);
     if (!a || !b || !o) return std::nullopt;
     Vec2 t = Sub(*b, *a);
-    if (Len2(t) < 1e-3f) {  // the ring seen edge-on at this point: across the line from the middle
+    if (Len2(t) < 1e-3f) {  // この点で輪を真横から見ている: 中心からの線に垂直にする
         const Vec2 radial = Sub(*a, *o);
         t = {-radial.y, radial.x};
     }
@@ -87,7 +87,7 @@ std::optional<Vec2> TangentAt(const Frame& f, const Screen& s, Vec3 axis, Vec3 g
     return Vec2{t.x / len, t.y / len};
 }
 
-// The point of the ring's visible arcs nearest the mouse (on the screen), and how far it is.
+// 輪の見える弧の、マウス (画面上) に一番近い点と、その距離。
 std::optional<Vec3> NearestOnRing(const Frame& f, const Screen& s, Vec3 eye, int axis, Vec2 mouse, float* distance) {
     std::optional<Vec3> best;
     float bestD = std::numeric_limits<float>::infinity();
@@ -99,7 +99,7 @@ std::optional<Vec3> NearestOnRing(const Frame& f, const Screen& s, Vec3 eye, int
             const float d = DistanceToSegment(mouse, *a, *b) + (front ? 0.f : kBackPenalty);
             if (d < bestD) {
                 bestD = d;
-                // The nearer end is close enough to grab by (64 points around).
+                // 近い方の端がつかめるほど近い (周りに 64 点)。
                 best = Len2(Sub(mouse, *a)) <= Len2(Sub(mouse, *b)) ? arc[i] : arc[i + 1];
             }
         }
@@ -125,7 +125,7 @@ std::array<Vec3, 3> AxesOf(const Mat4& world, Tool tool, Space space) {
     if (tool != Tool::Scale && space == Space::World) return axes;
     for (Vec3& a : axes) {
         const Vec3 d = Normalize(TransformDirection(world, a));
-        if (Length(d) > 0) a = d;  // a scale of 0 has no direction: keep the world's
+        if (Length(d) > 0) a = d;  // スケール 0 には向きが無い: ワールドのものを使う
     }
     return axes;
 }
@@ -179,20 +179,20 @@ std::vector<std::vector<Vec3>> RingArcs(const Frame& f, int axis, Vec3 eye, bool
         const float t = 2.f * std::numbers::pi_v<float> * static_cast<float>(i) / static_cast<float>(segments);
         const Vec3 dir = u * std::cos(t) + v * std::sin(t);
         pts[i] = f.origin + dir * f.size;
-        // A ring that faces the eye is all front (and has no back). The halves share their two ends,
-        // so front and back together make the whole circle without a gap.
+        // 目の方を向いた輪は全部が表側 (裏側は無い)。2 つの半分は両端を共有するので、表と裏を合わせると
+        // 隙間なく 1 周の円になる。
         const float d = Dot(dir, toEye);
         shown[i] = front ? d >= -0.02f : d <= 0.02f && Dot(f.axes[axis], toEye) * Dot(f.axes[axis], toEye) < 0.9996f;
     }
     std::vector<std::vector<Vec3>> arcs;
     const auto start = std::find(shown.begin(), shown.end(), false);
-    if (std::find(shown.begin(), shown.end(), true) == shown.end()) return arcs;  // none of it
-    if (start == shown.end()) {  // all of it: one closed loop
+    if (std::find(shown.begin(), shown.end(), true) == shown.end()) return arcs;  // 無し
+    if (start == shown.end()) {  // 全部: 閉じた 1 つの輪
         pts.push_back(pts.front());
         arcs.push_back(std::move(pts));
         return arcs;
     }
-    // Walk once around from a hidden point, so an arc never breaks at index 0.
+    // 隠れた点から 1 周歩く。こうすると弧が添字 0 で途切れない。
     const size_t first = static_cast<size_t>(start - shown.begin());
     std::vector<Vec3> run;
     for (size_t k = 1; k <= static_cast<size_t>(segments); ++k) {
@@ -234,7 +234,7 @@ bool PlaneShown(const Frame& f, const Screen& s, Handle plane, std::array<Vec2, 
         q[i] = *p;
     }
     if (out) *out = q;
-    // Its area on the screen (shoelace) against a square facing the eye: under a fifth, edge-on.
+    // 画面上の面積 (靴紐の公式) を、目の方を向いた正方形と比べる: 5 分の 1 未満なら真横から見ている。
     float area = 0;
     for (size_t i = 0; i < 4; ++i) area += Cross2(q[i], q[(i + 1) % 4]);
     const float side = (kPlaneFar - kPlaneNear) * f.pixels;
@@ -293,7 +293,7 @@ std::optional<Drag> BeginDrag(Tool tool, Handle handle, const Frame& f, const Sc
     if (tool == Tool::Rotate) {
         const Vec3 toEye = Normalize(eye - f.origin);
         if (handle == Handle::Free) {
-            // The screen's right and up in the world, at the gizmo (from the rays beside its middle).
+            // ギズモの所での、ワールドの中の画面の右と上 (中心の横の光線から求める)。
             const auto o = s.ToScreen(f.origin);
             if (!o || Length(toEye) == 0) return std::nullopt;
             Vec3 right = s.RayAt({o->x + 1.f, o->y}).dir - s.RayAt(*o).dir;
@@ -304,7 +304,7 @@ std::optional<Drag> BeginDrag(Tool tool, Handle handle, const Frame& f, const Sc
             d.up = Cross(toEye, right);
             return d;
         }
-        // A ring: the gizmo's axis, or the line of sight for the outer ring.
+        // 輪: ギズモの軸、または外側の輪なら視線。
         const Vec3 axis3 = handle == Handle::View ? toEye : f.axes[axis];
         const auto grab = handle == Handle::View ? NearestOnLoop(s, FacingCircle(f, eye, kViewRing), mouse, nullptr)
                                                  : NearestOnRing(f, s, eye, axis, mouse, nullptr);
@@ -337,14 +337,14 @@ std::optional<Change> Update(const Drag& d, const Screen& s, Vec2 mouse, const S
     const Frame& f = d.frame;
     if (d.handle == Handle::Uniform) {
         const Vec2 m = Sub(mouse, d.startMouse);
-        float factor = 1.f + (m.x - m.y) * 0.01f;  // right / up: bigger
+        float factor = 1.f + (m.x - m.y) * 0.01f;  // 右 / 上: 大きく
         if (snap.on) factor = 1.f + Step(factor - 1.f, snap.scale);
         c.factor = std::max(factor, kMinScaleFactor);
         return c;
     }
     if (d.tool == Tool::Rotate) {
         if (d.handle == Handle::Free) {
-            // Like rolling a ball: the side facing the eye follows the mouse; the farther, the more.
+            // ボールを転がすように: 目の方を向いた側がマウスについてくる。遠いほど大きく動く。
             const Vec2 m = Sub(mouse, d.startMouse);
             const float len = Len2(m);
             const Vec3 axis3 = Normalize(Cross(d.axis, d.right * m.x - d.up * m.y));
@@ -356,7 +356,7 @@ std::optional<Change> Update(const Drag& d, const Screen& s, Vec2 mouse, const S
         }
         const float radius = d.handle == Handle::View ? kViewRing : 1.f;
         const float along = Dot2(Sub(mouse, d.startMouse), d.tangent);
-        float degrees = along / std::max(f.pixels * radius, 1.f) * kRadToDeg;  // the ring's length under the mouse
+        float degrees = along / std::max(f.pixels * radius, 1.f) * kRadToDeg;  // マウスの下の輪の長さ
         if (snap.on) degrees = Step(degrees, snap.degrees);
         c.degrees = degrees;
         c.worldAxis = d.axis;
@@ -380,7 +380,7 @@ std::optional<Change> Update(const Drag& d, const Screen& s, Vec2 mouse, const S
     if (d.tool == Tool::Scale) {
         float factor = std::fabs(d.startT) > 1e-6f ? *t / d.startT : 1.f;
         if (snap.on) factor = 1.f + Step(factor - 1.f, snap.scale);
-        c.factor = std::max(factor, kMinScaleFactor);  // as the uniform box: never 0 or turned inside out
+        c.factor = std::max(factor, kMinScaleFactor);  // 均一の箱と同じ: 0 にも裏返しにもしない
         return c;
     }
     float along = *t - d.startT;
@@ -393,7 +393,7 @@ Transform Apply(const Transform& start, const Mat4& parentWorld, const Mat4& sta
                 const std::optional<Vec3>& pivot) {
     Transform t = start;
     const auto toParent = Inverse(parentWorld);
-    // Turning / scaling about a pivot moves the thing too: `offset` = where it goes, from the pivot.
+    // ピボットのまわりに回す / 拡大縮小すると物も動く: `offset` = ピボットから見た、行く先。
     const Vec3 startPlace = TransformPoint(startWorld, {0, 0, 0});
     const Vec3 fromPivot = pivot ? startPlace - *pivot : Vec3{0, 0, 0};
     auto placeAt = [&](Vec3 offset) {
@@ -405,14 +405,14 @@ Transform Apply(const Transform& start, const Mat4& parentWorld, const Mat4& sta
             break;
         case Tool::Rotate: {
             if (!toParent) break;
-            // About the axis as the gizmo shows it (a ring: each thing's own axis when they turn in their
-            // own places), written in the parent's space (where rotation is).
+            // ギズモが見せる軸のまわり (輪: 各自の場所で回すときは、各自の軸)。親の空間 (rotation がある所)
+            // で表す。
             const bool own = c.axis >= 0 && (!pivot || Length(c.worldAxis) == 0);
             const Vec3 worldAxis = own ? AxesOf(startWorld, Tool::Rotate, space)[c.axis] : Normalize(c.worldAxis);
             const Vec3 axis = Normalize(TransformDirection(*toParent, worldAxis));
             if (Length(axis) == 0) break;
-            // A mirrored parent (a scale of -1 on one axis: a character turned round so) turns the parent's
-            // space the other way round: there the turn is the other way, to be this way in the world.
+            // 鏡のように反転した親 (1 つの軸のスケールが -1: こうして向きを逆にしたキャラクター) は、親の空間の
+            // 向きを逆にする: そこでは、ワールドでこう回るように、回転が逆向きになる。
             const float(&m)[4][4] = parentWorld.m;
             const float det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
                               m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);

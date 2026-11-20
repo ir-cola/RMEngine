@@ -11,9 +11,9 @@ namespace rm::weather {
 
 namespace {
 
-// テンプレート: a row for each ready-made weather - its name; picked, the fields are set to it (one undo
-// entry; in Play the copy that plays, at once - the rain and the clouds change on the spot, the snow
-// still comes in over about 10 seconds).
+// テンプレート: 出来合いの天候ごとの行 - その名前。選ぶと、欄がそれに設定される (Undo 1 回分。
+// Play 中は、再生しているコピーに即座に反映する - 雨と雲はその場で変わり、雪は 10 秒ほどかけて
+// 入ってくる)。
 std::vector<editor::w::Action> Presets(const game_production::SceneSettingMenuHost& host) {
     std::vector<editor::w::Action> rows;
     const reflect::EnumDesc* kinds = reflect::FindEnum(typeid(WeatherPreset));

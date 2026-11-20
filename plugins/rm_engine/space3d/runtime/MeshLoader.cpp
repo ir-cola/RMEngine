@@ -14,9 +14,9 @@ MeshLoader::MeshLoader(LoadFn load)
 MeshLoader::~MeshLoader() {
     if (worker_.joinable()) {
         worker_.request_stop();
-        stopReading_ = true;  // the file being read stops at its next ask (after request_stop: see Run)
+        stopReading_ = true;  // 読んでいるファイルは、次に確かめるときに止まる (request_stop の後: Run を見る)
         wake_.notify_all();
-        worker_.join();  // waits for the file being read now, if any
+        worker_.join();  // 今読んでいるファイルがあれば、それを待つ
     }
 }
 
@@ -63,13 +63,13 @@ void MeshLoader::Run(std::stop_token stop) {
         queue_.pop_front();
         reading_ = ticket;
         dropReading_ = false;
-        stopReading_ = stop.stop_requested();  // closing already (the destructor sets it after asking to stop)
+        stopReading_ = stop.stop_requested();  // もう閉じている (デストラクターが、止めるよう頼んだ後にこれを立てる)
         lock.unlock();
 
         Result r;
         const auto start = std::chrono::steady_clock::now();
-        // Whatever goes wrong while reading becomes "not readable" (an exception leaving a thread's
-        // function would end the whole program).
+        // 読んでいる間に何が起きても「読めない」にする (スレッドの関数から例外が出ると、プログラム全体が
+        // 終わってしまう)。
         try {
             ReadBudget budget(&stopReading_);
             r.mesh = load_(file, &r.error, budget);

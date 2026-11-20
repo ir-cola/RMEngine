@@ -1,29 +1,28 @@
 #pragma once
-// 3D 空間 - the shape of a model read from a file: vertices (position, normal, UV) and triangles.
-// Pure: the bytes are given (MeshFile.h reads them from disk) - tested in tests/TestSpace3d.cpp.
+// 3D 空間 - ファイルから読んだモデルの形: 頂点 (位置・法線・UV) と三角形。
+// 純粋: バイト列は渡される (MeshFile.h がディスクから読む)。tests/TestSpace3d.cpp でテストする。
 //
-//   glTF 2.0: .gltf (JSON; buffers in other files or written inside as data: URIs) and .glb (one
-//             file). Every mesh of the default scene, placed by its nodes (matrix or T / R / S),
-//             becomes one mesh in the model's own space. Triangles, strips and fans.
-//   OBJ:      v / vt / vn / f (polygons are cut into triangles; negative numbers count from the end).
-//   FBX:      binary and ASCII 7.x - Fbx.h.
+//   glTF 2.0: .gltf (JSON。バッファーは別ファイル、または data: URI として中に書く) と .glb
+//             (1 ファイル)。既定のシーンのすべてのメッシュを、ノード (行列または T / R / S) で
+//             配置して、モデル自身の空間の 1 つのメッシュにする。三角形、ストリップ、ファン。
+//   OBJ:      v / vt / vn / f (ポリゴンは三角形に切る。負の数は末尾から数える)。
+//   FBX:      バイナリと ASCII の 7.x - Fbx.h。
 //
-// Materials (metal / roughness PBR, as glTF): glTF's pbrMetallicRoughness (baseColorFactor /
-// Texture, metallicFactor, roughnessFactor, metallicRoughnessTexture), normalTexture (+ scale),
-// emissiveFactor / Texture (+ KHR_materials_emissive_strength), alphaMode; pictures in a file next to
-// the model, inside the .glb, or a data: URI. OBJ's .mtl (mtllib / usemtl: Kd, d / Tr, Ns, Pr, Pm,
-// Ke, map_Kd, map_Ke, norm / map_Bump / bump - taken as a normal map, -bm its strength). The
-// triangles are sorted by material into parts (MeshPart: one draw each). Pictures are not decoded
-// here (MeshImage keeps the bytes or the file's name): that needs Windows (WIC) - see Texture.h.
+// マテリアル (金属 / ラフネスの PBR。glTF と同じ): glTF の pbrMetallicRoughness (baseColorFactor /
+// Texture、metallicFactor、roughnessFactor、metallicRoughnessTexture)、normalTexture (+ scale)、
+// emissiveFactor / Texture (+ KHR_materials_emissive_strength)、alphaMode。絵は、モデルの隣のファイル、
+// .glb の中、または data: URI にある。OBJ の .mtl (mtllib / usemtl: Kd、d / Tr、Ns、Pr、Pm、
+// Ke、map_Kd、map_Ke、norm / map_Bump / bump - 法線マップとして扱う、-bm はその強さ)。
+// 三角形はマテリアルごとにパーツ (MeshPart: 1 パーツ 1 描画) に並べ替える。絵はここでは
+// デコードしない (MeshImage がバイト列かファイル名を持つ): それには Windows (WIC) が要る - Texture.h を見る。
 //
-// Not read (yet): occlusion maps, glTF samplers (every picture repeats), TEXCOORD_1, other material
-// extensions, skins, morph targets, animation, sparse accessors, Draco.
-// Normals that are missing are made from the triangles (smooth). The front of a triangle is
-// counter-clockwise, as in both formats; UV (0, 0) is the top left of a picture, as in glTF and
-// Direct3D (OBJ's V, which goes up, is turned over).
+// まだ読まないもの: オクルージョンマップ、glTF のサンプラー (絵は全部繰り返す)、TEXCOORD_1、その他の
+// マテリアル拡張、スキン、モーフターゲット、アニメーション、スパースアクセサー、Draco。
+// 無い法線は三角形から作る (スムーズ)。三角形の表は、どちらの形式も同じく反時計回り。UV (0, 0) は
+// 絵の左上で、glTF や Direct3D と同じ (OBJ の V は上向きなので、ひっくり返す)。
 //
 //   std::string error;
-//   auto mesh = space3d::ParseMesh(".glb", bytes, readRelated, &error);   // nullopt: error says why (Japanese)
+//   auto mesh = space3d::ParseMesh(".glb", bytes, readRelated, &error);   // nullopt: error が理由を言う (日本語)
 
 #include "base/Math.h"
 #include "rm_engine/space3d/runtime/Transform.h"
@@ -45,25 +44,25 @@ struct MeshVertex {
     Vec2 uv;
 };
 
-// A picture a material is painted with: a file next to the model (`file`: relative to the model's
-// folder, '/' between folders, percent signs decoded) or the picture's bytes written inside the
-// model (`bytes`: a .glb's buffer, a data: URI). Not decoded yet.
+// マテリアルを塗る絵: モデルの隣のファイル (`file`: モデルのフォルダからの相対、フォルダの区切りは
+// '/'、パーセント記号はデコード済み)、またはモデルの中に書かれた絵のバイト列 (`bytes`: .glb の
+// バッファー、data: URI)。まだデコードしない。
 struct MeshImage {
     std::string file;
     std::vector<uint8_t> bytes;
-    std::string name;  // for messages: the file's name, or the image's name / "画像 2"
+    std::string name;  // メッセージ用: ファイル名、または画像の名前 / "画像 2"
 };
 
-// How a material's alpha is taken (glTF alphaMode): not at all (the usual: a picture's alpha
-// channel is ignored), as a cut-out (less than alphaCutoff is a hole), or see-through.
+// マテリアルのアルファの扱い (glTF の alphaMode): 使わない (普通はこれ。絵のアルファチャンネルは
+// 無視する)、切り抜き (alphaCutoff 未満は穴)、または透過。
 enum class AlphaMode : uint8_t { Opaque, Mask, Blend };
 
-// How a part looks. Colours are linear light (as glTF writes them; an OBJ's screen colours are
-// turned into it). Pictures are indices into MeshData::images (-1 = none), at the vertex's UV:
-//   colour   = baseColor x image (its rgb are the screen's colours: sRGB)
-//   metallic / roughness x metallicRoughnessImage (glTF: blue = metal, green = rough; linear)
-//   normal   = normalImage (tangent space, linear), its bend times normalScale
-//   emission = emissive x emissiveImage (sRGB), added to the light
+// パーツの見た目。色はリニアの光 (glTF の書き方どおり。OBJ の画面の色はそれに変える)。絵は
+// MeshData::images の番号 (-1 = なし) で、頂点の UV で貼る:
+//   色     = baseColor x 絵 (その rgb は画面の色: sRGB)
+//   金属 / ラフネス x metallicRoughnessImage (glTF: 青 = 金属、緑 = ラフネス。リニア)
+//   法線   = normalImage (接線空間、リニア)。その曲がりに normalScale を掛ける
+//   発光   = emissive x emissiveImage (sRGB)。光に足す
 struct MeshMaterial {
     std::string name;
     Color baseColor{1, 1, 1, 1};
@@ -75,12 +74,12 @@ struct MeshMaterial {
     int metallicRoughnessImage = -1;
     int normalImage = -1;
     float normalScale = 1.f;
-    Color emissive{0, 0, 0, 1};  // rgb, may be more than 1 (alpha is not used)
+    Color emissive{0, 0, 0, 1};  // rgb。1 より大きくてよい (アルファは使わない)
     int emissiveImage = -1;
 };
 
-// Triangles [firstIndex, firstIndex + indexCount) of `indices`, all of one material (-1: none -
-// drawn white, so the draw's colour shows).
+// `indices` の三角形 [firstIndex, firstIndex + indexCount)。すべて 1 つのマテリアル (-1: なし -
+// 白で描くので、描画の色が見える)。
 struct MeshPart {
     uint32_t firstIndex = 0, indexCount = 0;
     int material = -1;
@@ -89,32 +88,33 @@ struct MeshPart {
 
 struct MeshData {
     std::vector<MeshVertex> vertices;
-    std::vector<uint32_t> indices;  // 3 per triangle, front counter-clockwise
-    Vec3 min{0, 0, 0}, max{0, 0, 0};  // the bounds (the box along the model's own axes that holds it)
-    std::vector<MeshPart> parts;      // cover `indices` in order; one per material used (at least one)
+    std::vector<uint32_t> indices;  // 三角形 1 つにつき 3 個。表は反時計回り
+    Vec3 min{0, 0, 0}, max{0, 0, 0};  // 境界 (モデル自身の軸に沿った、それを収める箱)
+    std::vector<MeshPart> parts;      // `indices` を順に覆う。使われたマテリアルごとに 1 つ (最低 1 つ)
     std::vector<MeshMaterial> materials;
     std::vector<MeshImage> images;
-    std::vector<std::string> warnings;  // read anyway, but something was missing (an OBJ's .mtl) - Japanese
+    std::vector<std::string> warnings;  // 読めたが何かが足りなかった (OBJ の .mtl など) - 日本語
 };
 
-// --- How much one model may take while it is read (every reader asks before it makes room) ---
-// A broken or crafted file can ask for far more than it holds: an accessor without data names 50
-// million vertices in a few bytes, one mesh is placed by a million nodes, a node names the same child
-// twice at every level (2^256 walks). Past these the model is "not readable", with the reason:
-inline constexpr uint64_t kMaxModelVertices = 20'000'000;  // vertices of the finished model, all parts
-inline constexpr uint64_t kMaxModelBytes = 2ull << 30;     // memory the reading takes (2 GB, counted roughly)
-inline constexpr uint64_t kMaxModelSteps = 1'000'000;      // nodes and links walked (glTF nodes, FBX nodes / links)
+// --- 1 つのモデルが読む間に使ってよい量 (どのリーダーも、場所を作る前に確かめる) ---
+// 壊れた、または細工されたファイルは、中身よりはるかに多くを要求できる。データの無いアクセサーは、
+// 数バイトで 5000 万個の頂点を名指しし、1 つのメッシュが 100 万個のノードで配置され、ノードは
+// どの階層でも同じ子を 2 回名指しする (2^256 回の探索)。これらを超えると、モデルは理由つきで
+// 「読めない」ことになる:
+inline constexpr uint64_t kMaxModelVertices = 20'000'000;  // 完成したモデルの頂点数 (全パーツ)
+inline constexpr uint64_t kMaxModelBytes = 2ull << 30;     // 読むのに使うメモリ (2 GB、おおよそで数える)
+inline constexpr uint64_t kMaxModelSteps = 1'000'000;      // 歩いたノードとリンクの数 (glTF のノード、FBX のノード / リンク)
 
 class ReadBudget {
 public:
-    // `cancel`: set (by another thread) to stop the reading at its next ask.
+    // `cancel`: (別のスレッドが) 立てると、次に確かめるときに読むのをやめる。
     explicit ReadBudget(const std::atomic<bool>* cancel = nullptr, uint64_t maxVertices = kMaxModelVertices, uint64_t maxBytes = kMaxModelBytes,
                         uint64_t maxSteps = kMaxModelSteps)
         : cancel_(cancel), maxVertices_(maxVertices), maxBytes_(maxBytes), maxSteps_(maxSteps) {}
-    // Room for `vertices` more vertices and `bytes` more bytes. False (and *error, Japanese) when that
-    // goes past a limit, or the reading was cancelled.
+    // `vertices` 個の頂点と `bytes` バイトの場所。上限を超える、または読むのが取り消されたときは
+    // false (と *error に日本語)。
     bool Take(uint64_t vertices, uint64_t bytes, std::string* error);
-    // One more node / link walked (and a look at cancel).
+    // ノード / リンクをもう 1 つ歩いた (と、cancel の確認)。
     bool Step(std::string* error);
     uint64_t Vertices() const { return vertices_; }
     uint64_t Bytes() const { return bytes_; }
@@ -126,51 +126,51 @@ private:
     uint64_t vertices_ = 0, bytes_ = 0, steps_ = 0;
 };
 
-// Another file a model points to (a .gltf's buffer "model.bin", an OBJ's "model.mtl"), by the path
-// relative to the model's folder (percent signs already decoded, '/' between folders); nullopt
-// when it cannot be read.
+// モデルが指す別のファイル (.gltf のバッファー "model.bin"、OBJ の "model.mtl")。モデルのフォルダ
+// からの相対パス (パーセント記号はデコード済み、フォルダの区切りは '/') で指す。読めない
+// ときは nullopt。
 using ReadRelated = std::function<std::optional<std::vector<uint8_t>>(std::string_view uri)>;
 
-// By the file's extension (".gltf" / ".glb" / ".obj" / ".fbx", any case). `budget`: null = the limits above.
+// ファイルの拡張子で (".gltf" / ".glb" / ".obj" / ".fbx"、大文字小文字は問わない)。`budget`: null = 上の上限。
 std::optional<MeshData> ParseMesh(std::string_view extension, std::span<const uint8_t> bytes, const ReadRelated& read,
                                   std::string* error, ReadBudget* budget = nullptr);
-// .gltf or .glb (told apart by the first bytes).
+// .gltf または .glb (先頭のバイトで見分ける)。
 std::optional<MeshData> ParseGltf(std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error, ReadBudget* budget = nullptr);
-// `read` finds the .mtl files (null: no materials).
+// `read` が .mtl ファイルを探す (null: マテリアル無し)。
 std::optional<MeshData> ParseObj(std::string_view text, const ReadRelated& read, std::string* error, ReadBudget* budget = nullptr);
 inline std::optional<MeshData> ParseObj(std::string_view text, std::string* error) { return ParseObj(text, nullptr, error); }
 
-// One .mtl file's materials (folder: where the .mtl is, relative to the model's folder - "" or
-// "mats/" - so its pictures can be found from the model). Lines it does not know are skipped.
+// 1 つの .mtl ファイルのマテリアル (folder: .mtl のある場所。モデルのフォルダからの相対 - "" や
+// "mats/" - で、モデルから絵を探せるようにする)。知らない行は飛ばす。
 std::vector<MeshMaterial> ParseMtl(std::string_view text, std::string_view folder, std::vector<MeshImage>& images);
 
-// A colour component between linear light (glTF's factors, the renderer's light) and the screen's
-// numbers (sRGB: paint tools, the UI's colours, .mtl), 0..1.
+// 色の成分を、リニアの光 (glTF の係数、レンダラーの光) と画面の数 (sRGB: ペイントツール、UI の色、
+// .mtl) の間で変える。0..1。
 float LinearToScreen(float linear);
 float ScreenToLinear(float screen);
 
-// The triangles sorted by material (stable: the order inside a material stays), and the parts that
-// say where each material's run is. `materialOfTriangle` has one entry per triangle.
+// 三角形をマテリアルで並べ替えたもの (安定: マテリアルの中の順序は保つ) と、各マテリアルの区間が
+// どこかを言うパーツ。`materialOfTriangle` は三角形 1 つにつき 1 項目。
 void SortByMaterial(MeshData& mesh, std::span<const int> materialOfTriangle);
 
-// `part`'s vertices and triangles added to `out`, placed by `world` (normals by its inverse
-// transpose; a mirroring `world` turns the triangles back, so the front stays counter-clockwise).
-// Parts / materials are not touched (the reader sorts by material at the end).
+// `part` の頂点と三角形を `out` に足す。`world` で配置する (法線はその逆転置行列で。反転する
+// `world` は三角形を裏返して、表が反時計回りのままにする)。
+// パーツ / マテリアルには触らない (リーダーが最後にマテリアルで並べ替える)。
 void AppendPlaced(MeshData& out, const MeshData& part, const Mat4& world);
 
-// Every index names a vertex that is there (the readers check as they read; this is for meshes
-// made elsewhere - a plugin's own - before they are used: Renderer::Upload). False and *error.
+// どのインデックスも、ある頂点を指している (リーダーは読みながら確かめる。これは、使う前の、
+// ほかで作ったメッシュ - プラグイン自前のもの - 用: Renderer::Upload)。false と *error。
 bool IndicesInRange(const MeshData& mesh, std::string* error);
 
-// Smooth normals from the triangles (each triangle counts by its area); a vertex on no triangle
-// points up.
+// 三角形からのスムーズな法線 (各三角形は面積の分だけ効く)。どの三角形にも属さない頂点は
+// 上を向く。
 void ComputeNormals(MeshData& mesh);
 void ComputeBounds(MeshData& mesh);
-// The asset's import settings (core/asset ModelImport): every position times `scale`, and a model made
-// with Z up stood up so Y is up (y = z, z = -y; normals too). The bounds follow.
+// アセットの取り込みの設定 (core/asset の ModelImport): すべての位置に `scale` を掛け、Z が上の
+// モデルは Y が上になるよう立てる (y = z、z = -y。法線も)。境界もそれに合わせる。
 void ApplyModelImport(MeshData& mesh, float scale, bool zUp);
 
-// Pieces of reading, tested on their own.
+// 読み込みの部品。それぞれ単独でテストする。
 std::optional<std::vector<uint8_t>> DecodeBase64(std::string_view text);
 std::string DecodePercent(std::string_view uri);  // "my%20model.bin" -> "my model.bin"
 

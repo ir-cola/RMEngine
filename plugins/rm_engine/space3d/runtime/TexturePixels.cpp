@@ -53,15 +53,15 @@ float AlphaCoverage(const platform::Image& rgba, float cutoff) {
 
 namespace {
 
-// The level's alpha times `scale` (to 255 at most).
+// レベルのアルファに `scale` を掛ける (最大 255)。
 platform::Image ScaledAlpha(const platform::Image& level, float scale) {
     platform::Image out = level;
     for (size_t i = 3; i < out.pixels.size(); i += 4) out.pixels[i] = static_cast<uint8_t>(std::min(255.f, out.pixels[i] * scale + 0.5f));
     return out;
 }
 
-// The scale (found by halving the range) that makes the level cover as much as `target`. Counted on
-// the level's alpha histogram (no copy of the picture per try).
+// レベルが `target` と同じだけ覆うようになる scale (範囲を半分ずつにして探す)。レベルのアルファの
+// ヒストグラムで数える (試すたびに絵をコピーしない)。
 void KeepCoverage(platform::Image& level, float cutoff, float target) {
     const size_t n = static_cast<size_t>(level.width) * level.height;
     if (n == 0) return;
@@ -100,11 +100,11 @@ TexturePixels MakeTexturePixels(platform::Image rgba, bool srgb, const MipOption
     }
     const float cutoff = std::min(options.keepCoverage, 1.f);
     const float coverage = cutoff > 0 ? AlphaCoverage(rgba, cutoff) : 0.f;
-    // sRGB <-> linear by tables (a pow per texel made a 4096 x 4096 picture take seconds).
+    // sRGB <-> リニアはテーブルで行う (テクセルごとの pow だと 4096 x 4096 の絵が数秒かかった)。
     static const auto tables = [] {
         struct Tables {
             float toLinear[256];
-            uint8_t toScreen[4096];  // linear 0..1 in 4096 steps -> the screen's byte
+            uint8_t toScreen[4096];  // リニア 0..1 を 4096 段に分けた -> 画面のバイト
         } t{};
         for (int v = 0; v < 256; ++v) t.toLinear[v] = ScreenToLinear(static_cast<float>(v) / 255.f);
         for (int i = 0; i < 4096; ++i) t.toScreen[i] = static_cast<uint8_t>(LinearToScreen(static_cast<float>(i) / 4095.f) * 255.f + 0.5f);
@@ -138,7 +138,7 @@ TexturePixels MakeTexturePixels(platform::Image rgba, bool srgb, const MipOption
         }
         out.levels.push_back(std::move(b));
     }
-    // (each smaller copy from the one before as it was averaged: the scaled alpha is only what is kept)
+    // (小さい各コピーは、平均した 1 つ前から作る。拡大したアルファは残すものだけ)
     if (cutoff > 0) {
         for (size_t i = 1; i < out.levels.size(); ++i) KeepCoverage(out.levels[i], cutoff, coverage);
     }

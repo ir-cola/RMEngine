@@ -1,13 +1,13 @@
 #pragma once
-// ゲーム制作 × 3D - an entity drawn as a 3D model (its shape from a file), placed by its Transform.
-// Without a model (or one that cannot be read) it is drawn as a box, as before. Or as a simple shape
-// made without a file (形: 箱 / 球 / 円柱 / カプセル / 平面 - 3D 空間's Primitives.h, their sizes there): the
-// 階層's 追加 ▸ 3D オブジェクト makes entities with them.
+// ゲーム制作 × 3D - 3D モデル (形はファイルから) として描くエンティティ。Transform で置く。
+// モデルが無い (または読めない) ときは、これまでどおり箱で描く。または、ファイルなしで作る
+// 単純な形 (形: 箱 / 球 / 円柱 / カプセル / 平面 - 3D 空間の Primitives.h、大きさはそこ):
+// 階層の 追加 ▸ 3D オブジェクト が、これらのエンティティを作る。
 //
-// `model` is an asset reference (the id in the file's .meta): moving or renaming the file in the アセット
-// panel or in Explorer does not lose it. Data from before references held a path inside the project
-// ("Assets/Models/robot.glb"); it is read as it is and still found (SoftwareHost::AssetFile) until
-// another model is chosen.
+// `model` はアセットの参照 (ファイルの .meta にある id): アセット パネルや Explorer で
+// ファイルを動かしたり名前を変えたりしても失われない。参照より前のデータはプロジェクト内の
+// パス ("Assets/Models/robot.glb") を持っていた。それはそのまま読み、別のモデルを選ぶまで
+// 見つかる (SoftwareHost::AssetFile)。
 
 #include "core/reflect/Reflect.h"
 #include "rm_engine/space3d/runtime/Primitives.h"
@@ -27,7 +27,7 @@ enum class MeshShape {
     RM_ITEM(Label="平面") Plane,
 };
 
-// The simple shape it is drawn as; nullopt: the model (MeshShape::Model).
+// 描く単純な形。nullopt: モデル (MeshShape::Model)。
 inline std::optional<space3d::Shape> ShapeOf(MeshShape s) {
     switch (s) {
         case MeshShape::Model: return std::nullopt;

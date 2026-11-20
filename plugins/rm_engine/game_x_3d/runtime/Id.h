@@ -1,5 +1,5 @@
 #pragma once
-// The ID of the connector "ゲーム制作 × 3D" - written here once (and in plugin.json).
+// コネクター「ゲーム制作 × 3D」の ID - ここに 1 度だけ書く (と plugin.json に)。
 
 #include "core/PluginId.h"
 

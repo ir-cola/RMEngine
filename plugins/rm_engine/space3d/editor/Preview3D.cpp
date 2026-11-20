@@ -15,7 +15,7 @@ namespace theme = editor::theme;
 
 namespace {
 
-constexpr int kGridHalf = 5;  // the floor grid from -5 to 5 (1 per line)
+constexpr int kGridHalf = 5;  // 床の格子は -5 から 5 まで (1 本ごとに 1)
 
 }  // namespace
 
@@ -29,7 +29,7 @@ Preview3D::Preview3D() {
 bool Preview3D::Draw(ui::Context& c, const ui::Rect& r, platform::Gfx& gfx, std::string_view id, const Content& content) {
     if (r.w < 8 || r.h < 8) return true;
     if (gfx.Generation() != generation_) {
-        // New devices (the GPU was lost): everything made on the old ones goes.
+        // 新しいデバイス (GPU が失われた): 古いデバイスで作ったものは全部捨てる。
         renderer_ = Renderer{};
         tried_ = false;
         bitmap_.Reset();
@@ -44,7 +44,7 @@ bool Preview3D::Draw(ui::Context& c, const ui::Rect& r, platform::Gfx& gfx, std:
     }
     if (!renderer_.Ready()) return false;
 
-    // The mouse: left drag turns, right / middle drag moves, the wheel comes nearer.
+    // マウス: 左ドラッグで回し、右 / 中ドラッグで動かし、ホイールで近づく。
     const ui::Context::ButtonResult b = c.ButtonBehavior(c.MakeId(id), r);
     const ui::Input& in = c.In();
     if (b.held) {
@@ -89,7 +89,7 @@ bool Preview3D::Draw(ui::Context& c, const ui::Rect& r, platform::Gfx& gfx, std:
     f.lines = grid_;
     f.meshes = content.meshes;
     f.extras = content.extras;
-    // Direct2D's drawing so far goes to the GPU first; then Direct3D draws into its own picture.
+    // Direct2D のここまでの描画を先に GPU へ送る。そのあと Direct3D が自分の画面に描く。
     dc->Flush();
     ID3D11Texture2D* picture = renderer_.Render(gfx.D3DContext(), f);
     if (!picture) return false;

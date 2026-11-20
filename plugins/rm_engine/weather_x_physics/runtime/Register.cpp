@@ -14,7 +14,7 @@ namespace {
 using weather::WeatherBlocker;
 using space3d::Mat4;
 
-// The unit shape turned by `turn`, `size` big on its own axes, its middle at `center`.
+// 単位の形を `turn` で回し、各軸に `size` の大きさにして、中心を `center` に置いたもの。
 Mat4 Placed(const Mat4& turn, Vec3 size, Vec3 center) {
     Mat4 m = turn;
     const float s[3] = {size.x, size.y, size.z};
@@ -29,7 +29,7 @@ Mat4 Placed(const Mat4& turn, Vec3 size, Vec3 center) {
 
 Vec3 Plus(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
 
-// A shape (physics' ShapeDims) where its entity is.
+// エンティティのある所の形 (物理の ShapeDims)。
 void AddShapes(const physics::ShapeDims& d, const physics::Pose& pose, int entity, const Mat4& world, std::vector<WeatherBlocker>& out) {
     const Vec3 center = Plus(pose.position, space3d::TransformDirection(pose.turn, d.offset));
     switch (d.kind) {
@@ -67,7 +67,7 @@ void GatherBlockers(const game_production::Scene& scene, const std::function<con
         const Mat4* w = world ? world(e.data.id) : nullptr;
         if (!w) continue;
         const physics::Pose pose = physics::PoseOf(*w);
-        // Does it move (a body that is not 動かない)? Its colliders leave footprints in snow.
+        // 動くか (動かない ではない体か)。そのコライダーは雪に足跡を残す。
         bool moves = false;
         for (const game_production::Component& comp : e.components) {
             if (comp.Known() && comp.type == body) moves = static_cast<const physics::Rigidbody*>(comp.value.Get())->motion != physics::Motion::Static;
@@ -76,10 +76,10 @@ void GatherBlockers(const game_production::Scene& scene, const std::function<con
             if (!comp.Known()) continue;
             if (comp.type == collider) {
                 const auto& c = *static_cast<const physics::Collider*>(comp.value.Get());
-                if (c.trigger) continue;  // (passed through)
+                if (c.trigger) continue;  // (通り抜ける)
                 Add(physics::DimsOf(c, pose.scale), pose, e.data.id, *w, moves, out);
             } else if (comp.type == character) {
-                // (the body stands up on the entity's place as the physics has it: not turned, not scaled)
+                // (体はエンティティの場所に、物理が持つとおりに立つ: 回さず、拡大もしない)
                 physics::Pose upright;
                 upright.position = pose.position;
                 Add(physics::DimsOf(*static_cast<const physics::Character*>(comp.value.Get())), upright, e.data.id, *w, true, out);

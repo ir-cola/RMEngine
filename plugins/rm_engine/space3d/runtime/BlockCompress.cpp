@@ -31,7 +31,7 @@ TextureFormat ChooseFormat(TextureUse use, TextureCompression setting, PictureTr
         }
         return traits.alpha ? (canBC7 ? TextureFormat::BC7 : TextureFormat::BC3) : TextureFormat::BC1;
     };
-    // What the use can read: a colour needs three channels; a normal map two; numbers one only when grey.
+    // 用途が読めるもの: 色には 3 チャンネル、法線マップには 2、数値は灰色のときだけ 1。
     auto fits = [&](TextureFormat f) {
         switch (f) {
             case TextureFormat::BC4: return use == TextureUse::Data && traits.gray;
@@ -52,7 +52,7 @@ TextureFormat ChooseFormat(TextureUse use, TextureCompression setting, PictureTr
     return fits(f) ? f : automatic();
 }
 
-// --- BC1 (and the colour half of BC3) ----------------------------------------------------------
+// --- BC1 (と BC3 の色の半分) --------------------------------------------------------------------
 
 namespace {
 
@@ -68,7 +68,7 @@ void Unpack565(uint16_t v, int out[3]) {
     out[2] = (b << 3) | (b >> 2);
 }
 
-// The 4 colours of a block with c0 > c1 (or 3 + black when c0 <= c1: BC1's other mode).
+// c0 > c1 のときのブロックの 4 色 (c0 <= c1 のときは 3 色 + 黒: BC1 のもう 1 つのモード)。
 void Palette(uint16_t c0, uint16_t c1, bool fourAlways, int pal[4][4]) {
     int a[3], b[3];
     Unpack565(c0, a);
@@ -93,7 +93,7 @@ int Distance2(const int a[3], const uint8_t* b) {
     return dr * dr + dg * dg + db * db;
 }
 
-// Indices of the 16 texels against two 565 end colours (4-colour mode); the squared error.
+// 16 個のテクセルの、2 つの 565 の端の色 (4 色モード) に対する添字と、二乗誤差。
 long long Fit(const uint8_t rgba[64], uint16_t c0, uint16_t c1, uint32_t& indices) {
     int pal[4][4];
     Palette(c0, c1, true, pal);
@@ -120,9 +120,8 @@ void Put32(uint8_t* out, uint32_t v) {
     for (int k = 0; k < 4; ++k) out[k] = static_cast<uint8_t>(v >> (8 * k));
 }
 
-// The colour block: end points along the colours' main direction (the covariance's strongest axis),
-// pulled in a little, then once more by least squares on the chosen indices. Always 4-colour mode
-// (c0 > c1; equal: one colour), as BC3 needs too.
+// 色のブロック: 端点は色の主な向き (共分散の一番強い軸) に沿って取り、少し内側に寄せ、さらに選んだ添字に
+// 最小二乗法をもう一度かける。いつも 4 色モード (c0 > c1。等しいとき: 1 色)。BC3 もそうする必要がある。
 void EncodeColorBlock(const uint8_t rgba[64], uint8_t out[8]) {
     float mean[3] = {0, 0, 0};
     for (int i = 0; i < 16; ++i) {
@@ -135,7 +134,7 @@ void EncodeColorBlock(const uint8_t rgba[64], uint8_t out[8]) {
         cov[3] += d[1] * d[1], cov[4] += d[1] * d[2], cov[5] += d[2] * d[2];
     }
     float axis[3] = {0.577f, 0.577f, 0.577f};
-    for (int it = 0; it < 8; ++it) {  // power iteration
+    for (int it = 0; it < 8; ++it) {  // べき乗法
         const float x = cov[0] * axis[0] + cov[1] * axis[1] + cov[2] * axis[2];
         const float y = cov[1] * axis[0] + cov[3] * axis[1] + cov[4] * axis[2];
         const float z = cov[2] * axis[0] + cov[4] * axis[1] + cov[5] * axis[2];
@@ -156,7 +155,7 @@ void EncodeColorBlock(const uint8_t rgba[64], uint8_t out[8]) {
     if (c0 < c1) std::swap(c0, c1);
     uint32_t indices = 0;
     long long error = c0 == c1 ? 0 : Fit(rgba, c0, c1, indices);
-    // Least squares: the end colours that best explain the chosen indices (weights 1, 0, 2/3, 1/3).
+    // 最小二乗法: 選んだ添字を一番よく説明する端の色 (重みは 1, 0, 2/3, 1/3)。
     if (c0 != c1) {
         float aa = 0, bb = 0, ab = 0, ax[3] = {0, 0, 0}, bx[3] = {0, 0, 0};
         static constexpr float kW[4] = {1.f, 0.f, 2.f / 3.f, 1.f / 3.f};
@@ -199,9 +198,9 @@ void DecodeColorBlock(const uint8_t in[8], bool fourAlways, uint8_t rgba[64]) {
     }
 }
 
-// --- BC4 (one channel; BC3's alpha and each half of BC5) ---------------------------------------
+// --- BC4 (1 チャンネル。BC3 のアルファと BC5 の各半分) -------------------------------------------
 
-// The 8 values of a block: a0 > a1 - 8 steps between; otherwise 6 steps and 0 and 255.
+// ブロックの 8 つの値: a0 > a1 なら - 間が 8 段。そうでなければ 6 段と 0 と 255。
 void Values(uint8_t a0, uint8_t a1, int out[8]) {
     out[0] = a0, out[1] = a1;
     if (a0 > a1) {
@@ -219,7 +218,7 @@ void EncodeBC4(const uint8_t values[16], uint8_t out[8]) {
     for (int i = 0; i < 16; ++i) lo = std::min(lo, values[i]), hi = std::max(hi, values[i]);
     out[0] = hi, out[1] = lo;
     uint64_t bits = 0;
-    if (hi > lo) {  // 8-step mode
+    if (hi > lo) {  // 8 段モード
         int pal[8];
         Values(hi, lo, pal);
         for (int i = 0; i < 16; ++i) {
@@ -282,17 +281,17 @@ void DecodeBC3(const uint8_t in[16], uint8_t rgba[64]) {
     for (int i = 0; i < 16; ++i) rgba[i * 4 + 3] = alpha[i];
 }
 
-// --- BC7, mode 6 -------------------------------------------------------------------------------
-// One of BC7's eight modes: one line through RGBA (two end colours of 7 bits + a shared lowest bit
-// each) and a 4-bit place on it for every texel (16 steps). It keeps alpha as well as colour, which
-// is what BC7 is used for here (colours with see-through parts); the other modes (two or three lines
-// per block) would be finer on blocks of very different colours.
+// --- BC7、モード 6 ---------------------------------------------------------------------------------
+// BC7 の 8 つのモードの 1 つ: RGBA を通る 1 本の線 (7 ビットの端の色が 2 つ + それぞれ共有の最下位ビット 1 つ)
+// と、各テクセルの、その上での 4 ビットの位置 (16 段)。色だけでなくアルファも持つので、ここで BC7 を使う
+// 目的 (透ける部分のある色) に合う。他のモード (1 ブロックに 2 本か 3 本の線) は、色がとても違う
+// ブロックではもっと細かくなる。
 
 namespace {
 
 constexpr int kWeights4[16] = {0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64};
 
-// Writes `count` bits of `v` at bit `at` (LSB first), as BC7 lays its fields.
+// `v` の下位 `count` ビットを、ビット位置 `at` に書く (LSB が先)。BC7 がフィールドを並べるとおりに。
 void PutBits(uint8_t out[16], int& at, uint32_t v, int count) {
     for (int i = 0; i < count; ++i, ++at) {
         if ((v >> i) & 1) out[at >> 3] |= static_cast<uint8_t>(1u << (at & 7));
@@ -305,7 +304,7 @@ uint32_t GetBits(const uint8_t in[16], int& at, int count) {
     return v;
 }
 
-// An end colour as 7 bits + the shared lowest bit, whichever bit lands nearer.
+// 端の色を 7 ビット + 共有の最下位ビットで表す。近くなる方のビットを選ぶ。
 void Quantize7p(const float e[4], int q[4], int& p) {
     int best = 1 << 30;
     for (int bit = 0; bit < 2; ++bit) {
@@ -323,7 +322,7 @@ void Quantize7p(const float e[4], int q[4], int& p) {
     }
 }
 
-// The 16 colours between two quantized end points; the indices of the texels and the squared error.
+// 量子化した 2 つの端点の間の 16 色。テクセルの添字と二乗誤差。
 long long Fit7(const uint8_t rgba[64], const int q0[4], int p0, const int q1[4], int p1, uint8_t idx[16]) {
     int pal[16][4];
     for (int k = 0; k < 4; ++k) {
@@ -350,8 +349,8 @@ long long Fit7(const uint8_t rgba[64], const int q0[4], int p0, const int q1[4],
 }  // namespace
 
 void EncodeBC7(const uint8_t rgba[64], uint8_t out[16]) {
-    // The end points: along the strongest direction of the 16 RGBA values (power iteration on the
-    // covariance), pulled in a little; then once more by least squares on the chosen indices.
+    // 端点: 16 個の RGBA の値の一番強い向き (共分散へのべき乗法) に沿って取り、少し内側に寄せ、さらに
+    // 選んだ添字に最小二乗法をもう一度かける。
     float mean[4] = {0, 0, 0, 0};
     for (int t = 0; t < 16; ++t) {
         for (int k = 0; k < 4; ++k) mean[k] += rgba[t * 4 + k] / 16.f;
@@ -395,7 +394,7 @@ void EncodeBC7(const uint8_t rgba[64], uint8_t out[16]) {
     {
         float aa = 0, bb = 0, ab = 0, ax[4] = {0, 0, 0, 0}, bx[4] = {0, 0, 0, 0};
         for (int t = 0; t < 16; ++t) {
-            const float w = kWeights4[idx[t]] / 64.f, v = 1 - w;  // texel = v * e0 + w * e1
+            const float w = kWeights4[idx[t]] / 64.f, v = 1 - w;  // テクセル = v * e0 + w * e1
             aa += v * v, bb += w * w, ab += v * w;
             for (int k = 0; k < 4; ++k) ax[k] += v * rgba[t * 4 + k], bx[k] += w * rgba[t * 4 + k];
         }
@@ -417,7 +416,7 @@ void EncodeBC7(const uint8_t rgba[64], uint8_t out[16]) {
             }
         }
     }
-    // The first texel's index has only 3 bits: when it is 8 or more, the ends are swapped.
+    // 最初のテクセルの添字は 3 ビットしかない: 8 以上のときは、端を入れ替える。
     if (idx[0] >= 8) {
         std::swap_ranges(q0, q0 + 4, q1);
         std::swap(p0, p1);
@@ -425,7 +424,7 @@ void EncodeBC7(const uint8_t rgba[64], uint8_t out[16]) {
     }
     std::memset(out, 0, 16);
     int at = 0;
-    PutBits(out, at, 1u << 6, 7);  // mode 6
+    PutBits(out, at, 1u << 6, 7);  // モード 6
     for (int k = 0; k < 4; ++k) {
         PutBits(out, at, static_cast<uint32_t>(q0[k]), 7);
         PutBits(out, at, static_cast<uint32_t>(q1[k]), 7);
@@ -438,7 +437,7 @@ void EncodeBC7(const uint8_t rgba[64], uint8_t out[16]) {
 void DecodeBC7(const uint8_t in[16], uint8_t rgba[64]) {
     int at = 0;
     const uint32_t mode = GetBits(in, at, 7);
-    if (mode != (1u << 6)) {  // only mode 6 is read (the one this engine writes): the rest are shown magenta
+    if (mode != (1u << 6)) {  // モード 6 だけ読む (このエンジンが書くもの)。他は赤紫で見せる
         for (int t = 0; t < 16; ++t) rgba[t * 4] = 255, rgba[t * 4 + 1] = 0, rgba[t * 4 + 2] = 255, rgba[t * 4 + 3] = 255;
         return;
     }
@@ -457,11 +456,11 @@ void DecodeBC7(const uint8_t in[16], uint8_t rgba[64]) {
     }
 }
 
-// --- Whole pictures -----------------------------------------------------------------------------
+// --- 画像全体 ---------------------------------------------------------------------------------------
 
 namespace {
 
-// One level's blocks.
+// 1 つのレベルのブロック。
 platform::Image CompressLevel(const platform::Image& level, TextureFormat f) {
     platform::Image out;
     out.width = level.width;
@@ -474,7 +473,7 @@ platform::Image CompressLevel(const platform::Image& level, TextureFormat f) {
         for (uint32_t bx = 0; bx < bw; ++bx) {
             for (uint32_t y = 0; y < 4; ++y) {
                 for (uint32_t x = 0; x < 4; ++x) {
-                    // (past the edge: the last row / column again)
+                    // (端の外: 最後の行 / 列をもう一度)
                     const uint32_t sx = std::min(bx * 4 + x, level.width - 1), sy = std::min(by * 4 + y, level.height - 1);
                     std::memcpy(block + (y * 4 + x) * 4, &level.pixels[(static_cast<size_t>(sy) * level.width + sx) * 4], 4);
                 }

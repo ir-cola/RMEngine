@@ -1,8 +1,8 @@
 #pragma once
-// The runtime part of 天候 (listed in plugins/RuntimePlugins.cpp; the exported game calls it by
-// RM_RUNTIME_ENTRY): the scene setting 天候 (Weather.h), the system that moves it on while the game
-// plays, what it tells the sky (ゲーム制作 × 3D's SkyWeather), its drawing into the 3D pictures
-// (WeatherDraw.h) and the scripts' part (sdk/RMWeather.h).
+// 天候 のランタイム側 (plugins/RuntimePlugins.cpp に並ぶ。書き出したゲームは
+// RM_RUNTIME_ENTRY から呼ぶ): シーン設定の 天候 (Weather.h)、ゲームが動く間それを進める
+// システム、空に伝えること (ゲーム制作 × 3D の SkyWeather)、3D の絵への描画 (WeatherDraw.h)、
+// スクリプト側 (sdk/RMWeather.h)。
 
 #include "core/RuntimeRegistry.h"
 

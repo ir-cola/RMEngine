@@ -1,6 +1,6 @@
 #pragma once
-// The sky part of the scripts' API (sdk/RM3D.h: rm::Sky): the scene's 空 - its 時刻.
-// Offered at kScriptApiPoint by RegisterRuntime.
+// スクリプト API の空の部分 (sdk/RM3D.h: rm::Sky): シーンの 空 - その 時刻。
+// RegisterRuntime が kScriptApiPoint に出す。
 
 #include "rm_engine/game_production/runtime/Scripts.h"
 

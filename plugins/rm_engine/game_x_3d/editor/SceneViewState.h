@@ -1,7 +1,7 @@
 #pragma once
-// How the user looks at a game's 3D scene view: the camera, the gizmo chosen and its steps, shadows on / off. Kept next to the
-// panel layout (UserSettings/Layout.json), not in the project - written once here, so saving and
-// loading come from the description (rule 9). Never shown in an inspector.
+// ユーザーが、ゲームの 3D シーンビューをどう見るか: カメラ、選んだギズモとその刻み、影のオン / オフ。
+// パネルのレイアウト (UserSettings/Layout.json) の隣に残し、プロジェクトには入れない - ここに
+// 1 度だけ書くので、保存と読み込みは定義から作られる (憲法 9)。インスペクターには出さない。
 
 #include "rm_engine/space3d/editor/Gizmo.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -14,18 +14,18 @@ struct SceneViewState {
     RM_PROPERTY() space3d::gizmo::Tool tool = space3d::gizmo::Tool::Move;
     RM_PROPERTY() space3d::gizmo::Space space = space3d::gizmo::Space::Local;
     RM_PROPERTY() space3d::gizmo::Pivot pivot = space3d::gizmo::Pivot::Each;
-    // The steps of the gizmo (Ctrl held, or always when snapAlways - then Ctrl moves smoothly).
-    RM_PROPERTY(Min=0.001, Max=1000) float snapMove = 0.25f;  // world units
+    // ギズモの刻み (Ctrl を押している間。snapAlways のときは常に刻みで、Ctrl でなめらかに動く)。
+    RM_PROPERTY(Min=0.001, Max=1000) float snapMove = 0.25f;  // ワールドの単位
     RM_PROPERTY(Min=0.1, Max=180) float snapDegrees = 15.f;
-    RM_PROPERTY(Min=0.001, Max=10) float snapScale = 0.1f;   // of the scale at the start
+    RM_PROPERTY(Min=0.001, Max=10) float snapScale = 0.1f;   // 始めたときのスケールに対して
     RM_PROPERTY() bool snapAlways = false;
-    // Shadows of the light (on the floor and on things): the 影 button.
+    // ライトの影 (床と物の上): 影 ボタン。
     RM_PROPERTY() bool shadows = true;
-    // The scene's 空 behind the scene view too (the game view and the preview always show it): 空.
+    // シーンビューにも出すシーンの 空 (ゲームビューとプレビューは常に出す): 空。
     RM_PROPERTY() bool sky = true;
-    // While playing: the lines the game's scripts draw (rm::Debug) - the デバッグ button.
+    // Play 中: ゲームのスクリプトが描く線 (rm::Debug) - デバッグ ボタン。
     RM_PROPERTY() bool debugDraw = true;
-    // The lines plugins show over the scene (物理: the colliders) of every thing, not only the selected - 形.
+    // プラグインがシーンの上に見せる線 (物理: コライダー) を、選んだものだけでなくすべての物に出す - 形。
     RM_PROPERTY() bool allShapes = false;
 };
 

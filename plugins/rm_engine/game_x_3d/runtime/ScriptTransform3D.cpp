@@ -1,5 +1,5 @@
-// The 3D part of the scripts' API (RM3D.h / RM3DAbi.h): Transform, on the scene that plays.
-// RmApi::ctx is game production's ScriptWorld.
+// スクリプト API の 3D の部分 (RM3D.h / RM3DAbi.h): Transform。遊んでいるシーンの上で。
+// RmApi::ctx はゲーム制作の ScriptWorld。
 
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
 
@@ -66,8 +66,8 @@ int WorldPosition(void* ctx, uint64_t id, float out[3]) {
 
 constexpr RmTransform3DApi kTable{&Get, &Set, &WorldPosition};
 
-// The world matrix of the Transforms from the top down to `id`'s parent (self = false) or `id` (true);
-// parents without a Transform are skipped. Identity for none.
+// 一番上から `id` の親まで (self = false)、または `id` まで (true) の Transform のワールド行列。
+// Transform の無い親は飛ばす。1 つも無ければ単位行列。
 space3d::Mat4 ChainMatrix(const game_production::Scene& scene, int id, bool self) {
     std::vector<const space3d::Transform*> chain;
     size_t steps = 0;
@@ -81,7 +81,7 @@ space3d::Mat4 ChainMatrix(const game_production::Scene& scene, int id, bool self
     return m;
 }
 
-// The entity's Transform and world matrix (null: none).
+// エンティティの Transform とワールド行列 (null: 無い)。
 space3d::Transform* WorldOf(void* ctx, uint64_t id, space3d::Mat4& world) {
     space3d::Transform* t = TransformOf(ctx, id);
     if (!t) return nullptr;
@@ -89,7 +89,7 @@ space3d::Transform* WorldOf(void* ctx, uint64_t id, space3d::Mat4& world) {
     return t;
 }
 
-// Puts it at `want` in the world (its Transform made up for its parents').
+// ワールドの `want` に置く (親の分を補って Transform を作る)。
 void PlaceInWorld(void* ctx, uint64_t id, space3d::Transform& t, const space3d::WorldPlacement& want) {
     const space3d::Mat4 parent = ChainMatrix(*static_cast<ScriptWorld*>(ctx)->scene, static_cast<int>(id), false);
     t = space3d::FromWorld(t, parent, want);
@@ -141,7 +141,7 @@ int LookAt(void* ctx, uint64_t id, const float target[3], const float up[3]) {
     if (!t) return 0;
     space3d::WorldPlacement want = space3d::Decompose(w, t->rotation);
     const Vec3 forward = space3d::Normalize(space3d::operator-(Vec3{target[0], target[1], target[2]}, want.position));
-    if (space3d::Length(forward) == 0) return 1;  // (at the target: no way to look)
+    if (space3d::Length(forward) == 0) return 1;  // (目標の所にいる: 向く方向が無い)
     const Vec3 z = space3d::operator*(forward, -1.f);
     Vec3 x = space3d::Normalize(space3d::Cross(Vec3{up[0], up[1], up[2]}, z));
     if (space3d::Length(x) == 0) x = space3d::Normalize(space3d::Cross(std::fabs(z.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0}, z));
@@ -179,7 +179,7 @@ const game_production::ScriptApiPart& ScriptTransform3DPart2() {
 
 bool Pose3D(const game_production::Scene& scene, int entity, game_production::Pose& out) {
     if (!TransformIn(scene, entity)) return false;
-    // The Transforms from the top parent down (parents without one are skipped).
+    // 一番上の親から下へ、Transform を並べる (持たない親は飛ばす)。
     std::vector<const space3d::Transform*> chain;
     size_t steps = 0;
     for (const game_production::SceneEntity* e = scene.Find(entity); e && steps++ <= scene.Entities().size(); e = scene.Find(e->data.parent)) {
@@ -188,7 +188,7 @@ bool Pose3D(const game_production::Scene& scene, int entity, game_production::Po
     space3d::Mat4 m;
     for (auto it = chain.rbegin(); it != chain.rend(); ++it) m = space3d::WorldMatrix(m, **it);
     out.position = space3d::TransformPoint(m, {0, 0, 0});
-    // Where it looks: -Z, Y up (as a camera: space3d::ViewFromWorld).
+    // 見る向き: -Z、Y が上 (カメラと同じ: space3d::ViewFromWorld)。
     const Vec3 f = space3d::Normalize(space3d::TransformDirection(m, {0, 0, -1}));
     const Vec3 u = space3d::Normalize(space3d::TransformDirection(m, {0, 1, 0}));
     out.forward = space3d::Length(f) > 0 ? f : Vec3{0, 0, -1};

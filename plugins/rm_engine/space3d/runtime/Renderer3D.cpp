@@ -24,16 +24,16 @@ namespace rm::space3d {
 
 namespace {
 
-// The constant buffer `Frame`.
+// 定数バッファー `Frame`。
 struct FrameConstants {
     float viewProj[16];
     float lightViewProj[16];
     float eye[4];
-    float fog[4];  // rgb: its colour (linear); a: how thick (per metre)
+    float fog[4];  // rgb: 色 (リニア)、a: 濃さ (1 メートルあたり)
 };
 static_assert(sizeof(FrameConstants) % 16 == 0);
 
-// The constant buffer `Shadows`.
+// 定数バッファー `Shadows`。
 struct ShadowConstants {
     float sunViewProj[kCascades][16];
     float localViewProj[kLocalShadowSlices][16];
@@ -47,7 +47,7 @@ static_assert(sizeof(MeshVertex) == 32, "MeshVertex goes to the GPU as it is (PO
 
 void CopyMatrix(float out[16], const Mat4& m) { std::memcpy(out, &m.m[0][0], sizeof(float) * 16); }
 
-// The inverse transpose (a scale of 0 cannot be inverted: then the matrix itself, the box is flat anyway).
+// 逆転置行列 (スケール 0 は逆行列を作れない: そのときは行列そのもの。どのみち箱は平ら)。
 Mat4 NormalMatrix(const Mat4& world) {
     const auto inv = Inverse(world);
     if (!inv) return world;
@@ -58,7 +58,7 @@ Mat4 NormalMatrix(const Mat4& world) {
     return t;
 }
 
-// The renderer's shaders with ToScreen / ToLinear (SkyShader.h: the sky's are the same) in front.
+// レンダラーのシェーダーの前に ToScreen / ToLinear (SkyShader.h: 空のものと同じ) を付けたもの。
 const std::string& ShaderText() {
     static const std::string text = RendererShaderText();
     return text;
@@ -82,7 +82,7 @@ bool Compile(const char* entry, const char* target, Microsoft::WRL::ComPtr<ID3DB
     return Compile(ShaderText(), "space3d", entry, target, out, error);
 }
 
-// The floor's plane (y = 0), far wider than any scene (it only shows where shadows fall).
+// 床の平面 (y = 0)。どのシーンよりもずっと広い (影が落ちる所にだけ見える)。
 MeshData FloorPlane() {
     constexpr float s = 5000.f;
     MeshData m;
@@ -93,17 +93,17 @@ MeshData FloorPlane() {
     return m;
 }
 
-// Shadow maps of one kind: tiles of `size` pixels side by side in one texture (up to 4 a row), and
-// what each tile holds now (a fingerprint of the light's matrix and of what was drawn into it). A tile
-// whose fingerprint has not changed is not drawn again - in any renderer of the device.
+// 1 種類のシャドウマップ: 大きさ `size` ピクセルのタイルを 1 枚のテクスチャーに並べたもの (1 行に最大 4 つ)。
+// と、各タイルが今持っているもの (光の行列と、そこに描いたものの指紋)。指紋が変わっていない
+// タイルは描き直さない - そのデバイスのどのレンダラーでも。
 struct ShadowMaps {
     Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> dsv;
     uint32_t tiles = 0, cols = 0, rows = 0, size = 0;
-    std::vector<uint64_t> holds;  // per tile (0: nothing known)
-    // The kept layer: the same tiles holding only what stays put (Box / MeshDraw::moving false), made
-    // when a map first has moving things in it.
+    std::vector<uint64_t> holds;  // タイルごと (0: 何も分かっていない)
+    // 保持した層: 動かないもの (Box / MeshDraw::moving が false) だけを持つ同じタイル。マップに
+    // 動くものが初めて入ったときに作る。
     Microsoft::WRL::ComPtr<ID3D11Texture2D> layerTexture;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> layerSrv;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilView> layerDsv;
@@ -123,33 +123,33 @@ struct Renderer::Shared {
     Ptr<ID3D11Device> device;
     Ptr<ID3D11VertexShader> lineVs, meshVs, shadowVs, clearVs;
     Ptr<ID3D11PixelShader> linePs, meshPs, floorPs, copyPs;
-    // MeshPS with a plugin's touch (RenderFrame::surface), by its code (null: it would not compile - told once).
+    // プラグインの手が入った MeshPS (RenderFrame::surface)。そのコードで引く (null: コンパイルできない - 1 回だけ知らせる)。
     std::unordered_map<std::string, Ptr<ID3D11PixelShader>> surfaces;
     Ptr<ID3D11InputLayout> lineLayout, meshLayout;
-    Ptr<ID3D11Buffer> frame, lights, shadows;  // the constant buffers (b0, b1, b2)
+    Ptr<ID3D11Buffer> frame, lights, shadows;  // 定数バッファー (b0, b1, b2)
     std::shared_ptr<const GpuMesh> cube, floor;
-    std::array<std::shared_ptr<const GpuMesh>, 5> shapes;  // by Shape (the box is `cube`)
+    std::array<std::shared_ptr<const GpuMesh>, 5> shapes;  // Shape ごと (箱は `cube`)
     Ptr<ID3D11RasterizerState> raster, shadowRaster;
     Ptr<ID3D11DepthStencilState> depth, depthNoWrite, depthClear, depthBehind;
     Ptr<ID3D11BlendState> blend;
-    // Pictures: one for each フィルタ and 端の扱い (the image's import settings - TextureSampling.h's
-    // SamplerIndex): 滑らか = smooth, mipmapped and anisotropic; くっきり = the nearest pixel (mipmapped far away).
+    // 絵: フィルタと端の扱いごとに 1 つ (画像の取り込みの設定 - TextureSampling.h の SamplerIndex):
+    // 滑らか = スムーズ、ミップマップあり、異方性; くっきり = 最近傍のピクセル (遠くはミップマップ)。
     std::array<Ptr<ID3D11SamplerState>, kSamplerCount> samplers;
     Ptr<ID3D11SamplerState> shadowSampler;
-    // The sky: its constant buffer (b3), a sampler stopping at the edges (one of six pictures), the
-    // depth test off (drawn first, writing nothing), and the programs made so far by their text.
+    // 空: その定数バッファー (b3)、端で止まるサンプラー (6 枚の絵の 1 つ)、深度テストをオフ
+    // (最初に描き、何も書かない)、と、これまでにテキストから作ったプログラム。
     Ptr<ID3D11Buffer> skyFrame;
-    Ptr<ID3D11Buffer> directionCb, surfaceCb;  // 向きの地図 (b6) and a plugin's surface numbers (b5)
+    Ptr<ID3D11Buffer> directionCb, surfaceCb;  // 向きの地図 (b6) と、プラグインの面の数 (b5)
     Ptr<ID3D11SamplerState> edgeSampler;
     Ptr<ID3D11DepthStencilState> depthOff;
-    // ミップマップ・ストリーミング: the streamed pictures made on this device (Renderer::Stream).
+    // ミップマップ・ストリーミング: このデバイスで作ったストリーミングの絵 (Renderer::Stream)。
     std::mutex streamMutex;
     std::vector<std::weak_ptr<const GpuTexture>> streamed;
     std::mutex skyMutex;
     std::unordered_map<std::string, std::weak_ptr<const SkyProgram>> skies;
-    // The shadow maps (depth seen from the lights): the sun's (1, or kCascades) and the point / spot
-    // lights' (kLocalShadowSlices). Made when first needed. And the map from above (雨・雪・濡れ:
-    // Lighting.h's PlanCover).
+    // シャドウマップ (光から見た深度): 太陽のもの (1 枚、または kCascades 枚) と、点光源・スポットの
+    // もの (kLocalShadowSlices)。最初に要るときに作る。と、上からの地図 (雨・雪・濡れ:
+    // Lighting.h の PlanCover)。
     ShadowMaps sun, local, directionMaps;
     UINT samples = 1;
 
@@ -161,16 +161,17 @@ struct Renderer::Shared {
 
 namespace {
 
-// One Shared per device: made by the first renderer on it, gone with the last. A device made again
-// (the GPU was lost: platform::Gfx::Generation) is another device, so it gets its own.
+// デバイスごとに Shared は 1 つ: そのデバイスの最初のレンダラーが作り、最後のレンダラーと一緒に
+// 消える。作り直されたデバイス (GPU が失われた: platform::Gfx::Generation) は別のデバイスなので、
+// 自分の Shared を持つ。
 std::mutex g_sharedMutex;
 std::unordered_map<ID3D11Device*, std::weak_ptr<Renderer::Shared>>& SharedByDevice() {
     static std::unordered_map<ID3D11Device*, std::weak_ptr<Renderer::Shared>> map;
     return map;
 }
 
-// A fingerprint (64 bits) of some 4-byte words (matrices, serials), added to `h`: a word at a time
-// (multiply and fold), not a byte - it runs for every thing in every shadow map.
+// 4 バイトの語 (行列、通し番号) の指紋 (64 ビット) を `h` に足す。バイトではなく 1 語ずつ (掛けて
+// 折りたたむ)。すべてのシャドウマップのすべてのものについて走るため。
 uint64_t HashWords(uint64_t h, const void* data, size_t size) {
     const auto* p = static_cast<const uint8_t*>(data);
     for (size_t i = 0; i + 4 <= size; i += 4) {
@@ -183,7 +184,7 @@ uint64_t HashWords(uint64_t h, const void* data, size_t size) {
 }
 constexpr uint64_t kFingerprintStart = 14695981039346656037ull;
 
-// Whether two materials are drawn with the same pictures (null: none) - then they can be one draw.
+// 2 つのマテリアルが同じ絵で描かれるか (null: なし)。そうなら 1 回の描画にまとめられる。
 bool SamePictures(const DrawMaterial* a, const DrawMaterial* b) {
     if (a == b) return true;
     auto texture = [](const DrawMaterial* m, int k) -> const void* {
@@ -198,12 +199,12 @@ bool SamePictures(const DrawMaterial* a, const DrawMaterial* b) {
     for (int k = 0; k < 4; ++k) {
         if (texture(a, k) != texture(b, k)) return false;
     }
-    return true;  // (the sampler follows the colour picture, the same one)
+    return true;  // (サンプラーは色の絵、つまり同じものに従う)
 }
 
-const char kSamplerMark[kSamplerCount] = {};  // PictureSet's mark for the colour picture's sampler
+const char kSamplerMark[kSamplerCount] = {};  // PictureSet の、色の絵のサンプラーの印
 
-std::atomic<uint64_t> g_meshSerial{0};  // GpuMesh::serial: never the same twice
+std::atomic<uint64_t> g_meshSerial{0};  // GpuMesh::serial: 同じ値は 2 度出ない
 
 }  // namespace
 
@@ -232,8 +233,8 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
-    // The vertices (slot 0) and, per draw, where its thing and material are (slot 1: one "instance"
-    // whose data is picked by the draw's start instance).
+    // 頂点 (スロット 0) と、描画ごとの、そのものとマテリアルの場所 (スロット 1: データが描画の
+    // 開始インスタンスで選ばれる「インスタンス」1 つ)。
     const D3D11_INPUT_ELEMENT_DESC meshIn[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
@@ -269,21 +270,21 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
 
     D3D11_RASTERIZER_DESC rd{};
     rd.FillMode = D3D11_FILL_SOLID;
-    rd.CullMode = D3D11_CULL_NONE;  // open models show their inside too (lit as its own side: MeshPS asks the eye)
+    rd.CullMode = D3D11_CULL_NONE;  // 開いたモデルは内側も見せる (自分の側として光を当てる: MeshPS が目に聞く)
     rd.DepthClipEnable = TRUE;
     rd.MultisampleEnable = TRUE;
     D3D11_RASTERIZER_DESC sd = rd;
     sd.MultisampleEnable = FALSE;
-    sd.SlopeScaledDepthBias = 1.5f;  // surfaces seen from the light at a slant are pushed back more
+    sd.SlopeScaledDepthBias = 1.5f;  // 光から斜めに見える面は、より奥に押す
     D3D11_DEPTH_STENCIL_DESC dd{};
     dd.DepthEnable = TRUE;
     dd.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
     dd.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
     D3D11_DEPTH_STENCIL_DESC dn = dd;
     dn.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-    D3D11_DEPTH_STENCIL_DESC db = dn;  // only where something is in front (debug lines' hidden parts)
+    D3D11_DEPTH_STENCIL_DESC db = dn;  // 手前に何かがある所だけ (デバッグ線の隠れた部分)
     db.DepthFunc = D3D11_COMPARISON_GREATER;
-    D3D11_DEPTH_STENCIL_DESC dc = dd;  // a tile of a shadow map cleared (ClearVS: depth 1 everywhere)
+    D3D11_DEPTH_STENCIL_DESC dc = dd;  // シャドウマップのタイルを消したもの (ClearVS: どこも深度 1)
     dc.DepthFunc = D3D11_COMPARISON_ALWAYS;
     D3D11_BLEND_DESC bl{};
     bl.RenderTarget[0].BlendEnable = TRUE;
@@ -297,11 +298,11 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     D3D11_SAMPLER_DESC ts{};
     ts.Filter = D3D11_FILTER_ANISOTROPIC;
     ts.MaxAnisotropy = 8;
-    ts.AddressU = ts.AddressV = ts.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;  // UVs past 0..1 repeat the picture
+    ts.AddressU = ts.AddressV = ts.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;  // UV が 0..1 を超えたら絵を繰り返す
     ts.ComparisonFunc = D3D11_COMPARISON_NEVER;
     ts.MaxLOD = D3D11_FLOAT32_MAX;
-    // Compares the pixel's depth with the map's, blending the answers of the 2 x 2 texels around it.
-    // Outside the map the depth is 1 (the farthest): nothing there casts a shadow.
+    // ピクセルの深度をマップの深度と比べ、まわりの 2 x 2 テクセルの答えを混ぜる。
+    // マップの外では深度が 1 (一番遠い): そこには影を落とすものが無い。
     D3D11_SAMPLER_DESC ss{};
     ss.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
     ss.AddressU = ss.AddressV = ss.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
@@ -316,7 +317,7 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     }
     for (size_t k = 0; k < kSamplerCount; ++k) {
         D3D11_SAMPLER_DESC d = ts;
-        if (k >= 3) {  // くっきり: the nearest pixel (the smaller copies still far away)
+        if (k >= 3) {  // くっきり: 最近傍のピクセル (遠くでは小さいコピー)
             d.Filter = D3D11_FILTER_MIN_MAG_POINT_MIP_LINEAR;
             d.MaxAnisotropy = 1;
         }
@@ -352,8 +353,8 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
 bool Renderer::Shared::EnsureMaps(ShadowMaps& maps, uint32_t tiles, uint32_t size) {
     if (maps.tiles >= tiles && maps.size == size && maps.srv) return true;
     maps = {};
-    // Up to 4 tiles a row. One texture seen two ways: written as depth (D32), read as numbers (R32)
-    // by the comparing sampler.
+    // 1 行に最大 4 タイル。1 枚のテクスチャーを 2 通りに見る: 深度として書き (D32)、比較する
+    // サンプラーが数として読む (R32)。
     const uint32_t cols = std::min(tiles, 4u), rows = (tiles + cols - 1) / cols;
     D3D11_TEXTURE2D_DESC td{};
     td.Width = size * cols;
@@ -389,7 +390,7 @@ ID3D11PixelShader* Renderer::Shared::MeshPsFor(std::string_view surface) {
     if (surface.empty()) return meshPs.Get();
     const std::string key(surface);
     if (const auto it = surfaces.find(key); it != surfaces.end()) return it->second ? it->second.Get() : meshPs.Get();
-    Ptr<ID3D11PixelShader>& ps = surfaces[key];  // (null if it fails: not tried again)
+    Ptr<ID3D11PixelShader>& ps = surfaces[key];  // (失敗したら null: もう試さない)
     Ptr<ID3DBlob> code;
     std::string error;
     if (!Compile(RendererShaderText(surface), "surface", "MeshPS", "ps_4_0", code, &error) ||
@@ -405,7 +406,7 @@ bool Renderer::Shared::EnsureLayer(ShadowMaps& maps) {
     if (maps.layerSrv) return true;
     if (!maps.texture) return false;
     D3D11_TEXTURE2D_DESC td{};
-    maps.texture->GetDesc(&td);  // the same tiles, the same way (written as D32, read as R32)
+    maps.texture->GetDesc(&td);  // 同じタイルを同じやり方で (D32 で書き、R32 で読む)
     D3D11_DEPTH_STENCIL_VIEW_DESC dv{};
     dv.Format = DXGI_FORMAT_D32_FLOAT;
     dv.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
@@ -426,7 +427,7 @@ bool Renderer::Shared::EnsureLayer(ShadowMaps& maps) {
 }
 
 bool Renderer::Init(ID3D11Device* device, std::string* error) {
-    // Called again (the GPU's devices made again): nothing of the device before is kept.
+    // もう一度呼ばれた (GPU のデバイスが作り直された): 前のデバイスのものは何も残らない。
     lineVb_.Reset();
     lineCapacity_ = 0;
     thingsBuffer_.Reset();
@@ -500,15 +501,15 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     if (mesh.vertices.size() > UINT32_MAX / sizeof(MeshVertex) || mesh.indices.size() > UINT32_MAX / sizeof(uint32_t)) {
         return fail("頂点が多すぎて GPU に載せられません");
     }
-    // A mesh made by a plugin directly (not through the readers) may point past its vertices: the
-    // part boxes below read vertices[indices[k]] on the CPU.
+    // プラグインが (リーダーを通さず) 直接作ったメッシュは、頂点の外を指しているかもしれない。
+    // 下のパーツの箱は、CPU で vertices[indices[k]] を読む。
     if (std::string why; !IndicesInRange(mesh, &why)) {
         if (error) *error = why;
         return nullptr;
     }
     auto gpu = std::make_shared<GpuMesh>();
     D3D11_BUFFER_DESC bd{};
-    bd.Usage = D3D11_USAGE_IMMUTABLE;  // written once, never changed
+    bd.Usage = D3D11_USAGE_IMMUTABLE;  // 1 度だけ書き、変えない
     bd.ByteWidth = static_cast<UINT>(mesh.vertices.size() * sizeof(MeshVertex));
     bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
     D3D11_SUBRESOURCE_DATA init{mesh.vertices.data(), 0, 0};
@@ -521,7 +522,7 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     gpu->min = mesh.min;
     gpu->max = mesh.max;
     gpu->indexCount = static_cast<uint32_t>(mesh.indices.size() / 3 * 3);
-    // The parts as they are (only whole triangles inside the indices); none: one part, no material.
+    // パーツはそのまま (インデックスの中に収まる完全な三角形だけ)。無いとき: パーツ 1 つ、マテリアル無し。
     for (const MeshPart& part : mesh.parts) {
         const uint64_t end = static_cast<uint64_t>(part.firstIndex) + part.indexCount;
         if (part.indexCount >= 3 && end <= gpu->indexCount) gpu->parts.push_back({part.firstIndex, part.indexCount / 3 * 3, part.material});
@@ -545,13 +546,13 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const platform::Image&
 
 namespace {
 
-// ミップマップ・ストリーミング: the levels this small (or smaller) are always on the GPU.
+// ミップマップ・ストリーミング: これ以下の小さいレベルは、常に GPU にある。
 constexpr uint32_t kStreamAlwaysKept = 64;
-// A finer level asked for is kept this long after the last draw that needed it (seconds); one not
-// needed by any draw that long goes back to the always-kept levels.
+// 求められた細かいレベルは、それを必要とした最後の描画の後、この時間 (秒) 保つ。それだけの間
+// どの描画にも要らなかったものは、常に保つレベルに戻る。
 constexpr double kStreamKeepFine = 2.0;
 constexpr double kStreamForget = 5.0;
-// Finer levels put on the GPU in one frame at most (the rest the next frames).
+// 1 フレームに GPU に載せる細かいレベルの上限 (残りは次のフレーム)。
 constexpr int kStreamUploadsPerFrame = 8;
 
 uint32_t SmallestKept(const TexturePixels& p) {
@@ -562,7 +563,7 @@ uint32_t SmallestKept(const TexturePixels& p) {
 
 double StreamClock() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
-// Levels top .. the last of `pixels` as one texture on the GPU. False and *why when it cannot.
+// 最上位 .. `pixels` の最後のレベルを 1 つのテクスチャーとして GPU に載せる。できないときは false と *why。
 bool MakeTextureView(ID3D11Device* device, const TexturePixels& pixels, uint32_t top, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& view,
                      size_t& bytes, const char** why) {
     std::vector<D3D11_SUBRESOURCE_DATA> init;
@@ -581,7 +582,7 @@ bool MakeTextureView(ID3D11Device* device, const TexturePixels& pixels, uint32_t
     td.Height = pixels.levels[top].height;
     td.MipLevels = static_cast<UINT>(init.size());
     td.ArraySize = 1;
-    // sRGB forms: the GPU reads linear light. The numbers are DXGI_FORMAT's (TextureFile.h).
+    // sRGB の形式: GPU はリニアの光を読む。数は DXGI_FORMAT のもの (TextureFile.h)。
     td.Format = static_cast<DXGI_FORMAT>(DxgiFormatOf(pixels.format, pixels.srgb));
     td.SampleDesc.Count = 1;
     td.Usage = D3D11_USAGE_IMMUTABLE;
@@ -619,7 +620,7 @@ std::shared_ptr<const GpuTexture> Renderer::UploadTexture(const TexturePixels& p
     gpu->format = pixels.format;
     gpu->levels = static_cast<uint32_t>(pixels.levels.size());
     gpu->madeBy = id_;
-    // Streamed (and with smaller copies): only the always-kept small levels now; Render adds finer ones.
+    // ストリーミング (小さいコピーつき): 今は常に保つ小さいレベルだけ。細かいものは Render が足す。
     const bool streamed = sampling.streamed && pixels.levels.size() > 1;
     const uint32_t first = streamed ? SmallestKept(pixels) : 0;
     const char* why = nullptr;
@@ -647,8 +648,8 @@ void Renderer::Stream(const RenderFrame& f, const Vec3& eye) {
         }
     }
     if (all.empty()) return;
-    // The finest level each is seen at in this picture: the picture spread over the thing's size on
-    // the screen (its bounds' sphere), one level finer for pictures repeated over it.
+    // この絵の中で、それぞれが見られる一番細かいレベル: 絵を、そのものの画面上の大きさ (その
+    // 境界の球) に広げたもの。絵が繰り返されるものは 1 つ細かく。
     const bool ortho = f.projection.m[3][3] == 1.f;
     const float pixelsPerUnit = f.projection.m[1][1] * 0.5f * static_cast<float>(f.height);
     streamSeen_.clear();
@@ -680,7 +681,7 @@ void Renderer::Stream(const RenderFrame& f, const Vec3& eye) {
                 st.wantAt = now;
             }
         } else if (now - st.wantAt > kStreamForget) {
-            st.want = smallest;  // not drawn for a while (by any renderer): only the small levels
+            st.want = smallest;  // しばらく描かれていない (どのレンダラーからも): 小さいレベルだけ
         }
         if (st.want == st.top) continue;
         if (st.want < st.top && uploads >= kStreamUploadsPerFrame) continue;
@@ -718,7 +719,7 @@ bool Renderer::Resize(uint32_t width, uint32_t height) {
     td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     td.SampleDesc.Count = 1;
     td.Usage = D3D11_USAGE_DEFAULT;
-    td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;  // shader resource: Direct2D draws it
+    td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;  // シェーダーリソース: Direct2D が描く
     if (FAILED(device_->CreateTexture2D(&td, nullptr, &picture_))) return false;
     ID3D11Texture2D* target = picture_.Get();
     samples_ = shared_->samples;
@@ -729,7 +730,7 @@ bool Renderer::Resize(uint32_t width, uint32_t height) {
         target = multisample_.Get();
     }
     if (FAILED(device_->CreateRenderTargetView(target, nullptr, &rtv_))) return false;
-    // The depth: typeless, so shaders can read it too (particles collide with what is drawn).
+    // 深度: typeless にして、シェーダーからも読めるようにする (パーティクルは描かれたものと衝突する)。
     td.Format = DXGI_FORMAT_R24G8_TYPELESS;
     td.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
     td.SampleDesc.Count = samples_;
@@ -737,7 +738,7 @@ bool Renderer::Resize(uint32_t width, uint32_t height) {
     dd.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
     dd.ViewDimension = samples_ > 1 ? D3D11_DSV_DIMENSION_TEXTURE2DMS : D3D11_DSV_DIMENSION_TEXTURE2D;
     if (FAILED(device_->CreateTexture2D(&td, nullptr, &depthTex_)) || FAILED(device_->CreateDepthStencilView(depthTex_.Get(), &dd, &dsv_))) {
-        // (a GPU that cannot read a depth buffer: one only for the depth test)
+        // (深度バッファーを読めない GPU: 深度テスト専用に 1 つだけ)
         td.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
         td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
         depthTex_.Reset();
@@ -783,7 +784,7 @@ void BindMesh(ID3D11DeviceContext* ctx, ID3D11Buffer* vb, ID3D11Buffer* ib) {
 
 void Put(std::array<float, 4>& out, Color c) { out = {c.r, c.g, c.b, c.a}; }
 
-// A dynamic buffer at least `bytes` big (made again, larger, when it is not).
+// `bytes` 以上の大きさの動的バッファー (足りなければ、より大きく作り直す)。
 bool EnsureDynamic(ID3D11Device* device, Microsoft::WRL::ComPtr<ID3D11Buffer>& buffer, size_t& capacity, size_t bytes, UINT bind) {
     if (buffer && capacity >= bytes) return true;
     const size_t cap = std::max(bytes, capacity * 2) + 4096;
@@ -826,7 +827,7 @@ uint32_t Renderer::AddMaterial(const DrawMaterial& m) {
     const float mode = m.alpha == AlphaMode::Mask ? 1.f : m.alpha == AlphaMode::Blend ? 2.f : 0.f;
     things_.emplace_back();
     Put(things_.back(), m.color);
-    // A picture's flag: 0 none, 1 a picture, 2 a picture with fewer channels (BC5 normals, BC4 numbers).
+    // 絵のフラグ: 0 なし、1 絵あり、2 チャンネルが少ない絵 (BC5 の法線、BC4 の数)。
     auto flag = [](const TextureRef& t, int fewer) { return !t ? 0.f : ChannelsOf(t->format) == fewer ? 2.f : 1.f; };
     things_.push_back({m.texture ? 1.f : 0.f, mode, m.alphaCutoff, flag(m.normal, 2)});
     things_.push_back({m.metallic, m.roughness, m.normalScale, flag(m.metalRough, 1)});
@@ -865,7 +866,7 @@ void Renderer::Emit(const GpuMesh* mesh, uint32_t firstIndex, uint32_t indexCoun
         Cmd& last = cmds_.back();
         if (last.mesh == mesh && last.firstIndex == firstIndex && last.indexCount == indexCount && last.slot + last.instances == slot &&
             SamePictures(last.material, material)) {
-            ++last.instances;  // the next instance of the same draw
+            ++last.instances;  // 同じ描画の次のインスタンス
             return;
         }
     }
@@ -884,7 +885,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     if (!Ready() || f.width == 0 || f.height == 0 || !Resize(f.width, f.height)) return nullptr;
     Shared& s = *shared_;
 
-    // Everything filled: the boxes and the models (each with its own place and colour).
+    // 塗ったものすべて: 箱とモデル (それぞれ自分の場所と色)。
     items_.clear();
     for (const Box& b : f.boxes) {
         items_.push_back({s.cube.get(), &b.world, b.color, b.castShadow, {}, {0, 0, 0, 0}});
@@ -895,7 +896,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         items_.push_back({m.mesh, &m.world, m.color, m.castShadow, m.materials, m.highlight});
         items_.back().moving = m.moving;
     }
-    // Culling (always): what lies wholly outside the camera's view is left out of the picture.
+    // カリング (常に): カメラの視界の完全に外にあるものは、絵から外す。
     const Mat4 viewProj = f.projection * f.view;
     stats_ = Stats{};
     stats_.things = items_.size();
@@ -905,7 +906,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         it.seen = BoxInFrustum(camera, it.bounds);
         if (it.seen) ++stats_.drawn;
     }
-    // The shapes of the 向きの地図 (a plugin's: 天候's colliders): never in the picture, only in those maps.
+    // 向きの地図の形 (プラグインのもの: 天候のコライダー): 絵には出ず、その地図にだけ入る。
     for (const MapShape& b : f.mapShapes) {
         if (!b.mesh || b.mesh->indexCount == 0) continue;
         items_.push_back({b.mesh, &b.world, {1, 1, 1, 1}, false, {}, {0, 0, 0, 0}});
@@ -920,12 +921,11 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         eye = TransformPoint(*toWorld, {0, 0, 0});
         forward = Normalize(TransformDirection(*toWorld, {0, 0, -1}));
     }
-    Stream(f, eye);  // ミップマップ・ストリーミング: the levels the streamed pictures need now
-    // The lights (none: the one default directional light; more than kMaxLights: the nearest and
-    // brightest) and the ambient light.
+    Stream(f, eye);  // ミップマップ・ストリーミング: ストリーミングの絵が今必要とするレベル
+    // 光 (無いとき: 既定の平行光 1 つ。kMaxLights より多いとき: 一番近くて明るいもの) と環境光。
     LightSetup lights = MakeLights(f.lights, f.lightDirection, f.ambient, eye);
 
-    // Every thing's and material's numbers, once for the frame (the draws only say which).
+    // すべてのものとマテリアルの数を、フレームに 1 回 (描画は、どれかだけを言う)。
     things_.clear();
     draws_.clear();
     cmds_.clear();
@@ -952,9 +952,9 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         Emit(it.mesh, part.firstIndex, part.indexCount, AddDraw(it.thing, it.firstMaterial + k * 4), &materialOf(it, part));
     };
 
-    // What casts, grouped by mesh (stable: DrawOrder.h) once for all the maps - a map's things of one
-    // mesh become one instanced draw - each with a fingerprint of its mesh and place.
-    // The same for the 向きの地図's shapes (mapOrder_).
+    // 影を落とすものを、メッシュごとにまとめる (安定: DrawOrder.h)。全部のマップに対して 1 回。
+    // マップの中の 1 つのメッシュのものは、1 回のインスタンス描画になる。それぞれにメッシュと場所の指紋を付ける。
+    // 向きの地図の形 (mapOrder_) にも同じことをする。
     for (const bool blocks : {false, true}) {
         keys_.clear();
         still_.clear();
@@ -970,20 +970,19 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         list.clear();
         for (const uint32_t k : order_) list.push_back(still_[k]);
     }
-    mapMovingOrder_.clear();  // (the moving ones only: RenderFrame::mapMovingOnly)
+    mapMovingOrder_.clear();  // (動くものだけ: RenderFrame::mapMovingOnly)
     for (const uint32_t i : mapOrder_) {
         if (items_[i].moving) mapMovingOrder_.push_back(i);
     }
 
-    // 1. The shadow maps to draw: what casts, seen from each light. Only what lies in a map is drawn
-    // into it (each map's own view: a light's, a cascade's), and a map that would hold the same as it
-    // does (the same matrix, the same things where they were) is not drawn again. A map with things
-    // that move keeps a layer of what stays put (drawn again only when that changes) and lays it back
-    // under the moving ones.
+    // 1. 描くシャドウマップ: 影を落とすものを、各光から見る。マップの中にあるものだけをそこに描き
+    // (各マップ自身の視界: 光の、カスケードの)、今と同じ内容になるマップ (同じ行列で、ものが同じ
+    // 場所) は描き直さない。動くものを含むマップは、動かないものの層を保持して (それが変わった
+    // ときだけ描き直す)、動くものの下に敷き戻す。
     ShadowConstants sc{};
     sc.viewForward[0] = forward.x, sc.viewForward[1] = forward.y, sc.viewForward[2] = forward.z;
-    // The box the sun's maps are fitted to: what stays put, the moving things widening it only in
-    // steps (Lighting.h's SunFitBounds: dragging one does not change the maps every frame).
+    // 太陽のマップを合わせる箱: 動かないもの。動くものは段階的にだけ広げる
+    // (Lighting.h の SunFitBounds: 1 つをドラッグしても、毎フレームマップが変わらない)。
     std::optional<Bounds> stillBox, movingBox;
     for (const uint32_t i : casterOrder_) {
         const Bounds& b = items_[i].bounds;
@@ -995,20 +994,20 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     const std::optional<Bounds> fitted = SunFitBounds(stillBox, movingBox);
     const bool anyCaster = fitted.has_value();
     const Bounds casters = fitted.value_or(Bounds{});
-    enum class MapMode { Whole, Layer, OverLayer };  // all of it / the kept layer / laid back + the moving ones
+    enum class MapMode { Whole, Layer, OverLayer };  // 全部 / 保持した層 / 敷き戻し + 動くもの
     struct MapWork {
         ShadowMaps* maps;
         uint32_t tile;
         Mat4 viewProj;
-        size_t first, end;  // its draws in cmds_
+        size_t first, end;  // cmds_ の中のその描画
         MapMode mode;
     };
     std::vector<MapWork> layers, work;
-    // What the tiles will hold once drawn - written to them after the drawing (step 1 below), not
-    // here: a frame that stops before (the frame's numbers could not go to the GPU) leaves the tiles
-    // saying what they really hold, and they are drawn again next time.
+    // 描き終えたらタイルが持つことになるもの - 描いた後に (下の手順 1 で) タイルに書き、ここでは
+    // 書かない: 途中で止まったフレーム (フレームの数が GPU に送れなかった) では、タイルは本当に持って
+    // いるものを言い続け、次回描き直される。
     struct Holds {
-        std::vector<uint64_t>* of;  // ShadowMaps::holds or layerHolds
+        std::vector<uint64_t>* of;  // ShadowMaps::holds または layerHolds
         uint32_t tile;
         uint64_t value;
     };
@@ -1033,7 +1032,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             }
         }
         const uint64_t whole = moving_.empty() ? still : HashWords(still, &moving, sizeof(moving));
-        if (maps.holds[tile] == whole) {  // drawn already (this frame's, the last's, or another renderer's)
+        if (maps.holds[tile] == whole) {  // すでに描いた (このフレームの、前のフレームの、または別のレンダラーの)
             ++stats_.mapsKept;
             return;
         }
@@ -1058,7 +1057,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         emitCasters(moving_);
         work.push_back({&maps, tile, lightViewProj, movingFirst, cmds_.size(), MapMode::OverLayer});
     };
-    // The sun: one map fitted to what casts, or the cascades along the view.
+    // 太陽: 影を落とすものに合わせた 1 枚、または視界に沿ったカスケード。
     int sunMaps = 0;
     if (f.shadows && anyCaster && lights.shadowLight >= 0) {
         const SunShadowPlan plan = PlanSunShadows(lights.shadowDirection, casters, f.view, f.projection, kShadowMapSize);
@@ -1066,7 +1065,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             sunMaps = plan.count;
             for (size_t m = 0; m < static_cast<size_t>(plan.count); ++m) {
                 CopyMatrix(sc.sunViewProj[m], plan.viewProj[m]);
-                // The biases are a texel or so: the normal offset in the world, the depth's in the map.
+                // バイアスは 1 テクセルほど: 法線方向のずらしはワールドで、深度のものはマップで。
                 sc.sunInfo[m][0] = plan.splitFar[m];
                 sc.sunInfo[m][1] = plan.texel[m] * 1.5f;
                 sc.sunInfo[m][2] = plan.texel[m] / std::max(plan.depthRange[m], 1e-6f);
@@ -1076,7 +1075,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     }
     sc.shadowInfo[0] = static_cast<float>(sunMaps);
     sc.shadowInfo[1] = 1.f / static_cast<float>(kShadowMapSize);
-    // The point lights and spots.
+    // 点光源とスポット。
     bool localMaps = false;
     if (f.shadows && anyCaster && lights.localSlices > 0 && s.EnsureMaps(s.local, static_cast<uint32_t>(kLocalShadowSlices), kLocalShadowSize)) {
         localMaps = true;
@@ -1088,14 +1087,14 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     sc.shadowInfo[2] = 1.f / static_cast<float>(kLocalShadowSize);
     sc.atlas[0] = static_cast<float>(std::max(s.sun.cols, 1u)), sc.atlas[1] = static_cast<float>(std::max(s.sun.rows, 1u));
     sc.atlas[2] = static_cast<float>(std::max(s.local.cols, 1u)), sc.atlas[3] = static_cast<float>(std::max(s.local.rows, 1u));
-    // Lights whose maps were not drawn have no shadows.
+    // マップを描かなかった光には影が無い。
     for (size_t i = 0; i < kMaxLights; ++i) {
         if (sunMaps == 0) lights.block.color[i][3] = 0;
         if (!localMaps) lights.block.shadow[i][0] = -1;
     }
     const bool shadows = sunMaps > 0 || localMaps;
-    // 向きの地図: the hidden shapes seen along each direction asked for (a plugin's: 天候's rain, snow
-    // and what got wet). No shapes: none (everything open, MapPast says).
+    // 向きの地図: 求められた各向きに沿って見た、隠れた形 (プラグインのもの: 天候の雨、雪、濡れた
+    // 所)。形が無いとき: なし (すべて開けている、と MapPast が言う)。
     DirectionMapConstants dm{};
     const uint32_t mapCount = static_cast<uint32_t>(std::min<size_t>(f.mapDirections.size(), kDirectionMaps));
     dm.size[0] = static_cast<float>(kCoverSize);
@@ -1115,9 +1114,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         }
     }
 
-    // 2. The picture's draws: what is not see-through (sorted: pictures, then mesh and part - the
-    // depth test sorts out what is in front), the floor's shadows, then what is see-through, the
-    // farthest first (by the middle of its part).
+    // 2. 絵の描画: 透けないもの (並べ替える: 絵、次にメッシュとパーツ - 手前にあるものは深度テストが
+    // 決める)、床の影、次に透けるもの。一番遠いものから (パーツの真ん中で)。
     const size_t opaqueFirst = cmds_.size();
     mergeFloor_ = opaqueFirst;
     keys_.clear();
@@ -1156,7 +1154,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             const GpuMesh& m = *items_[i].mesh;
             centers_.push_back(TransformPoint(*items_[i].world, m.partCenters[static_cast<size_t>(part - m.parts.data())]));
         }
-        // (the same mesh, part and pictures one after another in this order still become one draw)
+        // (同じメッシュ、パーツ、絵がこの順に続くものは、やはり 1 回の描画になる)
         for (const size_t k : BackToFront(centers_, eye)) partDraw(items_[seeThrough_[k].first], *seeThrough_[k].second);
     }
     const size_t seeThroughEnd = cmds_.size();
@@ -1178,7 +1176,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         }
     }
 
-    // The frame's numbers go to the GPU at once.
+    // フレームの数を一度に GPU へ送る。
     if (!UploadFrame(ctx)) return nullptr;
     FrameConstants fc{};
     CopyMatrix(fc.viewProj, viewProj);
@@ -1200,9 +1198,9 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->VSSetConstantBuffers(0, 1, &frameCb);
     ctx->PSSetConstantBuffers(0, 3, cbs);
     ID3D11ShaderResourceView* noSrvs[8] = {};
-    ctx->PSSetShaderResources(0, 8, noSrvs);  // the maps may still be bound for reading: they are written first
+    ctx->PSSetShaderResources(0, 8, noSrvs);  // マップがまだ読む用に結びついているかもしれない: 先に書く
     ctx->PSSetShaderResources(8, 1, noSrvs);
-    ctx->VSSetShaderResources(8, 1, noSrvs);  // (a plugin's draw may have read the 向きの地図 there)
+    ctx->VSSetShaderResources(8, 1, noSrvs);  // (プラグインの描画が、そこで向きの地図を読んだかもしれない)
     ID3D11ShaderResourceView* thingsView = thingsView_.Get();
     ctx->VSSetShaderResources(6, 1, &thingsView);
     ctx->PSSetShaderResources(6, 1, &thingsView);
@@ -1216,8 +1214,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     const float factor[4] = {0, 0, 0, 0};
     ctx->OMSetBlendState(s.blend.Get(), factor, 0xFFFFFFFF);
 
-    // Runs draws: the mesh bound when it changes, the pictures when they change; each draw is all
-    // its instances at once.
+    // 描画を実行する: メッシュは変わったときに、絵は変わったときに結ぶ。各描画はそのインスタンスを
+    // 全部一度に描く。
     const GpuMesh* bound = nullptr;
     auto run = [&](size_t first, size_t end, bool painted) {
         const DrawMaterial* pictures = nullptr;
@@ -1234,7 +1232,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
                 ID3D11ShaderResourceView* views[4] = {view(mat.texture.get()), view(mat.metalRough.get()), view(mat.normal.get()),
                                                       view(mat.emission.get())};
                 ctx->PSSetShaderResources(1, 4, views);
-                // (the colour picture decides: フィルタ and 端の扱い are the image's import settings)
+                // (色の絵が決める: フィルタと端の扱いは、画像の取り込みの設定)
                 ID3D11SamplerState* sampler = s.samplers[mat.texture ? SamplerIndex(mat.texture->sampling) : 0].Get();
                 ctx->PSSetSamplers(1, 1, &sampler);
                 pictures = cmd.material;
@@ -1244,11 +1242,11 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         }
     };
 
-    // 1. The shadow maps that changed: the kept layers first (what stays put), then each map's tile -
-    // cleared (depth 1) and drawn whole, or laid back from its layer with the moving things on top.
+    // 1. 変わったシャドウマップ: まず保持した層 (動かないもの)、次に各マップのタイルを - 消して
+    // (深度 1) 丸ごと描く、または層から敷き戻して、その上に動くものを描く。
     if (!layers.empty() || !work.empty()) {
         ctx->RSSetState(s.shadowRaster.Get());
-        ctx->PSSetShader(nullptr, nullptr, 0);  // depth only
+        ctx->PSSetShader(nullptr, nullptr, 0);  // 深度だけ
         ID3D11DepthStencilView* target = nullptr;
         auto begin = [&](ID3D11DepthStencilView* dsv, const MapWork& w) {
             if (dsv != target) {
@@ -1279,10 +1277,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         for (const MapWork& w : work) {
             begin(w.maps->dsv.Get(), w);
             if (w.mode == MapMode::OverLayer) {
-                // The layer's depths, exactly (CopyDepthPS), then the moving things over them. (The
-                // whole texture cannot be copied: the tiles of other maps lie in it too.)
+                // 層の深度をそのまま (CopyDepthPS)、その上に動くものを描く。(テクスチャー全体はコピーできない:
+                // ほかのマップのタイルも中にあるため。)
                 ID3D11ShaderResourceView* layer = w.maps->layerSrv.Get();
-                ctx->RSSetState(s.raster.Get());  // no depth bias on the copied depths
+                ctx->RSSetState(s.raster.Get());  // コピーした深度には深度バイアスを掛けない
                 ctx->OMSetDepthStencilState(s.depthClear.Get(), 0);
                 ctx->VSSetShader(s.clearVs.Get(), nullptr, 0);
                 ctx->PSSetShader(s.copyPs.Get(), nullptr, 0);
@@ -1298,23 +1296,23 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             drawCasters(w);
         }
     }
-    // The tiles drawn now hold what was planned.
+    // 今描いたタイルは、計画したものを持っている。
     for (const Holds& h : holds) (*h.of)[h.tile] = h.value;
     ctx->UpdateSubresource(frameCb, 0, nullptr, &fc, 0, 0);
 
-    // 2. The picture.
+    // 2. 絵。
     ID3D11RenderTargetView* rtv = rtv_.Get();
     ctx->OMSetRenderTargets(1, &rtv, dsv_.Get());
     const D3D11_VIEWPORT vp{0, 0, static_cast<float>(f.width), static_cast<float>(f.height), 0, 1};
     ctx->RSSetViewports(1, &vp);
-    const float clear[4] = {f.clear.r, f.clear.g, f.clear.b, f.clear.a};  // a < 1: a picture to put over something (a thumbnail)
+    const float clear[4] = {f.clear.r, f.clear.g, f.clear.b, f.clear.a};  // a < 1: 何かの上に重ねる絵 (サムネイル)
     ctx->ClearRenderTargetView(rtv, clear);
     ctx->ClearDepthStencilView(dsv_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.f, 0);
     ctx->RSSetState(s.raster.Get());
-    // The sky, behind everything: one triangle over the picture, the depth test off (nothing written).
+    // 空は、すべての後ろ: 絵の上に三角形 1 つ、深度テストはオフ (何も書かない)。
     if (f.sky && f.sky->program) {
         SkyConstants skyK = f.sky->constants;
-        Mat4 turn = f.view;  // the camera's turn only: the sky is infinitely far
+        Mat4 turn = f.view;  // カメラの回転だけ: 空は無限に遠い
         turn.m[3][0] = turn.m[3][1] = turn.m[3][2] = 0;
         if (const auto inv = Inverse(f.projection * turn)) {
             CopyMatrix(skyK.invViewProj, *inv);
@@ -1342,7 +1340,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->PSSetShaderResources(5, 1, &localSrv);
         ctx->PSSetSamplers(0, 1, &sampler);
     }
-    // 向きの地図 (b6, t8) and a plugin's surface numbers (b5): for the models, and for what plugins draw.
+    // 向きの地図 (b6、t8) と、プラグインの面の数 (b5): モデルと、プラグインが描くもの用。
     ID3D11ShaderResourceView* mapsSrv = directionMaps ? s.directionMaps.srv.Get() : nullptr;
     ID3D11Buffer* extraCbs[2] = {s.surfaceCb.Get(), s.directionCb.Get()};
     ctx->PSSetShaderResources(8, 1, &mapsSrv);
@@ -1350,8 +1348,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->VSSetShader(s.meshVs.Get(), nullptr, 0);
     ctx->PSSetShader(meshPs, nullptr, 0);
     run(opaqueFirst, opaqueEnd, true);
-    // What plugins draw as solid things (RenderFrame::solids: 天候's snow), lit as the models are; then
-    // ours is set again.
+    // プラグインが固い物として描くもの (RenderFrame::solids: 天候の雪)。モデルと同じに光を当てる。
+    // その後、こちらのものをもう一度設定する。
     if (!f.solids.empty()) {
         const ExtraDrawContext ec{ctx, f.view, f.projection, eye, f.width, f.height, nullptr, samples_, s.directionCb.Get(), mapsSrv};
         for (const ExtraDraw& draw : f.solids) {
@@ -1377,8 +1375,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->PSSetShader(meshPs, nullptr, 0);
         bound = nullptr;
     }
-    // The shadows on the floor: see-through, over what is already drawn (the depth test still hides
-    // the floor behind things), and writing no depth (the grid lies on it).
+    // 床の影: 透けて、すでに描いたものの上に (深度テストは、ものの後ろの床をやはり隠す)、深度は
+    // 書かない (グリッドが床の上にある)。
     if (floorEnd > opaqueEnd) {
         ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
         ctx->PSSetShader(s.floorPs.Get(), nullptr, 0);
@@ -1386,7 +1384,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
     }
 
-    // Lines (after the filled things: the grid is see-through, and the depth test still hides it behind them).
+    // 線 (塗ったものの後: グリッドは透けていて、深度テストは、その後ろにあるものに隠す)。
     if (!f.lines.empty() && LineCapacity(f.lines.size())) {
         D3D11_MAPPED_SUBRESOURCE map{};
         if (SUCCEEDED(ctx->Map(lineVb_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) {
@@ -1400,15 +1398,15 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             bound = nullptr;
             ctx->VSSetShader(s.lineVs.Get(), nullptr, 0);
             ctx->PSSetShader(s.linePs.Get(), nullptr, 0);
-            // (depth-tested, but writing none: what reads the depth - particles colliding - sees no grid)
+            // (深度テストはするが書かない: 深度を読むもの - 衝突するパーティクル - にはグリッドが見えない)
             ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
             ctx->Draw(static_cast<UINT>(f.lines.size() & ~size_t{1}), 0);
             ctx->OMSetDepthStencilState(s.depth.Get(), 0);
         }
     }
 
-    // 3. What is see-through, over everything else and writing no depth (what is behind another
-    // see-through part still shows through it).
+    // 3. 透けるもの: ほかのすべての上に、深度は書かない (ほかの透けるパーツの後ろにあるものも、
+    // それを通して見える)。
     if (seeThroughEnd > floorEnd) {
         ctx->IASetInputLayout(s.meshLayout.Get());
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1419,8 +1417,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
     }
 
-    // 3-2. What plugins draw themselves (particles: see-through, depth-tested, writing no depth); then
-    // ours is set again for the lines.
+    // 3-2. プラグインが自分で描くもの (パーティクル: 透けて、深度テストをし、深度は書かない)。
+    // その後、こちらのものを線用にもう一度設定する。
     if (!f.extras.empty()) {
         ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
         const ExtraDrawContext ec{ctx, f.view, f.projection, eye, f.width, f.height, depthSrv_.Get(), samples_, s.directionCb.Get(), mapsSrv};
@@ -1437,8 +1435,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         bound = nullptr;
     }
 
-    // 4. Debug lines over everything: the parts nothing hides as given, the hidden parts faint (the
-    // same lines again, a quarter as strong, where the depth test says something is in front).
+    // 4. デバッグ線をすべての上に: 何も隠していない部分はそのまま、隠れた部分は薄く (同じ線をもう
+    // 一度、4 分の 1 の強さで、深度テストが手前に何かあると言う所に)。
     if (const size_t n = f.debugLines.size() & ~size_t{1}; n > 0 && LineCapacity(n * 2)) {
         D3D11_MAPPED_SUBRESOURCE map{};
         if (SUCCEEDED(ctx->Map(lineVb_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) {
@@ -1466,7 +1464,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     }
 
     if (samples_ > 1) ctx->ResolveSubresource(picture_.Get(), 0, multisample_.Get(), 0, DXGI_FORMAT_B8G8R8A8_UNORM);
-    // Nothing of ours stays bound (Direct2D draws the picture next).
+    // こちらのものは何も結んだまま残らない (次に Direct2D が絵を描く)。
     ctx->OMSetRenderTargets(0, nullptr, nullptr);
     ctx->PSSetShaderResources(0, 8, noSrvs);
     ctx->PSSetShaderResources(8, 1, noSrvs);

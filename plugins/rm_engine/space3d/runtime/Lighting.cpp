@@ -10,30 +10,30 @@ namespace rm::space3d {
 namespace {
 
 constexpr float kDeg = std::numbers::pi_v<float> / 180.f;
-constexpr float kSpotFadeStart = 0.75f;  // a spot is full inside 3/4 of its half angle
-constexpr float kPointFov = 95.f;        // each side of a point light's cube (a little over 90: soft edges meet)
-constexpr float kCascadeMix = 0.75f;     // CascadeSplits: 1 = evenly growing steps, 0 = even steps
+constexpr float kSpotFadeStart = 0.75f;  // スポットは、半角の 4 分の 3 の内側では全力
+constexpr float kPointFov = 95.f;        // 点光源のキューブの各面 (90 より少し広い: やわらかい縁がつながる)
+constexpr float kCascadeMix = 0.75f;     // CascadeSplits: 1 = 等比に広がる段、0 = 等しい段
 
 Vec3 DirectionOr(Vec3 d, Vec3 fallback) {
     const Vec3 n = Normalize(d);
     return Length(n) == 0 ? fallback : n;
 }
 
-// The near plane of a point / spot shadow map (as far as the depth's precision allows).
+// 点光源 / スポットのシャドウマップのニア面 (深度の精度が許す限り遠く)。
 float LocalNear(float range) { return std::clamp(range * 0.01f, 0.02f, 0.5f); }
 float LocalFar(float range) { return std::max(range, LocalNear(range) * 2.f); }
 float SpotFov(float spotAngle) { return std::min(std::clamp(spotAngle, 1.f, 179.f) * 1.1f + 4.f, 170.f); }
 
-// Up for a camera looking along `dir` (any up that is not the line of sight).
+// `dir` の向きに見るカメラの上向き (視線ではないどの上向きでもよい)。
 Vec3 UpFor(Vec3 dir) { return std::fabs(dir.y) > 0.99f ? Vec3{0, 0, 1} : Vec3{0, 1, 0}; }
 
-// What a perspective shadow map of `fov` degrees reaching `range` puts in LightBlock::shadow (y, z).
+// `range` まで届く `fov` 度の透視シャドウマップが、LightBlock::shadow (y, z) に入れるもの。
 void LocalBias(float fov, float range, float out[4]) {
     const float texelPerDistance = 2.f * std::tan(fov * 0.5f * kDeg) / static_cast<float>(kLocalShadowSize);
     const float n = LocalNear(range), f = LocalFar(range);
     out[1] = texelPerDistance * 1.5f;
-    // A shift of 1.5 texels (texelPerDistance x d in the world) in the map's depth near d: depth =
-    // f / (f - n) x (1 - n / d), whose change per unit of d is f n / ((f - n) d^2).
+    // マップの深度の、距離 d の近くでの 1.5 テクセル分のずれ (ワールドでの texelPerDistance x d): 深度 =
+    // f / (f - n) x (1 - n / d)、その d あたりの変化は f n / ((f - n) d^2)。
     out[2] = 1.5f * texelPerDistance * f * n / (f - n);
 }
 
@@ -62,7 +62,7 @@ LightSetup MakeLights(std::span<const Light> lightsIn, Vec3 defaultDirection, co
     LightSetup s;
     const Light fallback{.direction = defaultDirection};
     const std::span<const Light> given = lightsIn.empty() ? std::span<const Light>(&fallback, 1) : lightsIn;
-    // The directional lights first, then the point / spot lights that matter most to the eye.
+    // まず平行光源、次に目にとって一番大事な点光源 / スポット。
     std::vector<size_t> order(given.size());
     for (size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::vector<float> weight(given.size());
@@ -111,7 +111,7 @@ LightSetup MakeLights(std::span<const Light> lightsIn, Vec3 defaultDirection, co
             }
             continue;
         }
-        // A point / spot light: its maps, while there are free ones.
+        // 点光源 / スポット: そのマップを、空きがある間だけ。
         const size_t need = l.type == LightType::Point ? 6 : 1;
         if (s.localSlices + need > kLocalShadowSlices) {
             ++s.shadowsLeftOut;
@@ -143,8 +143,7 @@ std::array<float, kCascades> CascadeSplits(float nearZ, float farZ) {
 
 namespace {
 
-// The texel and depth of an orthographic light matrix (it only turns and moves, so each row is the
-// scale of that axis).
+// 正射影のライト行列のテクセルと深度 (回って動くだけなので、各行がその軸のスケールになる)。
 void Measure(const Mat4& m, uint32_t mapSize, float* texel, float* depthRange) {
     auto rowLength = [&](int r) { return Length({m.m[0][r], m.m[1][r], m.m[2][r]}); };
     const float width = 2.f / std::max(rowLength(0), 1e-12f), height = 2.f / std::max(rowLength(1), 1e-12f);
@@ -156,7 +155,7 @@ void Measure(const Mat4& m, uint32_t mapSize, float* texel, float* depthRange) {
 
 std::optional<Bounds> SunFitBounds(const std::optional<Bounds>& still, const std::optional<Bounds>& moving) {
     if (!moving) return still;
-    // A sixteenth of the box's size, a power of two (at least 1/4): the same while things move inside.
+    // 箱の大きさの 16 分の 1 で、2 のべき乗 (少なくとも 1/4): 中でものが動いている間は同じ。
     auto stepFor = [](const Bounds& b) { return std::exp2(std::ceil(std::log2(std::max(Length(b.max - b.min) / 16.f, 0.25f)))); };
     if (!still) {
         const float step = stepFor(*moving);
@@ -182,24 +181,23 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
     };
     if (Length(casters.max - casters.min) * 0.5f <= kSingleMapRadius) return single();
 
-    // What the camera sees, in view space (the eye at 0, looking along -z), and how far its near and far
-    // planes are in front of the eye. Each cascade's ball is measured there, from the projection alone:
-    // the same numbers whichever way the camera turns (2026-11-19: measured in the world, the rounding
-    // of a ball's size flipped with the camera's angle and the shadows flickered).
+    // カメラが見るもの (ビュー空間: 目が 0 で -z の向きを見る) と、そのニア面とファー面が目の前のどれだけ先に
+    // あるか。各カスケードの球はそこで、射影だけから測る: カメラがどちらを向いても同じ数になる
+    // (2026-11-19: ワールドで測っていたとき、球の大きさの丸めがカメラの角度で入れ替わって、影がちらついた)。
     const auto toWorld = Inverse(view);
     const auto corners = FrustumCorners(projection);
     if (!toWorld || !corners) return single();
     const float d0 = -(*corners)[0].z, d1 = -(*corners)[4].z;
     const float reach = std::min(d1, kShadowDistance);
     if (!(d1 > d0) || !(reach > d0 + 1e-3f)) return single();
-    auto at = [&](size_t edge, float d) {  // the point of an edge of the view at distance d (view space)
+    auto at = [&](size_t edge, float d) {  // 視界の端の、距離 d での点 (ビュー空間)
         const Vec3 a = (*corners)[edge], b = (*corners)[edge + 4];
         return a + (b - a) * ((d - d0) / (d1 - d0));
     };
 
-    // The light's turn (no move: the cascades are moved in whole texels in it).
+    // ライトの回転 (動かさない: カスケードはその中で、テクセル単位で動かす)。
     const Mat4 turn = LookAt({0, 0, 0}, dir, UpFor(dir));
-    float casterHigh = -1e30f;  // the casters' side nearest the light (view space looks along -z: higher z)
+    float casterHigh = -1e30f;  // キャスターの、ライトに一番近い側 (ビュー空間は -z の向きを見る: z が大きい方)
     for (int i = 0; i < 8; ++i) {
         const Vec3 p = TransformPoint(turn, {(i & 1) ? casters.max.x : casters.min.x, (i & 2) ? casters.max.y : casters.min.y,
                                              (i & 4) ? casters.max.z : casters.min.z});
@@ -219,12 +217,12 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
         for (const Vec3& p : pts) center = center + p * 0.125f;
         float radius = 0;
         for (const Vec3& p : pts) radius = std::max(radius, Length(p - center));
-        radius = std::ceil(radius * 16.f) / 16.f + 0.01f;  // (a little room, in steps)
+        radius = std::ceil(radius * 16.f) / 16.f + 0.01f;  // (少し余裕を、段階で)
         Vec3 lc = TransformPoint(turn, TransformPoint(*toWorld, center));
         const float texel = radius * 2.f / static_cast<float>(std::max(mapSize, 1u));
         lc.x = std::floor(lc.x / texel) * texel;
         lc.y = std::floor(lc.y / texel) * texel;
-        // Deep enough for its ball, and towards the light for everything that casts into it.
+        // その球に十分な深さで、そこに影を落とす全てのためにライトの方へ。
         const float pad = radius * 0.02f + 0.01f;
         const float high = std::max(lc.z + radius, casterHigh) + pad, low = lc.z - radius - pad;
         plan.viewProj[c] = Orthographic(lc.x - radius, lc.x + radius, lc.y - radius, lc.y + radius, -high, -low) * turn;
@@ -238,12 +236,12 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
 
 CoverPlan PlanCover(Vec3 eye, Vec3 direction) {
     const Vec3 d = DirectionOr(direction, {0, -1, 0});
-    // Across the way: two axes at right angles to it (the first level when it falls straight).
+    // 横断する向き: それに直角な 2 つの軸 (真っすぐ落ちるときは最初のレベル)。
     const Vec3 a = Normalize(std::fabs(d.z) < 0.99f ? Cross(d, {0, 0, 1}) : Cross(d, {1, 0, 0}));
     const Vec3 b = Cross(a, d);
     constexpr float texel = kCoverSide / static_cast<float>(kCoverSize);
-    const float u = std::floor(Dot(eye, a) / texel) * texel, v = std::floor(Dot(eye, b) / texel) * texel;  // whole texels
-    const float start = std::floor((Dot(eye, d) - kCoverAbove) / 4.f) * 4.f;  // (in steps: kept while the eye bobs)
+    const float u = std::floor(Dot(eye, a) / texel) * texel, v = std::floor(Dot(eye, b) / texel) * texel;  // テクセル単位
+    const float start = std::floor((Dot(eye, d) - kCoverAbove) / 4.f) * 4.f;  // (段階で: 目が上下に揺れても保つ)
     const float half = kCoverSide * 0.5f;
     CoverPlan c;
     c.range = kCoverDepth;

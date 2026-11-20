@@ -1,5 +1,5 @@
-// The weather part of the scripts' API (RMWeather.h). RmApi::ctx is game production's ScriptWorld: its
-// scene is the one that plays (the copy, in the editor), and its 天候 is that scene's setting.
+// スクリプト API の天候の部分 (RMWeather.h)。RmApi::ctx はゲーム制作の ScriptWorld: そのシーンは
+// Play しているもの (エディターではコピー) で、その 天候 はそのシーンの設定。
 
 #include "rm_engine/weather/runtime/ScriptWeather.h"
 
@@ -35,13 +35,13 @@ int SetValue(void* ctx, int which, float value, float seconds) {
     Weather* w = WeatherOf(ctx);
     if (!w || !std::isfinite(value)) return 0;
     if (which < 0 || which > 8 || which == 7) return 0;
-    if (which <= 4) BeginFade(*w, seconds);  // (雪にする, 雷, 積もる高さ: at once - snow comes in by itself)
-    auto tenths = [](float v, float most) { return std::trunc(std::clamp(v, 0.f, most) * 10.f + 1e-4f) / 10.f; };  // (as the inspector keeps them)
+    if (which <= 4) BeginFade(*w, seconds);  // (雪にする、雷、積もる高さ: すぐに - 雪は自分で入ってくる)
+    auto tenths = [](float v, float most) { return std::trunc(std::clamp(v, 0.f, most) * 10.f + 1e-4f) / 10.f; };  // (インスペクターが持つ形で)
     switch (which) {
         case 0: w->cloudAmount = tenths(value, 100.f); break;
         case 1: w->precipitation = tenths(value, 100.f); break;
         case 2: w->fogAmount = tenths(value, 100.f); break;
-        case 3: w->windDirection = std::fmod(value, 360.f); break;  // (a fade turns it the short way: NowOf blends the vector)
+        case 3: w->windDirection = std::fmod(value, 360.f); break;  // (フェードは短いほうへ回す: NowOf がベクトルを混ぜる)
         case 4: w->windStrength = std::clamp(value, 0.f, 100.f); break;
         case 5: w->snowing = value != 0; break;
         case 6: w->lightning = value != 0; break;
@@ -62,7 +62,7 @@ int GetValue(void* ctx, int which, int now, float* out) {
         case 3: {
             if (!now) {
                 *out = w->windDirection;
-            } else {  // (the inverse of WindOf: 0 to -Z, + to the left)
+            } else {  // (WindOf の逆: 0 は -Z、+ は左)
                 const float strength = std::sqrt(n.windX * n.windX + n.windZ * n.windZ);
                 *out = strength > 1e-6f ? std::atan2(-n.windX, -n.windZ) * 57.2957795f : w->windDirection;
             }

@@ -1,12 +1,11 @@
-// The exported game's drawing in 3D (game_production/runtime/GameDraw.h): the scene through the game's
-// camera, by 3D 空間's renderer, into the window.
+// 書き出したゲームの 3D 描画 (game_production/runtime/GameDraw.h): ゲームのカメラ越しの
+// シーンを、3D 空間のレンダラーでウィンドウに描く。
 //
-// A thing with a 3D model (メッシュ) is drawn with the model the export baked (MeshBake: read as the editor
-// reads it, in this engine's form) and its pictures as the GPU takes them (DDS: BC7 turned into RGBA on a
-// GPU without it), or as its 形 (箱, 球 ...); when its model cannot be read, as a box. A thing without a
-// メッシュ is not drawn (the editor shows it as a mark). Lights, 環境光, shadows, the camera, the scene's
-// 空 (SkyPaint.h: the same painter as the editor's) and switched-off things are as in the editor's game
-// view.
+// 3D モデル (メッシュ) を持つ物は、書き出しで焼いたモデル (MeshBake: エディターと同じように
+// 読み、このエンジンの形にしたもの) と、GPU が読める形の画像 (DDS: BC7 が無い GPU では
+// RGBA にする) で描く。または 形 (箱, 球 ...) で描く。モデルが読めないときは箱で描く。
+// メッシュ の無い物は描かない (エディターでは印で出る)。ライト、環境光、影、カメラ、シーンの
+// 空 (SkyPaint.h: エディターと同じ描き手)、オフの物は、エディターのゲームビューと同じ。
 
 #include "rm_engine/game_x_3d/runtime/GameDraw3D.h"
 
@@ -47,7 +46,7 @@ public:
         if (!renderer_.Ready() || generation_ != f.gfx.Generation()) {
             bitmap_.Reset();
             picture_ = nullptr;
-            models_.clear();  // (made on the devices that are gone)
+            models_.clear();  // (もう無いデバイスの上に作ったもの)
             pictures_.clear();
             sky_ = SkyPainter{};
             generation_ = f.gfx.Generation();
@@ -67,9 +66,9 @@ public:
         lights_.clear();
         std::optional<space3d::Ambient> amb;
         std::optional<std::pair<Camera, space3d::Mat4>> eye;
-        std::unordered_map<int, space3d::Mat4> world;  // parents come before their children in TreeOrder
-        shown_.clear();                                 // the places of what is switched on (WorldDrawFrame::world)
-        drawnWith_.clear();                             // ... and the models they are drawn with (WorldDrawFrame::model)
+        std::unordered_map<int, space3d::Mat4> world;  // 親は TreeOrder で子より先に来る
+        shown_.clear();                                 // オンのものの位置 (WorldDrawFrame::world)
+        drawnWith_.clear();                             // ... と、それらを描くモデル (WorldDrawFrame::model)
         for (const auto& t : f.scene.TreeOrder()) {
             const auto& e = *t.entity;
             const auto it = world.find(e.data.parent);
@@ -81,7 +80,7 @@ public:
             }
             const space3d::Mat4 w = space3d::WorldMatrix(parent, *static_cast<const space3d::Transform*>(tc->value.Get()));
             world[e.data.id] = w;
-            if (!t.activeInHierarchy) continue;  // switched off: not in the game
+            if (!t.activeInHierarchy) continue;  // オフ: ゲームには出ない
             shown_[e.data.id] = w;
             const game_production::Component* cc = e.FindComponent(camera);
             const game_production::Component* lc = e.FindComponent(light);
@@ -90,10 +89,10 @@ public:
             if (cc && cc->Known() && static_cast<uint64_t>(e.data.id) == f.camera) eye.emplace(*static_cast<const Camera*>(cc->value.Get()), w);
             if (lc && lc->Known()) lights_.push_back(ToRenderLight(*static_cast<const Light*>(lc->value.Get()), w));
             if (ac && ac->Known() && !amb) amb = ToRenderAmbient(*static_cast<const AmbientLight*>(ac->value.Get()));
-            if (!mc || !mc->Known()) continue;  // no メッシュ: nothing to see (an empty entity, a camera, パーティクル ...)
+            if (!mc || !mc->Known()) continue;  // メッシュ が無い: 見えるものが無い (空のエンティティ、カメラ、パーティクル ...)
             const MeshRenderer* mr = static_cast<const MeshRenderer*>(mc->value.Get());
             const bool shadow = mr->castShadows;
-            constexpr Color kPlain{0.78f, 0.80f, 0.84f, 1};  // a box (its model is missing) and a simple shape
+            constexpr Color kPlain{0.78f, 0.80f, 0.84f, 1};  // 箱 (モデルが無い) と単純な形
             if (const auto shape = ShapeOf(mr->shape)) {
                 if (const space3d::GpuMesh* g = renderer_.ShapeOf(*shape)) {
                     meshes_.push_back({g, w, kPlain, shadow, {}});
@@ -108,9 +107,9 @@ public:
             }
             boxes_.push_back({w, kPlain, shadow});
         }
-        // (More than kMaxLights: the renderer's MakeLights chooses - the sun with shadows is never cut by the order.)
+        // (kMaxLights より多いとき: レンダラーの MakeLights が選ぶ - 影を付ける太陽は順番で切られない。)
         if (!eye) {
-            // No camera to see through (the game settings' 最初のカメラ): the background only.
+            // 見るカメラが無い (ゲーム設定の 最初のカメラ): 背景だけ。
             if (!told_) log::Warn("ゲームの設定の「最初のカメラ」がカメラの付いた有効なエンティティを指していないので、背景だけを塗ります");
             told_ = true;
             f.dc->Clear(D2D1::ColorF(bg.r, bg.g, bg.b, 1));
@@ -128,22 +127,22 @@ public:
         frame.meshes = meshes_;
         frame.ambient = amb.value_or(space3d::Ambient{});
         frame.shadows = true;
-        // The scene's 空, behind everything (its time: the game's, as the clouds drift); 光を空に合わせる.
+        // シーンの 空 は何よりも後ろ (時間はゲームのもの。雲が流れる)。光を空に合わせる。
         seconds_ += f.dt;
         const Sky* sky = f.scene.Setting<Sky>();
         if (sky && sky->kind != SkyKind::None) {
-            look_ = LookOf(*sky, seconds_, SkyWeatherOf(f.registry, f.scene, seconds_));  // (its clouds: the weather's)
+            look_ = LookOf(*sky, seconds_, SkyWeatherOf(f.registry, f.scene, seconds_));  // (その雲: 天候のもの)
             const SkyLook& look = look_;
             SkyPainter::Sources sources;
             sources.picture = [&](const AssetRef& ref) { return PictureOf(f, ref); };
             sources.code = [&](const AssetRef& ref) { return f.asset(ref); };
             sources.name = [](const AssetRef& ref) { return ref.guid; };
-            sources.readEvery = -1;  // the game's files do not change
+            sources.readEvery = -1;  // ゲームのファイルは変わらない
             frame.sky = sky_.Prepare(renderer_, *sky, look, sources);
             FollowSky(look, lights_, frame.ambient);
         }
         frame.lights = lights_;
-        // What other plugins draw into the world themselves (パーティクル: WorldDraw.h).
+        // 他のプラグインが世界に自分で描くもの (パーティクル: WorldDraw.h)。
         if (!drawersMade_ && f.registry) {
             drawersMade_ = true;
             for (const auto& d : f.registry->Contributions<WorldDrawInfo>(kWorldDrawPoint)) {
@@ -165,7 +164,7 @@ public:
                 return it != drawnWith_.end() ? it->second : nullptr;
             };
             wf.shape = [this](space3d::Shape s) { return renderer_.ShapeOf(s); };
-            // What they add to the frame (天候: the 向きの地図, 濡れ), then what they draw.
+            // それらがフレームに足すもの (天候: 向きの地図、濡れ)。そのあと、それらが描くもの。
             for (const auto& d : drawers_) {
                 FrameAdditions add;
                 d->PrepareFrame(wf, add);
@@ -181,7 +180,7 @@ public:
             for (const auto& d : drawers_) d->Prepare(wf, extras_);
         }
         frame.extras = extras_;
-        f.dc->Flush();  // Direct2D's drawing first, then Direct3D's picture
+        f.dc->Flush();  // 先に Direct2D の描画、そのあと Direct3D の絵
         ID3D11Texture2D* picture = renderer_.Render(f.gfx.D3DContext(), frame);
         if (!picture) return;
         if (picture != picture_ || !bitmap_) {
@@ -201,14 +200,14 @@ private:
         std::shared_ptr<const space3d::GpuMesh> gpu;
         std::vector<space3d::DrawMaterial> materials;
     };
-    // The baked model an asset id names, put on the GPU the first time (null: draw a box - told once).
+    // アセット id が指す焼いたモデルを、最初に GPU に置く (null: 箱を描く - 1 度だけ知らせる)。
     const Model* ModelOf(const game_production::GameDrawFrame& f, const AssetRef& ref) {
         if (ref.Empty()) return nullptr;
         auto [it, first] = models_.try_emplace(ref.guid);
         if (!first) return it->second.gpu ? &it->second : nullptr;
         std::string err;
         const auto bytes = f.asset(ref);
-        std::vector<space3d::TextureSampling> sampling;  // per image: how it is read (its import settings)
+        std::vector<space3d::TextureSampling> sampling;  // 画像ごと: 読み方 (その取り込みの設定)
         const auto mesh = bytes ? space3d::ReadBakedMesh(*bytes, &err, &sampling) : std::nullopt;
         if (!mesh) {
             log::Warn("モデルを読めないので箱で描きます ({}): {}", ref.guid, bytes ? err : std::string("ゲームに入っていません"));
@@ -234,7 +233,7 @@ private:
                     continue;
                 }
                 if (pixels->format == space3d::TextureFormat::BC7 && !renderer_.SupportsBC7()) {
-                    // A GPU without BC7: the picture as plain RGBA.
+                    // BC7 の無い GPU: 画像を素の RGBA にする。
                     for (platform::Image& level : pixels->levels) level = space3d::Decompress(level, pixels->format);
                     pixels->format = space3d::TextureFormat::Rgba8;
                 }
@@ -252,8 +251,8 @@ private:
         return &m;
     }
 
-    // A picture of the sky (an image asset: baked as it was, or the file) on the GPU, read the first
-    // time (null: it cannot be read - told once).
+    // 空の画像 (画像アセット: 焼いたものそのまま、またはファイル) を GPU に置く。最初に
+    // (null: 読めない - 1 度だけ知らせる)。
     space3d::TextureRef PictureOf(const game_production::GameDrawFrame& f, const AssetRef& ref) {
         auto [it, first] = pictures_.try_emplace(ref.guid);
         if (!first) return it->second;
@@ -273,10 +272,10 @@ private:
 
     space3d::Renderer renderer_;
     std::unordered_map<std::string, Model> models_;
-    std::unordered_map<std::string, space3d::TextureRef> pictures_;  // the sky's, by asset id
+    std::unordered_map<std::string, space3d::TextureRef> pictures_;  // 空の分。アセット id ごと
     SkyPainter sky_;
-    SkyLook look_;  // this frame's (the renderer reads its rain / snow)
-    double seconds_ = 0;  // the game's time the sky moves by
+    SkyLook look_;  // このフレームのもの (レンダラーが雨 / 雪を読む)
+    double seconds_ = 0;  // 空が動くもとになるゲームの時間
     std::vector<space3d::MeshDraw> meshes_;
     uint64_t generation_ = 0;
     std::vector<space3d::Box> boxes_;
@@ -284,12 +283,12 @@ private:
     ID3D11Texture2D* picture_ = nullptr;
     Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap_;
     bool told_ = false;
-    // Other plugins' drawing into the world (WorldDraw.h), made at the first frame.
+    // 他のプラグインの世界への描画 (WorldDraw.h)。最初のフレームで作る。
     std::vector<std::unique_ptr<WorldDrawer>> drawers_;
     bool drawersMade_ = false;
     std::vector<space3d::ExtraDraw> extras_;
     std::unordered_map<int, space3d::Mat4> shown_;
-    std::unordered_map<int, const space3d::GpuMesh*> drawnWith_;  // the model each entity is drawn with
+    std::unordered_map<int, const space3d::GpuMesh*> drawnWith_;  // 各エンティティを描くモデル
 };
 
 }  // namespace
@@ -298,8 +297,8 @@ std::unique_ptr<game_production::GameDrawer> CreateGameDraw3D() { return std::ma
 
 namespace {
 
-// What the exported game registers of this plugin (its generated main calls it by the C name below):
-// the runtime part the editor has too, and the drawer (the editor has its scene views instead).
+// 書き出したゲームがこのプラグインから登録するもの (生成される main が下の C の名前で呼ぶ):
+// エディターも持つランタイム側と、描き手 (エディターにはかわりにシーンビューがある)。
 void RegisterForGame(RuntimeRegistry& registry) {
     RegisterRuntime(registry);
     static const game_production::GameDrawInfo kDraw{"3d", 0, &CreateGameDraw3D};

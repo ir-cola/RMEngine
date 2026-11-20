@@ -1,10 +1,10 @@
 #pragma once
-// ゲーム制作 × 3D - the scene's 空 made ready for 3D 空間's renderer (RenderFrame::sky): one painter
-// for every picture that shows the sky (the scene view, the game view and the camera preview in the
-// editor; the exported game), so the sky looks the same in all of them. Where the pictures and the
-// user's .rmsky come from differs (the editor's files / the game's .rmpak): the caller says (Sources).
+// ゲーム制作 × 3D - 3D 空間のレンダラー (RenderFrame::sky) 用に整えたシーンの 空: 空を見せる
+// すべての絵 (エディターのシーンビュー、ゲームビュー、カメラプレビュー、書き出したゲーム) に
+// 描き手は 1 つ。どれでも空が同じに見える。画像とユーザーの .rmsky の出どころは違う
+// (エディターのファイル / ゲームの .rmpak): 呼ぶ側が言う (Sources)。
 //
-//   SkyPainter painter;                                   // one per picture's owner
+//   SkyPainter painter;                                   // 絵の持ち主ごとに 1 つ
 //   const SkyLook look = LookOf(*sky, seconds);
 //   if (const space3d::SkyDraw* d = painter.Prepare(renderer, *sky, look, sources)) frame.sky = d;
 //   FollowSky(look, lights, ambient);                    // 光を空に合わせる
@@ -23,33 +23,33 @@ namespace rm::game_x_3d {
 class SkyPainter {
 public:
     struct Sources {
-        // A picture on the GPU (a colour picture: read as linear light); null while it is not ready
-        // or cannot be read (the caller tells why).
+        // GPU 上の画像 (色の画像: リニアの光として読む)。準備ができていないか読めない間は null
+        // (呼ぶ側が理由を知らせる)。
         std::function<space3d::TextureRef(const AssetRef&)> picture;
-        // A .rmsky file's text; nullopt when it is not there.
+        // .rmsky ファイルのテキスト。無いときは nullopt。
         std::function<std::optional<std::string>(const AssetRef&)> code;
-        // Its name for the messages (the file's name).
+        // メッセージ用の名前 (ファイルの名前)。
         std::function<std::string(const AssetRef&)> name;
-        // How often the .rmsky is read again (seconds; its edits show without reopening). < 0: once.
+        // .rmsky を読み直す間隔 (秒。編集は開き直さなくても出る)。< 0: 1 度だけ。
         double readEvery = 0.25;
-        double now = 0;  // seconds, any start (for readEvery)
+        double now = 0;  // 秒。始まりはどこでもよい (readEvery 用)
     };
 
-    // What to draw behind everything; null: the clear colour (なし, or the sky cannot be drawn: its
-    // shader does not compile - told once on the console - or its .rmsky is missing).
+    // 何よりも後ろに描くもの。null: クリアの色 (なし か、空が描けないとき: シェーダーが
+    // コンパイルできない - コンソールに 1 度だけ知らせる - か、.rmsky が無い)。
     const space3d::SkyDraw* Prepare(space3d::Renderer& renderer, const Sky& sky, const SkyLook& look, const Sources& sources);
 
 private:
     std::string Code(const Sky& sky, const SkyLook& look, const Sources& sources, std::string& fileName);
 
     space3d::SkyDraw draw_;
-    std::string compiled_;  // the HLSL draw_.program was made from
-    bool failed_ = false;   // compiled_ did not compile: not tried again until the code changes
-    // The user's .rmsky as read last, and when.
+    std::string compiled_;  // draw_.program を作った HLSL
+    bool failed_ = false;   // compiled_ がコンパイルできなかった: コードが変わるまで再び試さない
+    // 最後に読んだユーザーの .rmsky と、その時刻。
     std::string codeGuid_;
     std::optional<std::string> code_;
     double codeReadAt_ = -1e9;
-    std::unordered_set<std::string> told_;  // messages given once
+    std::unordered_set<std::string> told_;  // 1 度だけ出したメッセージ
 };
 
 }  // namespace rm::game_x_3d

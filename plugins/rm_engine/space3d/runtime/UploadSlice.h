@@ -1,14 +1,14 @@
 #pragma once
-// 3D 空間 - how much time a frame may spend sending pictures to the GPU (the idea of Unity's
-// asyncUploadTimeSlice). Pure (tested in tests/TestSpace3d.cpp): the caller measures each copy
-// (QueryPerformanceCounter: platform::NowSeconds) and says how long it took.
+// 3D 空間 - 1 フレームが絵の GPU への送信に使ってよい時間 (Unity の asyncUploadTimeSlice と
+// 同じ考え)。純粋 (tests/TestSpace3d.cpp でテストする): 呼ぶ側が各コピーを測り
+// (QueryPerformanceCounter: platform::NowSeconds)、かかった時間を渡す。
 //
 //   if (slice.May(frame)) { const double t0 = NowSeconds(); Upload(...); slice.Spent(NowSeconds() - t0); }
 //
-// The first copy of a frame always may (so pictures keep coming, however big one is); after it,
-// copies stop when the frame has spent the budget. `frame` is any value that changes every frame.
-// Deferred(frame) counts the copies put off in that frame only: a frame that asked for none (nothing
-// is waiting any more) has none - so nobody draws again for copies that were made long ago.
+// フレームの最初のコピーは必ず通す (どんなに大きくても絵が届き続けるように)。その後は、
+// フレームが予算を使い切ったらコピーを止める。`frame` はフレームごとに変わる値なら何でもよい。
+// Deferred(frame) はそのフレームで先送りしたコピーだけを数える。何も頼まなかったフレーム (もう
+// 待っているものがない) は 0 - だから、ずっと前に済んだコピーのために描き直す者はいない。
 
 #include <algorithm>
 #include <cstddef>
@@ -29,7 +29,7 @@ public:
         spent_ += std::max(seconds, 0.0);
         ++copies_;
     }
-    // Copies put off in `frame` (each of them asks again in the next frame): draw again until 0.
+    // `frame` で先送りしたコピー (どれも次のフレームでまた頼む): 0 になるまで描き直す。
     size_t Deferred(double frame) const { return frame == frame_ ? deferred_ : 0; }
     double SpentThisFrame() const { return spent_; }
 

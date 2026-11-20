@@ -1,11 +1,10 @@
 #pragma once
-// ゲーム制作 × 3D - the light component: 平行光 (directional, like the sun), 点光源 (point, like a bulb)
-// or スポット (a cone, like a torch), shining along its entity's own -Z (the Transform's rotation turns
-// it; a point light shines every way). The scene view and the game view light the scene with them;
-// with none, one white directional light from above (3D 空間's default, Lighting.h). At most 8 are
-// drawn. Shadows: the first directional light that casts them, and point / spot lights while their
-// maps last (Lighting.h).
-// Pure - tested in tests/TestSpace3d.cpp.
+// ゲーム制作 × 3D - ライトの部品: 平行光 (太陽のような directional)、点光源 (電球のような
+// point)、スポット (懐中電灯のような円錐)。その物自身の -Z に沿って照らす (Transform の回転で
+// 向きが変わる。点光源はどちらにも照らす)。シーンビューとゲームビューはこれでシーンを照らす。
+// 無いときは、上からの白い平行光 1 つ (3D 空間の既定、Lighting.h)。描くのは最大 8 つ。影は、
+// 影を付ける最初の平行光と、マップが続く間の点光源 / スポット (Lighting.h)。
+// 純粋 - tests/TestSpace3d.cpp でテストする。
 
 #include "core/reflect/Reflect.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
@@ -31,12 +30,12 @@ struct Light {
     RM_PROPERTY(Edit, Label="影を落とす", Tooltip="平行光は、影を落とす平行光の 1 つ目だけが影を出します。点光源とスポットは影の地図 8 枚を階層の順に使います (点光源は 6 枚、スポットは 1 枚)。足りない光は影なし") bool castShadows = true;
 };
 
-// The light as the renderer takes it, placed by its entity's world matrix (it shines along -Z).
+// レンダラーが受け取る形のライト。そのエンティティのワールド行列で置く (-Z に沿って照らす)。
 space3d::Light ToRenderLight(const Light& light, const space3d::Mat4& world);
 
-// 環境光: the light every face gets whatever the lights - the sky's colour on faces turned up, the
-// ground's on faces turned down. The first 有効 entity with it decides (none: 3D 空間's default, the
-// look before it could be set). Where its entity is does not matter.
+// 環境光: どのライトがあっても、すべての面が受ける光 - 上を向く面には空の色、下を向く面には
+// 地面の色。これを持つ最初の 有効 なエンティティが決める (無ければ 3D 空間の既定。設定できる
+// ようになる前の見た目)。そのエンティティがどこにあるかは関係ない。
 RM_STRUCT(Label="環境光")
 struct AmbientLight {
     RM_PROPERTY(Edit, Label="上からの色", Tooltip="上を向いた面に当たる光 (空の明るさ)", Min=0, Max=1) Color sky{0.16f, 0.16f, 0.16f, 1};

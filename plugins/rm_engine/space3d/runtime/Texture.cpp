@@ -46,16 +46,16 @@ void PictureDecoder::Run(std::stop_token stop) {
         std::shared_ptr<Job> job;
         {
             std::unique_lock lock(mu_);
-            if (!wake_.wait(lock, stop, [&] { return !queue_.empty(); })) return;  // stopped
-            // (The wait also returns true when stopped with jobs still queued: the picture being made is
-            // finished, the rest are dropped - not all made while the view that closed waits.)
+            if (!wake_.wait(lock, stop, [&] { return !queue_.empty(); })) return;  // 止まった
+            // (待ちは、仕事が残ったまま止まったときも true を返す: 作っている途中の絵は仕上げ、残りは
+            // 捨てる - 閉じたビューが待つ間に全部は作らない。)
             if (stop.stop_requested()) return;
             job = std::move(queue_.front());
             queue_.pop_front();
         }
-        if (job.use_count() > 1) {  // somebody still wants it
-            // Nothing thrown may leave the thread (that would end the program): a broken picture
-            // that makes the decoding run out of memory is just "cannot be read".
+        if (job.use_count() > 1) {  // まだ誰かが欲しがっている
+            // 投げられたものはスレッドから出してはならない (出ればプログラムが終わる): 壊れた絵のせいで
+            // デコードがメモリ不足になっても、「読めない」として扱うだけにする。
             try {
                 Make(*job);
             } catch (const std::bad_alloc&) {
@@ -70,7 +70,7 @@ void PictureDecoder::Run(std::stop_token stop) {
             }
             job->done_.store(true, std::memory_order_release);
         }
-        // (no longer waiting when it is taken or let go: Job::Taken)
+        // (取られたとき、または手放されたときは、もう待っていない: Job::Taken)
     }
 }
 
@@ -89,7 +89,7 @@ std::optional<std::vector<uint8_t>> ReadAll(const std::filesystem::path& file) {
     return bytes;
 }
 
-// The asset id in `file`'s .meta ("" when it has none yet).
+// `file` の .meta にあるアセット ID (まだ無いときは "")。
 std::string GuidOf(const std::filesystem::path& file) {
     std::filesystem::path meta = file;
     meta += L".meta";
@@ -100,7 +100,7 @@ std::string GuidOf(const std::filesystem::path& file) {
 
 uint32_t Most(int setting) { return std::min(kMaxTextureSize, static_cast<uint32_t>(std::max(setting, 1))); }
 
-// Into the cache folder: written beside and then put in place (a half-written file is never read).
+// キャッシュのフォルダへ: 隣に書いてから所定の場所に置く (書きかけのファイルは読まれない)。
 void WriteCache(const std::filesystem::path& file, const std::vector<uint8_t>& bytes) {
     std::error_code ec;
     std::filesystem::create_directories(file.parent_path(), ec);
@@ -140,13 +140,13 @@ std::wstring EntryKey(TextureUse use, bool srgb, const std::filesystem::path& fi
 void PictureDecoder::Make(Job& job) {
     const Source& s = job.source_;
     const double start = platform::NowSeconds();
-    // The bytes, whose they are, and how they are to be read (the import settings in the .meta).
+    // バイト列と、それが誰のものか、どう読むか (.meta の取り込みの設定)。
     std::optional<std::vector<uint8_t>> owned;
     std::span<const uint8_t> data;
     asset::TextureCompression compression = asset::TextureCompression::Auto;
     uint32_t most = kMaxTextureSize;
     std::string settings, id;
-    MipOptions mips;  // (a model's own pictures: always with their mipmaps)
+    MipOptions mips;  // (モデル自身の絵: 必ずミップマップ付き)
     if (s.bytes) {
         data = *s.bytes;
         const auto imp = asset::ReadImport<asset::ModelImport>(s.file);
@@ -169,12 +169,12 @@ void PictureDecoder::Make(Job& job) {
         settings = json::Write(reflect::Save(imp));
         id = GuidOf(s.file);
     }
-    // Made before (the same bytes, settings and use): the cache's .dds, as the GPU takes it.
+    // 前に作ったもの (同じバイト列・設定・用途): キャッシュの .dds を、GPU が受け取れる形で。
     std::filesystem::path cached;
     if (!s.cacheFolder.empty()) {
         cached = s.cacheFolder / PathFromUtf8(TextureCacheName(id, HashBytes(data), settings, s.use, s.srgb, s.canBC7));
         if (const auto bytes = ReadAll(cached)) {
-            std::string ignored;  // a broken cache file is just made again
+            std::string ignored;  // 壊れたキャッシュのファイルは作り直すだけ
             if (auto p = ReadDds(*bytes, &ignored)) {
                 job.pixels = std::move(*p);
                 job.fromCache = true;
@@ -202,7 +202,7 @@ bool TextureCache::Upload(Renderer& renderer, PictureDecoder::Job& job, double n
         job.Taken();
         return true;
     }
-    if (!slice_.May(now)) return false;  // this frame has copied for long enough: the next one
+    if (!slice_.May(now)) return false;  // このフレームは十分長くコピーした: 続きは次のフレーム
     const double start = platform::NowSeconds();
     out = renderer.UploadTexture(*job.pixels, error, job.sampling);
     slice_.Spent(platform::NowSeconds() - start);
@@ -215,7 +215,7 @@ TextureRef TextureCache::Get(Renderer& renderer, const std::filesystem::path& fi
     e.usedAt = now;
     const std::string name = PathToUtf8(file.filename());
     if (e.gpu && e.gpu->madeBy != renderer.Id()) {
-        // Made by another renderer (the GPU was made again): never used here - read again.
+        // 別のレンダラーが作ったもの (GPU を作り直した): ここでは使わず、読み直す。
         e.gpu.reset();
         e.job.reset();
         e.loaded = false;
@@ -223,7 +223,7 @@ TextureRef TextureCache::Get(Renderer& renderer, const std::filesystem::path& fi
     TextureRef made;
     std::string error;
     if (e.job && Upload(renderer, *e.job, now, made, &error)) {
-        // Made: on the GPU now (or it could not be).
+        // 作った: 今 GPU にある (または作れなかった)。
         const bool again = e.gpu != nullptr;
         const bool cached = e.job->fromCache;
         const double seconds = e.job->seconds;
@@ -240,7 +240,7 @@ TextureRef TextureCache::Get(Renderer& renderer, const std::filesystem::path& fi
     if (e.loaded && now - e.checkedAt < kCheckSeconds) return e.gpu;
     e.checkedAt = now;
     std::error_code ec;
-    const auto time = asset::ChangedAt(file, ec);  // the picture or its import settings (.meta)
+    const auto time = asset::ChangedAt(file, ec);  // 絵かその取り込みの設定 (.meta)
     if (ec) {
         e.gpu.reset();
         e.job.reset();
@@ -250,11 +250,11 @@ TextureRef TextureCache::Get(Renderer& renderer, const std::filesystem::path& fi
         e.told = true;
         return nullptr;
     }
-    if (e.loaded && time == e.time) return e.gpu;  // not changed (ready, being made, or could not be read)
+    if (e.loaded && time == e.time) return e.gpu;  // 変わっていない (できている・作っている途中・読めなかった)
     e.loaded = true;
     e.time = time;
     e.told = false;
-    // To the thread; the old picture stays until the new one is ready.
+    // スレッドへ。新しい絵ができるまで古い絵は残る。
     e.job = decoder_.Request({nullptr, file, -1, use, srgb, cacheFolder_, renderer.SupportsBC7()});
     return e.gpu;
 }
@@ -298,7 +298,7 @@ void ModelPaint::Load(const MeshData& mesh, const std::filesystem::path& modelFi
     inside_.clear();
     draw_.clear();
     slots_.clear();
-    // Each picture inside the model is made once per use, however many materials use it.
+    // モデルの中の各絵は、いくつの材質が使っても、使い方ごとに 1 回だけ作る。
     constexpr size_t kUses = 3;
     std::vector<int> insideOf(mesh.images.size() * kUses, -1);
     std::vector<std::shared_ptr<const std::vector<uint8_t>>> bytes(mesh.images.size());
@@ -335,9 +335,9 @@ void ModelPaint::Load(const MeshData& mesh, const std::filesystem::path& modelFi
 }
 
 std::span<const DrawMaterial> ModelPaint::Materials(Renderer& renderer, TextureCache& cache, double now) {
-    // The pictures inside the model: asked for once, put on the GPU when made (and the frame has time).
+    // モデルの中の絵: 1 回だけ頼み、できたら (フレームに余裕があれば) GPU に置く。
     for (Inside& in : inside_) {
-        if (in.gpu && in.gpu->madeBy != renderer.Id()) in.gpu.reset();  // the GPU was made again: read again
+        if (in.gpu && in.gpu->madeBy != renderer.Id()) in.gpu.reset();  // GPU を作り直した: 読み直す
         if (in.gpu || in.failed) continue;
         if (!in.job) {
             in.job = cache.Decoder().Request({in.bytes, modelFile_, in.image, in.use, in.srgb, cache.CacheFolder(), renderer.SupportsBC7()});

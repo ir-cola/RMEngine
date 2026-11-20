@@ -8,8 +8,7 @@ namespace {
 
 constexpr int kMaxBits = 15;
 
-// A Huffman code given by its code lengths (canonical): how many codes of each length, and the
-// symbols in code order.
+// 符号の長さで与えるハフマン符号 (正準): 長さごとに符号がいくつあるかと、符号の順の記号。
 struct Huffman {
     std::array<uint16_t, kMaxBits + 1> count{};
     std::array<uint16_t, 320> symbol{};
@@ -32,14 +31,14 @@ public:
                 case 0: ok = Stored(); break;
                 case 1: ok = Fixed(); break;
                 case 2: ok = Dynamic(); break;
-                default: return false;  // 3: not a block type
+                default: return false;  // 3: ブロックの種類ではない
             }
             if (!ok) return false;
         }
         return true;
     }
 
-    size_t Used() const { return pos_; }  // bytes of input read (the last one counted whole)
+    size_t Used() const { return pos_; }  // 読んだ入力のバイト数 (最後の 1 つは丸ごと数える)
     std::vector<uint8_t>& Out() { return out_; }
 
 private:
@@ -57,7 +56,7 @@ private:
     }
 
     bool Stored() {
-        bitBuf_ = 0;  // to the next byte
+        bitBuf_ = 0;  // 次のバイトへ
         bitCount_ = 0;
         if (pos_ + 4 > in_.size()) return false;
         const unsigned len = in_[pos_] | (in_[pos_ + 1] << 8);
@@ -69,7 +68,7 @@ private:
         return true;
     }
 
-    // -1: broken.
+    // -1: 壊れている。
     int Decode(const Huffman& h) {
         int code = 0, first = 0, index = 0;
         for (int len = 1; len <= kMaxBits; ++len) {
@@ -86,12 +85,11 @@ private:
         return -1;
     }
 
-    // False when the lengths ask for more codes than there are (an incomplete code is allowed:
-    // a single distance code, as zlib writes).
+    // 長さが、あり得る数より多くの符号を求めるなら false (不完全な符号は許す: zlib が書く、距離の符号が 1 つだけの場合)。
     static bool Build(Huffman& h, const uint8_t* lengths, int n) {
         h.count.fill(0);
         for (int s = 0; s < n; ++s) ++h.count[lengths[s]];
-        if (h.count[0] == n) return true;  // no codes: anything decoded is broken
+        if (h.count[0] == n) return true;  // 符号が無い: 復号したものは壊れている
         int left = 1;
         for (int len = 1; len <= kMaxBits; ++len) {
             left <<= 1;
@@ -118,7 +116,7 @@ private:
                 if (out_.size() >= max_) return false;
                 out_.push_back(static_cast<uint8_t>(sym));
             } else if (sym == 256) {
-                return true;  // end of the block
+                return true;  // ブロックの終わり
             } else {
                 sym -= 257;
                 if (sym >= 29) return false;
@@ -130,7 +128,7 @@ private:
                 if (!Bits(kDistExtra[d], extra)) return false;
                 const size_t back = kDistBase[d] + static_cast<size_t>(extra);
                 if (back > out_.size() || out_.size() + len > max_) return false;
-                // Byte by byte: the copy may overlap what it writes (a run).
+                // 1 バイトずつ: コピーは自分が書いたものと重なってよい (繰り返し)。
                 const size_t from = out_.size() - back;
                 for (size_t k = 0; k < len; ++k) out_.push_back(out_[from + k]);
             }
@@ -179,7 +177,7 @@ private:
             }
             int len = 0, repeat = 0;
             if (sym == 16) {
-                if (at == 0) return false;  // nothing to repeat
+                if (at == 0) return false;  // 繰り返すものが無い
                 len = lengths[at - 1];
                 if (!Bits(2, repeat)) return false;
                 repeat += 3;
@@ -193,7 +191,7 @@ private:
             if (at + repeat > nlen + ndist) return false;
             while (repeat-- > 0) lengths[at++] = static_cast<uint8_t>(len);
         }
-        if (lengths[256] == 0) return false;  // no end-of-block code
+        if (lengths[256] == 0) return false;  // ブロック終了の符号が無い
         Huffman lit, dist;
         if (!Build(lit, lengths, nlen) || !Build(dist, lengths + nlen, ndist)) return false;
         return Codes(lit, dist);
@@ -227,8 +225,8 @@ std::optional<std::vector<uint8_t>> Inflate(std::span<const uint8_t> data, size_
 }
 
 std::optional<std::vector<uint8_t>> InflateZlib(std::span<const uint8_t> data, size_t maxSize) {
-    // CMF / FLG: deflate (8), a window of at most 32 KB, no preset dictionary, and a check that
-    // makes the pair a multiple of 31.
+    // CMF / FLG: deflate (8)、窓は多くて 32 KB、プリセット辞書なし、そしてこの 2 つの組が 31 の倍数に
+    // なるチェック。
     if (data.size() < 6) return std::nullopt;
     const unsigned cmf = data[0], flg = data[1];
     if ((cmf & 0x0F) != 8 || (cmf >> 4) > 7 || (flg & 0x20) != 0 || ((cmf << 8) | flg) % 31 != 0) return std::nullopt;

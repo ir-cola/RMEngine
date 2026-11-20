@@ -1,8 +1,8 @@
 #pragma once
-// 3D 空間 - a picture ready to go to the GPU: itself and its smaller copies (mipmaps: no shimmer far
-// away), each half the one before, down to 1 x 1, as plain RGBA or block-compressed (BlockCompress.h).
-// Made on the CPU - on any thread, so the slow part never stops the drawing; only
-// Renderer::UploadTexture is on the drawing thread. Pure (tested in tests/TestSpace3d.cpp).
+// 3D 空間 - GPU に送れる状態の絵。絵そのものと、その小さいコピー (ミップマップ: 遠くでちらつかない)。
+// 各コピーは 1 つ前の半分で、1 x 1 まで続く。形は生の RGBA かブロック圧縮 (BlockCompress.h)。
+// CPU で作る。どのスレッドでもよく、重い所が描画を止めない。描画スレッドにあるのは
+// Renderer::UploadTexture だけ。純粋 (tests/TestSpace3d.cpp でテストする)。
 
 #include "platform/Pixels.h"
 
@@ -12,41 +12,41 @@
 
 namespace rm::space3d {
 
-// How the texels are kept on the GPU. The BC formats hold 4 x 4 texels in one block (8 or 16 bytes):
-//   BC1  RGB (+ 1 bit of alpha)  8 bytes  - colours without see-through parts
-//   BC3  RGBA                   16 bytes  - colours with alpha, on GPUs without BC7
-//   BC4  one channel            8 bytes  - a grey picture of numbers (read as .r)
-//   BC5  two channels           16 bytes  - normal maps (x, y; z is worked out)
-//   BC7  RGBA, better            16 bytes  - colours with alpha (feature level 11.0)
+// GPU でのテクセルの持ち方。BC のフォーマットは 4 x 4 テクセルを 1 ブロック (8 か 16 バイト) に持つ:
+//   BC1  RGB (+ アルファ 1 ビット)  8 バイト  - 透ける所のない色
+//   BC3  RGBA                      16 バイト  - アルファつきの色 (BC7 の無い GPU 用)
+//   BC4  1 チャンネル               8 バイト  - 数値の灰色の絵 (.r で読む)
+//   BC5  2 チャンネル              16 バイト  - 法線マップ (x, y。z は計算する)
+//   BC7  RGBA、より高品質          16 バイト  - アルファつきの色 (フィーチャーレベル 11.0)
 enum class TextureFormat : uint8_t { Rgba8, BC1, BC3, BC4, BC5, BC7 };
 
 bool IsBlockCompressed(TextureFormat f);
-size_t BlockBytes(TextureFormat f);  // a 4 x 4 block (0 for Rgba8)
-// The bytes of one row of the level (of texels, or of blocks), and of the whole level.
+size_t BlockBytes(TextureFormat f);  // 4 x 4 ブロックのバイト数 (Rgba8 は 0)
+// レベルの 1 行のバイト数 (テクセルか、ブロックの) と、レベル全体のバイト数。
 size_t RowPitch(TextureFormat f, uint32_t width);
 size_t LevelBytes(TextureFormat f, uint32_t width, uint32_t height);
-// Channels the format keeps (4 / 3 / 1 / 2): what the shader may read.
+// フォーマットが持つチャンネル数 (4 / 3 / 1 / 2): シェーダーが読めるもの。
 int ChannelsOf(TextureFormat f);
 
 struct TexturePixels {
-    // [0] = the picture. Each level's `pixels` holds LevelBytes(format, width, height) bytes: RGBA
-    // texels (PixelOrder::Rgba) or blocks, row after row.
+    // [0] = 絵。各レベルの `pixels` は LevelBytes(format, width, height) バイトを持つ: RGBA の
+    // テクセル (PixelOrder::Rgba) かブロックが、1 行ずつ並ぶ。
     std::vector<platform::Image> levels;
-    bool srgb = true;  // a colour picture (averaged as light; read as linear) or numbers
+    bool srgb = true;  // 色の絵 (光として平均し、リニアで読む) か数値
     TextureFormat format = TextureFormat::Rgba8;
 };
 
-// Colour pictures are averaged as light (sRGB -> linear -> back, by tables), so smaller copies do not
-// darken; numbers (and alpha) are averaged as they are. Empty levels when the picture is empty.
-// The image's import settings for its smaller copies (ImageImport: ミップマップ・透明部分を保つ).
+// 色の絵は光として平均する (sRGB -> リニア -> 戻す、テーブルで)。小さいコピーが暗くならない
+// ようにするため。数値 (とアルファ) はそのまま平均する。絵が空なら、レベルも空。
+// 画像の取り込みの設定のうち小さいコピーに関するもの (ImageImport: ミップマップ・透明部分を保つ)。
 struct MipOptions {
-    bool mipmaps = true;     // false: only the picture itself (one level)
-    float keepCoverage = 0;  // > 0: each smaller copy's alpha is scaled so that as many texels as in the
-                             // picture are at least this (cut-out leaves and fences do not fade away)
+    bool mipmaps = true;     // false: 絵そのものだけ (1 レベル)
+    float keepCoverage = 0;  // > 0: 小さい各コピーのアルファを拡大し、絵の中で「この値以上」のテクセルと
+                             // 同じ数だけ残るようにする (切り抜きの葉やフェンスが薄れて消えない)
 };
 TexturePixels MakeTexturePixels(platform::Image rgba, bool srgb, const MipOptions& options = {});
 
-// How much of the picture (0 .. 1) has alpha at least `cutoff` (0 .. 1).
+// 絵のうち、アルファが `cutoff` (0 .. 1) 以上の割合 (0 .. 1)。
 float AlphaCoverage(const platform::Image& rgba, float cutoff);
 
 }  // namespace rm::space3d

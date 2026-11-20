@@ -28,7 +28,7 @@ public:
         Put(c.b);
         Put(c.a);
     }
-    // One chunk: its tag, its size, then what `fill` writes.
+    // 1 つのチャンク: タグ、サイズ、そして `fill` が書くもの。
     template <class F>
     void Chunk(const char (&tag)[5], F fill) {
         bytes.append(tag, 4);
@@ -58,7 +58,7 @@ public:
         return true;
     }
     bool Color4(Color& c) { return Get(c.r) && Get(c.g) && Get(c.b) && Get(c.a); }
-    // A count of items of at least `each` bytes (never more than the bytes left could hold).
+    // 少なくとも 1 つ `each` バイトある項目の個数 (残りのバイトに収まる数を超えない)。
     bool Count(uint32_t& n, size_t each) { return Get(n) && static_cast<uint64_t>(n) * each <= b_.size(); }
     std::string_view Rest() const { return b_; }
 
@@ -128,7 +128,7 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
     in.Get(format);
     if (format > kBakedMeshFormat) return fail(std::format("新しい版で焼いたモデルです (形式 {} / この版は {} まで)", format, kBakedMeshFormat));
     MeshData m;
-    std::vector<std::array<uint8_t, 4>> sharp;  // per material (SHRP)
+    std::vector<std::array<uint8_t, 4>> sharp;  // マテリアルごと (SHRP)
     std::string_view rest = in.Rest();
     while (!rest.empty()) {
         if (rest.size() < 12) return fail("焼いたモデルが壊れています (途中で切れています)");
@@ -175,7 +175,7 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
                     ok = ok && c.Str(path);
                     *slot = -1;
                     if (!ok || path.empty()) continue;
-                    // One image per path.
+                    // パスごとに画像 1 つ。
                     int found = -1;
                     for (size_t i = 0; i < m.images.size(); ++i) {
                         if (m.images[i].file == path) found = static_cast<int>(i);
@@ -193,7 +193,7 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
             for (auto& sm : sharp) {
                 for (uint8_t& b : sm) ok = ok && c.Get(b);
             }
-        }  // (a tag this version does not know: skipped)
+        }  // (このバージョンが知らないタグ: 飛ばす)
         if (!ok) return fail(std::format("焼いたモデルの {} が壊れています", std::string(tag)));
     }
     if (m.parts.empty() && !m.indices.empty()) m.parts.push_back({0, static_cast<uint32_t>(m.indices.size()), -1});

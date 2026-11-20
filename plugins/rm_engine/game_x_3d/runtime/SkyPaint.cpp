@@ -11,7 +11,7 @@ std::string SkyPainter::Code(const Sky& sky, const SkyLook& look, const Sources&
         fileName = space3d::BuiltinSkyName(*look.builtin);
         return std::string(space3d::BuiltinSkyCode(*look.builtin));
     }
-    // 自分のシェーダー: the .rmsky, read again now and then (an edit saved in the text editor shows).
+    // 自分のシェーダー: .rmsky を、ときどき読み直す (テキストエディターで保存した編集が出る)。
     if (sky.shader.Empty()) return {};
     if (sky.shader.guid != codeGuid_ || (sources.readEvery >= 0 && sources.now - codeReadAt_ >= sources.readEvery)) {
         codeGuid_ = sky.shader.guid;
@@ -32,20 +32,20 @@ const space3d::SkyDraw* SkyPainter::Prepare(space3d::Renderer& renderer, const S
     const std::string code = Code(sky, look, sources, fileName);
     if (code.empty()) return nullptr;
     const std::string hlsl = space3d::AssembleSky(code, fileName);
-    // (a shader with a mistake is not compiled again on every frame - 2026-11-18: it was)
+    // (間違いのあるシェーダーは毎フレーム作り直さない - 2026-11-18: 作り直していた)
     if (hlsl != compiled_ || (!draw_.program && !failed_)) {
         compiled_ = hlsl;
         std::string error;
         draw_.program = renderer.MakeSky(hlsl, &error);
         failed_ = !draw_.program;
-        // On one line: the コンソール shows a message's first line (2026-11-18 on screen: only "…を作れません:").
+        // 1 行で: コンソールはメッセージの 1 行目だけを出す (2026-11-18 の画面: 「…を作れません:」だけだった)。
         std::replace(error.begin(), error.end(), '\n', ' ');
         while (!error.empty() && (error.back() == ' ' || error.back() == '\r')) error.pop_back();
         std::erase(error, '\r');
         if (!draw_.program && told_.insert("compile:" + hlsl).second) log::Warn("空のシェーダー「{}」を作れません: {}", fileName, error);
     }
     if (!draw_.program) return nullptr;
-    // The pictures: one around, six of a cube, or the one a user's shader reads as sky0.
+    // 画像: ぐるりと 1 枚、立方体の 6 枚、またはユーザーのシェーダーが sky0 として読む 1 枚。
     draw_.textures = {};
     auto picture = [&](size_t slot, const AssetRef& ref) {
         if (!ref.Empty() && sources.picture) draw_.textures[slot] = sources.picture(ref);
@@ -55,7 +55,7 @@ const space3d::SkyDraw* SkyPainter::Prepare(space3d::Renderer& renderer, const S
         const AssetRef* faces[space3d::kSkyTextures] = {&sky.right, &sky.left, &sky.up, &sky.down, &sky.back, &sky.front};
         for (size_t k = 0; k < space3d::kSkyTextures; ++k) picture(k, *faces[k]);
     }
-    // A picture sky whose pictures are not there (yet: being read): the clear colour, not black.
+    // 画像の空で、その画像がまだ無い (読み込み中): 黒でなく、クリアの色。
     const bool anyPicture = std::any_of(draw_.textures.begin(), draw_.textures.end(), [](const auto& t) { return t != nullptr; });
     if ((sky.kind == SkyKind::Panorama || sky.kind == SkyKind::SixImages) && !anyPicture) return nullptr;
     draw_.constants = look.constants;
