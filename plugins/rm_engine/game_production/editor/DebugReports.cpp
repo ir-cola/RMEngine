@@ -1,5 +1,5 @@
-// What the views tell the デバッグ window (DebugPanel.h: ViewReport), and the window's layout - apart from
-// its drawing: the views and the tests use them.
+// ビューがデバッグウィンドウに知らせること (DebugPanel.h: ViewReport)と、ウィンドウのレイアウト -
+// 描画とは別にしてある: ビューとテストがそれを使う。
 
 #include "rm_engine/game_production/editor/DebugPanel.h"
 
@@ -12,7 +12,7 @@
 
 namespace rm::game_production {
 
-// --- What the views tell -------------------------------------------------------------------------------
+// --- ビューが知らせること -------------------------------------------------------------------------------
 
 namespace {
 std::atomic<double> g_reportsUntil{0};
@@ -38,7 +38,7 @@ std::vector<ViewReport> RecentViews(double maxAge) {
     std::vector<ViewReport> out;
     for (auto it = Reports().begin(); it != Reports().end();) {
         if (now - it->second.at > 60) {
-            it = Reports().erase(it);  // (a view gone long ago)
+            it = Reports().erase(it);  // (ずっと前になくなったビュー)
             continue;
         }
         if (now - it->second.at <= maxAge) out.push_back(it->second);
@@ -48,7 +48,7 @@ std::vector<ViewReport> RecentViews(double maxAge) {
     return out;
 }
 
-// --- The window's layout (pure: the shape, the hit test and the drawing use it) -------------------------
+// --- ウィンドウのレイアウト (純粋: 形・当たり判定・描画が使う) -------------------------------------------
 
 using ui::Rect;
 
@@ -66,7 +66,7 @@ FolderWindowLayout LayoutFolderWindow(float w, float h) {
 std::vector<editor::ToolRoundRect> FolderWindowShape(float w, float h) {
     const FolderWindowLayout l = LayoutFolderWindow(w, h);
     std::vector<editor::ToolRoundRect> parts{{l.body, kFolderBodyRadius}};
-    // (each tab reaches well into the sheet: its own round bottom corners stay hidden there)
+    // (各タブはシートの奥まで届く: タブ自身の下の丸い角はそこに隠れる)
     for (const Rect& t : l.tabs) parts.push_back({{t.x, t.y, t.w, t.h + kFolderBodyRadius * 2}, kFolderTabRadius});
     return parts;
 }
@@ -78,7 +78,7 @@ editor::ToolHit HitFolderWindow(const FolderWindowLayout& l, float x, float y) {
     for (const Rect& t : l.tabs) {
         if (t.Contains(x, y)) return ToolHit::Client;
     }
-    if (y < l.body.y) return ToolHit::Nowhere;  // (between and right of the tabs: not the window)
+    if (y < l.body.y) return ToolHit::Nowhere;  // (タブの間と右: ウィンドウではない)
     const bool left = x < l.body.x + kEdge, right = x >= l.body.Right() - kEdge, bottom = y >= l.body.Bottom() - kEdge;
     const bool top = y < l.body.y + 4 && x > l.tabs[kFolderTabs - 1].Right();
     if (bottom && left) return ToolHit::BottomLeft;

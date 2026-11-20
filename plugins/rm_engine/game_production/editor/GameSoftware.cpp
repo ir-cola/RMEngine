@@ -61,11 +61,11 @@ using ui::Rect;
 constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
 constexpr char kScenesPanel[] = "scenes";
-constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" rows in the 階層's menu
-constexpr float kSpaceStripH = 34.f;   // the strip of spaces (3D / 2D) above the scene view
+constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" の行数 (階層のメニュー)
+constexpr float kSpaceStripH = 34.f;   // シーンビューの上の空間 (3D / 2D) の帯
 
-// The views of one space (a SceneViewInfo): the scene view, and the game view showing the game while it
-// plays (the same kind of view).
+// 1 つの空間のビュー (SceneViewInfo): シーンビューと、Play 中にゲームを映すゲームビュー
+// (同じ種類のビュー)。
 struct View {
     const SceneViewInfo* info = nullptr;
     std::unique_ptr<SceneView> scene;
@@ -89,17 +89,17 @@ void Placeholder(ui::Context& c, const Rect& r, const std::wstring& title, const
     p.Text({r.x + 32, cy - 4, r.w - 64, 80}, body, ts);
 }
 
-// A change to the shape of the scene (create / delete / duplicate / move): the scene before and
-// after. Field edits (name, switch) are reflect::SetFieldCommand like everywhere else.
+// シーンの形の変更 (作る・消す・複製・動かす): 変更の前と後のシーン。名前・スイッチなどの
+// フィールドの編集は、ほかと同じく reflect::SetFieldCommand。
 class SceneCommand final : public ICommand {
 public:
     SceneCommand(Scene& scene, json::Value before, json::Value after, std::string label)
         : scene_(scene), before_(std::move(before)), after_(std::move(after)), label_(std::move(label)) {
-        bytes_ = json::Write(before_, false).size() + json::Write(after_, false).size();  // once (the history's limit)
+        bytes_ = json::Write(before_, false).size() + json::Write(after_, false).size();  // 一度だけ (履歴の上限のため)
     }
     size_t Bytes() const override { return bytes_; }
-    // The next id is kept: an id given out once is never given again (an entity made after an undo
-    // never gets the id of one that was undone - references and saved views would point at it).
+    // 次の id は取っておく: 一度配った id は二度と配らない (Undo の後に作ったエンティティが、
+    // Undo で消えたエンティティの id をもらわないように。参照や保存したビューがそれを指してしまう)。
     void Do() override { Load(after_); }
     void Undo() override { Load(before_); }
     std::string Label() const override { return label_; }
@@ -117,8 +117,8 @@ private:
     size_t bytes_ = 0;
 };
 
-// A file an edit wrote (a prefab - Prefab に反映): undo writes back what was there, redo the new one.
-// Put in the same entry as the scene's change, so undo never leaves the file and the scene apart.
+// 編集が書いたファイル (Prefab - Prefab に反映): Undo は元にあった内容を書き戻し、Redo は新しい内容を書く。
+// シーンの変更と同じ 1 項目に入れるので、Undo でファイルとシーンがずれることはない。
 class FileCommand final : public ICommand {
 public:
     FileCommand(std::function<void(const std::string&)> write, std::string before, std::string after, std::string label)
@@ -133,8 +133,8 @@ private:
     std::string before_, after_, label_;
 };
 
-// A change of the scene's shape kept as the entities it touched, before and after (SceneRecord) -
-// not the whole scene twice. Undo / redo put back only those entities.
+// シーンの形の変更は、触れたエンティティの前と後 (SceneRecord) として持つ。シーン全体を 2 つ
+// 持つのではない。Undo / Redo はそのエンティティだけを戻す。
 class RecordCommand final : public ICommand {
 public:
     RecordCommand(Scene& scene, SceneRecord record, std::string label) : scene_(scene), record_(std::move(record)), label_(std::move(label)) {}
@@ -149,7 +149,7 @@ private:
     std::string label_;
 };
 
-// An edit of the game's list of scenes (シーンの一覧: added, removed, moved, the first one).
+// ゲームのシーンの一覧 (シーンの一覧: 足す・消す・動かす・最初の 1 つ) の編集。
 class SceneListCommand final : public ICommand {
 public:
     SceneListCommand(SceneList& list, SceneList before, SceneList after, std::string label)
@@ -165,7 +165,7 @@ private:
 };
 
 #ifdef _DEBUG
-// The scene as a whole, but for the next id (which undo never takes back: ids are not used again).
+// 次の id を除いて、シーン全体。(次の id は Undo でも戻さない: id は使い回さない。)
 json::Value ShapeOf(const Scene& scene) {
     json::Value v = scene.Save();
     v.Erase("nextId");
@@ -179,14 +179,14 @@ std::vector<int> ToEntityIds(std::span<const tree::ItemId> ids) {
     return out;
 }
 
-// Play: the scene is copied and the copy plays; stopping throws the copy away (the scene, the undo
-// history and the unsaved mark never see it).
+// Play: シーンをコピーし、そのコピーを動かす。停止するとコピーを捨てる (シーンも Undo の履歴も
+// 未保存の印も、コピーには関わらない)。
 enum class PlayState { Stopped, Playing, Paused };
 
 class GameSoftware final : public editor::Software, public tree::Source {
 public:
     explicit GameSoftware(editor::SoftwareHost& host) : host_(host), scripts_(host) {
-        // Component types come from other plugins (the connectors: "ゲーム制作 × 3D" offers Transform).
+        // 部品の型はほかのプラグインから来る (コネクター: 「ゲーム制作 × 3D」が Transform を出す)。
         std::vector<const reflect::TypeDesc*> types, multiple;
         for (const auto& c : host.Registry().Contributions<ComponentInfo>(kComponentPoint)) {
             const reflect::TypeDesc* t = &c.item->type();
@@ -200,33 +200,33 @@ public:
         baseTypes_ = types;
         baseMultiple_ = multiple;
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
-        // The scene's own values (重力, 空 ...): the インスペクター shows them when the scene is chosen.
+        // シーン自身の値 (重力, 空 ...): シーンを選ぶとインスペクターが見せる。
         scene_.SetSettingTypes(SettingTypes(host.Registry()));
         for (const auto& s : host.Registry().Contributions<SceneSettingInfo>(kSceneSettingPoint)) {
             if (s.item->space) settingSpaces_[s.item->type().name] = s.item->space;
         }
-        // How the editor shows them (the 階層's pictures, ローカル / ワールド): their plugins' editor parts.
+        // エディターでの見せ方 (階層の絵、ローカル / ワールド) は、そのプラグインのエディター部分が持つ。
         for (const auto& l : host.Registry().Contributions<ComponentLook>(kComponentLookPoint)) componentLooks_.push_back(l.item);
         for (const auto& l : host.Registry().Contributions<SceneSettingLook>(kSceneSettingLookPoint)) settingLooks_.push_back(l.item);
-        // ... and so do the systems that move them while the game plays.
+        // ... Play 中にそれを動かすシステムも同じ。
         runner_.SetSystems(RegisteredSystems(host.Registry()));
-        // Systems read assets from the project's files (a mesh collider: the model, as the scene view reads it).
+        // システムはプロジェクトのファイルからアセットを読む (メッシュコライダー: シーンビューと同じ読み方のモデル)。
         runner_.SetAssets({nullptr, [this](const AssetRef& ref) { return host_.AssetFile(ref); }});
         cameraTypes_ = CameraTypes(host.Registry());
     }
 
-    // The scripts' objects go before their DLL does (scripts_ is destroyed before the scenes).
+    // スクリプトのオブジェクトは、その DLL より先に消す (scripts_ はシーンより先に壊れる)。
     ~GameSoftware() override {
         playScene_.reset();
         scene_.Load(json::Value());
     }
 
-    // --- Software ---------------------------------------------------------------------------
+    // --- ソフト ---------------------------------------------------------------------------
     std::vector<editor::dock::PanelType> Panels() override {
         std::vector<editor::dock::PanelType> panels{
             {kSceneView, TrKey(L"シーンビュー"),
              [this](ui::Context& c, const Rect& r) {
-                 // (measured for the デバッグ panel: how often, and how long it takes)
+                 // (デバッグ パネル用に測る: どのくらいの頻度で、どのくらい時間がかかるか)
                  const double t0 = platform::NowSeconds();
                  DrawSceneView(c, r);
                  sceneMeter_.Frame(t0, (platform::NowSeconds() - t0) * 1000.0);
@@ -242,7 +242,7 @@ public:
              }},
             {kScenesPanel, TrKey(L"シーン"), [this](ui::Context& c, const Rect& r) { DrawScenesPanel(c, r); }},
         };
-        // Panels the plugins add (ゲーム UI: the UI view) - not of a space.
+        // プラグインが足すパネル (ゲーム UI: UI ビュー)。空間のものではない。
         for (const auto& p : host_.Registry().Contributions<ViewPanelInfo>(kViewPanelPoint)) {
             const ViewPanelInfo* info = p.item;
             if (!info->create || !info->id || !*info->id) continue;
@@ -251,9 +251,9 @@ public:
         return panels;
     }
 
-    // デバッグ: a window of its own (not docked in the editor): no Windows frame, shaped as a file folder with
-    // five tabs (DebugPanel.h). Drawn by a timer - never frame after frame (that kept the editor's own
-    // window from being drawn while the panel floated).
+    // デバッグ: 専用のウィンドウ (エディターに固定しない): Windows の枠はなく、5 つのタブを持つ
+    // ファイルフォルダの形 (DebugPanel.h)。タイマーで描く。毎フレームは描かない (描くと、パネルが
+    // 浮いている間エディター本体のウィンドウが描かれなくなった)。
     void ToggleDebugWindow() {
         if (debugWindow_ && debugWindow_->IsOpen()) {
             debugWindow_->Close();
@@ -277,7 +277,7 @@ public:
         if (!debugWindow_) log::Warn("デバッグの窓を作れませんでした");
     }
 
-    // What the デバッグ window shows now.
+    // 今デバッグ ウィンドウが見せるもの。
     DebugView MakeDebugView() {
         const double now = platform::NowSeconds();
         DebugView v;
@@ -313,8 +313,8 @@ public:
         return v;
     }
 
-    // A panel a plugin added: its view, made the first time it is drawn (its state kept like the scene
-    // views': "viewPanels": {id: state}).
+    // プラグインが足したパネル: そのビューは、最初に描くときに作る (状態はシーンビューと同じく
+    // "viewPanels": {id: 状態} に持つ)。
     void DrawViewPanel(ui::Context& c, const Rect& r, const ViewPanelInfo& info) {
         auto it = viewPanels_.find(info.id);
         if (it == viewPanels_.end()) {
@@ -332,7 +332,7 @@ public:
         using editor::dock::Axis;
         namespace cp = editor::core_panel;
         editor::dock::Layout l;
-        // The plugins' panels (the UI view) are tabs next to the scene and the game.
+        // プラグインのパネル (UI ビュー) は、シーンとゲームの隣のタブになる。
         std::vector<std::string> views{kSceneView, kGameView};
         for (const auto& p : host_.Registry().Contributions<ViewPanelInfo>(kViewPanelPoint)) {
             if (p.item->create && p.item->id && *p.item->id) views.push_back(p.item->id);
@@ -345,9 +345,9 @@ public:
 
     tree::Source* Hierarchy() override { return this; }
 
-    // The view is kept as read, so a scene view not opened this time keeps its camera (and keys of a
-    // newer version stay).
-    // "inspectorModes": [[entity id, mode], ...] - how each entity's Transform is shown (switched by the user).
+    // ビューは読んだままに持つ。だから今回開かなかったシーンビューもカメラを保ち (新しい版の
+    // キーも残る)。
+    // "inspectorModes": [[エンティティ id, モード], ...] - 各エンティティの Transform の見せ方 (ユーザーが切り替える)。
     void LoadView(const json::Value& view) override {
         view_ = view.IsObject() ? view : json::Value::MakeObject();
         for (View& v : views_) v.scene->LoadState(ViewState(v));
@@ -358,14 +358,14 @@ public:
     }
     json::Value SaveView() const override {
         json::Value v = view_.IsObject() ? view_ : json::Value::MakeObject();
-        // "sceneViews": {space: the view's state} - a space whose plugin is not here now keeps its own.
+        // "sceneViews": {空間: そのビューの状態} - プラグインが今ない空間は、その状態をそのまま持つ。
         if (!views_.empty()) {
             json::Value states = v.Get("sceneViews").IsObject() ? v.Get("sceneViews") : json::Value::MakeObject();
             for (const View& view : views_) {
                 if (json::Value s = view.scene->SaveState(); !s.IsNull()) states.Set(view.info->space, std::move(s));
             }
             v.Set("sceneViews", std::move(states));
-            v.Erase("sceneView");  // the one view before there were spaces: now in "sceneViews"
+            v.Erase("sceneView");  // 空間ができる前の 1 つだけのビュー: 今は "sceneViews" にある
         }
         if (!viewPanels_.empty()) {
             json::Value states = v.Get("viewPanels").IsObject() ? v.Get("viewPanels") : json::Value::MakeObject();
@@ -376,9 +376,9 @@ public:
         }
         json::Value modes = json::Value::MakeArray();
         std::vector<std::pair<int, int>> sorted(modes_.begin(), modes_.end());
-        std::sort(sorted.begin(), sorted.end());  // the same file for the same choices
+        std::sort(sorted.begin(), sorted.end());  // 同じ選び方なら同じファイル
         for (const auto& [id, mode] : sorted) {
-            if (!scene_.Find(id)) continue;  // deleted since
+            if (!scene_.Find(id)) continue;  // その後に消えた
             json::Value pair = json::Value::MakeArray();
             pair.Push(id);
             pair.Push(mode);
@@ -388,12 +388,12 @@ public:
         return v;
     }
 
-    // The game's data in the .rmpf: the settings and the list of scenes; the scene shown is read from
-    // its own file (SceneFile.h). A project of before has its scene inside: read from there, and split
-    // off at the next save.
+    // .rmpf のゲームのデータ: 設定とシーンの一覧。見せるシーンはそのシーン自身のファイル
+    // (SceneFile.h) から読む。前の形のプロジェクトはシーンを中に持っている。そこから読み、
+    // 次の保存で分ける。
     void LoadData(const json::Value& data) override {
-        // The scripts first: the scene's scripts are components of their types. (The global variables
-        // before: the header of their names is written with the project.)
+        // スクリプトを先に: シーンのスクリプトは、その型の部品になる。(グローバル変数は前の形では、
+        // 名前のヘッダーをプロジェクトと一緒に書く。)
         {
             GameSettings peek;
             reflect::Load(peek, data.Get("settings"));
@@ -420,35 +420,35 @@ public:
                 ReadOpenScene(warnings);
             }
             if (scripts_.Building() && !warnings.empty()) {
-                // The first build of a new project (or of sources newer than the DLL) is going on: its
-                // scripts are parts it does not know yet. Told after it, only what is still unknown then
-                // (ReloadScripts reads the scene again with the new types and tells its own).
+                // 新しいプロジェクト (または DLL より新しいソース) の最初のビルドが進んでいる間は、
+                // スクリプトはまだ知らない部品になっている。終わった後に知らせるのは、そのときもまだ
+                // 分からないものだけ (ReloadScripts が新しい型でシーンを読み直して、自分の分を知らせる)。
                 heldSceneWarnings_ = std::move(warnings);
                 log::Info("シーン: スクリプトのビルドが終わってから、使えない部品が残っていないか確かめます");
             } else {
                 for (const auto& w : warnings) log::Warn("シーン: {}", w);
             }
             RefreshPrefabsOnOpen();
-            ++dataVersion_;  // (the scene was made again: no history entry tells it)
+            ++dataVersion_;  // (シーンを作り直した: 履歴の項目はそれを知らせない)
         }
-        host_.Inspect({});  // (the game settings are a window of their own: opened when asked)
+        host_.Inspect({});  // (ゲーム設定は専用のウィンドウ: 頼まれたときに開く)
     }
 
     bool SaveData(json::Value& data, std::vector<editor::ProjectFileWrite>& files) override {
-        // What the last save gave and was never taken on (Saved not called): that save failed part
-        // way. Its scene file may be written or not - the one on disk is not known any more (written
-        // again this time); a new scene whose .meta got written keeps that id and file.
+        // 前回の保存が出したのに取り込まれなかったもの (Saved が呼ばれていない): その保存が途中で
+        // 失敗した。シーンのファイルは書けたかどうか分からない - ディスクにあるものがもう分からない
+        // (今回は書き直す)。.meta が書けた新しいシーンは、その id とファイルを持ち続ける。
         if (pending_) {
             std::error_code ec;
             const bool metaThere = slot_.guid.empty() && fs::exists(FullPath(pending_->slot.path + std::string(asset::kMetaSuffix)), ec);
             slot_ = SlotAfterFailedSave(slot_, pending_->slot, metaThere);
-            if (metaThere) host_.AssetOf(FullPath(slot_.path));  // (its id known now: SlotNow finds it)
+            if (metaThere) host_.AssetOf(FullPath(slot_.path));  // (id が分かった: SlotNow が見つける)
             log::Warn("前の保存が途中で失敗したので、シーンをもう一度書きます: {}", slot_.path);
         }
         pending_.reset();
         gave_ = false;
-        // Nothing is written (and the plugin is not recorded as used) while everything is as a new
-        // project has it - opening a project once must not tie it to this plugin.
+        // 新しいプロジェクトと同じ状態のあいだは何も書かない (プラグインも使用済みとして記録しない)。
+        // プロジェクトを一度開いただけで、このプラグインに結びつけてはいけない。
         const GameSettings defaults;
         const ExportSettings exportDefaults;
         const bool untouched = reflect::Equals(reflect::TypeOf<GameSettings>(), &settings_, &defaults) && unknowns_.Empty() &&
@@ -459,16 +459,16 @@ public:
         if (data.Find("export") || !reflect::Equals(reflect::TypeOf<ExportSettings>(), &exportSettings_, &exportDefaults) || !exportUnknowns_.Empty()) {
             data.Set("export", reflect::Save(exportSettings_, &exportUnknowns_));
         }
-        // A scene whose file could not be read is never written over: an edited one goes to a new file.
+        // 読めなかったシーンのファイルには上書きしない: 編集したものは新しいファイルに行く。
         if (sceneUnread_ && scene_.Empty()) return true;
-        // What each placed prefab changed, worked out now against its prefab (kept in the file so a
-        // changed prefab can be put under them again when the project is opened).
+        // 置いた各 Prefab が変えたもの。今、その Prefab と比べて求める (ファイルに持つので、プロジェクトを
+        // 開くときに、変えた Prefab をその下に入れ直せる)。
         Scene saved = scene_;
         UpdateOverrides(saved);
         const SceneSlot slot = SlotNow();
         ScenePlan plan = PlanSceneSave(saved.Save(), slot, asset::NewGuid());
         if (oldForm_) {
-            // The .rmpf as it was (the scene inside), kept once next to it before it is written in the new form.
+            // .rmpf の元のまま (シーンが中にある形)。新しい形で書く前に、隣に一度だけ取っておく。
             const fs::path rmpf = host_.GetProject().file;
             fs::path backup = rmpf;
             backup += kOldSceneBackupSuffix;
@@ -477,8 +477,8 @@ public:
             if (!fs::exists(backup, ec)) {
                 auto bytes = platform::ReadFileBytes(rmpf, &err);
                 if (!bytes) {
-                    // Never split without the .rmpf of before kept: saved as before (the scene inside,
-                    // edits and all), split at a later save.
+                    // 前の .rmpf を取っておくまで分けない: 前と同じ形 (シーンを中に、編集もすべて) で保存し、
+                    // 後の保存で分ける。
                     log::Error("前の .rmpf を控え ({}) に写せないので、シーンはまだ .rmpf の中に保存します (次の保存でもう一度分けます): {}",
                                PathToUtf8(backup.filename()), err);
                     data.Set("scene", saved.Save());
@@ -488,7 +488,7 @@ public:
             }
         }
         for (FileWrite& f : plan.files) files.push_back({std::move(f.path), std::move(f.text)});
-        // The list: the scene's id in it (in the place of the one whose file was gone), shown first.
+        // 一覧: そのシーンの id を入れる (ファイルが消えたシーンの場所に)。最初に見せる。
         SceneList list = sceneList_;
         auto& ids = list.scenes;
         const auto at = std::find(ids.begin(), ids.end(), AssetRef{slot.guid.empty() ? replaces_ : slot.guid});
@@ -499,7 +499,7 @@ public:
         }
         list.open = AssetRef{plan.after.guid};
         data.Set("sceneList", reflect::Save(list, &sceneListUnknowns_));
-        data.Erase("scene");  // (a project of before: now in the file)
+        data.Erase("scene");  // (前の形のプロジェクト: 今はファイルの中)
         pending_ = Pending{plan.after, std::move(list)};
         return true;
     }
@@ -507,18 +507,18 @@ public:
     // --- 書き出し (GameExport.h) -------------------------------------------------------------------
     bool CanExport() const override { return true; }
 
-    // The exe's name: the one typed, else made from the game's name (shown in the field as it is).
+    // exe の名前: 入力されたもの。なければゲームの名前から作る (欄にはそのまま見せる)。
     std::string ExeNameNow() const {
         return exportSettings_.exeName.empty() ? editor::exporter::ExeNameFrom(settings_.title) : exportSettings_.exeName;
     }
-    // Where to: this PC's choice (the view, not project data); first <project>/Build/<exe name>.
+    // 出力先: この PC の選び方 (ビューのもので、プロジェクトのデータではない)。最初は <project>/Build/<exe の名前>。
     fs::path OutputNow() const {
         const std::string& o = view_.Get("export").Get("output").AsString();
         if (!o.empty()) return PathFromUtf8(o);
         return host_.GetProject().Root() / L"Build" / PathFromUtf8(ExeNameNow());
     }
 
-    // What an export is made from: the project as it is now (the scene as edited, not only as saved).
+    // 書き出しの元: 今のプロジェクトそのまま (編集中のシーンで、保存済みだけではない)。
     bool ExportInput(const fs::path& outDir, GameExportInput& in, std::string* error) {
         in.title = settings_.title;
         in.exeName = ExeNameNow();
@@ -534,8 +534,8 @@ public:
         in.assetFile = [this](const AssetRef& r) { return host_.AssetFile(r); };
         in.scripts = ScriptRequestFor(host_);
         in.scripts.globals = settings_.globals;
-        // The scenes of the list (the one shown as it is now), in the list's order; the game starts with
-        // the list's 最初のシーン.
+        // 一覧のシーン (見せているものは今の状態) を、一覧の順に。ゲームは一覧の 最初のシーン
+        // から始まる。
         Scene saved = scene_;
         UpdateOverrides(saved);
         ExportScenes scenes = ScenesForExport(sceneList_, AssetRef{slot_.guid}, SlotNow().path, SceneFileText(saved.Save()),
@@ -544,7 +544,7 @@ public:
                                                   std::string err;
                                                   auto bytes = file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
                                                   if (!bytes) return std::nullopt;
-                                                  // Its placed prefabs as their files are now (as when it is opened).
+                                                  // 置いた Prefab は、今のファイルのとおりに (開いたときと同じ)。
                                                   if (const auto doc = ReadSceneFile(*bytes, &err)) {
                                                       Scene other = scene_;
                                                       reflect::Warnings warnings;
@@ -558,27 +558,27 @@ public:
         for (const std::string& id : scenes.unread) log::Warn("書き出し: シーン ({}) を読めないので入れません", id);
         in.scenes = std::move(scenes.scenes);
         in.first = scenes.first;
-        // The plugins: as recorded, what the scenes use, the one drawing the game's space - then their
-        // requirements and connectors.
-        // Counted from what the game uses - not the project's whole record, which may name plugins of
-        // other softwares (an illustration's): those never go into the game, and one that is missing
-        // does not stop it.
+        // プラグイン: 記録されたもの、シーンが使うもの、ゲームの空間を描くもの。それから
+        // その要求とコネクター。
+        // ゲームが使うものから数える。プロジェクトの記録全体からではない (記録にはほかの
+        // ソフト、たとえばイラストのプラグインの名前もある)。それらはゲームに入らず、
+        // ないものがあっても止めない。
         std::vector<PluginId> used;
         auto add = [&](const PluginId& id) {
             if (std::find(used.begin(), used.end(), id) == used.end()) used.push_back(id);
         };
         add(game_production::kPluginId.Id());
         for (const PluginId& id : UsedPlugins()) add(id);
-        // ... and every other scene of the game (their components' plugins too).
+        // ... ゲームのほかのシーンすべて (その部品のプラグインも)。
         std::vector<std::string> types;
         for (const auto& s : in.scenes) {
             if (const auto doc = json::Parse(s.second)) ComponentTypesIn(*doc, types);
         }
         for (const PluginId& id : PluginsOffering(types, host_.Registry().Contributions<ComponentInfo>(kComponentPoint))) add(id);
-        // ... and the plugins an asset the game uses needs (音: a sound a script plays, with no 音源 in any scene).
+        // ... ゲームが使うアセットが必要とするプラグインも (音: スクリプトが鳴らす音で、どのシーンにも 音源 がないもの)。
         const std::vector<ExportAsset> assets = CollectAssets(in);
-        // ... and the components of every prefab the game may place (a script's rm::Spawn of one that no
-        // scene places: read from its file - the prefabs read in this session are not all of them).
+        // ... ゲームが置くかもしれない Prefab すべての部品 (どのシーンにも置かれていない Prefab を
+        // スクリプトの rm::Spawn が使う場合: そのファイルから読む。この起動で読んだ Prefab がすべてではない)。
         std::vector<std::string> prefabTypes;
         for (const ExportAsset& a : assets) {
             if (PathToUtf8(a.file.extension()) != kPrefabExtension) continue;
@@ -605,7 +605,7 @@ public:
             if (error) *error = editor::TrU8F("このエンジンに無いプラグインを使っています: {}", missing.front().Text());
             return false;
         }
-        // The record's plugins this engine does not have: only told (the game does not use them).
+        // 記録にあるが、このエンジンにはないプラグイン: 知らせるだけ (ゲームは使わない)。
         if (auto rec = editor::ParsePluginIdList(host_.GetProject().doc.Get("plugins"), nullptr)) {
             const auto manifests = host_.PluginManifests();
             for (const PluginId& id : *rec) {
@@ -616,14 +616,14 @@ public:
         return true;
     }
 
-    // The plugins' bakers (ゲーム用の形に変える: 3D models, pictures) - statics, usable from any thread.
+    // プラグインのベイカー (ゲーム用の形に変える: 3D モデル、画像) - static で、どのスレッドからも使える。
     std::vector<const ExportBaker*> Bakers() const {
         std::vector<const ExportBaker*> out;
         for (const auto& b : host_.Registry().Contributions<ExportBaker>(kExportBakePoint)) out.push_back(b.item);
         return out;
     }
 
-    // The export check's command line: on this thread, the lines to the log.
+    // 書き出しチェックのコマンドライン: このスレッドで、行をログに出す。
     bool ExportNow(const fs::path& outDir, std::string* error) override {
         GameExportInput in;
         editor::exporter::Request req;
@@ -633,10 +633,10 @@ public:
         return editor::exporter::Run(req, [&](float, const std::string& line) { note(line); }, error);
     }
 
-    // The 書き出し button: the request made here (the data as it is now), the work on a worker.
+    // 書き出し ボタン: 依頼はここで作り (今のデータ)、作業はワーカーで行う。
     void StartExport() {
         {
-            std::lock_guard lock(exportRun_->mtx);  // (the worker sets it under the lock)
+            std::lock_guard lock(exportRun_->mtx);  // (ワーカーがロックの下で入れる)
             if (exportRun_->running) return;
         }
         auto run = std::make_shared<ExportRun>();
@@ -649,7 +649,7 @@ public:
             log::Error("書き出し: {}", err);
             return;
         }
-        // What the editor knows is read here; the rest (baking, linking) on the worker - only files.
+        // エディターが知っていることはここで読む。残り (ベイク、リンク) はワーカーで - ファイルだけ。
         std::vector<ExportAsset> assets = CollectAssets(in);
         in.assetFile = nullptr;
         run->running = true;
@@ -672,8 +672,8 @@ public:
         });
     }
 
-    // An edit of the panel goes where the value lives: the game's name to the game settings, the exe's
-    // name to the project's export settings (both undone), where to into the view (this PC's).
+    // パネルでの編集は値の置き場所へ行く: ゲームの名前はゲーム設定へ、exe の名前はプロジェクトの
+    // 書き出し設定へ (どちらも Undo できる)、出力先はビューへ (この PC のもの)。
     void ApplyExportEdit(editor::inspector::Edit& edit) {
         const auto& fields = reflect::TypeOf<ExportView>().fields;
         if (edit.path.empty() || edit.path[0] >= fields.size()) return;
@@ -684,9 +684,9 @@ public:
             view_.Set("export", std::move(e));
             return;
         }
-        // While playing (2026-11-19): the game's name changes in place - the game settings go back at Stop,
-        // as ゲーム設定's edits do - and never into the history; the exe's name (the project's export
-        // settings: not put back at Stop) is not changed then.
+        // Play 中 (2026-11-19): ゲームの名前はその場で変わる - ゲーム設定は ゲーム設定 の編集と同じく Stop で
+        // 戻る - 履歴には入らない。exe の名前 (プロジェクトの書き出し設定: Stop で戻さない) は
+        // そのときは変えない。
         if (Running() && name == "exeName") {
             log::Info("Play 中は exe の名前を変えられません (止めてから)");
             return;
@@ -709,19 +709,19 @@ public:
         if (name == "exeName") push(reflect::TypeOf<ExportSettings>(), "exeName", &exportSettings_, &exportUnknowns_);
     }
 
-    // ゲームの設定 ▸ ビルド: the game's name, the exe's name, where to (with 出力先を選ぶ on its right - under it
-    // when the window is narrow), which scenes go in, then 書き出す and what it did.
+    // ゲームの設定 ▸ ビルド: ゲームの名前、exe の名前、出力先 (右に 出力先を選ぶ - ウィンドウが狭いときは
+    // その下)、入れるシーン、それから 書き出す と、その結果。
     void DrawBuildTab(ui::Context& c, const Rect& r) {
         auto& p = c.P();
-        // The tab scrolls when it is low (the 書き出す button and the log stay reachable).
+        // 低いときはタブがスクロールする (書き出す ボタンとログに届くように)。
         float& contentH = c.FloatState(c.MakeId("export.contentH"), 300.f);
         const float off = editor::w::BeginScroll(c, "export.scroll", r, contentH);
         const Rect area = Rect{r.x, r.y - off, r.w, std::max(r.h, contentH)}.Inset(14, 10, 14, 10);
         const float top = area.y;
         ExportView v{settings_.title, ExeNameNow(), PathToUtf8(OutputNow())};
         constexpr float kBrowseW = 150;
-        const bool browseBeside = area.w >= 460;  // (narrow: the button goes under the field)
-        // The names (as the inspector draws them), then 出力先 with its button.
+        const bool browseBeside = area.w >= 460;  // (狭いとき: ボタンは欄の下に行く)
+        // 名前 (インスペクターが描くとおりに)、それから 出力先 とそのボタン。
         editor::inspector::Block names{&reflect::TypeOf<ExportView>(), &v, nullptr, {}, {}, {}};
         names.fields = {"title", "exeName"};
         const Rect box{area.x - 12, area.y, area.w + 12, std::max(2 * 30.f + 10, exportInspector_.contentHeight)};
@@ -733,8 +733,8 @@ public:
         if (auto edit = editor::inspector::Draw(c, outputInspector_, whereBox, std::span(&where, 1))) ApplyExportEdit(*edit);
         const Rect browse = browseBeside ? Rect{area.Right() - kBrowseW, y + 4, kBrowseW, 26} : Rect{area.Right() - kBrowseW, whereBox.Bottom() + 2, kBrowseW, 26};
         if (editor::w::Button(c, "export_browse", browse, Tr(L"出力先を選ぶ…"))) {
-            // In the output folder (not there yet: the nearest one above it; on a drive that is not there:
-            // the project's folder).
+            // 出力フォルダの中 (まだないとき: その上の一番近いフォルダ。ないドライブのとき:
+            // プロジェクトのフォルダ)。
             const fs::path start = platform::ExistingFolderAtOrAbove(OutputNow()).empty() ? host_.GetProject().Root() : OutputNow();
             host_.PickFolder(Tr(L"書き出すフォルダを選ぶ"), start, [this](fs::path folder) {
                 json::Value e = view_.Get("export").IsObject() ? view_.Get("export") : json::Value::MakeObject();
@@ -746,11 +746,11 @@ public:
         ui::TextStyle ts;
         ts.size = 12;
         ts.color = theme::TextDim;
-        // The icon: the game settings' (shown here, chosen in ゲーム設定).
+        // アイコン: ゲーム設定のもの (ここでは見せるだけで、選ぶのは ゲーム設定 で)。
         const fs::path icon = settings_.icon.Empty() ? fs::path() : host_.AssetFile(settings_.icon);
         p.Text({area.x, y, area.w, 22}, TrF(L"アイコン: {}", icon.empty() ? Tr(L"(なし。「ゲーム設定」のタブの「アイコン」で PNG か ICO を選びます)") : icon.filename().native()), ts);
         y += 28;
-        // The scenes that go in (the one the game starts with always does).
+        // 入れるシーン (ゲームが最初に始めるシーンは必ず入る)。
         ui::TextStyle head = ts;
         head.color = theme::Text;
         head.bold = true;
@@ -760,7 +760,7 @@ public:
         for (const AssetRef& ref : GameScenes(sceneList_, AssetRef{slot_.guid})) {
             bool built = ref.Empty() || SceneBuilt(sceneList_, ref);
             const bool initial = ref == first || (first.Empty() && ref == AssetRef{slot_.guid});
-            const bool always = initial || ref.Empty();  // (a scene not saved yet: the open one - always in)
+            const bool always = initial || ref.Empty();  // (まだ保存していないシーン: 開いているもの - 必ず入る)
             std::wstring label = Utf8ToWide(SceneTitle(ref));
             if (initial) {
                 label += Tr(L" (初期シーン: いつも入る)");
@@ -800,9 +800,9 @@ public:
         if (running || run.ok) {
             editor::w::ProgressBar(c, {area.x + 172, y + 11, std::max(10.f, area.w - 172), 10}, run.ok ? 1.f : run.progress);
         }
-        (void)running;  // (its progress is drawn again by the window's timer)
+        (void)running;  // (進み具合はウィンドウのタイマーがまた描く)
         y += 42;
-        // The log of this export (scrolled to with the rest of the panel).
+        // この書き出しのログ (パネルのほかの部分と一緒にスクロールする)。
         ts.wrap = false;
         for (size_t i = 0; i < run.lines.size(); ++i) {
             const bool last = i + 1 == run.lines.size();
@@ -815,8 +815,8 @@ public:
         editor::w::EndScroll(c, "export.scroll", r, contentH);
     }
 
-    // The plugins offering the components of the scene and of the prefabs it places (recorded in the
-    // .rmpf: an exported game links them).
+    // シーンと、そこに置く Prefab の部品を出すプラグイン (.rmpf に記録する: 書き出したゲームが
+    // それをリンクする)。
     std::vector<PluginId> UsedPlugins() const override {
         std::vector<std::string> types;
         ComponentTypesIn(scene_.Save(), types);
@@ -825,7 +825,7 @@ public:
     }
 
     void Saved() override {
-        if (gave_) hadData_ = true;  // (in the .rmpf now: a save that empties it again writes that too)
+        if (gave_) hadData_ = true;  // (今は .rmpf にある: 空にもう一度する保存は、それも書く)
         gave_ = false;
         if (!pending_) return;
         const bool newFile = slot_.guid.empty();
@@ -836,22 +836,22 @@ public:
         oldForm_ = false;
         sceneUnread_ = false;
         replaces_.clear();
-        if (newFile) host_.AssetOf(FullPath(slot_.path));  // its id is known now (without waiting for a look)
+        if (newFile) host_.AssetOf(FullPath(slot_.path));  // id が分かった (見るのを待たずに)
     }
 
     // --- Play --------------------------------------------------------------------------------
     void Tick(ui::Context& c) override {
-        // Scripts built again: swapped here, between frames (never while playing: at Stop).
-        // (an edit of the list: the header and a build, a second later - never from Play's own values: they
-        // go back at Stop)
+        // スクリプトをもう一度ビルドした: ここで、フレームの間に入れ替える (Play 中は入れ替えない: Stop で)。
+        // (一覧の編集: ヘッダーとビルドを 1 秒後に - Play 自身の値からは決してしない: それらは
+        // Stop で戻る)
         if (!Running()) scripts_.SetGlobals(settings_.globals);
         scripts_.Poll(c);
-        if (debugWindow_ && !debugWindow_->IsOpen()) debugWindow_.reset();  // (closed by its × / Alt+F4)
+        if (debugWindow_ && !debugWindow_->IsOpen()) debugWindow_.reset();  // (× / Alt+F4 で閉じた)
         if (settingsWindow_ && !settingsWindow_->IsOpen()) settingsWindow_.reset();
-        // (while playing: at Stop, or now - the game settings' Play 中のビルド)
+        // (Play 中: Stop で、またはすぐ - ゲーム設定の Play 中のビルド)
         if (auto dll = scripts_.TakeReady(Running() && settings_.scriptReload == ScriptReload::AtStop)) ReloadScripts(*dll);
         if (!heldSceneWarnings_.empty() && !scripts_.Building()) {
-            // The build failed (no new DLL): what the scene could not use is told now.
+            // ビルドに失敗した (新しい DLL がない): シーンが使えなかったものを、今知らせる。
             for (const auto& w : heldSceneWarnings_) log::Warn("シーン: {}", w);
             heldSceneWarnings_.clear();
         }
@@ -861,24 +861,24 @@ public:
         }
         scripts_.mouseInGame = [this] { return mouseInGame_; };
         if (play_ == PlayState::Playing && playScene_) {
-            // The time since the last frame (at most a quarter of a second: a frame that took long -
-            // a window dragged, the software switched - does not make the game jump).
+            // 前のフレームからの時間 (最大 4 分の 1 秒: 時間がかかったフレーム -
+            // ウィンドウをドラッグした、ソフトを切り替えた - でゲームが飛ばないように)。
             const double dt = std::clamp(c.Time() - lastTick_, 0.0, 0.25);
             lastTick_ = c.Time();
-            // The left button's presses of this frame (the window's messages: a click shorter than a frame
-            // too) - a press only over the game view.
+            // このフレームの左ボタンの押下 (ウィンドウのメッセージ: フレームより短いクリックも)
+            // - 押すのはゲームビューの上だけ。
             pointerWentDown_ = mouseInGame_ && c.In().pressed[0];
             pointerWentUp_ = c.In().released[0];
             const double t0 = platform::NowSeconds();
             AdvancePlay(dt);
             updateMeter_.Frame(t0, (platform::NowSeconds() - t0) * 1000.0);
             playGraph_.Push(t0, (platform::NowSeconds() - t0) * 1000.0);
-            mouseInGame_ = false;  // (the game view says it again when it is drawn)
+            mouseInGame_ = false;  // (ゲームビューは、描かれるときにもう一度言う)
             c.RequestAnimation();
         }
     }
 
-    // ▶ ⏸ ⏭ ■ in the middle of the tab row, and what is going on next to them.
+    // ▶ ⏸ ⏭ ■ をタブの行の真ん中に置く。その隣に、今していることも出す。
     void DrawToolbar(ui::Context& c, const Rect& r) override {
         constexpr float kB = 30, kGap = 4;
         const float groupW = kB * 4 + kGap * 3;
@@ -917,7 +917,7 @@ public:
                 text = play_ == PlayState::Paused ? Tr(L"一時停止中 — ■ で止めると Play の前に戻ります")
                                                   : Tr(L"Play 中 — インスペクターで変えた値も、■ で止めると Play の前に戻ります");
             }
-            // Scripts built while playing: used from Stop.
+            // Play 中にビルドしたスクリプト: Stop から使う。
             if (running && scripts_.WaitingForStop()) text = Tr(L"スクリプトをビルドしました — Stop で反映されます");
             if (scripts_.Building()) text += (text.empty() ? L"" : L"   ") + Tr(L"スクリプトをビルドしています…");
             if (!text.empty()) c.P().Text({x + 8, r.y, r.Right() - x - 16, r.h}, text, ts);
@@ -926,7 +926,7 @@ public:
 
     bool Running() const override { return play_ != PlayState::Stopped; }
 
-    // The editor's デバッグ menu: ゲームデバッグ opens / closes the debug window.
+    // エディターの デバッグ メニュー: ゲームデバッグ がデバッグ ウィンドウを開く / 閉じる。
     std::vector<DebugMenuItem> DebugMenu() override {
         DebugMenuItem item;
         item.label = Tr(L"ゲームデバッグ");
@@ -952,7 +952,7 @@ public:
         }
     }
 
-    // The top row: the open scene (its name); choosing it shows the scene's own values (InspectScene).
+    // 一番上の行: 開いているシーン (その名前)。選ぶとシーン自身の値が出る (InspectScene)。
     std::optional<TopRow> Top() const override {
         std::string name = SceneNameOf(slot_.path);
         return TopRow{name.empty() ? Tr(L"シーン") : Utf8ToWide(name), editor::w::Icon::Scene, inspectingScene_};
@@ -967,7 +967,7 @@ public:
 
     void Rename(tree::ItemId id, const std::string& name) override {
         if (Running()) return;
-        // The same field and the same command as editing 名前 in the inspector.
+        // インスペクターで 名前 を編集するのと同じ欄、同じコマンド。
         const reflect::TypeDesc& t = reflect::TypeOf<Entity>();
         SceneEntity* e = scene_.Find(static_cast<int>(id));
         if (!e) return;
@@ -1010,7 +1010,7 @@ public:
     std::vector<tree::Action> Actions(std::span<const tree::ItemId> selection) override {
         std::vector<tree::Action> list = EditActions(ToEntityIds(selection));
         if (Running()) {
-            // Play: the scene is not changed (the copy plays). The rows stay, greyed, under a note.
+            // Play: シーンは変えない (コピーが動く)。行は残し、灰色にして、注意書きの下に置く。
             for (auto& a : list) {
                 a.enabled = false;
                 a.run = nullptr;
@@ -1029,7 +1029,7 @@ private:
     std::vector<tree::Action> EditActions(const std::vector<int>& sel) {
         std::vector<tree::Action> list;
 
-        // 追加 ▸: an empty entity, then what the plugins make, in their folders (3D オブジェクト ▸ 箱 ...).
+        // 追加 ▸: 空のエンティティ、それからプラグインが作るものをそのフォルダの中に (3D オブジェクト ▸ 箱 ...)。
         const std::wstring add = Tr(L"追加");
         tree::Action create;
         create.label = Tr(L"空のエンティティ");
@@ -1061,7 +1061,7 @@ private:
             make.folder = add;
             if (info->folder) {
                 for (const std::wstring& part : SplitPath(info->folder)) make.folder += L"/" + Tr(part);
-            } else if (!line) {  // (the line between the empty ones and the rest)
+            } else if (!line) {  // (空のものと残りの間の線)
                 tree::Action l;
                 l.separator = true;
                 l.folder = add;
@@ -1076,7 +1076,7 @@ private:
         sep.separator = true;
         list.push_back(sep);
 
-        // The clipboard: entities as JSON text (the file's form), so another project can take them.
+        // クリップボード: エンティティを JSON のテキスト (ファイルの形) で。別のプロジェクトも取れる。
         tree::Action copy;
         copy.label = Tr(L"コピー");
         copy.key = ui::Key::C;
@@ -1104,7 +1104,7 @@ private:
         paste.key = ui::Key::V;
         paste.ctrl = true;
         paste.run = [this, sel] {
-            // Right after the (last) selected entity, as its sibling; nothing selected: the end of the top level.
+            // 選んだ (最後の) エンティティの直後に、その兄弟として。何も選んでいないとき: 最上位の末尾。
             const auto [parent, index] = After(sel);
             PasteEntities(parent, index);
         };
@@ -1160,7 +1160,7 @@ private:
         return list;
     }
 
-    // Right after the (last) selected entity, as its sibling; nothing selected: the end of the top level.
+    // 選んだ (最後の) エンティティの直後に、その兄弟として。何も選んでいないとき: 最上位の末尾。
     std::pair<int, size_t> After(const std::vector<int>& sel) const {
         if (!sel.empty()) {
             if (const SceneEntity* e = scene_.Find(sel.back())) {
@@ -1173,22 +1173,22 @@ private:
     }
 
     // --- Play ----------------------------------------------------------------------------------
-    // The scene that is shown: the copy that plays, or the scene itself.
+    // 見せているシーン: 動いているコピー、またはシーンそのもの。
     Scene& Shown() { return playScene_ ? *playScene_ : scene_; }
     const Scene& Shown() const { return playScene_ ? *playScene_ : scene_; }
 
     void StartPlay(ui::Context& c) {
         if (Running()) return;
-        // Not in the middle of a drag (a gizmo, a row): the rest of it would go to the scene and the
-        // history under the copy that plays.
+        // ドラッグの途中ではない (ギズモ、行): 残りが、動いているコピーの下で、シーンと履歴へ
+        // 行ってしまうから。
         const ui::Input& in = c.In();
         if (in.down[0] || in.down[1] || in.down[2]) {
             log::Info("ドラッグ中は Play を始めません (ボタンを離してから)");
             return;
         }
-        playScene_ = std::make_unique<Scene>(scene_);  // the copy that plays (components are deep copies)
+        playScene_ = std::make_unique<Scene>(scene_);  // 動かすコピー (部品はディープコピー)
         runner_.Reset();
-        runner_.SetCamera(SceneCamera(*playScene_, cameraTypes_, settings_.startCamera.id));  // the systems may switch it (SystemContext::camera)
+        runner_.SetCamera(SceneCamera(*playScene_, cameraTypes_, settings_.startCamera.id));  // システムが切り替えてよい (SystemContext::camera)
         scripts_.Runner().Reset();
         scripts_.World().time = 0;
         scripts_.World().unscaledTime = 0;
@@ -1196,9 +1196,9 @@ private:
         scripts_.World().timeScale = 1;
         scripts_.World().layers = &settings_.layers;
         debug_.Clear();
-        scripts_.World().debug = &debug_;  // the editor shows rm::Debug's lines (an exported game has none)
-        // The scenes Game::LoadScene can switch to: the game's (the list, and this one when it is not in it).
-        // (numbered as the exported game numbers them: the ones left out of the build are not there either)
+        scripts_.World().debug = &debug_;  // エディターが rm::Debug の線を見せる (書き出したゲームにはない)
+        // Game::LoadScene が切り替えられるシーン: ゲームの (一覧。これが一覧にないときはこれも)。
+        // (書き出したゲームの番号のつけ方と同じ: ビルドから外したものはここにもない)
         playScenes_ = PlayScenes(sceneList_, AssetRef{slot_.guid});
         ScriptWorld& world = scripts_.World();
         world.sceneNames.clear();
@@ -1212,39 +1212,39 @@ private:
             world.sceneIds.push_back(playScenes_[i].guid);
             if (playScenes_[i] == AssetRef{slot_.guid}) world.sceneIndex = static_cast<int>(i);
         }
-        scripts_.World().actions = &settings_.input;  // (edited while playing: read as it is each frame)
-        scripts_.World().prefab = [this](const AssetRef& r) { return Cached(r); };  // rm::Spawn(prefab): the files as last read
-        settingsBeforePlay_ = reflect::Save(settings_, &unknowns_);  // (changed in Play's inspector: back at ■)
-        ResetGlobals(true);  // every global variable at its 初めの値; rm::Save into Library/Saves
+        scripts_.World().actions = &settings_.input;  // (Play 中に編集: フレームごとに今のものを読む)
+        scripts_.World().prefab = [this](const AssetRef& r) { return Cached(r); };  // rm::Spawn(prefab): 最後に読んだファイル
+        settingsBeforePlay_ = reflect::Save(settings_, &unknowns_);  // (Play のインスペクターで変更: ■ で戻る)
+        ResetGlobals(true);  // すべてのグローバル変数が 初めの値 に。rm::Save は Library/Saves へ
         {
-            // The player's bindings saved by a script (rm::Input::SaveBindings), as the game reads them.
+            // スクリプトが保存したプレイヤーのキー割り当て (rm::Input::SaveBindings)。ゲームが読むとおりに。
             std::string why;
             if (!world.LoadBindings(&why) && !why.empty()) log::Warn("入力の割り当て (input.json) を読めません: {}", why);
         }
-        kept_.clear();       // (この値を残す: from this Play only)
+        kept_.clear();       // (この値を残す: この Play のものだけ)
         keptLeft_.clear();
-        StartServices();     // 音 ... (the plugins' PlayServices): until ■
+        StartServices();     // 音 ... (プラグインの PlayServices): ■ まで
         play_ = PlayState::Playing;
         lastTick_ = c.Time();
-        EnsureViews();  // the game view sees through the game settings' 最初のカメラ
+        EnsureViews();  // ゲームビューは、ゲーム設定の 最初のカメラ を通して見る
         log::Info("▶ Play (システム {} 個)。止めると Play の前のシーンに戻ります", runner_.Systems().size());
         c.RequestAnimation();
         host_.Redraw();
     }
 
-    // One frame of the systems; a camera they switched to is told on the console.
+    // システムの 1 フレーム。切り替えたカメラはコンソールに知らせる。
     void AdvancePlay(double dt) {
         const uint64_t before = runner_.Camera();
-        // The scripts first (input -> scripts' Tick -> fixed steps ...); they may switch the camera too.
+        // スクリプトが先 (入力 -> スクリプトの Tick -> 固定ステップ ...)。カメラもスクリプトが切り替えてよい。
         ScriptWorld& world = scripts_.World();
         world.camera = runner_.Camera();
-        // The game's time: the real seconds times the time scale (rm::SetTimeScale); the game UI keeps the real ones.
+        // ゲームの時間: 実際の秒数に時間の倍率 (rm::SetTimeScale) をかけたもの。ゲーム UI は実際の秒数を使う。
         const double realDt = dt;
         dt *= world.timeScale;
         world.unscaledDt = static_cast<float>(realDt);
-        world.keyboardPlayer = std::clamp(settings_.keyboardPlayer - 1, 0, kPlayers - 1);  // (edited while playing: read each frame)
+        world.keyboardPlayer = std::clamp(settings_.keyboardPlayer - 1, 0, kPlayers - 1);  // (Play 中に編集: フレームごとに読む)
         world.SetPointer(pointer_, GameScreen());
-        // (the デバッグ panel shown: each part timed - the scripts by type, the systems one by one)
+        // (デバッグ パネルを出しているとき: 各部分の時間を測る - スクリプトは型ごとに、システムは 1 つずつ)
         const bool timing = platform::NowSeconds() - debugShownAt_ < 1.0;
         scripts_.Runner().SetTiming(timing);
         runner_.SetTiming(timing);
@@ -1256,17 +1256,17 @@ private:
             mark = t;
         };
         const double start = mark;
-        debug_.BeginFrame(dt);  // last frame's lines go (and the ones whose seconds are up), then the scripts draw this one's
+        debug_.BeginFrame(dt);  // 前のフレームの線を消し (秒数が過ぎたものも)、それからスクリプトが今回の線を描く
         scripts_.Runner().Frame(*playScene_, world, scripts_.Module(), settings_.scriptOrder, static_cast<float>(dt));
         lap(times.scripts);
         runner_.SetCamera(world.camera);
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
         lap(times.systems);
-        // What the systems' fixed steps tell the scripts (the physics' contacts ...).
+        // システムの固定ステップがスクリプトに伝えること (物理の接触 ...)。
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, runner_.Hooks());
         lap(times.hooks);
-        // The services (音, the game UI ...): the game screen as the game settings' 画面, the mouse over the
-        // game view; the hooks they ask for (a button's OnClick) go to the scripts now.
+        // サービス (音、ゲーム UI ...): ゲーム画面はゲーム設定の 画面 のとおり、マウスは
+        // ゲームビューの上のもの。サービスが頼むフック (ボタンの OnClick) は、今スクリプトへ渡す。
         std::vector<HookCall> asked;
         PlayFrame pf{*playScene_, runner_.Camera(), static_cast<float>(realDt)};
         pf.screen = GameScreen();
@@ -1275,7 +1275,7 @@ private:
         pf.pointerWentUp = pointerWentUp_;
         pf.input = &world.inputNow;
         pf.inputBefore = &world.inputBefore;
-        pf.actions = &world.Actions();  // (the player's bindings)
+        pf.actions = &world.Actions();  // (プレイヤーのキー割り当て)
         pf.hooks = &asked;
         pf.world = &world;
         services_.Frame(pf);
@@ -1289,17 +1289,17 @@ private:
             systemTimes_ = runner_.Times();
         }
         if (std::exchange(world.quitAsked, false)) {
-            // ゲームを終わる: the game would close - Play stops (as ■).
+            // ゲームを終わる: ゲームが閉じることになる - Play が止まる (■ と同じ)。
             log::Info("ゲームを終わる → Play を止めます (書き出したゲームではウィンドウが閉じます)");
             StopPlay();
             return;
         }
-        // A scene the scripts asked for (Game::LoadScene): switched between frames, inside the copy
-        // that plays - the scene being edited stays (■ comes back to it).
+        // スクリプトが頼んだシーン (Game::LoadScene): フレームの間に、動いているコピーの中で切り替える
+        // - 編集中のシーンはそのまま (■ でそこへ戻る)。
         const std::string from = world.sceneIndex >= 0 ? world.sceneNames[static_cast<size_t>(world.sceneIndex)] : std::string();
         std::string err;
-        // この値を残す of the scene from before Play: their values as it leaves (its entities' ids are
-        // another scene's after the switch).
+        // Play 前のシーンの この値を残す: 切り替えで離れるときの値 (そのエンティティの id は、
+        // 切り替えた後は別のシーンのものになる)。
         std::vector<std::pair<Kept, json::Value>> leaving;
         if (world.sceneAsked >= 0 && PlayingOwnScene()) leaving = ReadKept();
         const SceneSwitch sw = SwitchAskedScene(*playScene_, world, scripts_.Runner(), scripts_.Module(), settings_.scriptOrder,
@@ -1322,8 +1322,8 @@ private:
         }
     }
 
-    // A scene of the game read for Play (Game::LoadScene): the one open as it is now, the others from
-    // their files (as saved).
+    // Play のために読んだゲームのシーン (Game::LoadScene): 開いているものは今の状態、ほかは
+    // そのファイルから (保存されたまま)。
     bool ReadPlayScene(size_t index, Scene& into, std::string* error) {
         if (index >= playScenes_.size()) return false;
         const AssetRef& ref = playScenes_[index];
@@ -1342,7 +1342,7 @@ private:
         reflect::Warnings warnings;
         into.Load(*scene, &warnings);
         reflect::Warnings prefabWarnings;
-        RefreshPrefabsIn(into, prefabWarnings);  // (its prefabs as their files are now, as when it is opened)
+        RefreshPrefabsIn(into, prefabWarnings);  // (その Prefab は今のファイルのとおりに。開いたときと同じ)
         for (const auto& w : warnings) log::Warn("シーン: {}", w);
         for (const auto& w : prefabWarnings) log::Warn("Prefab: {}", w);
         return true;
@@ -1351,17 +1351,17 @@ private:
     void StopPlay() {
         if (!Running()) return;
         log::Info("■ 停止 ({:.2f} 秒・{} コマ)。シーンは Play の前に戻りました", runner_.Time(), runner_.Frames());
-        const auto kept = TakeKept();  // (as they were shown: before the scripts' EndPlay)
+        const auto kept = TakeKept();  // (見せていたとおりに: スクリプトの EndPlay の前)
         scripts_.Runner().Stop(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder);  // EndPlay
         scripts_.World().services = nullptr;
-        scripts_.StopInput();  // (every pad still)
+        scripts_.StopInput();  // (すべてのパッドを静止)
         scriptTimes_.clear();
         systemTimes_.clear();
         scripts_.World().playerActions.reset();
         scripts_.World().timeScale = 1;
-        services_.Stop();    // every sound stops (■: nothing of the game is heard after it)
-        playScene_.reset();  // (scripts built while playing are taken at the next frame: on the scene from before Play)
-        // The game settings as they were before Play (the inspector changes them in place while playing).
+        services_.Stop();    // すべての音が止まる (■: これ以後ゲームの音は何も聞こえない)
+        playScene_.reset();  // (Play 中にビルドしたスクリプトは次のフレームで取り込む: Play 前のシーンに対して)
+        // Play の前のゲーム設定 (Play 中はインスペクターがその場で変える)。
         if (!settingsBeforePlay_.IsNull()) {
             if (reflect::Save(settings_, &unknowns_) != settingsBeforePlay_) {
                 reflect::Load(settings_, settingsBeforePlay_, &unknowns_);
@@ -1369,16 +1369,16 @@ private:
             }
             settingsBeforePlay_ = json::Value();
         }
-        debug_.Clear();      // Stop: every debug line goes
-        ResetGlobals(false);  // as before Play (what was saved stays in Library/Saves)
+        debug_.Clear();      // Stop: デバッグの線がすべて消える
+        ResetGlobals(false);  // Play の前のとおりに (保存したものは Library/Saves に残る)
         play_ = PlayState::Stopped;
-        KeepValues(kept);  // この値を残す: into the scene from before Play (one undo entry)
-        host_.SelectInTree({});  // (the selection may name entities of a scene switched to)
+        KeepValues(kept);  // この値を残す: Play 前のシーンへ (Undo の項目は 1 つ)
+        host_.SelectInTree({});  // (選択は、切り替えたシーンのエンティティを指しているかもしれない)
         host_.Redraw();
     }
 
-    // The plugins' PlayServices for this Play: assets from their files (as they are now) with their
-    // .meta's import settings.
+    // この Play の、プラグインの PlayServices: アセットはそのファイルから (今の状態) と、
+    // その .meta の取り込みの設定で。
     void StartServices() {
         PlayHost play;
         play.registry = &host_.Registry();
@@ -1409,7 +1409,7 @@ private:
         scripts_.World().services = &services_;
     }
 
-    // The editor's saves (Library/Saves/save_*.json) to the Recycle Bin.
+    // エディターの保存 (Library/Saves/save_*.json) をごみ箱へ。
     void DeleteSaves() {
         const fs::path folder = ProjectSaveFolder(host_.GetProject().Root());
         std::vector<fs::path> files;
@@ -1430,8 +1430,8 @@ private:
         }
     }
 
-    // The game's global variables back to their 初めの値 (Play and Stop); a 初めの値 that does not fit
-    // its type is told at Play.
+    // ゲームのグローバル変数を 初めの値 に戻す (Play と Stop)。型に合わない 初めの値 は、
+    // Play で知らせる。
     void ResetGlobals(bool tell) {
         std::vector<std::string> warnings;
         ScriptWorld& world = scripts_.World();
@@ -1445,12 +1445,12 @@ private:
     void TogglePause(ui::Context& c) {
         if (!Running()) return;
         play_ = play_ == PlayState::Paused ? PlayState::Playing : PlayState::Paused;
-        services_.SetPaused(play_ == PlayState::Paused);  // (sounds keep their place)
-        lastTick_ = c.Time();  // the paused time does not count
+        services_.SetPaused(play_ == PlayState::Paused);  // (音は位置を保つ)
+        lastTick_ = c.Time();  // 一時停止していた時間は数えない
         c.RequestAnimation();
     }
 
-    // One frame (1 / 目標 FPS seconds), then paused.
+    // 1 フレーム (1 / 目標 FPS 秒) 進めて、一時停止。
     void StepFrame(ui::Context& c) {
         if (!Running() || !playScene_) return;
         play_ = PlayState::Paused;
@@ -1460,8 +1460,8 @@ private:
         host_.Redraw();
     }
 
-    // The views come from the plugins that know a space (ゲーム制作 × 3D / × 2D): asked once. Each
-    // space has a scene view and a game view of its own (each keeps its camera).
+    // ビューは、空間を知っているプラグイン (ゲーム制作 × 3D / × 2D) から来る: 一度だけ聞く。
+    // 各空間にそれぞれのシーンビューとゲームビューがある (それぞれカメラを持つ)。
     void EnsureViews() {
         if (viewsAsked_) return;
         viewsAsked_ = true;
@@ -1475,7 +1475,7 @@ private:
         for (View& v : views_) v.scene->LoadState(ViewState(v));
     }
 
-    // The state kept for a view; before there were spaces it was one "sceneView" (the default view's).
+    // ビューに持つ状態。空間ができる前は 1 つの "sceneView" だった (既定のビューのもの)。
     json::Value ViewState(const View& v) const {
         const json::Value& states = view_.Get("sceneViews");
         if (states.IsObject() && !states.Get(v.info->space).IsNull()) return states.Get(v.info->space);
@@ -1483,8 +1483,8 @@ private:
         return {};
     }
 
-    // The game's space: the view the game chose, or the default (the first) when it chose none or one
-    // whose plugin is not here now. Null when no plugin brings a view.
+    // ゲームの空間: ゲームが選んだビュー。何も選んでいない、またはそのプラグインが今ないときは
+    // 既定のもの (最初のもの)。ビューを出すプラグインがなければ null。
     View* Current() {
         EnsureViews();
         for (View& v : views_) {
@@ -1497,8 +1497,8 @@ private:
         return v ? v->info->space : std::string{};
     }
 
-    // The strip above the scene view when more than one space is offered: switching is an edit of the
-    // game (GameSettings::space - undo, unsaved): the game view and new entities follow it.
+    // 空間が 2 つ以上あるとき、シーンビューの上に出る帯: 切り替えはゲームの編集 (GameSettings::space
+    // - Undo、未保存): ゲームビューと新しいエンティティがそれに従う。
     void DrawSpaceStrip(ui::Context& c, const Rect& strip) {
         editor::w::DrawBar(c, strip, theme::Bg);
         std::vector<std::wstring> labels;
@@ -1515,7 +1515,7 @@ private:
         if (i >= 0 && i != selected && !Running()) ChooseSpace(views_[static_cast<size_t>(i)].info->space);
     }
 
-    // Above the game view while it is stopped: that it is, and the game settings (最初のカメラ ...).
+    // ゲームビューの上 (停止中): 止まっていること、それとゲーム設定 (最初のカメラ ...)。
     void DrawStoppedStrip(ui::Context& c, const Rect& strip) {
         editor::w::DrawBar(c, strip, theme::Bg);
         constexpr float kButtonW = 150;
@@ -1526,7 +1526,7 @@ private:
         ts.v = ui::VAlign::Center;
         c.P().Text({strip.x + 10, strip.y, button.x - strip.x - 18, strip.h}, Tr(L"止まっています (▶ / Ctrl+P で Play)。最初のカメラから見たシーン"), ts);
         if (editor::w::Button(c, "game_settings", button, Tr(L"ゲームの設定を開く"))) InspectSettings();
-        // The scripts: build now, write them in Visual Studio.
+        // スクリプト: 今ビルドする、Visual Studio で書く。
         const Rect vs{button.x - 6 - kButtonW, button.y, kButtonW, button.h};
         const Rect build{vs.x - 6 - kButtonW, button.y, kButtonW, button.h};
         if (build.x > strip.x + 200) {
@@ -1538,7 +1538,7 @@ private:
         }
     }
 
-    // The component types: the plugins' and the scripts' (a script may be attached several times).
+    // 部品の型: プラグインのものとスクリプトのもの (スクリプトは何度でも付けてよい)。
     void UseScriptTypes() {
         std::vector<const reflect::TypeDesc*> types = baseTypes_, multiple = baseMultiple_;
         for (const reflect::TypeDesc* t : scripts_.Module().Types()) {
@@ -1548,22 +1548,22 @@ private:
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
     }
 
-    // Hot reload (a frame boundary): the values written out by name, the old DLL's objects gone, the
-    // new DLL loaded, read back - a new field gets its default, a field that went is kept in the file,
-    // a script that went stays as a missing one with its values (Scene: unknown component). While
-    // playing (Play 中のビルド = すぐ入れ替える) the copy that plays the same way: its scripts that had
-    // started stay started and get OnReloaded instead of BeginPlay.
+    // ホットリロード (フレームの境目): 値を名前で書き出し、古い DLL のオブジェクトを消し、新しい
+    // DLL を読み込んで、読み戻す。新しいフィールドは既定値になり、なくなったフィールドは
+    // ファイルに残り、なくなったスクリプトは値を持ったまま「ない」ものとして残る (Scene: unknown
+    // component)。Play 中 (Play 中のビルド = すぐ入れ替える) は、動いているコピーにも同じことをする:
+    // 始まっていたスクリプトは始まったままで、BeginPlay の代わりに OnReloaded を受ける。
     void ReloadScripts(const std::filesystem::path& dll) {
         std::unique_ptr<ScriptModule> next = scripts_.LoadModule(dll);
-        if (!next) return;  // (told) the old DLL goes on
-        // The coroutines' frames are the old DLL's: they stop before it goes (OnReloaded may start them again).
+        if (!next) return;  // (知らせた) 古い DLL はそのまま動く
+        // コルーチンのフレームは古い DLL のもの: DLL が消える前に止める (OnReloaded がまた始めてよい)。
         if (!scripts_.World().coroutines.empty()) {
             log::Info("スクリプトを入れ替えたので、動いていたコルーチン {} 個を止めました", scripts_.World().coroutines.size());
             scripts_.World().ClearCoroutines();
         }
         const json::Value saved = scene_.Save();
         scene_.SetComponentTypes(baseTypes_, baseMultiple_);
-        scene_.Load(saved);  // the old scripts' objects gone (kept as read)
+        scene_.Load(saved);  // 古いスクリプトのオブジェクトが消える (読んだままに保つ)
         std::vector<ScriptRunner::RunState> running;
         json::Value playing;
         if (playScene_) {
@@ -1572,17 +1572,17 @@ private:
             playScene_->SetComponentTypes(baseTypes_, baseMultiple_);
             playScene_->Load(playing);
         }
-        // The history's edits point at the old types (their code is in the old DLL): they go too.
+        // 履歴の編集は古い型を指す (そのコードは古い DLL にある): それらも消す。
         if (host_.History().UndoCount() + host_.History().RedoCount() > 0) {
             host_.History().Clear();
             log::Info("スクリプトを読み直したので、元に戻す (Undo) の履歴を消しました");
         }
-        scriptTimes_.clear();  // (they point at the old DLL's types)
+        scriptTimes_.clear();  // (古い DLL の型を指している)
         scripts_.Swap(std::move(next));
         UseScriptTypes();
         reflect::Warnings warnings;
         scene_.Load(saved, &warnings);
-        heldSceneWarnings_.clear();  // (read again: what is told now replaces what was held at opening)
+        heldSceneWarnings_.clear();  // (読み直した: 今知らせるものが、開いたときに持っていたものと入れ替わる)
         for (const auto& w : warnings) log::Warn("シーン: {}", w);
         if (playScene_) {
             playScene_->SetComponentTypes(scene_.ComponentTypes(), scene_.MultipleTypes());
@@ -1617,7 +1617,7 @@ private:
         h.timeScale = play_ == PlayState::Playing ? scripts_.World().timeScale : Running() ? 0.f : 1.f;
         h.game = game;
         h.background = settings_.clearColor;
-        h.camera = Running() ? runner_.Camera() : SceneCamera(scene_, cameraTypes_, settings_.startCamera.id);  // in Play: as the systems left it
+        h.camera = Running() ? runner_.Camera() : SceneCamera(scene_, cameraTypes_, settings_.startCamera.id);  // Play 中: システムが残したとおりに
         h.aspect = static_cast<float>(std::max(1, settings_.display.width)) / static_cast<float>(std::max(1, settings_.display.height));
         h.openSettings = [this] { InspectSettings(); };
         h.settings = &settings_;
@@ -1630,7 +1630,7 @@ private:
         return h;
     }
 
-    // The scene view comes from a plugin that knows a space (ゲーム制作 × 3D / × 2D); without one, a note.
+    // シーンビューは、空間を知っているプラグイン (ゲーム制作 × 3D / × 2D) から来る。なければ注意書き。
     void DrawSceneView(ui::Context& c, const Rect& panel) {
         if (!Current()) {
             Placeholder(c, panel, Tr(L"シーンビュー"),
@@ -1640,12 +1640,12 @@ private:
         Rect r = panel;
         if (views_.size() >= 2 && r.h > 120) DrawSpaceStrip(c, ui::TakeTop(r, kSpaceStripH));
         SceneViewHost h = ViewHost(false);
-        Current()->scene->Draw(c, r, h);  // (the strip may have just switched it)
-        if (play_ == PlayState::Playing) c.RequestAnimation();  // this panel may be in a window of its own
+        Current()->scene->Draw(c, r, h);  // (帯が今切り替えたかもしれない)
+        if (play_ == PlayState::Playing) c.RequestAnimation();  // このパネルは専用のウィンドウにあるかもしれない
     }
 
-    // The game as it sees itself: while playing the copy that plays, otherwise the scene as it is (a
-    // strip on top says so, with the way to the settings).
+    // ゲーム自身が見る自分: Play 中は動いているコピー、そうでなければシーンそのもの (上の
+    // 帯がそう言い、設定へ行く道も出す)。
     void DrawGameView(ui::Context& c, const Rect& panel) {
         EnsureViews();
         View* view = Current();
@@ -1657,14 +1657,14 @@ private:
         }
         Rect r = panel;
         if (!Running() && r.h > 120) DrawStoppedStrip(c, ui::TakeTop(r, kSpaceStripH));
-        mouseInGame_ = c.IsHovered(r);  // (the game's mouse buttons: only over here - read by the next frame)
+        mouseInGame_ = c.IsHovered(r);  // (ゲームのマウスボタン: ここの上だけ - 次のフレームが読む)
         SceneViewHost h = ViewHost(true);
         view->game->Draw(c, r, h);
-        // The other spaces over it, in their order (2D over a 3D game, when it has a camera to show it).
+        // その上にほかの空間を、その順に (3D のゲームの上に 2D。それを映すカメラがあるとき)。
         for (View& other : views_) {
             if (&other != view) other.game->DrawLayer(c, r, h);
         }
-        // Over everything: the game UI ... - on the game screen's rectangle, as the game settings' 画面.
+        // 一番上に: ゲーム UI ... - ゲーム画面の矩形に、ゲーム設定の 画面 のとおりに。
         const Rect game = GameScreenRect(r, h.aspect);
         const Vec2 screen = GameScreen();
         const ui::Input& in = c.In();
@@ -1676,12 +1676,12 @@ private:
         if (play_ == PlayState::Playing) c.RequestAnimation();
     }
 
-    // The game's screen as the game settings' 画面 (DIPs).
+    // ゲームの画面 (ゲーム設定の 画面 のとおり、DIP)。
     Vec2 GameScreen() const {
         return {static_cast<float>(std::max(1, settings_.display.width)), static_cast<float>(std::max(1, settings_.display.height))};
     }
 
-    // What the plugins draw over the whole game screen (ScreenDrawInfo: the game UI), into `game`.
+    // プラグインがゲーム画面全体に描くもの (ScreenDrawInfo: ゲーム UI) を `game` に。
     void DrawScreen(ui::Context& c, const Rect& game, Vec2 screen) {
         if (!screensAsked_) {
             screensAsked_ = true;
@@ -1706,9 +1706,9 @@ private:
         c.P().PopClip();
     }
 
-    // --- Inspector -----------------------------------------------------------------------------
-    // 外す in Play: the copy's component goes at the end of the next frame, a script's EndPlay first (as
-    // rm::Entity::Remove asks). Gone with the copy at ■ anyway.
+    // --- インスペクター -----------------------------------------------------------------------------
+    // Play の 外す: コピーの部品は次のフレームの終わりに消え、スクリプトの EndPlay が先に走る
+    // (rm::Entity::Remove が頼むとおり)。どのみち ■ でコピーごと消える。
     void PlayRemoveComponent(int id, const std::string& type, size_t nth) {
         SceneEntity* e = playScene_ ? playScene_->Find(id) : nullptr;
         Component* c = e ? e->FindComponent(type, nth) : nullptr;
@@ -1720,14 +1720,14 @@ private:
         }
     }
 
-    // A note on top of the inspector while playing (its blocks are shown, not edited).
+    // Play 中のインスペクターの上の注意書き (ブロックは見せるだけで、編集しない)。
     static editor::InspectBlock PlayNote() {
         return {nullptr, {}, {}, Tr(L"Play 中です。ここで変えた値は動いているゲームにすぐ効きますが、保存されず、■ で止めると Play の前に戻ります (元に戻す の履歴にも入りません)。欄を右クリック →「この値を残す」で、止めたときの値を Play の前のシーンへ書き戻します。"), {}};
     }
 
-    // Play: a right click on a field → この値を残す (design BluePrint 20-b 3). The field is remembered by
-    // entity, component (its type and place; "" = the entity's own fields) and path; at Stop its value
-    // then is written into the scene from before Play (KeepValues).
+    // Play: フィールドを右クリック → この値を残す (設計 BluePrint 20-b 3)。フィールドは
+    // エンティティ、部品 (その型と位置。"" = エンティティ自身のフィールド)、パスで覚える。
+    // Stop のとき、そのときの値を Play 前のシーンに書く (KeepValues)。
     struct Kept {
         SceneField field;
         std::string label;
@@ -1752,13 +1752,13 @@ private:
         };
     }
 
-    // The scene playing is the one from before Play (not one Game::LoadScene switched to): only its
-    // entities are the edited scene's.
+    // 動いているシーンが Play 前のもの (Game::LoadScene が切り替えた先ではない) のとき: その
+    // エンティティだけが、編集中のシーンのもの。
     bool PlayingOwnScene() {
         const int i = scripts_.World().sceneIndex;
         return i < 0 || static_cast<size_t>(i) >= playScenes_.size() || playScenes_[static_cast<size_t>(i)] == AssetRef{slot_.guid};
     }
-    // The kept values as they are now in the copy that plays.
+    // 残す値の、動いているコピーでの今の値。
     std::vector<std::pair<Kept, json::Value>> ReadKept() {
         std::vector<std::pair<Kept, json::Value>> out;
         for (const Kept& k : kept_) {
@@ -1766,8 +1766,8 @@ private:
         }
         return out;
     }
-    // At Stop: the kept values - as they were when the scene from before Play was left, then as they
-    // are in the copy that plays (before its EndPlay) when it is that scene ...
+    // Stop のとき: 残す値 - Play 前のシーンを離れたときの値、それがそのシーンなら動いている
+    // コピーでの値 (その EndPlay の前) ...
     std::vector<std::pair<Kept, json::Value>> TakeKept() {
         std::vector<std::pair<Kept, json::Value>> out = std::exchange(keptLeft_, {});
         if (PlayingOwnScene()) {
@@ -1776,8 +1776,8 @@ private:
         kept_.clear();
         return out;
     }
-    // ... written into the scene from before Play: one undo entry (unsaved). One the scene does not have
-    // (made while playing) is told.
+    // ... Play 前のシーンに書く: Undo の項目は 1 つ (未保存)。シーンにないもの (Play 中に作った)
+    // は知らせる。
     void KeepValues(const std::vector<std::pair<Kept, json::Value>>& values) {
         if (values.empty()) return;
         std::vector<int> touched;
@@ -1798,8 +1798,8 @@ private:
         log::Info("Play の値を {} 個残しました (Ctrl+Z で戻せます)", done);
     }
 
-    // The scene's own values (SceneSettingInfo: 物理's 重力, 3D's 空 ...), one block each - those of
-    // another space than the game's left out. In Play: the copy that plays, shown, not edited.
+    // シーン自身の値 (SceneSettingInfo: 物理の 重力、3D の 空 ...) を 1 つずつブロックで - ゲームの
+    // 空間以外のものは除く。Play では動いているコピーのもので、見せるだけで編集しない。
     void InspectScene() {
         inspectingEntities_ = false;
         inspectingScene_ = true;
@@ -1812,7 +1812,7 @@ private:
             if (play) blocks.push_back(PlayNote());
             const std::string space = CurrentSpace();
             for (const Component& c : Shown().Settings()) {
-                if (!c.Known()) continue;  // its plugin is not here: kept in the file as it was
+                if (!c.Known()) continue;  // そのプラグインがない: ファイルにそのまま残す
                 if (const auto it = settingSpaces_.find(c.type); it != settingSpaces_.end() && !space.empty() && it->second != space) continue;
                 const std::string type = c.type;
                 editor::InspectBlock b{c.value.Type(), [this, type, play] {
@@ -1820,7 +1820,7 @@ private:
                                            return s && s->Known() ? reflect::EditTarget{s->value.Get(), &s->unknowns} : reflect::EditTarget{};
                                        },
                                        Utf8ToWide(TrU8(c.value.Type()->label)), {}, {}};
-                b.direct = play;  // (Play: the copy that plays, changed in place)
+                b.direct = play;  // (Play: 動いているコピーを、その場で変える)
                 if (const SceneSettingLook* look = SettingLookOf(type); look && (look->menu || look->presets)) {
                     SceneSettingMenuHost mh;
                     mh.host = &host_;
@@ -1834,7 +1834,7 @@ private:
                         if (!play) {
                             edit(std::move(label), std::move(change));
                         } else if (Component* s = Shown().FindSetting(type); s && s->Known()) {
-                            change(s->value.Get());  // (the copy that plays: at once, back at ■)
+                            change(s->value.Get());  // (動いているコピー: すぐに、■ で戻る)
                         }
                     };
                     if (look->menu) b.menu = look->menu(mh);
@@ -1861,9 +1861,9 @@ private:
         return nullptr;
     }
 
-    // ゲームの設定: a window of its own (not docked in the editor), shaped as the デバッグ window: ゲーム設定,
-    // シーン設定 (the scene the game starts with, tags, layers), セーブ設定 (global variables, the saves),
-    // 入力設定, ビルド. An edit is an undo entry (in Play: in place, put back at ■).
+    // ゲームの設定: 専用のウィンドウ (エディターに固定しない)、形は デバッグ ウィンドウと同じ:
+    // ゲーム設定、シーン設定 (ゲームが始めるシーン、タグ、レイヤー)、セーブ設定 (グローバル変数、
+    // セーブ)、入力設定、ビルド。編集は Undo の項目 (Play 中は: その場で、■ で戻る)。
     void InspectSettings() { OpenSettingsWindow(-1); }
 
     void OpenSettingsWindow(int tab) {
@@ -1879,7 +1879,7 @@ private:
         spec.heightDip = 720;
         spec.minWidthDip = 420;
         spec.minHeightDip = 300;
-        spec.refreshSeconds = 0.25;  // (a build's progress, Play starting / stopping)
+        spec.refreshSeconds = 0.25;  // (ビルドの進み具合、Play の開始 / 停止)
         spec.shape = [](float w, float h) { return FolderWindowShape(w, h); };
         spec.hit = [](float x, float y, float w, float h) { return HitFolderWindow(LayoutFolderWindow(w, h), x, y); };
         spec.draw = [this](ui::Context& c, float w, float h) { DrawSettingsWindow(c, w, h); };
@@ -1902,7 +1902,7 @@ private:
         }
     }
 
-    // One tab of the game settings: some of their fields (the inspector draws them) and what goes with them.
+    // ゲーム設定の 1 つのタブ: そのフィールドのいくつか (インスペクターが描く) と、それに付くもの。
     void DrawSettingsTab(ui::Context& c, const Rect& r, int tab) {
         auto& p = c.P();
         editor::inspector::Block b{&reflect::TypeOf<GameSettings>(), &settings_, &unknowns_, {}, {}, {}};
@@ -1918,7 +1918,7 @@ private:
         ts.wrap = true;
         float y = r.y + 6;
         if (tab == 1) {
-            // The scene the game starts with (書き出したゲーム; the editor's Play starts with the one open).
+            // ゲームが始めるシーン (書き出したゲーム。エディターの Play は開いているシーンから始まる)。
             ui::TextStyle label = ts;
             label.wrap = false;
             label.color = theme::Text;
@@ -1929,7 +1929,7 @@ private:
             if (editor::w::ComboBox(c, "first_scene", combo, first.Empty() ? Tr(L"(なし)") : Utf8ToWide(SceneTitle(first)), !Running()).clicked) {
                 firstScenePopup_.OpenAt(combo.x, combo.Bottom());
             }
-            if (firstScenePopup_.open && Running()) firstScenePopup_.open = false;  // (Play began while it was open)
+            if (firstScenePopup_.open && Running()) firstScenePopup_.open = false;  // (開いている間に Play が始まった)
             if (firstScenePopup_.open) {
                 std::vector<editor::w::MenuItem> items;
                 for (const AssetRef& ref : sceneList_.scenes) {
@@ -1968,7 +1968,7 @@ private:
         }
     }
 
-    // A field of the game settings changed in their window: an undo entry - in Play, in place (put back at ■).
+    // ゲーム設定のフィールドをそのウィンドウで変えた: Undo の項目 - Play 中は、その場で (■ で戻る)。
     void ApplySettingsEdit(editor::inspector::Edit& edit) {
         const reflect::TypeDesc& type = reflect::TypeOf<GameSettings>();
         auto cmd = std::make_unique<reflect::SetFieldCommand>(type, std::move(edit.path), std::move(edit.before), std::move(edit.after),
@@ -1981,8 +1981,8 @@ private:
         host_.Redraw();
     }
 
-    // Where an entity is now (the list may have been rebuilt by undo since): found by id each time.
-    // `play`: in the copy that plays (shown while playing; never edited).
+    // エンティティが今どこにあるか (Undo で一覧が作り直されたかもしれない): そのつど id で探す。
+    // `play`: 動いているコピーの中 (Play 中に見せる。編集はしない)。
     std::function<reflect::EditTarget()> ResolveEntity(int id, bool play = false) {
         return [this, id, play] {
             SceneEntity* e = (play ? Shown() : scene_).Find(id);
@@ -2005,14 +2005,14 @@ private:
         return nullptr;
     }
 
-    // The component `type` of the entity and of its parents that have it: the top parent's first.
-    // Empty when the entity or its component is gone.
+    // エンティティと、その部品 `type` を持つ親の部品: 一番上の親のものが先。
+    // エンティティやその部品がなくなっていれば空。
     static std::vector<const void*> Chain(const Scene& scene, int id, const std::string& type) {
         std::vector<const void*> chain;
         const SceneEntity* self = scene.Find(id);
         const Component* own = self ? self->FindComponent(type) : nullptr;
         if (!own || !own->Known()) return chain;
-        size_t steps = 0;  // a broken file could make a ring of parents
+        size_t steps = 0;  // 壊れたファイルが親の輪を作るかもしれない
         for (const SceneEntity* e = self; e && steps++ <= scene.Entities().size(); e = scene.Find(e->data.parent)) {
             const Component* c = e->FindComponent(type);
             if (c && c->Known()) chain.push_back(c->value.Get());
@@ -2021,21 +2021,21 @@ private:
         return chain;
     }
 
-    // The values a component's plugin works out through the parents: worked out again every time the
-    // inspector asks, into a value of their own (edits of it go through EditDerived).
+    // 部品のプラグインが、親をたどって求める値: インスペクターが聞くたびに求め直し、自分専用の
+    // 値に入れる (その編集は EditDerived を通る)。
     std::function<reflect::EditTarget()> Derived(int id, std::string type, const ComponentLook* info, bool play) {
         auto value = std::make_shared<reflect::Object>(info->derivedType());
         return [this, id, type = std::move(type), info, value, play] {
             const std::vector<const void*> chain = Chain(play ? Shown() : scene_, id, type);
-            if (chain.empty()) return reflect::EditTarget{};  // gone (undo)
+            if (chain.empty()) return reflect::EditTarget{};  // なくなった (Undo)
             info->derive(chain, value->Get());
             return reflect::EditTarget{value->Get(), nullptr};
         };
     }
 
-    // A derived value typed in the inspector: the component's plugin works out the component that
-    // gives it; the fields that change are edits of the component (one undo entry; typing one field
-    // joins into one entry).
+    // インスペクターに入力した派生値: 部品のプラグインが、それを与える部品を求める。変わる
+    // フィールドは部品の編集になる (Undo の項目は 1 つ。1 つのフィールドを打つ間は 1 つの項目に
+    // まとまる)。
     void EditDerived(int id, const std::string& type, const ComponentLook* info, editor::InspectBlock::Change ch, bool play = false) {
         const std::vector<const void*> chain = Chain(play ? Shown() : scene_, id, type);
         if (chain.empty()) return;
@@ -2059,7 +2059,7 @@ private:
             cmds.push_back(std::make_unique<reflect::SetFieldCommand>(ct, reflect::FieldPath{i}, reflect::SaveField(f, chain.back(), nullptr),
                                                                       reflect::SaveField(f, next.Get(), nullptr), resolve, ch.label, ch.merge));
         }
-        if (play) {  // (the copy that plays: in place, kept nowhere)
+        if (play) {  // (動いているコピー: その場で、どこにも残らない)
             for (auto& cmd : cmds) cmd->Do();
             return;
         }
@@ -2072,9 +2072,9 @@ private:
         host_.History().Push(std::move(group), false);
     }
 
-    // A field typed in the inspector of a component whose plugin keeps its fields together
-    // (ComponentLook::adjust): the field as typed, then what the plugin changed with it - one undo entry
-    // (typing into one field still joins into one entry while the plugin changes nothing else).
+    // フィールドをまとめて持つプラグインの部品 (ComponentLook::adjust) のインスペクターに
+    // 入力したフィールド: 入力したとおりのフィールドと、それでプラグインが変えたもの - Undo の項目は 1 つ
+    // (プラグインがほかに何も変えない間は、1 つのフィールドへの入力が 1 つの項目にまとまる)。
     void EditAdjusted(int id, const std::string& type, size_t nth, const ComponentLook* info, editor::InspectBlock::Change ch, bool play = false) {
         Scene& scene = play ? Shown() : scene_;
         SceneEntity* e = scene.Find(id);
@@ -2092,7 +2092,7 @@ private:
         ct.copy(next.Get(), typed.Get());
         info->adjust(scene, settings_, id, ch.path, c->value.Get(), next.Get());
         const uint64_t diff = reflect::Diff(ct, typed.Get(), next.Get());
-        if (play) {  // (the copy that plays: the field and what the plugin changed with it, in place)
+        if (play) {  // (動いているコピー: フィールドと、それでプラグインが変えたものを、その場で)
             typedCmd->Do();
             const Component* now = scene.Find(id) ? scene.Find(id)->FindComponent(type, nth) : nullptr;
             if (now && now->Known()) ct.copy(const_cast<void*>(now->value.Get()), next.Get());
@@ -2113,14 +2113,14 @@ private:
         host_.History().Push(std::move(group), false);
     }
 
-    // How a child's component with derived values is shown: 0 = its own (as it starts), 1 = derived.
-    // Once switched it stays (kept in UserSettings).
+    // 派生値のある子の部品の見せ方: 0 = 自分の値 (始まりのまま)、1 = 派生値。
+    // 一度切り替えたらそのまま (UserSettings に持つ)。
     int ModeOf(const SceneEntity& e) const {
         const auto it = modes_.find(e.data.id);
         return it != modes_.end() ? it->second : 0;
     }
 
-    // A line under the entity's header when it is part of a placed prefab.
+    // Prefab として置かれたものの一部のとき、エンティティのヘッダーの下に出す行。
     std::wstring PrefabNote(int id) const {
         const int root = scene_.PrefabRootOf(id);
         if (root == 0) return {};
@@ -2132,7 +2132,7 @@ private:
         if (it == prefabs_.end()) return TrF(L"Prefab「{}」を置いた物です (ファイル {} が読めません)", name, where);
         const json::Value* overrides = CachedOverrides(root);
         const size_t n = overrides ? CountOverrides(*overrides) : 0;
-        // A prefab nested in another placed prefab: say which.
+        // 置いた別の Prefab に入れ子になった Prefab: どれか言う。
         if (const int around = r->prefab.outer > 0 ? scene_.PrefabRootOf(r->data.parent) : 0) {
             return TrF(L"Prefab「{}」を置いた物です ({})。Prefab「{}」の中に入っています。Prefab と違う所: {} 個 (名前と置き場所を含む)", name,
                        where, Utf8ToWide(PrefabTitle(scene_.Find(around)->prefab.asset)), n);
@@ -2140,8 +2140,8 @@ private:
         return TrF(L"Prefab「{}」を置いた物です ({})。Prefab と違う所: {} 個 (名前と置き場所を含む)", name, where, n);
     }
 
-    // The folder a component type is listed in by 部品を足す: its plugin's (ComponentInfo::folder, each
-    // part translated), "スクリプト" for a script, else "その他".
+    // 部品の型を 部品を足す で入れるフォルダ: そのプラグインのもの (ComponentInfo::folder、各部分を
+    // 翻訳する)、スクリプトは "スクリプト"、それ以外は "その他"。
     std::wstring FolderOf(const reflect::TypeDesc& t) const {
         if (t.kind == reflect::TypeKind::Script) return Tr(L"スクリプト");
         const auto it = componentFolders_.find(t.name);
@@ -2158,8 +2158,8 @@ private:
         return out;
     }
 
-    // Where a type's folder comes in 部品を足す: 3D, 2D, UI, 物理, 音, エフェクト, then other plugins'
-    // folders, スクリプト, その他 (the list is sorted by this; the folders come in the order of their first row).
+    // 型のフォルダが 部品を足す でどの順に来るか: 3D, 2D, UI, 物理, 音, エフェクト、それから
+    // ほかのプラグインのフォルダ、スクリプト、その他 (一覧はこれで並べる。フォルダは最初の行の順に来る)。
     int FolderRank(const reflect::TypeDesc& t) const {
         if (t.kind == reflect::TypeKind::Script) return 100;
         const auto it = componentFolders_.find(t.name);
@@ -2172,16 +2172,16 @@ private:
         return 50;
     }
 
-    // The component types in 部品を足す's order (FolderRank; in a folder, as the plugins give them).
+    // 部品の型を 部品を足す の順に (FolderRank。フォルダの中は、プラグインが出した順)。
     std::vector<const reflect::TypeDesc*> TypesForAdding() const {
         std::vector<const reflect::TypeDesc*> types = scene_.ComponentTypes();
         std::stable_sort(types.begin(), types.end(), [this](const reflect::TypeDesc* a, const reflect::TypeDesc* b) { return FolderRank(*a) < FolderRank(*b); });
         return types;
     }
 
-    // The inspector of one entity: the entity itself, then its components (each with ⋮ → 外す), and
-    // "部品を足す" under them. Asked again every time it is drawn (undo may add or take components;
-    // Play shows the copy that plays).
+    // 1 つのエンティティのインスペクター: エンティティ自身、それから部品 (それぞれ ⋮ → 外す)、
+    // その下に "部品を足す"。描くたびに聞き直す (Undo が部品を足したり取ったりするかもしれない。
+    // Play は動いているコピーを見せる)。
     editor::Inspectable EntityInspectable(int id) {
         editor::Inspectable in;
         in.title = Tr(L"エンティティ");
@@ -2200,7 +2200,7 @@ private:
                 const size_t nth = e->NthOf(c);
                 const size_t count = e->CountComponents(type);
                 const std::string label = c.Known() ? c.value.Type()->label : c.type;
-                // Several of one type: numbered (the block's title is also what keeps its fields apart).
+                // 同じ型が複数ある: 番号を振る (ブロックのタイトルは、そのフィールドを区別するものでもある)。
                 const std::wstring number = count > 1 ? std::format(L" ({})", nth + 1) : std::wstring();
                 editor::w::Action remove;
                 remove.label = Tr(L"外す");
@@ -2211,7 +2211,7 @@ private:
                     }
                     EditTouching({id}, std::format("「{}」を外す", label), [&] { scene_.RemoveComponent(id, type, nth); });
                 };
-                // Its place among the entity's components (the order they are shown - and run).
+                // エンティティの部品の中での位置 (見せる順 - 動く順でもある)。
                 const size_t at = static_cast<size_t>(&c - e->components.data());
                 editor::w::Action up;
                 up.label = Tr(L"上へ移動");
@@ -2237,14 +2237,14 @@ private:
                 sep.separator = true;
                 std::vector<editor::w::Action> menu{up, down, sep, remove};
                 if (c.Known()) {
-                    // A script: where it runs among the others (the game settings' スクリプトの実行順).
+                    // スクリプト: ほかのスクリプトの中で動く順 (ゲーム設定の スクリプトの実行順)。
                     std::wstring note;
                     if (c.value.Type()->kind == reflect::TypeKind::Script) note = TrF(L"スクリプト ・ 実行順 {}", ScriptOrderOf(c.type, settings_.scriptOrder));
                     editor::InspectBlock b{c.value.Type(), ResolveComponent(id, c.type, nth, play), Utf8ToWide(TrU8(label)) + number, note, menu};
                     b.direct = play;
                     if (play) b.fieldMenu = KeepMenu(id, type, nth);
-                    // A child: ローカル / ワールド (or whatever the plugin calls them), one block shown either way.
-                    // At the top level both ways are the same numbers, so there is no switch.
+                    // 子: ローカル / ワールド (プラグインが別の名前で呼ぶ場合はそれ)。どちらでも 1 つのブロックを見せる。
+                    // 最上位ではどちらも同じ数値なので、切り替えはない。
                     if (const ComponentLook* info = LookOf(c.type); info && info->HasDerived() && nth == 0 && e->data.parent != 0) {
                         b.modes = {Tr(info->ownLabel), Tr(info->derivedLabel)};
                         b.mode = ModeOf(*e);
@@ -2271,7 +2271,7 @@ private:
         in.addLabel = Tr(L"＋ 部品を足す");
         in.addMenu = [this, id] {
             std::vector<editor::w::Action> list;
-            // (Play: added to the copy that plays - its script starts at the next frame; gone at ■)
+            // (Play: 動いているコピーに足す - そのスクリプトは次のフレームで始まる。■ で消える)
             const SceneEntity* e = Shown().Find(id);
             for (const reflect::TypeDesc* t : TypesForAdding()) {
                 if (!e || (e->FindComponent(t->name) && !Shown().AllowsMultiple(t->name))) continue;
@@ -2300,9 +2300,9 @@ private:
         return in;
     }
 
-    // Several entities at once: the entity's own values and the components every one of them has
-    // (the first of each type), shown from the last selected; a change goes to all ("—" where they
-    // differ). 外す / 部品を足す work on all of them.
+    // 複数のエンティティを同時に: エンティティ自身の値と、全員が持つ部品 (型ごとに最初の 1 つ)
+    // を、最後に選んだものから見せる。変更は全員に行く (違うところは "—")。
+    // 外す / 部品を足す は全員に効く。
     editor::Inspectable ManyInspectable(std::vector<int> ids) {
         editor::Inspectable in;
         in.title = TrF(L"{} 個のエンティティ", ids.size());
@@ -2310,7 +2310,7 @@ private:
             std::vector<editor::InspectBlock> blocks;
             const bool play = Running();
             const Scene& shown = Shown();
-            std::vector<int> here;  // the ones that are still there (undo)
+            std::vector<int> here;  // まだある (Undo)
             for (const int id : ids) {
                 if (shown.Find(id)) here.push_back(id);
             }
@@ -2354,7 +2354,7 @@ private:
         in.addMenu = [this, ids] {
             std::vector<editor::w::Action> list;
             for (const reflect::TypeDesc* t : TypesForAdding()) {
-                // Offered while at least one of them lacks it (or may have more); added where it can be.
+                // 少なくとも 1 つが持っていない (またはもっとあるかもしれない) 間は出す。足せるところに足す。
                 const bool someCan = Shown().AllowsMultiple(t->name) || std::any_of(ids.begin(), ids.end(), [&](int id) {
                                          const SceneEntity* e = Shown().Find(id);
                                          return e && !e->FindComponent(t->name);
@@ -2388,9 +2388,9 @@ private:
         return in;
     }
 
-    // --- シーンの一覧 (the game's scenes) ---------------------------------------------------------
-    // A scene's name for the screen and for Game::LoadScene: its file's (the new one not saved yet: the
-    // file it will be).
+    // --- シーンの一覧 (ゲームのシーン) ---------------------------------------------------------
+    // 画面と Game::LoadScene に使うシーンの名前: そのファイルのもの (まだ保存していない新しい
+    // ものは、これからできるファイルのもの)。
     std::string SceneTitle(const AssetRef& ref) const {
         if (ref.Empty() || ref.guid == slot_.guid) return SceneNameOf(slot_.path);
         const fs::path file = host_.AssetFile(ref);
@@ -2404,7 +2404,8 @@ private:
         host_.Redraw();
     }
 
-    // Before the scene shown changes: what is not saved is saved (or not) as the user says, then `go`.
+    // 見せるシーンが変わる前に: 保存していないものを、ユーザーが言うとおりに保存する (しない)。
+    // それから `go`。
     void AfterAskingToSave(std::wstring what, std::function<void()> go) {
         if (Running()) {
             log::Info("Play 中はシーンを開けません (■ で止めてから)");
@@ -2421,8 +2422,8 @@ private:
                   });
     }
 
-    // The scene shown becomes another: `ref` read from its file (empty: a new scene, `newPath`). The
-    // history goes (its entries are edits of the scene that was shown).
+    // 見せるシーンが別のものになる: `ref` をそのファイルから読む (空: 新しいシーン、`newPath`)。
+    // 履歴は消える (その項目は、見せていたシーンの編集だから)。
     void ShowScene(const AssetRef& ref, const std::string& newPath = {}) {
         scene_.Load(json::Value());
         slot_ = {"", newPath.empty() ? NewSceneFile() : newPath, 0};
@@ -2431,7 +2432,7 @@ private:
         pending_.reset();
         reflect::Warnings warnings;
         if (!ref.Empty()) {
-            sceneList_.open = ref;  // (written with the next save: the scene the project opens with)
+            sceneList_.open = ref;  // (次の保存で書く: プロジェクトが開くときのシーン)
             ReadOpenScene(warnings);
         }
         for (const auto& w : warnings) log::Warn("シーン: {}", w);
@@ -2442,7 +2443,7 @@ private:
         sceneChosen_ = ref;
         renamingScene_ = false;
         log::Info("シーン「{}」を開きました (エンティティ {} 個)", SceneTitle(ref), scene_.Entities().size());
-        host_.Inspect({});  // (the game settings are a window of their own: opened when asked)
+        host_.Inspect({});  // (ゲーム設定は専用のウィンドウ: 頼まれたときに開く)
         host_.Redraw();
     }
 
@@ -2451,7 +2452,7 @@ private:
         AfterAskingToSave(Tr(L"別のシーンを開く"), [this, ref] { ShowScene(ref); });
     }
 
-    // A new empty scene (Assets/Scenes/Scene.rmscene ...), saved at once: it is in the list and on disk.
+    // 新しい空のシーン (Assets/Scenes/Scene.rmscene ...) をすぐ保存する: 一覧にもディスクにもある。
     void NewSceneAsked() {
         AfterAskingToSave(Tr(L"新しいシーンを作る"), [this] {
             ShowScene({}, NewSceneFile("Scene"));
@@ -2459,10 +2460,11 @@ private:
         });
     }
 
-    // シーン: the game's scenes as the ヒエラルキー shows its entities (the same tree view): a click opens
-    // one (the open one is the chosen row), dragging puts them in another order (the game's order), F2 /
-    // double-click / the menu renames, a right click: 開く, 新しいシーン (+ 一覧に足す for a scene of
-    // Assets the list does not have). Which one the game starts with: ゲームの設定 ▸ シーン設定.
+    // シーン: ゲームのシーンを、ヒエラルキー がエンティティを見せるとおりに (同じツリー表示):
+    // クリックで 1 つ開き (開いているものが選ばれた行)、ドラッグで順を変え (ゲームの順)、
+    // F2 / ダブルクリック / メニューで名前を変え、右クリックで: 開く、新しいシーン
+    // (Assets にあって一覧にないシーンには 一覧に足す)。ゲームが始めるのはどれか:
+    // ゲームの設定 ▸ シーン設定。
     class SceneListSource final : public editor::tree::Source {
     public:
         explicit SceneListSource(GameSoftware& g) : g_(g) {}
@@ -2505,7 +2507,7 @@ private:
             }
         }
         bool CanMove() const override { return !g_.Running(); }
-        // A new order: what is in the list (and a scene of Assets dragged in among them) as the rows now stand.
+        // 新しい順: 一覧にあるもの (間にドラッグで入れた Assets のシーンも) を、今の行の並びのとおりに。
         void Move(std::span<const editor::tree::ItemId> items, editor::tree::ItemId parent, size_t index) override {
             std::vector<AssetRef> moved;
             for (const editor::tree::ItemId id : items) {
@@ -2516,7 +2518,7 @@ private:
             for (const AssetRef& r : refs_) {
                 if (std::find(moved.begin(), moved.end(), r) == moved.end()) order.push_back(r);
             }
-            // (no scene holds another: dropped on a row's middle = right after it)
+            // (どのシーンもほかのシーンを持たない: 行の真ん中に落とす = その直後)
             size_t at = std::min(index, order.size());
             if (parent != 0) {
                 if (const auto p = RefOf(parent)) {
@@ -2536,7 +2538,7 @@ private:
             g_.EditSceneList(TrU8("シーンの順を変える"), [&](SceneList& l) { l.scenes = next; });
             g_.KeepOpenSceneChosen();
         }
-        // A row chosen: opened when the button is let go (not when a drag starts on it).
+        // 行を選んだ: ボタンを離したときに開く (その行でドラッグが始まったときは開かない)。
         void SelectionChanged(std::span<const editor::tree::ItemId> ids) override {
             if (ids.size() != 1) return;
             const auto r = RefOf(ids[0]);
@@ -2576,11 +2578,11 @@ private:
 
     private:
         GameSoftware& g_;
-        std::vector<AssetRef> refs_;  // the rows as listed last
-        size_t listed_ = 0;           // ... the game's (the rest: scenes of Assets not in the list)
+        std::vector<AssetRef> refs_;  // 最後に一覧に出した行
+        size_t listed_ = 0;           // ... ゲームのもの (残り: 一覧にない Assets のシーン)
     };
 
-    // The scenes Assets has and the game's list does not (the open one aside).
+    // Assets にあって、ゲームの一覧にないシーン (開いているものは別にして)。
     std::vector<AssetRef> ScenesNotListed() {
         std::vector<AssetRef> out;
         const AssetRef open{slot_.guid};
@@ -2592,7 +2594,7 @@ private:
         return out;
     }
 
-    // The open scene is the chosen row (after a click that asked first, a drag, another scene opened).
+    // 開いているシーンが選ばれた行 (先に聞くクリックの後、ドラッグの後、別のシーンを開いた後)。
     void KeepOpenSceneChosen() { editor::tree::RequestSelect(sceneTree_, {SceneListSource::IdOf(AssetRef{slot_.guid})}); }
 
     void DrawScenesPanel(ui::Context& c, const Rect& r) {
@@ -2603,11 +2605,11 @@ private:
             KeepOpenSceneChosen();
         }
         editor::tree::Draw(c, sceneTree_, *sceneSource_, r);
-        // A row clicked: opened once the button is up and no drag came of it (the save asked first).
+        // クリックした行: ボタンが上がり、ドラッグにならなかったら開く (先に保存を聞く)。
         if (sceneTree_.dragging) sceneToOpen_.reset();
         if (sceneToOpen_ && !c.In().down[0]) {
             const AssetRef ref = *std::exchange(sceneToOpen_, std::nullopt);
-            KeepOpenSceneChosen();  // (stays on the open one until the other is open)
+            KeepOpenSceneChosen();  // (別のものが開くまで、開いているものに留まる)
             if (Running()) {
                 log::Info("Play 中はシーンを切り替えられません (■ で止めてから)");
             } else {
@@ -2616,8 +2618,8 @@ private:
         }
     }
 
-    // A scene's file renamed (its id stays: the list and Game::LoadScene use the new name). The new
-    // scene not saved yet: the file it will be.
+    // シーンのファイルの名前を変えた (id はそのまま: 一覧と Game::LoadScene は新しい名前を使う)。
+    // まだ保存していない新しいシーンは、これからできるファイルのもの。
     void RenameScene(const AssetRef& ref, const std::string& to) {
         sceneProblem_.clear();
         if (to.empty()) return;
@@ -2639,14 +2641,14 @@ private:
                 sceneProblem_ = problem;
                 return;
             }
-            if (ref.guid == slot_.guid) SlotNow();  // (its file is found by its id)
+            if (ref.guid == slot_.guid) SlotNow();  // (そのファイルは id で見つかる)
         }
         log::Info("シーンの名前を「{}」にしました", to);
         renamingScene_ = false;
         host_.Redraw();
     }
 
-    // The scene files in Assets/ (from the project folder), looked at now and then.
+    // Assets/ のシーンファイル (プロジェクトのフォルダから)。ときどき見て回る。
     const std::vector<std::string>& SceneFiles() {
         const double now = platform::NowSeconds();
         if (now - sceneFilesTime_ < 2.0 && sceneFilesTime_ > 0) return sceneFiles_;
@@ -2663,20 +2665,21 @@ private:
         return sceneFiles_;
     }
 
-    // --- Prefabs -------------------------------------------------------------------------------
-    // A prefab file is an asset (a .rmprefab in Assets/) and is named by its id (AssetRef): moving or
-    // renaming it keeps every placed one linked. Data from before assets had ids names it by a path
-    // from the project folder - read the same way (SoftwareHost::AssetFile), made an id when opened.
+    // --- Prefab -------------------------------------------------------------------------------
+    // Prefab のファイルはアセット (Assets/ の .rmprefab) で、id (AssetRef) で名指しする。動かしたり
+    // 名前を変えたりしても、置いたものすべてのリンクが保たれる。アセットに id がなかった前のデータは、
+    // プロジェクトのフォルダからのパスで名指ししている - 同じように読み (SoftwareHost::AssetFile)、
+    // 開いたときに id にする。
     static constexpr size_t kMaxNesting = kMaxPrefabNesting;  // (runtime/Prefab.h)
 
     std::filesystem::path FullPath(const std::string& path) const { return host_.GetProject().Root() / PathFromUtf8(path); }
-    // A file's path from the project folder, "/" between the parts.
+    // ファイルの、プロジェクトのフォルダからのパス。部分の間は "/"。
     std::string RelativePath(const fs::path& file) const {
         return PathToUtf8(file.lexically_normal().lexically_relative(host_.GetProject().Root().lexically_normal()).generic_wstring());
     }
 
-    // --- Scenes (runtime/SceneFile.h) --------------------------------------------------------
-    // Where a new scene's file goes: Assets/Scenes/Main.rmscene ("Main 2" ... when taken).
+    // --- シーン (runtime/SceneFile.h) --------------------------------------------------------
+    // 新しいシーンのファイルの置き場所: Assets/Scenes/Main.rmscene (取られていたら "Main 2" ...)。
     std::string NewSceneFile(std::string_view name = "Main") const {
         return NewScenePath(name, [this](const std::string& p) {
             std::error_code ec;
@@ -2684,11 +2687,11 @@ private:
         });
     }
 
-    // Reads the scene the list shows (its file found by its id). One that cannot be read leaves the
-    // scene empty and is never written over (an edited scene goes to a new file at the save).
+    // 一覧が見せるシーンを読む (そのファイルは id で見つける)。読めないものはシーンを空にし、
+    // 上書きしない (編集したシーンは、保存のとき新しいファイルへ行く)。
     void ReadOpenScene(reflect::Warnings& warnings) {
         const AssetRef open = OpenScene(sceneList_);
-        if (open.Empty()) return;  // no scene yet: a new file at the first save
+        if (open.Empty()) return;  // まだシーンがない: 最初の保存で新しいファイル
         const fs::path file = host_.AssetFile(open);
         std::string err;
         std::optional<json::Value> scene;
@@ -2700,7 +2703,7 @@ private:
         }
         if (!scene) {
             sceneUnread_ = true;
-            replaces_ = file.empty() ? open.guid : std::string();  // a missing file's place in the list goes to the new one
+            replaces_ = file.empty() ? open.guid : std::string();  // ないファイルの、一覧での場所は新しいものへ行く
             log::Error("シーン ({}) を読めませんでした: {}。空のシーンで開きます。編集して保存すると新しいファイルに書きます (元のファイルは上書きしません)",
                        file.empty() ? open.guid : PathToUtf8(file), err);
             return;
@@ -2708,12 +2711,12 @@ private:
         scene_.Load(*scene, &warnings);
     }
 
-    // The scene's slot as it is now: a file moved or renamed since is found by its id; one deleted
-    // since is written again as a new scene (a new file and id, in its place in the list).
+    // 今のシーンの置き場所: その後に動かしたり名前を変えたりしたファイルは id で見つかる。その後に
+    // 消されたものは新しいシーンとして書き直す (新しいファイルと id で、一覧の同じ場所に)。
     SceneSlot SlotNow() {
         if (slot_.guid.empty()) {
-            // Decided now, not when it was read: a file put there since (Main.rmscene back from the
-            // recycle bin) is never written over.
+            // 読んだときではなく、今決める: その後に置かれたファイル (ごみ箱から戻した Main.rmscene)
+            // には、決して上書きしない。
             slot_ = {"", NewSceneFile(), 0};
             return slot_;
         }
@@ -2727,7 +2730,7 @@ private:
         return slot_;
     }
 
-    // The prefab's name (its file's, without .rmprefab) and where its file is, for the screen.
+    // Prefab の名前 (.rmprefab を除いたファイルの名前) と、そのファイルの場所。画面用。
     std::string PrefabTitle(const AssetRef& ref) const {
         const std::filesystem::path f = host_.AssetFile(ref);
         return f.empty() ? PrefabName(ref.guid) : PathToUtf8(f.stem());
@@ -2737,7 +2740,7 @@ private:
         return f.empty() ? ref.guid : PathToUtf8(f.lexically_relative(host_.GetProject().Root()).generic_wstring());
     }
 
-    // The prefab file, read now (and kept as the last known form of it). Nothing when it cannot be read.
+    // Prefab のファイルを今読む (その最後に分かった形として持つ)。読めないときは何も返さない。
     const json::Value* ReadPrefab(const AssetRef& ref) {
         const std::filesystem::path file = host_.AssetFile(ref);
         if (file.empty()) {
@@ -2768,18 +2771,18 @@ private:
         return it != prefabs_.end() ? &it->second : ReadPrefab(ref);
     }
 
-    // What every placed prefab of `scene` changed, worked out now against its prefab as last read
-    // (kept in the file and in a nested prefab's link, so a changed prefab can be put under it again).
-    // `scene` is scene_ or a copy of it as it is now (SaveData).
+    // `scene` に置いた各 Prefab が変えたもの。最後に読んだ Prefab と比べて今求める
+    // (ファイルと、入れ子の Prefab のリンクに持つので、変えた Prefab をその下に入れ直せる)。
+    // `scene` は scene_ か、今の状態のそのコピー (SaveData)。
     void UpdateOverrides(Scene& scene) const {
         for (const int root : scene.PrefabRoots()) {
             if (const json::Value* o = CachedOverrides(root)) scene.Find(root)->prefab.overrides = *o;
         }
     }
 
-    // What the placed prefab `root` changed, against its prefab as last read - worked out once per
-    // change of the scene (the history's change number), of a prefab file or of the loaded data, not
-    // every time the inspector is drawn. Null: not a placed prefab, or its file is not read.
+    // 置いた Prefab `root` が、最後に読んだ Prefab と比べて変えたもの。シーンの変更 (履歴の変更番号)、
+    // Prefab のファイル、読み込んだデータが変わるごとに 1 回だけ求める。インスペクターを描くたびではない。
+    // null: 置いた Prefab ではない、またはそのファイルを読んでいない。
     const json::Value* CachedOverrides(int root) const {
         const std::pair<uint64_t, uint64_t> stamp{host_.History().Changes(), dataVersion_};
         if (stamp != overridesStamp_) {
@@ -2794,7 +2797,7 @@ private:
         return &(overridesCache_[root] = Overrides(scene_, root, p->second, placementTypes_));
     }
 
-    // The prefabs `root` is inside (and its own): a prefab is never filled inside itself.
+    // `root` が中にある Prefab (とそれ自身): Prefab は自分の中を埋めることはない。
     std::vector<std::string> ChainOf(int root) const { return ChainOf(scene_, root); }
     static std::vector<std::string> ChainOf(const Scene& s, int root) {
         std::vector<std::string> chain;
@@ -2805,9 +2808,9 @@ private:
         return chain;
     }
 
-    // True when `prefab` has `guid` inside it (nested, at any depth, through the files as last read).
+    // `prefab` の中に `guid` があるとき true (入れ子の、どの深さでも。最後に読んだファイルをたどって)。
     bool ContainsPrefab(const json::Value& prefab, const std::string& guid, size_t depth = 0) {
-        if (depth > kMaxNesting) return true;  // deeper than anything sensible: a loop
+        if (depth > kMaxNesting) return true;  // まともな深さを超えた: 輪になっている
         for (const std::string& a : NestedAssets(prefab)) {
             if (a == guid) return true;
             if (const json::Value* inner = Cached(AssetRef{a}); inner && ContainsPrefab(*inner, guid, depth + 1)) return true;
@@ -2815,21 +2818,21 @@ private:
         return false;
     }
 
-    // Fills the prefabs nested in the placed prefab `root` from their own files (each with its own
-    // overrides), and the ones nested in those ...
+    // 置いた Prefab `root` の中に入れ子になった Prefab を、それぞれのファイルから埋める (それぞれの
+    // 上書きも付けて)。さらにその中に入れ子のものも ...
     void FillNested(int root, std::vector<std::string>& chain, reflect::Warnings& warnings) {
         FillNestedPrefabs(
             scene_, root, chain, [this](const AssetRef& r) { return Cached(r); }, warnings, [this](const AssetRef& r) { return PrefabTitle(r); });
     }
 
-    // The placed prefab `root` made again from `prefab` with `overrides`, then what is nested in it.
+    // 置いた Prefab `root` を、`prefab` と `overrides` からもう一度作り、それから中の入れ子も。
     void Remake(int root, const json::Value& prefab, const json::Value& overrides, reflect::Warnings& warnings) {
         scene_.ApplyPrefab(root, prefab, overrides, &warnings);
         std::vector<std::string> chain = ChainOf(root);
         FillNested(root, chain, warnings);
     }
 
-    // The overrides a prefab file keeps for the prefab nested in it as entity `id`.
+    // Prefab のファイルが、そこに入れ子になった Prefab (エンティティ `id`) のために持つ上書き。
     static json::Value FileOverrides(const json::Value& prefab, int id) {
         for (const auto& e : prefab.Get("entities").Items()) {
             if (e.Get("id").AsInt(0) == id) return e.Get("prefab").Get("overrides");
@@ -2837,14 +2840,14 @@ private:
         return {};
     }
 
-    // Opening the project: every placed prefab is made from its file again (with what it changed),
-    // outermost first, so a prefab changed since (by another scene, by hand) shows. Not an edit: the
-    // project is as it was.
+    // プロジェクトを開くとき: 置いた Prefab すべてを、そのファイルから (変えたものも付けて)
+    // 外側から作り直す。だから (別のシーンや手で) 後から変えた Prefab が見える。編集ではない:
+    // プロジェクトはそのまま。
     void RefreshPrefabsOnOpen() {
         prefabs_.clear();
         ++dataVersion_;
-        // Data from before assets had ids: the prefab named by a path gets its file's id (written so
-        // at the next save).
+        // アセットに id がなかった前のデータ: パスで名指ししていた Prefab は、そのファイルの id をもらう
+        // (次の保存でそう書かれる)。
         for (const int root : scene_.PrefabRoots()) {
             AssetRef& ref = scene_.Find(root)->prefab.asset;
             if (asset::IsGuid(ref.guid)) continue;
@@ -2857,35 +2860,35 @@ private:
         for (const auto& w : warnings) log::Warn("Prefab: {}", w);
     }
 
-    // Every placed prefab of `s` made from its file again (with what it changed), outermost first: the
-    // scene opened, and the other scenes of the game as Play switches to them and as they are exported
-    // (their files keep the prefabs as of their last save - a prefab changed since shows in them too).
+    // `s` に置いた Prefab すべてを、そのファイルから (変えたものも付けて) 外側から作り直す:
+    // 開いたシーンと、Play が切り替えるときや書き出すときのゲームのほかのシーン (そのファイルは
+    // 最後の保存時点の Prefab を持つ - 後から変えた Prefab も、そこに見える)。
     void RefreshPrefabsIn(Scene& s, reflect::Warnings& warnings) {
         for (const int root : s.PrefabRoots()) {
             const SceneEntity* r = s.Find(root);
-            if (!r) continue;  // went with a prefab around it
-            if (r->prefab.outer > 0 && s.PrefabRootOf(r->data.parent) != 0) continue;  // filled with the one around it
+            if (!r) continue;  // 周りの Prefab と一緒に消えた
+            if (r->prefab.outer > 0 && s.PrefabRootOf(r->data.parent) != 0) continue;  // 周りのものと一緒に埋めた
             const AssetRef ref = r->prefab.asset;
             const json::Value overrides = r->prefab.overrides;
             if (const json::Value* prefab = Cached(ref)) {
                 const json::Value copy = *prefab;
                 s.ApplyPrefab(root, copy, overrides, &warnings);
-            }  // (else kept as saved; the ones inside still follow their files)
+            }  // (そうでなければ保存したまま。中のものは今もそのファイルに従う)
             std::vector<std::string> chain = ChainOf(s, root);
             FillNestedPrefabs(
                 s, root, chain, [this](const AssetRef& a) { return Cached(a); }, warnings, [this](const AssetRef& a) { return PrefabTitle(a); });
         }
     }
 
-    // Every placed prefab of `ref` made again from `next`, keeping what each changed from `before`
-    // (except `skip`). A prefab nested in one that was not changed there takes what `next` has for it.
-    // Inside an Edit; UpdateOverrides has been called while the cache still had `before`.
+    // `ref` に置いた Prefab すべてを `next` から作り直す。それぞれが `before` から変えたものは
+    // 保つ (`skip` は除く)。そこで変えていない Prefab に入れ子になった Prefab は、`next` が持つものを
+    // 取る。Edit の中で。UpdateOverrides は、キャッシュがまだ `before` を持っている間に呼んである。
     void ReapplyPrefab(const AssetRef& ref, const json::Value& before, const json::Value& next, int skip) {
         reflect::Warnings warnings;
         for (const int root : scene_.PrefabRoots(ref.guid)) {
             if (root == skip || !scene_.Find(root)) continue;
             const json::Value overrides = Overrides(scene_, root, before, placementTypes_);
-            std::vector<std::pair<int, int>> untouched;  // (nested root, its id in the file)
+            std::vector<std::pair<int, int>> untouched;  // (入れ子の root、ファイルでのその id)
             for (const int n : scene_.NestedPrefabs(root)) {
                 const PrefabLink& l = scene_.Find(n)->prefab;
                 if (l.overrides == FileOverrides(before, l.outer)) untouched.emplace_back(n, l.outer);
@@ -2901,7 +2904,7 @@ private:
         for (const auto& w : warnings) log::Warn("Prefab「{}」: {}", PrefabTitle(ref), w);
     }
 
-    // The prefab files in Assets/ (looked for again at most every 2 seconds: the menu is asked often).
+    // Assets/ の Prefab ファイル (探し直すのは 2 秒に 1 回まで: メニューはよく聞かれる)。
     const std::vector<std::string>& PrefabFiles() {
         const double now = platform::NowSeconds();
         if (now - prefabFilesTime_ < 2.0 && prefabFilesTime_ > 0) return prefabFiles_;
@@ -2918,7 +2921,7 @@ private:
         return prefabFiles_;
     }
 
-    // A file name in Assets/ for a new prefab named after the entity (not one that is there).
+    // エンティティの名前からつける、新しい Prefab のための Assets/ のファイル名 (すでにあるものではない)。
     std::string NewPrefabPath(const std::string& entityName) const {
         const std::string stem = ValidateFileName(entityName, 48) == FileNameError::None ? entityName : std::string("Prefab");
         std::error_code ec;
@@ -2937,11 +2940,11 @@ private:
             log::Error("Prefab「{}」を書けませんでした: {}", PathToUtf8(file.filename()), err);
             return false;
         }
-        prefabFilesTime_ = 0;  // look again
+        prefabFilesTime_ = 0;  // もう一度探す
         return true;
     }
 
-    // Writes a prefab file's text (wherever the asset is now) and keeps it as the last known form.
+    // Prefab ファイルのテキストを書き (アセットが今どこにあっても)、その最後に分かった形として持つ。
     bool WriteBytes(const AssetRef& ref, const std::string& text) {
         const std::filesystem::path file = host_.AssetFile(ref);
         std::string err;
@@ -2986,7 +2989,7 @@ private:
                 list.push_back(std::move(unlink));
             }
         }
-        // Placing one: after the selected entity, like 貼り付け.
+        // 置く: 選んだエンティティの後に、貼り付け と同じく。
         const std::vector<std::string>& files = PrefabFiles();
         for (size_t i = 0; i < files.size() && i < kMaxPrefabRows; ++i) {
             tree::Action place;
@@ -3012,11 +3015,11 @@ private:
         if (!e) return;
         const std::string name = e->data.name;
         const std::string path = NewPrefabPath(name);
-        UpdateOverrides(scene_);  // the prefabs placed inside are kept with what was changed on them
+        UpdateOverrides(scene_);  // 中に置いた Prefab は、それに加えた変更とともに保つ
         std::unordered_map<int, int> sources;
         const json::Value prefab = MakePrefab(scene_, id, &sources);
         if (!WriteFile(FullPath(path), prefab)) return;
-        const AssetRef ref = host_.AssetOf(FullPath(path));  // the new file's id (its .meta is written now)
+        const AssetRef ref = host_.AssetOf(FullPath(path));  // 新しいファイルの id (.meta は今書く)
         if (ref.Empty()) {
             log::Error("Prefab「{}」をアセットにできませんでした (Assets の中に作れませんでした)", path);
             return;
@@ -3036,8 +3039,8 @@ private:
             log::Warn("Prefab「{}」のファイルが見つからないので反映できません", PrefabTitle(ref));
             return;
         }
-        // The file as it is now: kept whole for undo, and never written over when it is not a prefab
-        // this version can read (a newer version's, a broken one).
+        // 今のファイル: Undo のために丸ごと持つ。このバージョンが読めない Prefab (新しい版のもの、
+        // 壊れたもの) のときは、決して上書きしない。
         std::string err;
         const auto onDisk = platform::ReadFileBytes(file, &err);
         const auto parsed = onDisk ? json::Parse(*onDisk) : std::nullopt;
@@ -3045,19 +3048,19 @@ private:
             log::Warn("Prefab「{}」のファイルが読めない (新しい版で作られたか、壊れている) ので、反映しません", PrefabTitle(ref));
             return;
         }
-        // The prefab as it was (what the other placed ones changed is worked out against it).
+        // 元の Prefab (置いたほかのものが変えたものは、これと比べて求める)。
         json::Value before = *parsed;
         if (const json::Value* old = Cached(ref)) before = *old;
-        UpdateOverrides(scene_);  // while the cache still has the prefabs as they were
+        UpdateOverrides(scene_);  // キャッシュがまだ元の Prefab を持っている間に
         std::unordered_map<int, int> sources;
-        const json::Value next = MakePrefab(scene_, root, &sources, &*parsed);  // (the file's other keys stay)
+        const json::Value next = MakePrefab(scene_, root, &sources, &*parsed);  // (ファイルのほかのキーはそのまま)
         if (ContainsPrefab(next, ref.guid)) {
             log::Warn("Prefab「{}」の中に「{}」自身が入ることになるので、反映しません", PrefabTitle(ref), PrefabTitle(ref));
             return;
         }
         const std::string nextText = json::Write(next);
         if (!WriteBytes(ref, nextText)) return;
-        // Undo writes the file back as it was (and the placed ones with it); redo writes it again.
+        // Undo はファイルを元のとおりに書き戻し (置いたものも一緒に)、Redo はもう一度書く。
         auto fileCmd = std::make_unique<FileCommand>([this, ref](const std::string& text) { WriteBytes(ref, text); }, *onDisk, nextText,
                                                    std::format("Prefab「{}」のファイル", PrefabTitle(ref)));
         EditTouching(scene_.PrefabRoots(ref.guid), 
@@ -3070,7 +3073,7 @@ private:
         log::Info("Prefab「{}」に反映しました (置いた物 {} 個)", PrefabWhere(ref), scene_.PrefabRoots(ref.guid).size());
     }
 
-    // The file as it is now (changed by hand, by another project): every placed one follows it.
+    // 今のファイル (手で、または別のプロジェクトで変えた): 置いたものすべてがそれに従う。
     void ReloadPrefab(int root) {
         const SceneEntity* r = scene_.Find(root);
         if (!r || !r->prefab.Root()) return;
@@ -3100,27 +3103,27 @@ private:
             made = scene_.PlacePrefab(copy, ref, parent, index, &warnings);
             if (!made) return;
             std::vector<std::string> chain = ChainOf(made);
-            FillNested(made, chain, warnings);  // the prefabs inside it, from their own files
+            FillNested(made, chain, warnings);  // その中の Prefab を、それぞれのファイルから
         });
         for (const auto& w : warnings) log::Warn("Prefab「{}」: {}", path, w);
         if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)});
     }
 
-    // --- Editing -------------------------------------------------------------------------------
+    // --- 編集 -------------------------------------------------------------------------------
     std::string NameOf(int id) const {
         const SceneEntity* e = scene_.Find(id);
         return e ? e->data.name : std::string();
     }
 
-    // Runs a change of the scene's shape and puts it in the history (edit = undo entry = unsaved).
-    // A change that changes nothing leaves no entry. Never while playing (the copy plays).
-    // THE way a change of the scene's shape goes into the history (edit = undo entry = unsaved):
-    // `touched` names the entities the change alters (with everything below them - SceneRecord.h);
-    // the ones it makes are found by themselves. Only those are kept, before and after. `also`:
-    // something done with it outside the scene (a file written), undone with it in one entry.
-    // A change that changes nothing leaves no entry. Never while playing (the copy plays).
-    // Debug build: every edit is checked against the whole scene before and after (a touched entity
-    // left out would make undo wrong - this finds it at once, while the record is still small).
+    // シーンの形の変更を実行し、履歴に入れる (編集 = Undo の項目 = 未保存)。
+    // 何も変えない変更は項目を残さない。Play 中は決してしない (動くのはコピー)。
+    // シーンの形の変更が履歴に入る唯一の道 (編集 = Undo の項目 = 未保存):
+    // `touched` は、その変更が変えるエンティティ (その下のものすべてを含む - SceneRecord.h)
+    // を挙げる。変更が作るものは自分で見つかる。それだけを前と後で持つ。`also`:
+    // それと一緒にシーンの外でしたこと (ファイルを書いた) で、1 つの項目で一緒に Undo する。
+    // 何も変えない変更は項目を残さない。Play 中は決してしない (動くのはコピー)。
+    // デバッグビルド: すべての編集を、前と後でシーン全体と照らして調べる (触れたエンティティを
+    // 挙げ忘れると Undo が間違う - 記録がまだ小さいうちに、これですぐ見つかる)。
     template <class Fn>
     void EditTouching(std::vector<int> touched, std::string label, Fn&& change, std::unique_ptr<ICommand> also = nullptr) {
         if (Running()) {
@@ -3157,8 +3160,8 @@ private:
         host_.History().Push(std::move(group));
     }
 
-    // (The whole scene before and after: no edit uses it now - every one names what it touches.
-    // Kept for a change whose touched entities cannot be named.)
+    // (前と後のシーン全体: 今これを使う編集はない - どれも触れるものを挙げる。
+    // 触れるエンティティを挙げられない変更のために残してある。)
     template <class Fn>
     void Edit(std::string label, Fn&& change, std::unique_ptr<ICommand> also = nullptr) {
         if (Running()) {
@@ -3203,7 +3206,7 @@ private:
         host_.SelectInTree({made.begin(), made.end()});
     }
 
-    // 追加 ▸ ... (a plugin's CreateItemInfo): under the selected one or after the selection.
+    // 追加 ▸ ... (プラグインの CreateItemInfo): 選んだものの下か、選択の後に。
     void CreateItem(const CreateItemInfo& info, const std::vector<int>& sel) {
         int parent = 0;
         size_t index = Scene::kEnd;
@@ -3217,10 +3220,10 @@ private:
             if (info.make) {
                 made = info.make(scene_, parent, index);
             } else {
-                made = MakeEntity(WideToUtf8(Tr(info.label)), parent, index);  // (its name in the language in use)
+                made = MakeEntity(WideToUtf8(Tr(info.label)), parent, index);  // (使っている言語での名前)
                 info.fill(scene_, made);
             }
-            // What other plugins add to it (物理: a collider of its shape) - in the same undo entry.
+            // ほかのプラグインがそれに足すもの (物理: その形のコライダー) - 同じ Undo の項目の中で。
             if (!made) return;
             for (const auto& c : host_.Registry().Contributions<CreatedInfo>(kCreatedPoint)) {
                 if (c.item->added) c.item->added(scene_, made, info.made ? info.made : "");
@@ -3229,8 +3232,8 @@ private:
         if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
     }
 
-    // An entity as 空のエンティティ makes it: the components new entities get (e.g. the Transform of the
-    // game's space).
+    // 空のエンティティ が作るエンティティ: 新しいエンティティがもらう部品 (たとえば
+    // ゲームの空間の Transform)。
     int MakeEntity(std::string name, int parent, size_t index) {
         const int made = scene_.Create(std::move(name), parent, index);
         const std::string space = CurrentSpace();
@@ -3240,8 +3243,8 @@ private:
         return made;
     }
 
-    // The order of 追加 ▸'s folders (the key as the plugin wrote it, before it is translated); others
-    // after these, in the order of the plugins.
+    // 追加 ▸ のフォルダの順 (プラグインが書いたままのキー。翻訳する前): ほかのものは
+    // これらの後に、プラグインの順で。
     static int CreateRank(const wchar_t* folder) {
         static constexpr std::wstring_view kOrder[] = {L"3D オブジェクト", L"2D オブジェクト", L"カメラ", L"ライト", L"UI", L"エフェクト", L"音"};
         if (!folder) return -1;  // (追加 itself: first)
@@ -3265,41 +3268,41 @@ private:
     void CreateEntity(int parent, size_t index) {
         int made = 0;
         EditTouching({}, "エンティティを作成", [&] {
-            made = MakeEntity(TrU8("エンティティ"), parent, index);  // the name it starts with, in the language in use
+            made = MakeEntity(TrU8("エンティティ"), parent, index);  // 始めの名前。使っている言語で
         });
         if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
     }
 
     editor::SoftwareHost& host_;
     GameSettings settings_;
-    reflect::Unknowns unknowns_;  // keys / enum names of a newer version: written back unchanged
+    reflect::Unknowns unknowns_;  // 新しい版のキーや enum の名前: そのまま書き戻す
     Scene scene_;
-    std::vector<int> selection_;  // the 階層's selection (shown in the scene view)
-    std::vector<View> views_;  // one per space offered, the default (smallest order) first
+    std::vector<int> selection_;  // 階層の選択 (シーンビューに見せる)
+    std::vector<View> views_;  // 出している空間ごとに 1 つ。既定のもの (一番小さい order) が先
     bool viewsAsked_ = false;
-    std::vector<const ComponentInfo*> newEntityInfos_;  // components new entities get (of the game's space)
-    std::vector<const ComponentLook*> componentLooks_;      // how the editor shows them (editor parts)
+    std::vector<const ComponentInfo*> newEntityInfos_;  // 新しいエンティティがもらう部品 (ゲームの空間の)
+    std::vector<const ComponentLook*> componentLooks_;      // エディターでの見せ方 (エディター部分)
     std::vector<std::string> placementTypes_;
-    std::unordered_map<std::string, const char*> componentFolders_;  // TypeDesc::name -> ComponentInfo::folder               // where a placed prefab is (Transform)
-    json::Value view_;  // UserSettings: how the user looks (the scene view's camera ...)
-    std::unordered_map<int, int> modes_;  // entity id -> how its component with derived values is shown
-    bool hadData_ = false;  // the .rmpf has the game's data (read from it, or written by a save)
-    bool gave_ = false;     // the last SaveData gave data (Saved: it is in the .rmpf now)
-    // The scenes (runtime/SceneFile.h): the list in the .rmpf, and the file of the one shown.
+    std::unordered_map<std::string, const char*> componentFolders_;  // TypeDesc::name -> ComponentInfo::folder               // 置いた Prefab がある場所 (Transform)
+    json::Value view_;  // UserSettings: ユーザーの見方 (シーンビューのカメラ ...)
+    std::unordered_map<int, int> modes_;  // エンティティ id -> 派生値のある部品の見せ方
+    bool hadData_ = false;  // .rmpf にゲームのデータがある (そこから読んだ、または保存が書いた)
+    bool gave_ = false;     // 最後の SaveData がデータを出した (Saved: 今は .rmpf にある)
+    // シーン (runtime/SceneFile.h): .rmpf の一覧と、見せているシーンのファイル。
     SceneList sceneList_;
-    reflect::Unknowns sceneListUnknowns_;  // keys of a newer version: written back unchanged
+    reflect::Unknowns sceneListUnknowns_;  // 新しい版のキー: そのまま書き戻す
     SceneSlot slot_;
-    std::string replaces_;      // the id of a scene whose file was gone: the new file takes its place in the list
-    bool oldForm_ = false;      // read from inside the .rmpf (a project of before): split off at the next save
-    bool sceneUnread_ = false;  // the list's scene could not be read: never written over
+    std::string replaces_;      // ファイルがなくなったシーンの id: 新しいファイルが一覧でその場所に入る
+    bool oldForm_ = false;      // .rmpf の中から読んだ (前の形のプロジェクト): 次の保存で分ける
+    bool sceneUnread_ = false;  // 一覧のシーンが読めなかった: 上書きしない
     struct Pending {
         SceneSlot slot;
         SceneList list;
     };
-    std::optional<Pending> pending_;  // what SaveData gave, taken on by Saved()
+    std::optional<Pending> pending_;  // SaveData が出したもの。Saved() が取り込む
     std::vector<std::string> sceneFiles_;  // SceneFiles()
     double sceneFilesTime_ = 0;
-    // 書き出し (GameExport.h): the project's part, the panel, the export running on a worker.
+    // 書き出し (GameExport.h): プロジェクト側の部分、パネル、ワーカーで走る書き出し。
     ExportSettings exportSettings_;
     reflect::Unknowns exportUnknowns_;
     editor::inspector::State exportInspector_;
@@ -3308,68 +3311,68 @@ private:
         float progress = 0;
         std::vector<std::string> lines;
         bool running = false;
-        std::optional<bool> ok;  // set when it ended
+        std::optional<bool> ok;  // 終わったときに入れる
     };
     std::shared_ptr<ExportRun> exportRun_ = std::make_shared<ExportRun>();
     std::jthread exportThread_;
-    bool inspectingEntities_ = false;  // the inspector shows the 階層's selection (not the settings)
-    bool inspectingScene_ = false;     // ... the scene's own values (the 階層's top row is drawn chosen)
-    std::vector<const SceneSettingLook*> settingLooks_;              // how the editor shows them (editor parts)
-    std::unordered_map<std::string, std::string> settingSpaces_;    // setting type -> the game's space it is for
+    bool inspectingEntities_ = false;  // インスペクターは階層の選択を見せている (設定ではなく)
+    bool inspectingScene_ = false;     // ... シーン自身の値 (階層の一番上の行が選ばれて描かれる)
+    std::vector<const SceneSettingLook*> settingLooks_;              // エディターでの見せ方 (エディター部分)
+    std::unordered_map<std::string, std::string> settingSpaces_;    // 設定の型 -> それが使われるゲームの空間
 
     // Play
     PlayState play_ = PlayState::Stopped;
-    GameScripts scripts_;  // the game's C++ scripts (built, loaded, swapped; run while playing)
-    reflect::Warnings heldSceneWarnings_;  // told after the first build (see LoadData)
-    DebugDraw debug_;      // what the scripts draw with rm::Debug while playing (shown by the views; gone at Stop)
-    std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // the plugins' component types
-    std::unique_ptr<Scene> playScene_;  // the copy that plays
+    GameScripts scripts_;  // ゲームの C++ スクリプト (ビルド、読み込み、入れ替え。Play 中に動く)
+    reflect::Warnings heldSceneWarnings_;  // 最初のビルドの後に知らせる (LoadData を見る)
+    DebugDraw debug_;      // Play 中にスクリプトが rm::Debug で描くもの (ビューが見せる。Stop で消える)
+    std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // プラグインの部品の型
+    std::unique_ptr<Scene> playScene_;  // 動かすコピー
     std::vector<Kept> kept_;            // この値を残す: written back at Stop
-    std::vector<std::pair<Kept, json::Value>> keptLeft_;  // ... their values when the scene from before Play was left (Game::LoadScene)
-    bool mouseInGame_ = false;          // the mouse over the game view (its last drawing)
-    // The デバッグ panel and what it shows: how often the views are drawn and Play's frames run, the mouse
-    // over the scene view.
+    std::vector<std::pair<Kept, json::Value>> keptLeft_;  // ... Play 前のシーンを離れたときの値 (Game::LoadScene)
+    bool mouseInGame_ = false;          // ゲームビューの上のマウス (最後に描いたとき)
+    // デバッグ パネルと、それが見せるもの: ビューを描く頻度と Play のフレームが走る頻度、シーンビューの
+    // 上のマウス。
     DebugPanel debugPanel_;
-    std::unique_ptr<editor::ToolWindow> debugWindow_;  // the デバッグ window while it is open
-    // The ゲームの設定 window while it is open: its tab, an inspector for each tab of settings, the second
-    // one of the ビルド tab (出力先), the list of 初期シーン.
+    std::unique_ptr<editor::ToolWindow> debugWindow_;  // 開いている間の デバッグ ウィンドウ
+    // 開いている間の ゲームの設定 ウィンドウ: そのタブ、設定のタブごとのインスペクター、ビルド
+    // タブの 2 つ目 (出力先)、初期シーン の一覧。
     std::unique_ptr<editor::ToolWindow> settingsWindow_;
     int settingsTab_ = 0;
     std::array<editor::inspector::State, 4> settingsInspectors_;
     editor::inspector::State outputInspector_;
     editor::w::Popup firstScenePopup_;
     FrameMeter sceneMeter_, gameMeter_, updateMeter_;
-    json::Value settingsBeforePlay_;  // the game settings when Play started (null: not playing)
-    double debugShownAt_ = -1e9;  // the window was drawn then (Play's parts are timed while it is shown)
+    json::Value settingsBeforePlay_;  // Play が始まったときのゲーム設定 (null: Play 中ではない)
+    double debugShownAt_ = -1e9;  // そのときウィンドウを描いた (見せている間は Play の各部分の時間を測る)
     FrameGraph playGraph_, sceneGraph_;
     PlayTimes playTimes_;
     std::vector<ScriptRunner::ScriptTime> scriptTimes_;
     std::vector<SystemRunner::SystemTime> systemTimes_;
     std::optional<Vec2> sceneMouse_;
-    std::optional<Vec2> pointer_;       // ... on the game screen (DIPs of the game settings' 画面); nullopt: not over it
-    bool pointerWentDown_ = false, pointerWentUp_ = false;  // this frame's left button presses (PlayFrame)
-    std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // over the game view (the game UI)
-    std::map<std::string, std::unique_ptr<SceneView>> viewPanels_;  // the plugins' panels (ViewPanelInfo), by id
+    std::optional<Vec2> pointer_;       // ... ゲーム画面の上 (ゲーム設定の 画面 の DIP)。nullopt: その上にない
+    bool pointerWentDown_ = false, pointerWentUp_ = false;  // このフレームの左ボタンの押下 (PlayFrame)
+    std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // ゲームビューの上 (ゲーム UI)
+    std::map<std::string, std::unique_ptr<SceneView>> viewPanels_;  // プラグインのパネル (ViewPanelInfo)、id ごと
     bool screensAsked_ = false;
-    std::vector<AssetRef> playScenes_;  // the scenes Play can switch to (PlayScenes when it started)
-    std::vector<std::string> cameraTypes_;  // the components the game sees through (SceneCamera)
-    // シーンの一覧 panel: the row chosen (a scene's id; "" = the new scene not saved yet), renaming it.
+    std::vector<AssetRef> playScenes_;  // Play が切り替えられるシーン (始まったときの PlayScenes)
+    std::vector<std::string> cameraTypes_;  // ゲームがそれを通して見る部品 (SceneCamera)
+    // シーンの一覧 パネル: 選んだ行 (シーンの id。"" = まだ保存していない新しいシーン)、その名前変更。
     std::optional<AssetRef> sceneChosen_;
     bool renamingScene_ = false;
     std::string sceneNewName_;
     std::wstring sceneProblem_;
-    // The シーン panel: its tree (as the ヒエラルキー's), the row clicked to open, the scene shown last.
+    // シーン パネル: そのツリー (ヒエラルキー のもの)、開くためにクリックした行、最後に見せたシーン。
     editor::tree::State sceneTree_;
     std::unique_ptr<SceneListSource> sceneSource_;
     std::optional<AssetRef> sceneToOpen_;
     std::optional<AssetRef> shownInList_;
     SystemRunner runner_;
-    PlayServices services_;  // the plugins' (音 ...): from ▶ to ■
+    PlayServices services_;  // プラグインのもの (音 ...): ▶ から ■ まで
     double lastTick_ = 0;
 
-    // Prefabs: the files as last read or written (path -> content)
+    // Prefab: 最後に読んだ / 書いたファイル (パス -> 内容)
     std::unordered_map<std::string, json::Value> prefabs_;
-    uint64_t dataVersion_ = 0;  // up at every change of prefabs_ or of a scene made without the history
+    uint64_t dataVersion_ = 0;  // prefabs_ や、履歴を通さずに作ったシーンが変わるたびに増やす
     mutable std::unordered_map<int, json::Value> overridesCache_;  // root -> CachedOverrides
     mutable std::pair<uint64_t, uint64_t> overridesStamp_{~uint64_t{0}, ~uint64_t{0}};
     std::vector<std::string> prefabFiles_;

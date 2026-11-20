@@ -1,20 +1,20 @@
 #pragma once
-// Systems: what moves the game every frame (the S of ECS). Game production does not know what any
-// system does - plugins offer them, like components (Components.h):
+// システム: 毎フレームゲームを動かすもの (ECS の S)。ゲーム制作は、どのシステムが何をするかを
+// 知らない。プラグインが部品 (Components.h) と同じようにシステムを渡す:
 //
-//   // in a plugin's runtime part (runtime/Register.cpp - core/RuntimeRegistry.h), so the exported game
-//   // reads the same list as the editor's Play:
+//   // プラグインのランタイムの部分 (runtime/Register.cpp - core/RuntimeRegistry.h) に書く。
+//   // 書き出したゲームも、エディターの Play と同じ一覧を読める:
 //   static const game_production::SystemInfo kSpin{"回り続ける", game_production::SystemPhase::Frame, 0, &RunSpin};
 //   registry.Contribute(game_production::kSystemPoint, kSpin);
 //
-// Two kinds:
-//   Fixed  runs in steps of the game settings' 物理の刻み (fixedTimestep): 0, 1 or more times a
-//          frame, so it runs the same however fast the PC is (physics, game rules).
-//   Frame  runs once a frame with the time since the last one (looks: turning, animation).
-// Each frame: every Fixed step first, then the Frame systems. Inside a kind: `order` (smaller
-// first), then the order they were offered.
+// 種類は 2 つ:
+//   Fixed  ゲーム設定の 物理の刻み (fixedTimestep) の刻みで動く: 1 フレームに 0 回、1 回、またはそれ以上。
+//          PC がどれだけ速くても同じに動く (物理、ゲームのルール)。
+//   Frame  前回からの時間を受け取って、1 フレームに 1 回動く (見た目: 回る、アニメーション)。
+// 毎フレーム: まず Fixed の刻みすべて、そのあと Frame のシステム。同じ種類の中では `order` (小さい
+// ほうが先)、そのあとは渡された順。
 //
-// Pure (the runtime: no editor, no drawing, no files) - tested in tests/TestSystems.cpp.
+// 純粋 (ランタイム: エディターも描画もファイルも使わない)。tests/TestSystems.cpp でテストする。
 
 #include "core/RuntimeRegistry.h"
 #include "rm_engine/game_production/runtime/Scene.h"
@@ -30,99 +30,95 @@
 
 namespace rm::game_production {
 
-// PluginRegistry point: items are SystemInfo (static).
+// PluginRegistry の口: 項目は SystemInfo (static)。
 inline constexpr char kSystemPoint[] = "rm_engine.game_production.system";
 
 enum class SystemPhase { Fixed, Frame };
 
-// The content of assets, for systems that need it (a mesh collider's model): the host's way to it.
+// アセットの中身。それを必要とするシステム (メッシュコライダーのモデル) 向けに、ホストがそこへ行く道を渡す。
 struct AssetAccess {
-    // The bytes as the game has them (an exported game: from its .rmpak - baked); nullopt: none.
+    // ゲームが持っているままのバイト列 (書き出したゲーム: .rmpak から。ベイク済み)。nullopt: なし。
     std::function<std::optional<std::string>(const AssetRef&)> bytes;
-    // The file on disk (the editor: the project's Assets/...); empty: none.
+    // ディスク上のファイル (エディター: プロジェクトの Assets/...)。空: なし。
     std::function<std::filesystem::path(const AssetRef&)> file;
 };
 
-// A script hook a system asks for (a physics contact ...): called on every started script of `entity`
-// after the fixed steps of the frame, in the scripts' order (ScriptRunner::Deliver), with `other`.
-// The hook's number is RmAbi.h's RM_HOOK_* (game production does not know what the systems are).
+// システムが頼むスクリプトのフック (物理の接触 ...): フレームの固定の刻みの後に、`entity` の始まった
+// スクリプトすべてに、スクリプトの順で呼ぶ (ScriptRunner::Deliver)。`other` が付く。フックの番号は
+// RmAbi.h の RM_HOOK_*  (ゲーム制作は、システムが何かを知らない)。
 struct HookCall {
     int entity = 0;
     int hook = 0;
     int other = 0;
 };
 
-// What a system gets each time it runs.
+// システムが動くたびに受け取るもの。
 struct SystemContext {
     Scene& scene;
-    float dt = 0;          // seconds: the fixed step (Fixed) or the time since the last frame (Frame)
-    double time = 0;       // seconds of game time before this run
-    uint64_t frame = 0;    // frames run before this one (the first frame is 0)
-    // The entity the game sees through now (its id; 0: none). It starts as the game settings'
-    // 最初のカメラ when Play starts; a system switches the game's camera by setting it to another
-    // entity (what makes an entity a camera is the space's business: a 3D Camera component ...).
+    float dt = 0;          // 秒数: 固定の刻み (Fixed) か、前のフレームからの時間 (Frame)
+    double time = 0;       // この実行より前のゲーム内の秒数
+    uint64_t frame = 0;    // これより前に動いたフレーム数 (最初のフレームは 0)
+    // 今ゲームが見ているエンティティ (その id。0: なし)。Play の開始時は、ゲーム設定の 最初のカメラ に
+    // なる。システムはこれを別のエンティティにして、ゲームのカメラを切り替える (何がエンティティを
+    // カメラにするかは空間の仕事: 3D の Camera 部品 ...)。
     uint64_t camera = 0;
-    // Where hooks for the scripts go (null: nobody delivers them - nothing to ask).
+    // スクリプトへのフックの届け先 (null: 届ける者がいない。頼むことがない)。
     std::vector<HookCall>* hooks = nullptr;
-    // The host's assets (null: none).
+    // ホストのアセット (null: なし)。
     const AssetAccess* assets = nullptr;
 };
 
 struct SystemInfo {
-    const char* name = "";  // for the console (Japanese, as logs are)
+    const char* name = "";  // コンソール用 (ログと同じく日本語)
     SystemPhase phase = SystemPhase::Frame;
     int order = 0;
     void (*run)(SystemContext& ctx) = nullptr;
 };
 
-// Every component of `type` of the entities that run (they and every parent are 有効), in the 階層's
-// order; an entity with several of that type gives each, in its order. Components whose plugin is
-// missing are not given.
+// `type` の部品すべて。動くエンティティのもの (そのエンティティも親もすべて 有効)。階層の順で。
+// その型を複数持つエンティティは、それぞれを順に返す。プラグインが無い部品は返さない。
 void ForEachComponent(Scene& scene, std::string_view type, const std::function<void(SceneEntity&, Component&)>& fn);
 
-// The systems the plugins offered (their runtime parts), in the order they were offered - what a game
-// runs (SystemRunner::SetSystems sorts them).
+// プラグインが渡したシステム (そのランタイムの部分)。渡された順。ゲームが動かすのはこれ
+// (SystemRunner::SetSystems が並べ替える)。
 std::vector<const SystemInfo*> RegisteredSystems(const RuntimeRegistry& registry);
 
-// The component types the game sees through (ComponentInfo::camera), each once.
+// ゲームが見通す部品の型 (ComponentInfo::camera)。それぞれ 1 回だけ。
 std::vector<std::string> CameraTypes(const RuntimeRegistry& registry);
-// The scene settings' types (SceneSettingInfo), each once, in the order offered (Scene::SetSettingTypes).
+// シーン設定の型 (SceneSettingInfo)。それぞれ 1 回だけ、渡された順 (Scene::SetSettingTypes)。
 std::vector<const reflect::TypeDesc*> SettingTypes(const RuntimeRegistry& registry);
-// The camera of a scene that starts playing (Play, the game, a scene switched to): `wanted` (the game
-// settings' 最初のカメラ) when it is an entity of this scene with a camera component, else the first
-// running entity (in the 階層's order) that has one; 0 when there is none.
+// Play を始めるシーンのカメラ (Play、ゲーム、切り替えた先のシーン): `wanted` (ゲーム設定の
+// 最初のカメラ) が、このシーンのエンティティでカメラ部品を持つならそれ。そうでなければ、カメラ部品を
+// 持つ最初の動いているエンティティ (階層の順)。無ければ 0。
 uint64_t SceneCamera(const Scene& scene, const std::vector<std::string>& cameraTypes, uint64_t wanted);
 
-// Runs the systems over a scene (the copy that plays). Keeps the game's clock and what is left of
-// the fixed step.
+// シーン (Play するコピー) の上でシステムを動かす。ゲームの時計と、固定の刻みの余りを持つ。
 class SystemRunner {
 public:
-    // At most this many Fixed steps in one frame: a frame that took very long (a breakpoint, the
-    // window dragged) does not make the game run hundreds of steps to catch up.
+    // 1 フレームでの Fixed の刻みの上限。とても長くかかったフレーム (ブレークポイント、ウィンドウを
+    // ドラッグ) で、追いつくために何百ステップも動かさないようにする。
     static constexpr int kMaxFixedSteps = 8;
 
     void SetSystems(std::span<const SystemInfo* const> systems);
     const std::vector<const SystemInfo*>& Systems() const { return systems_; }
 
-    // Back to the start (Play pressed again).
+    // 最初に戻す (Play をもう一度押した)。
     void Reset();
-    // One frame of `dt` seconds (negative: 0). `fixedStep` <= 0: no Fixed steps. Returns how many
-    // Fixed steps ran.
+    // `dt` 秒の 1 フレーム (負: 0)。`fixedStep` <= 0: Fixed の刻みなし。動いた Fixed の刻みの数を返す。
     int Advance(Scene& scene, double dt, float fixedStep);
 
     double Time() const { return time_; }
     uint64_t Frames() const { return frames_; }
-    // The camera the game sees through (SystemContext::camera): set when Play starts, changed by the
-    // systems. Reset makes it 0.
+    // ゲームが見通すカメラ (SystemContext::camera): Play の開始時に設定し、システムが変える。Reset で 0 になる。
     void SetCamera(uint64_t entity) { camera_ = entity; }
     uint64_t Camera() const { return camera_; }
-    // How the systems read assets (SystemContext::assets).
+    // システムがアセットを読む方法 (SystemContext::assets)。
     void SetAssets(AssetAccess a) { assets_ = std::move(a); }
-    // The hooks the systems asked for in the last Advance (for ScriptRunner::Deliver).
+    // 最後の Advance でシステムが頼んだフック (ScriptRunner::Deliver 用)。
     const std::vector<HookCall>& Hooks() const { return hooks_; }
 
-    // How long each system took in the last Advance (its fixed steps added up) - measured only while
-    // asked (the editor's デバッグ panel). And how many fixed steps the last Advance ran.
+    // 最後の Advance で各システムにかかった時間 (固定の刻みは合計)。頼まれている間だけ測る
+    // (エディターの デバッグ パネル)。それと、最後の Advance で動いた固定の刻みの数。
     struct SystemTime {
         const SystemInfo* system = nullptr;
         double ms = 0;
@@ -133,10 +129,10 @@ public:
     int LastSteps() const { return lastSteps_; }
 
 private:
-    std::vector<const SystemInfo*> systems_;  // Fixed first, then Frame; by order inside each
+    std::vector<const SystemInfo*> systems_;  // Fixed が先、そのあと Frame。それぞれの中は order 順
     double time_ = 0;
-    double fixedTime_ = 0;  // game time the Fixed steps have reached
-    double carry_ = 0;      // time not yet covered by a Fixed step
+    double fixedTime_ = 0;  // Fixed の刻みが進んだところまでのゲーム内の時間
+    double carry_ = 0;      // まだ Fixed の刻みで消化していない時間
     uint64_t frames_ = 0;
     uint64_t camera_ = 0;
     std::vector<HookCall> hooks_;
@@ -144,7 +140,7 @@ private:
     bool timing_ = false;
     std::vector<SystemTime> times_;
     int lastSteps_ = 0;
-    // Runs one system (timed when asked).
+    // システムを 1 つ動かす (頼まれたら時間を測る)。
     void Run(size_t index, SystemContext& ctx);
 };
 

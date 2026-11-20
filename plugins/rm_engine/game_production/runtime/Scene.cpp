@@ -50,7 +50,7 @@ bool Scene::AddComponent(int id, const reflect::TypeDesc& type) {
     if (const SceneEntity* e = Find(id); !e || (e->FindComponent(type.name) && !AllowsMultiple(type.name))) return false;
     Component c;
     c.type = type.name;
-    c.value = reflect::Object(type);  // (a script's default value may make entities: looked up again after)
+    c.value = reflect::Object(type);  // (スクリプトの既定値がエンティティを作ることがある: そのあとでもう一度探す)
     SceneEntity* e = Find(id);
     if (!e) return false;
     e->components.push_back(std::move(c));
@@ -81,7 +81,7 @@ bool Scene::MoveComponent(int id, std::string_view type, int by, size_t nth) {
 void Scene::Reindex() const {
     index_.clear();
     index_.reserve(entities_.size());
-    for (size_t i = 0; i < entities_.size(); ++i) index_.emplace(entities_[i].data.id, i);  // (the first of a repeated id)
+    for (size_t i = 0; i < entities_.size(); ++i) index_.emplace(entities_[i].data.id, i);  // (同じ id が重なったときは最初のもの)
     indexStale_ = false;
 }
 
@@ -91,7 +91,7 @@ size_t Scene::IndexOf(int id) const {
     for (int attempt = 0; attempt < 2; ++attempt) {
         const auto it = index_.find(id);
         if (it != index_.end() && it->second < entities_.size() && entities_[it->second].data.id == id) return it->second;
-        // Out of date (a change that did not Touch, or a list of another size): once more, freshly.
+        // 古くなっている (Touch しなかった変更や、大きさの違うリスト): もう一度、新しく作る。
         const bool stale = it != index_.end() || index_.size() != entities_.size();
         if (!stale || attempt == 1) break;
         Reindex();
@@ -118,7 +118,7 @@ std::vector<int> Scene::Children(int parent) const {
 }
 
 std::unordered_set<int> Scene::Subtree(std::span<const int> roots) const {
-    std::unordered_map<int, std::vector<int>> children;  // parent id -> ids
+    std::unordered_map<int, std::vector<int>> children;  // 親の id -> id の並び
     for (const auto& e : entities_) children[e.data.parent].push_back(e.data.id);
     std::unordered_set<int> out;
     std::vector<int> todo;
@@ -150,7 +150,7 @@ bool Scene::IsUnder(int id, int ancestor) const {
 }
 
 std::vector<TreeEntry> Scene::TreeOrder() const {
-    std::unordered_map<int, std::vector<size_t>> children;  // parent id -> indices, in order
+    std::unordered_map<int, std::vector<size_t>> children;  // 親の id -> 添字の並び (順番どおり)
     for (size_t i = 0; i < entities_.size(); ++i) children[entities_[i].data.parent].push_back(i);
     std::vector<TreeEntry> out;
     out.reserve(entities_.size());
@@ -178,10 +178,9 @@ std::vector<TreeEntry> Scene::TreeOrder() const {
 }
 
 std::vector<int> Scene::Roots(std::span<const int> ids) const {
-    // One pass in tree order (parents come first): an entity is covered when its parent is given or
-    // covered.
+    // 木の順に 1 回通す (親が先): 親が指定されているか覆われているエンティティは、覆われている。
     const std::unordered_set<int> given(ids.begin(), ids.end());
-    std::unordered_set<int> covered;  // given, or below a given one
+    std::unordered_set<int> covered;  // 指定されたもの、または指定されたものの下
     std::vector<int> out;
     for (const TreeEntry& t : TreeOrder()) {
         const int id = t.entity->data.id;
@@ -194,7 +193,7 @@ std::vector<int> Scene::Roots(std::span<const int> ids) const {
 }
 
 size_t Scene::InsertPosition(int parent, size_t index) const {
-    // Before the index-th child of `parent`; after the last one (= the end of the list) otherwise.
+    // `parent` の index 番目の子の前。そうでなければ最後の子のあと (= リストの終わり)。
     size_t seen = 0;
     for (size_t i = 0; i < entities_.size(); ++i) {
         if (entities_[i].data.parent != parent) continue;
@@ -224,14 +223,14 @@ void SceneEntity::MapEntityRefs(const std::unordered_map<int, int>& to, bool cle
     };
     reflect::MapEntityRefs(reflect::TypeOf<Entity>(), &data, map);
     for (Component& c : components) {
-        if (c.Known()) reflect::MapEntityRefs(*c.value.Type(), c.value.Get(), map);  // (one not offered now stays as read)
+        if (c.Known()) reflect::MapEntityRefs(*c.value.Type(), c.value.Get(), map);  // (今は出ていないものは、読んだままにする)
     }
 }
 
 std::vector<int> Scene::Duplicate(std::span<const int> ids) {
     std::vector<int> made;
     for (const int root : Roots(ids)) {
-        // The root and everything below it, in list order (so siblings keep their order).
+        // ルートとその下の全部を、リストの順に (兄弟の順番が保たれる)。
         std::vector<SceneEntity> copies;
         std::unordered_map<int, int> newId;
         const std::unordered_set<int> inside = Subtree(std::span<const int>(&root, 1));
@@ -242,8 +241,8 @@ std::vector<int> Scene::Duplicate(std::span<const int> ids) {
             copies.push_back(std::move(c));
         }
         for (auto& c : copies) {
-            if (const auto it = newId.find(c.data.parent); it != newId.end()) c.data.parent = it->second;  // the root keeps its parent
-            c.MapEntityRefs(newId, false);  // a reference inside the copied ones points at the copy
+            if (const auto it = newId.find(c.data.parent); it != newId.end()) c.data.parent = it->second;  // ルートの親はそのまま
+            c.MapEntityRefs(newId, false);  // コピーした中の参照は、コピーを指す
         }
         made.push_back(newId[root]);
         const size_t pos = IndexOf(root) + 1;
@@ -270,11 +269,11 @@ bool Scene::Move(std::span<const int> ids, int parent, size_t index) {
     const std::vector<int> roots = Roots(ids);
     if (roots.empty()) return false;
     for (const int r : roots) {
-        if (IsUnder(parent, r)) return false;  // into itself
+        if (IsUnder(parent, r)) return false;  // 自分自身の中へ
     }
-    std::vector<std::pair<int, int>> was;  // (id, parent) in list order, to tell whether anything changed
+    std::vector<std::pair<int, int>> was;  // リストの順の (id, 親)。何か変わったかを調べるため
     for (const auto& e : entities_) was.emplace_back(e.data.id, e.data.parent);
-    // Parts of placed prefabs that go to another parent leave their prefab (worked out before anything moves).
+    // 置いた Prefab の部品が別の親へ行くと、その Prefab を抜ける (何かを動かす前に求めておく)。
     std::vector<int> leaving;
     for (const int r : roots) {
         const SceneEntity* e = Find(r);
@@ -297,7 +296,7 @@ bool Scene::Move(std::span<const int> ids, int parent, size_t index) {
 
     std::vector<std::pair<int, int>> now;
     for (const auto& e : entities_) now.emplace_back(e.data.id, e.data.parent);
-    // Only the order among siblings matters: compare per parent.
+    // 大事なのは兄弟の間の順番だけ: 親ごとに比べる。
     auto siblings = [](const std::vector<std::pair<int, int>>& list) {
         std::unordered_map<int, std::vector<int>> m;
         for (const auto& [id, p] : list) m[p].push_back(id);
@@ -307,7 +306,7 @@ bool Scene::Move(std::span<const int> ids, int parent, size_t index) {
 }
 
 json::Value Scene::SaveComponent(const Component& c) {
-    if (!c.Known()) return c.raw;  // a type not offered now: exactly as it was read
+    if (!c.Known()) return c.raw;  // 今は出ていない型: 読んだままそっくり返す
     json::Value cj = c.raw.IsObject() ? c.raw : json::Value::MakeObject();
     cj.Set("type", c.type);
     cj.Set("data", reflect::Save(*c.value.Type(), c.value.Get(), &c.unknowns));
@@ -337,17 +336,17 @@ Component Scene::ReadComponent(const json::Value& cj, std::span<const reflect::T
     if (t && data.IsObject() && allowed) {
         c.value = reflect::Object(*t);
         reflect::Load(*t, c.value.Get(), data, &c.unknowns, warnings);
-        c.raw.Erase("data");  // written again from the value
+        c.raw.Erase("data");  // 値からもう一度書く
     }
     return c;
 }
 
-// --- The scene's own values -------------------------------------------------------------------
+// --- シーン自身の値 ---------------------------------------------------------------------------
 
 void Scene::SetSettingTypes(std::vector<const reflect::TypeDesc*> types) {
     settingTypes_ = std::move(types);
-    // Read again with the new list: a setting kept as it was read may be known now (and one known
-    // before but not offered now goes back to being kept).
+    // 新しいリストでもう一度読む: 読んだまま持っていた設定が、今は分かるかもしれない (前は分かって
+    // いたが今は出ていないものは、持ち続ける状態に戻る)。
     std::vector<Component> was = std::move(settings_);
     settings_.clear();
     for (const Component& c : was) {
@@ -386,7 +385,7 @@ json::Value Scene::SaveEntity(const SceneEntity& e) const {
     if (e.prefab.Linked()) {
         json::Value link = e.prefab.extra.IsObject() ? e.prefab.extra : json::Value::MakeObject();
         link.Set("source", e.prefab.source);
-        link.Erase("path");  // the form from before assets had ids: written as "asset" now
+        link.Erase("path");  // アセットに id が無かった頃の形: これからは "asset" で書く
         if (e.prefab.Root()) {
             link.Set("asset", e.prefab.asset.guid);
             if (e.prefab.overrides.IsObject()) link.Set("overrides", e.prefab.overrides);
@@ -427,7 +426,7 @@ void Scene::RestoreStates(std::span<const int> ids, std::span<const EntityState>
     for (const EntityState& s : states) {
         if (s.present) back.push_back(&s);
     }
-    // In the order of their places: each goes where it was, the ones before it being back already.
+    // 場所の順に: それぞれもとの場所へ戻す。その前のものはもう戻っている。
     std::sort(back.begin(), back.end(), [](const EntityState* a, const EntityState* b) { return a->index < b->index; });
     for (const EntityState* s : back) {
         SceneEntity e = LoadEntity(s->data, nullptr);
@@ -439,7 +438,7 @@ void Scene::RestoreStates(std::span<const int> ids, std::span<const EntityState>
 
 SceneEntity Scene::LoadEntity(const json::Value& item, reflect::Warnings* warnings) const {
     SceneEntity e;
-    // "components" and "prefab" are the scene's to read (not unknown keys of the entity).
+    // "components" と "prefab" はシーンが読むもの (エンティティの知らないキーではない)。
     json::Value fields = item;
     json::Value comps;
     if (json::Value* cs = fields.Find("components")) comps = std::move(*cs);
@@ -447,7 +446,7 @@ SceneEntity Scene::LoadEntity(const json::Value& item, reflect::Warnings* warnin
     if (const json::Value* link = fields.Find("prefab"); link && link->IsObject() && link->Get("source").AsInt(0) > 0) {
         e.prefab.extra = *link;
         e.prefab.source = static_cast<int>(link->Get("source").AsInt(0));
-        // "asset": the prefab file's id; "path": a file from before assets had ids (read the same way).
+        // "asset": Prefab ファイルの id。"path": アセットに id が無かった頃のファイル (同じように読む)。
         e.prefab.asset.guid = link->Find("asset") ? link->Get("asset").AsString() : link->Get("path").AsString();
         if (e.prefab.Root()) {
             e.prefab.overrides = link->Get("overrides");
@@ -489,7 +488,7 @@ bool Scene::IsClip(const json::Value& clip) { return clip.IsObject() && clip.Get
 json::Value Scene::Copy(std::span<const int> ids) const {
     const std::unordered_set<int> inside = Subtree(Roots(ids));
     json::Value list = json::Value::MakeArray();
-    for (const auto& e : entities_) {  // list order: siblings keep their order
+    for (const auto& e : entities_) {  // リストの順: 兄弟の順番が保たれる
         if (inside.contains(e.data.id)) list.Push(SaveEntity(e));
     }
     json::Value o = json::Value::MakeObject();
@@ -505,7 +504,7 @@ std::vector<int> Scene::Paste(const json::Value& clip, int parent, size_t index,
     std::vector<int> roots = PasteList(clip.Get("entities"), parent, index, warnings, &idMap);
     std::vector<int> all;
     for (const auto& [from, to] : idMap) all.push_back(to);
-    for (const int r : roots) all.push_back(r);  // (an entity without an id of its own is in no map)
+    for (const int r : roots) all.push_back(r);  // (自分の id を持たないエンティティは、どの対応表にも入らない)
     DetachCopies(all);
     return roots;
 }
@@ -514,8 +513,8 @@ std::vector<int> Scene::PasteList(const json::Value& entities, int parent, size_
                                   std::unordered_map<int, int>* idMap) {
     std::vector<int> roots;
     if (parent != 0 && !Find(parent)) parent = 0;
-    // New ids; a parent inside the clip is followed only when it came before (so there is never a
-    // loop) - anything else is a root, placed at `parent`.
+    // 新しい id。クリップの中の親は、それが先に来ていたときだけたどる (輪にならないように) -
+    // それ以外はルートで、`parent` に置く。
     std::unordered_map<int, int> newId;
     std::vector<SceneEntity> copies;
     for (const auto& item : entities.Items()) {
@@ -533,8 +532,8 @@ std::vector<int> Scene::PasteList(const json::Value& entities, int parent, size_
         }
         copies.push_back(std::move(e));
     }
-    // References to what was copied point at the copies; to anything else they stay (pasted in the
-    // same scene: still that entity) - a prefab's point only inside it (the others are 0 in its file).
+    // コピーしたものへの参照はコピーを指す。ほかへの参照はそのまま (同じシーンに貼ったときは、
+    // やはりそのエンティティ) - Prefab の参照は、その中だけを指す (ほかは Prefab のファイルでは 0)。
     for (SceneEntity& e : copies) e.MapEntityRefs(newId, false);
     const size_t pos = InsertPosition(parent, index);
     entities_.insert(entities_.begin() + static_cast<std::ptrdiff_t>(std::min(pos, entities_.size())), std::make_move_iterator(copies.begin()),
@@ -557,19 +556,19 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
         AddMissingSettings();
         return;
     }
-    extra_ = v;  // every key in its place; Save replaces "nextId", "entities" and "settings" in place
+    extra_ = v;  // どのキーももとの場所に。Save は "nextId"、"entities"、"settings" をその場で置き換える
     for (const auto& item : v.Get("entities").Items()) entities_.push_back(LoadEntity(item, warnings));
     Touch();
-    // The scene's own values: the first of each type (a type not offered now is kept as read, quietly:
-    // a 2D game's scene keeps the 3D sky it does not use).
+    // シーン自身の値: 型ごとに最初のもの (今は出ていない型は、読んだまま静かに持つ: 2D のゲームの
+    // シーンは、使わない 3D の空を持ち続ける)。
     for (const auto& item : v.Get("settings").Items()) {
         if (!item.IsObject() || FindSetting(item.Get("type").AsString())) continue;
         settings_.push_back(ReadComponent(item, settingTypes_, true, warnings));
     }
     AddMissingSettings();
 
-    // Ids: positive and unique. Repeated or missing ones get new ids (never one in use).
-    // (An id or a nextId too big to count on from - a broken file - is not used: no overflow.)
+    // id: 正で、重複しない。重複や無いものには新しい id を振る (使用中のものは決して使わない)。
+    // (そこから数え続けられないほど大きな id や nextId - 壊れたファイル - は使わない: あふれない。)
     int maxId = 0;
     for (const auto& e : entities_) {
         if (e.data.id <= kMaxId) maxId = std::max(maxId, e.data.id);
@@ -584,8 +583,8 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
         e.data.id = fresh;
         seen.insert(fresh);
     }
-    Touch();  // the ids repaired
-    // Parents: existing, and no loops.
+    Touch();  // id を直した
+    // 親: あるものだけ。輪は無し。
     for (auto& e : entities_) {
         if (e.data.parent == 0) continue;
         if (e.data.parent == e.data.id || !seen.contains(e.data.parent)) {
@@ -594,7 +593,7 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
         }
     }
     for (auto& e : entities_) {
-        // Walk up; coming back to itself (or walking too long) is a loop.
+        // 上へたどる。自分に戻ってきたら (またはたどりすぎたら) 輪。
         int cur = e.data.parent;
         bool loop = false;
         for (size_t steps = 0; cur > 0; ++steps) {
@@ -612,7 +611,7 @@ void Scene::Load(const json::Value& v, reflect::Warnings* warnings) {
     }
 }
 
-// --- What a project uses (Components.h) -------------------------------------------------------
+// --- プロジェクトが使うもの (Components.h) --------------------------------------------------
 
 void ComponentTypesIn(const json::Value& sceneOrPrefab, std::vector<std::string>& out) {
     auto add = [&](const json::Value& component) {
@@ -636,7 +635,7 @@ std::vector<PluginId> PluginsOffering(const std::vector<std::string>& used, cons
 
 namespace {
 
-// The field `f` names: its description and the struct holding it (field null: not there).
+// `f` が指すフィールド: その説明と、それを持つ構造体 (field が null: 無い)。
 reflect::PathTarget SceneFieldTarget(Scene& scene, const SceneField& f) {
     SceneEntity* e = scene.Find(f.entity);
     if (!e) return {};

@@ -1,10 +1,10 @@
 #pragma once
-// How an exported game is drawn: by the plugin that knows the game's space (3D: ゲーム制作 × 3D, 2D:
-// ゲーム制作 × 2D - game production never knows a space). Each offers a drawer from its RUNTIME part;
-// the game takes the one of the game settings' space (GameSettings::space), or the one with the
-// smallest order when that is not set or not there.
+// 書き出したゲームの描き方: ゲームの空間を知るプラグイン (3D: ゲーム制作 × 3D、2D:
+// ゲーム制作 × 2D - ゲーム制作は空間を知らない) が行う。それぞれが自分のランタイム側から
+// 描画担当を出す。ゲームは、ゲーム設定の空間 (GameSettings::space) のものを使う。
+// それが未設定かなければ、order が一番小さいものを使う。
 //
-//   // in a connector's runtime/Register.cpp:
+//   // コネクターの runtime/Register.cpp で:
 //   static const game_production::GameDrawInfo kDraw{"3d", 0, &CreateGameDraw3D};
 //   registry.Contribute(game_production::kGameDrawPoint, kDraw);
 
@@ -26,47 +26,47 @@
 
 namespace rm::game_production {
 
-// What one frame of the game is drawn from.
+// ゲームの 1 フレームを描くための材料。
 struct GameDrawFrame {
     const Scene& scene;
-    uint64_t camera = 0;         // the entity the game sees through (SystemContext::camera)
+    uint64_t camera = 0;         // ゲームが通して見るエンティティ (SystemContext::camera)
     Color background{0, 0, 0, 1};  // the game settings' 背景の色
     platform::Gfx& gfx;
-    ID2D1DeviceContext* dc;      // the window's (its whole client area)
+    ID2D1DeviceContext* dc;      // ウィンドウのもの (クライアント領域全体)
     float width = 0, height = 0;  // DIPs
-    // The bytes of an asset (the game: from its .rmpak - what the export put in for it, baked or as
-    // its file); nullopt when it is not there.
+    // アセットのバイト列 (ゲームでは .rmpak から - 書き出しがそのために入れたもの。ベイクしたものか
+    // ファイルそのもの)。なければ nullopt。
     std::function<std::optional<std::string>(const AssetRef&)> asset;
-    // A file of the game's own by its path (a baked model's pictures: "Baked/<id>/0.dds").
+    // ゲーム自身のファイルをパスで (ベイクしたモデルの絵: "Baked/<id>/0.dds")。
     std::function<std::optional<std::string>(std::string_view path)> file;
-    // What the plugins offer (a drawer asks it for things other plugins draw into its picture).
+    // プラグインが出すもの (描画担当は、他のプラグインが自分の絵に描くものをこれで頼む)。
     const RuntimeRegistry* registry = nullptr;
-    float dt = 0;  // seconds the game moved on since the last frame drawn (0 while it is paused)
+    float dt = 0;  // 前に描いたフレームからゲームが進んだ秒数 (一時停止中は 0)
 };
 
 class GameDrawer {
 public:
     virtual ~GameDrawer() = default;
     virtual void Draw(const GameDrawFrame& f) = 0;
-    // Over another space's picture (a 2D layer over a 3D game: カメラ (2D)「3D の上に重ねる」). Drawn
-    // after the game's own drawer, by the drawers of the other spaces; nothing by default.
+    // 別の空間の絵の上に (3D のゲームに重ねる 2D の層: カメラ (2D)「3D の上に重ねる」)。ゲーム自身の
+    // 描画担当の後に、他の空間の描画担当が描く。既定では何もしない。
     virtual void DrawOverlay(const GameDrawFrame& f) { (void)f; }
 };
 
-// Over the whole game screen, after every space's picture (the game UI: rm_engine/game_ui). Not of a
-// space: drawn in a game of any. Both hosts draw it: the exported game over its window, the editor's
-// game view over its picture of the game (stopped too) - into `area`, the game screen being `screen`
-// (the game settings' 画面 in the editor: what is drawn is scaled to the area).
+// ゲーム画面全体の上に、すべての空間の絵の後に描く (ゲーム UI: rm_engine/game_ui)。空間には属さず、
+// どの空間のゲームでも描く。どちらのホストも描く: 書き出したゲームはそのウィンドウに、エディターの
+// ゲームビューはゲームの絵の上に (止まっているときも) - `area` の中に、ゲーム画面は `screen` として
+// (エディターではゲーム設定の 画面: 描くものはエリアに合わせて拡大縮小される)。
 struct ScreenDrawFrame {
     const Scene& scene;
     const GameSettings& settings;
     platform::Gfx& gfx;
     ID2D1DeviceContext* dc;
-    float x = 0, y = 0, width = 0, height = 0;  // where on the dc (DIPs)
-    Vec2 screen{1280, 720};                    // the game's screen it stands for (DIPs)
-    std::function<std::optional<std::string>(const AssetRef&)> asset;  // as GameDrawFrame::asset
-    bool playing = false;  // the game runs (the editor: Play) - else the scene as it is being made
-    bool paused = false;   // ... and is paused (the editor's ⏸): what moves by itself (a 動画) waits
+    float x = 0, y = 0, width = 0, height = 0;  // dc 上の場所 (DIPs)
+    Vec2 screen{1280, 720};                    // それが表すゲームの画面 (DIPs)
+    std::function<std::optional<std::string>(const AssetRef&)> asset;  // GameDrawFrame::asset と同じ
+    bool playing = false;  // ゲームが動いている (エディターでは Play) - そうでなければ作っている途中のシーン
+    bool paused = false;   // ... そして一時停止中 (エディターの ⏸): 自分で動くもの (動画) は待つ
 };
 
 class ScreenDrawer {
@@ -75,17 +75,17 @@ public:
     virtual void Draw(const ScreenDrawFrame& f) = 0;
 };
 
-// RuntimeRegistry point: items are ScreenDrawInfo (static). Drawn in `order` (the smaller first).
+// RuntimeRegistry の口: 中身は ScreenDrawInfo (static)。`order` の順 (小さいほうが先) に描く。
 inline constexpr char kScreenDrawPoint[] = "rm_engine.game_production.screen_draw";
 struct ScreenDrawInfo {
     int order = 0;
     std::unique_ptr<ScreenDrawer> (*create)() = nullptr;
 };
 
-// RuntimeRegistry point: items are GameDrawInfo (static).
+// RuntimeRegistry の口: 中身は GameDrawInfo (static)。
 inline constexpr char kGameDrawPoint[] = "rm_engine.game_production.game_draw";
 struct GameDrawInfo {
-    const char* space = "";  // as SceneViewInfo::space ("3d", "2d")
+    const char* space = "";  // SceneViewInfo::space と同じ ("3d"、"2d")
     int order = 0;
     std::unique_ptr<GameDrawer> (*create)() = nullptr;
 };

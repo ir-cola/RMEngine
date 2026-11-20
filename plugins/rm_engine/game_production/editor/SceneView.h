@@ -1,17 +1,17 @@
 #pragma once
-// The scene view's frame. Game production shows the panel; what is drawn in it - and how the
-// camera moves - comes from a plugin that knows a space (the connector ゲーム制作 × 3D draws it in
-// 3D). Game production itself never knows 3D or 2D (design RME_PLATFORM 4-f).
+// シーンビューの枠。ゲーム制作がパネルを出す。中に描くもの、そしてカメラの動かし方は、空間を
+// 知るプラグインが持つ (コネクター ゲーム制作 × 3D が 3D で描く)。ゲーム制作自身は 3D も 2D も
+// 知らない (設計 RME_PLATFORM 4-f)。
 //
-//   // in a connector's RegisterEditor:
+//   // コネクターの RegisterEditor で:
 //   static const game_production::SceneViewInfo kView{&CreateMySceneView};
 //   registry.Contribute(game_production::kSceneViewPoint, kView);
 //
-// Each scene view belongs to a space (`space`: "3d", "2d" - only a name to game production). The game
-// chooses one (GameSettings::space - project data: the game view and new entities follow it); when
-// more than one is offered, the scene panel has a strip of their labels to switch (an edit: undo, unsaved).
-// None chosen yet (or a space whose plugin is gone): the one with the smallest `order`. Without any,
-// the panel says which plugins bring one.
+// シーンビューはそれぞれ 1 つの空間 (`space`: "3d"、"2d" - ゲーム制作にとってはただの名前) に属す。
+// ゲームは 1 つを選ぶ (GameSettings::space - プロジェクトのデータ: ゲームビューと新しいエンティティが
+// それに従う)。2 つ以上あるときは、シーンパネルに切り替えのラベルの帯が出る (編集: Undo に積み、
+// 未保存になる)。まだ選んでいない (または選んだ空間のプラグインがない) ときは、`order` が一番小さいもの。
+// 1 つもなければ、パネルがどのプラグインが持ってくるかを表示する。
 
 #include "core/reflect/FieldCommand.h"
 #include "editor/plugin/Software.h"
@@ -29,64 +29,64 @@
 
 namespace rm::game_production {
 
-// PluginRegistry point: items are SceneViewInfo (static).
+// PluginRegistry の口: 中身は SceneViewInfo (static)。
 inline constexpr char kSceneViewPoint[] = "rm_engine.game_production.scene_view";
 
-// What a scene view gets each time it is drawn.
+// シーンビューが描かれるたびに受け取るもの。
 struct SceneViewHost {
-    editor::SoftwareHost& host;                     // the GPU, the history ...
+    editor::SoftwareHost& host;                     // GPU、履歴など
     const Scene& scene;
-    std::span<const int> selection;                 // the selected entities (the 階層's)
-    std::function<void(std::vector<int>)> select;   // select these instead (empty: nothing)
-    // Where a component of an entity is (found again each time it is called - undo may rebuild the
-    // scene). For edits: change the value through it and push reflect::SetFieldCommand with it on
-    // host.History() (edit = undo entry = unsaved).
+    std::span<const int> selection;                 // 選択中のエンティティ (階層のもの)
+    std::function<void(std::vector<int>)> select;   // 代わりにこれらを選ぶ (空: 何も選ばない)
+    // エンティティの部品がある場所 (呼ぶたびに探し直す - Undo でシーンが作り直されることがあるため)。
+    // 編集するときは、これを通して値を変え、これを使った reflect::SetFieldCommand を
+    // host.History() に積む (編集 = Undo の 1 件 = 未保存)。
     std::function<std::function<reflect::EditTarget()>(int id, const std::string& type)> component;
-    // Play: `scene` is the copy that plays (it changes every frame, and is not edited - no gizmo).
+    // Play 中: `scene` は Play 中のコピー (毎フレーム変わり、編集しない - ギズモなし)。
     bool playing = false;
-    // How fast the game's time goes while playing (rm::SetTimeScale; 0 while paused): what moves by itself
-    // in a picture (the particles) moves by the picture's time times this.
+    // Play 中のゲームの時間の進む速さ (rm::SetTimeScale。一時停止中は 0): 絵の中で自分で動くもの
+    // (パーティクル) は、絵の時間にこれをかけた分だけ動く。
     float timeScale = 1;
-    // The game view: only the picture of the game - no grid, tools or selection, seen through the
-    // game's camera (`camera`), the game settings' 背景の色 behind it (unless the camera has its own).
+    // ゲームビュー: ゲームの絵だけ - グリッド・ツール・選択なし。ゲームのカメラ (`camera`) を通して見え、
+    // その後ろにはゲーム設定の 背景の色 が出る (カメラが自分の色を持つときは除く)。
     bool game = false;
     Color background{0, 0, 0, 1};
-    // The game settings' 最初のカメラ: the entity the game sees through (0: none chosen). What makes an
-    // entity a camera is the view's business (a 3D camera component, ...).
+    // ゲーム設定の 最初のカメラ: ゲームがそれを通して見るエンティティ (0: 未選択)。何がエンティティを
+    // カメラにするかはビューごとの事情 (3D のカメラ部品など)。
     uint64_t camera = 0;
-    // The shape of the game's screen (the game settings' 画面: width / height). The game view is drawn
-    // in it (bands around when the panel is wider or taller); the scene view's camera preview too.
+    // ゲームの画面の形 (ゲーム設定の 画面: 幅 / 高さ)。ゲームビューはこの中に描く (パネルがそれより
+    // 広い・高いときは周りに帯が出る)。シーンビューのカメラのプレビューも同じ。
     float aspect = 16.f / 9.f;
-    // Shows the game settings in the inspector (the game view's way to choose 最初のカメラ).
+    // ゲーム設定をインスペクターに出す (ゲームビューが 最初のカメラ を選ぶための手段)。
     std::function<void()> openSettings;
-    // Play: the lines the scripts drew with rm::Debug (DebugDraw.h) - each view draws the ones of its
-    // space (the scene view only while its toolbar's デバッグ is on). Null when not playing.
+    // Play 中: スクリプトが rm::Debug (DebugDraw.h) で描いた線。各ビューは自分の空間の線を描く
+    // (シーンビューはツールバーの デバッグ がオンのときだけ)。Play 中でないときは null。
     const DebugDraw* debug = nullptr;
-    // The game settings (read only: the 画面's size and safe area - the UI view).
+    // ゲーム設定 (読み取り専用: 画面のサイズとセーフエリア - UI ビュー用)。
     const GameSettings* settings = nullptr;
-    // Changes the scene's shape (a view makes entities or moves them: the UI view drops a picture, gives
-    // a UI thing another parent): `touched` the entities the change alters (with what is under them;
-    // the ones it makes are found by themselves - SceneRecord), one undo entry named `label`. `change`
-    // gives the entities to select after it (empty: the selection stays). Nothing while playing.
+    // シーンの形を変える (ビューがエンティティを作ったり動かしたりする: UI ビューは絵を置き、UI の
+    // ものに別の親をつける): `touched` は変更で変わるエンティティ (その下にあるものも含む。作られる
+    // ものは自動で見つかる - SceneRecord)。Undo は `label` という名前の 1 件。`change` は、変更の後に
+    // 選ぶエンティティを返す (空: 選択はそのまま)。Play 中は何もしない。
     std::function<void(std::vector<int> touched, std::string label, std::function<std::vector<int>(Scene&)> change)> editScene;
 };
 
-// One per open game and view (the scene view, the game view): keeps its own camera.
+// 開いているゲームとビュー (シーンビュー、ゲームビュー) ごとに 1 つ: 自分のカメラを持つ。
 class SceneView {
 public:
     virtual ~SceneView() = default;
     virtual void Draw(ui::Context& c, const ui::Rect& r, SceneViewHost& host) = 0;
-    // The game view of another space (the game's own space drew first): this space's picture laid over
-    // it, without filling the background (2D over 3D: a HUD), when the view has something to show
-    // that way. `host.game` is true. Default: nothing.
+    // 別の空間のゲームビュー (ゲーム自身の空間が先に描く): この空間の絵を、背景を塗らずにその上に
+    // 重ねる (2D を 3D の上に: HUD)。ビューに、そのように出せるものがあるとき。`host.game` は true。
+    // 既定: 何もしない。
     virtual void DrawLayer(ui::Context& c, const ui::Rect& r, SceneViewHost& host) { (void)c, (void)r, (void)host; }
-    // How the user looks (camera, tool ...): kept with the panel layout, not in the project.
+    // ユーザーの見方 (カメラ、ツールなど): パネルのレイアウトと一緒に保存し、プロジェクトには入れない。
     virtual void LoadState(const json::Value& state) { (void)state; }
     virtual json::Value SaveState() const { return {}; }
 };
 
-// The game screen's rectangle in a panel: the largest of `aspect` (width / height) in its middle (the game
-// view draws the game there; bands around it). One place for every view (rule 2).
+// パネルの中のゲーム画面の長方形: `aspect` (幅 / 高さ) の最大のものを、真ん中に取る (ゲームビューは
+// そこにゲームを描き、周りに帯が出る)。全ビューで 1 か所 (憲法 2)。
 inline ui::Rect GameScreenRect(const ui::Rect& panel, float aspect) {
     const float a = aspect > 1e-3f ? aspect : 1e-3f;
     float w = panel.w, h = panel.w / a;
@@ -97,47 +97,47 @@ inline ui::Rect GameScreenRect(const ui::Rect& panel, float aspect) {
     return {panel.x + (panel.w - w) * 0.5f, panel.y + (panel.h - h) * 0.5f, w, h};
 }
 
-// PluginRegistry point: items are ViewPanelInfo (static). A panel of the game software that a plugin
-// adds (ゲーム UI: the UI view). It gets the same SceneViewHost as the scene view (game = false) and is
-// not of a space: shown whatever the game's space is.
+// PluginRegistry の口: 中身は ViewPanelInfo (static)。プラグインが足す、ゲームソフトのパネル
+// (ゲーム UI: UI ビュー)。シーンビューと同じ SceneViewHost を受け取る (game = false)。空間には
+// 属さず、ゲームの空間が何であっても出る。
 inline constexpr char kViewPanelPoint[] = "rm_engine.game_production.view_panel";
 struct ViewPanelInfo {
-    const char* id = "";             // the panel's id in the layout (unique among the game's panels)
-    const wchar_t* title = nullptr;  // a TrKey string
+    const char* id = "";             // レイアウトでのパネルの id (ゲームのパネルの中で一意)
+    const wchar_t* title = nullptr;  // TrKey の文字列
     std::unique_ptr<SceneView> (*create)() = nullptr;
 };
 
-// PluginRegistry point: items are CreateItemInfo (static). Rows a plugin adds to the 階層's right-click
-// menu 追加 ▸ (ゲーム UI: UI ▸ キャンバス / ボタン ...; ゲーム制作 × 3D: 3D オブジェクト ▸ 箱 / 球 ...),
-// each in its folder - the folders in a fixed order (GameSoftware), then the order of the plugins.
-// The entity is made in one of two ways:
-//   make   makes it (and what is under it) in `scene` under `parent` at `index` and returns it (0:
-//          nothing) - it decides its name and its components (a 3D 箱 gets a 3D Transform whatever the
-//          game's space is);
-//   fill   adds to an entity made like 空のエンティティ (named `label`, with the Transform of the game's
-//          space) - for what is at home in any space (パーティクル, 音源).
-// It is one undo entry, then selected with its name being typed.
+// PluginRegistry の口: 中身は CreateItemInfo (static)。プラグインが階層の右クリックメニュー
+// 追加 ▸ に足す行 (ゲーム UI: UI ▸ キャンバス / ボタン ...、ゲーム制作 × 3D: 3D オブジェクト ▸ 箱 / 球 ...)。
+// それぞれ自分のフォルダに入り、フォルダは決まった順 (GameSoftware)、その中はプラグインの順。
+// エンティティの作り方は 2 通り:
+//   make   `scene` の `parent` の下の `index` に、エンティティ (とその下のもの) を作って返す (0:
+//          何も作らない) - 名前と部品はこれが決める (3D の 箱 は、ゲームの空間が何でも
+//          3D の Transform を持つ);
+//   fill   空のエンティティ (`label` という名前、ゲームの空間の Transform つき) と同じように作った
+//          エンティティに足す - どの空間でも使えるもの (パーティクル、音源) 用。
+// Undo の 1 件になり、その後に選択されて、名前を入力できる状態になる。
 inline constexpr char kCreateItemPoint[] = "rm_engine.game_production.create_item";
 struct CreateItemInfo {
-    const wchar_t* label = nullptr;   // a TrKey string: what it is (a noun: the undo entry is 「箱」を作成)
+    const wchar_t* label = nullptr;   // TrKey の文字列: それが何か (名詞: Undo の名前は 「箱」を作成)
     const wchar_t* folder = nullptr;  // a TrKey string ("3D オブジェクト"; "/" between folders inside folders); null: 追加 itself
     int (*make)(Scene& scene, int parent, size_t index) = nullptr;
     void (*fill)(Scene& scene, int entity) = nullptr;
-    bool child = false;  // under the one selected entity (else - and with none selected - after the selection)
-    // What it makes, in plain words, for the plugins that add to it (kCreatedPoint): "box", "sphere",
-    // "cylinder", "capsule", "plane" (a 3D shape of 1 unit; the plane 10 x 10) - null: nothing to say.
+    bool child = false;  // 選択中のエンティティの下に作る (そうでなければ - 何も選んでいなくても - 選択の後ろに)
+    // 何を作るかを、足すプラグイン (kCreatedPoint) 向けに平たく言ったもの: "box"、"sphere"、
+    // "cylinder"、"capsule"、"plane" (1 ユニットの 3D の形。plane は 10 x 10) - null: 言うことなし。
     const char* made = nullptr;
 };
 
-// PluginRegistry point: items are CreatedInfo (static). After 追加 ▸ made an entity, in the same undo
-// entry, each may add to it (物理: a collider the shape of a 3D object - a plugin that knows both).
+// PluginRegistry の口: 中身は CreatedInfo (static)。追加 ▸ がエンティティを作った後、同じ Undo の
+// 1 件の中で、それぞれが足してよい (物理: 3D オブジェクトの形のコライダー - 両方を知るプラグイン)。
 inline constexpr char kCreatedPoint[] = "rm_engine.game_production.created";
 struct CreatedInfo {
-    void (*added)(Scene& scene, int entity, std::string_view made) = nullptr;  // `made`: CreateItemInfo::made ("" if none)
+    void (*added)(Scene& scene, int entity, std::string_view made) = nullptr;  // `made`: CreateItemInfo::made (なければ "")
 };
 
-// The component of type T added to entity `id` (or the one it has already, if it may not have two; null:
-// the type is not offered now). For CreateItemInfo's make / fill.
+// エンティティ `id` に足した型 T の部品 (2 つ持てない型で、すでにあるときはそれ。null: 今はその型を
+// 出していない)。CreateItemInfo の make / fill 用。
 template <class T>
 T* AddComponentTo(Scene& scene, int id) {
     scene.AddComponent(id, reflect::TypeOf<T>());
@@ -148,20 +148,19 @@ T* AddComponentTo(Scene& scene, int id) {
 
 struct SceneViewInfo {
     std::unique_ptr<SceneView> (*create)();
-    const char* space = "";              // e.g. "3d" (ComponentInfo::space names the same)
-    const wchar_t* label = nullptr;      // e.g. 3D (a TrKey string: translated when shown)
-    int order = 0;                       // the smaller is the default
+    const char* space = "";              // 例: "3d" (ComponentInfo::space も同じものを指す)
+    const wchar_t* label = nullptr;      // 例: 3D (TrKey の文字列: 表示するときに翻訳する)
+    int order = 0;                       // 小さいほうが既定
 };
 
-// PluginRegistry point: items are SceneLinesInfo (static). Lines a plugin shows over the scene in the
-// scene view while editing and playing (物理: the colliders' shapes). Each view takes the lines of its
-// own space (DebugSpace) and draws them like the scripts' debug lines (3D: hidden parts faint). Not in
-// the game view.
+// PluginRegistry の口: 中身は SceneLinesInfo (static)。プラグインが、編集中も Play 中も、シーンビューの
+// シーンの上に出す線 (物理: コライダーの形)。各ビューは自分の空間 (DebugSpace) の線を取り、スクリプトの
+// デバッグ線と同じように描く (3D: 隠れた部分は薄く)。ゲームビューには出ない。
 inline constexpr char kSceneLinesPoint[] = "rm_engine.game_production.scene_lines";
 
 struct SceneLinesInfo {
-    // Adds the lines of the selected entities (`all`: of every entity) to `out` (seconds: 0).
-    // The view's toolbar has the switch 形: 選択 / 全部 (`all`).
+    // 選択中のエンティティ (`all` のときは全エンティティ) の線を `out` に足す (seconds: 0)。
+    // ビューのツールバーに 形: 選択 / 全部 (`all`) のスイッチがある。
     void (*lines)(const Scene& scene, std::span<const int> selection, bool all, DebugDraw& out);
 };
 

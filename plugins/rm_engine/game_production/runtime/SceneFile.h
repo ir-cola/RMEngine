@@ -1,23 +1,22 @@
 #pragma once
-// A game's scenes kept as files of their own, one per scene (not inside the .rmpf: the .rmpf has a
-// limit of platform::kMaxFileBytes, and a save writes only the scenes that changed). Pure: no files are
-// touched here - tested in tests/TestSceneFile.cpp. The editor (GameSoftware) and, later, the exported
-// game read the files.
+// ゲームのシーンを、シーンごとに 1 つのファイルに残す (.rmpf の中ではなく: .rmpf には
+// platform::kMaxFileBytes の上限があり、保存では変わったシーンだけを書く)。純粋: ここではファイルを
+// 触らない - tests/TestSceneFile.cpp でテストする。エディター (GameSoftware) と、あとで書き出した
+// ゲームがそのファイルを読む。
 //
-//   Assets/Scenes/<名前>.rmscene      an asset like any other: a .meta with its id next to it
+//   Assets/Scenes/<名前>.rmscene      ほかと同じアセット: id を持つ .meta が隣にある
 //   { "kind": "rm_engine.scene", "format": 1, "nextId": 7, "entities": [ ... ] }    (Scene::Save + kind / format)
 //
 //   .rmpf  "softwareData": [ { ... "software": "game", "data": {
-//              "settings":  { ... the game settings ... },
-//              "sceneList": { "scenes": ["<asset id>", ...], "open": "<asset id>" } } } ]
+//              "settings":  { ... ゲームの設定 ... },
+//              "sceneList": { "scenes": ["<アセット id>", ...], "open": "<アセット id>" } } } ]
 //
-// Projects of before (0.0.1: the one scene inside the .rmpf as "scene") are still read; the next save
-// writes the scene to its own file, drops "scene" from the .rmpf and keeps the .rmpf as it was once,
-// next to it (<名前>.rmpf.before-scenes.bak).
+// 前のプロジェクト (0.0.1: .rmpf の中に "scene" として 1 つのシーン) も、まだ読める。次の保存で
+// シーンを自分のファイルに書き、.rmpf から "scene" を落とし、.rmpf はもとのまま 1 回だけ、その
+// 隣に残す (<名前>.rmpf.before-scenes.bak)。
 //
-// Keys of a newer version are kept: in the scene file (the scene's own unknown keys, kind / format
-// among them), in "sceneList" (reflect::Unknowns) and in the game's data (the editor saves into the data
-// as it was read).
+// 新しい版のキーは残る: シーンのファイル (シーン自身の知らないキー。kind / format も含む)、
+// "sceneList" (reflect::Unknowns)、ゲームのデータ (エディターは読んだままのデータに保存する)。
 
 #include "base/Json.h"
 #include "base/Ref.h"
@@ -32,62 +31,62 @@
 namespace rm::game_production {
 
 inline constexpr char kSceneKind[] = "rm_engine.scene";
-inline constexpr int64_t kSceneFormat = 1;  // the "format" this version writes
+inline constexpr int64_t kSceneFormat = 1;  // このバージョンが書く "format"
 inline constexpr char kSceneExtension[] = ".rmscene";
-inline constexpr char kScenesFolder[] = "Assets/Scenes";  // where a new scene's file goes (from the project folder)
+inline constexpr char kScenesFolder[] = "Assets/Scenes";  // 新しいシーンのファイルの置き場所 (プロジェクトのフォルダから)
 inline constexpr char kOldSceneBackupSuffix[] = ".before-scenes.bak";  // <名前>.rmpf + this
 
-// The game's scenes, in the .rmpf ("sceneList"): their asset ids in the game's order (what goes into
-// the exported game; Game::LoadScene(number) counts in it), the one the game starts with, and the one
-// the editor shows.
+// ゲームのシーン。.rmpf ("sceneList") の中: アセット id をゲームの順番で (書き出したゲームに
+// 入るもの。Game::LoadScene(number) はこの中で数える)、ゲームが始まるシーン、エディターが
+// 見せているシーン。
 RM_STRUCT()
 struct SceneList {
     RM_PROPERTY() std::vector<AssetRef> scenes;
-    RM_PROPERTY() AssetRef open;   // empty: the first
-    RM_PROPERTY() AssetRef first;  // the game starts here (empty, or not in the list: the list's first)
-    // Scenes of the list an export leaves out (ゲームの設定 ▸ ビルド); the one the game starts with is
-    // always in. Play in the editor leaves them out too (PlayScenes: the same numbers as the game).
+    RM_PROPERTY() AssetRef open;   // 空: 最初のもの
+    RM_PROPERTY() AssetRef first;  // ゲームはここから始まる (空、またはリストに無いとき: リストの最初)
+    // 書き出しから外すリストのシーン (ゲームの設定 ▸ ビルド)。ゲームが始まるシーンは必ず入る。
+    // エディターの Play もこれらを外す (PlayScenes: ゲームと同じ番号)。
     RM_PROPERTY() std::vector<AssetRef> notBuilt;
 };
-// The scene goes into an export (not left out - or the one the game starts with).
+// そのシーンが書き出しに入る (外されていない - または、ゲームが始まるシーン)。
 bool SceneBuilt(const SceneList& list, const AssetRef& scene);
 
-// The scene shown: `open` when it is in the list, else the first. Empty when the list is.
+// 見せるシーン: リストにあれば `open`、なければ最初のもの。リストが空なら空。
 AssetRef OpenScene(const SceneList& list);
-// The scene the game starts with: `first` when it is in the list, else the list's first. Empty when
-// the list is.
+// ゲームが始まるシーン: リストにあれば `first`、なければリストの最初。リストが空なら空。
 AssetRef FirstScene(const SceneList& list);
-// The scenes of the game, in order: the list's, then the one open in the editor when it is not in it
-// (a new scene not saved yet: an empty ref) - what Play can switch to and what an export puts in.
+// ゲームのシーンを順番に: リストのもの、そのあとにエディターで開いているシーンがリストに
+// 無いとき (まだ保存していない新しいシーン: 空の ref) - Play が切り替えられるものと、
+// 書き出しに入れるもの。
 std::vector<AssetRef> GameScenes(const SceneList& list, const AssetRef& open);
-// What Play in the editor can switch to, numbered as the exported game numbers its scenes: GameScenes
-// without the ones left out of the build - and the one open, when it is left out, last (it plays, but
-// the scenes after it keep the exported game's numbers).
+// エディターの Play が切り替えられるシーン。書き出したゲームと同じ番号を付ける: GameScenes から
+// ビルドで外したものを除き、開いているものが外されているときは、それを最後に置く (遊べるが、
+// そのあとのシーンは書き出したゲームの番号を保つ)。
 std::vector<AssetRef> PlayScenes(const SceneList& list, const AssetRef& open);
-// A scene's name, as Game::LoadScene("…") takes it: its file's name without .rmscene
-// ("Assets/Scenes/Title.rmscene" -> "Title").
+// シーンの名前。Game::LoadScene("…") が受け取る形: ファイル名から .rmscene を除いたもの
+// ("Assets/Scenes/Title.rmscene" -> "Title")。
 std::string SceneNameOf(std::string_view path);
-// The place of the first scene of that name (nullopt: none).
+// その名前の最初のシーンの場所 (nullopt: 無い)。
 std::optional<size_t> FindSceneByName(const std::vector<std::string>& names, std::string_view name);
 
-// A scene's file: kind and format first, then the scene's keys (Scene::Save) - a "kind" / "format"
-// it kept from the file it was read from is replaced by this version's.
+// シーンのファイル: kind と format が先、そのあとにシーンのキー (Scene::Save) - 読んだファイル
+// から持ってきた "kind" / "format" は、このバージョンのものに置き換える。
 std::string SceneFileText(const json::Value& scene);
-// The scene (the object to give Scene::Load) in a scene file's text. Refused, with the reason
-// (Japanese) in *error: not JSON, not a scene file (kind), or written by a newer version (format) -
-// never read, and so never written over.
+// シーンファイルのテキストの中のシーン (Scene::Load に渡すオブジェクト)。断るときは、理由
+// (日本語) を *error に入れる: JSON ではない、シーンファイルではない (kind)、新しいバージョンが
+// 書いた (format) - 読まず、したがって上書きもしない。
 std::optional<json::Value> ReadSceneFile(std::string_view text, std::string* error);
 
-// A short sign of a file's text (FNV-1a, 64 bits): the scene is written only when the sign of its
-// text differs from the one of the file on disk (as read or last written). 0 never comes out.
+// ファイルのテキストの短い印 (FNV-1a, 64 ビット): シーンは、そのテキストの印が、ディスクの
+// ファイル (読んだとき、または最後に書いたとき) の印と違うときだけ書く。0 は決して出ない。
 uint64_t TextSign(std::string_view text);
 
-// The data of a project of before: its scene ("scene"), taken out of `data` (which keeps every other
-// key). Nothing (and `data` unchanged) when it has none, or already has "sceneList".
+// 前のプロジェクトのデータ: そのシーン ("scene")。`data` から取り出す (`data` はほかのキーを
+// そのまま持つ)。無いとき、またはすでに "sceneList" があるときは何もしない (`data` はそのまま)。
 std::optional<json::Value> TakeOldScene(json::Value& data);
 
-// Where a new scene's file goes: Assets/Scenes/<name>.rmscene, or "<name> 2", "<name> 3" ... when
-// `taken` says that one is there. `name` must be a valid file name (base/FileName).
+// 新しいシーンのファイルの置き場所: Assets/Scenes/<name>.rmscene。`taken` がそれは有ると
+// 言うときは "<name> 2"、"<name> 3" ...。`name` は正しいファイル名 (base/FileName) でなければならない。
 template <class Taken>
 std::string NewScenePath(std::string_view name, Taken taken) {
     for (int i = 1;; ++i) {
@@ -96,29 +95,29 @@ std::string NewScenePath(std::string_view name, Taken taken) {
     }
 }
 
-// One scene's part of a save: what to write for it.
+// 1 つのシーンの保存分: 何を書くか。
 struct SceneSlot {
-    std::string guid;     // its asset id ("": none yet - a scene of before, or not saved yet)
-    std::string path;     // its file, from the project folder ("Assets/Scenes/Main.rmscene")
-    uint64_t onDisk = 0;  // TextSign of its file as read or last written (0: no file yet)
+    std::string guid;     // そのアセット id ("": まだ無い - 前のシーン、またはまだ保存していない)
+    std::string path;     // そのファイル。プロジェクトのフォルダから ("Assets/Scenes/Main.rmscene")
+    uint64_t onDisk = 0;  // 読んだとき、または最後に書いたときのファイルの TextSign (0: まだファイルが無い)
 };
 struct FileWrite {
-    std::string path;  // from the project folder
+    std::string path;  // プロジェクトのフォルダから
     std::string text;
 };
 struct ScenePlan {
-    std::vector<FileWrite> files;  // in this order: the .meta of a new scene first, then the scene
-    SceneSlot after;               // the slot once the files are written (its id, its file's sign)
+    std::vector<FileWrite> files;  // この順で: 新しいシーンの .meta が先、そのあとシーン
+    SceneSlot after;               // ファイルを書いたあとのスロット (その id、ファイルの印)
 };
-// What saving `scene` (Scene::Save) into `slot` writes: nothing when the text is the one on disk;
-// the scene's file when it changed; and, for a scene without an id, a .meta giving it `newGuid`
-// (written before the scene, so a look at the folder never gives it another id).
+// `scene` (Scene::Save) を `slot` に保存すると何を書くか: テキストがディスクにあるものと同じなら
+// 何も書かない。変わったらシーンのファイル。id の無いシーンには、`newGuid` を与える .meta も
+// (シーンより先に書く: フォルダを見ただけで別の id を与えてしまうことが無いように)。
 ScenePlan PlanSceneSave(const json::Value& scene, const SceneSlot& slot, const std::string& newGuid);
 
-// The slot to save into after a save planned `tried` (its `after`) and failed part way - some of its
-// files written, some not, which is not known: the file on disk is not known any more (onDisk 0: the
-// scene is written again), and a new scene whose .meta did get written (`newMetaThere`) keeps that id
-// and file (else it stays without an id: its .meta was written first, so its file is not there either).
+// `tried` (その `after`) を計画した保存が途中で失敗したあとに保存するスロット - ファイルの
+// いくつかは書け、いくつかは書けていないが、どれかは分からない: ディスクのファイルはもう
+// 分からない (onDisk 0: シーンはまた書く)。.meta が書けた新しいシーン (`newMetaThere`) は、その
+// id とファイルを持ち続ける (そうでなければ id 無しのまま: .meta を先に書いたので、そのファイルも無い)。
 SceneSlot SlotAfterFailedSave(const SceneSlot& slot, const SceneSlot& tried, bool newMetaThere);
 
 }  // namespace rm::game_production

@@ -1,16 +1,15 @@
 #pragma once
-// Input by action name (design TestEngine NewEngineBluePrint 5: a script never holds a key code - so a
-// game pad reaches every script too). The RUNTIME part: the editor's Play and the exported game read the
-// input the same way, with this code.
+// アクション名での入力 (設計 TestEngine NewEngineBluePrint 5: スクリプトはキーコードを持たない -
+// だからゲームパッドもすべてのスクリプトに届く)。ランタイム側: エディターの Play と書き出した
+// ゲームは、このコードで同じように入力を読む。
 //
-//   InputReader::Read()   once a frame (ScriptRunner::Frame): the keys and the mouse buttons
-//                         (GetAsyncKeyState) and the game pads (XInput, in Windows) - only while a
-//                         window of this program is in front (a key typed into another app never moves
-//                         the game)
-//   InputFrame            what was read (plain data: tests make their own)
-//   EvaluateAction        an action of the game settings' 入力 on a frame: its axis, and whether it is down
+//   InputReader::Read()   1 フレームに 1 回 (ScriptRunner::Frame): キーとマウスのボタン
+//                         (GetAsyncKeyState) とゲームパッド (XInput、Windows で) - このプログラムの
+//                         ウィンドウが前にあるときだけ (他のアプリに打ったキーでゲームが動くことはない)
+//   InputFrame            読んだもの (ただのデータ: テストは自分で作る)
+//   EvaluateAction        ゲーム設定の 入力 のアクションを 1 フレームで評価する: その軸と、押されているか
 //
-// Pressed / Released compare this frame with the last (ScriptWorld keeps both).
+// Pressed / Released は、このフレームと前のフレームを比べる (ScriptWorld が両方を持つ)。
 
 #include "base/Json.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
@@ -28,107 +27,107 @@ namespace rm::game_production {
 inline constexpr int kPadControlBase = 0x100;  // InputControl::PadA
 inline constexpr size_t kPadControls = 20;     // PadA .. PadRightStickY
 
-inline constexpr int kPlayers = 4;  // game pads (XInput's slots) = players 0..3
+inline constexpr int kPlayers = 4;  // ゲームパッド (XInput のスロット) = プレイヤー 0..3
 
 struct InputFrame {
-    std::array<uint8_t, 256> keys{};        // by virtual-key code (the mouse buttons too): 1 = held down
-    std::array<float, kPadControls> pad{};  // by InputControl - PadA: buttons 0 / 1, triggers 0..1, sticks -1..1
-                                            // (every pad: each control the one that pushes it most)
-    std::array<std::array<float, kPadControls>, kPlayers> pads{};  // ... each pad on its own (by slot)
-    std::array<uint8_t, kPlayers> padConnected{};                   // 1: a pad is in that slot
-    float wheel = 0;  // the mouse wheel's notches since the last frame (+: away from you)
+    std::array<uint8_t, 256> keys{};        // 仮想キーコードごと (マウスのボタンも): 1 = 押されている
+    std::array<float, kPadControls> pad{};  // InputControl ごと - PadA: ボタンは 0 / 1、トリガーは 0..1、スティックは -1..1
+                                            // (全パッド: 各コントロールは、一番強く押しているパッドのもの)
+    std::array<std::array<float, kPadControls>, kPlayers> pads{};  // ... 各パッドを別々に (スロットごと)
+    std::array<uint8_t, kPlayers> padConnected{};                   // 1: そのスロットにパッドがある
+    float wheel = 0;  // 前のフレームからのマウスホイールのノッチ数 (+: 奥へ)
 };
 
-// The value of one control on a frame: a key or a button 0 / 1, a trigger 0..1, a stick -1..1
-// (0 for None and for a value this version does not know).
+// フレームでの 1 つのコントロールの値: キーやボタンは 0 / 1、トリガーは 0..1、スティックは -1..1
+// (None と、このバージョンが知らない値は 0)。
 float ControlValue(const InputFrame& f, InputControl c);
 
 struct ActionValue {
-    float axis = 0;     // every binding's value x scale, added, cut to -1..1
-    bool down = false;  // one binding at 0.5 or more (either way: a stick to the left with scale 1 too)
+    float axis = 0;     // すべての割り当ての値 x scale を足して、-1..1 に切ったもの
+    bool down = false;  // 割り当てのどれかが 0.5 以上 (どちら向きでも: scale 1 でスティックを左に倒したときも)
 };
 ActionValue EvaluateAction(const InputAction& a, const InputFrame& f);
-// The same for one player (0..3): pad controls from that player's pad only; keys and mouse buttons only
-// when the player is `keyboardPlayer`. player < 0: everyone (as above).
+// 1 人のプレイヤー (0..3) 用の同じもの: パッドのコントロールはそのプレイヤーのパッドだけから、
+// キーとマウスのボタンは、そのプレイヤーが `keyboardPlayer` のときだけ。player < 0: 全員 (上と同じ)。
 float ControlValue(const InputFrame& f, InputControl c, int player, int keyboardPlayer);
 ActionValue EvaluateAction(const InputAction& a, const InputFrame& f, int player, int keyboardPlayer);
-// What went down between `before` and `now` for `player` (< 0: anyone): a key or mouse button, a pad's
-// button or trigger, a stick pushed past half way (*direction -1 when pushed to the - side). None when
-// nothing did. Keys first (low codes first), then the pad's controls in their order.
+// `before` から `now` の間に `player` (< 0: 誰でも) に押されたもの: キーかマウスのボタン、パッドの
+// ボタンかトリガー、半分を超えて倒されたスティック (- 側に倒したときは *direction が -1)。
+// 何もなければ None。キーが先 (小さいコードから)、その後にパッドのコントロールをその順で。
 InputControl AnyPressed(const InputFrame& now, const InputFrame& before, int player, int keyboardPlayer, float* direction);
-// A control's name as the game settings save it ("Space", "PadA"; a key the list does not name: "Key0x5B").
+// ゲーム設定が保存するときのコントロールの名前 ("Space"、"PadA"。一覧に名前がないキー: "Key0x5B")。
 std::string ControlName(int control);
 
-// --- The player's bindings (rm::Input::SetBinding ... SaveBindings): input.json on the player's PC ------
+// --- プレイヤーの割り当て (rm::Input::SetBinding ... SaveBindings): プレイヤーの PC の input.json ---
 //   { "kind": "rm_engine.input_bindings", "format": 1, "actions": [ { "name": "Jump", "bindings": [...] } ] }
-// Only actions the game has are taken (by name); an action the file does not have keeps the game's.
+// ゲームにあるアクションだけを (名前で) 取り込む。ファイルにないアクションは、ゲームのものを保つ。
 inline constexpr char kBindingsKind[] = "rm_engine.input_bindings";
 json::Value BindingsToJson(std::span<const InputAction> actions);
 std::vector<InputAction> BindingsFromJson(std::span<const InputAction> game, const json::Value& saved);
-// The action of that name (the first; names are compared as they are, case and all); null: none.
+// その名前のアクション (最初のもの。名前は大文字小文字も含めそのまま比べる)。なければ null。
 const InputAction* FindAction(std::span<const InputAction> actions, std::string_view name);
-// ... or, when the game settings have none of that name (a game made before it was standard), the
-// standard one of DefaultInputActions; null when neither has it.
+// ... または、ゲーム設定にその名前のものがないとき (標準になる前に作ったゲーム)、DefaultInputActions の
+// 標準のもの。どちらにもなければ null。
 const InputAction* ActionOrStandard(std::span<const InputAction> actions, std::string_view name);
 
-// The game UI's actions (in every new game's 入力; the UI reads only these - never a pad or a key itself).
-// Up / Down / Left / Right: the axis at 0.5 or more (a stick pushed that way).
+// ゲーム UI のアクション (どの新しいゲームの 入力 にもある。UI はこれだけを読み - パッドやキーを
+// 自分では決して読まない)。Up / Down / Left / Right: 軸が 0.5 以上 (スティックをその向きに倒した)。
 inline constexpr char kUiUp[] = "UIUp";
 inline constexpr char kUiDown[] = "UIDown";
 inline constexpr char kUiLeft[] = "UILeft";
 inline constexpr char kUiRight[] = "UIRight";
-inline constexpr char kUiSubmit[] = "UISubmit";  // press the chosen button
-inline constexpr char kUiCancel[] = "UICancel";  // go back (close the window opened last)
+inline constexpr char kUiSubmit[] = "UISubmit";  // 選んでいるボタンを押す
+inline constexpr char kUiCancel[] = "UICancel";  // 戻る (最後に開いたウィンドウを閉じる)
 
-// The mouse buttons let go of in a frame (the editor's Play: a click on the 階層 or the インスペクター is
-// not the game's - only one over the game view is).
+// 1 フレームの間に離されたマウスのボタン (エディターの Play: 階層やインスペクターへのクリックは
+// ゲームのものではない - ゲームビューの上のものだけ)。
 void DropMouseButtons(InputFrame& f);
 
-// A stick (XInput's -32768..32767 per axis) with a round dead zone: 0 inside it; outside, the length
-// is scaled so the edge of the dead zone is 0 and the full push 1 (the direction kept).
+// 円形のデッドゾーンつきのスティック (XInput の軸ごとに -32768..32767): その内側は 0。外側は、
+// デッドゾーンの縁が 0、いっぱいに倒したときが 1 になるよう長さを直す (向きは保つ)。
 std::array<float, 2> StickValue(int x, int y, int deadZone);
-// A trigger (0..255) with its threshold: 0 below, then 0..1.
+// しきい値つきのトリガー (0..255): それより下は 0、その上は 0..1。
 float TriggerValue(int v, int threshold);
 
-// The key-down messages this program's thread took, counted per virtual key (the mouse buttons too).
-// A key pressed and let go between two frames (a quick tap, a computer that types for you, a slow
-// frame) is not down when the frame looks: its count still went up.
+// このプログラムのスレッドが受け取ったキー押下メッセージを、仮想キーごとに数えたもの (マウスの
+// ボタンも)。2 つのフレームの間に押して離したキー (ちょんと叩く、勝手に打つコンピューター、遅い
+// フレーム) は、フレームが見たときには押されていない: それでも、この数は増えている。
 struct KeyPresses {
     std::array<uint32_t, 256> count{};
 };
-// The keys pressed since `seen` are down in this frame (up again in the next, if let go: Pressed and
-// Released both see it once).
+// `seen` より後に押されたキーは、このフレームで押されている (離されていれば次のフレームで上がる:
+// Pressed と Released の両方が 1 回ずつ見る)。
 void AddMissedPresses(InputFrame& f, const KeyPresses& now, const KeyPresses& seen);
 
-// Reads the keyboard, the mouse buttons and the game pads (all four: each control takes the pad that
-// pushes it most). A pad slot found empty is asked again only after a second (XInput is slow on an
-// empty slot: asking all four every frame costs time). The keys held now (GetAsyncKeyState) and those
-// pressed since the last frame (KeyPresses, from a WH_GETMESSAGE hook on the thread that reads: the
-// editor's UI thread, the exported game's only one).
+// キーボード、マウスのボタン、ゲームパッドを読む (4 つすべて: 各コントロールは一番強く押している
+// パッドのもの)。空だったパッドのスロットは、1 秒後にしかもう一度聞かない (XInput は空の
+// スロットが遅い: 4 つを毎フレーム聞くと時間がかかる)。今押されているキー (GetAsyncKeyState) と、
+// 前のフレームから押されたもの (KeyPresses。読むスレッド - エディターの UI スレッド、書き出した
+// ゲームでは唯一のスレッド - の WH_GETMESSAGE フックから)。
 class InputReader {
 public:
     ~InputReader();
     InputFrame Read();
-    // Shakes the pad in `slot` (0..3; low: the left heavy motor, high: the right light one, 0..1) for
-    // `seconds` - Read stops it when they are over. StopVibration: every pad still now.
+    // `slot` (0..3) のパッドを `seconds` 秒振動させる (low: 左の重いモーター、high: 右の軽いモーター、
+    // 0..1) - 終わると Read が止める。StopVibration: まだ動いているすべてのパッドを止める。
     void Vibrate(int slot, float low, float high, double seconds);
     void StopVibration();
-    // The presses counted so far are not the game's (the editor's typing between two Plays): the next
-    // Read sees only those made after this.
+    // ここまでに数えた押下はゲームのものではない (2 回の Play の間のエディターでの入力): 次の Read は、
+    // これより後のものだけを見る。
     void Forget();
 
 private:
-    std::array<uint64_t, 4> nextLook_{};  // GetTickCount64 when an empty slot is asked again
-    std::array<uint64_t, 4> shakeUntil_{};  // GetTickCount64 when a pad's shaking stops (0: not shaking)
-    KeyPresses seen_;                     // the counts at the last Read
+    std::array<uint64_t, 4> nextLook_{};  // 空のスロットをもう一度聞く時刻の GetTickCount64
+    std::array<uint64_t, 4> shakeUntil_{};  // パッドの振動が止まる時刻の GetTickCount64 (0: 振動していない)
+    KeyPresses seen_;                     // 最後の Read のときの数
 };
 
-// Every pad as it is now, for the debug panel (not the game's reader: nothing of the game's input is
-// taken). An empty slot is asked again only after a second, as InputReader does.
+// 今のすべてのパッド。デバッグパネル用 (ゲームの読み取りではない: ゲームの入力は何も取らない)。
+// 空のスロットは、InputReader と同じく、1 秒後にしかもう一度聞かない。
 struct PadState {
     bool connected = false;
-    std::array<float, kPadControls> values{};  // by InputControl - PadA (as InputFrame::pad)
-    int battery = -1;                          // 0 empty .. 3 full; -1: wired or not known
+    std::array<float, kPadControls> values{};  // InputControl ごと - PadA (InputFrame::pad と同じ)
+    int battery = -1;                          // 0 空 .. 3 満タン、-1: 有線、または不明
 };
 class PadWatcher {
 public:

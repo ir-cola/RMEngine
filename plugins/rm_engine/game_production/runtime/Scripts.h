@@ -1,21 +1,21 @@
 #pragma once
-// C++ scripts (the moves of a game): loaded from a DLL, seen by the engine as reflected types, run
-// while the game plays. The RUNTIME part: the exported game uses the same code as the editor's Play
-// (design TestEngine NewEngineBluePrint 5 / 6 / 6-b / 20-c, RME_PLATFORM 4-b).
+// C++ スクリプト (ゲームの動き): DLL から読み込み、エンジンからは reflect の型として見え、ゲームが
+// Play される間に動く。ランタイムの部分: 書き出したゲームも、エディターの Play と同じコードを使う
+// (設計 TestEngine NewEngineBluePrint 5 / 6 / 6-b / 20-c、RME_PLATFORM 4-b)。
 //
-//   host (editor / game)                       this file
-//     ScriptModule::Load(dll, api)          ─▶  LoadLibrary, RmModuleInit, the ABI checked, every
-//                                                script made a reflect::TypeDesc (MakeScriptTypes)
-//     scene.SetComponentTypes(... + Types())     scripts are components of entities: the inspector,
-//                                                saving, undo and copying work on them as on any
-//     ScriptRunner::Frame(scene, world, dt)  ─▶  BeginPlay of the new ones, then Tick, type by type
+//   ホスト (エディター / ゲーム)                このファイル
+//     ScriptModule::Load(dll, api)          ─▶  LoadLibrary、RmModuleInit、ABI の確認、どの
+//                                                スクリプトも reflect::TypeDesc にする (MakeScriptTypes)
+//     scene.SetComponentTypes(... + Types())     スクリプトはエンティティの部品: インスペクター、
+//                                                保存、Undo、コピーが、ほかの部品と同じに働く
+//     ScriptRunner::Frame(scene, world, dt)  ─▶  新しいものの BeginPlay、そのあと型ごとに Tick
 //     ScriptRunner::Stop(scene, world)       ─▶  EndPlay
 //
-// Which DLL is the host's business: the editor reads the newest built one of <project>/Library/
-// Scripts/ (LatestScriptDll), an exported game the Scripts.dll next to its exe.
+// どの DLL を使うかはホストの仕事: エディターは <project>/Library/Scripts/ の中で一番新しくビルド
+// されたもの (LatestScriptDll) を読み、書き出したゲームは exe の隣の Scripts.dll を読む。
 //
-// Every hook runs inside __try / __except (ScriptGuard.cpp): a script that crashes is stopped alone,
-// once told on the console; the host goes on.
+// どのフックも __try / __except の中で動く (ScriptGuard.cpp): 落ちたスクリプトだけが止まり、コンソールに
+// 1 回知らせる。ホストは動き続ける。
 
 #include "base/Json.h"
 #include "core/RuntimeRegistry.h"
@@ -45,163 +45,162 @@
 
 namespace rm::game_production {
 
-// --- The plugins' parts of the API (RmApi::part) ------------------------------------------------
-// RuntimeRegistry point: items are ScriptApiPart (static). The connectors offer what knows a space:
-// "ゲーム制作 × 3D" Transform in 3D (RM3D.h), "ゲーム制作 × 2D" in 2D (RM2D.h).
+// --- API のうち、プラグインの部品 (RmApi::part) ------------------------------------------------
+// RuntimeRegistry の口: 項目は ScriptApiPart (static)。つなぎ役が、空間を知っているものを渡す:
+// 「ゲーム制作 × 3D」は 3D の Transform (RM3D.h)、「ゲーム制作 × 2D」は 2D の Transform (RM2D.h)。
 inline constexpr char kScriptApiPoint[] = "rm_engine.game_production.script_api";
 struct ScriptApiPart {
-    const char* name;  // e.g. "rm_engine.game_x_3d.transform"
+    const char* name;  // 例: "rm_engine.game_x_3d.transform"
     uint32_t version;
-    const void* table;  // the part's C struct of functions; they get RmApi::ctx = ScriptWorld*
+    const void* table;  // その部品の関数の C 構造体。RmApi::ctx = ScriptWorld* を受け取る
 };
 
-// A coroutine of a script (rm::Task: its frame is the DLL's) and when it runs on (RmCoroutinesApi).
+// スクリプトのコルーチン (rm::Task: フレームは DLL のもの) と、いつ続きを動かすか (RmCoroutinesApi)。
 struct CoroutineSlot {
     uint64_t id = 0;
     void* frame = nullptr;
     int (*resume)(void* frame, RmWait* next) = nullptr;
     void (*destroy)(void* frame) = nullptr;
-    const void* owner = nullptr;  // the script that started it (null: none - stopped at the game's end only)
+    const void* owner = nullptr;  // 始めたスクリプト (null: なし。ゲームの終わりにだけ止まる)
     int ownerEntity = 0;
     RmWait wait{};
-    uint64_t waitFrom = 0;  // the frame its wait began in (a wait ends in a later frame at the earliest)
-    double until = 0;       // RmWait_Seconds: game time; RmWait_RealSeconds: real time
-    bool dead = false;      // ended or stopped (taken out after the pass)
-    bool running = false;   // inside its resume now (stopping it then frees it after it returns)
+    uint64_t waitFrom = 0;  // 待ちが始まったフレーム (待ちは早くても後のフレームで終わる)
+    double until = 0;       // RmWait_Seconds: ゲーム内の時間。RmWait_RealSeconds: 実際の時間
+    bool dead = false;      // 終わった、または止めた (パスの後で取り除く)
+    bool running = false;   // 今 resume の中にいる (その間に止めると、戻った後で解放する)
 };
 
-// An event sent by a script (rm::Events), delivered after the frame's Ticks (ScriptRunner::DeliverEvents).
+// スクリプトが送ったイベント (rm::Events)。フレームの Tick の後に届ける (ScriptRunner::DeliverEvents)。
 struct QueuedEvent {
     std::string name;
     int sender = 0;
     double number = 0;
     std::string text;
     int entity = 0;
-    uint32_t scope = 0;  // 0 every entity, 1 the target only, 2 the target and what is below it
+    uint32_t scope = 0;  // 0 すべてのエンティティ、1 対象だけ、2 対象とその下
     int target = 0;
 };
 
-// What the scripts see while they run: RmApi::ctx points at this.
+// スクリプトが動いている間に見えるもの: RmApi::ctx はこれを指す。
 struct ScriptWorld {
-    Scene* scene = nullptr;  // the scene that plays (the copy, in the editor)
-    float dt = 0;            // this frame's seconds, the time scale applied (Tick's dt)
-    double time = 0;         // game seconds before this frame (the time scale applied)
-    // The time scale (rm::SetTimeScale): the host multiplies its frame's real seconds by it for the scripts,
-    // the systems and what draws (particles). The real ones: unscaledDt / unscaledTime. frame: frames before
-    // this one.
+    Scene* scene = nullptr;  // Play しているシーン (エディターではコピー)
+    float dt = 0;            // このフレームの秒数。時間の倍率を掛けた後 (Tick の dt)
+    double time = 0;         // このフレームより前のゲーム内の秒数 (時間の倍率を掛けた後)
+    // 時間の倍率 (rm::SetTimeScale): ホストはフレームの実際の秒数にこれを掛けて、スクリプト、システム、
+    // 描くもの (パーティクル) に渡す。実際の値は unscaledDt / unscaledTime。frame: このフレームより
+    // 前のフレーム数。
     float timeScale = 1;
     float unscaledDt = 0;
     double unscaledTime = 0;
     uint64_t frame = 0;
-    // The mouse on the game screen (the game settings' 画面, DIPs): the host sets it each frame
-    // (SetPointer) before the scripts run. nullopt: not over the game.
+    // ゲーム画面上のマウス (ゲーム設定の 画面、DIP): ホストがスクリプトの実行前に毎フレーム設定する
+    // (SetPointer)。nullopt: ゲームの上にない。
     std::optional<Vec2> pointer;
     Vec2 lastPointer{0, 0};
     Vec2 pointerDelta{0, 0};
     Vec2 screen{1280, 720};
-    // The plugins (Entity::SetParent keeping the world place asks the spaces: PlaceInfo::keepWorld). Null: none.
+    // プラグイン (世界での位置を保つ Entity::SetParent が空間に尋ねる: PlaceInfo::keepWorld)。null: なし。
     const RuntimeRegistry* registry = nullptr;
-    // The game settings' layer names (rm::LayerIndex: 1, 2 ... in this order); null: none.
+    // ゲーム設定のレイヤー名 (rm::LayerIndex: 1、2 ... はこの順)。null: なし。
     const std::vector<std::string>* layers = nullptr;
-    uint64_t camera = 0;  // SystemContext::camera: the game's camera, switched by scripts too
-    // The host's input, read once a frame (both hosts: an InputReader - only while one of their windows
-    // is in front; tests give their own). Empty: nothing is ever down.
+    uint64_t camera = 0;  // SystemContext::camera: ゲームのカメラ。スクリプトでも切り替えられる
+    // ホストの入力。1 フレームに 1 回読む (どちらのホストも InputReader: ウィンドウのどれかが前にある間だけ。
+    // テストは自分のものを渡す)。空: 何も押されていない。
     std::function<InputFrame()> readInput;
-    // The game settings' 入力 (the host's GameSettings::input; it lives as long as the world is used).
+    // ゲーム設定の 入力 (ホストの GameSettings::input。ワールドが使われる間は生きている)。
     const std::vector<InputAction>* actions = nullptr;
-    // ... as the player changed them (rm::Input::SetBinding, read from input.json); nullopt: the settings'.
+    // ... プレイヤーが変えたもの (rm::Input::SetBinding、input.json から読む)。nullopt: 設定のもの。
     std::optional<std::vector<InputAction>> playerActions;
-    // Who has the keyboard and the mouse (0 = 1P: the game settings' キーボードとマウスのプレイヤー - 1).
+    // 誰がキーボードとマウスを持つか (0 = 1P: ゲーム設定の キーボードとマウスのプレイヤー - 1)。
     int keyboardPlayer = 0;
-    // Shakes a player's pad (the host's InputReader::Vibrate); empty: nothing shakes.
+    // プレイヤーのパッドを震わせる (ホストの InputReader::Vibrate)。空: 震えない。
     std::function<void(int player, float low, float high, float seconds)> vibrate;
-    // A script's message (level 0 info / 1 warning / 2 error).
+    // スクリプトのメッセージ (レベル 0 情報 / 1 警告 / 2 エラー)。
     std::function<void(int level, std::string_view text)> log;
-    // The plugins' parts of the API (what they offered at kScriptApiPoint: ScriptApiParts).
+    // API のうち、プラグインの部品 (kScriptApiPoint で渡されたもの: ScriptApiParts)。
     std::vector<ScriptApiPart> parts;
-    // Where rm::Debug's lines go: the editor's buffer while it plays (DebugDraw.h). Null - an exported
-    // game - and the debug parts do nothing.
+    // rm::Debug の行の行き先: Play 中はエディターのバッファー (DebugDraw.h)。null (書き出したゲーム) の
+    // ときは、デバッグの部品は何もしない。
     DebugDraw* debug = nullptr;
-    // The game's scenes (Game::LoadScene): their names in the list's order, the one playing (-1: not
-    // one of them) and the one asked for this frame (-1: none; switched between frames: SwitchAskedScene).
+    // ゲームのシーン (Game::LoadScene): 一覧の順の名前、Play 中のもの (-1: 一覧にない) と、このフレームに
+    // 頼まれたもの (-1: なし。フレームの間に切り替える: SwitchAskedScene)。
     std::vector<std::string> sceneNames;
-    // Their asset ids, in the same order ("" where not known): a scene chosen as an asset (a game UI
-    // button's シーンを切り替える) is found by its id - two scenes of one name in two folders are two.
+    // それらのアセット id。同じ順 (わからないものは "")。アセットとして選んだシーン (ゲーム UI のボタンの
+    // シーンを切り替える) は id で探す。別のフォルダに同じ名前のシーンが 2 つあれば、2 つのシーンになる。
     std::vector<std::string> sceneIds;
     int sceneIndex = -1;
     int sceneAsked = -1;
-    // The game asked to end (a game UI button's ゲームを終わる): the host ends it after this frame (the
-    // exported game closes its window; the editor's Play stops, as ■).
+    // ゲームが終了を頼んだ (ゲーム UI のボタンの ゲームを終わる): ホストはこのフレームの後で終える
+    // (書き出したゲームはウィンドウを閉じ、エディターの Play は ■ のように止まる)。
     bool quitAsked = false;
     InputFrame inputNow, inputBefore;
-    std::unordered_set<std::string> told;  // names asked for that are not there (told once each)
-    // The game's global variables (one store for the whole game: switching the scene keeps them; the
-    // host Resets them from the settings at Play / Stop / when the game starts) and where rm::Save
-    // writes them (empty: rm::Save does nothing).
+    std::unordered_set<std::string> told;  // 頼まれたが無い名前 (それぞれ 1 回だけ知らせる)
+    // ゲームのグローバル変数 (ゲーム全体で 1 つの置き場: シーンを切り替えても残る。ホストは Play / Stop /
+    // ゲームの開始時に、設定からこれを Reset する) と、rm::Save がそれを書く場所
+    // (空: rm::Save は何もしない)。
     GlobalStore globals;
     std::filesystem::path saveFolder;
-    // rm::Spawn(prefab): the prefab files (the host's: the editor's Assets, the game's .rmpak). Empty:
-    // spawning a prefab gives nothing.
+    // rm::Spawn(prefab): Prefab のファイル (ホストのもの: エディターは Assets、ゲームは .rmpak)。空:
+    // Prefab を出しても何も出ない。
     PrefabReader prefab;
-    // What plugins keep while the game plays (音 ...: PlayServices.h) - the host's; null when none
-    // (a test): the parts that use one do nothing.
+    // ゲームが Play される間にプラグインが持つもの (音 ...: PlayServices.h)。ホストのもの。無いとき
+    // (テスト) は null: それを使う部品は何もしない。
     PlayServices* services = nullptr;
-    // Asked during the frame, done at its end (ScriptRunner::Frame): EndPlay first, then away.
-    std::vector<int> destroyAsked;                            // entities (with what is below them)
-    std::vector<std::pair<int, const void*>> removeAsked;     // components: their entity and object
-    // The coroutines (rm::StartCoroutine) and the events sent this frame (rm::Events).
+    // フレーム中に頼まれ、フレームの終わりに行う (ScriptRunner::Frame): まず EndPlay、そのあと消す。
+    std::vector<int> destroyAsked;                            // エンティティ (その下のものも)
+    std::vector<std::pair<int, const void*>> removeAsked;     // 部品: そのエンティティとオブジェクト
+    // コルーチン (rm::StartCoroutine) と、このフレームに送られたイベント (rm::Events)。
     std::vector<CoroutineSlot> coroutines;
     uint64_t nextCoroutine = 1;
     bool inCoroutinePass = false;
     std::vector<QueuedEvent> events;
-    // The script whose hook (or coroutine) runs now, and its entity (null / 0: none) - what a coroutine
-    // started now belongs to and what an event sent now comes from.
+    // 今フックを動かしている (またはコルーチンが動いている) スクリプトと、そのエンティティ (null / 0: なし)。
+    // 今始めたコルーチンの持ち主と、今送ったイベントの送り主になる。
     const void* currentScript = nullptr;
     int currentEntity = 0;
 
-    // Reads the input once a frame (pressed / released compare with the last frame).
+    // 入力を 1 フレームに 1 回読む (押した / 離したは前のフレームと比べる)。
     void ReadInput();
-    // The mouse for this frame (the host's: over the game screen or not) and the screen's size.
+    // このフレームのマウス (ホストのもの: ゲーム画面の上にあるかどうか) と画面の大きさ。
     void SetPointer(std::optional<Vec2> at, Vec2 screenSize);
-    // The input actions in use: the player's (playerActions) or the game settings'.
+    // 使っている入力アクション: プレイヤーのもの (playerActions) か、ゲーム設定のもの。
     const std::vector<InputAction>& Actions() const;
-    // The player's bindings from <saveFolder>/input.json (nothing there: the settings'); false and *why
-    // when a file is there and cannot be read. Save writes them.
+    // プレイヤーの割り当てを <saveFolder>/input.json から読む (無ければ設定のもの)。ファイルがあるのに
+    // 読めないときは false と *why。Save がそれを書く。
     bool LoadBindings(std::string* why = nullptr);
     bool SaveBindings(std::string* why = nullptr);
     std::filesystem::path BindingsFile() const;
-    // Coroutines: start one (runs it to its first wait now; its id, 0 when it ended at once), stop one /
-    // every one of a script / all of them (before the scripts' DLL is let go). ResumeCoroutines: after the
-    // Ticks, every coroutine whose wait is over runs on.
+    // コルーチン: 1 つ始める (最初の待ちまで今すぐ動かす。id を返す。すぐ終わったら 0)、1 つ止める /
+    // スクリプトのすべてを止める / 全部止める (スクリプトの DLL を手放す前)。ResumeCoroutines: Tick の後に、
+    // 待ちが終わったコルーチンすべてを続きへ進める。
     uint64_t StartCoroutine(void* frame, int (*resume)(void*, RmWait*), void (*destroy)(void*));
     void StopCoroutine(uint64_t id);
     void StopCoroutinesOf(const void* owner);
     void ClearCoroutines();
     void ResumeCoroutines();
     bool CoroutineRunning(uint64_t id) const;
-    // An action of the game settings by name; null (and told once) when there is none.
+    // ゲーム設定のアクションを名前で。無ければ null (1 回だけ知らせる)。
     const InputAction* Action(const char* name);
-    // A global variable by name; null (and told once) when there is none.
+    // グローバル変数を名前で。無ければ null (1 回だけ知らせる)。
     GlobalValue* Global(const char* name);
-    // Tells a script's mistake once (a warning on the console): `key` says which.
+    // スクリプトの間違いを 1 回だけ知らせる (コンソールに警告): `key` でどれかを区別する。
     void TellOnce(const std::string& key, std::string_view text);
 };
 
-// The engine's table for a world: RmApi::ctx is the world (it must live as long as the table is used).
+// ワールド用のエンジンの表: RmApi::ctx がワールド (表が使われる間は生きていること)。
 RmApi MakeScriptApi(ScriptWorld& world);
 const void* FindScriptApiPart(std::span<const ScriptApiPart> parts, const char* name, uint32_t version);
-// What the plugins offered (RuntimeRegistry: the editor's PluginRegistry, or the game's).
+// プラグインが渡したもの (RuntimeRegistry: エディターの PluginRegistry、またはゲームのもの)。
 std::vector<ScriptApiPart> ScriptApiParts(const RuntimeRegistry& registry);
 
-// --- The scripts of a module as reflected types (pure: tests feed a module built by hand) --------
+// --- リフレクトされた型としてのモジュールのスクリプト (純粋: テストは手で作ったモジュールを渡す) ----
 struct ScriptType {
     reflect::TypeDesc desc{};
     std::vector<reflect::FieldDesc> fields;
-    const RmScriptDesc* script = nullptr;  // its hooks (in the DLL)
-    reflect::StringAccess strings{};        // its std::string fields: through the DLL (RmModule::stringGet / stringSet)
-    reflect::StringAccess assets{};         // its asset fields (char guid[RM_ASSET_ID_SIZE]: plain bytes)
-    // What its fields need, owned here (their addresses stay): the RM_STRUCTs, the RM_ENUMs and the
-    // lists (worked by the DLL's functions).
+    const RmScriptDesc* script = nullptr;  // そのフック (DLL の中)
+    reflect::StringAccess strings{};        // その std::string の欄: DLL を通して (RmModule::stringGet / stringSet)
+    reflect::StringAccess assets{};         // そのアセットの欄 (char guid[RM_ASSET_ID_SIZE]: ただのバイト列)
+    // 欄に必要なもの。ここが持つ (アドレスは変わらない): RM_STRUCT、RM_ENUM、リスト (DLL の関数で扱う)。
     struct Nested {
         reflect::TypeDesc desc{};
         std::vector<reflect::FieldDesc> fields;
@@ -213,27 +212,27 @@ struct ScriptType {
     std::unordered_map<const RmStructDesc*, std::unique_ptr<Nested>> structs;
     std::unordered_map<const RmEnumDesc*, std::unique_ptr<EnumType>> enums;
     std::vector<std::unique_ptr<reflect::ArrayOps>> lists;
-    // The guarded stand-ins its TypeDescs use for the DLL's construct / destruct / copy (a crash there
-    // stops that object, not the editor or the game), given back when it goes.
+    // その TypeDesc が DLL の構築 / 破棄 / コピーのために使う、ガード付きの代役 (そこで落ちても止まるのは
+    // そのオブジェクトだけで、エディターやゲームではない)。消えるときに返す。
     std::vector<size_t> guards;
     ScriptType() = default;
     ScriptType(const ScriptType&) = delete;
     ScriptType& operator=(const ScriptType&) = delete;
     ~ScriptType();
 };
-// This engine is a Debug build (its scripts must be too: RmModuleFlag_Debug).
+// このエンジンは Debug ビルド (スクリプトも Debug でなければならない: RmModuleFlag_Debug)。
 #ifdef _DEBUG
 inline constexpr bool kEngineDebug = true;
 #else
 inline constexpr bool kEngineDebug = false;
 #endif
-// Why a module cannot be used (empty = fine): another ABI, built as Debug for a Release engine (or the
-// other way), no string functions, a type too strictly aligned, a field of a kind this version does
-// not know (or an enum / struct / list without its description), two scripts of one name.
+// モジュールが使えない理由 (空 = 問題なし): ABI が違う、Release のエンジンに Debug ビルド (その逆も)、
+// 文字列の関数が無い、アラインメントが厳しすぎる型、このバージョンが知らない種類の欄 (または説明の無い
+// enum / 構造体 / リスト)、同じ名前のスクリプトが 2 つ。
 std::string CheckModule(const RmModule* module, uint32_t engineAbi = RM_ABI_VERSION, bool engineDebug = kEngineDebug);
 std::vector<std::unique_ptr<ScriptType>> MakeScriptTypes(const RmModule& module);
 
-// --- A loaded script DLL --------------------------------------------------------------------------
+// --- 読み込んだスクリプトの DLL -----------------------------------------------------------------
 class ScriptModule {
 public:
     ScriptModule() = default;
@@ -241,16 +240,16 @@ public:
     ScriptModule& operator=(const ScriptModule&) = delete;
     ~ScriptModule() { Unload(); }
 
-    // Loads `dll` and reads its scripts. False with the reason (Japanese) when it cannot be used.
+    // `dll` を読み込み、そのスクリプトを読む。使えないときは理由 (日本語) を付けて false。
     bool Load(const std::filesystem::path& dll, const RmApi& api, std::string* why);
-    // Every object of these types must be gone first (their code is in the DLL).
+    // まず、これらの型のオブジェクトをすべて消しておくこと (そのコードは DLL の中にある)。
     void Unload();
     bool Loaded() const { return module_ != nullptr; }
     const std::filesystem::path& Path() const { return path_; }
     std::vector<const reflect::TypeDesc*> Types() const;
     const ScriptType* Find(std::string_view name) const;
 
-    // For tests: a module that is not a DLL (made by hand).
+    // テスト用: DLL ではないモジュール (手で作ったもの)。
     void Adopt(const RmModule& module);
 
 private:
@@ -260,44 +259,45 @@ private:
     std::vector<std::unique_ptr<ScriptType>> types_;
 };
 
-// The newest DLL the editor built in `folder` (<project>/Library/Scripts): "Scripts_<number>.dll"
-// with the largest number; empty when there is none.
+// エディターが `folder` (<project>/Library/Scripts) に作った一番新しい DLL: 番号が最大の
+// "Scripts_<number>.dll"。無ければ空。
 std::filesystem::path LatestScriptDll(const std::filesystem::path& folder);
-// "Scripts_0007.dll" -> 7 (-1: not that form).
+// "Scripts_0007.dll" -> 7 (-1: この形ではない)。
 int ScriptDllNumber(std::wstring_view fileName);
 
-// --- The order scripts run in -----------------------------------------------------------------------
-// The number of a type in the game settings' 実行順 (0 when it is not listed).
+// --- スクリプトを動かす順 ----------------------------------------------------------------------
+// ゲーム設定の 実行順 での型の番号 (一覧に無ければ 0)。
 int ScriptOrderOf(std::string_view type, std::span<const ScriptOrderEntry> order);
-// Types by (number, name): the listed ones before / after the middle bucket of the others (0, by name).
+// 型を (番号, 名前) で並べる: 一覧にあるものを、一覧にないものの真ん中のまとまり (0、名前順) の前 /
+// 後に置く。
 std::vector<std::string> SortScriptTypes(std::vector<std::string> types, std::span<const ScriptOrderEntry> order);
 
-// --- Running them -------------------------------------------------------------------------------
+// --- 動かす -------------------------------------------------------------------------------------
 class ScriptRunner {
 public:
-    // One frame: the input read; EndPlay of the started scripts switched off since (their entity or a
-    // parent made not 有効); BeginPlay of every running script not started yet (new, or switched on
-    // again); then Tick of every running one - type by type in the run order; inside a type by entity
-    // id, then in the order they are attached. BeginPlay and EndPlay always come in pairs (a script
-    // whose entity was deleted is gone with it). A script that crashed is not run again.
+    // 1 フレーム: 入力を読む。その後に切られた (そのエンティティか親が 有効 でなくなった) 始まった
+    // スクリプトの EndPlay。まだ始まっていない動作中のスクリプト (新しい、または入れ直した) の
+    // BeginPlay。そのあと動いているすべての Tick。型ごとに実行順で、型の中ではエンティティ id 順、
+    // そのあとは付けた順。BeginPlay と EndPlay は必ず対で呼ぶ (エンティティごと消えたスクリプトは
+    // 一緒に消える)。落ちたスクリプトは二度と動かさない。
     void Frame(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order, float dt);
-    // What was asked during the frame (Entity::Destroy, Remove<T>): the EndPlay of the scripts that go
-    // (in the run order; a script started only), then the components and entities removed. Asked
-    // again in those EndPlays: done too (a few rounds at most). Frame does it at its end.
+    // フレーム中に頼まれたこと (Entity::Destroy、Remove<T>): 去るスクリプトの EndPlay (実行順で。始まった
+    // スクリプトだけ)、そのあと外した部品と消したエンティティ。その EndPlay の中でまた頼まれたことも
+    // 行う (多くても数回)。Frame は終わりにこれを行う。
     void ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);
-    // The hooks the systems asked for this frame (SystemRunner::Hooks: OnHit, OnTriggerEnter / Exit ...),
-    // in the order asked; for each, every started script of its entity that is on, in the scripts'
-    // order (the same as Tick's). Then what they destroyed / removed goes (ApplyAsked).
+    // このフレームにシステムが頼んだフック (SystemRunner::Hooks: OnHit、OnTriggerEnter / Exit ...)。
+    // 頼まれた順に、それぞれについて、そのエンティティの有効で始まったスクリプトすべてを、スクリプトの
+    // 順 (Tick と同じ) で呼ぶ。そのあと、それらが壊した / 外したものを片付ける (ApplyAsked)。
     void Deliver(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
                  std::span<const HookCall> calls);
-    // The events sent (rm::Events): each to the started, switched-on scripts with OnEvent it reaches, in the
-    // scripts' order; one sent meanwhile right after (a few rounds at most). Then what they destroyed goes.
-    // Frame and Deliver do it at their ends.
+    // 送られたイベント (rm::Events): 届く OnEvent を持つ、始まって有効なスクリプトそれぞれに、スクリプトの
+    // 順で。その間に送られたものは続けて (多くても数回)。そのあと、それらが壊したものを片付ける。
+    // Frame と Deliver は、それぞれの終わりにこれを行う。
     void DeliverEvents(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);
-    // The scripts built again while the game plays (design BluePrint 20-c): before, which scripts of the
-    // scene had started / crashed (by entity, type and place among that type's - their objects are
-    // made again); after the scene was read back with the new types, the same taken again and
-    // OnReloaded called on each started one (in the run order; BeginPlay is not called again).
+    // ゲームが Play される間にスクリプトを作り直す (設計 BluePrint 20-c): 前は、シーンのどのスクリプトが
+    // 始まった / 落ちたか (エンティティ、型、その型の中での位置で。オブジェクトは作り直される)。
+    // 新しい型でシーンを読み直した後は、同じものをもう一度取り、始まった各スクリプトに OnReloaded を
+    // 呼ぶ (実行順で。BeginPlay はもう一度呼ばない)。
     struct RunState {
         int entity = 0;
         std::string type;
@@ -307,16 +307,16 @@ public:
     std::vector<RunState> Remember(const Scene& scene) const;
     void Resume(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
                 std::span<const RunState> before);
-    // EndPlay of every started script (Stop), then all forgotten - and the world no longer points at the
-    // scene (it is about to go).
+    // 始まった全スクリプトの EndPlay (Stop)、そのあと全部忘れる。ワールドもシーンを指さなくなる
+    // (シーンはこれから消える)。
     void Stop(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order);
     void Reset();
     size_t Crashed() const { return crashed_.size(); }
 
-    // How long the scripts took in the last Frame (and the Delivers after it), type by type (the most
-    // first), and the coroutines run on after the Ticks - measured only while asked (the デバッグ panel).
+    // 最後の Frame (とその後の Deliver) でスクリプトにかかった時間。型ごとに (多い順)、Tick の後に
+    // 続きを動かしたコルーチンも。頼まれている間だけ測る (デバッグ パネル)。
     struct ScriptTime {
-        const ScriptType* type = nullptr;  // null: the coroutines
+        const ScriptType* type = nullptr;  // null: コルーチン
         double ms = 0;
         int calls = 0;
     };
@@ -328,38 +328,38 @@ private:
         int entity;
         const ScriptType* type;
         void* data;
-        bool active;  // it and every parent 有効
+        bool active;  // それも親もすべて 有効
     };
-    // Every script of the scene (the switched-off ones too), in the run order.
+    // シーンの全スクリプト (切られたものも)。実行順で。
     std::vector<Instance> Collect(Scene& scene, const ScriptModule& module, std::span<const ScriptOrderEntry> order) const;
-    // Runs a hook guarded; false (and the script stopped, told once) when it crashed. EndPlay (and a crash)
-    // stops the script's coroutines.
+    // フックをガード付きで動かす。落ちたら false (スクリプトを止め、1 回だけ知らせる)。EndPlay (と落ちたとき)
+    // はスクリプトのコルーチンを止める。
     bool Call(ScriptWorld& world, const Instance& in, int hook, float dt, int other = 0, const RmEvent* event = nullptr);
 
     std::unordered_set<void*> started_;
     std::unordered_set<void*> crashed_;
     bool timing_ = false;
-    std::unordered_map<const ScriptType*, ScriptTime> times_;  // (null key: the coroutines)
+    std::unordered_map<const ScriptType*, ScriptTime> times_;  // (null のキー: コルーチン)
 };
 
-// --- Switching the scene (Game::LoadScene) -------------------------------------------------------
+// --- シーンの切り替え (Game::LoadScene) ---------------------------------------------------------
 enum class SceneSwitch { None, Switched, Failed };
-// Between frames: the scene the scripts asked for during the frame just played. `load` reads it (its
-// place in world.sceneNames) into the scene given (its component types already set); then EndPlay of
-// every started script of `playing`, which becomes the new scene - its scripts get BeginPlay at the next
-// Frame. None: nothing was asked. Failed (*error why): `playing` goes on as it was.
+// フレームの間に: 今終えたフレームでスクリプトが頼んだシーン。`load` がそれ (world.sceneNames での
+// 位置) を渡されたシーン (部品の型は設定済み) に読み込む。そのあと `playing` の始まった全スクリプトの
+// EndPlay を呼び、`playing` を新しいシーンにする。そのスクリプトは次の Frame で BeginPlay を受ける。
+// None: 何も頼まれていない。失敗 (*error に理由): `playing` はそのまま続く。
 SceneSwitch SwitchAskedScene(Scene& playing, ScriptWorld& world, ScriptRunner& runner, const ScriptModule& module,
                              std::span<const ScriptOrderEntry> order, const std::function<bool(size_t index, Scene& into, std::string* error)>& load,
                              std::string* error);
 
-// The hooks, called inside __try / __except (ScriptGuard.cpp). 0 = fine, else the exception code.
-// hook: 0 = BeginPlay, 1 = Tick, 2 = EndPlay.
+// フック。__try / __except の中で呼ぶ (ScriptGuard.cpp)。0 = 問題なし、それ以外は例外コード。
+// hook: 0 = BeginPlay、1 = Tick、2 = EndPlay。
 unsigned long CallScriptHook(const RmScriptDesc& script, int hook, void* self, RmEntityId entity, float dt, RmEntityId other = 0,
                              const RmEvent* event = nullptr);
-// A coroutine's resume / destroy, guarded the same way (0 = fine). *alive: resume's answer.
+// コルーチンの resume / destroy。同じようにガード付き (0 = 問題なし)。*alive: resume の答え。
 unsigned long CallCoroutineResume(int (*resume)(void*, RmWait*), void* frame, RmWait* next, int* alive);
 unsigned long CallCoroutineDestroy(void (*destroy)(void*), void* frame);
-// A script's (or its RM_STRUCT's) object made, destroyed, copied by the DLL's code - guarded the same way.
+// スクリプト (またはその RM_STRUCT) のオブジェクトを、DLL のコードで作る、壊す、コピーする。同じようにガード付き。
 unsigned long CallScriptConstruct(void (*construct)(void*), void* p);
 unsigned long CallScriptDestruct(void (*destruct)(void*), void* p);
 unsigned long CallScriptCopy(void (*copy)(void*, const void*), void* dst, const void* src);

@@ -1,18 +1,18 @@
 #pragma once
-// Building a game's scripts into a DLL with Visual Studio 2022's MSBuild (found with vswhere), and the
-// Visual Studio project that lets the user write them with IntelliSense.
+// Visual Studio 2022 の MSBuild (vswhere で見つける) でゲームのスクリプトを DLL にビルドする。
+// そして、ユーザーが IntelliSense つきでスクリプトを書けるようにする Visual Studio のプロジェクト。
 //
-//   <project>/Assets/Scripts/**.h / **.cpp            the user's scripts (plain C++20)
-//   <project>/Scripts.sln                             open this in Visual Studio (「Visual Studio で開く」)
-//   <project>/Library/Scripts/Scripts.vcxproj         written by the editor (when a project is opened)
-//   <project>/Library/Scripts/Generated/rm_scripts.cpp   rmgen --scripts writes it before every build
-//   <project>/Library/Scripts/Scripts_0007.dll        what the editor built (a new name every time:
-//                                                     the loaded one cannot be written over)
-//   <engine>/rmgen.exe, <engine>/Sdk/RM.h ...         the generator and the headers scripts include
+//   <project>/Assets/Scripts/**.h / **.cpp            ユーザーのスクリプト (ふつうの C++20)
+//   <project>/Scripts.sln                             これを Visual Studio で開く (「Visual Studio で開く」)
+//   <project>/Library/Scripts/Scripts.vcxproj         エディターが書く (プロジェクトを開いたとき)
+//   <project>/Library/Scripts/Generated/rm_scripts.cpp   rmgen --scripts が、ビルドのたびに書く
+//   <project>/Library/Scripts/Scripts_0007.dll        エディターがビルドしたもの (毎回新しい名前:
+//                                                     読み込んだものには上書きできない)
+//   <engine>/rmgen.exe, <engine>/Sdk/RM.h ...         ジェネレーターと、スクリプトが include するヘッダー
 //
-// The DLL is built with the engine's toolset and C runtime (/MD - /MDd for a Debug engine), so the
-// same DLL runs in the editor and in an exported game. Building runs a process and waits for it: call
-// it on a worker thread (editor/app/Worker), never while drawing.
+// DLL は、エンジンのツールセットと C ランタイム (/MD - Debug のエンジンは /MDd) でビルドするので、
+// 同じ DLL がエディターでも書き出したゲームでも動く。ビルドはプロセスを起動して待つ: ワーカー
+// スレッド (editor/app/Worker) から呼ぶこと。描画中には呼ばない。
 
 #include "rm_engine/game_production/runtime/GameSettings.h"
 
@@ -23,35 +23,35 @@
 namespace rm::game_production {
 
 struct ScriptBuildRequest {
-    std::filesystem::path project;          // the project's folder
-    std::filesystem::path engine;           // where rmgen.exe is
-    std::vector<std::filesystem::path> sdk;  // folders of RM.h & co. (the engine's Sdk/; the tests: the sources)
-    bool debug = false;                     // the engine is a Debug build (/MDd)
-    // For an exported game: always Release (/MD - the runtime the export puts next to the game), no
-    // debug information (no .pdb, no path of this PC in the DLL), into Library/Scripts/Export/Scripts.dll
-    // (apart from the editor's DLLs and objects). `debug` is not used then.
+    std::filesystem::path project;          // プロジェクトのフォルダ
+    std::filesystem::path engine;           // rmgen.exe がある場所
+    std::vector<std::filesystem::path> sdk;  // RM.h などのフォルダ (エンジンの Sdk/。テストでは: ソース)
+    bool debug = false;                     // エンジンが Debug ビルドである (/MDd)
+    // 書き出すゲーム用: いつも Release (/MD - 書き出しがゲームの隣に置くランタイム)。デバッグ情報なし
+    // (.pdb なし、DLL にこの PC のパスを入れない)。Library/Scripts/Export/Scripts.dll に作る
+    // (エディターの DLL やオブジェクトとは別)。このとき `debug` は使わない。
     bool forExport = false;
-    // The game settings' グローバル変数: written as Library/Scripts/Globals/RmGlobals.h (Global::<name>).
+    // ゲーム設定の グローバル変数: Library/Scripts/Globals/RmGlobals.h (Global::<name>) として書く。
     std::vector<GlobalVariable> globals;
-    // Every object made again (MSBuild's Rebuild target), not only what changed (ビルドし直す).
+    // 変わったものだけでなく、すべてのオブジェクトを作り直す (MSBuild の Rebuild ターゲット。ビルドし直す)。
     bool rebuild = false;
 };
 
 struct ScriptBuildResult {
     bool ok = false;
-    bool noVisualStudio = false;     // MSBuild was not found (told in one line, nothing else)
-    bool nothingToBuild = false;     // no .cpp / .h in Assets/Scripts
-    std::filesystem::path dll;       // ok: the new DLL
-    std::vector<std::string> errors; // the compiler's / rmgen's lines with "error" (UTF-8)
-    std::string summary;             // one line for the console (Japanese)
+    bool noVisualStudio = false;     // MSBuild が見つからなかった (1 行で伝える。他には何もしない)
+    bool nothingToBuild = false;     // Assets/Scripts に .cpp / .h がない
+    std::filesystem::path dll;       // 成功: 新しい DLL
+    std::vector<std::string> errors; // コンパイラーや rmgen の "error" を含む行 (UTF-8)
+    std::string summary;             // コンソール用の 1 行 (日本語)
 };
 
-// What the editor's last build did (the debug window's スクリプト shows it).
+// エディターの最後のビルドがしたこと (デバッグウィンドウの スクリプト に出る)。
 struct ScriptBuildOutcome {
     enum class State { None, Ok, Failed, NoVisualStudio, NothingToBuild } state = State::None;
-    std::string summary;              // as on the console (Japanese)
-    std::vector<std::string> errors;  // the compiler's lines
-    double at = 0;                    // when it ended (platform::NowSeconds)
+    std::string summary;              // コンソールと同じ (日本語)
+    std::vector<std::string> errors;  // コンパイラーの行
+    double at = 0;                    // 終わった時刻 (platform::NowSeconds)
 };
 
 // <project>/Assets/Scripts
@@ -60,30 +60,30 @@ std::filesystem::path ScriptsFolder(const std::filesystem::path& project);
 std::filesystem::path ScriptBuildFolder(const std::filesystem::path& project);
 // <project>/Scripts.sln
 std::filesystem::path ScriptSolution(const std::filesystem::path& project);
-// Where the DLLs are built: Library/Scripts (Release) / Library/Scripts/Debug (an engine built as Debug).
-// A DLL is used only by an engine of its kind (RmModuleFlag_Debug); an export takes the Release ones.
+// DLL をビルドする場所: Library/Scripts (Release) / Library/Scripts/Debug (Debug でビルドしたエンジン)。
+// DLL は同じ種類のエンジンだけが使う (RmModuleFlag_Debug)。書き出しは Release のものを使う。
 std::filesystem::path ScriptDllFolder(const std::filesystem::path& project, bool debug);
-// The newest time a script file (.h / .cpp under Assets/Scripts) was written; 0 when there is none.
+// スクリプトファイル (Assets/Scripts の下の .h / .cpp) が最後に書かれた一番新しい時刻。1 つもなければ 0。
 long long ScriptSourcesTime(const std::filesystem::path& project);
 
-// Writes Library/Scripts/Scripts.vcxproj, Scripts.sln and Globals/RmGlobals.h (only when their text
-// changes). False with the reason when they cannot be written.
+// Library/Scripts/Scripts.vcxproj、Scripts.sln、Globals/RmGlobals.h を書く (中身が変わるときだけ)。
+// 書けないときは、理由つきで false。
 bool WriteScriptProject(const ScriptBuildRequest& r, std::string* why);
-// The text of the two (pure: tested).
+// その 2 つの中身 (純粋: テストする)。
 std::string ScriptVcxproj(const ScriptBuildRequest& r);
 std::string ScriptSln();
-// Library/Scripts/Globals/RmGlobals.h: the global variables as Global::<name> (RM.h includes it).
+// Library/Scripts/Globals/RmGlobals.h: グローバル変数を Global::<name> として並べたもの (RM.h が include する)。
 std::filesystem::path GlobalsHeaderFile(const std::filesystem::path& project);
-// Its text (pure: tested). A name a script cannot use (not a C++ name, twice) is left out and told in
-// `skipped` (its value is still there by name: rm::GlobalVar<int>("名前")).
+// その中身 (純粋: テストする)。スクリプトが使えない名前 (C++ の名前でない、重複) は省いて
+// `skipped` に入れて知らせる (値は名前でなら使える: rm::GlobalVar<int>("名前"))。
 std::string GlobalsHeader(const std::vector<GlobalVariable>& globals, std::vector<std::string>* skipped = nullptr);
 
-// Visual Studio's MSBuild.exe (vswhere: the newest installation with MSBuild); empty when there is none.
+// Visual Studio の MSBuild.exe (vswhere: MSBuild のある一番新しいインストール)。なければ空。
 std::filesystem::path FindMSBuild();
-// Builds the scripts into ScriptDllFolder/Scripts_<next number>.dll. Blocks until MSBuild is done; one
-// build of a project at a time on this PC (the next waits for it: a named mutex).
+// スクリプトを ScriptDllFolder/Scripts_<次の番号>.dll にビルドする。MSBuild が終わるまで止まる。
+// この PC では 1 プロジェクトにつき一度に 1 つのビルドだけ (次のものはそれを待つ: 名前つきミューテックス)。
 ScriptBuildResult BuildScripts(const ScriptBuildRequest& r);
-// The lines of MSBuild's output that are errors (", error " / ": error "), without the project path at the end.
+// MSBuild の出力のうちエラーの行 (", error " / ": error ")。末尾のプロジェクトのパスは除く。
 std::vector<std::string> ErrorLines(const std::string& output);
 
 }  // namespace rm::game_production

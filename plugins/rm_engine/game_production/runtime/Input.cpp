@@ -10,7 +10,7 @@
 #include <cstdio>
 #include <utility>
 
-// XInput 1.4 (in Windows 8 and later). A static library carries this into the exported game's link too.
+// XInput 1.4 (Windows 8 以降にある)。静的ライブラリがこれを、書き出したゲームのリンクにも運ぶ。
 #pragma comment(lib, "xinput.lib")
 
 namespace rm::game_production {
@@ -22,9 +22,9 @@ std::vector<InputAction> DefaultInputActions() {
         axis("MoveX", {{C::Left, -1}, {C::Right, 1}, {C::A, -1}, {C::D, 1}, {C::PadLeftStickX, 1}, {C::PadLeft, -1}, {C::PadRight, 1}}),
         axis("MoveY", {{C::Down, -1}, {C::Up, 1}, {C::S, -1}, {C::W, 1}, {C::PadLeftStickY, 1}, {C::PadDown, -1}, {C::PadUp, 1}}),
         axis("Jump", {{C::Space, 1}, {C::PadA, 1}}),
-        axis("Fire", {{C::MouseLeft, 1}, {C::Z, 1}, {C::PadX, 1}, {C::PadRT, 1}}),  // (not Ctrl: the editor's Ctrl+P would fire)
-        // The game UI's (rm_engine/game_ui): choose a button (the arrows, the pad's cross and left stick),
-        // press it, go back. Every game has them; their bindings may be changed like any action's.
+        axis("Fire", {{C::MouseLeft, 1}, {C::Z, 1}, {C::PadX, 1}, {C::PadRT, 1}}),  // (Ctrl は使わない: エディターの Ctrl+P で撃ってしまう)
+        // ゲーム UI (rm_engine/game_ui) 用: ボタンを選ぶ (矢印、パッドの十字と左スティック)、押す、戻る。
+        // どのゲームにもある。その割り当ては、ほかのアクションと同じように変えてよい。
         axis(kUiUp, {{C::Up, 1}, {C::PadUp, 1}, {C::PadLeftStickY, 1}}),
         axis(kUiDown, {{C::Down, 1}, {C::PadDown, 1}, {C::PadLeftStickY, -1}}),
         axis(kUiLeft, {{C::Left, 1}, {C::PadLeft, 1}, {C::PadLeftStickX, -1}}),
@@ -179,7 +179,7 @@ void AddMissedPresses(InputFrame& f, const KeyPresses& now, const KeyPresses& se
 
 namespace {
 
-// Counts the key-down messages of the thread it is made on (one per thread: the first Read makes it).
+// 自分が作られたスレッドのキー押下メッセージを数える (スレッドごとに 1 つ: 最初の Read が作る)。
 class PressHook {
 public:
     PressHook() : hook_(SetWindowsHookExW(WH_GETMESSAGE, &PressHook::Proc, nullptr, GetCurrentThreadId())) {}
@@ -194,7 +194,7 @@ public:
         return hook;
     }
     const KeyPresses& Presses() const { return presses_; }
-    // The wheel's notches since the last call.
+    // 前に呼んでからのホイールのノッチ数。
     float TakeWheel() { return std::exchange(wheel_, 0.0f); }
 
 private:
@@ -209,7 +209,7 @@ private:
         switch (m.message) {
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
-            if (!(m.lParam & (LPARAM{1} << 30))) add(m.wParam);  // (not the repeats of a key held)
+            if (!(m.lParam & (LPARAM{1} << 30))) add(m.wParam);  // (押しっぱなしのリピートは数えない)
             break;
         case WM_LBUTTONDOWN:
         case WM_LBUTTONDBLCLK: add(VK_LBUTTON); break;
@@ -229,14 +229,14 @@ private:
     float wheel_ = 0;
 };
 
-// A window of this process is in front (another app's keys are not the game's).
+// このプロセスのウィンドウが前にある (他のアプリのキーはゲームのものではない)。
 bool InFront() {
     DWORD pid = 0;
     GetWindowThreadProcessId(GetForegroundWindow(), &pid);
     return pid == GetCurrentProcessId();
 }
 
-// The pad's values in InputControl order (PadA ..).
+// パッドの値を InputControl の順で (PadA ..)。
 std::array<float, kPadControls> PadValues(const XINPUT_GAMEPAD& g) {
     static constexpr WORD kButtons[] = {XINPUT_GAMEPAD_A,          XINPUT_GAMEPAD_B,           XINPUT_GAMEPAD_X,         XINPUT_GAMEPAD_Y,
                                         XINPUT_GAMEPAD_LEFT_SHOULDER, XINPUT_GAMEPAD_RIGHT_SHOULDER, XINPUT_GAMEPAD_BACK,   XINPUT_GAMEPAD_START,
@@ -273,7 +273,7 @@ std::array<PadState, kPlayers> PadWatcher::Read() {
         PadState& p = out[slot];
         p.connected = true;
         p.values = PadValues(s.Gamepad);
-        if (now >= batteryAt_[slot]) {  // (asked now and then: it changes slowly)
+        if (now >= batteryAt_[slot]) {  // (ときどき聞く: ゆっくり変わるため)
             batteryAt_[slot] = now + 5000;
             XINPUT_BATTERY_INFORMATION b{};
             battery_[slot] = XInputGetBatteryInformation(slot, BATTERY_DEVTYPE_GAMEPAD, &b) == ERROR_SUCCESS &&
@@ -295,7 +295,7 @@ InputReader::~InputReader() { StopVibration(); }
 
 void InputReader::Vibrate(int slot, float low, float high, double seconds) {
     if (slot < 0 || slot >= kPlayers) return;
-    // (NaN: still - a NaN would become any number on its way to a WORD; a day at most)
+    // (NaN: 止める - NaN は WORD になる途中で何かの数になってしまう。最長でも 1 日)
     if (!std::isfinite(low)) low = 0;
     if (!std::isfinite(high)) high = 0;
     seconds = std::isfinite(seconds) ? std::min(seconds, 86400.0) : 0.0;
@@ -326,13 +326,13 @@ InputFrame InputReader::Read() {
         if (shakeUntil_[slot] != 0 && now >= shakeUntil_[slot]) Vibrate(static_cast<int>(slot), 0, 0, 0);
     }
     if (!InFront()) {
-        StopVibration();  // (the player went to another app)
+        StopVibration();  // (プレイヤーが別のアプリに移った)
         return f;
     }
     f.wheel = wheel;
     for (int vk = 1; vk < 256; ++vk) f.keys[static_cast<size_t>(vk)] = (GetAsyncKeyState(vk) & 0x8000) ? 1 : 0;
-    // GetAsyncKeyState reads the mouse's physical buttons: swapped (left-handed) -> the logical ones
-    // (the messages are already logical).
+    // GetAsyncKeyState はマウスの物理ボタンを読む: 入れ替えている (左利き) ときは論理ボタンに直す
+    // (メッセージのほうは、すでに論理ボタン)。
     if (GetSystemMetrics(SM_SWAPBUTTON)) std::swap(f.keys[VK_LBUTTON], f.keys[VK_RBUTTON]);
     AddMissedPresses(f, presses, seen);
     for (DWORD slot = 0; slot < 4; ++slot) {

@@ -1,43 +1,43 @@
 #pragma once
-// Prefabs: an entity and everything below it kept as a file, placed in scenes as many times as
-// wanted. Change the prefab and every placed one follows - except what was changed on the placed
-// one itself (its overrides).
+// Prefab: エンティティとその下の全部を 1 つのファイルとして残し、シーンに何回でも置けるもの。
+// Prefab を変えると、置いた全部が追いかけて変わる - 置いた側で変えたもの (上書き = overrides)
+// は除く。
 //
-//   prefab file (.rmprefab, JSON)
+//   Prefab ファイル (.rmprefab, JSON)
 //     { "kind": "rm_engine.game_production.prefab", "format": 1,
-//       "entities": [ <the root>, <below it ...> ] }      the scene's entity form, parents first
+//       "entities": [ <ルート>, <その下 ...> ] }      シーンのエンティティの形。親が先
 //
-//   a placed prefab, in the scene
-//     every entity has "prefab": { "source": <its id in the file> }; the root also has
-//     "asset": "<the .rmprefab's asset id>" and "overrides": {
+//   シーンに置いた Prefab
+//     すべてのエンティティが "prefab": { "source": <ファイル内での id> } を持つ。ルートはさらに
+//     "asset": "<.rmprefab のアセット id>" と "overrides": {
 //        "fields":            [ {"source": 1, "component": "", "index": 0, "field": "name", "value": "Cube 2"},
 //                               {"source": 1, "component": "rm::space3d::Transform", "index": 0, "field": "position", "value": [...]} ],
 //        "addedComponents":   [ {"source": 2, "component": {"type": ..., "data": {...}}} ],
 //        "removedComponents": [ {"source": 2, "component": "rm::...", "index": 0} ],
 //        "removedEntities":   [ 3 ] }
 //
-//   component "" = the entity's own fields (name, 有効). Fields are compared one by one at the top
-//   level of the entity / component (a vector field is one field). The root's own fields and the
-//   fields of its "placement" components (Transform - ComponentInfo::placement) always count as
-//   overrides: a placed thing keeps its name and its place when the prefab changes.
+//   component "" = エンティティ自身のフィールド (name, 有効)。フィールドは、エンティティ / 部品の
+//   最上位で 1 つずつ比べる (vector のフィールドは 1 つ分)。ルート自身のフィールドと、その
+//   "placement" 部品 (Transform - ComponentInfo::placement) のフィールドは、いつも上書きに数える:
+//   置いたものは、Prefab が変わっても名前と場所を保つ。
 //
-// The prefab file is named by its asset id (AssetRef: moving or renaming it keeps the link). Data
-// from before assets had ids has "path" (from the project folder) - read the same way.
+// Prefab のファイルはアセット id で名前を付ける (AssetRef: 動かしても名前を変えてもリンクは切れない)。
+// アセットに id が無かった頃のデータは "path" (プロジェクトのフォルダから) を持つ - 同じように読む。
 //
-// NESTED PREFABS: a placed prefab inside the entities a prefab is made from stays a prefab of its own.
-// The outer file keeps only its root, with its link ("prefab": {"source", "asset", "overrides"} -
-// what was changed on it, against ITS prefab); what is inside it always comes from its own file.
-//   * in the scene the nested root is both: the root of its placed prefab, and one of the outer's
-//     entities (PrefabLink::outer = its id in the outer file)
-//   * the outer's overrides cover the outer's own entities (the nested root's place, say); a change
-//     on the nested prefab's insides is the nested root's own overrides
-//   * changing the inner prefab reaches every placed one, nested ones included (they are made from
-//     its file); changing the outer remakes its entities and keeps the nested roots that were there
-//     with their own overrides (the editor first works them out again)
-//   * the editor fills the nested ones (Scene::NestedPrefabs → ApplyPrefab from their files),
-//     outermost first, and refuses a prefab that would end up inside itself
+// 入れ子の Prefab: Prefab の元になるエンティティの中に置いた Prefab は、自分自身の Prefab のまま残る。
+// 外側のファイルが持つのはそのルートだけで、そのリンク ("prefab": {"source", "asset", "overrides"} -
+// 変えたもの。その Prefab に対して) を持つ。中身はいつも自分のファイルから来る。
+//   * シーンでは、入れ子のルートは両方になる: 置いた Prefab のルートであり、外側のエンティティの
+//     1 つでもある (PrefabLink::outer = 外側のファイルでの id)
+//   * 外側の上書きは外側自身のエンティティを扱う (たとえば入れ子のルートの場所)。入れ子の Prefab の
+//     内側の変更は、入れ子のルート自身の上書きになる
+//   * 内側の Prefab を変えると、置いた全部に届く (入れ子のものも。そのファイルから作られるため)。
+//     外側を変えると、外側のエンティティを作り直し、そこにあった入れ子のルートは、自分の上書きを
+//     持ったまま残す (エディターが先にそれらを求め直す)
+//   * エディターが入れ子のものを埋める (Scene::NestedPrefabs → 自分のファイルから ApplyPrefab)。
+//     一番外側から。自分自身の中に入ってしまう Prefab は断る
 //
-// Pure (no files) - tested in tests/TestPrefab.cpp. Reading and writing the files is the editor's.
+// 純粋 (ファイルを触らない) - tests/TestPrefab.cpp でテストする。ファイルの読み書きはエディターの仕事。
 
 #include "base/Json.h"
 #include "rm_engine/game_production/runtime/Scene.h"
@@ -53,43 +53,42 @@ namespace rm::game_production {
 
 inline constexpr char kPrefabKind[] = "rm_engine.game_production.prefab";
 inline constexpr char kPrefabExtension[] = ".rmprefab";
-inline constexpr int kPrefabFormat = 1;  // the "format" this version writes
+inline constexpr int kPrefabFormat = 1;  // このバージョンが書く "format"
 
 bool IsPrefab(const json::Value& v);
-// Written by a newer version ("format" above kPrefabFormat): not read, and never written over.
+// 新しいバージョンが書いたもの ("format" が上の kPrefabFormat より大きい): 読まず、上書きもしない。
 bool NewerPrefab(const json::Value& v);
 
-// The prefab of `root` and everything below it. Entities of a placed prefab keep their source as
-// their id in the file (so the other placed ones still match after it is written back); the others
-// get ids after those. `sources` (if given): scene id -> id in the file, for Scene::LinkPrefab.
-// A prefab placed inside is written as its root with its link and its current PrefabLink::overrides
-// (the caller works them out first); what is inside it is not written (★ nor plain entities put
-// under its insides). `previous`: the file as it was (when writing it again) - its keys this version
-// does not know are kept (rule 6).
+// `root` の Prefab とその下の全部。置いた Prefab のエンティティは、source をファイルでの id として
+// 持つ (書き戻したあとも、ほかの置いたものと合うように)。ほかはその後ろに id を振る。`sources`
+// (渡されたとき): シーンの id -> ファイル内の id (Scene::LinkPrefab 用)。
+// 中に置いた Prefab は、ルートとそのリンク、今の PrefabLink::overrides として書く (呼んだ側が
+// 先に求めておく)。その中身は書かない (★ その内側に置いた普通のエンティティも書かない)。
+// `previous`: もとのファイル (書き直すとき) - このバージョンが知らないキーは残す (憲法 6)。
 json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int>* sources = nullptr, const json::Value* previous = nullptr);
 
-// The asset ids of the prefabs nested in `prefab` (a file's content), in order, each once.
+// `prefab` (ファイルの内容) の中に入れ子になった Prefab のアセット id。順番どおり、1 つずつ。
 std::vector<std::string> NestedAssets(const json::Value& prefab);
 
-// How the placed prefab `root` differs from `prefab` (the form above). `placement`: component types
-// whose fields on the root always count as overrides.
+// 置いた Prefab `root` が `prefab` (上の形) とどう違うか。`placement`: ルートのフィールドが
+// いつも上書きに数えられる部品の型。
 json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, std::span<const std::string> placement = {});
-// How many changes `overrides` holds (shown in the inspector).
+// `overrides` が持つ変更の数 (インスペクターに出る)。
 size_t CountOverrides(const json::Value& overrides);
 
-// A prefab file's content by its asset id (the editor's files, an exported game's .rmpak); null: none.
+// アセット id から見た Prefab ファイルの内容 (エディターのファイル、書き出したゲームの .rmpak)。null: 無い。
 using PrefabReader = std::function<const json::Value*(const AssetRef& asset)>;
-inline constexpr size_t kMaxPrefabNesting = 16;  // prefabs inside prefabs inside ...
-// The prefabs nested in the placed prefab `root` filled from their own files (each with its own
-// overrides), and the ones nested in those. `chain`: the prefabs `root` is inside, itself included -
-// one that would end up inside itself is not filled (told in `warnings`; `title` names it).
+inline constexpr size_t kMaxPrefabNesting = 16;  // Prefab の中の Prefab の中の ...
+// 置いた Prefab `root` の中に入れ子になった Prefab を、それぞれのファイルから (それぞれの上書き
+// つきで) 埋め、さらにその中に入れ子になったものも埋める。`chain`: `root` が入っている Prefab
+// (自分も含む) - 自分自身の中に入ってしまうものは埋めない (`warnings` で知らせる。`title` がその名前)。
 void FillNestedPrefabs(Scene& scene, int root, std::vector<std::string>& chain, const PrefabReader& read, reflect::Warnings& warnings,
                        const std::function<std::string(const AssetRef&)>& title);
-// A copy of the prefab `asset` with everything nested in it, under `parent` (0: the top) - what
-// rm::Spawn(prefab) makes while the game plays. 0: no such prefab (or it has no entities).
+// Prefab `asset` を、中に入れ子になったものごと `parent` (0: 一番上) の下にコピーしたもの -
+// ゲーム中の rm::Spawn(prefab) が作るもの。0: そんな Prefab が無い (またはエンティティが無い)。
 int SpawnPrefab(Scene& scene, const AssetRef& asset, int parent, const PrefabReader& read, reflect::Warnings& warnings);
 
-// The file name's stem (no folder, no extension): "Assets/Enemies/Bat.rmprefab" -> "Bat".
+// ファイル名の語幹 (フォルダも拡張子も無し): "Assets/Enemies/Bat.rmprefab" -> "Bat"。
 std::string PrefabName(std::string_view path);
 
 }  // namespace rm::game_production

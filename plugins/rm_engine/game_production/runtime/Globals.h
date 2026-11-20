@@ -1,20 +1,20 @@
 #pragma once
-// Global variables of a game and saving them (design TestEngine NewEngineBluePrint 6: accessors in a
-// namespace - Global::score - never #define; RME_PLATFORM 4-b: input / global variables + save). The
-// RUNTIME part: the editor's Play and the exported game keep them the same way, in the ScriptWorld (one
-// for the whole game: switching the scene keeps them).
+// ゲームのグローバル変数と、その保存 (設計 TestEngine NewEngineBluePrint 6: 名前空間のアクセサー -
+// Global::score - #define は決して使わない。RME_PLATFORM 4-b: 入力 / グローバル変数 + セーブ)。
+// ランタイム側: エディターの Play と書き出したゲームは、ScriptWorld の中に (ゲーム全体で 1 つ:
+// シーンを切り替えても残る)、同じやり方で持つ。
 //
-//   GlobalStore::Reset(settings.globals)   at Play and at Stop (editor) / when the game starts: every
-//                                          value back to its 初めの値
-//   the scripts read / write them by name  (the part "rm_engine.game_production.globals"; in a script
-//                                          Global::score, from the header GlobalsHeader writes)
-//   WriteSave / ReadSave (a slot)          <folder>/save_<slot>.json, written with WriteFileAtomic:
+//   GlobalStore::Reset(settings.globals)   Play と Stop のとき (エディター) / ゲームが始まるとき:
+//                                          すべての値が 初めの値 に戻る
+//   スクリプトが名前で読み書きする         (部品 "rm_engine.game_production.globals"。スクリプトでは
+//                                          Global::score。GlobalsHeader が書くヘッダーから)
+//   WriteSave / ReadSave (スロット)        <folder>/save_<slot>.json。WriteFileAtomic で書く:
 //       { "kind": "rm_engine.save", "format": 1, "globals": { "score": 3, "name": "A", "pos": [1, 2] } }
-//     A write starts from the file that is there (else the last one read): keys this version does not
-//     know - a variable no longer in the list, another member - are written back as they were.
+//     書くときは、そこにあるファイル (なければ最後に読んだもの) から始める: このバージョンが知らない
+//     キー - 一覧からなくなった変数や、別のメンバー - は、そのまま書き戻す。
 //
-// Where: the editor's Play <project>/Library/Saves/ (never in Assets), an exported game
-// %LOCALAPPDATA%\<exe name>\Saves\.
+// 場所: エディターの Play は <project>/Library/Saves/ (Assets の中には決して置かない)、書き出した
+// ゲームは %LOCALAPPDATA%\<exe name>\Saves\。
 
 #include "base/Json.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
@@ -31,39 +31,38 @@ namespace rm::game_production {
 
 struct GlobalValue {
     GlobalType type = GlobalType::Int;
-    double v[3]{};  // Bool (0 / 1), Int (whole), Float, Vec2 (2), Vec3 (3)
-    std::string s;  // String
+    double v[3]{};  // Bool (0 / 1)、Int (整数)、Float、Vec2 (2)、Vec3 (3)
+    std::string s;  // 文字列
 };
 
-// A 初めの値 as written in the settings ("true", "3", "1.5", "text", "1, 2, 3"); "" is zero (an empty
-// text). nullopt when it does not fit the type ("abc" for an int).
+// 設定に書かれた 初めの値 ("true"、"3"、"1.5"、"text"、"1, 2, 3")。"" はゼロ (空の文字列)。
+// 型に合わないとき (int に "abc") は nullopt。
 std::optional<GlobalValue> ParseGlobalValue(GlobalType type, std::string_view text);
-// The value as text (what ParseGlobalValue reads back): "true", "3", "1.5", "1, 2, 3".
+// 値を文字にしたもの (ParseGlobalValue が読み戻せる形): "true"、"3"、"1.5"、"1, 2, 3"。
 std::string FormatGlobalValue(const GlobalValue& v);
 json::Value GlobalToJson(const GlobalValue& v);
-// A value read from a save, made the variable's type (a number for a float: fine; a text for a number:
-// nullopt).
+// セーブから読んだ値を、変数の型にしたもの (float に数: よい。数に文字: nullopt)。
 std::optional<GlobalValue> GlobalFromJson(GlobalType type, const json::Value& j);
-// A name a script can use as Global::<name>: ASCII letters, digits and _, not starting with a digit,
-// not a C++ keyword.
+// スクリプトが Global::<name> として使える名前: ASCII の英字・数字・_ で、数字で始まらず、
+// C++ のキーワードでもない。
 bool IsGlobalName(std::string_view name);
 
 class GlobalStore {
 public:
-    // Every variable of the list at its 初めの値 (one that does not fit: zero, and a warning). A name
-    // twice: the first.
+    // 一覧のすべての変数を 初めの値 で (合わないもの: ゼロにして、警告を出す)。同じ名前が
+    // 2 つあるとき: 最初のもの。
     void Reset(std::span<const GlobalVariable> list, std::vector<std::string>* warnings = nullptr);
     GlobalValue* Find(std::string_view name);
     const GlobalValue* Find(std::string_view name) const;
     size_t Size() const { return values_.size(); }
-    // Every variable (name, value), in the list's order.
+    // すべての変数 (名前、値)、一覧の順。
     const std::vector<std::pair<std::string, GlobalValue>>& Values() const { return values_; }
-    // A save document: `base` (the file's, or the last read) with "kind", "format" and every variable set.
+    // セーブの文書: `base` (ファイルのもの、または最後に読んだもの) に、"kind"、"format"、すべての変数を設定したもの。
     json::Value ToSave(json::Value base) const;
-    // Takes the variables of a save document (the others stay as they are). False when it is not a save.
+    // セーブの文書から変数を取り込む (他はそのまま)。セーブでないときは false。
     bool FromSave(const json::Value& doc, std::vector<std::string>* warnings);
 
-    json::Value lastRead;  // the last document read (its unknown keys go along to a new slot)
+    json::Value lastRead;  // 最後に読んだ文書 (知らないキーは、新しいスロットに一緒に行く)
 
 private:
     std::vector<std::pair<std::string, GlobalValue>> values_;
@@ -72,7 +71,7 @@ private:
 inline constexpr char kSaveKind[] = "rm_engine.save";
 inline constexpr int64_t kSaveFormat = 1;
 
-// A slot: "0", "auto", "slot-2" (ASCII letters, digits, _ and -; 1 to 64): never a path.
+// スロット: "0"、"auto"、"slot-2" (ASCII の英字・数字・_ と -、1 から 64 文字): パスには決してしない。
 bool IsSaveSlot(std::string_view slot);
 std::filesystem::path SaveFile(const std::filesystem::path& folder, std::string_view slot);
 bool WriteSave(GlobalStore& store, const std::filesystem::path& folder, std::string_view slot, std::string* why);
@@ -81,9 +80,9 @@ bool ReadSave(GlobalStore& store, const std::filesystem::path& folder, std::stri
 bool SaveExists(const std::filesystem::path& folder, std::string_view slot);
 bool DeleteSave(const std::filesystem::path& folder, std::string_view slot, std::string* why);
 
-// <project>/Library/Saves (the editor's Play)
+// <project>/Library/Saves (エディターの Play)
 std::filesystem::path ProjectSaveFolder(const std::filesystem::path& project);
-// %LOCALAPPDATA%\<exe name>\Saves (an exported game; the exe's name without .exe)
+// %LOCALAPPDATA%\<exe name>\Saves (書き出したゲーム。exe の名前から .exe を除いたもの)
 std::filesystem::path GameSaveFolder(std::wstring_view exeName);
 
 }  // namespace rm::game_production

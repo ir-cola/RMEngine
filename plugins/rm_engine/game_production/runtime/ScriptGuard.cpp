@@ -1,7 +1,7 @@
-// The calls into a script DLL, each inside __try / __except (structured exception handling): an access
-// violation, a division by zero or a C++ exception thrown out of a script is caught here, and the
-// caller stops that script only. Nothing in these functions needs unwinding (__try cannot share a
-// function with C++ objects that have destructors - C2712), so they only pass pointers along.
+// スクリプト DLL への呼び出し。どれも __try / __except (構造化例外処理) の中: アクセス違反、
+// ゼロ除算、スクリプトから投げられた C++ の例外は、ここで受け止め、呼んだ側がそのスクリプト
+// だけを止める。これらの関数には巻き戻しが要るものは無い (__try は、デストラクタを持つ C++
+// オブジェクトと同じ関数に置けない - C2712) ので、ポインターを渡すだけにしている。
 
 #include "rm_engine/game_production/runtime/Scripts.h"
 
@@ -13,8 +13,9 @@ namespace rm::game_production {
 
 namespace {
 
-// After a stack overflow is caught, the stack has no guard page any more: the next one would end the
-// program at once. _resetstkoflw puts it back - outside the __except block, where the stack is unwound.
+// スタックオーバーフローを受け止めたあとは、スタックにガードページが無くなる: 次の 1 回で
+// プログラムがすぐに終わってしまう。_resetstkoflw がそれを戻す - スタックが巻き戻された、
+// __except ブロックの外で。
 unsigned long Recovered(unsigned long code) {
     if (code == EXCEPTION_STACK_OVERFLOW) _resetstkoflw();
     return code;

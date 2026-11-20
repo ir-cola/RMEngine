@@ -1,13 +1,13 @@
 #pragma once
-// How the editor shows a component type - the editor part of a component (the type itself and what it
-// is to the game are the runtime part's: ComponentInfo, runtime/Components.h). Offered by the plugin
-// that offers the type, from its RegisterEditor (the words go through Tr, which the game has not):
+// エディターが部品の型をどう見せるか。部品のエディター側の部分 (型そのものと、ゲームにとっての
+// 意味はランタイム側のもの: ComponentInfo, runtime/Components.h)。型を出すプラグインが
+// RegisterEditor から出す (文字は Tr を通す。ゲームには Tr がない):
 //
 //   static const game_production::ComponentLook kTransformLook{.type = &reflect::TypeOf<space3d::Transform>,
 //       .derivedType = ..., .derive = ..., .underive = ..., .ownLabel = TrKey(L"ローカル"), .derivedLabel = TrKey(L"ワールド"), .icon = "cube"};
 //   registry.Contribute(game_production::kComponentLookPoint, kTransformLook);
 //
-// A type without a look is shown plainly (the 階層's "object" picture, its own values only).
+// 見た目のない型はそのまま素朴に表示する (階層の「object」の絵、自分の値だけ)。
 
 #include "core/reflect/Data.h"
 
@@ -18,31 +18,30 @@ namespace rm::game_production {
 class Scene;
 struct GameSettings;
 
-// PluginRegistry point: items are ComponentLook (static).
+// PluginRegistry の口: 項目は ComponentLook (static)。
 inline constexpr char kComponentLookPoint[] = "rm_engine.game_production.component_look";
 
 struct ComponentLook {
-    const reflect::TypeDesc& (*type)();  // the component type it is for
-    // Optional: a second way to show a child's component - values worked out from it and the same
-    // component of every parent (a Transform in the world). The inspector puts a switch ownLabel /
-    // derivedLabel above its fields (only for a child: at the top level both are the same); it starts
-    // with its own values (game production does not know what they mean). All five or none.
-    //   derive:   `chain` = the top parent's value first, this entity's last (parents without the
-    //             component are skipped) -> `out`, a value of derivedType().
-    //   underive: the derived values the user typed -> `component` (a copy of chain's last, changed
-    //             so that it derives them).
+    const reflect::TypeDesc& (*type)();  // 対象の部品の型
+    // 省略可: 子の部品を見せる 2 つ目の方法 - その部品と、親すべての同じ部品から求めた値 (ワールドでの
+    // Transform など)。インスペクターは欄の上に ownLabel / derivedLabel の切り替えを置く (子のときだけ。
+    // 最上位では両方同じ)。始めは自分の値で見せる (ゲーム制作はその意味を知らない)。5 つ全部か、なしか。
+    //   derive:   `chain` = 一番上の親の値が先頭、このエンティティの値が最後 (部品のない親は
+    //             飛ばす) -> `out` (derivedType() の値)。
+    //   underive: ユーザーが打った求めた値 -> `component` (chain の最後のコピー。それを
+    //             求めるように変えたもの)。
     const reflect::TypeDesc& (*derivedType)() = nullptr;
     void (*derive)(std::span<const void* const> chain, void* out) = nullptr;
     void (*underive)(std::span<const void* const> chain, const void* derived, void* component) = nullptr;
-    const wchar_t* ownLabel = nullptr;      // e.g. ローカル (a TrKey string: translated when shown)
+    const wchar_t* ownLabel = nullptr;      // 例: ローカル (TrKey の文字列: 見せるときに訳す)
     const wchar_t* derivedLabel = nullptr;  // e.g. ワールド
-    // The picture of an entity that has this component in the 階層 (a name the core knows: "cube").
-    // When several components have one, the last of the entity's components wins; none: "object".
+    // この部品を持つエンティティの階層での絵 (核が知っている名前: "cube")。複数の部品が持つときは、
+    // エンティティの部品の最後のものが勝つ。なければ "object"。
     const char* icon = nullptr;
-    // Optional: a field of the component typed in the inspector (one entity's, its own values). `after`
-    // is the component with that field changed, `before` as it was; the plugin may change its other
-    // fields so that they go together (UI の配置: a new アンカー keeps the thing where it is on the
-    // screen). Everything that changes is one undo entry. `scene` is as it was before the edit.
+    // 省略可: インスペクターで打つ部品の欄 (1 つのエンティティの、自分の値)。`after` はその欄を変えた
+    // 部品、`before` は変える前のもの。プラグインは他の欄も、つじつまが合うように変えてよい (UI の配置:
+    // 新しいアンカーでも物は画面の同じ所にある)。変わったものはすべて 1 つの Undo になる。`scene` は
+    // 編集の前のもの。
     void (*adjust)(const Scene& scene, const GameSettings& settings, int entity, const reflect::FieldPath& path, const void* before,
                    void* after) = nullptr;
 

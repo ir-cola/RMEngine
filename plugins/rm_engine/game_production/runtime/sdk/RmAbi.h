@@ -1,20 +1,20 @@
-/* RM Engine - the boundary between the engine and a game's scripts (a DLL). Plain C: what crosses it
- * is numbers, plain structs, UTF-8 `const char*` and function pointers - never std::string, never a
- * virtual function (design: TestEngine docs/NewEngineBluePrint.md 6 / 6-b).
+/* RM Engine - エンジンとゲームのスクリプト (DLL) の境目。素の C: 越えるのは数、素の struct、
+ * UTF-8 の `const char*`、関数ポインターだけ - std::string も仮想関数も越えない
+ * (設計: TestEngine docs/NewEngineBluePrint.md 6 / 6-b)。
  *
- *   engine (editor or exported game)                       script DLL (Scripts_0007.dll)
+ *   エンジン (エディターか書き出したゲーム)                   スクリプトの DLL (Scripts_0007.dll)
  *     LoadLibrary -> GetProcAddress("RmModuleInit")
- *     RmModuleInit(&api, RM_ABI_VERSION)  ───────────────▶  checks the version, keeps &api,
- *                                         ◀───────────────  returns the scripts it has (RmModule)
- *     each frame: the hooks of every script (BeginPlay / Tick / EndPlay), through function pointers;
- *     the scripts call back through api->core (and the plugins' parts: api->part(...))
+ *     RmModuleInit(&api, RM_ABI_VERSION)  ───────────────▶  版を確かめ、&api を持っておく
+ *                                         ◀───────────────  持っているスクリプト (RmModule) を返す
+ *     毎フレーム: 全スクリプトのフック (BeginPlay / Tick / EndPlay) を関数ポインターで呼ぶ
+ *     スクリプトは api->core (とプラグインの部品: api->part(...)) を通して呼び返す
  *
- * The engine never touches a script's std::string itself: the DLL has its own C runtime (it is a DLL,
- * /MD; the engine may be /MT), so its strings are read and written through the DLL's own two functions
- * (RmModule::stringGet / stringSet). Nothing else here allocates on one side and frees on the other.
+ * エンジンはスクリプトの std::string に直接は触らない: DLL は自分の C ランタイムを持つ (DLL は /MD、
+ * エンジンは /MT のことがある) ので、文字列は DLL 自身の 2 つの関数 (RmModule::stringGet /
+ * stringSet) を通して読み書きする。片側で確保して反対側で解放するものは、ほかにない。
  *
- * You do not include this file yourself: RM.h does. Change anything here -> raise RM_ABI_VERSION
- * (ABI 7: RmScriptDesc::onEvent; the parts below - time, coroutines, events, entity, mouse, input 2). */
+ * このファイルは自分では取り込まない: RM.h が取り込む。ここを変えたら RM_ABI_VERSION を上げる
+ * (ABI 7: RmScriptDesc::onEvent。下の部品 - 時間・コルーチン・イベント・エンティティ・マウス・入力 2)。 */
 #pragma once
 
 #include <stdint.h>
@@ -25,9 +25,9 @@
 extern "C" {
 #endif
 
-typedef uint64_t RmEntityId; /* 0 = none */
+typedef uint64_t RmEntityId; /* 0 = なし */
 
-/* The kinds of fields a script may have (RM_PROPERTY). */
+/* スクリプトが持てるフィールドの種類 (RM_PROPERTY)。 */
 enum RmFieldType {
     RmField_Bool = 0,
     RmField_Int = 1,
@@ -38,56 +38,56 @@ enum RmFieldType {
     RmField_Color = 6,
     RmField_EntityRef = 7,
     /* ABI 4 */
-    RmField_Enum = 8,   /* an RM_ENUM enum class (RmFieldDesc::enumDesc) */
-    RmField_Struct = 9, /* an RM_STRUCT struct (RmFieldDesc::structDesc) */
-    RmField_List = 10,  /* std::vector of one of the others (RmFieldDesc::list; the element's enumDesc /
-                           structDesc / assetKinds are the field's) */
+    RmField_Enum = 8,   /* RM_ENUM の enum class (RmFieldDesc::enumDesc) */
+    RmField_Struct = 9, /* RM_STRUCT の struct (RmFieldDesc::structDesc) */
+    RmField_List = 10,  /* 上のどれかの std::vector (RmFieldDesc::list。要素の enumDesc /
+                           structDesc / assetKinds がフィールドのもの) */
     RmField_Asset = 11  /* rm::PrefabRef / rm::ImageRef / rm::ModelRef / rm::SoundRef: char guid[RM_ASSET_ID_SIZE]
-                           (32 hex digits; "" = none) - plain bytes, read and written by the engine */
+                           (16 進 32 桁。"" = なし) - ただのバイト列で、エンジンが読み書きする */
 };
 
 #define RM_ASSET_ID_SIZE 40
 
 enum RmFieldFlags {
-    RmFieldFlag_Edit = 1,      /* shown in the inspector */
+    RmFieldFlag_Edit = 1,      /* インスペクターに出す */
     RmFieldFlag_ReadOnly = 2,
-    RmFieldFlag_Transient = 4, /* RM_TRANSIENT: not saved, not shown */
+    RmFieldFlag_Transient = 4, /* RM_TRANSIENT: 保存しない・出さない */
     RmFieldFlag_HasMin = 8,
     RmFieldFlag_HasMax = 16,
     RmFieldFlag_HasStep = 32
 };
 
 typedef struct RmFieldDesc {
-    const char* name; /* C++ name = key in the scene file */
+    const char* name; /* C++ の名前 = シーンファイルのキー */
     uint32_t type;    /* RmFieldType */
     uint32_t flags;   /* RmFieldFlags */
     void* (*access)(void* self);
-    const char* label; /* UTF-8, may be null */
+    const char* label; /* UTF-8。null もある */
     const char* tooltip;
     double min, max, step;
-    int32_t line; /* in the header */
-    /* ABI 4: what the kinds above need (null for the others) */
+    int32_t line; /* ヘッダーにある */
+    /* ABI 4: 上の種類が必要とするもの (ほかは null) */
     const struct RmEnumDesc* enumDesc;
     const struct RmStructDesc* structDesc;
     const struct RmListDesc* list;
-    const char* assetKinds; /* RmField_Asset: "image" / "model" / "audio" / ".rmprefab" (core/asset's kinds, or an extension) */
+    const char* assetKinds; /* RmField_Asset: "image" / "model" / "audio" / ".rmprefab" (core/asset の種類、または拡張子) */
 } RmFieldDesc;
 
 typedef struct RmEnumItem {
-    const char* name;  /* saved in files */
-    const char* label; /* shown; null: the name */
+    const char* name;  /* ファイルに保存する */
+    const char* label; /* 画面に出す。null: 名前 */
     int64_t value;
 } RmEnumItem;
 
 typedef struct RmEnumDesc {
-    const char* name; /* C++ name */
+    const char* name; /* C++ の名前 */
     const RmEnumItem* items;
     uint32_t itemCount;
     int64_t (*get)(const void* p);
     void (*set)(void* p, int64_t v);
 } RmEnumDesc;
 
-/* An RM_STRUCT inside a script (a value: no hooks). */
+/* スクリプトの中の RM_STRUCT (値: フックはない)。 */
 typedef struct RmStructDesc {
     const char* name;
     const char* label;
@@ -99,9 +99,9 @@ typedef struct RmStructDesc {
     void (*copy)(void* dst, const void* src);
 } RmStructDesc;
 
-/* A std::vector field, worked by the DLL (its C runtime owns the memory). */
+/* std::vector のフィールド。DLL が扱う (メモリは DLL の C ランタイムのもの)。 */
 typedef struct RmListDesc {
-    uint32_t element; /* RmFieldType of an element (never RmField_List) */
+    uint32_t element; /* 要素の RmFieldType (RmField_List にはならない) */
     uint32_t reserved;
     uint64_t (*size)(const void* vec);
     void (*resize)(void* vec, uint64_t n);
@@ -109,46 +109,46 @@ typedef struct RmListDesc {
 } RmListDesc;
 
 typedef struct RmScriptDesc {
-    const char* name;   /* C++ name ("Mover", "game::Mover") = what the scene saves */
-    const char* label;  /* RM_SCRIPT(Label="...") or the name */
-    const char* header; /* the header it is declared in (for messages) */
+    const char* name;   /* C++ の名前 ("Mover"、"game::Mover") = シーンが保存するもの */
+    const char* label;  /* RM_SCRIPT(Label="...") か名前 */
+    const char* header; /* 宣言されているヘッダー (メッセージ用) */
     uint64_t size, align;
     const RmFieldDesc* fields;
     uint32_t fieldCount;
-    void (*construct)(void* p); /* placement new with the default member values */
+    void (*construct)(void* p); /* メンバーの既定値で placement new する */
     void (*destruct)(void* p);
     void (*copy)(void* dst, const void* src);
-    /* null when the script does not have the hook */
+    /* スクリプトにそのフックがないときは null */
     void (*beginPlay)(void* self, RmEntityId self_entity);
     void (*tick)(void* self, RmEntityId self_entity, float dt);
     void (*endPlay)(void* self, RmEntityId self_entity);
-    /* ABI 4: after the scripts were built again while the game plays (the values carried over by
-       name; BeginPlay is not called again). Null when the script does not have it. */
+    /* ABI 4: ゲームの Play 中にスクリプトを作り直した後 (値は名前で引き継ぐ。
+       BeginPlay はもう一度は呼ばない)。スクリプトにないときは null。 */
     void (*onReloaded)(void* self, RmEntityId self_entity);
-    /* ABI 5: what the physics tells (RMPhysics.h). `other` is the other entity. Null when the script
-       does not have the hook. Called after the frame's fixed steps, on started scripts only. */
-    void (*onHit)(void* self, RmEntityId self_entity, RmEntityId other);          /* began touching (not a trigger) */
-    void (*onTriggerEnter)(void* self, RmEntityId self_entity, RmEntityId other); /* one of the two is a trigger */
+    /* ABI 5: 物理が知らせること (RMPhysics.h)。`other` は相手のエンティティ。スクリプトにフックが
+       ないときは null。そのフレームの固定ステップのあと、開始済みのスクリプトにだけ呼ぶ。 */
+    void (*onHit)(void* self, RmEntityId self_entity, RmEntityId other);          /* 触れ始めた (トリガーではない) */
+    void (*onTriggerEnter)(void* self, RmEntityId self_entity, RmEntityId other); /* どちらかがトリガー */
     void (*onTriggerExit)(void* self, RmEntityId self_entity, RmEntityId other);
-    /* ABI 6: a game UI button of the entity was pressed (RMUI.h: the mouse, or 決定 on the focused one).
-       Called after the frame's systems, on started scripts only. Null when the script does not have it. */
+    /* ABI 6: エンティティのゲーム UI のボタンが押された (RMUI.h: マウス、またはフォーカス中のものへの 決定)。
+       そのフレームのシステムのあと、開始済みのスクリプトにだけ呼ぶ。スクリプトにないときは null。 */
     void (*onClick)(void* self, RmEntityId self_entity);
-    /* ABI 7: an event sent by rm::Events (RM.h) reached the entity. Called after the frame's Ticks (and
-       after the systems' / services' hooks), on started scripts only. Null when the script does not have it. */
+    /* ABI 7: rm::Events (RM.h) が送ったイベントがエンティティに届いた。そのフレームの Tick のあと
+       (システム / サービスのフックのあとでもある)、開始済みのスクリプトにだけ呼ぶ。スクリプトにないときは null。 */
     void (*onEvent)(void* self, RmEntityId self_entity, const struct RmEvent* event);
 } RmScriptDesc;
 
-/* An event (ABI 7): a name, who sent it (0: the engine / nobody) and what it carries. The strings live
-   until the hook returns (copy what you keep). */
+/* イベント (ABI 7): 名前、送った者 (0: エンジン / 誰でもない)、運んでくるもの。文字列はフックが
+   戻るまで生きている (残したいものはコピーする)。 */
 typedef struct RmEvent {
     const char* name;   /* UTF-8 */
-    RmEntityId sender;  /* the entity whose script sent it (0: none) */
+    RmEntityId sender;  /* 送ったスクリプトのエンティティ (0: なし) */
     double number;
-    const char* text;   /* UTF-8, never null ("" when none) */
-    RmEntityId entity;  /* an entity it carries (0: none) */
+    const char* text;   /* UTF-8。null にはならない (ないときは "") */
+    RmEntityId entity;  /* 運んでくるエンティティ (0: なし) */
 } RmEvent;
 
-/* The hooks by number (a system asks for them by these: game_production::HookCall::hook). */
+/* フックの番号 (システムはこの番号で頼む: game_production::HookCall::hook)。 */
 enum RmHook {
     RM_HOOK_BEGIN_PLAY = 0,
     RM_HOOK_TICK = 1,
@@ -158,99 +158,99 @@ enum RmHook {
     RM_HOOK_TRIGGER_ENTER = 5,
     RM_HOOK_TRIGGER_EXIT = 6,
     RM_HOOK_CLICK = 7, /* ABI 6 */
-    RM_HOOK_EVENT = 8  /* ABI 7 (called with an RmEvent) */
+    RM_HOOK_EVENT = 8  /* ABI 7 (RmEvent を付けて呼ぶ) */
 };
 
 enum RmModuleFlags {
-    RmModuleFlag_Debug = 1 /* built as Debug (the debug C runtime): only a Debug engine takes it */
+    RmModuleFlag_Debug = 1 /* Debug で作った (Debug の C ランタイム): Debug のエンジンだけが受け取る */
 };
 
 typedef struct RmModule {
-    uint32_t abi;   /* RM_ABI_VERSION the DLL was built with */
+    uint32_t abi;   /* DLL を作ったときの RM_ABI_VERSION */
     uint32_t flags; /* RmModuleFlags */
     uint32_t scriptCount;
     const RmScriptDesc* scripts;
-    /* A script's std::string field (the pointer RmFieldDesc::access gives), by the DLL itself:
-       get copies what fits into buf (0-terminated) and returns the full length in bytes. */
+    /* スクリプトの std::string フィールド (RmFieldDesc::access が渡すポインター) を、DLL 自身が扱う:
+       get は入る分を buf にコピーし (0 で終わる)、全体の長さをバイトで返す。 */
     uint64_t (*stringGet)(const void* field, char* buf, uint64_t cap);
     void (*stringSet)(void* field, const char* utf8, uint64_t len);
 } RmModule;
 
-/* What every engine gives (game production's part). `ctx` is the engine's: pass it back as it is. */
+/* どのエンジンも渡すもの (ゲーム制作の部品)。`ctx` はエンジンのもの: そのまま返すこと。 */
 typedef struct RmCoreApi {
-    void (*log)(void* ctx, int level, const char* utf8); /* 0 = info, 1 = warning, 2 = error */
-    float (*deltaTime)(void* ctx);                       /* seconds of this frame */
-    double (*time)(void* ctx);                           /* seconds since Play */
+    void (*log)(void* ctx, int level, const char* utf8); /* 0 = 情報、1 = 警告、2 = エラー */
+    float (*deltaTime)(void* ctx);                       /* このフレームの秒数 */
+    double (*time)(void* ctx);                           /* Play してからの秒数 */
     RmEntityId (*findByName)(void* ctx, const char* utf8);
     int (*exists)(void* ctx, RmEntityId e);
     int (*isActive)(void* ctx, RmEntityId e);
     void (*setActive)(void* ctx, RmEntityId e, int active);
-    /* Copies the name (UTF-8, 0-terminated, cut to cap) and returns its full length in bytes. */
+    /* 名前 (UTF-8、0 で終わる、cap で切る) をコピーし、全体の長さをバイトで返す。 */
     uint32_t (*getName)(void* ctx, RmEntityId e, char* buf, uint32_t cap);
     RmEntityId (*parent)(void* ctx, RmEntityId e);
-    /* Keys by Windows virtual-key code (VK_LEFT = 0x25, 'A' = 0x41 ...). */
+    /* キーは Windows の仮想キーコードで (VK_LEFT = 0x25、'A' = 0x41 ...)。 */
     int (*keyDown)(void* ctx, int vk);
-    int (*keyPressed)(void* ctx, int vk);  /* went down this frame */
-    int (*keyReleased)(void* ctx, int vk); /* went up this frame */
-    RmEntityId (*camera)(void* ctx);       /* the camera the game sees through */
+    int (*keyPressed)(void* ctx, int vk);  /* このフレームに押された */
+    int (*keyReleased)(void* ctx, int vk); /* このフレームに離された */
+    RmEntityId (*camera)(void* ctx);       /* ゲームが見るカメラ */
     void (*setCamera)(void* ctx, RmEntityId e);
-    /* The nth script of type `typeName` (RmScriptDesc::name) of the entity; null: none. */
+    /* エンティティの `typeName` (RmScriptDesc::name) 型の n 番目のスクリプト。null: ない。 */
     void* (*getScript)(void* ctx, RmEntityId e, const char* typeName, uint32_t nth);
-    /* Scenes (ABI 3). The game's scenes are the list of the game settings, in its order; a scene's name is
-       its file's name without .rmscene. loadScene / loadSceneAt ask to switch at the end of this frame
-       (EndPlay of this scene, the new one read, its BeginPlay): 1 = asked, 0 = no such scene (told). */
+    /* シーン (ABI 3)。ゲームのシーンは、ゲームの設定の一覧にある順のもの。シーンの名前は
+       .rmscene を除いたファイル名。loadScene / loadSceneAt はこのフレームの終わりに切り替えを頼む
+       (このシーンの EndPlay、新しいシーンの読み込み、その BeginPlay): 1 = 頼んだ、0 = そんなシーンはない (知らせる)。 */
     int (*loadScene)(void* ctx, const char* nameUtf8);
     int (*loadSceneAt)(void* ctx, int32_t index);
-    /* The scene playing: its name (copied like getName; the full length returned), its place in the
-       list (-1: not in it) and how many the list has. */
+    /* 今動いているシーン: その名前 (getName と同じようにコピーし、全体の長さを返す)、一覧での
+       位置 (-1: 一覧にない)、一覧にいくつあるか。 */
     uint32_t (*sceneName)(void* ctx, char* buf, uint32_t cap);
     int32_t (*sceneIndex)(void* ctx);
     int32_t (*sceneCount)(void* ctx);
-    /* Entities and components (ABI 4). spawn / spawnPrefab make the entity now (under `parent`, 0: the
-       top) and return it; its scripts start at the next frame (BeginPlay before their first Tick).
-       destroy / removeComponent take effect at the end of this frame: EndPlay first, the entity's
-       children with it; an id of something gone is never used again (exists() says 0). */
+    /* エンティティと部品 (ABI 4)。spawn / spawnPrefab はエンティティをすぐに作り (`parent` の下に。
+       0: いちばん上)、それを返す。スクリプトは次のフレームに始まる (最初の Tick の前に BeginPlay)。
+       destroy / removeComponent はこのフレームの終わりに効く: 先に EndPlay、エンティティの
+       子もいっしょに。なくなったものの id は二度と使わない (exists() は 0 を返す)。 */
     RmEntityId (*spawn)(void* ctx, const char* nameUtf8, RmEntityId parent);
-    RmEntityId (*spawnPrefab)(void* ctx, const char* assetId, RmEntityId parent); /* 0: not a prefab of the game (told) */
+    RmEntityId (*spawnPrefab)(void* ctx, const char* assetId, RmEntityId parent); /* 0: ゲームの Prefab ではない (知らせる) */
     void (*destroy)(void* ctx, RmEntityId e);
-    /* A component by its type's name (a script's RmScriptDesc::name, or an engine one's, e.g.
-       "rm::space3d::Transform"): added with its default values (one that cannot be twice: the one there)
-       and returned; null: no such type / no such entity. */
+    /* 型の名前による部品 (スクリプトの RmScriptDesc::name、またはエンジンのもの。例:
+       "rm::space3d::Transform"): 既定値で足して返す (2 つ持てないものは、すでにあるもの)。
+       null: そんな型 / そんなエンティティはない。 */
     void* (*addComponent)(void* ctx, RmEntityId e, const char* typeName);
-    int (*removeComponent)(void* ctx, RmEntityId e, const char* typeName, uint32_t nth); /* 1: will go */
+    int (*removeComponent)(void* ctx, RmEntityId e, const char* typeName, uint32_t nth); /* 1: 消える */
     uint32_t (*countComponents)(void* ctx, RmEntityId e, const char* typeName);
 } RmCoreApi;
 
 typedef struct RmApi {
-    uint32_t abi; /* RM_ABI_VERSION of the engine */
+    uint32_t abi; /* エンジンの RM_ABI_VERSION */
     uint32_t reserved;
     void* ctx;
     const RmCoreApi* core;
-    /* A plugin's part of the API by name and version (RM3D.h: Transform in 3D ...); null when the
-       plugin is not in this engine / game. */
+    /* プラグインの API の部品を、名前と版で (RM3D.h: 3D の Transform ...)。そのプラグインが
+       このエンジン / ゲームにないときは null。 */
     const void* (*part)(void* ctx, const char* name, uint32_t version);
 } RmApi;
 
-/* --- Game production's own parts (asked by name with RmApi::part, like a plugin's) -------------
- * A part has its own version: adding one never changes RmCoreApi nor RM_ABI_VERSION, and an engine
- * without it gives null (RM.h then answers "nothing"). Change a part -> a new version of that part. */
+/* --- ゲーム制作の部品 (RmApi::part に名前で頼む。プラグインのものと同じ) -------------
+ * 部品には自分の版がある: 足しても RmCoreApi も RM_ABI_VERSION も変わらず、それがない
+ * エンジンは null を返す (RM.h は「なし」と答える)。部品を変えたら、その部品の版を新しくする。 */
 
-/* Input by action name (the game settings' 入力): "rm_engine.game_production.input", version 1. */
+/* 動作の名前による入力 (ゲームの設定の 入力): "rm_engine.game_production.input"、版 1。 */
 #define RM_PART_INPUT "rm_engine.game_production.input"
 #define RM_PART_INPUT_VERSION 1u
 typedef struct RmInputApi {
-    int (*down)(void* ctx, const char* action);     /* held now */
-    int (*pressed)(void* ctx, const char* action);  /* went down this frame */
-    int (*released)(void* ctx, const char* action); /* went up this frame */
+    int (*down)(void* ctx, const char* action);     /* いま押している */
+    int (*pressed)(void* ctx, const char* action);  /* このフレームに押された */
+    int (*released)(void* ctx, const char* action); /* このフレームに離された */
     float (*axis)(void* ctx, const char* action);   /* -1..1 */
 } RmInputApi;
 
-/* Input, version 2: the same by player, and what the player may change. `player`: -1 = everyone (every
- * game pad, the keyboard and the mouse - as version 1); 0..3 = that player: the game pad in that slot,
- * and the keyboard and the mouse when the game settings' キーボードとマウスのプレイヤー is that one.
- * The bindings are the player's: the game settings' 入力 until a script changes them (setBinding ...);
- * saveBindings writes them to the player's PC (input.json next to the saves), loadBindings reads them
- * back (the game does that by itself when it starts). */
+/* 入力、版 2: 同じものをプレイヤーごとに、そしてプレイヤーが変えられるもの。`player`: -1 = みんな
+ * (全部のゲームパッド、キーボード、マウス - 版 1 と同じ)、0..3 = そのプレイヤー: その番号のゲームパッドと、
+ * ゲームの設定の キーボードとマウスのプレイヤー がその人のときのキーボードとマウス。
+ * 割り当てはそのプレイヤーのもの: スクリプトが変える (setBinding ...) までは、ゲームの設定の 入力。
+ * saveBindings はそれをプレイヤーの PC に書き (セーブの隣の input.json)、loadBindings は
+ * 読み戻す (ゲームは始まるときに自分でやる)。 */
 #define RM_PART_INPUT_VERSION2 2u
 typedef struct RmInputApi2 {
     int (*down)(void* ctx, const char* action, int32_t player);
@@ -258,37 +258,37 @@ typedef struct RmInputApi2 {
     int (*released)(void* ctx, const char* action, int32_t player);
     float (*axis)(void* ctx, const char* action, int32_t player);
     int (*padConnected)(void* ctx, int32_t player);
-    /* Shakes the player's pad: low = the left (heavy) motor, high = the right (light) one, 0..1. */
+    /* プレイヤーのパッドを震わせる: low = 左 (重い) モーター、high = 右 (軽い) モーター、0..1。 */
     void (*vibrate)(void* ctx, int32_t player, float low, float high, float seconds);
     uint32_t (*bindingCount)(void* ctx, const char* action);
-    /* control: the game settings' InputControl value (a key's virtual-key code, a pad's 0x100 + ...). */
+    /* control: ゲームの設定の InputControl の値 (キーの仮想キーコード、パッドの 0x100 + ...)。 */
     int (*binding)(void* ctx, const char* action, uint32_t index, int32_t* control, float* scale);
-    int (*setBinding)(void* ctx, const char* action, uint32_t index, int32_t control, float scale); /* index == count: added */
+    int (*setBinding)(void* ctx, const char* action, uint32_t index, int32_t control, float scale); /* index == count: 足す */
     int (*removeBinding)(void* ctx, const char* action, uint32_t index);
-    void (*resetBindings)(void* ctx); /* back to the game settings' */
+    void (*resetBindings)(void* ctx); /* ゲームの設定のものに戻す */
     int (*saveBindings)(void* ctx);
     int (*loadBindings)(void* ctx);
-    /* What went down this frame for `player` (a key, a mouse button, a pad's button; a stick or a trigger
-       pushed past half way): its control, and *direction 1 / -1 (a stick to the left: -1); 0: nothing.
-       For "press the key for Jump". */
+    /* `player` についてこのフレームに押されたもの (キー、マウスのボタン、パッドのボタン、半分まで
+       倒したスティックやトリガー): その control と、*direction 1 / -1 (左に倒したスティック: -1)。0: なし。
+       「ジャンプのキーを押してください」のため。 */
     int32_t (*anyPressed)(void* ctx, int32_t player, float* direction);
-    /* A control's name ("Space", "A", "PadA", "MouseLeft" ...), copied like getName. */
+    /* control の名前 ("Space"、"A"、"PadA"、"MouseLeft" ...)。getName と同じようにコピーする。 */
     uint32_t (*controlName)(void* ctx, int32_t control, char* buf, uint32_t cap);
 } RmInputApi2;
 
-/* The mouse on the game's screen: "rm_engine.game_production.mouse", 1. The screen is the game
- * settings' 画面 (DIPs, (0, 0) at the top left, y down) - the editor's game view is scaled to it. */
+/* ゲームの画面にあるマウス: "rm_engine.game_production.mouse"、1。画面はゲームの設定の 画面
+ * (DIP、左上が (0, 0)、y は下向き) - エディターのゲームビューはそれに合わせて拡大・縮小される。 */
 #define RM_PART_MOUSE "rm_engine.game_production.mouse"
 #define RM_PART_MOUSE_VERSION 1u
 typedef struct RmMouseApi {
-    int (*position)(void* ctx, float out[2]); /* 0: not over the game (out: where it was last) */
-    void (*delta)(void* ctx, float out[2]);   /* moved since the last frame (0 while not over the game) */
-    float (*wheel)(void* ctx);                /* the wheel's notches this frame: + turned away from you */
+    int (*position)(void* ctx, float out[2]); /* 0: ゲームの上にない (out: 最後にあった所) */
+    void (*delta)(void* ctx, float out[2]);   /* 前のフレームから動いた (ゲームの上にないあいだは 0) */
+    float (*wheel)(void* ctx);                /* このフレームのホイールの目盛り: + は手前から奥へ回したとき */
     void (*screenSize)(void* ctx, float out[2]);
 } RmMouseApi;
 
-/* Time: "rm_engine.game_production.time", 1. The scale multiplies every dt of the game (the scripts'
- * Tick, the systems, the physics, the particles); 0 stops them (a pause menu) - Tick is still called. */
+/* 時間: "rm_engine.game_production.time"、1。倍率はゲームのすべての dt (スクリプトの
+ * Tick、システム、物理、パーティクル) に掛かる。0 でそれらが止まる (ポーズメニュー) - Tick は呼ばれ続ける。 */
 #define RM_PART_TIME "rm_engine.game_production.time"
 #define RM_PART_TIME_VERSION 1u
 typedef struct RmTimeApi {
@@ -299,17 +299,17 @@ typedef struct RmTimeApi {
     uint64_t (*frameCount)(void* ctx);
 } RmTimeApi;
 
-/* Coroutines: "rm_engine.game_production.coroutines", 1. The coroutine's frame is the DLL's (C++20
- * coroutines: RM.h's rm::Task); the engine keeps when to run it next. resume(frame, &next) runs it to its
- * next wait and writes the wait; it returns 0 when the coroutine ended. destroy(frame) frees it (ended,
- * or stopped early). The owner is the script whose hook (or coroutine) is running when it is started:
- * its EndPlay (or its entity destroyed, the scene switched, the game stopped, the scripts built again)
- * stops them. */
+/* コルーチン: "rm_engine.game_production.coroutines"、1。コルーチンのフレームは DLL のもの (C++20 の
+ * コルーチン: RM.h の rm::Task)。エンジンは次にいつ動かすかを持つ。resume(frame, &next) は次の待ちまで
+ * 動かして、その待ちを書く。コルーチンが終わったときは 0 を返す。destroy(frame) はそれを解放する (終わった
+ * もの、または途中で止めたもの)。持ち主は、始めたときに動いていたフック (またはコルーチン) のスクリプト:
+ * その EndPlay (またはエンティティが壊れる、シーンが切り替わる、ゲームが止まる、スクリプトが作り直される)
+ * で止まる。 */
 enum RmWaitKind {
-    RmWait_Frames = 0,      /* `frames` frames (1: the next frame) */
-    RmWait_Seconds = 1,     /* `seconds` of game time (the time scale counts) */
-    RmWait_RealSeconds = 2, /* `seconds` of real time */
-    RmWait_Coroutine = 3    /* until the coroutine `coroutine` has ended */
+    RmWait_Frames = 0,      /* `frames` フレーム (1: 次のフレーム) */
+    RmWait_Seconds = 1,     /* ゲーム時間で `seconds` 秒 (時間の倍率が効く) */
+    RmWait_RealSeconds = 2, /* 実時間で `seconds` 秒 */
+    RmWait_Coroutine = 3    /* コルーチン `coroutine` が終わるまで */
 };
 typedef struct RmWait {
     uint32_t kind;
@@ -320,16 +320,16 @@ typedef struct RmWait {
 #define RM_PART_COROUTINES "rm_engine.game_production.coroutines"
 #define RM_PART_COROUTINES_VERSION 1u
 typedef struct RmCoroutinesApi {
-    /* Runs it now to its first wait; its id (0: it ended at once - destroy was called). */
+    /* 最初の待ちまですぐ動かす: その id (0: すぐ終わった - destroy を呼んだ)。 */
     uint64_t (*start)(void* ctx, void* frame, int (*resume)(void* frame, RmWait* next), void (*destroy)(void* frame));
     void (*stop)(void* ctx, uint64_t id);
-    void (*stopAll)(void* ctx); /* every coroutine of the script that is running */
+    void (*stopAll)(void* ctx); /* いま動いているスクリプトのすべてのコルーチン */
     int (*running)(void* ctx, uint64_t id);
 } RmCoroutinesApi;
 
-/* Events: "rm_engine.game_production.events", 1. Sent now, delivered after this frame's Ticks (the
- * scripts' OnEvent, in their order); one sent in an OnEvent comes right after. scope: 0 = every entity,
- * 1 = `target` only, 2 = `target` and everything below it. */
+/* イベント: "rm_engine.game_production.events"、1。送るのはすぐで、届くのはこのフレームの Tick のあと
+ * (スクリプトの OnEvent、その順に)。OnEvent の中で送ったものはその直後に来る。scope: 0 = すべての
+ * エンティティ、1 = `target` だけ、2 = `target` とその下すべて。 */
 #define RM_PART_EVENTS "rm_engine.game_production.events"
 #define RM_PART_EVENTS_VERSION 1u
 typedef struct RmEventsApi {
@@ -337,8 +337,8 @@ typedef struct RmEventsApi {
                  RmEntityId entity);
 } RmEventsApi;
 
-/* Entities, more: "rm_engine.game_production.entity", 1. Tags and layers are names (the game settings
- * list them); "" = none (a layer "": the default one, number 0). */
+/* エンティティ、その他: "rm_engine.game_production.entity"、1。タグとレイヤーは名前 (ゲームの設定が
+ * 並べる)。"" = なし (レイヤーの "": 既定のもの、番号 0)。 */
 #define RM_PART_ENTITY "rm_engine.game_production.entity"
 #define RM_PART_ENTITY_VERSION 1u
 typedef struct RmEntityApi {
@@ -346,37 +346,37 @@ typedef struct RmEntityApi {
     void (*setTag)(void* ctx, RmEntityId e, const char* utf8);
     uint32_t (*getLayer)(void* ctx, RmEntityId e, char* buf, uint32_t cap);
     void (*setLayer)(void* ctx, RmEntityId e, const char* utf8);
-    /* A layer's number: "" 0, the game settings' レイヤー 1, 2 ... in their order; -1: not there. */
+    /* レイヤーの番号: "" は 0、ゲームの設定の レイヤー は並んでいる順に 1、2 ...。-1: ない。 */
     int32_t (*layerIndex)(void* ctx, const char* name);
-    /* The entities with this tag (in the 階層's order): how many there are, the first `cap` copied. */
+    /* このタグのエンティティ (階層の順): いくつあるか、最初の `cap` 個をコピーする。 */
     uint32_t (*findWithTag)(void* ctx, const char* tag, RmEntityId* out, uint32_t cap);
-    /* The children of `e` (0: the top level), in order: how many, the first `cap` copied. */
+    /* `e` の子 (0: いちばん上の階層) を順に: いくつあるか、最初の `cap` 個をコピーする。 */
     uint32_t (*children)(void* ctx, RmEntityId e, RmEntityId* out, uint32_t cap);
-    /* Moves `e` (with what is below it) under `parent` (0: the top) at `index` among its children
-       (-1: the end). keepWorld: it stays where it is in the world (its Transform changed). 0: refused
-       (into itself, no such entity). */
+    /* `e` を (その下のものといっしょに) `parent` の下の、子の中の `index` の位置へ動かす
+       (-1: 最後)。keepWorld: ワールドでは今の位置のまま (Transform が変わる)。0: 断った
+       (自分の中へ、そんなエンティティはない)。 */
     int (*setParent)(void* ctx, RmEntityId e, RmEntityId parent, int keepWorld, int32_t index);
     void (*setName)(void* ctx, RmEntityId e, const char* utf8);
 } RmEntityApi;
 
-/* Global variables (the game settings' グローバル変数) by name: "rm_engine.game_production.globals", 1.
- * `type` is how the script holds it: RmField_Bool (int32_t 0 / 1), RmField_Int (int32_t), RmField_Float
- * (float), RmField_Vec2 (float[2]), RmField_Vec3 (float[3]); the engine converts from / to the
- * variable's own type (a text variable is read / written only as text). 0 = no such variable (told
- * once; `out` untouched). */
+/* グローバル変数 (ゲームの設定の グローバル変数) を名前で: "rm_engine.game_production.globals"、1。
+ * `type` はスクリプトがそれをどう持つか: RmField_Bool (int32_t の 0 / 1)、RmField_Int (int32_t)、
+ * RmField_Float (float)、RmField_Vec2 (float[2])、RmField_Vec3 (float[3])。エンジンは変数自身の型との
+ * 間で変換する (文字の変数は、文字としてだけ読み書きできる)。0 = そんな変数はない (1 度だけ知らせる。
+ * `out` はそのまま)。 */
 #define RM_PART_GLOBALS "rm_engine.game_production.globals"
 #define RM_PART_GLOBALS_VERSION 1u
 typedef struct RmGlobalsApi {
     int (*get)(void* ctx, const char* name, uint32_t type, void* out);
     int (*set)(void* ctx, const char* name, uint32_t type, const void* value);
-    /* As text (a number variable: its text, "3" / "1.5" / "true" / "1, 2"): copied like getName, the
-       full length returned. */
+    /* 文字として (数の変数: その文字、"3" / "1.5" / "true" / "1, 2"): getName と同じようにコピーし、
+       全体の長さを返す。 */
     uint64_t (*getString)(void* ctx, const char* name, char* buf, uint64_t cap);
     int (*setString)(void* ctx, const char* name, const char* utf8, uint64_t len);
 } RmGlobalsApi;
 
-/* Saving every global variable to a slot ("0", "auto": letters, digits, _ and -): "rm_engine.
- * game_production.save", 1. 1 = done; 0 = not (told on the console). */
+/* すべてのグローバル変数をスロットに保存する ("0"、"auto": 英字、数字、_ と -): "rm_engine.
+ * game_production.save"、1。1 = できた、0 = できなかった (コンソールに知らせる)。 */
 #define RM_PART_SAVE "rm_engine.game_production.save"
 #define RM_PART_SAVE_VERSION 1u
 typedef struct RmSaveApi {
@@ -386,16 +386,16 @@ typedef struct RmSaveApi {
     int (*remove)(void* ctx, const char* slot);
 } RmSaveApi;
 
-/* The game itself: "rm_engine.game_production.game", 1. quit: the game ends after this frame (the
- * exported game's window closes; the editor's Play stops, as ■). */
+/* ゲームそのもの: "rm_engine.game_production.game"、1。quit: このフレームのあとでゲームが終わる
+ * (書き出したゲームのウィンドウが閉じる。エディターの Play は ■ のように止まる)。 */
 #define RM_PART_GAME "rm_engine.game_production.game"
 #define RM_PART_GAME_VERSION 1u
 typedef struct RmGameApi {
     void (*quit)(void* ctx);
 } RmGameApi;
 
-/* The one function a script DLL exports (rmgen writes it). Returns null when `abi` is not the
-   version it was built for. */
+/* スクリプトの DLL が書き出す、たった 1 つの関数 (rmgen が書く)。`abi` が DLL を作った版と
+   違うときは null を返す。 */
 typedef const RmModule* (*RmModuleInitFn)(const RmApi* api, uint32_t abi);
 
 #ifdef __cplusplus

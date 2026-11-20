@@ -37,7 +37,7 @@ std::vector<AssetRef> PlayScenes(const SceneList& list, const AssetRef& open) {
     for (const AssetRef& s : GameScenes(list, open)) {
         if (s.Empty() || SceneBuilt(list, s)) out.push_back(s);
     }
-    if (std::find(out.begin(), out.end(), open) == out.end()) out.push_back(open);  // (left out, but open: it plays)
+    if (std::find(out.begin(), out.end(), open) == out.end()) out.push_back(open);  // (外してあるが開いている: 遊べる)
     return out;
 }
 
@@ -117,7 +117,7 @@ ScenePlan PlanSceneSave(const json::Value& scene, const SceneSlot& slot, const s
     plan.after = slot;
     if (plan.after.guid.empty()) {
         plan.after.guid = newGuid;
-        // The name kept in the .meta (asset::MetaText) is the file's own.
+        // .meta に残る名前 (asset::MetaText) は、そのファイル自身のもの。
         const size_t slash = slot.path.find_last_of('/');
         plan.files.push_back({slot.path + std::string(asset::kMetaSuffix), asset::MetaText("", newGuid, slot.path.substr(slash + 1))});
     }

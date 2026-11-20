@@ -1,12 +1,12 @@
 #pragma once
-// The editor part of a scene setting (the type and what it is to the game are the runtime part's:
-// SceneSettingInfo, runtime/Components.h): a menu on its block in the インスペクター, offered by the
-// plugin that offers the setting, from its RegisterEditor.
+// シーン設定のエディター側 (型と、ゲームにとっての意味はランタイム側のもの: SceneSettingInfo、
+// runtime/Components.h): インスペクターのそのブロックに出るメニュー。設定を出すプラグインが、
+// 自分の RegisterEditor から足す。
 //
 //   static const game_production::SceneSettingLook kSkyLook{.type = &reflect::TypeOf<Sky>, .menu = &SkyMenu};
 //   registry.Contribute(game_production::kSceneSettingLookPoint, kSkyLook);
 //
-// A setting without a look is shown plainly (its fields; edits go to the history as any field).
+// 見た目 (Look) のない設定は、そのまま (フィールドだけ) 出る。編集は他のフィールドと同じく履歴に入る。
 
 #include "core/reflect/Data.h"
 #include "editor/plugin/Software.h"
@@ -18,27 +18,27 @@
 
 namespace rm::game_production {
 
-// PluginRegistry point: items are SceneSettingLook (static).
+// PluginRegistry の口: 中身は SceneSettingLook (static)。
 inline constexpr char kSceneSettingLookPoint[] = "rm_engine.game_production.scene_setting_look";
 
-// What the menu's rows can do. Copied into the rows (they run after the menu closes).
+// メニューの行ができること。行にコピーして持たせる (行はメニューが閉じた後に動くため)。
 struct SceneSettingMenuHost {
     editor::SoftwareHost* host = nullptr;
-    // Play: the setting shown is the copy that plays - the rows that change it are greyed.
+    // Play 中: 出ている設定は Play 中のコピー。それを変える行はグレーにする。
     bool play = false;
-    // Changes the setting of the open scene: `change` gets it (a value of the look's type) and may
-    // change any of its fields - one undo entry named `label` (UTF-8, Japanese).
+    // 開いているシーンの設定を変える: `change` に設定 (この Look の型の値) が渡り、どのフィールドも
+    // 変えてよい。Undo は `label` (UTF-8、日本語) という名前の 1 件。
     std::function<void(std::string label, std::function<void(void* setting)> change)> edit;
-    // The same, and in Play the copy that plays, at once (nothing to undo: it goes back at ■).
+    // 同じことを、Play 中は Play 中のコピーにも、すぐ行う (Undo には積まない: ■ で元に戻る)。
     std::function<void(std::string label, std::function<void(void* setting)> change)> apply;
 };
 
 struct SceneSettingLook {
     const reflect::TypeDesc& (*type)();
-    // The rows of the block's ⋮ menu (none: no menu).
+    // ブロックの ⋮ メニューの行 (空なら、メニューなし)。
     std::vector<editor::w::Action> (*menu)(const SceneSettingMenuHost& host) = nullptr;
-    // Ready-made values set at once (天候's テンプレート): a row above its fields named presetLabel(), a
-    // drop-down of these rows (each changes the setting through host.apply). None: no row.
+    // できあいの値をまとめて設定する (天候のテンプレート): フィールドの上に presetLabel() という名前の
+    // 行と、この行のドロップダウンが出る (各行は host.apply で設定を変える)。空なら、行なし。
     std::vector<editor::w::Action> (*presets)(const SceneSettingMenuHost& host) = nullptr;
     std::wstring (*presetLabel)() = nullptr;
 };

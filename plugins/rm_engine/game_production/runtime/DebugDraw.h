@@ -1,16 +1,16 @@
 #pragma once
-// Lines a game's scripts draw to see what they do (rm::Debug::Line / Box / Sphere / Ray in RM3D.h,
-// Line / Rect / Circle in RM2D.h - design RME_PLATFORM 4-b). Only the editor shows them (its game
-// view and scene view, while playing): an exported game gives its scripts no buffer
-// (ScriptWorld::debug stays null), so the calls do nothing there - nothing kept, nothing drawn.
+// ゲームのスクリプトが、自分のしていることを見るために描く線 (RM3D.h の rm::Debug::Line / Box /
+// Sphere / Ray、RM2D.h の Line / Rect / Circle - 設計 RME_PLATFORM 4-b)。見せるのはエディターだけ
+// (Play 中の、ゲームビューとシーンビュー): 書き出したゲームはスクリプトにバッファーを渡さない
+// (ScriptWorld::debug は null のまま) ので、そこでは呼んでも何も起きない - 保持も描画もしない。
 //
-// Every shape is kept as lines (the connectors' parts turn boxes, spheres, rectangles and circles into
-// them), in the space they were drawn in. A line given for 0 seconds is seen for the frame it was
-// drawn in; for N seconds, until N seconds of play have gone by. Pure - tested in tests/TestScripts.cpp.
+// どの形も線として保持する (箱・球・長方形・円は、コネクターの部分が線にする)。描かれた空間のまま。
+// 0 秒で与えた線は描かれたフレームの間だけ見える。N 秒なら、Play の時間で N 秒たつまで。
+// 純粋 (I/O も描画もしない)。tests/TestScripts.cpp でテストする。
 //
-//   each frame (Play):   debug.BeginFrame(dt)   -> what has had its time goes; then the scripts run
-//   a script:            debug.Add(...)          -> kept (false: full - kMaxLines)
-//   the views:           debug.Lines()           -> drawn (3D: hidden parts faint; 2D: on top)
+//   毎フレーム (Play):   debug.BeginFrame(dt)   -> 時間の切れたものが消える。その後スクリプトが動く
+//   スクリプト:          debug.Add(...)          -> 保持する (false: いっぱい - kMaxLines)
+//   ビュー:              debug.Lines()           -> 描く (3D: 隠れた部分は薄く、2D: 一番上に)
 //   Stop:                debug.Clear()
 
 #include "base/Math.h"
@@ -28,25 +28,25 @@ struct DebugLine {
     Vec3 a, b;  // 2D: z = 0
     Color color;
     DebugSpace space = DebugSpace::Space3D;
-    bool oneFrame = true;  // given for 0 seconds: gone at the next frame
-    double until = 0;      // otherwise: kept while the clock is at or before this
+    bool oneFrame = true;  // 0 秒で与えた: 次のフレームで消える
+    double until = 0;      // そうでなければ: 時計がこの値以下の間は保持する
 };
 
 class DebugDraw {
 public:
-    // More than this at once is dropped (and told once, the first time: TakeOverflowNotice). Lines are
-    // cheap to draw (one draw for all of them), so this only stops a script gone wrong from filling
-    // the memory (a loop that never stops adding).
+    // これより多いものは捨てる (最初の 1 回だけ知らせる: TakeOverflowNotice)。線は描くのが安い
+    // (全部を 1 回の描画で描く) ので、この上限は、暴走したスクリプト (追加し続けるループ) が
+    // メモリをいっぱいにするのを止めるためだけのもの。
     static constexpr size_t kMaxLines = 50'000;
 
-    // A new frame of play, `dt` seconds after the last: lines given for 0 seconds in an earlier frame,
-    // and lines whose seconds have gone by, are dropped.
+    // Play の新しいフレーム、前から `dt` 秒後: 前のフレームで 0 秒で与えられた線と、秒数が
+    // 過ぎた線を捨てる。
     void BeginFrame(double dt);
-    // A line to show for `seconds` (0 or less: this frame only). False when it was dropped (full).
+    // `seconds` 秒間見せる線 (0 以下: このフレームだけ)。捨てたとき (いっぱい) は false。
     bool Add(DebugSpace space, Vec3 a, Vec3 b, Color color, double seconds);
-    // True once after lines were first dropped (to tell the console once); again only after Clear.
+    // 線が初めて捨てられた後で 1 回だけ true (コンソールに 1 回だけ知らせるため)。もう一度は、Clear の後だけ。
     bool TakeOverflowNotice();
-    // Stop: everything goes (and the notice may be told again next time).
+    // Stop: すべて消える (次のときに、また知らせてよい)。
     void Clear();
 
     std::span<const DebugLine> Lines() const { return lines_; }

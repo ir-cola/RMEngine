@@ -35,7 +35,7 @@ std::optional<double> Number(std::string_view s) {
 
 double WholeInt(double d) { return std::clamp(std::round(d), static_cast<double>(std::numeric_limits<int32_t>::min()), static_cast<double>(std::numeric_limits<int32_t>::max())); }
 
-// Fits a number to the type (a bool 0 / 1, an int whole).
+// 数を型に合わせる (bool は 0 / 1、int は整数)。
 double Fit(GlobalType t, double d) {
     if (t == GlobalType::Bool) return d != 0 ? 1 : 0;
     if (t == GlobalType::Int) return WholeInt(d);
@@ -73,7 +73,7 @@ std::optional<GlobalValue> ParseGlobalValue(GlobalType type, std::string_view te
         if (t == "false" || t == "0") return v;
         return std::nullopt;
     }
-    // Numbers: one, or 2 / 3 split by , (or spaces). Fewer than the type has: the rest 0.
+    // 数: 1 つ、または 2 / 3 個を , (か空白) で区切る。型が持つ数より少ないとき: 残りは 0。
     std::vector<std::string_view> parts;
     size_t at = 0;
     while (at <= t.size()) {
@@ -189,7 +189,7 @@ bool GlobalStore::FromSave(const json::Value& doc, std::vector<std::string>* war
     if (doc.Get("format").AsInt(0) > kSaveFormat && warnings) warnings->push_back("新しい版のエンジンで書いたセーブです (読める所だけ読みます)");
     for (auto& [name, v] : values_) {
         const json::Value* j = doc.Get("globals").Find(name);
-        if (!j) continue;  // (not in the save: as it is now)
+        if (!j) continue;  // (セーブにない: 今のまま)
         if (auto read = GlobalFromJson(v.type, *j)) {
             v = std::move(*read);
         } else if (warnings) {
@@ -246,7 +246,8 @@ bool WriteSave(GlobalStore& store, const fs::path& folder, std::string_view slot
     const fs::path file = SaveFile(folder, slot);
     std::error_code ec;
     fs::create_directories(folder, ec);
-    // From the file there (its keys kept); a new one from the last read (its unknown keys go along).
+    // そこにあるファイルから (そのキーは保持する)。新しいものは、最後に読んだものから (知らないキーも
+    // 一緒に行く)。
     json::Value base = store.lastRead;
     if (fs::exists(file, ec)) {
         std::string ignored;

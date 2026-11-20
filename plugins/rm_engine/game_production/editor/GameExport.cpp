@@ -30,7 +30,7 @@ ExportScenes ScenesForExport(const SceneList& list, const AssetRef& open, const 
     const AssetRef first = FirstScene(list);
     std::optional<size_t> firstAt, openAt;
     for (const AssetRef& ref : GameScenes(list, open)) {
-        if (!ref.Empty() && !SceneBuilt(list, ref)) continue;  // (left out of the build: ゲームの設定 ▸ ビルド)
+        if (!ref.Empty() && !SceneBuilt(list, ref)) continue;  // (ビルドから外す: ゲームの設定 ▸ ビルド)
         if (ref == open) {
             openAt = out.scenes.size();
             if (!first.Empty() && ref == first) firstAt = openAt;
@@ -77,13 +77,13 @@ std::vector<ExportAsset> CollectAssets(const GameExportInput& in) {
     std::vector<ExportAsset> out;
     for (size_t i = 0; i < ids.size(); ++i) {
         const fs::path file = in.assetFile(AssetRef{ids[i]});
-        if (file.empty()) continue;  // an id of something else (an entity's), or a file that is gone: the game draws without it
+        if (file.empty()) continue;  // ほかのものの id (エンティティのもの) か、なくなったファイル: ゲームはそれなしで描く
         const std::string rel = PathToUtf8(file.lexically_normal().lexically_relative(in.projectRoot.lexically_normal()).generic_wstring());
-        if (!editor::exporter::PortablePath(rel)) continue;  // not in the project: never written into the game
+        if (!editor::exporter::PortablePath(rel)) continue;  // プロジェクトの外: ゲームには書かない
         if (std::any_of(out.begin(), out.end(), [&](const ExportAsset& a) { return a.rel == rel; })) continue;
         out.push_back({ids[i], file, rel, in.projectRoot});
-        // A prefab places more (its own assets, the prefabs inside it); a file of another of the engine's
-        // own kinds (.rm..., JSON) may name more too (a particle effect: its modules' .rmfx files).
+        // Prefab はさらに置く (自分のアセット、中の Prefab)。エンジン自身の別の種類のファイル (.rm...,
+        // JSON) もさらに名指すことがある (パーティクルの効果: その部品の .rmfx ファイル)。
         if (const std::wstring ext = file.extension().wstring(); ext.size() > 3 && ext.starts_with(L".rm")) {
             if (const auto bytes = ReadAll(file)) {
                 if (auto doc = json::Parse(*bytes)) add(*doc);
@@ -104,7 +104,7 @@ bool MakeRequest(const GameExportInput& in, const std::vector<ExportAsset>& asse
     out.exeName = in.exeName;
     out.titleUtf8 = in.title;
     out.plugins = in.plugins;
-    // The scripts: built now from the sources as they are (never an older DLL).
+    // スクリプト: 今のソースからその場でビルドする (古い DLL は決して使わない)。
     if (ScriptSourcesTime(in.scripts.project) != 0) {
         if (note) note(editor::TrU8("スクリプトをビルドしています (書き出し用。エンジンと同じ Release か Debug)"));
         ScriptBuildRequest r = in.scripts;
@@ -121,7 +121,7 @@ bool MakeRequest(const GameExportInput& in, const std::vector<ExportAsset>& asse
     if (!in.iconFile.empty()) {
         if (auto bytes = ReadAll(in.iconFile)) out.iconPng = std::move(*bytes);
     }
-    // The scenes, as they are now.
+    // シーン、今の状態のまま。
     for (const auto& [path, text] : in.scenes) {
         if (!editor::exporter::PortablePath(path)) return fail(editor::TrU8F("シーンのファイルがプロジェクトの外にあります: {}", path));
         out.files.push_back({path, text});
@@ -129,11 +129,11 @@ bool MakeRequest(const GameExportInput& in, const std::vector<ExportAsset>& asse
     auto has = [&](const std::string& path) {
         return std::any_of(out.files.begin(), out.files.end(), [&](const pak::Entry& e) { return e.path == path; });
     };
-    // The assets: baked into the game's own form by the first baker that takes each, else as their file.
+    // アセット: それぞれを受け取る最初のベイカーがゲーム自身の形に焼く。なければファイルのまま。
     json::Value map = json::Value::MakeObject();
     for (const ExportAsset& a : assets) {
         if (std::any_of(in.scenes.begin(), in.scenes.end(), [&](const auto& s) { return s.first == a.rel; })) {
-            map.Set(a.id, a.rel);  // a scene: already in (as it is now)
+            map.Set(a.id, a.rel);  // シーン: もう入っている (今の状態で)
             continue;
         }
         bool baked = false;
@@ -158,7 +158,7 @@ bool MakeRequest(const GameExportInput& in, const std::vector<ExportAsset>& asse
         if (!has(a.rel)) out.files.push_back({a.rel, *bytes});
     }
 
-    // game.json: what the game reads first (GamePlayer.h).
+    // game.json: ゲームが最初に読むもの (GamePlayer.h)。
     json::Value game = json::Value::MakeObject();
     game.Set("kind", kGameDataKind);
     game.Set("format", kGameDataFormat);
@@ -169,7 +169,7 @@ bool MakeRequest(const GameExportInput& in, const std::vector<ExportAsset>& asse
     game.Set("scenes", std::move(scenes));
     game.Set("first", static_cast<int64_t>(in.first));
     game.Set("assets", std::move(map));
-    // Never a path of this PC in what the game reads.
+    // ゲームが読むものに、この PC のパスは決して入れない。
     if (const auto abs = editor::exporter::AbsolutePathsIn(game); !abs.empty()) {
         return fail(editor::TrU8F("ゲームのデータにこの PC のパスが入っています: {}\n相対パスにしてから書き出してください。", abs.front()));
     }

@@ -32,16 +32,16 @@ using editor::TrKey;
 using editor::TrU8;
 using ui::Rect;
 
-// --- The panel ---------------------------------------------------------------------------------------
+// --- パネル ---------------------------------------------------------------------------------------
 
-// What is read of the PC once a second (it hardly changes).
+// PC について 1 秒に 1 回読むもの (ほとんど変わらない)。
 struct DebugPanel::System {
     std::vector<platform::MonitorDesc> monitors;
     std::optional<platform::GpuDesc> gpu;
     platform::ProcessMemory memory;
     platform::MemoryStatus pcMemory;
     platform::CpuDesc cpu;
-    std::optional<platform::CpuMeter::Usage> usage;  // over the last second
+    std::optional<platform::CpuMeter::Usage> usage;  // 直近の 1 秒
 };
 
 namespace {
@@ -56,7 +56,7 @@ std::wstring FramesText(const FrameMeter::Summary& s) {
     return TrF(L"{:.0f} FPS ・ 平均 {:.1f} ms ・ 最長 {:.1f} ms ・ 描く時間 {:.2f} ms", s.fps, s.meanMs, s.worstMs, s.workMs);
 }
 
-// A pad's button by its place (PadA ..): "A", "LB", "Start" ...
+// パッドのボタンをその位置で (PadA ..): "A", "LB", "Start" ...
 std::wstring PadControlName(size_t i) {
     std::string n = ControlName(kPadControlBase + static_cast<int>(i));
     if (n.rfind("Pad", 0) == 0) n.erase(0, 3);
@@ -70,10 +70,10 @@ bool KeyHeld(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
 FolderWindowLayout DrawFolderWindow(ui::Context& c, float width, float height, std::span<const std::wstring> titles, int& tab, std::wstring_view status,
                                     const std::function<void()>& close) {
     const FolderWindowLayout l = LayoutFolderWindow(width, height);
-    w::DrawBar(c, {0, 0, width, height}, theme::Sidebar);  // (under the shape's edges)
+    w::DrawBar(c, {0, 0, width, height}, theme::Sidebar);  // (図形の縁の下)
     tab = std::clamp(tab, 0, kFolderTabs - 1);
     auto title = [&](int i) { return i < static_cast<int>(titles.size()) ? titles[static_cast<size_t>(i)] : std::wstring(); };
-    // The tabs not chosen, the sheet, then the chosen tab on it (joined: no line between them).
+    // 選ばれていないタブ、シート、その上に選ばれたタブ (つなげる: 間に線を引かない)。
     int chosen = tab;
     for (int i = 0; i < kFolderTabs; ++i) {
         if (i != tab && w::FolderTab(c, std::format("folder.tab{}", i), l.tabs[i], title(i), false, kFolderTabRadius)) chosen = i;
@@ -102,7 +102,7 @@ void DebugPanel::DrawWindow(ui::Context& c, float width, float height, const Deb
 
 void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
     const double now = platform::NowSeconds();
-    WantViewReports();  // (the views tell what they drew while this is shown)
+    WantViewReports();  // (表示中は、ビューが描いたものを知らせてくる)
     padState_ = pads_.Read();
     if (!system_ || now - systemAt_ > 1.0) {
         auto s = std::make_shared<System>();
@@ -110,21 +110,21 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         if (v.gfx) s->gpu = platform::GpuOf(v.gfx->D3D());
         s->memory = platform::MemoryOfThisProcess();
         s->pcMemory = platform::MemoryOfThePc();
-        s->cpu = system_ ? system_->cpu : platform::Cpu();  // (it does not change: read once)
+        s->cpu = system_ ? system_->cpu : platform::Cpu();  // (変わらない: 1 回だけ読む)
         s->usage = cpuMeter_.Sample();
         system_ = std::move(s);
         systemAt_ = now;
     }
 
     const Rect view = r;
-    // (each tab scrolls on its own)
+    // (各タブは自分でスクロールする)
     float& contentH = c.FloatState(c.MakeId(std::format("debug.contentH{}", tab_)), 600.f);
     const std::string scrollId = std::format("debug.scroll{}", tab_);
     const float off = w::BeginScroll(c, scrollId, view, contentH);
     const float x = view.x + 10, width = view.w - 20;
     float y = view.y + 4 - off;
     const float top = y;
-    // A section of the tab shown (`tab`), folded or open (kept by its title).
+    // 表示中のタブ (`tab`) の節。たたまれているか開いているか (タイトルで覚える)。
     auto header = [&](int tab, std::wstring_view title) {
         if (tab != tab_) return false;
         bool& open = open_.try_emplace(std::wstring(title), true).first->second;
@@ -142,7 +142,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         y += kRowH;
     };
 
-    // --- How often things are drawn --------------------------------------------------------------
+    // --- 描く頻度 --------------------------------------------------------------
     if (header(0, Tr(L"フレームの速さ"))) {
         row(Tr(L"シーンビュー"), FramesText(v.sceneView));
         row(Tr(L"ゲームビュー"), FramesText(v.gameView));
@@ -153,7 +153,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
                                                                 u.worstMs, u.workMs));
         }
         if (v.settings) row(Tr(L"目標 FPS (ゲームの設定)"), std::to_wstring(v.settings->targetFps));
-        // The graph of the last frames: Play's (the interval and the work), else the scene view's drawing.
+        // 直近のフレームのグラフ: Play のもの (間隔と処理)。なければシーンビューの描画。
         const std::vector<float>& a = v.playing ? v.playGraph.intervals : v.sceneGraph.intervals;
         const std::vector<float>& b = v.playing ? v.playGraph.work : v.sceneGraph.work;
         if (!a.empty()) {
@@ -168,7 +168,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- Where the time of a Play frame goes ---------------------------------------------------------
+    // --- Play の 1 フレームの時間の行き先 ---------------------------------------------------------
     if (header(3, Tr(L"時間の内訳 (Play の 1 フレーム)"))) {
         if (!v.playing) {
             row(L"", Tr(L"Play 中に出ます (スクリプトの種類ごと・システムごとの時間)"));
@@ -211,7 +211,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         }
         row(Tr(L"スクリプトの種類"), TrF(L"{} 種類 (ビルドした DLL の中)", v.scriptTypes));
         if (v.playing) {
-            // A frame that needed the most fixed steps has fallen behind (the game slows down there).
+            // 固定ステップを一番多く要したフレームは遅れている (そこでゲームが遅くなる)。
             const bool behind = v.fixedSteps >= SystemRunner::kMaxFixedSteps;
             row(Tr(L"物理の刻み (このフレーム)"),
                 behind ? TrF(L"{} 回 (上限: 追いつけていません)", v.fixedSteps)
@@ -221,7 +221,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The scripts: how the last build went, and building / loading them again -----------------------
+    // --- スクリプト: 直近のビルドの結果と、ビルド・読み込みのやり直し -----------------------
     if (header(0, Tr(L"スクリプト"))) {
         using State = ScriptBuildOutcome::State;
         const ScriptBuildOutcome& b = v.scriptBuild;
@@ -242,8 +242,8 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         } else {
             row(Tr(L"ビルド"), Tr(L"プロジェクトを開いてからは、まだビルドしていません"));
         }
-        // ビルドし直す: every object made again (a build that keeps failing on what is already fixed, the
-        // engine's headers changed). 読み込み直す: the newest DLL used again (the scripts' values by name).
+        // ビルドし直す: オブジェクトをすべて作り直す (直した所に失敗し続けるビルド、エンジンのヘッダーが
+        // 変わったとき)。読み込み直す: 一番新しい DLL をもう一度使う (スクリプトの値は名前で引き継ぐ)。
         constexpr float kButtonW = 140, kButtonH = 26;
         const Rect rebuild{x + 10 + kLabelW, y + 3, kButtonW, kButtonH};
         const Rect reload{rebuild.Right() + 8, y + 3, kButtonW, kButtonH};
@@ -258,7 +258,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The global variables ---------------------------------------------------------------------------
+    // --- グローバル変数 ---------------------------------------------------------------------------
     if (header(4, Tr(L"グローバル変数"))) {
         if (!v.playing || !v.world) {
             row(L"", Tr(L"Play 中に、今の値が出ます (ゲームの設定の「グローバル変数」)"));
@@ -270,7 +270,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The mouse ---------------------------------------------------------------------------------
+    // --- マウス ---------------------------------------------------------------------------------
     if (header(0, Tr(L"マウス"))) {
         POINT cursor{};
         GetCursorPos(&cursor);
@@ -294,12 +294,12 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The keyboard --------------------------------------------------------------------------------
+    // --- キーボード --------------------------------------------------------------------------------
     if (header(1, Tr(L"キーボード"))) {
         std::wstring held;
         for (int vk = 8; vk < 256; ++vk) {
             if (vk == VK_XBUTTON1 || vk == VK_XBUTTON2 || !KeyHeld(vk)) continue;
-            // (the left / right ones of Shift, Ctrl and Alt are the same key twice)
+            // (Shift, Ctrl, Alt の左と右は、同じキーが 2 つ)
             if ((vk >= VK_LSHIFT && vk <= VK_RMENU)) continue;
             held += (held.empty() ? L"" : L" ・ ") + Utf8ToWide(ControlName(vk));
         }
@@ -307,7 +307,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The game pads -------------------------------------------------------------------------------
+    // --- ゲームパッド -------------------------------------------------------------------------------
     if (header(1, Tr(L"コントローラー (XInput)"))) {
         for (int p = 0; p < kPlayers; ++p) {
             const PadState& s = padState_[static_cast<size_t>(p)];
@@ -332,7 +332,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The game's input actions --------------------------------------------------------------------
+    // --- ゲームの入力アクション --------------------------------------------------------------------
     if (header(1, Tr(L"入力のアクション (Play 中)"))) {
         if (!v.playing || !v.world) {
             row(L"", Tr(L"Play 中に、ゲームの設定の「入力」の値が出ます (スクリプトが読む値)"));
@@ -346,7 +346,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The scene -----------------------------------------------------------------------------------
+    // --- シーン -----------------------------------------------------------------------------------
     if (header(0, Tr(L"シーン")) && v.scene) {
         const std::vector<TreeEntry> tree = v.scene->TreeOrder();
         size_t active = 0, roots = 0, components = 0, scripts = 0, missing = 0;
@@ -380,7 +380,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- What the views drew ---------------------------------------------------------------------------
+    // --- ビューが描いたもの ---------------------------------------------------------------------------
     if (header(3, Tr(L"描画とカメラ"))) {
         const std::vector<ViewReport> views = RecentViews();
         for (const ViewReport& vr : views) {
@@ -412,7 +412,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         }
     }
 
-    // --- The monitors --------------------------------------------------------------------------------
+    // --- モニター --------------------------------------------------------------------------------
     if (header(2, Tr(L"モニター"))) {
         for (size_t i = 0; i < system_->monitors.size(); ++i) {
             const platform::MonitorDesc& m = system_->monitors[i];
@@ -425,7 +425,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The console ---------------------------------------------------------------------------------------
+    // --- コンソール ---------------------------------------------------------------------------------------
     if (header(0, Tr(L"コンソール"))) {
         const log::Counts n = log::Counted();
         if (n.error > 0) {
@@ -443,7 +443,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The CPU -------------------------------------------------------------------------------------------
+    // --- CPU -------------------------------------------------------------------------------------------
     if (header(2, Tr(L"CPU"))) {
         const platform::CpuDesc& cpu = system_->cpu;
         row(Tr(L"名前"), cpu.name.empty() ? Tr(L"(読めません)") : cpu.name, true);
@@ -467,7 +467,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The memory ---------------------------------------------------------------------------------------
+    // --- メモリ ---------------------------------------------------------------------------------------
     if (header(2, Tr(L"メモリ"))) {
         const platform::MemoryStatus& pc = system_->pcMemory;
         if (pc.total > 0) {
@@ -482,7 +482,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The GPU ------------------------------------------------------------------------------------------
+    // --- GPU ------------------------------------------------------------------------------------------
     if (header(2, Tr(L"GPU"))) {
         if (const auto& g = system_->gpu) {
             row(Tr(L"GPU"), g->name, true);
@@ -504,7 +504,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
     }
 
     contentH = y - top + 10;
-    w::EndScroll(c, scrollId, view, contentH);  // (the tab's own: 2026-11-19, the thumb was another's)
+    w::EndScroll(c, scrollId, view, contentH);  // (そのタブ自身のもの: 2026-11-19、つまみが別のタブのものだった)
 }
 
 }  // namespace rm::game_production

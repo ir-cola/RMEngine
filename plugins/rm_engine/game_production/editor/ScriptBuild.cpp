@@ -33,7 +33,7 @@ std::string Xml(std::string s) {
     return o;
 }
 
-// A folder for MSBuild: absolute, with a backslash at the end.
+// MSBuild 用のフォルダ: 絶対パスで、最後にバックスラッシュをつける。
 std::string Dir(const fs::path& p) {
     std::string s = PathToUtf8(fs::absolute(p).lexically_normal());
     if (!s.empty() && s.back() != '\\') s += '\\';
@@ -65,13 +65,13 @@ bool WriteIfChanged(const fs::path& p, const std::string& text, std::string* why
     return true;
 }
 
-// Runs a command line and waits (platform::RunProcess: only its own pipe is handed down); its exit
-// code, -1 when it could not start.
+// コマンドラインを実行して待つ (platform::RunProcess: 自分のパイプだけを渡す)。終了コードを返す。
+// 起動できなかったときは -1。
 int Run(const std::wstring& commandLine, const fs::path& folder, std::string* output) {
     std::string error;
-    // MSBuild's worker nodes are never kept for later builds (they would keep the project's folder
-    // open: it could not be deleted) - with -nodeReuse:false on the command line, and the job of
-    // RunProcess ends whatever is left.
+    // MSBuild のワーカーノードは、後のビルドのために残さない (残すとプロジェクトのフォルダを開いた
+    // ままになり、消せなくなる) - コマンドラインに -nodeReuse:false をつけ、残ったものは RunProcess の
+    // ジョブが終わらせる。
     static const std::map<std::wstring, std::wstring> env = [] {
         auto e = platform::CurrentEnvironment();
         e[L"MSBUILDDISABLENODEREUSE"] = L"1";
@@ -83,9 +83,9 @@ int Run(const std::wstring& commandLine, const fs::path& folder, std::string* ou
     return static_cast<int>(r.exitCode);
 }
 
-// One build of a project at a time, in every process of this PC (an editor closed while building
-// leaves MSBuild running; opened again, a second build would take the same number and the same
-// Obj folder). A named mutex: let go when the build ends, or when its process ends.
+// ビルドは、この PC のどのプロセスでも、1 プロジェクトにつき一度に 1 つだけ (ビルド中に閉じた
+// エディターは MSBuild を動かしたままにする。開き直すと 2 つ目のビルドが同じ番号と同じ Obj
+// フォルダを使ってしまう)。名前つきミューテックス: ビルドが終わるか、そのプロセスが終わると解放される。
 class ProjectLock {
 public:
     explicit ProjectLock(const fs::path& project) {
@@ -94,7 +94,7 @@ public:
         const size_t hash = std::hash<std::wstring>{}(key);
         mutex_ = CreateMutexW(nullptr, FALSE, (L"Local\\RmEngineScriptBuild_" + std::to_wstring(hash)).c_str());
         if (!mutex_) return;
-        const DWORD w = WaitForSingleObject(mutex_, 10 * 60 * 1000);  // a build of this project still running elsewhere: wait for it
+        const DWORD w = WaitForSingleObject(mutex_, 10 * 60 * 1000);  // このプロジェクトのビルドがどこかでまだ動いている: 待つ
         held_ = w == WAIT_OBJECT_0 || w == WAIT_ABANDONED;
     }
     ~ProjectLock() {
@@ -117,7 +117,7 @@ std::string ReadText(const fs::path& p) {
     std::string t = s.str();
     if (t.size() >= 3 && static_cast<unsigned char>(t[0]) == 0xEF && static_cast<unsigned char>(t[1]) == 0xBB &&
         static_cast<unsigned char>(t[2]) == 0xBF) {
-        t.erase(0, 3);  // the UTF-8 mark MSBuild's file logger writes
+        t.erase(0, 3);  // MSBuild のファイルロガーが書く UTF-8 の印 (BOM)
     }
     return t;
 }
@@ -140,7 +140,7 @@ long long ScriptSourcesTime(const fs::path& project) {
         ++count;
         newest = std::max<long long>(newest, it->last_write_time(e2).time_since_epoch().count());
     }
-    return count == 0 ? 0 : newest + count;  // (a file removed changes it too)
+    return count == 0 ? 0 : newest + count;  // (ファイルを消したときも変わる)
 }
 
 std::string ScriptVcxproj(const ScriptBuildRequest& r) {
@@ -261,7 +261,7 @@ std::string GlobalsHeader(const std::vector<GlobalVariable>& globals, std::vecto
                            : g.type == GlobalType::String ? "std::string"
                            : g.type == GlobalType::Vec2   ? "::rm::Vec2"
                                                           : "::rm::Vec3";
-        // (names and types only: a 初めの値 is read at Play - changing one never builds again)
+        // (名前と型だけ: 初めの値 は Play で読む - 1 つ変えてもビルドし直しにはならない)
         o += std::format("inline constexpr ::rm::GlobalVar<{}> {}{{\"{}\"}};\n", type, g.name, g.name);
     }
     o += "}  // namespace Global\n";
@@ -299,7 +299,7 @@ std::vector<std::string> ErrorLines(const std::string& output) {
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.find(": error ") == std::string::npos && line.find(": fatal error ") == std::string::npos) continue;
-        // MSBuild ends a line with " [the project]": not needed here.
+        // MSBuild は行の終わりに " [プロジェクト]" をつける: ここでは要らない。
         if (const size_t b = line.rfind(" ["); b != std::string::npos && line.back() == ']') line.erase(b);
         while (!line.empty() && line.front() == ' ') line.erase(0, 1);
         if (std::find(lines.begin(), lines.end(), line) == lines.end()) lines.push_back(line);
@@ -330,27 +330,28 @@ ScriptBuildResult BuildScripts(const ScriptBuildRequest& r) {
         res.summary = why;
         return res;
     }
-    // Release and Debug apart (a DLL of the other one is never loaded: RmModuleFlag_Debug). An export is
-    // built as the engine is: its game is made from the game kit next to this engine, built the same way
-    // (a Debug engine's game is a Debug one - a Release Scripts.dll would not be loaded by it).
+    // Release と Debug は別々にする (もう一方の DLL は読み込まない: RmModuleFlag_Debug)。書き出しは
+    // エンジンと同じ作りでビルドする: そのゲームは、このエンジンの隣にあるゲームキットから、同じ
+    // やり方でビルドして作る (Debug のエンジンのゲームは Debug のもの - Release の Scripts.dll は
+    // それには読み込まれない)。
     const fs::path folder = ScriptDllFolder(r.project, r.debug);
     std::error_code mk;
     fs::create_directories(folder, mk);
-    // A new name every time (Scripts_0007.dll): the one the editor has loaded cannot be written over.
-    // For an export: always Scripts.dll in Export/, built apart (its own objects).
+    // 毎回新しい名前にする (Scripts_0007.dll): エディターが読み込んだものには上書きできない。
+    // 書き出しのときは、いつも Export/ の Scripts.dll で、別にビルドする (自分のオブジェクトで)。
     const int number = r.forExport ? 0 : std::max(0, ScriptDllNumber(LatestScriptDll(folder).filename().native())) + 1;
     const std::wstring name = r.forExport ? std::wstring(L"Scripts") : Utf8ToWide(std::format("Scripts_{:04}", number));
     const fs::path outFolder = r.forExport ? folder / L"Export" : folder;
     const fs::path log = folder / (r.forExport ? L"build_export.log" : L"build.log");
-    // (A folder ends with a backslash, which would escape the closing quote: doubled inside quotes.)
+    // (フォルダはバックスラッシュで終わり、それが閉じの引用符をエスケープしてしまう: 引用符の中では 2 つにする。)
     auto folderArg = [](const char* key, const fs::path& p) { return L" \"" + Utf8ToWide(key) + Utf8ToWide(Dir(p)) + L"\\\""; };
     std::wstring cmd = Quote(msbuild) + L" " + Quote(ScriptBuildFolder(r.project) / L"Scripts.vcxproj") + L" -nologo -v:quiet -m -nodeReuse:false -p:Configuration=" +
                        (r.debug ? L"Debug" : L"Release") + L" -p:Platform=x64 -p:TargetName=" + name + folderArg("-p:OutDir=", outFolder) +
                        folderArg("-p:RmEngineDir=", r.engine) + L" \"-flp:LogFile=" + log.native() + L";Encoding=UTF-8;Verbosity=minimal\"";
-    if (r.rebuild && !r.forExport) cmd += L" -t:Rebuild";  // (every object again)
+    if (r.rebuild && !r.forExport) cmd += L" -t:Rebuild";  // (すべてのオブジェクトをもう一度)
     if (r.forExport) {
         std::error_code e0;
-        fs::remove(outFolder / L"Scripts.dll", e0);  // (never the one of an earlier export, if this one fails)
+        fs::remove(outFolder / L"Scripts.dll", e0);  // (これが失敗しても、前の書き出しのものは消さない)
         cmd += L" -p:RmForExport=true" + folderArg("-p:IntDir=", folder / L"ObjExport");
     }
     const int code = Run(cmd, folder, nullptr);
@@ -367,7 +368,7 @@ ScriptBuildResult BuildScripts(const ScriptBuildRequest& r) {
     res.dll = dll;
     res.summary = std::format("スクリプトをビルドしました ({})", WideToUtf8(name + L".dll"));
     if (r.forExport) return res;
-    // The older DLLs (two back and before) are not needed: removed when they can be (one in use stays).
+    // 古い DLL (2 つ前とそれ以前) は要らない: 消せるときに消す (使用中のものは残る)。
     for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
         const fs::path p = it->path();
         const fs::path stem = p.stem();

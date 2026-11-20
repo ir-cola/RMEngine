@@ -1,17 +1,17 @@
-// RMMath.h - math for scripts (RM.h includes it: you do not need to). Pure: nothing here asks the engine.
+// RMMath.h - スクリプト用の数学 (RM.h が取り込むので、自分で取り込まなくてよい)。純粋: ここにあるものはエンジンに何も聞かない。
 //
-//   rm::Vec3 to = target - position;                       // + - * / on Vec2 / Vec3
+//   rm::Vec3 to = target - position;                       // Vec2 / Vec3 で + - * / が使える
 //   float d = rm::Length(to);  rm::Vec3 dir = rm::Normalize(to);
 //   position = rm::MoveTowards(position, target, speed * dt);
 //   float a = rm::Math::Lerp(0.0f, 10.0f, 0.5f);           // 5
-//   rm::Quat q = rm::Quat::Euler({0, 90, 0});              // the engine's angles (degrees; X -> Y -> Z)
-//   rm::Vec3 v = q * rm::Vec3{0, 0, -1};                   // turned
+//   rm::Quat q = rm::Quat::Euler({0, 90, 0});              // エンジンの角度 (度。X -> Y -> Z)
+//   rm::Vec3 v = q * rm::Vec3{0, 0, -1};                   // 回した結果
 //   float r = rm::Random::Range(1.0f, 6.0f);
 //
-// The engine's conventions: Y is up, right-handed; a thing (and a camera) looks along its -Z. Angles are
-// degrees; a Transform's rotation turns X first, then Y, then Z (R = Rz * Ry * Rx).
+// エンジンの決まり: Y が上で右手系。もの (とカメラ) は -Z の向きを見る。角度は度で、Transform の回転は
+// X、Y、Z の順に回す (R = Rz * Ry * Rx)。
 //
-// rm::Vec2 / rm::Vec3 / rm::Color must be declared before this file (RM.h declares them).
+// rm::Vec2 / rm::Vec3 / rm::Color は、このファイルより前に宣言しておく (RM.h が宣言する)。
 #pragma once
 
 #include <algorithm>
@@ -42,7 +42,7 @@ inline Vec3& operator+=(Vec3& a, Vec3 b) { return a = a + b; }
 inline Vec3& operator-=(Vec3& a, Vec3 b) { return a = a - b; }
 inline Vec3& operator*=(Vec3& a, float s) { return a = a * s; }
 inline Vec3& operator/=(Vec3& a, float s) { return a = a / s; }
-// Each component times each (a scale).
+// 成分ごとに掛ける (拡大・縮小)。
 inline Vec2 Scale(Vec2 a, Vec2 b) { return {a.x * b.x, a.y * b.y}; }
 inline Vec3 Scale(Vec3 a, Vec3 b) { return {a.x * b.x, a.y * b.y, a.z * b.z}; }
 
@@ -55,23 +55,23 @@ inline constexpr float Epsilon = 1e-6f;
 inline float Clamp(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 inline int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 inline float Clamp01(float v) { return Clamp(v, 0.0f, 1.0f); }
-// a at t = 0, b at t = 1 (t cut to 0..1); LerpUnclamped goes on past them.
+// t = 0 で a、t = 1 で b (t は 0..1 に切る)。LerpUnclamped はその外にも進む。
 inline float Lerp(float a, float b, float t) { return a + (b - a) * Clamp01(t); }
 inline float LerpUnclamped(float a, float b, float t) { return a + (b - a) * t; }
-// Where v is between a and b (0..1); a == b: 0.
+// v が a と b の間のどこか (0..1)。a == b なら 0。
 inline float InverseLerp(float a, float b, float v) { return a == b ? 0.0f : Clamp01((v - a) / (b - a)); }
-// Smooth at both ends (Hermite): from a to b as t goes 0..1.
+// 両端がなめらか (エルミート補間): t が 0..1 のとき a から b へ。
 inline float SmoothStep(float a, float b, float t) {
     t = Clamp01(t);
     t = t * t * (3.0f - 2.0f * t);
     return a + (b - a) * t;
 }
-// From `current` towards `target` by at most `maxDelta` (never past it).
+// `current` から `target` へ、最大でも `maxDelta` だけ進む (行き過ぎない)。
 inline float MoveTowards(float current, float target, float maxDelta) {
     if (std::fabs(target - current) <= maxDelta) return target;
     return current + (target > current ? maxDelta : -maxDelta);
 }
-// v wrapped into 0..length (5.5 in 0..2 -> 1.5); PingPong goes 0 -> length -> 0 ...
+// v を 0..length に巻き戻す (0..2 での 5.5 -> 1.5)。PingPong は 0 -> length -> 0 ... と往復する。
 inline float Repeat(float v, float length) {
     if (length <= 0) return 0;
     return Clamp(v - std::floor(v / length) * length, 0.0f, length);
@@ -81,7 +81,7 @@ inline float PingPong(float v, float length) {
     v = Repeat(v, length * 2.0f);
     return length - std::fabs(v - length);
 }
-// The shortest turn from angle a to angle b (degrees, -180..180).
+// 角度 a から角度 b への一番短い回転 (度。-180..180)。
 inline float DeltaAngle(float a, float b) {
     float d = Repeat(b - a, 360.0f);
     if (d > 180.0f) d -= 360.0f;
@@ -109,8 +109,8 @@ inline float Atan2(float y, float x) { return std::atan2(y, x); }
 inline float Floor(float v) { return std::floor(v); }
 inline float Ceil(float v) { return std::ceil(v); }
 inline float Round(float v) { return std::round(v); }
-// Follows `target` smoothly like a spring that does not overshoot (a camera following). `velocity` is
-// kept between frames by the caller (a RM_TRANSIENT field); smoothTime: about the seconds to get there.
+// `target` へ、行き過ぎないバネのようになめらかに追う (カメラの追従など)。`velocity` はフレームの間
+// 呼び出し側が持っておく (RM_TRANSIENT のフィールド)。smoothTime: 着くまでのおよその秒数。
 inline float SmoothDamp(float current, float target, float& velocity, float smoothTime, float dt, float maxSpeed = 1e30f) {
     smoothTime = std::max(0.0001f, smoothTime);
     const float omega = 2.0f / smoothTime;
@@ -134,7 +134,7 @@ inline float SmoothDamp(float current, float target, float& velocity, float smoo
 
 inline float Dot(Vec2 a, Vec2 b) { return a.x * b.x + a.y * b.y; }
 inline float Dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-// 2D: a.x * b.y - a.y * b.x (> 0 when b is counter-clockwise from a).
+// 2D: a.x * b.y - a.y * b.x (b が a から反時計回りにあるとき > 0)。
 inline float Cross(Vec2 a, Vec2 b) { return a.x * b.y - a.y * b.x; }
 inline Vec3 Cross(Vec3 a, Vec3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
 inline float LengthSquared(Vec2 v) { return Dot(v, v); }
@@ -143,7 +143,7 @@ inline float Length(Vec2 v) { return std::sqrt(Dot(v, v)); }
 inline float Length(Vec3 v) { return std::sqrt(Dot(v, v)); }
 inline float Distance(Vec2 a, Vec2 b) { return Length(a - b); }
 inline float Distance(Vec3 a, Vec3 b) { return Length(a - b); }
-// Length 1 in the same direction ((0, 0) stays (0, 0)).
+// 同じ向きで長さ 1 にする ((0, 0) は (0, 0) のまま)。
 inline Vec2 Normalize(Vec2 v) {
     const float l = Length(v);
     return l > 1e-12f ? v / l : Vec2{};
@@ -160,7 +160,7 @@ inline Vec2 Min(Vec2 a, Vec2 b) { return {std::min(a.x, b.x), std::min(a.y, b.y)
 inline Vec2 Max(Vec2 a, Vec2 b) { return {std::max(a.x, b.x), std::max(a.y, b.y)}; }
 inline Vec3 Min(Vec3 a, Vec3 b) { return {std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z)}; }
 inline Vec3 Max(Vec3 a, Vec3 b) { return {std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z)}; }
-// From `current` towards `target` by at most `maxDistance` (never past it).
+// `current` から `target` へ、最大でも `maxDistance` だけ進む (行き過ぎない)。
 inline Vec2 MoveTowards(Vec2 current, Vec2 target, float maxDistance) {
     const Vec2 d = target - current;
     const float l = Length(d);
@@ -171,7 +171,7 @@ inline Vec3 MoveTowards(Vec3 current, Vec3 target, float maxDistance) {
     const float l = Length(d);
     return l <= maxDistance || l == 0 ? target : current + d / l * maxDistance;
 }
-// Not longer than maxLength (same direction).
+// maxLength より長くしない (向きは同じ)。
 inline Vec2 ClampLength(Vec2 v, float maxLength) {
     const float l = Length(v);
     return l > maxLength && l > 0 ? v / l * maxLength : v;
@@ -180,16 +180,16 @@ inline Vec3 ClampLength(Vec3 v, float maxLength) {
     const float l = Length(v);
     return l > maxLength && l > 0 ? v / l * maxLength : v;
 }
-// Bounced off a surface with this normal (length 1).
+// この法線 (長さ 1) の面ではね返った向き。
 inline Vec2 Reflect(Vec2 v, Vec2 normal) { return v - normal * (2.0f * Dot(v, normal)); }
 inline Vec3 Reflect(Vec3 v, Vec3 normal) { return v - normal * (2.0f * Dot(v, normal)); }
-// The part of v along `onto` / on the plane with this normal.
+// v のうち `onto` に沿う部分 / この法線の面に沿う部分。
 inline Vec3 Project(Vec3 v, Vec3 onto) {
     const float d = Dot(onto, onto);
     return d > 1e-12f ? onto * (Dot(v, onto) / d) : Vec3{};
 }
 inline Vec3 ProjectOnPlane(Vec3 v, Vec3 normal) { return v - Project(v, normal); }
-// The angle between two directions (degrees, 0..180).
+// 2 つの向きの間の角度 (度。0..180)。
 inline float Angle(Vec2 a, Vec2 b) {
     const float d = std::sqrt(LengthSquared(a) * LengthSquared(b));
     return d < 1e-12f ? 0.0f : std::acos(Math::Clamp(Dot(a, b) / d, -1.0f, 1.0f)) * Math::Rad2Deg;
@@ -198,13 +198,13 @@ inline float Angle(Vec3 a, Vec3 b) {
     const float d = std::sqrt(LengthSquared(a) * LengthSquared(b));
     return d < 1e-12f ? 0.0f : std::acos(Math::Clamp(Dot(a, b) / d, -1.0f, 1.0f)) * Math::Rad2Deg;
 }
-// 2D: from a to b, counter-clockwise + (-180..180). 3D: the sign seen from `axis`'s tip.
+// 2D: a から b へ、反時計回りが + (-180..180)。3D: `axis` の先から見たときの符号。
 inline float SignedAngle(Vec2 a, Vec2 b) { return Angle(a, b) * (Cross(a, b) >= 0 ? 1.0f : -1.0f); }
 inline float SignedAngle(Vec3 a, Vec3 b, Vec3 axis) { return Angle(a, b) * (Dot(axis, Cross(a, b)) >= 0 ? 1.0f : -1.0f); }
-// The direction of an angle in 2D (degrees: 0 = right, 90 = up), and back.
+// 2D の角度が表す向き (度。0 = 右、90 = 上)と、その逆。
 inline Vec2 FromAngle(float degrees) { return {std::cos(degrees * Math::Deg2Rad), std::sin(degrees * Math::Deg2Rad)}; }
 inline float ToAngle(Vec2 v) { return std::atan2(v.y, v.x) * Math::Rad2Deg; }
-// Turned counter-clockwise by `degrees`.
+// `degrees` だけ反時計回りに回す。
 inline Vec2 Rotate(Vec2 v, float degrees) {
     const float c = std::cos(degrees * Math::Deg2Rad), s = std::sin(degrees * Math::Deg2Rad);
     return {v.x * c - v.y * s, v.x * s + v.y * c};
@@ -217,31 +217,31 @@ inline Vec3 SmoothDamp(Vec3 current, Vec3 target, Vec3& velocity, float smoothTi
             Math::SmoothDamp(current.z, target.z, velocity.z, smoothTime, dt)};
 }
 
-// --- Colours -----------------------------------------------------------------------------------
+// --- 色 -----------------------------------------------------------------------------------
 inline Color Lerp(Color a, Color b, float t) {
     t = Math::Clamp01(t);
     return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
 }
 
-// --- Rotations (quaternions) ---------------------------------------------------------------------
-// A turn in 3D. Made from the engine's angles (Euler), an axis and an angle, or a direction to look along;
-// q * v turns v; a * b is b first, then a.
+// --- 回転 (クォータニオン) ---------------------------------------------------------------------
+// 3D での回転。エンジンの角度 (Euler)、軸と角度、見る向きのどれかから作る。
+// q * v は v を回す。a * b は先に b、次に a で回す。
 struct Quat {
     float x = 0, y = 0, z = 0, w = 1;
 
     static Quat Identity() { return {}; }
-    // `degrees` about `axis` (any length; right hand: counter-clockwise looking from its tip).
+    // `axis` のまわりに `degrees` (軸の長さは何でもよい。右手: 軸の先から見て反時計回り)。
     static Quat AngleAxis(float degrees, Vec3 axis) {
         const Vec3 n = Normalize(axis);
         if (LengthSquared(n) == 0) return {};
         const float h = degrees * Math::Deg2Rad * 0.5f, s = std::sin(h);
         return {n.x * s, n.y * s, n.z * s, std::cos(h)};
     }
-    // The engine's angles (a Transform's rotation): X first, then Y, then Z.
+    // エンジンの角度 (Transform の回転): X、Y、Z の順。
     static Quat Euler(Vec3 degrees) {
         return AngleAxis(degrees.z, {0, 0, 1}) * AngleAxis(degrees.y, {0, 1, 0}) * AngleAxis(degrees.x, {1, 0, 0});
     }
-    // Looking along `forward` (the thing's -Z goes there) with its Y as near `up` as it can be.
+    // `forward` の向きを見る (ものの -Z がそこへ向く)。Y は `up` にできるだけ近づける。
     static Quat LookRotation(Vec3 forward, Vec3 up = {0, 1, 0}) {
         const Vec3 zAxis = Normalize(-forward);
         if (LengthSquared(zAxis) == 0) return {};
@@ -250,7 +250,7 @@ struct Quat {
         const Vec3 yAxis = Cross(zAxis, xAxis);
         return FromAxes(xAxis, yAxis, zAxis);
     }
-    // The turn that takes direction `from` to direction `to` (the shortest).
+    // 向き `from` を向き `to` へ移す回転 (一番短いもの)。
     static Quat FromToRotation(Vec3 from, Vec3 to) {
         const Vec3 a = Normalize(from), b = Normalize(to);
         const float d = Dot(a, b);
@@ -263,7 +263,7 @@ struct Quat {
         const Vec3 c = Cross(a, b);
         return Quat{c.x, c.y, c.z, 1.0f + d}.Normalized();
     }
-    // The turn whose X, Y, Z axes go to these directions (each length 1, at right angles).
+    // X、Y、Z の軸がこれらの向きへ行く回転 (どれも長さ 1 で、互いに直角)。
     static Quat FromAxes(Vec3 xAxis, Vec3 yAxis, Vec3 zAxis) {
         const float m00 = xAxis.x, m10 = xAxis.y, m20 = xAxis.z;
         const float m01 = yAxis.x, m11 = yAxis.y, m21 = yAxis.z;
@@ -290,9 +290,9 @@ struct Quat {
         const float l = std::sqrt(x * x + y * y + z * z + w * w);
         return l > 1e-12f ? Quat{x / l, y / l, z / l, w / l} : Quat{};
     }
-    // The turn back.
+    // 逆の回転。
     Quat Inverse() const { return Quat{-x, -y, -z, w}.Normalized(); }
-    // The engine's angles of this turn (degrees; X -> Y -> Z), as a Transform's rotation.
+    // この回転のエンジンの角度 (度。X -> Y -> Z)。Transform の回転として使う。
     Vec3 ToEuler() const {
         const float r20 = 2 * (x * z - w * y), r21 = 2 * (y * z + w * x), r22 = 1 - 2 * (x * x + y * y);
         const float r10 = 2 * (x * y + w * z), r00 = 1 - 2 * (y * y + z * z);
@@ -300,12 +300,12 @@ struct Quat {
         const float sy = Math::Clamp(-r20, -1.0f, 1.0f);
         const float ay = std::asin(sy) * Math::Rad2Deg;
         if (std::fabs(sy) < 0.99999f) return {std::atan2(r21, r22) * Math::Rad2Deg, ay, std::atan2(r10, r00) * Math::Rad2Deg};
-        // Straight up or down: only x -/+ z is fixed (z = 0).
+        // 真上か真下: x -/+ z だけが決まる (z = 0)。
         return {(sy > 0 ? std::atan2(r01, r11) : std::atan2(-r01, r11)) * Math::Rad2Deg, sy > 0 ? 90.0f : -90.0f, 0.0f};
     }
-    Vec3 Forward() const;  // -Z turned (where it looks)
-    Vec3 Right() const;    // +X turned
-    Vec3 Up() const;       // +Y turned
+    Vec3 Forward() const;  // -Z を回した向き (見ている向き)
+    Vec3 Right() const;    // +X を回した向き
+    Vec3 Up() const;       // +Y を回した向き
 
     friend Quat operator*(Quat a, Quat b) {
         return {a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
@@ -322,12 +322,12 @@ inline Vec3 Quat::Right() const { return *this * Vec3{1, 0, 0}; }
 inline Vec3 Quat::Up() const { return *this * Vec3{0, 1, 0}; }
 
 inline float Dot(Quat a, Quat b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
-// The angle between two turns (degrees, 0..180).
+// 2 つの回転の間の角度 (度。0..180)。
 inline float Angle(Quat a, Quat b) {
     const float d = std::min(std::fabs(Dot(a.Normalized(), b.Normalized())), 1.0f);
     return d > 1.0f - 1e-6f ? 0.0f : 2.0f * std::acos(d) * Math::Rad2Deg;
 }
-// Smoothly from a to b along the shortest way (t 0..1).
+// a から b へ、一番短い道すじでなめらかに (t は 0..1)。
 inline Quat Slerp(Quat a, Quat b, float t) {
     t = Math::Clamp01(t);
     float d = Dot(a, b);
@@ -340,14 +340,14 @@ inline Quat Slerp(Quat a, Quat b, float t) {
     const float wa = std::sin((1 - t) * th) / s, wb = std::sin(t * th) / s;
     return {a.x * wa + b.x * wb, a.y * wa + b.y * wb, a.z * wa + b.z * wb, a.w * wa + b.w * wb};
 }
-// From `from` towards `to` by at most `maxDegrees`.
+// `from` から `to` へ、最大でも `maxDegrees` だけ回す。
 inline Quat RotateTowards(Quat from, Quat to, float maxDegrees) {
     const float a = Angle(from, to);
     return a <= maxDegrees || a == 0 ? to : Slerp(from, to, maxDegrees / a);
 }
 
-// --- Random numbers ------------------------------------------------------------------------------
-// One stream for the whole game (xorshift): Seed(n) makes it give the same numbers again.
+// --- 乱数 ------------------------------------------------------------------------------------
+// ゲーム全体で 1 本の流れ (xorshift)。Seed(n) で同じ数をもう一度出せる。
 namespace Random {
 namespace detail {
 inline uint64_t& State() {
@@ -363,16 +363,16 @@ inline uint64_t Next() {
 }
 }  // namespace detail
 inline void Seed(uint64_t seed) { detail::State() = seed ? seed * 0x9E3779B97F4A7C15ull : 0x9E3779B97F4A7C15ull; }
-// 0 <= Value() < 1.
+// 0 <= Value() < 1。
 inline float Value() { return static_cast<float>(detail::Next() >> 40) / static_cast<float>(1ull << 24); }
-// min <= x < max (floats); min <= n < max (ints: Range(1, 7) is a die).
+// min <= x < max (float)、min <= n < max (int。Range(1, 7) はサイコロ)。
 inline float Range(float min, float max) { return min + (max - min) * Value(); }
 inline int Range(int min, int max) {
     if (max <= min) return min;
     return min + static_cast<int>(detail::Next() % static_cast<uint64_t>(static_cast<int64_t>(max) - min));
 }
 inline bool Chance(float probability) { return Value() < probability; }
-// A point inside a circle / ball of radius 1, and a direction (on its edge).
+// 半径 1 の円 / 球の中の点と、(その縁の) 向き。
 inline Vec2 InsideUnitCircle() {
     const float a = Value() * 2.0f * Math::PI, r = std::sqrt(Value());
     return {std::cos(a) * r, std::sin(a) * r};
@@ -382,7 +382,7 @@ inline Vec3 OnUnitSphere() {
     return {std::cos(a) * r, std::sin(a) * r, z};
 }
 inline Vec3 InsideUnitSphere() { return OnUnitSphere() * std::cbrt(Value()); }
-// A turn in any direction (evenly).
+// どの向きにも (まんべんなく) 向く回転。
 inline Quat Rotation() {
     const float u1 = Value(), u2 = Value() * 2.0f * Math::PI, u3 = Value() * 2.0f * Math::PI;
     const float a = std::sqrt(1 - u1), b = std::sqrt(u1);

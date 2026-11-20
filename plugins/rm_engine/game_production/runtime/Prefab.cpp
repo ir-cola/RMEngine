@@ -8,7 +8,7 @@ namespace rm::game_production {
 
 namespace {
 
-// The entity's own fields that are kept in a prefab (not the id and the parent: the scene's).
+// Prefab に残すエンティティ自身のフィールド (id と親は残さない: シーンのもの)。
 bool PrefabField(const reflect::FieldDesc& f) {
     const std::string_view n = f.name;
     return !f.transient && n != "id" && n != "parent";
@@ -21,11 +21,11 @@ const reflect::FieldDesc* FieldNamed(const reflect::TypeDesc& t, std::string_vie
     return nullptr;
 }
 
-// An entity's id in the file of the placed prefab `root`: its source - or, for a prefab nested in
-// it, its outer id (its source is its id in its own file).
+// 置いた Prefab `root` のファイルでのエンティティの id: その source。入れ子の Prefab の中なら、
+// その外側の id (source は、その Prefab 自身のファイルでの id)。
 int KeyOf(const SceneEntity& e, int root) { return e.data.id != root && e.prefab.Root() ? e.prefab.outer : e.prefab.source; }
 
-// True when `e` is inside a prefab nested in `root` (a placed prefab's root between them).
+// `e` が `root` の中に入れ子になった Prefab の内側のときは true (置いた Prefab のルートが間にある)。
 bool InsideNested(const Scene& scene, const SceneEntity& e, int root) {
     size_t steps = 0;
     for (const SceneEntity* p = scene.Find(e.data.parent); p && p->data.id != root && steps++ <= scene.Entities().size();
@@ -62,7 +62,7 @@ void FillNestedPrefabs(Scene& scene, int root, std::vector<std::string>& chain, 
             continue;
         }
         const json::Value* prefab = read(ref);
-        if (!prefab) continue;  // as it was saved
+        if (!prefab) continue;  // 保存されたとおり
         const json::Value copy = *prefab;
         const json::Value overrides = e->prefab.overrides;
         scene.ApplyPrefab(n, copy, overrides, &warnings);
@@ -94,7 +94,7 @@ std::string PrefabName(std::string_view path) {
 json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int>* sources, const json::Value* previous) {
     const SceneEntity* r = scene.Find(root);
     if (!r) return {};
-    // Ids in the file: the sources of a placed prefab stay; everything else after them.
+    // ファイル内の id: 置いた Prefab の source はそのまま、ほかは そのあとに振る。
     std::unordered_map<int, int> kept;
     int next = 1;
     if (r->prefab.Root()) {
@@ -104,14 +104,14 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
             next = std::max(next, s + 1);
         }
     }
-    std::unordered_map<int, int> ids;  // scene id -> id in the file
+    std::unordered_map<int, int> ids;  // シーンの id -> ファイル内の id
     std::unordered_set<int> used;
     std::vector<const SceneEntity*> inside;
     const std::unordered_set<int> under = scene.Subtree(std::span<const int>(&root, 1));
-    for (const TreeEntry& t : scene.TreeOrder()) {  // parents first, siblings in order
+    for (const TreeEntry& t : scene.TreeOrder()) {  // 親が先、兄弟は順番どおり
         const SceneEntity& e = *t.entity;
         if (!under.contains(e.data.id) || InsideNested(scene, e, root)) continue;
-        // Two of the same source (a broken file): the second gets its own.
+        // 同じ source が 2 つ (壊れたファイル): 2 つ目には別の id を与える。
         const auto k = kept.find(e.data.id);
         const int id = k != kept.end() && !used.contains(k->second) ? k->second : next++;
         used.insert(id);
@@ -120,17 +120,17 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
     }
     json::Value list = json::Value::MakeArray();
     for (const SceneEntity* ep : inside) {
-        // Entity references in the file's ids; one to an entity outside the prefab is cleared (a
-        // prefab is placed in other scenes - the placed one keeps it as an override).
+        // ファイル内の id で持つエンティティ参照。Prefab の外のエンティティへの参照は消す (Prefab は
+        // ほかのシーンに置かれる - 置いた側は上書きとして持ち続ける)。
         SceneEntity e = *ep;
         e.MapEntityRefs(ids, true);
         const int id = ids[e.data.id];
         json::Value ej = scene.SaveEntity(e);
         if (e.data.id != root && e.prefab.Root()) {
-            // A prefab placed inside: kept as its root, linked to its own file, with what was changed
-            // on it (as of the caller's last Overrides). What is inside it comes from its file.
-            json::Value link = e.prefab.extra.IsObject() ? e.prefab.extra : json::Value::MakeObject();  // (keys of a newer version stay)
-            link.Erase("outer");  // the scene's (its id in this file is its "id")
+            // 中に置いた Prefab: ルートとして残し、自分のファイルにつなぎ、変えたもの (呼んだ側の
+            // 最後の Overrides の時点) を持たせる。その中身はそのファイルから来る。
+            json::Value link = e.prefab.extra.IsObject() ? e.prefab.extra : json::Value::MakeObject();  // (新しい版のキーは残る)
+            link.Erase("outer");  // シーンのもの (このファイルでの id は "id")
             link.Erase("path");
             link.Set("source", e.prefab.source);
             link.Set("asset", e.prefab.asset.guid);
@@ -144,7 +144,7 @@ json::Value MakePrefab(const Scene& scene, int root, std::unordered_map<int, int
         list.Push(std::move(ej));
     }
     if (sources) *sources = std::move(ids);
-    json::Value o = previous && previous->IsObject() ? *previous : json::Value::MakeObject();  // its other keys stay
+    json::Value o = previous && previous->IsObject() ? *previous : json::Value::MakeObject();  // ほかのキーは残る
     o.Set("kind", kPrefabKind);
     o.Set("format", kPrefabFormat);
     o.Set("entities", std::move(list));
@@ -161,7 +161,7 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
     }
     const reflect::TypeDesc& entityType = reflect::TypeOf<Entity>();
     const auto& list = prefab.Get("entities").Items();
-    std::unordered_map<int, int> toScene;  // id in the file -> the placed entity's id
+    std::unordered_map<int, int> toScene;  // ファイル内の id -> 置いたエンティティの id
     for (size_t i = 0; i < list.size(); ++i) {
         const int src = static_cast<int>(list[i].Get("id").AsInt(0));
         const auto found = bySource.find(src);
@@ -172,7 +172,7 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
         const json::Value& p = list[i];
         const int src = static_cast<int>(p.Get("id").AsInt(0));
         if (src <= 0) continue;
-        // The prefab's first entity is the placed root, whatever its source says.
+        // Prefab の最初のエンティティが、source に何と書いてあっても、置いたルートになる。
         const auto found = bySource.find(src);
         const SceneEntity* placed = i == 0 ? scene.Find(root) : found != bySource.end() && found->second->data.id != root ? found->second : nullptr;
         if (!placed) {
@@ -182,14 +182,14 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
         const SceneEntity& e = *placed;
         const bool isRoot = i == 0;
         SceneEntity pe = scene.LoadEntity(p, nullptr);
-        pe.MapEntityRefs(toScene, true);  // (references in the file's ids -> the placed entities')
-        // The entity's own fields.
+        pe.MapEntityRefs(toScene, true);  // (ファイル内の id での参照 -> 置いたエンティティの参照)
+        // エンティティ自身のフィールド。
         for (const auto& f : entityType.fields) {
             if (!PrefabField(f)) continue;
             json::Value now = reflect::SaveField(f, &e.data, &e.unknowns);
             if (isRoot || now != reflect::SaveField(f, &pe.data, nullptr)) fields.Push(FieldOverride(src, "", 0, f.name, std::move(now)));
         }
-        // The prefab's components: changed fields, or gone from the placed one.
+        // Prefab の部品: 変えたフィールド、または置いた側では無くなったもの。
         for (const Component& pc : pe.components) {
             const size_t nth = pe.NthOf(pc);
             const Component* ec = e.FindComponent(pc.type, nth);
@@ -201,7 +201,7 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
                 removedComps.Push(std::move(o));
                 continue;
             }
-            if (!ec->Known() || !pc.Known()) continue;  // a type not offered now: follows the prefab
+            if (!ec->Known() || !pc.Known()) continue;  // 今は出ていない型: Prefab に従う
             const bool always = isRoot && std::find(placement.begin(), placement.end(), pc.type) != placement.end();
             for (const auto& f : pc.value.Type()->fields) {
                 if (f.transient) continue;
@@ -211,7 +211,7 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
                 }
             }
         }
-        // Components the placed one has and the prefab does not.
+        // 置いた側にあって、Prefab に無い部品。
         for (const Component& ec : e.components) {
             if (pe.FindComponent(ec.type, e.NthOf(ec))) continue;
             json::Value o = json::Value::MakeObject();
@@ -219,7 +219,7 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
             o.Set("component", Scene::SaveComponent(ec));
             added.Push(std::move(o));
         }
-        // The order of the components both have, when the placed one has them in another order.
+        // 両方にある部品の順番。置いた側の順番が違うとき。
         auto key = [](const std::string& type, size_t nth) { return type + "#" + std::to_string(nth); };
         std::vector<std::string> mine, theirs;
         json::Value order = json::Value::MakeArray();
@@ -241,11 +241,11 @@ json::Value Overrides(const Scene& scene, int root, const json::Value& prefab, s
             o.Set("order", std::move(order));
             componentOrder.Push(std::move(o));
         }
-        // The order of its children of the prefab (the order of siblings), when it is another.
+        // Prefab の子の順番 (兄弟の順番)。違うとき。
         std::vector<int> placedKids, fileKids;
         for (const int c : scene.Children(e.data.id)) {
             const SceneEntity* ce = scene.Find(c);
-            if (!ce->prefab.Linked() || (ce->prefab.Root() && ce->prefab.outer == 0)) continue;  // not one of the prefab's
+            if (!ce->prefab.Linked() || (ce->prefab.Root() && ce->prefab.outer == 0)) continue;  // Prefab のものではない
             const int k = KeyOf(*ce, root);
             if (bySource.contains(k) && bySource.at(k) == ce) placedKids.push_back(k);
         }
@@ -292,7 +292,7 @@ size_t CountOverrides(const json::Value& overrides) {
     return n;
 }
 
-// --- The scene's side ---------------------------------------------------------------------------
+// --- シーン側 -----------------------------------------------------------------------------------
 
 int Scene::PrefabRootOf(int id) const {
     const SceneEntity* e = Find(id);
@@ -338,7 +338,7 @@ std::vector<int> Scene::PrefabRoots(std::string_view asset) const {
 bool Scene::LinkPrefab(int root, const AssetRef& asset, const std::unordered_map<int, int>& sources) {
     SceneEntity* r = Find(root);
     if (!r || asset.Empty()) return false;
-    // 反映 (the same prefab again): a nested one stays inside the prefab around it.
+    // 反映 (同じ Prefab をもう一度): 入れ子の Prefab は、まわりの Prefab の中に残る。
     const int outer = r->prefab.Root() && r->prefab.asset == asset ? r->prefab.outer : 0;
     const std::unordered_set<int> under = Subtree(std::span<const int>(&root, 1));
     for (auto& e : entities_) {
@@ -346,10 +346,10 @@ bool Scene::LinkPrefab(int root, const AssetRef& asset, const std::unordered_map
         const auto it = sources.find(e.data.id);
         if (it == sources.end() || it->second <= 0) continue;
         if (e.data.id != root && e.prefab.Root()) {
-            e.prefab.outer = it->second;  // a prefab placed inside: nested now
+            e.prefab.outer = it->second;  // 中に置いた Prefab: これで入れ子になる
             continue;
         }
-        json::Value extra = std::move(e.prefab.extra);  // (a newer version's keys stay)
+        json::Value extra = std::move(e.prefab.extra);  // (新しい版のキーは残る)
         e.prefab = {};
         e.prefab.source = it->second;
         e.prefab.extra = std::move(extra);
@@ -357,9 +357,9 @@ bool Scene::LinkPrefab(int root, const AssetRef& asset, const std::unordered_map
     r = Find(root);
     r->prefab.asset = asset;
     r->prefab.overrides = json::Value::MakeObject();
-    // A prefab nested in another one made a prefab of its OWN leaves that one (placed by hand now, as
-    // when it is moved out): the outer prefab's file would make it its old prefab again. Applied to the
-    // prefab it already is, it stays where it was.
+    // 別の Prefab の中に入れ子になっていた Prefab が、自分自身の Prefab になるとき、外側から抜ける
+    // (手で置いたことになる。外へ動かしたときと同じ): 外側の Prefab のファイルだと、またもとの
+    // Prefab にしてしまうため。すでにその Prefab であるものに反映したときは、そのまま残る。
     r->prefab.outer = outer;
     return r->prefab.Root();
 }
@@ -370,7 +370,7 @@ bool Scene::UnlinkPrefab(int root) {
     for (const int m : members) {
         SceneEntity* e = Find(m);
         if (m != root && e->prefab.Root()) {
-            e->prefab.outer = 0;  // a nested prefab: placed by hand now
+            e->prefab.outer = 0;  // 入れ子の Prefab: 手で置いたことになる
         } else {
             e->prefab = {};
         }
@@ -387,14 +387,14 @@ int Scene::PlacePrefab(const json::Value& prefab, const AssetRef& asset, int par
         SceneEntity* e = Find(id);
         if (!e) continue;
         if (id != roots[0] && e->prefab.Root()) {
-            e->prefab.outer = source;  // a prefab nested in this one (filled from its own file by the editor)
+            e->prefab.outer = source;  // この中に入れ子になった Prefab (エディターが自分のファイルから埋める)
         } else {
             e->prefab = {};
             e->prefab.source = source;
         }
     }
     SceneEntity* r = Find(roots[0]);
-    if (!r->prefab.Linked()) r->prefab.source = 1;  // a hand-written file without ids
+    if (!r->prefab.Linked()) r->prefab.source = 1;  // id の無い手書きのファイル
     r->prefab.asset = asset;
     r->prefab.overrides = json::Value::MakeObject();
     r->prefab.outer = 0;
@@ -405,10 +405,10 @@ void Scene::DetachFromPrefab(int id) {
     const SceneEntity* e = Find(id);
     if (!e || !e->prefab.Linked()) return;
     if (e->prefab.Root()) {
-        Find(id)->prefab.outer = 0;  // a nested prefab: placed by hand now (it stays a prefab of its own)
+        Find(id)->prefab.outer = 0;  // 入れ子の Prefab: 手で置いたことになる (自分自身の Prefab のまま)
         return;
     }
-    // The parts below it of the same placed prefab, and the prefabs nested in those (worked out first).
+    // 置いた同じ Prefab のその下の部分と、その中に入れ子になった Prefab (先に求めておく)。
     const int around = PrefabRootOf(id);
     std::vector<int> plain, byHand;
     const std::unordered_set<int> under = Subtree(std::span<const int>(&id, 1));
@@ -431,11 +431,11 @@ void Scene::DetachCopies(const std::vector<int>& made) {
         const SceneEntity* e = Find(id);
         if (!e || !e->prefab.Linked()) continue;
         if (e->prefab.Root()) {
-            // A nested root copied without the prefab around it.
+            // まわりの Prefab を持たずにコピーした入れ子のルート。
             const int around = e->prefab.outer > 0 ? PrefabRootOf(e->data.parent) : 0;
             if (e->prefab.outer > 0 && !copied.contains(around)) byHand.push_back(id);
         } else if (!copied.contains(PrefabRootOf(id))) {
-            plain.push_back(id);  // a part of a placed prefab copied without its root
+            plain.push_back(id);  // ルートを持たずにコピーした、置いた Prefab の一部
         }
     }
     for (const int id : plain) Find(id)->prefab = {};
@@ -454,8 +454,8 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
         const std::vector<int> siblings = Children(parent);
         siblingIndex = static_cast<size_t>(std::find(siblings.begin(), siblings.end(), root) - siblings.begin());
     }
-    // Two parts with the same id in the file (data from before parts left a prefab when moved, a
-    // file edited by hand): the later ones leave the prefab as plain entities - nothing is lost.
+    // ファイル内に同じ id の部分が 2 つ (部分が動かすと Prefab を抜けるようになる前のデータや、
+    // 手で編集したファイル): 後のものは普通のエンティティとして Prefab を抜ける - 何も失われない。
     {
         std::unordered_set<int> keys;
         std::vector<int> clash;
@@ -472,17 +472,17 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
     }
     const std::vector<int> members = PrefabMembers(root);
     const std::unordered_set<int> memberSet(members.begin(), members.end());
-    std::unordered_map<int, int> idOf;  // id in the file -> the scene id it had
+    std::unordered_map<int, int> idOf;  // ファイル内の id -> それが持っていたシーンの id
     for (const int m : members) idOf.try_emplace(KeyOf(*Find(m), root), m);
 
     std::unordered_set<int> removedEntities;
     for (const auto& v : overrides.Get("removedEntities").Items()) removedEntities.insert(static_cast<int>(v.AsInt(0)));
 
-    // Every entity of the prefab, parents first; one whose parent is not there (removed, or later in
-    // a broken file) is left out with everything below it.
-    // The scene id of every entity of the prefab, before any is made: references between them
-    // (in the file's ids) become these. (A new id that ends up unused is simply skipped.)
-    std::unordered_map<int, int> planned;  // source -> scene id
+    // Prefab のすべてのエンティティ。親が先。親がそこに無いもの (消された、または壊れたファイルで
+    // あとにある) は、その下の全部といっしょに外す。
+    // Prefab のすべてのエンティティのシーンの id を、どれも作る前に決めておく: それらの間の参照
+    // (ファイル内の id) はこれになる。(使われずに終わる新しい id は、ただ飛ばす。)
+    std::unordered_map<int, int> planned;  // source -> シーンの id
     for (size_t i = 0; i < list.size(); ++i) {
         const int src = static_cast<int>(list[i].Get("id").AsInt(0));
         if (src <= 0 || planned.contains(src)) continue;
@@ -491,8 +491,8 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
     }
 
     std::vector<SceneEntity> built;
-    std::unordered_map<int, int> builtId;  // id in the file -> scene id
-    std::vector<int> builtKeys;            // built[i]'s id in the file
+    std::unordered_map<int, int> builtId;  // ファイル内の id -> シーンの id
+    std::vector<int> builtKeys;            // built[i] のファイル内の id
     for (size_t i = 0; i < list.size(); ++i) {
         const json::Value& p = list[i];
         const int src = static_cast<int>(p.Get("id").AsInt(0));
@@ -500,16 +500,16 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
         if (!isRoot && (src <= 0 || builtId.contains(src) || removedEntities.contains(src))) continue;
         const int parentSrc = static_cast<int>(p.Get("parent").AsInt(0));
         if (!isRoot && !builtId.contains(parentSrc)) continue;
-        SceneEntity e = LoadEntity(p, warnings);  // (with its "prefab": a nested one's link)
-        e.MapEntityRefs(planned, true);  // the prefab's own; the overrides below are in scene ids already
+        SceneEntity e = LoadEntity(p, warnings);  // ("prefab" つき: 入れ子のリンク)
+        e.MapEntityRefs(planned, true);  // Prefab 自身のもの。下の上書きはもうシーンの id
         const auto had = idOf.find(src);
         const SceneEntity* before = had != idOf.end() ? Find(had->second) : nullptr;
         e.data.id = isRoot ? root : planned[src];
         e.data.parent = isRoot ? parent : builtId[parentSrc];
         const bool nested = !isRoot && e.prefab.Root();
         if (nested) {
-            // A prefab nested in this one: its own link (from the file) - but one that was here keeps
-            // what was changed on it here.
+            // この中に入れ子になった Prefab: 自分のリンク (ファイルから) - ただし前からあったものは、
+            // ここで変えた内容を持ち続ける。
             if (before && before->prefab.Root() && before->prefab.asset == e.prefab.asset) {
                 e.prefab.overrides = before->prefab.overrides;
                 e.prefab.extra = before->prefab.extra;
@@ -526,7 +526,7 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
             e.prefab.outer = rootLink.outer;
         }
 
-        // What the placed one changed (by the entity's id in the file).
+        // 置いた側が変えたもの (ファイル内のエンティティの id で)。
         const int key = src > 0 ? src : rootLink.source;
         for (const auto& o : overrides.Get("fields").Items()) {
             if (o.Get("source").AsInt(0) != key) continue;
@@ -545,7 +545,7 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
         for (const auto& o : overrides.Get("removedComponents").Items()) {
             if (o.Get("source").AsInt(0) == key) gone.emplace_back(o.Get("component").AsString(), static_cast<size_t>(o.Get("index").AsInt(0)));
         }
-        std::sort(gone.begin(), gone.end(), [](const auto& a, const auto& b) { return a.second > b.second; });  // the later ones first
+        std::sort(gone.begin(), gone.end(), [](const auto& a, const auto& b) { return a.second > b.second; });  // あとのものを先に
         for (const auto& [type, nth] : gone) {
             if (const Component* c = e.FindComponent(type, nth)) e.components.erase(e.components.begin() + (c - e.components.data()));
         }
@@ -555,7 +555,7 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
             const std::string type = cj.Get("type").AsString();
             e.components.push_back(LoadComponent(cj, !e.FindComponent(type) || AllowsMultiple(type), e.data.name, warnings));
         }
-        // The placed one's order of the components (the slots they hold, filled in its order).
+        // 置いた側の部品の順番 (持っている枠を、その順番で埋める)。
         for (const auto& o : overrides.Get("componentOrder").Items()) {
             if (o.Get("source").AsInt(0) != key) continue;
             std::vector<size_t> slots;
@@ -575,7 +575,7 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
         builtKeys.push_back(key);
         built.push_back(std::move(e));
     }
-    // The placed one's order of siblings (the places they hold in the list, filled in its order).
+    // 置いた側の兄弟の順番 (リストの中で持っている場所を、その順番で埋める)。
     for (const auto& o : overrides.Get("childOrder").Items()) {
         const auto parentIt = builtId.find(static_cast<int>(o.Get("source").AsInt(0)));
         if (parentIt == builtId.end()) continue;
@@ -602,7 +602,7 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
         }
     }
 
-    // What goes: the members not made again - a nested prefab that went with everything in it.
+    // 消えるもの: もう一度作られなかったメンバー - 中の全部といっしょに消えた入れ子の Prefab。
     std::unordered_set<int> builtIds;
     for (const auto& e : built) builtIds.insert(e.data.id);
     std::unordered_set<int> erase = memberSet;
@@ -616,7 +616,7 @@ bool Scene::ApplyPrefab(int root, const json::Value& prefab, const json::Value& 
             if (e.prefab.Linked() && inside.contains(e.data.id)) erase.insert(e.data.id);
         }
     }
-    // Plain entities under an entity that went: under the root.
+    // 消えたエンティティの下にいた普通のエンティティ: ルートの下へ。
     for (auto& e : entities_) {
         if (erase.contains(e.data.id)) continue;
         if (erase.contains(e.data.parent) && !builtIds.contains(e.data.parent)) {

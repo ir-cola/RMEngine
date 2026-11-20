@@ -45,7 +45,7 @@ public:
         if (const std::string& title = doc->Get("title").AsString(); !title.empty()) host_.SetTitle(title);
         for (const auto& [guid, path] : doc->Get("assets").Members()) assets_[guid] = path.AsString();
 
-        // The component types the plugins offer (their runtime parts) - and the scripts' (Scripts.dll).
+        // プラグインが出す部品の型 (そのランタイム側) と、スクリプト (Scripts.dll) の型。
         std::vector<const reflect::TypeDesc*> types, multiple;
         for (const auto& c : host_.Registry().Contributions<ComponentInfo>(kComponentPoint)) {
             const reflect::TypeDesc* t = &c.item->type();
@@ -55,15 +55,15 @@ public:
         }
         world_.parts = ScriptApiParts(host_.Registry());
         world_.log = [this](int level, std::string_view t) { host_.Log(level, t); };
-        // The keys, the mouse buttons and the game pads: only while the game's window is in front (a key
-        // typed into another app never moves the game - as the editor's Play); read by action name.
+        // キー、マウスのボタン、ゲームパッド: ゲームのウィンドウが前にあるときだけ (他のアプリに打った
+        // キーでゲームが動くことはない - エディターの Play と同じ)。アクション名で読む。
         world_.readInput = [this] { return input_.Read(); };
         world_.actions = &settings_.input;
         world_.keyboardPlayer = std::clamp(settings_.keyboardPlayer - 1, 0, kPlayers - 1);
         world_.vibrate = [this](int player, float low, float high, float seconds) { input_.Vibrate(player, low, high, seconds); };
         world_.registry = &host_.Registry();
         world_.layers = &settings_.layers;
-        // rm::Spawn(prefab): the prefab files in the .rmpak (read once each).
+        // rm::Spawn(prefab): .rmpak の中の Prefab ファイル (それぞれ 1 回だけ読む)。
         world_.prefab = [this](const AssetRef& ref) -> const json::Value* {
             if (const auto it = prefabs_.find(ref.guid); it != prefabs_.end()) return it->second ? &*it->second : nullptr;
             std::optional<json::Value> doc;
@@ -78,8 +78,8 @@ public:
             const std::optional<json::Value>& slot = prefabs_.emplace(ref.guid, std::move(doc)).first->second;
             return slot ? &*slot : nullptr;
         };
-        // The global variables at their 初めの値 (the whole game: a scene switched keeps them); rm::Save
-        // into %LOCALAPPDATA%\<exe name>\Saves.
+        // グローバル変数は 初めの値 で (ゲーム全体: 切り替えたシーンも引き継ぐ)。rm::Save は
+        // %LOCALAPPDATA%\<exe name>\Saves に書く。
         {
             std::vector<std::string> told;
             world_.globals.Reset(settings_.globals, &told);
@@ -87,7 +87,7 @@ public:
             wchar_t exe[MAX_PATH] = {};
             const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
             world_.saveFolder = GameSaveFolder(std::filesystem::path(std::wstring(exe, n)).stem().native());
-            // The player's own bindings (rm::Input::SaveBindings), when there are some.
+            // プレイヤー自身の割り当て (rm::Input::SaveBindings)。あるときだけ。
             std::string why;
             if (!world_.LoadBindings(&why) && !why.empty()) host_.Log(1, "入力の割り当て (input.json) を読めません: " + why);
         }
@@ -109,11 +109,11 @@ public:
         scene_.SetComponentTypes(std::move(types), std::move(multiple));
         scene_.SetSettingTypes(SettingTypes(host_.Registry()));
 
-        // The game's scenes (the list's order: Game::LoadScene counts in it), and the first one.
+        // ゲームのシーン (一覧の順: Game::LoadScene はこの中で数える) と、最初の 1 つ。
         for (const auto& s : doc->Get("scenes").Items()) {
             scenePaths_.push_back(s.AsString());
             world_.sceneNames.push_back(SceneNameOf(s.AsString()));
-            // Its asset id, when the game names it by one (a game UI button's シーンを切り替える).
+            // そのアセット id。ゲームが id で名前を指すとき (ゲーム UI のボタンの シーンを切り替える)。
             std::string id;
             for (const auto& [guid, path] : assets_) {
                 if (path == s.AsString()) id = guid;
@@ -129,9 +129,9 @@ public:
         host_.Log(0, std::format("シーン {} 個。最初のシーン: {}", scenePaths_.size(), first < scenePaths_.size() ? world_.sceneNames[first] : std::string("(なし)")));
         cameraTypes_ = CameraTypes(host_.Registry());
 
-        // The systems, and the drawer of the game's space.
+        // システムと、ゲームの空間の描画担当。
         runner_.SetSystems(RegisteredSystems(host_.Registry()));
-        // Systems read assets from the .rmpak as the export put them in (a mesh collider: the baked model).
+        // システムは、書き出しが入れたままの形で .rmpak からアセットを読む (メッシュコライダー: ベイクしたモデル)。
         runner_.SetAssets({[this](const AssetRef& ref) -> std::optional<std::string> {
                                const auto it = assets_.find(ref.guid);
                                if (it == assets_.end()) return std::nullopt;
@@ -151,12 +151,12 @@ public:
             if (!chosen || d.item->order < chosen->order) chosen = d.item;
         }
         if (chosen && chosen->create) drawer_ = chosen->create();
-        // The other spaces' drawers draw their layers over it (2D over a 3D game).
+        // 他の空間の描画担当が、その上に自分の層を描く (3D のゲームに重ねる 2D)。
         for (const auto& d : host_.Registry().Contributions<GameDrawInfo>(kGameDrawPoint)) {
             if (d.item != chosen && d.item->create) overlays_.push_back(d.item->create());
         }
         if (!drawer_) host_.Log(1, "このゲームには描くプラグイン (3D / 2D) が入っていないので、背景の色だけを塗ります");
-        // Over the whole screen, after the spaces (the game UI), in their order.
+        // 画面全体の上に、空間の後で、その順に描く (ゲーム UI)。
         std::vector<const ScreenDrawInfo*> screens;
         for (const auto& d : host_.Registry().Contributions<ScreenDrawInfo>(kScreenDrawPoint)) screens.push_back(d.item);
         std::stable_sort(screens.begin(), screens.end(), [](const ScreenDrawInfo* a, const ScreenDrawInfo* b) { return a->order < b->order; });
@@ -166,7 +166,7 @@ public:
         screen_ = {static_cast<float>(settings_.display.width), static_cast<float>(settings_.display.height)};
         host_.Log(0, std::format("システム {} 個・エンティティ {} 個", runner_.Systems().size(), scene_.Entities().size()));
 
-        // What the plugins keep while the game plays (音: PlayServices.h) - until the game ends.
+        // ゲームが動いている間、プラグインが持っているもの (音: PlayServices.h) - ゲームが終わるまで。
         PlayHost play;
         play.registry = &host_.Registry();
         play.settings = &settings_;
@@ -181,7 +181,7 @@ public:
         return true;
     }
 
-    // The game settings' 画面 (幅 / 高さ / 表示のしかた / 垂直同期) and 目標 FPS.
+    // ゲーム設定の 画面 (幅 / 高さ / 表示のしかた / 垂直同期) と 目標 FPS。
     Display GetDisplay() const override {
         Display d;
         d.width = settings_.display.width;
@@ -195,13 +195,13 @@ public:
     }
 
     void Update(double realDt) override {
-        // The game's time: the real seconds times the time scale (rm::SetTimeScale) - for the scripts, the
-        // systems and the particles; the game UI moves on in real time (a pause menu at 0 still moves).
+        // ゲームの時間: 実際の秒数にタイムスケール (rm::SetTimeScale) をかけたもの - スクリプト、システム、
+        // パーティクル用。ゲーム UI は実時間で動き続ける (0 のときのポーズメニューも動く)。
         const double dt = realDt * world_.timeScale;
         movedFor_ += static_cast<float>(dt);
         world_.unscaledDt = static_cast<float>(realDt);
         world_.SetPointer(host_.Pointer(), screen_);
-        // The scripts (they read the keys), then the systems and their fixed steps.
+        // スクリプト (キーを読む)、それからシステムと、その固定ステップ。
         if (scripts_.Loaded()) {
             world_.scene = &scene_;
             world_.dt = static_cast<float>(dt);
@@ -210,13 +210,13 @@ public:
             scriptRunner_.Frame(scene_, world_, scripts_, settings_.scriptOrder, static_cast<float>(dt));
             runner_.SetCamera(world_.camera);
         } else {
-            world_.ReadInput();  // (the game UI reads it too)
+            world_.ReadInput();  // (ゲーム UI もこれを読む)
         }
         runner_.Advance(scene_, dt, settings_.fixedTimestep);
-        // What the systems' fixed steps tell the scripts (the physics' contacts ...).
+        // システムの固定ステップがスクリプトに伝えること (物理の接触など)。
         if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, runner_.Hooks());
-        // The services (音, the game UI ...) - with the screen, the mouse and the input; the hooks they ask
-        // for (a button's OnClick) go to the scripts now.
+        // サービス (音、ゲーム UI など) - 画面、マウス、入力を渡す。サービスが求めるフック (ボタンの OnClick) は
+        // 今はスクリプトに渡る。
         std::vector<HookCall> asked;
         PlayFrame pf{scene_, runner_.Camera(), static_cast<float>(realDt)};
         pf.screen = screen_;
@@ -226,7 +226,7 @@ public:
         pf.pointerWentUp = presses.up > 0;
         pf.input = &world_.inputNow;
         pf.inputBefore = &world_.inputBefore;
-        pf.actions = &world_.Actions();  // (the player's bindings)
+        pf.actions = &world_.Actions();  // (プレイヤーの割り当て)
         pf.hooks = &asked;
         pf.world = &world_;
         services_.Frame(pf);
@@ -235,7 +235,7 @@ public:
             host_.Log(0, "ゲームを終わります");
             host_.Quit();
         }
-        // A scene the scripts asked for (Game::LoadScene): switched here, between frames.
+        // スクリプトが頼んだシーン (Game::LoadScene): ここで、フレームの合間に切り替える。
         const std::string from = world_.sceneIndex >= 0 ? world_.sceneNames[static_cast<size_t>(world_.sceneIndex)] : std::string();
         std::string err;
         const SceneSwitch sw = SwitchAskedScene(
@@ -273,7 +273,7 @@ public:
         DrawScreen(dc, width, height);
     }
 
-    // The game UI ... over everything: the window is the game's screen.
+    // ゲーム UI など、すべての上に: ウィンドウがゲームの画面になる。
     void DrawScreen(ID2D1DeviceContext* dc, float width, float height) {
         screen_ = {width, height};
         if (screenDrawers_.empty()) return;
@@ -286,11 +286,11 @@ public:
         if (scripts_.Loaded()) scriptRunner_.Stop(scene_, world_, scripts_, settings_.scriptOrder);
         input_.StopVibration();
         world_.services = nullptr;
-        services_.Stop();  // (every sound stops)
+        services_.Stop();  // (すべての音が止まる)
     }
 
 private:
-    // The bytes of an asset: what the export put in the .rmpak for it (baked, or as its file).
+    // アセットのバイト列: 書き出しがそのために .rmpak に入れたもの (ベイクしたものか、ファイルそのもの)。
     std::optional<std::string> ReadAsset(const AssetRef& ref) {
         const auto it = assets_.find(ref.guid);
         if (it == assets_.end()) return std::nullopt;
@@ -300,7 +300,7 @@ private:
         return bytes;
     }
 
-    // The scene at `index` of the list, read from the .rmpak into `into` (its component types set).
+    // 一覧の `index` 番目のシーンを .rmpak から `into` に読む (部品の型を設定しておく)。
     bool ReadScene(size_t index, Scene& into, std::string* error) {
         if (index >= scenePaths_.size()) return false;
         const std::string& path = scenePaths_[index];
@@ -318,8 +318,8 @@ private:
     }
 
     game::Host& host_;
-    // The scripts' DLL first: members go in the reverse order, so the scene (holding the scripts'
-    // objects, whose code is in the DLL) is gone before the DLL is let go.
+    // スクリプトの DLL が先: メンバーは逆の順に消えるので、シーン (スクリプトのオブジェクトを持ち、
+    // そのコードは DLL の中にある) が、DLL を手放す前になくなる。
     InputReader input_;
     ScriptWorld world_;
     RmApi api_{};
@@ -329,22 +329,22 @@ private:
     Scene scene_;
     SystemRunner runner_;
     PlayServices services_;
-    std::unordered_map<std::string, std::string> assets_;  // asset id -> its path in the .rmpak
-    std::unordered_map<std::string, std::optional<json::Value>> prefabs_;  // rm::Spawn's prefabs, read (nullopt: not one)
-    std::vector<std::string> scenePaths_;                   // the game's scenes, in the list's order
-    std::vector<std::string> cameraTypes_;                  // what the game sees through (SceneCamera)
+    std::unordered_map<std::string, std::string> assets_;  // アセット id -> .rmpak の中のパス
+    std::unordered_map<std::string, std::optional<json::Value>> prefabs_;  // rm::Spawn の Prefab、読んだもの (nullopt: Prefab ではない)
+    std::vector<std::string> scenePaths_;                   // ゲームのシーン、一覧の順
+    std::vector<std::string> cameraTypes_;                  // ゲームが通して見るもの (SceneCamera)
     std::unique_ptr<GameDrawer> drawer_;
     std::vector<std::unique_ptr<GameDrawer>> overlays_;
-    std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // over everything (the game UI)
-    Vec2 screen_{1280, 720};                                    // the window's size at the last Draw (DIPs)
-    float movedFor_ = 0;  // seconds Update moved the game on since the last Draw (GameDrawFrame::dt)
+    std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // すべての上 (ゲーム UI)
+    Vec2 screen_{1280, 720};                                    // 最後の Draw のときのウィンドウのサイズ (DIPs)
+    float movedFor_ = 0;  // 最後の Draw から Update がゲームを進めた秒数 (GameDrawFrame::dt)
     ScriptRunner scriptRunner_;
 };
 
 std::unique_ptr<game::Game> CreateGame(game::Host& host) { return std::make_unique<GameFromProject>(host); }
 
-// What the exported game registers of game production (its generated main calls it by the C name
-// below): the game itself (the frame, game/Player.h, knows no software). The editor never has it.
+// 書き出したゲームがゲーム制作について登録するもの (生成された main が、下の C の名前で呼ぶ):
+// ゲーム自身 (枠の game/Player.h) はソフトを知らない。エディターにはこれはない。
 void RegisterForGame(RuntimeRegistry& registry) {
     static const game::GameInfo kGame{&CreateGame};
     registry.Contribute(game::kGamePoint, kGame);

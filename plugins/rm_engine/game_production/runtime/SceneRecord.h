@@ -1,27 +1,28 @@
 #pragma once
-// What one change of a scene's shape did, for undo - kept as the entities it touched, before and
-// after (like Unity's Undo.RecordObject), not as the whole scene twice.
+// シーンの形の 1 つの変更が何をしたか。Undo 用 - 触ったエンティティの、前と後として持つ
+// (Unity の Undo.RecordObject のように)。シーン全体を 2 回持つのではない。
 //
-//   SceneRecord r = SceneRecord::Begin(scene, touched);   // "these (and everything below them) will change"
-//   ... the change: Create / Delete / Move / Paste / Duplicate / AddComponent / ApplyPrefab ...
-//   r.End(scene);                                         // + every entity made since Begin (new ids)
-//   r.Undo(scene);  r.Redo(scene);                        // only those entities are put back
+//   SceneRecord r = SceneRecord::Begin(scene, touched);   // 「これら (とその下の全部) が変わる」
+//   ... 変更: Create / Delete / Move / Paste / Duplicate / AddComponent / ApplyPrefab ...
+//   r.End(scene);                                         // + Begin のあとに作られた全エンティティ (新しい id)
+//   r.Undo(scene);  r.Redo(scene);                        // そのエンティティだけが戻る
 //
-// What is kept of an entity: whether it is there, its place in the list (= the order of siblings)
-// and everything SaveEntity writes (its RM_PROPERTY fields, parent, components, prefab link).
+// エンティティについて持つもの: あるかないか、リストの中での場所 (= 兄弟の順番)、SaveEntity が
+// 書く全部 (RM_PROPERTY のフィールド、親、部品、Prefab のリンク)。
 //
-// THE ONE RULE: `touched` must name every entity the change alters other than the ones it makes.
-// An entity is "altered" when anything SaveEntity writes changes, or it is taken out / put in. (The
-// others move in the list only because entities before them come and go - that is fine: their order
-// among themselves stays.) Begin takes the touched entities with everything below them, which covers
-// what the scene's operations change (a prefab placed again changes its whole subtree).
-// The editor checks the rule in its Debug build on every edit (the whole scene before and after,
-// against Undo / Redo of the record); tests/TestSceneRecord.cpp runs thousands of random changes.
+// 唯一の決まり: `touched` は、その変更が変える、自分で作るもの以外のすべてのエンティティを
+// 挙げなければならない。SaveEntity が書く何かが変わるか、外される / 入れられるとき、エンティティは
+// 「変わった」。(ほかのものがリストの中で動くのは、前にあるエンティティが来たり去ったりする
+// からだけ - それは構わない: それらの間の順番は変わらない。) Begin は touched のエンティティを、
+// その下の全部ごと取る。シーンの操作が変えるものはこれで足りる (Prefab を置き直すと、その
+// サブツリー全体が変わる)。
+// エディターは Debug ビルドで、編集のたびにこの決まりを調べる (編集の前後のシーン全体を、
+// 記録の Undo / Redo と比べる)。tests/TestSceneRecord.cpp が、何千回ものランダムな変更を走らせる。
 //
-// Ids are never used again (Scene::NextId only goes up), so "made since Begin" is the ids from the
-// next id at Begin to the next id at End.
+// id は二度と使わない (Scene::NextId は上がるだけ) ので、「Begin のあとに作られた」は、Begin の
+// ときの次の id から End のときの次の id までの id になる。
 //
-// Pure - the runtime part of game production (no editor, no files).
+// 純粋 - ゲーム制作のランタイム側 (エディターなし、ファイルなし)。
 
 #include "rm_engine/game_production/runtime/Scene.h"
 
@@ -38,9 +39,9 @@ public:
     void Undo(Scene& scene) const { scene.RestoreStates(ids_, before_); }
     void Redo(Scene& scene) const { scene.RestoreStates(ids_, after_); }
 
-    // False when the change changed nothing (nothing is put in the history then).
+    // 変更が何も変えなかったときは false (そのときは履歴に何も入れない)。
     bool Changed() const { return before_ != after_; }
-    // About how much memory it keeps (the touched entities as text, before and after).
+    // 持っているメモリのおおよその量 (触ったエンティティの前と後をテキストで)。
     size_t Bytes() const { return bytes_; }
     size_t Entities() const { return ids_.size(); }
 

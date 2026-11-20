@@ -10,14 +10,14 @@ SceneRecord SceneRecord::Begin(const Scene& scene, std::span<const int> touched)
     if (!touched.empty()) {
         const std::unordered_set<int> all = scene.Subtree(touched);
         r.ids_.assign(all.begin(), all.end());
-        std::sort(r.ids_.begin(), r.ids_.end());  // (the same record for the same change)
+        std::sort(r.ids_.begin(), r.ids_.end());  // (同じ変更なら同じ記録)
     }
     r.before_ = scene.CaptureStates(r.ids_);
     return r;
 }
 
 void SceneRecord::End(const Scene& scene) {
-    // The entities made since Begin: not there before.
+    // Begin のあとに作られたエンティティ: その前には無かった。
     for (int id = nextAtBegin_; id < scene.NextId(); ++id) {
         if (!scene.Find(id) || std::binary_search(ids_.begin(), ids_.end(), id)) continue;
         ids_.push_back(id);

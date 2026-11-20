@@ -31,7 +31,7 @@ SceneEntity* EntityOf(void* ctx, RmEntityId id) {
     return w.scene->Find(static_cast<int>(id));
 }
 
-// --- The core table (RmCoreApi): every engine gives it ---------------------------------------
+// --- 核の表 (RmCoreApi): どのエンジンも渡す ----------------------------------------------------
 void ApiLog(void* ctx, int level, const char* text) {
     if (W(ctx).log) W(ctx).log(level, text ? text : "");
 }
@@ -116,8 +116,8 @@ uint32_t ApiSceneName(void* ctx, char* buf, uint32_t cap) {
 int32_t ApiSceneIndex(void* ctx) { return W(ctx).sceneIndex; }
 int32_t ApiSceneCount(void* ctx) { return static_cast<int32_t>(W(ctx).sceneNames.size()); }
 
-// --- Game production's own parts (RmApi::part by name, like a plugin's) -------------------------
-// Input by action name: this frame and the last, evaluated on the game settings' 入力.
+// --- ゲーム制作の持つ部品 (RmApi::part に名前で渡す。プラグインの部品と同じ) ----------------------
+// アクション名での入力: 今のフレームと前のフレーム。ゲーム設定の 入力 で調べる。
 int ApiInputDown(void* ctx, const char* name) {
     const InputAction* a = W(ctx).Action(name);
     return a && EvaluateAction(*a, W(ctx).inputNow).down ? 1 : 0;
@@ -136,8 +136,8 @@ float ApiInputAxis(void* ctx, const char* name) {
 }
 constexpr RmInputApi kInput{&ApiInputDown, &ApiInputPressed, &ApiInputReleased, &ApiInputAxis};
 
-// Global variables by name: numbers convert between the script's type and the variable's; a text
-// variable is read and written only as text.
+// グローバル変数を名前で: 数値はスクリプトの型と変数の型の間で変換する。文字の変数は文字としてだけ
+// 読み書きする。
 int Components(uint32_t type) { return type == RmField_Vec3 ? 3 : type == RmField_Vec2 ? 2 : 1; }
 bool NumberKind(uint32_t type) {
     return type == RmField_Bool || type == RmField_Int || type == RmField_Float || type == RmField_Vec2 || type == RmField_Vec3;
@@ -174,7 +174,7 @@ int ApiGlobalSet(void* ctx, const char* name, uint32_t type, const void* value) 
     } else {
         for (int i = 0; i < n; ++i) in[i] = static_cast<double>(static_cast<const float*>(value)[i]);
     }
-    // Into the variable's type: a plain number takes x; a vector takes what the script gives (the rest kept).
+    // 変数の型に合わせる: ふつうの数値は x を取る。ベクトルはスクリプトが渡したものを取る (残りはそのまま)。
     GlobalValue next = *g;
     if (g->type == GlobalType::Vec2 || g->type == GlobalType::Vec3) {
         for (int i = 0; i < n && i < (g->type == GlobalType::Vec3 ? 3 : 2); ++i) next.v[i] = in[i];
@@ -209,7 +209,7 @@ int ApiGlobalSetString(void* ctx, const char* name, const char* utf8, uint64_t l
 }
 constexpr RmGlobalsApi kGlobals{&ApiGlobalGet, &ApiGlobalSet, &ApiGlobalGetString, &ApiGlobalSetString};
 
-// Saving: every global variable to <saveFolder>/save_<slot>.json.
+// 保存: すべてのグローバル変数を <saveFolder>/save_<slot>.json に書く。
 int ApiSaveWrite(void* ctx, const char* slot) {
     ScriptWorld& w = W(ctx);
     std::string why;
@@ -226,8 +226,8 @@ int ApiSaveRead(void* ctx, const char* slot) {
     const bool ok = ReadSave(w.globals, w.saveFolder, s, &warnings, &why);
     if (w.log) {
         for (const std::string& m : warnings) w.log(1, m);
-        // (no save yet is the usual case at a game's first start - the script's false says it; only a
-        // save that is there and cannot be read is told)
+        // (ゲームの初回起動では「まだ保存がない」のがふつう。スクリプトの false がそれを伝える。
+        // 読めない保存がある場合だけ知らせる)
         if (!ok && SaveExists(w.saveFolder, s)) w.log(1, std::format("Save::Read(\"{}\"): 読めませんでした: {}", s, why));
     }
     return ok ? 1 : 0;
@@ -243,7 +243,7 @@ int ApiSaveRemove(void* ctx, const char* slot) {
 }
 constexpr RmSaveApi kSave{&ApiSaveWrite, &ApiSaveRead, &ApiSaveExists, &ApiSaveRemove};
 
-// Input, version 2: by player, and the player's bindings.
+// 入力 バージョン 2: プレイヤーごと、とプレイヤーの割り当て。
 int ApiInput2Down(void* ctx, const char* name, int32_t player) {
     ScriptWorld& w = W(ctx);
     const InputAction* a = w.Action(name);
@@ -272,13 +272,13 @@ void ApiVibrate(void* ctx, int32_t player, float low, float high, float seconds)
     ScriptWorld& w = W(ctx);
     if (w.vibrate && player >= 0 && player < kPlayers) w.vibrate(player, low, high, seconds);
 }
-// The player's own list (made from the settings' the first time a script changes it).
+// プレイヤー自身の一覧 (スクリプトが初めて変えたときに、設定のものから作る)。
 std::vector<InputAction>& PlayerActions(ScriptWorld& w) {
     if (!w.playerActions) w.playerActions = w.Actions();
     return *w.playerActions;
 }
 InputAction* PlayerAction(ScriptWorld& w, const char* name) {
-    if (!name || !w.Action(name)) return nullptr;  // (told once when there is none)
+    if (!name || !w.Action(name)) return nullptr;  // (無いときは 1 回だけ知らせる)
     for (InputAction& a : PlayerActions(w)) {
         if (a.name == name) return &a;
     }
@@ -297,7 +297,7 @@ int ApiBinding(void* ctx, const char* name, uint32_t index, int32_t* control, fl
 }
 int ApiSetBinding(void* ctx, const char* name, uint32_t index, int32_t control, float scale) {
     InputAction* a = PlayerAction(W(ctx), name);
-    if (!a || index > a->bindings.size() || !std::isfinite(scale)) return 0;  // (NaN would stay in the action, and in input.json)
+    if (!a || index > a->bindings.size() || !std::isfinite(scale)) return 0;  // (NaN がアクションと input.json に残ってしまう)
     const InputBinding b{static_cast<InputControl>(control), std::clamp(scale, -1.0f, 1.0f)};
     if (index == a->bindings.size()) {
         a->bindings.push_back(b);
@@ -344,7 +344,7 @@ constexpr RmInputApi2 kInput2{&ApiInput2Down,    &ApiInput2Pressed, &ApiInput2Re
                               &ApiVibrate,       &ApiBindingCount,  &ApiBinding,        &ApiSetBinding,   &ApiRemoveBinding,
                               &ApiResetBindings, &ApiSaveBindings,  &ApiLoadBindings,   &ApiAnyPressed,   &ApiControlName};
 
-// The mouse on the game screen.
+// ゲーム画面上のマウス。
 int ApiMousePosition(void* ctx, float out[2]) {
     const ScriptWorld& w = W(ctx);
     const Vec2 p = w.pointer.value_or(w.lastPointer);
@@ -363,7 +363,7 @@ void ApiScreenSize(void* ctx, float out[2]) {
 }
 constexpr RmMouseApi kMouse{&ApiMousePosition, &ApiMouseDelta, &ApiMouseWheel, &ApiScreenSize};
 
-// Time.
+// 時間。
 float ApiTimeScale(void* ctx) { return W(ctx).timeScale; }
 void ApiSetTimeScale(void* ctx, float scale) { W(ctx).timeScale = std::isfinite(scale) ? std::clamp(scale, 0.0f, 100.0f) : 1.0f; }
 float ApiUnscaledDeltaTime(void* ctx) { return W(ctx).unscaledDt; }
@@ -371,7 +371,7 @@ double ApiUnscaledTime(void* ctx) { return W(ctx).unscaledTime; }
 uint64_t ApiFrameCount(void* ctx) { return W(ctx).frame; }
 constexpr RmTimeApi kTime{&ApiTimeScale, &ApiSetTimeScale, &ApiUnscaledDeltaTime, &ApiUnscaledTime, &ApiFrameCount};
 
-// Coroutines.
+// コルーチン。
 uint64_t ApiCoStart(void* ctx, void* frame, int (*resume)(void*, RmWait*), void (*destroy)(void*)) {
     return W(ctx).StartCoroutine(frame, resume, destroy);
 }
@@ -383,12 +383,12 @@ void ApiCoStopAll(void* ctx) {
 int ApiCoRunning(void* ctx, uint64_t id) { return W(ctx).CoroutineRunning(id) ? 1 : 0; }
 constexpr RmCoroutinesApi kCoroutines{&ApiCoStart, &ApiCoStop, &ApiCoStopAll, &ApiCoRunning};
 
-// Events: queued, delivered after the frame's Ticks (ScriptRunner::DeliverEvents).
+// イベント: 待たせておき、フレームの Tick の後に届ける (ScriptRunner::DeliverEvents)。
 void ApiSendEvent(void* ctx, uint32_t scope, RmEntityId target, const char* name, double number, const char* text, uint64_t textLen,
                   RmEntityId entity) {
     ScriptWorld& w = W(ctx);
     if (!name || !*name || scope > 2) return;
-    if (scope != 0 && !EntityOf(ctx, target)) return;  // (sent to something gone: nobody gets it)
+    if (scope != 0 && !EntityOf(ctx, target)) return;  // (消えた相手に送った: 誰も受け取らない)
     if (w.events.size() >= 10000) {
         w.TellOnce("events:many", "rm::Events: 1 フレームに送るイベントが多すぎます (10000 個まで。OnEvent の中で送り合っていませんか)");
         return;
@@ -405,7 +405,7 @@ void ApiSendEvent(void* ctx, uint32_t scope, RmEntityId target, const char* name
 }
 constexpr RmEventsApi kEvents{&ApiSendEvent};
 
-// Entities: tags, layers, children, parents.
+// エンティティ: タグ、レイヤー、子、親。
 uint32_t ApiGetTag(void* ctx, RmEntityId e, char* buf, uint32_t cap) {
     const SceneEntity* x = EntityOf(ctx, e);
     return CopyText(x ? x->data.tag : std::string(), buf, cap);
@@ -462,7 +462,7 @@ int ApiSetParent(void* ctx, RmEntityId e, RmEntityId parent, int keepWorld, int3
     }
     const int ids[] = {id};
     const size_t at = index < 0 ? Scene::kEnd : static_cast<size_t>(index);
-    w.scene->Move(ids, to, at);  // (false: already there - nothing to do)
+    w.scene->Move(ids, to, at);  // (false: もうそこにある。何もしない)
     return 1;
 }
 void ApiSetName(void* ctx, RmEntityId e, const char* name) {
@@ -471,7 +471,7 @@ void ApiSetName(void* ctx, RmEntityId e, const char* name) {
 constexpr RmEntityApi kEntity{&ApiGetTag,     &ApiSetTag,   &ApiGetLayer,  &ApiSetLayer, &ApiLayerIndex,
                               &ApiFindWithTag, &ApiChildren, &ApiSetParent, &ApiSetName};
 
-// The game itself: Game::Quit asks for the end (the host ends the game after this frame).
+// ゲーム自体: Game::Quit は終了を頼む (ホストはこのフレームの後でゲームを終える)。
 void ApiQuit(void* ctx) { W(ctx).quitAsked = true; }
 constexpr RmGameApi kGame{&ApiQuit};
 
@@ -489,7 +489,7 @@ const void* ApiPart(void* ctx, const char* name, uint32_t version) {
     return FindScriptApiPart(W(ctx).parts, name, version);
 }
 
-// Entities and components (ABI 4).
+// エンティティと部品 (ABI 4)。
 RmEntityId ApiSpawn(void* ctx, const char* name, RmEntityId parent) {
     ScriptWorld& w = W(ctx);
     if (!w.scene) return 0;
@@ -525,7 +525,7 @@ void* ApiAddComponent(void* ctx, RmEntityId e, const char* typeName) {
         return nullptr;
     }
     if (!w.scene->AllowsMultiple(type->name)) {
-        if (Component* there = x->FindComponent(type->name)) return there->Known() ? there->value.Get() : nullptr;  // (one at most: the one there)
+        if (Component* there = x->FindComponent(type->name)) return there->Known() ? there->value.Get() : nullptr;  // (多くても 1 つ: そこにあるもの)
     }
     if (!w.scene->AddComponent(x->data.id, *type)) return nullptr;
     Component* made = EntityOf(ctx, e)->FindComponent(type->name, EntityOf(ctx, e)->CountComponents(type->name) - 1);
@@ -550,7 +550,7 @@ constexpr RmCoreApi kCore{&ApiLog,        &ApiDeltaTime,   &ApiTime,        &Api
                           &ApiSpawn,      &ApiSpawnPrefab, &ApiDestroy,     &ApiAddComponent, &ApiRemoveComponent,
                           &ApiCountComponents};
 
-// The C++ type of every script, as far as the engine is concerned (a script's own type lives in the DLL).
+// 全スクリプトの C++ の型。エンジンから見える範囲 (スクリプト自身の型は DLL の中にある)。
 struct ScriptTag {};
 const std::type_info& ScriptCppType() { return typeid(ScriptTag); }
 
@@ -587,7 +587,7 @@ const char* HookName(int hook) {
     }
 }
 
-// A script's asset field: char guid[RM_ASSET_ID_SIZE], read and written here (plain bytes).
+// スクリプトのアセット欄: char guid[RM_ASSET_ID_SIZE]。ここで読み書きする (ただのバイト列)。
 size_t AssetGet(const void*, const void* field, char* buf, size_t cap) {
     const char* g = static_cast<const char*>(field);
     const size_t n = strnlen(g, RM_ASSET_ID_SIZE - 1);
@@ -605,7 +605,7 @@ void AssetSet(const void*, void* field, const char* utf8, size_t len) {
     std::memset(g + n, 0, RM_ASSET_ID_SIZE - n);
 }
 
-// Why the fields `fields` (of a script or a struct) cannot be used; `seen`: structs already looked at.
+// `fields` (スクリプトや構造体の) の欄が使えない理由。`seen`: もう調べた構造体。
 std::string FieldsProblem(const RmFieldDesc* fields, uint32_t count, std::unordered_set<const RmStructDesc*>& seen, int depth) {
     if (count > 0 && !fields) return "欄の一覧が空です";
     if (depth > 16) return "構造体の入れ子が深すぎます";
@@ -641,7 +641,7 @@ std::string FieldsProblem(const RmFieldDesc* fields, uint32_t count, std::unorde
 const reflect::TypeDesc* StructOf(ScriptType& t, const RmStructDesc* s);
 const reflect::EnumDesc* EnumOf(ScriptType& t, const RmEnumDesc* e);
 
-// The value of a field (or of a list's elements: `type` is the element's).
+// 欄の値 (またはリストの要素の値: `type` は要素の型)。
 reflect::ValueType ValueOf(ScriptType& t, uint32_t type, const RmFieldDesc& in) {
     reflect::ValueType v{FieldTypeOf(type), nullptr, nullptr};
     if (type == RmField_Struct) v.structType = StructOf(t, in.structDesc);
@@ -669,7 +669,7 @@ reflect::FieldDesc MakeField(ScriptType& t, const RmFieldDesc& in) {
     if (in.type == RmField_List) {
         auto ops = std::make_unique<reflect::ArrayOps>();
         ops->element = ValueOf(t, base, in);
-        ops->size = in.list->size;  // (the DLL's: it owns the vector's memory)
+        ops->size = in.list->size;  // (DLL のもの: vector のメモリは DLL が持つ)
         ops->resize = in.list->resize;
         ops->at = in.list->at;
         fd.value = {reflect::FieldType::Array, nullptr, nullptr};
@@ -678,7 +678,7 @@ reflect::FieldDesc MakeField(ScriptType& t, const RmFieldDesc& in) {
     } else {
         fd.value = ValueOf(t, base, in);
     }
-    // Text: a std::string only through the DLL; an asset's id as plain bytes.
+    // 文字: std::string は DLL を通してだけ。アセットの id はただのバイト列で。
     if (base == RmField_String) fd.stringAccess = &t.strings;
     if (base == RmField_Asset) {
         fd.stringAccess = &t.assets;
@@ -687,13 +687,12 @@ reflect::FieldDesc MakeField(ScriptType& t, const RmFieldDesc& in) {
     return fd;
 }
 
-// --- Guarded construct / destruct / copy ---------------------------------------------------------
-// A TypeDesc's construct / destruct / copy are plain function pointers called by the core (a scene
-// adding a script, deleting one, copying the scene for Play): for a script's types they are stand-ins
-// from a fixed pool, each calling the DLL's own inside __try (ScriptGuard.cpp). A crash there (a
-// default value that reads a null pointer, a destructor that throws) is told and the object is left
-// zeroed - that object, not the editor or the game, goes wrong (2026-11-19). The pool full: the DLL's
-// own, unguarded.
+// --- ガード付きの構築 / 破棄 / コピー ----------------------------------------------------------
+// TypeDesc の構築 / 破棄 / コピーは、核が呼ぶただの関数ポインターだ (シーンがスクリプトを足す、消す、
+// Play のためにシーンをコピーする場面)。スクリプトの型では、固定のプールにある代役がそれぞれ DLL 自身の
+// 関数を __try の中で呼ぶ (ScriptGuard.cpp)。そこで落ちても (null ポインターを読む初期値や、例外を
+// 投げる破棄) 知らせたうえで、そのオブジェクトはゼロのままにする。おかしくなるのはそのオブジェクトだけで、
+// エディターやゲームではない (2026-11-19)。プールが一杯のときは、DLL 自身の関数をガード無しで使う。
 struct GuardSlot {
     void (*construct)(void*) = nullptr;
     void (*destruct)(void*) = nullptr;
@@ -740,7 +739,7 @@ constexpr auto kConstructs = Constructs(std::make_index_sequence<kGuardSlots>{})
 constexpr auto kDestructs = Destructs(std::make_index_sequence<kGuardSlots>{});
 constexpr auto kCopies = Copies(std::make_index_sequence<kGuardSlots>{});
 
-// `desc`'s functions become guarded stand-ins (kept in `t`, given back with it).
+// `desc` の関数をガード付きの代役に替える (`t` に持ち、`t` と一緒に返す)。
 void Guard(ScriptType& t, reflect::TypeDesc& desc) {
     std::lock_guard lock(g_guardsMutex);
     for (size_t i = 0; i < kGuardSlots; ++i) {
@@ -758,7 +757,7 @@ const reflect::TypeDesc* StructOf(ScriptType& t, const RmStructDesc* s) {
     if (auto it = t.structs.find(s); it != t.structs.end()) return &it->second->desc;
     auto n = std::make_unique<ScriptType::Nested>();
     ScriptType::Nested* at = n.get();
-    t.structs.emplace(s, std::move(n));  // first: a struct with a list of itself finds it
+    t.structs.emplace(s, std::move(n));  // 先に入れる: 自分自身のリストを持つ構造体がこれを見つけられるように
     for (uint32_t f = 0; f < s->fieldCount; ++f) at->fields.push_back(MakeField(t, s->fields[f]));
     at->desc = reflect::TypeDesc{s->name,
                                  s->label && *s->label ? s->label : s->name,
@@ -789,7 +788,7 @@ const reflect::EnumDesc* EnumOf(ScriptType& t, const RmEnumDesc* e) {
 
 }  // namespace
 
-// The module's init, guarded (ScriptGuard.cpp).
+// モジュールの init。ガード付き (ScriptGuard.cpp)。
 unsigned long CallModuleInit(RmModuleInitFn init, const RmApi* api, uint32_t abi, const RmModule** out);
 
 void ScriptWorld::ReadInput() {
@@ -817,7 +816,7 @@ bool ScriptWorld::LoadBindings(std::string* why) {
     const std::filesystem::path file = BindingsFile();
     std::error_code ec;
     if (file.empty() || !std::filesystem::is_regular_file(file, ec)) {
-        playerActions.reset();  // (none saved: the game settings')
+        playerActions.reset();  // (保存が無い: ゲーム設定のもの)
         return false;
     }
     const auto bytes = platform::ReadFileBytes(file, why);
@@ -842,7 +841,7 @@ bool ScriptWorld::SaveBindings(std::string* why) {
 }
 
 namespace {
-// Runs a coroutine on to its next wait (the script that owns it is the one running meanwhile).
+// コルーチンを次の待ちまで進める (その間に動いているのは、持ち主のスクリプト)。
 void RunCoroutine(ScriptWorld& w, CoroutineSlot& slot) {
     const void* script = std::exchange(w.currentScript, slot.owner);
     const int entity = std::exchange(w.currentEntity, slot.ownerEntity);
@@ -855,7 +854,7 @@ void RunCoroutine(ScriptWorld& w, CoroutineSlot& slot) {
     const unsigned long code = CallCoroutineResume(slot.resume, slot.frame, &next, &alive);
     w.currentScript = script;
     w.currentEntity = entity;
-    // (the list may have grown meanwhile: find the slot again)
+    // (その間にリストが伸びたかもしれない: 場所を探し直す)
     CoroutineSlot* s = nullptr;
     for (CoroutineSlot& c : w.coroutines) {
         if (c.id == id) s = &c;
@@ -866,7 +865,7 @@ void RunCoroutine(ScriptWorld& w, CoroutineSlot& slot) {
             s->dead = true;
             s->running = false;
         }
-        return;  // (its frame is left as it is: it may be broken)
+        return;  // (フレームはそのままにする: 壊れているかもしれない)
     }
     if (!s) return;
     s->running = false;
@@ -877,7 +876,7 @@ void RunCoroutine(ScriptWorld& w, CoroutineSlot& slot) {
     }
     s->wait = next;
     s->waitFrom = w.frame;
-    // A wait that begins after this frame's Ticks counts from the frame's end.
+    // このフレームの Tick の後に始まる待ちは、フレームの終わりから数える。
     const double scaled = w.time + (w.inCoroutinePass ? w.dt : 0.0);
     const double real = w.unscaledTime + (w.inCoroutinePass ? w.unscaledDt : 0.0);
     s->until = (next.kind == RmWait_RealSeconds ? real : scaled) + std::max(0.0, next.seconds);
@@ -910,7 +909,7 @@ void ScriptWorld::StopCoroutine(uint64_t id) {
     for (CoroutineSlot& c : coroutines) {
         if (c.id != id || c.dead) continue;
         c.dead = true;
-        if (!c.running) CallCoroutineDestroy(c.destroy, c.frame);  // (running: freed when it comes back)
+        if (!c.running) CallCoroutineDestroy(c.destroy, c.frame);  // (動いている最中: 戻ってきたときに解放する)
     }
 }
 
@@ -941,7 +940,7 @@ bool ScriptWorld::CoroutineRunning(uint64_t id) const {
 void ScriptWorld::ResumeCoroutines() {
     inCoroutinePass = true;
     const double scaled = time + dt, real = unscaledTime + unscaledDt;
-    // (only the ones there now: one started meanwhile has run already)
+    // (今あるものだけ: 途中で始まったものはもう動いた)
     std::vector<uint64_t> ids;
     for (const CoroutineSlot& c : coroutines) ids.push_back(c.id);
     for (const uint64_t id : ids) {
@@ -976,7 +975,7 @@ void ScriptWorld::TellOnce(const std::string& key, std::string_view text) {
 
 const InputAction* ScriptWorld::Action(const char* name) {
     if (!name) return nullptr;
-    if (const InputAction* a = FindAction(Actions(), name)) return a;  // (the player's bindings, when changed)
+    if (const InputAction* a = FindAction(Actions(), name)) return a;  // (プレイヤーの割り当て。変えたとき)
     if (told.insert(std::string("input:") + name).second && log) {
         log(1, std::format("入力のアクション「{}」はゲームの設定の「入力」にありません (いつも押されていない扱いです)", name));
     }
@@ -1039,7 +1038,7 @@ std::vector<std::unique_ptr<ScriptType>> MakeScriptTypes(const RmModule& m) {
         const RmScriptDesc& s = m.scripts[i];
         auto t = std::make_unique<ScriptType>();
         t->script = &s;
-        // Strings: only through the DLL (its C runtime owns their memory).
+        // 文字列: DLL を通してだけ (メモリは DLL の C ランタイムが持つ)。
         t->strings.ctx = &m;
         t->strings.get = [](const void* ctx, const void* field, char* buf, size_t cap) -> size_t {
             return static_cast<size_t>(static_cast<const RmModule*>(ctx)->stringGet(field, buf, cap));
@@ -1181,7 +1180,7 @@ std::vector<ScriptRunner::Instance> ScriptRunner::Collect(Scene& scene, const Sc
     for (size_t i = 0; i < sorted.size(); ++i) rank[sorted[i]] = i;
     std::stable_sort(out.begin(), out.end(), [&](const Instance& a, const Instance& b) {
         const size_t ra = rank[a.type->desc.name], rb = rank[b.type->desc.name];
-        return ra != rb ? ra < rb : a.entity < b.entity;  // (same entity: the order they are attached)
+        return ra != rb ? ra < rb : a.entity < b.entity;  // (同じエンティティ: 付けた順)
     });
     return out;
 }
@@ -1200,7 +1199,7 @@ bool ScriptRunner::Call(ScriptWorld& world, const Instance& in, int hook, float 
     }
     world.currentScript = script;
     world.currentEntity = entity;
-    if (hook == RM_HOOK_END_PLAY || code != 0) world.StopCoroutinesOf(in.data);  // (its coroutines end with it)
+    if (hook == RM_HOOK_END_PLAY || code != 0) world.StopCoroutinesOf(in.data);  // (コルーチンも一緒に終わる)
     if (code == 0) return true;
     crashed_.insert(in.data);
     if (world.log) {
@@ -1226,19 +1225,19 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
     const std::vector<Instance> list = Collect(scene, module, order);
     std::unordered_set<void*> present;
     for (const Instance& in : list) present.insert(in.data);
-    // Switched off since the last frame: EndPlay (BeginPlay again when switched on).
+    // 前のフレームから無効になった: EndPlay (有効に戻ったら BeginPlay をもう一度)。
     for (const Instance& in : list) {
         if (in.active || !started_.contains(in.data)) continue;
         if (!crashed_.contains(in.data)) Call(world, in, 2, 0);
         started_.erase(in.data);
     }
-    // Gone with its entity: its object is gone too (nothing left to call) - and its coroutines.
+    // エンティティと一緒に消えた: オブジェクトも消えている (呼ぶものはない)。コルーチンも。
     for (void* p : started_) {
         if (!present.contains(p)) world.StopCoroutinesOf(p);
     }
     std::erase_if(started_, [&](void* p) { return !present.contains(p); });
     std::erase_if(crashed_, [&](void* p) { return !present.contains(p); });
-    // BeginPlay of the new ones first (also what the last frame made), then every Tick.
+    // 新しいもの (前のフレームが作ったものも) の BeginPlay を先に、そのあと全部の Tick。
     for (const Instance& in : list) {
         if (!in.active || started_.contains(in.data) || crashed_.contains(in.data)) continue;
         started_.insert(in.data);
@@ -1248,10 +1247,10 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
         if (!in.active || crashed_.contains(in.data) || !started_.contains(in.data)) continue;
         Call(world, in, 1, dt);
     }
-    ApplyAsked(scene, world, module, order);  // what was destroyed / removed goes (EndPlay stops coroutines)
+    ApplyAsked(scene, world, module, order);  // 壊した / 外したものを片付ける (EndPlay がコルーチンを止める)
     {
         const auto t0 = std::chrono::steady_clock::now();
-        world.ResumeCoroutines();  // the coroutines whose wait is over
+        world.ResumeCoroutines();  // 待ちが終わったコルーチン
         if (timing_ && !world.coroutines.empty()) {
             ScriptTime& t = times_[nullptr];
             t.ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -1259,7 +1258,7 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
         }
     }
     DeliverEvents(scene, world, module, order);
-    ApplyAsked(scene, world, module, order);  // the frame's end
+    ApplyAsked(scene, world, module, order);  // フレームの終わり
     world.time += dt;
     world.unscaledTime += world.unscaledDt;
     ++world.frame;
@@ -1302,13 +1301,13 @@ void ScriptRunner::Deliver(Scene& scene, ScriptWorld& world, const ScriptModule&
     const std::vector<Instance> list = Collect(scene, module, order);
     for (const HookCall& h : calls) {
         for (const Instance& in : list) {
-            // Only what BeginPlay was called on (and EndPlay was not): the hooks come between the two.
+            // BeginPlay を呼んだものだけ (EndPlay はまだのもの): フックはこの 2 つの間に入る。
             if (in.entity != h.entity || !in.active || !started_.contains(in.data) || crashed_.contains(in.data)) continue;
             Call(world, in, h.hook, 0, h.other);
         }
     }
     ApplyAsked(scene, world, module, order);
-    DeliverEvents(scene, world, module, order);  // (what those hooks sent)
+    DeliverEvents(scene, world, module, order);  // (それらのフックが送ったもの)
 }
 
 void ScriptRunner::ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order) {
@@ -1322,18 +1321,18 @@ void ScriptRunner::ApplyAsked(Scene& scene, ScriptWorld& world, const ScriptModu
         std::unordered_set<int> gone = scene.Subtree(roots);
         std::unordered_set<const void*> goneObjects;
         for (const auto& [id, object] : remove) goneObjects.insert(object);
-        // EndPlay of the scripts that go (a script started only: BeginPlay and EndPlay in pairs).
+        // 去るスクリプトの EndPlay (始まったスクリプトだけ: BeginPlay と EndPlay は必ず対で)。
         auto endPlay = [&](const std::unordered_set<int>& entities) {
             for (const Instance& in : Collect(scene, module, order)) {
                 if (!entities.contains(in.entity) && !goneObjects.contains(in.data)) continue;
                 if (started_.contains(in.data) && !crashed_.contains(in.data)) Call(world, in, 2, 0);
-                started_.erase(in.data);  // (its memory may hold a new script next: never taken for this one)
+                started_.erase(in.data);  // (そのメモリに次の新しいスクリプトが入るかもしれない: このスクリプトとは決して見なさない)
                 crashed_.erase(in.data);
             }
         };
         endPlay(gone);
-        // An EndPlay may have put another entity under one that goes (Entity::SetParent): it goes with it,
-        // so its scripts' EndPlay comes too (2026-11-19: before, they went without one).
+        // EndPlay が、去るエンティティの下に別のエンティティを入れたかもしれない (Entity::SetParent)。
+        // それも一緒に去るので、そのスクリプトの EndPlay も呼ぶ (2026-11-19: 前は EndPlay 無しで消えていた)。
         for (int pass = 0; pass < 8; ++pass) {
             std::unordered_set<int> joined;
             for (const int id : scene.Subtree(roots)) {
@@ -1380,7 +1379,7 @@ void ScriptRunner::Resume(Scene& scene, ScriptWorld& world, const ScriptModule& 
     for (const RunState& r : before) {
         SceneEntity* e = scene.Find(r.entity);
         Component* c = e ? e->FindComponent(r.type, r.nth) : nullptr;
-        if (!c || !c->Known() || !module.Find(r.type)) continue;  // (a script that went: kept as a missing one)
+        if (!c || !c->Known() || !module.Find(r.type)) continue;  // (消えたスクリプト: 欠けたものとして残す)
         if (r.started) started_.insert(c->value.Get());
         if (r.crashed) crashed_.insert(c->value.Get());
     }
@@ -1395,12 +1394,12 @@ void ScriptRunner::Stop(Scene& scene, ScriptWorld& world, const ScriptModule& mo
         if (started_.contains(in.data) && !crashed_.contains(in.data)) Call(world, in, 2, 0);
     }
     Reset();
-    world.ClearCoroutines();     // (every one: also those whose script went without EndPlay)
+    world.ClearCoroutines();     // (全部: EndPlay 無しで消えたスクリプトのものも)
     world.events.clear();
-    world.destroyAsked.clear();  // (the scene goes as a whole)
+    world.destroyAsked.clear();  // (シーンごと消える)
     world.removeAsked.clear();
-    // The scene that played is thrown away next: a script's default value that asks the world (a
-    // script made when a component is added, or when scripts are swapped) must not see it.
+    // Play したシーンは次に捨てる。部品を足したときや、スクリプトを入れ替えたときに作られるスクリプトの
+    // 初期値が、ワールドに問い合わせても、そのシーンを見てはいけない。
     world.scene = nullptr;
 }
 
@@ -1409,16 +1408,16 @@ SceneSwitch SwitchAskedScene(Scene& playing, ScriptWorld& world, ScriptRunner& r
                              std::string* error) {
     const int asked = std::exchange(world.sceneAsked, -1);
     if (asked < 0) return SceneSwitch::None;
-    // Read first: a scene that cannot be read leaves the one playing as it is (its scripts go on).
+    // 先に読む: 読めないシーンのときは、Play 中のシーンをそのまま残す (スクリプトは動き続ける)。
     Scene next;
     next.SetComponentTypes(playing.ComponentTypes(), playing.MultipleTypes());
     next.SetSettingTypes(playing.SettingTypes());
     if (!load(static_cast<size_t>(asked), next, error)) return SceneSwitch::Failed;
-    if (module.Loaded()) runner.Stop(playing, world, module, order);  // EndPlay of this scene's scripts
+    if (module.Loaded()) runner.Stop(playing, world, module, order);  // このシーンのスクリプトの EndPlay
     runner.Reset();
     playing = std::move(next);
     world.sceneIndex = asked;
-    world.sceneAsked = -1;  // (asked again in an EndPlay: not taken - the switch is this one)
+    world.sceneAsked = -1;  // (EndPlay の中でまた頼まれた: 受けない。切り替えはこの 1 回)
     world.scene = &playing;
     return SceneSwitch::Switched;
 }

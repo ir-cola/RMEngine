@@ -1,10 +1,10 @@
 #pragma once
-// Exporting a game (the 書き出し panel of the ゲーム software, and the check's command line): what goes
-// into the exported folder - the game's data and scenes, only the assets they use, the plugins they use
-// - handed to the core's exporter (editor/export/Exporter.h), which links the exe.
+// ゲームの書き出し (ゲームソフトの書き出しパネルと、チェックのコマンドライン): 書き出し先のフォルダに
+// 入るもの - ゲームのデータとシーン、それが使うアセットだけ、それが使うプラグイン -
+// 核のエクスポーター (editor/export/Exporter.h) に渡し、それが exe をリンクする。
 //
-//   .rmpf  game data  "export": { "exeName": "…" }            (ExportSettings: project data, undone)
-//   UserSettings/Layout.json  the game's view  "export": { "output": "…" }   (where to: this PC's, never project data)
+//   .rmpf  ゲームのデータ  "export": { "exeName": "…" }            (ExportSettings: プロジェクトのデータ、Undo できる)
+//   UserSettings/Layout.json  ゲームのビュー  "export": { "output": "…" }   (出力先: この PC のもの、プロジェクトのデータではない)
 
 #include "base/Json.h"
 #include "base/Ref.h"
@@ -23,11 +23,11 @@ namespace rm::game_production {
 
 RM_STRUCT()
 struct ExportSettings {
-    RM_PROPERTY() std::string exeName;  // empty: made from the game's name (shown in the field)
+    RM_PROPERTY() std::string exeName;  // 空: ゲームの名前から作る (欄に表示される)
 };
 
-// What the 書き出し panel shows and edits: the game's name (= the game settings' ゲームの名前), the exe's
-// name, where to. Filled from the data every time it is drawn; an edit goes where the value lives.
+// 書き出しパネルが見せて編集するもの: ゲームの名前 (= ゲームの設定の ゲームの名前)、exe の名前、
+// 出力先。描くたびにデータから埋める。編集は値のある所へ行く。
 RM_STRUCT(Label="書き出し")
 struct ExportView {
     RM_PROPERTY(Edit, Label="ゲームの名前", Tooltip="ウィンドウのタイトルと exe の説明に使います (ゲームの設定の「ゲームの名前」と同じもの)") std::string title;
@@ -35,30 +35,31 @@ struct ExportView {
     RM_PROPERTY(Edit, Label="出力先", Tooltip="書き出すフォルダ。この PC の設定で、プロジェクトのデータには入りません") std::string output;
 };
 
-// What one export is made from (the open project as it is now - not only as saved).
+// 1 回の書き出しの材料 (開いているプロジェクトの今の状態 - 保存されたものだけではない)。
 struct GameExportInput {
     std::string title;
     std::string exeName;
     std::filesystem::path outDir;
-    json::Value settings;  // GameSettings as saved (its unknown keys too)
-    // The scenes: path from the project folder ("Assets/Scenes/Main.rmscene") and the file's text, in
-    // the list's order (ScenesForExport); the game starts with `first`.
+    json::Value settings;  // 保存されたままの GameSettings (知らないキーも)
+    // シーン: プロジェクトのフォルダからのパス ("Assets/Scenes/Main.rmscene") とファイルの中身を、
+    // 一覧の順に (ScenesForExport)。ゲームは `first` から始まる。
     std::vector<std::pair<std::string, std::string>> scenes;
     size_t first = 0;
     AssetRef icon;
-    std::vector<PluginId> plugins;          // ExportPlugins' order
+    std::vector<PluginId> plugins;          // ExportPlugins の順
     std::filesystem::path projectRoot;
-    std::function<std::filesystem::path(const AssetRef&)> assetFile;  // an asset's file now (empty: not there)
-    // The game's scripts, built for it on the export's worker (Release, no debug information:
-    // ScriptBuildRequest::forExport). No sources: no Scripts.dll; a build that fails stops the export.
+    std::function<std::filesystem::path(const AssetRef&)> assetFile;  // 今のアセットのファイル (空: ない)
+    // ゲームのスクリプト。書き出しのワーカーでそのためにビルドする (Release、デバッグ情報なし:
+    // ScriptBuildRequest::forExport)。ソースがなければ Scripts.dll も作らない。ビルドが失敗したら
+    // 書き出しは止まる。
     ScriptBuildRequest scripts;
-    std::filesystem::path iconFile;         // the icon's file (empty: none) - found on the UI thread
+    std::filesystem::path iconFile;         // アイコンのファイル (空: なし) - UI スレッドで見つける
 };
 
-// The scenes that go into the game (GameScenes: the list's, then the one open when it is not in it)
-// with their files' text: the open one as it is now (`openPath`, `openText`), the others as `read`
-// gives them (path, text; nullopt: left out, its id in `unread`). `first`: the place of the list's first
-// scene (FirstScene) among them - the open one's when that one is left out.
+// ゲームに入るシーン (GameScenes: 一覧のもの、一覧になければ開いているもの) とそのファイルの
+// 中身: 開いているものは今の状態 (`openPath`, `openText`)、ほかは `read` が返すもの
+// (パス, 中身。nullopt: 外す、その id は `unread` に入る)。`first`: 一覧の最初のシーンの位置
+// (FirstScene) をそれらの中で - 開いているものが外れるときはその位置。
 struct ExportScenes {
     std::vector<std::pair<std::string, std::string>> scenes;
     size_t first = 0;
@@ -67,45 +68,45 @@ struct ExportScenes {
 ExportScenes ScenesForExport(const SceneList& list, const AssetRef& open, const std::string& openPath, const std::string& openText,
                              const std::function<std::optional<std::pair<std::string, std::string>>(const AssetRef&)>& read);
 
-// The asset ids written in `v` (scenes, prefabs): every string that is an asset id, each once.
+// `v` に書かれたアセットの id (シーン、Prefab): アセットの id である文字列すべて、それぞれ 1 回。
 std::vector<std::string> AssetIdsIn(const json::Value& v);
 
-// --- Baking (design RME_PLATFORM 5-a: ゲーム用の形に変える) ---------------------------------------
-// An asset the game uses, found in the project (on the UI thread: the ids are the editor's).
+// --- ベイク (設計 RME_PLATFORM 5-a: ゲーム用の形に変える) ---------------------------------------
+// ゲームが使うアセットで、プロジェクトの中で見つけたもの (UI スレッドで: id はエディターのもの)。
 struct ExportAsset {
     std::string id;
     std::filesystem::path file;
-    std::string rel;  // from the project folder ("Assets/Models/house.gltf")
+    std::string rel;  // プロジェクトのフォルダから ("Assets/Models/house.gltf")
     std::filesystem::path projectRoot;
 };
 enum class BakeResult { NotMine, Done, Failed };
 struct ExportBaked {
-    std::vector<pak::Entry> files;  // into the .rmpak (paths of the game's own: "Baked/…")
-    std::string path;               // the one the game reads the asset by (game.json "assets": id -> path)
-    std::string note;               // a line for the export's log
+    std::vector<pak::Entry> files;  // .rmpak に入れる (ゲーム自身のパス: "Baked/…")
+    std::string path;               // ゲームがそのアセットを読むときのパス (game.json "assets": id -> パス)
+    std::string note;               // 書き出しのログの 1 行
 };
-// RuntimeRegistry point: items are ExportBaker (static), offered by the editor part of a plugin that
-// knows a kind of asset (ゲーム制作 × 3D: 3D models and their pictures, images as DDS). Asked in order
-// for every asset; the first that does not say NotMine bakes it. An asset nobody bakes goes in as its
-// file. Runs on the export's worker thread (only files are read).
+// RuntimeRegistry の口: 項目は ExportBaker (static)。ある種類のアセットを知っているプラグインの
+// エディター側が出す (ゲーム制作 × 3D: 3D モデルとその絵、画像は DDS)。アセットごとに順に尋ね、
+// NotMine と言わない最初のものが焼く。誰も焼かないアセットはファイルのまま入る。書き出しの
+// ワーカースレッドで動く (ファイルを読むだけ)。
 inline constexpr char kExportBakePoint[] = "rm_engine.game_production.export_bake";
 struct ExportBaker {
     BakeResult (*bake)(const ExportAsset& asset, ExportBaked& out, std::string* error) = nullptr;
-    // True for an asset the game needs this baker's plugin for (音: a sound - the game plays it with
-    // that plugin even when no scene has its component: a script's field). Its plugin then goes into
-    // the game. Null: never (a plugin the game has anyway: the space's). On the UI thread.
+    // ゲームがこのベイカーのプラグインを必要とするアセットなら true (音: 音声 - どのシーンにもその
+    // 部品がなくても (スクリプトの欄)、ゲームはそのプラグインで鳴らす)。そのプラグインがゲームに入る。
+    // null: 決して (ゲームがどのみち持つプラグイン: 空間のもの)。UI スレッドで。
     bool (*needsPlugin)(const ExportAsset& asset) = nullptr;
 };
 
-// Every asset the scenes use (the prefabs they place, followed, bring theirs), with its file now -
-// on the UI thread. Ids of no asset (an entity's name that looks like one, a file that is gone) and
-// files outside the project are left out.
+// シーンが使うすべてのアセット (置く Prefab、たどったもの、そのアセットも)を、今のファイルと
+// ともに - UI スレッドで。アセットでない id (エンティティの名前でそう見えるもの、なくなった
+// ファイル) とプロジェクトの外のファイルは外す。
 std::vector<ExportAsset> CollectAssets(const GameExportInput& in);
 
-// The exporter's request: game.json, the scenes, the assets (baked by the first baker that takes
-// each, else as their files), the icon (`iconFile`, read as it is). On the worker thread. False and
-// *error (Japanese) when something cannot be read or baked, or a path of this PC would be written into
-// the game. `note` gets a line per asset baked.
+// エクスポーターの依頼: game.json、シーン、アセット (それぞれを受け取る最初のベイカーが焼く。
+// なければファイルのまま)、アイコン (`iconFile`、そのまま読む)。ワーカースレッドで。何かが
+// 読めない・焼けない、またはこの PC のパスがゲームに書かれてしまうときは false と *error (日本語)。
+// `note` には焼いたアセットごとに 1 行入る。
 bool MakeRequest(const GameExportInput& in, const std::vector<ExportAsset>& assets, const std::vector<const ExportBaker*>& bakers,
                  editor::exporter::Request& out, const std::function<void(const std::string&)>& note, std::string* error);
 

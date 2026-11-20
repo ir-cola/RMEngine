@@ -14,9 +14,9 @@ void ArrowMover::Tick(rm::Entity self, float dt) {
     const float x = rm::Input::Axis("MoveX");
     const float y = rm::Input::Axis("MoveY");
     const bool turn = rm::Input::Down("Jump");
-    if (rm::Input::Pressed("Jump")) rm::Audio::Play(jumpSound);  // (RMAudio.h: once, the moment it is pressed)
+    if (rm::Input::Pressed("Jump")) rm::Audio::Play(jumpSound);  // (RMAudio.h: 押した瞬間に 1 回)
 
-    // A 3D entity: on the floor (up = farther away). A 2D one: on the screen (up = up).
+    // 3D のエンティティ: 床の上 (上 = 奥)。2D のエンティティ: 画面の上 (上 = 上)。
     if (rm::Transform3D t(self); t.Valid()) {
         rm::Vec3 p = t.Position();
         p.x += x * speed * dt;

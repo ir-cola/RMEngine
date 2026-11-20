@@ -12,7 +12,7 @@ RM_SCRIPT(Label="矢印キーで動く")
 struct ArrowMover {
     RM_PROPERTY(Edit, Label="速さ (1 秒に)", Min=0) float speed = 3.0f;
     RM_PROPERTY(Edit, Label="Jump で回す (度 / 秒)") float spin = 180.0f;
-    // The template's Assets/Sounds/jump.wav (its id): drag another sound onto the field to change it.
+    // テンプレートの Assets/Sounds/jump.wav (その id): 別の音をフィールドへドラッグすると替えられる。
     RM_PROPERTY(Edit, Label="ジャンプの音") rm::SoundRef jumpSound = {"a7d0c3f1e2b54c6d8e9f0a1b2c3d4e51"};
     RM_TRANSIENT() int frames = 0;
 

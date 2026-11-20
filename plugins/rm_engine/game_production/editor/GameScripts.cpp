@@ -20,7 +20,7 @@ ScriptBuildRequest ScriptRequestFor(const editor::SoftwareHost& host) {
     r.engine = platform::ExeDirectory();
     r.sdk = {r.engine / L"Sdk"};
 #ifdef _DEBUG
-    r.debug = true;  // the same C runtime as this engine (/MDd)
+    r.debug = true;  // この exe と同じ C ランタイム (/MDd)
 #endif
     return r;
 }
@@ -38,13 +38,13 @@ void GameScripts::StartInput() {
 
 GameScripts::GameScripts(editor::SoftwareHost& host) : host_(host), module_(std::make_unique<ScriptModule>()) {
     world_.parts = ScriptApiParts(host.Registry());
-    // The keys, the mouse buttons and the game pads: only while one of the editor's windows is in front
-    // (the same reader as an exported game's).
+    // キー、マウスのボタン、ゲームパッド: エディターのウィンドウのどれかが手前にあるときだけ
+    // (書き出したゲームと同じ読み取り器)。
     world_.readInput = [this] {
         InputFrame f = input_.Read();
         if (!mouseInGame || !mouseInGame()) {
-            DropMouseButtons(f);  // (a click on another panel is not the game's)
-            f.wheel = 0;          // (nor the wheel turned over it)
+            DropMouseButtons(f);  // (ほかのパネルのクリックはゲームのものではない)
+            f.wheel = 0;          // (その上で回したホイールも)
         }
         return f;
     };
@@ -69,7 +69,7 @@ ScriptBuildRequest GameScripts::Request() const {
 }
 
 void GameScripts::SetGlobals(const std::vector<GlobalVariable>& globals) {
-    // Only what the header has counts (names and types: a 初めの値 is read at Play, never compiled).
+    // ヘッダーにあるものだけが数える (名前と型: 初めの値は Play で読み、コンパイルはしない)。
     auto same = [](const std::vector<GlobalVariable>& a, const std::vector<GlobalVariable>& b) {
         return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](const GlobalVariable& x, const GlobalVariable& y) {
                    return x.name == y.name && x.type == y.type;
@@ -81,7 +81,7 @@ void GameScripts::SetGlobals(const std::vector<GlobalVariable>& globals) {
 }
 
 void GameScripts::Open() {
-    globalsChangedAt_ = -1;  // (Open writes the header with the list as it is)
+    globalsChangedAt_ = -1;  // (Open が今の一覧のままヘッダーを書く)
     const ScriptBuildRequest r = Request();
     std::string why;
     if (!WriteScriptProject(r, &why)) log::Warn("スクリプトの Visual Studio のプロジェクト: {}", why);
@@ -93,7 +93,7 @@ void GameScripts::Open() {
         if (auto m = LoadModule(dll)) Swap(std::move(m));
     }
     if (sources == 0) return;
-    // Built before what was written since (or never built): build now.
+    // その後に書かれたものより前にビルドした (または一度もビルドしていない): 今ビルドする。
     std::error_code ec;
     const auto built = dll.empty() ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(dll, ec);
     if (dll.empty() || ec || built.time_since_epoch().count() < sources - 1000) Build();
@@ -134,7 +134,7 @@ void GameScripts::Finished(const ScriptBuildResult& r) {
     } else if (r.nothingToBuild) {
         if (module_->Loaded()) {
             log::Info("{}", r.summary);
-            ready_ = std::filesystem::path();  // every script is gone: use none
+            ready_ = std::filesystem::path();  // スクリプトがすべてなくなった: 何も使わない
         }
     } else if (r.ok) {
         log::Info("{}", r.summary);
@@ -166,7 +166,7 @@ void GameScripts::OpenVisualStudio() {
         log::Error("Visual Studio のプロジェクトを書けませんでした: {}", why);
         return;
     }
-    // After this frame (opening another program is not done while drawing).
+    // このフレームの後で (別のプログラムを開くのは描画中にしない)。
     editor::PostToUi([sln] {
         const auto r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", sln.c_str(), nullptr, sln.parent_path().c_str(), SW_SHOWNORMAL));
         if (r <= 32) log::Error("Visual Studio で開けませんでした ({})。Visual Studio 2022 が入っているか確かめてください", PathToUtf8(sln));
@@ -176,8 +176,8 @@ void GameScripts::OpenVisualStudio() {
 void GameScripts::Poll(ui::Context& c) {
     const double now = platform::NowSeconds();
     const std::filesystem::path root = host_.GetProject().Root();
-    // The global variables' names or types changed: RmGlobals.h again (Visual Studio sees the new names),
-    // and a build when there are scripts - once the list is still for a second.
+    // グローバル変数の名前か型が変わった: RmGlobals.h をもう一度 (Visual Studio が新しい名前を見る)、
+    // スクリプトがあればビルドも - 一覧が 1 秒じっとしてから。
     if (globalsChangedAt_ >= 0) {
         if (now - globalsChangedAt_ < 1.0) {
             c.RequestAnimation();
@@ -194,12 +194,12 @@ void GameScripts::Poll(ui::Context& c) {
         }
     }
     if (now - lastAliveCheck_ >= 1.0) {
-        // (Assets/Scripts may come later - a first script made in Explorer - or be deleted and made
-        // again: the watch follows the old folder, so it is started again on the new one)
+        // (Assets/Scripts は後からできる (Explorer で作った最初のスクリプト) こともあるし、消して
+        // 作り直すこともある: 監視は古いフォルダを追うので、新しいフォルダで始め直す)
         lastAliveCheck_ = now;
         if (watching_ && watch_.Lost()) {
             watching_ = false;
-            changedAt_ = now;  // (what is there now is looked at)
+            changedAt_ = now;  // (今ある状態を見る)
         }
         std::error_code ec;
         const std::filesystem::path folder = ScriptsFolder(root);
@@ -213,12 +213,12 @@ void GameScripts::Poll(ui::Context& c) {
         }
         if (changedAt_ < 0) return;
         if (now - changedAt_ < 0.5) {
-            c.RequestAnimation();  // (the next frames come without input until it is looked at)
+            c.RequestAnimation();  // (見るまで、次のフレームは入力なしで来る)
             return;
         }
         changedAt_ = -1;
     } else if (now - lastLook_ < 1.0) {
-        return;  // (no watch: looked at once a second while frames come)
+        return;  // (監視なし: フレームが来る間は 1 秒に 1 回見る)
     }
     lastLook_ = now;
     const long long sources = ScriptSourcesTime(root);
@@ -248,7 +248,7 @@ std::unique_ptr<ScriptModule> GameScripts::LoadModule(const std::filesystem::pat
 
 void GameScripts::Swap(std::unique_ptr<ScriptModule> next) {
     runner_.Reset();
-    module_ = std::move(next);  // the old DLL goes now: nothing of its types may be left
+    module_ = std::move(next);  // 古い DLL は今消える: その型は何も残ってはいけない
 }
 
 }  // namespace rm::game_production

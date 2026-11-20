@@ -15,7 +15,7 @@ bool DebugDraw::Add(DebugSpace space, Vec3 a, Vec3 b, Color color, double second
         if (!noticeTold_) noticeDue_ = true;
         return false;
     }
-    const bool oneFrame = !(seconds > 0);  // (NaN too)
+    const bool oneFrame = !(seconds > 0);  // (NaN も)
     lines_.push_back({a, b, color, space, oneFrame, oneFrame ? clock_ : clock_ + seconds});
     return true;
 }

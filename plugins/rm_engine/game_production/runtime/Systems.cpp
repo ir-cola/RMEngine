@@ -8,7 +8,7 @@
 namespace rm::game_production {
 
 void ForEachComponent(Scene& scene, std::string_view type, const std::function<void(SceneEntity&, Component&)>& fn) {
-    // TreeOrder gives the entities that run; ids, because a system may change the scene's list.
+    // TreeOrder が動くエンティティを返す。id で持つのは、システムがシーンのリストを変えるかもしれないから。
     std::vector<int> ids;
     for (const TreeEntry& t : scene.TreeOrder()) {
         if (t.activeInHierarchy) ids.push_back(t.entity->data.id);
@@ -19,7 +19,7 @@ void ForEachComponent(Scene& scene, std::string_view type, const std::function<v
         for (size_t i = 0; i < e->components.size(); ++i) {
             Component& c = e->components[i];
             if (c.type == type && c.Known()) fn(*e, c);
-            e = scene.Find(id);  // fn may have added components (the list moved) or removed the entity
+            e = scene.Find(id);  // fn が部品を足した (リストが動いた) か、エンティティを消したかもしれない
             if (!e) break;
         }
     }
@@ -103,7 +103,7 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
     int steps = 0;
     if (fixedStep > 0) {
         carry_ += dt;
-        // A little slack, so 0.1 s of frames with a 0.02 s step is 5 steps (not 4 and a rounding error).
+        // 少し余裕を持たせる。0.02 秒刻みで 0.1 秒分のフレームは 5 ステップ (丸め誤差で 4 にはしない)。
         const double eps = fixedStep * 1e-6;
         while (carry_ + eps >= fixedStep && steps < kMaxFixedSteps) {
             for (size_t i = 0; i < systems_.size(); ++i) {
@@ -116,7 +116,7 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
             fixedTime_ += fixedStep;
             ++steps;
         }
-        if (steps == kMaxFixedSteps) carry_ = std::min(carry_, static_cast<double>(fixedStep));  // let the rest go
+        if (steps == kMaxFixedSteps) carry_ = std::min(carry_, static_cast<double>(fixedStep));  // 残りは捨てる
         carry_ = std::max(0.0, carry_);
     }
     for (size_t i = 0; i < systems_.size(); ++i) {

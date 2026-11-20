@@ -1,12 +1,12 @@
 #pragma once
-// ゲーム制作の「デバッグ」パネル: what is going on, to look at while making the game - how often the scene
-// view and the game view are drawn (FPS), where the mouse is, what is held on the keyboard and the game pads,
-// the input actions while playing, how many entities / components the scene has, the monitors and the
-// GPU, and what plugins add (パーティクル: how many particles are alive).
+// ゲーム制作の「デバッグ」パネル: 作っているゲームを見るための、今起きていること - シーンビューと
+// ゲームビューを描く頻度 (FPS)、マウスの位置、キーボードとゲームパッドで押されているもの、
+// Play 中の入力アクション、シーンのエンティティ / 部品の数、モニターと GPU、プラグインが足すもの
+// (パーティクル: 生きている粒の数)。
 //
-//   GameSoftware   measures (FrameMeter on each view's drawing and on Play's frames), fills a DebugView
-//                  and calls DebugPanel::Draw when the panel is shown
-//   plugins        add sections (DebugInfoInfo at kDebugInfoPoint): lines asked each time it is drawn
+//   GameSoftware   測る (各ビューの描画と Play のフレームに FrameMeter)、DebugView を埋め、
+//                  パネルが表示されたら DebugPanel::Draw を呼ぶ
+//   plugins        節を足す (kDebugInfoPoint の DebugInfoInfo): 描くたびに行を尋ねる
 
 #include "base/Math.h"
 #include "platform/SystemInfo.h"
@@ -47,20 +47,20 @@ class SystemRunner;
 struct ScriptWorld;
 struct GameSettings;
 
-// How often something is drawn (or run): the frames of the last second. Pure - tests/TestDebugPanel.cpp.
+// 何かを描く (や動かす) 頻度: 直近の 1 秒のフレーム。純粋 - tests/TestDebugPanel.cpp。
 class FrameMeter {
 public:
-    // One frame at `now` (seconds) that took `workMs` of this program's time.
+    // `now` (秒) の 1 フレーム。このプログラムの時間を `workMs` 使った。
     void Frame(double now, double workMs = 0) {
         marks_.push_back({now, workMs});
         while (!marks_.empty() && now - marks_.front().at > 1.0) marks_.pop_front();
     }
     struct Summary {
-        int frames = 0;      // in the last second (0: not drawn - nothing changed)
-        double fps = 0;      // frames per second over them
-        double meanMs = 0;   // the time between two of them, on average
-        double worstMs = 0;  // ... the longest
-        double workMs = 0;   // the time each took, on average
+        int frames = 0;      // 直近の 1 秒で (0: 描いていない - 何も変わらなかった)
+        double fps = 0;      // その間の 1 秒あたりのフレーム数
+        double meanMs = 0;   // 2 つのフレームの間の時間の平均
+        double worstMs = 0;  // ... 一番長いもの
+        double workMs = 0;   // それぞれにかかった時間の平均
     };
     Summary Over(double now) const {
         Summary s;
@@ -86,7 +86,7 @@ public:
             const double span = last->at - first;
             s.fps = span > 0 ? (s.frames - 1) / span : 0;
         } else {
-            s.fps = 1;  // one frame in the last second
+            s.fps = 1;  // 直近の 1 秒に 1 フレーム
         }
         return s;
     }
@@ -98,20 +98,20 @@ private:
     std::deque<Mark> marks_;
 };
 
-// A plugin's section of the panel. PluginRegistry point: items are DebugInfoInfo (static). `collect`
-// is called each time the panel is drawn (often: keep it cheap); its lines are shown as they are
-// (Japanese through Tr, as any text on screen).
+// プラグインのパネルの節。PluginRegistry の口: 項目は DebugInfoInfo (static)。`collect` は
+// パネルを描くたびに呼ばれる (頻繁: 軽く作る)。その行はそのまま表示される (日本語は Tr を通す。
+// 画面のどの文字とも同じ)。
 inline constexpr char kDebugInfoPoint[] = "rm_engine.game_production.debug_info";
 struct DebugInfoLine {
     std::wstring label;
     std::wstring value;
-    bool lit = false;  // shown in the accent (something that wants to be seen)
+    bool lit = false;  // アクセントで表示 (目立たせたいもの)
 };
-// What a section may look at: the scene shown (the copy that plays, while playing) and the game.
+// 節が見てよいもの: 表示中のシーン (Play 中は Play しているコピー) とゲーム。
 struct DebugContext {
     Scene* scene = nullptr;
     bool playing = false;
-    const ScriptWorld* world = nullptr;  // while playing (its services: 音, the game UI ...)
+    const ScriptWorld* world = nullptr;  // Play 中 (そのサービス: 音、ゲームの UI ...)
 };
 // The デバッグ window's tabs.
 enum class DebugTab { Basic = 0, Controller = 1, Pc = 2, Performance = 3, Game = 4 };
@@ -122,10 +122,10 @@ struct DebugInfoInfo {
     void (*collect)(const DebugContext& ctx, std::vector<DebugInfoLine>& out) = nullptr;
 };
 
-// What a view tells of its last drawing (the 3D / 2D views: what it drew, its camera). Told only while
-// the panel is shown (ViewReportsWanted: the panel asks each time it is drawn); one per view.
+// ビューが最後の描画について知らせること (3D / 2D ビュー: 何を描いたか、そのカメラ)。パネルが
+// 表示されている間だけ知らせる (ViewReportsWanted: パネルは描くたびに尋ねる)。ビュー 1 つにつき 1 つ。
 struct ViewReport {
-    std::wstring title;  // "シーンビュー (3D)" ... (Tr'd by the view)
+    std::wstring title;  // "シーンビュー (3D)" ... (ビューが Tr を通す)
     std::vector<DebugInfoLine> lines;
     double at = 0;
 };
@@ -134,7 +134,7 @@ bool ViewReportsWanted();
 void ReportView(const void* view, ViewReport report);
 std::vector<ViewReport> RecentViews(double maxAge = 1.0);
 
-// The last frames for the graph: the interval between two (ms) and the work of each (ms), oldest first.
+// グラフ用の直近のフレーム: 2 つの間隔 (ms) と、それぞれの処理 (ms)。古い順。
 struct FrameGraph {
     static constexpr size_t kSamples = 240;
     std::vector<float> intervals, work;
@@ -150,42 +150,42 @@ struct FrameGraph {
     }
 };
 
-// How long the parts of one Play frame took (ms).
+// Play の 1 フレームの各部分にかかった時間 (ms)。
 struct PlayTimes {
     double scripts = 0, systems = 0, hooks = 0, services = 0, total = 0;
 };
 
-// What the game software tells the panel each time it is drawn.
+// ゲームソフトが、描くたびにパネルへ知らせるもの。
 struct DebugView {
     const editor::PluginRegistry* registry = nullptr;
     platform::Gfx* gfx = nullptr;
-    const Scene* scene = nullptr;  // the scene shown (the copy that plays, while playing)
+    const Scene* scene = nullptr;  // 表示中のシーン (Play 中は Play しているコピー)
     const GameSettings* settings = nullptr;
     bool playing = false, paused = false;
-    const ScriptWorld* world = nullptr;     // while playing
-    const SystemRunner* runner = nullptr;   // while playing
+    const ScriptWorld* world = nullptr;     // Play 中
+    const SystemRunner* runner = nullptr;   // Play 中
     FrameMeter::Summary sceneView, gameView, update;
-    bool sceneViewOpen = false, gameViewOpen = false;  // (a view not in the layout is never drawn)
-    std::optional<Vec2> sceneMouse;  // over the scene view (DIPs from its top left)
-    std::optional<Vec2> gameMouse;   // over the game screen (the game settings' 画面)
-    size_t scriptTypes = 0;          // the scripts the built DLL has
-    // The scripts' build: the last one, one running now, and what the buttons do (ビルドし直す: every
-    // object again; 読み込み直す: the newest DLL used again).
+    bool sceneViewOpen = false, gameViewOpen = false;  // (レイアウトにないビューは描かれない)
+    std::optional<Vec2> sceneMouse;  // シーンビューの上 (左上からの DIP)
+    std::optional<Vec2> gameMouse;   // ゲーム画面の上 (ゲームの設定の 画面)
+    size_t scriptTypes = 0;          // ビルドした DLL にあるスクリプト
+    // スクリプトのビルド: 直近のもの、今動いているもの、ボタンがすること (ビルドし直す: オブジェクトを
+    // すべて作り直す。読み込み直す: 一番新しい DLL をもう一度使う)。
     ScriptBuildOutcome scriptBuild;
     bool scriptsBuilding = false;
     std::function<void()> rebuildScripts, reloadScripts;
-    // While playing: how long the last frame's parts took, type by type and system by system (measured
-    // while the panel is shown), and how many fixed steps it ran.
+    // Play 中: 直近のフレームの各部分にかかった時間を、型ごと・システムごとに (パネルの表示中に測る)、
+    // と実行した固定ステップの数。
     PlayTimes playTimes;
     std::vector<ScriptRunner::ScriptTime> scriptTimes;
     std::vector<SystemRunner::SystemTime> systemTimes;
     int fixedSteps = 0;
-    FrameGraph playGraph, sceneGraph;  // Play's frames; the scene view's drawing
+    FrameGraph playGraph, sceneGraph;  // Play のフレーム、シーンビューの描画
 };
 
-// A window shaped as a file folder (a software's tool window: no Windows frame) - the デバッグ window and
-// the ゲームの設定 window: five tabs over a sheet with a strip to move it by and its ×. Pure layout - the
-// shape, the hit test and the drawing use the same.
+// ファイルフォルダの形をしたウィンドウ (ソフトのツールウィンドウ: Windows の枠なし) - デバッグ
+// ウィンドウとゲームの設定ウィンドウ: シートの上に 5 つのタブ、動かすための帯、その ×。純粋な
+// レイアウト - 形・当たり判定・描画が同じものを使う。
 inline constexpr int kFolderTabs = 5;
 inline constexpr float kFolderTabH = 32, kFolderTabGap = 4, kFolderTabRadius = 9, kFolderBodyRadius = 12;
 struct FolderWindowLayout {
@@ -195,26 +195,26 @@ struct FolderWindowLayout {
 FolderWindowLayout LayoutFolderWindow(float w, float h);
 std::vector<editor::ToolRoundRect> FolderWindowShape(float w, float h);
 editor::ToolHit HitFolderWindow(const FolderWindowLayout& l, float x, float y);
-// Draws the window: the tabs (`titles`; a click on one changes `tab`), the sheet, `status` on its strip
-// and its × (`close`). Returns where things are (what the chosen tab shows goes in `content`).
+// ウィンドウを描く: タブ (`titles`。1 つをクリックすると `tab` が変わる)、シート、帯の `status`、
+// その × (`close`)。どこに何があるかを返す (選ばれたタブが見せるものは `content` に入る)。
 FolderWindowLayout DrawFolderWindow(ui::Context& c, float width, float height, std::span<const std::wstring> titles, int& tab, std::wstring_view status,
                                     const std::function<void()>& close);
 
 class DebugPanel {
 public:
-    // The whole window (its tabs, its sheet, its ×: `close`) - and what the chosen tab shows, in `r`.
+    // ウィンドウ全体 (そのタブ、シート、× : `close`) - と、選ばれたタブが見せるもの (`r`)。
     void DrawWindow(ui::Context& c, float width, float height, const DebugView& v, const std::function<void()>& close);
     void Draw(ui::Context& c, const ui::Rect& r, const DebugView& v);
 
 private:
     int tab_ = 0;
-    std::map<std::wstring, bool> open_;  // the sections folded or open, by title
+    std::map<std::wstring, bool> open_;  // たたまれているか開いているか、タイトルごと
     PadWatcher pads_;
     std::array<PadState, kPlayers> padState_{};
-    double systemAt_ = -1e9;  // when the monitors, the GPU, the CPU and the memory were last read
+    double systemAt_ = -1e9;  // モニター・GPU・CPU・メモリを最後に読んだ時刻
     struct System;
     std::shared_ptr<System> system_;
-    platform::CpuMeter cpuMeter_;  // how busy the CPU was between two reads (a second apart)
+    platform::CpuMeter cpuMeter_;  // 2 回の読みの間 (1 秒あけて) の CPU のふさがり具合
 
 };
 

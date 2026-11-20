@@ -1,8 +1,8 @@
 #pragma once
-// Editor part of the game production plugin: adds the "ゲーム" software.
-// Today: the game settings, and one scene whose entities (name, switch, parent) are listed in the
-// core 階層 and edited in the core インスペクター. The scene view, components (ECS), Play ...
-// come here later (design RME_PLATFORM 4-b).
+// ゲーム制作プラグインのエディター側: 「ゲーム」ソフトを足す。
+// 今あるのは、ゲームの設定と、1 つのシーン。そのエンティティ (名前・スイッチ・親) は核の階層に
+// 並び、核のインスペクターで編集する。シーンビュー・部品 (ECS)・Play などは後でここに来る
+// (設計 RME_PLATFORM 4-b)。
 
 #include "editor/plugin/Software.h"
 
