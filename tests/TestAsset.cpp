@@ -10,6 +10,7 @@
 #include "core/asset/ImportSettings.h"
 #include "editor/app/Worker.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
+#include "rm_engine/space3d/runtime/MeshFile.h"
 #include "core/reflect/Reflect.h"
 
 #include <windows.h>
@@ -239,8 +240,8 @@ RM_TEST(Asset_ImportSettingsInMeta) {
     CHECK(ImportInMeta(MetaText(text, G(2))).Get("scale").AsDouble() == 2.0);
     // 型付き: ローダーが読む形 (足りないものは既定値、範囲は保つ)。
     ModelImport m;
-    reflect::Load(m, *json::Parse(R"({"scale": 0, "up": "Z"})"));
-    CHECK(m.scale == 0.0001f && m.up == UpAxis::Z);
+    reflect::Load(m, *json::Parse(R"({"scale": 0, "axes": "ZUpRight"})"));
+    CHECK(m.scale == 0.0001f && m.axes == ModelAxes::ZUpRight && m.unit == ModelUnit::Auto && !m.turnAround);
     CHECK(ImportTypeOf(Kind::Model) == &reflect::TypeOf<ModelImport>() && ImportTypeOf(Kind::Image) == &reflect::TypeOf<ImageImport>());
     CHECK(ImportTypeOf(Kind::Audio) == &reflect::TypeOf<SoundImport>());
     CHECK(ImportTypeOf(Kind::Text) == nullptr && ImportTypeOf(Kind::Folder) == nullptr);
@@ -253,6 +254,11 @@ RM_TEST(Asset_ImportSettings_OldSharpIsTheFilter) {
     CHECK(dots.Get("filter").AsString() == "Sharp" && dots.Get("sharp").IsNull() && dots.Get("maxSize").AsInt() == 512);
     CHECK(ImportInMeta(R"({"import": {"sharp": false}})").Get("filter").AsString() == "Smooth");
     CHECK(ImportInMeta(R"({"import": {"sharp": false, "filter": "Sharp"}})").Get("filter").AsString() == "Sharp");
+    // 2026-11-20 より前、モデルは "up": "Y" / "Z" だった。Z は「Z が上・右手系」、Y は自動 (同じ読み方)。
+    const json::Value zUp = ImportInMeta(R"({"import": {"up": "Z", "scale": 0.5}})");
+    CHECK(zUp.Get("axes").AsString() == "ZUpRight" && zUp.Get("up").IsNull() && zUp.Get("scale").AsDouble() == 0.5);
+    const json::Value yUp = ImportInMeta(R"({"import": {"up": "Y"}})");
+    CHECK(yUp.Get("axes").IsNull() && yUp.Get("up").IsNull());
     ImageImport img;
     reflect::Load(img, dots);
     CHECK(img.filter == TextureFilter::Sharp && img.wrap == TextureWrap::Repeat && img.mipmaps && !img.keepCoverage && !img.streaming);
@@ -279,31 +285,64 @@ RM_TEST(Asset_ImportSettingsOnDisk) {
     imp.Set("up", "Z");
     CHECK(WriteImportJson(file, imp));
     const ModelImport m = ReadImport<ModelImport>(file);
-    CHECK(m.scale == 0.01f && m.up == UpAxis::Z);
+    CHECK(m.scale == 0.01f && m.axes == ModelAxes::ZUpRight);  // (古い "up": "Z" も読める)
     CHECK(ChangedAt(file, ec) >= before);
     // ID は今もあり、フォルダをもう一度走査しても設定は残る。
     const std::vector<Entry> again = Update(root, {}, notes);
     CHECK(again.size() == 1 && IsGuid(again[0].guid));
-    CHECK(ReadImport<ModelImport>(file).up == UpAxis::Z);
+    CHECK(ReadImport<ModelImport>(file).axes == ModelAxes::ZUpRight);
     ChangedAt(root / L"無い.obj", ec);
     CHECK(static_cast<bool>(ec));
     fs::remove_all(root, ec);
 }
 
 RM_TEST(Asset_ModelImportApplied) {
-    space3d::MeshData mesh;
-    mesh.vertices.push_back({{1, 2, 3}, {0, 0, 1}, {0, 0}});
-    mesh.vertices.push_back({{-1, 0, 0}, {0, 1, 0}, {0, 0}});
-    space3d::ComputeBounds(mesh);
-    space3d::ApplyModelImport(mesh, 2.f, true);  // Z 上 -> Y 上、2 倍の大きさ
-    const space3d::MeshVertex& v = mesh.vertices[0];
-    CHECK(v.position.x == 2 && v.position.y == 6 && v.position.z == -4);
-    CHECK(v.normal.x == 0 && v.normal.y == 1 && v.normal.z == 0);  // 上 (Z) を向いていたものが上 (Y) を向く
-    CHECK(mesh.vertices[1].normal.z == -1);
-    CHECK(mesh.max.y == 6 && mesh.min.x == -2 && mesh.min.z == -4);
-    space3d::MeshData same = mesh;
-    space3d::ApplyModelImport(same, 1.f, false);  // 既定値では何も変わらない
-    CHECK(same.vertices[0].position.y == 6);
+    // モデルの座標系をこのエンジン (Y が上・左手系: 右・上・奥が +) へ。右手系は Z で写し、三角形を裏返す。
+    auto one = [](Vec3 p, Vec3 n) {
+        space3d::MeshData m;
+        m.vertices.push_back({p, n, {0, 0}});
+        m.vertices.push_back({{0, 0, 0}, {0, 1, 0}, {0, 0}});
+        m.vertices.push_back({{0, 0, 0}, {0, 1, 0}, {0, 0}});
+        m.indices = {0, 1, 2};
+        space3d::ComputeBounds(m);
+        return m;
+    };
+    auto same = [](Vec3 a, Vec3 b) { return std::fabs(a.x - b.x) < 1e-5f && std::fabs(a.y - b.y) < 1e-5f && std::fabs(a.z - b.z) < 1e-5f; };
+    asset::ModelImport imp;
+    // 自動 / Y が上・右手系 (glTF): Z だけ反転 (前のエンジンと同じ見た目)、三角形は裏返す。
+    space3d::MeshData m = one({1, 2, 3}, {0, 0, 1});
+    space3d::ApplyModelImport(m, space3d::BasisOf(imp), false, 1.f);
+    CHECK(same(m.vertices[0].position, {1, 2, -3}) && same(m.vertices[0].normal, {0, 0, -1}) && m.indices[1] == 2 && m.indices[2] == 1);
+    // Z が上・右手系 (Blender): 上の Z が Y に、Blender の前 (-Y) は手前 (-Z) に。2 倍。
+    imp.axes = asset::ModelAxes::ZUpRight;
+    m = one({1, 2, 3}, {0, 0, 1});
+    space3d::ApplyModelImport(m, space3d::BasisOf(imp), false, 2.f);
+    CHECK(same(m.vertices[0].position, {2, 6, 4}) && same(m.vertices[0].normal, {0, 1, 0}));
+    CHECK(m.max.y == 6 && m.max.z == 4);
+    // Z が上・左手系 (Unreal: X が前、Y が右): 前は奥 (+Z)、右は右。裏返さない。
+    imp.axes = asset::ModelAxes::ZUpLeft;
+    m = one({1, 2, 3}, {1, 0, 0});
+    space3d::ApplyModelImport(m, space3d::BasisOf(imp), false, 1.f);
+    CHECK(same(m.vertices[0].position, {2, 3, 1}) && same(m.vertices[0].normal, {0, 0, 1}) && m.indices[1] == 1);
+    // Y が上・左手系 (Unity・このエンジン): そのまま。前後の反転: Y のまわりに 180 度。
+    imp.axes = asset::ModelAxes::YUpLeft;
+    m = one({1, 2, 3}, {0, 0, 1});
+    space3d::ApplyModelImport(m, space3d::BasisOf(imp), true, 1.f);
+    CHECK(same(m.vertices[0].position, {-1, 2, -3}) && same(m.vertices[0].normal, {0, 0, -1}) && m.indices[1] == 1);
+    // 細かく指定: 上 +Z、奥 +Y、右手系 = Blender と同じ。上と奥が同じ向きなら Y が上・右手系。
+    imp.axes = asset::ModelAxes::Custom;
+    imp.upAxis = asset::AxisDir::PosZ;
+    imp.depthAxis = asset::AxisDir::PosY;
+    imp.leftHanded = false;
+    m = one({1, 2, 3}, {0, 0, 1});
+    space3d::ApplyModelImport(m, space3d::BasisOf(imp), false, 1.f);
+    CHECK(same(m.vertices[0].position, {1, 3, 2}));
+    imp.depthAxis = asset::AxisDir::NegZ;
+    m = one({1, 2, 3}, {0, 0, 1});
+    space3d::ApplyModelImport(m, space3d::BasisOf(imp), false, 1.f);
+    CHECK(same(m.vertices[0].position, {1, 2, -3}));
+    // 単位: m・cm・mm (自動は FBX がファイルの単位で m にしてある)。
+    CHECK(space3d::UnitOf(asset::ModelUnit::Auto) == 1.f && space3d::UnitOf(asset::ModelUnit::Centimeter) == 0.01f && space3d::UnitOf(asset::ModelUnit::Millimeter) == 0.001f);
 }
 
 // --- 読めない .meta と、エディターの外で作ったコピー ------------------------------

@@ -72,6 +72,7 @@ public:
                 if (const auto bytes = host_.Read(at->second, &err)) {
                     doc = json::Parse(*bytes);
                     if (doc && !IsPrefab(*doc)) doc.reset();
+                    if (doc) UpgradePrefab(*doc, host_.Registry());
                 }
                 if (!doc) host_.Log(1, std::format("Prefab ({}) を読めません {}", at->second, err));
             }
@@ -306,7 +307,7 @@ private:
         const std::string& path = scenePaths_[index];
         std::string err;
         const auto bytes = host_.Read(path, &err);
-        const auto scene = bytes ? ReadSceneFile(*bytes, &err) : std::nullopt;
+        const auto scene = bytes ? ReadSceneFile(*bytes, &err, &host_.Registry()) : std::nullopt;
         if (!scene) {
             if (error) *error = std::format("シーン ({}) を読めません: {}", path, err);
             return false;

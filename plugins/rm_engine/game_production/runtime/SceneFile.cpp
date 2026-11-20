@@ -78,7 +78,45 @@ std::string SceneFileText(const json::Value& scene) {
     return json::Write(doc) + "\n";
 }
 
-std::optional<json::Value> ReadSceneFile(std::string_view text, std::string* error) {
+void NegateJsonNumber(json::Value& data, std::string_view key, size_t index) {
+    json::Value* v = data.IsObject() ? data.Find(std::string(key)) : nullptr;
+    if (!v || !v->IsArray() || index >= v->Items().size()) return;
+    const json::Value& n = v->Items()[index];
+    if (!n.IsNumber()) return;
+    json::Value next = json::Value::MakeArray();
+    for (size_t i = 0; i < v->Items().size(); ++i) next.Push(i == index ? json::Value(-v->Items()[i].AsDouble()) : v->Items()[i]);
+    *v = std::move(next);
+}
+
+void MirrorZ(json::Value& doc, const RuntimeRegistry& registry) {
+    auto mirrorList = [&](json::Value* list) {
+        if (!list || !list->IsArray()) return;
+        json::Value next = json::Value::MakeArray();
+        for (json::Value c : list->Items()) {
+            if (c.IsObject()) {
+                const std::string type = c.Get("type").AsString();
+                for (const auto& m : registry.Contributions<MirrorZInfo>(kMirrorZPoint)) {
+                    if (!m.item->type || !m.item->mirror || type != m.item->type) continue;
+                    if (json::Value* data = c.Find("data"); data && data->IsObject()) m.item->mirror(*data);
+                }
+            }
+            next.Push(std::move(c));
+        }
+        *list = std::move(next);
+    };
+    if (!doc.IsObject()) return;
+    if (json::Value* entities = doc.Find("entities"); entities && entities->IsArray()) {
+        json::Value next = json::Value::MakeArray();
+        for (json::Value e : entities->Items()) {
+            if (e.IsObject()) mirrorList(e.Find("components"));
+            next.Push(std::move(e));
+        }
+        *entities = std::move(next);
+    }
+    mirrorList(doc.Find("settings"));
+}
+
+std::optional<json::Value> ReadSceneFile(std::string_view text, std::string* error, const RuntimeRegistry* registry) {
     auto fail = [&](std::string msg) -> std::optional<json::Value> {
         if (error) *error = std::move(msg);
         return std::nullopt;
@@ -90,6 +128,10 @@ std::optional<json::Value> ReadSceneFile(std::string_view text, std::string* err
     const int64_t format = doc->Get("format").AsInt(0);
     if (format > kSceneFormat) {
         return fail(std::format("新しい版のエンジンで作られたシーンです (形式 {} / この版は {} まで)。読まず、上書きもしません", format, kSceneFormat));
+    }
+    if (format < 2 && registry) {  // (右手系のころのシーン: 左手系へ写す。次の保存で形式 2 になる)
+        MirrorZ(*doc, *registry);
+        doc->Set("format", kSceneFormat);
     }
     return doc;
 }

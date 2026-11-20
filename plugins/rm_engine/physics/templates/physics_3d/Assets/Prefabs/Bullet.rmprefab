@@ -1,6 +1,6 @@
 {
   "kind": "rm_engine.game_production.prefab",
-  "format": 1,
+  "format": 2,
   "entities": [
     {
       "id": 1,

@@ -2,7 +2,8 @@
 // 3D 空間: 空間を見る - ベクトル、カメラの行列、レイと、それが当たるもの。
 // 純粋 - tests/TestSpace3d.cpp でテストする。
 //
-// ワールドは右手系で Y が上 (X が右、Z が見る人に向かう)。カメラは自分の -Z を向く。
+// ワールドは左手系で Y が上 (X が右、Y が上、Z が奥 - 2026-11-20 から。前は右手系)。カメラは自分の +Z を
+// 向く。
 // 射影行列は深度を 0 (近) .. 1 (遠) に写す。Direct3D の求める形。
 
 #include "rm_engine/space3d/runtime/Transform.h"
@@ -29,10 +30,10 @@ Vec3 TransformDirection(const Mat4& m, Vec3 d);
 std::optional<Mat4> Inverse(const Mat4& m);
 
 Mat4 Perspective(float fovYDegrees, float aspect, float nearZ, float farZ);
-// ビュー空間のボックス (x 左..右、y 下..上、z -nearZ..-farZ: 目の前) -> -1..1、-1..1、0..1。
+// ビュー空間のボックス (x 左..右、y 下..上、z nearZ..farZ: 目の前) -> -1..1、-1..1、0..1。
 Mat4 Orthographic(float left, float right, float bottom, float top, float nearZ, float farZ);
 Mat4 LookAt(Vec3 eye, Vec3 target, Vec3 up);
-// `world` に置かれたカメラのビュー行列: 自分の -Z を向き、+Y が上 (編集用カメラや LookAt と
+// `world` に置かれたカメラのビュー行列: 自分の +Z を向き、+Y が上 (編集用カメラや LookAt と
 // 同じ)。`world` のスケールは除く (絵が伸びてしまうため)。
 Mat4 ViewFromWorld(const Mat4& world);
 // ビュー射影が見ているものの 8 つの角 (ワールド): ニアプレーンが 0..3、ファープレーンが 4..7、
@@ -93,7 +94,7 @@ std::optional<Vec3> ProjectToNdc(const Mat4& viewProjection, Vec3 p);
 RM_STRUCT()
 struct OrbitView {
     RM_PROPERTY() Vec3 pivot{0, 0, 0};
-    RM_PROPERTY(Min=-100000, Max=100000) float yaw = 35.f;  // Y まわりの度。0 は -Z を向く
+    RM_PROPERTY(Min=-100000, Max=100000) float yaw = 35.f;  // Y まわりの度。0 は +Z を向く (増やすと左へ)
     RM_PROPERTY(Min=-89, Max=89) float pitch = 25.f;        // 度。正は下を向く
     RM_PROPERTY(Min=0.05, Max=10000) float distance = 9.f;  // 目からピボットまで
     RM_PROPERTY(Min=10, Max=120) float fovY = 60.f;         // 度

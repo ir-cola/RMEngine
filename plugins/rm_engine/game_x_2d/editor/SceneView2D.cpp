@@ -150,7 +150,7 @@ public:
         Render(c, r, host, state_.camera, theme::SceneBackground());
         DrawGizmo(c, r, host);
         if (drag_ == Drag::Band) w::DrawSelectionBand(c, Normalized(press_, {c.In().mouseX, c.In().mouseY}).Intersect(r));
-        DrawHints(c, r, bar);
+        // (操作の説明はヘルプに: 2026-11-20 から画面には出さない)
         c.P().PopClip();
         if (bar) DrawBar(c, *bar);
         if (bar && snapOpen_) DrawSnapBox(c, SnapBox(r, *bar));
@@ -987,26 +987,6 @@ private:
             }
         }
         square(s.origin, gizmo::kCenterHalf - 2.f, colorOf(gizmo::Handle::Free, theme::Text.Alpha(0.85f)));
-    }
-
-    void DrawHints(ui::Context& c, const Rect& r, const std::optional<BarLayout>& bar) {
-        ui::TextStyle ts;
-        ts.size = 11;
-        ts.color = theme::TextDim;
-        ts.v = ui::VAlign::Bottom;
-        ts.wrap = true;
-        c.P().Text(r.Inset(10, 8, 10, 8),
-                   Tr(L"右 / 中ドラッグ: 平行移動   ホイール: 近づく   クリック: 選ぶ (Ctrl: 足す・外す)   何も無い所からドラッグ: 四角で囲んで選ぶ   物をドラッグ: 動かす   F: 選んだ物へ   W / E / R: 移動・回転・拡大縮小   X: ローカル / ワールド   Z: それぞれ / 中心   Ctrl+ドラッグ: 刻んで動かす   Esc: ドラッグをやめる"),
-                   ts);
-        if (placed_.empty()) {
-            ui::TextStyle hint = ts;
-            hint.size = 12;
-            hint.v = ui::VAlign::Top;
-            hint.color = theme::TextFaint;
-            c.P().Text(r.Inset(10, bar ? bar->all.Bottom() - r.y + 10 : 8, 10, 8),
-                       Tr(L"Transform 2D の付いたエンティティが、ここに小さな輪で出ます。スプライトの部品を付けると、その絵 (画像が無いときは白い四角) で描きます。"),
-                       hint);
-        }
     }
 
     enum class Drag { None, PanRight, PanMiddle, Press, Band, Body, Gizmo, Cancelled };

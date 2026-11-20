@@ -2,6 +2,7 @@
 // 3D 空間 - ディスクからモデルファイルを読む (Mesh.h の純粋な読み込みを包む I/O)。
 // .gltf のバッファーファイルは、その隣で探す (そのフォルダの下だけ)。
 
+#include "core/asset/ImportSettings.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 
 #include <filesystem>
@@ -16,6 +17,10 @@ namespace rm::space3d {
 // 大きさ、どちらが上か - core/asset/ImportSettings.h) を適用する。`budget`: 読むのに使ってよい量
 // (null: Mesh.h の上限)。例外は投げない: メモリ不足も「読めない」になる。
 std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::string* error, ReadBudget* budget = nullptr);
+
+// 取り込みの設定の座標系 (自動・プリセット・細かく指定) と単位を、ApplyModelImport の形で。純粋。
+ModelBasis BasisOf(const asset::ModelImport& imp);
+float UnitOf(asset::ModelUnit unit);
 
 // モデルが相対パスで名指すファイル ("tex/wood.png"、"../Textures/wood.png") を、フルパスで。
 // `root` の中でない (またはフルパスで書かれている) ときは空。純粋 (ディスクは使わない)。

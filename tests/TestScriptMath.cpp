@@ -73,9 +73,9 @@ RM_TEST(ScriptMath_QuatIsTheEnginesTurn) {
         const Vec3 back = q.ToEuler();
         CHECK(Near(Quat::Euler(back) * Vec3{1, 2, 3}, q * Vec3{1, 2, 3}));
     }
-    // 物は自分の -Z の向きを見る: LookRotation は頼んだ向きに合わせ、Y を上にする。
+    // 物は自分の +Z の向きを見る (左手系): LookRotation は頼んだ向きに合わせ、Y を上にする。
     const Quat look = Quat::LookRotation(Vec3{1, 0, 0});
-    CHECK(Near(look.Forward(), Vec3{1, 0, 0}) && Near(look.Up(), Vec3{0, 1, 0}) && Near(look.ToEuler(), Vec3{0, -90, 0}, 1e-3f));
+    CHECK(Near(look.Forward(), Vec3{1, 0, 0}) && Near(look.Up(), Vec3{0, 1, 0}) && Near(look.ToEuler(), Vec3{0, 90, 0}, 1e-3f));
     CHECK(Near(Quat::FromToRotation(Vec3{1, 0, 0}, Vec3{0, 1, 0}) * Vec3{1, 0, 0}, Vec3{0, 1, 0}));
     CHECK(Near(Quat::FromToRotation(Vec3{1, 0, 0}, Vec3{-1, 0, 0}) * Vec3{1, 0, 0}, Vec3{-1, 0, 0}));
     const Quat half = rm::Slerp(Quat::Identity(), Quat::AngleAxis(90, {0, 1, 0}), 0.5f);

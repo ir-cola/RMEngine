@@ -43,16 +43,49 @@ std::optional<MeshData> Load(const std::filesystem::path& file, const std::strin
         if (at.empty()) return std::nullopt;
         return ReadAll(at);
     };
-    auto mesh = ParseMesh(PathToUtf8(file.extension()), *bytes, related, &why, &budget);
+    const auto imp = asset::ReadImport<asset::ModelImport>(file);
+    auto mesh = ParseMesh(PathToUtf8(file.extension()), *bytes, related, &why, &budget, imp.axes == asset::ModelAxes::Auto,
+                          imp.unit == asset::ModelUnit::Auto);
     if (!mesh && error) *error = std::format("「{}」: {}", name, why);
-    if (mesh) {
-        const auto imp = asset::ReadImport<asset::ModelImport>(file);
-        ApplyModelImport(*mesh, imp.scale, imp.up == asset::UpAxis::Z);
-    }
+    if (mesh) ApplyModelImport(*mesh, BasisOf(imp), imp.turnAround, UnitOf(imp.unit) * imp.scale);
     return mesh;
 }
 
 }  // namespace
+
+ModelBasis BasisOf(const asset::ModelImport& imp) {
+    using asset::ModelAxes;
+    switch (imp.axes) {
+        case ModelAxes::Auto:  // (glTF・OBJ は Y が上・右手系、FBX は読むときにファイルの軸で Y が上・右手系にしてある)
+        case ModelAxes::YUpRight: return {{0, 1, 0}, {0, 0, -1}, false};
+        case ModelAxes::ZUpRight: return {{0, 0, 1}, {0, 1, 0}, false};
+        case ModelAxes::ZUpLeft: return {{0, 0, 1}, {1, 0, 0}, true};
+        case ModelAxes::YUpLeft: return {{0, 1, 0}, {0, 0, 1}, true};
+        case ModelAxes::Custom: {
+            auto dir = [](asset::AxisDir a) -> Vec3 {
+                switch (a) {
+                    case asset::AxisDir::PosX: return {1, 0, 0};
+                    case asset::AxisDir::NegX: return {-1, 0, 0};
+                    case asset::AxisDir::PosY: return {0, 1, 0};
+                    case asset::AxisDir::NegY: return {0, -1, 0};
+                    case asset::AxisDir::PosZ: return {0, 0, 1};
+                    case asset::AxisDir::NegZ: return {0, 0, -1};
+                }
+                return {0, 1, 0};
+            };
+            return {dir(imp.upAxis), dir(imp.depthAxis), imp.leftHanded};
+        }
+    }
+    return {};
+}
+
+float UnitOf(asset::ModelUnit unit) {
+    switch (unit) {
+        case asset::ModelUnit::Centimeter: return 0.01f;
+        case asset::ModelUnit::Millimeter: return 0.001f;
+        default: return 1.f;  // (自動: FBX は読むときにファイルの単位で m にしてある)
+    }
+}
 
 std::optional<MeshData> LoadMeshFile(const std::filesystem::path& file, std::string* error, ReadBudget* budget) {
     const std::string name = PathToUtf8(file.filename());

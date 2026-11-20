@@ -36,7 +36,7 @@ SamplerState skyEdge : register(s2);    // なめらか、端で止まる (6 枚
 static const float PI = 3.14159265;
 
 struct SkyInput {
-    float3 dir;    // このピクセルが見ている向き (ワールドの: 長さ 1、+Y が上、-Z が前)
+    float3 dir;    // このピクセルが見ている向き (ワールドの: 長さ 1、+Y が上、+Z が前 - 左手系)
     float2 uv;     // 画面上の位置 (0, 0 が左上 .. 1, 1 が右下)
     float time;    // 秒 (ゲームが動いている間は進み続ける)
     float3 sun;    // 太陽の向き (長さ 1)
@@ -77,17 +77,18 @@ float3 RotateY(float3 d, float a) {
     float c = cos(a), s = sin(a);
     return float3(c * d.x + s * d.z, d.y, -s * d.x + c * d.z);
 }
-// パノラマ (正距円筒: 360 x 180 度): 真ん中が正面 (-Z)、一番上が真上。
+// パノラマ (正距円筒: 360 x 180 度): 真ん中が正面 (+Z)、一番上が真上。
 float3 SamplePanorama(Texture2D t, float3 d) {
-    float2 uv = float2(0.5 + atan2(d.x, -d.z) / (2 * PI), acos(clamp(d.y, -1, 1)) / PI);
+    float2 uv = float2(0.5 + atan2(d.x, d.z) / (2 * PI), acos(clamp(d.y, -1, 1)) / PI);
     float2 dx = ddx(uv), dy = ddy(uv);
     dx.x -= round(dx.x);  // 後ろの継ぎ目をまたぐ: 絵全体が飛ばないように
     dy.x -= round(dy.x);
     return t.SampleGrad(skySmooth, uv, dx, dy).rgb;
 }
 // 6 枚の絵。目のまわりの立方体の各面に 1 枚ずつで、内側から見たもの (sky0 .. sky5: +X 右、-X 左、
-// +Y 上、-Y 下、+Z 後ろ、-Z 前。上 / 下の絵は、前が下 / 上の縁に来る)。
+// +Y 上、-Y 下、-Z 後ろ、+Z 前。上 / 下の絵は、前が下 / 上の縁に来る)。
 float3 SampleSixFaces(float3 d) {
+    d.z = -d.z;  // (左手系: 前の右手系の写し方のまま、+Z を前に)
     float3 a = abs(d);
     float2 st;
     int face;
@@ -233,11 +234,11 @@ float3 Sky(SkyInput i) {
 )";
 
 constexpr char kPanorama[] = R"(
-float3 Sky(SkyInput i) { return SamplePanorama(sky0, RotateY(i.dir, skyParam[0].x)); }
+float3 Sky(SkyInput i) { return SamplePanorama(sky0, RotateY(i.dir, -skyParam[0].x)); }
 )";
 
 constexpr char kSixFaces[] = R"(
-float3 Sky(SkyInput i) { return SampleSixFaces(RotateY(i.dir, skyParam[0].x)); }
+float3 Sky(SkyInput i) { return SampleSixFaces(RotateY(i.dir, -skyParam[0].x)); }
 )";
 
 constexpr char kNewSky[] = R"(// 空のシェーダー (RM Engine)
@@ -245,7 +246,7 @@ constexpr char kNewSky[] = R"(// 空のシェーダー (RM Engine)
 // このファイルを選びます。保存するとすぐに描き直されます。間違いがあるとコンソールに何行目かが出ます。
 //
 // Sky(i) は、向き i.dir に見える空の色を返します (光の強さ: 1 で白。もっと明るくてもよい)。
-//   i.dir    見ている向き (長さ 1。+Y が上、-Z が前)
+//   i.dir    見ている向き (長さ 1。+Y が上、+Z が前)
 //   i.uv     画面の位置 (左上 0,0 〜 右下 1,1)
 //   i.time   秒 (Play 中に進む)
 //   i.sun    太陽の向き (インスペクターの「太陽の高さ」「太陽の向き」)

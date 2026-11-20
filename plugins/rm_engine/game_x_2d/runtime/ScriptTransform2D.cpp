@@ -154,7 +154,7 @@ bool Pose2D(const game_production::Scene& scene, int entity, game_production::Po
     for (auto it = chain.rbegin(); it != chain.rend(); ++it) m = space2d::WorldMatrix(m, **it);
     const Vec2 p = space2d::TransformPoint(m, {0, 0});
     out.position = {p.x, p.y, 0};
-    out.forward = {0, 0, -1};  // 画面の奥向き: 左は左、右は右
+    out.forward = {0, 0, 1};  // 画面の奥向き (左手系: +Z): 左は左、右は右
     out.up = {0, 1, 0};
     return true;
 }

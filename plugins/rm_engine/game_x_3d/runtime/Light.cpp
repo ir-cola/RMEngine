@@ -12,7 +12,7 @@ space3d::Light ToRenderLight(const Light& light, const space3d::Mat4& world) {
              : light.kind == LightKind::Spot ? space3d::LightType::Spot
                                              : space3d::LightType::Directional;
     l.position = space3d::TransformPoint(world, {0, 0, 0});
-    l.direction = space3d::Normalize(space3d::TransformDirection(world, {0, 0, -1}));
+    l.direction = space3d::Normalize(space3d::TransformDirection(world, {0, 0, 1}));
     l.color = light.color;
     l.intensity = light.intensity;
     l.range = light.range;

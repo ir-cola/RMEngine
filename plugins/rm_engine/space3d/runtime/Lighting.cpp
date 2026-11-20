@@ -187,7 +187,7 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
     const auto toWorld = Inverse(view);
     const auto corners = FrustumCorners(projection);
     if (!toWorld || !corners) return single();
-    const float d0 = -(*corners)[0].z, d1 = -(*corners)[4].z;
+    const float d0 = (*corners)[0].z, d1 = (*corners)[4].z;  // (左手系: 目の前は +z)
     const float reach = std::min(d1, kShadowDistance);
     if (!(d1 > d0) || !(reach > d0 + 1e-3f)) return single();
     auto at = [&](size_t edge, float d) {  // 視界の端の、距離 d での点 (ビュー空間)
@@ -197,11 +197,11 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
 
     // ライトの回転 (動かさない: カスケードはその中で、テクセル単位で動かす)。
     const Mat4 turn = LookAt({0, 0, 0}, dir, UpFor(dir));
-    float casterHigh = -1e30f;  // キャスターの、ライトに一番近い側 (ビュー空間は -z の向きを見る: z が大きい方)
+    float casterNear = 1e30f;  // キャスターの、ライトに一番近い側 (ビュー空間は +z の向きを見る: z が小さい方)
     for (int i = 0; i < 8; ++i) {
         const Vec3 p = TransformPoint(turn, {(i & 1) ? casters.max.x : casters.min.x, (i & 2) ? casters.max.y : casters.min.y,
                                              (i & 4) ? casters.max.z : casters.min.z});
-        casterHigh = std::max(casterHigh, p.z);
+        casterNear = std::min(casterNear, p.z);
     }
     const auto splits = CascadeSplits(d0, reach);
     float start = d0;
@@ -224,11 +224,11 @@ SunShadowPlan PlanSunShadows(Vec3 direction, const Bounds& casters, const Mat4& 
         lc.y = std::floor(lc.y / texel) * texel;
         // その球に十分な深さで、そこに影を落とす全てのためにライトの方へ。
         const float pad = radius * 0.02f + 0.01f;
-        const float high = std::max(lc.z + radius, casterHigh) + pad, low = lc.z - radius - pad;
-        plan.viewProj[c] = Orthographic(lc.x - radius, lc.x + radius, lc.y - radius, lc.y + radius, -high, -low) * turn;
+        const float nearZ = std::min(lc.z - radius, casterNear) - pad, farZ = lc.z + radius + pad;
+        plan.viewProj[c] = Orthographic(lc.x - radius, lc.x + radius, lc.y - radius, lc.y + radius, nearZ, farZ) * turn;
         plan.splitFar[c] = end;
         plan.texel[c] = texel;
-        plan.depthRange[c] = high - low;
+        plan.depthRange[c] = farZ - nearZ;
         start = end;
     }
     return plan;

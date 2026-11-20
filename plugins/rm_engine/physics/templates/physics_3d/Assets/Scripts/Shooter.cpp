@@ -18,5 +18,5 @@ void Shooter::Tick(rm::Entity self, float dt) {
     }
     // 弾が始まる位置と、そのあとの速さ (弾はすぐ体を持つ: SetVelocity がそれを作る)。
     rm::Transform3D(b).SetPosition(rm::Transform3D(self).WorldPosition());
-    rm::Physics::SetVelocity(b, {0, 0, -speed});
+    rm::Physics::SetVelocity(b, {0, 0, speed});
 }

@@ -64,13 +64,13 @@ int MakeShape(Scene& scene, int parent, size_t index) {
 
 int MakeCamera(Scene& scene, int parent, size_t index) {
     // (少し後ろの上から、真ん中を見下ろす: 3D テンプレートのカメラと同じ)
-    const int id = MakePlaced(scene, editor::TrU8("カメラ"), parent, index, {0, 3, 8}, {-18, 0, 0});
+    const int id = MakePlaced(scene, editor::TrU8("カメラ"), parent, index, {0, 3, -8}, {18, 0, 0});  // (左手系: 手前の -Z から奥を見る)
     AddComponentTo<Camera>(scene, id);
     return id;
 }
 
 int MakeLight(Scene& scene, int parent, size_t index) {
-    const int id = MakePlaced(scene, editor::TrU8("光"), parent, index, {0, 6, 0}, {-50, -30, 0});  // (斜めに照らす)
+    const int id = MakePlaced(scene, editor::TrU8("光"), parent, index, {0, 6, 0}, {50, 30, 0});  // (斜めに照らす)
     AddComponentTo<Light>(scene, id);
     return id;
 }

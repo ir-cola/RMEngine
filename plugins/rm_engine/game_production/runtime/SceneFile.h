@@ -20,6 +20,7 @@
 
 #include "base/Json.h"
 #include "base/Ref.h"
+#include "core/RuntimeRegistry.h"
 #include "core/reflect/Reflect.h"
 
 #include <cstdint>
@@ -31,7 +32,9 @@
 namespace rm::game_production {
 
 inline constexpr char kSceneKind[] = "rm_engine.scene";
-inline constexpr int64_t kSceneFormat = 1;  // このバージョンが書く "format"
+// このバージョンが書く "format"。2 (2026-11-20): 左手系 (右・上・奥が +)。1 は右手系で、読むときに
+// Z で写す (MirrorZ: 見た目は前と同じ)。
+inline constexpr int64_t kSceneFormat = 2;
 inline constexpr char kSceneExtension[] = ".rmscene";
 inline constexpr char kScenesFolder[] = "Assets/Scenes";  // 新しいシーンのファイルの置き場所 (プロジェクトのフォルダから)
 inline constexpr char kOldSceneBackupSuffix[] = ".before-scenes.bak";  // <名前>.rmpf + this
@@ -75,7 +78,21 @@ std::string SceneFileText(const json::Value& scene);
 // シーンファイルのテキストの中のシーン (Scene::Load に渡すオブジェクト)。断るときは、理由
 // (日本語) を *error に入れる: JSON ではない、シーンファイルではない (kind)、新しいバージョンが
 // 書いた (format) - 読まず、したがって上書きもしない。
-std::optional<json::Value> ReadSceneFile(std::string_view text, std::string* error);
+// `registry` があれば、形式 1 (右手系) のシーンを左手系に写す (MirrorZ)。
+std::optional<json::Value> ReadSceneFile(std::string_view text, std::string* error, const RuntimeRegistry* registry = nullptr);
+
+// PluginRegistry の口: 中身は MirrorZInfo (static)。左手系 (2026-11-20) より前のファイル (シーンの
+// 形式 1・Prefab の形式 1) を読むとき、部品とシーンの値の "data" を Z で写す (位置の Z・オイラー角の
+// X と Y を反転、など): 見た目を前と同じに保つ。その型を出すプラグインが、自分の値の写し方を言う。
+inline constexpr char kMirrorZPoint[] = "rm_engine.game_production.mirror_z";
+struct MirrorZInfo {
+    const char* type = nullptr;                // TypeDesc::name ("rm::space3d::Transform")
+    void (*mirror)(json::Value& data) = nullptr;  // その部品の "data" を書き換える
+};
+// JSON の数の並び (Vec3 の [x, y, z]) の `index` 番目の符号を変える (無い・数でないときは何もしない)。
+void NegateJsonNumber(json::Value& data, std::string_view key, size_t index);
+// シーンや Prefab の JSON 全体 (entities[].components[] と settings[]) を写す。
+void MirrorZ(json::Value& doc, const RuntimeRegistry& registry);
 
 // ファイルのテキストの短い印 (FNV-1a, 64 ビット): シーンは、そのテキストの印が、ディスクの
 // ファイル (読んだとき、または最後に書いたとき) の印と違うときだけ書く。0 は決して出ない。

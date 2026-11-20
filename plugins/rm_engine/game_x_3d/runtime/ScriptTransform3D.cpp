@@ -142,7 +142,7 @@ int LookAt(void* ctx, uint64_t id, const float target[3], const float up[3]) {
     space3d::WorldPlacement want = space3d::Decompose(w, t->rotation);
     const Vec3 forward = space3d::Normalize(space3d::operator-(Vec3{target[0], target[1], target[2]}, want.position));
     if (space3d::Length(forward) == 0) return 1;  // (目標の所にいる: 向く方向が無い)
-    const Vec3 z = space3d::operator*(forward, -1.f);
+    const Vec3 z = forward;  // (左手系: もの自身の +Z が前)
     Vec3 x = space3d::Normalize(space3d::Cross(Vec3{up[0], up[1], up[2]}, z));
     if (space3d::Length(x) == 0) x = space3d::Normalize(space3d::Cross(std::fabs(z.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0}, z));
     const Vec3 y = space3d::Cross(z, x);
@@ -189,9 +189,9 @@ bool Pose3D(const game_production::Scene& scene, int entity, game_production::Po
     for (auto it = chain.rbegin(); it != chain.rend(); ++it) m = space3d::WorldMatrix(m, **it);
     out.position = space3d::TransformPoint(m, {0, 0, 0});
     // 見る向き: -Z、Y が上 (カメラと同じ: space3d::ViewFromWorld)。
-    const Vec3 f = space3d::Normalize(space3d::TransformDirection(m, {0, 0, -1}));
+    const Vec3 f = space3d::Normalize(space3d::TransformDirection(m, {0, 0, 1}));
     const Vec3 u = space3d::Normalize(space3d::TransformDirection(m, {0, 1, 0}));
-    out.forward = space3d::Length(f) > 0 ? f : Vec3{0, 0, -1};
+    out.forward = space3d::Length(f) > 0 ? f : Vec3{0, 0, 1};
     out.up = space3d::Length(u) > 0 ? u : Vec3{0, 1, 0};
     return true;
 }

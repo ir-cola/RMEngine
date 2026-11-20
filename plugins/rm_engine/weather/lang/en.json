@@ -4,7 +4,7 @@
   "雲の量": "Cloudiness",
   "雷": "Lightning",
   "風の向き (度)": "Wind direction (degrees)",
-  "風の吹いていく向き (真上から見て)。0: 前 (-Z) へ / 90: 左 (-X) へ / -90: 右 (+X) へ。雲・雨粒・雪が流されます": "Where the wind blows to (seen from above). 0: to the front (-Z) / 90: to the left (-X) / -90: to the right (+X). Clouds, raindrops and snow are carried along",
+  "風の吹いていく向き (真上から見て)。0: 前 (+Z) へ / 90: 左 (-X) へ / -90: 右 (+X) へ。雲・雨粒・雪が流されます": "Where the wind blows to (seen from above). 0: to the front (+Z) / 90: to the left (-X) / -90: to the right (+X). Clouds, raindrops and snow are carried along",
   "風の強さ (m/秒)": "Wind strength (m/s)",
   "0: 無風 〜 30: 嵐。雲の流れる速さと、雨粒・雪の傾き": "0: no wind to 30: a storm. How fast the clouds drift, and how much rain and snow slant",
   "天候": "Weather",

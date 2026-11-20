@@ -73,7 +73,9 @@ Vec3 SunDirection(const Sky& sky) {
         const float s = (std::fmod(sky.hour, 24.f) - 12.f) / 24.f * 2.f * std::numbers::pi_v<float>;
         d = Add(Scale(noon, std::cos(s)), Scale(Vec3{-1, 0, 0}, std::sin(s)));
     }
-    return Normalized(TurnY(d, sky.sunDirection));
+    // 左手系 (2026-11-20 から): 前の右手系の空をそのまま Z で写す (シーンも写したので、見た目は同じ)。
+    const Vec3 r = Normalized(TurnY(d, sky.sunDirection));
+    return {r.x, r.y, -r.z};
 }
 
 SkyLook LookOf(const Sky& sky, double seconds, const SkyWeather& weather) {

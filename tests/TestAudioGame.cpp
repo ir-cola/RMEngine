@@ -328,9 +328,9 @@ RM_TEST(AudioGame_WhereAnEntityIsHeardFrom) {
     Pose pose;
     CHECK(EntityPose(p.registry, p.scene, child, pose));
     CHECK(Near(pose.position.x, 11) && Near(pose.position.y, 2) && Near(pose.position.z, 3));
-    CHECK(Near(pose.forward.z, -1) && Near(pose.up.y, 1));  // -Z を向く (カメラと同じ)
-    t->rotation = {0, 90, 0};  // 左を向いた: -X を向く
-    CHECK(EntityPose(p.registry, p.scene, child, pose) && Near(pose.forward.x, -1) && Near(pose.forward.z, 0));
+    CHECK(Near(pose.forward.z, 1) && Near(pose.up.y, 1));  // +Z を向く (カメラと同じ。左手系)
+    t->rotation = {0, 90, 0};  // 右を向いた: +X を向く
+    CHECK(EntityPose(p.registry, p.scene, child, pose) && Near(pose.forward.x, 1) && Near(pose.forward.z, 0));
     const int bare = p.scene.Create("no transform");
     CHECK(!EntityPose(p.registry, p.scene, bare, pose) && !EntityPose(p.registry, p.scene, 999, pose));
     // 3D の 音源 はそこから鳴る (カメラがそれを聞く)。

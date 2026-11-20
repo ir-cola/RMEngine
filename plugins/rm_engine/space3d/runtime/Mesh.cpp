@@ -877,10 +877,10 @@ void SortByMaterial(MeshData& mesh, std::span<const int> materialOfTriangle) {
 }
 
 std::optional<MeshData> ParseMesh(std::string_view extension, std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error,
-                                  ReadBudget* budget) {
+                                  ReadBudget* budget, bool fileAxes, bool fileUnits) {
     if (SameIgnoringCase(extension, ".gltf") || SameIgnoringCase(extension, ".glb")) return ParseGltf(bytes, read, error, budget);
     if (SameIgnoringCase(extension, ".obj")) return ParseObj({reinterpret_cast<const char*>(bytes.data()), bytes.size()}, read, error, budget);
-    if (SameIgnoringCase(extension, ".fbx")) return ParseFbx(bytes, error, budget);
+    if (SameIgnoringCase(extension, ".fbx")) return ParseFbx(bytes, error, budget, fileAxes, fileUnits);
     Fail(error, std::format("「{}」のモデルは読めません (.gltf / .glb / .obj / .fbx が読めます)", extension));
     return std::nullopt;
 }
@@ -957,16 +957,21 @@ void ComputeNormals(MeshData& mesh) {
     }
 }
 
-void ApplyModelImport(MeshData& mesh, float scale, bool zUp) {
-    if (scale == 1.f && !zUp) return;
+void ApplyModelImport(MeshData& mesh, const ModelBasis& basis, bool turnAround, float scale) {
+    Vec3 up = Normalize(basis.up), depth = Normalize(basis.depth);
+    if (Length(up) == 0 || Length(depth) == 0 || std::fabs(Dot(up, depth)) > 0.999f) up = {0, 1, 0}, depth = {0, 0, -1};
+    // 右: 左手系なら 上 × 奥 (このエンジンと同じ)、右手系なら 奥 × 上 (鏡に映す)。
+    const Vec3 right = basis.leftHanded ? Cross(up, depth) : Cross(depth, up);
+    const float turn = turnAround ? -1.f : 1.f;
     for (MeshVertex& v : mesh.vertices) {
-        if (zUp) {
-            v.position = {v.position.x, v.position.z, -v.position.y};
-            v.normal = {v.normal.x, v.normal.z, -v.normal.y};
-        }
-        v.position = {v.position.x * scale, v.position.y * scale, v.position.z * scale};
+        const Vec3 p = v.position, n = v.normal;
+        v.position = {Dot(p, right) * turn * scale, Dot(p, up) * scale, Dot(p, depth) * turn * scale};
+        v.normal = {Dot(n, right) * turn, Dot(n, up), Dot(n, depth) * turn};
     }
-    // (回転は三角形の巻き方向を保つ。拡大は負にならない - 設定の Min)
+    if (!basis.leftHanded) {
+        // 鏡に映した: 三角形を裏返して、表 (反時計回り) を保つ。
+        for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) std::swap(mesh.indices[i + 1], mesh.indices[i + 2]);
+    }
     ComputeBounds(mesh);
 }
 

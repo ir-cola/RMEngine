@@ -916,10 +916,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         it.seen = false;
         it.bounds = WorldBounds(b.world, b.mesh->min, b.mesh->max);
     }
-    Vec3 eye{0, 0, 0}, forward{0, 0, -1};
+    Vec3 eye{0, 0, 0}, forward{0, 0, 1};
     if (const auto toWorld = Inverse(f.view)) {
         eye = TransformPoint(*toWorld, {0, 0, 0});
-        forward = Normalize(TransformDirection(*toWorld, {0, 0, -1}));
+        forward = Normalize(TransformDirection(*toWorld, {0, 0, 1}));
     }
     Stream(f, eye);  // ミップマップ・ストリーミング: ストリーミングの絵が今必要とするレベル
     // 光 (無いとき: 既定の平行光 1 つ。kMaxLights より多いとき: 一番近くて明るいもの) と環境光。

@@ -21,9 +21,16 @@ const reflect::TypeDesc* ImportTypeOf(Kind kind) {
 }
 
 void MigrateImport(json::Value& import) {
-    if (!import.IsObject() || !import.Get("sharp").IsBool()) return;
-    if (import.Get("filter").IsNull()) import.Set("filter", json::Value(std::string(import.Get("sharp").AsBool() ? "Sharp" : "Smooth")));
-    import.Erase("sharp");
+    if (!import.IsObject()) return;
+    if (import.Get("sharp").IsBool()) {
+        if (import.Get("filter").IsNull()) import.Set("filter", json::Value(std::string(import.Get("sharp").AsBool() ? "Sharp" : "Smooth")));
+        import.Erase("sharp");
+    }
+    // モデルの "up": "Y" / "Z" (2026-11-20 まで) は "axes" に: Z は「Z が上・右手系」、Y は自動 (前と同じ読み方)。
+    if (import.Get("up").IsString()) {
+        if (import.Get("axes").IsNull() && import.Get("up").AsString() == "Z") import.Set("axes", json::Value(std::string("ZUpRight")));
+        import.Erase("up");
+    }
 }
 
 json::Value ImportInMeta(std::string_view metaText) {

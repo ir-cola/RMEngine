@@ -151,7 +151,7 @@ bool DrawModelThumbnail(platform::Gfx& gfx, const void* prepared, uint32_t size,
     const Vec3 center = (mesh.min + mesh.max) * 0.5f;
     const float radius = std::max(Length(mesh.max - mesh.min) * 0.5f, 1e-4f);
     const float distance = radius / std::sin(kFovDegrees * 0.5f * 3.14159265f / 180.f) * 1.02f;
-    const Vec3 from = Normalize({0.75f, 0.6f, 1.f});  // 正面 (+Z)、少し右と上から
+    const Vec3 from = Normalize({0.75f, 0.6f, -1.f});  // 正面 (-Z: 左手系で見る人の側)、少し右と上から
     RenderFrame f;
     f.width = f.height = size;
     f.view = LookAt(center + from * distance, center, {0, 1, 0});

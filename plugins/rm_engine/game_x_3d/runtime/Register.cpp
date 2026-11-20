@@ -1,6 +1,7 @@
 #include "rm_engine/game_x_3d/runtime/Register.h"
 
 #include "rm_engine/game_production/runtime/Components.h"
+#include "rm_engine/game_production/runtime/SceneFile.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/CameraCycle.h"
@@ -15,9 +16,24 @@
 
 namespace rm::game_x_3d {
 
+namespace {
+
+// 右手系のころ (2026-11-20 より前) の Transform を左手系へ: Z で写す - 位置の Z と、回転 (オイラー角) の
+// X と Y を反転する (Z で写した回転 S R S は、X と Y のまわりの角が逆になる。順に関係なく)。大きさは
+// そのまま。
+void MirrorTransform(json::Value& data) {
+    game_production::NegateJsonNumber(data, "position", 2);
+    game_production::NegateJsonNumber(data, "rotation", 0);
+    game_production::NegateJsonNumber(data, "rotation", 1);
+}
+
+}  // namespace
+
 void RegisterRuntime(RuntimeRegistry& registry) {
     using game_production::ComponentInfo;
     using game_production::kComponentPoint;
+    static const game_production::MirrorZInfo kMirrorTransform{"rm::space3d::Transform", &MirrorTransform};
+    registry.Contribute(game_production::kMirrorZPoint, kMirrorTransform);
     // 3D のゲームのエンティティは 3D の空間に位置を持つ: ゲームの空間が 3D の間、新しい
     // エンティティはすべて持つ。置いた Prefab があるのもここ (その値は置いたものの値のまま)。
     static const ComponentInfo kTransform{.type = &reflect::TypeOf<space3d::Transform>, .onNewEntities = true, .placement = true, .space = "3d", .folder = "3D"};

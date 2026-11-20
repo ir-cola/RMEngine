@@ -5,10 +5,10 @@
 //   position = rm::MoveTowards(position, target, speed * dt);
 //   float a = rm::Math::Lerp(0.0f, 10.0f, 0.5f);           // 5
 //   rm::Quat q = rm::Quat::Euler({0, 90, 0});              // エンジンの角度 (度。X -> Y -> Z)
-//   rm::Vec3 v = q * rm::Vec3{0, 0, -1};                   // 回した結果
+//   rm::Vec3 v = q * rm::Vec3{0, 0, 1};                   // 回した結果
 //   float r = rm::Random::Range(1.0f, 6.0f);
 //
-// エンジンの決まり: Y が上で右手系。もの (とカメラ) は -Z の向きを見る。角度は度で、Transform の回転は
+// エンジンの決まり: Y が上で左手系 (右・上・奥が +)。もの (とカメラ) は +Z の向きを見る。角度は度で、Transform の回転は
 // X、Y、Z の順に回す (R = Rz * Ry * Rx)。
 //
 // rm::Vec2 / rm::Vec3 / rm::Color は、このファイルより前に宣言しておく (RM.h が宣言する)。
@@ -241,9 +241,9 @@ struct Quat {
     static Quat Euler(Vec3 degrees) {
         return AngleAxis(degrees.z, {0, 0, 1}) * AngleAxis(degrees.y, {0, 1, 0}) * AngleAxis(degrees.x, {1, 0, 0});
     }
-    // `forward` の向きを見る (ものの -Z がそこへ向く)。Y は `up` にできるだけ近づける。
+    // `forward` の向きを見る (ものの +Z がそこへ向く)。Y は `up` にできるだけ近づける。
     static Quat LookRotation(Vec3 forward, Vec3 up = {0, 1, 0}) {
-        const Vec3 zAxis = Normalize(-forward);
+        const Vec3 zAxis = Normalize(forward);
         if (LengthSquared(zAxis) == 0) return {};
         Vec3 xAxis = Normalize(Cross(up, zAxis));
         if (LengthSquared(xAxis) == 0) xAxis = Normalize(Cross(std::fabs(zAxis.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0}, zAxis));
@@ -303,7 +303,7 @@ struct Quat {
         // 真上か真下: x -/+ z だけが決まる (z = 0)。
         return {(sy > 0 ? std::atan2(r01, r11) : std::atan2(-r01, r11)) * Math::Rad2Deg, sy > 0 ? 90.0f : -90.0f, 0.0f};
     }
-    Vec3 Forward() const;  // -Z を回した向き (見ている向き)
+    Vec3 Forward() const;  // +Z を回した向き (見ている向き)
     Vec3 Right() const;    // +X を回した向き
     Vec3 Up() const;       // +Y を回した向き
 
@@ -317,7 +317,7 @@ struct Quat {
         return v + t * q.w + Cross(u, t);
     }
 };
-inline Vec3 Quat::Forward() const { return *this * Vec3{0, 0, -1}; }
+inline Vec3 Quat::Forward() const { return *this * Vec3{0, 0, 1}; }
 inline Vec3 Quat::Right() const { return *this * Vec3{1, 0, 0}; }
 inline Vec3 Quat::Up() const { return *this * Vec3{0, 1, 0}; }
 

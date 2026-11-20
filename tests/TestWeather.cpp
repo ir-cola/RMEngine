@@ -218,7 +218,7 @@ RM_TEST(Weather_Fade) {
 // フェードは風を短いほうの回りで回す。Play 中は、流れが積み重なり、フェードが進み、雨が濡らし、
 // 雪にする は約 10 秒かけて入ってくる。
 RM_TEST(Weather_Wind) {
-    CHECK(Near(WindOf(0, 2), {0, 0, -2}));
+    CHECK(Near(WindOf(0, 2), {0, 0, 2}));  // (0: 前 = +Z)
     CHECK(Near(WindOf(90, 1), {-1, 0, 0}));
     CHECK(Near(WindOf(-90, 3), {3, 0, 0}));
     CHECK(Near(WindOf(45, 0), {0, 0, 0}) && Near(WindOf(45, -1), {0, 0, 0}));
@@ -235,7 +235,7 @@ RM_TEST(Weather_Wind) {
     turn.windDirection = 10;
     turn.fadeElapsed = 1;
     const WeatherNow mid = NowOf(turn);
-    CHECK(mid.windZ < -4.5f && std::fabs(mid.windX) < 0.1f);
+    CHECK(mid.windZ > 4.5f && std::fabs(mid.windX) < 0.1f);
     game_production::Scene scene;
     scene.SetSettingTypes({&reflect::TypeOf<Weather>()});
     Weather& s = *scene.Setting<Weather>();

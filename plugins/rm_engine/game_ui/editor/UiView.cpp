@@ -134,7 +134,7 @@ public:
         DrawGuides(c, game, toDc, gs, screen);
         DrawSnapping(c, r, toDc);
         DrawSelection(c, host, toDc);
-        DrawHints(c, r);
+        // (操作の説明はヘルプに: 2026-11-20 から画面には出さない)
         if (!host.playing) {
             DropPicture(c, r, host, toDc);
             EditText(c, host, toDc);
@@ -1187,25 +1187,6 @@ private:
         const Vec2 from = at(mn.x + (mx.x - mn.x) * n->place->pivot.x, mn.y + (mx.y - mn.y) * n->place->pivot.y);
         const Vec2 to = PivotOnPanel(*n, toDc);
         p.Line(from.x, from.y, to.x, to.y, col.Alpha(0.5f), 1.f);
-    }
-
-    void DrawHints(ui::Context& c, const Rect& r) {
-        ui::TextStyle ts;
-        ts.size = 11;
-        ts.color = theme::TextDim;
-        ts.v = ui::VAlign::Bottom;
-        ts.wrap = true;
-        c.P().Text(r.Inset(10, 8, 10, 6),
-                   Tr(L"クリック: 選ぶ (Shift・Ctrl で足す)   囲む: 空いた所からドラッグ   ドラッグ: 動かす (Ctrl を押して離す: その物の子に)   ダブルクリック: 文字を打つ   四角: 大きさ   上の丸: 回す   中の輪: 回す中心   Alt: 吸い付かない   ホイール: 拡大   右ドラッグ: 画面を動かす   アセットの画像をドロップ: 画像を置く   道の点 (緑): ドラッグで動かす (回す中心と重なったら Shift で中心)"),
-                   ts);
-        if (tree_.nodes.empty()) {
-            ui::TextStyle hint = ts;
-            hint.size = 13;
-            hint.v = ui::VAlign::Center;
-            hint.h = ui::HAlign::Center;
-            hint.color = theme::TextFaint;
-            c.P().Text(r.Inset(24), Tr(L"UI はまだありません。階層を右クリックして「追加」→「UI」→「キャンバス」→ その下に「ボタン」「文字」などで作ります。"), hint);
-        }
     }
 
     enum class Drag { None, Press, Move, Resize, Rotate, Pivot, Pan, Marquee, PathPoint, Cancelled };

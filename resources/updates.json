@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "座標系を Y が上の左手系に (右・上・奥が +)。前のシーンは見た目を保って読み込む。3D モデルは取り込みの設定で座標系 (自動・Blender・Unreal など) と単位を選べる。シーンビューの左に道具のボタン (グリッド配置・選択・移動・回転・拡縮)、説明の文字は消した",
+          "en": "The coordinate system is now Y-up left-handed (right, up and forward are +). Older scenes load looking the same. 3D models can choose their coordinate system (auto, Blender, Unreal ...) and unit in the import settings. Tool buttons on the left of the scene view (grid, select, move, rotate, scale); the help text there is gone"
+        },
+        {
           "ja": "積雪のバグを直した (立ち上がる板・物を突き抜ける)。雨と雪は 1 つの降水量に (雪にすると雨が弱まってから雪へ)、霧の量 (天気で色が変わる)、積もる高さは cm (0〜5)。3D オブジェクトの追加でコライダーも付く",
           "en": "Fixed the snow (standing sheets, snow through things). Rain and snow share one precipitation (Snow turns the rain to a drizzle, then snow), a fog amount whose colour follows the weather, snow depth in cm (0-5). Added 3D objects get a collider"
         },

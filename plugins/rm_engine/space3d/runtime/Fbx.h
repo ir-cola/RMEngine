@@ -27,8 +27,11 @@
 
 namespace rm::space3d {
 
-// `budget`: 読むときに使ってよいもの (Mesh.h の ReadBudget。null = その上限)。
-std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* error, ReadBudget* budget = nullptr);
+// `budget`: 読むときに使ってよいもの (Mesh.h の ReadBudget。null = その上限)。`fileAxes` / `fileUnits`:
+// ファイルの GlobalSettings の軸 / 単位に直すか (false: ファイルの数のまま - 取り込みの設定で座標系や
+// 単位を選んだとき)。
+std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* error, ReadBudget* budget = nullptr, bool fileAxes = true,
+                                 bool fileUnits = true);
 
 // ノードのツリー (両方の FBX がこれに読み込まれる)。単独でテストする。
 struct FbxProperty {

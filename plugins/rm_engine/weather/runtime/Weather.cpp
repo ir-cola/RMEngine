@@ -136,7 +136,9 @@ Color FogColorOf(const WeatherNow& w, Color light) {
 
 Vec3 WindOf(float directionDegrees, float strength) {
     if (!std::isfinite(directionDegrees) || !(strength > 0) || !std::isfinite(strength)) return {0, 0, 0};
-    const Vec3 d = TurnY(Vec3{0, 0, -1}, directionDegrees);  // 0: 正面 (-Z)、+ は左
+    // 0: 正面 (+Z)、+ は左 (-X へ)。左手系 (2026-11-20 から): 前の右手系の向きを Z で写したもの。
+    const Vec3 r = TurnY(Vec3{0, 0, -1}, directionDegrees);
+    const Vec3 d{r.x, r.y, -r.z};
     return {d.x * strength, 0, d.z * strength};
 }
 

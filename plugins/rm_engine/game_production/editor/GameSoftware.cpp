@@ -411,6 +411,7 @@ public:
             warnings.clear();
             json::Value rest = data;
             if (std::optional<json::Value> old = TakeOldScene(rest)) {
+                MirrorZ(*old, host_.Registry());  // (.rmpf の中のころのシーン: 右手系だった)
                 scene_.Load(*old, &warnings);
                 oldForm_ = true;
                 log::Info("このプロジェクトのシーンは .rmpf の中にあります。次に保存するとき {} に分けます (前の .rmpf は {}{} に残します)", slot_.path,
@@ -545,7 +546,7 @@ public:
                                                   auto bytes = file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
                                                   if (!bytes) return std::nullopt;
                                                   // 置いた Prefab は、今のファイルのとおりに (開いたときと同じ)。
-                                                  if (const auto doc = ReadSceneFile(*bytes, &err)) {
+                                                  if (const auto doc = ReadSceneFile(*bytes, &err, &host_.Registry())) {
                                                       Scene other = scene_;
                                                       reflect::Warnings warnings;
                                                       other.Load(*doc, &warnings);
@@ -1334,7 +1335,7 @@ private:
         const fs::path file = host_.AssetFile(ref);
         std::string err;
         const auto bytes = file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
-        const auto scene = bytes ? ReadSceneFile(*bytes, &err) : std::nullopt;
+        const auto scene = bytes ? ReadSceneFile(*bytes, &err, &host_.Registry()) : std::nullopt;
         if (!scene) {
             if (error) *error = std::format("{}: {}", SceneTitle(ref), file.empty() ? TrU8("ファイルが Assets に見つかりません") : err);
             return false;
@@ -2698,7 +2699,7 @@ private:
         if (file.empty()) {
             err = TrU8("ファイルが Assets に見つかりません");
         } else if (auto bytes = platform::ReadFileBytes(file, &err)) {
-            scene = ReadSceneFile(*bytes, &err);
+            scene = ReadSceneFile(*bytes, &err, &host_.Registry());
             if (scene) slot_ = {open.guid, RelativePath(file), TextSign(*bytes)};
         }
         if (!scene) {
@@ -2759,6 +2760,7 @@ private:
             log::Warn("「{}」は Prefab のファイルではありません", PathToUtf8(file.filename()));
             return nullptr;
         }
+        UpgradePrefab(*v, host_.Registry());
         if (NewerPrefab(*v)) {
             log::Warn("Prefab「{}」は新しい版のエンジンで作られたので読みません (置いた物は保存したまま)", PathToUtf8(file.filename()));
             return nullptr;
@@ -2953,6 +2955,7 @@ private:
             return false;
         }
         if (auto v = json::Parse(text); v && IsPrefab(*v)) {
+            UpgradePrefab(*v, host_.Registry());
             prefabs_[ref.guid] = std::move(*v);
         } else {
             prefabs_.erase(ref.guid);
@@ -3043,7 +3046,8 @@ private:
         // 壊れたもの) のときは、決して上書きしない。
         std::string err;
         const auto onDisk = platform::ReadFileBytes(file, &err);
-        const auto parsed = onDisk ? json::Parse(*onDisk) : std::nullopt;
+        auto parsed = onDisk ? json::Parse(*onDisk) : std::nullopt;
+        if (parsed) UpgradePrefab(*parsed, host_.Registry());
         if (!parsed || !IsPrefab(*parsed) || NewerPrefab(*parsed)) {
             log::Warn("Prefab「{}」のファイルが読めない (新しい版で作られたか、壊れている) ので、反映しません", PrefabTitle(ref));
             return;

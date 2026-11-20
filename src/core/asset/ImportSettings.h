@@ -20,10 +20,33 @@
 
 namespace rm::asset {
 
-RM_ENUM(Label="上の向き")
-enum class UpAxis {
-    RM_ITEM(Label="Y が上") Y,
-    RM_ITEM(Label="Z が上 (Blender の OBJ・3ds Max など)") Z,
+// 3D モデルを作ったソフトの座標系 (2026-11-20 から。このエンジンは Y が上・左手系で、右・上・奥が +)。
+// 右手系のモデルは Z を反転して読む (前の右手系のエンジンで見えたのと同じ見た目になる)。
+RM_ENUM(Label="座標系")
+enum class ModelAxes {
+    RM_ITEM(Label="自動 (glTF・OBJ: Y が上・右手系 / FBX: ファイルに書いてある向き)") Auto,
+    RM_ITEM(Label="Y が上・右手系 (glTF・Maya・多くの OBJ)") YUpRight,
+    RM_ITEM(Label="Z が上・右手系 (Blender・3ds Max)") ZUpRight,
+    RM_ITEM(Label="Z が上・左手系 (Unreal)") ZUpLeft,
+    RM_ITEM(Label="Y が上・左手系 (Unity・このエンジン)") YUpLeft,
+    RM_ITEM(Label="細かく指定") Custom,
+};
+// モデルの軸の 1 つ (細かく指定するとき)。
+RM_ENUM(Label="軸")
+enum class AxisDir {
+    RM_ITEM(Label="+X") PosX,
+    RM_ITEM(Label="-X") NegX,
+    RM_ITEM(Label="+Y") PosY,
+    RM_ITEM(Label="-Y") NegY,
+    RM_ITEM(Label="+Z") PosZ,
+    RM_ITEM(Label="-Z") NegZ,
+};
+RM_ENUM(Label="単位")
+enum class ModelUnit {
+    RM_ITEM(Label="自動 (FBX: ファイルに書いてある単位 / ほか: m)") Auto,
+    RM_ITEM(Label="m") Meter,
+    RM_ITEM(Label="cm") Centimeter,
+    RM_ITEM(Label="mm") Millimeter,
 };
 
 RM_ENUM(Label="圧縮")
@@ -39,8 +62,13 @@ enum class TextureCompression {
 
 RM_STRUCT(Label="3D モデルの取り込み")
 struct ModelImport {
-    RM_PROPERTY(Edit, Label="大きさ", Tooltip="読み込んだ形に掛ける倍率 (センチメートルで作ったモデルなら 0.01)", Min=0.0001, Max=10000) float scale = 1;
-    RM_PROPERTY(Edit, Label="上の向き", Tooltip="作ったソフトで上だった軸。Z なら Y が上になるように起こして読みます") UpAxis up = UpAxis::Y;
+    RM_PROPERTY(Edit, Label="座標系", Tooltip="モデルを作ったソフトの座標系。自動で向きがおかしいときは、作ったソフトに合わせて選び直します (選ぶとすぐ読み直します)") ModelAxes axes = ModelAxes::Auto;
+    RM_PROPERTY(Edit, Label="上 (+Y) にする軸", Tooltip="モデルのどの軸を上にするか", ShowIf="axes=Custom") AxisDir upAxis = AxisDir::PosY;
+    RM_PROPERTY(Edit, Label="奥 (+Z) にする軸", Tooltip="モデルのどの軸を奥にするか (上と同じ向きの軸は選べません: そのときは +Y と -Z)", ShowIf="axes=Custom") AxisDir depthAxis = AxisDir::NegZ;
+    RM_PROPERTY(Edit, Label="左手系", Tooltip="入れる: モデルが左手系 (そのまま) / 外す: 右手系 (反転して読む)", ShowIf="axes=Custom") bool leftHanded = false;
+    RM_PROPERTY(Edit, Label="前後を反転", Tooltip="Y のまわりに 180 度回して読みます (モデルの前がこのエンジンの前 (+Z) を向くように)") bool turnAround = false;
+    RM_PROPERTY(Edit, Label="単位", Tooltip="モデルの 1 が何か。このエンジンの 1 は 1 m") ModelUnit unit = ModelUnit::Auto;
+    RM_PROPERTY(Edit, Label="大きさ", Tooltip="読み込んだ形にさらに掛ける倍率", Min=0.0001, Max=10000) float scale = 1;
     RM_PROPERTY(Edit, Label="中の絵の圧縮", Tooltip="モデルの中 (.glb など) の絵を GPU でどの形で持つか。自動: 不透明な色は BC1、透明のある色は BC7、ノーマルマップは BC5") TextureCompression textureCompression = TextureCompression::Auto;
     RM_PROPERTY(Edit, Label="中の絵の大きさの上限 (ピクセル)", Tooltip="モデルの中の絵がこれより大きければ縮めて読みます", Min=16, Max=8192) int textureMaxSize = 4096;
 };
@@ -92,7 +120,8 @@ struct ImageImport {
 const reflect::TypeDesc* ImportTypeOf(Kind kind);
 
 // 純粋: 古いバージョンが書いた設定を、このバージョンの名前に直す (その場で)。今のところ: 画像の
-// "sharp": true/false が "filter": "Sharp"/"Smooth" になる ("filter" がすでにあれば除く)。
+// "sharp": true/false が "filter": "Sharp"/"Smooth" になる ("filter" がすでにあれば除く)。モデルの
+// "up": "Z" が "axes": "ZUpRight" になる ("up" は除く)。
 void MigrateImport(json::Value& import);
 
 // 純粋: .meta のテキストの "import" オブジェクト (なければ空のオブジェクト。移行済み) と、

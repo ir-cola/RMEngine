@@ -207,7 +207,7 @@ struct RenderFrame {
     // 光 (Lighting.h: 最大 kMaxLights)。無いとき: 白い向きのある光が `lightDirection` の向きに
     // 進む (上から、少し手前から)。
     std::span<const Light> lights;
-    Vec3 lightDirection{-0.45f, -1.f, -0.3f};
+    Vec3 lightDirection{-0.45f, -1.f, 0.3f};  // (左手系: 前の右手系の向きを Z で写したもの)
     Ambient ambient;       // どの面も受ける光 (環境光)
     bool shadows = false;  // 光の影 (どの光に影があるかは Lighting.h が決める)
     Color shadowColor{0, 0, 0, 0.4f};  // 床の影 (アルファ: 濃さ)

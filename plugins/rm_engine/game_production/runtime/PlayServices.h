@@ -149,7 +149,7 @@ private:
 // 世界での位置。右手系、Y が上 (2D のゲーム: x y は画面上、z = 0。奥向き)。
 struct Pose {
     Vec3 position{0, 0, 0};
-    Vec3 forward{0, 0, -1};  // 向いている方向 (カメラ)
+    Vec3 forward{0, 0, 1};  // 向いている方向 (カメラ。左手系: +Z が前)
     Vec3 up{0, 1, 0};
 };
 

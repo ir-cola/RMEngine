@@ -301,7 +301,7 @@ std::optional<Drag> BeginDrag(Tool tool, Handle handle, const Frame& f, const Sc
             if (Length(right) == 0) return std::nullopt;
             d.axis = toEye;
             d.right = right;
-            d.up = Cross(toEye, right);
+            d.up = Cross(right, toEye);  // (左手系: 右 × 目へ = 上)
             return d;
         }
         // 輪: ギズモの軸、または外側の輪なら視線。

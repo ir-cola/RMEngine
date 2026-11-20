@@ -66,8 +66,8 @@ struct Voice {
     double silentLeft = 0;
 };
 
-// X3DAudio は左手系。エンジンの 3D 空間は右手系 (z が反転する)。
-X3DAUDIO_VECTOR Left(Vec3 v) { return {v.x, v.y, -v.z}; }
+// X3DAudio は左手系。エンジンの 3D 空間も左手系 (2026-11-20 から): そのまま渡す。
+X3DAUDIO_VECTOR Left(Vec3 v) { return {v.x, v.y, v.z}; }
 
 }  // namespace
 
@@ -94,7 +94,7 @@ struct AudioEngine::Impl {
     std::unordered_set<std::string> told;
     VoiceId nextId = 1;
     bool pausedAll = false;
-    Vec3 listenerPos{0, 0, 0}, listenerFront{0, 0, -1}, listenerUp{0, 1, 0};
+    Vec3 listenerPos{0, 0, 0}, listenerFront{0, 0, 1}, listenerUp{0, 1, 0};
     std::jthread thread;
 
     void Tell(const std::string& key, std::string text) {

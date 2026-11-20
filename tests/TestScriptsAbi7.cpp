@@ -356,12 +356,12 @@ RM_TEST(Abi7_KeepWorld_3DAnd2D_LookAt) {
     after[0] = now[12];
     after[1] = now[13];
     after[2] = now[14];
-    // LookAt: その -Z を目標へ、ワールドで (回した親の下でも)。
+    // LookAt: その +Z (左手系の前) を目標へ、ワールドで (回した親の下でも)。
     const float target[3] = {after[0] + 5, after[1], after[2]}, up[3] = {0, 1, 0};
     CHECK(t3.lookAt(&w, static_cast<uint64_t>(child), target, up) == 1);
     float m[16];
     t3.worldMatrix(&w, static_cast<uint64_t>(child), m);
-    const Vec3 forward = space3d::Normalize(Vec3{-m[8], -m[9], -m[10]});
+    const Vec3 forward = space3d::Normalize(Vec3{m[8], m[9], m[10]});
     CHECK(Near(forward, Vec3{1, 0, 0}));
     // ワールド位置を設定: そこへ行く。
     const float there[3] = {-4, 5, 6};

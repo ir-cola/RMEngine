@@ -368,7 +368,8 @@ Mat4 Euler(Vec3 d, int64_t order) {
 
 class FbxScene {
 public:
-    FbxScene(const std::vector<FbxNode>& top, std::string* error, ReadBudget& budget) : error_(error), budget_(budget) {
+    FbxScene(const std::vector<FbxNode>& top, std::string* error, ReadBudget& budget, bool fileAxes, bool fileUnits)
+        : error_(error), budget_(budget), fileAxes_(fileAxes), fileUnits_(fileUnits) {
         for (const FbxNode& n : top) {
             if (n.name == "Objects") objects_ = &n;
             if (n.name == "Connections") connections_ = &n;
@@ -471,7 +472,7 @@ private:
                     coordSign = axis("CoordAxisSign", 1) < 0 ? -1.f : 1.f;
         const float scale = ToFloat(PNumber(settings_, "UnitScaleFactor", 1.0) / 100.0);  // 1 単位あたりのセンチメートル
         Mat4 m;
-        if (up >= 0 && up < 3 && front >= 0 && front < 3 && coord >= 0 && coord < 3 && up != front && up != coord && front != coord) {
+        if (fileAxes_ && up >= 0 && up < 3 && front >= 0 && front < 3 && coord >= 0 && coord < 3 && up != front && up != coord && front != coord) {
             m = {};
             for (int c = 0; c < 4; ++c) {
                 for (int r = 0; r < 4; ++r) m.m[c][r] = 0;
@@ -481,7 +482,7 @@ private:
             m.m[front][2] = frontSign;  // こちらの Z <- ファイルの前
             m.m[3][3] = 1;
         }
-        const float s = scale > 0 && std::isfinite(scale) ? scale : 1.f;
+        const float s = fileUnits_ && scale > 0 && std::isfinite(scale) ? scale : 1.f;
         return Scaling({s, s, s}) * m;
     }
 
@@ -686,6 +687,7 @@ private:
     std::vector<int> triangleMaterial_;
     std::string* error_;
     ReadBudget& budget_;
+    bool fileAxes_ = true, fileUnits_ = true;
 };
 
 }  // namespace
@@ -719,7 +721,7 @@ std::optional<std::vector<FbxNode>> ParseFbxNodes(std::span<const uint8_t> bytes
     return AsciiReader(text, error, b).Read();
 }
 
-std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* error, ReadBudget* budget) {
+std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* error, ReadBudget* budget, bool fileAxes, bool fileUnits) {
     ReadBudget own;
     ReadBudget& b = budget ? *budget : own;
     int version = 0;
@@ -729,7 +731,7 @@ std::optional<MeshData> ParseFbx(std::span<const uint8_t> bytes, std::string* er
         Fail(error, std::format("FBX {} は古い形なので読めません (7.0 以降を読めます)", version));
         return std::nullopt;
     }
-    return FbxScene(*nodes, error, b).Read();
+    return FbxScene(*nodes, error, b, fileAxes, fileUnits).Read();
 }
 
 }  // namespace rm::space3d

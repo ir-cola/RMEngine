@@ -1,5 +1,7 @@
 #include "rm_engine/game_production/runtime/Prefab.h"
 
+#include "rm_engine/game_production/runtime/SceneFile.h"
+
 #include <algorithm>
 #include <format>
 #include <unordered_set>
@@ -49,6 +51,12 @@ json::Value FieldOverride(int source, const std::string& component, size_t index
 
 bool IsPrefab(const json::Value& v) { return v.IsObject() && v.Get("kind").AsString() == kPrefabKind; }
 bool NewerPrefab(const json::Value& v) { return IsPrefab(v) && v.Get("format").AsInt(1) > kPrefabFormat; }
+
+void UpgradePrefab(json::Value& prefab, const RuntimeRegistry& registry) {
+    if (!IsPrefab(prefab) || prefab.Get("format").AsInt(1) >= 2) return;
+    MirrorZ(prefab, registry);
+    prefab.Set("format", kPrefabFormat);
+}
 
 void FillNestedPrefabs(Scene& scene, int root, std::vector<std::string>& chain, const PrefabReader& read, reflect::Warnings& warnings,
                        const std::function<std::string(const AssetRef&)>& title) {

@@ -7,7 +7,9 @@
 #include "core/asset/AssetIndex.h"
 #include "core/reflect/Data.h"
 #include "rm_engine/game_production/runtime/Scene.h"
+#include "rm_engine/game_production/runtime/Prefab.h"
 #include "rm_engine/game_production/runtime/SceneFile.h"
+#include "rm_engine/game_x_3d/runtime/Register.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
@@ -259,4 +261,41 @@ RM_TEST(SceneFile_SceneCamera) {
     CHECK(SceneCamera(s, cameras, static_cast<uint64_t>(box)) == static_cast<uint64_t>(cam));  // カメラではない: 最初の動いているもの
     CHECK(SceneCamera(s, cameras, 999) == static_cast<uint64_t>(cam));                         // このシーンに無い
     CHECK(SceneCamera(s, {}, static_cast<uint64_t>(cam)) == 0);                                // カメラの型が無い: 無し
+}
+
+// 左手系 (2026-11-20) より前のシーン / Prefab (形式 1: 右手系) は、読むときに Z で写す: 位置の Z、
+// オイラー角の X と Y が逆に (見た目は前と同じ)。その型のプラグインが写し方を言う。形式 2 はそのまま。
+RM_TEST(SceneFile_OldRightHandedIsMirrored) {
+    RuntimeRegistry registry;
+    rm::game_x_3d::RegisterRuntime(registry);
+    static const rm::game_production::MirrorZInfo kFake{"Fake", [](json::Value& data) { rm::game_production::NegateJsonNumber(data, "offset", 2); }};
+    registry.Contribute(rm::game_production::kMirrorZPoint, kFake);
+    const std::string old = R"({"kind": "rm_engine.scene", "format": 1, "entities": [{"id": 1, "components": [
+        {"type": "rm::space3d::Transform", "data": {"position": [1, 2, 3], "rotation": [10, 20, 30], "scale": [1, 2, 3]}},
+        {"type": "Fake", "data": {"offset": [4, 5, 6]}}]}], "settings": [{"type": "Fake", "data": {"offset": [0, 0, 7]}}]})";
+    const auto doc = rm::game_production::ReadSceneFile(old, nullptr, &registry);
+    CHECK(doc.has_value());
+    if (!doc) return;
+    const json::Value& comps = doc->Get("entities").Items()[0].Get("components");
+    const json::Value& t = comps.Items()[0].Get("data");
+    CHECK(t.Get("position").Items()[2].AsDouble() == -3 && t.Get("position").Items()[0].AsDouble() == 1);
+    CHECK(t.Get("rotation").Items()[0].AsDouble() == -10 && t.Get("rotation").Items()[1].AsDouble() == -20 && t.Get("rotation").Items()[2].AsDouble() == 30);
+    CHECK(t.Get("scale").Items()[2].AsDouble() == 3);  // (大きさはそのまま)
+    CHECK(comps.Items()[1].Get("data").Get("offset").Items()[2].AsDouble() == -6);
+    CHECK(doc->Get("settings").Items()[0].Get("data").Get("offset").Items()[2].AsDouble() == -7);
+    CHECK(doc->Get("format").AsInt() == rm::game_production::kSceneFormat);
+    // 形式 2 (このバージョンが書いたもの) と、registry なしの読み方はそのまま。
+    std::string now = old;
+    now.replace(now.find("\"format\": 1"), 11, "\"format\": 2");
+    const auto kept = rm::game_production::ReadSceneFile(now, nullptr, &registry);
+    CHECK(kept && kept->Get("entities").Items()[0].Get("components").Items()[0].Get("data").Get("position").Items()[2].AsDouble() == 3);
+    const auto plain = rm::game_production::ReadSceneFile(old, nullptr);
+    CHECK(plain && plain->Get("entities").Items()[0].Get("components").Items()[0].Get("data").Get("position").Items()[2].AsDouble() == 3);
+    // Prefab も (形式 1 だけ。1 回だけ写す)。
+    json::Value prefab = *json::Parse(R"({"kind": "rm_engine.game_production.prefab", "format": 1, "entities": [{"id": 1, "components": [
+        {"type": "rm::space3d::Transform", "data": {"position": [0, 0, 5]}}]}]})");
+    rm::game_production::UpgradePrefab(prefab, registry);
+    rm::game_production::UpgradePrefab(prefab, registry);
+    CHECK(prefab.Get("format").AsInt() == rm::game_production::kPrefabFormat);
+    CHECK(prefab.Get("entities").Items()[0].Get("components").Items()[0].Get("data").Get("position").Items()[2].AsDouble() == -5);
 }

@@ -12,9 +12,12 @@ RM_STRUCT()
 struct SceneViewState {
     RM_PROPERTY() space3d::OrbitView camera;
     RM_PROPERTY() space3d::gizmo::Tool tool = space3d::gizmo::Tool::Move;
+    // 選択の道具 (Q): ギズモを出さず、クリックで選ぶだけ。外れているときは `tool` のギズモ。
+    RM_PROPERTY() bool selecting = false;
     RM_PROPERTY() space3d::gizmo::Space space = space3d::gizmo::Space::Local;
     RM_PROPERTY() space3d::gizmo::Pivot pivot = space3d::gizmo::Pivot::Each;
-    // ギズモの刻み (Ctrl を押している間。snapAlways のときは常に刻みで、Ctrl でなめらかに動く)。
+    // グリッド配置 (ギズモの刻み): Ctrl を押している間。snapAlways (グリッド配置のボタン) のときは常に
+    // 刻みで、Ctrl でなめらかに動く。
     RM_PROPERTY(Min=0.001, Max=1000) float snapMove = 0.25f;  // ワールドの単位
     RM_PROPERTY(Min=0.1, Max=180) float snapDegrees = 15.f;
     RM_PROPERTY(Min=0.001, Max=10) float snapScale = 0.1f;   // 始めたときのスケールに対して

@@ -20,7 +20,7 @@ void ArrowMover::Tick(rm::Entity self, float dt) {
     if (rm::Transform3D t(self); t.Valid()) {
         rm::Vec3 p = t.Position();
         p.x += x * speed * dt;
-        p.z -= y * speed * dt;
+        p.z += y * speed * dt;  // (左手系: 奥が +Z)
         t.SetPosition(p);
         if (turn) {
             rm::Vec3 r = t.Rotation();

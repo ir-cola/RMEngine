@@ -111,8 +111,8 @@ RM_TEST(Space3d_Camera_ProjectsThePivotToTheMiddle) {
     // 画面の真ん中を通るレイは、目から支点へ向かう。
     const Ray r = ScreenRay(*Inverse(vp), 0, 0);
     CHECK(Near(r.dir, v.Forward()));
-    // 初期のカメラ: 少し見下ろして、-Z と -X の方を向く。
-    CHECK(v.Forward().y < 0 && v.Forward().z < 0);
+    // 初期のカメラ: 少し見下ろして、+Z と -X の方を向く (左手系: 手前から奥を見る)。
+    CHECK(v.Forward().y < 0 && v.Forward().z > 0 && v.Forward().x < 0);
     CHECK(NearF(Length(v.Forward()), 1) && NearF(Dot(v.Forward(), v.Right()), 0) && NearF(Dot(v.Up(), v.Forward()), 0));
 }
 
@@ -276,7 +276,7 @@ RM_TEST(Gizmo_FrameAndScreen) {
     const gizmo::Screen s = ScreenOf(v);
     const auto mid = s.ToScreen({0, 0, 0});
     CHECK(mid && std::abs(mid->x - 400) < 1e-2f && std::abs(mid->y - 300) < 1e-2f);
-    CHECK(!s.ToScreen({0, 0, 20}));  // 目の後ろ
+    CHECK(!s.ToScreen({0, 0, -20}));  // 目の後ろ (目は -Z にあって +Z を見る)
     const gizmo::Frame f = *gizmo::MakeFrame(Mat4{}, gizmo::Tool::Move, gizmo::Space::World, v, 600);
     const auto end = s.ToScreen(gizmo::AxisEnd(f, 0));
     CHECK(end && std::abs(end->x - 490) < 0.5f && std::abs(end->y - 300) < 0.5f);  // 右へ 90 ピクセル
@@ -303,14 +303,14 @@ RM_TEST(Gizmo_RingShowsTheHalfFacingTheEye) {
     size_t backPoints = 0;
     for (const auto& arc : back) {
         backPoints += arc.size();
-        for (Vec3 p : arc) CHECK(p.z <= 1e-3f);
+        for (Vec3 p : arc) CHECK(p.z >= -1e-3f);  // (目は -Z: 裏は +Z の側)
     }
     CHECK(back.size() == 1 && backPoints >= 32 && backPoints <= 34);
     const auto edge = gizmo::RingArcs(f, 1, v.Eye(), true, 64);  // Y まわり: 半分が手前
     size_t points = 0;
     for (const auto& arc : edge) {
         points += arc.size();
-        for (Vec3 p : arc) CHECK(p.z >= -1e-3f);  // 真ん中の裏には何もない
+        for (Vec3 p : arc) CHECK(p.z <= 1e-3f);  // 真ん中の裏には何もない
     }
     CHECK(edge.size() == 1 && points >= 32 && points <= 34);
 }
@@ -418,7 +418,7 @@ RM_TEST(Gizmo_ApplyThroughTheParent) {
 }
 
 RM_TEST(Gizmo_ViewRingAndFreeRotation) {
-    const OrbitView v = FrontView();  // 目は +Z にあって原点を見る
+    const OrbitView v = FrontView();  // 目は -Z にあって原点を見る (左手系)
     const gizmo::Screen s = ScreenOf(v);
     const gizmo::Frame f = *gizmo::MakeFrame(Mat4{}, gizmo::Tool::Rotate, gizmo::Space::World, v, 600);
     using gizmo::Handle;
@@ -430,22 +430,22 @@ RM_TEST(Gizmo_ViewRingAndFreeRotation) {
     CHECK(gizmo::HitTest(Tool::Rotate, f, s, v.Eye(), {400 + outer + 30, 300}) == Handle::None);
     const float quarter = 3.14159265f / 2.f;
     gizmo::Snap smooth;
-    {  // 外側のリング: 視線 (ここでは +Z) まわり、長さの 4 分の 1 = 90 度
+    {  // 外側のリング: 視線 (目へ向く -Z) まわり、長さの 4 分の 1 = 90 度
         const auto drag = gizmo::BeginDrag(Tool::Rotate, Handle::View, f, s, v.Eye(), {400 + outer, 300});
         CHECK(drag.has_value());
-        CHECK(std::abs(drag->tangent.x) < 1e-3f && drag->tangent.y < -0.99f);  // 順方向 = 画面の上へ
-        const auto c = gizmo::Update(*drag, s, {400 + outer, 300 - outer * quarter}, smooth);
-        CHECK(c && std::abs(c->degrees - 90) < 0.5f && c->axis == -1 && Near(c->worldAxis, {0, 0, 1}));
+        CHECK(std::abs(drag->tangent.x) < 1e-3f && drag->tangent.y > 0.99f);  // 順方向 = 画面の下へ (左手系)
+        const auto c = gizmo::Update(*drag, s, {400 + outer, 300 + outer * quarter}, smooth);
+        CHECK(c && std::abs(c->degrees - 90) < 0.5f && c->axis == -1 && Near(c->worldAxis, {0, 0, -1}));
         const Transform t = gizmo::Apply({}, Mat4{}, Mat4{}, *c, gizmo::Space::Local, {});
-        CHECK(NearM(RotationMatrix(t.rotation), AxisAngle({0, 0, 1}, c->degrees)));
+        CHECK(NearM(RotationMatrix(t.rotation), AxisAngle({0, 0, -1}, c->degrees)));
     }
-    {  // 内側: 右へドラッグすると手前が右へ回る = +Y まわり。長さの 4 分の 1 = 90 度
+    {  // 内側: 右へドラッグすると手前が右へ回る = -Y まわり (左手系)。長さの 4 分の 1 = 90 度
         const auto drag = gizmo::BeginDrag(Tool::Rotate, Handle::Free, f, s, v.Eye(), {430, 320});
         CHECK(drag.has_value());
         const auto c = gizmo::Update(*drag, s, {430 + 90.f * quarter, 320}, smooth);
-        CHECK(c && std::abs(c->degrees - 90) < 0.5f && Near(c->worldAxis, {0, 1, 0}));
-        const auto upward = gizmo::Update(*drag, s, {430, 320 - 90.f * quarter}, smooth);  // 上: 手前が上がる = -X まわり
-        CHECK(upward && std::abs(upward->degrees - 90) < 0.5f && Near(upward->worldAxis, {-1, 0, 0}));
+        CHECK(c && std::abs(c->degrees - 90) < 0.5f && Near(c->worldAxis, {0, -1, 0}));
+        const auto upward = gizmo::Update(*drag, s, {430, 320 - 90.f * quarter}, smooth);  // 上: 手前が上がる = +X まわり
+        CHECK(upward && std::abs(upward->degrees - 90) < 0.5f && Near(upward->worldAxis, {1, 0, 0}));
         const auto still = gizmo::Update(*drag, s, {430, 320}, smooth);
         CHECK(still && still->degrees == 0);
     }
@@ -1150,9 +1150,9 @@ RM_TEST(Space3d_BoundsAndShadowMatrix) {
     CHECK(hit && NearF(*hit, 49.f));
     // 正射影: 箱の角は端に来る。
     const Mat4 o = Orthographic(-2, 2, -1, 1, 1, 11);
-    const auto back = ProjectToNdc(o, {2, 1, -11});
+    const auto back = ProjectToNdc(o, {2, 1, 11});  // (左手系: 目の前は +Z)
     CHECK(back && Near(*back, {1, 1, 1}));
-    const auto front = ProjectToNdc(o, {-2, -1, -1});
+    const auto front = ProjectToNdc(o, {-2, -1, 1});
     CHECK(front && Near(*front, {-1, -1, 0}));
     // 光の行列は、影を落とすものの角を全部含む。
     const Bounds casters{{-1, 0, -1}, {1, 3, 2}};
@@ -1202,30 +1202,31 @@ RM_TEST(SceneViewState_KeepsShadows) {
     CHECK(!back.shadows);
 }
 
-RM_TEST(Space3d_ViewFromWorld_LooksAlongMinusZ) {
-    // (0, 0, 5) で回していない: ワールドの真ん中は 5 手前 (ビュー空間は -Z を見る)。
+RM_TEST(Space3d_ViewFromWorld_LooksAlongPlusZ) {
+    // (0, 0, -5) で回していない: ワールドの真ん中は 5 奥 (左手系: ビュー空間は +Z を見る)。
     Transform t;
-    t.position = {0, 0, 5};
-    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(t)), {0, 0, 0}), {0, 0, -5}));
-    // Y まわりに 90 度回すと -X を見る。スケールは何も変えない。
+    t.position = {0, 0, -5};
+    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(t)), {0, 0, 0}), {0, 0, 5}));
+    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(t)), {1, 0, 0}), {1, 0, 5}));  // 右は右
+    // Y まわりに 90 度回すと +X (右) を見る。スケールは何も変えない。
     Transform turned;
     turned.rotation = {0, 90, 0};
     turned.scale = {2, 3, 4};
-    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(turned)), {-3, 0, 0}), {0, 0, -3}));
+    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(turned)), {3, 0, 0}), {0, 0, 3}));
     CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(turned)), {0, 1, 0}), {0, 1, 0}));  // 上は上のまま
-    // 真下を見ても、ビューはある。
+    // 真下を見ても (X まわりに +90 度)、ビューはある。
     Transform down;
-    down.rotation = {-90, 0, 0};
-    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(down)), {0, -2, 0}), {0, 0, -2}));
+    down.rotation = {90, 0, 0};
+    CHECK(Near(TransformPoint(ViewFromWorld(LocalMatrix(down)), {0, -2, 0}), {0, 0, 2}));
 }
 
 RM_TEST(Space3d_FrustumCorners) {
-    // 90 度、正方形、near 1、far 10、真ん中から -Z を見る。
+    // 90 度、正方形、near 1、far 10、真ん中から +Z を見る (左手系)。
     const auto k = FrustumCorners(Perspective(90, 1, 1, 10));
     CHECK(k.has_value());
     if (!k) return;
-    CHECK(Near((*k)[0], {-1, -1, -1}) && Near((*k)[1], {1, -1, -1}) && Near((*k)[2], {1, 1, -1}) && Near((*k)[3], {-1, 1, -1}));
-    CHECK(Near((*k)[4], {-10, -10, -10}) && Near((*k)[6], {10, 10, -10}));
+    CHECK(Near((*k)[0], {-1, -1, 1}) && Near((*k)[1], {1, -1, 1}) && Near((*k)[2], {1, 1, 1}) && Near((*k)[3], {-1, 1, 1}));
+    CHECK(Near((*k)[4], {-10, -10, 10}) && Near((*k)[6], {10, 10, 10}));
     // 逆行列を作れない行列には、逆行列はない。
     Mat4 flat;
     flat.m[0][0] = 0;
@@ -1241,14 +1242,14 @@ RM_TEST(Camera_Projection) {
     cam.projection = game_x_3d::CameraProjection::Orthographic;
     cam.orthographicSize = 5;
     const Mat4 o = game_x_3d::ProjectionOf(cam, 2.f);
-    const auto near1 = ProjectToNdc(o, {10, 5, -1}), far1 = ProjectToNdc(o, {10, 5, -500});
+    const auto near1 = ProjectToNdc(o, {10, 5, 1}), far1 = ProjectToNdc(o, {10, 5, 500});
     CHECK(near1 && far1 && NearF(near1->x, 1) && NearF(near1->y, 1) && NearF(far1->x, 1) && NearF(far1->y, 1));
     CHECK(near1 && far1 && near1->z >= 0 && far1->z <= 1 && far1->z > near1->z);
     // far が near より先にない (入力中の) ときも、絵は出る: NaN にならない。
     cam.projection = game_x_3d::CameraProjection::Perspective;
     cam.nearClip = 5;
     cam.farClip = 1;
-    const auto q = ProjectToNdc(game_x_3d::ProjectionOf(cam, 1.f), {0, 0, -5});
+    const auto q = ProjectToNdc(game_x_3d::ProjectionOf(cam, 1.f), {0, 0, 5});
     CHECK(q && std::isfinite(q->z));
     // シーンビューは、図形をこの距離までしか描かない。
     game_x_3d::Camera wide;
@@ -1342,13 +1343,13 @@ RM_TEST(Lighting_AtMostEight) {
 }
 
 RM_TEST(Light_FromItsEntity) {
-    // X まわりに -90 度回すと、光の -Z は下を向く。位置はエンティティの位置。
+    // X まわりに +90 度回すと、光の +Z (左手系の前) は下を向く。位置はエンティティの位置。
     game_x_3d::Light light;
     light.kind = game_x_3d::LightKind::Spot;
     light.intensity = 3;
     Transform t;
     t.position = {4, 5, 6};
-    t.rotation = {-90, 0, 0};
+    t.rotation = {90, 0, 0};
     const space3d::Light l = game_x_3d::ToRenderLight(light, LocalMatrix(t));
     CHECK(l.type == LightType::Spot && Near(l.position, {4, 5, 6}) && Near(l.direction, {0, -1, 0}) && NearF(l.intensity, 3));
     t.scale = {3, 3, 3};  // スケールで長くはならない

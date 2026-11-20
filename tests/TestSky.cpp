@@ -50,17 +50,17 @@ RM_TEST(Sky_SunByTheHour) {
     s.sunHeight = 60;
     CHECK(Near(SunDirection(s), {1, 0, 0}));  // 東の空に昇っている
     s.hour = 12;
-    CHECK(Near(SunDirection(s), {0, std::sin(60 * 3.14159265f / 180), std::cos(60 * 3.14159265f / 180)}));  // 高く、+Z の側
+    CHECK(Near(SunDirection(s), {0, std::sin(60 * 3.14159265f / 180), -std::cos(60 * 3.14159265f / 180)}));  // 高く、後ろ (-Z) の側 (左手系)
     s.hour = 18;
     CHECK(Near(SunDirection(s), {-1, 0, 0}));  // 西に沈んでいる
     s.hour = 0;
     CHECK(SunDirection(s).y < -0.8f);  // 同じだけ下
     s.hour = 24;
     CHECK(Near(SunDirection(s), SunDirection(Earth(0))));
-    // 太陽の向き は道すじ全体を回す (90: 太陽は正面の -Z から昇る)。
+    // 太陽の向き は道すじ全体を回す (90: 太陽は正面の +Z から昇る)。
     s.hour = 6;
     s.sunDirection = 90;
-    CHECK(Near(SunDirection(s), {0, 0, -1}));
+    CHECK(Near(SunDirection(s), {0, 0, 1}));
     // 地球の空 ではない: 時刻に関係なく、正午の太陽の位置。
     Sky space;
     space.kind = SkyKind::Space;

@@ -40,6 +40,7 @@
 // 純粋 (ファイルを触らない) - tests/TestPrefab.cpp でテストする。ファイルの読み書きはエディターの仕事。
 
 #include "base/Json.h"
+#include "core/RuntimeRegistry.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 
 #include <functional>
@@ -53,11 +54,13 @@ namespace rm::game_production {
 
 inline constexpr char kPrefabKind[] = "rm_engine.game_production.prefab";
 inline constexpr char kPrefabExtension[] = ".rmprefab";
-inline constexpr int kPrefabFormat = 1;  // このバージョンが書く "format"
+inline constexpr int kPrefabFormat = 2;  // このバージョンが書く "format" (2: 左手系。1 は読むときに Z で写す)
 
 bool IsPrefab(const json::Value& v);
 // 新しいバージョンが書いたもの ("format" が上の kPrefabFormat より大きい): 読まず、上書きもしない。
 bool NewerPrefab(const json::Value& v);
+// 形式 1 (右手系のころ) の Prefab を左手系へ写す (SceneFile.h の MirrorZ)。それ以外は何もしない。
+void UpgradePrefab(json::Value& prefab, const RuntimeRegistry& registry);
 
 // `root` の Prefab とその下の全部。置いた Prefab のエンティティは、source をファイルでの id として
 // 持つ (書き戻したあとも、ほかの置いたものと合うように)。ほかはその後ろに id を振る。`sources`

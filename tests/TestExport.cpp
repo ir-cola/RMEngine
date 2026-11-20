@@ -190,7 +190,7 @@ RM_TEST(Export_UsedPluginsFromComponents) {
 
 RM_TEST(Export_GameMain) {
     std::vector<GameLib> libs;
-    libs.push_back({std::nullopt, false, {"T_rm__asset__ModelImport"}, {"E_rm__asset__UpAxis"}});
+    libs.push_back({std::nullopt, false, {"T_rm__asset__ModelImport"}, {"E_rm__asset__ModelAxes"}});
     libs.push_back({Id("game_production"), false, {"T_rm__game_production__Entity"}, {}});
     libs.push_back({Id("game_x_2d"), true, {"T_rm__game_x_2d__Sprite"}, {}});
     const std::string s = GameMainSource(libs, "ぼくの \"ゲーム\"", 42);
@@ -202,7 +202,7 @@ RM_TEST(Export_GameMain) {
     CHECK(s.find("{\"rm_engine\", \"game_production\", nullptr}") < s.find("{\"rm_engine\", \"game_x_2d\""));
     // すべてのライブラリの型は AllTypes に、列挙型は AllEnums に。
     for (const char* sym : {"&rmgen_generated::T_rm__asset__ModelImport", "&rmgen_generated::T_rm__game_x_2d__Sprite",
-                            "&rmgen_generated::E_rm__asset__UpAxis", "extern const ::rm::reflect::TypeDesc T_rm__game_production__Entity;"}) {
+                            "&rmgen_generated::E_rm__asset__ModelAxes", "extern const ::rm::reflect::TypeDesc T_rm__game_production__Entity;"}) {
         CHECK(s.find(sym) != std::string::npos);
     }
     // タイトルはエスケープした UTF-8 (生の引用符でリテラルが壊れない)、ビルド番号。

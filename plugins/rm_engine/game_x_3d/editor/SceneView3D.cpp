@@ -64,8 +64,9 @@ constexpr float kOrbitDegreesPerDip = 0.4f;
 constexpr float kClickSlop = 4.f;  // これより小さくしか動かない押下はクリック
 constexpr int kGridHalf = 20;      // 格子は -20 から 20 まで (1 本ごと、10 本ごとに濃く)
 constexpr float kBarH = 28.f;      // 左上のツール帯
-constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kShadowW = 84.f, kSkyW = 64.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
-constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // 刻みの箱 (刻み の下)
+constexpr float kSpaceW = 168.f, kPivotW = 150.f, kShadowW = 84.f, kSkyW = 64.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
+constexpr float kToolSquare = 44.f, kToolGap = 4.f;   // 左の縦の列の正方形のボタン
+constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // グリッドの箱 (グリッド配置 の横)
 constexpr double kModelCheckSeconds = 1.0;    // モデルのファイルを調べ直す間隔 (ディスクで変わったか)
 constexpr double kModelForgetSeconds = 10.0;  // この間どのエンティティも使わないモデルは GPU から外す
 constexpr float kFrustumShown = 10.f;  // カメラの形はここまでしか描かない (遠い面が 1000 でもよい)
@@ -73,10 +74,12 @@ constexpr float kMarkSize = 18.f;      // カメラ / ライト / 空のエン�
 constexpr float kMarkPick = 11.f;      // 印にこれだけ近いクリックで、そのエンティティを選ぶ
 constexpr float kPreviewMaxW = 360.f;  // 右下のカメラプレビュー
 
-// ツール帯の部品: 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心, 刻み, 影。
-// ビューが 1 行に収まらないほど狭いと 2 行目に回る。`all` = すべてを丸める。
+// 左の縦の列 (正方形のボタン): グリッド配置・選択・移動・回転・拡縮。上の帯: ローカル / ワールド、
+// それぞれ / 中心、影、空、デバッグ、形。帯はビューが 1 行に収まらないほど狭いと 2 行目に回る。
+// `all` = 帯のすべてを丸める。
 struct BarLayout {
-    Rect tool, space, pivot, snap, shadow, sky, debug, shapes, all;
+    Rect grid, select, move, rotate, scale;
+    Rect space, pivot, shadow, sky, debug, shapes, all;
 };
 
 struct Placed {
@@ -224,7 +227,6 @@ public:
         DrawGizmo(c, r, host);
         previewAt_ = PreviewRect(r, host);
         if (previewAt_) DrawPreview(c, *previewAt_, host);
-        DrawHints(c, r, bar);
         if (bar) DrawBar(c, *bar);
         if (bar && snapOpen_) DrawSnapBox(c, SnapBox(r, *bar));
     }
@@ -437,6 +439,7 @@ private:
     // ギズモ: 最後に選んだ 1 つの上 (それぞれ)、または選んだもの全体の真ん中 (中心) -
     // 動くもの、つまり選んだ親の子は数えない - に置き、軸は最後のものに合わせる。
     std::optional<gizmo::Frame> GizmoFrame(const Rect& r, const game_production::SceneViewHost& host) const {
+        if (state_.selecting) return std::nullopt;  // (選択の道具: ギズモは出さない)
         const Placed* p = Primary(host);
         if (!p) return std::nullopt;
         if (state_.pivot == gizmo::Pivot::Each) return gizmo::MakeFrame(p->world, state_.tool, state_.space, state_.camera, r.h);
@@ -457,41 +460,48 @@ private:
     // ツール帯 (左上): 部品を左から右へ並べ、ビューの端で次の行へ回す。最初の部品さえ
     // 入らないほどビューが小さいときは出さない。
     static std::optional<BarLayout> Bar(const Rect& r) {
-        if (r.w < kToolW + 16 || r.h < kBarH + 60) return std::nullopt;
+        if (r.w < kSpaceW + kToolSquare + 32 || r.h < 5 * (kToolSquare + kToolGap) + 16) return std::nullopt;
         BarLayout b;
-        float x = r.x + 8, y = r.y + 8;
+        // 左の縦の列。
+        float ty = r.y + 8;
+        for (Rect* sq : {&b.grid, &b.select, &b.move, &b.rotate, &b.scale}) {
+            *sq = {r.x + 8, ty, kToolSquare, kToolSquare};
+            ty += kToolSquare + kToolGap;
+        }
+        // 上の帯は列の右から。
+        const float left = r.x + 8 + kToolSquare + 8;
+        float x = left, y = r.y + 8;
         auto place = [&](float w) {
-            if (x > r.x + 8 && x + w > r.Right() - 8) {
-                x = r.x + 8;
+            if (x > left && x + w > r.Right() - 8) {
+                x = left;
                 y += kBarH + 6;
             }
             const Rect at{x, y, w, kBarH};
             x += w + kBarGap;
             return at;
         };
-        b.tool = place(kToolW);
         b.space = place(kSpaceW);
         b.pivot = place(kPivotW);
-        b.snap = place(kSnapW);
         b.shadow = place(kShadowW);
         b.sky = place(kSkyW);
         b.debug = place(kDebugW);
         b.shapes = place(kShapesW);
-        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.shadow.Right(), b.sky.Right(), b.debug.Right(), b.shapes.Right()});
-        b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.shapes.Bottom() - (r.y + 8)};
+        const float right = std::max({b.space.Right(), b.pivot.Right(), b.shadow.Right(), b.sky.Right(), b.debug.Right(), b.shapes.Right()});
+        b.all = {left, r.y + 8, right - left, b.shapes.Bottom() - (r.y + 8)};
         return b;
     }
 
-    // 刻みの箱。刻み の下 (ビューの中に収める)。
+    // グリッドの箱 (刻む幅): グリッド配置 の右 (ビューの中に収める)。
     static Rect SnapBox(const Rect& r, const BarLayout& b) {
         const float h = 10 + 3 * kSnapRowH + 30 + 8;
-        return {std::max(r.x + 8, std::min(b.snap.x, r.Right() - 8 - kSnapBoxW)), b.snap.Bottom() + 4, kSnapBoxW, h};
+        return {b.grid.Right() + 6, std::min(b.grid.y, r.Bottom() - 8 - h), kSnapBoxW, h};
     }
 
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (previewAt_ && previewAt_->Inset(-4, -24, -4, -4).Contains(x, y)) return true;  // カメラプレビュー
         if (!bar) return false;
-        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->shadow, bar->sky, bar->debug, bar->shapes}) {
+        for (const Rect& part : {bar->grid, bar->select, bar->move, bar->rotate, bar->scale, bar->space, bar->pivot, bar->shadow, bar->sky, bar->debug,
+                                 bar->shapes}) {
             if (part.Contains(x, y)) return true;
         }
         return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
@@ -586,15 +596,20 @@ private:
         if (hovered && in.wheel != 0.f) space3d::Dolly(state_.camera, in.wheel);
         if (hovered && c.Focused() == 0 && drag_ != Drag::Look && drag_ != Drag::Gizmo) {
             if (c.KeyPressed(ui::Key::F)) FrameSelection(host);
-            if (c.KeyPressed(ui::Key::W)) state_.tool = gizmo::Tool::Move;
-            if (c.KeyPressed(ui::Key::E)) state_.tool = gizmo::Tool::Rotate;
-            if (c.KeyPressed(ui::Key::R)) state_.tool = gizmo::Tool::Scale;
+            if (c.KeyPressed(ui::Key::Q)) state_.selecting = true;
+            if (c.KeyPressed(ui::Key::W)) PickTool(gizmo::Tool::Move);
+            if (c.KeyPressed(ui::Key::E)) PickTool(gizmo::Tool::Rotate);
+            if (c.KeyPressed(ui::Key::R)) PickTool(gizmo::Tool::Scale);
             if (c.KeyPressed(ui::Key::X)) ToggleSpace();
             if (c.KeyPressed(ui::Key::Z)) TogglePivot();
         }
         return changed;
     }
 
+    void PickTool(gizmo::Tool tool) {
+        state_.tool = tool;
+        state_.selecting = false;
+    }
     void ToggleSpace() { state_.space = state_.space == gizmo::Space::Local ? gizmo::Space::World : gizmo::Space::Local; }
     void TogglePivot() { state_.pivot = state_.pivot == gizmo::Pivot::Each ? gizmo::Pivot::Center : gizmo::Pivot::Each; }
 
@@ -1305,14 +1320,22 @@ private:
         p.PopClip();
     }
 
-    // 移動 / 回転 / 拡大縮小, ローカル / ワールド, それぞれ / 中心 と 刻み。ビューの左上に浮かぶ。
+    // 左の縦の列 (グリッド配置・選択・移動・回転・拡縮) と、上の帯 (ローカル / ワールド、それぞれ / 中心、
+    // 影、空、デバッグ、形)。ビューの左上に浮かぶ。
     void DrawBar(ui::Context& c, const BarLayout& bar) {
-        const std::wstring move = Tr(L"移動"), rotate = Tr(L"回転"), scale = Tr(L"拡大縮小");
-        const std::wstring moveTip = Tr(L"矢印で動かす (W)"), rotateTip = Tr(L"輪で回す (E)"), scaleTip = Tr(L"箱で大きさを変える (R)");
-        const std::array<std::wstring_view, 3> tools{move, rotate, scale};
-        const std::array<std::wstring_view, 3> toolTips{moveTip, rotateTip, scaleTip};
-        if (const int i = w::Segmented(c, "gizmo_tool", bar.tool, tools, static_cast<int>(state_.tool), toolTips); i >= 0) {
-            state_.tool = static_cast<gizmo::Tool>(i);
+        // グリッド配置: 押すと切り替え (オンの間はギズモが常にグリッドの幅で動く)。右クリックで幅の箱。
+        const auto grid = w::ToolSquare(c, "tool_grid", bar.grid, Tr(L"グリッド配置"), state_.snapAlways, Tr(L"グリッド配置 (右クリックで幅)"));
+        if (grid.clicked) state_.snapAlways = !state_.snapAlways;
+        if (grid.rightClicked) snapOpen_ = !snapOpen_;
+        if (w::ToolSquare(c, "tool_select", bar.select, Tr(L"選択"), state_.selecting, Tr(L"選択 (Q)")).clicked) state_.selecting = true;
+        if (w::ToolSquare(c, "tool_move", bar.move, Tr(L"移動"), !state_.selecting && state_.tool == gizmo::Tool::Move, Tr(L"移動 (W)")).clicked) {
+            PickTool(gizmo::Tool::Move);
+        }
+        if (w::ToolSquare(c, "tool_rotate", bar.rotate, Tr(L"回転"), !state_.selecting && state_.tool == gizmo::Tool::Rotate, Tr(L"回転 (E)")).clicked) {
+            PickTool(gizmo::Tool::Rotate);
+        }
+        if (w::ToolSquare(c, "tool_scale", bar.scale, Tr(L"拡縮"), !state_.selecting && state_.tool == gizmo::Tool::Scale, Tr(L"拡縮 (R)")).clicked) {
+            PickTool(gizmo::Tool::Scale);
         }
         const std::wstring local = Tr(L"ローカル"), world = Tr(L"ワールド");
         const std::wstring localTip = Tr(L"選んだ物の向きに合わせる (X で切り替え)"), worldTip = Tr(L"世界の向き (X で切り替え)。大きさは常に物の向き");
@@ -1329,11 +1352,6 @@ private:
         if (const int i = w::Segmented(c, "gizmo_pivot", bar.pivot, pivots, static_cast<int>(state_.pivot), pivotTips); i >= 0) {
             state_.pivot = static_cast<gizmo::Pivot>(i);
         }
-        // 刻み: 刻みの箱を開く (ギズモが常に刻みで動くときは強調色)。
-        if (w::Button(c, "gizmo_snap", bar.snap, Tr(L"刻み"), state_.snapAlways ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
-            snapOpen_ = !snapOpen_;
-        }
-        if (!snapOpen_ && c.IsHovered(bar.snap)) w::Tooltip(c, Tr(L"ギズモの刻む幅 (Ctrl を押しながらドラッグすると刻んで動く)"));
         // 影: ライトが床と物に落とす影 (オンの間は強調色)。
         if (w::Button(c, "scene_shadows", bar.shadow, Tr(L"影"), state_.shadows ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.shadows = !state_.shadows;
@@ -1386,35 +1404,7 @@ private:
                 if (ec == std::errc{} && end == text.data() + text.size() && v > 0) *row.value = std::clamp(v, row.min, row.max);
             }
         }
-        w::Checkbox(c, "snap_always", {box.x + 12, y + 2, box.w - 24, 24}, state_.snapAlways, Tr(L"いつも刻む (Ctrl を押すとなめらか)"));
-    }
-
-    void DrawHints(ui::Context& c, const Rect& r, const std::optional<BarLayout>& bar) {
-        ui::TextStyle ts;
-        ts.size = 11;
-        ts.color = theme::TextDim;
-        ts.v = ui::VAlign::Bottom;
-        ts.wrap = true;
-        const float right = previewAt_ ? r.Right() - previewAt_->x + 8 : 10;
-        c.P().Text(r.Inset(10, 8, right, 8),
-                   Tr(L"右ドラッグ: 見回す (W A S D / Q E で移動)   中ドラッグ: 平行移動   ホイール: 近づく   Alt+左ドラッグ: 回る   F: 選んだ物へ   クリック: 選ぶ   W / E / R: 移動・回転・拡大縮小   X: ローカル / ワールド   Z: それぞれ / 中心   回転の球の中をドラッグ: 自由に回す   Ctrl+ギズモ: 刻んで動かす   Esc: ドラッグをやめる"),
-                   ts);
-        if (!placed_.empty()) {
-            // 今カメラに見えている物の数 (残りは間引く: 描かないが、影は描く)。
-            const space3d::Renderer::Stats& st = main_.renderer.LastStats();
-            ui::TextStyle faint = ts;
-            faint.v = ui::VAlign::Top;
-            faint.wrap = false;
-            faint.color = theme::TextFaint;
-            c.P().Text(r.Inset(10, bar ? bar->all.Bottom() - r.y + 6 : 8, 10, 8), TrF(L"描いた物 {} / {} (カメラの外は描かない)", st.drawn, st.things), faint);
-        }
-        if (placed_.empty()) {
-            ui::TextStyle hint = ts;
-            hint.size = 12;
-            hint.v = ui::VAlign::Top;
-            hint.color = theme::TextFaint;
-            c.P().Text(r.Inset(10, bar ? bar->all.Bottom() - r.y + 10 : 8, 10, 8), Tr(L"Transform の付いたエンティティが、ここに印で出ます。メッシュ (3D モデル) の部品を付けると、その形やモデルで描きます。"), hint);
-        }
+        w::Checkbox(c, "snap_always", {box.x + 12, y + 2, box.w - 24, 24}, state_.snapAlways, Tr(L"グリッド配置"));
     }
 
     enum class Drag { None, Look, Pan, Orbit, Click, Gizmo, Cancelled };

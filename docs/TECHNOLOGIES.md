@@ -550,7 +550,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **どこ** — `plugins/rm_engine/game_x_3d/editor/SceneView3D.cpp`
 
 ### 3D のカメラとクリックで選ぶ (レイ)
-- **透視投影・LookAt** — 遠くの物ほど小さく見せる行列と、カメラの位置と向きから作る行列。右手系・Y が上
+- **透視投影・LookAt** — 遠くの物ほど小さく見せる行列と、カメラの位置と向きから作る行列。左手系・Y が上 (2026-11-20 から。前は右手系)
 - **逆行列** — 行列を元に戻す行列。「画面のこの点」から「3D 空間のどの向き」かを逆にたどるのに使う
 - **レイとの当たり** — クリックした点から 3D 空間へ光線 (レイ) を飛ばし、どの箱に最初に当たるかを調べる。箱は「スラブ法」(x・y・z の 3 方向の板に挟まれた区間が重なるか) で調べる。回したり大きくしたりした箱は、レイの方を箱の向きに戻してから調べる
 - **編集用のカメラ** — 見ている点 (ピボット)・左右の角度・上下の角度・距離で持つ。見回す (目が動かない) / 回る (見ている点が動かない) / 平行移動 / 近づく / 飛ぶ を計算で分けている
@@ -773,7 +773,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
   - 落とし穴 1: `Stop` は「一時停止」で、止めても場所を覚えている。本当に止めるには `Stop` + `FlushSourceBuffers` (渡した波形を捨てる) + `DestroyVoice`
   - 落とし穴 2: ピッチ (速さ) の上限 `MaxFrequencyRatio` は作るときに決め、既定は 2 倍まで。エンジンは 8 倍で作る
   - 声を作る・消すのはエンジンの作業スレッドだけ (ゲームのスレッドは「こうしてほしい」と印を付けるだけ。待たない)
-- **X3DAudio** (3D の音): 聞く人 (ゲームのカメラ) と鳴る物の位置から、左右のスピーカーへの分け方 (行列) を計算する。X3DAudio は左手系なので、エンジンの右手系の z を裏返して渡す。距離で小さくする曲線はエンジンの自前 (`DistanceGain`: 近い間はそのまま、離れると 1/距離、最後の 4 分の 1 で 0 へ。テストあり)
+- **X3DAudio** (3D の音): 聞く人 (ゲームのカメラ) と鳴る物の位置から、左右のスピーカーへの分け方 (行列) を計算する。X3DAudio は左手系で、エンジンも左手系 (2026-11-20 から) なのでそのまま渡す。距離で小さくする曲線はエンジンの自前 (`DistanceGain`: 近い間はそのまま、離れると 1/距離、最後の 4 分の 1 で 0 へ。テストあり)
 - **Media Foundation** (Windows の動画・音の読み込み): MP3 / AAC / FLAC / WMA を読む。メモリのバイト列を `SHCreateMemStream` → `MFCreateMFByteStreamOnStream` → `MFCreateSourceReaderFromByteStream` で開き、float の波形で受け取る。Windows の「N エディション」には入っていないことがあるので、DLL (`mfplat.dll` / `mfreadwrite.dll`) を `LoadLibraryExW` (System32 だけを探す) で**後から**読み、無ければ理由を出して鳴らさない (ゲームは止まらない)。だからゲームには WAV か OGG を勧める
 - **WAV** (自作): RIFF の箱を読む。PCM の 8 / 16 / 24 / 32 ビットと float の 32 / 64 ビット、`WAVE_FORMAT_EXTENSIBLE`。壊れたファイル (箱の大きさがファイルより大きい・チャンネル数やサンプリング周波数がおかしい) は理由を付けて止める (テストあり)
 - **Ogg Vorbis** (`stb_vorbis`): OGG の音を読む 1 ファイルのライブラリ (パブリックドメイン / MIT。`plugins/rm_engine/audio/runtime/third_party/stb_vorbis.c`)。メモリから開き、好きな所へ飛べる (ループの点)
@@ -990,10 +990,17 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **霧** — 描画の一般の口 `RenderFrame::fog` (色と、1 m あたりの濃さ) を足した。モデルを塗るシェーダーは光を当てたあと `exp(-濃さ × 距離)` で霧の色へ混ぜる (`Fogged`)。天候はどしゃぶり・吹雪で霧を出し、嵐では 5 m 先がほぼ見えない
 - **どこ** — `plugins/rm_engine/weather/runtime/Weather.*` (`ApplyPreset`・`FogOf`・`SkyWeatherOf`)・`weather/editor/Register.cpp` (テンプレートの行)・`src/core/reflect/Reflect.h` / `Data.cpp` / `tools/rmgen/Scanner.cpp` (`Decimals`)・`src/editor/inspector/Inspector.cpp` (テンプレートの行)・`space3d/runtime/RendererShaders.cpp` (`Fogged`)・`Falling.cpp` (雨粒)
 
+### 左手系への切り替え・古いデータを写す・モデルの座標系
+- **何か** — ワールドを Y が上の**左手系** (右・上・奥が +。Unity と同じ) にした。中心は 3 つの行列: `LookAt` (右 = 上 × 前、ビュー空間の +z が前)、`Perspective` と `Orthographic` (+z の near..far を深度 0..1 へ)。これでカメラ・光・スクリプトの「前」は +Z になり、行列の掛け算・回転の式そのものは変わらない (どちらの手系でも同じ数式で、見え方だけが鏡になる)
+- **古いデータを写す** — 右手系のころのシーン・Prefab (形式 1) は、読むときに **Z で写す** (鏡 S = diag(1, 1, -1))。位置は z を反転、回転は S R S になり、オイラー角では **X と Y のまわりの角の符号が変わり Z はそのまま** (回す順に関係なく成り立つ)。写した世界を左手系で見ると、前の右手系の絵とまったく同じになる。どの値をどう写すかは型を出すプラグインが言う (ゲーム制作の口 `rm_engine.game_production.mirror_z`: 3D の Transform・コライダーのずらし・重力)。空の太陽・パノラマ・風の向きは、エンジンの中で同じ鏡をかけて見た目を保つ。テンプレートのシーンは形式 2 に書き直した
+- **モデルの座標系** — 取り込みの設定で「上にする軸」「奥にする軸」「左手系か」を選ぶ (プリセット: glTF・Blender・Unreal・Unity)。新しい座標は (右・上・奥 への射影) で、右は左手系なら 上 × 奥、右手系なら 奥 × 上 (= 鏡)。鏡のときは三角形の 2 つの頂点を入れ替えて表を保つ。FBX は「自動」のときだけファイルの GlobalSettings の軸と単位を使い、選んだときはファイルの数のまま読んでから選んだ座標系をかける
+- **どこ** — `space3d/runtime/View.cpp` (`LookAt`・`Perspective`・`Orthographic`・`OrbitView`)・`Lighting.cpp` (影の段の深さ)・`Mesh.cpp` (`ApplyModelImport`)・`MeshFile.cpp` (`BasisOf`)・`Fbx.cpp`・`core/asset/ImportSettings.*` (`ModelAxes` と古い "up" の移行)・`game_production/runtime/SceneFile.*` (`MirrorZ`)・`Prefab.cpp` (`UpgradePrefab`)
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-20 | 左手系への切り替え (LookAt・射影・古いシーンを Z で写す口)・モデルの座標系の選び方を足した |
 | 2026-11-20 | 積雪を真上からの格子 1 枚に戻した・雨と雪を 1 つの降水量に・霧の量と天気で変わる霧の色・作った物に足す口 (kCreatedPoint: 3D オブジェクトにコライダー) を足した |
 | 2026-11-20 | 天候を数値で持つ・テンプレートの行・データの小数の桁 (Decimals)・雨の強さで変わる雨粒・霧 (RenderFrame::fog) を足した |
 | 2026-11-20 | 積雪を作り直した (向きごとの雪の層・こんもりした形・吹き込み)・足跡 (ピンポンのテクスチャ・トーラス状のアドレス・動く物だけの地図) を足した |

@@ -87,6 +87,11 @@ bool IconButton(ui::Context& c, std::string_view id, const ui::Rect& r, Icon ico
 // `tooltip` (省略可) はマウスの下に出る。
 bool IconToggle(ui::Context& c, std::string_view id, const ui::Rect& r, Icon icon, bool on, bool enabled = true,
                 std::wstring_view tooltip = {});
+// 道具を選ぶ正方形のボタン (シーンビューの左の列: グリッド配置・選択・移動・回転・拡縮)。`on` の間は
+// 押し込まれたまま (アクセント)。いまは真ん中に小さな文字 (改行してよい: "グリッド\n配置") - あとで
+// アイコンに替える。右クリックも返す (グリッド配置: 幅の箱を開く)。
+ui::Context::ButtonResult ToolSquare(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label, bool on,
+                                     std::wstring_view tooltip = {});
 // 1 本の浮かんだ帯に横に並んだ、いくつかの選択肢の 1 つ (シーンビューの 移動 / 回転 / 拡大縮小):
 // 選んだものがアクセントの色。クリックされた番号を返す。なければ -1。`tooltips` (省略可、
 // ラベルごとに 1 つ) はマウスの下に出る。

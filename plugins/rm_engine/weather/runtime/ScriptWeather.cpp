@@ -62,9 +62,9 @@ int GetValue(void* ctx, int which, int now, float* out) {
         case 3: {
             if (!now) {
                 *out = w->windDirection;
-            } else {  // (WindOf の逆: 0 は -Z、+ は左)
+            } else {  // (WindOf の逆: 0 は +Z、+ は左)
                 const float strength = std::sqrt(n.windX * n.windX + n.windZ * n.windZ);
-                *out = strength > 1e-6f ? std::atan2(-n.windX, -n.windZ) * 57.2957795f : w->windDirection;
+                *out = strength > 1e-6f ? std::atan2(-n.windX, n.windZ) * 57.2957795f : w->windDirection;
             }
             return 1;
         }

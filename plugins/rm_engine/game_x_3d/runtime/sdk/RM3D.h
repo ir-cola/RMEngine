@@ -6,10 +6,10 @@
 //   p.y += 1.0f * dt;
 //   t.SetPosition(p);
 //   t.SetRotation({0, 90, 0});            // 度。X -> Y -> Z の順に回す
-//   t.LookAt(rm::Transform3D(target).WorldPosition());   // その -Z (カメラが見る向き) を target に向ける
-//   t.Translate({0, 0, -speed * dt});     // 自分の軸に沿って (前へ)
+//   t.LookAt(rm::Transform3D(target).WorldPosition());   // その +Z (カメラが見る向き) を target に向ける
+//   t.Translate({0, 0, speed * dt});      // 自分の軸に沿って (前へ)
 //   t.Rotate({0, 90 * dt, 0});            // 自分の軸のまわりに
-//   rm::Vec3 ahead = t.Forward();         // ワールドの向き: Forward (-Z), Right (+X), Up (+Y)
+//   rm::Vec3 ahead = t.Forward();         // ワールドの向き: Forward (+Z), Right (+X), Up (+Y) - 左手系
 //
 // Transform の無いエンティティ: 取る方は 0 (スケールは 1) を返し、書く方は何もしない。
 // Valid() で、Transform があるかどうか分かる。
@@ -75,15 +75,15 @@ public:
     Quat WorldRotationQuat() const { return Quat::Euler(WorldRotation()); }
     void SetRotation(Quat q) const { SetRotation(q.ToEuler()); }
 
-    // その -Z (カメラが見る向き) がワールドの `target` を向くように回し、Y を `up` の方へ向ける。
+    // その +Z (カメラが見る向き) がワールドの `target` を向くように回し、Y を `up` の方へ向ける。
     void LookAt(Vec3 target, Vec3 up = {0, 1, 0}) const {
         const float t[3] = {target.x, target.y, target.z}, u[3] = {up.x, up.y, up.z};
         if (api_) api_->lookAt(Api()->ctx, entity_.id, t, u);
     }
     void LookAt(Entity target, Vec3 up = {0, 1, 0}) const { LookAt(Transform3D(target).WorldPosition(), up); }
 
-    // 自分の軸がワールドで向く先 (長さ 1): Forward = -Z (見る向き), Right = +X, Up = +Y。
-    Vec3 Forward() const { return Normalize(Direction(2) * -1.0f); }
+    // 自分の軸がワールドで向く先 (長さ 1): Forward = +Z (見る向き), Right = +X, Up = +Y (左手系)。
+    Vec3 Forward() const { return Normalize(Direction(2)); }
     Vec3 Right() const { return Normalize(Direction(0)); }
     Vec3 Up() const { return Normalize(Direction(1)); }
     // 自分の空間 (子から見たもの) の点をワールドへ。
@@ -94,7 +94,7 @@ public:
                 m[2] * local.x + m[6] * local.y + m[10] * local.z + m[14]};
     }
 
-    // `delta` だけ動かす: 自分の軸に沿って (self = true: {0, 0, -1} が前)、またはワールドの軸に沿って。
+    // `delta` だけ動かす: 自分の軸に沿って (self = true: {0, 0, 1} が前)、またはワールドの軸に沿って。
     void Translate(Vec3 delta, bool self = true) const {
         if (self) {
             SetPosition(Position() + RotationQuat() * delta);

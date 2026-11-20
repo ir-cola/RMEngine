@@ -512,6 +512,26 @@ bool IconToggle(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon
     return enabled && b.clicked;
 }
 
+ui::Context::ButtonResult ToolSquare(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view label, bool on,
+                                     std::wstring_view tooltip) {
+    const ui::Context::ButtonResult b = c.ButtonBehavior(c.MakeId(idStr), r);
+    const bool down = b.held && b.hovered;
+    if (on) {
+        DrawSurface(c, r, down ? Surface::AccentPressed : b.hovered ? Surface::AccentHovered : Surface::Accent);
+    } else {
+        DrawSurface(c, r, down ? Surface::Pressed : b.hovered ? Surface::Hovered : Surface::Raised);
+    }
+    ui::TextStyle ts;
+    ts.size = 10.5f;
+    ts.color = on ? theme::OnAccent() : b.hovered ? theme::Text : theme::TextDim;
+    ts.h = ui::HAlign::Center;
+    ts.v = ui::VAlign::Center;
+    ts.wrap = true;
+    c.P().Text(r.Inset(2), label, ts);
+    if (b.hovered && !tooltip.empty()) Tooltip(c, tooltip);
+    return b;
+}
+
 void DrawRow(ui::Context& c, const Rect& r, RowLook look) {
     auto& p = c.P();
     const float radius = look.flat ? 0.f : 5.f;

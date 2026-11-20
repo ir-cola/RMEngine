@@ -32,7 +32,7 @@ typedef struct RmTransform3DApi2 {
     int (*setWorldPosition)(void* ctx, uint64_t entity, const float position[3]);
     int (*worldRotation)(void* ctx, uint64_t entity, float outDegrees[3]);
     int (*setWorldRotation)(void* ctx, uint64_t entity, const float degrees[3]);
-    /* その -Z (カメラが見る向き) が `target` (ワールド) を向くように回し、Y をできるだけ `up` に近づける。 */
+    /* その +Z (カメラが見る向き) が `target` (ワールド) を向くように回し、Y をできるだけ `up` に近づける。 */
     int (*lookAt)(void* ctx, uint64_t entity, const float target[3], const float up[3]);
 } RmTransform3DApi2;
 

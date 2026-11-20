@@ -63,7 +63,7 @@ inline float SnowNow() { return detail::WeatherValue(9, 1, 0); }
 // 積もる高さ (cm、0 .. 5) と、今の雪の深さ (cm)。
 inline void SetSnowDepth(float cm) { detail::SetWeatherValue(8, cm, 0); }
 inline float SnowLying() { return detail::WeatherValue(8, 1, 0); }
-// 風: 吹いていく先 (度、真上から見る: 0 は正面 -Z、90 は左 -X) と強さ (m/s)。雲はそれで
+// 風: 吹いていく先 (度、真上から見る: 0 は正面 +Z、90 は左 -X) と強さ (m/s)。雲はそれで
 // 流れ、雨と雪は斜めになる。
 inline void SetWind(float directionDegrees, float strength, float seconds = 0) {
     detail::SetWeatherValue(3, directionDegrees, seconds);

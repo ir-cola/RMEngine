@@ -75,9 +75,10 @@ Mat4 Perspective(float fovYDegrees, float aspect, float nearZ, float farZ) {
     Mat4 p;
     p.m[0][0] = f / std::max(aspect, 1e-6f);
     p.m[1][1] = f;
-    p.m[2][2] = farZ / (nearZ - farZ);
-    p.m[2][3] = -1.f;
-    p.m[3][2] = nearZ * farZ / (nearZ - farZ);
+    // 左手系: ビュー空間の +z が目の前 (2026-11-20 から。前は右手系で -z)。
+    p.m[2][2] = farZ / (farZ - nearZ);
+    p.m[2][3] = 1.f;
+    p.m[3][2] = -nearZ * farZ / (farZ - nearZ);
     p.m[3][3] = 0.f;
     return p;
 }
@@ -86,31 +87,32 @@ Mat4 Orthographic(float l, float r, float b, float t, float n, float f) {
     Mat4 o;
     o.m[0][0] = 2.f / (r - l);
     o.m[1][1] = 2.f / (t - b);
-    o.m[2][2] = 1.f / (n - f);
+    o.m[2][2] = 1.f / (f - n);
     o.m[3][0] = (l + r) / (l - r);
     o.m[3][1] = (t + b) / (b - t);
-    o.m[3][2] = n / (n - f);
+    o.m[3][2] = -n / (f - n);
     return o;
 }
 
 Mat4 LookAt(Vec3 eye, Vec3 target, Vec3 up) {
+    // 左手系: 右 = 上 × 前、ビュー空間の +z が前。
     const Vec3 f = Normalize(target - eye);
-    Vec3 s = Normalize(Cross(f, up));
+    Vec3 s = Normalize(Cross(up, f));
     if (Length(s) == 0) s = {1, 0, 0};  // 真上か真下を向いている
-    const Vec3 u = Cross(s, f);
+    const Vec3 u = Cross(f, s);
     Mat4 v;
     v.m[0][0] = s.x, v.m[1][0] = s.y, v.m[2][0] = s.z;
     v.m[0][1] = u.x, v.m[1][1] = u.y, v.m[2][1] = u.z;
-    v.m[0][2] = -f.x, v.m[1][2] = -f.y, v.m[2][2] = -f.z;
-    v.m[3][0] = -Dot(s, eye), v.m[3][1] = -Dot(u, eye), v.m[3][2] = Dot(f, eye);
+    v.m[0][2] = f.x, v.m[1][2] = f.y, v.m[2][2] = f.z;
+    v.m[3][0] = -Dot(s, eye), v.m[3][1] = -Dot(u, eye), v.m[3][2] = -Dot(f, eye);
     return v;
 }
 
 Mat4 ViewFromWorld(const Mat4& world) {
     const Vec3 eye = TransformPoint(world, {0, 0, 0});
-    Vec3 forward = Normalize(TransformDirection(world, {0, 0, -1}));
+    Vec3 forward = Normalize(TransformDirection(world, {0, 0, 1}));
     Vec3 up = Normalize(TransformDirection(world, {0, 1, 0}));
-    if (Length(forward) == 0) forward = {0, 0, -1};  // スケール 0
+    if (Length(forward) == 0) forward = {0, 0, 1};  // スケール 0
     if (Length(up) == 0 || std::fabs(Dot(forward, up)) > 0.9999f) up = std::fabs(forward.y) > 0.99f ? Vec3{0, 0, 1} : Vec3{0, 1, 0};
     return LookAt(eye, eye + forward, up);
 }
@@ -256,16 +258,18 @@ Mat4 DirectionalShadowMatrix(Vec3 direction, const Bounds& casters) {
         }
     }
     const float pad = radius * 0.02f + 0.01f;
-    // ビュー空間は -z を向く: 一番近い角の z が最大。
-    return Orthographic(lo[0] - pad, hi[0] + pad, lo[1] - pad, hi[1] + pad, -hi[2] - pad, -lo[2] + pad) * view;
+    // ビュー空間は +z を向く (左手系): 一番近い角の z が最小。
+    return Orthographic(lo[0] - pad, hi[0] + pad, lo[1] - pad, hi[1] + pad, lo[2] - pad, hi[2] + pad) * view;
 }
 
 Vec3 OrbitView::Forward() const {
     const float y = yaw * kDeg, p = pitch * kDeg;
-    return {-std::sin(y) * std::cos(p), -std::sin(p), -std::cos(y) * std::cos(p)};
+    // (yaw 0 は +Z を向く。yaw を増やすと左 (-X) へ向く: 前の右手系と同じ回り方なので、マウスの扱いと
+    // 覚えた yaw はそのまま - 2026-11-20 の左手系への変更で、ピボットの Z だけが反転する)
+    return {-std::sin(y) * std::cos(p), -std::sin(p), std::cos(y) * std::cos(p)};
 }
-Vec3 OrbitView::Right() const { return Normalize(Cross(Forward(), {0, 1, 0})); }
-Vec3 OrbitView::Up() const { return Cross(Right(), Forward()); }
+Vec3 OrbitView::Right() const { return Normalize(Cross({0, 1, 0}, Forward())); }
+Vec3 OrbitView::Up() const { return Cross(Forward(), Right()); }
 float OrbitView::WorldPerPixel(Vec3 p, float viewHeight) const {
     const float depth = Dot(p - Eye(), Forward());
     if (depth <= 1e-4f) return 0.f;

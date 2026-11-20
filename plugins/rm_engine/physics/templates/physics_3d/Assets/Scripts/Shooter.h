@@ -1,6 +1,6 @@
-// 見本のスクリプト: Space で弾 (プレハブ) を前 (-Z) に撃つ。弾にはコライダーと剛体が付いていて、
+// 見本のスクリプト: Space で弾 (プレハブ) を前 (+Z) に撃つ。弾にはコライダーと剛体が付いていて、
 // 何かに当たると Bullet の OnHit で消えます。
-// A sample script: Space shoots a bullet (a prefab) forward (-Z). The bullet has a collider and a
+// A sample script: Space shoots a bullet (a prefab) forward (+Z). The bullet has a collider and a
 // rigidbody; when it hits something, Bullet's OnHit destroys it.
 #pragma once
 

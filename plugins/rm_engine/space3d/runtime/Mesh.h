@@ -132,8 +132,9 @@ private:
 using ReadRelated = std::function<std::optional<std::vector<uint8_t>>(std::string_view uri)>;
 
 // ファイルの拡張子で (".gltf" / ".glb" / ".obj" / ".fbx"、大文字小文字は問わない)。`budget`: null = 上の上限。
+// `fileAxes` / `fileUnits`: FBX のファイルに書いてある軸 / 単位に直すか (ParseFbx)。
 std::optional<MeshData> ParseMesh(std::string_view extension, std::span<const uint8_t> bytes, const ReadRelated& read,
-                                  std::string* error, ReadBudget* budget = nullptr);
+                                  std::string* error, ReadBudget* budget = nullptr, bool fileAxes = true, bool fileUnits = true);
 // .gltf または .glb (先頭のバイトで見分ける)。
 std::optional<MeshData> ParseGltf(std::span<const uint8_t> bytes, const ReadRelated& read, std::string* error, ReadBudget* budget = nullptr);
 // `read` が .mtl ファイルを探す (null: マテリアル無し)。
@@ -166,9 +167,17 @@ bool IndicesInRange(const MeshData& mesh, std::string* error);
 // 上を向く。
 void ComputeNormals(MeshData& mesh);
 void ComputeBounds(MeshData& mesh);
-// アセットの取り込みの設定 (core/asset の ModelImport): すべての位置に `scale` を掛け、Z が上の
-// モデルは Y が上になるよう立てる (y = z、z = -y。法線も)。境界もそれに合わせる。
-void ApplyModelImport(MeshData& mesh, float scale, bool zUp);
+// モデルの座標系: モデルのどの向きが、このエンジン (Y が上・左手系: 右・上・奥が +) の上 (+Y) と
+// 奥 (+Z) になるか、モデルが左手系か。右手系なら右を反転する (鏡に映す)。
+struct ModelBasis {
+    Vec3 up{0, 1, 0};
+    Vec3 depth{0, 0, -1};
+    bool leftHanded = false;
+};
+// アセットの取り込みの設定 (core/asset の ModelImport) をかける: 座標系 (位置と法線。鏡に映すときは
+// 三角形を裏返して表を保つ)、前後の反転 (Y のまわりに 180 度)、`scale` 倍。境界もそれに合わせる。
+// 上と奥が同じ向きなら、Y が上・右手系 (+Y と -Z) として扱う。
+void ApplyModelImport(MeshData& mesh, const ModelBasis& basis, bool turnAround, float scale);
 
 // 読み込みの部品。それぞれ単独でテストする。
 std::optional<std::vector<uint8_t>> DecodeBase64(std::string_view text);
