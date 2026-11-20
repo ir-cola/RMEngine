@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "円柱など丸い物の上に積もった雪が四角くなっていたのを直した (雪が物の縁の形に沿って終わる)",
+          "en": "Snow on cylinders and other round objects no longer looks square (it now ends along the object's edge)"
+        },
+        {
           "ja": "屋根の下に吹き込む雪が、雨の染みと同じように奥へ向かってなめらかに減るように (線が見えて一様に白くなっていたのを直した)",
           "en": "Snow blown in under roofs now thins out smoothly toward the inside, like rain stains (it used to be uniformly white with visible lines)"
         },

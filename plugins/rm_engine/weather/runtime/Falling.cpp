@@ -311,8 +311,8 @@ const char kSnowLayerHlsl[] = R"(
 // (足跡、SnowTrailPS) では、決してその上にはならない。段では、上側で雪が薄くなって
 // なくなる (丸い縁)。根元で、急すぎる所と下に何もない所では、角を除く
 // (NaN: その三角形は描かない) - 雪が立たず、ものの中にもない。傾いた向きの降り方が屋根の下に
-// 吹き込む分は、そこでは白い (SnowAt) が高さはない。モデルと同じ光 (Shade)、霧の中
-// (Fogged)。RendererShaderText(kWetSurfaceHlsl) の後。
+// 吹き込む分は、そこでは白い (SnowAt) が高さはない。縁の角は本当の縁まで外へ動かす (EdgeReach)。
+// モデルと同じ光 (Shade)、霧の中 (Fogged)。RendererShaderText(kWetSurfaceHlsl) の後。
 cbuffer SnowLayer : register(b4) {
     float4 layerGrid;     // xy: 格子の角 (ワールドの x z、ちょうどのマス単位)、z: 1 マス (m)、w: 1 辺のマス数
     float4 layerInfo;     // x: まっすぐ下の地図、y: その線が始まる所 (ワールドの y: 目)
@@ -358,6 +358,38 @@ SnowCorner CornerAt(float2 xz, float fade) {
     return c;
 }
 
+// 真下の地図で、(x, z) の下の面が `level` の高さ (段の半分より近く。それより高くてもよい) にあるか
+// (0 .. 1): まわりの 4 テクセルをそれぞれ「ある / ない」で読み、場所で混ぜる - 地図のテクセル
+// (約 8 cm) より細かく、縁がどこにあるかが分かる。
+float OnLevel(float2 xz, float level, float ledge) {
+    int m = (int)layerInfo.x;
+    float4 p = mul(mapViewProj[m], float4(xz.x, layerInfo.y, xz.y, 1));
+    float2 f = (p.xy * float2(0.5, -0.5) + 0.5) * mapSize.x - 0.5;
+    float2 b = floor(f), w = f - b;
+    float on[4];
+    [unroll] for (int i = 0; i < 4; ++i) {
+        float2 t = b + float2(i % 2, i / 2);
+        bool inside = t.x >= 0 && t.y >= 0 && t.x < mapSize.x && t.y < mapSize.x;
+        float d = inside ? directionMaps.Load(int3(t + mapInfo[m].yz, 0)).r : 1;
+        on[i] = d < 1 && layerInfo.y + (p.z - d) * mapInfo[m].w > level - ledge * 0.5 ? 1 : 0;
+    }
+    return lerp(lerp(on[0], on[1], w.x), lerp(on[2], on[3], w.x), w.y);
+}
+// 縁の角 (隣が段の下) から `dir` に沿って、本当の縁 (下の面がその高さでなくなる所) までの距離
+// (多くて `most`)。8 か所で読み、半分の所を直線で求める。
+float EdgeReach(float2 xz, float2 dir, float level, float ledge, float most) {
+    float before = OnLevel(xz, level, ledge), t0 = 0;
+    if (before < 0.5) return 0;
+    [loop] for (int i = 1; i <= 8; ++i) {
+        float t = most * i / 8.0;
+        float on = OnLevel(xz + dir * t, level, ledge);
+        if (on < 0.5) return lerp(t0, t, saturate((before - 0.5) / max(before - on, 1e-4)));
+        before = on;
+        t0 = t;
+    }
+    return most;
+}
+
 struct SnowOut {
     float4 pos : SV_Position;
     float3 nrm : NORMAL;
@@ -400,7 +432,15 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
     float tu = gu + (gu == c.ground && (u.none || abs(u.ground - c.ground) > ledge) ? own : u.top - u.ground);
     o.nrm = normalize(float3(tl - tr, 2 * pace, td - tu));
     o.depth = c.depth;
-    o.wpos = float3(xz.x, rim ? c.ground + 0.002 : max(c.top, c.ground + 0.002), xz.y);
+    // 縁の角は、本当の縁まで外へ動かす: 円柱や丸い物の上の雪が、格子のマスの階段 (四角) ではなく
+    // 物の形に沿って終わる (2026-11-20)。
+    float2 at = xz;
+    if (rim) {
+        float2 outward = float2((l.none || c.ground - l.ground > ledge ? -1 : 0) + (r.none || c.ground - r.ground > ledge ? 1 : 0),
+                            (d.none || c.ground - d.ground > ledge ? -1 : 0) + (u.none || c.ground - u.ground > ledge ? 1 : 0));
+        if (dot(outward, outward) > 0.5) at += normalize(outward) * EdgeReach(xz, normalize(outward), c.ground, ledge, pace * length(outward));
+    }
+    o.wpos = float3(at.x, rim ? c.ground + 0.002 : max(c.top, c.ground + 0.002), at.y);
     o.pos = mul(viewProj, float4(o.wpos, 1));
     return o;
 }
