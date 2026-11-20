@@ -63,7 +63,8 @@ struct FallConstants {
 static_assert(sizeof(FallConstants) % 16 == 0);
 
 // 濡れ: the touch on every surface (3D 空間's RenderFrame::surface: Surface(...)) and its numbers - the
-// ways the rain fell, each with the 向きの地図 it is seen by (`maps`, -1: none - everything open).
+// ways the rain fell, each with the 向きの地図 it is seen by (`maps`, -1: none - everything open) and how
+// far it seeps under what covers.
 extern const char kWetSurfaceHlsl[];
 std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps);
 

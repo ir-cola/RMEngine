@@ -141,19 +141,26 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds) {
 namespace {
 
 // What falls now that wets (rain: all of it in the end; snow, where it melts: a little), each with the
-// way it falls, how wet it makes things at most and how fast (a second).
+// way it falls, how wet it makes things at most and how fast (a second), and how far it seeps under what
+// covers at most and how fast (metres a second).
 struct Wetting {
     Vec3 way;
     float most, speed;
+    float seepMost, seepSpeed;
 };
 std::vector<Wetting> WettingNow(const WeatherNow& now) {
     std::vector<Wetting> out;
     const Vec3 wind{now.windX, 0, now.windZ};
     // Rain: all of it wet in the end - sooner the harder it rains (a downpour: about 25 s; a drizzle:
     // about two minutes).
-    if (const float rain = RainNow(now); rain > 0) out.push_back({FallDirection(Precipitation::Kind::Rain, wind), 1.f, 0.004f + rain * 0.036f});
-    // Snow: where it melts, a little wet - slower (2026-11-19).
-    if (const float snow = SnowNow(now); snow > 0) out.push_back({FallDirection(Precipitation::Kind::Snow, wind), kSnowWet, 0.002f + snow * 0.012f});
+    // It seeps under what covers: a downpour 1 m in under two minutes, a drizzle in about seven (2026-11-20).
+    if (const float rain = RainNow(now); rain > 0) {
+        out.push_back({FallDirection(Precipitation::Kind::Rain, wind), 1.f, 0.004f + rain * 0.036f, kSeepRain, 0.002f + rain * 0.008f});
+    }
+    // Snow: where it melts, a little wet - slower (2026-11-19), and it seeps less far.
+    if (const float snow = SnowNow(now); snow > 0) {
+        out.push_back({FallDirection(Precipitation::Kind::Snow, wind), kSnowWet, 0.002f + snow * 0.012f, kSeepSnow, 0.001f + snow * 0.003f});
+    }
     return out;
 }
 
@@ -167,8 +174,9 @@ std::vector<WetWay> WetAtOnce(const WeatherNow& now) {
         auto same = std::find_if(out.begin(), out.end(), [&](const WetWay& o) { return o.way.x * w.way.x + o.way.y * w.way.y + o.way.z * w.way.z >= close; });
         if (same != out.end()) {
             same->sun = same->shade = std::max(same->sun, w.most);
+            same->seep = std::max(same->seep, w.seepMost);
         } else {
-            out.push_back({w.way, w.most, w.most});
+            out.push_back({w.way, w.most, w.most, w.seepMost});
         }
     }
     return out;
@@ -195,6 +203,7 @@ void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt) {
             for (float* level : {&it->sun, &it->shade}) {
                 if (*level < w.most) *level = std::min(w.most, *level + dt * w.speed);
             }
+            if (it->seep < w.seepMost) it->seep = std::min(w.seepMost, it->seep + dt * w.seepSpeed);
         }
         return;
     }

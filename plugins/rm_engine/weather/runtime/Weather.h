@@ -49,8 +49,15 @@ struct WeatherNow {
 struct WetWay {
     Vec3 way{0, -1, 0};        // length 1
     float sun = 0, shade = 0;  // 0 .. 1
+    // しみこみ: how far (metres) the wet has crept from where the rain reached into what it did not (under
+    // a ball, a bench, a barrel: the water spreads over the ground) - longer the longer it falls, up to
+    // kSeepRain (snow: kSeepSnow); kept while it dries. Under a thing smaller than this all of it gets wet;
+    // under a roof only its edge. A stand-in for water that flows: a fluid plugin, when there is one, can
+    // set it (or wet the ground itself) - the touch on the surfaces reads only this number.
+    float seep = 0;
 };
 inline constexpr size_t kWetWays = 4;  // the most kept (a 向きの地図 each)
+inline constexpr float kSeepRain = 1.f, kSeepSnow = 0.4f;
 
 RM_STRUCT(Label="天候")
 struct Weather {
@@ -97,7 +104,9 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds);
 // (all of it in the end: in about 25 seconds in a downpour, two minutes in a drizzle) - a way within kWetWayDegrees of one
 // kept is that one; the others stay as wet as they were (what the rain reached stays wet while it
 // rains). Not raining: all dry - in the sun in a minute and a half, in shade over five minutes - and
-// go when dry. At most kWetWays (a new way takes the place of the least wet one).
+// go when dry. At most kWetWays (a new way takes the place of the least wet one). The way it falls also
+// seeps further under what covers (WetWay::seep: a downpour 1 m in under two minutes, a drizzle in
+// about seven).
 inline constexpr float kWetWayDegrees = 8.f;
 // Snow wets too, where it melts - a little: at most this (rain: 1), more slowly. Nothing dries while
 // rain or snow falls.

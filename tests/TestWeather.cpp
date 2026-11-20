@@ -227,8 +227,9 @@ RM_TEST(Weather_SnowWets) {
     std::vector<WetWay> s;
     StepWet(s, snowy, 1);  // (0.002 + 0.5 x 0.012 a second)
     CHECK(s.size() == 1 && Near(s[0].sun, 0.008f) && Near(s[0].way, {0, -1, 0}));
+    CHECK(Near(s[0].seep, 0.0025f));  // (seeps under what covers: 0.001 + 0.5 x 0.003 m a second)
     StepWet(s, snowy, 1000);
-    CHECK(Near(s[0].sun, kSnowWet) && Near(s[0].shade, kSnowWet));
+    CHECK(Near(s[0].sun, kSnowWet) && Near(s[0].shade, kSnowWet) && Near(s[0].seep, kSeepSnow));
     std::vector<WetWay> rained = {{{0, -1, 0}, 1, 1}};
     StepWet(rained, snowy, 100);
     CHECK(Near(rained[0].sun, 1.f));  // (the rain's wet stays while it snows)
@@ -237,7 +238,7 @@ RM_TEST(Weather_SnowWets) {
     both.weight[2] = 0.5f;
     both.weight[3] = 0.5f;
     both.rain = 1;
-    CHECK(WetAtOnce(both).size() == 1 && Near(WetAtOnce(both)[0].sun, 1.f));
+    CHECK(WetAtOnce(both).size() == 1 && Near(WetAtOnce(both)[0].sun, 1.f) && Near(WetAtOnce(both)[0].seep, kSeepRain));
     WeatherNow fair;
     StepWet(s, fair, 9);
     CHECK(Near(s[0].sun, kSnowWet - 0.1f));  // (dries as the rain's does)
@@ -250,11 +251,16 @@ RM_TEST(Weather_Wetness) {
     rain.rain = 0.25f;
     WeatherNow fair;
     CHECK(WetAtOnce(fair).empty() && WetAtOnce(rain).size() == 1 && Near(WetAtOnce(rain)[0].sun, 1.f));  // (the editor: wet through)
+    CHECK(Near(WetAtOnce(rain)[0].seep, kSeepRain));  // (... and seeped as far as it goes)
     std::vector<WetWay> ways;
     StepWet(ways, rain, 1);  // (0.004 + 0.25 x 0.036 a second)
     CHECK(ways.size() == 1 && Near(ways[0].sun, 0.013f) && Near(ways[0].shade, 0.013f) && Near(ways[0].way, {0, -1, 0}));
+    CHECK(Near(ways[0].seep, 0.004f));  // (seeps under what covers: 0.002 + 0.25 x 0.008 m a second)
     StepWet(ways, rain, 100);
     CHECK(Near(ways[0].sun, 1.f));  // all of it wet in the end, even in a light rain
+    CHECK(Near(ways[0].seep, 0.404f));  // (still seeping further)
+    StepWet(ways, rain, 1000);
+    CHECK(Near(ways[0].seep, kSeepRain));
     WeatherNow downpour = rain;
     downpour.rain = 1;
     std::vector<WetWay> fast;
@@ -277,7 +283,7 @@ RM_TEST(Weather_Wetness) {
     CHECK(Near(ways[0].sun, 1.f) && Near(ways[1].sun, 0.026f));
     // It stops: dries in game time, shade slower; gone when dry.
     StepWet(ways, fair, 9);
-    CHECK(Near(ways[0].sun, 0.9f) && Near(ways[0].shade, 0.97f));
+    CHECK(Near(ways[0].sun, 0.9f) && Near(ways[0].shade, 0.97f) && Near(ways[0].seep, kSeepRain));  // (it seeped: kept while it dries)
     StepWet(ways, fair, 0);  // (paused: no time, no drying)
     CHECK(Near(ways[0].sun, 0.9f));
     StepWet(ways, fair, 100);
@@ -309,11 +315,11 @@ RM_TEST(Weather_Falling) {
     const Vec3 slant = FallDirection(Precipitation::Kind::Snow, {0, 0, -4});
     CHECK(slant.z < -0.7f && Near(slant.x * slant.x + slant.y * slant.y + slant.z * slant.z, 1.f));  // snow: light, far along
     // The surface's numbers: how many, then each way's sun / shade / map.
-    const WetWay ways[2] = {{{0, -1, 0}, 0.5f, 0.75f}, {{1, 0, 0}, 2.f, 0.1f}};
+    const WetWay ways[2] = {{{0, -1, 0}, 0.5f, 0.75f, 0.6f}, {{1, 0, 0}, 2.f, 0.1f}};
     const int maps[2] = {3, -1};
     const std::vector<float> d = WetSurfaceData(ways, maps);
     CHECK(d.size() == 4 * (1 + kWetWays) && d[0] == 2.f);
-    CHECK(d[4] == 0.5f && d[5] == 0.75f && d[6] == 3.f && d[8] == 1.f && d[10] == -1.f);  // (clamped to 1)
+    CHECK(d[4] == 0.5f && d[5] == 0.75f && d[6] == 3.f && d[7] == 0.6f && d[8] == 1.f && d[10] == -1.f && d[11] == 0.f);  // (clamped to 1; w: しみこみ)
     CHECK(d.size() <= 4 * space3d::kSurfaceData);
 }
 

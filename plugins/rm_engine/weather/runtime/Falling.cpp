@@ -170,6 +170,24 @@ float WetOpen(int k, float3 p, float2 s) {
     return open / total;
 }
 
+// しみこみ: how much of the wet reaches a covered point from around it - water spreading over the ground
+// (WetWay::seep). Read at 16 places on a spiral `reach` around it: wet when enough of them are open,
+// fewer and fewer specks toward `reach` in. Under a thing smaller than `reach` all of it is open nearby;
+// under a roof only its edge (2026-11-20: the ground right under a ball or a barrel stayed dry).
+float WetSeep(int k, float3 p, float2 s, float reach) {
+    const float turn = WetNoise(s * 0.8 + 9.7) * 6.2831853;
+    const float4 c = mul(mapViewProj[k], float4(p, 1));
+    const float4 ax = mul(mapViewProj[k], float4(1, 0, 0, 0)), az = mul(mapViewProj[k], float4(0, 0, 1, 0));
+    float open = 0;
+    [unroll] for (int i = 0; i < 16; ++i) {
+        const float r = reach * sqrt((i + 0.5) / 16.0);
+        const float a = i * 2.3999632 + turn;
+        const float2 o = float2(cos(a), sin(a)) * r;
+        open += saturate((0.06 - MapPastAt(k, c + ax * o.x + az * o.y)) / 0.06);
+    }
+    return saturate(open / 16 * 4);
+}
+
 // How wet a surface looks (0 .. 1): the wettest of the ways the rain fell that reached it (a place it
 // reached stays wet while it rains, whatever the wind does after), in the sun or in its shadow (shade
 // dries slower) - small specks, more and more of them until all of it is wet; toward a roof's edge
@@ -188,12 +206,18 @@ float WetAt(float3 wpos, float3 n) {
     // open the place is). How many specks: `wet`; how dark they are: `level`.
     float wet = 0, level = 0;
     [loop] for (int k = 0; k < count; ++k) {
-        float4 way = surfaceData[1 + k];  // x: how wet in the sun, y: in shade, z: its 向きの地図 (-1: none)
+        float4 way = surfaceData[1 + k];  // x: how wet in the sun, y: in shade, z: its 向きの地図 (-1: none), w: しみこみ (m)
         float l = lerp(way.y, way.x, lit);
         level = max(level, l);
         if (l <= wet) continue;
         int m = (int)way.z;
-        wet = m >= 0 && mapInfo[m].x > 0.5 ? max(wet, l * WetOpen(m, p, s)) : l;  // (no map: nothing to hit, all open)
+        if (m < 0 || mapInfo[m].x < 0.5) {
+            wet = l;  // (no map: nothing to hit, all open)
+            continue;
+        }
+        float open = WetOpen(m, p, s);
+        if (way.w > 0.02 && open < 0.999) open = max(open, WetSeep(m, p, s, way.w));
+        wet = max(wet, l * open);
     }
     if (wet <= 0) return 0;
     // Between dry and wet (an edge, the start of the rain) more specks here, fewer there - patches a
@@ -241,6 +265,7 @@ std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const 
         way[0] = std::clamp(ways[k].sun, 0.f, 1.f);
         way[1] = std::clamp(ways[k].shade, 0.f, 1.f);
         way[2] = static_cast<float>(k < maps.size() ? maps[k] : -1);
+        way[3] = std::isfinite(ways[k].seep) ? std::clamp(ways[k].seep, 0.f, 4.f) : 0.f;
     }
     return data;
 }
