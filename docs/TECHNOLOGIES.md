@@ -966,10 +966,17 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — 粒は数万あり、1 つ 1 つ物理の当たり判定 (コライダー) をすると重い。GPU が既に持っている「物の形」を 1 枚の地図にすれば、粒の数に関係なく 1 回の描画で済み、屋根の下・家の中も自然に分かる。その代わり、当たるのは「上から見えている面」だけ (横から吹き込む雨が壁の下に入る、などは無い)
 - **どこ** — `plugins/rm_engine/weather/runtime/` (`Weather.cpp`: 天気・フェード・風・濡れ / `Falling.cpp`: 雨と雪と濡れのシェーダー / `WeatherDraw.cpp`: 地図と濡れと粒を描き手に渡す / `WeatherBlocks.cpp` / `ScriptWeather.cpp`・`sdk/RMWeather.h`)・`plugins/rm_engine/weather_x_physics/runtime/Register.cpp`・`plugins/rm_engine/space3d/runtime/RendererShaders.cpp` (`kDirectionMapHlsl`・`Surface`)・`Renderer3D.cpp` (向きの地図・`MeshPsFor`)・`Lighting.cpp` (`PlanCover`)・`plugins/rm_engine/game_x_3d/runtime/Sky.cpp` (`SkyWeather`)・`WorldDraw.h` (`PrepareFrame`)・テスト `tests/TestWeather.cpp`・`tests/TestSky.cpp`・`tests/TestSpace3d.cpp` (`PlanCover`)
 
+### ビルドを速くする (全部のファイルを並べてコンパイル・64 ビットのコンパイラー)
+- **何か** — リポジトリの一番上の `Directory.Build.props` は、MSBuild (VS のビルドも同じ) がその下の全プロジェクトを読む前に読むファイル。ここでエンジンのプロジェクトだけに 3 つ指定する: **`UseMultiToolTask`** (全部の .cpp を、コアの数だけ同時にコンパイルする)・**`EnforceProcessCountAcrossBuilds`** (プロジェクトが同時に走っても、コンパイラーの数をコアの数までにする)・**`PreferredToolArchitecture=x64`** (64 ビット版のコンパイラーとリンカーを使う)。並べたコンパイラーは 1 つのデバッグ情報 (PDB) に書くので、`/FS` (`src/RM.Common.props`) で順番に書かせる
+- **なぜそれか** — プラグインはフォルダーごとに別の置き場 (.obj) を持つので、MSBuild はフォルダーごとに別々のコンパイラーの呼び出しにし、それを 1 つずつ順に走らせていた (/MP は 1 回の呼び出しの中だけを並べる)。ファイルが 2 つのフォルダーなら 2 コアしか使わない。測ると、よく使うヘッダーを変えたときの Debug ビルドが 123 秒 → 46 秒、照明のヘッダーで 45 秒 → 14 秒、.cpp 1 つで 9 秒 → 4 秒 (16 コア)
+- **工夫** — `PreferredToolArchitecture` は `Microsoft.Cpp.props` より前でないと効かないので、プロジェクトが後から読む `RM.Common.props` ではなく `Directory.Build.props` に書く。ゲームのスクリプトのプロジェクト (`Project/` の下にあることがある) は変えないよう、プロジェクトの名前で絞る
+- **どこ** — `Directory.Build.props`・`src/RM.Common.props`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-20 | ビルドを速くする (Directory.Build.props で全部のファイルを並べてコンパイル・64 ビットのコンパイラー・/FS) を足した |
 | 2026-11-19 | スクリプトの型の作る・消す・写すを構造化例外処理で守る中継の関数 (テンプレートの番号の表) と、Jolt の体をその場で変える方法を足した |
 | 2026-11-19 | 雨と雪が物に当たる・濡れる (上から見た深度の地図)、天気のフェード (割合で混ぜる)、風 (足し合わせた距離でずらす) を足した |
 | 2026-11-19 | 雨と雪の当たりを、降る向きから見たコライダーの地図に変えた (風で屋根の下にも入る・雪は止まってから溶ける)。つなぎプラグイン「ゲーム制作 × 3D × 物理」を足した |

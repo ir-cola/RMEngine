@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Read by MSBuild before every project below this folder (before Microsoft.Cpp.props: the only place
+     PreferredToolArchitecture still takes effect). Only the engine's own projects are changed - not a
+     game's Scripts.vcxproj that may lie in Project/ (its build is RM Engine's own, ScriptBuild.cpp).
+     Faster builds (2026-11-20, measured: a widely used header changed, Debug: 123 s -> 46 s):
+       - UseMultiToolTask: every source file is compiled side by side across the cores. Without it the
+         plugin folders (each its own object folder: its own CL call) were compiled one call after another,
+         a folder of 2 files using 2 cores.
+       - PreferredToolArchitecture x64: the 64-bit compiler and linker (not the 32-bit ones).
+       - /FS (RM.Common.props): the CL processes running side by side share one PDB. -->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'RM_Engine' Or '$(MSBuildProjectName)' == 'RMBase' Or '$(MSBuildProjectName)' == 'RMJolt' Or '$(MSBuildProjectName)' == 'RMGameKit' Or '$(MSBuildProjectName)' == 'RMTests' Or '$(MSBuildProjectName)' == 'rmgen'">
+    <UseMultiToolTask>true</UseMultiToolTask>
+    <EnforceProcessCountAcrossBuilds>true</EnforceProcessCountAcrossBuilds>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+</Project>

@@ -18,7 +18,8 @@
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalOptions>/utf-8 /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <!-- /FS: the compilers running side by side (UseMultiToolTask, ../Directory.Build.props) share one PDB -->
+      <AdditionalOptions>/utf-8 /Zc:__cplusplus /FS %(AdditionalOptions)</AdditionalOptions>
       <!-- JPH_*: Jolt Physics' settings (RMJolt.vcxproj), the same for every project and both configurations
            (Jolt checks that its library and the code using it agree). Results that do not depend on the CPU
            (the same steps give the same positions on every PC): replays and tests stay true. -->
