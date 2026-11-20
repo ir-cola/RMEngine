@@ -228,6 +228,9 @@ struct RenderFrame {
     // directions (at most kDirectionMaps; map k is the k-th) - read by `surface` and by `extras`.
     std::span<const Vec3> mapDirections;
     std::span<const MapShape> mapShapes;
+    // Map k sees only the moving shapes when mapMovingOnly[k] is not 0 (天候: the undersides of what
+    // walks through the snow, seen from below). Shorter than mapDirections: the rest see all.
+    std::span<const uint8_t> mapMovingOnly;
     const SurfaceTouch* surface = nullptr;  // a plugin's touch on every surface (null: none)
 };
 
@@ -342,7 +345,7 @@ private:
     std::vector<Cmd> cmds_;
     size_t mergeFloor_ = 0;
     std::vector<DrawKey> keys_;
-    std::vector<uint32_t> order_, casterOrder_, mapOrder_, still_, moving_;
+    std::vector<uint32_t> order_, casterOrder_, mapOrder_, mapMovingOrder_, still_, moving_;
     std::vector<std::pair<uint32_t, uint32_t>> refs_;  // (item, part) of each key
     struct PictureSetHash {
         size_t operator()(const std::array<const void*, 5>& a) const noexcept {

@@ -39,8 +39,9 @@ public:
         directions_.clear();
         falls_.clear();
         solids_.clear();
-        snowCover_ = 0;
-        snowMap_ = -1;
+        movingOnly_.clear();
+        upMap_ = -1;
+        anySnow_ = false;
         const Weather* w = f.scene.Setting<Weather>();
         if (!w || !f.atmosphere) return;
         const WeatherNow now = NowOf(*w);
@@ -69,12 +70,22 @@ public:
             wetMaps_.push_back(static_cast<int>(directions_.size()));
             directions_.push_back(way.way);
         }
-        // 積雪: what the snow reaches straight down (a map of its own).
-        snowCover_ = SnowCoverNow(*w);
-        if (snowCover_ > 0) {
-            snowMap_ = static_cast<int>(directions_.size());
-            directions_.push_back({0, -1, 0});
+        // 積雪 lies on what each way's map sees. Footprints (only while the game plays): the moving
+        // shapes seen from below (a map of their own, of them only).
+        for (const WetWay& way : wet_) anySnow_ = anySnow_ || way.snow > 0.0005f;
+        if (!f.playing) {
+            trailsOn_ = false;
+        } else if (!trailsOn_) {
+            trailsOn_ = true;
+            ++trailCount_;  // (a new Play: no footprints yet)
         }
+        trailFill_ = trailsOn_ ? SnowFallRate(now, w->snowDepth) * std::max(f.dt, 0.f) : 0.f;
+        if (anySnow_ && trailsOn_) {
+            upMap_ = static_cast<int>(directions_.size());
+            directions_.push_back({0, 1, 0});
+        }
+        movingOnly_.assign(directions_.size(), 0);
+        if (upMap_ >= 0) movingOnly_[static_cast<size_t>(upMap_)] = 1;
         if (directions_.empty()) return;
         // What they hit: the colliders (the connector 天候 × 物理), never drawn.
         if (f.registry) {
@@ -85,19 +96,20 @@ public:
         if (shapes_.empty()) {
             for (Precipitation& p : falls_) p.map = -1;  // (nothing to hit: no maps - all open)
             std::fill(wetMaps_.begin(), wetMaps_.end(), -1);
-            snowMap_ = -1;
+            upMap_ = -1;
         } else {
             out.mapDirections = directions_;
             out.mapShapes = shapes_;
+            out.mapMovingOnly = movingOnly_;
         }
-        if (!wet_.empty() || snowCover_ > 0) {
+        if (!wet_.empty()) {
             surface_.code = kWetSurfaceHlsl;
-            surface_.data = WetSurfaceData(wet_, wetMaps_, snowCover_, snowMap_);
+            surface_.data = WetSurfaceData(wet_, wetMaps_);
             out.surface = &surface_;
         }
-        // The snow lying with its height (on the tops the map sees; thin: in its patches).
-        if (snowCover_ > 0 && snowMap_ >= 0 && LayerReady(f.gfx)) {
-            solids_.push_back([this](const space3d::ExtraDrawContext& dc) { DrawSnowLayer(dc); });
+        // The snow lying with its height (on what the ways' maps see; thin: in lumps), and its footprints.
+        if (anySnow_ && !shapes_.empty() && LayerReady(f.gfx)) {
+            solids_.push_back([this](const space3d::ExtraDrawContext& dc) { DrawSnow(dc); });
             out.solids = solids_;
         }
     }
@@ -169,27 +181,71 @@ private:
         return true;
     }
 
-    // The snow lying's shaders (made from the renderer's text: lit as the models are), once per device.
+    // The snow lying's shaders (made from the renderer's text: lit as the models are), its grid's
+    // corners and the footprints' two pictures - once per device.
     bool LayerReady(platform::Gfx& gfx) {
         if (layerGeneration_ == gfx.Generation() && (layerVs_ || layerFailed_)) return layerVs_ != nullptr;
         layerGeneration_ = gfx.Generation();
         layerVs_.Reset();
         layerPs_.Reset();
         layerCb_.Reset();
+        layerIndices_.Reset();
+        trailVs_.Reset();
+        trailPs_.Reset();
+        trailCb_.Reset();
+        for (TrailPicture& t : trails_) t = {};
         layerFailed_ = false;
         ID3D11Device* device = gfx.D3D();
         if (!device) return false;
-        const std::string text = space3d::RendererShaderText(kWetSurfaceHlsl) + kSnowLayerHlsl;
-        Ptr<ID3DBlob> vs, ps;
+        const std::string base = space3d::RendererShaderText(kWetSurfaceHlsl);
+        const std::string layerText = base + kSnowLayerHlsl, trailText = base + kSnowTrailHlsl;
+        Ptr<ID3DBlob> vs, ps, tvs, tps;
         std::string error;
-        D3D11_BUFFER_DESC cd{};
-        cd.Usage = D3D11_USAGE_DEFAULT;
-        cd.ByteWidth = sizeof(SnowLayerConstants);
-        cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        if (!Compile(text, "SnowLayerVS", "vs_4_0", vs, error) || !Compile(text, "SnowLayerPS", "ps_4_0", ps, error) ||
-            FAILED(device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &layerVs_)) ||
-            FAILED(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &layerPs_)) ||
-            FAILED(device->CreateBuffer(&cd, nullptr, &layerCb_))) {
+        auto cbuffer = [&](UINT bytes, Ptr<ID3D11Buffer>& out) {
+            D3D11_BUFFER_DESC cd{};
+            cd.Usage = D3D11_USAGE_DEFAULT;
+            cd.ByteWidth = bytes;
+            cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            return SUCCEEDED(device->CreateBuffer(&cd, nullptr, &out));
+        };
+        // The grid's two triangles a cell (its corners are numbered row by row: SnowLayerVS).
+        std::vector<uint32_t> indices;
+        indices.reserve(size_t{kSnowCells} * kSnowCells * 6);
+        const uint32_t side = kSnowCells + 1;
+        for (uint32_t y = 0; y < kSnowCells; ++y) {
+            for (uint32_t x = 0; x < kSnowCells; ++x) {
+                const uint32_t c = y * side + x;
+                for (const uint32_t i : {c, c + 1, c + side, c + side, c + 1, c + side + 1}) indices.push_back(i);
+            }
+        }
+        D3D11_BUFFER_DESC id{};
+        id.Usage = D3D11_USAGE_IMMUTABLE;
+        id.ByteWidth = static_cast<UINT>(indices.size() * sizeof(uint32_t));
+        id.BindFlags = D3D11_BIND_INDEX_BUFFER;
+        D3D11_SUBRESOURCE_DATA idata{indices.data(), 0, 0};
+        bool ok = Compile(layerText, "SnowLayerVS", "vs_4_0", vs, error) && Compile(layerText, "SnowLayerPS", "ps_4_0", ps, error) &&
+                  Compile(trailText, "SnowTrailVS", "vs_4_0", tvs, error) && Compile(trailText, "SnowTrailPS", "ps_4_0", tps, error);
+        ok = ok && SUCCEEDED(device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &layerVs_)) &&
+             SUCCEEDED(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &layerPs_)) &&
+             SUCCEEDED(device->CreateVertexShader(tvs->GetBufferPointer(), tvs->GetBufferSize(), nullptr, &trailVs_)) &&
+             SUCCEEDED(device->CreatePixelShader(tps->GetBufferPointer(), tps->GetBufferSize(), nullptr, &trailPs_)) &&
+             cbuffer(sizeof(SnowLayerConstants), layerCb_) && cbuffer(sizeof(SnowTrailConstants), trailCb_) &&
+             SUCCEEDED(device->CreateBuffer(&id, &idata, &layerIndices_));
+        // The footprints: two pictures, each frame drawn from the other.
+        for (TrailPicture& t : trails_) {
+            if (!ok) break;
+            D3D11_TEXTURE2D_DESC td{};
+            td.Width = td.Height = kTrailCells;
+            td.MipLevels = td.ArraySize = 1;
+            td.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+            td.SampleDesc.Count = 1;
+            td.Usage = D3D11_USAGE_DEFAULT;
+            td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+            ok = SUCCEEDED(device->CreateTexture2D(&td, nullptr, &t.texture)) && SUCCEEDED(device->CreateShaderResourceView(t.texture.Get(), nullptr, &t.srv)) &&
+                 SUCCEEDED(device->CreateRenderTargetView(t.texture.Get(), nullptr, &t.rtv));
+        }
+        trailsCleared_ = false;
+        if (!ok) {
             log::Error("積もった雪を描く準備ができません: {}", error);
             layerVs_.Reset();
             layerFailed_ = true;
@@ -198,30 +254,82 @@ private:
         return true;
     }
 
-    // The snow lying (RenderFrame::solids: after the models, writing depth, lit as they are). Its corners
-    // read the map straight down in the vertex shader; the pixel shader uses the models' lighting, still
-    // bound.
-    void DrawSnowLayer(const space3d::ExtraDrawContext& dc) {
+    // 積雪 (RenderFrame::solids: after the models, writing depth, lit as they are): the footprints move
+    // on a frame (while the game plays), then a layer for each way with snow.
+    void DrawSnow(const space3d::ExtraDrawContext& dc) {
         if (!layerVs_ || !dc.directionMaps) return;
-        const SnowLayerConstants k = SnowLayerOf(dc.eye, snowCover_, snowMap_);
         ID3D11DeviceContext* ctx = dc.ctx;
-        ctx->UpdateSubresource(layerCb_.Get(), 0, nullptr, &k, 0, 0);
-        ID3D11Buffer* cb = layerCb_.Get();
+        ID3D11Buffer* none = nullptr;
+        ID3D11ShaderResourceView* noTexture = nullptr;
         ID3D11Buffer* maps = dc.directionMapsCb;
         ID3D11ShaderResourceView* mapTexture = dc.directionMaps;
+        if (!trailsCleared_) {  // (a new picture holds anything: no world cell matches what it says)
+            const float nothing[4] = {1e30f, 1e30f, 1e30f, -1};
+            for (TrailPicture& t : trails_) ctx->ClearRenderTargetView(t.rtv.Get(), nothing);
+            trailsCleared_ = true;
+        }
+        if (trailsOn_) {
+            TrailPicture& from = trails_[trailNow_];
+            TrailPicture& to = trails_[1 - trailNow_];
+            const SnowTrailConstants tk = SnowTrailOf(dc.eye, trailCount_, trailFill_, upMap_);
+            ctx->UpdateSubresource(trailCb_.Get(), 0, nullptr, &tk, 0, 0);
+            // Its own target and size; the picture's are set back after.
+            Ptr<ID3D11RenderTargetView> rtvBefore;
+            Ptr<ID3D11DepthStencilView> dsvBefore;
+            ctx->OMGetRenderTargets(1, &rtvBefore, &dsvBefore);
+            UINT viewports = 1;
+            D3D11_VIEWPORT viewportBefore{};
+            ctx->RSGetViewports(&viewports, &viewportBefore);
+            Ptr<ID3D11BlendState> blendBefore;
+            float factorBefore[4] = {};
+            UINT maskBefore = 0xFFFFFFFF;
+            ctx->OMGetBlendState(&blendBefore, factorBefore, &maskBefore);
+            ctx->VSSetShaderResources(9, 1, &noTexture);
+            ctx->OMSetRenderTargets(1, to.rtv.GetAddressOf(), nullptr);
+            const D3D11_VIEWPORT vp{0, 0, static_cast<float>(kTrailCells), static_cast<float>(kTrailCells), 0, 1};
+            ctx->RSSetViewports(1, &vp);
+            ctx->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
+            ID3D11Buffer* cb = trailCb_.Get();
+            ID3D11ShaderResourceView* before = from.srv.Get();
+            ctx->PSSetConstantBuffers(4, 1, &cb);
+            ctx->PSSetShaderResources(9, 1, &before);
+            ctx->IASetInputLayout(nullptr);
+            ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            ctx->VSSetShader(trailVs_.Get(), nullptr, 0);
+            ctx->PSSetShader(trailPs_.Get(), nullptr, 0);
+            ctx->Draw(3, 0);
+            ctx->PSSetShaderResources(9, 1, &noTexture);
+            ctx->PSSetConstantBuffers(4, 1, &none);
+            ctx->OMSetRenderTargets(1, rtvBefore.GetAddressOf(), dsvBefore.Get());
+            ctx->RSSetViewports(1, &viewportBefore);
+            ctx->OMSetBlendState(blendBefore.Get(), factorBefore, maskBefore);
+            trailNow_ = 1 - trailNow_;
+        }
+        // The layers (corners read the maps and the footprints in the vertex shader; the pixel shader the
+        // maps again - which way draws a place - and the models' lighting, still bound).
+        ID3D11Buffer* cb = layerCb_.Get();
+        ID3D11ShaderResourceView* trail = trails_[trailNow_].srv.Get();
         ctx->VSSetConstantBuffers(4, 1, &cb);
+        ctx->PSSetConstantBuffers(4, 1, &cb);
         ctx->VSSetConstantBuffers(6, 1, &maps);
         ctx->VSSetShaderResources(8, 1, &mapTexture);
+        ctx->VSSetShaderResources(9, 1, &trail);
         ctx->IASetInputLayout(nullptr);  // (each corner made from its number)
+        ctx->IASetIndexBuffer(layerIndices_.Get(), DXGI_FORMAT_R32_UINT, 0);
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(layerVs_.Get(), nullptr, 0);
         ctx->PSSetShader(layerPs_.Get(), nullptr, 0);
-        ctx->Draw(kSnowCells * kSnowCells * 6, 0);
-        ID3D11Buffer* none = nullptr;
-        ID3D11ShaderResourceView* noTexture = nullptr;
+        for (size_t k = 0; k < wet_.size() && k < wetMaps_.size(); ++k) {
+            if (!(wet_[k].snow > 0.0005f) || wetMaps_[k] < 0) continue;
+            const SnowLayerConstants lk = SnowLayerOf(dc.eye, wet_, wetMaps_, k, trailCount_, trailsOn_);
+            ctx->UpdateSubresource(cb, 0, nullptr, &lk, 0, 0);
+            ctx->DrawIndexed(kSnowCells * kSnowCells * 6, 0, 0);
+        }
         ctx->VSSetConstantBuffers(4, 1, &none);
+        ctx->PSSetConstantBuffers(4, 1, &none);
         ctx->VSSetConstantBuffers(6, 1, &none);
         ctx->VSSetShaderResources(8, 1, &noTexture);
+        ctx->VSSetShaderResources(9, 1, &noTexture);
     }
 
     // Rain or snow around the eye: see-through, depth-tested, writing no depth (as an ExtraDraw is
@@ -285,11 +393,24 @@ private:
     std::vector<WeatherBlocker> blockers_;
     space3d::SurfaceTouch surface_;
     std::vector<space3d::ExtraDraw> solids_;
-    float snowCover_ = 0;
-    int snowMap_ = -1;
-    Ptr<ID3D11VertexShader> layerVs_;
-    Ptr<ID3D11PixelShader> layerPs_;
-    Ptr<ID3D11Buffer> layerCb_;
+    std::vector<uint8_t> movingOnly_;  // RenderFrame::mapMovingOnly: the map from below
+    int upMap_ = -1;                   // the moving shapes from below (footprints; -1: none)
+    bool anySnow_ = false;
+    // 積雪's GPU things (LayerReady) and the footprints: two pictures, the one drawn last (trailNow_);
+    // trailCount_ goes up with each Play (each its own footprints); trailFill_: m to fill up this frame.
+    struct TrailPicture {
+        Ptr<ID3D11Texture2D> texture;
+        Ptr<ID3D11ShaderResourceView> srv;
+        Ptr<ID3D11RenderTargetView> rtv;
+    };
+    Ptr<ID3D11VertexShader> layerVs_, trailVs_;
+    Ptr<ID3D11PixelShader> layerPs_, trailPs_;
+    Ptr<ID3D11Buffer> layerCb_, trailCb_, layerIndices_;
+    TrailPicture trails_[2];
+    size_t trailNow_ = 0;
+    uint32_t trailCount_ = 0;
+    float trailFill_ = 0;
+    bool trailsOn_ = false, trailsCleared_ = false;
     uint64_t layerGeneration_ = ~uint64_t{0};
     bool layerFailed_ = false;
     Ptr<ID3D11VertexShader> vs_;

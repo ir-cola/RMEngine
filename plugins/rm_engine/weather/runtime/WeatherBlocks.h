@@ -27,7 +27,8 @@ inline constexpr char kWeatherBlockersPoint[] = "rm_engine.weather.blockers";
 struct WeatherBlocker {
     enum class Kind : uint8_t { Box, Sphere, Cylinder, Model } kind = Kind::Box;
     space3d::Mat4 world;
-    int entity = 0;  // Model: whose
+    int entity = 0;       // Model: whose
+    bool moving = false;  // it moves (a character, a body that is not 動かない): it leaves footprints in snow
 };
 
 struct WeatherBlockersInfo {

@@ -20,7 +20,7 @@ void MakeWeatherBlocks(const game_production::Scene& scene, const RuntimeRegistr
             case WeatherBlocker::Kind::Cylinder: mesh = shapeOf ? shapeOf(space3d::Shape::Cylinder) : nullptr; break;
             case WeatherBlocker::Kind::Model: mesh = modelOf ? modelOf(b.entity) : nullptr; break;
         }
-        if (mesh) out.push_back({mesh, b.world, false});
+        if (mesh) out.push_back({mesh, b.world, b.moving});
     }
 }
 

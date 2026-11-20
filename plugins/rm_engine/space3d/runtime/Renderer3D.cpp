@@ -969,6 +969,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         list.clear();
         for (const uint32_t k : order_) list.push_back(still_[k]);
     }
+    mapMovingOrder_.clear();  // (the moving ones only: RenderFrame::mapMovingOnly)
+    for (const uint32_t i : mapOrder_) {
+        if (items_[i].moving) mapMovingOrder_.push_back(i);
+    }
 
     // 1. The shadow maps to draw: what casts, seen from each light. Only what lies in a map is drawn
     // into it (each map's own view: a light's, a cascade's), and a map that would hold the same as it
@@ -1105,7 +1109,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             dm.info[k][1] = static_cast<float>((k % s.directionMaps.cols) * kCoverSize);
             dm.info[k][2] = static_cast<float>((k / s.directionMaps.cols) * kCoverSize);
             dm.info[k][3] = plan.range;
-            planMap(s.directionMaps, k, plan.viewProj, mapOrder_);
+            const bool movingOnly = k < f.mapMovingOnly.size() && f.mapMovingOnly[k] != 0;
+            planMap(s.directionMaps, k, plan.viewProj, movingOnly ? mapMovingOrder_ : mapOrder_);
         }
     }
 

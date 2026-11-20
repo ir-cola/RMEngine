@@ -166,7 +166,7 @@ std::vector<Wetting> WettingNow(const WeatherNow& now) {
 
 }  // namespace
 
-std::vector<WetWay> WetAtOnce(const WeatherNow& now) {
+std::vector<WetWay> WetAtOnce(const WeatherNow& now, float snowMost) {
     // (as after a while of it: each falling thing's way as wet as it makes things)
     std::vector<WetWay> out;
     const float close = std::cos(kWetWayDegrees * kDegrees);
@@ -179,15 +179,37 @@ std::vector<WetWay> WetAtOnce(const WeatherNow& now) {
             out.push_back({w.way, w.most, w.most, w.seepMost});
         }
     }
+    // The snow lying (as after a while of it): all of 積もる高さ, the way it falls.
+    if (SnowNow(now) > 0) {
+        const Vec3 snowWay = FallDirection(Precipitation::Kind::Snow, {now.windX, 0, now.windZ});
+        auto it = std::find_if(out.begin(), out.end(), [&](const WetWay& o) { return o.way.x * snowWay.x + o.way.y * snowWay.y + o.way.z * snowWay.z >= close; });
+        if (it != out.end()) it->snow = StepSnowCover(0, now, snowMost, 1e9f);
+    }
     return out;
 }
 
-void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt) {
+void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt, float snowMost) {
     dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
+    const float close = std::cos(kWetWayDegrees * kDegrees);
+    auto dot = [](Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+    // 積雪, all of it now and after: shared out below.
+    float snowBefore = 0;
+    for (const WetWay& w : ways) snowBefore += std::isfinite(w.snow) ? std::max(w.snow, 0.f) : 0.f;
+    const float snowAfter = StepSnowCover(snowBefore, now, snowMost, dt);
+    auto shareSnow = [&] {
+        if (snowAfter > snowBefore && SnowNow(now) > 0) {
+            // What fell goes to the way it falls (WettingNow made it a way).
+            const Vec3 snowWay = FallDirection(Precipitation::Kind::Snow, {now.windX, 0, now.windZ});
+            auto it = std::find_if(ways.begin(), ways.end(), [&](const WetWay& o) { return dot(o.way, snowWay) >= close; });
+            if (it != ways.end()) it->snow = std::max(it->snow, 0.f) + (snowAfter - snowBefore);
+        } else if (snowAfter < snowBefore) {
+            // What melts goes from all of them alike.
+            const float keep = snowBefore > 0 ? snowAfter / snowBefore : 0.f;
+            for (WetWay& w : ways) w.snow = std::isfinite(w.snow) ? std::max(w.snow, 0.f) * keep : 0.f;
+        }
+    };
     const std::vector<Wetting> wetting = WettingNow(now);
     if (!wetting.empty()) {
-        const float close = std::cos(kWetWayDegrees * kDegrees);
-        auto dot = [](Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
         for (const Wetting& w : wetting) {
             auto it = std::find_if(ways.begin(), ways.end(), [&](const WetWay& o) { return dot(o.way, w.way) >= close; });
             if (it == ways.end()) {
@@ -195,7 +217,7 @@ void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt) {
                     ways.push_back({w.way, 0, 0});
                     it = ways.end() - 1;
                 } else {
-                    it = std::min_element(ways.begin(), ways.end(), [](const WetWay& a, const WetWay& b) { return a.sun + a.shade < b.sun + b.shade; });
+                    it = std::min_element(ways.begin(), ways.end(), [](const WetWay& a, const WetWay& b) { return a.sun + a.shade + a.snow < b.sun + b.shade + b.snow; });
                     *it = {w.way, 0, 0};
                 }
             }
@@ -205,13 +227,15 @@ void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt) {
             }
             if (it->seep < w.seepMost) it->seep = std::min(w.seepMost, it->seep + dt * w.seepSpeed);
         }
+        shareSnow();
         return;
     }
     for (WetWay& w : ways) {
         w.sun = std::max(0.f, w.sun - dt / 90.f);
         w.shade = std::max(0.f, w.shade - dt / 300.f);
     }
-    std::erase_if(ways, [](const WetWay& w) { return w.sun <= 0 && w.shade <= 0; });
+    shareSnow();
+    std::erase_if(ways, [](const WetWay& w) { return w.sun <= 0 && w.shade <= 0 && !(w.snow > 0); });
 }
 
 float WetnessOf(const std::vector<WetWay>& ways) {
@@ -220,22 +244,28 @@ float WetnessOf(const std::vector<WetWay>& ways) {
     return most;
 }
 
-std::vector<WetWay> WetNow(const Weather& w) { return w.wetCounted ? w.wetWays : WetAtOnce(NowOf(w)); }
+std::vector<WetWay> WetNow(const Weather& w) { return w.wetCounted ? w.wetWays : WetAtOnce(NowOf(w), w.snowDepth); }
 
 float StepSnowCover(float cover, const WeatherNow& now, float most, float dt) {
     dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
     most = std::isfinite(most) ? std::clamp(most, 0.f, kMostSnowDepth) : 0.f;
     cover = std::isfinite(cover) ? std::clamp(cover, 0.f, most) : 0.f;
-    if (const float snow = SnowNow(now); snow > 0) {
-        // (all of 積もる高さ in 240 s at 1, 400 s at 0.5)
-        return std::min(most, cover + dt * most * (0.1f + snow * 0.9f) / 240.f);
+    if (const float rate = SnowFallRate(now, most); rate > 0) {
+        return std::min(most, cover + dt * rate);  // (all of 積もる高さ in 240 s at 1, 400 s at 0.5)
     }
     return std::max(0.f, cover - dt * (0.0002f + RainNow(now) * 0.002f));
 }
 
+float SnowFallRate(const WeatherNow& now, float most) {
+    const float snow = SnowNow(now);
+    most = std::isfinite(most) ? std::clamp(most, 0.f, kMostSnowDepth) : 0.f;
+    return snow > 0 ? most * (0.1f + snow * 0.9f) / 240.f : 0.f;
+}
+
 float SnowCoverNow(const Weather& w) {
-    if (w.wetCounted) return std::isfinite(w.snowCover) ? std::max(w.snowCover, 0.f) : 0.f;
-    return SnowNow(NowOf(w)) > 0 && std::isfinite(w.snowDepth) ? std::clamp(w.snowDepth, 0.f, kMostSnowDepth) : 0.f;
+    float all = 0;
+    for (const WetWay& way : WetNow(w)) all += std::isfinite(way.snow) ? std::max(way.snow, 0.f) : 0.f;
+    return all;
 }
 
 void RunWeather(game_production::SystemContext& ctx) {
@@ -245,12 +275,10 @@ void RunWeather(game_production::SystemContext& ctx) {
     if (w->fadeSeconds > 0 && w->fadeElapsed < w->fadeSeconds) w->fadeElapsed = std::min(w->fadeElapsed + dt, w->fadeSeconds);
     const WeatherNow now = NowOf(*w);
     if (!w->wetCounted) {
-        w->wetWays.clear();  // (the game starts dry: the rain wets it as it plays - 2026-11-19)
-        w->snowCover = 0;    // (and with no snow: it lies as it snows - 2026-11-20)
+        w->wetWays.clear();  // (the game starts dry and with no snow: it lies as it snows - 2026-11-19 / 20)
         w->wetCounted = true;
     }
-    StepWet(w->wetWays, now, dt);
-    w->snowCover = StepSnowCover(w->snowCover, now, w->snowDepth, dt);
+    StepWet(w->wetWays, now, dt, w->snowDepth);
     w->driftX = std::fmod(w->driftX + now.windX * dt, kDriftWrap);
     w->driftZ = std::fmod(w->driftZ + now.windZ * dt, kDriftWrap);
 }

@@ -172,6 +172,7 @@ public:
                 if (frame.mapDirections.empty() && !add.mapDirections.empty()) {
                     frame.mapDirections = add.mapDirections;
                     frame.mapShapes = add.mapShapes;
+                    frame.mapMovingOnly = add.mapMovingOnly;
                 }
                 if (!frame.surface) frame.surface = add.surface;
                 if (frame.solids.empty()) frame.solids = add.solids;

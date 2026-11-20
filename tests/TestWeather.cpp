@@ -9,6 +9,7 @@
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/RendererShaders.h"
 #include "rm_engine/space3d/runtime/SkyShader.h"
+#include "rm_engine/space3d/runtime/View.h"
 #include "rm_engine/weather/runtime/Falling.h"
 #include "rm_engine/weather/runtime/Weather.h"
 
@@ -269,25 +270,54 @@ RM_TEST(Weather_SnowCover) {
     CHECK(StepSnowCover(0.01f, fair, 0.24f, 1000) == 0.f);
     CHECK(StepSnowCover(std::nanf(""), snowy, 0.24f, 1) >= 0.f && StepSnowCover(0, snowy, 99.f, 1e9f) == kMostSnowDepth);
     CHECK(StepSnowCover(0.1f, snowy, 0.24f, std::nanf("")) == 0.1f);
-    // As a picture shows it: the editor - at its full depth while it snows; Play - as counted.
+    CHECK(Near(SnowFallRate(snowy, 0.24f), 0.001f) && SnowFallRate(fair, 0.24f) == 0.f);  // (footprints fill up as fast)
+    // The ways share it: what falls goes to the way it falls (slanted by the wind: a way of its own),
+    // what melts goes from all alike.
+    std::vector<WetWay> ways;
+    StepWet(ways, snowy, 100, 0.24f);
+    CHECK(ways.size() == 1 && Near(ways[0].snow, 0.1f) && Near(ways[0].way, {0, -1, 0}));
+    WeatherNow windy = snowy;
+    windy.windX = 3;
+    StepWet(ways, windy, 50, 0.24f);
+    CHECK(ways.size() == 2 && Near(ways[0].snow, 0.1f) && Near(ways[1].snow, 0.05f) && ways[1].way.x > 0.3f);
+    StepWet(ways, windy, 1000, 0.24f);
+    CHECK(Near(ways[0].snow + ways[1].snow, 0.24f));  // (all of it: never above 積もる高さ)
+    const float before0 = ways[0].snow, before1 = ways[1].snow;
+    StepWet(ways, fair, 60, 0.24f);
+    CHECK(Near(ways[0].snow + ways[1].snow, 0.228f) && Near(ways[0].snow / before0, ways[1].snow / before1));
+    StepWet(ways, fair, 100000, 0.24f);
+    CHECK(ways.empty());  // (dry and melted: gone)
+    // As a picture shows it: the editor - all of it lying, the way it falls; Play - as counted.
     Weather w;
     w.kind = WeatherKind::Snow;
     w.snowDepth = 0.3f;
     CHECK(Near(SnowCoverNow(w), 0.3f));
+    CHECK(WetAtOnce(NowOf(w), w.snowDepth).size() == 1 && Near(WetAtOnce(NowOf(w), w.snowDepth)[0].snow, 0.3f));
     w.kind = WeatherKind::Clear;
     CHECK(SnowCoverNow(w) == 0.f);
     w.wetCounted = true;
-    w.snowCover = 0.05f;
+    w.wetWays = {{{0, -1, 0}, 0, 0, 0, 0.05f}};
     CHECK(Near(SnowCoverNow(w), 0.05f));
-    // The snow lying with its height: a grid around the eye in whole cells, the map's square.
-    const SnowLayerConstants k = SnowLayerOf({10.1f, 3, -7.3f}, 0.3f, 6);
-    const float cell = space3d::kCoverSide / static_cast<float>(kSnowCells);
-    CHECK(Near(k.grid[2], cell) && k.grid[3] == static_cast<float>(kSnowCells));
-    CHECK(Near(k.grid[0] + cell * kSnowCells * 0.5f, std::floor(10.1f / cell) * cell));
-    CHECK(Near(k.grid[1] + cell * kSnowCells * 0.5f, std::floor(-7.3f / cell) * cell));
-    CHECK(Near(k.info[0], 0.3f) && k.info[1] == 6.f && Near(k.info[2], 3.f));
-    const SnowLayerConstants moved = SnowLayerOf({10.1f + cell * 0.3f, 3, -7.3f}, 0.3f, 6);
-    CHECK(moved.grid[0] == k.grid[0]);  // (a step smaller than a cell: the same grid)
+    // A layer for a way: a grid across it around the eye in whole cells; every way's snow and map.
+    const WetWay lying[2] = {{{0, -1, 0}, 0, 0, 0, 0.2f}, {space3d::Normalize(Vec3{1, -2, 0}), 0, 0, 0, 0.1f}};
+    const int maps[2] = {3, 5};
+    const SnowLayerConstants k = SnowLayerOf({10.1f, 3, -7.3f}, lying, maps, 1, 7, true);
+    CHECK(Near(k.across[3], kSnowCell) && k.along[3] == static_cast<float>(kSnowCells) && k.way[3] == 1.f);
+    CHECK(Near(Vec3{k.way[0], k.way[1], k.way[2]}, space3d::Normalize(Vec3{1, -2, 0})));
+    const Vec3 a{k.across[0], k.across[1], k.across[2]}, b{k.along[0], k.along[1], k.along[2]}, d{k.way[0], k.way[1], k.way[2]};
+    auto dot = [](Vec3 x, Vec3 y) { return x.x * y.x + x.y * y.y + x.z * y.z; };
+    CHECK(std::fabs(dot(a, d)) < 1e-5f && std::fabs(dot(b, d)) < 1e-5f && std::fabs(dot(a, b)) < 1e-5f);
+    const Vec3 middle{k.middle[0], k.middle[1], k.middle[2]};
+    const float across = dot(middle, a) / kSnowCell;
+    CHECK(std::fabs(across - std::round(across)) < 1e-3f);  // (whole cells: the grid does not swim)
+    CHECK(Near(dot(middle, d), dot(Vec3{10.1f, 3, -7.3f}, d)));
+    CHECK(k.snow[0][0] == 0.2f && k.snow[0][1] == 3.f && k.snow[1][0] == 0.1f && k.snow[1][1] == 5.f && k.snow[2][1] == -1.f);
+    CHECK(k.trail[3] == static_cast<float>(kTrailCells) && k.trailMore[0] == 7.f);
+    CHECK(SnowLayerOf({10.1f, 3, -7.3f}, lying, maps, 1, 7, false).trail[3] == 0.f);  // (no footprints in the editor)
+    // The footprints' frame: around the eye in whole cells; the lines up start well under it.
+    const SnowTrailConstants t = SnowTrailOf({10.1f, 3, -7.3f}, 7, 0.01f, 6);
+    CHECK(Near(t.trail[0], std::floor(10.1f / kTrailCell) - kTrailCells / 2) && Near(t.trail[1], std::floor(-7.3f / kTrailCell) - kTrailCells / 2));
+    CHECK(Near(t.trail[2], kTrailCell) && t.more[0] == 7.f && Near(t.more[1], 0.01f) && t.more[2] < 3.f - 50.f && t.more[3] == 6.f);
 }
 
 RM_TEST(Weather_Wetness) {
@@ -364,12 +394,12 @@ RM_TEST(Weather_Falling) {
     const WetWay ways[2] = {{{0, -1, 0}, 0.5f, 0.75f, 0.6f}, {{1, 0, 0}, 2.f, 0.1f}};
     const int maps[2] = {3, -1};
     const std::vector<float> d = WetSurfaceData(ways, maps);
-    CHECK(d.size() == 4 * (1 + kWetWays) && d[0] == 2.f);
+    CHECK(d.size() == 4 * (1 + 2 * kWetWays) && d[0] == 2.f);
     CHECK(d[4] == 0.5f && d[5] == 0.75f && d[6] == 3.f && d[7] == 0.6f && d[8] == 1.f && d[10] == -1.f && d[11] == 0.f);  // (clamped to 1; w: しみこみ)
     CHECK(d.size() <= 4 * space3d::kSurfaceData);
-    CHECK(d[1] == 0.f && d[2] == -1.f);  // (no snow lying)
-    const std::vector<float> snowy = WetSurfaceData(ways, maps, 0.25f, 5);
-    CHECK(snowy[1] == 0.25f && snowy[2] == 5.f);
+    CHECK(d.size() == 4 * (1 + 2 * kWetWays) && d[20] == 0.f);  // (each way's snow: none)
+    const WetWay snowy[1] = {{{0, -1, 0}, 0, 0, 0, 0.25f}};
+    CHECK(WetSurfaceData(snowy, maps)[20] == 0.25f);
 }
 
 // The shaders compile as they are drawn: the drops and flakes (with 3D 空間's 向きの地図), and the
@@ -388,6 +418,9 @@ RM_TEST(Weather_ShadersCompile) {
     const std::string layer = space3d::RendererShaderText(kWetSurfaceHlsl) + kSnowLayerHlsl;
     CHECK(Compiles(layer, "SnowLayerVS", "vs_4_0", &error));
     CHECK(Compiles(layer, "SnowLayerPS", "ps_4_0", &error));
+    const std::string trail = space3d::RendererShaderText(kWetSurfaceHlsl) + kSnowTrailHlsl;
+    CHECK(Compiles(trail, "SnowTrailVS", "vs_4_0", &error));
+    CHECK(Compiles(trail, "SnowTrailPS", "ps_4_0", &error));
     if (!error.empty()) std::printf("%s\n", error.c_str());
     // A touch that does not compile does not compile (the renderer then keeps its own).
     CHECK(!Compiles(space3d::RendererShaderText("void Surface(inout float3 a) { a = ; }"), "MeshPS", "ps_4_0"));

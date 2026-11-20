@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "積雪を立体的に (こんもり盛り上がる)。風で斜めに吹き込む所 (屋根の下も) に積もり、動く物が歩いた跡がへこんで残る",
+          "en": "Snow now piles up in 3D mounds, lands where the wind blows it (under roof edges too), and moving things leave footprints in it"
+        },
+        {
           "ja": "積雪が途中で急に四角い層になるのを直した (まだらのまま厚くなる)。屋根や箱の縁では雪が薄くなって丸く終わる",
           "en": "Snow no longer turns into a square sheet all at once (the patches grow thicker as they are), and it thins to a rounded edge at roof and box rims"
         },

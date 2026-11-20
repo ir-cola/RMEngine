@@ -55,6 +55,9 @@ struct WetWay {
     // under a roof only its edge. A stand-in for water that flows: a fluid plugin, when there is one, can
     // set it (or wet the ground itself) - the touch on the surfaces reads only this number.
     float seep = 0;
+    // 積雪: how deep the snow that fell this way lies (m) where it reached - on what the way reaches
+    // (slanted by the wind: under a roof's edge too). Where several ways reach, their snow adds up.
+    float snow = 0;
 };
 inline constexpr size_t kWetWays = 4;  // the most kept (a 向きの地図 each)
 inline constexpr float kSeepRain = 1.f, kSeepSnow = 0.4f;
@@ -80,8 +83,6 @@ struct Weather {
     // counted yet (the editor before Play): what the rain falling now makes wet, at once (WetAtOnce).
     RM_TRANSIENT() std::vector<WetWay> wetWays;
     RM_TRANSIENT() bool wetCounted = false;
-    // 積雪 while the game plays (StepSnowCover): how deep the snow lies (m). Counted with 濡れ (wetCounted).
-    RM_TRANSIENT() float snowCover = 0;
     // How far the wind has carried the clouds, the drops and the flakes while the game played (world
     // units: the wind added up - a wind that changes never makes them jump).
     RM_TRANSIENT() float driftX = 0;
@@ -114,24 +115,28 @@ inline constexpr float kWetWayDegrees = 8.f;
 // Snow wets too, where it melts - a little: at most this (rain: 1), more slowly. Nothing dries while
 // rain or snow falls.
 inline constexpr float kSnowWet = 0.45f;
-void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt);
+// 積雪 (`snowMost`: 積もる高さ): the snow lying, all the ways together, goes as StepSnowCover says - what
+// falls goes to the way it falls (WetWay::snow), what melts goes from all of them alike.
+void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt, float snowMost = 0);
 // What is wet now, as the editor shows it before Play: what falls now (rain, snow), its way, as wet as it
 // makes things. (Play
 // starts dry and gets wet as it rains: RunWeather.)
-std::vector<WetWay> WetAtOnce(const WeatherNow& now);
+std::vector<WetWay> WetAtOnce(const WeatherNow& now, float snowMost = 0);
 // How wet it is (the scripts' rm::Sky::Wetness): the wettest way in the sun.
 float WetnessOf(const std::vector<WetWay>& ways);
 // What is wet as a picture shows it: as the game has counted it (Play), or at once.
 std::vector<WetWay> WetNow(const Weather& w);
 
-// 積雪: how deep the snow lies `dt` game seconds later (m). While it snows: deeper, up to `most` (積もる
-// 高さ) - in about four minutes in heavy snow, longer the lighter (never above `most`: lowered, it is
-// at once). Nothing snowing: it melts - about a centimetre a minute, faster in rain. Lies on what faces
-// up and the snow reaches straight down (under a roof: none).
+// 積雪: how deep the snow lies `dt` game seconds later (m), all of it. While it snows: deeper, up to `most`
+// (積もる高さ) - in about four minutes in heavy snow, longer the lighter (never above `most`: lowered, it
+// is at once). Nothing snowing: it melts - about a centimetre a minute, faster in rain. (StepWet shares
+// it out among the ways it fell.)
 inline constexpr float kMostSnowDepth = 2.f;
 float StepSnowCover(float cover, const WeatherNow& now, float most, float dt);
-// How deep the snow lies as a picture shows it: as the game has counted it (Play), or - the editor - at
-// its full 積もる高さ while it snows.
+// How fast the snow lying grows now (m a second; 0: not snowing) - footprints fill up as fast.
+float SnowFallRate(const WeatherNow& now, float most);
+// How deep the snow lies as a picture shows it, all the ways together: as the game has counted it (Play),
+// or - the editor - at its full 積もる高さ while it snows.
 float SnowCoverNow(const Weather& w);
 
 // The system 天候: while the game plays, a fade goes on, what the rain reaches gets wet (and dries),
