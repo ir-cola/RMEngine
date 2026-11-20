@@ -1,7 +1,7 @@
-// The whole road with a real Visual Studio: the sample script of the template 「ゲーム」 (ArrowMover)
-// built by MSBuild into a DLL (rmgen --scripts first), loaded by the runtime, attached to an entity and
-// run: BeginPlay, Tick moving it with the right arrow key, EndPlay. Skipped (and said) on a PC without
-// Visual Studio 2022. Also the text of the generated Visual Studio project and the error lines.
+// 本物の Visual Studio で全部の道を通す: テンプレート 「ゲーム」 のサンプルスクリプト (ArrowMover) を
+// MSBuild で DLL にビルドし (先に rmgen --scripts)、ランタイムが読み、エンティティに付けて動かす:
+// BeginPlay、右矢印キーで動かす Tick、EndPlay。Visual Studio 2022 の無い PC では飛ばす (そう知らせる)。
+// 生成した Visual Studio プロジェクトのテキストとエラーの行も調べる。
 
 #include "Test.h"
 
@@ -69,7 +69,7 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
     fs::create_directories(ScriptsFolder(project), ec);
     fs::copy(Repo() / L"plugins/rm_engine/game_production/templates/game/Assets/Scripts", ScriptsFolder(project), fs::copy_options::recursive, ec);
     CHECK(!ec);
-    // A script of the global variables and saves (Global::<name> from the header the build writes).
+    // グローバル変数とセーブのスクリプト (ビルドが書くヘッダーの Global::<name>)。
     {
         std::ofstream h(ScriptsFolder(project) / L"Scorer.h", std::ios::binary);
         h << "#pragma once\n#include \"RM.h\"\nRM_SCRIPT()\nstruct Scorer {\n    RM_PROPERTY() int n = 0;\n    void Tick(rm::Entity self, float dt);\n};\n";
@@ -85,8 +85,8 @@ RM_TEST(ScriptBuild_RealMSBuild_TheSampleRuns) {
              "    if (!rm::Save::Exists(1)) rm::Save::Write(1);\n"
              "}\n";
     }
-    // A script of ABI 7: a coroutine (frames, seconds, a condition), timers, an event and OnEvent, a tag, a
-    // parent set, the math - and the 2D / 3D / particles parts compiled (they do nothing here).
+    // ABI 7 のスクリプト: コルーチン (フレーム、秒、条件)、タイマー、イベントと OnEvent、タグ、
+    // 親の設定、数学 - と、2D / 3D / パーティクルの部品のコンパイル (ここでは何もしない)。
     {
         std::ofstream h(ScriptsFolder(project) / L"Waiter.h", std::ios::binary);
         h << R"rm(#pragma once
@@ -144,7 +144,7 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
 }
 )rm";
     }
-    // A script that makes and destroys, adds the engine's Transform, and has every new kind of field.
+    // 作って壊す、エンジンの Transform を足す、新しい種類の欄をすべて持つスクリプト。
     {
         std::ofstream h(ScriptsFolder(project) / L"Shooter.h", std::ios::binary);
         h << "#pragma once\n#include \"RM.h\"\n"
@@ -183,7 +183,7 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
                    {"player", GlobalType::String, "P"},
                    {"home", GlobalType::Vec3, ""}};
     req.project = project;
-    req.engine = ExeFolder();  // rmgen.exe is built next to the tests
+    req.engine = ExeFolder();  // rmgen.exe はテストの隣にビルドされる
     req.sdk = {Repo() / L"plugins/rm_engine/game_production/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_3d/runtime/sdk",
                Repo() / L"plugins/rm_engine/game_x_2d/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_audio/runtime/sdk",
                Repo() / L"plugins/rm_engine/game_x_particles/runtime/sdk"};
@@ -199,7 +199,7 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
         ScriptWorld world;
         world.parts = {game_x_3d::ScriptTransform3DPart(), game_x_3d::ScriptTransform3DPart2(), game_x_2d::ScriptTransform2DPart(),
                        game_x_2d::ScriptTransform2DPart2()};
-        // → held (the sample reads the action MoveX of the default 入力, not the key).
+        // → 押している (サンプルはキーではなく、既定の 入力 のアクション MoveX を読む)。
         world.readInput = [] {
             InputFrame f;
             f.keys[VK_RIGHT] = 1;
@@ -219,26 +219,26 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
         CHECK(mover && std::string(mover->desc.label) == "矢印キーで動く");
         if (!mover) return;
         {
-            Scene scene;  // (gone before the module: its scripts' code is in the DLL)
+            Scene scene;  // (モジュールより先に消える: スクリプトのコードは DLL の中にある)
             const reflect::TypeDesc& tf = reflect::TypeOf<space3d::Transform>();
             scene.SetComponentTypes({&tf, &mover->desc}, {&mover->desc});
             const int e = scene.Create("Player");
             scene.AddComponent(e, tf);
             scene.AddComponent(e, mover->desc);
-            // Its ジャンプの音 (rm::SoundRef) starts as the template's jump.wav, saved as the asset's id.
+            // その ジャンプの音 (rm::SoundRef) は、テンプレートの jump.wav で始まり、アセットの ID で保存される。
             CHECK(json::Write(scene.Save(), false).find("a7d0c3f1e2b54c6d8e9f0a1b2c3d4e51") != std::string::npos);
             ScriptRunner runner;
             runner.Frame(scene, world, module, {}, 0.5f);
             runner.Frame(scene, world, module, {}, 0.5f);
             const auto* t = static_cast<const space3d::Transform*>(scene.Find(e)->FindComponent(tf.name)->value.Get());
-            CHECK(t->position.x > 2.99f && t->position.x < 3.01f);  // speed 3 for one second, to the right
+            CHECK(t->position.x > 2.99f && t->position.x < 3.01f);  // 速さ 3 で 1 秒、右へ
             runner.Stop(scene, world, module, {});
             CHECK(told.find("「Player」を矢印キー・WASD・ゲームパッドで動かせます") != std::string::npos);
             CHECK(told.find("2 コマ動きました") != std::string::npos);
             CHECK(runner.Crashed() == 0);
         }
         {
-            // Making and destroying, the engine's Transform added, the new kinds of fields - in a real DLL.
+            // 作って壊す、エンジンの Transform を足す、新しい種類の欄 - 本物の DLL で。
             const ScriptType* shooter = module.Find("Shooter");
             CHECK(shooter != nullptr);
             if (shooter) {
@@ -267,7 +267,7 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
                     if (t) xs.push_back(static_cast<const space3d::Transform*>(t->value.Get())->position.x);
                 }
                 CHECK((xs == std::vector<float>{0, 1, 2}));  // count 2 + Burst
-                CHECK(!scene.Find(old) && scene.Entities().size() == 5);  // Gun, 3 bullets, the enemy (the old one and its child gone)
+                CHECK(!scene.Find(old) && scene.Entities().size() == 5);  // Gun、弾 3 つ、敵 (古いものとその子は消えた)
                 CHECK(std::any_of(scene.Entities().begin(), scene.Entities().end(), [](const SceneEntity& e) { return e.data.name == "Enemy" && e.prefab.Root(); }));
                 const json::Value data = reflect::Save(shooter->desc, scene.Find(gun)->FindComponent("Shooter")->value.Get());
                 CHECK(data.Get("shot").AsString() == "Burst" && data.Get("numbers").Size() == 3 && data.Get("pattern").Get("count").AsInt() == 2);
@@ -279,8 +279,8 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
             }
         }
         {
-            // The global variables from a script: Global::score += 5, ++, a text, a vector, a bool, by
-            // name; rm::Save into Library/Saves.
+            // スクリプトからのグローバル変数: Global::score += 5、++、文字、ベクトル、bool を名前で。
+            // rm::Save を Library/Saves に。
             const ScriptType* scorer = module.Find("Scorer");
             CHECK(scorer != nullptr);
             if (scorer) {
@@ -299,9 +299,9 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
             }
         }
         {
-            // ABI 7 in a real DLL: the coroutine ran a, b (next frame), c (0.25 s later), d (the event had
-            // come); the timer once, every 0.1 s three times; the event reached OnEvent; the tag and the
-            // parent were set; the math. Stopped: no coroutine left.
+            // 本物の DLL での ABI 7: コルーチンは a, b (次のフレーム), c (0.25 秒後), d (イベントが来た) を
+            // 動かした。タイマーは 1 回、0.1 秒ごとに 3 回。イベントは OnEvent に届いた。タグと親は設定された。
+            // 数学。止めた後: コルーチンは残らない。
             const ScriptType* waiter = module.Find("Waiter");
             CHECK(waiter != nullptr && waiter->script->onEvent != nullptr);
             if (waiter) {
@@ -323,12 +323,12 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
                 CHECK(world.coroutines.empty() && runner.Crashed() == 0);
             }
         }
-        // Built again: another name (the loaded one cannot be written over).
+        // もう一度ビルドする: 別の名前 (読み込んだものには上書きできない)。
         const ScriptBuildResult again = BuildScripts(req);
         CHECK(again.ok && again.dll.filename() == L"Scripts_0002.dll");
         CHECK(LatestScriptDll(ScriptDllFolder(project, req.debug)).filename() == L"Scripts_0002.dll");
-        // Two builds of one project at once (an editor closed while building, opened again): one waits
-        // for the other - two numbers, both built.
+        // 1 つのプロジェクトを同時に 2 回ビルドする (ビルド中に閉じたエディターを、また開いた): 片方は
+        // もう片方を待つ - 番号は 2 つ、どちらもビルドされる。
         ScriptBuildResult first, second;
         std::thread a([&] { first = BuildScripts(req); });
         std::thread b([&] { second = BuildScripts(req); });
@@ -340,17 +340,17 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
 }
 
 RM_TEST(Process_HandsDownOnlyItsOwnPipe) {
-    // Another inheritable pipe of this process (an export's, say): the child must not hold it, or the
-    // one reading it would wait for the child's end.
+    // このプロセスの別の継承できるパイプ (たとえば書き出しの): 子はそれを持ってはいけない。
+    // 持つと、それを読んでいる側が子の終わりを待ってしまう。
     SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
     HANDLE readEnd = nullptr, writeEnd = nullptr;
     CHECK(CreatePipe(&readEnd, &writeEnd, &sa, 0));
     std::thread child([] {
         std::string error;
-        platform::RunProcess(L"cmd.exe /c ping -n 3 127.0.0.1", {}, {}, &error);  // about 2 seconds
+        platform::RunProcess(L"cmd.exe /c ping -n 3 127.0.0.1", {}, {}, &error);  // 約 2 秒
     });
     Sleep(500);
-    CloseHandle(writeEnd);  // our only write end: the pipe is broken unless the child has one too
+    CloseHandle(writeEnd);  // こちらの唯一の書き込み側: 子も持っていない限り、パイプは壊れる
     DWORD avail = 0;
     const BOOL peek = PeekNamedPipe(readEnd, nullptr, 0, nullptr, &avail, nullptr);
     CHECK(!peek && GetLastError() == ERROR_BROKEN_PIPE);

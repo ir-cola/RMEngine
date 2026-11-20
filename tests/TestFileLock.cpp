@@ -1,5 +1,5 @@
-// Tests for the project lock (platform/FileLock): only one holder at a time, gone when let go.
-// Uses a real file in the temp folder (two FileLocks in one process act like two RM Engines).
+// プロジェクトのロック (platform/FileLock) のテスト: 同時に持てるのは 1 つだけ、手放すと消える。
+// 一時フォルダの本物のファイルを使う (1 つのプロセスの中の 2 つの FileLock は、2 つの RM Engine のように振る舞う)。
 
 #include "Test.h"
 
@@ -25,9 +25,9 @@ RM_TEST(FileLock_OneHolderAtATime) {
         CHECK(!second.Held() && !err.empty());
         first.Release();
         CHECK(!first.Held());
-        CHECK(!fs::exists(file, ec));  // let go: the file is gone
+        CHECK(!fs::exists(file, ec));  // 手放した: ファイルは消えた
         CHECK(second.Take(file, &err) == FileLock::Result::Taken);
-    }  // destroyed while held: let go too
+    }  // 持ったまま破棄された: これも手放す
     CHECK(!fs::exists(file, ec));
     FileLock nowhere;
     CHECK(nowhere.Take(dir / L"no_such_folder" / L"x.lock", nullptr) == FileLock::Result::Failed);

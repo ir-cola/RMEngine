@@ -1,6 +1,6 @@
-// Tests for reflection (core/reflect): the design's completion conditions T1-T3 plus equality,
-// diff, copy, unknown enum names and the undo command. The types are in TestReflectTypes.h and
-// their tables are written by rmgen during the build of RMTests.
+// リフレクション (core/reflect) のテスト: 設計の完了条件 T1-T3 に加えて、等しさ、差分、コピー、
+// 知らない enum の名前、Undo のコマンド。型は TestReflectTypes.h にあり、その表は RMTests のビルド中に
+// rmgen が書く。
 
 #include "Test.h"
 
@@ -45,7 +45,7 @@ RM_TEST(Reflect_TableFromHeader) {
     const TypeDesc& t = TypeOf<Settings>();
     CHECK(std::string_view(t.label) == "テスト用の設定");
     CHECK(t.kind == TypeKind::Struct);
-    CHECK(t.fields.size() == 13);  // transient fields are not in the table
+    CHECK(t.fields.size() == 13);  // transient の欄は表に入らない
     CHECK(FieldCount<Settings>() == 15);
     const FieldDesc& speed = FieldNamed(t, "speed");
     CHECK(speed.value.type == FieldType::Float);
@@ -60,14 +60,14 @@ RM_TEST(Reflect_TableFromHeader) {
     CHECK(std::string_view(q->items[0].label) == "低" && std::string_view(q->items[1].label) == "Medium");
     CHECK(q->items[2].value == 7);
     CHECK(FindEnum(typeid(Quality)) == q);
-    // Every reflected type of the program is listed (the tests also build the plugins' types).
+    // プログラムの反映された型はすべて一覧にある (テストはプラグインの型もビルドする)。
     auto listed = [](const TypeDesc* d) { return std::find(AllTypes().begin(), AllTypes().end(), d) != AllTypes().end(); };
     CHECK(listed(&TypeOf<Settings>()) && listed(&TypeOf<Window>()));
     CHECK(std::find(AllEnums().begin(), AllEnums().end(), q) != AllEnums().end());
 }
 
 RM_TEST(Reflect_T1_RoundTrip) {
-    // 10,000 random objects: save -> load -> save gives the same bytes, and the objects are equal.
+    // ランダムな 1 万個のオブジェクト: 保存 -> 読み込み -> 保存で同じバイト列になり、オブジェクトは等しい。
     std::mt19937 rng(1234);
     std::uniform_real_distribution<float> unit(0.f, 1.f);
     const TypeDesc& t = TypeOf<Settings>();
@@ -107,22 +107,22 @@ RM_TEST(Reflect_T2_UnknownKeysAreKept) {
     json::Value w = v.Get("window");
     w.Set("refreshRate", 144);
     v.Set("window", w);
-    v.Set("quality", "Ultra");  // an enum value this version does not know
+    v.Set("quality", "Ultra");  // このバージョンが知らない enum の値
 
     Settings b;
     Unknowns u;
     Warnings warn;
     Load(b, v, &u, &warn);
     CHECK(b.speed == 2.5f);
-    CHECK(b.quality == Quality::Medium);  // behaves with the default ...
-    CHECK(!warn.empty());                 // ... says so ...
-    const json::Value back = Save(b, &u);  // ... and writes everything back
+    CHECK(b.quality == Quality::Medium);  // 既定値で動く ...
+    CHECK(!warn.empty());                 // ... そう知らせる ...
+    const json::Value back = Save(b, &u);  // ... そして全部書き戻す
     CHECK(back.Get("addedByANewerVersion").AsString() == "keep me");
     CHECK(back.Get("pluginData").Get("x").AsInt() == 1);
     CHECK(back.Get("window").Get("refreshRate").AsInt() == 144);
     CHECK(back.Get("quality").AsString() == "Ultra");
     CHECK(back.Get("speed").AsDouble() == 2.5);
-    // without an Unknowns the file is read the same way, and only known data is written
+    // Unknowns が無くても、ファイルは同じように読め、知っているデータだけを書く
     Settings c;
     Load(c, v);
     CHECK(Equals(TypeOf<Settings>(), &b, &c));
@@ -144,27 +144,27 @@ RM_TEST(Reflect_T3_ClampIsTheSameOnBothRoads) {
                           {"level", inf, "inf"},   {"level", 1e300, "1e300"}};
     for (const Case& c : cases) {
         const FieldDesc& f = FieldNamed(t, c.field);
-        // the loader's road
+        // ローダーの道
         Settings loaded;
         json::Value v = Save(loaded);
         v.Set(c.field, c.in);
         Load(loaded, v);
         const double fromFile = std::string_view(c.field) == "speed" ? loaded.speed : loaded.level;
-        // the inspector's road (typed text, the current value being the default)
+        // インスペクターの道 (打ち込んだ文字で、今の値が既定値)
         const Settings fresh;
         const double current = std::string_view(c.field) == "speed" ? fresh.speed : fresh.level;
         const auto fromInput = NumberFromInput(f, c.typed, current);
         CHECK(fromInput.has_value());
         CHECK(fromInput && static_cast<float>(*fromInput) == static_cast<float>(fromFile));
     }
-    // the results themselves
+    // 結果そのもの
     const FieldDesc& speed = FieldNamed(t, "speed");
     CHECK(SanitizeNumber(speed, -5, 5) == 0 && SanitizeNumber(speed, 15, 5) == 10 && SanitizeNumber(speed, nan, 5) == 5);
     CHECK(SanitizeNumber(FieldNamed(t, "level"), 2.6, 1) == 3);
     CHECK(!NumberFromInput(speed, "abc", 5).has_value());
     CHECK(!NumberFromInput(speed, "", 5).has_value());
     CHECK(NumberFromInput(speed, " +4 ", 5) == 4.0);
-    // nested struct fields are clamped by their own attributes
+    // 入れ子の struct の欄は、それぞれの属性で収められる
     Settings s;
     json::Value v = Save(s);
     json::Value w = v.Get("window");
@@ -174,24 +174,24 @@ RM_TEST(Reflect_T3_ClampIsTheSameOnBothRoads) {
     CHECK(s.window.width == 320);
 }
 
-// Decimals=1: kept to tenths, the rest cut off (not rounded), on both roads; shown with them.
+// Decimals=1: 小数第 1 位までを残し、残りは切り捨てる (丸めない)。両方の道で。表示もそれに合わせる。
 RM_TEST(Reflect_Decimals) {
     const TypeDesc& t = TypeOf<rmtest::Tenths>();
     const FieldDesc& amount = FieldNamed(t, "amount");
     CHECK(amount.decimals == 1 && FieldNamed(t, "place").decimals == 2);
     CHECK(SanitizeNumber(amount, 12.39, 0) == 12.3 && SanitizeNumber(amount, 0.3, 0) == 0.3 && SanitizeNumber(amount, 99.99, 0) == 99.9);
     CHECK(SanitizeNumber(amount, 150, 0) == 100 && SanitizeNumber(amount, -1, 0) == 0);
-    CHECK(SanitizeNumber(amount, static_cast<float>(0.3f), 0) == 0.3);  // (0.3 as a float is 0.29999...)
+    CHECK(SanitizeNumber(amount, static_cast<float>(0.3f), 0) == 0.3);  // (0.3 は float では 0.29999...)
     CHECK(FormatNumber(amount, 12.39) == "12.3" && FormatNumber(amount, 20) == "20.0" && FormatNumber(amount, 0.3f) == "0.3");
     CHECK(FormatNumber(FieldNamed(t, "place"), -1.239) == "-1.23");
-    CHECK(SanitizeNumber(FieldNamed(t, "place"), -1.239, 0) == -1.23);  // (toward zero)
-    // The loader's road: the same.
+    CHECK(SanitizeNumber(FieldNamed(t, "place"), -1.239, 0) == -1.23);  // (0 に向かって)
+    // ローダーの道: 同じ。
     rmtest::Tenths loaded;
     json::Value v = Save(loaded);
     v.Set("amount", 45.67);
     Load(loaded, v);
     CHECK(loaded.amount == 45.6f);
-    // A field without it: as it is.
+    // それが無い欄: そのまま。
     CHECK(FieldNamed(TypeOf<Settings>(), "speed").decimals == -1 && SanitizeNumber(FieldNamed(TypeOf<Settings>(), "speed"), 3.25, 0) == 3.25);
 }
 
@@ -207,8 +207,8 @@ RM_TEST(Reflect_WrongTypesKeepTheValue) {
     CHECK(s.gravity.y == -9.8f);
     CHECK(s.window.width == 1280);
     CHECK(w.size() == 3);
-    // Kept and written back as they were (a newer version's value of another kind: design R1 4-f) -
-    // until the field is set (2026-11-19: before, the next save dropped them).
+    // 別の種類の新しいバージョンの値 (設計 R1 4-f) は、そのまま残して書き戻す -
+    // その欄が設定されるまで (2026-11-19: 前は次の保存で消えていた)。
     Settings k;
     Unknowns u;
     Load(k, v, &u, nullptr);
@@ -221,8 +221,8 @@ RM_TEST(Reflect_WrongTypesKeepTheValue) {
         set.Do();
     }
     back = Save(k, &u);
-    CHECK(back.Get("speed").AsDouble() == 7 && back.Get("window").AsInt() == 3);  // (chosen: the choice; the rest as they were)
-    // A number beyond what a float holds: as one that is not finite (it would become null, then the default).
+    CHECK(back.Get("speed").AsDouble() == 7 && back.Get("window").AsInt() == 3);  // (選んだもの: 選んだ値。残りはそのまま)
+    // float が持てる範囲を超える数: 有限でないものとして扱う (null になり、その後は既定値になる)。
     Settings big;
     json::Value bv = Save(big);
     bv.Set("gravity", json::Value::MakeArray());
@@ -235,21 +235,21 @@ RM_TEST(Reflect_WrongTypesKeepTheValue) {
     CHECK(big.gravity.x == -0.f || big.gravity.x == 0.f);
     CHECK(big.gravity.y == 2.f);
     CHECK(SanitizeNumber(FieldNamed(t, "speed"), 1e39, 4) == 4);
-    // An array's elements' unknowns stay with their places - not put on others when the count changed.
+    // 配列の要素の未知のキーは、その位置に付いたまま - 数が変わっても他の要素に移らない。
     Settings arr;
     json::Value av = Save(arr);
     json::Value mons = json::Value::MakeArray();
     for (int m = 0; m < 2; ++m) {
         json::Value one = json::Value::MakeObject();
         one.Set("width", 800 + m);
-        one.Set("hz", 60 + m);  // (a newer version's key)
+        one.Set("hz", 60 + m);  // (新しいバージョンのキー)
         mons.Push(one);
     }
     av.Set("monitors", mons);
     Unknowns au;
     Load(arr, av, &au, nullptr);
     CHECK(Save(arr, &au).Get("monitors").At(1).Get("hz").AsInt() == 61);
-    arr.monitors.erase(arr.monitors.begin());  // (a tool takes the first out directly)
+    arr.monitors.erase(arr.monitors.begin());  // (ツールが最初の 1 つを直接取り出す)
     const json::Value after = Save(arr, &au);
     CHECK(after.Get("monitors").Size() == 1 && after.Get("monitors").At(0).Find("hz") == nullptr && after.Get("monitors").At(0).Get("width").AsInt() == 801);
 }
@@ -258,7 +258,7 @@ RM_TEST(Reflect_EqualsDiffCopy) {
     const TypeDesc& t = TypeOf<Settings>();
     Settings a, b;
     CHECK(Equals(t, &a, &b) && Diff(t, &a, &b) == 0);
-    b.timer = 99;  // transient: not part of the data
+    b.timer = 99;  // transient: データではない
     CHECK(Equals(t, &a, &b));
     b.speed = 1;
     b.window.height = 999;
@@ -269,7 +269,7 @@ RM_TEST(Reflect_EqualsDiffCopy) {
     Settings c;
     t.copy(&c, &b);
     CHECK(Equals(t, &b, &c));
-    // construct / destruct by the table
+    // 表で construct / destruct する
     alignas(Settings) unsigned char raw[sizeof(Settings)];
     t.construct(raw);
     CHECK(reinterpret_cast<Settings*>(raw)->title == "My Game");
@@ -288,7 +288,7 @@ RM_TEST(Reflect_SetFieldCommandUndo) {
     h.SetOnModified([&] { ++modified; });
     auto resolve = [&] { return EditTarget{&s, &u}; };
 
-    // a nested field: window.width (clamped by its Min when applied)
+    // 入れ子の欄: window.width (適用するとき Min で収める)
     const FieldPath widthPath{IndexOf(t, "window"), IndexOf(TypeOf<Window>(), "width")};
     const PathTarget pt = Resolve(t, &s, &u, widthPath);
     CHECK(pt.field && std::string_view(pt.field->name) == "width");
@@ -303,7 +303,7 @@ RM_TEST(Reflect_SetFieldCommandUndo) {
     h.Redo();
     CHECK(s.window.width == 320);
 
-    // choosing a value for an enum that held an unknown name replaces it; undo brings the name back
+    // 未知の名前を持っていた enum の値を選ぶと、それを置き換える。Undo で名前が戻る
     const FieldPath qp{IndexOf(t, "quality")};
     const PathTarget qt = Resolve(t, &s, &u, qp);
     const json::Value before = SaveField(*qt.field, qt.owner, qt.unknowns);
@@ -324,7 +324,7 @@ RM_TEST(Reflect_References) {
     CHECK(FieldNamed(t, "textures").array->element.type == FieldType::AssetRef);
     CHECK(std::string_view(FieldNamed(t, "textures").assetKinds) == "image,model");
 
-    // Saved as the ids; read back the same.
+    // ID で保存し、同じに読み戻す。
     Links a;
     a.model.guid = "0123456789abcdef0123456789abcdef";
     a.target.id = 42;
@@ -341,8 +341,8 @@ RM_TEST(Reflect_References) {
     const Links none;
     CHECK(Diff(t, &a, &none) == 0b1111);
 
-    // An id this version does not know is kept as it is (written back unchanged); null = none;
-    // a wrong type keeps the value and warns.
+    // このバージョンが知らない ID はそのまま残す (変えずに書き戻す)。null = 無し。
+    // 型が違うものは、値を残して警告する。
     json::Value odd = v;
     odd.Set("model", "made-by-a-newer-version");
     odd.Set("target", nullptr);
@@ -358,7 +358,7 @@ RM_TEST(Reflect_References) {
     Load(d, wrong, nullptr, &warn);
     CHECK(d.model == a.model && d.target == a.target && warn.size() == 2);
 
-    // Changed through the one undo command, like any field.
+    // 他の欄と同じに、1 つの Undo コマンドで変える。
     UndoHistory h;
     Links s;
     auto resolve = [&] { return EditTarget{&s, nullptr}; };
@@ -383,14 +383,14 @@ RM_TEST(Reflect_SetFieldCommand_TypingIsOneEntry) {
     const FieldPath wp{IndexOf(t, "window"), IndexOf(TypeOf<Window>(), "width")};
     const FieldPath hp{IndexOf(t, "window"), IndexOf(TypeOf<Window>(), "height")};
     const int startW = s.window.width;
-    // "6", "64", "640" typed into the width field: one entry, undone at once.
+    // 幅の欄に "6", "64", "640" と打つ: 記録は 1 つ。1 回で Undo される。
     for (int v : {600, 640, 1640}) {
         const PathTarget pt = Resolve(t, &s, &u, wp);
         h.Push(std::make_unique<SetFieldCommand>(t, wp, SaveField(*pt.field, pt.owner, pt.unknowns), json::Value(v), resolve, "幅", 42),
                false);
     }
     CHECK(s.window.width == 1640 && h.UndoCount() == 1);
-    // Another field with the same key does not join; no key never joins.
+    // 同じキーの別の欄は加わらない。キーが無ければ加わらない。
     h.Push(std::make_unique<SetFieldCommand>(t, hp, json::Value(s.window.height), json::Value(500), resolve, "高さ", 42), false);
     h.Push(std::make_unique<SetFieldCommand>(t, hp, json::Value(500), json::Value(510), resolve, "高さ"), false);
     CHECK(h.UndoCount() == 3);
@@ -410,13 +410,13 @@ RM_TEST(Reflect_SetFieldCommand_OnlyTheSameObjectJoins) {
         return std::make_unique<SetFieldCommand>(t, wp, json::Value(from), json::Value(to), at(s, u), "幅", key);
     };
     UndoHistory h;
-    // The same key and field, another object (two inspectors, a key used again): two entries.
+    // 同じキーと欄で別のオブジェクト (2 つのインスペクター、使い回したキー): 記録は 2 つ。
     h.Push(set(a, ua, a.window.width, 700, 9), false);
     h.Push(set(b, ub, b.window.width, 800, 9), false);
     CHECK(h.UndoCount() == 2 && a.window.width == 700 && b.window.width == 800);
 
-    // Groups join all or nothing: the second group's last target is another object, so nothing of
-    // the first one may change (a redo must give 710, not the second group's 720).
+    // グループは全部か、なにもか: 2 つ目のグループの最後の対象は別のオブジェクトなので、
+    // 最初のグループは何も変えてはいけない (Redo は、2 つ目のグループの 720 ではなく 710 になるはず)。
     h.Clear();
     auto g1 = std::make_unique<CommandGroup>("幅", 5);
     g1->Add(set(a, ua, 700, 710, 11));
@@ -431,7 +431,7 @@ RM_TEST(Reflect_SetFieldCommand_OnlyTheSameObjectJoins) {
     CHECK(a.window.width == 700 && b.window.width == 800);
     CHECK(h.Redo());
     CHECK(a.window.width == 710 && b.window.width == 810);
-    // The same targets in the same order still join (typing into a field of several things).
+    // 同じ対象が同じ順なら、やはり加わる (複数のものの欄に打ち込む)。
     auto g3 = std::make_unique<CommandGroup>("幅", 6);
     g3->Add(set(a, ua, 710, 711, 12));
     g3->Add(set(b, ub, 810, 811, 12));
@@ -448,10 +448,10 @@ RM_TEST(Reflect_Object_OwnsAValueOfAnyType) {
     Object a(t);
     CHECK(!a.Empty() && a.Type() == &t);
     auto* s = static_cast<Settings*>(a.Get());
-    CHECK(s->title == "My Game" && s->speed == 5.0f);  // the default member values
+    CHECK(s->title == "My Game" && s->speed == 5.0f);  // メンバーの既定値
     s->title = "changed";
     s->scores = {1, 2, 3};
-    Object b = a;  // a deep copy
+    Object b = a;  // ディープコピー
     static_cast<Settings*>(b.Get())->scores.push_back(4);
     CHECK(s->scores.size() == 3);
     CHECK(static_cast<Settings*>(b.Get())->title == "changed");
@@ -466,8 +466,8 @@ RM_TEST(Reflect_Object_OwnsAValueOfAnyType) {
 }
 
 RM_TEST(Reflect_ShowIf_EveryTable) {
-    // Every ShowIf of every reflected type names a field of its struct and items its enum has (rmgen
-    // checks only the names of the fields).
+    // 反映された型の ShowIf はすべて、その struct の欄と、その enum が持つ項目を指す (rmgen は
+    // 欄の名前しか調べない)。
     for (const TypeDesc* t : AllTypes()) {
         for (const FieldDesc& f : t->fields) {
             const std::string problem = ShowIfProblem(*t, f);

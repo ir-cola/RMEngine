@@ -1,6 +1,6 @@
-// Tests for the baked model of an exported game (plugins/rm_engine/space3d/runtime/MeshBake): written
-// and read back the same, chunks of a newer version skipped, broken ones refused, and a real model
-// read as the editor reads it, baked and read back.
+// 書き出したゲームの焼いたモデル (plugins/rm_engine/space3d/runtime/MeshBake) のテスト: 書いて
+// 同じに読み戻す、新しいバージョンのチャンクは飛ばす、壊れたものは断る、本物のモデルを
+// エディターが読む形で読み、焼いて、読み戻す。
 
 #include "Test.h"
 
@@ -80,22 +80,22 @@ RM_TEST(MeshBake_RoundTrip) {
               back->vertices[i].uv == m.vertices[i].uv);
     }
     CHECK(back->materials.size() == 2 && SameMaterialNumbers(back->materials[0], m.materials[0]) && SameMaterialNumbers(back->materials[1], m.materials[1]));
-    // The pictures: one image per path, shared by the materials that use it, in their slots.
+    // 絵: パスごとに画像 1 つ。それを使うマテリアルで共有し、そのスロットに入れる。
     CHECK(back->images.size() == 3);
     CHECK(back->materials[0].image == back->materials[1].image && back->materials[0].image >= 0);
     CHECK(back->materials[0].normalImage >= 0 && back->materials[0].metallicRoughnessImage == -1 && back->materials[1].emissiveImage >= 0);
     CHECK(back->images[static_cast<size_t>(back->materials[0].normalImage)].file == "Baked/a/1.dds");
-    // How each picture is read (くっきり・鏡のように反転・ストリーミング): the colour picture only.
+    // 各絵の読み方 (くっきり・鏡のように反転・ストリーミング): 色の絵だけ。
     CHECK(sampling.size() == 3 && sampling[static_cast<size_t>(back->materials[0].image)] == dots &&
           sampling[static_cast<size_t>(back->materials[0].normalImage)] == TextureSampling{});
-    // Written again from what was read: the same bytes.
+    // 読んだものからもう一度書く: 同じバイト列。
     CHECK(WriteBakedMesh(*back, PicturesOf(*back, sampling)) == bytes);
 }
 
 RM_TEST(MeshBake_UnknownChunksAndBroken) {
     const MeshData m = Sample();
     std::string bytes = WriteBakedMesh(m, {});
-    // A chunk of a newer version: skipped.
+    // 新しいバージョンのチャンク: 飛ばす。
     std::string newer = bytes + "XTRA";
     const uint64_t three = 3;
     newer.append(reinterpret_cast<const char*>(&three), 8);
@@ -103,7 +103,7 @@ RM_TEST(MeshBake_UnknownChunksAndBroken) {
     std::string err;
     const auto read = ReadBakedMesh(newer, &err);
     CHECK(read && read->indices == m.indices && read->images.empty());
-    // Not a baked mesh / cut short / a part past the indices / a newer format.
+    // 焼いたメッシュではない / 途中で切れた / 頂点番号を越える部分 / 新しい形式。
     CHECK(!ReadBakedMesh("hello world, not a mesh", &err) && !err.empty());
     CHECK(!ReadBakedMesh(std::string_view(bytes).substr(0, bytes.size() - 5), &err));
     MeshData bad = m;
@@ -115,7 +115,7 @@ RM_TEST(MeshBake_UnknownChunksAndBroken) {
     CHECK(!ReadBakedMesh(later, &err));
 }
 
-// A real model, read as the editor reads it (LoadMeshFile: the import settings applied), baked and read.
+// 本物のモデルを、エディターが読むとおりに読み (LoadMeshFile: 取り込みの設定を適用)、焼いて読む。
 RM_TEST(MeshBake_ARealModel) {
     const std::filesystem::path file = std::filesystem::path(__FILE__).parent_path().parent_path() / "docs" / "samples" / "models" / "house.gltf";
     std::string err;

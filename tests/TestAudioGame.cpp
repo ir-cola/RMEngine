@@ -1,7 +1,7 @@
-// Tests for ゲーム制作 × 音 (plugins/rm_engine/game_x_audio): the exported game's .rmsound, the 音源
-// component saved and read back, the sounds of a Play (silent: no device) - a 音源 starts and stops with
-// its entity, the music cross-fades and goes on into a scene with the same BGM, ■ stops everything -
-// the volumes, the scripts' part, and where an entity is heard from (the 3D space's PlaceInfo).
+// ゲーム制作 × 音 (plugins/rm_engine/game_x_audio) のテスト: 書き出したゲームの .rmsound、
+// 保存して読み戻した 音源 部品、Play の音 (無音: デバイスなし) - 音源 はエンティティと一緒に
+// 始まり止まり、音楽はクロスフェードして同じ BGM のシーンへ続き、■ はすべてを止める -
+// 音量、スクリプトの部分、エンティティがどこから聞こえるか (3D 空間の PlaceInfo)。
 
 #include "Test.h"
 
@@ -39,8 +39,8 @@ constexpr char kSongB[] = "0123456789abcdef0123456789abcde3";
 
 bool Near(float a, float b, float eps = 1e-3f) { return std::fabs(a - b) <= eps; }
 
-// One Play: the 3D connector (where entities are) and 音's runtime parts, a silent host whose assets
-// are WAVs made here.
+// 1 回の Play: 3D コネクター (エンティティの居場所) と 音 のランタイムの部品、ここで作った
+// WAV をアセットにする無音のホスト。
 struct Play {
     RuntimeRegistry registry;
     GameSettings settings;
@@ -71,7 +71,7 @@ struct Play {
     }
     AudioService& Audio() { return *static_cast<AudioService*>(services.Find(kAudioServiceName)); }
     void Frame(float dt = 0.02f, uint64_t camera = 0) { services.Frame({scene, camera, dt}); }
-    // An entity with a 音源 of `sound` (and a Transform).
+    // `sound` の 音源 を持つ (Transform もある) エンティティ。
     int Source(const char* sound, bool playOnStart, AudioBus bus = AudioBus::Effects, bool loop = true) {
         const int e = scene.Create("音");
         scene.AddComponent(e, reflect::TypeOf<space3d::Transform>());
@@ -99,20 +99,20 @@ struct Play {
 }  // namespace
 
 RM_TEST(AudioGame_OtherServicesPlaySounds) {
-    // Game UI's button sounds: the other services find the one that plays sounds without knowing it.
+    // ゲーム UI のボタンの音: ほかのサービスは、音を鳴らすサービスを知らなくても見つけられる。
     Play p;
     SoundPlayer* sounds = p.services.Sounds();
     CHECK(sounds == static_cast<SoundPlayer*>(&p.Audio()));
-    // How loud music is (a game UI 動画's sound): 全体 × 音楽, a script's change too.
+    // 音楽の大きさ (ゲーム UI の 動画 の音): 全体 × 音楽。スクリプトの変更も。
     p.settings.volume.master = 0.5f;
     p.settings.volume.music = 0.8f;
     CHECK(Near(sounds->MusicVolume(), 0.4f));
     p.Audio().SetVolume(AudioService::BusVolume::Music, 0.2f);
     CHECK(Near(sounds->MusicVolume(), 0.1f));
     sounds->PlaySound(AssetRef{kBeep}, 0.5f);
-    sounds->PlaySound(AssetRef{"0123456789abcdef0123456789abcdef"}, 1);  // (not there: nothing)
+    sounds->PlaySound(AssetRef{"0123456789abcdef0123456789abcdef"}, 1);  // (ない: 何もしない)
     p.Frame();
-    // No service plays sounds: none.
+    // 音を鳴らすサービスがない: 何も鳴らない。
     PlayServices none;
     CHECK(none.Sounds() == nullptr);
 }
@@ -126,7 +126,7 @@ RM_TEST(AudioGame_SoundPack_RoundTripAndBroken) {
     const auto back = UnpackSound(packed);
     CHECK(back && back->name == "bgm.wav" && back->file == file);
     CHECK(back && Near(static_cast<float>(back->import.Get("volume").AsDouble(0)), 0.5f) && Near(static_cast<float>(back->import.Get("loopStart").AsDouble(0)), 1.25f));
-    // A plain sound file is not a pack; a broken pack is refused (never read past its end).
+    // ただの音のファイルはパックではない。壊れたパックは断る (終わりを越えて読まない)。
     CHECK(!UnpackSound(file));
     CHECK(!UnpackSound(""));
     CHECK(!UnpackSound(packed.substr(0, 10)));
@@ -137,8 +137,8 @@ RM_TEST(AudioGame_SoundPack_RoundTripAndBroken) {
     std::string notJson = PackSound("x", imp, "");
     notJson[12] = '!';
     CHECK(!UnpackSound(notJson));
-    // No import settings: an empty object.
-    const std::string plainPacked = PackSound("a.ogg", json::Value(), "OggS");  // (kept: file points into it)
+    // 取り込みの設定なし: 空のオブジェクト。
+    const std::string plainPacked = PackSound("a.ogg", json::Value(), "OggS");  // (残る: ファイルはその中を指す)
     const auto plain = UnpackSound(plainPacked);
     CHECK(plain && plain->import.IsObject() && plain->file == "OggS");
 }
@@ -161,7 +161,7 @@ RM_TEST(AudioGame_Source_SavedAndReadBack) {
     reflect::Load(b, saved);
     CHECK(b.sound == a.sound && Near(b.volume, 0.4f) && Near(b.pitch, 1.5f) && b.loop && !b.playOnStart && b.bus == AudioBus::Music);
     CHECK(Near(b.fade, 2) && b.spatial && Near(b.minDistance, 3) && Near(b.maxDistance, 50));
-    // The sound field takes sounds (the インスペクター's picker and drops).
+    // sound フィールドは音を受け取る (インスペクターの選択とドロップ)。
     const reflect::TypeDesc& t = reflect::TypeOf<AudioSource>();
     bool found = false;
     for (const reflect::FieldDesc& f : t.fields) {
@@ -171,11 +171,11 @@ RM_TEST(AudioGame_Source_SavedAndReadBack) {
 }
 
 RM_TEST(AudioGame_AskingDoesNotStopPlayOnStart) {
-    // A script asking IsPlaying in its BeginPlay (before the service's first Frame for it): the source's
-    // 始めから鳴らす still starts.
+    // スクリプトが BeginPlay の中で IsPlaying を尋ねる (サービスの最初の Frame より前): 音源の
+    // 始めから鳴らす は、それでも始まる。
     Play p;
     const int s = p.Source(kBeep, true);
-    CHECK(!p.Audio().SourcePlaying(p.scene, s));  // (not started yet)
+    CHECK(!p.Audio().SourcePlaying(p.scene, s));  // (まだ始まっていない)
     p.Frame();
     CHECK(p.Audio().SourcePlaying(p.scene, s));
 }
@@ -186,32 +186,32 @@ RM_TEST(AudioGame_SourcesStartAndStopWithTheirEntity) {
     const int on = p.Source(kBeep, true);
     const int off = p.Source(kBeep, false);
     p.Frame();
-    CHECK(p.Audio().Engine().Voices() == 1);           // 始めから鳴らす: only that one
+    CHECK(p.Audio().Engine().Voices() == 1);           // 始めから鳴らす: それだけ
     CHECK(p.Audio().SourcePlaying(p.scene, on) && !p.Audio().SourcePlaying(p.scene, off));
-    CHECK(p.Audio().SourcePlay(p.scene, off));         // the script's rm::AudioSource::Play
+    CHECK(p.Audio().SourcePlay(p.scene, off));         // スクリプトの rm::AudioSource::Play
     p.Frame();
     CHECK(p.Audio().Engine().Voices() == 2);
-    // Switched off: it stops (and starts again when switched on, as a new one).
+    // オフにした: 止まる (オンに戻すと、新しいものとしてまた始まる)。
     p.scene.Find(on)->data.active = false;
     CHECK(p.Within([&] { return p.Audio().Engine().Voices() == 1; }));
     p.scene.Find(on)->data.active = true;
     p.Frame();
     CHECK(p.Audio().Engine().Voices() == 2);
-    // Deleted: it stops.
+    // 削除した: 止まる。
     const int gone[] = {off};
     p.scene.Delete(gone);
     CHECK(p.Within([&] { return p.Audio().Engine().Voices() == 1; }));
-    // Stopped by a script; one with no 音源 says so.
+    // スクリプトで止めた。音源 のないものはそう答える。
     CHECK(p.Audio().SourceStop(p.scene, on));
     CHECK(p.Within([&] { return p.Audio().Engine().Voices() == 0; }));
     const int bare = p.scene.Create("no source");
     CHECK(!p.Audio().SourcePlay(p.scene, bare));
-    // A sound that is not there: nothing plays, told once.
+    // ない音: 何も鳴らず、1 回だけ知らせる。
     const size_t before = p.told.size();
     CHECK(p.Audio().PlayOnce(AssetRef{"ffffffffffffffffffffffffffffffff"}, 1, 1, nullptr) == 0);
     CHECK(p.Audio().PlayOnce(AssetRef{"ffffffffffffffffffffffffffffffff"}, 1, 1, nullptr) == 0);
     CHECK(p.told.size() == before + 1);
-    // ■: every service goes, and every sound with it.
+    // ■: すべてのサービスが消え、すべての音も一緒に消える。
     p.Audio().PlayOnce(AssetRef{kSongA}, 1, 1, nullptr);
     p.services.Stop();
     CHECK(!p.services.Running() && p.services.Find(kAudioServiceName) == nullptr);
@@ -223,16 +223,16 @@ RM_TEST(AudioGame_MusicCrossFadesAndGoesOnIntoTheNextScene) {
     a.PlayMusic(AssetRef{kSongA}, 1, 0.2f);
     const auto first = a.Music();
     CHECK(first != 0 && a.Playing(first));
-    // Another: the one before fades out while this one fades in.
+    // 別の音: 前のものはフェードアウトし、今度のものはフェードインする。
     a.PlayMusic(AssetRef{kSongB}, 1, 0.2f);
     const auto second = a.Music();
     CHECK(second != 0 && second != first && a.Playing(first) && a.Playing(second));
     CHECK(p.Within([&] { return !a.Playing(first); }));
     CHECK(a.Playing(second));
-    // The same again: it goes on as it is.
+    // 同じものをもう一度: そのまま続く。
     a.PlayMusic(AssetRef{kSongB}, 1, 0.2f);
     CHECK(a.Music() == second);
-    // A 音源 that is BGM with the same sound takes it over; a scene switched to with the same BGM keeps it.
+    // 同じ音の BGM の 音源 はそれを引き継ぐ。同じ BGM のシーンに切り替えても保つ。
     p.Source(kSongB, true, AudioBus::Music);
     p.Frame();
     CHECK(a.Music() == second && p.Audio().Engine().Voices() == 1);
@@ -242,7 +242,7 @@ RM_TEST(AudioGame_MusicCrossFadesAndGoesOnIntoTheNextScene) {
     p.Source(kSongB, true, AudioBus::Music);
     p.Frame();
     CHECK(a.Music() == second && a.Playing(second));
-    // ... a scene with another BGM cross-fades to it; a scene with none lets the music go.
+    // ... 別の BGM のシーンならそちらへクロスフェードし、BGM のないシーンなら音楽を手放す。
     a.SceneSwitched();
     p.scene = Scene();
     p.scene.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<AudioSource>()}, {&reflect::TypeOf<AudioSource>()});
@@ -255,7 +255,7 @@ RM_TEST(AudioGame_MusicCrossFadesAndGoesOnIntoTheNextScene) {
     p.Frame();
     CHECK(a.Music() == 0);
     CHECK(p.Within([&] { return p.Audio().Engine().Voices() == 0; }));
-    // StopMusic: the music a script started.
+    // StopMusic: スクリプトが始めた音楽。
     a.PlayMusic(AssetRef{kSongA}, 1, 0);
     CHECK(a.Music() != 0);
     a.StopMusic(0);
@@ -266,19 +266,19 @@ RM_TEST(AudioGame_Volumes_SettingsOrTheScript) {
     Play p;
     AudioService& a = p.Audio();
     CHECK(Near(a.Volume(AudioService::BusVolume::Master), 1) && Near(a.Volume(AudioService::BusVolume::Music), 1));
-    p.settings.volume.music = 0.5f;  // (edited while playing: read as it is)
+    p.settings.volume.music = 0.5f;  // (再生中に編集: そのまま読む)
     p.settings.volume.effects = 0.25f;
     CHECK(Near(a.Volume(AudioService::BusVolume::Music), 0.5f) && Near(a.Volume(AudioService::BusVolume::Effects), 0.25f));
-    a.SetVolume(AudioService::BusVolume::Music, 0.2f);  // a script's options screen
+    a.SetVolume(AudioService::BusVolume::Music, 0.2f);  // スクリプトのオプション画面
     CHECK(Near(a.Volume(AudioService::BusVolume::Music), 0.2f));
     p.settings.volume.music = 0.9f;
-    CHECK(Near(a.Volume(AudioService::BusVolume::Music), 0.2f));  // the script's stays
+    CHECK(Near(a.Volume(AudioService::BusVolume::Music), 0.2f));  // スクリプトの値が残る
     a.SetVolume(AudioService::BusVolume::Master, 9);
-    CHECK(Near(a.Volume(AudioService::BusVolume::Master), 2));    // at most 2
+    CHECK(Near(a.Volume(AudioService::BusVolume::Master), 2));    // 最大 2
     a.SetVolume(AudioService::BusVolume::Effects, -1);
     CHECK(Near(a.Volume(AudioService::BusVolume::Effects), 0));
-    p.Frame();  // (given to the engine)
-    // The loudness of one voice: 全体 x bus x asset x asked (audio::Gain), each at most 4.
+    p.Frame();  // (エンジンに渡される)
+    // 1 つの声の大きさ: 全体 x バス x アセット x 頼まれた値 (audio::Gain)。それぞれ最大 4。
     CHECK(Near(audio::Gain(2, 0.2f, 1, 0.5f), 0.2f));
 }
 
@@ -310,7 +310,7 @@ RM_TEST(AudioGame_ScriptPart) {
     CHECK(p.Audio().Music() != 0);
     api->stopMusic(&w, 0);
     CHECK(p.Audio().Music() == 0);
-    // No services (a host without them): nothing happens, nothing breaks.
+    // サービスがない (ない状態のホスト): 何も起きず、何も壊れない。
     ScriptWorld none;
     CHECK(api->play(&none, guid, 1, 1, nullptr) == 0 && api->source(&none, 1, 0) == 0 && api->playing(&none, 1) == 0);
 }
@@ -328,12 +328,12 @@ RM_TEST(AudioGame_WhereAnEntityIsHeardFrom) {
     Pose pose;
     CHECK(EntityPose(p.registry, p.scene, child, pose));
     CHECK(Near(pose.position.x, 11) && Near(pose.position.y, 2) && Near(pose.position.z, 3));
-    CHECK(Near(pose.forward.z, -1) && Near(pose.up.y, 1));  // looks along -Z (as a camera)
-    t->rotation = {0, 90, 0};  // turned left: looks along -X
+    CHECK(Near(pose.forward.z, -1) && Near(pose.up.y, 1));  // -Z を向く (カメラと同じ)
+    t->rotation = {0, 90, 0};  // 左を向いた: -X を向く
     CHECK(EntityPose(p.registry, p.scene, child, pose) && Near(pose.forward.x, -1) && Near(pose.forward.z, 0));
     const int bare = p.scene.Create("no transform");
     CHECK(!EntityPose(p.registry, p.scene, bare, pose) && !EntityPose(p.registry, p.scene, 999, pose));
-    // A 3D 音源 plays from there (and the camera hears it).
+    // 3D の 音源 はそこから鳴る (カメラがそれを聞く)。
     const int s = p.Source(kSongA, true);
     p.SourceOf(s).spatial = true;
     p.Frame(0.02f, static_cast<uint64_t>(child));

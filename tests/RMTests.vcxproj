@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Pure-code tests (no GPU, no files). Run by CI and tools/build.ps1. -->
+<!-- 純粋なコードのテスト (GPU もファイルも使わない)。CI と tools/build.ps1 が走らせる。 -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -37,11 +37,11 @@
   <ItemDefinitionGroup>
     <Link>
       <SubSystem>Console</SubSystem>
-      <!-- (platform/Shell.cpp: the scripts' build runs programs through platform/Process) -->
+      <!-- (platform/Shell.cpp: スクリプトのビルドは platform/Process 経由でプログラムを走らせる) -->
       <AdditionalDependencies>dwmapi.lib;bcrypt.lib;shcore.lib;windowscodecs.lib;d2d1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <ClCompile>
-      <!-- src\editor\widgets, src\editor\dock: their reflected types (ThemeFile.h, NamedLayouts.h) are generated with paths from there -->
+      <!-- src\editor\widgets, src\editor\dock: そこにある反射型 (ThemeFile.h, NamedLayouts.h) は、そこからのパスで生成される -->
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(RMRoot)tools;$(RMRoot)src\editor\widgets;$(RMRoot)src\editor\dock;$(RMRoot)src\core\asset;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
@@ -110,7 +110,7 @@
     <ClCompile Include="..\src\platform\SystemInfo.cpp" />
     <ClCompile Include="..\src\editor\export\ExportPlan.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\editor\GameExport.cpp" />
-    <!-- Pure files from other layers, compiled directly into the tests. -->
+    <!-- 他の層の純粋なファイル。テストに直接コンパイルして入れる。 -->
     <ClCompile Include="..\src\core\UndoHistory.cpp" />
     <ClCompile Include="..\src\ui\TextEdit.cpp" />
     <ClCompile Include="..\src\editor\dock\DockLayout.cpp" />
@@ -157,7 +157,7 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\DebugDraw.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\ScriptTransform2D.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\Register.cpp">
-      <!-- (two Register.cpp: one object each) -->
+      <!-- (Register.cpp が 2 つ: それぞれ別のオブジェクトにする) -->
       <ObjectFileName>$(IntDir)game_x_2d\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="..\plugins\RuntimePlugins.cpp" />

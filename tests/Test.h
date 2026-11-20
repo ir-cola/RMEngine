@@ -1,6 +1,6 @@
 #pragma once
-// Minimal test harness: RM_TEST registers a case, CHECK records a failure and continues.
-// The exe returns non-zero when anything failed, so CI and tools/build.ps1 can rely on the exit code.
+// 最小のテスト用の仕組み: RM_TEST がケースを登録し、CHECK は失敗を記録して続ける。
+// 失敗が 1 つでもあると exe は 0 以外を返すので、CI と tools/build.ps1 は終了コードに頼れる。
 
 #include <vector>
 

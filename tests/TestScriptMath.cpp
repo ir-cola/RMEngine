@@ -1,14 +1,15 @@
-// Tests for the scripts' math (sdk/RMMath.h, header only): vectors, rm::Math, rm::Quat (the same turn as the
-// engine's Transform angles - space3d::RotationMatrix), and rm::Random. RMMath.h works on the types it is
-// given (rm::Vec2 / Vec3 / Color: here the engine's, which have the same members as RM.h's).
+// スクリプト用の数学 (sdk/RMMath.h、ヘッダーのみ) のテスト: ベクトル、rm::Math、
+// rm::Quat (エンジンの Transform の角度と同じ回転 - space3d::RotationMatrix)、rm::Random。
+// RMMath.h は渡された型をそのまま使う (rm::Vec2 / Vec3 / Color: ここではエンジンのもので、
+// RM.h のものと同じメンバーを持つ)。
 
 #include "Test.h"
 
 #include "base/Math.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
-// (after the engine's headers: their own Vec3 operators are in rm::space3d - declared here first, the
-// scripts' in rm would make their inline code ambiguous)
+// (エンジンのヘッダーの後に: ヘッダー側の Vec3 の演算子は rm::space3d にある。ここで先に宣言する。
+// スクリプト側のものを rm に置くと、ヘッダーのインラインコードがあいまいになる)
 #include "rm_engine/game_production/runtime/sdk/RMMath.h"
 
 #include <cmath>
@@ -47,7 +48,7 @@ RM_TEST(ScriptMath_Numbers) {
     CHECK(Near(M::Repeat(5.5f, 2), 1.5f) && Near(M::Repeat(-0.5f, 2), 1.5f) && Near(M::PingPong(3, 2), 1));
     CHECK(Near(M::DeltaAngle(350, 10), 20) && Near(M::DeltaAngle(10, 350), -20) && Near(M::MoveTowardsAngle(350, 10, 5), 355));
     CHECK(Near(M::MoveTowards(0, 10, 4), 4) && Near(M::SmoothStep(0, 1, 0.5f), 0.5f) && M::Approximately(0.1f + 0.2f, 0.3f));
-    // SmoothDamp gets there without going past it.
+    // SmoothDamp は行き過ぎずに着く。
     float x = 0, v = 0;
     bool past = false;
     for (int i = 0; i < 300; ++i) {
@@ -60,7 +61,7 @@ RM_TEST(ScriptMath_Numbers) {
 RM_TEST(ScriptMath_QuatIsTheEnginesTurn) {
     using rm::Quat;
     using rm::Vec3;
-    // Euler: the same turn as a Transform's rotation (X, then Y, then Z) - every axis checked.
+    // オイラー角: Transform の回転と同じ回し方 (X、Y、Z の順) - 全部の軸を確かめる。
     const Vec3 angles[] = {{30, 0, 0}, {0, 45, 0}, {0, 0, 60}, {10, 20, 30}, {-70, 120, 15}};
     for (const Vec3& deg : angles) {
         const Quat q = Quat::Euler(deg);
@@ -68,11 +69,11 @@ RM_TEST(ScriptMath_QuatIsTheEnginesTurn) {
         for (const Vec3 v : {Vec3{1, 0, 0}, Vec3{0, 1, 0}, Vec3{0, 0, 1}, Vec3{1, 2, 3}}) {
             CHECK(Near(q * v, rm::space3d::TransformDirection(m, v)));
         }
-        // ... and back: the angles of the turn give the same turn.
+        // ... 戻しても: 回転の角度から同じ回転が得られる。
         const Vec3 back = q.ToEuler();
         CHECK(Near(Quat::Euler(back) * Vec3{1, 2, 3}, q * Vec3{1, 2, 3}));
     }
-    // A thing looks along its -Z: LookRotation puts it where asked, Y up.
+    // 物は自分の -Z の向きを見る: LookRotation は頼んだ向きに合わせ、Y を上にする。
     const Quat look = Quat::LookRotation(Vec3{1, 0, 0});
     CHECK(Near(look.Forward(), Vec3{1, 0, 0}) && Near(look.Up(), Vec3{0, 1, 0}) && Near(look.ToEuler(), Vec3{0, -90, 0}, 1e-3f));
     CHECK(Near(Quat::FromToRotation(Vec3{1, 0, 0}, Vec3{0, 1, 0}) * Vec3{1, 0, 0}, Vec3{0, 1, 0}));
@@ -86,7 +87,7 @@ RM_TEST(ScriptMath_Random) {
     rm::Random::Seed(7);
     const float first = rm::Random::Value();
     rm::Random::Seed(7);
-    CHECK(rm::Random::Value() == first);  // the same seed: the same numbers
+    CHECK(rm::Random::Value() == first);  // 同じシード: 同じ数
     bool inside = true;
     int faces[7] = {};
     for (int i = 0; i < 6000; ++i) {
@@ -98,5 +99,5 @@ RM_TEST(ScriptMath_Random) {
         inside = inside && rm::Length(rm::Random::InsideUnitCircle()) <= 1.0001f && Near(rm::Length(rm::Random::OnUnitSphere()), 1, 1e-3f);
     }
     CHECK(inside);
-    for (int d = 1; d <= 6; ++d) CHECK(faces[d] > 800 && faces[d] < 1200);  // about 1000 each
+    for (int d = 1; d <= 6; ++d) CHECK(faces[d] > 800 && faces[d] < 1200);  // 各 1000 ほど
 }

@@ -1,4 +1,4 @@
-# Builds and runs the 3D renderer's CPU benchmark (tools/bench3d/Bench3D.cpp). Needs a GPU.
+﻿# 3D レンダラーの CPU ベンチマーク (tools/bench3d/Bench3D.cpp) を作って走らせる。GPU が要る。
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\bench3d\run.ps1 [-Frames 300] [-Case boxes|mesh|drag]
 param([int]$Frames = 300, [ValidateSet('boxes', 'mesh', 'drag')][string]$Case = 'boxes')
 

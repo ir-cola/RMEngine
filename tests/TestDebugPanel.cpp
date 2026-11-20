@@ -1,6 +1,6 @@
-// Tests for what the デバッグ panel shows: the frame meter (frames of the last second, the gaps, a view not
-// drawn), the PC's monitors and the GPU of a Direct3D device (platform/SystemInfo), the names of the pads'
-// controls, and the particles each picture reports.
+// デバッグパネルが見せるもののテスト: フレームメーター (直近 1 秒のフレーム、間隔、描かれて
+// いないビュー)、PC のモニターと Direct3D デバイスの GPU (platform/SystemInfo)、パッドの
+// 操作の名前、そして各画面が報告するパーティクル。
 
 #include "Test.h"
 
@@ -21,7 +21,7 @@ using namespace rm;
 RM_TEST(DebugPanel_FrameMeter) {
     game_production::FrameMeter m;
     CHECK(m.Over(0).frames == 0);
-    // 60 frames 1/60 s apart, the last 10 ms late: 60 FPS, the worst gap 26.7 ms.
+    // 1/60 秒おきの 60 フレーム、最後が 10 ms 遅れた: 60 FPS、一番大きい間隔は 26.7 ms。
     double t = 10;
     for (int i = 0; i < 60; ++i) {
         t += 1.0 / 60 + (i == 59 ? 0.010 : 0);
@@ -30,9 +30,9 @@ RM_TEST(DebugPanel_FrameMeter) {
     const auto s = m.Over(t);
     CHECK(s.frames == 60 && std::fabs(s.fps - 59.0 / (t - (10 + 1.0 / 60))) < 0.01 && s.fps > 55 && s.fps < 61);
     CHECK(std::fabs(s.worstMs - 26.67) < 0.1 && std::fabs(s.workMs - 2.0) < 1e-9);
-    // Nothing drawn for a second: nothing to tell (the editor draws only what changes).
+    // 1 秒間何も描かれていない: 知らせることはない (エディターは変わったものだけを描く)。
     CHECK(m.Over(t + 1.5).frames == 0);
-    // One frame alone.
+    // フレームが 1 つだけ。
     m.Frame(t + 3);
     CHECK(m.Over(t + 3).frames == 1 && m.Over(t + 3).fps == 1);
 }
@@ -46,7 +46,7 @@ RM_TEST(DebugPanel_MonitorsAndGpu) {
         primaries += m.primary ? 1 : 0;
     }
     CHECK(primaries == 1);
-    // The GPU of a device (the software one when there is no GPU here: a name all the same).
+    // デバイスの GPU (ここに GPU がなければソフトのもの: それでも名前はある)。
     Microsoft::WRL::ComPtr<ID3D11Device> device;
     D3D_FEATURE_LEVEL fl{};
     HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, &fl, nullptr);
@@ -67,7 +67,7 @@ RM_TEST(DebugPanel_CpuAndMemory) {
     CHECK(cpu.performanceCores + cpu.efficiencyCores == 0 || cpu.performanceCores + cpu.efficiencyCores == cpu.cores);
     const platform::MemoryStatus pc = platform::MemoryOfThePc();
     CHECK(pc.total > 0 && pc.available <= pc.total && pc.load <= 100 && pc.commitLimit >= pc.total / 2);
-    // Busy for a while between two samples: this program used some of the CPU (never more than all of it).
+    // 2 つのサンプルの間しばらく忙しかった: このプログラムは CPU を少し使った (全部を超えることはない)。
     platform::CpuMeter meter;
     CHECK(!meter.Sample());
     volatile double sink = 0;
@@ -80,7 +80,7 @@ RM_TEST(DebugPanel_CpuAndMemory) {
 RM_TEST(DebugPanel_PadNamesAndParticles) {
     using namespace rm::game_production;
     CHECK(ControlName(kPadControlBase) == "PadA" && ControlName(kPadControlBase + 4) == "PadLB" && ControlName(kPadControlBase + 19) == "PadRightStickY");
-    // A drawer's report is there while it is fresh, one entry per drawer.
+    // 描画役の報告は、新しいうちはある。描画役ごとに 1 項目。
     int drawer = 0;
     game_x_particles::PictureParticles p;
     p.picture = "scene";
@@ -94,7 +94,7 @@ RM_TEST(DebugPanel_PadNamesAndParticles) {
         if (r.picture == "scene" && r.alive == 130) ++mine;
     }
     CHECK(mine == 1);
-    CHECK(game_x_particles::RecentParticles(-1).empty());  // (nothing is newer than now)
+    CHECK(game_x_particles::RecentParticles(-1).empty());  // (今より新しいものはない)
 }
 
 RM_TEST(DebugPanel_SystemsTimed_FixedSteps) {
@@ -107,13 +107,13 @@ RM_TEST(DebugPanel_SystemsTimed_FixedSteps) {
     r.SetSystems(list);
     Scene s;
     r.Advance(s, 0.1, 0.02f);
-    CHECK(r.Times().empty() && r.LastSteps() == 5);  // (not timed unless asked)
+    CHECK(r.Times().empty() && r.LastSteps() == 5);  // (頼まれない限り時間は計らない)
     r.SetTiming(true);
     r.Advance(s, 0.04, 0.02f);
-    // In the systems' order (Fixed first): the fixed one ran twice, the frame one once.
+    // システムの順 (Fixed が先): 固定のものは 2 回、フレームのものは 1 回走った。
     CHECK(r.Times().size() == 2 && r.Times()[0].system == &kFixed && r.Times()[0].runs == 2 && r.Times()[1].runs == 1 && r.LastSteps() == 2);
     CHECK(r.Times()[0].ms >= 0);
-    r.Advance(s, 1.0, 0.02f);  // far behind: the most steps, no more
+    r.Advance(s, 1.0, 0.02f);  // 大きく遅れた: 最大のステップ数まで、それ以上は進まない
     CHECK(r.LastSteps() == SystemRunner::kMaxFixedSteps);
 }
 
@@ -133,7 +133,7 @@ RM_TEST(DebugPanel_LogCountsAndViewReports) {
     ReportView(&a, r);
     r.title = L"zz test A";
     ReportView(&b, r);
-    ReportView(&b, r);  // (one per view)
+    ReportView(&b, r);  // (ビューごとに 1 つ)
     size_t mine = 0;
     std::wstring order;
     for (const ViewReport& v : RecentViews()) {
@@ -142,32 +142,32 @@ RM_TEST(DebugPanel_LogCountsAndViewReports) {
             order += v.title.back();
         }
     }
-    CHECK(mine == 2 && order == L"AB");  // sorted by title
+    CHECK(mine == 2 && order == L"AB");  // タイトル順に並ぶ
 }
 
 RM_TEST(DebugPanel_WindowLayoutShapeAndHits) {
     using namespace rm::game_production;
     using rm::editor::ToolHit;
     const FolderWindowLayout l = LayoutFolderWindow(620, 720);
-    // Five tabs side by side on top, the sheet under them, the × in the sheet's top right.
+    // 上に 5 つのタブが横に並び、その下にシート、シートの右上に ×。
     for (int i = 1; i < kFolderTabs; ++i) CHECK(l.tabs[i].x > l.tabs[i - 1].Right() && l.tabs[i].y == 0);
     CHECK(l.tabs[0].x == 0 && l.body.y == kFolderTabH && l.body.Bottom() == 720 && l.close.Right() < 620 && l.close.y > l.body.y);
     CHECK(l.content.y >= l.grip.Bottom() && l.content.Bottom() <= l.body.Bottom());
-    // The shape: the sheet and a rounded rectangle for each tab.
+    // 形: シートと、タブごとの角丸の四角。
     const auto shape = FolderWindowShape(620, 720);
     CHECK(shape.size() == 1 + kFolderTabs && shape[0].rect.y == kFolderTabH);
-    // What a point is: a tab and the × are the UI's; the strip moves the window; the edges size it;
-    // right of the tabs is not the window at all.
+    // 点が何か: タブと × は UI のもの、帯はウィンドウを動かし、縁は大きさを変える。
+    // タブの右はウィンドウではない。
     CHECK(HitFolderWindow(l, l.tabs[2].x + 5, 10) == ToolHit::Client);
     CHECK(HitFolderWindow(l, l.close.x + 5, l.close.y + 5) == ToolHit::Client);
     CHECK(HitFolderWindow(l, 200, l.body.y + 15) == ToolHit::Caption);
     CHECK(HitFolderWindow(l, 300, 400) == ToolHit::Client);
     CHECK(HitFolderWindow(l, 619, 719) == ToolHit::BottomRight && HitFolderWindow(l, 1, 719) == ToolHit::BottomLeft);
     CHECK(HitFolderWindow(l, 619, 400) == ToolHit::Right && HitFolderWindow(l, 300, 719) == ToolHit::Bottom);
-    // Wide: the tabs stop at their widest; right of them is not the window at all.
+    // 広い: タブは一番広い幅で止まる。その右はウィンドウではない。
     const FolderWindowLayout wide = LayoutFolderWindow(1000, 600);
     CHECK(wide.tabs[kFolderTabs - 1].Right() < 900 && HitFolderWindow(wide, 950, 10) == ToolHit::Nowhere);
-    // Narrow: the tabs shrink but stay five in the window.
+    // 狭い: タブは縮むが、ウィンドウの中で 5 つのまま。
     const FolderWindowLayout n = LayoutFolderWindow(420, 300);
     CHECK(n.tabs[kFolderTabs - 1].Right() <= 420);
 }

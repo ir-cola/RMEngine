@@ -1,9 +1,11 @@
-// Tests for the scripts' API of ABI 7 (RmAbi.h's new parts), on modules built here by hand: coroutines
-// (their waits - frames, game seconds, real seconds, another coroutine -, their owner's EndPlay stopping
-// them, a crash), events (to everyone / one / a subtree, after the Ticks, one sent in OnEvent the same
-// frame), the time scale, tags / layers / children / parents (a loop refused), the world kept when the
-// parent changes (3D and 2D), LookAt, the mouse, input by player and the player's bindings (saved, read
-// back), a sprite's animation and the particles from a script.
+// ABI 7 のスクリプト API (RmAbi.h の新しい部分) のテスト。ここで手作りした
+// モジュールで行う: コルーチン (待ち - フレーム、ゲーム内の秒、実時間の秒、
+// 別のコルーチン -、持ち主の EndPlay による停止、クラッシュ)、
+// イベント (全員へ / 1 つへ / 部分木へ、Tick のあと、OnEvent で送ったものは
+// 同じフレーム)、時間の倍率、タグ / レイヤー / 子 / 親 (ループは断る)、
+// 親を変えても保たれるワールド (3D と 2D)、LookAt、マウス、
+// プレイヤーごとの入力とプレイヤーのキー割り当て (保存して読み戻す)、
+// スプライトのアニメーション、スクリプトからのパーティクル。
 
 #include "Test.h"
 
@@ -52,7 +54,7 @@ uint64_t StringGet(const void*, char* buf, uint64_t cap) {
 }
 void StringSet(void*, const char*, uint64_t) {}
 
-// A coroutine made by hand: each resume logs its step and asks for the next wait (none left: it ends).
+// 手作りしたコルーチン: 再開のたびに手順を記録し、次の待ちを頼む (もう無ければ終わる)。
 struct FakeCo {
     std::vector<RmWait> waits;
     size_t step = 0;
@@ -76,11 +78,11 @@ void FakeDestroy(void* f) {
 }
 const RmCoroutinesApi& Co() { return *static_cast<const RmCoroutinesApi*>(g_api->part(g_api->ctx, RM_PART_COROUTINES, RM_PART_COROUTINES_VERSION)); }
 
-// --- Scripts --------------------------------------------------------------------------------------
+// --- スクリプト ---------------------------------------------------------------------
 struct Waits {
     uint64_t id = 0;
 };
-FakeCo* g_next = nullptr;  // what the next BeginPlay starts
+FakeCo* g_next = nullptr;  // 次の BeginPlay が始めるもの
 void WaitsBegin(void* s, RmEntityId) {
     FakeCo* co = std::exchange(g_next, nullptr);
     if (co) static_cast<Waits*>(s)->id = Co().start(g_api->ctx, co, &FakeResume, &FakeDestroy);
@@ -92,7 +94,7 @@ struct Listener {
 void ListenerEvent(void* s, RmEntityId e, const RmEvent* ev) {
     ++static_cast<Listener*>(s)->got;
     g_log += std::to_string(e) + ev->name + std::to_string(static_cast<int>(ev->number)) + ev->text + "/" + std::to_string(ev->sender) + " ";
-    // An answer sent from OnEvent comes the same frame.
+    // OnEvent から送った答えは同じフレームに届く。
     if (std::string(ev->name) == "Ping") {
         const auto* t = static_cast<const RmEventsApi*>(g_api->part(g_api->ctx, RM_PART_EVENTS, RM_PART_EVENTS_VERSION));
         t->send(g_api->ctx, 1, ev->sender, "Pong", 0, "", 0, 0);
@@ -109,7 +111,7 @@ void SenderTick(void* s, RmEntityId e, float) {
     if (++static_cast<Sender*>(s)->frame != 1) return;
     const auto* t = static_cast<const RmEventsApi*>(g_api->part(g_api->ctx, RM_PART_EVENTS, RM_PART_EVENTS_VERSION));
     t->send(g_api->ctx, 0, 0, "All", 1, "x", 1, 0);
-    t->send(g_api->ctx, 1, g_one, "One", 2, "yy", 1, 0);  // (only 1 byte of the text)
+    t->send(g_api->ctx, 1, g_one, "One", 2, "yy", 1, 0);  // (文字は 1 バイトだけ)
     t->send(g_api->ctx, 2, g_down, "Down", 3, "", 0, 0);
 }
 
@@ -134,7 +136,7 @@ Scene SceneWith(const ScriptModule& m, std::vector<const reflect::TypeDesc*> mor
 bool Near(float a, float b, float eps = 1e-3f) { return std::fabs(a - b) < eps; }
 bool Near(Vec3 a, Vec3 b, float eps = 1e-3f) { return Near(a.x, b.x, eps) && Near(a.y, b.y, eps) && Near(a.z, b.z, eps); }
 
-// One frame as a host runs it: the real seconds and the scaled ones.
+// ホストが動かす 1 フレーム: 実時間の秒と、倍率をかけた秒。
 void Step(ScriptRunner& r, Scene& s, ScriptWorld& w, const ScriptModule& m, float realDt) {
     w.unscaledDt = realDt;
     r.Frame(s, w, m, {}, realDt * w.timeScale);
@@ -162,11 +164,12 @@ RM_TEST(Abi7_Coroutine_GameTimeAndRealTime) {
         for (size_t i = before; i < g_log.size(); ++i) frameOf.push_back(f);
     }
     CHECK(g_log == "abcd");
-    // b: the next frame. c: its wait began at frame 1's end (0.2 s) -> 0.45 s: the end of frame 4. d: 1 real
-    // second after that (1.5 s): the end of frame 14. Then it is freed.
+    // b: 次のフレーム。c: 待ちはフレーム 1 の終わり (0.2 秒) に始まった ->
+    // 0.45 秒: フレーム 4 の終わり。d: その 1 実時間秒後 (1.5 秒): フレーム 14 の終わり。
+    // そのあと解放される。
     CHECK((frameOf == std::vector<int>{0, 1, 4, 14}));
     CHECK(g_destroyed == 1 && w.coroutines.empty());
-    // With the time scale at 0, game seconds stand still but real seconds go on.
+    // 時間の倍率が 0 のとき、ゲーム内の秒は止まるが、実時間の秒は進む。
     g_log.clear();
     g_destroyed = 0;
     ScriptWorld w2;
@@ -178,14 +181,14 @@ RM_TEST(Abi7_Coroutine_GameTimeAndRealTime) {
     FakeCo* real = new FakeCo{{RmWait{RmWait_RealSeconds, 0, 0.05, 0}}, 0, 'A'};
     w2.timeScale = 0;
     ScriptRunner r2;
-    Step(r2, s2, w2, m, 0.1f);  // a (the scripted one), and one started outside a script (no owner)
+    Step(r2, s2, w2, m, 0.1f);  // a (スクリプトで始めた) と、外で始めた (持ち主なし)
     w2.scene = &s2;
     const uint64_t loose = Co().start(api2.ctx, real, &FakeResume, &FakeDestroy);
     CHECK(loose != 0 && Co().running(api2.ctx, loose) == 1);
     for (int f = 0; f < 5; ++f) Step(r2, s2, w2, m, 0.1f);
-    CHECK(g_log == "aAB");  // the game-seconds one waits for ever at scale 0; the real-seconds one ended
+    CHECK(g_log == "aAB");  // ゲーム内の秒は倍率 0 でずっと待つ。実時間の秒は終わった
     CHECK(Co().running(api2.ctx, loose) == 0 && w2.coroutines.size() == 1);
-    r2.Stop(s2, w2, m, {});  // Stop: every one freed
+    r2.Stop(s2, w2, m, {});  // Stop: 全部解放される
     CHECK(w2.coroutines.empty() && g_destroyed == 2);
     g_api = nullptr;
 }
@@ -208,23 +211,24 @@ RM_TEST(Abi7_Coroutine_StoppedWithItsScript_WaitsForAnother_Crash) {
     Step(r, s, w, m, 0.1f);
     const uint64_t id = static_cast<const Waits*>(s.Find(a)->FindComponent("co::Waits")->value.Get())->id;
     CHECK(id != 0 && Co().running(api.ctx, id) == 1);
-    // One started outside waits for that one (RmWait_Coroutine).
+    // 外で始めたものは、そのコルーチン (RmWait_Coroutine) を待つ。
     w.scene = &s;
     const uint64_t waiter = Co().start(api.ctx, new FakeCo{{RmWait{RmWait_Coroutine, 0, 0, id}}, 0, 'W'}, &FakeResume, &FakeDestroy);
     Step(r, s, w, m, 0.1f);
     CHECK(g_log == "aW" && Co().running(api.ctx, waiter) == 1);
-    // Its entity switched off: EndPlay - its coroutine goes; the waiting one runs on in that frame (and ends).
+    // エンティティを切る: EndPlay - そのコルーチンは消える。待っていた方は、
+    // そのフレームで走り続ける (そして終わる)。
     s.Find(a)->data.active = false;
     Step(r, s, w, m, 0.1f);
     CHECK(Co().running(api.ctx, id) == 0 && g_log == "aWX" && Co().running(api.ctx, waiter) == 0 && g_destroyed == 2);
-    // Stopped by its id; a coroutine that crashes: stopped and told, the game goes on.
+    // id で止める。クラッシュするコルーチン: 止めて知らせ、ゲームは続く。
     const uint64_t later = Co().start(api.ctx, new FakeCo{{RmWait{RmWait_Frames, 5, 0, 0}}, 0, 'L'}, &FakeResume, &FakeDestroy);
     Co().stop(api.ctx, later);
     CHECK(Co().running(api.ctx, later) == 0 && g_destroyed == 3);
     FakeCo* bad = new FakeCo{{}, 0, 'Z', true};
     CHECK(Co().start(api.ctx, bad, &FakeResume, &FakeDestroy) == 0);
     CHECK(told.find("コルーチンが止まりました") != std::string::npos);
-    delete bad;  // (the engine leaves a crashed one's frame alone)
+    delete bad;  // (エンジンはクラッシュしたもののフレームには触らない)
     r.Stop(s, w, m, {});
     g_api = nullptr;
 }
@@ -254,20 +258,20 @@ RM_TEST(Abi7_Events_EveryoneOneSubtree_AfterTheTicks) {
     ScriptRunner r;
     Step(r, s, w, m, 0.1f);
     const std::string A = std::to_string(a), P = std::to_string(p), C = std::to_string(c), S = std::to_string(sender);
-    // Every Tick first (listeners by name before the sender), then the events in the order sent; a switched-off
-    // listener gets nothing.
+    // まず全部の Tick (名前順で、受け取り側が送り手より先)、そのあと送った順にイベント。切ってある
+    // 受け取り側には何も届かない。
     CHECK(g_log == "T" + A + " T" + P + " T" + C + " T" + S + " " + A + "All1x/" + S + " " + P + "All1x/" + S + " " + C + "All1x/" + S + " " + A +
                        "One2y/" + S + " " + P + "Down3/" + S + " " + C + "Down3/" + S + " ");
-    // One sent in OnEvent (Ping -> Pong to the sender) is delivered in the same frame.
+    // OnEvent で送ったもの (Ping -> 送り手へ Pong) は同じフレームに届く。
     g_log.clear();
     w.scene = &s;
-    w.currentEntity = a;  // (as if A's script sent it)
+    w.currentEntity = a;  // (A のスクリプトが送ったかのように)
     const auto* t = static_cast<const RmEventsApi*>(api.part(api.ctx, RM_PART_EVENTS, RM_PART_EVENTS_VERSION));
     t->send(api.ctx, 1, static_cast<RmEntityId>(p), "Ping", 0, "", 0, 0);
     w.currentEntity = 0;
     r.DeliverEvents(s, w, m, {});
     CHECK(g_log == P + "Ping0/" + A + " " + A + "Pong0/" + P + " ");
-    // To something gone: nobody.
+    // 無くなったものへ: 誰にも届かない。
     g_log.clear();
     t->send(api.ctx, 1, 99999, "Lost", 0, "", 0, 0);
     r.DeliverEvents(s, w, m, {});
@@ -284,7 +288,7 @@ RM_TEST(Abi7_TimeScale_TagsLayersChildrenParents) {
     const RmApi api = MakeScriptApi(w);
     const auto& time = *static_cast<const RmTimeApi*>(api.part(api.ctx, RM_PART_TIME, RM_PART_TIME_VERSION));
     const auto& ent = *static_cast<const RmEntityApi*>(api.part(api.ctx, RM_PART_ENTITY, RM_PART_ENTITY_VERSION));
-    // The time scale: kept between 0 and 100 (a broken number: 1).
+    // 時間の倍率: 0 から 100 に収める (壊れた数は: 1)。
     time.setScale(api.ctx, 0.5f);
     CHECK(time.scale(api.ctx) == 0.5f);
     time.setScale(api.ctx, -3);
@@ -297,13 +301,13 @@ RM_TEST(Abi7_TimeScale_TagsLayersChildrenParents) {
     Step(r, s, w, m, 0.2f);
     CHECK(Near(static_cast<float>(w.time), 0.2f) && Near(static_cast<float>(time.unscaledTime(api.ctx)), 0.4f) && time.frameCount(api.ctx) == 2);
     CHECK(Near(time.unscaledDeltaTime(api.ctx), 0.2f));
-    // Tags and layers.
+    // タグとレイヤー。
     w.scene = &s;
     const int a = s.Create("A"), b = s.Create("B"), c = s.Create("C", a);
     ent.setTag(api.ctx, static_cast<RmEntityId>(c), "Enemy");
     ent.setTag(api.ctx, static_cast<RmEntityId>(b), "Enemy");
     RmEntityId found[4] = {};
-    CHECK(ent.findWithTag(api.ctx, "Enemy", found, 1) == 2 && found[0] == static_cast<RmEntityId>(c));  // the 階層's order: C (under A) first
+    CHECK(ent.findWithTag(api.ctx, "Enemy", found, 1) == 2 && found[0] == static_cast<RmEntityId>(c));  // 階層の順: C (A の下) が先
     char buf[16];
     CHECK(ent.getTag(api.ctx, static_cast<RmEntityId>(b), buf, sizeof(buf)) == 5 && std::string(buf) == "Enemy");
     const std::vector<std::string> layers{"Water", "UI"};
@@ -311,7 +315,7 @@ RM_TEST(Abi7_TimeScale_TagsLayersChildrenParents) {
     ent.setLayer(api.ctx, static_cast<RmEntityId>(a), "UI");
     CHECK(s.Find(a)->data.layer == "UI");
     CHECK(ent.layerIndex(api.ctx, "") == 0 && ent.layerIndex(api.ctx, "Water") == 1 && ent.layerIndex(api.ctx, "UI") == 2 && ent.layerIndex(api.ctx, "X") == -1);
-    // Children (0: the top level) and parents: under itself is refused; moved in place.
+    // 子 (0: 最上位) と親: 自分の下へは断る。その場で動かす。
     CHECK(ent.children(api.ctx, 0, found, 4) == 2 && found[0] == static_cast<RmEntityId>(a) && found[1] == static_cast<RmEntityId>(b));
     CHECK(ent.setParent(api.ctx, static_cast<RmEntityId>(a), static_cast<RmEntityId>(c), 1, -1) == 0);
     CHECK(ent.setParent(api.ctx, static_cast<RmEntityId>(b), static_cast<RmEntityId>(a), 1, 0) == 1);
@@ -319,14 +323,14 @@ RM_TEST(Abi7_TimeScale_TagsLayersChildrenParents) {
     CHECK(ent.setParent(api.ctx, static_cast<RmEntityId>(c), 0, 0, -1) == 1 && s.Find(c)->data.parent == 0);
     ent.setName(api.ctx, static_cast<RmEntityId>(c), "Renamed");
     CHECK(s.Find(c)->data.name == "Renamed");
-    // Saved with the scene (and read back).
+    // シーンと一緒に保存する (そして読み戻す)。
     Scene back;
     back.Load(s.Save());
     CHECK(back.Find(b)->data.tag == "Enemy" && back.Find(a)->data.layer == "UI");
 }
 
 RM_TEST(Abi7_KeepWorld_3DAnd2D_LookAt) {
-    // 3D: the parent moved, turned and scaled; the child keeps its world place when put under it.
+    // 3D: 親を動かし、回し、拡大する。子は親の下に入れても、ワールドでの位置を保つ。
     const reflect::TypeDesc& tf = reflect::TypeOf<space3d::Transform>();
     Scene s;
     s.SetComponentTypes({&tf}, {});
@@ -352,20 +356,20 @@ RM_TEST(Abi7_KeepWorld_3DAnd2D_LookAt) {
     after[0] = now[12];
     after[1] = now[13];
     after[2] = now[14];
-    // LookAt: its -Z towards the target, in the world (under the turned parent too).
+    // LookAt: その -Z を目標へ、ワールドで (回した親の下でも)。
     const float target[3] = {after[0] + 5, after[1], after[2]}, up[3] = {0, 1, 0};
     CHECK(t3.lookAt(&w, static_cast<uint64_t>(child), target, up) == 1);
     float m[16];
     t3.worldMatrix(&w, static_cast<uint64_t>(child), m);
     const Vec3 forward = space3d::Normalize(Vec3{-m[8], -m[9], -m[10]});
     CHECK(Near(forward, Vec3{1, 0, 0}));
-    // World position set: it is there.
+    // ワールド位置を設定: そこへ行く。
     const float there[3] = {-4, 5, 6};
     t3.setWorldPosition(&w, static_cast<uint64_t>(child), there);
     t3.worldPosition(&w, static_cast<uint64_t>(child), after);
     CHECK(Near(Vec3{after[0], after[1], after[2]}, Vec3{-4, 5, 6}));
 
-    // 2D: the same with a turned, scaled parent and the drawing order.
+    // 2D: 回して拡大した親と、描く順で同じこと。
     const reflect::TypeDesc& t2d = reflect::TypeOf<space2d::Transform2D>();
     Scene s2;
     s2.SetComponentTypes({&t2d}, {});
@@ -385,8 +389,8 @@ RM_TEST(Abi7_KeepWorld_3DAnd2D_LookAt) {
     s2.Move(ids2, p2, Scene::kEnd);
     t2.worldGet(&w, static_cast<uint64_t>(c2), 0, p1);
     t2.worldGet(&w, static_cast<uint64_t>(c2), 1, r1);
-    CHECK(Near(p0[0], p1[0]) && Near(p0[1], p1[1]) && Near(r1[0], 10) && k->order == 4);  // 3 + 4 = 7 in the world
-    const float right[2] = {p1[0], p1[1] + 3};  // straight up from it: +X turned to 90
+    CHECK(Near(p0[0], p1[0]) && Near(p0[1], p1[1]) && Near(r1[0], 10) && k->order == 4);  // ワールドで 3 + 4 = 7
+    const float right[2] = {p1[0], p1[1] + 3};  // そこから真上: +X を 90 に回した
     t2.lookAt(&w, static_cast<uint64_t>(c2), right);
     t2.worldGet(&w, static_cast<uint64_t>(c2), 1, r1);
     CHECK(Near(r1[0], 90));
@@ -402,12 +406,12 @@ RM_TEST(Abi7_Mouse_InputByPlayer_Bindings) {
     w.SetPointer(Vec2{110, 40}, {1280, 720});
     mouse.delta(api.ctx, at);
     CHECK(at[0] == 10 && at[1] == -10);
-    w.SetPointer(std::nullopt, {1280, 720});  // gone off the game: where it was last, no movement
+    w.SetPointer(std::nullopt, {1280, 720});  // ゲームの外へ出た: 最後にいた所のまま、動かない
     CHECK(mouse.position(api.ctx, at) == 0 && at[0] == 110);
     mouse.delta(api.ctx, at);
     CHECK(at[0] == 0 && at[1] == 0);
 
-    // By player: 2P's pad pushes MoveX; the keyboard is 1P's.
+    // プレイヤー別: 2P のパッドは MoveX を押し、キーボードは 1P のもの。
     const std::vector<InputAction> list = DefaultInputActions();
     w.actions = &list;
     InputFrame f;
@@ -419,12 +423,12 @@ RM_TEST(Abi7_Mouse_InputByPlayer_Bindings) {
     const auto& in = *static_cast<const RmInputApi2*>(api.part(api.ctx, RM_PART_INPUT, RM_PART_INPUT_VERSION2));
     CHECK(Near(in.axis(api.ctx, "MoveX", 0), 1) && Near(in.axis(api.ctx, "MoveX", 1), -0.8f) && Near(in.axis(api.ctx, "MoveX", 2), 0));
     CHECK(in.padConnected(api.ctx, 1) == 1 && in.padConnected(api.ctx, 0) == 0);
-    w.keyboardPlayer = 1;  // the keyboard is 2P's now: 1P has nothing
+    w.keyboardPlayer = 1;  // キーボードは今は 2P のもの: 1P は何もない
     CHECK(Near(in.axis(api.ctx, "MoveX", 0), 0) && Near(in.axis(api.ctx, "MoveX", 1), 0.2f));
-    // What went down: the key first; a stick to the left: -1.
+    // 押された順: 先にキー、スティックを左へ: -1。
     float dir = 0;
     CHECK(in.anyPressed(api.ctx, -1, &dir) == VK_RIGHT && dir == 1);
-    // The key held already: 2P's stick pushed left is what went down.
+    // キーは押したまま: 2P のスティックを左へ倒したものが押された扱いになる。
     w.inputBefore = InputFrame{};
     w.inputBefore.keys[VK_RIGHT] = 1;
     w.inputNow = f;
@@ -433,7 +437,7 @@ RM_TEST(Abi7_Mouse_InputByPlayer_Bindings) {
     in.controlName(api.ctx, static_cast<int32_t>(InputControl::PadA), name, sizeof(name));
     CHECK(std::string(name) == "PadA" && ControlName(0x5B) == "Key0x5B" && ControlName(0x20) == "Space");
 
-    // The player's bindings: Jump on J, saved, reset, read back.
+    // プレイヤーのキー割り当て: Jump を J に、保存、リセット、読み戻す。
     const std::filesystem::path folder = std::filesystem::temp_directory_path() / (L"rm_bindings_" + std::to_wstring(GetCurrentProcessId()));
     std::error_code ec;
     std::filesystem::remove_all(folder, ec);
@@ -444,12 +448,12 @@ RM_TEST(Abi7_Mouse_InputByPlayer_Bindings) {
     int32_t control = 0;
     float scale = 0;
     CHECK(in.binding(api.ctx, "Jump", 1, &control, &scale) == 1 && control == 'K' && scale == 1);
-    CHECK(list[2].bindings.size() == 2 && list[2].bindings[0].control == InputControl::Space);  // the settings' are untouched
+    CHECK(list[2].bindings.size() == 2 && list[2].bindings[0].control == InputControl::Space);  // 設定のものは変わらない
     CHECK(in.saveBindings(api.ctx) == 1);
     in.resetBindings(api.ctx);
     CHECK(in.bindingCount(api.ctx, "Jump") == 2 && w.Actions()[2].bindings[0].control == InputControl::Space);
     CHECK(in.loadBindings(api.ctx) == 1 && w.Actions()[2].bindings[0].control == static_cast<InputControl>('J'));
-    // An action the file does not have keeps the game's; one the game no longer has is not taken.
+    // ファイルに無い操作はゲームのものを残し、ゲームにもう無い操作は取り込まない。
     std::vector<InputAction> game = list;
     game.push_back({"Dash", {{InputControl::Shift, 1}}});
     json::Value saved = BindingsToJson(w.Actions());
@@ -486,7 +490,7 @@ RM_TEST(Abi7_SpriteAnimation_AndParticles_FromScripts) {
         ctx.dt = dt;
         game_x_2d::RunSpriteAnimation(ctx);
     };
-    // Its own コマの並び from a script, played; the speed changed keeps the step it is on.
+    // スクリプトから、そのスプライトの コマの並び を再生する。速さを変えても今のコマは保たれる。
     const int32_t run4[] = {4, 5, 6, 7};
     a.setFrames(&w, id, run4, 4);
     run(0.25f);
@@ -495,7 +499,7 @@ RM_TEST(Abi7_SpriteAnimation_AndParticles_FromScripts) {
     CHECK(a.step(&w, id) == 2);
     run(1.0f);
     CHECK(a.step(&w, id) == 3 && sp->cell == 7);
-    // Paused: it stays; a jump to a step; stopped: the first, still; played again.
+    // 一時停止: そのまま。コマへ飛ぶ。停止: 最初のコマ、そのまま。また再生。
     a.pause(&w, id, 1);
     run(5.0f);
     CHECK(a.step(&w, id) == 3 && a.playing(&w, id) == 0);
@@ -508,9 +512,9 @@ RM_TEST(Abi7_SpriteAnimation_AndParticles_FromScripts) {
     a.play(&w, id, 0);
     a.setLoop(&w, id, 0);
     run(10.0f);
-    CHECK(a.step(&w, id) == 3 && a.playing(&w, id) == 0 && a.loop(&w, id) == 0);  // not looping: the end
+    CHECK(a.step(&w, id) == 3 && a.playing(&w, id) == 0 && a.loop(&w, id) == 0);  // ループしない: 最後で止まる
 
-    // The particles: what a script asked is kept on the component for the drawer (each, or one of them).
+    // パーティクル: スクリプトが頼んだことは、描く側のために部品に残る (全部、または 1 つ)。
     const auto& p = *static_cast<const RmParticlesApi*>(game_x_particles::ScriptParticlesPart().table);
     auto* first = static_cast<game_x_particles::ParticleSystem*>(s.Find(e)->FindComponent(fx.name, 0)->value.Get());
     auto* second = static_cast<game_x_particles::ParticleSystem*>(s.Find(e)->FindComponent(fx.name, 1)->value.Get());
@@ -524,14 +528,14 @@ RM_TEST(Abi7_SpriteAnimation_AndParticles_FromScripts) {
     p.setSpeed(&w, id, RM_PARTICLES_ALL, 50);
     CHECK(first->emitted == 30 && second->emitted == 0 && first->paused && second->paused && first->speed == 10 && p.speed(&w, id, 1) == 10);
 
-    // The births of an emitter: stopped, only what was asked; never more than it holds.
+    // エミッターの発生: 止まっていれば頼まれた分だけ。持っている数より多くは出ない。
     particles::ParticleEmitter em;
     em.rate = 100;
     em.burst = 0;
     em.capacity = 50;
     particles::EmitterClock clock;
     CHECK(particles::EmitterBirths(clock, em, 0.1f, true, 0) == 10);
-    CHECK(particles::EmitterBirths(clock, em, 0.1f, false, 5) == 5 && clock.age > 0.09f && clock.age < 0.11f);  // (the clock stayed)
+    CHECK(particles::EmitterBirths(clock, em, 0.1f, false, 5) == 5 && clock.age > 0.09f && clock.age < 0.11f);  // (時計は止まったまま)
     CHECK(particles::EmitterBirths(clock, em, 0.1f, true, 1000) == 50);
 }
 

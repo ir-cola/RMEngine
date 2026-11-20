@@ -1,5 +1,5 @@
-// Tests for the log (src/base/Log): writing from many threads at once, sinks that run on any thread or
-// wait for the owner's thread (DeliverQueued), and RemoveSink never leaving a sink being called.
+// ログ (src/base/Log) のテスト: 多くのスレッドから同時に書く、どのスレッドでも動くシンクと
+// 持ち主のスレッドを待つシンク (DeliverQueued)、そして RemoveSink の後にシンクが呼ばれないこと。
 
 #include "Test.h"
 
@@ -18,7 +18,7 @@ RM_TEST(Log_ManyThreadsAtOnce) {
     constexpr int kThreads = 8, kEach = 2000;
     std::atomic<int> calls{0};
     std::mutex mtx;
-    std::set<uint64_t> seen;  // every entry once, none torn
+    std::set<uint64_t> seen;  // どの記録も 1 回ずつで、欠けていない
     bool torn = false;
     const int sink = log::AddSink([&](const log::Entry& e) {
         calls.fetch_add(1);
@@ -39,7 +39,7 @@ RM_TEST(Log_ManyThreadsAtOnce) {
     CHECK(!torn);
     CHECK(seen.size() == static_cast<size_t>(kThreads * kEach));
     CHECK(log::LastSeq() == before + kThreads * kEach);
-    // The ring keeps the newest 2000, in order.
+    // リングは新しい 2000 件を順番に保つ。
     const auto snap = log::Snapshot();
     CHECK(snap.size() == 2000);
     bool ordered = true;
@@ -48,8 +48,8 @@ RM_TEST(Log_ManyThreadsAtOnce) {
 }
 
 RM_TEST(Log_RemoveSinkWaitsForCallsOnOtherThreads) {
-    // A sink that takes a while; RemoveSink on this thread while other threads keep writing. After it
-    // returns, the sink must never be called again (its owner may be gone).
+    // 時間のかかるシンク。他のスレッドが書き続けるなか、このスレッドで RemoveSink する。戻った後は、
+    // シンクを二度と呼んではいけない (持ち主はもう無いかもしれない)。
     std::atomic<bool> removed{false};
     std::atomic<bool> calledAfter{false};
     std::atomic<int> calls{0};
@@ -57,7 +57,7 @@ RM_TEST(Log_RemoveSinkWaitsForCallsOnOtherThreads) {
         if (removed.load()) calledAfter = true;
         calls.fetch_add(1);
         std::this_thread::sleep_for(std::chrono::microseconds(200));
-        if (removed.load()) calledAfter = true;  // still inside when RemoveSink returned
+        if (removed.load()) calledAfter = true;  // RemoveSink が戻ったとき、まだ中にいた
     });
     std::atomic<bool> stop{false};
     std::vector<std::thread> threads;
@@ -69,11 +69,11 @@ RM_TEST(Log_RemoveSinkWaitsForCallsOnOtherThreads) {
     while (calls.load() < 50) std::this_thread::yield();
     log::RemoveSink(sink);
     removed = true;
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));  // writers go on a little
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));  // 書き手は少し続ける
     stop = true;
     for (auto& th : threads) th.join();
     CHECK(!calledAfter.load());
-    log::RemoveSink(sink);  // twice: nothing
+    log::RemoveSink(sink);  // 2 回: 何もしない
 }
 
 RM_TEST(Log_QueuedSinksWaitForTheirThread) {
@@ -88,21 +88,21 @@ RM_TEST(Log_QueuedSinksWaitForTheirThread) {
         log::Delivery::Queued);
     std::atomic<int> wakes{0};
     log::SetWake([&] { wakes.fetch_add(1); });
-    log::DeliverQueued();  // (anything left from before)
+    log::DeliverQueued();  // (前から残っているもの)
     got.clear();
     std::thread writer([] {
         for (int i = 0; i < 100; ++i) log::Info("queued {}", i);
     });
     writer.join();
-    CHECK(got.empty());   // nothing until this thread asks
-    CHECK(wakes.load() == 1);  // woken once (the queue was empty), not 100 times
+    CHECK(got.empty());   // このスレッドが頼むまで何も来ない
+    CHECK(wakes.load() == 1);  // 1 回だけ起こされる (キューが空だったので)。100 回ではない
     log::DeliverQueued();
     CHECK(got.size() == 100);
     CHECK(!otherThread);
     bool ordered = true;
     for (size_t i = 1; i < got.size(); ++i) ordered = ordered && got[i] > got[i - 1];
     CHECK(ordered);
-    // Removed: what was waiting for it is dropped.
+    // 外した: それを待っていたものは捨てる。
     log::Info("after");
     log::RemoveSink(sink);
     got.clear();
@@ -112,7 +112,7 @@ RM_TEST(Log_QueuedSinksWaitForTheirThread) {
 }
 
 RM_TEST(Log_SinkMayRemoveItselfAndLog) {
-    // A sink that logs and removes itself on the same thread does not wait for itself.
+    // ログを出して同じスレッドで自分を外すシンクは、自分を待たない。
     int id = 0;
     int calls = 0;
     id = log::AddSink([&](const log::Entry& e) {

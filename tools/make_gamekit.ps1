@@ -1,11 +1,11 @@
-﻿# Makes <exe folder>/GameKit/ from RMGameKit's objects (src/RMGameKit.vcxproj runs it after its build):
-#   kit.json                               what is here, how it was built (the C++ runtime), the system libraries
-#   lib/core.lib  + lib/core/reflect/       the layers that ship in games (base core platform ui game), and the
-#                                           outside libraries built on their own (-ExtraCoreLibs: Jolt Physics)
-#   lib/<author>/<name>/runtime.lib  + reflect/   one per plugin with a runtime part
-# reflect/ holds rmgen's files of the lib's headers: the export reads the reflected types' names from them
-# (editor/export ExportPlan: ReadSymbols) to list them in the game's generated main.
-# A plugin's "entry" is whether its runtime sources have RM_RUNTIME_ENTRY (core/RuntimeRegistry.h).
+﻿# <exe のフォルダ>/GameKit/ を RMGameKit のオブジェクトから作る (src/RMGameKit.vcxproj が、そのビルドの後に走らせる):
+#   kit.json                               ここに何があるか、どう作ったか (C++ のランタイム)、システムライブラリ
+#   lib/core.lib  + lib/core/reflect/       ゲームに入る層 (base core platform ui game) と、
+#                                           単独で作った外のライブラリ (-ExtraCoreLibs: Jolt Physics)
+#   lib/<author>/<name>/runtime.lib  + reflect/   ランタイム部のあるプラグインごとに 1 つ
+# reflect/ には、lib のヘッダーの rmgen のファイルが入る: 書き出しはそこから反射した型の名前を読み、
+# ゲームが生成する main に並べる (editor/export ExportPlan: ReadSymbols)。
+# プラグインの "entry" は、そのランタイムのソースに RM_RUNTIME_ENTRY があるかどうか (core/RuntimeRegistry.h)。
 param(
     [Parameter(Mandatory = $true)][string]$Root,
     [Parameter(Mandatory = $true)][string]$ObjDir,
@@ -54,12 +54,12 @@ function Copy-Reflect([string]$dir, [string[]]$prefixes) {
     }
 }
 
-# The core: base core platform ui game
+# 核: base core platform ui game
 $corePrefixes = @('base_', 'core_', 'platform_', 'ui_', 'game_')
 $coreObjs = @(Get-ChildItem (Join-Path $ObjDir 'k') -Recurse -Filter *.obj | Where-Object { $_.FullName -notlike "*\k\..\plugins\*" } | ForEach-Object FullName)
 $coreObjs = @($coreObjs | Where-Object { -not $_.StartsWith((Join-Path $ObjDir 'plugins')) })
 $coreObjs += @(Generated-For $corePrefixes | ForEach-Object FullName)
-# lib.exe takes .lib files as inputs too: their members go into core.lib (a game links only what it uses of them)
+# lib.exe は .lib ファイルも入力に取る: その中身は core.lib に入る (ゲームはそのうち使うものだけをリンクする)
 foreach ($x in $ExtraCoreLibs) {
     if (-not (Test-Path $x)) { Write-Host "make_gamekit: $x がありません"; exit 1 }
     $coreObjs += (Resolve-Path $x).Path
@@ -67,7 +67,7 @@ foreach ($x in $ExtraCoreLibs) {
 Make-Lib (Join-Path $lib 'core.lib') $coreObjs | Out-Null
 Copy-Reflect (Join-Path $lib 'core') $corePrefixes
 
-# The plugins
+# プラグイン
 $plugins = @()
 foreach ($authorDir in Get-ChildItem (Join-Path $Root 'plugins') -Directory) {
     foreach ($pluginDir in Get-ChildItem $authorDir.FullName -Directory) {

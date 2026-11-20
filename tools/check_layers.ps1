@@ -1,16 +1,16 @@
-# Checks the include direction between folders of src/ against layers.txt.
-#   * a file may include only folders of the same or a lower layer
-#   * a folder that ships in games ("yes") may not include one that does not ("no")
-# Includes are written from src/, e.g. #include "base/Json.h". Includes without a folder are skipped.
+﻿# src/ のフォルダ間の include の向きを layers.txt と照らして調べる。
+#   * ファイルは、同じ層か下の層のフォルダだけを include できる
+#   * ゲームに入る ("yes") フォルダは、入らない ("no") フォルダを include できない
+# include は src/ からの形で書く。例: #include "base/Json.h"。フォルダのない include は飛ばす。
 #
-# And the plugins (plugins/<author>/<name>/, design RME_PLATFORM 3-b):
-#   * src/ (the core) never includes a plugin
-#   * plugin code is in runtime/ (ships in games) or editor/ (editor only)
-#   * runtime/ includes only src folders that ship in games, and only runtime/ of plugins
-#   * a plugin includes only itself and the plugins listed in "requires" of its plugin.json
-#   * plugin.json names the folder it is in; "requires" never goes round in a circle
-#   * every plugin with an editor part is listed in plugins/BuiltinPlugins.cpp
-#   * plugins/RuntimePlugins.cpp (the list a game exe links) includes nothing editor-only
+# プラグイン (plugins/<author>/<name>/、設計 RME_PLATFORM 3-b) について:
+#   * src/ (核) はプラグインを include しない
+#   * プラグインのコードは runtime/ (ゲームに入る) か editor/ (エディターだけ) に置く
+#   * runtime/ が include できるのは、ゲームに入る src のフォルダと、プラグインの runtime/ だけ
+#   * プラグインが include できるのは、自分自身と plugin.json の "requires" に書いたプラグインだけ
+#   * plugin.json は、それが入っているフォルダの名前を書く。"requires" は輪にならない
+#   * エディター部のあるプラグインは、すべて plugins/BuiltinPlugins.cpp に載っている
+#   * plugins/RuntimePlugins.cpp (ゲームの exe がリンクする一覧) は、エディターだけのものを include しない
 param([string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path)
 
 $layers = @{}
@@ -27,9 +27,9 @@ $src = Join-Path $Root 'src'
 $pluginsRoot = Join-Path $Root 'plugins'
 $errors = 0
 
-# --- plugins and their plugin.json ---
+# --- プラグインと plugin.json ---
 $authors = @{}
-$plugins = @{}  # "author/name" -> list of required "author/name"
+$plugins = @{}  # "author/name" -> 必要な "author/name" の一覧
 if (Test-Path $pluginsRoot) {
     foreach ($a in Get-ChildItem $pluginsRoot -Directory) {
         $authors[$a.Name] = $true
@@ -60,7 +60,7 @@ if (Test-Path $pluginsRoot) {
         }
     }
 }
-# requirements must not go round in a circle
+# 要るものは輪にならない
 $state = @{}
 function Visit([string]$k, [string[]]$path) {
     if ($state[$k] -eq 'done') { return }
@@ -108,13 +108,13 @@ Get-ChildItem $src -Recurse -Include *.h, *.cpp | ForEach-Object {
     }
 }
 
-# --- plugin code ---
+# --- プラグインのコード ---
 if (Test-Path $pluginsRoot) {
     $listFile = Join-Path $pluginsRoot 'BuiltinPlugins.cpp'
     $listText = if (Test-Path $listFile) { Get-Content $listFile -Raw -Encoding UTF8 } else { '' }
     foreach ($k in $plugins.Keys) {
-        # Listed = its editor part or its id is included there (space3d's editor part is only a library
-        # for other plugins' editors - the gizmo - so it has nothing to register).
+        # 載っている = エディター部か id がそこに include されている (space3d のエディター部は、ほかの
+        # プラグインのエディター (ギズモ) が使うライブラリなので、登録するものがない)。
         $listed = $listText.Contains("`"$k/editor/") -or $listText.Contains("`"$k/runtime/Id.h`"")
         if ((Test-Path (Join-Path $pluginsRoot "$k/editor")) -and -not $listed) {
             Write-Host "plugins/${k}: has an editor part but is not listed in plugins/BuiltinPlugins.cpp"
@@ -123,10 +123,10 @@ if (Test-Path $pluginsRoot) {
     }
     Get-ChildItem $pluginsRoot -Recurse -Include *.h, *.cpp | ForEach-Object {
         $rel = $_.FullName.Substring($pluginsRoot.Length + 1) -replace '\\', '/'
-        if ($rel -match '(^|/)templates/') { return }  # a template's scripts are a game's (built into its own DLL)
-        if ($rel -eq 'BuiltinPlugins.cpp') { return }  # the list of every plugin
+        if ($rel -match '(^|/)templates/') { return }  # テンプレートのスクリプトはゲームのもの (それ自身の DLL に入る)
+        if ($rel -eq 'BuiltinPlugins.cpp') { return }  # すべてのプラグインの一覧
         if ($rel -eq 'RuntimePlugins.cpp') {
-            # The list of runtime parts: goes into games, so only what ships in games.
+            # ランタイム部の一覧: ゲームに入るので、ゲームに入るものだけ。
             $n = 0
             foreach ($text in Get-Content $_.FullName -Encoding UTF8) {
                 $n++

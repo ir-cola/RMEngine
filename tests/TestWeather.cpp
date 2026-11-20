@@ -1,5 +1,5 @@
-// Tests for the plugin 天候 (weather/runtime): what each weather tells the sky, lightning, a fade, the
-// wind, 濡れ, what falls, and that its shaders compile (D3DCompile, as it is drawn) - with 3D 空間's.
+// プラグイン 天候 (weather/runtime) のテスト: 天候ごとに空・雷・フェード・風・濡れ・降るものがどう
+// 決まるか、シェーダーがコンパイルできるか (D3DCompile、描くときと同じやり方) を調べる。3D 空間のも使う。
 
 #include "Test.h"
 
@@ -48,7 +48,7 @@ Weather Of(WeatherPreset preset) {
     return w;
 }
 
-// 地球の空 at `hour` with the weather `w` (as a picture shows it: the sky asks 天候).
+// 天候 `w` のときの `hour` 時の地球の空 (絵が見せるとおり。空は 天候 に尋ねる)。
 SkyLook LookWith(float hour, const Weather& w, double seconds = 0) {
     Sky s;
     s.kind = SkyKind::Earth;
@@ -58,7 +58,7 @@ SkyLook LookWith(float hour, const Weather& w, double seconds = 0) {
 
 }  // namespace
 
-// The templates set the amounts at once (the wind's way stays); a value of a newer version: nothing.
+// テンプレートは量をまとめて決める (風の向きは変えない)。新しい版の値は何もしない。
 RM_TEST(Weather_Presets) {
     Weather w;
     w.windDirection = 45;
@@ -73,14 +73,14 @@ RM_TEST(Weather_Presets) {
     const Weather before = w;
     ApplyPreset(w, static_cast<WeatherPreset>(99));
     CHECK(w.cloudAmount == before.cloudAmount && w.precipitation == before.precipitation);
-    // From light to heavy, the rain only grows; every template is one (13).
+    // 弱い雨から強い雨へ、雨は増えるだけ。どのテンプレートもそうなる (13)。
     float last = -1;
     for (const WeatherPreset p : {WeatherPreset::Sprinkle, WeatherPreset::Drizzle, WeatherPreset::Rain, WeatherPreset::Downpour, WeatherPreset::Storm}) {
         CHECK(Of(p).precipitation > last && !Of(p).snowing);
         last = Of(p).precipitation;
     }
     CHECK(reflect::TypeOf<Weather>().fields.size() > 0 && kWeatherPresets == 13);
-    // The amounts are kept to tenths (the inspector shows "12.3"; the rest cut off).
+    // 量は 10 分の 1 の単位で持つ (インスペクターは "12.3" と見せ、それ以下は切り捨てる)。
     const reflect::FieldDesc* rain = nullptr;
     for (const reflect::FieldDesc& f : reflect::TypeOf<Weather>().fields) {
         if (std::string_view(f.name) == "precipitation") rain = &f;
@@ -89,8 +89,8 @@ RM_TEST(Weather_Presets) {
     CHECK(rain && reflect::SanitizeNumber(*rain, 120, 0) == 100);
 }
 
-// What the weather tells the sky: few clouds - fair (the sun hardly dimmed), many - cloudy; rain darkens
-// them into rain clouds (and brings clouds however few were asked); snow's are paler and hazier.
+// 天候が空に伝えること: 雲が少ないと快晴 (太陽はほとんど陰らない)、多いとくもり。雨が降ると雲が
+// 暗くなって雨雲になる (雲が少なくても雲が出る)。雪の雲は白っぽく、かすんでいる。
 RM_TEST(Weather_SkyLook) {
     const SkyLook noon = LookWith(12, Of(WeatherPreset::Fair));
     const SkyLook rain = LookWith(12, Of(WeatherPreset::Rain));
@@ -101,13 +101,13 @@ RM_TEST(Weather_SkyLook) {
     thick.cloudAmount = 100;
     CHECK(LookWith(12, thick).constants.param[1][0] > LookWith(12, thin).constants.param[1][0]);
     CHECK(LookWith(12, thick).lightStrength < LookWith(12, thin).lightStrength);
-    CHECK(LookWith(12, thin).lightStrength > noon.lightStrength * 0.95f);  // (few clouds: the sun as it is)
+    CHECK(LookWith(12, thin).lightStrength > noon.lightStrength * 0.95f);  // (雲が少ない: 太陽はそのまま)
     Weather none;
     none.cloudAmount = 0;
     CHECK(Near(LookWith(12, none).constants.param[1][0], 0.f));
     CHECK(LookWith(12, Of(WeatherPreset::Cloudy)).lightStrength < noon.lightStrength * 0.7f);
     CHECK(rain.lightStrength < noon.lightStrength * 0.35f && rain.ambientSky.b < noon.ambientSky.b * 0.7f);
-    // Rain darkens the clouds: the same clouds, more rain - darker; rain from a clear sky brings clouds.
+    // 雨は雲を暗くする: 同じ雲で雨が多いほど暗い。晴れた空に雨を降らせると雲が出る。
     Weather grey = Of(WeatherPreset::Cloudy), raining = grey;
     raining.precipitation = 60;
     CHECK(SkyWeatherOf(raining, 0).dark > SkyWeatherOf(grey, 0).dark + 0.2f);
@@ -115,28 +115,28 @@ RM_TEST(Weather_SkyLook) {
     sudden.cloudAmount = 0;
     sudden.precipitation = 50;
     CHECK(SkyWeatherOf(sudden, 0).cover > 0.7f);
-    // Snow: paler than rain's clouds, hazier.
+    // 雪: 雨の雲より白っぽく、かすんでいる。
     CHECK(SkyWeatherOf(Of(WeatherPreset::Snow), 0).dark < SkyWeatherOf(Of(WeatherPreset::Rain), 0).dark);
     CHECK(SkyWeatherOf(Of(WeatherPreset::Snow), 0).haze > SkyWeatherOf(Of(WeatherPreset::Cloudy), 0).haze);
-    // The fair sky with no 天候 at all is about the same as 晴れ (20).
+    // 天候 が何もない快晴の空は 晴れ とほぼ同じ (20)。
     Sky plain;
     plain.kind = SkyKind::Earth;
     plain.hour = 12;
     CHECK(Near(LookOf(plain, 0).lightStrength, noon.lightStrength, 0.05f));
-    // What falls, as much as asked (/ 100); none without.
+    // 降るもの: 頼まれた量だけ (/ 100)。頼まれなければ降らない。
     CHECK(Near(RainNow(NowOf(Of(WeatherPreset::Rain))), 0.5f) && SnowNow(NowOf(Of(WeatherPreset::Rain))) == 0.f);
     CHECK(Near(SnowNow(NowOf(Of(WeatherPreset::Blizzard))), 1.f) && RainNow(NowOf(Of(WeatherPreset::Blizzard))) == 0.f);
     CHECK(RainNow(NowOf(thick)) == 0.f && SnowNow(NowOf(thick)) == 0.f);
-    // One 降水量: rain - or, with 雪にする, snow; never both.
+    // 降水量 は 1 つ: 雨、または 雪にする なら雪。両方は降らない。
     Weather off = Of(WeatherPreset::Snow);
     off.snowing = false;
     CHECK(SnowNow(NowOf(off)) == 0.f && Near(RainNow(NowOf(off)), 0.5f));
     for (int k = 0; k <= 100; ++k) {
         const float x = static_cast<float>(k) / 100.f;
-        CHECK(std::min(RainShare(x), SnowShare(x)) == 0.f);  // (never both)
+        CHECK(std::min(RainShare(x), SnowShare(x)) == 0.f);  // (両方は降らない)
     }
-    CHECK(RainShare(0) == 1.f && SnowShare(1) == 1.f && RainShare(0.49f) > 0.1f && RainShare(0.49f) < 0.2f && Near(SnowShare(0.5f), 0.15f));  // (a drizzle, then light snow)
-    // 霧: 霧の量 (a few metres seen at 100, about 20 at 50), and more in a downpour or a snowstorm.
+    CHECK(RainShare(0) == 1.f && SnowShare(1) == 1.f && RainShare(0.49f) > 0.1f && RainShare(0.49f) < 0.2f && Near(SnowShare(0.5f), 0.15f));  // (霧雨、そして小雪)
+    // 霧: 霧の量 (100 で数 m 先まで、50 で 20 m ほど先まで見える)。土砂降りや吹雪ではさらに濃い。
     CHECK(FogOf(NowOf(Of(WeatherPreset::Fair))) == 0.f);
     Weather misty;
     misty.fogAmount = 100;
@@ -145,22 +145,22 @@ RM_TEST(Weather_SkyLook) {
     CHECK(std::exp(-FogOf(NowOf(misty)) * 20.f) < 0.1f && std::exp(-FogOf(NowOf(misty)) * 5.f) > 0.5f);
     Weather downpour = Of(WeatherPreset::Downpour), calm = downpour;
     calm.fogAmount = 0;
-    CHECK(FogOf(NowOf(calm)) > 0.f && FogOf(NowOf(downpour)) > FogOf(NowOf(calm)));  // (its own fog, and 霧の量 too)
+    CHECK(FogOf(NowOf(calm)) > 0.f && FogOf(NowOf(downpour)) > FogOf(NowOf(calm)));  // (自分の霧と、霧の量 も)
     CHECK(FogOf(NowOf(Of(WeatherPreset::Storm))) > FogOf(NowOf(downpour)));
-    // Its colour: pale; darker in rain; white in snow.
+    // 色: 薄い。雨では暗く、雪では白い。
     const Color light{1, 1, 1, 1};
     const Color fair = FogColorOf(NowOf(misty), light), rainy = FogColorOf(NowOf(downpour), light), snowy = FogColorOf(NowOf(Of(WeatherPreset::Snow)), light);
     CHECK(rainy.r < fair.r - 0.1f && snowy.r > fair.r + 0.1f && rainy.b > rainy.r);
-    // 濡れ before Play: as wet as the rain now makes things; dry without rain; snow a little.
+    // Play の前の 濡れ: 今の雨が濡らす分だけ濡れる。雨がなければ乾いている。雪は少し濡らす。
     const std::vector<WetWay> wet = WetNow(Of(WeatherPreset::Rain));
     CHECK(wet.size() == 1 && Near(wet[0].sun, 1.f) && Near(wet[0].shade, 1.f) && wet[0].way.y < -0.9f);
     CHECK(WetNow(Of(WeatherPreset::Fair)).empty());
     Weather snow = Of(WeatherPreset::Snow);
     snow.windStrength = 0;
-    CHECK(WetNow(snow).size() == 1 && Near(WetNow(snow)[0].sun, kSnowWet));  // (snow: a little, where it melts)
+    CHECK(WetNow(snow).size() == 1 && Near(WetNow(snow)[0].sun, kSnowWet));  // (雪: 溶ける所で少し)
 }
 
-// 雷: now and then a flash, only while the time goes on (and only with many clouds).
+// 雷: ときどき光る。時間が進んでいるときだけ (雲が多いときだけ)。
 RM_TEST(Weather_Lightning) {
     Weather storm = Of(WeatherPreset::Storm);
     int flashes = 0, dark = 0;
@@ -182,41 +182,41 @@ RM_TEST(Weather_Lightning) {
     CHECK(!any);
 }
 
-// A fade of the weather (scripts' rm::Sky::SetWeather ...): from the weather of the moment to the
-// fields', eased; a fade begun during another starts where that one has come.
+// 天候のフェード (スクリプトの rm::Sky::SetWeather ...): その時点の天候から目標の天候へ、
+// なめらかに変える。別のフェードの途中で始めたら、そのフェードが来た所から始める。
 RM_TEST(Weather_Fade) {
     Weather sky = Of(WeatherPreset::Fair);
     CHECK(Near(NowOf(sky).clouds, 0.2f) && NowOf(sky).rain == 0.f);
     BeginFade(sky, 10);
     ApplyPreset(sky, WeatherPreset::Storm);
-    CHECK(RainNow(NowOf(sky)) == 0.f && Near(NowOf(sky).clouds, 0.2f));  // not begun: still fair
+    CHECK(RainNow(NowOf(sky)) == 0.f && Near(NowOf(sky).clouds, 0.2f));  // (始まっていない: まだ快晴)
     sky.fadeElapsed = 5;
     const WeatherNow half = NowOf(sky);
     CHECK(Near(half.clouds, 0.6f) && Near(half.rain, 0.5f));
     sky.fadeElapsed = 1;
-    CHECK(NowOf(sky).rain < 0.1f);  // eased: slow at first
+    CHECK(NowOf(sky).rain < 0.1f);  // (なめらか: 最初はゆっくり)
     sky.fadeElapsed = 5;
     const float midCover = SkyWeatherOf(sky, 0).cover;
     CHECK(midCover > SkyWeatherOf(Of(WeatherPreset::Fair), 0).cover && midCover <= SkyWeatherOf(Of(WeatherPreset::Storm), 0).cover);
     sky.fadeElapsed = 10;
     CHECK(Near(RainNow(NowOf(sky)), 1.f) && Near(NowOf(sky).clouds, 1.f));
-    // A fade begun halfway through another starts from where it had come (no jump).
+    // 別のフェードの途中で始めたフェードは、そのフェードが来た所から始まる (飛ばない)。
     sky.fadeElapsed = 5;
     const WeatherNow before = NowOf(sky);
     BeginFade(sky, 4);
     ApplyPreset(sky, WeatherPreset::Clear);
     const WeatherNow after = NowOf(sky);
     CHECK(Near(after.clouds, before.clouds) && Near(after.rain, before.rain));
-    // 0 seconds: at once.
+    // 0 秒: すぐに変わる。
     Weather now = Of(WeatherPreset::Fair);
     BeginFade(now, 0);
     now.cloudAmount = 75;
     CHECK(Near(NowOf(now).clouds, 0.75f));
 }
 
-// 風: the direction (0 to the front -Z, + to the left) and strength as a vector; the clouds' drift and
-// the drops' slant are it; a fade turns it the short way. While playing: the drift adds up, a fade goes
-// on, the rain wets, 雪を降らせる comes in over about 10 seconds.
+// 風: 向き (0 で正面の -Z、+ で左) と強さをベクトルで持つ。雲の流れと雨粒の傾きは風で決まる。
+// フェードは風を短いほうの回りで回す。Play 中は、流れが積み重なり、フェードが進み、雨が濡らし、
+// 雪にする は約 10 秒かけて入ってくる。
 RM_TEST(Weather_Wind) {
     CHECK(Near(WindOf(0, 2), {0, 0, -2}));
     CHECK(Near(WindOf(90, 1), {-1, 0, 0}));
@@ -227,7 +227,7 @@ RM_TEST(Weather_Wind) {
     sky.windStrength = 10;
     const game_x_3d::SkyWeather sw = SkyWeatherOf(sky, 0);
     CHECK(Near(sw.windX, 10) && Near(sw.windZ, 0));
-    CHECK(FallDirection(Precipitation::Kind::Rain, {sw.windX, 0, sw.windZ}).x > 0.3f);  // the drops slant with it
+    CHECK(FallDirection(Precipitation::Kind::Rain, {sw.windX, 0, sw.windZ}).x > 0.3f);  // (雨粒が風で傾く)
     Weather turn = Of(WeatherPreset::Fair);
     turn.windDirection = 350;
     turn.windStrength = 5;
@@ -245,11 +245,11 @@ RM_TEST(Weather_Wind) {
     game_production::SystemContext ctx{scene, 0.5f};
     RunWeather(ctx);
     CHECK(Near(s.driftX, -2.f) && Near(s.driftZ, 0.f));
-    CHECK(s.wetCounted && s.wetWays.size() == 1 && Near(s.wetWays[0].sun, 0.011f));  // (Play starts dry: wetter as it rains - 0.5 s x (0.004 + 0.5 x 0.036))
+    CHECK(s.wetCounted && s.wetWays.size() == 1 && Near(s.wetWays[0].sun, 0.011f));  // (Play は乾いた所から始まる: 雨が降るほど濡れる - 0.5 秒 x (0.004 + 0.5 x 0.036))
     s.precipitation = 0;
     RunWeather(ctx);
-    CHECK(s.wetWays.size() == 1 && s.wetWays[0].sun < 0.011f && s.wetWays[0].sun > 0.004f);  // dries slowly
-    CHECK(s.wetWays[0].shade > s.wetWays[0].sun);                                       // shade slower
+    CHECK(s.wetWays.size() == 1 && s.wetWays[0].sun < 0.011f && s.wetWays[0].sun > 0.004f);  // ゆっくり乾く
+    CHECK(s.wetWays[0].shade > s.wetWays[0].sun);                                       // 日陰は遅い
     CHECK(WetNow(s).size() == 1 && Near(WetNow(s)[0].sun, s.wetWays[0].sun));
     BeginFade(s, 1);
     s.cloudAmount = 90;
@@ -258,8 +258,8 @@ RM_TEST(Weather_Wind) {
     RunWeather(ctx);
     RunWeather(ctx);
     CHECK(Near(s.fadeElapsed, 1.f) && Near(NowOf(s).clouds, 0.9f));
-    // 雪にする: the rain weakens, then it snows - over about 5 seconds (the editor shows it at once), back
-    // the same way.
+    // 雪にする: 雨が弱まり、それから雪になる。約 5 秒かける (エディターはすぐに見せる)。戻すときも
+    // 同じ道をたどる。
     Weather editor;
     editor.precipitation = 50;
     editor.snowing = true;
@@ -267,9 +267,9 @@ RM_TEST(Weather_Wind) {
     s.precipitation = 50;
     s.snowing = true;
     RunWeather(ctx);
-    CHECK(Near(s.snowIn, 0.1f) && RainNow(NowOf(s)) > 0.f && RainNow(NowOf(s)) < 0.5f && SnowNow(NowOf(s)) == 0.f);  // (weaker rain)
+    CHECK(Near(s.snowIn, 0.1f) && RainNow(NowOf(s)) > 0.f && RainNow(NowOf(s)) < 0.5f && SnowNow(NowOf(s)) == 0.f);  // (雨が弱まる)
     for (int k = 0; k < 4; ++k) RunWeather(ctx);
-    CHECK(Near(s.snowIn, 0.5f) && RainNow(NowOf(s)) == 0.f && Near(SnowNow(NowOf(s)), 0.075f));  // (now light snow)
+    CHECK(Near(s.snowIn, 0.5f) && RainNow(NowOf(s)) == 0.f && Near(SnowNow(NowOf(s)), 0.075f));  // (今は小雪)
     for (int k = 0; k < 10; ++k) RunWeather(ctx);
     CHECK(s.snowIn == 1.f && Near(SnowNow(NowOf(s)), 0.5f) && RainNow(NowOf(s)) == 0.f);
     s.snowing = false;
@@ -277,54 +277,54 @@ RM_TEST(Weather_Wind) {
     CHECK(Near(s.snowIn, 0.9f) && SnowNow(NowOf(s)) > 0.f && RainNow(NowOf(s)) == 0.f);
 }
 
-// 濡れ: the ways the rain fell - wetter quickly while it rains, what it reached stays wet while it
-// rains (the wind turning starts another way), dry again slowly in game time, slower in shade.
-// Snow wets a little where it melts - slowly, at most kSnowWet; nothing dries while it falls; rain and
-// snow falling alike (no wind) are one way, as wet as the wetter makes it.
+// 濡れ: 雨が降った方向ごとに持つ。雨の間は早く濡れる。雨が届いた所は雨の間は濡れたまま
+// (風が回ると別の方向になる)。ゲーム内の時間でゆっくり乾き、日陰はもっと遅い。
+// 雪は溶ける所を少しずつ濡らす (最大 kSnowWet)。降っている間は何も乾かない。雨と雪が同じように
+// 降る (風なし) ときは 1 つの方向で、濡れの強いほうに合わせて濡れる。
 RM_TEST(Weather_SnowWets) {
     WeatherNow snowy;
     snowy.snow = 0.5f;
     std::vector<WetWay> s;
-    StepWet(s, snowy, 1);  // (0.002 + 0.5 x 0.012 a second)
+    StepWet(s, snowy, 1);  // (1 秒に 0.002 + 0.5 x 0.012)
     CHECK(s.size() == 1 && Near(s[0].sun, 0.008f) && Near(s[0].way, {0, -1, 0}));
-    CHECK(Near(s[0].seep, 0.0025f));  // (seeps under what covers: 0.001 + 0.5 x 0.003 m a second)
+    CHECK(Near(s[0].seep, 0.0025f));  // (覆われた所の下へしみる: 1 秒に 0.001 + 0.5 x 0.003 m)
     StepWet(s, snowy, 1000);
     CHECK(Near(s[0].sun, kSnowWet) && Near(s[0].shade, kSnowWet) && Near(s[0].seep, kSeepSnow));
     std::vector<WetWay> rained = {{{0, -1, 0}, 1, 1}};
     StepWet(rained, snowy, 100);
-    CHECK(Near(rained[0].sun, 1.f));  // (the rain's wet stays while it snows)
+    CHECK(Near(rained[0].sun, 1.f));  // (雪の間も雨の濡れは残る)
     CHECK(WetAtOnce(snowy).size() == 1 && Near(WetAtOnce(snowy)[0].sun, kSnowWet));
     WeatherNow both = snowy;
     both.rain = 1;
     CHECK(WetAtOnce(both).size() == 1 && Near(WetAtOnce(both)[0].sun, 1.f) && Near(WetAtOnce(both)[0].seep, kSeepRain));
     WeatherNow fair;
     StepWet(s, fair, 9);
-    CHECK(Near(s[0].sun, kSnowWet - 0.1f));  // (dries as the rain's does)
+    CHECK(Near(s[0].sun, kSnowWet - 0.1f));  // (雨のときと同じように乾く)
 }
 
-// 積雪: deeper while it snows, up to 積もる高さ; melts after (faster in rain); the editor shows it lying.
+// 積雪: 雪が降る間は深くなり、積もる高さ まで。やむと溶ける (雨では速い)。エディターは積もった状態を見せる。
 RM_TEST(Weather_SnowCover) {
     WeatherNow snowy;
     snowy.snow = 1;
-    float cover = StepSnowCover(0, snowy, 0.24f, 1);  // (0.24 x (0.1 + 0.9) / 240 a second)
+    float cover = StepSnowCover(0, snowy, 0.24f, 1);  // (1 秒に 0.24 x (0.1 + 0.9) / 240)
     CHECK(Near(cover, 0.001f));
     cover = StepSnowCover(cover, snowy, 0.24f, 1000);
-    CHECK(Near(cover, 0.24f));  // never above it
-    CHECK(Near(StepSnowCover(cover, snowy, 0.1f, 1), 0.1f));  // (lowered: at once)
+    CHECK(Near(cover, 0.24f));  // それ以上にはならない
+    CHECK(Near(StepSnowCover(cover, snowy, 0.1f, 1), 0.1f));  // (下げたら: すぐに)
     WeatherNow light = snowy;
     light.snow = 0.5f;
-    CHECK(Near(StepSnowCover(0, light, 0.24f, 1), 0.00055f));  // lighter snow: slower
+    CHECK(Near(StepSnowCover(0, light, 0.24f, 1), 0.00055f));  // 弱い雪: 遅い
     WeatherNow fair;
-    CHECK(Near(StepSnowCover(0.24f, fair, 0.24f, 60), 0.228f));  // melts: about a centimetre a minute
+    CHECK(Near(StepSnowCover(0.24f, fair, 0.24f, 60), 0.228f));  // 溶ける: 1 分に 1 cm ほど
     WeatherNow rain;
     rain.rain = 1;
-    CHECK(Near(StepSnowCover(0.24f, rain, 0.24f, 60), 0.108f));  // faster in rain
+    CHECK(Near(StepSnowCover(0.24f, rain, 0.24f, 60), 0.108f));  // 雨では速い
     CHECK(StepSnowCover(0.01f, fair, 0.24f, 1000) == 0.f);
     CHECK(StepSnowCover(std::nanf(""), snowy, 0.24f, 1) >= 0.f && StepSnowCover(0, snowy, 99.f, 1e9f) == kMostSnowDepth);
     CHECK(StepSnowCover(0.1f, snowy, 0.24f, std::nanf("")) == 0.1f);
-    CHECK(Near(SnowFallRate(snowy, 0.24f), 0.001f) && SnowFallRate(fair, 0.24f) == 0.f);  // (footprints fill up as fast)
-    // The ways share it: what falls goes to the way it falls (slanted by the wind: a way of its own),
-    // what melts goes from all alike.
+    CHECK(Near(SnowFallRate(snowy, 0.24f), 0.001f) && SnowFallRate(fair, 0.24f) == 0.f);  // (足跡も同じ速さで埋まる)
+    // 方向ごとの層で分け合う: 降るものは降る方向に入る (風で斜めなら、その方向だけの層)。
+    // 溶けるものはどの層からも同じだけ引く。
     std::vector<WetWay> ways;
     StepWet(ways, snowy, 100, 0.24f);
     CHECK(ways.size() == 1 && Near(ways[0].snow, 0.1f) && Near(ways[0].way, {0, -1, 0}));
@@ -333,39 +333,39 @@ RM_TEST(Weather_SnowCover) {
     StepWet(ways, windy, 50, 0.24f);
     CHECK(ways.size() == 2 && Near(ways[0].snow, 0.1f) && Near(ways[1].snow, 0.05f) && ways[1].way.x > 0.3f);
     StepWet(ways, windy, 1000, 0.24f);
-    CHECK(Near(ways[0].snow + ways[1].snow, 0.24f));  // (all of it: never above 積もる高さ)
+    CHECK(Near(ways[0].snow + ways[1].snow, 0.24f));  // (全部で: 積もる高さ を超えない)
     const float before0 = ways[0].snow, before1 = ways[1].snow;
     StepWet(ways, fair, 60, 0.24f);
     CHECK(Near(ways[0].snow + ways[1].snow, 0.228f) && Near(ways[0].snow / before0, ways[1].snow / before1));
     StepWet(ways, fair, 100000, 0.24f);
-    CHECK(ways.empty());  // (dry and melted: gone)
-    // As a picture shows it: the editor - all of it lying, the way it falls; Play - as counted.
+    CHECK(ways.empty());  // (乾いて溶けた: 消える)
+    // 絵が見せるとおり: エディターは全部が積もった状態で降る方向のまま、Play は数えたとおり。
     Weather w;
     w.snowing = true;
     w.precipitation = 50;
     w.windStrength = 0;
-    w.snowDepthCm = 3.47f;  // (cm: as the inspector keeps it, 3.4)
+    w.snowDepthCm = 3.47f;  // (cm: インスペクターが持つとおり、3.4)
     CHECK(Near(SnowMostOf(w), 0.0347f) && Near(SnowCoverNow(w), 0.0347f));
     CHECK(WetAtOnce(NowOf(w), SnowMostOf(w)).size() == 1 && Near(WetAtOnce(NowOf(w), SnowMostOf(w))[0].snow, 0.0347f));
     w.snowDepthCm = 9;
-    CHECK(Near(SnowMostOf(w), 0.05f));  // (5 cm at most)
+    CHECK(Near(SnowMostOf(w), 0.05f));  // (多くて 5 cm)
     w.snowing = false;
     CHECK(SnowCoverNow(w) == 0.f);
     w.wetCounted = true;
     w.wetWays = {{{0, -1, 0}, 0, 0, 0, 0.05f}};
     CHECK(Near(SnowCoverNow(w), 0.05f));
-    // The snow lying: one grid straight down around the eye, in whole cells; every way's snow and map.
+    // 積もった雪: 目の真下に向けた 1 つの格子を、マスの整数個で。どの方向の雪も向きの地図も使う。
     const WetWay lying[2] = {{{0, -1, 0}, 0, 0, 0, 0.02f}, {space3d::Normalize(Vec3{1, -2, 0}), 0, 0, 0, 0.01f}};
     const int maps[2] = {3, 5};
     const SnowLayerConstants k = SnowLayerOf({10.1f, 3, -7.3f}, lying, maps, 6, 7, true);
     CHECK(Near(k.grid[2], kSnowCell) && k.grid[3] == static_cast<float>(kSnowCells) && k.info[0] == 6.f && Near(k.info[1], 3.f));
     CHECK(Near(k.grid[0] + kSnowCell * kSnowCells * 0.5f, std::floor(10.1f / kSnowCell) * kSnowCell));
     CHECK(Near(k.grid[1] + kSnowCell * kSnowCells * 0.5f, std::floor(-7.3f / kSnowCell) * kSnowCell));
-    CHECK(SnowLayerOf({10.1f + kSnowCell * 0.1f, 3, -7.3f}, lying, maps, 6, 7, true).grid[0] == k.grid[0]);  // (the grid does not swim)
+    CHECK(SnowLayerOf({10.1f + kSnowCell * 0.1f, 3, -7.3f}, lying, maps, 6, 7, true).grid[0] == k.grid[0]);  // (格子は泳がない)
     CHECK(k.snow[0][0] == 0.02f && k.snow[0][1] == 3.f && k.snow[1][0] == 0.01f && k.snow[1][1] == 5.f && k.snow[2][1] == -1.f);
     CHECK(k.trail[3] == static_cast<float>(kTrailCells) && k.trailMore[0] == 7.f);
-    CHECK(SnowLayerOf({10.1f, 3, -7.3f}, lying, maps, 6, 7, false).trail[3] == 0.f);  // (no footprints in the editor)
-    // The footprints' frame: around the eye in whole cells; the lines up start well under it.
+    CHECK(SnowLayerOf({10.1f, 3, -7.3f}, lying, maps, 6, 7, false).trail[3] == 0.f);  // (エディターに足跡はない)
+    // 足跡の枠: 目のまわりをマスの整数個で。上向きの線は目よりかなり下から始まる。
     const SnowTrailConstants t = SnowTrailOf({10.1f, 3, -7.3f}, 7, 0.01f, 6);
     CHECK(Near(t.trail[0], std::floor(10.1f / kTrailCell) - kTrailCells / 2) && Near(t.trail[1], std::floor(-7.3f / kTrailCell) - kTrailCells / 2));
     CHECK(Near(t.trail[2], kTrailCell) && t.more[0] == 7.f && Near(t.more[1], 0.01f) && t.more[2] < 3.f - 50.f && t.more[3] == 6.f);
@@ -375,57 +375,57 @@ RM_TEST(Weather_Wetness) {
     WeatherNow rain;
     rain.rain = 0.25f;
     WeatherNow fair;
-    CHECK(WetAtOnce(fair).empty() && WetAtOnce(rain).size() == 1 && Near(WetAtOnce(rain)[0].sun, 1.f));  // (the editor: wet through)
-    CHECK(Near(WetAtOnce(rain)[0].seep, kSeepRain));  // (... and seeped as far as it goes)
+    CHECK(WetAtOnce(fair).empty() && WetAtOnce(rain).size() == 1 && Near(WetAtOnce(rain)[0].sun, 1.f));  // (エディター: しみ通るまで濡れる)
+    CHECK(Near(WetAtOnce(rain)[0].seep, kSeepRain));  // (... 行けるところまでしみる)
     std::vector<WetWay> ways;
-    StepWet(ways, rain, 1);  // (0.004 + 0.25 x 0.036 a second)
+    StepWet(ways, rain, 1);  // (1 秒に 0.004 + 0.25 x 0.036)
     CHECK(ways.size() == 1 && Near(ways[0].sun, 0.013f) && Near(ways[0].shade, 0.013f) && Near(ways[0].way, {0, -1, 0}));
-    CHECK(Near(ways[0].seep, 0.004f));  // (seeps under what covers: 0.002 + 0.25 x 0.008 m a second)
+    CHECK(Near(ways[0].seep, 0.004f));  // (覆われた所の下へしみる: 1 秒に 0.002 + 0.25 x 0.008 m)
     StepWet(ways, rain, 100);
-    CHECK(Near(ways[0].sun, 1.f));  // all of it wet in the end, even in a light rain
-    CHECK(Near(ways[0].seep, 0.404f));  // (still seeping further)
+    CHECK(Near(ways[0].sun, 1.f));  // 弱い雨でも、最後は全部が濡れる
+    CHECK(Near(ways[0].seep, 0.404f));  // (まだ奥へしみている)
     StepWet(ways, rain, 1000);
     CHECK(Near(ways[0].seep, kSeepRain));
     WeatherNow downpour = rain;
     downpour.rain = 1;
     std::vector<WetWay> fast;
     StepWet(fast, downpour, 1);
-    CHECK(fast[0].sun > 0.013f * 2);  // (sooner the harder it rains: 0.04 a second)
-    // The wind turns: a way of its own; the first stays as wet as it was while it rains.
+    CHECK(fast[0].sun > 0.013f * 2);  // (強い雨ほど早い: 1 秒に 0.04)
+    // 風が回る: 別の方向になる。最初の方向は、雨の間は濡れたままになる。
     WeatherNow windy = rain;
     windy.windX = 10;
     StepWet(ways, windy, 2);
     CHECK(ways.size() == 2 && Near(ways[0].sun, 1.f) && Near(ways[1].sun, 0.026f) && ways[1].way.x > 0.3f);
-    // A little wind (within kWetWayDegrees): the same way.
+    // 少しの風 (kWetWayDegrees 以内): 同じ方向。
     WeatherNow breeze = rain;
     breeze.windX = 0.5f;
     StepWet(ways, breeze, 1);
     CHECK(ways.size() == 2);
-    // Less rain: nothing dries while it rains.
+    // 雨が弱まる: 降っている間は何も乾かない。
     WeatherNow drizzle = rain;
     drizzle.rain = 0.05f;
     StepWet(ways, drizzle, 50);
     CHECK(Near(ways[0].sun, 1.f) && Near(ways[1].sun, 0.026f));
-    // It stops: dries in game time, shade slower; gone when dry.
+    // やむ: ゲーム内の時間で乾く。日陰は遅い。乾いたら消える。
     StepWet(ways, fair, 9);
-    CHECK(Near(ways[0].sun, 0.9f) && Near(ways[0].shade, 0.97f) && Near(ways[0].seep, kSeepRain));  // (it seeped: kept while it dries)
-    StepWet(ways, fair, 0);  // (paused: no time, no drying)
+    CHECK(Near(ways[0].sun, 0.9f) && Near(ways[0].shade, 0.97f) && Near(ways[0].seep, kSeepRain));  // (しみた分: 乾く間は残る)
+    StepWet(ways, fair, 0);  // (止まっている: 時間が進まず、乾かない)
     CHECK(Near(ways[0].sun, 0.9f));
     StepWet(ways, fair, 100);
-    CHECK(ways.size() == 1 && ways[0].sun == 0.f && ways[0].shade > 0.f);  // (the second way: dry in shade too, gone)
+    CHECK(ways.size() == 1 && ways[0].sun == 0.f && ways[0].shade > 0.f);  // (2 つ目の方向: 日陰も乾いて消える)
     StepWet(ways, fair, 1000);
     CHECK(ways.empty());
-    // At most kWetWays: a new way takes the least wet one's place.
+    // 多くて kWetWays: 新しい方向は、いちばん濡れていない方向の場所に入る。
     for (int k = 0; k < 6; ++k) {
         WeatherNow w = rain;
         w.windX = static_cast<float>(k) * 6.f;
         StepWet(ways, w, 1);
     }
     CHECK(ways.size() == kWetWays);
-    CHECK(Near(WetnessOf(ways), 0.026f) && WetnessOf({}) == 0.f);  // (24 and 30 m/s: within kWetWayDegrees - one way, wetter twice)
+    CHECK(Near(WetnessOf(ways), 0.026f) && WetnessOf({}) == 0.f);  // (24 と 30 m/s: kWetWayDegrees 以内 - 方向は 1 つで、濡れは 2 倍)
 }
 
-// What falls: how many for an amount, the way it goes in a wind, the numbers 濡れ's touch gets.
+// 降るもの: 量から数、風でのたどる向き、濡れ が受け取る数。
 RM_TEST(Weather_Falling) {
     Precipitation snow;
     snow.kind = Precipitation::Kind::Snow;
@@ -433,28 +433,28 @@ RM_TEST(Weather_Falling) {
     CHECK(PrecipitationCount(snow) == kMaxSnowflakes);
     Precipitation rain;
     rain.amount = 0.5f;
-    CHECK(PrecipitationCount(rain) == static_cast<uint32_t>(std::pow(0.5f, 1.4f) * kMaxRaindrops + 0.5f));  // (fewer than half: a little rain is a few drops)
+    CHECK(PrecipitationCount(rain) == static_cast<uint32_t>(std::pow(0.5f, 1.4f) * kMaxRaindrops + 0.5f));  // (半分より少ない: 弱い雨は数粒)
     rain.amount = 0.05f;
     CHECK(PrecipitationCount(rain) < kMaxRaindrops / 50);
     rain.amount = 7;
     CHECK(PrecipitationCount(rain) == kMaxRaindrops);
     CHECK(Near(FallDirection(Precipitation::Kind::Rain, {0, 0, 0}), {0, -1, 0}));
     const Vec3 slant = FallDirection(Precipitation::Kind::Snow, {0, 0, -4});
-    CHECK(slant.z < -0.7f && Near(slant.x * slant.x + slant.y * slant.y + slant.z * slant.z, 1.f));  // snow: light, far along
-    // The surface's numbers: how many, then each way's sun / shade / map.
+    CHECK(slant.z < -0.7f && Near(slant.x * slant.x + slant.y * slant.y + slant.z * slant.z, 1.f));  // 雪: 軽く、遠くまで流れる
+    // 面に渡す数: まず数、それから方向ごとの sun / shade / 地図。
     const WetWay ways[2] = {{{0, -1, 0}, 0.5f, 0.75f, 0.6f}, {{1, 0, 0}, 2.f, 0.1f}};
     const int maps[2] = {3, -1};
     const std::vector<float> d = WetSurfaceData(ways, maps);
     CHECK(d.size() == 4 * (1 + 2 * kWetWays) && d[0] == 2.f);
     CHECK(d[4] == 0.5f && d[5] == 0.75f && d[6] == 3.f && d[7] == 0.6f && d[8] == 1.f && d[10] == -1.f && d[11] == 0.f);  // (clamped to 1; w: しみこみ)
     CHECK(d.size() <= 4 * space3d::kSurfaceData);
-    CHECK(d.size() == 4 * (1 + 2 * kWetWays) && d[20] == 0.f);  // (each way's snow: none)
+    CHECK(d.size() == 4 * (1 + 2 * kWetWays) && d[20] == 0.f);  // (方向ごとの雪: なし)
     const WetWay snowy[1] = {{{0, -1, 0}, 0, 0, 0, 0.25f}};
     CHECK(WetSurfaceData(snowy, maps)[20] == 0.25f);
 }
 
-// The shaders compile as they are drawn: the drops and flakes (with 3D 空間's 向きの地図), and the
-// renderer's models with and without 濡れ's touch on every surface.
+// シェーダーは描くときと同じやり方でコンパイルする: 雨粒と雪片 (3D 空間の 向きの地図 を使う) と、
+// ランタイムのモデルを、どの面でも 濡れ の部分あり・なしの両方で。
 RM_TEST(Weather_ShadersCompile) {
     std::string error;
     const std::string fall = std::string(space3d::kColorHlsl) + space3d::kDirectionMapHlsl + kFallHlsl;
@@ -473,6 +473,6 @@ RM_TEST(Weather_ShadersCompile) {
     CHECK(Compiles(trail, "SnowTrailVS", "vs_4_0", &error));
     CHECK(Compiles(trail, "SnowTrailPS", "ps_4_0", &error));
     if (!error.empty()) std::printf("%s\n", error.c_str());
-    // A touch that does not compile does not compile (the renderer then keeps its own).
+    // コンパイルできない部分は、コンパイルできない (そのときランタイムは自分のを使い続ける)。
     CHECK(!Compiles(space3d::RendererShaderText("void Surface(inout float3 a) { a = ; }"), "MeshPS", "ps_4_0"));
 }

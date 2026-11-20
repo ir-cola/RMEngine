@@ -1,4 +1,4 @@
-// Tests for L0 base: UTF conversion, JSON, file names.
+// L0 base のテスト: UTF 変換、JSON、ファイル名。
 
 #include "Test.h"
 
@@ -32,9 +32,9 @@ RM_TEST(Utf_SurrogatePair) {
 
 RM_TEST(Utf_InvalidBecomesReplacement) {
     CHECK(Utf8ToWide("\xFF") == L"\xFFFD");
-    CHECK(Utf8ToWide("\xC0\xAF") == L"\xFFFD\xFFFD");          // overlong '/'
-    CHECK(Utf8ToWide("\xE3\x81") == L"\xFFFD\xFFFD");          // truncated
-    CHECK(Utf8ToWide("\xED\xA0\x80") == L"\xFFFD\xFFFD\xFFFD");  // encoded surrogate
+    CHECK(Utf8ToWide("\xC0\xAF") == L"\xFFFD\xFFFD");          // 冗長な '/'
+    CHECK(Utf8ToWide("\xE3\x81") == L"\xFFFD\xFFFD");          // 途中で切れている
+    CHECK(Utf8ToWide("\xED\xA0\x80") == L"\xFFFD\xFFFD\xFFFD");  // エンコードされたサロゲート
     CHECK(Utf8ToWide("a\xFFz") == L"a\xFFFDz");
     const wchar_t lone[] = {0xD83D, L'x', 0};
     CHECK(WideToUtf8(lone) == "\xEF\xBF\xBDx");
@@ -67,7 +67,7 @@ RM_TEST(Json_WriteIsStableAndOrdered) {
         "}\n";
     auto v = json::Parse(text);
     CHECK(v.has_value());
-    CHECK(json::Write(*v) == text);  // byte-identical round trip
+    CHECK(json::Write(*v) == text);  // バイト単位で同じになる往復
     CHECK(v->Members()[0].first == "kind");
     CHECK(v->Get("formatVersion").IsInt());
     CHECK(v->Get("whole").GetType() == json::Type::Double);
@@ -77,8 +77,8 @@ RM_TEST(Json_WriteIsStableAndOrdered) {
 RM_TEST(Json_UnknownKeysArePreserved) {
     auto v = json::Parse(R"({"a":1,"future":{"x":[1,2]},"b":"keep"})");
     CHECK(v.has_value());
-    v->Set("a", 42);         // change a known key in place
-    v->Set("added", "new");  // append a new one
+    v->Set("a", 42);         // 知っているキーはその場で変える
+    v->Set("added", "new");  // 新しいキーは末尾に足す
     CHECK(json::Write(*v, false) == R"({"a":42,"future":{"x":[1,2]},"b":"keep","added":"new"})");
 }
 
@@ -87,13 +87,13 @@ RM_TEST(Json_Numbers) {
     CHECK(v.has_value());
     CHECK(v->At(0).AsInt() == 0);
     CHECK(v->At(1).AsInt() == -7);
-    CHECK(v->At(2).AsInt() == 9007199254740993ll);  // beyond double precision, kept exactly
+    CHECK(v->At(2).AsInt() == 9007199254740993ll);  // double の精度を超える値も、正確に保つ
     CHECK(v->At(3).AsDouble() == 1.5);
     CHECK(v->At(4).AsDouble() == -0.25);
     CHECK(v->At(5).AsDouble() == 1000.0);
     CHECK(v->At(6).AsDouble() == 0.02);
     const std::string once = json::Write(*v, false);
-    CHECK(json::Write(*json::Parse(once), false) == once);  // stable from the second write on
+    CHECK(json::Write(*json::Parse(once), false) == once);  // 2 回目の書き込みからは変わらない
 }
 
 RM_TEST(Json_Strings) {
@@ -102,7 +102,7 @@ RM_TEST(Json_Strings) {
     CHECK(v->At(0).AsString() == "a\"b\\c\n\t");
     CHECK(v->At(1).AsString() == "\xE3\x81\x82");      // あ
     CHECK(v->At(2).AsString() == "\xF0\x9F\x98\x80");  // U+1F600
-    CHECK(v->At(3).AsString() == "\xEF\xBF\xBD");      // lone surrogate -> U+FFFD
+    CHECK(v->At(3).AsString() == "\xEF\xBF\xBD");      // 単独のサロゲート -> U+FFFD
     CHECK(v->At(4).AsString() == "//");
     json::Value s("ctl\x01");
     CHECK(json::Write(s, false) == "\"ctl\\u0001\"");
@@ -118,7 +118,7 @@ RM_TEST(Json_Errors) {
     CHECK(!json::Parse("1 2", &e));
     CHECK(!json::Parse("01", &e));
     CHECK(!json::Parse("", &e));
-    CHECK(!json::Parse(std::string(1000, '['), &e));  // depth limit, no stack overflow
+    CHECK(!json::Parse(std::string(1000, '['), &e));  // 深さの上限があり、スタックオーバーフローしない
     CHECK(!json::Parse("{\n  \"a\": 1,\n  x\n}", &e));
     CHECK(e.line == 3 && e.column == 3);
     CHECK(!e.message.empty());
@@ -144,12 +144,12 @@ RM_TEST(Json_AccessorsOnWrongType) {
     CHECK(!arr.Erase("x"));
 }
 
-// --- File names --------------------------------------------------------------
+// --- ファイル名 --------------------------------------------------------------
 
 RM_TEST(FileName_Validation) {
     CHECK(ValidateFileName("MyGame") == FileNameError::None);
     CHECK(ValidateFileName("\xE3\x82\xB2\xE3\x83\xBC\xE3\x83\xA0 2") == FileNameError::None);  // "ゲーム 2"
-    CHECK(ValidateFileName("Level=1") == FileNameError::None);  // '=' is legal (bug #11 of the previous engine)
+    CHECK(ValidateFileName("Level=1") == FileNameError::None);  // '=' は使える (前のエンジンのバグ #11)
     CHECK(ValidateFileName("CONSOLE") == FileNameError::None);
     CHECK(ValidateFileName("") == FileNameError::Empty);
     CHECK(ValidateFileName("a<b") == FileNameError::InvalidChar);
@@ -167,8 +167,8 @@ RM_TEST(FileName_Validation) {
 }
 
 RM_TEST(Json_BigObjectsStayFast) {
-    // 200,000 keys: read, filled and searched in a straight line (a list search per key would be the
-    // square: 4e10 comparisons, minutes).
+    // 200,000 個のキー: 読み込み、詰め、探すのを直線的に行う (キーごとにリストを探すと 2 乗に
+    // なる: 4e10 回の比較、何分もかかる)。
     std::string text = "{";
     for (int i = 0; i < 200000; ++i) text += std::format("{}\"k{}\": {}", i ? "," : "", i, i);
     text += "}";
@@ -189,22 +189,22 @@ RM_TEST(Json_BigObjectIndexFollowsChanges) {
     json::Value o = json::Value::MakeObject();
     for (int i = 0; i < 40; ++i) o.Set(std::format("k{}", i), i);
     CHECK(o.Get("k30").AsInt() == 30);
-    // Replaced in place (the order stays), erased, set again (at the end).
+    // その場で置き換え (順序は保つ)、消し、また設定する (末尾に付く)。
     o.Set("k30", 300);
     CHECK(o.Get("k30").AsInt() == 300 && o.Members()[30].first == "k30");
     CHECK(o.Erase("k5") && !o.Find("k5") && o.Get("k6").AsInt() == 6 && o.Size() == 39);
     o.Set("k5", 5);
     CHECK(o.Members().back().first == "k5" && o.Get("k5").AsInt() == 5);
-    // Changed from outside through Members(): still found right.
-    o.Members().erase(o.Members().begin());  // k0 gone
+    // Members() を通して外から変えても、ちゃんと見つかる。
+    o.Members().erase(o.Members().begin());  // k0 が消えた
     CHECK(!o.Find("k0") && o.Get("k1").AsInt() == 1);
     o.Members()[0].first = "renamed";
     CHECK(o.Get("renamed").AsInt() == 1 && !o.Find("k1"));
-    // A copy has its own (the cache is not shared).
+    // コピーは自分のものを持つ (キャッシュは共有しない)。
     json::Value c = o;
     c.Set("only_in_copy", 1);
     CHECK(c.Find("only_in_copy") && !o.Find("only_in_copy"));
-    // A repeated key in a big object: the last value, at the place of the first (as for small ones).
+    // 大きなオブジェクトで繰り返されたキー: 最後の値が、最初の場所に入る (小さなものと同じ)。
     std::string text = "{";
     for (int i = 0; i < 30; ++i) text += std::format("\"k{}\": {},", i, i);
     text += "\"k3\": 33}";

@@ -1,4 +1,4 @@
-// Tests for plugin IDs (core/PluginId.h) and plugin.json / resolution (editor/plugin/PluginManifest).
+// プラグイン ID (core/PluginId.h) と plugin.json / 解決 (editor/plugin/PluginManifest) のテスト。
 
 #include "Test.h"
 
@@ -12,7 +12,7 @@ using namespace rm::editor;
 
 namespace {
 
-// The official ID compiles (a wrong one would not: PluginIdLiteral is consteval).
+// 公式の ID はコンパイルできる (間違ったものはできない: PluginIdLiteral は consteval)。
 constexpr PluginIdLiteral kGame{"rm_engine", "game_production"};
 static_assert(PluginIdProblem("rm_engine", "game_production") == nullptr);
 static_assert(PluginIdProblem("rm", "render3d") != nullptr);
@@ -35,21 +35,21 @@ PluginCandidate Candidate(const char* author, const char* name, std::vector<Plug
 RM_TEST(PluginId_Rules) {
     CHECK(PluginIdProblem("rm_engine", "render3d") == nullptr);
     CHECK(PluginIdProblem("akatuki", "toon_shader2") == nullptr);
-    CHECK(PluginIdProblem("ab", "render3d") != nullptr);                     // author too short
-    CHECK(PluginIdProblem("abcdefghijklmnopqrstu", "render3d") != nullptr);  // author 21 chars
-    CHECK(PluginIdProblem("rm_engine", "ui") != nullptr);                     // name too short
-    CHECK(PluginIdProblem("rm_engine", std::string(65, 'a')) != nullptr);     // name too long
+    CHECK(PluginIdProblem("ab", "render3d") != nullptr);                     // 作者名が短すぎる
+    CHECK(PluginIdProblem("abcdefghijklmnopqrstu", "render3d") != nullptr);  // 作者名が 21 文字
+    CHECK(PluginIdProblem("rm_engine", "ui") != nullptr);                     // 名前が短すぎる
+    CHECK(PluginIdProblem("rm_engine", std::string(65, 'a')) != nullptr);     // 名前が長すぎる
     CHECK(PluginIdProblem("rm_engine", std::string(64, 'a')) == nullptr);
-    CHECK(PluginIdProblem("Rm_engine", "render3d") != nullptr);  // upper case
-    CHECK(PluginIdProblem("7studio", "render3d") != nullptr);    // starts with a digit
-    CHECK(PluginIdProblem("rm_engine", "render-3d") != nullptr);  // '-' is not allowed
-    CHECK(PluginIdProblem("rm_engine", "render.3d") != nullptr);  // '.' neither
+    CHECK(PluginIdProblem("Rm_engine", "render3d") != nullptr);  // 大文字
+    CHECK(PluginIdProblem("7studio", "render3d") != nullptr);    // 数字で始まる
+    CHECK(PluginIdProblem("rm_engine", "render-3d") != nullptr);  // '-' は使えない
+    CHECK(PluginIdProblem("rm_engine", "render.3d") != nullptr);  // '.' も使えない
     CHECK(PluginIdProblem("rm_engine", "render 3d") != nullptr);
     CHECK(PluginIdProblem("rm__engine", "render3d") != nullptr);  // "__"
-    CHECK(PluginIdProblem("rm_engine", "render3d_") != nullptr);  // trailing '_'
-    CHECK(PluginIdProblem("con", "render3d") != nullptr);         // Windows device names
+    CHECK(PluginIdProblem("rm_engine", "render3d_") != nullptr);  // 末尾の '_'
+    CHECK(PluginIdProblem("con", "render3d") != nullptr);         // Windows のデバイス名
     CHECK(PluginIdProblem("lpt3", "render3d") != nullptr);
-    CHECK(PluginIdProblem("com0", "render3d") == nullptr);  // only com1-com9 are reserved
+    CHECK(PluginIdProblem("com0", "render3d") == nullptr);  // 予約されているのは com1-com9 だけ
     CHECK(PluginIdProblem("console", "render3d") == nullptr);
     CHECK(kGame.Id() == (PluginId{"rm_engine", "game_production"}));
     CHECK(kGame.Id().Text() == "rm_engine / game_production");
@@ -66,13 +66,13 @@ RM_TEST(PluginManifest_Parse) {
     CHECK(m->displayName == "ゲーム UI");
     CHECK(m->requirements.size() == 1 && m->requirements[0].name == "game_production");
 
-    // one value of an ID alone is an error (never guessed)
+    // ID の片方の値だけでは、エラー (推測はしない)
     auto half = json::Parse(R"({"author":"rm_engine","name":"game_ui","requires":[{"name":"game_production"}]})");
     CHECK(!ParsePluginManifest(*half, &err).has_value());
     CHECK(!err.empty());
     auto badId = json::Parse(R"({"author":"RM","name":"game_ui"})");
     CHECK(!ParsePluginManifest(*badId, &err).has_value());
-    // no displayName -> the name; no requirements -> none
+    // displayName が無い -> 名前。requirements が無い -> 無し
     auto plain = json::Parse(R"({"author":"rm_engine","name":"game_ui"})");
     auto pm = ParsePluginManifest(*plain, &err);
     CHECK(pm && pm->displayName == "game_ui" && pm->requirements.empty());
@@ -92,9 +92,9 @@ RM_TEST(Plugins_ResolveOrderAndReasons) {
     const PluginId game{"rm_engine", "game_production"};
     const PluginId space{"rm_engine", "space3d"};
     std::vector<PluginCandidate> c;
-    c.push_back(Candidate("rm_engine", "game_ui", {game}));  // listed before what it needs
+    c.push_back(Candidate("rm_engine", "game_ui", {game}));  // 必要とするものより先に並ぶ
     c.push_back(Candidate("rm_engine", "game_production"));
-    c.push_back(Candidate("rm_engine", "physics", {game, space}));  // space3d is not built in
+    c.push_back(Candidate("rm_engine", "physics", {game, space}));  // space3d は組み込みではない
     c.push_back(Candidate("rm_engine", "cloth", {{"rm_engine", "physics"}}));
     c.push_back(Candidate("rm_engine", "mismatch", {}, "someone"));
     PluginCandidate noFile;
@@ -109,7 +109,7 @@ RM_TEST(Plugins_ResolveOrderAndReasons) {
     CHECK(r.statuses[3].state == PluginState::RequirementDisabled);
     CHECK(r.statuses[4].state == PluginState::IdMismatch);
     CHECK(r.statuses[5].state == PluginState::NoManifest);
-    // requirements first: game_production before game_ui
+    // 必要とするものが先: game_production が game_ui より前
     CHECK(r.order.size() == 2);
     CHECK(r.order[0] == 1 && r.order[1] == 0);
 }
@@ -149,27 +149,27 @@ RM_TEST(Plugins_InstallPlan) {
         Manifest("game_ui", {Id("game_production")}),
         Manifest("game_production", {Id("space3d")}),
         Manifest("space3d"),
-        Manifest("physics", {Id("game_production"), Id("cloth_sim")}),  // cloth_sim is not in this engine
+        Manifest("physics", {Id("game_production"), Id("cloth_sim")}),  // cloth_sim はこのエンジンに無い
     };
     std::vector<PluginId> unavailable;
-    // nothing installed: the whole tree, requirements first
+    // 何も入っていない: 木全体を、必要とするものから先に
     auto plan = InstallPlan(Id("game_ui"), available, {}, &unavailable);
     CHECK(plan == std::vector<PluginId>({Id("space3d"), Id("game_production"), Id("game_ui")}));
     CHECK(unavailable.empty());
-    // already installed ones are not copied again
+    // 入っているものは、もう一度コピーしない
     plan = InstallPlan(Id("game_ui"), available, {Id("space3d")}, &unavailable);
     CHECK(plan == std::vector<PluginId>({Id("game_production"), Id("game_ui")}));
-    // the plugin is installed, but a requirement two steps down is missing: found through the ready ones
+    // プラグインは入っているが、2 段下の必要なものが無い: 準備のできたものをたどって見つける
     plan = InstallPlan(Id("game_ui"), available, {Id("game_ui"), Id("game_production")}, &unavailable);
     CHECK(plan == std::vector<PluginId>({Id("space3d")}));
-    // everything ready: nothing to do
+    // すべて準備できている: やることは無い
     plan = InstallPlan(Id("game_ui"), available, {Id("game_ui"), Id("game_production"), Id("space3d")}, &unavailable);
     CHECK(plan.empty());
-    // a requirement this engine does not have
+    // このエンジンに無い必要なもの
     plan = InstallPlan(Id("physics"), available, {}, &unavailable);
     CHECK(unavailable == std::vector<PluginId>({Id("cloth_sim")}));
     CHECK(plan.back() == Id("physics"));
-    // a circle does not loop forever
+    // 輪になっていても、無限にはループしない
     const std::vector<PluginManifest> loop = {Manifest("alpha", {Id("bravo")}), Manifest("bravo", {Id("alpha")})};
     plan = InstallPlan(Id("alpha"), loop, {}, nullptr);
     CHECK(plan.size() == 2);
@@ -207,7 +207,7 @@ RM_TEST(Plugins_NotInstalled) {
 
 namespace {
 
-// game_production needs a connector; game_x_3d connects it with space3d.
+// game_production はコネクターが要る。game_x_3d がそれを space3d とつなぐ。
 std::vector<PluginManifest> ConnectorWorld() {
     PluginManifest game = Manifest("game_production");
     game.needsConnector = true;
@@ -236,7 +236,7 @@ RM_TEST(PluginManifest_ConnectorKeys) {
     auto needs = json::Parse(R"({"author":"rm_engine","name":"game_production","needsConnector":true})");
     auto g = ParsePluginManifest(*needs, &err);
     CHECK(g && g->needsConnector && !g->connectorFor);
-    // The target must also be required (so it is enabled first), never itself, never a connector that needs one.
+    // 対象も requires に入っていること (先に有効になるように)。自分自身や、コネクターを要するコネクターは不可。
     auto notRequired = json::Parse(R"({"author":"rm_engine","name":"game_x_3d","connectorFor":{"author":"rm_engine","name":"game_production"}})");
     CHECK(!ParsePluginManifest(*notRequired, &err));
     auto self = json::Parse(R"({"author":"rm_engine","name":"game_x_3d","connectorFor":{"author":"rm_engine","name":"game_x_3d"},
@@ -248,7 +248,7 @@ RM_TEST(PluginManifest_ConnectorKeys) {
 
 RM_TEST(Plugins_ConnectorDecidesEnabled) {
     const auto w = ConnectorWorld();
-    // Everything installed: all enabled, the connector after both of its sides.
+    // すべて入っている: すべて有効。コネクターは両側の後。
     std::vector<PluginCandidate> c;
     for (const auto& m : w) c.push_back(FromManifest(m));
     auto r = ResolvePlugins(c);
@@ -257,7 +257,7 @@ RM_TEST(Plugins_ConnectorDecidesEnabled) {
     auto pos = [&](size_t idx) { return std::find(r.order.begin(), r.order.end(), idx) - r.order.begin(); };
     CHECK(pos(2) > pos(0) && pos(2) > pos(1));
 
-    // 3D 空間 not installed: the connector cannot work, so game production is off - and game_ui with it.
+    // 3D 空間 が入っていない: コネクターが動けないので、ゲーム制作は無効 - game_ui もいっしょに。
     c[1].installed = false;
     r = ResolvePlugins(c);
     CHECK(r.statuses[2].state == PluginState::RequirementDisabled);
@@ -267,7 +267,7 @@ RM_TEST(Plugins_ConnectorDecidesEnabled) {
     CHECK(r.statuses[3].state == PluginState::RequirementDisabled);
     CHECK(r.order.empty());
 
-    // No connector in the engine at all.
+    // エンジンにコネクターがまったく無い。
     std::vector<PluginCandidate> alone = {FromManifest(w[0])};
     r = ResolvePlugins(alone);
     CHECK(r.statuses[0].state == PluginState::NoConnector);
@@ -275,32 +275,32 @@ RM_TEST(Plugins_ConnectorDecidesEnabled) {
 
 RM_TEST(Plugins_InstallPlanBringsConnectors) {
     const auto w = ConnectorWorld();
-    // Game production alone brings a space and the connector.
+    // ゲーム制作だけで、空間とコネクターが付いてくる。
     auto plan = InstallPlan(Id("game_production"), w, {}, nullptr);
     CHECK(plan == std::vector<PluginId>({Id("game_production"), Id("space3d"), Id("game_x_3d")}));
-    // Installed, but without a connector ("前提をインストール"): only what is missing.
+    // 入っているがコネクターが無い ("前提をインストール"): 足りないものだけ。
     plan = InstallPlan(Id("game_production"), w, {Id("game_production")}, nullptr);
     CHECK(plan == std::vector<PluginId>({Id("space3d"), Id("game_x_3d")}));
-    // 3D 空間 when game production is there: the connector comes along by itself.
+    // ゲーム制作がある場合の 3D 空間: コネクターはひとりでに付いてくる。
     plan = InstallPlan(Id("space3d"), w, {Id("game_production")}, nullptr);
     CHECK(plan == std::vector<PluginId>({Id("space3d"), Id("game_x_3d")}));
-    // 3D 空間 alone: no connector (game production is not there).
+    // 3D 空間 だけ: コネクターは無し (ゲーム制作が無い)。
     plan = InstallPlan(Id("space3d"), w, {}, nullptr);
     CHECK(plan == std::vector<PluginId>({Id("space3d")}));
-    // Everything there: nothing.
+    // すべてある: 何もしない。
     CHECK(InstallPlan(Id("game_ui"), w, {Id("game_production"), Id("space3d"), Id("game_x_3d"), Id("game_ui")}, nullptr).empty());
 }
 
-// A connector a newer engine added for plugins installed before: brought at start-up.
+// 新しいエンジンが、以前に入れたプラグインのために足したコネクター: 起動時に持ってくる。
 RM_TEST(Plugins_ConnectorsToBring) {
     const auto w = ConnectorWorld();
-    // Both sides installed, the connector not: it comes.
+    // 両側が入っていて、コネクターは無い: 付いてくる。
     const std::vector<PluginManifest> both = {w[0], w[1]};
     CHECK(ConnectorsToBring(both, w) == std::vector<PluginId>({Id("game_x_3d")}));
-    // Installed already, or a side missing: nothing.
+    // もう入っている、または片側が無い: 何もしない。
     CHECK(ConnectorsToBring(w, w).empty());
     CHECK(ConnectorsToBring({w[0]}, w).empty());
-    // A connector joining a connector (ゲーム制作 × 3D × 物理): it follows the one it joins.
+    // コネクターをつなぐコネクター (ゲーム制作 × 3D × 物理): つなぐ相手に付いていく。
     PluginManifest phys = Manifest("physics");
     PluginManifest x3dPhys = Manifest("game_x_3d_x_physics", {Id("game_x_3d"), Id("physics")});
     x3dPhys.connectorFor = Id("game_x_3d");
@@ -312,13 +312,13 @@ RM_TEST(Plugins_ConnectorsToBring) {
 
 RM_TEST(Plugins_DependentsThroughConnector) {
     const auto w = ConnectorWorld();
-    // Removing 3D 空間: the connector goes, so game production (its last connector) and game_ui go too.
+    // 3D 空間 を外す: コネクターが消え、ゲーム制作 (その最後のコネクター) と game_ui も消える。
     const auto d = Dependents(Id("space3d"), w);
     CHECK(d.size() == 3);
     CHECK(d[0].id == Id("game_x_3d") && !d[0].via);
     CHECK(d[1].id == Id("game_production") && d[1].via == Id("game_x_3d"));
     CHECK(d[2].id == Id("game_ui") && d[2].via == Id("game_production"));
-    // With a second connector (2D) still there, game production keeps working.
+    // 2 つ目のコネクター (2D) がまだあれば、ゲーム制作は動き続ける。
     auto more = w;
     PluginManifest x2d = Manifest("game_x_2d", {Id("game_production"), Id("space2d")});
     x2d.connectorFor = Id("game_production");
@@ -329,14 +329,14 @@ RM_TEST(Plugins_DependentsThroughConnector) {
 }
 
 RM_TEST(Plugins_InstallPlanFindsWhatAnInstalledConnectorLacks) {
-    // A newer engine: the connector now also needs physics_lib, which is not installed.
+    // 新しいエンジン: コネクターが physics_lib も要るようになったが、入っていない。
     auto w = ConnectorWorld();
     w[2].requirements.push_back(Id("physics_lib"));
     w.push_back(Manifest("physics_lib", {Id("space3d")}));
     const std::vector<PluginId> ready = {Id("game_production"), Id("space3d"), Id("game_x_3d")};
     auto plan = InstallPlan(Id("game_production"), w, ready, nullptr);
     CHECK(plan == std::vector<PluginId>({Id("physics_lib")}));
-    // Everything there: nothing.
+    // すべてある: 何もしない。
     auto all = ready;
     all.push_back(Id("physics_lib"));
     CHECK(InstallPlan(Id("game_production"), w, all, nullptr).empty());
@@ -344,25 +344,25 @@ RM_TEST(Plugins_InstallPlanFindsWhatAnInstalledConnectorLacks) {
 
 RM_TEST(Plugins_ReadyPlugins_OlderCopiesAreCopiedAgain) {
     const auto engine = ConnectorWorld();
-    // Installed from an older engine: the connector still requires a plugin this engine dropped,
-    // and game production lacks the connector rule.
+    // 古いエンジンから入れた: コネクターは、このエンジンが外したプラグインをまだ必要とし、
+    // ゲーム制作にはコネクターの規則が無い。
     auto installed = engine;
     installed[2].requirements.push_back(Id("render3d"));
     installed[0].needsConnector = false;
-    installed.push_back(Manifest("someone_else"));  // not in this engine: taken as it is
+    installed.push_back(Manifest("someone_else"));  // このエンジンに無い: そのまま扱う
     const auto ready = ReadyPlugins(installed, engine);
     CHECK(ready == std::vector<PluginId>({Id("space3d"), Id("game_ui"), Id("someone_else")}));
-    // So installing game production copies it and its connector again.
+    // だからゲーム制作を入れると、それとそのコネクターをもう一度コピーする。
     const auto plan = InstallPlan(Id("game_production"), engine, ready, nullptr);
     CHECK(plan == std::vector<PluginId>({Id("game_production"), Id("game_x_3d")}));
 }
 
 RM_TEST(Plugin_FirstStartInstalls) {
     const PluginId a{"rm_engine", "game_production"}, b{"rm_engine", "space3d"}, c{"rm_engine", "space2d"};
-    // A new engine with nothing installed before: everything.
+    // 何も入っていなかった新しいエンジン: すべて。
     CHECK(FirstStartInstalls({a, b, c}, {}) == std::vector<PluginId>({a, b, c}));
-    // What the user had in the shared folder carries over (space2d was removed there), in the engine's order;
-    // a plugin this engine does not have is not asked for.
+    // 共有フォルダーにユーザーが入れていたものを引き継ぐ (space2d はそこで外された)。順番はエンジンのもの。
+    // このエンジンに無いプラグインは求めない。
     const PluginId gone{"someone", "old"};
     CHECK(FirstStartInstalls({a, b, c}, {b, gone, a}) == std::vector<PluginId>({a, b}));
 }

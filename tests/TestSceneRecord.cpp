@@ -1,7 +1,7 @@
-// Tests for SceneRecord (game production's runtime/SceneRecord): undo of a change of the scene's
-// shape kept as the touched entities only. Thousands of random changes - the same kinds the editor
-// makes, touching what the editor says it touches - each undone and redone and compared with the
-// whole scene. And how much one entry keeps in a scene of 10,000 entities, against the whole scene.
+// SceneRecord (ゲーム制作の runtime/SceneRecord) のテスト: シーンの形を変えたときの Undo を、
+// 触ったエンティティだけで持つ。何千ものランダムな変更 - エディターが行うのと同じ種類で、
+// エディターが触ると言うものだけを触る - を、それぞれ Undo と Redo して、シーン全体と比べる。
+// さらに、1 万エンティティのシーンで 1 つの記録が持つ量を、シーン全体と比べる。
 
 #include "Test.h"
 
@@ -23,7 +23,7 @@ namespace {
 const reflect::TypeDesc& Tf() { return reflect::TypeOf<space3d::Transform>(); }
 const reflect::TypeDesc& Sp() { return reflect::TypeOf<game_x_3d::Spin>(); }
 
-// The whole scene but the next id (undo never takes it back: ids are not used again).
+// 次の ID を除くシーン全体 (Undo は次の ID を戻さない: ID は再利用しない)。
 json::Value Shape(const Scene& s) {
     json::Value v = s.Save();
     v.Erase("nextId");
@@ -40,7 +40,7 @@ bool IndexRight(const Scene& s) {
 struct World {
     Scene scene;
     std::mt19937 rng{20261112};
-    std::unordered_map<std::string, json::Value> files;  // asset id -> prefab file
+    std::unordered_map<std::string, json::Value> files;  // アセット ID -> Prefab ファイル
     int nextAsset = 1;
 
     int Pick() {
@@ -61,7 +61,7 @@ struct World {
     }
     std::vector<int> Roots() { return scene.PrefabRoots(); }
 
-    // The prefabs nested in `root`, from their files (what the editor's FillNested does).
+    // `root` に入れ子になった Prefab を、そのファイルから (エディターの FillNested がすること)。
     void Fill(int root, std::vector<std::string>& chain) {
         if (chain.size() > 8) return;
         for (const int n : scene.NestedPrefabs(root)) {
@@ -86,7 +86,7 @@ struct World {
     }
 };
 
-// One random change: what it touches (as the editor names it) and the change itself.
+// ランダムな変更 1 つ: 触るもの (エディターの呼び方で) と、変更そのもの。
 struct Change {
     std::vector<int> touched;
     std::function<void()> run;
@@ -166,7 +166,7 @@ Change RandomChange(World& w) {
                     },
                     "place prefab"};
         }
-        case 10: {  // 「Prefab に反映」 from one placed root: every placed one of that prefab is touched
+        case 10: {  // 「Prefab に反映」 を置いた 1 つのルートから: その Prefab を置いたものはすべて触る
             const std::vector<int> roots = w.Roots();
             if (roots.empty()) return {{}, [] {}, "nothing"};
             const int root = roots[std::uniform_int_distribution<size_t>(0, roots.size() - 1)(w.rng)];
@@ -224,11 +224,11 @@ RM_TEST(SceneRecord_ThousandsOfRandomChanges_UndoAndRedoGiveTheWholeScene) {
             std::printf("    step %d (%s): undo %s, redo %s\n", step, c.kind, undone ? "ok" : "WRONG", redone ? "ok" : "WRONG");
         }
     }
-    CHECK(changed > 2000);  // most of them really changed something
+    CHECK(changed > 2000);  // ほとんどは、本当に何かを変えた
 }
 
 RM_TEST(SceneRecord_UndoInOrderThroughManyChanges) {
-    // Several records undone newest first, then redone oldest first: each step the scene as it was.
+    // いくつかの記録を新しい方から Undo し、古い方から Redo する: 各段階で、そのときのシーンになる。
     World w;
     w.scene.SetComponentTypes({&Tf(), &Sp()}, {&Sp()});
     for (int i = 0; i < 6; ++i) w.scene.Create("start");
@@ -256,8 +256,8 @@ RM_TEST(SceneRecord_UndoInOrderThroughManyChanges) {
 }
 
 RM_TEST(SceneRecord_TenThousand_OneDeleteKeepsLittle) {
-    // 100 chains of 100, every entity with a Transform. One leaf deleted: the whole scene twice (as
-    // before) against the touched entity only.
+    // 100 本の 100 個の鎖で、どのエンティティにも Transform がある。葉を 1 つ削除: シーン全体を 2 回 (これまで)
+    // と、触ったエンティティだけを比べる。
     json::Value list = json::Value::MakeArray();
     const std::string tf = Tf().name;
     for (int i = 1; i <= 10000; ++i) {
@@ -282,14 +282,14 @@ RM_TEST(SceneRecord_TenThousand_OneDeleteKeepsLittle) {
         s->Load(file);
     }
     using clock = std::chrono::steady_clock;
-    // Before: the whole scene before and after, as text (what the history kept).
+    // 前: 変更の前と後のシーン全体をテキストで (履歴が持っていたもの)。
     auto t = clock::now();
     const json::Value wholeBefore = a.Save();
     a.Delete(std::vector<int>{100});
     const json::Value wholeAfter = a.Save();
     const size_t wholeBytes = json::Write(wholeBefore, false).size() + json::Write(wholeAfter, false).size();
     const double wholeMs = std::chrono::duration<double, std::milli>(clock::now() - t).count();
-    // After: the record of the touched entity.
+    // 後: 触ったエンティティの記録。
     t = clock::now();
     SceneRecord r = SceneRecord::Begin(b, std::vector<int>{100});
     b.Delete(std::vector<int>{100});

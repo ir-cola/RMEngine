@@ -1,5 +1,5 @@
-// Tests for the generator (tools/rmgen/Scanner): errors with codes and the user's line numbers
-// (design R1 T4 / T6), and what it reads from a header.
+// ジェネレーター (tools/rmgen/Scanner) のテスト: コード付きのエラーとユーザーの行番号
+// (設計 R1 T4 / T6)、そしてヘッダーから読むもの。
 
 #include "Test.h"
 
@@ -70,15 +70,15 @@ struct Speed final {
 }
 
 RM_TEST(Rmgen_OutputNamesNeverMeet) {
-    // Paths that read the same once '/' is '_' still make different files (a hash of the whole path).
+    // '/' を '_' にすると同じ読みになるパスでも、別のファイルになる (パス全体のハッシュ)。
     CHECK(OutputName("rm_engine/game_x_3d/A.h") != OutputName("rm_engine/game_x/3d/A.h"));
     CHECK(OutputName("core/x/A.h") != OutputName("core_x/A.h"));
-    CHECK(OutputName("a/b/C.h") == OutputName("a\\b\\C.h"));  // the same path either way
-    CHECK(OutputName("a/b/C.h") == OutputName("a/b/C.h"));    // and the same every build
+    CHECK(OutputName("a/b/C.h") == OutputName("a\\b\\C.h"));  // どちらの書き方でも同じパス
+    CHECK(OutputName("a/b/C.h") == OutputName("a/b/C.h"));    // ビルドごとにも同じ
     CHECK(OutputName("a/b/C.h").size() == std::string("a_b_C.12345678.reflect.cpp").size());
 
-    // Two headers with the same include path (a plugin author named "core" next to src/core; or only
-    // the case differs - one file on Windows): rmgen stops (RM0012) instead of writing one over the other.
+    // 同じ include パスのヘッダーが 2 つ (src/core の隣に "core" という作者のプラグイン。または
+    // 大文字小文字だけ違う - Windows では 1 つのファイル): rmgen は片方をもう片方に上書きせず、止まる (RM0012)。
     const char* text = "RM_STRUCT()\nstruct A {\n    RM_PROPERTY() int a = 0;\n};\n";
     const char* other = "RM_STRUCT()\nstruct B {\n    RM_PROPERTY() int b = 0;\n};\n";
     std::vector<Diagnostic> diags;
@@ -97,7 +97,7 @@ RM_TEST(Rmgen_OutputNamesNeverMeet) {
     found = false;
     for (const auto& d : diags) found = found || d.code == "RM0012";
     CHECK(found);
-    // Different paths: no error.
+    // 別のパス: エラーなし。
     diags.clear();
     headers.clear();
     headers.push_back(Scan(text, "1/A.h", "rm_engine/game_x_3d/A.h", diags));
@@ -106,17 +106,17 @@ RM_TEST(Rmgen_OutputNamesNeverMeet) {
     CHECK(diags.empty());
 }
 
-// #if 0 is skipped; a field in another #if / #ifdef inside a struct is an error (its count would differ
-// by build); a macro's \ continuation works with CRLF too (2026-11-19).
+// #if 0 は飛ばす。struct の中の別の #if / #ifdef にある欄はエラー (数がビルドで変わるため)。
+// マクロの \ の継続は CRLF でも働く (2026-11-19)。
 RM_TEST(Rmgen_Preprocessor) {
     const Result off = Run("RM_STRUCT()\nstruct A {\n    RM_PROPERTY() int a = 0;\n#if 0\n    RM_PROPERTY() int b = 0;\n    junk }{ ;\n#endif\n};\n");
     CHECK(off.diags.empty() && off.headers[0].structs.size() == 1 && off.headers[0].structs[0].fields.size() == 1);
     const Result debug = Run("RM_STRUCT()\nstruct A {\n    RM_PROPERTY() int a = 0;\n#ifdef _DEBUG\n    RM_PROPERTY() int b = 0;\n#endif\n};\n");
     CHECK(Has(debug, "RM0014", 5));
-    // A struct wholly inside a guard is fine.
+    // ガードの中に丸ごと入った struct は問題ない。
     const Result guard = Run("#ifndef A_H\n#define A_H\nRM_STRUCT()\nstruct A {\n    RM_PROPERTY() int a = 0;\n};\n#endif\n");
     CHECK(guard.diags.empty() && guard.headers[0].structs.size() == 1);
-    // CRLF: the continued line of a macro is the macro's, not code.
+    // CRLF: マクロの継続した行はマクロのもので、コードではない。
     const Result crlf = Run("#define TWO(a) \\\r\n    struct a { int x; };\r\nRM_STRUCT()\r\nstruct B {\r\n    RM_PROPERTY() int b = 0;\r\n};\r\n");
     CHECK(crlf.diags.empty() && crlf.headers[0].structs.size() == 1 && crlf.headers[0].structs[0].name == "B");
 }
@@ -146,18 +146,18 @@ private:
 };
 RM_PROPERTY() int stray = 0;
 )");
-    CHECK(Has(r, "RM0002", 3));   // unknown key (typo)
-    CHECK(Has(r, "RM0003", 4));   // Label needs a string
-    CHECK(Has(r, "RM0003", 5));   // Min must be a literal, not a constant's name
+    CHECK(Has(r, "RM0002", 3));   // 知らないキー (打ち間違い)
+    CHECK(Has(r, "RM0003", 4));   // Label は文字列が要る
+    CHECK(Has(r, "RM0003", 5));   // Min はリテラルで、定数の名前ではない
     CHECK(Has(r, "RM0004", 6));   // double
-    CHECK(Has(r, "RM0004", 7));   // pointer
-    CHECK(Has(r, "RM0006", 8));   // not a reflected type
-    CHECK(Has(r, "RM0008", 9));   // array of arrays
+    CHECK(Has(r, "RM0004", 7));   // ポインター
+    CHECK(Has(r, "RM0006", 8));   // 反映された型ではない
+    CHECK(Has(r, "RM0008", 9));   // 配列の配列
     CHECK(Has(r, "RM0003", 10));  // Min > Max
-    CHECK(Has(r, "RM0003", 11));  // Min on a string
-    CHECK(Has(r, "RM0003", 12));  // a flag with a value
+    CHECK(Has(r, "RM0003", 11));  // 文字列に Min
+    CHECK(Has(r, "RM0003", 12));  // 値の付いたフラグ
     CHECK(Has(r, "RM0011", 13));  // private
-    CHECK(Has(r, "RM0005", 16));  // annotation outside a reflected struct
+    CHECK(Has(r, "RM0005", 16));  // 反映された struct の外の注釈
 }
 
 RM_TEST(Rmgen_DuplicateNamesAndBases) {
@@ -205,7 +205,7 @@ struct Links {
     CHECK(out.find(".assetKinds = \"model\"") != std::string::npos && out.find(".assetKinds = \"image,model\"") != std::string::npos);
     CHECK(out.find("decltype(::Links::model), ::rm::AssetRef>") != std::string::npos);
 
-    // AssetKind only on an AssetRef, and only lower-case names with commas.
+    // AssetKind は AssetRef にだけ、そして小文字の名前をカンマで区切ったものだけ。
     const Result bad = Run(R"(RM_STRUCT()
 struct A {
     RM_PROPERTY(AssetKind="model") int a = 0;
@@ -223,7 +223,7 @@ struct A {
 }
 
 RM_TEST(Rmgen_Decimals) {
-    // Decimals=0 .. 6 on a float, a vector or a colour; written into the table.
+    // Decimals=0 .. 6 は float、ベクトル、色に付けられる。表に書く。
     const Result ok = Run(R"(#pragma once
 RM_STRUCT()
 struct S {
@@ -247,7 +247,7 @@ struct S {
 }
 
 RM_TEST(Rmgen_ShowIf) {
-    // ShowIf names other fields of the same struct ("kind=A|B", "flag", "!flag", & for both).
+    // ShowIf は同じ struct の他の欄を指す ("kind=A|B", "flag", "!flag", & は両方)。
     const Result ok = Run(R"(#pragma once
 RM_ENUM() enum class K { A, B };
 RM_STRUCT()
@@ -269,5 +269,5 @@ struct S {
     RM_PROPERTY(Edit, ShowIf="w") float w = 0;
 };
 )");
-    CHECK(Has(bad, "RM0003", 5) && Has(bad, "RM0003", 6) && Has(bad, "RM0003", 7) && Has(bad, "RM0003", 8));  // (w: itself)
+    CHECK(Has(bad, "RM0003", 5) && Has(bad, "RM0003", 6) && Has(bad, "RM0003", 7) && Has(bad, "RM0003", 8));  // (w: 自分自身)
 }

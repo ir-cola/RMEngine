@@ -1,17 +1,17 @@
 // rmgen --out <dir> --root <dir> [--root <dir> ...] [--skip-dir <name>] [--scripts]
 //
-// --skip-dir: folders of that name are not read (the engine skips plugins' templates/: the scripts in
-//             a template are a game's, not the engine's).
-// --scripts:  the roots are a game's scripts (Assets/Scripts): writes <out>/rm_scripts.cpp, the
-//             registration of the script DLL (RM.h), instead of the engine's tables.
+// --skip-dir: その名前のフォルダは読まない (エンジンはプラグインの templates/ を飛ばす: テンプレートの
+//             スクリプトはゲームのもので、エンジンのものではない)。
+// --scripts:  root はゲームのスクリプト (Assets/Scripts): エンジンの表の代わりに、スクリプトの DLL の
+//             登録 (RM.h) である <out>/rm_scripts.cpp を書く。
 //
-// Reads every .h under the roots, and writes <out>/<header>.reflect.cpp for each header with
-// reflected types plus <out>/rm_all_types.cpp. A file is written only when its text changes
-// (so MSBuild recompiles only what changed); generated files of headers that are gone are removed.
-// Exit code 0 = ok, 1 = errors in the headers (printed as "file(line,col): error RM####: ..."),
-// 2 = bad arguments / I/O.
+// root の下の .h をすべて読み、反射した型のあるヘッダーごとに <out>/<header>.reflect.cpp を、
+// さらに <out>/rm_all_types.cpp を書く。ファイルは、中身が変わったときだけ書く
+// (MSBuild が変わったものだけ作り直すように)。なくなったヘッダーの生成ファイルは消す。
+// 終了コード 0 = 成功、1 = ヘッダーにエラー ("file(line,col): error RM####: ..." と出す)、
+// 2 = 引数が悪い / I/O エラー。
 
-#include <windows.h>  // WIN32_LEAN_AND_MEAN / NOMINMAX come from RM.Common.props
+#include <windows.h>  // WIN32_LEAN_AND_MEAN / NOMINMAX は RM.Common.props から来る
 
 #include "Scanner.h"
 
@@ -34,8 +34,8 @@ std::string U8(const fs::path& p) {
     return std::string(s.begin(), s.end());
 }
 
-// Another program (Visual Studio saving a file, an antivirus scan, a compiler reading the output)
-// can hold a file for a moment. Every file operation is tried again a few times before giving up.
+// ほかのプログラム (ファイルを保存する Visual Studio、ウイルス検査、出力を読むコンパイラ) が
+// 少しの間ファイルを握ることがある。ファイルの操作はどれも、あきらめる前に数回やり直す。
 constexpr int kTries = 20;
 constexpr DWORD kWaitMs = 100;
 
@@ -51,7 +51,7 @@ std::string ErrorText(DWORD code) {
 }
 
 bool ReadOnce(const fs::path& p, std::string& out, DWORD& error) {
-    // Share everything: a file being written or renamed by someone else can still be read.
+    // すべて共有する: ほかの人が書いている・名前を変えているファイルでも読める。
     HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
                            FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
@@ -68,7 +68,7 @@ bool ReadOnce(const fs::path& p, std::string& out, DWORD& error) {
     return ok;
 }
 
-// missing = the file is not there (not an error for an output file that was never written).
+// missing = ファイルがない (一度も書かれていない出力ファイルではエラーにしない)。
 bool ReadAll(const fs::path& p, std::string& out, std::string* why = nullptr, bool* missing = nullptr) {
     DWORD error = 0;
     for (int i = 0; i < kTries; ++i) {
@@ -83,7 +83,7 @@ bool ReadAll(const fs::path& p, std::string& out, std::string* why = nullptr, bo
     return false;
 }
 
-// Writes only when the text differs. Returns false (with the reason) on an I/O error.
+// 中身が違うときだけ書く。I/O エラーのときは (理由つきで) false を返す。
 bool WriteIfChanged(const fs::path& p, const std::string& text, bool& wrote, std::string& why) {
     std::string old;
     wrote = false;
@@ -115,8 +115,8 @@ bool WriteIfChanged(const fs::path& p, const std::string& text, bool& wrote, std
     return false;
 }
 
-// Every .h under `base`. An entry that vanishes while the folder is listed (a temporary file of
-// another program) is skipped; a folder that cannot be listed is tried again before giving up.
+// `base` の下の .h をすべて。フォルダを一覧している間に消えた項目 (ほかのプログラムの一時
+// ファイル) は飛ばす。一覧できないフォルダは、あきらめる前にやり直す。
 bool ListHeaders(const fs::path& base, std::vector<fs::path>& out, std::string& why, const std::vector<std::wstring>& skip) {
     std::error_code exists;
     if (!fs::is_directory(base, exists)) {
@@ -191,7 +191,7 @@ int wmain(int argc, wchar_t** argv) {
             std::string text;
             bool missing = false;
             if (!ReadAll(file, text, &why, &missing)) {
-                if (missing) continue;  // removed while we were reading the folder
+                if (missing) continue;  // フォルダを読んでいる間に消された
                 std::printf("%s: error RM0007: 読めませんでした (%s)。ほかのアプリがこのファイルを開いていないか確かめてください\n",
                             U8(file).c_str(), why.c_str());
                 return 2;
@@ -238,7 +238,7 @@ int wmain(int argc, wchar_t** argv) {
         if (!emit("rm_all_types.cpp", rmgen::EmitAll(headers))) return 2;
     }
     for (fs::directory_iterator it(out, ec), end; !ec && it != end; it.increment(ec)) {
-        std::error_code removeEc;  // (its own: one that cannot be removed does not stop the walk)
+        std::error_code removeEc;  // (専用: 消せないものがあっても、走査は止まらない)
         if (it->path().extension() == L".cpp" && !produced.count(it->path().filename())) fs::remove(it->path(), removeEc);
     }
     size_t types = 0;

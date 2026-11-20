@@ -1,4 +1,4 @@
-// Tests for what renaming a project changes on disk (editor/project/ProjectRename).
+// プロジェクトの名前を変えたときにディスク上で変わること (editor/project/ProjectRename) のテスト。
 
 #include "Test.h"
 
@@ -9,36 +9,36 @@ using namespace rm::editor;
 namespace fs = std::filesystem;
 
 RM_TEST(ProjectRename_OwnFolderFollows) {
-    // A project this engine made: <parent>/<name>/<name>.rmpf - everything follows.
+    // このエンジンが作ったプロジェクト: <parent>/<name>/<name>.rmpf - すべてがついてくる。
     const auto plan = PlanProjectRename(L"D:\\Projects\\Game\\Game.rmpf", "Game", "Foo");
     CHECK(plan.renameFolder);
     CHECK(plan.folder == fs::path(L"D:\\Projects\\Foo"));
     CHECK(plan.file == fs::path(L"D:\\Projects\\Foo\\Foo.rmpf"));
-    // letter case of the folder ignored (Windows)
+    // フォルダーの大文字小文字は無視 (Windows)
     CHECK(PlanProjectRename(L"D:\\Projects\\game\\Game.rmpf", "Game", "Foo").renameFolder);
-    // Japanese names
+    // 日本語の名前
     const auto jp = PlanProjectRename(L"D:\\作品\\冒険\\冒険.rmpf", "冒険", "旅");
     CHECK(jp.renameFolder && jp.file == fs::path(L"D:\\作品\\旅\\旅.rmpf"));
 }
 
 RM_TEST(ProjectRename_UsersFolderStays) {
-    // "開く…" of D:\Work\game.rmpf named "Game": D:\Work is the user's, it must never become D:\Foo.
+    // D:\Work\game.rmpf の "開く…" で名前が "Game": D:\Work はユーザーのもので、D:\Foo にしてはいけない。
     const auto plan = PlanProjectRename(L"D:\\Work\\game.rmpf", "Game", "Foo");
     CHECK(!plan.renameFolder);
     CHECK(plan.folder == fs::path(L"D:\\Work"));
     CHECK(plan.file == fs::path(L"D:\\Work\\Foo.rmpf"));
-    // a .rmpf at the root of a drive
+    // ドライブの直下の .rmpf
     const auto root = PlanProjectRename(L"D:\\Game.rmpf", "Game", "Foo");
     CHECK(!root.renameFolder && root.file == fs::path(L"D:\\Foo.rmpf"));
-    // the folder only looks like the name with something added
+    // フォルダーは、名前に何かを足したものに見えるだけ
     CHECK(!PlanProjectRename(L"D:\\Game2\\Game.rmpf", "Game", "Foo").renameFolder);
 }
 
 RM_TEST(ProjectRename_OnlyTheCase) {
-    // The same name in another letter case: the folder is renamed (to show the new case), it is the same one.
+    // 同じ名前で大文字小文字だけ違う: フォルダーの名前は変わる (新しい大文字小文字を見せるため) が、同じフォルダー。
     const auto plan = PlanProjectRename(L"D:\\P\\game\\game.rmpf", "game", "Game");
     CHECK(plan.renameFolder && plan.folder == fs::path(L"D:\\P\\Game"));
-    // Already that name: nothing for the folder.
+    // もうその名前: フォルダーは何もしない。
     CHECK(!PlanProjectRename(L"D:\\P\\Game\\Game.rmpf", "Game", "Game").renameFolder);
     CHECK(SameFileName(L"Game", L"gAME") && !SameFileName(L"Game", L"Games"));
 }

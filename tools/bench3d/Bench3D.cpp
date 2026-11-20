@@ -1,16 +1,15 @@
-// How long the 3D renderer takes on the CPU for one frame (space3d::Renderer::Render): 1000 boxes
-// (casting shadows) and 8 lights (the sun, point lights and spots, with shadows), seen by a moving
-// camera. Not part of the engine or its tests (it needs a GPU): built and run by hand -
+// 3D レンダラーが 1 フレームに CPU で使う時間 (space3d::Renderer::Render): 1000 個の箱
+// (影を落とす) と 8 個の光 (太陽・点光源・スポット、影つき) を、動くカメラで見る。エンジンにも
+// そのテストにも入れない (GPU が要る): 手で作って走らせる -
 //
 //   powershell -NoProfile -ExecutionPolicy Bypass -File tools\bench3d\run.ps1 [-Frames 300] [-Case boxes|mesh]
 //
-//   boxes: 1000 boxes (Box: the renderer's cube)
-//   mesh:  1000 models of the same mesh (MeshDraw: a ball of 480 triangles, one material, uploaded once)
-//   drag:  1000 boxes close together (the sun's one map, not cascades), the camera still, and the
-//          outermost box dragged outwards a little every frame (marked moving): what dragging costs
+//   boxes: 1000 個の箱 (Box: レンダラーの立方体)
+//   mesh:  同じメッシュのモデル 1000 個 (MeshDraw: 三角形 480 個の球、マテリアル 1 つ、アップロードは 1 回)
+//   drag:  1000 個の箱を近づけて並べる (太陽の地図は 1 枚、カスケードなし)。カメラは動かさず、
+//          いちばん外の箱を毎フレーム少しずつ外へ引っぱる (動くものとして印をつける): 引っぱる費用
 //
-// Prints the average and the median of the CPU time spent in Render (the GPU is waited for between
-// frames, outside the measured time).
+// Render に使った CPU 時間の平均と中央値を出す (GPU はフレームの間に待つ。計る時間の外)。
 
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
@@ -35,8 +34,8 @@ int main(int argc, char** argv) {
     const bool dragCase = argc > 2 && std::string(argv[2]) == "drag";
     Microsoft::WRL::ComPtr<ID3D11Device> device;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
-    // Anywhere after the others: "fl10" = a device of feature level 10.0 only (the least the engine
-    // needs); "debug" = with Direct3D's debug layer (its messages go to the debugger's output).
+    // ほかの引数の後ならどこでもよい: "fl10" = フィーチャーレベル 10.0 だけのデバイス (エンジンが
+    // 要る最低限)。"debug" = Direct3D のデバッグ層つき (そのメッセージはデバッガーの出力へ行く)。
     bool fl10 = false, debug = false;
     for (int i = 1; i < argc; ++i) {
         fl10 = fl10 || std::string(argv[i]) == "fl10";
@@ -60,7 +59,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // 1000 boxes on a 40 x 25 grid (2 apart), some stacked.
+    // 40 x 25 の格子 (2 間隔) に 1000 個の箱、いくつかは積む。
     std::vector<Box> boxes;
     for (int i = 0; i < 1000; ++i) {
         Transform t;
@@ -68,7 +67,7 @@ int main(int argc, char** argv) {
         t.rotation = {0, static_cast<float>(i * 13 % 90), 0};
         boxes.push_back({LocalMatrix(t), {0.7f, 0.7f, 0.75f, 1}, true});
     }
-    // The same 1000 places as models of one mesh: a ball (16 x 15 quads), one material.
+    // 同じ 1000 か所に 1 つのメッシュのモデルを置く: 球 (16 x 15 の四角)、マテリアル 1 つ。
     MeshData ball;
     constexpr int kAround = 16, kUp = 15;
     for (int j = 0; j <= kUp; ++j) {
@@ -101,7 +100,7 @@ int main(int argc, char** argv) {
         m.materials = ballMaterials;
         meshes.push_back(m);
     }
-    // drag: the same 1000 boxes 1 apart in 32 columns (all within the sun's one map), the first one moving.
+    // drag: 同じ 1000 個の箱を 32 列に 1 間隔で並べる (全部が太陽の地図 1 枚の中)。最初の 1 個が動く。
     std::vector<Box> close = boxes;
     for (size_t i = 0; i < close.size(); ++i) {
         close[i].world.m[3][0] = static_cast<float>(i % 32) - 15.5f;
@@ -111,7 +110,7 @@ int main(int argc, char** argv) {
     const std::span<const Box> drawBoxes = meshCase ? std::span<const Box>() : dragCase ? std::span<const Box>(close) : std::span<const Box>(boxes);
     const std::span<const MeshDraw> drawMeshes = meshCase ? std::span<const MeshDraw>(meshes) : std::span<const MeshDraw>();
 
-    // 8 lights: the sun, 1 point light and 6 spots, all casting shadows.
+    // 8 個の光: 太陽、点光源 1 個、スポット 6 個。すべて影を落とす。
     std::vector<Light> lights(8);
     lights[0].type = LightType::Directional;
     lights[0].direction = {-0.45f, -1.f, -0.3f};
@@ -126,28 +125,27 @@ int main(int argc, char** argv) {
         lights[static_cast<size_t>(i)].spotAngle = 50;
     }
 
-    // Bench3D.exe image <file.ppm>: one fixed frame (the sun, 1 point light and 2 spots: every one gets
-    // its shadow maps whatever the order) saved, to compare the picture of two versions.
-    // Bench3D.exe image <file.ppm> [mesh]: the models instead of the boxes.
+    // Bench3D.exe image <file.ppm>: 固定した 1 フレーム (太陽、点光源 1 個、スポット 2 個: 順番に
+    // 関係なく、どの光も影の地図を持つ) を保存して、2 つの版の絵を見比べる。
+    // Bench3D.exe image <file.ppm> [mesh]: 箱の代わりにモデルを使う。
     if (argc > 2 && std::string(argv[1]) == "image") {
         lights.resize(4);
         RenderFrame f;
         f.width = 640;
         f.height = 360;
-        f.clear = {0.75f, 0.75f, 0.78f, 1};  // light: the shadows on the floor show
+        f.clear = {0.75f, 0.75f, 0.78f, 1};  // 明るい色: 床の影が見える
         f.view = LookAt({0, 18, 30}, {0, 0, 0}, {0, 1, 0});
         f.projection = Perspective(60, 16.f / 9.f, 0.1f, 500);
-        // [moving]: every other box inside the rest moving (the shadow maps keep a layer of the rest;
-        // the sun's maps are fitted to what stays put, which still holds them); one is moved and put
-        // back, so the last frame lays the kept layer back and draws only the moving ones - the
-        // picture must be the same as without.
+        // [moving]: 残りの中の箱を 1 つおきに動かす (影の地図は残りの層を持つ。太陽の地図は動かない
+        // ものに合わせてあり、それでも持っている)。1 つを動かして戻すので、最後のフレームは持っていた
+        // 層を戻して動くものだけを描く - 絵は動かさないときと同じでなければならない。
         const bool moving = argc > 3 && std::string(argv[3]) == "moving";
         std::vector<Box> still = boxes;
         size_t firstMoving = 0;
         if (moving) {
             for (size_t i = 1; i < still.size(); i += 2) {
                 const size_t col = i % 40, row = i / 40;
-                if (col == 0 || col == 39 || row == 0 || row == 24 || i % 3 == 2) continue;  // not at an edge, not the tallest
+                if (col == 0 || col == 39 || row == 0 || row == 24 || i % 3 == 2) continue;  // 端でなく、いちばん高くない
                 still[i].moving = true;
                 if (firstMoving == 0) firstMoving = i;
             }
@@ -172,7 +170,7 @@ int main(int argc, char** argv) {
                         r.LastStats().mapsDrawn, r.LastStats().mapsKept, r.LastStats().layersDrawn);
         }
         r.Render(ctx.Get(), f);
-        ID3D11Texture2D* picture = r.Render(ctx.Get(), f);  // twice: the second keeps the shadow maps it can
+        ID3D11Texture2D* picture = r.Render(ctx.Get(), f);  // 2 回: 2 回目は残せる影の地図を残す
         if (!picture) return 1;
         D3D11_TEXTURE2D_DESC td{};
         picture->GetDesc(&td);
@@ -197,7 +195,7 @@ int main(int argc, char** argv) {
         ctx->Unmap(staging.Get(), 0);
         std::printf("saved %s\n", argv[2]);
         if (info) {
-            // What the debug layer said (warnings and errors), if anything.
+            // デバッグ層が言ったこと (警告とエラー)。あれば。
             size_t told = 0;
             for (UINT64 i = 0; i < info->GetNumStoredMessages(); ++i) {
                 SIZE_T size = 0;
@@ -215,7 +213,7 @@ int main(int argc, char** argv) {
     D3D11_QUERY_DESC qd{D3D11_QUERY_EVENT, 0};
     Microsoft::WRL::ComPtr<ID3D11Query> done;
     device->CreateQuery(&qd, &done);
-    // The GPU's own time for the frame too (timestamps around Render).
+    // フレームの GPU 自身の時間も (Render の前後のタイムスタンプ)。
     D3D11_QUERY_DESC dq{D3D11_QUERY_TIMESTAMP_DISJOINT, 0}, tq{D3D11_QUERY_TIMESTAMP, 0};
     Microsoft::WRL::ComPtr<ID3D11Query> disjoint, t0, t1;
     device->CreateQuery(&dq, &disjoint);
@@ -224,13 +222,13 @@ int main(int argc, char** argv) {
     std::vector<double> ms, gpu;
     size_t layersAll = 0;
     for (int frame = 0; frame < frames + 20; ++frame) {
-        // The camera turns slowly around the middle (the cascades follow it; the lights and boxes stay).
+        // カメラは真ん中のまわりをゆっくり回る (カスケードはついてくる。光と箱は動かない)。
         const float a = static_cast<float>(frame) * 0.01f;
         RenderFrame f;
         f.width = 1280;
         f.height = 720;
         f.view = dragCase ? LookAt({0, 25, 35}, {0, 0, 0}, {0, 1, 0}) : LookAt({std::sin(a) * 30.f, 18, std::cos(a) * 30.f}, {0, 0, 0}, {0, 1, 0});
-        if (dragCase) close[0].world.m[3][0] -= 0.01f;  // dragged outwards, 1 cm a frame
+        if (dragCase) close[0].world.m[3][0] -= 0.01f;  // 外へ引っぱる、1 フレームに 1 cm
         f.projection = Perspective(60, 16.f / 9.f, 0.1f, 500);
         f.boxes = drawBoxes;
         f.meshes = drawMeshes;
@@ -244,7 +242,7 @@ int main(int argc, char** argv) {
         ctx->End(t1.Get());
         ctx->End(disjoint.Get());
         if (frame >= 20) layersAll += r.LastStats().layersDrawn;
-        // The GPU finishes the frame before the next one (outside the time).
+        // 次のフレームの前に GPU がフレームを終える (計る時間の外)。
         ctx->End(done.Get());
         while (ctx->GetData(done.Get(), nullptr, 0, 0) == S_FALSE) {
         }

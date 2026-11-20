@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- rmgen: writes the reflection tables before every build (see src/core/reflect/Reflect.h). -->
+<!-- rmgen: ビルドのたびに、反射の表を書く (src/core/reflect/Reflect.h を見る)。 -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">

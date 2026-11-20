@@ -1,6 +1,6 @@
-// Entity references (EntityRef) in copies: reflect::MapEntityRefs, and the game's scene - duplicating,
-// copy & paste, and prefabs (made, placed, overrides, a changed prefab) point at the copies, not at the
-// originals. The component with references is rmtest::Links (TestReflectTypes.h).
+// コピー内のエンティティ参照 (EntityRef): reflect::MapEntityRefs と、ゲームのシーン - 複製、
+// コピー & ペースト、Prefab (作る、置く、上書き、変えた Prefab) は、元ではなくコピーを指す。
+// 参照を持つ部品は rmtest::Links (TestReflectTypes.h)。
 
 #include "Test.h"
 
@@ -54,20 +54,20 @@ RM_TEST(EntityRefs_MapInsideStructsAndArrays) {
 RM_TEST(EntityRefs_DuplicateAndPastePointAtTheCopies) {
     int a = 0, b = 0, c = 0;
     Scene s = Make(&a, &b, &c);
-    // Duplicated: the copy of A points at the copy of B; C was not copied - still C.
+    // 複製した: A のコピーは B のコピーを指す。C はコピーされていない - 今も C のまま。
     const int a2 = s.Duplicate(std::vector<int>{a})[0];
     const int b2 = s.Children(a2)[0];
     CHECK(a2 != a && b2 != b);
     CHECK(LinksOf(s, a2).target.id == static_cast<uint64_t>(b2));
     CHECK(LinksOf(s, a2).followers[0].id == static_cast<uint64_t>(c));
-    CHECK(LinksOf(s, a).target.id == static_cast<uint64_t>(b));  // the original is as it was
-    // Copied and pasted: the same.
+    CHECK(LinksOf(s, a).target.id == static_cast<uint64_t>(b));  // 元は元のまま
+    // コピー & ペースト: 同じ。
     const json::Value clip = s.Copy(std::vector<int>{a});
     const int a3 = s.Paste(clip)[0];
     const int b3 = s.Children(a3)[0];
     CHECK(LinksOf(s, a3).target.id == static_cast<uint64_t>(b3));
     CHECK(LinksOf(s, a3).followers[0].id == static_cast<uint64_t>(c));
-    // The clip itself keeps the original ids (it is the same form as the file).
+    // クリップ自体は元の ID を保つ (ファイルと同じ形なので)。
     CHECK(clip.Get("entities").At(0).Get("components").At(0).Get("data").Get("target").AsInt() == b);
 }
 
@@ -76,23 +76,23 @@ RM_TEST(EntityRefs_Prefabs) {
     Scene s = Make(&a, &b, &c);
     std::unordered_map<int, int> sources;
     const json::Value prefab = MakePrefab(s, a, &sources);
-    // In the file: B's id in the file; C is outside the prefab - cleared.
+    // ファイルの中: B の ID がファイルにある。C は Prefab の外 - 消える。
     const json::Value& data = prefab.Get("entities").At(0).Get("components").At(0).Get("data");
     CHECK(data.Get("target").AsInt() == sources[b]);
     CHECK(data.Get("followers").At(0).AsInt() == 0);
     s.LinkPrefab(a, AssetRef{"Assets/A.rmprefab"}, sources);
-    // The reference inside is not a change of the placed one; the one to C is (it is kept that way).
+    // 中の参照は、置いたものの変更ではない。C への参照は変更 (そのまま保たれる)。
     const json::Value ov = Overrides(s, a, prefab);
     CHECK(!HasOverride(ov, "target"));
     CHECK(HasOverride(ov, "followers"));
 
-    // Placed: points at its own B.
+    // 置いた: 自分の B を指す。
     const int p = s.PlacePrefab(prefab, AssetRef{"Assets/A.rmprefab"});
     const int pb = s.Children(p)[0];
     CHECK(LinksOf(s, p).target.id == static_cast<uint64_t>(pb));
     CHECK(LinksOf(s, p).followers[0].id == 0);
     CHECK(!HasOverride(Overrides(s, p, prefab), "target"));
-    // The placed one points at C (its own change); the prefab changes; brought up to date, both stay right.
+    // 置いたものは C を指す (自分の変更)。Prefab が変わる。更新すると、どちらも正しいまま。
     LinksOf(s, p).followers[0].id = static_cast<uint64_t>(c);
     const json::Value pov = Overrides(s, p, prefab);
     CHECK(HasOverride(pov, "followers"));

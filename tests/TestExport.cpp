@@ -1,6 +1,6 @@
-// Tests for exporting a game's pure parts: the .rmpak (core/pak), which plugins go in (editor/export
-// ExportPlan + the components' owners: game_production Components.h), the exe's name, the generated
-// main and that only paths of the game's own folder are left.
+// ゲームの書き出しの純粋な部分のテスト: .rmpak (core/pak)、どのプラグインが入るか (editor/export
+// ExportPlan + 部品の持ち主: game_production Components.h)、exe の名前、生成された main、
+// そしてゲーム自身のフォルダのパスだけが残ること。
 
 #include "Test.h"
 
@@ -68,9 +68,9 @@ RM_TEST(Pak_RoundTrip) {
                                              {"Assets/empty.txt", ""},
                                              {"Assets/bin.dat", std::string("\0\x01\xff\x80", 4)}};
     const std::string bytes = pak::Write(entries, 1234, platform::PakCipher(1234));
-    // Nothing is there as it was written (the files cannot be read by opening the pak as text).
+    // 書いたままのものは何もない (pak をテキストとして開いてもファイルは読めない)。
     CHECK(bytes.find("My Game") == std::string::npos && bytes.find("rm_engine.scene") == std::string::npos);
-    CHECK(bytes.find("Main.rmscene") == std::string::npos);  // the index too
+    CHECK(bytes.find("Main.rmscene") == std::string::npos);  // 索引も
     pak::Reader r;
     std::string err;
     CHECK(r.Open(FromMemory(bytes), bytes.size(), 1234, platform::PakCipher(1234), &err));
@@ -80,12 +80,12 @@ RM_TEST(Pak_RoundTrip) {
         CHECK(read && *read == e.bytes);
     }
     CHECK(!r.Read("Assets/none.png", &err) && !err.empty());
-    // Build 0: any build is read.
+    // ビルド 0: どのビルドも読める。
     pak::Reader any;
     CHECK(any.Open(FromMemory(bytes), bytes.size(), 0, platform::PakCipher(1234), &err));
 }
 
-// AES-256-CTR by Windows' CNG: the NIST SP 800-38A test vector (F.5.5), and back again.
+// Windows の CNG による AES-256-CTR: NIST SP 800-38A のテストベクター (F.5.5)、そして元に戻す。
 RM_TEST(Pak_AesCtrVector) {
     auto hex = [](const char* h) {
         std::vector<uint8_t> out;
@@ -103,7 +103,7 @@ RM_TEST(Pak_AesCtrVector) {
     CHECK(data == hex("601ec313775789a5b7a7f504bbf3d228f443e3ca4d62b59aca84e990cacaf5c5"));
     CHECK(platform::AesCtr(key, iv, data.data(), data.size()));
     CHECK(data == hex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51"));
-    // The pak's cipher: another build, another key.
+    // pak の暗号: 別のビルドなら別の鍵。
     std::string a(40, 'x'), b(40, 'x');
     platform::PakCipher(1)(a.data(), a.size(), 0);
     platform::PakCipher(2)(b.data(), b.size(), 0);
@@ -115,18 +115,18 @@ RM_TEST(Pak_Refused) {
     std::string bytes = pak::Write(entries, 7, platform::PakCipher(7));
     std::string err;
     pak::Reader r;
-    // Of another export: refused with the reason.
+    // 別の書き出しのもの: 理由を付けて断る。
     CHECK(!r.Open(FromMemory(bytes), bytes.size(), 8, platform::PakCipher(8), &err) && !err.empty());
-    // Not a pak / too short.
+    // pak ではない / 短すぎる。
     const std::string text = "not a pak at all, just some text....................";
     CHECK(!r.Open(FromMemory(text), text.size(), 0, platform::PakCipher(0), &err));
     const std::string tiny = "RMPAK";
     CHECK(!r.Open(FromMemory(tiny), tiny.size(), 0, platform::PakCipher(0), &err));
-    // A changed byte in an entry: found when it is read.
+    // 項目の中で 1 バイト変わった: 読んだときに見つかる。
     CHECK(r.Open(FromMemory(bytes), bytes.size(), 7, platform::PakCipher(7), &err));
     bytes[r.Entries()[0].at + 3] ^= 0x10;
     CHECK(!r.Read("a.txt", &err) && !err.empty());
-    // A broken index (a size past the end): refused at Open.
+    // 壊れた索引 (サイズが終わりを越える): Open で断る。
     std::string cut = pak::Write(entries, 7, platform::PakCipher(7));
     cut.resize(cut.size() - 4);
     CHECK(!r.Open(FromMemory(cut), cut.size(), 7, platform::PakCipher(7), &err));
@@ -137,7 +137,7 @@ RM_TEST(Export_ExeName) {
     CHECK(ExeNameFrom("ぼくの:ゲーム?") == "ぼくのゲーム");
     CHECK(ExeNameFrom("  a/b\\c*d.  ") == "abcd");
     CHECK(ExeNameFrom("???") == "Game" && ExeNameFrom("") == "Game" && ExeNameFrom("CON") == "Game");
-    CHECK(ExeNameFrom("A=B") == "A=B");  // "=" is a file name's character (the previous engine's #11 was not the name)
+    CHECK(ExeNameFrom("A=B") == "A=B");  // "=" はファイル名に使える文字 (前のエンジンの #11 は名前の問題ではなかった)
     const std::string longName(100, 'x');
     CHECK(ExeNameFrom(longName).size() == 64);
     CHECK(ExeNameProblem("Game").empty() && !ExeNameProblem("a:b").empty() && !ExeNameProblem("").empty() && !ExeNameProblem("NUL").empty());
@@ -147,22 +147,22 @@ RM_TEST(Export_ExeName) {
 RM_TEST(Export_Plugins) {
     const auto world = World();
     std::vector<PluginId> missing;
-    // A 2D game: the 2D side and its connector, nothing of 3D.
+    // 2D のゲーム: 2D 側とそのコネクターだけで、3D のものはなし。
     const auto two = ExportPlugins({Id("game_production"), Id("game_x_2d")}, world, &missing);
     CHECK(missing.empty() && Has(two, "game_production") && Has(two, "space2d") && Has(two, "game_x_2d") && !Has(two, "space3d"));
     auto at = [&](const std::vector<PluginId>& v, const char* n) { return std::find(v.begin(), v.end(), Id(n)) - v.begin(); };
     CHECK(at(two, "game_production") < at(two, "game_x_2d") && at(two, "space2d") < at(two, "game_x_2d"));
-    // Only game production recorded (a scene with nothing in it): it needs a connector - the first one.
+    // ゲーム制作だけが記録された (中身のないシーン): コネクターが要る - 最初のもの。
     const auto bare = ExportPlugins({Id("game_production")}, world, &missing);
     CHECK(Has(bare, "game_x_3d") && Has(bare, "space3d"));
-    CHECK(!Has(bare, "theme_colors"));  // never what nothing uses
-    // A plugin this engine does not have.
+    CHECK(!Has(bare, "theme_colors"));  // 何も使わないものは決して入れない
+    // このエンジンにないプラグイン。
     ExportPlugins({Id("physics_jolt")}, world, &missing);
     CHECK(missing.size() == 1 && missing[0] == Id("physics_jolt"));
 }
 
 RM_TEST(Export_UsedPluginsFromComponents) {
-    // A scene: its entities' component types (and a placed prefab's added one), each once.
+    // シーン: エンティティの部品の型 (と置いた Prefab で足された型) を、それぞれ 1 回。
     const json::Value scene = Parse(R"({"entities": [
         {"id": 1, "components": [{"type": "rm::space3d::Transform", "data": {}}, {"type": "rm::game_x_3d::Camera", "data": {}}]},
         {"id": 2, "components": [{"type": "rm::space3d::Transform", "data": {}}],
@@ -170,7 +170,7 @@ RM_TEST(Export_UsedPluginsFromComponents) {
     std::vector<std::string> types;
     game_production::ComponentTypesIn(scene, types);
     CHECK((types == std::vector<std::string>{"rm::space3d::Transform", "rm::game_x_3d::Camera", "rm::game_x_2d::Sprite"}));
-    // Their owners, as the plugins registered them (runtime parts).
+    // それらの持ち主は、プラグインが登録したとおり (ランタイムの部品)。
     RuntimeRegistry r;
     const PluginId ids[] = {game_x_3d::kPluginId.Id(), game_x_2d::kPluginId.Id()};
     RegisterRuntimeParts(r, ids);
@@ -179,7 +179,7 @@ RM_TEST(Export_UsedPluginsFromComponents) {
     CHECK((owners == std::vector<PluginId>{game_x_3d::kPluginId.Id()}));
     const auto none = game_production::PluginsOffering({"rm::someone::Gone"}, offered);
     CHECK(none.empty());
-    // From a real scene's file form.
+    // 本物のシーンのファイルの形から。
     game_production::Scene s;
     s.SetComponentTypes({&reflect::TypeOf<space3d::Transform>()});
     s.AddComponent(s.Create("A"), reflect::TypeOf<space3d::Transform>());
@@ -194,21 +194,21 @@ RM_TEST(Export_GameMain) {
     libs.push_back({Id("game_production"), false, {"T_rm__game_production__Entity"}, {}});
     libs.push_back({Id("game_x_2d"), true, {"T_rm__game_x_2d__Sprite"}, {}});
     const std::string s = GameMainSource(libs, "ぼくの \"ゲーム\"", 42);
-    // The registration of the plugins that have one, by its C name, in order; the others listed too.
+    // 登録を持つプラグインの登録を、C の名前で順に。持たないものも並べる。
     CHECK(RuntimeEntryName(Id("game_x_2d")) == "rm_runtime__rm_engine__game_x_2d");
     CHECK(s.find("void rm_runtime__rm_engine__game_x_2d(rm::RuntimeRegistry&);") != std::string::npos);
     CHECK(s.find("&rm_runtime__rm_engine__game_x_2d}") != std::string::npos);
     CHECK(s.find("rm_runtime__rm_engine__game_production") == std::string::npos);
     CHECK(s.find("{\"rm_engine\", \"game_production\", nullptr}") < s.find("{\"rm_engine\", \"game_x_2d\""));
-    // Every library's types in AllTypes, the enums in AllEnums.
+    // すべてのライブラリの型は AllTypes に、列挙型は AllEnums に。
     for (const char* sym : {"&rmgen_generated::T_rm__asset__ModelImport", "&rmgen_generated::T_rm__game_x_2d__Sprite",
                             "&rmgen_generated::E_rm__asset__UpAxis", "extern const ::rm::reflect::TypeDesc T_rm__game_production__Entity;"}) {
         CHECK(s.find(sym) != std::string::npos);
     }
-    // The title as escaped UTF-8 (no raw quote breaks the literal), the build number.
+    // タイトルはエスケープした UTF-8 (生の引用符でリテラルが壊れない)、ビルド番号。
     CHECK(s.find("\\\"") != std::string::npos && s.find("\\xe3") != std::string::npos && s.find("42ull") != std::string::npos);
     CHECK(s.find("rm_game_image()") != std::string::npos);
-    // No enums at all: an empty span, not an empty array.
+    // 列挙型がまったくない: 空の配列ではなく、空の span。
     const std::string bare = GameMainSource({{std::nullopt, false, {}, {}}}, "G", 1);
     CHECK(bare.find("return {};") != std::string::npos && bare.find("kItems[] = {\n    };") == std::string::npos);
 }
@@ -238,15 +238,15 @@ RM_TEST(Export_PortablePaths) {
 }
 
 RM_TEST(Export_ResourceIconAndNumber) {
-    // The resource: the name in the file's details ("" doubled), the icon only when there is one.
+    // リソース: ファイルの詳細に名前 ("" は二重に)、アイコンは、あるときだけ。
     const std::string rc = GameResourceSource("ぼくの \"ゲーム\"", "MyGame", true);
     CHECK(rc.find("1 ICON \"game.ico\"") != std::string::npos);
     CHECK(rc.find("VALUE \"FileDescription\", \"ぼくの \"\"ゲーム\"\"\"") != std::string::npos);
     CHECK(rc.find("\"MyGame.exe\"") != std::string::npos);
     CHECK(GameResourceSource("G", "G", false).find("ICON") == std::string::npos);
-    // A \ doubled too (rc reads it as the start of an escape: "C:\new" would get a line break).
+    // \ も二重に (rc はエスケープの始まりと読む: "C:\new" だと改行になる)。
     CHECK(GameResourceSource("a\\new", "G", false).find("\"a\\\\new\"") != std::string::npos);
-    // An icon holding the PNG as it is: header, one entry (256 -> 0), the PNG after 22 bytes.
+    // PNG をそのまま持つアイコン: ヘッダー、項目 1 つ (256 -> 0)、PNG は 22 バイトのあと。
     std::string png = "\x89PNG\r\n\x1a\n";
     png += std::string("\0\0\0\x0dIHDR", 8);
     png += std::string("\0\0\x01\0\0\0\0\x30", 8);  // 256 x 48
@@ -258,7 +258,7 @@ RM_TEST(Export_ResourceIconAndNumber) {
         CHECK((*ico)[2] == 1 && (*ico)[4] == 1 && (*ico)[6] == 0 && (*ico)[7] == 48);
     }
     CHECK(!IcoFromPng("GIF89a....................."));
-    // The build number: the same files, the same number; another file, another; never 0.
+    // ビルド番号: 同じファイルなら同じ番号、別のファイルなら別の番号、0 は決してない。
     const std::vector<std::pair<std::string, std::string>> a{{"game.json", "{}"}, {"Assets/a.png", "x"}};
     auto b = a;
     CHECK(BuildNumber(a) == BuildNumber(b) && BuildNumber(a) != 0);
@@ -273,26 +273,26 @@ RM_TEST(Export_AssetIdsOfAScene) {
         {"id": 1, "name": "0123456789abcdef0123456789abcdef", "components": [{"type": "rm::game_x_2d::Sprite", "data": {"image": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}]},
         {"id": 2, "prefab": {"source": 1, "asset": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, "components": [{"type": "x", "data": {"image": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "n": "ABCDEF0123456789abcdef0123456789"}}]}]})");
     const auto ids = game_production::AssetIdsIn(scene);
-    // Every asset id, each once (an upper-case one is not an id); a name that looks like one is found
-    // too - the export then finds no asset of it and leaves it out.
+    // すべてのアセット ID を、それぞれ 1 回 (大文字のものは ID ではない)。ID に見える名前も
+    // 見つかる - 書き出しはそのアセットを見つけられず、外す。
     CHECK(ids.size() == 3);
     CHECK(std::find(ids.begin(), ids.end(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") != ids.end());
     CHECK(std::find(ids.begin(), ids.end(), "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") != ids.end());
 }
 
 RM_TEST(Export_IconFile) {
-    // An .ico as it is (every size in it), a PNG put in one, anything else none.
+    // .ico はそのまま (中のすべてのサイズ)、PNG はそれに入れる、それ以外はなし。
     auto icoWith = [](uint32_t size, uint32_t offset) {
         std::string ico("\0\0\x01\0\x01\0", 6);
-        ico += std::string(8, '\x01');  // width, height, colours, reserved, planes, bits
+        ico += std::string(8, '\x01');  // 幅、高さ、色数、予約、プレーン数、ビット数
         ico.append(reinterpret_cast<const char*>(&size), 4);
         ico.append(reinterpret_cast<const char*>(&offset), 4);
         return ico + "picture";
     };
     const std::string ico = icoWith(7, 22);
     CHECK(IconFile(ico) == ico);
-    CHECK(!IconFile(std::string("\0\0\x01\0\x02\0", 6) + std::string(16, '\x01')));  // says 2 entries, has 1
-    // An entry's picture outside the file, inside the header, or of no size: not an icon.
+    CHECK(!IconFile(std::string("\0\0\x01\0\x02\0", 6) + std::string(16, '\x01')));  // 項目 2 つと言うが、あるのは 1 つ
+    // 項目の画像がファイルの外、ヘッダーの内側、またはサイズ 0: アイコンではない。
     CHECK(!IconFile(icoWith(8, 22)) && !IconFile(icoWith(7, 23)) && !IconFile(icoWith(7, 0)) && !IconFile(icoWith(0, 22)));
     CHECK(!IconFile(icoWith(0xFFFFFFFFu, 22)) && !IconFile(icoWith(7, 0xFFFFFFF0u)));
     CHECK(!IconFile("BM........................"));
@@ -303,8 +303,8 @@ RM_TEST(Export_IconFile) {
     CHECK(made && made->substr(22) == png);
 }
 
-// The scenes an export puts in: the list's, in its order (the one open as it is now), then the open one
-// when it is not in the list; one that cannot be read left out; the game starts with the list's first.
+// 書き出しに入れるシーン: 一覧のもの、その順 (今開いているものは、そのまま)。そのあと
+// 開いているものが一覧にないとき。読めないものは外す。ゲームは一覧の最初から始まる。
 RM_TEST(Export_ScenesOfTheGame) {
     using namespace rm::game_production;
     const AssetRef a{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, b{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, c{"cccccccccccccccccccccccccccccccc"};
@@ -312,25 +312,25 @@ RM_TEST(Export_ScenesOfTheGame) {
     list.scenes = {a, b, c};
     list.first = b;
     auto read = [&](const AssetRef& ref) -> std::optional<std::pair<std::string, std::string>> {
-        if (ref == c) return std::nullopt;  // (gone)
+        if (ref == c) return std::nullopt;  // (消えた)
         return std::make_pair("Assets/Scenes/" + ref.guid.substr(0, 1) + ".rmscene", "file " + ref.guid.substr(0, 1));
     };
     ExportScenes s = ScenesForExport(list, a, "Assets/Scenes/a.rmscene", "now a", read);
     CHECK(s.scenes.size() == 2 && s.scenes[0].second == "now a" && s.scenes[1].second == "file b");
     CHECK(s.first == 1 && s.unread == std::vector<std::string>{c.guid});
-    // The open scene not in the list (new): last; the first scene the list's.
+    // 開いているシーンが一覧にない (新しい): 最後。最初のシーンは一覧のもの。
     list.first = {};
     s = ScenesForExport(list, AssetRef{}, "Assets/Scenes/Scene.rmscene", "new", read);
     CHECK(s.scenes.size() == 3 && s.scenes[2].first == "Assets/Scenes/Scene.rmscene" && s.first == 0);
-    // The list's first cannot be read: the game starts with the open one.
+    // 一覧の最初が読めない: ゲームは開いているものから始まる。
     list.first = c;
     list.scenes = {c, b};
     s = ScenesForExport(list, b, "Assets/Scenes/b.rmscene", "now b", read);
     CHECK(s.scenes.size() == 1 && s.first == 0);
-    // An empty list (a project of before): the open scene only.
+    // 空の一覧 (以前のプロジェクト): 開いているシーンだけ。
     s = ScenesForExport(SceneList{}, a, "Assets/Scenes/Main.rmscene", "main", read);
     CHECK(s.scenes.size() == 1 && s.first == 0 && s.scenes[0].second == "main");
-    // Left out of the build (ゲームの設定 ▸ ビルド): not in it - but the one the game starts with always is.
+    // ビルドから外した (ゲームの設定 ▸ ビルド): 入らない - ただしゲームが始まるものは必ず入る。
     SceneList some;
     some.scenes = {a, b};
     some.first = b;

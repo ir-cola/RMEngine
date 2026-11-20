@@ -1,4 +1,4 @@
-// Tests for the core tree (editor/tree/TreeModel): visible rows, search, selection, drop places.
+// 核のツリー (editor/tree/TreeModel) のテスト: 見える行、検索、選択、ドロップの位置。
 
 #include "Test.h"
 
@@ -15,7 +15,7 @@ namespace {
 //     A1a    3
 //   A2       4
 // B          5
-// C          6  (cannot have children)
+// C          6  (子を持てない)
 std::vector<Item> Sample() {
     std::vector<Item> v = {
         {1, 0, "A"}, {2, 1, "A1"}, {3, 2, "A1a"}, {4, 1, "A2"}, {5, 0, "B"}, {6, 0, "C"},
@@ -50,7 +50,7 @@ RM_TEST(Tree_VisibleRows_DepthAndCollapse) {
 
 RM_TEST(Tree_Search_ShowsMatchesAndTheirParents) {
     const auto items = Sample();
-    // A collapsed item opens while searching.
+    // 閉じた項目は、検索中は開く。
     auto rows = VisibleRows(items, {1, 2}, "a1A");
     CHECK((Ids(items, rows) == std::vector<ItemId>{1, 2, 3}));
     CHECK(rows[0].expanded && rows[1].expanded);
@@ -63,7 +63,7 @@ RM_TEST(Tree_Search_ShowsMatchesAndTheirParents) {
 }
 
 RM_TEST(Tree_BrokenParents_CountAsTopLevel) {
-    // A parent listed after its child, or missing: the tree must not loop or hide the item.
+    // 親が子より後ろにある、または親がない: ツリーはループせず、項目を隠さない。
     const std::vector<Item> items = {{1, 2, "child first"}, {2, 0, "parent"}, {3, 99, "orphan"}};
     const auto rows = VisibleRows(items, {}, "");
     CHECK(rows.size() == 3);
@@ -76,14 +76,14 @@ RM_TEST(Tree_Selection_ClickCtrlShift) {
     Selection s;
     Click(s, items, rows, 2, false, false);
     CHECK((s.ids == std::vector<ItemId>{2}));
-    Click(s, items, rows, 5, false, true);  // range 2..5
+    Click(s, items, rows, 5, false, true);  // 範囲 2..5
     CHECK((s.ids == std::vector<ItemId>{2, 3, 4, 5}));
     CHECK(s.anchor == 2 && s.focus == 5);
-    Click(s, items, rows, 3, true, false);  // toggle off
+    Click(s, items, rows, 3, true, false);  // オフにする
     CHECK((s.ids == std::vector<ItemId>{2, 4, 5}));
-    Click(s, items, rows, 1, true, false);  // toggle on, kept in display order
+    Click(s, items, rows, 1, true, false);  // オンにする。表示順に保つ
     CHECK((s.ids == std::vector<ItemId>{1, 2, 4, 5}));
-    Click(s, items, rows, 6, true, true);  // Ctrl+Shift adds the range from the anchor (1) to 6
+    Click(s, items, rows, 6, true, true);  // Ctrl+Shift でアンカー (1) から 6 までの範囲を足す
     CHECK((s.ids == std::vector<ItemId>{1, 2, 3, 4, 5, 6}));
     SelectAll(s, items, VisibleRows(items, {1}, ""));
     CHECK((s.ids == std::vector<ItemId>{1, 5, 6}));
@@ -94,10 +94,10 @@ RM_TEST(Tree_Selection_PruneForgetsGoneItems) {
     Selection s;
     s.ids = {4, 2};
     s.anchor = s.focus = 4;
-    CHECK(Prune(s, items));  // order only
+    CHECK(Prune(s, items));  // 順番だけ
     CHECK((s.ids == std::vector<ItemId>{2, 4}));
     CHECK(!Prune(s, items));
-    items.erase(items.begin() + 3);  // 4 is gone
+    items.erase(items.begin() + 3);  // 4 はなくなった
     CHECK(Prune(s, items));
     CHECK((s.ids == std::vector<ItemId>{2}));
     CHECK(s.anchor == 0 && s.focus == 0);
@@ -114,22 +114,22 @@ RM_TEST(Tree_Drop_BeforeInsideAfter) {
     const auto items = Sample();
     const auto rows = VisibleRows(items, {}, "");
     const std::vector<ItemId> moving = {5};
-    auto d = DropOnRow(items, rows, 0, 0.1f, moving);  // top of A
+    auto d = DropOnRow(items, rows, 0, 0.1f, moving);  // A の上
     CHECK(d && d->parent == 0 && d->index == 0 && d->mark == Drop::Mark::Before && d->target == 1);
-    d = DropOnRow(items, rows, 0, 0.5f, moving);  // middle of A: at the end of its children
+    d = DropOnRow(items, rows, 0, 0.5f, moving);  // A の真ん中: 子の最後に
     CHECK(d && d->parent == 1 && d->index == 2 && d->mark == Drop::Mark::Inside);
-    d = DropOnRow(items, rows, 0, 0.9f, moving);  // bottom of an open A: its first child
+    d = DropOnRow(items, rows, 0, 0.9f, moving);  // 開いた A の下: 最初の子
     CHECK(d && d->parent == 1 && d->index == 0 && d->mark == Drop::Mark::After);
-    d = DropOnRow(items, rows, 3, 0.9f, moving);  // bottom of A2: after it
+    d = DropOnRow(items, rows, 3, 0.9f, moving);  // A2 の下: その後ろ
     CHECK(d && d->parent == 1 && d->index == 2);
-    // C cannot have children: halves only. B (moving) is not counted.
+    // C は子を持てない: 上下の半分だけ。B (動かしている) は数えない。
     d = DropOnRow(items, rows, 5, 0.4f, moving);
     CHECK(d && d->parent == 0 && d->index == 1 && d->mark == Drop::Mark::Before);
     d = DropOnRow(items, rows, 5, 0.6f, moving);
     CHECK(d && d->parent == 0 && d->index == 2 && d->mark == Drop::Mark::After);
     const Drop end = DropAtEnd(items, moving);
     CHECK(end.parent == 0 && end.index == 2 && end.mark == Drop::Mark::End);
-    // A closed item: the bottom edge is after it (not inside).
+    // 閉じた項目: 下の縁はその後ろ (中ではない)。
     const auto closed = VisibleRows(items, {1}, "");
     d = DropOnRow(items, closed, 0, 0.9f, moving);
     CHECK(d && d->parent == 0 && d->index == 1);
@@ -139,12 +139,12 @@ RM_TEST(Tree_Drop_NeverIntoItself) {
     const auto items = Sample();
     const auto rows = VisibleRows(items, {}, "");
     const std::vector<ItemId> moving = {1};
-    CHECK(!DropOnRow(items, rows, 2, 0.5f, moving));  // inside A1a (below A)
-    CHECK(!DropOnRow(items, rows, 1, 0.1f, moving));  // before A1 = under A
-    CHECK(!DropOnRow(items, rows, 0, 0.5f, moving));  // inside A itself
-    auto d = DropOnRow(items, rows, 0, 0.1f, moving);  // before itself: allowed, changes nothing
+    CHECK(!DropOnRow(items, rows, 2, 0.5f, moving));  // A1a の中 (A の下)
+    CHECK(!DropOnRow(items, rows, 1, 0.1f, moving));  // A1 の前 = A の下
+    CHECK(!DropOnRow(items, rows, 0, 0.5f, moving));  // A 自身の中
+    auto d = DropOnRow(items, rows, 0, 0.1f, moving);  // 自分の前: 許す、何も変わらない
     CHECK(d && d->parent == 0 && d->index == 0);
-    d = DropOnRow(items, rows, 4, 0.9f, moving);  // after B: index counts without A
+    d = DropOnRow(items, rows, 4, 0.9f, moving);  // B の後ろ: 番号は A を除いて数える
     CHECK(d && d->parent == 0 && d->index == 1);
     CHECK(!DropOnRow(items, rows, 99, 0.5f, moving));
 }
@@ -166,10 +166,10 @@ RM_TEST(Tree_ItemIndex) {
     CHECK(index.Find(99) == static_cast<size_t>(-1) && !index.Has(99) && index.Has(6));
 }
 
-// Thousands of items, all selected: every step stays proportional to items + selected (it used to
-// look through the selection for each item, and rebuild an index for each moving item).
+// 何千もの項目を全部選ぶ: どのステップも items + selected に比例したまま (以前は項目ごとに
+// 選択を全部調べ、動かす項目ごとにインデックスを作り直していた)。
 RM_TEST(Tree_ThousandsAllSelected_StayLight) {
-    constexpr ItemId kGroups = 200, kEach = 100;  // 200 parents with 100 children each = 20 200 items
+    constexpr ItemId kGroups = 200, kEach = 100;  // 親 200 個に子が 100 個ずつ = 20 200 項目
     std::vector<Item> items;
     for (ItemId g = 1; g <= kGroups; ++g) {
         const ItemId parent = g * 1000;
@@ -183,16 +183,16 @@ RM_TEST(Tree_ThousandsAllSelected_StayLight) {
     Selection sel;
     SelectAll(sel, items, rows);
     CHECK(sel.ids.size() == items.size());
-    for (int frame = 0; frame < 10; ++frame) CHECK(!Prune(sel, items));  // every frame
-    // Shift+click over everything (the range adds what is not selected yet)
+    for (int frame = 0; frame < 10; ++frame) CHECK(!Prune(sel, items));  // 毎フレーム
+    // 全部の上で Shift+クリック (範囲は、まだ選ばれていないものを足す)
     Selection range;
     SelectOnly(range, items.front().id);
     Click(range, items, rows, items.back().id, false, true);
     CHECK(range.ids.size() == items.size());
-    // Only the groups move as a whole (their children go with them).
+    // グループだけがまとまって動く (子は一緒に行く)。
     const auto roots = Roots(items, sel.ids);
     CHECK(roots.size() == kGroups && roots.front() == 1000);
-    // Dropping everything somewhere: never into itself, counted without the moving ones.
+    // 全部をどこかへドロップ: 自分の中へは入らない。動かすものを除いて数える。
     CHECK(!DropOnRow(items, rows, 5, 0.5f, sel.ids));
     const Drop end = DropAtEnd(items, sel.ids);
     CHECK(end.index == 0);
@@ -201,5 +201,5 @@ RM_TEST(Tree_ThousandsAllSelected_StayLight) {
     CHECK(d && d->parent == 1000 && d->index == kEach);
 
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    CHECK(seconds < 3.0);  // generous: the quadratic version took far longer at this size
+    CHECK(seconds < 3.0);  // 余裕をもたせてある: 2 乗の版は、この大きさでずっとかかった
 }

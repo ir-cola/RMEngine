@@ -1,7 +1,7 @@
-# Build the solution, run the tests and the layer check.
+﻿# ソリューションを作り、テストとレイヤー検査を走らせる。
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 [-Config Debug|Release] [-NoTest]
-# Success is decided by exit codes only (never by grepping the build output: MSBuild wraps
-# long lines, and piping it in PowerShell can lose $LASTEXITCODE - previous engine 4-24).
+# 成否は終了コードだけで決める (ビルドの出力を grep しない: MSBuild は長い行を折り返し、
+# PowerShell でパイプすると $LASTEXITCODE を失うことがある - 前のエンジン 4-24)。
 param(
     [ValidateSet('Debug', 'Release')][string]$Config = 'Debug',
     [switch]$NoTest
@@ -40,6 +40,6 @@ if (-not $NoTest) {
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tools\check_layers.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-# Every string on screen has English (editor/lang).
+# 画面に出す文字には必ず英語がある (editor/lang)。
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tools\check_lang.ps1')
 exit $LASTEXITCODE

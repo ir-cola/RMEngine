@@ -1,5 +1,5 @@
-// Tests for the scene of the game production plugin (runtime/Scene): the shape of the entity tree,
-// moving / copying / deleting, and the save format (unknown keys kept, broken files repaired).
+// ゲーム制作プラグインのシーン (runtime/Scene) のテスト: エンティティの木の形、
+// 移動 / コピー / 削除、そして保存形式 (未知のキーは残す、壊れたファイルは直す)。
 
 #include "Test.h"
 
@@ -44,12 +44,12 @@ RM_TEST(Scene_CreateAndTreeOrder) {
     const auto tree = s.TreeOrder();
     CHECK(tree[2].depth == 2 && tree[3].depth == 1 && tree[4].depth == 0);
     CHECK((s.Children(1) == std::vector<int>{2, 4}));
-    // At an index among the siblings.
+    // 兄弟の間の位置に。
     const int first = s.Create("first", 0, 0);
     CHECK((s.Children(0) == std::vector<int>{first, 1, 5}));
     const int mid = s.Create("mid", 1, 1);
     CHECK((s.Children(1) == std::vector<int>{2, mid, 4}));
-    // A missing parent: top level.
+    // 親が無い: 最上位。
     const int lost = s.Create("lost", 999);
     CHECK(s.Find(lost)->data.parent == 0);
 }
@@ -59,28 +59,28 @@ RM_TEST(Scene_ActiveInHierarchy) {
     s.Find(2)->data.active = false;
     for (const TreeEntry& t : s.TreeOrder()) {
         const int id = t.entity->data.id;
-        CHECK(t.activeInHierarchy == (id != 2 && id != 3));  // A1a is off because A1 is
+        CHECK(t.activeInHierarchy == (id != 2 && id != 3));  // A1a は A1 が無効なので無効
     }
 }
 
 RM_TEST(Scene_Move_ReorderReparentAndRefuse) {
     Scene s = Sample();
-    // B before A (index counted without B).
+    // A の前に B (番号は B を除いて数える)。
     CHECK(s.Move(std::vector<int>{5}, 0, 0));
     CHECK((s.Children(0) == std::vector<int>{5, 1}));
-    // The same again changes nothing.
+    // もう一度同じことをしても、何も変わらない。
     CHECK(!s.Move(std::vector<int>{5}, 0, 0));
-    // A2 into B.
+    // A2 を B の中へ。
     CHECK(s.Move(std::vector<int>{4}, 5, 0));
     CHECK(s.Find(4)->data.parent == 5);
     CHECK((s.Children(1) == std::vector<int>{2}));
-    // Never into itself or below itself, never under a missing parent.
+    // 自分の中にも、自分より下にも入れない。無い親の下にも入れない。
     CHECK(!s.Move(std::vector<int>{1}, 3, 0));
     CHECK(!s.Move(std::vector<int>{1}, 1, 0));
     CHECK(!s.Move(std::vector<int>{2}, 777, 0));
     CHECK(s.Find(1)->data.parent == 0);
-    // Several at once, in tree order (A2 is under B, which comes first); a child of a moved one
-    // goes along (A1a stays under A1).
+    // いくつかを同時に、木の順で (A2 は B の下にあり、B が先に来る)。動かしたものの子は
+    // ついていく (A1a は A1 の下のまま)。
     CHECK(s.Move(std::vector<int>{3, 2, 4}, 0, Scene::kEnd));
     CHECK((s.Children(0) == std::vector<int>{5, 1, 4, 2}));
     CHECK(s.Find(3)->data.parent == 2);
@@ -88,7 +88,7 @@ RM_TEST(Scene_Move_ReorderReparentAndRefuse) {
 
 RM_TEST(Scene_Duplicate_CopiesSubtreeNextToOriginal) {
     Scene s = Sample();
-    const auto made = s.Duplicate(std::vector<int>{1, 3});  // 3 is under 1: copied with it, once
+    const auto made = s.Duplicate(std::vector<int>{1, 3});  // 3 は 1 の下: いっしょにコピーされ、1 回だけ
     CHECK(made.size() == 1);
     const int copy = made[0];
     CHECK(copy == 6);
@@ -98,7 +98,7 @@ RM_TEST(Scene_Duplicate_CopiesSubtreeNextToOriginal) {
     CHECK(kids.size() == 2);
     CHECK(s.Find(kids[0])->data.name == "A1" && s.Find(kids[1])->data.name == "A2");
     CHECK(s.Children(kids[0]).size() == 1);
-    // The originals are untouched.
+    // 元のものには手を付けない。
     CHECK((s.Children(1) == std::vector<int>{2, 4}));
 }
 
@@ -107,7 +107,7 @@ RM_TEST(Scene_Delete_TakesEverythingBelow) {
     CHECK(s.Delete(std::vector<int>{2, 5}) == 3);
     CHECK((Order(s) == std::vector<int>{1, 4}));
     CHECK(s.Delete(std::vector<int>{42}) == 0);
-    // Ids are never reused.
+    // ID は再利用しない。
     CHECK(s.Create("new") == 6);
 }
 
@@ -117,7 +117,7 @@ RM_TEST(Scene_SaveLoad_RoundTripAndUnknownKeys) {
     json::Value saved = s.Save();
     saved.Set("future", "kept");
     json::Value& first = saved.Find("entities")->At(0);
-    first.Set("components", json::Value::MakeArray());  // a key of a newer version
+    first.Set("components", json::Value::MakeArray());  // 新しいバージョンのキー
 
     Scene t;
     reflect::Warnings w;
@@ -128,7 +128,7 @@ RM_TEST(Scene_SaveLoad_RoundTripAndUnknownKeys) {
     CHECK(again == saved);
     CHECK(again.Get("future").AsString() == "kept");
     CHECK(again.Get("entities").At(0).Find("components") != nullptr);
-    // The next id survives a deletion and a reload.
+    // 次の ID は、削除と再読み込みの後も残る。
     CHECK(t.Create("x") == 6);
 }
 
@@ -155,7 +155,7 @@ RM_TEST(Scene_Load_RepairsBrokenFiles) {
     reflect::Warnings w;
     s.Load(v, &w);
     CHECK(w.size() >= 5);
-    // Every id unique and positive, every entity reachable from the top.
+    // ID はすべて一意で正の数。すべてのエンティティが最上位から届く。
     std::vector<int> ids;
     for (const auto& e : s.Entities()) ids.push_back(e.data.id);
     CHECK(s.TreeOrder().size() == s.Entities().size());
@@ -165,7 +165,7 @@ RM_TEST(Scene_Load_RepairsBrokenFiles) {
     }
     CHECK(s.Find(4)->data.parent == 0);
     CHECK(s.Find(7)->data.parent == 0);
-    // New ids never collide with loaded ones.
+    // 新しい ID は、読み込んだものとぶつからない。
     const int fresh = s.Create("new");
     CHECK(fresh > 7);
 }
@@ -180,14 +180,14 @@ RM_TEST(Scene_Components_AddRemoveDuplicate) {
     Scene s = Sample();
     s.SetComponentTypes({&TransformType()});
     CHECK(s.AddComponent(1, TransformType()));
-    CHECK(!s.AddComponent(1, TransformType()));  // one of each type
+    CHECK(!s.AddComponent(1, TransformType()));  // 型ごとに 1 つ
     CHECK(!s.AddComponent(99, TransformType()));
     Component* c = s.Find(1)->FindComponent(TransformType().name);
     CHECK(c && c->Known());
     auto* t = static_cast<space3d::Transform*>(c->value.Get());
-    CHECK(t->scale.x == 1 && t->position.y == 0);  // the type's defaults
+    CHECK(t->scale.x == 1 && t->position.y == 0);  // 型の既定値
     t->position = {1, 2, 3};
-    // A copy of the entity has its own copy of the component.
+    // エンティティのコピーは、部品も自分のコピーを持つ。
     const auto made = s.Duplicate(std::vector<int>{1});
     auto* copy = static_cast<space3d::Transform*>(s.Find(made[0])->FindComponent(TransformType().name)->value.Get());
     CHECK(copy != t && copy->position.z == 3);
@@ -204,7 +204,7 @@ RM_TEST(Scene_Components_SaveLoadAndUnknownTypes) {
     s.AddComponent(2, TransformType());
     static_cast<space3d::Transform*>(s.Find(2)->FindComponent(TransformType().name)->value.Get())->rotation = {0, 45, 0};
     json::Value saved = s.Save();
-    // A component of a plugin that is not here, and a key of a newer version inside a known one.
+    // ここに無いプラグインの部品と、知っている部品の中の新しいバージョンのキー。
     json::Value& e2 = saved.Find("entities")->At(1);
     json::Value foreign = json::Value::MakeObject();
     foreign.Set("type", "someone::Physics");
@@ -217,14 +217,14 @@ RM_TEST(Scene_Components_SaveLoadAndUnknownTypes) {
     t.SetComponentTypes({&TransformType()});
     reflect::Warnings w;
     t.Load(saved, &w);
-    CHECK(w.size() == 1);  // the unknown component
+    CHECK(w.size() == 1);  // 未知の部品
     const SceneEntity* e = t.Find(2);
     CHECK(e->components.size() == 2);
     CHECK(e->components[0].Known() && !e->components[1].Known());
     CHECK(static_cast<const space3d::Transform*>(e->components[0].value.Get())->rotation.y == 45);
-    CHECK(t.Save() == saved);  // both written back as they were
+    CHECK(t.Save() == saved);  // どちらも、そのまま書き戻す
 
-    // Without the type offered (3D 空間 not installed): read as unknown, still written back.
+    // 型を渡さない (3D 空間 が入っていない): 未知として読み、それでも書き戻す。
     Scene none;
     none.Load(saved, nullptr);
     CHECK(!none.Find(2)->components[0].Known());
@@ -236,35 +236,35 @@ RM_TEST(Scene_CopyPaste_NewIdsWhereAsked) {
     s.SetComponentTypes({&TransformType()});
     s.AddComponent(2, TransformType());
     static_cast<space3d::Transform*>(s.Find(2)->FindComponent(TransformType().name)->value.Get())->position = {1, 2, 3};
-    const json::Value clip = s.Copy(std::vector<int>{1, 3});  // 3 is under 1: copied with it, once
+    const json::Value clip = s.Copy(std::vector<int>{1, 3});  // 3 は 1 の下: いっしょにコピーされ、1 回だけ
     CHECK(Scene::IsClip(clip) && clip.Get("entities").Items().size() == 4);
-    CHECK(s.Entities().size() == 5);  // copying changes nothing
+    CHECK(s.Entities().size() == 5);  // コピーしても何も変わらない
 
-    // At the end of the top level: new ids, the same shape below.
+    // 最上位の末尾に: 新しい ID で、その下は同じ形。
     const auto roots = s.Paste(clip);
     CHECK((roots == std::vector<int>{6}));
     CHECK((s.Children(0) == std::vector<int>{1, 5, 6}));
     const auto kids = s.Children(6);
     CHECK(kids.size() == 2 && s.Find(kids[0])->data.name == "A1" && s.Find(kids[1])->data.name == "A2");
     CHECK(s.Children(kids[0]).size() == 1);
-    // The component came along, a copy of its own.
+    // 部品もついてきた。自分のコピーとして。
     auto* t = static_cast<space3d::Transform*>(s.Find(kids[0])->FindComponent(TransformType().name)->value.Get());
     CHECK(t->position.z == 3);
     t->position.z = 9;
     CHECK(static_cast<space3d::Transform*>(s.Find(2)->FindComponent(TransformType().name)->value.Get())->position.z == 3);
 
-    // Under B, first; twice is fine (new ids again).
+    // まず B の下に。2 回でもよい (また新しい ID)。
     const auto under = s.Paste(clip, 5, 0);
     CHECK(under.size() == 1 && s.Children(5).front() == under[0] && s.Find(under[0])->data.parent == 5);
-    // A missing parent: the top level. Not entities: nothing.
+    // 無い親: 最上位。エンティティでないもの: 何もしない。
     CHECK(s.Find(s.Paste(clip, 999)[0])->data.parent == 0);
     CHECK(s.Paste(json::Value("hello")).empty());
-    CHECK(s.Paste(s.Save()).empty());  // a whole scene is not a clip
+    CHECK(s.Paste(s.Save()).empty());  // シーン全体はクリップではない
 }
 
 RM_TEST(Scene_Paste_NeverMakesALoop) {
     Scene s;
-    // Written by hand (or broken): a parent after its child, a parent loop, a repeated id.
+    // 手で書いた (または壊れた): 子の後にある親、親のループ、繰り返した ID。
     json::Value clip = json::Value::MakeObject();
     clip.Set("kind", "rm_engine.game_production.entities");
     json::Value list = json::Value::MakeArray();
@@ -275,37 +275,37 @@ RM_TEST(Scene_Paste_NeverMakesALoop) {
         e.Set("name", name);
         list.Push(std::move(e));
     };
-    entity(1, 2, "a");  // its parent comes later: a root
-    entity(2, 1, "b");  // under a
-    entity(2, 0, "c");  // the same id again: a root of its own
-    entity(3, 3, "d");  // its own parent: a root
+    entity(1, 2, "a");  // 親が後に来る: ルート
+    entity(2, 1, "b");  // a の下
+    entity(2, 0, "c");  // 同じ ID がもう一度: 自分のルート
+    entity(3, 3, "d");  // 自分が親: ルート
     clip.Set("entities", std::move(list));
     const auto roots = s.Paste(clip);
     CHECK(roots.size() == 3);
     CHECK(s.Entities().size() == 4);
-    CHECK(s.TreeOrder().size() == 4);  // every entity is reachable from the top
+    CHECK(s.TreeOrder().size() == 4);  // すべてのエンティティが最上位から届く
 }
 
 RM_TEST(Scene_MoveComponent_UpAndDown) {
     Scene s = Sample();
     s.SetComponentTypes({&TransformType()});
     s.AddComponent(1, TransformType());
-    // A second component: one of a plugin that is not here (kept as read), after the Transform.
+    // 2 つ目の部品: ここに無いプラグインのもの (読んだまま残す)。Transform の後。
     json::Value saved = s.Save();
     json::Value foreign = json::Value::MakeObject();
     foreign.Set("type", "someone::Physics");
     saved.Find("entities")->At(0).Find("components")->Push(foreign);
     s.Load(saved);
     const std::string t = TransformType().name;
-    CHECK(!s.MoveComponent(1, t, -1));  // first already
+    CHECK(!s.MoveComponent(1, t, -1));  // もう先頭
     CHECK(s.MoveComponent(1, t, 1));
     CHECK(s.Find(1)->components[0].type == "someone::Physics" && s.Find(1)->components[1].type == t);
-    CHECK(!s.MoveComponent(1, t, 1));  // last now
+    CHECK(!s.MoveComponent(1, t, 1));  // もう最後
     CHECK(s.MoveComponent(1, "someone::Physics", 1));
     CHECK(s.Find(1)->components[0].type == t);
     CHECK(!s.MoveComponent(1, "nothing", 1));
     CHECK(!s.MoveComponent(99, t, 1));
-    CHECK(!s.MoveComponent(1, t, 2));  // one place at a time
+    CHECK(!s.MoveComponent(1, t, 2));  // 一度に 1 つずつ
 }
 
 namespace {
@@ -314,8 +314,8 @@ double SecondsSince(std::chrono::steady_clock::time_point t) {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
 }
 
-// 10,000 entities: 100 chains of 100 (each the parent of the next), every one with a Transform and a
-// 回り続ける - deep and wide enough that anything that walks the list per entity shows.
+// 1 万のエンティティ: 100 本の 100 個の鎖 (それぞれ次の親)。どれも Transform と
+// 回り続ける を持つ - エンティティごとにリストをたどるものが目立つくらい、深くて広い。
 json::Value BigScene() {
     const std::string transform = TransformType().name;
     const std::string spin = reflect::TypeOf<game_x_3d::Spin>().name;
@@ -344,8 +344,8 @@ json::Value BigScene() {
 }  // namespace
 
 RM_TEST(Scene_TenThousand_InReasonableTime) {
-    // The limits are loose on purpose (a slow or busy PC must not fail): they catch work that grows
-    // with the square of the entities (seconds to minutes here), not small slowdowns.
+    // 上限はわざとゆるくしてある (遅い PC や忙しい PC で失敗してはいけない): 小さな遅れではなく、
+    // エンティティの数の 2 乗で増える作業 (ここでは数秒から数分) を捕まえる。
     const reflect::TypeDesc& spin = reflect::TypeOf<game_x_3d::Spin>();
     Scene s;
     s.SetComponentTypes({&TransformType(), &spin}, {&spin});
@@ -362,7 +362,7 @@ RM_TEST(Scene_TenThousand_InReasonableTime) {
     CHECK(found == 100000);
     CHECK(SecondsSince(t) < 3.0);
 
-    // One frame of a system over every entity.
+    // すべてのエンティティに対するシステムの 1 フレーム。
     static const SystemInfo kSpin{"回り続ける", SystemPhase::Frame, 0, &game_x_3d::RunSpin};
     const SystemInfo* list[] = {&kSpin};
     SystemRunner runner;
@@ -372,7 +372,7 @@ RM_TEST(Scene_TenThousand_InReasonableTime) {
     CHECK(SecondsSince(t) < 3.0);
     CHECK(static_cast<const space3d::Transform*>(s.Find(10000)->FindComponent(TransformType().name)->value.Get())->rotation.y > 0);
 
-    // The roots of half of them, a copy of a chain, then half of them deleted.
+    // 半分のルートを選び、鎖のコピーを作り、その後で半分を削除する。
     std::vector<int> half;
     for (int id = 1; id <= 5000; ++id) half.push_back(id);
     t = std::chrono::steady_clock::now();
@@ -403,39 +403,39 @@ RM_TEST(Scene_IndexStaysRightAfterEveryChange) {
     CHECK(allFound(s) && !s.Find(2) && !s.Find(3));
     s.Paste(s.Copy(std::vector<int>{1}));
     CHECK(allFound(s));
-    // What undo does: the scene from before. The ids made since are gone, the others found again.
+    // Undo がすること: 前のシーンに戻る。その後に作った ID は消え、他は見つかる。
     s.Load(before);
     CHECK(allFound(s) && !s.Find(made) && s.Find(3) && s.Find(3)->data.name == "A1a");
-    // A copy of the scene keeps its own, right index.
+    // シーンのコピーは、自分の正しいインデックスを保つ。
     Scene copy = s;
     CHECK(allFound(copy) && copy.Find(1) != s.Find(1));
 }
 
 RM_TEST(Scene_Settings) {
-    // The scene's own values (SceneSettingInfo): one of each type offered, with its defaults until changed.
+    // シーン自身の値 (SceneSettingInfo): 型ごとに 1 つ出され、変えるまでは既定値。
     const reflect::TypeDesc& spin = reflect::TypeOf<game_x_3d::Spin>();
     Scene s = Sample();
     CHECK(s.Settings().empty());
-    CHECK(!s.Save().Find("settings"));  // none offered: the file is as before
+    CHECK(!s.Save().Find("settings"));  // 何も出さない: ファイルは前のまま
     s.SetSettingTypes({&spin});
     CHECK(s.Settings().size() == 1 && s.Setting<game_x_3d::Spin>() != nullptr);
     s.Setting<game_x_3d::Spin>()->degreesPerSecond.y = 45;
     const json::Value saved = s.Save();
     CHECK(saved.Get("settings").Size() == 1 && saved.Get("settings").At(0).Get("type").AsString() == spin.name);
 
-    // Read back (the types set before or after Load: the same).
+    // 読み戻す (型を Load の前に設定しても後でも同じ)。
     Scene a;
     a.SetSettingTypes({&spin});
     a.Load(saved);
     CHECK(a.Setting<game_x_3d::Spin>() && a.Setting<game_x_3d::Spin>()->degreesPerSecond.y == 45);
     Scene b;
     b.Load(saved);
-    CHECK(b.Settings().size() == 1 && !b.Settings()[0].Known());  // not offered: kept as read
-    CHECK(b.Save().Get("settings") == saved.Get("settings"));     // ... and written back the same
+    CHECK(b.Settings().size() == 1 && !b.Settings()[0].Known());  // 出していない: 読んだまま残す
+    CHECK(b.Save().Get("settings") == saved.Get("settings"));     // ... そして同じに書き戻す
     b.SetSettingTypes({&spin});
     CHECK(b.Setting<game_x_3d::Spin>() && b.Setting<game_x_3d::Spin>()->degreesPerSecond.y == 45);
 
-    // A file without settings: the defaults. Unknown keys inside a setting stay; a second of a type is dropped.
+    // 設定の無いファイル: 既定値。設定の中の未知のキーは残る。型ごとの 2 つ目は捨てる。
     json::Value v = saved;
     json::Value list = json::Value::MakeArray();
     json::Value one = saved.Get("settings").At(0);
@@ -453,7 +453,7 @@ RM_TEST(Scene_Settings) {
     v.Erase("settings");
     c.Load(v);
     CHECK(c.Setting<game_x_3d::Spin>() && c.Setting<game_x_3d::Spin>()->degreesPerSecond.y == game_x_3d::Spin{}.degreesPerSecond.y);
-    // A copy (Play) has its own.
+    // コピー (Play) は自分のものを持つ。
     Scene d = c;
     d.Setting<game_x_3d::Spin>()->degreesPerSecond.y = 1;
     CHECK(c.Setting<game_x_3d::Spin>()->degreesPerSecond.y != 1);

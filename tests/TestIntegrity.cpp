@@ -1,4 +1,4 @@
-// Tests for the integrity check (editor/app/Integrity): the file list and the comparison.
+// 整合性チェック (editor/app/Integrity) のテスト: ファイル一覧と、その比較。
 
 #include "Test.h"
 
@@ -27,7 +27,7 @@ RM_TEST(Integrity_ParseFileList) {
                             &err);
     CHECK(ok && ok->size() == 1 && (*ok)[0].sha256 == std::string(64, 'a') && (*ok)[0].size == 5);
     CHECK(!ParseFileList(*json::Parse(R"({"kind":"other","files":[]})"), &err));
-    // Never a path out of the engine's folder, never a short hash.
+    // エンジンのフォルダーの外へのパスや、短いハッシュは出さない。
     CHECK(!ParseFileList(*json::Parse(R"({"kind":"rm_engine.files","files":[{"path":"../x","sha256":")" + kA + R"("}]})"), &err));
     CHECK(!ParseFileList(*json::Parse(R"({"kind":"rm_engine.files","files":[{"path":"C:/x","sha256":")" + kA + R"("}]})"), &err));
     CHECK(!ParseFileList(*json::Parse(R"({"kind":"rm_engine.files","files":[{"path":"x","sha256":"abc"}]})"), &err));
@@ -49,7 +49,7 @@ RM_TEST(Integrity_CheckFiles_MissingAndChanged) {
 
 RM_TEST(Integrity_StalePlugins) {
     const PluginId space{"rm_engine", "space3d"}, game{"rm_engine", "game_production"};
-    // space3d's installed plugin.json differs (an old copy); game_production has no files in the list.
+    // space3d の入っている plugin.json が違う (古いコピー)。game_production は一覧にファイルが無い。
     auto stale = StalePlugins(Sample(), {space, game}, [&](const PluginId&, const std::string& p) -> std::optional<std::string> {
         return p == "plugin.json" ? std::optional<std::string>(kA) : std::nullopt;
     });
@@ -57,14 +57,14 @@ RM_TEST(Integrity_StalePlugins) {
     stale = StalePlugins(Sample(), {space}, [&](const PluginId&, const std::string&) { return std::optional<std::string>(kB); });
     CHECK(stale.empty());
     stale = StalePlugins(Sample(), {space}, [&](const PluginId&, const std::string&) { return std::optional<std::string>(); });
-    CHECK(stale.size() == 1);  // missing in the installed copy
+    CHECK(stale.size() == 1);  // 入っているコピーに無い
 }
 
 RM_TEST(Integrity_EngineChanged) {
-    CHECK(!EngineChanged(kA, kA));                // the same engine as at the last start: nothing to look at
-    CHECK(EngineChanged(kB, kA));                 // a new file list
-    CHECK(EngineChanged(kA, ""));                 // never looked at yet
-    CHECK(EngineChanged(std::nullopt, kA));       // no list: always (only plugin.json, cheap)
+    CHECK(!EngineChanged(kA, kA));                // 前回の起動と同じエンジン: 見るものは無い
+    CHECK(EngineChanged(kB, kA));                 // 新しいファイル一覧
+    CHECK(EngineChanged(kA, ""));                 // まだ見ていない
+    CHECK(EngineChanged(std::nullopt, kA));       // 一覧無し: いつも (plugin.json だけ、軽い)
 }
 
 RM_TEST(Integrity_PluginsToRefresh) {
@@ -74,30 +74,30 @@ RM_TEST(Integrity_PluginsToRefresh) {
         ++manifestLooks;
         return id == game;
     };
-    // With the list: the files in it decide (an old plugin.json of space3d), plugin.json alone is not read.
+    // 一覧がある場合: 中のファイルで決める (space3d の古い plugin.json)。plugin.json だけは読まない。
     auto old = [&](const PluginId&, const std::string&) { return std::optional<std::string>(kA); };
     auto got = PluginsToRefresh(Sample(), {space, game}, old, differs);
     CHECK(got.size() == 1 && got[0] == space);
     CHECK(manifestLooks == 0);
     auto same = [&](const PluginId&, const std::string&) { return std::optional<std::string>(kB); };
     CHECK(PluginsToRefresh(Sample(), {space, game}, same, differs).empty());
-    // Without the list: plugin.json of each.
+    // 一覧が無い場合: それぞれの plugin.json。
     got = PluginsToRefresh(std::nullopt, {space, game}, same, differs);
     CHECK(got.size() == 1 && got[0] == game);
     CHECK(manifestLooks == 2);
-    CHECK(PluginsToRefresh(std::nullopt, {}, same, differs).empty());  // removed plugins are not looked at
+    CHECK(PluginsToRefresh(std::nullopt, {}, same, differs).empty());  // 削除されたプラグインは見ない
 }
 
 RM_TEST(EngineKey_OneFolderPerEngine) {
     const std::string k = rm::editor::EngineKey(LR"(C:\RM\build\bin\x64\Release)");
     CHECK(k.starts_with("release-") && k.size() == std::string("release-").size() + 16);
-    // the same folder written differently is the same engine
+    // 書き方が違っても同じフォルダーは同じエンジン
     CHECK(rm::editor::EngineKey(LR"(c:\rm\BUILD\bin\x64\Release\\)") == k);
     CHECK(rm::editor::EngineKey(LR"(C:/RM/build/bin/x64/Release)") == k);
     CHECK(rm::editor::EngineKey(LR"(C:\RM\build\bin\x64\.\Release)") == k);
-    // another build (Debug, a worktree) is another engine
+    // 別のビルド (Debug や worktree) は別のエンジン
     CHECK(rm::editor::EngineKey(LR"(C:\RM\build\bin\x64\Debug)") != k);
     CHECK(rm::editor::EngineKey(LR"(C:\RM\.claude\worktrees\a\build\bin\x64\Release)") != k);
-    // a name with no ASCII letters still makes a folder name
+    // ASCII の文字が無い名前でも、フォルダー名は作れる
     CHECK(rm::editor::EngineKey(LR"(D:\エンジン)").starts_with("engine-"));
 }

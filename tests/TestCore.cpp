@@ -1,4 +1,4 @@
-// Tests for the pure parts of core and ui: undo history and text editing.
+// core と ui の純粋な部分のテスト: Undo の履歴とテキスト編集。
 
 #include "Test.h"
 
@@ -22,7 +22,7 @@ struct SetInt final : ICommand {
     void Undo() override { target = before; }
 };
 
-// A command that (wrongly) pushes another command while it runs.
+// 実行中に (誤って) 別のコマンドを積むコマンド。
 struct Reentrant final : ICommand {
     UndoHistory& h;
     int& value;
@@ -68,10 +68,10 @@ RM_TEST(Undo_ReentrantPushIsRejected) {
     auto cmd = std::make_unique<Reentrant>(h, v);
     Reentrant* raw = cmd.get();
     CHECK(h.Push(std::move(cmd), false));
-    CHECK(!raw->pushedOk);  // nested Push during Do was refused
+    CHECK(!raw->pushedOk);  // Do の最中の入れ子の Push は断られた
     CHECK(h.UndoCount() == 1);
     CHECK(h.Undo());
-    CHECK(!raw->pushedOk);  // ... and during Undo
+    CHECK(!raw->pushedOk);  // ... Undo の最中も
     CHECK(h.UndoCount() == 0 && h.RedoCount() == 1);
     CHECK(v == 0);
 }
@@ -82,8 +82,8 @@ RM_TEST(Undo_GroupIsOneEntryUndoneInReverse) {
     auto group = std::make_unique<CommandGroup>("移動");
     CHECK(group->Empty());
     group->Add(std::make_unique<SetInt>(v, 0, 1));
-    group->Add(std::make_unique<SetInt>(v, 1, 2));  // depends on the first: reverse order matters
-    group->Add(nullptr);                             // ignored
+    group->Add(std::make_unique<SetInt>(v, 1, 2));  // 最初のものに依存する: 逆順が大事
+    group->Add(nullptr);                             // 無視される
     CHECK(!group->Empty());
     CHECK(h.Push(std::move(group), false));
     CHECK(v == 2 && h.UndoCount() == 1);
@@ -94,7 +94,7 @@ RM_TEST(Undo_GroupIsOneEntryUndoneInReverse) {
 }
 
 namespace {
-// Typing: commands with the same key join.
+// 入力: 同じキーのコマンドはつながる。
 struct Typed final : ICommand {
     int& target;
     int before, after, key;
@@ -120,13 +120,13 @@ RM_TEST(Undo_MergeTypingIntoOneEntry) {
     CHECK(h.Push(std::make_unique<Typed>(v, 1, 12, 7), false));
     CHECK(h.Push(std::make_unique<Typed>(v, 12, 123, 7), false));
     CHECK(v == 123 && h.UndoCount() == 1 && modified == 3);
-    CHECK(h.Undo() && v == 0);  // one undo: all of the typing
+    CHECK(h.Undo() && v == 0);  // Undo 1 回: 入力ぜんぶ
     CHECK(h.Redo() && v == 123);
-    // After an undo nothing joins (the redo would be lost under it otherwise).
+    // Undo のあとは何もつながらない (つながると、その下で Redo が失われる)。
     CHECK(h.Undo());
     CHECK(h.Push(std::make_unique<Typed>(v, 0, 5, 7), false));
     CHECK(h.UndoCount() == 1 && h.RedoCount() == 0 && v == 5);
-    // Another key: a new entry. Back to where it began: the entry goes.
+    // 別のキー: 新しい項目。始まりの状態に戻ると、その項目は消える。
     CHECK(h.Push(std::make_unique<Typed>(v, 5, 6, 8), false));
     CHECK(h.UndoCount() == 2);
     CHECK(h.Push(std::make_unique<Typed>(v, 6, 5, 8), false));
@@ -134,7 +134,7 @@ RM_TEST(Undo_MergeTypingIntoOneEntry) {
 }
 
 namespace {
-// An entry that says how much it keeps.
+// どれだけ保つかを言う項目。
 struct Heavy final : ICommand {
     int& target;
     int before, after;
@@ -152,10 +152,10 @@ RM_TEST(Undo_MaxBytes_TheOldestGoFirst) {
     int v = 0;
     const uint64_t changes = h.Changes();
     for (int i = 0; i < 5; ++i) h.Push(std::make_unique<Heavy>(v, i, i + 1, 100), false);
-    CHECK(h.UndoCount() == 2 && v == 5);  // 200 bytes: the two newest
+    CHECK(h.UndoCount() == 2 && v == 5);  // 200 バイト: 新しい 2 つ
     CHECK(h.Changes() == changes + 5);
     CHECK(h.Undo() && h.Undo() && v == 3 && !h.CanUndo());
-    // One entry bigger than the limit still stays (the newest is never dropped).
+    // 上限より大きい項目も 1 つなら残る (一番新しいものは決して捨てない)。
     h.Push(std::make_unique<Heavy>(v, 3, 9, 1000), false);
     CHECK(h.UndoCount() == 1 && h.Undo() && v == 3);
     static_assert(UndoHistory::kMaxBytes >= (size_t{64} << 20));
@@ -196,7 +196,7 @@ RM_TEST(TextEdit_Selection) {
     e.SetCaret(1, false);
     e.SetCaret(4, true);
     CHECK(e.SelectedText() == L"bcd");
-    e.MoveLeft(false, false);  // collapses to the start
+    e.MoveLeft(false, false);  // 始めへ畳まれる
     CHECK(e.Caret() == 1 && !e.HasSelection());
     e.SetCaret(4, true);
     CHECK(e.Backspace(false));
@@ -206,10 +206,10 @@ RM_TEST(TextEdit_Selection) {
 RM_TEST(TextEdit_SurrogatePairs) {
     ui::TextEdit e;
     e.SetText(L"a\xD83D\xDE00z");  // a 😀 z
-    e.MoveLeft(false, false);       // before z
-    e.MoveLeft(false, false);       // before 😀 (skips both halves)
+    e.MoveLeft(false, false);       // z の前
+    e.MoveLeft(false, false);       // 😀 の前 (両方の半分を飛ばす)
     CHECK(e.Caret() == 1);
-    e.SetCaret(2, false);  // inside the pair -> snapped
+    e.SetCaret(2, false);  // ペアの内側 -> 寄せられる
     CHECK(e.Caret() == 1);
     e.SetCaret(3, false);
     CHECK(e.Backspace(false));
@@ -235,7 +235,7 @@ RM_TEST(TextEdit_MaxLength) {
     e.Insert(L"abcdef");
     CHECK(e.Text() == L"abcd");
     e.SetText(L"abc");
-    e.Insert(L"\xD83D\xDE00");  // would split the pair -> dropped
+    e.Insert(L"\xD83D\xDE00");  // ペアを割ってしまう -> 捨てる
     CHECK(e.Text() == L"abc");
 }
 
@@ -244,7 +244,7 @@ RM_TEST(Color_MixAndShade) {
     CHECK(rm::Mix(red, {0, 0, 0, 0}, 0.f) == red);
     const rm::Color half = rm::Mix({0, 0, 0, 1}, {1, 1, 1, 1}, 0.5f);
     CHECK(half.r == 0.5f && half.g == 0.5f && half.a == 1.f);
-    // Shade keeps the hue and alpha, only lighter (towards white) or darker (towards black).
+    // Shade は色相とアルファを保ち、明るく (白へ) か暗く (黒へ) するだけ。
     const rm::Color light = rm::Shade(red.Alpha(0.5f), 0.5f);
     CHECK(light.r == 0.9f && light.g == 0.6f && light.a == 0.5f);
     const rm::Color dark = rm::Shade(red, -0.5f);

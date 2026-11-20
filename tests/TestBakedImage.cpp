@@ -1,6 +1,6 @@
-// Tests for a sprite's image as the exported game gets it (plugins/rm_engine/game_x_2d/runtime/
-// BakedImage): the file as it is with its size and import settings in front, read back the same; a
-// picture not baked given back as it is; a broken header refused; keys of a newer version skipped.
+// 書き出したゲームが受け取るスプライトの画像のテスト (plugins/rm_engine/game_x_2d/runtime/
+// BakedImage): そのままのファイルの前にサイズと取り込みの設定を付けたものが、同じに読み戻せる。
+// 焼いていない画像はそのまま返す。壊れたヘッダーは断る。新しい版のキーは読み飛ばす。
 
 #include "Test.h"
 
@@ -29,11 +29,11 @@ RM_TEST(BakedImage_RoundTrip) {
 
 RM_TEST(BakedImage_NotBakedAndBroken) {
     std::string err;
-    // A picture file as it is (a game exported before): itself, nothing known.
+    // そのままの画像ファイル (以前に書き出したゲーム): それ自身で、何も分からない。
     const std::string png = "\x89PNG\r\n\x1a\n....";
     const auto plain = ReadBakedImage(png, &err);
     CHECK(plain && plain->picture == png && plain->info.width == 0 && !plain->info.sharp && plain->info.maxSize == 0);
-    // Broken: cut short, the header longer than the bytes, the header not JSON.
+    // 壊れている: 途中で切れた、ヘッダーがバイト数より長い、ヘッダーが JSON ではない。
     const std::string bytes = WriteBakedImage({10, 20, false, 64}, "pic");
     CHECK(!ReadBakedImage(std::string_view(bytes).substr(0, 10), &err) && !err.empty());
     std::string longer = bytes;
@@ -43,7 +43,7 @@ RM_TEST(BakedImage_NotBakedAndBroken) {
     std::string notJson = bytes;
     notJson[12] = 'x';
     CHECK(!ReadBakedImage(notJson, &err));
-    // A key of a newer version: skipped.
+    // 新しい版のキー: 読み飛ばす。
     const std::string head = R"({"width":5,"height":6,"sharp":true,"maxSize":0,"later":[1,2]})";
     std::string newer("RMIMAGE\0", 8);
     const uint32_t n = static_cast<uint32_t>(head.size());

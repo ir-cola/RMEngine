@@ -1,5 +1,5 @@
-// Tests for the systems of the game production plugin (runtime/Systems): the fixed step, the order
-// they run in, which entities they see - and the built-in 回り続ける (game_x_3d/runtime/Spin).
+// ゲーム制作プラグインのシステム (runtime/Systems) のテスト: 固定ステップ、動く順、
+// どのエンティティが見えるか - と、組み込みの 回り続ける (game_x_3d/runtime/Spin)。
 
 #include "Test.h"
 
@@ -23,7 +23,7 @@ using namespace rm::game_production;
 
 namespace {
 
-std::string g_log;  // what the test systems did, in order
+std::string g_log;  // テスト用のシステムがやったことを、順に
 int g_fixedRuns = 0;
 float g_lastDt = 0;
 
@@ -43,7 +43,7 @@ RM_TEST(Systems_OrderFixedFirstThenByOrder) {
     static const SystemInfo b{"B", SystemPhase::Frame, 5, &LogB};
     static const SystemInfo a{"A", SystemPhase::Frame, -1, &LogA};
     static const SystemInfo f{"F", SystemPhase::Fixed, 100, &LogF};
-    static const SystemInfo none{"none", SystemPhase::Frame, 0, nullptr};  // nothing to run: left out
+    static const SystemInfo none{"none", SystemPhase::Frame, 0, nullptr};  // 動かすものがない: 外す
     const SystemInfo* list[] = {&b, &a, &f, &none};
     SystemRunner r;
     r.SetSystems(list);
@@ -62,17 +62,17 @@ RM_TEST(Systems_FixedStepCatchesUpAndCarries) {
     r.SetSystems(list);
     Scene s;
     g_fixedRuns = 0;
-    // 0.1 s with a 0.02 s step: 5 steps (not 4 and a rounding error).
+    // 0.1 秒を 0.02 秒のステップで: 5 ステップ (4 と丸め誤差ではない)。
     CHECK(r.Advance(s, 0.1, 0.02f) == 5);
     CHECK(Near(g_lastDt, 0.02f));
-    // Short frames: the time is carried until a step is due.
+    // 短いフレーム: ステップの時間になるまで、時間を繰り越す。
     CHECK(r.Advance(s, 0.012, 0.02f) == 0);
     CHECK(r.Advance(s, 0.012, 0.02f) == 1);
     CHECK(g_fixedRuns == 6);
-    // A very long frame never runs more than kMaxFixedSteps, and does not leave a debt.
+    // とても長いフレームでも kMaxFixedSteps より多くは動かず、借りも残さない。
     CHECK(r.Advance(s, 5.0, 0.02f) == SystemRunner::kMaxFixedSteps);
     CHECK(r.Advance(s, 0.0, 0.02f) <= 1);
-    // No step: no Fixed systems. Negative time: none.
+    // ステップなし: Fixed のシステムは動かない。負の時間: 動かない。
     CHECK(r.Advance(s, 1.0, 0.f) == 0);
     CHECK(r.Advance(s, -1.0, 0.02f) == 0);
     r.Reset();
@@ -87,12 +87,12 @@ RM_TEST(Systems_ForEachComponent_ActiveOnlyAndEveryOne) {
     const int off = s.Create("off");
     const int under = s.Create("under", off);
     CHECK(s.AddComponent(a, spin));
-    CHECK(s.AddComponent(a, spin));  // several: allowed for this type
+    CHECK(s.AddComponent(a, spin));  // 複数: この型では許す
     CHECK(s.AddComponent(under, spin));
     s.Find(off)->data.active = false;
     int seen = 0;
     ForEachComponent(s, spin.name, [&](SceneEntity& e, Component&) {
-        CHECK(e.data.id == a);  // not the one under a switched-off parent
+        CHECK(e.data.id == a);  // オフにした親の下のものは違う
         ++seen;
     });
     CHECK(seen == 2);
@@ -105,11 +105,11 @@ RM_TEST(Systems_Spin_TurnsTheTransform) {
     s.SetComponentTypes({&transform, &spin}, {&spin});
     const int e = s.Create("turning");
     s.AddComponent(e, transform);
-    s.AddComponent(e, spin);  // 90 degrees a second about Y
+    s.AddComponent(e, spin);  // Y まわりに 1 秒で 90 度
     s.AddComponent(e, spin);
     static_cast<game_x_3d::Spin*>(s.Find(e)->FindComponent(spin.name, 1)->value.Get())->degreesPerSecond = {30, 0, 0};
     const int lonely = s.Create("no transform");
-    s.AddComponent(lonely, spin);  // nothing to turn: nothing happens
+    s.AddComponent(lonely, spin);  // 回すものがない: 何も起きない
 
     static const SystemInfo kSpin{"回り続ける", SystemPhase::Frame, 0, &game_x_3d::RunSpin};
     const SystemInfo* list[] = {&kSpin};
@@ -117,8 +117,8 @@ RM_TEST(Systems_Spin_TurnsTheTransform) {
     r.SetSystems(list);
     r.Advance(s, 0.5, 0.02f);
     const auto& rot = static_cast<const space3d::Transform*>(s.Find(e)->FindComponent(transform.name)->value.Get())->rotation;
-    CHECK(Near(rot.y, 45) && Near(rot.x, 15) && Near(rot.z, 0));  // the two add up
-    // Kept between -360 and 360.
+    CHECK(Near(rot.y, 45) && Near(rot.x, 15) && Near(rot.z, 0));  // 2 つが足し合わさる
+    // -360 と 360 の間に保つ。
     for (int i = 0; i < 10; ++i) r.Advance(s, 1.0, 0.02f);
     CHECK(rot.y > -360 && rot.y < 360);
     CHECK(Near(rot.y, std::fmod(45.f + 900.f, 360.f)));
@@ -130,7 +130,7 @@ void SwitchTo(SystemContext& c) { c.camera = g_wanted; }
 }  // namespace
 
 RM_TEST(Systems_SwitchTheCamera) {
-    // A system sets SystemContext::camera; the runner keeps it for the next systems and frames.
+    // システムが SystemContext::camera を設定する。ランナーはそれを次のシステムとフレームのために保つ。
     static const SystemInfo kSwitch{"switch", SystemPhase::Frame, 0, &SwitchTo};
     const SystemInfo* list[] = {&kSwitch};
     SystemRunner r;
@@ -158,7 +158,7 @@ RM_TEST(Systems_CameraCycle) {
     s.AddComponent(b, camera);
     const int off = s.Create("off");
     s.AddComponent(off, camera);
-    s.Find(off)->data.active = false;  // a camera switched off is skipped
+    s.Find(off)->data.active = false;  // オフにしたカメラは飛ばす
     const int director = s.Create("director");
     s.AddComponent(director, cycle);
     static_cast<game_x_3d::CameraCycle*>(s.Find(director)->FindComponent(cycle.name)->value.Get())->seconds = 1.5f;
@@ -168,42 +168,42 @@ RM_TEST(Systems_CameraCycle) {
     SystemRunner r;
     r.SetSystems(list);
     r.SetCamera(static_cast<uint64_t>(a));
-    r.Advance(s, 1.0, 0.02f);  // 0 .. 1: no change
+    r.Advance(s, 1.0, 0.02f);  // 0 .. 1: 変わらない
     CHECK(r.Camera() == static_cast<uint64_t>(a));
-    r.Advance(s, 1.0, 0.02f);  // 1 .. 2: passes 1.5 -> B
+    r.Advance(s, 1.0, 0.02f);  // 1 .. 2: 1.5 を通る -> B
     CHECK(r.Camera() == static_cast<uint64_t>(b));
-    r.Advance(s, 1.0, 0.02f);  // 2 .. 3: passes 3.0? (3.0 is the end: floor(3 / 1.5) = 2 > 1) -> back to A
+    r.Advance(s, 1.0, 0.02f);  // 2 .. 3: 3.0 を通る? (3.0 は終わり: floor(3 / 1.5) = 2 > 1) -> A に戻る
     CHECK(r.Camera() == static_cast<uint64_t>(a));
-    // Without the component nothing switches.
+    // 部品がなければ何も切り替わらない。
     s.RemoveComponent(director, cycle.name);
     r.Advance(s, 5.0, 0.02f);
     CHECK(r.Camera() == static_cast<uint64_t>(a));
 }
 
 RM_TEST(Systems_RuntimeRegistry_TheGameReadsTheSameList) {
-    // What an exported game does: the runtime parts of the plugins it has register into one list.
+    // 書き出したゲームがやること: 持っているプラグインのランタイム部分が 1 つのリストに登録される。
     RuntimeRegistry r;
     const PluginId x3d = game_x_3d::kPluginId.Id();
     RegisterRuntimeParts(r, std::span<const PluginId>(&x3d, 1));
     const auto systems = RegisteredSystems(r);
     CHECK(systems.size() == 3 && systems[0]->run == &game_x_3d::RunSpin && systems[1]->run == &game_x_3d::RunCameraCycle &&
           systems[2]->run == &game_x_3d::RunSkyClock);
-    // ... and the scene's 空 (a scene setting of a 3D game).
+    // ... とシーンの 空 (3D のゲームのシーンの設定)。
     const auto settings = SettingTypes(r);
     CHECK(settings.size() == 1 && settings[0] == &reflect::TypeOf<game_x_3d::Sky>());
-    // Every component type of the connector is the runtime part's (Transform, メッシュ, カメラ, 光, 環境光,
-    // 回り続ける, カメラを順に切り替える): the game knows them without the editor.
+    // コネクターの部品の型は全部、ランタイム部分のもの (Transform, メッシュ, カメラ, 光, 環境光,
+    // 回り続ける, カメラを順に切り替える): ゲームはエディターなしでそれらを知っている。
     const auto comps = r.Contributions<ComponentInfo>(kComponentPoint);
     CHECK(comps.size() == 7 && comps[0].plugin == x3d);
     CHECK(comps[0].item->type().name == reflect::TypeOf<space3d::Transform>().name && comps[0].item->onNewEntities && comps[0].item->placement);
     CHECK(std::count_if(comps.begin(), comps.end(), [](const auto& c) { return c.item->multiple; }) == 1);
-    // The 2D connector's too.
+    // 2D のコネクターも同じ。
     RuntimeRegistry r2;
     const PluginId x2d = game_x_2d::kPluginId.Id();
     RegisterRuntimeParts(r2, std::span<const PluginId>(&x2d, 1));
     CHECK(r2.Contributions<ComponentInfo>(kComponentPoint).size() == 5 && RegisteredSystems(r2).size() == 2);
-    CHECK(r.Contributions<SystemInfo>(kComponentPoint).empty());  // another type at that point: not read
-    // A plugin that is not enabled registers nothing.
+    CHECK(r.Contributions<SystemInfo>(kComponentPoint).empty());  // その位置にある別の型: 読まない
+    // 有効でないプラグインは何も登録しない。
     RuntimeRegistry none;
     const PluginId other{"rm_engine", "space3d"};
     RegisterRuntimeParts(none, std::span<const PluginId>(&other, 1));

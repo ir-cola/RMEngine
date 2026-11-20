@@ -1,7 +1,7 @@
-// Tests for C++ scripts (game production's runtime/Scripts + rmgen --scripts): the run order, the
-// ABI check, scripts as reflected types, the hooks (BeginPlay before Tick, a crash stops only that
-// script), the values carried over when the scripts are built again, and rmgen's registration.
-// A module is built here by hand (the same tables rmgen writes into a script DLL).
+// C++ スクリプトのテスト (ゲーム制作のランタイム/Scripts + rmgen --scripts): 実行順、
+// ABI の確認、リフレクションの型としてのスクリプト、フック (BeginPlay は Tick より先、
+// クラッシュは そのスクリプトだけ止める)、スクリプトを作り直したときの値の引き継ぎ、
+// rmgen の登録。モジュールはここで手作りする (rmgen がスクリプト DLL に書くのと同じ表)。
 
 #include "Test.h"
 
@@ -19,7 +19,7 @@ using namespace rm::game_production;
 
 namespace {
 
-std::string g_log;  // what the hooks did
+std::string g_log;  // フックがしたこと
 
 struct Counter {
     int ticks = 0;
@@ -43,7 +43,7 @@ void* CrasherX(void* o) { return &static_cast<Crasher*>(o)->x; }
 void CrasherTick(void*, RmEntityId, float) {
     g_log += "C";
     volatile int* p = nullptr;
-    *p = 1;  // an access violation: caught, this script stopped
+    *p = 1;  // アクセス違反: 捕まえて、このスクリプトを止める
 }
 
 template <class T>
@@ -65,8 +65,8 @@ const RmScriptDesc kScripts[] = {
     {"Crasher", "落ちる", "Crasher.h", sizeof(Crasher), alignof(Crasher), kCrasherFields, 1, &Construct<Crasher>, &Destruct<Crasher>,
      &Copy<Crasher>, nullptr, &CrasherTick, nullptr},
 };
-// The module's string functions (in a real DLL: rmgen writes them, with the DLL's C runtime). Counted:
-// the engine must go through them for every string field.
+// モジュールの文字列関数 (本物の DLL では rmgen が書き、DLL の C ランタイムを使う)。数える:
+// エンジンはどの文字列フィールドでも、これを通さなければならない。
 int g_stringCalls = 0;
 uint64_t StringGet(const void* field, char* buf, uint64_t cap) {
     ++g_stringCalls;
@@ -97,7 +97,7 @@ Scene SceneWith(const ScriptModule& m) {
 RM_TEST(Scripts_OrderByListThenName) {
     const std::vector<ScriptOrderEntry> order{{"Camera", 10}, {"Input", -5}};
     const auto sorted = SortScriptTypes({"Player", "Camera", "Enemy", "Input", "Player"}, order);
-    CHECK((sorted == std::vector<std::string>{"Input", "Enemy", "Player", "Camera"}));  // -5, (0: by name), 10
+    CHECK((sorted == std::vector<std::string>{"Input", "Enemy", "Player", "Camera"}));  // -5、(0: 名前順)、10
     CHECK(ScriptOrderOf("Camera", order) == 10 && ScriptOrderOf("Nobody", order) == 0);
 }
 
@@ -105,7 +105,7 @@ RM_TEST(Scripts_CheckModule) {
     CHECK(!CheckModule(nullptr).empty());
     CHECK(CheckModule(&kModule).empty());
     const RmModule other{RM_ABI_VERSION + 1, kFlags, 2, kScripts, &StringGet, &StringSet};
-    CHECK(!CheckModule(&other).empty());  // built with another RM.h
+    CHECK(!CheckModule(&other).empty());  // 別の RM.h で作った
     RmScriptDesc twice[] = {kScripts[0], kScripts[0]};
     const RmModule dup{RM_ABI_VERSION, kFlags, 2, twice, &StringGet, &StringSet};
     CHECK(!CheckModule(&dup).empty());
@@ -120,7 +120,7 @@ RM_TEST(Scripts_CheckModule) {
     strange[0].fieldCount = 1;
     const RmModule odd{RM_ABI_VERSION, kFlags, 1, strange, &StringGet, &StringSet};
     CHECK(!CheckModule(&odd).empty());
-    // Built as Debug for a Release engine (or the other way): never read (another C runtime).
+    // Release のエンジンに Debug で作ったもの (その逆も): 読まない (C ランタイムが違う)。
     const RmModule otherKind{RM_ABI_VERSION, kFlags ^ RmModuleFlag_Debug, 2, kScripts, &StringGet, &StringSet};
     CHECK(!CheckModule(&otherKind).empty());
     const RmModule noStrings{RM_ABI_VERSION, kFlags, 2, kScripts, nullptr, nullptr};
@@ -134,7 +134,7 @@ RM_TEST(Scripts_AreReflectedTypes) {
     const ScriptType* c = m.Find("test::Counter");
     CHECK(c && c->desc.kind == reflect::TypeKind::Script && std::string(c->desc.label) == "数える" && c->desc.fields.size() == 3);
     CHECK(c->desc.fields[1].hasMin && c->desc.fields[2].value.type == reflect::FieldType::String);
-    // Saved and read like any data (the inspector and undo use the same tables).
+    // ほかのデータと同じように保存して読む (インスペクターと Undo も同じ表を使う)。
     reflect::Object o(c->desc);
     static_cast<Counter*>(o.Get())->speed = 7;
     const json::Value saved = reflect::Save(c->desc, o.Get());
@@ -159,11 +159,12 @@ RM_TEST(Scripts_BeginPlayBeforeTick_TypeByType_CrashStopsOnlyIt) {
     const std::vector<ScriptOrderEntry> order{{"Crasher", -1}};
     g_log.clear();
     r.Frame(s, w, m, order, 0.1f);
-    // BeginPlay of every new one first (by entity), then Tick type by type: Crasher (-1) before Counter.
+    // 新しいもの全部の BeginPlay が先 (エンティティ順)、
+    // そのあと型ごとに Tick: Crasher (-1) が Counter より先。
     CHECK(g_log == "B1B2CT1T2");
     CHECK(r.Crashed() == 1 && told.find("Crasher") == std::string::npos && told.find("落ちる") != std::string::npos);
     g_log.clear();
-    // A new one during the game: its BeginPlay before its Tick, in the next frame. The crashed one rests.
+    // ゲーム中に増えたもの: 次のフレームで、BeginPlay が Tick より先。クラッシュしたものは休む。
     const int c = s.Create("c");
     s.AddComponent(c, m.Find("test::Counter")->desc);
     r.Frame(s, w, m, order, 0.1f);
@@ -176,8 +177,8 @@ RM_TEST(Scripts_BeginPlayBeforeTick_TypeByType_CrashStopsOnlyIt) {
 }
 
 RM_TEST(Scripts_ValuesCarriedOverWhenBuiltAgain) {
-    // Before: Counter {ticks, speed, note}. After: speed is an int now, note is gone, `extra` is new,
-    // and Crasher is gone (renamed or deleted).
+    // 前: Counter {ticks, speed, note}。後: speed は int になり、note は無くなり、`extra` が増え、
+    // Crasher も無くなる (名前の変更か削除)。
     struct Counter2 {
         int speed = 0;
         int extra = 42;
@@ -202,7 +203,7 @@ RM_TEST(Scripts_ValuesCarriedOverWhenBuiltAgain) {
     before->speed = 3.0f;
     before->ticks = 5;
     before->note = "keep me";
-    // What a hot reload does: the values written out by name, the old types gone, the new ones read.
+    // ホットリロードがすること: 値を名前で書き出し、古い型を捨て、新しい型へ読み込む。
     const json::Value saved = s.Save();
     ScriptModule next;
     next.Adopt(module2);
@@ -212,17 +213,17 @@ RM_TEST(Scripts_ValuesCarriedOverWhenBuiltAgain) {
     const Component* c = t.Find(a)->FindComponent("test::Counter");
     CHECK(c && c->Known());
     const auto* after = static_cast<const Counter2*>(c->value.Get());
-    CHECK(after->ticks == 5);   // same name, same type: kept
-    CHECK(after->speed == 3);   // float -> int: converted
-    CHECK(after->extra == 42);  // new: its default
-    // The field that went is kept (written back - it comes back if the field does), and the script
-    // that went is kept as a missing one, with its values.
+    CHECK(after->ticks == 5);   // 同じ名前で同じ型: 残る
+    CHECK(after->speed == 3);   // float -> int: 変換される
+    CHECK(after->extra == 42);  // 新しい: その初期値
+    // 無くなったフィールドは残す (書き戻す - フィールドが戻れば値も戻る)。無くなったスクリプトは、
+    // 値ごと「無いスクリプト」として残す。
     const json::Value again = t.Save();
     const json::Value& comps = again.Get("entities").At(0).Get("components");
     CHECK(comps.At(0).Get("data").Get("note").AsString() == "keep me");
     const Component* gone = t.Find(a)->FindComponent("Crasher");
     CHECK(gone && !gone->Known());
-    CHECK(!warnings.empty());  // the missing script is told
+    CHECK(!warnings.empty());  // 無いスクリプトを知らせる
 }
 
 RM_TEST(Scripts_CoreApiOnTheWorld) {
@@ -247,10 +248,10 @@ RM_TEST(Scripts_CoreApiOnTheWorld) {
     CHECK(core.findByName(api.ctx, "Hand") == static_cast<RmEntityId>(child) && core.findByName(api.ctx, "nobody") == 0);
     CHECK(core.parent(api.ctx, child) == static_cast<RmEntityId>(a));
     char name[4];
-    CHECK(core.getName(api.ctx, a, name, sizeof(name)) == 6 && std::string(name) == "Pla");  // cut, the full length told
+    CHECK(core.getName(api.ctx, a, name, sizeof(name)) == 6 && std::string(name) == "Pla");  // 切って、全体の長さを返す
     CHECK(core.isActive(api.ctx, child) == 1);
     core.setActive(api.ctx, a, 0);
-    CHECK(core.isActive(api.ctx, child) == 0);  // through its parent
+    CHECK(core.isActive(api.ctx, child) == 0);  // 親を通して
     CHECK(core.getScript(api.ctx, child, "test::Counter", 0) != nullptr && core.getScript(api.ctx, child, "test::Counter", 1) == nullptr);
     w.ReadInput();
     leftDown = true;
@@ -285,7 +286,7 @@ struct Mover {
     CHECK(cpp.find("{\"speed\", RmField_Float") != std::string::npos && cpp.find("RmFieldFlag_HasMin") != std::string::npos);
     CHECK(cpp.find("{\"dir\", RmField_Vec3") != std::string::npos && cpp.find("\"time\"") == std::string::npos);
     CHECK(cpp.find("\"動く\"") != std::string::npos);
-    // ABI 4: lists, enums, nested structs, asset references, OnReloaded.
+    // ABI 4: リスト、列挙型、入れ子の構造体、アセット参照、OnReloaded。
     const char* more = R"(#include "RM.h"
 RM_ENUM() enum class Mode { RM_ITEM(Label="歩く") Walk, Run };
 RM_STRUCT(Label="波") struct Wave { RM_PROPERTY(Edit) int count = 3; RM_PROPERTY(Edit) std::vector<std::string> tags; };
@@ -313,7 +314,7 @@ struct Spawner {
     CHECK(c1.find("{\"enemy\", RmField_Asset") != std::string::npos && c1.find("\".rmprefab\"") != std::string::npos);
     CHECK(c1.find("RmVecSize<std::vector<::rm::ImageRef>>") != std::string::npos && c1.find("\"image\"") != std::string::npos);
     CHECK(c1.find("RmReloadOf<::Spawner>()") != std::string::npos);
-    // What a script cannot have: told, not skipped.
+    // スクリプトが持てないもの: 黙って飛ばさず、知らせる。
     const char* bad = R"(#include "RM.h"
 RM_COMPONENT()
 struct Engine {
@@ -334,7 +335,7 @@ struct Bad {
     rmgen::Validate(h2, d2);
     rmgen::ValidateScripts(h2, d2);
     CHECK(d2.size() == 3 && std::all_of(d2.begin(), d2.end(), [](const rmgen::Diagnostic& d) { return d.code == "RM0013"; }));
-    // No scripts at all: still a module (empty).
+    // スクリプトが 1 つもない: それでもモジュールにはなる (空)。
     CHECK(rmgen::EmitScripts({}).find("kRmScripts = nullptr") != std::string::npos);
 }
 
@@ -344,11 +345,11 @@ RM_TEST(Scripts_StringsOnlyThroughTheModule) {
     const ScriptType* c = m.Find("test::Counter");
     reflect::Object o(c->desc);
     g_stringCalls = 0;
-    // Read, written, compared: always through the DLL's own functions (its C runtime owns the memory).
+    // 読む、書く、比べる: いつも DLL 自身の関数を通す (メモリは DLL の C ランタイムのもの)。
     json::Value data = reflect::Save(c->desc, o.Get());
     CHECK(data.Get("note").AsString() == "hello" && g_stringCalls > 0);
     const int afterSave = g_stringCalls;
-    data.Set("note", std::string(100, 'x'));  // longer than the small-string buffer: a heap allocation
+    data.Set("note", std::string(100, 'x'));  // 小さい文字列用バッファより長い: ヒープに確保される
     reflect::Load(c->desc, o.Get(), data);
     CHECK(g_stringCalls > afterSave && static_cast<Counter*>(o.Get())->note == std::string(100, 'x'));
     reflect::Object copy(c->desc);
@@ -360,12 +361,12 @@ namespace {
 int g_deep = 0;
 #pragma optimize("", off)
 #pragma warning(push)
-#pragma warning(disable : 4717)  // (recursing for ever is what this is for)
+#pragma warning(disable : 4717)  // (無限に再帰するのがこの目的)
 int Deep(int n) {
     volatile char buf[4096];
     buf[0] = static_cast<char>(n);
     ++g_deep;
-    return Deep(n + 1) + buf[0];  // never returns: the stack runs out
+    return Deep(n + 1) + buf[0];  // 戻らない: スタックを使い切る
 }
 #pragma warning(pop)
 #pragma optimize("", on)
@@ -375,7 +376,8 @@ void OverflowTick(void*, RmEntityId, float) { Deep(0); }
 RM_TEST(Scripts_StackOverflowTwice_TheEditorGoesOn) {
     RmScriptDesc d = kScripts[1];
     d.tick = &OverflowTick;
-    // Twice: after the first, the stack's guard page must be back (or the second ends the program).
+    // 2 回: 1 回目のあと、スタックのガードページが元に戻っていなければ
+    // ならない (戻らないと 2 回目でプログラムが終わる)。
     CHECK(CallScriptHook(d, 1, nullptr, 1, 0) == EXCEPTION_STACK_OVERFLOW);
     CHECK(CallScriptHook(d, 1, nullptr, 1, 0) == EXCEPTION_STACK_OVERFLOW);
     CHECK(g_deep > 10);
@@ -393,27 +395,27 @@ RM_TEST(Scripts_BeginAndEndInPairs_WhenSwitchedOffAndOn) {
     r.Frame(s, w, m, {}, 0.1f);
     CHECK(g_log == "B1T1");
     g_log.clear();
-    s.Find(a)->data.active = false;  // switched off: EndPlay, no Tick
+    s.Find(a)->data.active = false;  // 切った: EndPlay は呼ぶ、Tick は呼ばない
     r.Frame(s, w, m, {}, 0.1f);
     CHECK(g_log == "E1");
     g_log.clear();
     r.Frame(s, w, m, {}, 0.1f);
     CHECK(g_log.empty());
-    s.Find(a)->data.active = true;  // on again: BeginPlay again, then Tick
+    s.Find(a)->data.active = true;  // また入れた: また BeginPlay、そのあと Tick
     r.Frame(s, w, m, {}, 0.1f);
-    CHECK(g_log == "B1!T1");  // (the same object: its ticks kept)
+    CHECK(g_log == "B1!T1");  // (同じオブジェクト: Tick の数は残る)
     g_log.clear();
-    // Stop: EndPlay of every started one, also one switched off just now; the world lets the scene go.
+    // Stop: 始まっていたもの全部の EndPlay (今切ったものも)。ワールドはシーンを手放す。
     s.Find(a)->data.active = false;
     r.Stop(s, w, m, {});
     CHECK(g_log == "E1" && w.scene == nullptr);
     g_log.clear();
     r.Stop(s, w, m, {});
-    CHECK(g_log.empty());  // nothing started: nothing ended
+    CHECK(g_log.empty());  // 何も始まっていない: 何も終わらない
 }
 
-// Game::LoadScene: asked during a frame, switched between frames - EndPlay of the scene playing, the
-// new one read, its BeginPlay at the next frame. The scene being edited (the copy plays) never changes.
+// Game::LoadScene: フレーム中に頼み、フレームの間で切り替える - 今のシーンの EndPlay、
+// 新しいシーンを読み、その BeginPlay は次のフレーム。編集中のシーン (動くのはコピー) は変わらない。
 RM_TEST(Scripts_LoadSceneBetweenFrames) {
     ScriptModule m;
     m.Adopt(kModule);
@@ -427,7 +429,7 @@ RM_TEST(Scripts_LoadSceneBetweenFrames) {
     stage.AddComponent(b, m.Find("test::Counter")->desc);
     const json::Value stageFile = stage.Save();
 
-    Scene playing = edited;  // (Play: the copy plays)
+    Scene playing = edited;  // (Play: 動くのはコピー)
     ScriptWorld w;
     std::string warned;
     w.log = [&](int level, std::string_view text) {
@@ -453,29 +455,29 @@ RM_TEST(Scripts_LoadSceneBetweenFrames) {
     g_log.clear();
     r.Frame(playing, w, m, order, 0.1f);
     CHECK(g_log == "B1T1");
-    // Nothing asked: nothing switched.
+    // 何も頼んでいない: 何も切り替わらない。
     CHECK(SwitchAskedScene(playing, w, r, m, order, load, &err) == SceneSwitch::None && loaded.empty());
-    // A name not in the list: refused (told), nothing asked.
+    // 一覧にない名前: 断る (知らせる)、何も頼まれない。
     CHECK(core.loadScene(api.ctx, "Nowhere") == 0 && warned.find("Nowhere") != std::string::npos && w.sceneAsked == -1);
     CHECK(core.loadSceneAt(api.ctx, 5) == 0 && w.sceneAsked == -1);
-    // Asked during the frame (as a script's Tick would): the frame ends, then the switch.
+    // フレーム中に頼む (スクリプトの Tick がするように): フレームが終わってから切り替わる。
     char name[16];
     CHECK(core.sceneName(api.ctx, name, sizeof(name)) == 5 && std::string(name) == "Title" && core.sceneIndex(api.ctx) == 0 && core.sceneCount(api.ctx) == 2);
     CHECK(core.loadScene(api.ctx, "Stage") == 1 && w.sceneAsked == 1);
     g_log.clear();
     CHECK(SwitchAskedScene(playing, w, r, m, order, load, &err) == SceneSwitch::Switched);
-    CHECK(g_log == "E1");  // the old scene's EndPlay; the new one's scripts not started yet
+    CHECK(g_log == "E1");  // 古いシーンの EndPlay。新しいシーンのスクリプトはまだ始まっていない
     CHECK(w.sceneIndex == 1 && w.sceneAsked == -1 && w.scene == &playing && playing.Find(b) && playing.Find(b)->data.name == "ステージ");
     CHECK(core.sceneName(api.ctx, name, sizeof(name)) == 5 && std::string(name) == "Stage");
     g_log.clear();
     r.Frame(playing, w, m, order, 0.1f);
-    CHECK(g_log == "B2T2");  // BeginPlay before the first Tick, in the new scene
-    // A scene that cannot be read: the one playing goes on (no EndPlay).
+    CHECK(g_log == "B2T2");  // 新しいシーンで、最初の Tick より先に BeginPlay
+    // 読めないシーン: 動いているシーンは続く (EndPlay はない)。
     CHECK(core.loadSceneAt(api.ctx, 0) == 1);
     g_log.clear();
     CHECK(SwitchAskedScene(playing, w, r, m, order, load, &err) == SceneSwitch::Failed && err == "読めません");
     CHECK(g_log.empty() && w.sceneIndex == 1 && w.sceneAsked == -1 && playing.Find(b));
-    // Stopped (■): the copy goes; the scene being edited is as it was.
+    // 停止 (■): コピーは消え、編集中のシーンはそのまま。
     r.Stop(playing, w, m, order);
     CHECK(g_log == "E2");
     CHECK(edited.Save() == editedBefore);

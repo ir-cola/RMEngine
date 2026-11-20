@@ -1,6 +1,6 @@
-// Tests for the particle plugin (plugins/rm_engine/particles): reading a module (.rmfx), putting an
-// emitter's shaders together from its modules, and that what is put together compiles (D3DCompile:
-// no GPU needed).
+// パーティクルのプラグイン (plugins/rm_engine/particles) のテスト: モジュール (.rmfx) を読む、
+// エミッターのシェーダーをモジュールから組み立てる、組み立てたものがコンパイルできる
+// (D3DCompile: GPU は要らない)。
 
 #include "Test.h"
 
@@ -35,7 +35,7 @@ using namespace rm::particles;
 
 namespace {
 
-// Compiles one entry of the text; the compiler's words on failure.
+// テキストのエントリーを 1 つコンパイルする。失敗したらコンパイラーの言葉を返す。
 std::string Compile(const std::string& hlsl, const char* entry, const char* target) {
     Microsoft::WRL::ComPtr<ID3DBlob> code, errors;
     const HRESULT hr = D3DCompile(hlsl.data(), hlsl.size(), "particles", nullptr, nullptr, entry, target, D3DCOMPILE_ENABLE_STRICTNESS, 0, &code, &errors);
@@ -71,19 +71,19 @@ RM_TEST(Particles_ModuleSource_ReadsParamsAttrsAndFunctions) {
     const ModuleParam* d = FindParam(m, "direction");
     CHECK(d && d->type == ParamType::Float3 && d->value[0] == 1 && d->value[1] == 0 && d->value[2] == -2);
     const ModuleParam* t = FindParam(m, "tint");
-    CHECK(t && t->type == ParamType::Color && t->value[3] == 1);  // a colour without a value: white
+    CHECK(t && t->type == ParamType::Color && t->value[3] == 1);  // 値の無い色: 白
     const ModuleParam* r = FindParam(m, "range");
-    CHECK(r && r->value[0] == 3 && r->value[1] == 3);             // one value for all
+    CHECK(r && r->value[0] == 3 && r->value[1] == 3);             // 全部に同じ値
     CHECK(FindParam(m, "on") && FindParam(m, "on")->value[0] == 1);
     CHECK(m.attrs[0].name == "heat" && m.attrs[0].type == "float" && m.attrs[0].line == 7);
     CHECK(!m.hasSpawn && m.hasUpdate);
-    // The engine's lines are empty in the code: the compiler's line numbers are the file's.
+    // エンジンの行はコードの中では空: コンパイラーの行番号はファイルのものと同じ。
     size_t lines = 0;
     for (const char c : m.code) lines += c == '\n';
     CHECK(lines == 10 && m.code.find("param") == std::string::npos && m.code.find("p.velocity") != std::string::npos);
 }
 
-// A function only in a comment is not there (the new module's "// void Spawn(...) { }").
+// コメントの中だけにある関数は無いものとする (新しいモジュールの "// void Spawn(...) { }")。
 RM_TEST(Particles_ModuleSource_CommentsAreNotFunctions) {
     const ModuleSource m = ParseModule(
         "module \"x\"\n"
@@ -107,7 +107,7 @@ RM_TEST(Particles_ModuleSource_SaysWhatIsWrong) {
     CHECK(kinds.size() == 6);
     CHECK(kinds.size() == 6 && kinds[0] == ModuleErrorKind::UnknownType && m.errors[0].line == 1);
     CHECK(kinds.size() == 6 && kinds[1] == ModuleErrorKind::BadName && kinds[2] == ModuleErrorKind::BadValue && kinds[3] == ModuleErrorKind::BadLine);
-    CHECK(kinds.size() == 6 && kinds[4] == ModuleErrorKind::BadValue);  // ("1; param float e = 2" is not a value)
+    CHECK(kinds.size() == 6 && kinds[4] == ModuleErrorKind::BadValue);  // ("1; param float e = 2" は値ではない)
     CHECK(kinds.size() == 6 && kinds[5] == ModuleErrorKind::NoFunction && m.errors[5].line == 0);
     CHECK(!Message(m.errors[0]).empty());
 }
@@ -118,13 +118,13 @@ RM_TEST(Particles_Builtins_ReadWithoutErrors) {
         const ModuleSource* m = FindBuiltin(b.id);
         CHECK(m && m->errors.empty() && !m->title.empty());
         if (!m) continue;
-        for (const ModuleParam& p : m->params) CHECK(!p.label.empty());  // every field has its words
+        for (const ModuleParam& p : m->params) CHECK(!p.label.empty());  // どの欄にも言葉がある
     }
     CHECK(FindBuiltin("no_such_module") == nullptr);
 }
 
 RM_TEST(Particles_Shader_PutTogetherAndCompiles) {
-    // Every built-in module at once, then the new effect's emitter: all three kinds of shader compile.
+    // 組み込みのモジュールを全部まとめて、その後で新しいエフェクトのエミッター: 3 種類のシェーダーが全部コンパイルできる。
     ParticleEmitter all;
     for (const BuiltinModule& b : BuiltinModules()) {
         ParticleModule m;
@@ -153,20 +153,20 @@ RM_TEST(Particles_Shader_ParamsAttrsAndErrorsByFile) {
     const std::vector<ModuleInput> in{{&a, "A.rmfx", values}, {&b, "B.rmfx", {}}};
     const EmitterShader s = AssembleShader(in);
     CHECK(s.errors.empty());
-    CHECK(s.stride == 96 + 4 + 12);  // heat once (both have it), wind
+    CHECK(s.stride == 96 + 4 + 12);  // heat は 1 回 (両方が持つ)、wind
     CHECK(s.paramSlots == 3);
-    // Two params named speed: one per module's namespace.
+    // speed という名前の param が 2 つ: モジュールごとの名前空間で 1 つずつ。
     CHECK(s.hlsl.find("M0::speed = P[0].x") != std::string::npos && s.hlsl.find("M1::speed = P[2].x") != std::string::npos);
     CHECK(Compile(s.hlsl, "UpdateMain", "cs_5_0").empty() && Compile(s.hlsl, "SpawnMain", "cs_5_0").empty());
-    // The values: given (9), the default (red; 5); a value of a param no longer there is not used.
+    // 値: 渡したもの (9)、既定 (赤; 5)。もう無い param の値は使わない。
     const std::vector<float> p = PackParams(in);
     CHECK(p.size() == 12 && p[0] == 9 && p[4] == 1 && p[5] == 0 && p[7] == 1 && p[8] == 5);
-    // A mistake in a module's code: the compiler names its file and its line.
+    // モジュールのコードの間違い: コンパイラーがそのファイルと行を示す。
     const ModuleSource bad = ParseModule("param float x = 1;\n\nvoid Update(inout Particle p, float dt, inout Random rnd) {\n    p.nothing = x;\n}\n");
     const std::vector<ModuleInput> badIn{{&bad, "Bad.rmfx", {}}};
     const std::string err = Compile(AssembleShader(badIn).hlsl, "UpdateMain", "cs_5_0");
     CHECK(err.find("Bad.rmfx(4") != std::string::npos);
-    // The same attr with two types: said, with the line.
+    // 同じ attr が 2 つの型で: 行を添えて知らせる。
     const ModuleSource c = ParseModule("attr float3 heat;\nvoid Update(inout Particle p, float dt, inout Random rnd) {}\n");
     const std::vector<ModuleInput> clash{{&a, "A.rmfx", {}}, {&c, "C.rmfx", {}}};
     const EmitterShader cs = AssembleShader(clash);
@@ -193,22 +193,22 @@ RM_TEST(Particles_Clock_RateBurstDurationLoop) {
     e.loop = false;
     e.capacity = 100;
     EmitterClock c;
-    CHECK(AdvanceClock(c, e, 0) == 5);       // the burst at once
-    CHECK(AdvanceClock(c, e, 0.25f) == 2);   // 2.5 owed: 2 now ...
-    CHECK(AdvanceClock(c, e, 0.25f) == 3);   // ... and the half later
-    CHECK(AdvanceClock(c, e, 1.0f) == 5 && c.finished);  // to the end of the round, then nothing
+    CHECK(AdvanceClock(c, e, 0) == 5);       // バーストは一度に
+    CHECK(AdvanceClock(c, e, 0.25f) == 2);   // 2.5 個の借り: 今 2 個 ...
+    CHECK(AdvanceClock(c, e, 0.25f) == 3);   // ... 半分は後で
+    CHECK(AdvanceClock(c, e, 1.0f) == 5 && c.finished);  // ラウンドの終わりまで。その後は何も出ない
     CHECK(AdvanceClock(c, e, 1.0f) == 0);
-    // Looping: each round starts with its burst again; a long frame runs through rounds.
+    // ループ: ラウンドごとにまたバーストから始まる。長いフレームは複数のラウンドを通り抜ける。
     e.loop = true;
     EmitterClock l;
     CHECK(AdvanceClock(l, e, 0) == 5);
     CHECK(AdvanceClock(l, e, 2.5f) == 25 + 10 && !l.finished && l.age > 0.49f && l.age < 0.51f);
-    // Never more than the capacity at once.
+    // 同時に容量より多くはならない。
     e.capacity = 7;
     EmitterClock m;
     CHECK(AdvanceClock(m, e, 10) == 7);
-    // 長さ made shorter than the time already played (an edit while it plays): the round ends now -
-    // never a negative count (it was read as about 4 billion particles).
+    // 長さ をもう再生した時間より短くした (再生中の編集): ラウンドは今終わる。
+    // 数は負にならない (以前は約 40 億個のパーティクルとして読まれた)。
     e.capacity = 100;
     e.loop = false;
     EmitterClock s;
@@ -223,7 +223,7 @@ RM_TEST(Particles_Clock_RateBurstDurationLoop) {
     AdvanceClock(t, e, 0.8f);
     e.duration = 0.2f;
     const uint32_t looped = AdvanceClock(t, e, 0.1f);
-    CHECK(looped >= 5 && looped <= 7 && !t.finished);  // (the next round: its burst, then a frame of rate)
+    CHECK(looped >= 5 && looped <= 7 && !t.finished);  // (次のラウンド: そのバースト、その後にレートのフレーム)
 }
 
 RM_TEST(Particles_EffectFile_KeepsWhatItDoesNotKnow) {
@@ -242,7 +242,7 @@ RM_TEST(Particles_EffectFile_KeepsWhatItDoesNotKnow) {
 }
 
 RM_TEST(Particles_Export_TakesTheModulesAnEffectNames) {
-    // A scene names an effect; the effect names a module of a file: both go into the game.
+    // シーンがエフェクトを指し、エフェクトがファイルのモジュールを指す: 両方ともゲームに入る。
     namespace fs = std::filesystem;
     const fs::path root = fs::temp_directory_path() / "rm_particles_export_test";
     std::error_code ec;
@@ -270,7 +270,7 @@ RM_TEST(Particles_Export_TakesTheModulesAnEffectNames) {
 }
 
 RM_TEST(Particles_Physics_CollidersBecomeShapes) {
-    // A box turned and scaled, a sphere, a trigger (left out) and a mesh (left out): shapes in the world.
+    // 回転して拡大した箱、球、トリガー (除く)、メッシュ (除く): 世界の中の形。
     game_production::Scene scene;
     scene.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<physics::Collider>()});
     auto add = [&](const char* name, Vec3 pos, Vec3 scale, physics::Shape shape, bool trigger) {
@@ -295,7 +295,7 @@ RM_TEST(Particles_Physics_CollidersBecomeShapes) {
         const auto* t = static_cast<const space3d::Transform*>(e.FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get());
         worlds[e.data.id] = space3d::WorldMatrix(space3d::Mat4{}, *t);
     }
-    // What rain and snow hit (天候 × 物理): the same colliders as the renderer's simple shapes.
+    // 雨と雪が当たるもの (天候 × 物理): レンダラーの単純な形と同じコライダー。
     {
         using weather::WeatherBlocker;
         const int capsule = add("カプセル", {0, 5, 0}, {1, 1, 1}, physics::Shape::Capsule, false);
@@ -305,13 +305,13 @@ RM_TEST(Particles_Physics_CollidersBecomeShapes) {
         worlds[capsule] = space3d::WorldMatrix(space3d::Mat4{}, space3d::Transform{{0, 5, 0}, {0, 0, 0}, {1, 1, 1}});
         std::vector<WeatherBlocker> blocks;
         weather_x_physics::GatherBlockers(scene, [&](int id) -> const space3d::Mat4* { return worlds.count(id) ? &worlds[id] : nullptr; }, blocks);
-        // 箱, 球, (トリガー: no), メッシュ, カプセル (a cylinder and two balls).
+        // 箱, 球, (トリガー: 無し), メッシュ, カプセル (円柱 1 つと球 2 つ)。
         CHECK(blocks.size() == 6);
         if (blocks.size() == 6) {
-            CHECK(blocks[0].kind == WeatherBlocker::Kind::Box && blocks[0].world.m[0][0] == 2 && blocks[0].world.m[3][1] == 2);  // 1 x scale 2 wide
-            CHECK(blocks[1].kind == WeatherBlocker::Kind::Sphere && blocks[1].world.m[1][1] == 3);  // radius 0.5 x 3: 3 across
+            CHECK(blocks[0].kind == WeatherBlocker::Kind::Box && blocks[0].world.m[0][0] == 2 && blocks[0].world.m[3][1] == 2);  // 1 x 拡大 2 で幅 2
+            CHECK(blocks[1].kind == WeatherBlocker::Kind::Sphere && blocks[1].world.m[1][1] == 3);  // 半径 0.5 x 3: 幅 3
             CHECK(blocks[2].kind == WeatherBlocker::Kind::Model && blocks[2].entity == scene.Entities()[3].data.id);
-            CHECK(blocks[3].kind == WeatherBlocker::Kind::Cylinder && blocks[3].world.m[1][1] == 2 && blocks[3].world.m[0][0] == 1);  // 3 - the two ends
+            CHECK(blocks[3].kind == WeatherBlocker::Kind::Cylinder && blocks[3].world.m[1][1] == 2 && blocks[3].world.m[0][0] == 1);  // 3 - 両端
             CHECK(blocks[4].kind == WeatherBlocker::Kind::Sphere && blocks[4].world.m[3][1] == 6 && blocks[5].world.m[3][1] == 4);
         }
         const int gone[] = {capsule};
@@ -323,17 +323,17 @@ RM_TEST(Particles_Physics_CollidersBecomeShapes) {
     CHECK(shapes.size() == 2);
     if (shapes.size() != 2) return;
     CHECK(shapes[0].type == CollisionType::Box && shapes[0].center[0] == 1 && shapes[0].center[1] == 2 && shapes[0].center[2] == 3);
-    CHECK(shapes[0].sizeX == 1 && shapes[0].sizeY == 0.5f && shapes[0].sizeZ == 0.5f);  // half of 1 x scale
-    CHECK(shapes[0].axisX[0] == 1 && shapes[0].axisY[1] == 1 && shapes[0].axisZ[2] == 1);  // the axes stay unit
-    CHECK(shapes[1].type == CollisionType::Sphere && shapes[1].sizeX == 1.5f);  // 0.5 x the largest scale
-    // Switched off (no place): nothing.
+    CHECK(shapes[0].sizeX == 1 && shapes[0].sizeY == 0.5f && shapes[0].sizeZ == 0.5f);  // 1 x 拡大の半分
+    CHECK(shapes[0].axisX[0] == 1 && shapes[0].axisY[1] == 1 && shapes[0].axisZ[2] == 1);  // 軸は単位の長さのまま
+    CHECK(shapes[1].type == CollisionType::Sphere && shapes[1].sizeX == 1.5f);  // 0.5 x 一番大きい拡大
+    // 切ってある (場所が無い): 何もない。
     std::vector<CollisionShape> none;
     particles_x_physics::GatherShapes(scene, [](int) -> const space3d::Mat4* { return nullptr; }, none);
     CHECK(none.empty());
 }
 
 RM_TEST(Particles_Shader_CollisionTrailsAndStretchCompile) {
-    // The 当たる modules with a trail: the kernels and both kinds of drawing compile.
+    // 軌跡のある 当たる モジュール: カーネルと 2 種類の描画がコンパイルできる。
     ParticleEmitter e = NewEffect().emitters[0];
     ParticleModule shapes, depth;
     shapes.builtin = "collide_shapes";
@@ -352,8 +352,8 @@ RM_TEST(Particles_Shader_CollisionTrailsAndStretchCompile) {
 }
 
 RM_TEST(Particles_Presets_UseModulesThatExistAndCompile) {
-    // Every preset: built-in modules only, every value names a param of its module, and its emitters'
-    // shaders compile (all six entries); it saves and loads as it is.
+    // プリセットはすべて: 組み込みモジュールだけ、どの値もモジュールの param の名前、
+    // エミッターのシェーダーがコンパイルできる (6 エントリー全部)。保存して、そのまま読める。
     CHECK(EffectPresets().size() >= 8 && EffectPresets()[0].id == "glow");
     for (const EffectPreset& p : EffectPresets()) {
         const ParticleEffect e = p.make();

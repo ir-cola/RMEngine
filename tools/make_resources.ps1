@@ -1,7 +1,7 @@
-# Generates resources/app.ico and resources/logo_hub.png from the artwork in the repository root.
-#   RM_Engine_icon.png -> resources/app.ico      (16..256 px, PNG frames)
-#   RM_Engine_logo.png -> resources/logo_hub.png (cropped to the opaque area, 960 px wide)
-# Run with Windows PowerShell:  powershell -NoProfile -ExecutionPolicy Bypass -File tools\make_resources.ps1
+﻿# リポジトリのルートの絵から resources/app.ico と resources/logo_hub.png を作る。
+#   RM_Engine_icon.png -> resources/app.ico      (16..256 px、PNG のフレーム)
+#   RM_Engine_logo.png -> resources/logo_hub.png (透明でない範囲に切り抜く、幅 960 px)
+# Windows PowerShell で走らせる:  powershell -NoProfile -ExecutionPolicy Bypass -File tools\make_resources.ps1
 param([string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path)
 
 $ErrorActionPreference = 'Stop'
@@ -51,7 +51,7 @@ function Resize-Image([System.Drawing.Image]$img, [System.Drawing.Rectangle]$src
 $outDir = Join-Path $Root 'resources'
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
-# --- Hub logo -------------------------------------------------------------
+# --- Hub のロゴ -------------------------------------------------------------
 $logo = New-Object System.Drawing.Bitmap (Join-Path $Root 'RM_Engine_logo.png')
 $b = [RmImg]::OpaqueBounds($logo, 8)
 $pad = 8
@@ -64,7 +64,7 @@ $logoOut.Save((Join-Path $outDir 'logo_hub.png'), [System.Drawing.Imaging.ImageF
 $logoOut.Dispose(); $logo.Dispose()
 Write-Host "logo_hub.png  crop=$crop  size=${lw}x${lh}"
 
-# --- App icon (PNG frames inside an .ico) ---------------------------------
+# --- アプリのアイコン (.ico の中の PNG フレーム) ---------------------------------
 $icon = New-Object System.Drawing.Bitmap (Join-Path $Root 'RM_Engine_icon.png')
 $full = New-Object System.Drawing.Rectangle 0, 0, $icon.Width, $icon.Height
 $sizes = @(16, 20, 24, 32, 40, 48, 64, 128, 256)

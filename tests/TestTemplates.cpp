@@ -1,6 +1,6 @@
-// Tests for the project templates (editor/project/Templates): reading template.json, the tree, what
-// a node needs installed, the new project's .rmpf and Layout.json, the "ソフトで絞る" groups - and the
-// templates shipped in plugins/ (readable, their first scenes load without a warning).
+// プロジェクトのテンプレート (editor/project/Templates) のテスト: template.json を読む、木、
+// ノードに必要なインストール、新しいプロジェクトの .rmpf と Layout.json、"ソフトで絞る" の
+// グループ - と、plugins/ に入っているテンプレート (読める、最初のシーンが警告なしで読める)。
 
 #include "Test.h"
 
@@ -43,7 +43,7 @@ PluginManifest Manifest(const char* name, std::vector<PluginId> requirements = {
     return m;
 }
 
-// game_production needs a connector; one for 3D and one for 2D; a theme pack nobody needs.
+// game_production にはコネクターが要る。3D 用と 2D 用に 1 つずつ。誰も要らないテーマパック。
 std::vector<PluginManifest> World() {
     PluginManifest game = Manifest("game_production");
     game.needsConnector = true;
@@ -99,22 +99,22 @@ RM_TEST(Template_Parse) {
     if (t) {
         CHECK(t->id == "game_3d" && t->name == "3D のゲーム" && t->description == "説明" && t->order == 2);
         CHECK((t->path == std::vector<std::string>{"game", "3d"}));
-        // Its own plugin first, then the others, each once.
+        // そのプラグイン自身が先、次にほか。それぞれ 1 回ずつ。
         CHECK((t->plugins == std::vector<PluginId>{Id("game_x_3d"), Id("space3d")}));
         CHECK(t->open.Get("software").AsString() == "game");
         CHECK(t->project.IsObject() && t->userSettings.IsObject());
     }
-    // Only kind / format / id / path / name are needed.
+    // 必要なのは kind / format / id / path / name だけ。
     const json::Value small = Parse(R"({"kind": "rm_engine.template", "format": 1, "id": "a", "path": ["a"], "name": "A"})");
     auto s = ParseTemplate(small, Id("game_production"), &err);
     CHECK(s.has_value() && s->open.IsNull() && s->project.IsNull() && s->plugins.size() == 1);
 
     for (const char* bad : {
              R"({"kind": "other", "format": 1, "id": "a", "path": ["a"], "name": "A"})",
-             R"({"kind": "rm_engine.template", "format": 2, "id": "a", "path": ["a"], "name": "A"})",       // newer
+             R"({"kind": "rm_engine.template", "format": 2, "id": "a", "path": ["a"], "name": "A"})",       // 新しい
              R"({"kind": "rm_engine.template", "format": 1, "id": "A b", "path": ["a"], "name": "A"})",     // id
              R"({"kind": "rm_engine.template", "format": 1, "id": "a", "path": [], "name": "A"})",          // path
-             R"({"kind": "rm_engine.template", "format": 1, "id": "a", "path": ["3D"], "name": "A"})",      // part
+             R"({"kind": "rm_engine.template", "format": 1, "id": "a", "path": ["3D"], "name": "A"})",      // 部分
              R"({"kind": "rm_engine.template", "format": 1, "id": "a", "path": ["game", "_x"], "name": "A"})",
              R"({"kind": "rm_engine.template", "format": 1, "id": "a__b", "path": ["a"], "name": "A"})",
              R"({"kind": "rm_engine.template", "format": 1, "id": "a", "path": "a", "name": "A"})",
@@ -131,25 +131,25 @@ RM_TEST(Template_Parse) {
 
 RM_TEST(TemplateTree_OrderAndBranches) {
     std::vector<ProjectTemplate> list = GameTemplates();
-    list.push_back(Make("music_daw", "daw", {"music", "daw"}, {}, 5));  // "music" has no template of its own
+    list.push_back(Make("music_daw", "daw", {"music", "daw"}, {}, 5));  // "music" 自身のテンプレートはない
     const TemplateTree tree = BuildTemplateTree(std::move(list));
     CHECK(tree.warnings.empty());
     std::vector<std::string> labels;
     for (size_t i = 0; i < tree.nodes.size(); ++i) labels.push_back(tree.Label(i));
-    // Parents before children; siblings by order (白紙 first), the 3D branch with what is below it before 2D.
+    // 親が子より先。兄弟は order 順 (白紙が先)。3D の枝は、その下にあるものと一緒に 2D より先。
     CHECK((labels == std::vector<std::string>{"白紙", "game", "game_3d", "stg", "game_2d", "music", "daw"}));
     const size_t game = tree.Find({"game"}), x3d = tree.Find({"game", "3d"}), stg = tree.Find({"game", "3d", "stg"});
     CHECK(tree.nodes[stg].parent == x3d && tree.nodes[x3d].parent == game && tree.nodes[game].parent == static_cast<size_t>(-1));
     CHECK(tree.nodes[stg].depth == 2);
     const size_t music = tree.Find({"music"});
-    CHECK(music != static_cast<size_t>(-1) && tree.At(music) == nullptr);  // a branch only: its id is shown
+    CHECK(music != static_cast<size_t>(-1) && tree.At(music) == nullptr);  // 枝だけ: その id を表示する
     CHECK(tree.Find({"nothing"}) == static_cast<size_t>(-1));
 }
 
 RM_TEST(TemplateTree_TwoAtOnePlace) {
     std::vector<ProjectTemplate> list = GameTemplates();
-    list.push_back(Make("other_game", "game_3d_too", {"game", "3d"}));  // same place: the first stays
-    list.push_back(Make("game_x_3d", "game_3d", {"game", "3d_again"}));  // same plugin, same id
+    list.push_back(Make("other_game", "game_3d_too", {"game", "3d"}));  // 同じ場所: 最初のものが残る
+    list.push_back(Make("game_x_3d", "game_3d", {"game", "3d_again"}));  // 同じプラグイン、同じ id
     const TemplateTree tree = BuildTemplateTree(std::move(list));
     CHECK(tree.warnings.size() == 2);
     CHECK(tree.At(tree.Find({"game", "3d"}))->plugin == Id("game_x_3d"));
@@ -158,11 +158,11 @@ RM_TEST(TemplateTree_TwoAtOnePlace) {
 
 RM_TEST(TemplateTree_PluginsOfANode) {
     const TemplateTree tree = BuildTemplateTree(GameTemplates());
-    // Its own template and everything below it (design 09-29: "ゲーム" brings both 3D and 2D).
+    // そのテンプレートと、その下のすべて (設計 09-29: "ゲーム" は 3D と 2D の両方を持ってくる)。
     const auto game = TemplatePlugins(tree, tree.Find({"game"}));
     for (const char* n : {"game_production", "game_x_3d", "space3d", "stg_kit", "game_x_2d", "space2d"}) CHECK(Has(game, n));
     CHECK(game.size() == 6 && game.front() == Id("game_production"));
-    // A middle branch: what is below it only (no 2D).
+    // 途中の枝: その下だけ (2D は含まない)。
     const auto x3d = TemplatePlugins(tree, tree.Find({"game", "3d"}));
     CHECK(Has(x3d, "stg_kit") && Has(x3d, "space3d") && !Has(x3d, "space2d") && !Has(x3d, "game_x_2d"));
     const auto x2d = TemplatePlugins(tree, tree.Find({"game", "2d"}));
@@ -173,28 +173,28 @@ RM_TEST(TemplateTree_PluginsOfANode) {
 
 RM_TEST(TemplateTree_InstallPlan) {
     const auto world = World();
-    // Nothing installed: the 2D game needs game production, 2D 空間 and its connector (not 3D).
+    // 何も入っていない: 2D のゲームにはゲーム制作、2D 空間、そのコネクターが要る (3D は要らない)。
     std::vector<PluginId> unavailable;
     const auto all2d = TemplateInstallPlan({Id("game_x_2d"), Id("game_production"), Id("space2d")}, world, {}, &unavailable);
     CHECK(unavailable.empty());
     CHECK(Has(all2d, "game_production") && Has(all2d, "space2d") && Has(all2d, "game_x_2d"));
-    CHECK(!Has(all2d, "space3d") && !Has(all2d, "game_x_3d"));  // not the first connector this engine has
-    // Game production alone: it brings the first connector (and its space), as installing it does.
+    CHECK(!Has(all2d, "space3d") && !Has(all2d, "game_x_3d"));  // このエンジンの最初のコネクターではない
+    // ゲーム制作だけ: 最初のコネクター (とその空間) を持ってくる。インストールしたときと同じ。
     const auto alone = TemplateInstallPlan({Id("game_production")}, world, {}, nullptr);
     CHECK(Has(alone, "game_x_3d") && Has(alone, "space3d"));
-    // Requirements before the ones needing them, each once.
+    // 必要なものを、それを要るものより先に。それぞれ 1 回ずつ。
     auto at = [&](const std::vector<PluginId>& v, const char* n) { return std::find(v.begin(), v.end(), Id(n)) - v.begin(); };
     CHECK(at(all2d, "space2d") < at(all2d, "game_x_2d") && at(all2d, "game_production") < at(all2d, "game_x_2d"));
     for (const PluginId& id : all2d) CHECK(std::count(all2d.begin(), all2d.end(), id) == 1);
-    // The 3D side installed: the 2D game brings only the 2D side.
+    // 3D 側が入っている: 2D のゲームは 2D 側だけを持ってくる。
     const std::vector<PluginId> ready{Id("game_production"), Id("space3d"), Id("game_x_3d")};
     const auto more = TemplateInstallPlan({Id("game_x_2d"), Id("game_production"), Id("space2d")}, world, ready, nullptr);
     CHECK((more == std::vector<PluginId>{Id("space2d"), Id("game_x_2d")}));
-    // Everything there: nothing to copy.
+    // 全部ある: コピーするものはない。
     std::vector<PluginId> everything;
     for (const auto& m : world) everything.push_back(m.id);
     CHECK(TemplateInstallPlan({Id("game_x_2d"), Id("game_production")}, world, everything, nullptr).empty());
-    // A plugin this engine does not have.
+    // このエンジンにないプラグイン。
     TemplateInstallPlan({Id("stg_kit"), Id("space3d")}, world, {}, &unavailable);
     CHECK((unavailable == std::vector<PluginId>{Id("stg_kit")}));
 }
@@ -211,16 +211,16 @@ RM_TEST(Template_NewProjectFile) {
                           {"author": "rm_engine", "plugin": "game_production", "software": "other", "data": {}} ],
         "extra": 5 })");
     ApplyTemplate(doc, t);
-    // The core's keys are the core's.
+    // 核のキーは核のもの。
     CHECK(doc.Get("name").AsString() == "MyGame" && doc.Get("kind").AsString() == kProjectKind);
     CHECK(doc.Get("template").Get("author").AsString() == "rm_engine" && doc.Get("template").Get("plugin").AsString() == "game_x_3d" &&
           doc.Get("template").Get("id").AsString() == "game_3d");
     CHECK(doc.Get("extra").AsInt() == 5 && doc.Get("softwareData").Items().size() == 2);
-    // The plugin whose data is there is recorded (once), as saving would record it.
+    // データがあるプラグインは (1 回だけ) 記録する。保存するときと同じ。
     const auto used = ParsePluginIdList(doc.Get("plugins"), nullptr);
     CHECK(used && (*used == std::vector<PluginId>{Id("game_production")}));
 
-    // 白紙: only the record.
+    // 白紙: 記録だけ。
     json::Value blank = json::Value::MakeObject();
     blank.Set("plugins", json::Value::MakeArray());
     ApplyTemplate(blank, BlankTemplate());
@@ -238,9 +238,9 @@ RM_TEST(Template_FirstLayout) {
     const json::Value l = TemplateLayout(t);
     CHECK(l.Get("kind").AsString() == kLayoutKind && l.Get("formatVersion").AsInt() == kLayoutFormatVersion);
     CHECK(l.Get("active").Get("software").AsString() == "game" && l.Get("active").Get("plugin").AsString() == "game_production");
-    // One entry per software (the first).
+    // ソフトごとに 1 件 (最初のもの)。
     CHECK(l.Get("softwares").Items().size() == 1 && l.Get("softwares").Items()[0].Get("view").Get("a").AsInt() == 1);
-    // Only the software to open.
+    // 開くソフトだけ。
     t.userSettings = {};
     const json::Value o = TemplateLayout(t);
     CHECK(o.Get("active").IsObject() && !o.Find("softwares"));
@@ -249,7 +249,7 @@ RM_TEST(Template_FirstLayout) {
 RM_TEST(Template_SoftwareGroups) {
     auto world = World();
     PluginManifest paint = Manifest("paint_brushes");
-    paint.softwares = {"illust"};  // no template needs it: it says which software it is for
+    paint.softwares = {"illust"};  // どのテンプレートも要らない: どのソフトのものかを示す
     world.push_back(paint);
     PluginManifest ui = Manifest("game_ui_kit", {Id("game_production")});
     ui.softwares = {"game"};
@@ -258,14 +258,14 @@ RM_TEST(Template_SoftwareGroups) {
                                       Make("game_x_3d", "game_3d", {"game", "3d"}, {Id("space3d")}),
                                       Make("game_x_2d", "game_2d", {"game", "2d"}, {Id("space2d")})};
     const auto groups = GroupPluginsBySoftware(BuildTemplateTree(std::move(list)), world);
-    CHECK(groups.size() == 2);  // 白紙 needs nothing: not a software
+    CHECK(groups.size() == 2);  // 白紙は何も要らない: ソフトではない
     CHECK(groups[0].id == "game" && groups[0].name == "game");
     for (const char* n : {"game_production", "space3d", "space2d", "game_x_3d", "game_x_2d", "game_ui_kit"}) CHECK(Has(groups[0].plugins, n));
     CHECK(!Has(groups[0].plugins, "theme_colors") && !Has(groups[0].plugins, "paint_brushes"));
     CHECK(groups[1].id == "illust" && groups[1].name == "illust" && (groups[1].plugins == std::vector<PluginId>{Id("paint_brushes")}));
 
-    // A connector no template needs: in the software of everything it joins (a connector of a connector
-    // too, listed before it). Joining two softwares' plugins: in neither.
+    // どのテンプレートも要らないコネクター: つながるものすべてのソフトに入る (コネクターのコネクター
+    // も、その前に並べる)。2 つのソフトのプラグインをつなぐもの: どちらにも入らない。
     PluginManifest sparks = Manifest("sparks");
     sparks.softwares = {"game"};
     PluginManifest sparksX = Manifest("sparks_x_physics", {Id("game_x_sparks"), Id("game_production"), Id("sparks")});
@@ -281,7 +281,7 @@ RM_TEST(Template_SoftwareGroups) {
     for (const char* n : {"sparks", "game_x_sparks", "sparks_x_physics"}) CHECK(Has(joined[0].plugins, n));
     CHECK(!Has(joined[0].plugins, "paint_x_sparks") && !Has(joined[1].plugins, "paint_x_sparks"));
 
-    // plugin.json's "software": an array of ids.
+    // plugin.json の "software": id の配列。
     std::string err;
     auto m = ParsePluginManifest(Parse(R"({"author": "rm_engine", "name": "paint_brushes", "software": ["illust", "game"]})"), &err);
     CHECK(m && (m->softwares == std::vector<std::string>{"illust", "game"}));
@@ -289,7 +289,7 @@ RM_TEST(Template_SoftwareGroups) {
     CHECK(!ParsePluginManifest(Parse(R"({"author": "rm_engine", "name": "paint_brushes", "software": [1]})"), &err));
 }
 
-// The templates in this repository: readable, at their places, and their first data loads as it is.
+// このリポジトリのテンプレート: 読める、所定の場所にある、最初のデータがそのまま読める。
 RM_TEST(Template_ThePlugins) {
     namespace fs = std::filesystem;
     const fs::path plugins = fs::path(__FILE__).parent_path().parent_path() / "plugins";
@@ -308,7 +308,7 @@ RM_TEST(Template_ThePlugins) {
         auto t = ParseTemplate(*doc, owner, &err);
         CHECK(t.has_value());
         if (!t) continue;
-        // The plugins it names are in this repository.
+        // 名指しされるプラグインは、このリポジトリにある。
         for (const PluginId& id : t->plugins) CHECK(fs::exists(plugins / id.author / id.name / "plugin.json"));
         t->folder = it->path().parent_path();
         list.push_back(std::move(*t));
@@ -322,10 +322,10 @@ RM_TEST(Template_ThePlugins) {
     // Choosing ゲーム brings both spaces and both connectors.
     const auto game = TemplatePlugins(tree, tree.Find({"game"}));
     for (const char* n : {"game_production", "space3d", "space2d", "game_x_3d", "game_x_2d", "game_ui"}) CHECK(Has(game, n));
-    // The UI sample brings the game UI (and the 2D space it is made in), not 3D.
+    // UI サンプルはゲーム UI (とそれを作る 2D 空間) を持ってくる。3D は持ってこない。
     const auto ui = TemplatePlugins(tree, tree.Find({"game", "2d", "ui"}));
     CHECK(Has(ui, "game_ui") && Has(ui, "space2d") && !Has(ui, "space3d"));
-    // ... and 音 (the sample's jump sound, the 3D / 2D templates' BGM; its connector comes with it).
+    // ... と 音 (サンプルのジャンプ音、3D / 2D テンプレートの BGM。そのコネクターも一緒に来る)。
     for (const auto& path : std::vector<std::vector<std::string>>{{"game"}, {"game", "3d"}, {"game", "2d"}}) CHECK(Has(TemplatePlugins(tree, tree.Find(path)), "audio"));
 
     using namespace rm::game_production;
@@ -342,17 +342,17 @@ RM_TEST(Template_ThePlugins) {
                                      &reflect::TypeOf<game_x_2d::Spin2D>(), &reflect::TypeOf<game_ui::UiCanvas>(), &reflect::TypeOf<game_ui::UiRect>(),
                                      &reflect::TypeOf<game_ui::UiText>(), &reflect::TypeOf<game_ui::UiImage>(), &reflect::TypeOf<game_ui::UiButton>(),
                                      &reflect::TypeOf<game_ui::UiBar>()});
-            // The new form: the scene in its own file (the template's Assets/, copied into the project),
-            // named in the list by the id in its .meta.
+            // 新しい形: シーンは自分のファイルに (テンプレートの Assets/ をプロジェクトへコピー)。
+            // リストには .meta の id で名前をつける。
             CHECK(!data.Find("scene"));
             SceneList sceneList;
             reflect::Unknowns listUnknowns;
             reflect::Warnings warnings;
             reflect::Load(sceneList, data.Get("sceneList"), &listUnknowns, &warnings);
             CHECK(listUnknowns.Empty() && !sceneList.scenes.empty());
-            // Every scene of the list is a file of the template (found by the id in its .meta); the one
-            // read below is the one the project opens with.
-            std::map<std::string, fs::path> files;  // id -> scene file
+            // リストの各シーンはテンプレートのファイル (.meta の id で見つける)。下で読むものが、
+            // プロジェクトが開くときに使うシーン。
+            std::map<std::string, fs::path> files;  // id -> シーンファイル
             std::error_code dirEc;
             for (fs::directory_iterator f(t.folder / "Assets" / "Scenes", dirEc), end; !dirEc && f != end; f.increment(dirEc)) {
                 if (f->path().extension() != L".meta") continue;
@@ -371,7 +371,7 @@ RM_TEST(Template_ThePlugins) {
             CHECK(sceneJson.has_value());
             if (!sceneJson) continue;
             scene.Load(*sceneJson, &warnings);
-            // (only the template's own scripts are types not known here)
+            // (ここで知らない型は、テンプレート自身のスクリプトだけ)
             std::erase_if(warnings, [&](const std::string& w) {
                 std::error_code se;
                 for (fs::directory_iterator f(t.folder / "Assets" / "Scripts", se), end; !se && f != end; f.increment(se)) {
@@ -383,7 +383,7 @@ RM_TEST(Template_ThePlugins) {
             CHECK(!scene.Empty());
             for (const SceneEntity& e : scene.Entities()) {
                 CHECK(e.unknowns.Empty());
-                // (a script of the template's own Assets/Scripts is a type of its DLL: not known here)
+                // (テンプレート自身の Assets/Scripts のスクリプトはその DLL の型なので、ここでは知らない)
                 for (const Component& c : e.components) CHECK(c.Known() || fs::exists(t.folder / "Assets" / "Scripts" / (c.type + ".h")));
             }
             GameSettings settings;
@@ -391,7 +391,7 @@ RM_TEST(Template_ThePlugins) {
             reflect::Load(settings, data.Get("settings"), &unknowns, &warnings);
             CHECK(warnings.empty() && unknowns.Empty());
             CHECK(settings.space == "3d" || settings.space == "2d");
-            // The game sees through a camera of the scene.
+            // ゲームはシーンのカメラを通して見る。
             const SceneEntity* cam = scene.Find(static_cast<int>(settings.startCamera.id));
             CHECK(cam && (cam->FindComponent(reflect::TypeOf<game_x_3d::Camera>().name) || cam->FindComponent(reflect::TypeOf<game_x_2d::Camera2D>().name)));
         }

@@ -1,7 +1,7 @@
-// Tests for the game's global variables and saves (game production's runtime/Globals + the scripts'
-// parts "rm_engine.game_production.globals" / ".save" + the header Global::<name>): 初めの値 read by
-// type, a save written and read back, keys a save has that this version does not know kept, slots
-// that are not names refused, the numbers converted between the script's type and the variable's.
+// ゲームのグローバル変数とセーブのテスト (ゲーム制作の runtime/Globals と、スクリプトの部品
+// "rm_engine.game_production.globals" / ".save" と、ヘッダーの Global::<name>)。
+// 初めの値を型どおりに読む、セーブを書いて読み戻す、このバージョンが知らないキーは残す、
+// 名前でないスロットは断る、スクリプトの型と変数の型の間で数を変換する。
 
 #include "Test.h"
 
@@ -38,17 +38,17 @@ std::vector<GlobalVariable> SomeGlobals() {
 RM_TEST(Globals_InitialValuesByType) {
     auto v = ParseGlobalValue(GlobalType::Int, " 7 ");
     CHECK(v && v->v[0] == 7);
-    CHECK(ParseGlobalValue(GlobalType::Int, "2.6")->v[0] == 3);  // an int is whole
+    CHECK(ParseGlobalValue(GlobalType::Int, "2.6")->v[0] == 3);  // int は整数
     CHECK(ParseGlobalValue(GlobalType::Int, "")->v[0] == 0);
     CHECK(!ParseGlobalValue(GlobalType::Int, "abc") && !ParseGlobalValue(GlobalType::Int, "1, 2"));
     CHECK(ParseGlobalValue(GlobalType::Bool, "true")->v[0] == 1 && ParseGlobalValue(GlobalType::Bool, "false")->v[0] == 0);
     CHECK(!ParseGlobalValue(GlobalType::Bool, "yes"));
     const auto vec = ParseGlobalValue(GlobalType::Vec3, "1, -2.5 3");
     CHECK(vec && vec->v[0] == 1 && vec->v[1] == -2.5 && vec->v[2] == 3);
-    CHECK(ParseGlobalValue(GlobalType::Vec2, "4")->v[1] == 0);  // fewer: the rest 0
+    CHECK(ParseGlobalValue(GlobalType::Vec2, "4")->v[1] == 0);  // 足りない分は 0
     CHECK(!ParseGlobalValue(GlobalType::Vec2, "1, 2, 3"));
     CHECK(ParseGlobalValue(GlobalType::String, " as it is ")->s == " as it is ");
-    // Written back as text the same way.
+    // 同じ形で文字に書き戻す。
     for (const GlobalVariable& g : SomeGlobals()) {
         const auto parsed = ParseGlobalValue(g.type, g.initial);
         CHECK(parsed && ParseGlobalValue(g.type, FormatGlobalValue(*parsed))->v[0] == parsed->v[0]);
@@ -60,7 +60,7 @@ RM_TEST(Globals_InitialValuesByType) {
 RM_TEST(Globals_StoreReset_ABadInitialIsZero) {
     std::vector<GlobalVariable> list = SomeGlobals();
     list.push_back({"broken", GlobalType::Float, "fast"});
-    list.push_back({"score", GlobalType::Int, "99"});  // twice: the first
+    list.push_back({"score", GlobalType::Int, "99"});  // 2 回: 最初のもの
     GlobalStore s;
     std::vector<std::string> warnings;
     s.Reset(list, &warnings);
@@ -81,17 +81,17 @@ RM_TEST(Globals_SaveWrittenAndReadBack_UnknownKeysKept) {
     CHECK(doc && doc->Get("kind").AsString() == kSaveKind && doc->Get("globals").Get("score").AsInt() == 42);
     CHECK(doc->Get("globals").Get("home").Size() == 3 && doc->Get("globals").Get("cleared").AsBool());
 
-    // Read back into a fresh store.
+    // 新しいストアに読み戻す。
     GlobalStore t;
     t.Reset(SomeGlobals());
     std::vector<std::string> warnings;
     CHECK(ReadSave(t, folder, "0", &warnings, &why) && t.Find("score")->v[0] == 42 && t.Find("player")->s == "Z" && warnings.empty());
 
-    // A save of a newer version: a variable this list has not, a key of its own - written back.
+    // 新しいバージョンのセーブ: この一覧にない変数と独自のキーは、そのまま書き戻す。
     json::Value newer = *doc;
     json::Value g = doc->Get("globals");
     g.Set("gone", json::Value(5));
-    g.Set("score", json::Value("not a number"));  // a value of another type: not read (warned), kept as is
+    g.Set("score", json::Value("not a number"));  // 別の型の値: 読まず (警告する)、そのまま残す
     newer.Set("globals", g);
     newer.Set("playTime", json::Value(123.5));
     CHECK(platform::WriteFileAtomic(SaveFile(folder, "1"), json::Write(newer), &why));
@@ -104,21 +104,21 @@ RM_TEST(Globals_SaveWrittenAndReadBack_UnknownKeysKept) {
     const auto after = json::Parse(*platform::ReadFileBytes(SaveFile(folder, "1"), nullptr));
     CHECK(after->Get("playTime").AsDouble() == 123.5 && after->Get("globals").Get("gone").AsInt() == 5);
     CHECK(after->Get("globals").Get("speed").AsDouble() == 9 && after->Get("globals").Get("score").AsInt() == 10);
-    // A new slot takes the unknown keys of the save read last along.
+    // 新しいスロットは、最後に読んだセーブの未知のキーを引き継ぐ。
     CHECK(WriteSave(u, folder, "copy", &why));
     CHECK(json::Parse(*platform::ReadFileBytes(SaveFile(folder, "copy"), nullptr))->Get("playTime").AsDouble() == 123.5);
 
-    // Slots are names, never paths; reading what is not there fails.
+    // スロットは名前で、パスではない。無いものを読むと失敗する。
     CHECK(!WriteSave(s, folder, "../x", &why) && !WriteSave(s, folder, "", &why) && !WriteSave(s, folder, "a/b", &why));
     CHECK(!ReadSave(t, folder, "9", &warnings, &why));
     CHECK(DeleteSave(folder, "0", &why) && !SaveExists(folder, "0"));
-    CHECK(!WriteSave(s, fs::path(), "0", &why));  // no folder: nothing
+    CHECK(!WriteSave(s, fs::path(), "0", &why));  // フォルダー無し: 何もしない
     std::error_code ec;
     fs::remove_all(folder, ec);
 }
 
 RM_TEST(Game_QuitThroughTheScriptsPart) {
-    // Game::Quit asks for the end: the host ends the game after this frame (ScriptWorld::quitAsked).
+    // Game::Quit は終了を頼む: ホストはこのフレームの後でゲームを終える (ScriptWorld::quitAsked)。
     ScriptWorld w;
     const RmApi api = MakeScriptApi(w);
     const auto* game = static_cast<const RmGameApi*>(api.part(api.ctx, RM_PART_GAME, RM_PART_GAME_VERSION));
@@ -142,16 +142,16 @@ RM_TEST(Globals_ThroughTheScriptsParts) {
     int32_t i = 0;
     CHECK(g->get(api.ctx, "score", RmField_Int, &i) == 1 && i == 10);
     float f = 0;
-    CHECK(g->get(api.ctx, "score", RmField_Float, &f) == 1 && f == 10);  // an int read as float
+    CHECK(g->get(api.ctx, "score", RmField_Float, &f) == 1 && f == 10);  // int を float で読む
     f = 2.6f;
-    CHECK(g->set(api.ctx, "score", RmField_Float, &f) == 1 && w.globals.Find("score")->v[0] == 3);  // into an int: whole
+    CHECK(g->set(api.ctx, "score", RmField_Float, &f) == 1 && w.globals.Find("score")->v[0] == 3);  // int へ: 整数にする
     int32_t b = 0;
     CHECK(g->get(api.ctx, "cleared", RmField_Bool, &b) == 1 && b == 1);
     float v3[3] = {};
     CHECK(g->get(api.ctx, "home", RmField_Vec3, v3) == 1 && v3[1] == 2);
     const float v2[2] = {7, 8};
     CHECK(g->set(api.ctx, "home", RmField_Vec2, v2) == 1 && w.globals.Find("home")->v[0] == 7 && w.globals.Find("home")->v[2] == 3);
-    // Text: as text only; a number variable gives its text.
+    // 文字: 文字としてだけ。数の変数は、その文字を返す。
     char buf[8];
     CHECK(g->getString(api.ctx, "player", buf, sizeof(buf)) == 3 && std::string(buf) == "A B");
     CHECK(g->setString(api.ctx, "player", "Hello!", 6) == 1 && w.globals.Find("player")->s == "Hello!");
@@ -159,10 +159,10 @@ RM_TEST(Globals_ThroughTheScriptsParts) {
     CHECK(g->setString(api.ctx, "score", "12", 2) == 1 && w.globals.Find("score")->v[0] == 12);
     CHECK(g->setString(api.ctx, "score", "x", 1) == 0);
     CHECK(g->get(api.ctx, "player", RmField_Int, &i) == 0);
-    // A name not in the list: told once.
+    // 一覧に無い名前: 1 回だけ知らせる。
     CHECK(g->get(api.ctx, "nobody", RmField_Int, &i) == 0 && g->get(api.ctx, "nobody", RmField_Int, &i) == 0);
     CHECK(told.find("「nobody」") != std::string::npos && told.find("「nobody」") == told.rfind("「nobody」"));
-    // Saving through the part: written, the values changed, read back.
+    // 部品を通して保存: 書かれる、値が変わる、読み戻せる。
     CHECK(sv->exists(api.ctx, "1") == 0 && sv->write(api.ctx, "1") == 1 && sv->exists(api.ctx, "1") == 1);
     w.globals.Find("score")->v[0] = 0;
     CHECK(sv->read(api.ctx, "1") == 1 && w.globals.Find("score")->v[0] == 12);
@@ -175,7 +175,7 @@ RM_TEST(Globals_ThroughTheScriptsParts) {
 RM_TEST(Globals_HeaderOfNames) {
     std::vector<GlobalVariable> list = SomeGlobals();
     list.push_back({"2bad", GlobalType::Int, ""});
-    list.push_back({"score", GlobalType::Float, ""});  // twice
+    list.push_back({"score", GlobalType::Float, ""});  // 2 回
     std::vector<std::string> skipped;
     const std::string h = GlobalsHeader(list, &skipped);
     CHECK(h.find("namespace Global {") != std::string::npos);
@@ -184,7 +184,7 @@ RM_TEST(Globals_HeaderOfNames) {
     CHECK(h.find("::rm::GlobalVar<::rm::Vec3> home{\"home\"}") != std::string::npos);
     CHECK(h.find("::rm::GlobalVar<bool> cleared") != std::string::npos);
     CHECK(h.find("2bad") == std::string::npos && skipped.size() == 2);
-    // A 初めの値 is not in it (changing one never builds again).
+    // 初めの値はこの中に入らない (1 つ変えても、作り直しにはならない)。
     list[0].initial = "500";
     CHECK(GlobalsHeader(list) == h);
 }

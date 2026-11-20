@@ -1,8 +1,9 @@
-// Tests for the rest of C++ scripts (ABI 4): the new kinds of fields (an enum, a list, a nested struct,
-// an asset's id - saved, read back, compared, strings only through the module), making and destroying
-// entities from a script (made at once, started at the next frame; destroyed at the frame's end after
-// EndPlay, children too; an id of something gone does nothing), components added / got / removed, and
-// a prefab spawned. A module is built here by hand (the tables rmgen writes into a script DLL).
+// C++ スクリプトの残りのテスト (ABI 4): 新しい種類のフィールド (列挙型、リスト、
+// 入れ子の構造体、アセットの id - 保存、読み戻し、比較、文字列はモジュールを通すだけ)、
+// スクリプトからのエンティティの作成と破棄 (その場で作り、次のフレームで始まる。
+// 破棄はフレームの終わりに EndPlay のあと、子も。無くなったものの id は何もしない)、
+// 部品の追加 / 取得 / 削除、Prefab の生成。モジュールはここで手作りする
+// (rmgen がスクリプト DLL に書く表)。
 
 #include "Test.h"
 
@@ -52,7 +53,7 @@ void StringSet(void* field, const char* utf8, uint64_t len) {
     static_cast<std::string*>(field)->assign(utf8, static_cast<size_t>(len));
 }
 
-// --- A script with every new kind of field ------------------------------------------------------
+// --- 新しい種類のフィールドを全部持つスクリプト ---------------------------------
 enum class Mode : int { Walk = 0, Run = 5 };
 struct Wave {
     int count = 3;
@@ -95,7 +96,7 @@ const RmFieldDesc kRichFields[] = {
      nullptr, nullptr, nullptr, ".rmprefab"},
 };
 
-// --- Scripts that make, destroy and count ----------------------------------------------------------
+// --- 作る・壊す・数えるスクリプト ----------------------------------------------------------
 struct Counter {
     int ticks = 0;
 };
@@ -118,11 +119,11 @@ void SpawnerTick(void* s, RmEntityId, float) {
     const RmCoreApi& c = *g_api->core;
     void* ctx = g_api->ctx;
     g_log += "S";
-    // Made now (set up at once), started next frame; the target (and what is under it) at the frame's end.
+    // 今作る (その場で用意され)、次のフレームで始まる。対象 (とその下のもの) はフレームの終わりに。
     g_made = c.spawn(ctx, "Bullet", 0);
     c.addComponent(ctx, g_made, "test::Counter");
     c.destroy(ctx, c.findByName(ctx, "Target"));
-    // Made and destroyed in the same frame: never started, never ended.
+    // 同じフレームで作って壊す: 始まらず、終わらない。
     const RmEntityId brief = c.spawn(ctx, "Brief", 0);
     c.addComponent(ctx, brief, "test::Counter");
     c.destroy(ctx, brief);
@@ -164,7 +165,7 @@ RM_TEST(ScriptsMore_NewFieldTypes_SavedReadBackCompared) {
     g_strings = 0;
     json::Value j = reflect::Save(d, o.Get());
     CHECK(j.Get("mode").AsString() == "Walk" && j.Get("numbers").Size() == 2 && j.Get("numbers").At(1).AsInt() == 2);
-    CHECK(j.Get("names").At(0).AsString() == "a" && g_strings > 0);  // (a string of a list: through the module)
+    CHECK(j.Get("names").At(0).AsString() == "a" && g_strings > 0);  // (リストの文字列: モジュールを通す)
     CHECK(j.Get("wave").Get("count").AsInt() == 3 && j.Get("wave").Get("tag").AsString() == "w" && j.Get("waves").Size() == 0);
     CHECK(j.Get("prefab").AsString().empty());
 
@@ -175,7 +176,7 @@ RM_TEST(ScriptsMore_NewFieldTypes_SavedReadBackCompared) {
     j.Set("numbers", nums);
     json::Value names = json::Value::MakeArray();
     names.Push("x");
-    names.Push(std::string(40, 'y'));  // longer than the small-string buffer: the DLL allocates it
+    names.Push(std::string(40, 'y'));  // 小さい文字列用バッファより長い: DLL が確保する
     j.Set("names", names);
     json::Value wave = j.Get("wave");
     wave.Set("count", json::Value(9));
@@ -195,20 +196,20 @@ RM_TEST(ScriptsMore_NewFieldTypes_SavedReadBackCompared) {
     CHECK(r.wave.count == 9 && r.wave.tag == "w" && r.waves.size() == 1 && r.waves[0].count == 1 && r.waves[0].tag == "first");
     CHECK(std::string(r.prefab) == guid && warnings.empty());
     CHECK(!reflect::Equals(d, o.Get(), back.Get()));
-    CHECK(reflect::Save(d, back.Get()) == j);  // written back the same
-    // An enum name this version does not know: kept and written back.
+    CHECK(reflect::Save(d, back.Get()) == j);  // 同じに書き戻される
+    // このバージョンが知らない列挙型の名前: 残して書き戻す。
     json::Value newer = j;
     newer.Set("mode", json::Value("Fly"));
     reflect::Object n(d);
     reflect::Unknowns u;
     reflect::Load(d, n.Get(), newer, &u, &warnings);
     CHECK(reflect::Save(d, n.Get(), &u).Get("mode").AsString() == "Fly");
-    // The asset field takes the kinds of file its type says.
+    // アセットのフィールドは、その型が言う種類のファイルを受け取る。
     CHECK(d.fields[5].value.type == reflect::FieldType::AssetRef && std::string(d.fields[5].assetKinds) == ".rmprefab");
     CHECK(d.fields[1].value.type == reflect::FieldType::Array && d.fields[1].array->element.type == reflect::FieldType::Int);
     CHECK(d.fields[0].value.enumType && d.fields[0].value.enumType->items.size() == 2 && std::string(d.fields[0].value.enumType->items[0].label) == "歩く");
 
-    // Carried over by name to the scripts built again (a scene saved and read with another module).
+    // 作り直したスクリプトへ名前で引き継ぐ (シーンを保存して、別のモジュールで読む)。
     Scene s = SceneWith(m);
     const int e = s.Create("A");
     s.AddComponent(e, d);
@@ -260,12 +261,12 @@ RM_TEST(ScriptsMore_SpawnAndDestroy_AtTheFrameBoundary) {
     ScriptRunner r;
     g_log.clear();
     r.Frame(s, w, m, {}, 0.1f);
-    // Spawner (by name, first) asks; the target still ticks this frame; at its end EndPlay of the target
-    // and its child, then they go. The bullet is there already, not started.
+    // Spawner (名前順で先頭) が頼む。対象はこのフレームもまだ Tick する。その終わりに対象と
+    // その子の EndPlay、そのあと消える。弾はもうあるが、まだ始まっていない。
     CHECK(g_log == "B" + Id(target) + "B" + Id(child) + "ST" + Id(target) + "T" + Id(child) + "E" + Id(target) + "E" + Id(child));
     CHECK(!s.Find(target) && !s.Find(child) && s.Find(static_cast<int>(g_made)) && s.Find(static_cast<int>(g_made))->data.name == "Bullet");
     CHECK(std::none_of(s.Entities().begin(), s.Entities().end(), [](const SceneEntity& e) { return e.data.name == "Brief"; }));
-    // An id of something gone: nothing happens (and nothing breaks).
+    // 無くなったものの id: 何も起きない (何も壊れない)。
     const RmCoreApi& c = *api.core;
     char name[8] = "x";
     CHECK(c.exists(api.ctx, target) == 0 && c.getName(api.ctx, target, name, sizeof(name)) == 0 && c.parent(api.ctx, child) == 0);
@@ -274,19 +275,19 @@ RM_TEST(ScriptsMore_SpawnAndDestroy_AtTheFrameBoundary) {
     CHECK(c.addComponent(api.ctx, target, "test::Counter") == nullptr && c.countComponents(api.ctx, target, "test::Counter") == 0);
     g_log.clear();
     r.Frame(s, w, m, {}, 0.1f);
-    CHECK(g_log == "B" + std::to_string(g_made) + "T" + std::to_string(g_made));  // the bullet: BeginPlay before its first Tick
-    // Stop: EndPlay of the bullet; nothing asked is left over.
+    CHECK(g_log == "B" + std::to_string(g_made) + "T" + std::to_string(g_made));  // 弾: 最初の Tick より先に BeginPlay
+    // Stop: 弾の EndPlay。頼んだものは何も残らない。
     g_log.clear();
     c.destroy(api.ctx, g_made);
     r.Stop(s, w, m, {});
     CHECK(g_log == "E" + std::to_string(g_made) && w.destroyAsked.empty());
-    // Spawning under a parent; a parent that is gone: at the top.
+    // 親の下へ生成する。無くなった親: 最上位に。
     w.scene = &s;
     const RmEntityId under = c.spawn(api.ctx, "Under", spawner);
     const RmEntityId top = c.spawn(api.ctx, "Top", target);
     CHECK(c.parent(api.ctx, under) == static_cast<RmEntityId>(spawner) && c.parent(api.ctx, top) == 0);
     w.scene = nullptr;
-    CHECK(c.spawn(api.ctx, "Nowhere", 0) == 0);  // not playing: nothing
+    CHECK(c.spawn(api.ctx, "Nowhere", 0) == 0);  // Play 中でない: 何もしない
     g_api = nullptr;
 }
 
@@ -305,7 +306,7 @@ RM_TEST(ScriptsMore_AddGetRemoveComponents) {
     void* second = c.addComponent(api.ctx, e, "test::Counter");
     CHECK(first && second && first != second && c.countComponents(api.ctx, e, "test::Counter") == 2);
     CHECK(c.getScript(api.ctx, e, "test::Counter", 1) == second);
-    // One that cannot be twice: the one there.
+    // 2 つ持てないもの: すでにあるもの。
     void* rich = c.addComponent(api.ctx, e, "test::Rich");
     CHECK(rich && c.addComponent(api.ctx, e, "test::Rich") == rich && c.countComponents(api.ctx, e, "test::Rich") == 1);
     CHECK(c.addComponent(api.ctx, e, "NoSuchType") == nullptr && told.find("NoSuchType") != std::string::npos);
@@ -313,7 +314,7 @@ RM_TEST(ScriptsMore_AddGetRemoveComponents) {
     g_log.clear();
     r.Frame(s, w, m, {}, 0.1f);
     CHECK(g_log == "B" + Id(e) + "B" + Id(e) + "T" + Id(e) + "T" + Id(e));
-    // Removed: still there until the frame's end, EndPlay first.
+    // 削除: フレームの終わりまでは残り、先に EndPlay。
     CHECK(c.removeComponent(api.ctx, e, "test::Counter", 0) == 1 && c.countComponents(api.ctx, e, "test::Counter") == 2);
     CHECK(c.removeComponent(api.ctx, e, "test::Counter", 5) == 0);
     g_log.clear();
@@ -327,7 +328,7 @@ RM_TEST(ScriptsMore_AddGetRemoveComponents) {
 RM_TEST(ScriptsMore_SpawnAPrefab) {
     ScriptModule m;
     m.Adopt(kModule);
-    // The prefab: an enemy with a gun that counts.
+    // Prefab: 数える銃を持った敵。
     Scene src = SceneWith(m);
     const int enemy = src.Create("Enemy");
     const int gun = src.Create("Gun", enemy);
@@ -347,27 +348,28 @@ RM_TEST(ScriptsMore_SpawnAPrefab) {
     CHECK(root && root->data.name == "Enemy" && root->prefab.Root() && root->prefab.asset.guid == guid);
     const std::vector<int> kids = s.Children(static_cast<int>(made));
     CHECK(kids.size() == 1 && s.Find(kids[0])->FindComponent("test::Counter") != nullptr);
-    // Twice: two copies, other ids.
+    // 2 回: 2 つのコピー、別の id。
     CHECK(api.core->spawnPrefab(api.ctx, guid.c_str(), 0) != made);
-    // Not a prefab of the game: nothing, told once.
+    // ゲームの Prefab ではない: 何もしない、知らせるのは 1 回だけ。
     CHECK(api.core->spawnPrefab(api.ctx, "ffffffffffffffffffffffffffffffff", 0) == 0 && told.find("ffff") != std::string::npos);
 }
 
 RM_TEST(ScriptsMore_SwappedWhilePlaying_StartedStayStarted_OnReloaded) {
-    ScriptModule m, m2;  // (before the scene: its objects go before the types they are made of)
+    ScriptModule m, m2;  // (シーンより前: 作られたもののオブジェクトは、その元の型より先に消える)
     m.Adopt(kModule);
     Scene s = SceneWith(m);
     const int a = s.Create("A");
     s.AddComponent(a, m.Find("test::Counter")->desc);
     const int b = s.Create("B");
     s.AddComponent(b, m.Find("test::Counter")->desc);
-    s.Find(b)->data.active = false;  // not started
+    s.Find(b)->data.active = false;  // 始まっていない
     ScriptWorld w;
     ScriptRunner r;
     r.Frame(s, w, m, {}, 0.1f);
     r.Frame(s, w, m, {}, 0.1f);
-    // The scripts built again: which ones had started, the values out by name, the old objects gone, the
-    // new module's read back - as the editor does it (GameSoftware::ReloadScripts while playing).
+    // スクリプトを作り直す: 始まっていたもの、名前で書き出した値、古いオブジェクトを
+    // 捨て、新しいモジュールのものを読み戻す - エディターがするとおり
+    // (Play 中の GameSoftware::ReloadScripts)。
     const auto running = r.Remember(s);
     CHECK(running.size() == 1 && running[0].entity == a && running[0].started);
     const json::Value saved = s.Save();
@@ -378,8 +380,8 @@ RM_TEST(ScriptsMore_SwappedWhilePlaying_StartedStayStarted_OnReloaded) {
     s.Load(saved);
     g_log.clear();
     r.Resume(s, w, m2, {}, running);
-    CHECK(g_log == "R" + Id(a));  // OnReloaded, no BeginPlay again
-    CHECK(static_cast<const Counter*>(s.Find(a)->FindComponent("test::Counter")->value.Get())->ticks == 2);  // carried over
+    CHECK(g_log == "R" + Id(a));  // OnReloaded、BeginPlay はもう一度は呼ばない
+    CHECK(static_cast<const Counter*>(s.Find(a)->FindComponent("test::Counter")->value.Get())->ticks == 2);  // 引き継ぎ済み
     g_log.clear();
     r.Frame(s, w, m2, {}, 0.1f);
     CHECK(g_log == "T" + Id(a));
@@ -389,7 +391,7 @@ RM_TEST(ScriptsMore_SwappedWhilePlaying_StartedStayStarted_OnReloaded) {
     CHECK(g_log == "B" + Id(b) + "T" + Id(a) + "T" + Id(b));
     g_log.clear();
     r.Stop(s, w, m2, {});
-    CHECK(g_log == "E" + Id(a) + "E" + Id(b));  // pairs kept across the swap
+    CHECK(g_log == "E" + Id(a) + "E" + Id(b));  // 入れ替えをまたいで組が残る
 }
 
 RM_TEST(ScriptsMore_KeepThisValue_ReadFromThePlayCopy_WrittenBack) {
@@ -398,8 +400,8 @@ RM_TEST(ScriptsMore_KeepThisValue_ReadFromThePlayCopy_WrittenBack) {
     Scene before = SceneWith(m);
     const int e = before.Create("Hero");
     before.AddComponent(e, m.Find("test::Rich")->desc);
-    Scene playing = before;  // the copy that plays
-    // In Play: the name, a nested struct's field, a list changed.
+    Scene playing = before;  // 動いているコピー
+    // Play 中: 名前、入れ子の構造体のフィールド、変えたリスト。
     playing.Find(e)->data.name = "Hero (played)";
     Rich& r = *static_cast<Rich*>(playing.Find(e)->FindComponent("test::Rich")->value.Get());
     r.wave.count = 42;
@@ -411,11 +413,11 @@ RM_TEST(ScriptsMore_KeepThisValue_ReadFromThePlayCopy_WrittenBack) {
     const auto vCount = ReadSceneField(playing, count);
     const auto vNumbers = ReadSceneField(playing, numbers);
     CHECK(vName && vName->AsString() == "Hero (played)" && vCount && vCount->AsInt() == 42 && vNumbers && vNumbers->Size() == 3);
-    // Written into the scene from before Play; what was not kept stays as it was.
+    // Play の前のシーンへ書く。残らなかったものはそのまま。
     CHECK(WriteSceneField(before, name, *vName) && WriteSceneField(before, count, *vCount));
     const Rich& kept = *static_cast<const Rich*>(before.Find(e)->FindComponent("test::Rich")->value.Get());
     CHECK(before.Find(e)->data.name == "Hero (played)" && kept.wave.count == 42 && (kept.numbers == std::vector<int>{1, 2}));
-    // Not there (an entity made while playing, a component gone, a path too long): nothing.
+    // 無い (Play 中に作ったエンティティ、無くなった部品、長すぎるパス): 何もしない。
     CHECK(!ReadSceneField(before, SceneField{999, "", 0, {2}}) && !ReadSceneField(before, SceneField{e, "test::Counter", 0, {0}}));
     CHECK(!WriteSceneField(before, SceneField{999, "", 0, {2}}, *vName));
 }

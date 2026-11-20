@@ -1,5 +1,5 @@
-// Tests for the scripts' debug drawing: game production's buffer (runtime/DebugDraw) and the
-// connectors' parts that turn rm::Debug's shapes into its lines (game_x_3d / game_x_2d ScriptDebug*).
+// スクリプトのデバッグ描画のテスト: ゲーム制作のバッファ (runtime/DebugDraw) と、rm::Debug の
+// 図形を線にするコネクターの部分 (game_x_3d / game_x_2d ScriptDebug*)。
 
 #include "Test.h"
 
@@ -28,23 +28,23 @@ constexpr float kRed[4] = {1, 0, 0, 1};
 
 RM_TEST(DebugDraw_OneFrameAndSeconds) {
     DebugDraw d;
-    CHECK(d.Add(DebugSpace::Space3D, {0, 0, 0}, {1, 0, 0}, {1, 0, 0, 1}, 0));   // this frame only
-    CHECK(d.Add(DebugSpace::Space3D, {0, 0, 0}, {0, 1, 0}, {0, 1, 0, 1}, 0.5));  // half a second
-    CHECK(d.Add(DebugSpace::Space2D, {0, 0, 0}, {0, 0, 1}, {0, 0, 1, 1}, -3));  // less than 0: this frame
+    CHECK(d.Add(DebugSpace::Space3D, {0, 0, 0}, {1, 0, 0}, {1, 0, 0, 1}, 0));   // このフレームだけ
+    CHECK(d.Add(DebugSpace::Space3D, {0, 0, 0}, {0, 1, 0}, {0, 1, 0, 1}, 0.5));  // 0.5 秒
+    CHECK(d.Add(DebugSpace::Space2D, {0, 0, 0}, {0, 0, 1}, {0, 0, 1, 1}, -3));  // 0 未満: このフレーム
     CHECK(d.Lines().size() == 3);
-    d.BeginFrame(0.2);  // the next frame: the one-frame lines go
+    d.BeginFrame(0.2);  // 次のフレーム: 1 フレームだけの線は消える
     CHECK(d.Lines().size() == 1 && d.Lines()[0].color.g == 1);
-    d.BeginFrame(0.2);  // 0.4 s: still
+    d.BeginFrame(0.2);  // 0.4 秒: まだある
     CHECK(d.Lines().size() == 1);
-    d.BeginFrame(0.0);  // a frame that took no time still drops this frame's lines, not the timed one
+    d.BeginFrame(0.0);  // 時間がかからなかったフレームでも、このフレームの線は消すが、時間つきの線は消さない
     CHECK(d.Lines().size() == 1);
-    d.BeginFrame(0.2);  // 0.6 s: gone
+    d.BeginFrame(0.2);  // 0.6 秒: 消えた
     CHECK(d.Lines().empty());
-    // A one-frame line is gone at the next frame even when no time passes.
+    // 1 フレームだけの線は、時間が進まなくても次のフレームで消える。
     CHECK(d.Add(DebugSpace::Space3D, {0, 0, 0}, {1, 1, 1}, {}, 0));
     d.BeginFrame(0);
     CHECK(d.Lines().empty());
-    // NaN seconds: this frame only (never kept for good).
+    // 秒が NaN: このフレームだけ (ずっと残ることは決してない)。
     CHECK(d.Add(DebugSpace::Space3D, {0, 0, 0}, {1, 1, 1}, {}, std::numeric_limits<double>::quiet_NaN()));
     d.BeginFrame(1);
     CHECK(d.Lines().empty());
@@ -53,15 +53,15 @@ RM_TEST(DebugDraw_OneFrameAndSeconds) {
 RM_TEST(DebugDraw_FullIsDroppedAndToldOnce) {
     DebugDraw d;
     for (size_t i = 0; i < DebugDraw::kMaxLines; ++i) d.Add(DebugSpace::Space3D, {0, 0, 0}, {1, 0, 0}, {}, 10);
-    CHECK(!d.TakeOverflowNotice());  // full, but nothing dropped yet
+    CHECK(!d.TakeOverflowNotice());  // いっぱいだが、まだ何も捨てていない
     CHECK(!d.Add(DebugSpace::Space3D, {0, 0, 0}, {1, 0, 0}, {}, 0));
     CHECK(!d.Add(DebugSpace::Space3D, {0, 0, 0}, {1, 0, 0}, {}, 0));
     CHECK(d.Lines().size() == DebugDraw::kMaxLines && d.Dropped() == 2);
-    CHECK(d.TakeOverflowNotice());   // told once ...
-    CHECK(!d.TakeOverflowNotice());  // ... not again
+    CHECK(d.TakeOverflowNotice());   // 1 回だけ知らせる ...
+    CHECK(!d.TakeOverflowNotice());  // ... 2 回目はない
     d.Add(DebugSpace::Space3D, {0, 0, 0}, {1, 0, 0}, {}, 0);
     CHECK(!d.TakeOverflowNotice());
-    // Stop: all gone, and it may be told again in the next Play.
+    // Stop: すべて消え、次の Play ではまた知らせてよい。
     d.Clear();
     CHECK(d.Lines().empty() && d.Dropped() == 0 && d.Clock() == 0);
 }
@@ -73,7 +73,7 @@ RM_TEST(DebugDraw_ShapesBecomeLines) {
     const float o[3] = {1, 2, 3}, size[3] = {2, 4, 6}, x[3] = {0, 0, 0}, dir[3] = {0, 0, 2};
     Debug3D().box(&w, o, size, kRed, 0);
     CHECK(d.Lines().size() == 12);
-    // Its corners are the box's.
+    // 角は箱の角。
     float minX = 1e9f, maxY = -1e9f;
     for (const DebugLine& l : d.Lines()) {
         minX = std::min({minX, l.a.x, l.b.x});
@@ -85,15 +85,15 @@ RM_TEST(DebugDraw_ShapesBecomeLines) {
     Debug3D().sphere(&w, o, 0.5f, kRed, 1);
     CHECK(d.Lines().size() == 3 * game_x_3d::kDebugSphereSegments && !d.Lines()[0].oneFrame);
     d.Clear();
-    Debug3D().ray(&w, x, dir, 5, kRed, 0);  // 5 along +Z, whatever the direction's length
+    Debug3D().ray(&w, x, dir, 5, kRed, 0);  // +Z に 5、向きの長さに関係なく
     CHECK(d.Lines().size() == 1 && d.Lines()[0].b.z == 5);
-    Debug3D().ray(&w, x, x, 5, kRed, 0);  // no direction: nothing
+    Debug3D().ray(&w, x, x, 5, kRed, 0);  // 向きなし: 何もしない
     const float nan = std::numeric_limits<float>::quiet_NaN();
     const float bad[3] = {nan, 0, 0};
-    Debug3D().line(&w, x, bad, kRed, 0);  // not a place: nothing
-    Debug3D().sphere(&w, o, -1, kRed, 0);  // a negative radius: nothing
+    Debug3D().line(&w, x, bad, kRed, 0);  // 場所ではない: 何もしない
+    Debug3D().sphere(&w, o, -1, kRed, 0);  // 負の半径: 何もしない
     CHECK(d.Lines().size() == 1);
-    // 2D: in the plane (z = 0).
+    // 2D: 平面の上 (z = 0)。
     d.Clear();
     const float c2[2] = {0, 0}, s2[2] = {2, 1}, b2[2] = {3, 4};
     Debug2D().rect(&w, c2, s2, kRed, 0);
@@ -104,7 +104,7 @@ RM_TEST(DebugDraw_ShapesBecomeLines) {
 }
 
 RM_TEST(DebugDraw_ExportedGameDoesNothing) {
-    // An exported game gives its scripts a world without a buffer: every call returns at once.
+    // 書き出したゲームは、スクリプトにバッファのない世界を渡す: どの呼び出しもすぐ戻る。
     ScriptWorld w;
     CHECK(w.debug == nullptr);
     std::vector<std::string> told;
@@ -120,7 +120,7 @@ RM_TEST(DebugDraw_ExportedGameDoesNothing) {
         Debug2D().circle(&w, p2, 1, kRed, 0);
     }
     CHECK(told.empty());
-    // The parts are offered under their names and versions (what RM3D.h / RM2D.h ask for).
+    // 部品は名前とバージョンで提供される (RM3D.h / RM2D.h が求めるもの)。
     const std::vector<ScriptApiPart> parts{game_x_3d::ScriptDebug3DPart(), game_x_2d::ScriptDebug2DPart()};
     CHECK(FindScriptApiPart(parts, RM_PART_DEBUG3D, RM_PART_DEBUG3D_VERSION) == &Debug3D());
     CHECK(FindScriptApiPart(parts, RM_PART_DEBUG2D, RM_PART_DEBUG2D_VERSION) == &Debug2D());
@@ -135,7 +135,7 @@ RM_TEST(DebugDraw_TooManyIsToldOnceOnTheConsole) {
         if (level == 1) told.emplace_back(t);
     };
     const float p[3] = {0, 0, 0}, s[3] = {1, 1, 1};
-    // A script gone wrong: boxes every frame, for good.
+    // おかしくなったスクリプト: 毎フレーム箱を出し続ける。
     for (size_t i = 0; i < DebugDraw::kMaxLines / 12 + 100; ++i) Debug3D().box(&w, p, s, kRed, 1000);
     CHECK(d.Lines().size() == DebugDraw::kMaxLines && d.Dropped() > 0);
     CHECK(told.size() == 1);

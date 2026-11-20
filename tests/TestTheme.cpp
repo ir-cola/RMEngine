@@ -1,6 +1,6 @@
-// Tests for the color themes (editor/widgets/Theme.h, ThemeFile.h): the built-in three, the themes of
-// the theme packs (their files in plugins/<author>/<name>/themes/), and the shapes of the seasons
-// pack's pictures (plugins/rm_engine/theme_seasons/editor/Ornament.h).
+// カラーテーマ (editor/widgets/Theme.h, ThemeFile.h) のテスト: 組み込みの 3 つ、テーマパックの
+// テーマ (plugins/<author>/<name>/themes/ のファイル)、季節パックの絵の形
+// (plugins/rm_engine/theme_seasons/editor/Ornament.h)。
 
 #include "Test.h"
 
@@ -24,10 +24,10 @@ RM_TEST(Theme_BuiltInThree) {
     CHECK(list.size() >= 3);
     CHECK(list[0].id == "Dark" && list[1].id == "Light" && list[2].id == "System");
     for (size_t i = 0; i < 3; ++i) CHECK(list[i].group == 0 && list[i].pack.empty() && !list[i].ornament && !list[i].name.empty());
-    // The old three-way choice was saved by these names: a hub.json from before keeps its theme.
+    // 前の 3 択はこれらの名前で保存されていた: 前の hub.json でもテーマは保たれる。
     CHECK(theme::FindTheme("Dark").palette && theme::FindTheme("Dark").palette->bg == theme::kDark.bg);
     CHECK(!theme::FindTheme("System").palette);
-    // Unknown (a pack not installed, a newer version's theme, a typo): the first theme.
+    // 不明 (入れていないパック、新しいバージョンのテーマ、打ち間違い): 最初のテーマ。
     CHECK(&theme::FindTheme("NoSuchTheme") == &theme::Themes()[0]);
     CHECK(&theme::FindTheme("") == &theme::Themes()[0]);
 }
@@ -50,8 +50,8 @@ RM_TEST(Theme_PackThemesComeAndGo) {
     theme::SetPackThemes({spring});
     CHECK(theme::Themes().size() == 4);
     CHECK(theme::FindTheme("Spring").id == "Spring" && theme::FindTheme("Spring").group == 1);
-    CHECK(theme::FindTheme("Sakura").id == "Spring");  // its name before (桜)
-    // The pack removed: the first theme (hub.json keeps the id, so it comes back with the pack).
+    CHECK(theme::FindTheme("Sakura").id == "Spring");  // 前の名前 (桜)
+    // パックを外した: 最初のテーマ (hub.json は id を保つので、パックを戻せば戻る)。
     theme::SetPackThemes({});
     CHECK(theme::Themes().size() == 3);
     CHECK(&theme::FindTheme("Spring") == &theme::Themes()[0]);
@@ -75,8 +75,8 @@ RM_TEST(ThemeFile_ReadsColorsAndFillsTheRest) {
     CHECK(t->info.palette->bg == rm::Color::Hex(0xAABBCC));
     CHECK(t->info.palette->shadow == rm::Color::Hex(0x000000, 64.f / 255.f));
     CHECK(t->info.palette->caption == 0x102030u);
-    CHECK(t->info.palette->text == theme::kLight.text);  // left out: the light theme's
-    // Not a theme, no id, a color that cannot be read: refused, with the reason.
+    CHECK(t->info.palette->text == theme::kLight.text);  // 省いた: ライトテーマのもの
+    // テーマではない、id がない、読めない色: 理由を添えて断る。
     for (const char* bad : {R"({"kind": "other", "id": "A", "name": "A"})", R"({"kind": "rm_engine.theme", "name": "A"})",
                             R"({"kind": "rm_engine.theme", "id": "A", "name": "A", "colors": {"bg": "red"}})"}) {
         std::string why;
@@ -84,7 +84,7 @@ RM_TEST(ThemeFile_ReadsColorsAndFillsTheRest) {
     }
 }
 
-// Every theme file of the packs in this repository: readable, ids unique, light ones light.
+// このリポジトリのパックのテーマファイルすべて: 読める、id は重ならない、ライトなものはライト。
 RM_TEST(ThemeFile_ThePacks) {
     const std::filesystem::path plugins = std::filesystem::path(__FILE__).parent_path().parent_path() / "plugins";
     std::set<std::string> ids{"Dark", "Light", "System"};
@@ -103,7 +103,7 @@ RM_TEST(ThemeFile_ThePacks) {
         if (!t) continue;
         CHECK(ids.insert(t->info.id).second);
         for (const std::string& a : t->info.aliases) CHECK(ids.insert(a).second);
-        // The logo's ink (white or black, whichever stands out) is the one a theme of its kind expects.
+        // ロゴのインク (目立つ方の白か黒) は、その種類のテーマが期待するもの。
         const rm::Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
         CHECK(theme::InkOn(t->info.palette->sidebar) == (t->info.palette->light ? black : white));
         ++count;
@@ -127,12 +127,12 @@ RM_TEST(Ornament_SakuraShape) {
             reach(s.c);
         }
     }
-    CHECK(figures == 5);                       // five petals
-    CHECK(std::fabs(farthest - 100) < 0.01f);  // the tips touch the radius, nothing goes past it
-    // Not turned: the first petal points straight up, its notch on the centre line.
+    CHECK(figures == 5);                       // 花びら 5 枚
+    CHECK(std::fabs(farthest - 100) < 0.01f);  // 先端は半径に届き、それより先には出ない
+    // 回さない: 最初の花びらは真上を向き、切れ込みは中心線の上。
     CHECK(flat.steps[3].op == Path::Op::Line);
     CHECK(std::fabs(flat.steps[3].a.x - 200) < 0.01f && std::fabs(flat.steps[3].a.y - 216) < 0.01f);
-    // Turned 10 degrees counter-clockwise: that notch moves to the left (and stays 84 from the centre).
+    // 反時計回りに 10 度回す: その切れ込みは左へ動く (中心から 84 のまま)。
     const rm::Vec2 n = ornament::Sakura(c, 100, 10).steps[3].a;
     CHECK(n.x < 200 - 14 && n.x > 200 - 15);
     CHECK(std::fabs(std::hypot(n.x - c.x, n.y - c.y) - 84) < 0.01f);
@@ -147,7 +147,7 @@ RM_TEST(Theme_InkOn_WhiteOnDarkBlackOnLight) {
 
 namespace {
 
-// Every point a path reaches (the control points of its curves too).
+// パスが届くすべての点 (曲線の制御点も)。
 struct Bounds {
     float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
     int figures = 0;
@@ -168,7 +168,7 @@ Bounds BoundsOf(const rm::ui::Path& p) {
     return b;
 }
 
-// Twice the signed area of each figure's straight corners: > 0 = clockwise on the screen.
+// 各図形の直線の角の符号付き面積の 2 倍: > 0 = 画面で時計回り。
 bool AllClockwise(const rm::ui::Path& p) {
     std::vector<rm::Vec2> fig;
     bool ok = true;
@@ -193,39 +193,39 @@ bool AllClockwise(const rm::ui::Path& p) {
 
 RM_TEST(Ornament_ShapesStayInTheirPlace) {
     using namespace ornament;
-    // Random: the same numbers for the same seed, all in 0 .. 1.
+    // 乱数: 同じシードなら同じ数。すべて 0 .. 1 の中。
     Random a{7}, b{7};
     for (int i = 0; i < 100; ++i) {
         const float x = a.Next();
         CHECK(x == b.Next() && x >= 0 && x < 1);
     }
-    // A polygon given counter-clockwise is turned round (so overlapping figures join, never cut holes).
+    // 反時計回りに与えたポリゴンは裏返す (重なる図形がつながり、穴をあけないように)。
     rm::ui::Path poly;
     const rm::Vec2 ccw[4] = {{0, 0}, {0, 10}, {10, 10}, {10, 0}};
     AddPolygon(poly, ccw);
     CHECK(AllClockwise(poly));
 
-    // The silhouettes: within their radius (a little more for a stalk / stem), all clockwise.
+    // シルエット: 半径の中 (茎 / 柄は少し外へ)。すべて時計回り。
     const rm::Vec2 c{500, 500};
     const Bounds leaf = BoundsOf(MapleLeaf(c, 100, 0));
-    CHECK(std::fabs(leaf.y0 - 400) < 1.f);         // the top lobe's tip at the radius
+    CHECK(std::fabs(leaf.y0 - 400) < 1.f);         // 上の丸みの先端は半径のところ
     CHECK(leaf.x0 > 390 && leaf.x1 < 610 && leaf.y1 < 570);
     CHECK(AllClockwise(MapleLeaf(c, 100, 33)));
     const Bounds flake = BoundsOf(Snowflake(c, 100, 0));
     CHECK(flake.x0 > 390 && flake.x1 < 610 && flake.y0 > 390 && flake.y1 < 610);
     CHECK(AllClockwise(Snowflake(c, 100, 10)));
     const Bounds sun = BoundsOf(Sun(c, 100, 0));
-    CHECK(std::fabs(sun.y0 - 400) < 0.5f && sun.x0 > 390 && sun.x1 < 610 && sun.y1 < 610);  // the top ray's tip at the radius
+    CHECK(std::fabs(sun.y0 - 400) < 0.5f && sun.x0 > 390 && sun.x1 < 610 && sun.y1 < 610);  // 上の光線の先端は半径のところ
     CHECK(AllClockwise(Sun(c, 100, 10)));
 
-    // The cherry tree grows from the bottom edge near the right, its crown up top past the top and
-    // right edges, reaching about 1.6 x size in; its petals blow to the left.
+    // 桜の木は、右寄りの下の縁から生える。樹冠は上の縁と右の縁の先の上にあり、
+    // 大きさの約 1.6 倍まで入ってくる。花びらは左へ吹かれる。
     const rm::ui::Rect screen{0, 0, 1000, 700};
     const rm::ui::Path cherry = CherryTree(screen, 200);
     const Bounds tree = BoundsOf(cherry);
     CHECK(tree.x0 > 1000 - 200 * 1.7f && tree.x1 > 1000 && tree.y0 < 0 && tree.y1 > 700);
     CHECK(AllClockwise(cherry));
-    // Near the bottom only the trunk (and a petal or two): narrow, standing near the right edge.
+    // 下のほうには幹だけ (と花びらが 1、2 枚): 細く、右の縁の近くに立つ。
     float lowLeft = 1e9f, lowRight = -1e9f;
     for (const auto& st : cherry.steps) {
         if (st.a.y < 680) continue;
@@ -236,60 +236,60 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     const rm::ui::Path stream = PetalStream(screen, 820, 80, 9, 4);
     const Bounds sb = BoundsOf(stream);
     CHECK(sb.figures > 60 && sb.x1 < 820 + 30 && sb.x0 > -10 && sb.y1 <= 700 + 10);
-    int nearTree = 0, farAway = 0;  // thick near the tree, thinning out
+    int nearTree = 0, farAway = 0;  // 木の近くは濃く、離れるほど薄く
     for (const auto& st : stream.steps) {
         if (st.op != rm::ui::Path::Op::Begin) continue;
         (st.a.x > 820 - 300 ? nearTree : farAway) += 1;
     }
     CHECK(nearTree > farAway);
 
-    // Every corner silhouette fills the same box (a maple leaf as tall as a cherry blossom).
+    // 角のシルエットはどれも同じ箱を埋める (カエデの葉は桜の花と同じ高さ)。
     const rm::ui::Rect box{10, 400, 200, 200};
     for (const rm::ui::Path& sil : {FitInto(Sakura({0, 0}, 1, 10), box), FitInto(MapleLeaf({0, 0}, 1, 10), box),
                                      FitInto(Snowflake({0, 0}, 1, 10), box), FitInto(Sun({0, 0}, 1, 10), box)}) {
         const Bounds sb2 = BoundsOf(sil);
         CHECK(sb2.x0 >= 10 - 0.01f && sb2.x1 <= 210 + 0.01f && sb2.y0 >= 400 - 0.01f && sb2.y1 <= 600 + 0.01f);
-        CHECK(std::fabs((sb2.x1 - sb2.x0) - 200) < 0.01f || std::fabs((sb2.y1 - sb2.y0) - 200) < 0.01f);  // as large as it fits
-        CHECK(std::fabs((sb2.x0 + sb2.x1) * 0.5f - 110) < 0.01f && std::fabs((sb2.y0 + sb2.y1) * 0.5f - 500) < 0.01f);  // centred
+        CHECK(std::fabs((sb2.x1 - sb2.x0) - 200) < 0.01f || std::fabs((sb2.y1 - sb2.y0) - 200) < 0.01f);  // 入る限り大きく
+        CHECK(std::fabs((sb2.x0 + sb2.x1) * 0.5f - 110) < 0.01f && std::fabs((sb2.y0 + sb2.y1) * 0.5f - 500) < 0.01f);  // 中央に
     }
 
-    // The flurry stays in its area (give or take a petal's size).
+    // 花びらの舞いは、その領域の中に収まる (花びら 1 枚ぶんの大きさは前後してよい)。
     const rm::ui::Rect area{0, 0, 300, 200};
     const rm::ui::Path petals = Petals(area, 40, 8, 1234);
     const Bounds pb = BoundsOf(petals);
     CHECK(pb.figures == 40 && pb.x0 > -8 && pb.y0 > -8 && pb.x1 < 308 && pb.y1 < 208);
 
     const rm::ui::Rect win{0, 0, 800, 600};
-    // The beach: only the bottom-right corner, its shore from (800 - 300, 600) up to (800, 600 - 200).
-    // The sand castle: on its base (its heap a little below it, in the sand), as wide and tall as asked.
+    // 浜辺: 右下の角だけ。その岸は (800 - 300, 600) から (800, 600 - 200) まで。
+    // 砂の城: 土台の上 (その山は少し下、砂の中)。頼まれた幅と高さで。
     const Bounds castle = BoundsOf(SandCastle({400, 500}, 100));
     CHECK(castle.x0 > 400 - 90 && castle.x1 < 400 + 90 && castle.y0 > 500 - 100 && castle.y1 < 500 + 12);
     CHECK(AllClockwise(SandCastle({400, 500}, 100)));
-    // The summer silhouette: a mound on the bottom edge, the parasol the tallest thing on it.
+    // 夏のシルエット: 下の縁の盛り上がり。パラソルがその上で一番高い。
     const Bounds scene = BoundsOf(BeachScene({500, 600}, 300));
     CHECK(scene.y1 > 600 && scene.y0 > 600 - 300 * 1.1f && scene.y0 < 600 - 300 * 0.85f);
     CHECK(scene.x0 > 500 - 300 && scene.x1 < 500 + 300 * 0.9f);
     CHECK(AllClockwise(BeachScene({500, 600}, 300)));
-    // The canopy: thick at the top, a few further down, never below `depth` (give or take a leaf).
+    // 木のおおい: 上は濃く、下へは少し。`depth` より下には出ない (葉 1 枚ぶんは前後してよい)。
     int above = 0, below = 0;
     for (const auto& part : Canopy(win, 200, 0.25f, 9)) {
         if (part.steps.empty()) continue;
         CHECK(BoundsOf(part).y1 < 200 + 30);
         for (const auto& st : part.steps) (st.a.y < 60 ? above : below) += st.op == rm::ui::Path::Op::Begin ? 1 : 0;
     }
-    CHECK(above + below >= 200 && above > below);  // 800 x 0.25 leaves (and a stalk each), most near the top
+    CHECK(above + below >= 200 && above > below);  // 800 x 0.25 枚の葉 (それぞれ茎つき)。大半は上の近く
 
-    // Falling snow stays in its area; the same flakes for the same seed.
+    // 降る雪は領域の中に収まる。同じシードなら同じ雪片。
     const Bounds flakes = BoundsOf(Snowfall({0, 0, 400, 300}, 50, 6, 3));
     CHECK(flakes.figures == 50 && flakes.x0 > -4 && flakes.y0 > -4 && flakes.x1 < 404 && flakes.y1 < 304);
-    // Snow piles up at the bottom edge, inside it: never more than `depth` above it, off the corners.
+    // 雪は下の縁の内側に積もる: 縁から `depth` より上にはならず、角にはかからない。
     const rm::ui::Rect panel{100, 200, 300, 150};
     const Bounds drift = BoundsOf(SnowDrift(panel, 9, 8));
     CHECK(drift.y1 == 350 && drift.y0 >= 350 - 9.01f);
     CHECK(drift.x0 >= 100 + 4.f && drift.x1 <= 400 - 4.f);
     CHECK(AllClockwise(SnowDrift(panel, 9, 8)));
-    CHECK(SnowDrift({0, 0, 5, 10}, 6, 8).steps.empty());  // too narrow for any
-    // The same drift wherever the panel is and however wide it grows (only its right end follows).
+    CHECK(SnowDrift({0, 0, 5, 10}, 6, 8).steps.empty());  // 狭すぎて何も入らない
+    // パネルがどこにあっても、どんなに広くなっても同じ吹きだまり (右端だけがついていく)。
     const auto heights = [](const rm::ui::Rect& r) {
         std::vector<float> out;
         for (const auto& st : SnowDrift(r, 9, 8).steps) out.push_back(st.a.y);
@@ -298,18 +298,18 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     const std::vector<float> narrow = heights({100, 200, 300, 150}), wide = heights({100, 200, 600, 150});
     const std::vector<float> moved = heights({250, 200, 300, 150});
     CHECK(narrow.size() > 40 && wide.size() > narrow.size());
-    for (size_t i = 0; i + 10 < narrow.size(); ++i) CHECK(narrow[i] == wide[i]);  // until the right end's slope
+    for (size_t i = 0; i + 10 < narrow.size(); ++i) CHECK(narrow[i] == wide[i]);  // 右端の傾きまでは
     CHECK(moved == narrow);
 
-    // Icicles hang from the top edge, no longer than asked, only a few here and there.
+    // つらら (氷柱) は上の縁から下がる。頼まれた長さより長くならず、ところどころに少しだけ。
     const IcicleShapes ice = Icicles(win, 40, 5);
     const Bounds ib = BoundsOf(ice.ice);
     CHECK(ib.y0 >= 2 - 0.01f && ib.y1 <= 2 + 40 + 0.01f && ib.x0 >= 0);
     CHECK(ib.figures >= 1 && ib.figures <= 3 * (800 / 260 + 1));
     CHECK(BoundsOf(ice.snow).y0 >= -5.01f && BoundsOf(ice.shine).y1 <= ib.y1);
     CHECK(AllClockwise(ice.ice) && AllClockwise(ice.shine) && AllClockwise(ice.snow));
-    // Each icicle's tip (its lowest point): the same icicles in the same places whatever the window's
-    // width - one running past the right edge is kept (cut off by the edge), never dropped.
+    // 各つららの先端 (一番低い点): ウィンドウの幅が何でも、同じ場所に同じつらら。
+    // 右の縁をはみ出すものは残す (縁で切れる)。落とさない。
     const auto tips = [](const rm::ui::Path& path, float before) {
         std::vector<rm::Vec2> out;
         rm::Vec2 low{0, -1e9f};

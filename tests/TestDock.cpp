@@ -1,5 +1,5 @@
-// Tests for the docking tree (editor/dock/DockLayout): edits, pruning, save format, geometry, the tab
-// strip that does not fit; and the named layouts (editor/dock/NamedLayouts).
+// ドッキングの木 (editor/dock/DockLayout) のテスト: 編集、刈り込み、保存の形、幾何、収まらない
+// タブの帯。そして名前つきの配置 (editor/dock/NamedLayouts)。
 
 #include "Test.h"
 
@@ -13,7 +13,7 @@ using namespace rm::editor::dock;
 
 namespace {
 
-// [ left | [ center | right ] ] over [ bottom1 bottom2 ]
+// [ left | [ center | right ] ] の上に [ bottom1 bottom2 ]
 Layout Sample() {
     Layout l;
     auto top = l.MakeSplit(Axis::Horizontal, 0.2f, l.MakeLeaf({"left"}),
@@ -36,10 +36,10 @@ RM_TEST(Dock_CloseCollapsesSplit) {
     CHECK(CountNodes(*l.main) == 7);
     CHECK(l.Close("right"));
     CHECK(!l.Contains("right"));
-    // the [center | right] split is replaced by the center leaf
+    // [center | right] の分割が center の葉に置き換わる
     CHECK(CountNodes(*l.main) == 5);
     CHECK(l.Contains("center"));
-    CHECK(!l.Close("right"));  // already closed
+    CHECK(!l.Close("right"));  // もう閉じている
 }
 
 RM_TEST(Dock_CloseEverythingLeavesEmptyRoot) {
@@ -48,7 +48,7 @@ RM_TEST(Dock_CloseEverythingLeavesEmptyRoot) {
     CHECK(l.main != nullptr);
     CHECK(l.main->IsEmptyLeaf());
     CHECK(l.Panels().empty());
-    // and a panel can be opened again into it
+    // そしてパネルは、またそこに開ける
     CHECK(l.Open("left", 12345));
     CHECK(l.main->IsLeaf() && l.main->tabs.size() == 1);
 }
@@ -69,7 +69,7 @@ RM_TEST(Dock_EdgeSplitsTarget) {
     const Node* moved = l.LeafOf("bottom2");
     CHECK(moved && moved->tabs.size() == 1);
     CHECK(l.LeafOf("bottom1")->tabs.size() == 1);
-    // the center leaf is now the lower half of a vertical split whose upper half is bottom2
+    // center の葉は、上半分が bottom2 の縦分割の下半分になった
     const Node* c = l.FindNode(center);
     CHECK(c && c->tabs[0] == "center");
     bool found = false;
@@ -99,13 +99,13 @@ RM_TEST(Dock_ReorderInsideOneStrip) {
     Layout l;
     l.main = l.MakeLeaf({"a", "b", "c"});
     const uint32_t id = l.main->id;
-    // drag "a" to the gap after "c" (index 3 counted with "a" still in the strip)
+    // "a" を "c" の後ろのすき間にドラッグ (帯にまだ "a" がある状態で数えて 3 番目)
     CHECK(l.Dock("a", id, Zone::Center, 3));
     CHECK(l.main->tabs == std::vector<std::string>({"b", "c", "a"}));
-    // drag "a" to the front
+    // "a" を先頭にドラッグ
     CHECK(l.Dock("a", id, Zone::Center, 0));
     CHECK(l.main->tabs == std::vector<std::string>({"a", "b", "c"}));
-    // dropping on its own place changes nothing
+    // 自分の場所に落としても何も変わらない
     CHECK(!l.Dock("a", id, Zone::Center, 0));
     CHECK(!l.Dock("a", id, Zone::Center, 1));
 }
@@ -115,17 +115,17 @@ RM_TEST(Dock_LoneTabOnItselfIsNoChange) {
     const uint32_t center = LeafId(l, "center");
     CHECK(!l.Dock("center", center, Zone::Left));
     CHECK(!l.Dock("center", center, Zone::Center));
-    CHECK(LeafId(l, "center") == center);  // ids kept, so open windows still find their nodes
+    CHECK(LeafId(l, "center") == center);  // ID は保つので、開いているウィンドウは今もノードを見つけられる
     CHECK(CountNodes(*l.main) == 7);
 }
 
 RM_TEST(Dock_EdgeOfGroupThatHoldsTheSource) {
-    // Dock "right" to the left edge of the [center | right] group it is part of.
+    // "right" を、それが属する [center | right] のグループの左端にドッキングする。
     Layout l = Sample();
     const Node* group = l.main->a->b.get();
     const uint32_t groupId = group->id;
     CHECK(l.Dock("right", groupId, Zone::Left));
-    // the group collapsed to the center leaf, with "right" now in front of it
+    // グループは center の葉に畳まれ、"right" がその前に来る
     const Node* top = l.main->a.get();
     CHECK(!top->IsLeaf());
     const Node* wrap = top->b.get();
@@ -143,14 +143,14 @@ RM_TEST(Dock_FloatAndBack) {
     uint32_t site = 99;
     CHECK(l.LeafOf("left", &site) != nullptr && site == fid);
     CHECK(CountNodes(*l.main) == 5);
-    // a lone panel floated again only moves its window
+    // 1 つだけのパネルをまた浮かせても、ウィンドウが動くだけ
     CHECK(l.Float("left", {300, 300, 50, 50}) == fid);
     CHECK(l.floating.size() == 1);
     CHECK(l.floating[0].rect.x == 300 && l.floating[0].rect.w >= 120);
-    // another panel docked into the floating window
+    // 別のパネルが浮かせたウィンドウにドッキングした
     CHECK(l.Dock("right", l.floating[0].root->id, Zone::Bottom));
     CHECK(l.SiteOf(LeafId(l, "right")) == fid);
-    // the whole window goes back to the main tree
+    // ウィンドウごとメインの木に戻る
     CHECK(l.DockFloating(fid, LeafId(l, "center"), Zone::Right));
     CHECK(l.floating.empty());
     CHECK(l.LeafOf("left", &site) && site == 0);
@@ -210,11 +210,11 @@ RM_TEST(Dock_SanitizeDropsUnknownAndDuplicates) {
     CHECK(l.has_value());
     l->Sanitize({"a", "b", "c"});
     CHECK(l->Panels() == std::vector<std::string>({"a", "b", "c"}));
-    // the main split kept "a" left and "b" right; the ratio was clamped
+    // メインの分割は "a" を左、"b" を右に保った。比率は収められた
     CHECK(!l->main->IsLeaf());
     CHECK(l->main->ratio <= 0.95f);
     CHECK(l->main->a->active == 0);
-    // the window whose only panel is gone was dropped; the duplicate "b" in the other one too
+    // パネルが 1 つもなくなったウィンドウは捨てられた。もう一方の重複した "b" も
     CHECK(l->floating.size() == 1);
     CHECK(l->floating[0].root->tabs == std::vector<std::string>({"c"}));
 }
@@ -229,12 +229,12 @@ RM_TEST(Dock_ArrangeAndSplitter) {
     CHECK(placed[2].rect.x == 104 && placed[2].rect.w == 300);
     const ui::Rect s = SplitterRect(*l.main, {0, 0, 404, 100}, 4);
     CHECK(s.x == 100 && s.w == 4 && s.h == 100);
-    // dragging far left stops at the minimum size
+    // 左へ大きくドラッグすると、最小サイズで止まる
     const float r = RatioAt(*l.main, {0, 0, 404, 100}, 4, -50, 80);
     CHECK(std::fabs(r - 0.2f) < 1e-6f);
     const float mid = RatioAt(*l.main, {0, 0, 404, 100}, 4, 202, 80);
     CHECK(std::fabs(mid - 0.5f) < 1e-6f);
-    // too small to keep both minimums: split in the middle
+    // 小さすぎて両方の最小を保てない: 真ん中で分ける
     CHECK(RatioAt(*l.main, {0, 0, 100, 100}, 4, 10, 80) == 0.5f);
 }
 
@@ -248,16 +248,16 @@ RM_TEST(Dock_ZonePreview) {
     CHECK(center.w == 200);
 }
 
-// --- Tab strip: a row of tabs longer than the strip -----------------------------------------
+// --- タブの帯: 帯より長いタブの列 -----------------------------------------------
 
 namespace {
-const float kFour[] = {100, 100, 100, 100};  // content = 4 * 100 + 3 * 2 = 406
+const float kFour[] = {100, 100, 100, 100};  // 中身 = 4 * 100 + 3 * 2 = 406
 }
 
 RM_TEST(Dock_TabStripFits) {
     const TabStripFit roomy = FitTabStrip(kFour, 2, 500, 70, 50);
     CHECK(!roomy.overflow && roomy.view == 500 && roomy.scroll == 0 && roomy.content == 406);
-    // too long: the buttons take room, the scroll is kept inside the row
+    // 長すぎる: ボタンが場所を取り、スクロールは列の中に収める
     const TabStripFit tight = FitTabStrip(kFour, 2, 250, 70, 1000);
     CHECK(tight.overflow && tight.view == 180 && tight.scroll == 226);
     CHECK(FitTabStrip(kFour, 2, 250, 70, -5).scroll == 0);
@@ -267,13 +267,13 @@ RM_TEST(Dock_TabStripFits) {
 }
 
 RM_TEST(Dock_TabStripShowsTab) {
-    CHECK(ScrollToShowTab(kFour, 2, 180, 0, 2) == 124);   // its right edge to the view's right edge
+    CHECK(ScrollToShowTab(kFour, 2, 180, 0, 2) == 124);   // 右端をビューの右端に
     CHECK(ScrollToShowTab(kFour, 2, 180, 0, 1) == 22);
-    CHECK(ScrollToShowTab(kFour, 2, 180, 226, 0) == 0);   // its left edge to the view's left edge
-    CHECK(ScrollToShowTab(kFour, 2, 180, 150, 2) == 150); // already whole: does not move
+    CHECK(ScrollToShowTab(kFour, 2, 180, 226, 0) == 0);   // 左端をビューの左端に
+    CHECK(ScrollToShowTab(kFour, 2, 180, 150, 2) == 150); // もう全部見えている: 動かない
     const float wide[] = {300};
-    CHECK(ScrollToShowTab(wide, 2, 100, 0, 0) == 0);       // wider than the view: its left side
-    CHECK(ScrollToShowTab(kFour, 2, 180, 40, 9) == 40);    // no such tab
+    CHECK(ScrollToShowTab(wide, 2, 100, 0, 0) == 0);       // ビューより広い: その左側
+    CHECK(ScrollToShowTab(kFour, 2, 180, 40, 9) == 40);    // そんなタブはない
 }
 
 RM_TEST(Dock_TabStripSteps) {
@@ -295,11 +295,11 @@ RM_TEST(Dock_TabStripInsertIndex) {
     CHECK(TabInsertIndex(kFour, 2, 0) == 0);
     CHECK(TabInsertIndex(kFour, 2, 49) == 0);
     CHECK(TabInsertIndex(kFour, 2, 60) == 1);
-    CHECK(TabInsertIndex(kFour, 2, 260) == 3);  // a hidden tab counts like a seen one
+    CHECK(TabInsertIndex(kFour, 2, 260) == 3);  // 隠れたタブも、見えているタブと同じに数える
     CHECK(TabInsertIndex(kFour, 2, 999) == 4);
 }
 
-// --- Named layouts (editor/dock/NamedLayouts): names, save / rename / delete, the save format ---
+// --- 名前つきの配置 (editor/dock/NamedLayouts): 名前、保存 / 名前変更 / 削除、保存の形 ---
 namespace {
 
 Layout Two(const char* a, const char* b) {
@@ -318,7 +318,7 @@ size_t CountKey(const json::Value& o, std::string_view key) {
 
 RM_TEST(NamedLayouts_Names) {
     CHECK(NamedLayouts::CleanName("  作業  ") == "作業");
-    CHECK(NamedLayouts::CleanName("\xE3\x80\x80作業 中\xE3\x80\x80") == "作業 中");  // full-width spaces too
+    CHECK(NamedLayouts::CleanName("\xE3\x80\x80作業 中\xE3\x80\x80") == "作業 中");  // 全角スペースも
     CHECK(NamedLayouts::CleanName(" \xE3\x80\x80 ").empty());
     NamedLayouts n;
     CHECK(n.Check("") == NamedLayouts::NameCheck::Empty);
@@ -326,7 +326,7 @@ RM_TEST(NamedLayouts_Names) {
     CHECK(n.FreeName("配置") == "配置");
     CHECK(n.Put("配置", Two("a", "b")));
     CHECK(n.Check(" 配置 ") == NamedLayouts::NameCheck::Taken);
-    CHECK(n.Check("配置", "配置") == NamedLayouts::NameCheck::Ok);  // its own name
+    CHECK(n.Check("配置", "配置") == NamedLayouts::NameCheck::Ok);  // 自分の名前
     CHECK(n.FreeName("配置") == "配置 2");
     CHECK(n.Put("配置 2", Two("a", "b")));
     CHECK(n.FreeName("配置") == "配置 3");
@@ -338,7 +338,7 @@ RM_TEST(NamedLayouts_PutReplacesInPlace) {
     CHECK(n.Empty());
     CHECK(n.Put("first", Two("a", "b")));
     CHECK(n.Put("second", Two("b", "a")));
-    CHECK(n.Put(" first", Two("x", "y")));  // the same name: replaced, not added
+    CHECK(n.Put(" first", Two("x", "y")));  // 同じ名前: 追加せず置き換える
     CHECK(n.Entries().size() == 2);
     CHECK(n.Entries()[0].info.name == "first");
     const auto got = n.Get("first", {"x", "y"});
@@ -348,9 +348,9 @@ RM_TEST(NamedLayouts_PutReplacesInPlace) {
 RM_TEST(NamedLayouts_GetCleansForKnownPanels) {
     NamedLayouts n;
     n.Put("p", Two("keep", "gone"));
-    const auto got = n.Get("p", {"keep"});  // a panel of a plugin that is not installed now
+    const auto got = n.Get("p", {"keep"});  // 今はインストールされていないプラグインのパネル
     CHECK(got && got->Contains("keep") && !got->Contains("gone"));
-    CHECK(got->main->IsLeaf());  // the empty side folded away
+    CHECK(got->main->IsLeaf());  // 空になった側は畳まれた
     CHECK(!n.Get("missing", {"keep"}));
 }
 
@@ -358,13 +358,13 @@ RM_TEST(NamedLayouts_RenameAndRemove) {
     NamedLayouts n;
     n.Put("a", Two("x", "y"));
     n.Put("b", Two("x", "y"));
-    CHECK(!n.Rename("a", "b"));    // taken
-    CHECK(!n.Rename("a", "  "));   // empty
-    CHECK(!n.Rename("zzz", "c"));  // missing
-    CHECK(n.Rename("a", "a"));     // the same name is fine
+    CHECK(!n.Rename("a", "b"));    // 使用中
+    CHECK(!n.Rename("a", "  "));   // 空
+    CHECK(!n.Rename("zzz", "c"));  // ない
+    CHECK(n.Rename("a", "a"));     // 同じ名前なら問題ない
     CHECK(n.Rename("a", " c "));
     CHECK(n.Find("c") && !n.Find("a"));
-    CHECK(n.Entries()[0].info.name == "c");  // keeps its place
+    CHECK(n.Entries()[0].info.name == "c");  // 場所は保つ
     CHECK(n.Remove("c"));
     CHECK(!n.Remove("c"));
     CHECK(n.Entries().size() == 1 && n.Entries()[0].info.name == "b");
@@ -376,11 +376,11 @@ RM_TEST(NamedLayouts_JsonKeepsWhatItDoesNotKnow) {
     const json::Value layout = n.Entries()[0].layout;
     json::Value list = n.ToJson();
     CHECK(list.IsArray() && list.Size() == 1);
-    list.At(0).Set("color", "red");                 // a key of a newer version
+    list.At(0).Set("color", "red");                 // 新しい版のキー
     json::Value odd = json::Value::MakeObject();
-    odd.Set("future", 1);                          // not an entry at all
+    odd.Set("future", 1);                          // 項目ですらない
     list.Push(odd);
-    json::Value twin = json::Value::MakeObject();  // a second entry of the same name
+    json::Value twin = json::Value::MakeObject();  // 同じ名前の 2 つ目の項目
     twin.Set("name", "work");
     list.Push(twin);
 
@@ -391,7 +391,7 @@ RM_TEST(NamedLayouts_JsonKeepsWhatItDoesNotKnow) {
     const json::Value again = back.ToJson();
     CHECK(again.Size() == 3);
     CHECK(again.At(0).Get("color").AsString() == "red");
-    CHECK(CountKey(again.At(0), "layout") == 1);  // "layout" is ours, not an unknown key written twice
+    CHECK(CountKey(again.At(0), "layout") == 1);  // "layout" は私たちのもので、知らないキーが 2 回書かれたのではない
     CHECK(again.At(1) == odd && again.At(2) == twin);
     CHECK(NamedLayouts::FromJson(json::Value()).Empty());
 }
@@ -403,8 +403,8 @@ RM_TEST(NamedLayouts_BrokenLayoutIsNotUsed) {
     e.Set("layout", "not a layout");
     list.Push(e);
     const NamedLayouts n = NamedLayouts::FromJson(list);
-    CHECK(n.Find("broken"));  // listed (it can be deleted) ...
-    CHECK(!n.Get("broken", {"x"}));  // ... but never applied
+    CHECK(n.Find("broken"));  // 一覧に出る (削除はできる) ...
+    CHECK(!n.Get("broken", {"x"}));  // ... が、適用はしない
     CHECK(n.ToJson().At(0).Get("layout").AsString() == "not a layout");
 }
 
@@ -414,15 +414,15 @@ RM_TEST(NamedLayouts_MoveBetweenLists) {
     project.Put("b", Two("x", "y"));
     shared.Put("b", Two("y", "x"));
     json::Value list = project.ToJson();
-    list.At(0).Set("memo", "kept");  // an unknown key travels with the entry
+    list.At(0).Set("memo", "kept");  // 知らないキーは項目と一緒に運ばれる
     project = NamedLayouts::FromJson(list);
 
     CHECK(NamedLayouts::Move(project, " a ", shared));
     CHECK(!project.Find("a") && shared.Find("a"));
-    CHECK(shared.Entries().back().info.name == "a");  // at the end
+    CHECK(shared.Entries().back().info.name == "a");  // 末尾に
     CHECK(shared.ToJson().At(1).Get("memo").AsString() == "kept");
     CHECK(shared.Get("a", {"x", "y"}).has_value());
-    CHECK(!NamedLayouts::Move(project, "b", shared));  // the name is taken there: nothing moves
+    CHECK(!NamedLayouts::Move(project, "b", shared));  // そこでは名前が使われている: 何も動かない
     CHECK(project.Find("b") && shared.Entries().size() == 2);
     CHECK(!NamedLayouts::Move(project, "zzz", shared));
     CHECK(!NamedLayouts::Move(shared, "a", shared));

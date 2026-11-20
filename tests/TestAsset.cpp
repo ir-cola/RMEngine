@@ -1,6 +1,6 @@
-// Tests for asset ids (core/asset): kinds, .meta text, Reconcile (which file has which id after files
-// came, went, moved and were renamed), the order of the folder tree, and the files on a real folder
-// (a temporary one: scan, write .meta, move a file without its .meta, read the ids back).
+// アセット ID (core/asset) のテスト: 種類、.meta の文字列、Reconcile (ファイルが増えた・消えた・
+// 動いた・名前が変わったあと、どのファイルがどの ID を持つか)、フォルダ木の並び、実際のフォルダ
+// (一時フォルダ: 走査、.meta の書き込み、.meta なしでファイルを動かす、ID を読み戻す)。
 
 #include "Test.h"
 
@@ -29,7 +29,7 @@ using namespace rm::asset;
 
 namespace {
 
-// Ids "00..01", "00..02" ... in order: what a new id is is known in advance.
+// ID は "00..01", "00..02" ... の順: 新しい ID が何になるか前もって分かる。
 struct Counter {
     uint64_t next = 1;
     std::string operator()() { return GuidFromNumbers(0, next++); }
@@ -56,8 +56,8 @@ RM_TEST(Asset_Kinds) {
     CHECK(KindMatches(Kind::Model, "model"));
     CHECK(KindMatches(Kind::Image, "model, image"));
     CHECK(!KindMatches(Kind::Audio, "model,image"));
-    CHECK(KindMatches(Kind::Other, ""));    // empty = any file ...
-    CHECK(!KindMatches(Kind::Folder, ""));  // ... but not a folder
+    CHECK(KindMatches(Kind::Other, ""));    // 空 = どのファイルでも ...
+    CHECK(!KindMatches(Kind::Folder, ""));  // ... ただしフォルダは除く
     CHECK(ValidKindFilter("") && ValidKindFilter("image,model") && !ValidKindFilter("image,mesh"));
 }
 
@@ -74,7 +74,7 @@ RM_TEST(Asset_MetaKeepsOtherKeys) {
     const std::string g = G(1);
     const std::string text = MetaText("", g);
     CHECK(GuidInMeta(text) == g);
-    // A newer version (or a plugin) wrote more keys: they stay when the id is written again.
+    // 新しい版 (またはプラグイン) がキーを増やして書いた: ID を書き直しても残る。
     const std::string withMore = R"({"guid": "0000000000000abc0000000000000001", "import": {"scale": 2}})";
     const std::string again = MetaText(withMore, G(2));
     CHECK(GuidInMeta(again) == G(2));
@@ -84,51 +84,51 @@ RM_TEST(Asset_MetaKeepsOtherKeys) {
 
 RM_TEST(Asset_Reconcile_NewAndKept) {
     Counter ids;
-    // First look: nothing has an id yet.
+    // 最初の走査: まだどれにも ID がない。
     std::vector<Found> found = {{"Models", true, ""}, {"Models/Tree.fbx", false, ""}, {"sky.png", false, ""}};
     Plan p = Reconcile({}, found, {}, ids);
     CHECK(p.entries.size() == 3 && p.writes.size() == 3 && p.moves.empty());
     CHECK(At(p, "Models/Tree.fbx")->guid == GuidFromNumbers(0, 2));
-    // Next look: every one has its .meta - nothing to write.
+    // 次の走査: すべてに .meta がある - 書くものはない。
     for (Found& f : found) f.metaGuid = At(p, f.path)->guid;
     Plan q = Reconcile(p.entries, found, {}, ids);
     CHECK(q.writes.empty() && q.moves.empty() && q.entries == p.entries);
 }
 
 RM_TEST(Asset_Reconcile_MovedWithoutMeta) {
-    // Explorer moved Tree.fbx into Props/ but its .meta stayed behind (an orphan).
+    // エクスプローラーが Tree.fbx を Props/ に動かしたが、.meta は残った (孤児)。
     Counter ids;
     const std::vector<Entry> before = {{"Models", G(1), true}, {"Models/Tree.fbx", G(2), false}, {"Props", G(3), true}};
     const std::vector<Found> found = {{"Models", true, G(1)}, {"Props", true, G(3)}, {"Props/Tree.fbx", false, ""}};
     const std::vector<Orphan> orphans = {{"Models/Tree.fbx", G(2)}};
     const Plan p = Reconcile(before, found, orphans, ids);
-    CHECK(At(p, "Props/Tree.fbx")->guid == G(2));  // the same id: references still find it
+    CHECK(At(p, "Props/Tree.fbx")->guid == G(2));  // 同じ ID: 参照は今も見つけられる
     CHECK(p.moves.size() == 1 && p.moves[0].from == "Models/Tree.fbx" && p.moves[0].to == "Props/Tree.fbx");
-    CHECK(p.writes.size() == 1 && p.writes[0].guid == G(2) && p.writes[0].name == "Tree.fbx");  // the moved .meta says its name
+    CHECK(p.writes.size() == 1 && p.writes[0].guid == G(2) && p.writes[0].name == "Tree.fbx");  // 動いた .meta が自分の名前を持つ
     CHECK(!p.notes.empty());
 }
 
 RM_TEST(Asset_Reconcile_RenamedWithoutMeta) {
     Counter ids;
-    // Renamed in the same folder (rock.png -> stone.png): the only one gone and the only one new there.
+    // 同じフォルダ内で名前を変えた (rock.png -> stone.png): そこで消えたのは 1 つだけ、新しいのも 1 つだけ。
     const std::vector<Found> found = {{"Tex", true, G(1)}, {"Tex/stone.png", false, ""}, {"Tex/grass.png", false, G(3)}};
     const std::vector<Orphan> orphans = {{"Tex/rock.png", G(2)}};
     const Plan p = Reconcile({}, found, orphans, ids);
     CHECK(At(p, "Tex/stone.png")->guid == G(2));
     CHECK(p.moves.size() == 1 && p.moves[0].to == "Tex/stone.png");
-    // Two new ones with that extension: not clear which - both get new ids, the orphan stays.
+    // その拡張子の新しいファイルが 2 つ: どちらか分からない - 両方に新しい ID を付け、孤児は残る。
     const std::vector<Found> two = {{"Tex", true, G(1)}, {"Tex/a.png", false, ""}, {"Tex/b.png", false, ""}};
     const Plan q = Reconcile({}, two, orphans, ids);
     CHECK(At(q, "Tex/a.png")->guid != G(2) && At(q, "Tex/b.png")->guid != G(2));
     CHECK(q.moves.empty() && q.writes.size() == 2);
-    // Another extension is another thing.
+    // 別の拡張子は別のもの。
     const std::vector<Found> other = {{"Tex", true, G(1)}, {"Tex/stone.jpg", false, ""}};
     CHECK(At(Reconcile({}, other, orphans, ids), "Tex/stone.jpg")->guid != G(2));
 }
 
 RM_TEST(Asset_Reconcile_FolderRenamed) {
-    // A folder renamed in Explorer: what is in it moved with its .meta files; the folder's own .meta
-    // ("Old.meta", next to it) stayed - the folder keeps its id by the rename rule.
+    // エクスプローラーでフォルダの名前を変えた: 中のものは .meta ごと動いた。フォルダ自身の .meta
+    // ("Old.meta"、フォルダの隣) は残った - 名前変更の規則でフォルダは ID を保つ。
     Counter ids;
     const std::vector<Found> found = {{"New", true, ""}, {"New/a.png", false, G(2)}};
     const std::vector<Orphan> orphans = {{"Old", G(1)}};
@@ -140,17 +140,17 @@ RM_TEST(Asset_Reconcile_FolderRenamed) {
 
 RM_TEST(Asset_Reconcile_MetaDeletedOrCopied) {
     Counter ids;
-    // The .meta was deleted, the file is where it was: its id from the last look comes back.
+    // .meta が消されたが、ファイルは元の場所にある: 前回の走査の ID が戻る。
     const std::vector<Entry> before = {{"a.png", G(1), false}};
     const Plan p = Reconcile(before, std::vector<Found>{{"a.png", false, ""}}, {}, ids);
     CHECK(At(p, "a.png")->guid == G(1) && p.writes.size() == 1 && p.writes[0].guid == G(1));
-    // A copy made with its .meta: the one at the id's old path keeps it, the copy gets a new one.
+    // .meta ごと作ったコピー: ID の元のパスにあるほうが ID を保ち、コピーは新しい ID をもらう。
     const std::vector<Found> copied = {{"a - copy.png", false, G(1)}, {"a.png", false, G(1)}};
     const Plan q = Reconcile(before, copied, {}, ids);
     CHECK(At(q, "a.png")->guid == G(1));
     CHECK(At(q, "a - copy.png")->guid != G(1) && IsGuid(At(q, "a - copy.png")->guid));
     CHECK(q.writes.size() == 1 && q.writes[0].path == "a - copy.png");
-    // An orphan whose id a file still has (a stray copy of a .meta) is not used again.
+    // ID をまだ持っているファイルがある孤児 (.meta の迷子のコピー) は、もう使わない。
     const Plan r = Reconcile({}, std::vector<Found>{{"a.png", false, G(1)}, {"b.png", false, ""}},
                              std::vector<Orphan>{{"b2.png", G(1)}}, ids);
     CHECK(At(r, "b.png")->guid != G(1));
@@ -162,7 +162,7 @@ RM_TEST(Asset_DisplayOrder) {
     const std::vector<size_t> order = DisplayOrder(e);
     std::vector<std::string> paths;
     for (const size_t i : order) paths.push_back(e[i].path);
-    // folders first (names ignoring case), each followed by what is in it; then the files
+    // フォルダが先 (名前は大文字小文字を無視)、それぞれの直後に中身。そのあとファイル
     const std::vector<std::string> want = {"a", "a/x.png", "B", "B/c", "Y.png", "z.txt"};
     CHECK(paths == want);
     CHECK(NumberOf(G(1)) == NumberOf(G(1)) && NumberOf(G(1)) != NumberOf(G(2)) && NumberOf("") != 0);
@@ -189,18 +189,18 @@ RM_TEST(Asset_FilesOnDisk) {
 
     std::vector<std::string> notes;
     const std::vector<Entry> first = Update(root, {}, notes);
-    CHECK(first.size() == 3);  // the folder, the model, the picture (not desktop.ini)
+    CHECK(first.size() == 3);  // フォルダ、モデル、画像 (desktop.ini は除く)
     CHECK(fs::exists(root / L"モデル.meta") && fs::exists(root / L"sky.png.meta"));
     std::string treeGuid;
     for (const Entry& e : first) {
         if (e.path == "モデル/木.fbx") treeGuid = e.guid;
     }
     CHECK(IsGuid(treeGuid));
-    // What the game reads (nothing written): the same ids.
+    // ゲームが読むもの (何も書かない): 同じ ID。
     const std::vector<Entry> read = ReadIndex(root);
     CHECK(read.size() == 3);
 
-    // Moved outside the editor without its .meta: the id goes along, and so does the .meta.
+    // エディターの外で .meta なしで動かした: ID はついていき、.meta も同じ。
     fs::rename(root / L"モデル" / L"木.fbx", root / L"木.fbx", ec);
     const std::vector<Entry> second = Update(root, first, notes);
     std::string movedGuid;
@@ -209,13 +209,13 @@ RM_TEST(Asset_FilesOnDisk) {
     }
     CHECK(movedGuid == treeGuid);
     CHECK(fs::exists(root / L"木.fbx.meta") && !fs::exists(root / L"モデル" / L"木.fbx.meta"));
-    // Looking again changes nothing.
+    // もう一度走査しても何も変わらない。
     CHECK(Update(root, second, notes) == second);
     fs::remove_all(root.parent_path(), ec);
 }
 
 RM_TEST(Asset_KindsOfReflectedFields) {
-    // Every AssetKind="..." of every reflected type names kinds that exist (rmgen checks only the form).
+    // 反射型すべての AssetKind="..." は、実在する種類の名前になっている (rmgen は形だけ調べる)。
     for (const reflect::TypeDesc* t : reflect::AllTypes()) {
         for (const reflect::FieldDesc& f : t->fields) {
             if (f.assetKinds && !ValidKindFilter(f.assetKinds)) CHECK(!"unknown AssetKind");
@@ -224,7 +224,7 @@ RM_TEST(Asset_KindsOfReflectedFields) {
 }
 
 RM_TEST(Asset_ImportSettingsInMeta) {
-    // The "import" object of a .meta, and a new text with another one: the id and other keys stay.
+    // .meta の "import" オブジェクトと、別のものを持つ新しい文字列: ID とほかのキーは残る。
     const std::string meta = R"({"guid": "0000000000000abc0000000000000001", "memo": 1, "import": {"scale": 0.5, "future": true}})";
     const json::Value imp = ImportInMeta(meta);
     CHECK(imp.Get("scale").AsDouble() == 0.5);
@@ -235,9 +235,9 @@ RM_TEST(Asset_ImportSettingsInMeta) {
     CHECK(GuidInMeta(text) == G(1));
     CHECK(text.find("\"memo\"") != std::string::npos && text.find("\"future\"") != std::string::npos);
     CHECK(ImportInMeta(text).Get("scale").AsDouble() == 2.0);
-    // Writing the id again keeps the settings (MetaText keeps every other key).
+    // ID を書き直しても設定は残る (MetaText はほかのキーをすべて残す)。
     CHECK(ImportInMeta(MetaText(text, G(2))).Get("scale").AsDouble() == 2.0);
-    // Typed: what a loader reads (defaults for what is missing, the range kept).
+    // 型付き: ローダーが読む形 (足りないものは既定値、範囲は保つ)。
     ModelImport m;
     reflect::Load(m, *json::Parse(R"({"scale": 0, "up": "Z"})"));
     CHECK(m.scale == 0.0001f && m.up == UpAxis::Z);
@@ -247,8 +247,8 @@ RM_TEST(Asset_ImportSettingsInMeta) {
 }
 
 RM_TEST(Asset_ImportSettings_OldSharpIsTheFilter) {
-    // Before 2026-11-18 an image's filter was "sharp": true / false. Read as "filter"; one already
-    // there wins; the old key is gone (written back without it).
+    // 2026-11-18 より前、画像のフィルターは "sharp": true / false だった。"filter" として読む。すでに
+    // あればそちらが勝つ。古いキーは消える (それ抜きで書き戻す)。
     const json::Value dots = ImportInMeta(R"({"guid": "0000000000000abc0000000000000001", "import": {"sharp": true, "maxSize": 512}})");
     CHECK(dots.Get("filter").AsString() == "Sharp" && dots.Get("sharp").IsNull() && dots.Get("maxSize").AsInt() == 512);
     CHECK(ImportInMeta(R"({"import": {"sharp": false}})").Get("filter").AsString() == "Smooth");
@@ -256,7 +256,7 @@ RM_TEST(Asset_ImportSettings_OldSharpIsTheFilter) {
     ImageImport img;
     reflect::Load(img, dots);
     CHECK(img.filter == TextureFilter::Sharp && img.wrap == TextureWrap::Repeat && img.mipmaps && !img.keepCoverage && !img.streaming);
-    // The defaults: smooth, repeated, with mipmaps.
+    // 既定値: なめらか、くり返し、ミップマップあり。
     const ImageImport plain;
     CHECK(plain.filter == TextureFilter::Smooth && plain.mipmaps && plain.coverageCutoff == 0.5f);
 }
@@ -270,10 +270,10 @@ RM_TEST(Asset_ImportSettingsOnDisk) {
     const fs::path file = root / L"木.obj";
     std::ofstream(file, std::ios::binary) << "v 0 0 0\n";
     std::vector<std::string> notes;
-    Update(root, {}, notes);  // the id
+    Update(root, {}, notes);  // ID
     const auto before = ChangedAt(file, ec);
     CHECK(!ec);
-    CHECK(ReadImport<ModelImport>(file).scale == 1.f);  // none yet: the defaults
+    CHECK(ReadImport<ModelImport>(file).scale == 1.f);  // まだない: 既定値
     json::Value imp = json::Value::MakeObject();
     imp.Set("scale", 0.01);
     imp.Set("up", "Z");
@@ -281,7 +281,7 @@ RM_TEST(Asset_ImportSettingsOnDisk) {
     const ModelImport m = ReadImport<ModelImport>(file);
     CHECK(m.scale == 0.01f && m.up == UpAxis::Z);
     CHECK(ChangedAt(file, ec) >= before);
-    // The id is still there, and looking at the folder again keeps the settings.
+    // ID は今もあり、フォルダをもう一度走査しても設定は残る。
     const std::vector<Entry> again = Update(root, {}, notes);
     CHECK(again.size() == 1 && IsGuid(again[0].guid));
     CHECK(ReadImport<ModelImport>(file).up == UpAxis::Z);
@@ -295,21 +295,21 @@ RM_TEST(Asset_ModelImportApplied) {
     mesh.vertices.push_back({{1, 2, 3}, {0, 0, 1}, {0, 0}});
     mesh.vertices.push_back({{-1, 0, 0}, {0, 1, 0}, {0, 0}});
     space3d::ComputeBounds(mesh);
-    space3d::ApplyModelImport(mesh, 2.f, true);  // Z up -> Y up, twice as big
+    space3d::ApplyModelImport(mesh, 2.f, true);  // Z 上 -> Y 上、2 倍の大きさ
     const space3d::MeshVertex& v = mesh.vertices[0];
     CHECK(v.position.x == 2 && v.position.y == 6 && v.position.z == -4);
-    CHECK(v.normal.x == 0 && v.normal.y == 1 && v.normal.z == 0);  // what faced up (Z) faces up (Y)
+    CHECK(v.normal.x == 0 && v.normal.y == 1 && v.normal.z == 0);  // 上 (Z) を向いていたものが上 (Y) を向く
     CHECK(mesh.vertices[1].normal.z == -1);
     CHECK(mesh.max.y == 6 && mesh.min.x == -2 && mesh.min.z == -4);
     space3d::MeshData same = mesh;
-    space3d::ApplyModelImport(same, 1.f, false);  // the defaults change nothing
+    space3d::ApplyModelImport(same, 1.f, false);  // 既定値では何も変わらない
     CHECK(same.vertices[0].position.y == 6);
 }
 
-// --- A .meta that cannot be read, and copies made outside the editor ------------------------------
+// --- 読めない .meta と、エディターの外で作ったコピー ------------------------------
 
 namespace {
-// git's conflict marks around two ids (written out here so the marks are not at a line start of this file).
+// 2 つの ID を囲む git の衝突マーク (このファイルの行頭にマークが来ないよう、ここで組み立てて書いている)。
 std::string ConflictText() {
     const std::string lt(7, '<'), eq(7, '='), gt(7, '>');
     return lt + " HEAD\n{\"guid\": \"0000000000000abc0000000000000001\"}\n" + eq + "\n{\"guid\": \"0000000000000abc0000000000000002\"}\n" + gt +
@@ -320,19 +320,19 @@ std::string ConflictText() {
 RM_TEST(Asset_ReadMeta_OkDamagedUnreadable) {
     const MetaInfo ok = ReadMeta(R"({"guid": "0000000000000abc0000000000000001", "name": "a.png"})");
     CHECK(ok.state == MetaState::Ok && ok.guid == G(1) && ok.name == "a.png");
-    // A comma too many: not JSON, but the one id in it is picked out (and the file is never rewritten).
+    // カンマが 1 つ多い: JSON ではないが、中の 1 つの ID は拾える (ファイルは決して書き直さない)。
     const MetaInfo comma = ReadMeta("{\"guid\": \"0000000000000abc0000000000000002\",}");
     CHECK(comma.state == MetaState::Damaged && comma.guid == G(2));
-    CHECK(!GuidInMeta("{\"guid\": \"0000000000000abc0000000000000002\",}"));  // (only an Ok one counts there)
-    // git's conflict marks with two ids: which one is not clear.
+    CHECK(!GuidInMeta("{\"guid\": \"0000000000000abc0000000000000002\",}"));  // (Ok のものだけが数える)
+    // 2 つの ID を持つ git の衝突マーク: どちらか分からない。
     CHECK(ReadMeta(ConflictText()).state == MetaState::Unreadable);
     CHECK(ReadMeta("garbage").state == MetaState::Unreadable);
-    CHECK(ReadMeta("{\"memo\": 1}").state == MetaState::Unreadable);  // JSON, but no id
-    // The name is written with the id; other keys stay.
+    CHECK(ReadMeta("{\"memo\": 1}").state == MetaState::Unreadable);  // JSON だが ID がない
+    // 名前は ID と一緒に書かれる。ほかのキーは残る。
     const std::string t = MetaText(R"({"guid": "0000000000000abc0000000000000001", "memo": 1})", G(1), "b.png");
     CHECK(ReadMeta(t).name == "b.png" && t.find("\"memo\"") != std::string::npos);
     CHECK(Ignored("a.png.meta.tmp") && Ignored("A.PNG.META.TMP"));
-    // What other programs keep for a moment while they save (Visual Studio, Office, backups)
+    // ほかのプログラムが保存中の少しの間だけ持つもの (Visual Studio、Office、バックアップ)
     CHECK(Ignored("a.tmp") && Ignored("~RF1a2b.TMP") && Ignored("~$a.docx") && Ignored("a.cpp~"));
     CHECK(!Ignored("a.cpp") && !Ignored("tmp.png") && !Ignored("a~b.png"));
 }
@@ -342,15 +342,15 @@ RM_TEST(Asset_Reconcile_UnreadableMetaIsNeverReplaced) {
     Found locked{"a.png", false, ""};
     locked.meta = MetaState::Unreadable;
     locked.metaProblem = "開けません";
-    // Opened at start (no last look): left out until it can be read - no new id, nothing written.
+    // 起動時に開いた (前回の走査なし): 読めるようになるまで外す - 新しい ID なし、何も書かない。
     const Plan p = Reconcile({}, std::vector<Found>{locked}, {}, ids);
     CHECK(p.entries.empty() && p.writes.empty() && p.moves.empty());
     CHECK(!p.notes.empty());
-    // During the session: it keeps the id of the last look - still nothing written.
+    // セッション中: 前回の走査の ID を保つ - やはり何も書かない。
     const std::vector<Entry> before = {{"a.png", G(1), false}};
     const Plan q = Reconcile(before, std::vector<Found>{locked}, {}, ids);
     CHECK(q.entries.size() == 1 && q.entries[0].guid == G(1) && q.writes.empty());
-    // A broken .meta whose id could be picked out: used, never written.
+    // 壊れた .meta でも ID が拾えたもの: 使うが、決して書かない。
     Found broken{"b.png", false, G(2)};
     broken.meta = MetaState::Damaged;
     const Plan r = Reconcile({}, std::vector<Found>{broken}, {}, ids);
@@ -359,8 +359,8 @@ RM_TEST(Asset_Reconcile_UnreadableMetaIsNeverReplaced) {
 
 RM_TEST(Asset_Reconcile_CopyDoesNotTakeTheId) {
     Counter ids;
-    // Copied in Explorer while the editor was closed: "X - コピー.png" + a copy of the .meta, listed
-    // first (' ' comes before '.'). The .meta says the name it was written for: the original keeps it.
+    // エディターを閉じている間にエクスプローラーでコピーした: "X - コピー.png" + .meta のコピー。
+    // 先に並ぶ (' ' は '.' より前)。.meta には書き込んだときの名前がある: 元のほうが ID を保つ。
     Found copy{"X - コピー.png", false, G(1)};
     copy.meta = MetaState::Ok;
     copy.metaName = "X.png";
@@ -371,17 +371,17 @@ RM_TEST(Asset_Reconcile_CopyDoesNotTakeTheId) {
     CHECK(At(p, "X.png")->guid == G(1));
     CHECK(At(p, "X - コピー.png")->guid != G(1));
     CHECK(p.writes.size() == 1 && p.writes[0].path == "X - コピー.png" && p.writes[0].name == "X - コピー.png");
-    // A .meta from before names were written: the one made first is the original (a copy is made new).
+    // 名前を書く前の .meta: 先に作られたほうが元 (コピーは新しく作る)。
     copy.metaName = original.metaName = "";
     copy.metaCreated = 2000;
     original.metaCreated = 1000;
     const Plan q = Reconcile({}, std::vector<Found>{copy, original}, {}, ids);
     CHECK(At(q, "X.png")->guid == G(1));
-    // Nothing tells them apart: the first, with a note that it is a guess.
+    // 区別するものがない: 最初のもの。推測だという注記を付ける。
     copy.metaCreated = original.metaCreated = 0;
     const Plan r = Reconcile({}, std::vector<Found>{copy, original}, {}, ids);
     CHECK(At(r, "X - コピー.png")->guid == G(1) && !r.notes.empty());
-    // A copy whose .meta is broken cannot be given its own id: left out, its .meta untouched.
+    // .meta が壊れているコピーには自分の ID を付けられない: 外し、その .meta には触らない。
     copy.meta = MetaState::Damaged;
     copy.metaName = "";
     original.metaName = "X.png";
@@ -400,7 +400,7 @@ RM_TEST(Asset_FilesOnDisk_BrokenAndLockedMetaStay) {
         std::ifstream f(p, std::ios::binary);
         return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     };
-    // A .meta with a comma too many, and one with git's conflict marks.
+    // カンマが 1 つ多い .meta と、git の衝突マークがある .meta。
     const std::string commaText = "{\"guid\": \"0000000000000abc0000000000000007\", \"memo\": 1,}";
     const std::string conflictText = ConflictText();
     write(root / L"a.png", "a");
@@ -410,18 +410,18 @@ RM_TEST(Asset_FilesOnDisk_BrokenAndLockedMetaStay) {
     write(root / L"c.png.meta.tmp", "left by a failed write");
     std::vector<std::string> notes;
     const std::vector<Entry> first = Update(root, {}, notes);
-    CHECK(first.size() == 1 && first[0].path == "a.png" && first[0].guid == G(7));  // b waits; the .tmp is not an asset
-    CHECK(read(root / L"a.png.meta") == commaText);  // not written over
+    CHECK(first.size() == 1 && first[0].path == "a.png" && first[0].guid == G(7));  // b は待つ。.tmp はアセットではない
+    CHECK(read(root / L"a.png.meta") == commaText);  // 上書きしない
     CHECK(read(root / L"b.png.meta") == conflictText);
     CHECK(!notes.empty());
 
-    // Fixed by hand: b gets the id written in it again.
+    // 手で直した: b には、そこに書かれた ID がまた付く。
     write(root / L"b.png.meta", "{\"guid\": \"0000000000000abc0000000000000002\"}");
     const std::vector<Entry> second = Update(root, first, notes);
     CHECK(second.size() == 2);
 
-    // A .meta another program holds open (no sharing): the id of the last look stays, and the
-    // .meta is not written over.
+    // ほかのプログラムが開いたままの .meta (共有なし): 前回の走査の ID は保ち、
+    // .meta は上書きしない。
     const fs::path bMeta = root / L"b.png.meta";
     HANDLE h = CreateFileW(bMeta.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     CHECK(h != INVALID_HANDLE_VALUE);
@@ -429,12 +429,12 @@ RM_TEST(Asset_FilesOnDisk_BrokenAndLockedMetaStay) {
     bool kept = false;
     for (const Entry& e : third) kept |= e.path == "b.png" && e.guid == G(2);
     CHECK(kept);
-    // Opened at start while it is held: left out (not given a new id).
+    // 持たれている間に起動時に開いた: 外す (新しい ID は付けない)。
     const std::vector<Entry> fresh = Update(root, {}, notes);
     CHECK(fresh.size() == 1);
     CloseHandle(h);
     CHECK(read(bMeta) == "{\"guid\": \"0000000000000abc0000000000000002\"}");
-    // Import settings are not written into a broken .meta either.
+    // 取り込みの設定も、壊れた .meta には書かない。
     CHECK(!WriteImportJson(root / L"a.png", json::Value::MakeObject()));
     CHECK(read(root / L"a.png.meta") == commaText);
     fs::remove_all(root.parent_path(), ec);
@@ -451,15 +451,15 @@ RM_TEST(Asset_FilesOnDisk_CopiedWhileClosed) {
     const std::vector<Entry> first = Update(root, {}, notes);
     CHECK(first.size() == 1);
     const std::string id = first[0].guid;
-    // The editor is closed; Explorer copies the file and its .meta.
+    // エディターは閉じている。エクスプローラーがファイルとその .meta をコピーする。
     fs::copy_file(root / L"X.png", root / L"X - コピー.png", ec);
     fs::copy_file(root / L"X.png.meta", root / L"X - コピー.png.meta", ec);
-    const std::vector<Entry> second = Update(root, {}, notes);  // opened again: no last look
+    const std::vector<Entry> second = Update(root, {}, notes);  // もう一度開いた: 前回の走査なし
     std::string original, copy;
     for (const Entry& e : second) (e.path == "X.png" ? original : copy) = e.guid;
     CHECK(original == id);
     CHECK(IsGuid(copy) && copy != id);
-    // Renamed in the editor: the .meta says the new name.
+    // エディターで名前を変えた: .meta に新しい名前が書かれる。
     fs::rename(root / L"X.png", root / L"Y.png", ec);
     fs::rename(root / L"X.png.meta", root / L"Y.png.meta", ec);
     CHECK(RecordName(root / L"Y.png"));
@@ -472,11 +472,11 @@ RM_TEST(Asset_FilesOnDisk_CopiedWhileClosed) {
     fs::remove_all(root.parent_path(), ec);
 }
 
-// --- Big folders --------------------------------------------------------------------------------
+// --- 大きなフォルダ ----------------------------------------------------------------
 
 RM_TEST(Asset_Reconcile_BigFolderIsFast) {
-    // 20,000 files in 100 folders: 18,000 with their .meta, 1,000 moved without it (orphans left
-    // behind), 1,000 new; and the last look's ids. The time grows with the count, not its square.
+    // 100 フォルダに 20,000 ファイル: 18,000 は .meta あり、1,000 は .meta なしで動かした (孤児が
+    // 残る)、1,000 は新しい。それと前回の走査の ID。時間は数に比例し、その 2 乗にはならない。
     Counter ids;
     std::vector<Found> found;
     std::vector<Orphan> orphans;
@@ -489,7 +489,7 @@ RM_TEST(Asset_Reconcile_BigFolderIsFast) {
             f.meta = MetaState::Ok;
             before.push_back({f.path, f.metaGuid, false});
         } else if (i < 19000) {
-            // moved here from another folder, its .meta left behind
+            // 別のフォルダからここに動かした、.meta は残してきた
             const std::string old = std::format("Old{}/file{}.png", i % 100, i);
             orphans.push_back({old, G(static_cast<uint64_t>(i + 1))});
             before.push_back({old, G(static_cast<uint64_t>(i + 1)), false});
@@ -501,9 +501,9 @@ RM_TEST(Asset_Reconcile_BigFolderIsFast) {
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     CHECK(seconds < 5.0);
     CHECK(p.entries.size() == 20000);
-    CHECK(p.moves.size() == 1000);  // every moved one kept its id
+    CHECK(p.moves.size() == 1000);  // 動いたものはすべて ID を保った
     CHECK(At(p, "F50/file18050.png")->guid == G(18051));
-    // DisplayOrder of the same: folders first, then by name.
+    // 同じものの DisplayOrder: フォルダが先、そのあと名前順。
     const auto t2 = std::chrono::steady_clock::now();
     const std::vector<size_t> order = DisplayOrder(p.entries);
     CHECK(order.size() == 20000);
@@ -521,20 +521,20 @@ RM_TEST(Asset_ScanReadsOnlyChangedMeta) {
     std::vector<std::string> notes;
     bool wrote = false;
     const std::vector<Entry> first = Update(root, {}, notes, &cache, &wrote);
-    CHECK(first.size() == 50 && wrote);  // the ids were written
-    // Looked at again: the .meta files it wrote are read once (they are new to the cache) ...
+    CHECK(first.size() == 50 && wrote);  // ID が書かれた
+    // もう一度走査した: 書いた .meta は 1 回読まれる (キャッシュには新しいので) ...
     const std::vector<Entry> second = Update(root, first, notes, &cache, &wrote);
     CHECK(second == first && !wrote);
-    // ... and after that, none - nothing changed.
+    // ... そのあとは 0 回 - 何も変わっていない。
     const std::vector<Entry> third = Update(root, second, notes, &cache, &wrote);
     CHECK(third == first && cache.reads == 0);
-    // One .meta changed (its import settings): only that one is read.
+    // .meta が 1 つ変わった (取り込みの設定): それだけが読まれる。
     json::Value imp = json::Value::MakeObject();
     imp.Set("sharp", true);
     CHECK(WriteImportJson(root / L"f7.png", imp));
     Update(root, third, notes, &cache, &wrote);
     CHECK(cache.reads == 1);
-    // A file gone: its .meta is no longer kept.
+    // ファイルが消えた: その .meta はもう保たない。
     fs::remove(root / L"f3.png", ec);
     fs::remove(root / L"f3.png.meta", ec);
     const std::vector<Entry> fourth = Update(root, third, notes, &cache, &wrote);
@@ -542,13 +542,13 @@ RM_TEST(Asset_ScanReadsOnlyChangedMeta) {
     fs::remove_all(root.parent_path(), ec);
 }
 
-// --- Looking at the folder on a Worker --------------------------------------------------------------
+// --- Worker でフォルダを走査する -----------------------------------------------------
 
 RM_TEST(Asset_LookNumber_OnlyTheNewestCounts) {
     LookNumber looks;
     const uint64_t a = looks.Next();
     CHECK(looks.Current(a));
-    const uint64_t b = looks.Next();  // asked again (or the editor renamed something)
+    const uint64_t b = looks.Next();  // もう一度頼んだ (またはエディターが何かの名前を変えた)
     CHECK(!looks.Current(a) && looks.Current(b) && looks.Now() == b);
 }
 
@@ -559,17 +559,17 @@ RM_TEST(Asset_Look_WritesNothingAndStops) {
     fs::remove_all(root.parent_path(), ec);
     fs::create_directories(root, ec);
     for (int i = 0; i < 600; ++i) std::ofstream(root / std::format(L"f{}.png", i), std::ios::binary) << "x";
-    // A look only works the plan out: the new ids are in it, no .meta is written yet.
+    // 走査は計画を立てるだけ: 新しい ID は計画に入るが、.meta はまだ書かない。
     MetaCache cache;
     bool stopped = true;
     const Plan plan = Look(root, {}, &cache, {}, &stopped);
     CHECK(!stopped && plan.entries.size() == 600 && plan.writes.size() == 600);
     CHECK(!fs::exists(root / L"f0.png.meta"));
-    // The thread that owns the ids writes them.
+    // ID を持つスレッドがそれを書く。
     std::vector<std::string> errors;
     ApplyPlan(root, plan, errors);
     CHECK(errors.empty() && fs::exists(root / L"f0.png.meta"));
-    // Asked to stop: it ends part way, with nothing to use.
+    // 止めるよう頼んだ: 途中で終わり、使えるものはない。
     std::stop_source source;
     source.request_stop();
     const Plan none = Look(root, plan.entries, &cache, source.get_token(), &stopped);
@@ -579,8 +579,8 @@ RM_TEST(Asset_Look_WritesNothingAndStops) {
 }
 
 RM_TEST(Asset_LookOnWorker_OvertakenResultIsDropped) {
-    // As AssetLibrary does: the look runs on a Worker, its plan comes back to the UI thread and is used
-    // only while its number is the newest.
+    // AssetLibrary と同じ: 走査は Worker で走り、計画は UI スレッドに戻ってきて、
+    // 番号が最新のときだけ使われる。
     namespace fs = std::filesystem;
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() / L"rm_asset_look_worker" / L"Assets";
@@ -600,7 +600,7 @@ RM_TEST(Asset_LookOnWorker_OvertakenResultIsDropped) {
             if (stopped) return;
             post([&, number, plan = std::move(plan)] {
                 ++arrived;
-                if (looks.Current(number)) applied = plan.entries;  // (else: overtaken - thrown away)
+                if (looks.Current(number)) applied = plan.entries;  // (そうでなければ: 追い越された - 捨てる)
             });
         });
     };
@@ -612,18 +612,18 @@ RM_TEST(Asset_LookOnWorker_OvertakenResultIsDropped) {
         }
         return done();
     };
-    // The editor changes the folder while a look runs (a new number, no new look yet): the look's
-    // result arrives, and is not used.
+    // 走査の最中にエディターがフォルダを変えた (新しい番号、新しい走査はまだない): 走査の
+    // 結果は届くが、使わない。
     ask();
     looks.Next();
     CHECK(pump([&] { return arrived == 1; }));
     CHECK(applied.empty());
-    // A look asked after the change is used - and sees the folder as it is now.
+    // 変更のあとに頼んだ走査は使われる - しかも今のフォルダの姿を見る。
     std::ofstream(root / L"b.png", std::ios::binary) << "b";
     ask();
     CHECK(pump([&] { return !applied.empty(); }));
     CHECK(applied.size() == 2);
-    // Two asked one after the other: only the newest is used (the Worker drops the first, too).
+    // 続けて 2 つ頼んだ: 最新のものだけが使われる (Worker も最初のものを捨てる)。
     applied.clear();
     std::ofstream(root / L"c.png", std::ios::binary) << "c";
     ask();
@@ -635,8 +635,8 @@ RM_TEST(Asset_LookOnWorker_OvertakenResultIsDropped) {
 }
 
 RM_TEST(Asset_Look_CaseOfANameDoesNotCount) {
-    // Renamed only in its case outside the editor (tree.png -> Tree.png): Windows sees one file, and its
-    // .meta (tree.png.meta) is still its own - the id stays, nothing is written over it.
+    // エディターの外で大文字小文字だけ名前を変えた (tree.png -> Tree.png): Windows には 1 つのファイルに
+    // 見え、その .meta (tree.png.meta) は今も自分のもの - ID は保ち、何も上書きしない。
     namespace fs = std::filesystem;
     std::error_code ec;
     const fs::path root = fs::temp_directory_path() / L"rm_asset_case" / L"Assets";
@@ -654,11 +654,11 @@ RM_TEST(Asset_Look_CaseOfANameDoesNotCount) {
     CHECK(GuidInMeta(text) == guid);
     CHECK(FoldCase(L"Tree.PNG.meta") == FoldCase(L"tree.png.META"));
     in.close();
-    // The import settings of an asset whose .meta is gone: made again with its id (not lost).
+    // .meta が消えたアセットの取り込みの設定: その ID でもう一度作る (失われない)。
     fs::remove(root / L"tree.png.meta", ec);
     json::Value imp = json::Value::MakeObject();
     imp.Set("scale", 2.0);
-    CHECK(!WriteImportJson(root / L"Tree.png", imp));  // (no id given: never one without)
+    CHECK(!WriteImportJson(root / L"Tree.png", imp));  // (ID を渡さない: ID なしでは決して作らない)
     CHECK(WriteImportJson(root / L"Tree.png", imp, guid));
     CHECK(ReadImportJson(root / L"Tree.png").Get("scale").AsDouble() == 2.0);
     std::ifstream again(root / L"Tree.png.meta", std::ios::binary);

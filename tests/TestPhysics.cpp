@@ -1,7 +1,7 @@
-// Tests for the plugin 物理 (plugins/rm_engine/physics): the shapes worked out from the components
-// (Shapes - pure), and the world (PhysicsWorld - Jolt): falling and resting, triggers, OnHit once,
-// 2D bodies staying on the plane, the Play copy's world thrown away, the components saved and read.
-// And how long one step takes with 1000 boxes (printed: the number the plugin's report gives).
+// プラグイン 物理 (plugins/rm_engine/physics) のテスト: 部品から求める形 (Shapes - 純粋)、
+// そして世界 (PhysicsWorld - Jolt): 落ちて止まる、トリガー、OnHit が 1 回、2D の物体が平面に
+// とどまる、Play のコピーの世界を捨てる、部品の保存と読み込み。
+// さらに、箱 1000 個で 1 ステップにかかる時間 (表示する: プラグインのレポートが出す数)。
 
 #include "Test.h"
 
@@ -53,7 +53,7 @@ T& Add(Scene& s, int id) {
     return Get<T>(s, id);
 }
 
-// A 3D entity at `at` with a box collider of `size` (and a body: none = static).
+// `at` にある 3D エンティティ。`size` のボックスコライダー付き (物体は、無し = 静的)。
 int Box3(Scene& s, const char* name, Vec3 at, Vec3 size, std::optional<Motion> motion) {
     const int id = s.Create(name);
     Add<space3d::Transform>(s, id).position = at;
@@ -72,7 +72,7 @@ int Count(const std::vector<HookCall>& hooks, int entity, int hook) {
 
 }  // namespace
 
-// --- Shapes (pure) --------------------------------------------------------------------------------
+// --- 形 (純粋) --------------------------------------------------------------------------------
 
 RM_TEST(Physics_Shapes_SizesTakeTheScale) {
     Collider c;
@@ -80,23 +80,23 @@ RM_TEST(Physics_Shapes_SizesTakeTheScale) {
     c.offset = {0, 1, 0};
     ShapeDims d = DimsOf(c, {1, 3, 0.5f});
     CHECK(d.kind == ShapeDims::Kind::Box && Near(d.half.x, 1) && Near(d.half.y, 1.5f) && Near(d.half.z, 1));
-    CHECK(Near(d.offset.y, 3));  // the offset is scaled too
+    CHECK(Near(d.offset.y, 3));  // オフセットも拡大される
     c.shape = Shape::Sphere;
     c.radius = 0.5f;
     d = DimsOf(c, {1, 4, 2});
-    CHECK(d.kind == ShapeDims::Kind::Sphere && Near(d.radius, 2));  // the largest axis
+    CHECK(d.kind == ShapeDims::Kind::Sphere && Near(d.radius, 2));  // 一番大きい軸
     c.shape = Shape::Capsule;
     c.height = 2;
     d = DimsOf(c, {1, 1, 1});
     CHECK(d.kind == ShapeDims::Kind::Capsule && Near(d.radius, 0.5f) && Near(d.halfHeight, 0.5f));
-    c.height = 0.5f;  // shorter than the two ends: a sphere
+    c.height = 0.5f;  // 両端より短い: 球
     CHECK(Near(DimsOf(c, {1, 1, 1}).halfHeight, 0));
-    // 2D: as thick as every 2D body.
+    // 2D: どの 2D の物体も同じ厚さ。
     Collider2D c2;
     c2.size = {3, 1};
     d = DimsOf(c2, {2, 1, 1});
     CHECK(Near(d.half.x, 3) && Near(d.half.y, 0.5f) && Near(d.half.z, kPlaneHalfDepth));
-    // A character's capsule stands on its feet.
+    // キャラクターのカプセルは足で立つ。
     Character ch;
     ch.radius = 0.5f;
     ch.height = 2;
@@ -112,9 +112,9 @@ RM_TEST(Physics_Shapes_PoseAndOutline) {
     const Pose p = PoseOf(space3d::WorldMatrix(space3d::Mat4{}, t));
     CHECK(Near(p.position.x, 1) && Near(p.position.y, 2) && Near(p.position.z, 3));
     CHECK(Near(p.scale.x, 2) && Near(p.scale.y, 2) && Near(p.scale.z, 2));
-    // The turn has columns of length 1.
+    // 回転の列は長さ 1。
     CHECK(Near(std::sqrt(p.turn.m[0][0] * p.turn.m[0][0] + p.turn.m[0][1] * p.turn.m[0][1] + p.turn.m[0][2] * p.turn.m[0][2]), 1));
-    // A box: 12 edges; a 2D box: 4.
+    // 箱: 辺 12 本。2D の箱: 4 本。
     std::vector<Segment> lines;
     ShapeDims box;
     Outline(box, p, false, lines);
@@ -122,14 +122,14 @@ RM_TEST(Physics_Shapes_PoseAndOutline) {
     lines.clear();
     Outline(box, p, true, lines);
     CHECK(lines.size() == 4);
-    // 2D: the angle comes back.
+    // 2D: 角度が戻ってくる。
     space2d::Transform2D t2;
     t2.position = {5, 6};
     t2.rotation = 30;
     const Pose p2 = PoseOf(space2d::WorldMatrix(space2d::Mat3{}, t2));
     CHECK(Near(p2.position.x, 5) && Near(p2.position.y, 6) && Near(p2.position.z, 0));
     CHECK(Near(AngleOf(p2), 30, 1e-2f));
-    // Places under parents: a child of a moved parent is moved too; one without a Transform is where its parent is.
+    // 親の下の場所: 動かした親の子も動く。Transform の無いものは親の場所にある。
     Scene s = NewScene();
     const int parent = s.Create("parent");
     Add<space3d::Transform>(s, parent).position = {10, 0, 0};
@@ -143,23 +143,23 @@ RM_TEST(Physics_Shapes_PoseAndOutline) {
     CHECK(Near(c.world3.m[3][0], 10) && Near(c.world3.m[3][1], 1));
 }
 
-// --- The world (Jolt) -----------------------------------------------------------------------------
+// --- 世界 (Jolt) -----------------------------------------------------------------------------
 
 RM_TEST(Physics_World_FallsAndRestsOnTheFloor) {
     Scene s = NewScene();
-    Box3(s, "floor", {0, -0.5f, 0}, {20, 1, 20}, std::nullopt);  // static: top at y = 0
+    Box3(s, "floor", {0, -0.5f, 0}, {20, 1, 20}, std::nullopt);  // 静的: 上面は y = 0
     const int box = Box3(s, "box", {0, 5, 0}, {1, 1, 1}, Motion::Dynamic);
     PhysicsWorld w;
-    Run(w, s, 30);  // half a second: falling
+    Run(w, s, 30);  // 半秒: 落ちている
     const float midway = Get<space3d::Transform>(s, box).position.y;
     CHECK(midway < 5 && midway > 0.5f);
-    Run(w, s, 240);  // four more seconds: at rest on the floor
+    Run(w, s, 240);  // さらに 4 秒: 床の上で止まる
     const Vec3 at = Get<space3d::Transform>(s, box).position;
     CHECK(Near(at.y, 0.5f, 0.03f) && Near(at.x, 0, 0.01f) && Near(at.z, 0, 0.01f));
     const auto v = w.Velocity(s, box);
     CHECK(v && std::fabs(v->y) < 0.05f);
     CHECK(w.Bodies() == 2);
-    // A gravity scale of 0: it floats (a body made again with the new values).
+    // 重力の倍率が 0: 浮く (新しい値で作り直した物体)。
     Get<space3d::Transform>(s, box).position = {0, 3, 0};
     Get<Rigidbody>(s, box).gravityScale = 0;
     w.SetVelocity(s, box, {0, 0, 0});
@@ -176,17 +176,17 @@ RM_TEST(Physics_World_TriggerEnterAndExit) {
     PhysicsWorld w;
     std::vector<HookCall> all, hooks;
     w.Step(s, kStep, kGravity, &hooks, nullptr);
-    CHECK(w.SetVelocity(s, ball, {5, 0, 0}));  // through the zone in about 2 s
+    CHECK(w.SetVelocity(s, ball, {5, 0, 0}));  // 約 2 秒でゾーンを通り抜ける
     for (int i = 0; i < 180; ++i) {
         hooks.clear();
         w.Step(s, kStep, kGravity, &hooks, nullptr);
         all.insert(all.end(), hooks.begin(), hooks.end());
     }
-    CHECK(Get<space3d::Transform>(s, ball).position.x > 3);  // passed through (not stopped)
+    CHECK(Get<space3d::Transform>(s, ball).position.x > 3);  // 通り抜けた (止まらない)
     CHECK(Count(all, ball, RM_HOOK_TRIGGER_ENTER) == 1 && Count(all, ball, RM_HOOK_TRIGGER_EXIT) == 1);
     CHECK(Count(all, zone, RM_HOOK_TRIGGER_ENTER) == 1 && Count(all, zone, RM_HOOK_TRIGGER_EXIT) == 1);
     CHECK(Count(all, ball, RM_HOOK_HIT) == 0);
-    // Enter before exit; `other` is the other one.
+    // 出る前に入る。`other` はもう一方。
     const auto enter = std::find_if(all.begin(), all.end(), [&](const HookCall& h) { return h.entity == ball && h.hook == RM_HOOK_TRIGGER_ENTER; });
     const auto exit = std::find_if(all.begin(), all.end(), [&](const HookCall& h) { return h.entity == ball && h.hook == RM_HOOK_TRIGGER_EXIT; });
     CHECK(enter < exit && enter->other == zone);
@@ -201,16 +201,16 @@ RM_TEST(Physics_World_HitOnceWhileTouching) {
     std::vector<HookCall> all, hooks;
     w.Step(s, kStep, kGravity, &hooks, nullptr);
     w.SetVelocity(s, bullet, {20, 0, 0});
-    for (int i = 0; i < 120; ++i) {  // hits, then rests against the wall (still touching)
+    for (int i = 0; i < 120; ++i) {  // 当たって、壁にもたれて止まる (まだ触れている)
         hooks.clear();
         w.Step(s, kStep, kGravity, &hooks, nullptr);
         all.insert(all.end(), hooks.begin(), hooks.end());
         if (std::fabs(w.Velocity(s, bullet).value_or(Vec3{}).x) > 0.01f) continue;
-        w.SetVelocity(s, bullet, {1, 0, 0});  // pressed on: still one touch
+        w.SetVelocity(s, bullet, {1, 0, 0});  // 押し続ける: 接触は 1 回のまま
     }
     CHECK(Count(all, bullet, RM_HOOK_HIT) == 1);
     CHECK(Count(all, wall, RM_HOOK_HIT) == 1);
-    CHECK(Get<space3d::Transform>(s, bullet).position.x < -0.5f);  // stopped by the wall (not through it)
+    CHECK(Get<space3d::Transform>(s, bullet).position.x < -0.5f);  // 壁で止まった (抜けない)
 }
 
 RM_TEST(Physics_World_2DStaysOnThePlane) {
@@ -218,7 +218,7 @@ RM_TEST(Physics_World_2DStaysOnThePlane) {
     const int ground = s.Create("ground");
     Add<space2d::Transform2D>(s, ground).position = {0, -1};
     Add<Collider2D>(s, ground).size = {20, 1};
-    // A box falling onto the edge of a slope: it turns as it lands - about Z only.
+    // 斜面の縁に落ちる箱: 着地で回る - Z まわりだけ。
     const int box = s.Create("box");
     auto& t = Add<space2d::Transform2D>(s, box);
     t.position = {0.4f, 3};
@@ -228,19 +228,19 @@ RM_TEST(Physics_World_2DStaysOnThePlane) {
     PhysicsWorld w;
     for (int i = 0; i < 240; ++i) {
         w.Step(s, kStep, kGravity, nullptr, nullptr);
-        if (i == 0) w.AddForce(s, box, {0, 0, 50}, true);  // pushed out of the plane: does nothing
+        if (i == 0) w.AddForce(s, box, {0, 0, 50}, true);  // 平面の外へ押す: 何も起きない
     }
     const auto v = w.Velocity(s, box);
     CHECK(v && Near(v->z, 0, 1e-4f));
     const auto& at = Get<space2d::Transform2D>(s, box);
-    CHECK(at.position.y < 0 && at.position.y > -0.6f);  // resting on the ground (top at -0.5)
-    // Turned to lie flat (a multiple of 90).
+    CHECK(at.position.y < 0 && at.position.y > -0.6f);  // 地面の上で止まる (上面は -0.5)
+    // 倒れて平らになる (90 の倍数)。
     const float r = std::fmod(std::fabs(at.rotation), 90.f);
     CHECK(r < 1.f || r > 89.f);
 }
 
 RM_TEST(Physics_World_PlayCopyIsThrownAway) {
-    // Play: the copy plays and gets the world; the original keeps its values and has none.
+    // Play: コピーが動いて世界を持つ。元は値を保ち、世界は持たない。
     Scene original = NewScene();
     Box3(original, "floor", {0, -0.5f, 0}, {20, 1, 20}, std::nullopt);
     const int box = Box3(original, "box", {0, 5, 0}, {1, 1, 1}, Motion::Dynamic);
@@ -249,16 +249,16 @@ RM_TEST(Physics_World_PlayCopyIsThrownAway) {
         PhysicsWorld& w = WorldOf(playing);
         for (int i = 0; i < 60; ++i) w.Step(playing, kStep, kGravity, nullptr, nullptr);
         CHECK(Get<space3d::Transform>(playing, box).position.y < 5);
-        CHECK(WorldOf(playing).Bodies() == 2);  // the same world each time
-        Scene again = playing;  // a copy (e.g. the next Play) starts with no world
+        CHECK(WorldOf(playing).Bodies() == 2);  // 毎回同じ世界
+        Scene again = playing;  // コピー (例えば次の Play) は世界無しで始まる
         CHECK(WorldOf(again).Bodies() == 0);
-    }  // ■: the copy and its world go
+    }  // ■: コピーとその世界は消える
     CHECK(Near(Get<space3d::Transform>(original, box).position.y, 5));
     CHECK(WorldOf(original).Bodies() == 0);
 }
 
 RM_TEST(Physics_World_SystemAndRaycast) {
-    // The system 物理 runs in the fixed steps with the scene's gravity.
+    // システム 物理 は、シーンの重力で固定ステップで動く。
     Scene s = NewScene();
     Box3(s, "floor", {0, -0.5f, 0}, {20, 1, 20}, std::nullopt);
     const int box = Box3(s, "box", {0, 2, 0}, {1, 1, 1}, Motion::Dynamic);
@@ -266,18 +266,18 @@ RM_TEST(Physics_World_SystemAndRaycast) {
     const game_production::SystemInfo* list[] = {&kPhysics};
     game_production::SystemRunner r;
     r.SetSystems(list);
-    // The scene's own 重力 (a scene setting): every scene has one, with the defaults.
+    // シーン自身の 重力 (シーンの設定): どのシーンにもあり、既定値を持つ。
     s.SetSettingTypes({&reflect::TypeOf<PhysicsSettings>()});
     CHECK(s.Setting<PhysicsSettings>() && Near(s.Setting<PhysicsSettings>()->gravity.y, -9.81f));
-    // A second with no gravity: it stays - and goes to sleep (at rest for more than half a second).
+    // 重力の無い 1 秒: そのまま - そして眠る (半秒より長く止まっている)。
     s.Setting<PhysicsSettings>()->gravity = {0, 0, 0};
     for (int i = 0; i < 60; ++i) r.Advance(s, kStep, kStep);
     CHECK(Near(Get<space3d::Transform>(s, box).position.y, 2, 1e-3f));
-    // Gravity again: the sleeping body wakes up and falls (half a second: about 1.2 m).
+    // また重力: 眠っていた物体が起きて落ちる (半秒で約 1.2 m)。
     s.Setting<PhysicsSettings>()->gravity = kGravity;
     for (int i = 0; i < 30; ++i) r.Advance(s, kStep, kStep);
     CHECK(Get<space3d::Transform>(s, box).position.y < 1.0f);
-    // A ray down from above hits the box first; a trigger is not hit.
+    // 上から下へのレイは箱に最初に当たる。トリガーには当たらない。
     const int zone = Box3(s, "zone", {0, 8, 0}, {4, 1, 4}, std::nullopt);
     Get<Collider>(s, zone).trigger = true;
     r.Advance(s, kStep, kStep);
@@ -285,7 +285,7 @@ RM_TEST(Physics_World_SystemAndRaycast) {
     const auto hit = w.Raycast({0, 10, 0}, {0, -1, 0}, 100);
     CHECK(hit && hit->entity == box && hit->normal.y > 0.9f);
     CHECK(!w.Raycast({0, 10, 0}, {0, 1, 0}, 100));
-    // Moved by a script (the Transform): the body goes there.
+    // スクリプト (Transform) で動かした: 物体はそこへ行く。
     Get<space3d::Transform>(s, box).position = {5, 3, 0};
     r.Advance(s, kStep, kStep);
     CHECK(Near(Get<space3d::Transform>(s, box).position.x, 5, 1e-3f));
@@ -302,7 +302,7 @@ RM_TEST(Physics_World_CharacterWalksAndStands) {
     CHECK(w.Characters() == 1 && w.Grounded(hero));
     CHECK(Near(Get<space3d::Transform>(s, hero).position.y, 0, 0.05f));
     CHECK(w.Move(s, hero, {2, 0, 0}));
-    Run(w, s, 60);  // a second at 2 m/s
+    Run(w, s, 60);  // 2 m/s で 1 秒
     CHECK(Near(Get<space3d::Transform>(s, hero).position.x, 2, 0.2f));
     CHECK(w.Jump(s, hero, 5));
     Run(w, s, 10);
@@ -330,7 +330,7 @@ RM_TEST(Physics_Components_SaveAndLoad) {
 }
 
 RM_TEST(Physics_Speed_1000Boxes) {
-    // 1000 boxes falling in a pile onto a floor: how long one step takes (printed - not a pass / fail).
+    // 1000 個の箱が床に山になって落ちる: 1 ステップにかかる時間 (表示するだけ - 合否ではない)。
     Scene s = NewScene();
     Box3(s, "floor", {0, -0.5f, 0}, {100, 1, 100}, std::nullopt);
     for (int i = 0; i < 1000; ++i) {
@@ -340,7 +340,7 @@ RM_TEST(Physics_Speed_1000Boxes) {
     PhysicsWorld w;
     using Clock = std::chrono::steady_clock;
     const auto t0 = Clock::now();
-    w.Step(s, kStep, kGravity, nullptr, nullptr);  // the first: every body made
+    w.Step(s, kStep, kGravity, nullptr, nullptr);  // 最初: すべての物体を作る
     const auto t1 = Clock::now();
     constexpr int kSteps = 120;
     double worst = 0;

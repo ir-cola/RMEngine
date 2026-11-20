@@ -14,16 +14,16 @@ std::string Diagnostic::Text() const { return std::format("{}({},{}): error {}: 
 namespace {
 
 // ---------------------------------------------------------------------------
-// Tokens
+// トークン
 // ---------------------------------------------------------------------------
 
 enum class Tok { Ident, Number, String, Char, Punct, End };
 
 struct Token {
     Tok kind = Tok::End;
-    std::string text;  // String: the content between the quotes, as written
+    std::string text;  // String: 引用符の間の中身を、書いたまま
     int line = 0, col = 0;
-    int cond = 0;  // how many #if / #ifdef / #ifndef it is inside (#if 0's skipped part: not read at all)
+    int cond = 0;  // 中に入っている #if / #ifdef / #ifndef の数 (#if 0 の飛ばす部分: まったく読まない)
     bool Is(std::string_view s) const { return (kind == Tok::Ident || kind == Tok::Punct) && text == s; }
 };
 
@@ -33,7 +33,7 @@ bool IsIdentChar(char c) { return IsIdentStart(c) || (c >= '0' && c <= '9'); }
 std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::vector<Diagnostic>& diags) {
     std::vector<Token> out;
     enum class Cond { Counted, Off };
-    std::vector<Cond> conds;  // the #if / #ifdef the reading is inside
+    std::vector<Cond> conds;  // 読んでいる場所を囲む #if / #ifdef
     size_t i = 0;
     int line = 1, col = 1;
     bool lineStart = true;
@@ -44,7 +44,7 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
                 col = 1;
                 lineStart = true;
             } else if (static_cast<unsigned char>(s[i]) < 0x80 || static_cast<unsigned char>(s[i]) >= 0xC0) {
-                ++col;  // count characters, not UTF-8 continuation bytes
+                ++col;  // 文字を数える (UTF-8 の続きのバイトは数えない)
             }
         }
     };
@@ -59,11 +59,11 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
             advance(1);
             continue;
         }
-        if (c == '#' && lineStart) {  // preprocessor line (with \ continuations - LF or CRLF)
+        if (c == '#' && lineStart) {  // プリプロセッサの行 (\ の継続つき - LF でも CRLF でも)
             std::string directive;
             while (i < s.size() && s[i] != '\n') {
                 if (s[i] == '\\' && i + 2 < s.size() && s[i + 1] == '\r' && s[i + 2] == '\n') {
-                    advance(3);  // (CRLF: 2026-11-19 - before, the \r ended the line and the next was read as code)
+                    advance(3);  // (CRLF: 2026-11-19 - 前は \r で行が終わり、次の行がコードとして読まれた)
                     directive += ' ';
                     continue;
                 }
@@ -75,8 +75,8 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
                 directive += s[i];
                 advance(1);
             }
-            // #if 0 ... (#else ...) #endif: the part not compiled is not read; any other #if / #ifdef is
-            // counted (Token::cond) - a field inside one is an error (RM0014).
+            // #if 0 ... (#else ...) #endif: コンパイルされない部分は読まない。それ以外の #if / #ifdef は
+            // 数える (Token::cond) - その中のフィールドはエラー (RM0014)。
             std::string_view d(directive);
             d.remove_prefix(1);
             while (!d.empty() && (d.front() == ' ' || d.front() == '\t')) d.remove_prefix(1);
@@ -91,13 +91,13 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
             } else if (word == "if" || word == "ifdef" || word == "ifndef") {
                 conds.push_back(Cond::Counted);
             } else if ((word == "else" || word == "elif") && !conds.empty() && conds.back() == Cond::Off) {
-                conds.back() = Cond::Counted;  // (#if 0's other part: compiled, maybe)
+                conds.back() = Cond::Counted;  // (#if 0 の別の部分: たぶんコンパイルされる)
             } else if (word == "endif" && !conds.empty()) {
                 conds.pop_back();
             }
             continue;
         }
-        if (std::find(conds.begin(), conds.end(), Cond::Off) != conds.end()) {  // #if 0: not read
+        if (std::find(conds.begin(), conds.end(), Cond::Off) != conds.end()) {  // #if 0: 読まない
             advance(1);
             lineStart = false;
             continue;
@@ -116,7 +116,7 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
         Token t;
         t.line = line;
         t.col = col;
-        size_t prefix = std::string_view::npos;  // u8"..." / L"..." are read as plain strings
+        size_t prefix = std::string_view::npos;  // u8"..." / L"..." は普通の文字列として読む
         if (c == '"') {
             prefix = 0;
         } else if ((c == 'L' || c == 'u' || c == 'U') && i + 1 < s.size() && s[i + 1] == '"') {
@@ -194,7 +194,7 @@ std::vector<Token> Tokenize(std::string_view s, const std::string& file, std::ve
 }
 
 // ---------------------------------------------------------------------------
-// Parser
+// パーサー
 // ---------------------------------------------------------------------------
 
 bool IsTypeMacro(const Token& t) { return t.Is("RM_STRUCT") || t.Is("RM_COMPONENT") || t.Is("RM_SCRIPT"); }
@@ -283,7 +283,7 @@ private:
         }
     }
 
-    // From an opening bracket to just after its partner.
+    // 開き括弧から、その相手の閉じ括弧の直後まで。
     void SkipBalanced() {
         const std::string open = Cur().text;
         const std::string close = open == "{" ? "}" : open == "(" ? ")" : "]";
@@ -371,7 +371,7 @@ private:
         }
     }
 
-    // Checks the keys against what the macro accepts.
+    // キーが、マクロの受け付けるものかどうかを調べる。
     void CheckAttrs(const std::vector<Attr>& attrs, std::string_view macro) {
         struct Rule {
             std::string_view key;
@@ -467,7 +467,7 @@ private:
             item.name = Cur().text;
             item.line = Cur().line;
             ++p_;
-            while (!Cur().Is(",") && !Cur().Is("}") && Cur().kind != Tok::End) ++p_;  // "= value"
+            while (!Cur().Is(",") && !Cur().Is("}") && Cur().kind != Tok::End) ++p_;  // "= 値"
             if (Cur().Is(",")) ++p_;
             e.items.push_back(std::move(item));
         }
@@ -507,7 +507,7 @@ private:
     }
 
     void ParseBody(Struct& s) {
-        const int bodyCond = p_ > 0 ? t_[p_ - 1].cond : 0;  // (the body's {: a field must be in no other #if)
+        const int bodyCond = p_ > 0 ? t_[p_ - 1].cond : 0;  // (本体の {: フィールドはほかの #if の中にあってはいけない)
         std::vector<Attr> pending;
         std::string pendingMacro;
         Token pendingAt;
@@ -546,7 +546,7 @@ private:
                 ++p_;
                 continue;
             }
-            // Things that are not data members.
+            // データメンバーでないもの。
             if (tk.Is("static") || tk.Is("using") || tk.Is("typedef") || tk.Is("friend") || tk.Is("template") ||
                 tk.Is("constexpr") || tk.Is("enum") || tk.Is("struct") || tk.Is("class") || tk.Is("union") ||
                 tk.Is("virtual") || tk.Is("explicit") || tk.Is("operator") || tk.Is("~")) {
@@ -564,13 +564,13 @@ private:
         }
     }
 
-    // To the end of a declaration, including a function body.
+    // 宣言の終わりまで。関数の本体も含む。
     void SkipDeclaration() {
         while (Cur().kind != Tok::End) {
             if (Cur().Is("{") || Cur().Is("(") || Cur().Is("[")) {
                 const bool brace = Cur().Is("{");
                 SkipBalanced();
-                if (brace && !Cur().Is(";") && !Cur().Is(",")) return;  // a function body
+                if (brace && !Cur().Is(";") && !Cur().Is(",")) return;  // 関数の本体
                 continue;
             }
             if (Cur().Is(";")) {
@@ -583,7 +583,7 @@ private:
     }
 
     void ParseMember(Struct& s, std::vector<Attr>& attrs, std::string& macro, const Token& macroAt) {
-        // Collect the type and the name: everything up to "=", "{", ";", "(", "[" or ":" at depth 0.
+        // 型と名前を集める: 深さ 0 の "="、"{"、";"、"("、"[" か ":" の手前まですべて。
         const size_t begin = p_;
         int angle = 0;
         while (Cur().kind != Tok::End) {
@@ -597,7 +597,7 @@ private:
             ++p_;
         }
         const size_t end = p_;
-        if (Cur().Is("(")) {  // a member function (or a constructor)
+        if (Cur().Is("(")) {  // メンバー関数 (またはコンストラクター)
             if (!macro.empty()) Error(macroAt, "RM0005", std::format("{} は関数には付けられません", macro));
             p_ = begin;
             SkipDeclaration();
@@ -635,12 +635,12 @@ private:
             size_t k = begin;
             if (!ParseType(k, end - 1, f.type, f.name)) f.type.kind = TypeRef::Kind::Int;
         }
-        // Skip the initializer.
+        // 初期化子を飛ばす。
         SkipDeclaration();
         s.fields.push_back(std::move(f));
     }
 
-    // Reads a type from tokens [k, end).
+    // トークン [k, end) から型を読む。
     bool ParseType(size_t& k, size_t end, TypeRef& out, const std::string& field) {
         auto fail = [&](const Token& at, std::string why) {
             Error(at, "RM0004", std::format("{}: {}", field, why));
@@ -648,7 +648,7 @@ private:
         };
         if (k >= end) return fail(t_[k], "型がありません");
         if (t_[k].Is("const") || t_[k].Is("volatile") || t_[k].Is("mutable")) return fail(t_[k], "const / volatile / mutable は付けられません");
-        // a qualified name
+        // 修飾された名前
         std::string name;
         const Token& first = t_[k];
         if (t_[k].Is("::")) ++k;
@@ -681,7 +681,7 @@ private:
                 {"AssetRef", TypeRef::Kind::AssetRef}, {"rm::AssetRef", TypeRef::Kind::AssetRef},
                 {"EntityRef", TypeRef::Kind::EntityRef}, {"rm::EntityRef", TypeRef::Kind::EntityRef},
             };
-            // A script's asset references (RM.h: plain bytes, not core's AssetRef).
+            // スクリプトのアセット参照 (RM.h: ただのバイト列で、核の AssetRef ではない)。
             static const std::set<std::string> kScriptAssets = {"PrefabRef", "ImageRef", "ModelRef", "SoundRef"};
             static const std::set<std::string> kRefused = {"double", "long", "short", "char", "unsigned", "signed", "int8_t",
                                                            "uint8_t", "int16_t", "uint16_t", "uint32_t", "int64_t", "uint64_t",
@@ -712,7 +712,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Emitting
+// 書き出し
 // ---------------------------------------------------------------------------
 
 std::string Id(const std::string& qualified) {
@@ -800,8 +800,8 @@ Header Scan(std::string_view text, const std::string& file, const std::string& i
 }
 
 void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
-    // Two headers must not make the same file, nor have the same include path (one would hide the
-    // other). Compared without case: Windows' files do not tell "A" from "a".
+    // 2 つのヘッダーが同じファイルを作ったり、同じ include のパスを持ったりしてはいけない (片方が
+    // もう片方を隠す)。大文字小文字を区別せずに比べる: Windows のファイルは "A" と "a" を区別しない。
     {
         auto lower = [](std::string s) {
             for (char& c : s) c = (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : (c == '\\' ? '/' : c);
@@ -827,7 +827,7 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
         bool isEnum;
     };
     std::vector<Known> known;
-    std::map<std::string, std::pair<std::string, int>> where;  // qualified -> (file, line)
+    std::map<std::string, std::pair<std::string, int>> where;  // 修飾名 -> (ファイル, 行)
     for (const auto& h : headers) {
         auto add = [&](const std::string& q, bool isEnum, int line) {
             if (auto it = where.find(q); it != where.end()) {
@@ -842,7 +842,7 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
         for (const auto& e : h.enums) add(e.Qualified(), true, e.line);
     }
 
-    // A name is looked up from the namespace it is used in outwards, like C++ does.
+    // 名前は、使っている名前空間から外へ向かって探す。C++ と同じ。
     auto resolve = [&](const std::string& name, const std::string& fromNs) -> const Known* {
         std::string ns = fromNs;
         for (;;) {
@@ -905,8 +905,8 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
                         }
                     }
                     if (a.key == "AssetKind") {
-                        // The names themselves (image, model ...) are core/asset's; a test checks every one is known.
-                        // A key may also be a file's extension (".rmfx": core/asset KindMatches).
+                        // 名前そのもの (image, model ...) は core/asset のもの。すべてが知っている名前であることを
+                        // テストが確かめる。キーはファイルの拡張子でもよい (".rmfx": core/asset KindMatches)。
                         bool words = !a.value.empty() && a.value.front() != ',' && a.value.back() != ',' && a.value.find(",,") == std::string::npos;
                         for (size_t k = 0; words && k < a.value.size(); ++k) {
                             const char ch = a.value[k];
@@ -922,8 +922,8 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
                         }
                     }
                     if (a.key == "ShowIf") {
-                        // "kind=A|B", "flag", "!flag", joined by & - each naming another field of this struct
-                        // (whether A, B are its items: a test of the tables, tests/TestReflect.cpp).
+                        // "kind=A|B"、"flag"、"!flag" を & でつなぐ - それぞれ、この構造体の別のフィールドを指す
+                        // (A、B がその項目かどうか: 表のテスト tests/TestReflect.cpp)。
                         std::string_view rest = a.value;
                         bool ok = !rest.empty();
                         while (ok && !rest.empty()) {
@@ -967,7 +967,7 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
 
 std::string OutputName(const std::string& includePath) {
     std::string s;
-    uint32_t hash = 2166136261u;  // FNV-1a of the whole path ('\' read as '/')
+    uint32_t hash = 2166136261u;  // パス全体の FNV-1a ('\' は '/' として読む)
     for (const char c : includePath) {
         const char k = c == '\\' ? '/' : c;
         hash = (hash ^ static_cast<uint8_t>(k)) * 16777619u;
@@ -1141,11 +1141,11 @@ std::string EmitAll(const std::vector<Header>& all) {
     return o;
 }
 
-// --- Scripts (a game's DLL: RM.h, not core/reflect) ---------------------------------------------
+// --- スクリプト (ゲームの DLL: RM.h。core/reflect ではない) ---------------------------------
 
 namespace {
 
-// The struct named `qualified` among the headers (null: none).
+// ヘッダーの中で `qualified` という名前の構造体 (null: なし)。
 const Struct* FindStruct(const std::vector<Header>& all, const std::string& qualified) {
     for (const Header& h : all) {
         for (const Struct& s : h.structs) {
@@ -1155,7 +1155,7 @@ const Struct* FindStruct(const std::vector<Header>& all, const std::string& qual
     return nullptr;
 }
 
-// What a script's field may be: the types of RmAbi.h (a vector of them, one level).
+// スクリプトのフィールドになれるもの: RmAbi.h の型 (その配列、1 段まで)。
 std::string ScriptFieldProblem(const std::vector<Header>& all, const TypeRef& t) {
     const TypeRef& base = t.kind == TypeRef::Kind::Vector ? t.element[0] : t;
     if (base.kind == TypeRef::Kind::AssetRef && base.assetType.empty()) {
@@ -1185,7 +1185,7 @@ const char* ScriptKind(const TypeRef& t) {
     return "RmField_Int";
 }
 
-// The kinds of file an asset field takes (core/asset's keys, or an extension).
+// アセットのフィールドが受け取るファイルの種類 (core/asset のキー、または拡張子)。
 const char* AssetKinds(const std::string& assetType) {
     if (assetType == "PrefabRef") return ".rmprefab";
     if (assetType == "ImageRef") return "image";
@@ -1194,7 +1194,7 @@ const char* AssetKinds(const std::string& assetType) {
     return "";
 }
 
-// The RmFieldDesc lines of a struct (a script's or an RM_STRUCT's), and the list descriptions they need.
+// 構造体 (スクリプトのか RM_STRUCT のか) の RmFieldDesc の行と、それが要る一覧の説明。
 std::string ScriptFields(const Struct& s, std::string& before, size_t& count) {
     const std::string q = s.Qualified(), id = Id(q), cpp = Cpp(q);
     std::string fields;
@@ -1328,7 +1328,7 @@ const RmApi* rm::Api() { return g_rmApi; }
         }
         return {};
     };
-    // Enums and structs refer to each other by address: declared first.
+    // enum と構造体は互いにアドレスで参照する: 先に宣言する。
     o += "namespace rmgen_scripts {\n";
     for (const auto& [e, h] : enums) o += std::format("extern const RmEnumDesc E_{};\n", Id(e->Qualified()));
     for (const Struct* s : structs) o += std::format("extern const RmStructDesc S_{};\n", Id(s->Qualified()));

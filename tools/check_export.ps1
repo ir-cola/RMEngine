@@ -1,10 +1,10 @@
-﻿# The export check (design NewEngineBluePrint 11-b-2, rule 5): makes a project from each template,
-# exports it (RM_Engine.exe --export-template: no window) and starts the game with --smoke (a few frames,
-# exit code 0). Also checks the exported folder: the exe, Game.rmpak, no .pdb, and no path of this PC in
-# the exe and the scripts' DLL. Exit code 0 = every game was exported and ran.
+﻿# 書き出しの検査 (設計 NewEngineBluePrint 11-b-2、憲法 5): テンプレートごとにプロジェクトを作り、
+# 書き出し (RM_Engine.exe --export-template: ウィンドウなし)、ゲームを --smoke で起動する (数フレーム、
+# 終了コード 0)。書き出したフォルダも調べる: exe、Game.rmpak、.pdb がないこと、exe とスクリプトの DLL に
+# この PC のパスがないこと。終了コード 0 = どのゲームも書き出せて、走った。
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\check_export.ps1 [-Config Release]
-# Needs Visual Studio (the export links with it) and a built engine (tools\build.ps1).
-# Another PC without the engine (Windows Sandbox): docs/HOW_TO_TRY.md, "書き出したゲームを別の PC で".
+# Visual Studio (書き出しがリンクに使う) と、作ったエンジン (tools\build.ps1) が要る。
+# エンジンのない別の PC (Windows Sandbox): docs/HOW_TO_TRY.md の「書き出したゲームを別の PC で」。
 param([ValidateSet('Debug', 'Release')][string]$Config = 'Release')
 
 $ErrorActionPreference = 'Stop'
@@ -14,7 +14,7 @@ if (-not (Test-Path $engine)) { Write-Host "check_export: エンジンがあり�
 $work = Join-Path $env:TEMP 'rm_export_check'
 $log = Join-Path $env:LOCALAPPDATA 'RM_Engine\Logs\editor.log'
 
-# author plugin id: the templates checked
+# 作者のプラグイン id: 検査するテンプレート
 $templates = @(
     @('rm_engine', 'game_production', 'game'),
     @('rm_engine', 'game_x_2d', 'game_2d'),
@@ -22,8 +22,8 @@ $templates = @(
     @('rm_engine', 'physics', 'physics_3d')
 )
 $failed = 0
-# A path of this PC (the repository's, the export's folder, the user's) in a file written, as UTF-8 or
-# UTF-16: the path, else $null.
+# 書いたファイルにこの PC のパス (リポジトリ、書き出し先のフォルダ、ユーザーの) があるか。UTF-8 でも
+# UTF-16 でも調べる。あればそのパス、なければ $null。
 function Find-PcPath([string]$file, [string]$dir) {
     $bytes = [IO.File]::ReadAllBytes($file)
     $text8 = [Text.Encoding]::UTF8.GetString($bytes)
@@ -48,7 +48,7 @@ foreach ($t in $templates) {
     if ($exe.Count -ne 1) { Write-Host "NG  $($t[2]): exe が 1 つではありません"; $failed++; continue }
     if (-not (Test-Path (Join-Path $game 'Game.rmpak'))) { Write-Host "NG  $($t[2]): Game.rmpak がありません"; $failed++; continue }
     if (@(Get-ChildItem $game -Filter *.pdb).Count -gt 0) { Write-Host "NG  $($t[2]): .pdb が入っています"; $failed++; continue }
-    # No path of this PC in the exe (the project's, the engine's), as UTF-8 or UTF-16.
+    # exe (プロジェクトの、エンジンの) にこの PC のパスがない。UTF-8 でも UTF-16 でも調べる。
     $leak = Find-PcPath $exe[0].FullName $dir
     if ($leak) { Write-Host "NG  $($t[2]): exe にこの PC のパスが残っています: $leak"; $failed++; continue }
     $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
@@ -58,8 +58,8 @@ foreach ($t in $templates) {
         $failed++
         continue
     }
-    # The 3D / 2D templates have a BGM (an 音源 of Assets/Sounds/bgm.wav): it went in (baked as .rmsound,
-    # with its import settings) and the game read it (game.log) - heard or not (a PC without sound).
+    # 3D / 2D のテンプレートには BGM がある (Assets/Sounds/bgm.wav の 音源): それが入り (取り込みの設定と
+    # 一緒に .rmsound に焼く)、ゲームが読んだ (game.log) - 聞こえたかどうかは別 (音の出ない PC もある)。
     $sound = ''
     if ($t[2] -eq 'game_2d' -or $t[2] -eq 'game_3d') {
         $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), (New-Object System.Text.UTF8Encoding $false))
@@ -75,9 +75,10 @@ foreach ($t in $templates) {
     $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB, 1)
     Write-Host "OK  $($t[2]): $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB) を書き出し、--smoke で起動して閉じました$sound"
 }
-# A game with a script: the template 「ゲーム」 (its sample script ArrowMover), an entity with it put into
-# the scene, the scripts built and the project exported, then the game with --smoke: its game.log must
-# show the script's BeginPlay and its EndPlay with the frames it ticked (Scripts.dll read and run).
+# スクリプトつきのゲーム: テンプレート 「ゲーム」 (見本のスクリプト ArrowMover) で、それをつけた
+# エンティティをシーンに置き、スクリプトを作って、プロジェクトを書き出し、ゲームを --smoke で動かす:
+# game.log にそのスクリプトの BeginPlay と、動いたフレーム数つきの EndPlay が出なければならない
+# (Scripts.dll を読んで走らせた)。
 $dir = Join-Path $work 'game_scripts'
 if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 $p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_production', 'game', "`"$dir`"") -Wait -PassThru
@@ -109,7 +110,7 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         Write-Host 'NG  game_scripts: Scripts.dll が書き出しに入っていません'
         $failed++
     } elseif (($leak = Find-PcPath (Join-Path $game 'Scripts.dll') $dir) -or ($leak = Find-PcPath $exe[0].FullName $dir)) {
-        # (the scripts are built for the export: Release, no debug info - no .pdb path in the DLL)
+        # (スクリプトは書き出し用に作る: Release、デバッグ情報なし - DLL に .pdb のパスを入れない)
         Write-Host "NG  game_scripts: Scripts.dll か exe にこの PC のパスが残っています: $leak"
         $failed++
     } elseif (@(Get-ChildItem $game -Filter *.pdb).Count -gt 0) {
@@ -130,9 +131,9 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
-# A 3D game with a model: the template 「3D のゲーム」 with docs/samples/models/house.gltf (and its two
-# pictures) put on an entity. The export bakes it (the engine's form + DDS); the game must put it on the
-# GPU as a model with its pictures (game.log), not draw a box.
+# モデルつきの 3D のゲーム: テンプレート 「3D のゲーム」 に docs/samples/models/house.gltf (と 2 枚の
+# 絵) をエンティティにつける。書き出しはそれを焼く (エンジンの形式 + DDS)。ゲームはそれを絵つきの
+# モデルとして GPU に載せなければならず (game.log)、箱を描いてはいけない。
 $dir = Join-Path $work 'game_model'
 if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 $p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_3d', 'game_3d', "`"$dir`"") -Wait -PassThru
@@ -178,8 +179,9 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
-# A 2D game with a sprite's image: the file as it is with its size and import settings in front (くっきり
-# and 大きさの上限 64 here): the game reads it smaller, くっきり, and knows the file's own size.
+# 画像つきの 2D のゲームのスプライト: ファイルをそのまま、前に大きさと取り込みの設定をつけて
+# (ここでは くっきり と 大きさの上限 64): ゲームはそれを小さく、くっきり読み、ファイル自身の
+# 大きさも知っている。
 $dir = Join-Path $work 'game_sprite'
 if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 $p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_2d', 'game_2d', "`"$dir`"") -Wait -PassThru
@@ -226,9 +228,9 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
-# Two scenes (the template 「シーンを切り替える見本」: Title -> Stage by its script GoToScene): both go in,
-# the game starts with the first, and the script's Game::LoadScene switches in the exported game (its
-# 「自動で切り替える (秒)」 set here, so --smoke switches without a key).
+# シーンが 2 つ (テンプレート 「シーンを切り替える見本」: Title -> Stage、スクリプトの GoToScene):
+# どちらも入り、ゲームは最初のシーンで始まり、書き出したゲームでスクリプトの Game::LoadScene が
+# 切り替える (「自動で切り替える (秒)」 をここで決めるので、--smoke はキーなしで切り替わる)。
 $dir = Join-Path $work 'game_scenes'
 if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 $p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_2d', 'scenes_2d', "`"$dir`"") -Wait -PassThru
@@ -262,10 +264,10 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
-# The game UI (the template 「ゲーム UI の見本」: Title's はじめる button -> Game with the score text and the HP
-# bar): the UI plugin goes in (its parts are in the scenes), the scripts build with RMUI.h and OnClick, the UI
-# is drawn over the 2D picture, and はじめる switches Title -> Game (its 「自動で押す (秒)」 set here: --smoke
-# presses no key, so the script calls its own OnClick).
+# ゲーム UI (テンプレート 「ゲーム UI の見本」: Title の はじめる ボタン -> スコアの文字と HP バーの
+# ある Game): UI のプラグインが入り (部品はシーンの中)、スクリプトは RMUI.h と OnClick でビルドでき、
+# UI は 2D の絵の上に描かれ、はじめる で Title -> Game に切り替わる (「自動で押す (秒)」 をここで
+# 決める: --smoke はキーを押さないので、スクリプトが自分の OnClick を呼ぶ)。
 $dir = Join-Path $work 'game_ui'
 if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 $p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_ui', 'ui_sample', "`"$dir`"") -Wait -PassThru

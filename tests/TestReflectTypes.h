@@ -1,5 +1,5 @@
 #pragma once
-// Reflected types used by the tests (rmgen reads this file for RMTests).
+// テストで使う反映された型 (rmgen が RMTests のためにこのファイルを読む)。
 
 #include "core/reflect/Reflect.h"
 
@@ -37,14 +37,14 @@ struct Settings {
     RM_TRANSIENT() void* runtimeHandle = nullptr;
 };
 
-// Decimals=1: kept to tenths (the rest cut off) and shown so.
+// Decimals=1: 小数第 1 位までを残し (残りは切り捨て)、そう表示する。
 RM_STRUCT()
 struct Tenths {
     RM_PROPERTY(Edit, Min=0, Max=100, Decimals=1) float amount = 20.f;
     RM_PROPERTY(Edit, Decimals=2) rm::Vec2 place{0, 0};
 };
 
-// References (base/Ref.h): saved as ids.
+// 参照 (base/Ref.h): ID で保存する。
 RM_STRUCT()
 struct Links {
     RM_PROPERTY(Edit, AssetKind="model") rm::AssetRef model;

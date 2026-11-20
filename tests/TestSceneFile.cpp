@@ -1,6 +1,6 @@
-// Tests for the game's scenes kept as files of their own (plugins/rm_engine/game_production/runtime/
-// SceneFile): the file's form, the round trip, unknown keys, the projects of before (the scene inside
-// the .rmpf) and that a save writes only the scenes that changed.
+// ゲームのシーンを専用のファイルとして持つこと (plugins/rm_engine/game_production/runtime/
+// SceneFile) のテスト: ファイルの形、往復、未知のキー、以前のプロジェクト (.rmpf の中にシーン)、
+// そして保存は変わったシーンだけを書くこと。
 
 #include "Test.h"
 
@@ -34,7 +34,7 @@ Scene MakeScene() {
     return s;
 }
 
-// The files of a save, as a folder would have them (path -> text).
+// 保存のファイルを、フォルダーが持つように (パス -> テキスト)。
 using Disk = std::map<std::string, std::string>;
 void Write(Disk& disk, const ScenePlan& plan) {
     for (const FileWrite& f : plan.files) disk[f.path] = f.text;
@@ -52,7 +52,7 @@ RM_TEST(SceneFile_RoundTrip) {
     const auto read = ReadSceneFile(text, &err);
     CHECK(read.has_value());
     if (!read) return;
-    // kind and format come first.
+    // kind と format が先に来る。
     CHECK(read->Members().size() >= 2 && read->Members()[0].first == "kind" && read->Members()[1].first == "format");
     CHECK(read->Get("kind").AsString() == kSceneKind && read->Get("format").AsInt() == kSceneFormat);
     Scene again;
@@ -61,7 +61,7 @@ RM_TEST(SceneFile_RoundTrip) {
     again.Load(*read, &warnings);
     CHECK(warnings.empty());
     CHECK(again.Entities().size() == 2 && again.Entities()[0].data.name == "床" && again.Entities()[1].data.parent == again.Entities()[0].data.id);
-    // Written again: the same text (a scene that did not change is not written - its sign is the same).
+    // もう一度書く: 同じテキスト (変わっていないシーンは書かない - その印は同じ)。
     CHECK(SceneFileText(again.Save()) == text);
     CHECK(TextSign(SceneFileText(again.Save())) == TextSign(text));
 }
@@ -71,14 +71,14 @@ RM_TEST(SceneFile_Refused) {
     CHECK(!ReadSceneFile("{ broken", &err) && !err.empty());
     CHECK(!ReadSceneFile(R"({"kind": "rm_engine.game_production.prefab", "format": 1, "entities": []})", &err));
     CHECK(!ReadSceneFile(R"([1, 2])", &err));
-    // A newer version's: not read (and so never written over).
+    // 新しいバージョンのもの: 読まない (だから上書きもしない)。
     CHECK(!ReadSceneFile(R"({"kind": "rm_engine.scene", "format": 99, "entities": []})", &err));
     CHECK(ReadSceneFile(R"({"kind": "rm_engine.scene", "format": 1})", &err).has_value());
     CHECK(TextSign("") != 0 && TextSign("a") != TextSign("b"));
 }
 
 RM_TEST(SceneFile_UnknownKeysStay) {
-    // In the scene file: its own keys and an entity's.
+    // シーンのファイルに: そのキーと、エンティティのキー。
     const char* text = R"({"kind": "rm_engine.scene", "format": 1, "lighting": {"sky": "blue"}, "nextId": 3,
         "entities": [ {"id": 1, "parent": 0, "name": "A", "active": true, "glow": 5, "components": []} ]})";
     std::string err;
@@ -90,7 +90,7 @@ RM_TEST(SceneFile_UnknownKeysStay) {
     const auto back = ReadSceneFile(SceneFileText(s.Save()), &err);
     CHECK(back && back->Get("lighting").Get("sky").AsString() == "blue");
     CHECK(back && back->Get("entities").Items()[0].Get("glow").AsInt() == 5);
-    // In the .rmpf's list.
+    // .rmpf の一覧に。
     SceneList list;
     reflect::Unknowns unknowns;
     reflect::Load(list, Parse(R"({"scenes": ["0123456789abcdef0123456789abcdef"], "open": "", "folders": ["x"]})"), &unknowns);
@@ -106,7 +106,7 @@ RM_TEST(SceneFile_OpenScene) {
     CHECK(OpenScene(list).guid == "a");
     list.open = AssetRef{"b"};
     CHECK(OpenScene(list).guid == "b");
-    list.open = AssetRef{"gone"};  // not in the list: the first
+    list.open = AssetRef{"gone"};  // 一覧に無い: 最初のもの
     CHECK(OpenScene(list).guid == "a");
 }
 
@@ -121,7 +121,7 @@ RM_TEST(SceneFile_NewPath) {
 RM_TEST(SceneFile_OnlyChangedScenesAreWritten) {
     Scene scene = MakeScene();
     Disk disk;
-    // A new scene: its .meta (with the new id) first, then the scene.
+    // 新しいシーン: 先にその .meta (新しい ID 入り)、その後にシーン。
     const SceneSlot fresh{"", "Assets/Scenes/Main.rmscene", 0};
     const ScenePlan first = PlanSceneSave(scene.Save(), fresh, kGuid);
     CHECK(first.files.size() == 2);
@@ -129,19 +129,19 @@ RM_TEST(SceneFile_OnlyChangedScenesAreWritten) {
     CHECK(asset::GuidInMeta(first.files[0].text) == kGuid);
     CHECK(first.after.guid == kGuid && first.after.onDisk == TextSign(first.files[1].text));
     Write(disk, first);
-    // Nothing changed: nothing written.
+    // 何も変わっていない: 何も書かない。
     const ScenePlan same = PlanSceneSave(scene.Save(), first.after, "ffffffffffffffffffffffffffffffff");
     CHECK(same.files.empty() && same.after.guid == kGuid && same.after.onDisk == first.after.onDisk);
-    // Changed: the scene only (its id stays, no .meta).
+    // 変わった: シーンだけ (ID は同じ、.meta は無し)。
     scene.Create("木");
     const ScenePlan changed = PlanSceneSave(scene.Save(), first.after, "ffffffffffffffffffffffffffffffff");
     CHECK(changed.files.size() == 1 && changed.files[0].path == "Assets/Scenes/Main.rmscene");
     CHECK(changed.after.guid == kGuid && changed.after.onDisk != first.after.onDisk);
     Write(disk, changed);
-    // Changed back (an undo): written again, as it differs from the file now.
+    // 元に戻した (Undo): 今のファイルと違うので、もう一度書く。
     const ScenePlan back = PlanSceneSave(MakeScene().Save(), changed.after, "");
     CHECK(back.files.size() == 1);
-    // A file read from the disk and saved untouched: not written.
+    // ディスクから読んで、そのまま保存した: 書かない。
     std::string err;
     const auto read = ReadSceneFile(disk["Assets/Scenes/Main.rmscene"], &err);
     CHECK(read.has_value());
@@ -152,18 +152,18 @@ RM_TEST(SceneFile_OnlyChangedScenesAreWritten) {
     CHECK(PlanSceneSave(loaded.Save(), asRead, "").files.empty());
 }
 
-// A save that failed part way (the scene written, the .rmpf not - or the other way): the next save
-// writes the scene again, even when it is back to what the slot last knew (an undo); a new scene whose
-// .meta got written keeps that id and file.
+// 途中で失敗した保存 (シーンは書いたが .rmpf は書かなかった - またはその逆): 次の保存は
+// シーンをもう一度書く。スロットが最後に知っていた内容に戻っていても (Undo)。.meta が書かれた
+// 新しいシーンは、その ID とファイルを保つ。
 RM_TEST(SceneFile_AfterAFailedSave) {
     const Scene scene = MakeScene();
     const SceneSlot read{kGuid, "Assets/Scenes/Main.rmscene", TextSign(SceneFileText(scene.Save()))};
     SceneSlot tried = read;
-    tried.onDisk = 12345;  // (another text was being written)
+    tried.onDisk = 12345;  // (別のテキストを書いていた)
     const SceneSlot after = SlotAfterFailedSave(read, tried, false);
     CHECK(after.guid == kGuid && after.path == read.path && after.onDisk == 0);
-    CHECK(PlanSceneSave(scene.Save(), after, "").files.size() == 1);  // written again, though unchanged
-    // A new scene: its .meta there - its id and file kept; not there - still none (a .meta at the next save).
+    CHECK(PlanSceneSave(scene.Save(), after, "").files.size() == 1);  // 変わっていなくても、もう一度書く
+    // 新しいシーン: その .meta がある - ID とファイルは保つ。無い - やはり無し (.meta は次の保存で)。
     const SceneSlot fresh{"", "Assets/Scenes/Main.rmscene", 0};
     const SceneSlot triedNew{kGuid, "Assets/Scenes/Main.rmscene", 99};
     const SceneSlot kept = SlotAfterFailedSave(fresh, triedNew, true);
@@ -173,7 +173,7 @@ RM_TEST(SceneFile_AfterAFailedSave) {
 }
 
 RM_TEST(SceneFile_ProjectOfBefore) {
-    // 0.0.1: the scene inside the .rmpf's game data, next to the settings (and a key of a newer version).
+    // 0.0.1: .rmpf のゲームデータの中にシーンがあり、設定の隣にある (と、新しいバージョンのキー)。
     json::Value data = Parse(R"({"settings": {"space": "3d"}, "future": 1,
         "scene": {"nextId": 3, "entities": [ {"id": 1, "parent": 0, "name": "カメラ", "active": true, "components": []},
                                              {"id": 2, "parent": 1, "name": "子", "active": false, "components": []} ]}})");
@@ -183,7 +183,7 @@ RM_TEST(SceneFile_ProjectOfBefore) {
     if (!old) return;
     Scene scene;
     scene.Load(*old);
-    // Split off: written to its file with a new id, read back the same.
+    // 切り離す: 新しい ID でそのファイルに書き、同じに読み戻す。
     Disk disk;
     const ScenePlan plan = PlanSceneSave(scene.Save(), {"", "Assets/Scenes/Main.rmscene", 0}, kGuid);
     Write(disk, plan);
@@ -197,44 +197,44 @@ RM_TEST(SceneFile_ProjectOfBefore) {
     CHECK(again.Save().Get("nextId").AsInt() == 3);
     CHECK(asset::GuidInMeta(disk["Assets/Scenes/Main.rmscene.meta"]) == kGuid);
 
-    // Data already split: nothing to take (and "scene" there is left alone).
+    // もう切り離してあるデータ: 取るものは無い ("scene" はそこに放っておく)。
     json::Value now = Parse(R"({"settings": {}, "sceneList": {"scenes": []}, "scene": {"entities": []}})");
     CHECK(!TakeOldScene(now) && now.Find("scene"));
     json::Value none = Parse(R"({"settings": {}})");
     CHECK(!TakeOldScene(none));
 }
 
-// The game's scenes: the list's order, the one open when it is not in it (last), the first one, the
-// names Game::LoadScene takes.
+// ゲームのシーン: 一覧の順、一覧に無いのに開いているもの (最後)、最初のもの、
+// Game::LoadScene が受け取る名前。
 RM_TEST(SceneFile_GameScenesAndNames) {
     const AssetRef a{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, b{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, c{"cccccccccccccccccccccccccccccccc"};
     SceneList list;
     list.scenes = {a, b};
-    CHECK(FirstScene(list) == a);  // none chosen: the list's first
+    CHECK(FirstScene(list) == a);  // 選んだものが無い: 一覧の最初
     list.first = b;
     CHECK(FirstScene(list) == b);
-    list.first = c;  // not in the list (taken out): the list's first
+    list.first = c;  // 一覧に無い (外した): 一覧の最初
     CHECK(FirstScene(list) == a);
     CHECK(FirstScene(SceneList{}).Empty());
     CHECK((GameScenes(list, b) == std::vector<AssetRef>{a, b}));
-    CHECK((GameScenes(list, c) == std::vector<AssetRef>{a, b, c}));            // open, not in the list: last
-    CHECK((GameScenes(list, AssetRef{}) == std::vector<AssetRef>{a, b, AssetRef{}}));  // a new scene not saved yet
-    // Play numbers them as the exported game: without the ones left out of the build; the open one, left
-    // out, last (2026-11-19: Game::LoadScene(2) went to another scene in the game).
+    CHECK((GameScenes(list, c) == std::vector<AssetRef>{a, b, c}));            // 開いているが一覧に無い: 最後
+    CHECK((GameScenes(list, AssetRef{}) == std::vector<AssetRef>{a, b, AssetRef{}}));  // まだ保存していない新しいシーン
+    // Play は、書き出したゲームと同じように番号を付ける: ビルドから外したものは除く。開いているものは、
+    // 外していても最後 (2026-11-19: Game::LoadScene(2) がゲームの別のシーンに行っていた)。
     SceneList three;
     three.scenes = {a, b, c};
     three.notBuilt = {b};
     CHECK((PlayScenes(three, a) == std::vector<AssetRef>{a, c}));
     CHECK((PlayScenes(three, b) == std::vector<AssetRef>{a, c, b}));
     CHECK((PlayScenes(three, AssetRef{}) == std::vector<AssetRef>{a, c, AssetRef{}}));
-    three.notBuilt = {a};  // (the first is always built)
+    three.notBuilt = {a};  // (最初のものは常にビルドされる)
     CHECK((PlayScenes(three, c) == std::vector<AssetRef>{a, b, c}));
     list.scenes = {a, a, AssetRef{}, b};
-    CHECK((GameScenes(list, a) == std::vector<AssetRef>{a, b}));  // each once, no empty ids
+    CHECK((GameScenes(list, a) == std::vector<AssetRef>{a, b}));  // それぞれ 1 回、空の ID は無し
     CHECK(SceneNameOf("Assets/Scenes/Title.rmscene") == "Title" && SceneNameOf("Stage 2.rmscene") == "Stage 2" && SceneNameOf("Assets\\x.rmscene") == "x");
     const std::vector<std::string> names{"Title", "Stage", "Stage"};
     CHECK(FindSceneByName(names, "Stage") == std::optional<size_t>(1) && !FindSceneByName(names, "stage") && !FindSceneByName(names, ""));
-    // The list keeps "first" (and keys of a newer version) through a save and a load.
+    // 一覧は、保存して読み込んでも "first" (と新しいバージョンのキー) を保つ。
     SceneList saved;
     saved.scenes = {a, b};
     saved.first = b;
@@ -243,12 +243,12 @@ RM_TEST(SceneFile_GameScenesAndNames) {
     CHECK(back.first == b && back.scenes == saved.scenes);
 }
 
-// The camera a scene starts with: the game settings' 最初のカメラ when it is a camera of this scene,
-// else the first running entity with a camera component.
+// シーンが始まるときのカメラ: ゲーム設定の 最初のカメラ がこのシーンのカメラならそれ、
+// そうでなければカメラ部品を持つ最初の動いているエンティティ。
 RM_TEST(SceneFile_SceneCamera) {
     Scene s;
     s.SetComponentTypes({&reflect::TypeOf<space3d::Transform>()});
-    const std::vector<std::string> cameras{reflect::TypeOf<space3d::Transform>().name};  // (a type standing for a camera)
+    const std::vector<std::string> cameras{reflect::TypeOf<space3d::Transform>().name};  // (カメラを表す型)
     const int box = s.Create("箱");
     const int off = s.Create("止めたカメラ");
     s.AddComponent(off, reflect::TypeOf<space3d::Transform>());
@@ -256,7 +256,7 @@ RM_TEST(SceneFile_SceneCamera) {
     const int cam = s.Create("カメラ");
     s.AddComponent(cam, reflect::TypeOf<space3d::Transform>());
     CHECK(SceneCamera(s, cameras, static_cast<uint64_t>(cam)) == static_cast<uint64_t>(cam));
-    CHECK(SceneCamera(s, cameras, static_cast<uint64_t>(box)) == static_cast<uint64_t>(cam));  // not a camera: the first running one
-    CHECK(SceneCamera(s, cameras, 999) == static_cast<uint64_t>(cam));                         // not in this scene
-    CHECK(SceneCamera(s, {}, static_cast<uint64_t>(cam)) == 0);                                // no camera types: none
+    CHECK(SceneCamera(s, cameras, static_cast<uint64_t>(box)) == static_cast<uint64_t>(cam));  // カメラではない: 最初の動いているもの
+    CHECK(SceneCamera(s, cameras, 999) == static_cast<uint64_t>(cam));                         // このシーンに無い
+    CHECK(SceneCamera(s, {}, static_cast<uint64_t>(cam)) == 0);                                // カメラの型が無い: 無し
 }
