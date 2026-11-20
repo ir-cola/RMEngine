@@ -1,13 +1,13 @@
 #pragma once
-// The editor application: owns the GPU device and switches between the two screens.
+// エディターのアプリ本体: GPU のデバイスを持ち、2 つの画面を切り替える。
 //
-//   Hub  --(open / create project)-->  Editor
-//   Hub  <--(close editor window)----  Editor
+//   Hub  --(プロジェクトを開く / 作る)-->  エディター
+//   Hub  <--(エディターのウィンドウを閉じる)----  エディター
 //
-// Hub and editor live in the same exe (the shipped game is a different exe and contains
-// neither). Screen changes are requested and applied by the message loop afterwards
-// (never from inside a window procedure), so a window is never destroyed while one of
-// its own handlers is still running.
+// Hub とエディターは同じ exe の中にある (出来上がったゲームは別の exe で、どちらも含まない)。
+// 画面の切り替えは要求として受け、あとでメッセージループが行う (ウィンドウプロシージャの中では
+// 決してしない)。そうすれば、ウィンドウ自身のハンドラーがまだ動いている間にそのウィンドウが
+// 壊れることはない。
 
 #include "editor/app/Worker.h"
 #include "editor/plugin/Plugins.h"
@@ -25,11 +25,11 @@ namespace rm::editor {
 class ScreenWindow;
 
 struct LaunchOptions {
-    std::filesystem::path projectFile;  // --project <file.rmpf>: skip the Hub (used to restart into a project)
-    // The export check's command lines (tools/check_export.ps1), no window; the exit code is 0 when it was done:
-    //   --new-from-template <author> <plugin> <id> <folder>   a project made from that template: <folder>/Project/Project.rmpf
-    //   --export <file.rmpf> <folder>                          the project exported into <folder> (its scripts built first)
-    //   --export-template <author> <plugin> <id> <folder>     both: <folder>/Project, exported into <folder>/Game
+    std::filesystem::path projectFile;  // --project <file.rmpf>: Hub を飛ばす (プロジェクトへ再起動するのに使う)
+    // 書き出しの確認 (tools/check_export.ps1) のコマンドライン。ウィンドウなし。終わると終了コードは 0:
+    //   --new-from-template <author> <plugin> <id> <folder>   そのテンプレートから作ったプロジェクト: <folder>/Project/Project.rmpf
+    //   --export <file.rmpf> <folder>                          プロジェクトを <folder> に書き出す (先にスクリプトをビルドする)
+    //   --export-template <author> <plugin> <id> <folder>     両方: <folder>/Project を作り、<folder>/Game に書き出す
     std::vector<std::wstring> newFromTemplate, exportProject, exportTemplate;
 };
 
@@ -39,32 +39,32 @@ public:
     ~App();
 
     int Run(const LaunchOptions& options);
-    // The export check (LaunchOptions::exportTemplate): the exit code.
+    // 書き出しの確認 (LaunchOptions::exportTemplate): その終了コード。
     int RunExportCheck(const LaunchOptions& options);
 
     platform::Gfx& Gfx() { return gfx_; }
     HubSettings& Settings() { return settings_; }
     const Plugins& GetPlugins() const { return plugins_; }
 
-    // Before opening, the plugins the project records are checked (it is not opened without them),
-    // and the Hub tells once about installed plugins that lack a requirement - unless skipNotice.
+    // 開く前に、プロジェクトが記録しているプラグインを調べる (なければ開かない)。skipNotice でなければ、
+    // Hub は、必要なものが足りない入っているプラグインがあることも 1 度だけ知らせる。
     void RequestOpenProject(const std::filesystem::path& file, bool skipNotice = false);
-    // The editor's plugin menu (the editor has saved): install, then open the same project again.
+    // エディターのプラグインメニュー (エディターは保存した): 入れてから、同じプロジェクトをもう一度開く。
     void RequestInstallAndReopen(std::vector<PluginId> ids, const std::filesystem::path& project);
-    // Hub only (no editor may be open): change the installed plugins and read them again.
+    // Hub だけ (エディターは開いていないこと): 入っているプラグインを変えて、読み直す。
     bool InstallPlugins(const std::vector<PluginId>& ids, std::string* error);
     bool UninstallPlugin(const PluginId& id, std::string* error);
     void RequestHub(std::string errorMessage = {});
     void RequestQuit();
 
-    // Applies the options (color theme, language) to every window. At start and after a change.
+    // オプション (色のテーマ、言語) を全ウィンドウに当てる。起動時と変更の後に。
     void ApplyOptions();
-    // Windows' light / dark setting changed (matters only for "PC の設定に合わせる").
+    // Windows の明るい / 暗い設定が変わった (「PC の設定に合わせる」のときだけ関係する)。
     void SystemThemeChanged();
 
-    // The GPU is lost (Gfx::Lost): its devices made again, every window drawn again (each makes its
-    // own drawing again on the next frame). False when it cannot be now - the window asking tries
-    // again in a moment; after a few failures the user is told and offered to save.
+    // GPU が失われた (Gfx::Lost): デバイスを作り直し、全ウィンドウをもう一度描く (各ウィンドウは
+    // 次のフレームで自分の描画を作り直す)。今はできないなら false。頼んだウィンドウが少し後に
+    // またやってみる。何度か失敗したら、ユーザーに知らせて保存を勧める。
     bool RecoverGraphics(ScreenWindow& asking);
 
 private:
@@ -75,18 +75,18 @@ private:
     class HubScreen* EnsureHub();
     void Replace(std::unique_ptr<ScreenWindow> next);
     void LoadLanguageCatalogs();
-    // The themes of the theme packs: themes/*.json of every enabled plugin (+ its pictures, offered by
-    // its code at w::kOrnamentPoint). After each reading of the plugins. A theme chosen whose pack is
-    // gone is replaced by the first theme in the options (for good).
+    // テーマパックのテーマ: 有効な全プラグインの themes/*.json (と、その絵。プラグインのコードが
+    // w::kOrnamentPoint で出す)。プラグインを読むたびに。選んだテーマのパックがなくなったら、
+    // オプションの最初のテーマに置き換える (以後ずっと)。
     void LoadThemes();
-    // The plugins read again (after installing / removing), then their themes, then the look.
+    // プラグインを (入れた / 消した後に) 読み直し、次にそのテーマ、次に見た目。
     void ReloadPlugins();
-    // After the engine was updated: the installed plugins' new copies (worked out on a Worker at start,
-    // applied when no editor is open - right away at the Hub, else when the Hub comes back).
+    // エンジンを更新した後: 入っているプラグインの新しいコピー (起動時に Worker で作り、
+    // エディターが開いていないときに当てる。Hub ならすぐ、そうでなければ Hub に戻ったとき)。
     void StartEngineRefresh();
     void ApplyEngineRefreshIfReady();
 
-    std::optional<Plugins::EngineRefreshPlan> engineRefresh_;  // worked out, not applied yet
+    std::optional<Plugins::EngineRefreshPlan> engineRefresh_;  // 作ったが、まだ当てていない
     platform::Gfx gfx_;
     HubSettings settings_;
     Plugins plugins_;
@@ -97,9 +97,9 @@ private:
     std::vector<PluginId> pendingInstall_;
     std::string pendingMessage_;
     bool running_ = true;
-    int graphicsFailures_ = 0;  // Recreate failed this many times in a row
-    bool graphicsTold_ = false; // ... and the user was told
-    Worker engineWorker_;       // last: what it posts is dropped once the App is gone
+    int graphicsFailures_ = 0;  // Recreate がこの回数続けて失敗した
+    bool graphicsTold_ = false; // ... ユーザーには知らせた
+    Worker engineWorker_;       // 最後に: App がなくなった後は、これが post するものは捨てられる
 };
 
 }  // namespace rm::editor

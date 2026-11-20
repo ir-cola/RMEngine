@@ -1,13 +1,13 @@
 #pragma once
-// Panel layouts the user saved under a name (pure - tested in RMTests).
+// 名前を付けて保存したパネルレイアウト (純粋 (I/O も描画もしない)。RMTests でテストする)。
 //
-// One list per software, kept with that software's current layout in <project>/UserSettings/Layout.json:
-//   "named": [ { "name": "絵を描く", "layout": { "main": ..., "floating": [...] }, ...unknown keys }, ... ]
-// The entry's own fields are the RM_STRUCT below (saved and loaded by reflection); "layout" is the
-// docking tree's own format (Layout::ToJson). Keys this version does not know are written back, and
-// an element that is not an entry at all (no name) is kept as it is, unseen.
+// ソフトごとに 1 つの一覧で、そのソフトの現在のレイアウトと一緒に <project>/UserSettings/Layout.json に置く:
+//   "named": [ { "name": "絵を描く", "layout": { "main": ..., "floating": [...] }, ...未知のキー }, ... ]
+// 項目自身のフィールドは下の RM_STRUCT (リフレクションで保存・読み込み)。"layout" は
+// ドッキングの木自身の形式 (Layout::ToJson)。このバージョンが知らないキーは書き戻す。
+// 項目ですらない要素 (name が無い) は、見せずにそのまま残す。
 //
-// Names are compared as typed after trimming spaces (also the full-width one), case and all.
+// 名前は、前後の空白 (全角も) を除いた打った文字のまま、大文字小文字も区別して比べる。
 
 #include "core/reflect/Data.h"
 #include "editor/dock/DockLayout.h"
@@ -28,8 +28,8 @@ class NamedLayouts {
 public:
     struct Entry {
         NamedLayoutInfo info;
-        json::Value layout;          // as saved (Layout::ToJson); made into a Layout only when used
-        reflect::Unknowns unknowns;  // keys of a newer version
+        json::Value layout;          // 保存したまま (Layout::ToJson)。使うときに初めて Layout にする
+        reflect::Unknowns unknowns;  // 新しいバージョンのキー
     };
     enum class NameCheck { Ok, Empty, Taken };
 
@@ -37,21 +37,21 @@ public:
     bool Empty() const { return entries_.empty(); }
     const Entry* Find(std::string_view name) const;
 
-    // Spaces at both ends removed. Empty / the name of another entry (except `self`) is refused.
+    // 前後の空白を取る。空、または別の項目の名前 (`self` は除く) は断る。
     static std::string CleanName(std::string_view name);
     NameCheck Check(std::string_view name, std::string_view self = {}) const;
-    // A name not used yet: base, "base 2", "base 3" ...
+    // まだ使っていない名前: base、"base 2"、"base 3" ...
     std::string FreeName(std::string_view base) const;
 
-    // Saves `layout` under `name`: replaces the entry of that name in place (its unknown keys stay)
-    // or adds one at the end. Returns false (and does nothing) for an empty name.
+    // `layout` を `name` で保存する: その名前の項目をその場で置き換える (未知のキーは残る)か、
+    // 末尾に足す。名前が空なら false を返して何もしない。
     bool Put(std::string_view name, const Layout& layout);
-    bool Rename(std::string_view from, std::string_view to);  // false: missing / refused name
+    bool Rename(std::string_view from, std::string_view to);  // false: 無い名前 / 断られた名前
     bool Remove(std::string_view name);
-    // Moves the entry `name` (with its unknown keys) to the end of `to` - between a project's list and
-    // the shared one. False (nothing moved): missing in `from`, or `to` has that name already.
+    // 項目 `name` (未知のキーごと) を `to` の末尾へ移す - プロジェクトの一覧と共有の一覧の間で。
+    // false (何も動かない): `from` に無い、または `to` に同じ名前がすでにある。
     static bool Move(NamedLayouts& from, std::string_view name, NamedLayouts& to);
-    // The saved layout, cleaned for the panels that exist now. nullopt: missing or unreadable.
+    // 保存したレイアウトを、今あるパネルに合わせて整えたもの。nullopt: 無い、または読めない。
     std::optional<Layout> Get(std::string_view name, const std::vector<std::string>& knownPanels) const;
 
     json::Value ToJson() const;
@@ -59,7 +59,7 @@ public:
 
 private:
     std::vector<Entry> entries_;
-    std::vector<json::Value> others_;  // elements that are not entries: written back unchanged
+    std::vector<json::Value> others_;  // 項目ではない要素: そのまま書き戻す
 };
 
 }  // namespace rm::editor::dock

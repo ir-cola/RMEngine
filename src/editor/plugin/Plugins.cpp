@@ -73,8 +73,8 @@ fs::path WithSuffix(const fs::path& p, const wchar_t* suffix) {
     return out;
 }
 
-// A copy that was put aside (<folder>.old) and never replaced - the app stopped between the two
-// renames of CopyIn: the old copy goes back, so the plugin is never lost.
+// よけておいた (<folder>.old) まま戻されなかった写し - CopyIn の 2 回の名前変更の間に
+// アプリが止まった: 古い写しを元に戻すので、プラグインが失われることはない。
 void PutBackInterrupted(const fs::path& to) {
     const fs::path aside = WithSuffix(to, L".old");
     std::error_code ec;
@@ -87,7 +87,7 @@ void PutBackInterrupted(const fs::path& to) {
     }
 }
 
-// What an uninstall could not delete (<folder>.removing): tried again.
+// アンインストールで消せなかったもの (<folder>.removing): もう一度消してみる。
 void RemoveLeftovers(const fs::path& folder) {
     const fs::path aside = WithSuffix(folder, L".removing");
     std::error_code ec;
@@ -100,14 +100,14 @@ void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir, c
     availableDir_ = availableDir;
     installedDir_ = installedDir;
     std::error_code ec;
-    // (a first start that could not install everything is one again next time - 2026-11-19: before, the
-    // folder was there and the rest never came)
+    // (全部は入れられなかった最初の起動は、次回もう一度最初の起動になる - 2026-11-19: 前は
+    // フォルダーがあるだけで、残りが入らなかった)
     const fs::path unfinished = installedDir_ / L".first-start-unfinished";
     const bool firstStart = !fs::exists(installedDir_, ec) || fs::exists(unfinished, ec);
-    Reload();  // the engine's copies are known (names in the log) before anything is installed
+    Reload();  // 何かを入れる前に、エンジンの写しが分かっている (名前がログに出る)
     if (firstStart) {
-        // First start of this engine for this user: what was installed in the folder every engine
-        // shared before (the user's choice carries over), else everything that comes with it.
+        // このユーザーにとってのこのエンジンの最初の起動: 全エンジンで共有していたフォルダーに
+        // 入っていたもの (ユーザーの選択を引き継ぐ)、無ければ付いてくる全部。
         fs::create_directories(installedDir_, ec);
         { std::ofstream mark(unfinished); }
         std::vector<PluginId> available, legacy;
@@ -116,7 +116,7 @@ void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir, c
             if (!legacyDir.empty() && fs::exists(FolderOf(legacyDir, b.id.Id()) / L"plugin.json", ec)) legacy.push_back(b.id.Id());
         }
         const std::vector<PluginId> first = FirstStartInstalls(available, legacy);
-        // Each on its own: one that cannot be copied (a folder held by another program) does not stop the rest.
+        // 1 つずつ別に行う: 写せないもの (別のプログラムが持っているフォルダー) があっても、残りは止まらない。
         bool all = true;
         for (const PluginId& id : first) {
             std::string err;
@@ -133,8 +133,8 @@ void Plugins::Load(const fs::path& availableDir, const fs::path& installedDir, c
         }
         Reload();
     }
-    // A connector this engine brought for plugins installed before (a newer engine's): it comes along
-    // now, as it would have when they were installed.
+    // 前から入っているプラグイン用に、このエンジンが持ってきたコネクター (新しいエンジンのもの):
+    // プラグインを入れたときに来たはずのものと同じように、今来る。
     if (const std::vector<PluginId> bring = ConnectorsToBring(installed_, available_); !bring.empty()) {
         std::string err;
         if (!Install(bring, &err)) log::Error("{}", err);
@@ -169,7 +169,7 @@ void Plugins::Reload() {
             cand.manifestError = mine.error;
             if (mine.manifest) installed_.push_back(*mine.manifest);
         } else {
-            cand.manifest = engineCopy.manifest;  // for its display name
+            cand.manifest = engineCopy.manifest;  // 表示名のため
         }
         candidates.push_back(std::move(cand));
     }
@@ -179,7 +179,7 @@ void Plugins::Reload() {
         PluginStatus st = res.statuses[i];
         if (!candidates[i].manifest) {
             for (const auto& m : available_) {
-                if (m.id == st.id) st.displayName = m.displayName;  // the installed plugin.json is unreadable
+                if (m.id == st.id) st.displayName = m.displayName;  // 入っている plugin.json が読めない
             }
         }
         Entry entry{std::move(st), availableFlags[i], candidates[i].installed};
@@ -194,10 +194,10 @@ void Plugins::Reload() {
         entries_.push_back(std::move(entry));
     }
     for (const size_t i : res.order) {
-        // The runtime part first (what an exported game registers too), then the editor part.
+        // 先にランタイムの部分 (書き出したゲームも登録するもの)、次にエディターの部分。
         const PluginId id = entries_[i].status.id;
         RegisterRuntimeParts(registry_, std::span<const PluginId>(&id, 1));
-        if (!builtin[i].registerEditor) continue;  // nothing of the editor's (e.g. 2D 空間)
+        if (!builtin[i].registerEditor) continue;  // エディター側のものは無い (例: 2D 空間)
         registry_.BeginPlugin(id);
         builtin[i].registerEditor(registry_);
         registry_.EndPlugin();
@@ -270,7 +270,7 @@ std::string Plugins::DisplayName(const PluginId& id) const {
 }
 
 std::vector<PluginId> Plugins::InstallPlan(const PluginId& id, std::vector<PluginId>* unavailable) const {
-    // "Ready" = installed, readable and the same as this engine's copy. A broken or older copy is copied again.
+    // 「準備できている」 = 入っていて、読めて、このエンジンの写しと同じ。壊れた写しや古い写しはもう一度写す。
     return editor::InstallPlan(id, available_, ReadyPlugins(installed_, available_), unavailable);
 }
 
@@ -287,11 +287,11 @@ bool Plugins::CopyIn(const PluginId& id, std::string* error) {
         if (error) *error = TrU8F("「{}」をインストールできませんでした ({}): {}", DisplayName(id), WideToUtf8(Tr(step)), FsError(why));
         return false;
     };
-    // The old copy is never deleted before the new one is in place:
-    //   1. copy the engine's files next to it (<folder>.installing)    fails -> the old copy is untouched
-    //   2. put the old copy aside (<folder>.old)                        fails -> the old copy is untouched
-    //   3. the new copy takes its place                                 fails -> the old copy goes back
-    //   4. the old copy is deleted                                      fails -> only a leftover (removed next time)
+    // 古い写しは、新しい写しが置かれるまで消さない:
+    //   1. エンジンのファイルをその隣に写す (<folder>.installing)    失敗 -> 古い写しはそのまま
+    //   2. 古い写しをよける (<folder>.old)                               失敗 -> 古い写しはそのまま
+    //   3. 新しい写しを所定の場所に置く                                  失敗 -> 古い写しを戻す
+    //   4. 古い写しを消す                                                失敗 -> 残りかすだけ (次回消す)
     PutBackInterrupted(to);
     std::error_code ec;
     fs::remove_all(temp, ec);
@@ -305,7 +305,7 @@ bool Plugins::CopyIn(const PluginId& id, std::string* error) {
     if (hadOld) {
         std::error_code asideEc;
         fs::rename(to, aside, asideEc);
-        if (asideEc) return fail(TrKey(L"前の写しをよける"), asideEc);  // a file inside is open in another app ...
+        if (asideEc) return fail(TrKey(L"前の写しをよける"), asideEc);  // 中のファイルが別のアプリで開かれている ...
     }
     std::error_code placeEc;
     fs::rename(temp, to, placeEc);
@@ -343,7 +343,7 @@ std::vector<PluginId> Plugins::InstalledAndAvailable() const {
 
 Plugins::EngineRefreshPlan Plugins::PlanEngineRefresh(const fs::path& fileList, const fs::path& availableDir, const fs::path& installedDir,
                                                       const std::vector<PluginId>& candidates) {
-    // Any thread: reads files only (no log, no translations, nothing of the app).
+    // どのスレッドからでも: ファイルを読むだけ (ログも翻訳もアプリのものも使わない)。
     EngineRefreshPlan plan;
     std::error_code ec;
     if (!fs::is_directory(installedDir, ec)) return plan;
@@ -358,7 +358,7 @@ Plugins::EngineRefreshPlan Plugins::PlanEngineRefresh(const fs::path& fileList, 
         std::string err;
         auto bytes = platform::ReadFileBytes(fileList, &err);
         auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
-        if (doc) list = integrity::ParseFileList(*doc, nullptr);  // (no translated message off the UI thread)
+        if (doc) list = integrity::ParseFileList(*doc, nullptr);  // (UI スレッド以外では翻訳したメッセージを使わない)
         if (!list) plan.listError = err.empty() ? PathToUtf8(fileList) : err;
     }
     plan.refresh = integrity::PluginsToRefresh(
@@ -367,7 +367,7 @@ Plugins::EngineRefreshPlan Plugins::PlanEngineRefresh(const fs::path& fileList, 
         [&](const PluginId& id) {
             const auto engine = platform::ReadFileBytes(FolderOf(availableDir, id) / L"plugin.json", nullptr);
             const auto mine = platform::ReadFileBytes(FolderOf(installedDir, id) / L"plugin.json", nullptr);
-            return engine && (!mine || *mine != *engine);  // an unreadable engine copy is never copied
+            return engine && (!mine || *mine != *engine);  // 読めないエンジンの写しは写さない
         });
     return plan;
 }
@@ -390,7 +390,7 @@ std::vector<PluginId> Plugins::ApplyEngineRefresh(const EngineRefreshPlan& plan)
         log::Info("エンジンが新しくなったので、入れたプラグインを写し直しました ({} 個)", copied.size());
         Reload();
     }
-    // Looked at again on the next start when something failed (or there is no list to stamp).
+    // 何か失敗した (または印を付けるリストが無い) ときは、次の起動でもう一度調べる。
     if (plan.listHash && allCopied) {
         std::string err;
         if (!platform::WriteFileAtomic(installedDir_ / L"engine_files.sha256", *plan.listHash, &err)) {
@@ -401,9 +401,9 @@ std::vector<PluginId> Plugins::ApplyEngineRefresh(const EngineRefreshPlan& plan)
 }
 
 bool Plugins::Uninstall(const PluginId& id, std::string* error) {
-    // Renamed out of the way first: if that fails (a file of it open elsewhere) nothing has changed -
-    // deleting in place could stop half-way and leave a plugin without its plugin.json. What cannot be
-    // deleted of the renamed folder is tried again at the next start (RemoveLeftovers).
+    // 先に名前を変えてどける: それが失敗しても (ファイルが別の所で開かれている) 何も変わらない。
+    // その場で消すと途中で止まり、plugin.json の無いプラグインが残るかもしれない。
+    // 名前を変えたフォルダーのうち消せなかったものは、次の起動でもう一度消す (RemoveLeftovers)。
     const fs::path folder = FolderOf(installedDir_, id);
     const fs::path aside = WithSuffix(folder, L".removing");
     std::error_code ec;

@@ -1,5 +1,5 @@
 #pragma once
-// plugin.json and deciding which plugins can be used (pure - tested in RMTests).
+// plugin.json の読み込みと、どのプラグインが使えるかの判定 (純粋。RMTests でテストする)。
 //
 //   Plugins/<author>/<name>/plugin.json
 //   {
@@ -7,17 +7,17 @@
 //     "requires": [ { "author": "rm_engine", "name": "game_production" } ]
 //   }
 //
-// The ID is written twice on purpose (design RME_PLATFORM 3-b, plan "A"): in the plugin's
-// header (for C++) and in plugin.json (read without compiling). Loading compares the two and
-// refuses a plugin whose IDs differ - the mismatch is always found, never silently picked.
-// A plugin whose requirement is missing or unusable is not enabled, and says why.
+// ID は意図して 2 か所に書く (設計 RME_PLATFORM 3-b、案 "A")。プラグインのヘッダー (C++ 用) と
+// plugin.json (コンパイルせずに読める) だ。読み込み時に 2 つを比べ、ID が違うプラグインは
+// 断る。食い違いは必ず見つかり、黙ってどちらかを選ぶことはない。
+// 前提が無い、または使えないプラグインは有効にせず、理由を伝える。
 //
-// Connectors (design RME_PLATFORM 4-f, plan C): game production must not know 3D or 2D, so the
-// parts that do live in a connector plugin ("ゲーム制作 × 3D") that requires both sides:
-//   game production   "needsConnector": true          -> enabled only while one of its connectors is
-//   the connector     "connectorFor": { game production }, "requires": [ game production, 3D 空間 ]
-// The arrow goes one way only (connector -> both sides), so requirements never go round.
-// A connector is installed automatically once everything it requires is (never chosen by hand).
+// コネクター (設計 RME_PLATFORM 4-f、案 C): ゲーム制作は 3D も 2D も知ってはいけないので、
+// 知っている部分は両側を前提にするコネクタープラグイン ("ゲーム制作 × 3D") に置く:
+//   ゲーム制作        "needsConnector": true          -> コネクターのどれかがある間だけ有効
+//   コネクター        "connectorFor": { ゲーム制作 }, "requires": [ ゲーム制作, 3D 空間 ]
+// 矢印は一方向だけ (コネクター -> 両側) なので、前提が堂々巡りにならない。
+// コネクターは、前提が全部そろうと自動で入る (手では選ばない)。
 
 #include "base/Json.h"
 #include "core/PluginId.h"
@@ -32,97 +32,97 @@ struct PluginManifest {
     PluginId id;
     std::string displayName;  // UTF-8
     std::vector<PluginId> requirements;
-    bool needsConnector = false;            // enabled only while a connector for it is
-    std::optional<PluginId> connectorFor;   // this plugin is a connector for that one (also in requirements)
-    // The softwares it belongs to, when no template needs it ("software": ["game"]: ids of the template
-    // tree's top nodes - editor/project/Templates.h). Only for the Hub's "ソフトで絞る"; optional.
+    bool needsConnector = false;            // そのコネクターがある間だけ有効
+    std::optional<PluginId> connectorFor;   // このプラグインは、そのプラグインのコネクター (前提にも入る)
+    // どのソフトに属すか。どのテンプレートも必要としないとき ("software": ["game"]: テンプレートの
+    // 木の一番上のノードの ID。editor/project/Templates.h)。Hub の「ソフトで絞る」だけに使う。省略できる。
     std::vector<std::string> softwares;
 
     bool operator==(const PluginManifest&) const = default;
 };
 
-// A list of IDs: [ { "author": ..., "name": ... }, ... ]. Used for "requires" and for the
-// plugins recorded in a project file. Each entry needs both values (never guessed).
+// ID の一覧: [ { "author": ..., "name": ... }, ... ]。"requires" と、プロジェクトファイルに
+// 記録するプラグインに使う。各項目に両方の値が要る (推測はしない)。
 std::optional<std::vector<PluginId>> ParsePluginIdList(const json::Value& v, std::string* error);
 std::optional<PluginManifest> ParsePluginManifest(const json::Value& v, std::string* error);
 
 enum class PluginState {
     Enabled,
-    NotInstalled,         // this engine has it, the user has not installed it
-    NoManifest,           // plugin.json not found
-    BadManifest,          // unreadable, wrong shape, invalid ID, two plugins with one ID
-    IdMismatch,           // plugin.json and the code disagree
-    MissingRequirement,   // a required plugin is not in this engine at all
-    RequirementDisabled,  // a required plugin exists but is not installed or cannot be used
-    Cycle,                // requirements go round in a circle
-    NoConnector,          // "needsConnector", and none of its connectors can be used
+    NotInstalled,         // このエンジンにはあるが、ユーザーが入れていない
+    NoManifest,           // plugin.json が見つからない
+    BadManifest,          // 読めない、形が違う、ID が不正、同じ ID のプラグインが 2 つある
+    IdMismatch,           // plugin.json とコードが食い違う
+    MissingRequirement,   // 前提のプラグインがこのエンジンに全く無い
+    RequirementDisabled,  // 前提のプラグインはあるが、入っていないか使えない
+    Cycle,                // 前提が堂々巡りしている
+    NoConnector,          // "needsConnector" なのに、使えるコネクターが 1 つも無い
 };
 
-// One plugin built into the exe, with what was read from its plugin.json.
+// exe に組み込まれた 1 つのプラグインと、その plugin.json から読んだ内容。
 struct PluginCandidate {
-    PluginId id;  // from the code
+    PluginId id;  // コードから
     bool installed = true;
-    // Installed: its installed plugin.json. Not installed: the engine's copy (for the name only).
+    // 入っている場合: 入っている plugin.json。入っていない場合: エンジンの写し (名前だけに使う)。
     std::optional<PluginManifest> manifest;
     bool manifestFound = false;
-    std::string manifestError;  // when found but not usable
+    std::string manifestError;  // 見つかったが使えないときの理由
 };
 
 struct PluginStatus {
     PluginId id;
-    std::string displayName;  // from plugin.json; the ID text when there is none
+    std::string displayName;  // plugin.json から。無いときは ID の文字
     PluginState state = PluginState::Enabled;
-    std::string reason;  // Japanese, empty when enabled
+    std::string reason;  // 日本語。有効なら空
 };
 
 struct PluginResolution {
-    std::vector<PluginStatus> statuses;  // same order as the candidates
-    std::vector<size_t> order;           // enabled candidates, requirements first
+    std::vector<PluginStatus> statuses;  // candidates と同じ順
+    std::vector<size_t> order;           // 有効な candidates。前提が先
 };
 
 PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& candidates);
 
-// True for the states the Hub marks "⚠ 前提が無い" (installed, but a requirement is missing).
+// Hub が「⚠ 前提が無い」と印を付ける状態 (入っているが、前提が無い) のとき true。
 inline bool LacksRequirement(PluginState s) {
     return s == PluginState::MissingRequirement || s == PluginState::RequirementDisabled || s == PluginState::Cycle ||
            s == PluginState::NoConnector;
 }
 
-// --- Installing and removing (pure) ------------------------------------------------------
-// Design RME_PLATFORM 1-b-2 / 5: requirements are installed together with a plugin; any installed
-// plugin can be removed on its own, after a warning that lists who needs it.
+// --- 入れる・消す (純粋) ------------------------------------------------------
+// 設計 RME_PLATFORM 1-b-2 / 5: 前提はプラグインと一緒に入れる。入っているプラグインは
+// どれも単独で消せるが、先に、それを必要とする物を並べた警告を出す。
 
-// What to copy so that `id` can be used: every plugin of its requirement tree, `id` included,
-// that is not in `ready` (installed and readable) - requirements first, each once. Ready plugins
-// are looked through, so a requirement missing further down is found. Empty = nothing to copy.
-// A plugin of the tree that is not in `available` (not in this engine) goes to *unavailable.
-// Connectors come along: every connector whose requirements are then all there, and - for a plugin
-// that needs a connector and would have none - the first connector this engine has for it, with
-// its requirements (game production alone brings 3D 空間 and ゲーム制作 × 3D).
+// `id` を使えるようにするために写すもの。`id` の前提の木にあるプラグインすべて (`id` も含む)
+// のうち、`ready` (入っていて読める) に無いもの。前提が先で、それぞれ 1 回だけ。
+// ready のプラグインは素通りして調べるので、もっと下で足りない前提も見つかる。空 = 写すものは無い。
+// 木のうち `available` (このエンジンにある) に無いプラグインは *unavailable に入る。
+// コネクターも一緒に来る: 前提が全部そろったコネクターすべてと、コネクターが必要なのに
+// 1 つも無くなるプラグインには、このエンジンが持つ最初のコネクターとその前提
+// (ゲーム制作だけで 3D 空間 と ゲーム制作 × 3D が来る)。
 std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginManifest>& available,
                                   const std::vector<PluginId>& ready, std::vector<PluginId>* unavailable);
 
-// The installed plugins that need no copying: readable, and the same as this engine's copy. An installed
-// copy that differs (from an older engine: other requirements, a connector rule it lacked) is copied
-// again by the next install plan. Plugins this engine does not have are taken as they are.
+// 写す必要が無い、入っているプラグイン。読めて、このエンジンの写しと同じもの。違う写し
+// (古いエンジンのもの: 前提が違う、コネクターの決まりが無いなど) は、次の入れる計画でもう一度
+// 写す。このエンジンに無いプラグインは、そのまま受け取る。
 std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available);
 
-// What the first start of an engine installs (its own folder of installed plugins is new): what the
-// user had installed in the folder every engine shared before (`legacyInstalled`, when it had any),
-// else everything the engine has. In the engine's order; only plugins the engine has.
+// エンジンの最初の起動で入れるもの (自分用の入れたプラグインのフォルダーが新しい): 前は
+// 全エンジンで共有していたフォルダーにユーザーが入れていたもの (`legacyInstalled`。あれば)、
+// 無ければエンジンが持つ全部。エンジンの順で、エンジンが持つプラグインだけ。
 std::vector<PluginId> FirstStartInstalls(const std::vector<PluginId>& available, const std::vector<PluginId>& legacyInstalled);
 
-// The connectors this engine has that are not installed though everything they join is (a connector a
-// newer engine added - ゲーム制作 × 3D × 物理 - for plugins installed before): installed at start-up, as
-// they would have come along with the plugins. In the engine's order.
+// このエンジンが持つコネクターのうち、つなぐ物がすべて入っているのに入っていないもの
+// (新しいエンジンが足したコネクター - ゲーム制作 × 3D × 物理 - を、前から入っているプラグイン用に):
+// 起動時に入れる。プラグインを入れたときに一緒に来たはずのものと同じ扱い。エンジンの順で。
 std::vector<PluginId> ConnectorsToBring(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available);
 
 struct Dependent {
     PluginId id;
-    std::optional<PluginId> via;  // empty: needs it directly; else needs it through this plugin
+    std::optional<PluginId> via;  // 空: 直接必要とする。それ以外: このプラグインを通して必要とする
 };
-// Installed plugins that stop working when `id` is removed: direct ones first, then the ones
-// that need it through them. Each once. A plugin that loses its last connector counts too (via the connector).
+// `id` を消すと動かなくなる、入っているプラグイン。直接のものが先で、次にそれらを通して
+// 必要とするもの。それぞれ 1 回だけ。最後のコネクターを失うプラグインも入る (コネクター経由)。
 std::vector<Dependent> Dependents(const PluginId& id, const std::vector<PluginManifest>& installed);
 
 }  // namespace rm::editor

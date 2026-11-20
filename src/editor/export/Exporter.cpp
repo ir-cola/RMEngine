@@ -48,11 +48,11 @@ std::optional<std::string> ReadFile(const fs::path& file) {
     return std::string{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
-// Visual Studio: where it is (vswhere), and the environment its vcvars64.bat makes.
+// Visual Studio: 場所 (vswhere) と、vcvars64.bat が作る環境。
 struct VisualStudio {
     fs::path root;
     std::map<std::wstring, std::wstring> env;
-    fs::path tools;  // ...\VC\Tools\MSVC\<ver>\bin\Hostx64\x64\ (cl, link)
+    fs::path tools;  // ...\VC\Tools\MSVC\<ver>\bin\Hostx64\x64\ (cl、link)
     fs::path rc;
 };
 
@@ -98,9 +98,9 @@ std::optional<VisualStudio> FindVisualStudio(std::string* error) {
         }
         return {};
     };
-    // The tools' messages in English (plain ASCII: never garbled by a code page) - shown as they are.
+    // ツールのメッセージは英語 (ASCII だけ: コードページで文字化けしない) - そのまま見せる。
     vs.env[L"VSLANG"] = L"1033";
-    vs.env[L"MSBUILDDISABLENODEREUSE"] = L"1";  // (nothing it starts is kept running after it)
+    vs.env[L"MSBUILDDISABLENODEREUSE"] = L"1";  // (起動したものを動かしたままにしない)
     vs.tools = fs::path(envOf(L"VCToolsInstallDir")) / L"bin" / L"Hostx64" / L"x64";
     vs.rc = fs::path(envOf(L"WindowsSdkVerBinPath")) / L"x64" / L"rc.exe";
     if (!fs::exists(vs.tools / L"link.exe", ec) || !fs::exists(vs.rc, ec)) {
@@ -110,7 +110,7 @@ std::optional<VisualStudio> FindVisualStudio(std::string* error) {
     return vs;
 }
 
-// Visual Studio's C++ runtime DLLs to put next to the game (VC\Redist\MSVC\<newest>\x64\Microsoft.VC*.CRT\).
+// ゲームの隣に置く Visual Studio の C++ ランタイム DLL (VC\Redist\MSVC\<newest>\x64\Microsoft.VC*.CRT\)。
 std::vector<fs::path> RuntimeDlls(const fs::path& vsRoot) {
     std::vector<fs::path> out;
     std::error_code ec;
@@ -148,7 +148,7 @@ bool Run(const Request& r, const Report& report, std::string* error) {
         if (error) *error = std::move(msg);
         return false;
     };
-    // 1. The game kit.
+    // 1. ゲームキット。
     report(0.02f, TrU8("ゲームの部品 (GameKit) を確かめています"));
     const fs::path kit = KitFolder();
     const auto kitText = ReadFile(kit / L"kit.json");
@@ -191,14 +191,14 @@ bool Run(const Request& r, const Report& report, std::string* error) {
         if (!fs::exists(f, ec)) return fail(TrU8F("ゲームの部品が欠けています: {}\nエンジンをビルドし直してください。", PathToUtf8(f)));
     }
 
-    // 2. Visual Studio.
+    // 2. Visual Studio。
     report(0.10f, TrU8("Visual Studio を探しています"));
     std::string err;
     const auto vs = FindVisualStudio(&err);
     if (!vs) return fail(err);
     report(0.20f, TrU8F("Visual Studio: {}", PathToUtf8(vs->root)));
 
-    // The build number (the exe and the .rmpak) and the work folder.
+    // ビルド番号 (exe と .rmpak) と作業フォルダ。
     std::vector<std::pair<std::string, std::string>> forNumber;
     for (const pak::Entry& e : r.files) forNumber.push_back({e.path, e.bytes});
     forNumber.push_back({"exe", r.exeName});
@@ -230,7 +230,7 @@ bool Run(const Request& r, const Report& report, std::string* error) {
     report(0.40f, TrU8("アイコンと名前のリソースを作っています"));
     if (!run(Quote(vs->rc) + L" /nologo /c65001 /fogame.res game.rc", "rc")) return false;
 
-    // 3. Link: made with its name.
+    // 3. リンク: その名前のまま作る。
     const fs::path exe = r.outDir / PathFromUtf8(r.exeName + ".exe");
     report(0.50f, TrU8F("リンクしています: {}", PathToUtf8(exe.filename())));
     std::wstring rsp;
@@ -238,10 +238,10 @@ bool Run(const Request& r, const Report& report, std::string* error) {
     rsp += L"/OUT:" + Quote(exe) + L"\nmain.obj\ngame.res\n";
     for (const fs::path& f : libFiles) rsp += Quote(f) + L"\n";
     for (const auto& s : kitDoc->Get("systemLibs").Items()) rsp += Utf8ToWide(s.AsString()) + L"\n";
-    if (!WriteFile(work / L"link.rsp", "\xEF\xBB\xBF" + WideToUtf8(rsp), &err)) return fail(err);  // (UTF-8 with its mark: link reads it so)
+    if (!WriteFile(work / L"link.rsp", "\xEF\xBB\xBF" + WideToUtf8(rsp), &err)) return fail(err);  // (UTF-8 の印付き: link はそう読む)
     if (!run(Quote(vs->tools / L"link.exe") + L" @link.rsp", "link")) return false;
 
-    // 4. The rest of the folder.
+    // 4. フォルダの残り。
     report(0.75f, TrU8F("アセットを詰めています ({} 個)", r.files.size()));
     const std::string pakBytes = pak::Write(r.files, build, platform::PakCipher(build));
     if (pakBytes.empty()) return fail(TrU8("アセットを暗号化できませんでした (Windows の暗号の機能 (CNG) を使えません)"));
@@ -251,7 +251,7 @@ bool Run(const Request& r, const Report& report, std::string* error) {
         if (ec) return fail(TrU8F("スクリプトの DLL を写せませんでした: {}\n{}", PathToUtf8(r.scriptsDll), ec.message()));
         report(0.80f, TrU8("スクリプト: Scripts.dll"));
     } else {
-        fs::remove(r.outDir / L"Scripts.dll", ec);  // (one of an earlier export)
+        fs::remove(r.outDir / L"Scripts.dll", ec);  // (前の書き出しのもの)
     }
     const auto dlls = RuntimeDlls(vs->root);
     for (const fs::path& d : dlls) {
@@ -261,8 +261,8 @@ bool Run(const Request& r, const Report& report, std::string* error) {
     report(0.85f, dlls.empty() ? TrU8("★ Visual Studio の C++ ランタイム (Redist) が見つからないので、横に置いていません")
                                : TrU8F("C++ のランタイム: {} 個", dlls.size()));
 
-    // 5. No path of this PC in anything written: the exe, the scripts' DLL, every file of the .rmpak
-    // (before it was encrypted) - the project's folder, the engine's, the user's.
+    // 5. 書いたもののどこにもこの PC のパスを残さない: exe、スクリプトの DLL、.rmpak の全ファイル
+    // (暗号化する前) - プロジェクトのフォルダ、エンジンのフォルダ、ユーザーのフォルダ。
     std::vector<std::string> privatePaths = r.privatePaths;
     privatePaths.push_back(PathToUtf8(platform::ExeDirectory()));
     wchar_t home[MAX_PATH] = {};

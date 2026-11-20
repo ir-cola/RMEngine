@@ -14,7 +14,7 @@ bool IsSpaceAt(std::string_view s, size_t i, size_t* len) {
         *len = 1;
         return true;
     }
-    if (s.substr(i, 3) == "\xE3\x80\x80") {  // U+3000 (full-width space)
+    if (s.substr(i, 3) == "\xE3\x80\x80") {  // U+3000 (全角スペース)
         *len = 3;
         return true;
     }
@@ -126,10 +126,10 @@ NamedLayouts NamedLayouts::FromJson(const json::Value& v, reflect::Warnings* war
         if (item.IsObject()) reflect::Load(e.info, item, &e.unknowns, warnings);
         e.info.name = CleanName(e.info.name);
         if (e.info.name.empty() || out.Find(e.info.name)) {
-            out.others_.push_back(item);  // not an entry (or a second one of a name): kept, not shown
+            out.others_.push_back(item);  // 項目ではない (または同じ名前の 2 つ目): 残すが表示しない
             continue;
         }
-        // "layout" is not a reflected field: it is ours, not an unknown key.
+        // "layout" はリフレクションのフィールドではなく自前のものなので、未知のキーではない。
         auto& keys = e.unknowns.keys;
         keys.erase(std::remove_if(keys.begin(), keys.end(), [](const json::Value::Member& m) { return m.first == kLayoutKey; }),
                    keys.end());

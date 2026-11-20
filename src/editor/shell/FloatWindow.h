@@ -1,7 +1,7 @@
 #pragma once
-// A panel window taken out of the editor window ("floating"). It is owned by the editor window
-// (stays above it, has no taskbar button) and shows one docking tree of the editor's layout.
-// Everything it shows and does goes through the EditorScreen: this class is only the OS window.
+// エディターのウィンドウから取り出したパネルのウィンドウ ("フローティング")。エディターの
+// ウィンドウが持ち (その上に出て、タスクバーのボタンはない)、エディターのレイアウトのドッキングツリーを 1 つ出す。
+// これが出すものも、することも、すべて EditorScreen を通る: このクラスは OS のウィンドウでしかない。
 
 #include "editor/app/ScreenWindow.h"
 #include "editor/dock/DockLayout.h"
@@ -21,10 +21,10 @@ public:
     bool Open(const dock::ScreenRect& rect, HWND owner, const std::wstring& title, bool activate);
     uint32_t Id() const { return id_; }
 
-    // The rectangle last given to or read from the window (to notice a moved layout entry).
+    // 最後にウィンドウへ渡した、またはウィンドウから読んだ矩形 (レイアウトの項目が動いたのに気づくため)。
     const dock::ScreenRect& Applied() const { return applied_; }
     void MoveTo(const dock::ScreenRect& rect);
-    dock::ScreenRect CurrentRect();  // also becomes Applied()
+    dock::ScreenRect CurrentRect();  // Applied() にもなる
 
 protected:
     void OnFrame(ui::Context& c, float width, float height) override;

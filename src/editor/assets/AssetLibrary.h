@@ -1,22 +1,22 @@
 #pragma once
-// The assets of the open project (its Assets/ folder) for the editor: their ids (core/asset), kept up
-// to date with the disk, and the file operations of the アセット panel. One per open project - every
-// software's アセット panel shows the same folder.
+// 開いているプロジェクト (その Assets/ フォルダー) のアセットをエディターに出す。id
+// (core/asset) をディスクに合わせて最新に保ち、アセットパネルのファイル操作もする。開いている
+// プロジェクトにつき 1 つ - どのソフトのアセットパネルも同じフォルダーを見せる。
 //
-// The ids follow the files: an operation here moves / renames the .meta with its file, and a change
-// made outside (Explorer) is seen the next time the editor draws (platform::FolderWatch) and
-// reconciled (asset::Reconcile).
+// id はファイルについて行く: ここでの操作は .meta をファイルと一緒に動かし / 改名する。外 (エクスプローラー)
+// で行った変更は、次にエディターが描くときに見つけ (platform::FolderWatch)、
+// 合わせ直す (asset::Reconcile)。
 //
-// Looking at the folder runs on a Worker (editor/app/Worker): reading the folder and the .meta files
-// and working out the plan (asset::Look) never stop the drawing. The plan comes back to the UI thread,
-// which writes its .meta files and puts the new ids in place in one go (ApplyLook). Every look and every
-// change made here takes a new number (asset::LookNumber): a result whose number is no longer the
-// newest - the folder changed again, or the editor renamed / moved / deleted something meanwhile - is
-// thrown away, and a look is asked again. Meanwhile the panel and the インスペクター go on with the
-// last result (Looking(): the panel says 調べています). An operation here puts its own change into the
-// ids at once (the panel follows without waiting), then asks for a look. File operations are not project data: they happen on the disk at
-// once, are not undone with Ctrl+Z and do not make the project unsaved (deleting goes to the
-// Recycle Bin - that is the way back).
+// フォルダーを調べるのは Worker (editor/app/Worker) で走る: フォルダーと .meta ファイルを読み、
+// 計画を立てる (asset::Look) ので、描画は止まらない。計画は UI スレッドに戻り、UI スレッドが
+// その .meta ファイルを書き、新しい id をまとめて置く (ApplyLook)。調べるたびと、ここで行う
+// 変更のたびに新しい番号が付く (asset::LookNumber): 番号がもう最新でない結果 - フォルダーが
+// また変わった、またはその間にエディターが何かを改名 / 移動 / 削除した - は捨てられ、
+// もう一度調べるよう頼む。その間もパネルとインスペクターは最後の結果で動き続ける
+// (Looking(): パネルは「調べています」と言う)。ここでの操作は自分の変更をすぐ id に入れ
+// (パネルは待たずに追いつく)、そのあと調べを頼む。ファイル操作はプロジェクトのデータではない:
+// ディスクですぐ起き、Ctrl+Z では戻らず、プロジェクトを未保存にもしない (削除はごみ箱へ行く
+// - それが戻る道)。
 
 #include "base/Json.h"
 #include "core/asset/AssetFiles.h"
@@ -39,70 +39,69 @@ namespace rm::editor {
 
 class AssetLibrary {
 public:
-    // `onChange`: called (from any thread) when something changes in the folder while no one asks -
-    // the owner wakes the UI thread with it (editor::UiWake) so a change made in Explorer shows at once.
+    // `onChange`: 誰も頼んでいないのにフォルダーで何か変わったときに (どのスレッドからでも) 呼ばれる。
+    // 持ち主はこれで UI スレッドを起こす (editor::UiWake)。エクスプローラーでの変更がすぐ見える。
     explicit AssetLibrary(std::filesystem::path root, std::function<void()> onChange = {});
-    ~AssetLibrary();  // writes the import settings still waiting
+    ~AssetLibrary();  // まだ待っている取り込みの設定を書く
 
     const std::filesystem::path& Root() const { return root_; }
     const asset::Index& Index() const { return index_; }
-    // Indices into Index().Entries() in the order of the folder tree.
+    // Index().Entries() への添字。フォルダーツリーの順
     std::span<const size_t> Order() const { return order_; }
-    // Changes every time the ids or paths may have changed (a refresh).
+    // id やパスが変わったかもしれないたびに変わる (リフレッシュ)。
     uint64_t Version() const { return version_; }
 
-    // Asks for a look at the folder (creating it when it is missing), on the Worker; a look still going
-    // is dropped. A .meta that did not change since the last look (same size and time) is not read
-    // again. The folder watch's news of the .meta files it writes itself is dropped.
+    // フォルダーを調べるよう頼む (なければ作る)。Worker で行い、まだ続いている調べは捨てる。
+    // 前回の調べから変わっていない .meta (サイズと時刻が同じ) は読み直さない。自分で書く .meta に
+    // ついてのフォルダー監視の知らせは捨てる。
     void Refresh();
-    // The first look, here and now (on the UI thread), when the project is opened: the softwares read
-    // their data right after and find their prefabs, models ... by id - with no ids yet, every one of
-    // them would be "missing". Every later look runs on the Worker.
+    // プロジェクトを開くとき、最初の調べをここですぐ (UI スレッドで) 行う。各ソフトはその直後に
+    // データを読み、Prefab やモデルなどを id で探す。まだ id がないと、どれもみな「見つからない」に
+    // なってしまう。これ以降の調べはすべて Worker で走る。
     void LookNow();
-    // A look is going on (or none has finished yet): the ids are the last look's.
+    // 調べが進んでいる (またはまだ 1 つも終わっていない): id は最後の調べのもの。
     bool Looking() const { return looking_; }
-    // A look has been used (the ids are the folder's, not empty for not having looked yet).
+    // 調べが 1 度使われた (id はフォルダーのもので、まだ調べていないから空、ということではない)。
     bool Ready() const { return ready_; }
-    // Called on the UI thread after a look's result was put in place (redraw what shows the ids).
+    // 調べの結果を置いた後に UI スレッドで呼ばれる (id を見せている物を描き直す)。
     std::function<void()> onChanged;
-    // Asks for a look when something under the folder was added, removed or renamed since the last
-    // one - once it has been quiet for a moment (a program saving through a file of its own for a
-    // moment is seen after it is done). True when it asked.
+    // 前回の調べの後に、フォルダーの下で何かが足された / 消された / 改名されたら、調べるよう頼む。
+    // 少し静かになってから (プログラムが自前のファイル経由でしばらく保存している間は、それが
+    // 終わってから見つかる)。頼んだら true。
     bool Poll();
-    // A change was seen and the folder is not quiet yet: the owner asks for the next frames.
+    // 変更を見つけたが、フォルダーはまだ静かになっていない: 持ち主が次のフレームを頼む。
     bool Settling() const { return changedAt_ >= 0; }
-    // The id of a file the editor has just written inside Assets/ (`path` relative to it): given at
-    // once - its .meta written now - without waiting for a look. "" when it cannot be given.
+    // エディターが Assets/ の中に書いたばかりのファイルの id (`path` は Assets/ からの相対):
+    // 調べを待たずに、すぐ与える - その .meta をここで書く。与えられないときは ""。
     std::string AdoptFile(const std::string& path);
 
-    // An asset's import settings as they are now - with a change of the インスペクター that is still
-    // waiting to be written.
+    // アセットの取り込みの設定の今の姿 - まだ書かれずに待っているインスペクターでの変更も含む。
     json::Value Import(const std::string& guid) const;
-    // A change of them: kept, and written to the .meta by FlushImports - when the edit is finished (a
-    // drag let go, typing done), not at every step of it. Whoever reads the asset reads it again then.
+    // その変更: 保持し、編集が終わったとき (ドラッグを離した、入力が済んだ) に FlushImports が
+    // .meta に書く。1 歩ごとには書かない。そのアセットを読む側は、そのときに読み直す。
     void QueueImport(const std::string& guid, json::Value import);
-    // An asset's contents as the editor has them now (a software's own kind of file - a particle
-    // effect - edited and not written yet), else its file; nullopt when it is not there.
+    // エディターが今持っているアセットの中身 (ソフト独自の種類のファイル - パーティクルの
+    // エフェクトなど - を編集して、まだ書いていない物)。なければファイル。ないときは nullopt。
     std::optional<std::string> Content(const std::string& guid) const;
-    // An edit of them: kept, and written to the file by FlushImports (as an import setting is).
+    // その編集: 保持し、FlushImports がファイルに書く (取り込みの設定と同じ)。
     void QueueContent(const std::string& guid, std::string bytes);
     bool HasQueuedImports() const { return !queuedImports_.empty() || !queuedContents_.empty(); }
-    // Writes what waits, into each .meta and file (the folder is not looked at again for it).
+    // 待っている物を、それぞれの .meta とファイルに書く (そのためにフォルダーをもう一度調べはしない)。
     void FlushImports();
 
     std::filesystem::path FullPath(const asset::Entry& e) const;
-    std::wstring NameOf(const asset::Entry& e) const;      // the file name
-    std::wstring FolderOf(const asset::Entry& e) const;    // "Assets/Models" (where it is)
+    std::wstring NameOf(const asset::Entry& e) const;      // ファイル名
+    std::wstring FolderOf(const asset::Entry& e) const;    // "Assets/Models" (どこにあるか)
 
-    // File operations. Each returns what went wrong, in the language in use (empty = done); the
-    // console gets it in Japanese. The ids stay with the files.
+    // ファイル操作。どれも、何が悪かったかを (使っている言語で) 返す (空 = 済んだ)。コンソールには
+    // 日本語で出す。id はファイルについて行く。
     std::wstring Rename(const std::string& guid, const std::string& newNameUtf8);
-    // Into the folder `folderGuid` ("" = the top of Assets/).
+    // フォルダー `folderGuid` の中へ ("" = Assets/ の一番上)。
     std::wstring Move(std::span<const std::string> guids, const std::string& folderGuid);
-    // A new folder "新しいフォルダ" (2, 3 ... when taken) in `whereGuid` (a folder, or the folder of a
-    // file; "" = the top). *made = its id.
+    // `whereGuid` (フォルダー、またはファイルのあるフォルダー。"" = 一番上) の中に、新しいフォルダー
+    // "新しいフォルダ" を作る (使われていれば 2、3 ...)。*made = その id。
     std::wstring NewFolder(const std::string& whereGuid, std::string* made);
-    // To the Recycle Bin, with their .meta files.
+    // ごみ箱へ、その .meta ファイルと一緒に。
     std::wstring Delete(std::span<const std::string> guids);
 
 private:
@@ -112,25 +111,25 @@ private:
     std::function<void()> onChange_;
     platform::FolderWatch watch_;
     bool watching_ = false;
-    double changedAt_ = -1;  // when the watch last told of a change not looked at yet
-    double lastAliveCheck_ = 0;  // when the watch was last asked whether it still sees the folder
-    // After writing .meta files here: their news asks for one more look once quiet (not thrown away -
-    // a change made outside at the same moment would go with it).
+    double changedAt_ = -1;  // 監視が、まだ調べていない変更を最後に知らせた時刻
+    double lastAliveCheck_ = 0;  // 監視に、まだフォルダーが見えているか最後に尋ねた時刻
+    // ここで .meta ファイルを書いた後: その知らせは、静かになったらもう 1 度調べるよう頼む
+    // (捨てない - 同じ時に外で行った変更も一緒に捨てられてしまう)。
     void SettleAfterOwnWrites();
     uint64_t version_ = 0;
-    std::set<std::string> lastNotes_;  // what the last look told the console
+    std::set<std::string> lastNotes_;  // 最後の調べがコンソールに伝えた物
     std::map<std::string, json::Value> queuedImports_;
-    std::map<std::string, std::string> queuedContents_;  // guid -> the file's contents waiting to be written  // guid -> import settings waiting to be written
+    std::map<std::string, std::string> queuedContents_;  // guid -> 書くのを待っているファイルの中身  // guid -> 書くのを待っている取り込みの設定
 
-    // The result of a look, on the UI thread: used only while `number` is the newest.
+    // 調べの結果。UI スレッドで: `number` が最新の間だけ使う。
     void ApplyLook(uint64_t number, asset::Plan plan);
-    // Ids changed here (an operation): put in place now; the look asked afterwards confirms them.
+    // ここで (操作で) 変わった id: すぐ置く。そのあと頼んだ調べが確かめる。
     void SetEntries(std::vector<asset::Entry> entries);
-    void MovedInIndex(const std::string& from, const std::string& to);  // `from` and what is under it
-    void RemovedFromIndex(const std::string& path);                     // `path` and what is under it
+    void MovedInIndex(const std::string& from, const std::string& to);  // `from` とその下の物
+    void RemovedFromIndex(const std::string& path);                     // `path` とその下の物
 
-    // The .meta files as the last look read them. Shared with the look on the Worker (only one look
-    // reads it at a time: an older one still running holds the lock until it sees it was stopped).
+    // 最後の調べが読んだ .meta ファイル。Worker の調べと共有する (調べが読むのは同時に 1 つだけ:
+    // まだ走っている古い調べは、止められたと気づくまでロックを持つ)。
     struct CacheBox {
         std::mutex mutex;
         asset::MetaCache cache;
@@ -139,7 +138,7 @@ private:
     asset::LookNumber looks_;
     bool looking_ = false;
     bool ready_ = false;
-    Worker worker_;  // last: destroyed first - what a look still posts is dropped, never applied to a gone library
+    Worker worker_;  // 最後に置く: 最初に壊れる - まだ調べが post する物は捨てられ、なくなったライブラリーには当てない
 };
 
 }  // namespace rm::editor

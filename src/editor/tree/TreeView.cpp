@@ -15,12 +15,12 @@ using ui::Rect;
 namespace {
 
 constexpr size_t npos = static_cast<size_t>(-1);
-constexpr float kIconW = 18.f;  // the row's picture (Icon), between the arrow and the name
-constexpr float kLineH = 24.f;  // the name (and the rename field) in a row of any height
+constexpr float kIconW = 18.f;  // 行の絵 (Icon)。矢印と名前の間
+constexpr float kLineH = 24.f;  // どんな高さの行でも、名前 (と名前変更のフィールド) が入る行
 constexpr float kIndent = 16.f;
 constexpr float kArrow = 16.f;
-constexpr float kDragStart = 6.f;  // DIPs the mouse moves before a press becomes a drag
-constexpr float kTop = 4.f;        // space above the first row
+constexpr float kDragStart = 6.f;  // 押したのがドラッグになるまでにマウスが動く DIP
+constexpr float kTop = 4.f;        // 最初の行の上の空き
 constexpr char kScrollId[] = "tree.scroll";
 
 ui::TextStyle Style(float size, ui::Color color, ui::HAlign h = ui::HAlign::Left) {
@@ -39,7 +39,7 @@ size_t RowOf(std::span<const Item> items, std::span<const Row> rows, ItemId id) 
     return npos;
 }
 
-// Opens every ancestor of `id`, so the row can be seen.
+// `id` の祖先をすべて開いて、その行が見えるようにする。
 void Reveal(State& st, std::span<const Item> items, const ItemIndex& index, ItemId id) {
     size_t i = index.Find(id);
     for (size_t steps = 0; i != npos && steps <= items.size(); ++steps) {
@@ -122,7 +122,7 @@ void RequestSelect(State& st, std::vector<ItemId> ids, bool rename) {
 json::Value SaveState(const State& st) {
     json::Value o = json::Value::MakeObject();
     std::vector<ItemId> closed(st.collapsed.begin(), st.collapsed.end());
-    std::sort(closed.begin(), closed.end());  // the same file for the same tree
+    std::sort(closed.begin(), closed.end());  // 同じツリーなら同じファイルになる
     json::Value list = json::Value::MakeArray();
     for (const ItemId id : closed) list.Push(static_cast<uint64_t>(id));
     o.Set("collapsed", std::move(list));
@@ -150,15 +150,15 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
     std::vector<Item> items;
     src.Items(items);
     const float kRowH = std::clamp(src.RowHeight(), 20.f, 200.f);
-    // The picture: the Icon's width in a short row, square and as tall as the row allows in a tall one.
+    // 絵: 低い行では Icon の幅、高い行では正方形で、行が許す限りの高さ。
     const float pictureW = std::max(kIconW, kRowH - 6.f);
     const std::vector<ItemId> before = st.sel.ids;
-    bool reselected = false;  // the selected row pressed again (below)
-    const ItemIndex index(items);  // finding by id, all frame long (thousands of items stay light)
-    // Closed items that are gone (deleted) are forgotten, so the kept list does not grow forever.
+    bool reselected = false;  // 選択中の行がもう一度押された (下)
+    const ItemIndex index(items);  // フレームの間ずっと ID で探す (何千もの項目でも軽いまま)
+    // 無くなった (削除された) 閉じた項目は忘れる。残している一覧が際限なく増えないように。
     std::erase_if(st.collapsed, [&](ItemId id) { return !index.Has(id); });
 
-    // --- What the software asked for, and what disappeared ------------------------------
+    // --- ソフトが頼んだこと、消えたもの ------------------------------
     if (st.hasPending) {
         st.hasPending = false;
         st.sel.ids = std::move(st.pending);
@@ -169,16 +169,16 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         st.scrollTo = st.sel.focus;
         if (st.pendingRename && st.sel.ids.size() == 1 && src.CanRename(st.sel.ids[0])) {
             StartRename(st, items[index.Find(st.sel.ids[0])]);
-            st.filter.clear();  // the new item must be visible to be renamed
+            st.filter.clear();  // 新しい項目は、名前を変えるために見えていなければならない
         }
         st.pendingRename = false;
-        if (!st.sel.ids.empty()) st.hasKeys = true;  // Delete / F2 work on what was just made
+        if (!st.sel.ids.empty()) st.hasKeys = true;  // Delete / F2 が、作ったばかりのものに効く
     }
     Prune(st.sel, items);
     if (st.renaming != 0 && !index.Has(st.renaming)) st.renaming = 0;
     std::erase_if(st.moving, [&](ItemId id) { return !index.Has(id); });
 
-    // --- Search box ------------------------------------------------------------------------
+    // --- 検索ボックス ------------------------------------------------------------------------
     Rect body = area;
     const Rect search = ui::TakeTop(body, 36).Inset(8, 6, 8, 4);
     const ui::Id searchId = c.MakeId("tree.search");
@@ -187,7 +187,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         c.ClearFocus();
     }
     w::TextField(c, "tree.search", search, st.filter, Tr(L"検索"));
-    // The top row (Source::Top): under the search box, outside the scrolled rows.
+    // 一番上の行 (Source::Top): 検索ボックスの下で、スクロールする行の外。
     const std::optional<Source::TopRow> top = src.Top();
     std::optional<Rect> topRect;
     if (top) topRect = ui::TakeTop(body, kRowH).Inset(4, 0, 4, 0);
@@ -195,12 +195,12 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
 
     std::vector<Row> rows = VisibleRows(items, st.collapsed, st.filter);
 
-    // While the menu is open, the rows under it only show.
+    // メニューが開いている間、その下の行は表示だけする。
     const bool inputWas = c.InputEnabled();
     if (st.menu.open) c.SetInputEnabled(false);
     if (c.MousePressed() || c.MousePressed(ui::Mouse::Right)) st.hasKeys = c.IsHovered(view);
 
-    // --- Keyboard (when the last click was in this tree and no text field has the keys) ---
+    // --- キーボード (最後のクリックがこのツリーで、どのテキストフィールドもキーを持っていないとき) ---
     if (st.hasKeys && c.Focused() == 0 && st.renaming == 0 && !st.dragging && c.InputEnabled() && !in.keys.empty()) {
         const size_t fr = RowOf(items, rows, st.sel.focus);
         auto moveTo = [&](size_t r, bool extend) {
@@ -241,7 +241,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
                 }
             }
         }
-        // The menu's shortcuts (F2 for 名前を変更 among them).
+        // メニューのショートカット (その中の 名前を変更 の F2 など)。
         for (const Action& a : MenuFor(src, st, items)) {
             if (a.key != ui::Key::None && a.enabled && a.run && c.KeyPressed(a.key, a.ctrl, a.shift)) {
                 a.run();
@@ -252,8 +252,8 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         rows = VisibleRows(items, st.collapsed, st.filter);
     }
 
-    // --- Scrolling ---------------------------------------------------------------------------
-    const float content = kTop + kRowH * static_cast<float>(rows.size()) + kRowH;  // + room to drop at the end
+    // --- スクロール ---------------------------------------------------------------------------
+    const float content = kTop + kRowH * static_cast<float>(rows.size()) + kRowH;  // + 最後にドロップするための空き
     if (st.scrollTo != 0) {
         const size_t r = RowOf(items, rows, st.scrollTo);
         if (r != npos) {
@@ -265,7 +265,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         st.scrollTo = 0;
     }
     if (st.dragging && in.down[0]) {
-        // Near the top / bottom edge while dragging: scroll towards it.
+        // ドラッグ中、上端 / 下端の近くでは: そちらへスクロールする。
         float& off = c.FloatState(c.MakeId(kScrollId));
         const float maxOff = std::max(0.f, content - view.h);
         float step = 0;
@@ -277,7 +277,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             c.RequestRedraw();
         }
     }
-    // --- The top row (before the rows' scroll: outside their clip, 2026-11-18 on screen it was cut off) ---
+    // --- 一番上の行 (行のスクロールより前: そのクリップの外。2026-11-18 画面で切れていた) ---
     bool topClicked = false, topRightClicked = false;
     if (topRect) {
         const bool hovered = c.IsHovered(*topRect);
@@ -317,9 +317,9 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         p.Text({view.x + 12, view.y + 6, view.w - 24, 22}, Tr(L"見つかりません。"), Style(12, theme::TextFaint));
     }
 
-    // --- Rows ------------------------------------------------------------------------------------
+    // --- 行 ------------------------------------------------------------------------------------
     bool rowPressed = false, rowRightClicked = topRightClicked, renameDrawn = false;
-    const std::unordered_set<ItemId> selectedSet = st.sel.Set();  // once, not per row
+    const std::unordered_set<ItemId> selectedSet = st.sel.Set();  // 行ごとではなく 1 度だけ
     for (size_t r = 0; r < rows.size(); ++r) {
         const Rect row = rowRect(r);
         if (row.Bottom() < view.y || row.y > view.Bottom()) continue;
@@ -356,11 +356,11 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
                 StartRename(st, it);
                 st.pressItem = 0;
             } else if (selected && !in.ctrl && !in.shift) {
-                st.pressDeferred = st.sel.ids.size() > 1;  // keep the others for a drag
+                st.pressDeferred = st.sel.ids.size() > 1;  // ほかの行はドラッグのために残す
                 st.sel.focus = it.id;
-                // The one selected row pressed again: told as a choice all the same, so the インスペクター
-                // shows it again after showing something else (2026-11-17 on screen: an emitter of the
-                // パーティクル tab stayed there when the selected entity was clicked).
+                // 選択中の 1 行がもう一度押された: それでも選択として知らせる。そうするとインスペクターは、
+                // ほかのものを見せたあとでもそれをもう一度見せる (2026-11-17 画面で: 選択中の
+                // エンティティをクリックしても、パーティクル タブのエミッターがそのまま残っていた)。
                 reselected = !st.pressDeferred;
             } else {
                 Click(st.sel, items, rows, it.id, in.ctrl, in.shift);
@@ -410,15 +410,15 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         }
         c.PopId();
     }
-    // A rename whose row scrolled out of view is finished with what was typed.
+    // スクロールで見えなくなった行の名前変更は、入力した内容で終わらせる。
     if (st.renaming != 0 && !renameDrawn && !st.renameStart) {
         const size_t i = Find(items, st.renaming);
         if (i != npos && !st.renameText.empty() && st.renameText != items[i].name) src.Rename(st.renaming, st.renameText);
         st.renaming = 0;
     }
 
-    // --- Clicks on empty space ------------------------------------------------------------------
-    const Rect emptyArea{view.x, view.y, view.w - 12, view.h};  // not the scroll bar
+    // --- 何もない所のクリック ------------------------------------------------------------------
+    const Rect emptyArea{view.x, view.y, view.w - 12, view.h};  // スクロールバーは含めない
     if (!rowPressed && c.IsHovered(emptyArea) && c.MousePressed() && !in.ctrl && !in.shift) {
         st.sel.ids.clear();
         st.sel.anchor = st.sel.focus = 0;
@@ -430,7 +430,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         if (!st.menuActions.empty()) st.menu.OpenAt(in.mouseX, in.mouseY);
     }
 
-    // --- Dragging -----------------------------------------------------------------------------
+    // --- ドラッグ -----------------------------------------------------------------------------
     std::optional<Drop> drop;
     if (st.pressItem != 0) {
         if (!st.dragging && in.down[0] && src.CanMove() &&
@@ -448,11 +448,11 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             c.RequestRedraw();
         }
     }
-    // Out of the tree, the rows can be dropped on another panel (a reference field).
+    // ツリーの外では、行を別のパネル (参照フィールド) にドロップできる。
     if (st.dragging) w::SetDragThing(src.DragOut(st.moving));
     const bool dropOnTop = st.dragging && in.mouseInside && topRect && topRect->Contains(in.mouseX, in.mouseY);
     if (dropOnTop) {
-        drop = DropAtEnd(items, st.moving);  // the top level, at the end
+        drop = DropAtEnd(items, st.moving);  // 最上位の最後
     } else if (st.dragging && in.mouseInside && view.Contains(in.mouseX, in.mouseY)) {
         const float rel = in.mouseY - rowsTop;
         if (rel < 0) {
@@ -464,7 +464,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         }
     }
     if (st.dragging && drop && !dropOnTop) {
-        // Where it goes: a line between rows, or a frame around the row it goes into.
+        // 行き先: 行の間の線、または入る行を囲む枠。
         if (drop->mark == Drop::Mark::Inside) {
             const size_t r = RowOf(items, rows, drop->target);
             if (r != npos) p.StrokeRoundRect(rowRect(r), 4, theme::Accent, 1.5f);
@@ -485,18 +485,18 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         }
     }
     w::EndScroll(c, kScrollId, view, content);
-    if (dropOnTop) p.StrokeRoundRect(*topRect, 4, theme::Accent, 1.5f);  // into the top row: a frame around it
+    if (dropOnTop) p.StrokeRoundRect(*topRect, 4, theme::Accent, 1.5f);  // 一番上の行の中へ: その周りに枠
 
     if (st.pressItem != 0 && !in.down[0]) {
-        // Released.
+        // 離した。
         if (st.dragging && drop) {
             const std::vector<ItemId> moving = st.moving;
             src.Move(moving, drop->parent, drop->index);
-            st.collapsed.erase(drop->parent);  // show where they went
+            st.collapsed.erase(drop->parent);  // 行き先が見えるようにする
         } else if (!st.dragging && st.pressDeferred) {
             SelectOnly(st.sel, st.pressItem);
         }
-        if (st.dragging) w::EndDragThing(c);  // (a panel drawn after this one still sees it let go)
+        if (st.dragging) w::EndDragThing(c);  // (これのあとに描くパネルも、離したのを見る)
         st.pressItem = 0;
         st.pressDeferred = false;
         st.dragging = false;
@@ -504,12 +504,12 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         c.RequestRedraw();
     }
     if (st.dragging) {
-        // What is being dragged, next to the mouse (over everything, also outside the panel).
+        // ドラッグしているものを、マウスの横に (すべての上に。パネルの外でも)。
         const size_t i = st.moving.size() == 1 ? Find(items, st.moving[0]) : npos;
         const std::wstring tag = i != npos ? Utf8ToWide(items[i].name) : TrF(L"{} 個", st.moving.size());
         const bool inTree = drop.has_value();
         c.AddOverlay([&c, tag, inTree] {
-            // (at the end of the frame: a reference field drawn after the tree has said whether it takes it)
+            // (フレームの終わりに: ツリーのあとに描く参照フィールドが、受け取るかどうかを答えてから)
             const bool ok = w::TakeDragAccepted() || inTree;
             auto& pp = c.P();
             const float wdt = std::min(260.f, pp.TextWidth(tag, 12) + 20);
@@ -522,7 +522,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
 
     c.SetInputEnabled(inputWas);
 
-    // --- The right-click menu (at the end of the frame: not cut off by the panel) -----------------
+    // --- 右クリックメニュー (フレームの終わりに: パネルで切られないように) -----------------
     w::ActionMenu(c, st.menu, st.menuActions);
 
     if (st.sel.ids != before || reselected) src.SelectionChanged(st.sel.ids);

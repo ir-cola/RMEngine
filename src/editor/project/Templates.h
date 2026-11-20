@@ -1,30 +1,30 @@
 #pragma once
-// Project templates and their tree (design RME_PLATFORM 1-b-2 / 5-a). Pure - tested in RMTests.
+// プロジェクトのテンプレートとその木 (設計 RME_PLATFORM 1-b-2 / 5-a)。純粋。RMTests でテストする。
 //
-// A template is data, not code: a plugin offers one by having a file in its folder,
+// テンプレートはコードではなくデータだ: プラグインは、自分のフォルダーにファイルを置いて出す。
 //
 //   plugins/<author>/<name>/templates/<id>/template.json
 //   {
 //     "kind": "rm_engine.template", "format": 1,
-//     "id": "game_3d",                       unique within the plugin (recorded in the new .rmpf)
-//     "path": ["game", "3d"],                where in the tree: the branches above, then its own node
-//     "name": "3D のゲーム", "description": "…",   Japanese (Tr when drawn; English in the plugin's lang/en.json)
-//     "order": 0,                            among its siblings (smaller first; then by name)
-//     "plugins": [ { "author": …, "name": … } ],   what its content needs (its own plugin is added)
-//     "open": { "author": …, "plugin": …, "software": "game" },   the software shown first
-//     "project": { "softwareData": [ … ] },  keys put into the new .rmpf (the first scene: camera, light, floor …)
+//     "id": "game_3d",                       プラグイン内で一意 (新しい .rmpf に記録する)
+//     "path": ["game", "3d"],                木のどこか: 上の枝、そして自分のノード
+//     "name": "3D のゲーム", "description": "…",   日本語 (描くときに Tr。英語はプラグインの lang/en.json)
+//     "order": 0,                            兄弟の中で (小さい方が先。同じなら名前順)
+//     "plugins": [ { "author": …, "name": … } ],   中身が必要とするもの (自分のプラグインは足される)
+//     "open": { "author": …, "plugin": …, "software": "game" },   最初に出すソフト
+//     "project": { "softwareData": [ … ] },  新しい .rmpf に入れるキー (最初のシーン: カメラ、ライト、床 ...)
 //     "userSettings": { "softwares": [ { "author": …, "plugin": …, "software": …, "layout": …, "view": … } ] }
-//   }                                        the first layout / view, put into UserSettings/Layout.json
-//   plugins/<author>/<name>/templates/<id>/Assets/…   files copied into the new project's Assets/ (with
-//                                                      their .meta: a game's first scene, named by its id in "project")
+//   }                                        最初のレイアウト / 見え方。UserSettings/Layout.json に入れる
+//   plugins/<author>/<name>/templates/<id>/Assets/…   新しいプロジェクトの Assets/ に写すファイル (その
+//                                                      .meta も: ゲームの最初のシーン。"project" の中で ID で指す)
 //
-// The core reads the files of the plugins this engine has - installed or not - so a template is in
-// the tree before its plugins are installed (the Hub then offers to install them). The core knows
-// neither the plugins nor what their data means: it copies "project" and "userSettings" over.
+// 核は、このエンジンが持つプラグインのファイルを - 入っていても入っていなくても - 読むので、
+// プラグインが入る前でもテンプレートは木に出る (Hub が入れるか尋ねる)。核はプラグインも
+// その データの意味も知らない: "project" と "userSettings" をそのまま写す。
 //
-// The tree is made from the paths; a branch is only a way of showing (a node without a template of
-// its own shows its id). Choosing a node needs every plugin of its template and of every template
-// below it (design 09-29: "ゲーム" brings both 3D and 2D) - its own template is what the project starts as.
+// 木はパスから作る。枝は見せ方でしかない (自分のテンプレートが無いノードは、その ID を出す)。
+// ノードを選ぶには、そのテンプレートと、その下のすべてのテンプレートのプラグインが全部要る
+// (設計 09-29: 「ゲーム」は 3D と 2D の両方を持ってくる) - プロジェクトの始まりは、そのノード自身のテンプレート。
 
 #include "base/Json.h"
 #include "core/PluginId.h"
@@ -42,81 +42,81 @@ inline constexpr char kTemplateKind[] = "rm_engine.template";
 inline constexpr int64_t kTemplateFormat = 1;
 
 struct ProjectTemplate {
-    std::optional<PluginId> plugin;  // who offers it; none: the core's own (白紙)
+    std::optional<PluginId> plugin;  // 出すプラグイン。なし: 核自身のもの (白紙)
     std::string id;
-    std::vector<std::string> path;   // the last part is its own node
-    std::string name;                // UTF-8 Japanese
+    std::vector<std::string> path;   // 最後の部分が自分のノード
+    std::string name;                // UTF-8 の日本語
     std::string description;
     int order = 0;
-    std::vector<PluginId> plugins;   // what its content needs (`plugin` first)
-    json::Value open;                // { author, plugin, software } or null
-    json::Value project;             // object or null
-    json::Value userSettings;        // object or null
-    // The folder of its template.json (set by the loader, not read from the file): an "Assets" folder
-    // there is copied into the new project (a game's first scene: Assets/Scenes/Main.rmscene + .meta).
+    std::vector<PluginId> plugins;   // 中身が必要とするもの (最初が `plugin`)
+    json::Value open;                // { author, plugin, software } か null
+    json::Value project;             // オブジェクトか null
+    json::Value userSettings;        // オブジェクトか null
+    // その template.json のフォルダー (ローダーが入れる。ファイルからは読まない): そこにある
+    // "Assets" フォルダーは新しいプロジェクトに写す (ゲームの最初のシーン: Assets/Scenes/Main.rmscene + .meta)。
     std::filesystem::path folder;
 };
 
-// The core's own template: a project with nothing in it (no plugin needed).
+// 核自身のテンプレート: 何も入っていないプロジェクト (プラグインは要らない)。
 const ProjectTemplate& BlankTemplate();
 
-// One template.json of `owner`'s folder. Unknown keys are allowed (a newer engine's); a newer
-// format, a wrong shape, a bad id or path is refused with the reason (Japanese) in *error.
+// `owner` のフォルダーにある 1 つの template.json。知らないキーは許す (新しいエンジンのもの)。
+// 新しい format、形が違う、ID やパスが不正なものは、理由 (日本語) を *error に入れて断る。
 std::optional<ProjectTemplate> ParseTemplate(const json::Value& v, const PluginId& owner, std::string* error);
 
 struct TemplateNode {
     std::vector<std::string> path;
     size_t depth = 0;                       // path.size() - 1
-    size_t parent = static_cast<size_t>(-1);  // index of the parent node; npos at the top
-    int tmpl = -1;                          // index into TemplateTree::templates; -1: a branch only
+    size_t parent = static_cast<size_t>(-1);  // 親のノードの番号。一番上では npos
+    int tmpl = -1;                          // TemplateTree::templates の番号。-1: 枝だけ
 };
 
 struct TemplateTree {
     std::vector<ProjectTemplate> templates;
-    std::vector<TemplateNode> nodes;  // parents before their children, siblings in order (as shown)
-    std::vector<std::string> warnings;  // templates left out (two at one place, a bad id ...)
+    std::vector<TemplateNode> nodes;  // 親が子より先、兄弟は順に (表示の順)
+    std::vector<std::string> warnings;  // 外したテンプレート (同じ場所に 2 つ、不正な ID ...)
 
     const ProjectTemplate* At(size_t node) const {
         return node < nodes.size() && nodes[node].tmpl >= 0 ? &templates[static_cast<size_t>(nodes[node].tmpl)] : nullptr;
     }
-    // The text a node shows: its template's name, or (a branch only) its id. UTF-8, before Tr.
+    // ノードが出す文字: そのテンプレートの名前、または (枝だけなら) その ID。UTF-8。Tr の前。
     std::string Label(size_t node) const;
-    size_t Find(const std::vector<std::string>& path) const;  // npos when not there
+    size_t Find(const std::vector<std::string>& path) const;  // そこに無ければ npos
 };
 
-// The tree of these templates. Two at the same place: the first stays, the other is a warning.
-// Two of one plugin with the same id: the same.
+// これらのテンプレートの木。同じ場所に 2 つあれば最初のものを残し、もう 1 つは警告にする。
+// 1 つのプラグインの同じ ID の 2 つも同じ。
 TemplateTree BuildTemplateTree(std::vector<ProjectTemplate> templates);
 
-// What making a project from `node` needs: the plugins of its template and of every template below
-// it, each once, in tree order.
+// `node` からプロジェクトを作るのに必要なもの: そのテンプレートと、その下のすべてのテンプレートの
+// プラグイン。それぞれ 1 回で、木の順。
 std::vector<PluginId> TemplatePlugins(const TemplateTree& tree, size_t node);
 
-// What to copy before a project can be made from templates needing `needed`: each one's install
-// plan (requirements and connectors, InstallPlan) put together, each once. Plugins this engine does
-// not have go to *unavailable.
+// `needed` を必要とするテンプレートからプロジェクトを作る前に写すもの: それぞれの入れる計画
+// (前提とコネクター、InstallPlan) をまとめ、それぞれ 1 回だけ。このエンジンに無い
+// プラグインは *unavailable に入る。
 std::vector<PluginId> TemplateInstallPlan(const std::vector<PluginId>& needed, const std::vector<PluginManifest>& available,
                                           const std::vector<PluginId>& ready, std::vector<PluginId>* unavailable);
 
-// A new project's .rmpf (kind, name ... already set) made from the template: the template is recorded
-// ("template": { author, plugin, id }), its "project" keys are put in - except the core's own keys
-// (kind, formatVersion, name, engineVersion, template, plugins) - and the plugin of each
-// "softwareData" entry is recorded in "plugins", as saving that software's data would.
+// テンプレートから作る、新しいプロジェクトの .rmpf (kind、name ... は設定済み): テンプレートを
+// 記録し ("template": { author, plugin, id })、その "project" のキーを入れる - ただし核自身の
+// キー (kind、formatVersion、name、engineVersion、template、plugins) は除く - そして、
+// 各 "softwareData" の項目のプラグインを "plugins" に記録する (そのソフトのデータを保存したときと同じ)。
 void ApplyTemplate(json::Value& doc, const ProjectTemplate& t);
 
-// A new project's UserSettings/Layout.json from the template ("active" from "open", the
-// "softwares" entries from "userSettings"); null when the template says nothing about either.
+// テンプレートから作る、新しいプロジェクトの UserSettings/Layout.json ("active" は "open" から、
+// "softwares" の項目は "userSettings" から)。どちらについてもテンプレートが何も言わなければ null。
 json::Value TemplateLayout(const ProjectTemplate& t);
 
-// --- "ソフトで絞る" (the Hub's plugin list) --------------------------------------------------
-// A software = a top-level node of the template tree. Its plugins: every plugin the templates below
-// it need, with their requirements and connectors (as installing would bring them), and every
-// plugin whose plugin.json says "software": [its id]. A software in a plugin.json with no node of
-// that id comes after the others, named by its id. A node needing no plugin (白紙) is not one.
-// A plugin in no software is 共通.
+// --- 「ソフトで絞る」(Hub のプラグイン一覧) ---------------------------------------------------
+// ソフト = テンプレートの木の一番上のノード。そのプラグイン: その下のテンプレートが必要とする
+// プラグインすべて (入れたときに来る前提とコネクターも)と、plugin.json に "software": [その ID]
+// と書いてあるプラグインすべて。plugin.json にあるソフトで、その ID のノードが無いものは、
+// ほかの後ろに、その ID の名前で出す。プラグインが要らないノード (白紙) はソフトではない。
+// どのソフトにも無いプラグインは 共通。
 struct SoftwareGroup {
     std::string id;
-    std::string name;  // UTF-8, before Tr
+    std::string name;  // UTF-8。Tr の前
     std::vector<PluginId> plugins;
 };
 std::vector<SoftwareGroup> GroupPluginsBySoftware(const TemplateTree& tree, const std::vector<PluginManifest>& available);

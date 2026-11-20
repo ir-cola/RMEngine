@@ -17,8 +17,8 @@ void AppendUnique(std::vector<PluginId>& to, const PluginId& id) {
     if (std::find(to.begin(), to.end(), id) == to.end()) to.push_back(id);
 }
 
-// A template id or a part of a path: a-z 0-9 _ (one way of writing: "3d" and "3D" never make two
-// branches), 1-32 characters; it may start with a digit ("2d"), but not with or end in _, and no "__".
+// テンプレートの ID、またはパスの一部: a-z 0-9 _ (書き方は 1 通り: "3d" と "3D" が 2 つの枝にならない)、
+// 1〜32 文字。数字で始めてよい ("2d") が、_ で始めたり終わったりはできず、"__" も使えない。
 std::string PartError(const std::string& s) {
     if (s.empty()) return TrU8("空の ID は使えません");
     if (s.size() > 32) return TrU8("ID は 32 文字までです");
@@ -56,7 +56,7 @@ const ProjectTemplate& BlankTemplate() {
         t.path = {"blank"};
         t.name = WideToUtf8(TrKey(L"白紙"));
         t.description = WideToUtf8(TrKey(L"何も入っていないプロジェクト。プラグインを足して育てます。"));
-        t.order = -1000;  // always first
+        t.order = -1000;  // いつも最初
         return t;
     }();
     return kBlank;
@@ -128,7 +128,7 @@ size_t TemplateTree::Find(const std::vector<std::string>& path) const {
 
 TemplateTree BuildTemplateTree(std::vector<ProjectTemplate> templates) {
     TemplateTree tree;
-    // Keep the first of two at one place (or of one plugin with one id).
+    // 同じ場所の 2 つ (または 1 つのプラグインの同じ ID) のうち、最初の 1 つを残す。
     for (ProjectTemplate& t : templates) {
         bool clash = false;
         for (const ProjectTemplate& kept : tree.templates) {
@@ -146,7 +146,8 @@ TemplateTree BuildTemplateTree(std::vector<ProjectTemplate> templates) {
         if (!clash) tree.templates.push_back(std::move(t));
     }
 
-    // Every path prefix is a node; a node's order is its template's, a branch's the smallest below it.
+    // パスの先頭部分はどれもノードになる。ノードの order はそのテンプレートのもので、枝は
+    // その下で最も小さいもの。
     struct Raw {
         std::vector<std::string> path;
         int tmpl = -1;
@@ -176,7 +177,7 @@ TemplateTree BuildTemplateTree(std::vector<ProjectTemplate> templates) {
         }
     }
     auto label = [&](const Raw& r) { return r.tmpl >= 0 ? tree.templates[static_cast<size_t>(r.tmpl)].name : r.path.back(); };
-    // Depth first: the children of `parent` in order, each followed by what is below it.
+    // 深さ優先: `parent` の子を順に、それぞれの後にその下を続ける。
     auto add = [&](auto&& self, const std::vector<std::string>& parentPath, size_t parentIndex) -> void {
         std::vector<const Raw*> children;
         for (const Raw& r : raw) {
@@ -201,7 +202,7 @@ std::vector<PluginId> TemplatePlugins(const TemplateTree& tree, size_t node) {
     std::vector<PluginId> out;
     if (node >= tree.nodes.size()) return out;
     const auto& base = tree.nodes[node].path;
-    // Nodes are in tree order: the node, then everything below it until the next one at its depth or above.
+    // ノードは木の順: そのノード、続いて、同じ深さかそれより上の次のノードまでの、その下すべて。
     for (size_t i = node; i < tree.nodes.size(); ++i) {
         if (i > node && tree.nodes[i].depth <= tree.nodes[node].depth) break;
         if (!std::equal(base.begin(), base.end(), tree.nodes[i].path.begin())) break;
@@ -215,9 +216,9 @@ std::vector<PluginId> TemplatePlugins(const TemplateTree& tree, size_t node) {
 std::vector<PluginId> TemplateInstallPlan(const std::vector<PluginId>& needed, const std::vector<PluginManifest>& available,
                                           const std::vector<PluginId>& ready, std::vector<PluginId>* unavailable) {
     std::vector<PluginId> out, missing;
-    // What earlier plans copy counts as there for the later ones. The plugins that need a connector go
-    // last: by then the template's own connector (2D's) is planned, so the first connector this engine
-    // has (3D's) is not brought in for nothing.
+    // 前の計画で写すものは、後の計画では「そこにある」とみなす。コネクターが必要なプラグインは
+    // 最後に回す: そのときにはテンプレート自身のコネクター (2D の) が計画済みなので、このエンジンが
+    // 持つ最初のコネクター (3D の) を無駄に持ってこない。
     std::vector<PluginId> there = ready;
     auto needsConnector = [&](const PluginId& id) {
         const auto it = std::find_if(available.begin(), available.end(), [&](const PluginManifest& m) { return m.id == id; });
@@ -253,7 +254,7 @@ void ApplyTemplate(json::Value& doc, const ProjectTemplate& t) {
             doc.Set(key, value);
         }
     }
-    // The plugins whose data is in the project now are recorded, as saving their data records them.
+    // データがもうプロジェクトにあるプラグインを記録する (そのデータを保存すると記録されるのと同じ)。
     json::Value* used = doc.Find("plugins");
     if (!used || !used->IsArray()) used = &doc.Set("plugins", json::Value::MakeArray());
     for (const auto& entry : doc.Get("softwareData").Items()) {
@@ -296,7 +297,7 @@ std::vector<SoftwareGroup> GroupPluginsBySoftware(const TemplateTree& tree, cons
     for (size_t i = 0; i < tree.nodes.size(); ++i) {
         if (tree.nodes[i].depth != 0) continue;
         SoftwareGroup g{tree.nodes[i].path.front(), tree.Label(i), {}};
-        // Everything installing the templates would bring (nothing counted as installed).
+        // テンプレートを入れたときに来るもの全部 (何も入っていないものとして数える)。
         g.plugins = TemplateInstallPlan(TemplatePlugins(tree, i), available, {}, nullptr);
         groups.push_back(std::move(g));
     }
@@ -310,8 +311,9 @@ std::vector<SoftwareGroup> GroupPluginsBySoftware(const TemplateTree& tree, cons
             AppendUnique(it->plugins, m.id);
         }
     }
-    // A connector goes where everything it joins is (2026-11-17 on screen: ゲーム制作 × パーティクル showed
-    // under 共通). Again until none moves: a connector may need another connector ("パーティクル × 物理").
+    // コネクターは、つなぐ物がすべてある所に置く (2026-11-17 画面で: ゲーム制作 × パーティクルが
+    // 共通の下に出た)。動くものが無くなるまで繰り返す: コネクターがほかのコネクターを必要とする
+    // ことがある ("パーティクル × 物理")。
     for (bool moved = true; moved;) {
         moved = false;
         for (const PluginManifest& m : available) {

@@ -11,12 +11,12 @@ std::string EngineKey(const std::filesystem::path& exeDirectory) {
     while (full.size() > 3 && (full.back() == L'\\' || full.back() == L'/')) full.pop_back();
     for (auto& ch : full) ch = static_cast<wchar_t>(std::towlower(ch == L'/' ? L'\\' : ch));
 
-    uint64_t h = 1469598103934665603ull;  // FNV-1a 64 over the UTF-16 code units
+    uint64_t h = 1469598103934665603ull;  // UTF-16 のコード単位に対する FNV-1a 64
     for (const wchar_t ch : full) {
         h ^= static_cast<uint16_t>(ch);
         h *= 1099511628211ull;
     }
-    // A readable part: the folder's own name, ASCII letters / digits / - _ only (at most 24).
+    // 読める部分: フォルダー自身の名前。ASCII の英数字と - _ だけ (24 文字まで)。
     std::string name;
     const std::wstring last = std::filesystem::path(full).filename().native();
     for (const wchar_t ch : last) {

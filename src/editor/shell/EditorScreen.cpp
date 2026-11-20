@@ -33,20 +33,20 @@ ui::TextStyle Style(float size, ui::Color color, bool bold = false, ui::HAlign h
     return s;
 }
 
-// The "start" panel exists only while no software is installed.
+// "start" パネルは、ソフトが 1 つも入っていない間だけある。
 constexpr char kStart[] = "core.start";
 
 // <project>/UserSettings/Layout.json
 //   { "kind": "rm_engine.layout", "formatVersion": 2,
 //     "active": { "author": "rm_engine", "plugin": "game_production", "software": "game" },
 //     "softwares": [ { "author": ..., "plugin": ..., "software": ..., "layout": { "main": ..., "floating": [...] },
-//                      "view": { ... the software's own (Software::SaveView) },
-//                      "named": [ { "name": ..., "layout": {...} } ] (layouts saved under a name: dock/NamedLayouts.h),
-//                      "tree": { "collapsed": [...], "selected": [...] } (the 階層: tree::SaveState),
-//                      "assets": { "thumbnail": 40 } (the アセット panel: the thumbnails' size in DIPs) } ] }
-// The workspace without a software has only "software": "core". Entries of softwares that are not
-// installed now, and keys this version does not know, are written back unchanged.
-// (kLayoutKind / kLayoutFormatVersion: editor/project/Project.h - a new project's template writes it too.)
+//                      "view": { ... ソフト自身のもの (Software::SaveView) },
+//                      "named": [ { "name": ..., "layout": {...} } ] (名前を付けて保存したレイアウト: dock/NamedLayouts.h),
+//                      "tree": { "collapsed": [...], "selected": [...] } (階層: tree::SaveState),
+//                      "assets": { "thumbnail": 40 } (アセット パネル: サムネイルの大きさ。単位は DIP) } ] }
+// ソフトのないワークスペースは "software": "core" だけを持つ。今は入っていないソフトの項目と、
+// このバージョンが知らないキーは、そのまま書き戻す。
+// (kLayoutKind / kLayoutFormatVersion: editor/project/Project.h - 新しいプロジェクトのテンプレートも同じ値を書く。)
 constexpr char kCoreSoftware[] = "core";
 
 dock::Layout CoreDefaultLayout() {
@@ -79,7 +79,7 @@ bool SameKey(const json::Value& entry, const json::Value& key) {
 }
 
 #ifdef _DEBUG
-// Debug builds only: an edit that changes nothing, to exercise "unsaved changes" end to end.
+// Debug ビルドだけ: 何も変えない編集。「未保存の変更」の流れを端から端まで試すためのもの。
 class TestCommand final : public ICommand {
 public:
     void Do() override {}
@@ -91,10 +91,10 @@ public:
 }  // namespace
 
 EditorScreen::EditorScreen(App& app, Project project) : ScreenWindow(app), project_(std::move(project)) {
-    // (a file added in Explorer while the editor is idle: the watch wakes it, the frame looks again)
+    // (エディターが待機中にエクスプローラーでファイルが足された場合: 監視が起こし、フレームがもう一度調べる)
     assets_ = std::make_unique<AssetLibrary>(project_.AssetsDir(), assetsWake_.Signal());
-    // The ids before the softwares read their data (a scene finds its prefabs by id). Only this first
-    // look waits; every later one runs on a Worker (AssetLibrary).
+    // ソフトがデータを読む前に ID が要る (シーンは Prefab を ID で探す)。待つのはこの最初の調べだけで、
+    // 以降はすべて Worker で走る (AssetLibrary)。
     assets_->LookNow();
     thumbnails_ = std::make_unique<Thumbnails>(app_.Gfx(), app_.GetPlugins().Registry(), project_.AssetsDir());
     BuildWorkspaces();
@@ -113,8 +113,8 @@ bool EditorScreen::Open() {
     d.heightDip = 900;
     d.minWidthDip = 960;
     d.minHeightDip = 560;
-    assets_->onChanged = [this] { RedrawAll(); };  // a look's result was put in place (from the Worker)
-    LoadLayout();  // before the callbacks below: nothing to sync yet
+    assets_->onChanged = [this] { RedrawAll(); };  // 調べた結果が反映された (Worker から)
+    LoadLayout();  // 下のコールバックより前: まだ同期するものはない
     if (!CreateScreenWindow(d, SW_SHOWMAXIMIZED)) return false;
     for (auto& ws : workspaces_) {
         Workspace* w = ws.get();
@@ -123,13 +123,13 @@ bool EditorScreen::Open() {
         };
         w->dock.onRedrawAll = [this] { RedrawAll(); };
     }
-    SyncFloating(false);  // panel windows saved last time come back without taking the focus
-    // Queued: a log written on a worker thread reaches the windows on this (the UI) thread, from the
-    // App's message loop (log::DeliverQueued) - RedrawAll touches the windows.
+    SyncFloating(false);  // 前回保存したパネルウィンドウを、フォーカスを奪わずに戻す
+    // キューに積む: ワーカースレッドで書かれたログは、App のメッセージループ (log::DeliverQueued) から
+    // この (UI) スレッドでウィンドウに届く - RedrawAll はウィンドウに触るため。
     logSink_ = log::AddSink([this](const log::Entry&) { RedrawAll(); }, log::Delivery::Queued);
     log::Info("エディターを開きました: {} ({})", project_.Name(), WideToUtf8(Active().Title()));
     UpdateTitle();
-    SetTimer(Hwnd(), kAutoSaveTimer, 15000, nullptr);  // looks every 15 s; saves at the chosen interval
+    SetTimer(Hwnd(), kAutoSaveTimer, 15000, nullptr);  // 15 秒ごとに調べ、選んだ間隔で保存する
     return true;
 }
 
@@ -141,20 +141,20 @@ void EditorScreen::OnLookChanged() {
 
 void EditorScreen::OnTimer(UINT_PTR id) {
     if (id != kAutoSaveTimer || !dirty_) return;
-    // Never in the middle of something: a dialog, an open menu, typing, a drag (a button held).
+    // 作業の途中では保存しない: ダイアログ、開いているメニュー、入力中、ドラッグ中 (ボタンを押している間)。
     if (modal_ != Modal::None || menuPopup_.open || ctx_.Focused() != 0) return;
     if (GetKeyState(VK_LBUTTON) < 0 || GetKeyState(VK_RBUTTON) < 0 || GetKeyState(VK_MBUTTON) < 0) return;
     const double minutes = Minutes(app_.Settings().GetOptions().autoSave);
     if (platform::NowSeconds() - dirtySince_ < minutes * 60.0) return;
     log::Info("自動保存します ({} 分ごと)", minutes);
-    if (!Save()) dirtySince_ = platform::NowSeconds();  // the error is shown; try again after another interval
+    if (!Save()) dirtySince_ = platform::NowSeconds();  // エラーは表示済み。もう 1 間隔待ってやり直す
 }
 
 void EditorScreen::Close() {
     if (Hwnd()) KillTimer(Hwnd(), kAutoSaveTimer);
     CloseFloats();
     ScreenWindow::Close();
-    if (lock_) lock_->Release();  // another RM Engine may open the project now
+    if (lock_) lock_->Release();  // これで別の RM Engine がプロジェクトを開ける
 }
 
 void EditorScreen::ShowError(std::wstring message) {
@@ -169,7 +169,7 @@ void EditorScreen::RedrawAll() {
 }
 
 // ---------------------------------------------------------------------------
-// Workspaces (one per software) and their layouts
+// ワークスペース (ソフトごとに 1 つ) とそのレイアウト
 // ---------------------------------------------------------------------------
 
 const PluginRegistry& EditorScreen::Workspace::Registry() const { return editor_.app_.GetPlugins().Registry(); }
@@ -189,10 +189,10 @@ fs::path EditorScreen::Workspace::AssetFile(const AssetRef& ref) const {
         const asset::Entry* e = lib.Index().ByGuid(ref.guid);
         return e ? lib.FullPath(*e) : fs::path();
     }
-    // Data from before references: a path inside the project ("Assets/Models/robot.glb").
+    // 参照ができる前のデータ: プロジェクト内のパス ("Assets/Models/robot.glb")。
     std::string rel = ref.guid;
     std::replace(rel.begin(), rel.end(), '\\', '/');
-    if (rel.find("..") != std::string::npos || rel.find(':') != std::string::npos) return {};  // stays inside the project
+    if (rel.find("..") != std::string::npos || rel.find(':') != std::string::npos) return {};  // プロジェクトの外に出ない
     std::error_code ec;
     const fs::path p = editor_.project_.Root() / PathFromUtf8(rel);
     return fs::exists(p, ec) ? p : fs::path();
@@ -201,16 +201,16 @@ fs::path EditorScreen::Workspace::AssetFile(const AssetRef& ref) const {
 AssetRef EditorScreen::Workspace::AssetOf(const fs::path& file) {
     AssetLibrary& lib = *editor_.assets_;
     const fs::path rel = file.lexically_normal().lexically_relative(lib.Root().lexically_normal());
-    if (rel.empty() || rel.native().starts_with(L"..")) return {};  // not inside Assets/
+    if (rel.empty() || rel.native().starts_with(L"..")) return {};  // Assets/ の中ではない
     const std::string path = PathToUtf8(rel.generic_wstring());
-    // (a file just written - a prefab saved: it gets its id now, without waiting for a look)
+    // (書いたばかりのファイル - 保存した Prefab: 調べを待たずに、今すぐ ID をもらう)
     const std::string guid = lib.AdoptFile(path);
     return guid.empty() ? AssetRef{} : AssetRef{guid};
 }
 
 std::optional<std::string> EditorScreen::Workspace::AssetContent(const AssetRef& ref) {
     if (asset::IsGuid(ref.guid)) return editor_.assets_->Content(ref.guid);
-    const fs::path file = AssetFile(ref);  // (a path of data made before references)
+    const fs::path file = AssetFile(ref);  // (参照ができる前に作られたデータのパス)
     std::string err;
     return file.empty() ? std::nullopt : platform::ReadFileBytes(file, &err);
 }
@@ -227,7 +227,7 @@ void EditorScreen::Workspace::PickFolder(std::wstring title, fs::path start, std
     EditorScreen& ed = editor_;
     ed.Defer([&ed, title = std::move(title), start = std::move(start), done = std::move(done)] {
         if (auto folder = platform::PickFolder(ed.Hwnd(), title, start.native())) {
-            ed.ctx_.ClearFocus();  // a field being typed into must not write its old text back over the new value
+            ed.ctx_.ClearFocus();  // 入力中のフィールドが、古い文字を新しい値の上に書き戻してはいけない
             done(fs::path(*folder));
         }
     });
@@ -291,7 +291,7 @@ void EditorScreen::BuildWorkspaces() {
             log::Error("ソフト「{}」を作れませんでした ({})", WideToUtf8(type.title), type.plugin.Text());
             continue;
         }
-        // The software's panels after the core ones; ids must not collide (they are saved in layouts).
+        // ソフトのパネルはコアのパネルの後ろ。ID はぶつからないこと (レイアウトに保存されるため)。
         std::vector<dock::PanelType> panels = CorePanels(false);
         for (auto& pt : ws->software->Panels()) {
             const bool taken = pt.id.starts_with("core.") ||
@@ -310,12 +310,12 @@ void EditorScreen::BuildWorkspaces() {
         ws->dock.SetPanelTypes(CorePanels(true));
         workspaces_.push_back(std::move(ws));
     }
-    // The most important wire of the editor: an edit that reaches any history marks the project unsaved.
+    // エディターの一番大事な配線: どれかの履歴に届いた編集は、プロジェクトを未保存にする。
     for (auto& ws : workspaces_) ws->history.SetOnModified([this] { SetDirty(true); });
 }
 
 // .rmpf: "softwareData": [ { "author": ..., "plugin": ..., "software": ..., "data": {...} } ]
-// Entries of softwares that are not installed now are kept as they are.
+// 今は入っていないソフトの項目はそのまま残す。
 void EditorScreen::LoadSoftwareData() {
     const json::Value& entries = project_.doc.Get("softwareData");
     for (auto& ws : workspaces_) {
@@ -333,8 +333,8 @@ void EditorScreen::LoadSoftwareData() {
 void EditorScreen::StoreSoftwareData(std::vector<ProjectFileWrite>& files) {
     for (auto& ws : workspaces_) {
         if (!ws->software) continue;
-        // Found again for each software: the document's members below may have grown since (Set of a new
-        // key moves them) - a pointer from before would point at freed memory.
+        // ソフトごとに探し直す: 下のドキュメントのメンバーはその後に増えているかもしれない (新しい
+        // キーの Set で動く) - 前のポインターは解放済みのメモリを指してしまう。
         json::Value* entries = project_.doc.Find("softwareData");
         const json::Value key = WorkspaceKey(ws->type);
         json::Value* entry = nullptr;
@@ -351,12 +351,12 @@ void EditorScreen::StoreSoftwareData(std::vector<ProjectFileWrite>& files) {
             entry = &entries->Items().back();
         }
         entry->Set("data", std::move(data));
-        // The project now has this plugin's data: record it, so the project is never opened without
-        // it (and saved without its data). The record is written automatically, never by hand.
+        // プロジェクトはこのプラグインのデータを持つようになった: 記録しておき、プロジェクトがそれ無しで
+        // 開かれる (そしてそのデータ抜きで保存される) ことがないようにする。記録は自動で書き、手では書かない。
         json::Value* used = project_.doc.Find("plugins");
         if (!used || !used->IsArray()) used = &project_.doc.Set("plugins", json::Value::MakeArray());
         std::vector<PluginId> ids{ws->type->plugin};
-        for (const PluginId& p : ws->software->UsedPlugins()) ids.push_back(p);  // (its components' plugins ...)
+        for (const PluginId& p : ws->software->UsedPlugins()) ids.push_back(p);  // (その部品のプラグイン ...)
         for (const PluginId& id : ids) {
             bool known = false;
             for (const auto& u : used->Items()) known |= u.Get("author").AsString() == id.author && u.Get("name").AsString() == id.name;
@@ -372,7 +372,7 @@ void EditorScreen::StoreSoftwareData(std::vector<ProjectFileWrite>& files) {
 
 void EditorScreen::SwitchSoftware(size_t index) {
     if (index >= workspaces_.size() || index == active_) return;
-    // Outside the frame: the floating windows of the old software are destroyed, the new one's created.
+    // フレームの外で: 古いソフトのフローティングウィンドウを壊し、新しいほうのを作る。
     Defer([this, index] {
         if (index == active_) return;
         CloseFloats();
@@ -401,7 +401,7 @@ void EditorScreen::LoadLayout() {
         } else {
             broken = true;
         }
-        // Format 1 kept { "softwares": { "core": <layout> } }.
+        // フォーマット 1 は { "softwares": { "core": <layout> } } だった。
         if (const json::Value* old = layoutDoc_.Find("softwares"); old && old->IsObject()) {
             json::Value list = json::Value::MakeArray();
             if (const json::Value* core = old->Find(kCoreSoftware)) {
@@ -442,11 +442,11 @@ void EditorScreen::LoadLayout() {
     }
 }
 
-// %APPDATA%\RM_Engine\Layouts.json - named layouts every project can use (paths::SharedLayoutsFile):
+// %APPDATA%\RM_Engine\Layouts.json - どのプロジェクトでも使える、名前付きレイアウト (paths::SharedLayoutsFile):
 //   { "kind": "rm_engine.shared_layouts", "formatVersion": 1,
 //     "softwares": [ { "author": ..., "plugin": ..., "software": ..., "named": [ { "name", "layout" } ] } ] }
-// Read when the editor opens, written as soon as the list changes. Softwares not installed now and
-// unknown keys are written back unchanged (like Layout.json).
+// エディターを開くときに読み、一覧が変わったらすぐ書く。今は入っていないソフトと
+// 知らないキーはそのまま書き戻す (Layout.json と同じ)。
 constexpr char kSharedLayoutsKind[] = "rm_engine.shared_layouts";
 constexpr int64_t kSharedLayoutsFormatVersion = 1;
 
@@ -464,7 +464,7 @@ void EditorScreen::LoadSharedLayouts() {
             sharedReadOnly_ = sharedDoc_.Get("formatVersion").AsInt(0) > kSharedLayoutsFormatVersion;
             if (sharedReadOnly_) log::Warn("共通の配置は新しい版の RM Engine で保存されています。この版では上書きしません");
         } else {
-            // Never written over: a file we cannot read may be the user's to fix.
+            // 上書きしない: 読めないファイルは、ユーザーが直すものかもしれない。
             sharedReadOnly_ = true;
             log::Warn("共通の配置を読めませんでした (上書きしません): {}", PathToUtf8(file));
         }
@@ -563,8 +563,8 @@ void EditorScreen::ResetLayout() {
 }
 
 void EditorScreen::RequestSyncFloating() {
-    // Windows are created and destroyed from the message loop, never inside a frame or a
-    // window procedure of the window being destroyed.
+    // ウィンドウはメッセージループから作って壊す。フレームの中や、壊す最中のウィンドウの
+    // ウィンドウプロシージャの中では決してしない。
     if (syncQueued_) return;
     syncQueued_ = true;
     Defer([this] { SyncFloating(true); });
@@ -592,7 +592,7 @@ void EditorScreen::SyncFloating(bool activate) {
                 failed.push_back(f.id);
                 continue;
             }
-            f.rect = fw->CurrentRect();  // may differ: a saved position on a monitor that is gone
+            f.rect = fw->CurrentRect();  // 違うことがある: 無くなったモニターにあった保存位置
             floats_.push_back(std::move(fw));
             continue;
         }
@@ -618,8 +618,8 @@ void EditorScreen::CloseFloats() {
 
 void EditorScreen::DrawFloating(ui::Context& c, float width, float height, FloatWindow& window) {
     c.P().Clear(theme::Bg);
-    w::DrawBackdrop(c, true);  // the theme's picture, behind everything
-    // While the editor shows a dialog (or the 部品を足す panel: OnFrame), the panel windows only show.
+    w::DrawBackdrop(c, true);  // テーマの絵。すべての後ろに
+    // エディターがダイアログ (や 部品を足す パネル: OnFrame) を出している間、パネルウィンドウは表示だけする。
     const bool blocked = modal_ != Modal::None || Active().inspectorState.addPopup.open;
     c.SetInputEnabled(!blocked);
     if (!blocked) HandleShortcuts(c);
@@ -633,7 +633,7 @@ void EditorScreen::DrawFloating(ui::Context& c, float width, float height, Float
 
 void EditorScreen::ForwardDrag(ui::Context& c, HWND self, float width, float height) {
     const ui::Input& in = c.In();
-    // Only the window the drag is in has the button down (it has the mouse captured) or sees it let go.
+    // ドラッグしているウィンドウだけが、ボタンを押している (マウスをキャプチャーしている) か、離したのを見る。
     if (!w::DraggedThing() || (!in.down[0] && !in.released[0])) return;
     ScreenWindow* target = nullptr;
     POINT pt{};
@@ -652,12 +652,12 @@ void EditorScreen::ForwardDrag(ui::Context& c, HWND self, float width, float hei
         y = static_cast<float>(pt.y) / target->Scale();
     }
     const HWND now = target ? target->Hwnd() : nullptr;
-    if (dragTarget_ && dragTarget_ != now) InvalidateRect(dragTarget_, nullptr, FALSE);  // its outline goes away
+    if (dragTarget_ && dragTarget_ != now) InvalidateRect(dragTarget_, nullptr, FALSE);  // その枠線を消す
     dragTarget_ = in.released[0] ? nullptr : now;
     w::SetDragElsewhere(target ? &target->UiContext() : nullptr, x, y, in.released[0]);
     if (target) {
         target->Invalidate();
-        c.RequestRedraw();  // keep following the mouse
+        c.RequestRedraw();  // マウスに付いていく
     }
 }
 
@@ -667,7 +667,7 @@ void EditorScreen::FloatingMoving(uint32_t floatingId, HWND hwnd) { Active().doc
 
 void EditorScreen::FloatingMoveEnded(uint32_t floatingId) {
     Active().dock.WindowMoveEnded(floatingId);
-    // Still floating (not docked back): remember where the user put it.
+    // まだフローティング (ドックに戻していない): ユーザーが置いた場所を覚えておく。
     dock::Floating* f = Active().dock.GetLayout().FindFloating(floatingId);
     for (auto& fw : floats_) {
         if (f && fw->Id() == floatingId) f->rect = fw->CurrentRect();
@@ -675,12 +675,12 @@ void EditorScreen::FloatingMoveEnded(uint32_t floatingId) {
 }
 
 // ---------------------------------------------------------------------------
-// State
+// 状態
 // ---------------------------------------------------------------------------
 
 void EditorScreen::SetDirty(bool dirty) {
     if (dirty_ == dirty) return;
-    if (dirty) dirtySince_ = platform::NowSeconds();  // the auto-save interval counts from the first unsaved change
+    if (dirty) dirtySince_ = platform::NowSeconds();  // 自動保存の間隔は、最初の未保存の変更から数える
     dirty_ = dirty;
     UpdateTitle();
     Invalidate();
@@ -691,8 +691,8 @@ void EditorScreen::UpdateTitle() {
 }
 
 void EditorScreen::FlushAssetEdits(const ui::Context& c) {
-    // An import setting is written once the edit is finished: no button held (a drag of a number),
-    // no field of this window being typed into.
+    // 取り込みの設定は編集が終わってから書く: ボタンを押していない (数のドラッグ)、
+    // このウィンドウのフィールドに入力していない。
     if (!assets_->HasQueuedImports() || c.Focused() != 0) return;
     if (GetKeyState(VK_LBUTTON) < 0 || GetKeyState(VK_RBUTTON) < 0 || GetKeyState(VK_MBUTTON) < 0) return;
     assets_->FlushImports();
@@ -708,8 +708,8 @@ bool EditorScreen::Save() {
         modal_ = Modal::Error;
         return false;
     };
-    // The softwares' own files (a game's scenes) first, each atomically: the .rmpf written after them
-    // never names a file that is not there. A failure stops the save before the .rmpf.
+    // ソフト自身のファイル (ゲームのシーン) を先に、それぞれ原子的に書く: そのあとに書く .rmpf が、
+    // 無いファイルの名前を持つことはない。失敗したら .rmpf の前で保存を止める。
     for (const ProjectFileWrite& f : files) {
         const bool inside = !f.path.empty() && f.path.find("..") == std::string::npos && f.path.find(':') == std::string::npos &&
                             f.path.front() != '/' && f.path.front() != '\\';
@@ -739,15 +739,15 @@ inspector::Refs EditorScreen::MakeRefs() {
     if (Thumbnails* thumbs = thumbnails_.get()) {
         refs.thumbnail = [lib, thumbs](ui::Context& c, const std::string& guid, float size) { return AssetThumbnail(c, *lib, *thumbs, guid, size); };
     }
-    // An entity reference = an item of this software's 階層 (game: an entity). Its parent is "where".
+    // エンティティ参照 = このソフトの 階層 の項目 (ゲームではエンティティ)。その親が「場所」。
     tree::Source* src = Active().software ? Active().software->Hierarchy() : nullptr;
     if (!src) return refs;
-    // Listed once per drawing of the インスペクター, and only when a field asks (every entity-reference
-    // field of the drawing shares the list, and finds its item by the id's index).
+    // インスペクターを 1 回描くごとに 1 度だけ一覧にし、フィールドが求めたときだけ作る (その描画の
+    // エンティティ参照フィールドはみな一覧を共有し、ID の添字で項目を探す)。
     struct Items {
         bool built = false;
         std::vector<inspector::RefChoice> list;
-        std::unordered_map<uint64_t, size_t> at;  // id -> its place in list
+        std::unordered_map<uint64_t, size_t> at;  // id -> list の中の位置
     };
     auto cache = std::make_shared<Items>();
     auto build = [src, cache]() -> const Items& {
@@ -755,7 +755,7 @@ inspector::Refs EditorScreen::MakeRefs() {
         cache->built = true;
         std::vector<tree::Item> items;
         src->Items(items);
-        const tree::ItemIndex index(items);  // (the tree's own id index)
+        const tree::ItemIndex index(items);  // (ツリー自身の ID 索引)
         cache->list.reserve(items.size());
         for (const tree::Item& it : items) {
             inspector::RefChoice r;
@@ -796,8 +796,8 @@ bool EditorScreen::OnQueryEndSession() {
         SaveLayout();
         return true;
     }
-    // Asked like closing: save / close without saving / cancel. Windows waits on its shutdown page
-    // with this reason; "保存して閉じる" then quits, and the shutdown goes on (or the user starts it again).
+    // 閉じるときと同じように尋ねる: 保存 / 保存せず閉じる / キャンセル。Windows は、この理由を
+    // 付けてシャットダウンのページで待つ。"保存して閉じる" で終了し、シャットダウンは続く (またはユーザーがやり直す)。
     if (!shutdownBlocked_) {
         ShutdownBlockReasonCreate(Hwnd(), Tr(L"RM Engine: 保存されていない変更があります").c_str());
         shutdownBlocked_ = true;
@@ -810,7 +810,7 @@ bool EditorScreen::OnQueryEndSession() {
 }
 
 void EditorScreen::OnEndSession() {
-    // Shutting down anyway ("強制的にシャットダウン"): the layout is kept; unsaved changes cannot be asked about.
+    // とにかくシャットダウンする ("強制的にシャットダウン"): レイアウトは残す。未保存の変更は尋ねられない。
     if (dirty_) log::Warn("保存しないまま Windows が終了しました: {}", project_.Name());
     SaveLayout();
 }
@@ -834,7 +834,7 @@ void EditorScreen::FinishClose(CloseAction action) {
 }
 
 // ---------------------------------------------------------------------------
-// Menus
+// メニュー
 // ---------------------------------------------------------------------------
 
 std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
@@ -851,8 +851,8 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
                 it.checked = Active().dock.GetLayout().Contains(t.id);
                 items.push_back(std::move(it));
             }
-            // Order read by RunMenu: panels | named layouts (this project's, then the shared ones;
-            // when there are some) | the commands.
+            // RunMenu が読む順: パネル | 名前付きレイアウト (このプロジェクトのもの、次に共有のもの。
+            // あるとき) | コマンド。
             items.push_back({L"", L"", true, true});
             for (const bool sharedList : {false, true}) {
                 for (const auto& e : Active().Named(sharedList).Entries()) {
@@ -870,20 +870,20 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
             return items;
         }
         case Menu::Plugins: {
-            // One row per plugin, in the order of Plugins::Entries() (RunMenu relies on it).
+            // プラグイン 1 つにつき 1 行。Plugins::Entries() の順 (RunMenu はこれに頼る)。
             std::vector<w::MenuItem> items;
             for (const Plugins::Entry& e : app_.GetPlugins().Entries()) {
                 w::MenuItem it;
                 const std::wstring name = Utf8ToWide(TrU8(e.status.displayName));
                 if (e.connector && !e.installed) {
-                    // A connector is never chosen: it comes along with what it joins.
+                    // コネクターは選ばれない: つなぐものと一緒に付いてくる。
                     it.label = name + L"  (" + Utf8ToWide(e.status.id.Text()) + L")";
                     it.shortcut = Tr(L"つなぐ両方が入ると自動で入ります");
                     it.enabled = false;
                 } else if (e.installed) {
                     it.label = name + L"  (" + Utf8ToWide(e.status.id.Text()) + L")";
                     it.shortcut = e.status.state == PluginState::Enabled ? Tr(L"使用中") : Tr(L"⚠ 使えません");
-                    it.enabled = false;  // information only
+                    it.enabled = false;  // 情報だけ
                 } else {
                     it.label = TrF(L"「{}」をインストール…", name);
                     it.enabled = e.available;
@@ -898,7 +898,7 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
         case Menu::Help:
             return {{Tr(L"RM Engine について")}};
         case Menu::Debug: {
-            // The shown software's rows first (RunMenu counts them), then the editor's own tests.
+            // 表示中のソフトの行が先 (RunMenu が数える)、そのあとにエディター自身のテスト。
             std::vector<w::MenuItem> items;
             if (Active().software) {
                 for (const Software::DebugMenuItem& d : Active().software->DebugMenu()) {
@@ -974,23 +974,24 @@ void EditorScreen::RunMenu(Menu m, int index) {
 }
 
 // ---------------------------------------------------------------------------
-// Drawing
+// 描画
 // ---------------------------------------------------------------------------
 
 void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     auto& p = c.P();
-    // Files added / moved / renamed outside (Explorer): the ids follow, the names shown too.
+    // 外 (エクスプローラー) でファイルが足された / 動かされた / 名前を変えられた: ID が付いてくる。
+    // 表示する名前も。
     if (assets_->Poll()) RedrawAll();
-    if (assets_->Settling()) c.RequestAnimation();  // (frames until it has been quiet a moment)
+    if (assets_->Settling()) c.RequestAnimation();  // (しばらく静かになるまでフレームを回す)
     FlushAssetEdits(c);
     p.Clear(theme::Bg);
-    w::DrawBackdrop(c, false);  // the theme's picture, behind everything (again on each panel and bar)
-    // A menu, a dialog - or the インスペクター's 部品を足す panel, wider than its panel: what is under them
-    // takes no input (2026-11-17 on screen: a click on the panel's folder row over the scene view also
-    // reached the scene view, which chose nothing - the inspector was rebuilt and the panel closed).
-    // Also the right-click menus of the 階層 / アセット and the インスペクター's ⋮ menus and drop-down lists
-    // (2026-11-18 on screen: 追加 ▸ 3D オブジェクト ▸ 球 picked over the scene view also reached it,
-    // which chose what was under the mouse instead of the new 球).
+    w::DrawBackdrop(c, false);  // テーマの絵。すべての後ろに (パネルやバーごとにもう一度)
+    // メニュー、ダイアログ - またはインスペクターの 部品を足す パネル (パネルより広いとき): その下にあるものは
+    // 入力を受けない (2026-11-17 画面で: シーンビューの上にあるパネルのフォルダー行をクリックすると
+    // シーンビューにも届いて、何も選ばなかった - インスペクターが作り直されてパネルが閉じた)。
+    // 階層 / アセット の右クリックメニュー、インスペクターの ⋮ メニュー、ドロップダウンの一覧も同じ
+    // (2026-11-18 画面で: シーンビューの上で 追加 ▸ 3D オブジェクト ▸ 球 を選んだら、それも
+    // シーンビューに届き、新しい 球 でなくマウスの下にあるものが選ばれた)。
     const Workspace& view = Active();
     const bool overlay = modal_ != Modal::None || menuPopup_.open || view.inspectorState.addPopup.open || view.inspectorState.menu.open ||
                          view.inspectorState.popup.open || view.treeState.menu.open || (view.assetPanel && view.assetPanel->MenuOpen());
@@ -1002,7 +1003,7 @@ void EditorScreen::OnFrame(ui::Context& c, float width, float height) {
     const Rect menuBar = ui::TakeTop(full, 30);
     const Rect tabs = ui::TakeTop(full, 36);
     const Rect status = ui::TakeBottom(full, 24);
-    if (Active().software) Active().software->Tick(c);  // a game that plays moves on before it is drawn
+    if (Active().software) Active().software->Tick(c);  // Play 中のゲームは、描く前に先へ進む
     Active().dock.Draw(c, full.Inset(4), 0, Hwnd(), Scale());
     DrawSoftTabs(c, tabs);
     DrawStatusBar(c, status);
@@ -1032,23 +1033,23 @@ void EditorScreen::BeginInstallPlugin(const PluginId& id) {
 }
 
 void EditorScreen::HandleShortcuts(ui::Context& c) {
-    // While the right button is held (the 3D scene view flies: Ctrl goes down, S back) no shortcut runs -
-    // Ctrl + S there is flying, not saving (2026-11-19).
+    // 右ボタンを押している間 (3D のシーンビューが飛ぶ: Ctrl が下がり、S が戻る) はショートカットを動かさない -
+    // そこでの Ctrl + S は飛ぶことで、保存ではない (2026-11-19)。
     if (c.In().down[static_cast<int>(ui::Mouse::Right)]) return;
-    // Shared by the editor window and the panel windows: Ctrl+S works wherever the focus is - in a text
-    // field too (what is typed there is already in the data: the fields apply each key). Before, the check
-    // below came first and a focused field kept Ctrl+S from saving (2026-11-17 on screen: typed in the
-    // アセット search, Ctrl+S left the title's "*").
+    // エディターのウィンドウとパネルウィンドウで共有: Ctrl+S はフォーカスがどこにあっても効く -
+    // テキストフィールドの中でも (そこで打った文字はもうデータに入っている: フィールドは 1 キーごとに
+    // 反映する)。前は下の判定が先にあり、フォーカス中のフィールドが Ctrl+S の保存を妨げた
+    // (2026-11-17 画面で: アセットの検索で入力したあと Ctrl+S しても、タイトルの "*" が残った)。
     if (c.KeyPressed(ui::Key::S, true)) Save();
-    // Ctrl+Z / Ctrl+Y in a field are the field's own (its text), not the history's.
+    // フィールドの中の Ctrl+Z / Ctrl+Y はそのフィールド自身のもの (その文字)。履歴のものではない。
     if (c.Focused() != 0) return;
     if (c.KeyPressed(ui::Key::Z, true)) UndoRedo(false);
     if (c.KeyPressed(ui::Key::Y, true) || c.KeyPressed(ui::Key::Z, true, true)) UndoRedo(true);
 }
 
 void EditorScreen::UndoRedo(bool redo) {
-    // While a software runs (a game in Play) its data stays as it was: undo would change what the
-    // run goes back to, under it.
+    // ソフトが動いている間 (Play 中のゲーム) は、そのデータはそのまま。Undo すると、実行が戻る先を
+    // 実行中に変えてしまう。
     if (Active().software && Active().software->Running()) {
         log::Info("Play 中は元に戻す / やり直しはできません (止めてから)");
         return;
@@ -1064,7 +1065,7 @@ void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
     auto& p = c.P();
     w::DrawBar(c, r, theme::Sidebar);
     static const wchar_t* kTitles[] = {TrKey(L"ファイル"), TrKey(L"編集"), TrKey(L"ウィンドウ"), TrKey(L"プラグイン"), TrKey(L"ヘルプ"), TrKey(L"デバッグ")};
-    const int count = static_cast<int>(Menu::Count);  // (デバッグ too: a game's ゲームデバッグ is there)
+    const int count = static_cast<int>(Menu::Count);  // (デバッグも: ゲームの ゲームデバッグ がある)
     float x = r.x + 6;
     for (int i = 0; i < count; ++i) {
         const std::wstring menuTitle = Tr(kTitles[i]);
@@ -1088,7 +1089,7 @@ void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
 }
 
 void EditorScreen::DrawOpenMenu(ui::Context& c) {
-    // While a menu is open, hovering another menu title switches to it (like any desktop app).
+    // メニューが開いている間、別のメニューのタイトルにマウスを重ねるとそちらに切り替わる (どのデスクトップアプリとも同じ)。
     const auto& in = c.In();
     for (int i = 0; i < static_cast<int>(Menu::Count); ++i) {
         const Rect& t = menuTitleRects_[i];
@@ -1098,10 +1099,10 @@ void EditorScreen::DrawOpenMenu(ui::Context& c) {
             c.RequestRedraw();
         }
     }
-    // A click on the title of the open menu closes it (MenuPopup treats it as "outside").
+    // 開いているメニューのタイトルをクリックすると閉じる (MenuPopup は「外」として扱う)。
     const Menu m = openMenu_;
     const std::vector<w::MenuItem> items = MenuItems(m);
-    // As wide as the longest row (label + shortcut), at least 260.
+    // 一番長い行 (ラベル + ショートカット) と同じ幅。ただし 260 以上。
     float width = 260;
     for (const auto& it : items) {
         const float need = c.P().TextWidth(it.label, theme::FontSize) + c.P().TextWidth(it.shortcut, theme::FontSize) + 84;
@@ -1113,12 +1114,12 @@ void EditorScreen::DrawOpenMenu(ui::Context& c) {
 
 void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
     auto& p = c.P();
-    // A software that runs (a game in Play) tints the row: it can be seen from anywhere in the window.
+    // 動いているソフト (Play 中のゲーム) は行に色を付ける: ウィンドウのどこからでも分かる。
     const bool running = Active().software && Active().software->Running();
     w::DrawBar(c, r, running ? theme::RunningBar() : theme::Bg);
     w::Separator(c, r.x, r.Bottom() - 1, r.w);
     if (!workspaces_[0]->type) {
-        // No plugin provides a "software", so there are no tabs to show.
+        // "software" を出すプラグインがないので、表示するタブがない。
         p.Text(r.Inset(16, 0, 16, 0), Tr(L"ソフトはまだありません — プラグインを追加すると、ここにソフト (ゲーム・イラスト・作曲 …) のタブが並びます"),
                Style(12, theme::TextFaint));
         return;
@@ -1137,7 +1138,7 @@ void EditorScreen::DrawSoftTabs(ui::Context& c, Rect r) {
         if (b.clicked) SwitchSoftware(i);
         x += wdt + 4;
     }
-    // The software's own controls (a game's ▶ Play ■), in the room right of the tabs.
+    // ソフト自身の操作 (ゲームの ▶ Play ■) は、タブの右の空きに出す。
     if (Active().software && r.Right() - x > 40) {
         c.PushId("toolbar");
         Active().software->DrawToolbar(c, {x + 8, r.y, r.Right() - x - 16, r.h});
@@ -1161,14 +1162,14 @@ void EditorScreen::DrawHierarchy(ui::Context& c, Rect r) {
 void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     Workspace& ws = Active();
     const Inspectable& target = ws.inspected;
-    // The blocks as they are now (a component may have come back or gone with an undo).
+    // 今のブロック (Undo で部品が戻ったり無くなったりしているかもしれない)。
     const std::vector<InspectBlock> blocks = target.blocks ? target.blocks() : std::vector<InspectBlock>{};
     std::vector<inspector::Block> shown;
-    std::vector<size_t> source;  // shown[i] is blocks[source[i]]
+    std::vector<size_t> source;  // shown[i] は blocks[source[i]]
     for (size_t i = 0; i < blocks.size(); ++i) {
         const InspectBlock& b = blocks[i];
         const reflect::EditTarget obj = b.type && b.resolve ? b.resolve() : reflect::EditTarget{};
-        if (b.type && !obj.object) continue;  // gone
+        if (b.type && !obj.object) continue;  // 無くなった
         std::vector<const void*> others;
         for (const auto& resolveOther : b.also) {
             if (const reflect::EditTarget o = resolveOther ? resolveOther() : reflect::EditTarget{}; o.object) others.push_back(o.object);
@@ -1189,12 +1190,12 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
     const Rect title = ui::TakeTop(r, 34);
     c.P().Text(title.Inset(12, 0, 12, 0), target.title, Style(14, theme::Text, true));
     w::Separator(c, title.x + 8, title.Bottom() - 1, title.w - 16);
-    // (a choice made in a drop-down arrives a frame later: the list may have changed since)
+    // (ドロップダウンで選んだものは 1 フレーム遅れて届く: その間に一覧が変わったかもしれない)
     const inspector::Refs refs = MakeRefs();
     if (auto edit = inspector::Draw(c, ws.inspectorState, r, shown, target.addLabel, target.addMenu, &refs); edit && edit->block < source.size()) {
-        // Edit = undo entry = unsaved (rule 7): the change is applied by the command, never directly -
-        // except a block that is edited in place (`direct`: a game's copy in Play), whose command is done
-        // at once and kept nowhere.
+        // 編集 = Undo の項目 = 未保存 (憲法 7): 変更はコマンドが適用し、直接は変えない -
+        // ただしその場で編集するブロック (`direct`: Play 中のゲームのコピー) は別で、そのコマンドはすぐ実行し
+        // どこにも残さない。
         const InspectBlock& b = blocks[source[edit->block]];
         auto commit = [&](std::unique_ptr<ICommand> cmd) {
             if (b.direct) {
@@ -1204,12 +1205,12 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
             }
         };
         if (b.readOnly) {
-            // shown only (a drop-down chosen just before Play started): nothing changes
+            // 表示だけ (Play が始まる直前に選んだドロップダウン): 何も変わらない
         } else if (b.onEdit) {
             b.onEdit({std::move(edit->path), std::move(edit->before), std::move(edit->after), std::move(edit->label), edit->merge});
         } else if (!b.also.empty()) {
-            // The same change to every selected one, as one entry. Every target gets a command (even one
-            // that has the value already), so the typing of one field joins command by command.
+            // 選択中のすべてに同じ変更を、1 つの項目として。どの対象にもコマンドを作る (すでに同じ値の
+            // ものにも)。こうして 1 つのフィールドの入力が、コマンドごとにつながる。
             auto group = std::make_unique<CommandGroup>(edit->label, edit->merge);
             std::vector<std::function<reflect::EditTarget()>> targets{b.resolve};
             targets.insert(targets.end(), b.also.begin(), b.also.end());
@@ -1221,7 +1222,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
                 json::Value before = reflect::SaveField(*pt.field, pt.owner, pt.unknowns);
                 json::Value after = edit->after;
                 if (edit->component >= 0 && before.IsArray() && after.IsArray()) {
-                    // A vector: only the number typed; the others keep their own.
+                    // ベクター: 打った数だけ。ほかの成分はそれぞれの値のまま。
                     after = before;
                     const size_t i = static_cast<size_t>(edit->component);
                     if (i < after.Items().size() && i < edit->after.Items().size()) after.At(i) = edit->after.At(i);
@@ -1234,8 +1235,8 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
             commit(std::make_unique<reflect::SetFieldCommand>(*b.type, std::move(edit->path), std::move(edit->before), std::move(edit->after),
                                                               b.resolve, std::move(edit->label), edit->merge));
         }
-        // The change came after this frame's fields (and the panels before them) were drawn: once more
-        // with it (2026-11-18 on screen: a drop-down's choice in シーン「Main」 showed only when the mouse moved).
+        // 変更が、このフレームのフィールド (とその前のパネル) を描いた後に来た: それを反映してもう 1 回
+        // (2026-11-18 画面で: シーン「Main」でドロップダウンの選択が、マウスを動かすまで表示されなかった)。
         c.RequestRedraw();
     }
 }
@@ -1260,7 +1261,7 @@ void EditorScreen::DrawConsole(ui::Context& c, Rect r) {
     const uint64_t last = entries.empty() ? 0 : entries.back().seq;
     auto seen = consoleSeenSeq_.try_emplace(&c, ~0ull).first;
     if (last != seen->second) {
-        w::ScrollToEnd(c, "console");  // follow new output (and start at the end in a new window)
+        w::ScrollToEnd(c, "console");  // 新しい出力を追う (新しいウィンドウでは最後から始める)
         seen->second = last;
     }
     const Rect view = r.Inset(0, 2, 0, 2);
@@ -1319,14 +1320,14 @@ void EditorScreen::DrawModal(ui::Context& c) {
         if (w::Button(c, "uc.cancel", cancel, Tr(L"キャンセル")) || c.KeyPressed(ui::Key::Escape)) {
             modal_ = Modal::None;
             pendingClose_ = CloseAction::None;
-            EndShutdownBlock();  // Windows' shutdown (if it was one) is cancelled
+            EndShutdownBlock();  // Windows のシャットダウン (そうだったなら) は取り消された
         } else if (w::Button(c, "uc.discard", discard, Tr(L"保存せずに閉じる"))) {
             modal_ = Modal::None;
             log::Warn("保存せずに閉じました: {}", project_.Name());
             FinishClose(pendingClose_);
         } else if (w::Button(c, "uc.save", save, Tr(L"保存して閉じる"), w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
             modal_ = Modal::None;
-            if (Save()) FinishClose(pendingClose_);  // on failure Save() shows the error and the editor stays open
+            if (Save()) FinishClose(pendingClose_);  // 失敗したら Save() がエラーを出し、エディターは開いたまま
         }
         return;
     }
@@ -1356,14 +1357,14 @@ void EditorScreen::DrawModal(ui::Context& c) {
             modal_ = Modal::None;
         } else if (w::Button(c, "ip.ok", ok, Tr(L"保存して開き直す"), w::ButtonKind::Primary) || c.KeyPressed(ui::Key::Enter)) {
             modal_ = Modal::None;
-            // A failed save shows its error and the editor stays as it is (nothing is lost).
+            // 保存に失敗するとエラーを出し、エディターはそのまま (何も失われない)。
             if (Save()) app_.RequestInstallAndReopen(installPlan_, project_.file);
         }
         return;
     }
 
     if (modal_ == Modal::Ask) {
-        // A software's question (SoftwareHost::Ask): the answer goes back after the dialog is gone.
+        // ソフトからの質問 (SoftwareHost::Ask): 答えはダイアログが消えた後に返す。
         const Rect cr = w::BeginModal(c, 600, 220, askTitle_);
         p.Text({cr.x, cr.y, cr.w, cr.h - 48}, modalText_, body);
         int answer = -2;

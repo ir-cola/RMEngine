@@ -10,7 +10,7 @@ namespace rm::editor {
 
 namespace {
 
-// Never destroyed: a work thread that was let go (detached) may still post while the app exits.
+// 決して壊さない: 手放した (detach した) 作業スレッドが、アプリの終了中にまだ post するかもしれない。
 struct Queue {
     std::mutex mutex;
     std::vector<std::function<void()>> posted;
@@ -31,8 +31,8 @@ void PostToUi(std::function<void()> fn) {
         std::lock_guard lock(q.mutex);
         q.posted.push_back(std::move(fn));
     }
-    // Wakes GetMessage in App's loop (which then runs RunPostedToUi). A modal loop (a window being
-    // dragged) may drop this message: the work still runs with the next message.
+    // App のループの GetMessage を起こす (そのあと RunPostedToUi が走る)。モーダルなループ
+    // (ウィンドウのドラッグ) はこのメッセージを落とすかもしれない。作業は次のメッセージで走る。
     if (const DWORD ui = g_uiThread.load()) PostThreadMessageW(ui, WM_NULL, 0, 0);
 }
 
@@ -41,7 +41,7 @@ UiWake::UiWake(std::function<void()> onUi) : onUi_(std::make_shared<std::functio
 std::function<void()> UiWake::Signal() const {
     return [weak = std::weak_ptr<std::function<void()>>(onUi_)] {
         PostToUi([weak] {
-            if (auto fn = weak.lock()) (*fn)();  // (on the UI thread: it is gone only if destroyed before)
+            if (auto fn = weak.lock()) (*fn)();  // (UI スレッドで: なくなっているのは、その前に壊された場合だけ)
         });
     };
 }
@@ -56,8 +56,8 @@ void RunPostedToUi() {
     for (auto& fn : list) fn();
 }
 
-// Shared by the Worker and everything it posted: `run` is the Run whose posts still count. Only the
-// UI thread reads or writes it (posts are checked when they run, on the UI thread), so no lock.
+// Worker と、それが post した物すべてで共有する: `run` は、post がまだ有効な Run。UI スレッドだけが
+// 読み書きする (post は走るときに、UI スレッドで確かめる) ので、ロックはない。
 struct Worker::State {
     uint64_t run = 0;
     bool busy = false;
@@ -67,13 +67,13 @@ Worker::Worker() : state_(std::make_shared<State>()) {}
 
 Worker::~Worker() {
     Stop();
-    // Not waited for: a read of an unreachable network drive can take seconds, and closing a screen
-    // must not. The work holds only its own copies (never the screen), and what it posts is dropped.
+    // 待たない: 届かないネットワークドライブの読み込みは何秒もかかることがあり、画面を閉じるのが
+    // それを待ってはいけない。作業は自分のコピーだけを持ち (画面は持たない)、post した物は捨てられる。
     if (thread_.joinable()) thread_.detach();
 }
 
 void Worker::Stop() {
-    ++state_->run;  // what the old work still posts is dropped
+    ++state_->run;  // 古い作業がまだ post する物は捨てられる
     state_->busy = false;
     if (thread_.joinable()) thread_.request_stop();
 }
@@ -81,7 +81,7 @@ void Worker::Stop() {
 void Worker::Run(Work work) {
     Stop();
     if (thread_.joinable()) {
-        // The previous work was asked to stop: let it end on its own (it only posts into a dropped run).
+        // 前の作業は止めるよう頼んである: 自分で終わらせる (捨てられた run に post するだけ)。
         thread_.detach();
     }
     const uint64_t run = ++state_->run;
@@ -90,7 +90,7 @@ void Worker::Run(Work work) {
     Post post = [weak, run](std::function<void()> fn) {
         PostToUi([weak, run, fn = std::move(fn)] {
             const auto st = weak.lock();
-            if (!st || st->run != run) return;  // a newer Run, Stop, or the Worker is gone
+            if (!st || st->run != run) return;  // もっと新しい Run、Stop、または Worker がなくなった
             fn();
         });
     };

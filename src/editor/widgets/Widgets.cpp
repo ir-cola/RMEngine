@@ -18,14 +18,14 @@ using ui::Color;
 using ui::Rect;
 
 // ---------------------------------------------------------------------------
-// Surfaces, icons, rows, tabs - the one drawing of each
+// 面・アイコン・行・タブ: それぞれの描き方は 1 本だけ
 // ---------------------------------------------------------------------------
 
 namespace {
 
 void FillGradient(ui::Painter& p, const Rect& r, float radius, const theme::Gradient& g) { p.FillRoundRectGradient(r, radius, g.top, g.bottom); }
 
-// The light catching the top edge of a raised surface.
+// 盛り上がった面の上の縁に当たる光。
 void TopLight(ui::Painter& p, const Rect& r, float radius, Color c) {
     const float inset = std::max(radius, 2.f);
     if (r.w > inset * 2) p.FillRect({r.x + inset, r.y + 1, r.w - inset * 2, 1}, c);
@@ -84,7 +84,7 @@ void DrawSurface(ui::Context& c, const Rect& r, Surface s, float radius) {
 
 namespace {
 
-// Which windows are panel windows of their own (DrawBackdrop notes it; their picture is lighter).
+// どのウィンドウが独立したパネルのウィンドウか (DrawBackdrop が控える。その絵は明るめ)。
 std::unordered_map<const ui::Context*, bool>& FloatingWindows() {
     static std::unordered_map<const ui::Context*, bool> floating;
     return floating;
@@ -110,26 +110,26 @@ void DrawBackdropOn(ui::Context& c, const Rect& r, float corner, bool panelThing
 void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
     if (r.w <= 0 || r.h <= 0) return;
     auto& p = c.P();
-    auto grow = [](float v) { return v > 0 ? v + 1.f : 0.f; };  // the outer line's corners: the same curve, 1px out
+    auto grow = [](float v) { return v > 0 ? v + 1.f : 0.f; };  // 外の線の角: 同じ曲線を 1px 外に
     const theme::Gradient fill = theme::Gentle(theme::Panel);
     const theme::Gradient inner = theme::EdgeInner();
     const Color outer = theme::EdgeOuter();
     p.StrokeRoundRectGradient(r.Inset(-1), {grow(k.tl), grow(k.tr), grow(k.br), grow(k.bl)}, outer, outer);
     p.FillRoundRectGradient(r, k, fill.top, fill.bottom);
-    DrawBackdropOn(c, r, std::max(k.bl, k.br));  // the theme's picture, under the content
+    DrawBackdropOn(c, r, std::max(k.bl, k.br));  // テーマの絵。内容の下に描く
     p.StrokeRoundRectGradient(r, k, inner.top, inner.bottom);
 }
 
 void DrawBar(ui::Context& c, const Rect& r, Color base) {
     const theme::Gradient g = theme::Gentle(base);
     c.P().FillRectGradient(r, g.top, g.bottom);
-    DrawBackdropOn(c, r, 0, false);  // the picture only: no snow piled on a thin strip
+    DrawBackdropOn(c, r, 0, false);  // 絵だけ。細い帯には雪を積もらせない
 }
 
 void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
     auto& p = c.P();
     const float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
-    const float s = std::clamp(std::min(r.w, r.h) * 0.22f, 2.5f, 5.f);  // half the size of the mark
+    const float s = std::clamp(std::min(r.w, r.h) * 0.22f, 2.5f, 5.f);  // 印の半分の大きさ
     constexpr float kW = 1.6f;
     switch (icon) {
         case Icon::Close:
@@ -158,7 +158,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.Line(cx + s * 0.5f, cy - s, cx - s * 0.5f, cy, color, kW);
             p.Line(cx - s * 0.5f, cy, cx + s * 0.5f, cy + s, color, kW);
             break;
-        case Icon::Dash:  // "some yes, some no" (a check box of things edited together)
+        case Icon::Dash:  // 「一部はいい、一部はだめ」 (まとめて編集しているもののチェックボックス)
             p.Line(cx - s, cy, cx + s, cy, color, 2.f);
             break;
         case Icon::Check:
@@ -169,7 +169,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.Line(cx - s, cy, cx + s, cy, color, kW);
             p.Line(cx, cy - s, cx, cy + s, color, kW);
             break;
-        case Icon::Grip:  // something to hold and drag: three short lines
+        case Icon::Grip:  // つかんでドラッグするもの: 短い線が 3 本
             for (int i = -1; i <= 1; ++i) p.Line(cx - s, cy + static_cast<float>(i) * s * 0.75f, cx + s, cy + static_cast<float>(i) * s * 0.75f, color, 1.3f);
             break;
         case Icon::Object: {
@@ -177,7 +177,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.StrokeRoundRect({cx - rr, cy - rr, rr * 2, rr * 2}, rr, color, 1.3f);
             break;
         }
-        case Icon::Play: {  // a triangle pointing right
+        case Icon::Play: {  // 右向きの三角
             ui::Path tri;
             tri.Begin({cx - s * 0.8f, cy - s * 1.1f});
             tri.Line({cx + s * 1.1f, cy});
@@ -185,11 +185,11 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.FillPath(tri, color);
             break;
         }
-        case Icon::Pause:  // two bars
+        case Icon::Pause:  // 2 本の棒
             p.FillRect({cx - s * 0.95f, cy - s * 1.05f, s * 0.7f, s * 2.1f}, color);
             p.FillRect({cx + s * 0.25f, cy - s * 1.05f, s * 0.7f, s * 2.1f}, color);
             break;
-        case Icon::Step: {  // a smaller triangle and a bar: one frame on
+        case Icon::Step: {  // 小さめの三角と棒: 1 フレーム進める
             ui::Path tri;
             tri.Begin({cx - s * 1.0f, cy - s * 1.0f});
             tri.Line({cx + s * 0.5f, cy});
@@ -198,11 +198,11 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             p.FillRect({cx + s * 0.6f, cy - s * 1.0f, s * 0.5f, s * 2.0f}, color);
             break;
         }
-        case Icon::Stop:  // a square
+        case Icon::Stop:  // 四角
             p.FillRect({cx - s * 0.9f, cy - s * 0.9f, s * 1.8f, s * 1.8f}, color);
             break;
         case Icon::Folder: {
-            // A folder from the side: its body and the tab on its upper left.
+            // 横から見たフォルダー: 本体と、左上のタブ。
             const float h = std::min(r.w, r.h) * 0.34f;
             const float x0 = cx - h * 1.1f, x1 = cx + h * 1.1f, y0 = cy - h * 0.55f, y1 = cy + h * 0.8f;
             p.StrokeRoundRect({x0, y0, x1 - x0, y1 - y0}, 1.5f, color, 1.3f);
@@ -213,7 +213,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
         }
         case Icon::File:
         case Icon::Text: {
-            // A page with its upper right corner folded (+ lines of text).
+            // 右上の角が折れたページ (+ 文字の行)。
             const float h = std::min(r.w, r.h) * 0.36f;
             const float x0 = cx - h * 0.72f, x1 = cx + h * 0.72f, y0 = cy - h, y1 = cy + h, f = h * 0.5f;
             p.Line(x0, y0, x1 - f, y0, color, 1.3f);
@@ -232,7 +232,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Image: {
-            // A picture: its frame, a mountain and the sun.
+            // 絵: 枠と、山と、太陽。
             const float h = std::min(r.w, r.h) * 0.36f;
             const float x0 = cx - h * 1.05f, x1 = cx + h * 1.05f, y0 = cy - h * 0.8f, y1 = cy + h * 0.8f;
             p.StrokeRoundRect({x0, y0, x1 - x0, y1 - y0}, 1.5f, color, 1.3f);
@@ -244,7 +244,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Audio: {
-            // A note: its head, stem and flag.
+            // 音符: 頭と、棒と、旗。
             const float h = std::min(r.w, r.h) * 0.36f;
             const float sx = cx + h * 0.3f;
             p.FillCircle(cx - h * 0.05f, cy + h * 0.62f, h * 0.36f, color);
@@ -253,7 +253,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Font: {
-            // The letter A.
+            // 文字の A。
             const float h = std::min(r.w, r.h) * 0.36f;
             p.Line(cx - h * 0.75f, cy + h, cx, cy - h, color, 1.4f);
             p.Line(cx, cy - h, cx + h * 0.75f, cy + h, color, 1.4f);
@@ -261,7 +261,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Camera: {
-            // A film camera from the side: the body and the lens's cone on its right.
+            // 横から見たフィルム用カメラ: 本体と、その右のレンズの円錐。
             const float h = std::min(r.w, r.h) * 0.36f;
             const float bx = cx - h * 1.0f, bw = h * 1.25f, by = cy - h * 0.55f, bh = h * 1.1f;
             p.StrokeRoundRect({bx, by, bw, bh}, h * 0.15f, color, 1.3f);
@@ -274,7 +274,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Light: {
-            // A sun: a round middle and eight short rays.
+            // 太陽: 丸い中心と、短い光が 8 本。
             const float h = std::min(r.w, r.h) * 0.38f;
             p.FillCircle(cx, cy, h * 0.42f, color);
             for (int i = 0; i < 8; ++i) {
@@ -285,7 +285,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Point: {
-            // A place and nothing else: a ring, a dot in it and four short ticks around (a sight).
+            // 場所だけで他には何もない印: 輪と、その中の点と、まわりの短い目盛り 4 つ (照準)。
             const float h = std::min(r.w, r.h) * 0.38f, ring = h * 0.62f;
             p.StrokeRoundRect({cx - ring, cy - ring, ring * 2, ring * 2}, ring, color, 1.3f);
             p.FillCircle(cx, cy, h * 0.16f, color);
@@ -296,7 +296,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Scene: {
-            // A scene: two layers (flat squares seen at a slant), one over the other.
+            // シーン: 2 枚の層 (斜めから見た平らな四角) が、重なっている。
             const float h = std::min(r.w, r.h) * 0.36f;
             for (const float dy : {-h * 0.3f, h * 0.3f}) {
                 const float x[4] = {cx, cx + h, cx, cx - h};
@@ -306,7 +306,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Effect: {
-            // A sparkle: a big four-pointed star (its sides pulled in) and a small one at its upper right.
+            // きらめき: 大きな 4 つ角の星 (辺がへこんでいる) と、右上の小さな星。
             auto star = [&](float sx, float sy, float big, float waist) {
                 ui::Path s;
                 s.Begin({sx, sy - big});
@@ -325,7 +325,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Square: {
-            // A thing on a plane: a square, a little turned (not a box of the UI).
+            // 平面の上のもの: 少し回した四角 (UI の箱ではない)。
             const float h = std::min(r.w, r.h) * 0.36f;
             const float x[4] = {cx, cx + h, cx, cx - h};
             const float y[4] = {cy - h, cy, cy + h, cy};
@@ -334,7 +334,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         }
         case Icon::Cube: {
-            // Seen from above a corner: the outline (a hexagon) and the three edges of the near corner.
+            // 角の上から見た形: 輪郭 (六角形) と、手前の角の 3 本の辺。
             const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;
             const float x[6] = {cx, cx + k, cx + k, cx, cx - k, cx - k};
             const float y[6] = {cy - h, cy - h * 0.5f, cy + h * 0.5f, cy + h, cy + h * 0.5f, cy - h * 0.5f};
@@ -368,7 +368,7 @@ bool Button(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_
             break;
     }
     if (!enabled) {
-        // A disabled button is the same box, faded over with the background.
+        // 無効なボタンは同じ箱で、背景と混ぜて薄くしたもの。
         p.FillRoundRect(r, theme::Radius, theme::Bg.Alpha(0.55f));
         fg = theme::TextFaint;
     }
@@ -443,7 +443,7 @@ bool FolderTab(ui::Context& c, std::string_view idStr, const Rect& r, std::wstri
     auto& p = c.P();
     const ui::Corners top{radius, radius, 0, 0};
     if (selected) {
-        // The sheet's own fill, reaching a little down into it (so no line shows where they meet).
+        // シート自身の塗りを、少し下まで伸ばす (つなぎ目に線が出ないように)。
         const theme::Gradient fill = theme::Gentle(theme::Panel);
         const Rect joined{r.x, r.y, r.w, r.h + 2};
         p.StrokeRoundRectGradient(joined.Inset(-1, -1, -1, 0), {radius + 1, radius + 1, 0, 0}, theme::EdgeOuter(), theme::EdgeOuter());
@@ -520,7 +520,7 @@ void DrawRow(ui::Context& c, const Rect& r, RowLook look) {
         p.FillRoundRectGradient(r, radius, g.top, g.bottom);
         TopLight(p, r, radius, theme::Highlight());
         if (look.focused) {
-            // The accent bar: on the edge of a flat row, inside a rounded one.
+            // アクセントの棒: 平らな行では端に、角の丸い行では内側に。
             const theme::Gradient a = theme::AccentOf(theme::Accent);
             const Rect bar = look.flat ? Rect{r.x, r.y, 3, r.h} : Rect{r.x, r.y + 4, 3, r.h - 8};
             p.FillRoundRectGradient(bar, look.flat ? 0.f : 1.5f, a.top, a.bottom);
@@ -543,8 +543,8 @@ ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view idStr, con
 }
 
 namespace {
-// A tiny editor window in a palette's own colors (not the palette in use): title bar, sidebar with
-// a selected item, a panel with lines of text and an accent button.
+// パレット自身の色で描いた小さなエディターのウィンドウ (使用中のパレットではない): タイトルバー、
+// 選んだ項目のあるサイドバー、文字の行とアクセントのボタンのあるパネル。
 void ThemePreview(ui::Painter& p, const Rect& r, const theme::Palette& k) {
     constexpr float R = 5.f, barH = 12.f;
     p.FillRoundRect(r, R, k.bg);
@@ -583,7 +583,7 @@ ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view idStr, cons
     if (palette) {
         ThemePreview(p, pr, *palette);
     } else {
-        // Follows Windows: dark on the left, light on the right.
+        // Windows に従う: 左が暗く、右が明るい。
         const float half = std::round(pr.w * 0.5f);
         p.PushClip({pr.x, pr.y, half, pr.h});
         ThemePreview(p, pr, theme::kDark);
@@ -693,12 +693,12 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
     if (hovered) c.SetCursor(ui::Cursor::IBeam);
     bool focused = c.Focused() == id;
     if (focused && (!c.InputEnabled() || !enabled)) {
-        c.ClearFocus();  // an overlay opened above this field
+        c.ClearFocus();  // このフィールドの上に開いたオーバーレイ
         focused = false;
     }
 
-    // 1) Typed text first: a click that moves the focus away in this same frame must not
-    //    drop what was typed (or committed by the IME) just before it.
+    // 1) 入力した文字が先: 同じフレームでフォーカスを外す
+    //    クリックがあっても、その直前に入力した (または IME が確定した) 文字を落とさない。
     bool changed = false;
     if (focused) {
         auto& e = c.FocusedEdit();
@@ -742,10 +742,10 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
         }
     }
 
-    // 2) Clicks: focus / caret placement, or losing the focus. While the left button is held after a
-    //    press in the field, the selection follows the mouse (from where it was pressed).
-    //    drag: 0 = none, 1 = selecting, 2 = pressed while entering the field (select all on release
-    //    unless the mouse moved: selectAllOnFocus).
+    // 2) クリック: フォーカス / キャレットの位置、またはフォーカスを外す。フィールドで押した後に
+    //    左ボタンを押している間、選択はマウスに付いていく (押した所から)。
+    //    drag: 0 = なし、1 = 選択中、2 = フィールドに入るときに押した (マウスが動かなければ
+    //    離したときに全部選ぶ: selectAllOnFocus)。
     float& drag = c.FloatState(id ^ 0xD1A6D1A6D1A6D1A6ull);
     float& pressX = c.FloatState(id ^ 0x9E55E59E55E59E55ull);
     if (hovered && c.MousePressed()) {
@@ -759,7 +759,7 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
         if (in.doubleClicked) e.SelectAll();
         drag = entering && selectAllOnFocus && !in.shift && !in.doubleClicked ? 2.f : in.doubleClicked ? 0.f : 1.f;
         pressX = in.mouseX;
-        if (drag == 2.f) e.SelectAll();  // shown at once; a drag replaces it with what it covers
+        if (drag == 2.f) e.SelectAll();  // すぐ表示する。ドラッグすると、覆った範囲に置き換わる
         c.ResetCaretBlink();
     } else if (focused && !c.FocusIsNew() && (in.pressed[0] || in.pressed[1]) && !r.Contains(in.mouseX, in.mouseY)) {
         c.ClearFocus();
@@ -768,7 +768,7 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
     } else if (focused && drag != 0 && in.down[0]) {
         if (drag == 1.f || std::fabs(in.mouseX - pressX) >= 3.f) {
             auto& e = c.FocusedEdit();
-            if (drag == 2.f) e.SetCaret(p.HitTest(e.Text(), pressX - inner.x + scroll, fs), false);  // the drag starts where it was pressed
+            if (drag == 2.f) e.SetCaret(p.HitTest(e.Text(), pressX - inner.x + scroll, fs), false);  // ドラッグは押した所から始まる
             drag = 1.f;
             e.SetCaret(p.HitTest(e.Text(), in.mouseX - inner.x + scroll, fs), true);
             c.ResetCaretBlink();
@@ -776,7 +776,7 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
     }
     if (drag != 0 && (!in.down[0] || !focused)) drag = 0;
 
-    // 3) What to draw.
+    // 3) 何を描くか。
     std::wstring display;
     size_t caret = 0, selA = 0, selB = 0, compStart = 0, compLen = 0;
     if (focused) {
@@ -797,13 +797,13 @@ bool TextField(ui::Context& c, std::string_view idStr, const Rect& r, std::strin
         display = Utf8ToWide(value);
     }
 
-    // Frame
-    if (focused) p.StrokeRoundRect(r.Inset(-2), theme::Radius + 2, theme::Accent.Alpha(0.25f), 2.f);  // a soft ring
+    // 枠
+    if (focused) p.StrokeRoundRect(r.Inset(-2), theme::Radius + 2, theme::Accent.Alpha(0.25f), 2.f);  // やわらかい輪
     DrawSurface(c, r, Surface::Sunken);
     if (focused || hovered) p.StrokeRoundRect(r, theme::Radius, focused ? theme::Accent : theme::BorderHover);
     if (!enabled) p.FillRoundRect(r, theme::Radius, theme::Bg.Alpha(0.45f));
 
-    // Keep the caret visible.
+    // キャレットが見えるようにする。
     const float caretX = p.CaretX(display, caret, fs);
     const float textW = p.TextWidth(display, fs);
     if (focused) {
@@ -902,7 +902,7 @@ bool Switch(ui::Context& c, std::string_view idStr, float x, float y, bool& on, 
     if (b.hovered) c.SetCursor(ui::Cursor::Hand);
     if (b.clicked) on = !on;
 
-    // Where the knob is: 0 = left (off) .. 1 = right (on). It slides there over a few frames.
+    // つまみの位置: 0 = 左 (オフ) .. 1 = 右 (オン)。数フレームかけてそこへ滑る。
     float& pos = c.FloatState(id ^ 0x5717C85717C85717ull, on ? 1.f : 0.f);
     const float target = on ? 1.f : 0.f;
     if (pos != target) {
@@ -922,12 +922,12 @@ bool Switch(ui::Context& c, std::string_view idStr, float x, float y, bool& on, 
     }
     const Rect track{cx, y, kTrackW, kSwitchH};
     const float r = kSwitchH * 0.5f;
-    // The track turns from grey to the accent as the knob goes right.
+    // つまみが右へ行くにつれて、溝が灰色からアクセントの色に変わる。
     p.FillRoundRect(track, r, Mix(theme::SwitchOff(), b.hovered ? theme::AccentHover : theme::Accent, pos));
     if (pos < 1.f) p.StrokeRoundRect(track, r, theme::Border.Alpha(1.f - pos));
     const float knobR = r - 2.f;
     const float kx = track.x + r + (track.w - 2.f * r) * pos;
-    p.FillCircle(kx, track.y + r + 0.8f, knobR, theme::Shadow.Alpha(0.35f));  // a soft shade under it
+    p.FillCircle(kx, track.y + r + 0.8f, knobR, theme::Shadow.Alpha(0.35f));  // その下のやわらかい影
     p.FillCircle(kx, track.y + r, knobR, theme::SwitchKnob());
     cx += kTrackW + kLabelGap;
     if (!onLabel.empty()) {
@@ -971,7 +971,7 @@ bool Slider(ui::Context& c, std::string_view idStr, const Rect& r, float& value,
     const float kx = x0 + (x1 - x0) * t;
     p.FillRoundRect({x0, cy - 2, x1 - x0, 4}, 2, theme::SwitchOff());
     p.FillRoundRect({x0, cy - 2, kx - x0, 4}, 2, b.hovered || b.held ? theme::AccentHover : theme::Accent);
-    p.FillCircle(kx, cy + 0.8f, knobR, theme::Shadow.Alpha(0.35f));  // a soft shade under it
+    p.FillCircle(kx, cy + 0.8f, knobR, theme::Shadow.Alpha(0.35f));  // その下のやわらかい影
     p.FillCircle(kx, cy, knobR, theme::SwitchKnob());
     p.FillCircle(kx, cy, knobR - 3.5f, b.held ? theme::Accent : theme::SwitchOff());
     return changed;
@@ -1042,7 +1042,7 @@ Rect MenuRect(const ui::Context& c, const Popup& popup, const std::vector<MenuIt
     float h = kPad * 2;
     for (const auto& it : items) h += it.separator ? kSepH : kItemH;
     const Rect& vp = c.Viewport();
-    h = std::min(h, std::max(kPad * 2 + kItemH, vp.h - 8));  // (taller than the window: it scrolls - MenuPopup)
+    h = std::min(h, std::max(kPad * 2 + kItemH, vp.h - 8));  // (ウィンドウより高い: スクロールする - MenuPopup)
     const float x = std::clamp(popup.x, vp.x + 4, std::max(vp.x + 4, vp.Right() - width - 4));
     const float y = std::clamp(popup.y, vp.y + 4, std::max(vp.y + 4, vp.Bottom() - h - 4));
     return {x, y, width, h};
@@ -1050,16 +1050,16 @@ Rect MenuRect(const ui::Context& c, const Popup& popup, const std::vector<MenuIt
 
 namespace {
 
-// The rows of one menu in `box` (drawn, scrolled when taller than the window). Returns the row clicked
-// (not on the frame it opened: `fresh`), -1 if none. `hovered`: the row under the mouse (-1);
-// `openRow`: a row shown as if under the mouse (its menu is open).
+// `box` の中の 1 つのメニューの行 (描く。ウィンドウより高ければスクロールする)。クリックされた行を
+// 返す (開いたフレームのものは除く: `fresh`)。なければ -1。`hovered`: マウスの下の行 (-1)。
+// `openRow`: マウスの下にあるかのように見せる行 (そのメニューが開いている)。
 int MenuBox(ui::Context& c, const Rect& box, const std::vector<MenuItem>& items, bool fresh, int openRow = -1, int* hovered = nullptr) {
     auto& p = c.P();
     DrawSurface(c, box, Surface::Popup, 6.f);
     if (hovered) *hovered = -1;
 
     int clicked = -1;
-    // A list taller than the window (MenuRect keeps the box inside it): its rows scroll (the wheel, the bar).
+    // ウィンドウより高いリスト (MenuRect が箱をその中に収める): 行はスクロールする (ホイール、バー)。
     float content = 0;
     for (const auto& it : items) content += it.separator ? kSepH : kItemH;
     const Rect view{box.x, box.y + kPad, box.w, box.h - kPad * 2};
@@ -1076,7 +1076,7 @@ int MenuBox(ui::Context& c, const Rect& box, const std::vector<MenuItem>& items,
             continue;
         }
         const Rect row{box.x + kPad, y, box.w - kPad * 2 - (scrolls ? 10.f : 0.f), kItemH};
-        const bool seen = row.Bottom() > view.y && row.y < view.Bottom();  // (scrolled out: not pressed)
+        const bool seen = row.Bottom() > view.y && row.y < view.Bottom();  // (スクロールで外に出た: 押されない)
         c.PushId(static_cast<uint64_t>(i));
         const auto b = it.enabled && seen ? c.ButtonBehavior(c.MakeId("item"), row) : ui::Context::ButtonResult{};
         c.PopId();
@@ -1094,8 +1094,8 @@ int MenuBox(ui::Context& c, const Rect& box, const std::vector<MenuItem>& items,
             ts.color = theme::TextFaint;
             p.Text(row.Inset(10, 0, 10, 0), it.shortcut, ts);
         }
-        // (not on the frame it opened: a quick click or a touchpad tap - press and release in one frame -
-        // would otherwise open it and pick the item that came under the mouse with the same release)
+        // (開いたフレームのものは除く: 素早いクリックやタッチパッドのタップ - 1 フレームで押して離す -
+        // だと、開いた同じ離しで、マウスの下に来た項目を選んでしまう)
         if (b.clicked && !fresh) clicked = static_cast<int>(i);
         y += kItemH;
     }
@@ -1181,7 +1181,7 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
         items.reserve(list->size());
         for (const Action& a : *list) items.push_back({a.label, a.folder, a.separator});
 
-        // The menus open now: the first, then one for each folder of `sub` (追加, 追加/3D オブジェクト ...).
+        // 今開いているメニュー: 最初のものと、`sub` の各フォルダーの分 (追加, 追加/3D オブジェクト ...)。
         struct Level {
             std::wstring folder;
             std::vector<MenuLevelRow> rows;
@@ -1215,12 +1215,12 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
             const size_t slash = pop.sub.find(L'/', start);
             const size_t end = slash == std::wstring::npos ? pop.sub.size() : slash;
             Level l = build(pop.sub.substr(0, end));
-            if (l.rows.empty()) break;  // (a folder that is not there any more)
+            if (l.rows.empty()) break;  // (もうないフォルダー)
             levels.push_back(std::move(l));
             start = end + 1;
         }
-        // Where each is: the first where it was opened; the next beside its folder's row in the one
-        // before (on the left when there is no room on the right). Kept inside the window (MenuRect).
+        // それぞれの位置: 最初のものは開いた所。次のものは、前のメニューのフォルダーの行の横
+        // (右に場所がなければ左)。ウィンドウの中に収める (MenuRect)。
         Popup at;
         at.x = pop.x;
         at.y = pop.y;
@@ -1228,7 +1228,7 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
             Level& l = levels[k];
             if (k > 0) {
                 const Level& before = levels[k - 1];
-                float y = before.box.y + kPad;  // (its rows as MenuBox draws them, unscrolled)
+                float y = before.box.y + kPad;  // (MenuBox が描くままの行。スクロールしていない)
                 at.y = before.box.y;
                 for (size_t i = 0; i < before.rows.size(); ++i) {
                     if (before.rows[i].isFolder && before.rows[i].path == l.folder) at.y = y - kPad;
@@ -1249,7 +1249,7 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
             return;
         }
         if (c.KeyPressed(ui::Key::Escape)) {
-            // The last menu opened closes (the first: all of them).
+            // 最後に開いたメニューが閉じる (最初のメニューなら、全部)。
             if (levels.size() <= 1) {
                 pop.open = false;
             } else {
@@ -1275,7 +1275,7 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
             int hovered = -1;
             const int clicked = MenuBox(c, l.box, l.shown, fresh, openRow, &hovered);
             c.PopId();
-            // The mouse on a row: a folder's menu opens beside it; another row closes the menus after this one.
+            // 行の上のマウス: フォルダーのメニューはその横に開く。別の行なら、これより後のメニューを閉じる。
             if (hovered >= 0) {
                 const MenuLevelRow& r = l.rows[static_cast<size_t>(hovered)];
                 sub = r.isFolder ? r.path : l.folder;
@@ -1297,7 +1297,7 @@ void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions
         if (picked >= 0 && static_cast<size_t>(picked) < list->size()) {
             pop.open = false;
             c.RequestRedraw();
-            const auto run = (*list)[static_cast<size_t>(picked)].run;  // a copy: running may rebuild the list
+            const auto run = (*list)[static_cast<size_t>(picked)].run;  // コピー: 実行するとリストが作り直されることがある
             if (run) run();
         }
     });
@@ -1374,13 +1374,13 @@ int PickerPopup(ui::Context& c, Popup& popup, std::string_view idStr, std::strin
             ts.h = ui::HAlign::Right;
             p.Text({row.Right() - detailW - 6, row.y, detailW, row.h}, it.detail, ts);
         }
-        // (not on the frame it opened: a quick click or a touchpad tap - press and release in one frame -
-        // would otherwise open it and pick the item that came under the mouse with the same release)
+        // (開いたフレームのものは除く: 素早いクリックやタッチパッドのタップ - 1 フレームで押して離す -
+        // だと、開いた同じ離しで、マウスの下に来た項目を選んでしまう)
         if (b.clicked && !fresh) clicked = static_cast<int>(i);
     }
     EndScroll(c, "list", list, content);
-    // Enter takes the first row found by what was typed. With nothing typed it only closes: the first
-    // row is then just the top of the list ("(なし)" of a reference - Enter to close would clear it).
+    // Enter は、入力した文字で見つかった最初の行を選ぶ。何も入力していなければ閉じるだけ: その
+    // ときの最初の行は単にリストの先頭だから (参照の "(なし)" - Enter で閉じると消えてしまう)。
     if (clicked < 0 && enter && !rows.empty() && !search.empty()) clicked = 0;
     if (clicked < 0 && enter && search.empty()) close();
     if (clicked >= 0) close();
@@ -1401,7 +1401,7 @@ void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::v
         const bool inputWas = c.InputEnabled();
         c.SetInputEnabled(true);
         constexpr float kHeadH = 34.f, kSearchH = 38.f, kRowH = 26.f, kIndent = 16.f;
-        // One height whatever is shown (opening or closing a folder, typing, does not move the panel).
+        // 何を表示していても高さは同じ (フォルダーを開閉したり、入力したりしても、パネルが動かない)。
         const Rect& vp = c.Viewport();
         const float listH = std::clamp(vp.h - 8 - kPad * 2 - kHeadH - kSearchH, kRowH * 3, kRowH * 14);
         const float h = kPad * 2 + kHeadH + kSearchH + listH;
@@ -1419,8 +1419,8 @@ void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::v
         const bool fresh = pop.fresh;
         pop.fresh = false;
         if (fresh) {
-            // Opened: an empty search (what was typed last time would hide most of the list); the
-            // folders stay as they were left, and so does the place it was moved to.
+            // 開いたとき: 検索は空にする (前回入力した文字だとリストの大半が隠れる)。フォルダーは
+            // 閉じたときのままで、動かした位置もそのまま。
             st.search.clear();
             st.dragging = false;
             c.FocusText(searchId, L"", true);
@@ -1434,8 +1434,8 @@ void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::v
         int run = -1;
         if (!closing) {
             DrawSurface(c, box, Surface::Popup, 6.f);
-            // The top: a grip, what it is for, and × to close. Held and dragged, it moves the panel (kept
-            // inside the window: the box above is clamped every frame).
+            // 上の部分: つかむ所と、何のためのものか、閉じる ×。つかんでドラッグすると、パネルが動く
+            // (ウィンドウの中に収める: 上の箱は毎フレーム押し込まれる)。
             const Rect top{box.x, box.y, box.w - kPad - 34, kPad + kHeadH};
             const auto grab = c.ButtonBehavior(c.MakeId("top"), top);
             if (grab.held) {
@@ -1462,9 +1462,9 @@ void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::v
         }
         if (!closing) {
             TextField(c, "search", {box.x + kPad + 2, box.y + kPad + kHeadH, box.w - kPad * 2 - 4, kSearchH - 10}, st.search, Tr(L"検索"));
-            // The rows: folders (open / closed) and the actions in them (BuildPickTree).
+            // 行: フォルダー (開 / 閉) と、その中のアクション (BuildPickTree)。
             std::vector<PickItem> items;
-            std::vector<size_t> index;  // items[i] is actions[index[i]]
+            std::vector<size_t> index;  // items[i] は actions[index[i]]
             for (size_t i = 0; i < list->size(); ++i) {
                 const Action& a = (*list)[i];
                 if (a.separator) continue;
@@ -1512,20 +1512,20 @@ void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::v
                     p.Text({row.Right() - countW - 6, row.y, countW, row.h}, count, cs);
                     if (b.clicked && !fresh) toggle = r.path;
                 } else {
-                    // Inside a folder: under the folder's name (past its ▸ and picture); at the top: at the edge.
+                    // フォルダーの中: フォルダーの名前の下 (▸ と絵の先)。一番上: 端。
                     if (r.depth > 0) x += 40 - kIndent;
                     p.Text({x + 4, row.y, row.Right() - x - 10, row.h}, r.label, ts);
-                    // (not on the frame it opened: a quick click would pick the row that came under the mouse)
+                    // (開いたフレームのものは除く: 素早いクリックだと、下に来た行を選んでしまう)
                     if (b.clicked && !fresh) run = static_cast<int>(index[static_cast<size_t>(r.item)]);
                 }
             }
             EndScroll(c, "list", listR, content);
-            // A folder clicked: opened or closed (while searching, all that hold something found are open).
+            // フォルダーをクリックした: 開閉する (検索中は、見つかったものを含むフォルダーが全部開く)。
             if (!toggle.empty() && search.empty()) {
                 if (!st.open.erase(toggle)) st.open.insert(toggle);
                 c.RequestRedraw();
             }
-            // Enter: the first usable one found by what was typed; with nothing typed it only closes.
+            // Enter: 入力した文字で見つかった、使える最初のもの。何も入力していなければ閉じるだけ。
             if (run < 0 && enter && !search.empty()) {
                 for (const PickTreeRow& r : rows) {
                     if (r.isFolder) continue;
@@ -1542,7 +1542,7 @@ void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::v
         c.PopId();
         c.SetInputEnabled(inputWas);
         if (run >= 0) {
-            const auto fn = (*list)[static_cast<size_t>(run)].run;  // a copy: running may rebuild the list
+            const auto fn = (*list)[static_cast<size_t>(run)].run;  // コピー: 実行するとリストが作り直されることがある
             if (fn) fn();
         }
     });
@@ -1553,7 +1553,7 @@ struct DragState {
     bool active = false;
     DragThing thing;
     bool accepted = false;
-    // Over another window (see SetDragElsewhere): a copy of the thing, kept for that window's frame.
+    // 別のウィンドウの上 (SetDragElsewhere を見る): そのものをコピーして、そのウィンドウのフレームの間持っておく。
     const ui::Context* elsewhere = nullptr;
     float x = 0, y = 0;
     bool released = false;
@@ -1582,23 +1582,23 @@ const DragThing* DraggedThing() { return Drag().active ? &Drag().thing : nullptr
 const DragThing* DropTarget(ui::Context& c, const Rect& r, const std::function<bool(const DragThing&)>& accepts) {
     DragState& d = Drag();
     if (d.elsewhere == &c) {
-        // Dragged in another window, over this one.
+        // 別のウィンドウでドラッグして、これの上に来た。
         const bool over = r.Contains(d.x, d.y) && c.CurrentClip().Contains(d.x, d.y);
         if (!over || (accepts && !accepts(d.elsewhereThing))) return nullptr;
         c.P().StrokeRoundRect(r.Inset(-1), theme::Radius, theme::Accent, 2.f);
         if (!d.released) return nullptr;
         d.released = false;
         d.elsewhere = nullptr;
-        return &d.elsewhereThing;  // valid until the next drag
+        return &d.elsewhereThing;  // 次のドラッグまで有効
     }
     const DragThing* t = DraggedThing();
     const bool released = c.MouseReleased();
-    // (only while the button is held or just let go: a drag whose panel went away leaves nothing behind)
+    // (ボタンを押している間か、離した直後だけ: パネルがなくなったドラッグは何も残さない)
     if (!t || (!c.In().down[0] && !released) || !c.IsHovered(r) || (accepts && !accepts(*t))) return nullptr;
     Drag().accepted = true;
     c.P().StrokeRoundRect(r.Inset(-1), theme::Radius, theme::Accent, 2.f);
     c.RequestRedraw();
-    return released ? t : nullptr;  // let go over it
+    return released ? t : nullptr;  // その上で離した
 }
 
 bool TakeDragAccepted() {
@@ -1635,10 +1635,10 @@ Rect BeginModal(ui::Context& c, float width, float height, std::wstring_view tit
     const Rect box{vp.x + (vp.w - width) * 0.5f, vp.y + (vp.h - height) * 0.5f, width, height};
     p.Shadow(box, 8, theme::Shadow, 28);
     DrawSurface(c, box, Surface::Panel, 8.f);
-    // The title on a raised band, like a window's own title bar.
+    // 盛り上がった帯の上のタイトル。ウィンドウ自身のタイトルバーのよう。
     const theme::Gradient tg = theme::Raised(theme::PanelHeader);
     p.FillRoundRectGradient({box.x + 1, box.y + 1, box.w - 2, 48}, 7.f, tg.top, tg.bottom);
-    p.FillRect({box.x + 1, box.y + 30, box.w - 2, 19}, tg.bottom);  // square bottom corners of the band
+    p.FillRect({box.x + 1, box.y + 30, box.w - 2, 19}, tg.bottom);  // 帯の下の角は四角
     TopLight(p, box, 8.f, theme::Highlight());
     Separator(c, box.x + 1, box.y + 49, box.w - 2);
     ui::TextStyle ts;

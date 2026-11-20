@@ -1,24 +1,24 @@
 #pragma once
-// The editor window for one open project.
+// 1 つのプロジェクトを開いたエディターのウィンドウ。
 //
-// Layout (design doc "body -> software -> panels"):
-//   menu bar                      File / Edit / Window / Plugins / Help
-//   software tabs                 one tab per "software" (game, illustration, music ...) that plugins add
-//   panels of the selected software, docked (editor/dock) - they can also go out into their own windows
-//   status bar
+// レイアウト (設計ドキュメント "body -> software -> panels"):
+//   メニューバー                  File / Edit / Window / Plugins / Help
+//   ソフトのタブ                  プラグインが足す "software" (ゲーム、イラスト、音楽 ...) ごとに 1 つ
+//   選んだソフトのパネル          ドックされている (editor/dock) - 自分のウィンドウに出すこともできる
+//   ステータスバー
 //
-// Each software is a Workspace: its own panels, layout, floating windows and undo history
-// (Ctrl+Z in one software never undoes another's edit). The project has one "unsaved" mark:
-// an edit pushed to any workspace's history sets it. With no software installed, a single
-// workspace shows the core panels alone.
+// ソフトはそれぞれ 1 つの Workspace: 自分のパネル、レイアウト、フローティングウィンドウ、Undo の履歴を持つ
+// (あるソフトの Ctrl+Z が別のソフトの編集を戻すことはない)。プロジェクトの「未保存」の印は 1 つ:
+// どれかのワークスペースの履歴に積まれた編集が、これを立てる。ソフトが 1 つも入っていないときは、
+// ワークスペース 1 つがコアのパネルだけを出す。
 //
-// Closing (title bar X, "Back to Hub", "Quit") always goes through RequestClose,
-// which asks about unsaved changes - one road, never two.
+// 閉じる (タイトルバーの X、"Back to Hub"、"Quit") は必ず RequestClose を通り、
+// 未保存の変更を尋ねる - 道は 1 本で、2 本にはしない。
 //
-// The panel layout is the user's view, not project data: it is not undoable, does not make the
-// project unsaved, and is kept in <project>/UserSettings/Layout.json (one entry per software,
-// plus which software was shown last). Layouts saved under a name are kept there too, per software
-// (Window menu: save / switch / manage - EditorLayouts.cpp).
+// パネルのレイアウトはユーザーの見え方であって、プロジェクトのデータではない: Undo できず、
+// プロジェクトを未保存にせず、<project>/UserSettings/Layout.json に残す (ソフトごとに 1 項目と、
+// 最後にどのソフトを表示していたか)。名前を付けて保存したレイアウトもそこに、ソフトごとに残す
+// (Window メニュー: 保存 / 切り替え / 管理 - EditorLayouts.cpp)。
 
 #include "base/Log.h"
 #include "core/UndoHistory.h"
@@ -49,21 +49,21 @@ public:
     EditorScreen(App& app, Project project);
     ~EditorScreen() override;
     bool Open();
-    // The export check's command line (no window): the first software that exports does it into `outDir`.
+    // 書き出しチェックのコマンドライン (ウィンドウなし): 書き出せる最初のソフトが `outDir` に書き出す。
     bool ExportForCheck(const std::filesystem::path& outDir, std::string* error);
-    // The project's lock (ProjectLockFile), held while this editor is open.
+    // プロジェクトのロック (ProjectLockFile)。このエディターが開いている間持つ。
     void AdoptLock(std::unique_ptr<platform::FileLock> lock) { lock_ = std::move(lock); }
-    void Close() override;  // closes the floating panel windows first
+    void Close() override;  // 先にフローティングのパネルウィンドウを閉じる
     void ShowError(std::wstring message);
-    void OnLookChanged() override;  // the panel windows too
+    void OnLookChanged() override;  // パネルウィンドウも
 
-    // --- Called by the floating panel windows ---
+    // --- フローティングのパネルウィンドウから呼ばれる ---
     void DrawFloating(ui::Context& c, float width, float height, FloatWindow& window);
-    // A thing dragged out of a panel (an asset, an item of the 階層) is over another window of this
-    // editor: that window is told where, so a reference field there takes it (w::SetDragElsewhere).
+    // パネルから引きずり出したもの (アセット、階層の項目) が、このエディターの別のウィンドウの上に来た:
+    // そのウィンドウに場所を伝え、そこの参照フィールドが受け取れるようにする (w::SetDragElsewhere)。
     void ForwardDrag(ui::Context& c, HWND self, float width, float height);
-    // Import settings changed in the インスペクター are written to their .meta once the edit is
-    // finished (AssetLibrary::FlushImports) - asked at the end of every window's frame.
+    // インスペクターで変えた取り込みの設定は、編集が終わってから .meta に書く
+    // (AssetLibrary::FlushImports) - どのウィンドウもフレームの終わりに呼ぶ。
     void FlushAssetEdits(const ui::Context& c);
     void CloseFloatingWindow(uint32_t floatingId);
     void FloatingMoving(uint32_t floatingId, HWND hwnd);
@@ -72,10 +72,10 @@ public:
 protected:
     void OnFrame(ui::Context& c, float width, float height) override;
     void OnCloseRequested() override;
-    bool OnQueryEndSession() override;  // unsaved changes: asks (the same dialog as closing)
+    bool OnQueryEndSession() override;  // 未保存の変更: 尋ねる (閉じるときと同じダイアログ)
     void OnEndSession() override;
-    void OnTimer(UINT_PTR id) override;  // auto-save
-    std::optional<bool> SaveWork() override { return Save(); }  // the GPU is gone for good
+    void OnTimer(UINT_PTR id) override;  // 自動保存
+    std::optional<bool> SaveWork() override { return Save(); }  // GPU が完全に失われた
 
 private:
     static constexpr UINT_PTR kAutoSaveTimer = 100;
@@ -85,22 +85,22 @@ private:
 
     void RequestClose(CloseAction action);
     void FinishClose(CloseAction action);
-    void EndShutdownBlock();  // the reason given to Windows while asking (ShutdownBlockReasonCreate)
+    void EndShutdownBlock();  // 尋ねている間に Windows へ伝える理由 (ShutdownBlockReasonCreate)
     bool Save();
     void SetDirty(bool dirty);
     void UpdateTitle();
-    // What reference fields of the インスペクター show (assets, the 階層's items of the software shown).
+    // インスペクターの参照フィールドが出すもの (アセット、表示中のソフトの 階層 の項目)。
     inspector::Refs MakeRefs();
     std::vector<w::MenuItem> MenuItems(Menu m) const;
     void RunMenu(Menu m, int index);
     void HandleShortcuts(ui::Context& c);
-    void UndoRedo(bool redo);  // the shown software's history (not while it runs)
-    // Plugin menu: installing from the editor saves, installs and opens the same project again
-    // (design RME_PLATFORM 5-a, decided 2026-09-29). Removing is only possible in the Hub.
+    void UndoRedo(bool redo);  // 表示中のソフトの履歴 (動いている間は使わない)
+    // プラグインメニュー: エディターからインストールすると、保存し、インストールして、同じプロジェクトをもう一度開く
+    // (設計 RME_PLATFORM 5-a、2026-09-29 に決定)。取り除くのは Hub でだけできる。
     void BeginInstallPlugin(const PluginId& id);
     void RedrawAll();
 
-    // One software inside this project (or, with no software installed, the core panels alone).
+    // このプロジェクトの中の 1 つのソフト (ソフトが入っていないときは、コアのパネルだけ)。
     class Workspace final : public SoftwareHost {
     public:
         explicit Workspace(EditorScreen& editor) : editor_(editor) {}
@@ -108,8 +108,8 @@ private:
         const Project& GetProject() const override { return editor_.project_; }
         void Redraw() override { editor_.RedrawAll(); }
         void Inspect(Inspectable target) override {
-            // A software that asks again and again (every frame) throws the inspector's scroll and menus
-            // away each time: told once (a bug to fix in it).
+            // 何度も (毎フレーム) 尋ねるソフトは、そのたびにインスペクターのスクロールとメニューを
+            // 捨ててしまう: 1 度だけ知らせる (そのソフト側の直すべきバグ)。
             const double now = platform::NowSeconds();
             if (now - inspectSince_ > 1.0) {
                 inspectSince_ = now;
@@ -120,8 +120,8 @@ private:
                 log::Warn("インスペクターが 1 秒に 20 回以上作り直されています (スクロールとメニューが戻ります。直すべき不具合です)");
             }
             inspected = std::move(target);
-            // A new thing shown: the scroll, the fields' typing and the menus start over. The 部品を足す
-            // panel's open folders and the place it was moved to stay (found again on the next entity).
+            // 新しいものを表示した: スクロール、フィールドの入力、メニューは最初からになる。部品を足す
+            // パネルの開いているフォルダーと動かした場所は残る (次のエンティティで探し直す)。
             auto picker = std::move(inspectorState.addPicker);
             inspectorState = {};
             inspectorState.addPicker = std::move(picker);
@@ -153,34 +153,34 @@ private:
             editor_.RedrawAll();
         }
         dock::Layout DefaultLayout() const;
-        std::wstring Title() const { return Tr(type ? type->title : TrKey(L"コア")); }  // in the language in use
+        std::wstring Title() const { return Tr(type ? type->title : TrKey(L"コア")); }  // 使っている言語で
 
-        const SoftwareType* type = nullptr;  // nullptr: no software (core panels + "start")
-        UndoHistory history;                 // declared before `software`, so it outlives it
+        const SoftwareType* type = nullptr;  // nullptr: ソフトなし (コアのパネル + "start")
+        UndoHistory history;                 // `software` より前に宣言する。こちらのほうが長く生きるように
         dock::DockSpace dock;
         std::unique_ptr<Software> software;
-        Inspectable inspected;  // what the インスペクター shows
+        Inspectable inspected;  // インスペクターが見せているもの
         inspector::State inspectorState;
-        double inspectSince_ = 0;  // Inspect asked in this second: how often (told once when too often)
+        double inspectSince_ = 0;  // この 1 秒間に頼まれた Inspect: 回数 (多すぎるときは 1 度だけ知らせる)
         int inspectCount_ = 0;
         bool inspectTold_ = false;
         tree::State treeState;  // the 階層: selection, open items, search
-        dock::NamedLayouts named;  // layouts the user saved under a name (UserSettings)
-        dock::NamedLayouts shared;  // named layouts every project can use (%APPDATA%\RM_Engine\Layouts.json)
-        std::string namedShown;    // the named layout switched to / saved last (checked in the menu)
-        bool namedShownShared = false;  // ... and which list it is in
+        dock::NamedLayouts named;  // ユーザーが名前を付けて保存したレイアウト (UserSettings)
+        dock::NamedLayouts shared;  // どのプロジェクトでも使える名前付きレイアウト (%APPDATA%\RM_Engine\Layouts.json)
+        std::string namedShown;    // 最後に切り替えた / 保存した名前付きレイアウト (メニューでチェックが付く)
+        bool namedShownShared = false;  // ... それがどちらの一覧にあるか
         dock::NamedLayouts& Named(bool sharedList) { return sharedList ? shared : named; }
         const dock::NamedLayouts& Named(bool sharedList) const { return sharedList ? shared : named; }
-        std::unique_ptr<AssetPanel> assetPanel;  // the アセット panel (made when first drawn)
-        float assetThumbnail = 40.f;             // its thumbnails' size (UserSettings: "assets": {"thumbnail"})
+        std::unique_ptr<AssetPanel> assetPanel;  // アセット パネル (最初に描くときに作る)
+        float assetThumbnail = 40.f;             // そのサムネイルの大きさ (UserSettings: "assets": {"thumbnail"})
 
     private:
         EditorScreen& editor_;
     };
 
-    // Workspaces, panels and their layout
+    // ワークスペース、パネル、そのレイアウト
     void BuildWorkspaces();
-    // .rmpf "softwareData": each software's own part of the project (read once, written on save).
+    // .rmpf の "softwareData": 各ソフト自身のプロジェクトの部分 (1 度読み、保存時に書く)。
     void LoadSoftwareData();
     void StoreSoftwareData(std::vector<ProjectFileWrite>& files);
     std::vector<dock::PanelType> CorePanels(bool withStart);
@@ -193,16 +193,16 @@ private:
     void ResetLayout();
     void CaptureFloatingRects();
     void LoadSharedLayouts();
-    void SaveSharedLayouts();  // where the user put the panel windows, into the layout
-    // Named layouts (EditorLayouts.cpp)
+    void SaveSharedLayouts();  // ユーザーがパネルウィンドウを置いた場所を、レイアウトに
+    // 名前付きレイアウト (EditorLayouts.cpp)
     void BeginSaveLayoutAs();
     bool SaveNamedLayout(const std::string& name, bool shared);
     void ApplyNamedLayout(const std::string& name, bool shared);
-    void SaveNamedList(bool shared);  // writes the file the list lives in
-    // Before a named list is changed: the shared one read again from its file (another RM Engine open at
-    // the same time may have changed it - what it did is kept). False (told): the file it lives in is not
-    // written by this version (a newer one's, or one that could not be read) - the change is not made,
-    // or it would be gone at the next start.
+    void SaveNamedList(bool shared);  // 一覧が入っているファイルを書く
+    // 名前付きの一覧を変える前に: 共有のほうはファイルから読み直す (同時に開いている別の RM Engine が
+    // 変えているかもしれない - それがしたことは残す)。false (知らせ済み): その一覧が入っているファイルを
+    // このバージョンは書かない (新しいバージョンのもの、または読めなかったもの) - 変更はしない。
+    // しないと、次の起動で消えてしまう。
     bool BeginNamedEdit(bool shared);
     void DrawSaveLayoutAs(ui::Context& c);
     void DrawLayouts(ui::Context& c);
@@ -223,53 +223,53 @@ private:
     void DrawAssets(ui::Context& c, ui::Rect r);
 
     Project project_;
-    std::unique_ptr<platform::FileLock> lock_;  // let go in Close() (and when destroyed)
+    std::unique_ptr<platform::FileLock> lock_;  // Close() で (と壊れるときに) 手放す
     bool dirty_ = false;
-    double dirtySince_ = 0;  // platform::NowSeconds() of the first unsaved change
+    double dirtySince_ = 0;  // 最初の未保存の変更の platform::NowSeconds()
 
     Modal modal_ = Modal::None;
     CloseAction pendingClose_ = CloseAction::None;
     bool shutdownBlocked_ = false;
     std::wstring modalText_;
-    // Modal::Ask (SoftwareHost::Ask): its title, buttons and what gets the answer.
+    // Modal::Ask (SoftwareHost::Ask): そのタイトル、ボタン、答えを受け取るもの。
     std::wstring askTitle_;
     std::vector<std::wstring> askButtons_;
     std::function<void(int)> askDone_;
     std::wstring installName_;
     std::vector<PluginId> installPlan_;
-    // the named layout dialogs
-    std::string layoutName_;      // typed in "save as"
-    bool layoutShared_ = false;   // "save as" into the shared list
+    // 名前付きレイアウトのダイアログ
+    std::string layoutName_;      // "名前を付けて保存" に入力した名前
+    bool layoutShared_ = false;   // "名前を付けて保存" を共有の一覧へ
     bool focusLayoutName_ = false;
-    std::string renamingLayout_;  // the row being renamed in the list ("" = none; a row key: list + name)
+    std::string renamingLayout_;  // 一覧で名前を変えている行 ("" = なし。行のキー: 一覧 + 名前)
     std::string renameText_;
     bool focusRename_ = false;
-    std::string confirmDelete_;   // the row whose 削除 was pressed once
+    std::string confirmDelete_;   // 削除 を 1 度押した行
 
     w::Popup menuPopup_;
     Menu openMenu_ = Menu::None;
     ui::Rect menuTitleRects_[static_cast<int>(Menu::Count)] = {};
 
-    // Declared BEFORE the workspaces, so they are destroyed AFTER them (members go in reverse order):
-    // every workspace's AssetPanel, its ImportCommands in the undo history and Workspace::AssetFile
-    // point at them while the workspaces are being torn down.
+    // ワークスペースより「前」に宣言する。そうすれば、ワークスペースより「後」に壊れる (メンバーは
+    // 逆の順に壊れる): すべてのワークスペースの AssetPanel、Undo 履歴の ImportCommands、
+    // Workspace::AssetFile は、ワークスペースを壊している間これらを指しているため。
     UiWake assetsWake_{[this] { RedrawAll(); }};
-    std::unique_ptr<AssetLibrary> assets_;    // the project's Assets/ (ids, file operations) - every software's
-    std::unique_ptr<Thumbnails> thumbnails_;  // the assets' small pictures - every software's panel shares them (its thread ends here)
+    std::unique_ptr<AssetLibrary> assets_;    // プロジェクトの Assets/ (ID、ファイル操作) - どのソフトのものでも
+    std::unique_ptr<Thumbnails> thumbnails_;  // アセットの小さな絵 - どのソフトのパネルも共有する (そのスレッドはここで終わる)
 
-    std::vector<std::unique_ptr<Workspace>> workspaces_;  // never empty
+    std::vector<std::unique_ptr<Workspace>> workspaces_;  // 空にはならない
     size_t active_ = 0;
-    std::vector<std::unique_ptr<FloatWindow>> floats_;  // of the active workspace only
+    std::vector<std::unique_ptr<FloatWindow>> floats_;  // アクティブなワークスペースのものだけ
     bool syncQueued_ = false;
-    json::Value layoutDoc_;        // the whole Layout.json (other softwares and unknown keys are kept)
-    bool layoutReadOnly_ = false;  // written by a newer engine: used but never overwritten
-    json::Value sharedDoc_;        // the whole shared Layouts.json (other softwares and unknown keys are kept)
+    json::Value layoutDoc_;        // Layout.json 全体 (ほかのソフトと知らないキーは残す)
+    bool layoutReadOnly_ = false;  // 新しいエンジンが書いた: 使うが、上書きはしない
+    json::Value sharedDoc_;        // 共有の Layouts.json 全体 (ほかのソフトと知らないキーは残す)
     bool sharedReadOnly_ = false;
 
-    HWND dragTarget_ = nullptr;  // the window last told about a drag over it (ForwardDrag)
+    HWND dragTarget_ = nullptr;  // 最後にドラッグの上に来たと知らせたウィンドウ (ForwardDrag)
 
     int logSink_ = 0;
-    // Last log entry each window's console has followed (a panel can move between windows).
+    // 各ウィンドウのコンソールが最後に追ったログの項目 (パネルはウィンドウの間を動ける)。
     std::unordered_map<const ui::Context*, uint64_t> consoleSeenSeq_;
 };
 

@@ -1,15 +1,15 @@
 #pragma once
-// Where the engine keeps its files - written here once (the Hub's オプション page shows them).
+// エンジンがファイルを置く場所 - ここに 1 度だけ書く (Hub のオプションのページが見せる)。
 //
-//   <engine>/Project/                       new projects (default)   engine = platform::EngineDirectory()
-//   <exe>/Plugins/<author>/<name>/          plugins this engine has
-//   %LOCALAPPDATA%\RM_Engine\Engines\<key>\Plugins\   installed plugins of THIS engine (EngineKey.h:
-//                                           every build / copy of the engine has its own)
-//   %LOCALAPPDATA%\RM_Engine\Plugins\       where every engine kept them before (read once: what
-//                                           was installed there is what a new engine installs first)
+//   <engine>/Project/                       新しいプロジェクト (既定)   engine = platform::EngineDirectory()
+//   <exe>/Plugins/<author>/<name>/          このエンジンが持つプラグイン
+//   %LOCALAPPDATA%\RM_Engine\Engines\<key>\Plugins\   このエンジン専用の、入っているプラグイン (EngineKey.h:
+//                                           エンジンのビルド / コピーごとに別)
+//   %LOCALAPPDATA%\RM_Engine\Plugins\       前はどのエンジンもここに置いた (1 度だけ読む:
+//                                           そこに入っていた物を、新しいエンジンが最初に入れる)
 //   %LOCALAPPDATA%\RM_Engine\Logs\          editor.log
-//   %APPDATA%\RM_Engine\hub.json            the Hub's settings (HubSettings)
-//   %APPDATA%\RM_Engine\Layouts.json        panel layouts shared by every project (per software)
+//   %APPDATA%\RM_Engine\hub.json            Hub の設定 (HubSettings)
+//   %APPDATA%\RM_Engine\Layouts.json        全プロジェクトで共通のパネル配置 (ソフトごと)
 
 #include <filesystem>
 
@@ -23,7 +23,7 @@ std::filesystem::path LogFolder();
 std::filesystem::path LogFile();
 std::filesystem::path HubSettingsFile();
 std::filesystem::path SharedLayoutsFile();
-std::filesystem::path LangFolder();      // <exe>/Lang (the core's translations)
-std::filesystem::path FileList();        // <exe>/RM_Engine.files.json (for the integrity check)
+std::filesystem::path LangFolder();      // <exe>/Lang (核の翻訳)
+std::filesystem::path FileList();        // <exe>/RM_Engine.files.json (整合性の確認用)
 
 }  // namespace rm::editor::paths

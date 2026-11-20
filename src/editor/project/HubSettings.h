@@ -1,7 +1,7 @@
 #pragma once
-// Hub state shared by every project: the recent-project list and the hidden plugin notice.
-// Stored in %APPDATA%\RM_Engine\hub.json (unknown keys kept - an old "lastLocation" stays, unused).
-// New projects go in <engine>/Project by default (platform::EngineDirectory), not a remembered folder.
+// 全プロジェクトで共有する Hub の状態: 最近のプロジェクトの一覧と、非表示にしたプラグインの通知。
+// %APPDATA%\RM_Engine\hub.json に保存する (知らないキーは残す - 古い "lastLocation" は使わずに残る)。
+// 新しいプロジェクトは、覚えたフォルダーではなく、標準で <engine>/Project に入る (platform::EngineDirectory)。
 
 #include "base/Json.h"
 #include "core/PluginId.h"
@@ -17,7 +17,7 @@ namespace rm::editor {
 
 struct RecentProject {
     std::filesystem::path file;  // .rmpf
-    int64_t lastOpened = 0;      // unix seconds
+    int64_t lastOpened = 0;      // unix 秒
 };
 
 class HubSettings {
@@ -26,22 +26,22 @@ public:
     bool Save();
 
     const std::vector<RecentProject>& Recent() const { return recent_; }
-    // The list with what another RM Engine did to the file since (projects it opened come in, ones it
-    // took out go) - without writing. Save does it first; the Hub when it shows the list.
+    // 別の RM Engine がその後ファイルにしたこと (開いたプロジェクトが入り、外したものが消える) を
+    // 反映した一覧 - 書き込みはしない。Save が最初にするほか、Hub は一覧を出すときにする。
     void SyncRecent();
-    void Touch(const std::filesystem::path& file);  // move to the top, set lastOpened = now
+    void Touch(const std::filesystem::path& file);  // 先頭に移し、lastOpened = 今 にする
     void Remove(const std::filesystem::path& file);
-    // The project moved (renamed): same place in the list, same lastOpened.
+    // プロジェクトが移った (名前が変わった): 一覧の同じ場所、同じ lastOpened。
     void Replace(const std::filesystem::path& from, const std::filesystem::path& to);
 
-    // "Do not show again until this changes" of the notice about plugins that lack a requirement
-    // (design RME_PLATFORM 1-b-2): hidden only while the set of such plugins stays the same.
+    // 前提が無いプラグインについての通知の「変わるまで二度と表示しない」
+    // (設計 RME_PLATFORM 1-b-2): そういうプラグインの組が同じ間だけ非表示にする。
     bool LimitedNoticeHidden(const std::vector<PluginId>& limited) const;
     void HideLimitedNotice(const std::vector<PluginId>& limited);
     bool HasHiddenNotice() const;
     void ShowNoticesAgain();  // forgets "この状態が変わるまで表示しない"
 
-    // The options (hub.json "options"; keys of a newer version are kept).
+    // オプション (hub.json の "options"。新しい版のキーは残す)。
     Options& GetOptions() { return options_; }
     reflect::Unknowns& OptionsUnknowns() { return optionsUnknowns_; }
 
@@ -49,18 +49,18 @@ public:
 private:
     json::Value doc_ = json::Value::MakeObject();
     std::vector<RecentProject> recent_;
-    // Taken out of the list by the user (削除, a rename's old path): not brought back from the file at Save.
+    // ユーザーが一覧から外したもの (削除、名前の変更の古いパス): Save でファイルから戻さない。
     std::vector<std::filesystem::path> forgotten_;
-    // The list as the file had it when this one last read or wrote it, and what this one opened since:
-    // a row gone from the file meanwhile was taken out by another RM Engine, and stays out at Save
-    // (2026-11-18 on screen: a Hub still showing the old list brought it back when it opened a project).
+    // これが最後に読んだか書いたときにファイルにあった一覧と、その後にこれが開いたもの:
+    // その間にファイルから消えた行は別の RM Engine が外したので、Save でも外したまま
+    // (2026-11-18 画面で: 古い一覧を出したままの Hub が、プロジェクトを開いたときにそれを戻していた)。
     std::vector<std::filesystem::path> onDisk_;
     std::vector<std::filesystem::path> opened_;
     Options options_;
     reflect::Unknowns optionsUnknowns_;
 };
 
-// Windows paths compare case-insensitively.
+// Windows のパスは大文字小文字を区別せずに比べる。
 bool SamePath(const std::filesystem::path& a, const std::filesystem::path& b);
 
 }  // namespace rm::editor

@@ -7,19 +7,19 @@ namespace rm::editor::w {
 
 namespace {
 
-// One letter for comparing: full-width Latin letters and digits as half-width, then lower case.
+// 比べるための 1 文字: 全角のラテン文字と数字を半角に、そのあと小文字に。
 wchar_t Fold(wchar_t ch) {
     if (ch >= 0xFF01 && ch <= 0xFF5E) ch = static_cast<wchar_t>(ch - 0xFF01 + 0x21);
     if (ch >= L'A' && ch <= L'Z') ch = static_cast<wchar_t>(ch - L'A' + L'a');
     return ch;
 }
 
-// A folder and what is in it (built from the paths, in the order things first come).
+// フォルダーと、その中身 (パスから作る。出てきた順)。
 struct Node {
     std::wstring name, path;
-    std::vector<size_t> folders;  // indexes into the node list
+    std::vector<size_t> folders;  // ノード一覧への添字
     std::vector<int> items;
-    size_t count = 0;  // items inside, deep
+    size_t count = 0;  // 中の項目の数 (深くまで)
 };
 
 std::vector<std::wstring> Parts(std::wstring_view path) {
@@ -49,7 +49,7 @@ bool PickMatches(std::wstring_view text, std::wstring_view search) {
 }
 
 std::vector<PickTreeRow> BuildPickTree(std::span<const PickItem> items, std::wstring_view search, const std::set<std::wstring>& open) {
-    // Node 0: the top (no folder).
+    // ノード 0: 最上位 (フォルダーなし)。
     std::vector<Node> nodes(1);
     std::map<std::wstring, size_t> byPath;
     for (size_t i = 0; i < items.size(); ++i) {
@@ -75,7 +75,7 @@ std::vector<PickTreeRow> BuildPickTree(std::span<const PickItem> items, std::wst
     }
 
     std::vector<PickTreeRow> rows;
-    // The top's items, then its folders; inside a folder, its folders then its items.
+    // 最上位の項目が先、次にそのフォルダー。フォルダーの中では、そのフォルダーが先、次に項目。
     auto add = [&](auto&& self, size_t n, int depth) -> void {
         const Node& node = nodes[n];
         auto addItems = [&] {
@@ -114,7 +114,7 @@ std::vector<MenuLevelRow> MenuLevel(std::span<const PickItem> items, std::wstrin
     std::set<std::wstring> seen;
     for (size_t i = 0; i < items.size(); ++i) {
         const std::vector<std::wstring> parts = Parts(items[i].folder);
-        if (parts.size() < at.size() || !std::equal(at.begin(), at.end(), parts.begin())) continue;  // not inside this menu
+        if (parts.size() < at.size() || !std::equal(at.begin(), at.end(), parts.begin())) continue;  // このメニューの中ではない
         MenuLevelRow r;
         if (parts.size() == at.size()) {
             r.separator = items[i].separator;

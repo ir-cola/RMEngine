@@ -36,7 +36,7 @@ std::optional<ThemeFromFile> ParseThemeFile(const json::Value& v, std::string* e
     if (file.id.empty()) return fail("\"id\" がありません");
     if (file.name.empty()) return fail("\"name\" がありません");
 
-    // Each color: the file's, or the built-in theme's of the same kind (light / dark).
+    // どの色も: ファイルのもの、または同じ種類 (ライト / ダーク) の組み込みテーマのもの。
     Palette p = file.light ? kLight : kDark;
     const ThemeFileColors& c = file.colors;
     const std::array<std::pair<const std::string*, Color*>, 23> colors{{

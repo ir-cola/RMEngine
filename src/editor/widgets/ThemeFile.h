@@ -1,17 +1,17 @@
 #pragma once
-// A theme file: one theme of a theme pack (plugins/<author>/<name>/themes/*.json). Written once here:
-// reading comes from the description (rule 9). The colors are "#RRGGBB" or "#RRGGBBAA"; one left out
-// (or empty) is the built-in dark / light theme's (by `light`). Pure - tested in tests/TestTheme.cpp.
+// テーマファイル: テーマパックの 1 つのテーマ (plugins/<author>/<name>/themes/*.json)。ここで 1 度だけ書く:
+// 読み込みは記述から来る (憲法 9)。色は "#RRGGBB" か "#RRGGBBAA"。省略した (または空の) 色は、
+// 組み込みのダーク / ライトテーマのもの (`light` で決まる)。純粋 - tests/TestTheme.cpp でテストする。
 //
 //   {
 //     "kind": "rm_engine.theme", "format": 1,
-//     "id": "Spring",                 kept in hub.json when chosen (unique among all themes)
-//     "name": "スプリング",            Japanese; English in the pack's lang/en.json
-//     "aliases": ["Sakura"],          ids it was saved under before (optional)
-//     "order": 1,                     its place in the pack (optional)
-//     "light": true,                  a light theme (the gradients are made for light or dark)
-//     "ornament": "spring",           pictures the pack's code offers under this name (optional)
-//     "caption": "#F5E4EA",           the title bar
+//     "id": "Spring",                 選んだとき hub.json に残る (全テーマの中で一意)
+//     "name": "スプリング",            日本語。英語はパックの lang/en.json に
+//     "aliases": ["Sakura"],          前に保存されていた id (省略可)
+//     "order": 1,                     パックの中での位置 (省略可)
+//     "light": true,                  ライトテーマ (グラデーションはライト用かダーク用に作る)
+//     "ornament": "spring",           パックのコードがこの名前で出す絵 (省略可)
+//     "caption": "#F5E4EA",           タイトルバー
 //     "colors": { "bg": "#FBF1F4", "sidebar": ..., "shadow": "#00000021", ... }
 //   }
 
@@ -69,16 +69,16 @@ struct ThemeFile {
 
 inline constexpr char kThemeFileKind[] = "rm_engine.theme";
 
-// A theme read from a file: what the list needs (its group, pack and pictures are filled in by the
-// one who read the pack), its place in the pack and the name of its pictures.
+// ファイルから読んだテーマ: 一覧が要るもの (そのグループ、パック、絵は、パックを読んだ側が
+// 埋める)、パックの中での位置、絵の名前。
 struct ThemeFromFile {
     ThemeInfo info;
     int order = 0;
     std::string ornament;
 };
-// nullopt (+ why in *error) when it is not a theme file, has no id or name, or a color cannot be read.
+// テーマファイルでない、id か name がない、色が読めない、のどれかのとき nullopt (+ 理由を *error に)。
 std::optional<ThemeFromFile> ParseThemeFile(const json::Value& v, std::string* error);
-// "#RRGGBB" / "#RRGGBBAA" (the # may be left out).
+// "#RRGGBB" / "#RRGGBBAA" (# は付けなくてもよい)。
 std::optional<Color> ParseHexColor(std::string_view text);
 
 }  // namespace rm::editor::theme

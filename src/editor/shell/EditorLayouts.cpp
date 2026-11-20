@@ -1,8 +1,9 @@
-// The editor's named panel layouts: "save the layout as ...", switching, and the list to rename /
-// delete / move them (Window menu). Two lists per software, both dock::NamedLayouts (pure, tested):
-//   this project's   <project>/UserSettings/Layout.json  "named"
-//   shared           %APPDATA%\RM_Engine\Layouts.json     (every project of this PC can use them)
-// A list is written as soon as it changes. Layouts are not project data: no undo, never "unsaved".
+// エディターの名前を付けたパネルのレイアウト: 「レイアウトを名前を付けて保存」、切り替え、
+// そして名前の変更 / 削除 / 移動の一覧 (ウィンドウメニュー)。ソフトごとに 2 つの一覧があり、
+// どちらも dock::NamedLayouts (純粋。テスト済み):
+//   このプロジェクトの  <project>/UserSettings/Layout.json  "named"
+//   共有               %APPDATA%\RM_Engine\Layouts.json     (この PC の全プロジェクトで使える)
+// 一覧は、変わったらすぐに書く。レイアウトはプロジェクトのデータではない: Undo は無く、「未保存」にもならない。
 
 #include "editor/lang/Lang.h"
 #include "editor/shell/EditorScreen.h"
@@ -29,7 +30,7 @@ ui::TextStyle Style(float size, ui::Color color, bool bold = false) {
 
 constexpr float kRowH = 40.f;
 
-// Which row of the list: the list and the name (a name may be in both lists).
+// 一覧のどの行か: 一覧と名前 (名前は両方の一覧にあることがある)。
 std::string RowKey(bool shared, const std::string& name) { return (shared ? "s:" : "p:") + name; }
 
 std::wstring ListName(bool shared) { return shared ? Tr(L"共通の配置") : Tr(L"このプロジェクトの配置"); }
@@ -38,7 +39,7 @@ std::wstring ListName(bool shared) { return shared ? Tr(L"共通の配置") : Tr
 
 void EditorScreen::BeginSaveLayoutAs() {
     Workspace& ws = Active();
-    // The one switched to last is offered (saving the changes made to it); otherwise a free name.
+    // 最後に切り替えたものを出す (それに加えた変更を保存する)。無ければ空いている名前。
     const bool offerShown = !ws.namedShown.empty() && ws.Named(ws.namedShownShared).Find(ws.namedShown);
     layoutShared_ = offerShown && ws.namedShownShared;
     layoutName_ = offerShown ? ws.namedShown : ws.named.FreeName(WideToUtf8(Tr(L"配置")));
@@ -91,7 +92,7 @@ void EditorScreen::ApplyNamedLayout(const std::string& name, bool shared) {
         log::Warn("配置「{}」を読めませんでした", name);
         return;
     }
-    ws.dock.SetLayout(std::move(*layout));  // the panel windows follow (RequestSyncFloating)
+    ws.dock.SetLayout(std::move(*layout));  // パネルのウィンドウが追従する (RequestSyncFloating)
     ws.namedShown = name;
     ws.namedShownShared = shared;
     log::Info("配置「{}」に切り替えました ({})", name, WideToUtf8(ws.Title()));
@@ -163,7 +164,7 @@ void EditorScreen::DrawLayouts(ui::Context& c) {
            Style(12, theme::TextFaint));
     const Rect view{cr.x, cr.y + 30, cr.w, cr.Bottom() - 52 - (cr.y + 30)};
 
-    // What a button asked for, done after the list is drawn (it changes the list).
+    // ボタンが求めたことを、一覧を描いた後で行う (一覧が変わるため)。
     enum class Do { None, Apply, Rename, Delete, Move } todo = Do::None;
     Row target{};
     const bool renaming = !renamingLayout_.empty();
@@ -184,7 +185,7 @@ void EditorScreen::DrawLayouts(ui::Context& c) {
             if (row.Bottom() < view.y || row.y > view.Bottom()) continue;
             c.PushId(static_cast<uint64_t>(i));
             w::DrawRow(c, row, {shown, c.IsHovered(row), false});
-            // Buttons from the right; `next` gives the rectangle of the next one to the left.
+            // ボタンは右から。`next` が、その左の次のボタンの四角を返す。
             float right = row.Right() - 6;
             auto next = [&](float width) {
                 right -= width;
@@ -220,7 +221,7 @@ void EditorScreen::DrawLayouts(ui::Context& c) {
                         confirmDelete_ = key;
                     }
                 }
-                // To the other list - not when that list has the name already.
+                // もう片方の一覧へ - その一覧に同じ名前が既にあるときはしない。
                 const bool canMove = !ws.Named(!r.shared).Find(r.name);
                 if (w::Button(c, "lay.move", next(150), r.shared ? Tr(L"このプロジェクトへ") : Tr(L"共通にする"),
                               w::ButtonKind::Secondary, !renaming && canMove)) {
@@ -240,7 +241,7 @@ void EditorScreen::DrawLayouts(ui::Context& c) {
                     todo = Do::Apply;
                     target = r;
                 }
-                // The list it is in, then the name.
+                // それがある一覧、次に名前。
                 const std::wstring where = r.shared ? Tr(L"共通") : Tr(L"プロジェクト");
                 const float whereW = 90;
                 p.Text({right - whereW, row.y, whereW, row.h}, where, Style(11, theme::TextFaint));
@@ -290,7 +291,7 @@ void EditorScreen::DrawLayouts(ui::Context& c) {
             break;
     }
 
-    // Bottom row: save / back to the first layout on the left, close on the right.
+    // 一番下の行: 左に 保存 / 最初のレイアウトに戻す、右に閉じる。
     const Rect saveAs{cr.x, cr.Bottom() - 36, 170, 36};
     const Rect reset{saveAs.Right() + 12, saveAs.y, 170, 36};
     const Rect close{cr.Right() - 110, saveAs.y, 110, 36};

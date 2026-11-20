@@ -24,7 +24,7 @@ namespace {
 
 constexpr float kRow = 30.f;
 constexpr float kIndent = 14.f;
-constexpr float kAxisW = 14.f;   // the X / Y / Z in front of a vector's boxes
+constexpr float kAxisW = 14.f;   // ベクトルの欄の前の X / Y / Z
 constexpr float kElemRow = 28.f;
 
 ui::TextStyle Text(float size, ui::Color color, bool bold = false) {
@@ -35,7 +35,7 @@ ui::TextStyle Text(float size, ui::Color color, bool bold = false) {
     return ts;
 }
 
-// An edit made inside an array element, turned into the edit of the array field (or nothing).
+// 配列の要素の中で行った編集を、配列フィールドの編集に変える (または何もしない)。
 using Wrap = std::function<std::optional<Edit>(Edit)>;
 
 struct Pass {
@@ -47,9 +47,9 @@ struct Pass {
     float labelW = 0;
     std::optional<Edit> edit;
     std::wstring tooltip;
-    Wrap wrap;  // inside an array element (null: the edit is the field's own)
+    Wrap wrap;  // 配列の要素の中 (null: その編集はフィールド自身のもの)
     const Refs* refs = nullptr;
-    // The block's menu for a field (Block::fieldMenu), and whether a right click may open it now.
+    // フィールドのブロックのメニュー (Block::fieldMenu) と、今右クリックで開いてよいか。
     const std::function<std::vector<w::Action>(const reflect::FieldPath&, std::string_view)>* fieldMenu = nullptr;
     bool menusOk = false;
 
@@ -62,16 +62,15 @@ struct Pass {
     }
 };
 
-// Every typing / dragging session gets its own merge key (unique in the program: two inspectors never share one).
+// 入力・ドラッグの 1 回ごとに独自のマージキーを持つ (プログラム内で一意: 2 つのインスペクターは同じものを共有しない)。
 uint64_t NewSession() {
     static uint64_t next = 0;
     return ++next;
 }
 
-// A text box whose text is used as it is typed: returned after every change, and once more on
-// Enter / leaving the field when the value shown differs from it. Esc returns the value from before
-// the field was entered. While it is not being edited it simply shows `shown`. `merge` = the key of
-// this typing (one undo entry).
+// 打っている途中のテキストをそのまま使う入力欄: 変わるたびに返し、Enter か欄を出たときに、
+// 見えている値がそれと違えばもう一度返す。Esc は欄に入る前の値を返す。編集中でなければ
+// `shown` をそのまま見せる。`merge` = この入力のキー (Undo は 1 つの項目)。
 std::optional<std::string> LiveField(Pass& x, std::string_view id, const Rect& r, const std::string& shown, bool enabled,
                                      uint64_t& merge) {
     ui::Context& c = x.c;
@@ -107,10 +106,10 @@ std::optional<std::string> LiveField(Pass& x, std::string_view id, const Rect& r
     return std::nullopt;
 }
 
-// Dragging `handle` left / right changes a number, like a slider without end (the cursor hides and
-// the mouse goes on past the screen's edge). The speed is chosen when the drag starts: the field's
-// Step per pixel, or more for a big number (Unity's rule); Shift x4, Alt x1/4. Returns the new
-// value while it changes; `merge` = the drag's key (one undo entry).
+// `handle` を左右にドラッグして数を変える。終わりのないスライダーのようなもの (カーソルは隠れ、
+// マウスは画面の端を越えて動き続ける)。速さはドラッグを始めたときに決める: フィールドの
+// ピクセルあたりの Step か、大きな数ならそれより大きく (Unity のルール)。Shift で 4 倍、Alt で 1/4。
+// 変わっている間は新しい値を返す。`merge` = そのドラッグのキー (Undo は 1 つの項目)。
 std::optional<double> Scrub(Pass& x, std::string_view id, const Rect& handle, double current, const FieldDesc& f, bool enabled,
                             uint64_t& merge) {
     if (!enabled || handle.w <= 0) return std::nullopt;
@@ -129,7 +128,7 @@ std::optional<double> Scrub(Pass& x, std::string_view id, const Rect& handle, do
         x.st.scrubMoved = 0;
         x.st.scrubSession = NewSession();
         x.st.scrubSpeed = f.hasStep && f.step > 0 ? f.step : std::max(1.0, std::sqrt(std::fabs(current))) * 0.03;
-        c.ClearFocus();  // a field being typed into is finished first
+        c.ClearFocus();  // 入力中の欄を先に終わらせる
     }
     c.LockMouse();
     merge = x.st.scrubSession;
@@ -139,29 +138,29 @@ std::optional<double> Scrub(Pass& x, std::string_view id, const Rect& handle, do
     return v != current ? std::optional<double>(v) : std::nullopt;
 }
 
-// Shown in a field whose value is not the same in every object edited together.
+// いっしょに編集している全オブジェクトで値が同じでないフィールドに出す。
 constexpr char kMixed[] = "\xE2\x80\x94";  // —
 
 using Others = std::span<const void* const>;
 
 size_t Components(FieldType t) { return t == FieldType::Vec2 ? 2 : t == FieldType::Vec3 ? 3 : t == FieldType::Color ? 4 : 0; }
 
-// One value: a number, a vector, text, a check box or a list - of a field or of an array element.
+// 1 つの値: 数、ベクトル、文字、チェックボックス、リスト - フィールドか配列の要素の。
 struct Spot {
-    const FieldDesc& f;          // its field (number rules: Min / Max / Int / Step)
-    reflect::ValueType vt;       // its type (the field's, or the array's element)
+    const FieldDesc& f;          // そのフィールド (数のルール: Min / Max / Int / Step)
+    reflect::ValueType vt;       // その型 (フィールドの型か、配列の要素の型)
     const void* value = nullptr;
-    std::vector<const void*> others;  // the same value in the objects edited together
-    const Unknowns* u = nullptr;      // the owner's unknowns (an enum name kept) - null for elements
-    const char* enumKey = nullptr;    // the field name the enum's unknown name is kept under
+    std::vector<const void*> others;  // いっしょに編集しているオブジェクトの同じ値
+    const Unknowns* u = nullptr;      // 持ち主の unknowns (enum の名前を残す) - 要素では null
+    const char* enumKey = nullptr;    // enum の未知の名前を残すフィールド名
     bool enabled = true;
-    Rect r;                       // where the value goes
-    Rect scrub;                   // a label that changes a single number when dragged (w = 0: none)
-    // The Edit for a new value (path, before, label - the block's); `merge` / `component` are added.
+    Rect r;                       // 値を置く場所
+    Rect scrub;                   // ドラッグすると 1 つの数を変えるラベル (w = 0: なし)
+    // 新しい値の Edit (path、before、label - ブロックのもの)。`merge` / `component` を足す。
     std::function<Edit(json::Value)> editFor;
 };
 
-// The id a reference holds, as text ("" = none).
+// 参照が持つ ID を文字にしたもの ("" = なし)。
 std::string RefValue(const FieldDesc& f, FieldType t, const void* v) {
     if (t == FieldType::AssetRef) return reflect::ReadAssetId(f, v);
     const uint64_t id = static_cast<const EntityRef*>(v)->id;
@@ -178,10 +177,10 @@ json::Value RefJson(FieldType t, const std::string& value) {
     return json::Value(id);
 }
 
-// An enum with more items than this opens a list with a search box (scrolled) instead of a menu.
+// これより項目の多い enum は、メニューではなく検索欄つき (スクロールする) のリストを開く。
 constexpr size_t kShortEnum = 16;
 
-// A reference: its name in a box (a click opens the list), × to clear it, and a place to drop one.
+// 参照: 箱に名前 (クリックでリストを開く)、× で消す、そして 1 つ落とせる場所。
 template <class Put>
 void DrawRef(Pass& x, const Spot& s, const Put& put) {
     ui::Context& c = x.c;
@@ -211,7 +210,7 @@ void DrawRef(Pass& x, const Spot& s, const Put& put) {
     if (canClear && w::IconButton(c, "clear", {face.Right() + 2, s.r.y, 24, s.r.h}, w::Icon::Close)) put(RefJson(s.vt.type, ""), 0, -1);
     if (!s.enabled || !x.refs) return;
 
-    // Dropped from the アセット panel / the 階層.
+    // アセットパネル / 階層からドロップした。
     const Refs* refs = x.refs;
     const auto accepts = [&](const w::DragThing& t) {
         if (t.values.empty()) return false;
@@ -229,7 +228,7 @@ void DrawRef(Pass& x, const Spot& s, const Put& put) {
         x.st.pickSearch.clear();
     }
     if (!x.st.popup.open || x.st.popupId != popupId) return;
-    // The list (at the end of the frame, over everything): (なし) and what there is of the kinds asked.
+    // リスト (フレームの終わりに全部の上に): (なし) と、頼まれた種類のあるもの。
     std::vector<RefChoice> choices;
     if (isAsset && refs->assets) {
         for (RefChoice& r : refs->assets()) {
@@ -243,12 +242,12 @@ void DrawRef(Pass& x, const Spot& s, const Put& put) {
     const bool withOthers = !s.others.empty();
     const float width = std::max(s.r.w, 300.f);
     const FieldType type = s.vt.type;
-    // Assets: their thumbnails in the list (the same ones as the アセット panel's).
+    // アセット: リストにサムネイル (アセットパネルのものと同じ)。
     auto thumbnail = isAsset ? refs->thumbnail : nullptr;
     c.AddOverlay([&c, st, choices = std::move(choices), width, withOthers, type, editFor = s.editFor, wrap = x.wrap, thumbnail] {
         std::vector<const RefChoice*> picks;
         std::vector<w::PickRow> rows;
-        if (st->pickSearch.empty()) {  // "(なし)" first, while nothing is typed
+        if (st->pickSearch.empty()) {  // 何も打っていない間は先頭に "(なし)"
             rows.push_back({Tr(L"(なし)")});
             picks.push_back(nullptr);
         }
@@ -284,7 +283,7 @@ void DrawValue(Pass& x, const Spot& s) {
         Edit e = s.editFor(std::move(after));
         e.merge = merge;
         e.component = component;
-        // With others, a change counts even when this object has the value already (they may not).
+        // 他のものがあるときは、このオブジェクトがすでにその値でも変更とみなす (他は違うかもしれない)。
         if (e.before != e.after || !s.others.empty()) x.Put(std::move(e));
     };
     uint64_t merge = 0;
@@ -292,7 +291,7 @@ void DrawValue(Pass& x, const Spot& s) {
     switch (s.vt.type) {
         case FieldType::Bool: {
             bool v = *static_cast<const bool*>(s.value);
-            // Not the same in all the objects edited together: a dash (like the "—" of a number).
+            // いっしょに編集している全オブジェクトで同じでない: ダッシュ (数の "—" と同じ)。
             const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return *static_cast<const bool*>(o) != v; });
             if (w::Checkbox(c, "v", {s.r.x, s.r.y, 28, s.r.h}, v, L"", differ) && s.enabled) put(json::Value(v));
             break;
@@ -335,7 +334,7 @@ void DrawValue(Pass& x, const Spot& s) {
             static const wchar_t* kChannels[] = {L"R", L"G", L"B", L"A"};
             for (size_t i = 0; i < n; ++i) {
                 const Rect cell{area.x + (each + 4) * static_cast<float>(i), area.y, each, area.h};
-                // A letter in front of each box: which one it is, and a handle to drag it.
+                // 各欄の前に文字: どれかを示し、ドラッグのつまみにもなる。
                 const Rect handle{cell.x, cell.y, kAxisW, cell.h};
                 const Rect box{cell.x + kAxisW, cell.y, cell.w - kAxisW, cell.h};
                 const ui::Color letter = !s.enabled || isColor ? theme::TextFaint
@@ -383,9 +382,8 @@ void DrawValue(Pass& x, const Spot& s) {
                 x.st.pickSearch.clear();
             }
             if (x.st.popup.open && x.st.popupId == popupId) {
-                // The list is drawn at the end of the frame (not cut off by the panel). The choice is
-                // handed back through State and returned by the next Draw. A long list (the keys of
-                // an input ...) is one to search in, scrolled.
+                // リストはフレームの終わりに描く (パネルで切られない)。選んだものは State を通して
+                // 渡し、次の Draw が返す。長いリスト (入力のキーなど) は、検索できるスクロールつきにする。
                 const bool longList = e.items.size() > kShortEnum;
                 const float width = std::max(s.r.w, longList ? 260.f : 180.f);
                 State* st = &x.st;
@@ -426,14 +424,14 @@ void DrawValue(Pass& x, const Spot& s) {
         case FieldType::AssetRef:
         case FieldType::EntityRef: DrawRef(x, s, put); break;
         case FieldType::Struct:
-        case FieldType::Array: break;  // (not single values: DrawField)
+        case FieldType::Array: break;  // (単独の値ではない: DrawField)
     }
 }
 
 void DrawStruct(Pass& x, const TypeDesc& t, const void* obj, Others others, const Unknowns* u, FieldPath& prefix, float indent);
 
-// An array: its count and ＋, then every element with its grip, index, value and ×. Every change is
-// the whole array, written as it is saved.
+// 配列: 個数と ＋、そして各要素のつまみ・番号・値・×。変更は毎回、保存するときの形で
+// 配列全体になる。
 void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const void* owner, Others others, const Unknowns* u,
                const FieldPath& path, float indent, const Rect& valueR, bool enabled, const std::function<Edit(json::Value)>& editFor) {
     ui::Context& c = x.c;
@@ -449,15 +447,15 @@ void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const voi
     };
     const bool differ = std::any_of(others.begin(), others.end(), [&](const void* o) { return reflect::SaveField(f, o, nullptr) != arr; });
 
-    // "N 個" and ＋ on the field's row.
+    // フィールドの行に "N 個" と ＋。
     const Rect plusR{valueR.Right() - 26, valueR.y, 26, valueR.h};
     p.Text({valueR.x, valueR.y, valueR.w - 30, valueR.h}, differ ? Utf8ToWide(kMixed) : TrF(L"{} 個", count), Text(12, theme::TextDim));
     if (w::IconButton(c, "add", plusR, w::Icon::Plus, enabled && !differ)) {
         json::Value after = arr;
         if (count > 0) {
-            after.Push(arr.At(count - 1));  // a copy of the last (what is usually wanted next)
+            after.Push(arr.At(count - 1));  // 最後のもののコピー (次に欲しいのはたいていこれ)
         } else {
-            // One element with its default value: a copy of the owner with the array made one longer.
+            // 既定値の要素 1 つ: 持ち主のコピーで、配列を 1 つ長くしたもの。
             reflect::Object tmp(ownerType);
             ownerType.copy(tmp.Get(), owner);
             ops.resize(f.Get(tmp.Get()), 1);
@@ -473,7 +471,7 @@ void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const voi
     }
 
     const ui::Id arrayId = c.MakeId("array");
-    std::vector<float> tops;  // each element's row, for dropping a dragged one
+    std::vector<float> tops;  // 各要素の行。ドラッグしてきたものを落とすため
     const reflect::TypeDesc* elemStruct = ops.element.type == FieldType::Struct ? ops.element.structType : nullptr;
     const float left = x.view.x + 12 + indent + kIndent;
     const float width = x.view.w - 24 - indent - kIndent;
@@ -485,7 +483,7 @@ void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const voi
         tops.push_back(row.y);
         x.y += kElemRow;
 
-        // The grip: drag it up / down to move the element.
+        // つまみ: 上下にドラッグして要素を動かす。
         const Rect grip{row.x, row.y, 16, row.h};
         if (enabled) {
             const auto g = c.ButtonBehavior(c.MakeId("grip"), grip);
@@ -505,7 +503,7 @@ void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const voi
             put(std::move(after));
         }
 
-        // The element's value; its edits become the whole array's.
+        // 要素の値。その編集は配列全体の編集になる。
         const Wrap outer = x.wrap;
         const size_t block = x.block;
         const bool withOthers = !others.empty();
@@ -537,14 +535,14 @@ void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const voi
             return e;
         };
         if (elemStruct) {
-            // A struct: its fields under the element's row.
+            // 構造体: 要素の行の下にそのフィールド。
             FieldPath inner;
             DrawStruct(x, *elemStruct, elem, {}, nullptr, inner, indent + 2 * kIndent);
         } else {
             Spot s{f, ops.element, elem};
             s.enabled = enabled;
             s.r = {row.x + 46, row.y + 3, std::max(30.f, row.w - 46 - 28), row.h - 6};
-            s.scrub = indexR;  // the index: drag it to change a number
+            s.scrub = indexR;  // 番号: ドラッグして数を変える
             const std::string label = std::format("「{}」を変更", f.Label());
             const json::Value before = arr.At(i);
             s.editFor = [label, before](json::Value after) {
@@ -561,9 +559,9 @@ void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const voi
         c.PopId();
     }
 
-    // An element being dragged: a line where it would go; let go = moved there.
+    // ドラッグ中の要素: 置かれる所に線。離す = そこへ動かす。
     if (x.st.arrayDrag == arrayId && count > 1) {
-        size_t slot = 0;  // before element `slot` (count = at the end)
+        size_t slot = 0;  // 要素 `slot` の前 (count = 末尾)
         while (slot < tops.size() && in.mouseY > tops[slot] + kElemRow * 0.5f) ++slot;
         const size_t from = std::min(x.st.arrayDragFrom, count - 1);
         if (in.down[0]) {
@@ -589,13 +587,13 @@ void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const voi
 
 void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t index, const void* owner, Others others, const Unknowns* u,
                FieldPath& prefix, float indent) {
-    if (!f.edit && !f.readOnly) return;  // saved, not shown
-    if (!reflect::FieldShown(ownerType, f, owner)) return;  // ShowIf: not for what it is now (still saved)
+    if (!f.edit && !f.readOnly) return;  // 保存はするが表示しない
+    if (!reflect::FieldShown(ownerType, f, owner)) return;  // ShowIf: 今のものには出さない (保存はする)
     ui::Context& c = x.c;
     auto& p = c.P();
     const bool enabled = f.edit && !f.readOnly;
     const void* value = f.Get(owner);
-    std::vector<const void*> otherValues;  // the same field in the objects edited together
+    std::vector<const void*> otherValues;  // いっしょに編集しているオブジェクトの同じフィールド
     for (const void* o : others) otherValues.push_back(f.Get(o));
     FieldPath path = prefix;
     path.push_back(index);
@@ -604,7 +602,7 @@ void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t in
     const Rect labelR{row.x + 12 + indent, row.y, x.labelW - indent, row.h};
     Rect valueR{row.x + 12 + x.labelW + 8, row.y + 3, std::max(40.f, row.w - x.labelW - 34), row.h - 6};
     x.y += kRow;
-    // Vectors and colours get their own line when the panel is too narrow for their boxes.
+    // ベクトルと色は、パネルが狭くて欄が入らないとき自分の行を持つ。
     const size_t comps = Components(f.value.type);
     if (comps > 0 && valueR.w / static_cast<float>(comps) < 64.f + kAxisW) {
         valueR = {row.x + 12 + indent + kIndent, x.y + 1, row.w - 24 - indent - kIndent, kRow - 6};
@@ -613,8 +611,8 @@ void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t in
 
     p.Text(labelR, Utf8ToWide(TrU8(f.Label())), Text(12, enabled ? theme::TextDim : theme::TextFaint, f.value.type == FieldType::Struct));
     if (f.tooltip && c.IsHovered(labelR)) x.tooltip = Utf8ToWide(TrU8(f.tooltip));
-    // A right click on the line: the block's menu for this field (read straight from the input: the
-    // fields of a block that only shows take no input, but this still works).
+    // 行を右クリック: このフィールドのブロックのメニュー (入力から直に読む: 表示だけの
+    // ブロックのフィールドは入力を受けないが、これは動く)。
     if (x.fieldMenu && *x.fieldMenu && x.menusOk && !x.wrap) {
         const ui::Input& in = c.In();
         if (in.pressed[static_cast<int>(ui::Mouse::Right)] && row.Contains(in.mouseX, in.mouseY) && x.view.Contains(in.mouseX, in.mouseY)) {
@@ -622,7 +620,7 @@ void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t in
             if (!actions.empty()) {
                 x.st.menuActions = std::move(actions);
                 x.st.menu.OpenAt(in.mouseX, in.mouseY);
-                x.menusOk = false;  // (one menu)
+                x.menusOk = false;  // (メニューは 1 つ)
             }
         }
     }
@@ -656,7 +654,7 @@ void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t in
             Spot s{f, f.value, value, otherValues, u, f.name};
             s.enabled = enabled;
             s.r = valueR;
-            // A single number: its label is the handle to drag it.
+            // 単独の数: ラベルがドラッグのつまみ。
             if (f.value.type == FieldType::Int || f.value.type == FieldType::Float) s.scrub = labelR;
             s.editFor = editFor;
             DrawValue(x, s);
@@ -703,14 +701,14 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
     x.refs = refs;
     x.y = area.y + 6 - off;
     x.labelW = std::clamp(area.w * 0.38f, 96.f, 220.f);
-    // While a drop-down or a menu is open, the fields under it only show.
+    // ドロップダウンやメニューが開いている間、その下のフィールドは表示だけ。
     const bool inputWas = c.InputEnabled();
     x.menusOk = inputWas && !st.popup.open && !st.menu.open && !st.addPopup.open;
     if (st.popup.open || st.menu.open || st.addPopup.open) c.SetInputEnabled(false);
     for (size_t bi = 0; bi < blocks.size(); ++bi) {
         const Block& b = blocks[bi];
         x.block = bi;
-        // Ids by title (the list may change - a component added or removed - without mixing up fields).
+        // タイトルごとの ID (部品を足したり消したりして一覧が変わっても、フィールドが混ざらない)。
         c.PushId(b.title.empty() ? std::string("block") : WideToUtf8(b.title));
         const bool folded = !b.title.empty() && st.folded.contains(b.title);
         if (!b.title.empty()) DrawHeader(x, b, folded);
@@ -719,18 +717,18 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 ui::TextStyle ns = Text(12, theme::TextFaint);
                 ns.wrap = true;
                 ns.v = ui::VAlign::Top;
-                // As tall as the note is (a long one wraps to three lines and more).
+                // 注記の高さのとおり (長いと 3 行以上に折り返す)。
                 const float h = std::ceil(c.P().TextHeight(b.note, ns.size, x.view.w - 28));
                 c.P().Text({x.view.x + 14, x.y, x.view.w - 28, h + 2}, b.note, ns);
                 x.y += h + 8;
             }
             if (b.modes.size() == 2) {
-                // Two ways of showing the block: a switch above its fields (left = the first way).
+                // ブロックの見せ方が 2 つ: フィールドの上のスイッチ (左 = 最初の見せ方)。
                 bool second = b.mode == 1;
                 if (w::Switch(c, "mode", x.view.x + 12, x.y + 4, second, b.modes[0], b.modes[1]) && b.setMode) b.setMode(second ? 1 : 0);
                 x.y += 32;
             } else if (!b.modes.empty()) {
-                // More ways: one strip of choices.
+                // もっと多い見せ方: 選択肢を 1 列に並べる。
                 std::vector<std::wstring_view> labels(b.modes.begin(), b.modes.end());
                 const float wdt = std::min(84.f * static_cast<float>(labels.size()) + 4.f, x.view.w - 24);
                 const int picked = w::Segmented(c, "mode", {x.view.x + 12, x.y + 2, wdt, 26}, labels, b.mode);
@@ -738,7 +736,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 x.y += 34;
             }
             if (!b.presets.empty()) {
-                // Ready-made values: a row as a field's - its name, and a drop-down whose rows set them.
+                // できあいの値: フィールドと同じような行 - 名前と、選ぶと値を設定するドロップダウン。
                 const Rect row{x.view.x, x.y, x.view.w, kRow};
                 const Rect labelR{row.x + 12, row.y, x.labelW, row.h};
                 const Rect valueR{row.x + 12 + x.labelW + 8, row.y + 3, std::max(40.f, row.w - x.labelW - 34), row.h - 6};
@@ -753,7 +751,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 x.fieldMenu = b.fieldMenu ? &b.fieldMenu : nullptr;
                 FieldPath prefix;
                 const bool inputBefore = c.InputEnabled();
-                if (b.readOnly) c.SetInputEnabled(false);  // shown only: no field takes a click or a key
+                if (b.readOnly) c.SetInputEnabled(false);  // 表示だけ: どの欄もクリックもキーも受けない
                 if (b.fields.empty()) {
                     DrawStruct(x, *b.type, b.object, b.others, b.unknowns, prefix, 0);
                 } else {
@@ -778,7 +776,7 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
         }
         x.y += 44;
     }
-    // The panel's title: the button's words without its "＋".
+    // パネルのタイトル: ボタンの言葉から "＋" を除いたもの。
     std::wstring addTitle(addLabel);
     if (addTitle.starts_with(L"＋")) addTitle.erase(0, 1);
     while (!addTitle.empty() && addTitle.front() == L' ') addTitle.erase(0, 1);

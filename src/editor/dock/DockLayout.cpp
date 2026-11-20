@@ -57,7 +57,7 @@ const Node* LeafWith(const Node& n, std::string_view panel) {
 
 const Node* FirstLeaf(const Node& n) { return n.IsLeaf() ? &n : FirstLeaf(*n.a); }
 
-// Replaces splits that have an empty leaf child by the other child. The root may stay an empty leaf.
+// 空の葉の子を持つ分割を、もう一方の子に置き換える。ルートは空の葉のままでもよい。
 void PruneSlot(std::unique_ptr<Node>& slot) {
     if (!slot || slot->IsLeaf()) return;
     PruneSlot(slot->a);
@@ -147,7 +147,7 @@ void SanitizeNode(Node& n, const std::unordered_set<std::string>& known, std::un
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Layout
+// 配置
 // ---------------------------------------------------------------------------
 
 Layout::Layout() { main = MakeLeaf({}); }
@@ -321,7 +321,7 @@ bool Layout::Dock(std::string_view panel, uint32_t targetId, Zone zone, int tabI
     const Node* target = FindNode(targetId);
     if (!target || !Contains(panel)) return false;
     if (zone == Zone::Center && !target->IsLeaf()) return false;
-    // Dropping a panel on its own lone tab, or on the edge of a group made of only itself, changes nothing.
+    // パネルを自分だけのタブや、自分だけでできたグループの端にドロップしても、何も変わらない。
     uint32_t fromLeaf = 0;
     int fromIndex = 0;
     const Layout before = Clone();
@@ -333,7 +333,7 @@ bool Layout::Dock(std::string_view panel, uint32_t targetId, Zone zone, int tabI
     }
     Prune();
     if (ToJson() == before.ToJson()) {
-        *this = before.Clone();  // keep the node ids the windows refer to
+        *this = before.Clone();  // ウィンドウが指しているノードの id を保つ
         return false;
     }
     return true;
@@ -346,7 +346,7 @@ bool Layout::DockFloating(uint32_t floatingId, uint32_t targetId, Zone zone) {
     if (!target || (zone == Zone::Center && !target->IsLeaf())) return false;
     std::unique_ptr<Node> sub = std::move(f->root);
     std::erase_if(floating, [&](const Floating& x) { return x.id == floatingId; });
-    if (!Insert(std::move(sub), targetId, zone, -1)) return false;  // cannot happen: target checked above
+    if (!Insert(std::move(sub), targetId, zone, -1)) return false;  // 起こらない: ターゲットは上で確かめた
     Prune();
     return true;
 }
@@ -421,7 +421,7 @@ std::optional<Layout> Layout::FromJson(const json::Value& v) {
     l.Renumber(*l.main);
     for (const auto& o : v.Get("floating").Items()) {
         auto root = NodeFromJson(o.Get("root"));
-        if (!root) continue;  // one broken window does not lose the rest
+        if (!root) continue;  // 壊れたウィンドウが 1 つあっても、残りは失わない
         Floating f;
         f.id = l.NewId();
         f.rect = {static_cast<int>(o.Get("x").AsInt()), static_cast<int>(o.Get("y").AsInt()),
@@ -434,7 +434,7 @@ std::optional<Layout> Layout::FromJson(const json::Value& v) {
 }
 
 // ---------------------------------------------------------------------------
-// Geometry
+// 幾何
 // ---------------------------------------------------------------------------
 
 void SplitChildren(const Node& split, const ui::Rect& r, float gap, ui::Rect& a, ui::Rect& b) {
@@ -491,7 +491,7 @@ ui::Rect ZonePreview(const ui::Rect& t, Zone zone, bool targetIsLeaf) {
 }
 
 // ---------------------------------------------------------------------------
-// Tab strip
+// タブの帯
 // ---------------------------------------------------------------------------
 
 float TabLeft(std::span<const float> widths, float spacing, size_t index) {
@@ -520,8 +520,8 @@ float ScrollToShowTab(std::span<const float> widths, float spacing, float view, 
     const float content = TabLeft(widths, spacing, widths.size()) - spacing;
     const float left = TabLeft(widths, spacing, index);
     const float right = left + widths[index];
-    if (right > scroll + view) scroll = right - view;  // cut off on the right: its right edge to the view's
-    if (left < scroll) scroll = left;                   // on the left (or wider than the view): its left edge
+    if (right > scroll + view) scroll = right - view;  // 右が切れている: その右端をビューの右端に合わせる
+    if (left < scroll) scroll = left;                   // 左が切れている (またはビューより広い): その左端に合わせる
     return ClampTabScroll(content, view, scroll);
 }
 

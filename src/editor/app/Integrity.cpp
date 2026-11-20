@@ -19,7 +19,7 @@ std::optional<std::vector<FileEntry>> ParseFileList(const json::Value& v, std::s
         std::transform(e.sha256.begin(), e.sha256.end(), e.sha256.begin(), [](char c) {
             return c >= 'A' && c <= 'F' ? static_cast<char>(c - 'A' + 'a') : c;
         });
-        // Never a path that leaves the engine's folder.
+        // エンジンのフォルダーの外へ出るパスは決して使わない。
         if (e.path.empty() || e.sha256.size() != 64 || e.path.find("..") != std::string::npos || e.path.front() == '/' ||
             e.path.find(':') != std::string::npos) {
             if (error) *error = TrU8("RM_Engine.files.json に読めない行があります: ") + e.path;

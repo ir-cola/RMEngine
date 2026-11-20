@@ -31,8 +31,8 @@ std::unordered_map<ItemId, size_t> IndexOf(std::span<const Item> items) {
     return m;
 }
 
-// The parent's index, or npos for the top level. A parent that is missing or listed after its
-// child (a software's mistake) counts as the top level, so the tree never loops.
+// 親の添字。最上位なら npos。親が無い、または子より後ろに並んでいる (ソフトの間違い) ときは
+// 最上位として扱い、ツリーがループしないようにする。
 std::vector<size_t> ParentIndices(std::span<const Item> items) {
     const auto index = IndexOf(items);
     std::vector<size_t> parent(items.size(), npos);
@@ -47,7 +47,7 @@ std::vector<size_t> ParentIndices(std::span<const Item> items) {
 using IdSet = std::unordered_set<ItemId>;
 IdSet SetOf(std::span<const ItemId> ids) { return {ids.begin(), ids.end()}; }
 
-// How many children of `parent` that are not moving come before list position `stop`.
+// 動いていない `parent` の子のうち、一覧の位置 `stop` より前にあるものの数。
 size_t SiblingsBefore(std::span<const Item> items, ItemId parent, size_t stop, const IdSet& moving) {
     size_t n = 0;
     for (size_t i = 0; i < stop && i < items.size(); ++i) {
@@ -56,7 +56,7 @@ size_t SiblingsBefore(std::span<const Item> items, ItemId parent, size_t stop, c
     return n;
 }
 
-// Not into a moving item or below one: walk up from `parent` once (not once per moving item).
+// 動く項目の中や下には入れない: `parent` から 1 回だけ上へたどる (動く項目ごとにではなく)。
 bool ParentAllowed(std::span<const Item> items, ItemId parent, const IdSet& moving) {
     if (parent == 0) return true;
     const ItemIndex index(items);
@@ -93,7 +93,7 @@ std::vector<Row> VisibleRows(std::span<const Item> items, const std::unordered_s
         hasChildren[parent[i]] = true;
     }
 
-    // With a filter: an item is shown when it matches or something below it does.
+    // フィルターがあるとき: 項目が一致するか、その下に一致するものがあれば表示する。
     std::vector<bool> shown(items.size(), filter.empty());
     if (!filter.empty()) {
         for (size_t i = items.size(); i-- > 0;) {
@@ -103,7 +103,7 @@ std::vector<Row> VisibleRows(std::span<const Item> items, const std::unordered_s
     }
 
     std::vector<Row> rows;
-    std::vector<bool> open(items.size(), false);  // the item is visible and its children are shown
+    std::vector<bool> open(items.size(), false);  // その項目は見えていて、子が表示される
     for (size_t i = 0; i < items.size(); ++i) {
         if (!shown[i]) continue;
         if (parent[i] != npos && !open[parent[i]]) continue;
@@ -173,7 +173,7 @@ void Click(Selection& sel, std::span<const Item> items, std::span<const Row> row
                 if (have.insert(x).second) sel.ids.push_back(x);
             }
             sel.focus = id;
-            Prune(sel, items);  // display order
+            Prune(sel, items);  // 表示順
             return;
         }
     }
@@ -197,7 +197,7 @@ void SelectAll(Selection& sel, std::span<const Item> items, std::span<const Row>
 }
 
 bool Prune(Selection& sel, std::span<const Item> items) {
-    // Every frame: items + selected, never items x selected.
+    // 毎フレーム: items + selected であり、items x selected にはしない。
     const IdSet selected = sel.Set();
     std::vector<ItemId> kept;
     kept.reserve(sel.ids.size());
@@ -217,7 +217,7 @@ bool Prune(Selection& sel, std::span<const Item> items) {
 std::vector<ItemId> Roots(std::span<const Item> items, std::span<const ItemId> ids) {
     const std::vector<size_t> parent = ParentIndices(items);
     const IdSet selected = SetOf(ids);
-    // covered[i]: item i is selected or below a selected one (parents come first in the list).
+    // covered[i]: 項目 i が選択中か、選択中のものの下にある (親は一覧の先に来る)。
     std::vector<bool> covered(items.size(), false);
     std::vector<ItemId> out;
     for (size_t i = 0; i < items.size(); ++i) {
@@ -248,7 +248,7 @@ std::optional<Drop> DropOnRow(std::span<const Item> items, std::span<const Row> 
     } else if (fraction >= after) {
         d.mark = Drop::Mark::After;
         if (row.expanded) {
-            // The line under an open item is above its first child: the first child it is.
+            // 開いている項目の下の線は、その最初の子の上にある: 最初の子にあたる。
             d.parent = it.id;
             d.index = 0;
         } else {

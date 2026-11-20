@@ -1,17 +1,17 @@
 #pragma once
-// The アセット panel (core_panel::kAssets): the project's Assets/ folder as a tree - folders and
-// files with a picture of their kind. Drawn with the core tree (editor/tree), so it selects, searches,
-// renames (F2 / double-click) and drags like the 階層:
+// アセットパネル (core_panel::kAssets): プロジェクトの Assets/ フォルダーをツリーで見せる -
+// フォルダーとファイルを、その種類の絵と一緒に。核のツリー (editor/tree) で描くので、階層と
+// 同じように選べて、検索でき、改名 (F2 / ダブルクリック) でき、ドラッグできる:
 //
-//   drag rows onto a folder           move the files there (their ids go along)
-//   drag rows out of the panel        onto a reference field (AssetRef) of the インスペクター
-//   right-click                       新しいフォルダ / エクスプローラーで表示 / 削除 (ごみ箱へ)
-//                                     (on empty space: 新しいフォルダ / エクスプローラーで開く)
-//   under the tree                    what the selected one is and where, and the slider of the
-//                                     thumbnails' size (left end: no thumbnails, the kinds' pictures)
+//   行をフォルダーへドラッグ          ファイルをそこへ移す (id はついて行く)
+//   行をパネルの外へドラッグ          インスペクターの参照欄 (AssetRef) へ
+//   右クリック                        新しいフォルダ / エクスプローラーで表示 / 削除 (ごみ箱へ)
+//                                     (空いた所で: 新しいフォルダ / エクスプローラーで開く)
+//   ツリーの下                        選んだ物が何で、どこにあるか。サムネイルの大きさの
+//                                     スライダー (左の端: サムネイルなし、種類の絵)
 //
-// Pictures and 3D models show a thumbnail (Thumbnails.h) instead of their kind's picture.
-// One per software (its own selection and open folders); the files are the project's (AssetLibrary).
+// 画像と 3D モデルは、その種類の絵の代わりにサムネイル (Thumbnails.h) を出す。
+// ソフトごとに 1 つ (それぞれの選択と開いたフォルダー)。ファイルはプロジェクトのもの (AssetLibrary)。
 
 #include "core/reflect/Object.h"
 #include "editor/assets/AssetLibrary.h"
@@ -34,26 +34,26 @@ namespace rm::editor {
 
 class AssetPanel final : public tree::Source {
 public:
-    static constexpr float kMinThumbnail = 16.f;  // and below kThumbnailsFrom: no thumbnails
+    static constexpr float kMinThumbnail = 16.f;  // これ以下は kThumbnailsFrom: サムネイルなし
     static constexpr float kThumbnailsFrom = 20.f;
     static constexpr float kMaxThumbnail = 96.f;
 
-    // showError: a problem with a file operation (a dialog). thumbnails: null = none. thumbnailSize:
-    // the thumbnails' size in DIPs (the software's view: kept in UserSettings by the editor).
+    // showError: ファイル操作の問題 (ダイアログ)。thumbnails: null = なし。thumbnailSize:
+    // サムネイルの大きさ (DIP。ソフトの見え方: エディターが UserSettings に保つ)。
     AssetPanel(AssetLibrary& library, Thumbnails* thumbnails, float& thumbnailSize, std::function<void(std::wstring)> showError);
 
     void Draw(ui::Context& c, const ui::Rect& r);
-    // Its right-click menu is open (what is under the menu takes no clicks: EditorScreen::OnFrame).
+    // 右クリックメニューが開いている (メニューの下にある物はクリックを受けない: EditorScreen::OnFrame)。
     bool MenuOpen() const { return state_.menu.open; }
 
-    // Selecting one asset shows it in the software's インスペクター (`inspect`): what it is and, for a
-    // kind that has them, its import settings (core/asset/ImportSettings.h). A change is written to
-    // its .meta at once as an undo entry on the software's history (`push`) - Ctrl+Z writes the old
-    // value back. Shown when the button is let go without a drag (dragging an asset to a field of the
-    // インスペクター does not take the インスペクター away from what it shows).
+    // アセットを 1 つ選ぶと、そのソフトのインスペクター (`inspect`) に出す: それが何かと、
+    // 持っている種類なら取り込みの設定 (core/asset/ImportSettings.h)。変更はすぐその .meta に
+    // 書かれ、ソフトの履歴 (`push`) に Undo の 1 件として積まれる - Ctrl+Z で古い値を書き戻す。
+    // ドラッグせずにボタンを離したときに出す (アセットをインスペクターの欄へドラッグしても、
+    // インスペクターが出している物は奪われない)。
     void SetInspector(std::function<void(Inspectable)> inspect, std::function<void(std::unique_ptr<ICommand>)> push);
-    // Where the plugins' previews are (AssetPreview.h: a sound's length, 「鳴らしてみる」), and how to have
-    // every window drawn again when a line they read on their thread is there (on the UI thread).
+    // プラグインのプレビューがある所 (AssetPreview.h: 音の長さ、「鳴らしてみる」)と、別のスレッドで
+    // 読む行が出来たときに (UI スレッドで) 全ウィンドウを描き直させる方法。
     void SetPreviews(const PluginRegistry* registry, std::function<void()> redraw);
 
     // tree::Source
@@ -74,7 +74,7 @@ private:
     void Report(const std::wstring& problem);
     void InspectSelected();
 
-    // The import settings shown in the インスペクター (one asset at a time).
+    // インスペクターに出す取り込みの設定 (アセットを 1 つずつ)。
     struct ImportView {
         std::string guid;
         reflect::Object object;
@@ -85,7 +85,7 @@ private:
     std::function<void(std::unique_ptr<ICommand>)> push_;
     bool pendingInspect_ = false;
     const PluginRegistry* registry_ = nullptr;
-    std::unique_ptr<UiWake> described_;  // a preview's line is known: redraw (gone with the panel)
+    std::unique_ptr<UiWake> described_;  // プレビューの行がわかった: 描き直す (パネルと一緒になくなる)
     friend class ImportCommand;
 
     AssetLibrary& lib_;
@@ -93,17 +93,17 @@ private:
     float& thumbnailSize_;
     std::function<void(std::wstring)> showError_;
     tree::State state_;
-    std::unordered_map<tree::ItemId, std::string> guids_;  // tree id -> asset id (from the last Items)
+    std::unordered_map<tree::ItemId, std::string> guids_;  // ツリーの id -> アセットの id (最後の Items から)
 };
 
-// The picture and the name of a kind ("画像" ...), in the language in use.
+// 種類の絵と名前 ("画像" など)。使っている言語で。
 w::Icon IconOf(asset::Kind kind);
 tree::Icon TreeIconOf(asset::Kind kind);
 std::wstring KindLabel(asset::Kind kind);
 
-// What a reference field (AssetRef) of the インスペクター shows and lists.
+// インスペクターの参照欄 (AssetRef) が出して並べる物。
 std::optional<inspector::RefChoice> AssetChoice(const AssetLibrary& library, std::string_view guid);
-// The thumbnail of an asset, `size` DIPs square (in the window's pixels); null: none, or not made yet.
+// アセットのサムネイル。`size` DIP 四方 (ウィンドウのピクセルで)。null: なし、またはまだ作っていない。
 ID2D1Bitmap* AssetThumbnail(ui::Context& c, const AssetLibrary& library, Thumbnails& thumbnails, std::string_view guid, float size);
 std::vector<inspector::RefChoice> AssetChoices(const AssetLibrary& library);
 

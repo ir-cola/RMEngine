@@ -1,18 +1,18 @@
 #pragma once
-// Draws a docking tree in a window and lets the user rearrange it (editor only).
+// ウィンドウにドッキングの木を描き、ユーザーが並べ替えられるようにする (エディター専用)。
 //
-//   tab strip      click = show, drag = move, middle click / x = close, right click = menu.
-//                  Tabs that do not fit: the wheel or < > move the row, v lists every tab; the shown
-//                  tab is always moved into view. Dragging a tab near an end of the row moves it too.
-//   splitter       drag = resize (the ratio is kept, so the panels scale with the window)
-//   drop guides    while dragging, guides appear on the panel under the cursor (and on the
-//                  edges of the window). Releasing on a guide docks there; on a tab strip it
-//                  becomes a tab; anywhere else the panel goes out into its own window.
+//   タブ列         クリック = 表示、ドラッグ = 移動、中クリック / x = 閉じる、右クリック = メニュー。
+//                  収まらないタブ: ホイールか < > で行を動かし、v で全タブを一覧する。表示中の
+//                  タブは必ず見える所に動かす。行の端の近くへタブをドラッグしても動く。
+//   分割線         ドラッグ = 大きさを変える (比率を保つので、パネルはウィンドウに合わせて伸縮する)
+//   ドロップガイド ドラッグ中、カーソルの下のパネル (とウィンドウの端) にガイドが出る。
+//                  ガイドの上で離すとそこにドックする。タブ列の上ならタブになる。
+//                  それ以外ならパネルは自分のウィンドウに出ていく。
 //
-// One DockSpace serves every window of the editor: the editor window (site 0) and each
-// floating window (site = its floating id). A drag started in one window can end in another,
-// so the drop target is found from the screen position and the window under it.
-// The layout is edited only at the end of a frame (never while its nodes are being drawn).
+// 1 つの DockSpace がエディターの全ウィンドウを受け持つ: エディターウィンドウ (site 0) と、
+// 各浮動ウィンドウ (site = その浮動 ID)。あるウィンドウで始めたドラッグは別のウィンドウで
+// 終わることがあるので、ドロップ先は画面上の位置とその下にあるウィンドウから探す。
+// レイアウトはフレームの終わりにだけ編集する (ノードを描いている最中には絶対にしない)。
 
 #include "editor/dock/DockLayout.h"
 #include "editor/widgets/Widgets.h"
@@ -28,17 +28,17 @@
 namespace rm::editor::dock {
 
 struct PanelType {
-    std::string id;       // "core.console" - also the key in the saved layout
-    std::wstring title;   // tab label
+    std::string id;       // "core.console" - 保存されるレイアウトのキーでもある
+    std::wstring title;   // タブの表示名
     std::function<void(ui::Context&, const ui::Rect&)> draw;
 };
 
 class DockSpace {
 public:
-    // Called after a change of the tree structure (panels moved / opened / closed, windows added
-    // or removed). The owner creates / destroys floating windows to match the layout.
+    // 木の構造が変わった後 (パネルの移動・開く・閉じる、ウィンドウの追加や削除) に呼ぶ。
+    // 持ち主はレイアウトに合わせて浮動ウィンドウを作ったり壊したりする。
     std::function<void()> onStructureChanged;
-    // Redraw every window that shows a dock (a drag shows guides in another window).
+    // ドックを表示しているウィンドウを全部再描画する (ドラッグ中は別のウィンドウにガイドが出る)。
     std::function<void()> onRedrawAll;
 
     void SetPanelTypes(std::vector<PanelType> types) { types_ = std::move(types); }
@@ -50,22 +50,22 @@ public:
     const Layout& GetLayout() const { return layout_; }
     void SetLayout(Layout layout);
 
-    // --- Per window ---
+    // --- ウィンドウごと ---
     void Draw(ui::Context& c, const ui::Rect& area, uint32_t site, HWND hwnd, float scale);
-    // Drop guides, the dragged tab and the tab menu. Draw last, with input enabled.
+    // ドロップガイド、ドラッグ中のタブ、タブのメニュー。最後に、入力を有効にして描く。
     void DrawOverlay(ui::Context& c, uint32_t site);
     void ForgetSite(uint32_t site);
 
-    // --- Floating window moved by its title bar (WM_MOVING / WM_EXITSIZEMOVE) ---
+    // --- タイトルバーで動かす浮動ウィンドウ (WM_MOVING / WM_EXITSIZEMOVE) ---
     void WindowMoving(uint32_t floatingId, HWND hwnd);
     void WindowMoveEnded(uint32_t floatingId);
 
-    // --- Commands (menus) ---
+    // --- コマンド (メニュー) ---
     void TogglePanel(std::string_view id);
-    void FloatPanel(std::string_view id);  // into a new window next to where it is now
-    void CloseFloating(uint32_t floatingId);  // the X of a floating window: its panels are closed
+    void FloatPanel(std::string_view id);  // 今ある場所の隣の新しいウィンドウへ
+    void CloseFloating(uint32_t floatingId);  // 浮動ウィンドウの X: 中のパネルを閉じる
     bool IsDragging() const { return drag_.kind == DragKind::Tab || drag_.kind == DragKind::Window; }
-    // Window title for a floating window: its panels' names.
+    // 浮動ウィンドウのタイトル: 中のパネルの名前。
     std::wstring FloatingTitle(uint32_t floatingId) const;
 
 private:
@@ -73,16 +73,16 @@ private:
 
     struct LeafGeo {
         uint32_t id = 0;
-        ui::Rect rect;   // whole leaf
-        ui::Rect strip;  // tab strip
-        ui::Rect view;   // the part of the strip the tabs are shown in (without the < > v buttons)
-        std::vector<float> widths;  // of each tab
+        ui::Rect rect;   // 葉全体
+        ui::Rect strip;  // タブ列
+        ui::Rect view;   // タブを表示する部分 (< > v のボタンを除く)
+        std::vector<float> widths;  // 各タブの幅
         bool overflow = false;
     };
-    // The row of a leaf's tabs (by leaf id; not saved).
+    // 葉のタブの行 (葉 ID ごと。保存しない)。
     struct StripState {
         float scroll = 0;
-        std::string shown;  // the tab that was in front last frame: a new one is moved into view
+        std::string shown;  // 前のフレームで手前にあったタブ: 新しくなったら見える所に動かす
         size_t count = 0;
     };
     struct Site {
@@ -98,7 +98,7 @@ private:
         uint32_t node = 0;
         Zone zone = Zone::Center;
         bool leaf = true;
-        ui::Rect target;  // rectangle of the target node (for the preview)
+        ui::Rect target;  // 対象ノードの矩形 (プレビュー用)
     };
     struct Target {
         bool valid = false;
@@ -106,21 +106,21 @@ private:
         uint32_t node = 0;
         Zone zone = Zone::Center;
         int tabIndex = -1;
-        ui::Rect preview;  // in the target window, DIPs
+        ui::Rect preview;  // 対象ウィンドウでの DIP
     };
     struct Drag {
         DragKind kind = DragKind::None;
-        std::string panel;      // Tab
-        uint32_t floating = 0;  // Window
+        std::string panel;      // タブ
+        uint32_t floating = 0;  // ウィンドウ
         uint32_t fromSite = 0;
         float startX = 0, startY = 0;
         ui::Rect fromLeaf;
-        // hover (updated from the cursor position on the screen)
+        // ホバー (画面上のカーソル位置から更新する)
         uint32_t hoverSite = ~0u;
-        float hoverX = 0, hoverY = 0;  // in the hovered window, DIPs
-        uint32_t hoverLeaf = 0;        // leaf under the cursor (its guides are shown)
+        float hoverX = 0, hoverY = 0;  // ホバー中のウィンドウでの DIP
+        uint32_t hoverLeaf = 0;        // カーソルの下の葉 (そのガイドを出す)
         Target target;
-        // moving a row of tabs that does not fit, while the tab is held near one of its ends
+        // 収まらないタブの行を動かす。タブを行の端の近くに持っている間
         POINT lastCursor{};
         double lastScrollTime = 0;
     };
@@ -128,7 +128,7 @@ private:
         w::Popup popup;
         std::string panel;
     };
-    struct TabList {  // the v menu: every tab of one leaf
+    struct TabList {  // v メニュー: 1 つの葉の全タブ
         w::Popup popup;
         uint32_t leaf = 0;
     };

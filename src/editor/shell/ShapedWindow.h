@@ -1,9 +1,9 @@
 #pragma once
-// A software's own window (SoftwareHost::OpenToolWindow): no Windows frame, the shape the software
-// gives (a region: the union of rounded rectangles, set again whenever its size changes), owned by the
-// editor's window. Moved and sized where the software's hit test says (WM_NCHITTEST); drawn on input
-// and by a timer every `refreshSeconds` - never invalidated frame after frame, which would keep the
-// editor's own window from being drawn (Windows paints the windows that wait one after another).
+// ソフト自身のウィンドウ (SoftwareHost::OpenToolWindow): Windows のフレームはなく、形はソフトが
+// 決める (領域: 角丸の四角の和集合。サイズが変わるたびに設定し直す)。エディターのウィンドウが持つ。
+// ソフトのヒットテストが言う場所で動かし、サイズを変える (WM_NCHITTEST)。入力と `refreshSeconds` ごとの
+// タイマーで描く - フレームごとに無効化はしない。そうするとエディター自身のウィンドウが描かれなくなる
+// (Windows は待っているウィンドウを 1 つずつ描くため)。
 
 #include "editor/app/ScreenWindow.h"
 #include "editor/plugin/Software.h"

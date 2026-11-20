@@ -130,7 +130,7 @@ const AssetPreview* PreviewFor(const PluginRegistry& registry, asset::Kind kind)
 
 namespace {
 
-// 「鳴らしてみる」 / 「止める」 for an asset whose kind has a preview (none: nothing).
+// 「鳴らしてみる」 / 「止める」。プレビューがある種類のアセット用 (なければ何もない)。
 std::vector<w::Action> PreviewActions(const AssetLibrary& lib, const AssetPreview* preview, const std::string& guid) {
     std::vector<w::Action> list;
     const asset::Entry* e = lib.Index().ByGuid(guid);
@@ -159,7 +159,7 @@ ID2D1Bitmap* AssetThumbnail(ui::Context& c, const AssetLibrary& lib, Thumbnails&
     if (!e) return nullptr;
     const asset::Kind kind = asset::KindOf(e->path, e->folder);
     if (!thumbnails.Has(kind)) return nullptr;
-    // In the window's pixels (sharp on a high-DPI screen).
+    // ウィンドウのピクセルで (高 DPI の画面でもくっきり)。
     float dpiX = 96, dpiY = 96;
     if (ID2D1DeviceContext* dc = c.P().DC()) dc->GetDpi(&dpiX, &dpiY);
     const uint32_t pixels = static_cast<uint32_t>(std::ceil(size * dpiX / 96.f));
@@ -204,7 +204,7 @@ void AssetPanel::Rename(tree::ItemId id, const std::string& nameUtf8) {
 }
 
 void AssetPanel::Move(std::span<const tree::ItemId> items, tree::ItemId parent, size_t index) {
-    (void)index;  // a folder lists its contents by name: only where they go matters
+    (void)index;  // フォルダーは中身を名前で並べる: どこに入るかだけが大事
     std::string folder;
     if (parent != 0) {
         const auto it = guids_.find(parent);
@@ -231,7 +231,7 @@ std::vector<tree::Action> AssetPanel::Actions(std::span<const tree::ItemId> sele
     folder.run = [this, where] {
         std::string made;
         Report(lib_.NewFolder(where, &made));
-        if (!made.empty()) tree::RequestSelect(state_, {asset::NumberOf(made)}, true);  // and type its name
+        if (!made.empty()) tree::RequestSelect(state_, {asset::NumberOf(made)}, true);  // 名前を打つ
     };
     list.push_back(std::move(folder));
     separator();
@@ -244,13 +244,13 @@ std::vector<tree::Action> AssetPanel::Actions(std::span<const tree::ItemId> sele
         return list;
     }
     if (registry_ && guids.size() == 1) {
-        // A sound: heard from here (the 音 plugin's preview).
+        // 音: ここで聞く (音プラグインのプレビュー)。
         if (const asset::Entry* e = lib_.Index().ByGuid(guids[0])) {
             for (tree::Action& a : PreviewActions(lib_, PreviewFor(*registry_, asset::KindOf(e->path, e->folder)), guids[0])) list.push_back(std::move(a));
         }
     }
-    // The asset's details and import settings in the インスペクター (as choosing it shows them - also when
-    // the インスペクター shows something else since).
+    // アセットの詳細と取り込みの設定をインスペクターに出す (選んだときの出し方と同じ - その後
+    // インスペクターが別の物を出していても)。
     tree::Action details;
     details.label = Tr(L"詳しく見る (インスペクター)");
     details.enabled = guids.size() == 1 && static_cast<bool>(inspect_);
@@ -279,7 +279,7 @@ w::DragThing AssetPanel::DragOut(std::span<const tree::ItemId> items) {
     return t;
 }
 
-// One change of an asset's import settings: written to its .meta (and back on undo).
+// アセットの取り込みの設定の 1 回の変更: その .meta に書く (Undo すると戻る)。
 class ImportCommand final : public ICommand {
 public:
     ImportCommand(AssetLibrary& lib, std::weak_ptr<AssetPanel::ImportView> view, std::string guid, const reflect::TypeDesc& type,
@@ -300,9 +300,9 @@ public:
 
 private:
     void Apply(const json::Value& v) {
-        if (!lib_.Index().ByGuid(guid_)) return;  // (deleted)
-        // The settings now, with this one field changed (other settings and unknown keys stay). Written
-        // to the .meta when the edit is finished (AssetLibrary::FlushImports), not at every step of a drag.
+        if (!lib_.Index().ByGuid(guid_)) return;  // (削除された)
+        // 今の設定に、この欄だけを変えた物 (ほかの設定と知らないキーはそのまま)。編集が終わったときに
+        // .meta に書く (AssetLibrary::FlushImports)。ドラッグの 1 歩ごとには書かない。
         reflect::Object o(type_);
         reflect::Unknowns u;
         reflect::Load(type_, o.Get(), lib_.Import(guid_), &u);
@@ -334,7 +334,7 @@ void AssetPanel::SetInspector(std::function<void(Inspectable)> inspect, std::fun
 }
 
 void AssetPanel::SelectionChanged(std::span<const tree::ItemId> ids) {
-    if (ids.size() == 1) pendingInspect_ = true;  // shown when the button is let go (not after a drag)
+    if (ids.size() == 1) pendingInspect_ = true;  // ボタンを離したときに出す (ドラッグの後ではない)
 }
 
 void AssetPanel::InspectSelected() {
@@ -345,7 +345,7 @@ void AssetPanel::InspectSelected() {
     const std::string guid = e->guid;
     const asset::Kind kind = asset::KindOf(e->path, e->folder);
     const reflect::TypeDesc* type = asset::ImportTypeOf(kind);
-    // The settings as the .meta has them now.
+    // .meta が今持っている設定。
     view_->guid = guid;
     view_->unknowns = {};
     if (type) {
@@ -354,7 +354,7 @@ void AssetPanel::InspectSelected() {
     } else {
         view_->object = {};
     }
-    // What the file is: its size on the disk, when it was changed, and a picture's size in pixels.
+    // ファイルが何か: ディスク上のサイズ、変更した日時、画像ならピクセルのサイズ。
     std::wstring facts;
     if (!e->folder) {
         const std::filesystem::path full = lib_.FullPath(*e);
@@ -387,12 +387,12 @@ void AssetPanel::InspectSelected() {
     target.blocks = [lib, view, guid, type, push, preview, known, facts] {
         std::vector<InspectBlock> blocks;
         const asset::Entry* now = lib->Index().ByGuid(guid);
-        if (!now) return blocks;  // deleted: nothing is shown
+        if (!now) return blocks;  // 削除された: 何も出さない
         InspectBlock info;
         info.note = KindLabel(asset::KindOf(now->path, now->folder)) + L"  ·  Assets/" + Utf8ToWide(now->path) + L"\nID " + Utf8ToWide(guid);
         if (!facts.empty()) info.note += L"\n" + facts;
         if (preview && preview->describe) {
-            // (a sound: its length and form - and 「鳴らしてみる」 in the block's ⋮ menu)
+            // (音: 長さと形式 - 「鳴らしてみる」はブロックの ⋮ メニューにある)
             if (const std::wstring line = preview->describe(lib->FullPath(*now), known); !line.empty()) info.note += L"\n" + line;
             info.title = KindLabel(asset::KindOf(now->path, now->folder));
             info.menu = PreviewActions(*lib, preview, guid);
@@ -419,19 +419,19 @@ void AssetPanel::InspectSelected() {
 }
 
 void AssetPanel::Draw(ui::Context& c, const Rect& r) {
-    if (lib_.Poll()) c.RequestRedraw();  // changed on the disk (Explorer ...)
+    if (lib_.Poll()) c.RequestRedraw();  // ディスクで変わった (エクスプローラーなど)
     Rect area = r;
     const Rect info = ui::TakeBottom(area, 24);
     tree::Draw(c, state_, *this, area);
-    // A click on one asset shows it in the インスペクター - once the button is up, and not after a drag
-    // (the drag may be going to a field of what the インスペクター shows now).
+    // アセットを 1 つクリックするとインスペクターに出す - ボタンを離してから、ドラッグの後ではない
+    // (ドラッグは、インスペクターが今出している物の欄へ持って行くところかもしれない)。
     if (state_.dragging) pendingInspect_ = false;
     if (pendingInspect_ && !c.In().down[0]) {
         pendingInspect_ = false;
         InspectSelected();
     }
 
-    // Under the tree: what the selected one is and where it is.
+    // ツリーの下: 選んだ物が何で、どこにあるか。
     std::wstring text;
     const std::vector<std::string> sel = GuidsOf(state_.sel.ids);
     if (sel.size() == 1) {
@@ -449,12 +449,12 @@ void AssetPanel::Draw(ui::Context& c, const Rect& r) {
     } else {
         text = TrF(L"{} 個のファイルとフォルダ", lib_.Index().Entries().size());
     }
-    // A look at the folder going on (on the Worker): what is shown is the last look's until it ends.
+    // フォルダーを調べている (Worker で): 終わるまでは、最後の調べの結果を出す。
     if (lib_.Looking()) text += L"  ·  " + Tr(L"調べています…");
     w::Separator(c, info.x + 8, info.y, info.w - 16);
     float textRight = 12;
     if (thumbnails_ && info.w > 260) {
-        // The thumbnails' size (the left end: none - the kinds' pictures, as small rows).
+        // サムネイルの大きさ (左の端: なし - 種類の絵を、小さな行で)。
         constexpr float kSliderW = 96;
         const Rect slider{info.Right() - 12 - kSliderW, info.y + 2, kSliderW, info.h - 4};
         if (w::Slider(c, "asset_thumbnail_size", slider, thumbnailSize_, kMinThumbnail, kMaxThumbnail)) c.RequestRedraw();

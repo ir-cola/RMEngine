@@ -19,7 +19,7 @@ namespace {
 
 constexpr UINT kWmDeferred = WM_APP + 1;
 constexpr UINT_PTR kCaretTimer = 1;
-constexpr UINT_PTR kDeviceTimer = 2;  // the GPU could not be made again: try again in a moment
+constexpr UINT_PTR kDeviceTimer = 2;  // GPU を作り直せなかった: 少し後にもう一度やってみる
 constexpr UINT kDeviceRetryMs = 1000;
 
 ui::Key MapKey(WPARAM vk) {
@@ -56,7 +56,7 @@ ui::Key MapKey(WPARAM vk) {
         case 'X': return ui::Key::X;
         case 'Y': return ui::Key::Y;
         case 'Z': return ui::Key::Z;
-        default: return ui::Key::None;  // includes VK_PROCESSKEY (keys eaten by the IME)
+        default: return ui::Key::None;  // VK_PROCESSKEY (IME が食べたキー) も含む
     }
 }
 
@@ -92,14 +92,14 @@ void ScreenWindow::Close() {
 
 bool ScreenWindow::CreateScreenWindow(const platform::WindowDesc& descIn, int showCmd) {
     platform::WindowDesc desc = descIn;
-    desc.captionRgb = theme::CaptionRgb;  // the title bar in the colors of the theme in use
+    desc.captionRgb = theme::CaptionRgb;  // タイトルバーは、使っているテーマの色にする
     desc.darkCaption = !theme::IsLight;
     if (!window_.Create(desc, this)) return false;
     if (!target_.Create(app_.Gfx(), window_.Handle(), window_.Dpi())) return false;
     painter_.Init(app_.Gfx().DWrite());
     ctx_.getClipboardText = [this] { return platform::GetClipboardText(Hwnd()); };
     ctx_.setClipboardText = [this](const std::wstring& s) { platform::SetClipboardText(Hwnd(), s); };
-    // The IME is off until a text field takes focus.
+    // テキスト欄がフォーカスを取るまで、IME は切っておく。
     ImmAssociateContextEx(Hwnd(), nullptr, 0);
     imeOn_ = false;
     alive_ = true;
@@ -156,13 +156,13 @@ void ScreenWindow::MouseMoved(LPARAM lp) {
     const float s = window_.Scale();
     const float x = GET_X_LPARAM(lp) / s, y = GET_Y_LPARAM(lp) / s;
     if (mouseLocked_) {
-        // Count the move, then put the cursor back where the drag started: it never reaches a screen edge.
+        // 動きを数えてから、カーソルをドラッグを始めた所へ戻す。こうすれば画面の端に届かない。
         input_.mouseDX += x - anchorX_;
         input_.mouseDY += y - anchorY_;
         if (x != anchorX_ || y != anchorY_) {
             POINT p{static_cast<LONG>(std::lround(anchorX_ * s)), static_cast<LONG>(std::lround(anchorY_ * s))};
             ClientToScreen(Hwnd(), &p);
-            SetCursorPos(p.x, p.y);  // its own WM_MOUSEMOVE comes at the anchor: a move of 0
+            SetCursorPos(p.x, p.y);  // その自身の WM_MOUSEMOVE が固定位置で来る: 動きは 0
         }
         input_.mouseX = anchorX_;
         input_.mouseY = anchorY_;
@@ -193,9 +193,9 @@ void ScreenWindow::MouseButton(int button, LPARAM lp, bool down, bool doubleClic
     UpdateMouse(lp);
     UpdateModifiers();
     if (down) {
-        // A click while the IME is composing commits the composition first (like every Windows
-        // text box). The result arrives synchronously as WM_IME_COMPOSITION, so the focused field
-        // receives it in this same frame, before the click moves the focus.
+        // IME が変換中にクリックされたら、まず変換を確定する (どの Windows のテキストボックスも
+        // 同じ)。結果は WM_IME_COMPOSITION として同期的に届くので、フォーカスされた欄は、
+        // クリックがフォーカスを動かす前の、この同じフレームで受け取る。
         if (!input_.imeComposition.empty()) {
             if (HIMC imc = ImmGetContext(Hwnd())) {
                 ImmNotifyIME(imc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
@@ -214,9 +214,9 @@ void ScreenWindow::MouseButton(int button, LPARAM lp, bool down, bool doubleClic
     OnInput();
 }
 
-// The GPU lost (or its devices made again by another window): made again before drawing - the
-// swap chain and the painter's brushes here, the screen's own things in OnDeviceChanged, everything
-// else by its owner when it sees Gfx::Generation change.
+// GPU が失われた (または別のウィンドウがデバイスを作り直した): 描く前に作り直す。スワップ
+// チェーンとペインターのブラシはここで、画面自身の物は OnDeviceChanged で、それ以外は
+// 持ち主が Gfx::Generation の変化に気づいたときに作り直す。
 bool ScreenWindow::EnsureDevice() {
     platform::Gfx& gfx = app_.Gfx();
     if (gfx.Lost() && !app_.RecoverGraphics(*this)) {
@@ -224,9 +224,9 @@ bool ScreenWindow::EnsureDevice() {
         return false;
     }
     if (target_.Generation() == gfx.Generation()) return true;
-    target_.Reset();  // a window has one swap chain at a time: the old one goes first
+    target_.Reset();  // ウィンドウが持つスワップチェーンは同時に 1 つ: 古いほうを先に
     if (!target_.Create(gfx, Hwnd(), window_.Dpi())) {
-        SetTimer(Hwnd(), kDeviceTimer, kDeviceRetryMs, nullptr);  // tried again (a lost device: Lost() says so then)
+        SetTimer(Hwnd(), kDeviceTimer, kDeviceRetryMs, nullptr);  // またやってみた (失われたデバイス: そのときは Lost() がそう言う)
         return false;
     }
     painter_.DeviceChanged();
@@ -244,10 +244,10 @@ void ScreenWindow::RunFrame() {
 
     dc->BeginDraw();
     painter_.Begin(dc);
-    // The input of this frame is taken now, and what lives one frame (presses, the wheel, keys typed) is
-    // cleared from the window's own record at once: a message that arrives while the frame is drawn (a
-    // call in it may let the message queue run) counts in the next frame - it is never cleared unseen
-    // with this one.
+    // このフレームの入力はここで取り、1 フレームだけ生きる物 (押した、ホイール、打ったキー) は
+    // ウィンドウ自身の記録からすぐ消す。フレームを描いている間に届いたメッセージ (その中の呼び出しが
+    // メッセージキューを回すことがある) は次のフレームで数える。見られないまま、このフレームと
+    // 一緒に消されることはない。
     frameInput_ = input_;
     input_.EndFrame();
     ctx_.BeginFrame(&painter_, &frameInput_, {0, 0, w, h}, platform::NowSeconds());
@@ -257,18 +257,19 @@ void ScreenWindow::RunFrame() {
     painter_.End();
     const HRESULT drawn = dc->EndDraw();
     const bool shown = target_.Present();
-    // The GPU went away during this frame: everything is made again before the next one.
+    // このフレームの間に GPU がなくなった: 次のフレームの前に全部作り直す。
     if (drawn == D2DERR_RECREATE_TARGET || (!shown && app_.Gfx().Lost())) {
         app_.Gfx().MarkLost();
         Invalidate();
     }
-    // Clicks and keys may change state after the widgets that show it were drawn
-    // (Esc closing a dialog, a click opening a menu). Such a frame is always followed by one more.
+    // クリックやキーは、それを見せるウィジェットを描いた後で状態を変えることがある
+    // (Esc でダイアログが閉じる、クリックでメニューが開くなど)。そういうフレームの後には、
+    // 必ずもう 1 フレーム続ける。
     bool hadInput = !frameInput_.keys.empty() || !frameInput_.chars.empty() || !frameInput_.imeResult.empty() || frameInput_.wheel != 0.f;
     for (int i = 0; i < 3; ++i) hadInput = hadInput || frameInput_.pressed[i] || frameInput_.released[i];
     inFrame_ = false;
 
-    if (!alive_) return;  // OnFrame may have closed the screen
+    if (!alive_) return;  // OnFrame が画面を閉じたかもしれない
     UpdateIme();
     UpdateMouseLock();
     const ui::Cursor want = ctx_.GetCursor();
@@ -276,10 +277,10 @@ void ScreenWindow::RunFrame() {
         cursor_ = want;
         if (input_.mouseInside && !mouseLocked_) SetCursor(LoadCursorW(nullptr, CursorResource(cursor_)));
     }
-    // A frame that changed state (opened a menu, clicked a button ...) is followed by one
-    // more frame so everything drawn earlier in the frame sees the new state. Bounded.
+    // 状態を変えたフレーム (メニューを開いた、ボタンを押したなど) の後にはもう 1 フレーム続け、
+    // フレームの前のほうで描いた物も新しい状態を見られるようにする。回数に上限がある。
     if ((ctx_.RedrawRequested() || hadInput) && ++chainedFrames_ < 4) Invalidate();
-    // Something is moving by itself (a flying camera): keep drawing, frame after frame.
+    // 何かが勝手に動いている (飛んでいるカメラ): フレームを続けて描く。
     if (ctx_.AnimationRequested()) Invalidate();
 }
 
@@ -325,7 +326,7 @@ void ScreenWindow::UpdateIme() {
 }
 
 LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& handled) {
-    if (!alive_) return 0;  // not handled -> DefWindowProc
+    if (!alive_) return 0;  // 扱わなかった -> DefWindowProc
     {
         LRESULT result = 0;
         if (OnWindowMessage(m, wp, lp, result)) {
@@ -382,7 +383,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             return 0;
         case WM_CAPTURECHANGED:
         case WM_KILLFOCUS:
-            if (m == WM_KILLFOCUS) std::fill(std::begin(input_.keyDown), std::end(input_.keyDown), false);  // the key-up goes elsewhere
+            if (m == WM_KILLFOCUS) std::fill(std::begin(input_.keyDown), std::end(input_.keyDown), false);  // キーを離したことは別の所へ行く
             for (int i = 0; i < 3; ++i) {
                 if (input_.down[i]) input_.released[i] = true;
                 input_.down[i] = false;
@@ -393,7 +394,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN: {
             UpdateModifiers();
-            // Ctrl+Alt+Shift+F12: as if the GPU were lost (to try the way back without a real reset).
+            // Ctrl+Alt+Shift+F12: GPU が失われたことにする (本当にリセットせずに、戻る道を試すため)。
             if (wp == VK_F12 && input_.ctrl && input_.alt && input_.shift) {
                 log::Warn("GPU のデバイスが失われたことにします (Ctrl+Alt+Shift+F12: 作り直しの試し)");
                 app_.Gfx().MarkLost();
@@ -406,7 +407,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
                 input_.keyDown[static_cast<int>(k)] = true;
                 OnInput();
             }
-            handled = m == WM_KEYDOWN;  // keep Alt+F4 / Alt+Space working
+            handled = m == WM_KEYDOWN;  // Alt+F4 / Alt+Space が働くようにしておく
             return 0;
         }
         case WM_KEYUP: {
@@ -419,14 +420,14 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             return 0;
         }
         case WM_SYSKEYUP: {
-            // A key let go while Alt is held (Alt+Space, Alt+W ...) comes here, not as WM_KEYUP: it is up
-            // too (2026-11-19: before, it stayed held and the 3D scene view flew on by itself).
+            // Alt を押している間に離したキー (Alt+Space、Alt+W など) は WM_KEYUP ではなくここに来る。
+            // それも離れたことにする (2026-11-19: 前は押されたままになり、3D のシーンビューが勝手に飛び続けた)。
             UpdateModifiers();
             if (const ui::Key k = MapKey(wp); k != ui::Key::None) {
                 input_.keyDown[static_cast<int>(k)] = false;
                 OnInput();
             }
-            // A lone Alt / F10 would enter the (empty) system menu mode and swallow the next keys.
+            // Alt や F10 だけを押すと (空の) システムメニューのモードに入り、次のキーを飲み込んでしまう。
             if (wp == VK_MENU || wp == VK_F10) return 0;
             handled = false;
             return 0;
@@ -440,7 +441,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             return 0;
         }
         case WM_IME_SETCONTEXT:
-            // We draw the composition string ourselves (inline in the field).
+            // 変換中の文字列は自分で描く (欄の中にそのまま)。
             return DefWindowProcW(h, m, wp, lp & ~static_cast<LPARAM>(ISC_SHOWUICOMPOSITIONWINDOW));
         case WM_IME_STARTCOMPOSITION:
             UpdateIme();
@@ -458,7 +459,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
                 ImmReleaseContext(h, imc);
             }
             OnInput();
-            return 0;  // not passed on, so no WM_IME_CHAR / WM_CHAR duplicates
+            return 0;  // 先へ渡さない。WM_IME_CHAR / WM_CHAR が重ならないように
         }
         case WM_IME_ENDCOMPOSITION:
             input_.imeComposition.clear();
@@ -468,7 +469,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             return 0;
         case WM_SETCURSOR:
             if (mouseLocked_) {
-                SetCursor(nullptr);  // hidden while a drag turns the camera
+                SetCursor(nullptr);  // ドラッグでカメラを回している間は隠す
                 return TRUE;
             }
             if (LOWORD(lp) == HTCLIENT) {
@@ -482,7 +483,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
                 Invalidate();
             } else if (wp == kDeviceTimer) {
                 KillTimer(h, kDeviceTimer);
-                Invalidate();  // the next frame tries the GPU again
+                Invalidate();  // 次のフレームでもう一度 GPU を試す
             } else {
                 OnTimer(wp);
             }

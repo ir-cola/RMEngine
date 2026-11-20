@@ -1,11 +1,11 @@
 #pragma once
-// エディターの整合性の確認 (Hub > オプション): are the engine's files all there and unchanged?
-// Like Steam's "verify integrity of game files". The build writes <exe>/RM_Engine.files.json
-// (tools/make_filelist.ps1: path, size, SHA-256 of RM_Engine.exe, Lang/**, Plugins/**); the check
-// hashes the files again and compares. Installed plugins (%LOCALAPPDATA%\RM_Engine\Engines\<engine>\Plugins) are
-// compared with the engine's copies in the same list: a stale or broken one can be copied again.
+// エディターの整合性の確認 (Hub > オプション): エンジンのファイルは全部あって、変わっていないか?
+// Steam の「ゲームファイルの整合性を確認」と同じ。ビルドは <exe>/RM_Engine.files.json を書く
+// (tools/make_filelist.ps1: パス、サイズ、RM_Engine.exe・Lang/**・Plugins/** の SHA-256)。確認では
+// ファイルをもう一度ハッシュして比べる。入っているプラグイン (%LOCALAPPDATA%\RM_Engine\Engines\<engine>\Plugins) は
+// 同じ一覧にあるエンジンのコピーと比べ、古い物や壊れた物はコピーし直せる。
 //
-// Pure (the hashing is passed in) - tested in tests/TestIntegrity.cpp.
+// 純粋 (ハッシュは外から渡す)。tests/TestIntegrity.cpp でテストする。
 
 #include "base/Json.h"
 #include "core/PluginId.h"
@@ -19,9 +19,9 @@
 namespace rm::editor::integrity {
 
 struct FileEntry {
-    std::string path;  // relative to the exe's folder, '/' separated
+    std::string path;  // exe のフォルダーからの相対パス、'/' 区切り
     uint64_t size = 0;
-    std::string sha256;  // lower-case hex
+    std::string sha256;  // 小文字の 16 進
 };
 
 std::optional<std::vector<FileEntry>> ParseFileList(const json::Value& v, std::string* error);
@@ -32,26 +32,26 @@ struct FileProblem {
     Problem problem;
 };
 
-// hashOf(path) = the file's SHA-256 now, nullopt when it is missing.
+// hashOf(path) = そのファイルの今の SHA-256。ファイルがなければ nullopt。
 using HashOf = std::function<std::optional<std::string>(const std::string& path)>;
 
 std::vector<FileProblem> CheckFiles(const std::vector<FileEntry>& list, const HashOf& hashOf);
 
-// Installed plugins whose files differ from the engine's copies in the list ("Plugins/<a>/<n>/..."):
-// installedHashOf(id, pathInsideThePlugin) = the installed file's SHA-256, nullopt when missing.
-// Files only the installed copy has are not looked at.
+// ファイルが一覧にあるエンジンのコピーと違う、入っているプラグイン ("Plugins/<a>/<n>/..."):
+// installedHashOf(id, プラグインの中のパス) = 入っているファイルの SHA-256。なければ nullopt。
+// 入っているコピーにだけあるファイルは見ない。
 using InstalledHashOf = std::function<std::optional<std::string>(const PluginId& id, const std::string& pathInPlugin)>;
 std::vector<PluginId> StalePlugins(const std::vector<FileEntry>& list, const std::vector<PluginId>& installed,
                                    const InstalledHashOf& installedHashOf);
 
-// --- After the engine was updated (each start) ------------------------------------------------
-// The installed plugins are copies of the engine's; a new engine may bring new copies (plugin.json,
-// translations, theme files ...). Whether to look at all: the SHA-256 of the engine's file list
-// differs from the stamp kept after the last look (no list: always - then only plugin.json is
-// compared, which is cheap).
+// --- エンジンを更新した後 (起動のたびに) ------------------------------------------------
+// 入っているプラグインはエンジンのコピーで、新しいエンジンは新しいコピー (plugin.json、
+// 翻訳、テーマのファイルなど) を持ってくることがある。そもそも調べるかどうか: エンジンの
+// ファイル一覧の SHA-256 が、前回調べた後に残した印と違うとき (一覧がなければいつも調べる。
+// その場合は plugin.json だけを比べるので軽い)。
 bool EngineChanged(const std::optional<std::string>& fileListHash, const std::string& keptStamp);
-// Which installed plugins (that this engine also has) to copy again: with the file list, those whose
-// files differ (StalePlugins); without it, those whose plugin.json differs (manifestDiffers).
+// 入っているプラグインのうち (このエンジンにもあるもの) どれをコピーし直すか: ファイル一覧が
+// あれば、ファイルが違うもの (StalePlugins)。なければ plugin.json が違うもの (manifestDiffers)。
 using ManifestDiffers = std::function<bool(const PluginId& id)>;
 std::vector<PluginId> PluginsToRefresh(const std::optional<std::vector<FileEntry>>& list, const std::vector<PluginId>& installed,
                                        const InstalledHashOf& installedHashOf, const ManifestDiffers& manifestDiffers);

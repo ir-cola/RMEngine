@@ -1,6 +1,6 @@
 #pragma once
-// The editor's options (Hub > オプション). Written once here: saving (hub.json "options"), the
-// options page (drawn by the inspector from this description) and the defaults all come from it.
+// エディターのオプション (Hub > オプション)。ここで 1 回だけ書く: 保存 (hub.json の "options")、
+// オプションのページ (インスペクターがこの記述から描く)、既定値は、すべてここから作る。
 
 #include "core/reflect/Reflect.h"
 
@@ -26,9 +26,9 @@ enum class AutoSaveInterval {
 
 RM_STRUCT(Label="オプション")
 struct Options {
-    // The id of one of theme::Themes() (chosen on its own screen, so not in the inspector): a built-in
-    // one or a theme pack's. The built-in ids are the names of the old three-way choice, so a hub.json
-    // from before keeps its theme. A pack's theme whose pack is removed becomes the first theme (for good).
+    // theme::Themes() のどれかの ID (専用の画面で選ぶので、インスペクターには無い): 組み込みの
+    // もの、またはテーマパックのもの。組み込みの ID は前の 3 択の名前なので、前の hub.json でも
+    // テーマが保たれる。パックを消したときのそのパックのテーマは、最初のテーマになる (ずっと)。
     RM_PROPERTY(Label="色のテーマ") std::string theme = "Dark";
     RM_PROPERTY(Edit, Label="言語") UiLanguage language = UiLanguage::Japanese;
     RM_PROPERTY(Edit, Label="自動保存の間隔", Tooltip="開いているプロジェクトに未保存の変更があれば、この間隔で保存します") AutoSaveInterval autoSave = AutoSaveInterval::Min5;

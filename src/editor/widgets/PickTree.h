@@ -1,9 +1,9 @@
 #pragma once
-// The rows of a list in folders (the インスペクター's 部品を足す panel): items with a folder ("3D",
-// "UI", "物理/2D" - "/" between folders inside folders), folders that open and close, and a search that
-// keeps only what matches. Also the rows of one menu of a menu in folders (the 階層's 追加 ▸ 3D
-// オブジェクト ▸ 箱: w::ActionMenu). Pure: what is drawn comes from this, and the tests check it
-// (TestPickTree).
+// フォルダー分けした一覧の行 (インスペクターの 部品を足す パネル): フォルダー ("3D",
+// "UI", "物理/2D" - フォルダーの中のフォルダーは "/" で区切る) 付きの項目、開閉するフォルダー、
+// 一致するものだけを残す検索。フォルダー分けしたメニューのうち 1 つのメニューの行も
+// (階層の 追加 ▸ 3D オブジェクト ▸ 箱: w::ActionMenu)。純粋: 描くものはここから作り、
+// テストがそれを確かめる (TestPickTree)。
 
 #include <cstddef>
 #include <set>
@@ -16,44 +16,44 @@ namespace rm::editor::w {
 
 struct PickItem {
     std::wstring label;
-    std::wstring folder;  // empty: at the top, outside every folder
-    bool separator = false;  // a line between rows (menus only)
+    std::wstring folder;  // 空: 最上位で、どのフォルダーの外でもない
+    bool separator = false;  // 行の間の線 (メニューだけ)
 };
 
 struct PickTreeRow {
     bool isFolder = false;
-    std::wstring label;   // the item's, or the folder's own name (its last part)
-    std::wstring path;    // a folder: its whole path ("物理/2D"); an item: its folder
-    int depth = 0;        // 0 at the top
-    int item = -1;        // an item: its index in the list given
-    bool open = false;    // a folder: shown open (its rows follow)
-    size_t count = 0;     // a folder: how many items are inside it (inside its folders too), after the search
+    std::wstring label;   // 項目の、またはフォルダー自身の名前 (その最後の部分)
+    std::wstring path;    // フォルダー: そのパス全体 ("物理/2D")。項目: そのフォルダー
+    int depth = 0;        // 最上位が 0
+    int item = -1;        // 項目: 渡された一覧での添字
+    bool open = false;    // フォルダー: 開いて表示している (その行が続く)
+    size_t count = 0;     // フォルダー: 中の項目の数 (中のフォルダーの分も)。検索のあと
 };
 
-// The rows to show, top to bottom. Items outside every folder first, then the folders in the order
-// their first item comes in the list; inside a folder its own folders first, then its items, in list
-// order. `open`: the folders open now (by path) - the others are closed (only their row).
-// `search` (not empty): only the items whose label or folder contains it (ignoring case) - and the
-// folders that hold them, all open (what was found is never hidden in a closed folder).
+// 上から下に見せる行。どのフォルダーの外にもある項目が先、次にフォルダー。順番は、一覧で
+// そのフォルダーの最初の項目が出てくる順。フォルダーの中は、中のフォルダーが先、次に項目 (一覧の順)。
+// `open`: 今開いているフォルダー (パスで) - ほかは閉じていて、その行だけ。
+// `search` (空でない): ラベルかフォルダーにそれを含む項目 (大文字小文字は区別しない) と、それを
+// 持つフォルダーだけ。フォルダーはすべて開く (見つかったものが、閉じたフォルダーに隠れることはない)。
 std::vector<PickTreeRow> BuildPickTree(std::span<const PickItem> items, std::wstring_view search, const std::set<std::wstring>& open);
 
-// Whether `text` contains `search` (ignoring the case of Latin letters; full-width letters count as
-// their half-width ones, so "ｕｉ" finds "UI").
+// `text` が `search` を含むか (ラテン文字の大文字小文字は区別しない。全角の文字は
+// 半角と同じに数えるので、"ｕｉ" で "UI" が見つかる)。
 bool PickMatches(std::wstring_view text, std::wstring_view search);
 
-// One row of one menu of a menu in folders: an item, a line, or a folder (a row that opens the next
-// menu: what is inside it).
+// フォルダー分けしたメニューのうち 1 つのメニューの 1 行: 項目、線、またはフォルダー (次の
+// メニューを開く行: その中にあるもの)。
 struct MenuLevelRow {
     bool isFolder = false;
     bool separator = false;
-    std::wstring label;  // a folder: its own name (its last part)
-    std::wstring path;   // a folder: its whole path ("追加/3D オブジェクト")
-    int item = -1;       // an item or a line: its index in the list given
+    std::wstring label;  // フォルダー: 自身の名前 (その最後の部分)
+    std::wstring path;   // フォルダー: そのパス全体 ("追加/3D オブジェクト")
+    int item = -1;       // 項目か線: 渡された一覧での添字
 };
 
-// The rows of the menu that shows `folder` ("" = the first menu), in the list's order: its own items
-// and lines, and - where the first item inside one of its folders comes - that folder's row (once).
-// Lines at the start or the end, and a line after a line, are left out (a folder took what was between).
+// `folder` を出すメニュー ("" = 最初のメニュー) の行を、一覧の順に: そのメニュー自身の項目と線、
+// それと - そのフォルダーの中の最初の項目が出てくる所に - そのフォルダーの行 (1 回だけ)。
+// 最初や最後の線と、線の次の線は出さない (フォルダーがその間にあったものを持っていった)。
 std::vector<MenuLevelRow> MenuLevel(std::span<const PickItem> items, std::wstring_view folder);
 
 }  // namespace rm::editor::w

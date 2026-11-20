@@ -1,11 +1,12 @@
 #pragma once
-// Which engine this is, as a folder name (pure - tested in RMTests).
+// このエンジンがどれか、フォルダー名として (純粋 - RMTests でテストする)。
 //
-// Every build of the engine (Debug, Release, each git worktree, an installed copy) keeps its own
-// installed plugins: %LOCALAPPDATA%\RM_Engine\Engines\<key>\Plugins\. Sharing one folder let an old
-// build copy its old plugin files over a newer build's, or remove a folder another running engine
-// was reading. The key is the exe's folder: "<its name>-<16 hex of its full path>", e.g.
-// "Release-3f2a...". The same folder (letter case and a trailing separator ignored) is the same key.
+// エンジンのビルドはどれも (Debug、Release、git worktree ごと、インストールしたコピー)、入っている
+// プラグインを自分の分として持つ: %LOCALAPPDATA%\RM_Engine\Engines\<key>\Plugins\。1 つの
+// フォルダーを共有すると、古いビルドが古いプラグインのファイルを新しいビルドのものに上書き
+// コピーしたり、動いている別のエンジンが読んでいるフォルダーを消したりした。key は exe の
+// フォルダー: "<その名前>-<フルパスの 16 桁の 16 進>"。例 "Release-3f2a..."。同じフォルダー
+// (大文字小文字と末尾の区切りは無視) は同じ key になる。
 
 #include <filesystem>
 #include <string>

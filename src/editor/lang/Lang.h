@@ -1,18 +1,18 @@
 #pragma once
-// The language of the editor's screens (日本語 / English).
+// エディターの画面の言語 (日本語 / English)。
 //
-// Every string shown on screen is written in Japanese in the code and passed through Tr:
+// 画面に出す文字列はすべてコードに日本語で書いて、Tr を通す:
 //
 //   w::Button(c, "save", r, Tr(L"保存"));
-//   p.Text(r, TrF(L"「{}」を削除", name), style);          // with std::format arguments
+//   p.Text(r, TrF(L"「{}」を削除", name), style);          // std::format の引数つき
 //
-// The Japanese text is the key. English comes from catalogs - JSON objects { "日本語": "English" }:
-// the core's (resources/lang/en.json -> <exe>/Lang/en.json) and each plugin's
-// (plugins/<author>/<name>/lang/en.json). A string with no English stays Japanese, and
-// tools/check_lang.ps1 (run by build.ps1) fails the build when a Tr string has no English.
-// Labels of reflected types (RM_PROPERTY(Label=...)) are translated where they are drawn.
+// 日本語の文章がキーになる。英語はカタログ - JSON オブジェクト { "日本語": "English" } - から来る:
+// 核のもの (resources/lang/en.json -> <exe>/Lang/en.json) と、各プラグインのもの
+// (plugins/<author>/<name>/lang/en.json)。英語の無い文字列は日本語のままで、
+// tools/check_lang.ps1 (build.ps1 が走らせる) は、英語の無い Tr の文字列があるとビルドを止める。
+// リフレクションした型のラベル (RM_PROPERTY(Label=...)) は、描くときに翻訳する。
 //
-// Messages that only go to the log (console / editor.log) stay Japanese.
+// ログ (コンソール / editor.log) にしか出ないメッセージは日本語のままにする。
 
 #include "base/Json.h"
 
@@ -25,11 +25,11 @@ namespace rm::editor::lang {
 
 enum class Language { Japanese, English };
 
-// Pure: one language's table (tested in tests/TestLang.cpp).
+// 純粋: 1 つの言語の表 (tests/TestLang.cpp でテストする)。
 class Catalog {
 public:
-    // Adds the entries of { "日本語": "English", ... }. Returns how many were added; bad entries
-    // (not strings, empty) are skipped.
+    // { "日本語": "English", ... } の項目を足す。足した数を返す。悪い項目
+    // (文字列でない、空) は飛ばす。
     size_t Add(const json::Value& object);
     const std::string* Find(std::string_view japanese) const;
     size_t Size() const { return entries_.size(); }
@@ -41,16 +41,16 @@ private:
 
 void SetLanguage(Language language);
 Language Current();
-Catalog& EnglishCatalog();  // filled at start-up (App)
+Catalog& EnglishCatalog();  // 起動時に埋める (App)
 
 std::wstring Tr(std::wstring_view japanese);
-// Marks a string that is kept and translated later, where it is drawn (a panel's or a software's
-// title is registered once, the language may change afterwards). check_lang.ps1 sees it.
+// 取っておいて後で、描くときに翻訳する文字列に印を付ける (パネルやソフトのタイトルは
+// 1 回だけ登録するが、その後で言語が変わることがある)。check_lang.ps1 はこれも見る。
 constexpr const wchar_t* TrKey(const wchar_t* japanese) { return japanese; }
 std::string TrU8(std::string_view japanese);
 
-// A translated std::format string. When the translation does not take the same arguments (a
-// mistake in a catalog), the Japanese one is used instead of failing.
+// 翻訳した std::format 文字列。翻訳が同じ引数を取らないとき (カタログの間違い) は、
+// 失敗せずに日本語の方を使う。
 template <class... A>
 std::wstring TrF(std::wstring_view japanese, const A&... args) {
     const std::wstring fmt = Tr(japanese);

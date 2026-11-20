@@ -135,7 +135,7 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
         }
     }
 
-    // Depth-first over the requirements: a plugin is enabled only after all of its requirements are.
+    // 前提を深さ優先でたどる: プラグインは、前提が全部有効になった後でだけ有効になる。
     enum class Mark { None, Visiting, Done };
     std::vector<Mark> mark(n, Mark::None);
     auto find = [&](const PluginId& id) -> size_t {
@@ -150,7 +150,7 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
         PluginStatus& s = r.statuses[i];
         if (usable[i]) {
             for (const PluginId& req : c[i].manifest->requirements) {
-                // (a not-installed candidate is never "usable", so its requirements are not followed)
+                // (未インストールの候補は「使える」にならないので、その前提はたどらない)
                 const size_t j = find(req);
                 if (j == n) {
                     s.state = PluginState::MissingRequirement;
@@ -177,9 +177,9 @@ PluginResolution ResolvePlugins(const std::vector<PluginCandidate>& c) {
     };
     for (size_t i = 0; i < n; ++i) visit(visit, i);
 
-    // Connectors (design 4-f, rule 2): a plugin that needs one is enabled only while one is. Its
-    // connectors require it, so it may only be switched off afterwards - and then whatever requires
-    // it (its connectors among them) goes off too, until nothing changes.
+    // コネクタ (設計 4-f、憲法 2): コネクタが必要なプラグインは、コネクタが 1 つある間だけ有効になる。
+    // コネクタはそのプラグインを前提とするので、後でないとオフにできない - そして、それを
+    // 前提とするもの (そのコネクタも) も、変わらなくなるまでオフになる。
     auto isEnabled = [&](size_t j) { return r.statuses[j].state == PluginState::Enabled; };
     for (bool changed = true; changed;) {
         changed = false;
@@ -244,7 +244,7 @@ std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginMa
             if (!isReady && unavailable && !Contains(*unavailable, p)) unavailable->push_back(p);
             return;
         }
-        // Ready plugins are walked through too: a requirement further down may be missing.
+        // 準備できたプラグインも通る: もっと先の前提が無いかもしれない。
         visiting.push_back(p);
         for (const PluginId& req : m->requirements) self(self, req);
         visiting.pop_back();
@@ -253,11 +253,11 @@ std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginMa
     };
     add(add, id);
 
-    // Connectors come along (design 4-f, rule 1: they are never chosen by hand).
+    // コネクタは付いてくる (設計 4-f、憲法 1: 手では選ばない)。
     auto have = [&](const PluginId& p) { return Contains(ready, p) || Contains(plan, p); };
     for (bool changed = true; changed;) {
         changed = false;
-        // Every connector whose requirements are all there.
+        // 前提が全部そろっているコネクタすべて。
         for (const PluginManifest& m : available) {
             if (!m.connectorFor || have(m.id)) continue;
             if (std::all_of(m.requirements.begin(), m.requirements.end(), have)) {
@@ -266,9 +266,9 @@ std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginMa
                 changed = true;
             }
         }
-        // A plugin being installed that needs a connector: its connector (the one there already, else
-        // the first one this engine has) with everything that connector requires - an installed
-        // connector may need a plugin a newer engine added (a connector that now requires one more plugin).
+        // コネクタが必要なプラグインをインストールするとき: そのコネクタ (すでにあるもの、
+        // なければこのエンジンの最初のもの) と、そのコネクタが前提とする全部。インストール済みの
+        // コネクタは、新しいエンジンが足したプラグインを必要とすることがある (前提が 1 つ増えたコネクタ)。
         std::vector<PluginId> targets = plan;
         if (!Contains(targets, id)) targets.push_back(id);
         for (const PluginId& t : targets) {
@@ -304,7 +304,7 @@ std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed,
 std::vector<PluginId> ConnectorsToBring(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available) {
     std::vector<PluginId> out;
     auto have = [&](const PluginId& p) { return FindManifest(installed, p) != nullptr || Contains(out, p); };
-    // (again until nothing more: a connector may join another connector)
+    // (もう増えなくなるまで繰り返す: コネクタが別のコネクタにつながることがある)
     for (bool changed = true; changed;) {
         changed = false;
         for (const PluginManifest& m : available) {
@@ -328,7 +328,7 @@ std::vector<PluginId> FirstStartInstalls(const std::vector<PluginId>& available,
 }
 
 std::vector<Dependent> Dependents(const PluginId& id, const std::vector<PluginManifest>& installed) {
-    // Breadth first from `id`: whoever requires a plugin in the frontier is the next ring.
+    // `id` から幅優先: 前線にあるプラグインを前提とするものが次の輪。
     std::vector<Dependent> out;
     std::vector<PluginId> frontier{id};
     std::vector<PluginId> seen{id};
@@ -343,7 +343,7 @@ std::vector<Dependent> Dependents(const PluginId& id, const std::vector<PluginMa
                 d.id = m.id;
                 if (f != id) d.via = f;
                 out.push_back(std::move(d));
-                // A connector that goes: the plugin it serves stops too when it was the last one.
+                // 外れるコネクタ: 仕える先のプラグインも、それが最後の 1 つだったなら止まる。
                 if (!m.connectorFor || Contains(seen, *m.connectorFor)) continue;
                 const PluginManifest* target = FindManifest(installed, *m.connectorFor);
                 if (!target || !target->needsConnector) continue;

@@ -1,20 +1,20 @@
 #pragma once
-// The core tree view (階層 panel). One piece of code draws every tree of every software
-// (rule 3); a software only implements tree::Source.
+// コアのツリービュー (階層 パネル)。すべてのソフトのすべてのツリーを 1 つのコードで描く
+// (憲法 3)。ソフトは tree::Source を実装するだけ。
 //
-//   click / Ctrl+click / Shift+click     select (range over the visible rows)
-//   ▸ / ▾, ← / →                         close / open (← on a closed item goes to its parent)
-//   ↑ / ↓ / Home / End (+Shift)          move the selection
-//   drag rows                            move them: on the upper / lower edge of a row = before /
-//                                        after it, on its middle = inside it, below the last row = the end;
-//                                        out of the tree onto a reference field (Source::DragOut)
-//   F2 / double-click                    rename in place (Enter / clicking elsewhere = done, Esc = cancel)
-//   Ctrl+A                               select all
-//   right-click                          the software's menu (+ 名前を変更)
-//   search box                           shows the matching items and their parents
+//   クリック / Ctrl+クリック / Shift+クリック     選ぶ (見えている行の範囲)
+//   ▸ / ▾, ← / →                         閉じる / 開く (閉じた項目での ← は親へ行く)
+//   ↑ / ↓ / Home / End (+Shift)          選択を動かす
+//   行をドラッグ                         動かす: 行の上 / 下の端 = その前 / 後、
+//                                        真ん中 = その中、最後の行より下 = 最後。
+//                                        ツリーの外の参照フィールドへ (Source::DragOut)
+//   F2 / ダブルクリック                  その場で名前を変える (Enter / ほかをクリック = 完了、Esc = 取り消し)
+//   Ctrl+A                               すべて選ぶ
+//   右クリック                           ソフトのメニュー (+ 名前を変更)
+//   検索ボックス                         一致する項目とその親を出す
 //
-// The view never changes the software's data. Renaming and moving are requests the software
-// turns into undo entries (rule 7); what the menu rows do is up to the software.
+// ビューはソフトのデータを変えない。名前の変更と移動はソフトへの頼みで、ソフトがそれを
+// Undo の項目にする (憲法 7)。メニューの行が何をするかはソフト次第。
 
 #include "base/Json.h"
 #include "editor/lang/Lang.h"
@@ -31,29 +31,28 @@
 
 namespace rm::editor::tree {
 
-// A row of the right-click menu, optionally with a shortcut (works while the tree has the keys).
+// 右クリックメニューの 1 行。ショートカットを付けてもよい (ツリーがキーを持っている間効く)。
 using Action = w::Action;
 
-// The picture of a row (Item::icon) as the widgets draw it (the rows, and a reference field's list).
+// 行の絵 (Item::icon) を、ウィジェットが描くとおりに (行と、参照フィールドの一覧)。
 w::Icon PictureOf(Icon icon);
 
-// What a software puts in the tree.
+// ソフトがツリーに入れるもの。
 class Source {
 public:
     virtual ~Source() = default;
-    // Every item, in display order (see Item). Called whenever the tree is drawn.
+    // すべての項目を表示順に (Item を見る)。ツリーを描くたびに呼ぶ。
     virtual void Items(std::vector<Item>& out) = 0;
-    // Shown when there are no items.
+    // 項目がないときに出す。
     virtual std::wstring EmptyText() const { return Tr(L"まだ何もありません。"); }
 
-    // Optional: a row above the items that is not one of them (the 階層's scene): always there, not
-    // scrolled, not searched. Clicking it clears the selection and calls TopClicked (after
-    // SelectionChanged); a right click opens the menu of empty space (Actions with nothing); rows
-    // dropped on it go to the top level, at the end.
+    // 省略可: 項目の上にある、項目ではない行 (階層 のシーン): いつもあり、スクロールせず、検索にも
+    // 掛からない。クリックすると選択を消し、TopClicked を呼ぶ (SelectionChanged のあと)。右クリックは
+    // 何もない所のメニュー (Actions に何も無い) を開く。ここにドロップした行は最上位の最後に行く。
     struct TopRow {
         std::wstring name;
         w::Icon icon = w::Icon::Object;
-        bool selected = false;  // drawn as chosen (what it stands for is in the インスペクター)
+        bool selected = false;  // 選ばれたように描く (それが指すものはインスペクターにある)
     };
     virtual std::optional<TopRow> Top() const { return std::nullopt; }
     virtual void TopClicked() {}
@@ -66,27 +65,26 @@ public:
         (void)id;
         (void)nameUtf8;
     }
-    // Move `items` (Roots of the selection, in display order) under `parent` at `index` (see Drop).
+    // `items` (選択の Roots。表示順) を `parent` の下の `index` に動かす (Drop を見る)。
     virtual bool CanMove() const { return false; }
     virtual void Move(std::span<const ItemId> items, ItemId parent, size_t index) {
         (void)items;
         (void)parent;
         (void)index;
     }
-    // The selection changed (also when selected items disappeared, e.g. after undo).
+    // 選択が変わった (選択項目が消えたときも。例: Undo のあと)。
     virtual void SelectionChanged(std::span<const ItemId> ids) { (void)ids; }
-    // Menu rows for a right-click (on empty space the selection is empty) and their shortcuts.
+    // 右クリックのメニューの行 (何もない所では選択は空) とそのショートカット。
     virtual std::vector<Action> Actions(std::span<const ItemId> selection) {
         (void)selection;
         return {};
     }
-    // Rows dragged out of the tree onto another panel (a reference field of the インスペクター): what
-    // they are (w::DragThing). The default: "item" with the ids (EntityRef fields take them).
+    // ツリーから別のパネル (インスペクターの参照フィールド) へドラッグした行: それが何か
+    // (w::DragThing)。既定: ID を持つ "item" (EntityRef フィールドが受け取る)。
     virtual w::DragThing DragOut(std::span<const ItemId> items);
-    // How tall a row is (DIPs). Taller rows have a bigger picture (the アセット panel's thumbnails).
+    // 行の高さ (DIP)。高い行ほど絵が大きい (アセット パネルのサムネイル)。
     virtual float RowHeight() const { return 24.f; }
-    // Draws the row's picture itself into `r` (a thumbnail) and returns true; false: the core draws
-    // the item's Icon.
+    // 行の絵を `r` の中に自分で描いて (サムネイル) true を返す。false: コアが項目の Icon を描く。
     virtual bool DrawPicture(ui::Context& c, const Item& item, const ui::Rect& r) {
         (void)c;
         (void)item;
@@ -95,13 +93,13 @@ public:
     }
 };
 
-// Per tree (one per software): selection, open / closed items, search, rename, drag.
+// ツリーごと (ソフトごとに 1 つ): 選択、開いている / 閉じている項目、検索、名前変更、ドラッグ。
 struct State {
     Selection sel;
     std::unordered_set<ItemId> collapsed;
     std::string filter;
 
-    // Set from outside (the software): applied at the next Draw, once the items are listed.
+    // 外から (ソフトから) 設定する: 項目が並んだあとの次の Draw で適用する。
     bool hasPending = false;
     std::vector<ItemId> pending;
     bool pendingRename = false;
@@ -110,25 +108,25 @@ struct State {
     bool renameStart = false;
     std::string renameText;
 
-    ItemId pressItem = 0;     // a row pressed with the left button, not yet released
+    ItemId pressItem = 0;     // 左ボタンで押した行。まだ離していない
     float pressX = 0, pressY = 0;
-    bool pressDeferred = false;  // a press on a selected row: select only it on release (not after a drag)
+    bool pressDeferred = false;  // 選択中の行を押した: 離したときにそれだけを選ぶ (ドラッグのあとではなく)
     bool dragging = false;
     std::vector<ItemId> moving;
 
-    bool hasKeys = false;     // the last click was in this tree
+    bool hasKeys = false;     // 最後のクリックがこのツリーだった
     w::Popup menu;
     std::vector<Action> menuActions;
-    ItemId scrollTo = 0;      // keep this row in view on the next Draw
+    ItemId scrollTo = 0;      // 次の Draw でこの行を見える所に保つ
 };
 
-// Asks the tree to select `ids` (and, with rename, to start renaming the first) at the next Draw.
+// 次の Draw で `ids` を選ぶ (rename 付きなら、最初のものの名前変更を始める) ようツリーに頼む。
 void RequestSelect(State& st, std::vector<ItemId> ids, bool rename = false);
 
-// What is kept of a tree when the project is closed (UserSettings/Layout.json, with the layout - the
-// user's way of looking, not project data): { "collapsed": [ids], "selected": [ids] }. Loading asks
-// for the selection (applied at the next Draw; ids that are gone are dropped there, and closed ids
-// of items that are gone are forgotten by Draw).
+// プロジェクトを閉じるときにツリーから残すもの (UserSettings/Layout.json に、レイアウトと一緒に -
+// ユーザーの見え方であって、プロジェクトのデータではない): { "collapsed": [ids], "selected": [ids] }。
+// 読み込みは選択を頼む (次の Draw で適用。無くなった ID はそこで捨て、無くなった項目の閉じた ID は
+// Draw が忘れる)。
 json::Value SaveState(const State& st);
 void LoadState(State& st, const json::Value& v);
 

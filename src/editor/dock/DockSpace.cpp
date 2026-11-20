@@ -16,22 +16,22 @@ using ui::Rect;
 
 namespace {
 
-constexpr float kGap = 1.f;            // between two panels: one dark seam (the panels' outer edge line)
-constexpr float kSplitterGrab = 3.f;   // the seam can be grabbed this far into the panels on each side
-constexpr float kPanelRadius = 6.f;    // corners on the outside of the dock area (touching ones are square)
-constexpr float kStripH = 30.f;        // tab strip height
-constexpr float kMinPanel = 80.f;      // a splitter never makes a side smaller than this
-constexpr float kCloseW = 22.f;        // room for the x of a tab
-constexpr float kStripPad = 4.f;       // before the first tab and after the last one / the buttons
-constexpr float kTabSpacing = 2.f;     // between two tabs
-constexpr float kStripButton = 22.f;   // < > v when the tabs do not fit
+constexpr float kGap = 1.f;            // 隣り合う 2 つのパネルの間: 暗い継ぎ目 1 本 (パネルの外枠の線)
+constexpr float kSplitterGrab = 3.f;   // 継ぎ目は両側のパネルのこの幅までつかめる
+constexpr float kPanelRadius = 6.f;    // ドック領域の外側の角 (接している角は四角)
+constexpr float kStripH = 30.f;        // タブ列の高さ
+constexpr float kMinPanel = 80.f;      // 分割線でも片側をこれより小さくしない
+constexpr float kCloseW = 22.f;        // タブの x の分の幅
+constexpr float kStripPad = 4.f;       // 最初のタブの前と、最後のタブ・ボタンの後ろの余白
+constexpr float kTabSpacing = 2.f;     // タブとタブの間
+constexpr float kStripButton = 22.f;   // タブが収まらないときの < > v
 constexpr float kStripButtons = kStripButton * 3 + 4;
-constexpr float kWheelStep = 60.f;     // one notch of the wheel over a tab strip
-constexpr float kDragEdge = 28.f;      // a dragged tab this close to an end of a row moves the row
-constexpr double kDragScrollSpeed = 500.0;  // DIPs per second
-constexpr float kGuide = 32.f;         // drop guide size
-constexpr float kGuideStep = 38.f;     // distance between the guides of a cross
-constexpr float kDragThreshold = 6.f;  // a tab moves only after the mouse moved this far
+constexpr float kWheelStep = 60.f;     // タブ列の上でホイールを 1 目盛り回したとき
+constexpr float kDragEdge = 28.f;      // 行の端にこれだけ近づけてタブをドラッグすると行が動く
+constexpr double kDragScrollSpeed = 500.0;  // DIP/秒
+constexpr float kGuide = 32.f;         // ドロップガイドの大きさ
+constexpr float kGuideStep = 38.f;     // 十字のガイドどうしの間隔
+constexpr float kDragThreshold = 6.f;  // マウスがこれだけ動いて初めてタブが動く
 
 bool EscapePressed(const ui::Input& in) {
     return std::any_of(in.keys.begin(), in.keys.end(), [](const ui::KeyEvent& k) { return k.key == ui::Key::Escape; });
@@ -67,7 +67,7 @@ void DrawGuide(ui::Context& c, const Rect& box, Zone zone, bool hot) {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Panels and layout
+// パネルとレイアウト
 // ---------------------------------------------------------------------------
 
 const PanelType* DockSpace::FindPanel(std::string_view id) const {
@@ -88,7 +88,7 @@ void DockSpace::SetLayout(Layout layout) {
     drag_ = {};
     for (auto& [site, m] : menus_) m.popup.open = false;
     for (auto& [site, m] : tabLists_) m.popup.open = false;
-    strips_.clear();  // node ids start again in the new layout
+    strips_.clear();  // ノード ID は新しいレイアウトでまた最初から振る
     Changed();
 }
 
@@ -141,7 +141,7 @@ void DockSpace::ForgetSite(uint32_t site) {
 }
 
 // ---------------------------------------------------------------------------
-// Drawing
+// 描画
 // ---------------------------------------------------------------------------
 
 void DockSpace::Draw(ui::Context& c, const Rect& area, uint32_t siteId, HWND hwnd, float scale) {
@@ -151,11 +151,11 @@ void DockSpace::Draw(ui::Context& c, const Rect& area, uint32_t siteId, HWND hwn
     site.area = area;
     site.leaves.clear();
     const Node* root = RootOf(siteId);
-    if (!root) return;  // a floating window whose panels were just moved away (closed after this frame)
+    if (!root) return;  // パネルを移し終えた浮動ウィンドウ (このフレームの後で閉じる)
     site.rootId = root->id;
     site.rootIsLeaf = root->IsLeaf();
 
-    // While a tab menu is open or something is being dragged, the panels only show.
+    // タブのメニューが開いている間とドラッグ中は、パネルは表示だけする。
     const bool inputWas = c.InputEnabled();
     if (MenuOpen(siteId) || IsDragging()) c.SetInputEnabled(false);
 
@@ -172,7 +172,7 @@ void DockSpace::Draw(ui::Context& c, const Rect& area, uint32_t siteId, HWND hwn
     }
     c.SetInputEnabled(inputWas);
 
-    // The window where a tab drag started has the mouse capture, so it follows the whole drag.
+    // タブのドラッグを始めたウィンドウがマウスキャプチャを持つので、ドラッグ全体を追える。
     if (drag_.fromSite == siteId && (drag_.kind == DragKind::Pending || drag_.kind == DragKind::Tab)) {
         const ui::Input& in = c.In();
         if (drag_.kind == DragKind::Pending) {
@@ -194,7 +194,7 @@ void DockSpace::Draw(ui::Context& c, const Rect& area, uint32_t siteId, HWND hwn
         }
     }
 
-    // Edits collected during the frame are applied now, after every node was drawn.
+    // フレーム中にためた編集は、全ノードを描き終えた今ここで適用する。
     auto edits = std::move(post_);
     post_.clear();
     for (auto& fn : edits) fn();
@@ -204,7 +204,7 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
     auto& p = c.P();
     geo.id = leaf.id;
     geo.rect = r;
-    // Rounded only where the panel touches nothing: both sides of the corner on the dock area's edge.
+    // 何にも接していない所だけ丸める: ドック領域の端にある角の両側。
     const Rect& area = sites_[siteId].area;
     constexpr float eps = 0.5f;
     const bool left = r.x <= area.x + eps, top = r.y <= area.y + eps;
@@ -228,9 +228,10 @@ void DockSpace::DrawLeaf(ui::Context& c, const Node& leaf, const Rect& r, uint32
     }
     const PanelType* type = FindPanel(leaf.tabs[static_cast<size_t>(leaf.active)]);
     if (!type || !type->draw) return;
-    // A panel leaves the context as it found it: the input switched on or off, the ids and the clips.
-    // One that does not (an early return between a push and its pop) is put right here - else every
-    // panel drawn after it in this window would take no mouse, or have other ids - and told once.
+    // パネルは、文脈を見つけたときの状態のまま返す: 入力のオンオフ、ID、クリップ。
+    // 返さないもの (push と pop の間の早期 return) はここで戻して、1 回だけ知らせる。
+    // でないと、このウィンドウでそれより後に描くパネルが、マウスを受けなくなったり
+    // 別の ID になったりする。
     const bool inputWas = c.InputEnabled();
     const size_t ids = c.IdDepth(), clips = c.ClipDepth();
     c.PushId(type->id);
@@ -258,8 +259,8 @@ void DockSpace::DrawTabStrip(ui::Context& c, const Node& leaf, const Rect& strip
         geo.widths.push_back(p.TextWidth(titles.back(), 12, true) + 20 + kCloseW);
     }
 
-    // Where the row is: kept per leaf, moved so that a tab that comes to the front is seen whole
-    // (clicked, chosen from the v list, opened from the Window menu, dropped here).
+    // 行の位置: 葉ごとに持ち、手前に来たタブが全部見えるように動かす
+    // (クリック・v の一覧から選ぶ・Window メニューから開く・ここへドロップしたとき)。
     StripState& st = strips_[leaf.id];
     TabStripFit fit = FitTabStrip(geo.widths, kTabSpacing, strip.w - kStripPad * 2, kStripButtons, st.scroll);
     const std::string shown = leaf.tabs.empty() ? std::string() : leaf.tabs[static_cast<size_t>(leaf.active)];
@@ -276,7 +277,7 @@ void DockSpace::DrawTabStrip(ui::Context& c, const Node& leaf, const Rect& strip
     geo.view = view;
     geo.overflow = fit.overflow;
 
-    // < > v at the right end, only while the tabs do not fit.
+    // 右端の < > v は、タブが収まらないときだけ。
     if (fit.overflow) {
         c.PushId(static_cast<uint64_t>(leaf.id));
         const float by = strip.y + 3 + (strip.h - 3 - kStripButton) * 0.5f;
@@ -308,7 +309,7 @@ void DockSpace::DrawTabStrip(ui::Context& c, const Node& leaf, const Rect& strip
         const float tw = geo.widths[i];
         const Rect tab{x, strip.y + 3, tw, strip.h - 3};
         x += tw + kTabSpacing;
-        if (tab.Right() < view.x || tab.x > view.Right()) continue;  // out of view: nothing to draw or touch
+        if (tab.Right() < view.x || tab.x > view.Right()) continue;  // 見えない: 描くことも触ることもない
 
         c.PushId(id);
         const auto b = c.ButtonBehavior(c.MakeId("tab"), tab);
@@ -360,7 +361,7 @@ void DockSpace::DrawSplitter(ui::Context& c, const Node& split, const Rect& r) {
     const bool dragging = c.Active() == id;
     if (b.hovered || dragging) {
         c.SetCursor(horizontal ? ui::Cursor::SizeWE : ui::Cursor::SizeNS);
-        // The seam lights up (2px, over the panels' edges).
+        // 継ぎ目が光る (2px、パネルの縁の上)。
         const Rect line = horizontal ? Rect{bar.x + bar.w * 0.5f - 1, bar.y, 2, bar.h} : Rect{bar.x, bar.y + bar.h * 0.5f - 1, bar.w, 2};
         c.P().FillRect(line, dragging ? theme::Accent : theme::BorderHover);
     }
@@ -368,14 +369,14 @@ void DockSpace::DrawSplitter(ui::Context& c, const Node& split, const Rect& r) {
         const float mouse = horizontal ? c.In().mouseX : c.In().mouseY;
         const float ratio = RatioAt(split, r, kGap, mouse, kMinPanel);
         if (ratio != split.ratio) {
-            if (Node* n = layout_.FindNode(split.id)) n->ratio = ratio;  // not a structure change
+            if (Node* n = layout_.FindNode(split.id)) n->ratio = ratio;  // 構造の変更ではない
             c.RequestRedraw();
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Drag and drop
+// ドラッグ&ドロップ
 // ---------------------------------------------------------------------------
 
 std::vector<DockSpace::Guide> DockSpace::GuidesAt(const Site& site, float x, float y) const {
@@ -393,7 +394,7 @@ std::vector<DockSpace::Guide> DockSpace::GuidesAt(const Site& site, float x, flo
         }
         break;
     }
-    // The edges of the whole window: put the panel along a side of everything.
+    // ウィンドウ全体の端: パネルを全部の横 (一番外側) に置く。
     if (!site.rootIsLeaf) {
         const Rect& a = site.area;
         const float m = kGuide * 0.5f + 8;
@@ -438,7 +439,7 @@ void DockSpace::UpdateHover(HWND exclude) {
             for (const auto& leaf : s.leaves) {
                 if (!leaf.strip.Contains(hx, hy)) continue;
                 if (leaf.overflow) ScrollWhileDragging(leaf, hx, pt);
-                // Counted in the row (hidden tabs too); a drop on the buttons goes after the last tab seen.
+                // 行の中で数える (隠れたタブも)。ボタンの上へのドロップは、見えている最後のタブの後ろになる。
                 const auto st = strips_.find(leaf.id);
                 const float scroll = leaf.overflow && st != strips_.end() ? st->second.scroll : 0.f;
                 const float rx = std::clamp(hx, leaf.view.x, leaf.view.Right()) - leaf.view.x + scroll;
@@ -453,9 +454,9 @@ void DockSpace::UpdateHover(HWND exclude) {
             }
         }
     }
-    // Redraw only when what the guides show changes. Redrawing on every call would make the
-    // dragging window invalidate itself from inside its own frame forever, and its endless
-    // WM_PAINTs starve the other windows (they would never show their guides).
+    // ガイドの表示が変わるときだけ再描画する。呼ぶたびに再描画すると、ドラッグ中の
+    // ウィンドウが自分のフレームの中で自分を無効にし続け、終わらない WM_PAINT が
+    // ほかのウィンドウを飢えさせる (ガイドがいつまでも出ない)。
     const Target& o = drag_.target;
     const bool changed = hover != drag_.hoverSite || leafUnder != drag_.hoverLeaf || t.valid != o.valid ||
                          t.site != o.site || t.node != o.node || t.zone != o.zone || t.tabIndex != o.tabIndex;
@@ -469,15 +470,16 @@ void DockSpace::UpdateHover(HWND exclude) {
 }
 
 void DockSpace::ScrollWhileDragging(const LeafGeo& leaf, float x, POINT cursor) {
-    // Moved only when the cursor moves: redrawing on its own would make the dragging window paint
-    // itself forever (see UpdateHover). Held still, the row stays; a little wiggle keeps it going.
+    // カーソルが動いたときだけ動かす: 勝手に再描画すると、ドラッグ中のウィンドウが
+    // ずっと自分を描き続ける (UpdateHover を見る)。止めたままなら行は止まる。
+    // 少し揺らすと動き続ける。
     const double now = platform::NowSeconds();
     const double dt = std::min(now - drag_.lastScrollTime, 0.05);
     drag_.lastScrollTime = now;
     if (drag_.kind != DragKind::Tab || (cursor.x == drag_.lastCursor.x && cursor.y == drag_.lastCursor.y)) return;
     int dir = 0;
     if (x < leaf.view.x + kDragEdge) dir = -1;
-    if (x > leaf.view.Right() - kDragEdge) dir = 1;  // the < > v buttons count as the right end
+    if (x > leaf.view.Right() - kDragEdge) dir = 1;  // < > v のボタンは右端とみなす
     if (dir == 0) return;
     StripState& st = strips_[leaf.id];
     const TabStripFit fit = FitTabStrip(leaf.widths, kTabSpacing, leaf.strip.w - kStripPad * 2, kStripButtons, st.scroll);
@@ -505,7 +507,7 @@ void DockSpace::FinishTabDrag() {
             if (layout_.Dock(d.panel, d.target.node, d.target.zone, d.target.tabIndex)) Changed();
         });
     } else {
-        // Released away from every guide and tab strip: the panel goes out into its own window.
+        // どのガイドにもタブ列にも当たらずに離した: パネルは自分のウィンドウに出ていく。
         POINT pt{};
         GetCursorPos(&pt);
         const auto it = sites_.find(d.fromSite);
@@ -529,7 +531,7 @@ void DockSpace::WindowMoving(uint32_t floatingId, HWND hwnd) {
         drag_.floating = floatingId;
         drag_.fromSite = floatingId;
     }
-    UpdateHover(hwnd);  // the moving window itself is under the cursor: look below it
+    UpdateHover(hwnd);  // 動いているウィンドウ自身がカーソルの下にある: その下を調べる
 }
 
 void DockSpace::WindowMoveEnded(uint32_t floatingId) {
@@ -544,7 +546,7 @@ void DockSpace::WindowMoveEnded(uint32_t floatingId) {
 }
 
 // ---------------------------------------------------------------------------
-// Overlay and commands
+// オーバーレイとコマンド
 // ---------------------------------------------------------------------------
 
 void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
@@ -560,7 +562,7 @@ void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
             DrawGuide(c, g.rect, g.zone, g.rect.Contains(drag_.hoverX, drag_.hoverY));
         }
     }
-    // The tab being dragged follows the mouse inside the window it came from.
+    // ドラッグ中のタブは、元のウィンドウの中でマウスについてくる。
     if (drag_.kind == DragKind::Tab && drag_.fromSite == siteId && c.Viewport().Contains(c.In().mouseX, c.In().mouseY)) {
         const PanelType* type = FindPanel(drag_.panel);
         const std::wstring title = type ? Tr(type->title) : Utf8ToWide(drag_.panel);
@@ -622,10 +624,10 @@ void DockSpace::DrawTabList(ui::Context& c, uint32_t siteId) {
         width = std::max(width, c.P().TextWidth(item.label, theme::FontSize) + 64);
         items.push_back(std::move(item));
     }
-    const std::vector<std::string> tabs = leaf->tabs;  // a copy: activating edits the layout
+    const std::vector<std::string> tabs = leaf->tabs;  // コピー: 有効にするとレイアウトが変わるため
     const int pick = w::MenuPopup(c, list.popup, items, width);
     if (pick >= 0) {
-        // In front = moved into view (DrawTabStrip, next frame).
+        // 手前 = 見える所に動かす (DrawTabStrip、次のフレーム)。
         layout_.Activate(tabs[static_cast<size_t>(pick)]);
         if (onRedrawAll) onRedrawAll();
     }
@@ -644,7 +646,7 @@ uint32_t DockSpace::LargestMainLeaf() const {
     }
     const Node* n = layout_.FindNode(target);
     if (n && n->IsLeaf()) return target;
-    // not drawn yet: the first leaf of the editor window
+    // まだ描いていない: エディターウィンドウの最初の葉
     const Node* first = layout_.main.get();
     while (!first->IsLeaf()) first = first->a.get();
     return first->id;
@@ -654,7 +656,7 @@ void DockSpace::TogglePanel(std::string_view id) {
     if (layout_.Contains(id)) {
         layout_.Close(id);
     } else {
-        layout_.Open(id, LargestMainLeaf());  // as a tab of the biggest panel of the editor window
+        layout_.Open(id, LargestMainLeaf());  // エディターウィンドウで一番大きいパネルのタブとして
     }
     Changed();
 }
@@ -667,7 +669,7 @@ void DockSpace::FloatPanel(std::string_view id) {
     uint32_t fid = 0;
     const Node* leaf = layout_.LeafOf(id, &fid);
     if (!leaf) return;
-    // A little below and to the right of where the panel is now.
+    // 今のパネルの少し右下。
     ScreenRect r{200, 200, 480, 360};
     if (const auto it = sites_.find(fid); it != sites_.end()) {
         const Site& s = it->second;

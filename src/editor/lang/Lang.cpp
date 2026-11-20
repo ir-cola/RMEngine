@@ -41,7 +41,7 @@ std::string TrU8(std::string_view japanese) {
 
 std::wstring Tr(std::wstring_view japanese) {
     if (g_language == Language::Japanese) return std::wstring(japanese);
-    // Converted once per string: the screens are drawn often.
+    // 文字列ごとに 1 回だけ変換する: 画面は何度も描くので。
     static std::unordered_map<std::wstring, std::wstring> cache;
     static size_t cachedFor = static_cast<size_t>(-1);
     if (cachedFor != EnglishCatalog().Size()) {

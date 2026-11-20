@@ -1,14 +1,14 @@
 #pragma once
-// The plugins of this engine, shared by the Hub and every project
-// (design RME_PLATFORM 5-a: a plugin installed in the Hub works in every project).
+// このエンジンのプラグイン。Hub と全プロジェクトで共有する
+// (設計 RME_PLATFORM 5-a: Hub で入れたプラグインは全プロジェクトで動く)。
 //
-//   available   <exe folder>/Plugins/<author>/<name>/          what this engine has (comes with the engine)
-//   installed   %LOCALAPPDATA%\RM_Engine\Engines\<engine>\Plugins\<author>\<name>\   what the user installed
+//   available   <exe folder>/Plugins/<author>/<name>/          このエンジンにあるもの (エンジンに付いてくる)
+//   installed   %LOCALAPPDATA%\RM_Engine\Engines\<engine>\Plugins\<author>\<name>\   ユーザーが入れたもの
 //
-// Installing copies a plugin's folder from "available" to "installed", removing deletes it, and
-// reinstalling copies it again (repairs broken files without passing through "not installed").
-// The code itself is built into the exe (static linking): a plugin that is not installed, or whose
-// requirements are not, is simply never initialised. The first start installs everything available.
+// 入れるときはプラグインのフォルダーを "available" から "installed" に写し、消すときはそれを消し、
+// 入れ直すときはもう一度写す ("入っていない" を経由せずに、壊れたファイルを直せる)。
+// コード自体は exe に組み込まれる (静的リンク): 入っていない、または前提が入っていない
+// プラグインは、初期化されないだけだ。最初の起動で、ある物をすべて入れる。
 
 #include "editor/plugin/PluginManifest.h"
 #include "editor/plugin/Software.h"
@@ -24,64 +24,64 @@ namespace rm::editor {
 class Plugins {
 public:
     struct Entry {
-        PluginStatus status;     // id, display name, state, reason
-        bool available = false;  // this engine has its files, so it can be (re)installed
+        PluginStatus status;     // ID、表示名、状態、理由
+        bool available = false;  // このエンジンにファイルがあるので、(再) インストールできる
         bool installed = false;
-        // A connector (its plugin.json's connectorFor): never chosen by hand - it comes along when what it
-        // joins is installed. Shown apart (Hub) and not offered for installing (the editor's menu).
+        // コネクター (その plugin.json の connectorFor): 手では選ばない - つなぐ物が入ると一緒に来る。
+        // 別に表示し (Hub)、入れる候補には出さない (エディターのメニュー)。
         bool connector = false;
-        std::vector<PluginId> joins;  // what it requires (the two sides it joins)
+        std::vector<PluginId> joins;  // 前提とするもの (つなぐ両側)
     };
 
-    // The first start of this engine (installedDir missing) installs what `legacyDir` has installed
-    // (the folder every engine shared before) - or, with nothing there, everything available.
+    // このエンジンの最初の起動 (installedDir が無い) では、`legacyDir` に入っているもの
+    // (前は全エンジンで共有していたフォルダー) を入れる。何も無ければ、ある物すべて。
     void Load(const std::filesystem::path& availableDir, const std::filesystem::path& installedDir,
               const std::filesystem::path& legacyDir = {});
-    // Reads everything again and rebuilds the registry. Only while no editor is open
-    // (open workspaces point into the registry).
+    // 全部を読み直してレジストリーを作り直す。エディターが 1 つも開いていないときだけ
+    // (開いているワークスペースはレジストリーを指している)。
     void Reload();
 
     const std::vector<Entry>& Entries() const { return entries_; }
-    // The plugin.json of every plugin this engine has (installed or not).
+    // このエンジンが持つ全プラグインの plugin.json (入っていてもいなくても)。
     const std::vector<PluginManifest>& Available() const { return available_; }
     const Entry* Find(const PluginId& id) const;
     bool IsEnabled(const PluginId& id) const;
-    std::string DisplayName(const PluginId& id) const;  // the ID text for an unknown plugin
-    // Where an installed plugin's files are (its theme files: themes/*.json).
+    std::string DisplayName(const PluginId& id) const;  // 不明なプラグインは ID の文字
+    // 入っているプラグインのファイルの場所 (そのテーマファイル: themes/*.json)。
     std::filesystem::path InstalledFolder(const PluginId& id) const;
     const PluginRegistry& Registry() const { return registry_; }
 
-    // The project templates (the Hub's 新規作成): 白紙 and every template.json of the plugins this
-    // engine has - installed or not (<engine plugins>/<author>/<name>/templates/<id>/template.json).
+    // プロジェクトのテンプレート (Hub の新規作成): 白紙と、このエンジンが持つプラグインの
+    // 全 template.json - 入っていても入っていなくても (<engine plugins>/<author>/<name>/templates/<id>/template.json)。
     const TemplateTree& Templates() const { return templates_; }
-    // The softwares of the template tree with their plugins (the Hub's "ソフトで絞る").
+    // テンプレートの木のソフトと、そのプラグイン (Hub の「ソフトで絞る」)。
     const std::vector<SoftwareGroup>& SoftwareGroups() const { return softwareGroups_; }
-    // What to copy before a project can be made from the template tree's `node` (its plugins and those
-    // below it, with their requirements and connectors). This engine lacks some -> *unavailable.
+    // テンプレートの木の `node` からプロジェクトを作る前に写すもの (そのプラグインと、その下の
+    // もの、前提とコネクターも)。このエンジンに無い物は *unavailable へ。
     std::vector<PluginId> TemplateInstallPlan(size_t node, std::vector<PluginId>* unavailable = nullptr) const;
 
-    // What installing (or repairing) `id` copies: it and its requirements that are not installed
-    // and usable already, requirements first. Requirements this engine does not have -> *unavailable.
+    // `id` を入れる (または直す) ときに写すもの: それと、その前提のうち、まだ入っていない、または
+    // 使えないもの。前提が先。このエンジンに無い前提は *unavailable へ。
     std::vector<PluginId> InstallPlan(const PluginId& id, std::vector<PluginId>* unavailable = nullptr) const;
-    // Installed plugins that stop working without `id` (direct first, then indirect).
+    // `id` が無いと動かなくなる、入っているプラグイン (直接のものが先、次に間接のもの)。
     std::vector<Dependent> Dependents(const PluginId& id) const;
 
-    // File operations. They do not reload: call Reload() after a batch.
-    bool Install(const std::vector<PluginId>& ids, std::string* error);  // also reinstalls installed ones
+    // ファイルの操作。再読み込みはしない: まとめて行った後に Reload() を呼ぶ。
+    bool Install(const std::vector<PluginId>& ids, std::string* error);  // 入っているものの入れ直しもする
     bool Uninstall(const PluginId& id, std::string* error);
 
-    // Each start, after Load: when the engine was updated (its file list changed since the last start),
-    // installed plugins whose files differ from the engine's copies are copied again - what the Hub's
-    // 再インストール does, without asking (they are the engine's files, not the user's). Plugins the
-    // user removed stay removed. The stamp (SHA-256 of the file list) is kept in
-    // <installed>/engine_files.sha256.
-    //   PlanEngineRefresh   any thread (App runs it on a Worker: it hashes every installed file) - reads only
-    //   ApplyEngineRefresh  UI thread, while no editor is open: copies, writes the stamp, reloads when
-    //                       anything was copied. Returns what was copied.
+    // 起動のたび、Load の後に: エンジンが更新されていて (前回の起動からファイルの一覧が変わった)、
+    // 入っているプラグインのファイルがエンジンの写しと違うなら、もう一度写す - Hub の
+    // 再インストールと同じことを、聞かずにする (ユーザーのファイルではなく、エンジンのファイルだから)。
+    // ユーザーが消したプラグインは消えたまま。印 (ファイル一覧の SHA-256) は
+    // <installed>/engine_files.sha256 に残す。
+    //   PlanEngineRefresh   どのスレッドからでも (App が Worker で走らせる: 入っている全ファイルのハッシュを取る) - 読むだけ
+    //   ApplyEngineRefresh  UI スレッド、エディターが 1 つも開いていないとき: 写し、印を書き、
+    //                       何か写したら再読み込みする。写したものを返す。
     struct EngineRefreshPlan {
-        bool looked = false;                  // the engine changed: `refresh` was worked out
-        std::optional<std::string> listHash;  // of the file list (nullopt: none - nothing to stamp)
-        std::string listError;                // the list could not be read (only plugin.json compared)
+        bool looked = false;                  // エンジンが変わった: `refresh` を計算した
+        std::optional<std::string> listHash;  // ファイル一覧の (nullopt: 一覧が無い - 印を付けるものは無い)
+        std::string listError;                // 一覧が読めなかった (plugin.json だけ比べた)
         std::vector<PluginId> refresh;
     };
     std::vector<PluginId> InstalledAndAvailable() const;
@@ -96,9 +96,9 @@ private:
     void LoadTemplates();
 
     std::filesystem::path availableDir_, installedDir_;
-    std::vector<PluginManifest> available_;  // manifests of the engine's copies
-    std::vector<PluginManifest> installed_;  // manifests of the installed copies that could be read
-    std::vector<Entry> entries_;             // one per plugin built into the exe
+    std::vector<PluginManifest> available_;  // エンジンの写しの manifest
+    std::vector<PluginManifest> installed_;  // 読めた、入っている写しの manifest
+    std::vector<Entry> entries_;             // exe に組み込まれたプラグイン 1 つにつき 1 つ
     TemplateTree templates_;
     std::vector<SoftwareGroup> softwareGroups_;
     PluginRegistry registry_;

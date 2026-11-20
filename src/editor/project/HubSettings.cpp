@@ -97,14 +97,14 @@ bool HubSettings::Save() {
 }
 
 void HubSettings::SyncRecent() {
-    // Another RM Engine open at the same time may have opened projects since this one read the file:
-    // those stay in the list (newest first), unless this one took them out.
+    // 同時に開いている別の RM Engine が、これがファイルを読んだ後にプロジェクトを開いたかもしれない:
+    // それらは (新しい順に) 一覧に残す。ただし、これが外したものは除く。
     {
         std::string err;
         const auto bytes = platform::ReadFileBytes(paths::HubSettingsFile(), &err);
         const auto doc = bytes ? json::Parse(*bytes) : std::nullopt;
         if (doc && doc->IsObject()) {
-            // Taken out by another RM Engine since this one saw the file (and not opened here since).
+            // これがファイルを見た後に別の RM Engine が外した (ここでは開いていない)。
             std::vector<fs::path> disk;
             for (const auto& item : doc->Get("recent").Items()) {
                 if (!item.Get("path").AsString().empty()) disk.push_back(PathFromUtf8(item.Get("path").AsString()));
@@ -127,7 +127,7 @@ void HubSettings::SyncRecent() {
             }
             std::stable_sort(recent_.begin(), recent_.end(), [](const RecentProject& a, const RecentProject& b) { return a.lastOpened > b.lastOpened; });
             if (recent_.size() > kMaxRecent) recent_.resize(kMaxRecent);
-            onDisk_ = std::move(disk);  // (what the file has now: the next sync compares with it)
+            onDisk_ = std::move(disk);  // (今ファイルにあるもの: 次の同期はこれと比べる)
         }
     }
 }
@@ -146,7 +146,7 @@ void HubSettings::Remove(const fs::path& file) {
 }
 
 void HubSettings::Replace(const fs::path& from, const fs::path& to) {
-    // An old row for the new path (a project that used to be there) would be a duplicate.
+    // 新しいパスの古い行 (前にそこにあったプロジェクト) は重複になってしまう。
     if (!SamePath(from, to)) std::erase_if(recent_, [&](const RecentProject& r) { return SamePath(r.file, to); });
     for (auto& r : recent_) {
         if (SamePath(r.file, from)) r.file = to;

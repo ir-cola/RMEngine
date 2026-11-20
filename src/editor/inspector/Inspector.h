@@ -1,37 +1,35 @@
 #pragma once
-// The inspector: draws the fields of reflected objects from their TypeDesc. There is no per-type
-// inspector code - a plugin only describes its struct (design RME_PLATFORM 4-c: "the core shows,
-// the software decides what").
+// インスペクター: リフレクションしたオブジェクトのフィールドを、その TypeDesc から描く。型ごとの
+// インスペクターのコードはない - プラグインは自分の構造体を書くだけ (設計 RME_PLATFORM 4-c:
+// 「核は見せ、決めるのはソフト」)。
 //
-// It shows a list of BLOCKS (the "lumps of values" the selected thing has - for an entity of a
-// game: the entity itself, then each component). The core does not know what a block means: a
-// block has a title, an optional menu (⋮: e.g. 外す) and its fields; under the blocks there can be
-// an "add" button whose menu the software fills. The word "component" is the game's, not the core's.
+// ブロックの一覧を見せる (選んだものが持つ「値のかたまり」 - ゲームのエンティティなら、
+// エンティティ自身と各部品)。核はブロックの意味を知らない: ブロックにはタイトル、省略できる
+// メニュー (⋮: たとえば 外す)、フィールドがある。ブロックの下に「追加」ボタンを置け、
+// そのメニューはソフトが埋める。「部品」という言葉はゲームのもので、核のものではない。
 //
-// It never writes into an object. A change comes back as an Edit (with the index of its block),
-// which the caller turns into a reflect::SetFieldCommand on the software's history - so every edit
-// is undoable and marks the project unsaved (rule 7). Text and number fields send an Edit for every
-// key typed (the value changes as it is typed), all with the same `merge` key while the field keeps
-// the focus, so the history keeps one entry for the whole typing; Esc sends the value from before
-// the field was entered (the entry goes away). A click into a field selects all of it; a drag
-// selects what it covers. Numbers go through reflect::NumberFromInput: the same Min / Max /
-// rounding as loading a file (design R1 T3) - text that is not a number yet ("-", "1e") waits.
+// オブジェクトには絶対に書き込まない。変更は Edit (ブロックの番号つき) として返り、呼んだ側が
+// それをソフトの履歴の reflect::SetFieldCommand にする - だから編集はすべて Undo でき、
+// プロジェクトは未保存になる (憲法 7)。テキストと数の欄は、キーを 1 つ打つたびに Edit を送る
+// (打つと値が変わる)。欄にフォーカスがある間は全部同じ `merge` キーなので、履歴には打った
+// 全体で 1 つの項目が残る。Esc は欄に入る前の値を送る (その項目は消える)。欄をクリックすると
+// 全部を選び、ドラッグすると覆った分を選ぶ。数は reflect::NumberFromInput を通る: ファイルを
+// 読み込むときと同じ Min / Max / 丸め (設計 R1 T3) - まだ数でない文字 ("-"、"1e") は待つ。
 //
-// Dragging a number's label (or the X / Y / Z in front of a vector's boxes, the index of an array
-// element) left / right changes it like a slider without end (Shift: faster, Alt: slower; one undo
-// entry per drag).
+// 数のラベル (またはベクトルの欄の前の X / Y / Z、配列の要素の番号) を左右にドラッグすると、
+// 終わりのないスライダーのように変わる (Shift: 速く、Alt: ゆっくり。ドラッグごとに Undo は 1 つ)。
 //
-//   bool           check box          int / float     number field
-//   std::string    text field         Vec2/3, Color   one number field per component (+ a swatch)
-//   enum           drop-down list (a name this version does not know shows as "名前 (不明)")
-//   struct         its fields, indented
-//   AssetRef       the file's name (+ its picture); a drag from the アセット panel puts one in (only the
-//   EntityRef      kinds of AssetKind=), a click opens a list to pick from (with a search box), × clears
-//                  it; an entity: an item of the 階層 the same way. An id that is not there any more
-//                  shows "(見つかりません)" and is kept. What there is comes from Refs (the editor's).
-//   std::vector    "N 個" and ＋ (adds a copy of the last), then each element: a grip to drag it to
-//                  another place, its index, its value (any of the above), × to remove it. Every
-//                  change is the whole array set at once (one undo entry).
+//   bool           チェックボックス      int / float     数の欄
+//   std::string    文字の欄              Vec2/3, Color   成分ごとに数の欄 1 つ (+ 色見本)
+//   enum           ドロップダウンリスト (このバージョンが知らない名前は "名前 (不明)" と出る)
+//   struct         そのフィールド (インデントする)
+//   AssetRef       ファイルの名前 (+ 絵)。アセットパネルからドラッグすると入る (AssetKind= の
+//   EntityRef      種類だけ)。クリックすると選ぶリストが開く (検索欄つき)、× で消す。
+//                  エンティティ: 同じように 階層 の項目。もう無い ID は
+//                  "(見つかりません)" と出て、残る。何があるかは Refs (エディターのもの) から来る。
+//   std::vector    "N 個" と ＋ (最後のコピーを足す)、そして各要素: ドラッグして別の場所へ
+//                  動かすつまみ、番号、値 (上のどれか)、消す ×。変更は毎回配列全体を
+//                  いっぺんに設定する (Undo は 1 つの項目)。
 
 #include "base/Json.h"
 #include "core/reflect/Data.h"
@@ -52,91 +50,91 @@ struct Edit {
     size_t block = 0;
     reflect::FieldPath path;
     json::Value before, after;
-    std::string label;  // for the undo history, e.g. 「目標 FPS」を変更
-    uint64_t merge = 0;  // != 0: typing into one field - edits with the same key are one undo entry
-    int component = -1;  // a Vec2 / Vec3 / Color field: the one number typed (-1: the whole value)
+    std::string label;  // Undo 履歴用、たとえば 「目標 FPS」を変更
+    uint64_t merge = 0;  // != 0: 1 つの欄に打っている - 同じキーの編集は Undo の 1 つの項目
+    int component = -1;  // Vec2 / Vec3 / Color のフィールド: 打った数 1 つ (-1: 値全体)
 };
 
-// What reference fields show and offer (the inspector knows neither the assets nor the 階層).
+// 参照フィールドが見せるものと出すもの (インスペクターはアセットも 階層 も知らない)。
 struct RefChoice {
-    std::string value;    // as it is saved: an asset's id / an item's id (in decimal)
+    std::string value;    // 保存する形: アセットの ID / 項目の ID (10 進)
     std::wstring name;
-    std::wstring detail;  // where it is (its folder / its parent), shown faint
+    std::wstring detail;  // 場所 (そのフォルダ / その親)。薄く表示
     w::Icon icon = w::Icon::File;
-    std::string kind;     // an asset's kind ("image", "model" ... core/asset KindKey)
-    std::string file;     // an asset's path in Assets/ (an AssetKind of an extension, ".rmprefab", looks at it)
+    std::string kind;     // アセットの種類 ("image"、"model" ... core/asset KindKey)
+    std::string file;     // Assets/ にあるアセットのパス (拡張子の AssetKind、".rmprefab" がこれを見る)
 };
 struct Refs {
-    std::function<std::optional<RefChoice>(std::string_view guid)> asset;  // nullopt: not in the project
-    std::function<std::vector<RefChoice>()> assets;                         // every file and folder
-    std::function<std::optional<RefChoice>(uint64_t id)> item;             // an item of the 階層
+    std::function<std::optional<RefChoice>(std::string_view guid)> asset;  // nullopt: プロジェクトにない
+    std::function<std::vector<RefChoice>()> assets;                         // 全ファイルとフォルダ
+    std::function<std::optional<RefChoice>(uint64_t id)> item;             // 階層 の項目
     std::function<std::vector<RefChoice>()> items;
-    // An asset's small picture (the アセット panel's thumbnail), `size` DIPs; null: none (yet).
+    // アセットの小さな絵 (アセットパネルのサムネイル)、`size` DIP。null: (まだ) なし。
     std::function<ID2D1Bitmap*(ui::Context& c, const std::string& guid, float size)> thumbnail;
 };
 
-// One lump of values.
+// 値のかたまり 1 つ。
 struct Block {
-    const reflect::TypeDesc* type = nullptr;  // null: only `note` is shown (e.g. a component whose plugin is missing)
+    const reflect::TypeDesc* type = nullptr;  // null: `note` だけ出す (たとえばプラグインが無い部品)
     void* object = nullptr;
     const reflect::Unknowns* unknowns = nullptr;
-    std::wstring title;           // the header (folds the block when clicked); empty = no header
-    std::wstring note;            // a line under the header
-    std::vector<w::Action> menu;  // the header's ⋮ menu; empty = no button
-    // Ways to show the block (e.g. ローカル / ワールド): a switch above its fields; empty = none.
-    // Choosing one calls setMode - the caller then gives the block shown that way.
+    std::wstring title;           // 見出し (クリックするとブロックをたたむ)。空 = 見出しなし
+    std::wstring note;            // 見出しの下の 1 行
+    std::vector<w::Action> menu;  // 見出しの ⋮ メニュー。空 = ボタンなし
+    // ブロックの見せ方 (たとえば ローカル / ワールド): フィールドの上のスイッチ。空 = なし。
+    // 選ぶと setMode を呼ぶ - 呼んだ側がその見せ方のブロックを渡す。
     std::vector<std::wstring> modes;
     int mode = 0;
     std::function<void(int)> setMode;
-    // More objects of the same type edited together with `object` (several things selected): a
-    // value that is not the same in all of them shows "—". The Edit is the one for `object`; the
-    // caller applies it to these too (for a vector, only its `component`).
+    // `object` といっしょに編集する、同じ型の別のオブジェクト (複数を選んだとき): 全部で
+    // 同じではない値は "—" と出す。Edit は `object` のもの。呼んだ側がこれらにも
+    // 適用する (ベクトルなら、その `component` だけ)。
     std::vector<const void*> others;
-    // Shown, not edited (a game in Play shows the copy that plays): the fields take no input.
+    // 表示だけで編集しない (Play 中のゲームは動いているコピーを見せる): フィールドは入力を受けない。
     bool readOnly = false;
-    // A right click on a field's line (also on a block that only shows): this menu for that field
-    // (e.g. Play's この値を残す). Null / empty: no menu.
+    // フィールドの行を右クリック (表示だけのブロックでも): そのフィールド用のこのメニュー
+    // (たとえば Play の この値を残す)。null / 空: メニューなし。
     std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
-    // Only these fields of the type (by their names; a window that shows a big type in tabs); empty: all.
+    // この型のこれらのフィールドだけ (名前で。大きな型をタブで見せるウィンドウ用)。空: 全部。
     std::vector<std::string> fields;
-    // Ready-made values set at once (天候's 快晴 / 雨 / 嵐 ...): a row above the fields - its name and a
-    // drop-down of these; a row picked runs (the caller puts it in its history). Empty: no row.
+    // いっぺんに設定するできあいの値 (天候の 快晴 / 雨 / 嵐 ...): フィールドの上に 1 行 - 名前と
+    // これらのドロップダウン。選んだ行が動く (呼んだ側が履歴に積む)。空: 行なし。
     std::wstring presetLabel;
     std::vector<w::Action> presets;
 };
 
-// Per inspector: text being typed, the open drop-down / menu, folded blocks.
+// インスペクターごと: 打っている最中の文字、開いているドロップダウン / メニュー、たたんだブロック。
 struct State {
     std::unordered_map<ui::Id, std::string> text;
     ui::Id editing = 0;
-    std::string original;  // the value of the field being edited when it was entered (Esc)
-    uint64_t session = 0;  // the merge key of that typing
-    w::Popup popup;  // a drop-down list of an enum field, or the list of a reference field
-    ui::Id popupId = 0;  // ... of this field (or array element)
-    std::string pickSearch;  // typed into the reference list's search box
-    // Dragging a label to change a number: which one, from what value, how far, its undo key.
+    std::string original;  // その欄に入ったときの、編集中の欄の値 (Esc)
+    uint64_t session = 0;  // その入力のマージキー
+    w::Popup popup;  // enum フィールドのドロップダウンリスト、または参照フィールドのリスト
+    ui::Id popupId = 0;  // ... このフィールド (か配列の要素) の
+    std::string pickSearch;  // 参照リストの検索欄に打ったもの
+    // ラベルをドラッグして数を変える: どれか、どの値から、どれだけ、その Undo キー。
     ui::Id scrub = 0;
     double scrubStart = 0, scrubMoved = 0, scrubSpeed = 0;
     uint64_t scrubSession = 0;
-    // Dragging an array element by its grip: which array, which element.
+    // つまみで配列の要素をドラッグする: どの配列の、どの要素か。
     ui::Id arrayDrag = 0;
     size_t arrayDragFrom = 0;
-    std::optional<Edit> pending;  // chosen in the drop-down (drawn at the end of the frame)
-    w::Popup menu;                // a block's ⋮ menu
+    std::optional<Edit> pending;  // ドロップダウンで選んだもの (フレームの終わりに描く)
+    w::Popup menu;                // ブロックの ⋮ メニュー
     std::vector<w::Action> menuActions;
-    // The add button's panel (w::ActionPicker): × / search / the choices in folders. Its open folders
-    // stay from one opening to the next (and when something else is shown: EditorScreen's Inspect).
+    // 追加ボタンのパネル (w::ActionPicker): × / 検索 / フォルダに入った選択肢。開いたフォルダは
+    // 次に開くときまで残る (ほかのものを表示したときも: EditorScreen の Inspect)。
     w::Popup addPopup;
     std::vector<w::Action> addActions;
     w::PickerState addPicker;
-    std::unordered_set<std::wstring> folded;  // block titles
+    std::unordered_set<std::wstring> folded;  // ブロックのタイトル
     float contentHeight = 0;
 };
 
-// Draws the blocks into `area` (scrolls when needed); `addLabel` non-empty = a button under them
-// that opens a panel of what `addMenu` returns (in their folders: w::Action::folder). Returns a
-// finished change, if any.
-// `refs`: what reference fields can show (null: they show only "(なし)" / "(見つかりません)").
+// ブロックを `area` に描く (必要ならスクロールする)。`addLabel` が空でなければ、その下に
+// `addMenu` が返すものを並べるパネルを開くボタンを置く (フォルダに入れて: w::Action::folder)。
+// 終わった変更があれば返す。
+// `refs`: 参照フィールドが見せられるもの (null: "(なし)" / "(見つかりません)" だけ出す)。
 std::optional<Edit> Draw(ui::Context& c, State& st, const ui::Rect& area, std::span<const Block> blocks,
                          std::wstring_view addLabel = {}, const std::function<std::vector<w::Action>()>& addMenu = {},
                          const Refs* refs = nullptr);

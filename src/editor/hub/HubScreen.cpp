@@ -102,7 +102,7 @@ void HubScreen::OnCloseRequested() { app_.RequestQuit(); }
 
 void HubScreen::OnLookChanged() {
     ScreenWindow::OnLookChanged();
-    // Not read again: what a row says in words is made when it is drawn (in the language now).
+    // 読み直さない: 行の言葉は描くときに (今の言語で) 作る。
 }
 
 void HubScreen::ShowError(std::wstring message, fs::path removableFile, std::wstring title) {
@@ -114,11 +114,11 @@ void HubScreen::ShowError(std::wstring message, fs::path removableFile, std::wst
 }
 
 // ---------------------------------------------------------------------------
-// Data
+// データ
 // ---------------------------------------------------------------------------
 
 HubScreen::RowData HubScreen::ReadRow(const fs::path& file) {
-    // On the Worker's thread: files only (no translations, no log, nothing of the screen).
+    // Worker のスレッドで: ファイルだけ (翻訳もログも画面も触らない)。
     RowData d;
     d.file = file;
     d.name = file.stem().native();
@@ -146,8 +146,8 @@ void HubScreen::ApplyRow(const RowData& d) {
 }
 
 void HubScreen::Refresh() {
-    // What another RM Engine opened or took out meanwhile (2026-11-18 on screen: back from the editor,
-    // the Hub still showed a project removed in the other one, and not the one it made).
+    // その間に別の RM Engine が開いたり外したりしたもの (2026-11-18 画面で: エディターから戻ると、
+    // Hub に別の方で外したプロジェクトが残り、作ったばかりのものは出なかった)。
     app_.Settings().SyncRecent();
     rows_.clear();
     std::vector<fs::path> files;
@@ -155,12 +155,12 @@ void HubScreen::Refresh() {
         Row row;
         row.file = r.file;
         row.folder = r.file.parent_path().native();
-        row.name = r.file.stem().native();  // until it is read
+        row.name = r.file.stem().native();  // 読み終わるまで
         rows_.push_back(std::move(row));
         files.push_back(r.file);
     }
     SortRows();
-    // A project on a slow or unreachable drive takes seconds: read on a Worker, one row at a time.
+    // 遅い、または届かないドライブのプロジェクトは数秒かかる: Worker で 1 行ずつ読む。
     rowsWorker_.Run([this, files](std::stop_token stop, const Worker::Post& post) {
         for (const fs::path& file : files) {
             if (stop.stop_requested()) return;
@@ -168,7 +168,7 @@ void HubScreen::Refresh() {
             post([this, d = std::move(d)] { ApplyRow(d); });
         }
         post([this] {
-            SortRows();  // by the dates now known
+            SortRows();  // 分かった日付で
             Invalidate();
         });
     });
@@ -197,7 +197,7 @@ std::vector<size_t> HubScreen::FilteredRows() const {
 }
 
 // ---------------------------------------------------------------------------
-// Actions
+// 操作
 // ---------------------------------------------------------------------------
 
 void HubScreen::OpenRow(const Row& row) {
@@ -216,7 +216,7 @@ void HubScreen::BrowseOpen() {
 }
 
 void HubScreen::BeginNewProject() {
-    // Always the engine's Project folder (another place can be chosen with 参照… for each project).
+    // いつもエンジンの Project フォルダ (別の場所はプロジェクトごとに 参照… で選べる)。
     const fs::path loc = paths::DefaultProjects();
     newLocation_ = PathToUtf8(loc);
     newName_ = "NewProject";
@@ -233,7 +233,7 @@ void HubScreen::BrowseLocation() {
     Defer([this] {
         auto folder = platform::PickFolder(Hwnd(), Tr(L"保存先のフォルダを選択"), Utf8ToWide(newLocation_));
         if (folder) {
-            ctx_.ClearFocus();  // the field must not write its old text back over the new value
+            ctx_.ClearFocus();  // フィールドが古い文字を新しい値の上に書き戻してはいけない
             newLocation_ = WideToUtf8(*folder);
             newError_.clear();
         }
@@ -274,7 +274,7 @@ void HubScreen::CreateNewProject() {
         newError_ = Tr(L"テンプレートを選んでください (名前だけの枝からは作れません)。");
         return;
     }
-    // The plugins of the template and of the ones below it (design 09-29), asked for as opening a project does.
+    // テンプレートとその下にあるものが使うプラグイン (設計 09-29)。プロジェクトを開くときと同じ聞き方をする。
     std::vector<PluginId> unavailable;
     std::vector<PluginId> plan = plugins.TemplateInstallPlan(node, &unavailable);
     if (!unavailable.empty()) {
@@ -292,7 +292,7 @@ void HubScreen::CreateNewProject() {
                   Utf8ToWide(TrU8(t->name))) +
               L"\n" + PluginNames(plan);
     pr.toInstall = std::move(plan);
-    // After this frame: the Enter that pressed 作成 must not also answer the question.
+    // このフレームの後で: 作成を押した Enter が、質問への答えにもなってはいけない。
     Defer([this, pr = std::move(pr)]() mutable { ShowPrompt(std::move(pr)); });
 }
 
@@ -330,20 +330,20 @@ void HubScreen::RunRename() {
         renameError_ = NameErrorText(ne);
         return;
     }
-    // Already called that everywhere: nothing to do.
+    // もうどこでもその名前で呼ばれている: 何もしない。
     const ProjectRenamePlan plan = PlanProjectRename(renameFile_, WideToUtf8(renameOld_), renameName_);
     if (WideToUtf8(renameOld_) == renameName_ && !plan.renameFolder && plan.file.native() == renameFile_.native()) {
         modal_ = Modal::None;
         return;
     }
-    // Open in another RM Engine: its editor would keep saving to the old place.
+    // 別の RM Engine で開いている: そのエディターは古い場所に保存し続けてしまう。
     {
         platform::FileLock probe;
         if (probe.Take(ProjectLockFile(renameFile_), nullptr) == platform::FileLock::Result::HeldByOther) {
             renameError_ = Tr(L"このプロジェクトは別の RM Engine で開いているので、名前を変えられません。そちらを閉じてからにしてください。");
             return;
         }
-    }  // let go before the folder is renamed (an open file inside would stop it)
+    }  // フォルダの名前を変える前に手放す (中で開いているファイルがあると止まる)
     std::string err;
     const auto newFile = RenameProject(renameFile_, renameName_, &err);
     if (!newFile) {
@@ -358,13 +358,13 @@ void HubScreen::RunRename() {
 }
 
 // ---------------------------------------------------------------------------
-// Drawing
+// 描画
 // ---------------------------------------------------------------------------
 
 void HubScreen::OnFrame(ui::Context& c, float width, float height) {
     auto& p = c.P();
     p.Clear(theme::Bg);
-    w::DrawBackdrop(c, false);  // the theme's picture, behind everything (again on the sidebar)
+    w::DrawBackdrop(c, false);  // テーマの絵を全部の後ろに (サイドバーの上にもう一度)
     const bool overlay = modal_ != Modal::None || rowMenu_.open;
     c.SetInputEnabled(!overlay);
 
@@ -406,7 +406,7 @@ void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
         const auto sz = logo_->GetSize();
         const float lw = r.w - 64;
         const float lh = lw * sz.height / sz.width;
-        // The logo is one color: white on a dark sidebar, black on a light one (every theme).
+        // ロゴは 1 色: 暗いサイドバーでは白、明るいサイドバーでは黒 (どのテーマでも)。
         p.ImageTinted(logo_.Get(), {r.x + 32, y, lw, lh}, theme::InkOn(theme::Sidebar));
         y += lh + 40;
     } else {
@@ -414,7 +414,7 @@ void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
         y += 72;
     }
 
-    // The pages: whole-width rows split by lines (the whole row is the button).
+    // ページ: 幅いっぱいの行を線で区切る (行全体がボタン)。
     constexpr float kNavH = 50.f;
     w::Separator(c, r.x, y, r.w - 1);
     auto nav = [&](std::string_view id, std::wstring_view label, Page page) {
@@ -444,7 +444,7 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
     w::TextField(c, "hub.search", {searchRow.x, searchRow.y, std::min(360.f, searchRow.w), 34}, search_, Tr(L"プロジェクトを検索"));
     ui::TakeTop(area, 16);
 
-    // Table (on the page's own background: only the header line, and the hovered / selected row, are drawn)
+    // 表 (ページ自身の背景の上: 見出しの線と、ホバー / 選択中の行だけを描く)
     Rect table = area;
     const Rect head = ui::TakeTop(table, 38);
     const float menuW = 48, modW = 180;
@@ -466,7 +466,7 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
                 sortAscending_ = !sortAscending_;
             } else {
                 sortColumn_ = column;
-                sortAscending_ = column != 1;  // dates: newest first
+                sortAscending_ = column != 1;  // 日付: 新しい順
             }
             SortRows();
         }
@@ -486,7 +486,7 @@ void HubScreen::DrawProjects(ui::Context& c, Rect area) {
         return;
     }
 
-    // Whole-width rows split by lines; the whole row is the button.
+    // 幅いっぱいの行を線で区切る。行全体がボタン。
     const float rowH = 56;
     const float content = rowH * static_cast<float>(visible.size());
     const Rect view = table;
@@ -548,7 +548,7 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
            Tr(L"インストールしたプラグインは、すべてのプロジェクトで使えます。前提のプラグインは一緒にインストールされます。削除はここだけでできます。"),
            note);
     ui::TakeTop(area, 4);
-    // ソフトで絞る (design 1-b-2 A): すべて / each software of the template tree / 共通.
+    // ソフトで絞る (設計 1-b-2 A): すべて / テンプレートの木の各ソフト / 共通。
     const auto& groups = plugins.SoftwareGroups();
     if (!groups.empty()) {
         std::vector<std::wstring> texts{Tr(L"すべて")};
@@ -569,7 +569,7 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
         p.Text(box.Inset(24, 0, 24, 0), Tr(L"このエンジンにはプラグインが入っていません"), Style(15, theme::Text, true));
         return;
     }
-    // The rows scroll (more plugins than the window is tall).
+    // 行はスクロールする (ウィンドウの高さよりプラグインが多いとき)。
     const Rect view{area.x - 4, area.y, area.w + 8, area.h};
     float& contentH = c.FloatState(c.MakeId("plg.contentH"), 600.f);
     const float off = w::BeginScroll(c, "plg.scroll", view, contentH);
@@ -578,7 +578,7 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     auto outside = [&](const Rect& row) { return row.Bottom() < view.y || row.y > view.Bottom(); };
     bool anyShown = false;
     for (const Plugins::Entry& e : plugins.Entries()) {
-        if (e.connector) continue;  // below, apart: they are never chosen by hand
+        if (e.connector) continue;  // 下に離して置く: 手では選ばない
         if (!PluginShown(e.status.id)) continue;
         anyShown = true;
         const PluginStatus& st = e.status;
@@ -590,7 +590,7 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
         p.Text({row.x + 24, row.y + 40, row.w * 0.4f, 20}, TrF(L"作者 {}   名前 {}", Utf8ToWide(st.id.author), Utf8ToWide(st.id.name)),
                Style(12, theme::TextFaint));
 
-        // Buttons from the right edge.
+        // ボタンは右端から。
         c.PushId(st.id.author);
         c.PushId(st.id.name);
         Rect b{row.Right() - 20 - 110, row.y + 18, 110, 36};
@@ -648,9 +648,9 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     w::EndScroll(c, "plg.scroll", view, contentH);
 }
 
-// The connectors (ゲーム制作 × 3D ...): no install / remove buttons - one comes along when everything it
-// joins is installed, and stops when one of them is removed. Only what they join and how they are; a
-// broken one can be copied again.
+// コネクタ (ゲーム制作 × 3D ...): インストール / 削除のボタンはない - つなぐものが全部
+// 入ると 1 つ付いてきて、そのどれかを削除すると止まる。つなぐものとその状態だけを出す。
+// 壊れたものはもう一度コピーできる。
 void HubScreen::DrawConnectors(ui::Context& c, Rect& area, const Rect& view) {
     auto& p = c.P();
     const Plugins& plugins = app_.GetPlugins();
@@ -704,12 +704,12 @@ bool HubScreen::PluginShown(const PluginId& id) const {
     const int n = static_cast<int>(groups.size());
     if (pluginFilter_ <= 0 || pluginFilter_ > n + 1) return true;
     auto in = [&](const SoftwareGroup& g) { return std::find(g.plugins.begin(), g.plugins.end(), id) != g.plugins.end(); };
-    if (pluginFilter_ == n + 1) return std::none_of(groups.begin(), groups.end(), in);  // 共通: in no software
+    if (pluginFilter_ == n + 1) return std::none_of(groups.begin(), groups.end(), in);  // 共通: どのソフトにも入っていない
     return in(groups[static_cast<size_t>(pluginFilter_ - 1)]);
 }
 
 // ---------------------------------------------------------------------------
-// Plugin questions
+// プラグインの質問
 // ---------------------------------------------------------------------------
 
 std::wstring HubScreen::PluginLine(const PluginId& id) const {
@@ -729,7 +729,7 @@ std::wstring HubScreen::PluginNames(const std::vector<PluginId>& ids) const {
 }
 
 int HubScreen::RecentProjectsUsing(const PluginId& id) const {
-    // Only the projects the Hub knows (the recent list, as the Worker read it) - the PC is never searched.
+    // Hub が知っているプロジェクトだけ (最近の一覧。Worker が読んだもの) - PC の中は探さない。
     int n = 0;
     for (const Row& row : rows_) {
         if (!row.loading && std::find(row.plugins.begin(), row.plugins.end(), id) != row.plugins.end()) ++n;
@@ -763,7 +763,7 @@ void HubScreen::AskBlockingPlugins(const fs::path& project, const std::vector<Pl
     pr.body = Tr(L"このプロジェクトが使っているプラグインがそろっていないため、開けません。") + L"\n";
     for (const PluginId& id : blocking) pr.body += PluginLine(id) + L"\n";
     if (!unavailable.empty()) {
-        pr.toInstall.clear();  // cannot make it whole: nothing to offer
+        pr.toInstall.clear();  // 完全にはできない: 出せるものはない
         pr.body += L"\n" + Tr(L"このエンジンには次のプラグインがありません。エンジンを新しい版にしてください。") + L"\n" + PluginNames(unavailable);
     } else if (!pr.toInstall.empty()) {
         pr.body += L"\n" + Tr(L"前提プラグインをインストールしますか？") + L"\n" + PluginNames(pr.toInstall);
@@ -839,8 +839,8 @@ void HubScreen::BeginRemove(const PluginId& id) {
 
 void HubScreen::RunInstall(const std::vector<PluginId>& ids) {
     if (ids.empty()) return;
-    // Installing reads the plugins again (Entries() is made anew): never in the middle of drawing the
-    // list of them - after the frame, from the message loop.
+    // インストールするとプラグインを読み直す (Entries() を作り直す): その一覧を描いている
+    // 最中は絶対にしない - フレームの後で、メッセージループから。
     Defer([this, ids] {
         std::string err;
         if (!app_.InstallPlugins(ids, &err)) ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
@@ -918,7 +918,7 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
             }
             break;
         case PromptKind::Create:
-            // Back to the new project dialog either way (what was typed there is kept).
+            // どちらでも新規プロジェクトのダイアログに戻る (そこで打った内容は残す)。
             if (w::Button(c, "pp.cancel", left, Tr(L"やめる")) || esc) {
                 modal_ = Modal::NewProject;
             } else if (w::Button(c, "pp.install", right, Tr(L"インストールして作成"), w::ButtonKind::Primary) || enter) {
@@ -933,7 +933,7 @@ void HubScreen::DrawPluginPrompt(ui::Context& c) {
             }
             break;
         case PromptKind::Remove:
-            // The safe answer is the default: Enter and Esc both mean "no" (decided 2026-09-30).
+            // 安全な答えが初期値: Enter も Esc も「いいえ」の意味 (2026-09-30 に決めた)。
             if (w::Button(c, "pp.no", left, Tr(L"いいえ")) || enter || esc) {
                 close();
             } else if (w::Button(c, "pp.remove", right, Tr(L"削除"), w::ButtonKind::Primary)) {
@@ -964,7 +964,7 @@ void HubScreen::DrawOptions(ui::Context& c, Rect area) {
         p.Text({area.x, y, area.w, 20}, text, Style(12, theme::TextFaint));
         y += 26;
     };
-    // A place on disk, with a button that shows it in Explorer (when it exists).
+    // ディスク上の場所と、あればエクスプローラーで見せるボタン。
     auto place = [&](std::string_view id, std::wstring_view label, const fs::path& path) {
         const Rect row{area.x, y, area.w, 36};
         p.Text({row.x, row.y, labelW, row.h}, label, Style(13, theme::TextDim));
@@ -978,18 +978,18 @@ void HubScreen::DrawOptions(ui::Context& c, Rect area) {
         y += 42;
     };
 
-    // The page scrolls when the window is low.
+    // ウィンドウが低いときはページがスクロールする。
     const Rect view{area.x - 4, area.y, area.w + 8, area.h};
     float& contentH = c.FloatState(c.MakeId("opt.contentH"), 900.f);
     const float off = w::BeginScroll(c, "opt.scroll", view, contentH);
     y -= off;
     const float top = y;
 
-    // --- The options themselves: drawn by the inspector from their type (editor/project/Options.h).
+    // --- オプション本体: インスペクターがその型から描く (editor/project/Options.h)。
     section(Tr(L"設定"));
     Options& opts = app_.Settings().GetOptions();
     {
-        // The theme: chosen on its own screen (there will be many), the one in use shown here.
+        // テーマ: 専用の画面で選ぶ (たくさんできる予定)。ここには今使っているものを出す。
         const Rect row{area.x, y, area.w, 36};
         p.Text({row.x, row.y, labelW, row.h}, Tr(L"色のテーマ"), Style(13, theme::TextDim));
         p.Text({row.x + labelW, row.y, row.w - labelW - buttonW - 16, row.h}, Tr(theme::FindTheme(opts.theme).name), Style(13, theme::Text));
@@ -1000,10 +1000,10 @@ void HubScreen::DrawOptions(ui::Context& c, Rect area) {
     }
     reflect::Unknowns& unknowns = app_.Settings().OptionsUnknowns();
     const inspector::Block block{&reflect::TypeOf<Options>(), &opts, &unknowns, {}, {}, {}};
-    // As tall as the options are (the inspector measures them while drawing): no scroll bar of its own.
+    // オプションの数だけの高さ (インスペクターが描きながら測る): 自前のスクロールバーはない。
     const Rect box{area.x - 12, y, area.w + 12, std::max(3 * 30.f + 20, optionsInspector_.contentHeight)};
     if (auto edit = inspector::Draw(c, optionsInspector_, box, std::span(&block, 1))) {
-        // Not project data: applied at once, saved in hub.json, not undoable.
+        // プロジェクトのデータではない: すぐ反映し、hub.json に保存し、Undo はできない。
         reflect::SetFieldCommand change(reflect::TypeOf<Options>(), std::move(edit->path), std::move(edit->before), std::move(edit->after),
                                         [&opts, &unknowns] { return reflect::EditTarget{&opts, &unknowns}; }, std::move(edit->label));
         change.Do();
@@ -1085,7 +1085,7 @@ void HubScreen::DrawUpdates(ui::Context& c, Rect area) {
         y += 8;
         for (const std::string& line : e.items) {
             const std::wstring text = Utf8ToWide(line);
-            // Long lines wrap: measure roughly (one line per this many DIPs of text).
+            // 長い行は折り返す: おおまかに測る (これだけの DIP の文字ごとに 1 行)。
             const float width = area.w - 28;
             const float lines = std::max(1.f, std::ceil(p.TextWidth(text, 13) / std::max(1.f, width)));
             p.FillCircle(area.x + 8.5f, y + 10.5f, 2.5f, theme::Accent);
@@ -1105,7 +1105,7 @@ void HubScreen::RunIntegrityCheck() {
     integrityDone_ = integrityTotal_ = 0;
     modal_ = Modal::Integrity;
     Invalidate();
-    // What the work needs, copied here (on the UI thread).
+    // 作業に必要なものをここにコピーする (UI スレッドで)。
     std::vector<PluginId> installed;
     for (const auto& e : app_.GetPlugins().Entries()) {
         if (e.installed) installed.push_back(e.status.id);
@@ -1122,7 +1122,7 @@ void HubScreen::RunIntegrityCheck() {
         }
         r.listRead = true;
         r.files = list->size();
-        // How far it is: told now and then (not for every file).
+        // 進み具合: ときどき知らせる (ファイルごとにはしない)。
         size_t done = 0;
         auto last = std::chrono::steady_clock::now();
         auto counted = [&] {
@@ -1140,7 +1140,7 @@ void HubScreen::RunIntegrityCheck() {
             counted();
             return platform::Sha256File(exeDir / PathFromUtf8(rel));
         });
-        // Installed plugins compared with the engine's copies.
+        // インストール済みのプラグインを、エンジンのコピーと比べる。
         r.stale = integrity::StalePlugins(*list, installed, [&](const PluginId& id, const std::string& rel) -> std::optional<std::string> {
             if (stop.stop_requested()) return std::nullopt;
             return platform::Sha256File(installedDir / PathFromUtf8(id.author) / PathFromUtf8(id.name) / PathFromUtf8(rel));
@@ -1188,10 +1188,10 @@ void HubScreen::DrawThemePicker(ui::Context& c) {
     const auto themes = theme::Themes();
     constexpr int kCols = 4;
     constexpr float kGap = 16, kCardH = 156, kLineGap = 36, kNoteH = 30, kButtonsH = 52;
-    // Where each card goes: four to a row, and each group (the built-in three, then each theme pack)
-    // starts a new row under a line with the pack's name.
+    // カードの置き場所: 1 行に 4 枚。各グループ (組み込みの 3 つ、次に各テーマパック) は、
+    // パックの名前を書いた線の下から新しい行を始める。
     struct Cell {
-        int col, row, lines;  // lines = how many group lines are above it
+        int col, row, lines;  // lines = この上にグループの線がいくつあるか
     };
     std::vector<Cell> cells;
     int col = 0, row = 0, lines = 0;
@@ -1211,11 +1211,11 @@ void HubScreen::DrawThemePicker(ui::Context& c) {
     const Rect cr = w::BeginModal(c, 900, 58 + kNoteH + gridH + 8 + kButtonsH + 20, Tr(L"色のテーマ"));
     p.Text({cr.x, cr.y, cr.w, 24}, Tr(L"選ぶとすぐに変わります。"), Style(13, theme::TextDim));
 
-    // The cards (the grid scrolls when the window is too low for all of them).
+    // カード (全部が入らないほどウィンドウが低いと、グリッドがスクロールする)。
     const Rect view{cr.x - 4, cr.y + kNoteH, cr.w + 8, cr.h - kNoteH - kButtonsH};
     const float off = w::BeginScroll(c, "theme.scroll", view, gridH + 8);
     const float cardW = (cr.w - kGap * (kCols - 1)) / kCols;
-    // A row's top: rows above it, each followed by a gap - or, at a group's end, by the line's space.
+    // 行の上端: その上にある行と、それぞれの後ろの隙間 - グループの終わりなら線の分の場所。
     auto rowTop = [&](const Cell& cell) {
         return view.y + 4 - off + cell.row * kCardH + (cell.row - cell.lines) * kGap + cell.lines * kLineGap;
     };
@@ -1226,7 +1226,7 @@ void HubScreen::DrawThemePicker(ui::Context& c) {
         const Cell& cell = cells[i];
         const float top = rowTop(cell);
         if (i > 0 && cell.lines != cells[i - 1].lines) {
-            // The pack's name, then the line.
+            // パックの名前、そして線。
             const std::wstring pack = Tr(t.pack);
             const float nameW = pack.empty() ? 0.f : p.TextWidth(pack, 12) + 10.f;
             p.Text({cr.x, top - kLineGap, nameW, kLineGap - 6}, pack, Style(12, theme::TextDim));
@@ -1237,7 +1237,7 @@ void HubScreen::DrawThemePicker(ui::Context& c) {
         const bool clicked = w::ThemeCard(c, "card", card, t.palette ? &*t.palette : nullptr, Tr(t.name), &t == &current).clicked;
         c.PopId();
         if (clicked && &t != &current) {
-            // Not project data: applied at once, saved in hub.json, not undoable (like the other options).
+            // プロジェクトのデータではない: すぐ反映し、hub.json に保存し、Undo はできない (ほかのオプションと同じ)。
             opts.theme = t.id;
             app_.Settings().Save();
             app_.ApplyOptions();
@@ -1261,7 +1261,7 @@ void HubScreen::DrawIntegrity(ui::Context& c) {
     ts.v = ui::VAlign::Top;
     const Rect ok{cr.Right() - 110, cr.Bottom() - 36, 110, 36};
     if (integrityRunning_) {
-        // Hashing on the Worker: how far it is, and a way out.
+        // Worker でハッシュを取る: 進み具合と、やめる方法。
         const std::wstring how = integrityTotal_ > 0 ? TrF(L"ファイルを確かめています… {} / {} 個", integrityDone_, integrityTotal_)
                                                      : Tr(L"ファイルを確かめています…");
         p.Text({cr.x, cr.y, cr.w, 40}, how, ts);
@@ -1286,7 +1286,7 @@ void HubScreen::DrawIntegrity(ui::Context& c) {
             if (!app_.InstallPlugins(ids, &err)) {
                 ShowError(Utf8ToWide(err), {}, Tr(L"直せませんでした"));
             } else {
-                RunIntegrityCheck();  // shows the result again
+                RunIntegrityCheck();  // 結果をもう一度見せる
             }
         });
         return;
@@ -1328,9 +1328,9 @@ void HubScreen::DrawRowMenu(ui::Context& c) {
     }
 }
 
-// The new project dialog: the template tree on the left (design RME_PLATFORM 1-b-2: a node needs the
-// plugins of its template and of every one below it), what the chosen one is and needs, the name and
-// the place on the right.
+// 新規プロジェクトのダイアログ: 左にテンプレートの木 (設計 RME_PLATFORM 1-b-2: ノードは、
+// そのテンプレートとその下にある全部のプラグインを必要とする)、右に選んだものが何で
+// 何を必要とするか、そして名前と場所。
 void HubScreen::DrawNewProject(ui::Context& c) {
     auto& p = c.P();
     const Plugins& plugins = app_.GetPlugins();
@@ -1341,7 +1341,7 @@ void HubScreen::DrawNewProject(ui::Context& c) {
     ui::TakeLeft(body, 28);
     const size_t chosen = NewNode();
 
-    // --- The tree (rows indented by depth; a mark when choosing it installs plugins first)
+    // --- 木 (行は深さでインデントする。選ぶとプラグインを先にインストールするなら印を付ける)
     p.Text({left.x, left.y, left.w, 20}, Tr(L"テンプレート"), Style(12, theme::TextDim, true));
     const Rect list{left.x, left.y + 26, left.w, left.h - 26 - 26};
     w::DrawSurface(c, list, w::Surface::Panel, 6.f);
@@ -1376,7 +1376,7 @@ void HubScreen::DrawNewProject(ui::Context& c) {
     w::EndScroll(c, "np.tree", view, content);
     p.Text({left.x, list.Bottom() + 6, left.w, 18}, Tr(L"テンプレートは、プラグインが持ってきます。"), Style(11, theme::TextFaint));
 
-    // --- The name and the place (at the bottom), the chosen template above them
+    // --- 名前と場所 (下)、その上に選んだテンプレート
     constexpr float kFieldsH = 24 + 46 + 24 + 44 + 26 + 40;
     DrawTemplateDetails(c, {body.x, body.y, body.w, body.h - kFieldsH - 8}, chosen);
     float y = body.Bottom() - kFieldsH;
@@ -1420,8 +1420,8 @@ void HubScreen::DrawNewProject(ui::Context& c) {
     }
 }
 
-// The chosen node: its name and description, the plugins it uses (and how each is now), and how many
-// creating it installs first.
+// 選んだノード: その名前と説明、使うプラグイン (と今の状態)、作る前に
+// インストールする数。
 void HubScreen::DrawTemplateDetails(ui::Context& c, const Rect& r, size_t node) {
     auto& p = c.P();
     const Plugins& plugins = app_.GetPlugins();
@@ -1452,7 +1452,7 @@ void HubScreen::DrawTemplateDetails(ui::Context& c, const Rect& r, size_t node) 
     y += 24;
     std::vector<PluginId> unavailable;
     const std::vector<PluginId> plan = plugins.TemplateInstallPlan(node, &unavailable);
-    // The plugins needed, then the ones that come along (requirements and connectors).
+    // 必要なプラグイン、次に付いてくるもの (前提とコネクタ)。
     std::vector<PluginId> shown = needed;
     for (const PluginId& id : plan) {
         if (std::find(shown.begin(), shown.end(), id) == shown.end()) shown.push_back(id);
@@ -1500,8 +1500,8 @@ void HubScreen::DrawRename(ui::Context& c) {
     if (w::TextField(c, "rn.name", {cr.x, y, cr.w, 34}, renameName_, Tr(L"プロジェクト名"))) renameError_.clear();
     y += 46;
 
-    // What changes on disk: the .rmpf and the name inside, and the folder when it is the project's own
-    // (named after it). A folder of the user's keeps its name.
+    // ディスク上で変わるもの: .rmpf とその中の名前、そしてプロジェクト自身のものなら
+    // フォルダ (その名前を付けている)。ユーザーのフォルダは名前を変えない。
     const fs::path oldFolder = renameFile_.parent_path();
     const ProjectRenamePlan plan = PlanProjectRename(renameFile_, WideToUtf8(renameOld_), renameName_);
     ui::TextStyle faint = Style(12, theme::TextFaint);

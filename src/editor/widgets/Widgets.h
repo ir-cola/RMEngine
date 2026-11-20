@@ -1,16 +1,16 @@
 #pragma once
-// Editor widgets: the core UI foundation (ui::Context) + the editor theme.
+// エディターの部品: 核の UI の土台 (ui::Context) + エディターのテーマ。
 //
-// Used like ImGui - one call draws a thing and says what the user did with it:
+// ImGui のように使う - 1 回の呼び出しで 1 つのものを描き、ユーザーが何をしたかを返す:
 //
 //   if (w::Button(c, "save", r, Tr(L"保存"), w::ButtonKind::Primary)) Save();
 //   if (w::Selectable(c, "row", r, selected).clicked) Select();
 //   if (w::CollapsingHeader(c, "hdr", r, title, open)) ...;
 //   if (w::IconButton(c, "more", r, w::Icon::Dots)) OpenMenu();
 //
-// Every box on screen is one of the Surfaces below, every list row DrawRow, every tab DrawTab,
-// every icon DrawIcon - one drawing each (rule 3). Screens do not fill rectangles of their own:
-// a new look is made here once and shows everywhere. Colors and gradients come from Theme.h.
+// 画面上の箱はすべて下の Surface のどれか、リストの行はすべて DrawRow、タブはすべて DrawTab、
+// アイコンはすべて DrawIcon - それぞれ描き方は 1 本 (憲法 3)。画面は自分で四角を塗らない:
+// 新しい見た目はここで 1 回作れば、どこにでも出る。色とグラデーションは Theme.h から来る。
 
 #include "editor/widgets/Theme.h"
 #include "ui/Context.h"
@@ -27,185 +27,185 @@ namespace rm::editor::w {
 
 enum class ButtonKind { Primary, Secondary, Ghost };
 
-// --- Surfaces ------------------------------------------------------------------------------
+// --- 面 ------------------------------------------------------------------------------------
 enum class Surface {
-    Panel,          // a panel / card / list: gentle gradient, border
-    Raised,         // a button / header: raised gradient, a light line on top, border
-    Hovered,        // Raised under the mouse
-    Pressed,        // Raised, pushed in (the gradient turned over)
-    Sunken,         // a text field / an unchecked box: darker at the top
-    Accent,         // the primary button / a checked box
+    Panel,          // パネル / カード / リスト: 穏やかなグラデーション、枠
+    Raised,         // ボタン / 見出し: 盛り上がったグラデーション、上に明るい線、枠
+    Hovered,        // マウスが乗った Raised
+    Pressed,        // 押し込まれた Raised (グラデーションを逆にする)
+    Sunken,         // テキストフィールド / チェックのない箱: 上のほうが暗い
+    Accent,         // 主役のボタン / チェックのある箱
     AccentHovered,
     AccentPressed,
-    Selected,       // a selected item
-    Popup,          // a menu / tooltip / dialog: soft shadow, raised gradient, border
+    Selected,       // 選んだ項目
+    Popup,          // メニュー / ツールチップ / ダイアログ: やわらかい影、盛り上がったグラデーション、枠
 };
 void DrawSurface(ui::Context& c, const ui::Rect& r, Surface s, float radius = theme::Radius);
-// A panel with its edge (theme::EdgeOuter / EdgeInner): the dark line lies 1px OUTSIDE r, so two
-// panels 1px apart share one dark seam. Each corner its own radius - square where it touches another.
+// 枠 (theme::EdgeOuter / EdgeInner) のあるパネル: 暗い線は r の 1px 外側に引くので、1px 離れた 2 つの
+// パネルは 1 本の暗い継ぎ目を共有する。角ごとに別々の半径 - ほかに接する所は四角。
 void DrawPanelFrame(ui::Context& c, const ui::Rect& r, ui::Corners radii);
 
-// --- A theme's pictures: always behind the content ---------------------------------------
-// A theme pack's code draws them (offered at kOrnamentPoint; a theme file of the same plugin names
-// one by `name` - "ornament").
+// --- テーマの絵: いつも内容の後ろ ---------------------------------------------------------
+// テーマパックのコードが描く (kOrnamentPoint で受け付ける。同じプラグインのテーマファイルが
+// `name` で 1 つ指す - "ornament")。
 struct OrnamentInfo {
     const char* name;
-    // The picture of a whole window (`floating`: a panel window of its own - a lighter picture). Drawn
-    // on the window's background, then again on each panel and bar (clipped to it) after its fill.
+    // ウィンドウ全体の絵 (`floating`: 独立したパネルのウィンドウ - 明るめの絵)。ウィンドウの背景に描き、
+    // その後、各パネルとバーの塗りの後にもう一度描く (それに切り取って)。
     void (*window)(ui::Context& c, const ui::Rect& window, bool floating);
-    // Something of a panel's own, after the window's picture on it (winter: snow at its bottom). May be null.
+    // パネル自身のもの。ウィンドウの絵の後にその上へ描く (冬: 下に雪)。null でもよい。
     void (*panel)(ui::Context& c, const ui::Rect& r, float corner);
 };
 inline constexpr char kOrnamentPoint[] = "core.theme_ornament";
-// First in a frame, after clearing the window: the theme's picture on its background.
+// フレームの最初、ウィンドウをクリアした後: 背景にテーマの絵を描く。
 void DrawBackdrop(ui::Context& c, bool floating);
-// The picture again on a surface just filled (DrawPanelFrame / DrawBar do it), clipped to `r`, and
-// (`panelThings`) the pack's things of a panel (winter: snow piled at its bottom) - not on bars.
+// 塗ったばかりの面にもう一度絵を描く (DrawPanelFrame / DrawBar がやる)。`r` に切り取り、
+// (`panelThings`) パックのパネル用のもの (冬: 下に積もった雪) も描く - バーには描かない。
 void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0, bool panelThings = true);
 
-// A strip of the window's frame (menu bar, status bar, sidebar): gentle gradient, no border.
+// ウィンドウの枠の帯 (メニューバー、ステータスバー、サイドバー): 穏やかなグラデーション、枠なし。
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 
-// --- Icons: drawn with lines, so they sit in the middle of their box at any size ------------
+// --- アイコン: 線で描くので、どの大きさでも箱の真ん中に収まる ---------------------------------
 enum class Icon {
     Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Dash, Object, Cube, Square, Plus, Grip, Play, Pause, Step, Stop,
-    // what an entity is (the 階層, the scene view's marks)
-    // Point: a thing with only a place (a ring with a dot - the scene view's mark of an empty entity);
-    // Effect: a sparkle (パーティクル); Scene: layers (a scene - the 階層's top row)
+    // エンティティが何か (階層、シーンビューの印)
+    // Point: 場所だけのもの (点のある輪 - シーンビューの空のエンティティの印);
+    // Effect: きらめき (パーティクル); Scene: 層 (シーン - 階層の一番上の行)
     Camera, Light, Point, Effect, Scene,
-    // what a file is (the アセット panel, reference fields)
+    // ファイルが何か (アセットパネル、参照フィールド)
     Folder, File, Image, Audio, Font, Text,
 };
 void DrawIcon(ui::Context& c, const ui::Rect& r, Icon icon, ui::Color color);
 
-// --- Buttons ---------------------------------------------------------------------------------
+// --- ボタン ----------------------------------------------------------------------------------
 bool Button(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label,
             ButtonKind kind = ButtonKind::Secondary, bool enabled = true);
-// A small square button with an icon (Ghost look: only a surface under the mouse).
+// アイコンのある小さな四角のボタン (Ghost の見た目: マウスの下のときだけ面が出る)。
 bool IconButton(ui::Context& c, std::string_view id, const ui::Rect& r, Icon icon, bool enabled = true);
-// An icon button that stays pressed in (the accent) while `on` - a game's ▶ while it plays. `tooltip`
-// (optional) shows under the mouse.
+// `on` の間、押し込まれたままの (アクセントの) アイコンボタン - 動いている間のゲームの ▶。
+// `tooltip` (省略可) はマウスの下に出る。
 bool IconToggle(ui::Context& c, std::string_view id, const ui::Rect& r, Icon icon, bool on, bool enabled = true,
                 std::wstring_view tooltip = {});
-// One of a few choices, side by side in one floating strip (the scene view's 移動 / 回転 / 拡大縮小):
-// the chosen one in the accent. Returns the index clicked, -1 when none. `tooltips` (optional, one
-// per label) shows under the mouse.
+// 1 本の浮かんだ帯に横に並んだ、いくつかの選択肢の 1 つ (シーンビューの 移動 / 回転 / 拡大縮小):
+// 選んだものがアクセントの色。クリックされた番号を返す。なければ -1。`tooltips` (省略可、
+// ラベルごとに 1 つ) はマウスの下に出る。
 int Segmented(ui::Context& c, std::string_view id, const ui::Rect& r, std::span<const std::wstring_view> labels, int selected,
               std::span<const std::wstring_view> tooltips = {});
 
-// --- Rows (lists, trees, menus, sidebars) ----------------------------------------------------
+// --- 行 (リスト、ツリー、メニュー、サイドバー) -----------------------------------------------
 struct RowLook {
     bool selected = false;
     bool hovered = false;
-    bool focused = true;  // the list has the keys: a selected row shows the accent bar
-    bool flat = false;    // square, edge to edge: rows of a list split by lines (Hub's pages, project list)
+    bool focused = true;  // リストがキーを受け取っている: 選んだ行にアクセントの棒が出る
+    bool flat = false;    // 四角で、端から端まで: 線で区切ったリストの行 (Hub のページ、プロジェクトの一覧)
 };
 void DrawRow(ui::Context& c, const ui::Rect& r, RowLook look);
-// A clickable row (ImGui's Selectable). Draws the row; what is on it is drawn by the caller.
+// クリックできる行 (ImGui の Selectable)。行を描く。行の上にあるものは呼び出し側が描く。
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view id, const ui::Rect& r, bool selected, bool flat = false);
-// One theme to choose (the theme screen): a small window drawn in that theme's own colors, its name
-// below, the chosen one outlined in the accent with a check. palette = nullptr: "PC の設定に合わせる"
-// (half dark, half light).
+// 選ぶテーマ 1 つ (テーマの画面): そのテーマ自身の色で描いた小さなウィンドウと、その下に名前。
+// 選んだものはアクセントで縁取ってチェックを付ける。palette = nullptr: "PC の設定に合わせる"
+// (半分が暗く、半分が明るい)。
 ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view id, const ui::Rect& r, const theme::Palette* palette,
                                     std::wstring_view name, bool selected);
-// A page link of a sidebar: a flat row (the caller draws the lines between them). True when clicked.
+// サイドバーのページへのリンク: 平らな行 (行の間の線は呼び出し側が描く)。クリックされたら true。
 bool NavItem(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label, bool selected);
 
-// --- Tabs and headers ------------------------------------------------------------------------
+// --- タブと見出し ----------------------------------------------------------------------------
 void DrawTab(ui::Context& c, const ui::Rect& r, bool selected, bool hovered);
-// A section that folds (ImGui's CollapsingHeader): flips `open` and returns true when clicked.
-// `reserveRight` leaves room on the right for buttons the caller draws on it.
+// 折りたためる節 (ImGui の CollapsingHeader): クリックされると `open` を反転して true を返す。
+// `reserveRight` は、呼び出し側がその上に描くボタンのために右に余白を残す。
 bool CollapsingHeader(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view title, bool& open,
                       float reserveRight = 0.f);
 
-// --- A drop-down list's face (the list itself is a MenuPopup the caller opens) -------------
-// `icon`: a picture in front of the text (a reference field: what kind of file).
+// --- ドロップダウンリストの顔 (リスト自体は呼び出し側が開く MenuPopup) --------------------
+// `icon`: 文字の前の絵 (参照フィールド: どの種類のファイルか)。
 ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view text, bool enabled = true,
                                    std::optional<Icon> icon = std::nullopt);
 
-// How far something is: a sunken track filled with the accent up to `fraction` (0..1).
+// どこまで進んだか: 沈んだ溝を、`fraction` (0..1) までアクセントで塗る。
 void ProgressBar(ui::Context& c, const ui::Rect& r, float fraction);
 
-// One fact of a list (the debug panel): its name dim on the left (`labelWidth`), its value on the right.
-// `lit`: the value in the accent (a button held, something that is on).
+// リストの事実 1 つ (デバッグパネル): 名前が左に薄く (`labelWidth`)、値が右に。
+// `lit`: 値をアクセントで (押されているボタン、オンになっているもの)。
 void InfoRow(ui::Context& c, const ui::Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth, bool lit = false);
-// The same with the value in the danger colour (an error to be seen: a build that failed).
+// 同じで、値を危険の色にしたもの (目立たせたいエラー: 失敗したビルド)。
 void InfoRowDanger(ui::Context& c, const ui::Rect& r, std::wstring_view label, std::wstring_view value, float labelWidth);
-// A window shaped like a file folder (ゲーム制作's デバッグ): tabs standing on a sheet. Draw the tabs not
-// chosen, then the sheet, then the chosen tab - it is the sheet's colour and joins it (no line between).
-// FolderTab: true when clicked. squareTopLeft: the first tab is chosen (the sheet's corner under it is
-// its side, not round).
+// ファイルフォルダーの形のウィンドウ (ゲーム制作の デバッグ): シートの上に立つタブ。選んでいない
+// タブを描き、次にシート、最後に選んだタブを描く - それはシートの色でシートにつながる (間に線がない)。
+// FolderTab: クリックされたら true。squareTopLeft: 最初のタブを選んでいる (その下のシートの角は
+// タブ側なので丸くしない)。
 bool FolderTab(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label, bool selected, float radius);
 void DrawFolderSheet(ui::Context& c, const ui::Rect& r, float radius, bool squareTopLeft);
 
-// Values over time, the newest on the right (the debug panel's frame times): `a` a line in the accent,
-// `b` (may be empty) one in the warning colour, 0 at the bottom and `top` at the top (higher ones are cut);
-// `guides`: faint lines across at those values.
+// 時間に沿った値、新しいものが右 (デバッグパネルのフレーム時間): `a` はアクセントの線、
+// `b` (空でもよい) は警告の色の線、下が 0 で上が `top` (それより高いものは切る);
+// `guides`: その値の所に横切る薄い線。
 void LineGraph(ui::Context& c, const ui::Rect& r, std::span<const float> a, std::span<const float> b, float top, std::span<const float> guides);
 
-// --- Lines and tips --------------------------------------------------------------------------
+// --- 線とヒント ------------------------------------------------------------------------------
 void Separator(ui::Context& c, float x, float y, float width);
-// A tip next to the mouse, drawn at the end of the frame (over everything).
+// マウスの横のヒント。フレームの最後に (何よりも上に) 描く。
 void Tooltip(ui::Context& c, std::wstring_view text);
 
-// Single-line text field (IME, selection, clipboard). Returns true when the value changed.
-// Dragging the mouse selects; a double click selects everything. selectAllOnFocus: a click that
-// enters the field selects all of it (a value to type over - the inspector's fields); a drag that
-// enters it selects what it goes over instead.
+// 1 行のテキストフィールド (IME、選択、クリップボード)。値が変わったら true を返す。
+// マウスのドラッグで選び、ダブルクリックで全部選ぶ。selectAllOnFocus: フィールドに入るクリックが
+// 全部を選ぶ (上から打ち込む値 - インスペクターのフィールド); フィールドに入るドラッグは、
+// 代わりに通った範囲を選ぶ。
 bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::string& valueUtf8,
                std::wstring_view placeholder = {}, bool enabled = true, bool selectAllOnFocus = false);
 
-// Check box with a label. Returns true when the value changed.
-// mixed: the objects edited together do not agree - a dash instead of the check; a click makes it on.
+// ラベル付きのチェックボックス。値が変わったら true を返す。
+// mixed: まとめて編集しているオブジェクトが一致しない - チェックの代わりに横棒を出す。クリックするとオンになる。
 bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label, bool mixed = false);
-// A number in a text field (a view's setting - the scene view's steps): the text as typed while the field
-// has the focus, the value otherwise (`text` keeps it between frames). True when `value` changed: a number
-// typed (brought into min .. max); text that is not one changes nothing.
+// テキストフィールドの数 (ビューの設定 - シーンビューの刻み): フォーカスがある間は打ったままの
+// 文字、それ以外は値 (`text` がフレームの間それを持つ)。`value` が変わったら true: 数が
+// 打たれた (min .. max に収める); 数でない文字は何も変えない。
 bool NumberField(ui::Context& c, std::string_view id, const ui::Rect& r, float& value, float min, float max, std::string& text);
-// The rectangle being dragged out to select what is in it (a scene view): faint accent with its edge.
+// 中のものを選ぶためにドラッグして作る四角 (シーンビュー): 薄いアクセントと、その縁。
 void DrawSelectionBand(ui::Context& c, const ui::Rect& r);
-// A switch as on a phone: a long round track, its round knob slides to the right when on (the track
-// turns the accent color). `offLabel` / `onLabel` (optional) stand at its left / right; the one that
-// is chosen is bright. A click anywhere on it turns it over. Returns true when clicked (`on` changed).
-// The width it takes: SwitchWidth.
+// 携帯電話のようなスイッチ: 長い丸い溝と、オンのときに右へ滑る丸いつまみ (溝はアクセントの色に
+// 変わる)。`offLabel` / `onLabel` (省略可) はその左 / 右に立つ。選んでいるほうが明るい。
+// どこをクリックしても反転する。クリックされたら true を返す (`on` が変わった)。
+// 必要な幅: SwitchWidth。
 bool Switch(ui::Context& c, std::string_view id, float x, float y, bool& on, std::wstring_view offLabel = {},
             std::wstring_view onLabel = {});
 float SwitchWidth(ui::Context& c, std::wstring_view offLabel = {}, std::wstring_view onLabel = {});
 inline constexpr float kSwitchH = 22.f;
 
-// A small picture of a file (the アセット panel's thumbnails): on a faint square, fitted inside `r`
-// keeping its shape; faint when `dimmed`.
+// ファイルの小さな絵 (アセットパネルのサムネイル): 薄い四角の上に、形を保って `r` の中に収める。
+// `dimmed` のときは薄く。
 void DrawThumbnail(ui::Context& c, const ui::Rect& r, ID2D1Bitmap* bitmap, bool dimmed = false);
 
-// A slider: a thin track (the accent up to the knob) and a round knob. Pressing anywhere on it and
-// dragging sets `value` between min and max (it follows the mouse outside too, until let go).
-// Returns true while it changes the value.
+// スライダー: 細い溝 (つまみまでがアクセント) と丸いつまみ。どこでも押してドラッグすると
+// `value` が min と max の間で決まる (外に出ても、離すまでマウスに付いていく)。
+// 値を変えている間 true を返す。
 bool Slider(ui::Context& c, std::string_view id, const ui::Rect& r, float& value, float min, float max);
 
-// Rounded panel with a title bar. Returns the content area.
+// タイトルバー付きの角の丸いパネル。内容の領域を返す。
 ui::Rect Panel(ui::Context& c, const ui::Rect& r, std::wstring_view title);
 
-// Vertical scrolling. Draw the content between Begin and End, offset by the returned value.
+// 縦のスクロール。内容を Begin と End の間に描き、返された値だけずらす。
 float BeginScroll(ui::Context& c, std::string_view id, const ui::Rect& view, float contentHeight);
 void EndScroll(ui::Context& c, std::string_view id, const ui::Rect& view, float contentHeight);
-// Jump to the end on the next BeginScroll (consoles that follow new output).
+// 次の BeginScroll で末尾へ飛ぶ (新しい出力を追うコンソール用)。
 void ScrollToEnd(ui::Context& c, std::string_view id);
 
-// --- Popup menu ---------------------------------------------------------------
+// --- ポップアップメニュー ---------------------------------------------------
 struct MenuItem {
     std::wstring label;
     std::wstring shortcut;
     bool enabled = true;
     bool separator = false;
-    bool checked = false;  // a check mark in front of the label
-    bool submenu = false;  // opens another menu (a ▸ at the right; ActionMenu's folders)
+    bool checked = false;  // ラベルの前のチェックマーク
+    bool submenu = false;  // 別のメニューを開く (右に ▸。ActionMenu のフォルダー)
 };
 
 struct Popup {
     bool open = false;
-    bool fresh = false;  // opened during this frame: the click that opened it is not an "outside" click
+    bool fresh = false;  // このフレームの間に開いた: 開いたクリックは「外」のクリックではない
     float x = 0, y = 0;
-    std::wstring sub;  // ActionMenu: the folder whose menu is open now ("追加/3D オブジェクト"; "" = none)
+    std::wstring sub;  // ActionMenu: 今メニューが開いているフォルダー ("追加/3D オブジェクト"; "" = なし)
     void OpenAt(float px, float py) {
         open = true;
         fresh = true;
@@ -215,95 +215,95 @@ struct Popup {
     }
 };
 
-// Draws an open popup. Returns the clicked item index, or -1.
-// Closes on selection, Escape, or a click outside (the click is swallowed).
+// 開いているポップアップを描く。クリックされた項目の番号か -1 を返す。
+// 選ぶ・Escape・外のクリックで閉じる (そのクリックは受け止める)。
 int MenuPopup(ui::Context& c, Popup& popup, const std::vector<MenuItem>& items, float width = 240.f);
-// The rectangle MenuPopup will use (after keeping it inside the viewport).
+// MenuPopup が使う四角 (ビューポートの中に収めた後)。
 ui::Rect MenuRect(const ui::Context& c, const Popup& popup, const std::vector<MenuItem>& items, float width = 240.f);
 
-// A menu row that does something, optionally with a shortcut. Used by menus that a software fills
-// (the 階層's right-click menu, the inspector's block menus ...).
+// 何かをするメニューの行。ショートカットを付けてもよい。ソフトが埋めるメニュー
+// (階層の右クリックメニュー、インスペクターのブロックのメニュー ...) が使う。
 struct Action {
     std::wstring label;
-    std::function<void()> run;  // empty for a separator
+    std::function<void()> run;  // 区切りなら空
     bool enabled = true;
     bool separator = false;
     ui::Key key = ui::Key::None;
     bool ctrl = false, shift = false;
-    // The folder it is in ("3D", "UI", "物理/2D"; empty = at the top). ActionPicker: folders that open
-    // and close in the list. ActionMenu: a row of the folder's name opens a menu of what is in it (to the
-    // side, when the mouse is on the row): 追加 ▸ 3D オブジェクト ▸ 箱.
+    // 入っているフォルダー ("3D"、"UI"、"物理/2D"; 空 = 一番上)。ActionPicker: リストの中で開閉する
+    // フォルダー。ActionMenu: フォルダーの名前の行が、中にあるもののメニューを開く (マウスが行の上に
+    // あるとき、横に): 追加 ▸ 3D オブジェクト ▸ 箱。
     std::wstring folder;
 };
-std::wstring ShortcutText(const Action& a);  // "Ctrl+D", "Delete", "" (no shortcut)
-// Draws `popup` (when open) with `actions` at the end of the frame (not cut off by a panel) and runs
-// the picked row. The list is kept by the caller until the menu closes. Actions in folders
-// (Action::folder) are in menus of their own (Esc closes the last one opened; a click outside all of
-// them closes them all).
+std::wstring ShortcutText(const Action& a);  // "Ctrl+D"、"Delete"、"" (ショートカットなし)
+// `popup` を (開いていれば) `actions` と一緒にフレームの最後に描き (パネルに切られない)、
+// 選ばれた行を実行する。リストはメニューが閉じるまで呼び出し側が持っておく。フォルダーの
+// アクション (Action::folder) はそれぞれ別のメニューに入る (Esc で最後に開いたものを閉じる。
+// 全部の外をクリックすると全部閉じる)。
 void ActionMenu(ui::Context& c, Popup& popup, const std::vector<Action>& actions);
 
-// A panel to pick one action from (the インスペクター's 部品を足す): `title` and × on top, a search box,
-// then the actions in their folders (Action::folder), each folder opened and closed by its row. Like
-// ActionMenu it is drawn at the end of the frame, runs the picked action and closes; × / Esc / a click
-// outside close it. Enter runs the first one found by what was typed. Its top (where the title is)
-// drags it somewhere else. Which folders are open and where it was moved to are the caller's (kept from
-// one opening to the next); the search starts empty each time it opens. It is wider than a menu and
-// covers other panels: while it is open the screen under it should take no input (EditorScreen does).
+// アクションを 1 つ選ぶパネル (インスペクターの 部品を足す): 上に `title` と ×、検索ボックス、
+// その下にフォルダー (Action::folder) ごとのアクション。各フォルダーはその行で開閉する。
+// ActionMenu のようにフレームの最後に描き、選ばれたアクションを実行して閉じる; × / Esc /
+// 外のクリックでも閉じる。Enter は入力した文字で見つかった最初のものを実行する。上の部分
+// (タイトルのある所) をドラッグすると別の所へ動かせる。どのフォルダーが開いているか、どこへ
+// 動かしたかは呼び出し側が持つ (開くたびに引き継ぐ); 検索は開くたびに空から始まる。メニューより
+// 広くて他のパネルを覆う: 開いている間は、その下の画面が入力を受けないようにする (EditorScreen がやる)。
 struct PickerState {
     std::string search;
-    std::set<std::wstring> open;  // folder paths shown open (all closed at first)
-    bool placed = false;          // moved by its top: opens at x, y (else where the caller opens it)
+    std::set<std::wstring> open;  // 開いているフォルダーのパス (最初は全部閉じている)
+    bool placed = false;          // 上の部分で動かした: x, y に開く (そうでなければ呼び出し側が開く所)
     float x = 0, y = 0;
-    bool dragging = false;        // its top held: the mouse's place in it
+    bool dragging = false;        // 上の部分をつかんでいる: その中のマウスの位置
     float grabX = 0, grabY = 0;
 };
 void ActionPicker(ui::Context& c, Popup& popup, PickerState& state, const std::vector<Action>& actions, std::wstring title,
                   float width = 320.f);
 
-// A list to choose one thing from, with a search box on top (a reference field's choices). Call it at
-// the end of the frame, like MenuPopup. `search` is what is typed (kept by the caller, who lists only
-// the rows that match it). Returns the row clicked - or the first one on Enter - and closes; -1 for none.
+// 1 つのものを選ぶリスト。上に検索ボックスがある (参照フィールドの選択肢)。MenuPopup のように
+// フレームの最後に呼ぶ。`search` は入力された文字 (呼び出し側が持ち、それに合う行だけを並べる)。
+// クリックされた行 - または Enter なら最初の行 - を返して閉じる; なければ -1。
 struct PickRow {
     std::wstring name;
-    std::wstring detail;  // faint, on the right (where it is)
+    std::wstring detail;  // 薄く、右に (どこにあるか)
     bool hasIcon = false;
     Icon icon = Icon::File;
 };
-// `picture` (optional): a small picture for row i, asked only for the rows in view (null: its icon);
-// `rowHeight` makes room for it.
+// `picture` (省略可): 行 i の小さな絵。見えている行についてだけ呼ばれる (null: その行のアイコン);
+// `rowHeight` でそのための場所を作る。
 int PickerPopup(ui::Context& c, Popup& popup, std::string_view id, std::string& search, std::span<const PickRow> rows,
                 float width = 320.f, float rowHeight = 26.f, const std::function<ID2D1Bitmap*(size_t row, float size)>& picture = {});
 
-// --- Dragging a thing from one panel to another (an asset or an item of the 階層 onto a reference
-// field of the インスペクター). One mouse, so one thing at a time for the whole program. The panel it
-// comes from sets it while the drag goes on and ends it when the button is let go; a place that takes
-// it asks DropTarget. The window that has the mouse captured sees the drag; when the mouse is over
-// another window of the program, the editor tells that window where (SetDragElsewhere), so its places
-// light up and take the thing too (a panel moved out into its own window).
+// --- あるパネルから別のパネルへものをドラッグする (アセットや階層の項目を インスペクターの参照
+// フィールドへ)。マウスは 1 つなので、プログラム全体で一度に 1 つのものだけ。元のパネルが、ドラッグが
+// 続く間これを設定し、ボタンを離したときに終わらせる; 受け取る所は DropTarget に聞く。マウスを
+// 捕まえているウィンドウがドラッグを見る; マウスがプログラムの別のウィンドウの上にあるときは、
+// エディターがそのウィンドウに場所を伝え (SetDragElsewhere)、そこの受け取る所も光って
+// ものを受け取る (独立したウィンドウに出したパネル)。
 struct DragThing {
-    std::string kind;                 // what it is: "asset" (values: ids) / "item" (values: ids of the 階層's items)
-    std::vector<std::string> values;  // one or more
+    std::string kind;                 // それが何か: "asset" (values: id) / "item" (values: 階層の項目の id)
+    std::vector<std::string> values;  // 1 つ以上
 };
 void SetDragThing(DragThing thing);
-// Ends the drag at the end of this frame: places drawn later in the same frame still see it let go.
+// このフレームの最後にドラッグを終わらせる: 同じフレームで後から描く場所には、離されたことが見える。
 void EndDragThing(ui::Context& c);
 const DragThing* DraggedThing();
-// A place it can be dropped on. While a thing that `accepts` takes is over `r`, outlines it; returns
-// the thing when the mouse is let go there (else null).
+// ドロップできる場所。`accepts` が受け付けるものが `r` の上にある間、縁取る; そこでマウスが
+// 離されたらそのものを返す (そうでなければ null)。
 const DragThing* DropTarget(ui::Context& c, const ui::Rect& r, const std::function<bool(const DragThing&)>& accepts);
-// Whether a DropTarget under the mouse took the thing in this frame (the tag next to the mouse shows
-// it). Reading it forgets it - call it once a frame, at its end.
+// マウスの下の DropTarget がこのフレームでものを受け取ったか (マウスの横のタグがそれを示す)。
+// 読むと忘れる - 1 フレームに 1 回、最後に呼ぶ。
 bool TakeDragAccepted();
-// The dragged thing is over another window (`target`: its context; x, y: the mouse there, in its
-// DIPs); `released`: let go there. Null target: over no other window of ours.
+// ドラッグしているものが別のウィンドウの上にある (`target`: その context; x, y: そこでのマウスの
+// 位置、DIP); `released`: そこで離した。target が null なら: 私たちのどのウィンドウの上でもない。
 void SetDragElsewhere(const ui::Context* target, float x, float y, bool released);
-// Where the drag is now, for the window it was told to (SetDragElsewhere): null when none.
+// 今のドラッグの場所。伝えられたウィンドウ用 (SetDragElsewhere): なければ null。
 const ui::Context* DragElsewhereTarget();
-// At the end of a window's frame: a drop handed to it is used up (taken or not).
+// ウィンドウのフレームの最後: そこへ渡されたドロップは使い切る (受け取られたかどうかに関わらず)。
 void EndDragFrame(ui::Context& c);
 
-// --- Modal dialog -------------------------------------------------------------
-// Dims the screen, draws the dialog box and title, returns the content area.
+// --- モーダルダイアログ -------------------------------------------------------
+// 画面を暗くして、ダイアログの箱とタイトルを描き、内容の領域を返す。
 ui::Rect BeginModal(ui::Context& c, float width, float height, std::wstring_view title);
 
 }  // namespace rm::editor::w

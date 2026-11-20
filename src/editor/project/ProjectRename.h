@@ -1,14 +1,14 @@
 #pragma once
-// What renaming a project changes on disk (pure - tested in RMTests).
+// プロジェクトの名前を変えるとディスク上で何が変わるか (純粋。RMTests でテストする)。
 //
-//   <parent>/<name>/<name>.rmpf     a folder this engine made (named after the project): the folder,
-//                                   the .rmpf and the name inside all follow the new name
-//   <anything>/<other>.rmpf         a .rmpf the user put in a folder of their own ("開く…" of
-//                                   D:\Work\game.rmpf): only the .rmpf and the name inside change.
-//                                   The folder is the user's - renaming it would rename D:\Work.
+//   <parent>/<name>/<name>.rmpf     このエンジンが作ったフォルダー (プロジェクトの名前が付いている):
+//                                   フォルダーも .rmpf も中の名前も、新しい名前に変わる
+//   <anything>/<other>.rmpf         ユーザーが自分のフォルダーに置いた .rmpf ("開く…" で
+//                                   D:\Work\game.rmpf): .rmpf と中の名前だけが変わる。
+//                                   フォルダーはユーザーのもの - 変えると D:\Work の名前が変わってしまう。
 //
-// The folder counts as the project's when its name is the project's name (letter case ignored, as
-// Windows does).
+// フォルダーの名前がプロジェクトの名前と同じなら、プロジェクトのフォルダーとみなす
+// (Windows と同じく、大文字小文字は無視する)。
 
 #include <filesystem>
 #include <string_view>
@@ -16,14 +16,14 @@
 namespace rm::editor {
 
 struct ProjectRenamePlan {
-    bool renameFolder = false;     // the folder is the project's and its name changes
-    std::filesystem::path folder;  // the project's folder afterwards
-    std::filesystem::path file;    // the .rmpf afterwards
+    bool renameFolder = false;     // フォルダーはプロジェクトのもので、名前が変わる
+    std::filesystem::path folder;  // 変更後のプロジェクトのフォルダー
+    std::filesystem::path file;    // 変更後の .rmpf
 };
 
 ProjectRenamePlan PlanProjectRename(const std::filesystem::path& file, std::string_view oldNameUtf8, std::string_view newNameUtf8);
 
-// Two file names that Windows treats as one (letter case ignored).
+// Windows が同じとみなす 2 つのファイル名 (大文字小文字は無視する)。
 bool SameFileName(const std::filesystem::path& a, const std::filesystem::path& b);
 
 }  // namespace rm::editor

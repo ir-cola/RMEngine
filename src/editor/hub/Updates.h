@@ -1,8 +1,8 @@
 #pragma once
-// アップデート情報 (the Hub's page): what changed in each version, in both languages.
-// The text is resources/updates.json, built into the exe (IDR_UPDATES), newest first:
+// アップデート情報 (Hub のページ): 各バージョンで何が変わったか、両方の言語で。
+// 文章は resources/updates.json で、exe に組み込まれる (IDR_UPDATES)。新しい順。
 //   { "kind": "rm_engine.updates", "updates": [ { "version", "date", "items": [ {"ja", "en"} ] } ] }
-// Add an entry there with every change people will notice. Pure - tested in tests/TestLang.cpp.
+// 人が気づく変更はすべて、そこに項目を足す。純粋 (I/O も描画もしない)。tests/TestLang.cpp でテストする。
 
 #include "base/Json.h"
 
@@ -14,7 +14,7 @@ namespace rm::editor {
 struct UpdateEntry {
     std::string version;
     std::string date;
-    std::vector<std::string> items;  // in the language asked for (Japanese when the English is missing)
+    std::vector<std::string> items;  // 頼まれた言語で (英語が無ければ日本語)
 };
 
 std::vector<UpdateEntry> ParseUpdates(const json::Value& v, bool english);

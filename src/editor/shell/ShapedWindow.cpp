@@ -30,7 +30,7 @@ bool ShapedWindow::Open(HWND owner) {
 void ShapedWindow::Close() {
     if (closing_ || !Hwnd()) return;
     closing_ = true;
-    // (from its own frame - the X button - the window goes after the frame, never under it)
+    // (自分のフレーム - X ボタン - から: ウィンドウはフレームの後ろに行き、前には来ない)
     Defer([this] {
         KillTimer(Hwnd(), kRefreshTimer);
         ScreenWindow::Close();
@@ -71,13 +71,13 @@ void ShapedWindow::ApplyShape() {
         CombineRgn(all, all, one, RGN_OR);
         DeleteObject(one);
     }
-    if (!SetWindowRgn(h, all, TRUE)) DeleteObject(all);  // (taken: the window owns it; not: still ours)
+    if (!SetWindowRgn(h, all, TRUE)) DeleteObject(all);  // (渡した: ウィンドウが持つ。渡していない: まだこちらのもの)
 }
 
 bool ShapedWindow::OnWindowMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) {
     switch (msg) {
         case WM_NCCALCSIZE:
-            // No frame: the whole window is the client area.
+            // フレームなし: ウィンドウ全体がクライアント領域。
             if (wp) {
                 result = 0;
                 return true;
@@ -108,12 +108,12 @@ bool ShapedWindow::OnWindowMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& resu
             return true;
         }
         case WM_NCACTIVATE:
-            // (nothing of a frame to draw as active or not)
+            // (アクティブかどうかで描き分けるフレームがない)
             result = TRUE;
             return true;
         case WM_SIZE:
             ApplyShape();
-            return false;  // (the screen window resizes its picture too)
+            return false;  // (画面ウィンドウは絵のサイズも変える)
         default:
             return false;
     }

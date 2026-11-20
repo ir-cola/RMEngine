@@ -1,10 +1,10 @@
 #pragma once
-// One top-level window that shows one screen (the Hub or the editor).
-// Collects input, runs the immediate-mode UI and presents - only when something changed.
+// 1 つの画面 (Hub かエディター) を出す、1 つのトップレベルウィンドウ。
+// 入力を集め、イミディエイトモードの UI を動かし、表示する - 何か変わったときだけ。
 //
-// Frame flow:  input message -> Invalidate -> WM_PAINT -> RunFrame (OnFrame + draw + Present)
-//              resize         -> RunFrame directly inside WM_SIZE (no frozen picture while dragging)
-// Nothing runs while the user is idle (0% CPU), except the caret blink timer of a focused field.
+// フレームの流れ:  入力メッセージ -> Invalidate -> WM_PAINT -> RunFrame (OnFrame + 描画 + Present)
+//                   サイズ変更    -> WM_SIZE の中で直接 RunFrame (ドラッグ中に絵が固まらない)
+// ユーザーが何もしない間は何も動かない (CPU 0%)。フォーカスのある欄のカーソル点滅タイマーだけは別。
 
 #include "platform/Gfx.h"
 #include "platform/Window.h"
@@ -26,21 +26,22 @@ public:
     ScreenWindow(const ScreenWindow&) = delete;
     ScreenWindow& operator=(const ScreenWindow&) = delete;
 
-    // Releases the swap chain and destroys the window. Safe to call twice.
+    // スワップチェーンを放してウィンドウを壊す。2 回呼んでも安全。
     virtual void Close();
 
     HWND Hwnd() const { return window_.Handle(); }
     void Invalidate();
-    // Runs fn later from the message loop (outside drawing). Use it for anything that opens
-    // a modal OS dialog: those run their own message loop and would re-enter the frame.
+    // あとでメッセージループから fn を走らせる (描画の外で)。モーダルな OS のダイアログを開く
+    // 処理には必ずこれを使う。そういうダイアログは自分でメッセージループを回すので、
+    // フレームに入り直してしまう。
     void Defer(std::function<void()> fn);
     void SetTitle(std::wstring_view title) { window_.SetTitle(title); }
     float Scale() const { return window_.Scale(); }
     const ui::Context& UiContext() const { return ctx_; }
-    // The color theme or the language changed: the title bar follows, everything is drawn again.
+    // 色のテーマか言語が変わった: タイトルバーもそれに合わせ、全部をもう一度描く。
     virtual void OnLookChanged();
-    // When the GPU cannot be made again: the screen's work saved, if it has any (nullopt: nothing to
-    // save; true / false: saved or not).
+    // GPU を作り直せないとき: 画面の作業を保存する (あれば。nullopt: 保存する物はない。
+    // true / false: 保存できた / できなかった)。
     virtual std::optional<bool> SaveWork() { return std::nullopt; }
 
 protected:
@@ -48,20 +49,20 @@ protected:
 
     virtual void OnCreated() {}
     virtual void OnFrame(ui::Context& c, float width, float height) = 0;
-    virtual void OnCloseRequested() = 0;  // the title bar X / Alt+F4
-    // Windows is shutting down / signing out (WM_QUERYENDSESSION). false = not now (unsaved changes:
-    // the screen asks the user; Windows shows the reason on its "apps are preventing shutdown" page).
+    virtual void OnCloseRequested() = 0;  // タイトルバーの X / Alt+F4
+    // Windows がシャットダウン / サインアウトする (WM_QUERYENDSESSION)。false = 今はだめ (未保存の
+    // 変更: 画面がユーザーに尋ねる。理由は Windows の「アプリがシャットダウンを妨げています」画面に出る)。
     virtual bool OnQueryEndSession() { return true; }
-    // It ends anyway (WM_ENDSESSION): nothing can be asked any more - keep what can be kept, quickly.
+    // どのみち終わる (WM_ENDSESSION): もう何も尋ねられない - 残せる物を、急いで残す。
     virtual void OnEndSession() {}
-    // Messages the screen window does not handle itself (WM_MOVING ...). DefWindowProc still runs.
-    // A timer the screen set with SetTimer(Hwnd(), id, ...) (ids from 100 up; 1 is the caret).
+    // 画面のウィンドウ自身が扱わないメッセージ (WM_MOVING など)。DefWindowProc はそのあと走る。
+    // 画面が SetTimer(Hwnd(), id, ...) で設定したタイマー (id は 100 から。1 はカーソルの点滅)。
     virtual void OnTimer(UINT_PTR id) { (void)id; }
-    // The GPU's devices were made again (it was lost): Direct2D things the screen keeps (bitmaps ...)
-    // are made again here. The swap chain and the painter are already new.
+    // GPU のデバイスが作り直された (失われていた): 画面が持つ Direct2D の物 (ビットマップなど) は
+    // ここで作り直す。スワップチェーンとペインターはもう新しい。
     virtual void OnDeviceChanged() {}
-    // Any message before the screen window looks at it: true (and `result`) to answer it here (a shaped
-    // window's WM_NCHITTEST / WM_NCCALCSIZE).
+    // 画面のウィンドウが見る前の、すべてのメッセージ: ここで答えるなら true (と `result`)
+    // (形を変えたウィンドウの WM_NCHITTEST / WM_NCCALCSIZE)。
     virtual bool OnWindowMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) {
         (void)msg;
         (void)wp;
@@ -80,8 +81,8 @@ protected:
     platform::SwapTarget target_;
     ui::Painter painter_;
     ui::Context ctx_;
-    ui::Input input_;       // what the messages bring, gathered until the next frame takes it
-    ui::Input frameInput_;  // what the frame being drawn sees (taken from input_ at its start)
+    ui::Input input_;       // メッセージが運んでくる物を、次のフレームが取るまで集めておく
+    ui::Input frameInput_;  // 描いているフレームが見る物 (開始時に input_ から取る)
 
 private:
     LRESULT OnMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, bool& handled) override;
@@ -94,15 +95,15 @@ private:
     void UpdateModifiers();
     void UpdateIme();
     void RunDeferred();
-    bool EnsureDevice();  // the GPU usable and this window's drawing made on its current devices
+    bool EnsureDevice();  // GPU が使え、このウィンドウの描画が今のデバイスの上にできている
 
     bool alive_ = false;
     bool inFrame_ = false;
     bool trackingMouse_ = false;
     bool imeOn_ = true;
     bool caretTimer_ = false;
-    bool mouseLocked_ = false;      // Context::LockMouse: hidden, kept at the anchor
-    float anchorX_ = 0, anchorY_ = 0;  // DIPs in the client area
+    bool mouseLocked_ = false;      // Context::LockMouse: 隠して、固定位置に留める
+    float anchorX_ = 0, anchorY_ = 0;  // クライアント領域の DIP
     int chainedFrames_ = 0;
     ui::Cursor cursor_ = ui::Cursor::Arrow;
     std::vector<std::function<void()>> deferred_;

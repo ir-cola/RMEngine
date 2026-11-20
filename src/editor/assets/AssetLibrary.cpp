@@ -17,8 +17,8 @@ namespace rm::editor {
 
 namespace {
 
-// The same message to the console (in Japanese) and back to the screen (in the language in use).
-// `japanese` is a TrKey(L"...") (check_lang.ps1 sees the English is there).
+// 同じメッセージを、コンソール (日本語) と、画面 (使っている言語) に出す。
+// `japanese` は TrKey(L"...") (英語があるかは check_lang.ps1 が見る)。
 template <class... A>
 std::wstring Problem(const wchar_t* japanese, const A&... args) {
     log::Warn("{}", WideToUtf8(std::vformat(std::wstring_view(japanese), std::make_wformat_args(args...))));
@@ -27,7 +27,7 @@ std::wstring Problem(const wchar_t* japanese, const A&... args) {
 
 std::wstring Why(const std::error_code& ec) { return Utf8ToWide(ec.message()); }
 
-// A name for a file or folder: one Windows name, and not one the list leaves out.
+// ファイルやフォルダーの名前: Windows の名前として 1 つで、一覧が省くものではないこと。
 const wchar_t* NameProblem(const std::string& name) {
     switch (ValidateFileName(name, 255)) {
         case FileNameError::None: break;
@@ -42,16 +42,16 @@ const wchar_t* NameProblem(const std::string& name) {
     return nullptr;
 }
 
-// Renames `from` to `to` together with its .meta (the id goes along), and records the new name in the
-// .meta. Refuses when a .meta is already where its .meta would go (it would be written over, or
-// taken as the moved file's). Puts the file back when the .meta cannot follow, so the two never part
-// - and says so when even that fails. Returns what went wrong (in the language in use), empty = done.
+// `from` を `to` に、その .meta と一緒に改名し (id は引き継ぐ)、新しい名前を .meta に記録する。
+// その .meta が行く場所にもう .meta があるときは断る (上書きされるか、動かしたファイルの
+// ものと見なされてしまう)。.meta がついて行けないときはファイルを元に戻し、2 つが離れない
+// ようにする。それさえ失敗したらそう伝える。何が悪かったかを (使っている言語で) 返す。空 = 済んだ。
 std::wstring MoveWithMeta(const fs::path& from, const fs::path& to, const std::wstring& name) {
     fs::path metaFrom = from, metaTo = to;
     metaFrom += L".meta";
     metaTo += L".meta";
     std::error_code ec;
-    const bool sameMeta = fs::equivalent(metaFrom, metaTo, ec);  // (only the letter case changes)
+    const bool sameMeta = fs::equivalent(metaFrom, metaTo, ec);  // (大文字小文字だけが変わる)
     if (!sameMeta && fs::exists(metaTo, ec)) {
         return Problem(TrKey(L"行き先にもう「{}」があるので、「{}」を動かしていません (ID がぶつかります)。"), metaTo.filename().native(), name);
     }
@@ -72,7 +72,7 @@ std::wstring MoveWithMeta(const fs::path& from, const fs::path& to, const std::w
             return Problem(TrKey(L"「{}」の .meta を動かせなかったので、動かしていません: {}"), name, Why(metaEc));
         }
     }
-    asset::RecordName(to);  // (the name a copy of it would not have)
+    asset::RecordName(to);  // (そのコピーにはない名前)
     return {};
 }
 
@@ -104,19 +104,20 @@ void AssetLibrary::FlushImports() {
     if (queuedImports_.empty() && queuedContents_.empty()) return;
     for (auto& [guid, bytes] : queuedContents_) {
         const asset::Entry* e = index_.ByGuid(guid);
-        if (!e) continue;  // (deleted meanwhile)
+        if (!e) continue;  // (その間に消えた)
         std::string err;
         if (!platform::WriteFileAtomic(FullPath(*e), bytes, &err)) log::Warn("{} に書けませんでした: {}", e->path, err);
     }
     queuedContents_.clear();
     for (auto& [guid, import] : queuedImports_) {
         const asset::Entry* e = index_.ByGuid(guid);
-        if (!e) continue;  // (deleted meanwhile)
+        if (!e) continue;  // (その間に消えた)
         if (!asset::WriteImportJson(FullPath(*e), import, e->guid)) log::Warn("取り込みの設定を {}.meta に書けませんでした (開けない・壊れている)", e->path);
     }
     queuedImports_.clear();
-    // The watch's news of these .meta files: one more look after it is quiet (it finds nothing new from
-    // them - the cache keeps it cheap - but a file added outside at the same moment is not lost).
+    // これらの .meta ファイルについての監視の知らせ: 静かになった後にもう 1 度調べる (そこからは
+    // 何も新しい物は見つからない - キャッシュのおかげで軽い - が、同じ時に外から足されたファイルを
+    // 取りこぼさない)。
     SettleAfterOwnWrites();
 }
 
@@ -133,7 +134,7 @@ void AssetLibrary::Refresh() {
     if (!watching_) watching_ = watch_.Start(root_, false, onChange_);
     const uint64_t number = looks_.Next();
     looking_ = true;
-    // The look gets copies only (the Worker's rule): the folder, the last ids, the shared cache.
+    // 調べるときはコピーだけを受け取る (Worker の決まり): フォルダー、最後の id、共有のキャッシュ。
     std::vector<asset::Entry> previous(index_.Entries().begin(), index_.Entries().end());
     worker_.Run([this, number, root = root_, previous = std::move(previous), box = cache_](std::stop_token stop, const Worker::Post& post) {
         std::lock_guard lock(box->mutex);
@@ -142,12 +143,12 @@ void AssetLibrary::Refresh() {
         std::string problem;
         asset::Plan plan = asset::Look(root, previous, &box->cache, stop, &stopped, &problem);
         if (!problem.empty()) {
-            // Not the whole folder: the ids stay as they are (looked at again when the folder changes).
+            // フォルダー全体ではない: id はそのまま (フォルダーが変わるとまた調べる)。
             post([problem] { log::Warn("アセットのフォルダを最後まで読めませんでした (今のままにします): {}", problem); });
             return;
         }
         if (stopped) return;
-        // (`this` is used only inside post: on the UI thread, and dropped if the library is gone)
+        // (`this` は post の中でだけ使う: UI スレッドで、ライブラリーがなくなっていたら捨てられる)
         post([this, number, plan = std::move(plan)]() mutable { ApplyLook(number, std::move(plan)); });
     });
 }
@@ -156,7 +157,7 @@ void AssetLibrary::LookNow() {
     std::error_code ec;
     fs::create_directories(root_, ec);
     if (!watching_) watching_ = watch_.Start(root_, false, onChange_);
-    worker_.Stop();  // (a look still going is overtaken)
+    worker_.Stop();  // (まだ続いている調べは追い越される)
     const uint64_t number = looks_.Next();
     looking_ = true;
     asset::Plan plan;
@@ -176,8 +177,8 @@ void AssetLibrary::LookNow() {
 }
 
 void AssetLibrary::ApplyLook(uint64_t number, asset::Plan plan) {
-    if (!looks_.Current(number)) return;  // overtaken: a newer look was asked (or an operation changed the ids)
-    // The folder changed while it was looked at: this look may have missed it - look again.
+    if (!looks_.Current(number)) return;  // 追い越された: もっと新しい調べが頼まれた (または、操作が id を変えた)
+    // 調べている間にフォルダーが変わった: この調べは見逃したかもしれない - もう一度調べる。
     if (watching_ && watch_.Changed()) {
         while (watch_.Changed()) {
         }
@@ -189,10 +190,10 @@ void AssetLibrary::ApplyLook(uint64_t number, asset::Plan plan) {
     const bool wrote = !plan.writes.empty() || !plan.moves.empty();
     asset::ApplyPlan(root_, plan, notes);
     for (auto& n : plan.notes) notes.push_back(std::move(n));
-    // The .meta files it wrote itself: one more look once quiet. That look writes nothing (the ids are
-    // in their .meta files now), so it ends there - and a file added outside meanwhile is seen.
+    // 自分で書いた .meta ファイル: 静かになったらもう 1 度調べる。その調べは何も書かない
+    // (id はもう .meta ファイルの中にある) ので、そこで終わる。その間に外から足されたファイルも見える。
     if (wrote) SettleAfterOwnWrites();
-    // (a note that stays true - a .meta that still cannot be read - is told once, not at every look)
+    // (ずっと変わらない知らせ - まだ読めない .meta など - は、調べるたびではなく 1 度だけ伝える)
     std::set<std::string> told;
     for (std::string& n : notes) {
         if (!lastNotes_.contains(n)) log::Warn("アセット: {}", n);
@@ -234,17 +235,17 @@ std::string AssetLibrary::AdoptFile(const std::string& path) {
     const fs::path full = asset::FullPath(root_, path);
     if (!fs::exists(full, ec)) return {};
     std::string guid = asset::GiveId(root_, path, asset::NewGuid());
-    if (guid.empty() || index_.ByGuid(guid)) return {};  // (a .meta copied with another file's id: the look sorts it out)
+    if (guid.empty() || index_.ByGuid(guid)) return {};  // (別のファイルの id を持った .meta をコピーした: 調べが片付ける)
     std::vector<asset::Entry> entries(index_.Entries().begin(), index_.Entries().end());
     entries.push_back({path, guid, fs::is_directory(full, ec)});
     SetEntries(std::move(entries));
-    Refresh();  // (and an older look that did not see it is dropped)
+    Refresh();  // (それを見なかった古い調べは捨てられる)
     return guid;
 }
 
 bool AssetLibrary::Poll() {
     const double now = platform::NowSeconds();
-    // The folder deleted / made again / not watchable at first: watched again, and looked at.
+    // フォルダーが消された / 作り直された / 最初は監視できなかった: また監視して、調べる。
     if (now - lastAliveCheck_ >= 1.0) {
         lastAliveCheck_ = now;
         if (!watching_ || watch_.Lost()) {
@@ -282,7 +283,7 @@ std::wstring AssetLibrary::Rename(const std::string& guid, const std::string& ne
     const fs::path from = FullPath(*e);
     const fs::path to = from.parent_path() / PathFromUtf8(newName);
     std::error_code ec;
-    // (a different name only in letter case is the same file to Windows: rename it all the same)
+    // (大文字小文字だけが違う名前は Windows では同じファイル: それでも改名する)
     const bool sameFile = fs::equivalent(from, to, ec);
     if (!sameFile && fs::exists(to, ec)) return Problem(TrKey(L"「{}」はもうあります。"), Utf8ToWide(newName));
     if (std::wstring problem = MoveWithMeta(from, to, NameOf(*e)); !problem.empty()) {
@@ -291,7 +292,7 @@ std::wstring AssetLibrary::Rename(const std::string& guid, const std::string& ne
     }
     log::Info("アセットの名前を変えました: {} → {}", e->path, newName);
     const std::string oldPath = e->path;
-    MovedInIndex(oldPath, asset::Join(asset::ParentOf(oldPath), newName));  // shown at once; the look confirms it
+    MovedInIndex(oldPath, asset::Join(asset::ParentOf(oldPath), newName));  // すぐに見せる。調べが確かめる
     Refresh();
     return {};
 }
@@ -303,7 +304,7 @@ std::wstring AssetLibrary::Move(std::span<const std::string> guids, const std::s
         if (!f || !f->folder) return {};
         folder = f->path;
     }
-    // Copied first: the index changes as they go.
+    // 先にコピーしておく: 進むにつれて索引が変わる。
     std::vector<asset::Entry> moving;
     for (const std::string& g : guids) {
         if (const asset::Entry* e = index_.ByGuid(g)) moving.push_back(*e);
@@ -311,7 +312,7 @@ std::wstring AssetLibrary::Move(std::span<const std::string> guids, const std::s
     std::wstring problem;
     int moved = 0;
     for (const asset::Entry& e : moving) {
-        if (asset::ParentOf(e.path) == folder) continue;  // already there
+        if (asset::ParentOf(e.path) == folder) continue;  // もうそこにある
         if (folder == e.path || folder.starts_with(e.path + "/")) {
             problem = Problem(TrKey(L"「{}」を自分の中には動かせません。"), NameOf(e));
             continue;
@@ -348,14 +349,14 @@ std::wstring AssetLibrary::NewFolder(const std::string& whereGuid, std::string* 
         return Problem(TrKey(L"フォルダを作れませんでした: {}"), Why(ec));
     }
     log::Info("フォルダを作りました: {}", path);
-    const std::string guid = AdoptFile(path);  // its id now (the panel selects it to be named)
+    const std::string guid = AdoptFile(path);  // その id (パネルが選んで、名前を付けさせる)
     if (made) *made = guid;
     return {};
 }
 
 std::wstring AssetLibrary::Delete(std::span<const std::string> guids) {
-    // One asset at a time (the file and its .meta together): one that cannot go to the Recycle Bin
-    // stays, and the others still go.
+    // アセットを 1 つずつ (ファイルとその .meta を一緒に): ごみ箱へ行けない物は残り、
+    // ほかは消える。
     struct One {
         std::vector<fs::path> paths;
         std::string name;
@@ -364,7 +365,7 @@ std::wstring AssetLibrary::Delete(std::span<const std::string> guids) {
     for (const std::string& g : guids) {
         const asset::Entry* e = index_.ByGuid(g);
         if (!e) continue;
-        // Something inside a folder that goes too is not listed twice.
+        // 一緒に消えるフォルダーの中の物は、2 度は並べない。
         const bool inside = std::any_of(guids.begin(), guids.end(), [&](const std::string& other) {
             const asset::Entry* o = index_.ByGuid(other);
             return o && o != e && o->folder && e->path.starts_with(o->path + "/");
@@ -388,7 +389,7 @@ std::wstring AssetLibrary::Delete(std::span<const std::string> guids) {
             log::Info("ごみ箱へ移しました: {}", one.name);
             RemovedFromIndex(one.name);
         } else if (notRecyclable) {
-            // Never deleted for good (no Recycle Bin there, or it is too big for it).
+            // 完全には消さない (そこにごみ箱がない、または大きすぎて入らない)。
             problem = Problem(TrKey(L"「{}」はごみ箱に入れられない場所にある (USB メモリ・ネットワーク・ごみ箱より大きい) ので、消していません。消すならエクスプローラーで消してください。"),
                               Utf8ToWide(one.name));
         } else {

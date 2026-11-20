@@ -1,21 +1,21 @@
 #pragma once
-// Slow disk work off the UI thread. Nothing that may wait on a disk (a project on an unreachable
-// network drive, hashing every file of the engine) runs while a window is drawing: it runs on a
-// thread of its own and hands its results back to the UI thread, where they are applied between
-// frames (App's message loop runs them - never inside a frame).
+// UI スレッドの外でするディスクの重い作業。ディスクを待つかもしれない物 (届かないネットワーク
+// ドライブのプロジェクト、エンジンの全ファイルのハッシュ) は、ウィンドウを描く間は走らない。
+// 専用のスレッドで走り、結果を UI スレッドに返す。結果はそこで、フレームとフレームの間に
+// 当てる (App のメッセージループが走らせる - フレームの中では決して走らせない)。
 //
 //   worker_.Run([files](std::stop_token stop, const Worker::Post& post) {
 //       for (...) {
 //           if (stop.stop_requested()) return;
-//           Result r = ReadSlowly(...);                 // on the worker thread: no UI, no app state
-//           post([this, r] { rows_[...] = r; });         // on the UI thread, later
+//           Result r = ReadSlowly(...);                 // 作業スレッドで: UI もアプリの状態も触らない
+//           post([this, r] { rows_[...] = r; });         // あとで UI スレッドで
 //       }
 //   });
 //
-// A new Run (or Stop, or destroying the Worker) asks the previous work to stop and drops whatever
-// it still posts: a result never lands on a screen that is gone or on data that was asked for again.
-// The work runs on with no one waiting for it (it is let go, not joined), so it must use only what it
-// was given (copies) - the screen and the app are touched only inside `post`.
+// 新しい Run (または Stop、Worker の破棄) は、前の作業に止まるよう頼み、それがまだ post する物を
+// 捨てる。結果が、もうない画面や、あらためて頼まれたデータに落ちることはない。
+// 作業は、誰にも待たれずに走り続ける (join せず手放す)。だから渡された物 (コピー) だけを使うこと。
+// 画面とアプリは `post` の中でだけ触る。
 
 #include <functional>
 #include <memory>
@@ -24,19 +24,20 @@
 
 namespace rm::editor {
 
-// Runs fn on the UI thread soon (from any thread). App's message loop calls RunPostedToUi.
+// fn をもうすぐ UI スレッドで走らせる (どのスレッドからでも)。App のメッセージループが
+// RunPostedToUi を呼ぶ。
 void PostToUi(std::function<void()> fn);
-void RunPostedToUi();      // UI thread only
-void SetUiThread();        // the thread that runs RunPostedToUi (App::Run, once)
+void RunPostedToUi();      // UI スレッドだけ
+void SetUiThread();        // RunPostedToUi を走らせるスレッド (App::Run で 1 度)
 
-// A wake-up any thread may call (a folder watch's signal): runs `onUi` on the UI thread soon - unless
-// this UiWake is gone by then (the screen closed meanwhile), then nothing happens.
+// どのスレッドからも呼べる起こし (フォルダー監視の合図): もうすぐ UI スレッドで `onUi` を走らせる。
+// ただしその時までにこの UiWake がなくなっていたら (その間に画面が閉じた)、何も起きない。
 class UiWake {
 public:
     explicit UiWake(std::function<void()> onUi);
     UiWake(const UiWake&) = delete;
     UiWake& operator=(const UiWake&) = delete;
-    std::function<void()> Signal() const;  // (copies are safe to call from any thread)
+    std::function<void()> Signal() const;  // (コピーはどのスレッドから呼んでも安全)
 
 private:
     std::shared_ptr<std::function<void()>> onUi_;
@@ -53,8 +54,8 @@ public:
     ~Worker();
 
     void Run(Work work);
-    void Stop();          // asks the work to stop; what it posts from now on is dropped
-    bool Busy() const;    // the last Run has not finished (UI thread)
+    void Stop();          // 作業に止まるよう頼む。これ以降それが post する物は捨てられる
+    bool Busy() const;    // 最後の Run がまだ終わっていない (UI スレッド)
 
 private:
     struct State;

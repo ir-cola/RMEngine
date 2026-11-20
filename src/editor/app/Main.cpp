@@ -1,4 +1,4 @@
-// Entry point of RM_Engine.exe (Hub + editor).
+// RM_Engine.exe (Hub とエディター) の入り口。
 
 #include "base/Log.h"
 #include "base/Utf.h"
@@ -33,12 +33,12 @@ rm::editor::LaunchOptions ParseCommandLine() {
         } else if (a == L"--project" && i + 1 < argc) {
             opt.projectFile = argv[++i];
         } else if (a.size() > 5 && _wcsicmp(a.c_str() + a.size() - 5, L".rmpf") == 0) {
-            opt.projectFile = a;  // a .rmpf passed directly (e.g. opened from Explorer)
+            opt.projectFile = a;  // 直接渡された .rmpf (たとえばエクスプローラーから開いた)
         }
     }
     LocalFree(argv);
-    // A path relative to where the engine was started from becomes a full one: the Hub's list of
-    // projects holds full paths, so the same project never shows twice.
+    // エンジンを起動した場所からの相対パスは、フルパスにする。Hub のプロジェクト一覧はフルパスを
+    // 持っているので、同じプロジェクトが 2 つ出ることはない。
     if (!opt.projectFile.empty()) {
         std::error_code ec;
         const auto full = std::filesystem::absolute(opt.projectFile, ec);
@@ -48,12 +48,12 @@ rm::editor::LaunchOptions ParseCommandLine() {
 }
 
 void InstallLogSinks() {
-    // Debugger output (Visual Studio "Output" window).
+    // デバッガーの出力 (Visual Studio の「出力」ウィンドウ)。
     rm::log::AddSink([](const rm::log::Entry& e) {
         const char* tag = e.level == rm::log::Level::Error ? "[error] " : e.level == rm::log::Level::Warn ? "[warn]  " : "[info]  ";
         OutputDebugStringW(rm::Utf8ToWide(std::string(tag) + e.text + "\n").c_str());
     });
-    // %LOCALAPPDATA%\RM_Engine\Logs\editor.log (overwritten on every start).
+    // %LOCALAPPDATA%\RM_Engine\Logs\editor.log (起動のたびに上書きする)。
     std::error_code ec;
     std::filesystem::create_directories(rm::editor::paths::LogFolder(), ec);
     static std::ofstream file(rm::editor::paths::LogFile(), std::ios::binary | std::ios::trunc);
@@ -70,7 +70,7 @@ void InstallLogSinks() {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
-    // STA is required by the shell file dialogs.
+    // シェルのファイルダイアログには STA が要る。
     const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     InstallLogSinks();
     rm::log::Info("{} {} を起動しました", rm::kEngineName, rm::kEngineVersion);

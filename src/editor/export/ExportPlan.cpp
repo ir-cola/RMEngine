@@ -13,8 +13,8 @@ namespace rm::editor::exporter {
 
 namespace {
 
-// A C string literal of UTF-8 text (every byte outside plain ASCII written as \x.., split so the
-// next character is never taken into the escape).
+// UTF-8 の文章の C 文字列リテラル (ASCII 以外のバイトは全部 \x.. で書き、
+// 次の文字がエスケープに取り込まれないよう分ける)。
 std::string CString(std::string_view s) {
     std::string out = "\"";
     for (const unsigned char c : s) {
@@ -44,7 +44,7 @@ std::string ExeNameFrom(std::string_view gameName) {
         while (!t.empty() && t.front() == ' ') t.erase(t.begin());
     };
     trim(s);
-    // At most 64 characters (UTF-16 units): cut at a character's start.
+    // 最大 64 文字 (UTF-16 の単位): 文字の先頭で切る。
     while (ValidateFileName(s) == FileNameError::TooLong) {
         size_t cut = s.size() - 1;
         while (cut > 0 && (static_cast<unsigned char>(s[cut]) & 0xC0) == 0x80) --cut;
@@ -70,7 +70,7 @@ std::string ExeNameProblem(std::string_view name) {
 
 std::vector<PluginId> ExportPlugins(const std::vector<PluginId>& recorded, const std::vector<PluginManifest>& available,
                                     std::vector<PluginId>* missing) {
-    // The same as installing them on a PC that has nothing yet: requirements first, connectors with them.
+    // まだ何も入っていない PC に入れるのと同じ: 前提が先、コネクタはそれと一緒。
     return TemplateInstallPlan(recorded, available, {}, missing);
 }
 
@@ -84,7 +84,7 @@ std::string GameMainSource(const std::vector<GameLib>& libs, std::string_view ti
     s += "#include <span>\n\n";
     s += "namespace rm { class RuntimeRegistry; }\n";
     s += "namespace rm::reflect { struct TypeDesc; struct EnumDesc; }\n\n";
-    // The same declarations as src/game/Player.h.
+    // src/game/Player.h と同じ宣言。
     s += "extern \"C\" {\n";
     s += "struct RmLinkedPlugin { const char* author; const char* name; void (*registerRuntime)(rm::RuntimeRegistry&); };\n";
     s += "struct RmGameImage { const char* title; unsigned long long build; const RmLinkedPlugin* plugins; unsigned long long count; };\n";
@@ -139,7 +139,7 @@ void ReadSymbols(std::string_view text, std::vector<std::string>& types, std::ve
             const size_t start = at + prefix.size();
             size_t end = start;
             while (end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_')) ++end;
-            // A definition (" = {"), not a declaration (";").
+            // 定義 (" = {") であって、宣言 (";") ではない。
             size_t next = end;
             while (next < text.size() && text[next] == ' ') ++next;
             if (end > start && next < text.size() && text[next] == '=') {
@@ -151,8 +151,8 @@ void ReadSymbols(std::string_view text, std::vector<std::string>& types, std::ve
 }
 
 std::string GameResourceSource(std::string_view title, std::string_view exeName, bool icon) {
-    // A string of the script: " doubled and \ doubled (rc reads \ as the start of an escape), nothing
-    // else changes (UTF-8 with /c65001).
+    // スクリプトの文字列: " は 2 つに、\ も 2 つにする (rc は \ をエスケープの始まりと読む)。
+    // ほかは変えない (/c65001 で UTF-8)。
     auto quoted = [](std::string_view s) {
         std::string out = "\"";
         for (const char c : s) {
@@ -192,27 +192,27 @@ std::optional<std::string> IcoFromPng(std::string_view png) {
         put16(v & 0xffff);
         put16(v >> 16);
     };
-    put16(0);  // reserved
-    put16(1);  // an icon
-    put16(1);  // one picture
-    ico += static_cast<char>(w >= 256 ? 0 : w);  // 0 = 256 (or more)
+    put16(0);  // 予約
+    put16(1);  // アイコン
+    put16(1);  // 絵は 1 枚
+    ico += static_cast<char>(w >= 256 ? 0 : w);  // 0 = 256 (以上)
     ico += static_cast<char>(h >= 256 ? 0 : h);
-    ico += '\0';  // no palette
+    ico += '\0';  // パレットなし
     ico += '\0';
-    put16(1);   // planes
-    put16(32);  // bits
+    put16(1);   // プレーン数
+    put16(32);  // ビット数
     put32(static_cast<uint32_t>(png.size()));
-    put32(6 + 16);  // where the picture starts
+    put32(6 + 16);  // 絵が始まる位置
     ico.append(png);
     return ico;
 }
 
 std::optional<std::string> IconFile(std::string_view bytes) {
-    // An .ico: reserved 0, type 1, at least one picture (and its 16-byte entries there).
+    // .ico: 予約 0、種類 1、絵が 1 枚以上 (とそこにある 16 バイトの項目)。
     if (bytes.size() >= 22 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 1 && bytes[3] == 0 && (bytes[4] != 0 || bytes[5] != 0)) {
         const size_t count = static_cast<unsigned char>(bytes[4]) | (static_cast<size_t>(static_cast<unsigned char>(bytes[5])) << 8);
         if (bytes.size() < 6 + 16 * count) return std::nullopt;
-        // Each picture (its size at +8, where it is at +12) inside the file.
+        // 各画像 (大きさは +8、位置は +12) がファイルの中にある。
         auto u32 = [&](size_t at) {
             uint32_t v = 0;
             for (size_t i = 0; i < 4; ++i) v |= static_cast<uint32_t>(static_cast<unsigned char>(bytes[at + i])) << (8 * i);

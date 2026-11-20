@@ -21,9 +21,10 @@ namespace rm::editor {
 
 namespace {
 
-// A request may come from a message that was *sent* to a window (WM_CLOSE from taskkill or from
-// Windows shutting down). Sent messages are handled inside GetMessage, which then keeps waiting -
-// so the request would wait for the next unrelated message. A posted no-op wakes the loop up.
+// 要求は、ウィンドウに *送られた* メッセージ (taskkill や Windows のシャットダウンによる
+// WM_CLOSE) から来ることがある。送られたメッセージは GetMessage の中で処理され、GetMessage は
+// そのまま待ち続ける。だから要求は、次の無関係なメッセージまで待たされる。何もしないメッセージを
+// post して、ループを起こす。
 void WakeMessageLoop() { PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0); }
 
 }  // namespace
@@ -31,7 +32,7 @@ void WakeMessageLoop() { PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0)
 App::App() = default;
 
 int App::RunExportCheck(const LaunchOptions& options) {
-    // A project from a template (--new-from-template / --export-template).
+    // テンプレートから作ったプロジェクト (--new-from-template / --export-template)。
     auto makeProject = [&](const std::vector<std::wstring>& args, std::filesystem::path* file) {
         const std::string author = WideToUtf8(args[0]), plugin = WideToUtf8(args[1]), id = WideToUtf8(args[2]);
         const std::filesystem::path work = args[3];
@@ -66,7 +67,7 @@ int App::RunExportCheck(const LaunchOptions& options) {
         log::Info("書き出しの確かめ: プロジェクトを作りました: {}", PathToUtf8(*file));
         return true;
     };
-    // A project exported (--export / --export-template): opened without a window, its softwares' data read.
+    // 書き出したプロジェクト (--export / --export-template): ウィンドウなしで開き、各ソフトのデータを読む。
     auto exportProject = [&](const std::filesystem::path& file, const std::filesystem::path& out) {
         std::string err;
         auto project = LoadProject(file, &err);
@@ -104,9 +105,9 @@ int App::Run(const LaunchOptions& options) {
     ApplyOptions();
     SetUiThread();
     plugins_.Load(paths::EnginePlugins(), paths::InstalledPlugins(), paths::LegacyInstalledPlugins());
-    StartEngineRefresh();  // a new engine: new copies of the installed plugins (hashed off this thread)
+    StartEngineRefresh();  // 新しいエンジン: 入っているプラグインの新しいコピー (このスレッドの外でハッシュを取る)
     LoadThemes();
-    ApplyOptions();  // the theme chosen may be a pack's
+    ApplyOptions();  // 選んだテーマはパックのものかもしれない
     if (!options.exportTemplate.empty() || !options.newFromTemplate.empty() || !options.exportProject.empty()) return RunExportCheck(options);
     if (!options.projectFile.empty()) {
         RequestOpenProject(options.projectFile);
@@ -115,8 +116,8 @@ int App::Run(const LaunchOptions& options) {
     }
     ApplyPending();
 
-    // Log entries for the windows (queued sinks) are given here, on this thread; a log written on another
-    // thread wakes the loop up for it.
+    // ウィンドウ用のログ (キューに入れるシンク) はここ、このスレッドで渡す。別のスレッドで書いた
+    // ログは、ループを起こしてここに回す。
     const DWORD uiThread = GetCurrentThreadId();
     log::SetWake([uiThread] { PostThreadMessageW(uiThread, WM_NULL, 0, 0); });
     log::DeliverQueued();
@@ -125,7 +126,7 @@ int App::Run(const LaunchOptions& options) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
         log::DeliverQueued();
-        RunPostedToUi();  // results of slow disk work (Worker), between frames
+        RunPostedToUi();  // 時間のかかるディスク作業 (Worker) の結果。フレームとフレームの間に
         ApplyPending();
     }
     log::SetWake({});
@@ -172,8 +173,8 @@ void App::RequestQuit() {
 }
 
 void App::LoadLanguageCatalogs() {
-    // The core's English (<exe>/Lang/en.json) and each plugin's (<exe>/Plugins/<author>/<name>/lang/en.json).
-    // The engine's own copies: the plugins' code is built into this exe, so their texts match it.
+    // 核の英語 (<exe>/Lang/en.json) と各プラグインの英語 (<exe>/Plugins/<author>/<name>/lang/en.json)。
+    // エンジン自身のコピーを使う。プラグインのコードはこの exe に組み込まれているので、文字もそれに合う。
     lang::Catalog& en = lang::EnglishCatalog();
     en.Clear();
     std::vector<std::filesystem::path> files{paths::LangFolder() / L"en.json"};
@@ -215,7 +216,7 @@ void App::StartEngineRefresh() {
 }
 
 void App::ApplyEngineRefreshIfReady() {
-    // Only while no editor is open: its workspaces point into the plugin registry that Reload makes anew.
+    // エディターを開いていない間だけ。ワークスペースは、Reload が作り直すプラグインの登録簿を指している。
     if (!engineRefresh_ || !dynamic_cast<HubScreen*>(screen_.get())) return;
     const Plugins::EngineRefreshPlan plan = std::move(*engineRefresh_);
     engineRefresh_.reset();
@@ -232,7 +233,7 @@ void App::ReloadPlugins() {
 }
 
 void App::LoadThemes() {
-    theme::SetPackThemes({});  // the built-in three only, while the packs are read
+    theme::SetPackThemes({});  // 組み込みの 3 つだけ。パックを読む間
     const auto ornaments = plugins_.Registry().Contributions<w::OrnamentInfo>(w::kOrnamentPoint);
     std::vector<theme::ThemeInfo> themes;
     int group = 0;
@@ -267,7 +268,7 @@ void App::LoadThemes() {
                 continue;
             }
             if (!t.ornament.empty()) {
-                // Its pictures: offered by the same plugin's code under that name.
+                // その絵: 同じプラグインのコードがその名前で出す。
                 for (const auto& o : ornaments) {
                     if (o.plugin == e.status.id && t.ornament == o.item->name) t.info.ornament = o.item;
                 }
@@ -280,9 +281,9 @@ void App::LoadThemes() {
     }
     log::Info("テーマ: パックから {} 個", themes.size());
     theme::SetPackThemes(std::move(themes));
-    // The theme chosen is not there any more (its pack removed, or not installed): the first theme
-    // from now on, written to hub.json - installing the pack again does not bring it back. An old id
-    // (a theme's alias) becomes the theme's own.
+    // 選んだテーマがもうない (パックを消した、または入れていない): 以後は最初のテーマにして
+    // hub.json に書く。パックをもう一度入れても戻らない。古い id (テーマの別名) は
+    // そのテーマ本来の id にする。
     Options& o = settings_.GetOptions();
     const theme::ThemeInfo& now = theme::FindTheme(o.theme);
     if (now.id != o.theme) {
@@ -301,7 +302,7 @@ void App::ApplyOptions() {
 
 namespace {
 
-// Every window of the editor (the Hub or the editor, and its panel windows) drawn again.
+// エディターの全ウィンドウ (Hub かエディター、そのパネルウィンドウ) をもう一度描く。
 void RedrawAllWindows() {
     EnumThreadWindows(
         GetCurrentThreadId(),
@@ -330,7 +331,7 @@ bool App::RecoverGraphics(ScreenWindow& asking) {
     constexpr int kTellAfter = 3;
     if (graphicsFailures_ >= kTellAfter && !graphicsTold_) {
         graphicsTold_ = true;
-        // Outside the frame (a message box runs its own message loop). Drawn by Windows, not by the GPU.
+        // フレームの外 (メッセージボックスは自分でメッセージループを回す)。GPU ではなく Windows が描く。
         asking.Defer([this, hwnd = asking.Hwnd()] {
             ScreenWindow* screen = screen_.get();
             const std::wstring title = Tr(L"GPU が使えません");
@@ -357,7 +358,7 @@ void App::SystemThemeChanged() {
 void App::Replace(std::unique_ptr<ScreenWindow> next) {
     std::unique_ptr<ScreenWindow> old = std::move(screen_);
     screen_ = std::move(next);
-    if (old) old->Close();  // after the new window is shown, so the app never has zero windows
+    if (old) old->Close();  // 新しいウィンドウを出した後に閉じる。アプリのウィンドウが 0 個にならないように
 }
 
 void App::ShowHub(const std::string& errorMessage) {
@@ -369,7 +370,7 @@ void App::ShowHub(const std::string& errorMessage) {
     }
     if (!errorMessage.empty()) hub->ShowError(Utf8ToWide(errorMessage));
     Replace(std::move(hub));
-    ApplyEngineRefreshIfReady();  // the editor (if one was open) is gone now
+    ApplyEngineRefreshIfReady();  // エディター (開いていれば) はもうない
 }
 
 HubScreen* App::EnsureHub() {
@@ -391,8 +392,8 @@ void App::OpenProjectNow() {
         if (HubScreen* hub = EnsureHub()) hub->ShowError(Utf8ToWide(err));
         return;
     }
-    // Design RME_PLATFORM 5-a: a project that records a plugin which cannot be used is not opened -
-    // saving it without the plugin could only lose that plugin's data.
+    // 設計 RME_PLATFORM 5-a: 使えないプラグインが記録されているプロジェクトは開かない。
+    // そのプラグインなしで保存すると、そのプラグインのデータを失うだけだから。
     std::vector<PluginId> blocking;
     for (const PluginId& id : *used) {
         if (!plugins_.IsEnabled(id)) blocking.push_back(id);
@@ -402,7 +403,7 @@ void App::OpenProjectNow() {
         if (HubScreen* hub = EnsureHub()) hub->AskBlockingPlugins(pendingFile_, blocking);
         return;
     }
-    // Installed plugins that lack a requirement: told once, before opening (decided 2026-11-04).
+    // 必要なものが足りない、入っているプラグイン: 開く前に 1 度だけ知らせる (2026-11-04 に決めた)。
     std::vector<PluginId> limited;
     for (const auto& e : plugins_.Entries()) {
         if (e.installed && e.status.state != PluginState::Enabled) limited.push_back(e.status.id);
@@ -411,7 +412,7 @@ void App::OpenProjectNow() {
         if (HubScreen* hub = EnsureHub()) hub->AskLimitedPlugins(pendingFile_, limited);
         return;
     }
-    // Open in another RM Engine: never twice (both would save over each other's changes).
+    // 別の RM Engine で開いている: 2 重には開かない (互いの変更を上書きしてしまう)。
     auto lock = std::make_unique<platform::FileLock>();
     std::string lockErr;
     const auto taken = lock->Take(ProjectLockFile(project->file), &lockErr);
@@ -422,7 +423,7 @@ void App::OpenProjectNow() {
         return;
     }
     if (taken == platform::FileLock::Result::Failed) {
-        // A folder where nothing can be written (read only ...): opened, but not guarded.
+        // 何も書き込めないフォルダー (読み取り専用など): 開くが、守りはしない。
         log::Warn("プロジェクトの印 (ほかの RM Engine で開かないための) を作れませんでした。そのまま開きます: {}", lockErr);
     }
     settings_.Touch(project->file);
@@ -461,7 +462,7 @@ void App::ApplyPending() {
                     if (auto* editor = dynamic_cast<EditorScreen*>(screen_.get())) editor->ShowError(Utf8ToWide(err));
                     break;
                 }
-                // The editor closes before the plugins are read again: its workspaces point into the registry.
+                // プラグインを読み直す前にエディターを閉じる。ワークスペースは登録簿を指しているから。
                 if (screen_) screen_->Close();
                 screen_.reset();
                 ReloadPlugins();

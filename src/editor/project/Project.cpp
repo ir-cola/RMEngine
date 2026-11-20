@@ -59,7 +59,7 @@ bool SaveProject(const Project& project, std::string* error) {
     const std::string text = json::Write(project.doc);
     constexpr uint64_t kLimitMb = platform::kMaxFileBytes >> 20;
     if (text.size() > platform::kMaxFileBytes) {
-        // Not saved (the file on disk stays as it was): it could not be opened again.
+        // 保存しない (ディスクのファイルはそのまま): もう一度開けなかった。
         if (error) {
             *error = TrU8F("プロジェクトファイルが大きすぎるので保存しませんでした ({} MB / 上限 {} MB)。前に保存したものはそのままです。\n大きなデータ (絵・音・モデルなど) は Assets フォルダのファイルにしてください。",
                            text.size() >> 20, kLimitMb);
@@ -92,7 +92,7 @@ std::optional<Project> CreateProject(const fs::path& parentDir, const std::strin
         if (error) *error = TrU8F("フォルダを作れませんでした: {}\n{}", PathToUtf8(folder), ec.message());
         return std::nullopt;
     }
-    // The template's files (a game's first scene and its .meta) before the project file names them.
+    // プロジェクトファイルが名前を挙げる前に作る、テンプレートのファイル (ゲームの最初のシーンと .meta)。
     if (!tmpl.folder.empty() && fs::is_directory(tmpl.folder / L"Assets", ec)) {
         fs::copy(tmpl.folder / L"Assets", folder / L"Assets", fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
         if (ec) {
@@ -108,13 +108,13 @@ std::optional<Project> CreateProject(const fs::path& parentDir, const std::strin
     p.doc.Set("formatVersion", kProjectFormatVersion);
     p.doc.Set("name", nameUtf8);
     p.doc.Set("engineVersion", kEngineVersion);
-    // Plugins this project uses. Recorded automatically (never by hand): here, the plugins of the
-    // template's first data; afterwards, whenever a software saves its data.
+    // このプロジェクトが使うプラグイン。自動で記録する (手ではしない): ここでは、テンプレートの
+    // 最初のデータのプラグイン。その後は、ソフトがデータを保存するたびに。
     p.doc.Set("plugins", json::Value::MakeArray());
     ApplyTemplate(p.doc, tmpl);
 
-    // The first layout (which software shows first ...) before the project file: a project is never
-    // found without it.
+    // プロジェクトファイルより前に作る最初のレイアウト (最初にどのソフトを出すか ...):
+    // これが無いプロジェクトは見つからない。
     if (const json::Value layout = TemplateLayout(tmpl); !layout.IsNull()) {
         std::string err;
         fs::create_directories(p.LayoutFile().parent_path(), ec);
@@ -138,20 +138,20 @@ std::optional<fs::path> RenameProject(const fs::path& file, const std::string& n
     if (!project) return std::nullopt;
     const std::string oldName = project->Name();
 
-    // The folder follows only when it is the project's own (named after it); a folder of the user's
-    // (a .rmpf opened from D:\Work) keeps its name - only the .rmpf and the name inside change.
+    // フォルダーが付いてくるのは、それがプロジェクト自身のとき (プロジェクトの名前が付いている)だけ。
+    // ユーザーのフォルダー (D:\Work から開いた .rmpf) は名前を変えない - .rmpf と中の名前だけ変わる。
     const ProjectRenamePlan plan = PlanProjectRename(file, oldName, newNameUtf8);
     const fs::path oldFolder = file.parent_path();
     const fs::path newFolder = plan.folder;
     const fs::path newFile = plan.file;
     const fs::path newFileName = newFile.filename();
     if (newFile.native().size() > 240) return fail(TrU8("新しい名前だとパスが長すぎます。短い名前にしてください。"));
-    // Only the letter case may differ (Windows names ignore case): the same folder, renamed.
+    // 大文字小文字だけが違うことがある (Windows の名前は大文字小文字を無視する): 同じフォルダーの名前の変更。
     const bool sameFolder = SamePath(oldFolder, newFolder);
     std::error_code ec;
     if (!sameFolder && fs::exists(newFolder, ec)) return fail(TrU8F("同じ名前のフォルダが既にあります: {}", PathToUtf8(newFolder)));
 
-    // 1. The folder (only when it is the project's).
+    // 1. フォルダー (プロジェクト自身のときだけ)。
     bool folderMoved = false;
     if (plan.renameFolder) {
         fs::rename(oldFolder, newFolder, ec);
@@ -168,7 +168,7 @@ std::optional<fs::path> RenameProject(const fs::path& file, const std::string& n
         if (e2) log::Error("フォルダの名前を元に戻せませんでした: {} → {} ({})", PathToUtf8(newFolder), PathToUtf8(oldFolder), e2.message());
     };
 
-    // 2. The .rmpf (now inside the renamed folder).
+    // 2. .rmpf (名前を変えたフォルダーの中の)。
     const fs::path fileNow = newFolder / file.filename();
     bool fileMoved = false;
     if (file.filename().native() != newFileName.native()) {
@@ -184,7 +184,7 @@ std::optional<fs::path> RenameProject(const fs::path& file, const std::string& n
         fileMoved = true;
     }
 
-    // 3. The name inside (every other key is written back as it was).
+    // 3. 中の名前 (ほかのキーは、そのまま書き戻す)。
     project->file = newFile;
     project->doc.Set("name", newNameUtf8);
     std::string saveErr;

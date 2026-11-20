@@ -39,8 +39,8 @@ void FloatWindow::OnFrame(ui::Context& c, float width, float height) { editor_.D
 void FloatWindow::OnCloseRequested() { editor_.CloseFloatingWindow(id_); }
 
 void FloatWindow::OnOtherMessage(UINT msg, WPARAM, LPARAM) {
-    // Moving the window by its title bar over the editor shows the drop guides there;
-    // letting go on a guide docks every panel of this window back.
+    // ウィンドウをタイトルバーでエディターの上に動かすと、そこにドロップのガイドが出る。
+    // ガイドの上で離すと、このウィンドウのパネルがすべてドックに戻る。
     if (msg == WM_MOVING) editor_.FloatingMoving(id_, Hwnd());
     if (msg == WM_EXITSIZEMOVE) editor_.FloatingMoveEnded(id_);
 }

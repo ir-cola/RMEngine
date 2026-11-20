@@ -1,14 +1,13 @@
 #pragma once
-// The editor's look. The core UI foundation (src/ui) has no colors on purpose:
-// a game UI built on the same foundation must not change when the editor theme does.
+// エディターの見た目。コアの UI の土台 (src/ui) は、わざと色を持たない:
+// 同じ土台で作ったゲームの UI は、エディターのテーマが変わっても変わってはいけない。
 //
-// The built-in palettes (黒 = dark, the default; 白 = light) and the list of themes (Themes(): what
-// オプション > 色のテーマ > 「テーマを変更…」 shows). The colors below are the palette in use; ApplyTheme
-// switches them. Every screen reads them while drawing, so a switch shows on the next frame.
-//
-// Built in: 黒, 白 and PC の設定に合わせる. Every other theme comes from a theme pack: a plugin with
-// theme files (plugins/<author>/<name>/themes/*.json, read by ThemeFile.h when the plugins are read;
-// a pack's pictures are its code, offered at w::kOrnamentPoint). A new theme = a theme file in a pack.
+// 組み込みのパレット (黒 = ダーク、既定。白 = ライト) とテーマの一覧 (Themes():
+// オプション > 色のテーマ > 「テーマを変更…」 が出すもの)。下の色は今使っているパレットで、ApplyTheme が
+// 切り替える。どの画面も描くときにこれを読むので、切り替えは次のフレームで見える。
+// 組み込みは 黒、白、PC の設定に合わせる。ほかのテーマはすべてテーマパックから来る: テーマファイルを
+// 持つプラグイン (plugins/<author>/<name>/themes/*.json。プラグインを読むときに ThemeFile.h が読む。
+// パックの絵はそのコードで、w::kOrnamentPoint に出る)。新しいテーマ = パックの中のテーマファイル。
 
 #include "editor/lang/Lang.h"
 #include "ui/Types.h"
@@ -22,7 +21,7 @@
 #include <vector>
 
 namespace rm::editor::w {
-struct OrnamentInfo;  // a theme pack's pictures (Widgets.h)
+struct OrnamentInfo;  // テーマパックの絵 (Widgets.h)
 }
 
 namespace rm::editor::theme {
@@ -33,8 +32,8 @@ struct Palette {
     Color bg, sidebar, panel, panelHeader, border, borderHover, field, hover, pressed, selected;
     Color accent, accentHover, accentPressed, text, textDim, textFaint, danger, warn, folder, shadow;
     Color scrollThumb, scrollThumbHot, dim;
-    uint32_t caption;  // title bar (0xRRGGBB)
-    bool light;        // a light theme (the gradients below are made for light or dark)
+    uint32_t caption;  // タイトルバー (0xRRGGBB)
+    bool light;        // ライトテーマ (下のグラデーションは、ライト用かダーク用に作る)
 };
 
 inline constexpr Palette kDark{
@@ -53,7 +52,7 @@ inline constexpr Palette kLight{
     Color::Hex(0xC2C4CB), Color::Hex(0x9EA1AA), Color::Hex(0x000000, 0.35f), 0xE8E8EC, true,
 };
 
-// The palette in use (dark until Apply is called).
+// 今使っているパレット (Apply を呼ぶまではダーク)。
 inline Color Bg = kDark.bg;
 inline Color Sidebar = kDark.sidebar;
 inline Color Panel = kDark.panel;
@@ -76,21 +75,21 @@ inline Color Folder = kDark.folder;
 inline Color Shadow = kDark.shadow;
 inline Color ScrollThumb = kDark.scrollThumb;
 inline Color ScrollThumbHot = kDark.scrollThumbHot;
-inline Color Dim = kDark.dim;  // behind a dialog
+inline Color Dim = kDark.dim;  // ダイアログの後ろ
 inline uint32_t CaptionRgb = kDark.caption;
 inline bool IsLight = false;
-inline const w::OrnamentInfo* CurrentOrnament = nullptr;  // the theme's pictures (none for most)
+inline const w::OrnamentInfo* CurrentOrnament = nullptr;  // テーマの絵 (ほとんどは無し)
 
-// One theme of the list. Its id is what hub.json keeps (options.theme).
+// 一覧の 1 つのテーマ。その id を hub.json が持つ (options.theme)。
 struct ThemeInfo {
     std::string id;
-    std::wstring name;               // Japanese (Tr when shown)
-    std::optional<Palette> palette;  // none: follows Windows (kDark or kLight)
-    int group = 0;                   // 0 = the built-in three, then one number per pack (the theme screen
-                                     // starts a new row for each, under the pack's name)
-    std::wstring pack;               // the pack's name (its plugin's display name; Tr when shown)
-    std::vector<std::string> aliases;           // ids it was saved under before (a hub.json of then keeps it)
-    const w::OrnamentInfo* ornament = nullptr;  // its pictures, from the pack's code
+    std::wstring name;               // 日本語 (表示するとき Tr を通す)
+    std::optional<Palette> palette;  // none: Windows に合わせる (kDark か kLight)
+    int group = 0;                   // 0 = 組み込みの 3 つ、そのあとはパックごとに 1 つの番号 (テーマの画面は
+                                     // それぞれ、パックの名前の下で新しい行を始める)
+    std::wstring pack;               // パックの名前 (そのプラグインの表示名。表示するとき Tr を通す)
+    std::vector<std::string> aliases;           // 前に保存されていた id (そのころの hub.json がこれを持っている)
+    const w::OrnamentInfo* ornament = nullptr;  // その絵。パックのコードから
 };
 
 namespace detail {
@@ -106,15 +105,15 @@ inline constexpr size_t kBuiltIn = 3;
 }  // namespace detail
 
 inline std::span<const ThemeInfo> Themes() { return detail::List(); }
-// The themes of the packs (read again whenever the plugins are), after the built-in three. A
-// reference from FindTheme is good until the next call.
+// パックのテーマ (プラグインを読み直すたびに読み直す)。組み込みの 3 つのあと。FindTheme が
+// 返す参照は、次に呼ぶまで有効。
 inline void SetPackThemes(std::vector<ThemeInfo> themes) {
     auto& list = detail::List();
     list.resize(detail::kBuiltIn);
     for (ThemeInfo& t : themes) list.push_back(std::move(t));
 }
-// An unknown id (a pack that is not installed, a theme of a newer version, a typo in hub.json) is the
-// first theme (App then writes that one to hub.json: installing the pack again does not bring it back).
+// 知らない id (入っていないパック、新しいバージョンのテーマ、hub.json の打ち間違い) は、
+// 一覧の最初のテーマ (そのあと App がそれを hub.json に書く: パックをもう一度入れても元には戻らない)。
 inline const ThemeInfo& FindTheme(std::string_view id) {
     const auto list = Themes();
     for (const ThemeInfo& t : list) {
@@ -127,7 +126,7 @@ inline const ThemeInfo& FindTheme(std::string_view id) {
     }
     return list[0];
 }
-// The palette a theme stands for now (for "PC の設定に合わせる": what Windows uses).
+// テーマが今表すパレット ("PC の設定に合わせる" 用: Windows が使っているもの)。
 inline const Palette& PaletteOf(const ThemeInfo& t, bool systemPrefersLight) {
     return t.palette ? *t.palette : systemPrefersLight ? kLight : kDark;
 }
@@ -141,7 +140,7 @@ inline void Apply(const Palette& p) {
     ScrollThumb = p.scrollThumb, ScrollThumbHot = p.scrollThumbHot, Dim = p.dim, CaptionRgb = p.caption;
     IsLight = light;
 }
-// The theme's palette and its pictures.
+// テーマのパレットとその絵。
 inline void ApplyTheme(const ThemeInfo& t, bool systemPrefersLight) {
     Apply(PaletteOf(t, systemPrefersLight));
     CurrentOrnament = t.ornament;
@@ -150,86 +149,85 @@ inline void ApplyTheme(const ThemeInfo& t, bool systemPrefersLight) {
 inline constexpr float FontSize = 13.f;
 inline constexpr float Radius = 4.f;
 
-// --- Gradients -------------------------------------------------------------------------------
-// The flat colors above, lit from above: a little lighter at the top, a little darker at the
-// bottom - the same hue, so the palette stays as it is. Every box the widgets draw uses these.
+// --- グラデーション -------------------------------------------------------------------------------
+// 上にある単色を上から照らす: 上を少し明るく、下を少し暗く - 同じ色相なので、パレットはそのまま。
+// ウィジェットが描く箱はすべてこれを使う。
 
 struct Gradient {
     Color top, bottom;
-    Gradient Flipped() const { return {bottom, top}; }  // pressed / sunk in
+    Gradient Flipped() const { return {bottom, top}; }  // 押された / へこんだ
 };
 
-// A surface that stands out (buttons, headers, tabs): stronger on the dark theme, where light
-// from above shows more.
+// 目立つ面 (ボタン、ヘッダー、タブ): ダークテーマでは強め。上からの光がよく見えるため。
 inline Gradient Raised(Color c) { return IsLight ? Gradient{Shade(c, 0.55f), Shade(c, -0.05f)} : Gradient{Shade(c, 0.07f), Shade(c, -0.12f)}; }
-// A large area (panels, the sidebar): the same light, gentler.
+// 広い面 (パネル、サイドバー): 同じ光で、穏やかに。
 inline Gradient Gentle(Color c) { return IsLight ? Gradient{Shade(c, 0.35f), Shade(c, -0.025f)} : Gradient{Shade(c, 0.035f), Shade(c, -0.06f)}; }
-// Sunk in (text fields, check boxes): darker at the top, as if lit from above.
+// へこんだ面 (テキストフィールド、チェックボックス): 上から照らしたように、上のほうが暗い。
 inline Gradient Sunken(Color c) { return IsLight ? Gradient{Shade(c, -0.05f), c} : Gradient{Shade(c, -0.25f), Shade(c, 0.03f)}; }
-// The accent (primary buttons, the selected item): bright and clear on both themes.
+// アクセント (主なボタン、選択した項目): どちらのテーマでも明るくはっきり。
 inline Gradient AccentOf(Color c) { return {Shade(c, 0.12f), Shade(c, -0.14f)}; }
 
-// A thin light line inside the top edge of a raised surface (where the light catches it).
+// 浮いた面の上端の内側にある、細くて明るい線 (光が当たる所)。
 inline Color Highlight() { return IsLight ? Color{1, 1, 1, 0.75f} : Color{1, 1, 1, 0.06f}; }
-// The edge of a panel, two lines: a dark one just outside (also the 1px seam between docked panels)
-// and a thin light one just inside, brighter at the top and faint - but still lighter than the
-// background - at the bottom, so every side of the panel can be seen.
+// パネルの縁、2 本の線: すぐ外側の暗い線 (ドックしたパネルの間の 1px の継ぎ目も兼ねる) と、
+// すぐ内側の細くて明るい線。後者は上ほど明るく、下では薄くなる - それでも背景よりは明るい - ので、
+// パネルのどの辺も見える。
 inline Color EdgeOuter() { return IsLight ? Color::Hex(0xC4C6CD) : Color::Hex(0x0B0C0E); }
 inline Gradient EdgeInner() { return IsLight ? Gradient{Color{1, 1, 1, 1}, Color{1, 1, 1, 0.55f}} : Gradient{Color{1, 1, 1, 0.10f}, Color{1, 1, 1, 0.035f}}; }
 inline Color AccentHighlight() { return Color{1, 1, 1, 0.22f}; }
-// A theme pack's silhouettes: the accent, faint (behind the content, on the panels too).
+// テーマパックのシルエット: アクセント色で薄く (内容の後ろ。パネルの上にも)。
 inline Color OrnamentColor() { return Accent.Alpha(IsLight ? 0.10f : 0.12f); }
 
-// How bright a color looks (relative luminance, 0 = black .. 1 = white; WCAG's formula).
+// 色の明るさの見え方 (相対輝度。0 = 黒 .. 1 = 白。WCAG の式)。
 inline float Luminance(Color c) {
     auto lin = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
     return 0.2126f * lin(c.r) + 0.7152f * lin(c.g) + 0.0722f * lin(c.b);
 }
-// White or black, whichever stands out more on `bg` (the higher contrast ratio): for one-color
-// pictures like the Hub's logo, so they can be seen on every theme.
+// `bg` の上でより目立つほう、白か黒 (コントラスト比が高いほう): Hub のロゴのような
+// 単色の絵が、どのテーマでも見えるように。
 inline Color InkOn(Color bg) {
     const float l = Luminance(bg);
     const float onWhite = 1.05f / (l + 0.05f), onBlack = (l + 0.05f) / 0.05f;
     return onWhite >= onBlack ? Color{1, 1, 1, 1} : Color{0, 0, 0, 1};
 }
-// Text and marks on the accent (always white: the accent is the same red on both themes).
+// アクセントの上の文字と印 (いつも白: アクセントはどちらのテーマでも同じ赤)。
 inline Color OnAccent() { return Color{1, 1, 1, 1}; }
-// A switch (w::Switch): the track when off, and the round knob (white in every theme, as on a phone).
+// スイッチ (w::Switch): オフのときのトラックと、丸いつまみ (どのテーマでも白。スマホと同じ)。
 inline Color SwitchOff() { return IsLight ? Color::Hex(0xD3D6DC) : Color::Hex(0x3B3F48); }
 inline Color SwitchKnob() { return Color{1, 1, 1, 1}; }
 
-// --- 3D views (scene view): the floor, the axes, things in the scene -------------------------
+// --- 3D ビュー (シーンビュー): 床、軸、シーンの中のもの -------------------------
 inline Color SceneBackground() { return IsLight ? Shade(Bg, -0.07f) : Shade(Field, -0.1f); }
 inline Color SceneGrid() { return Text.Alpha(IsLight ? 0.14f : 0.09f); }
 inline Color SceneGridMajor() { return Text.Alpha(IsLight ? 0.30f : 0.20f); }
-inline Color AxisX() { return Color::Hex(0xE5484D); }  // red, as in every 3D tool
-inline Color AxisY() { return Color::Hex(0x5BB974); }  // green
-inline Color AxisZ() { return Color::Hex(0x4C8DF6); }  // blue
-inline Color GizmoHot() { return Color::Hex(0xF2C230); }  // the gizmo handle under the mouse / being dragged (yellow)
+inline Color AxisX() { return Color::Hex(0xE5484D); }  // 赤。どの 3D ツールでも同じ
+inline Color AxisY() { return Color::Hex(0x5BB974); }  // 緑
+inline Color AxisZ() { return Color::Hex(0x4C8DF6); }  // 青
+inline Color GizmoHot() { return Color::Hex(0xF2C230); }  // マウスの下にある / ドラッグ中のギズモのハンドル (黄色)
 inline Color SceneObject() { return IsLight ? Color::Hex(0xAEB4BF) : Color::Hex(0x98A2B3); }
 inline Color SceneObjectSelected() { return Mix(SceneObject(), Accent, 0.55f); }
 inline Color SceneObjectInactive() { return Mix(SceneObject(), SceneBackground(), 0.6f); }
-// A camera's shape (the lines of what it sees) and a light's (its direction, its reach) and their marks.
+// カメラの形 (見えるものの線) と、ライトの形 (向き、届く範囲) と、その印。
 inline Color SceneCamera() { return Text.Alpha(IsLight ? 0.70f : 0.75f); }
 inline Color SceneLight() { return IsLight ? Color::Hex(0xC08A12) : Color::Hex(0xF2D16B); }
-// The mark of a thing with no shape of its own (an empty entity, パーティクル, 音源): as a camera's.
+// 自分の形を持たないものの印 (空のエンティティ、パーティクル、音源): カメラの印と同じ。
 inline Color SceneMark() { return SceneCamera(); }
-// A model is drawn in its own colours (materials and pictures) times this: as it is, or faint and
-// see-through when switched off. The selected one glows at its edges instead of being recoloured.
+// モデルは、自分の色 (マテリアルと絵) に、これを掛けて描く: そのままか、オフのときは薄く
+// 透かして。選択中のものは、色を変えず、縁が光る。
 inline Color SceneModel() { return Color{1, 1, 1, 1}; }
 inline Color SceneModelInactive() { return Color{1, 1, 1, 0.35f}; }
 inline Color SceneSelectedGlow() { return Accent.Alpha(0.85f); }
-// Behind a model's thumbnail (アセット panel): a faint square so a light or dark model shows on both themes.
+// モデルのサムネイルの後ろ (アセット パネル): 薄い四角。明るいモデルも暗いモデルも、どちらのテーマでも見える。
 inline Color ThumbnailBack() { return Text.Alpha(IsLight ? 0.06f : 0.08f); }
-// Shadows falling on the floor (laid over the background: darker on the dark theme to still show).
+// 床に落ちる影 (背景の上に重ねる: ダークテーマでは濃くして、それでも見えるように)。
 inline Color SceneShadow() { return Color{0, 0, 0, IsLight ? 0.30f : 0.55f}; }
-// Physics shapes drawn over the scene (物理: colliders, characters): a solid one, a trigger (things pass
-// through it - it only tells), and one switched off (faint).
+// シーンの上に描く物理の形 (物理: コライダー、キャラクター): 固いもの、トリガー (ものが通り抜ける -
+// 知らせるだけ)、オフにしたもの (薄く)。
 inline Color SceneCollider() { return IsLight ? Color::Hex(0x1F9D55) : Color::Hex(0x5EE08F); }
 inline Color SceneTrigger() { return IsLight ? Color::Hex(0x8E44C9) : Color::Hex(0xC79BF2); }
 inline Color SceneColliderInactive() { return Mix(SceneCollider(), SceneBackground(), 0.6f); }
 
-// --- A software running (a game in Play): its tab row is tinted with the accent -----------------
+// --- ソフトが動いている (Play 中のゲーム): そのタブの行をアクセント色で染める -----------------
 inline Color RunningBar() { return Mix(Bg, Accent, IsLight ? 0.22f : 0.28f); }
 
 }  // namespace rm::editor::theme

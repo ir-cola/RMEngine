@@ -15,10 +15,10 @@ namespace rm::editor {
 
 namespace {
 
-constexpr double kCheckSeconds = 1.0;    // how often a file is looked at again
-constexpr double kForgetSeconds = 60.0;  // a thumbnail not shown this long is forgotten
+constexpr double kCheckSeconds = 1.0;    // ファイルをどれだけの間隔で見直すか
+constexpr double kForgetSeconds = 60.0;  // これだけ長く出していないサムネイルは忘れる
 
-// The size made for `pixels`: the next of 32 / 64 / 128 / 256 (bigger is not needed in a panel).
+// `pixels` のために作る大きさ: 32 / 64 / 128 / 256 のうち次の物 (パネルにはそれより大きいのは要らない)。
 uint32_t Bucket(uint32_t pixels) {
     uint32_t size = 32;
     while (size < pixels && size < 256) size *= 2;
@@ -46,7 +46,7 @@ const ThumbnailMaker* Thumbnails::MakerFor(asset::Kind kind) const {
 
 bool Thumbnails::Has(asset::Kind kind) const { return kind == asset::Kind::Image || MakerFor(kind) != nullptr; }
 
-// A result that says only why it could not be made.
+// 作れなかった理由だけを言う結果。
 Thumbnails::Done Thumbnails::Failed(Job job, std::string why) {
     Done d;
     d.job = std::move(job);
@@ -59,14 +59,14 @@ void Thumbnails::Work(std::stop_token stop) {
         Job job;
         {
             std::unique_lock lock(mu_);
-            if (!wake_.wait(lock, stop, [&] { return !jobs_.empty(); })) return;  // stopped
-            job = std::move(jobs_.back());  // the newest: what the panel shows now
+            if (!wake_.wait(lock, stop, [&] { return !jobs_.empty(); })) return;  // 止まった
+            job = std::move(jobs_.back());  // 一番新しい: パネルが今出している物
             jobs_.pop_back();
         }
         Done d;
         d.job = std::move(job);
-        // Nothing thrown here may leave the thread (that would end the whole editor): a file that
-        // makes the reading run out of memory, or a plugin that throws, is just "cannot be made".
+        // ここで投げた物がスレッドの外へ出てはいけない (エディター全体が終わってしまう):
+        // 読み込みでメモリが足りなくなるファイルや、例外を投げるプラグインは、ただ「作れない」にする。
         try {
             if (d.job.kind == asset::Kind::Image) {
                 auto image = platform::LoadImageFile(platform::ThreadImagingFactory(), d.job.file, platform::PixelOrder::PremultipliedBgra,
@@ -91,15 +91,16 @@ void Thumbnails::Work(std::stop_token stop) {
 
 void Thumbnails::Finish(Done& d, ui::Context& c) {
     const auto it = entries_.find(d.job.guid);
-    if (it == entries_.end()) return;  // forgotten meanwhile
+    if (it == entries_.end()) return;  // その間に忘れられた
     Entry& e = it->second;
     if (e.asked == d.job.size) e.asked = 0;
-    if (d.job.time != e.time) return;  // the file changed meanwhile: it is asked again
-    // Newest first: a smaller one asked earlier may come after a bigger one - it never replaces it.
+    if (d.job.time != e.time) return;  // その間にファイルが変わった: 頼み直す
+    // 新しい物が先: 前に頼んだ小さいほうが大きいほうの後に来ることがある - それが大きいほうを
+    // 置き換えることはない。
     if (!e.failed && e.image.width > 0 && d.job.size < e.size) return;
     if (d.ok && d.prepared) {
         const ThumbnailMaker* maker = MakerFor(d.job.kind);
-        if (ID2D1DeviceContext* dc = c.P().DC()) dc->Flush();  // what Direct2D drew so far goes to the GPU first
+        if (ID2D1DeviceContext* dc = c.P().DC()) dc->Flush();  // Direct2D がここまでに描いた物を、先に GPU へ送る
         try {
             d.ok = maker && maker->draw(gfx_, d.prepared.get(), d.job.size, d.image, &d.error);
         } catch (const std::exception& ex) {
@@ -121,7 +122,7 @@ void Thumbnails::Collect(ui::Context& c) {
         for (Done& d : done_) toDraw_.push_back(std::move(d));
         done_.clear();
     }
-    // Pictures cost nothing more here; a plugin's kind is drawn on the GPU, a few each frame.
+    // 画像はここではこれ以上かからない。プラグインの種類は GPU で描き、毎フレーム少しずつ。
     size_t used = 0;
     for (; used < toDraw_.size(); ++used) {
         if (spentMs_ >= kFrameBudgetMs) break;
@@ -131,7 +132,7 @@ void Thumbnails::Collect(ui::Context& c) {
         --working_;
     }
     toDraw_.erase(toDraw_.begin(), toDraw_.begin() + static_cast<std::ptrdiff_t>(used));
-    if (working_ > 0) c.RequestAnimation();  // look again next frame (the worker does not wake the window)
+    if (working_ > 0) c.RequestAnimation();  // 次のフレームでまた見る (worker はウィンドウを起こさない)
 }
 
 ID2D1Bitmap* Thumbnails::Get(ui::Context& c, const std::string& guid, asset::Kind kind, const std::filesystem::path& file, uint32_t pixels) {
@@ -146,7 +147,7 @@ ID2D1Bitmap* Thumbnails::Get(ui::Context& c, const std::string& guid, asset::Kin
         }
         Collect(c);
     }
-    // The GPU's devices were made again: every bitmap goes (made again from the kept pictures).
+    // GPU のデバイスが作り直された: ビットマップはすべて捨てる (取っておいた画像から作り直す)。
     if (gfx_.Generation() != generation_) {
         generation_ = gfx_.Generation();
         for (auto& [id, entry] : entries_) {
@@ -159,16 +160,16 @@ ID2D1Bitmap* Thumbnails::Get(ui::Context& c, const std::string& guid, asset::Kin
     if (now - e.checkedAt >= kCheckSeconds) {
         e.checkedAt = now;
         std::error_code ec;
-        const auto time = asset::ChangedAt(file, ec);  // the file or its import settings (.meta)
-        if (ec) return nullptr;  // gone (the panel will see it soon)
+        const auto time = asset::ChangedAt(file, ec);  // ファイルまたはその取り込みの設定 (.meta)
+        if (ec) return nullptr;  // なくなった (パネルがすぐ気づく)
         if (time != e.time) {
             e.time = time;
-            e.size = 0;  // changed on disk: made again
+            e.size = 0;  // ディスクで変わった: 作り直す
         }
     }
     const uint32_t want = Bucket(pixels);
     if ((e.size == 0 || (!e.failed && e.size < want)) && e.asked < want) {
-        // To the worker (started with the first job).
+        // worker へ (最初の仕事で起動する)。
         e.asked = want;
         ++working_;
         {
