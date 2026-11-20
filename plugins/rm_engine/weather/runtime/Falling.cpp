@@ -148,18 +148,26 @@ float WetSpecks(float2 s, float density, float footprint) {
 }
 
 // How much the rain reached a point the way `k` (0 .. 1): the place a little off the surface is not past
-// anything that way - read at 5 x 5 places 45 cm apart (weighted to the middle), so toward a roof's edge
-// it falls off over about two metres: the specks thin out there, as on real ground (2026-11-19).
-float WetOpen(int k, float3 p) {
-    float4 c = mul(mapViewProj[k], float4(p, 1));
-    float4 dx = mul(mapViewProj[k], float4(0.45, 0, 0, 0)), dz = mul(mapViewProj[k], float4(0, 0, 0.45, 0));
-    float open = 0;
-    [unroll] for (int y = -2; y <= 2; ++y) {
-        [unroll] for (int x = -2; x <= 2; ++x) {
-            open += saturate((0.06 - MapPastAt(k, c + dx * x + dz * y)) / 0.06) * ((3 - abs(x)) * (3 - abs(y)));
-        }
+// anything that way - read at 32 places on a spiral 75 cm around it (weighted to the middle), so toward a
+// roof's edge the specks thin out over a metre or so, as on real ground. Each place reads "reached or
+// not", so the spiral is turned and moved a little from place to place (slowly, and in speck-sized
+// wobbles): the steps of each reading fall at different places and overlap - no band, no line where the
+// specks stop (2026-11-20: a 5 x 5 grid made 5 straight bands, the specks cut off along each).
+float WetOpen(int k, float3 p, float2 s) {
+    const float2 wobble = float2(WetNoise(s * 7 + 11.3), WetNoise(s * 7 + 27.9)) * 2 - 1;
+    const float turn = WetNoise(s * 0.8 + 5.1) * 6.2831853;
+    const float4 c = mul(mapViewProj[k], float4(p + float3(wobble.x, 0, wobble.y) * 0.18, 1));
+    const float4 ax = mul(mapViewProj[k], float4(1, 0, 0, 0)), az = mul(mapViewProj[k], float4(0, 0, 1, 0));
+    float open = 0, total = 0;
+    [unroll] for (int i = 0; i < 32; ++i) {
+        const float r = 0.75 * sqrt((i + 0.5) / 32.0);
+        const float a = i * 2.3999632 + turn;  // (the golden angle: evenly over the disc)
+        const float w = 1.05 - r / 0.75;
+        const float2 o = float2(cos(a), sin(a)) * r;
+        open += saturate((0.06 - MapPastAt(k, c + ax * o.x + az * o.y)) / 0.06) * w;
+        total += w;
     }
-    return open / 81;
+    return open / total;
 }
 
 // How wet a surface looks (0 .. 1): the wettest of the ways the rain fell that reached it (a place it
@@ -185,7 +193,7 @@ float WetAt(float3 wpos, float3 n) {
         level = max(level, l);
         if (l <= wet) continue;
         int m = (int)way.z;
-        wet = m >= 0 && mapInfo[m].x > 0.5 ? max(wet, l * WetOpen(m, p)) : l;  // (no map: nothing to hit, all open)
+        wet = m >= 0 && mapInfo[m].x > 0.5 ? max(wet, l * WetOpen(m, p, s)) : l;  // (no map: nothing to hit, all open)
     }
     if (wet <= 0) return 0;
     // Between dry and wet (an edge, the start of the rain) more specks here, fewer there - patches a

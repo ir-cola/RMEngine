@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "屋根の端の濡れが段 (帯) にならないように。染みの数が少しずつ重なって減り、線で途切れない",
+          "en": "The wet edge by a roof no longer forms bands: the specks thin out gradually and are never cut off along a line"
+        },
+        {
           "ja": "カメラの向きによって影がちらつくのを直した。シーンビューの右ドラッグ移動をもっと遅く (細かく動かせる。Shift で速く)",
           "en": "Shadows no longer flicker as the camera turns, and flying in the scene view (right drag) is much slower for fine moves (Shift for speed)"
         },
