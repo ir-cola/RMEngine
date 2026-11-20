@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The precompiled header (2026-11-20): base/pch/StdPch.h (the standard library headers used most) is
+     compiled once per project and read before every source file (forced include - no source file names
+     it). Imported by RM_Engine and RMTests after RM.Common.props. Not by RMGameKit (its objects become
+     the game kit's libraries: a game would have to link the header's object too), RMBase, RMJolt or
+     rmgen (small, or rarely built). Measured (Debug): a file 0.3 .. 1.3 s less to compile. -->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>base/pch/StdPch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)StdPch.pch</PrecompiledHeaderOutputFile>
+      <ForcedIncludeFiles>base/pch/StdPch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)base\pch\StdPch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+      <ObjectFileName>$(IntDir)pch\</ObjectFileName>
+    </ClCompile>
+  </ItemGroup>
+</Project>

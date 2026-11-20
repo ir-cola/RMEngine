@@ -7,7 +7,10 @@
   <Target Name="RmGen" Condition="'$(RmGenSkip)' != 'true'">
     <Exec Command="&quot;$(OutDir)rmgen.exe&quot; --out &quot;$(RmGenOut).&quot; --skip-dir templates $(RmGenRoots)" StdOutEncoding="UTF-8" />
   </Target>
-  <Target Name="RmGenCompile" BeforeTargets="ClCompile" DependsOnTargets="RmGen">
+  <!-- Before FixupCLCompileOptions (not only ClCompile): the generated files are then given the same
+       compile settings as the others - with UseMultiToolTask, "compile after the precompiled header"
+       (RM.Pch.props) - 2026-11-20. Not in Visual Studio's design-time builds (IntelliSense). -->
+  <Target Name="RmGenCompile" BeforeTargets="FixupCLCompileOptions;ClCompile" DependsOnTargets="RmGen" Condition="'$(DesignTimeBuild)' != 'true'">
     <MakeDir Directories="$(IntDir)generated" />
     <ItemGroup>
       <ClCompile Include="$(RmGenOut)*.cpp">
