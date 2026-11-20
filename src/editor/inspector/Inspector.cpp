@@ -737,6 +737,18 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 if (picked >= 0 && picked != b.mode && b.setMode) b.setMode(picked);
                 x.y += 34;
             }
+            if (!b.presets.empty()) {
+                // Ready-made values: a row as a field's - its name, and a drop-down whose rows set them.
+                const Rect row{x.view.x, x.y, x.view.w, kRow};
+                const Rect labelR{row.x + 12, row.y, x.labelW, row.h};
+                const Rect valueR{row.x + 12 + x.labelW + 8, row.y + 3, std::max(40.f, row.w - x.labelW - 34), row.h - 6};
+                c.P().Text(labelR, b.presetLabel, Text(12, theme::TextDim));
+                if (w::ComboBox(c, "preset", valueR, Tr(L"選ぶと、すぐその値に"), c.InputEnabled()).clicked) {
+                    x.st.menuActions = b.presets;
+                    x.st.menu.OpenAt(valueR.x, valueR.Bottom() + 2);
+                }
+                x.y += kRow + 6;
+            }
             if (b.type && b.object) {
                 x.fieldMenu = b.fieldMenu ? &b.fieldMenu : nullptr;
                 FieldPath prefix;

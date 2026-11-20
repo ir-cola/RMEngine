@@ -1009,6 +1009,7 @@ private:
             }
             if (!frame.surface) frame.surface = add.surface;
             if (frame.solids.empty()) frame.solids = add.solids;
+            if (!(frame.fog.a > 0)) frame.fog = add.fog;
         }
         bool moving = false;
         for (const auto& d : pic.drawers) {

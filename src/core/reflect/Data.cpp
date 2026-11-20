@@ -169,6 +169,14 @@ double SanitizeNumber(const FieldDesc& f, double v, double fallback) {
     if (!std::isfinite(v) || (floats && std::fabs(v) > static_cast<double>(std::numeric_limits<float>::max()))) v = fallback;
     if (f.hasMin) v = std::max(v, f.min);
     if (f.hasMax) v = std::min(v, f.max);
+    if (floats && f.decimals >= 0) {
+        // Decimals=N: the rest cut off (toward zero - 12.39 is 12.3), then within Min / Max again. (A hair
+        // added first: 0.3 is 0.29999... as a float, which must stay 0.3.)
+        const double scale = std::pow(10.0, std::min(f.decimals, 9));
+        v = std::trunc(v * scale + (v >= 0 ? 1e-6 : -1e-6)) / scale;
+        if (f.hasMin) v = std::max(v, f.min);
+        if (f.hasMax) v = std::min(v, f.max);
+    }
     if (f.value.type == FieldType::Int || (f.array && f.array->element.type == FieldType::Int)) {
         v = std::round(v);
         v = std::clamp(v, static_cast<double>(std::numeric_limits<int>::min()),
@@ -196,6 +204,13 @@ std::optional<double> NumberFromInput(const FieldDesc& f, std::string_view text,
 std::string FormatNumber(const FieldDesc& f, double v) {
     const bool isInt = f.value.type == FieldType::Int || (f.array && f.array->element.type == FieldType::Int);
     if (isInt) return std::to_string(static_cast<long long>(v));
+    if (f.decimals >= 0 && std::isfinite(v)) {
+        // Decimals=N: always that many ("12.0"), cut off as SanitizeNumber keeps it.
+        const int d = std::min(f.decimals, 9);
+        const double scale = std::pow(10.0, d);
+        const double cut = std::trunc(v * scale + (v >= 0 ? 1e-6 : -1e-6)) / scale;
+        return std::format("{:.{}f}", cut == 0 ? 0.0 : cut, d);
+    }
     char buf[64];
     const auto r = std::to_chars(buf, buf + sizeof(buf), static_cast<float>(v));
     return std::string(buf, r.ptr);

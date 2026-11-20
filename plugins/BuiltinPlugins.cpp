@@ -15,6 +15,7 @@
 #include "rm_engine/game_x_particles/editor/Connector.h"
 #include "rm_engine/game_x_particles/runtime/Id.h"
 #include "rm_engine/particles_x_physics/runtime/Id.h"
+#include "rm_engine/weather/editor/Register.h"
 #include "rm_engine/weather/runtime/Id.h"
 #include "rm_engine/weather_x_physics/runtime/Id.h"
 #include "rm_engine/game_production/editor/GameSoftware.h"
@@ -46,7 +47,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {particles::kPluginId, nullptr},
         {game_x_particles::kPluginId, &game_x_particles::RegisterEditor},
         {particles_x_physics::kPluginId, nullptr},
-        {weather::kPluginId, nullptr},  // (its runtime part registers everything)
+        {weather::kPluginId, &weather::RegisterEditor},
         {weather_x_physics::kPluginId, nullptr},
         {space3d::kPluginId, &space3d::RegisterEditor},
         {game_x_3d::kPluginId, &game_x_3d::RegisterEditor},

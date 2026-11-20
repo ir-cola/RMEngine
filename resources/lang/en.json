@@ -451,5 +451,6 @@
   "ファイル {}  ·  変更 {}": "File {}  ·  modified {}",
   "{} x {} ピクセル": "{} x {} pixels",
   "ヒエラルキー": "Hierarchy",
-  "このソフトにはデバッグの項目がありません": "This software has nothing in the debug menu"
+  "このソフトにはデバッグの項目がありません": "This software has nothing in the debug menu",
+  "選ぶと、すぐその値に": "Pick one to set it at once"
 }

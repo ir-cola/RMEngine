@@ -21,6 +21,8 @@
 //
 // Every field of a reflected struct must be RM_PROPERTY or RM_TRANSIENT (error RM0001).
 // RM_PROPERTY attributes: Edit, ReadOnly, Label="", Tooltip="", Min=, Max=, Step= (numbers only),
+// Decimals=1 (float, vectors, colours: kept to that many decimals - the rest cut off, not rounded - and
+// shown with them: "12.3"),
 // AssetKind="model" / "image,model" (AssetRef only: the kinds of file it takes - core/asset),
 // ShowIf="kind=Show|Hide" / "useMin" / "!loop" (& for both): the inspector shows the field only when
 // another field of the same struct is one of those items / on / off (FieldShown, Data.h) - the fields
@@ -108,6 +110,7 @@ struct FieldDesc {
     const char* assetKinds = nullptr;  // AssetRef: AssetKind="..." (null: any file)
     const StringAccess* stringAccess = nullptr;  // String of another module (scripts): ReadString / WriteString
     const char* showIf = nullptr;  // ShowIf="..." (null: always shown)
+    int decimals = -1;             // Decimals=N: kept to N decimals, the rest cut off (-1: as it is)
 
     const void* Get(const void* object) const { return access(const_cast<void*>(object)); }
     void* Get(void* object) const { return access(object); }

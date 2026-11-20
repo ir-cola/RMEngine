@@ -21,31 +21,31 @@ Weather* WeatherOf(void* ctx) {
     return w && w->scene ? w->scene->Setting<Weather>() : nullptr;
 }
 
-int SetWeather(void* ctx, int kind, float seconds) {
+int SetWeather(void* ctx, int preset, float seconds) {
     Weather* w = WeatherOf(ctx);
-    if (!w || kind < 0 || kind > 3) return 0;
+    if (!w || preset < 0 || preset >= kWeatherPresets) return 0;
     BeginFade(*w, seconds);
-    w->kind = static_cast<WeatherKind>(kind);
+    ApplyPreset(*w, static_cast<WeatherPreset>(preset));
     return 1;
 }
 
-int WeatherSet(void* ctx) {
-    const Weather* w = WeatherOf(ctx);
-    return w ? static_cast<int>(w->kind) : -1;
-}
+int HasWeather(void* ctx) { return WeatherOf(ctx) ? 0 : -1; }
 
 int SetValue(void* ctx, int which, float value, float seconds) {
     Weather* w = WeatherOf(ctx);
     if (!w || !std::isfinite(value)) return 0;
-    if (which < 0 || which > 6 || which == 5) return 0;
-    if (which <= 4) BeginFade(*w, seconds);  // (雷: at once)
+    if (which < 0 || which > 8 || which == 7) return 0;
+    if (which <= 4) BeginFade(*w, seconds);  // (雪を降らせる, 雷, 積もる高さ: at once - snow comes in slowly by itself)
+    auto amount = [](float v) { return std::trunc(std::clamp(v, 0.f, 100.f) * 10.f + 1e-4f) / 10.f; };  // (as the inspector keeps it: tenths)
     switch (which) {
-        case 0: (w->kind == WeatherKind::Clear ? w->clearClouds : w->cloudiness) = std::clamp(value, 0.f, 1.f); break;
-        case 1: w->rain = std::clamp(value, 0.f, 1.f); break;
-        case 2: w->snow = std::clamp(value, 0.f, 1.f); break;
+        case 0: w->cloudAmount = amount(value); break;
+        case 1: w->rainAmount = amount(value); break;
+        case 2: w->snowAmount = amount(value); break;
         case 3: w->windDirection = std::fmod(value, 360.f); break;  // (a fade turns it the short way: NowOf blends the vector)
         case 4: w->windStrength = std::clamp(value, 0.f, 100.f); break;
+        case 5: w->snowing = value != 0; break;
         case 6: w->lightning = value != 0; break;
+        case 8: w->snowDepth = std::clamp(value, 0.f, kMostSnowDepth); break;
         default: break;
     }
     return 1;
@@ -54,19 +54,11 @@ int SetValue(void* ctx, int which, float value, float seconds) {
 int GetValue(void* ctx, int which, int now, float* out) {
     const Weather* w = WeatherOf(ctx);
     if (!w || !out) return 0;
-    const WeatherNow n = now ? NowOf(*w) : TargetOf(*w);
+    const WeatherNow n = NowOf(*w);
     switch (which) {
-        case 0: {
-            if (!now) {
-                *out = w->kind == WeatherKind::Clear ? w->clearClouds : w->cloudiness;
-            } else {  // (a mix: each weather's own amount by its share)
-                const float clear = n.weight[static_cast<int>(WeatherKind::Clear)];
-                *out = n.clearClouds * clear + n.cloudiness * (1 - clear);
-            }
-            return 1;
-        }
-        case 1: *out = now ? RainNow(n) : w->rain; return 1;
-        case 2: *out = now ? SnowNow(n) : w->snow; return 1;
+        case 0: *out = now ? n.clouds * 100.f : w->cloudAmount; return 1;
+        case 1: *out = now ? RainNow(n) * 100.f : w->rainAmount; return 1;
+        case 2: *out = now ? SnowNow(n) * 100.f : w->snowAmount; return 1;
         case 3: {
             if (!now) {
                 *out = w->windDirection;
@@ -77,8 +69,10 @@ int GetValue(void* ctx, int which, int now, float* out) {
             return 1;
         }
         case 4: *out = now ? std::sqrt(n.windX * n.windX + n.windZ * n.windZ) : w->windStrength; return 1;
+        case 5: *out = now ? SnowInOf(*w) : (w->snowing ? 1.f : 0.f); return 1;
         case 6: *out = w->lightning ? 1.f : 0.f; return 1;
         case 7: *out = WetnessOf(WetNow(*w)); return 1;
+        case 8: *out = now ? SnowCoverNow(*w) : w->snowDepth; return 1;
         default: return 0;
     }
 }
@@ -89,7 +83,7 @@ float Fading(void* ctx) {
     return std::clamp(w->fadeElapsed / w->fadeSeconds, 0.f, 1.f);
 }
 
-constexpr RmWeatherApi kTable{&SetWeather, &WeatherSet, &SetValue, &GetValue, &Fading};
+constexpr RmWeatherApi kTable{&SetWeather, &HasWeather, &SetValue, &GetValue, &Fading};
 
 }  // namespace
 

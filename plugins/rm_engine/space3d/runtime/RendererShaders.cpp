@@ -16,7 +16,13 @@ cbuffer Frame : register(b0) {
     float4x4 viewProj;
     float4x4 lightViewProj;  // ShadowVS: world -> the shadow map being drawn (x, y -1..1, depth 0..1)
     float4 eye;              // xyz: where the camera is (world)
+    float4 fog;              // rgb: its colour (linear); a: how thick (per metre; 0: none) - RenderFrame::fog
 };
+// The fog (RenderFrame::fog): the farther, the more of its colour (linear, before ToScreen).
+float3 Fogged(float3 c, float3 wpos) {
+    if (fog.a <= 0) return c;
+    return lerp(fog.rgb, c, exp(-fog.a * distance(wpos, eye.xyz)));
+}
 // Every thing's and material's numbers of the frame, written once a frame (Renderer3D.cpp's things_).
 // A draw says where its thing and its material are (DRAW: x, y, in float4s):
 //   a thing:    world (4 columns), normalWorld (3 columns: the inverse transpose of world - normals
@@ -256,7 +262,7 @@ float4 MeshPS(MeshOut i) : SV_Target {
     Surface(base.rgb, rough, metal, i.wpos, shape);  // a plugin's touch (RenderFrame::surface: 天候's 濡れ)
     rough = clamp(rough, 0.04, 1);
     float3 glow = emissive.rgb * (emissive.w > 0.5 ? emissionMap.Sample(baseSampler, i.uv).rgb : float3(1, 1, 1));
-    float3 rgb = ToScreen(Shade(base.rgb, metal, rough, n, toEye, i.wpos) + glow);
+    float3 rgb = ToScreen(Fogged(Shade(base.rgb, metal, rough, n, toEye, i.wpos) + glow, i.wpos));
     // Selected: the edges (where the surface turns away from the eye) glow, the colours stay.
     return float4(lerp(rgb, highlight.rgb, rim), base.a);
 }

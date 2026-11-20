@@ -1,11 +1,12 @@
 // RMWeather.h - the scene's weather for scripts (the plugin 天候 gives it): change it at once or faded
-// over some seconds.
+// over some seconds. Amounts are 0 .. 100, as the inspector shows them.
 //
 //   #include "RMWeather.h"
-//   rm::Sky::SetWeather(rm::Weather::Rain, 10.0f);   // clouds come, then the rain, over 10 seconds
-//   rm::Sky::SetRain(1.0f, 5.0f);                     // heavier rain, over 5 seconds
+//   rm::Sky::SetWeather(rm::Weather::Rain, 10.0f);    // clouds come, then the rain, over 10 seconds
+//   rm::Sky::SetRain(100.0f, 5.0f);                    // a storm's rain, over 5 seconds
+//   rm::Sky::SetSnowing(true);                         // snow comes in (over about 10 seconds)
 //   rm::Sky::SetWind(90.0f, 12.0f, 3.0f);              // to the left (-X), 12 m/s, over 3 seconds
-//   float falling = rm::Sky::RainNow();               // how much rain falls this moment (0 .. 1)
+//   float falling = rm::Sky::RainNow();                // how much rain falls this moment (0 .. 100)
 //
 // (The sky's 時刻 is RM3D.h's rm::Sky::SetHour.) Without the plugin, or a scene without 天候: nothing
 // happens and the getters give zeros.
@@ -16,9 +17,11 @@
 
 namespace rm {
 
-// The four weathers (the inspector's 天候 → 天気).
-enum class Weather { Clear = 0, Cloudy = 1, Rain = 2, Snow = 3 };
-
+// The ready-made weathers (the inspector's 天候 → テンプレート): each sets 雲の量, 雨の量, 雪, 雷 and the
+// wind's strength.
+enum class Weather {
+    Clear = 0, Fair, Cloudy, Sprinkle, Drizzle, Rain, Downpour, Storm, LightSnow, Snow, HeavySnow, Blizzard,
+};
 // seconds: how long the change takes (0: at once) - eased in and out, from the weather of the moment.
 namespace Sky {
 namespace detail {
@@ -41,22 +44,23 @@ inline bool HasWeather() { return detail::ApiWeather() && detail::ApiWeather()->
 inline void SetWeather(Weather weather, float seconds = 0) {
     if (const RmWeatherApi* s = detail::ApiWeather()) s->setWeather(Api()->ctx, static_cast<int>(weather), seconds);
 }
-inline Weather GetWeather() {
-    const RmWeatherApi* s = detail::ApiWeather();
-    const int w = s ? s->weather(Api()->ctx) : 0;
-    return w >= 0 && w <= 3 ? static_cast<Weather>(w) : Weather::Clear;
-}
-// 雲の量 of the weather set (晴れ has its own): 0 .. 1.
+// 雲の量 (0 .. 100: few - fair, many - cloudy; rain darkens them).
 inline void SetClouds(float amount, float seconds = 0) { detail::SetWeatherValue(0, amount, seconds); }
 inline float Clouds() { return detail::WeatherValue(0, 0, 0); }
-// 雨の量 / 雪の量 (0 .. 1): how much falls while it rains / snows.
+// 雨の量 / 雪の量 (0 .. 100). 雪の量 falls while 雪を降らせる is on (SetSnowing).
 inline void SetRain(float amount, float seconds = 0) { detail::SetWeatherValue(1, amount, seconds); }
 inline void SetSnow(float amount, float seconds = 0) { detail::SetWeatherValue(2, amount, seconds); }
 inline float Rain() { return detail::WeatherValue(1, 0, 0); }
 inline float Snow() { return detail::WeatherValue(2, 0, 0); }
-// What falls this moment (0 .. 1: none while the weather is another, part of it during a fade).
+// 雪を降らせる: the snow (and its sky) comes in - or goes - over about 10 seconds.
+inline void SetSnowing(bool on) { detail::SetWeatherValue(5, on ? 1.0f : 0.0f, 0); }
+inline bool Snowing() { return detail::WeatherValue(5, 0, 0) != 0; }
+// What falls this moment (0 .. 100: part of it during a fade or while snow comes in).
 inline float RainNow() { return detail::WeatherValue(1, 1, 0); }
 inline float SnowNow() { return detail::WeatherValue(2, 1, 0); }
+// 積もる高さ (m), and how deep the snow lies now (m).
+inline void SetSnowDepth(float metres) { detail::SetWeatherValue(8, metres, 0); }
+inline float SnowLying() { return detail::WeatherValue(8, 1, 0); }
 // 風: where it blows to (degrees, seen from above: 0 to the front -Z, 90 to the left -X) and how
 // strong (m/s). The clouds drift with it, the rain and the snow slant.
 inline void SetWind(float directionDegrees, float strength, float seconds = 0) {

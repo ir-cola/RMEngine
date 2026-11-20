@@ -1821,7 +1821,7 @@ private:
                                        },
                                        Utf8ToWide(TrU8(c.value.Type()->label)), {}, {}};
                 b.direct = play;  // (Play: the copy that plays, changed in place)
-                if (const SceneSettingLook* look = SettingLookOf(type); look && look->menu) {
+                if (const SceneSettingLook* look = SettingLookOf(type); look && (look->menu || look->presets)) {
                     SceneSettingMenuHost mh;
                     mh.host = &host_;
                     mh.play = play;
@@ -1830,7 +1830,18 @@ private:
                             if (Component* s = scene_.FindSetting(type); s && s->Known()) change(s->value.Get());
                         });
                     };
-                    b.menu = look->menu(mh);
+                    mh.apply = [this, type, play, edit = mh.edit](std::string label, std::function<void(void*)> change) {
+                        if (!play) {
+                            edit(std::move(label), std::move(change));
+                        } else if (Component* s = Shown().FindSetting(type); s && s->Known()) {
+                            change(s->value.Get());  // (the copy that plays: at once, back at ■)
+                        }
+                    };
+                    if (look->menu) b.menu = look->menu(mh);
+                    if (look->presets) {
+                        b.presets = look->presets(mh);
+                        b.presetLabel = look->presetLabel ? look->presetLabel() : std::wstring();
+                    }
                 }
                 blocks.push_back(std::move(b));
             }

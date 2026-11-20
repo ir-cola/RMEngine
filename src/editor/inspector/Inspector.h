@@ -99,6 +99,10 @@ struct Block {
     std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
     // Only these fields of the type (by their names; a window that shows a big type in tabs); empty: all.
     std::vector<std::string> fields;
+    // Ready-made values set at once (天候's 快晴 / 雨 / 嵐 ...): a row above the fields - its name and a
+    // drop-down of these; a row picked runs (the caller puts it in its history). Empty: no row.
+    std::wstring presetLabel;
+    std::vector<w::Action> presets;
 };
 
 // Per inspector: text being typed, the open drop-down / menu, folded blocks.

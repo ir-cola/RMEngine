@@ -71,6 +71,7 @@ struct FrameAdditions {
     std::span<const uint8_t> mapMovingOnly;  // RenderFrame::mapMovingOnly
     const space3d::SurfaceTouch* surface = nullptr;
     std::span<const space3d::ExtraDraw> solids;  // RenderFrame::solids (天候: the snow lying)
+    Color fog{0, 0, 0, 0};                       // RenderFrame::fog (天候: a downpour; a = 0: none)
 };
 
 class WorldDrawer {

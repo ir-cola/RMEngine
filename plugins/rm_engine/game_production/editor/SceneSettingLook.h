@@ -29,12 +29,18 @@ struct SceneSettingMenuHost {
     // Changes the setting of the open scene: `change` gets it (a value of the look's type) and may
     // change any of its fields - one undo entry named `label` (UTF-8, Japanese).
     std::function<void(std::string label, std::function<void(void* setting)> change)> edit;
+    // The same, and in Play the copy that plays, at once (nothing to undo: it goes back at ■).
+    std::function<void(std::string label, std::function<void(void* setting)> change)> apply;
 };
 
 struct SceneSettingLook {
     const reflect::TypeDesc& (*type)();
     // The rows of the block's ⋮ menu (none: no menu).
     std::vector<editor::w::Action> (*menu)(const SceneSettingMenuHost& host) = nullptr;
+    // Ready-made values set at once (天候's テンプレート): a row above its fields named presetLabel(), a
+    // drop-down of these rows (each changes the setting through host.apply). None: no row.
+    std::vector<editor::w::Action> (*presets)(const SceneSettingMenuHost& host) = nullptr;
+    std::wstring (*presetLabel)() = nullptr;
 };
 
 }  // namespace rm::game_production

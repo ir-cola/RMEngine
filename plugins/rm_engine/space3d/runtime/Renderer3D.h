@@ -216,6 +216,10 @@ struct RenderFrame {
     bool shadows = false;  // the lights' shadows (Lighting.h says which lights have them)
     Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
     std::span<const ExtraDraw> extras;  // in this order (ExtraDraw)
+    // A fog over the models (天候's downpour / snowstorm): rgb its colour (linear), a how thick (per
+    // metre: exp(-a x distance) of a thing is left; 0: none). A shader made from RendererShaderText
+    // has it as Fogged(colour, wpos).
+    Color fog{0, 0, 0, 0};
     // What plugins draw as solid things (天候's snow lying on the ground): right after the models,
     // depth-tested and writing depth (what is see-through, behind or in front, comes after). The models'
     // lighting is still bound for the pixel shader - b0 .. b2 (the frame, the lights, the shadows), t0 /

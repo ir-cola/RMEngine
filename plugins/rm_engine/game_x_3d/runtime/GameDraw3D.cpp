@@ -176,6 +176,7 @@ public:
                 }
                 if (!frame.surface) frame.surface = add.surface;
                 if (frame.solids.empty()) frame.solids = add.solids;
+                if (!(frame.fog.a > 0)) frame.fog = add.fog;
             }
             for (const auto& d : drawers_) d->Prepare(wf, extras_);
         }

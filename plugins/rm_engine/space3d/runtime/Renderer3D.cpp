@@ -29,6 +29,7 @@ struct FrameConstants {
     float viewProj[16];
     float lightViewProj[16];
     float eye[4];
+    float fog[4];  // rgb: its colour (linear); a: how thick (per metre)
 };
 static_assert(sizeof(FrameConstants) % 16 == 0);
 
@@ -1182,6 +1183,9 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     FrameConstants fc{};
     CopyMatrix(fc.viewProj, viewProj);
     fc.eye[0] = eye.x, fc.eye[1] = eye.y, fc.eye[2] = eye.z;
+    if (f.fog.a > 0 && std::isfinite(f.fog.a)) {
+        fc.fog[0] = f.fog.r, fc.fog[1] = f.fog.g, fc.fog[2] = f.fog.b, fc.fog[3] = std::min(f.fog.a, 10.f);
+    }
     ctx->UpdateSubresource(s.lights.Get(), 0, nullptr, &lights.block, 0, 0);
     ctx->UpdateSubresource(s.shadows.Get(), 0, nullptr, &sc, 0, 0);
     ctx->UpdateSubresource(s.directionCb.Get(), 0, nullptr, &dm, 0, 0);

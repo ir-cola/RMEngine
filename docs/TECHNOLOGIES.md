@@ -982,10 +982,18 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **工夫** — 入れるのは標準ライブラリだけ: エンジンのヘッダーを入れると、それを変えるたびに作り直しになってかえって遅い。`windows.h` や Direct3D を入れると全部のファイルが Windows を見られてしまい、層の柵 (`layers.txt`: ランタイムは OS やエディターを知らない) が include の行から読めなくなる。使うのはエンジン本体 (RM_Engine) とテスト (RMTests) だけ: ゲームキット (RMGameKit) の .obj はゲームのライブラリになるので、ゲームのリンクにヘッダーの .obj まで要ることになる。rmgen が作るファイルも同じ設定でコンパイルされるよう、追加を `FixupCLCompileOptions` の前にした (`src/RM.Reflect.targets`。後だと、並べたコンパイルで .pch ができる前に読みに行って失敗した)
 - **どこ** — `src/base/pch/StdPch.h`・`StdPch.cpp`・`src/RM.Pch.props` (RM_Engine.vcxproj と RMTests.vcxproj が読む)・`src/RM.Reflect.targets`
 
+### 天候を数値で持つ・テンプレート・小数の桁・霧
+- **何か** — 天候は「晴れ / くもり / 雨 / 雪」を選ぶのをやめ、雲の量・雨の量・雪の量 (0〜100) と「雪を降らせる」で持つ。空の見た目 (雲の覆い・暗さ・かすみ・日の通り方) は量から計算する式 1 本 (雨は雲を暗く、雪は淡くかすませる。雨か雪があれば雲が出る)。**テンプレート**は値の組 (快晴〜嵐・小雪〜吹雪) で、選ぶと欄にまとめて書く (インスペクターの新しい「テンプレートの行」: `InspectBlock::presets`。シーンの設定の見え方 `SceneSettingLook::presets` から出し、Undo 1 つ。Play 中は動いているコピーにすぐ)。雪の入り・抜けは Play 中だけ時間で進む値 (`snowIn`、10 秒) にして、一瞬で変わらない
+- **小数の桁** — データの定義の属性 `Decimals=1` を足した (rmgen が読み、`FieldDesc::decimals`)。保存・読み込み・インスペクター・スクリプトのどこから入っても同じ関数 (`SanitizeNumber`) で小数第 1 位より下を**切り捨て** (0.3 は float では 0.29999… なので、ごく小さい数を足してから切る)、表示も `FormatNumber` で常に 1 桁 ("20.0")
+- **雨粒の見た目** — 雨の強さを頂点シェーダーに渡し、筋の長さ・太さ・濃さ・撥ねの大きさを強さの式で変える (弱いと大粒がまばら、強いと長く太い筋)。数は強さの 1.4 乗 (少ない量は本当に少なく、100 に向かって急に増える)
+- **霧** — 描画の一般の口 `RenderFrame::fog` (色と、1 m あたりの濃さ) を足した。モデルを塗るシェーダーは光を当てたあと `exp(-濃さ × 距離)` で霧の色へ混ぜる (`Fogged`)。天候はどしゃぶり・吹雪で霧を出し、嵐では 5 m 先がほぼ見えない
+- **どこ** — `plugins/rm_engine/weather/runtime/Weather.*` (`ApplyPreset`・`FogOf`・`SkyWeatherOf`)・`weather/editor/Register.cpp` (テンプレートの行)・`src/core/reflect/Reflect.h` / `Data.cpp` / `tools/rmgen/Scanner.cpp` (`Decimals`)・`src/editor/inspector/Inspector.cpp` (テンプレートの行)・`space3d/runtime/RendererShaders.cpp` (`Fogged`)・`Falling.cpp` (雨粒)
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-20 | 天候を数値で持つ・テンプレートの行・データの小数の桁 (Decimals)・雨の強さで変わる雨粒・霧 (RenderFrame::fog) を足した |
 | 2026-11-20 | 積雪を作り直した (向きごとの雪の層・こんもりした形・吹き込み)・足跡 (ピンポンのテクスチャ・トーラス状のアドレス・動く物だけの地図) を足した |
 | 2026-11-20 | 積雪 (向きの地図から作る高さの地図・頂点の番号から作る格子・NaN で三角形を消す)・描画の口 solids を足した |
 | 2026-11-20 | 濡れのしみこみ (陰へしみこむ距離を時間で伸ばし、その円の中が開いていれば濡らす) を足した |

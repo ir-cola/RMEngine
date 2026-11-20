@@ -15,7 +15,7 @@ cbuffer Fall : register(b4) {
     float4 eye;          // xyz: where the camera is
     float4 precipInfo;   // x: 0 rain / 1 snow, y: seconds, z: the box's side, w: its 向きの地図 (-1: none)
     float4 precipLight;  // rgb: what lights them (linear)
-    float4 camRight;     // xyz: the camera's right (world)
+    float4 camRight;     // xyz: the camera's right (world); w: how heavy the rain is (0 .. 1)
     float4 camUp;        // xyz: the camera's up
     float4 precipWind;   // xy: the wind now (m/s, world x z); zw: how far it has carried them
     float4 precipFall;   // x: the least fall (m/s), y: how much faster each may be, z: how much of the wind takes it (Falling.h's FallOf)
@@ -88,15 +88,20 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
             return o;
         }
         float k = since / 0.14;
-        float r = 0.02 + 0.06 * k;  // (small: a drop's splash, wind or not)
+        float r = (0.02 + 0.06 * k) * (0.6 + 0.8 * camRight.w);  // (small: a drop's splash, wind or not; bigger in heavy rain)
         w = hit - dir * 0.015 + (camRight.xyz * q.x + float3(0, 0.45, 0) * (q.y + 1)) * r;
         o.fade *= 1 - k;
         o.splash = 1;
     } else {
-        // A thin streak behind it along the way it falls (the wind slants it), turned to face the eye.
+        // A streak behind it along the way it falls (the wind slants it), turned to face the eye. How it
+        // looks goes with how heavy the rain is: a few big drops (ぽつぽつ), short fine ones (小雨), longer
+        // (雨), long heavy streaks (どしゃぶり, 嵐).
+        float heavy = camRight.w;
+        float big = 1 - smoothstep(0.03, 0.12, heavy);
         float3 side = normalize(cross(dir, rel + float3(1e-4, 0, 1e-4)));
-        float len = 0.35 + seed.x * 0.25;
-        w += side * q.x * (0.004 + dist * 0.0006) - dir * (q.y * 0.5 + 0.5) * len;
+        float len = lerp(0.14 + 0.95 * heavy * heavy, 0.16, big) + seed.x * (0.1 + 0.35 * heavy);
+        float width = lerp(0.0025 + 0.0035 * heavy, 0.006, big);
+        w += side * q.x * (width + dist * 0.0006) - dir * (q.y * 0.5 + 0.5) * len;
     }
     o.pos = mul(viewProj, float4(w, 1));
     return o;
@@ -121,7 +126,8 @@ float4 FallPS(PrecipOut i) : SV_Target {
         float r = length(i.uv * float2(1, 1.6) - float2(0, 0.6));  // a flat ring, seen from the side
         a = saturate(1 - abs(r - 0.65) * 4) * 0.45 + saturate(1 - r * 3) * 0.2;
     } else {
-        a = snow ? saturate((1 - length(i.uv)) * 2.5) * 0.9 : (1 - abs(i.uv.x)) * (0.55 - 0.25 * i.uv.y * i.uv.y) * 0.45;
+        float heavy = camRight.w, big = 1 - smoothstep(0.03, 0.12, heavy);
+        a = snow ? saturate((1 - length(i.uv)) * 2.5) * 0.9 : (1 - abs(i.uv.x)) * (0.55 - 0.25 * i.uv.y * i.uv.y) * lerp(0.32 + 0.4 * heavy, 0.6, big);
     }
     return float4(ToScreen(precipLight.rgb * (snow ? 1.0 : 0.85)), saturate(a) * i.fade);
 }
@@ -412,7 +418,7 @@ float4 SnowLayerPS(SnowOut i) : SV_Target {
     float3 n = normalize(i.nrm);
     float3 v = normalize(eye.xyz - i.wpos);
     float grain = (WetNoise(i.wpos.xz * 40) - 0.5) * 0.05;  // (a little uneven: not plastic)
-    return float4(ToScreen(Shade(kSnowWhite + grain, 0, 0.75, n, v, i.wpos)), 1);
+    return float4(ToScreen(Fogged(Shade(kSnowWhite + grain, 0, 0.75, n, v, i.wpos), i.wpos)), 1);
 }
 )";
 
@@ -511,9 +517,10 @@ SnowTrailConstants SnowTrailOf(Vec3 eye, uint32_t count, float fill, int upMap) 
 }
 
 uint32_t PrecipitationCount(const Precipitation& p) {
-    const float amount = p.amount > 1.f ? 1.f : p.amount < 0.f ? 0.f : p.amount;
-    const uint32_t most = p.kind == Precipitation::Kind::Rain ? kMaxRaindrops : kMaxSnowflakes;
-    return static_cast<uint32_t>(amount * static_cast<float>(most) + 0.5f);
+    const float amount = std::isfinite(p.amount) ? std::clamp(p.amount, 0.f, 1.f) : 0.f;
+    const bool rain = p.kind == Precipitation::Kind::Rain;
+    const float share = std::pow(amount, rain ? 1.4f : 1.2f);
+    return static_cast<uint32_t>(share * static_cast<float>(rain ? kMaxRaindrops : kMaxSnowflakes) + 0.5f);
 }
 
 FallSpeed FallOf(Precipitation::Kind kind) {

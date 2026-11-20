@@ -21,21 +21,23 @@ namespace rm::weather {
 struct Precipitation {
     enum class Kind : uint8_t { Rain, Snow };
     Kind kind = Kind::Rain;
-    float amount = 0;              // 0 .. 1: none .. kMaxRaindrops / kMaxSnowflakes
+    float amount = 0;              // 0 .. 1: none .. kMaxRaindrops / kMaxSnowflakes (rain: also how heavy each drop looks)
     float seconds = 0;             // the time they fall by (still: they hang where they are)
     Color light{1, 1, 1, 1};       // what lights them (linear)
     float windX = 0, windZ = 0;    // the wind now (m/s, world)
     float driftX = 0, driftZ = 0;  // how far the wind has carried them (world units)
     int map = -1;                  // the 向きの地図 of the way they fall (-1: none - nothing to hit)
 };
-inline constexpr uint32_t kMaxRaindrops = 16000;
-inline constexpr uint32_t kMaxSnowflakes = 10000;
+// (2026-11-20: four times as many - the heaviest rain felt light; a storm is a wall of rain)
+inline constexpr uint32_t kMaxRaindrops = 64000;
+inline constexpr uint32_t kMaxSnowflakes = 30000;
 inline constexpr float kRainBox = 24.f;  // the box's side (world units)
 inline constexpr float kSnowBox = 18.f;
 // The wind's drift starts again from 0 this far (world units): a multiple of both boxes (they look
 // the same there), and far enough that the clouds' jump is seldom (a big storm: hours).
 inline constexpr float kDriftWrap = kRainBox * kSnowBox * 400.f;
-// How many are drawn for an amount (0 .. the most).
+// How many are drawn for an amount (0 .. the most): few for a little (a few drops: ぽつぽつ), growing
+// faster than the amount towards a storm.
 uint32_t PrecipitationCount(const Precipitation& p);
 
 // How they fall: down at least `least` m/s (each drop / flake up to `spread` faster), and `carried` of
@@ -55,7 +57,7 @@ struct FallConstants {
     float eye[4];
     float info[4];   // x: 0 rain / 1 snow, y: seconds, z: the box's side, w: its 向きの地図 (-1: none)
     float light[4];  // rgb: what lights them (linear)
-    float right[4];  // xyz: the camera's right (world)
+    float right[4];  // xyz: the camera's right (world); w: how heavy the rain is (0 .. 1: the drops' look)
     float up[4];     // xyz: the camera's up
     float wind[4];   // xy: the wind now (m/s, world x z); zw: how far it has carried them
     float fall[4];   // x: the least fall (m/s), y: how much faster each may be, z: how much of the wind takes it

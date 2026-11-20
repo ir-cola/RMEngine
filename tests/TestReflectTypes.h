@@ -37,6 +37,13 @@ struct Settings {
     RM_TRANSIENT() void* runtimeHandle = nullptr;
 };
 
+// Decimals=1: kept to tenths (the rest cut off) and shown so.
+RM_STRUCT()
+struct Tenths {
+    RM_PROPERTY(Edit, Min=0, Max=100, Decimals=1) float amount = 20.f;
+    RM_PROPERTY(Edit, Decimals=2) rm::Vec2 place{0, 0};
+};
+
 // References (base/Ref.h): saved as ids.
 RM_STRUCT()
 struct Links {

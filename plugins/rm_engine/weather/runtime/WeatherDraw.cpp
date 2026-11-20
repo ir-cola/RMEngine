@@ -48,6 +48,8 @@ public:
         const Vec3 wind{now.windX, 0, now.windZ};
         // What falls (each with the 向きの地図 of its way) and what got wet (a map for each way).
         const Color light = LightOf(f.sky);
+        // A downpour's (a snowstorm's) fog: the colour of the light in the air, a little dimmer.
+        if (const float fog = FogOf(now); fog > 0) out.fog = {light.r * 0.42f, light.g * 0.42f, light.b * 0.45f, fog};
         for (const auto kind : {Precipitation::Kind::Rain, Precipitation::Kind::Snow}) {
             Precipitation p;
             p.kind = kind;
@@ -348,6 +350,7 @@ private:
         k.light[0] = p.light.r, k.light[1] = p.light.g, k.light[2] = p.light.b;
         // The camera's right and up: the view's first two rows (m[column][row]).
         k.right[0] = dc.view.m[0][0], k.right[1] = dc.view.m[1][0], k.right[2] = dc.view.m[2][0];
+        k.right[3] = snow ? 0.f : std::clamp(p.amount, 0.f, 1.f);  // (how heavy: the drops' look)
         k.up[0] = dc.view.m[0][1], k.up[1] = dc.view.m[1][1], k.up[2] = dc.view.m[2][1];
         k.wind[0] = p.windX, k.wind[1] = p.windZ, k.wind[2] = p.driftX, k.wind[3] = p.driftZ;
         k.fall[0] = speed.least, k.fall[1] = speed.spread, k.fall[2] = speed.carried;

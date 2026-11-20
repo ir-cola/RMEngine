@@ -381,7 +381,7 @@ private:
                                          {"Label", Attr::Kind::String},    {"Tooltip", Attr::Kind::String},
                                          {"Min", Attr::Kind::Number},      {"Max", Attr::Kind::Number},
                                          {"Step", Attr::Kind::Number},     {"AssetKind", Attr::Kind::String},
-                                         {"ShowIf", Attr::Kind::String}};
+                                         {"ShowIf", Attr::Kind::String},  {"Decimals", Attr::Kind::Number}};
         static const Rule kLabelOnly[] = {{"Label", Attr::Kind::String}};
         std::span<const Rule> rules;
         if (macro == "RM_PROPERTY") {
@@ -895,6 +895,15 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
                     if ((a.key == "Min" || a.key == "Max" || a.key == "Step") && !numeric) {
                         diags.push_back({h.file, a.line, a.col, "RM0003", std::format("{} は数値・ベクトル・色だけに付けられます", a.key)});
                     }
+                    if (a.key == "Decimals") {
+                        const bool floats = numeric && base.kind != TypeRef::Kind::Int;
+                        const bool whole = a.kind == Attr::Kind::Number && a.value.size() == 1 && a.value[0] >= '0' && a.value[0] <= '6';
+                        if (!floats) {
+                            diags.push_back({h.file, a.line, a.col, "RM0003", "Decimals は float・ベクトル・色だけに付けられます"});
+                        } else if (!whole) {
+                            diags.push_back({h.file, a.line, a.col, "RM0003", std::format("Decimals={}: 0 から 6 の整数で書いてください", a.value)});
+                        }
+                    }
                     if (a.key == "AssetKind") {
                         // The names themselves (image, model ...) are core/asset's; a test checks every one is known.
                         // A key may also be a file's extension (".rmfx": core/asset KindMatches).
@@ -1061,18 +1070,22 @@ std::string EmitHeader(const std::vector<Header>& all, const Header& h) {
                 const Attr* st = attr("Step");
                 const Attr* kinds = attr("AssetKind");
                 const Attr* showIf = attr("ShowIf");
+                const Attr* decimals = attr("Decimals");
                 auto num = [](const Attr* a) { return a && a->kind == Attr::Kind::Number ? NumberLiteral(a->value) : std::string("0.0"); };
                 o += std::format(
                     "    {{.name = \"{}\", .value = {}, .access = [](void* o) -> void* {{ return &static_cast<{}*>(o)->{}; }}, .array = {},\n"
                     "     .edit = {}, .readOnly = {}, .label = {}, .tooltip = {},\n"
-                    "     .hasMin = {}, .hasMax = {}, .hasStep = {}, .min = {}, .max = {}, .step = {}, .line = {}, .assetKinds = {}, .showIf = {}}},\n",
+                    "     .hasMin = {}, .hasMax = {}, .hasStep = {}, .min = {}, .max = {}, .step = {}, .line = {}, .assetKinds = {}, .showIf = {}, .decimals = {}}},\n",
                     f.name, ValueTypeInit(f.type), cpp, f.name, f.type.kind == TypeRef::Kind::Vector ? "&A_" + id + "_" + f.name : "nullptr",
                     attr("Edit") ? "true" : "false", attr("ReadOnly") ? "true" : "false",
                     label ? "\"" + label->value + "\"" : "nullptr", tip ? "\"" + tip->value + "\"" : "nullptr",
                     mn && mn->kind == Attr::Kind::Number ? "true" : "false", mx && mx->kind == Attr::Kind::Number ? "true" : "false",
                     st && st->kind == Attr::Kind::Number ? "true" : "false", num(mn), num(mx), num(st), f.line,
                     kinds && kinds->kind == Attr::Kind::String ? "\"" + kinds->value + "\"" : std::string("nullptr"),
-                    showIf && showIf->kind == Attr::Kind::String ? "\"" + showIf->value + "\"" : std::string("nullptr"));
+                    showIf && showIf->kind == Attr::Kind::String ? "\"" + showIf->value + "\"" : std::string("nullptr"),
+                    decimals && decimals->kind == Attr::Kind::Number && decimals->value.size() == 1 && decimals->value[0] >= '0' && decimals->value[0] <= '6'
+                        ? decimals->value
+                        : std::string("-1"));
             }
             o += "};\n";
         }

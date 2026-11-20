@@ -222,6 +222,30 @@ struct A {
     CHECK(Has(bad, "RM0003", 7));
 }
 
+RM_TEST(Rmgen_Decimals) {
+    // Decimals=0 .. 6 on a float, a vector or a colour; written into the table.
+    const Result ok = Run(R"(#pragma once
+RM_STRUCT()
+struct S {
+    RM_PROPERTY(Edit, Decimals=1) float x = 0;
+    RM_PROPERTY(Edit) float y = 0;
+};
+)");
+    CHECK(ok.diags.empty());
+    const std::string out = EmitHeader(ok.headers, ok.headers[0]);
+    CHECK(out.find(".decimals = 1}") != std::string::npos && out.find(".decimals = -1}") != std::string::npos);
+    const Result bad = Run(R"(#pragma once
+RM_STRUCT()
+struct S {
+    RM_PROPERTY(Edit, Decimals=1) int i = 0;
+    RM_PROPERTY(Edit, Decimals=7) float a = 0;
+    RM_PROPERTY(Edit, Decimals=0.5) float b = 0;
+    RM_PROPERTY(Edit, Decimals=1) bool c = false;
+};
+)");
+    CHECK(Has(bad, "RM0003", 4) && Has(bad, "RM0003", 5) && Has(bad, "RM0003", 6) && Has(bad, "RM0003", 7));
+}
+
 RM_TEST(Rmgen_ShowIf) {
     // ShowIf names other fields of the same struct ("kind=A|B", "flag", "!flag", & for both).
     const Result ok = Run(R"(#pragma once

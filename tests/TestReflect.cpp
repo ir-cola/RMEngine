@@ -174,6 +174,27 @@ RM_TEST(Reflect_T3_ClampIsTheSameOnBothRoads) {
     CHECK(s.window.width == 320);
 }
 
+// Decimals=1: kept to tenths, the rest cut off (not rounded), on both roads; shown with them.
+RM_TEST(Reflect_Decimals) {
+    const TypeDesc& t = TypeOf<rmtest::Tenths>();
+    const FieldDesc& amount = FieldNamed(t, "amount");
+    CHECK(amount.decimals == 1 && FieldNamed(t, "place").decimals == 2);
+    CHECK(SanitizeNumber(amount, 12.39, 0) == 12.3 && SanitizeNumber(amount, 0.3, 0) == 0.3 && SanitizeNumber(amount, 99.99, 0) == 99.9);
+    CHECK(SanitizeNumber(amount, 150, 0) == 100 && SanitizeNumber(amount, -1, 0) == 0);
+    CHECK(SanitizeNumber(amount, static_cast<float>(0.3f), 0) == 0.3);  // (0.3 as a float is 0.29999...)
+    CHECK(FormatNumber(amount, 12.39) == "12.3" && FormatNumber(amount, 20) == "20.0" && FormatNumber(amount, 0.3f) == "0.3");
+    CHECK(FormatNumber(FieldNamed(t, "place"), -1.239) == "-1.23");
+    CHECK(SanitizeNumber(FieldNamed(t, "place"), -1.239, 0) == -1.23);  // (toward zero)
+    // The loader's road: the same.
+    rmtest::Tenths loaded;
+    json::Value v = Save(loaded);
+    v.Set("amount", 45.67);
+    Load(loaded, v);
+    CHECK(loaded.amount == 45.6f);
+    // A field without it: as it is.
+    CHECK(FieldNamed(TypeOf<Settings>(), "speed").decimals == -1 && SanitizeNumber(FieldNamed(TypeOf<Settings>(), "speed"), 3.25, 0) == 3.25);
+}
+
 RM_TEST(Reflect_WrongTypesKeepTheValue) {
     Settings s;
     json::Value v = json::Value::MakeObject();

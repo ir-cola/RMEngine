@@ -6,6 +6,7 @@
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
+#include "core/reflect/Data.h"
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/RendererShaders.h"
 #include "rm_engine/space3d/runtime/SkyShader.h"
@@ -41,9 +42,9 @@ bool Compiles(const std::string& hlsl, const char* entry, const char* target, st
     return SUCCEEDED(hr);
 }
 
-Weather Of(WeatherKind kind) {
+Weather Of(WeatherPreset preset) {
     Weather w;
-    w.kind = kind;
+    ApplyPreset(w, preset);
     return w;
 }
 
@@ -57,52 +58,95 @@ SkyLook LookWith(float hour, const Weather& w, double seconds = 0) {
 
 }  // namespace
 
-// What each weather tells the sky: less sunlight, more cloud - the more cloudy, the more so; 晴れ has
-// its own 雲の量 (the sun hardly dimmed).
+// The templates set the amounts at once (the wind's way stays); a value of a newer version: nothing.
+RM_TEST(Weather_Presets) {
+    Weather w;
+    w.windDirection = 45;
+    ApplyPreset(w, WeatherPreset::Storm);
+    CHECK(w.cloudAmount == 100.f && w.rainAmount == 100.f && !w.snowing && w.lightning && w.windStrength > 15.f && w.windDirection == 45.f);
+    ApplyPreset(w, WeatherPreset::Clear);
+    CHECK(w.cloudAmount == 0.f && w.rainAmount == 0.f && !w.lightning && w.windStrength < 2.f);
+    ApplyPreset(w, WeatherPreset::HeavySnow);
+    CHECK(w.snowing && w.snowAmount == 80.f && w.rainAmount == 0.f);
+    const Weather before = w;
+    ApplyPreset(w, static_cast<WeatherPreset>(99));
+    CHECK(w.cloudAmount == before.cloudAmount && w.snowAmount == before.snowAmount);
+    // From light to heavy, the rain only grows; every template is one (12).
+    float last = -1;
+    for (const WeatherPreset p : {WeatherPreset::Sprinkle, WeatherPreset::Drizzle, WeatherPreset::Rain, WeatherPreset::Downpour, WeatherPreset::Storm}) {
+        CHECK(Of(p).rainAmount > last);
+        last = Of(p).rainAmount;
+    }
+    CHECK(reflect::TypeOf<Weather>().fields.size() > 0 && kWeatherPresets == 12);
+    // The amounts are kept to tenths (the inspector shows "12.3"; the rest cut off).
+    const reflect::FieldDesc* rain = nullptr;
+    for (const reflect::FieldDesc& f : reflect::TypeOf<Weather>().fields) {
+        if (std::string_view(f.name) == "rainAmount") rain = &f;
+    }
+    CHECK(rain && rain->decimals == 1 && reflect::SanitizeNumber(*rain, 33.37, 0) == 33.3 && reflect::FormatNumber(*rain, 33.37) == "33.3");
+    CHECK(rain && reflect::SanitizeNumber(*rain, 120, 0) == 100);
+}
+
+// What the weather tells the sky: few clouds - fair (the sun hardly dimmed), many - cloudy; rain darkens
+// them into rain clouds (and brings clouds however few were asked); snow's are paler and hazier.
 RM_TEST(Weather_SkyLook) {
-    const SkyLook noon = LookWith(12, Of(WeatherKind::Clear));
-    Weather rainy = Of(WeatherKind::Rain);
-    const SkyLook rain = LookWith(12, rainy);
+    const SkyLook noon = LookWith(12, Of(WeatherPreset::Fair));
+    const SkyLook rain = LookWith(12, Of(WeatherPreset::Rain));
     CHECK(rain.lightStrength < noon.lightStrength * 0.5f);
     CHECK(rain.constants.param[1][0] > noon.constants.param[1][0]);
-    Weather thin = Of(WeatherKind::Cloudy), thick = thin;
-    thin.cloudiness = 0.1f;
-    thick.cloudiness = 1.f;
+    Weather thin, thick;
+    thin.cloudAmount = 10;
+    thick.cloudAmount = 100;
     CHECK(LookWith(12, thick).constants.param[1][0] > LookWith(12, thin).constants.param[1][0]);
     CHECK(LookWith(12, thick).lightStrength < LookWith(12, thin).lightStrength);
-    CHECK(Near(noon.constants.param[1][0], 0.15f));  // 晴れ: a few clouds (its own 雲の量: 0.2) - as with no 天候
-    Weather fair = Of(WeatherKind::Clear), cloudyFair = fair, few = Of(WeatherKind::Cloudy);
-    fair.clearClouds = 0;
-    cloudyFair.clearClouds = 1;
-    few.cloudiness = 0;
-    CHECK(Near(LookWith(12, fair).constants.param[1][0], 0.f) && LookWith(12, cloudyFair).constants.param[1][0] > 0.6f);
-    CHECK(LookWith(12, cloudyFair).lightStrength > noon.lightStrength * 0.75f);
-    CHECK(LookWith(12, few).constants.param[1][0] >= LookWith(12, cloudyFair).constants.param[1][0] * 0.5f);
-    CHECK(LookWith(12, few).lightStrength < LookWith(12, cloudyFair).lightStrength);
-    CHECK(LookWith(12, Of(WeatherKind::Cloudy)).lightStrength < noon.lightStrength * 0.45f);
-    CHECK(rain.lightStrength < noon.lightStrength * 0.25f && rain.ambientSky.b < noon.ambientSky.b * 0.6f);
-    // The fair sky with no 天候 at all is the same as 晴れ's 0.2.
+    CHECK(LookWith(12, thin).lightStrength > noon.lightStrength * 0.95f);  // (few clouds: the sun as it is)
+    Weather none;
+    none.cloudAmount = 0;
+    CHECK(Near(LookWith(12, none).constants.param[1][0], 0.f));
+    CHECK(LookWith(12, Of(WeatherPreset::Cloudy)).lightStrength < noon.lightStrength * 0.7f);
+    CHECK(rain.lightStrength < noon.lightStrength * 0.35f && rain.ambientSky.b < noon.ambientSky.b * 0.7f);
+    // Rain darkens the clouds: the same clouds, more rain - darker; rain from a clear sky brings clouds.
+    Weather grey = Of(WeatherPreset::Cloudy), raining = grey;
+    raining.rainAmount = 60;
+    CHECK(SkyWeatherOf(raining, 0).dark > SkyWeatherOf(grey, 0).dark + 0.2f);
+    Weather sudden;
+    sudden.cloudAmount = 0;
+    sudden.rainAmount = 50;
+    CHECK(SkyWeatherOf(sudden, 0).cover > 0.7f);
+    // Snow: paler than rain's clouds, hazier.
+    CHECK(SkyWeatherOf(Of(WeatherPreset::Snow), 0).dark < SkyWeatherOf(Of(WeatherPreset::Rain), 0).dark);
+    CHECK(SkyWeatherOf(Of(WeatherPreset::Snow), 0).haze > SkyWeatherOf(Of(WeatherPreset::Cloudy), 0).haze);
+    // The fair sky with no 天候 at all is about the same as 晴れ (20).
     Sky plain;
     plain.kind = SkyKind::Earth;
     plain.hour = 12;
-    CHECK(Near(LookOf(plain, 0).constants.param[1][0], noon.constants.param[1][0]) && Near(LookOf(plain, 0).lightStrength, noon.lightStrength, 0.01f));
-    // 雨 / 雪: what falls (none in clear or cloudy weather), as much as asked.
-    CHECK(Near(RainNow(NowOf(rainy)), 0.5f) && SnowNow(NowOf(rainy)) == 0.f);
-    Weather snow = Of(WeatherKind::Snow);
-    snow.snow = 1;
-    CHECK(SnowNow(NowOf(snow)) == 1.f && RainNow(NowOf(snow)) == 0.f);
+    CHECK(Near(LookOf(plain, 0).lightStrength, noon.lightStrength, 0.05f));
+    // What falls, as much as asked (/ 100); none without.
+    CHECK(Near(RainNow(NowOf(Of(WeatherPreset::Rain))), 0.5f) && SnowNow(NowOf(Of(WeatherPreset::Rain))) == 0.f);
+    CHECK(Near(SnowNow(NowOf(Of(WeatherPreset::Blizzard))), 1.f) && RainNow(NowOf(Of(WeatherPreset::Blizzard))) == 0.f);
     CHECK(RainNow(NowOf(thick)) == 0.f && SnowNow(NowOf(thick)) == 0.f);
-    // 濡れ before Play: as wet as the rain now makes things (twice its amount, at most 1); dry without rain.
-    const std::vector<WetWay> wet = WetNow(rainy);
+    // 雪の量 falls only with 雪を降らせる.
+    Weather off = Of(WeatherPreset::Snow);
+    off.snowing = false;
+    CHECK(SnowNow(NowOf(off)) == 0.f);
+    // A fog only in a downpour (a few metres seen at 100) or a snowstorm.
+    CHECK(FogOf(NowOf(Of(WeatherPreset::Rain))) == 0.f && FogOf(NowOf(Of(WeatherPreset::Fair))) == 0.f);
+    const float storm = FogOf(NowOf(Of(WeatherPreset::Storm)));
+    CHECK(storm > 0.4f && std::exp(-storm * 5.f) < 0.12f);  // (5 m: nearly gone)
+    CHECK(FogOf(NowOf(Of(WeatherPreset::Downpour))) > 0.f && FogOf(NowOf(Of(WeatherPreset::Downpour))) < storm);
+    CHECK(FogOf(NowOf(Of(WeatherPreset::Blizzard))) > 0.1f && FogOf(NowOf(Of(WeatherPreset::Blizzard))) < storm);
+    // 濡れ before Play: as wet as the rain now makes things; dry without rain; snow a little.
+    const std::vector<WetWay> wet = WetNow(Of(WeatherPreset::Rain));
     CHECK(wet.size() == 1 && Near(wet[0].sun, 1.f) && Near(wet[0].shade, 1.f) && wet[0].way.y < -0.9f);
-    CHECK(WetNow(Of(WeatherKind::Clear)).empty());
+    CHECK(WetNow(Of(WeatherPreset::Fair)).empty());
+    Weather snow = Of(WeatherPreset::Snow);
+    snow.windStrength = 0;
     CHECK(WetNow(snow).size() == 1 && Near(WetNow(snow)[0].sun, kSnowWet));  // (snow: a little, where it melts)
 }
 
-// 雷: now and then a flash, only while the time goes on (and only in cloudy or rainy weather).
+// 雷: now and then a flash, only while the time goes on (and only with many clouds).
 RM_TEST(Weather_Lightning) {
-    Weather storm = Of(WeatherKind::Rain);
-    storm.lightning = true;
+    Weather storm = Of(WeatherPreset::Storm);
     int flashes = 0, dark = 0;
     for (int k = 1; k < 4000; ++k) {
         const game_x_3d::SkyWeather w = SkyWeatherOf(storm, k * 0.125);
@@ -115,75 +159,60 @@ RM_TEST(Weather_Lightning) {
     }
     CHECK(flashes > 20 && dark > flashes * 10);
     CHECK(SkyWeatherOf(storm, 0).flash == 0.f);
-    Weather snowStorm = Of(WeatherKind::Snow);
-    snowStorm.lightning = true;
+    Weather fair = Of(WeatherPreset::Fair);
+    fair.lightning = true;
     bool any = false;
-    for (int k = 1; k < 4000; ++k) any = any || SkyWeatherOf(snowStorm, k * 0.125).flash > 0;
+    for (int k = 1; k < 4000; ++k) any = any || SkyWeatherOf(fair, k * 0.125).flash > 0;
     CHECK(!any);
 }
 
-// A fade of the weather (scripts' rm::Sky::SetWeather ...): from the weather of the moment to the fields' weather,
-// eased; a fade begun during another starts where that one has come; both falls while rain turns to snow.
+// A fade of the weather (scripts' rm::Sky::SetWeather ...): from the weather of the moment to the
+// fields', eased; a fade begun during another starts where that one has come.
 RM_TEST(Weather_Fade) {
-    Weather sky = Of(WeatherKind::Clear);
-    // No fade: the fields as they are.
-    CHECK(NowOf(sky).weight[0] == 1.f && NowOf(sky).weight[2] == 0.f);
+    Weather sky = Of(WeatherPreset::Fair);
+    CHECK(Near(NowOf(sky).clouds, 0.2f) && NowOf(sky).rain == 0.f);
     BeginFade(sky, 10);
-    sky.kind = WeatherKind::Rain;
-    sky.rain = 1;
-    CHECK(NowOf(sky).weight[0] == 1.f && RainNow(NowOf(sky)) == 0.f);  // not begun: still fair
+    ApplyPreset(sky, WeatherPreset::Storm);
+    CHECK(RainNow(NowOf(sky)) == 0.f && Near(NowOf(sky).clouds, 0.2f));  // not begun: still fair
     sky.fadeElapsed = 5;
     const WeatherNow half = NowOf(sky);
-    CHECK(Near(half.weight[0], 0.5f) && Near(half.weight[2], 0.5f) && Near(half.weight[0] + half.weight[1] + half.weight[2] + half.weight[3], 1.f));
-    CHECK(Near(half.rain, 0.75f) && Near(RainNow(half), 0.375f));  // (its share x the amount on its way from 0.5 to 1)
-    // Eased: slow at first.
+    CHECK(Near(half.clouds, 0.6f) && Near(half.rain, 0.5f));
     sky.fadeElapsed = 1;
-    CHECK(NowOf(sky).weight[2] < 0.1f);
-    // The look in between: between the two weathers' looks.
+    CHECK(NowOf(sky).rain < 0.1f);  // eased: slow at first
     sky.fadeElapsed = 5;
     const float midCover = SkyWeatherOf(sky, 0).cover;
-    Weather fair = Of(WeatherKind::Clear), wet = Of(WeatherKind::Rain);
-    wet.rain = 1;
-    CHECK(midCover > SkyWeatherOf(fair, 0).cover && midCover < SkyWeatherOf(wet, 0).cover);
-    CHECK(RainNow(NowOf(sky)) > 0.f && RainNow(NowOf(sky)) < 1.f);
-    // Done: the fields' weather.
+    CHECK(midCover > SkyWeatherOf(Of(WeatherPreset::Fair), 0).cover && midCover <= SkyWeatherOf(Of(WeatherPreset::Storm), 0).cover);
     sky.fadeElapsed = 10;
-    CHECK(NowOf(sky).weight[2] == 1.f && Near(RainNow(NowOf(sky)), 1.f));
+    CHECK(Near(RainNow(NowOf(sky)), 1.f) && Near(NowOf(sky).clouds, 1.f));
     // A fade begun halfway through another starts from where it had come (no jump).
     sky.fadeElapsed = 5;
     const WeatherNow before = NowOf(sky);
     BeginFade(sky, 4);
-    sky.kind = WeatherKind::Snow;
+    ApplyPreset(sky, WeatherPreset::Clear);
     const WeatherNow after = NowOf(sky);
-    CHECK(Near(after.weight[0], before.weight[0]) && Near(after.weight[2], before.weight[2]) && after.weight[3] == 0.f);
-    // Rain into snow: both fall on the way.
-    Weather turning = Of(WeatherKind::Rain);
-    BeginFade(turning, 2);
-    turning.kind = WeatherKind::Snow;
-    turning.fadeElapsed = 1;
-    CHECK(RainNow(NowOf(turning)) > 0.f && SnowNow(NowOf(turning)) > 0.f);
+    CHECK(Near(after.clouds, before.clouds) && Near(after.rain, before.rain));
     // 0 seconds: at once.
-    Weather now = Of(WeatherKind::Clear);
+    Weather now = Of(WeatherPreset::Fair);
     BeginFade(now, 0);
-    now.kind = WeatherKind::Cloudy;
-    CHECK(NowOf(now).weight[1] == 1.f);
+    now.cloudAmount = 75;
+    CHECK(Near(NowOf(now).clouds, 0.75f));
 }
 
 // 風: the direction (0 to the front -Z, + to the left) and strength as a vector; the clouds' drift and
-// the drops' slant are it; a fade turns it the short way.
+// the drops' slant are it; a fade turns it the short way. While playing: the drift adds up, a fade goes
+// on, the rain wets, 雪を降らせる comes in over about 10 seconds.
 RM_TEST(Weather_Wind) {
     CHECK(Near(WindOf(0, 2), {0, 0, -2}));
     CHECK(Near(WindOf(90, 1), {-1, 0, 0}));
     CHECK(Near(WindOf(-90, 3), {3, 0, 0}));
     CHECK(Near(WindOf(45, 0), {0, 0, 0}) && Near(WindOf(45, -1), {0, 0, 0}));
-    Weather sky = Of(WeatherKind::Rain);
+    Weather sky = Of(WeatherPreset::Rain);
     sky.windDirection = -90;
     sky.windStrength = 10;
     const game_x_3d::SkyWeather sw = SkyWeatherOf(sky, 0);
     CHECK(Near(sw.windX, 10) && Near(sw.windZ, 0));
     CHECK(FallDirection(Precipitation::Kind::Rain, {sw.windX, 0, sw.windZ}).x > 0.3f);  // the drops slant with it
-    // From 350 to 10 degrees: through 0, not round the back.
-    Weather turn = Of(WeatherKind::Clear);
+    Weather turn = Of(WeatherPreset::Fair);
     turn.windDirection = 350;
     turn.windStrength = 5;
     BeginFade(turn, 2);
@@ -191,30 +220,40 @@ RM_TEST(Weather_Wind) {
     turn.fadeElapsed = 1;
     const WeatherNow mid = NowOf(turn);
     CHECK(mid.windZ < -4.5f && std::fabs(mid.windX) < 0.1f);
-    // While playing the wind carries them: the drift adds up (and a fade goes on, and the rain wets).
     game_production::Scene scene;
     scene.SetSettingTypes({&reflect::TypeOf<Weather>()});
     Weather& s = *scene.Setting<Weather>();
-    s.kind = WeatherKind::Rain;
-    s.rain = 0.5f;
+    s.rainAmount = 50;
     s.windDirection = 90;
     s.windStrength = 4;
     game_production::SystemContext ctx{scene, 0.5f};
     RunWeather(ctx);
     CHECK(Near(s.driftX, -2.f) && Near(s.driftZ, 0.f));
     CHECK(s.wetCounted && s.wetWays.size() == 1 && Near(s.wetWays[0].sun, 0.011f));  // (Play starts dry: wetter as it rains - 0.5 s x (0.004 + 0.5 x 0.036))
-    s.kind = WeatherKind::Clear;
+    s.rainAmount = 0;
     RunWeather(ctx);
     CHECK(s.wetWays.size() == 1 && s.wetWays[0].sun < 0.011f && s.wetWays[0].sun > 0.004f);  // dries slowly
     CHECK(s.wetWays[0].shade > s.wetWays[0].sun);                                       // shade slower
     CHECK(WetNow(s).size() == 1 && Near(WetNow(s)[0].sun, s.wetWays[0].sun));
     BeginFade(s, 1);
-    s.kind = WeatherKind::Snow;
+    s.cloudAmount = 90;
     RunWeather(ctx);
     CHECK(Near(s.fadeElapsed, 0.5f));
     RunWeather(ctx);
     RunWeather(ctx);
-    CHECK(Near(s.fadeElapsed, 1.f) && NowOf(s).weight[3] == 1.f);
+    CHECK(Near(s.fadeElapsed, 1.f) && Near(NowOf(s).clouds, 0.9f));
+    // 雪を降らせる: in over about 10 seconds (the editor shows it at once), out the same.
+    Weather editor;
+    editor.snowing = true;
+    CHECK(SnowInOf(editor) == 1.f && Near(SnowNow(NowOf(editor)), 0.5f));
+    s.snowing = true;
+    RunWeather(ctx);
+    CHECK(Near(s.snowIn, 0.05f) && Near(SnowNow(NowOf(s)), 0.025f));
+    for (int k = 0; k < 30; ++k) RunWeather(ctx);
+    CHECK(s.snowIn == 1.f && Near(SnowNow(NowOf(s)), 0.5f));
+    s.snowing = false;
+    RunWeather(ctx);
+    CHECK(Near(s.snowIn, 0.95f) && SnowNow(NowOf(s)) > 0.f);
 }
 
 // 濡れ: the ways the rain fell - wetter quickly while it rains, what it reached stays wet while it
@@ -223,8 +262,6 @@ RM_TEST(Weather_Wind) {
 // snow falling alike (no wind) are one way, as wet as the wetter makes it.
 RM_TEST(Weather_SnowWets) {
     WeatherNow snowy;
-    snowy.weight[0] = 0;
-    snowy.weight[3] = 1;
     snowy.snow = 0.5f;
     std::vector<WetWay> s;
     StepWet(s, snowy, 1);  // (0.002 + 0.5 x 0.012 a second)
@@ -237,8 +274,6 @@ RM_TEST(Weather_SnowWets) {
     CHECK(Near(rained[0].sun, 1.f));  // (the rain's wet stays while it snows)
     CHECK(WetAtOnce(snowy).size() == 1 && Near(WetAtOnce(snowy)[0].sun, kSnowWet));
     WeatherNow both = snowy;
-    both.weight[2] = 0.5f;
-    both.weight[3] = 0.5f;
     both.rain = 1;
     CHECK(WetAtOnce(both).size() == 1 && Near(WetAtOnce(both)[0].sun, 1.f) && Near(WetAtOnce(both)[0].seep, kSeepRain));
     WeatherNow fair;
@@ -249,8 +284,6 @@ RM_TEST(Weather_SnowWets) {
 // 積雪: deeper while it snows, up to 積もる高さ; melts after (faster in rain); the editor shows it lying.
 RM_TEST(Weather_SnowCover) {
     WeatherNow snowy;
-    snowy.weight[0] = 0;
-    snowy.weight[3] = 1;
     snowy.snow = 1;
     float cover = StepSnowCover(0, snowy, 0.24f, 1);  // (0.24 x (0.1 + 0.9) / 240 a second)
     CHECK(Near(cover, 0.001f));
@@ -263,8 +296,6 @@ RM_TEST(Weather_SnowCover) {
     WeatherNow fair;
     CHECK(Near(StepSnowCover(0.24f, fair, 0.24f, 60), 0.228f));  // melts: about a centimetre a minute
     WeatherNow rain;
-    rain.weight[0] = 0;
-    rain.weight[2] = 1;
     rain.rain = 1;
     CHECK(Near(StepSnowCover(0.24f, rain, 0.24f, 60), 0.108f));  // faster in rain
     CHECK(StepSnowCover(0.01f, fair, 0.24f, 1000) == 0.f);
@@ -289,11 +320,12 @@ RM_TEST(Weather_SnowCover) {
     CHECK(ways.empty());  // (dry and melted: gone)
     // As a picture shows it: the editor - all of it lying, the way it falls; Play - as counted.
     Weather w;
-    w.kind = WeatherKind::Snow;
+    w.snowing = true;
+    w.windStrength = 0;
     w.snowDepth = 0.3f;
     CHECK(Near(SnowCoverNow(w), 0.3f));
     CHECK(WetAtOnce(NowOf(w), w.snowDepth).size() == 1 && Near(WetAtOnce(NowOf(w), w.snowDepth)[0].snow, 0.3f));
-    w.kind = WeatherKind::Clear;
+    w.snowing = false;
     CHECK(SnowCoverNow(w) == 0.f);
     w.wetCounted = true;
     w.wetWays = {{{0, -1, 0}, 0, 0, 0, 0.05f}};
@@ -322,8 +354,6 @@ RM_TEST(Weather_SnowCover) {
 
 RM_TEST(Weather_Wetness) {
     WeatherNow rain;
-    rain.weight[0] = 0;
-    rain.weight[2] = 1;
     rain.rain = 0.25f;
     WeatherNow fair;
     CHECK(WetAtOnce(fair).empty() && WetAtOnce(rain).size() == 1 && Near(WetAtOnce(rain)[0].sun, 1.f));  // (the editor: wet through)
@@ -384,7 +414,9 @@ RM_TEST(Weather_Falling) {
     CHECK(PrecipitationCount(snow) == kMaxSnowflakes);
     Precipitation rain;
     rain.amount = 0.5f;
-    CHECK(PrecipitationCount(rain) == kMaxRaindrops / 2);
+    CHECK(PrecipitationCount(rain) == static_cast<uint32_t>(std::pow(0.5f, 1.4f) * kMaxRaindrops + 0.5f));  // (fewer than half: a little rain is a few drops)
+    rain.amount = 0.05f;
+    CHECK(PrecipitationCount(rain) < kMaxRaindrops / 50);
     rain.amount = 7;
     CHECK(PrecipitationCount(rain) == kMaxRaindrops);
     CHECK(Near(FallDirection(Precipitation::Kind::Rain, {0, 0, 0}), {0, -1, 0}));

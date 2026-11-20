@@ -85,6 +85,9 @@ struct InspectBlock {
     bool direct = false;
     // A right click on a field (also on a read-only block): a menu for it (inspector::Block::fieldMenu).
     std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
+    // Ready-made values set at once: a row above the fields (inspector::Block::presets).
+    std::wstring presetLabel;
+    std::vector<w::Action> presets;
 };
 
 struct Inspectable {
