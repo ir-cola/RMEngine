@@ -38,6 +38,9 @@ public:
     void PrepareFrame(const game_x_3d::WorldDrawFrame& f, game_x_3d::FrameAdditions& out) override {
         directions_.clear();
         falls_.clear();
+        solids_.clear();
+        snowCover_ = 0;
+        snowMap_ = -1;
         const Weather* w = f.scene.Setting<Weather>();
         if (!w || !f.atmosphere) return;
         const WeatherNow now = NowOf(*w);
@@ -66,6 +69,12 @@ public:
             wetMaps_.push_back(static_cast<int>(directions_.size()));
             directions_.push_back(way.way);
         }
+        // 積雪: what the snow reaches straight down (a map of its own).
+        snowCover_ = SnowCoverNow(*w);
+        if (snowCover_ > 0) {
+            snowMap_ = static_cast<int>(directions_.size());
+            directions_.push_back({0, -1, 0});
+        }
         if (directions_.empty()) return;
         // What they hit: the colliders (the connector 天候 × 物理), never drawn.
         if (f.registry) {
@@ -76,14 +85,20 @@ public:
         if (shapes_.empty()) {
             for (Precipitation& p : falls_) p.map = -1;  // (nothing to hit: no maps - all open)
             std::fill(wetMaps_.begin(), wetMaps_.end(), -1);
+            snowMap_ = -1;
         } else {
             out.mapDirections = directions_;
             out.mapShapes = shapes_;
         }
-        if (!wet_.empty()) {
+        if (!wet_.empty() || snowCover_ > 0) {
             surface_.code = kWetSurfaceHlsl;
-            surface_.data = WetSurfaceData(wet_, wetMaps_);
+            surface_.data = WetSurfaceData(wet_, wetMaps_, snowCover_, snowMap_);
             out.surface = &surface_;
+        }
+        // Deeper than a centimetre: the snow lying with its height (on the tops the map sees).
+        if (snowCover_ >= 0.01f && snowMap_ >= 0 && LayerReady(f.gfx)) {
+            solids_.push_back([this](const space3d::ExtraDrawContext& dc) { DrawSnowLayer(dc); });
+            out.solids = solids_;
         }
     }
 
@@ -154,6 +169,61 @@ private:
         return true;
     }
 
+    // The snow lying's shaders (made from the renderer's text: lit as the models are), once per device.
+    bool LayerReady(platform::Gfx& gfx) {
+        if (layerGeneration_ == gfx.Generation() && (layerVs_ || layerFailed_)) return layerVs_ != nullptr;
+        layerGeneration_ = gfx.Generation();
+        layerVs_.Reset();
+        layerPs_.Reset();
+        layerCb_.Reset();
+        layerFailed_ = false;
+        ID3D11Device* device = gfx.D3D();
+        if (!device) return false;
+        const std::string text = space3d::RendererShaderText(kWetSurfaceHlsl) + kSnowLayerHlsl;
+        Ptr<ID3DBlob> vs, ps;
+        std::string error;
+        D3D11_BUFFER_DESC cd{};
+        cd.Usage = D3D11_USAGE_DEFAULT;
+        cd.ByteWidth = sizeof(SnowLayerConstants);
+        cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        if (!Compile(text, "SnowLayerVS", "vs_4_0", vs, error) || !Compile(text, "SnowLayerPS", "ps_4_0", ps, error) ||
+            FAILED(device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &layerVs_)) ||
+            FAILED(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &layerPs_)) ||
+            FAILED(device->CreateBuffer(&cd, nullptr, &layerCb_))) {
+            log::Error("積もった雪を描く準備ができません: {}", error);
+            layerVs_.Reset();
+            layerFailed_ = true;
+            return false;
+        }
+        return true;
+    }
+
+    // The snow lying (RenderFrame::solids: after the models, writing depth, lit as they are). Its corners
+    // read the map straight down in the vertex shader; the pixel shader uses the models' lighting, still
+    // bound.
+    void DrawSnowLayer(const space3d::ExtraDrawContext& dc) {
+        if (!layerVs_ || !dc.directionMaps) return;
+        const SnowLayerConstants k = SnowLayerOf(dc.eye, snowCover_, snowMap_);
+        ID3D11DeviceContext* ctx = dc.ctx;
+        ctx->UpdateSubresource(layerCb_.Get(), 0, nullptr, &k, 0, 0);
+        ID3D11Buffer* cb = layerCb_.Get();
+        ID3D11Buffer* maps = dc.directionMapsCb;
+        ID3D11ShaderResourceView* mapTexture = dc.directionMaps;
+        ctx->VSSetConstantBuffers(4, 1, &cb);
+        ctx->VSSetConstantBuffers(6, 1, &maps);
+        ctx->VSSetShaderResources(8, 1, &mapTexture);
+        ctx->IASetInputLayout(nullptr);  // (each corner made from its number)
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->VSSetShader(layerVs_.Get(), nullptr, 0);
+        ctx->PSSetShader(layerPs_.Get(), nullptr, 0);
+        ctx->Draw(kSnowCells * kSnowCells * 6, 0);
+        ID3D11Buffer* none = nullptr;
+        ID3D11ShaderResourceView* noTexture = nullptr;
+        ctx->VSSetConstantBuffers(4, 1, &none);
+        ctx->VSSetConstantBuffers(6, 1, &none);
+        ctx->VSSetShaderResources(8, 1, &noTexture);
+    }
+
     // Rain or snow around the eye: see-through, depth-tested, writing no depth (as an ExtraDraw is
     // drawn). They read the 向きの地図 of their way in the vertex shader: where they hit.
     void DrawFall(const space3d::ExtraDrawContext& dc, const Precipitation& p) {
@@ -214,6 +284,14 @@ private:
     std::vector<space3d::MapShape> shapes_;
     std::vector<WeatherBlocker> blockers_;
     space3d::SurfaceTouch surface_;
+    std::vector<space3d::ExtraDraw> solids_;
+    float snowCover_ = 0;
+    int snowMap_ = -1;
+    Ptr<ID3D11VertexShader> layerVs_;
+    Ptr<ID3D11PixelShader> layerPs_;
+    Ptr<ID3D11Buffer> layerCb_;
+    uint64_t layerGeneration_ = ~uint64_t{0};
+    bool layerFailed_ = false;
     Ptr<ID3D11VertexShader> vs_;
     Ptr<ID3D11PixelShader> ps_;
     Ptr<ID3D11Buffer> cb_;

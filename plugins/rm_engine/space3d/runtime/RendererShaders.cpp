@@ -309,8 +309,8 @@ const char kDirectionMapHlsl[] = R"(
 // along each direction, tiles side by side in one texture (Lighting.h's PlanCover; RendererShaders.h's
 // DirectionMapConstants).
 cbuffer DirectionMaps : register(b6) {
-    float4x4 mapViewProj[6];  // world -> a map (x, y -1..1 across the way, depth 0..1 along it)
-    float4 mapInfo[6];        // x: 1 = there is one; y, z: its tile's left, top (pixels); w: its depth range (world)
+    float4x4 mapViewProj[8];  // world -> a map (x, y -1..1 across the way, depth 0..1 along it)
+    float4 mapInfo[8];        // x: 1 = there is one; y, z: its tile's left, top (pixels); w: its depth range (world)
     float4 mapSize;           // x: a map's size (pixels); y: how many
 };
 Texture2D directionMaps : register(t8);

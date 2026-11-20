@@ -1341,6 +1341,33 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->VSSetShader(s.meshVs.Get(), nullptr, 0);
     ctx->PSSetShader(meshPs, nullptr, 0);
     run(opaqueFirst, opaqueEnd, true);
+    // What plugins draw as solid things (RenderFrame::solids: 天候's snow), lit as the models are; then
+    // ours is set again.
+    if (!f.solids.empty()) {
+        const ExtraDrawContext ec{ctx, f.view, f.projection, eye, f.width, f.height, nullptr, samples_, s.directionCb.Get(), mapsSrv};
+        for (const ExtraDraw& draw : f.solids) {
+            if (draw) draw(ec);
+        }
+        ctx->OMSetRenderTargets(1, rtv_.GetAddressOf(), dsv_.Get());
+        ctx->OMSetBlendState(s.blend.Get(), factor, 0xFFFFFFFF);
+        ctx->OMSetDepthStencilState(s.depth.Get(), 0);
+        ctx->RSSetState(s.raster.Get());
+        ctx->VSSetConstantBuffers(0, 1, &frameCb);
+        ctx->PSSetConstantBuffers(0, 3, cbs);
+        ctx->GSSetShader(nullptr, nullptr, 0);
+        ctx->IASetInputLayout(s.meshLayout.Get());
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        {
+            const UINT stride = sizeof(uint32_t) * 2, offset = 0;
+            ID3D11Buffer* db = drawsBuffer_.Get();
+            ctx->IASetVertexBuffers(1, 1, &db, &stride, &offset);
+        }
+        ctx->VSSetShaderResources(6, 1, &thingsView);
+        ctx->PSSetShaderResources(6, 1, &thingsView);
+        ctx->VSSetShader(s.meshVs.Get(), nullptr, 0);
+        ctx->PSSetShader(meshPs, nullptr, 0);
+        bound = nullptr;
+    }
     // The shadows on the floor: see-through, over what is already drawn (the depth test still hides
     // the floor behind things), and writing no depth (the grid lies on it).
     if (floorEnd > opaqueEnd) {

@@ -16,7 +16,7 @@
 namespace rm::space3d {
 
 // 向きの地図: at most this many in a frame.
-inline constexpr uint32_t kDirectionMaps = 6;
+inline constexpr uint32_t kDirectionMaps = 8;
 // The cbuffer DirectionMaps (b6) as the GPU reads it.
 struct DirectionMapConstants {
     float viewProj[kDirectionMaps][16];

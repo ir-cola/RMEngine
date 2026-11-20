@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "雪が積もるように (天候の「積もる高さ」まで。屋根の下には積もらず、やむと溶ける)。雪の粒を少し小さく",
+          "en": "Snow now piles up (to the weather's Snow depth; none under roofs, and it melts when it stops). Snowflakes are a little smaller"
+        },
+        {
           "ja": "雨が続くと、濡れが物の下へしみこむように (小さな物の真下も濡れる。屋根の下は端だけ)",
           "en": "As the rain goes on, the wet seeps in under things (right under small things too; under a roof only near its edge)"
         },

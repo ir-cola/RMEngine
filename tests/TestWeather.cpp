@@ -6,6 +6,7 @@
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
+#include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/RendererShaders.h"
 #include "rm_engine/space3d/runtime/SkyShader.h"
 #include "rm_engine/weather/runtime/Falling.h"
@@ -244,6 +245,51 @@ RM_TEST(Weather_SnowWets) {
     CHECK(Near(s[0].sun, kSnowWet - 0.1f));  // (dries as the rain's does)
 }
 
+// 積雪: deeper while it snows, up to 積もる高さ; melts after (faster in rain); the editor shows it lying.
+RM_TEST(Weather_SnowCover) {
+    WeatherNow snowy;
+    snowy.weight[0] = 0;
+    snowy.weight[3] = 1;
+    snowy.snow = 1;
+    float cover = StepSnowCover(0, snowy, 0.24f, 1);  // (0.24 x (0.1 + 0.9) / 240 a second)
+    CHECK(Near(cover, 0.001f));
+    cover = StepSnowCover(cover, snowy, 0.24f, 1000);
+    CHECK(Near(cover, 0.24f));  // never above it
+    CHECK(Near(StepSnowCover(cover, snowy, 0.1f, 1), 0.1f));  // (lowered: at once)
+    WeatherNow light = snowy;
+    light.snow = 0.5f;
+    CHECK(Near(StepSnowCover(0, light, 0.24f, 1), 0.00055f));  // lighter snow: slower
+    WeatherNow fair;
+    CHECK(Near(StepSnowCover(0.24f, fair, 0.24f, 60), 0.228f));  // melts: about a centimetre a minute
+    WeatherNow rain;
+    rain.weight[0] = 0;
+    rain.weight[2] = 1;
+    rain.rain = 1;
+    CHECK(Near(StepSnowCover(0.24f, rain, 0.24f, 60), 0.108f));  // faster in rain
+    CHECK(StepSnowCover(0.01f, fair, 0.24f, 1000) == 0.f);
+    CHECK(StepSnowCover(std::nanf(""), snowy, 0.24f, 1) >= 0.f && StepSnowCover(0, snowy, 99.f, 1e9f) == kMostSnowDepth);
+    CHECK(StepSnowCover(0.1f, snowy, 0.24f, std::nanf("")) == 0.1f);
+    // As a picture shows it: the editor - at its full depth while it snows; Play - as counted.
+    Weather w;
+    w.kind = WeatherKind::Snow;
+    w.snowDepth = 0.3f;
+    CHECK(Near(SnowCoverNow(w), 0.3f));
+    w.kind = WeatherKind::Clear;
+    CHECK(SnowCoverNow(w) == 0.f);
+    w.wetCounted = true;
+    w.snowCover = 0.05f;
+    CHECK(Near(SnowCoverNow(w), 0.05f));
+    // The snow lying with its height: a grid around the eye in whole cells, the map's square.
+    const SnowLayerConstants k = SnowLayerOf({10.1f, 3, -7.3f}, 0.3f, 6);
+    const float cell = space3d::kCoverSide / static_cast<float>(kSnowCells);
+    CHECK(Near(k.grid[2], cell) && k.grid[3] == static_cast<float>(kSnowCells));
+    CHECK(Near(k.grid[0] + cell * kSnowCells * 0.5f, std::floor(10.1f / cell) * cell));
+    CHECK(Near(k.grid[1] + cell * kSnowCells * 0.5f, std::floor(-7.3f / cell) * cell));
+    CHECK(Near(k.info[0], 0.3f) && k.info[1] == 6.f && Near(k.info[2], 3.f));
+    const SnowLayerConstants moved = SnowLayerOf({10.1f + cell * 0.3f, 3, -7.3f}, 0.3f, 6);
+    CHECK(moved.grid[0] == k.grid[0]);  // (a step smaller than a cell: the same grid)
+}
+
 RM_TEST(Weather_Wetness) {
     WeatherNow rain;
     rain.weight[0] = 0;
@@ -321,6 +367,9 @@ RM_TEST(Weather_Falling) {
     CHECK(d.size() == 4 * (1 + kWetWays) && d[0] == 2.f);
     CHECK(d[4] == 0.5f && d[5] == 0.75f && d[6] == 3.f && d[7] == 0.6f && d[8] == 1.f && d[10] == -1.f && d[11] == 0.f);  // (clamped to 1; w: しみこみ)
     CHECK(d.size() <= 4 * space3d::kSurfaceData);
+    CHECK(d[1] == 0.f && d[2] == -1.f);  // (no snow lying)
+    const std::vector<float> snowy = WetSurfaceData(ways, maps, 0.25f, 5);
+    CHECK(snowy[1] == 0.25f && snowy[2] == 5.f);
 }
 
 // The shaders compile as they are drawn: the drops and flakes (with 3D 空間's 向きの地図), and the
@@ -336,6 +385,9 @@ RM_TEST(Weather_ShadersCompile) {
     for (const char* entry : {"MeshPS", "FloorPS", "CopyDepthPS", "LinePS"}) CHECK(Compiles(plain, entry, "ps_4_0", &error));
     for (const char* entry : {"MeshVS", "ShadowVS", "ClearVS", "LineVS"}) CHECK(Compiles(plain, entry, "vs_4_0", &error));
     CHECK(Compiles(space3d::RendererShaderText(kWetSurfaceHlsl), "MeshPS", "ps_4_0", &error));
+    const std::string layer = space3d::RendererShaderText(kWetSurfaceHlsl) + kSnowLayerHlsl;
+    CHECK(Compiles(layer, "SnowLayerVS", "vs_4_0", &error));
+    CHECK(Compiles(layer, "SnowLayerPS", "ps_4_0", &error));
     if (!error.empty()) std::printf("%s\n", error.c_str());
     // A touch that does not compile does not compile (the renderer then keeps its own).
     CHECK(!Compiles(space3d::RendererShaderText("void Surface(inout float3 a) { a = ; }"), "MeshPS", "ps_4_0"));

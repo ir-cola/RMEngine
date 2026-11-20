@@ -1,5 +1,7 @@
 #include "rm_engine/weather/runtime/Falling.h"
 
+#include "rm_engine/space3d/runtime/Lighting.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -60,7 +62,7 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
     float since = past / speed;  // seconds since it hit
     float3 hit = w - dir * past;  // where
     if (snow) {
-        float size = 0.02 + seed.z * 0.025;
+        float size = 0.014 + seed.z * 0.017;  // (2026-11-20: a third smaller)
         if (past > 0) {
             // It stops where it touched and lies flat on it (a little above: never in it), stays a
             // moment, then melts like a fried egg: the wet edge spreads thin and uneven while the white
@@ -231,12 +233,101 @@ float WetAt(float3 wpos, float3 n) {
 // 濡れ on every surface (3D 空間's RenderFrame::surface): water in the surface makes it darker - and only a
 // touch smoother: wet ground, not a puddle. (2026-11-19: smoother, a wet speck in shade mirrored the sky
 // and looked lighter than the dry ground - the shadow's edge became a line; now a speck is always darker.)
+// 積雪 on a surface (0 .. 1): how white it is - on what faces up and the snow reaches straight down
+// (surfaceData[0].z: its 向きの地図; under a roof: none). Thin snow: white patches growing together, all
+// of it white at 2 cm (deeper, the snow lying - SnowLayerVS - covers it with its height too).
+static const float3 kSnowWhite = float3(0.82, 0.84, 0.88);
+float SnowAt(float3 wpos, float3 n) {
+    float depth = surfaceData[0].y;
+    if (depth <= 0 || n.y < 0.2) return 0;
+    int m = (int)surfaceData[0].z;
+    float open = m >= 0 && mapInfo[m].x > 0.5 ? saturate((0.06 - MapPast(m, wpos + n * 0.05)) / 0.06) : 1;
+    float cover = saturate(depth / 0.02) * smoothstep(0.2, 0.7, n.y);
+    float patches = 0.6 * WetNoise(wpos.xz * 4) + 0.4 * WetNoise(wpos.xz * 17 + 3.1);
+    float white = cover >= 0.98 ? 1 : smoothstep(1 - cover - 0.06, 1 - cover + 0.06, patches);
+    return open * white;
+}
+
+// 濡れ and 積雪 on every surface (3D 空間's RenderFrame::surface): water in the surface makes it darker
+// - and only a touch smoother: wet ground, not a puddle. (2026-11-19: smoother, a wet speck in shade
+// mirrored the sky and looked lighter than the dry ground - the shadow's edge became a line; now a
+// speck is always darker.) Snow lies over it: white and dull.
 void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, float3 n) {
     float wet = WetAt(wpos, n);
+    float snow = SnowAt(wpos, n);
+    wet *= 1 - snow;
     albedo *= 1 - wet * 0.3 * (1 - metal);
     rough = lerp(rough, min(rough, max(rough * 0.85, 0.5)), wet);
+    albedo = lerp(albedo, kSnowWhite, snow);
+    rough = lerp(rough, 0.75, snow);
 }
 )";
+
+const char kSnowLayerHlsl[] = R"(
+// 積雪 with its height (RenderFrame::solids): a grid around the eye (SnowLayerOf), each corner on the top
+// of what the snow reaches straight down (its 向きの地図), raised by how deep it lies. Where the top
+// steps (a roof's edge, a box's side) or there is none, the corner is left out (a corner at NaN: its
+// triangles are not drawn) - the snow ends there, as it lies on each top. Lit as the models are
+// (Shade: the sun's shadows fall on it). After RendererShaderText(kWetSurfaceHlsl).
+cbuffer SnowLayer : register(b4) {
+    float4 snowGrid;  // xy: the grid's corner (world x z); z: a cell (m); w: cells a side
+    float4 snowInfo;  // x: how deep (m); y: its 向きの地図; z: where the lines down start (world y)
+};
+struct SnowOut { float4 pos : SV_Position; float3 nrm : NORMAL; float3 wpos : TEXCOORD2; };
+
+// The top at (x, z) as the map sees it (world y), or -1e30: none there.
+float SnowTop(float2 xz) {
+    int k = (int)snowInfo.y;
+    float past = MapPastAt(k, mul(mapViewProj[k], float4(xz.x, snowInfo.z, xz.y, 1)));
+    return past < -1e29 ? -1e30 : snowInfo.z + past;
+}
+
+SnowOut SnowLayerVS(uint id : SV_VertexID) {
+    const uint2 kCorner[6] = {uint2(0, 0), uint2(1, 0), uint2(0, 1), uint2(0, 1), uint2(1, 0), uint2(1, 1)};
+    uint cells = (uint)snowGrid.w;
+    uint cell = id / 6;
+    uint2 g = uint2(cell % cells, cell / cells) + kCorner[id % 6];
+    float pace = snowGrid.z;
+    float2 xz = snowGrid.xy + float2(g) * pace;
+    float h = SnowTop(xz);
+    float l = SnowTop(xz - float2(pace, 0)), r = SnowTop(xz + float2(pace, 0));
+    float d = SnowTop(xz - float2(0, pace)), u = SnowTop(xz + float2(0, pace));
+    SnowOut o;
+    float ledge = 0.15 + pace;  // (a step higher than a slope of 45 degrees and a bit)
+    if (h < -1e29 || abs(l - h) > ledge || abs(r - h) > ledge || abs(d - h) > ledge || abs(u - h) > ledge) {
+        float nan = asfloat(0x7fc00000);
+        o.pos = float4(nan, nan, nan, nan);
+        o.nrm = float3(0, 1, 0);
+        o.wpos = float3(0, 0, 0);
+        return o;
+    }
+    o.nrm = normalize(float3(l - r, 2 * pace, d - u));
+    o.wpos = float3(xz.x, h + snowInfo.x, xz.y);
+    o.pos = mul(viewProj, float4(o.wpos, 1));
+    return o;
+}
+
+float4 SnowLayerPS(SnowOut i) : SV_Target {
+    float3 n = normalize(i.nrm);
+    float3 v = normalize(eye.xyz - i.wpos);
+    float grain = (WetNoise(i.wpos.xz * 40) - 0.5) * 0.05;  // (a little uneven: not plastic)
+    return float4(ToScreen(Shade(kSnowWhite + grain, 0, 0.75, n, v, i.wpos)), 1);
+}
+)";
+
+SnowLayerConstants SnowLayerOf(Vec3 eye, float depth, int map) {
+    SnowLayerConstants k{};
+    const float cell = space3d::kCoverSide / static_cast<float>(kSnowCells);
+    const float half = cell * static_cast<float>(kSnowCells) * 0.5f;
+    k.grid[0] = std::floor(eye.x / cell) * cell - half;  // (in whole cells: the grid does not swim as the eye moves)
+    k.grid[1] = std::floor(eye.z / cell) * cell - half;
+    k.grid[2] = cell;
+    k.grid[3] = static_cast<float>(kSnowCells);
+    k.info[0] = std::isfinite(depth) ? std::clamp(depth, 0.f, kMostSnowDepth) : 0.f;
+    k.info[1] = static_cast<float>(map);
+    k.info[2] = std::isfinite(eye.y) ? eye.y : 0.f;
+    return k;
+}
 
 uint32_t PrecipitationCount(const Precipitation& p) {
     const float amount = p.amount > 1.f ? 1.f : p.amount < 0.f ? 0.f : p.amount;
@@ -256,10 +347,12 @@ Vec3 FallDirection(Precipitation::Kind kind, Vec3 wind) {
     return {x / len, y / len, z / len};
 }
 
-std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps) {
+std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps, float snowDepth, int snowMap) {
     const size_t count = std::min(ways.size(), kWetWays);
     std::vector<float> data(4 * (1 + kWetWays), 0.f);
     data[0] = static_cast<float>(count);
+    data[1] = std::isfinite(snowDepth) ? std::clamp(snowDepth, 0.f, kMostSnowDepth) : 0.f;
+    data[2] = static_cast<float>(snowMap);
     for (size_t k = 0; k < count; ++k) {
         float* way = &data[4 * (1 + k)];
         way[0] = std::clamp(ways[k].sun, 0.f, 1.f);

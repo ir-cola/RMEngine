@@ -69,13 +69,14 @@ struct FrameAdditions {
     std::span<const Vec3> mapDirections;
     std::span<const space3d::MapShape> mapShapes;
     const space3d::SurfaceTouch* surface = nullptr;
+    std::span<const space3d::ExtraDraw> solids;  // RenderFrame::solids (天候: the snow lying)
 };
 
 class WorldDrawer {
 public:
     virtual ~WorldDrawer() = default;
-    // Once a frame, before Prepare: what it adds to the frame (天候: the 向きの地図 of the colliders and
-    // 濡れ on every surface; RenderFrame::mapDirections / mapShapes / surface).
+    // Once a frame, before Prepare: what it adds to the frame (天候: the 向きの地図 of the colliders,
+    // 濡れ on every surface and the snow lying; RenderFrame::mapDirections / mapShapes / surface / solids).
     virtual void PrepareFrame(const WorldDrawFrame& f, FrameAdditions& out) {
         (void)f;
         (void)out;

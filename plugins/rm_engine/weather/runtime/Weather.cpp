@@ -222,6 +222,22 @@ float WetnessOf(const std::vector<WetWay>& ways) {
 
 std::vector<WetWay> WetNow(const Weather& w) { return w.wetCounted ? w.wetWays : WetAtOnce(NowOf(w)); }
 
+float StepSnowCover(float cover, const WeatherNow& now, float most, float dt) {
+    dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
+    most = std::isfinite(most) ? std::clamp(most, 0.f, kMostSnowDepth) : 0.f;
+    cover = std::isfinite(cover) ? std::clamp(cover, 0.f, most) : 0.f;
+    if (const float snow = SnowNow(now); snow > 0) {
+        // (all of 積もる高さ in 240 s at 1, 400 s at 0.5)
+        return std::min(most, cover + dt * most * (0.1f + snow * 0.9f) / 240.f);
+    }
+    return std::max(0.f, cover - dt * (0.0002f + RainNow(now) * 0.002f));
+}
+
+float SnowCoverNow(const Weather& w) {
+    if (w.wetCounted) return std::isfinite(w.snowCover) ? std::max(w.snowCover, 0.f) : 0.f;
+    return SnowNow(NowOf(w)) > 0 && std::isfinite(w.snowDepth) ? std::clamp(w.snowDepth, 0.f, kMostSnowDepth) : 0.f;
+}
+
 void RunWeather(game_production::SystemContext& ctx) {
     Weather* w = ctx.scene.Setting<Weather>();
     if (!w) return;
@@ -230,9 +246,11 @@ void RunWeather(game_production::SystemContext& ctx) {
     const WeatherNow now = NowOf(*w);
     if (!w->wetCounted) {
         w->wetWays.clear();  // (the game starts dry: the rain wets it as it plays - 2026-11-19)
+        w->snowCover = 0;    // (and with no snow: it lies as it snows - 2026-11-20)
         w->wetCounted = true;
     }
     StepWet(w->wetWays, now, dt);
+    w->snowCover = StepSnowCover(w->snowCover, now, w->snowDepth, dt);
     w->driftX = std::fmod(w->driftX + now.windX * dt, kDriftWrap);
     w->driftZ = std::fmod(w->driftZ + now.windZ * dt, kDriftWrap);
 }

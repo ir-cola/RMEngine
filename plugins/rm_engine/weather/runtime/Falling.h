@@ -62,10 +62,22 @@ struct FallConstants {
 };
 static_assert(sizeof(FallConstants) % 16 == 0);
 
-// 濡れ: the touch on every surface (3D 空間's RenderFrame::surface: Surface(...)) and its numbers - the
-// ways the rain fell, each with the 向きの地図 it is seen by (`maps`, -1: none - everything open) and how
-// far it seeps under what covers.
+// 濡れ and 積雪: the touch on every surface (3D 空間's RenderFrame::surface: Surface(...)) and its numbers -
+// the ways the rain fell, each with the 向きの地図 it is seen by (`maps`, -1: none - everything open) and
+// how far it seeps under what covers; how deep the snow lies and the map straight down (`snowMap`).
 extern const char kWetSurfaceHlsl[];
-std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps);
+std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps, float snowDepth = 0, int snowMap = -1);
+
+// 積雪 with its height (RenderFrame::solids): SnowLayerVS / SnowLayerPS, after
+// RendererShaderText(kWetSurfaceHlsl). A grid of kSnowCells x kSnowCells around the eye (the 向きの地図's
+// square), drawn with kSnowCells^2 x 6 corners and no buffers.
+extern const char kSnowLayerHlsl[];
+inline constexpr uint32_t kSnowCells = 256;
+struct SnowLayerConstants {
+    float grid[4];  // xy: the grid's corner (world x z, in whole cells); z: a cell (m); w: cells a side
+    float info[4];  // x: how deep (m); y: its 向きの地図; z: where the lines down start (world y: the eye)
+};
+static_assert(sizeof(SnowLayerConstants) % 16 == 0);
+SnowLayerConstants SnowLayerOf(Vec3 eye, float depth, int map);
 
 }  // namespace rm::weather

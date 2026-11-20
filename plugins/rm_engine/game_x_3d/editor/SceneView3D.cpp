@@ -1007,6 +1007,7 @@ private:
                 frame.mapShapes = add.mapShapes;
             }
             if (!frame.surface) frame.surface = add.surface;
+            if (frame.solids.empty()) frame.solids = add.solids;
         }
         bool moving = false;
         for (const auto& d : pic.drawers) {

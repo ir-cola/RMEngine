@@ -174,6 +174,7 @@ public:
                     frame.mapShapes = add.mapShapes;
                 }
                 if (!frame.surface) frame.surface = add.surface;
+                if (frame.solids.empty()) frame.solids = add.solids;
             }
             for (const auto& d : drawers_) d->Prepare(wf, extras_);
         }

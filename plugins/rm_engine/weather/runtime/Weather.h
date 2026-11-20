@@ -68,6 +68,7 @@ struct Weather {
     RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中)", ShowIf="kind=Cloudy|Rain") bool lightning = false;
     RM_PROPERTY(Edit, Label="雨の量", Tooltip="0: 降らない 〜 1: どしゃぶり", Min=0, Max=1, Step=0.05, ShowIf="kind=Rain") float rain = 0.5f;
     RM_PROPERTY(Edit, Label="雪の量", Tooltip="0: 降らない 〜 1: 大雪", Min=0, Max=1, Step=0.05, ShowIf="kind=Snow") float snow = 0.5f;
+    RM_PROPERTY(Edit, Label="積もる高さ (m)", Tooltip="雪がこの高さまで積もります (Play 中は降っている間に少しずつ。大雪で 4 分ほど)。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)", Min=0, Max=2, Step=0.01, ShowIf="kind=Snow") float snowDepth = 0.1f;
     RM_PROPERTY(Edit, Label="風の向き (度)", Tooltip="風の吹いていく向き (真上から見て)。0: 前 (-Z) へ / 90: 左 (-X) へ / -90: 右 (+X) へ。雲・雨粒・雪が流されます", Min=-360, Max=360) float windDirection = 0.f;
     RM_PROPERTY(Edit, Label="風の強さ (m/秒)", Tooltip="0: 無風 〜 30: 嵐。雲の流れる速さと、雨粒・雪の傾き", Min=0, Max=40, Step=0.5) float windStrength = 2.f;
     // A fade (scripts: rm::Sky's SetWeather / SetRain ... with seconds): the weather when it began, how
@@ -79,6 +80,8 @@ struct Weather {
     // counted yet (the editor before Play): what the rain falling now makes wet, at once (WetAtOnce).
     RM_TRANSIENT() std::vector<WetWay> wetWays;
     RM_TRANSIENT() bool wetCounted = false;
+    // 積雪 while the game plays (StepSnowCover): how deep the snow lies (m). Counted with 濡れ (wetCounted).
+    RM_TRANSIENT() float snowCover = 0;
     // How far the wind has carried the clouds, the drops and the flakes while the game played (world
     // units: the wind added up - a wind that changes never makes them jump).
     RM_TRANSIENT() float driftX = 0;
@@ -120,6 +123,16 @@ std::vector<WetWay> WetAtOnce(const WeatherNow& now);
 float WetnessOf(const std::vector<WetWay>& ways);
 // What is wet as a picture shows it: as the game has counted it (Play), or at once.
 std::vector<WetWay> WetNow(const Weather& w);
+
+// 積雪: how deep the snow lies `dt` game seconds later (m). While it snows: deeper, up to `most` (積もる
+// 高さ) - in about four minutes in heavy snow, longer the lighter (never above `most`: lowered, it is
+// at once). Nothing snowing: it melts - about a centimetre a minute, faster in rain. Lies on what faces
+// up and the snow reaches straight down (under a roof: none).
+inline constexpr float kMostSnowDepth = 2.f;
+float StepSnowCover(float cover, const WeatherNow& now, float most, float dt);
+// How deep the snow lies as a picture shows it: as the game has counted it (Play), or - the editor - at
+// its full 積もる高さ while it snows.
+float SnowCoverNow(const Weather& w);
 
 // The system 天候: while the game plays, a fade goes on, what the rain reaches gets wet (and dries),
 // and the wind carries the clouds and what falls.

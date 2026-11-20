@@ -216,6 +216,13 @@ struct RenderFrame {
     bool shadows = false;  // the lights' shadows (Lighting.h says which lights have them)
     Color shadowColor{0, 0, 0, 0.4f};  // the shadows on the floor (alpha: how dark)
     std::span<const ExtraDraw> extras;  // in this order (ExtraDraw)
+    // What plugins draw as solid things (天候's snow lying on the ground): right after the models,
+    // depth-tested and writing depth (what is see-through, behind or in front, comes after). The models'
+    // lighting is still bound for the pixel shader - b0 .. b2 (the frame, the lights, the shadows), t0 /
+    // t5 and s0 (the shadow maps), b5 (a plugin's surface numbers), b6 / t8 (向きの地図) - so a shader
+    // made from RendererShaderText can light it with Shade(...) exactly as a model. Leave those bound;
+    // whatever else it changes is set back after. ExtraDrawContext::depth is null here.
+    std::span<const ExtraDraw> solids;
     const SkyDraw* sky = nullptr;       // null (or no program): only the clear colour behind
     // 向きの地図 (RendererShaders.h): the depth of `mapShapes` (not drawn) seen along each of these
     // directions (at most kDirectionMaps; map k is the k-th) - read by `surface` and by `extras`.
