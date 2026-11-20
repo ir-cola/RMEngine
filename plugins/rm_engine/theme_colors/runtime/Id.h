@@ -1,5 +1,5 @@
 #pragma once
-// The ID of the basic color theme pack (青 / 緑): only theme files - written here once (and in plugin.json, compared at start-up).
+// 基本の色テーマパック (青 / 緑) の ID: テーマファイルだけ - ここに 1 回だけ書く (plugin.json にも書き、起動時に比べる)。
 
 #include "core/PluginId.h"
 

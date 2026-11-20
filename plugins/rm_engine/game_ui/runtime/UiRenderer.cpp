@@ -22,7 +22,7 @@ namespace {
 D2D1_COLOR_F ToD2D(Color c) { return {c.r, c.g, c.b, c.a}; }
 D2D1_MATRIX_3X2_F ToD2D(const Affine& m) { return D2D1::Matrix3x2F(m.a, m.b, m.c, m.d, m.tx, m.ty); }
 D2D1_RECT_F ToD2D(const UiBox& b) { return D2D1::RectF(b.x, b.y, b.x + b.w, b.y + b.h); }
-// Only its transparency changes the picture (drawn as it is, faded).
+// 透明度だけが絵を変える (そのまま描き、薄くする)。
 bool OnlyFades(const UiPaint& p) { return p.tint.r == 1.f && p.tint.g == 1.f && p.tint.b == 1.f && p.amount <= 0; }
 
 }  // namespace
@@ -60,8 +60,8 @@ ID2D1SolidColorBrush* UiRenderer::Brush(Color c) {
 
 void UiRenderer::Forget() {
     pictures_.clear();
-    // Fonts are only looked at again: one made again for the same bytes would be one more copy that the
-    // loader keeps for as long as the renderer lives.
+    // フォントは見直すだけ: 同じバイト列で作り直すと、ローダーがレンダラーの生きている間ずっと持つ
+    // コピーがもう 1 つ増えてしまう。
     for (auto& [id, f] : fonts_) f.tried = false;
     formats_.clear();
 }
@@ -110,7 +110,7 @@ const UiRenderer::Font* UiRenderer::FontOf(platform::Gfx& gfx, const AssetRef& r
     f.tried = true;
     const auto bytes = asset ? asset(ref) : std::nullopt;
     const size_t hash = bytes ? std::hash<std::string_view>{}(*bytes) : 0;
-    if (bytes && f.collection && f.hash == hash) return &f;  // the same file: the font made before
+    if (bytes && f.collection && f.hash == hash) return &f;  // 同じファイル: 前に作ったフォント
     f.collection.Reset();
     f.family.clear();
     f.hash = hash;
@@ -119,7 +119,7 @@ const UiRenderer::Font* UiRenderer::FontOf(platform::Gfx& gfx, const AssetRef& r
         log::Warn("ゲーム UI: フォントのファイル ({}) を読めないので、フォントの名前で描きます", ref.guid);
         return nullptr;
     }
-    // One loader of fonts in memory for this renderer (registered on the factory, let go with it).
+    // このレンダラー用のメモリ上のフォントのローダー 1 つ (ファクトリーに登録し、一緒に手放す)。
     Microsoft::WRL::ComPtr<IDWriteInMemoryFontFileLoader> loader;
     if (fontLoader_) {
         fontLoader_.As(&loader);
@@ -133,7 +133,7 @@ const UiRenderer::Font* UiRenderer::FontOf(platform::Gfx& gfx, const AssetRef& r
     Microsoft::WRL::ComPtr<IDWriteFontCollection1> collection;
     Microsoft::WRL::ComPtr<IDWriteFontFamily> family;
     Microsoft::WRL::ComPtr<IDWriteLocalizedStrings> names;
-    // (no owner given: DirectWrite keeps its own copy of the bytes)
+    // (持ち主の指定なし: DirectWrite はバイト列の自分のコピーを持つ)
     const bool ok = loader && SUCCEEDED(loader->CreateInMemoryFontFileReference(factory.Get(), bytes->data(), static_cast<UINT32>(bytes->size()), nullptr, &file)) &&
                     SUCCEEDED(factory->CreateFontSetBuilder(&builder)) && SUCCEEDED(builder->AddFontFile(file.Get())) &&
                     SUCCEEDED(builder->CreateFontSet(&set)) && SUCCEEDED(factory->CreateFontCollectionFromFontSet(set.Get(), &collection)) &&
@@ -162,7 +162,7 @@ IDWriteTextFormat* UiRenderer::Format(platform::Gfx& gfx, const std::wstring& fa
                                                                 L"ja-jp", &fmt))) {
         return nullptr;
     }
-    if (formats_.size() > 256) formats_.clear();  // (sizes animated by a script: never without end)
+    if (formats_.size() > 256) formats_.clear();  // (スクリプトで動かすサイズ: 際限なく増やさない)
     return formats_.emplace(key, fmt).first->second.Get();
 }
 
@@ -176,14 +176,13 @@ void UiRenderer::DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const Ui
         dc_->SetTransform(ToD2D(full) * old);
         dc_->DrawBitmap(bitmap, ToD2D(dst), color.a, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, &src, nullptr);
     } else {
-        Microsoft::WRL::ComPtr<ID2D1Effect> own;  // (recording: one of its own)
+        Microsoft::WRL::ComPtr<ID2D1Effect> own;  // (記録中: 自分専用のもの)
         Microsoft::WRL::ComPtr<ID2D1Effect>& tint = fresh_ ? own : tint_;
         if (!tint && FAILED(dc_->CreateEffect(CLSID_D2D1ColorMatrix, &tint))) tint.Reset();
         if (!tint) return;
         if (fresh_) keep_.push_back(tint);
-        // Each colour multiplied by the tint, then moved toward the replacing colour by its amount k (rows:
-        // the input's r g b a and 1; columns: the output's). The effect works on colours not multiplied by
-        // their alpha, so a replaced colour keeps the picture's shape.
+        // 各色にティントを掛け、次に量 k だけ置き換える色へ寄せる (行: 入力の r g b a と 1、列: 出力の)。
+        // エフェクトは alpha を掛けていない色で働くので、置き換えた色は絵の形を保つ。
         const float k = std::clamp(paint.amount, 0.f, 1.f), keep = 1 - k;
         const D2D1_MATRIX_5X4_F m = D2D1::Matrix5x4F(color.r * keep, 0, 0, 0, 0, color.g * keep, 0, 0, 0, 0, color.b * keep, 0, 0, 0, 0, color.a,
                                                      paint.replace.r * k, paint.replace.g * k, paint.replace.b * k, 0);
@@ -191,7 +190,7 @@ void UiRenderer::DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const Ui
         tint->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
         Microsoft::WRL::ComPtr<ID2D1Image> out;
         tint->GetOutput(&out);
-        // The piece drawn at (0, 0) and scaled onto dst.
+        // (0, 0) に描いた部分を dst に拡大縮小したもの。
         const Affine place = full * Translate({dst.x, dst.y}) * Scaling(dst.w / sw, dst.h / sh);
         dc_->SetTransform(ToD2D(place) * old);
         const D2D1_POINT_2F at{0, 0};
@@ -203,7 +202,7 @@ void UiRenderer::DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const Ui
 
 void UiRenderer::DrawImage(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint) {
     const UiImage& img = *n.image;
-    const Color color = Paint(img.color, paint);  // (a box of colour)
+    const Color color = Paint(img.color, paint);  // (色の箱)
     const UiPaint picture{Multiply(img.color, paint.tint), paint.replace, paint.amount};
     const Picture* p = PictureOf(gfx, n.button ? ButtonImage(*n.button, img.image) : img.image, asset);
     if (!p) {
@@ -214,9 +213,9 @@ void UiRenderer::DrawImage(const UiNode& n, const Affine& full, platform::Gfx& g
         dc_->SetTransform(old);
         return;
     }
-    const D2D1_SIZE_F dip = p->bitmap->GetSize();  // (the bitmap's own DIPs: the file may have been read smaller)
+    const D2D1_SIZE_F dip = p->bitmap->GetSize();  // (ビットマップ自身の DIP: ファイルは小さく読まれたかもしれない)
     const float kx = p->width ? dip.width / static_cast<float>(p->width) : 1.f, ky = p->height ? dip.height / static_cast<float>(p->height) : 1.f;
-    // 切り出し: the part of the picture used (its pixels -> the bitmap's DIPs); 9 スライス counts inside it.
+    // 切り出し: 使う絵の部分 (そのピクセル -> ビットマップの DIP)。9 スライス はその内側で数える。
     const UiBox crop = CropRect({static_cast<float>(p->width), static_cast<float>(p->height)}, img.cropOffset, img.cropSize);
     const float cx = crop.x * kx, cy = crop.y * ky, cw = crop.w * kx, ch = crop.h * ky;
     if (cw <= 0 || ch <= 0) return;
@@ -225,7 +224,7 @@ void UiRenderer::DrawImage(const UiNode& n, const Affine& full, platform::Gfx& g
         DrawPiece(p->bitmap.Get(), D2D1::RectF(cx, cy, cx + cw, cy + ch), n.box, full, picture);
         return;
     }
-    // 9 スライス: the borders keep their size (縁の大きさ), shrunk together when the box is smaller.
+    // 9 スライス: 縁は大きさを保ち (縁の大きさ)、箱が小さいときは一緒に縮む。
     const float l = std::max(0.f, tl.x), t = std::max(0.f, tl.y), r = std::max(0.f, br.x), b = std::max(0.f, br.y);
     const float s = std::max(img.sliceScale, 0.01f);
     float dl = l * s, dt = t * s, dr = r * s, db = b * s;
@@ -262,7 +261,7 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
     if (FAILED(gfx.DWrite()->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), fmt, n.box.w, n.box.h, &layout))) return;
     const DWRITE_TEXT_RANGE all{0, static_cast<UINT32>(text.size())};
     if (t.vertical) {
-        // 縦書き: lines go down, the next one to the left (the flow first: the two must agree).
+        // 縦書き: 行は下へ進み、次の行は左へ (先に流れの向き: 2 つは一致していなければならない)。
         layout->SetFlowDirection(DWRITE_FLOW_DIRECTION_RIGHT_TO_LEFT);
         layout->SetReadingDirection(DWRITE_READING_DIRECTION_TOP_TO_BOTTOM);
     }
@@ -274,7 +273,7 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
         if (SUCCEEDED(layout.As(&spaced))) spaced->SetCharacterSpacing(0, t.letterSpacing, 0, all);
     }
     if (t.lineHeight > 0) layout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, t.lineHeight, t.lineHeight * 0.8f);
-    // 部分のスタイル (all but the colour - that is for the text itself, not its outline and shadow).
+    // 部分のスタイル (色以外すべて - 色はテキスト自身のもので、縁取りや影のものではない)。
     for (const UiTextRun& run : t.runs) {
         const UiTextRange r = TextRange(text, run.start, run.length);
         if (r.length == 0) continue;
@@ -284,7 +283,7 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
         if (run.underline != UiRunSwitch::Keep) layout->SetUnderline(run.underline == UiRunSwitch::On, range);
         if (run.strike != UiRunSwitch::Keep) layout->SetStrikethrough(run.strike == UiRunSwitch::On, range);
     }
-    // The sizes (the text's and the runs'), all scaled by `k`: はみ出したら縮める finds the largest that fits.
+    // サイズ (テキストのと各部分の) をすべて `k` 倍する: はみ出したら縮める が収まる最大のものを探す。
     auto sizes = [&](float k) {
         layout->SetFontSize(size * k, all);
         for (const UiTextRun& run : t.runs) {
@@ -319,22 +318,22 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
     dc_->GetTransform(&old);
     dc_->SetTransform(ToD2D(full) * old);
     auto draw = [&](float ox, float oy, Color c) {
-        c.a *= n.alpha;  // (faded with what it is in)
+        c.a *= n.alpha;  // (入っているものと一緒に薄くする)
         if (c.a <= 0) return;
-        // (文字だけずらす: only where it is drawn - its box, its wrapping and the mouse stay)
+        // (文字だけずらす: 描く場所だけ - 箱、折り返し、マウスはそのまま)
         const D2D1_POINT_2F at{n.box.x + t.offset.x + ox, n.box.y + t.offset.y + oy};
         if (ID2D1SolidColorBrush* b = Brush(c)) dc_->DrawTextLayout(at, layout.Get(), b, D2D1_DRAW_TEXT_OPTIONS_NONE);
     };
     if (t.shadow.x != 0 || t.shadow.y != 0) draw(t.shadow.x, t.shadow.y, t.shadowColor);
     if (t.outline > 0) {
-        // The outline: the text drawn round itself (8 ways, and 8 more between them when thick).
+        // 縁取り: テキストをそのまわりに描く (8 方向、太いときはその間にさらに 8 方向)。
         const int ways = t.outline > 2 ? 16 : 8;
         for (int i = 0; i < ways; ++i) {
             const float a = 6.2831853f * static_cast<float>(i) / static_cast<float>(ways);
             draw(std::cos(a) * t.outline, std::sin(a) * t.outline, t.outlineColor);
         }
     }
-    // The runs' colours, for the text itself (each its own brush: the layout holds it until drawn).
+    // 各部分の色、テキスト自身用 (それぞれ自分のブラシ: レイアウトは描くまでそれを持つ)。
     for (const UiTextRun& run : t.runs) {
         const UiTextRange r = TextRange(text, run.start, run.length);
         if (!run.setColor || r.length == 0) continue;
@@ -351,7 +350,7 @@ void UiRenderer::DrawText(const UiNode& n, const Affine& full, platform::Gfx& gf
 
 void UiRenderer::DrawOutline(const UiNode& n, const Affine& full, const UiStroke& stroke) {
     if (stroke.width <= 0 || stroke.color.a <= 0) return;
-    // Round the box, outside it (the line's middle half its width out).
+    // 箱のまわり、外側に (線の真ん中が幅の半分だけ外へ)。
     D2D1_MATRIX_3X2_F old;
     dc_->GetTransform(&old);
     dc_->SetTransform(ToD2D(full) * old);
@@ -363,8 +362,8 @@ void UiRenderer::DrawOutline(const UiNode& n, const Affine& full, const UiStroke
 }
 
 void UiRenderer::DrawFocus(const UiNode& n, const Affine& full) {
-    // The button chosen by the keys / a pad: a frame round it, light outside and dark inside, so it shows
-    // on any colour of button and of what is behind it (the colours of the frame are not the button's).
+    // キー / パッドで選んだボタン: そのまわりの枠で、外が明るく内が暗い。どんな色のボタンの上でも、
+    // 後ろがどんな色でも見えるように (枠の色はボタンのものではない)。
     D2D1_MATRIX_3X2_F old;
     dc_->GetTransform(&old);
     dc_->SetTransform(ToD2D(full) * old);
@@ -381,9 +380,9 @@ void UiRenderer::DrawFocus(const UiNode& n, const Affine& full) {
 
 namespace {
 
-// The transform it is drawn with (the node's, then the device context's own).
+// 描くときの変換 (ノードのもの、次にデバイスコンテキスト自身のもの)。
 D2D1_MATRIX_3X2_F Whole(const Affine& full, const D2D1_MATRIX_3X2_F& old) { return ToD2D(full) * old; }
-// How many device DIPs one of its units is (for radii: its turn does not count).
+// そのものの 1 単位がデバイスの何 DIP か (半径用: 回転は数えない)。
 float UnitsToDips(const D2D1_MATRIX_3X2_F& m) { return std::sqrt(std::abs(m._11 * m._22 - m._12 * m._21)); }
 D2D1_VECTOR_4F Vector(Color c) { return {c.r, c.g, c.b, std::clamp(c.a, 0.f, 1.f)}; }
 
@@ -406,7 +405,7 @@ void UiRenderer::FillShape(const UiNode& n, const Affine& full, Color color) {
 
 void UiRenderer::DrawBorder(const UiNode& n, const Affine& full, const UiStroke& stroke) {
     if (stroke.width <= 0 || stroke.color.a <= 0) return;
-    // Inside the box (its line's middle half its width in), the corners as the 背景's.
+    // 箱の内側 (線の真ん中が幅の半分だけ内へ)、角は 背景 のもの。
     const float w = std::min({stroke.width, n.box.w * 0.5f, n.box.h * 0.5f}), h = w * 0.5f;
     if (w <= 0) return;
     D2D1_MATRIX_3X2_F old;
@@ -431,8 +430,8 @@ void UiRenderer::DrawBevel(const UiNode& n, const Affine& full, bool inset) {
     dc_->SetTransform(Whole(full, old));
     const float r = std::max(0.f, Rounding(*n.style, n.box) - h);
     const D2D1_ROUNDED_RECT ring = D2D1::RoundedRect(D2D1::RectF(n.box.x + h, n.box.y + h, n.box.Right() - h, n.box.Bottom() - h), r, r);
-    // The ring of its edge: the top left half lit, the bottom right half in shade (the other way pressed in),
-    // split along the line from its top right corner to its bottom left one.
+    // 縁のリング: 左上の半分が明るく、右下の半分が影 (押し込まれたときは逆)。右上の角から左下の角への
+    // 線で分ける。
     const UiBox& b = n.box;
     auto half = [&](bool topLeft, Color color) {
         if (color.a <= 0) return;
@@ -476,7 +475,7 @@ void UiRenderer::DrawBody(const UiNode& n, const Affine& full, platform::Gfx& gf
 
 void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint) {
     const UiStyle& st = *n.style;
-    // Its shape, recorded once: the 影 and the 光 are made from it, the ぼかし blurs it.
+    // その形を 1 度だけ記録する: 影 と 光 はそれから作り、ぼかし はそれをぼかす。
     Microsoft::WRL::ComPtr<ID2D1Image> target;
     dc_->GetTarget(&target);
     Microsoft::WRL::ComPtr<ID2D1CommandList> list;
@@ -497,7 +496,7 @@ void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::
     dc_->GetTransform(&old);
     const D2D1_MATRIX_3X2_F m = Whole(full, old);
     const float k = UnitsToDips(m);
-    dc_->SetTransform(D2D1::Matrix3x2F::Identity());  // (the list holds where it was drawn)
+    dc_->SetTransform(D2D1::Matrix3x2F::Identity());  // (リストが描いた場所を持っている)
     if (st.shadow.enabled) {
         Color c = st.shadow.color;
         c.a *= n.alpha;
@@ -507,7 +506,7 @@ void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::
             fx->SetValue(D2D1_SHADOW_PROP_COLOR, Vector(c));
             Microsoft::WRL::ComPtr<ID2D1Image> out;
             fx->GetOutput(&out);
-            // Its offset turns and scales with it.
+            // そのオフセットは一緒に回り、拡大縮小する。
             const D2D1_POINT_2F at{st.shadow.offset.x * m._11 + st.shadow.offset.y * m._21, st.shadow.offset.x * m._12 + st.shadow.offset.y * m._22};
             dc_->DrawImage(out.Get(), &at);
             fx->SetInput(0, nullptr);
@@ -517,8 +516,8 @@ void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::
         Color c = Rainbowed(st.glow.color, RainbowFor(n, &UiRainbow::glow));
         c.a *= n.alpha;
         if (ID2D1Effect* fx = Effect(glow_, CLSID_D2D1Shadow); fx && c.a > 0) {
-            // A blurred silhouette of its colour, its light added to what is under it - under its body, so
-            // it shines round it (on top, it would whiten the body itself: 2026-11-17 on screen).
+            // その色のぼやけたシルエットで、その光を下にあるものへ加える - 本体の下に: その周りで光るように
+            // (上に重ねると本体そのものが白くなる: 2026-11-17 画面で確認)。
             fx->SetInput(0, list.Get());
             fx->SetValue(D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, std::max(st.glow.radius, 0.f) * k * 0.5f);
             fx->SetValue(D2D1_SHADOW_PROP_COLOR, Vector(c));
@@ -574,7 +573,7 @@ void UiRenderer::DrawVideo(const UiNode& n, const Affine& full, platform::Gfx& g
         slot.player.reset();
         return;
     }
-    // Played only while the game plays (the editor: its first picture, silent).
+    // ゲームの Play 中だけ再生する (エディター: 最初の絵、音なし)。
     slot.player->Set(playing_ && v.playOnStart, v.loop, std::clamp(v.speed, 0.1f, 8.f), playing_ ? v.volume * std::clamp(v.gain, 0.f, 2.f) : 0.f, v.start, v.end);
     ID2D1Bitmap1* frame = slot.player->Frame(dc_);
     if (!frame) return;
@@ -597,7 +596,7 @@ bool UiRenderer::Animates(const UiTree& tree) {
 void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& tree, const Affine& toDc, const AssetReader& asset) {
     if (!dc) return;
     if (gfx.Generation() != generation_) {
-        // New devices (the GPU was reset, the driver updated): what was made on the old ones goes.
+        // 新しいデバイス (GPU がリセットされた、ドライバーが更新された): 古いデバイスで作ったものは捨てる。
         generation_ = gfx.Generation();
         pictures_.clear();
         brush_.Reset();
@@ -609,20 +608,20 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         owner_ = nullptr;
     }
     Begin(dc);
-    time_ = platform::NowSeconds();  // (虹色 goes round with the clock)
+    time_ = platform::NowSeconds();  // (虹色 は時計に合わせて回る)
     for (auto& [key, v] : videos_) v.seen = false;
-    // Text turned or scaled cannot be ClearType: greyscale for all of it (put back afterwards).
+    // 回したり拡大縮小したテキストは ClearType にできない: 全部グレースケールにする (あとで戻す)。
     const D2D1_TEXT_ANTIALIAS_MODE aa = dc->GetTextAntialiasMode();
     dc->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
     for (const UiNode& n : tree.nodes) {
         const Affine full = toDc * n.self;
-        if (n.alpha <= 0.001f) continue;  // faded out whole (its children too: their alpha is under it)
+        if (n.alpha <= 0.001f) continue;  // 全体が消えた (子も: その alpha はこの下にある)
         const UiButtonLook look = n.button ? ButtonNow(*n.button) : UiButtonLook{};
         UiPaint paint = PaintOf(look);
-        paint.tint.a *= n.alpha;  // (出る・消える動き / FadeTo: everything it draws)
+        paint.tint.a *= n.alpha;  // (出る・消える動き / FadeTo: 描くものすべて)
         if (const auto rb = RainbowFor(n, &UiRainbow::body)) paint.tint = Multiply(paint.tint, *rb);
-        // The order: 影 - 発光 - its body (背景, 画像, バー, 文字; ぼかし) - 立体 - 枠 - the keys' choice (spec §3-4 puts
-        // the glow over the body: it whitened the body itself - 2026-11-17 on screen).
+        // 順序: 影 - 発光 - 本体 (背景、画像、バー、文字; ぼかし) - 立体 - 枠 - キーの選択 (仕様 §3-4 は
+        // 光を本体の上に置く: 本体そのものが白くなった - 2026-11-17 画面で確認)。
         const UiStyle* st = n.style;
         if (st && (st->shadow.enabled || st->glow.enabled || (st->blur.enabled && st->blur.radius > 0))) {
             DrawWithEffects(n, full, gfx, asset, paint);
@@ -631,7 +630,7 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         }
         if (st && BevelShown(*st)) DrawBevel(n, full, BevelInset(*st, n.button));
         if (st && st->border.enabled) {
-            // Its own 枠, mixed with a button's state outline (UI-2: toward its own frame, never thinner).
+            // その 枠 を、ボタンの状態の縁取りと混ぜる (UI-2: 自分の枠へ向かい、細くはならない)。
             const UiStroke own{st->border.width, Rainbowed(st->border.color, RainbowFor(n, &UiRainbow::border))};
             UiStroke stroke = n.button ? ButtonOutline(look, own) : own;
             stroke.color.a *= n.alpha;
@@ -644,7 +643,7 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
         if (n.button && n.button->focused && n.button->interactable) DrawFocus(n, full);
     }
     dc->SetTextAntialiasMode(aa);
-    std::erase_if(videos_, [](const auto& kv) { return !kv.second.seen; });  // (not drawn: stopped - its sound too)
+    std::erase_if(videos_, [](const auto& kv) { return !kv.second.seen; });  // (描かれていない: 止める - 音も)
 }
 
 }  // namespace rm::game_ui

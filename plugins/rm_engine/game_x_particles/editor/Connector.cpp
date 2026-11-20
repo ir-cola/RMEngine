@@ -15,11 +15,11 @@ namespace rm::game_x_particles {
 
 namespace {
 
-// 追加 ▸ エフェクト ▸ パーティクル: an entity of the game's space (2D or 3D: the particles follow it) with a
-// particle system.
+// 追加 ▸ エフェクト ▸ パーティクル: ゲームの空間 (2D でも 3D でも: パーティクルはそれに
+// ついていく) に、パーティクルシステムを持つエンティティを置く。
 void FillParticles(game_production::Scene& scene, int entity) { game_production::AddComponentTo<ParticleSystem>(scene, entity); }
 
-// デバッグ ▸ パーティクル: each 3D picture's particles (the players count the alive ones while it is shown).
+// デバッグ ▸ パーティクル: 各 3D の絵のパーティクル (その絵が出ているあいだ、プレイヤーが生きている数を数える)。
 void ParticleLines(const game_production::DebugContext&, std::vector<game_production::DebugInfoLine>& out) {
     particles::CountAliveFor(1.5);
     std::vector<PictureParticles> list = RecentParticles();
@@ -42,7 +42,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::CreateItemInfo kItem{.label = editor::TrKey(L"パーティクル"), .folder = editor::TrKey(L"エフェクト"),
                                                        .fill = &FillParticles};
     registry.Contribute(game_production::kCreateItemPoint, kItem);
-    // The 階層's picture and the 3D scene view's mark of an entity with particles: a sparkle.
+    // パーティクルを持つエンティティの、階層の絵と 3D シーンビューの印: きらめき。
     static const game_production::ComponentLook kLook{.type = &reflect::TypeOf<ParticleSystem>, .icon = "effect"};
     registry.Contribute(game_production::kComponentLookPoint, kLook);
     // デバッグ: how many particles each view plays.

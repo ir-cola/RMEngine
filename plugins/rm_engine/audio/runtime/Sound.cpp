@@ -51,15 +51,15 @@ std::optional<WavInfo> ParseWav(std::span<const uint8_t> b, const SoundBudget& b
     bool haveFormat = false, haveData = false;
     uint16_t bits = 0, tag = 0, blockAlign = 0;
     size_t at = 12;
-    // Chunks: 4 bytes of name, 4 of size, the body (padded to an even size). Every size is checked
-    // against what is left of the file (a broken or hostile size never reads past its end).
+    // チャンク: 名前 4 バイト、サイズ 4 バイト、本体 (偶数サイズになるよう詰める)。どのサイズも
+    // ファイルの残りと照らして調べる (壊れた、または悪意あるサイズでも、終わりを越えて読むことはない)。
     while (at + 8 <= b.size()) {
         const uint8_t* h = b.data() + at;
         const uint32_t size = U32(h + 4);
         const size_t body = at + 8;
         if (size > b.size() - body) {
             if (std::memcmp(h, "data", 4) == 0 && haveFormat) {
-                // A data chunk longer than the file (a recording cut off): play what is there.
+                // ファイルより長い data チャンク (録音が途中で切れた): あるところまで鳴らす。
                 info.dataOffset = body;
                 info.dataBytes = b.size() - body;
                 haveData = true;
@@ -84,7 +84,7 @@ std::optional<WavInfo> ParseWav(std::span<const uint8_t> b, const SoundBudget& b
                     Fail(error, "WAVE_FORMAT_EXTENSIBLE の fmt が短すぎます");
                     return std::nullopt;
                 }
-                tag = U16(f + 24);  // the sub format GUID's first 2 bytes: 1 PCM / 3 float
+                tag = U16(f + 24);  // サブフォーマット GUID の最初の 2 バイト: 1 は PCM / 3 は float
             }
             haveFormat = true;
         } else if (std::memcmp(h, "data", 4) == 0) {
@@ -148,7 +148,7 @@ size_t WavToFloat(std::span<const uint8_t> b, const WavInfo& info, uint64_t from
             case SampleKind::Pcm16: v = static_cast<float>(static_cast<int16_t>(U16(p))) / 32768.f; break;
             case SampleKind::Pcm24: {
                 int32_t s = static_cast<int32_t>(p[0] | (p[1] << 8) | (p[2] << 16));
-                if (s & 0x800000) s |= ~0xFFFFFF;  // the sign of 24 bits
+                if (s & 0x800000) s |= ~0xFFFFFF;  // 24 ビットの符号
                 v = static_cast<float>(s) / 8388608.f;
                 break;
             }
@@ -166,7 +166,7 @@ size_t WavToFloat(std::span<const uint8_t> b, const WavInfo& info, uint64_t from
                 break;
             }
         }
-        out[i] = std::isfinite(v) ? std::clamp(v, -1.f, 1.f) : 0.f;  // (a float file may hold NaN or loud values)
+        out[i] = std::isfinite(v) ? std::clamp(v, -1.f, 1.f) : 0.f;  // (float のファイルには NaN や大きすぎる値があるかもしれない)
     }
     return n;
 }
@@ -214,7 +214,7 @@ LoopPoints LoopFrames(double startSeconds, double endSeconds, uint32_t sampleRat
     lp.start = frame(startSeconds);
     lp.end = frame(endSeconds);
     if (lp.end == 0 || lp.end > totalFrames) lp.end = totalFrames;
-    if (lp.start >= lp.end) return {0, totalFrames};  // a broken pair: the whole sound
+    if (lp.start >= lp.end) return {0, totalFrames};  // 壊れた組: 音全体
     return lp;
 }
 
@@ -242,7 +242,7 @@ float FadeGain(double elapsed, double seconds, bool in) {
     if (seconds <= 0 || !std::isfinite(seconds)) return in ? 1.f : 0.f;
     const double t = std::clamp(elapsed / seconds, 0.0, 1.0);
     constexpr double kHalfPi = 1.5707963267948966;
-    // Equal power: in = sin, out = cos (in² + out² = 1 along a crossfade).
+    // 等パワー: in = sin、out = cos (クロスフェード中、in² + out² = 1)。
     return static_cast<float>(in ? std::sin(t * kHalfPi) : std::cos(t * kHalfPi));
 }
 
@@ -253,7 +253,7 @@ float DistanceGain(float d, float minD, float maxD) {
     if (d <= minD) return 1.f;
     if (d >= maxD) return 0.f;
     const float inverse = minD / d;
-    // The last quarter of the way to maxDistance tapers to 0 (no step where it stops).
+    // maxDistance までの最後の 4 分の 1 は 0 へ細くする (止まるところに段を作らない)。
     const float taperFrom = minD + (maxD - minD) * 0.75f;
     const float taper = d <= taperFrom ? 1.f : (maxD - d) / (maxD - taperFrom);
     return std::clamp(inverse * taper, 0.f, 1.f);

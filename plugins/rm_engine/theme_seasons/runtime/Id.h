@@ -1,5 +1,5 @@
 #pragma once
-// The ID of the seasons theme pack (spring / summer / fall / winter): theme files and the code of their pictures - written here once (and in plugin.json, compared at start-up).
+// 季節テーマパック (春 / 夏 / 秋 / 冬) の ID: テーマファイルと、その絵のコード - ここに 1 回だけ書く (plugin.json にも書き、起動時に比べる)。
 
 #include "core/PluginId.h"
 

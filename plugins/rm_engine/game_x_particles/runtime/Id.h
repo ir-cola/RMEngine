@@ -1,5 +1,5 @@
 #pragma once
-// The ID of the connector ゲーム制作 × パーティクル - written here once (and in plugin.json, compared at start-up).
+// コネクター ゲーム制作 × パーティクル の ID - ここに 1 か所だけ書く (と plugin.json に。起動時に突き合わせる)。
 
 #include "core/PluginId.h"
 

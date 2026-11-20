@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#pragma comment(lib, "xaudio2.lib")  // XAudio2 2.9 and X3DAudio (xaudio2_9.dll: Windows 10 and later)
+#pragma comment(lib, "xaudio2.lib")  // XAudio2 2.9 と X3DAudio (xaudio2_9.dll: Windows 10 以降)
 
 using Microsoft::WRL::ComPtr;
 
@@ -36,7 +36,7 @@ void ApplyImport(SoundSource& sound, const asset::SoundImport& import) {
 
 namespace {
 
-constexpr int kStreamBuffers = 4;   // queued pieces of a stream (at most kStreamBuffers - 1 at once)
+constexpr int kStreamBuffers = 4;   // ストリームの待ち行列に入れた断片 (同時に多くて kStreamBuffers - 1 個)
 constexpr double kPieceSeconds = 0.25;
 
 enum class State : uint8_t { Loading, Playing, Done };
@@ -46,27 +46,27 @@ struct Voice {
     SoundSource sound;
     PlayParams p;
     State state = State::Loading;
-    bool stopAsked = false;  // to go (the engine's thread destroys it)
+    bool stopAsked = false;  // 止めてほしい (エンジンのスレッドが壊す)
     bool paused = false;
     bool fadingOut = false;
     double fadeInT = 0, fadeOutT = 0, fadeOutLen = 0;
-    // On the device
+    // デバイス上
     IXAudio2SourceVoice* src = nullptr;
     IXAudio2Voice* bus = nullptr;
     Format format;
-    std::shared_ptr<const Pcm> pcm;  // a sound decoded whole (shared)
-    // A stream
+    std::shared_ptr<const Pcm> pcm;  // 丸ごとデコードした音 (共有)
+    // ストリーム
     std::unique_ptr<Decoder> dec;
     uint64_t total = 0, pos = 0;
     LoopPoints loop;
     bool streamEnded = false;
     std::array<std::vector<float>, kStreamBuffers> buffers;
     int nextBuffer = 0;
-    // Silent: what is left to "play" (seconds; infinite while looping)
+    // 無音: 「鳴らす」ために残っている時間 (秒。ループ中は無限)
     double silentLeft = 0;
 };
 
-// X3DAudio is left-handed; the engine's 3D space is right-handed (z flips).
+// X3DAudio は左手系。エンジンの 3D 空間は右手系 (z が反転する)。
 X3DAUDIO_VECTOR Left(Vec3 v) { return {v.x, v.y, -v.z}; }
 
 }  // namespace
@@ -84,8 +84,8 @@ struct AudioEngine::Impl {
     std::condition_variable_any cv;
     std::unordered_map<VoiceId, std::shared_ptr<Voice>> voices;
     std::deque<std::shared_ptr<Voice>> loads;
-    // Sounds decoded whole, by key: kept while the engine lives (a sound effect played again is not read
-    // again), up to kKeepBytes - past it, the oldest ones are let go (voices playing them keep theirs).
+    // 丸ごとデコードした音をキーごとに持つ: エンジンが生きている間は残す (鳴らし直す効果音は読み直さない)。
+    // kKeepBytes まで - 超えたら古いものから手放す (それを鳴らしているボイスは自分の分を持ち続ける)。
     static constexpr size_t kKeepBytes = 256u << 20;
     std::unordered_map<std::string, std::shared_ptr<const Pcm>> decoded;
     std::deque<std::string> decodedOrder;
@@ -101,7 +101,7 @@ struct AudioEngine::Impl {
         if (told.insert(key).second) messages.push_back(std::move(text));
     }
 
-    // --- The engine's thread ------------------------------------------------------------------------
+    // --- エンジンのスレッド ------------------------------------------------------------------------
     void Run(std::stop_token stop) {
         const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);  // (Media Foundation)
         while (!stop.stop_requested()) {
@@ -121,7 +121,7 @@ struct AudioEngine::Impl {
         if (SUCCEEDED(co)) CoUninitialize();
     }
 
-    // Reads a sound (outside the lock: it may take a while), then puts it on the device.
+    // 音を読み (ロックの外: 時間がかかるかもしれない)、そのあとデバイスに載せる。
     void Load(const std::shared_ptr<Voice>& v) {
         {
             std::lock_guard lock(m);
@@ -149,7 +149,7 @@ struct AudioEngine::Impl {
                     if (whole) {
                         pcm = std::make_shared<const Pcm>(std::move(*whole));
                     } else {
-                        stream = true;  // (too long after all: streamed)
+                        stream = true;  // (結局長すぎた: ストリームにする)
                         dec = OpenDecoder(v->sound.bytes, budget, &error);
                     }
                 }
@@ -205,7 +205,7 @@ struct AudioEngine::Impl {
         v.bus = v.p.bus == Bus::Music ? static_cast<IXAudio2Voice*>(music) : static_cast<IXAudio2Voice*>(effects);
         XAUDIO2_SEND_DESCRIPTOR send{0, v.bus};
         const XAUDIO2_VOICE_SENDS sends{1, &send};
-        // Made for pitches up to kMaxPitch (the default MaxFrequencyRatio of 2 would refuse more).
+        // kMaxPitch までのピッチ用に作る (既定の MaxFrequencyRatio は 2 で、それ以上は断られる)。
         if (FAILED(xa->CreateSourceVoice(&v.src, &wf.Format, 0, kMaxPitch, nullptr, &sends, nullptr))) {
             v.src = nullptr;
             Tell(v.sound.key + "|voice", std::format("音「{}」の声を作れません ({} Hz・{} チャンネル)", v.sound.name, v.format.sampleRate, v.format.channels));
@@ -220,7 +220,7 @@ struct AudioEngine::Impl {
                 b.LoopBegin = static_cast<UINT32>(v.loop.start);
                 b.LoopLength = static_cast<UINT32>(v.loop.end - v.loop.start);
                 b.LoopCount = XAUDIO2_LOOP_INFINITE;
-                if (b.LoopBegin == 0 && v.loop.end >= v.total) b.LoopLength = 0;  // (the whole)
+                if (b.LoopBegin == 0 && v.loop.end >= v.total) b.LoopLength = 0;  // (全体)
             }
             v.src->SubmitSourceBuffer(&b);
         } else {
@@ -229,7 +229,7 @@ struct AudioEngine::Impl {
         return true;
     }
 
-    // A stream kept kStreamBuffers - 1 pieces ahead (under the lock).
+    // ストリームは kStreamBuffers - 1 個先まで入れておく (ロックの下で)。
     void FeedStream(Voice& v) {
         if (!v.src || !v.dec) return;
         XAUDIO2_VOICE_STATE st{};
@@ -247,7 +247,7 @@ struct AudioEngine::Impl {
             const size_t got = piece.frames ? v.dec->Read(buf.data(), piece.frames) : 0;
             v.pos = piece.from + got;
             if (got == 0) {
-                // The real end (a length that was wrong, or unknown): round again, or the end.
+                // 本当の終わり (長さが間違っていた、または不明): もう一周するか、終わる。
                 if (v.p.loop && v.pos != v.loop.start && v.dec->Seek(v.loop.start)) {
                     v.pos = v.loop.start;
                     continue;
@@ -273,13 +273,13 @@ struct AudioEngine::Impl {
         if (v.src) {
             v.src->Stop(0);
             v.src->FlushSourceBuffers();
-            v.src->DestroyVoice();  // (waits for the device to let go of its buffers)
+            v.src->DestroyVoice();  // (デバイスがバッファを手放すまで待つ)
             v.src = nullptr;
         }
         v.state = State::Done;
     }
 
-    // Streams fed; voices that ended or were stopped go (the engine's thread).
+    // ストリームに送り込む。終わった、または止められたボイスを消す (エンジンのスレッド)。
     void Feed() {
         std::lock_guard lock(m);
         for (auto it = voices.begin(); it != voices.end();) {
@@ -304,8 +304,8 @@ struct AudioEngine::Impl {
         }
     }
 
-    // --- The game thread -------------------------------------------------------------------------
-    // Volume, pitch and where it is heard from (under the lock).
+    // --- ゲームのスレッド -------------------------------------------------------------------------
+    // 音量・ピッチ・聞こえてくる方向 (ロックの下で)。
     void Apply(Voice& v, double dt) {
         const bool running = !v.paused && !pausedAll;
         float g = Gain(1, 1, v.sound.assetVolume, v.p.volume);
@@ -329,15 +329,15 @@ struct AudioEngine::Impl {
         }
         if (silent) {
             if (running && v.state == State::Playing) v.silentLeft -= dt;
-            if (v.silentLeft <= 0 && v.state == State::Playing) v.stopAsked = true;  // (ended: Update takes it away)
+            if (v.silentLeft <= 0 && v.state == State::Playing) v.stopAsked = true;  // (終わった: Update が片づける)
             return;
         }
         if (!v.src) return;
         v.src->SetVolume(g);
         v.src->SetFrequencyRatio(ClampPitch(v.p.pitch));
         if (v.p.spatial) {
-            // Where it is heard from (left / right ...): X3DAudio's matrix. Its own distance curve is flat
-            // (the loudness by distance is DistanceGain above: the same everywhere, tested).
+            // 聞こえてくる方向 (左 / 右 ...): X3DAudio の行列。その距離カーブは平らにしてある
+            // (距離による音の大きさは上の DistanceGain: どこでも同じ。テスト済み)。
             static const X3DAUDIO_DISTANCE_CURVE_POINT kFlat[2] = {{0.f, 1.f}, {1.f, 1.f}};
             static const X3DAUDIO_DISTANCE_CURVE kFlatCurve{const_cast<X3DAUDIO_DISTANCE_CURVE_POINT*>(kFlat), 2};
             X3DAUDIO_LISTENER l{};
@@ -422,7 +422,7 @@ void AudioEngine::Stop(VoiceId id, double fadeOut) {
     const auto it = s.voices.find(id);
     if (it == s.voices.end()) return;
     Voice& v = *it->second;
-    if (fadeOut > 0 && !v.paused && !s.pausedAll) {  // (one still being read fades once it plays)
+    if (fadeOut > 0 && !v.paused && !s.pausedAll) {  // (まだ読み込み中のものは、鳴り始めてからフェードする)
         if (!v.fadingOut) {
             v.fadingOut = true;
             v.fadeOutT = 0;
@@ -431,7 +431,7 @@ void AudioEngine::Stop(VoiceId id, double fadeOut) {
         return;
     }
     v.stopAsked = true;
-    if (v.src) v.src->Stop(0);  // (silent at once; the engine's thread destroys it)
+    if (v.src) v.src->Stop(0);  // (すぐ無音にする。エンジンのスレッドが壊す)
 }
 
 void AudioEngine::SetPaused(VoiceId id, bool paused) {
@@ -443,7 +443,7 @@ void AudioEngine::SetPaused(VoiceId id, bool paused) {
     v.paused = paused;
     if (v.src && !s.pausedAll && !v.stopAsked) {
         if (paused) {
-            v.src->Stop(0);  // keeps its place (XAudio2's Stop is a pause)
+            v.src->Stop(0);  // 位置を保つ (XAudio2 の Stop は一時停止)
         } else {
             v.src->Start(0);
         }
@@ -522,7 +522,7 @@ void AudioEngine::Update(double dt) {
     for (auto it = s.voices.begin(); it != s.voices.end();) {
         Voice& v = *it->second;
         if (v.state == State::Playing && !v.stopAsked) s.Apply(v, dt);
-        // Silent voices that ended (or were stopped) go here: there is nothing on a device to let go of.
+        // 終わった (または止められた) 無音のボイスはここで消す: デバイスに手放すものは何もない。
         if (s.silent && v.state == State::Playing && v.stopAsked) {
             it = s.voices.erase(it);
         } else {

@@ -1,7 +1,7 @@
-// The plugins whose RUNTIME part registers something (core/RuntimeRegistry.h): the systems and the
-// component types a game runs with. Only runtime/ headers are included here, so an exported game
-// (no editor) can link this list; the editor's loader uses it too (before each RegisterEditor).
-// tools/check_layers.ps1 checks that nothing here is editor-only.
+// RUNTIME の部分が何かを登録するプラグイン (core/RuntimeRegistry.h): ゲームが動くときに使う
+// システムと部品の型。ここでは runtime/ のヘッダーしか include しないので、書き出したゲーム
+// (エディター無し) もこの一覧をリンクできる。エディターのローダーも使う (各 RegisterEditor の前に)。
+// エディター専用のものがここに入っていないかは tools/check_layers.ps1 が調べる。
 
 #include "core/RuntimeRegistry.h"
 #include "rm_engine/game_x_3d/runtime/Id.h"

@@ -1,10 +1,10 @@
 #pragma once
-// 音 - the editor part: sounds heard from the アセット panel (the core's editor::kAssetPreviewPoint).
+// 音 - エディターの部分: アセット パネルで聴く音 (核の editor::kAssetPreviewPoint)。
 //
-//   describe   "0:12.5 ・ 44100 Hz ステレオ ・ Ogg Vorbis" - read on a thread of its own (once per file
-//              and time it was changed): the panel shows "長さを調べています…" until then
-//   play       the file with its import settings (音量・ループの点 - a preview loops only when the
-//              loop points are set), on an AudioEngine of its own (not the game's)
+//   describe   "0:12.5 ・ 44100 Hz ステレオ ・ Ogg Vorbis" - 専用のスレッドで読む (ファイルと
+//              更新時刻ごとに 1 回): それまでパネルは "長さを調べています…" と出す
+//   play       ファイルを取り込みの設定 (音量・ループの点 - プレビューがループするのは
+//              ループの点が設定されているときだけ) つきで、専用の AudioEngine (ゲームのものではない) で鳴らす
 
 #include "editor/plugin/Software.h"
 

@@ -1,5 +1,5 @@
-// The game UI's part of the scripts' API (RMUI.h / RMUIAbi.h), on the scene that plays.
-// RmApi::ctx is game production's ScriptWorld.
+// スクリプトの API (RMUI.h / RMUIAbi.h) のうち、ゲーム UI の部分。動いているシーンに対して働く。
+// RmApi::ctx はゲーム制作の ScriptWorld。
 
 #include "rm_engine/game_ui/runtime/ScriptUi.h"
 
@@ -32,7 +32,7 @@ T* PartOf(void* ctx, uint64_t id) {
 
 Color ColorOf(const float v[4]) { return {v[0], v[1], v[2], v[3]}; }
 
-// The UI windows (canvases) by name: the first in the 階層 of that name; told once when none.
+// 名前で探す UI のウィンドウ (キャンバス): 階層でその名前の最初のもの。なければ 1 回だけ知らせる。
 game_production::SceneEntity* Window(void* ctx, const char* name) {
     ScriptWorld& w = World(ctx);
     if (!w.scene || !name) return nullptr;
@@ -111,7 +111,7 @@ int ShowWindow(void* ctx, const char* name, int shown) {
 int SwitchWindow(void* ctx, const char* name) {
     game_production::SceneEntity* target = Window(ctx, name);
     if (!target) return 0;
-    SwitchToWindow(*World(ctx).scene, target->data.id);  // (as a button's ウィンドウを切り替える)
+    SwitchToWindow(*World(ctx).scene, target->data.id);  // (ボタンの ウィンドウを切り替える と同じ)
     return 1;
 }
 
@@ -133,7 +133,7 @@ int Focus(void* ctx, uint64_t id) {
     return 1;
 }
 
-// The tweens go through the UI service (it steps them each frame).
+// トゥイーンは UI サービスを通す (サービスが毎フレームそれを進める)。
 UiService* Service(void* ctx) {
     ScriptWorld& w = World(ctx);
     return w.services ? dynamic_cast<UiService*>(w.services->Find(kUiServiceName)) : nullptr;
@@ -164,7 +164,7 @@ const game_production::ScriptApiPart& ScriptUiPart() {
 }
 
 const game_production::ScriptApiPart& ScriptUiPartVersion1() {
-    // Version 1's table is the start of version 2's (the same functions in the same places).
+    // バージョン 1 の表は、バージョン 2 の先頭部分 (同じ関数が同じ場所にある)。
     static const game_production::ScriptApiPart part{RM_PART_UI, 1u, &kTable};
     return part;
 }

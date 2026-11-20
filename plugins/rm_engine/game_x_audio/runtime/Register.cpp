@@ -15,13 +15,13 @@ std::unique_ptr<game_production::PlayService> CreateService(const game_productio
 }  // namespace
 
 void RegisterRuntime(RuntimeRegistry& registry) {
-    // 音源: in 3D and 2D games alike (an entity may have several: footsteps and a voice).
+    // 音源: 3D のゲームでも 2D のゲームでも同じ (1 つのエンティティに複数付けてよい: 足音と声)。
     static const game_production::ComponentInfo kSource{.type = &reflect::TypeOf<AudioSource>, .multiple = true, .folder = "音"};
     registry.Contribute(game_production::kComponentPoint, kSource);
-    // The sounds while the game plays (the editor's Play and the game).
+    // ゲームが動く間の音 (エディターの Play とゲーム)。
     static const game_production::PlayServiceInfo kService{kAudioServiceName, &CreateService};
     registry.Contribute(game_production::kPlayServicePoint, kService);
-    // Scripts: rm::Audio / rm::AudioSource (sdk/RMAudio.h).
+    // スクリプト: rm::Audio / rm::AudioSource (sdk/RMAudio.h)。
     registry.Contribute(game_production::kScriptApiPoint, ScriptAudioPart());
 }
 

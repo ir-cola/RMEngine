@@ -33,7 +33,7 @@ public:
     void Prepare(const game_x_3d::WorldDrawFrame& f, std::vector<space3d::ExtraDraw>& out) override {
         animating_ = false;
         if (f.gfx.Generation() != generation_ || f.playing != playing_) {
-            running_.clear();  // (new devices; Play started or stopped: everything from the start)
+            running_.clear();  // (新しいデバイス、Play の開始か停止: すべて始めから)
             view_ = {};
             generation_ = f.gfx.Generation();
             playing_ = f.playing;
@@ -44,8 +44,8 @@ public:
         const std::string type = reflect::TypeOf<ParticleSystem>().name;
         const double now = NowSeconds();
         for (auto& [id, r] : running_) r.seen = false;
-        // What they collide with: the shapes (gathered at the first particle that runs) and the depth of
-        // this picture's last frame (taken while it was drawn: ViewTaker below).
+        // ぶつかる相手: 形 (最初に動くパーティクルで集める) と、この絵の最後のフレームの
+        // 深度 (描いている間に取る: 下の ViewTaker)。
         bool gathered = false;
         particles::CollisionWorld collide;
         if (view_.depth) {
@@ -59,7 +59,7 @@ public:
         }
         viewTaken_ = false;
         out.push_back([this](const space3d::ExtraDrawContext& dc) { TakeView(dc); });
-        // Each パーティクル of each entity (several on one: several effects, each with its own player).
+        // 各エンティティの各 パーティクル (1 つに複数あれば複数のエフェクトで、それぞれ専用のプレイヤー)。
         struct Found {
             const game_production::SceneEntity* entity;
             size_t nth;
@@ -77,14 +77,14 @@ public:
             const auto& e = *one.entity;
             const size_t nth = one.nth;
             const auto& ps = *one.system;
-            // Playing: the ones letting out particles, and those a script stopped while theirs die away.
+            // Play 中: パーティクルを出しているものと、スクリプトが止めて残りが消えていくもの。
             const auto there = running_.find(RunKey(e.data.id, nth));
             if (f.playing ? !Emitting(ps) && (there == running_.end() || there->second.player.Finished())
                           : std::find(f.selection.begin(), f.selection.end(), e.data.id) == f.selection.end()) {
                 continue;
             }
             const space3d::Mat4* world = f.world ? f.world(e.data.id) : nullptr;
-            if (!world) continue;  // no Transform, or switched off
+            if (!world) continue;  // Transform がない、またはオフ
             if (!particles::CanRunParticles(device)) {
                 if (!toldNoGpu_) log::Warn("この GPU ではパーティクルを出せません (Direct3D 11 の機能レベル 11_0 が要ります)");
                 toldNoGpu_ = true;
@@ -106,7 +106,7 @@ public:
                 collide.shapes = shapes_;
             }
             if (f.playing) {
-                // What scripts asked since the last frame (each once).
+                // 前のフレームからスクリプトが頼んだこと (それぞれ 1 回)。
                 r.player.SetEmitting(Emitting(ps));
                 if (ps.restarts != r.restarts) r.player.Restart();
                 if (ps.emitted != r.emitted) r.player.Emit(ps.emitted - r.emitted);
@@ -122,7 +122,7 @@ public:
             animating_ = true;
         }
         std::erase_if(running_, [](const auto& kv) { return !kv.second.seen; });
-        // What this picture plays, for the debug panel.
+        // この絵が再生しているもの。デバッグパネル用。
         PictureParticles stats;
         stats.picture = f.picture ? f.picture : "";
         stats.playing = f.playing;
@@ -142,7 +142,7 @@ public:
     bool Animating() const override { return animating_; }
 
 private:
-    // The camera and the depth of this picture's frame (read by the next frame's collisions).
+    // この絵のフレームのカメラと深度 (次のフレームの衝突が読む)。
     struct View {
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depth;
         uint32_t samples = 1;
@@ -174,7 +174,7 @@ private:
     struct Running {
         EffectPlayer player;
         bool seen = false;
-        uint32_t restarts = 0, emitted = 0;  // the scripts' requests done (ParticleSystem's counts)
+        uint32_t restarts = 0, emitted = 0;  // スクリプトの頼みをやり終えた数 (ParticleSystem の数)
     };
     struct Loaded {
         std::shared_ptr<const ParticleEffect> effect;
@@ -182,14 +182,14 @@ private:
         double lookedAt = -1e9;
     };
 
-    // The effect an asset holds (read again now and then); none: the sample (NewEffect).
+    // アセットが持つエフェクト (ときどき読み直す)。なければ見本 (NewEffect)。
     std::shared_ptr<const ParticleEffect> EffectOf(const AssetRef& ref, const game_x_3d::WorldDrawFrame& f, double now) {
         if (ref.Empty()) {
             static const auto sample = std::make_shared<const ParticleEffect>(particles::NewEffect());
             return sample;
         }
         Loaded& l = effects_[ref.guid];
-        // (Not playing - the editor: looked at often, so an edit of the パーティクル tab shows at once.)
+        // (再生中でない - エディター: よく見直すので、パーティクル タブでの編集がすぐ出る。)
         if (now - l.lookedAt < (f.playing ? kLookSeldom : kLookOften)) return l.effect;
         l.lookedAt = now;
         const auto bytes = f.asset ? f.asset(ref) : std::nullopt;
@@ -214,8 +214,8 @@ private:
     }
 
     static uint64_t RunKey(int entity, size_t nth) { return (static_cast<uint64_t>(static_cast<uint32_t>(entity)) << 32) | static_cast<uint32_t>(nth); }
-    std::unordered_map<uint64_t, Running> running_;  // by entity and which of its パーティクル (RunKey)
-    std::unordered_map<std::string, Loaded> effects_;  // by asset id
+    std::unordered_map<uint64_t, Running> running_;  // エンティティと、その何番目の パーティクル か (RunKey) ごと
+    std::unordered_map<std::string, Loaded> effects_;  // アセット id ごと
     ModuleFiles modules_;
     ParticleImages images_;
     std::vector<particles::CollisionShape> shapes_;
@@ -257,7 +257,7 @@ ID3D11ShaderResourceView* ParticleImages::Find(const AssetRef& ref, platform::Gf
     if (ref.Empty()) return nullptr;
     Entry& e = images_[ref.guid];
     if (e.generation != gfx.Generation()) {
-        e = {};  // (made on devices that are gone)
+        e = {};  // (なくなったデバイスで作ったもの)
         e.generation = gfx.Generation();
     }
     const double now = NowSeconds();
@@ -271,14 +271,14 @@ ID3D11ShaderResourceView* ParticleImages::Find(const AssetRef& ref, platform::Gf
         if (told_.insert(ref.guid + why).second) log::Warn("パーティクルの絵 ({}) を読めません: {}", ref.guid, why);
     };
     std::string err;
-    const auto baked = asset::ReadBakedImage(*bytes, &err);  // (the game's: baked; the editor's: the file)
+    const auto baked = asset::ReadBakedImage(*bytes, &err);  // (ゲームのもの: ベイク済み。エディターのもの: ファイル)
     if (!baked) return tell(err), nullptr;
     const auto* data = reinterpret_cast<const uint8_t*>(baked->picture.data());
     const auto image = platform::DecodeImage(gfx.Wic(), std::span(data, baked->picture.size()), platform::PixelOrder::Rgba, {1024, 1024}, &err);
     if (!image) return tell(err), nullptr;
-    // With its mipmaps (the smaller copies 3D 空間's pictures have, averaged as light): a big picture on
-    // small or far particles does not shimmer (2026-11-18: it had only the one level). The texels stay
-    // as the picture has them (UNORM: the particle shader takes them as they are).
+    // ミップマップつき (3D 空間の絵が持つ、小さくしたコピー。光として平均する): 大きな絵を小さな
+    // パーティクルや遠いパーティクルに貼ってもちらつかない (2026-11-18: 以前は 1 段しかなかった)。
+    // テクセルは絵のまま (UNORM: パーティクルのシェーダーはそのまま受け取る)。
     const space3d::TexturePixels pixels = space3d::MakeTexturePixels(*image, true);
     if (pixels.levels.empty() || pixels.format != space3d::TextureFormat::Rgba8) return tell("ミップマップを作れません"), nullptr;
     D3D11_TEXTURE2D_DESC td{};
@@ -305,7 +305,7 @@ particles::ViewConstants ViewOf(const space3d::ExtraDrawContext& c) {
     particles::ViewConstants v{};
     const space3d::Mat4 viewProj = c.projection * c.view;
     std::memcpy(v.viewProj, &viewProj.m[0][0], sizeof(v.viewProj));
-    // The camera's right and up in the world: the rows of the view's turn (m[column][row]).
+    // ワールドでのカメラの右と上: ビューの回転の行 (m[列][行])。
     for (int i = 0; i < 3; ++i) {
         v.right[i] = c.view.m[i][0];
         v.up[i] = c.view.m[i][1];

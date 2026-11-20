@@ -8,7 +8,7 @@ namespace {
 
 D2D1_COLOR_F ToD2D(Color c) { return {c.r, c.g, c.b, c.a}; }
 
-// Our matrix (column vectors) as Direct2D's (row vectors: p' = p * M).
+// こちらの行列 (列ベクトル) を Direct2D の行列 (行ベクトル: p' = p * M) にしたもの。
 D2D1_MATRIX_3X2_F ToD2D(const Mat3& m) { return D2D1::Matrix3x2F(m.a, m.b, m.c, m.d, m.tx, m.ty); }
 
 bool IsWhite(Color c) { return c.r == 1.f && c.g == 1.f && c.b == 1.f; }
@@ -61,7 +61,7 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
     D2D1_MATRIX_3X2_F old;
     dc->GetTransform(&old);
     if (f.clear.a <= 0) {
-        // a layer over another picture: nothing to fill
+        // 別の絵の上に重ねる層: 塗るものはない
     } else if (ID2D1SolidColorBrush* br = Brush(dc, f.clear)) {
         dc->FillRectangle(D2D1::RectF(f.viewport.x, f.viewport.y, f.viewport.x + f.viewport.w, f.viewport.y + f.viewport.h), br);
     }
@@ -70,10 +70,9 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
     const Mat3 screen = ScreenMatrix(f.camera, f.viewport);
     for (const SpriteDraw& s : f.sprites) {
         const float fx = s.flipX ? -1.f : 1.f, fy = s.flipY ? -1.f : 1.f;
-        // What is drawn (the image in its own DIPs, or the unit square) -> the sprite's own space:
-        // its middle at the origin, Y up, `size` units across (turned over when flipped).
-        // A part of the image (an atlas's cell) is drawn at (0, 0) in the image's DIPs (its pixels may be
-        // other than 96 per inch).
+        // 描くもの (画像の DIP のままか、単位の正方形) -> スプライト自身の空間:
+        // 中心が原点、Y が上、幅 `size` 単位 (反転しているときは裏返す)。
+        // 画像の一部 (アトラスのセル) は、画像の DIP の (0, 0) に描く (ピクセルは 1 インチ 96 でないこともある)。
         float w = 1, h = 1;
         D2D1_RECT_F source{};
         if (s.image) {
@@ -99,13 +98,13 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
             dc->DrawBitmap(s.image, rect, s.color.a, mode, &source, nullptr);
             continue;
         }
-        Brush(dc, s.color);  // (makes sure tint_ belongs to this context)
+        Brush(dc, s.color);  // (tint_ がこのコンテキストのものであることを確かめる)
         if (!tint_ && FAILED(dc->CreateEffect(CLSID_D2D1ColorMatrix, &tint_))) tint_.Reset();
         if (!tint_) {
             dc->DrawBitmap(s.image, rect, s.color.a, mode, &source, nullptr);
             continue;
         }
-        // Rows: the input's r, g, b, a and 1; columns: the output's. Each colour multiplied by the tint.
+        // 行: 入力の r, g, b, a と 1。列: 出力。各色に色味をかける。
         const D2D1_MATRIX_5X4_F m = D2D1::Matrix5x4F(s.color.r, 0, 0, 0,  //
                                                      0, s.color.g, 0, 0,  //
                                                      0, 0, s.color.b, 0,  //
@@ -115,7 +114,7 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
         tint_->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
         Microsoft::WRL::ComPtr<ID2D1Image> out;
         tint_->GetOutput(&out);
-        const D2D1_POINT_2F at{0, 0};  // the part's top left lands at (0, 0)
+        const D2D1_POINT_2F at{0, 0};  // 部分の左上が (0, 0) に来る
         dc->DrawImage(out.Get(), &at, &source, mode);
         tint_->SetInput(0, nullptr);
     }

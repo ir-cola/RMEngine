@@ -8,13 +8,13 @@
 namespace rm::game_x_particles {
 
 void RegisterRuntime(RuntimeRegistry& registry) {
-    // パーティクル (several on one entity are several effects).
+    // パーティクル (1 つのエンティティに複数あれば、複数のエフェクト)。
     static const game_production::ComponentInfo kSystem{.type = &reflect::TypeOf<ParticleSystem>, .multiple = true, .folder = "エフェクト"};
     registry.Contribute(game_production::kComponentPoint, kSystem);
-    // Drawn into the 3D pictures: the scene view, the game view and the exported game.
+    // 3D の絵に描く: シーンビュー、ゲームビュー、書き出したゲーム。
     static const game_x_3d::WorldDrawInfo kDraw{&CreateParticleDraw};
     registry.Contribute(game_x_3d::kWorldDrawPoint, kDraw);
-    // Scripts: play / stop / emit (sdk/RMParticles.h).
+    // スクリプト: 再生 / 停止 / 出す (sdk/RMParticles.h)。
     registry.Contribute(game_production::kScriptApiPoint, ScriptParticlesPart());
 }
 

@@ -8,8 +8,7 @@ namespace rm::particles {
 
 namespace {
 
-// (Order: as offered in the パーティクル tab's ＋ menu - shapes, then what a particle starts with, then
-// what moves it, then how it looks over its life.)
+// (順番: パーティクルタブの ＋ メニューに出す順 - 形、粒の始めの値、動かすもの、生きている間の見た目の順。)
 constexpr BuiltinModule kModules[] = {
     {"shape_cone", R"(module "形: 円すい"
 param float angle = 25 [0, 90]; // 広がる角度 (度)

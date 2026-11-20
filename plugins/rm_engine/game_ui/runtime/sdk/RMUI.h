@@ -1,21 +1,21 @@
-// RMUI.h - the game UI for scripts (the plugin ゲーム UI gives it).
+// RMUI.h - スクリプト用のゲーム UI (プラグイン ゲーム UI が提供する)。
 //
 //   #include "RMUI.h"
-//   rm::UI::SetText(scoreLabel, "スコア " + std::to_string(Global::score));   // a 文字 entity
-//   rm::UI::SetBar(hpBar, hp / maxHp);                                         // a バー entity: 0..1
-//   rm::UI::SetImage(icon, iconImage);                                         // a 画像 entity (rm::ImageRef)
-//   rm::UI::SwitchTo("Pause");     // that UI window (a キャンバス entity, by name) shown, the others hidden
+//   rm::UI::SetText(scoreLabel, "スコア " + std::to_string(Global::score));   // 文字 エンティティ
+//   rm::UI::SetBar(hpBar, hp / maxHp);                                         // バー エンティティ: 0..1
+//   rm::UI::SetImage(icon, iconImage);                                         // 画像 エンティティ (rm::ImageRef)
+//   rm::UI::SwitchTo("Pause");     // その UI ウィンドウ (名前で指す キャンバス エンティティ) を表示し、ほかは隠す
 //   rm::UI::Show("HUD"); rm::UI::Hide("HUD"); rm::UI::IsShown("HUD");
 //   rm::UI::SetInteractable(button, false);
-//   rm::UI::MoveTo(panel, {0, 40}, 0.3f);              // 位置 there over 0.3 s (rm::UI::Ease::Out)
+//   rm::UI::MoveTo(panel, {0, 40}, 0.3f);              // 位置 をそこへ 0.3 秒かけて (rm::UI::Ease::Out)
 //   rm::UI::ScaleTo(icon, 1.2f, 0.2f, rm::UI::Ease::Back); rm::UI::RotateTo(arrow, 90, 0.5f); rm::UI::FadeTo(hint, 0, 1);
-//   rm::UI::PlayPath(bird); rm::UI::StopPath(bird);    // its 道に沿って動く
+//   rm::UI::PlayPath(bird); rm::UI::StopPath(bird);    // その 道に沿って動く
 //
-// A button calls the scripts of its own entity:
-//   void OnClick(rm::Entity self);   // pressed with the mouse, or 決定 (the keys / a pad) on the chosen one
+// ボタンは自分のエンティティのスクリプトを呼ぶ:
+//   void OnClick(rm::Entity self);   // マウスで押された、または選ばれたボタンへの 決定 (キー / パッド)
 //
-// To show or hide one thing, switch its entity: rm::Entity::SetActive (RM.h).
-// An entity without that UI part: the setters do nothing, the getters give "" / -1.
+// 1 つのものを表示・非表示にするには、そのエンティティを切り替える: rm::Entity::SetActive (RM.h)。
+// その UI の部分のないエンティティ: セッターは何もせず、ゲッターは "" / -1 を返す。
 #pragma once
 
 #include "RM.h"
@@ -27,7 +27,7 @@ namespace rm {
 namespace UI {
 namespace detail {
 inline const RmUiApi* Get() {
-    static const RmUiApi* api = Part<RmUiApi>(RM_PART_UI, RM_PART_UI_VERSION);  // the engine's, for good
+    static const RmUiApi* api = Part<RmUiApi>(RM_PART_UI, RM_PART_UI_VERSION);  // エンジンのもの、ずっと
     return api;
 }
 }  // namespace detail
@@ -85,13 +85,13 @@ inline bool IsShown(const char* window) {
     const RmUiApi* u = detail::Get();
     return u && u->windowShown(Api()->ctx, window) != 0;
 }
-// The keys' focus on this button (shown as chosen until the mouse moves).
+// このボタンへのキーのフォーカス (マウスが動くまで選ばれたものとして表示する)。
 inline void Focus(Entity button) {
     if (const RmUiApi* u = detail::Get()) u->focus(Api()->ctx, button.id);
 }
-// How a tween goes over its time (as the inspector's 速さの曲線).
+// トゥイーンが時間をかけてどう進むか (インスペクターの 速さの曲線 と同じ)。
 enum class Ease : int { Linear = 0, In = 1, Out = 2, InOut = 3, Bounce = 4, Back = 5 };
-// From where it is now to there, over `seconds` (0: at once). Another of the same kind takes over.
+// いまの所からそこまで、`seconds` かけて (0: すぐに)。同じ種類のほかのものは引き継ぐ。
 inline void MoveTo(Entity e, Vec2 position, float seconds, Ease ease = Ease::Out) {
     if (const RmUiApi* u = detail::Get()) u->moveTo(Api()->ctx, e.id, position.x, position.y, seconds, static_cast<int>(ease));
 }
@@ -101,11 +101,11 @@ inline void ScaleTo(Entity e, float scale, float seconds, Ease ease = Ease::Out)
 inline void RotateTo(Entity e, float degrees, float seconds, Ease ease = Ease::Out) {
     if (const RmUiApi* u = detail::Get()) u->rotateTo(Api()->ctx, e.id, degrees, seconds, static_cast<int>(ease));
 }
-// 0: unseen .. 1: as it is (its children fade with it).
+// 0: 見えない .. 1: そのまま (子も一緒に薄くなる)。
 inline void FadeTo(Entity e, float alpha, float seconds, Ease ease = Ease::Out) {
     if (const RmUiApi* u = detail::Get()) u->fadeTo(Api()->ctx, e.id, alpha, seconds, static_cast<int>(ease));
 }
-// Its 道に沿って動く: on from where it is / stopped / from the start.
+// その 道に沿って動く: 今の所から続ける / 止める / 最初から。
 inline void PlayPath(Entity e) {
     if (const RmUiApi* u = detail::Get()) u->playPath(Api()->ctx, e.id, 1);
 }

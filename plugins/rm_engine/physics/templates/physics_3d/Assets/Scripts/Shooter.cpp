@@ -16,7 +16,7 @@ void Shooter::Tick(rm::Entity self, float dt) {
         rm::Log::Warn("「弾」にプレハブが選ばれていません");
         return;
     }
-    // Where the bullet starts, then its speed (it has its body at once: SetVelocity makes it).
+    // 弾が始まる位置と、そのあとの速さ (弾はすぐ体を持つ: SetVelocity がそれを作る)。
     rm::Transform3D(b).SetPosition(rm::Transform3D(self).WorldPosition());
     rm::Physics::SetVelocity(b, {0, 0, -speed});
 }

@@ -28,7 +28,7 @@ std::vector<PictureParticles> RecentParticles(double maxAge) {
     std::vector<PictureParticles> out;
     for (auto it = Store().begin(); it != Store().end();) {
         if (now - it->second.at > 60) {
-            it = Store().erase(it);  // (a drawer gone long ago)
+            it = Store().erase(it);  // (ずっと前に消えた描き手)
             continue;
         }
         if (now - it->second.at <= maxAge) out.push_back(it->second);

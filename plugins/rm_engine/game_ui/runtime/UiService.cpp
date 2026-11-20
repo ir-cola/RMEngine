@@ -19,13 +19,13 @@ using game_production::InputAction;
 using game_production::InputControl;
 using game_production::InputFrame;
 
-// An action's push this frame (0..1: its axis; a stick pushed the other way is 0).
+// このフレームのアクションの押し具合 (0..1: その軸。逆向きに倒したスティックは 0)。
 float Push(std::span<const InputAction> actions, const char* name, const InputFrame& f) {
     const InputAction* a = ActionOrStandard(actions, name);
     return a ? std::max(0.f, EvaluateAction(*a, f).axis) : 0.f;
 }
 
-// The direction held on a frame: the stronger way only (a stick pushed aslant goes one way), screen Y down.
+// 1 フレームで押されている向き: 強いほうの向きだけ (斜めに倒したスティックも 1 方向)、画面 Y は下向き。
 void Held(std::span<const InputAction> actions, const InputFrame& f, int& dx, int& dy) {
     using namespace game_production;
     const float h = Push(actions, kUiRight, f) - Push(actions, kUiLeft, f);
@@ -48,14 +48,14 @@ bool PressableIn(const UiTree& tree, int canvas, int entity) {
 
 bool Contains(const std::vector<int>& v, int x) { return std::find(v.begin(), v.end(), x) != v.end(); }
 
-// The windows shown: what opened since last frame is remembered with what it hid (戻る's way back).
+// 表示されているウィンドウ: 前のフレームから開いたものは、隠したものと一緒に覚える (戻る の戻り道)。
 void FollowWindows(const UiTree& tree, UiFocus& state) {
     std::vector<int> now;
     for (const UiNode& n : tree.nodes) {
-        if (n.parent < 0 && !n.closing) now.push_back(n.entity);  // (one going away is closed already)
+        if (n.parent < 0 && !n.closing) now.push_back(n.entity);  // (去っていくものはもう閉じている)
     }
     if (!state.started) {
-        state.started = true;  // (the windows of the start: nothing to go back to)
+        state.started = true;  // (最初のウィンドウ: 戻る先はない)
     } else {
         std::vector<int> gone;
         for (const int w : state.shown) {
@@ -64,7 +64,7 @@ void FollowWindows(const UiTree& tree, UiFocus& state) {
         for (const int w : now) {
             if (!Contains(state.shown, w)) state.visits.push_back({w, gone});
         }
-        std::erase_if(state.visits, [&](const UiVisit& v) { return !Contains(now, v.window); });  // closed some other way
+        std::erase_if(state.visits, [&](const UiVisit& v) { return !Contains(now, v.window); });  // ほかの方法で閉じられた
     }
     state.shown = std::move(now);
 }
@@ -90,22 +90,22 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
               std::span<const InputAction> actions, const InputFrame* now, const InputFrame* before, float dt, UiFocus& state) {
     UiStep step;
     FollowWindows(tree, state);
-    // The mouse.
+    // マウス。
     const PointerResult pr = StepPointer(tree, pointer, down, wentDown, wentUp, state.pointer);
     const bool moved = pointer && state.lastPointer && std::abs(pointer->x - state.lastPointer->x) + std::abs(pointer->y - state.lastPointer->y) > 0.5f;
-    if (moved || (pointer && wentDown)) state.keyboard = false;  // the mouse is used: the choice is not shown
+    if (moved || (pointer && wentDown)) state.keyboard = false;  // マウスを使っている: 選択は表示しない
     state.lastPointer = pointer;
     if (pr.clicked) {
         step.clicked.push_back(pr.clicked);
-        state.focus = pr.clicked;  // (the keys go on from there)
+        state.focus = pr.clicked;  // (キーはそこから続ける)
     }
-    // The keys and the pad, in the frontmost window that takes them: it always has a chosen button.
+    // キーとパッドは、それを受ける一番手前のウィンドウで: そこには必ず選ばれたボタンがある。
     const int window = NavigationCanvas(tree);
     const UiNode* wn = window ? tree.Find(window) : nullptr;
     if (window != state.window) {
         state.window = window;
-        // A button a script chose this frame (rm::UI::Focus - after Show of its window, in a Start) stays
-        // chosen; else the window's 最初に選ぶボタン.
+        // スクリプトがこのフレームに選んだボタン (rm::UI::Focus - ウィンドウの Show の後、Start で) は
+        // 選ばれたまま。そうでなければウィンドウの 最初に選ぶボタン。
         if (!(state.scriptChose && PressableIn(tree, window, state.focus))) {
             state.focus = wn ? FirstFocus(tree, window, static_cast<int>(wn->canvasPart->firstButton.id)) : 0;
         }
@@ -115,7 +115,7 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
     state.scriptChose = false;
     if (wn && now && before) {
         UiKeys keys = ReadUiKeys(actions, *now, *before);
-        // Held: a step after kRepeatDelay, then every kRepeatEvery.
+        // 押しっぱなし: kRepeatDelay の後に 1 歩、その後は kRepeatEvery ごと。
         if (keys.holdDx || keys.holdDy) {
             if (keys.dx || keys.dy || keys.holdDx != state.heldDx || keys.holdDy != state.heldDy) {
                 state.heldDx = keys.holdDx;
@@ -134,7 +134,7 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
             state.heldDx = state.heldDy = 0;
         }
         if (keys.dx || keys.dy) {
-            // The first step after the mouse only shows the choice again; then each moves it.
+            // マウスの後の最初の 1 歩は選択を再び見せるだけ。その次から 1 歩ずつ動かす。
             if (state.keyboard && state.focus) state.focus = NextButton(tree, window, state.focus, keys.dx, keys.dy);
             state.keyboard = true;
         }
@@ -151,35 +151,36 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
             }
         }
     }
-    // How each button looks this frame.
+    // このフレームの各ボタンの見た目。
     for (const UiNode& n : tree.nodes) {
         if (!n.button) continue;
         UiButton* b = MutableButton(scene, n.entity);
         if (!b) continue;
-        // Pressed while held on it; 乗った only when no other button is held (dragging off one onto another).
+        // 押されている間は押した状態。乗った はほかのボタンが押されていないときだけ (あるボタンから別の
+        // ボタンへドラッグしたとき)。
         const UiButtonState s = !b->interactable                                    ? UiButtonState::Disabled
                                 : pr.held == n.entity                               ? UiButtonState::Pressed
                                 : pr.hovered == n.entity && !state.pointer.pressed ? UiButtonState::Hover
                                                                                     : UiButtonState::Normal;
         b->state = static_cast<int>(s);
         b->focused = state.keyboard && state.focus == n.entity && n.canvas == window;
-        // Its look eased toward the state's (the first frame: as it is).
+        // その見た目を状態のものへなめらかに近づける (最初のフレーム: そのまま)。
         const UiButtonLook target = ButtonTarget(*b);
         b->now = b->ready ? EaseLook(b->now, target, EaseAmount(dt, b->transition)) : target;
-        // 乗った (the mouse, the keys' choice) or pressed: its sound once when it becomes so - pressed on it
-        // and let go is one sound, not two. Not on the first frame (the choice shown from the start).
+        // 乗った (マウス、キーの選択) か押された: そうなったときに 1 度だけその音 - 押して離すのは 2 回では
+        // なく 1 回の音。最初のフレームは鳴らさない (最初から表示されている選択)。
         const bool hot = b->interactable && (s == UiButtonState::Hover || s == UiButtonState::Pressed || b->focused);
         if (hot && !b->hot && b->ready) step.hovered.push_back(n.entity);
         b->hot = hot;
         b->ready = true;
     }
-    // The buttons not shown now (their window hidden): back to normal, so shown again they start from
-    // there - their look not from where it was, their sound when the mouse comes on them (not lost).
+    // いま表示されていないボタン (そのウィンドウが隠れている): 通常に戻す。再び表示されたとき、
+    // 見た目は前の状態からでなくそこから始まり、音はマウスが乗ったときに鳴る (失われない)。
     std::unordered_set<int> shown;
     for (const UiNode& n : tree.nodes) {
         if (n.button) shown.insert(n.entity);
     }
-    // (every entity: the switched off ones too - those are the hidden ones)
+    // (全エンティティ: オフのものも - それが隠れているもの)
     for (const auto& t : scene.TreeOrder()) {
         if (shown.contains(t.entity->data.id)) continue;
         UiButton* b = MutableButton(scene, t.entity->data.id);
@@ -212,7 +213,7 @@ void SwitchToWindow(game_production::Scene& scene, int window) {
 bool CloseWindow(game_production::Scene& scene, UiFocus& state, int window) {
     const auto it = std::find_if(state.visits.rbegin(), state.visits.rend(), [&](const UiVisit& v) { return v.window == window; });
     if (it == state.visits.rend()) return false;
-    // This window off, what it hid on again (and remembered so: no new visit next frame).
+    // このウィンドウをオフにし、隠したものをオンに戻す (そして覚える: 次のフレームに新しい訪問は作らない)。
     if (game_production::SceneEntity* e = scene.Find(window)) e->data.active = false;
     std::erase(state.shown, window);
     for (const int h : it->hid) {
@@ -241,7 +242,7 @@ bool ChangeVariable(game_production::GlobalValue& v, const UiAction& a, std::str
             if (!number) return fail("ON / OFF の変数には足せません (ON にする・OFF にする・入れ替える を使います)");
             x = a.change == UiVariableChange::Add ? x + a.amount : a.amount;
             {
-                // 下限 / 上限, each on its own (turned round only when both are used and the wrong way).
+                // 下限 / 上限をそれぞれ別に (両方使われていて向きが逆のときだけ入れ替える)。
                 double lo = a.min, hi = a.max;
                 if (a.useMin && a.useMax && lo > hi) std::swap(lo, hi);
                 if (a.useMin) x = std::max(x, lo);
@@ -316,7 +317,7 @@ T* Part(game_production::SceneEntity& e) {
     return c && c->Known() ? static_cast<T*>(c->value.Get()) : nullptr;
 }
 
-// One tween's value now (and whether it has ended).
+// トゥイーン 1 つの今の値 (と終わったかどうか)。
 Vec2 TweenAt(UiTween& t, float dt) {
     t.time += std::max(dt, 0.f);
     const float f = t.seconds > 1e-4f ? t.time / t.seconds : 1.f;
@@ -338,7 +339,7 @@ void StepMotion(game_production::Scene& scene, float dt, UiMotionWorld& world) {
         UiCanvas* canvas = Part<UiCanvas>(*e);
         if (!place && !canvas) continue;
         UiLive live;
-        // 出る・消える動き: started when it comes on (or at the start), ended - and its window let go - at its end.
+        // 出る・消える動き: オンになったとき (または最初に) 始まり、終わりで終わる - ウィンドウも手放す。
         if (UiMotion* m = Part<UiMotion>(*e)) {
             const bool shown = t.activeInHierarchy;
             auto phase = static_cast<UiMotionPhase>(m->phase);
@@ -346,11 +347,11 @@ void StepMotion(game_production::Scene& scene, float dt, UiMotionWorld& world) {
                 phase = first && !m->atStart ? UiMotionPhase::Still : UiMotionPhase::Showing;
                 m->time = 0;
             } else if (!shown && m->seen) {
-                // Switched off itself (not with a parent): it goes as its 消えるとき says.
+                // 自分自身がオフになった (親ごとでなく): 消えるとき が言うとおりに去る。
                 phase = !e->data.active && m->hide.enabled ? UiMotionPhase::Hiding : UiMotionPhase::Still;
                 m->time = 0;
             } else if (!shown && phase == UiMotionPhase::Hiding && e->data.active) {
-                phase = UiMotionPhase::Still;  // (a parent switched off meanwhile: gone with it)
+                phase = UiMotionPhase::Still;  // (その間に親がオフになった: 一緒に消える)
             }
             m->seen = shown;
             if (phase != UiMotionPhase::Still) {
@@ -365,7 +366,7 @@ void StepMotion(game_production::Scene& scene, float dt, UiMotionWorld& world) {
             }
             m->phase = static_cast<int>(phase);
         }
-        // 道に沿って動く: walked while it is shown.
+        // 道に沿って動く: 表示されている間歩く。
         if (UiPath* p = Part<UiPath>(*e); p && place && t.activeInHierarchy) {
             const UiPathPose pose = StepPath(*p, PathLine(*p), dt);
             UiLive along;
@@ -373,7 +374,7 @@ void StepMotion(game_production::Scene& scene, float dt, UiMotionWorld& world) {
             if (p->orient) along.turn = pose.angle;
             live = Combine(live, along);
         }
-        // The scripts' tweens: 位置 and 回転 themselves; the size and the transparency kept here.
+        // スクリプトのトゥイーン: 位置 と 回転 はそのもの自身に、大きさと透明度はここに持つ。
         if (const auto it = world.tweens.find(id); it != world.tweens.end()) {
             UiTweens& tw = it->second;
             if (tw.move.active && place) place->position = TweenAt(tw.move, dt);
@@ -423,7 +424,7 @@ bool PlayPath(game_production::Scene& scene, int entity, int how) {
 UiScreen ScreenOf(const game_production::GameSettings& settings, Vec2 size) {
     UiScreen s;
     s.size = size;
-    // The safe area is set in DIPs of the game settings' 画面: scaled to the screen it is drawn on.
+    // セーフエリアはゲーム設定の 画面 の DIP で決める: 描く画面に合わせて拡大縮小する。
     const float kx = settings.display.width > 0 ? size.x / static_cast<float>(settings.display.width) : 1.f;
     const float ky = settings.display.height > 0 ? size.y / static_cast<float>(settings.display.height) : 1.f;
     s.safeTopLeft = {settings.display.safeAreaTopLeft.x * kx, settings.display.safeAreaTopLeft.y * ky};
@@ -433,19 +434,19 @@ UiScreen ScreenOf(const game_production::GameSettings& settings, Vec2 size) {
 
 void UiService::Frame(const game_production::PlayFrame& f) {
     if (!host_.settings) return;
-    StepMotion(f.scene, f.dt, motion_);  // (first: what is going away is still laid out - not clicked)
+    StepMotion(f.scene, f.dt, motion_);  // (最初に: 去っていくものはまだ配置される - クリックはされない)
     const UiTree tree = BuildUi(f.scene, ScreenOf(*host_.settings, f.screen));
-    // (the mouse is the pointer - not a binding of an action)
+    // (マウスはポインター - アクションの割り当てではない)
     const bool down = f.input && game_production::ControlValue(*f.input, InputControl::MouseLeft) >= 0.5f;
     const bool before = f.inputBefore && game_production::ControlValue(*f.inputBefore, InputControl::MouseLeft) >= 0.5f;
     const std::span<const InputAction> actions = f.actions ? std::span<const InputAction>(*f.actions) : std::span<const InputAction>();
-    // Went down / up: what the window was told, or what changed since the last frame. A quick click has
-    // both in one frame (the button up at both looks): StepPointer takes that as a click.
+    // 押した / 離した: ウィンドウが知らされたこと、または前のフレームから変わったこと。速いクリックは
+    // 1 フレームに両方ある (ボタンはどちらの見た目でも上がっている): StepPointer はそれをクリックと扱う。
     const bool wentDown = f.pointerWentDown || (down && !before);
     const bool wentUp = f.pointerWentUp || (!down && before);
     const UiStep step = StepUi(f.scene, tree, f.pointer, down, wentDown, wentUp, actions, f.input, f.inputBefore, f.dt, state_);
-    // For each button pressed: its sound, then what it does, then the scripts' OnClick (spec §6-6: an
-    // OnClick reads what the actions did; the scene and the end are asked, done after the frame).
+    // 押された各ボタンについて: その音、次にそれがすること、次にスクリプトの OnClick (仕様 §6-6:
+    // OnClick はアクションがしたことを読む。シーンと終了は依頼され、フレームの後に行う)。
     game_production::SoundPlayer* sounds = f.services ? f.services->Sounds() : nullptr;
     auto play = [&](int id, bool click) {
         const UiButton* b = MutableButton(f.scene, id);
@@ -454,7 +455,7 @@ void UiService::Frame(const game_production::PlayFrame& f) {
         if (!sound.Empty()) sounds->PlaySound(sound, click ? b->clickVolume : b->hoverVolume);
     };
     for (const int id : step.hovered) play(id, false);
-    // 動画 play their sound themselves: as loud as music is now (全体 × 音楽).
+    // 動画 は自分で音を鳴らす: 今の音楽と同じ大きさで (全体 × 音楽)。
     const float musicGain = sounds ? sounds->MusicVolume() : host_.settings->volume.master * host_.settings->volume.music;
     for (const auto& t : f.scene.TreeOrder()) {
         game_production::SceneEntity* e = f.scene.Find(t.entity->data.id);
@@ -465,8 +466,8 @@ void UiService::Frame(const game_production::PlayFrame& f) {
     if (game_production::ScriptWorld* world = f.world) {
         actionHost.globals = &world->globals;
         actionHost.loadScene = [this, world](const AssetRef& scene) {
-            // The scene by its id (two of one name in two folders are two); else by its file's name, as
-            // Game::LoadScene("…") takes it.
+            // ID でのシーン (2 つのフォルダにある同じ名前の 2 つは別のもの)。なければファイル名で、
+            // Game::LoadScene("…") が受け取るとおりに。
             std::optional<size_t> at;
             for (size_t i = 0; i < world->sceneIds.size() && !at; ++i) {
                 if (world->sceneIds[i] == scene.guid) at = i;

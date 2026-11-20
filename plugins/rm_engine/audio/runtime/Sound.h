@@ -1,12 +1,12 @@
 #pragma once
-// 音 - the pure part of sound (no device, no files): reading WAV, how a stream is cut into pieces,
-// loop points, volumes and fades, and how loud a sound is at a distance. Tested in tests/TestAudio.cpp.
+// 音 - 音の純粋な部分 (デバイスも、ファイルも使わない): WAV を読むこと、ストリームを断片に切ること、
+// ループの点、音量とフェード、距離による音の大きさ。tests/TestAudio.cpp でテストする。
 //
-// Design (TestEngine RME_PLATFORM.md 「音」): played with XAudio2 (AudioEngine.h), read by this engine
-// (WAV here, Ogg Vorbis with stb_vorbis) and by Media Foundation (MP3 / AAC / FLAC: Decoder.h - not
-// on every Windows: the N editions have none). A game's sounds are best WAV or OGG.
+// 設計 (TestEngine RME_PLATFORM.md 「音」): XAudio2 で鳴らし (AudioEngine.h)、このエンジンが読む
+// (WAV はここ、Ogg Vorbis は stb_vorbis) ほか Media Foundation も読む (MP3 / AAC / FLAC: Decoder.h -
+// どの Windows にもあるわけではない: N エディションには無い)。ゲームの音は WAV か OGG が一番よい。
 //
-// Everything is played as 32-bit float samples, interleaved (L R L R ...).
+// すべて 32 ビット float のサンプルをインターリーブして (L R L R ...) 鳴らす。
 
 #include "base/Math.h"
 
@@ -19,53 +19,53 @@
 namespace rm::audio {
 
 struct Format {
-    uint32_t sampleRate = 0;  // frames a second
-    uint16_t channels = 0;    // 1 mono, 2 stereo ...
+    uint32_t sampleRate = 0;  // 1 秒あたりのフレーム数
+    uint16_t channels = 0;    // 1 はモノラル、2 はステレオ ...
     bool operator==(const Format&) const = default;
 };
 
-// What a sound file may be (as the 3D model loader's ReadBudget: a broken or a hostile file never
-// makes the engine read gigabytes or allocate without end). A sound longer than `maxWholeSeconds` is
-// always streamed (never decoded whole into memory).
+// 音のファイルが取ってよい大きさ (3D モデルローダーの ReadBudget と同じ考え: 壊れた、または悪意ある
+// ファイルでも、エンジンが何ギガバイトも読んだり、際限なく確保したりしない)。`maxWholeSeconds` より
+// 長い音は必ずストリームにする (丸ごとメモリにデコードしない)。
 struct SoundBudget {
     uint64_t maxFileBytes = 1ull << 30;  // 1 GB
     uint32_t maxChannels = 8;
     uint32_t minSampleRate = 1000;
     uint32_t maxSampleRate = 384000;
-    double maxWholeSeconds = 60 * 10;  // decoded whole up to this (at 48 kHz stereo float: 230 MB)
-    double maxSeconds = 60 * 60 * 6;   // longer than this is not a sound (a broken length)
+    double maxWholeSeconds = 60 * 10;  // ここまでは丸ごとデコードする (48 kHz ステレオ float で 230 MB)
+    double maxSeconds = 60 * 60 * 6;   // これより長いものは音ではない (長さが壊れている)
 };
 
-// --- WAV (RIFF) - read by this engine ------------------------------------------------------------
+// --- WAV (RIFF) - このエンジンが読む ------------------------------------------------------------
 enum class SampleKind : uint8_t { Pcm8, Pcm16, Pcm24, Pcm32, Float32, Float64 };
 struct WavInfo {
     Format format;
     SampleKind sample = SampleKind::Pcm16;
-    size_t dataOffset = 0;  // where the samples start in the file
+    size_t dataOffset = 0;  // サンプルがファイルのどこから始まるか
     size_t dataBytes = 0;
     uint64_t frames = 0;
 };
 size_t BytesPerSample(SampleKind k);
 bool LooksLikeWav(std::span<const uint8_t> bytes);
-// The file's chunks checked (sizes inside the file, a known sample kind, PCM 8 / 16 / 24 / 32 or float
-// 32 / 64, WAVE_FORMAT_EXTENSIBLE too); nullopt and *error (Japanese) when it is not one to play.
+// ファイルのチャンクを調べたもの (サイズがファイルの中に収まる、サンプルの種類が分かる、PCM 8 / 16 / 24 / 32
+// か float 32 / 64、WAVE_FORMAT_EXTENSIBLE も); 鳴らせないものでは nullopt と *error (日本語)。
 std::optional<WavInfo> ParseWav(std::span<const uint8_t> bytes, const SoundBudget& budget, std::string* error);
-// `frames` frames from frame `from`, as float -1..1 (interleaved) into `out` (frames * channels).
-// Frames past the end are not read: the number read.
+// フレーム `from` から `frames` フレームを、-1..1 の float (インターリーブ) で `out` (frames * channels) へ。
+// 終わりを越えたフレームは読まない: 返すのは読んだ数。
 size_t WavToFloat(std::span<const uint8_t> bytes, const WavInfo& info, uint64_t from, size_t frames, float* out);
-// A WAV file of 16-bit samples (the engine's own sounds: the templates' samples, the tests).
+// 16 ビットのサンプルの WAV ファイル (エンジン自身の音: テンプレートのサンプル、テスト)。
 std::string WriteWav16(std::span<const float> samples, Format format);
 
-// --- Streams and loops --------------------------------------------------------------------------
-// The part that repeats: [start, end) in frames; end 0 = the end of the sound.
+// --- ストリームとループ ------------------------------------------------------------------------
+// 繰り返す部分: フレームで [start, end)。end 0 = 音の終わり。
 struct LoopPoints {
     uint64_t start = 0, end = 0;
 };
-// From seconds (an import setting), kept inside the sound (start before end; a broken pair = the whole).
+// 秒 (取り込みの設定) から。音の中に収める (start が end より前。壊れた組 = 音全体)。
 LoopPoints LoopFrames(double startSeconds, double endSeconds, uint32_t sampleRate, uint64_t totalFrames);
-// The next piece of a stream at frame `pos`: read `frames` frames from `from` (a looping sound goes
-// back to the loop's start at its end - the piece stops there and the next one starts from it).
-// `ends`: nothing comes after it (not looping, the end reached).
+// ストリームの、フレーム `pos` にある次の断片: `from` から `frames` フレームを読む (ループする音は
+// 終わりでループの先頭へ戻る - 断片はそこで止まり、次の断片がそこから始まる)。
+// `ends`: このあとには何も続かない (ループせず、終わりに着いた)。
 struct Piece {
     uint64_t from = 0;
     size_t frames = 0;
@@ -73,23 +73,23 @@ struct Piece {
 };
 Piece NextPiece(uint64_t pos, uint64_t totalFrames, size_t want, bool loop, LoopPoints loopPoints);
 
-// --- Loudness -------------------------------------------------------------------------------------
-// The gain a voice plays with: the game's 全体 x its kind (BGM / 効果音) x the asset's import setting x
-// what the game asked (the source's 音量, a script's volume) - each kept to 0..4.
+// --- 音の大きさ -------------------------------------------------------------------------------
+// ボイスが鳴らすときのゲイン: ゲームの 全体 x その種類 (BGM / 効果音) x アセットの取り込みの設定 x
+// ゲームが頼んだもの (ソースの 音量、スクリプトの volume) - どれも 0..4 に収める。
 float Gain(float master, float kind, float asset, float asked);
-// A fade over `seconds` after `elapsed`: in = 0 -> 1, out = 1 -> 0 (equal power: a crossfade does not
-// dip in the middle). seconds <= 0: done at once.
+// `elapsed` から `seconds` かけるフェード: in = 0 -> 1、out = 1 -> 0 (等パワー: クロスフェードで
+// 真ん中が凹まない)。seconds <= 0: すぐに終わる。
 float FadeGain(double elapsed, double seconds, bool in);
-// How loud a sound is at `distance` (3D / 2D 距離で減衰): 1 up to `minDistance`, then min / d, reaching
-// 0 at `maxDistance` (the last part tapers so it goes silent rather than stopping at a step).
+// `distance` の所での音の大きさ (3D / 2D 距離で減衰): `minDistance` までは 1、そのあと min / d で、
+// `maxDistance` で 0 になる (最後の部分は細くなって、段で止まらず無音になる)。
 float DistanceGain(float distance, float minDistance, float maxDistance);
-// A pitch kept inside what a voice was made for (XAudio2's MaxFrequencyRatio - its default of 2 would
-// refuse anything higher: the engine makes voices for kMaxPitch).
+// ボイスが作られた範囲に収めたピッチ (XAudio2 の MaxFrequencyRatio - 既定の 2 では、それより高いものは
+// 断られる: エンジンは kMaxPitch までのボイスを作る)。
 inline constexpr float kMinPitch = 0.05f;
 inline constexpr float kMaxPitch = 8.0f;
 float ClampPitch(float pitch);
 
-// "1:23.4" (minutes:seconds.tenths) - a sound's length for the アセット panel.
+// "1:23.4" (分:秒.十分の一秒) - アセット パネルに出す音の長さ。
 std::string LengthText(double seconds);
 
 }  // namespace rm::audio

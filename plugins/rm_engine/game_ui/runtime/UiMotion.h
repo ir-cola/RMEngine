@@ -1,12 +1,12 @@
 #pragma once
-// ゲーム UI - how UI things move while the game plays (UI-4: docs/UI_EDITOR.md). Pure (no drawing, no
-// scene): the UI service steps them each frame and writes UiLive (UiComponents.h); the layout puts it on
-// top of UI の配置. Tested in tests/TestGameUi.cpp.
+// ゲーム UI - ゲームの Play 中に UI のものがどう動くか (UI-4: docs/UI_EDITOR.md)。純粋 (描画も
+// シーンも扱わない): UI サービスが毎フレームそれを進めて UiLive (UiComponents.h) に書き、
+// レイアウトがそれを UI の配置の上に重ねる。tests/TestGameUi.cpp でテストする。
 //
-//   出る・消える動き   UiTransition: from its values to the thing as it is (出る), or the other way (消える)
-//   道に沿って動く     UiPath: a line through points (curved: Catmull-Rom), walked at a speed
-//   速さの曲線         Ease: how the time 0..1 becomes the way 0..1 (はねる / 行き過ぎて戻る leave 0..1 on
-//                      the way and end at 1)
+//   出る・消える動き   UiTransition: その値から今のままのものへ (出る)、またはその逆 (消える)
+//   道に沿って動く     UiPath: 点を通る線 (曲線: Catmull-Rom) を、ある速さで歩く
+//   速さの曲線         Ease: 時間 0..1 を道のり 0..1 にする (はねる / 行き過ぎて戻る は途中で
+//                      0..1 をはみ出し、終わりは 1)
 
 #include "rm_engine/game_ui/runtime/UiComponents.h"
 
@@ -14,35 +14,35 @@
 
 namespace rm::game_ui {
 
-// The time `t` (0..1) through the curve: 0 at 0, 1 at 1.
+// 時間 `t` (0..1) を曲線に通したもの: 0 で 0、1 で 1。
 float Ease(UiEase ease, float t);
 
-// Two moves at once (a window coming in while its thing walks its path): moved by both, scaled by both,
-// turned by both, faded by both.
+// 2 つの動きを同時に (窓が入ってくる間にそのものが道を歩く): 両方で動かし、両方で拡大縮小し、
+// 両方で回し、両方でフェードする。
 UiLive Combine(const UiLive& a, const UiLive& b);
 
-// A transition `time` seconds after it began: 出る (`showing`) - its values at first, the thing as it is
-// at the end; 消える - the other way. Before its 待ち: as at its beginning.
+// 始まって `time` 秒後の動き: 出る (`showing`) - 最初はその値、終わりでは今のままのもの。
+// 消える - その逆。待ち の前は始まりのまま。
 UiLive TransitionAt(const UiTransition& t, bool showing, float time);
-// It has ended (or does nothing: not used).
+// 終わっている (または何もしない: 使われていない)。
 bool TransitionDone(const UiTransition& t, float time);
 
-// A path as a line of short straight pieces (curved when smooth), and the length along it to each point.
+// 道を短い直線の連なりとして (smooth なら曲線)、そして各点までの線に沿った長さ。
 struct UiPathLine {
     std::vector<Vec2> points;
-    std::vector<float> along;  // from the first point
+    std::vector<float> along;  // 最初の点から
     float Length() const { return along.empty() ? 0.f : along.back(); }
 };
 UiPathLine PathLine(const UiPath& path);
-// Where `distance` along the line is (kept to the line), and which way it goes there (degrees: right 0,
-// down 90 - the screen's Y goes down).
+// 線に沿って `distance` の所 (線の内側に収める) と、そこで進む向き (度: 右が 0、下が 90 -
+// 画面の Y は下向き)。
 struct UiPathPose {
     Vec2 offset{0, 0};
     float angle = 0;
 };
 UiPathPose PathPoseAt(const UiPathLine& line, float distance);
-// One frame of a path (UiPath's transient values: started, playing, travelled, backward), and where the
-// thing is on it now.
+// 道の 1 フレーム (UiPath の保存されない値: started, playing, travelled, backward) と、いま
+// その上のどこにいるか。
 UiPathPose StepPath(UiPath& path, const UiPathLine& line, float dt);
 
 }  // namespace rm::game_ui

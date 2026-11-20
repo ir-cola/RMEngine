@@ -1,7 +1,7 @@
 #pragma once
-// How many particles each 3D picture plays (the scene view, the game view, the exported game): what the
-// drawers counted at their last frame - read by the editor's debug panel. Kept for the whole program,
-// by drawer; an entry not told again for a while is forgotten.
+// 3D の絵 (シーンビュー、ゲームビュー、書き出したゲーム) ごとに、パーティクルをいくつ再生しているか:
+// 描き手が直近のフレームで数えた値で、エディターのデバッグパネルが読む。プログラムが動いている間
+// ずっと、描き手ごとに持つ。しばらく知らせてこない項目は忘れる。
 
 #include <cstddef>
 #include <cstdint>
@@ -11,20 +11,20 @@
 namespace rm::game_x_particles {
 
 struct PictureParticles {
-    std::string picture;  // "scene" / "game" / "preview" (WorldDrawFrame::picture; empty: the game's own)
+    std::string picture;  // "scene" / "game" / "preview" (WorldDrawFrame::picture。空: ゲーム自身のもの)
     bool playing = false;
     size_t systems = 0;   // パーティクル components it found
-    size_t effects = 0;   // effects playing (each with its player on the GPU)
+    size_t effects = 0;   // 再生中のエフェクトの数 (それぞれ GPU 上に自分のプレイヤーを持つ)
     uint32_t emitters = 0;
-    uint64_t capacity = 0;  // particles they may hold at most
-    uint64_t alive = 0;     // alive now (as read back from the GPU)
+    uint64_t capacity = 0;  // 持てるパーティクルの最大数
+    uint64_t alive = 0;     // 今生きている数 (GPU から読み戻したもの)
     bool aliveKnown = false;
-    double at = 0;  // NowSeconds() when told
+    double at = 0;  // 知らせた時の NowSeconds()
 };
 
-// A drawer tells what it played this frame (`drawer`: who it is - one entry each).
+// 描き手がこのフレームに再生した数を知らせる (`drawer`: 描き手が誰か - 1 人に 1 項目)。
 void ReportParticles(const void* drawer, PictureParticles stats);
-// The drawers told within the last `maxAge` seconds, in no special order.
+// 直近 `maxAge` 秒以内に知らせてきた描き手。順番は決まっていない。
 std::vector<PictureParticles> RecentParticles(double maxAge = 1.0);
 
 }  // namespace rm::game_x_particles

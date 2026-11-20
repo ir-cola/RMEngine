@@ -20,7 +20,7 @@ float Ease(UiEase ease, float t) {
             return 1 - u * u * u / 2;
         }
         case UiEase::Bounce: {
-            // Falls to the end and bounces there, smaller each time.
+            // 終わりまで落ちてそこで弾み、そのたびに小さくなる。
             constexpr float n = 7.5625f, d = 2.75f;
             if (t < 1 / d) return n * t * t;
             if (t < 2 / d) {
@@ -35,7 +35,7 @@ float Ease(UiEase ease, float t) {
             return n * t * t + 0.984375f;
         }
         case UiEase::Back: {
-            // Goes past the end a little, then comes back to it.
+            // 終わりを少し通り過ぎてから戻ってくる。
             constexpr float c1 = 1.70158f, c3 = c1 + 1;
             const float u = t - 1;
             return 1 + c3 * u * u * u + c1 * u * u;
@@ -67,7 +67,7 @@ UiLive TransitionAt(const UiTransition& t, bool showing, float time) {
     const float local = time - std::max(t.delay, 0.f);
     const float f = t.duration > 1e-4f ? local / t.duration : (local >= 0 ? 1.f : 0.f);
     const float e = Ease(t.ease, f);
-    const float away = showing ? 1 - e : e;  // how far from the thing as it is (0: there)
+    const float away = showing ? 1 - e : e;  // 今のままの位置からどれだけ離れているか (0: そこにある)
     const Vec2 way = SlideWay(t.slide);
     UiLive l;
     l.offset = {way.x * t.distance * away, way.y * t.distance * away};
@@ -100,7 +100,7 @@ UiPathLine PathLine(const UiPath& path) {
         if (path.closed && n > 2) return p[static_cast<size_t>(((i % static_cast<long long>(n)) + static_cast<long long>(n)) % static_cast<long long>(n))];
         return p[static_cast<size_t>(std::clamp<long long>(i, 0, static_cast<long long>(n) - 1))];
     };
-    constexpr int kPieces = 16;  // short straight pieces per curved segment
+    constexpr int kPieces = 16;  // 曲線 1 区間あたりの短い直線の数
     for (size_t s = 0; s < segments; ++s) {
         const long long i = static_cast<long long>(s);
         const Vec2 p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
@@ -109,7 +109,7 @@ UiPathLine PathLine(const UiPath& path) {
             continue;
         }
         for (int k = 1; k <= kPieces; ++k) {
-            // Catmull-Rom: through every point, its tangent from the points beside it.
+            // Catmull-Rom: すべての点を通り、接線は隣の点から決める。
             const float u = static_cast<float>(k) / kPieces, u2 = u * u, u3 = u2 * u;
             auto c = [&](float a, float b, float d, float e) { return 0.5f * (2 * b + (-a + d) * u + (2 * a - 5 * b + 4 * d - e) * u2 + (-a + 3 * b - 3 * d + e) * u3); };
             add({c(p0.x, p1.x, p2.x, p3.x), c(p0.y, p1.y, p2.y, p3.y)});
@@ -126,7 +126,7 @@ UiPathPose PathPoseAt(const UiPathLine& line, float distance) {
         return pose;
     }
     const float d = std::clamp(std::isfinite(distance) ? distance : 0.f, 0.f, line.Length());
-    // The piece it is on (the first whose end is at or past it).
+    // 今いる区間 (終わりがそれ以上の最初のもの)。
     size_t i = 1;
     while (i + 1 < line.points.size() && line.along[i] < d) ++i;
     const Vec2 a = line.points[i - 1], b = line.points[i];
@@ -156,8 +156,8 @@ UiPathPose StepPath(UiPath& path, const UiPathLine& line, float dt) {
                 break;
             case UiPathLoop::Loop: path.travelled = std::fmod(path.travelled, length); break;
             case UiPathLoop::PingPong: {
-                // (how many ends were passed, at once: a loop that takes `length` off each time never ends
-                // when `travelled` is far more than a float can tell from it)
+                // (通り過ぎた区間の数を一度に: 毎回 `length` を引くループは、`travelled` が float で
+                // 区別できないほど大きいと終わらなくなる)
                 const double ends = std::floor(static_cast<double>(path.travelled) / length);
                 path.travelled = static_cast<float>(static_cast<double>(path.travelled) - ends * length);
                 if (!std::isfinite(path.travelled) || path.travelled >= length || path.travelled < 0) path.travelled = 0;
@@ -170,7 +170,7 @@ UiPathPose StepPath(UiPath& path, const UiPathLine& line, float dt) {
     float d = Ease(path.ease, f) * length;
     if (path.backward) d = length - d;
     UiPathPose pose = PathPoseAt(line, d);
-    if (path.backward) pose.angle += 180;  // (facing the way it goes)
+    if (path.backward) pose.angle += 180;  // (進む向きを向く)
     return pose;
 }
 

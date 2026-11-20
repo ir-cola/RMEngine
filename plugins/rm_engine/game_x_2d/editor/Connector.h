@@ -1,10 +1,10 @@
 #pragma once
-// The connector "ゲーム制作 × 2D" (design RME_PLATFORM 4-f, plan C): the parts of game production
-// that need to know 2D space. Game production itself never includes 2D 空間; this plugin requires
-// both and joins them. It is installed automatically once both are (never chosen by hand).
+// コネクター「ゲーム制作 × 2D」(設計 RME_PLATFORM 4-f、案 C): ゲーム制作のうち 2D の空間を知る必要が
+// ある部分。ゲーム制作自身は 2D 空間 を決して取り込まない。このプラグインが両方を requires して
+// つなぐ。両方が入ると自動で入る (手では選ばない)。
 //
-// It offers 2D 空間's Transform 2D as a component that new entities of a 2D game get, the sprite (a
-// picture), 回り続ける (2D) and its system, and the 2D scene view (drawn by 2D 空間).
+// 2D 空間の Transform 2D を、2D のゲームの新しいエンティティが持つ部品として、スプライト (絵)、
+// 回り続ける (2D) とそのシステム、そして 2D シーンビュー (2D 空間が描く) を提供する。
 
 #include "editor/plugin/Software.h"
 

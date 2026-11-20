@@ -1,7 +1,7 @@
 #pragma once
-// パーティクル - the modules the engine has (written as .rmfx, the same as a user's: ModuleSource.h).
-// An effect names one by its id (ParticleModule::builtin). Their words (module titles, param labels) are
-// Japanese here; the editor shows them through Tr (the plugin's lang/en.json).
+// パーティクル - エンジンが持つモジュール (ユーザーのものと同じ .rmfx で書く: ModuleSource.h)。
+// エフェクトは ID でモジュールを 1 つ指す (ParticleModule::builtin)。モジュールのタイトルや
+// パラメーターの名前はここでは日本語で、エディターは Tr を通して見せる (プラグインの lang/en.json)。
 
 #include "rm_engine/particles/runtime/ModuleSource.h"
 
@@ -11,12 +11,12 @@
 namespace rm::particles {
 
 struct BuiltinModule {
-    std::string_view id;    // saved in the effect: never changed once shipped
-    std::string_view text;  // the .rmfx
+    std::string_view id;    // エフェクトに保存される: 出荷したら変えない
+    std::string_view text;  // .rmfx の中身
 };
 
 std::span<const BuiltinModule> BuiltinModules();
-// The parsed module of this id (parsed once); null: no such module.
+// この ID のモジュールを解析したもの (解析は 1 度だけ); null: そのモジュールは無い。
 const ModuleSource* FindBuiltin(std::string_view id);
 
 }  // namespace rm::particles

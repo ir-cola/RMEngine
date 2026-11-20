@@ -1,25 +1,26 @@
 #pragma once
-// ゲーム UI while the game plays (game production's PlayService: the editor's Play and the exported game
-// run it the same way). Each frame, after the scripts and the systems:
+// ゲームが動く間の ゲーム UI (ゲーム制作の PlayService: エディターの Play と書き出したゲームは同じように
+// 動かす)。毎フレーム、スクリプトとシステムの後に:
 //
-//   the mouse      over a button: 乗った; the left button down on it: 押した; let go on the same one: OnClick
-//   the keys / pad standard in every game, nothing to set: the frontmost window (canvas) with
-//                  キーとパッドで選ぶ always has a chosen button (its 最初に選ぶボタン, or the top left one) -
-//                  shown from the start, hidden while the mouse is used. UIUp / UIDown / UILeft / UIRight
-//                  (the arrows, the pad's cross, the left stick) step to the nearest button that way
-//                  (NextButton); held, they go on stepping. UISubmit presses the chosen button. UICancel
-//                  presses the window's 戻るで押すボタン, or else closes the window opened last and shows
-//                  again what it hid (Show / SwitchTo by a script, or a canvas switched on).
-//   pressed        its 押したときの音, then its 押したときの動作 in order (RunActions: windows, the scene,
-//                  a variable, a sound, the end of the game), then the scripts' OnClick
-//   then           every button's state (UiButton::state / focused: not saved) and its look eased toward
-//                  the state's (UiButton::now: 変わる速さ), for the drawing; the buttons' sounds (乗った /
-//                  押した: whichever service plays sounds - PlayServices::Sounds); then the OnClick hooks
-//                  for the scripts of the pressed buttons' entities (PlayFrame::hooks)
+//   マウス         ボタンの上: 乗った。左ボタンを押す: 押した。同じ所で離す: OnClick
+//   キー / パッド  どのゲームでも標準で、設定は要らない: キーとパッドで選ぶ を持つ一番手前の
+//                  ウィンドウ (キャンバス) には、いつも選ばれたボタンがある (最初に選ぶボタン、
+//                  なければ左上のもの) - 最初から表示され、マウスを使う間は隠れる。UIUp / UIDown /
+//                  UILeft / UIRight (矢印キー、パッドの十字、左スティック) はその向きの一番近い
+//                  ボタンへ 1 歩動き (NextButton)、押しっぱなしなら動き続ける。UISubmit は選ばれた
+//                  ボタンを押す。UICancel はウィンドウの 戻るで押すボタン を押す。なければ最後に
+//                  開いたウィンドウを閉じ、隠していたものを再び表示する (スクリプトの Show /
+//                  SwitchTo、またはオンにしたキャンバス)。
+//   押した         その 押したときの音、次に 押したときの動作 を順に (RunActions: ウィンドウ、
+//                  シーン、変数、音、ゲームの終了)、次にスクリプトの OnClick
+//   そのあと       すべてのボタンの状態 (UiButton::state / focused: 保存しない) と、その見た目を状態の
+//                  ものへなめらかに近づけたもの (UiButton::now: 変わる速さ)、描画用。ボタンの音
+//                  (乗った / 押した: 音を鳴らすサービスが何であれ - PlayServices::Sounds)。そして
+//                  押されたボタンのエンティティのスクリプト用の OnClick フック (PlayFrame::hooks)
 //
-// The keys and the pad are read only through the game settings' 入力 (game production's actions, a
-// game without them: their standard ones) - never a key or a pad itself: changing the bindings (or
-// another kind of controller) changes the UI's too.
+// キーとパッドはゲーム設定の 入力 を通してだけ読む (ゲーム制作のアクション。ない場合はその標準の
+// もの) - キーやパッドそのものは決して読まない: 割り当てを変えれば (または別の種類のコントローラー
+// でも) UI のも変わる。
 
 #include "rm_engine/game_production/runtime/Globals.h"
 #include "rm_engine/game_production/runtime/PlayServices.h"
@@ -36,103 +37,103 @@
 namespace rm::game_ui {
 
 inline constexpr char kUiServiceName[] = "rm_engine.game_ui";
-inline constexpr float kRepeatDelay = 0.4f;  // a direction held this long ...
-inline constexpr float kRepeatEvery = 0.12f;  // ... steps again this often
+inline constexpr float kRepeatDelay = 0.4f;  // この時間押しっぱなしの向きは ...
+inline constexpr float kRepeatEvery = 0.12f;  // ... この間隔でまた 1 歩進む
 
-// What the actions say this frame (pure: tests give their own frames).
+// このフレームのアクションが言っていること (純粋: テストは自分のフレームを渡す)。
 struct UiKeys {
-    int dx = 0, dy = 0;          // a direction pressed this frame (screen Y down; the stronger way only)
-    int holdDx = 0, holdDy = 0;  // the direction held now
-    bool submit = false;         // UISubmit went down
-    bool cancel = false;         // UICancel went down
+    int dx = 0, dy = 0;          // このフレームに押された向き (画面 Y は下向き。強いほうの向きだけ)
+    int holdDx = 0, holdDy = 0;  // 今押しっぱなしの向き
+    bool submit = false;         // UISubmit が押された
+    bool cancel = false;         // UICancel が押された
 };
 UiKeys ReadUiKeys(std::span<const game_production::InputAction> actions, const game_production::InputFrame& now,
                   const game_production::InputFrame& before);
 
-// A window shown over others (or instead of them): what 戻る closes, and what it shows again.
+// ほかのものの上に (または代わりに) 表示されたウィンドウ: 戻る が閉じるもの、そして再び表示するもの。
 struct UiVisit {
     int window = 0;
     std::vector<int> hid;
 };
 
-// The focus, the mouse and the windows of one Play (kept between frames).
+// 1 回の Play のフォーカス、マウス、ウィンドウ (フレーム間で保つ)。
 struct UiFocus {
     PointerState pointer;
-    int window = 0;          // the window the keys worked in last frame
-    int focus = 0;           // its chosen button
-    bool keyboard = true;    // the choice is shown (hidden while the mouse is used)
-    bool scriptChose = false;  // a script chose `focus` since the last frame (kept when its window comes in front)
+    int window = 0;          // 前のフレームでキーが効いたウィンドウ
+    int focus = 0;           // その選ばれたボタン
+    bool keyboard = true;    // 選択を表示している (マウスを使う間は隠す)
+    bool scriptChose = false;  // 前のフレームから、スクリプトが `focus` を選んだ (そのウィンドウが手前に来ても保つ)
     std::optional<Vec2> lastPointer;
-    int heldDx = 0, heldDy = 0;  // a direction held: it repeats
+    int heldDx = 0, heldDy = 0;  // 押しっぱなしの向き: 繰り返す
     float heldFor = 0, repeatAt = 0;
-    bool started = false;        // the windows shown at first are known (none of them is closed by 戻る)
-    std::vector<int> shown;      // the windows shown last frame
-    std::vector<UiVisit> visits; // windows opened since, oldest first
+    bool started = false;        // 最初に表示されたウィンドウは分かっている (どれも 戻る では閉じない)
+    std::vector<int> shown;      // 前のフレームに表示されていたウィンドウ
+    std::vector<UiVisit> visits; // それ以降に開いたウィンドウ、古いものが先
 };
 
-// What one frame did.
+// 1 フレームがしたこと。
 struct UiStep {
-    std::vector<int> clicked;  // buttons pressed, in order (OnClick)
-    std::vector<int> hovered;  // buttons that became 乗った (or pressed, or chosen) this frame: their 乗ったときの音
+    std::vector<int> clicked;  // 押されたボタンを順に (OnClick)
+    std::vector<int> hovered;  // このフレームに 乗った (または押された、選ばれた) ボタン: その 乗ったときの音
     int closed = 0;            // the window 戻る closed (0: none)
 };
 
-// One frame (pure: the scene's buttons get their state, a window closed by 戻る is switched off and what it
-// hid switched on again).
+// 1 フレーム (純粋: シーンのボタンに状態が付き、戻る で閉じたウィンドウはオフになり、それが
+// 隠していたものは再びオンになる)。
 UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<Vec2> pointer, bool down, bool wentDown, bool wentUp,
               std::span<const game_production::InputAction> actions, const game_production::InputFrame* now,
               const game_production::InputFrame* before, float dt, UiFocus& state);
 
-// --- Motion (UI-4): 出る・消える動き, 道, the scripts' tweens ------------------------------------------
-// A script's tween (rm::UI::MoveTo ...): from where it was asked to where it goes, over `seconds`.
+// --- 動き (UI-4): 出る・消える動き、道、スクリプトのトゥイーン -----------------------------------
+// スクリプトのトゥイーン (rm::UI::MoveTo ...): 頼まれたときの所から行く先まで、`seconds` かけて。
 struct UiTween {
     bool active = false;
-    Vec2 from{0, 0}, to{0, 0};  // (one value: x)
+    Vec2 from{0, 0}, to{0, 0};  // (値 1 つ: x)
     float time = 0, seconds = 0;
     UiEase ease = UiEase::Out;
 };
 struct UiTweens {
-    UiTween move, scale, turn, fade;  // 位置, the size, 回転, the transparency
-    float scaleNow = 1, alphaNow = 1;  // what ScaleTo / FadeTo left (kept after they end)
+    UiTween move, scale, turn, fade;  // 位置、大きさ、回転、透明度
+    float scaleNow = 1, alphaNow = 1;  // ScaleTo / FadeTo が残したもの (終わった後も保つ)
 };
-// What moves while the game plays, kept between frames (the UI service's; made new at a scene switch).
+// ゲームが動く間に動くもので、フレーム間で保つ (UI サービスのもの。シーンの切り替えで新しく作る)。
 struct UiMotionWorld {
-    bool started = false;  // the first frame was stepped (ゲームの始めにも)
-    std::unordered_map<int, UiTweens> tweens;  // by entity
+    bool started = false;  // 最初のフレームを進めた (ゲームの始めにも)
+    std::unordered_map<int, UiTweens> tweens;  // エンティティごと
 };
-// One frame of every motion of `scene`: each 出る・消える動き started / stepped / ended as its entity is
-// switched on and off, each 道 walked, each tween stepped - then UiLive written (UI の配置's, a window's
-// UiCanvas's) for the layout.
+// `scene` のすべての動きの 1 フレーム: 各 出る・消える動き はエンティティのオン・オフに合わせて
+// 始まり / 進み / 終わり、各 道 は歩き、各トゥイーンは進む - そのあと UiLive (UI の配置の、
+// ウィンドウの UiCanvas の) をレイアウト用に書く。
 void StepMotion(game_production::Scene& scene, float dt, UiMotionWorld& world);
-// A tween asked (seconds <= 0: at once). False: the entity has no UI の配置.
+// 頼まれたトゥイーン (seconds <= 0: すぐに)。False: エンティティに UI の配置がない。
 enum class UiTweenKind { Move, Scale, Turn, Fade };
 bool StartTween(game_production::Scene& scene, UiMotionWorld& world, int entity, UiTweenKind kind, Vec2 to, float seconds, UiEase ease);
-// A 道: 1 plays on from where it is, 0 stops, 2 plays from its start. False: no 道に沿って動く.
+// 道: 1 は今の所から続けて再生、0 は止める、2 は最初から再生。False: 道に沿って動く がない。
 bool PlayPath(game_production::Scene& scene, int entity, int how);
 
-// --- The windows (canvases): shared by the buttons' actions and the scripts' rm::UI -------------
-// A window: a canvas not inside another canvas (one inside is a part of its window).
+// --- ウィンドウ (キャンバス): ボタンのアクションとスクリプトの rm::UI が共有する ---------------
+// ウィンドウ: 別のキャンバスの中にないキャンバス (中にあるものはそのウィンドウの一部)。
 bool IsWindow(const game_production::Scene& scene, int entity);
-// Only `window` shown of the windows (every other one hidden; what is inside it stays as it is).
+// ウィンドウのうち `window` だけを表示する (ほかはすべて隠す。その中身はそのまま)。
 void SwitchToWindow(game_production::Scene& scene, int window);
-// 戻る: `window` hidden and what it hid shown again, when it was opened over others since (state.visits);
-// false (nothing changes) when it was not - a window of the start is never closed so.
+// 戻る: `window` を隠し、それが隠していたものを再び表示する。それがほかのものの上に開かれて
+// いたとき (state.visits)。そうでなければ false (何も変わらない) - 最初のウィンドウはこれでは閉じない。
 bool CloseWindow(game_production::Scene& scene, UiFocus& state, int window);
 
 // --- 押したときの動作 -------------------------------------------------------------------------
-// What the actions reach: the game's (the service gives them from PlayFrame::world and the host), a
-// test its own. One left empty: that kind of action does nothing (told).
+// アクションが届くもの: ゲームのもの (サービスが PlayFrame::world とホストから渡す)、テストなら
+// その専用のもの。空のままなら、その種類のアクションは何もしない (知らせる)。
 struct UiActionHost {
     game_production::GlobalStore* globals = nullptr;
-    std::function<bool(const AssetRef& scene)> loadScene;           // asked; switched between frames (false: not a scene of the game)
-    std::function<void()> quit;                                    // asked; the game ends after this frame
+    std::function<bool(const AssetRef& scene)> loadScene;           // 頼まれる。フレームの間に切り替える (false: ゲームのシーンではない)
+    std::function<void()> quit;                                    // 頼まれる。このフレームの後でゲームが終わる
     std::function<void(const AssetRef& sound, float volume)> playSound;
     std::function<void(int level, std::string_view text)> log;
 };
-// A global variable changed as `a` says (変え方, 数, 下限 / 上限). False (*why) when it cannot be so
-// (a text, a Vec2 - or 足す on ON / OFF).
+// `a` の言うとおりに変えたグローバル変数 (変え方、数、下限 / 上限)。そうできないときは false (*why)
+// (テキスト、Vec2 - または ON / OFF への 足す)。
 bool ChangeVariable(game_production::GlobalValue& v, const UiAction& a, std::string* why);
-// The actions of the button `button` (in the window `window`), in order.
+// ボタン `button` (ウィンドウ `window` の) のアクションを順に。
 void RunActions(game_production::Scene& scene, int button, int window, const UiButton& b, UiFocus& state, const UiActionHost& host);
 
 class UiService final : public game_production::PlayService {
@@ -144,9 +145,9 @@ public:
         motion_ = {};
     }
     UiMotionWorld& Motion() { return motion_; }
-    // The focus, the windows and the mouse now (the editor's デバッグ panel).
+    // いまのフォーカス、ウィンドウ、マウス (エディターの デバッグ パネル)。
     const UiFocus& State() const { return state_; }
-    // A script chose a button (rm::UI::Focus): shown as chosen until the mouse moves.
+    // スクリプトがボタンを選んだ (rm::UI::Focus): マウスが動くまで選ばれたものとして表示する。
     void Focus(int entity) {
         state_.focus = entity;
         state_.keyboard = true;
@@ -161,7 +162,7 @@ private:
 
 std::unique_ptr<game_production::PlayService> CreateUiService(const game_production::PlayHost& host);
 
-// The game's screen and its safe area, from the game settings.
+// ゲームの画面とそのセーフエリア、ゲーム設定から。
 UiScreen ScreenOf(const game_production::GameSettings& settings, Vec2 size);
 
 }  // namespace rm::game_ui

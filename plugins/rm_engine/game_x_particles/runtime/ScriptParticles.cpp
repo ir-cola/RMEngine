@@ -1,6 +1,6 @@
-// The particles' part of the scripts' API (RMParticles.h / RMParticlesAbi.h): what a script asks is written
-// into the パーティクル of the scene that plays (its RM_TRANSIENT fields); the drawer does it (ParticleDraw.cpp).
-// RmApi::ctx is game production's ScriptWorld.
+// スクリプト API のパーティクル部分 (RMParticles.h / RMParticlesAbi.h): スクリプトが頼んだことは、
+// 再生しているシーンのパーティクル (その RM_TRANSIENT のフィールド) に書き込む。実際に処理するのは
+// 描き手 (ParticleDraw.cpp)。RmApi::ctx はゲーム制作の ScriptWorld。
 
 #include "rm_engine/game_x_particles/runtime/ParticleSystem.h"
 #include "rm_engine/game_x_particles/runtime/sdk/RMParticlesAbi.h"
@@ -19,7 +19,7 @@ game_production::SceneEntity* EntityOf(void* ctx, uint64_t id) {
     return w.scene->Find(static_cast<int>(id));
 }
 
-// Each パーティクル `nth` names (every one for RM_PARTICLES_ALL).
+// `nth` が指すパーティクル (RM_PARTICLES_ALL ならすべて)。
 void Each(void* ctx, uint64_t id, uint32_t nth, const std::function<void(ParticleSystem&)>& fn) {
     game_production::SceneEntity* e = EntityOf(ctx, id);
     if (!e) return;

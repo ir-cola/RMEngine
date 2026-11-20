@@ -1,7 +1,7 @@
 #pragma once
-// 物理's editor part: the colliders' and characters' shapes drawn as lines over the scene in the
-// scene views (3D and 2D; their toolbar's 形 switches between the selected things and all). The
-// components, the system and the scripts' part are the runtime part's (runtime/Register.cpp).
+// 物理 のエディター部分: コライダーとキャラクターの形を、シーンビュー (3D と 2D) のシーンの上に線で
+// 描く (そのツールバーの 形 で、選んだものとすべてを切り替える)。部品、システム、スクリプト向けの部分は
+// ランタイム部分 (runtime/Register.cpp) のもの。
 
 #include "editor/plugin/Software.h"
 

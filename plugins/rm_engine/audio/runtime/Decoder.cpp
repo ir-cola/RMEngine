@@ -15,8 +15,8 @@
 #include <mutex>
 #include <vector>
 
-#pragma comment(lib, "mfuuid.lib")   // Media Foundation's GUIDs only (a static library: no DLL is needed for them)
-#pragma comment(lib, "shlwapi.lib")  // SHCreateMemStream (every Windows has it)
+#pragma comment(lib, "mfuuid.lib")   // Media Foundation の GUID だけ (静的ライブラリ: そのための DLL は要らない)
+#pragma comment(lib, "shlwapi.lib")  // SHCreateMemStream (どの Windows にもある)
 
 using Microsoft::WRL::ComPtr;
 
@@ -80,11 +80,11 @@ public:
     bool Seek(uint64_t frame) override { return stb_vorbis_seek(v_, static_cast<unsigned>(std::min<uint64_t>(frame, 0xFFFFFFFFu))) != 0; }
 
 private:
-    Bytes bytes_;  // (stb_vorbis reads from them: kept while it lives)
+    Bytes bytes_;  // (stb_vorbis がここから読む: 生きている間は残す)
     stb_vorbis* v_;
 };
 
-// --- Media Foundation (MP3 / AAC / FLAC ...) - loaded when first needed ------------------------------
+// --- Media Foundation (MP3 / AAC / FLAC ...) - 初めて要るときに読み込む ---------------------------
 struct Mf {
     bool ok = false;
     HRESULT(WINAPI* createByteStreamOnStream)(IStream*, IMFByteStream**) = nullptr;
@@ -96,10 +96,10 @@ const Mf& MediaFoundation() {
     static Mf mf;
     static std::once_flag once;
     std::call_once(once, [] {
-        // From the system's folder only (never a DLL lying next to the game).
+        // システムのフォルダーからだけ (ゲームの隣に置かれた DLL は決して読まない)。
         HMODULE plat = LoadLibraryExW(L"mfplat.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
         HMODULE reader = LoadLibraryExW(L"mfreadwrite.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (!plat || !reader) return;  // the N editions of Windows: no Media Foundation
+        if (!plat || !reader) return;  // N エディションの Windows: Media Foundation が無い
         using Startup = HRESULT(WINAPI*)(ULONG, DWORD);
         const auto startup = reinterpret_cast<Startup>(reinterpret_cast<void*>(GetProcAddress(plat, "MFStartup")));
         mf.createByteStreamOnStream = reinterpret_cast<decltype(mf.createByteStreamOnStream)>(
@@ -108,7 +108,7 @@ const Mf& MediaFoundation() {
         mf.createSourceReaderFromByteStream = reinterpret_cast<decltype(mf.createSourceReaderFromByteStream)>(
             reinterpret_cast<void*>(GetProcAddress(reader, "MFCreateSourceReaderFromByteStream")));
         if (!startup || !mf.createByteStreamOnStream || !mf.createMediaType || !mf.createSourceReaderFromByteStream) return;
-        mf.ok = SUCCEEDED(startup(MF_VERSION, MFSTARTUP_LITE));  // (never shut down: it lives as long as the program)
+        mf.ok = SUCCEEDED(startup(MF_VERSION, MFSTARTUP_LITE));  // (終了させない: プログラムが動く間は生きている)
     });
     return mf;
 }
@@ -124,7 +124,7 @@ public:
             }
             return false;
         }
-        // A copy in a stream of memory (SHCreateMemStream copies the bytes).
+        // メモリのストリームにコピーを作る (SHCreateMemStream はバイト列をコピーする)。
         ComPtr<IStream> stream;
         stream.Attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes->data()), static_cast<UINT>(bytes->size())));
         ComPtr<IMFByteStream> byteStream;
@@ -138,7 +138,7 @@ public:
         ComPtr<IMFMediaType> want;
         if (FAILED(mf.createMediaType(&want))) return false;
         want->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
-        want->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_Float);  // Media Foundation converts to 32-bit float
+        want->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_Float);  // Media Foundation が 32 ビット float に変換する
         if (FAILED(reader_->SetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), nullptr, want.Get()))) {
             if (error) *error = "Media Foundation で音として読めません";
             return false;
@@ -153,7 +153,7 @@ public:
         PROPVARIANT var;
         PropVariantInit(&var);
         if (SUCCEEDED(reader_->GetPresentationAttribute(static_cast<DWORD>(MF_SOURCE_READER_MEDIASOURCE), MF_PD_DURATION, &var)) && var.vt == VT_UI8) {
-            frames = var.uhVal.QuadPart * rate / 10'000'000ull;  // (100 ns units)
+            frames = var.uhVal.QuadPart * rate / 10'000'000ull;  // (100 ns 単位)
         }
         PropVariantClear(&var);
         codec = "Media Foundation";
@@ -206,7 +206,7 @@ public:
 
 private:
     ComPtr<IMFSourceReader> reader_;
-    std::vector<float> left_;  // decoded and not yet given
+    std::vector<float> left_;  // デコードしたが、まだ渡していないもの
     size_t at_ = 0;
     bool ended_ = false;
 };

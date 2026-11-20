@@ -1,5 +1,5 @@
-// The 2D debug drawing part of the scripts' API (RM2D.h's rm::Debug). RmApi::ctx is game
-// production's ScriptWorld; its `debug` is the editor's buffer while it plays, null in a game.
+// スクリプト API の 2D デバッグ描画の部分 (RM2D.h の rm::Debug)。RmApi::ctx は game
+// production の ScriptWorld。その `debug` は Play 中はエディターのバッファ、ゲームでは null。
 
 #include "rm_engine/game_x_2d/runtime/ScriptDebug2D.h"
 

@@ -11,7 +11,7 @@ namespace {
 constexpr float kPi = 3.14159265358979323846f;
 constexpr float kRad = kPi / 180.f;
 
-// The same angle as `deg` (+ 360s) nearest `hint`.
+// `deg` と同じ角度 (360 の整数倍だけ違う) のうち `hint` に一番近いもの。
 float NearAngle(float deg, float hint) { return deg + 360.f * std::round((hint - deg) / 360.f); }
 
 }  // namespace
@@ -74,7 +74,7 @@ WorldPlacement2D Decompose(const Mat3& world, float hintDegrees) {
     p.position = {world.tx, world.ty};
     const Vec2 x{world.a, world.b}, y{world.c, world.d};
     const float sx = Length(x);
-    // The X axis gives the turn; Y is what is left (negative when mirrored; not at right angles when skewed).
+    // X 軸が回転を決める。Y は残り (反転しているときは負。ゆがんでいると直角にならない)。
     p.scale.x = sx;
     p.scale.y = sx > 1e-12f ? Determinant(world) / sx : Length(y);
     const float deg = sx > 1e-12f ? std::atan2(x.y, x.x) / kRad : std::atan2(-y.x, y.y) / kRad;
@@ -89,12 +89,12 @@ Transform2D FromWorld(const Transform2D& current, const Mat3& parentWorld, int p
         if (const auto inv = Inverse(parentWorld)) t.position = TransformPoint(*inv, want.position);
     }
     if (want.rotation != now.rotation) {
-        // A mirrored parent turns the other way.
+        // 反転した親は逆向きに回す。
         const float sign = Determinant(parentWorld) < 0 ? -1.f : 1.f;
         t.rotation = current.rotation + (want.rotation - now.rotation) * sign;
     }
     auto ratio = [](float want, float now, float own) {
-        if (std::abs(now) < 1e-12f) return want;  // nothing to scale from: take it as it is
+        if (std::abs(now) < 1e-12f) return want;  // 拡大する元がない: そのまま使う
         return own * (want / now);
     };
     if (want.scale.x != now.scale.x) t.scale.x = ratio(want.scale.x, now.scale.x, current.scale.x);

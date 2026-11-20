@@ -1,7 +1,7 @@
 #pragma once
-// The runtime part of ゲーム制作 × パーティクル (listed in plugins/RuntimePlugins.cpp; the exported game
-// calls it by RM_RUNTIME_ENTRY): the component パーティクル (ParticleSystem.h) and its drawing into the
-// 3D pictures (ParticleDraw.h: ゲーム制作 × 3D's WorldDrawer - the editor's views and the game alike).
+// ゲーム制作 × パーティクル のランタイム部分 (plugins/RuntimePlugins.cpp に並べる。書き出したゲームは
+// RM_RUNTIME_ENTRY で呼ぶ): 部品 パーティクル (ParticleSystem.h) と、それを 3D の絵に描く処理
+// (ParticleDraw.h: ゲーム制作 × 3D の WorldDrawer - エディターのビューもゲームも同じ)。
 
 #include "core/RuntimeRegistry.h"
 

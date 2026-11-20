@@ -1,5 +1,5 @@
 #pragma once
-// The ID of the particle plugin (パーティクル) - written here once (and in plugin.json, compared at start-up).
+// パーティクルプラグイン (パーティクル) の ID - ここに 1 度だけ書く (plugin.json にも書き、起動時に突き合わせる)。
 
 #include "core/PluginId.h"
 

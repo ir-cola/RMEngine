@@ -1,6 +1,6 @@
-/* RM Engine - the physics part of the scripts' API (the plugin 物理 gives it). Plain C, like RmAbi.h.
- * Scripts include RMPhysics.h, not this. The part has its own version: change it -> raise its version
- * (RM_ABI_VERSION stays: the hooks OnHit / OnTriggerEnter / OnTriggerExit are in RmAbi.h). */
+/* RM Engine - スクリプトの API の物理の部分 (プラグイン 物理 が提供する)。RmAbi.h と同じ素の C。
+ * スクリプトは RMPhysics.h を include する。これは直接 include しない。この部分は自分のバージョンを持つ:
+ * 変えたらそのバージョンを上げる (RM_ABI_VERSION は変えない: OnHit / OnTriggerEnter / OnTriggerExit のフックは RmAbi.h にある)。 */
 #pragma once
 
 #include <stdint.h>
@@ -13,24 +13,24 @@ extern "C" {
 #endif
 
 typedef struct RmRayHit {
-    uint64_t entity; /* what was hit (0: nothing) */
+    uint64_t entity; /* 当たったもの (0: なし) */
     float point[3];
     float normal[3];
     float distance;
 } RmRayHit;
 
-/* Vectors are 3 floats in the world (a 2D game: z = 0). Each returns 0 when the entity has no body
-   (no collider, switched off) or the call does not fit it (a force on something that does not move). */
+/* ベクトルはワールドの float 3 つ (2D のゲーム: z = 0)。エンティティに体がない (コライダーがない、切ってある)
+   か、呼び出しが合わない (動かないものに力をかける) ときは、どれも 0 を返す。 */
 typedef struct RmPhysicsApi {
-    int (*addForce)(void* ctx, uint64_t entity, const float force[3], int impulse); /* impulse: 1 = at once (N·s), 0 = over the next step (N) */
+    int (*addForce)(void* ctx, uint64_t entity, const float force[3], int impulse); /* impulse: 1 = すぐ (N·s)、0 = 次のステップの間 (N) */
     int (*getVelocity)(void* ctx, uint64_t entity, float out[3]);
     int (*setVelocity)(void* ctx, uint64_t entity, const float velocity[3]);
-    int (*raycast)(void* ctx, const float origin[3], const float direction[3], float maxDistance, RmRayHit* hit); /* 1: hit */
+    int (*raycast)(void* ctx, const float origin[3], const float direction[3], float maxDistance, RmRayHit* hit); /* 1: 当たった */
     /* キャラクター */
-    int (*characterMove)(void* ctx, uint64_t entity, const float velocity[3]); /* the walk (its horizontal part), kept until changed */
-    int (*characterJump)(void* ctx, uint64_t entity, float speed);              /* when on the ground (at the next step) */
+    int (*characterMove)(void* ctx, uint64_t entity, const float velocity[3]); /* 歩く速さ (水平の部分)。変えるまで続く */
+    int (*characterJump)(void* ctx, uint64_t entity, float speed);              /* 地面にいるとき (次のステップで) */
     int (*characterGrounded)(void* ctx, uint64_t entity);
-    int (*characterGroundNormal)(void* ctx, uint64_t entity, float out[3]);    /* 0: not standing on anything */
+    int (*characterGroundNormal)(void* ctx, uint64_t entity, float out[3]);    /* 0: 何にも立っていない */
 } RmPhysicsApi;
 
 #ifdef __cplusplus

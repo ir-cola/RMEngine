@@ -1,7 +1,7 @@
-// Baking a sprite's image for the exported game (game_production/editor/GameExport.h: ExportBaker):
-// the file as it is (never compressed further: the game reads it with WIC as the editor does) with the
-// file's own size and the import settings くっきり / 大きさの上限 in front (runtime/BakedImage.h) - so
-// the game draws the sprite at the size and in the way the 2D scene view shows it.
+// 書き出すゲーム用に、スプライトの画像を焼く (game_production/editor/GameExport.h: ExportBaker):
+// ファイルはそのまま (それ以上は圧縮しない: ゲームはエディターと同じく WIC で読む) に、ファイル自身の
+// 大きさと、取り込みの設定 くっきり / 大きさの上限 を前に付ける (runtime/BakedImage.h) - ゲームが
+// 2D シーンビューの見せるとおりの大きさと方法でスプライトを描くように。
 
 #include "rm_engine/game_x_2d/editor/ExportBake2D.h"
 
@@ -37,9 +37,9 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
         if (error) *error = why;
         return BakeResult::Failed;
     }
-    // The file's own size (as the 2D scene view reads it) - on a thread of its own: its WIC factory
-    // (and COM) end with it, whatever thread bakes (the headless export's is the main thread, whose
-    // thread_local factory would be let go after COM at the process's end).
+    // ファイル自身の大きさ (2D シーンビューが読むとおりに) - 専用のスレッドで: その WIC ファクトリー
+    // (と COM) はそれと一緒に終わる。どのスレッドが焼いても (ヘッドレスの書き出しではメインスレッド
+    // で、その thread_local のファクトリーは、プロセスの最後に COM の後で手放されてしまう)。
     std::optional<platform::Image> whole;
     std::thread([&] { whole = platform::LoadImageFile(platform::ThreadImagingFactory(), a.file, platform::PixelOrder::PremultipliedBgra, {}, &why); }).join();
     if (!whole) {

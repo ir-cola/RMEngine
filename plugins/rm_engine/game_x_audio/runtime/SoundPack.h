@@ -1,11 +1,11 @@
 #pragma once
-// A sound as the exported game has it (.rmsound in Game.rmpak, "Baked/<id>.rmsound"): the file as it
-// is (WAV / OGG / MP3 ... - not decoded, not made again) after a small header with what the editor
-// read from its .meta (the import settings) and its name. The game reads no .meta.
+// 書き出したゲームが持つ形の音 (Game.rmpak の .rmsound、"Baked/<id>.rmsound"): ファイルを
+// そのまま (WAV / OGG / MP3 ... - デコードも作り直しもしない)、その前に小さなヘッダーを付ける。
+// ヘッダーにはエディターが .meta から読んだもの (取り込みの設定) と名前が入る。ゲームは .meta を読まない。
 //
-//   "RMSOUND1"  uint32 (little endian) n  n bytes of JSON {"name": "bgm.ogg", "import": {...}}  the file
+//   "RMSOUND1"  uint32 (リトルエンディアン) n  n バイトの JSON {"name": "bgm.ogg", "import": {...}}  ファイル
 //
-// Pure (no files): tested in tests/TestAudio.cpp.
+// 純粋 (ファイルは扱わない): tests/TestAudio.cpp でテストする。
 
 #include "base/Json.h"
 
@@ -23,9 +23,9 @@ std::string PackSound(std::string_view name, const json::Value& import, std::str
 struct UnpackedSound {
     std::string name;
     json::Value import;
-    std::string_view file;  // inside the packed bytes
+    std::string_view file;  // 詰めたバイト列の中
 };
-// nullopt: not a pack (or a broken one: the header longer than the bytes, or not JSON).
+// nullopt: パックではない (または壊れている: ヘッダーがバイト列より長い、または JSON でない)。
 std::optional<UnpackedSound> UnpackSound(std::string_view packed);
 
 }  // namespace rm::game_x_audio

@@ -1,7 +1,7 @@
 #pragma once
-// The runtime part of ゲーム制作 × 音 (listed in plugins/RuntimePlugins.cpp; the exported game calls it
-// by RM_RUNTIME_ENTRY): the component 音源 (AudioSource.h), the sounds of a Play (AudioService.h: a
-// game production PlayService) and the scripts' part (sdk/RMAudio.h).
+// ゲーム制作 × 音 のランタイムの部分 (plugins/RuntimePlugins.cpp に並べる。書き出したゲームは
+// RM_RUNTIME_ENTRY で呼ぶ): 部品 音源 (AudioSource.h)、Play の音 (AudioService.h: game
+// production の PlayService)、スクリプトの部分 (sdk/RMAudio.h)。
 
 #include "core/RuntimeRegistry.h"
 

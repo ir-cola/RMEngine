@@ -1,7 +1,7 @@
 #pragma once
-// The connector パーティクル × 物理 (listed in plugins/RuntimePlugins.cpp; the exported game calls it by
-// RM_RUNTIME_ENTRY): the physics plugin's コライダー (箱・球・カプセル; not メッシュ, not トリガー) and
-// キャラクター become the shapes particles collide with (ゲーム制作 × パーティクル's CollisionShapes.h).
+// コネクター パーティクル × 物理 (plugins/RuntimePlugins.cpp に並べる。書き出したゲームは
+// RM_RUNTIME_ENTRY で呼ぶ): 物理プラグインの コライダー (箱・球・カプセル; メッシュとトリガーは除く) と
+// キャラクター を、粒が当たる形にする (ゲーム制作 × パーティクル の CollisionShapes.h)。
 
 #include "core/RuntimeRegistry.h"
 #include "rm_engine/game_production/runtime/Scene.h"
@@ -15,7 +15,7 @@ namespace rm::particles_x_physics {
 
 void RegisterRuntime(RuntimeRegistry& registry);
 
-// The scene's colliders as shapes in the world (`world`: where an entity is; null: switched off).
+// シーンのコライダーをワールドの形にしたもの (`world`: エンティティの位置; null: 切ってある)。
 void GatherShapes(const game_production::Scene& scene, const std::function<const space3d::Mat4*(int entity)>& world,
                   std::vector<particles::CollisionShape>& out);
 

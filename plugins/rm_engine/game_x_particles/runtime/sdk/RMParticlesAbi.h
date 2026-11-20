@@ -1,5 +1,5 @@
-/* RM Engine - the particles' part of the scripts' API (ゲーム制作 × パーティクル gives it). Plain C, like
- * RmAbi.h. Scripts include RMParticles.h, not this. Change it -> raise its version. */
+/* RM Engine - スクリプト API のパーティクル部分 (ゲーム制作 × パーティクル が提供する)。RmAbi.h と同じ
+ * 素の C。スクリプトが include するのは RMParticles.h で、これではない。変えたらバージョンを上げる。 */
 #pragma once
 
 #include <stdint.h>
@@ -11,20 +11,20 @@
 extern "C" {
 #endif
 
-/* An entity's パーティクル (nth: which of them, 0 = the first; RM_PARTICLES_ALL = every one). Each does nothing
-   on an entity without one. */
+/* エンティティのパーティクル (nth: そのうちどれか。0 = 最初のもの; RM_PARTICLES_ALL = すべて)。
+   持たないエンティティに対しては何もしない。 */
 #define RM_PARTICLES_ALL 0xFFFFFFFFu
 
 typedef struct RmParticlesApi {
     uint32_t (*count)(void* ctx, uint64_t entity);
-    /* Letting out particles again (fromStart: what is out goes, the clocks from 0). */
+    /* またパーティクルを出す (fromStart: 出ているものは消え、時計は 0 から)。 */
     void (*play)(void* ctx, uint64_t entity, uint32_t nth, int fromStart);
-    /* No new particles: what is out lives on and dies away (clear: it goes at once). */
+    /* 新しく出さない: 出ているものは生き続けて消えていく (clear: すぐ消す)。 */
     void (*stop)(void* ctx, uint64_t entity, uint32_t nth, int clear);
     void (*pause)(void* ctx, uint64_t entity, uint32_t nth, int paused);
-    /* `count` particles of each emitter at once (stopped or not). */
+    /* 各エミッターから `count` 個を一度に出す (止まっていてもいなくても)。 */
     void (*emit)(void* ctx, uint64_t entity, uint32_t nth, uint32_t count);
-    int (*playing)(void* ctx, uint64_t entity, uint32_t nth); /* letting out particles (not stopped) */
+    int (*playing)(void* ctx, uint64_t entity, uint32_t nth); /* パーティクルを出す (止まっていない時) */
     float (*speed)(void* ctx, uint64_t entity, uint32_t nth);
     void (*setSpeed)(void* ctx, uint64_t entity, uint32_t nth, float speed);
 } RmParticlesApi;

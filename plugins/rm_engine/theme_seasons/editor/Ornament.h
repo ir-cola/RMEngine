@@ -1,11 +1,11 @@
 #pragma once
-// 季節テーマパック - the shapes of the seasons' pictures (a cherry tree, the sun, a maple leaf, a
-// snowflake, clouds, snow on an edge ...). Pure: they only make ui::Paths (tested in
-// tests/TestTheme.cpp); Seasons.cpp draws them in the season's colors, behind the content.
+// 季節テーマパック - 季節の絵の形 (桜の木、太陽、もみじの葉、雪の結晶、雲、縁に積もる雪 ...)。
+// 純粋: ui::Path を作るだけ (tests/TestTheme.cpp でテストする)。Seasons.cpp が季節の色で、
+// 内容の後ろに描く。
 //
-// Every figure goes round the same way (clockwise on the screen) and the painter fills by winding,
-// so figures that overlap (the circles of a tree's crown) make one silhouette, never holes.
-// "Random" scatters come from a fixed seed: the same picture every frame.
+// どの図形も同じ向き (画面上で時計回り) にまわり、描く側は巻き数で塗るので、重なった図形
+// (木の樹冠の円) は 1 つの影になり、穴はできない。
+// 「ランダム」な散らばりは固定した種から作る: 毎フレーム同じ絵になる。
 
 #include "ui/Path.h"
 #include "ui/Types.h"
@@ -16,81 +16,76 @@
 
 namespace rm::theme_seasons::ornament {
 
-// --- Building blocks --------------------------------------------------------------------------
+// --- 部品 --------------------------------------------------------------------------
 void AddCircle(ui::Path& p, Vec2 center, float r);
 void AddEllipse(ui::Path& p, Vec2 center, float rx, float ry, float degrees);
-// A closed polygon, put clockwise whichever way the points were given.
+// 閉じた多角形。点がどちら回りに与えられても時計回りにする。
 void AddPolygon(ui::Path& p, std::span<const Vec2> points);
-// A bar from `a` to `b`, `wa` wide at a and `wb` wide at b (a branch, an arm of a snowflake).
+// `a` から `b` への棒。a での幅が `wa`、b での幅が `wb` (枝、雪の結晶の腕)。
 void AddBar(ui::Path& p, Vec2 a, Vec2 b, float wa, float wb);
 
-// The path moved and scaled (the same in both directions) to sit centred in `box` as large as it
-// fits: the corner silhouettes of every season fill the same box, whatever their own shape.
+// `box` の中に収まる最大の大きさで中央に置くよう、動かして拡大縮小したパス (縦横同じ倍率):
+// どの季節の角の影も、元の形に関係なく同じ箱を埋める。
 ui::Path FitInto(const ui::Path& path, const ui::Rect& box);
 
-// Small repeatable random numbers (0 .. 1) from a seed.
+// 種から作る、何度でも同じになる小さな乱数 (0 .. 1)。
 struct Random {
     uint32_t state;
     float Next();
 };
 
-// --- Spring -----------------------------------------------------------------------------------
-// A cherry blossom, filled as one silhouette: five petals, each with a notch at its tip. Before
-// turning, one petal points straight up. radius = from the centre to the petals' tips;
-// degreesCcw = turned counter-clockwise as seen on screen.
+// --- 春 -----------------------------------------------------------------------------------
+// 桜の花。1 つの影として塗る: 花びら 5 枚で、それぞれ先に切れ込みがある。回す前は、
+// 花びら 1 枚がまっすぐ上を向く。radius = 中心から花びらの先まで。
+// degreesCcw = 画面上で反時計回りに回す度数。
 ui::Path Sakura(Vec2 center, float radius, float degreesCcw);
-// A cherry tree in full bloom growing from the bottom edge of `window` near its right edge: a trunk
-// rising (bending a little, its roots flaring at the foot) to a fork a little past the window's
-// middle, branches spreading up from there into a wide crown of blossom up top (its top and right
-// cut off by the window's edges), a low branch with its own clump off to the left. `size` = the
-// crown's half width; its blossom reaches about 1.6 x size left of the window's right edge.
+// 満開の桜の木。`window` の下の端から右の端の近くに生える: 幹が (少し曲がり、根元で根が広がりながら)
+// ウィンドウの真ん中より少し上の枝分かれまで伸び、そこから枝が上に広がって上のほうの広い花の
+// 樹冠になる (上と右はウィンドウの端で切れる)。左へは、自分の房を持つ低い枝。`size` =
+// 樹冠の半分の幅。花はウィンドウの右端から左へ size の約 1.6 倍まで届く。
 ui::Path CherryTree(const ui::Rect& window, float size);
-// Petals blown off that tree's crown to the left: thick near it (`fromX` = its left edge), thinning
-// out and sinking as they fly across the window.
+// その木の樹冠から左へ吹き飛ばされた花びら: 木の近く (`fromX` = 木の左端) では多く、
+// ウィンドウを横切って飛ぶにつれて減り、沈む。
 ui::Path PetalStream(const ui::Rect& window, float fromX, int count, float size, uint32_t seed);
-// Small petals scattered in `area` (a flurry), each about `size` long.
+// `area` に散らした小さな花びら (吹雪のように)。それぞれ長さ約 `size`。
 ui::Path Petals(const ui::Rect& area, int count, float size, uint32_t seed);
 
-// --- Summer -----------------------------------------------------------------------------------
-// The sun: a round disc and twelve pointed rays around it, long and short in turn (radius = to the
-// long rays' tips), turned `degreesCcw`.
+// --- 夏 -----------------------------------------------------------------------------------
+// 太陽: 丸い円盤とそのまわりのとがった光線 12 本 (長いのと短いのが交互。radius = 長い光線の先まで)。
+// `degreesCcw` 回す。
 ui::Path Sun(Vec2 center, float radius, float degreesCcw);
 ui::Path Cloud(Vec2 center, float width);
-// A sand castle standing on `base` (the middle of its foot), made by hand: a wall and three towers
-// that lean and bulge a little, round lumps on their tops, a heap of sand at its foot (so, filled
-// together with the beach, it grows out of the sand).
+// `base` (足の真ん中) に立つ砂のお城。手で作る: 壁と塔 3 つ (少し傾いてふくらむ)、
+// てっぺんの丸い塊、足元の砂の山 (だから、浜と一緒に塗ると、砂から生えているように見える)。
 ui::Path SandCastle(Vec2 base, float height);
-// A beach parasol stuck in the sand at `base`, leaning: its canopy (a scalloped dome) and its pole.
+// `base` の砂に刺さって傾いた浜のパラソル: 傘 (ふちどりのあるドーム) と柄。
 ui::Path BeachParasol(Vec2 base, float height, float degreesCcw);
-// The summer silhouette for the bottom-right corner (like spring's cherry tree): a low mound of sand
-// with the parasol stuck in it and the sand castle beside it. `base` = the middle of the mound's
-// foot (on the window's bottom edge), `height` = to the top of the parasol.
+// 右下の角の夏の影 (春の桜の木のように): 低い砂の小山に、パラソルが刺さり、
+// そのそばに砂のお城。`base` = 小山の足の真ん中 (ウィンドウの下端上)、`height` = パラソルのてっぺんまで。
 ui::Path BeachScene(Vec2 base, float height);
 
-// --- Fall -------------------------------------------------------------------------------------
-// A maple leaf (五つの尖った葉先と葉柄): radius = from the centre to the top tip. `points` = how
-// finely its edge is drawn (fewer for the small leaves of the canopy).
+// --- 秋 -----------------------------------------------------------------------------------
+// もみじの葉 (五つの尖った葉先と葉柄): radius = 中心から上の先まで。`points` = 縁を
+// どれだけ細かく描くか (樹冠の小さな葉は少なめ)。
 ui::Path MapleLeaf(Vec2 center, float radius, float degreesCcw, int points = 180);
-// Autumn leaves thick along the top of `window` and thinning out down to about `depth`, in four
-// colors (one path each). `perPixel` = leaves per pixel of width.
+// `window` の上に沿って濃く、`depth` くらいまで下に向かって薄くなる紅葉。4 色 (1 色に 1 パス)。
+// `perPixel` = 幅 1 ピクセルあたりの葉の数。
 std::array<ui::Path, 4> Canopy(const ui::Rect& window, float depth, float perPixel, uint32_t seed);
 
-// --- Winter -----------------------------------------------------------------------------------
-// A snowflake: six thick arms each ending in a sharp spearhead, two pairs of thick pointed branches
-// on each, a hexagon at the heart. radius = to the arms' tips.
+// --- 冬 -----------------------------------------------------------------------------------
+// 雪の結晶: 太い腕 6 本 (それぞれ先は鋭い槍先)、各腕に太くとがった枝が 2 対、
+// 中心に六角形。radius = 腕の先まで。
 ui::Path Snowflake(Vec2 center, float radius, float degreesCcw);
-// Falling snow, held still: round flakes of about `size` scattered over `area`.
+// 降る雪を止めたもの: `area` に散らした、約 `size` の丸い雪片。
 ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed);
-// Snow piled up at the bottom of `r` (a panel, a window): a soft wavy drift rising at most `depth`
-// from the bottom edge, inside it, sloping down over the last pixels at both ends (off the rounded
-// corners). Its swells are measured from r's left edge in pixels, so a box that grows or moves keeps
-// the same drift (only its right end follows).
+// `r` (パネル、ウィンドウ) の下に積もった雪: 下の端から最大 `depth` まで盛り上がる、内側の柔らかく波打つ
+// 吹きだまり。両端の最後の数ピクセルで下がる (丸い角から外れる)。うねりは r の左端からのピクセルで測るので、
+// 箱が大きくなったり動いたりしても同じ吹きだまりのまま (右端だけがついてくる)。
 ui::Path SnowDrift(const ui::Rect& r, float depth, float cornerRadius);
-// A few icicles hanging from the top edge of `window`, here and there: a small group of one to three
-// under a lump of snow every 260 .. 640 pixels. The groups are laid out from the window's left edge
-// and every group that starts inside it is made (one past the right edge is simply cut off there),
-// so resizing the window never makes one pop in or out. Each icicle tapers to a sharp tip with
-// small ripples along it (`ice`), a thin shine down its left side (`shine`); `snow` = the lumps.
+// `window` の上の端からぶら下がるつららがところどころに: 260 .. 640 ピクセルごとに、雪の塊の下に 1 本から 3 本の
+// 小さな 1 組。組はウィンドウの左端から並べ、内側で始まる組はすべて作る (右端を越えるものはそこで切るだけ)。
+// だからウィンドウの大きさを変えても、出たり消えたりしない。つららはそれぞれ、小さな波 (`ice`) のある鋭い先に向かって
+// 細くなり、左側に細いつや (`shine`) がある。`snow` = 雪の塊。
 struct IcicleShapes {
     ui::Path snow, ice, shine;
 };

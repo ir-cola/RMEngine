@@ -11,7 +11,7 @@ namespace rm::physics {
 void RegisterRuntime(RuntimeRegistry& registry) {
     using game_production::ComponentInfo;
     using game_production::kComponentPoint;
-    // The components: data only - the world reads them each fixed step (added by hand).
+    // 部品: データだけ - ワールドが固定ステップごとに読む (手で足した)。
     static const ComponentInfo kRigidbody{.type = &reflect::TypeOf<Rigidbody>, .folder = "物理"};
     registry.Contribute(kComponentPoint, kRigidbody);
     static const ComponentInfo kCollider{.type = &reflect::TypeOf<Collider>, .folder = "物理"};
@@ -20,13 +20,13 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(kComponentPoint, kCollider2D);
     static const ComponentInfo kCharacter{.type = &reflect::TypeOf<Character>, .folder = "物理"};
     registry.Contribute(kComponentPoint, kCharacter);
-    // The scene's 重力 (each scene its own).
+    // シーンの 重力 (シーンごとに自分の)。
     static const game_production::SceneSettingInfo kSettings{.type = &reflect::TypeOf<PhysicsSettings>};
     registry.Contribute(game_production::kSceneSettingPoint, kSettings);
-    // The world steps in the game settings' 物理の刻み (after the scripts' Tick; the hooks after it).
+    // ワールドはゲーム設定の 物理の刻み で進む (スクリプトの Tick のあと; フックはその後)。
     static const game_production::SystemInfo kSystem{"物理", game_production::SystemPhase::Fixed, 0, &RunPhysics};
     registry.Contribute(game_production::kSystemPoint, kSystem);
-    // Scripts: forces, speeds, rays, characters (sdk/RMPhysics.h).
+    // スクリプト: 力、速さ、レイ、キャラクター (sdk/RMPhysics.h)。
     registry.Contribute(game_production::kScriptApiPoint, ScriptPhysicsPart());
 }
 

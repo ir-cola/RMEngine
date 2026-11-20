@@ -15,7 +15,7 @@ namespace rm::game_x_2d {
 
 namespace {
 
-// A Transform 2D's place in the world: its parents' Transforms 2D, then its own (shown under it).
+// Transform 2D のワールドでの場所: 親の Transform 2D、次にそれ自身のもの (その下に表示)。
 void DeriveWorld(std::span<const void* const> chain, void* out) {
     space2d::Mat3 world;
     int order = 0;
@@ -24,14 +24,14 @@ void DeriveWorld(std::span<const void* const> chain, void* out) {
         world = space2d::WorldMatrix(world, t);
         order += t.order;
     }
-    // Near its own angle: a thing at the top level shows the same numbers as its Transform 2D.
+    // 自分の角度の近くに: トップレベルのものは、その Transform 2D と同じ数を表示する。
     const float hint = static_cast<const space2d::Transform2D*>(chain.back())->rotation;
     auto& placement = *static_cast<space2d::WorldPlacement2D*>(out);
     placement = space2d::Decompose(world, hint);
     placement.order = order;
 }
 
-// World values typed in the inspector -> the Transform 2D that gives them under its parents.
+// インスペクターに入力したワールドの値 -> 親の下でそれを与える Transform 2D。
 void UnderiveWorld(std::span<const void* const> chain, const void* derived, void* component) {
     space2d::Mat3 parent;
     int order = 0;
@@ -44,8 +44,8 @@ void UnderiveWorld(std::span<const void* const> chain, const void* derived, void
     t = space2d::FromWorld(t, parent, order, *static_cast<const space2d::WorldPlacement2D*>(derived));
 }
 
-// 追加 ▸ 2D オブジェクト / カメラ: an entity with a Transform 2D (whatever the game's space is) and what
-// makes it that - names in the language in use.
+// 追加 ▸ 2D オブジェクト / カメラ: Transform 2D を持つエンティティ (ゲームの空間が何であっても) と、
+// それを成り立たせる部品 - 名前は使っている言語で。
 using game_production::AddComponentTo;
 using game_production::Scene;
 
@@ -63,11 +63,11 @@ int MakeCamera(Scene& scene, int parent, size_t index) { return MakeWith<Camera2
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
-    // (The component types and the systems are the runtime part's: runtime/Register.cpp. Here only how
-    // the editor shows them.)
+    // (部品の型とシステムはランタイム側のもの: runtime/Register.cpp。ここはエディターがそれをどう
+    // 見せるかだけ。)
     using game_production::ComponentLook;
     using game_production::kComponentLookPoint;
-    // A Transform 2D is shown as it is (ローカル) or in the world (ワールド).
+    // Transform 2D はそのまま (ローカル) か、ワールドで (ワールド) 表示する。
     static const ComponentLook kTransform{.type = &reflect::TypeOf<space2d::Transform2D>,
                                           .derivedType = &reflect::TypeOf<space2d::WorldPlacement2D>,
                                           .derive = &DeriveWorld,
@@ -82,7 +82,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     registry.Contribute(kComponentLookPoint, kAnimation);
     static const ComponentLook kCamera{.type = &reflect::TypeOf<Camera2D>, .icon = "camera"};
     registry.Contribute(kComponentLookPoint, kCamera);
-    // ... and are seen on the plane in the 2D scene view (after 3D when both are there).
+    // ... そして 2D シーンビューの平面の上に見える (両方あるときは 3D の後)。
     static const game_production::SceneViewInfo kSceneView{&CreateSceneView2D, "2d", editor::TrKey(L"2D"), /*order*/ 10};
     registry.Contribute(game_production::kSceneViewPoint, kSceneView);
     // The 階層's 追加 ▸.
@@ -91,7 +91,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
         {.label = editor::TrKey(L"2D カメラ"), .folder = editor::TrKey(L"カメラ"), .make = &MakeCamera},
     };
     for (const auto& item : kItems) registry.Contribute(game_production::kCreateItemPoint, item);
-    // Sprites' images for the exported game: the file with its size and import settings.
+    // 書き出すゲーム用のスプライトの画像: ファイルとその大きさ、取り込みの設定。
     RegisterExportBake(registry);
 }
 

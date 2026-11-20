@@ -14,7 +14,7 @@ ParticleEffect NewEffect() {
         return m;
     };
     e.modules = {module("shape_cone"), module("initial"), module("force"), module("color_over_life"), module("size_over_life")};
-    // A slow rise (the force's default pulls down): a little upward instead.
+    // ゆっくり上る (力の初期値は下へ引く): 代わりに少し上向きにする。
     e.modules[2].values.push_back({"acceleration", 0, 0.5f, 0, 0});
     ParticleEffect effect;
     effect.emitters.push_back(std::move(e));

@@ -1,13 +1,13 @@
 #pragma once
-// ゲーム制作 × パーティクル - the particles in a 3D picture (ゲーム制作 × 3D's WorldDrawer): one
-// EffectPlayer per entity with パーティクル, moved on by the picture's time and drawn into it.
+// ゲーム制作 × パーティクル - 3D の絵 (ゲーム制作 × 3D の WorldDrawer) に出すパーティクル。
+// パーティクルを持つエンティティごとに EffectPlayer を 1 つ作り、絵の時間で進めて、絵の中に描く。
 //
-//   playing (Play, the exported game)   every パーティクル with 始めから出す
-//   not playing (the editor)            the selected ones (to be looked at), from the start when selected
+//   再生中 (Play、書き出したゲーム)   始めから出す がついたパーティクルすべて
+//   再生していない (エディター)        選んだもの (見るため)。選んだ時に始めから
 //
-// An effect is read from its asset once and looked at again now and then (a file saved meanwhile -
-// the パーティクル tab, another program - plays as it is now). A problem (an effect that cannot be read, a
-// shader that does not compile) is told once in the console.
+// エフェクトはアセットから 1 度だけ読み、あとは時々見直す (その間に保存されたファイル -
+// パーティクルタブや別のソフトで - は、今の内容で再生される)。問題 (読めないエフェクト、
+// コンパイルできないシェーダー) はコンソールに 1 度だけ知らせる。
 
 #include "rm_engine/game_x_3d/runtime/WorldDraw.h"
 #include "rm_engine/particles/runtime/ModuleSource.h"
@@ -28,13 +28,13 @@ namespace rm::game_x_particles {
 
 std::unique_ptr<game_x_3d::WorldDrawer> CreateParticleDraw();
 
-// The modules an effect names: the built-in ones, and the files (.rmfx) read through `read` - looked at
-// again now and then (a file saved meanwhile is a new source: the players make their shaders again).
+// エフェクトが名前で挙げるモジュール: 組み込みのものと、`read` で読む (.rmfx の) ファイル。
+// 時々見直す (その間に保存されたファイルは新しい元として扱い、プレイヤーがシェーダーを作り直す)。
 class ModuleFiles {
 public:
     using Read = std::function<std::optional<std::string>(const AssetRef&)>;
     using Name = std::function<std::string(const AssetRef&)>;
-    // `often`: looked at again every quarter second (the editor), else every second and a half.
+    // `often`: 4 分の 1 秒ごとに見直す (エディター)。そうでなければ 1 秒半ごと。
     std::shared_ptr<const particles::ModuleSource> Find(const particles::ParticleModule& m, std::string& file, const Read& read, const Name& name,
                                                         bool often);
 
@@ -45,11 +45,11 @@ private:
         std::string name;
         double lookedAt = -1e9;
     };
-    std::unordered_map<std::string, Entry> files_;  // by asset id
+    std::unordered_map<std::string, Entry> files_;  // アセット ID ごと
 };
 
-// The pictures emitters show (their 絵) on the GPU: read through `read` (a picture file, or the game's
-// baked one), looked at again now and then; one that cannot be read is told once.
+// エミッターが見せる絵 (その 絵) を GPU に置いたもの: `read` で読み (絵のファイル、
+// またはゲームに焼いたもの)、時々見直す。読めないものは 1 度だけ知らせる。
 class ParticleImages {
 public:
     ID3D11ShaderResourceView* Find(const AssetRef& ref, platform::Gfx& gfx, const ModuleFiles::Read& read, bool often);
@@ -61,15 +61,15 @@ private:
         double lookedAt = -1e9;
         uint64_t generation = 0;
     };
-    std::unordered_map<std::string, Entry> images_;  // by asset id
+    std::unordered_map<std::string, Entry> images_;  // アセット ID ごと
     std::set<std::string> told_;
 };
 
-// How often an asset is read again (seconds): the editor while stopped, else.
+// アセットを読み直す間隔 (秒): 止まっているエディターの時と、それ以外の時。
 inline constexpr double kLookOften = 0.25, kLookSeldom = 1.5;
 double NowSeconds();
 
-// The camera of a 3D picture as the particles' shaders take it.
+// パーティクルのシェーダーが受け取る形にした、3D の絵のカメラ。
 particles::ViewConstants ViewOf(const space3d::ExtraDrawContext& c);
 
 }  // namespace rm::game_x_particles

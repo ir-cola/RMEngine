@@ -54,32 +54,32 @@ using space2d::operator-;
 using space2d::operator*;
 using ui::Rect;
 
-constexpr float kClickSlop = 4.f;     // a press that moves less than this is a click
-constexpr float kMarkRadius = 7.f;    // the ring of an entity without a sprite (DIPs)
-constexpr float kBarH = 28.f;         // the tool strip at the top left
+constexpr float kClickSlop = 4.f;     // これより小さくしか動かない押下はクリック
+constexpr float kMarkRadius = 7.f;    // スプライトのないエンティティの輪 (DIP)
+constexpr float kBarH = 28.f;         // 左上のツールの帯
 constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kGridW = 56.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
-constexpr float kSnapBoxW = 280.f, kSnapRowH = 30.f;  // the box of the steps (under 刻み)
-constexpr double kImageCheckSeconds = 1.0;    // how often an image file is looked at again (changed on disk?)
-constexpr double kImageForgetSeconds = 10.0;  // an image no entity uses for this long is let go
+constexpr float kSnapBoxW = 280.f, kSnapRowH = 30.f;  // 刻みの箱 (刻みの下)
+constexpr double kImageCheckSeconds = 1.0;    // 画像ファイルを見直す間隔 (ディスクで変わったか)
+constexpr double kImageForgetSeconds = 10.0;  // どのエンティティも使わないままこの時間がたった画像は手放す
 
 struct BarLayout {
     Rect tool, space, pivot, snap, grid, debug, shapes, all;
 };
 
-// An entity with a Transform 2D, as it is this frame.
+// Transform 2D を持つエンティティの、このフレームでの状態。
 struct Placed {
     int id = 0;
     Mat3 world, parentWorld;
-    int order = 0;        // its world order (parents' added)
-    size_t tree = 0;      // where it is in the 階層 (later = in front)
+    int order = 0;        // ワールドでの順番 (親の分を足したもの)
+    size_t tree = 0;      // 階層での位置 (後ろほど手前)
     bool active = true;
-    bool sprite = false;  // has a sprite (else drawn as a small ring, not in the game)
+    bool sprite = false;  // スプライトがある (なければ小さな輪で描く。ゲームには出ない)
     space2d::SpriteDraw draw;
     int subOrder = 0;     // the sprite's 並び順
-    std::optional<Camera2D> camera;  // it is a camera (カメラ (2D))
+    std::optional<Camera2D> camera;  // カメラである (カメラ (2D))
 };
 
-// The largest rectangle of `aspect` (width / height) in the middle of r (the game screen's shape).
+// r の真ん中にある、`aspect` (幅 / 高さ) の一番大きい長方形 (ゲーム画面の形)。
 Rect Fit(const Rect& r, float aspect) {
     const float a = std::max(aspect, 1e-3f);
     float w = r.w, h = r.w / a;
@@ -90,21 +90,22 @@ Rect Fit(const Rect& r, float aspect) {
     return {r.x + (r.w - w) * 0.5f, r.y + (r.h - h) * 0.5f, w, h};
 }
 
-// An image file read once by the asset's id (several entities with the same image share it). Looked at
-// again now and then: a file changed on disk is read again; a file that cannot be read is told once.
+// アセットの id で一度だけ読む画像ファイル (同じ画像のエンティティが
+// いくつあっても共有する)。ときどき見直す: ディスクで変わったファイルは
+// 読み直し、読めないファイルは一度だけ知らせる。
 struct ImageEntry {
     Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
-    uint32_t width = 0, height = 0;  // the file's pixels (the bitmap may be smaller: kMaxImageSize)
-    bool sharp = false;  // the image's import setting くっきり (with the sprite's own)
+    uint32_t width = 0, height = 0;  // ファイルのピクセル数 (ビットマップはもっと小さいことがある: kMaxImageSize)
+    bool sharp = false;  // 画像の取り込みの設定の くっきり (スプライト自身の設定とあわせる)
     bool looked = false, loaded = false, told = false;
     std::filesystem::file_time_type time{};
     double checkedAt = 0, usedAt = 0;
-    // Read on a thread of its own (the file and WIC); only the bitmap is made on the UI thread, when
-    // it arrives. Dropping the entry drops the worker and what it would still bring.
+    // 専用のスレッドで読む (ファイルと WIC)。ビットマップだけは、届いたときに
+    // UI スレッドで作る。エントリを捨てると、ワーカーとこれから届く分も捨てる。
     std::unique_ptr<editor::Worker> worker;
     bool reading = false;
     struct Arrived {
-        std::optional<platform::Image> image;  // nullopt: `error` says why
+        std::optional<platform::Image> image;  // nullopt: 理由は `error` にある
         std::string error;
         uint32_t width = 0, height = 0;
         bool sharp = false;
@@ -112,7 +113,7 @@ struct ImageEntry {
     std::optional<Arrived> arrived;
 };
 
-// One thing being dragged: as it was when the drag began, and as the drag last left it.
+// ドラッグされている 1 つ分: ドラッグを始めたときの状態と、最後にドラッグが残した状態。
 struct Edited {
     Transform2D start;
     Transform2D last;
@@ -138,14 +139,14 @@ public:
         if (r.w < 8 || r.h < 8) return;
         DropOldGpuThings(host);
         Begin(c, host);
-        if (host.game) {  // the game view: only the picture, through the game's camera
+        if (host.game) {  // ゲームビュー: 絵だけを、ゲームのカメラ越しに描く
             DrawGame(c, r, host);
             return;
         }
         c.P().PushClip(r);
         const std::optional<BarLayout> bar = Bar(r);
         if (!bar) snapOpen_ = false;
-        if (HandleInput(c, r, host, bar)) Place(c, host);  // a drag moved things this frame
+        if (HandleInput(c, r, host, bar)) Place(c, host);  // このフレームのドラッグで物が動いた
         Render(c, r, host, state_.camera, theme::SceneBackground());
         DrawGizmo(c, r, host);
         if (drag_ == Drag::Band) w::DrawSelectionBand(c, Normalized(press_, {c.In().mouseX, c.In().mouseY}).Intersect(r));
@@ -155,11 +156,12 @@ public:
         if (bar && snapOpen_) DrawSnapBox(c, SnapBox(r, *bar));
     }
 
-    // In a 3D game: the 2D picture over the 3D one, through a カメラ (2D) with 3D の上に重ねる - the
-    // 最初のカメラ when it is one, else the first active one in the 階層. Nothing without one.
+    // 3D のゲームでは、3D の絵の上に 2D の絵を、「3D の上に重ねる」にした カメラ (2D) 越しに
+    // 描く。使うのは 最初のカメラ がそれならそれ、そうでなければ階層で最初の有効なもの。
+    // どちらもなければ何も描かない。
     void DrawLayer(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) override {
         if (r.w < 8 || r.h < 8) return;
-        DropOldGpuThings(host);  // (a 3D game's 2D layer is drawn only here)
+        DropOldGpuThings(host);  // (3D のゲームの 2D の層はここでだけ描く)
         Begin(c, host);
         const Placed* cam = nullptr;
         auto usable = [](const Placed& p) { return p.camera && p.camera->overlay && p.active; };
@@ -176,8 +178,8 @@ public:
         c.P().PopClip();
     }
 
-    // The GPU's devices were made again (platform::Gfx::Generation): Direct2D's things go - the
-    // renderer's brush and effect, the images' bitmaps (read again when needed).
+    // GPU のデバイスが作り直された (platform::Gfx::Generation): Direct2D の物は捨てる。
+    // レンダラーのブラシとエフェクト、画像のビットマップ (必要になったら読み直す)。
     void DropOldGpuThings(game_production::SceneViewHost& host) {
         if (const uint64_t now = host.host.Graphics().Generation(); now != generation_) {
             generation_ = now;
@@ -205,14 +207,14 @@ private:
         ForgetUnusedImages();
     }
 
-    // --- Where everything is ---------------------------------------------------------------------
+    // --- 物の置き場所 ---------------------------------------------------------------------
     void Place(ui::Context& c, game_production::SceneViewHost& host) {
         placed_.clear();
         struct Parent {
             Mat3 world;
             int order = 0;
         };
-        std::unordered_map<int, Parent> parents;  // parents come before their children in TreeOrder
+        std::unordered_map<int, Parent> parents;  // 親は TreeOrder で子より先に来る
         size_t index = 0;
         for (const auto& t : host.scene.TreeOrder()) {
             const auto& e = *t.entity;
@@ -220,7 +222,7 @@ private:
             const Parent parent = it != parents.end() ? it->second : Parent{};
             const game_production::Component* comp = e.FindComponent(transformType_);
             if (!comp || !comp->Known()) {
-                parents[e.data.id] = parent;  // no place of its own: its children follow the parent
+                parents[e.data.id] = parent;  // 自分の場所を持たない: 子は親についていく
                 ++index;
                 continue;
             }
@@ -245,11 +247,11 @@ private:
                 p.draw.flipX = sp.flipX;
                 p.draw.flipY = sp.flipY;
                 const ImageEntry* img = Image(c, sp.image, host);
-                p.draw.crisp = sp.crisp || (img && img->sharp);  // the sprite's own, or the image's import setting
+                p.draw.crisp = sp.crisp || (img && img->sharp);  // スプライト自身の設定、または画像の取り込みの設定
                 if (img) {
                     p.draw.image = img->bitmap.Get();
-                    // The cell of the atlas, in the bitmap's pixels; its size in the plane from the file's
-                    // pixels (a bitmap scaled down to fit keeps the sprite's size).
+                    // アトラスのセル (ビットマップのピクセル単位)。平面での大きさはファイルの
+                    // ピクセル数から決める (縮小したビットマップでも、スプライトの大きさは変わらない)。
                     const D2D1_SIZE_U px = img->bitmap->GetPixelSize();
                     p.draw.part = space2d::CellOf(px.width, px.height, sp.columns, sp.rows, sp.cell);
                     const space2d::PixelRect file = space2d::CellOf(img->width, img->height, sp.columns, sp.rows, sp.cell);
@@ -261,14 +263,14 @@ private:
         }
     }
 
-    // The image `ref` names (wherever it is now), read the first time it is asked for; null: a square.
-    // Read by the core's one way to read pictures (platform/Image: WIC), made a Direct2D bitmap.
+    // `ref` が指す画像 (今どこにあっても) を、最初に求められたときに読む。null: 四角。
+    // 核の画像の読み方 (platform/Image: WIC) 1 本で読み、Direct2D のビットマップにする。
     const ImageEntry* Image(ui::Context& c, const AssetRef& ref, game_production::SceneViewHost& host) {
         if (ref.Empty()) return nullptr;
         ImageEntry& m = images_[ref.guid];
         m.usedAt = now_;
         if (m.arrived) {
-            // Read on the worker: the bitmap is made here (Direct2D belongs to the UI thread).
+            // ワーカーで読む: ビットマップはここで作る (Direct2D は UI スレッドのもの)。
             const bool again = m.bitmap != nullptr;
             ImageEntry::Arrived got = std::move(*m.arrived);
             m.arrived.reset();
@@ -285,14 +287,14 @@ private:
                 log::Warn("2D のシーンビュー: 画像「{}」を読めないので四角で描きます: {}", name, got.error);
             }
         }
-        if (m.reading) c.RequestAnimation();  // drawn again until the picture being read arrives
+        if (m.reading) c.RequestAnimation();  // 読んでいる絵が届くまで描き直し続ける
         if (m.looked && now_ - m.checkedAt < kImageCheckSeconds) return m.bitmap ? &m : nullptr;
         m.looked = true;
         m.checkedAt = now_;
         const std::filesystem::path file = host.host.AssetFile(ref);
         const std::string name = file.empty() ? ref.guid : PathToUtf8(file.filename());
         std::error_code ec;
-        // (the picture or its import settings in the .meta)
+        // (画像そのものか、.meta の取り込みの設定)
         const auto time = file.empty() ? std::filesystem::file_time_type{} : asset::ChangedAt(file, ec);
         if (file.empty() || ec) {
             m.bitmap.Reset();
@@ -304,21 +306,21 @@ private:
             return nullptr;
         }
         m.told = false;
-        if (m.loaded && time == m.time) return m.bitmap ? &m : nullptr;  // not changed
+        if (m.loaded && time == m.time) return m.bitmap ? &m : nullptr;  // 変わっていない
         m.loaded = true;
         m.time = time;
-        // To the worker; the old bitmap stays until the new picture is here.
+        // ワーカーへ渡す。新しい絵が届くまで古いビットマップは残す。
         if (!m.worker) m.worker = std::make_unique<editor::Worker>();
         m.reading = true;
-        ImageEntry* entry = &m;  // (the entry outlives its worker's posts: they are dropped with it)
+        ImageEntry* entry = &m;  // (エントリはワーカーの投稿より長く生きる: 投稿はエントリと一緒に捨てる)
         m.worker->Run([file, entry](std::stop_token stop, const editor::Worker::Post& post) {
             ImageEntry::Arrived got;
-            // The image's import settings (its .meta): くっきり, and how big it may be.
+            // 画像の取り込みの設定 (.meta): くっきり と、どこまで大きくしてよいか。
             const auto imp = asset::ReadImport<asset::ImageImport>(file);
             got.sharp = imp.filter == asset::TextureFilter::Sharp;
             const uint32_t most = std::min<uint32_t>(kMaxImageSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
             IWICImagingFactory* wic = platform::ThreadImagingFactory();
-            // (the file's own size first: a picture bigger than a bitmap is scaled down, the sprite keeps its size)
+            // (まずファイル自身の大きさ。ビットマップより大きい絵は縮小するが、スプライトの大きさは変えない)
             auto whole = platform::LoadImageFile(wic, file, platform::PixelOrder::PremultipliedBgra, {}, &got.error);
             if (whole) {
                 got.width = whole->width;
@@ -347,7 +349,7 @@ private:
         return nullptr;
     }
 
-    // The gizmo's axes come from the last selected entity that has a place (the one clicked last).
+    // ギズモの軸は、場所を持つ最後に選んだエンティティ (最後にクリックしたもの) から取る。
     const Placed* Primary(std::span<const int> selection) const {
         for (auto it = selection.rbegin(); it != selection.rend(); ++it) {
             if (const Placed* p = FindPlaced(*it)) return p;
@@ -355,8 +357,8 @@ private:
         return nullptr;
     }
 
-    // Where the gizmo is: on the one selected last (それぞれ), or in the middle of every selected thing
-    // that moves - a child of a selected parent not counted - with the last one's axes (中心).
+    // ギズモの場所: 最後に選んだ 1 つの上 (それぞれ)、または動く物すべての真ん中
+    // (選んだ親の子は数えない)。軸は最後の 1 つのもの (中心)。
     std::optional<gizmo::Frame> GizmoFrame(const game_production::SceneViewHost& host, gizmo::Tool tool) const {
         const Placed* p = Primary(host.selection);
         if (!p) return std::nullopt;
@@ -369,7 +371,7 @@ private:
         return gizmo::CenterFrame(places, own);
     }
 
-    // What a click hits: a sprite's rectangle, or the ring of a thing without one.
+    // クリックが当たる物: スプライトの長方形、またはスプライトのない物の輪。
     bool Hits(const Placed& p, const Rect& r, Vec2 mouse) const {
         const space2d::ScreenRect sr = ToScreenRect(r);
         if (p.sprite) {
@@ -380,7 +382,7 @@ private:
         return space2d::Length(mouse - at) <= kMarkRadius + 3.f;
     }
 
-    // Where a thing is on the screen: the box around its sprite's corners, or around its ring.
+    // 物が画面のどこにあるか: スプライトの角を囲む箱、または輪を囲む箱。
     Rect ScreenBounds(const Placed& p, const Rect& r) const {
         const space2d::ScreenRect sr = ToScreenRect(r);
         if (!p.sprite) {
@@ -399,7 +401,7 @@ private:
         return {mn.x, mn.y, mx.x - mn.x, mx.y - mn.y};
     }
 
-    // The front one under the mouse (0: none).
+    // マウスの下の一番手前のもの (0: なし)。
     int PickAt(const Rect& r, Vec2 mouse) const {
         const auto order = DrawOrder();
         for (auto it = order.rbegin(); it != order.rend(); ++it) {
@@ -409,7 +411,7 @@ private:
         return 0;
     }
 
-    // Back to front.
+    // 奥から手前へ。
     std::vector<size_t> DrawOrder() const {
         std::vector<space2d::DrawKey> keys;
         keys.reserve(placed_.size());
@@ -417,7 +419,7 @@ private:
         return space2d::DrawOrder(keys);
     }
 
-    // --- The tool strip and the box of the steps -------------------------------------------------
+    // --- ツールの帯と刻みの箱 -------------------------------------------------------------
     static std::optional<BarLayout> Bar(const Rect& r) {
         if (r.w < kToolW + 16 || r.h < kBarH + 60) return std::nullopt;
         BarLayout b;
@@ -443,7 +445,7 @@ private:
         return b;
     }
 
-    // The box of the steps, under 刻み (kept inside the view).
+    // 刻みの箱。刻みの下に出す (ビューの中に収める)。
     static Rect SnapBox(const Rect& r, const BarLayout& b) {
         const float h = 10 + 5 * kSnapRowH + 6;
         return {std::max(r.x + 8, std::min(b.snap.x, r.Right() - 8 - kSnapBoxW)), b.snap.Bottom() + 4, kSnapBoxW, h};
@@ -480,7 +482,7 @@ private:
         if (const int i = w::Segmented(c, "gizmo2d_pivot", bar.pivot, pivots, static_cast<int>(state_.pivot), pivotTips); i >= 0) {
             state_.pivot = static_cast<gizmo::Pivot>(i);
         }
-        // 刻み: opens the box of the steps (in the accent while drags always go in steps).
+        // 刻み: 刻みの箱を開く (ドラッグがいつも刻みで動くときは、強調の色)。
         if (w::Button(c, "gizmo2d_snap", bar.snap, Tr(L"刻み"), state_.snapAlways ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             snapOpen_ = !snapOpen_;
         }
@@ -489,20 +491,20 @@ private:
             state_.grid = !state_.grid;
         }
         if (c.IsHovered(bar.grid)) w::Tooltip(c, Tr(L"格子を出す・消す"));
-        // デバッグ: the lines the game's scripts draw while it plays (rm::Debug), in this view.
+        // デバッグ: ゲームのスクリプトが Play 中に描く線 (rm::Debug) を、このビューに出す。
         if (w::Button(c, "scene2d_debug_draw", bar.debug, Tr(L"デバッグ"), state_.debugDraw ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.debugDraw = !state_.debugDraw;
         }
         if (c.IsHovered(bar.debug)) w::Tooltip(c, Tr(L"Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)"));
-        // 形: the lines plugins show over the scene (物理: the colliders) - of the selected things or of all.
+        // 形: プラグインがシーンの上に出す線 (物理: コライダー)。選んだ物の分か、すべての分。
         if (w::Button(c, "scene2d_shapes", bar.shapes, state_.allShapes ? Tr(L"形: 全部") : Tr(L"形: 選択"), w::ButtonKind::Secondary)) {
             state_.allShapes = !state_.allShapes;
         }
         if (c.IsHovered(bar.shapes)) w::Tooltip(c, Tr(L"コライダー (物理の当たりの形) などの線を、選んだ物だけに出すか、全部の物に出すか (押すと切り替え)"));
     }
 
-    // The steps: how far a move, a turn and a scale go at a time; and whether always. View state like the
-    // tool (kept in UserSettings, not an edit of the project).
+    // 刻み: 移動・回転・拡大縮小を一度にどれだけ動かすか、それをいつもやるか。ツールと同じビューの
+    // 状態 (UserSettings に保存する。プロジェクトの編集ではない)。
     void DrawSnapBox(ui::Context& c, const Rect& box) {
         w::DrawSurface(c, box, w::Surface::Popup);
         ui::TextStyle label;
@@ -523,7 +525,7 @@ private:
                       {"snap2d_scale", Tr(L"大きさ"), &state_.snapScale, 0.001f, 10.f}};
         for (size_t i = 0; i < std::size(rows); ++i, y += kSnapRowH) {
             Row& row = rows[i];
-            const bool off = i == 0 && state_.snapToGrid;  // the grid's step is used instead
+            const bool off = i == 0 && state_.snapToGrid;  // 代わりにグリッドの刻みを使う
             ui::TextStyle l = label;
             if (off) l.color = theme::TextFaint;
             c.P().Text({box.x + 12, y, 140, kSnapRowH - 6}, row.name, l);
@@ -532,13 +534,13 @@ private:
         w::Checkbox(c, "snap2d_always", {box.x + 12, y + 2, box.w - 24, 24}, state_.snapAlways, Tr(L"いつも刻む (Ctrl を押すとなめらか)"));
     }
 
-    // --- Input ---------------------------------------------------------------------------------
-    // Returns true when a drag changed the scene this frame.
+    // --- 入力 ---------------------------------------------------------------------------
+    // このフレームのドラッグでシーンが変わったら true を返す。
     bool HandleInput(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const std::optional<BarLayout>& bar) {
         const ui::Input& in = c.In();
         const bool overBar = OverBar(r, bar, in.mouseX, in.mouseY);
         bool hovered = c.IsHovered(r) && !overBar;
-        // The box of the steps closes on a click outside it (the click does nothing else) or Esc.
+        // 刻みの箱は、外をクリックする (そのクリックは他に何もしない) か Esc で閉じる。
         if (snapOpen_ && drag_ == Drag::None) {
             const bool pressed = c.MousePressed() || c.MousePressed(ui::Mouse::Right) || c.MousePressed(ui::Mouse::Middle);
             if ((pressed && !overBar) || (c.Focused() == 0 && c.KeyPressed(ui::Key::Escape))) {
@@ -550,7 +552,7 @@ private:
         const space2d::ScreenRect sr = ToScreenRect(r);
         bool changed = false;
 
-        // In Play the scene is the copy that plays: shown, not edited (no gizmo, no dragging things).
+        // Play ではシーンは動いているコピー: 見せるだけで編集しない (ギズモもなく、物をドラッグできない)。
         const std::optional<gizmo::Frame> frame = host.playing ? std::nullopt : GizmoFrame(host, state_.tool);
         if (drag_ == Drag::None) {
             hot_ = hovered && frame ? gizmo::HitTest(state_.tool, *frame, state_.camera, sr, mouse) : gizmo::Handle::None;
@@ -564,7 +566,7 @@ private:
             } else if (c.MousePressed() && hot_ != gizmo::Handle::None && frame &&
                        BeginEdit(host, host.scene.Roots(host.selection))) {
                 gizmo_ = gizmo::BeginDrag(state_.tool, hot_, *frame, state_.camera, sr, mouse);
-                // 中心: turns and scales go about the gizmo's middle (a move is the same either way).
+                // 中心: 回転と拡大縮小はギズモの真ん中を中心にする (移動はどちらでも同じ)。
                 pivot_ = state_.pivot == gizmo::Pivot::Center ? std::optional<gizmo::Frame>(*frame) : std::nullopt;
                 drag_ = Drag::Gizmo;
             } else if (c.MousePressed()) {
@@ -573,8 +575,8 @@ private:
                 pressed_ = host.playing ? 0 : PickAt(r, mouse);
             }
         } else if (drag_ != Drag::None) {
-            // Undo / redo (Ctrl+Z) while the button is still held: the scene may no longer be what the drag
-            // started from (the thing gone, its Transform 2D back) - the drag stops (nothing is pushed).
+            // ボタンを押したまま Undo / Redo (Ctrl+Z) した: シーンがドラッグを始めたときの
+            // ままとは限らない (物が消えた、Transform 2D が戻った) ので、ドラッグをやめる (何も積まない)。
             if ((drag_ == Drag::Gizmo || drag_ == Drag::Body) && HistoryMoved(host)) {
                 AbandonEdit();
                 drag_ = Drag::Cancelled;
@@ -591,11 +593,11 @@ private:
                 if (c.KeyPressed(ui::Key::Escape)) drag_ = Drag::Cancelled;
             } else if (drag_ == Drag::Press && space2d::Length(mouse - press_) >= kClickSlop) {
                 if (pressed_ == 0) {
-                    drag_ = Drag::Band;  // from an empty place: a rectangle selects what it touches
+                    drag_ = Drag::Band;  // 何もない所から: 四角で触れた物を選ぶ
                 } else {
-                    // A drag that started on a thing moves it (with the rest of the selection, when it is
-                    // selected; alone - and selected now - when it is not).
-                    // The thing pressed is looked for again: it may have gone since (Ctrl+Z with the button held).
+                    // 物の上で始めたドラッグはその物を動かす (選ばれているなら選択中の物みんなと一緒に、
+                    // 選ばれていないなら、それだけを選んで動かす)。
+                    // 押した物は探し直す: 消えているかもしれない (ボタンを押したまま Ctrl+Z した)。
                     const Placed* grabbed = FindPlaced(pressed_);
                     const bool inSelection = std::find(host.selection.begin(), host.selection.end(), pressed_) != host.selection.end();
                     std::vector<int> ids = inSelection ? host.scene.Roots(host.selection) : std::vector<int>{pressed_};
@@ -613,10 +615,10 @@ private:
             }
             if ((drag_ == Drag::Gizmo || drag_ == Drag::Body) && gizmo_) {
                 if (c.KeyPressed(ui::Key::Escape)) {
-                    CancelEdit();  // everything back where it was; the button still has to be let go
+                    CancelEdit();  // すべて元の場所に戻す。ボタンは離す必要がある
                     drag_ = Drag::Cancelled;
                 } else {
-                    // Ctrl: in steps - or smoothly, when it is always in steps.
+                    // Ctrl: 刻みで動かす。いつも刻みのときは滑らかに動かす。
                     gizmo::Snap snap;
                     snap.on = in.ctrl != state_.snapAlways;
                     snap.move = state_.snapToGrid ? space2d::GridFor(state_.camera.zoom).step : state_.snapMove;
@@ -639,7 +641,7 @@ private:
         return changed;
     }
 
-    // A click (the button let go where it was pressed): select what is under it; Ctrl adds / takes away.
+    // クリック (押した場所でボタンを離した): 下にある物を選ぶ。Ctrl で選択に足す / 外す。
     void Click(game_production::SceneViewHost& host, const Rect& r, bool ctrl) {
         const int hit = PickAt(r, press_);
         if (!ctrl) {
@@ -656,7 +658,7 @@ private:
         host.select(std::move(sel));
     }
 
-    // The rectangle dragged out: everything it touches (in the 階層's order); Ctrl adds to the selection.
+    // ドラッグで作った四角: 触れた物すべて (階層の順)。Ctrl で選択に足す。
     void SelectInBand(game_production::SceneViewHost& host, const Rect& r, const Rect& band, bool ctrl) {
         std::vector<int> sel = ctrl ? std::vector<int>(host.selection.begin(), host.selection.end()) : std::vector<int>{};
         for (const Placed& p : placed_) {
@@ -681,7 +683,7 @@ private:
         space2d::Frame(state_.camera, ToScreenRect(r), (mn + mx) * 0.5f, (mx - mn) * 0.5f);
     }
 
-    // --- Editing by dragging -------------------------------------------------------------------
+    // --- ドラッグで編集する ---------------------------------------------------------------
     bool BeginEdit(game_production::SceneViewHost& host, const std::vector<int>& ids) {
         if (!host.component) return false;
         edited_.clear();
@@ -698,17 +700,17 @@ private:
         return !edited_.empty();
     }
 
-    // The history changed since the drag began (an undo / redo, or an edit from elsewhere).
+    // ドラッグを始めてから履歴が変わった (Undo / Redo、または他からの編集)。
     bool HistoryMoved(game_production::SceneViewHost& host) const {
         return history_ != std::pair{host.host.History().UndoCount(), host.host.History().RedoCount()};
     }
 
-    // Stops a drag after the history moved under it: each field the drag changed - and nothing else
-    // changed since - goes back to where it started (what the undo / redo set stays). Nothing is pushed.
+    // 履歴が動いたあとでドラッグをやめる: ドラッグが変えた各項目は、そのあとに他で
+    // 変わっていなければ、始めの値に戻す (Undo / Redo が決めた値はそのまま)。何も積まない。
     void AbandonEdit() {
         for (const Edited& e : edited_) {
             const reflect::EditTarget t = e.resolve();
-            if (!t.object) continue;  // gone
+            if (!t.object) continue;  // 消えた
             auto& tr = *static_cast<Transform2D*>(t.object);
             if (tr.position == e.last.position) tr.position = e.start.position;
             if (tr.rotation == e.last.rotation) tr.rotation = e.start.rotation;
@@ -720,8 +722,8 @@ private:
         log::Info("ドラッグ中に元に戻す / やり直しがあったので、ドラッグをやめました");
     }
 
-    // While dragging, the Transforms are changed directly (the inspector follows); the history gets
-    // one entry when the button is let go.
+    // ドラッグ中は Transform を直接変える (インスペクターも追う)。履歴に積むのは
+    // ボタンを離したときの 1 件。
     void ApplyEdit(const gizmo::Change& change) {
         for (Edited& e : edited_) {
             const reflect::EditTarget t = e.resolve();
@@ -741,7 +743,7 @@ private:
         gizmo_.reset();
     }
 
-    // Edit = undo entry = unsaved (rule 7): one entry for the whole drag, whatever was changed.
+    // 編集 = Undo の 1 件 = 未保存 (憲法 7): 何を変えても、ドラッグ全体で 1 件。
     void EndEdit(game_production::SceneViewHost& host) {
         const gizmo::Tool tool = gizmo_ ? gizmo_->tool : gizmo::Tool::Move;
         const char* label = tool == gizmo::Tool::Move ? "移動" : tool == gizmo::Tool::Rotate ? "回転" : "拡大縮小";
@@ -761,15 +763,15 @@ private:
                                                                       e.resolve, label));
             }
         }
-        if (!group->Empty()) host.host.History().Push(std::move(group));  // already applied while dragging
+        if (!group->Empty()) host.host.History().Push(std::move(group));  // ドラッグ中にもう反映済み
         edited_.clear();
         gizmo_.reset();
         pivot_.reset();
     }
 
-    // --- The game view -------------------------------------------------------------------------
-    // Through the game settings' 最初のカメラ (a カメラ (2D) on an entity with a Transform 2D), in the game
-    // screen's shape; what is missing when it cannot (and the way to the settings).
+    // --- ゲームビュー --------------------------------------------------------------------
+    // ゲーム設定の 最初のカメラ (Transform 2D のあるエンティティの カメラ (2D)) 越しに、
+    // ゲーム画面の形で描く。できないときは足りない物と、設定への道を出す。
     void DrawGame(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) {
         std::wstring problem;
         const game_production::SceneEntity* e = host.camera != 0 ? host.scene.Find(static_cast<int>(host.camera)) : nullptr;
@@ -803,8 +805,8 @@ private:
         c.P().PopClip();
     }
 
-    // --- Drawing -------------------------------------------------------------------------------
-    // `clear` alpha 0: a layer over another space's picture (nothing filled).
+    // --- 描く ---------------------------------------------------------------------------
+    // `clear` のアルファが 0: 別の空間の絵の上に重ねる層 (塗りつぶさない)。
     void Render(ui::Context& c, const Rect& r, game_production::SceneViewHost& host, const space2d::Camera2D& view, Color clear) {
         const bool game = host.game;
         const space2d::ScreenRect sr = ToScreenRect(r);
@@ -813,16 +815,16 @@ private:
         sprites_.clear();
         if (!game && state_.grid) Grid(sr);
         if (!game) {
-            // The axes through the origin: X red, Y green (as the gizmo's arrows).
+            // 原点を通る軸: X は赤、Y は緑 (ギズモの矢印と同じ)。
             const Vec2 a = space2d::ToWorld(view, sr, {r.x, r.Bottom()}), b = space2d::ToWorld(view, sr, {r.Right(), r.y});
             lines_.push_back({{a.x, 0}, {b.x, 0}, theme::AxisX().Alpha(0.8f), 1.f});
             lines_.push_back({{0, a.y}, {0, b.y}, theme::AxisY().Alpha(0.8f), 1.f});
         }
         for (const size_t i : DrawOrder()) {
             const Placed& p = placed_[i];
-            if (!p.sprite || (game && !p.active)) continue;  // switched off: not in the game
+            if (!p.sprite || (game && !p.active)) continue;  // オフ: ゲームには出ない
             space2d::SpriteDraw d = p.draw;
-            if (!p.active) d.color = d.color.Alpha(d.color.a * 0.35f);  // switched off: faint in the scene view
+            if (!p.active) d.color = d.color.Alpha(d.color.a * 0.35f);  // オフ: シーンビューでは薄く
             sprites_.push_back(d);
         }
         if (!game) {
@@ -843,14 +845,14 @@ private:
         f.lines = lines_;
         f.sprites = sprites_;
         f.overlay = overlay_;
-        // Play: the lines the scripts drew with rm::Debug in 2D (this scene view only while デバッグ is on).
+        // Play: スクリプトが 2D で rm::Debug で描いた線 (このシーンビューは デバッグ がオンのときだけ)。
         debug_.clear();
         if (host.debug && (game || state_.debugDraw)) {
             for (const game_production::DebugLine& l : host.debug->Lines()) {
                 if (l.space == game_production::DebugSpace::Space2D) debug_.push_back({{l.a.x, l.a.y}, {l.b.x, l.b.y}, l.color, 1.5f});
             }
         }
-        // The lines plugins show over the scene (物理: the colliders' shapes): the scene view only.
+        // プラグインがシーンの上に出す線 (物理: コライダーの形): シーンビューだけ。
         if (!game) {
             sceneLines_.Clear();
             for (const auto& l : host.host.Registry().Contributions<game_production::SceneLinesInfo>(game_production::kSceneLinesPoint)) {
@@ -862,7 +864,7 @@ private:
         }
         f.debug = debug_;
         renderer_.Render(c.P().DC(), f);
-        // デバッグ ▸ 描画とカメラ: what was drawn, and where the camera is.
+        // デバッグ ▸ 描画とカメラ: 何を描いたか、カメラはどこか。
         if (game_production::ViewReportsWanted()) {
             using editor::Tr;
             using editor::TrF;
@@ -877,14 +879,14 @@ private:
         }
     }
 
-    // The grid over the part of the plane that is seen: a step that keeps lines apart, every 5th / 10th darker.
+    // 見えている平面のグリッド: 線が離れて見える刻みにして、5 本目 / 10 本目ごとを濃くする。
     void Grid(const space2d::ScreenRect& sr) {
         const space2d::GridStep g = space2d::GridFor(state_.camera.zoom);
         const Vec2 mn = space2d::ToWorld(state_.camera, sr, {sr.x, sr.y + sr.h});
         const Vec2 mx = space2d::ToWorld(state_.camera, sr, {sr.x + sr.w, sr.y});
         const long long x0 = static_cast<long long>(std::floor(mn.x / g.step)), x1 = static_cast<long long>(std::ceil(mx.x / g.step));
         const long long y0 = static_cast<long long>(std::floor(mn.y / g.step)), y1 = static_cast<long long>(std::ceil(mx.y / g.step));
-        if (x1 - x0 > 2000 || y1 - y0 > 2000) return;  // (never with GridFor's step; a guard)
+        if (x1 - x0 > 2000 || y1 - y0 > 2000) return;  // (GridFor の刻みならありえない。念のための守り)
         for (long long i = x0; i <= x1; ++i) {
             const float x = static_cast<float>(i) * g.step;
             lines_.push_back({{x, mn.y}, {x, mx.y}, i % g.major == 0 ? theme::SceneGridMajor() : theme::SceneGrid(), 1.f});
@@ -902,8 +904,8 @@ private:
         for (int i = 0; i < 4; ++i) overlay_.push_back({k[i], k[(i + 1) % 4], col, 1.5f});
     }
 
-    // What a camera sees (the game screen's shape about its place, turned with it), and a small mark on
-    // its top edge (which way is up).
+    // カメラが見る範囲 (ゲーム画面の形を、カメラの場所のまわりにカメラと一緒に回したもの) と、
+    // 上の辺の小さな印 (どちらが上か)。
     void CameraFrame(const Placed& p, float aspect, ui::Color col) {
         const Vec2 half = HalfExtent(*p.camera, aspect);
         const space2d::WorldPlacement2D at = space2d::Decompose(p.world);
@@ -918,7 +920,7 @@ private:
         overlay_.push_back({top, b, col, 1.5f});
     }
 
-    // A thing without a sprite: a small ring (the same size on the screen) with a tick along its X axis.
+    // スプライトのない物: 小さな輪 (画面での大きさは同じ) と、X 軸に沿った短い線。
     void Mark(const Placed& p, ui::Color col) {
         const float rad = kMarkRadius / std::max(state_.camera.zoom, 1e-6f);
         const Vec2 o = space2d::TransformPoint(p.world, {0, 0});
@@ -931,11 +933,11 @@ private:
         overlay_.push_back({o + x * rad, o + x * (rad * 1.8f), col, 1.5f});
     }
 
-    // The gizmo over the picture (drawn on the screen from gizmo2d's shapes: what is drawn is what is grabbed).
+    // 絵の上のギズモ (gizmo2d の形から画面に描く: 描いた物がそのままつかめる物)。
     void DrawGizmo(ui::Context& c, const Rect& r, const game_production::SceneViewHost& host) {
-        if (host.playing || drag_ == Drag::Body || drag_ == Drag::Band) return;  // Play: not edited
+        if (host.playing || drag_ == Drag::Body || drag_ == Drag::Band) return;  // Play: 編集しない
         const gizmo::Tool tool = drag_ == Drag::Gizmo && gizmo_ ? gizmo_->tool : state_.tool;
-        // While dragging, the gizmo follows the things (made again from where they are now).
+        // ドラッグ中、ギズモは物についていく (今ある場所から作り直す)。
         const std::optional<gizmo::Frame> shown = GizmoFrame(host, tool);
         if (!shown) return;
         const gizmo::ScreenShape s = gizmo::ShapeOf(*shown, state_.camera, ToScreenRect(r));
@@ -959,7 +961,7 @@ private:
                        s.origin.x + std::cos(a1) * gizmo::kRingRadius, s.origin.y + std::sin(a1) * gizmo::kRingRadius, col,
                        active == gizmo::Handle::Ring ? 3.f : 2.f);
             }
-            // A spoke along the thing's X: shows how far it has turned.
+            // 物の X に沿った線: どれだけ回ったかを見せる。
             p.Line(s.origin.x, s.origin.y, s.tips[0].x, s.tips[0].y, theme::AxisX().Alpha(0.7f), 1.5f);
             p.FillCircle(s.origin.x, s.origin.y, 3.f, theme::Text);
             return;
@@ -1009,27 +1011,27 @@ private:
 
     enum class Drag { None, PanRight, PanMiddle, Press, Band, Body, Gizmo, Cancelled };
 
-    SceneViewState2D state_;      // the camera, the tool, the steps, the grid (kept in UserSettings)
-    reflect::Unknowns unknowns_;  // keys of a newer version: written back unchanged
+    SceneViewState2D state_;      // カメラ、ツール、刻み、グリッド (UserSettings に保存)
+    reflect::Unknowns unknowns_;  // 新しい版のキー: そのまま書き戻す
     space2d::Renderer2D renderer_;
-    uint64_t generation_ = 0;  // the GPU's devices renderer_ and images_ were made on
+    uint64_t generation_ = 0;  // renderer_ と images_ を作った GPU のデバイス
     std::string transformType_, spriteType_, cameraType_;
     std::vector<Placed> placed_;
     std::vector<space2d::Line2D> lines_, overlay_, debug_;
-    game_production::DebugDraw sceneLines_;  // the plugins' scene lines of this frame (SceneLinesInfo)
+    game_production::DebugDraw sceneLines_;  // このフレームのプラグインのシーンの線 (SceneLinesInfo)
     std::vector<space2d::SpriteDraw> sprites_;
-    std::unordered_map<std::string, ImageEntry> images_;  // by Sprite::image (the asset's id)
+    std::unordered_map<std::string, ImageEntry> images_;  // Sprite::image (アセットの id) ごと
     double now_ = 0;
 
     Drag drag_ = Drag::None;
     Vec2 press_{0, 0};
-    int pressed_ = 0;  // the entity under the mouse when the left button went down (0: none)
+    int pressed_ = 0;  // 左ボタンを押したときにマウスの下にいたエンティティ (0: なし)
     gizmo::Handle hot_ = gizmo::Handle::None;
     std::optional<gizmo::Drag> gizmo_;
-    std::optional<gizmo::Frame> pivot_;  // 中心: what the drag turns / scales about
+    std::optional<gizmo::Frame> pivot_;  // 中心: ドラッグが回す / 拡大縮小する中心
     std::vector<Edited> edited_;
-    std::pair<size_t, size_t> history_{0, 0};  // the undo / redo counts of the history when the drag began
-    bool snapOpen_ = false;              // the box of the steps is open
+    std::pair<size_t, size_t> history_{0, 0};  // ドラッグを始めたときの履歴の Undo / Redo の数
+    bool snapOpen_ = false;              // 刻みの箱が開いている
     std::array<std::string, 3> snapText_;
 };
 

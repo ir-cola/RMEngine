@@ -1,15 +1,14 @@
 #pragma once
-// ゲーム制作 × 音 - 音源: an entity that plays a sound while the game plays. In a 3D game and a 2D one
-// alike (where it is comes from the space's PlaceInfo: game_production/runtime/PlayServices.h).
+// ゲーム制作 × 音 - 音源: ゲームが動く間、音を鳴らすエンティティ。3D のゲームでも 2D の
+// ゲームでも同じ (場所は空間の PlaceInfo から: game_production/runtime/PlayServices.h)。
 //
-//   始めから鳴らす   when it starts to run (Play, the scene switched to, the entity switched on / spawned)
-//   鳴らす先 BGM     the game's music: starting it fades out the music before it (a cross-fade of
-//                   フェード seconds) - one music at a time, with rm::Audio::PlayMusic too
-//   距離で小さくする  heard from the entity: smaller farther from the game's camera (X3DAudio for left /
-//                   right); off: the same everywhere
-// It stops when its entity goes (deleted, switched off, the scene switched away) and at ■.
-// Its values are read every frame: changed in the インスペクター (or by a script) while it plays, it
-// sounds so at once.
+//   始めから鳴らす   動き始めるとき (Play、切り替えたシーン、エンティティをオンにした / 生成した)
+//   鳴らす先 BGM     ゲームの音楽: 始めると前の音楽がフェードアウトする (フェード秒のクロス
+//                   フェード)。音楽は 1 度に 1 つ。rm::Audio::PlayMusic でも同じ
+//   距離で小さくする  エンティティから聞こえる: ゲームのカメラから遠いほど小さい (左右は
+//                   X3DAudio)。オフ: どこでも同じ
+// エンティティがなくなる (削除、オフ、別のシーンへ切り替え) と止まり、■ でも止まる。
+// 値は毎フレーム読む: 動いている間にインスペクター (かスクリプト) で変えると、すぐその音になる。
 
 #include "core/reflect/Reflect.h"
 

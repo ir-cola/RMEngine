@@ -1,22 +1,22 @@
 #pragma once
-// The 2D scene view of a game (the connector ゲーム制作 × 2D): the grid and the axes, every entity that
-// has a Transform 2D where it is (parents included) - its sprite, or a small ring when it has none - back
-// to front by 並び順, the selection outlined.
+// ゲームの 2D シーンビュー (コネクター ゲーム制作 × 2D): グリッドと軸、Transform 2D を持つ
+// すべてのエンティティを置かれた場所に (親も含めて) 描く。スプライト、なければ小さな輪。
+// 並び順で奥から手前へ描き、選択は輪郭で囲む。
 //
-//   right / middle drag   slide the picture (it follows the mouse)
-//   wheel                 nearer / farther (about the point under the mouse)
-//   left click            select the entity under the mouse (the front one; nothing there: none)
-//   Ctrl + left click     add to / take from the selection
-//   left drag on a thing  move it (and everything selected with it, when it is selected)
-//   F                     come to the selected entity
+//   右 / 中ボタンのドラッグ   絵をずらす (マウスについてくる)
+//   ホイール                 近づく / 遠ざかる (マウスの下の点が中心)
+//   左クリック               マウスの下のエンティティを選ぶ (一番手前。なければ何も選ばない)
+//   Ctrl + 左クリック        選択に足す / 外す
+//   物の上を左ドラッグ       その物を動かす (選ばれているなら、選択中の物みんなと一緒に)
+//   F                        選んだエンティティのところへ行く
 //
-// The selected entity has a gizmo (2D 空間's space2d::gizmo2d): its arrows / ring / boxes move, turn or
-// scale every selected entity, one undo entry per drag. W / E / R or the strip at the top left choose the
-// tool, X (or the strip) the thing's own axes or the world's. Ctrl while dragging: in steps (the grid's
-// step, 15 degrees, 0.1 times). Esc puts everything back while dragging. The camera, the tool and the
-// grid on / off are kept in UserSettings.
+// 選んだエンティティにはギズモ (2D 空間の space2d::gizmo2d) が出る。矢印 / 輪 / 箱で、選んだ
+// エンティティすべてを動かす・回す・拡大縮小する。1 回のドラッグが Undo の 1 件。W / E / R か
+// 左上の帯でツールを選び、X (か帯) で物自身の軸かワールドの軸かを選ぶ。ドラッグ中の Ctrl は刻み
+// (グリッドの刻み、15 度、0.1 倍)。ドラッグ中に Esc を押すとすべて元に戻る。カメラ、ツール、
+// グリッドのオン / オフは UserSettings に保存する。
 //
-// Drawn by 2D 空間's renderer with Direct2D straight into the panel (no picture of its own).
+// 2D 空間のレンダラーが Direct2D でパネルに直接描く (専用の絵は持たない)。
 
 #include "rm_engine/game_production/editor/SceneView.h"
 

@@ -1,17 +1,16 @@
 #pragma once
-// 季節テーマパック: the four seasons (スプリング / サマー / フォール / ウィンター). Their colors are theme
-// files (themes/*.json, read by the core like every pack's); their pictures are this code, offered to
-// the core at w::kOrnamentPoint under the names the theme files use ("spring" ...). The core draws
-// them behind the content: on the window's background and again on each panel and bar.
+// 季節テーマパック: 4 つの季節 (スプリング / サマー / フォール / ウィンター)。色はテーマファイル
+// (themes/*.json、どのパックのものも核が読む)。絵はこのコードで、テーマファイルが使う名前
+// ("spring" ...) で w::kOrnamentPoint の所で核に渡す。核はそれらを内容の後ろ (ウィンドウの背景と、
+// 各パネルとバーの上) に描く。
 //
-//   spring  a cherry tree growing up on the right, in bloom up top, petals blowing off it, a blossom
-//           (bottom-left), a flurry of petals (top-left)
-//   summer  a mound of sand with a parasol and a sand castle (bottom-right), clouds (top-right), the
-//           sun (bottom-left)
-//   fall    leaves thick along the top and scattered below, a big maple leaf (bottom-left)
-//   winter  falling snow (held still), icicles from the top edge, snow piled at the bottom of every
-//           panel, a snowflake (bottom-left)
-// A panel window of its own gets a lighter picture: spring's petals, summer's clouds, winter's snow.
+//   spring  右に生える桜の木 (上のほうで満開、花びらが吹き飛ぶ)、花 (左下)、
+//           花びらの吹雪 (左上)
+//   summer  砂の小山にパラソルと砂のお城 (右下)、雲 (右上)、太陽 (左下)
+//   fall    上に沿って濃く下に散らばる葉、大きなもみじの葉 (左下)
+//   winter  降る雪 (止めたもの)、上の端からのつらら、すべてのパネルの下に積もる雪、
+//           雪の結晶 (左下)
+// 専用ウィンドウのパネルは軽い絵になる: 春は花びら、夏は雲、冬は雪。
 
 #include "editor/plugin/Software.h"
 

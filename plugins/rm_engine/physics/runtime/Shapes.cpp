@@ -11,7 +11,7 @@ namespace rm::physics {
 namespace {
 
 constexpr float kPi = std::numbers::pi_v<float>;
-constexpr int kCircle = 32;  // segments of a circle's line
+constexpr int kCircle = 32;  // 円の線の分割数
 
 Vec3 Add(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
 Vec3 Mul(Vec3 a, float s) { return {a.x * s, a.y * s, a.z * s}; }
@@ -20,7 +20,7 @@ Vec3 Abs(Vec3 v) { return {std::fabs(v.x), std::fabs(v.y), std::fabs(v.z)}; }
 
 }  // namespace
 
-// The place of `e` under the parent place `up` (null: the top). False: it has no place of its own.
+// 親の位置 `up` (null: 一番上) の下にある `e` の位置。false: 自分の位置は持たない。
 bool PlaceUnder(const game_production::SceneEntity& e, const EntityPlace* up, EntityPlace& out) {
     out = up ? *up : EntityPlace{};
     out.parent3 = out.world3;
@@ -39,7 +39,7 @@ bool PlaceUnder(const game_production::SceneEntity& e, const EntityPlace* up, En
         out.order = out.parentOrder + t.order;
         return true;
     }
-    // No place of its own: its children are where its parent is.
+    // 自分の位置は持たない。子は親のいる所にいる。
     out.world3 = out.parent3;
     out.world2 = out.parent2;
     return false;
@@ -55,13 +55,13 @@ Pose PoseOf(const space3d::Mat4& world) {
         len[c] = Len(axis[c]);
     }
     p.scale = {len[0], len[1], len[2]};
-    // The turn: the axes made length 1 and square to each other (a scale of 0: the axis it would have).
+    // 回転: 軸を長さ 1 で互いに直角にしたもの (拡大率 0 の軸は、本来その軸になるもの)。
     Vec3 x = len[0] > 1e-12f ? Mul(axis[0], 1 / len[0]) : Vec3{1, 0, 0};
     Vec3 y = len[1] > 1e-12f ? Mul(axis[1], 1 / len[1]) : Vec3{0, 1, 0};
     Vec3 z = space3d::Normalize(space3d::Cross(x, y));
     if (Len(z) < 0.5f) z = {0, 0, 1};
     y = space3d::Normalize(space3d::Cross(z, x));
-    // A mirrored matrix (negative scale): keep a turn (right-handed), the mirror in the scale.
+    // 反転した行列 (負の拡大率): 回転は右手系のまま残し、反転は拡大率に入れる。
     if (space3d::Dot(z, len[2] > 1e-12f ? Mul(axis[2], 1 / len[2]) : z) < 0) p.scale.z = -p.scale.z;
     const Vec3 cols[3] = {x, y, z};
     for (int c = 0; c < 3; ++c) {
@@ -78,7 +78,7 @@ Pose PoseOf(const space2d::Mat3& world) {
     p.position = {world.tx, world.ty, 0};
     const float sx = std::sqrt(world.a * world.a + world.b * world.b);
     float sy = std::sqrt(world.c * world.c + world.d * world.d);
-    if (space2d::Determinant(world) < 0) sy = -sy;  // mirrored: the mirror in Y's scale
+    if (space2d::Determinant(world) < 0) sy = -sy;  // 反転: 反転は Y の拡大率に入れる
     p.scale = {sx, sy, 1};
     const float angle = sx > 1e-12f ? std::atan2(world.b, world.a) : 0.f;
     p.turn = space3d::RotationMatrix({0, 0, angle * 180.f / kPi});
@@ -91,7 +91,7 @@ ShapeDims DimsOf(const Collider& c, Vec3 scale) {
     const Vec3 s = Abs(scale);
     ShapeDims d;
     d.offset = {c.offset.x * scale.x, c.offset.y * scale.y, c.offset.z * scale.z};
-    // (a scale of 0 would make Jolt's inverse scale infinite: at least 0.001, its sign kept)
+    // (拡大率 0 だと Jolt の逆拡大率が無限大になる: 0.001 以上にし、符号は残す)
     auto least = [](float k) { return std::fabs(k) < 0.001f ? (k < 0 ? -0.001f : 0.001f) : k; };
     d.meshScale = {least(scale.x), least(scale.y), least(scale.z)};
     switch (c.shape) {
@@ -107,7 +107,7 @@ ShapeDims DimsOf(const Collider& c, Vec3 scale) {
         case Shape::Capsule: {
             d.kind = ShapeDims::Kind::Capsule;
             d.radius = std::max(c.radius * std::max(s.x, s.z), 0.001f);
-            d.halfHeight = std::max(c.height * s.y * 0.5f - d.radius, 0.f);  // the straight part (none: a sphere)
+            d.halfHeight = std::max(c.height * s.y * 0.5f - d.radius, 0.f);  // まっすぐな部分 (なし: 球)
             break;
         }
         case Shape::Mesh: d.kind = ShapeDims::Kind::Mesh; break;
@@ -144,18 +144,18 @@ ShapeDims DimsOf(const Character& c) {
     d.radius = std::max(c.radius, 0.01f);
     const float height = std::max(c.height, d.radius * 2 + 0.01f);
     d.halfHeight = height * 0.5f - d.radius;
-    d.offset = {0, height * 0.5f, 0};  // standing on the entity's position
+    d.offset = {0, height * 0.5f, 0};  // エンティティの位置に立つ
     return d;
 }
 
 void Outline(const ShapeDims& dims, const Pose& pose, bool flat, std::vector<Segment>& out) {
-    // Shape space -> world: turned like the entity, moved to the entity and the offset.
+    // 形の空間 -> ワールド: エンティティと同じ向きに回し、エンティティとオフセットの所へ動かす。
     auto at = [&](Vec3 local) {
         const Vec3 p = Add(local, dims.offset);
         return Add(pose.position, space3d::TransformDirection(pose.turn, p));
     };
     auto line = [&](Vec3 a, Vec3 b) { out.push_back({at(a), at(b)}); };
-    // A circle of `radius` about `center` in the plane of the axes u and v (a part of it: `from` .. `to` turns).
+    // 軸 u と v の平面で `center` を中心にした半径 `radius` の円 (一部だけ: `from` .. `to` 回転分)。
     auto arc = [&](Vec3 center, Vec3 u, Vec3 v, float radius, float from, float to) {
         const int n = std::max(2, static_cast<int>(kCircle * (to - from)));
         for (int i = 0; i < n; ++i) {
@@ -169,7 +169,7 @@ void Outline(const ShapeDims& dims, const Pose& pose, bool flat, std::vector<Seg
     switch (dims.kind) {
         case ShapeDims::Kind::Box: {
             const Vec3 h = dims.half;
-            if (flat) {  // a 2D box: its rectangle on the plane
+            if (flat) {  // 2D の箱: 平面上の長方形
                 const Vec3 k[4] = {{-h.x, -h.y, 0}, {h.x, -h.y, 0}, {h.x, h.y, 0}, {-h.x, h.y, 0}};
                 for (int i = 0; i < 4; ++i) line(k[i], k[(i + 1) % 4]);
                 break;
@@ -190,12 +190,12 @@ void Outline(const ShapeDims& dims, const Pose& pose, bool flat, std::vector<Seg
         case ShapeDims::Kind::Capsule: {
             const float r = dims.radius, hh = dims.halfHeight;
             const Vec3 top{0, hh, 0}, bottom{0, -hh, 0};
-            // The outline seen from the front (XY): two half circles and the two sides.
+            // 正面 (XY) から見た輪郭: 半円 2 つと両側の 2 辺。
             arc(top, X, Y, r, 0, 0.5f);
             arc(bottom, X, Y, r, 0.5f, 1);
             line({r, hh, 0}, {r, -hh, 0});
             line({-r, hh, 0}, {-r, -hh, 0});
-            if (!flat) {  // ... from the side (ZY), and the rings where the ends meet the sides
+            if (!flat) {  // ... 横 (ZY) から見たもの、と端が側面に接する所の輪
                 arc(top, Z, Y, r, 0, 0.5f);
                 arc(bottom, Z, Y, r, 0.5f, 1);
                 line({0, hh, r}, {0, -hh, r});
@@ -205,7 +205,7 @@ void Outline(const ShapeDims& dims, const Pose& pose, bool flat, std::vector<Seg
             }
             break;
         }
-        case ShapeDims::Kind::Mesh: break;  // the model itself is the shape (the scene view draws it already)
+        case ShapeDims::Kind::Mesh: break;  // モデル自身が形になる (シーンビューがもう描いている)
     }
 }
 

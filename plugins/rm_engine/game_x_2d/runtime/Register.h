@@ -1,9 +1,9 @@
 #pragma once
-// The runtime part of ゲーム制作 × 2D: what an exported game needs from it too (listed in
-// plugins/RuntimePlugins.cpp; the editor's loader calls it before RegisterEditor).
-// Every component type it offers (Transform 2D, スプライト, スプライトのアニメーション, カメラ (2D),
-// 回り続ける (2D)) and the systems. How the editor shows them (ローカル / ワールド, the 階層's pictures)
-// is the editor part's (editor/Connector.cpp: game_production::ComponentLook).
+// ゲーム制作 × 2D のランタイムの部分: 書き出したゲームにもこれが要る (plugins/RuntimePlugins.cpp に
+// 並べる。エディターのローダーが RegisterEditor の前に呼ぶ)。
+// 出すのは、すべての部品の種類 (Transform 2D、スプライト、スプライトのアニメーション、カメラ (2D)、
+// 回り続ける (2D)) とシステム。エディターでの見せ方 (ローカル / ワールド、階層の絵) は
+// エディター側の部分 (editor/Connector.cpp: game_production::ComponentLook)。
 
 #include "core/RuntimeRegistry.h"
 

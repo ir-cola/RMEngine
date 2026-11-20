@@ -1,14 +1,14 @@
 #pragma once
-// ゲーム制作 × 2D - an entity drawn as a picture (a sprite), placed by its Transform 2D.
-// Without an image (or one that cannot be read) it is a square of its colour, 1 unit across.
+// ゲーム制作 × 2D - 絵 (スプライト) として描くエンティティ。場所は Transform 2D が決める。
+// 画像がない (または読めない) ときは、その色の 1 単位四方の四角。
 //
-// `image` is an asset reference (the id in the file's .meta): moving or renaming the file does not lose it.
-// The size in the plane comes from the image: its pixels ÷ 1 単位のピクセル数 (100: an image of 100 x 50
-// pixels is 1 x 0.5 units), its middle at the entity's place.
+// `image` はアセットの参照 (ファイルの .meta の id): ファイルを動かしたり名前を変えたりしても
+// 外れない。平面での大きさは画像から決まる: ピクセル数 ÷ 1 単位のピクセル数 (100: 100 x 50
+// ピクセルの画像は 1 x 0.5 単位)、真ん中がエンティティの場所。
 //
-// An atlas (a sprite sheet): the image cut into 横のコマ数 x 縦のコマ数 cells of the same size; コマ is the
-// one drawn (0 = top left, left to right, then down - space2d::CellOf), and its size is the cell's.
-// スプライトのアニメーション (SpriteAnimation.h) steps コマ while the game plays.
+// アトラス (スプライトシート): 画像を同じ大きさの 横のコマ数 x 縦のコマ数 のセルに切ったもの。
+// コマ が描くセル (0 = 左上、左から右、そして下へ - space2d::CellOf)、大きさはそのセルの大きさ。
+// スプライトのアニメーション (SpriteAnimation.h) がゲームが動く間 コマ を進める。
 
 #include "core/reflect/Reflect.h"
 

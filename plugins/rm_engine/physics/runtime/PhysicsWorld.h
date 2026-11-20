@@ -1,18 +1,18 @@
 #pragma once
-// 物理 - the physics world of a scene that plays: Jolt Physics behind a thin wall (nothing outside this
-// plugin's .cpp files sees a Jolt type - design NewEngineBluePrint 9-f). One per playing scene, kept in
-// the scene itself (Scene::PlayState: the copy that plays at ■ is thrown away with its world; a scene
-// switched to gets a new one).
+// 物理 - 再生しているシーンの物理ワールド: 薄い壁の向こうの Jolt Physics (このプラグインの .cpp
+// ファイルの外は、Jolt の型を見ない - 設計 NewEngineBluePrint 9-f)。再生中のシーン 1 つにつき 1 つで、
+// シーン自身が持つ (Scene::PlayState: ■ で再生するコピーはそのワールドと一緒に捨てる; 切り替えた先の
+// シーンは新しいものを持つ)。
 //
-//   each fixed step (the system 物理, SystemPhase::Fixed - after the scripts' Tick):
-//     1 the bodies made as the components are (made, made again when changed, gone when the entity /
-//       the component / 有効 goes); where a script put a Transform, the body goes there
-//     2 Jolt steps by the game settings' 物理の刻み, with the game settings' 重力
-//     3 where the bodies went, back into the Transforms (動く bodies, characters)
-//     4 what touched / parted: HookCall (OnHit / OnTriggerEnter / OnTriggerExit) for the scripts
+//   固定ステップごと (システム 物理、SystemPhase::Fixed - スクリプトの Tick のあと):
+//     1 部品の通りに物体を作る (作る、変わったら作り直す、エンティティ / 部品 / 有効 が無くなれば消す);
+//       スクリプトが Transform を置いたなら、物体もそこへ行く
+//     2 ゲーム設定の 物理の刻み で、ゲーム設定の 重力 を使って Jolt が進む
+//     3 物体が動いた先を Transform に書き戻す (動く 物体、キャラクター)
+//     4 触れた / 離れたもの: スクリプトへ HookCall (OnHit / OnTriggerEnter / OnTriggerExit)
 //
-// A 2D body (コライダー (2D) on a Transform 2D) is a Jolt body that stays on the plane: it moves in X and Y
-// and turns about Z only (Jolt's AllowedDOFs) - 2D and 3D share one world.
+// 2D の物体 (Transform 2D についた コライダー (2D)) は、平面に留まる Jolt の物体: X と Y に動き、
+// Z まわりにだけ回る (Jolt の AllowedDOFs) - 2D と 3D は 1 つのワールドを共有する。
 
 #include "base/Math.h"
 #include "rm_engine/game_production/runtime/Scene.h"
@@ -32,13 +32,13 @@ public:
     PhysicsWorld(const PhysicsWorld&) = delete;
     PhysicsWorld& operator=(const PhysicsWorld&) = delete;
 
-    // One fixed step of `dt` seconds over `scene`. `hooks` / `assets`: as SystemContext's (may be null).
+    // `scene` に対する `dt` 秒の固定ステップ 1 回。`hooks` / `assets`: SystemContext と同じ (null でもよい)。
     void Step(game_production::Scene& scene, float dt, Vec3 gravity, std::vector<game_production::HookCall>* hooks,
               const game_production::AssetAccess* assets);
 
-    // --- for the scripts (RMPhysics.h). An entity without a body yet gets it here (a bullet made in
-    // Tick can be given its speed at once). False / nullopt: it has no body (no collider, a trigger
-    // for forces ...). Forces and impulses act on 動く bodies only.
+    // --- スクリプト用 (RMPhysics.h)。まだ物体が無いエンティティには、ここで作る (Tick で作った弾に
+    // すぐ速さを与えられる)。false / nullopt: 物体が無い (コライダーが無い、力に対するトリガー ...)。
+    // 力と衝撃は 動く 物体にだけ働く。
     bool AddForce(game_production::Scene& scene, int entity, Vec3 force, bool impulse);
     std::optional<Vec3> Velocity(game_production::Scene& scene, int entity);
     bool SetVelocity(game_production::Scene& scene, int entity, Vec3 velocity);
@@ -47,22 +47,22 @@ public:
         Vec3 point{0, 0, 0}, normal{0, 0, 0};
         float distance = 0;
     };
-    // The first thing (not a trigger) along the ray from `origin` towards `direction`, at most
-    // `maxDistance` away. Characters are hit too (their body).
+    // `origin` から `direction` の向きへ、最大 `maxDistance` の距離までのレイが最初に当たるもの
+    // (トリガーは除く)。キャラクターにも当たる (その物体に)。
     std::optional<RayHit> Raycast(Vec3 origin, Vec3 direction, float maxDistance) const;
 
-    // Characters (キャラクター): walk with `velocity` (its horizontal part) until told otherwise; jump
-    // when on the ground; where they stand.
+    // キャラクター (キャラクター): `velocity` (その水平の成分) で、別の指示があるまで歩く; 地面にいる
+    // 時にジャンプする; 立っている所。
     bool Move(game_production::Scene& scene, int entity, Vec3 velocity);
     bool Jump(game_production::Scene& scene, int entity, float speed);
     bool Grounded(int entity) const;
     std::optional<Vec3> GroundNormal(int entity) const;
 
-    // How many bodies / characters there are now (tests, the console).
+    // いま物体 / キャラクターがいくつあるか (テスト、コンソール用)。
     size_t Bodies() const;
     size_t Characters() const;
-    // For the editor's デバッグ panel: the bodies awake (moving: the others sleep), the pairs touching now,
-    // and how long the last step took.
+    // エディターの デバッグ パネル用: 起きている (動いている: 他は眠っている) 物体、いま触れている組、
+    // 直近のステップにかかった時間。
     size_t ActiveBodies() const;
     size_t TouchingPairs() const;
     double LastStepMs() const;
@@ -73,12 +73,12 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// The physics world of a playing scene (made the first time).
+// 再生中のシーンの物理ワールド (最初に呼んだ時に作る)。
 PhysicsWorld& WorldOf(game_production::Scene& scene);
-// The scene's world when it has one (it has stepped while playing); null: none (nothing is made).
+// シーンのワールドがあればそれ (再生中にステップしたもの); null: 無い (何も作らない)。
 PhysicsWorld* FindWorldOf(game_production::Scene& scene);
 
-// The system 物理 (SystemPhase::Fixed): PhysicsWorld::Step of the scene's world.
+// システム 物理 (SystemPhase::Fixed): シーンのワールドの PhysicsWorld::Step。
 void RunPhysics(game_production::SystemContext& ctx);
 
 }  // namespace rm::physics

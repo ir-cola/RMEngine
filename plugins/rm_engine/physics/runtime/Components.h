@@ -1,19 +1,18 @@
 #pragma once
-// 物理 - the components (data only: what the physics world reads each fixed step). Design: TestEngine
-// NewEngineBluePrint 5 (Rigidbody / Collider are components), 9-f (settings only; the bodies are the
-// physics world's, never saved).
+// 物理 - 部品 (データだけ: 物理ワールドが固定ステップごとに読む)。設計: TestEngine
+// NewEngineBluePrint 5 (Rigidbody / Collider は部品)、9-f (設定だけ。物体は物理ワールドのもので、保存しない)。
 //
-//   剛体 (Rigidbody)      how it moves: 動く (gravity, pushed by others) / 動かない / キネマティック (moved by
-//                         its Transform only, pushes others); mass, friction, bounce, gravity, locked turns
-//   コライダー (Collider)  its shape in 3D: 箱 / 球 / カプセル / メッシュ (the model of its メッシュ部品: things
-//                         that do not move only), a trigger (tells, does not block), moved from the entity
-//   コライダー (2D)        its shape on the plane: 箱 / 円 / カプセル - a body that stays on the plane (no Z,
-//                         turns about Z only)
-//   キャラクター          a character that walks (slopes, steps, the ground) instead of being a body
+//   剛体 (Rigidbody)      どう動くか: 動く (重力があり、他に押される) / 動かない / キネマティック (Transform
+//                         でだけ動かし、他を押す); 質量、摩擦、反発、重力、回転の固定
+//   コライダー (Collider)  3D での形: 箱 / 球 / カプセル / メッシュ (その メッシュ部品 のモデル: 動かない
+//                         ものだけ)、トリガー (知らせるだけで、止めない)、エンティティから動かす
+//   コライダー (2D)        平面での形: 箱 / 円 / カプセル - 平面に留まる物体 (Z は無く、Z まわりにだけ
+//                         回る)
+//   キャラクター          物体ではなく、歩く (坂、段差、地面) キャラクター
 //
-// An entity with a collider and no 剛体 is a body that does not move (a floor, a wall). Sizes are times
-// the entity's Transform scale (its world scale: parents' included). Units: m, kg, s.
-// Pure data - the physics world (PhysicsWorld.h) makes bodies from it.
+// コライダーがあって 剛体 が無いエンティティは、動かない物体 (床、壁)。大きさは、エンティティの
+// Transform の拡縮 (ワールドでの拡縮: 親の分も含む) の倍。単位: m、kg、s。
+// 純粋なデータ - 物理ワールド (PhysicsWorld.h) がこれから物体を作る。
 
 #include "core/reflect/Reflect.h"
 
@@ -26,9 +25,9 @@ enum class Motion {
     RM_ITEM(Label="キネマティック") Kinematic,
 };
 
-// The scene's own (game_production::SceneSettingInfo: the インスペクター shows it when the scene - the
-// 階層's top row - is chosen). Each scene has its own gravity. (It was the game settings' 重力 before
-// 2026-11-17: that value is kept in the project file, not used.)
+// シーン自身のもの (game_production::SceneSettingInfo: シーン - 階層の一番上の行 - を選ぶと
+// インスペクターに出る)。シーンごとに自分の重力を持つ。(2026-11-17 より前はゲーム設定の 重力 だった:
+// その値はプロジェクトファイルに残るが、使わない。)
 RM_STRUCT(Label="物理")
 struct PhysicsSettings {
     RM_PROPERTY(Edit, Label="重力", Tooltip="m/s²。世界の向きで (Y が上)。2D のゲームは X と Y を使います") Vec3 gravity{0, -9.81f, 0};

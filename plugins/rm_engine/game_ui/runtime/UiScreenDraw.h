@@ -1,8 +1,9 @@
 #pragma once
-// The game UI over the whole game screen (game production's ScreenDrawer): laid out (UiLayout.h) and drawn
-// (UiRenderer.h) - in the editor's game view (Play or not) and in the exported game, over every space's
-// picture. Offered by the editor part for the game view, and for the exported game by RegisterForGame
-// (this plugin's entry: the drawing is not in the tests' list of runtime parts).
+// ゲーム画面全体の上のゲーム UI (ゲーム制作の ScreenDrawer): 配置 (UiLayout.h) して描く
+// (UiRenderer.h) - エディターのゲームビュー (Play 中でもそうでなくても) と書き出したゲームで、
+// どの空間の絵の上にも。ゲームビュー用にはエディター側の部分が、書き出したゲーム用には
+// RegisterForGame (このプラグインの入口: 描画はテストのランタイム部分の一覧に入っていない)
+// が提供する。
 
 #include "rm_engine/game_production/runtime/GameDraw.h"
 #include "rm_engine/game_ui/runtime/UiRenderer.h"

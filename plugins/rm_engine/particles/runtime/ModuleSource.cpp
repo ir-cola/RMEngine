@@ -15,9 +15,9 @@ std::string_view Trim(std::string_view s) {
     return s;
 }
 
-// The code without its comments (// to the end of the line, /* ... */): what is really written. A
-// function only mentioned in a comment is not there (2026-11-18 on screen: the new module's
-// "// void Spawn(...) { }" was taken for a Spawn and the engine called one that did not exist).
+// コメント (行末までの // と /* ... */) を除いたコード: 本当に書いてあるもの。コメントにだけ出てくる
+// 関数は無いものとする (2026-11-18 画面で: 新しいモジュールの "// void Spawn(...) { }" を Spawn と
+// 取り違え、無い関数をエンジンが呼んでしまった)。
 std::string WithoutComments(std::string_view code) {
     std::string out;
     out.reserve(code.size());
@@ -62,7 +62,7 @@ bool ParseFloat(std::string_view s, float& out) {
     return r.ec == std::errc() && r.ptr == s.data() + s.size();
 }
 
-// "1, 2, 3" / "(1, 2, 3)" / "float3(1, 2, 3)" / "{1, 2, 3}" -> numbers.
+// "1, 2, 3" / "(1, 2, 3)" / "float3(1, 2, 3)" / "{1, 2, 3}" -> 数値。
 bool ParseValues(std::string_view s, std::vector<float>& out) {
     s = Trim(s);
     if (const size_t open = s.find_first_of("({"); open != std::string_view::npos) {

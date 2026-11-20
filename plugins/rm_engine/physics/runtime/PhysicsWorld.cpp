@@ -1,5 +1,5 @@
-// 物理 - the physics world (Jolt Physics). The only file that sees Jolt's types (design 9-f: the wall is
-// thin and in one place).
+// 物理 - 物理ワールド (Jolt Physics)。Jolt の型を見るのはこのファイルだけ (設計 9-f: 壁は薄く、
+// 1 か所に)。
 
 #include "rm_engine/physics/runtime/PhysicsWorld.h"
 
@@ -14,7 +14,7 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
 
-// Jolt's headers are not ours to keep warning-free at /W4.
+// Jolt のヘッダーは /W4 で警告を 0 に保つ対象ではない。
 #pragma warning(push, 0)
 #include <Jolt/Jolt.h>
 
@@ -62,9 +62,9 @@ using game_production::HookCall;
 using game_production::Scene;
 using game_production::SceneEntity;
 
-// --- Jolt, once for the whole program (never twice: Play / ■ again and again only make worlds) ----------
-// The job threads and the step's scratch memory are shared by every world (one steps at a time: the
-// game's thread). Left alive until the program ends (no order-of-exit trouble with the threads).
+// --- Jolt はプログラム全体で 1 度だけ (2 度はしない: Play / ■ を何度繰り返しても作るのはワールドだけ) ----------
+// ジョブのスレッドとステップの作業メモリは、すべてのワールドで共有する (同時に進めるのは 1 つ:
+// ゲームのスレッド)。プログラムが終わるまで生かしておく (スレッドとの終了順の問題を避ける)。
 struct Jolt {
     JPH::TempAllocatorImpl* temp = nullptr;
     JPH::JobSystemThreadPool* jobs = nullptr;
@@ -84,7 +84,7 @@ Jolt& JoltOnce() {
     return j;
 }
 
-// --- layers: what does not move never meets what does not move ---------------------------------
+// --- レイヤー: 動かないものは、動かないものと出会わない ---------------------------------
 namespace Layer {
 constexpr JPH::ObjectLayer kStatic = 0;
 constexpr JPH::ObjectLayer kMoving = 1;
@@ -131,7 +131,7 @@ space3d::Mat4 TurnOf(JPH::QuatArg q) {
     return out;
 }
 
-// A fingerprint of numbers (FNV-1a): a body is made again when its settings' fingerprint changes.
+// 数値の指紋 (FNV-1a): 設定の指紋が変わると、物体を作り直す。
 struct Fingerprint {
     uint64_t h = 14695981039346656037ull;
     Fingerprint& Add(const void* p, size_t n) {
@@ -140,7 +140,7 @@ struct Fingerprint {
         return *this;
     }
     Fingerprint& Add(float v) {
-        // Rounded a little: a scale that is the same give or take float noise is the same.
+        // 少し丸める: float のノイズの範囲で同じ拡縮は、同じものとする。
         const int64_t q = static_cast<int64_t>(std::llround(static_cast<double>(v) * 10000.0));
         return Add(&q, sizeof(q));
     }
@@ -152,7 +152,7 @@ struct Fingerprint {
 
 uint32_t Key(JPH::BodyID id) { return id.GetIndexAndSequenceNumber(); }
 
-// What touched and what parted during a step (Jolt calls this from its job threads).
+// 1 ステップの間に何が触れ、何が離れたか (Jolt がそのジョブのスレッドから呼ぶ)。
 class Contacts final : public JPH::ContactListener {
 public:
     void OnContactAdded(const JPH::Body& a, const JPH::Body& b, const JPH::ContactManifold&, JPH::ContactSettings&) override {
@@ -164,7 +164,7 @@ public:
         std::lock_guard lock(mu_);
         return touching_.size();
     }
-    // The pairs (by body) that began / ended touching since the last call.
+    // 前に呼んでから触れ始めた / 触れなくなった (物体ごとの) 組。
     void Take(std::vector<std::pair<uint32_t, uint32_t>>& began, std::vector<std::pair<uint32_t, uint32_t>>& ended) {
         std::lock_guard lock(mu_);
         began.assign(began_.begin(), began_.end());
@@ -172,7 +172,7 @@ public:
         began_.clear();
         ended_.clear();
     }
-    // A body that left the world: what it touched is forgotten (no exit for it).
+    // ワールドから消えた物体: それが触れていたものは忘れる (その分の終了は出さない)。
     void Forget(uint32_t body) {
         std::lock_guard lock(mu_);
         std::erase_if(touching_, [&](const auto& kv) { return kv.first.first == body || kv.first.second == body; });
@@ -181,19 +181,19 @@ public:
     }
 
 private:
-    // Contacts come per pair of sub shapes (a mesh's triangles ...): a pair of bodies touches while any do.
+    // 接触はサブ形状 (メッシュの三角形など) の組ごとに来る: 物体の組は、どれかが触れている間は触れている。
     void Count(JPH::BodyID x, JPH::BodyID y, int d) {
         uint32_t a = Key(x), b = Key(y);
         if (a > b) std::swap(a, b);
         std::lock_guard lock(mu_);
-        // (a parting told for a pair not known - its body has gone, Jolt tells after - makes no entry:
-        // before, an entry of 0 stayed for ever)
+        // (知らない組への離れた知らせ - その物体はもう無く、Jolt が後から知らせる - は項目を作らない:
+        // 前は 0 の項目がずっと残っていた)
         if (d < 0 && !touching_.contains({a, b})) return;
         int& n = touching_[{a, b}];
         const int before = n;
         n = std::max(0, n + d);
         if (before == 0 && n > 0) {
-            if (!ended_.erase({a, b})) began_.insert({a, b});  // (parted and touched again within a step: nothing)
+            if (!ended_.erase({a, b})) began_.insert({a, b});  // (1 ステップの中で離れてまた触れた: 何もしない)
         } else if (before > 0 && n == 0) {
             if (!began_.erase({a, b})) ended_.insert({a, b});
             touching_.erase({a, b});
@@ -204,14 +204,14 @@ private:
     std::set<std::pair<uint32_t, uint32_t>> began_, ended_;
 };
 
-// Rays skip triggers.
+// レイはトリガーを飛ばす。
 class NotSensors final : public JPH::BodyFilter {
 public:
     bool ShouldCollideLocked(const JPH::Body& body) const override { return !body.IsSensor(); }
 };
 
-// The model of the entity's メッシュ (3D モデル): the mesh collider's shape. Read by the type's name and
-// the field's: 物理 does not need ゲーム制作 × 3D. Empty: none.
+// エンティティの メッシュ (3D モデル) のモデル: メッシュコライダーの形。型の名前とフィールドの名前で
+// 読む: 物理 は ゲーム制作 × 3D を必要としない。空: 無し。
 AssetRef ModelOf(const game_production::SceneEntity& e) {
     const game_production::Component* mr = e.FindComponent("rm::game_x_3d::MeshRenderer");
     if (!mr || !mr->Known()) return {};
@@ -231,16 +231,16 @@ struct PhysicsWorld::Impl {
     Contacts contacts;
     JPH::PhysicsSystem system;
     const game_production::AssetAccess* assets = nullptr;
-    Vec3 gravityNow{0, 0, 0};  // the gravity the system has (set in Step when it differs)
-    double stepMs = 0;         // how long the last Update took
+    Vec3 gravityNow{0, 0, 0};  // システムが持っている重力 (違っていれば Step で設定する)
+    double stepMs = 0;         // 直近の Update にかかった時間
 
     struct BodyRec {
         JPH::BodyID id;
-        uint64_t settings = 0;           // what it was made as (another: made again)
-        uint64_t shape = 0, numbers = 0;  // its shape and numbers (another: changed in place)
+        uint64_t settings = 0;           // 何として作ったか (違うと: 作り直す)
+        uint64_t shape = 0, numbers = 0;  // その形と数値 (違うと: その場で変える)
         Motion motion = Motion::Static;
         bool flat = false, trigger = false;
-        Vec3 wrotePosition{0, 0, 0};  // the pose last written into (or read from) the Transform
+        Vec3 wrotePosition{0, 0, 0};  // Transform に最後に書いた (または読んだ) 姿勢
         JPH::Quat wroteTurn = JPH::Quat::sIdentity();
         bool seen = false;
     };
@@ -248,26 +248,26 @@ struct PhysicsWorld::Impl {
         JPH::Ref<JPH::CharacterVirtual> ch;
         uint64_t settings = 0;
         Character values;
-        Vec3 walk{0, 0, 0};    // Move: the horizontal speed wanted
-        float jump = 0;        // Jump: asked for the next step (0: none)
+        Vec3 walk{0, 0, 0};    // Move: 欲しい水平方向の速さ
+        float jump = 0;        // Jump: 次のステップに頼んだ (0: 無し)
         Vec3 wrotePosition{0, 0, 0};
         bool seen = false;
     };
-    std::unordered_map<int, BodyRec> bodies;   // by entity
-    std::unordered_map<int, CharRec> chars;    // by entity
-    std::unordered_map<uint32_t, int> owner;   // body (Key) -> entity (characters' inner bodies too)
-    std::unordered_set<uint32_t> triggers;     // bodies that are triggers
+    std::unordered_map<int, BodyRec> bodies;   // エンティティごと
+    std::unordered_map<int, CharRec> chars;    // エンティティごと
+    std::unordered_map<uint32_t, int> owner;   // 物体 (Key) -> エンティティ (キャラクターの内側の物体も)
+    std::unordered_set<uint32_t> triggers;     // トリガーである物体
     struct MeshEntry {
-        JPH::RefConst<JPH::Shape> shape;  // null: cannot be read (told once)
+        JPH::RefConst<JPH::Shape> shape;  // null: 読めない (1 度だけ知らせる)
     };
-    std::unordered_map<std::string, MeshEntry> meshes;  // the models of mesh colliders, by asset id
-    std::unordered_set<int> told;                       // entities told about (once each)
+    std::unordered_map<std::string, MeshEntry> meshes;  // メッシュコライダーのモデル、アセット ID ごと
+    std::unordered_set<int> told;                       // 知らせたエンティティ (1 つにつき 1 度)
 
     Impl() {
         JoltOnce();
         system.Init(65536, 0, 65536, 20480, bpLayers, objectVsBp, pairs);
         system.SetContactListener(&contacts);
-        system.SetGravity(JPH::Vec3::sZero());  // as `gravityNow` (Step sets the game's)
+        system.SetGravity(JPH::Vec3::sZero());  // `gravityNow` の通り (Step がゲームのものに設定する)
     }
     ~Impl() {
         JPH::BodyInterface& bi = system.GetBodyInterface();
@@ -275,14 +275,14 @@ struct PhysicsWorld::Impl {
             bi.RemoveBody(b.id);
             bi.DestroyBody(b.id);
         }
-        chars.clear();  // (their inner bodies go with them)
+        chars.clear();  // (その内側の物体も一緒に消える)
     }
 
     void TellOnce(int entity, const std::string& text) {
         if (told.insert(entity).second) log::Warn("物理: {}", text);
     }
 
-    // --- shapes -------------------------------------------------------------------------------
+    // --- 形 -------------------------------------------------------------------------------
     JPH::RefConst<JPH::Shape> MeshShapeOf(const SceneEntity& e) {
         const AssetRef model = ModelOf(e);
         if (model.Empty()) return nullptr;
@@ -339,7 +339,7 @@ struct PhysicsWorld::Impl {
         return s;
     }
 
-    // --- bodies --------------------------------------------------------------------------------
+    // --- 物体 --------------------------------------------------------------------------------
     void Remove(int entity) {
         const auto it = bodies.find(entity);
         if (it == bodies.end()) return;
@@ -363,8 +363,8 @@ struct PhysicsWorld::Impl {
         chars.erase(it);
     }
 
-    // Makes / keeps / moves the body of `e` at `place`. `created`: counts the bodies made (the broad phase
-    // is tidied after many). False: it has no body (no collider; a mesh that cannot be read yet).
+    // `e` の物体を、`place` に作る / 保つ / 動かす。`created`: 作った物体を数える (たくさん作ったら
+    // ブロードフェーズを整える)。false: 物体が無い (コライダーが無い; まだ読めないメッシュ)。
     bool Sync(SceneEntity& e, const EntityPlace& place, float dt, int* created) {
         const int id = e.data.id;
         const Component* cc = e.FindComponent(reflect::TypeOf<Collider>().name);
@@ -386,9 +386,8 @@ struct PhysicsWorld::Impl {
             TellOnce(id, std::format("「{}」のメッシュのコライダーは動かない物だけです (動かない物として扱います)", e.data.name));
             motion = Motion::Static;
         }
-        // What makes the body again (another kind of body) / what changes in it as it is - its shape, its
-        // numbers (2026-11-19: before, any change made it again: OnHit / OnTriggerEnter came again without
-        // an exit, and a moving body stopped).
+        // 物体を作り直す条件 (別の種類の物体) / そのまま変える部分 - 形と数値 (2026-11-19: 前は、どんな変更でも
+        // 作り直していた: OnHit / OnTriggerEnter が終了なしにまた来て、動く物体が止まった)。
         Fingerprint fp;
         fp.Add(flat).Add(trigger).Add(static_cast<int>(motion));
         Fingerprint shapeFp;
@@ -396,7 +395,7 @@ struct PhysicsWorld::Impl {
         if (dims.kind == ShapeDims::Kind::Mesh) shapeFp.Add(ModelOf(e).guid);
         Fingerprint numbersFp;
         if (rb) numbersFp.Add(rb->mass).Add(rb->friction).Add(rb->bounciness).Add(rb->gravityScale).Add(rb->lockRotationX).Add(rb->lockRotationY).Add(rb->lockRotationZ);
-        // On the plane: X, Y and the turn about Z only. In 3D: the turns not locked.
+        // 平面では: X、Y と Z まわりの回転だけ。3D では: 固定していない回転。
         JPH::EAllowedDOFs dofs = flat ? (JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY | JPH::EAllowedDOFs::RotationZ)
                                       : JPH::EAllowedDOFs::All;
         if (rb && rb->lockRotationX) dofs = dofs & ~JPH::EAllowedDOFs::RotationX;
@@ -413,7 +412,7 @@ struct PhysicsWorld::Impl {
         if (found == bodies.end()) {
             JPH::RefConst<JPH::Shape> shape = ShapeOf(dims, e);
             if (!shape) return false;
-            // A trigger that moves by nothing is kinematic (it sees what does not move too).
+            // 何も動かさないトリガーはキネマティックにする (動かないものも見える)。
             const JPH::EMotionType type = motion == Motion::Dynamic   ? JPH::EMotionType::Dynamic
                                           : motion == Motion::Kinematic || trigger ? JPH::EMotionType::Kinematic
                                                                                    : JPH::EMotionType::Static;
@@ -427,7 +426,7 @@ struct PhysicsWorld::Impl {
             if (type == JPH::EMotionType::Dynamic) {
                 s.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
                 s.mMassPropertiesOverride.mMass = std::max(rb->mass, 0.001f);
-                s.mMotionQuality = JPH::EMotionQuality::LinearCast;  // a fast thing (a bullet) does not go through a wall
+                s.mMotionQuality = JPH::EMotionQuality::LinearCast;  // 速いもの (弾) は壁を抜けない
             }
             if (type == JPH::EMotionType::Dynamic) s.mAllowedDOFs = dofs;
             const JPH::BodyID body = bi.CreateAndAddBody(s, type == JPH::EMotionType::Static ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
@@ -452,8 +451,8 @@ struct PhysicsWorld::Impl {
         }
         BodyRec& r = found->second;
         r.seen = true;
-        // Its shape or its numbers changed (a size that pulses, a friction set while playing): in place -
-        // what it touches and how it moves stay.
+        // 形か数値が変わった (脈打つ大きさ、再生中に設定した摩擦): その場で変える - 触れているものと
+        // 動き方はそのまま。
         if (r.shape != shapeFp.h) {
             JPH::RefConst<JPH::Shape> shape = ShapeOf(dims, e);
             if (!shape) {
@@ -462,7 +461,7 @@ struct PhysicsWorld::Impl {
             }
             bi.SetShape(r.id, shape, true, r.motion == Motion::Static ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
             r.shape = shapeFp.h;
-            r.numbers = ~numbersFp.h;  // (its mass is the shape's now: set again below)
+            r.numbers = ~numbersFp.h;  // (質量はいまは形のもの: 下でもう一度設定する)
         }
         if (r.numbers != numbersFp.h) {
             bi.SetFriction(r.id, rb ? rb->friction : 0.5f);
@@ -479,14 +478,14 @@ struct PhysicsWorld::Impl {
             }
             r.numbers = numbersFp.h;
         }
-        // Where the Transform says now: a script (or the inspector) moved it -> the body goes there.
-        // (the Transform keeps what was written give or take the float noise of going through its angles)
+        // Transform がいま言っている所: スクリプト (またはインスペクター) が動かした -> 物体をそこへ動かす。
+        // (Transform は、角度を通る間の float のノイズの範囲で、書いたものをそのまま持つ)
         const bool moved = std::fabs(pose.position.x - r.wrotePosition.x) + std::fabs(pose.position.y - r.wrotePosition.y) +
                                std::fabs(pose.position.z - r.wrotePosition.z) > 1e-4f ||
                            std::fabs(turn.Dot(r.wroteTurn)) < 1 - 1e-5f;
         const bool kinematic = bi.GetMotionType(r.id) == JPH::EMotionType::Kinematic;
         if (kinematic && dt > 0) {
-            bi.MoveKinematic(r.id, position, turn, dt);  // moves through the step (pushes what is in the way)
+            bi.MoveKinematic(r.id, position, turn, dt);  // ステップの間に動かす (道をふさぐものを押す)
         } else if (moved) {
             bi.SetPositionAndRotation(r.id, position, turn, r.motion == Motion::Static ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
         }
@@ -516,11 +515,11 @@ struct PhysicsWorld::Impl {
             JPH::RefConst<JPH::Shape> capsule = new JPH::RotatedTranslatedShape(J(d.offset), JPH::Quat::sIdentity(), new JPH::CapsuleShape(d.halfHeight, d.radius));
             JPH::CharacterVirtualSettings s;
             s.mShape = capsule;
-            s.mInnerBodyShape = capsule;  // a body for the others to meet (bullets, triggers)
+            s.mInnerBodyShape = capsule;  // 他のもの (弾、トリガー) が出会う物体
             s.mInnerBodyLayer = Layer::kMoving;
             s.mMaxSlopeAngle = JPH::DegreesToRadians(std::clamp(c.maxSlope, 0.f, 89.f));
             s.mMass = std::max(c.mass, 0.1f);
-            s.mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -d.radius);  // the lower sphere stands
+            s.mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -d.radius);  // 下の球が立つ
             CharRec r;
             r.ch = new JPH::CharacterVirtual(&s, J(pose.position), JPH::Quat::sIdentity(), static_cast<JPH::uint64>(id), &system);
             r.settings = fp.h;
@@ -534,11 +533,11 @@ struct PhysicsWorld::Impl {
         r.seen = true;
         const Vec3 p = pose.position;
         if (std::fabs(p.x - r.wrotePosition.x) + std::fabs(p.y - r.wrotePosition.y) + std::fabs(p.z - r.wrotePosition.z) > 1e-4f) {
-            r.ch->SetPosition(J(p));  // a script put it somewhere
+            r.ch->SetPosition(J(p));  // スクリプトがどこかに置いた
         }
     }
 
-    // Where every entity is (parents first), and every body made / kept / gone as the components are.
+    // すべてのエンティティの位置 (親が先)、そして部品の通りに、すべての物体を作る / 保つ / 消す。
     void SyncAll(Scene& scene, float dt) {
         for (auto& [e, b] : bodies) b.seen = false;
         for (auto& [e, c] : chars) c.seen = false;
@@ -551,7 +550,7 @@ struct PhysicsWorld::Impl {
             EntityPlace p;
             const bool placed = PlaceUnder(*e, parent != places.end() ? &parent->second : nullptr, p);
             places[e->data.id] = p;
-            if (!placed || !t.activeInHierarchy) continue;  // no place / switched off: no body (removed below)
+            if (!placed || !t.activeInHierarchy) continue;  // 位置が無い / 切ってある: 物体は無い (下で外す)
             Sync(*e, p, dt, &created);
             SyncCharacter(*e, p);
         }
@@ -565,24 +564,24 @@ struct PhysicsWorld::Impl {
             if (!c.seen) gone.push_back(e);
         }
         for (const int e : gone) RemoveCharacter(e);
-        if (created >= 64) system.OptimizeBroadPhase();  // many new at once: the broad phase tidied
+        if (created >= 64) system.OptimizeBroadPhase();  // 一度にたくさん新しくなった: ブロードフェーズを整える
         placesCache = std::move(places);
     }
-    std::unordered_map<int, EntityPlace> placesCache;  // the last SyncAll's (for writing back)
+    std::unordered_map<int, EntityPlace> placesCache;  // 直近の SyncAll の分 (書き戻し用)
 
-    // One entity alone (a script asks before the step made its body).
+    // エンティティ 1 つだけ (ステップが物体を作る前に、スクリプトが頼んだ時)。
     bool SyncOne(Scene& scene, int id) {
         if (bodies.contains(id) || chars.contains(id)) return true;
         SceneEntity* e = scene.Find(id);
         if (!e) return false;
-        // Its parents' places, top first.
+        // その親の位置、上から順に。
         std::vector<const SceneEntity*> chain;
         for (const SceneEntity* x = e; x && chain.size() <= scene.Entities().size(); x = scene.Find(x->data.parent)) chain.push_back(x);
         std::reverse(chain.begin(), chain.end());
         EntityPlace p;
         bool placed = false;
         for (const SceneEntity* x : chain) {
-            if (!x->data.active) return false;  // switched off (it or a parent)
+            if (!x->data.active) return false;  // 切ってある (それ自身か親が)
             const EntityPlace up = p;
             placed = PlaceUnder(*x, x == chain.front() ? nullptr : &up, p);
         }
@@ -592,12 +591,12 @@ struct PhysicsWorld::Impl {
         return Sync(*e, p, 0, nullptr) || chars.contains(id);
     }
 
-    // --- back into the Transforms ----------------------------------------------------------------
+    // --- Transform への書き戻し ----------------------------------------------------------------
     void WriteBack(Scene& scene) {
         const std::string t3 = reflect::TypeOf<space3d::Transform>().name, t2 = reflect::TypeOf<space2d::Transform2D>().name;
         const JPH::BodyInterface& bi = system.GetBodyInterface();
         for (auto& [id, r] : bodies) {
-            if (r.motion != Motion::Dynamic || !bi.IsActive(r.id)) continue;  // asleep: where it was
+            if (r.motion != Motion::Dynamic || !bi.IsActive(r.id)) continue;  // 眠っている: 元の所のまま
             const auto place = placesCache.find(id);
             SceneEntity* e = scene.Find(id);
             if (place == placesCache.end() || !e) continue;
@@ -648,7 +647,7 @@ struct PhysicsWorld::Impl {
         }
     }
 
-    // --- characters walk ----------------------------------------------------------------------------
+    // --- キャラクターが歩く ----------------------------------------------------------------------------
     void StepCharacters(float dt, Vec3 gravity) {
         JoltOnce();
         for (auto& [id, r] : chars) {
@@ -657,7 +656,7 @@ struct PhysicsWorld::Impl {
             ch.UpdateGroundVelocity();
             const bool ground = ch.GetGroundState() == JPH::CharacterVirtual::EGroundState::OnGround;
             const JPH::Vec3 v = ch.GetLinearVelocity();
-            // Jolt's way: on the ground and not moving away from it -> the ground's speed; in the air -> its own fall.
+            // Jolt のやり方: 地面にいて、離れる向きに動いていない -> 地面の速さ; 空中 -> 自分の落下。
             JPH::Vec3 vertical = ground && (v - ch.GetGroundVelocity()).Dot(ch.GetUp()) < 0.1f ? ch.GetGroundVelocity() : JPH::Vec3(0, v.GetY(), 0);
             vertical += g * dt;
             if (r.jump > 0 && ground) vertical += ch.GetUp() * r.jump;
@@ -672,7 +671,7 @@ struct PhysicsWorld::Impl {
         }
     }
 
-    // --- what touched -------------------------------------------------------------------------------
+    // --- 触れたもの -------------------------------------------------------------------------------
     void Tell(std::vector<HookCall>* hooks) {
         std::vector<std::pair<uint32_t, uint32_t>> began, ended;
         contacts.Take(began, ended);
@@ -685,13 +684,13 @@ struct PhysicsWorld::Impl {
             const auto ea = owner.find(p.first), eb = owner.find(p.second);
             if (ea == owner.end() || eb == owner.end() || ea->second == eb->second) return;
             const bool trigger = triggers.contains(p.first) || triggers.contains(p.second);
-            if (!trigger && !begin) return;  // (parting of solid things: no hook)
+            if (!trigger && !begin) return;  // (固いものどうしが離れた: フックは無い)
             const int kind = trigger ? (begin ? RM_HOOK_TRIGGER_ENTER : RM_HOOK_TRIGGER_EXIT) : RM_HOOK_HIT;
             events.push_back({kind, std::min(ea->second, eb->second), std::max(ea->second, eb->second)});
         };
         for (const auto& p : ended) add(p, false);
         for (const auto& p : began) add(p, true);
-        // The same order whatever Jolt's threads did: exits first, then by entity.
+        // Jolt のスレッドが何をしても同じ順番にする: 終了が先、そのあとエンティティ順。
         std::sort(events.begin(), events.end(), [](const Event& x, const Event& y) {
             const int kx = x.kind == RM_HOOK_TRIGGER_EXIT ? 0 : 1, ky = y.kind == RM_HOOK_TRIGGER_EXIT ? 0 : 1;
             if (kx != ky) return kx < ky;
@@ -718,7 +717,7 @@ void PhysicsWorld::Step(Scene& scene, float dt, Vec3 gravity, std::vector<HookCa
     w.SyncAll(scene, dt);
     if (dt <= 0) return;
     if (gravity.x != w.gravityNow.x || gravity.y != w.gravityNow.y || gravity.z != w.gravityNow.z) {
-        // A new gravity (the scene's 重力 changed): bodies at rest wake up to feel it.
+        // 新しい重力 (シーンの 重力 が変わった): 止まっている物体は、それを感じるよう起きる。
         w.gravityNow = gravity;
         w.system.SetGravity(J(gravity));
         JPH::BodyInterface& bi = w.system.GetBodyInterface();
@@ -762,7 +761,7 @@ bool PhysicsWorld::SetVelocity(Scene& scene, int entity, Vec3 velocity) {
     Impl& w = *impl_;
     if (!w.SyncOne(scene, entity)) return false;
     if (const auto c = w.chars.find(entity); c != w.chars.end()) {
-        c->second.walk = velocity;  // a character: its walk (and the fall is its own)
+        c->second.walk = velocity;  // キャラクター: その歩き (落下はキャラクター自身のもの)
         return true;
     }
     const auto it = w.bodies.find(entity);

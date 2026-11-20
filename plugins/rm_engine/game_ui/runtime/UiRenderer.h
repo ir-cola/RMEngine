@@ -1,18 +1,18 @@
 #pragma once
-// ゲーム UI - drawing the laid-out UI (UiLayout.h) with Direct2D and DirectWrite, onto the device context
-// the window already draws with (the game's window; the editor's game view and UI view). The colours are
-// the game's own data (never the editor's theme). Japanese comes out as DirectWrite falls back to the
-// system's fonts for the characters a font has not.
+// ゲーム UI - 配置した UI (UiLayout.h) を Direct2D と DirectWrite で、ウィンドウがすでに描いている
+// デバイスコンテキスト (ゲームのウィンドウ。エディターのゲームビューと UI ビュー) に描く。色は
+// ゲーム自身のデータ (エディターのテーマは決して使わない)。日本語は、フォントにない文字を DirectWrite が
+// システムのフォントで補って出す。
 //
-//   画像  a rectangle of its colour, or the picture (WIC: platform/Image) tinted by it - in 9 pieces
-//         when it has 9 スライス (the corners keep their size, the middle stretches)
-//   バー  the back, then the filled part (BarFill)
-//   文字  DirectWrite: a font of Windows by name, or a font file of the game (an asset: .ttf / .otf,
-//         read from memory into a font collection of its own); its shadow, outline (drawn round it) and itself
+//   画像  その色の長方形、またはその色でティントした絵 (WIC: platform/Image) - 9 スライス が
+//         あるときは 9 つの部分で (角は大きさを保ち、真ん中が伸びる)
+//   バー  後ろ、次に塗られた部分 (BarFill)
+//   文字  DirectWrite: 名前で指定する Windows のフォント、またはゲームのフォントファイル (アセット:
+//         .ttf / .otf、メモリから専用のフォントコレクションに読む)。その影、縁取り (まわりに描く)、本体
 //
-// A button paints the picture and the bar of its own entity (its look now: ButtonNow - multiplied, and
-// moved toward a replacing colour by a colour matrix), swaps its picture by state (ButtonImage), draws
-// its outline round its box (ButtonOutline) and scales them with their children (in the layout).
+// ボタンは自分のエンティティの絵とバーを塗り (今の見た目: ButtonNow - 掛け合わせ、カラー
+// マトリックスで置き換える色へ寄せる)、状態で絵を差し替え (ButtonImage)、箱のまわりに縁取りを描き
+// (ButtonOutline)、子と一緒にそれらを拡大縮小する (レイアウトで)。
 
 #include "base/Ref.h"
 #include "platform/Gfx.h"
@@ -32,8 +32,8 @@
 
 namespace rm::game_ui {
 
-// The bytes of an asset (the editor: its file; the game: what the export put in for it - an image baked
-// by ゲーム制作 × 2D comes with its header: core/asset/BakedImage.h); nullopt when it is not there.
+// アセットのバイト列 (エディター: そのファイル。ゲーム: 書き出しが入れたもの - ゲーム制作 × 2D が
+// 焼いた画像はヘッダー付き: core/asset/BakedImage.h)。なければ nullopt。
 using AssetReader = std::function<std::optional<std::string>(const AssetRef&)>;
 
 class UiRenderer {
@@ -43,31 +43,31 @@ public:
     UiRenderer& operator=(const UiRenderer&) = delete;
     ~UiRenderer();
 
-    // Draws `tree` (back to front); `toDc` maps the screen's DIPs to the device context's.
+    // `tree` を奥から手前へ描く。`toDc` は画面の DIP をデバイスコンテキストのものへ写す。
     void Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& tree, const Affine& toDc, const AssetReader& asset);
-    // A plain rectangle (the editor's backdrop of the game screen), in the device context's DIPs.
+    // ただの長方形 (エディターのゲーム画面の背景)、デバイスコンテキストの DIP で。
     void Fill(ID2D1DeviceContext* dc, const UiBox& box, Color color);
-    // Reads the pictures and fonts again when next drawn (their files changed).
+    // 次に描くときに絵とフォントを読み直す (ファイルが変わった)。
     void Forget();
-    // The game runs (the editor's Play, the exported game): 動画 play then - else they stop on their first
-    // picture, silent.
+    // ゲームが動いている (エディターの Play、書き出したゲーム): 動画 はそのとき再生する - そうでなければ
+    // 最初の絵で止まり、音もなし。
     void SetPlaying(bool playing);
-    // Something in the tree moves by itself (a 動画, 虹色): drawn again every frame.
+    // ツリーの何かが自分で動く (動画、虹色): 毎フレーム描き直す。
     static bool Animates(const UiTree& tree);
-    // The size of an image's file in pixels (0, 0: not read yet / not a picture).
+    // 画像のファイルのピクセルでの大きさ (0, 0: まだ読んでいない / 絵ではない)。
     Vec2 ImageSize(const AssetRef& ref) const;
 
 private:
     struct Picture {
         Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
-        uint32_t width = 0, height = 0;  // the file's pixels
+        uint32_t width = 0, height = 0;  // ファイルのピクセル
         bool tried = false;
     };
     struct Font {
         Microsoft::WRL::ComPtr<IDWriteFontCollection> collection;
         std::wstring family;
         bool tried = false;
-        size_t hash = 0;  // of the file's bytes it was made from (Forget: made again only when they changed)
+        size_t hash = 0;  // 作ったときのファイルのバイト列の (Forget: 変わったときだけ作り直す)
     };
 
     void Begin(ID2D1DeviceContext* dc);
@@ -78,11 +78,11 @@ private:
     void DrawImage(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint);
     void DrawPiece(ID2D1Bitmap* bitmap, const D2D1_RECT_F& src, const UiBox& dst, const Affine& full, const UiPaint& paint);
     void DrawOutline(const UiNode& n, const Affine& full, const UiStroke& stroke);
-    // UI-5 (見た目): what makes its shape - 背景, 画像, バー, 文字 - drawn as it is, or into a command list
-    // that the 影, the ぼかし and the 光 are made from (Direct2D's Shadow and GaussianBlur effects).
+    // UI-5 (見た目): 形を作るもの - 背景、画像、バー、文字 - をそのまま描くか、影・ぼかし・光の
+    // 元になるコマンドリストに描く (Direct2D の Shadow と GaussianBlur エフェクト)。
     void DrawBody(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint);
     void DrawVideo(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint);
-    // 虹色 now for one of its colours (UiRainbow's flag for it), and a colour with it (its alpha kept).
+    // 色の 1 つに対する今の 虹色 (UiRainbow のそのフラグ) と、それを付けた色 (alpha は保つ)。
     std::optional<Color> RainbowFor(const UiNode& n, bool UiRainbow::* part) const;
     static Color Rainbowed(Color c, const std::optional<Color>& rainbow);
     void DrawWithEffects(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint);
@@ -94,27 +94,27 @@ private:
     void DrawFocus(const UiNode& n, const Affine& full);
 
     ID2D1DeviceContext* dc_ = nullptr;
-    ID2D1DeviceContext* owner_ = nullptr;  // the context brush_ and tint_ were made for
+    ID2D1DeviceContext* owner_ = nullptr;  // brush_ と tint_ を作ったコンテキスト
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
     Microsoft::WRL::ComPtr<ID2D1Effect> tint_;
     Microsoft::WRL::ComPtr<ID2D1Effect> shadow_, glow_, blur_;
-    // Recording a command list: it keeps the brushes and effects it was drawn with - not copies - so each
-    // draw then gets one of its own (kept here until the list is drawn).
+    // コマンドリストへの記録: 描いたブラシとエフェクトを (コピーでなく) そのまま持つので、描くたびに
+    // 専用のものを使う (リストを描くまでここに保つ)。
     bool fresh_ = false;
     bool playing_ = false;
     double time_ = 0;  // seconds (虹色)
     struct Video {
         std::unique_ptr<VideoPlayer> player;
-        bool failed = false;  // told once
-        bool seen = false;    // drawn this frame (one not drawn stops)
+        bool failed = false;  // 1 度だけ知らせた
+        bool seen = false;    // このフレームに描いた (描かれなかったものは止まる)
     };
-    std::unordered_map<std::string, Video> videos_;  // by entity and asset
+    std::unordered_map<std::string, Video> videos_;  // エンティティとアセットごと
     std::vector<Microsoft::WRL::ComPtr<IUnknown>> keep_;
-    std::unordered_map<std::string, Picture> pictures_;  // by asset id
-    std::unordered_map<std::string, Font> fonts_;        // by asset id
+    std::unordered_map<std::string, Picture> pictures_;  // アセット ID ごと
+    std::unordered_map<std::string, Font> fonts_;        // アセット ID ごと
     std::map<std::tuple<std::wstring, IDWriteFontCollection*, float, bool, bool>, Microsoft::WRL::ComPtr<IDWriteTextFormat>> formats_;
-    uint64_t generation_ = 0;  // platform::Gfx::Generation the bitmaps, the brush and the effect were made in
-    Microsoft::WRL::ComPtr<IUnknown> fontLoader_;  // IDWriteInMemoryFontFileLoader (registered on the factory)
+    uint64_t generation_ = 0;  // ビットマップ・ブラシ・エフェクトを作った platform::Gfx::Generation
+    Microsoft::WRL::ComPtr<IUnknown> fontLoader_;  // IDWriteInMemoryFontFileLoader (ファクトリーに登録)
     Microsoft::WRL::ComPtr<IDWriteFactory> loaderFactory_;
 };
 

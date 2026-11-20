@@ -1,9 +1,9 @@
-// The exported game's drawing in 2D (game_production/runtime/GameDraw.h): the plane through the game's
-// カメラ (2D), by 2D 空間's renderer, into the window. The same order and look as the editor's game view:
-// sprites back to front (Transform 2D's 並び順, then the sprite's, then the 階層's), an image's atlas
-// cell, a square of the colour without an image; switched-off things are not drawn.
-// Over a 3D game (DrawOverlay): through a カメラ (2D) with「3D の上に重ねる」- the 最初のカメラ when it is
-// one, else the first active one - without filling the background (as the editor's game view).
+// 書き出したゲームの 2D の描画 (game_production/runtime/GameDraw.h): ゲームの カメラ (2D) 越しに
+// 平面を、2D 空間のレンダラーでウィンドウに描く。順番も見た目もエディターのゲームビューと同じ:
+// スプライトは奥から手前へ (Transform 2D の 並び順、次にスプライトの、次に階層の)、画像の
+// アトラスのセル、画像がなければ色の四角。オフの物は描かない。
+// 3D のゲームの上では (DrawOverlay): 「3D の上に重ねる」の カメラ (2D) 越しに、最初のカメラ が
+// それならそれ、そうでなければ最初の有効なもの。背景は塗りつぶさない (エディターのゲームビューと同じ)。
 
 #include "rm_engine/game_x_2d/runtime/GameDraw2D.h"
 
@@ -40,7 +40,7 @@ public:
 
 private:
     void DrawWith(const game_production::GameDrawFrame& f, bool overlay) {
-        if (generation_ != f.gfx.Generation() || dc_ != f.dc) {  // the devices were made again: their bitmaps go
+        if (generation_ != f.gfx.Generation() || dc_ != f.dc) {  // デバイスが作り直された: ビットマップは捨てる
             generation_ = f.gfx.Generation();
             dc_ = f.dc;
             images_.clear();
@@ -75,7 +75,7 @@ private:
             const int order = parent.order + tr.order;
             parents[e.data.id] = {world, order};
             const size_t tree = index++;
-            if (!t.activeInHierarchy) continue;  // switched off: not in the game
+            if (!t.activeInHierarchy) continue;  // オフ: ゲームには出ない
             if (const game_production::Component* cc = e.FindComponent(camera); cc && cc->Known()) {
                 const auto& cam = *static_cast<const Camera2D*>(cc->value.Get());
                 if (static_cast<uint64_t>(e.data.id) == f.camera && (!overlay || cam.overlay)) eye.emplace(cam, world);
@@ -91,9 +91,9 @@ private:
             p.draw.flipX = sp.flipX;
             p.draw.flipY = sp.flipY;
             const Loaded* img = Image(f, sp.image);
-            p.draw.crisp = sp.crisp || (img && img->sharp);  // the sprite's own, or the image's import setting (as the editor)
+            p.draw.crisp = sp.crisp || (img && img->sharp);  // スプライト自身の設定、または画像の取り込みの設定 (エディターと同じ)
             if (img) {
-                // The cell in the bitmap's pixels; its size in the world from the file's (as the 2D scene view).
+                // ビットマップのピクセルでのセル。ワールドでの大きさはファイルのピクセル数から (2D シーンビューと同じ)。
                 const D2D1_SIZE_U px = img->bitmap->GetPixelSize();
                 p.draw.image = img->bitmap.Get();
                 p.draw.part = space2d::CellOf(px.width, px.height, sp.columns, sp.rows, sp.cell);
@@ -105,7 +105,7 @@ private:
         }
         if (overlay) {
             if (!eye) eye = firstOverlay;
-            if (!eye) return;  // no layer over the 3D picture
+            if (!eye) return;  // 3D の絵の上に重ねる層はない
         }
         if (!eye) {
             if (!told_) log::Warn("ゲームの設定の「最初のカメラ」がカメラ (2D) の付いた有効なエンティティを指していないので、背景だけを塗ります");
@@ -125,15 +125,15 @@ private:
         renderer_.Render(f.dc, frame);
     }
 
-    // An image read from the game's assets: the bitmap, the file's own size, its くっきり.
+    // ゲームのアセットから読んだ画像: ビットマップ、ファイル自身の大きさ、くっきり。
     struct Loaded {
         Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
         uint32_t width = 0, height = 0;
         bool sharp = false;
     };
 
-    // The image an asset id names, read from the game's assets once (null: a square of the colour).
-    // Baked (BakedImage: the file with its size and import settings) or a picture file as it is.
+    // アセット id が指す画像を、ゲームのアセットから一度だけ読む (null: 色の四角)。
+    // ベイク済み (BakedImage: 大きさと取り込みの設定つきのファイル) か、そのままの画像ファイル。
     const Loaded* Image(const game_production::GameDrawFrame& f, const AssetRef& ref) {
         if (ref.Empty()) return nullptr;
         auto [it, made] = images_.try_emplace(ref.guid);
@@ -150,7 +150,7 @@ private:
                 if (pixels) m.bitmap = platform::BitmapFromImage(f.dc, *pixels);
                 if (pixels && !m.bitmap) err = "Direct2D のビットマップにできませんでした";
                 if (m.bitmap) {
-                    m.width = info.width > 0 ? info.width : pixels->width;  // (a picture not baked: its pixels)
+                    m.width = info.width > 0 ? info.width : pixels->width;  // (ベイクしていない画像: そのピクセル数)
                     m.height = info.height > 0 ? info.height : pixels->height;
                     m.sharp = info.sharp;
                     log::Info("画像を読みました: {} ({} x {}{}{})", ref.guid, m.width, m.height, m.sharp ? "・くっきり" : "",
@@ -180,8 +180,8 @@ std::unique_ptr<game_production::GameDrawer> CreateGameDraw2D() { return std::ma
 
 namespace {
 
-// What the exported game registers of this plugin (its generated main calls it by the C name below):
-// the runtime part the editor has too, and the drawer (the editor has its scene views instead).
+// 書き出したゲームがこのプラグインについて登録するもの (生成した main が下の C の名前で呼ぶ):
+// エディターにもあるランタイムの部分と、描画役 (エディターは代わりにシーンビューを持つ)。
 void RegisterForGame(RuntimeRegistry& registry) {
     RegisterRuntime(registry);
     static const game_production::GameDrawInfo kDraw{"2d", 10, &CreateGameDraw2D};

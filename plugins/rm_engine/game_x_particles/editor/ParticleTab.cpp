@@ -53,7 +53,7 @@ using particles::ParticleValue;
 
 constexpr float kPad = 8, kRow = 26, kIndent = 18;
 
-// One edit of an effect's file: its contents before and after (typing into one field: one entry).
+// エフェクトのファイルの 1 回の編集: 前と後の中身 (1 つの欄に打つ間は 1 件)。
 class EffectCommand final : public ICommand {
 public:
     EffectCommand(editor::SoftwareHost& host, AssetRef ref, std::string before, std::string after, std::string label, uint64_t merge)
@@ -80,7 +80,7 @@ private:
     uint64_t merge_;
 };
 
-// Changes the effect of `ref` (a copy of it as the editor has it now) and puts it in the history.
+// `ref` のエフェクト (エディターが今持っているコピー) を変えて、履歴に積む。
 void EditEffect(editor::SoftwareHost& host, const AssetRef& ref, const std::string& label, uint64_t merge,
                 const std::function<void(ParticleEffect&)>& change) {
     const auto bytes = host.AssetContent(ref);
@@ -95,12 +95,12 @@ void EditEffect(editor::SoftwareHost& host, const AssetRef& ref, const std::stri
     host.History().Push(std::make_unique<EffectCommand>(host, ref, *bytes, std::move(after), label, merge), false);
 }
 
-// The emitter shown in the インスペクター (kept alive by the inspector's functions, not by the tab).
+// インスペクターに出しているエミッター (インスペクターの関数が生かす。タブではない)。
 struct EmitterInspect {
     editor::SoftwareHost* host = nullptr;
     AssetRef ref;
     size_t index = 0;
-    std::string bytes;  // what `copy` was read from
+    std::string bytes;  // `copy` を読んだ元
     ParticleEmitter copy;
 };
 
@@ -134,7 +134,7 @@ editor::Inspectable EmitterInspectable(std::shared_ptr<EmitterInspect> s) {
     return in;
 }
 
-// The value of a param in a module (given, else its default).
+// モジュールの param の値 (与えられていればそれ、なければ既定値)。
 std::array<float, 4> ValueOf(const ParticleModule& m, const ModuleParam& p) {
     for (const ParticleValue& v : m.values) {
         if (v.name == p.name) return {v.x, v.y, v.z, v.w};
@@ -142,7 +142,7 @@ std::array<float, 4> ValueOf(const ParticleModule& m, const ModuleParam& p) {
     return p.value;
 }
 
-// A module of a file shown in the インスペクター (its file and 使う: the reference field picks a .rmfx).
+// インスペクターに出すファイルのモジュール (そのファイルと 使う: 参照の欄で .rmfx を選ぶ)。
 struct ModuleInspect {
     editor::SoftwareHost* host = nullptr;
     AssetRef ref;
@@ -181,7 +181,7 @@ editor::Inspectable ModuleInspectable(std::shared_ptr<ModuleInspect> s) {
     return in;
 }
 
-// What is wrong with a line of a module (in the screen's language).
+// モジュールの 1 行のどこが悪いか (画面の言語で)。
 std::wstring ErrorText(const particles::ModuleError& e) {
     using K = particles::ModuleErrorKind;
     std::wstring what;
@@ -197,14 +197,14 @@ std::wstring ErrorText(const particles::ModuleError& e) {
     return e.line > 0 ? TrF(L"{} 行目: {}", e.line, what) : what;
 }
 
-// Opens a file in the program Windows has for it (else asks which one) - after this frame.
+// ファイルを Windows が持つプログラムで開く (なければどれで開くか聞く) - このフレームのあとで。
 void OpenOutside(const fs::path& file) {
     editor::PostToUi([file] {
         if (!platform::OpenFileOutside(file)) log::Error("ファイルを開けませんでした: {}", PathToUtf8(file.wstring()));
     });
 }
 
-// A new module's file: a short example to start from.
+// 新しいモジュールのファイル: 始めの短い例。
 constexpr char kNewModule[] = R"(module "新しいモジュール"
 // 欄になる値: param 型 名前 = 初めの値 [いちばん小さい, いちばん大きい]; // 欄の名前
 // 型: float float2 float3 float4 color int bool
@@ -255,7 +255,7 @@ public:
         }
         emitter_ = std::min<size_t>(emitter_, effect_->emitters.empty() ? 0 : effect_->emitters.size() - 1);
 
-        // The strip: the file's name, again from the start, a new emitter.
+        // 帯: ファイルの名前、始めからもう一度、新しいエミッター。
         const ui::Rect top{r.x + kPad, r.y + kPad, r.w - 2 * kPad, 28};
         ui::TextStyle ts;
         ts.color = theme::Text;
@@ -275,15 +275,15 @@ public:
             DrawList(c, {r.x + kPad, lowerY, listW, lowerH}, host);
             DrawValues(c, {r.x + 2 * kPad + listW, lowerY, r.w - 3 * kPad - listW, lowerH}, host);
         }
-        // What a menu chose last frame (its overlay ran after this view had drawn: nothing of the scene then).
+        // メニューが前のフレームで選んだもの (そのオーバーレイは、このビューが描いたあとに動いた: そのときシーンには何もない)。
         if (const int chosen = std::exchange(chosenEmitter_, -1); chosen >= 0) AddEmitters(host, particles::EffectPresets()[static_cast<size_t>(chosen)]);
         if (const int chosen = std::exchange(chosenModule_, -1); chosen >= 0) AddModule(host, chosen);
         Menus(c);
     }
 
-    // The menus: drawn over everything, without the tab's clip (2026-11-17 on screen: drawn in the tab,
-    // ＋ エミッター's was hidden under the preview and ＋ モジュール's cut off at the tab's bottom edge). They
-    // only remember what was chosen - Draw acts on it in the next frame.
+    // メニュー: タブのクリップなしで、すべての上に描く (2026-11-17 の画面で: タブの中に描くと、
+    // ＋ エミッター のはプレビューの下に隠れ、＋ モジュール のはタブの下端で切れた)。
+    // 選んだものを覚えるだけで、Draw が次のフレームでそれをする。
     void Menus(ui::Context& c) {
         if (!createMenu_.open && !emitterMenu_.open && !addMenu_.open) return;
         c.AddOverlay([this, &c] {
@@ -299,7 +299,7 @@ public:
         });
     }
 
-    // ＋ モジュール's rows: the modules the engine has (in their order), then a file's, then a new file.
+    // ＋ モジュール の行: エンジンが持つモジュール (その順)、次にファイルのもの、次に新しいファイル。
     static std::vector<w::MenuItem> AddMenuItems() {
         std::vector<w::MenuItem> items;
         for (const particles::BuiltinModule& b : particles::BuiltinModules()) {
@@ -327,7 +327,7 @@ private:
         c.P().Text(r, text, ts);
     }
 
-    // The first selected entity with パーティクル.
+    // パーティクル を持つ最初に選んだエンティティ。
     static std::optional<Target> FindTarget(const game_production::SceneViewHost& host) {
         const std::string type = reflect::TypeOf<ParticleSystem>().name;
         for (const int id : host.selection) {
@@ -339,7 +339,7 @@ private:
         return std::nullopt;
     }
 
-    // The effect as the editor has it now (read again only when its contents changed).
+    // エディターが今持っているエフェクト (中身が変わったときだけ読み直す)。
     void Load(game_production::SceneViewHost& host) {
         const auto bytes = host.host.AssetContent(ref_);
         if (!bytes) {
@@ -359,9 +359,9 @@ private:
         effect_ = std::make_shared<const ParticleEffect>(std::move(*e));
     }
 
-    // A new file Assets/Particles/<the entity's name>.rmparticle (the sample effect), put in the
-    // component's エフェクト (one undo entry; the file stays).
-    // The presets (炎・煙 ...) to choose from; the one chosen (-1: none yet).
+    // 新しいファイル Assets/Particles/<エンティティの名前>.rmparticle (見本のエフェクト) を、
+    // 部品の エフェクト に入れる (Undo の 1 件。ファイルは残る)。
+    // 選べるプリセット (炎・煙 ...) と、選んだもの (-1: まだなし)。
     static int PresetMenu(ui::Context& c, w::Popup& popup) {
         if (!popup.open) return -1;
         std::vector<w::MenuItem> items;
@@ -369,7 +369,7 @@ private:
         return w::MenuPopup(c, popup, items, 220);
     }
 
-    // A preset's effect, its emitters' names in the screen's language.
+    // プリセットのエフェクト。エミッターの名前は画面の言語で。
     static ParticleEffect Made(const particles::EffectPreset& preset) {
         ParticleEffect e = preset.make();
         for (ParticleEmitter& em : e.emitters) em.name = TrU8(em.name);
@@ -409,7 +409,7 @@ private:
         log::Info("パーティクルのエフェクトを作りました: {}", PathToUtf8(file.wstring()));
     }
 
-    // A preset's emitters at the end of the effect (a fire with smoke: two).
+    // プリセットのエミッターを、エフェクトの終わりに足す (煙つきの火: 2 つ)。
     void AddEmitters(game_production::SceneViewHost& host, const particles::EffectPreset& preset) {
         const ParticleEffect add = Made(preset);
         EditEffect(host.host, ref_, "エミッターを足す", 0, [&add](ParticleEffect& e) { e.emitters.insert(e.emitters.end(), add.emitters.begin(), add.emitters.end()); });
@@ -425,7 +425,7 @@ private:
         host.host.Inspect(EmitterInspectable(std::move(s)));
     }
 
-    // The effect playing over a floor, from the start again whenever its modules change.
+    // 床の上で動くエフェクト。モジュールが変わるたびに、始めからやり直す。
     void DrawPreview(ui::Context& c, const ui::Rect& r, game_production::SceneViewHost& host) {
         platform::Gfx& gfx = host.host.Graphics();
         if (gfx.Generation() != generation_) {
@@ -453,7 +453,7 @@ private:
         if (!preview_.Draw(c, r, gfx, "particles.preview", {{}, extras})) Note(c, r.Inset(12), Tr(L"3D の描画を始められませんでした。くわしくはコンソールを見てください。"));
     }
 
-    // The emitters and their modules (from the top: they run in this order).
+    // エミッターとそのモジュール (上から: この順に動く)。
     void DrawList(ui::Context& c, const ui::Rect& r, game_production::SceneViewHost& host) {
         float content = 0;
         for (const ParticleEmitter& e : effect_->emitters) content += (kRow + 2) * (2 + static_cast<float>(e.modules.size())) + 6;
@@ -480,7 +480,7 @@ private:
                     if (i < ef.emitters.size()) ef.emitters.erase(ef.emitters.begin() + static_cast<std::ptrdiff_t>(i));
                 });
                 module_ = -1;
-                break;  // (the list changed under us: drawn again next frame)
+                break;  // (リストが途中で変わった: 次のフレームで描き直す)
             }
             y += kRow + 2;
             for (size_t j = 0; j < e.modules.size(); ++j) {
@@ -527,7 +527,7 @@ private:
         w::EndScroll(c, "particles.list", r, content);
     }
 
-    // ＋ モジュール's row `chosen` (AddMenuItems) done to the emitter it was opened for.
+    // ＋ モジュール の行 `chosen` (AddMenuItems) を、それを開いたエミッターにする。
     void AddModule(game_production::SceneViewHost& host, int chosen) {
         if (effect_) {
             std::vector<std::string> ids;
@@ -551,7 +551,7 @@ private:
         }
     }
 
-    // A module's source (built in, or its file as the editor has it - read again now and then).
+    // モジュールの元: 組み込みか、エディターが持つそのファイル (ときどき読み直す)。
     std::shared_ptr<const ModuleSource> Source(game_production::SceneViewHost& host, const ParticleModule& m, std::string& file) {
         return modules_.Find(
             m, file, [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
@@ -573,7 +573,7 @@ private:
         host.host.Inspect(ModuleInspectable(std::move(s)));
     }
 
-    // A module of a file at the end of emitter `to` (none chosen yet: the インスペクター picks it).
+    // ファイルのモジュールを、エミッター `to` の終わりに足す (まだ選んでいない: インスペクターで選ぶ)。
     void AddFileModule(game_production::SceneViewHost& host, size_t to, const AssetRef& file) {
         const size_t at = effect_ && to < effect_->emitters.size() ? effect_->emitters[to].modules.size() : 0;
         EditEffect(host.host, ref_, "モジュールを足す", 0, [to, file](ParticleEffect& ef) {
@@ -587,7 +587,7 @@ private:
         InspectModule(host, to, at);
     }
 
-    // A new .rmfx in Assets/Particles/Modules (an example to start from), added to emitter `to` and opened.
+    // Assets/Particles/Modules に新しい .rmfx (始めの例) を作り、エミッター `to` に足して開く。
     void CreateModule(game_production::SceneViewHost& host, size_t to) {
         const fs::path dir = host.host.GetProject().AssetsDir() / L"Particles" / L"Modules";
         std::error_code ec;
@@ -622,7 +622,7 @@ private:
         if (emitter_ == i && module_ == static_cast<int>(j)) module_ += by;
     }
 
-    // The chosen module's values (its `param`s: their labels, types and ranges are the module's).
+    // 選んだモジュールの値 (その `param`: ラベル・型・範囲はモジュールが決める)。
     void DrawValues(ui::Context& c, const ui::Rect& r, game_production::SceneViewHost& host) {
         const ParticleModule* m = nullptr;
         if (emitter_ < effect_->emitters.size() && module_ >= 0 && static_cast<size_t>(module_) < effect_->emitters[emitter_].modules.size()) {
@@ -640,7 +640,7 @@ private:
         c.P().Text({r.x, r.y, r.w - 110, kRow}, Title(*m, src.get(), file), ts);
         ts.bold = false;
         float top = r.y + kRow + 4;
-        // A module of a file: open it (to write it), and what is wrong with it.
+        // ファイルのモジュール: 開く (書くため)、と、どこが悪いか。
         if (m->builtin.empty()) {
             const fs::path path = m->file.Empty() ? fs::path() : host.host.AssetFile(m->file);
             if (!path.empty() && w::Button(c, "particles.open", {r.Right() - 104, r.y, 104, kRow}, Tr(L"ファイルを開く"))) OpenOutside(path);
@@ -728,10 +728,10 @@ private:
     std::unique_ptr<particles::EffectPlayer> player_ = std::make_unique<particles::EffectPlayer>();
     uint64_t generation_ = 0;
     double drawnAt_ = -1;
-    std::map<std::string, std::string> texts_;  // the number fields' text while typed
+    std::map<std::string, std::string> texts_;  // 打っている間の数の欄の文字
     w::Popup addMenu_;
-    w::Popup createMenu_, emitterMenu_;  // the presets: a new effect / its emitters added
-    int chosenCreate_ = -1, chosenEmitter_ = -1, chosenModule_ = -1;  // what a menu chose (done at the next Draw)
+    w::Popup createMenu_, emitterMenu_;  // プリセット: 新しいエフェクト / それに足すエミッター
+    int chosenCreate_ = -1, chosenEmitter_ = -1, chosenModule_ = -1;  // メニューが選んだもの (次の Draw でする)
     size_t addTo_ = 0;
     std::set<std::string> told_;
     ModuleFiles modules_;

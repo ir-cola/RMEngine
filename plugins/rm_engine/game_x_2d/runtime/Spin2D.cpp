@@ -13,7 +13,7 @@ void RunSpin2D(game_production::SystemContext& ctx) {
         if (!t || !t->Known()) return;
         const auto& spin = *static_cast<const Spin2D*>(c.value.Get());
         float& r = static_cast<space2d::Transform2D*>(t->value.Get())->rotation;
-        r = std::fmod(r + spin.degreesPerSecond * ctx.dt, 360.f);  // kept between -360 and 360
+        r = std::fmod(r + spin.degreesPerSecond * ctx.dt, 360.f);  // -360 から 360 の間に保つ
     });
 }
 

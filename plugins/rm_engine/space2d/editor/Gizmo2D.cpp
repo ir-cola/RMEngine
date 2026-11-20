@@ -9,7 +9,7 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// A direction of the plane on the screen (Y turned over, the camera's turn), unit length.
+// 画面上の平面の向き (Y を反転し、カメラの回転をかけたもの)。長さ 1。
 Vec2 OnScreen(const Camera2D& cam, Vec2 axis) { return Normalize({Rotate(axis, -cam.rotation).x, -Rotate(axis, -cam.rotation).y}); }
 
 float DistanceToSegment(Vec2 p, Vec2 a, Vec2 b) {
@@ -21,7 +21,7 @@ float DistanceToSegment(Vec2 p, Vec2 a, Vec2 b) {
 
 float Step(float v, float step) { return step > 0 ? std::round(v / step) * step : v; }
 
-// The angle of the mouse about the gizmo's middle (degrees, counter-clockwise in the plane).
+// ギズモの中心から見たマウスの角度 (度、平面での反時計回り)。
 float AngleOf(Vec2 v) { return std::atan2(v.y, v.x) * 180.f / kPi; }
 
 }  // namespace
@@ -32,7 +32,7 @@ Frame MakeFrame(const Mat3& world, Tool tool, Space space) {
     if (space == Space::Local || tool == Tool::Scale) {
         const Vec2 x = Normalize({world.a, world.b});
         Vec2 y = Normalize({world.c, world.d});
-        if (Length(x) == 0 && Length(y) == 0) return f;  // scaled to nothing: the world's axes
+        if (Length(x) == 0 && Length(y) == 0) return f;  // 拡大率が 0: ワールドの軸
         if (Length(x) == 0) return f;
         if (Length(y) == 0) y = {-x.y, x.x};
         f.axes = {x, y};
@@ -62,7 +62,7 @@ Handle HitTest(Tool tool, const Frame& f, const Camera2D& cam, const ScreenRect&
         return std::abs(Length(mouse - s.origin) - kRingRadius) <= kHitSlop ? Handle::Ring : Handle::None;
     }
     if (std::abs(mouse.x - s.origin.x) <= kCenterHalf && std::abs(mouse.y - s.origin.y) <= kCenterHalf) return Handle::Free;
-    // The nearer arrow wins where they come close.
+    // 矢印が近づく所では、近いほうが選ばれる。
     const float dx = DistanceToSegment(mouse, s.origin, s.tips[0]);
     const float dy = DistanceToSegment(mouse, s.origin, s.tips[1]);
     if (std::min(dx, dy) > kHitSlop) return Handle::None;
@@ -99,7 +99,7 @@ Change Update(Drag& drag, const Camera2D& cam, const ScreenRect& r, Vec2 mouse, 
         }
         case Tool::Rotate: {
             const float raw = AngleOf(now - drag.frame.origin);
-            float delta = raw - drag.lastRaw;  // the shorter way round (the mouse does not jump half a turn)
+            float delta = raw - drag.lastRaw;  // 短いほうまわり (マウスが半回転ぶん飛ばないように)
             while (delta > 180.f) delta -= 360.f;
             while (delta < -180.f) delta += 360.f;
             drag.lastRaw = raw;
@@ -116,7 +116,7 @@ Change Update(Drag& drag, const Camera2D& cam, const ScreenRect& r, Vec2 mouse, 
                 const float f = std::abs(from) > 1e-6f ? to / from : 1.f;
                 (i == 0 ? ch.scale.x : ch.scale.y) = stepped(f);
             } else {
-                // Right and up grow, left and down shrink (never below 1/100).
+                // 右と上は大きく、左と下は小さくなる (1/100 より小さくはならない)。
                 const float moved = (mouse.x - drag.startScreen.x) - (mouse.y - drag.startScreen.y);
                 const float f = stepped(std::max(0.01f, 1.f + moved * kScalePerDip));
                 ch.scale = {f, f};

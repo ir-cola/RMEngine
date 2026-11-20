@@ -1,7 +1,7 @@
 #pragma once
-// The runtime part of 物理: the components (剛体, コライダー, コライダー (2D), キャラクター), the system that
-// steps the physics (fixed steps) and the scripts' part (RMPhysics.h). Listed in plugins/RuntimePlugins.cpp;
-// an exported game that uses it links it by RM_RUNTIME_ENTRY (Register.cpp).
+// 物理 のランタイム部分: 部品 (剛体、コライダー、コライダー (2D)、キャラクター)、物理を進める
+// システム (固定ステップ)、スクリプト向けの部分 (RMPhysics.h)。plugins/RuntimePlugins.cpp に並べる。
+// これを使う書き出したゲームは、RM_RUNTIME_ENTRY (Register.cpp) でリンクする。
 
 #include "core/RuntimeRegistry.h"
 

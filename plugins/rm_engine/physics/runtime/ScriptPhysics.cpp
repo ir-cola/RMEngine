@@ -1,5 +1,5 @@
-// The physics part of the scripts' API (sdk/RMPhysics.h / RMPhysicsAbi.h), on the scene that plays.
-// RmApi::ctx is game production's ScriptWorld.
+// スクリプト API の物理の部分 (sdk/RMPhysics.h / RMPhysicsAbi.h)。再生しているシーンに対して働く。
+// RmApi::ctx はゲーム制作の ScriptWorld。
 
 #include "rm_engine/physics/runtime/ScriptPhysics.h"
 

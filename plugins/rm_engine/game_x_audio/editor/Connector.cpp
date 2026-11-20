@@ -38,7 +38,7 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
     const std::string name = PathToUtf8(a.file.filename());
     out.path = "Baked/" + a.id + ".rmsound";
     out.files.push_back({out.path, PackSound(name, asset::ReadImportJson(a.file), *bytes)});
-    // WAV and OGG are read by the engine itself; anything else needs Media Foundation on the player's PC.
+    // WAV と OGG はエンジン自身が読む。それ以外は、プレイヤーの PC の Media Foundation が要る。
     const std::span<const uint8_t> head(reinterpret_cast<const uint8_t*>(bytes->data()), bytes->size());
     const bool own = audio::LooksLikeWav(head) || bytes->starts_with("OggS");
     out.note = own ? std::format("音を入れました: {} ({} KB)", a.rel, (bytes->size() + 1023) / 1024)
@@ -47,12 +47,12 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
     return BakeResult::Done;
 }
 
-// 追加 ▸ 音 ▸ 音源: an entity of the game's space with a sound source.
+// 追加 ▸ 音 ▸ 音源: ゲームの空間に、音源を持つエンティティを置く。
 void FillSource(game_production::Scene& scene, int entity) { game_production::AddComponentTo<AudioSource>(scene, entity); }
 
-// デバッグ ▸ 音: where the sound goes, and while playing what sounds.
+// デバッグ ▸ 音: 音がどこへ行くか、Play 中は何が鳴っているか。
 void SoundLines(const game_production::DebugContext& ctx, std::vector<game_production::DebugInfoLine>& out) {
-    // (the device's name is asked of Windows at most once a second)
+    // (デバイスの名前は Windows に 1 秒に 1 回までしか聞かない)
     static double askedAt = -1e9;
     static std::wstring output;
     const double now = platform::NowSeconds();

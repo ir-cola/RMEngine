@@ -25,11 +25,11 @@ namespace fs = std::filesystem;
 using editor::Tr;
 using editor::TrF;
 
-// One for the editor: what files are (Describer: on a thread of its own) and the preview's engine.
+// エディターに 1 つ: ファイルが何かを調べるもの (Describer: 専用のスレッド) と、プレビューのエンジン。
 struct Previewer {
     Describer describer;
     std::unique_ptr<AudioEngine> engine;
-    double lastUpdate = 0;  // when SoundPlaying last moved the engine on (its voices end by the time since)
+    double lastUpdate = 0;  // SoundPlaying が最後にエンジンを進めた時刻 (ボイスはそこからの経過時間で終わる)
 
     AudioEngine& Engine() {
         if (!engine) engine = std::make_unique<AudioEngine>();
@@ -42,7 +42,7 @@ struct Previewer {
 };
 
 Previewer& ThePreviewer() {
-    static Previewer p;  // (made on first use: an editor that never previews a sound opens no device)
+    static Previewer p;  // (初めて使うときに作る: 音を一度もプレビューしないエディターはデバイスを開かない)
     return p;
 }
 
@@ -62,13 +62,13 @@ void PlaySound(const fs::path& file, const json::Value& importJson) {
     reflect::Load(imp, importJson);
     SoundSource s;
     s.bytes = std::make_shared<const std::string>(std::move(*bytes));
-    // The engine keeps what it decoded by this key: the file's contents are in it, so a file written
-    // again (a song exported once more) is decoded again - not the old sound until a restart.
+    // エンジンは、デコードしたものをこのキーで覚えている。キーにはファイルの中身が入っているので、
+    // 書き直したファイル (もう一度書き出した曲) はデコードし直す - 再起動まで古い音のまま、にはならない。
     s.key = std::format("{}|{}|{:x}", PathToUtf8(file), s.bytes->size(), std::hash<std::string_view>{}(*s.bytes));
     s.name = PathToUtf8(file.filename());
     ApplyImport(s, imp);
     PlayParams params;
-    params.loop = imp.loopEnd > 0 || imp.loopStart > 0;  // (a preview loops only when its loop is set)
+    params.loop = imp.loopEnd > 0 || imp.loopStart > 0;  // (プレビューがループするのは、ループが設定されているときだけ)
     engine.Play(s, params);
     log::Info("音の試し: {}{}", s.name, params.loop ? " (ループ: 「止める」で止まります)" : "");
     p.TellMessages();
@@ -83,9 +83,9 @@ bool SoundPlaying() {
     Previewer& p = ThePreviewer();
     p.TellMessages();
     if (!p.engine) return false;
-    // (Voices that finished are let go in Update - the game calls it every frame; the preview here, as
-    // the panel asks, with the time since it last did: without a sound device a voice ends only as its
-    // time goes by - 2026-11-19, Update(0) never ended one.)
+    // (終わったボイスは Update で手放す - ゲームは毎フレーム呼ぶ。ここのプレビューは、パネルが
+    // 尋ねるとおり、前回からの経過時間を渡して呼ぶ。音のデバイスが無いと、ボイスは時間が経つことでしか
+    // 終わらない - 2026-11-19、Update(0) ではどれも終わらなかった。)
     const double now = platform::NowSeconds();
     const double dt = p.lastUpdate > 0 ? std::clamp(now - p.lastUpdate, 0.0, 0.25) : 0.0;
     p.lastUpdate = now;

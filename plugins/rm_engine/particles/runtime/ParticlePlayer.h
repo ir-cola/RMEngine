@@ -1,15 +1,15 @@
 #pragma once
-// パーティクル - one effect playing on the GPU (Direct3D 11, feature level 11_0: compute shaders).
+// パーティクル - GPU で再生している 1 つのエフェクト (Direct3D 11、フィーチャーレベル 11_0: コンピュートシェーダー)。
 //
-//   EmitterClock   how many particles an emitter lets out this frame (rate, burst, duration, loop). Pure:
-//                  tested in tests/TestParticles.cpp
-//   EffectPlayer   an effect's emitters on the GPU: each a buffer of particles (a ring: a new particle
-//                  takes the next slot - the oldest goes when it is full), a compute shader that starts
-//                  the new ones and one that moves all of them, and a draw of squares facing the camera
-//                  (ParticleShader.h). The shaders are made once per text and device and shared by every
-//                  player (a hundred torches of one effect compile once).
+//   EmitterClock   エミッターがこのフレームに出す粒の数 (レート、バースト、長さ、ループ)。純粋:
+//                  tests/TestParticles.cpp でテストする
+//   EffectPlayer   エフェクトのエミッターを GPU 上で動かす: それぞれ粒のバッファー (リング: 新しい粒は
+//                  次の枠に入り、いっぱいなら一番古いものが消える)、新しい粒を始めるコンピュート
+//                  シェーダー、全部を動かすコンピュートシェーダー、カメラに向いた四角の描画
+//                  (ParticleShader.h)。シェーダーはテキストとデバイスごとに 1 度だけ作り、すべての
+//                  プレイヤーで共有する (同じエフェクトの松明が百本あっても、コンパイルは 1 回)。
 //
-// The player is made again when the GPU's devices are (platform::Gfx::Generation: its owner's job).
+// プレイヤーは GPU のデバイスが作り直された時に作り直す (platform::Gfx::Generation: 持ち主の仕事)。
 
 #include "rm_engine/particles/runtime/ModuleSource.h"
 #include "rm_engine/particles/runtime/ParticleEffect.h"
@@ -28,34 +28,34 @@
 namespace rm::particles {
 
 struct EmitterClock {
-    float age = 0;          // seconds into this round
-    float owed = 0;         // part of a particle still to let out (rate x time)
+    float age = 0;          // このラウンドに入ってからの秒数
+    float owed = 0;         // まだ出していない粒の端数 (レート x 時間)
     bool burstDone = false;
-    bool finished = false;  // not looping and its duration is over
+    bool finished = false;  // ループしておらず、長さが終わった
 };
-// The particles to let out in the next `dt` seconds (at most the emitter's capacity).
+// 次の `dt` 秒に出す粒 (多くてもエミッターの容量まで)。
 uint32_t AdvanceClock(EmitterClock& c, const ParticleEmitter& e, float dt);
-// The particles an emitter lets out in the next `dt` seconds when a script may have stopped it (emitting
-// false: none of its own - the clock stays) and asked for `extra` at once (rm::Particles::Emit): at most
-// its capacity.
+// スクリプトに止められているかもしれないエミッターが、次の `dt` 秒に出す粒 (emitting が false:
+// 自分の分は出さない - 時計はそのまま) と、一度に頼まれた `extra` 個 (rm::Particles::Emit):
+// 多くても容量まで。
 uint32_t EmitterBirths(EmitterClock& c, const ParticleEmitter& e, float dt, bool emitting, uint32_t extra);
 
-// Finds a module's source: a built-in one, or the .rmfx a module names (null: none; `file` its name for
-// the compiler's messages). A file read again (saved meanwhile) is a new source: the player that sees it
-// makes its shaders again.
+// モジュールの元を探す: 組み込みのもの、またはモジュールが名前で挙げる .rmfx (null: 無し;
+// `file` はコンパイラーのメッセージ用の名前)。読み直した (その間に保存された) ファイルは新しい元で、
+// それを見たプレイヤーがシェーダーを作り直す。
 using ModuleLookup = std::function<std::shared_ptr<const ModuleSource>(const ParticleModule& m, std::string& file)>;
-// Built-in modules only (a module of a file is left out).
+// 組み込みモジュールだけ (ファイルのモジュールは除く)。
 std::shared_ptr<const ModuleSource> BuiltinLookup(const ParticleModule& m, std::string& file);
 
-// What particles collide with this frame (CollideShapes / CollideDepth); null: nothing.
+// このフレームに粒が当たる相手 (CollideShapes / CollideDepth); null: 無し。
 struct CollisionWorld {
-    std::span<const CollisionShape> shapes;  // the colliders' shapes in the world
-    // The picture's depth from its last frame (the renderer's ExtraDrawContext::depth) and the camera it
-    // was drawn with; null: no depth to collide with.
+    std::span<const CollisionShape> shapes;  // ワールドにあるコライダーの形
+    // 絵の直近のフレームの深度 (レンダラーの ExtraDrawContext::depth) と、それを描いたカメラ;
+    // null: 当たる深度が無い。
     ID3D11ShaderResourceView* depth = nullptr;
     uint32_t samples = 1;
     float viewProj[16]{};
-    float inverse[16]{};  // clip -> world
+    float inverse[16]{};  // クリップ -> ワールド
     float eye[3]{};
     uint32_t width = 0, height = 0;
 };
@@ -67,32 +67,32 @@ public:
     EffectPlayer(const EffectPlayer&) = delete;
     EffectPlayer& operator=(const EffectPlayer&) = delete;
 
-    // The effect to play (kept as given until Set again: the owner keeps it alive). Asked every frame: the
-    // modules are looked up again, and made again only when the effect or a module's source changed.
-    // Emitters whose shaders stay the same keep their particles; values only change the constant buffers.
+    // 再生するエフェクト (次に Set するまで、渡されたまま持つ: 生かしておくのは持ち主)。毎フレーム
+    // 聞かれる: モジュールは毎回引き直し、エフェクトかモジュールの元が変わった時だけ作り直す。
+    // シェーダーが変わらないエミッターは粒を持ち続け、値が変わるだけなら定数バッファーだけが変わる。
     void Set(std::shared_ptr<const ParticleEffect> effect, const ModuleLookup& lookup);
     const std::shared_ptr<const ParticleEffect>& Effect() const { return effect_; }
 
-    // From the start again (no particles, the clocks at 0).
+    // また始めから (粒は無し、時計は 0)。
     void Restart();
-    // Letting out new particles (a script's Stop: false - what is out lives on and dies away), and `count`
-    // more of each emitter at the next Advance (a script's Emit).
+    // 新しい粒を出す (スクリプトの Stop: false - 出ているものは生き続けて消えていく) と、次の Advance で
+    // 各エミッターから `count` 個多く出す (スクリプトの Emit)。
     void SetEmitting(bool on);
     bool Emitting() const { return emitting_; }
     void Emit(uint32_t count) { pending_ += count; }
-    // Moves it on by dt (lets out new particles where `world` puts the emitter - a column-major 4x4).
+    // dt だけ進める (`world` が置いたエミッターの位置から新しい粒を出す - 列優先の 4x4)。
     void Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const float world[16], float dt, const CollisionWorld* collide = nullptr);
-    // Draws its particles: the caller has bound the picture's render target and depth buffer. `images`:
-    // the picture an emitter's 絵 names on the GPU (null: not there - the dot's shape is drawn instead).
+    // 粒を描く: 呼び出し側が絵のレンダーターゲットと深度バッファーを結びつけてある。`images`:
+    // エミッターの 絵 が指す GPU 上の絵 (null: 無い - 代わりに点の形を描く)。
     using ImageLookup = std::function<ID3D11ShaderResourceView*(const AssetRef&)>;
     void Draw(ID3D11DeviceContext* ctx, const ViewConstants& view, const ImageLookup& images = {});
 
-    // Why an emitter cannot run (its shaders did not compile: the compiler's words); empty: it runs.
+    // エミッターが動かせない理由 (シェーダーがコンパイルできなかった: コンパイラーの言葉); 空: 動く。
     std::string Error(size_t emitter) const;
-    // Every emitter has finished (not looping, and its particles have had time to die).
+    // すべてのエミッターが終わった (ループしておらず、粒が消えるだけの時間もたった)。
     bool Finished() const;
-    // Its emitters that run, the particles they hold at most, and how many are alive (as last read back
-    // from the GPU while CountingAlive; aliveKnown false: not read yet).
+    // 動いているエミッター、それらが持てる粒の最大数、生きている数 (CountingAlive の間に GPU から
+    // 最後に読み戻した値; aliveKnown が false: まだ読めていない)。
     struct Census {
         uint32_t emitters = 0;
         uint64_t capacity = 0;
@@ -100,8 +100,8 @@ public:
         bool aliveKnown = true;
     };
     Census Count() const;
-    // What went wrong since the last call (a module that cannot be read, a shader that does not compile:
-    // Japanese, for the console) - each told once.
+    // 前に呼んでからうまくいかなかったこと (読めないモジュール、コンパイルできないシェーダー:
+    // コンソール用の日本語) - それぞれ 1 度だけ知らせる。
     std::vector<std::string> TakeProblems();
 
 private:
@@ -114,19 +114,19 @@ private:
     float time_ = 0;
     bool emitting_ = true;
     uint32_t pending_ = 0;
-    // What the emitters collide with (shared by them): the shapes and the camera of the depth.
+    // エミッターが当たる相手 (みんなで共有する): 形と、深度のカメラ。
     Microsoft::WRL::ComPtr<ID3D11Buffer> shapes_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shapesView_;
     size_t shapesCapacity_ = 0;
     Microsoft::WRL::ComPtr<ID3D11Buffer> collideCb_;
 };
 
-// Counting the particles alive (for the debug panel): each player counts them on the GPU for the next
-// `seconds` and reads the number back a few frames later. Not asked: nothing is counted (no cost).
+// 生きている粒を数える (デバッグパネル用): 各プレイヤーが次の `seconds` 秒の間 GPU で数え、数フレーム
+// 後に数を読み戻す。頼まれなければ何も数えない (負担なし)。
 void CountAliveFor(double seconds);
 bool CountingAlive();
 
-// Direct3D can run the particles (feature level 11_0 or later).
+// Direct3D がパーティクルを動かせる (フィーチャーレベル 11_0 以上)。
 bool CanRunParticles(ID3D11Device* device);
 
 }  // namespace rm::particles

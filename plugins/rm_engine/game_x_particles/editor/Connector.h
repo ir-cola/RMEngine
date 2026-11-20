@@ -1,6 +1,6 @@
 #pragma once
-// The editor part of ゲーム制作 × パーティクル (listed in plugins/BuiltinPlugins.cpp): the パーティクル tab
-// (ParticleTab.h) next to the scene and the game.
+// ゲーム制作 × パーティクル のエディターの部分 (plugins/BuiltinPlugins.cpp に並べる): シーンと
+// ゲームの隣の パーティクル タブ (ParticleTab.h)。
 
 #include "editor/plugin/Software.h"
 

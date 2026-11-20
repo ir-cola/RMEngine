@@ -11,7 +11,7 @@ namespace rm::game_ui {
 void RegisterRuntime(RuntimeRegistry& registry) {
     using game_production::ComponentInfo;
     using game_production::kComponentPoint;
-    // The UI's parts (no space: a UI thing has no Transform - it is laid out on the screen).
+    // UI の部品 (空間は無い: UI のものには Transform が無い - 画面の上に配置される)。
     static const ComponentInfo kCanvas{.type = &reflect::TypeOf<UiCanvas>, .folder = "UI"};
     static const ComponentInfo kRect{.type = &reflect::TypeOf<UiRect>, .folder = "UI"};
     static const ComponentInfo kText{.type = &reflect::TypeOf<UiText>, .folder = "UI"};
@@ -25,12 +25,12 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     for (const ComponentInfo* c : {&kCanvas, &kRect, &kText, &kImage, &kButton, &kBar, &kMotion, &kPath, &kStyle, &kVideo}) {
         registry.Contribute(kComponentPoint, *c);
     }
-    // While the game plays: the mouse, the keys, the buttons' OnClick.
+    // ゲームが動いているあいだ: マウス、キー、ボタンの OnClick。
     static const game_production::PlayServiceInfo kService{kUiServiceName, &CreateUiService};
     registry.Contribute(game_production::kPlayServicePoint, kService);
-    // Scripts: sdk/RMUI.h.
+    // スクリプト: sdk/RMUI.h。
     registry.Contribute(game_production::kScriptApiPoint, ScriptUiPart());
-    registry.Contribute(game_production::kScriptApiPoint, ScriptUiPartVersion1());  // (scripts built before the tweens)
+    registry.Contribute(game_production::kScriptApiPoint, ScriptUiPartVersion1());  // (トゥイーンより前に作ったスクリプト)
 }
 
 }  // namespace rm::game_ui

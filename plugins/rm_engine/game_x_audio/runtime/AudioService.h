@@ -1,20 +1,19 @@
 #pragma once
-// ゲーム制作 × 音 - the sounds of one Play (of the game): game production's PlayService
-// (game_production/runtime/PlayServices.h). Made when the game starts to play, gone at ■ - with it its
-// AudioEngine (rm_engine/audio), so nothing is heard after.
+// ゲーム制作 × 音 - 1 回の Play (ゲームの) の音: game production の PlayService
+// (game_production/runtime/PlayServices.h)。ゲームが動き始めるときに作り、■ で消える。
+// その AudioEngine (rm_engine/audio) も一緒に消えるので、そのあとは何も聞こえない。
 //
-// Each frame (after the scripts and the systems):
-//   the volumes        the game settings' 音量 (全体・BGM・効果音), or what a script set
-//   who hears          the game's camera (where it is and looks: the space's PlaceInfo)
-//   the 音源 components a new one (Play, the scene switched to, switched on, spawned) starts when
-//                      始めから鳴らす; one that went (deleted, switched off) stops (with its フェード);
-//                      the others follow their 音量 / ピッチ and where their entity is
-// The music (BGM): one at a time. Starting one fades out the one before (クロスフェード); the same
-// sound already playing as the music goes on (a scene switched to with the same BGM does not start it
-// again).
+// 毎フレーム (スクリプトとシステムのあとで):
+//   音量              ゲーム設定の 音量 (全体・BGM・効果音)、またはスクリプトが決めた値
+//   聞く人            ゲームのカメラ (どこにいて何を見ているか: 空間の PlaceInfo)
+//   音源 部品         新しいもの (Play、切り替えたシーン、オンにした、生成した) は
+//                     始めから鳴らす なら鳴り始める。なくなったもの (削除、オフ) は止まる
+//                     (フェードつき)。他は 音量 / ピッチ と、エンティティの場所に追従する
+// 音楽 (BGM): 同時に 1 つ。1 つ始めると前のものがフェードアウトする (クロスフェード)。同じ音が
+// もう音楽として鳴っていれば、そのまま続く (同じ BGM のシーンに切り替えても、また始めない)。
 //
-// Sounds come from the host (PlayHost::asset): the editor's files with their .meta, the game's
-// .rmsound (SoundPack.h). Each sound read once per Play.
+// 音はホスト (PlayHost::asset) から来る: エディターは .meta つきのファイル、ゲームは
+// .rmsound (SoundPack.h)。どの音も 1 回の Play で一度だけ読む。
 
 #include "rm_engine/audio/runtime/AudioEngine.h"
 #include "rm_engine/game_production/runtime/PlayServices.h"
@@ -41,15 +40,15 @@ public:
 
     void Frame(const game_production::PlayFrame& f) override;
     void SetPaused(bool paused) override;
-    // The scene switched: every 音源 of the scene before stops (with its フェード); its music goes on
-    // only when the new scene starts the same sound as its music (the next Frame decides).
+    // シーンが切り替わった: 前のシーンのすべての 音源 が止まる (フェードつき)。その音楽は、新しい
+    // シーンが同じ音を音楽として始めるときだけ続く (次の Frame が決める)。
     void SceneSwitched() override;
 
-    // The other services' sounds (game UI's buttons): once, on the effects' bus.
+    // 他のサービスの音 (ゲームの UI のボタン): 1 回だけ、効果音のバスで。
     void PlaySound(const AssetRef& sound, float volume) override { PlayOnce(sound, volume, 1, nullptr); }
     float MusicVolume() const override { return Volume(BusVolume::Master) * Volume(BusVolume::Music); }
 
-    // --- What scripts ask (RMAudio.h) ---
+    // --- スクリプトが頼むこと (RMAudio.h) ---
     VoiceId PlayOnce(const AssetRef& sound, float volume, float pitch, const Vec3* position);
     void Stop(VoiceId voice, float fade);
     bool Playing(VoiceId voice) const;
@@ -57,7 +56,7 @@ public:
     void StopMusic(float fade);
     void SetVolume(BusVolume bus, float volume);
     float Volume(BusVolume bus) const;
-    // An entity's (first) 音源; false when it has none.
+    // エンティティの (最初の) 音源。ないときは false。
     bool SourcePlay(game_production::Scene& scene, int entity);
     bool SourceStop(game_production::Scene& scene, int entity);
     bool SourcePause(game_production::Scene& scene, int entity, bool paused);
@@ -65,8 +64,8 @@ public:
 
     audio::AudioEngine& Engine() { return *engine_; }
 
-    // For the editor's デバッグ panel: the device, the voices sounding, the 音源 known, the music's file
-    // (empty: none) and the volumes now.
+    // エディターの デバッグ パネル用: デバイス、鳴っている声、知っている 音源、音楽のファイル
+    // (空: なし)、今の音量。
     struct Facts {
         bool device = false;
         size_t voices = 0;
@@ -82,9 +81,9 @@ private:
         int entity = 0;
         VoiceId voice = 0;
         float fade = 0;
-        bool paused = false;  // by a script
+        bool paused = false;  // スクリプトによる
     };
-    using SourceKey = std::pair<const void*, int>;  // the component's object and its entity
+    using SourceKey = std::pair<const void*, int>;  // 部品のオブジェクトとそのエンティティ
     struct KeyHash {
         size_t operator()(const SourceKey& k) const { return std::hash<const void*>()(k.first) ^ (static_cast<size_t>(k.second) * 0x9E3779B97F4A7C15ull); }
     };
@@ -98,11 +97,11 @@ private:
 
     const game_production::PlayHost& host_;
     std::unique_ptr<audio::AudioEngine> engine_;
-    std::unordered_map<std::string, std::optional<audio::SoundSource>> sounds_;  // by asset id (nullopt: cannot be read)
+    std::unordered_map<std::string, std::optional<audio::SoundSource>> sounds_;  // アセット id ごと (nullopt: 読めない)
     std::unordered_map<SourceKey, Source, KeyHash> sources_;
-    float scriptVolume_[3] = {-1, -1, -1};  // set by a script (< 0: the game settings')
-    // The music: its voice, its sound, who started it (a 音源's object; null: a script), and whether
-    // its scene went (SceneSwitched: stopped at the next Frame unless taken over).
+    float scriptVolume_[3] = {-1, -1, -1};  // スクリプトが決めた値 (< 0: ゲーム設定のもの)
+    // 音楽: その声、その音、始めたもの (音源のオブジェクト。null: スクリプト)、そのシーンが
+    // なくなったか (SceneSwitched: 引き継がれなければ次の Frame で止める)。
     VoiceId music_ = 0;
     std::string musicSound_;
     const void* musicOwner_ = nullptr;
@@ -110,7 +109,7 @@ private:
     float musicFade_ = 0;
 };
 
-// The scripts' part (RMAudioAbi.h): offered at game production's kScriptApiPoint.
+// スクリプトの部分 (RMAudioAbi.h): game production の kScriptApiPoint に出す。
 const game_production::ScriptApiPart& ScriptAudioPart();
 
 }  // namespace rm::game_x_audio

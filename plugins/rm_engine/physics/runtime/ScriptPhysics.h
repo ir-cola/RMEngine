@@ -1,5 +1,5 @@
 #pragma once
-// The physics part of the scripts' API (sdk/RMPhysics.h): forces, speeds, rays, characters.
+// スクリプト API の物理の部分 (sdk/RMPhysics.h): 力、速さ、レイ、キャラクター。
 
 #include "rm_engine/game_production/runtime/Scripts.h"
 

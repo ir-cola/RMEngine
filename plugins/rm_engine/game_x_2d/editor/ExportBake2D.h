@@ -1,5 +1,5 @@
 #pragma once
-// The exported game's baking of sprites' images (ExportBake2D.cpp).
+// 書き出すゲームでのスプライトの画像の焼き込み (ExportBake2D.cpp)。
 
 #include "editor/plugin/Software.h"
 

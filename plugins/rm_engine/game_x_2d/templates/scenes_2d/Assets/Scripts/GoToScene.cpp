@@ -10,7 +10,7 @@ void GoToScene::BeginPlay(rm::Entity self) {
 void GoToScene::Tick(rm::Entity self, float dt) {
     (void)self;
     time += dt;
-    // The switch happens at the end of this frame (this scene's EndPlay, then the next one's BeginPlay).
+    // 切り替えはこのフレームの終わりに起きる (このシーンの EndPlay、次に次のシーンの BeginPlay)。
     if (rm::Input::Pressed(rm::Key::Enter) || (after > 0 && time >= after)) rm::Game::LoadScene(next);
 }
 

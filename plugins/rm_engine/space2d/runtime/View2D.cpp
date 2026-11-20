@@ -23,7 +23,7 @@ Vec2 ToWorld(const Camera2D& cam, const ScreenRect& r, Vec2 screen) {
 }
 
 Mat3 ScreenMatrix(const Camera2D& cam, const ScreenRect& r) {
-    // The middle of the screen, Y turned over and zoomed, the camera's turn taken back, the centre to 0.
+    // 画面の真ん中、Y を反転して拡大し、カメラの回転を戻し、中心を 0 にしたもの。
     const Mat3 screen{cam.zoom, 0, 0, -cam.zoom, r.x + r.w * 0.5f, r.y + r.h * 0.5f};
     return screen * Rotation(-cam.rotation) * Translation(Vec2{0, 0} - cam.center);
 }
@@ -37,7 +37,7 @@ void ZoomAt(Camera2D& cam, const ScreenRect& r, Vec2 screen, float notches) {
     const Vec2 before = ToWorld(cam, r, screen);
     cam.zoom = std::clamp(cam.zoom * std::pow(kZoomPerNotch, notches), kMinZoom, kMaxZoom);
     const Vec2 after = ToWorld(cam, r, screen);
-    cam.center = cam.center + (before - after);  // the same point under the mouse again
+    cam.center = cam.center + (before - after);  // 同じ点がまたマウスの下に来る
 }
 
 void Frame(Camera2D& cam, const ScreenRect& r, Vec2 center, Vec2 halfSize) {
@@ -49,13 +49,13 @@ void Frame(Camera2D& cam, const ScreenRect& r, Vec2 center, Vec2 halfSize) {
 
 GridStep GridFor(float zoom, float minDips) {
     GridStep g;
-    const float want = minDips / std::max(zoom, 1e-6f);  // the smallest step that is far enough apart
+    const float want = minDips / std::max(zoom, 1e-6f);  // 十分離れる一番小さい刻み
     float base = std::pow(10.f, std::floor(std::log10(want)));
     for (int i = 0; i < 4; ++i, base *= 10.f) {
         for (const float k : {1.f, 2.f, 5.f}) {
             if (base * k >= want * 0.999f) {
                 g.step = base * k;
-                g.major = k == 2.f ? 5 : 10;  // 2, 4, 6, 8, (10): the 10s stand out
+                g.major = k == 2.f ? 5 : 10;  // 2, 4, 6, 8, (10): 10 の倍数が目立つ
                 return g;
             }
         }

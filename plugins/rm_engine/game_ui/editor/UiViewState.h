@@ -1,6 +1,6 @@
 #pragma once
-// How the user looks at the UI view: the guides on or off. Kept next to the panel layout
-// (UserSettings/Layout.json: the game's "viewPanels" -> "ui"), not in the project.
+// UI ビューの見方: 目安の入り切り。パネルの配置の隣に保存する
+// (UserSettings/Layout.json: ゲームの "viewPanels" -> "ui")。プロジェクトには入れない。
 
 #include "base/Math.h"
 #include "core/reflect/Reflect.h"
@@ -9,14 +9,14 @@ namespace rm::game_ui {
 
 RM_STRUCT()
 struct UiViewState {
-    RM_PROPERTY() bool safeArea = true;  // the safe area's guide
-    RM_PROPERTY() bool anchors = true;   // the selected thing's anchors
-    RM_PROPERTY(Min=0.1, Max=10) float zoom = 1;  // 1: the game's screen fits the panel
-    RM_PROPERTY() Vec2 pan{0, 0};                  // DIPs the screen is moved by from the middle
-    RM_PROPERTY() bool snapGuides = true;          // to other things' sides and middles (補助線)
-    RM_PROPERTY() bool snapGrid = false;           // to the grid (格子)
-    RM_PROPERTY(Min=1, Max=1000) float gridStep = 10;  // the grid's step (the canvas's units)
-    RM_PROPERTY() bool otherCanvases = true;       // a canvas being made: the other (switched on) ones shown too
+    RM_PROPERTY() bool safeArea = true;  // セーフエリアの目安
+    RM_PROPERTY() bool anchors = true;   // 選んだもののアンカー
+    RM_PROPERTY(Min=0.1, Max=10) float zoom = 1;  // 1: ゲームの画面がパネルに収まる
+    RM_PROPERTY() Vec2 pan{0, 0};                  // 画面を真ん中から動かした DIP
+    RM_PROPERTY() bool snapGuides = true;          // ほかのものの辺と真ん中へ (補助線)
+    RM_PROPERTY() bool snapGrid = false;           // 格子へ (格子)
+    RM_PROPERTY(Min=1, Max=1000) float gridStep = 10;  // 格子の間隔 (キャンバスの単位)
+    RM_PROPERTY() bool otherCanvases = true;       // 作っているキャンバス: ほかの (切っていない) キャンバスも見せる
 };
 
 }  // namespace rm::game_ui

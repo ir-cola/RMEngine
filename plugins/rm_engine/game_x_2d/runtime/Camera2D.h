@@ -1,14 +1,15 @@
 #pragma once
-// ゲーム制作 × 2D - the camera component of a 2D game: what the game sees, from where its Transform 2D
-// puts it (its middle at the entity's place). The game sees through the camera chosen in the game
-// settings (最初のカメラ), in the game screen's shape. Its background is the game settings' 背景の色
-// unless the camera has its own. Pure - tested in tests/TestSpace2d.cpp.
+// ゲーム制作 × 2D - 2D のゲームのカメラ部品: ゲームが何を見るか、Transform 2D が決める場所
+// (エンティティの場所が真ん中) から。ゲームはゲーム設定の 最初のカメラ で選んだカメラ越しに、
+// ゲーム画面の形で見る。背景はカメラ自身の色がなければゲーム設定の 背景の色。
+// 純粋 (I/O も描画もしない)。tests/TestSpace2d.cpp でテストする。
 //
-// It turns with its entity (the world's rotation, parents included); the entity's scale does not change
-// what it sees (見える大きさ does).
+// エンティティと一緒に回る (親も含めたワールドの回転)。エンティティの拡大縮小は
+// 見える範囲を変えない (変えるのは 見える大きさ)。
 //
-// In a 3D game, a camera with 3D の上に重ねる lays the 2D picture over the 3D one in the game view (no
-// background): the 最初のカメラ when it is a カメラ (2D), else the first active one in the 階層.
+// 3D のゲームでは、3D の上に重ねる を付けたカメラが、ゲームビューで 3D の絵の上に 2D の絵を
+// 重ねる (背景なし)。使うのは 最初のカメラ が カメラ (2D) ならそれ、そうでなければ階層で
+// 最初の有効なもの。
 
 #include "core/reflect/Reflect.h"
 #include "rm_engine/space2d/runtime/View2D.h"
@@ -25,11 +26,11 @@ struct Camera2D {
     bool overlay = true;
 };
 
-// How the picture of `viewHeight` DIPs is looked at through a camera placed by `world` (its place and turn).
+// `world` (場所と回転) に置いたカメラ越しに、`viewHeight` DIP の絵をどう見るか。
 space2d::Camera2D ViewOf(const Camera2D& camera, const space2d::Mat3& world, float viewHeight);
-// What the camera sees (in the plane) for a picture of `aspect` (width / height): its half size.
+// `aspect` (幅 / 高さ) の絵に対してカメラが (平面で) 見る範囲: その半分の大きさ。
 Vec2 HalfExtent(const Camera2D& camera, float aspect);
-// What the picture is filled with before anything is drawn.
+// 何かを描く前に絵を塗りつぶす色。
 Color BackgroundOf(const Camera2D& camera, Color gameBackground);
 
 }  // namespace rm::game_x_2d

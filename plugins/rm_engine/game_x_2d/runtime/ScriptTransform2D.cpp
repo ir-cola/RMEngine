@@ -1,5 +1,5 @@
-// The 2D part of the scripts' API (RM2D.h / RM2DAbi.h): Transform 2D, on the scene that plays.
-// RmApi::ctx is game production's ScriptWorld.
+// スクリプト API の 2D の部分 (RM2D.h / RM2DAbi.h): 動いているシーンの Transform 2D。
+// RmApi::ctx は game production の ScriptWorld。
 
 #include "rm_engine/game_x_2d/runtime/ScriptTransform2D.h"
 
@@ -54,8 +54,8 @@ space2d::Transform2D* TransformIn(game_production::Scene& scene, int id) {
     return c && c->Known() ? static_cast<space2d::Transform2D*>(c->value.Get()) : nullptr;
 }
 
-// The world matrix and order of the Transforms 2D from the top down to `id`'s parent (self = false) or
-// `id` (true); parents without one are skipped.
+// 一番上から `id` の親 (self = false) または `id` 自身 (true) までの Transform 2D の
+// ワールド行列と順番。Transform 2D のない親は飛ばす。
 space2d::Mat3 ChainMatrix(game_production::Scene& scene, int id, bool self, int& order) {
     std::vector<const space2d::Transform2D*> chain;
     size_t steps = 0;
@@ -86,7 +86,7 @@ int WorldGet(void* ctx, uint64_t id, int which, float out[2]) {
     return 1;
 }
 
-// Puts it at `want` (its world order kept) under its parents.
+// `want` に置く (ワールドの順番は保つ)。親の下で。
 void Place(void* ctx, uint64_t id, space2d::Transform2D& t, space2d::WorldPlacement2D want) {
     int parentOrder = 0;
     const space2d::Mat3 parent = ChainMatrix(*SceneOf(ctx), static_cast<int>(id), false, parentOrder);
@@ -114,7 +114,7 @@ int LookAt(void* ctx, uint64_t id, const float target[2]) {
     const float dx = target[0] - want.position.x, dy = target[1] - want.position.y;
     if (dx == 0 && dy == 0) return 1;
     const float angle = std::atan2(dy, dx) * 57.29577951308232f;
-    want.rotation = angle + 360.f * std::round((want.rotation - angle) / 360.f);  // (near the one now)
+    want.rotation = angle + 360.f * std::round((want.rotation - angle) / 360.f);  // (今の値に近いほう)
     Place(ctx, id, *t, want);
     return 1;
 }
@@ -154,7 +154,7 @@ bool Pose2D(const game_production::Scene& scene, int entity, game_production::Po
     for (auto it = chain.rbegin(); it != chain.rend(); ++it) m = space2d::WorldMatrix(m, **it);
     const Vec2 p = space2d::TransformPoint(m, {0, 0});
     out.position = {p.x, p.y, 0};
-    out.forward = {0, 0, -1};  // into the screen: left is left, right is right
+    out.forward = {0, 0, -1};  // 画面の奥向き: 左は左、右は右
     out.up = {0, 1, 0};
     return true;
 }

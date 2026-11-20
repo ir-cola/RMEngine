@@ -10,7 +10,7 @@ void UiScreenDrawer::Draw(const game_production::ScreenDrawFrame& f) {
     const UiTree tree = BuildUi(f.scene, ScreenOf(f.settings, f.screen));
     if (tree.nodes.empty()) return;
     const Affine toDc = Translate({f.x, f.y}) * Scaling(f.width / f.screen.x, f.height / f.screen.y);
-    renderer_.SetPlaying(f.playing && !f.paused);  // (動画 play while the game runs - and wait while it is paused)
+    renderer_.SetPlaying(f.playing && !f.paused);  // (動画 はゲームが動く間再生し - 一時停止中は待つ)
     renderer_.Draw(f.dc, f.gfx, tree, toDc, f.asset);
 }
 
@@ -23,8 +23,8 @@ const game_production::ScreenDrawInfo& ScreenDrawPart() {
 
 namespace {
 
-// What the exported game registers of ゲーム UI (its generated main calls it by the C name below): the
-// runtime part and the drawing over the screen.
+// 書き出したゲームが ゲーム UI について登録するもの (生成された main が下の C の名前で呼ぶ): ランタイム
+// の部分と、画面の上への描画。
 void RegisterForGame(RuntimeRegistry& registry) {
     RegisterRuntime(registry);
     registry.Contribute(game_production::kScreenDrawPoint, ScreenDrawPart());

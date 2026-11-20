@@ -1,7 +1,7 @@
 #pragma once
-// ゲーム制作 × パーティクル - the shapes particles collide with (the built-in module 当たる: コライダー):
-// whoever knows a kind of collider offers a way to turn the scene's into shapes (the connector
-// パーティクル × 物理: the physics plugin's コライダー and キャラクター). Gathered once a frame by each picture.
+// ゲーム制作 × パーティクル - パーティクルがぶつかる形 (組み込みモジュール 当たる: コライダー):
+// コライダーの種類を知っている側が、シーンのものを形にする方法を出す (コネクター
+// パーティクル × 物理: 物理プラグインの コライダー と キャラクター)。各絵が 1 フレームに 1 回集める。
 //
 //   static const game_x_particles::CollisionShapesInfo kShapes{&Gather};
 //   registry.Contribute(game_x_particles::kCollisionShapesPoint, kShapes);
@@ -15,11 +15,11 @@
 
 namespace rm::game_x_particles {
 
-// RuntimeRegistry point: items are CollisionShapesInfo (static).
+// RuntimeRegistry の口: 項目は CollisionShapesInfo (static)。
 inline constexpr char kCollisionShapesPoint[] = "rm_engine.game_x_particles.collision_shapes";
 
 struct CollisionShapesInfo {
-    // Adds the scene's shapes to `out`; `world`: where an entity is (null: not shown - switched off).
+    // シーンの形を `out` に足す。`world`: エンティティがどこにあるか (null: 出ていない - オフ)。
     void (*gather)(const game_production::Scene& scene, const std::function<const space3d::Mat4*(int entity)>& world,
                    std::vector<particles::CollisionShape>& out) = nullptr;
 };

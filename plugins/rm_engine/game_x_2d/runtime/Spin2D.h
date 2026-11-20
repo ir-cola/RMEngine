@@ -1,7 +1,7 @@
 #pragma once
-// 回り続ける (2D): a component that keeps turning its entity's Transform 2D while the game plays -
-// the simplest thing to see that Play works in 2D. An entity may have several (they add up).
-// Pure - tested in tests/TestSpace2d.cpp.
+// 回り続ける (2D): ゲームが動く間、エンティティの Transform 2D を回し続ける部品。
+// Play が 2D で動くのを見るのに一番簡単なもの。1 つのエンティティに複数付けてもよい (合計される)。
+// 純粋 (I/O も描画もしない)。tests/TestSpace2d.cpp でテストする。
 
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_production/runtime/Systems.h"
@@ -14,7 +14,7 @@ struct Spin2D {
     float degreesPerSecond = 90.f;
 };
 
-// The system (Frame): every 回り続ける (2D) adds its turn for this frame to the entity's first Transform 2D.
+// システム (Frame): すべての 回り続ける (2D) が、このフレーム分の回転をエンティティの最初の Transform 2D に足す。
 void RunSpin2D(game_production::SystemContext& ctx);
 
 }  // namespace rm::game_x_2d

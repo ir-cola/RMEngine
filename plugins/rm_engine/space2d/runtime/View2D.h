@@ -1,17 +1,16 @@
 #pragma once
-// 2D 空間: looking at the plane - the camera (where it looks and how near) and what a point of the
-// screen touches. Pure - tested in tests/TestSpace2d.cpp.
+// 2D 空間: 平面を見る - カメラ (どこを、どれだけ近くで見るか) と、画面の点が触れるもの。
+// 純粋 (I/O も描画もしない)。tests/TestSpace2d.cpp でテストする。
 //
-// The screen is a rectangle of DIPs with Y going down; the plane has Y up (Transform2D.h). The camera
-// puts `center` in the middle of the rectangle, `zoom` DIPs for one unit of the plane, turned by
-// `rotation` (a camera turned counter-clockwise shows the plane turned clockwise; the editing camera
-// is never turned, a game's camera turns with its entity).
+// 画面は Y が下向きの DIP の長方形。平面は Y が上 (Transform2D.h)。カメラは `center` を長方形の
+// 真ん中に置き、平面の 1 単位を `zoom` DIP にして、`rotation` だけ回す (カメラを反時計回りに回すと
+// 平面は時計回りに回って見える。編集用のカメラは回らない。ゲームのカメラはエンティティと一緒に回る)。
 
 #include "rm_engine/space2d/runtime/Transform2D.h"
 
 namespace rm::space2d {
 
-// A rectangle of the screen (DIPs). Its own type so the runtime does not need the UI's.
+// 画面の長方形 (DIP)。ランタイムが UI のものを必要としないよう、専用の型にしてある。
 struct ScreenRect {
     float x = 0, y = 0, w = 0, h = 0;
 };
@@ -19,8 +18,8 @@ struct ScreenRect {
 RM_STRUCT()
 struct Camera2D {
     RM_PROPERTY() Vec2 center{0, 0};
-    RM_PROPERTY(Min=0.5, Max=20000) float zoom = 100.f;  // DIPs per unit (100: a sprite of 100 pixels per unit shows 1:1)
-    RM_PROPERTY() float rotation = 0;  // degrees, counter-clockwise
+    RM_PROPERTY(Min=0.5, Max=20000) float zoom = 100.f;  // 1 単位あたりの DIP (100: 1 単位 100 ピクセルのスプライトが 1:1 で見える)
+    RM_PROPERTY() float rotation = 0;  // 度、反時計回り
 };
 
 inline constexpr float kMinZoom = 0.5f;
@@ -28,28 +27,28 @@ inline constexpr float kMaxZoom = 20000.f;
 
 Vec2 ToScreen(const Camera2D& cam, const ScreenRect& r, Vec2 world);
 Vec2 ToWorld(const Camera2D& cam, const ScreenRect& r, Vec2 screen);
-// world -> screen as a matrix (for drawing things turned and scaled).
+// ワールド -> 画面を行列にしたもの (回転・拡大縮小した物を描くため)。
 Mat3 ScreenMatrix(const Camera2D& cam, const ScreenRect& r);
 
-// The picture follows the mouse: it moved (dx, dy) DIPs on the screen.
+// 絵がマウスについてくる: 画面上で (dx, dy) DIP 動いた。
 void Pan(Camera2D& cam, float dx, float dy);
-// Nearer (notches > 0) or farther, keeping the point of the plane under `screen` where it is.
+// 近く (notches > 0) か遠くへ。`screen` の下にある平面の点はそのまま動かさない。
 void ZoomAt(Camera2D& cam, const ScreenRect& r, Vec2 screen, float notches);
-// Shows a box of the plane (its middle, half its size) filling about 2/3 of the view.
+// 平面の箱 (その中心と大きさの半分) がビューの約 2/3 を占めるように映す。
 void Frame(Camera2D& cam, const ScreenRect& r, Vec2 center, Vec2 halfSize);
 
-// The grid's step in plane units: 1, 2 or 5 times a power of ten, the smallest whose lines are at
-// least `minDips` apart on the screen. `major`: every this many lines one is darker (always 5 or 10).
+// 平面の単位での格子の刻み: 10 の累乗の 1、2、5 倍で、線の間が画面上で `minDips` 以上になる一番小さいもの。
+// `major`: この本数ごとに 1 本を濃くする (いつも 5 か 10)。
 struct GridStep {
     float step = 1;
     int major = 10;
 };
 GridStep GridFor(float zoom, float minDips = 12.f);
 
-// Whether a point of the plane is inside a box (min .. max of the thing's own space) placed by `world`
-// (moved, turned, scaled, mirrored).
+// 平面の点が、`world` で置かれた (動かし、回し、拡大縮小し、反転した) 箱 (物自身の空間の min .. max) の
+// 中にあるか。
 bool InsidePlacedBox(Vec2 point, const Mat3& world, Vec2 min, Vec2 max);
-// The 4 corners of that box in the world, counter-clockwise from (min.x, min.y).
+// その箱のワールドでの 4 つの角。(min.x, min.y) から反時計回り。
 void PlacedBoxCorners(const Mat3& world, Vec2 min, Vec2 max, Vec2 out[4]);
 
 }  // namespace rm::space2d

@@ -19,7 +19,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace {
 
-// What the Media Engine tells (on its own threads): only whether it failed.
+// Media Engine が知らせること (それ自身のスレッドで): 失敗したかどうかだけ。
 class Notify final : public IMFMediaEngineNotify {
 public:
     STDMETHODIMP QueryInterface(REFIID riid, void** out) override {
@@ -51,7 +51,7 @@ private:
 bool StartMediaFoundation() {
     static std::once_flag once;
     static bool ok = false;
-    std::call_once(once, [] { ok = SUCCEEDED(MFStartup(MF_VERSION)); });  // (for the process: never shut down)
+    std::call_once(once, [] { ok = SUCCEEDED(MFStartup(MF_VERSION)); });  // (プロセスの間: 終了させない)
     return ok;
 }
 
@@ -66,7 +66,8 @@ std::unique_ptr<VideoPlayer> VideoPlayer::Open(platform::Gfx& gfx, const std::st
     if (!device) return fail("GPU (Direct3D 11) がありません");
     if (bytes.empty()) return fail("動画のファイルが空か、読めません");
     if (!StartMediaFoundation()) return fail("Media Foundation を使えません (Windows の N エディションなど)");
-    // The Media Engine decodes on the same device from its own threads: the device must take that.
+    // Media Engine は同じデバイスの上でそれ自身のスレッドからデコードする: デバイスはそれを受け付ける
+    // ようにしておかなければならない。
     ComPtr<ID3D10Multithread> mt;
     if (SUCCEEDED(device->QueryInterface(IID_PPV_ARGS(&mt)))) mt->SetMultithreadProtected(TRUE);
     UINT token = 0;
@@ -87,10 +88,10 @@ std::unique_ptr<VideoPlayer> VideoPlayer::Open(platform::Gfx& gfx, const std::st
     }
     ComPtr<IMFMediaEngineEx> ex;
     ComPtr<IStream> stream;
-    stream.Attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes.data()), static_cast<UINT>(bytes.size())));  // (a copy of the bytes)
+    stream.Attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes.data()), static_cast<UINT>(bytes.size())));  // (バイト列のコピー)
     ComPtr<IMFByteStream> byteStream;
     if (!stream || FAILED(p->engine_.As(&ex)) || FAILED(MFCreateMFByteStreamOnStream(stream.Get(), &byteStream))) return fail("動画を読む準備ができません");
-    BSTR hint = SysAllocString(L"video.mp4");  // (a name for its kind: the bytes themselves decide)
+    BSTR hint = SysAllocString(L"video.mp4");  // (種類の見当をつける名前: 決めるのはバイト列そのもの)
     const HRESULT hr = ex->SetSourceFromByteStream(byteStream.Get(), hint);
     SysFreeString(hint);
     if (FAILED(hr)) return fail("この動画は読めません");
@@ -100,7 +101,7 @@ std::unique_ptr<VideoPlayer> VideoPlayer::Open(platform::Gfx& gfx, const std::st
 }
 
 VideoPlayer::~VideoPlayer() {
-    if (engine_) engine_->Shutdown();  // (its threads and its sound stop here)
+    if (engine_) engine_->Shutdown();  // (そのスレッドと音はここで止まる)
 }
 
 bool VideoPlayer::Failed() const { return !engine_ || static_cast<const Notify*>(notify_.Get())->failed; }
@@ -111,7 +112,7 @@ void VideoPlayer::Set(bool play, bool loop, float speed, float volume, double st
         started_ = true;
         if (start > 0) engine_->SetCurrentTime(start);
     }
-    const int wantLoop = loop && end <= 0 ? 1 : 0;  // (with an end: looped by hand below)
+    const int wantLoop = loop && end <= 0 ? 1 : 0;  // (終わりがあるとき: 下で手動でループさせる)
     if (wantLoop != loop_) {
         loop_ = wantLoop;
         engine_->SetLoop(wantLoop != 0);
@@ -142,7 +143,7 @@ ID2D1Bitmap1* VideoPlayer::Frame(ID2D1DeviceContext* dc) {
     DWORD w = 0, h = 0;
     if (FAILED(engine_->GetNativeVideoSize(&w, &h)) || w == 0 || h == 0) return nullptr;
     if (!texture_ || w != width_ || h != height_ || dc != bitmapOf_) {
-        // A texture of the picture's size the engine copies into, seen by Direct2D as a bitmap.
+        // 絵と同じ大きさのテクスチャで、エンジンがそこへコピーし、Direct2D からはビットマップに見える。
         texture_.Reset();
         bitmap_.Reset();
         hasFrame_ = false;
@@ -159,7 +160,7 @@ ID2D1Bitmap1* VideoPlayer::Frame(ID2D1DeviceContext* dc) {
         td.SampleDesc.Count = 1;
         td.Usage = D3D11_USAGE_DEFAULT;
         td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        // On the device the engine was given (the Gfx's, which Direct2D draws with too).
+        // エンジンに渡したデバイスの上で (Gfx のもの。Direct2D もこれで描く)。
         if (FAILED(device_->CreateTexture2D(&td, nullptr, &texture_)) || FAILED(texture_.As(&surface))) return nullptr;
         const D2D1_BITMAP_PROPERTIES1 props =
             D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_NONE, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));

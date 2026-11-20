@@ -1,5 +1,5 @@
 #pragma once
-// The ID of the plugin 物理 - written here once (and in plugin.json).
+// プラグイン 物理 の ID - ここに 1 度だけ書く (plugin.json にも書く)。
 
 #include "core/PluginId.h"
 

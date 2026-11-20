@@ -27,7 +27,7 @@ T* Add(Scene& scene, int id) {
     return game_production::AddComponentTo<T>(scene, id);
 }
 
-// What each row makes: ready to be seen (a size, a colour, a word) - names in the language in use.
+// 各行が作るもの: 見せられる状態 (大きさ、色、言葉) - 名前は使っている言語で。
 int MakeCanvas(Scene& scene, int parent, size_t index) {
     const int id = scene.Create(TrU8("キャンバス"), parent, index);
     Add<UiCanvas>(scene, id);
@@ -53,7 +53,7 @@ int MakeButton(Scene& scene, int parent, size_t index) {
     if (UiRect* r = Add<UiRect>(scene, id)) r->size = {320, 88};
     if (UiImage* i = Add<UiImage>(scene, id)) i->color = {0.22f, 0.42f, 0.85f, 1};
     Add<UiButton>(scene, id);
-    // Its label: a text filling it.
+    // そのラベル: それを埋める文字。
     const int label = scene.Create(TrU8("文字"), id);
     if (UiRect* r = Add<UiRect>(scene, label)) {
         r->anchor = UiAnchor::Stretch;
@@ -70,8 +70,8 @@ int MakeBar(Scene& scene, int parent, size_t index) {
     return id;
 }
 
-// UI の配置's アンカー changed in the inspector: 位置 and 大きさ worked out again so that the thing stays
-// where it is (as laid out on the game settings' 画面). Not laid out (switched off): left as typed.
+// UI の配置のアンカーをインスペクターで変えた: そのものが今の場所に残るように 位置 と 大きさ を
+// 計算し直す (ゲーム設定の 画面 に配置したとおりに)。配置されない (切ってある) もの: 入力のまま。
 void KeepPlace(const Scene& scene, const game_production::GameSettings& settings, int entity, const reflect::FieldPath&, const void* before,
                void* after) {
     const UiRect& was = *static_cast<const UiRect*>(before);
@@ -87,7 +87,7 @@ void KeepPlace(const Scene& scene, const game_production::GameSettings& settings
     now.size = moved.size;
 }
 
-// デバッグ ▸ ゲーム UI: which button is chosen, in which window, by the keys or the mouse.
+// デバッグ ▸ ゲーム UI: どのボタンが、どのウィンドウで、キーかマウスで選ばれているか。
 void UiLines(const game_production::DebugContext& ctx, std::vector<game_production::DebugInfoLine>& out) {
     const auto* ui = ctx.playing && ctx.world && ctx.world->services ? dynamic_cast<const UiService*>(ctx.world->services->Find(kUiServiceName)) : nullptr;
     if (!ui || !ctx.scene) {
@@ -110,12 +110,12 @@ void UiLines(const game_production::DebugContext& ctx, std::vector<game_producti
 void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"ゲーム UI"), 40, game_production::DebugTab::Game, &UiLines};
     registry.Contribute(game_production::kDebugInfoPoint, kDebug);
-    // The UI over the game view (the exported game registers its own: UiScreenDraw.cpp).
+    // ゲームのビューの上の UI (書き出したゲームは自分のものを登録する: UiScreenDraw.cpp)。
     registry.Contribute(game_production::kScreenDrawPoint, ScreenDrawPart());
-    // The UI view: a tab next to the scene and the game.
+    // UI ビュー: シーンとゲームの隣のタブ。
     static const game_production::ViewPanelInfo kView{"ui", TrKey(L"UI ビュー"), &CreateUiView};
     registry.Contribute(game_production::kViewPanelPoint, kView);
-    // The 階層's 追加 ▸ UI (a canvas after the selection; the rest under the selected one: on its canvas).
+    // 階層の 追加 ▸ UI (キャンバスは選択の後ろに、それ以外は選択中のものの下 = そのキャンバスの中に)。
     static const game_production::CreateItemInfo kItems[] = {
         {.label = TrKey(L"キャンバス"), .folder = L"UI", .make = &MakeCanvas},
         {.label = TrKey(L"ボタン"), .folder = L"UI", .make = &MakeButton, .child = true},
@@ -124,7 +124,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
         {.label = TrKey(L"バー"), .folder = L"UI", .make = &MakeBar, .child = true},
     };
     for (const auto& item : kItems) registry.Contribute(game_production::kCreateItemPoint, item);
-    // Their pictures in the 階層.
+    // 階層に出すそれらの絵。
     static const game_production::ComponentLook kLooks[] = {
         {.type = &reflect::TypeOf<UiCanvas>, .icon = "square"},
         {.type = &reflect::TypeOf<UiImage>, .icon = "image"},

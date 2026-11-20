@@ -55,7 +55,7 @@ Affine Translate(Vec2 t) { return {1, 0, 0, 1, t.x, t.y}; }
 Affine Scaling(float sx, float sy) { return {sx, 0, 0, sy, 0, 0}; }
 Affine Rotation(float degrees) {
     const float s = std::sin(degrees * kPi / 180.f), c = std::cos(degrees * kPi / 180.f);
-    return {c, s, -s, c, 0, 0};  // (1, 0) -> (c, s): with Y down, a clockwise turn
+    return {c, s, -s, c, 0, 0};  // (1, 0) -> (c, s): Y が下向きなので、時計回りの回転
 }
 Affine About(Vec2 pivot, float degrees, float scale) {
     if (degrees == 0 && scale == 1) return {};
@@ -81,17 +81,17 @@ void AnchorRange(UiAnchor anchor, Vec2& min, Vec2& max) {
         case UiAnchor::StretchRight: min = {1, 0}, max = {1, 1}; return;
         case UiAnchor::Stretch: min = {0, 0}, max = {1, 1}; return;
     }
-    min = max = {0.5f, 0.5f};  // (a value of a newer version)
+    min = max = {0.5f, 0.5f};  // (新しいバージョンの値)
 }
 
 UiBox PlaceBox(const UiRect& r, const UiBox& parent) {
     Vec2 mn, mx;
     AnchorRange(r.anchor, mn, mx);
-    // The anchors' box in the parent; the size adds to it (a point anchor: the size is the size).
+    // 親の中のアンカーの枠。大きさはそこに足す (点のアンカー: 大きさがそのまま大きさ)。
     const float ax = parent.x + parent.w * mn.x, ay = parent.y + parent.h * mn.y;
     const float aw = parent.w * (mx.x - mn.x), ah = parent.h * (mx.y - mn.y);
     const float w = std::max(0.f, aw + r.size.x), h = std::max(0.f, ah + r.size.y);
-    // The 中心 sits at the anchors' box's point of the same fraction, moved by 位置.
+    // 中心 は、アンカーの枠の中の同じ割合の点にあり、位置 だけ動かす。
     const float px = ax + aw * r.pivot.x + r.position.x, py = ay + ah * r.pivot.y + r.position.y;
     return {px - w * r.pivot.x, py - h * r.pivot.y, w, h};
 }
@@ -102,7 +102,7 @@ UiRect Reanchored(const UiRect& r, UiAnchor to, const UiBox& parent) {
     out.anchor = to;
     Vec2 mn, mx;
     AnchorRange(to, mn, mx);
-    // PlaceBox backwards: the anchors' box of the new anchor, the size that adds to it, the 中心 from it.
+    // PlaceBox の逆: 新しいアンカーのアンカーの枠、それに足す大きさ、そこからの 中心。
     const float ax = parent.x + parent.w * mn.x, ay = parent.y + parent.h * mn.y;
     const float aw = parent.w * (mx.x - mn.x), ah = parent.h * (mx.y - mn.y);
     out.size = {box.w - aw, box.h - ah};
@@ -127,10 +127,10 @@ Vec2 HandleSides(UiHandle h) {
 UiRect ResizeByHandle(const UiRect& r, const UiBox& parent, UiHandle h, Vec2 along, bool keepAspect, float minSize) {
     const UiBox box = PlaceBox(r, parent);
     const Vec2 sides = HandleSides(h);
-    // How much wider / taller (the visible box), never below minSize.
+    // どれだけ広く / 高くなったか (見える枠)。minSize を下回らない。
     float dw = along.x * sides.x, dh = along.y * sides.y;
     if (keepAspect && sides.x != 0 && sides.y != 0 && box.w > 1e-4f && box.h > 1e-4f) {
-        // (the bigger change decides; the other follows the ratio)
+        // (変化が大きいほうが決める。もう一方は比率に従う)
         const float kx = (box.w + dw) / box.w, ky = (box.h + dh) / box.h;
         const float k = std::abs(kx - 1) >= std::abs(ky - 1) ? kx : ky;
         dw = box.w * k - box.w;
@@ -140,7 +140,7 @@ UiRect ResizeByHandle(const UiRect& r, const UiBox& parent, UiHandle h, Vec2 alo
     dh = std::max(dh, minSize - box.h);
     UiRect out = r;
     out.size = {r.size.x + dw, r.size.y + dh};
-    // The 中心 moves with the side that moves (by its share of the change), turned into the parent's units.
+    // 中心 は、動く辺と一緒に動く (変化のうちの自分の割合だけ)。親の単位に直したもの。
     const Vec2 shiftOwn{sides.x > 0 ? dw * r.pivot.x : sides.x < 0 ? -dw * (1 - r.pivot.x) : 0,
                         sides.y > 0 ? dh * r.pivot.y : sides.y < 0 ? -dh * (1 - r.pivot.y) : 0};
     const Affine turn = Rotation(r.rotation);
@@ -163,8 +163,8 @@ UiRect MovePivot(const UiRect& r, const UiBox& parent, Vec2 pivot) {
     Vec2 mn, mx;
     AnchorRange(r.anchor, mn, mx);
     const float aw = parent.w * (mx.x - mn.x), ah = parent.h * (mx.y - mn.y);
-    // The new 中心 is the old one plus the (turned) move inside the box; 位置 also measures from the
-    // anchors' box at the 中心's fraction, which moves with it.
+    // 新しい 中心 は、古い中心に、枠の中での (回した) 動きを足したもの。位置 も、中心の割合の所の
+    // アンカーの枠から測るので、それも一緒に動く。
     const Vec2 inside{(pivot.x - r.pivot.x) * box.w, (pivot.y - r.pivot.y) * box.h};
     const Affine turn = Rotation(r.rotation);
     const Vec2 turned{turn.a * inside.x + turn.c * inside.y, turn.b * inside.x + turn.d * inside.y};
@@ -218,7 +218,7 @@ void AnchorCell(UiAnchor anchor, int& row, int& column) {
             }
         }
     }
-    row = column = 1;  // (a value of a newer version: the middle)
+    row = column = 1;  // (新しいバージョンの値: 真ん中)
 }
 
 UiRect Rehomed(const UiRect& r, const UiBox& oldParent, const UiBox& newParent, Vec2 pivotAt, float rotation) {
@@ -236,7 +236,7 @@ UiRect Rehomed(const UiRect& r, const UiBox& oldParent, const UiBox& newParent, 
 
 UiTree OnlyCanvas(const UiTree& tree, int canvas) {
     UiTree out;
-    std::vector<int> moved(tree.nodes.size(), -1);  // old index -> new index
+    std::vector<int> moved(tree.nodes.size(), -1);  // 古い添字 -> 新しい添字
     for (size_t i = 0; i < tree.nodes.size(); ++i) {
         if (tree.nodes[i].canvas != canvas) continue;
         UiNode n = tree.nodes[i];
@@ -279,7 +279,8 @@ std::vector<Vec2> DistributeShifts(std::span<const UiBox> boxes, bool across) {
     std::vector<size_t> order(boxes.size());
     for (size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return lo(a) + len(a) * 0.5f < lo(b) + len(b) * 0.5f; });
-    // The room from the first's start to the last's end, less what they fill: equal gaps between them.
+    // 最初の始まりから最後の終わりまでの広さから、それらが埋める分を引いたもの: そのあいだの
+    // 等しい隙間。
     float filled = 0;
     for (const size_t i : order) filled += len(i);
     const float start = lo(order.front()), end = lo(order.back()) + len(order.back());
@@ -324,10 +325,10 @@ const UiNode* UiTree::Find(int entity) const {
 
 UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std::span<const int> alsoShow) {
     UiTree tree;
-    // The 階層: each entity's children in its order (the last tie-break of 手前の順).
+    // 階層: 各エンティティの子を、その順に (手前の順の最後の決め手)。
     std::unordered_map<int, std::vector<const game_production::SceneEntity*>> children;
     for (const auto& t : scene.TreeOrder()) children[t.entity->data.parent].push_back(t.entity);
-    // Switched off but still going (its 消えるとき not over): drawn as if on.
+    // 切ってあるが、まだ動いている (その 消えるとき が終わっていない): 入っているものとして描く。
     auto going = [&](const game_production::SceneEntity* e) {
         const UiMotion* m = PartOf<UiMotion>(*e);
         return m && m->phase == static_cast<int>(UiMotionPhase::Hiding);
@@ -338,14 +339,14 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
         }
         return true;
     };
-    // The canvases (not under another canvas), switched on with what holds them - or holding one of
-    // `alsoShow`.
+    // キャンバス (ほかのキャンバスの下でないもの)。入っていて、それを持つものと一緒に - または
+    // `alsoShow` のどれかを持つもの。
     std::unordered_set<int> forced;
     for (const int id : alsoShow) {
         int canvas = 0;
         size_t steps = 0;
         for (const game_production::SceneEntity* e = scene.Find(id); e && steps++ <= scene.Entities().size(); e = scene.Find(e->data.parent)) {
-            if (PartOf<UiCanvas>(*e)) canvas = e->data.id;  // (the outermost wins)
+            if (PartOf<UiCanvas>(*e)) canvas = e->data.id;  // (一番外側が勝つ)
         }
         if (canvas) forced.insert(canvas);
     }
@@ -374,7 +375,7 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
         root.entity = ca.e->data.id;
         root.canvas = root.entity;
         root.box = {0, 0, area.w / k, area.h / k};
-        // The window as its 出る・消える動き moves it now: about its middle.
+        // 出る・消える動き が今動かしているウィンドウ: その真ん中を中心に。
         const UiLive& wl = ca.c->live;
         const Vec2 middle{root.box.w * 0.5f, root.box.h * 0.5f};
         root.toScreen = root.self = Translate({area.x, area.y}) * Scaling(k, k) * Translate(wl.offset) * About(middle, wl.turn, wl.scale);
@@ -388,7 +389,7 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
         root.style = PartOf<UiStyle>(*ca.e);
         root.video = PartOf<UiVideo>(*ca.e);
         tree.nodes.push_back(root);
-        // Depth first; a thing without UI の配置 passes its parent's box to its children.
+        // 深さ優先。UI の配置 を持たないものは、親の枠をそのまま子に渡す。
         struct Step {
             const game_production::SceneEntity* e;
             int parentNode;
@@ -403,18 +404,18 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
                 const UiRect* rb = PartOf<UiRect>(*b);
                 return (ra ? ra->order : 0) < (rb ? rb->order : 0);
             });
-            for (auto k2 = kids.rbegin(); k2 != kids.rend(); ++k2) stack.push_back({*k2, parentNode});  // (popped in order)
+            for (auto k2 = kids.rbegin(); k2 != kids.rend(); ++k2) stack.push_back({*k2, parentNode});  // (順に取り出される)
         };
         push(root.entity, 0 + static_cast<int>(tree.nodes.size()) - 1);
         size_t guard = 0;
         while (!stack.empty() && guard++ <= scene.Entities().size() * 2 + 8) {
             const Step s = stack.back();
             stack.pop_back();
-            if (!s.e->data.active && !going(s.e)) continue;  // switched off: with what is under it
+            if (!s.e->data.active && !going(s.e)) continue;  // 切ってある: その下にあるものも一緒に
             const UiNode& parent = tree.nodes[static_cast<size_t>(s.parentNode)];
             const UiRect* place = PartOf<UiRect>(*s.e);
             if (!place) {
-                push(s.e->data.id, s.parentNode);  // (not one: its children go into the same box)
+                push(s.e->data.id, s.parentNode);  // (ノードにはしない: その子は同じ枠に入る)
                 continue;
             }
             const UiLive& live = place->live;
@@ -430,7 +431,8 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
             n.style = PartOf<UiStyle>(*s.e);
             n.video = PartOf<UiVideo>(*s.e);
             n.box = PlaceBox(*place, parent.box);
-            // Moved now (出る・消える動き, 道, the scripts' tweens): its box moves, its turn and size about its 中心.
+            // 今動いている (出る・消える動き、道、スクリプトのトゥイーン): 枠が動き、回転と大きさはその 中心 を
+            // 中心にする。
             n.box.x += live.offset.x;
             n.box.y += live.offset.y;
             n.toScreen = parent.self;
@@ -444,7 +446,7 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
     return tree;
 }
 
-// --- The mouse, the keys -----------------------------------------------------------------------
+// --- マウス、キー --------------------------------------------------------------------------
 
 bool Hits(const UiNode& n, Vec2 p) {
     const auto inv = Invert(n.self);
@@ -453,7 +455,7 @@ bool Hits(const UiNode& n, Vec2 p) {
 
 int TopAt(const UiTree& tree, Vec2 p) {
     for (auto it = tree.nodes.rbegin(); it != tree.nodes.rend(); ++it) {
-        if (it->parent < 0) continue;  // a canvas itself takes nothing (a window may be partly empty)
+        if (it->parent < 0) continue;  // キャンバス自身は何も受け取らない (ウィンドウの一部が空でもよい)
         if (it->closing) continue;     // going away (消えるとき): seen, not touched
         if (!(it->image || it->bar || it->button || it->video || (it->style && it->style->background.enabled))) continue;
         if (Hits(*it, p)) return it->entity;
@@ -480,7 +482,7 @@ PointerResult StepPointer(const UiTree& tree, std::optional<Vec2> p, bool down, 
     PointerResult r;
     r.hovered = p ? ButtonAt(tree, *p) : 0;
     if (wentDown) state.pressed = r.hovered;
-    if (state.pressed && !tree.Find(state.pressed)) state.pressed = 0;  // gone (switched off, destroyed)
+    if (state.pressed && !tree.Find(state.pressed)) state.pressed = 0;  // なくなった (切った、壊した)
     if (wentUp || !down) {
         if (wentUp && state.pressed && state.pressed == r.hovered) r.clicked = state.pressed;
         state.pressed = 0;
@@ -491,10 +493,11 @@ PointerResult StepPointer(const UiTree& tree, std::optional<Vec2> p, bool down, 
 
 int NavigationCanvas(const UiTree& tree) {
     for (auto it = tree.nodes.rbegin(); it != tree.nodes.rend(); ++it) {
-        if (!Pressable(it->button) || it->closing) continue;  // (a window going away takes no keys)
+        if (!Pressable(it->button) || it->closing) continue;  // (去っていくウィンドウはキーを受け取らない)
         const UiNode* c = tree.Find(it->canvas);
         if (!c || !c->canvasPart || !c->canvasPart->navigation) continue;
-        // The frontmost canvas with one: its own, since nodes go back to front by canvas.
+        // ボタンを持つ一番手前のキャンバス: そのキャンバス自身のもの。ノードはキャンバスごとに奥から手前へ
+        // 並ぶため。
         return it->canvas;
     }
     return 0;
@@ -526,7 +529,7 @@ int MoveFocus(const UiTree& tree, int canvas, int current, int dx, int dy) {
         const Vec2 c = Center(n);
         const float ax = c.x - o.x, ay = c.y - o.y;
         const float along = ax * static_cast<float>(dx) + ay * static_cast<float>(dy);
-        if (along <= 0.5f) continue;  // not that way
+        if (along <= 0.5f) continue;  // その向きではない
         const float aside = std::abs(ax * static_cast<float>(dy) - ay * static_cast<float>(dx));
         const float score = along + aside * 2.f;
         if (score < bestScore) {
@@ -538,8 +541,8 @@ int MoveFocus(const UiTree& tree, int canvas, int current, int dx, int dy) {
 }
 
 int NextButton(const UiTree& tree, int canvas, int current, int dx, int dy) {
-    // Its own link that way first (上 / 下 / 左 / 右で移る先), when it is a button of the window that can be
-    // pressed; else the nearest that way on the screen.
+    // まずその向きの自分のリンク (上 / 下 / 左 / 右で移る先)。それが、押せるそのウィンドウのボタン
+    // のとき。そうでなければ、画面でその向きに一番近いもの。
     if (const UiNode* from = tree.Find(current); from && from->button && (dx != 0) != (dy != 0)) {
         const UiButton& b = *from->button;
         const EntityRef& link = dy < 0 ? b.up : dy > 0 ? b.down : dx < 0 ? b.left : b.right;
@@ -549,11 +552,11 @@ int NextButton(const UiTree& tree, int canvas, int current, int dx, int dy) {
     return MoveFocus(tree, canvas, current, dx, dy);
 }
 
-// --- How a button looks --------------------------------------------------------------------------
+// --- ボタンの見え方 ----------------------------------------------------------------------------
 
 namespace {
 
-// The state it looks as: not pressable is 使えない, focused (the keys' choice) looks as 乗った.
+// 見た目に使う状態: 押せなければ 使えない、選ばれている (キーで選んだ) ものは 乗った と同じ。
 UiButtonState LooksAs(const UiButton& b) {
     if (!b.interactable) return UiButtonState::Disabled;
     const auto s = static_cast<UiButtonState>(b.state);
@@ -580,7 +583,7 @@ UiButtonLook ButtonTarget(const UiButton& b) {
         default: break;
     }
     if (b.colorMode == UiButtonColorMode::Replace && s != UiButtonState::Normal) {
-        // The state's colour itself (its r g b); its transparency still multiplies.
+        // その状態の色そのもの (その r g b)。透明度はやはり掛ける。
         l.tint = b.normal.Alpha(color.a);
         l.replace = color.Alpha(1);
         l.replaceAmount = 1;
@@ -603,8 +606,8 @@ float EaseAmount(float dt, float seconds) {
 
 UiButtonLook EaseLook(const UiButtonLook& now, const UiButtonLook& target, float amount) {
     UiButtonLook goal = target;
-    // A state with no outline: the last one fades (never thinner, never toward white). One not seen yet
-    // (its amount 0): the new one's width and colour at once - only its amount grows.
+    // 輪郭の無い状態: 最後のものが消えていく (細くならず、白に寄らない)。まだ見えていないもの
+    // (その量が 0): 新しいものの太さと色をすぐに - 量だけが増える。
     if (goal.outlineAmount <= 0) goal.outline = now.outline, goal.outlineColor = now.outlineColor;
     if (goal.replaceAmount <= 0) goal.replace = now.replace;
     UiButtonLook from = now;
@@ -672,7 +675,7 @@ Color RainbowColor(const UiRainbow& r, double seconds) {
     if (!std::isfinite(hue)) hue = 0;
     if (hue < 0) hue += 1;
     const float s = std::clamp(r.saturation, 0.f, 1.f), v = std::clamp(r.brightness, 0.f, 1.f);
-    // HSV to RGB: six sectors of the colour wheel.
+    // HSV から RGB へ: 色相環の 6 つの区間。
     const float h6 = static_cast<float>(hue) * 6, f = h6 - std::floor(h6);
     const float p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
     switch (static_cast<int>(h6) % 6) {

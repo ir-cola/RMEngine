@@ -7,7 +7,7 @@ namespace rm::particles {
 
 namespace {
 
-// A built-in module with some of its values (the rest: the module's defaults).
+// 組み込みモジュールと、その値のいくつか (残りはモジュールの初期値)。
 ParticleModule M(const char* id, std::initializer_list<ParticleValue> values = {}) {
     ParticleModule m;
     m.builtin = id;

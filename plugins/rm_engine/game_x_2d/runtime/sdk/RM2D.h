@@ -1,25 +1,25 @@
-// RM2D.h - Transform in 2D for scripts (the plugin ゲーム制作 × 2D gives it).
+// RM2D.h - スクリプト用の 2D の Transform (プラグイン ゲーム制作 × 2D が提供する)。
 //
 //   #include "RM2D.h"
 //   rm::Transform2D t(self);
-//   rm::Vec2 p = t.Position();     // in the parent
+//   rm::Vec2 p = t.Position();     // 親の中での位置
 //   p.x += 2.0f * dt;
 //   t.SetPosition(p);
-//   t.SetRotation(t.Rotation() + 90.0f * dt);   // degrees, counter-clockwise +
-//   t.LookAt(rm::Transform2D(target).WorldPosition());   // its right (+X) towards the target
+//   t.SetRotation(t.Rotation() + 90.0f * dt);   // 度、反時計回りが +
+//   t.LookAt(rm::Transform2D(target).WorldPosition());   // 右 (+X) を目標に向ける
 //
-// The sprite's animation (スプライトのアニメーション):
+// スプライトのアニメーション:
 //   rm::SpriteAnimation anim(self);
-//   anim.SetFrames({4, 5, 6, 7});   anim.Play();          // a run: those cells, from the start
-//   anim.SetSpeed(12);  anim.Pause();  anim.Stop();       // 1 秒のコマ数 / held / back to the first
-//   if (!anim.Playing()) ...                              // a one that does not loop reached its end
+//   anim.SetFrames({4, 5, 6, 7});   anim.Play();          // 走り: そのセルを、始めから
+//   anim.SetSpeed(12);  anim.Pause();  anim.Stop();       // 1 秒のコマ数 / 止めておく / 最初に戻る
+//   if (!anim.Playing()) ...                              // ループしないものが終わりに着いた
 //
-// An entity without a Transform 2D: the getters give zeros (scale: ones), the setters do nothing.
+// Transform 2D のないエンティティ: ゲッターは 0 を返し (拡大縮小は 1)、セッターは何もしない。
 //
-// Debug drawing - lines in the plane to see what a script does. The editor shows them over the game
-// view and the scene view while the game plays; an exported game does nothing with them.
-//   rm::Debug::Line(a, b, {1, 0, 0, 1});             // this frame only
-//   rm::Debug::Rect(center, {2, 1}, color, 2.0f);    // for 2 seconds
+// デバッグ描画 - スクリプトが何をしているか見るための平面上の線。Play 中、エディターはゲームビューと
+// シーンビューの上にこれを出す。書き出したゲームは何もしない。
+//   rm::Debug::Line(a, b, {1, 0, 0, 1});             // このフレームだけ
+//   rm::Debug::Rect(center, {2, 1}, color, 2.0f);    // 2 秒間
 //   rm::Debug::Circle(center, 0.5f, color);
 #pragma once
 
@@ -30,12 +30,12 @@ namespace rm {
 
 class Transform2D {
 public:
-    // The engine's component (Entity::Add / Get / Remove<rm::Transform2D>()).
+    // エンジンの部品 (Entity::Add / Get / Remove<rm::Transform2D>())。
     static constexpr const char* kComponentType = "rm::space2d::Transform2D";
     explicit Transform2D(Entity entity)
         : entity_(entity), api_(Part<RmTransform2DApi2>(RM_PART_TRANSFORM2D, RM_PART_TRANSFORM2D_VERSION2)) {}
 
-    // The entity has a Transform 2D (and this engine has the 2D plugin).
+    // エンティティに Transform 2D がある (そしてこのエンジンに 2D プラグインがある)。
     bool Valid() const {
         float v[2];
         return api_ && api_->get(Api()->ctx, entity_.id, 0, v) != 0;
@@ -46,22 +46,22 @@ public:
     void SetPosition(Vec2 v) const { Set(0, v); }
     void SetRotation(float degrees) const { Set(1, {degrees, 0}); }
     void SetScale(Vec2 v) const { Set(2, v); }
-    // In the world (its parents included); setting one changes its own values to make up for the parents'.
+    // ワールドでの値 (親を含む): 設定すると、親の分を埋め合わせるように自分の値を変える。
     Vec2 WorldPosition() const { return World(0, {0, 0}); }
     float WorldRotation() const { return World(1, {0, 0}).x; }
     Vec2 WorldScale() const { return World(2, {1, 1}); }
     void SetWorldPosition(Vec2 v) const { SetWorld(0, v); }
     void SetWorldRotation(float degrees) const { SetWorld(1, {degrees, 0}); }
-    // Turns it so its right (+X) points at `target` in the world.
+    // 右 (+X) がワールドの `target` を向くように回す。
     void LookAt(Vec2 target) const {
         const float t[2] = {target.x, target.y};
         if (api_) api_->lookAt(Api()->ctx, entity_.id, t);
     }
     void LookAt(Entity target) const { LookAt(Transform2D(target).WorldPosition()); }
-    // Where its right (+X) and up (+Y) point in the world (length 1).
+    // 右 (+X) と上 (+Y) がワールドでどちらを向くか (長さ 1)。
     Vec2 Right() const { return FromAngle(WorldRotation()); }
     Vec2 Up() const { return FromAngle(WorldRotation() + 90.0f); }
-    // Moved by `delta`: along its own axes (self) or the world's.
+    // `delta` だけ動かす: 自分の軸に沿って (self) か、ワールドの軸に沿って。
     void Translate(Vec2 delta, bool self = true) const {
         if (self) {
             SetPosition(Position() + Rotate(delta, Rotation()));
@@ -94,13 +94,13 @@ private:
     const RmTransform2DApi2* api_;
 };
 
-// The entity's スプライトのアニメーション, from a script (nothing happens on an entity without one: Valid()).
+// エンティティの スプライトのアニメーション をスクリプトから (持たないエンティティでは何も起きない: Valid())。
 class SpriteAnimation {
 public:
     explicit SpriteAnimation(Entity entity)
         : entity_(entity), api_(Part<RmSpriteAnimationApi>(RM_PART_SPRITE_ANIMATION, RM_PART_SPRITE_ANIMATION_VERSION)) {}
     bool Valid() const { return api_ && api_->has(Api()->ctx, entity_.id) != 0; }
-    // On (paused / stopped: moving again); fromStart: from the first step.
+    // オン (一時停止 / 停止していたら、また動く)。fromStart: 最初のステップから。
     void Play(bool fromStart = false) const {
         if (api_) api_->play(Api()->ctx, entity_.id, fromStart ? 1 : 0);
     }
@@ -119,16 +119,16 @@ public:
     void SetLoop(bool loop) const {
         if (api_) api_->setLoop(Api()->ctx, entity_.id, loop ? 1 : 0);
     }
-    // コマの並び: the sprite's cells to show in turn (empty: all of them, 0 up); it plays them from the start.
+    // コマの並び: 順に見せるスプライトのセル (空: すべて、0 から)。始めから再生する。
     void SetFrames(const std::vector<int>& cells) const {
         if (api_) api_->setFrames(Api()->ctx, entity_.id, cells.data(), static_cast<uint32_t>(cells.size()));
     }
-    // The place in コマの並び now (0 = the first), and a jump to one.
+    // 今の コマの並び での位置 (0 = 最初)、と、そこへのジャンプ。
     int Frame() const { return api_ ? api_->step(Api()->ctx, entity_.id) : 0; }
     void SetFrame(int step) const {
         if (api_) api_->setStep(Api()->ctx, entity_.id, step);
     }
-    // Moving: not paused or stopped, and not on the last step of one that does not loop.
+    // 動いている: 一時停止も停止もしておらず、ループしないものの最後のステップでもない。
     bool Playing() const { return api_ && api_->playing(Api()->ctx, entity_.id) != 0; }
 
 private:
@@ -139,17 +139,17 @@ private:
 namespace Debug {
 namespace detail {
 inline const RmDebug2DApi* Api2D() {
-    static const RmDebug2DApi* api = Part<RmDebug2DApi>(RM_PART_DEBUG2D, RM_PART_DEBUG2D_VERSION);  // the engine's, for good
+    static const RmDebug2DApi* api = Part<RmDebug2DApi>(RM_PART_DEBUG2D, RM_PART_DEBUG2D_VERSION);  // エンジンのもの、ずっと
     return api;
 }
 }  // namespace detail
 
-// A line from a to b (units of the plane), for `seconds` (0: this frame only).
+// a から b への線 (平面の単位)、`seconds` 秒間 (0: このフレームだけ)。
 inline void Line(Vec2 a, Vec2 b, Color color = {}, float seconds = 0) {
     const float pa[2] = {a.x, a.y}, pb[2] = {b.x, b.y}, c[4] = {color.r, color.g, color.b, color.a};
     if (const RmDebug2DApi* d = detail::Api2D()) d->line(Api()->ctx, pa, pb, c, seconds);
 }
-// The edges of a rectangle along the plane's axes: its middle and its size.
+// 平面の軸に沿った長方形の辺: その真ん中と大きさ。
 inline void Rect(Vec2 center, Vec2 size, Color color = {}, float seconds = 0) {
     const float p[2] = {center.x, center.y}, s[2] = {size.x, size.y}, c[4] = {color.r, color.g, color.b, color.a};
     if (const RmDebug2DApi* d = detail::Api2D()) d->rect(Api()->ctx, p, s, c, seconds);

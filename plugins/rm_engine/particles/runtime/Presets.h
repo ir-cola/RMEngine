@@ -1,8 +1,8 @@
 #pragma once
-// パーティクル - effects ready to start from (炎・煙・火花 ...): made of the built-in modules only, so
-// they need no picture or file (the old engine's lesson: "○を放つだけで炎が作れない" - a fire must
-// be one click). The パーティクル tab makes a new effect from one, or adds its emitters to an effect.
-// Their names are Japanese here; the editor shows them through Tr (the plugin's lang/en.json).
+// パーティクル - そこから始められる出来合いのエフェクト (炎・煙・火花 ...): 組み込みモジュールだけで
+// 作るので、絵もファイルもいらない (前のエンジンの教訓: "○を放つだけで炎が作れない" - 炎は
+// ワンクリックで作れなければならない)。パーティクルタブは、これらから新しいエフェクトを作るか、
+// エフェクトにそのエミッターを足す。名前はここでは日本語で、エディターは Tr を通して見せる (プラグインの lang/en.json)。
 
 #include "rm_engine/particles/runtime/ParticleEffect.h"
 
@@ -13,11 +13,11 @@ namespace rm::particles {
 
 struct EffectPreset {
     std::string_view id;
-    std::string_view title;  // Japanese
+    std::string_view title;  // 日本語
     ParticleEffect (*make)();
 };
 
-// In the order offered (the first: NewEffect's soft glow).
+// 出す順番 (最初のもの: NewEffect のやわらかい光)。
 std::span<const EffectPreset> EffectPresets();
 
 }  // namespace rm::particles

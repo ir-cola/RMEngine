@@ -1,12 +1,13 @@
-// The plugins built into this exe (static linking: design RME_PLATFORM 10 (a)).
+// この exe に組み込むプラグイン (静的リンク: 設計 RME_PLATFORM 10 (a))。
 //
-// The only file that knows every plugin. The core declares BuiltinPlugins() and never includes
-// a plugin; tools/check_layers.ps1 checks that every plugin with an editor part is listed here.
-// A plugin with nothing to register (2D 空間: its runtime, and an editor part that is only a library
-// for other plugins' editors - the gizmo; a theme pack with only theme files) is listed too, with no
-// RegisterEditor - it can be installed and required like any other. (3D 空間's editor part is mostly
-// such a library too, and registers only the 3D models' thumbnails.)
-// Order does not matter: the loader enables requirements first.
+// すべてのプラグインを知っている唯一のファイル。核は BuiltinPlugins() を宣言するだけで、
+// プラグインを include しない。エディターの部分を持つプラグインがすべてここに並んでいるかは
+// tools/check_layers.ps1 が調べる。
+// 登録するものが何もないプラグイン (2D 空間: そのランタイムと、ほかのプラグインのエディターの
+// ためのライブラリでしかないエディターの部分 - ギズモ。ファイルだけのテーマ集) もここに並べる。
+// RegisterEditor は持たない - ほかと同じようにインストールでき、requires にも書ける。
+// (3D 空間のエディターの部分もほぼライブラリで、登録するのは 3D モデルのサムネイルだけ。)
+// 順番は関係ない: ローダーが requires を先に有効にする。
 
 #include "editor/plugin/Software.h"
 #include "rm_engine/audio/editor/Preview.h"
@@ -56,7 +57,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {physics::kPluginId, &physics::RegisterEditor},
         {game_x_audio::kPluginId, &game_x_audio::RegisterEditor},
         {game_ui::kPluginId, &game_ui::RegisterEditor},
-        {theme_colors::kPluginId, nullptr},  // theme files only (themes/*.json)
+        {theme_colors::kPluginId, nullptr},  // テーマのファイルだけ (themes/*.json)
         {theme_paper::kPluginId, nullptr},
         {theme_seasons::kPluginId, &theme_seasons::RegisterEditor},
     };

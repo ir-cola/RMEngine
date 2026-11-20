@@ -1,16 +1,16 @@
 #pragma once
-// ゲーム UI - the parts of a game's UI. Every UI thing is an entity (design: this plugin's README part in
-// docs/ARCHITECTURE.md): a キャンバス entity is one UI window (タイトル, HUD, ポーズ ...), and the UI
-// entities below it are laid out in it. So the 階層, the inspector, saving, undo, prefabs and the scripts'
-// Spawn / Destroy work for the UI as for anything else (rule 1).
+// ゲーム UI - ゲームの UI の部品。UI のものはすべてエンティティ (設計: docs/ARCHITECTURE.md の
+// このプラグインの README の部分): キャンバス のエンティティが UI のウィンドウ 1 つ (タイトル、HUD、
+// ポーズ ...) で、その下の UI のエンティティがその中に配置される。だから 階層、インスペクター、保存、
+// Undo、Prefab、スクリプトの Spawn / Destroy が、UI でもほかのものと同じように働く (憲法 1)。
 //
-//   キャンバス          a UI window: its 基準の解像度 and how it fits the screen; shown = the entity active
-//   UI の配置          where a UI thing is in its parent: fixed to a corner / the middle / stretched (アンカー),
-//                     its place, size, turn and order among its siblings
-//   文字 / 画像 / ボタン / バー   what it shows and does
+//   キャンバス          UI のウィンドウ: その 基準の解像度 と画面への収まり方。見える = エンティティが有効
+//   UI の配置          UI のものが親の中のどこにあるか: 角 / 真ん中に固定、または引き伸ばし (アンカー)、
+//                     その場所、大きさ、回転、兄弟の中での順
+//   文字 / 画像 / ボタン / バー   何を見せ、何をするか
 //
-// Units: DIPs of the canvas's 基準の解像度, the screen's Y going down (as the screen; a 2D game's plane has
-// Y up - the UI is not on the plane). Pure values - laid out by UiLayout.h, drawn by UiRenderer.h.
+// 単位: キャンバスの 基準の解像度 の DIP。画面の Y は下向き (画面と同じ。2D のゲームの平面は
+// Y が上 - UI は平面の上にない)。純粋な値 - 配置は UiLayout.h、描画は UiRenderer.h。
 
 #include "core/reflect/Reflect.h"
 
@@ -28,14 +28,14 @@ enum class UiScaleMode {
     RM_ITEM(Label="合わせない (DIP のまま)") None,
 };
 
-// How a UI thing is moved now while the game plays, on top of its UI の配置 (not saved): 出る・消える動き,
-// 道に沿って動く and the scripts' ScaleTo / FadeTo (UiService writes it each frame; the layout uses it).
-// Its children move, turn, grow and fade with it.
+// ゲームが動いているあいだ、UI のものが今どう動かされているか。UI の配置の上に重ねる (保存しない):
+// 出る・消える動き、道に沿って動く、スクリプトの ScaleTo / FadeTo (UiService が毎フレーム書き、
+// 配置が使う)。その子も、一緒に動き、回り、大きくなり、フェードする。
 struct UiLive {
-    Vec2 offset{0, 0};  // moved by (its parent's units)
+    Vec2 offset{0, 0};  // これだけ動かす (親の単位で)
     float scale = 1;    // about its 中心
-    float turn = 0;     // degrees, clockwise
-    float alpha = 1;    // 0: unseen .. 1
+    float turn = 0;     // 度、時計回り
+    float alpha = 1;    // 0: 見えない .. 1
     bool operator==(const UiLive&) const = default;
 };
 
@@ -49,7 +49,7 @@ struct UiCanvas {
     RM_PROPERTY(Edit, Label="キーとパッドで選ぶ", Tooltip="十字キー・左スティック・矢印キーでボタンを選び、決定で押し、戻るでウィンドウを戻ります (表に出ているいちばん手前のキャンバスだけ。割り当てはゲームの設定の「入力」の UIUp / UIDown / UILeft / UIRight / UISubmit / UICancel)") bool navigation = true;
     RM_PROPERTY(Edit, Label="最初に選ぶボタン", Tooltip="このウィンドウが出たときに選んでいるボタン。無ければ左上のボタン") EntityRef firstButton;
     RM_PROPERTY(Edit, Label="戻るで押すボタン", Tooltip="「戻る」でこのボタンを押します。無ければ、このウィンドウを閉じて前のウィンドウに戻ります") EntityRef cancelButton;
-    RM_TRANSIENT() UiLive live;  // the window moved now (its 出る・消える動き)
+    RM_TRANSIENT() UiLive live;  // 今動いているウィンドウ (その 出る・消える動き)
 };
 
 RM_ENUM(Label="固定する場所")
@@ -81,12 +81,12 @@ struct UiRect {
     RM_PROPERTY(Edit, Label="回す中心", Tooltip="位置と回転の中心 (0〜1。左上が 0, 0、真ん中が 0.5, 0.5)", Min=0, Max=1) Vec2 pivot{0.5f, 0.5f};
     RM_PROPERTY(Edit, Label="回転 (度)", Tooltip="時計回りが +。子も一緒に回ります", Min=-100000, Max=100000) float rotation = 0;
     RM_PROPERTY(Edit, Label="手前の順", Tooltip="兄弟の中で大きいほど手前に描きます (同じなら階層で後ろの物が手前)", Min=-100000, Max=100000) int order = 0;
-    RM_TRANSIENT() UiLive live;  // moved now while the game plays
+    RM_TRANSIENT() UiLive live;  // ゲームが動いているあいだ、今動いているもの
 };
 
-// --- How it looks, more (UI-5): 背景・枠・影・光・ぼかし・立体 -----------------------------------------
-// One struct for each kind (never one set of numbers meaning other things for each kind: spec §2-7).
-// Each draws nothing until it is used (a thing without them looks as before, to the bit).
+// --- 見た目の続き (UI-5): 背景・枠・影・光・ぼかし・立体 ---------------------------------------
+// 種類ごとに 1 つの構造体 (種類ごとに別のものを意味する 1 組の数値は作らない: 仕様 §2-7)。
+// どれも使うまでは何も描かない (それを持たないものは、ビットまで前と同じに見える)。
 RM_STRUCT(Label="背景")
 struct UiBackground {
     RM_PROPERTY(Edit, Label="使う", Tooltip="画像が無くても、この色の (角の丸い) 四角を描きます。ボタンや下敷きが画像なしで作れます") bool enabled = true;
@@ -163,10 +163,10 @@ struct UiVideo {
     RM_PROPERTY(Edit, Label="音の大きさ", Min=0, Max=1) float volume = 1;
     RM_PROPERTY(Edit, Label="始める所 (秒)", Min=0, Max=100000) float start = 0;
     RM_PROPERTY(Edit, Label="終わる所 (秒)", Tooltip="0 なら最後まで", Min=0, Max=100000) float end = 0;
-    RM_TRANSIENT() float gain = 1;  // 全体 × 音楽 now (the UI service; 1 outside the game)
+    RM_TRANSIENT() float gain = 1;  // 全体 × 音楽 の今の値 (UI サービスが入れる。ゲームの外では 1)
 };
 
-// --- Motion (UI-4) ------------------------------------------------------------------------------------
+// --- 動き (UI-4) -------------------------------------------------------------------------------
 RM_ENUM(Label="速さの曲線")
 enum class UiEase {
     RM_ITEM(Label="一定") Linear,
@@ -186,8 +186,7 @@ enum class UiSlide {
     RM_ITEM(Label="下") Down,
 };
 
-// One way of appearing (出るとき: from these values to the thing as it is) or of going (消えるとき: from it
-// as it is to these values).
+// 現れ方 (出るとき: この値から今のものの状態へ) か、去り方 (消えるとき: 今の状態からこの値へ) の 1 つ。
 RM_STRUCT(Label="出る・消える動き")
 struct UiTransition {
     RM_PROPERTY(Edit, Label="使う") bool enabled = true;
@@ -207,11 +206,11 @@ struct UiMotion {
     RM_PROPERTY(Edit, Label="出るとき", Tooltip="有効になったとき (ボタンの動作・スクリプトの Show・SetActive)") UiTransition show;
     RM_PROPERTY(Edit, Label="消えるとき", Tooltip="有効を外されたとき。動き終わるまで見えています (ボタンは押せません)") UiTransition hide;
     RM_PROPERTY(Edit, Label="ゲームの始めにも", Tooltip="ゲーム (シーン) の始めから出ている物も、出るときの動きで出します") bool atStart = true;
-    RM_TRANSIENT() int phase = 0;      // UiMotionPhase (the UI service)
-    RM_TRANSIENT() float time = 0;     // seconds since it began
-    RM_TRANSIENT() bool seen = false;  // shown last frame
+    RM_TRANSIENT() int phase = 0;      // UiMotionPhase (UI サービス)
+    RM_TRANSIENT() float time = 0;     // 始まってからの秒
+    RM_TRANSIENT() bool seen = false;  // 前のフレームで見えていた
 };
-// What a UiMotion is doing (UiMotion::phase).
+// UiMotion が今していること (UiMotion::phase)。
 enum class UiMotionPhase : int { Still = 0, Showing = 1, Hiding = 2 };
 
 RM_ENUM(Label="道の走り方")
@@ -232,9 +231,9 @@ struct UiPath {
     RM_PROPERTY(Edit, Label="速さの曲線", Tooltip="1 回・往復の片道ごとに") UiEase ease = UiEase::Linear;
     RM_PROPERTY(Edit, Label="向きを合わせる", Tooltip="進む向きに回します (右向きが 0 度)") bool orient = false;
     RM_PROPERTY(Edit, Label="始めから動く", Tooltip="外すとスクリプトの rm::UI::PlayPath で動き出します") bool playOnStart = true;
-    RM_TRANSIENT() float travelled = 0;  // along the path (the UI service)
+    RM_TRANSIENT() float travelled = 0;  // 道に沿った道のり (UI サービス)
     RM_TRANSIENT() bool playing = false;
-    RM_TRANSIENT() bool backward = false;  // 往復: on the way back
+    RM_TRANSIENT() bool backward = false;  // 往復: 戻る途中
     RM_TRANSIENT() bool started = false;
 };
 
@@ -252,8 +251,8 @@ enum class UiAlignY {
     RM_ITEM(Label="下") Bottom,
 };
 
-// A part of a text styled on its own (spec §2-5 部分スタイル): the characters from `start` (0: the first;
-// a line break is one too), `length` of them. A later run wins where two meet.
+// 文字の一部を別に飾るもの (仕様 §2-5 部分スタイル): `start` (0: 最初。改行も 1 文字に数える) から
+// `length` 文字。重なる所では後のものが勝つ。
 RM_ENUM(Label="部分の切り替え")
 enum class UiRunSwitch {
     RM_ITEM(Label="そのまま") Keep,
@@ -315,7 +314,7 @@ struct UiImage {
     Vec2 cropSize{0, 0};
 };
 
-// The state a button is in this frame (written by the UI service while the game plays; not saved).
+// このフレームでボタンがいる状態 (ゲームが動くあいだ UI サービスが書く。保存しない)。
 enum class UiButtonState : int { Normal = 0, Hover = 1, Pressed = 2, Disabled = 3 };
 
 RM_ENUM(Label="ボタンの色の変え方")
@@ -324,11 +323,11 @@ enum class UiButtonColorMode {
     RM_ITEM(Label="置き換える") Replace,
 };
 
-// How a button looks now, on its way to its state's look (UiLayout: ButtonTarget / EaseLook). The colours
-// go two ways at once (spec §6-4): multiplied by `tint`, then moved toward `replace` by `replaceAmount` -
-// what is replaced differs (the picture, the bar's back, its fill), so one colour would not do. The
-// outline is the state's, mixed in by `outlineAmount` (0: the thing's own - none yet): a state without
-// one keeps the last width and colour while the amount falls, so it fades and never gets thinner.
+// ボタンが今どう見えているか。状態の見た目へ向かう途中のもの (UiLayout: ButtonTarget / EaseLook)。
+// 色は 2 通りで同時に動く (仕様 §6-4): `tint` を掛け、そのあと `replaceAmount` だけ `replace` へ寄せる -
+// 置き換わるもの (絵、バーの背、その中身) が違うので、色 1 つでは足りない。輪郭はその状態のもので、
+// `outlineAmount` で混ぜる (0: そのもの自身のもの - まだ無い): 輪郭の無い状態は、量が減るあいだ
+// 最後の太さと色を保つので、細くならずに消える。
 struct UiButtonLook {
     Color tint{1, 1, 1, 1};
     Color replace{1, 1, 1, 1};  // (r g b)
@@ -339,9 +338,9 @@ struct UiButtonLook {
     float outlineAmount = 0;
 };
 
-// What a button does when pressed, without a script (配置と配線; spec §6-7). In order, after its sound and
-// before the scripts' OnClick - so an OnClick of the same frame reads what they did. Only while the game
-// plays (the editor's Play, the exported game). Each kind shows only its own fields (ShowIf).
+// ボタンを押したとき、スクリプト無しでしてくれること (配置と配線; 仕様 §6-7)。順に、その音のあと、
+// スクリプトの OnClick より前に - だから同じフレームの OnClick は、これがしたことを読む。
+// ゲームが動くあいだだけ (エディターの Play、書き出したゲーム)。種類ごとに自分の欄だけを出す (ShowIf)。
 RM_ENUM(Label="押したときの動作の種類")
 enum class UiActionKind {
     RM_ITEM(Label="ウィンドウを出す") ShowWindow,
@@ -412,11 +411,11 @@ struct UiButton {
     RM_PROPERTY(Edit, Label="下で移る先", Tooltip="空なら画面の下で一番近いボタン") EntityRef down;
     RM_PROPERTY(Edit, Label="左で移る先", Tooltip="空なら画面の左で一番近いボタン") EntityRef left;
     RM_PROPERTY(Edit, Label="右で移る先", Tooltip="空なら画面の右で一番近いボタン") EntityRef right;
-    RM_TRANSIENT() int state = 0;         // UiButtonState, this frame (the UI service)
-    RM_TRANSIENT() bool focused = false;  // chosen by the keys / a pad (looks as Hover)
-    RM_TRANSIENT() UiButtonLook now;      // how it looks now (the UI service eases it toward its state's look)
-    RM_TRANSIENT() bool ready = false;    // `now` is set (else it looks as its state: the editor, the first frame)
-    RM_TRANSIENT() bool hot = false;      // 乗った or pressed last frame (its sound once, when it becomes so)
+    RM_TRANSIENT() int state = 0;         // UiButtonState、このフレームの (UI サービス)
+    RM_TRANSIENT() bool focused = false;  // キーやパッドで選ばれた (Hover と同じに見える)
+    RM_TRANSIENT() UiButtonLook now;      // 今の見た目 (UI サービスが、その状態の見た目へなめらかに寄せる)
+    RM_TRANSIENT() bool ready = false;    // `now` が入っている (入っていなければ、その状態のとおりに見える: エディター、最初のフレーム)
+    RM_TRANSIENT() bool hot = false;      // 前のフレームで 乗った か押された (その音は、そうなったとき 1 回だけ)
 };
 
 RM_ENUM(Label="伸びる向き")

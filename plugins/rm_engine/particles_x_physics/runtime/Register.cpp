@@ -24,14 +24,14 @@ void Put(float (&to)[3], Vec3 v) {
     to[2] = v.z;
 }
 
-// A column of a turn (m[column][row]): one of the entity's axes in the world (length 1).
+// 回転の 1 列 (m[列][行]): エンティティの軸の 1 つをワールドで表したもの (長さ 1)。
 Vec3 Column(const Mat4& m, int c) { return {m.m[c][0], m.m[c][1], m.m[c][2]}; }
 
 }  // namespace
 
 void GatherShapes(const game_production::Scene& scene, const std::function<const Mat4*(int)>& world, std::vector<CollisionShape>& out) {
-    // The shapes as the physics makes its bodies (physics::DimsOf / PoseOf: the same sizes, minimums and
-    // the character standing up, not turned or scaled - written once there, 2026-11-19).
+    // 物理が物体を作る時と同じ形 (physics::DimsOf / PoseOf: 同じ大きさ、同じ最小値、キャラクターは
+    // 立たせて回さず拡縮もしない - そこに 1 度だけ書いてある、2026-11-19)。
     const std::string collider = reflect::TypeOf<physics::Collider>().name, character = reflect::TypeOf<physics::Character>().name;
     auto add = [&](const physics::ShapeDims& d, const physics::Pose& pose) {
         CollisionShape s{};
@@ -56,7 +56,7 @@ void GatherShapes(const game_production::Scene& scene, const std::function<const
                 s.sizeX = d.radius;
                 s.sizeY = d.halfHeight;
                 break;
-            case physics::ShapeDims::Kind::Mesh: return;  // (a mesh's shape is the model's: not here)
+            case physics::ShapeDims::Kind::Mesh: return;  // (メッシュの形はモデルのもの: ここでは扱わない)
         }
         out.push_back(s);
     };

@@ -1,16 +1,17 @@
 #pragma once
-// 音 - turning a sound file into samples, a piece at a time (a long BGM is never decoded whole).
+// 音 - 音のファイルをサンプルにする。1 回に 1 断片ずつ (長い BGM は丸ごとデコードしない)。
 //
-//   WAV                this engine (Sound.h: PCM 8 / 16 / 24 / 32, float 32 / 64)
-//   Ogg Vorbis         stb_vorbis (public domain / MIT: runtime/third_party) - Media Foundation cannot
-//                      read OGG on every PC
-//   MP3 / AAC / FLAC   Media Foundation (Windows). Loaded when first needed (LoadLibrary): a PC without
-//                      it (the Windows N editions) still runs the game - those sounds are then silent,
-//                      with the reason on the console / in game.log once.
+//   WAV                このエンジン (Sound.h: PCM 8 / 16 / 24 / 32、float 32 / 64)
+//   Ogg Vorbis         stb_vorbis (パブリックドメイン / MIT: runtime/third_party) - Media Foundation は
+//                      どの PC でも OGG を読めるわけではない
+//   MP3 / AAC / FLAC   Media Foundation (Windows)。初めて要るときに読み込む (LoadLibrary): 無い PC
+//                      (Windows の N エディション) でもゲームは動く - その音は無音になり、
+//                      理由がコンソールと game.log に 1 回出る。
 //
-// Which one is chosen by the file's first bytes (not its name). A decoder reads from the bytes it was
-// given (shared: one sound playing several times shares them). Any thread; one decoder is used by one
-// thread at a time. Media Foundation is used on a thread that called CoInitializeEx (the engine's).
+// どれを使うかは、ファイルの最初のバイトで決める (名前ではない)。デコーダーは渡されたバイト列から
+// 読む (共有: 同じ音を何回か鳴らしても、バイト列は共有する)。どのスレッドでもよいが、1 つのデコーダーを
+// 同時に使うのは 1 つのスレッドだけ。Media Foundation は、CoInitializeEx を呼んだスレッド (エンジンの)
+// で使う。
 
 #include "rm_engine/audio/runtime/Sound.h"
 
@@ -29,27 +30,27 @@ class Decoder {
 public:
     virtual ~Decoder() = default;
     Format format;
-    uint64_t frames = 0;   // the length (0: unknown - read until Read gives 0)
+    uint64_t frames = 0;   // 長さ (0: 不明 - Read が 0 を返すまで読む)
     const char* codec = "";  // "WAV" / "Ogg Vorbis" / "Media Foundation"
-    // Up to `frames` frames into `out` (frames * channels floats); 0 at the end.
+    // `frames` フレームまでを `out` (frames * channels 個の float) に読む。終わりでは 0。
     virtual size_t Read(float* out, size_t frames) = 0;
-    // To frame `frame` (a loop going back). False when it cannot.
+    // `frame` フレームへ移る (ループで戻る)。できなければ false。
     virtual bool Seek(uint64_t frame) = 0;
 };
 
-// The decoder for `bytes`; null and *error (Japanese, with what to do) when it cannot be read.
+// `bytes` のデコーダー。読めないときは null と *error (日本語で、どうすればよいかも書く)。
 std::unique_ptr<Decoder> OpenDecoder(Bytes bytes, const SoundBudget& budget, std::string* error);
 
-// The whole sound as float samples (a short sound effect: decoded once, played many times). Refuses
-// what is longer than budget.maxWholeSeconds (it is to be streamed).
+// 音全体を float のサンプルで (短い効果音: 1 回デコードして、何度も鳴らす)。budget.maxWholeSeconds
+// より長いものは断る (ストリームにするもの)。
 struct Pcm {
     Format format;
-    std::vector<float> samples;  // interleaved
+    std::vector<float> samples;  // インターリーブ
     uint64_t Frames() const { return format.channels ? samples.size() / format.channels : 0; }
 };
 std::optional<Pcm> DecodeWhole(Decoder& decoder, const SoundBudget& budget, std::string* error);
 
-// What a sound is (the アセット panel): its form, length and reader. nullopt: it cannot be read.
+// 音が何か (アセット パネル): 形式、長さ、読むもの。nullopt: 読めない。
 struct SoundInfo {
     Format format;
     double seconds = 0;
@@ -57,7 +58,7 @@ struct SoundInfo {
 };
 std::optional<SoundInfo> Describe(Bytes bytes, const SoundBudget& budget, std::string* error);
 
-// Media Foundation is on this PC (loaded and started; asked once).
+// この PC に Media Foundation がある (読み込んで開始済み。調べるのは 1 回)。
 bool MediaFoundationAvailable();
 
 }  // namespace rm::audio

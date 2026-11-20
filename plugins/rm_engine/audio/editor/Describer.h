@@ -1,11 +1,12 @@
 #pragma once
-// 音 - the line the アセット panel shows about a sound ("長さ 0:12.5 · 44100 Hz ステレオ · Ogg Vorbis"),
-// read on a thread of its own: once per file and time it was changed (the panel asks every frame).
+// 音 - アセット パネルが音について見せる 1 行 ("長さ 0:12.5 · 44100 Hz ステレオ · Ogg Vorbis")。
+// 専用のスレッドで読む: ファイルと更新時刻ごとに 1 回 (パネルは毎フレーム尋ねる)。
 //
-//   Line(file, known)   the line when it is known; else "長さを調べています…" and the file is read -
-//                       `known` is called (on the describer's thread) once the line is there, so the
-//                       panel can have the windows drawn again (a frame drawn before that would show
-//                       "長さを調べています…" until the mouse moved)
+//   Line(file, known)   分かっていればその 1 行。分かっていなければ "長さを調べています…" を返し、
+//                       ファイルを読む -
+//                       1 行ができたら `known` を (describer のスレッドで) 呼ぶ。パネルがウィンドウを
+//                       描き直せるようにするため (その前に描いたフレームは、マウスが動くまで
+//                       "長さを調べています…" のままになる)
 
 #include <condition_variable>
 #include <deque>
@@ -27,7 +28,7 @@ public:
     Describer& operator=(const Describer&) = delete;
 
     std::wstring Line(const std::filesystem::path& file, const std::function<void()>& known);
-    // The line of the file's bytes (on any thread; what Line shows when it is known).
+    // ファイルのバイト列から作る 1 行 (どのスレッドでも呼べる。分かっているとき Line が返すもの)。
     static std::wstring Read(const std::filesystem::path& file);
 
 private:
@@ -35,13 +36,13 @@ private:
         std::filesystem::file_time_type time{};
         bool ready = false;
         std::wstring line;
-        std::vector<std::function<void()>> waiting;  // told when it is ready
+        std::vector<std::function<void()>> waiting;  // できたら知らせる先
     };
     std::mutex m_;
     std::condition_variable_any cv_;
     std::unordered_map<std::wstring, Known> known_;
     std::deque<std::filesystem::path> asked_;
-    std::jthread thread_;  // (last: stopped and joined first)
+    std::jthread thread_;  // (最後に置く: 最初に止めて join される)
 };
 
 }  // namespace rm::audio

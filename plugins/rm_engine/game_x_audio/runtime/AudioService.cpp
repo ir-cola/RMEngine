@@ -35,7 +35,7 @@ AudioService::AudioService(const gp::PlayHost& host) : host_(host), engine_(std:
     if (!host.silent && !engine_->HasDevice()) Tell(1, "音: 音の出る機器が見つからないので、音は鳴りません (ゲームはそのまま動きます)");
 }
 
-AudioService::~AudioService() { engine_.reset(); }  // (every voice stops, the device closes)
+AudioService::~AudioService() { engine_.reset(); }  // (すべての声が止まり、デバイスが閉じる)
 
 void AudioService::Tell(int level, const std::string& text) {
     if (host_.log) host_.log(level, text);
@@ -50,7 +50,7 @@ const audio::SoundSource* AudioService::Sound(const AssetRef& ref) {
     if (auto bytes = host_.asset ? host_.asset(ref) : std::nullopt) {
         audio::SoundSource s;
         json::Value import;
-        if (const auto pack = UnpackSound(*bytes)) {  // the game's: baked with its import settings
+        if (const auto pack = UnpackSound(*bytes)) {  // ゲームのもの: 取り込みの設定つきでベイク済み
             if (!pack->name.empty()) name = pack->name;
             import = pack->import;
             s.bytes = std::make_shared<const std::string>(pack->file);
@@ -73,15 +73,15 @@ const audio::SoundSource* AudioService::Sound(const AssetRef& ref) {
 }
 
 void AudioService::Frame(const gp::PlayFrame& f) {
-    // The volumes: the game settings' (edited while playing: heard at once), or a script's.
+    // 音量: ゲーム設定のもの (Play 中に編集すると、すぐ聞こえる)、またはスクリプトのもの。
     engine_->SetVolumes(Volume(BusVolume::Master), Volume(BusVolume::Music), Volume(BusVolume::Effects));
-    // Who hears: the game's camera.
+    // 聞く人: ゲームのカメラ。
     gp::Pose ear;
     if (f.camera != 0 && f.camera <= static_cast<uint64_t>(std::numeric_limits<int>::max()) && host_.registry &&
         gp::EntityPose(*host_.registry, f.scene, static_cast<int>(f.camera), ear)) {
         engine_->SetListener(ear.position, ear.forward, ear.up);
     }
-    // The 音源 components of the entities that run: new ones start, the others follow their values.
+    // 動いているエンティティの 音源 部品: 新しいものは鳴り始め、他は値に追従する。
     std::unordered_map<SourceKey, Source, KeyHash> seen;
     seen.reserve(sources_.size());
     gp::ForEachComponent(f.scene, reflect::TypeOf<AudioSource>().name, [&](gp::SceneEntity& e, gp::Component& c) {
@@ -100,7 +100,7 @@ void AudioService::Frame(const gp::PlayFrame& f) {
             if (a->playOnStart) StartSource(*a, s, f.scene);
         } else if (s.voice != 0) {
             if (!engine_->IsPlaying(s.voice)) {
-                s.voice = 0;  // it ended
+                s.voice = 0;  // 終わった
             } else {
                 engine_->SetVolume(s.voice, a->volume);
                 engine_->SetPitch(s.voice, a->pitch);
@@ -110,10 +110,10 @@ void AudioService::Frame(const gp::PlayFrame& f) {
         }
         seen.emplace(key, s);
     });
-    // The ones that went (deleted, switched off): stopped with their フェード.
+    // なくなったもの (削除、オフ): フェード付きで止める。
     for (auto& [key, s] : sources_) StopVoice(s);
     sources_ = std::move(seen);
-    // The music of the scene before that no 音源 of this one took over.
+    // 前のシーンの音楽のうち、このシーンの 音源 が引き継がなかったもの。
     if (musicOrphan_) {
         if (music_ != 0) engine_->Stop(music_, musicFade_);
         music_ = 0;
@@ -131,7 +131,7 @@ void AudioService::SetPaused(bool paused) { engine_->PauseAll(paused); }
 void AudioService::SceneSwitched() {
     for (auto& [key, s] : sources_) {
         if (s.voice != 0 && s.voice == music_) {
-            musicOrphan_ = true;  // (the next Frame: taken over by the same BGM, or stopped)
+            musicOrphan_ = true;  // (次の Frame: 同じ BGM が引き継ぐか、止める)
             musicFade_ = s.fade;
             musicOwner_ = nullptr;
             continue;
@@ -144,7 +144,7 @@ void AudioService::SceneSwitched() {
 AudioService::VoiceId AudioService::StartSource(const AudioSource& c, Source& s, gp::Scene& scene) {
     if (s.voice != 0) {
         const float fade = s.fade;
-        s.fade = 0;  // (played again: the one before stops at once)
+        s.fade = 0;  // (また鳴らす: 前のものはすぐ止める)
         StopVoice(s);
         s.fade = fade;
     }
@@ -172,7 +172,7 @@ AudioService::VoiceId AudioService::StartSource(const AudioSource& c, Source& s,
 }
 
 AudioService::VoiceId AudioService::StartMusic(const AssetRef& ref, audio::PlayParams params, double fade, const void* owner) {
-    // The same sound already playing as the music: it goes on (a scene switched to with the same BGM).
+    // 同じ音がもう音楽として鳴っている: そのまま続ける (同じ BGM のシーンに切り替えたとき)。
     if (music_ != 0 && !ref.Empty() && musicSound_ == ref.guid && engine_->IsPlaying(music_)) {
         musicOwner_ = owner;
         musicOrphan_ = false;
@@ -180,7 +180,7 @@ AudioService::VoiceId AudioService::StartMusic(const AssetRef& ref, audio::PlayP
         engine_->SetVolume(music_, params.volume);
         return music_;
     }
-    if (music_ != 0) engine_->Stop(music_, fade);  // fades out while the new one fades in
+    if (music_ != 0) engine_->Stop(music_, fade);  // 新しいものがフェードインする間に、フェードアウトする
     music_ = 0;
     musicSound_.clear();
     musicOwner_ = nullptr;
@@ -262,7 +262,7 @@ std::pair<AudioSource*, AudioService::Source*> AudioService::SourceOf(gp::Scene&
     gp::Component* c = e ? e->FindComponent(reflect::TypeOf<AudioSource>().name) : nullptr;
     if (!c || !c->Known()) return {nullptr, nullptr};
     auto* a = static_cast<AudioSource*>(c->value.Get());
-    Source& s = sources_[SourceKey{a, entity}];  // (a new one: started by the script, so not by 始めから鳴らす)
+    Source& s = sources_[SourceKey{a, entity}];  // (新しいもの: スクリプトが始めたので 始めから鳴らす ではない)
     s.entity = entity;
     return {a, &s};
 }
@@ -290,8 +290,8 @@ bool AudioService::SourcePause(gp::Scene& scene, int entity, bool paused) {
 }
 
 bool AudioService::SourcePlaying(gp::Scene& scene, int entity) {
-    // Only asked: nothing is made (a source made here would no longer be "new" at the next Frame, and
-    // its 始めから鳴らす would never start - a script asking in its BeginPlay silenced it).
+    // 頼まれただけ: 何も作らない (ここで作った音源は次の Frame では「新しい」ものではなくなり、
+    // その 始めから鳴らす は始まらない - BeginPlay で頼むスクリプトが音を消していた)。
     gp::SceneEntity* e = scene.Find(entity);
     gp::Component* c = e ? e->FindComponent(reflect::TypeOf<AudioSource>().name) : nullptr;
     if (!c || !c->Known()) return false;
@@ -299,7 +299,7 @@ bool AudioService::SourcePlaying(gp::Scene& scene, int entity) {
     return it != sources_.end() && it->second.voice != 0 && engine_->IsPlaying(it->second.voice);
 }
 
-// --- The scripts' part (RMAudioAbi.h): RmApi::ctx is game production's ScriptWorld --------------------
+// --- スクリプトの部分 (RMAudioAbi.h): RmApi::ctx は game production の ScriptWorld --------------
 namespace {
 
 AudioService* ServiceOf(void* ctx) {
@@ -360,7 +360,7 @@ int SourceSetV(void* ctx, uint64_t entity, int what, float value) {
     gp::SceneEntity* e = w.scene && id != 0 ? w.scene->Find(id) : nullptr;
     gp::Component* c = e ? e->FindComponent(reflect::TypeOf<AudioSource>().name) : nullptr;
     if (!c || !c->Known()) return 0;
-    auto* a = static_cast<AudioSource*>(c->value.Get());  // (heard at the end of the frame: Frame follows the values)
+    auto* a = static_cast<AudioSource*>(c->value.Get());  // (フレームの終わりに聞こえる: Frame が値に追従する)
     if (what == 0) a->volume = std::clamp(value, 0.f, 4.f);
     if (what == 1) a->pitch = audio::ClampPitch(value);
     return 1;

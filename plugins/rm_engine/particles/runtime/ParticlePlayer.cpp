@@ -29,9 +29,9 @@ uint32_t AdvanceClock(EmitterClock& c, const ParticleEmitter& e, float dt) {
         c.burstDone = true;
     }
     float left = std::max(dt, 0.f);
-    // (A long dt runs through several rounds; each round starts with its burst.)
+    // (長い dt は何ラウンドかに分けて進める; 各ラウンドの頭でバーストを出す。)
     for (int rounds = 0; left > 0 && rounds < 1000; ++rounds) {
-        // (Never below 0: 長さ made shorter than the time already played - the round ends now.)
+        // (0 を下回らせない: 長さを、もう再生した時間より短くした時 - ラウンドは今終わる。)
         const float span = std::max(0.f, std::min(left, duration - c.age));
         c.owed += rate * span;
         c.age += span;
@@ -60,14 +60,14 @@ std::shared_ptr<const ModuleSource> BuiltinLookup(const ParticleModule& m, std::
     if (m.builtin.empty()) return nullptr;
     file = m.builtin;
     const ModuleSource* src = FindBuiltin(m.builtin);
-    // (the built-in ones live for the whole program: a pointer that owns nothing)
+    // (組み込みのものはプログラムが動いている間ずっとある: 何も所有しないポインター)
     return src ? std::shared_ptr<const ModuleSource>(std::shared_ptr<const ModuleSource>(), src) : nullptr;
 }
 
 bool CanRunParticles(ID3D11Device* device) { return device && device->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0; }
 
 namespace {
-std::atomic<int64_t> g_countUntil{0};  // steady_clock milliseconds
+std::atomic<int64_t> g_countUntil{0};  // steady_clock のミリ秒
 int64_t NowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
@@ -78,19 +78,19 @@ bool CountingAlive() { return NowMs() < g_countUntil.load(); }
 
 namespace {
 
-// The shaders of one text on one device (shared by every player that has the same modules).
+// 1 つのテキストを 1 つのデバイスで使うシェーダー (同じモジュールを持つプレイヤー全員で共有)。
 struct Programs {
     ComPtr<ID3D11ComputeShader> spawn, update;
     ComPtr<ID3D11VertexShader> vs, trailVs;
     ComPtr<ID3D11PixelShader> ps, trailPs;
-    std::string error;  // the compiler's words (then nothing above is made)
+    std::string error;  // コンパイラーの言葉 (出ると、上のものは何も作らない)
 };
 
-// The states every emitter draws with, once per device.
+// どのエミッターも描く時に使うステート。デバイスごとに 1 つ。
 struct States {
     ComPtr<ID3D11BlendState> add, alpha;
     ComPtr<ID3D11RasterizerState> raster;
-    ComPtr<ID3D11SamplerState> sampler;  // the pictures: smooth, clamped at the edges
+    ComPtr<ID3D11SamplerState> sampler;  // 絵用: なめらか、端はクランプ
 };
 
 bool Compile(const std::string& hlsl, const char* entry, const char* target, ComPtr<ID3DBlob>& code, std::string& error) {
@@ -124,7 +124,7 @@ std::shared_ptr<const Programs> ProgramsFor(ID3D11Device* device, const std::str
             p->error = "シェーダーを GPU に作れません";
         }
     }
-    // (Texts nobody plays any more are forgotten now and then.)
+    // (誰も再生しなくなったテキストは、時々忘れる。)
     if (made.size() > 64) std::erase_if(made, [](const auto& kv) { return kv.second.expired(); });
     slot = p;
     return p;
@@ -176,29 +176,29 @@ ComPtr<ID3D11Buffer> ConstantBuffer(ID3D11Device* device, UINT bytes) {
     return b;
 }
 
-constexpr float kForgetDeadAfter = 30;  // a finished emitter's particles are surely gone after this (seconds)
+constexpr float kForgetDeadAfter = 30;  // 終わったエミッターの粒は、これだけたてば確実に消えている (秒)
 
 }  // namespace
 
 struct EffectPlayer::Emitter {
-    const ParticleEmitter* data = nullptr;  // inside effect_
-    std::vector<std::shared_ptr<const ModuleSource>> looked;  // every module in use, as looked up (null: none)
-    std::vector<std::shared_ptr<const ModuleSource>> sources;  // the ones that run
+    const ParticleEmitter* data = nullptr;  // effect_ の中
+    std::vector<std::shared_ptr<const ModuleSource>> looked;  // 使っているすべてのモジュールを引いた結果 (null: 無し)
+    std::vector<std::shared_ptr<const ModuleSource>> sources;  // 動くもの
     std::vector<std::string> files;
-    std::string error;  // the compiler's words when its shaders did not compile
+    std::string error;  // シェーダーがコンパイルできなかった時のコンパイラーの言葉
     std::vector<ModuleInput> inputs;
     EmitterShader shader;
     std::vector<float> params;
     std::shared_ptr<const Programs> programs;
     std::shared_ptr<const States> states;
-    bool broken = false;  // its modules or its shaders cannot run (told once)
-    // The GPU could not give it room for this many particles / trail points (told once): tried again
-    // when 粒の数の上限 / トレイルの点 change - not every frame, and not never (it is not broken).
+    bool broken = false;  // モジュールかシェーダーが動かせない (1 度だけ知らせる)
+    // GPU がこの数のパーティクル / トレイルの点を置く場所を用意できなかった (1 度だけ知らせる):
+    // 粒の数の上限 / トレイルの点 が変わったらまた試す - 毎フレームではなく、永久にやめるのでもない (壊れてはいない)。
     uint32_t failedCapacity = 0, failedTrail = 0;
 
     ComPtr<ID3D11Buffer> particles;
     ComPtr<ID3D11UnorderedAccessView> uav;
-    // Counting the alive ones (CountAliveFor): a 4-byte counter, and copies read back a few frames later.
+    // 生きているものを数える (CountAliveFor): 4 バイトのカウンターと、数フレーム後に読み戻すコピー。
     ComPtr<ID3D11Buffer> count;
     ComPtr<ID3D11UnorderedAccessView> countUav;
     ComPtr<ID3D11Buffer> readBack[3];
@@ -207,17 +207,17 @@ struct EffectPlayer::Emitter {
     uint64_t alive = 0;
     bool aliveKnown = false;
     ComPtr<ID3D11ShaderResourceView> srv;
-    uint32_t capacity = 0;  // of the buffer made
+    uint32_t capacity = 0;  // 作ったバッファーの
     bool cleared = false;
     ComPtr<ID3D11Buffer> emitterCb, paramsCb, viewCb;
     uint32_t paramsCbSlots = 0;
-    // The trail: TrailPoints float4 per particle (made with the particles when the emitter has a trail).
+    // トレイル: 粒 1 つにつき float4 を TrailPoints 個 (エミッターにトレイルがあれば、粒と一緒に作る)。
     ComPtr<ID3D11Buffer> trails;
     ComPtr<ID3D11UnorderedAccessView> trailsUav;
     ComPtr<ID3D11ShaderResourceView> trailsSrv;
-    uint32_t trailPoints = 0;  // of the buffer made
+    uint32_t trailPoints = 0;  // 作ったバッファーの
 
-    EmitterConstants constants{};  // as last written to emitterCb (Draw changes hasImage when the picture is not there)
+    EmitterConstants constants{};  // emitterCb に最後に書いた値 (絵が無ければ Draw が hasImage を変える)
     EmitterClock clock;
     uint32_t head = 0, serial = 0;
     float sinceFinished = 0;
@@ -227,7 +227,7 @@ EffectPlayer::EffectPlayer() = default;
 EffectPlayer::~EffectPlayer() = default;
 
 void EffectPlayer::Set(std::shared_ptr<const ParticleEffect> effect, const ModuleLookup& lookup) {
-    // The modules each emitter uses now.
+    // 各エミッターがいま使っているモジュール。
     struct Found {
         const ParticleModule* module;
         std::shared_ptr<const ModuleSource> source;
@@ -278,7 +278,7 @@ void EffectPlayer::Set(std::shared_ptr<const ParticleEffect> effect, const Modul
         e->params = PackParams(e->inputs);
         for (const ModuleError& err : e->shader.errors) problems_.push_back(std::format("パーティクル「{}」: {}", data.name, Message(err)));
         e->broken = !e->shader.errors.empty();
-        // The same modules as before: the particles go on (only the values changed).
+        // 前と同じモジュール: 粒はそのまま続く (値だけが変わった)。
         if (i < emitters_.size() && emitters_[i] && emitters_[i]->shader.hlsl == e->shader.hlsl && !e->broken) {
             Emitter& old = *emitters_[i];
             old.data = e->data;
@@ -295,7 +295,7 @@ void EffectPlayer::Set(std::shared_ptr<const ParticleEffect> effect, const Modul
     emitters_ = std::move(next);
 }
 
-// The counter of the alive particles and its read-back copies (made the first time they are counted).
+// 生きている粒のカウンターと、読み戻し用のコピー (初めて数える時に作る)。
 bool EffectPlayer::MakeCounter(ID3D11Device* device, Emitter& e) {
     if (e.countUav) return true;
     D3D11_BUFFER_DESC bd{};
@@ -327,13 +327,13 @@ bool EffectPlayer::MakeCounter(ID3D11Device* device, Emitter& e) {
     return true;
 }
 
-// The count of a few frames ago, when the GPU has it ready (never waited for); this frame's copied.
+// 数フレーム前のカウント。GPU に用意ができていれば使う (待たない); 今フレームのはコピーする。
 void EffectPlayer::ReadBackCount(ID3D11DeviceContext* ctx, Emitter& e) {
     const uint32_t slot = e.readBackNext;
     if (e.readBackFilled[slot]) {
         D3D11_MAPPED_SUBRESOURCE m{};
         const HRESULT hr = ctx->Map(e.readBack[slot].Get(), 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &m);
-        if (hr == DXGI_ERROR_WAS_STILL_DRAWING) return;  // (not yet: this slot is kept, nothing copied this frame)
+        if (hr == DXGI_ERROR_WAS_STILL_DRAWING) return;  // (まだ: この枠は取っておき、今フレームは何もコピーしない)
         if (SUCCEEDED(hr)) {
             e.alive = std::min<uint64_t>(*static_cast<const uint32_t*>(m.pData), e.capacity);
             e.aliveKnown = true;
@@ -368,9 +368,9 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
     time_ += dt;
     struct Used {
         uint32_t& pending;
-        ~Used() { pending = 0; }  // (each emitter took the asked particles once, at whatever return)
+        ~Used() { pending = 0; }  // (各エミッターは、どこで return しても頼まれた粒を 1 度だけ受け取った)
     } used{pending_};
-    // What the emitters collide with: the shapes (one buffer, grown when needed) and the depth's camera.
+    // エミッターが当たる相手: 形 (バッファー 1 つ、要れば広げる) と、深度のカメラ。
     CollideConstants cc{};
     const size_t shapeCount = collide ? std::min<size_t>(collide->shapes.size(), 4096) : 0;
     if (shapeCount > shapesCapacity_ || !shapes_) {
@@ -415,7 +415,7 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
         if (!e.programs) {
             e.programs = ProgramsFor(device, e.shader.hlsl);
             if (!e.programs->error.empty()) {
-                // On one line: the コンソール shows a message's first line (2026-11-18 on screen).
+                // 1 行で: コンソールはメッセージの 1 行目を見せる (2026-11-18 画面で)。
                 std::string why = e.programs->error;
                 std::replace(why.begin(), why.end(), '\n', ' ');
                 std::erase(why, '\r');
@@ -455,7 +455,7 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
             e.trails.Reset();
             e.trailPoints = 0;
         }
-        // The trail's places (made again when the number of points or of particles changes).
+        // トレイルの場所 (点の数か粒の数が変わったら作り直す)。
         const uint32_t points = e.data->trail ? static_cast<uint32_t>(std::clamp(e.data->trailPoints, 2, 64)) : 0;
         if (points != e.trailPoints && !(points > 0 && e.failedTrail == points)) {
             e.trails.Reset();
@@ -473,7 +473,7 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
                     SUCCEEDED(device->CreateShaderResourceView(e.trails.Get(), nullptr, &e.trailsSrv))) {
                     e.trailPoints = points;
                     e.failedTrail = 0;
-                    e.cleared = false;  // (the particles from the start: their trails are new)
+                    e.cleared = false;  // (最初からの粒: そのトレイルは新しい)
                 } else {
                     problems_.push_back(std::format("パーティクル「{}」: GPU にトレイルの場所を作れません", e.data->name));
                     e.failedTrail = points;
@@ -496,7 +496,7 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
             e.cleared = true;
         }
         const uint32_t born = EmitterBirths(e.clock, *e.data, dt, emitting_, pending_);
-        if (e.clock.finished || !emitting_) e.sinceFinished += dt;  // (stopped by a script: dying away)
+        if (e.clock.finished || !emitting_) e.sinceFinished += dt;  // (スクリプトが止めた: 消えていく)
 
         EmitterConstants ec{};
         std::copy(world, world + 16, ec.world);
@@ -549,15 +549,15 @@ void EffectPlayer::Advance(ID3D11Device* device, ID3D11DeviceContext* ctx, const
         e.head = (e.head + born) % e.capacity;
         e.serial += born;
     }
-    // (nothing of ours stays bound to the compute stage: the depth is the renderer's next frame)
+    // (うちのものは何もコンピュート段に結びつけたままにしない: 深度は次のフレームのレンダラーのもの)
     ID3D11ShaderResourceView* noViews[3] = {};
     ctx->CSSetShaderResources(1, 3, noViews);
 }
 
 void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view, const ImageLookup& images) {
     if (!ctx) return;
-    // What is set now goes back after (an ExtraDraw sets back what it changes: what draws next - 天候's
-    // rain - is not drawn added up like a glowing emitter).
+    // いま設定されているものは、終わったあとで元に戻す (ExtraDraw は変えたものを戻す: 次に描くもの -
+    // 天候の雨 - は、光るエミッターのように足し合わせて描かれはしない)。
     Microsoft::WRL::ComPtr<ID3D11BlendState> blendBefore;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterBefore;
     float factorBefore[4] = {};
@@ -578,7 +578,7 @@ void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view, con
     for (auto& ptr : emitters_) {
         Emitter& e = *ptr;
         if (!e.data->enabled || e.broken || !e.programs || !e.srv || !e.cleared || !e.states) continue;
-        // The emitter's picture (not there yet - being read - or gone: the dot's shape instead).
+        // エミッターの絵 (まだ無い - 読み込み中 - か、もう無い: 代わりに点の形)。
         ID3D11ShaderResourceView* image = !e.data->image.Empty() && images ? images(e.data->image) : nullptr;
         if ((image ? 1u : 0u) != e.constants.hasImage) {
             e.constants.hasImage = image ? 1u : 0u;
@@ -597,13 +597,13 @@ void EffectPlayer::Draw(ID3D11DeviceContext* ctx, const ViewConstants& view, con
         ID3D11Buffer* viewCb = e.viewCb.Get();
         ID3D11Buffer* emitterCb = e.emitterCb.Get();
         ctx->VSSetConstantBuffers(2, 1, &viewCb);
-        ctx->VSSetConstantBuffers(0, 1, &emitterCb);  // (Stretch, the trail's numbers)
+        ctx->VSSetConstantBuffers(0, 1, &emitterCb);  // (Stretch、トレイルの数値)
         ctx->PSSetConstantBuffers(0, 1, &emitterCb);
         const float factor[4] = {};
         ctx->OMSetBlendState(e.data->blend == ParticleBlend::Add ? e.states->add.Get() : e.states->alpha.Get(), factor, 0xFFFFFFFF);
         ctx->RSSetState(e.states->raster.Get());
         if (e.data->dots) ctx->DrawInstanced(6, e.capacity, 0, 0);
-        // The trails: a band of TrailPoints pieces per particle.
+        // トレイル: 粒ごとに TrailPoints 個の部分でできた帯。
         if (e.trailPoints > 0 && e.trailsSrv) {
             ID3D11ShaderResourceView* trails = e.trailsSrv.Get();
             ctx->VSSetShaderResources(4, 1, &trails);

@@ -35,7 +35,7 @@ SpriteAnimation* AnimOf(void* ctx, uint64_t id) {
     game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<SpriteAnimation>().name) : nullptr;
     return c && c->Known() ? static_cast<SpriteAnimation*>(c->value.Get()) : nullptr;
 }
-// How many cells its sprite has (for an animation without its own コマの並び).
+// スプライトのセルの数 (自分の コマの並び を持たないアニメーション用)。
 int Cells(void* ctx, uint64_t id) {
     game_production::SceneEntity* e = EntityOf(ctx, id);
     game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<Sprite>().name) : nullptr;
@@ -74,7 +74,7 @@ float Speed(void* ctx, uint64_t id) {
 void SetSpeed(void* ctx, uint64_t id, float fps) {
     SpriteAnimation* a = AnimOf(ctx, id);
     if (!a) return;
-    // (the step it is on stays: what was played at the old speed is counted in)
+    // (今いるステップはそのまま: 古い速さで再生した分は数えに入れる)
     a->startStep = StepOf(ctx, id, *a);
     a->time = 0;
     a->framesPerSecond = std::clamp(fps, 0.f, 240.f);

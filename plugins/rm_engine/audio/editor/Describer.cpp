@@ -39,7 +39,7 @@ Describer::Describer() {
                 tell.swap(k.waiting);
             }
             for (const auto& t : tell) {
-                if (t) t();  // (outside the lock: it may wake the UI thread)
+                if (t) t();  // (ロックの外で呼ぶ: UI スレッドを起こすかもしれない)
             }
         }
         if (SUCCEEDED(co)) CoUninitialize();
@@ -80,7 +80,7 @@ std::wstring Describer::Line(const fs::path& file, const std::function<void()>& 
         cv_.notify_all();
     }
     if (k.ready) return k.line;
-    if (known && k.waiting.empty()) k.waiting.push_back(known);  // (once: it has every window drawn again)
+    if (known && k.waiting.empty()) k.waiting.push_back(known);  // (一度だけ: これで全ウィンドウがまた描かれる)
     return Tr(L"長さを調べています…");
 }
 

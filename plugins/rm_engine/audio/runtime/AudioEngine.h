@@ -1,24 +1,24 @@
 #pragma once
-// 音 - the sound device and everything playing on it (XAudio2, in Windows 10 and later; 3D with
-// X3DAudio). One per game that plays (the editor's Play, the exported game) - and one for the アセット
-// panel's preview.
+// 音 - 音のデバイスと、その上で鳴っているものすべて (Windows 10 以降の XAudio2。3D は
+// X3DAudio)。鳴らすゲーム 1 つにつき 1 つ (エディターの Play、書き出したゲーム) - それと
+// アセット パネルのプレビュー用に 1 つ。
 //
-//   game thread   Play / Stop / SetPaused / SetVolume ... (quick: they only mark what is wanted)
-//                 Update(dt) every frame: fades, 3D (where each voice is heard), voices that finished
-//   its thread    reads the sounds (decodes a short one whole, once - shared by every voice of it -
-//                 or opens a long one to stream), makes the XAudio2 voices and keeps each stream fed
-//                 (4 pieces of 1/4 second queued: the game may stall up to a second without a gap)
+//   ゲームのスレッド   Play / Stop / SetPaused / SetVolume ... (速い: ほしい状態を印すだけ)
+//                      Update(dt) を毎フレーム: フェード、3D (各ボイスが聞こえる方向)、終わったボイス
+//   専用のスレッド     音を読み (短いものは丸ごと 1 回デコードして、その音のボイス全部で共有する。
+//                      長いものは開いてストリームにする)、XAudio2 のボイスを作り、各ストリームに
+//                      送り込み続ける (1/4 秒の断片を 4 つ待たせる: ゲームが 1 秒ほど止まっても途切れない)
 //
-// Voices go to two submixes - 効果音 and BGM - into the mastering voice (全体): the game settings'
-// three volumes. Pitch: voices are made for up to kMaxPitch (XAudio2's MaxFrequencyRatio is 2 by
-// default and refuses more). Pause = XAudio2's Stop (it keeps the place) / Start; a real stop also
-// flushes the buffers and destroys the voice (both on the engine's thread, which owns them).
+// ボイスは 2 つのサブミックス - 効果音と BGM - を通って、マスタリングボイス (全体) に入る: ゲーム設定の
+// 3 つの音量。ピッチ: ボイスは kMaxPitch まで作る (XAudio2 の MaxFrequencyRatio は既定で 2 で、それ以上は
+// 断られる)。一時停止 = XAudio2 の Stop (位置を保つ) / Start。本当の停止はバッファを空にしてボイスも
+// 壊す (どちらも、それらを持つエンジンのスレッドで)。
 //
-// Silent (no device - a PC without sound, the tests): voices are kept and time passes for them as if
-// they played (a sound ends after its length), nothing is heard.
+// 無音 (デバイスが無い - 音の出ない PC、テスト): ボイスは残り、鳴っているかのように時間が過ぎる
+// (音は長さが過ぎれば終わる)。何も聞こえない。
 //
-// Problems (a sound that cannot be read, no Media Foundation ...) are kept for the caller's console
-// (TakeMessages): Japanese, once per sound.
+// 問題 (読めない音、Media Foundation が無い ...) は、呼び出し側のコンソール用に取っておく
+// (TakeMessages): 日本語で、音ごとに 1 回。
 
 #include "base/Math.h"
 #include "core/asset/ImportSettings.h"
@@ -32,41 +32,41 @@
 namespace rm::audio {
 
 enum class Bus : uint8_t { Effects, Music };
-// How a sound is read (its import setting ストリーミング): long ones streamed, short ones decoded whole.
+// 音の読み方 (取り込みの設定 ストリーミング): 長いものはストリーム、短いものは丸ごとデコード。
 enum class StreamMode : uint8_t { Auto, Always, Never };
-inline constexpr double kStreamLongerThan = 10.0;  // seconds (Auto)
+inline constexpr double kStreamLongerThan = 10.0;  // 秒 (Auto)
 
-// A sound to play: its file's bytes and its import settings.
+// 鳴らす音: ファイルのバイト列と取り込みの設定。
 struct SoundSource {
     Bytes bytes;
-    std::string key;   // the same key = the same sound (decoded once): its asset id
-    std::string name;  // for messages (the file's name)
+    std::string key;   // 同じキー = 同じ音 (1 回だけデコード): そのアセットの id
+    std::string name;  // メッセージ用 (ファイルの名前)
     float assetVolume = 1;
     StreamMode stream = StreamMode::Auto;
-    double loopStart = 0, loopEnd = 0;  // seconds (loopEnd 0: the end)
+    double loopStart = 0, loopEnd = 0;  // 秒 (loopEnd が 0: 終わりまで)
 };
 
-// A sound's import settings (its .meta: 音量・ストリーミング・ループの点) onto it.
+// 音の取り込みの設定 (.meta: 音量・ストリーミング・ループの点) をその音に反映する。
 void ApplyImport(SoundSource& sound, const asset::SoundImport& import);
 
 struct PlayParams {
     Bus bus = Bus::Effects;
-    float volume = 1;   // what was asked (0..4)
+    float volume = 1;   // 頼まれた値 (0..4)
     float pitch = 1;
     bool loop = false;
     bool spatial = false;  // heard from `position` (3D / 2D 距離で減衰)
     Vec3 position{0, 0, 0};
     float minDistance = 1, maxDistance = 30;
-    double fadeIn = 0;   // seconds
-    bool paused = false;  // made paused (an AudioSource whose game is paused)
+    double fadeIn = 0;   // 秒
+    bool paused = false;  // 一時停止にして作る (ゲームが一時停止中の AudioSource)
 };
 
 class AudioEngine {
 public:
-    using VoiceId = uint64_t;  // 0: none
+    using VoiceId = uint64_t;  // 0: なし
 
     explicit AudioEngine(bool silent = false);
-    ~AudioEngine();  // everything stops (the voices and the thread are gone when it returns)
+    ~AudioEngine();  // すべて止まる (戻るときにはボイスもスレッドも無くなっている)
     AudioEngine(const AudioEngine&) = delete;
     AudioEngine& operator=(const AudioEngine&) = delete;
 
@@ -78,13 +78,13 @@ public:
     void SetVolume(VoiceId id, float volume);
     void SetPitch(VoiceId id, float pitch);
     void SetPosition(VoiceId id, Vec3 position);
-    bool IsPlaying(VoiceId id) const;  // still there (being read, playing, paused or fading out)
+    bool IsPlaying(VoiceId id) const;  // まだある (読み込み中、鳴っている、一時停止中、フェードアウト中)
 
-    // Who hears (the game's camera). Right-handed, Y up, as the 3D space (a 2D game: z = 0).
+    // 聞く人 (ゲームのカメラ)。3D 空間と同じ右手系、Y が上 (2D のゲーム: z = 0)。
     void SetListener(Vec3 position, Vec3 forward, Vec3 up);
     void SetVolumes(float master, float music, float effects);
-    void PauseAll(bool paused);  // the game paused (⏸): every voice keeps its place
-    void StopAll();              // at once (■: nothing is heard after it)
+    void PauseAll(bool paused);  // ゲームが一時停止 (⏸): どのボイスも位置を保つ
+    void StopAll();              // すぐに (■: そのあとは何も聞こえない)
     size_t Voices() const;
 
     void Update(double dt);

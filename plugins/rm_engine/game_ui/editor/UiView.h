@@ -1,16 +1,15 @@
 #pragma once
-// The UI view (a panel of the game software: game production's ViewPanelInfo): the game's screen as the
-// game settings' 画面, the UI drawn on it as the game draws it (the same layout and drawing), and the
-// tools to make it:
+// UI ビュー (ゲームソフトのパネル: ゲーム制作の ViewPanelInfo): ゲーム設定の 画面 としてのゲームの
+// 画面と、その上にゲームが描くとおりに描いた UI (同じ配置、同じ描き方)、それを作る道具:
 //
-//   left click            select the UI thing under the mouse (the frontmost)
-//   left drag on a thing  move it (its 位置)
-//   a corner's square     resize it (the opposite corner stays)
-//   Esc while dragging    back to where it was
+//   左クリック          マウスの下の UI のもの (一番手前) を選ぶ
+//   もののドラッグ      動かす (その 位置)
+//   角の四角            大きさを変える (反対側の角は動かない)
+//   ドラッグ中の Esc    元の場所へ戻す
 //
-// The selected thing shows its anchors (the little marks where it is fixed in its parent) and the canvas
-// its edge; the safe area of the game settings is a guide (セーフエリア in the strip). One undo entry per
-// drag. A canvas switched off is shown while one of its things is selected (the window being made).
+// 選んだものには、そのアンカー (親の中で固定される所を示す小さな印) が、キャンバスには縁が出る。
+// ゲーム設定のセーフエリアは目安になる (帯の セーフエリア)。ドラッグ 1 回につき Undo は 1 件。
+// 切ってあるキャンバスも、その中のものを選んでいるあいだは見せる (作っているウィンドウ)。
 
 #include "rm_engine/game_production/editor/SceneView.h"
 

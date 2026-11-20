@@ -1,17 +1,17 @@
 #pragma once
-// パーティクル - an effect (.rmparticle, design docs/ANIMATION_PARTICLES.md 3): emitters, each a list of
-// modules run in order on the GPU. A module is HLSL (.rmfx - ModuleSource.h): the built-in ones are
-// written the same way (BuiltinModules.h), so there is one way of running them (rule 3).
+// パーティクル - エフェクト (.rmparticle、設計 docs/ANIMATION_PARTICLES.md 3): エミッターが並び、
+// それぞれがモジュールの列を順に GPU で動かす。モジュールは HLSL (.rmfx - ModuleSource.h) で、
+// 組み込みのものも同じ書き方なので、動かし方は 1 つだけ (憲法 3)。
 //
 //   エフェクト「炎」
-//    └ エミッター「火」   how many, how often, how they are drawn
-//        ├ 形: 円すい      ← a module: its `param`s are its fields (ParticleValue: the values set here)
+//    └ エミッター「火」   いくつ、どのくらいの頻度で、どう描くか
+//        ├ 形: 円すい      ← モジュール: その `param` がフィールド (ParticleValue: ここで決めた値)
 //        ├ はじめの値
 //        └ 色の変わり方
 //
-// Saved as JSON (reflect: rule 9). A module's values are kept by the param's name, so a module whose
-// params change (a new version, an edited .rmfx) keeps what still fits; a value of a param it no longer
-// has is kept as written (it comes back if the param does).
+// JSON で保存する (reflect: 憲法 9)。モジュールの値は param の名前で持つので、param が変わった
+// モジュール (新しい版、編集した .rmfx) でも、合うものはそのまま残る。もう無い param の値も
+// 書かれたまま残す (その param が戻れば戻る)。
 
 #include "base/Ref.h"
 #include "core/reflect/Data.h"
@@ -45,7 +45,7 @@ enum class ParticleSheet {
     RM_ITEM(Label="粒ごとにランダムな 1 コマ") Random,
 };
 
-// One param's value (a float uses x; float3 x y z; a colour x y z w = r g b a; a bool x != 0).
+// param 1 つの値 (float は x; float3 は x y z; 色は x y z w = r g b a; bool は x != 0)。
 RM_STRUCT(Label="モジュールの値")
 struct ParticleValue {
     RM_PROPERTY() std::string name;
@@ -57,11 +57,11 @@ struct ParticleValue {
 
 RM_STRUCT(Label="モジュール")
 struct ParticleModule {
-    // A built-in module's id (BuiltinModules: "initial", "shape_cone" ...); empty: the file's.
+    // 組み込みモジュールの ID (BuiltinModules: "initial"、"shape_cone" など); 空: ファイルのもの。
     RM_PROPERTY() std::string builtin;
     RM_PROPERTY(Edit, Label="モジュールのファイル", Tooltip="HLSL で書いたモジュール (.rmfx)", AssetKind=".rmfx") AssetRef file;
     RM_PROPERTY(Edit, Label="使う", Tooltip="外すと、このモジュールを飛ばします") bool enabled = true;
-    RM_PROPERTY() std::vector<ParticleValue> values;  // by param name; a param not here has its default
+    RM_PROPERTY() std::vector<ParticleValue> values;  // param の名前ごと; ここに無い param は初期値
 };
 
 RM_STRUCT(Label="エミッター")
@@ -87,7 +87,7 @@ struct ParticleEmitter {
     RM_PROPERTY(Edit, Label="トレイルの長さ (秒)", Tooltip="どれだけ前までの跡を描くか", Min=0.01, Max=60, Step=0.01) float trailTime = 0.5f;
     RM_PROPERTY(Edit, Label="トレイルの点の数", Tooltip="多いほどなめらか (GPU のメモリ: 粒の数 × 点の数 × 16 バイト)", Min=2, Max=64) int trailPoints = 12;
     RM_PROPERTY(Edit, Label="トレイルの太さ", Tooltip="粒の大きさに掛けます。先へ行くほど細く・薄くなります", Min=0, Max=100, Step=0.05) float trailWidth = 1;
-    RM_PROPERTY() std::vector<ParticleModule> modules;  // run from the top (shown and edited in the パーティクル tab)
+    RM_PROPERTY() std::vector<ParticleModule> modules;  // 上から順に動かす (パーティクルタブで見せて編集する)
 };
 
 RM_STRUCT(Label="エフェクト")
@@ -95,7 +95,7 @@ struct ParticleEffect {
     RM_PROPERTY() std::vector<ParticleEmitter> emitters;
 };
 
-// The whole file (kind and format around the effect: what ReadEffect / WriteEffect read and write).
+// ファイル全体 (エフェクトの周りの種類と形式: ReadEffect / WriteEffect が読み書くもの)。
 RM_STRUCT(Label="エフェクトのファイル")
 struct EffectFile {
     RM_PROPERTY() std::string kind;
@@ -103,15 +103,15 @@ struct EffectFile {
     RM_PROPERTY() ParticleEffect effect;
 };
 
-// What a new effect starts with: one emitter of a soft, rising glow (形: 円すい, はじめの値, 力,
-// 色の変わり方, 大きさの変わり方).
+// 新しいエフェクトの初期状態: やわらかく上る光のエミッター 1 つ (形: 円すい、はじめの値、力、
+// 色の変わり方、大きさの変わり方)。
 ParticleEffect NewEffect();
 
-// The file (.rmparticle): {"kind": "rm_engine.particle_effect", "format": 1, "effect": {...}}.
+// ファイル (.rmparticle): {"kind": "rm_engine.particle_effect", "format": 1, "effect": {...}}。
 inline constexpr char kEffectExtension[] = ".rmparticle";
 inline constexpr char kEffectKind[] = "rm_engine.particle_effect";
-// nullopt (and *error, Japanese) when it is not one. Keys this version does not know go to `unknowns`
-// (written back by WriteEffect: rule 6).
+// エフェクトでなければ nullopt (と *error に日本語)。この版が知らないキーは `unknowns` に入れる
+// (WriteEffect が書き戻す: 憲法 6)。
 std::optional<ParticleEffect> ReadEffect(std::string_view bytes, std::string* error, reflect::Unknowns* unknowns = nullptr);
 std::string WriteEffect(const ParticleEffect& effect, const reflect::Unknowns* unknowns = nullptr);
 

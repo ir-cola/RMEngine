@@ -1,8 +1,8 @@
 #pragma once
-// The runtime part of ゲーム UI: what an exported game needs from it too (listed in
-// plugins/RuntimePlugins.cpp; the editor's loader calls it before RegisterEditor) - the UI's component
-// types, the service that runs it while the game plays and the scripts' part. The drawing over the
-// screen is UiScreenDraw.h's (registered for the game there, by the editor part for the game view).
+// ゲーム UI のランタイムの部分: 書き出したゲームにも要るもの (plugins/RuntimePlugins.cpp に並べる。
+// エディターのローダーは RegisterEditor の前にこれを呼ぶ) - UI の部品の型、ゲームが動くあいだ UI を
+// 動かすサービス、スクリプトの部分。画面への描画は UiScreenDraw.h のもの (ゲーム用はそこで登録し、
+// ゲームのビュー用はエディターの部分が登録する)。
 
 #include "core/RuntimeRegistry.h"
 

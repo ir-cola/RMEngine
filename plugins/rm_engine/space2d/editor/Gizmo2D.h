@@ -1,17 +1,17 @@
 #pragma once
-// 2D 空間 - the gizmo of a 2D view: the arrows, the ring and the boxes that move, turn and scale a
-// thing when they are dragged. Only the math lives here: where the handles are on the screen (the same
-// shapes are drawn and hit-tested - rule 3), which one is under the mouse, and what a drag does to a
-// Transform 2D. Drawing it is the view's. Used by every software that edits a 2D space (the game's 2D
-// scene view today, the illustration software later). Pure - tested in tests/TestSpace2d.cpp.
+// 2D 空間 - 2D ビューのギズモ: ドラッグして物を動かし、回し、拡大縮小する矢印・輪・箱。
+// ここにあるのは計算だけ: ハンドルが画面のどこにあるか (描くのと当たり判定は同じ形 - 憲法 3)、
+// どれがマウスの下にあるか、ドラッグが Transform 2D に何をするか。描くのはビューの仕事。
+// 2D の空間を編集するソフトすべてが使う (今はゲームの 2D シーンビュー、あとでイラストのソフト)。
+// 純粋 (I/O も描画もしない)。tests/TestSpace2d.cpp でテストする。
 //
 //   gizmo2d::Frame f = gizmo2d::MakeFrame(world, tool, space);
 //   gizmo2d::Handle h = gizmo2d::HitTest(tool, f, camera, rect, mouse);
-//   gizmo2d::Drag drag = gizmo2d::BeginDrag(tool, h, f, camera, rect, mouse);   // on press
-//   gizmo2d::Change ch = gizmo2d::Update(drag, camera, rect, mouse, snap);     // every move
-//   transform = gizmo2d::Apply(start, parentWorld, startWorld, ch);          // (or with &f: about its middle)
+//   gizmo2d::Drag drag = gizmo2d::BeginDrag(tool, h, f, camera, rect, mouse);   // 押したとき
+//   gizmo2d::Change ch = gizmo2d::Update(drag, camera, rect, mouse, snap);     // 動かすたび
+//   transform = gizmo2d::Apply(start, parentWorld, startWorld, ch);          // (または &f を付けて: 中心まわり)
 //
-// The gizmo keeps one size on the screen (DIPs) however near the camera is.
+// ギズモは、カメラがどれだけ近くても画面上で同じ大きさ (DIP) を保つ。
 
 #include "rm_engine/space2d/runtime/View2D.h"
 
@@ -24,60 +24,60 @@ namespace rm::space2d::gizmo2d {
 
 RM_ENUM()
 enum class Tool { Move, Rotate, Scale };
-// The directions of the arrows: the thing's own axes or the world's. (Scale is always along the thing's
-// own axes - a Transform 2D's scale is.)
+// 矢印の向き: 物自身の軸か、ワールドの軸か。(拡大縮小はいつも物自身の軸に沿う -
+// Transform 2D の拡大率がそうだから。)
 RM_ENUM()
 enum class Space { Local, World };
-// Where the gizmo sits when several things are selected, and what they turn / scale about: each about
-// its own place (the gizmo on the one selected last), or all about the middle of them (the gizmo there).
+// 複数を選んだときにギズモが置かれる所と、回転・拡大縮小の中心: 各自の位置まわり
+// (ギズモは最後に選んだものの所)、または全体の真ん中まわり (ギズモもそこ)。
 RM_ENUM()
 enum class Pivot { Each, Center };
 
 enum class Handle : uint8_t {
     None,
-    X, Y,   // an arrow / a scale axis
-    Free,   // the square in the middle: moves freely / scales evenly
-    Ring,   // rotate: the circle
+    X, Y,   // 矢印 / 拡大縮小の軸
+    Free,   // 真ん中の四角: 自由に動かす / 均等に拡大縮小する
+    Ring,   // 回転: 円
 };
 
-inline constexpr float kArrowLength = 80.f;  // DIPs on the screen
+inline constexpr float kArrowLength = 80.f;  // 画面上の DIP
 inline constexpr float kRingRadius = 70.f;
-inline constexpr float kCenterHalf = 9.f;    // half the middle square
-inline constexpr float kHitSlop = 7.f;       // how near the mouse must be to a line
-inline constexpr float kScalePerDip = 0.01f; // the middle square of 拡大縮小: 100 DIPs right / up = twice
+inline constexpr float kCenterHalf = 9.f;    // 真ん中の四角の半分
+inline constexpr float kHitSlop = 7.f;       // マウスが線にどれだけ近ければよいか
+inline constexpr float kScalePerDip = 0.01f; // 拡大縮小の真ん中の四角: 右 / 上へ 100 DIP で 2 倍
 
-// The gizmo as it is placed: at `origin` (in the plane), with two unit axes (in the plane).
+// 置かれたままのギズモ: `origin` (平面上) に、単位長さの軸 2 本 (平面上)。
 struct Frame {
     Vec2 origin{0, 0};
     std::array<Vec2, 2> axes{Vec2{1, 0}, Vec2{0, 1}};
 };
 Frame MakeFrame(const Mat3& world, Tool tool, Space space);
-// The middle of several places (中心), with the axes of `axesFrom` (the one selected last).
+// 複数の位置の真ん中 (中心)。軸は `axesFrom` (最後に選んだもの) のもの。
 Frame CenterFrame(std::span<const Vec2> places, const Frame& axesFrom);
 
-// On the screen: the gizmo's middle and the tip of each arrow.
+// 画面上: ギズモの真ん中と、各矢印の先。
 struct ScreenShape {
     Vec2 origin;
     std::array<Vec2, 2> tips;
 };
 ScreenShape ShapeOf(const Frame& f, const Camera2D& cam, const ScreenRect& r);
 
-// The handle under the mouse (screen DIPs).
+// マウスの下のハンドル (画面の DIP)。
 Handle HitTest(Tool tool, const Frame& f, const Camera2D& cam, const ScreenRect& r, Vec2 mouse);
 
 struct Drag {
     Tool tool = Tool::Move;
     Handle handle = Handle::None;
     Frame frame;
-    Vec2 startWorld{0, 0};   // the mouse in the plane when the drag began
-    Vec2 startScreen{0, 0};  // ... and on the screen
-    float lastRaw = 0;       // rotate: the angle of the mouse last time (to count whole turns)
-    float turned = 0;        // rotate: degrees so far (can go past 180)
+    Vec2 startWorld{0, 0};   // ドラッグを始めたときの、平面上のマウス
+    Vec2 startScreen{0, 0};  // ... と画面上のマウス
+    float lastRaw = 0;       // 回転: 前回のマウスの角度 (何回転したか数えるため)
+    float turned = 0;        // 回転: ここまでの度数 (180 を超えることもある)
 };
-// A drag of `handle` (not None), starting where the mouse is.
+// `handle` (None 以外) のドラッグ。マウスのある所から始まる。
 Drag BeginDrag(Tool tool, Handle handle, const Frame& f, const Camera2D& cam, const ScreenRect& r, Vec2 mouse);
 
-// Steps (Ctrl): moves by `move` units along each axis, turns by `degrees`, scales by `scale` of the start.
+// ステップ (Ctrl): 各軸に沿って `move` 単位ずつ動き、`degrees` ずつ回り、開始時の `scale` 刻みで拡大縮小する。
 struct Snap {
     bool on = false;
     float move = 0.25f;
@@ -85,18 +85,17 @@ struct Snap {
     float scale = 0.1f;
 };
 
-// What the drag does so far (from its start).
+// ここまでにドラッグがしたこと (開始から見て)。
 struct Change {
-    Vec2 move{0, 0};      // in the plane (world)
-    float degrees = 0;    // counter-clockwise
-    Vec2 scale{1, 1};     // times the start's, along the thing's own axes
+    Vec2 move{0, 0};      // 平面上 (ワールド)
+    float degrees = 0;    // 反時計回り
+    Vec2 scale{1, 1};     // 開始時の何倍か。物自身の軸に沿う
 };
 Change Update(Drag& drag, const Camera2D& cam, const ScreenRect& r, Vec2 mouse, const Snap& snap);
 
-// The Transform 2D after the change (from how it was when the drag began): a move is in the world and
-// goes through the parent's inverse; a turn is turned over under a mirrored parent. `pivot` (中心): a
-// turn also carries its place round the gizmo's middle, a scale moves it away from the middle along the
-// gizmo's axes.
+// 変更後の Transform 2D (ドラッグを始めたときの状態から)。移動はワールドで行い、親の逆行列を通す。
+// 回転は、反転した親の下では向きを逆にする。`pivot` (中心): 回転は位置もギズモの真ん中のまわりに運び、
+// 拡大縮小は位置をギズモの軸に沿って真ん中から遠ざける。
 Transform2D Apply(const Transform2D& start, const Mat3& parentWorld, const Mat3& startWorld, const Change& change,
                   const Frame* pivot = nullptr);
 

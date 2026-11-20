@@ -1,7 +1,7 @@
 #pragma once
-// stb_vorbis (runtime/third_party/stb_vorbis.c, v1.24 - public domain or MIT, by Sean Barrett: the
-// licence is at the end of that file) - its declarations, with the settings it is compiled with
-// (StbVorbis.cpp): from memory only (no FILE*, no push API).
+// stb_vorbis (runtime/third_party/stb_vorbis.c、v1.24 - パブリックドメインまたは MIT、Sean Barrett
+// 作: ライセンスはそのファイルの末尾) - その宣言と、コンパイルするときの設定 (StbVorbis.cpp):
+// メモリからだけ (FILE* も push API も無し)。
 
 #define STB_VORBIS_NO_STDIO
 #define STB_VORBIS_NO_PUSHDATA_API

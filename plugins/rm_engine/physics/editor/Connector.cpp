@@ -28,8 +28,8 @@ const T* Find(const SceneEntity& e) {
     return c && c->Known() ? static_cast<const T*>(c->value.Get()) : nullptr;
 }
 
-// The shapes the physics makes (Shapes.h: the same sizes and places as the bodies), as lines: of the
-// selected entities, or of all. Switched off (it or a parent): faint - it has no body while so.
+// 物理が作る形 (Shapes.h: 物体と同じ大きさ、同じ位置) を線で描く: 選んだエンティティのもの、または
+// すべて。切ってある (それ自身か親が) もの: 薄く - 切ってある間は物体が無いため。
 void ShapeLines(const Scene& scene, std::span<const int> selection, bool all, DebugDraw& out) {
     if (!all && selection.empty()) return;
     std::unordered_map<int, EntityPlace> places;
@@ -62,7 +62,7 @@ void ShapeLines(const Scene& scene, std::span<const int> selection, bool all, De
             draw(c->trigger);
         }
         if (const Character* c = Find<Character>(e)) {
-            Pose upright;  // a character stands upright whatever its turn (and is not scaled)
+            Pose upright;  // キャラクターは回転に関係なく立っている (拡縮もしない)
             upright.position = pose.position;
             Outline(DimsOf(*c), upright, false, segments);
             draw(false);
@@ -70,7 +70,7 @@ void ShapeLines(const Scene& scene, std::span<const int> selection, bool all, De
     }
 }
 
-// デバッグ ▸ 物理: the bodies and what touches, while playing.
+// デバッグ ▸ 物理: 再生中の物体と、触れているもの。
 void PhysicsLines(const game_production::DebugContext& ctx, std::vector<game_production::DebugInfoLine>& out) {
     const PhysicsWorld* w = ctx.playing && ctx.scene ? FindWorldOf(*ctx.scene) : nullptr;
     if (!w) {
@@ -84,9 +84,9 @@ void PhysicsLines(const game_production::DebugContext& ctx, std::vector<game_pro
     out.push_back({editor::Tr(L"1 回の刻みの時間"), std::format(L"{:.3f} ms", w->LastStepMs())});
 }
 
-// A 3D object made by 追加 ▸ 3D オブジェクト gets a collider of its shape (2026-11-20): a box, a ball, a
-// capsule as they are; a cylinder as a box around it (there is no cylinder collider); the plane a thin
-// box under it. What has no shape to say (a light, a camera): nothing.
+// 追加 ▸ 3D オブジェクト で作った 3D オブジェクトは、その形のコライダーを持つ (2026-11-20): 箱、球、
+// カプセルはそのまま; 円柱はそれを囲む箱 (円柱のコライダーは無い); 平面はその下の薄い箱。形を
+// 言えないもの (ライト、カメラ): 何も付けない。
 void AddCollider(Scene& scene, int entity, std::string_view made) {
     const bool box = made == "box" || made == "cylinder";
     if (!box && made != "sphere" && made != "capsule" && made != "plane") return;

@@ -1,27 +1,28 @@
-// RMPhysics.h - the physics for scripts (the plugin 物理 gives it: Jolt Physics inside).
+// RMPhysics.h - スクリプト用の物理 (プラグイン 物理 が提供する。中身は Jolt Physics)。
 //
-// Give an entity a コライダー (or コライダー (2D)) and, to make it move, a 剛体 in the inspector. Then:
+// エンティティに コライダー (か コライダー (2D)) を付け、動かしたいなら インスペクターで 剛体 も付ける。
+// そのうえで:
 //
 //   #include "RMPhysics.h"
-//   rm::Physics::AddImpulse(self, {0, 5, 0});          // a kick up (N·s), at once
-//   rm::Physics::AddForce(self, {10, 0, 0});           // a push (N), over the next fixed step
+//   rm::Physics::AddImpulse(self, {0, 5, 0});          // 上へ蹴る (N·s)。すぐ効く
+//   rm::Physics::AddForce(self, {10, 0, 0});           // 押す (N)。次の固定ステップの間かかる
 //   rm::Vec3 v = rm::Physics::Velocity(self);          // m/s
-//   rm::Physics::SetVelocity(bullet, {0, 0, -20});     // a bullet just made with rm::Spawn: it has a body at once
+//   rm::Physics::SetVelocity(bullet, {0, 0, -20});     // rm::Spawn で作ったばかりの弾。すぐ体を持つ
 //   rm::Physics::RayHit hit;
 //   if (rm::Physics::Raycast(from, {0, -1, 0}, 10.0f, &hit)) { hit.entity, hit.point, hit.normal, hit.distance }
 //
-// The hooks (write them in the script; called after the frame's fixed steps):
-//   void OnHit(rm::Entity self, rm::Entity other);           // began touching (once until they part)
-//   void OnTriggerEnter(rm::Entity self, rm::Entity other);  // a コライダー with トリガー: came in ...
-//   void OnTriggerExit(rm::Entity self, rm::Entity other);   // ... went out
+// フック (スクリプトに書く。フレームの固定ステップのあとに呼ばれる):
+//   void OnHit(rm::Entity self, rm::Entity other);           // 触れ始めた (離れるまでは 1 回)
+//   void OnTriggerEnter(rm::Entity self, rm::Entity other);  // トリガー 付きの コライダー: 入ってきた ...
+//   void OnTriggerExit(rm::Entity self, rm::Entity other);   // ... 出ていった
 //
-// A character (the キャラクター component: walks on slopes and steps, stands on the ground):
-//   rm::Character::Move(self, {x, 0, z});      // the walk in m/s, kept until changed (gravity is its own)
-//   rm::Character::Jump(self, 5.0f);           // up at 5 m/s, when on the ground
+// キャラクター (キャラクター 部品: 坂や段を歩き、地面に立つ):
+//   rm::Character::Move(self, {x, 0, z});      // 歩く速さ (m/s)。変えるまで続く (重力は別)
+//   rm::Character::Jump(self, 5.0f);           // 秒速 5 m で上へ。地面にいるとき
 //   bool onGround = rm::Character::Grounded(self);
 //
-// In 2D the same calls work with z = 0 (2D bodies stay on the plane): AddImpulse(self, {0, 5, 0}).
-// Without the plugin 物理 (or for an entity with no body) nothing happens and the getters give zeros.
+// 2D でも同じ呼び出しが z = 0 で使える (2D の物体は平面に留まる): AddImpulse(self, {0, 5, 0})。
+// プラグイン 物理 がない (または体のないエンティティ) と何も起きず、取得は 0 を返す。
 #pragma once
 
 #include "RM.h"
@@ -61,7 +62,7 @@ inline bool SetVelocity(Entity e, Vec3 velocity) {
     const RmPhysicsApi* a = detail::Api();
     return a && a->setVelocity(rm::Api()->ctx, e.id, v) != 0;
 }
-// The first thing (not a trigger) along the ray, at most `maxDistance` away.
+// 光線に沿った最初のもの (トリガーは除く)。`maxDistance` までの距離で調べる。
 inline bool Raycast(Vec3 origin, Vec3 direction, float maxDistance, RayHit* hit = nullptr) {
     const float o[3] = {origin.x, origin.y, origin.z}, d[3] = {direction.x, direction.y, direction.z};
     RmRayHit h{};
@@ -91,7 +92,7 @@ inline bool Grounded(Entity e) {
     const RmPhysicsApi* a = Physics::detail::Api();
     return a && a->characterGrounded(rm::Api()->ctx, e.id) != 0;
 }
-// The ground's normal under it (0, 0, 0 when not standing on anything).
+// 足元の地面の法線 (何にも立っていないときは 0, 0, 0)。
 inline Vec3 GroundNormal(Entity e) {
     float v[3] = {0, 0, 0};
     const RmPhysicsApi* a = Physics::detail::Api();

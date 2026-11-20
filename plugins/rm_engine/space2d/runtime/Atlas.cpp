@@ -10,7 +10,7 @@ PixelRect CellOf(uint32_t width, uint32_t height, int columns, int rows, int ind
     const int count = cols * rws;
     const int i = ((index % count) + count) % count;
     const uint32_t cw = width / static_cast<uint32_t>(cols), ch = height / static_cast<uint32_t>(rws);
-    if (cw == 0 || ch == 0) return {0, 0, width, height};  // more cells than pixels: the whole image
+    if (cw == 0 || ch == 0) return {0, 0, width, height};  // セルがピクセルより多い: 画像全体
     const uint32_t col = static_cast<uint32_t>(i % cols), row = static_cast<uint32_t>(i / cols);
     return {col * cw, row * ch, cw, ch};
 }
