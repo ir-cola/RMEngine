@@ -120,7 +120,7 @@ struct ViewPanelInfo {
 inline constexpr char kCreateItemPoint[] = "rm_engine.game_production.create_item";
 struct CreateItemInfo {
     const wchar_t* label = nullptr;   // TrKey の文字列: それが何か (名詞: Undo の名前は 「箱」を作成)
-    const wchar_t* folder = nullptr;  // a TrKey string ("3D オブジェクト"; "/" between folders inside folders); null: 追加 itself
+    const wchar_t* folder = nullptr;  // TrKey の文字列 ("3D オブジェクト"。フォルダの中のフォルダは "/" で区切る)。null: 追加 そのもの
     int (*make)(Scene& scene, int parent, size_t index) = nullptr;
     void (*fill)(Scene& scene, int entity) = nullptr;
     bool child = false;  // 選択中のエンティティの下に作る (そうでなければ - 何も選んでいなくても - 選択の後ろに)

@@ -99,7 +99,7 @@ SkyLook LookOf(const Sky& sky, double seconds, const SkyWeather& weather) {
             const float moonUp = Smooth(-0.02f, 0.1f, moon.y);
             const Vec3 ground = Add(Scale(horizon, 0.25f), Scale(Vec3{0.02f, 0.018f, 0.015f}, day));
             Set(k.param[0], sunLight, day);
-            look.flash = std::clamp(w.flash, 0.f, 1.f);  // 雷 (the weather's)
+            look.flash = std::clamp(w.flash, 0.f, 1.f);  // 雷 (天候のもの)
             Set(k.param[1], {w.cover, w.dark, w.haze}, look.flash);
             Set(k.param[2], zenith, night * night * (1 - w.cover));
             Set(k.param[3], horizon, night * moonUp);

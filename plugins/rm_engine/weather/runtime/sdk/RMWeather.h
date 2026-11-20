@@ -45,7 +45,7 @@ inline bool HasWeather() { return detail::ApiWeather() && detail::ApiWeather()->
 inline void SetWeather(Weather weather, float seconds = 0) {
     if (const RmWeatherApi* s = detail::ApiWeather()) s->setWeather(Api()->ctx, static_cast<int>(weather), seconds);
 }
-// 雲の量 (0 .. 100: few - fair, many - cloudy; rain darkens them).
+// 雲の量 (0 .. 100: 少ないと晴れ、多いとくもり。雨が降ると暗くなる)。
 inline void SetClouds(float amount, float seconds = 0) { detail::SetWeatherValue(0, amount, seconds); }
 inline float Clouds() { return detail::WeatherValue(0, 0, 0); }
 // 降水量 (0 .. 100): 雨、または 雪にする が入っている間は雪 - 両方にはならない。

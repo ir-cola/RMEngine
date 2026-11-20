@@ -1,6 +1,6 @@
 #pragma once
 // スクリプト API の 2D デバッグ描画の部分 (sdk/RM2D.h: rm::Debug::Line / Rect / Circle)。図形は
-// game production の DebugDraw (ScriptWorld::debug) の線 (z = 0) になる。バッファがなければ
+// ゲーム制作 の DebugDraw (ScriptWorld::debug) の線 (z = 0) になる。バッファがなければ
 // (書き出したゲーム) どの呼び出しもすぐ戻る。RegisterRuntime が kScriptApiPoint に出す。
 
 #include "rm_engine/game_production/runtime/Scripts.h"

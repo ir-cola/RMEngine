@@ -164,7 +164,7 @@ private:
         double inspectSince_ = 0;  // この 1 秒間に頼まれた Inspect: 回数 (多すぎるときは 1 度だけ知らせる)
         int inspectCount_ = 0;
         bool inspectTold_ = false;
-        tree::State treeState;  // the 階層: selection, open items, search
+        tree::State treeState;  // 階層: 選択・開いた項目・検索
         dock::NamedLayouts named;  // ユーザーが名前を付けて保存したレイアウト (UserSettings)
         dock::NamedLayouts shared;  // どのプロジェクトでも使える名前付きレイアウト (%APPDATA%\RM_Engine\Layouts.json)
         std::string namedShown;    // 最後に切り替えた / 保存した名前付きレイアウト (メニューでチェックが付く)

@@ -456,7 +456,7 @@ bool Hits(const UiNode& n, Vec2 p) {
 int TopAt(const UiTree& tree, Vec2 p) {
     for (auto it = tree.nodes.rbegin(); it != tree.nodes.rend(); ++it) {
         if (it->parent < 0) continue;  // キャンバス自身は何も受け取らない (ウィンドウの一部が空でもよい)
-        if (it->closing) continue;     // going away (消えるとき): seen, not touched
+        if (it->closing) continue;     // 消えていく途中 (消えるとき): 見えるが、触れない
         if (!(it->image || it->bar || it->button || it->video || (it->style && it->style->background.enabled))) continue;
         if (Hits(*it, p)) return it->entity;
     }

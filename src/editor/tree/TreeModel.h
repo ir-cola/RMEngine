@@ -30,7 +30,7 @@ enum class Icon : uint8_t {
     Square,  // 2D の平面にあるもの
     Effect,  // a sparkle (パーティクル)
     Scene,   // レイヤー (ゲームのシーン: シーン の一覧)
-    // files (the アセット panel)
+    // ファイル (アセット パネル)
     Folder,
     File,
     Image,

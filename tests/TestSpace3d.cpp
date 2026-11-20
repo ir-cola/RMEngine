@@ -892,7 +892,7 @@ platform::Image Speckled() {
 }  // namespace
 
 RM_TEST(TexturePixels_NoMipmapsAndKeptCoverage) {
-    // ミップマップ off: the picture alone.
+    // ミップマップ off: 絵 1 枚だけ。
     const TexturePixels one = MakeTexturePixels(Speckled(), true, {false, 0});
     CHECK(one.levels.size() == 1 && one.levels[0].width == 64);
     // 透明部分を保つ: 平均すると、小さいコピーで 0.8 に届くテクセルは少ない (切り抜きが薄れる)。

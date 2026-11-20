@@ -45,7 +45,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // パーティクルを持つエンティティの、階層の絵と 3D シーンビューの印: きらめき。
     static const game_production::ComponentLook kLook{.type = &reflect::TypeOf<ParticleSystem>, .icon = "effect"};
     registry.Contribute(game_production::kComponentLookPoint, kLook);
-    // デバッグ: how many particles each view plays.
+    // デバッグ: ビューごとに、いくつのパーティクルを再生しているか。
     static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"パーティクル"), 10, game_production::DebugTab::Performance, &ParticleLines};
     registry.Contribute(game_production::kDebugInfoPoint, kDebug);
 }

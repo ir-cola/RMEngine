@@ -386,7 +386,7 @@ RM_TEST(GameUi_Keys_MoveTheFocusAndPress) {
     const UiTree t = BuildUi(s, {});
     CHECK(NavigationCanvas(t) == canvas);
     CHECK(FirstFocus(t, canvas, 0) == tl);
-    CHECK(FirstFocus(t, canvas, br) == br);  // the canvas's 最初に選ぶボタン
+    CHECK(FirstFocus(t, canvas, br) == br);  // キャンバスの 最初に選ぶボタン
     // 単独では: 画面上でその向きに一番近いボタン (ボタンには何も設定していない)。
     CHECK(NextButton(t, canvas, tl, 1, 0) == tr);
     CHECK(NextButton(t, canvas, tl, 0, 1) == bl);
@@ -509,7 +509,7 @@ RM_TEST(GameUi_Cancel_ClosesTheWindowOpenedLast) {
     auto frame = [&](const InputFrame& now) { return StepUi(s, BuildUi(s, {}), std::nullopt, false, false, false, actions, &now, &none, 0.016f, state); };
     // 最初は HUD だけ: 戻る は何も閉じない (別のウィンドウの上に開いたものではないので)。
     CHECK(frame(esc).closed == 0 && s.Find(hud)->data.active);
-    // Pause shown over HUD (a script's Show): 戻る closes Pause, HUD stays.
+    // HUD の上に Pause を出す (スクリプトの Show): 戻る で Pause が閉じ、HUD は残る。
     s.Find(pause)->data.active = true;
     frame(none);
     CHECK(state.focus == resume);  // 新しいウィンドウの最初のボタンが選ばれる
@@ -751,7 +751,7 @@ RM_TEST(GameUi_ButtonActions_WhatTheyDo) {
     a.useMin = true;
     a.min = 7;  // どちらも逆に使った: 入れ替える (5..7)
     CHECK(ChangeVariable(n, a, nullptr) && n.v[0] == 5);
-    a.useMax = false;  // only 下限 7: never turned round
+    a.useMax = false;  // 下限 7 だけ: 一度も折り返さない
     CHECK(ChangeVariable(n, a, nullptr) && n.v[0] == 7);
     GlobalValue text{GlobalType::String};
     std::string why;
@@ -917,7 +917,7 @@ RM_TEST(GameUi_Motion_EaseTransitionAndPath) {
     l = TransitionAt(t, true, 1.0f);
     CHECK(Near(l.alpha, 0.5f) && Near(l.offset.x, -40) && Near(l.scale, 0.75f) && !TransitionDone(t, 1.0f));
     CHECK(TransitionAt(t, true, 1.5f) == UiLive{} && TransitionDone(t, 1.5f));
-    // 消えるとき: the other way.
+    // 消えるとき: 逆向き。
     l = TransitionAt(t, false, 1.5f);
     CHECK(Near(l.alpha, 0) && Near(l.offset.x, -80));
     t.enabled = false;

@@ -33,7 +33,7 @@ enum class UiScaleMode {
 // 配置が使う)。その子も、一緒に動き、回り、大きくなり、フェードする。
 struct UiLive {
     Vec2 offset{0, 0};  // これだけ動かす (親の単位で)
-    float scale = 1;    // about its 中心
+    float scale = 1;    // その 中心 のまわりに
     float turn = 0;     // 度、時計回り
     float alpha = 1;    // 0: 見えない .. 1
     bool operator==(const UiLive&) const = default;

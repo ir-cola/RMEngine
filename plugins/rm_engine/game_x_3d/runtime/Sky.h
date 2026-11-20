@@ -87,7 +87,7 @@ Vec3 SunDirection(const Sky& sky);
 struct SkyWeather {
     float cover = 0.15f, dark = 0.0048f, haze = 0.006f;  // 雲の量、その暗さ、もや (0 .. 1)
     float through = 0.992f;                              // 太陽の光がどれだけ通るか
-    float flash = 0;                                      // 雷: a flash now (0 .. 1)
+    float flash = 0;                                      // 雷: いまの光り (0 .. 1)
     float driftX = 0, driftZ = 0;  // 風が雲をどれだけ運んだか (ワールドの単位)
     float windX = 0, windZ = 0;    // 今の風 (m/s、ワールド)
 };
@@ -107,7 +107,7 @@ struct SkyLook {
     bool drivesLight = false;           // 光を空に合わせる (地球の空, 宇宙)
     Vec3 lightGoes{0, -1, 0};           // 光が向かう向き (太陽から、夜は月から)
     Color lightColor{1, 1, 1, 1};       // リニア
-    float lightStrength = 1.f;          // multiplies the light component's own 強さ
+    float lightStrength = 1.f;          // 光の部品自身の 強さ に掛ける
     Color ambientSky{0.16f, 0.16f, 0.16f, 1}, ambientGround{0.08f, 0.08f, 0.08f, 1};
     float flash = 0;  // 雷: 今の閃光 (0 .. 1。雲と環境光を照らす)
 };

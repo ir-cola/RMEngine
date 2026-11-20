@@ -57,7 +57,7 @@ struct InspectBlock {
     std::function<reflect::EditTarget()> resolve;  // オブジェクトが今ある場所 (と、その未知の値)。オブジェクトが null = 消えた
     std::wstring title;           // 見出し (空 = 無し)
     std::wstring note;            // 見出しの下の 1 行
-    std::vector<w::Action> menu;  // the header's ⋮ menu (e.g. 外す)
+    std::vector<w::Action> menu;  // 見出しの ⋮ メニュー (例: 外す)
     // ブロックの見せ方 (例: Transform を ローカル / ワールド で): 欄の上の切り替え。
     // 選ぶと setMode を呼び、ソフトはその見せ方のブロックを返す。
     std::vector<std::wstring> modes;
@@ -293,7 +293,7 @@ public:
 struct SoftwareType {
     PluginId plugin;      // レジストリーが入れる: それを足したプラグイン
     std::string id;       // プラグイン内で一意。例: "game" (プラグインの名前の部分と同じ決まり)
-    std::wstring title;   // tab label, e.g. L"ゲーム"
+    std::wstring title;   // タブの名前。例: L"ゲーム"
     std::function<std::unique_ptr<Software>(SoftwareHost&)> create;
 };
 

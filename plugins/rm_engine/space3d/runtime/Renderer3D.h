@@ -97,7 +97,7 @@ class GpuTexture {
 public:
     uint32_t width = 0, height = 0;  // 絵の大きさ (一番大きいレベル。GPU にあるかどうかは問わない)
     bool srgb = false;  // 色として読む (sRGB -> 線形) か、数値として読む
-    TextureSampling sampling;  // フィルタ・端の扱い・ストリーミング: the image's import settings
+    TextureSampling sampling;  // フィルタ・端の扱い・ストリーミング: 画像の取り込みの設定
     uint32_t levels = 0;       // ミップマップの数 (1: なし)
     mutable size_t bytes = 0;  // 今 GPU にある量。ミップマップ込み (遠くでストリーミングされている間は減る)
     TextureFormat format = TextureFormat::Rgba8;  // 保存の形式 (BC: 圧縮)

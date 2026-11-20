@@ -1,5 +1,5 @@
 // スクリプト API の 2D の部分 (RM2D.h / RM2DAbi.h): 動いているシーンの Transform 2D。
-// RmApi::ctx は game production の ScriptWorld。
+// RmApi::ctx は ゲーム制作 の ScriptWorld。
 
 #include "rm_engine/game_x_2d/runtime/ScriptTransform2D.h"
 

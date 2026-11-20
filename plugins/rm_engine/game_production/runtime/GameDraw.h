@@ -30,7 +30,7 @@ namespace rm::game_production {
 struct GameDrawFrame {
     const Scene& scene;
     uint64_t camera = 0;         // ゲームが通して見るエンティティ (SystemContext::camera)
-    Color background{0, 0, 0, 1};  // the game settings' 背景の色
+    Color background{0, 0, 0, 1};  // ゲームの設定の 背景の色
     platform::Gfx& gfx;
     ID2D1DeviceContext* dc;      // ウィンドウのもの (クライアント領域全体)
     float width = 0, height = 0;  // DIPs

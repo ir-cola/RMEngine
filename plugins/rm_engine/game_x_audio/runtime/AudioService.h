@@ -1,5 +1,5 @@
 #pragma once
-// ゲーム制作 × 音 - 1 回の Play (ゲームの) の音: game production の PlayService
+// ゲーム制作 × 音 - 1 回の Play (ゲームの) の音: ゲーム制作 の PlayService
 // (game_production/runtime/PlayServices.h)。ゲームが動き始めるときに作り、■ で消える。
 // その AudioEngine (rm_engine/audio) も一緒に消えるので、そのあとは何も聞こえない。
 //
@@ -109,7 +109,7 @@ private:
     float musicFade_ = 0;
 };
 
-// スクリプトの部分 (RMAudioAbi.h): game production の kScriptApiPoint に出す。
+// スクリプトの部分 (RMAudioAbi.h): ゲーム制作 の kScriptApiPoint に出す。
 const game_production::ScriptApiPart& ScriptAudioPart();
 
 }  // namespace rm::game_x_audio

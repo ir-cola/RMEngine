@@ -68,7 +68,7 @@ inline float Bar(Entity e) {
 inline void SetInteractable(Entity e, bool on) {
     if (const RmUiApi* u = detail::Get()) u->setInteractable(Api()->ctx, e.id, on ? 1 : 0);
 }
-// UI windows (キャンバス entities) by name.
+// UI のウィンドウ (キャンバス のエンティティ) を名前で。
 inline bool Show(const char* window) {
     const RmUiApi* u = detail::Get();
     return u && u->showWindow(Api()->ctx, window, 1) != 0;

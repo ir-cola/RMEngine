@@ -873,7 +873,7 @@ private:
         f.view = space3d::ViewFromWorld(cam.world);
         f.projection = ProjectionOf(*cam.camera, host.aspect);
         f.clear = BackgroundOf(*cam.camera, host.background);
-        f.shadows = true;  // the lights decide (影を落とす)
+        f.shadows = true;  // 光が決める (影を落とす)
         f.shadowColor = theme::SceneShadow();
         return f;
     }

@@ -391,7 +391,7 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- The plugins' sections (パーティクル ...) ------------------------------------------------------
+    // --- プラグインの欄 (パーティクル ...) ---------------------------------------------------
     DebugContext ctx;
     ctx.scene = const_cast<Scene*>(v.scene);
     ctx.playing = v.playing;

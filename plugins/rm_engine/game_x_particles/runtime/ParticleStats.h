@@ -13,7 +13,7 @@ namespace rm::game_x_particles {
 struct PictureParticles {
     std::string picture;  // "scene" / "game" / "preview" (WorldDrawFrame::picture。空: ゲーム自身のもの)
     bool playing = false;
-    size_t systems = 0;   // パーティクル components it found
+    size_t systems = 0;   // 見つけた パーティクル の部品
     size_t effects = 0;   // 再生中のエフェクトの数 (それぞれ GPU 上に自分のプレイヤーを持つ)
     uint32_t emitters = 0;
     uint64_t capacity = 0;  // 持てるパーティクルの最大数

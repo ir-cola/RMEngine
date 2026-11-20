@@ -500,7 +500,7 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             RunDeferred();
             return 0;
         case WM_SETTINGCHANGE:
-            // Windows' light / dark setting changed (for "PC の設定に合わせる").
+            // Windows の明るい / 暗いの設定が変わった ("PC の設定に合わせる" のため)。
             if (lp && std::wstring_view(reinterpret_cast<const wchar_t*>(lp)) == L"ImmersiveColorSet") app_.SystemThemeChanged();
             handled = false;
             return 0;

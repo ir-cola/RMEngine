@@ -299,7 +299,7 @@ bool AudioService::SourcePlaying(gp::Scene& scene, int entity) {
     return it != sources_.end() && it->second.voice != 0 && engine_->IsPlaying(it->second.voice);
 }
 
-// --- スクリプトの部分 (RMAudioAbi.h): RmApi::ctx は game production の ScriptWorld --------------
+// --- スクリプトの部分 (RMAudioAbi.h): RmApi::ctx は ゲーム制作 の ScriptWorld --------------
 namespace {
 
 AudioService* ServiceOf(void* ctx) {

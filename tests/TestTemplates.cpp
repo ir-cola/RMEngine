@@ -72,7 +72,7 @@ ProjectTemplate Make(const char* owner, const char* id, std::vector<std::string>
     return t;
 }
 
-// 白紙 / ゲーム (game) / 3D (game_3d) / STG (stg, under 3D) / 2D (game_2d)
+// 白紙 / ゲーム (game) / 3D (game_3d) / STG (stg、3D の下) / 2D (game_2d)
 std::vector<ProjectTemplate> GameTemplates() {
     return {BlankTemplate(),
             Make("game_production", "game", {"game"}),
@@ -319,7 +319,7 @@ RM_TEST(Template_ThePlugins) {
     for (const auto& path : std::vector<std::vector<std::string>>{{"blank"}, {"game"}, {"game", "3d"}, {"game", "3d", "physics"}, {"game", "2d"}, {"game", "2d", "scenes"}, {"game", "2d", "ui"}}) {
         CHECK(tree.At(tree.Find(path)) != nullptr);
     }
-    // Choosing ゲーム brings both spaces and both connectors.
+    // ゲーム を選ぶと、両方の空間と両方のコネクターが付いてくる。
     const auto game = TemplatePlugins(tree, tree.Find({"game"}));
     for (const char* n : {"game_production", "space3d", "space2d", "game_x_3d", "game_x_2d", "game_ui"}) CHECK(Has(game, n));
     // UI サンプルはゲーム UI (とそれを作る 2D 空間) を持ってくる。3D は持ってこない。

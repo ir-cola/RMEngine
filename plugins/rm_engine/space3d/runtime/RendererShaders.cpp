@@ -257,7 +257,7 @@ float4 MeshPS(MeshOut i) : SV_Target {
     if (pbr.w > 1.5) mr = mr.rrrr;  // 1 チャンネル (BC4): 灰色の値が両方になる
     float metal = pbr.x * (pbr.w > 0.5 ? mr.b : 1);
     float rough = clamp(pbr.y * (pbr.w > 0.5 ? mr.g : 1), 0.04, 1);
-    Surface(base.rgb, rough, metal, i.wpos, shape);  // a plugin's touch (RenderFrame::surface: 天候's 濡れ)
+    Surface(base.rgb, rough, metal, i.wpos, shape);  // プラグインが手を加える所 (RenderFrame::surface: 天候 の 濡れ)
     rough = clamp(rough, 0.04, 1);
     float3 glow = emissive.rgb * (emissive.w > 0.5 ? emissionMap.Sample(baseSampler, i.uv).rgb : float3(1, 1, 1));
     float3 rgb = ToScreen(Fogged(Shade(base.rgb, metal, rough, n, toEye, i.wpos) + glow, i.wpos));

@@ -1,5 +1,5 @@
 #pragma once
-// スクリプト API の 2D の部分 (sdk/RM2D.h): Transform 2D。RegisterRuntime が game production の
+// スクリプト API の 2D の部分 (sdk/RM2D.h): Transform 2D。RegisterRuntime が ゲーム制作 の
 // kScriptApiPoint に出す。
 
 #include "rm_engine/game_production/runtime/PlayServices.h"
@@ -12,7 +12,7 @@ const game_production::ScriptApiPart& ScriptTransform2DPart2();  // (とワー�
 // Entity::SetParent(p, keepWorld): `newParent` の下でも今の場所に残るように Transform 2D を変える。
 void KeepWorld2D(game_production::Scene& scene, int entity, int newParent);
 // エンティティが画面のどこにいるか (親の Transform 2D も含める。z = 0、画面の奥向き):
-// 2D の空間の game production の PlaceInfo (2D のゲームの音はそこから聞こえる)。
+// 2D の空間の ゲーム制作 の PlaceInfo (2D のゲームの音はそこから聞こえる)。
 bool Pose2D(const game_production::Scene& scene, int entity, game_production::Pose& out);
 
 }  // namespace rm::game_x_2d

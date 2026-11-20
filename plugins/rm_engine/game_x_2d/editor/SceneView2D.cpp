@@ -75,7 +75,7 @@ struct Placed {
     bool active = true;
     bool sprite = false;  // スプライトがある (なければ小さな輪で描く。ゲームには出ない)
     space2d::SpriteDraw draw;
-    int subOrder = 0;     // the sprite's 並び順
+    int subOrder = 0;     // スプライトの 並び順
     std::optional<Camera2D> camera;  // カメラである (カメラ (2D))
 };
 

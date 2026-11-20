@@ -42,8 +42,8 @@ struct SkyInput {
     float3 sun;    // 太陽の向き (長さ 1)
     float3 moon;   // 月の向き
     float hour;    // 0 .. 24 (地球の空's 時刻)
-    float3 value;  // the inspector's 値 (自分のシェーダー)
-    float4 color;  // the inspector's 色 (linear)
+    float3 value;  // インスペクターの 値 (自分のシェーダー)
+    float4 color;  // インスペクターの 色 (リニア)
 };
 
 // 0 .. 1。同じ点なら同じ値 (模様は見えない)。

@@ -89,7 +89,7 @@ public:
         }
         std::optional<TexturePixels> pixels;  // nullopt: `error` に理由 (日本語)
         std::string error;
-        TextureSampling sampling;  // the image's import settings (フィルタ・端の扱い・ストリーミング)
+        TextureSampling sampling;  // 画像の取り込みの設定 (フィルタ・端の扱い・ストリーミング)
         bool fromCache = false;  // キャッシュの .dds から読んだ (デコードも圧縮もやり直していない)
         double seconds = 0;      // スレッドがかかった時間
 

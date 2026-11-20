@@ -54,7 +54,7 @@ struct PlayParams {
     float volume = 1;   // 頼まれた値 (0..4)
     float pitch = 1;
     bool loop = false;
-    bool spatial = false;  // heard from `position` (3D / 2D 距離で減衰)
+    bool spatial = false;  // `position` から聞こえる (3D / 2D 距離で減衰)
     Vec3 position{0, 0, 0};
     float minDistance = 1, maxDistance = 30;
     double fadeIn = 0;   // 秒

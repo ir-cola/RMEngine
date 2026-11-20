@@ -3327,7 +3327,7 @@ private:
     DebugDraw debug_;      // Play 中にスクリプトが rm::Debug で描くもの (ビューが見せる。Stop で消える)
     std::vector<const reflect::TypeDesc*> baseTypes_, baseMultiple_;  // プラグインの部品の型
     std::unique_ptr<Scene> playScene_;  // 動かすコピー
-    std::vector<Kept> kept_;            // この値を残す: written back at Stop
+    std::vector<Kept> kept_;            // この値を残す: Stop のときに書き戻す
     std::vector<std::pair<Kept, json::Value>> keptLeft_;  // ... Play 前のシーンを離れたときの値 (Game::LoadScene)
     bool mouseInGame_ = false;          // ゲームビューの上のマウス (最後に描いたとき)
     // デバッグ パネルと、それが見せるもの: ビューを描く頻度と Play のフレームが走る頻度、シーンビューの

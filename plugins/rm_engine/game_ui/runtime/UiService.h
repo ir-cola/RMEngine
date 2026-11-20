@@ -75,7 +75,7 @@ struct UiFocus {
 struct UiStep {
     std::vector<int> clicked;  // 押されたボタンを順に (OnClick)
     std::vector<int> hovered;  // このフレームに 乗った (または押された、選ばれた) ボタン: その 乗ったときの音
-    int closed = 0;            // the window 戻る closed (0: none)
+    int closed = 0;            // 戻る で閉じたウィンドウ (0: なし)
 };
 
 // 1 フレーム (純粋: シーンのボタンに状態が付き、戻る で閉じたウィンドウはオフになり、それが
