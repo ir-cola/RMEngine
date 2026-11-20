@@ -85,7 +85,7 @@ public:
             trailsOn_ = true;
             ++trailCount_;  // (新しい Play: まだ足跡なし)
         }
-        trailFill_ = trailsOn_ ? SnowFallRate(now, SnowMostOf(*w)) * std::max(f.dt, 0.f) : 0.f;
+        trailFill_ = trailsOn_ ? SnowFallRate(now) * std::max(f.dt, 0.f) : 0.f;
         if (anySnow_) {  // (雪が積もる先: 上の面、真下に向けて)
             downMap_ = static_cast<int>(directions_.size());
             directions_.push_back({0, -1, 0});

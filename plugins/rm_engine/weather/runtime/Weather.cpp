@@ -81,7 +81,7 @@ float SnowInOf(const Weather& w) {
 float RainShare(float x) { return x < 0.5f ? 1 - 0.85f * Smooth(0.f, 0.5f, x) : 0.f; }
 float SnowShare(float x) { return x >= 0.5f ? 0.15f + 0.85f * Smooth(0.5f, 1.f, x) : 0.f; }
 
-float SnowMostOf(const Weather& w) { return std::isfinite(w.snowDepthCm) ? std::clamp(w.snowDepthCm, 0.f, 5.f) / 100.f : 0.f; }
+float SnowMostOf(const Weather& w) { return std::isfinite(w.snowDepthCm) ? std::clamp(w.snowDepthCm / 100.f, 0.f, kMostSnowDepth) : 0.f; }
 
 WeatherNow TargetOf(const Weather& w) {
     WeatherNow n;
@@ -277,17 +277,13 @@ float StepSnowCover(float cover, const WeatherNow& now, float most, float dt) {
     dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
     most = std::isfinite(most) ? std::clamp(most, 0.f, kMostSnowDepth) : 0.f;
     cover = std::isfinite(cover) ? std::clamp(cover, 0.f, most) : 0.f;
-    if (const float rate = SnowFallRate(now, most); rate > 0) {
-        return std::min(most, cover + dt * rate);  // (積もる高さの全部が、量 1 で 240 秒、量 0.5 で 400 秒)
+    if (const float rate = SnowFallRate(now); rate > 0) {
+        return std::min(most, cover + dt * rate);  // (量 1 で 1 分に 2.5 cm、量 0.5 で 1.25 cm)
     }
     return std::max(0.f, cover - dt * (0.0002f + RainNow(now) * 0.002f));
 }
 
-float SnowFallRate(const WeatherNow& now, float most) {
-    const float snow = SnowNow(now);
-    most = std::isfinite(most) ? std::clamp(most, 0.f, kMostSnowDepth) : 0.f;
-    return snow > 0 ? most * (0.1f + snow * 0.9f) / 240.f : 0.f;
-}
+float SnowFallRate(const WeatherNow& now) { return SnowNow(now) * kSnowFallMost; }
 
 float SnowCoverNow(const Weather& w) {
     float all = 0;

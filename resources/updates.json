@@ -7,6 +7,14 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "屋根の下に吹き込む雪が、雨の染みと同じように奥へ向かってなめらかに減るように (線が見えて一様に白くなっていたのを直した)",
+          "en": "Snow blown in under roofs now thins out smoothly toward the inside, like rain stains (it used to be uniformly white with visible lines)"
+        },
+        {
+          "ja": "積もる高さを整数の cm で 0〜1000 まで (最初は 10) に。積もる速さは降る雪の量で決まるように (降水量 100 で 1 分に 2.5 cm ほど)",
+          "en": "Snow depth is now whole centimetres from 0 to 1000 (10 by default). How fast it piles up depends on how much snow falls (about 2.5 cm a minute at precipitation 100)"
+        },
+        {
           "ja": "シーンビューで右ドラッグ中に反対向きのキー (A→D、W→S、Space→Ctrl) へ切り替えたとき、カメラが固まったり一瞬跳んだりするのを直した",
           "en": "Fixed the scene view camera freezing or jumping for a moment when switching to the opposite key (A to D, W to S, Space to Ctrl) while right-dragging"
         },

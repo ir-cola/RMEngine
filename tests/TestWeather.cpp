@@ -306,14 +306,14 @@ RM_TEST(Weather_SnowWets) {
 RM_TEST(Weather_SnowCover) {
     WeatherNow snowy;
     snowy.snow = 1;
-    float cover = StepSnowCover(0, snowy, 0.24f, 1);  // (1 秒に 0.24 x (0.1 + 0.9) / 240)
-    CHECK(Near(cover, 0.001f));
+    float cover = StepSnowCover(0, snowy, 0.24f, 60);  // (量 1: 1 分に 2.5 cm - 積もる高さに関係なく)
+    CHECK(Near(cover, 0.025f) && Near(StepSnowCover(0, snowy, 1.f, 60), 0.025f));
     cover = StepSnowCover(cover, snowy, 0.24f, 1000);
     CHECK(Near(cover, 0.24f));  // それ以上にはならない
     CHECK(Near(StepSnowCover(cover, snowy, 0.1f, 1), 0.1f));  // (下げたら: すぐに)
     WeatherNow light = snowy;
     light.snow = 0.5f;
-    CHECK(Near(StepSnowCover(0, light, 0.24f, 1), 0.00055f));  // 弱い雪: 遅い
+    CHECK(Near(StepSnowCover(0, light, 0.24f, 60), 0.0125f));  // 弱い雪: 降る量に比べて遅い
     WeatherNow fair;
     CHECK(Near(StepSnowCover(0.24f, fair, 0.24f, 60), 0.228f));  // 溶ける: 1 分に 1 cm ほど
     WeatherNow rain;
@@ -322,15 +322,15 @@ RM_TEST(Weather_SnowCover) {
     CHECK(StepSnowCover(0.01f, fair, 0.24f, 1000) == 0.f);
     CHECK(StepSnowCover(std::nanf(""), snowy, 0.24f, 1) >= 0.f && StepSnowCover(0, snowy, 99.f, 1e9f) == kMostSnowDepth);
     CHECK(StepSnowCover(0.1f, snowy, 0.24f, std::nanf("")) == 0.1f);
-    CHECK(Near(SnowFallRate(snowy, 0.24f), 0.001f) && SnowFallRate(fair, 0.24f) == 0.f);  // (足跡も同じ速さで埋まる)
+    CHECK(Near(SnowFallRate(snowy), 0.025f / 60.f) && Near(SnowFallRate(light), 0.0125f / 60.f) && SnowFallRate(fair) == 0.f);  // (足跡も同じ速さで埋まる)
     // 方向ごとの層で分け合う: 降るものは降る方向に入る (風で斜めなら、その方向だけの層)。
     // 溶けるものはどの層からも同じだけ引く。
     std::vector<WetWay> ways;
-    StepWet(ways, snowy, 100, 0.24f);
+    StepWet(ways, snowy, 240, 0.24f);
     CHECK(ways.size() == 1 && Near(ways[0].snow, 0.1f) && Near(ways[0].way, {0, -1, 0}));
     WeatherNow windy = snowy;
     windy.windX = 3;
-    StepWet(ways, windy, 50, 0.24f);
+    StepWet(ways, windy, 120, 0.24f);
     CHECK(ways.size() == 2 && Near(ways[0].snow, 0.1f) && Near(ways[1].snow, 0.05f) && ways[1].way.x > 0.3f);
     StepWet(ways, windy, 1000, 0.24f);
     CHECK(Near(ways[0].snow + ways[1].snow, 0.24f));  // (全部で: 積もる高さ を超えない)
@@ -344,11 +344,15 @@ RM_TEST(Weather_SnowCover) {
     w.snowing = true;
     w.precipitation = 50;
     w.windStrength = 0;
-    w.snowDepthCm = 3.47f;  // (cm: インスペクターが持つとおり、3.4)
-    CHECK(Near(SnowMostOf(w), 0.0347f) && Near(SnowCoverNow(w), 0.0347f));
-    CHECK(WetAtOnce(NowOf(w), SnowMostOf(w)).size() == 1 && Near(WetAtOnce(NowOf(w), SnowMostOf(w))[0].snow, 0.0347f));
-    w.snowDepthCm = 9;
-    CHECK(Near(SnowMostOf(w), 0.05f));  // (多くて 5 cm)
+    CHECK(w.snowDepthCm == 10.f);  // (最初は 10 cm: 足跡が分かる深さ)
+    w.snowDepthCm = 34;  // (cm)
+    CHECK(Near(SnowMostOf(w), 0.34f) && Near(SnowCoverNow(w), 0.34f));
+    CHECK(WetAtOnce(NowOf(w), SnowMostOf(w)).size() == 1 && Near(WetAtOnce(NowOf(w), SnowMostOf(w))[0].snow, 0.34f));
+    w.snowDepthCm = 5000;
+    CHECK(SnowMostOf(w) == kMostSnowDepth);  // (多くて 10 m)
+    w.snowDepthCm = -3;
+    CHECK(SnowMostOf(w) == 0.f);
+    w.snowDepthCm = 34;
     w.snowing = false;
     CHECK(SnowCoverNow(w) == 0.f);
     w.wetCounted = true;

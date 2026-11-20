@@ -242,37 +242,50 @@ float WetAt(float3 wpos, float3 n) {
 static const float3 kSnowWhite = float3(0.82, 0.84, 0.88);
 // `depth` が積もる (x, z) で、雪がどう立つか (高さ: depth x この値。0: そこに雪なし)。薄いとき:
 // ゆっくりしたノイズが高い所で盛り上がる塊 - 深さより高く、雪が集まっている - が育ってつながる。
-// 約 8 cm からは、ゆるやかなうねりのある一面の雪 (2026-11-20: 薄い雪は、雨のような平らな点だった)。
+// 約 3.5 cm からは、ゆるやかなうねりのある一面の雪 (2026-11-20: 薄い雪は、雨のような平らな点だった)。
+// うねりは深さの ±20% だが、多くて ±2 cm (深い雪が大きく波打たない)。
 float SnowShape(float2 xz, float depth) {
     if (depth <= 0) return 0;
     float n = 0.65 * WetNoise(xz * 2.2 + 1.7) + 0.35 * WetNoise(xz * 5.3 + 4.1);
-    float cover = saturate(depth / 0.015);  // (積もる高さは最大 5 cm: 1.5 cm で全部覆う)
+    float cover = saturate(depth / 0.015);  // (1.5 cm で全部覆う)
     float lump = saturate((n - (1 - cover)) / 0.3);
     lump = lump * lump * (3 - 2 * lump);
     float thin = lump * lerp(2.5, 1, saturate(depth / 0.03));
-    return lerp(thin, 0.8 + 0.4 * n, saturate((depth - 0.015) / 0.02));
+    float deep = 1 + (0.4 * n - 0.2) * min(1, 0.1 / depth);
+    return lerp(thin, deep, saturate((depth - 0.015) / 0.02));
 }
 // 点は、地図 `m` が見る向き (0 .. 1) に開いているか (地図なし: 開いている)。
 float OpenFor(int m, float3 p) {
     return m >= 0 && mapInfo[m].x > 0.5 ? saturate((0.06 - MapPastAt(m, mul(mapViewProj[m], float4(p, 1)))) / 0.06) : 1;
 }
-// ある点に雪がどれだけ深く積もるか: 各降り方が残したもの (WetWay::snow: surfaceData[5 + k].x) を、
-// その降り方が届く所 (その 向きの地図) で足し合わせる。風で傾くと、降り方は屋根の縁の下にも届く。
-float SnowDepthAt(float3 wpos, float3 n) {
+// 面の 積雪 (0 .. 1): 上を向く所。各降り方が届く具合は、雨の染みと同じ渦巻きで読む (WetOpen) -
+// 屋根の縁に向かって 1 m ほどかけて、雪のまだら (点が集まった塊) が少しずつ減る。全部届く所では
+// 雪が立つ所が白い (積もった雪の足元は高さに合わせる - SnowLayerVS と同じ形)。(2026-11-20:
+// 前は 1 か所だけ読んでいて、屋根の下に吹き込む所は地図のマスの線が見え、範囲が一様に白かった。)
+float SnowAt(float3 wpos, float3 n) {
+    float3 a = abs(n);
+    float2 s = a.y >= a.x && a.y >= a.z ? wpos.xz : a.x >= a.z ? wpos.zy : wpos.xy;
+    float footprint = max(fwidth(s.x), fwidth(s.y));  // (どの return より前: 微分は全ピクセルが要る)
     int count = (int)surfaceData[0].x;
-    float depth = 0;
+    if (n.y < 0.3 || count <= 0) return 0;
+    float3 p = wpos + n * 0.12;
+    float depth = 0, most = 0;
     [loop] for (int k = 0; k < count; ++k) {
         float snow = surfaceData[5 + k].x;
-        if (snow > 0) depth += snow * OpenFor((int)surfaceData[1 + k].z, wpos + n * 0.05);
+        if (snow <= 0) continue;
+        most += snow;
+        int m = (int)surfaceData[1 + k].z;
+        depth += snow * (m >= 0 && mapInfo[m].x > 0.5 ? WetOpen(m, p, s) : 1);
     }
-    return depth;
-}
-// 面の 積雪 (0 .. 1): 雪が立つ所が白い (積もった雪の足元は高さに合わせる - SnowLayerVS と同じ形)。
-// 上を向く所。
-float SnowAt(float3 wpos, float3 n) {
-    if (n.y < 0.3) return 0;
-    float depth = SnowDepthAt(wpos, n);
-    return depth > 0 ? smoothstep(0.01, 0.03, SnowShape(wpos.xz, depth)) * smoothstep(0.3, 0.5, n.y) : 0;
+    if (depth <= 0) return 0;
+    // 届く割合 (縁で 1 から 0 へ) に、雪の薄さ (1.5 cm で全部) を掛けたものが、まだらの数。
+    float reach = saturate(depth / most);
+    float wet = reach * saturate(most / 0.015);
+    const float patch = WetNoise(s * 0.6 + 3.7) * 2 - 1;  // (縁が一様な帯にならない: 1、2 m のまだら)
+    float density = saturate(wet + patch * wet * (1 - wet) * 0.9);
+    float specks = WetSpecks(s * 0.45, density, footprint * 0.45);  // (雨の点より大きい塊)
+    float lying = smoothstep(0.01, 0.03, SnowShape(wpos.xz, depth)) * smoothstep(0.85, 1, reach);
+    return max(specks, lying) * smoothstep(0.3, 0.5, n.y);
 }
 
 // すべての面の 濡れ と 積雪 (3D 空間の RenderFrame::surface): 面の中の水で暗くなり - 少しだけ

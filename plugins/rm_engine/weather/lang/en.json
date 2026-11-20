@@ -28,7 +28,7 @@
   "雪にする": "Snow",
   "入れると、雨がだんだん小雨になってから雪に変わり、雪が強まって降水量に戻ります。外すと逆に、雪が弱まってから雨に (Play 中は 5 秒ほど。エディターではすぐその見た目)。雨と雪が一緒に降ることはありません": "When on, the rain weakens to a drizzle, then turns to snow that grows back to the precipitation; off, the snow weakens, then turns to rain (about 5 seconds in Play; the editor shows it at once). Rain and snow never fall together",
   "積もる高さ (cm)": "Snow depth (cm)",
-  "雪がこの高さまで積もります (0〜5 cm。Play 中は降っている間に少しずつ、大雪で 4 分ほど)。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)": "Snow piles up to this depth (0-5 cm; in Play little by little while it snows, about 4 minutes in heavy snow). 0: none. None lies under a roof; when it stops, it melts slowly (faster in rain)",
   "霧の量": "Fog amount",
-  "0: 無し 〜 50: 20 m ほど先がかすむ 〜 100: 数 m 先しか見えない。色は天気で変わります (晴れ・くもり: 白っぽい / 雨: 暗い灰色 / 雪: 白)。強い雨・雪では、これに加えて霧が出ます": "0: none / 50: things about 20 m away fade / 100: only a few metres can be seen. Its colour follows the weather (fair or cloudy: pale / rain: dark grey / snow: white). Heavy rain or snow adds fog of its own"
+  "0: 無し 〜 50: 20 m ほど先がかすむ 〜 100: 数 m 先しか見えない。色は天気で変わります (晴れ・くもり: 白っぽい / 雨: 暗い灰色 / 雪: 白)。強い雨・雪では、これに加えて霧が出ます": "0: none / 50: things about 20 m away fade / 100: only a few metres can be seen. Its colour follows the weather (fair or cloudy: pale / rain: dark grey / snow: white). Heavy rain or snow adds fog of its own",
+  "雪がこの高さまで積もります (cm、整数。最大 1000)。Play 中は降っている間に少しずつ、降る量が多いほど速く (降水量 100 で 1 分に 2.5 cm ほど)。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)": "Snow piles up to this depth (cm, whole numbers, up to 1000). In Play it builds up while it snows, faster the more it snows (about 2.5 cm a minute at precipitation 100). 0: none. None lies under a roof; when it stops, it melts slowly (faster in rain)"
 }

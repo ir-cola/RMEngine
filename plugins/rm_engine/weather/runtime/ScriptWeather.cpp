@@ -45,7 +45,7 @@ int SetValue(void* ctx, int which, float value, float seconds) {
         case 4: w->windStrength = std::clamp(value, 0.f, 100.f); break;
         case 5: w->snowing = value != 0; break;
         case 6: w->lightning = value != 0; break;
-        case 8: w->snowDepthCm = tenths(value, 5.f); break;
+        case 8: w->snowDepthCm = std::trunc(std::clamp(value, 0.f, kMostSnowDepth * 100.f) + 1e-4f); break;  // (cm、整数)
         default: break;
     }
     return 1;
