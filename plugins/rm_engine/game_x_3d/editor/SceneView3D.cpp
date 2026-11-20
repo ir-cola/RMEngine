@@ -616,6 +616,11 @@ private:
     // 見回している間 (右ボタンを押している): W A S D で前 / 左 / 後ろ / 右、Space (か E) で上、
     // Ctrl (か Q) で下 - Shift を押すとどれも速くなる。
     void Fly(ui::Context& c, float dt) {
+        // 見回している間は、キーを押していなくてもフレームを続けて描く (2026-11-20)。前はキーを
+        // 離すとフレームが止まり、次のキー (反対向きの D・S・Ctrl など) で起きたフレームの dt が
+        // 止まっていた間の長さ (最大 0.1 秒) になって一瞬跳んだ。Ctrl だけはキーの知らせでフレームが
+        // 起きないので、マウスを動かすまで固まっていた。
+        c.RequestAnimation();
         auto axis = [&](ui::Key plus, ui::Key minus) { return (c.KeyDown(plus) ? 1.f : 0.f) - (c.KeyDown(minus) ? 1.f : 0.f); };
         const float up = (c.KeyDown(ui::Key::Space) || c.KeyDown(ui::Key::E) ? 1.f : 0.f) - (c.In().ctrl || c.KeyDown(ui::Key::Q) ? 1.f : 0.f);
         const Vec3 dir{axis(ui::Key::D, ui::Key::A), up, axis(ui::Key::W, ui::Key::S)};
@@ -624,7 +629,6 @@ private:
         // 長い距離は Shift。
         const float speed = std::max(0.4f, state_.camera.distance * 0.15f) * (c.In().shift ? 4.f : 1.f);
         space3d::Fly(state_.camera, dir * (speed * dt));
-        c.RequestAnimation();  // キーを押している間は、マウスを動かさなくても飛び続ける
     }
 
     // --- ギズモ ------------------------------------------------------------------------------

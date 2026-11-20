@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "シーンビューで右ドラッグ中に反対向きのキー (A→D、W→S、Space→Ctrl) へ切り替えたとき、カメラが固まったり一瞬跳んだりするのを直した",
+          "en": "Fixed the scene view camera freezing or jumping for a moment when switching to the opposite key (A to D, W to S, Space to Ctrl) while right-dragging"
+        },
+        {
           "ja": "座標系を Y が上の左手系に (右・上・奥が +)。前のシーンは見た目を保って読み込む。3D モデルは取り込みの設定で座標系 (自動・Blender・Unreal など) と単位を選べる。シーンビューの左に道具のボタン (グリッド配置・選択・移動・回転・拡縮)、説明の文字は消した",
           "en": "The coordinate system is now Y-up left-handed (right, up and forward are +). Older scenes load looking the same. 3D models can choose their coordinate system (auto, Blender, Unreal ...) and unit in the import settings. Tool buttons on the left of the scene view (grid, select, move, rotate, scale); the help text there is gone"
         },
