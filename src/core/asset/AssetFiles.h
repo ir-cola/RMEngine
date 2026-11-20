@@ -1,6 +1,6 @@
 #pragma once
-// Reading an Assets/ folder and writing its .meta files (the I/O half of AssetIndex.h).
-// Standard library only: the game reads the same files to find an asset by its id (ReadIndex).
+// Assets/ フォルダーを読み、その .meta ファイルを書く (AssetIndex.h の I/O の半分)。
+// 標準ライブラリだけ: ゲームは同じファイルを読んで、id からアセットを見つける (ReadIndex)。
 
 #include "core/asset/AssetIndex.h"
 
@@ -16,13 +16,13 @@ namespace rm::asset {
 struct Scan {
     std::vector<Found> found;
     std::vector<Orphan> orphans;
-    bool stopped = false;  // asked to stop part way: what it has is not the whole folder - not to be used
-    // The folder could not be listed to its end (a folder of OneDrive's that is only online while
-    // OneDrive is not running ...): not the whole folder either - not to be used (stopped is set too).
+    bool stopped = false;  // 途中で止めるよう頼まれた: 持っているのはフォルダー全部ではない - 使わないこと
+    // フォルダーを最後まで一覧にできなかった (OneDrive が動いていない間はオンラインにしかない
+    // OneDrive のフォルダーなど): これもフォルダー全部ではない - 使わないこと (stopped も立つ)。
     std::string problem;
 };
-// What the last look read from each .meta, with its size and time: a .meta that is the same size
-// and has the same time is not read again (looking at a big folder again reads only what changed).
+// 前回の調べで各 .meta から読んだもの。大きさと時刻付き: 大きさも時刻も同じ .meta は
+// もう一度読まない (大きなフォルダーを調べ直しても、変わった分だけ読む)。
 struct MetaCache {
     struct Seen {
         uintmax_t size = 0;
@@ -31,28 +31,28 @@ struct MetaCache {
         int64_t created = 0;
     };
     std::unordered_map<std::wstring, Seen> byPath;
-    size_t reads = 0;  // .meta files read by the last scan (for the tests)
+    size_t reads = 0;  // 前回の走査で読んだ .meta ファイル (テスト用)
 };
-// Every file and folder under `root` (not the ignored ones) with the id of its .meta, and the .meta
-// files whose file is gone. Paths in display order. `cache` (optional): kept between looks. `stop`:
-// looked at every few entries - asked, it ends early with Scan::stopped.
+// `root` 以下の全ファイルとフォルダー (無視したものは除く) を、その .meta の id と一緒に、
+// ファイルがなくなった .meta も。パスは表示順。`cache` (省略可): 調べの間で持ち越す。`stop`:
+// 数エントリーごとに見る - 立つと、Scan::stopped を付けて早めに終わる。
 Scan ScanFolder(const std::filesystem::path& root, MetaCache* cache = nullptr, std::stop_token stop = {});
 
-// One look at the folder: ScanFolder + Reconcile, WITHOUT writing anything - safe on a thread of its
-// own (the editor's Worker). The plan's .meta writes are made afterwards by ApplyPlan, on the thread
-// that owns the folder's ids. *stopped: it was asked to stop, or the folder could not be listed whole
-// (*problem says why) - the plan is empty, not to be used: the ids stay as they were.
+// フォルダーを 1 回調べる: ScanFolder + Reconcile。何も書かない - 専用のスレッド (エディターの
+// Worker) で安全。計画の .meta の書き込みは、後で ApplyPlan が、フォルダーの id を持つスレッドで行う。
+// *stopped: 止めるよう頼まれた、またはフォルダー全部を一覧にできなかった (*problem に理由) -
+// 計画は空で、使わないこと: id はそのまま。
 Plan Look(const std::filesystem::path& root, std::span<const Entry> previous, MetaCache* cache, std::stop_token stop, bool* stopped,
           std::string* problem = nullptr);
-// Writes a .meta: next to it first, on the disk (flushed), then moved in place - neither a crash of the
-// program nor of Windows (a power cut) leaves half a .meta, or an empty one with its id lost.
+// .meta を書く: まず隣にディスクへ (フラッシュして) 書き、それから元の場所へ移す - プログラムが
+// 落ちても、Windows が落ちても (停電)、書きかけの .meta も、id が失われた空の .meta も残らない。
 bool WriteMetaFile(const std::filesystem::path& p, const std::string& text);
-// A path as Windows compares it (letters' case does not count): "Tree.png" and "tree.png" are one file.
+// Windows が比べるのと同じパス (大文字小文字は区別しない): "Tree.png" と "tree.png" は同じファイル。
 std::wstring FoldCase(std::wstring_view path);
 
-// Which look's result may be used. Asking for a look - or changing the folder from the editor (a
-// rename, a move ...) - takes a new number; a result is used only while its number is the newest. A
-// look that was overtaken (the folder changed again while it ran) is thrown away, never applied.
+// どの調べの結果を使ってよいか。調べを頼む - またはエディターからフォルダーを変える
+// (名前の変更、移動など) - たびに新しい番号を取り、結果を使うのはその番号が最新の間だけ。
+// 追い越された調べ (動いている間にフォルダーがまた変わった) は捨て、決して適用しない。
 class LookNumber {
 public:
     uint64_t Next() { return ++now_; }
@@ -63,31 +63,31 @@ private:
     uint64_t now_ = 0;
 };
 
-// Gives one item its id at once (a file the editor has just written - a prefab saved): the id of the
-// .meta next to it when it has a readable one, else `guid` written into a new / readable .meta (with
-// its name). Never writes over an unreadable one. The id it has now ("" when it could not be given).
+// 1 つの項目にすぐ id を付ける (エディターが今書いたファイル - 保存した Prefab): 隣の .meta が
+// 読めればその id、そうでなければ `guid` を新しい / 読める .meta に (名前と一緒に) 書く。
+// 読めないものには決して上書きしない。今持っている id (付けられなかったときは "")。
 std::string GiveId(const std::filesystem::path& root, std::string_view path, const std::string& guid);
 
-// Writes / moves the .meta files of a Reconcile plan. Problems (Japanese, UTF-8) go to `errors`.
+// Reconcile の計画の .meta ファイルを書く / 動かす。問題 (日本語、UTF-8) は `errors` へ。
 void ApplyPlan(const std::filesystem::path& root, const Plan& plan, std::vector<std::string>& errors);
 
-// Scan + Reconcile + ApplyPlan: the ids of the folder now. `previous`: the last result (empty at first).
-// `notes` gets what moved and every problem.
-// True in *wrote when it wrote or moved a .meta (the folder watch will tell of it).
+// Scan + Reconcile + ApplyPlan: 今のフォルダーの id。`previous`: 前回の結果 (最初は空)。
+// `notes` には動いたことと全部の問題が入る。
+// .meta を書いた、または動かしたとき、*wrote が true になる (フォルダーの監視がそれを知らせる)。
 std::vector<Entry> Update(const std::filesystem::path& root, std::span<const Entry> previous, std::vector<std::string>& notes,
                           MetaCache* cache = nullptr, bool* wrote = nullptr);
 
-// The ids as the .meta files say, without writing anything (the game: an id -> its file).
+// .meta ファイルが言う通りの id。何も書かない (ゲーム: id -> そのファイル)。
 std::vector<Entry> ReadIndex(const std::filesystem::path& root);
 
-// Records the file's current name in its .meta (after a rename / move) - only into a .meta that can
-// be read whole. False when it was not written.
+// ファイルの今の名前をその .meta に記録する (名前の変更 / 移動の後) - 全部読める .meta にだけ。
+// 書かなかったときは false。
 bool RecordName(const std::filesystem::path& file);
 
-// A new random id (from any thread).
+// 新しいランダムな id (どのスレッドからでも)。
 std::string NewGuid();
 
-// Where an item is on disk.
+// 項目がディスクのどこにあるか。
 std::filesystem::path FullPath(const std::filesystem::path& root, std::string_view path);
 std::filesystem::path MetaPath(const std::filesystem::path& root, std::string_view path);
 

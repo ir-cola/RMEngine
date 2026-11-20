@@ -20,7 +20,7 @@ std::string Message(DWORD code) {
 
 FileLock::Result FileLock::Take(const std::filesystem::path& path, std::string* error) {
     Release();
-    // No sharing at all: a second CreateFile on it (another RM Engine) fails with a sharing violation.
+    // 共有なし: 同じファイルへの 2 回目の CreateFile (別の RM Engine) は共有違反で失敗する。
     handle_ = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
                           FILE_ATTRIBUTE_HIDDEN | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
     if (handle_ != INVALID_HANDLE_VALUE) return Result::Taken;
@@ -32,7 +32,7 @@ FileLock::Result FileLock::Take(const std::filesystem::path& path, std::string* 
 
 void FileLock::Release() {
     if (handle_ == INVALID_HANDLE_VALUE) return;
-    CloseHandle(handle_);  // deletes the file (FILE_FLAG_DELETE_ON_CLOSE)
+    CloseHandle(handle_);  // ファイルを消す (FILE_FLAG_DELETE_ON_CLOSE)
     handle_ = INVALID_HANDLE_VALUE;
 }
 

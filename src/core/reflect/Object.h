@@ -1,7 +1,7 @@
 #pragma once
-// A value of a reflected type chosen at run time (the type is known only by its TypeDesc), e.g.
-// one component of an entity. It owns the value: made with the type's default member values,
-// copied with the type's copy, destroyed with its destructor.
+// 実行時に選ぶリフレクションの型の値 (型は TypeDesc でしか分からない)。たとえば
+// エンティティの部品の 1 つ。値を所有する: 型の既定のメンバー値で作り、
+// 型のコピーでコピーし、デストラクターで壊す。
 //
 //   reflect::Object o(reflect::TypeOf<Transform>());
 //   static_cast<Transform*>(o.Get())->position = {1, 2, 3};
@@ -34,7 +34,7 @@ private:
     void* data_ = nullptr;
 };
 
-// The type with this C++ name (TypeDesc::name, e.g. "rm::space3d::Transform") among `types`.
+// この C++ 名 (TypeDesc::name、たとえば "rm::space3d::Transform") を持つ型を `types` の中から。
 const TypeDesc* FindTypeNamed(std::span<const TypeDesc* const> types, std::string_view name);
 
 }  // namespace rm::reflect

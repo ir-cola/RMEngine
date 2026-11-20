@@ -12,7 +12,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace {
 
-// More than this is not a picture to open whole (a broken file that says it is huge).
+// これより大きいものは、まるごと開く画像ではない (巨大だと言い張る壊れたファイル)。
 constexpr uintmax_t kMaxFileBytes = 512ull << 20;
 constexpr uint64_t kMaxPixels = 16384ull * 16384ull;
 
@@ -115,7 +115,7 @@ std::optional<Image> LoadImageFile(IWICImagingFactory* wic, const std::filesyste
 IWICImagingFactory* ThreadImagingFactory() {
     struct Holder {
         ComPtr<IWICImagingFactory> factory;
-        bool com = false;  // this thread's COM was started here (ended with the thread)
+        bool com = false;  // このスレッドの COM をここで始めた (スレッドと一緒に終わる)
         ~Holder() {
             factory.Reset();
             if (com) CoUninitialize();
@@ -123,7 +123,7 @@ IWICImagingFactory* ThreadImagingFactory() {
     };
     thread_local Holder h;
     if (!h.factory) {
-        h.com = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));  // a thread that has COM already keeps its own
+        h.com = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));  // COM をもう持っているスレッドは、それをそのまま使う
         CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&h.factory));
     }
     return h.factory.Get();

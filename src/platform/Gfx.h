@@ -1,21 +1,21 @@
 #pragma once
-// GPU and 2D drawing setup: one Direct3D 11 device shared by every window,
-// Direct2D on top of it (for the UI), DirectWrite (text) and WIC (images).
+// GPU と 2D 描画の準備: 全ウィンドウで共有する Direct3D 11 デバイス 1 つ、
+// その上の Direct2D (UI 用)、DirectWrite (文字)、WIC (画像)。
 //
-// Rules from the previous engine (design doc RME_PLATFORM 7-1):
-//  * every window's swap chain is FLIP_DISCARD + DXGI_SCALING_NONE (never stretched)
-//  * the window redraws inside WM_SIZE, so dragging the border never freezes the picture
+// 前のエンジンからの決まり (設計 RME_PLATFORM 7-1):
+//  * どのウィンドウのスワップチェーンも FLIP_DISCARD + DXGI_SCALING_NONE (引き伸ばさない)
+//  * ウィンドウは WM_SIZE の中で描き直す。枠をドラッグしても絵が固まらないように
 //
-// The GPU can be lost while the editor runs (the driver updated or crashed, the GPU reset after a
-// hang - TDR -, an external GPU unplugged). Then every object made on it is dead: Recreate makes new
-// devices and counts it in Generation(). Whoever keeps something made on the GPU (a swap chain,
-// textures, buffers, shaders, Direct2D bitmaps / brushes / effects) remembers the generation it was
-// made in and throws it away - to make it again - when the number has changed:
+// エディターが動いている間に GPU が失われることがある (ドライバーの更新やクラッシュ、フリーズ後の
+// GPU のリセット - TDR -、外付け GPU の取り外し)。そうなると、その上で作ったオブジェクトは全部死ぬ:
+// Recreate が新しいデバイスを作り、Generation() に数える。GPU の上で作ったもの (スワップチェーン、
+// テクスチャ、バッファ、シェーダー、Direct2D のビットマップ / ブラシ / エフェクト) を持っている側は、
+// 作ったときの世代を覚えておき、番号が変わったら捨てて作り直す:
 //
 //   if (gfx.Generation() != madeIn_) { DropGpuThings(); madeIn_ = gfx.Generation(); }
 //
-// The factories (Direct2D, DirectWrite, WIC) are not on the GPU and stay: geometry and text
-// formats live on.
+// ファクトリー (Direct2D, DirectWrite, WIC) は GPU の上にないので残る: ジオメトリと文字の
+// フォーマットは生き続ける。
 #include "platform/Win.h"
 
 #include <d2d1_1.h>
@@ -35,17 +35,17 @@ class Gfx {
 public:
     bool Init();
 
-    // How many times the devices were made (1 after Init; one more after each Recreate).
+    // デバイスを何回作ったか (Init のあとは 1。Recreate のたびに 1 増える)。
     uint64_t Generation() const { return generation_; }
-    // The device is gone (or SimulateLoss was called): nothing drawn reaches the screen until Recreate.
+    // デバイスが無くなった (または SimulateLoss を呼んだ): Recreate まで、描いたものは画面に届かない。
     bool Lost() const;
-    // Why, for the console (S_OK when it is not lost; DXGI_ERROR_DEVICE_REMOVED for a simulated loss).
+    // その理由 (コンソール用。失われていなければ S_OK。模擬した喪失なら DXGI_ERROR_DEVICE_REMOVED)。
     HRESULT LostReason() const;
-    // New Direct3D / Direct2D devices (the old objects are left for their owners to drop). False when
-    // they cannot be made now (try again a little later); the old devices are kept then.
+    // 新しい Direct3D / Direct2D デバイス (古いオブジェクトは、持ち主が捨てるまで残す)。今は作れない
+    // ときは false (少しあとでもう一度)。そのときは古いデバイスをそのまま使う。
     bool Recreate();
-    // Something said the device is gone (Direct2D's D2DERR_RECREATE_TARGET), or the way back is being
-    // tried without a real GPU reset: Lost() is true until the next Recreate.
+    // 何かがデバイスの喪失を告げた (Direct2D の D2DERR_RECREATE_TARGET)、または本物の GPU リセット無しで
+    // 復帰を試している: 次の Recreate まで Lost() は true。
     void MarkLost() { markedLost_ = true; }
 
     ID3D11Device* D3D() const { return d3d_.Get(); }
@@ -57,7 +57,7 @@ public:
     IWICImagingFactory* Wic() const { return wic_.Get(); }
 
 private:
-    bool CreateDevices();  // Direct3D, its DXGI factory and the Direct2D device on it
+    bool CreateDevices();  // Direct3D、その DXGI ファクトリー、その上の Direct2D デバイス
 
     uint64_t generation_ = 0;
     bool markedLost_ = false;
@@ -70,18 +70,18 @@ private:
     Microsoft::WRL::ComPtr<IWICImagingFactory> wic_;
 };
 
-// The swap chain + Direct2D device context of one window.
+// 1 つのウィンドウのスワップチェーン + Direct2D のデバイスコンテキスト。
 class SwapTarget {
 public:
     bool Create(Gfx& gfx, HWND hwnd, float dpi);
     void Reset();
     void Resize(UINT width, UINT height);
     void SetDpi(float dpi);
-    // syncInterval 1: in step with the screen (vsync), 0: at once.
+    // syncInterval 1: 画面に合わせる (vsync)。0: すぐに。
     bool Present(UINT syncInterval = 1);
 
     ID2D1DeviceContext* Context() const { return dc_.Get(); }
-    // The Gfx::Generation it was made in (0: not made).
+    // 作られたときの Gfx::Generation (0: 作られていない)。
     uint64_t Generation() const { return generation_; }
     UINT Width() const { return width_; }
     UINT Height() const { return height_; }
@@ -99,11 +99,11 @@ private:
     uint64_t generation_ = 0;
 };
 
-// Bytes of an RCDATA resource embedded in the exe (empty when missing).
+// exe に埋め込んだ RCDATA リソースのバイト列 (無いときは空)。
 std::span<const uint8_t> ResourceBytes(int id);
 
-// Decodes an image (PNG/JPEG/BMP...) with WIC. maxWidth > 0 scales down (keeping the aspect).
-// When it fails: the reason (Japanese) goes to `error`, or to the log when `error` is null.
+// 画像 (PNG/JPEG/BMP...) を WIC でデコードする。maxWidth > 0 なら (縦横比を保って) 縮小する。
+// 失敗したときは、理由 (日本語) を `error` に入れる。`error` が null ならログに出す。
 Microsoft::WRL::ComPtr<ID2D1Bitmap> LoadBitmapFromMemory(Gfx& gfx, ID2D1DeviceContext* dc, std::span<const uint8_t> data,
                                                          UINT maxWidth = 0, std::string* error = nullptr);
 

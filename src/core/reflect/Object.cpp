@@ -5,8 +5,8 @@
 
 namespace rm::reflect {
 
-// The memory is new'd with the default alignment (16 bytes on x64), enough for every type the
-// reflection supports (no over-aligned members).
+// メモリーは既定の境界合わせ (x64 では 16 バイト) で new する。リフレクションが対応する型には
+// どれも十分 (境界合わせが過大なメンバーはない)。
 Object::Object(const TypeDesc& type) : type_(&type) {
     data_ = ::operator new(type.size);
     type.construct(data_);

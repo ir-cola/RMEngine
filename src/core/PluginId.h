@@ -1,15 +1,15 @@
 #pragma once
-// Plugin IDs (design RME_PLATFORM 3-a, decided 2026-09-28).
+// プラグイン ID (設計 RME_PLATFORM 3-a、2026-09-28 決定)。
 //
-//   * two separate values, author + name. They are never joined into one string in data
-//     ("rm_engine" "render3d" and "akatuki" "render3d" are different plugins)
-//   * a-z, 0-9 and '_' only; starts with a letter; no '_' at the end; no "__"
-//   * author 3-20 characters and not a Windows device name (con, prn, aux, nul, com1-9, lpt1-9)
-//   * name 5-64 characters
-//   * the official author is "rm_engine"
+//   * 値は 2 つに分ける: 作者 + 名前。データの中で 1 つの文字列に繋げない
+//     ("rm_engine" "render3d" と "akatuki" "render3d" は別のプラグイン)
+//   * 使えるのは a-z、0-9、'_' だけ。先頭は英字。末尾に '_' を置かない。"__" も不可
+//   * 作者は 3〜20 文字で、Windows のデバイス名 (con, prn, aux, nul, com1-9, lpt1-9) は不可
+//   * 名前は 5〜64 文字
+//   * 公式の作者は "rm_engine"
 //
-// PluginIdProblem is the only place these rules are written. A plugin writes its own ID once,
-// in its header, as a PluginIdLiteral - a wrong ID there does not compile.
+// これらの決まりを書くのは PluginIdProblem だけ。プラグインは自分の ID をヘッダーに 1 回だけ、
+// PluginIdLiteral として書く - 間違った ID はコンパイルが通らない。
 
 #include <string>
 #include <string_view>
@@ -43,7 +43,7 @@ constexpr bool IsDeviceName(std::string_view s) {
 
 }  // namespace plugin_id_detail
 
-// nullptr when the ID is valid, otherwise the reason (Japanese, UTF-8).
+// ID が正しければ nullptr、そうでなければ理由 (日本語、UTF-8)。
 constexpr const char* PluginIdProblem(std::string_view author, std::string_view name) {
     using namespace plugin_id_detail;
     if (const char* p = PartProblem(author, 3, 20, "作者名は 3 文字以上にしてください", "作者名は 20 文字までです")) return p;
@@ -59,11 +59,11 @@ struct PluginId {
     std::string name;
 
     bool operator==(const PluginId&) const = default;
-    // For messages only ("rm_engine / render3d"). Never stored as one string.
+    // メッセージ専用 ("rm_engine / render3d")。1 つの文字列としては決して保存しない。
     std::string Text() const { return author + " / " + name; }
 };
 
-// A plugin's own ID, written once in its header:
+// プラグイン自身の ID。ヘッダーに 1 回だけ書く:
 //   inline constexpr rm::PluginIdLiteral kPluginId{"rm_engine", "game_production"};
 struct PluginIdLiteral {
     std::string_view author;

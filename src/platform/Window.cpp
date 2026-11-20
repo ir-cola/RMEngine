@@ -34,7 +34,7 @@ void RegisterClassOnce(WNDPROC proc) {
 }
 
 DWORD StyleFor(const WindowDesc& d) {
-    if (d.frameless) return WS_POPUP | WS_THICKFRAME;  // (THICKFRAME: sizing by its edges; the frame itself is taken away: WM_NCCALCSIZE)
+    if (d.frameless) return WS_POPUP | WS_THICKFRAME;  // (THICKFRAME: 縁でサイズを変えられる。枠そのものは取り去る: WM_NCCALCSIZE)
     if (d.tool) return WS_OVERLAPPEDWINDOW & ~WS_MINIMIZEBOX;
     return d.resizable ? WS_OVERLAPPEDWINDOW : (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX);
 }
@@ -69,7 +69,7 @@ bool Window::Create(const WindowDesc& desc, WindowListener* listener) {
     if (desc.hasRect) {
         const RECT want{desc.x, desc.y, desc.x + desc.w, desc.y + desc.h};
         if (HMONITOR on = MonitorFromRect(&want, MONITOR_DEFAULTTONULL)) {
-            // Kept inside the work area of the monitor it is on (not under the taskbar, not off screen).
+            // 今いるモニターの作業領域の中に収める (タスクバーの下や画面の外にならない)。
             MONITORINFO om{sizeof(om)};
             GetMonitorInfoW(on, &om);
             const RECT& owa = om.rcWork;
@@ -118,7 +118,7 @@ void Window::SetTitle(std::wstring_view title) {
 
 LRESULT CALLBACK Window::WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     if (m == WM_NCCREATE) {
-        // CreateWindowExW is still running: remember the object for every later message.
+        // CreateWindowExW がまだ動いている: 以後のメッセージのために、オブジェクトを覚えておく。
         auto* cs = reinterpret_cast<CREATESTRUCTW*>(l);
         auto* created = static_cast<Window*>(cs->lpCreateParams);
         created->hwnd_ = h;
@@ -126,7 +126,7 @@ LRESULT CALLBACK Window::WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         return DefWindowProcW(h, m, w, l);
     }
     auto* self = reinterpret_cast<Window*>(GetWindowLongPtrW(h, GWLP_USERDATA));
-    if (!self) return DefWindowProcW(h, m, w, l);  // before WM_NCCREATE or after Destroy()
+    if (!self) return DefWindowProcW(h, m, w, l);  // WM_NCCREATE の前、または Destroy() の後
 
     switch (m) {
         case WM_GETMINMAXINFO: {
@@ -134,7 +134,7 @@ LRESULT CALLBACK Window::WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             const UINT dpi = GetDpiForWindow(h);
             const float s = dpi / 96.f;
             RECT r{0, 0, static_cast<LONG>(self->desc_.minWidthDip * s), static_cast<LONG>(self->desc_.minHeightDip * s)};
-            // (no frame: the window is all client area - as it is made)
+            // (枠なし: ウィンドウ全体がクライアント領域 - 作ったとおり)
             if (!self->desc_.frameless) AdjustWindowRectExForDpi(&r, StyleFor(self->desc_), FALSE, ExStyleFor(self->desc_), dpi);
             mmi->ptMinTrackSize = {r.right - r.left, r.bottom - r.top};
             return 0;
@@ -151,7 +151,7 @@ LRESULT CALLBACK Window::WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             return 0;
         }
         case WM_ERASEBKGND:
-            return 1;  // everything is drawn by Direct2D
+            return 1;  // 全部 Direct2D で描く
         default:
             break;
     }

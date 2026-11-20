@@ -28,7 +28,7 @@ struct KindName {
 constexpr KindName kKinds[] = {{Kind::Folder, "folder"}, {Kind::Image, "image"}, {Kind::Model, "model"}, {Kind::Audio, "audio"},
                                {Kind::Font, "font"},     {Kind::Text, "text"},   {Kind::Other, "other"}};
 
-// Splits "a,b, c" into its keys (spaces around them ignored).
+// "a,b, c" をキーに分ける (まわりの空白は無視)。
 std::vector<std::string_view> Keys(std::string_view filter) {
     std::vector<std::string_view> out;
     while (!filter.empty()) {
@@ -126,10 +126,10 @@ bool Ignored(std::string_view name) {
     if (name.empty() || name.front() == '.') return true;
     const std::string lower = LowerText(name);
     if (lower == "desktop.ini" || lower == "thumbs.db") return true;
-    if (lower.ends_with(".meta.tmp")) return true;  // a .meta being written (or left by a failed write)
-    // Files another program keeps for a moment while it saves (written next to the file, then renamed
-    // onto it - Visual Studio's "~RF1a2b.TMP", Office's "~$a.docx", backups "a.txt~"): never assets
-    // (the same as Unity's rule). Seen as one, each would leave a .meta behind for a file gone at once.
+    if (lower.ends_with(".meta.tmp")) return true;  // 書いている途中の .meta (または書き込みに失敗して残ったもの)
+    // 他のプログラムが保存の間だけ作るファイル (ファイルの隣に書いてから、その上に名前を変える -
+    // Visual Studio の "~RF1a2b.TMP"、Office の "~$a.docx"、バックアップの "a.txt~"): アセットにしない
+    // (Unity の決まりと同じ)。アセットとして扱うと、すぐ消えるファイルに .meta を 1 つずつ残してしまう。
     if (name.front() == '~' || name.back() == '~' || lower.ends_with(".tmp")) return true;
     return lower.size() > kMetaSuffix.size() && lower.ends_with(kMetaSuffix);
 }
@@ -144,11 +144,11 @@ MetaInfo ReadMeta(std::string_view text) {
             if (v->Get("name").IsString()) m.name = v->Get("name").AsString();
             return m;
         }
-        m.state = MetaState::Unreadable;  // JSON, but no id in it
+        m.state = MetaState::Unreadable;  // JSON だが、id が入っていない
         return m;
     }
-    // Not JSON (a comma too many, git's conflict marks ...): the id is still picked out when it is
-    // written plainly - but such a file is never written over (what else it held would be lost).
+    // JSON ではない (カンマが 1 つ多い、git の衝突マークなど): id が素直に書かれていれば取り出すが、
+    // そういうファイルには決して上書きしない (他に入っていたものが失われる)。
     m.state = MetaState::Unreadable;
     const size_t key = text.find("\"guid\"");
     if (key == std::string_view::npos) return m;
@@ -160,7 +160,7 @@ MetaInfo ReadMeta(std::string_view text) {
     if (i >= text.size() || text[i] != '"' || i + 33 >= text.size() || text[i + 33] != '"') return m;
     const std::string_view guid = text.substr(i + 1, 32);
     if (!IsGuid(guid)) return m;
-    // Only one id in it (two - a merge conflict between two of them - is not clear).
+    // id が 1 つだけのとき (2 つ - 2 つの間のマージ衝突 - だとはっきりしない)。
     if (text.find("\"guid\"", key + 6) != std::string_view::npos) return m;
     m.state = MetaState::Damaged;
     m.guid = std::string(guid);
@@ -175,38 +175,38 @@ std::optional<std::string> GuidInMeta(std::string_view text) {
 
 std::string MetaText(std::string_view old, const std::string& guid, std::string_view name) {
     json::Value doc = json::Value::MakeObject();
-    if (auto v = json::Parse(old); v && v->IsObject()) doc = std::move(*v);  // the other keys stay
+    if (auto v = json::Parse(old); v && v->IsObject()) doc = std::move(*v);  // 他のキーは残る
     doc.Set("guid", guid);
     if (!name.empty()) doc.Set("name", std::string(name));
     return json::Write(doc) + "\n";
 }
 
 // ---------------------------------------------------------------------------
-// Reconcile
+// 照合 (Reconcile)
 // ---------------------------------------------------------------------------
 
 namespace {
 
 bool HasId(const Found& f) { return f.meta != MetaState::Unreadable && IsGuid(f.metaGuid); }
 
-// Several items whose .meta has the same id (a file copied with its .meta): which is the original.
-// `sure` = false when nothing tells them apart (the first in the list is taken).
+// 同じ id の .meta を持つ複数の項目 (.meta ごとコピーしたファイル): どれが元か。
+// 何も区別がつかないときは `sure` = false (一覧の最初のものを取る)。
 size_t Original(std::span<const Found> found, const std::vector<size_t>& list, const std::string* previousPath, bool& sure) {
     sure = true;
-    // a. Where the id was at the last look (the editor saw it there).
+    // a. 前回の調べで id があった場所 (エディターがそこで見ている)。
     if (previousPath) {
         for (const size_t i : list) {
             if (found[i].path == *previousPath) return i;
         }
     }
-    // b. The name the .meta was written for: a copy ("X - コピー.png") keeps the original's name.
+    // b. .meta が書かれたときの名前: コピー ("X - コピー.png") は元の名前を保つ。
     std::vector<size_t> named;
     for (const size_t i : list) {
         if (!found[i].metaName.empty() && FileNameOf(found[i].path) == found[i].metaName) named.push_back(i);
     }
     if (named.size() == 1) return named[0];
-    // c. The .meta made first (a copy's is made when it is copied; moving keeps the time). Only when
-    //    every time is known and the earliest is one alone.
+    // c. 最初に作られた .meta (コピーの .meta はコピーしたときに作られる。移動では時刻が保たれる)。
+    //    全部の時刻が分かっていて、一番早いものが 1 つだけのときに限る。
     const std::vector<size_t>& pool = named.empty() ? list : named;
     if (pool.size() == 1) return pool.front();
     const bool known = std::all_of(pool.begin(), pool.end(), [&](size_t i) { return found[i].metaCreated > 0; });
@@ -226,18 +226,18 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
     Plan plan;
     const size_t n = found.size();
     std::vector<std::string> ids(n);
-    std::vector<bool> skipped(n, false);  // no id now (its .meta cannot be read / cannot be given its own)
+    std::vector<bool> skipped(n, false);  // 今は id がない (その .meta は読めない / 専用のものを付けられない)
     std::set<std::string, std::less<>> taken;
-    std::map<std::string, std::string, std::less<>> previousPath;  // guid -> where it was
-    std::map<std::string, std::string, std::less<>> previousId;    // path -> its guid
+    std::map<std::string, std::string, std::less<>> previousPath;  // guid -> 前にあった場所
+    std::map<std::string, std::string, std::less<>> previousId;    // パス -> その guid
     for (const Entry& e : previous) {
         previousPath[e.guid] = e.path;
         previousId[e.path] = e.guid;
     }
 
-    // 0. A .meta that is there but cannot be read (another program has it open, its text is broken
-    //    and no id can be picked out): never written over, never given a new id. The item keeps the
-    //    id it had at the last look, else it waits (not listed) until the .meta can be read.
+    // 0. あるが読めない .meta (他のプログラムが開いている、文面が壊れていて id を取り出せない):
+    //    決して上書きせず、新しい id も付けない。項目は前回の調べの id を保ち、なければ
+    //    (一覧に出さずに) .meta が読めるようになるまで待つ。
     for (size_t i = 0; i < n; ++i) {
         if (found[i].meta != MetaState::Unreadable) continue;
         const std::string why = found[i].metaProblem.empty() ? std::string("読めません") : found[i].metaProblem;
@@ -252,15 +252,15 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
         }
     }
 
-    // 1. Items with their own .meta. A guid claimed twice (a copy made with its .meta) stays with the
-    //    original (Original); the others get new ids below.
+    // 1. 自分の .meta を持つ項目。2 回主張された guid (.meta ごとコピーしたもの) は元 (Original) に
+    //    残り、他のものは下で新しい id をもらう。
     std::map<std::string, std::vector<size_t>, std::less<>> claims;
     for (size_t i = 0; i < n; ++i) {
         if (ids[i].empty() && !skipped[i] && HasId(found[i])) claims[found[i].metaGuid].push_back(i);
     }
     std::vector<bool> copied(n, false);
     for (const auto& [guid, list] : claims) {
-        if (taken.count(guid)) {  // (kept by an item whose .meta cannot be read now)
+        if (taken.count(guid)) {  // (今は .meta が読めない項目が持っている)
             for (const size_t i : list) copied[i] = true;
             continue;
         }
@@ -275,19 +275,19 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
         if (!sure) plan.notes.push_back(std::format("同じ ID の .meta が {} 個あり、どれが元か分からないので {} を元にしました", list.size(), found[winner].path));
     }
 
-    // 2. Items without one: the id of something that vanished, when it is clearly the same thing.
-    //    Everything is looked up through indexes made once (by path, by name, by folder + extension,
-    //    by id): the time grows with the number of files, not with its square.
+    // 2. .meta のない項目: 消えたものの id を、明らかに同じものだと言えるときに。
+    //    すべて、一度作った索引 (パス別、名前別、フォルダー + 拡張子別、id 別) で調べる:
+    //    時間はファイル数に比例し、その 2 乗にはならない。
     struct Gone {
         std::string path, guid;
-        bool hasMeta = false;  // an Orphan (its .meta moves along) / only in `previous` (a .meta is written)
+        bool hasMeta = false;  // 孤児 (その .meta が一緒に動く) / `previous` にだけある (.meta を書く)
         bool used = false;
-        std::string name, place;  // FileNameOf(path) / folder + '\0' + extension (made once)
+        std::string name, place;  // FileNameOf(path) / フォルダー + '\0' + 拡張子 (一度だけ作る)
     };
     std::vector<Gone> gone;
     std::unordered_set<std::string> goneGuids;
     auto addGone = [&](const std::string& path, const std::string& guid, bool hasMeta) {
-        if (!goneGuids.insert(guid).second && !hasMeta) return;  // (an id of `previous` already left as a .meta)
+        if (!goneGuids.insert(guid).second && !hasMeta) return;  // (`previous` の id で、すでに .meta として残っているもの)
         Gone g{path, guid, hasMeta};
         g.name = std::string(FileNameOf(path));
         g.place = std::string(ParentOf(path)) + '\0' + Extension(path);
@@ -297,10 +297,10 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
         if (IsGuid(o.guid) && !taken.count(o.guid)) addGone(o.path, o.guid, true);
     }
     for (const Entry& e : previous) {
-        if (!taken.count(e.guid) && !goneGuids.count(e.guid)) addGone(e.path, e.guid, false);  // (its path may be found: the .meta was deleted - a. below)
+        if (!taken.count(e.guid) && !goneGuids.count(e.guid)) addGone(e.path, e.guid, false);  // (そのパスが見つかるかも: .meta が消された - 下の a.)
     }
     std::unordered_map<std::string, std::vector<size_t>> goneByPath, goneByName, goneByPlace, goneByGuid;
-    std::unordered_map<std::string, int> unusedByName, unusedByPlace;  // how many not used yet
+    std::unordered_map<std::string, int> unusedByName, unusedByPlace;  // まだ使っていない数
     for (size_t k = 0; k < gone.size(); ++k) {
         goneByPath[gone[k].path].push_back(k);
         goneByName[gone[k].name].push_back(k);
@@ -309,7 +309,7 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
         ++unusedByName[gone[k].name];
         ++unusedByPlace[gone[k].place];
     }
-    // The same guid may be left twice (two .meta copies): use it once.
+    // 同じ guid が 2 回残ることがある (.meta のコピーが 2 つ): 1 回だけ使う。
     auto give = [&](size_t i, Gone& g, const char* why) {
         ids[i] = g.guid;
         taken.insert(g.guid);
@@ -320,31 +320,31 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
             --unusedByPlace[gone[k].place];
         }
         if (g.hasMeta) plan.moves.push_back({g.path, found[i].path});
-        // (after a move: the .meta now says the new name - a copy of it later is told apart by it)
+        // (移動の後: .meta は新しい名前を言うので、後のコピーはそれで見分けられる)
         plan.writes.push_back({found[i].path, g.guid, std::string(FileNameOf(found[i].path))});
         if (g.path != found[i].path) plan.notes.push_back(std::format("{} → {} ({}。ID はそのまま)", g.path, found[i].path, why));
     };
-    // The unused one of a list (when the count says there is exactly one).
+    // リストの中の使っていない 1 つ (数がちょうど 1 つと言うとき)。
     auto unusedIn = [&](const std::vector<size_t>& list) -> Gone* {
         for (const size_t k : list) {
             if (!gone[k].used) return &gone[k];
         }
         return nullptr;
     };
-    std::vector<size_t> open;  // items still without an id
+    std::vector<size_t> open;  // まだ id のない項目
     for (size_t i = 0; i < n; ++i) {
         if (ids[i].empty() && !copied[i] && !skipped[i]) open.push_back(i);
     }
-    // a. Its own old path (the .meta was deleted, the file is where it was).
+    // a. 自分の古いパス (.meta は消されたが、ファイルは元の場所にある)。
     for (const size_t i : open) {
         if (const auto it = goneByPath.find(found[i].path); it != goneByPath.end()) {
             if (Gone* g = unusedIn(it->second)) give(i, *g, "同じ場所");
         }
     }
     std::erase_if(open, [&](size_t i) { return !ids[i].empty(); });
-    // b. The only vanished thing with the same name, and the only new one with it (moved).
+    // b. 同じ名前の消えたものが 1 つだけで、同じ名前の新しいものも 1 つだけ (移動した)。
     {
-        std::unordered_map<std::string, int> rivals;  // new ones by name
+        std::unordered_map<std::string, int> rivals;  // 名前別の新しいもの
         for (const size_t i : open) ++rivals[std::string(FileNameOf(found[i].path))];
         for (const size_t i : open) {
             const std::string name(FileNameOf(found[i].path));
@@ -355,7 +355,7 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
         }
     }
     std::erase_if(open, [&](size_t i) { return !ids[i].empty(); });
-    // c. The only vanished thing in the same folder with the same extension, and the only new one there (renamed).
+    // c. 同じフォルダーに同じ拡張子の消えたものが 1 つだけで、そこの新しいものも 1 つだけ (名前を変えた)。
     {
         std::vector<std::string> place(n);
         std::unordered_map<std::string, int> rivals;
@@ -371,8 +371,8 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
         }
     }
 
-    // 3. Everything else: a new id (copies keep their other .meta keys - the write keeps them). A copy
-    //    whose .meta is broken cannot be given its own id without losing what it holds: left out.
+    // 3. それ以外はすべて: 新しい id (コピーは他の .meta のキーを保つ - 書き込みが保つ)。.meta が
+    //    壊れているコピーは、中身を失わずに専用の id を付けられない: 外しておく。
     for (size_t i = 0; i < n; ++i) {
         if (!ids[i].empty() || skipped[i]) continue;
         if (copied[i] && found[i].meta == MetaState::Damaged) {
@@ -396,12 +396,12 @@ Plan Reconcile(std::span<const Entry> previous, std::span<const Found> found, st
 }
 
 // ---------------------------------------------------------------------------
-// Display order, numbers, index
+// 表示順、番号、索引
 // ---------------------------------------------------------------------------
 
 std::vector<size_t> DisplayOrder(std::span<const Entry> entries) {
-    std::unordered_map<std::string, std::vector<size_t>> children;  // folder path -> items in it
-    std::vector<std::string> lower(entries.size());                  // names ignoring case (made once)
+    std::unordered_map<std::string, std::vector<size_t>> children;  // フォルダーのパス -> その中の項目
+    std::vector<std::string> lower(entries.size());                  // 大文字小文字を無視した名前 (一度だけ作る)
     for (size_t i = 0; i < entries.size(); ++i) {
         children[std::string(ParentOf(entries[i].path))].push_back(i);
         lower[i] = LowerText(FileNameOf(entries[i].path));
@@ -427,7 +427,7 @@ std::vector<size_t> DisplayOrder(std::span<const Entry> entries) {
         }
     };
     walk(walk, "", 0);
-    // Items whose folder is not in the list (should not happen): at the end, in path order.
+    // フォルダーが一覧にない項目 (起きないはず): 最後に、パスの順で。
     for (size_t i = 0; i < entries.size(); ++i) {
         if (!placed[i]) out.push_back(i);
     }

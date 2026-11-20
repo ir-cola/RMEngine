@@ -72,11 +72,11 @@ bool WriteImportJson(const fs::path& file, const json::Value& import, const std:
     std::string old;
     std::error_code ec;
     if (!fs::exists(meta, ec) && !ec && IsGuid(guid)) {
-        // Gone (it could not be written when the asset got its id): made again with that id.
+        // なくなっていた (アセットが id をもらったとき書けなかった): その id でまた作る。
         return WriteMetaFile(meta, MetaWithImport(MetaText({}, guid), import));
     }
-    // Only into a .meta that is there and can be read whole (with its id): one that is locked or
-    // broken is never written over, and one without an id would lose the asset its id.
+    // そこにあって全部読める .meta (id がある) にだけ: ロックされた・壊れたものには決して上書きせず、
+    // id のないものに書くと、そのアセットの id が失われる。
     if (!ReadText(meta, old) || ReadMeta(old).state != MetaState::Ok) return false;
     return WriteMetaFile(meta, MetaWithImport(old, import));
 }

@@ -20,15 +20,15 @@ struct SinkRec {
     Sink fn;
     Delivery delivery = Delivery::AnyThread;
     bool removed = false;
-    std::vector<std::thread::id> callers;  // threads calling it right now (one entry per call)
+    std::vector<std::thread::id> callers;  // 今呼んでいるスレッド (呼び出し 1 回につき 1 つ)
 };
 
 struct State {
     std::mutex mtx;
-    std::condition_variable idle;  // a call of a sink has ended
+    std::condition_variable idle;  // シンクの呼び出しが 1 つ終わった
     std::deque<Entry> ring;
     std::vector<std::shared_ptr<SinkRec>> sinks;
-    std::deque<std::pair<std::shared_ptr<SinkRec>, Entry>> queue;  // for Queued sinks
+    std::deque<std::pair<std::shared_ptr<SinkRec>, Entry>> queue;  // Queued のシンク用
     std::function<void()> wake;
     int nextSinkId = 1;
     uint64_t seq = 0;
@@ -41,7 +41,7 @@ State& S() {
     return s;
 }
 
-// Calls `rec` with `e` unless it was removed; RemoveSink (on another thread) waits for the call to end.
+// `rec` を `e` で呼ぶ (外されていなければ)。RemoveSink (別のスレッドから) は呼び出しが終わるまで待つ。
 void Call(State& s, const std::shared_ptr<SinkRec>& rec, const Entry& e) {
     const auto me = std::this_thread::get_id();
     {
@@ -49,7 +49,7 @@ void Call(State& s, const std::shared_ptr<SinkRec>& rec, const Entry& e) {
         if (rec->removed) return;
         rec->callers.push_back(me);
     }
-    // Outside the lock: a sink may log or read Snapshot() itself.
+    // ロックの外で: シンクが自分でログを書いたり Snapshot() を読んだりしてもよい。
     rec->fn(e);
     {
         std::lock_guard lock(s.mtx);
@@ -80,8 +80,8 @@ void RemoveSink(int id) {
     s.sinks.erase(it);
     rec->removed = true;
     std::erase_if(s.queue, [&](const auto& q) { return q.first == rec; });
-    // Wait for calls on other threads (a call on this thread - the sink removing itself - cannot end
-    // before we return, and it is the caller's own business).
+    // 他のスレッドでの呼び出しを待つ (このスレッドでの呼び出し - シンクが自分を外す場合 - は、
+    // こちらが戻るまで終われないし、呼んだ側の問題でもある)。
     const auto me = std::this_thread::get_id();
     s.idle.wait(lock, [&] { return std::all_of(rec->callers.begin(), rec->callers.end(), [&](const auto& t) { return t == me; }); });
 }

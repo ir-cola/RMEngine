@@ -6,10 +6,10 @@
 
 namespace rm::platform {
 
-// A file that only one process can have open at a time - "this project is open in an editor".
-// Taking it creates the file (hidden) and keeps it open with no sharing; letting go deletes it.
-// When the process ends without letting go (a crash, Task Manager), Windows closes the handle and
-// the file goes too (FILE_FLAG_DELETE_ON_CLOSE), so a lock is never left behind.
+// 同時に 1 つのプロセスしか開けないファイル - 「このプロジェクトはエディターで開いている」。
+// 取ると、ファイルを (隠しで) 作り、共有なしで開いたままにする。手放すと消える。
+// 手放さずにプロセスが終わったとき (クラッシュ、タスクマネージャー) は、Windows がハンドルを閉じて
+// ファイルも消える (FILE_FLAG_DELETE_ON_CLOSE) ので、ロックが残ることは決してない。
 class FileLock {
 public:
     enum class Result { Taken, HeldByOther, Failed };

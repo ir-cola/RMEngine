@@ -20,7 +20,7 @@ namespace rm::game {
 
 namespace {
 
-// game.log next to the exe (when that folder can be written: not under Program Files).
+// exe の隣の game.log (そのフォルダに書けるとき。Program Files の下では書けない)。
 void InstallLog(const std::filesystem::path& folder) {
     static std::ofstream file;
     static std::mutex mtx;
@@ -82,16 +82,16 @@ public:
                 DispatchMessageW(&msg);
             }
             if (quit_) break;
-            // Minimized: nothing is shown, so nothing is drawn or played - wait for a message (no core
-            // spent on a loop), and the time away does not count.
+            // 最小化中: 何も見えないので、描きも鳴らしもしない。メッセージを待つ (ループでコアを
+            // 使わない)。離れていた時間は数えない。
             if (IsIconic(window_.Handle()) && !smoke_) {
                 WaitMessage();
                 last = std::chrono::steady_clock::now();
                 continue;
             }
             const auto now = std::chrono::steady_clock::now();
-            // At most a quarter of a second (as the editor's Play): a frame that took long - the window
-            // dragged, the PC busy - never makes things jump.
+            // 最大でも 4 分の 1 秒まで (エディターの Play と同じ): 長くかかったフレーム (ウィンドウを
+            // ドラッグした、PC が忙しい) があっても、ものが飛ばない。
             const double dt = std::min(std::chrono::duration<double>(now - last).count(), 0.25);
             last = now;
             game_->Update(dt);
@@ -99,7 +99,7 @@ public:
                 if (!Recover()) return Fail("描けませんでした (GPU が失われ、作り直せませんでした)");
                 continue;
             }
-            // Without vsync: no more than the target frames a second.
+            // vsync なし: 1 秒に目標のフレーム数を超えない。
             if (!display_.vsync && display_.targetFps > 0) {
                 const auto next = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / display_.targetFps));
                 std::this_thread::sleep_until(next);
@@ -132,7 +132,7 @@ public:
     }
     PointerPresses TakePointerPresses() override { return std::exchange(presses_, PointerPresses{}); }
     void Quit() override { quit_ = true; }
-    // The mouse on the client area in DIPs (the size Draw is given) - only while this window is in front.
+    // クライアント領域の上のマウス (DIP。Draw に渡される大きさ)。このウィンドウが手前にあるときだけ。
     std::optional<Vec2> Pointer() const override {
         const HWND hwnd = window_.Handle();
         if (!hwnd || GetForegroundWindow() != hwnd) return std::nullopt;
@@ -150,13 +150,13 @@ public:
             case WM_SIZE:
                 if (target_.Context()) {
                     target_.Resize(LOWORD(lp), HIWORD(lp));
-                    // Drawn again at once (while the edge is dragged the loop above does not run).
+                    // すぐに描き直す (枠をドラッグしている間、上のループは回らない)。
                     if (started_ && wp != SIZE_MINIMIZED && !drawing_) DrawFrame();
                 }
                 return 0;
             case WM_DPICHANGED:
-                // Moved to a monitor of another scale: drawn in its DIPs (the window then gets the new
-                // size - WM_SIZE - from Window, as Windows suggests).
+                // 別の倍率のモニターに移った: そのモニターの DIP で描く (ウィンドウは、Windows の提案どおり、
+                // Window から新しい大きさ - WM_SIZE - をもらう)。
                 if (target_.Context()) target_.SetDpi(static_cast<float>(HIWORD(wp)));
                 return 0;
             case WM_LBUTTONDOWN:
@@ -204,7 +204,7 @@ private:
             size, image_.build, platform::PakCipher(image_.build), &error_);
     }
 
-    // False when the GPU was lost (Recover makes it again).
+    // GPU が失われたときは false (Recover で作り直す)。
     bool DrawFrame() {
         ID2D1DeviceContext* dc = target_.Context();
         if (!dc) return true;
@@ -222,11 +222,11 @@ private:
             toldDraw_ = true;
         }
         if (target_.Present(display_.vsync ? 1u : 0u)) return true;
-        return !gfx_.Lost();  // (a Present that failed for another reason: the next frame tries again)
+        return !gfx_.Lost();  // (Present が別の理由で失敗した: 次のフレームでもう一度やる)
     }
 
-    // The GPU was lost (a driver updated, the GPU reset): the devices and the window's target made
-    // again; the game's drawers see Gfx::Generation change and make theirs again.
+    // GPU が失われた (ドライバーの更新、GPU のリセット): デバイスとウィンドウの描画先を作り直す。
+    // ゲームの描画側は Gfx::Generation が変わるのを見て、自分の分を作り直す。
     bool Recover() {
         log::Warn("GPU が失われたので作り直します ({:08X})", static_cast<uint32_t>(gfx_.LostReason()));
         target_.Reset();
@@ -234,7 +234,7 @@ private:
         return target_.Create(gfx_, window_.Handle(), window_.Dpi());
     }
 
-    // Fullscreen / borderless: a window without its frame over the whole monitor it is on.
+    // フルスクリーン / 枠なし: 今いるモニターの全体を、枠のないウィンドウで覆う。
     void CoverMonitor() {
         const HWND hwnd = window_.Handle();
         MONITORINFO mi{sizeof(mi)};
@@ -245,7 +245,7 @@ private:
     }
 
     int Fail(const std::string& why) {
-        if (game_ && started_) game_->Stop();  // (the scripts' EndPlay ...)
+        if (game_ && started_) game_->Stop();  // (スクリプトの EndPlay など)
         started_ = false;
         log::Error("{}", why);
         if (!smoke_) MessageBoxW(window_.Handle(), Utf8ToWide(why).c_str(), Utf8ToWide(image_.title ? image_.title : "Game").c_str(), MB_ICONERROR);
@@ -265,10 +265,10 @@ private:
     std::unique_ptr<Game> game_;
     Game::Display display_;
     bool quit_ = false;
-    PointerPresses presses_;  // the left button since the last frame (TakePointerPresses)
-    bool started_ = false;   // the window is there and the game runs
-    bool drawing_ = false;   // inside DrawFrame (WM_SIZE does not draw again inside it)
-    bool toldDraw_ = false;  // a failed EndDraw was told (once)
+    PointerPresses presses_;  // 前のフレームから今までの左ボタン (TakePointerPresses)
+    bool started_ = false;   // ウィンドウがあって、ゲームが動いている
+    bool drawing_ = false;   // DrawFrame の中 (その中では WM_SIZE は描き直さない)
+    bool toldDraw_ = false;  // EndDraw の失敗を知らせた (1 回だけ)
 };
 
 }  // namespace

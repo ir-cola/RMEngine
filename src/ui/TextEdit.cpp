@@ -85,7 +85,7 @@ bool TextEdit::Insert(std::wstring_view s) {
     for (size_t i = 0; i < s.size(); ++i) {
         const wchar_t c = s[i];
         if (c == L'\r' || c == L'\n' || c == L'\t') {
-            if (c == L'\r' && i + 1 < s.size() && s[i + 1] == L'\n') continue;  // CRLF -> one space
+            if (c == L'\r' && i + 1 < s.size() && s[i + 1] == L'\n') continue;  // CRLF -> 空白 1 つ
             clean.push_back(L' ');
         } else if (c >= 0x20 && c != 0x7F) {
             clean.push_back(c);

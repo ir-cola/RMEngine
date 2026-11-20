@@ -28,9 +28,9 @@ void Context::BeginFrame(Painter* painter, const Input* input, Rect viewport, do
 }
 
 void Context::EndFrame() {
-    // A released button always ends the drag/press, even if the widget disappeared.
+    // 離されたボタンは、ウィジェットが消えていても、必ずドラッグ / 押下を終わらせる。
     if (in_->released[0]) active_ = 0;
-    // A focused text field that was not drawn this frame loses focus.
+    // このフレームで描かれなかったフォーカス中のテキスト欄は、フォーカスを失う。
     if (focused_ != 0 && !focusAlive_) {
         focused_ = 0;
         redraw_ = true;
@@ -74,7 +74,7 @@ bool Context::IsHovered(const Rect& r) const {
 bool Context::KeyPressed(Key k, bool ctrl, bool shift) const {
     if (!inputEnabled_) return false;
     for (const auto& e : in_->keys) {
-        // (no shortcut has Alt: Ctrl+Alt is AltGr on many keyboards - a letter typed, not Ctrl+S)
+        // (Alt を使うショートカットは無い: Ctrl+Alt は多くのキーボードで AltGr - 文字が入力され、Ctrl+S にはならない)
         if (e.key == k && e.ctrl == ctrl && e.shift == shift && !e.alt) return true;
     }
     return false;

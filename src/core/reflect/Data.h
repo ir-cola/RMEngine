@@ -1,10 +1,10 @@
 #pragma once
-// What every reflected type gets from its description: saving, loading (with range clamping and
-// "keep what you do not know"), comparison, diff and the input rule of numbers. One function each,
-// walking the TypeDesc - there is no per-type copy of any of these (rules 2 and 3 of CLAUDE.md).
+// リフレクションの型は、その記述から何でももらえる: 保存、読み込み (範囲の丸めと「知らないものを
+// 残す」付き)、比較、差分、数の入力の決まり。それぞれ関数 1 つが TypeDesc をたどる - どれも
+// 型ごとのコピーはない (CLAUDE.md の憲法 2 と 3)。
 //
-// Files are JSON objects keyed by field name. Enums are saved by NAME (inserting or reordering
-// enumerators never changes what old files mean). Vec2 / Vec3 / Color are arrays of numbers.
+// ファイルはフィールド名をキーにした JSON のオブジェクト。enum は名前で保存する (列挙子を挟んだり
+// 並べ替えたりしても、古いファイルの意味は変わらない)。Vec2 / Vec3 / Color は数の配列。
 
 #include "base/Json.h"
 #include "core/reflect/Reflect.h"
@@ -18,22 +18,21 @@
 
 namespace rm::reflect {
 
-// What a file had that this version does not understand (design R1 4-f / BluePrint 10-b).
-// It is kept next to the object and written back unchanged on save, so opening and saving a file
-// from a newer version (or with a plugin missing) never loses data.
+// ファイルにあって、このバージョンが分からないもの (設計 R1 4-f / BluePrint 10-b)。
+// オブジェクトの隣に保ち、保存でそのまま書き戻すので、新しいバージョンのファイル (またはプラグインが
+// ないファイル) を開いて保存しても、データは失われない。
 struct Unknowns {
     struct Nested;
-    std::vector<json::Value::Member> keys;                   // unknown keys, in file order
-    std::vector<std::pair<std::string, std::string>> enums;  // field -> enum name not in this version
-    // field -> a value of another kind than this version's field (a newer version changed it: a number
-    // that became a list ...): the field runs with its default and the value is written back as it was,
-    // until the field is set (design R1 4-f: what cannot be read is kept).
+    std::vector<json::Value::Member> keys;                   // 知らないキー、ファイルの順
+    std::vector<std::pair<std::string, std::string>> enums;  // フィールド -> このバージョンにない enum の名前
+    // フィールド -> このバージョンのフィールドと別の種類の値 (新しいバージョンが変えた: 数が
+    // リストになった、など): フィールドは既定値で動き、値はフィールドが設定されるまで、
+    // そのまま書き戻される (設計 R1 4-f: 読めないものは残す)。
     std::vector<json::Value::Member> kept;
-    // array field -> how many elements it had when read: its elements' unknowns ("field[3]") belong to
-    // those places - when the count has changed since (a tool added or removed some), they are not
-    // written to other elements.
+    // 配列のフィールド -> 読んだときの要素数。その要素の unknowns ("field[3]") はその場所のもの -
+    // その後に数が変わった (ツールが足した、消した) ときは、他の要素には書かない。
     std::vector<std::pair<std::string, size_t>> lengths;
-    std::vector<Nested> children;                            // "field" (struct) / "field[3]" (array element)
+    std::vector<Nested> children;                            // "field" (構造体) / "field[3]" (配列の要素)
 
     bool Empty() const;
     Unknowns* Child(const std::string& key, bool create);
@@ -49,59 +48,60 @@ struct Unknowns::Nested {
     Unknowns value;
 };
 
-// Messages for the console (Japanese, UTF-8), e.g. a value out of range or an unknown enum name.
+// コンソール用のメッセージ (日本語、UTF-8)。たとえば範囲外の値や、知らない enum の名前。
 using Warnings = std::vector<std::string>;
 
-// A String field's text, and setting it - through FieldDesc::stringAccess when the string is another
-// module's (every string field goes through these two).
+// String フィールドのテキストと、それを設定する - 文字列が別のモジュールのものなら
+// FieldDesc::stringAccess を通る (どの文字列フィールドもこの 2 つを通る)。
 std::string ReadString(const FieldDesc& f, const void* field);
 void WriteString(const FieldDesc& f, void* field, std::string_view text);
-// An AssetRef field's id ("" = none), and setting it - through FieldDesc::stringAccess when it is kept
-// in another form (a script's).
+// AssetRef フィールドの id ("" = なし) と、それを設定する - 別の形 (スクリプトのもの) で
+// 持っているなら FieldDesc::stringAccess を通る。
 std::string ReadAssetId(const FieldDesc& f, const void* field);
 void WriteAssetId(const FieldDesc& f, void* field, std::string_view id);
 
 json::Value Save(const TypeDesc& type, const void* object, const Unknowns* unknowns = nullptr);
-// Fields missing from the file keep their current value (so: default-construct, then Load).
+// ファイルにないフィールドは今の値を保つ (だから: 既定のまま作ってから Load する)。
 void Load(const TypeDesc& type, void* object, const json::Value& v, Unknowns* unknowns = nullptr,
           Warnings* warnings = nullptr);
 
-// One field (the value at `field.Get(object)`); `unknowns` is the object's (enum names live there).
+// 1 つのフィールド (`field.Get(object)` にある値)。`unknowns` はオブジェクトのもの (enum の名前はそこにある)。
 json::Value SaveField(const FieldDesc& field, const void* object, const Unknowns* unknowns);
 void LoadField(const FieldDesc& field, void* object, const json::Value& v, Unknowns* unknowns, Warnings* warnings);
 
-// Every EntityRef inside `object` (in nested structs and arrays too) that is set: id = map(id)
-// (0 clears it). Copies of entities use it to point at the copies (pasting, prefabs).
+// `object` の中 (入れ子の構造体や配列も) の、設定されている EntityRef すべて: id = map(id)
+// (0 は空にする)。エンティティのコピーが、コピーのほうを指すために使う (貼り付け、Prefab)。
 void MapEntityRefs(const TypeDesc& type, void* object, const std::function<uint64_t(uint64_t)>& map);
 
 bool Equals(const TypeDesc& type, const void* a, const void* b);
-// Bit i set = field i differs (transient fields never). At most 64 fields (rmgen checks).
+// ビット i が立つ = フィールド i が違う (transient は決して)。フィールドは最大 64 個 (rmgen が調べる)。
 uint64_t Diff(const TypeDesc& type, const void* a, const void* b);
 
-// THE rule for a number entering a field, used by loading and by the inspector alike:
-// not finite -> fallback (the current value); then clamped to Min / Max; Int fields are rounded.
+// 数がフィールドに入るときの決まり。読み込みもインスペクターも同じものを使う:
+// 有限でない -> fallback (今の値)。それから Min / Max に収める。Int フィールドは丸める。
 double SanitizeNumber(const FieldDesc& field, double v, double fallback);
-// What the user typed into a number field: nullopt when it is not a number at all.
+// ユーザーが数のフィールドに打ち込んだもの: 数でなければ nullopt。
 std::optional<double> ParseNumber(std::string_view text);
-// The typed text after SanitizeNumber - the inspector's path, tested against the loader's (T3).
+// SanitizeNumber を通した後の、打ち込んだテキスト - インスペクターの経路で、ローダーのものと
+// 突き合わせてテストする (T3)。
 std::optional<double> NumberFromInput(const FieldDesc& field, std::string_view text, double current);
 std::string FormatNumber(const FieldDesc& field, double v);
 
-// A field inside nested structs: indices into fields, outermost first.
+// 入れ子の構造体の中のフィールド: fields への添字、外側から順に。
 using FieldPath = std::vector<size_t>;
 struct PathTarget {
     const FieldDesc* field = nullptr;
-    void* owner = nullptr;          // the struct that holds the field
-    Unknowns* unknowns = nullptr;   // that struct's unknowns (null when none are kept)
+    void* owner = nullptr;          // フィールドを持つ構造体
+    Unknowns* unknowns = nullptr;   // その構造体の unknowns (保っていなければ null)
 };
 PathTarget Resolve(const TypeDesc& type, void* object, Unknowns* unknowns, const FieldPath& path);
 std::string PathText(const TypeDesc& type, const FieldPath& path);  // "window.width"
 
 const EnumItem* FindItem(const EnumDesc& e, int64_t value);
-// Whether the inspector shows `f` of `object` (a `owner`): its ShowIf holds (no ShowIf: true). A term
-// naming no field, or an item its enum has not: false (ShowIfProblem says what).
+// インスペクターが `object` (`owner`) の `f` を表示するか: その ShowIf が成り立つか (ShowIf なし: true)。
+// フィールドを指さない項や、その enum にない項目は false (何が悪いかは ShowIfProblem が言う)。
 bool FieldShown(const TypeDesc& owner, const FieldDesc& f, const void* object);
-// What is wrong with a ShowIf (empty: nothing) - the tests check every table.
+// ShowIf の何がおかしいか (空: 何も) - テストが全部の表を調べる。
 std::string ShowIfProblem(const TypeDesc& owner, const FieldDesc& f);
 const EnumItem* FindItem(const EnumDesc& e, std::string_view name);
 

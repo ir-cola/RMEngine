@@ -11,7 +11,7 @@
 namespace rm::reflect {
 
 // ---------------------------------------------------------------------------
-// Type lookup
+// 型の検索
 // ---------------------------------------------------------------------------
 
 const TypeDesc* FindType(const std::type_info& t) {
@@ -48,8 +48,8 @@ const EnumItem* FindItem(const EnumDesc& e, std::string_view name) {
 
 namespace {
 
-// One term of a ShowIf ("kind=A|B", "flag", "!flag") against `object` (null: only checked - *problem
-// says what is wrong).
+// ShowIf ("kind=A|B"、"flag"、"!flag") の 1 つの項を `object` に対して調べる (null: 調べるだけ -
+// *problem が何がおかしいかを言う)。
 bool ShowIfTerm(const TypeDesc& owner, std::string_view term, const void* object, std::string* problem) {
     const bool negate = term.starts_with('!');
     if (negate) term.remove_prefix(1);
@@ -111,7 +111,7 @@ std::string ShowIfProblem(const TypeDesc& owner, const FieldDesc& f) {
 }
 
 // ---------------------------------------------------------------------------
-// Unknowns
+// 知らないもの (Unknowns)
 // ---------------------------------------------------------------------------
 
 bool Unknowns::Empty() const {
@@ -158,20 +158,20 @@ void Unknowns::ForgetKept(std::string_view field) {
 }
 
 // ---------------------------------------------------------------------------
-// Numbers
+// 数
 // ---------------------------------------------------------------------------
 
 double SanitizeNumber(const FieldDesc& f, double v, double fallback) {
-    // Not finite, or more than a float field holds (1e39: it would become infinity, then null on the
-    // next save, then the default - 2026-11-19): the current value.
+    // 有限でない、または float のフィールドが持てる大きさを超える (1e39: 無限大になり、次の保存で
+    // null になり、それから既定値になる - 2026-11-19): 今の値にする。
     const FieldType t = f.array ? f.array->element.type : f.value.type;
     const bool floats = t == FieldType::Float || t == FieldType::Vec2 || t == FieldType::Vec3 || t == FieldType::Color;
     if (!std::isfinite(v) || (floats && std::fabs(v) > static_cast<double>(std::numeric_limits<float>::max()))) v = fallback;
     if (f.hasMin) v = std::max(v, f.min);
     if (f.hasMax) v = std::min(v, f.max);
     if (floats && f.decimals >= 0) {
-        // Decimals=N: the rest cut off (toward zero - 12.39 is 12.3), then within Min / Max again. (A hair
-        // added first: 0.3 is 0.29999... as a float, which must stay 0.3.)
+        // Decimals=N: 残りは切り捨てる (0 のほうへ。12.39 は 12.3)。それからまた Min / Max の範囲に収める。
+        // (先に少しだけ足す: 0.3 は float では 0.29999... だが、0.3 のままにしたい。)
         const double scale = std::pow(10.0, std::min(f.decimals, 9));
         v = std::trunc(v * scale + (v >= 0 ? 1e-6 : -1e-6)) / scale;
         if (f.hasMin) v = std::max(v, f.min);
@@ -205,7 +205,7 @@ std::string FormatNumber(const FieldDesc& f, double v) {
     const bool isInt = f.value.type == FieldType::Int || (f.array && f.array->element.type == FieldType::Int);
     if (isInt) return std::to_string(static_cast<long long>(v));
     if (f.decimals >= 0 && std::isfinite(v)) {
-        // Decimals=N: always that many ("12.0"), cut off as SanitizeNumber keeps it.
+        // Decimals=N: いつもその桁数 ("12.0")。SanitizeNumber が保つ通りに切り捨てる。
         const int d = std::min(f.decimals, 9);
         const double scale = std::pow(10.0, d);
         const double cut = std::trunc(v * scale + (v >= 0 ? 1e-6 : -1e-6)) / scale;
@@ -251,14 +251,14 @@ void WriteAssetId(const FieldDesc& f, void* field, std::string_view id) {
 namespace {
 
 // ---------------------------------------------------------------------------
-// Values
+// 値
 // ---------------------------------------------------------------------------
 
 float& F(void* p, size_t i) { return static_cast<float*>(p)[i]; }
 float F(const void* p, size_t i) { return static_cast<const float*>(p)[i]; }
 
-// A float is written as the shortest decimal that reads back as the same float ("0.02", not
-// "0.019999999552965164"): the file stays readable and the round trip stays exact.
+// float は、同じ float として読み戻せる最も短い小数で書く ("0.02" であって
+// "0.019999999552965164" ではない): ファイルは読みやすいままで、往復も正確なままになる。
 double FloatForFile(float f) {
     char buf[32];
     const auto r = std::to_chars(buf, buf + sizeof(buf), f);
@@ -306,7 +306,7 @@ void LoadValue(const FieldDesc& f, const ValueType& vt, void* p, const json::Val
 
 json::Value SaveValue(const FieldDesc& f, const ValueType& vt, const void* p, const Unknowns* parent, const std::string& key) {
     if (parent) {
-        if (const json::Value* kept = parent->Kept(key)) return *kept;  // (a value of another kind: as it was read)
+        if (const json::Value* kept = parent->Kept(key)) return *kept;  // (別の種類の値: 読んだ通りに)
     }
     switch (vt.type) {
         case FieldType::Bool: return json::Value(*static_cast<const bool*>(p));
@@ -324,7 +324,7 @@ json::Value SaveValue(const FieldDesc& f, const ValueType& vt, const void* p, co
         }
         case FieldType::Enum: {
             if (parent) {
-                if (const std::string* unknown = parent->Enum(key)) return json::Value(*unknown);  // written back as it was
+                if (const std::string* unknown = parent->Enum(key)) return json::Value(*unknown);  // 読んだ通りに書き戻す
             }
             const EnumItem* it = FindItem(*vt.enumType, vt.enumType->get(p));
             return it ? json::Value(it->name) : json::Value(vt.enumType->get(p));
@@ -334,8 +334,8 @@ json::Value SaveValue(const FieldDesc& f, const ValueType& vt, const void* p, co
             json::Value a = json::Value::MakeArray();
             const ArrayOps& ops = *f.array;
             const size_t n = ops.size(p);
-            // The elements' unknowns go with the places they were read at: not when the count has
-            // changed since (elements added or removed directly: they would land on other elements).
+            // 要素の unknowns は、読んだときの場所に付いて行く: それ以後に数が変わった (要素を直接足した、
+            // 消した) ときは行かない (別の要素に当たってしまう)。
             const Unknowns* elements = parent;
             if (parent) {
                 for (const auto& [k, count] : parent->lengths) {
@@ -355,7 +355,7 @@ void LoadValue(const FieldDesc& f, const ValueType& vt, void* p, const json::Val
                Warnings* w, const char* typeName) {
     if (parent) parent->ForgetKept(key);
     auto wrongType = [&] {
-        // Run with the default, but keep the value and write it back (a newer version's: design R1 4-f).
+        // 既定値で動かすが、値は保って書き戻す (新しいバージョンのもの: 設計 R1 4-f)。
         Warn(w, std::format("{}{}: {} が必要なところに別の種類の値があったので、既定の値で動かします (保存すると元のまま残ります)",
                             Where(typeName), key, TypeWord(vt.type)));
         if (parent) parent->kept.emplace_back(key, v);
@@ -395,7 +395,7 @@ void LoadValue(const FieldDesc& f, const ValueType& vt, void* p, const json::Val
             }
             return;
         case FieldType::AssetRef:
-            // Kept as written even when it is not an id this version knows (written back unchanged).
+            // このバージョンが知っている id でなくても、書かれた通りに保つ (そのまま書き戻す)。
             if (v.IsString()) {
                 WriteAssetId(f, p, v.AsString());
             } else if (v.IsNull()) {
@@ -440,7 +440,7 @@ void LoadValue(const FieldDesc& f, const ValueType& vt, void* p, const json::Val
                 vt.enumType->set(p, it->value);
                 if (parent) parent->ForgetEnum(key);
             } else {
-                // Behave with the default value, but keep the name and write it back (design R1 4-f).
+                // 既定値で動くが、名前は保って書き戻す (設計 R1 4-f)。
                 Warn(w, std::format("{}{}: 「{}」はこの版では分からない値なので既定値で動かします (保存すると元のまま残ります)",
                                     Where(typeName), key, v.AsString()));
                 if (parent) {
@@ -509,7 +509,7 @@ bool ValueEquals(const FieldDesc& f, const ValueType& vt, const void* a, const v
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Objects
+// オブジェクト
 // ---------------------------------------------------------------------------
 
 json::Value SaveField(const FieldDesc& f, const void* object, const Unknowns* unknowns) {
@@ -547,7 +547,7 @@ void Load(const TypeDesc& type, void* object, const json::Value& v, Unknowns* un
         if (field) {
             LoadValue(*field, field->value, field->Get(object), value, unknowns, field->name, w, type.name);
         } else if (unknowns) {
-            unknowns->keys.emplace_back(key, value);  // a field of a newer version, or of a removed one
+            unknowns->keys.emplace_back(key, value);  // 新しいバージョンのフィールド、または消されたフィールド
         }
     }
 }

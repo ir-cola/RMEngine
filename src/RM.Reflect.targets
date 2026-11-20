@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Reflection (src/core/reflect/Reflect.h): rmgen reads the headers under $(RmGenRoots) before
-     compiling and writes $(RmGenOut)*.reflect.cpp + rm_all_types.cpp, which are compiled here.
-     rmgen rewrites a file only when its text changes, so an unchanged header recompiles nothing.
-     /p:RmGenSkip=true skips the generator (used to check that a stale table stops the build). -->
+<!-- リフレクション (src/core/reflect/Reflect.h): rmgen がコンパイル前に $(RmGenRoots) 以下のヘッダーを
+     読み、$(RmGenOut)*.reflect.cpp と rm_all_types.cpp を書く。それをここでコンパイルする。
+     rmgen は文面が変わったときだけファイルを書き直すので、変わっていないヘッダーは再コンパイルされない。
+     /p:RmGenSkip=true で生成を飛ばす (古い表でビルドが止まるかを確かめるのに使う)。 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Target Name="RmGen" Condition="'$(RmGenSkip)' != 'true'">
     <Exec Command="&quot;$(OutDir)rmgen.exe&quot; --out &quot;$(RmGenOut).&quot; --skip-dir templates $(RmGenRoots)" StdOutEncoding="UTF-8" />
   </Target>
-  <!-- Before FixupCLCompileOptions (not only ClCompile): the generated files are then given the same
-       compile settings as the others - with UseMultiToolTask, "compile after the precompiled header"
-       (RM.Pch.props) - 2026-11-20. Not in Visual Studio's design-time builds (IntelliSense). -->
+  <!-- FixupCLCompileOptions の前に (ClCompile だけでなく): 生成ファイルにも他と同じコンパイル設定が付く。
+       UseMultiToolTask では「プリコンパイル済みヘッダーの後にコンパイル」(RM.Pch.props) - 2026-11-20。
+       Visual Studio のデザイン時ビルド (IntelliSense) では行わない。 -->
   <Target Name="RmGenCompile" BeforeTargets="FixupCLCompileOptions;ClCompile" DependsOnTargets="RmGen" Condition="'$(DesignTimeBuild)' != 'true'">
     <MakeDir Directories="$(IntDir)generated" />
     <ItemGroup>

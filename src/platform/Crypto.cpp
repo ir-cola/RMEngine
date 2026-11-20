@@ -15,11 +15,11 @@ namespace rm::platform {
 
 namespace {
 
-// The secret the .rmpak keys are made from (with each export's number). ★ It is in every game's exe.
+// .rmpak の鍵を作る元の秘密 (書き出しごとの番号と合わせて使う)。★ どのゲームの exe にも入っている。
 constexpr uint8_t kSecret[32] = {0x52, 0x4d, 0x45, 0x6e, 0x67, 0x69, 0x6e, 0x65, 0x9e, 0x37, 0x79, 0xb9, 0x7f, 0x4a, 0x7c, 0x15,
                                  0xf3, 0x9c, 0xc0, 0x60, 0x5c, 0xed, 0xc8, 0x34, 0x10, 0x82, 0x27, 0x6b, 0xf3, 0xa2, 0x72, 0x37};
 
-// AES in ECB on blocks of counters = CTR (BCrypt has no CTR mode of its own).
+// ECB の AES でカウンターのブロックを暗号化する = CTR (BCrypt には CTR モードが無い)。
 struct Aes {
     BCRYPT_ALG_HANDLE alg = nullptr;
     BCRYPT_KEY_HANDLE key = nullptr;
@@ -51,7 +51,7 @@ bool AesCtr(const AesKey& key, const std::array<uint8_t, 16>& iv, uint8_t* data,
     if (size == 0) return true;
     Aes aes;
     if (!aes.Open(key)) return false;
-    // The keystream a chunk at a time: the counters, encrypted in one call.
+    // キーストリームを 1 かたまりずつ: カウンターを 1 回の呼び出しでまとめて暗号化する。
     constexpr size_t kChunk = 64 * 1024;
     std::vector<uint8_t> counters(kChunk), stream(kChunk);
     std::array<uint8_t, 16> counter = iv;

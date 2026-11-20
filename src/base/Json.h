@@ -1,8 +1,8 @@
 #pragma once
-// Small JSON DOM (pure). Objects keep key order, so a document that is read,
-// partly changed and written back keeps every key it did not touch, in place.
-// This is how ".rmpf" and the other engine files pass unknown keys through
-// instead of dropping them (handoff memo 3-5: "unknown keys are kept and written back").
+// 小さな JSON の DOM (純粋)。オブジェクトはキーの順番を保つので、読んで一部だけ変えて
+// 書き戻した文書は、触っていないキーを全部そのままの位置に残す。
+// ".rmpf" などのエンジンのファイルが、知らないキーを捨てずに通せるのはこのため
+// (引き継ぎメモ 3-5: 「知らないキーは残して書き戻す」)。
 
 #include <cstdint>
 #include <functional>
@@ -49,30 +49,30 @@ public:
     bool AsBool(bool def = false) const { return type_ == Type::Bool ? b_ : def; }
     int64_t AsInt(int64_t def = 0) const;
     double AsDouble(double def = 0.0) const;
-    // Empty string when the value is not a string.
+    // 値が文字列でないときは空文字列。
     const std::string& AsString() const;
 
-    // Array / object element count (0 for scalars).
+    // 配列 / オブジェクトの要素数 (スカラーは 0)。
     size_t Size() const;
 
-    // --- Array ---
+    // --- 配列 ---
     const Value& At(size_t i) const { return arr_[i]; }
     Value& At(size_t i) { return arr_[i]; }
-    void Push(Value v);  // turns null into an array
+    void Push(Value v);  // null は配列になる
     const std::vector<Value>& Items() const { return arr_; }
     std::vector<Value>& Items() { return arr_; }
 
-    // --- Object (ordered) ---
-    // A big object (kIndexFrom keys or more) finds its keys through an index built when first
-    // needed, so reading or filling one with many keys stays linear (not the square of its size).
+    // --- オブジェクト (順番あり) ---
+    // 大きなオブジェクト (kIndexFrom 個以上のキー) は、初めて必要になったときに作る索引でキーを探す。
+    // キーの多いものを読んだり埋めたりしても、時間は直線的に増える (大きさの 2 乗にはならない)。
     static constexpr size_t kIndexFrom = 16;
     const Value* Find(std::string_view key) const;
     Value* Find(std::string_view key);
-    const Value& Get(std::string_view key) const;  // null value when missing
-    Value& Set(std::string_view key, Value v);     // replaces in place, else appends; null -> object
+    const Value& Get(std::string_view key) const;  // なければ null の値
+    Value& Set(std::string_view key, Value v);     // その場で置き換え、なければ末尾に足す。null ならオブジェクトになる
     bool Erase(std::string_view key);
     const std::vector<Member>& Members() const { return obj_; }
-    // (the list may be changed through it: the index is built again when next needed)
+    // (これを通して一覧を変えてもよい: 索引は次に必要になったとき作り直す)
     std::vector<Member>& Members() {
         index_.built = false;
         return obj_;
@@ -90,16 +90,16 @@ private:
     std::vector<Value> arr_;
     std::vector<Member> obj_;
 
-    // Where each key of a big object is. Only a cache: a copy or a move of the Value starts without
-    // it. Trusted only while the object has as many keys as when it was built, and every hit is
-    // checked against the key there (Members() may have changed the list).
+    // 大きなオブジェクトの各キーがどこにあるか。ただのキャッシュ: Value をコピー・ムーブしても、
+    // 索引なしで始まる。オブジェクトのキーの数が作ったときと同じ間だけ信用し、使うたびに
+    // そこにあるキーと照らして確かめる (Members() が一覧を変えたかもしれない)。
     struct KeyHash {
         using is_transparent = void;
         size_t operator()(std::string_view s) const noexcept { return std::hash<std::string_view>{}(s); }
     };
     struct KeyIndex {
-        // Allocated only for a big object (an empty std::unordered_map allocates on MSVC, and every
-        // Value - a number, a string - carries a KeyIndex).
+        // 大きなオブジェクトのときだけ確保する (空の std::unordered_map も MSVC では確保してしまい、
+        // どの Value - 数や文字列 - も KeyIndex を持っている)。
         std::unique_ptr<std::unordered_map<std::string, size_t, KeyHash, std::equal_to<>>> at;
         size_t size = 0;
         bool built = false;
@@ -121,21 +121,21 @@ private:
     };
     mutable KeyIndex index_;
     static constexpr size_t kNotFound = static_cast<size_t>(-1);
-    size_t IndexOf(std::string_view key) const;  // kNotFound when missing
+    size_t IndexOf(std::string_view key) const;  // なければ kNotFound
 };
 
 struct ParseError {
     size_t offset = 0;
-    size_t line = 1;    // 1-based
-    size_t column = 1;  // 1-based, in bytes
-    std::string message;  // Japanese, UTF-8
+    size_t line = 1;    // 1 始まり
+    size_t column = 1;  // 1 始まり、バイト単位
+    std::string message;  // 日本語、UTF-8
 };
 
-// Accepts an optional UTF-8 BOM. Duplicate keys: the last value wins (position of the first).
+// 先頭の UTF-8 BOM はあってもよい。キーが重複したら、最後の値が勝つ (位置は最初のもの)。
 std::optional<Value> Parse(std::string_view text, ParseError* error = nullptr);
 
-// pretty = 2-space indent and a trailing newline. Output is deterministic,
-// so Parse -> Write -> Parse -> Write is byte-identical.
+// pretty = 2 文字の字下げと末尾の改行。出力は決まった形になるので、
+// Parse -> Write -> Parse -> Write は一字一句同じになる。
 std::string Write(const Value& v, bool pretty = true);
 
 }  // namespace rm::json

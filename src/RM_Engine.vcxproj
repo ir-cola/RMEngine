@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- RM_Engine.exe = Hub + editor. (The exported game will be a separate exe without any of the editor.) -->
+<!-- RM_Engine.exe = Hub + エディター。(書き出すゲームは、エディターを何も含まない別の exe になる。) -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -183,11 +183,11 @@
     <None Include="..\resources\lang\en.json" />
     <None Include="..\resources\updates.json" />
   </ItemGroup>
-  <!-- Plugins (plugins/<author>/<name>/): every source file is built in (static linking).
-       Listed by wildcard so adding a plugin never means editing this file. -->
+  <!-- プラグイン (plugins/<作者>/<名前>/): ソースファイルは全部組み込む (静的リンク)。
+       ワイルドカードで並べるので、プラグインを足してもこのファイルは直さなくていい。 -->
   <ItemGroup>
-    <!-- one object folder per source folder: two plugins may both have an editor/Register.cpp -->
-    <!-- (not the scripts inside templates/: they are a game's, built into its own DLL) -->
+    <!-- ソースのフォルダーごとにオブジェクトのフォルダーを 1 つ: 2 つのプラグインが両方 editor/Register.cpp を持つことがある -->
+    <!-- (templates/ の中のスクリプトは除く: それはゲームのもので、ゲーム自身の DLL に組み込まれる) -->
     <ClCompile Include="..\plugins\**\*.cpp" Exclude="..\plugins\**\templates\**">
       <ObjectFileName>$(IntDir)plugins\%(RecursiveDir)</ObjectFileName>
     </ClCompile>
@@ -200,19 +200,19 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="RM.Reflect.targets" />
-  <!-- plugin.json files (+ their English, theme and template files) go next to the exe as Plugins/<author>/<name>/... (read at start-up). -->
+  <!-- plugin.json ファイル (と、その英語・テーマ・テンプレートのファイル) を exe の隣に Plugins/<作者>/<名前>/... として置く (起動時に読む)。 -->
   <Target Name="CopyPluginManifests" AfterTargets="Build">
     <ItemGroup>
       <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json;$(RMRoot)plugins\**\themes\*.json;$(RMRoot)plugins\**\templates\**\*" />
       <LangFile Include="$(RMRoot)resources\lang\*.json" />
-      <!-- the headers a game's scripts include (RM.h and the plugins' parts): <exe>/Sdk/ -->
+      <!-- ゲームのスクリプトがインクルードするヘッダー (RM.h とプラグインの部品): <exe>/Sdk/ -->
       <ScriptSdk Include="$(RMRoot)plugins\**\runtime\sdk\*.h" />
     </ItemGroup>
     <Copy SourceFiles="@(ScriptSdk)" DestinationFolder="$(OutDir)Sdk" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(PluginManifest)" DestinationFiles="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <!-- the core's translations: <exe>/Lang/en.json (editor/lang) -->
+    <!-- 核の翻訳: <exe>/Lang/en.json (editor/lang) -->
     <Copy SourceFiles="@(LangFile)" DestinationFolder="$(OutDir)Lang" SkipUnchangedFiles="true" />
-    <!-- the list of the engine's files with their SHA-256, for the integrity check (Hub > オプション) -->
+    <!-- エンジンのファイルと SHA-256 の一覧。整合性チェック用 (Hub > オプション) -->
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(RMRoot)tools\make_filelist.ps1&quot; -Dir &quot;$(OutDir).&quot;" />
   </Target>
 </Project>

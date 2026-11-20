@@ -1,12 +1,12 @@
 #pragma once
-// Undo / Redo history (pure).
+// Undo / Redo の履歴 (純粋)。
 //
-// Two rules carried over from the previous engine (handoff memo 2-1 / 4-6):
-//  * "Pushed to the history" == "unsaved". The owner wires SetOnModified to its dirty flag,
-//    so an edit that reaches the history can never be lost silently on close.
-//  * Take the command out of the stack first, then run it. A command that tries to Push
-//    while it is being undone / redone is rejected, so the stacks never get out of order
-//    (bug #15 of the previous engine).
+// 前のエンジンから引き継いだ 2 つの決まり (引き継ぎメモ 2-1 / 4-6):
+//  * 「履歴に積んだ」 == 「未保存」。持ち主が SetOnModified を自分の dirty フラグに繋ぐので、
+//    履歴に届いた編集が、閉じるときに黙って失われることはない。
+//  * コマンドは先にスタックから取り出してから実行する。Undo / Redo の最中のコマンドが
+//    Push しようとすると断られるので、スタックの順番が狂わない
+//    (前のエンジンのバグ #15)。
 
 #include <cstdint>
 #include <functional>
@@ -22,29 +22,29 @@ public:
     virtual void Do() = 0;
     virtual void Undo() = 0;
     virtual std::string Label() const { return {}; }
-    // Typing into a field applies every key at once, but is one entry: the history asks the newest
-    // entry to take in the next command (true = taken: it now ends where `next` ends).
+    // フィールドに打ち込むとキーごとに一度に反映されるが、1 つのエントリーにする: 履歴は
+    // 最新のエントリーに、次のコマンドを取り込むよう頼む (true = 取り込んだ: 今は `next` の終わりで終わる)。
     virtual bool MergeWith(const ICommand& next) {
         (void)next;
         return false;
     }
-    // Whether MergeWith(next) would take it in - asked without changing anything (a group joins only
-    // when every one of its commands can; a command that does not answer is never joined in a group).
+    // MergeWith(next) が取り込むかどうか - 何も変えずに尋ねる (グループが合流するのは、
+    // 全コマンドが合流できるときだけ。答えないコマンドは、グループに合流させない)。
     virtual bool CanMergeWith(const ICommand& next) const {
         (void)next;
         return false;
     }
-    // After merging, an entry that ends where it began (typed, then Esc) is dropped.
+    // 合流した後、始めた所で終わるエントリー (打ち込んで Esc) は捨てる。
     virtual bool IsNoOp() const { return false; }
-    // About how much memory the entry keeps (a scene before and after: its size as text). 0 = small.
-    // The history keeps at most UndoHistory::kMaxBytes of entries (the oldest go first).
+    // エントリーが持つメモリのおよその量 (前後のシーン: テキストにした大きさ)。0 = 小さい。
+    // 履歴は最大 UndoHistory::kMaxBytes までのエントリーを持つ (古いものから消える)。
     virtual size_t Bytes() const { return 0; }
 };
 
-// Several edits that are one action for the user (a gizmo drag of 3 selected objects): one entry,
-// undone in the reverse order. Empty groups should not be pushed. mergeKey != 0: a later group with
-// the same key and as many commands joins this one command by command (typing into a field of
-// several selected things) - so give every group of one typing the same targets in the same order.
+// ユーザーにとって 1 つの操作になる複数の編集 (選んだ 3 つのオブジェクトのギズモのドラッグ):
+// 1 つのエントリーにして、逆の順で Undo する。空のグループは積まないこと。mergeKey != 0: 同じキーで
+// 同じ数のコマンドを持つ後のグループは、コマンドごとにこれに合流する (選んだ複数のものの
+// フィールドへの打ち込み) - だから、1 回の打ち込みのグループは、同じ対象を同じ順で持たせること。
 class CommandGroup final : public ICommand {
 public:
     explicit CommandGroup(std::string label, uint64_t mergeKey = 0) : label_(std::move(label)), mergeKey_(mergeKey) {}
@@ -63,11 +63,11 @@ public:
         const auto* n = dynamic_cast<const CommandGroup*>(&next);
         if (!n || mergeKey_ == 0 || n->mergeKey_ != mergeKey_ || n->cmds_.size() != cmds_.size()) return false;
         for (size_t i = 0; i < cmds_.size(); ++i) {
-            if (!cmds_[i]->CanMergeWith(*n->cmds_[i])) return false;  // the same targets in the same order
+            if (!cmds_[i]->CanMergeWith(*n->cmds_[i])) return false;  // 同じ対象を同じ順で
         }
         return true;
     }
-    // All or nothing: nothing is changed unless every command joins (no half-joined group).
+    // 全部か何もしないか: 全コマンドが合流できない限り何も変えない (半分だけ合流したグループは作らない)。
     bool MergeWith(const ICommand& next) override {
         if (!CanMergeWith(next)) return false;
         const auto& n = static_cast<const CommandGroup&>(next);
@@ -96,19 +96,19 @@ class UndoHistory {
 public:
     void SetOnModified(std::function<void()> fn) { onModified_ = std::move(fn); }
     void SetMaxDepth(size_t n) { maxDepth_ = n; }
-    // The entries kept together may hold at most this much (ICommand::Bytes): a big scene whose every
-    // change keeps two copies of it does not fill the memory - the oldest entries go first (the newest
-    // one always stays). 256 MB per history (per software).
+    // まとめて持つエントリーはこの量まで (ICommand::Bytes): 変更のたびにコピーを 2 つ持つ大きなシーンで
+    // メモリがいっぱいにならないよう、古いエントリーから消える (最新の 1 つは必ず残す)。
+    // 履歴 (ソフト) ごとに 256 MB。
     static constexpr size_t kMaxBytes = size_t{256} << 20;
     void SetMaxBytes(size_t n) { maxBytes_ = n; }
-    // Goes up by one at every change of the history (an entry pushed, joined, undone, redone, cleared):
-    // what a cache of things worked out from the edited data compares (has anything changed since?).
+    // 履歴が変わるたびに 1 ずつ増える (エントリーを積む、合流する、Undo、Redo、空にする):
+    // 編集したデータから計算したものを持つキャッシュが、これを比べる (前から何か変わったか?)。
     uint64_t Changes() const { return changes_; }
 
-    // alreadyDone = true: the edit has been applied by the caller (typical for UI drags).
-    // Returns false when called from inside Undo()/Redo() (the command is dropped).
-    // When nothing was undone since the newest entry and it takes `cmd` in (ICommand::MergeWith), no
-    // new entry is made; if that leaves it changing nothing, it is removed.
+    // alreadyDone = true: 編集は呼んだ側がすでに適用している (UI のドラッグでよくある)。
+    // Undo()/Redo() の中から呼ぶと false を返す (コマンドは捨てる)。
+    // 最新のエントリー以降に Undo されておらず、それが `cmd` を取り込む (ICommand::MergeWith) なら、
+    // 新しいエントリーは作らない。結果として何も変えないエントリーになったら、それを消す。
     bool Push(std::unique_ptr<ICommand> cmd, bool alreadyDone = true);
 
     bool CanUndo() const { return !executing_ && !undo_.empty(); }
@@ -126,7 +126,7 @@ private:
         ++changes_;
         if (onModified_) onModified_();
     }
-    void Trim();  // the oldest entries go while there are too many or they hold too much
+    void Trim();  // 多すぎる、または持つ量が多すぎる間、古いエントリーを消す
 
     std::vector<std::unique_ptr<ICommand>> undo_;
     std::vector<std::unique_ptr<ICommand>> redo_;

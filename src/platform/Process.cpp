@@ -14,7 +14,7 @@ std::map<std::wstring, std::wstring> CurrentEnvironment() {
     if (!block) return out;
     for (const wchar_t* p = block; *p; p += wcslen(p) + 1) {
         const std::wstring entry = p;
-        const size_t eq = entry.find(L'=', 1);  // ("=C:=C:\..." keeps its leading '=')
+        const size_t eq = entry.find(L'=', 1);  // ("=C:=C:\..." は先頭の '=' を残す)
         if (eq == std::wstring::npos) continue;
         out[entry.substr(0, eq)] = entry.substr(eq + 1);
     }
@@ -24,7 +24,7 @@ std::map<std::wstring, std::wstring> CurrentEnvironment() {
 
 std::string ConsoleTextToUtf8(const std::string& bytes) {
     if (bytes.empty()) return {};
-    // UTF-8 already (the tools print in it when asked): keep it.
+    // もう UTF-8 (頼めばツールは UTF-8 で出す): そのまま使う。
     if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(), static_cast<int>(bytes.size()), nullptr, 0) > 0) return bytes;
     const UINT cp = GetOEMCP();
     const int n = MultiByteToWideChar(cp, 0, bytes.data(), static_cast<int>(bytes.size()), nullptr, 0);
@@ -46,9 +46,9 @@ ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem:
         return r;
     }
     SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
-    // Only the pipe is handed down (PROC_THREAD_ATTRIBUTE_HANDLE_LIST): a child must not get every
-    // inheritable handle of this process - another run's pipe, held by this child, would keep that
-    // run waiting for its end until this child ends too (an export and a script build at once).
+    // パイプだけを渡す (PROC_THREAD_ATTRIBUTE_HANDLE_LIST): 子に、このプロセスの継承できるハンドルを
+    // 全部渡してはいけない - 別の実行のパイプをこの子が持っていると、その実行は、この子が終わるまで
+    // 終端を待ち続けてしまう (書き出しとスクリプトのビルドが同時のとき)。
     SIZE_T attrSize = 0;
     InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
     std::vector<unsigned char> attrBuf(attrSize);
@@ -69,7 +69,7 @@ ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem:
     si.wShowWindow = SW_HIDE;
     si.hStdOutput = writePipe;
     si.hStdError = writePipe;
-    si.hStdInput = nullptr;  // (not in the list: nothing to read)
+    si.hStdInput = nullptr;  // (リストに入れない: 読むものが無い)
     six.lpAttributeList = attrs;
     std::vector<wchar_t> env;
     if (!environment.empty()) {
@@ -80,7 +80,7 @@ ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem:
         }
         env.push_back(L'\0');
     }
-    // A job for it and everything it starts: closed when it ends (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE).
+    // それと、それが起こすもの全部のためのジョブ: それが終わると閉じる (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)。
     HANDLE job = CreateJobObjectW(nullptr, nullptr);
     if (job) {
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
@@ -103,16 +103,16 @@ ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem:
         if (job) CloseHandle(job);
         return r;
     }
-    // In the job before it runs (so whatever it starts is in it too); a job that cannot take it: it runs
-    // without one.
+    // 動き出す前にジョブに入れる (起こすものもみなその中に入る)。ジョブに入れられなかったときは、
+    // ジョブ無しで動かす。
     if (job && !AssignProcessToJobObject(job, pi.hProcess)) {
         CloseHandle(job);
         job = nullptr;
     }
     ResumeThread(pi.hThread);
     r.started = true;
-    // Its output is read on a thread of its own, so a process it left running with the pipe (a
-    // background child) never keeps this waiting: the pipe closes when the job is closed below.
+    // 出力は専用のスレッドで読む。パイプを持ったまま残っているプロセス (バックグラウンドの子) が
+    // これを待たせ続けないように: パイプは、下でジョブを閉じたときに閉じる。
     std::thread reader([&r, readPipe] {
         char buf[4096];
         DWORD got = 0;
@@ -121,10 +121,10 @@ ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem:
     WaitForSingleObject(pi.hProcess, INFINITE);
     GetExitCodeProcess(pi.hProcess, &r.exitCode);
     if (job) {
-        TerminateJobObject(job, 1);  // what it left running ends now
+        TerminateJobObject(job, 1);  // 残っているものは今終わる
         CloseHandle(job);
     } else {
-        CancelIoEx(readPipe, nullptr);  // (no job: what it left keeps the pipe - stop reading anyway)
+        CancelIoEx(readPipe, nullptr);  // (ジョブが無い: 残ったものがパイプを持ち続ける - とにかく読むのをやめる)
     }
     reader.join();
     CloseHandle(readPipe);

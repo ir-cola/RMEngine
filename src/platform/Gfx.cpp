@@ -10,7 +10,7 @@ namespace rm::platform {
 bool Gfx::CreateDevices() {
     const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1,
                                         D3D_FEATURE_LEVEL_10_0};
-    const UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;  // required by Direct2D
+    const UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;  // Direct2D に必要
     auto create = [&](D3D_DRIVER_TYPE type, UINT f) {
         d3d_.Reset();
         d3dContext_.Reset();
@@ -19,10 +19,10 @@ bool Gfx::CreateDevices() {
     };
     HRESULT hr = E_FAIL;
 #ifdef _DEBUG
-    hr = create(D3D_DRIVER_TYPE_HARDWARE, flags | D3D11_CREATE_DEVICE_DEBUG);  // fails when the SDK layers are missing
+    hr = create(D3D_DRIVER_TYPE_HARDWARE, flags | D3D11_CREATE_DEVICE_DEBUG);  // SDK のレイヤーが無いと失敗する
 #endif
-    // (VIDEO_SUPPORT: the UI's video decoded on the GPU - Media Engine's DXVA; without it, when the driver
-    // will not make such a device)
+    // (VIDEO_SUPPORT: UI の動画を GPU でデコードする - Media Engine の DXVA。これが無いのは、ドライバーが
+    // そのデバイスを作れないとき)
     if (FAILED(hr)) hr = create(D3D_DRIVER_TYPE_HARDWARE, flags | D3D11_CREATE_DEVICE_VIDEO_SUPPORT);
     if (FAILED(hr)) hr = create(D3D_DRIVER_TYPE_HARDWARE, flags);
     if (FAILED(hr)) {
@@ -60,7 +60,7 @@ HRESULT Gfx::LostReason() const {
 }
 
 bool Gfx::Recreate() {
-    // The old devices go first: objects still holding them keep them alive, but nothing new is made on them.
+    // 古いデバイスは先に外す: それをまだ持っているオブジェクトは生き続けるが、新しいものは作らない。
     ComPtr<ID3D11Device> oldD3d = d3d_;
     ComPtr<ID3D11DeviceContext> oldContext = d3dContext_;
     ComPtr<IDXGIFactory2> oldDxgi = dxgiFactory_;
@@ -72,7 +72,7 @@ bool Gfx::Recreate() {
     d2dDevice_.Reset();
     dxgiFactory_.Reset();
     if (!CreateDevices()) {
-        d3d_ = oldD3d;  // nothing changed: tried again later
+        d3d_ = oldD3d;  // 何も変えなかった: あとでもう一度やる
         d3dContext_ = oldContext;
         dxgiFactory_ = oldDxgi;
         d2dDevice_ = oldD2d;
@@ -138,8 +138,8 @@ bool SwapTarget::Create(Gfx& gfx, HWND hwnd, float dpi) {
 }
 
 void SwapTarget::Reset() {
-    // Direct3D destroys objects lazily: the swap chain is really gone (and the window free for a new
-    // one - a window has one at a time) only after its device's context is flushed.
+    // Direct3D はオブジェクトを遅れて壊す: スワップチェーンが本当に消える (ウィンドウが新しいものに
+    // 使えるようになる - ウィンドウには同時に 1 つだけ) のは、そのデバイスのコンテキストを flush した後だけ。
     ComPtr<ID3D11Device> device;
     if (swap_) swap_->GetDevice(IID_PPV_ARGS(&device));
     if (dc_) dc_->SetTarget(nullptr);
@@ -173,7 +173,7 @@ void SwapTarget::Resize(UINT width, UINT height) {
     if (!swap_ || width == 0 || height == 0) return;
     if (width == width_ && height == height_) return;
     dc_->SetTarget(nullptr);
-    target_.Reset();  // every reference to the back buffer must be gone before ResizeBuffers
+    target_.Reset();  // ResizeBuffers の前に、バックバッファへの参照を全部消さなければならない
     const HRESULT hr = swap_->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr)) {
         log::Error("スワップチェーンの大きさを変えられませんでした (0x{:08X})", static_cast<uint32_t>(hr));
@@ -215,7 +215,7 @@ std::span<const uint8_t> ResourceBytes(int id) {
 
 ComPtr<ID2D1Bitmap> LoadBitmapFromMemory(Gfx& gfx, ID2D1DeviceContext* dc, std::span<const uint8_t> data, UINT maxWidth,
                                          std::string* error) {
-    // The one way pictures are decoded (platform/Image: WIC), then made a Direct2D bitmap.
+    // 画像をデコードする唯一の道 (platform/Image: WIC)。そのあと Direct2D のビットマップにする。
     std::string why;
     std::optional<Image> image;
     if (!dc) {

@@ -1,5 +1,5 @@
 #pragma once
-// Small value types shared by data (reflection, saving) and drawing. Pure.
+// データ (リフレクション、保存) と描画が共有する小さな値の型。純粋。
 
 #include <cstdint>
 
@@ -15,7 +15,7 @@ struct Vec3 {
     bool operator==(const Vec3&) const = default;
 };
 
-// Linear 0..1 components. Also the colour the UI draws with (ui::Color is this type).
+// 線形の 0..1 の成分。UI が描く色でもある (ui::Color はこの型)。
 struct Color {
     float r = 0, g = 0, b = 0, a = 1;
 
@@ -26,11 +26,11 @@ struct Color {
     bool operator==(const Color&) const = default;
 };
 
-// a at t = 0, b at t = 1 (every component, alpha too).
+// t = 0 で a、t = 1 で b (全成分、アルファも)。
 constexpr Color Mix(Color a, Color b, float t) {
     return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
 }
-// Towards white (amount > 0) or black (amount < 0), keeping alpha: the same hue, lighter or darker.
+// 白 (amount > 0) か黒 (amount < 0) へ寄せる。アルファは保つ: 同じ色相で明るく、または暗くする。
 constexpr Color Shade(Color c, float amount) {
     const Color to = amount >= 0 ? Color{1, 1, 1, c.a} : Color{0, 0, 0, c.a};
     return Mix(c, to, amount >= 0 ? amount : -amount);

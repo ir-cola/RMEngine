@@ -1,18 +1,18 @@
 #pragma once
-// What the plugins' RUNTIME parts offer each other - the part that also goes into an exported game,
-// which has no editor. A game's systems (game_production::SystemInfo) and the component types a
-// game needs are offered here, so the game exe and the editor's Play read the same list.
+// プラグインの RUNTIME の部分が互いに提供するもの - 書き出したゲーム (エディターを持たない) にも入る部分。
+// ゲームのシステム (game_production::SystemInfo) とゲームが必要とする部品の型をここで提供するので、
+// ゲームの exe とエディターの Play は同じ一覧を読む。
 //
-//   // plugins/<author>/<name>/runtime/Register.cpp
+//   // plugins/<作者>/<名前>/runtime/Register.cpp
 //   void RegisterRuntime(rm::RuntimeRegistry& r) {
 //       static const game_production::SystemInfo kSpin{...};
 //       r.Contribute(game_production::kSystemPoint, kSpin);
 //   }
-//   // listed once in plugins/RuntimePlugins.cpp: {kPluginId, &RegisterRuntime}
+//   // plugins/RuntimePlugins.cpp に 1 回だけ並べる: {kPluginId, &RegisterRuntime}
 //
-// The reader names the point and the item type; the core knows neither (design RME_PLATFORM 4-f).
-// The editor's PluginRegistry (editor/plugin/Software.h) IS one of these: the loader calls a plugin's
-// RegisterRuntime first, then its RegisterEditor, into the same registry.
+// 読む側が拠点 (point) と項目の型を指名する。核はどちらも知らない (設計 RME_PLATFORM 4-f)。
+// エディターの PluginRegistry (editor/plugin/Software.h) もこの 1 つ: ローダーはプラグインの
+// RegisterRuntime を先に、次に RegisterEditor を、同じレジストリーに対して呼ぶ。
 
 #include "core/PluginId.h"
 
@@ -26,19 +26,19 @@ namespace rm {
 
 template <class T>
 struct Contributed {
-    PluginId plugin;  // who offered it
+    PluginId plugin;  // 提供した人
     const T* item;
 };
 
 class RuntimeRegistry {
 public:
-    // `item` must live as long as the program (a static). Only enabled plugins register, so only
-    // their items are listed; requirements register first.
+    // `item` はプログラムが終わるまで生きていること (static)。有効なプラグインだけが登録するので、
+    // 一覧に出るのはその項目だけ。必須のものが先に登録される。
     template <class T>
     void Contribute(std::string_view point, const T& item) {
         contributions_.push_back({current_, std::string(point), &item, &typeid(T)});
     }
-    // Items of `point` of type T, in registration order (an item of another type is skipped).
+    // `point` の T 型の項目を、登録した順に (別の型の項目は飛ばす)。
     template <class T>
     std::vector<Contributed<T>> Contributions(std::string_view point) const {
         std::vector<Contributed<T>> out;
@@ -48,12 +48,12 @@ public:
         return out;
     }
 
-    // Used by the loader around each plugin's registration.
+    // ローダーが各プラグインの登録の前後で使う。
     void BeginPlugin(const PluginId& id) { current_ = id; }
     void EndPlugin() { current_ = {}; }
 
 protected:
-    const PluginId& Current() const { return current_; }  // the plugin registering now
+    const PluginId& Current() const { return current_; }  // 今登録しているプラグイン
 
 private:
     struct Contribution {
@@ -71,13 +71,12 @@ struct RuntimePlugin {
     void (*registerRuntime)(RuntimeRegistry& registry);
 };
 
-// The plugins whose runtime part registers something. Defined in plugins/RuntimePlugins.cpp (it
-// includes runtime parts only, so a game exe can link it).
+// ランタイムの部分が何かを登録するプラグイン。plugins/RuntimePlugins.cpp で定義する
+// (ランタイムの部分だけをインクルードするので、ゲームの exe がリンクできる)。
 std::span<const RuntimePlugin> RuntimePlugins();
 
-// Registers the runtime part of each plugin of `enabled` (requirements first - the order given) that
-// has one. The game exe calls it with the plugins it was exported with; the editor's loader with
-// the enabled ones.
+// `enabled` の各プラグインのうちランタイムの部分を持つものの登録を行う (必須のものが先 - 渡された順)。
+// ゲームの exe は書き出したときのプラグインで、エディターのローダーは有効なプラグインで呼ぶ。
 inline void RegisterRuntimeParts(RuntimeRegistry& registry, std::span<const PluginId> enabled) {
     for (const PluginId& id : enabled) {
         for (const RuntimePlugin& p : RuntimePlugins()) {
@@ -91,9 +90,9 @@ inline void RegisterRuntimeParts(RuntimeRegistry& registry, std::span<const Plug
 
 }  // namespace rm
 
-// The C name an exported game's generated main calls a plugin's registration by (editor/export:
-// RuntimeEntryName = "rm_runtime__<author>__<name>"). Written once in the plugin's runtime/Register.cpp,
-// after its RegisterRuntime:   RM_RUNTIME_ENTRY(rm_engine, game_x_3d, rm::game_x_3d::RegisterRuntime)
-// The game links only the plugins it lists, so only theirs are named (a static library's object that
-// nothing names is never linked).
+// 書き出したゲームの生成 main がプラグインの登録を呼ぶときの C の名前 (editor/export:
+// RuntimeEntryName = "rm_runtime__<作者>__<名前>")。プラグインの runtime/Register.cpp の
+// RegisterRuntime の後に 1 回だけ書く:   RM_RUNTIME_ENTRY(rm_engine, game_x_3d, rm::game_x_3d::RegisterRuntime)
+// ゲームは並べたプラグインだけをリンクするので、名前が出るのはそれだけ (誰からも名指しされない
+// 静的ライブラリのオブジェクトは、リンクされない)。
 #define RM_RUNTIME_ENTRY(author, name, fn)     extern "C" void rm_runtime__##author##__##name(::rm::RuntimeRegistry& registry) { fn(registry); }

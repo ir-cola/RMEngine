@@ -11,7 +11,7 @@ namespace rm::ui {
 namespace {
 D2D1_RECT_F ToD2D(const Rect& r) { return D2D1::RectF(r.x, r.y, r.x + r.w, r.y + r.h); }
 D2D1_COLOR_F ToD2D(Color c) { return D2D1::ColorF(c.r, c.g, c.b, c.a); }
-// 8 bits per component of both colors: 64 bits, so equal keys mean equal (shown) colors.
+// 両方の色の各成分 8 ビット: 64 ビット。キーが等しければ、(見える) 色も等しい。
 uint64_t GradientKey(Color a, Color b) {
     auto q = [](float v) { return static_cast<uint64_t>(std::lround(std::fmin(std::fmax(v, 0.f), 1.f) * 255.f)); };
     return q(a.r) | q(a.g) << 8 | q(a.b) << 16 | q(a.a) << 24 | q(b.r) << 32 | q(b.g) << 40 | q(b.b) << 48 | q(b.a) << 56;
@@ -39,7 +39,7 @@ void Painter::Begin(ID2D1DeviceContext* dc) {
     clipDepth_ = 0;
     if (brushOwner_ != dc) {
         brush_.Reset();
-        gradients_.clear();  // brushes belong to a device context
+        gradients_.clear();  // ブラシはデバイスコンテキストに属する
         dc_->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &brush_);
         brushOwner_ = dc;
     }
@@ -93,7 +93,7 @@ ID2D1LinearGradientBrush* Painter::Gradient(Color top, Color bottom, float y0, f
     const uint64_t key = GradientKey(top, bottom);
     auto it = gradients_.find(key);
     if (it == gradients_.end()) {
-        if (gradients_.size() > 512) gradients_.clear();  // never grows without bound
+        if (gradients_.size() > 512) gradients_.clear();  // 際限なく増えない
         const D2D1_GRADIENT_STOP stops[2] = {{0.f, ToD2D(top)}, {1.f, ToD2D(bottom)}};
         ComPtr<ID2D1GradientStopCollection> collection;
         ComPtr<ID2D1LinearGradientBrush> brush;
@@ -133,7 +133,7 @@ ComPtr<ID2D1PathGeometry> Painter::RoundRectPath(const Rect& r, Corners k) {
     ComPtr<ID2D1PathGeometry> path;
     ComPtr<ID2D1GeometrySink> sink;
     if (!factory || FAILED(factory->CreatePathGeometry(&path)) || FAILED(path->Open(&sink))) return nullptr;
-    // No radius larger than half a side.
+    // 半径は一辺の半分より大きくしない。
     const float lim = std::fmin(r.w, r.h) * 0.5f;
     k = {std::fmin(k.tl, lim), std::fmin(k.tr, lim), std::fmin(k.br, lim), std::fmin(k.bl, lim)};
     const float x0 = r.x, y0 = r.y, x1 = r.Right(), y1 = r.Bottom();
@@ -164,7 +164,7 @@ void Painter::FillRoundRectGradient(const Rect& r, Corners radii, Color top, Col
 }
 
 void Painter::StrokeRoundRectGradient(const Rect& r, Corners radii, Color top, Color bottom, float width) {
-    // The line sits inside the rectangle (its centre half a width in), the corners shrink with it.
+    // 線は矩形の内側に入る (その中心が線の幅の半分だけ内側)。角もそれに合わせて縮む。
     const float h = width * 0.5f;
     const Rect in{r.x + h, r.y + h, r.w - width, r.h - width};
     if (in.w <= 0 || in.h <= 0) return;
@@ -181,7 +181,7 @@ void Painter::FillPath(const Path& path, Color c) {
     ComPtr<ID2D1PathGeometry> geo;
     ComPtr<ID2D1GeometrySink> sink;
     if (!factory || FAILED(factory->CreatePathGeometry(&geo)) || FAILED(geo->Open(&sink))) return;
-    // Figures that overlap join into one shape (when they go round the same way), never cut holes.
+    // 重なる図形は 1 つの形につながる (同じ向きに回っているとき)。穴は決してあけない。
     sink->SetFillMode(D2D1_FILL_MODE_WINDING);
     auto pt = [](Vec2 v) { return D2D1::Point2F(v.x, v.y); };
     bool open = false;
@@ -206,7 +206,7 @@ void Painter::FillPath(const Path& path, Color c) {
 }
 
 void Painter::Shadow(const Rect& r, float radius, Color c, float size) {
-    // Four layers, each a little wider, lower and fainter: reads as a soft blur, costs four fills.
+    // 4 層。それぞれ少しずつ広く、低く、薄く: やわらかいぼかしに見えて、塗りは 4 回で済む。
     constexpr float kAlpha[4] = {0.40f, 0.24f, 0.12f, 0.05f};
     for (int i = 0; i < 4; ++i) {
         const float s = size * static_cast<float>(i + 1) / 4.f;
@@ -319,8 +319,8 @@ void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
         tintOwner_ = dc_;
     }
     if (!tint_) return;
-    // Rows: the input's r, g, b, a and 1; columns: the output's r, g, b, a (straight alpha - the
-    // effect takes premultiplied colors apart first). The color is fixed, the alpha is kept.
+    // 行: 入力の r, g, b, a と 1。列: 出力の r, g, b, a (ストレートアルファ - エフェクトは、
+    // 先に乗算済みの色をほどく)。色は固定で、アルファは残る。
     const D2D1_MATRIX_5X4_F m = D2D1::Matrix5x4F(0, 0, 0, 0,  //
                                                  0, 0, 0, 0,  //
                                                  0, 0, 0, 0,  //
@@ -328,7 +328,7 @@ void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
                                                  c.r, c.g, c.b, 0);
     tint_->SetInput(0, bmp);
     tint_->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
-    // Scaled by the transform, so the picture is smoothed as nicely as Image() does.
+    // 変形で拡大縮小されるので、Image() と同じようにきれいに補間される。
     const D2D1_SIZE_F size = bmp->GetSize();
     if (size.width <= 0 || size.height <= 0) return;
     D2D1_MATRIX_3X2_F old;

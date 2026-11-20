@@ -1,5 +1,5 @@
-// The exported game's entry: the generated main (editor/export) gives what it was exported with
-// (rm_game_image); everything else is game/Player.cpp.
+// 書き出したゲームの入り口: 生成された main (editor/export) が、書き出し時の内容 (rm_game_image) を渡す。
+// それ以外は game/Player.cpp。
 
 #include "game/Player.h"
 #include "platform/Win.h"

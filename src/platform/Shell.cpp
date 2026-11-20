@@ -11,7 +11,7 @@
 
 #include <format>
 
-#pragma comment(lib, "dwmapi.lib")  // (TopLevelWindowAt; also for the tests, which link this file alone)
+#pragma comment(lib, "dwmapi.lib")  // (TopLevelWindowAt。このファイルだけをリンクするテストにも必要)
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
@@ -30,15 +30,15 @@ std::optional<std::wstring> ShowOpenDialog(HWND owner, FILEOPENDIALOGOPTIONS ext
     const std::wstring t(title);
     dlg->SetTitle(t.c_str());
     if (filter) dlg->SetFileTypes(1, filter);
-    // (a folder that is not there yet - an export's output - opens the nearest one above it: never the
-    // folder the dialog remembers from another project)
+    // (まだ無いフォルダ - 書き出し先 - は、その上の一番近いフォルダを開く: 別のプロジェクトで
+    // ダイアログが覚えているフォルダは決して開かない)
     if (const std::filesystem::path start = ExistingFolderAtOrAbove(std::filesystem::path(initialFolder)); !start.empty()) {
         ComPtr<IShellItem> folder;
         if (SUCCEEDED(SHCreateItemFromParsingName(start.c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
             dlg->SetFolder(folder.Get());
         }
     }
-    if (FAILED(dlg->Show(owner))) return std::nullopt;  // includes "cancelled"
+    if (FAILED(dlg->Show(owner))) return std::nullopt;  // 「キャンセル」も含む
     ComPtr<IShellItem> result;
     if (FAILED(dlg->GetResult(&result))) return std::nullopt;
     PWSTR path = nullptr;
@@ -93,10 +93,9 @@ bool OpenFileOutside(const std::filesystem::path& file) {
 
 namespace {
 
-// Told by the shell before each item is deleted. When it would not go to the Recycle Bin (the flag
-// TSF_DELETE_RECYCLE_IF_POSSIBLE is missing: no bin on that drive, or the item is bigger than the
-// bin), the deletion is cancelled - with FOF_NOCONFIRMATION the shell would otherwise delete it for
-// good without asking.
+// 各項目が消される前に、シェルが知らせてくる。ごみ箱に入れられないとき (フラグ
+// TSF_DELETE_RECYCLE_IF_POSSIBLE が無い: そのドライブにごみ箱が無い、または項目がごみ箱より大きい)
+// は、削除をキャンセルする - FOF_NOCONFIRMATION だと、シェルは何も聞かずに完全に消してしまうため。
 class RecycleOnly final : public IFileOperationProgressSink {
 public:
     bool refused = false;
@@ -111,7 +110,7 @@ public:
         return E_NOINTERFACE;
     }
     IFACEMETHODIMP_(ULONG) AddRef() override { return ++refs_; }
-    IFACEMETHODIMP_(ULONG) Release() override { return --refs_; }  // lives on the caller's stack
+    IFACEMETHODIMP_(ULONG) Release() override { return --refs_; }  // 呼んだ側のスタックの上にある
 
     IFACEMETHODIMP PreDeleteItem(DWORD flags, IShellItem*) override {
         if (flags & TSF_DELETE_RECYCLE_IF_POSSIBLE) return S_OK;
@@ -149,13 +148,13 @@ bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string*
         if (error) *error = ErrorText(static_cast<DWORD>(hr));
         return false;
     }
-    // FOFX_RECYCLEONDELETE: to the Recycle Bin (Windows 8+). No questions, no window, no error dialog.
+    // FOFX_RECYCLEONDELETE: ごみ箱へ入れる (Windows 8 以上)。質問も、ウィンドウも、エラーのダイアログも出さない。
     op->SetOperationFlags(FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI);
     RecycleOnly sink;
     DWORD cookie = 0;
     const bool advised = SUCCEEDED(op->Advise(&sink, &cookie));
     if (!advised) {
-        // Without the sink there is no way to stop a permanent deletion: do not delete.
+        // シンクが無いと、完全削除を止める方法が無い: 削除しない。
         if (error) *error = "ごみ箱へ移すかどうかを確かめられないので、消していません";
         return false;
     }
@@ -186,7 +185,7 @@ bool MoveToRecycleBin(std::span<const std::filesystem::path> paths, std::string*
 FolderWatch::~FolderWatch() { Close(); }
 
 void FolderWatch::Close() {
-    // (waits for a callback still running: after this, onSignal_ is never called again)
+    // (まだ動いているコールバックを待つ: これのあと、onSignal_ は二度と呼ばれない)
     if (wait_) UnregisterWaitEx(wait_, INVALID_HANDLE_VALUE);
     wait_ = nullptr;
     if (handle_) FindCloseChangeNotification(handle_);
@@ -194,16 +193,16 @@ void FolderWatch::Close() {
 }
 
 void CALLBACK FolderWatch::Signaled(void* self, BOOLEAN /*timedOut*/) {
-    // On a thread of the system's pool: only the owner's onSignal (which must be safe from any thread).
+    // システムのプールのスレッドの上: 持ち主の onSignal だけ (どのスレッドから呼ばれても安全でなければならない)。
     static_cast<FolderWatch*>(self)->onSignal_();
 }
 
 void FolderWatch::Arm() {
     if (!handle_ || !onSignal_) return;
-    // Once only: the handle stays signalled until Changed() sees it, so a repeating wait would run
-    // again and again. Changed() arms it again for the next change.
-    // (waited for: a callback of the last arming that is still running must not outlive this object.
-    // It only posts to the UI thread - never waits for it - so this cannot hang)
+    // 1 回だけ: ハンドルは Changed() が見るまで通知されたままなので、繰り返し待つと何度も
+    // 動いてしまう。Changed() が、次の変更のためにもう一度待ち受けさせる。
+    // (待つ: 最後に待ち受けさせた分のコールバックが、まだ動いているうちにこのオブジェクトより
+    // 長生きしてはいけない。UI スレッドに post するだけで、その完了は待たないので、固まらない)
     if (wait_) UnregisterWaitEx(wait_, INVALID_HANDLE_VALUE);
     wait_ = nullptr;
     if (!RegisterWaitForSingleObject(&wait_, handle_, &FolderWatch::Signaled, this, INFINITE, WT_EXECUTEONLYONCE)) wait_ = nullptr;
@@ -211,8 +210,8 @@ void FolderWatch::Arm() {
 
 namespace {
 
-// Which folder is at `path` now (the volume and the file's number): another one after it was deleted
-// and made again, or moved to the Recycle Bin. nullopt when there is none.
+// 今 `path` にあるのはどのフォルダか (ボリュームとファイルの番号): 消して作り直したあとや、
+// ごみ箱へ移したあとは別のものになる。無いときは nullopt。
 std::optional<std::pair<DWORD, uint64_t>> FolderIdentity(const std::filesystem::path& path) {
     HANDLE h = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
@@ -247,7 +246,7 @@ bool FolderWatch::Start(const std::filesystem::path& folder, bool contents, std:
 
 bool FolderWatch::Changed() {
     if (!handle_ || WaitForSingleObject(handle_, 0) != WAIT_OBJECT_0) return false;
-    // Several changes in a row are one: wait for the next only after this one is seen.
+    // 続けて起きた複数の変更は 1 つにまとめる: 次を待つのは、この変更が見られたあとだけ。
     if (!FindNextChangeNotification(handle_)) {
         Close();
         return true;
@@ -309,9 +308,9 @@ std::string ErrorText(DWORD code) {
 }
 
 std::optional<std::string> ReadFileBytes(const std::filesystem::path& path, std::string* error) {
-    // Shared for writing and deleting too: a save of the same file (WriteFileAtomic: a new file renamed
-    // over it) going on in another thread or program is not refused while this reads (the size is
-    // checked against what was read).
+    // 書き込みと削除も共有する: 同じファイルの保存 (WriteFileAtomic: 新しいファイルをその上に名前変更)
+    // が別のスレッドやプログラムで進んでいても、これが読んでいる間は断られない (大きさは、読めた
+    // 量と照らして確かめる)。
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
                            FILE_ATTRIBUTE_NORMAL, nullptr);
     if (f == INVALID_HANDLE_VALUE) {
@@ -339,7 +338,7 @@ std::optional<std::string> ReadFileBytes(const std::filesystem::path& path, std:
 
 bool WriteFileAtomic(const std::filesystem::path& path, std::string_view data, std::string* error) {
     if (data.size() > kMaxFileBytes) {
-        // Never written: it could not be read back (ReadFileBytes has the same limit).
+        // 書かない: 読み戻せないため (ReadFileBytes にも同じ上限がある)。
         if (error) *error = std::format("大きすぎて書けません ({} MB / 上限 {} MB)", data.size() >> 20, kMaxFileBytes >> 20);
         return false;
     }
@@ -411,8 +410,8 @@ std::filesystem::path ExeDirectory() {
 
 std::filesystem::path EngineDirectory() {
     const std::filesystem::path exe = ExeDirectory();
-    // Built from source: the exe is in <source>/build/bin/x64/<config>/. The source folder is the
-    // one with RM_Engine.sln (a few levels up at most).
+    // ソースからビルドしたもの: exe は <source>/build/bin/x64/<config>/ にある。ソースのフォルダは
+    // RM_Engine.sln があるフォルダ (せいぜい数階層上)。
     std::error_code ec;
     std::filesystem::path dir = exe;
     for (int up = 0; up < 6 && !dir.empty(); ++up) {

@@ -1,6 +1,6 @@
 #pragma once
-// Running another program and reading what it prints (the export runs Visual Studio's compiler,
-// resource compiler and linker; vswhere finds Visual Studio). Waits until it ends.
+// 別のプログラムを動かして、その出力を読む (書き出しは Visual Studio のコンパイラ、
+// リソースコンパイラ、リンカーを動かす。vswhere が Visual Studio を探す)。終わるまで待つ。
 
 #include <filesystem>
 #include <map>
@@ -10,23 +10,24 @@
 namespace rm::platform {
 
 struct ProcessResult {
-    bool started = false;   // false: the program could not be started (*error says why)
+    bool started = false;   // false: プログラムを起動できなかった (*error に理由)
     unsigned long exitCode = 0;
-    std::string output;     // stdout and stderr together, as the program wrote them (bytes)
+    std::string output;     // stdout と stderr を、プログラムが書いたとおりにまとめたもの (バイト列)
 };
 
-// `commandLine`: the program (quoted when it has spaces) and its arguments. `environment`: the whole
-// environment it gets (empty: this process's). No window is shown.
-// Everything it starts goes with it (a job object): when it ends, what it left running - MSBuild's
-// worker nodes, a program started in the background - is ended too, so nothing keeps a folder of the
-// project open (it could not be deleted) or this call waiting. If this process ends first, they end too.
+// `commandLine`: プログラム (空白があれば引用符で囲む) とその引数。`environment`: 渡す環境全体
+// (空: このプロセスのもの)。ウィンドウは出さない。
+// それが起こしたものは全部、一緒に終わる (ジョブオブジェクト): 終わったとき、残っているもの
+// - MSBuild のワーカーノード、バックグラウンドで起こしたプログラム - も終わるので、プロジェクトの
+// フォルダを開いたままにするもの (消せなくなる) や、この呼び出しを待たせ続けるものは残らない。
+// このプロセスが先に終わったときも、それらは終わる。
 ProcessResult RunProcess(const std::wstring& commandLine, const std::filesystem::path& workingDir,
                          const std::map<std::wstring, std::wstring>& environment, std::string* error);
 
-// This process's environment (names as Windows keeps them).
+// このプロセスの環境 (名前は Windows が持つとおり)。
 std::map<std::wstring, std::wstring> CurrentEnvironment();
 
-// Program output in the console's code page (cl / link print in it) -> UTF-8.
+// コンソールのコードページ (cl / link はそれで出す) のプログラム出力 -> UTF-8。
 std::string ConsoleTextToUtf8(const std::string& bytes);
 
 }  // namespace rm::platform

@@ -1,13 +1,13 @@
 #pragma once
-// References a data type can hold (RM_PROPERTY fields, core/reflect): pure values, saved as IDs.
+// データの型が持てる参照 (RM_PROPERTY のフィールド、core/reflect): 純粋な値で、ID として保存する。
 //
-//   RM_PROPERTY(Edit, Label="モデル", AssetKind="model") rm::AssetRef model;   // a file of Assets/
-//   RM_PROPERTY(Edit, Label="追いかける相手")              rm::EntityRef target; // an item of the 階層
+//   RM_PROPERTY(Edit, Label="モデル", AssetKind="model") rm::AssetRef model;   // Assets/ のファイル
+//   RM_PROPERTY(Edit, Label="追いかける相手")              rm::EntityRef target; // 階層の項目
 //
-// An asset is named by the id in the .meta file next to it (core/asset), so moving or renaming the
-// file never breaks the reference. An entity (an item of a software's hierarchy - a game's entity)
-// by its id there. The inspector shows the name, takes a drag from the アセット / 階層 panels,
-// offers a list to pick from and a × to clear it.
+// アセットは、隣にある .meta ファイルの id で名前を指す (core/asset)。だからファイルを動かしても
+// 名前を変えても参照は壊れない。エンティティ (ソフトの階層の項目 - ゲームのエンティティ) は
+// そこにある id で指す。インスペクターは名前を表示し、アセット / 階層パネルからのドラッグを受け、
+// 選ぶための一覧を出し、× で空にできる。
 
 #include <cstdint>
 #include <string>
@@ -15,13 +15,13 @@
 namespace rm {
 
 struct AssetRef {
-    std::string guid;  // 32 lower-case hex digits; empty = none
+    std::string guid;  // 小文字の 16 進 32 桁。空 = なし
     bool Empty() const { return guid.empty(); }
     bool operator==(const AssetRef&) const = default;
 };
 
 struct EntityRef {
-    uint64_t id = 0;  // 0 = none
+    uint64_t id = 0;  // 0 = なし
     bool Empty() const { return id == 0; }
     bool operator==(const EntityRef&) const = default;
 };

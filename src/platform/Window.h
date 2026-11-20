@@ -1,6 +1,6 @@
 #pragma once
-// A top-level Win32 window: per-monitor DPI (v2), dark title bar, minimum size in DIPs.
-// Messages are forwarded to a WindowListener.
+// 最上位の Win32 ウィンドウ: モニターごとの DPI (v2)、暗いタイトルバー、DIP での最小サイズ。
+// メッセージは WindowListener に転送する。
 
 #include "platform/Win.h"
 
@@ -13,7 +13,7 @@ namespace rm::platform {
 class WindowListener {
 public:
     virtual ~WindowListener() = default;
-    // Set handled = true to skip DefWindowProc and return the result.
+    // handled = true にすると DefWindowProc を飛ばして、その結果を返す。
     virtual LRESULT OnMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, bool& handled) = 0;
 };
 
@@ -24,17 +24,17 @@ struct WindowDesc {
     int minWidthDip = 640;
     int minHeightDip = 400;
     bool resizable = true;
-    uint32_t captionRgb = 0x151618;  // title bar color (Windows 11)
-    bool darkCaption = true;         // light text on the title bar (Windows 10 / 11)
+    uint32_t captionRgb = 0x151618;  // タイトルバーの色 (Windows 11)
+    bool darkCaption = true;         // タイトルバーに明るい文字 (Windows 10 / 11)
 
-    // Panels taken out of the editor: owned by the editor window (stays above it, no taskbar button).
+    // エディターから取り出したパネル: エディターのウィンドウが持つ (その上に出る。タスクバーのボタンは無し)。
     HWND owner = nullptr;
     bool tool = false;
-    // No Windows frame at all (a shaped window draws its own and says where it is dragged and sized
-    // through WM_NCHITTEST): the size given is the whole window.
+    // Windows の枠を一切付けない (形のあるウィンドウは自分で描き、ドラッグとサイズ変更の位置を
+    // WM_NCHITTEST で伝える): 渡す大きさがウィンドウ全体。
     bool frameless = false;
-    // Window rectangle in physical pixels of the virtual screen. Ignored (centered instead)
-    // when it is not on any monitor any more (a saved position from an unplugged screen).
+    // 仮想スクリーンの物理ピクセルでのウィンドウの矩形。どのモニターにももう無いとき (外したモニターの
+    // 保存位置) は無視する (中央に置く)。
     bool hasRect = false;
     int x = 0, y = 0, w = 0, h = 0;
 };
@@ -46,16 +46,16 @@ public:
     Window& operator=(const Window&) = delete;
     ~Window() { Destroy(); }
 
-    // Created hidden; centered on the monitor under the mouse cursor unless desc.hasRect.
+    // 隠した状態で作る。desc.hasRect でなければ、マウスカーソルのあるモニターの中央に置く。
     bool Create(const WindowDesc& desc, WindowListener* listener);
-    // Stops forwarding messages first, then destroys the HWND.
+    // 先にメッセージの転送をやめ、それから HWND を壊す。
     void Destroy();
 
     HWND Handle() const { return hwnd_; }
     float Dpi() const { return static_cast<float>(dpi_); }
     float Scale() const { return static_cast<float>(dpi_) / 96.f; }
     void SetTitle(std::wstring_view title);
-    // The title bar follows the editor's color theme.
+    // タイトルバーはエディターの色のテーマに従う。
     void SetCaption(bool dark, uint32_t rgb);
 
 private:

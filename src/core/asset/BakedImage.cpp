@@ -33,7 +33,7 @@ std::string WriteBakedImage(const BakedImageInfo& info, std::string_view picture
 }
 
 std::optional<BakedImage> ReadBakedImage(std::string_view bytes, std::string* error) {
-    if (bytes.size() < 8 || std::memcmp(bytes.data(), kMagic, 8) != 0) return BakedImage{{}, bytes};  // a picture as it is
+    if (bytes.size() < 8 || std::memcmp(bytes.data(), kMagic, 8) != 0) return BakedImage{{}, bytes};  // 絵をそのまま
     auto fail = [&](const char* why) -> std::optional<BakedImage> {
         if (error) *error = why;
         return std::nullopt;

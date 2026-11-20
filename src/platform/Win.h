@@ -1,6 +1,6 @@
 #pragma once
-// The one place that includes <windows.h> for the platform layer.
-// NOMINMAX / WIN32_LEAN_AND_MEAN / UNICODE are also set by the project.
+// プラットフォーム層で <windows.h> を include する唯一の場所。
+// NOMINMAX / WIN32_LEAN_AND_MEAN / UNICODE はプロジェクトでも設定している。
 
 #ifndef NOMINMAX
 #define NOMINMAX

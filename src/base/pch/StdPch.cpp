@@ -1,2 +1,2 @@
-// Makes the precompiled header (src/RM.Pch.props: compiled with /Yc; base/pch/StdPch.h comes in by the
-// forced include, as for every other file).
+// プリコンパイル済みヘッダーを作る (src/RM.Pch.props: /Yc でコンパイル。base/pch/StdPch.h は
+// 他のファイルと同じく強制インクルードで入る)。

@@ -21,7 +21,7 @@ FileNameError ValidateFileName(std::string_view utf8, size_t maxChars) {
     if (w.front() == L' ') return FileNameError::LeadingSpace;
     if (w.back() == L'.' || w.back() == L' ') return FileNameError::TrailingDotOrSpace;
 
-    // Reserved device names apply to the part before the first dot ("con.txt" is reserved too).
+    // 予約されたデバイス名は最初のドットより前の部分に当たる ("con.txt" も予約済み)。
     std::wstring stem = w.substr(0, w.find(L'.'));
     while (!stem.empty() && stem.back() == L' ') stem.pop_back();
     for (auto& c : stem) {

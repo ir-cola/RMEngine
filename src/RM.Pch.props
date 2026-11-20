@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The precompiled header (2026-11-20): base/pch/StdPch.h (the standard library headers used most) is
-     compiled once per project and read before every source file (forced include - no source file names
-     it). Imported by RM_Engine and RMTests after RM.Common.props. Not by RMGameKit (its objects become
-     the game kit's libraries: a game would have to link the header's object too), RMBase, RMJolt or
-     rmgen (small, or rarely built). Measured (Debug): a file 0.3 .. 1.3 s less to compile. -->
+<!-- プリコンパイル済みヘッダー (2026-11-20): base/pch/StdPch.h (よく使う標準ライブラリのヘッダー) を
+     プロジェクトごとに 1 回コンパイルし、全ソースの前に読み込む (強制インクルード。どのソースにも
+     名前は書かない)。RM.Common.props の後に RM_Engine と RMTests が取り込む。RMGameKit は取り込まない
+     (そのオブジェクトがゲームキットのライブラリになり、ゲームはヘッダーのオブジェクトも
+     リンクする羽目になる)。RMBase・RMJolt・rmgen も取り込まない (小さいか、めったにビルドしない)。
+     計測 (Debug): 1 ファイルのコンパイルが 0.3 〜 1.3 秒短くなった。 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemDefinitionGroup>
     <ClCompile>

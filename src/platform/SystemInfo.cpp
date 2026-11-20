@@ -21,7 +21,7 @@ namespace rm::platform {
 
 namespace {
 
-// The monitors' own names (DisplayConfig: what the monitor tells Windows), by GDI device ("\\.\DISPLAY1").
+// モニター自身の名前 (DisplayConfig: モニターが Windows に伝えるもの)。GDI のデバイス ("\\.\DISPLAY1") ごと。
 std::vector<std::pair<std::wstring, std::wstring>> FriendlyNames() {
     std::vector<std::pair<std::wstring, std::wstring>> out;
     UINT32 paths = 0, modes = 0;
@@ -94,7 +94,7 @@ std::vector<MonitorDesc> Monitors(HWND window) {
             if (device == d.device && !name.empty()) d.name = name;
         }
         if (d.name.empty()) {
-            // (no name from the monitor: the display adapter's words for it)
+            // (モニターからの名前が無い: ディスプレイアダプターがそれを指す言葉)
             DISPLAY_DEVICEW dd{};
             dd.cb = sizeof(dd);
             d.name = EnumDisplayDevicesW(d.device.c_str(), 0, &dd, 0) && dd.DeviceString[0] ? std::wstring(dd.DeviceString) : d.device;
@@ -161,7 +161,7 @@ std::wstring DefaultAudioOutput() {
         FAILED(devices->GetDefaultAudioEndpoint(eRender, eConsole, &device)) || FAILED(device->OpenPropertyStore(STGM_READ, &props))) {
         return {};
     }
-    // PKEY_Device_FriendlyName (written here: its header wants its definitions linked in from elsewhere)
+    // PKEY_Device_FriendlyName (ここに書く: そのヘッダーは、定義を別の所からリンクしてくることを求めるため)
     static const PROPERTYKEY kFriendlyName{{0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
     PROPVARIANT name;
     PropVariantInit(&name);
@@ -182,7 +182,7 @@ ProcessMemory MemoryOfThisProcess() {
     }
     DWORD handles = 0;
     if (GetProcessHandleCount(GetCurrentProcess(), &handles)) m.handles = handles;
-    // The threads of this process (the system's list of every thread: one walk).
+    // このプロセスのスレッド (システムの全スレッドの一覧から: 1 回なぞる)。
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (snap != INVALID_HANDLE_VALUE) {
         THREADENTRY32 te{};
@@ -212,7 +212,7 @@ MemoryStatus MemoryOfThePc() {
 
 CpuDesc Cpu() {
     CpuDesc d;
-    // The name the CPU tells itself (CPUID 0x80000002..4), without the spaces around it.
+    // CPU が自分に言う名前 (CPUID 0x80000002..4)。前後の空白は除く。
     int regs[4] = {};
     __cpuid(regs, static_cast<int>(0x80000000));
     if (static_cast<unsigned>(regs[0]) >= 0x80000004u) {
@@ -235,7 +235,7 @@ CpuDesc Cpu() {
         if (RegGetValueW(HKEY_LOCAL_MACHINE, kKey, L"ProcessorNameString", RRF_RT_REG_SZ, nullptr, name, &size) == ERROR_SUCCESS) d.name = name;
     }
     d.threads = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
-    // The cores, and their kinds (a hybrid CPU: the cores of the highest efficiency class are the fast ones).
+    // コアと、その種類 (ハイブリッド CPU: 効率クラスが一番高いコアが速いコア)。
     DWORD len = 0;
     GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
     std::vector<uint8_t> buf(len);
@@ -268,7 +268,7 @@ std::optional<CpuMeter::Usage> CpuMeter::Sample() {
     const uint64_t i = Ticks(idle), k = Ticks(kernel), u = Ticks(user), p = Ticks(pk) + Ticks(pu);
     std::optional<Usage> out;
     if (has_) {
-        // (the system's kernel time counts its idle time too)
+        // (システムのカーネル時間は、アイドル時間も数える)
         const double all = static_cast<double>((k - kernel_) + (u - user_));
         if (all > 0) {
             Usage use;

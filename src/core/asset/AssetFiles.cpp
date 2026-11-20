@@ -71,7 +71,7 @@ namespace {
 
 bool WriteText(const fs::path& p, const std::string& text) { return WriteMetaFile(p, text); }
 
-// Windows' words for an error (UTF-8; std::error_code::message is in the ANSI code page).
+// Windows のエラーの言葉 (UTF-8。std::error_code::message は ANSI コードページ)。
 std::string ErrorWords(const std::error_code& ec) {
 #ifdef _WIN32
     wchar_t* buf = nullptr;
@@ -85,7 +85,7 @@ std::string ErrorWords(const std::error_code& ec) {
     return std::format("エラー {}", ec.value());
 }
 
-// When a file was made (Windows: the creation time; a copy gets a new one, a move keeps it). 0 = unknown.
+// ファイルが作られた時刻 (Windows: 作成日時。コピーは新しくなり、移動は保つ)。0 = 不明。
 int64_t CreatedAt(const fs::path& p) {
 #ifdef _WIN32
     struct _stat64 st {};
@@ -95,8 +95,8 @@ int64_t CreatedAt(const fs::path& p) {
     return 0;
 }
 
-// May the .meta at `p` be written? Only when it is not there, or it is one this engine can read
-// whole - a broken or locked one is never written over (what it holds would be lost).
+// `p` の .meta を書いてよいか? ないときか、このエンジンが全部読める .meta のときだけ -
+// 壊れた・ロックされたものには決して上書きしない (入っているものが失われる)。
 bool SafeToWrite(const fs::path& p, std::string& old, std::string& why) {
     old.clear();
     std::error_code ec;
@@ -126,7 +126,7 @@ std::string Rel(const fs::path& root, const fs::path& p) {
 std::wstring FoldCase(std::wstring_view path) {
     std::wstring s(path);
 #ifdef _WIN32
-    // Upper case, as the file system compares names (not the user's language's rules).
+    // 大文字にする。ファイルシステムが名前を比べるのと同じやり方 (ユーザーの言語の決まりではない)。
     if (!s.empty()) CharUpperBuffW(s.data(), static_cast<DWORD>(s.size()));
 #endif
     return s;
@@ -142,8 +142,8 @@ fs::path MetaPath(const fs::path& root, std::string_view path) {
 
 namespace {
 
-// What a .meta says: from the cache when it is the same size with the same time, else read (and
-// kept). One that cannot be read is not kept (tried again next time).
+// .meta の中身: 大きさと時刻が同じならキャッシュから、違えば読む (そして保つ)。
+// 読めなかったものは保たない (次にまた試す)。
 bool ReadMetaCached(const fs::path& meta, uintmax_t size, fs::file_time_type time, MetaCache* cache, MetaInfo& info, int64_t& created) {
     if (cache) {
         const auto it = cache->byPath.find(meta.native());
@@ -180,13 +180,13 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
     struct MetaFile {
         uintmax_t size = 0;
         fs::file_time_type time{};
-        bool known = false;  // size and time could be read from the listing
-        fs::path path;       // as it is spelled in the folder
+        bool known = false;  // 大きさと時刻を一覧から読めた
+        fs::path path;       // フォルダーでの綴りのまま
     };
-    // Every .meta under root, by its path with the case folded: Windows sees "tree.png.meta" as the
-    // .meta of "Tree.png" too (a file renamed only in its case keeps its .meta - and its id).
+    // root 以下の全 .meta を、大文字小文字を畳んだパスで: Windows は "tree.png.meta" も
+    // "Tree.png" の .meta とみなす (大文字小文字だけ変えた名前のファイルは、.meta - と id - を保つ)。
     std::unordered_map<std::wstring, MetaFile> metas;
-    std::vector<std::pair<fs::path, bool>> items;       // every file / folder (not ignored)
+    std::vector<std::pair<fs::path, bool>> items;       // 全ファイル / フォルダー (無視しないもの)
     for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
          it.increment(ec)) {
         if (stopping()) return out;
@@ -195,7 +195,7 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
         std::error_code e2;
         const bool folder = it->is_directory(e2);
         if (!folder && name.size() > kMetaSuffix.size() && Extension(name) == kMetaSuffix) {
-            // (the listing already has the size and the time: no more calls to Windows for them)
+            // (一覧にはすでに大きさと時刻があるので、そのために Windows をもう呼ばない)
             MetaFile m;
             std::error_code e3, e4;
             m.size = it->file_size(e3);
@@ -212,8 +212,8 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
         items.emplace_back(p, folder);
     }
     if (ec) {
-        // Listed only in part (not a folder it may not enter: those are skipped). Without the rest, the
-        // files after it would look gone and a folder without its .meta would get a new id: not used.
+        // 一部だけ一覧にできた (入れないフォルダーは飛ばしてあるので、それではない)。残りがないと、
+        // その後のファイルは消えたように見え、.meta のないフォルダーに新しい id が付いてしまう: 使わない。
         out = {};
         out.stopped = true;
         out.problem = ErrorWords(ec);
@@ -221,7 +221,7 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
     }
     std::unordered_map<std::wstring, bool> itemSet;
     for (const auto& [p, folder] : items) itemSet.emplace(FoldCase(p.native()), folder);
-    std::unordered_map<std::wstring, bool> seen;  // the .meta files used by this look (the rest leave the cache)
+    std::unordered_map<std::wstring, bool> seen;  // この調べで使った .meta ファイル (残りはキャッシュから消える)
 
     for (const auto& [p, folder] : items) {
         if (stopping()) return out;
@@ -234,7 +234,7 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
         if (m == metas.end()) {
             f.meta = MetaState::None;
         } else {
-            meta = m->second.path;  // (its own spelling: the cache's key)
+            meta = m->second.path;  // (それ自身の綴り: キャッシュのキー)
             seen[meta.native()] = true;
             MetaInfo info;
             int64_t created = 0;
@@ -258,7 +258,7 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
         target.replace_extension();  // "a.png.meta" -> "a.png"
         if (itemSet.contains(FoldCase(target.native()))) continue;
         std::error_code e2;
-        if (fs::exists(target, e2)) continue;  // (an ignored file's .meta)
+        if (fs::exists(target, e2)) continue;  // (無視したファイルの .meta)
         seen[metaPath] = true;
         MetaInfo info;
         int64_t created = 0;
@@ -266,7 +266,7 @@ Scan ScanFolder(const fs::path& root, MetaCache* cache, std::stop_token stop) {
         if (info.state == MetaState::Ok || info.state == MetaState::Damaged) out.orphans.push_back({Rel(root, target), info.guid});
     }
     if (cache) std::erase_if(cache->byPath, [&](const auto& kv) { return !seen.contains(kv.first); });
-    // (a stable order for the orphans: the map has none)
+    // (孤児の安定した順番: map には順番がない)
     std::sort(out.orphans.begin(), out.orphans.end(), [](const Orphan& a, const Orphan& b) { return a.path < b.path; });
     std::vector<Entry> tmp;
     tmp.reserve(out.found.size());
@@ -284,7 +284,7 @@ void ApplyPlan(const fs::path& root, const Plan& plan, std::vector<std::string>&
         const fs::path to = MetaPath(root, m.to);
         fs::rename(MetaPath(root, m.from), to, ec);
         if (ec) {
-            // Could not move it (in use?): write a new one with the same id instead (never over one there).
+            // 動かせなかった (使用中?): 代わりに同じ id で新しいものを書く (そこにあるものには決して上書きしない)。
             std::string old, why, there;
             const bool readable = ReadText(MetaPath(root, m.from), old) && ReadMeta(old).state == MetaState::Ok;
             if (!readable || !SafeToWrite(to, there, why) || !there.empty() || !WriteText(to, MetaText(old, *GuidInMeta(old)))) {
@@ -315,14 +315,14 @@ std::string GiveId(const fs::path& root, std::string_view path, const std::strin
     const fs::path meta = MetaPath(root, path);
     std::string old, why;
     if (!SafeToWrite(meta, old, why)) {
-        // There, but not readable whole: its id when one can be picked out, never written over.
+        // あるが全部は読めない: 取り出せるなら id を返し、決して上書きしない。
         std::string text;
         if (ReadText(meta, text)) {
             if (const MetaInfo info = ReadMeta(text); info.state == MetaState::Damaged) return info.guid;
         }
         return {};
     }
-    if (!old.empty()) return ReadMeta(old).guid;  // it has one already
+    if (!old.empty()) return ReadMeta(old).guid;  // すでに持っている
     if (!WriteText(meta, MetaText(old, guid, FileNameOf(path)))) return {};
     return guid;
 }
@@ -357,7 +357,7 @@ std::vector<Entry> ReadIndex(const fs::path& root) {
 }
 
 std::string NewGuid() {
-    static std::mutex mutex;  // (looks run on the editor's Worker; the UI thread makes ids too)
+    static std::mutex mutex;  // (調べは エディターの Worker で動き、UI スレッドも id を作る)
     std::lock_guard lock(mutex);
     static std::mt19937_64 rng = [] {
         std::random_device rd;

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Jolt Physics (third_party/JoltPhysics: MIT, the source as it is - see its LICENSE): one static library,
-     built once and linked by the editor, the tests and the game kit (make_gamekit.ps1 puts it into the
-     kit's core.lib: an exported game links what it uses of it). Design: TestEngine NewEngineBluePrint 9-c / 9-f.
-     Its settings (JPH_* in RM.Common.props) are the same for every project and both configurations: Jolt
-     checks at start that the library and the code using it agree (JPH::VerifyJoltVersionID).
-     Its own warnings are not ours to fix: they are turned off for its files only (the engine's code stays at /W4). -->
+<!-- Jolt Physics (third_party/JoltPhysics: MIT、ソースはそのまま。LICENSE を見ること): 静的ライブラリ 1 つ。
+     1 回ビルドして、エディター・テスト・ゲームキットがリンクする (make_gamekit.ps1 がキットの core.lib に入れる。
+     書き出したゲームは、そのうち使う分だけをリンクする)。設計: TestEngine NewEngineBluePrint 9-c / 9-f。
+     設定 (RM.Common.props の JPH_*) は全プロジェクト・両方の構成で同じ。Jolt は起動時に、
+     ライブラリとそれを使うコードが合っているか調べる (JPH::VerifyJoltVersionID)。
+     Jolt の警告はこちらで直すものではないので、Jolt のファイルだけ警告を切る (エンジンのコードは /W4 のまま)。 -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -42,12 +42,12 @@
     <ClCompile>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <SDLCheck>false</SDLCheck>
-      <!-- no debug information in the game's objects (no .pdb, no path of this PC through it) -->
+      <!-- ゲームのオブジェクトにはデバッグ情報を入れない (.pdb なし、この PC のパスも残らない) -->
       <DebugInformationFormat>None</DebugInformationFormat>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <!-- one object folder per source folder: Jolt has files of the same name in different folders -->
+    <!-- ソースのフォルダーごとにオブジェクトのフォルダーを 1 つ: Jolt には別のフォルダーに同名のファイルがある -->
     <ClCompile Include="third_party\JoltPhysics\Jolt\**\*.cpp">
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
     </ClCompile>

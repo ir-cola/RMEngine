@@ -1,15 +1,15 @@
 #pragma once
-// Process-wide log (pure). Platform code adds sinks (debugger output, log file);
-// the editor console reads Snapshot().
+// プロセス全体のログ (純粋)。プラットフォームのコードがシンク (デバッガー出力、ログファイル) を足し、
+// エディターのコンソールは Snapshot() を読む。
 //
-// Any thread may write (a worker reading a model, making thumbnails ...). Sinks come in two kinds:
-//   Delivery::AnyThread  called on the writer's thread, right away - the sink must be thread-safe
-//                        (the debugger output, the log file with its own lock)
-//   Delivery::Queued     the entry waits in a queue until the owner's thread calls DeliverQueued()
-//                        (the UI: it touches windows that only the UI thread may touch). SetWake
-//                        is called when the queue gets something, so a waiting thread wakes up.
-// RemoveSink returns only when the sink is no longer being called on another thread, and it is never
-// called afterwards (an object may remove its sink in its destructor). Tested in tests/TestBase.cpp.
+// どのスレッドからも書ける (モデルを読むワーカー、サムネイルを作るワーカーなど)。シンクは 2 種類:
+//   Delivery::AnyThread  書いたスレッドですぐ呼ぶ - シンクはスレッドセーフでなければならない
+//                        (デバッガー出力、専用のロックを持つログファイル)
+//   Delivery::Queued     持ち主のスレッドが DeliverQueued() を呼ぶまで、エントリーはキューで待つ
+//                        (UI 用: UI スレッドしか触れないウィンドウを触るため)。キューに何か入ると
+//                        SetWake が呼ばれ、待っているスレッドが起きる。
+// RemoveSink は、シンクが他のスレッドで呼ばれなくなってから戻り、その後は二度と呼ばれない
+// (オブジェクトがデストラクターで自分のシンクを外してよい)。テストは tests/TestBase.cpp。
 
 #include <cstdint>
 #include <format>
@@ -23,7 +23,7 @@ enum class Level : uint8_t { Info, Warn, Error };
 
 struct Entry {
     Level level = Level::Info;
-    double time = 0.0;  // seconds since the first log call
+    double time = 0.0;  // 最初のログ呼び出しからの秒数
     uint64_t seq = 0;   // 1, 2, 3 ...
     std::string text;   // UTF-8
 };
@@ -35,20 +35,20 @@ enum class Delivery : uint8_t { AnyThread, Queued };
 int AddSink(Sink sink, Delivery delivery = Delivery::AnyThread);
 void RemoveSink(int id);
 
-// Queued sinks: the entries waiting for them, given now on this thread (in the order written). At most
-// 2000 wait; older ones are dropped (each sink still gets the newest).
+// Queued のシンク: 待っているエントリーを、今このスレッドで渡す (書いた順)。待つのは最大
+// 2000 件で、古いものは捨てる (どのシンクにも新しい分は届く)。
 void DeliverQueued();
-// Called (on the writer's thread, outside the log's lock) when an entry starts waiting in the queue
-// that was empty: wakes the thread that calls DeliverQueued. Empty: none.
+// 空だったキューでエントリーが待ち始めたときに (書いたスレッドで、ログのロックの外で) 呼ばれ、
+// DeliverQueued を呼ぶスレッドを起こす。空: 何もしない。
 void SetWake(std::function<void()> wake);
 
 void Write(Level level, std::string text);
 
-// The newest entries (at most 2000 are kept).
+// 新しいエントリー (最大 2000 件まで残す)。
 std::vector<Entry> Snapshot();
 uint64_t LastSeq();
-// How many messages of each level were written since the program started, or since ResetCounted
-// (the debug panel: 数を 0 に戻す). The messages themselves stay.
+// プログラムが始まってから (または ResetCounted から) 書かれたメッセージの、レベルごとの数
+// (デバッグパネル: 数を 0 に戻す)。メッセージ自体は残る。
 struct Counts {
     uint64_t info = 0, warn = 0, error = 0;
 };

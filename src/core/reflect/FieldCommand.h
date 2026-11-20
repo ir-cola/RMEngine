@@ -1,7 +1,7 @@
 #pragma once
-// The one undo command for "a field of a reflected object was changed" - whatever the type.
-// Every edit UI (the inspector today, gizmos and others later) pushes this, so "edit = undo entry
-// = unsaved" holds without each UI writing its own command (rule 7 of CLAUDE.md).
+// 「リフレクションのオブジェクトのフィールドが変わった」ための Undo コマンドは、これ 1 つ - 型は問わない。
+// 編集 UI (今はインスペクター、後でギズモなど) はどれもこれを積むので、各 UI が自前のコマンドを
+// 書かなくても、「編集 = Undo のエントリー = 未保存」が成り立つ (CLAUDE.md の憲法 7)。
 
 #include "core/UndoHistory.h"
 #include "core/reflect/Data.h"
@@ -12,7 +12,7 @@
 
 namespace rm::reflect {
 
-// Where the edited object is at the moment the command runs (it may have been reloaded since).
+// コマンドが動く時点で、編集するオブジェクトがどこにあるか (その間に読み込み直されたかもしれない)。
 struct EditTarget {
     void* object = nullptr;
     Unknowns* unknowns = nullptr;
@@ -20,9 +20,8 @@ struct EditTarget {
 
 class SetFieldCommand final : public ICommand {
 public:
-    // mergeKey != 0: later commands with the same key, the same field and the same object (where
-    // `resolve` points now) join this one - the keys typed into one field while it has the focus are
-    // one undo entry.
+    // mergeKey != 0: 同じキー、同じフィールド、同じオブジェクト (`resolve` が今指す先) を持つ後のコマンドは
+    // これに合流する - フォーカスがある間に 1 つのフィールドへ打ったキーは、Undo の 1 エントリーになる。
     SetFieldCommand(const TypeDesc& type, FieldPath path, json::Value before, json::Value after,
                     std::function<EditTarget()> resolve, std::string label, uint64_t mergeKey = 0);
 

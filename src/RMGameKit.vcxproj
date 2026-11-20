@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The game kit: what an exported game is linked from (design NewEngineBluePrint 11-b, RME_PLATFORM 5-a
-     "書き出しを作り直す"). Compiles the layers that ship in games (base, core, platform, ui, game) and every
-     plugin's runtime/, then tools/make_gamekit.ps1 groups the objects into one .lib for the core and one
-     per plugin, next to the editor:  <exe folder>/GameKit/  (kit.json, lib/core.lib, lib/<author>/<name>/runtime.lib,
-     the reflected types' files of each lib). The export links only the libs of the plugins a game uses.
-     The same flags as the editor (RM.Common.props); the RMGameKit.lib this project also makes is not used. -->
+<!-- ゲームキット: 書き出したゲームがリンクして作られる元。ゲームに入る層 (base, core, platform, ui, game) と
+     全プラグインの runtime/ をコンパイルし、tools/make_gamekit.ps1 がオブジェクトを核用に 1 つ、
+     プラグインごとに 1 つの .lib にまとめて、エディターの隣に置く:  <exe のフォルダー>/GameKit/
+     (kit.json, lib/core.lib, lib/<作者>/<名前>/runtime.lib、各 lib のリフレクション型のファイル)。
+     書き出しは、ゲームが使うプラグインの lib だけをリンクする。
+     設定はエディターと同じ (RM.Common.props)。このプロジェクトが作る RMGameKit.lib 自体は使わない。
+     (設計 NewEngineBluePrint 11-b、RME_PLATFORM 5-a「書き出しを作り直す」) -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -40,7 +41,7 @@
   </ImportGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <!-- no debug information in the game's objects (no .pdb, no path of this PC through it) -->
+      <!-- ゲームのオブジェクトにはデバッグ情報を入れない (.pdb なし、この PC のパスも残らない) -->
       <DebugInformationFormat>None</DebugInformationFormat>
     </ClCompile>
   </ItemDefinitionGroup>
@@ -50,19 +51,19 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
-    <!-- Jolt Physics: built first, put into the kit's core.lib (make_gamekit.ps1 -ExtraCoreLibs) -->
+    <!-- Jolt Physics: 最初にビルドし、キットの core.lib に入れる (make_gamekit.ps1 -ExtraCoreLibs) -->
     <ProjectReference Include="RMJolt.vcxproj">
       <Project>{B31C7F8A-3629-44F3-8AFD-E51A26C76E5B}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
   </ItemGroup>
-  <!-- The layers that ship in games (layers.txt: "yes"): one object folder per source folder under k\ -->
+  <!-- ゲームに入る層 (layers.txt で "yes" のもの): ソースのフォルダーごとに k\ の下に 1 つオブジェクトのフォルダー -->
   <ItemGroup>
     <ClCompile Include="base\*.cpp;core\**\*.cpp;platform\*.cpp;ui\*.cpp;game\*.cpp">
       <ObjectFileName>$(IntDir)k\%(RelativeDir)</ObjectFileName>
     </ClCompile>
-    <!-- every plugin's runtime/ (not the scripts inside templates/): its objects under plugins\<author>\<name>\ -->
+    <!-- 全プラグインの runtime/ (templates/ の中のスクリプトは除く): オブジェクトは plugins\<作者>\<名前>\ の下 -->
     <ClCompile Include="..\plugins\**\runtime\**\*.cpp" Exclude="..\plugins\**\templates\**">
       <ObjectFileName>$(IntDir)k\%(RelativeDir)</ObjectFileName>
     </ClCompile>
@@ -72,8 +73,8 @@
     <RmGenRoots>--root "$(RMRoot)src" --root "$(RMRoot)plugins"</RmGenRoots>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <!-- Reflection: the same generator as the editor; only the files of shipping headers are compiled
-       (not the editor's, not rm_all_types.cpp - an exported game's generated main lists its own types). -->
+  <!-- リフレクション: エディターと同じ生成器。コンパイルするのはゲームに入るヘッダーのファイルだけ
+       (エディターのものと rm_all_types.cpp は除く。書き出したゲームの生成 main が自分の型を並べる)。 -->
   <Target Name="RmGenKit" BeforeTargets="ClCompile">
     <Exec Command="&quot;$(OutDir)rmgen.exe&quot; --out &quot;$(RmGenOut).&quot; $(RmGenRoots)" StdOutEncoding="UTF-8" />
     <MakeDir Directories="$(IntDir)generated" />

@@ -9,7 +9,7 @@ namespace {
 
 constexpr char kMagic[8] = {'R', 'M', 'P', 'A', 'K', 0, 0, 0};
 constexpr size_t kHeaderSize = 8 + 4 + 4 + 8 + 8 + 8;
-constexpr uint64_t kIndexStream = ~uint64_t{0};  // the index's stream
+constexpr uint64_t kIndexStream = ~uint64_t{0};  // 索引のストリーム
 
 template <class T>
 void Put(std::string& out, T v) {

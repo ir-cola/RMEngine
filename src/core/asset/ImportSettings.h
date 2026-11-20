@@ -1,13 +1,13 @@
 #pragma once
-// How an asset is read ("取り込みの設定"): kept in its .meta under "import", next to the id -
+// アセットの読み方 ("取り込みの設定"): その .meta の "import" に、id の隣に保つ -
 //   { "guid": "...", "import": { "scale": 0.01, "up": "Z" } }
-// Written once here as RM_STRUCTs, so saving, loading, the インスペクター and undo come from them (rule 9).
-// Keys of a newer version inside "import" (and around it) are written back unchanged (rule 6).
+// ここに RM_STRUCT として 1 回だけ書くので、保存・読み込み・インスペクター・Undo はそれから作られる (憲法 9)。
+// 新しいバージョンの "import" の中 (とそのまわり) のキーは、そのまま書き戻す (憲法 6)。
 //
-// The editor shows them when an asset is selected in the アセット panel and writes the .meta at once.
-// Whoever reads the asset (a plugin: the 3D model loader, the textures, the 2D sprites) reads them
-// with ReadImport and reads the file again when ChangedAt moves (the file OR its .meta changed).
-// The game reads the same .meta files.
+// アセットをアセットパネルで選ぶと、エディターがそれを見せ、すぐ .meta を書く。
+// アセットを読む人 (プラグイン: 3D モデルのローダー、テクスチャ、2D スプライト) は ReadImport で
+// 読み、ChangedAt が動いたらファイルをまた読む (ファイルか .meta が変わった)。
+// ゲームも同じ .meta ファイルを読む。
 
 #include "base/Json.h"
 #include "core/asset/AssetIndex.h"
@@ -52,8 +52,8 @@ enum class SoundStream {
     RM_ITEM(Label="しない (全部解いて持つ)") Never,
 };
 
-// A sound (音: WAV / OGG / MP3 ...). Read by the 音 plugin (rm_engine/audio) - the core knows the
-// settings, not the sound.
+// 音 (WAV / OGG / MP3 など)。音プラグイン (rm_engine/audio) が読む - 核が知っているのは
+// 設定で、音ではない。
 RM_STRUCT(Label="音の取り込み")
 struct SoundImport {
     RM_PROPERTY(Edit, Label="音量", Tooltip="この音をいつも何倍の大きさで鳴らすか (音源の部品・スクリプトの音量にさらに掛かります)", Min=0, Max=4, Step=0.01) float volume = 1;
@@ -75,7 +75,7 @@ enum class TextureWrap {
     RM_ITEM(Label="鏡のように反転") Mirror,
 };
 
-// (Before 2026-11-18 the filter was a bool "sharp": MigrateImport reads it as `filter`.)
+// (2026-11-18 より前は、フィルターは bool の "sharp" だった: MigrateImport が `filter` として読む。)
 RM_STRUCT(Label="画像の取り込み")
 struct ImageImport {
     RM_PROPERTY(Edit, Label="フィルタ", Tooltip="滑らか: 拡大・縮小をなめらかに / くっきり: 拡大してもぼかさず、ピクセルをそのまま大きくします (ドット絵。3D のテクスチャと 2D のスプライト)") TextureFilter filter = TextureFilter::Smooth;
@@ -88,22 +88,22 @@ struct ImageImport {
     RM_PROPERTY(Edit, Label="圧縮", Tooltip="3D のテクスチャとして GPU でどの形で持つか。自動: 不透明な色は BC1、透明のある色は BC7 (古い GPU では BC3)、ノーマルマップは BC5、1 チャンネルの数は BC4。なし: 圧縮しない (メモリは 4〜8 倍)") TextureCompression compression = TextureCompression::Auto;
 };
 
-// The settings type of a kind of asset (null: it has none).
+// アセットの種類の設定の型 (null: 持たない)。
 const reflect::TypeDesc* ImportTypeOf(Kind kind);
 
-// Pure: settings written by an older version, as this one names them (in place). Now: an image's
-// "sharp": true/false becomes "filter": "Sharp"/"Smooth" (unless "filter" is there already).
+// 純粋: 古いバージョンが書いた設定を、このバージョンの名前に直す (その場で)。今のところ: 画像の
+// "sharp": true/false が "filter": "Sharp"/"Smooth" になる ("filter" がすでにあれば除く)。
 void MigrateImport(json::Value& import);
 
-// Pure: the "import" object of a .meta's text (an empty object when there is none; migrated), and the
-// text with another one (every other key kept).
+// 純粋: .meta のテキストの "import" オブジェクト (なければ空のオブジェクト。移行済み) と、
+// それを別のものに替えたテキスト (他のキーは全部残す)。
 json::Value ImportInMeta(std::string_view metaText);
 std::string MetaWithImport(std::string_view metaText, const json::Value& import);
 
-// Files: the import settings of `file` (an asset's full path; read from "<file>.meta").
+// ファイル: `file` (アセットのフルパス) の取り込みの設定。"<file>.meta" から読む。
 json::Value ReadImportJson(const std::filesystem::path& file);
-// Writes them into its .meta. A .meta that is not there is made with `guid` (the asset's id, when it is
-// known); one that is locked or broken is never written over. False: could not.
+// それを .meta に書く。.meta がなければ `guid` (アセットの id。分かっていれば) で作る。
+// ロックされた・壊れたものには決して上書きしない。False: できなかった。
 bool WriteImportJson(const std::filesystem::path& file, const json::Value& import, const std::string& guid = {});
 template <class T>
 T ReadImport(const std::filesystem::path& file) {
@@ -111,8 +111,8 @@ T ReadImport(const std::filesystem::path& file) {
     reflect::Load(t, ReadImportJson(file));
     return t;
 }
-// The later of the file's and its .meta's times: when it moves, read the asset again (a setting
-// changed counts as the file changing). `ec` is set when the file itself is not there.
+// ファイルとその .meta の時刻の新しいほう: 動いたらアセットをまた読む (設定を変えたら、
+// ファイルが変わったのと同じ扱い)。ファイル自体がないときは `ec` が入る。
 std::filesystem::file_time_type ChangedAt(const std::filesystem::path& file, std::error_code& ec);
 
 }  // namespace rm::asset

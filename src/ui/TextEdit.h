@@ -1,6 +1,6 @@
 #pragma once
-// Single-line text editing state (pure): caret, selection, insert / delete,
-// surrogate-pair aware. The TextField widget draws it; this file only edits.
+// 1 行のテキスト編集の状態 (純粋): キャレット、選択、挿入 / 削除、
+// サロゲートペア対応。TextField ウィジェットがこれを描く。このファイルは編集だけをする。
 
 #include <string>
 #include <string_view>
@@ -21,7 +21,7 @@ public:
 
     void SetMaxLength(size_t n) { maxLength_ = n; }
 
-    // extend = keep the anchor (Shift held). word = Ctrl held.
+    // extend = アンカーを保つ (Shift を押している)。word = Ctrl を押している。
     void SetCaret(size_t pos, bool extend);
     void MoveLeft(bool extend, bool word);
     void MoveRight(bool extend, bool word);
@@ -29,8 +29,8 @@ public:
     void End(bool extend) { SetCaret(text_.size(), extend); }
     void SelectAll();
 
-    // All return true when the text changed.
-    // Insert replaces the selection. Line breaks become spaces, other control chars are dropped.
+    // すべて、テキストが変わったら true を返す。
+    // Insert は選択を置き換える。改行は空白になり、ほかの制御文字は捨てる。
     bool Insert(std::wstring_view s);
     bool Backspace(bool word);
     bool Delete(bool word);
@@ -41,7 +41,7 @@ private:
     size_t NextChar(size_t i) const;
     size_t PrevWord(size_t i) const;
     size_t NextWord(size_t i) const;
-    size_t Snap(size_t i) const;  // never stop between the two halves of a surrogate pair
+    size_t Snap(size_t i) const;  // サロゲートペアの 2 つの半分の間には決して止まらない
 
     std::wstring text_;
     size_t caret_ = 0;

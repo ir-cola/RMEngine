@@ -1,8 +1,8 @@
-// The standard library headers the engine uses most, compiled once per project (a precompiled header,
-// src/RM.Pch.props) and read before every source file of RM_Engine and RMTests (forced include: the
-// sources do not include this file themselves and still include what they use). Only the standard
-// library: never Windows, Direct3D or the engine's own headers (those change, or would let every file
-// see Windows - the layers in layers.txt stay what the includes say).
+// エンジンがよく使う標準ライブラリのヘッダー。プロジェクトごとに 1 回コンパイルし (プリコンパイル済み
+// ヘッダー、src/RM.Pch.props)、RM_Engine と RMTests の全ソースの前に読み込む (強制インクルード:
+// ソース自身はこのファイルをインクルードせず、使うものは今まで通り自分でインクルードする)。標準
+// ライブラリだけ: Windows・Direct3D・エンジン自身のヘッダーは決して入れない (それらは変わるし、
+// 全ファイルから Windows が見えてしまう - layers.txt の層は、インクルードが示す通りのままにする)。
 #pragma once
 
 #include <algorithm>

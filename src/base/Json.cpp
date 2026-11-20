@@ -7,7 +7,7 @@
 namespace rm::json {
 
 // ---------------------------------------------------------------------------
-// Value
+// 値 (Value)
 // ---------------------------------------------------------------------------
 
 Value Value::MakeArray() {
@@ -66,14 +66,14 @@ size_t Value::IndexOf(std::string_view key) const {
             index_.Forget();
             index_.at = std::make_unique<std::unordered_map<std::string, size_t, KeyHash, std::equal_to<>>>();
             index_.at->reserve(obj_.size());
-            for (size_t i = 0; i < obj_.size(); ++i) index_.at->try_emplace(obj_[i].first, i);  // (the first of a key, as a search finds)
+            for (size_t i = 0; i < obj_.size(); ++i) index_.at->try_emplace(obj_[i].first, i);  // (キーの最初のもの。検索で見つかる通り)
             index_.size = obj_.size();
             index_.built = true;
         }
         const auto it = index_.at->find(key);
         if (it == index_.at->end()) return kNotFound;
         if (it->second < obj_.size() && obj_[it->second].first == key) return it->second;
-        index_.built = false;  // the list was changed from outside: build it again once
+        index_.built = false;  // 一覧が外から変えられた: 次に 1 回作り直す
     }
     return kNotFound;
 }
@@ -101,7 +101,7 @@ Value& Value::Set(std::string_view key, Value v) {
         return *existing;
     }
     obj_.emplace_back(std::string(key), std::move(v));
-    if (index_.built && index_.size + 1 == obj_.size()) {  // keep an up-to-date index up to date
+    if (index_.built && index_.size + 1 == obj_.size()) {  // 最新の索引は最新のまま保つ
         index_.at->try_emplace(obj_.back().first, obj_.size() - 1);
         index_.size = obj_.size();
     }
@@ -112,7 +112,7 @@ bool Value::Erase(std::string_view key) {
     const size_t i = IndexOf(key);
     if (i == kNotFound) return false;
     obj_.erase(obj_.begin() + static_cast<std::ptrdiff_t>(i));
-    index_.Forget();  // the keys after it moved
+    index_.Forget();  // これより後ろのキーが動いた
     return true;
 }
 
@@ -131,7 +131,7 @@ bool Value::operator==(const Value& o) const {
 }
 
 // ---------------------------------------------------------------------------
-// Parser
+// パーサー (Parser)
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -362,7 +362,7 @@ private:
                     uint32_t cp = 0;
                     if (!Hex4(cp)) return false;
                     if (cp >= 0xD800 && cp <= 0xDBFF) {
-                        // Try to read the low half of a surrogate pair.
+                        // サロゲートペアの下位半分を読んでみる。
                         if (p_ + 6 <= s_.size() && s_[p_] == '\\' && s_[p_ + 1] == 'u') {
                             const size_t save = p_;
                             p_ += 2;
@@ -423,7 +423,7 @@ private:
                 out = Value(iv);
                 return true;
             }
-            // Out of int64 range: fall through to double.
+            // int64 の範囲外: double に回す。
         }
         double dv = 0.0;
         auto r = std::from_chars(b, e, dv);
@@ -439,7 +439,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Writer
+// 書き出し (Writer)
 // ---------------------------------------------------------------------------
 
 void WriteString(std::string& o, const std::string& s) {
@@ -489,7 +489,7 @@ void WriteValue(std::string& o, const Value& v, int depth, bool pretty) {
             auto r = std::to_chars(buf, buf + sizeof(buf), d);
             std::string_view sv(buf, static_cast<size_t>(r.ptr - buf));
             o += sv;
-            // Keep the "this is a double" information so the round trip is stable.
+            // 「これは double だ」という情報を残し、往復しても結果が変わらないようにする。
             if (sv.find_first_of(".eE") == std::string_view::npos) o += ".0";
             break;
         }

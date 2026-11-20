@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Settings shared by every project. Each project gets its own intermediate folder
-     (two projects sharing one obj folder caused "already defined" link errors in the previous engine). -->
+<!-- 全プロジェクト共通の設定。プロジェクトごとに専用の中間フォルダーを持つ
+     (2 つのプロジェクトが 1 つの obj フォルダーを共有すると、前のエンジンで「定義済み」のリンクエラーが出た)。 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <RMRoot>$(MSBuildThisFileDirectory)..\</RMRoot>
     <OutDir>$(RMRoot)build\bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(RMRoot)build\obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
-    <!-- The C++ runtime every project is built with - written once here: the game kit tells the export
-         (GameKit/kit.json) so a game's generated main is compiled the same way. -->
+    <!-- 全プロジェクトのビルドに使う C++ ランタイム。ここに 1 回だけ書く。ゲームキットが書き出しに伝える
+         (GameKit/kit.json) ので、ゲームの生成 main も同じ設定でコンパイルされる。 -->
     <RmCrt Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RmCrt>
     <RmCrt Condition="'$(Configuration)'!='Debug'">MultiThreaded</RmCrt>
   </PropertyGroup>
@@ -18,11 +18,11 @@
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <!-- /FS: the compilers running side by side (UseMultiToolTask, ../Directory.Build.props) share one PDB -->
+      <!-- /FS: 並んで動くコンパイラー (UseMultiToolTask、../Directory.Build.props) が 1 つの PDB を共有する -->
       <AdditionalOptions>/utf-8 /Zc:__cplusplus /FS %(AdditionalOptions)</AdditionalOptions>
-      <!-- JPH_*: Jolt Physics' settings (RMJolt.vcxproj), the same for every project and both configurations
-           (Jolt checks that its library and the code using it agree). Results that do not depend on the CPU
-           (the same steps give the same positions on every PC): replays and tests stay true. -->
+      <!-- JPH_*: Jolt Physics の設定 (RMJolt.vcxproj)。全プロジェクト・両方の構成で同じにする
+           (Jolt はライブラリと、それを使うコードの設定が合っているか調べる)。結果が CPU によらない
+           (同じ手順なら、どの PC でも同じ位置になる) ので、リプレイとテストが正しく保てる。 -->
       <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;UNICODE;_UNICODE;JPH_CROSS_PLATFORM_DETERMINISTIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory);$(MSBuildThisFileDirectory)third_party\JoltPhysics;$(RMRoot)plugins;$(RMRoot)resources;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>

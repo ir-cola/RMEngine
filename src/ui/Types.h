@@ -1,5 +1,5 @@
 #pragma once
-// Basic types of the core UI (the "foundation": no colors, no look).
+// 核の UI の基本の型 (「土台」: 色も見た目も無い)。
 
 #include "base/Math.h"
 
@@ -10,7 +10,7 @@
 
 namespace rm::ui {
 
-using Color = rm::Color;  // one colour type for data and drawing (base/Math.h)
+using Color = rm::Color;  // データと描画で色の型は 1 つ (base/Math.h)
 
 struct Rect {
     float x = 0, y = 0, w = 0, h = 0;
@@ -27,7 +27,7 @@ struct Rect {
     }
 };
 
-// Cut a strip off one side of r (r shrinks, the strip is returned).
+// r の片側から帯を切り取る (r は縮み、帯を返す)。
 inline Rect TakeTop(Rect& r, float h) {
     Rect t{r.x, r.y, r.w, h};
     r.y += h;
@@ -53,8 +53,8 @@ enum class Key : uint8_t {
     None, Left, Right, Up, Down, Home, End, PageUp, PageDown,
     Backspace, Delete, Enter, Escape, Tab, F2, F5,
     A, C, D, E, F, N, O, P, Q, R, S, V, W, X, Y, Z,
-    Space,  // (held: the 3D scene view flies up; typed text still comes as characters)
-    Count,  // the number of keys (for KeyDown)
+    Space,  // (押している間: 3D のシーンビューが上へ飛ぶ。入力した文字は、これまでどおり文字として届く)
+    Count,  // キーの数 (KeyDown 用)
 };
 
 struct KeyEvent {
@@ -64,7 +64,7 @@ struct KeyEvent {
 
 enum class Mouse : int { Left = 0, Right = 1, Middle = 2 };
 
-// Input collected by the window between two frames. Coordinates are DIPs.
+// フレームとフレームの間にウィンドウが集めた入力。座標は DIP。
 struct Input {
     float mouseX = -1e6f, mouseY = -1e6f;
     bool mouseInside = false;
@@ -72,21 +72,21 @@ struct Input {
     bool pressed[3] = {};
     bool released[3] = {};
     bool doubleClicked = false;
-    float wheel = 0.f;  // notches, + = away from the user
-    // How far the mouse moved since the last frame (DIPs). Keeps counting while the mouse is locked
-    // (Context::LockMouse), when mouseX / mouseY stay where the drag started.
+    float wheel = 0.f;  // ノッチ数。+ はユーザーから遠ざかる向き
+    // 前のフレームからマウスが動いた量 (DIP)。マウスをロックしている間 (Context::LockMouse) も数え続け、
+    // そのとき mouseX / mouseY はドラッグを始めた所に留まる。
     float mouseDX = 0.f, mouseDY = 0.f;
     bool ctrl = false, shift = false, alt = false;
 
-    bool keyDown[static_cast<int>(Key::Count)] = {};  // held now (kept across frames; cleared when the window loses the focus)
+    bool keyDown[static_cast<int>(Key::Count)] = {};  // 今押している (フレームをまたいで保つ。ウィンドウがフォーカスを失うと消す)
 
-    std::wstring chars;              // typed characters
-    std::vector<KeyEvent> keys;      // key presses (with repeat)
-    std::wstring imeResult;          // committed IME text
-    std::wstring imeComposition;     // text being composed (persists across frames)
+    std::wstring chars;              // 入力された文字
+    std::vector<KeyEvent> keys;      // キーの押下 (リピートつき)
+    std::wstring imeResult;          // 確定した IME のテキスト
+    std::wstring imeComposition;     // 変換中のテキスト (フレームをまたいで残る)
     int imeCursor = 0;
 
-    // Clears everything that only lives for one frame.
+    // 1 フレームだけ生きるものを全部消す。
     void EndFrame() {
         for (int i = 0; i < 3; ++i) pressed[i] = released[i] = false;
         doubleClicked = false;
@@ -108,7 +108,7 @@ struct TextStyle {
     HAlign h = HAlign::Left;
     VAlign v = VAlign::Center;
     bool wrap = false;
-    bool ellipsis = true;  // "…" when it does not fit (single line only)
+    bool ellipsis = true;  // 収まらないときは "…" (1 行のときだけ)
     Color color{1, 1, 1, 1};
 };
 
