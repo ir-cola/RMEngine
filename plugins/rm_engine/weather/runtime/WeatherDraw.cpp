@@ -95,8 +95,8 @@ public:
             surface_.data = WetSurfaceData(wet_, wetMaps_, snowCover_, snowMap_);
             out.surface = &surface_;
         }
-        // Deeper than a centimetre: the snow lying with its height (on the tops the map sees).
-        if (snowCover_ >= 0.01f && snowMap_ >= 0 && LayerReady(f.gfx)) {
+        // The snow lying with its height (on the tops the map sees; thin: in its patches).
+        if (snowCover_ > 0 && snowMap_ >= 0 && LayerReady(f.gfx)) {
             solids_.push_back([this](const space3d::ExtraDrawContext& dc) { DrawSnowLayer(dc); });
             out.solids = solids_;
         }

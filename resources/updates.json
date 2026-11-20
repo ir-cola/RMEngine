@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "積雪が途中で急に四角い層になるのを直した (まだらのまま厚くなる)。屋根や箱の縁では雪が薄くなって丸く終わる",
+          "en": "Snow no longer turns into a square sheet all at once (the patches grow thicker as they are), and it thins to a rounded edge at roof and box rims"
+        },
+        {
           "ja": "雪が積もるように (天候の「積もる高さ」まで。屋根の下には積もらず、やむと溶ける)。雪の粒を少し小さく",
           "en": "Snow now piles up (to the weather's Snow depth; none under roofs, and it melts when it stops). Snowflakes are a little smaller"
         },

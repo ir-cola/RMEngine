@@ -237,15 +237,20 @@ float WetAt(float3 wpos, float3 n) {
 // (surfaceData[0].z: its 向きの地図; under a roof: none). Thin snow: white patches growing together, all
 // of it white at 2 cm (deeper, the snow lying - SnowLayerVS - covers it with its height too).
 static const float3 kSnowWhite = float3(0.82, 0.84, 0.88);
+// Where thin snow lies (0 .. 1) at (x, z) on a face whose normal goes up `ny`, `depth` deep: patches
+// growing together, all of it at 2 cm. The same for the surface's white and the snow lying with its
+// height (SnowLayerPS): the patches get their height where they are.
+float SnowPatches(float2 xz, float ny, float depth) {
+    float cover = saturate(depth / 0.02) * smoothstep(0.2, 0.7, ny);
+    float patches = 0.6 * WetNoise(xz * 4) + 0.4 * WetNoise(xz * 17 + 3.1);
+    return cover >= 0.98 ? 1 : smoothstep(1 - cover - 0.06, 1 - cover + 0.06, patches);
+}
 float SnowAt(float3 wpos, float3 n) {
     float depth = surfaceData[0].y;
     if (depth <= 0 || n.y < 0.2) return 0;
     int m = (int)surfaceData[0].z;
     float open = m >= 0 && mapInfo[m].x > 0.5 ? saturate((0.06 - MapPast(m, wpos + n * 0.05)) / 0.06) : 1;
-    float cover = saturate(depth / 0.02) * smoothstep(0.2, 0.7, n.y);
-    float patches = 0.6 * WetNoise(wpos.xz * 4) + 0.4 * WetNoise(wpos.xz * 17 + 3.1);
-    float white = cover >= 0.98 ? 1 : smoothstep(1 - cover - 0.06, 1 - cover + 0.06, patches);
-    return open * white;
+    return open * SnowPatches(wpos.xz, n.y, depth);
 }
 
 // 濡れ and 積雪 on every surface (3D 空間's RenderFrame::surface): water in the surface makes it darker
@@ -266,8 +271,11 @@ void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, f
 const char kSnowLayerHlsl[] = R"(
 // 積雪 with its height (RenderFrame::solids): a grid around the eye (SnowLayerOf), each corner on the top
 // of what the snow reaches straight down (its 向きの地図), raised by how deep it lies. Where the top
-// steps (a roof's edge, a box's side) or there is none, the corner is left out (a corner at NaN: its
-// triangles are not drawn) - the snow ends there, as it lies on each top. Lit as the models are
+// steps: at the top of the step (a roof's edge, a box's rim) the snow thins to nothing at that corner -
+// a rounded edge; at its foot (beside a wall) and where there is no top the corner is left out (a corner
+// at NaN: its triangles are not drawn - no wall of snow down the step). Thin snow lies only in the
+// surface's patches (SnowPatches: the same pattern), so the patches get their height as they grow
+// (2026-11-20: a whole sheet came at once at 1 cm, square over the patches). Lit as the models are
 // (Shade: the sun's shadows fall on it). After RendererShaderText(kWetSurfaceHlsl).
 cbuffer SnowLayer : register(b4) {
     float4 snowGrid;  // xy: the grid's corner (world x z); z: a cell (m); w: cells a side
@@ -294,21 +302,27 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
     float d = SnowTop(xz - float2(0, pace)), u = SnowTop(xz + float2(0, pace));
     SnowOut o;
     float ledge = 0.15 + pace;  // (a step higher than a slope of 45 degrees and a bit)
-    if (h < -1e29 || abs(l - h) > ledge || abs(r - h) > ledge || abs(d - h) > ledge || abs(u - h) > ledge) {
+    bool foot = l - h > ledge || r - h > ledge || d - h > ledge || u - h > ledge;   // a neighbour far higher
+    bool rim = h - l > ledge || h - r > ledge || h - d > ledge || h - u > ledge;    // ... far lower (or none)
+    if (h < -1e29 || foot) {
         float nan = asfloat(0x7fc00000);
         o.pos = float4(nan, nan, nan, nan);
         o.nrm = float3(0, 1, 0);
         o.wpos = float3(0, 0, 0);
         return o;
     }
-    o.nrm = normalize(float3(l - r, 2 * pace, d - u));
-    o.wpos = float3(xz.x, h + snowInfo.x, xz.y);
+    // The slope from the neighbours on the same top (one across a step: as if level with this one).
+    float nl = abs(l - h) > ledge ? h : l, nr = abs(r - h) > ledge ? h : r;
+    float nd = abs(d - h) > ledge ? h : d, nu = abs(u - h) > ledge ? h : u;
+    o.nrm = normalize(float3(nl - nr, 2 * pace, nd - nu));
+    o.wpos = float3(xz.x, h + (rim ? 0.002 : max(snowInfo.x, 0.003)), xz.y);
     o.pos = mul(viewProj, float4(o.wpos, 1));
     return o;
 }
 
 float4 SnowLayerPS(SnowOut i) : SV_Target {
     float3 n = normalize(i.nrm);
+    clip(SnowPatches(i.wpos.xz, n.y, surfaceData[0].y) - 0.5);  // (thin snow: only in the patches)
     float3 v = normalize(eye.xyz - i.wpos);
     float grain = (WetNoise(i.wpos.xz * 40) - 0.5) * 0.05;  // (a little uneven: not plastic)
     return float4(ToScreen(Shade(kSnowWhite + grain, 0, 0.75, n, v, i.wpos)), 1);
