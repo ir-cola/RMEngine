@@ -84,9 +84,36 @@ void PhysicsLines(const game_production::DebugContext& ctx, std::vector<game_pro
     out.push_back({editor::Tr(L"1 回の刻みの時間"), std::format(L"{:.3f} ms", w->LastStepMs())});
 }
 
+// A 3D object made by 追加 ▸ 3D オブジェクト gets a collider of its shape (2026-11-20): a box, a ball, a
+// capsule as they are; a cylinder as a box around it (there is no cylinder collider); the plane a thin
+// box under it. What has no shape to say (a light, a camera): nothing.
+void AddCollider(Scene& scene, int entity, std::string_view made) {
+    const bool box = made == "box" || made == "cylinder";
+    if (!box && made != "sphere" && made != "capsule" && made != "plane") return;
+    Collider* c = game_production::AddComponentTo<Collider>(scene, entity);
+    if (!c) return;
+    if (box) {
+        c->shape = Shape::Box;
+        c->size = {1, 1, 1};
+    } else if (made == "sphere") {
+        c->shape = Shape::Sphere;
+        c->radius = 0.5f;
+    } else if (made == "capsule") {
+        c->shape = Shape::Capsule;
+        c->radius = 0.5f;
+        c->height = 2.f;
+    } else {
+        c->shape = Shape::Box;
+        c->size = {10, 0.02f, 10};
+        c->offset = {0, -0.01f, 0};
+    }
+}
+
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
+    static const game_production::CreatedInfo kCreated{&AddCollider};
+    registry.Contribute(game_production::kCreatedPoint, kCreated);
     static const game_production::SceneLinesInfo kLines{&ShapeLines};
     registry.Contribute(game_production::kSceneLinesPoint, kLines);
     static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"物理"), 20, game_production::DebugTab::Game, &PhysicsLines};

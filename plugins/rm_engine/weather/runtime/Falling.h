@@ -29,8 +29,9 @@ struct Precipitation {
     int map = -1;                  // the 向きの地図 of the way they fall (-1: none - nothing to hit)
 };
 // (2026-11-20: four times as many - the heaviest rain felt light; a storm is a wall of rain)
-inline constexpr uint32_t kMaxRaindrops = 64000;
-inline constexpr uint32_t kMaxSnowflakes = 30000;
+// (2026-11-20 again: rain less - a downpour is its fog more than its drops; snow far more)
+inline constexpr uint32_t kMaxRaindrops = 40000;
+inline constexpr uint32_t kMaxSnowflakes = 90000;
 inline constexpr float kRainBox = 24.f;  // the box's side (world units)
 inline constexpr float kSnowBox = 18.f;
 // The wind's drift starts again from 0 this far (world units): a multiple of both boxes (they look
@@ -72,8 +73,8 @@ extern const char kWetSurfaceHlsl[];
 std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps);
 
 // 積雪 with its height (RenderFrame::solids): SnowLayerVS / SnowLayerPS, after
-// RendererShaderText(kWetSurfaceHlsl) - a layer for each way with snow: a grid of kSnowCells x kSnowCells
-// cells of kSnowCell across the way around the eye, drawn with an index buffer and no vertex buffer.
+// RendererShaderText(kWetSurfaceHlsl) - one grid of kSnowCells x kSnowCells cells of kSnowCell around the
+// eye, seen straight from above, drawn with an index buffer and no vertex buffer.
 // 足跡: SnowTrailVS / SnowTrailPS (the same way): a picture of kTrailCells x kTrailCells cells of
 // kTrailCell around the eye, drawn each frame from the last (two of them; R32G32B32A32_FLOAT).
 extern const char kSnowLayerHlsl[];
@@ -83,12 +84,10 @@ inline constexpr float kSnowCell = 0.125f;  // (48 m)
 inline constexpr uint32_t kTrailCells = 512;
 inline constexpr float kTrailCell = 0.09375f;  // (48 m)
 struct SnowLayerConstants {
-    float across[4];   // xyz: one axis across the way; w: a cell (m)
-    float along[4];    // xyz: the other; w: cells a side
-    float way[4];      // xyz: the way it fell; w: this layer's way
-    float middle[4];   // xyz: the grid's middle (the eye, in whole cells across)
-    float snow[4][4];  // each way: x: its snow (m), y: its 向きの地図 (-1: none)
-    float trail[4];    // the footprints: xy: the first cell (world x z); z: a cell (m); w: cells a side (0: none)
+    float grid[4];       // xy: the grid's corner (world x z, in whole cells); z: a cell (m); w: cells a side
+    float info[4];       // x: the map straight down; y: where its lines start (world y: the eye)
+    float snow[4][4];    // each way: x: its snow (m), y: its 向きの地図 (-1: none)
+    float trail[4];      // the footprints: xy: the first cell (world x z); z: a cell (m); w: cells a side (0: none)
     float trailMore[4];  // x: which count of footprints
 };
 static_assert(sizeof(SnowLayerConstants) % 16 == 0);
@@ -97,8 +96,9 @@ struct SnowTrailConstants {
     float more[4];   // x: which count; y: how much it fills up now (m); z: where the lines up start (world y); w: the map from below
 };
 static_assert(sizeof(SnowTrailConstants) % 16 == 0);
-// The layer of way `layer` (of `ways`, seen by `maps`) around `eye`; footprints read when `trails`.
-SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, size_t layer, uint32_t trailCount, bool trails);
+// The snow lying around `eye`: on what `downMap` (straight down) sees, as deep as `ways` (seen by `maps`)
+// left; footprints read when `trails`.
+SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, int downMap, uint32_t trailCount, bool trails);
 // The footprints' frame: `fill` m filled up since the last; `upMap`: the map of the moving shapes from below.
 SnowTrailConstants SnowTrailOf(Vec3 eye, uint32_t count, float fill, int upMap);
 

@@ -3216,10 +3216,15 @@ private:
         EditTouching({}, std::format("「{}」を作成", WideToUtf8(info.label)), [&] {
             if (info.make) {
                 made = info.make(scene_, parent, index);
-                return;
+            } else {
+                made = MakeEntity(WideToUtf8(Tr(info.label)), parent, index);  // (its name in the language in use)
+                info.fill(scene_, made);
             }
-            made = MakeEntity(WideToUtf8(Tr(info.label)), parent, index);  // (its name in the language in use)
-            info.fill(scene_, made);
+            // What other plugins add to it (物理: a collider of its shape) - in the same undo entry.
+            if (!made) return;
+            for (const auto& c : host_.Registry().Contributions<CreatedInfo>(kCreatedPoint)) {
+                if (c.item->added) c.item->added(scene_, made, info.made ? info.made : "");
+            }
         });
         if (made) host_.SelectInTree({static_cast<tree::ItemId>(made)}, true);
     }

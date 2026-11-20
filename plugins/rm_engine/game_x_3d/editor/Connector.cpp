@@ -151,11 +151,11 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // The 階層's 追加 ▸.
     using editor::TrKey;
     static const game_production::CreateItemInfo kItems[] = {
-        {.label = TrKey(L"箱"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Box>},
-        {.label = TrKey(L"球"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Sphere>},
-        {.label = TrKey(L"円柱"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Cylinder>},
-        {.label = TrKey(L"カプセル"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Capsule>},
-        {.label = TrKey(L"平面"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Plane>},
+        {.label = TrKey(L"箱"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Box>, .made = "box"},
+        {.label = TrKey(L"球"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Sphere>, .made = "sphere"},
+        {.label = TrKey(L"円柱"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Cylinder>, .made = "cylinder"},
+        {.label = TrKey(L"カプセル"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Capsule>, .made = "capsule"},
+        {.label = TrKey(L"平面"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Plane>, .made = "plane"},
         {.label = TrKey(L"3D カメラ"), .folder = TrKey(L"カメラ"), .make = &MakeCamera},
         {.label = TrKey(L"光"), .folder = TrKey(L"ライト"), .make = &MakeLight},
         {.label = TrKey(L"環境光"), .folder = TrKey(L"ライト"), .make = &MakeAmbient},

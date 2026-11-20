@@ -250,11 +250,11 @@ static const float3 kSnowWhite = float3(0.82, 0.84, 0.88);
 float SnowShape(float2 xz, float depth) {
     if (depth <= 0) return 0;
     float n = 0.65 * WetNoise(xz * 2.2 + 1.7) + 0.35 * WetNoise(xz * 5.3 + 4.1);
-    float cover = saturate(depth / 0.04);
+    float cover = saturate(depth / 0.015);  // (積もる高さ is 5 cm at most: all of it covered at 1.5 cm)
     float lump = saturate((n - (1 - cover)) / 0.3);
     lump = lump * lump * (3 - 2 * lump);
-    float thin = lump * lerp(2.5, 1, saturate(depth / 0.06));
-    return lerp(thin, 0.85 + 0.3 * n, saturate((depth - 0.04) / 0.06));
+    float thin = lump * lerp(2.5, 1, saturate(depth / 0.03));
+    return lerp(thin, 0.8 + 0.4 * n, saturate((depth - 0.015) / 0.02));
 }
 // Is the point open the way map `m` looks (0 .. 1; no map: open)?
 float OpenFor(int m, float3 p) {
@@ -295,22 +295,21 @@ void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, f
 )";
 
 const char kSnowLayerHlsl[] = R"(
-// 積雪 with its height (RenderFrame::solids), one layer for each way snow fell (a WetWay with snow): a
-// grid across the way around the eye (SnowLayerOf). Each corner goes down the way's line to what the
-// snow hit (its 向きの地図 - slanted by the wind, that is under a roof's edge too) and stands up there as
-// high as the snow lies (all the ways' snow where each reaches, in SnowShape's lumps), but never above
-// where something moving pressed it (the footprints, SnowTrailPS). At a step: on its top the snow thins
-// to nothing (a rounded edge); at its foot and where nothing was hit the corner is left out (NaN: its
-// triangles are not drawn). Where an earlier way's layer reaches too, that one draws it (SnowLayerPS).
-// Lit as the models are (Shade). After RendererShaderText(kWetSurfaceHlsl).
+// 積雪 with its height (RenderFrame::solids): one grid around the eye, seen straight from above
+// (SnowLayerOf; 2026-11-20: a layer for each slanted way stood up in sheets and went through things).
+// Each corner lies on the top of what is under it (the map straight down) and stands up as high as the
+// snow lies there (every way's snow where that way reaches it, in SnowShape's lumps), never above where
+// something moving pressed it (the footprints, SnowTrailPS). At a step: on its top the snow thins to
+// nothing (a rounded edge); at its foot, on what is too steep and where nothing is under it, the corner
+// is left out (NaN: its triangles are not drawn) - no snow standing up, none inside a thing. What a
+// slanted way blows under a roof is white there (SnowAt) without height. Lit as the models are (Shade),
+// in the fog (Fogged). After RendererShaderText(kWetSurfaceHlsl).
 cbuffer SnowLayer : register(b4) {
-    float4 layerAcross;   // xyz: one axis across the way; w: a cell (m)
-    float4 layerAlong;    // xyz: the other axis across it; w: cells a side
-    float4 layerWay;      // xyz: the way it fell; w: this layer's way (0 ..)
-    float4 layerMiddle;   // xyz: the grid's middle (the eye, in whole cells); w: -
+    float4 layerGrid;     // xy: the grid's corner (world x z, in whole cells); z: a cell (m); w: cells a side
+    float4 layerInfo;     // x: the map straight down; y: where its lines start (world y: the eye)
     float4 layerSnow[4];  // each way: x: its snow (m), y: its 向きの地図 (-1: none)
     float4 trailInfo;     // xy: the footprints' first cell (world x z); z: a cell (m); w: cells a side (0: none)
-    float4 trailMore;     // x: which count of footprints (each Play its own); y .. w: -
+    float4 trailMore;     // x: which count of footprints (each Play its own)
 };
 Texture2D<float4> trailMap : register(t9);
 
@@ -324,34 +323,29 @@ float TrailCeiling(float2 xz) {
     return all(v.yz == cell) && v.w == trailMore.x ? v.x : 1e30;
 }
 
-// One corner: what the way's line from it hits (`hit`; `past`: how far the corner is past it; none:
-// nothing), how deep the snow lies there and the top of the snow (world y).
+// One corner at (x, z): the top under it (world y; none: -1e30), how deep the snow lies there, where
+// the snow's top is.
 struct SnowCorner {
-    float3 hit;
-    float past;
+    float ground;
     float depth;
     float top;
     bool none;
 };
-SnowCorner CornerAt(float2 g) {
+SnowCorner CornerAt(float2 xz, float fade) {
     SnowCorner c;
-    float cell = layerAcross.w;
-    float3 q = layerMiddle.xyz + layerAcross.xyz * (g.x * cell) + layerAlong.xyz * (g.y * cell);
-    int m = (int)layerSnow[(int)layerWay.w].y;
-    c.past = MapPastAt(m, mul(mapViewProj[m], float4(q, 1)));
-    c.none = c.past < -1e29;
-    c.hit = q - layerWay.xyz * c.past;
+    int m = (int)layerInfo.x;
+    float past = MapPastAt(m, mul(mapViewProj[m], float4(xz.x, layerInfo.y, xz.y, 1)));
+    c.none = past < -1e29;
+    c.ground = layerInfo.y + past;
     c.depth = 0;
-    c.top = c.hit.y;
+    c.top = c.ground;
     if (c.none) return c;
-    float3 above = c.hit + float3(0, 0.05, 0);
+    float3 above = float3(xz.x, c.ground + 0.05, xz.y);
     [unroll] for (int j = 0; j < 4; ++j) {
         if (layerSnow[j].x > 0) c.depth += layerSnow[j].x * OpenFor((int)layerSnow[j].y, above);
     }
-    // (fading out toward the grid's edge: no wall where it ends)
-    float fade = saturate((layerAlong.w * 0.5 - max(abs(g.x), abs(g.y))) * cell / 4);
-    float h = c.depth * SnowShape(c.hit.xz, c.depth) * fade;
-    c.top = max(c.hit.y, min(c.hit.y + h, TrailCeiling(c.hit.xz)));
+    float h = c.depth * SnowShape(xz, c.depth) * fade;
+    c.top = max(c.ground, min(c.ground + h, TrailCeiling(xz)));
     return c;
 }
 
@@ -359,62 +353,51 @@ struct SnowOut {
     float4 pos : SV_Position;
     float3 nrm : NORMAL;
     float3 wpos : TEXCOORD2;
-    float3 ground : TEXCOORD3;  // what the snow lies on
-    float depth : TEXCOORD4;    // how deep it lies there
+    float depth : TEXCOORD4;  // how deep it lies there
 };
 
 SnowOut SnowLayerVS(uint id : SV_VertexID) {
     SnowOut o;
-    uint side = (uint)layerAlong.w + 1;
-    float2 g = float2(id % side, id / side) - (side - 1) * 0.5;
-    SnowCorner c = CornerAt(g);
-    SnowCorner l = CornerAt(g - float2(1, 0)), r = CornerAt(g + float2(1, 0));
-    SnowCorner d = CornerAt(g - float2(0, 1)), u = CornerAt(g + float2(0, 1));
-    float ledge = 0.15 + layerAcross.w * 1.5;
-    // A neighbour much nearer up the line: this corner is at a step's foot. Much further (or none): at
-    // its top - a rim.
-    bool foot = (!l.none && l.past - c.past > ledge) || (!r.none && r.past - c.past > ledge) ||
-                (!d.none && d.past - c.past > ledge) || (!u.none && u.past - c.past > ledge);
-    bool rim = l.none || r.none || d.none || u.none || c.past - l.past > ledge || c.past - r.past > ledge ||
-               c.past - d.past > ledge || c.past - u.past > ledge;
-    // The ground's slope and the snow's (a neighbour across a step: as if this one).
-    float3 gl = l.none || abs(l.past - c.past) > ledge ? c.hit : l.hit, gr = r.none || abs(r.past - c.past) > ledge ? c.hit : r.hit;
-    float3 gd = d.none || abs(d.past - c.past) > ledge ? c.hit : d.hit, gu = u.none || abs(u.past - c.past) > ledge ? c.hit : u.hit;
-    float3 across = gr - gl, along = gu - gd;
-    float3 groundN = cross(along, across);
-    groundN = dot(groundN, groundN) > 1e-12 ? normalize(groundN) : float3(0, 1, 0);
-    if (groundN.y < 0) groundN = -groundN;
-    if (c.none || foot || groundN.y < 0.3) {
+    uint side = (uint)layerGrid.w + 1;
+    float2 g = float2(id % side, id / side);
+    float pace = layerGrid.z;
+    float2 xz = layerGrid.xy + g * pace;
+    // (low toward the grid's edge: no wall where it ends)
+    float fade = saturate((layerGrid.w * 0.5 - max(abs(g.x - layerGrid.w * 0.5), abs(g.y - layerGrid.w * 0.5))) * pace / 4);
+    SnowCorner c = CornerAt(xz, fade);
+    SnowCorner l = CornerAt(xz - float2(pace, 0), fade), r = CornerAt(xz + float2(pace, 0), fade);
+    SnowCorner d = CornerAt(xz - float2(0, pace), fade), u = CornerAt(xz + float2(0, pace), fade);
+    float ledge = 0.12 + pace;  // (a step steeper than about 45 degrees)
+    bool foot = (!l.none && l.ground - c.ground > ledge) || (!r.none && r.ground - c.ground > ledge) ||
+                (!d.none && d.ground - c.ground > ledge) || (!u.none && u.ground - c.ground > ledge);
+    bool rim = l.none || r.none || d.none || u.none || c.ground - l.ground > ledge || c.ground - r.ground > ledge ||
+               c.ground - d.ground > ledge || c.ground - u.ground > ledge;
+    // The slope of what it lies on and of the snow (a neighbour across a step: as if level with this one).
+    float gl = l.none || abs(l.ground - c.ground) > ledge ? c.ground : l.ground, gr = r.none || abs(r.ground - c.ground) > ledge ? c.ground : r.ground;
+    float gd = d.none || abs(d.ground - c.ground) > ledge ? c.ground : d.ground, gu = u.none || abs(u.ground - c.ground) > ledge ? c.ground : u.ground;
+    float3 groundN = normalize(float3(gl - gr, 2 * pace, gd - gu));
+    if (c.none || foot || groundN.y < 0.45) {
         float nan = asfloat(0x7fc00000);
         o.pos = float4(nan, nan, nan, nan);
         o.nrm = float3(0, 1, 0);
-        o.wpos = o.ground = float3(0, 0, 0);
+        o.wpos = float3(0, 0, 0);
         o.depth = 0;
         return o;
     }
-    float tl = gl.y + (gl.x == c.hit.x && gl.z == c.hit.z ? c.top - c.hit.y : l.top - l.hit.y);
-    float tr = gr.y + (gr.x == c.hit.x && gr.z == c.hit.z ? c.top - c.hit.y : r.top - r.hit.y);
-    float td = gd.y + (gd.x == c.hit.x && gd.z == c.hit.z ? c.top - c.hit.y : d.top - d.hit.y);
-    float tu = gu.y + (gu.x == c.hit.x && gu.z == c.hit.z ? c.top - c.hit.y : u.top - u.hit.y);
-    float3 n = cross(float3(gu.x, tu, gu.z) - float3(gd.x, td, gd.z), float3(gr.x, tr, gr.z) - float3(gl.x, tl, gl.z));
-    n = dot(n, n) > 1e-12 ? normalize(n) : groundN;
-    if (n.y < 0) n = -n;
-    o.nrm = n;
-    o.ground = c.hit;
+    float own = c.top - c.ground;
+    float tl = gl + (gl == c.ground && (l.none || abs(l.ground - c.ground) > ledge) ? own : l.top - l.ground);
+    float tr = gr + (gr == c.ground && (r.none || abs(r.ground - c.ground) > ledge) ? own : r.top - r.ground);
+    float td = gd + (gd == c.ground && (d.none || abs(d.ground - c.ground) > ledge) ? own : d.top - d.ground);
+    float tu = gu + (gu == c.ground && (u.none || abs(u.ground - c.ground) > ledge) ? own : u.top - u.ground);
+    o.nrm = normalize(float3(tl - tr, 2 * pace, td - tu));
     o.depth = c.depth;
-    o.wpos = float3(c.hit.x, rim ? c.hit.y + 0.002 : max(c.top, c.hit.y + 0.002), c.hit.z);
+    o.wpos = float3(xz.x, rim ? c.ground + 0.002 : max(c.top, c.ground + 0.002), xz.y);
     o.pos = mul(viewProj, float4(o.wpos, 1));
     return o;
 }
 
 float4 SnowLayerPS(SnowOut i) : SV_Target {
-    clip(SnowShape(i.ground.xz, i.depth) - 0.02);  // (where no lump stands: none)
-    // An earlier way's layer reaches here too: that one draws it.
-    int k = (int)layerWay.w;
-    float3 above = i.ground + float3(0, 0.05, 0);
-    [unroll] for (int j = 0; j < 4; ++j) {
-        if (j < k && layerSnow[j].x > 0.0005 && OpenFor((int)layerSnow[j].y, above) > 0.5) discard;
-    }
+    clip(SnowShape(i.wpos.xz, i.depth) - 0.02);  // (where no lump stands: none)
     float3 n = normalize(i.nrm);
     float3 v = normalize(eye.xyz - i.wpos);
     float grain = (WetNoise(i.wpos.xz * 40) - 0.5) * 0.05;  // (a little uneven: not plastic)
@@ -463,15 +446,6 @@ float4 SnowTrailPS(float4 pos : SV_Position) : SV_Target {
 
 namespace {
 
-// The two axes across a way (as 3D 空間's PlanCover has them).
-void AcrossOf(Vec3 d, Vec3& a, Vec3& b) {
-    auto cross = [](Vec3 x, Vec3 y) { return Vec3{x.y * y.z - x.z * y.y, x.z * y.x - x.x * y.z, x.x * y.y - x.y * y.x}; };
-    a = std::fabs(d.z) < 0.99f ? cross(d, {0, 0, 1}) : cross(d, {1, 0, 0});
-    const float len = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-    a = len > 0 ? Vec3{a.x / len, a.y / len, a.z / len} : Vec3{1, 0, 0};
-    b = cross(a, d);
-}
-
 void TrailFirstCell(Vec3 eye, float out[4]) {
     const float half = static_cast<float>(kTrailCells / 2);
     out[0] = (std::isfinite(eye.x) ? std::floor(eye.x / kTrailCell) : 0.f) - half;
@@ -482,20 +456,16 @@ void TrailFirstCell(Vec3 eye, float out[4]) {
 
 }  // namespace
 
-SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, size_t layer, uint32_t trailCount, bool trails) {
+SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, int downMap, uint32_t trailCount, bool trails) {
     SnowLayerConstants k{};
-    const Vec3 d = layer < ways.size() ? ways[layer].way : Vec3{0, -1, 0};
-    Vec3 a, b;
-    AcrossOf(d, a, b);
-    auto dot = [](Vec3 x, Vec3 y) { return x.x * y.x + x.y * y.y + x.z * y.z; };
     if (!std::isfinite(eye.x) || !std::isfinite(eye.y) || !std::isfinite(eye.z)) eye = {0, 0, 0};
-    // The middle in whole cells across the way (the grid does not swim as the eye moves).
-    const float u = std::floor(dot(eye, a) / kSnowCell) * kSnowCell, v = std::floor(dot(eye, b) / kSnowCell) * kSnowCell, w = dot(eye, d);
-    const Vec3 m{a.x * u + b.x * v + d.x * w, a.y * u + b.y * v + d.y * w, a.z * u + b.z * v + d.z * w};
-    k.across[0] = a.x, k.across[1] = a.y, k.across[2] = a.z, k.across[3] = kSnowCell;
-    k.along[0] = b.x, k.along[1] = b.y, k.along[2] = b.z, k.along[3] = static_cast<float>(kSnowCells);
-    k.way[0] = d.x, k.way[1] = d.y, k.way[2] = d.z, k.way[3] = static_cast<float>(layer);
-    k.middle[0] = m.x, k.middle[1] = m.y, k.middle[2] = m.z;
+    const float half = kSnowCell * static_cast<float>(kSnowCells) * 0.5f;
+    k.grid[0] = std::floor(eye.x / kSnowCell) * kSnowCell - half;  // (in whole cells: the grid does not swim as the eye moves)
+    k.grid[1] = std::floor(eye.z / kSnowCell) * kSnowCell - half;
+    k.grid[2] = kSnowCell;
+    k.grid[3] = static_cast<float>(kSnowCells);
+    k.info[0] = static_cast<float>(downMap);
+    k.info[1] = eye.y;
     for (size_t j = 0; j < 4; ++j) {
         const bool has = j < ways.size() && j < kWetWays;
         k.snow[j][0] = has && std::isfinite(ways[j].snow) ? std::clamp(ways[j].snow, 0.f, kMostSnowDepth) : 0.f;
@@ -519,7 +489,7 @@ SnowTrailConstants SnowTrailOf(Vec3 eye, uint32_t count, float fill, int upMap) 
 uint32_t PrecipitationCount(const Precipitation& p) {
     const float amount = std::isfinite(p.amount) ? std::clamp(p.amount, 0.f, 1.f) : 0.f;
     const bool rain = p.kind == Precipitation::Kind::Rain;
-    const float share = std::pow(amount, rain ? 1.4f : 1.2f);
+    const float share = std::pow(amount, rain ? 1.4f : 1.f);
     return static_cast<uint32_t>(share * static_cast<float>(rain ? kMaxRaindrops : kMaxSnowflakes) + 0.5f);
 }
 

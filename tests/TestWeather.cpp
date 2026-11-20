@@ -63,25 +63,27 @@ RM_TEST(Weather_Presets) {
     Weather w;
     w.windDirection = 45;
     ApplyPreset(w, WeatherPreset::Storm);
-    CHECK(w.cloudAmount == 100.f && w.rainAmount == 100.f && !w.snowing && w.lightning && w.windStrength > 15.f && w.windDirection == 45.f);
+    CHECK(w.cloudAmount == 100.f && w.precipitation == 100.f && !w.snowing && w.lightning && w.windStrength > 15.f && w.windDirection == 45.f && w.fogAmount > 0.f);
     ApplyPreset(w, WeatherPreset::Clear);
-    CHECK(w.cloudAmount == 0.f && w.rainAmount == 0.f && !w.lightning && w.windStrength < 2.f);
+    CHECK(w.cloudAmount == 0.f && w.precipitation == 0.f && !w.lightning && w.windStrength < 2.f && w.fogAmount == 0.f);
+    ApplyPreset(w, WeatherPreset::Foggy);
+    CHECK(w.fogAmount >= 50.f && w.precipitation == 0.f);
     ApplyPreset(w, WeatherPreset::HeavySnow);
-    CHECK(w.snowing && w.snowAmount == 80.f && w.rainAmount == 0.f);
+    CHECK(w.snowing && w.precipitation == 80.f);
     const Weather before = w;
     ApplyPreset(w, static_cast<WeatherPreset>(99));
-    CHECK(w.cloudAmount == before.cloudAmount && w.snowAmount == before.snowAmount);
-    // From light to heavy, the rain only grows; every template is one (12).
+    CHECK(w.cloudAmount == before.cloudAmount && w.precipitation == before.precipitation);
+    // From light to heavy, the rain only grows; every template is one (13).
     float last = -1;
     for (const WeatherPreset p : {WeatherPreset::Sprinkle, WeatherPreset::Drizzle, WeatherPreset::Rain, WeatherPreset::Downpour, WeatherPreset::Storm}) {
-        CHECK(Of(p).rainAmount > last);
-        last = Of(p).rainAmount;
+        CHECK(Of(p).precipitation > last && !Of(p).snowing);
+        last = Of(p).precipitation;
     }
-    CHECK(reflect::TypeOf<Weather>().fields.size() > 0 && kWeatherPresets == 12);
+    CHECK(reflect::TypeOf<Weather>().fields.size() > 0 && kWeatherPresets == 13);
     // The amounts are kept to tenths (the inspector shows "12.3"; the rest cut off).
     const reflect::FieldDesc* rain = nullptr;
     for (const reflect::FieldDesc& f : reflect::TypeOf<Weather>().fields) {
-        if (std::string_view(f.name) == "rainAmount") rain = &f;
+        if (std::string_view(f.name) == "precipitation") rain = &f;
     }
     CHECK(rain && rain->decimals == 1 && reflect::SanitizeNumber(*rain, 33.37, 0) == 33.3 && reflect::FormatNumber(*rain, 33.37) == "33.3");
     CHECK(rain && reflect::SanitizeNumber(*rain, 120, 0) == 100);
@@ -107,11 +109,11 @@ RM_TEST(Weather_SkyLook) {
     CHECK(rain.lightStrength < noon.lightStrength * 0.35f && rain.ambientSky.b < noon.ambientSky.b * 0.7f);
     // Rain darkens the clouds: the same clouds, more rain - darker; rain from a clear sky brings clouds.
     Weather grey = Of(WeatherPreset::Cloudy), raining = grey;
-    raining.rainAmount = 60;
+    raining.precipitation = 60;
     CHECK(SkyWeatherOf(raining, 0).dark > SkyWeatherOf(grey, 0).dark + 0.2f);
     Weather sudden;
     sudden.cloudAmount = 0;
-    sudden.rainAmount = 50;
+    sudden.precipitation = 50;
     CHECK(SkyWeatherOf(sudden, 0).cover > 0.7f);
     // Snow: paler than rain's clouds, hazier.
     CHECK(SkyWeatherOf(Of(WeatherPreset::Snow), 0).dark < SkyWeatherOf(Of(WeatherPreset::Rain), 0).dark);
@@ -125,16 +127,30 @@ RM_TEST(Weather_SkyLook) {
     CHECK(Near(RainNow(NowOf(Of(WeatherPreset::Rain))), 0.5f) && SnowNow(NowOf(Of(WeatherPreset::Rain))) == 0.f);
     CHECK(Near(SnowNow(NowOf(Of(WeatherPreset::Blizzard))), 1.f) && RainNow(NowOf(Of(WeatherPreset::Blizzard))) == 0.f);
     CHECK(RainNow(NowOf(thick)) == 0.f && SnowNow(NowOf(thick)) == 0.f);
-    // 雪の量 falls only with 雪を降らせる.
+    // One 降水量: rain - or, with 雪にする, snow; never both.
     Weather off = Of(WeatherPreset::Snow);
     off.snowing = false;
-    CHECK(SnowNow(NowOf(off)) == 0.f);
-    // A fog only in a downpour (a few metres seen at 100) or a snowstorm.
-    CHECK(FogOf(NowOf(Of(WeatherPreset::Rain))) == 0.f && FogOf(NowOf(Of(WeatherPreset::Fair))) == 0.f);
-    const float storm = FogOf(NowOf(Of(WeatherPreset::Storm)));
-    CHECK(storm > 0.4f && std::exp(-storm * 5.f) < 0.12f);  // (5 m: nearly gone)
-    CHECK(FogOf(NowOf(Of(WeatherPreset::Downpour))) > 0.f && FogOf(NowOf(Of(WeatherPreset::Downpour))) < storm);
-    CHECK(FogOf(NowOf(Of(WeatherPreset::Blizzard))) > 0.1f && FogOf(NowOf(Of(WeatherPreset::Blizzard))) < storm);
+    CHECK(SnowNow(NowOf(off)) == 0.f && Near(RainNow(NowOf(off)), 0.5f));
+    for (int k = 0; k <= 100; ++k) {
+        const float x = static_cast<float>(k) / 100.f;
+        CHECK(std::min(RainShare(x), SnowShare(x)) == 0.f);  // (never both)
+    }
+    CHECK(RainShare(0) == 1.f && SnowShare(1) == 1.f && RainShare(0.49f) > 0.1f && RainShare(0.49f) < 0.2f && Near(SnowShare(0.5f), 0.15f));  // (a drizzle, then light snow)
+    // 霧: 霧の量 (a few metres seen at 100, about 20 at 50), and more in a downpour or a snowstorm.
+    CHECK(FogOf(NowOf(Of(WeatherPreset::Fair))) == 0.f);
+    Weather misty;
+    misty.fogAmount = 100;
+    CHECK(Near(FogOf(NowOf(misty)), 0.5f) && std::exp(-FogOf(NowOf(misty)) * 5.f) < 0.1f);
+    misty.fogAmount = 50;
+    CHECK(std::exp(-FogOf(NowOf(misty)) * 20.f) < 0.1f && std::exp(-FogOf(NowOf(misty)) * 5.f) > 0.5f);
+    Weather downpour = Of(WeatherPreset::Downpour), calm = downpour;
+    calm.fogAmount = 0;
+    CHECK(FogOf(NowOf(calm)) > 0.f && FogOf(NowOf(downpour)) > FogOf(NowOf(calm)));  // (its own fog, and 霧の量 too)
+    CHECK(FogOf(NowOf(Of(WeatherPreset::Storm))) > FogOf(NowOf(downpour)));
+    // Its colour: pale; darker in rain; white in snow.
+    const Color light{1, 1, 1, 1};
+    const Color fair = FogColorOf(NowOf(misty), light), rainy = FogColorOf(NowOf(downpour), light), snowy = FogColorOf(NowOf(Of(WeatherPreset::Snow)), light);
+    CHECK(rainy.r < fair.r - 0.1f && snowy.r > fair.r + 0.1f && rainy.b > rainy.r);
     // 濡れ before Play: as wet as the rain now makes things; dry without rain; snow a little.
     const std::vector<WetWay> wet = WetNow(Of(WeatherPreset::Rain));
     CHECK(wet.size() == 1 && Near(wet[0].sun, 1.f) && Near(wet[0].shade, 1.f) && wet[0].way.y < -0.9f);
@@ -223,14 +239,14 @@ RM_TEST(Weather_Wind) {
     game_production::Scene scene;
     scene.SetSettingTypes({&reflect::TypeOf<Weather>()});
     Weather& s = *scene.Setting<Weather>();
-    s.rainAmount = 50;
+    s.precipitation = 50;
     s.windDirection = 90;
     s.windStrength = 4;
     game_production::SystemContext ctx{scene, 0.5f};
     RunWeather(ctx);
     CHECK(Near(s.driftX, -2.f) && Near(s.driftZ, 0.f));
     CHECK(s.wetCounted && s.wetWays.size() == 1 && Near(s.wetWays[0].sun, 0.011f));  // (Play starts dry: wetter as it rains - 0.5 s x (0.004 + 0.5 x 0.036))
-    s.rainAmount = 0;
+    s.precipitation = 0;
     RunWeather(ctx);
     CHECK(s.wetWays.size() == 1 && s.wetWays[0].sun < 0.011f && s.wetWays[0].sun > 0.004f);  // dries slowly
     CHECK(s.wetWays[0].shade > s.wetWays[0].sun);                                       // shade slower
@@ -242,18 +258,23 @@ RM_TEST(Weather_Wind) {
     RunWeather(ctx);
     RunWeather(ctx);
     CHECK(Near(s.fadeElapsed, 1.f) && Near(NowOf(s).clouds, 0.9f));
-    // 雪を降らせる: in over about 10 seconds (the editor shows it at once), out the same.
+    // 雪にする: the rain weakens, then it snows - over about 5 seconds (the editor shows it at once), back
+    // the same way.
     Weather editor;
+    editor.precipitation = 50;
     editor.snowing = true;
-    CHECK(SnowInOf(editor) == 1.f && Near(SnowNow(NowOf(editor)), 0.5f));
+    CHECK(SnowInOf(editor) == 1.f && Near(SnowNow(NowOf(editor)), 0.5f) && RainNow(NowOf(editor)) == 0.f);
+    s.precipitation = 50;
     s.snowing = true;
     RunWeather(ctx);
-    CHECK(Near(s.snowIn, 0.05f) && Near(SnowNow(NowOf(s)), 0.025f));
-    for (int k = 0; k < 30; ++k) RunWeather(ctx);
-    CHECK(s.snowIn == 1.f && Near(SnowNow(NowOf(s)), 0.5f));
+    CHECK(Near(s.snowIn, 0.1f) && RainNow(NowOf(s)) > 0.f && RainNow(NowOf(s)) < 0.5f && SnowNow(NowOf(s)) == 0.f);  // (weaker rain)
+    for (int k = 0; k < 4; ++k) RunWeather(ctx);
+    CHECK(Near(s.snowIn, 0.5f) && RainNow(NowOf(s)) == 0.f && Near(SnowNow(NowOf(s)), 0.075f));  // (now light snow)
+    for (int k = 0; k < 10; ++k) RunWeather(ctx);
+    CHECK(s.snowIn == 1.f && Near(SnowNow(NowOf(s)), 0.5f) && RainNow(NowOf(s)) == 0.f);
     s.snowing = false;
     RunWeather(ctx);
-    CHECK(Near(s.snowIn, 0.95f) && SnowNow(NowOf(s)) > 0.f);
+    CHECK(Near(s.snowIn, 0.9f) && SnowNow(NowOf(s)) > 0.f && RainNow(NowOf(s)) == 0.f);
 }
 
 // 濡れ: the ways the rain fell - wetter quickly while it rains, what it reached stays wet while it
@@ -321,31 +342,29 @@ RM_TEST(Weather_SnowCover) {
     // As a picture shows it: the editor - all of it lying, the way it falls; Play - as counted.
     Weather w;
     w.snowing = true;
+    w.precipitation = 50;
     w.windStrength = 0;
-    w.snowDepth = 0.3f;
-    CHECK(Near(SnowCoverNow(w), 0.3f));
-    CHECK(WetAtOnce(NowOf(w), w.snowDepth).size() == 1 && Near(WetAtOnce(NowOf(w), w.snowDepth)[0].snow, 0.3f));
+    w.snowDepthCm = 3.47f;  // (cm: as the inspector keeps it, 3.4)
+    CHECK(Near(SnowMostOf(w), 0.0347f) && Near(SnowCoverNow(w), 0.0347f));
+    CHECK(WetAtOnce(NowOf(w), SnowMostOf(w)).size() == 1 && Near(WetAtOnce(NowOf(w), SnowMostOf(w))[0].snow, 0.0347f));
+    w.snowDepthCm = 9;
+    CHECK(Near(SnowMostOf(w), 0.05f));  // (5 cm at most)
     w.snowing = false;
     CHECK(SnowCoverNow(w) == 0.f);
     w.wetCounted = true;
     w.wetWays = {{{0, -1, 0}, 0, 0, 0, 0.05f}};
     CHECK(Near(SnowCoverNow(w), 0.05f));
-    // A layer for a way: a grid across it around the eye in whole cells; every way's snow and map.
-    const WetWay lying[2] = {{{0, -1, 0}, 0, 0, 0, 0.2f}, {space3d::Normalize(Vec3{1, -2, 0}), 0, 0, 0, 0.1f}};
+    // The snow lying: one grid straight down around the eye, in whole cells; every way's snow and map.
+    const WetWay lying[2] = {{{0, -1, 0}, 0, 0, 0, 0.02f}, {space3d::Normalize(Vec3{1, -2, 0}), 0, 0, 0, 0.01f}};
     const int maps[2] = {3, 5};
-    const SnowLayerConstants k = SnowLayerOf({10.1f, 3, -7.3f}, lying, maps, 1, 7, true);
-    CHECK(Near(k.across[3], kSnowCell) && k.along[3] == static_cast<float>(kSnowCells) && k.way[3] == 1.f);
-    CHECK(Near(Vec3{k.way[0], k.way[1], k.way[2]}, space3d::Normalize(Vec3{1, -2, 0})));
-    const Vec3 a{k.across[0], k.across[1], k.across[2]}, b{k.along[0], k.along[1], k.along[2]}, d{k.way[0], k.way[1], k.way[2]};
-    auto dot = [](Vec3 x, Vec3 y) { return x.x * y.x + x.y * y.y + x.z * y.z; };
-    CHECK(std::fabs(dot(a, d)) < 1e-5f && std::fabs(dot(b, d)) < 1e-5f && std::fabs(dot(a, b)) < 1e-5f);
-    const Vec3 middle{k.middle[0], k.middle[1], k.middle[2]};
-    const float across = dot(middle, a) / kSnowCell;
-    CHECK(std::fabs(across - std::round(across)) < 1e-3f);  // (whole cells: the grid does not swim)
-    CHECK(Near(dot(middle, d), dot(Vec3{10.1f, 3, -7.3f}, d)));
-    CHECK(k.snow[0][0] == 0.2f && k.snow[0][1] == 3.f && k.snow[1][0] == 0.1f && k.snow[1][1] == 5.f && k.snow[2][1] == -1.f);
+    const SnowLayerConstants k = SnowLayerOf({10.1f, 3, -7.3f}, lying, maps, 6, 7, true);
+    CHECK(Near(k.grid[2], kSnowCell) && k.grid[3] == static_cast<float>(kSnowCells) && k.info[0] == 6.f && Near(k.info[1], 3.f));
+    CHECK(Near(k.grid[0] + kSnowCell * kSnowCells * 0.5f, std::floor(10.1f / kSnowCell) * kSnowCell));
+    CHECK(Near(k.grid[1] + kSnowCell * kSnowCells * 0.5f, std::floor(-7.3f / kSnowCell) * kSnowCell));
+    CHECK(SnowLayerOf({10.1f + kSnowCell * 0.1f, 3, -7.3f}, lying, maps, 6, 7, true).grid[0] == k.grid[0]);  // (the grid does not swim)
+    CHECK(k.snow[0][0] == 0.02f && k.snow[0][1] == 3.f && k.snow[1][0] == 0.01f && k.snow[1][1] == 5.f && k.snow[2][1] == -1.f);
     CHECK(k.trail[3] == static_cast<float>(kTrailCells) && k.trailMore[0] == 7.f);
-    CHECK(SnowLayerOf({10.1f, 3, -7.3f}, lying, maps, 1, 7, false).trail[3] == 0.f);  // (no footprints in the editor)
+    CHECK(SnowLayerOf({10.1f, 3, -7.3f}, lying, maps, 6, 7, false).trail[3] == 0.f);  // (no footprints in the editor)
     // The footprints' frame: around the eye in whole cells; the lines up start well under it.
     const SnowTrailConstants t = SnowTrailOf({10.1f, 3, -7.3f}, 7, 0.01f, 6);
     CHECK(Near(t.trail[0], std::floor(10.1f / kTrailCell) - kTrailCells / 2) && Near(t.trail[1], std::floor(-7.3f / kTrailCell) - kTrailCells / 2));

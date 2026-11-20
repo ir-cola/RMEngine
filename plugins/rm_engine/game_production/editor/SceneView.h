@@ -23,6 +23,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <string>
 #include <vector>
 
@@ -123,6 +124,16 @@ struct CreateItemInfo {
     int (*make)(Scene& scene, int parent, size_t index) = nullptr;
     void (*fill)(Scene& scene, int entity) = nullptr;
     bool child = false;  // under the one selected entity (else - and with none selected - after the selection)
+    // What it makes, in plain words, for the plugins that add to it (kCreatedPoint): "box", "sphere",
+    // "cylinder", "capsule", "plane" (a 3D shape of 1 unit; the plane 10 x 10) - null: nothing to say.
+    const char* made = nullptr;
+};
+
+// PluginRegistry point: items are CreatedInfo (static). After 追加 ▸ made an entity, in the same undo
+// entry, each may add to it (物理: a collider the shape of a 3D object - a plugin that knows both).
+inline constexpr char kCreatedPoint[] = "rm_engine.game_production.created";
+struct CreatedInfo {
+    void (*added)(Scene& scene, int entity, std::string_view made) = nullptr;  // `made`: CreateItemInfo::made ("" if none)
 };
 
 // The component of type T added to entity `id` (or the one it has already, if it may not have two; null:

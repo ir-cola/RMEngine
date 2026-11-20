@@ -41,6 +41,7 @@ public:
         solids_.clear();
         movingOnly_.clear();
         upMap_ = -1;
+        downMap_ = -1;
         anySnow_ = false;
         const Weather* w = f.scene.Setting<Weather>();
         if (!w || !f.atmosphere) return;
@@ -48,8 +49,11 @@ public:
         const Vec3 wind{now.windX, 0, now.windZ};
         // What falls (each with the 向きの地図 of its way) and what got wet (a map for each way).
         const Color light = LightOf(f.sky);
-        // A downpour's (a snowstorm's) fog: the colour of the light in the air, a little dimmer.
-        if (const float fog = FogOf(now); fog > 0) out.fog = {light.r * 0.42f, light.g * 0.42f, light.b * 0.45f, fog};
+        // 霧 (and a downpour's, a snowstorm's): its colour by the weather, from the light in the air.
+        if (const float fog = FogOf(now); fog > 0) {
+            const Color c = FogColorOf(now, light);
+            out.fog = {c.r, c.g, c.b, fog};
+        }
         for (const auto kind : {Precipitation::Kind::Rain, Precipitation::Kind::Snow}) {
             Precipitation p;
             p.kind = kind;
@@ -81,7 +85,11 @@ public:
             trailsOn_ = true;
             ++trailCount_;  // (a new Play: no footprints yet)
         }
-        trailFill_ = trailsOn_ ? SnowFallRate(now, w->snowDepth) * std::max(f.dt, 0.f) : 0.f;
+        trailFill_ = trailsOn_ ? SnowFallRate(now, SnowMostOf(*w)) * std::max(f.dt, 0.f) : 0.f;
+        if (anySnow_) {  // (what the snow lies on: the tops, straight down)
+            downMap_ = static_cast<int>(directions_.size());
+            directions_.push_back({0, -1, 0});
+        }
         if (anySnow_ && trailsOn_) {
             upMap_ = static_cast<int>(directions_.size());
             directions_.push_back({0, 1, 0});
@@ -99,6 +107,7 @@ public:
             for (Precipitation& p : falls_) p.map = -1;  // (nothing to hit: no maps - all open)
             std::fill(wetMaps_.begin(), wetMaps_.end(), -1);
             upMap_ = -1;
+            downMap_ = -1;
         } else {
             out.mapDirections = directions_;
             out.mapShapes = shapes_;
@@ -110,7 +119,7 @@ public:
             out.surface = &surface_;
         }
         // The snow lying with its height (on what the ways' maps see; thin: in lumps), and its footprints.
-        if (anySnow_ && !shapes_.empty() && LayerReady(f.gfx)) {
+        if (anySnow_ && downMap_ >= 0 && LayerReady(f.gfx)) {
             solids_.push_back([this](const space3d::ExtraDrawContext& dc) { DrawSnow(dc); });
             out.solids = solids_;
         }
@@ -321,12 +330,9 @@ private:
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(layerVs_.Get(), nullptr, 0);
         ctx->PSSetShader(layerPs_.Get(), nullptr, 0);
-        for (size_t k = 0; k < wet_.size() && k < wetMaps_.size(); ++k) {
-            if (!(wet_[k].snow > 0.0005f) || wetMaps_[k] < 0) continue;
-            const SnowLayerConstants lk = SnowLayerOf(dc.eye, wet_, wetMaps_, k, trailCount_, trailsOn_);
-            ctx->UpdateSubresource(cb, 0, nullptr, &lk, 0, 0);
-            ctx->DrawIndexed(kSnowCells * kSnowCells * 6, 0, 0);
-        }
+        const SnowLayerConstants lk = SnowLayerOf(dc.eye, wet_, wetMaps_, downMap_, trailCount_, trailsOn_);
+        ctx->UpdateSubresource(cb, 0, nullptr, &lk, 0, 0);
+        ctx->DrawIndexed(kSnowCells * kSnowCells * 6, 0, 0);
         ctx->VSSetConstantBuffers(4, 1, &none);
         ctx->PSSetConstantBuffers(4, 1, &none);
         ctx->VSSetConstantBuffers(6, 1, &none);
@@ -398,6 +404,7 @@ private:
     std::vector<space3d::ExtraDraw> solids_;
     std::vector<uint8_t> movingOnly_;  // RenderFrame::mapMovingOnly: the map from below
     int upMap_ = -1;                   // the moving shapes from below (footprints; -1: none)
+    int downMap_ = -1;                 // what the snow lies on: the tops, straight down (-1: none)
     bool anySnow_ = false;
     // 積雪's GPU things (LayerReady) and the footprints: two pictures, the one drawn last (trailNow_);
     // trailCount_ goes up with each Play (each its own footprints); trailFill_: m to fill up this frame.

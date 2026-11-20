@@ -1,9 +1,10 @@
 #pragma once
 // 天候 - the scene's weather (a scene setting: the インスペクター shows it under the scene, the 階層's top
 // row), all in amounts (2026-11-20: before, 晴れ / くもり / 雨 / 雪 was picked): 雲の量 (few: fair, many:
-// cloudy), 雨の量 (the clouds darken into rain clouds; from a few drops to a storm one sees a few metres
-// in), 雪を降らせる (snow and a snowy sky come in slowly) and 雪の量, 雷, the wind. The テンプレート
-// (快晴 / 雨 / 嵐 / 大雪 ...: WeatherPreset) set them all at once. What it does:
+// cloudy), 降水量 (rain or snow - never both: the clouds darken into rain clouds; from a few drops to a
+// storm), 雪にする (the rain weakens to a drizzle, then turns to snow - and back), 霧の量 (its colour by
+// the weather), 雷, the wind. The テンプレート (快晴 / 霧 / 雨 / 嵐 / 大雪 ...: WeatherPreset) set them all at
+// once. What it does:
 //
 //   the sky        地球の空's clouds, their darkness, haze, how much sunlight gets through, lightning, the
 //                  clouds drifting with the wind (ゲーム制作 × 3D's SkyWeather: this plugin tells it)
@@ -29,13 +30,14 @@ struct SystemContext;
 
 namespace rm::weather {
 
-// The ready-made weathers (the inspector's テンプレート, the scripts' rm::Weather): each sets 雲の量, 雨の量,
-// 雪を降らせる / 雪の量, 雷 and 風の強さ at once (ApplyPreset; the wind's way stays).
+// The ready-made weathers (the inspector's テンプレート, the scripts' rm::Weather): each sets 雲の量, 降水量,
+// 雪にする, 霧の量, 雷 and 風の強さ at once (ApplyPreset; the wind's way and 積もる高さ stay).
 RM_ENUM(Label="天気のテンプレート")
 enum class WeatherPreset {
     RM_ITEM(Label="快晴") Clear,
     RM_ITEM(Label="晴れ") Fair,
     RM_ITEM(Label="くもり") Cloudy,
+    RM_ITEM(Label="霧") Foggy,
     RM_ITEM(Label="ぽつぽつ雨") Sprinkle,
     RM_ITEM(Label="小雨") Drizzle,
     RM_ITEM(Label="雨") Rain,
@@ -46,14 +48,15 @@ enum class WeatherPreset {
     RM_ITEM(Label="大雪") HeavySnow,
     RM_ITEM(Label="吹雪") Blizzard,
 };
-inline constexpr int kWeatherPresets = 12;
+inline constexpr int kWeatherPresets = 13;
 
 // The weather as it is at a moment (amounts 0 .. 1: the fields' / 100). Not saved (Weather keeps what
 // it was when a fade began: fadeFrom).
 struct WeatherNow {
     float clouds = 0.2f;  // 雲の量
-    float rain = 0;       // 雨の量: what falls as rain
-    float snow = 0;       // 雪の量 as far as 雪を降らせる has come in: what falls as snow
+    float rain = 0;       // what falls as rain (降水量, as far as 雪にする lets it)
+    float snow = 0;       // what falls as snow
+    float fog = 0;        // 霧の量
     float windX = 0, windZ = 0;  // where the wind goes, seen from above (m/s, world)
 };
 
@@ -79,15 +82,15 @@ inline constexpr float kSeepRain = 1.f, kSeepSnow = 0.4f;
 RM_STRUCT(Label="天候")
 struct Weather {
     RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲ひとつ無い晴れ 〜 40: 雲の多い晴れ 〜 70: くもり 〜 100: 空一面の厚い雲 (暗くなり、日の光も弱まります)。雨や雪が降ると、少なくても雲が出ます (雲は空が「地球の空」のとき)", Min=0, Max=100, Step=0.1, Decimals=1) float cloudAmount = 20.f;
-    RM_PROPERTY(Edit, Label="雨の量", Tooltip="0: 降らない / 〜10: ぽつぽつ / 〜30: 小雨 / 〜60: 雨 / 〜85: どしゃぶり / 100: 数 m 先しか見えない嵐。増えるほど雲が暗い雨雲になり、雨粒が長く重くなります", Min=0, Max=100, Step=0.1, Decimals=1) float rainAmount = 0.f;
-    RM_PROPERTY(Edit, Label="雪を降らせる", Tooltip="入れると、10 秒ほどかけて雪と雪空に変わります。外すと同じくらいかけてやみます (エディターでは、すぐその見た目)") bool snowing = false;
-    RM_PROPERTY(Edit, Label="雪の量", Tooltip="0: 降らない / 〜20: ちらつく / 〜50: 雪 / 〜80: 大雪 / 100: 吹雪 (先が見えにくい)", Min=0, Max=100, Step=0.1, Decimals=1, ShowIf="snowing") float snowAmount = 50.f;
-    RM_PROPERTY(Edit, Label="積もる高さ (m)", Tooltip="雪がこの高さまで積もります (Play 中は降っている間に少しずつ。大雪で 4 分ほど)。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)", Min=0, Max=2, Step=0.01, ShowIf="snowing") float snowDepth = 0.1f;
+    RM_PROPERTY(Edit, Label="降水量", Tooltip="雨 (雪にするときは雪) の降る量。0: 降らない / 〜10: ぽつぽつ / 〜30: 小雨 / 〜60: 雨 / 〜85: どしゃぶり / 100: 嵐 (雪: 〜20 ちらつく / 〜50 雪 / 〜80 大雪 / 100 吹雪)。増えるほど雲が暗くなり、強い雨・雪では霧も出ます", Min=0, Max=100, Step=0.1, Decimals=1) float precipitation = 0.f;
+    RM_PROPERTY(Edit, Label="雪にする", Tooltip="入れると、雨がだんだん小雨になってから雪に変わり、雪が強まって降水量に戻ります。外すと逆に、雪が弱まってから雨に (Play 中は 5 秒ほど。エディターではすぐその見た目)。雨と雪が一緒に降ることはありません") bool snowing = false;
+    RM_PROPERTY(Edit, Label="積もる高さ (cm)", Tooltip="雪がこの高さまで積もります (0〜5 cm。Play 中は降っている間に少しずつ、大雪で 4 分ほど)。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)", Min=0, Max=5, Step=0.1, Decimals=1, ShowIf="snowing") float snowDepthCm = 3.f;
+    RM_PROPERTY(Edit, Label="霧の量", Tooltip="0: 無し 〜 50: 20 m ほど先がかすむ 〜 100: 数 m 先しか見えない。色は天気で変わります (晴れ・くもり: 白っぽい / 雨: 暗い灰色 / 雪: 白)。強い雨・雪では、これに加えて霧が出ます", Min=0, Max=100, Step=0.1, Decimals=1) float fogAmount = 0.f;
     RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中。雲の多いとき)") bool lightning = false;
     RM_PROPERTY(Edit, Label="風の向き (度)", Tooltip="風の吹いていく向き (真上から見て)。0: 前 (-Z) へ / 90: 左 (-X) へ / -90: 右 (+X) へ。雲・雨粒・雪が流されます", Min=-360, Max=360) float windDirection = 0.f;
     RM_PROPERTY(Edit, Label="風の強さ (m/秒)", Tooltip="0: 無風 〜 30: 嵐。雲の流れる速さと、雨粒・雪の傾き", Min=0, Max=40, Step=0.5) float windStrength = 2.f;
-    // 雪を降らせる coming in (0 .. 1) while the game plays: towards it, over about 10 seconds (the editor
-    // before Play: as the box says - wetCounted).
+    // How far 雪にする has come (0: rain .. 1: snow) while the game plays: towards it, over about 5 seconds
+    // (the editor before Play: as the box says - wetCounted).
     RM_TRANSIENT() float snowIn = 0;
     // A fade (scripts: rm::Sky's SetWeather / SetRain ... with seconds): the weather when it began, how
     // long it takes, how far it has come. The fields above are where it goes.
@@ -104,11 +107,17 @@ struct Weather {
     RM_TRANSIENT() float driftZ = 0;
 };
 
-// Sets the fields to a ready-made weather (WeatherPreset): 雲の量, 雨の量, 雪を降らせる / 雪の量, 雷 and 風の
-// 強さ (風の向き stays). A value of a newer version: nothing.
+// Sets the fields to a ready-made weather (WeatherPreset): 雲の量, 降水量, 雪にする, 霧の量, 雷 and 風の強さ
+// (風の向き and 積もる高さ stay). A value of a newer version: nothing.
 void ApplyPreset(Weather& w, WeatherPreset preset);
-// How far 雪を降らせる has come in (0 .. 1): as the game counted it, or - the editor - as the box says.
+// How far 雪にする has come (0: rain .. 1: snow): as the game counted it, or - the editor - as the box says.
 float SnowInOf(const Weather& w);
+// What of 降水量 falls as rain / as snow on the way between (x: SnowInOf): the rain weakens to a drizzle
+// (0.15 of it at the middle), then it is snow from as light, growing back - never both at once.
+float RainShare(float x);
+float SnowShare(float x);
+// 積もる高さ in metres.
+float SnowMostOf(const Weather& w);
 // The weather the fields say (where a fade goes) / the weather now (a fade's way there: eased).
 WeatherNow TargetOf(const Weather& w);
 WeatherNow NowOf(const Weather& w);
@@ -118,8 +127,11 @@ void BeginFade(Weather& w, float seconds);
 // How much rain / snow falls now (0 .. 1).
 float RainNow(const WeatherNow& w);
 float SnowNow(const WeatherNow& w);
-// How thick the fog of a heavy downpour / snowstorm is (per metre, 0: none): a few metres seen at 100.
+// How thick the fog is (per metre, 0: none): 霧の量 (a few metres seen at 100, 20 at 50), and more in a
+// downpour / snowstorm. Its colour (linear) from what lights the air: pale - darker and greyer in rain,
+// white in snow.
 float FogOf(const WeatherNow& w);
+Color FogColorOf(const WeatherNow& w, Color light);
 // The wind of 風の向き / 風の強さ (m/s, world: y is 0).
 Vec3 WindOf(float directionDegrees, float strength);
 
@@ -155,7 +167,8 @@ std::vector<WetWay> WetNow(const Weather& w);
 // it out among the ways it fell.)
 inline constexpr float kMostSnowDepth = 2.f;
 float StepSnowCover(float cover, const WeatherNow& now, float most, float dt);
-// How fast the snow lying grows now (m a second; 0: not snowing) - footprints fill up as fast.
+// How fast the snow lying grows now (m a second; 0: not snowing) - footprints fill up as fast. (`most`:
+// 積もる高さ in metres - SnowMostOf.)
 float SnowFallRate(const WeatherNow& now, float most);
 // How deep the snow lies as a picture shows it, all the ways together: as the game has counted it (Play),
 // or - the editor - at its full 積もる高さ while it snows.

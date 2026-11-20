@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "積雪のバグを直した (立ち上がる板・物を突き抜ける)。雨と雪は 1 つの降水量に (雪にすると雨が弱まってから雪へ)、霧の量 (天気で色が変わる)、積もる高さは cm (0〜5)。3D オブジェクトの追加でコライダーも付く",
+          "en": "Fixed the snow (standing sheets, snow through things). Rain and snow share one precipitation (Snow turns the rain to a drizzle, then snow), a fog amount whose colour follows the weather, snow depth in cm (0-5). Added 3D objects get a collider"
+        },
+        {
           "ja": "天候を数値に: 雲・雨・雪の量 (0〜100、小数第 1 位まで) とテンプレート (快晴〜嵐・吹雪)。雨は量で粒が変わり、100 は数 m 先しか見えない嵐。雪はチェックで少しずつ切り替わる",
           "en": "Weather is now amounts: clouds, rain and snow (0-100, one decimal) plus templates (clear sky to storm and blizzard). Raindrops change with the amount and 100 is a storm you see only a few metres into; snow fades in when checked"
         },

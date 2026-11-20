@@ -40,34 +40,35 @@ Vec3 TurnY(Vec3 d, float degrees) {
 
 void ApplyPreset(Weather& w, WeatherPreset preset) {
     struct Look {
-        float clouds, rain;
+        float clouds, precipitation;
         bool snowing;
-        float snow;
+        float fog;
         bool lightning;
         float wind;
     };
-    // (雲の量, 雨の量, 雪を降らせる, 雪の量, 雷, 風の強さ)
+    // (雲の量, 降水量, 雪にする, 霧の量, 雷, 風の強さ)
     static constexpr Look kLooks[kWeatherPresets] = {
-        {0, 0, false, 0, false, 1},          // 快晴
-        {20, 0, false, 0, false, 2},         // 晴れ
-        {75, 0, false, 0, false, 3},         // くもり
-        {65, 6, false, 0, false, 2},         // ぽつぽつ雨
-        {80, 22, false, 0, false, 2},        // 小雨
-        {90, 50, false, 0, false, 4},        // 雨
-        {100, 80, false, 0, false, 7},       // どしゃぶり
-        {100, 100, false, 0, true, 22},      // 嵐
-        {70, 0, true, 20, false, 1},         // 小雪
-        {85, 0, true, 50, false, 2},         // 雪
-        {100, 0, true, 80, false, 4},        // 大雪
-        {100, 0, true, 100, false, 18},      // 吹雪
+        {0, 0, false, 0, false, 1},       // 快晴
+        {20, 0, false, 0, false, 2},      // 晴れ
+        {75, 0, false, 0, false, 3},      // くもり
+        {60, 0, false, 60, false, 0.5f},  // 霧
+        {65, 6, false, 0, false, 2},      // ぽつぽつ雨
+        {80, 22, false, 5, false, 2},     // 小雨
+        {90, 50, false, 10, false, 4},    // 雨
+        {100, 80, false, 25, false, 7},   // どしゃぶり
+        {100, 100, false, 40, true, 22},  // 嵐
+        {70, 20, true, 5, false, 1},      // 小雪
+        {85, 50, true, 10, false, 2},     // 雪
+        {100, 80, true, 25, false, 4},    // 大雪
+        {100, 100, true, 50, false, 18},  // 吹雪
     };
     const int k = static_cast<int>(preset);
     if (k < 0 || k >= kWeatherPresets) return;
     const Look& l = kLooks[k];
     w.cloudAmount = l.clouds;
-    w.rainAmount = l.rain;
+    w.precipitation = l.precipitation;
     w.snowing = l.snowing;
-    if (l.snowing) w.snowAmount = l.snow;
+    w.fogAmount = l.fog;
     w.lightning = l.lightning;
     w.windStrength = l.wind;
 }
@@ -77,11 +78,18 @@ float SnowInOf(const Weather& w) {
     return std::isfinite(w.snowIn) ? std::clamp(w.snowIn, 0.f, 1.f) : 0.f;
 }
 
+float RainShare(float x) { return x < 0.5f ? 1 - 0.85f * Smooth(0.f, 0.5f, x) : 0.f; }
+float SnowShare(float x) { return x >= 0.5f ? 0.15f + 0.85f * Smooth(0.5f, 1.f, x) : 0.f; }
+
+float SnowMostOf(const Weather& w) { return std::isfinite(w.snowDepthCm) ? std::clamp(w.snowDepthCm, 0.f, 5.f) / 100.f : 0.f; }
+
 WeatherNow TargetOf(const Weather& w) {
     WeatherNow n;
+    const float p = Unit(w.precipitation), x = SnowInOf(w);
     n.clouds = Unit(w.cloudAmount);
-    n.rain = Unit(w.rainAmount);
-    n.snow = Unit(w.snowAmount) * SnowInOf(w);
+    n.rain = p * RainShare(x);
+    n.snow = p * SnowShare(x);
+    n.fog = Unit(w.fogAmount);
     const Vec3 wind = WindOf(w.windDirection, w.windStrength);
     n.windX = wind.x;
     n.windZ = wind.z;
@@ -96,6 +104,7 @@ WeatherNow NowOf(const Weather& w) {
     to.clouds = Lerp(a.clouds, to.clouds, t);
     to.rain = Lerp(a.rain, to.rain, t);
     to.snow = Lerp(a.snow, to.snow, t);
+    to.fog = Lerp(a.fog, to.fog, t);
     to.windX = Lerp(a.windX, to.windX, t);  // (the wind as a vector: it turns the short way)
     to.windZ = Lerp(a.windZ, to.windZ, t);
     return to;
@@ -111,9 +120,18 @@ float RainNow(const WeatherNow& w) { return std::isfinite(w.rain) ? std::clamp(w
 float SnowNow(const WeatherNow& w) { return std::isfinite(w.snow) ? std::clamp(w.snow, 0.f, 1.f) : 0.f; }
 
 float FogOf(const WeatherNow& w) {
-    // A downpour from about 55: at 100 a few metres seen (0.45 a metre: 5 m leaves a tenth); a snowstorm less.
+    // 霧の量: 0.5 a metre at 100 (5 m leaves a twelfth), 0.125 at 50 (20 m leaves a twelfth). A downpour
+    // from about 55 and a snowstorm add to it.
+    const float fog = std::isfinite(w.fog) ? std::clamp(w.fog, 0.f, 1.f) : 0.f;
     const float rain = Smooth(0.55f, 1.f, RainNow(w)), snow = Smooth(0.5f, 1.f, SnowNow(w));
-    return 0.45f * rain * std::sqrt(rain) + 0.18f * snow * std::sqrt(snow);
+    return 0.5f * fog * fog + 0.2f * rain * std::sqrt(rain) + 0.15f * snow * std::sqrt(snow);
+}
+
+Color FogColorOf(const WeatherNow& w, Color light) {
+    // Pale in fair or cloudy weather; darker and greyer (a little blue) in rain; white in snow.
+    const float rain = Smooth(0.f, 0.3f, RainNow(w)), snow = Smooth(0.f, 0.3f, SnowNow(w));
+    const float k = 0.55f - 0.22f * rain + 0.2f * snow;
+    return {light.r * k, light.g * k, light.b * (k + 0.04f * rain), 1};
 }
 
 Vec3 WindOf(float directionDegrees, float strength) {
@@ -132,7 +150,7 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds) {
     game_x_3d::SkyWeather s;
     s.cover = cover;
     s.dark = std::clamp((0.15f * cover + 0.45f * Smooth(0.45f, 1.f, cover) + 0.5f * r * (0.5f + 0.5f * cover)) * (1 - 0.35f * sn), 0.f, 1.f);
-    s.haze = std::clamp(0.02f + 0.15f * cover * cover + 0.45f * r * r + 0.5f * sn, 0.f, 1.f);
+    s.haze = std::clamp(0.02f + 0.15f * cover * cover + 0.45f * r * r + 0.5f * sn + 0.6f * std::clamp(now.fog, 0.f, 1.f), 0.f, 1.f);
     s.through = std::clamp(1 - 0.75f * Smooth(0.3f, 1.f, cover) - 0.35f * r - 0.15f * sn, 0.06f, 1.f);
     // 雷: now and then (an eighth of a second at a time) a flash - only while the time goes on.
     if (w.lightning && cover > 0.5f && seconds > 0) {
@@ -252,7 +270,7 @@ float WetnessOf(const std::vector<WetWay>& ways) {
     return most;
 }
 
-std::vector<WetWay> WetNow(const Weather& w) { return w.wetCounted ? w.wetWays : WetAtOnce(NowOf(w), w.snowDepth); }
+std::vector<WetWay> WetNow(const Weather& w) { return w.wetCounted ? w.wetWays : WetAtOnce(NowOf(w), SnowMostOf(w)); }
 
 float StepSnowCover(float cover, const WeatherNow& now, float most, float dt) {
     dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
@@ -282,15 +300,15 @@ void RunWeather(game_production::SystemContext& ctx) {
     const float dt = std::isfinite(ctx.dt) ? std::max(ctx.dt, 0.f) : 0.f;
     if (w->fadeSeconds > 0 && w->fadeElapsed < w->fadeSeconds) w->fadeElapsed = std::min(w->fadeElapsed + dt, w->fadeSeconds);
     if (!w->wetCounted) w->snowIn = w->snowing ? 1.f : 0.f;  // (as the editor showed it: then it changes slowly)
-    // 雪を降らせる: in (or out) over about 10 seconds.
+    // 雪にする: rain into snow (or back) over about 5 seconds.
     const float snowTo = w->snowing ? 1.f : 0.f, snowFrom = std::isfinite(w->snowIn) ? std::clamp(w->snowIn, 0.f, 1.f) : snowTo;
-    w->snowIn = snowFrom < snowTo ? std::min(snowTo, snowFrom + dt / 10.f) : std::max(snowTo, snowFrom - dt / 10.f);
+    w->snowIn = snowFrom < snowTo ? std::min(snowTo, snowFrom + dt / 5.f) : std::max(snowTo, snowFrom - dt / 5.f);
     const WeatherNow now = NowOf(*w);
     if (!w->wetCounted) {
         w->wetWays.clear();  // (the game starts dry and with no snow: it lies as it snows - 2026-11-19 / 20)
         w->wetCounted = true;
     }
-    StepWet(w->wetWays, now, dt, w->snowDepth);
+    StepWet(w->wetWays, now, dt, SnowMostOf(*w));
     w->driftX = std::fmod(w->driftX + now.windX * dt, kDriftWrap);
     w->driftZ = std::fmod(w->driftZ + now.windZ * dt, kDriftWrap);
 }
