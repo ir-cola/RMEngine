@@ -24,6 +24,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 [-Config Rel
 - 色は `theme::` の変数だけを使う (直に `Color::Hex` を書かない。黒と白のテーマで切り替わるため)
 - 画面は `w::` の部品で描く (ボタン・行・タブ・見出し・印・箱は `editor/widgets` にある)。画面のコードで四角を自分で塗らない。新しい見た目が要るときは widgets に部品を足す
 - 目に見える変更をしたら `resources/updates.json` (Hub の「アップデート情報」) に日本語と英語で 1 行足す
+- 機能を 1 つ作り終えるか、バグを数個直したら、エンジンの版を 0.0.1 上げる (`src/base/Version.h` の `RM_ENGINE_VERSION` の 1 か所)。`resources/updates.json` の先頭に新しい版と日付の欄を作り、それ以降の行はそこへ足す
 - 新しい技術 (API・ライブラリ・作り方) を使ったら [docs/TECHNOLOGIES.md](docs/TECHNOLOGIES.md) に説明を書き足し、末尾の「追記の記録」に 1 行足す (ユーザーが人に説明するためのメモ)
 
 ## 憲法 (前のエンジンの失敗から。破らない)
