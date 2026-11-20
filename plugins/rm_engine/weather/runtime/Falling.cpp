@@ -309,8 +309,8 @@ const char kSnowLayerHlsl[] = R"(
 // 各角は、その下にあるものの上面に載り (まっすぐ下の地図)、そこに雪が積もった高さまで立ち上がる
 // (各降り方の雪を、その降り方が届く所で、SnowShape の塊の中で)。動くものが押した所
 // (足跡、SnowTrailPS) では、決してその上にはならない。段では、上側で雪が薄くなって
-// なくなる (丸い縁)。根元で、急すぎる所と下に何もない所では、角を除く
-// (NaN: その三角形は描かない) - 雪が立たず、ものの中にもない。傾いた向きの降り方が屋根の下に
+// なくなる (丸い縁)。急すぎる所と下に何もない所では、角を除く (NaN: その三角形は描かない)。
+// 段をまたぐ三角形は捨てる - 雪が立たず、ものの中にもない。傾いた向きの降り方が屋根の下に
 // 吹き込む分は、そこでは白い (SnowAt) が高さはない。縁の角は本当の縁まで外へ動かす (EdgeReach)。
 // モデルと同じ光 (Shade)、霧の中 (Fogged)。RendererShaderText(kWetSurfaceHlsl) の後。
 cbuffer SnowLayer : register(b4) {
@@ -375,15 +375,17 @@ float OnLevel(float2 xz, float level, float ledge) {
     }
     return lerp(lerp(on[0], on[1], w.x), lerp(on[2], on[3], w.x), w.y);
 }
-// 縁の角 (隣が段の下) から `dir` に沿って、本当の縁 (下の面がその高さでなくなる所) までの距離
-// (多くて `most`)。8 か所で読み、半分の所を直線で求める。
-float EdgeReach(float2 xz, float2 dir, float level, float ledge, float most) {
+// 段の角から `dir` に沿って、本当の段 (OnLevel が `from` でなくなる所) までの距離 (多くて `most`)。
+// 縁の角 (隣が段の下): `level` = その高さ、`from` = true (面がなくなる所まで)。根元の角 (隣が段の
+// 上): `level` = その高さ + 段、`from` = false (面が立ち上がる所まで)。8 か所で読み、半分の所を
+// 直線で求める。
+float EdgeReach(float2 xz, float2 dir, float level, float ledge, float most, bool from) {
     float before = OnLevel(xz, level, ledge), t0 = 0;
-    if (before < 0.5) return 0;
+    if ((before >= 0.5) != from) return 0;
     [loop] for (int i = 1; i <= 8; ++i) {
         float t = most * i / 8.0;
         float on = OnLevel(xz + dir * t, level, ledge);
-        if (on < 0.5) return lerp(t0, t, saturate((before - 0.5) / max(before - on, 1e-4)));
+        if ((on >= 0.5) != from) return lerp(t0, t, saturate((before - 0.5) / (abs(before - on) > 1e-4 ? before - on : 1e-4)));
         before = on;
         t0 = t;
     }
@@ -395,6 +397,7 @@ struct SnowOut {
     float3 nrm : NORMAL;
     float3 wpos : TEXCOORD2;
     float depth : TEXCOORD4;  // そこにどれだけ深く積もるか
+    float2 edge : TEXCOORD5;  // x: 根元の角 (1)、y: 縁の角 (1)。両方が混ざる三角形は段をまたぐ: 描かない
 };
 
 SnowOut SnowLayerVS(uint id : SV_VertexID) {
@@ -417,12 +420,15 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
     float gl = l.none || abs(l.ground - c.ground) > ledge ? c.ground : l.ground, gr = r.none || abs(r.ground - c.ground) > ledge ? c.ground : r.ground;
     float gd = d.none || abs(d.ground - c.ground) > ledge ? c.ground : d.ground, gu = u.none || abs(u.ground - c.ground) > ledge ? c.ground : u.ground;
     float3 groundN = normalize(float3(gl - gr, 2 * pace, gd - gu));
-    if (c.none || foot || groundN.y < 0.45) {
+    // 根元の角は描く (2026-11-21: 前は除いていて、物のまわりの地面の雪がマスの階段で途切れた)。
+    // 段をまたぐ三角形 (根元の角と縁の角の両方を持つ) は SnowLayerPS が捨てる。
+    if (c.none || (foot && rim) || groundN.y < 0.45) {
         float nan = asfloat(0x7fc00000);
         o.pos = float4(nan, nan, nan, nan);
         o.nrm = float3(0, 1, 0);
         o.wpos = float3(0, 0, 0);
         o.depth = 0;
+        o.edge = float2(0, 0);
         return o;
     }
     float own = c.top - c.ground;
@@ -433,19 +439,29 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
     o.nrm = normalize(float3(tl - tr, 2 * pace, td - tu));
     o.depth = c.depth;
     // 縁の角は、本当の縁まで外へ動かす: 円柱や丸い物の上の雪が、格子のマスの階段 (四角) ではなく
-    // 物の形に沿って終わる (2026-11-20)。
+    // 物の形に沿って終わる (2026-11-20)。根元の角は、物の壁の手前 (2 cm) まで内へ動かす: まわりの
+    // 地面の雪が物の形に沿って根元まで届く (2026-11-21)。
     float2 at = xz;
     if (rim) {
         float2 outward = float2((l.none || c.ground - l.ground > ledge ? -1 : 0) + (r.none || c.ground - r.ground > ledge ? 1 : 0),
                             (d.none || c.ground - d.ground > ledge ? -1 : 0) + (u.none || c.ground - u.ground > ledge ? 1 : 0));
-        if (dot(outward, outward) > 0.5) at += normalize(outward) * EdgeReach(xz, normalize(outward), c.ground, ledge, pace * length(outward));
+        if (dot(outward, outward) > 0.5) at += normalize(outward) * EdgeReach(xz, normalize(outward), c.ground, ledge, pace * length(outward), true);
+    } else if (foot) {
+        float2 inward = float2((!l.none && l.ground - c.ground > ledge ? -1 : 0) + (!r.none && r.ground - c.ground > ledge ? 1 : 0),
+                               (!d.none && d.ground - c.ground > ledge ? -1 : 0) + (!u.none && u.ground - c.ground > ledge ? 1 : 0));
+        if (dot(inward, inward) > 0.5) {
+            float t = EdgeReach(xz, normalize(inward), c.ground + ledge, ledge, pace * length(inward), false);
+            at += normalize(inward) * max(t - 0.02, 0);
+        }
     }
+    o.edge = float2(foot ? 1 : 0, rim ? 1 : 0);
     o.wpos = float3(at.x, rim ? c.ground + 0.002 : max(c.top, c.ground + 0.002), at.y);
     o.pos = mul(viewProj, float4(o.wpos, 1));
     return o;
 }
 
 float4 SnowLayerPS(SnowOut i) : SV_Target {
+    if (i.edge.x > 0.001 && i.edge.y > 0.001) discard;  // (段をまたぐ三角形: 物の壁に張り付く雪の板になる)
     clip(SnowShape(i.wpos.xz, i.depth) - 0.02);  // (塊が立たない所: なし)
     float3 n = normalize(i.nrm);
     float3 v = normalize(eye.xyz - i.wpos);

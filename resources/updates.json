@@ -7,6 +7,10 @@
       "date": "2026-11-05",
       "items": [
         {
+          "ja": "物のまわりの地面に積もった雪が、物の形に沿って根元まで届くように (階段状に途切れていたのを直した)",
+          "en": "Snow on the ground around objects now reaches their base and follows their shape (it used to stop short in steps)"
+        },
+        {
           "ja": "円柱など丸い物の上に積もった雪が四角くなっていたのを直した (雪が物の縁の形に沿って終わる)",
           "en": "Snow on cylinders and other round objects no longer looks square (it now ends along the object's edge)"
         },
