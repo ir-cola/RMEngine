@@ -3,6 +3,14 @@
 まず [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を読むこと。前のエンジンの反省は
 `C:\Users\akatu\Desktop\school\TestEngine\新エンジンへの引き継ぎメモ.txt` と `TestEngine/docs/` (DESIGN_SUMMARY.md / RME_PLATFORM.md)。
 
+## 作業内容の目次 (→ [作業内容.md](作業内容.md))
+
+セッションの作業の記録は CLAUDE.md に直接書かず、[作業内容.md](作業内容.md) に日付と時間を付けて書く。ここはその目次。
+
+| 日付 | 項目 |
+|---|---|
+| 2026/11/21 | TestEngine にあって RME に無いものの一覧 / HOW_TO_TRY 9 章の見直し (**変更**) / ゲーム制作の機能の予定 (簡易移動・簡易カメラ・コライダーとメッシュの形・自分で作る形・流体) |
+
 ## 前提 (ユーザーの決定)
 
 - 対象は **Windows + Visual Studio 2022**。Windows の機能や VS に頼ってよい
