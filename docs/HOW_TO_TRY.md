@@ -430,6 +430,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1
 
 **入れたプラグインが古いとき**: 入れたプラグインはインストールしたときの写し。エンジンのものと違う (前の版の) 写しは、上のとおり起動のときと、プロジェクトを開くときの「インストールして開く」や「前提をインストール」で**自動で写し直される**。前の版で入った「3D 描画」は、3D 空間にまとめたので使われない (フォルダが残っていても害は無い)。全部をきれいに入れ直したいときは、エディターを閉じてから `%LOCALAPPDATA%\RM_Engine\Engines\<エンジン>\Plugins` をフォルダごと消して起動する
 
+**やめたプラグインの古い写し** (2026-11-22。画面では**未確認**。ビルドとテスト (`Plugins_RetiredCopies`) は通っている): 前のエンジンが入れた (ダウンロードした物ではない) のに、このエンジンにはもう無いプラグインは、起動したときに入れたプラグインのフォルダーから**消す** (ログに「このエンジンにはもう無いプラグインの古い写しを消しました: rm_engine/game_x_3d_x_physics」)。例: 「ゲーム制作 × 3D × 物理」は 2026-11-19 に役目を「天候 × 物理」へ移してやめたが、写しが残り、Hub のつなぎの一覧に「使用中」で出ていた。ダウンロードした物 (`download.json` がある) は消さない。ビルドも、リポジトリから消えたプラグインとヘルプのファイルを exe の隣 (`build\bin\x64\<Debug か Release>\Plugins`・`Help`) から消す
+- 試し方: Visual Studio で Debug をビルドして起動 → Hub の「プラグイン」のつなぎの一覧に「ゲーム制作 × 3D × 物理」が無い。`build\bin\x64\Debug\Plugins\rm_engine\` と `%LOCALAPPDATA%\RM_Engine\Engines\debug-…\Plugins\rm_engine\` に `game_x_3d_x_physics` が無い
+
 **Hub の「プラグイン」ページ**
 
 | 状態 | 表示 | ボタン |

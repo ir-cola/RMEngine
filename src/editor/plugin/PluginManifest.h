@@ -126,6 +126,15 @@ std::vector<PluginId> FirstStartInstalls(const std::vector<PluginId>& available,
 // 起動時に入れる。プラグインを入れたときに一緒に来たはずのものと同じ扱い。エンジンの順で。
 std::vector<PluginId> ConnectorsToBring(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available);
 
+// 入っている写しのうち、前のエンジンが写した (ダウンロードした物ではない) のに、このエンジンには
+// もう無いもの (やめた・ほかのプラグインに移した。例: 2026-11-19 の ゲーム制作 × 3D × 物理 → 天候 × 物理):
+// 起動時に消す。ダウンロードした物 (download.json がある) は消さない。入っている順で。
+struct InstalledCopy {
+    PluginId id;
+    bool downloaded = false;
+};
+std::vector<PluginId> RetiredCopies(const std::vector<InstalledCopy>& installed, const std::vector<PluginId>& engine);
+
 struct Dependent {
     PluginId id;
     std::optional<PluginId> via;  // 空: 直接必要とする。それ以外: このプラグインを通して必要とする

@@ -235,6 +235,14 @@
     <!-- 核の翻訳: <exe>/Lang/en.json (editor/lang) -->
     <Copy SourceFiles="@(LangFile)" DestinationFolder="$(OutDir)Lang" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(HelpFile)" DestinationFiles="@(HelpFile->'$(OutDir)Help\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <!-- リポジトリから消えたもの (やめたプラグイン・ヘルプのページ) を exe の隣からも消す。写すだけでは前の写しが残り、
+         エンジンにはもう無いプラグインがあるように見える (2026-11-22: ゲーム制作 × 3D × 物理)。空になったフォルダーも消す。 -->
+    <ItemGroup>
+      <CopiedOut Include="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)');@(HelpFile->'$(OutDir)Help\%(RecursiveDir)%(Filename)%(Extension)')" />
+      <StaleOut Include="$(OutDir)Plugins\**\*;$(OutDir)Help\**\*" Exclude="@(CopiedOut)" />
+    </ItemGroup>
+    <Delete Files="@(StaleOut)" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;foreach ($d in 'Plugins','Help') { $r = Join-Path '$(OutDir).' $d; if (Test-Path $r) { Get-ChildItem $r -Directory -Recurse | Sort-Object { $_.FullName.Length } -Descending | Where-Object { -not (Get-ChildItem $_.FullName -Force) } | Remove-Item } }&quot;" />
     <!-- エンジンのファイルと SHA-256 の一覧。整合性チェック用 (Hub > オプション) -->
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(RMRoot)tools\make_filelist.ps1&quot; -Dir &quot;$(OutDir).&quot;" />
   </Target>

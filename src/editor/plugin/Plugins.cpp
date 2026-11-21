@@ -200,9 +200,30 @@ void Plugins::Reload() {
         }
     }
     std::sort(extras.begin(), extras.end(), [](const PluginId& x, const PluginId& y) { return x.Text() < y.Text(); });
+    std::vector<InstalledCopy> copies;
     for (const PluginId& id : extras) {
         PutBackInterrupted(FolderOf(installedDir_, id));
         RemoveLeftovers(FolderOf(installedDir_, id));
+        std::error_code ec;
+        if (fs::is_directory(FolderOf(installedDir_, id), ec)) {
+            copies.push_back({id, fs::exists(FolderOf(installedDir_, id) / L"download.json", ec)});
+        }
+    }
+    // 前のエンジンが写したのに、このエンジンにはもう無いもの: 消す (Hub に「使用中」のまま残らない)。
+    for (const PluginId& id : RetiredCopies(copies, builtinIds)) {
+        const fs::path folder = FolderOf(installedDir_, id);
+        const fs::path aside = WithSuffix(folder, L".removing");
+        std::error_code ec;
+        fs::remove_all(aside, ec);
+        fs::rename(folder, aside, ec);
+        if (ec) {
+            log::Warn("このエンジンにはもう無いプラグインの古い写しを消せませんでした: {} ({})", PathToUtf8(folder), FsError(ec));
+            continue;
+        }
+        fs::remove_all(aside, ec);  // (消し残りは次の起動で RemoveLeftovers が消す)
+        log::Info("このエンジンにはもう無いプラグインの古い写しを消しました: {}", id.Text());
+    }
+    for (const PluginId& id : extras) {
         std::error_code ec;
         if (!fs::is_directory(FolderOf(installedDir_, id), ec)) continue;
         PluginCandidate cand;

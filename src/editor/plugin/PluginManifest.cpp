@@ -346,6 +346,14 @@ std::vector<PluginId> ConnectorsToBring(const std::vector<PluginManifest>& insta
     return out;
 }
 
+std::vector<PluginId> RetiredCopies(const std::vector<InstalledCopy>& installed, const std::vector<PluginId>& engine) {
+    std::vector<PluginId> out;
+    for (const InstalledCopy& c : installed) {
+        if (!c.downloaded && !Contains(engine, c.id) && !Contains(out, c.id)) out.push_back(c.id);
+    }
+    return out;
+}
+
 std::vector<PluginId> FirstStartInstalls(const std::vector<PluginId>& available, const std::vector<PluginId>& legacyInstalled) {
     if (legacyInstalled.empty()) return available;
     std::vector<PluginId> out;
