@@ -78,6 +78,7 @@
     <ClCompile Include="platform\Process.cpp" />
     <ClCompile Include="platform\Crypto.cpp" />
     <ClCompile Include="platform\SystemInfo.cpp" />
+    <ClCompile Include="platform\Http.cpp" />
     <ClCompile Include="editor\export\Exporter.cpp" />
     <ClCompile Include="ui\Context.cpp" />
     <ClCompile Include="ui\Painter.cpp" />
@@ -97,6 +98,8 @@
     <ClCompile Include="editor\assets\AssetPanel.cpp" />
     <ClCompile Include="editor\assets\Thumbnails.cpp" />
     <ClCompile Include="editor\plugin\PluginManifest.cpp" />
+    <ClCompile Include="editor\plugin\PluginIndex.cpp" />
+    <ClCompile Include="editor\plugin\PluginDownload.cpp" />
     <ClCompile Include="editor\tree\TreeModel.cpp" />
     <ClCompile Include="editor\tree\TreeView.cpp" />
     <ClCompile Include="editor\plugin\Plugins.cpp" />
@@ -132,6 +135,7 @@
     <ClInclude Include="platform\Pixels.h" />
     <ClInclude Include="platform\Shell.h" />
     <ClInclude Include="platform\SystemInfo.h" />
+    <ClInclude Include="platform\Http.h" />
     <ClInclude Include="platform\Win.h" />
     <ClInclude Include="platform\Window.h" />
     <ClInclude Include="ui\Context.h" />
@@ -156,6 +160,8 @@
     <ClInclude Include="editor\assets\AssetPreview.h" />
     <ClInclude Include="editor\assets\Thumbnails.h" />
     <ClInclude Include="editor\plugin\PluginManifest.h" />
+    <ClInclude Include="editor\plugin\PluginIndex.h" />
+    <ClInclude Include="editor\plugin\PluginDownload.h" />
     <ClInclude Include="editor\plugin\Plugins.h" />
     <ClInclude Include="editor\plugin\Software.h" />
     <ClInclude Include="editor\tree\TreeModel.h" />

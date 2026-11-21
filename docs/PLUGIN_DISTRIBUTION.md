@@ -146,7 +146,11 @@ Hub「プラグイン」を開く / 「更新を確かめる」
 
 ## 6. 段階
 
-### 段階 1: コードの無いプラグインを落とす (テーマ・テンプレート)
+### 段階 1: コードの無いプラグインを落とす (テーマ・テンプレート) — 2026-11-21 に作った (版 0.0.3。画面では未確認)
+
+作った物: `platform/Http` (WinHTTP)・`base/Zip` (zip と deflate を自分で読む)・`editor/plugin/PluginIndex` (一覧・版・出す物・zip のパスの検査。純粋でテスト付き)・`PluginDownload` (落として確かめて展開)・`Plugins::InstallDownloaded` と exe に無いコードの無いプラグインを一覧に出す・`App::StartCatalog` (立ち上げたときに 1 度)・Hub の「ダウンロードできるプラグイン」と左下の「新しい版があります」・`tools/make_plugin_package.ps1`。一覧の場所は `https://ir-cola.github.io/rm_engine/index.json` (`PluginIndex.h` の 1 か所。試すときは環境変数 `RM_PLUGIN_INDEX`)。すべての `plugin.json` の `version` を数 3 つの文字 (`"0.0.1"`) にした (前は数 1。古い写しの数は「版なし」として読む)。試し方は HOW_TO_TRY の「プラグインをダウンロードして入れる」。
+
+まだの物: 前提が一覧にしか無いとき、それも一緒に落とすこと (今は「先に入れてください」)・一覧の署名・落とす途中の進み具合の表示・エンジン本体の zip (段階 3)。
 
 - コードを読み込まないので、§1 の C++ の問題が無い。**最初に作るのはここ**。
 - 要る変更: Hub の一覧の 1 行を「exe に組み込まれたプラグイン」から「exe に組み込まれたもの + `code: false` の入れたもの」に広げる (`Plugins::Load` / `ResolvePlugins`)。テーマ (`themes/*.json`) とテンプレート (`templates/`) は今もファイルから読んでいるので、そのまま効く。

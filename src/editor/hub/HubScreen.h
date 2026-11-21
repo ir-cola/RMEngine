@@ -85,6 +85,8 @@ private:
     void DrawPlugins(ui::Context& c, ui::Rect r);
     // プラグインの下の、同じスクロールする行の中 (`area` はその下へ動く)。
     void DrawConnectors(ui::Context& c, ui::Rect& area, const ui::Rect& view);
+    // ダウンロードできるプラグイン (App::Catalog): 入っていない物・新しい版がある物と、一覧を読めたか。
+    void DrawDownloads(ui::Context& c, ui::Rect& area, const ui::Rect& view);
     void DrawOptions(ui::Context& c, ui::Rect r);
     void DrawUpdates(ui::Context& c, ui::Rect r);
     void DrawIntegrity(ui::Context& c);

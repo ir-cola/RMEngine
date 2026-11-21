@@ -6,7 +6,9 @@
 
 #include "base/Log.h"
 #include "base/Utf.h"
+#include "base/Version.h"
 #include "editor/lang/Lang.h"
+#include "editor/plugin/PluginIndex.h"
 #include "platform/Shell.h"
 
 #include <algorithm>
@@ -174,6 +176,59 @@ void Plugins::Reload() {
         candidates.push_back(std::move(cand));
     }
 
+    // exe に無い、入っているプラグイン (ダウンロードした、コードの無い物)。コードのある物はまだ使えない。
+    std::vector<PluginId> builtinIds;
+    for (const BuiltinPlugin& b : builtin) builtinIds.push_back(b.id.Id());
+    std::error_code dirEc;
+    std::vector<PluginId> extras;
+    for (fs::directory_iterator a(installedDir_, dirEc), end; !dirEc && a != end; a.increment(dirEc)) {
+        std::error_code ec;
+        if (!a->is_directory(ec)) continue;
+        const std::string author = PathToUtf8(a->path().filename());
+        for (fs::directory_iterator n(a->path(), ec), end2; !ec && n != end2; n.increment(ec)) {
+            std::error_code e2;
+            if (!n->is_directory(e2)) continue;
+            std::string name = PathToUtf8(n->path().filename());
+            for (const char* suffix : {".old", ".removing", ".installing"}) {
+                const std::string s = suffix;
+                if (name.size() > s.size() && name.compare(name.size() - s.size(), s.size(), s) == 0) name.resize(name.size() - s.size());
+            }
+            const PluginId id{author, name};
+            if (PluginIdProblem(id.author, id.name)) continue;
+            if (std::find(builtinIds.begin(), builtinIds.end(), id) != builtinIds.end()) continue;
+            if (std::find(extras.begin(), extras.end(), id) == extras.end()) extras.push_back(id);
+        }
+    }
+    std::sort(extras.begin(), extras.end(), [](const PluginId& x, const PluginId& y) { return x.Text() < y.Text(); });
+    for (const PluginId& id : extras) {
+        PutBackInterrupted(FolderOf(installedDir_, id));
+        RemoveLeftovers(FolderOf(installedDir_, id));
+        std::error_code ec;
+        if (!fs::is_directory(FolderOf(installedDir_, id), ec)) continue;
+        PluginCandidate cand;
+        cand.id = id;
+        cand.installed = true;
+        const ReadResult mine = ReadManifest(FolderOf(installedDir_, id));
+        cand.manifestFound = mine.found;
+        cand.manifest = mine.manifest;
+        cand.manifestError = mine.error;
+        if (cand.manifest && cand.manifest->code) {
+            cand.manifest.reset();
+            cand.manifestError = TrU8("コードのあるプラグインは、まだダウンロードして使えません");
+        }
+        if (cand.manifest) installed_.push_back(*cand.manifest);
+        candidates.push_back(std::move(cand));
+        availableFlags.push_back(false);
+    }
+    // 動く一番古いエンジンの版より古いエンジン: 使わない (入っている写しの plugin.json の engine.min)。
+    for (PluginCandidate& cand : candidates) {
+        if (!cand.installed || !cand.manifest || cand.manifest->engineMin.empty()) continue;
+        if (const auto c = CompareVersions(kEngineVersion, cand.manifest->engineMin); c && *c < 0) {
+            cand.manifestError = TrU8F("エンジン {} 以降が要ります (今は {})", cand.manifest->engineMin, kEngineVersion);
+            cand.manifest.reset();
+        }
+    }
+
     PluginResolution res = ResolvePlugins(candidates);
     for (size_t i = 0; i < candidates.size(); ++i) {
         PluginStatus st = res.statuses[i];
@@ -187,6 +242,9 @@ void Plugins::Reload() {
         for (const auto& a : available_) {
             if (!m && a.id == entry.status.id) m = &a;
         }
+        std::error_code mec;
+        entry.downloaded = entry.installed && fs::exists(FolderOf(installedDir_, entry.status.id) / L"download.json", mec);
+        if (m) entry.version = m->version;
         if (m && m->connectorFor) {
             entry.connector = true;
             entry.joins = m->requirements;
@@ -194,6 +252,7 @@ void Plugins::Reload() {
         entries_.push_back(std::move(entry));
     }
     for (const size_t i : res.order) {
+        if (i >= builtin.size()) continue;  // (exe に無い、コードの無いプラグイン: 登録するものは無い)
         // 先にランタイムの部分 (書き出したゲームも登録するもの)、次にエディターの部分。
         const PluginId id = entries_[i].status.id;
         RegisterRuntimeParts(registry_, std::span<const PluginId>(&id, 1));
@@ -215,11 +274,18 @@ void Plugins::Reload() {
 
 void Plugins::LoadTemplates() {
     std::vector<ProjectTemplate> list{BlankTemplate()};
-    for (const BuiltinPlugin& b : BuiltinPlugins()) {
-        const PluginId id = b.id.Id();
+    for (const Entry& entry : entries_) {
+        const PluginId id = entry.status.id;
+        // エンジンの写し。ただしダウンロードした新しい版が入っていればそれ、exe に無い物は入っている写し (有効なときだけ)。
+        bool mine = false;
+        for (const PluginManifest& m : installed_) {
+            if (m.id == id) mine = !entry.available || NewerThanEngine(m, available_);
+        }
+        if (!entry.available && (!mine || entry.status.state != PluginState::Enabled)) continue;
+        const fs::path root = mine ? installedDir_ : availableDir_;
         std::error_code ec;
         std::vector<fs::path> files;
-        for (fs::directory_iterator it(FolderOf(availableDir_, id) / L"templates", ec), end; !ec && it != end; it.increment(ec)) {
+        for (fs::directory_iterator it(FolderOf(root, id) / L"templates", ec), end; !ec && it != end; it.increment(ec)) {
             std::error_code e2;
             if (fs::is_regular_file(it->path() / L"template.json", e2)) files.push_back(it->path() / L"template.json");
         }
@@ -276,8 +342,9 @@ std::vector<PluginId> Plugins::InstallPlan(const PluginId& id, std::vector<Plugi
 
 std::vector<Dependent> Plugins::Dependents(const PluginId& id) const { return editor::Dependents(id, installed_); }
 
-bool Plugins::CopyIn(const PluginId& id, std::string* error) {
-    const fs::path from = FolderOf(availableDir_, id);
+bool Plugins::CopyIn(const PluginId& id, std::string* error) { return CopyIn(id, FolderOf(availableDir_, id), error); }
+
+bool Plugins::CopyIn(const PluginId& id, const fs::path& from, std::string* error) {
     const fs::path to = FolderOf(installedDir_, id);
     const fs::path temp = WithSuffix(to, L".installing");
     const fs::path aside = WithSuffix(to, L".old");
@@ -336,9 +403,48 @@ bool Plugins::Install(const std::vector<PluginId>& ids, std::string* error) {
 std::vector<PluginId> Plugins::InstalledAndAvailable() const {
     std::vector<PluginId> out;
     for (const Entry& e : entries_) {
-        if (e.installed && e.available) out.push_back(e.status.id);
+        if (!e.installed || !e.available) continue;
+        // ダウンロードした、エンジンの写しより新しい版: エンジンを更新しても古い写しで上書きしない。
+        const bool newer = std::any_of(installed_.begin(), installed_.end(),
+                                       [&](const PluginManifest& m) { return m.id == e.status.id && NewerThanEngine(m, available_); });
+        if (!newer) out.push_back(e.status.id);
     }
     return out;
+}
+
+bool Plugins::InstallDownloaded(const PluginId& expected, const fs::path& folder, const json::Value& marker, std::string* error) {
+    std::error_code ec;
+    auto done = [&](bool ok) {
+        fs::remove_all(folder, ec);
+        return ok;
+    };
+    const ReadResult r = ReadManifest(folder);
+    if (!r.manifest) {
+        if (error) *error = TrU8F("落とした plugin.json を読めません: {}", r.error);
+        return done(false);
+    }
+    if (r.manifest->id != expected) {
+        if (error) *error = TrU8F("落とした plugin.json の ID ({}) が一覧 ({}) と違います", r.manifest->id.Text(), expected.Text());
+        return done(false);
+    }
+    if (r.manifest->code) {
+        if (error) *error = TrU8("コードのあるプラグインは、まだダウンロードして使えません");
+        return done(false);
+    }
+    if (!r.manifest->engineMin.empty()) {
+        if (const auto c = CompareVersions(kEngineVersion, r.manifest->engineMin); !c || *c < 0) {
+            if (error) *error = TrU8F("エンジン {} 以降が要ります (今は {})", r.manifest->engineMin, kEngineVersion);
+            return done(false);
+        }
+    }
+    std::string err;
+    if (!platform::WriteFileAtomic(folder / L"download.json", json::Write(marker, true), &err)) {
+        if (error) *error = err;
+        return done(false);
+    }
+    const bool ok = CopyIn(expected, folder, error);
+    if (ok) log::Info("ダウンロードしたプラグインを置きました: {} ({}) 版 {}", r.manifest->displayName, expected.Text(), r.manifest->version);
+    return done(ok);
 }
 
 Plugins::EngineRefreshPlan Plugins::PlanEngineRefresh(const fs::path& fileList, const fs::path& availableDir, const fs::path& installedDir,

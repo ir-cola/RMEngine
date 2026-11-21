@@ -32,6 +32,7 @@ plugins/
 | ランタイムだけ | エディターの部分が無いプラグインも `BuiltinPlugins.cpp` に `RegisterEditor` 無し (`nullptr`) で載せる |
 | ビルド | 全部 `RM_Engine.exe` に静的リンク。ソースはワイルドカードで拾うので vcxproj を書き直さなくてよい。`plugin.json` はビルドで `build/bin/.../Plugins/<作者>/<名前>/` へ写る (= このエンジンが持っているもの) |
 | インストール | Hub で入れると `%LOCALAPPDATA%\RM_Engine\Engines\<エンジン>\Plugins\<作者>\<名前>\` へフォルダごと写る。入っていないプラグインは初期化されない。最初の起動では全部入る |
+| 版とダウンロード | `plugin.json` の `"version"` は数 3 つの文字 (`"0.0.1"`)、`"engine": { "min": ... }` は動く一番古いエンジン、`"code": false` はテーマとテンプレートだけの物。コードの無い物は `tools/make_plugin_package.ps1` で zip と一覧 `index.json` にしてポートフォリオに置くと、Hub の「ダウンロードできるプラグイン」から落として入れられる ([docs/PLUGIN_DISTRIBUTION.md](../docs/PLUGIN_DISTRIBUTION.md) 段階 1) |
 
 決まりは `tools/check_layers.ps1` がビルドと CI のたびに検査する。
 

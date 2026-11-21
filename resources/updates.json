@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.3",
+      "date": "2026-11-21",
+      "items": [
+        {
+          "ja": "Hub の「プラグイン」に「ダウンロードできるプラグイン」: 公開している一覧 (ポートフォリオのページ) から、テーマやテンプレートだけのプラグインを落として入れる・新しい版に更新する。立ち上げたときに一覧を見て、新しいエンジンがあれば左下に知らせる",
+          "en": "Plugins page of the Hub: \"Plugins to download\" installs or updates theme and template plugins from the published list (the portfolio page). The list is checked at start-up, and a newer engine is shown at the bottom left"
+        }
+      ]
+    },
+    {
       "version": "0.0.2",
       "date": "2026-11-21",
       "items": [

@@ -2,6 +2,7 @@
   "author": "rm_engine",
   "name": "game_production",
   "displayName": "ゲーム制作",
+  "version": "0.0.1",
   "requires": [],
   "needsConnector": true
 }

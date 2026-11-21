@@ -100,6 +100,7 @@
     <ClCompile Include="TestEntityRefs.cpp" />
     <ClCompile Include="TestTemplates.cpp" />
     <ClCompile Include="TestSceneFile.cpp" />
+    <ClCompile Include="TestDownload.cpp" />
     <ClCompile Include="TestMeshBake.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
     <ClCompile Include="TestBakedImage.cpp" />
@@ -116,6 +117,9 @@
     <ClCompile Include="..\src\editor\dock\DockLayout.cpp" />
     <ClCompile Include="..\src\editor\dock\NamedLayouts.cpp" />
     <ClCompile Include="..\src\editor\plugin\PluginManifest.cpp" />
+    <ClCompile Include="..\src\editor\plugin\PluginIndex.cpp" />
+    <ClCompile Include="..\src\editor\plugin\PluginDownload.cpp" />
+    <ClCompile Include="..\src\platform\Http.cpp" />
     <ClCompile Include="..\src\editor\project\Templates.cpp" />
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />

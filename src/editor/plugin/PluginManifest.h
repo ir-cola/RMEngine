@@ -37,6 +37,12 @@ struct PluginManifest {
     // どのソフトに属すか。どのテンプレートも必要としないとき ("software": ["game"]: テンプレートの
     // 木の一番上のノードの ID。editor/project/Templates.h)。Hub の「ソフトで絞る」だけに使う。省略できる。
     std::vector<std::string> softwares;
+    // 配布 (docs/PLUGIN_DISTRIBUTION.md §3-2): 版 (数 3 つ。書いていない古い plugin.json は空)・
+    // 動く一番古いエンジンの版 ("engine": { "min": ... }。空: どれでも)・コードがあるか ("code"。
+    // 書いていなければある。テーマとテンプレートだけのプラグインは false)。
+    std::string version;
+    std::string engineMin;
+    bool code = true;
 
     bool operator==(const PluginManifest&) const = default;
 };
@@ -102,10 +108,13 @@ inline bool LacksRequirement(PluginState s) {
 std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginManifest>& available,
                                   const std::vector<PluginId>& ready, std::vector<PluginId>* unavailable);
 
-// 写す必要が無い、入っているプラグイン。読めて、このエンジンの写しと同じもの。違う写し
-// (古いエンジンのもの: 前提が違う、コネクターの決まりが無いなど) は、次の入れる計画でもう一度
-// 写す。このエンジンに無いプラグインは、そのまま受け取る。
+// 写す必要が無い、入っているプラグイン。読めて、このエンジンの写しと同じもの、またはエンジンの写しより
+// 新しい版 (ダウンロードした物)。違う写し (古いエンジンのもの: 前提が違う、コネクターの決まりが無い
+// など) は、次の入れる計画でもう一度写す。このエンジンに無いプラグインは、そのまま受け取る。
 std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available);
+// 入っている写しが、このエンジンの写しより新しい版 (ダウンロードした物)。エンジンを更新したときの
+// 写し直しは、これを古いエンジンの写しで上書きしない。
+bool NewerThanEngine(const PluginManifest& installed, const std::vector<PluginManifest>& available);
 
 // エンジンの最初の起動で入れるもの (自分用の入れたプラグインのフォルダーが新しい): 前は
 // 全エンジンで共有していたフォルダーにユーザーが入れていたもの (`legacyInstalled`。あれば)、

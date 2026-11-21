@@ -996,10 +996,19 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **モデルの座標系** — 取り込みの設定で「上にする軸」「奥にする軸」「左手系か」を選ぶ (プリセット: glTF・Blender・Unreal・Unity)。新しい座標は (右・上・奥 への射影) で、右は左手系なら 上 × 奥、右手系なら 奥 × 上 (= 鏡)。鏡のときは三角形の 2 つの頂点を入れ替えて表を保つ。FBX は「自動」のときだけファイルの GlobalSettings の軸と単位を使い、選んだときはファイルの数のまま読んでから選んだ座標系をかける
 - **どこ** — `space3d/runtime/View.cpp` (`LookAt`・`Perspective`・`Orthographic`・`OrbitView`)・`Lighting.cpp` (影の段の深さ)・`Mesh.cpp` (`ApplyModelImport`)・`MeshFile.cpp` (`BasisOf`)・`Fbx.cpp`・`core/asset/ImportSettings.*` (`ModelAxes` と古い "up" の移行)・`game_production/runtime/SceneFile.*` (`MirrorZ`)・`Prefab.cpp` (`UpgradePrefab`)
 
+### プラグインのダウンロード: WinHTTP・zip と deflate を自分で読む・SHA-256 で確かめる
+- **何か** — Hub が、公開している一覧 `index.json` (ポートフォリオの GitHub Pages) を読み、テーマやテンプレートだけのプラグインの zip を落として入れる。流れ: 落とす → 一覧の大きさと SHA-256 と比べる → zip の中の名前を全部確かめる → 一時フォルダーに展開 → 前の写しを .old によけてから置く (失敗したら戻す)
+- **WinHTTP** — Windows に入っている HTTP の部品 (`winhttp.dll`)。`WinHttpCrackUrl` で URL を分け、`WinHttpOpen` (プロキシは Windows の設定) → `WinHttpConnect` → `WinHttpOpenRequest` (https なら `WINHTTP_FLAG_SECURE`) → `WinHttpSendRequest` / `WinHttpReceiveResponse` → 状態の番号 (200 か) → `WinHttpReadData` を上限まで。外のライブラリは要らない。試すときは file:/// かローカルのパスも読む (`platform/Http.*`)
+- **zip** — ファイルの終わりにある「中央の一覧」(End of central directory の印 `PK\x05\x06` を後ろから探す) から各ファイルの名前・大きさ・CRC・場所を読み、各ファイルの前の「ローカルの見出し」の後ろの中身を取り出す。中身は「そのまま」か **deflate** (RFC 1951)。deflate はハフマン符号 (よく出る記号ほど短いビット) と「前に出た何バイト前から何バイト写す」の組み合わせで、固定の表・ブロックごとの表 (表そのものもハフマンで書いてある)・圧縮なしの 3 種類の塊がある。zlib の作者の puff.c と同じ、短くて確かめやすい作りで自分で書いた (`base/Zip.*`。std だけ)。取り出した中身は CRC-32 で確かめる。テストは Python の zlib / zipfile で作ったバイト列で
+- **安全** — 落とした zip の中の名前に `..`・絶対パス・ドライブ (`C:`)・Windows の予約名 (`con`・`nul` …)・使えない文字があると、1 つでも何も書かない (「Zip Slip」と呼ばれる、展開先の外にファイルを書かせる攻撃を防ぐ)。一覧に書いた SHA-256 (Windows の BCrypt) と違う中身は捨てる。コードのあるプラグインはまだ入れない
+- **版** — エンジンもプラグインも数 3 つ (`0.0.3`)。プラグインの `plugin.json` の `engine.min` より古いエンジンでは使わない (Godot の `compatibility_minimum` と同じ)
+- **どこ** — `src/platform/Http.*`・`src/base/Zip.*`・`src/editor/plugin/PluginIndex.*` (一覧・版・何を出すか・zip のパスの検査: 純粋)・`PluginDownload.*` (落として展開)・`Plugins.cpp` (`InstallDownloaded`・exe に無いプラグインも一覧に)・`App.cpp` (`StartCatalog`・`DownloadPlugin`)・`HubScreen.cpp` (`DrawDownloads`)・`tools/make_plugin_package.ps1` (配る zip と一覧を作る)
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-21 | プラグインのダウンロード (WinHTTP・zip と deflate の自作の読み・SHA-256 の確認・zip の中のパスの検査・版の比べ) を足した |
 | 2026-11-20 | 左手系への切り替え (LookAt・射影・古いシーンを Z で写す口)・モデルの座標系の選び方を足した |
 | 2026-11-20 | 積雪を真上からの格子 1 枚に戻した・雨と雪を 1 つの降水量に・霧の量と天気で変わる霧の色・作った物に足す口 (kCreatedPoint: 3D オブジェクトにコライダー) を足した |
 | 2026-11-20 | 天候を数値で持つ・テンプレートの行・データの小数の桁 (Decimals)・雨の強さで変わる雨粒・霧 (RenderFrame::fog) を足した |

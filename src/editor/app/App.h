@@ -10,6 +10,7 @@
 // 壊れることはない。
 
 #include "editor/app/Worker.h"
+#include "editor/plugin/PluginIndex.h"
 #include "editor/plugin/Plugins.h"
 #include "editor/project/HubSettings.h"
 #include "platform/Gfx.h"
@@ -23,6 +24,17 @@
 namespace rm::editor {
 
 class ScreenWindow;
+
+// ダウンロードできるプラグインの一覧 (docs/PLUGIN_DISTRIBUTION.md 段階 1)。アプリを立ち上げたときに
+// 1 度だけ読む (Worker で)。読めなくても、今入っているものはそのまま動く。
+struct PluginCatalog {
+    enum class State { Loading, Ready, Failed };
+    State state = State::Loading;
+    std::string url;                   // 読んだ所 (zip の相対 URL はここから)
+    std::optional<PluginIndex> index;
+    std::wstring error;                // Failed のとき
+    std::optional<PluginId> downloading;  // 今落としている物
+};
 
 struct LaunchOptions {
     std::filesystem::path projectFile;  // --project <file.rmpf>: Hub を飛ばす (プロジェクトへ再起動するのに使う)
@@ -54,6 +66,12 @@ public:
     // Hub だけ (エディターは開いていないこと): 入っているプラグインを変えて、読み直す。
     bool InstallPlugins(const std::vector<PluginId>& ids, std::string* error);
     bool UninstallPlugin(const PluginId& id, std::string* error);
+    const PluginCatalog& Catalog() const { return catalog_; }
+    // 今のプラグインで出す「ダウンロードできる物」(PluginOffers)。一覧が無ければ空。
+    std::vector<PluginOffer> PluginOffersNow() const;
+    // Hub だけ: 一覧の `id` の一番新しい合う版を落として入れる (Worker)。終わると読み直し、だめなら
+    // Hub にエラーを出す。前提がこのエンジンにあって入っていなければ一緒に入れる。
+    void DownloadPlugin(const PluginId& id);
     void RequestHub(std::string errorMessage = {});
     void RequestQuit();
 
@@ -85,6 +103,18 @@ private:
     // エディターが開いていないときに当てる。Hub ならすぐ、そうでなければ Hub に戻ったとき)。
     void StartEngineRefresh();
     void ApplyEngineRefreshIfReady();
+    void StartCatalog();
+    // 落とし終えた物を置く (エディターが開いていない間だけ。開いていれば Hub に戻ったとき)。
+    void ApplyDownloadIfReady();
+    struct FinishedDownload {
+        PluginId id;
+        std::string version, sha256, url;
+        std::filesystem::path folder;
+        std::wstring error;  // 空: 落として展開できた
+        std::vector<PluginId> requirements;  // 一緒に入れる、このエンジンにある前提
+    };
+    std::optional<FinishedDownload> finishedDownload_;
+    PluginCatalog catalog_;
 
     std::optional<Plugins::EngineRefreshPlan> engineRefresh_;  // 作ったが、まだ当てていない
     platform::Gfx gfx_;
@@ -99,6 +129,8 @@ private:
     bool running_ = true;
     int graphicsFailures_ = 0;  // Recreate がこの回数続けて失敗した
     bool graphicsTold_ = false; // ... ユーザーには知らせた
+    Worker catalogWorker_;
+    Worker downloadWorker_;
     Worker engineWorker_;       // 最後に: App がなくなった後は、これが post するものは捨てられる
 };
 
