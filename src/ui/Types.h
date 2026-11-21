@@ -54,6 +54,7 @@ enum class Key : uint8_t {
     Backspace, Delete, Enter, Escape, Tab, F2, F5,
     A, C, D, E, F, N, O, P, Q, R, S, V, W, X, Y, Z,
     Space,  // (押している間: 3D のシーンビューが上へ飛ぶ。入力した文字は、これまでどおり文字として届く)
+    F1,     // ヘルプ (2026-11-22。番号を変えないよう後ろに足す)
     Count,  // キーの数 (KeyDown 用)
 };
 

@@ -69,6 +69,8 @@ void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
 // --- アイコン: 線で描くので、どの大きさでも箱の真ん中に収まる ---------------------------------
 enum class Icon {
     Close, Dots, DotsVertical, ChevronDown, ChevronRight, ChevronUp, ChevronLeft, Check, Dash, Object, Cube, Square, Plus, Grip, Play, Pause, Step, Stop,
+    // Menu: 横線 3 本 (ハンバーガー: 隠した一覧を出す - 細いヘルプの左上)
+    Menu,
     // エンティティが何か (階層、シーンビューの印)
     // Point: 場所だけのもの (点のある輪 - シーンビューの空のエンティティの印);
     // Effect: きらめき (パーティクル); Scene: 層 (シーン - 階層の一番上の行)

@@ -102,7 +102,14 @@ void HubScreen::OnCloseRequested() { app_.RequestQuit(); }
 
 void HubScreen::OnLookChanged() {
     ScreenWindow::OnLookChanged();
+    if (help_ && help_->IsOpen()) help_->OnLookChanged();
     // 読み直さない: 行の言葉は描くときに (今の言語で) 作る。
+}
+
+void HubScreen::ShowHelp() {
+    // 閉じた窓は作り直す (入れたプラグインのヘルプも読み直す)。
+    if (!help_ || !help_->IsOpen()) help_ = std::make_unique<HelpWindow>(app_);
+    if (!help_->Show(Hwnd())) log::Error("ヘルプの窓を開けませんでした");
 }
 
 void HubScreen::ShowError(std::wstring message, fs::path removableFile, std::wstring title) {
@@ -426,6 +433,10 @@ void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
     nav("nav.plugins", Tr(L"プラグイン"), Page::Plugins);
     nav("nav.updates", Tr(L"アップデート情報"), Page::Updates);
     nav("nav.options", Tr(L"オプション"), Page::Options);
+    // ヘルプはページではなく別の窓 (Hub にはドッキングが無い)。
+    if (w::NavItem(c, "nav.help", {r.x, y + 1, r.w - 1, kNavH - 1}, Tr(L"ヘルプ"), false)) Defer([this] { ShowHelp(); });
+    y += kNavH;
+    w::Separator(c, r.x, y, r.w - 1);
 
     p.Text({r.x + 28, r.Bottom() - 44, r.w - 56, 20}, TrF(L"バージョン {}", std::wstring(kEngineVersionW)), Style(12, theme::TextFaint));
     // 一覧 (立ち上げたときに読んだ) のエンジンの版が今のより新しい: 知らせる。

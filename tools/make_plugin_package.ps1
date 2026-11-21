@@ -10,7 +10,7 @@
 #   -EngineMin   その版が動く一番古いエンジン (既定: 今のエンジンの版。ダウンロードはこの版から)
 #   -SetVersion  zip の中の plugin.json の版をこれにする (試すとき: エンジンの写しより新しい版を作る)
 #
-# zip に入れるのは plugin.json・lang・themes・templates だけ (runtime\ の C++ は入れない)。区切りは /。
+# zip に入れるのは plugin.json・lang・themes・templates・help だけ (runtime\ の C++ は入れない)。区切りは /。
 # 前に作った index.json があれば、同じプラグインの別の版はそのまま残す (同じ版は作り直す)。
 param(
     [string]$Out = '',
@@ -73,7 +73,7 @@ foreach ($t in $targets) {
         $w = New-Object IO.StreamWriter($entry.Open(), $utf8)
         $w.Write($manifestText)
         $w.Dispose()
-        foreach ($sub in @('lang', 'themes', 'templates')) {
+        foreach ($sub in @('lang', 'themes', 'templates', 'help')) {
             $subDir = Join-Path $t.Dir.FullName $sub
             if (-not (Test-Path $subDir)) { continue }
             foreach ($f in Get-ChildItem $subDir -Recurse -File) {

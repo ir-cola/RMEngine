@@ -523,5 +523,10 @@
   "末尾が . か空白の名前があります": "A name ends with . or a space",
   "名前が長すぎます": "The name is too long",
   "落とした plugin.json の ID ({}) が一覧 ({}) と違います": "The downloaded plugin.json ID ({}) differs from the list ({})",
-  "落とした plugin.json を読めません: {}": "Cannot read the downloaded plugin.json: {}"
+  "落とした plugin.json を読めません: {}": "Cannot read the downloaded plugin.json: {}",
+  "Hub とエディター本体": "Hub and editor",
+  "このページにはまだ説明がありません。": "This page has no help yet.",
+  "ヘルプのページがありません。": "There are no help pages.",
+  "左の一覧からページを選んでください。": "Pick a page from the list on the left.",
+  "ページを読めませんでした: {}": "Could not read the page: {}"
 }

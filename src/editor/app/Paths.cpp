@@ -21,6 +21,7 @@ fs::path LogFile() { return LogFolder() / L"editor.log"; }
 fs::path HubSettingsFile() { return platform::GetKnownFolder(platform::KnownFolder::RoamingAppData) / L"RM_Engine" / L"hub.json"; }
 fs::path SharedLayoutsFile() { return platform::GetKnownFolder(platform::KnownFolder::RoamingAppData) / L"RM_Engine" / L"Layouts.json"; }
 fs::path LangFolder() { return platform::ExeDirectory() / L"Lang"; }
+fs::path HelpFolder() { return platform::ExeDirectory() / L"Help"; }
 fs::path FileList() { return platform::ExeDirectory() / L"RM_Engine.files.json"; }
 
 }  // namespace rm::editor::paths

@@ -11,6 +11,7 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -18,6 +19,15 @@
 #include <vector>
 
 namespace rm::ui {
+
+// 書式のある文字 (RichText) の一部: text[start, start + length)。
+struct TextRun {
+    uint32_t start = 0, length = 0;
+    bool bold = false;
+    bool mono = false;       // 等幅 (コード)
+    bool underline = false;  // (リンク)
+    std::optional<Color> color;
+};
 
 // 矩形の各角の半径 (0 = 角張る): ほかに接しているパネルは、その角が四角。
 struct Corners {
@@ -58,6 +68,11 @@ public:
     float TextWidth(std::wstring_view text, float size, bool bold = false);
     // `width` で折り返したときの文字の高さ (Text が style.wrap で描くのと同じ)。
     float TextHeight(std::wstring_view text, float size, float width, bool bold = false);
+    // 幅 r.w で折り返す、書式のある文字 (ヘルプのページ: 太字・コード・リンク)。高さを返す
+    // (draw = false: 測るだけ)。`runs` の外は `color` のふつうの文字。
+    float RichText(const Rect& r, std::wstring_view text, float size, Color color, std::span<const TextRun> runs, bool draw = true);
+    // RichText と同じように並べたとき、(x, y) の下にある文字の番号 (文字の上でなければ nullopt)。
+    std::optional<size_t> RichHitTest(const Rect& r, std::wstring_view text, float size, std::span<const TextRun> runs, float x, float y);
     // text[index] の前に置いたキャレットの x のずれ。
     float CaretX(std::wstring_view text, size_t index, float size, bool bold = false);
     // x に一番近いキャレット位置の番号。
@@ -74,6 +89,9 @@ public:
 private:
     IDWriteTextFormat* Format(float size, bool bold);
     Microsoft::WRL::ComPtr<IDWriteTextLayout> Layout(std::wstring_view text, float size, bool bold);
+    // 色の付いた部分のブラシは `brushes` に持たせる (描き終わるまで生きている)。
+    Microsoft::WRL::ComPtr<IDWriteTextLayout> RichLayout(std::wstring_view text, float size, float width, std::span<const TextRun> runs,
+                                                         std::vector<Microsoft::WRL::ComPtr<ID2D1SolidColorBrush>>* brushes);
     ID2D1SolidColorBrush* Brush(Color c);
     ID2D1LinearGradientBrush* Gradient(Color top, Color bottom, float y0, float y1);
     Microsoft::WRL::ComPtr<ID2D1PathGeometry> RoundRectPath(const Rect& r, Corners radii);

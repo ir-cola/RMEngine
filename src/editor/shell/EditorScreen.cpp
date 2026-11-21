@@ -1,3 +1,4 @@
+#include "editor/help/HelpBooks.h"
 #include "editor/lang/Lang.h"
 #include "editor/shell/EditorScreen.h"
 
@@ -99,6 +100,8 @@ EditorScreen::EditorScreen(App& app, Project project) : ScreenWindow(app), proje
     thumbnails_ = std::make_unique<Thumbnails>(app_.Gfx(), app_.GetPlugins().Registry(), project_.AssetsDir());
     BuildWorkspaces();
     LoadSoftwareData();
+    help_.SetGfx(&app_.Gfx());
+    help_.SetLibrary(LoadHelpLibrary(app_.GetPlugins()), lang::Current() == lang::Language::English);
 }
 
 EditorScreen::~EditorScreen() {
@@ -135,6 +138,7 @@ bool EditorScreen::Open() {
 
 void EditorScreen::OnLookChanged() {
     ScreenWindow::OnLookChanged();
+    help_.SetLibrary(LoadHelpLibrary(app_.GetPlugins()), lang::Current() == lang::Language::English);  // (言語が変わったかもしれない)
     for (auto& f : floats_) f->OnLookChanged();
     UpdateTitle();
 }
@@ -279,6 +283,7 @@ std::vector<dock::PanelType> EditorScreen::CorePanels(bool withStart) {
     list.push_back(panel(core_panel::kInspector, TrKey(L"インスペクター"), &EditorScreen::DrawInspector));
     list.push_back(panel(core_panel::kConsole, TrKey(L"コンソール"), &EditorScreen::DrawConsole));
     list.push_back(panel(core_panel::kAssets, TrKey(L"アセット"), &EditorScreen::DrawAssets));
+    list.push_back(panel(core_panel::kHelp, TrKey(L"ヘルプ"), &EditorScreen::DrawHelp));
     return list;
 }
 
@@ -434,6 +439,7 @@ void EditorScreen::LoadLayout() {
         layout.Sanitize(ws->dock.PanelIds());
         ws->dock.SetLayout(std::move(layout));
     }
+    help_.LoadState(layoutDoc_.Get("help"));
     if (broken) log::Warn("パネルの配置を一部読めなかったので、最初の配置で開きます: {}", PathToUtf8(file));
     LoadSharedLayouts();
     const json::Value& active = layoutDoc_.Get("active");
@@ -545,6 +551,8 @@ void EditorScreen::SaveLayout() {
             if (ws->software->Hierarchy()) entry->Set("tree", tree::SaveState(ws->treeState));
         }
     }
+
+    layoutDoc_.Set("help", help_.SaveState());  // (ヘルプのタブ・見ていたページ・開いた木: どのソフトでも同じ 1 つ)
 
     const fs::path file = LayoutFile();
     std::error_code ec;
@@ -896,7 +904,7 @@ std::vector<w::MenuItem> EditorScreen::MenuItems(Menu m) const {
             return items;
         }
         case Menu::Help:
-            return {{Tr(L"RM Engine について")}};
+            return {{Tr(L"ヘルプ"), L"F1"}, {Tr(L"RM Engine について")}};
         case Menu::Debug: {
             // 表示中のソフトの行が先 (RunMenu が数える)、そのあとにエディター自身のテスト。
             std::vector<w::MenuItem> items;
@@ -956,7 +964,8 @@ void EditorScreen::RunMenu(Menu m, int index) {
         const auto& entries = app_.GetPlugins().Entries();
         if (index >= 0 && index < static_cast<int>(entries.size())) BeginInstallPlugin(entries[static_cast<size_t>(index)].status.id);
     } else if (m == Menu::Help) {
-        modal_ = Modal::About;
+        if (index == 0) OpenHelp();
+        if (index == 1) modal_ = Modal::About;
     } else if (m == Menu::Debug) {
         std::vector<Software::DebugMenuItem> rows;
         if (Active().software) rows = Active().software->DebugMenu();
@@ -1041,11 +1050,20 @@ void EditorScreen::HandleShortcuts(ui::Context& c) {
     // 反映する)。前は下の判定が先にあり、フォーカス中のフィールドが Ctrl+S の保存を妨げた
     // (2026-11-17 画面で: アセットの検索で入力したあと Ctrl+S しても、タイトルの "*" が残った)。
     if (c.KeyPressed(ui::Key::S, true)) Save();
+    if (c.KeyPressed(ui::Key::F1)) OpenHelp();
     // フィールドの中の Ctrl+Z / Ctrl+Y はそのフィールド自身のもの (その文字)。履歴のものではない。
     if (c.Focused() != 0) return;
     if (c.KeyPressed(ui::Key::Z, true)) UndoRedo(false);
     if (c.KeyPressed(ui::Key::Y, true) || c.KeyPressed(ui::Key::Z, true, true)) UndoRedo(true);
 }
+
+void EditorScreen::OpenHelp(const std::string& page) {
+    if (!Active().dock.GetLayout().Contains(core_panel::kHelp)) Active().dock.TogglePanel(core_panel::kHelp);
+    if (!page.empty()) help_.Open(page);
+    RedrawAll();
+}
+
+void EditorScreen::DrawHelp(ui::Context& c, Rect r) { help_.Draw(c, r); }
 
 void EditorScreen::UndoRedo(bool redo) {
     // ソフトが動いている間 (Play 中のゲーム) は、そのデータはそのまま。Undo すると、実行が戻る先を

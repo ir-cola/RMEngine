@@ -90,6 +90,13 @@
     <ClCompile Include="editor\app\Worker.cpp" />
     <ClCompile Include="editor\lang\Lang.cpp" />
     <ClCompile Include="editor\hub\Updates.cpp" />
+    <ClCompile Include="editor\help\HelpDoc.cpp" />
+    <ClCompile Include="editor\help\HelpTree.cpp" />
+    <ClCompile Include="editor\help\HelpLibrary.cpp" />
+    <ClCompile Include="editor\help\HelpBooks.cpp" />
+    <ClCompile Include="editor\help\HelpView.cpp" />
+    <ClCompile Include="editor\help\HelpWindow.cpp" />
+    <ClCompile Include="editor\widgets\DocView.cpp" />
     <ClCompile Include="editor\dock\DockLayout.cpp" />
     <ClCompile Include="editor\dock\DockSpace.cpp" />
     <ClCompile Include="editor\dock\NamedLayouts.cpp" />
@@ -149,6 +156,13 @@
     <ClInclude Include="editor\app\Worker.h" />
     <ClInclude Include="editor\lang\Lang.h" />
     <ClInclude Include="editor\hub\Updates.h" />
+    <ClInclude Include="editor\help\HelpDoc.h" />
+    <ClInclude Include="editor\help\HelpTree.h" />
+    <ClInclude Include="editor\help\HelpLibrary.h" />
+    <ClInclude Include="editor\help\HelpBooks.h" />
+    <ClInclude Include="editor\help\HelpView.h" />
+    <ClInclude Include="editor\help\HelpWindow.h" />
+    <ClInclude Include="editor\widgets\DocView.h" />
     <ClInclude Include="editor\project\Options.h" />
     <ClInclude Include="editor\app\ScreenWindow.h" />
     <ClInclude Include="editor\dock\DockLayout.h" />
@@ -209,8 +223,10 @@
   <!-- plugin.json ファイル (と、その英語・テーマ・テンプレートのファイル) を exe の隣に Plugins/<作者>/<名前>/... として置く (起動時に読む)。 -->
   <Target Name="CopyPluginManifests" AfterTargets="Build">
     <ItemGroup>
-      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json;$(RMRoot)plugins\**\themes\*.json;$(RMRoot)plugins\**\templates\**\*" />
+      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json;$(RMRoot)plugins\**\themes\*.json;$(RMRoot)plugins\**\templates\**\*;$(RMRoot)plugins\**\help\**\*" />
       <LangFile Include="$(RMRoot)resources\lang\*.json" />
+      <!-- 核のヘルプ: <exe>/Help/ (editor/help) -->
+      <HelpFile Include="$(RMRoot)resources\help\**\*" />
       <!-- ゲームのスクリプトがインクルードするヘッダー (RM.h とプラグインの部品): <exe>/Sdk/ -->
       <ScriptSdk Include="$(RMRoot)plugins\**\runtime\sdk\*.h" />
     </ItemGroup>
@@ -218,6 +234,7 @@
     <Copy SourceFiles="@(PluginManifest)" DestinationFiles="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <!-- 核の翻訳: <exe>/Lang/en.json (editor/lang) -->
     <Copy SourceFiles="@(LangFile)" DestinationFolder="$(OutDir)Lang" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(HelpFile)" DestinationFiles="@(HelpFile->'$(OutDir)Help\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <!-- エンジンのファイルと SHA-256 の一覧。整合性チェック用 (Hub > オプション) -->
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(RMRoot)tools\make_filelist.ps1&quot; -Dir &quot;$(OutDir).&quot;" />
   </Target>

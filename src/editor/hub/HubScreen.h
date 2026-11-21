@@ -6,6 +6,7 @@
 #include "core/PluginId.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/app/Worker.h"
+#include "editor/help/HelpWindow.h"
 #include "editor/app/Integrity.h"
 #include "editor/inspector/Inspector.h"
 #include "editor/lang/Lang.h"
@@ -13,6 +14,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -171,6 +173,10 @@ private:
 
     Worker rowsWorker_;       // 最近のプロジェクトを読む
     Worker integrityWorker_;  // エンジンのファイルのハッシュを取る
+
+    // ヘルプの窓 (サイドバーの「ヘルプ」。1 つだけ: 開いていれば前に出す)。
+    std::unique_ptr<HelpWindow> help_;
+    void ShowHelp();
 
     // エラーダイアログ
     std::wstring errorTitle_;

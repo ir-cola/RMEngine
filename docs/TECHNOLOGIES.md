@@ -1004,10 +1004,19 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **版** — エンジンもプラグインも数 3 つ (`0.0.3`)。プラグインの `plugin.json` の `engine.min` より古いエンジンでは使わない (Godot の `compatibility_minimum` と同じ)
 - **どこ** — `src/platform/Http.*`・`src/base/Zip.*`・`src/editor/plugin/PluginIndex.*` (一覧・版・何を出すか・zip のパスの検査: 純粋)・`PluginDownload.*` (落として展開)・`Plugins.cpp` (`InstallDownloaded`・exe に無いプラグインも一覧に)・`App.cpp` (`StartCatalog`・`DownloadPlugin`)・`HubScreen.cpp` (`DrawDownloads`)・`tools/make_plugin_package.ps1` (配る zip と一覧を作る)
 
+### ヘルプ: 書式のある文字・Markdown の一部・ページの木
+- **何か** — エディターのヘルプのパネル (と Hub の窓) の中身。ページはコードに書かず、プラグインごとのフォルダーに Markdown の小さな一部で書く (前のエンジンでは 5,411 行の C++ に本文を書き、API を足すたびに手で直していた)
+- **書式のある文字** — DirectWrite の `IDWriteTextLayout` に、文字の範囲ごとの太さ (`SetFontWeight`)・書体 (`SetFontFamilyName`: コードは Consolas。日本語の字は DirectWrite が別の書体で補う)・下線 (`SetUnderline`)・色 (`SetDrawingEffect` にブラシを渡す) を付けて 1 回で描く (`ui::Painter::RichText`)。リンクを押したかは `HitTestPoint` でマウスの下の文字の番号を聞いて決める (`RichHitTest`)
+- **Markdown の一部** — 行ごとに見て、見出し・箇条書き (下げた幅で深さ)・番号・注意書き・表・コード・画像・横線に分け、行の中の `**` `` ` `` `[ ](…)` を拾う (`editor/help/HelpDoc`。純粋なのでテストがある)。続く行は段落につなぎ、英語の単語の間にだけ空白を入れる
+- **ページの木** — フォルダーの入れ子をそのまま木にし、並びはフォルダーごとの `_order.json`。ページの ID は「本 / フォルダー / 名前」で、見出しの文字は使わない (英語にしてもリンクが切れない)。つなぎのプラグインの本は、元のプラグインの本の下に入れる (`ArrangeBooks`)。木は核のツリービューをそのまま使う (検索・開く / 閉じる)
+- **Web のリンク** — `ShellExecuteW("open")` でいつものブラウザーに渡す。`http://` と `https://` で始まるものだけ (ファイルやプログラムは開かない。`platform::OpenWebPage`)
+- **どこ** — `src/editor/help/` (HelpDoc・HelpTree・HelpLibrary・HelpBooks・HelpView・HelpWindow)・`src/editor/widgets/DocView.*`・`src/ui/Painter.*` (RichText)・`resources/help/`・`plugins/<作者>/<名前>/help/`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-22 | ヘルプ (DirectWrite の書式のある文字と HitTestPoint・Markdown の一部の読み・ページの木・Web のリンクを開く) を足した |
 | 2026-11-21 | プラグインのダウンロード (WinHTTP・zip と deflate の自作の読み・SHA-256 の確認・zip の中のパスの検査・版の比べ) を足した |
 | 2026-11-20 | 左手系への切り替え (LookAt・射影・古いシーンを Z で写す口)・モデルの座標系の選び方を足した |
 | 2026-11-20 | 積雪を真上からの格子 1 枚に戻した・雨と雪を 1 つの降水量に・霧の量と天気で変わる霧の色・作った物に足す口 (kCreatedPoint: 3D オブジェクトにコライダー) を足した |

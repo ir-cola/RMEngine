@@ -30,6 +30,8 @@ std::optional<std::wstring> PickOpenFile(HWND owner, std::wstring_view title, st
 void ShowInExplorer(const std::filesystem::path& path);
 // フォルダをエクスプローラーで開く (中身を表示。何も選ばない)。
 void OpenFolder(const std::filesystem::path& folder);
+// Web のページをいつものブラウザーで開く (ヘルプのリンク)。http:// か https:// で始まるものだけ。
+bool OpenWebPage(std::wstring_view url);
 // Windows がそのファイルに割り当てているプログラムで開く。無ければ、どれで開くか聞く (.rmfx や
 // .rmsky をテキストエディターで)。どちらもだめなら false。
 bool OpenFileOutside(const std::filesystem::path& file);

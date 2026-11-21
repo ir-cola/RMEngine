@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.4",
+      "date": "2026-11-22",
+      "items": [
+        {
+          "ja": "ヘルプ: エディターは F1 (またはヘルプのメニュー) でドッキングできるヘルプのパネル、Hub はサイドバーの「ヘルプ」で別の窓。上のタブで「Hub とエディター本体」と「プラグイン」を切り替え、左の木からページを開く。シーンビュー・UI ビューの操作の説明もここに。細いときは ≡ で一覧を出す",
+          "en": "Help: in the editor, F1 (or the Help menu) opens a dockable help panel; in the Hub, \"Help\" in the sidebar opens it in its own window. Tabs switch between \"Hub and editor\" and \"Plugins\", and pages open from the tree on the left. The scene view and UI view controls are explained here. When narrow, ≡ shows the list"
+        }
+      ]
+    },
+    {
       "version": "0.0.3",
       "date": "2026-11-21",
       "items": [

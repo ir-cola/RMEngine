@@ -264,6 +264,55 @@ void Painter::Text(const Rect& r, std::wstring_view text, const TextStyle& st) {
                   D2D1_DRAW_TEXT_OPTIONS_CLIP);
 }
 
+ComPtr<IDWriteTextLayout> Painter::RichLayout(std::wstring_view text, float size, float width, std::span<const TextRun> runs,
+                                              std::vector<ComPtr<ID2D1SolidColorBrush>>* brushes) {
+    ComPtr<IDWriteTextLayout> layout;
+    IDWriteTextFormat* fmt = Format(size, false);
+    if (!fmt || width <= 0) return layout;
+    fmt->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+    fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+    DWRITE_TRIMMING none{DWRITE_TRIMMING_GRANULARITY_NONE, 0, 0};
+    fmt->SetTrimming(&none, nullptr);
+    if (FAILED(dwrite_->CreateTextLayout(text.data(), static_cast<UINT32>(text.size()), fmt, width, 100000.f, &layout))) return nullptr;
+    for (const TextRun& run : runs) {
+        if (run.length == 0 || run.start >= text.size()) continue;
+        const DWRITE_TEXT_RANGE range{run.start, run.length};
+        if (run.bold) layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, range);
+        if (run.mono) layout->SetFontFamilyName(L"Consolas", range);  // (日本語は DirectWrite が別の書体で補う)
+        if (run.underline) layout->SetUnderline(TRUE, range);
+        if (run.color && brushes && dc_) {
+            ComPtr<ID2D1SolidColorBrush> b;
+            if (SUCCEEDED(dc_->CreateSolidColorBrush(ToD2D(*run.color), &b))) {
+                layout->SetDrawingEffect(b.Get(), range);
+                brushes->push_back(b);
+            }
+        }
+    }
+    return layout;
+}
+
+float Painter::RichText(const Rect& r, std::wstring_view text, float size, Color color, std::span<const TextRun> runs, bool draw) {
+    if (text.empty() || r.w <= 0) return 0.f;
+    std::vector<ComPtr<ID2D1SolidColorBrush>> brushes;
+    auto layout = RichLayout(text, size, r.w, runs, draw ? &brushes : nullptr);
+    if (!layout) return 0.f;
+    DWRITE_TEXT_METRICS m{};
+    layout->GetMetrics(&m);
+    if (draw) dc_->DrawTextLayout({r.x, r.y}, layout.Get(), Brush(color), D2D1_DRAW_TEXT_OPTIONS_NONE);
+    return m.height;
+}
+
+std::optional<size_t> Painter::RichHitTest(const Rect& r, std::wstring_view text, float size, std::span<const TextRun> runs, float x, float y) {
+    if (text.empty() || r.w <= 0) return std::nullopt;
+    auto layout = RichLayout(text, size, r.w, runs, nullptr);
+    if (!layout) return std::nullopt;
+    BOOL trailing = FALSE, inside = FALSE;
+    DWRITE_HIT_TEST_METRICS hm{};
+    if (FAILED(layout->HitTestPoint(x - r.x, y - r.y, &trailing, &inside, &hm)) || !inside) return std::nullopt;
+    return static_cast<size_t>(hm.textPosition);
+}
+
 float Painter::TextWidth(std::wstring_view text, float size, bool bold) {
     if (text.empty()) return 0.f;
     auto layout = Layout(text, size, bold);

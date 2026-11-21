@@ -1,13 +1,13 @@
 ﻿# <dir>/RM_Engine.files.json を書く: エンジンが exe の隣に必要とするすべてのファイルを、大きさと
 # SHA-256 つきで (Hub > オプション > エディターの整合性 が、ファイルをこの一覧と比べる)。
-#   RM_Engine.exe, Lang/**, Plugins/**
+#   RM_Engine.exe, Lang/**, Help/**, Plugins/**
 # ビルドが走らせる (src/RM_Engine.vcxproj、プラグインと言語のファイルをコピーした後)。
 param([Parameter(Mandatory = $true)][string]$Dir)
 
 $ErrorActionPreference = 'Stop'
 $Dir = (Resolve-Path $Dir).Path.TrimEnd('\')
 $files = @(Join-Path $Dir 'RM_Engine.exe')
-foreach ($sub in 'Lang', 'Plugins') {
+foreach ($sub in 'Lang', 'Help', 'Plugins') {
     $p = Join-Path $Dir $sub
     if (Test-Path $p) { $files += (Get-ChildItem $p -Recurse -File | Sort-Object FullName | ForEach-Object FullName) }
 }

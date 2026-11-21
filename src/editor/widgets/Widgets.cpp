@@ -172,6 +172,9 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
         case Icon::Grip:  // つかんでドラッグするもの: 短い線が 3 本
             for (int i = -1; i <= 1; ++i) p.Line(cx - s, cy + static_cast<float>(i) * s * 0.75f, cx + s, cy + static_cast<float>(i) * s * 0.75f, color, 1.3f);
             break;
+        case Icon::Menu:  // 隠した一覧を出す: 長めの線が 3 本
+            for (int i = -1; i <= 1; ++i) p.Line(cx - s * 1.3f, cy + static_cast<float>(i) * s, cx + s * 1.3f, cy + static_cast<float>(i) * s, color, kW);
+            break;
         case Icon::Object: {
             const float rr = std::min(r.w, r.h) * 0.27f;
             p.StrokeRoundRect({cx - rr, cy - rr, rr * 2, rr * 2}, rr, color, 1.3f);

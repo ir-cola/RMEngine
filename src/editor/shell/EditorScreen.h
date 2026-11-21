@@ -22,6 +22,7 @@
 
 #include "base/Log.h"
 #include "core/UndoHistory.h"
+#include "editor/help/HelpView.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/assets/AssetLibrary.h"
 #include "editor/assets/AssetPanel.h"
@@ -94,6 +95,9 @@ private:
     std::vector<w::MenuItem> MenuItems(Menu m) const;
     void RunMenu(Menu m, int index);
     void HandleShortcuts(ui::Context& c);
+    // ヘルプのパネル (core.help): 閉じていれば開く。`page`: そのページを出す (空: 前に見ていたもの)。
+    void OpenHelp(const std::string& page = {});
+    void DrawHelp(ui::Context& c, ui::Rect r);
     void UndoRedo(bool redo);  // 表示中のソフトの履歴 (動いている間は使わない)
     // プラグインメニュー: エディターからインストールすると、保存し、インストールして、同じプロジェクトをもう一度開く
     // (設計 RME_PLATFORM 5-a、2026-09-29 に決定)。取り除くのは Hub でだけできる。
@@ -255,6 +259,7 @@ private:
     // Workspace::AssetFile は、ワークスペースを壊している間これらを指しているため。
     UiWake assetsWake_{[this] { RedrawAll(); }};
     std::unique_ptr<AssetLibrary> assets_;    // プロジェクトの Assets/ (ID、ファイル操作) - どのソフトのものでも
+    HelpView help_;                           // ヘルプのパネルの中身 (どのソフトでも同じ 1 つ)
     std::unique_ptr<Thumbnails> thumbnails_;  // アセットの小さな絵 - どのソフトのパネルも共有する (そのスレッドはここで終わる)
 
     std::vector<std::unique_ptr<Workspace>> workspaces_;  // 空にはならない
