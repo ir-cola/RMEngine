@@ -78,10 +78,11 @@ public:
     // x に一番近いキャレット位置の番号。
     size_t HitTest(std::wstring_view text, float x, float size, bool bold = false);
 
-    void Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity = 1.f);
+    // `src`: 画像の一部 (ピクセル。1 枚にまとめたアイコンの 1 マス)。null: 全体。
+    void Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity = 1.f, const Rect* src = nullptr);
     // 1 色の画像: 形 (アルファ) だけを残し、すべてのピクセルを `c` で塗る
-    // (1 色のロゴを、背景に合わせて白や黒で出す)。
-    void ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c);
+    // (1 色のロゴやアイコンを、背景やテーマに合わせた色で出す)。
+    void ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c, const Rect* src = nullptr);
 
     void PushClip(const Rect& r);
     void PopClip();

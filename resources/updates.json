@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.5",
+      "date": "2026-11-22",
+      "items": [
+        {
+          "ja": "アイコン: 線で描いていた印 (カメラ・光・フォルダー・画像・音・立方体・シーン・メニュー・足す) を絵に替えた。シーンビューの左の道具の列も文字から絵に。インスペクターの位置・回転・大きさ・回転の固定と、コンソールの警告・エラーにも絵。白 1 色の絵はテーマの色になる",
+          "en": "Icons: the line-drawn marks (camera, light, folder, image, sound, cube, scene, menu, add) are now pictures. The tool column on the left of the scene view uses pictures instead of words. Position, rotation, scale and rotation lock in the inspector, and warnings and errors in the console, also get pictures. Single-colour pictures follow the theme colour"
+        }
+      ]
+    },
+    {
       "version": "0.0.4",
       "date": "2026-11-22",
       "items": [

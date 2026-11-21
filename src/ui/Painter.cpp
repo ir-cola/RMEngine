@@ -355,12 +355,13 @@ size_t Painter::HitTest(std::wstring_view text, float x, float size, bool bold) 
     return pos > text.size() ? text.size() : pos;
 }
 
-void Painter::Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity) {
+void Painter::Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity, const Rect* src) {
     if (!bmp) return;
-    dc_->DrawBitmap(bmp, ToD2D(dst), opacity, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr, nullptr);
+    const D2D1_RECT_F from = src ? ToD2D(*src) : D2D1_RECT_F{};
+    dc_->DrawBitmap(bmp, ToD2D(dst), opacity, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, src ? &from : nullptr, nullptr);
 }
 
-void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
+void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c, const Rect* src) {
     if (!bmp || dst.w <= 0 || dst.h <= 0) return;
     if (tintOwner_ != dc_) {
         tint_.Reset();
@@ -378,12 +379,16 @@ void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
     tint_->SetInput(0, bmp);
     tint_->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
     // 変形で拡大縮小されるので、Image() と同じようにきれいに補間される。
+    // 一部だけ (`src`): DrawImage はその四角を切り出して、(0, 0) に置いて描く。
     const D2D1_SIZE_F size = bmp->GetSize();
-    if (size.width <= 0 || size.height <= 0) return;
+    const Rect from = src ? *src : Rect{0, 0, size.width, size.height};
+    if (from.w <= 0 || from.h <= 0) return;
     D2D1_MATRIX_3X2_F old;
     dc_->GetTransform(&old);
-    dc_->SetTransform(D2D1::Matrix3x2F::Scale(dst.w / size.width, dst.h / size.height) * D2D1::Matrix3x2F::Translation(dst.x, dst.y) * old);
-    dc_->DrawImage(tint_.Get(), D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+    dc_->SetTransform(D2D1::Matrix3x2F::Scale(dst.w / from.w, dst.h / from.h) * D2D1::Matrix3x2F::Translation(dst.x, dst.y) * old);
+    const D2D1_RECT_F crop = ToD2D(from);
+    const D2D1_POINT_2F at{0, 0};
+    dc_->DrawImage(tint_.Get(), &at, &crop, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
     dc_->SetTransform(old);
 }
 

@@ -91,7 +91,7 @@
 
 - **ImGui のように 1 回の呼び出しで描いて、何をされたかを返す**: `w::Button` / `w::IconButton` / `w::Selectable` / `w::NavItem` / `w::CollapsingHeader` / `w::ComboBox` / `w::TextField` / `w::Checkbox` / `w::MenuPopup` / `w::BeginModal` / `w::Tooltip` / `w::BeginScroll` …
 - **画面のコードは四角を自分で塗らない**。箱は `w::DrawSurface` (Panel / Raised / Hovered / Pressed / Sunken / Accent / Selected / Popup)、一覧の行は `w::DrawRow`、タブは `w::DrawTab`、窓の帯 (メニューバー・ステータスバー・サイドバー) は `w::DrawBar`、印 (× ・ ⋯ ・ ⋮ ・ ▾ ・ ▸ ・ ✓) は `w::DrawIcon`。見た目を変えるときはここを 1 か所直せば全部の画面が変わる (憲法 3)
-- 印は文字ではなく線と点で描く (文字の「…」は下に寄る。線ならどの大きさでも箱の真ん中に来る)
+- 印は文字ではなく `w::DrawIcon` で描く (文字の「…」は下に寄る)。絵のある印は 1 枚にまとめた絵 (`resources/icons/`。白 1 色の絵はテーマの色で塗る)、無い印 (× ✓ 矢印など) は線と点。どの印にどの絵かは `editor/widgets/IconAtlas.cpp` の表 1 か所。データの型の項目の前の絵は `RM_PROPERTY(Icon="...")`
 - **色はテーマの色にグラデーションを掛ける**: 上が少し明るく下が少し暗い (光が上から当たる)。色合いはパレットのまま。`theme::Raised` (ボタン・見出し・タブ) / `theme::Gentle` (パネル・帯) / `theme::Sunken` (入力欄: 上が暗い) / `theme::AccentOf` (アクセント)。盛り上がった面の上の縁に 1 本の明るい線 (`theme::Highlight`)。押したときはグラデーションを上下逆にする
 - 影は `Painter::Shadow` (少しずつ広く・薄くした角丸を 4 枚重ねる。ぼかしの代わり)。メニュー・ダイアログ・ツールチップ・ドラッグ中の札に付く
 - グラデーションのブラシは色の組ごとに 1 つ作って使い回す (`Painter::Gradient`。毎回作らない)

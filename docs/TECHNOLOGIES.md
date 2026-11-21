@@ -193,6 +193,14 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **1 色で塗る** — Direct2D の**効果** (エフェクト) の 1 つ、カラーマトリックス (`CLSID_D2D1ColorMatrix`)。色を「r, g, b, a に行列を掛ける」計算で変える。色の部分を決まった色にして、透明さ (アルファ) だけを残すと、絵の形をした 1 色の絵になる。縮めるときはきれいな補間 (`HIGH_QUALITY_CUBIC`) で描く。効果の識別子のために `dxguid.lib` をリンクした
 - **どこ** — `src/editor/widgets/Theme.h` (`Luminance` / `InkOn`)、`src/ui/Painter.cpp` (`ImageTinted`)、`src/editor/hub/HubScreen.cpp` (`DrawSidebar`)
 
+### アイコンを 1 枚にまとめる (スプライト / アトラス)
+- **何か** — 小さな絵をたくさん、1 枚の大きな画像のマスに並べて持つ (ゲームでいう「スプライトシート」「テクスチャアトラス」)。描くときは、その 1 枚の中の四角だけを切り出して描く。画像を 1 つしか読まないので、GPU に置く物も 1 つで済む
+- **作り方** — `tools/make_icon_atlas.ps1`。PowerShell から .NET の `System.Drawing` (GDI+) を使い、`resources/icons/source/*.png` を 1 マス 128 px に縮めて並べる (高品質の bicubic で縮め、マスの縁に 4 px の透明な余白: 小さく描くときに隣の絵がにじまない)。画素を `LockBits` でまとめて読み、色の付いた絵 (彩度の高い画素が多い物) を見分けて目次 (`icons.json`) に書く
+- **描き方** — Direct2D の `DrawBitmap` の「元の四角」(source rectangle) でマスを切り出す。白 1 色の絵は、ロゴと同じカラーマトリックスの効果で**テーマの色に塗る** (`DrawImage` の「画像の四角」で切り出す)。だからテーマを変えても絵を描き直さなくてよい。色付きの絵 (警告・エラー) はそのまま
+- **埋め込み** — 画像と目次は、ロゴと同じく exe のリソース (`RCDATA`) に入れる (`resources/app.rc`)。ファイルを置き忘れても絵が消えない
+- **どの印にどの絵** — `src/editor/widgets/IconAtlas.cpp` の表 1 か所。データの型の項目は `RM_PROPERTY(Icon="...")` (rmgen が表に書き、インスペクターが名前の前に描く)
+- **どこ** — `tools/make_icon_atlas.ps1`・`resources/icons/`・`src/editor/widgets/IconAtlas.*`・`src/editor/widgets/Widgets.cpp` (`DrawIcon`)・`src/ui/Painter.cpp` (`Image` / `ImageTinted` の `src`)
+
 ### 季節の絵 (図形を重ねて 1 つの影にする・決まった乱数)
 - **何か** — 季節のテーマの絵 (桜の木・太陽・浜辺・砂の城・椛・雪の結晶・降る雪・つらら・積もった雪など) を、画像ではなく線と曲線のパスで描く
 - **図形を重ねて 1 つの影に** — 桜の木の花は何十個もの円を重ねて作る。パスの塗り方には「交互 (alternate)」と「巻き数 (winding)」があり、交互だと 2 つ重なった所が抜けて穴になる。巻き数で塗り、図形を全部同じ向き (時計回り) に作ると、重なった所も塗られて 1 つの影になる。向きは「符号付き面積」(頂点を順に掛け合わせた和) の正負で分かるので、逆向きの多角形は裏返してから足す
@@ -1017,6 +1025,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-22 | アイコンを 1 枚にまとめる (スプライト / アトラス・System.Drawing・DrawBitmap の元の四角) を足した |
 | 2026-11-22 | ビルドの出力から、リポジトリで消したファイルを消す (MSBuild の Exclude と Delete) を足した |
 | 2026-11-22 | ヘルプ (DirectWrite の書式のある文字と HitTestPoint・Markdown の一部の読み・ページの木・Web のリンクを開く) を足した |
 | 2026-11-21 | プラグインのダウンロード (WinHTTP・zip と deflate の自作の読み・SHA-256 の確認・zip の中のパスの検査・版の比べ) を足した |

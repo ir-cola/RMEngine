@@ -1328,17 +1328,17 @@ private:
     // 影、空、デバッグ、形)。ビューの左上に浮かぶ。
     void DrawBar(ui::Context& c, const BarLayout& bar) {
         // グリッド配置: 押すと切り替え (オンの間はギズモが常にグリッドの幅で動く)。右クリックで幅の箱。
-        const auto grid = w::ToolSquare(c, "tool_grid", bar.grid, Tr(L"グリッド配置"), state_.snapAlways, Tr(L"グリッド配置 (右クリックで幅)"));
+        const auto grid = w::ToolSquare(c, "tool_grid", bar.grid, w::Icon::Grid, state_.snapAlways, Tr(L"グリッド配置 (右クリックで幅)"));
         if (grid.clicked) state_.snapAlways = !state_.snapAlways;
         if (grid.rightClicked) snapOpen_ = !snapOpen_;
-        if (w::ToolSquare(c, "tool_select", bar.select, Tr(L"選択"), state_.selecting, Tr(L"選択 (Q)")).clicked) state_.selecting = true;
-        if (w::ToolSquare(c, "tool_move", bar.move, Tr(L"移動"), !state_.selecting && state_.tool == gizmo::Tool::Move, Tr(L"移動 (W)")).clicked) {
+        if (w::ToolSquare(c, "tool_select", bar.select, w::Icon::Cursor, state_.selecting, Tr(L"選択 (Q)")).clicked) state_.selecting = true;
+        if (w::ToolSquare(c, "tool_move", bar.move, w::Icon::Move, !state_.selecting && state_.tool == gizmo::Tool::Move, Tr(L"移動 (W)")).clicked) {
             PickTool(gizmo::Tool::Move);
         }
-        if (w::ToolSquare(c, "tool_rotate", bar.rotate, Tr(L"回転"), !state_.selecting && state_.tool == gizmo::Tool::Rotate, Tr(L"回転 (E)")).clicked) {
+        if (w::ToolSquare(c, "tool_rotate", bar.rotate, w::Icon::Rotate, !state_.selecting && state_.tool == gizmo::Tool::Rotate, Tr(L"回転 (E)")).clicked) {
             PickTool(gizmo::Tool::Rotate);
         }
-        if (w::ToolSquare(c, "tool_scale", bar.scale, Tr(L"拡縮"), !state_.selecting && state_.tool == gizmo::Tool::Scale, Tr(L"拡縮 (R)")).clicked) {
+        if (w::ToolSquare(c, "tool_scale", bar.scale, w::Icon::Scale, !state_.selecting && state_.tool == gizmo::Tool::Scale, Tr(L"拡縮 (R)")).clicked) {
             PickTool(gizmo::Tool::Scale);
         }
         const std::wstring local = Tr(L"ローカル"), world = Tr(L"ワールド");

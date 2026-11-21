@@ -103,6 +103,7 @@ int App::Run(const LaunchOptions& options) {
         MessageBoxW(nullptr, Tr(L"グラフィックスを初期化できませんでした (Direct3D 11 / Direct2D)。").c_str(), L"RM Engine", MB_ICONERROR);
         return 1;
     }
+    w::InitIcons(gfx_);
     settings_.Load();
     LoadLanguageCatalogs();
     ApplyOptions();

@@ -102,6 +102,7 @@
     <ClCompile Include="TestSceneFile.cpp" />
     <ClCompile Include="TestDownload.cpp" />
     <ClCompile Include="TestHelp.cpp" />
+    <ClCompile Include="TestIcons.cpp" />
     <ClCompile Include="TestMeshBake.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
     <ClCompile Include="TestBakedImage.cpp" />
@@ -135,6 +136,7 @@
     <ClCompile Include="..\src\editor\help\HelpTree.cpp" />
     <ClCompile Include="..\src\editor\widgets\ThemeFile.cpp" />
     <ClCompile Include="..\src\editor\widgets\PickTree.cpp" />
+    <ClCompile Include="..\src\editor\widgets\IconAtlas.cpp" />
     <ClCompile Include="..\plugins\rm_engine\theme_seasons\editor\Ornament.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
     <ClCompile Include="..\plugins\rm_engine\audio\runtime\Sound.cpp" />

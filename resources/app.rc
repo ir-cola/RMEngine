@@ -3,3 +3,5 @@
 IDI_APP ICON "app.ico"
 IDR_LOGO_HUB RCDATA "logo_hub.png"
 IDR_UPDATES RCDATA "updates.json"
+IDR_ICONS RCDATA "icons/icons.png"
+IDR_ICONS_INDEX RCDATA "icons/icons.json"

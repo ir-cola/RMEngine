@@ -1291,7 +1291,8 @@ void EditorScreen::DrawConsole(ui::Context& c, Rect r) {
         const auto& e = entries[i];
         const ui::Color col = e.level == log::Level::Error ? theme::Danger : e.level == log::Level::Warn ? theme::Warn : theme::Text;
         p.Text({view.x + 12, y, 70, lineH}, std::format(L"{:8.2f}", e.time), Style(12, theme::TextFaint));
-        p.Text({view.x + 86, y, view.w - 100, lineH}, Utf8ToWide(e.text), Style(12, col));
+        if (e.level != log::Level::Info) w::DrawIcon(c, {view.x + 86, y, 14, lineH}, e.level == log::Level::Error ? w::Icon::Error : w::Icon::Warning, theme::Text, 13);
+        p.Text({view.x + 106, y, view.w - 120, lineH}, Utf8ToWide(e.text), Style(12, col));
     }
     w::EndScroll(c, "console", view, content);
 }

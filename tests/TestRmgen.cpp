@@ -246,6 +246,29 @@ struct S {
     CHECK(Has(bad, "RM0003", 4) && Has(bad, "RM0003", 5) && Has(bad, "RM0003", 6) && Has(bad, "RM0003", 7));
 }
 
+RM_TEST(Rmgen_Icon) {
+    // Icon="絵の名前": インスペクターの項目名の前の絵。表に書く。名前は英字と数字だけ。
+    const Result ok = Run(R"(#pragma once
+RM_STRUCT()
+struct S {
+    RM_PROPERTY(Edit, Icon="RotationLock") bool lockX = false;
+    RM_PROPERTY(Edit) bool other = false;
+};
+)");
+    CHECK(ok.diags.empty());
+    const std::string out = EmitHeader(ok.headers, ok.headers[0]);
+    CHECK(out.find(".icon = \"RotationLock\"") != std::string::npos && out.find(".icon = nullptr") != std::string::npos);
+    const Result bad = Run(R"(#pragma once
+RM_STRUCT()
+struct S {
+    RM_PROPERTY(Edit, Icon="") bool a = false;
+    RM_PROPERTY(Edit, Icon="Rotation Lock") bool b = false;
+    RM_PROPERTY(Edit, Icon=3) bool c = false;
+};
+)");
+    CHECK(Has(bad, "RM0003", 4) && Has(bad, "RM0003", 5) && !bad.diags.empty());
+}
+
 RM_TEST(Rmgen_ShowIf) {
     // ShowIf は同じ struct の他の欄を指す ("kind=A|B", "flag", "!flag", & は両方)。
     const Result ok = Run(R"(#pragma once
