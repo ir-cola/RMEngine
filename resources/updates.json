@@ -9,6 +9,10 @@
         {
           "ja": "つなぎ「天候 × 気候」: 天候と気候の両方を入れると、場所の気温で雨か雪かが決まる (+2 ℃ 以上は雨、-1 ℃ 以下は雪、間はみぞれ)。湿り気で降る量も変わる。雨粒と雪が 1 粒ずつ自分の場所で決めるので、気候エリアの境目では少しずつ雪に変わる",
           "en": "Connector \"Weather × Climate\": with both Weather and Climate installed, the temperature of each place decides between rain and snow (rain at +2 °C or warmer, snow at -1 °C or colder, sleet in between), and humidity changes how much falls. Each raindrop and snowflake decides by its own place, so rain turns into snow gradually across a climate zone border"
+        },
+        {
+          "ja": "天候: 雲の量 100 で、切れ目のない厚い雲の層になる (75 を越えると切れ目が少しずつ埋まる)",
+          "en": "Weather: at cloudiness 100 the clouds form one thick layer with no gaps (above 75 the gaps fill in little by little)"
         }
       ]
     },
