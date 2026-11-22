@@ -514,6 +514,13 @@ Step         Transform を読む (作る・作り直す・消す・スクリプ�
 - **書き出し**: 物理のランタイムは GameKit の `lib/rm_engine/physics/runtime.lib`、Jolt は `core.lib` に入る (`make_gamekit.ps1 -ExtraCoreLibs`)。ゲームが物理の部品を使うときだけプラグインが入る (今までの「使う部品から選ぶ」)
 - テスト: `tests/TestPhysics.cpp` (落ちて止まる・トリガーの出入り・OnHit は 1 回・2D は Z が動かない・Play のコピーを捨てる・保存と読み込み・光線・キャラクター・1000 個の箱の時間)。見本: テンプレート「物理の見本 (3D)」(`physics/templates/physics_3d`。`check_export.ps1` が書き出して起動する)
 
+### 気候 (`plugins/rm_engine/climate`。2026-11-22。設計: [CLIMATE.md](CLIMATE.md))
+
+- 前提 = ゲーム制作・3D 空間・2D 空間 (物理と同じく、1 つのプラグインに 2D と 3D の部品)。シーンの設定「気候」(エリアの外) と部品「気候エリア」(3D) /「気候エリア 2D」(`runtime/Climate.h` の `RM_STRUCT`)
+- 計算は純粋 (`ZoneDepth` → `ZoneWeight` (境目の幅でなめらかな段) → `Blend` (優先度の小さい順に重みの分だけ寄せる) → `CooledByHeight`)。`ClimateField` がシーンから有効なエリアを置かれた所と一緒に 1 回集め、何度でも答える
+- スクリプトの部分 `rm_engine.climate.climate` (`RMClimate.h`)。エディター: 口 `kSceneLinesPoint` にエリアの枠 (`theme::SceneArea` / `SceneAreaInner`)
+- 天候は気候を知らない。つなぎ「天候 × 気候」が天候の一般の口に答える (段階 1-b)
+
 ### Prefab (`plugins/rm_engine/game_production/runtime/Prefab.h`)
 
 ```

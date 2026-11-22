@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.7",
+      "date": "2026-11-22",
+      "items": [
+        {
+          "ja": "新しいプラグイン「気候」: シーンに気温と湿り気を決め、部品「気候エリア」(3D) と「気候エリア 2D」で場所ごとに変える。境目の幅で少しずつ変わり、重なると優先度の大きいほうが上。3D は高い所ほど冷える。スクリプトで場所の気温を読める (RMClimate.h)。天候の雨と雪が気候を見るのはこの次",
+          "en": "New plugin \"Climate\": set a temperature and humidity for the scene and change them by place with the \"Climate zone\" (3D) and \"Climate zone 2D\" components. They change gradually across the border width, and the higher priority wins where zones overlap. In 3D it gets colder higher up. Scripts can read the temperature at a place (RMClimate.h). Weather using the climate for rain and snow comes next"
+        }
+      ]
+    },
+    {
       "version": "0.0.6",
       "date": "2026-11-22",
       "items": [

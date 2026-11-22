@@ -226,6 +226,9 @@ inline Color SceneShadow() { return Color{0, 0, 0, IsLight ? 0.30f : 0.55f}; }
 inline Color SceneCollider() { return IsLight ? Color::Hex(0x1F9D55) : Color::Hex(0x5EE08F); }
 inline Color SceneTrigger() { return IsLight ? Color::Hex(0x8E44C9) : Color::Hex(0xC79BF2); }
 inline Color SceneColliderInactive() { return Mix(SceneCollider(), SceneBackground(), 0.6f); }
+// シーンの上に描くエリアの枠 (気候エリアなど): 縁と、境目の内側の縁 (薄く)。
+inline Color SceneArea() { return IsLight ? Color::Hex(0x2B6FD6) : Color::Hex(0x7DB8FF); }
+inline Color SceneAreaInner() { return Mix(SceneArea(), SceneBackground(), 0.55f); }
 
 // --- ソフトが動いている (Play 中のゲーム): そのタブの行をアクセント色で染める -----------------
 inline Color RunningBar() { return Mix(Bg, Accent, IsLight ? 0.22f : 0.28f); }

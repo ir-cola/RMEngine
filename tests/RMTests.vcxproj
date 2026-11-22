@@ -79,6 +79,7 @@
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestSky.cpp" />
     <ClCompile Include="TestWeather.cpp" />
+    <ClCompile Include="TestClimate.cpp" />
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
     <ClCompile Include="TestSystems.cpp" />
@@ -207,6 +208,11 @@
       <ObjectFileName>$(IntDir)weather\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\RendererShaders.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\climate\runtime\Climate.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\climate\runtime\ScriptClimate.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\climate\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)climate\</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)game_x_particles\</ObjectFileName>
     </ClCompile>
