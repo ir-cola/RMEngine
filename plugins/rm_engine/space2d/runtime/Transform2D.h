@@ -20,9 +20,9 @@ namespace rm::space2d {
 
 RM_STRUCT(Label="Transform 2D (位置・回転・大きさ・並び順)")
 struct Transform2D {
-    RM_PROPERTY(Edit, Label="位置") Vec2 position{0, 0};
-    RM_PROPERTY(Edit, Label="回転 (度)", Tooltip="反時計回りが + です") float rotation = 0;
-    RM_PROPERTY(Edit, Label="大きさ") Vec2 scale{1, 1};
+    RM_PROPERTY(Edit, Label="位置", Icon="Position") Vec2 position{0, 0};
+    RM_PROPERTY(Edit, Label="回転 (度)", Icon="Rotation", Tooltip="反時計回りが + です") float rotation = 0;
+    RM_PROPERTY(Edit, Label="大きさ", Icon="Scale") Vec2 scale{1, 1};
     RM_PROPERTY(Edit, Label="並び順", Tooltip="大きいほど手前に描きます (奥行きの代わり)。子は親の並び順に足した所に描きます", Min=-100000, Max=100000)
     int order = 0;
 };
@@ -60,9 +60,9 @@ inline Mat3 WorldMatrix(const Mat3& parentWorld, const Transform2D& t) { return 
 // 物がワールドのどこにあるか (親も含む) - Transform 2D の インスペクターの ワールド の表示。
 RM_STRUCT(Label="ワールドでの値 (親を含む)")
 struct WorldPlacement2D {
-    RM_PROPERTY(Edit, Label="位置") Vec2 position{0, 0};
-    RM_PROPERTY(Edit, Label="回転 (度)", Tooltip="反時計回りが + です") float rotation = 0;
-    RM_PROPERTY(Edit, Label="大きさ", Tooltip="親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です") Vec2 scale{1, 1};
+    RM_PROPERTY(Edit, Label="位置", Icon="Position") Vec2 position{0, 0};
+    RM_PROPERTY(Edit, Label="回転 (度)", Icon="Rotation", Tooltip="反時計回りが + です") float rotation = 0;
+    RM_PROPERTY(Edit, Label="大きさ", Icon="Scale", Tooltip="親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です") Vec2 scale{1, 1};
     RM_PROPERTY(Edit, Label="並び順", Tooltip="親の並び順を足した値です", Min=-100000, Max=100000) int order = 0;
 };
 // ワールド行列を位置・回転・拡大縮小に分解する。回転は `hintDegrees` に近いもの (360 の整数倍で選ぶ。

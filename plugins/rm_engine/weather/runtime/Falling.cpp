@@ -19,7 +19,21 @@ cbuffer Fall : register(b4) {
     float4 camUp;        // xyz: カメラの上
     float4 precipWind;   // xy: 今の風 (m/s、ワールドの x z)、zw: 風が運んだ距離
     float4 precipFall;   // x: 最小の落下 (m/s)、y: それぞれがさらに速くなれる量、z: 風がどれだけ運ぶか (Falling.h の FallOf)
+    float4 precipPlace;  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う
+    float4 precipPlaceSnow[13];  // 格子の点ごとの雪の割合 (4 つずつ。行が z、列が x)
 };
+float PlaceCell(int k) { return precipPlaceSnow[k >> 2][k & 3]; }
+// 目からの横のずれ `rel` (x z) の場所で、降るもののうち雪の割合 (格子を線形に補間)。
+float PlaceSnowAt(float2 rel) {
+    float n = precipPlace.y;
+    float2 g = clamp(rel / precipPlace.x + (n - 1) * 0.5, 0, n - 1.001);
+    int2 i = (int2)floor(g);
+    float2 f = g - i;
+    int w = (int)n;
+    float a = lerp(PlaceCell(i.y * w + i.x), PlaceCell(i.y * w + i.x + 1), f.x);
+    float b = lerp(PlaceCell((i.y + 1) * w + i.x), PlaceCell((i.y + 1) * w + i.x + 1), f.x);
+    return lerp(a, b, f.y);
+}
 uint PrecipHash(uint x) {
     x ^= x >> 16; x *= 0x7feb352d; x ^= x >> 15; x *= 0x846ca68b; x ^= x >> 16;
     return x;
@@ -47,6 +61,15 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
     p.xz += precipWind.zw * carried;  // ここまでの風
     float3 rel = (frac((p - eye.xyz) / box + 0.5) - 0.5) * box;  // 目に一番近いコピー
     float3 w = eye.xyz + rel;
+    // 場所ごとの降り方 (WeatherPlace.h): その場所で雪の割合が低ければ雪片は少なく、雨粒は多く (境目は両方: みぞれ)。
+    if (precipPlace.z > 0.5) {
+        float snowHere = PlaceSnowAt(rel.xz);
+        if (PrecipRand(id, 3) >= (snow ? snowHere : 1 - snowHere)) {
+            PrecipOut none = (PrecipOut)0;
+            none.pos = float4(0, 0, -1, 1);  // (6 つの角すべて: 何も描かない)
+            return none;
+        }
+    }
     // 雪片は揺れる (そう描く。当たるものは落ちる線で決まる)。
     float3 sway = snow ? float3(sin(t * 0.9 + seed.z * 40), 0, cos(t * 0.7 + seed.x * 40)) * 0.2 : float3(0, 0, 0);
     float dist = length(rel + sway);

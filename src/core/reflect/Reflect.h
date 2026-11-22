@@ -26,6 +26,7 @@
 // ShowIf="kind=Show|Hide" / "useMin" / "!loop" (両方なら &): 同じ構造体の別のフィールドが、それらの
 // 項目のどれかである / オン / オフのときだけ、インスペクターに出す (FieldShown, Data.h)。
 // リストの要素なら、その種類のときだけ、その種類のフィールドを出す。隠しても保存と読み込みはされる。
+// Icon="Position": インスペクターの項目名の前に出す絵 (resources/icons/source/ の絵の名前。英字と数字)。
 //
 // 型: bool, int, float, std::string, Vec2, Vec3, Color, AssetRef, EntityRef (base/Ref.h: id で保存)、
 // RM_ENUM の列挙型 (名前で保存)、RM_STRUCT の構造体 (入れ子)、std::vector<これらのどれか>。
@@ -108,6 +109,7 @@ struct FieldDesc {
     const char* assetKinds = nullptr;  // AssetRef: AssetKind="..." (null: どのファイルでも)
     const StringAccess* stringAccess = nullptr;  // 別のモジュール (スクリプト) の文字列: ReadString / WriteString
     const char* showIf = nullptr;  // ShowIf="..." (null: いつも表示)
+    const char* icon = nullptr;    // Icon="..." (null: 絵なし)
     int decimals = -1;             // Decimals=N: N 桁までにして、残りは切り捨てる (-1: そのまま)
 
     const void* Get(const void* object) const { return access(const_cast<void*>(object)); }

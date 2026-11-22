@@ -7,6 +7,7 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/weather/runtime/Falling.h"
 #include "rm_engine/weather/runtime/WeatherBlocks.h"
+#include "rm_engine/weather/runtime/WeatherPlace.h"
 
 #include <d3dcompiler.h>
 #include <wrl/client.h>
@@ -47,6 +48,15 @@ public:
         if (!w || !f.atmosphere) return;
         const WeatherNow now = NowOf(*w);
         const Vec3 wind{now.windX, 0, now.windZ};
+        // 場所ごとの降り方 (WeatherPlace.h) に答える者: 雨も雪も降る量のぶん用意し、粒が自分の場所で決める。
+        place_ = nullptr;
+        scene_ = &f.scene;
+        if (f.registry) {
+            for (const auto& c : f.registry->Contributions<WeatherPlaceInfo>(kWeatherPlacePoint)) {
+                if (c.item->grid) place_ = c.item->grid;
+            }
+        }
+        const float placedAmount = std::min(PrecipitationNow(*w) * kPlaceMostMore, 1.f);
         // 降るもの (それぞれの向きの向きの地図つき) と、濡れたもの (向きごとの地図)。
         const Color light = LightOf(f.sky);
         // 霧 (と、どしゃぶり・吹雪のぶん): 色は天候から、空気中の光で決まる。
@@ -58,6 +68,10 @@ public:
             Precipitation p;
             p.kind = kind;
             p.amount = kind == Precipitation::Kind::Rain ? RainNow(now) : SnowNow(now);
+            if (place_) {
+                p.amount = placedAmount;  // (どちらも、多いほうの倍率のぶん: 場所で減らす)
+                p.placed = true;
+            }
             if (!(p.amount > 0)) continue;
             p.seconds = static_cast<float>(f.seconds);
             p.light = light;
@@ -359,6 +373,23 @@ private:
         k.up[0] = dc.view.m[0][1], k.up[1] = dc.view.m[1][1], k.up[2] = dc.view.m[2][1];
         k.wind[0] = p.windX, k.wind[1] = p.windZ, k.wind[2] = p.driftX, k.wind[3] = p.driftZ;
         k.fall[0] = speed.least, k.fall[1] = speed.spread, k.fall[2] = speed.carried;
+        if (p.placed && place_ && scene_) {
+            // カメラのまわりの格子で、場所ごとの雪の割合 (と降る量の倍率: 多いほうの倍率から減らす)。
+            const float step = (snow ? kSnowBox : kRainBox) / static_cast<float>(kPlaceGrid - 1);
+            WeatherPlace grid[kPlaceGridPoints];
+            place_(*scene_, dc.eye, step, kPlaceGrid, grid);
+            const float most = kPlaceMostMore;
+            bool any = false;
+            for (int i = 0; i < kPlaceGridPoints; ++i) {
+                const float s = std::isfinite(grid[i].snow) ? std::clamp(grid[i].snow, 0.f, 1.f) : 0.f;
+                const float more = std::isfinite(grid[i].more) ? std::clamp(grid[i].more / most, 0.f, 1.f) : 1.f;
+                // (割合 x 倍率: 粒が出る割合。雨は 1 - 雪)
+                k.placeSnow[i] = snow ? s * more : 1 - (1 - s) * more;
+                any = any || (snow ? k.placeSnow[i] > 0 : k.placeSnow[i] < 1);
+            }
+            if (!any) return;  // (この降り方はまわりのどこにも降らない)
+            k.place[0] = step, k.place[1] = static_cast<float>(kPlaceGrid), k.place[2] = 1.f;
+        }
         ID3D11DeviceContext* ctx = dc.ctx;
         ctx->UpdateSubresource(cb_.Get(), 0, nullptr, &k, 0, 0);
         ID3D11Buffer* cb = cb_.Get();
@@ -396,6 +427,9 @@ private:
     std::vector<Vec3> directions_;
     std::vector<Precipitation> falls_;
     std::vector<WetWay> wet_;
+    // 場所ごとの降り方に答える者 (null: いない) と、このフレームのシーン (DrawFall が格子を聞く)。
+    void (*place_)(const game_production::Scene&, Vec3, float, int, WeatherPlace*) = nullptr;
+    const game_production::Scene* scene_ = nullptr;
     std::vector<int> wetMaps_;
     std::vector<space3d::MapShape> shapes_;
     std::vector<WeatherBlocker> blockers_;

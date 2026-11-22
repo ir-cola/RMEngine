@@ -1,6 +1,7 @@
 #include "editor/plugin/PluginManifest.h"
 
 #include "editor/lang/Lang.h"
+#include "editor/plugin/PluginIndex.h"
 #include <algorithm>
 #include <format>
 
@@ -93,6 +94,28 @@ std::optional<PluginManifest> ParsePluginManifest(const json::Value& v, std::str
             if (error) *error = TrU8("software はソフトの ID (文字) の配列で書いてください");
             return std::nullopt;
         }
+    }
+    // (2026-11-21 より前の plugin.json は "version": 1 の数: 版を書いていないのと同じに扱う)
+    if (const json::Value* ver = v.Find("version"); ver && ver->IsString()) {
+        m.version = ver->AsString();
+        if (!ParseVersion(m.version)) {
+            if (error) *error = TrU8F("version「{}」は数 3 つ (例 0.0.1) で書いてください", m.version);
+            return std::nullopt;
+        }
+    }
+    if (const json::Value* eng = v.Find("engine")) {
+        m.engineMin = eng->Get("min").AsString();
+        if (!m.engineMin.empty() && !ParseVersion(m.engineMin)) {
+            if (error) *error = TrU8F("engine.min「{}」は数 3 つで書いてください", m.engineMin);
+            return std::nullopt;
+        }
+    }
+    if (const json::Value* code = v.Find("code")) {
+        if (!code->IsBool()) {
+            if (error) *error = TrU8("code は true か false で書いてください");
+            return std::nullopt;
+        }
+        m.code = code->AsBool();
     }
     return m;
 }
@@ -296,9 +319,14 @@ std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed,
     std::vector<PluginId> ready;
     for (const PluginManifest& m : installed) {
         const PluginManifest* engine = FindManifest(available, m.id);
-        if (!engine || *engine == m) ready.push_back(m.id);
+        if (!engine || *engine == m || IsNewerVersion(m.version, engine->version)) ready.push_back(m.id);
     }
     return ready;
+}
+
+bool NewerThanEngine(const PluginManifest& installed, const std::vector<PluginManifest>& available) {
+    const PluginManifest* engine = FindManifest(available, installed.id);
+    return engine && IsNewerVersion(installed.version, engine->version);
 }
 
 std::vector<PluginId> ConnectorsToBring(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available) {
@@ -314,6 +342,14 @@ std::vector<PluginId> ConnectorsToBring(const std::vector<PluginManifest>& insta
                 changed = true;
             }
         }
+    }
+    return out;
+}
+
+std::vector<PluginId> RetiredCopies(const std::vector<InstalledCopy>& installed, const std::vector<PluginId>& engine) {
+    std::vector<PluginId> out;
+    for (const InstalledCopy& c : installed) {
+        if (!c.downloaded && !Contains(engine, c.id) && !Contains(out, c.id)) out.push_back(c.id);
     }
     return out;
 }

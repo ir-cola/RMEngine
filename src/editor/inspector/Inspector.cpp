@@ -5,6 +5,7 @@
 #include "core/asset/AssetIndex.h"
 #include "core/reflect/Object.h"
 #include "editor/tree/TreeModel.h"
+#include "editor/widgets/IconAtlas.h"
 #include "editor/widgets/Theme.h"
 
 #include <algorithm>
@@ -609,7 +610,12 @@ void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t in
         x.y += kRow;
     }
 
-    p.Text(labelR, Utf8ToWide(TrU8(f.Label())), Text(12, enabled ? theme::TextDim : theme::TextFaint, f.value.type == FieldType::Struct));
+    Rect nameR = labelR;
+    if (const auto icon = f.icon ? w::IconNamed(f.icon) : std::nullopt) {  // (RM_PROPERTY の Icon="...")
+        w::DrawIcon(c, {labelR.x, labelR.y, 14, labelR.h}, *icon, enabled ? theme::TextDim : theme::TextFaint, 14);
+        nameR = labelR.Inset(19, 0, 0, 0);
+    }
+    p.Text(nameR, Utf8ToWide(TrU8(f.Label())), Text(12, enabled ? theme::TextDim : theme::TextFaint, f.value.type == FieldType::Struct));
     if (f.tooltip && c.IsHovered(labelR)) x.tooltip = Utf8ToWide(TrU8(f.tooltip));
     // 行を右クリック: このフィールドのブロックのメニュー (入力から直に読む: 表示だけの
     // ブロックのフィールドは入力を受けないが、これは動く)。

@@ -9,6 +9,11 @@
 // 入れ直すときはもう一度写す ("入っていない" を経由せずに、壊れたファイルを直せる)。
 // コード自体は exe に組み込まれる (静的リンク): 入っていない、または前提が入っていない
 // プラグインは、初期化されないだけだ。最初の起動で、ある物をすべて入れる。
+//
+// ダウンロード (docs/PLUGIN_DISTRIBUTION.md 段階 1): 落とした物も "installed" に置き、横に download.json
+// (版・SHA-256・どこから) を書く。exe に無い、コードの無いプラグイン (テーマ・テンプレートだけ) も
+// 一覧に出て、そのテーマとテンプレートが使える。エンジンの写しより新しい版を落とした物は、エンジンを
+// 更新したときの写し直しで上書きしない。
 
 #include "editor/plugin/PluginManifest.h"
 #include "editor/plugin/Software.h"
@@ -31,6 +36,8 @@ public:
         // 別に表示し (Hub)、入れる候補には出さない (エディターのメニュー)。
         bool connector = false;
         std::vector<PluginId> joins;  // 前提とするもの (つなぐ両側)
+        bool downloaded = false;      // 入っている写しはダウンロードした物 (download.json がある)
+        std::string version;          // 入っている写しの版 (入っていなければエンジンの写しの。空: 書いていない)
     };
 
     // このエンジンの最初の起動 (installedDir が無い) では、`legacyDir` に入っているもの
@@ -44,6 +51,8 @@ public:
     const std::vector<Entry>& Entries() const { return entries_; }
     // このエンジンが持つ全プラグインの plugin.json (入っていてもいなくても)。
     const std::vector<PluginManifest>& Available() const { return available_; }
+    // 入っていて読めた plugin.json (ダウンロードした物も)。
+    const std::vector<PluginManifest>& InstalledManifests() const { return installed_; }
     const Entry* Find(const PluginId& id) const;
     bool IsEnabled(const PluginId& id) const;
     std::string DisplayName(const PluginId& id) const;  // 不明なプラグインは ID の文字
@@ -69,6 +78,10 @@ public:
     // ファイルの操作。再読み込みはしない: まとめて行った後に Reload() を呼ぶ。
     bool Install(const std::vector<PluginId>& ids, std::string* error);  // 入っているものの入れ直しもする
     bool Uninstall(const PluginId& id, std::string* error);
+    // 落として展開したフォルダー `folder` (PluginDownload) を `expected` として置く: plugin.json の ID が
+    // 合い、コードが無く、このエンジンで動く版であること。`marker` を download.json として一緒に置き、
+    // 終わったら `folder` を消す。再読み込みはしない。
+    bool InstallDownloaded(const PluginId& expected, const std::filesystem::path& folder, const json::Value& marker, std::string* error);
 
     // 起動のたび、Load の後に: エンジンが更新されていて (前回の起動からファイルの一覧が変わった)、
     // 入っているプラグインのファイルがエンジンの写しと違うなら、もう一度写す - Hub の
@@ -93,6 +106,7 @@ public:
 
 private:
     bool CopyIn(const PluginId& id, std::string* error);
+    bool CopyIn(const PluginId& id, const std::filesystem::path& from, std::string* error);
     void LoadTemplates();
 
     std::filesystem::path availableDir_, installedDir_;

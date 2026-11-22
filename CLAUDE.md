@@ -24,7 +24,7 @@
 - 対象は **Windows + Visual Studio 2022**。Windows の機能や VS に頼ってよい
 - **ImGui は一切使わない**。UI は `src/ui` (土台) + `src/editor/widgets` (見た目) の自作
 - 一番のメインはゲーム制作。ただしイラスト・作曲・3D モデルなども同じくらい力を入れる。機能はプラグインで足す
-- GitHub: https://github.com/ir-cola/RMEngine (private)。作業はコミットしてプッシュする
+- GitHub: https://github.com/ir-cola/RMEngine (公開。2026-11-21 から。就活のプレゼンにも使う)。作業はコミットしてプッシュする
 
 ## ビルドと確認
 

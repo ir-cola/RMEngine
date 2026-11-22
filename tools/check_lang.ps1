@@ -4,6 +4,8 @@
 #   ヘッダーの RM_STRUCT / RM_PROPERTY / RM_ENUM / RM_ITEM の Label="..." / Tooltip="..."
 #   plugin.json の "displayName"、テーマパックのテーマファイルの "name" (plugins/<a>/<n>/themes/*.json)、
 #   テンプレートの "name" / "description" (plugins/<a>/<n>/templates/<id>/template.json)
+#   ヘルプのページ (resources/help/*.md・plugins/<a>/<n>/help/*.md): どのページにも en/ の下に同じ名前の
+#   英語のページが要る (英語だけのページも、日本語の無いものとして止める)
 #
 # src/ の文字は resources/lang/en.json に、plugins/<author>/<name>/ の文字はそのプラグインの
 # lang/en.json に項目が要る。英語は日本語と同じ {} の引数を取らなければならない。
@@ -81,6 +83,23 @@ foreach ($tf in Get-ChildItem (Join-Path $Root 'plugins') -Recurse -Filter *.jso
     $rel = $tf.FullName.Substring($Root.Length + 1) -replace '\\', '/'
     $n = ([IO.File]::ReadAllText($tf.FullName, $utf8) | ConvertFrom-Json).name
     if ($n) { Need $rel 1 $n }
+}
+
+# ヘルプ: 日本語のページ <help>/x.md には英語のページ <help>/en/x.md (と逆も)。
+$helpRoots = @((Join-Path $Root 'resources/help')) + @(Get-ChildItem (Join-Path $Root 'plugins') -Recurse -Directory -Filter help | Where-Object { $_.Parent.Parent.Parent.Name -eq 'plugins' } | ForEach-Object { $_.FullName })
+foreach ($hr in $helpRoots) {
+    if (-not (Test-Path $hr)) { continue }
+    $enRoot = Join-Path $hr 'en'
+    foreach ($page in Get-ChildItem $hr -Recurse -Filter *.md | Where-Object { -not $_.FullName.StartsWith($enRoot + [IO.Path]::DirectorySeparatorChar) }) {
+        $rel = $page.FullName.Substring($hr.Length + 1)
+        if (-not (Test-Path (Join-Path $enRoot $rel))) { $missing.Add("$($page.FullName.Substring($Root.Length + 1)): no English help page (en\$rel)") }
+    }
+    if (Test-Path $enRoot) {
+        foreach ($page in Get-ChildItem $enRoot -Recurse -Filter *.md) {
+            $rel = $page.FullName.Substring($enRoot.Length + 1)
+            if (-not (Test-Path (Join-Path $hr $rel))) { $missing.Add("$($page.FullName.Substring($Root.Length + 1)): English help page without a Japanese one") }
+        }
+    }
 }
 
 # 英語の表は実行時に 1 つにまとめる (核のと、すべてのプラグインの): 同じ日本語に 2 つの違う

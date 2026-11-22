@@ -205,8 +205,9 @@ public:
         cameraType_ = reflect::TypeOf<Camera>().name;
         lightType_ = reflect::TypeOf<Light>().name;
         ambientType_ = reflect::TypeOf<AmbientLight>().name;
-        // 空の時間はゲームが動く間進む (雲が流れ、星が瞬く)。それ以外は止まっている。
-        skySeconds_ = host.playing ? skySeconds_ + std::clamp(c.Time() - now_, 0.0, 0.1) : 0.0;
+        // 空の時間はゲームが動く間、ゲームの時間の速さで進む (雲が流れ、星が瞬き、雨粒と雪が降る)。
+        // 一時停止の間 (timeScale 0) は止まる (2026-11-22: 前は雨粒と雪が降り続けた)。Play の外は 0。
+        skySeconds_ = host.playing ? skySeconds_ + std::clamp(c.Time() - now_, 0.0, 0.1) * std::max(host.timeScale, 0.f) : 0.0;
         now_ = c.Time();
         if (!looksMade_) MakeLooks(host);
         Place(host);
@@ -1328,17 +1329,17 @@ private:
     // 影、空、デバッグ、形)。ビューの左上に浮かぶ。
     void DrawBar(ui::Context& c, const BarLayout& bar) {
         // グリッド配置: 押すと切り替え (オンの間はギズモが常にグリッドの幅で動く)。右クリックで幅の箱。
-        const auto grid = w::ToolSquare(c, "tool_grid", bar.grid, Tr(L"グリッド配置"), state_.snapAlways, Tr(L"グリッド配置 (右クリックで幅)"));
+        const auto grid = w::ToolSquare(c, "tool_grid", bar.grid, w::Icon::Grid, state_.snapAlways, Tr(L"グリッド配置 (右クリックで幅)"));
         if (grid.clicked) state_.snapAlways = !state_.snapAlways;
         if (grid.rightClicked) snapOpen_ = !snapOpen_;
-        if (w::ToolSquare(c, "tool_select", bar.select, Tr(L"選択"), state_.selecting, Tr(L"選択 (Q)")).clicked) state_.selecting = true;
-        if (w::ToolSquare(c, "tool_move", bar.move, Tr(L"移動"), !state_.selecting && state_.tool == gizmo::Tool::Move, Tr(L"移動 (W)")).clicked) {
+        if (w::ToolSquare(c, "tool_select", bar.select, w::Icon::Cursor, state_.selecting, Tr(L"選択 (Q)")).clicked) state_.selecting = true;
+        if (w::ToolSquare(c, "tool_move", bar.move, w::Icon::Move, !state_.selecting && state_.tool == gizmo::Tool::Move, Tr(L"移動 (W)")).clicked) {
             PickTool(gizmo::Tool::Move);
         }
-        if (w::ToolSquare(c, "tool_rotate", bar.rotate, Tr(L"回転"), !state_.selecting && state_.tool == gizmo::Tool::Rotate, Tr(L"回転 (E)")).clicked) {
+        if (w::ToolSquare(c, "tool_rotate", bar.rotate, w::Icon::Rotate, !state_.selecting && state_.tool == gizmo::Tool::Rotate, Tr(L"回転 (E)")).clicked) {
             PickTool(gizmo::Tool::Rotate);
         }
-        if (w::ToolSquare(c, "tool_scale", bar.scale, Tr(L"拡縮"), !state_.selecting && state_.tool == gizmo::Tool::Scale, Tr(L"拡縮 (R)")).clicked) {
+        if (w::ToolSquare(c, "tool_scale", bar.scale, w::Icon::Scale, !state_.selecting && state_.tool == gizmo::Tool::Scale, Tr(L"拡縮 (R)")).clicked) {
             PickTool(gizmo::Tool::Scale);
         }
         const std::wstring local = Tr(L"ローカル"), world = Tr(L"ワールド");

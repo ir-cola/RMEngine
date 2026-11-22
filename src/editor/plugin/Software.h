@@ -45,6 +45,7 @@ inline constexpr char kHierarchy[] = "core.hierarchy";
 inline constexpr char kInspector[] = "core.inspector";
 inline constexpr char kConsole[] = "core.console";
 inline constexpr char kAssets[] = "core.assets";
+inline constexpr char kHelp[] = "core.help";  // ヘルプ (最初は閉じている。ヘルプのメニュー / F1 で開く)
 }  // namespace core_panel
 
 // 核のインスペクターが見せるもの: 題名と、ブロック ("値のかたまり" - ゲームのエンティティなら、

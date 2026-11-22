@@ -85,6 +85,12 @@ void OpenFolder(const std::filesystem::path& folder) {
     ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+bool OpenWebPage(std::wstring_view url) {
+    if (!url.starts_with(L"http://") && !url.starts_with(L"https://")) return false;  // (ファイルやプログラムは開かない)
+    const std::wstring u(url);
+    return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", u.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) > 32;
+}
+
 bool OpenFileOutside(const std::filesystem::path& file) {
     auto r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", file.c_str(), nullptr, file.parent_path().c_str(), SW_SHOWNORMAL));
     if (r <= 32) r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"openas", file.c_str(), nullptr, file.parent_path().c_str(), SW_SHOWNORMAL));

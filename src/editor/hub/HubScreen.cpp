@@ -102,7 +102,14 @@ void HubScreen::OnCloseRequested() { app_.RequestQuit(); }
 
 void HubScreen::OnLookChanged() {
     ScreenWindow::OnLookChanged();
+    if (help_ && help_->IsOpen()) help_->OnLookChanged();
     // 読み直さない: 行の言葉は描くときに (今の言語で) 作る。
+}
+
+void HubScreen::ShowHelp() {
+    // 閉じた窓は作り直す (入れたプラグインのヘルプも読み直す)。
+    if (!help_ || !help_->IsOpen()) help_ = std::make_unique<HelpWindow>(app_);
+    if (!help_->Show(Hwnd())) log::Error("ヘルプの窓を開けませんでした");
 }
 
 void HubScreen::ShowError(std::wstring message, fs::path removableFile, std::wstring title) {
@@ -426,8 +433,19 @@ void HubScreen::DrawSidebar(ui::Context& c, Rect r) {
     nav("nav.plugins", Tr(L"プラグイン"), Page::Plugins);
     nav("nav.updates", Tr(L"アップデート情報"), Page::Updates);
     nav("nav.options", Tr(L"オプション"), Page::Options);
+    // ヘルプはページではなく別の窓 (Hub にはドッキングが無い)。
+    if (w::NavItem(c, "nav.help", {r.x, y + 1, r.w - 1, kNavH - 1}, Tr(L"ヘルプ"), false)) Defer([this] { ShowHelp(); });
+    y += kNavH;
+    w::Separator(c, r.x, y, r.w - 1);
 
     p.Text({r.x + 28, r.Bottom() - 44, r.w - 56, 20}, TrF(L"バージョン {}", std::wstring(kEngineVersionW)), Style(12, theme::TextFaint));
+    // 一覧 (立ち上げたときに読んだ) のエンジンの版が今のより新しい: 知らせる。
+    const PluginCatalog& catalog = app_.Catalog();
+    if (catalog.index && EngineUpdateAvailable(*catalog.index, kEngineVersion)) {
+        ui::TextStyle ts = Style(12, theme::Warn, true);
+        ts.wrap = true;
+        p.Text({r.x + 28, r.Bottom() - 84, r.w - 56, 40}, TrF(L"新しい版 {} があります", Utf8ToWide(catalog.index->engine->version)), ts);
+    }
 }
 
 void HubScreen::DrawProjects(ui::Context& c, Rect area) {
@@ -576,6 +594,7 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     Rect content{area.x, area.y - off, area.w, 100000.f};
     const float top = content.y;
     auto outside = [&](const Rect& row) { return row.Bottom() < view.y || row.y > view.Bottom(); };
+    DrawDownloads(c, content, view);
     bool anyShown = false;
     for (const Plugins::Entry& e : plugins.Entries()) {
         if (e.connector) continue;  // 下に離して置く: 手では選ばない
@@ -646,6 +665,61 @@ void HubScreen::DrawPlugins(ui::Context& c, Rect area) {
     DrawConnectors(c, content, view);
     contentH = content.y - top;
     w::EndScroll(c, "plg.scroll", view, contentH);
+}
+
+// ダウンロードできるプラグイン: ポートフォリオの一覧 (立ち上げたときに読んだ) にあって、入っていない物か、
+// 入っている物より新しい版がある物。押すと落として入れる (App::DownloadPlugin)。
+void HubScreen::DrawDownloads(ui::Context& c, Rect& area, const Rect& view) {
+    auto& p = c.P();
+    const PluginCatalog& catalog = app_.Catalog();
+    auto outside = [&](const Rect& row) { return row.Bottom() < view.y || row.y > view.Bottom(); };
+    if (catalog.state == PluginCatalog::State::Loading) {
+        p.Text(ui::TakeTop(area, 28), Tr(L"ダウンロードできるプラグインの一覧を読んでいます…"), Style(13, theme::TextFaint));
+        ui::TakeTop(area, 8);
+        return;
+    }
+    if (catalog.state == PluginCatalog::State::Failed) {
+        ui::TextStyle ts = Style(12, theme::Warn);
+        ts.wrap = true;
+        ts.v = ui::VAlign::Top;
+        p.Text(ui::TakeTop(area, 36), TrF(L"ダウンロードできるプラグインの一覧を読めませんでした: {}", catalog.error), ts);
+        ui::TakeTop(area, 8);
+        return;
+    }
+    const std::vector<PluginOffer> offers = app_.PluginOffersNow();
+    if (offers.empty()) return;
+    p.Text(ui::TakeTop(area, 28), Tr(L"ダウンロードできるプラグイン"), Style(16, theme::Text, true));
+    ui::TakeTop(area, 4);
+    for (const PluginOffer& offer : offers) {
+        const Rect row = ui::TakeTop(area, 72);
+        ui::TakeTop(area, 8);
+        if (outside(row)) continue;
+        const IndexPlugin& plugin = *offer.plugin;
+        w::DrawSurface(c, row, w::Surface::Panel, 8.f);
+        p.Text({row.x + 24, row.y + 14, row.w * 0.4f, 24}, Utf8ToWide(TrU8(plugin.displayName)), Style(15, theme::Text, true));
+        p.Text({row.x + 24, row.y + 40, row.w * 0.4f, 20},
+               TrF(L"作者 {}   名前 {}", Utf8ToWide(plugin.id.author), Utf8ToWide(plugin.id.name)), Style(12, theme::TextFaint));
+        c.PushId("dl");
+        c.PushId(plugin.id.author);
+        c.PushId(plugin.id.name);
+        const bool busy = catalog.downloading.has_value();
+        const bool mine = busy && *catalog.downloading == plugin.id;
+        const Rect btn{row.Right() - 20 - 190, row.y + 18, 190, 36};
+        const std::wstring label = mine ? Tr(L"ダウンロード中…") : offer.kind == OfferKind::Update ? Tr(L"更新") : Tr(L"ダウンロードして入れる");
+        if (w::Button(c, "get", btn, label, w::ButtonKind::Primary, !busy)) {
+            Defer([this, id = plugin.id] { app_.DownloadPlugin(id); });
+        }
+        c.PopId();
+        c.PopId();
+        c.PopId();
+        const Rect status{row.x + row.w * 0.42f, row.y, btn.x - 16 - (row.x + row.w * 0.42f), row.h};
+        const std::wstring text = offer.kind == OfferKind::Update
+                                      ? TrF(L"新しい版 {} (今は {})", Utf8ToWide(offer.package->version),
+                                            offer.currentVersion.empty() ? Tr(L"版なし") : Utf8ToWide(offer.currentVersion))
+                                      : TrF(L"版 {}", Utf8ToWide(offer.package->version));
+        p.Text(status, text, Style(13, theme::TextDim, false, ui::HAlign::Right));
+    }
+    ui::TakeTop(area, 12);
 }
 
 // コネクタ (ゲーム制作 × 3D ...): インストール / 削除のボタンはない - つなぐものが全部

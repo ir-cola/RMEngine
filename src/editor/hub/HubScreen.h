@@ -6,6 +6,7 @@
 #include "core/PluginId.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/app/Worker.h"
+#include "editor/help/HelpWindow.h"
 #include "editor/app/Integrity.h"
 #include "editor/inspector/Inspector.h"
 #include "editor/lang/Lang.h"
@@ -13,6 +14,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -85,6 +87,8 @@ private:
     void DrawPlugins(ui::Context& c, ui::Rect r);
     // プラグインの下の、同じスクロールする行の中 (`area` はその下へ動く)。
     void DrawConnectors(ui::Context& c, ui::Rect& area, const ui::Rect& view);
+    // ダウンロードできるプラグイン (App::Catalog): 入っていない物・新しい版がある物と、一覧を読めたか。
+    void DrawDownloads(ui::Context& c, ui::Rect& area, const ui::Rect& view);
     void DrawOptions(ui::Context& c, ui::Rect r);
     void DrawUpdates(ui::Context& c, ui::Rect r);
     void DrawIntegrity(ui::Context& c);
@@ -169,6 +173,10 @@ private:
 
     Worker rowsWorker_;       // 最近のプロジェクトを読む
     Worker integrityWorker_;  // エンジンのファイルのハッシュを取る
+
+    // ヘルプの窓 (サイドバーの「ヘルプ」。1 つだけ: 開いていれば前に出す)。
+    std::unique_ptr<HelpWindow> help_;
+    void ShowHelp();
 
     // エラーダイアログ
     std::wstring errorTitle_;

@@ -310,6 +310,19 @@ RM_TEST(Plugins_ConnectorsToBring) {
     CHECK(ConnectorsToBring({w[0], w[1], phys}, all) == std::vector<PluginId>({Id("game_x_3d"), Id("game_x_3d_x_physics")}));
 }
 
+// 前のエンジンが写したのに、このエンジンにはもう無いプラグイン (やめたつなぎ): 起動時に消す。
+RM_TEST(Plugins_RetiredCopies) {
+    const std::vector<PluginId> engine = {Id("game_x_3d"), Id("weather_x_physics")};
+    const std::vector<InstalledCopy> installed = {
+        {Id("game_x_3d"), false},             // エンジンにある: 残す
+        {Id("game_x_3d_x_physics"), false},   // やめた: 消す
+        {Id("downloaded_pack"), true},        // ダウンロードした物: 残す
+        {{"someone", "old_tool"}, false},     // (作者は問わない)
+    };
+    CHECK(RetiredCopies(installed, engine) == std::vector<PluginId>({Id("game_x_3d_x_physics"), PluginId{"someone", "old_tool"}}));
+    CHECK(RetiredCopies({}, engine).empty());
+}
+
 RM_TEST(Plugins_DependentsThroughConnector) {
     const auto w = ConnectorWorld();
     // 3D 空間 を外す: コネクターが消え、ゲーム制作 (その最後のコネクター) と game_ui も消える。

@@ -37,6 +37,12 @@ struct PluginManifest {
     // どのソフトに属すか。どのテンプレートも必要としないとき ("software": ["game"]: テンプレートの
     // 木の一番上のノードの ID。editor/project/Templates.h)。Hub の「ソフトで絞る」だけに使う。省略できる。
     std::vector<std::string> softwares;
+    // 配布 (docs/PLUGIN_DISTRIBUTION.md §3-2): 版 (数 3 つ。書いていない古い plugin.json は空)・
+    // 動く一番古いエンジンの版 ("engine": { "min": ... }。空: どれでも)・コードがあるか ("code"。
+    // 書いていなければある。テーマとテンプレートだけのプラグインは false)。
+    std::string version;
+    std::string engineMin;
+    bool code = true;
 
     bool operator==(const PluginManifest&) const = default;
 };
@@ -102,10 +108,13 @@ inline bool LacksRequirement(PluginState s) {
 std::vector<PluginId> InstallPlan(const PluginId& id, const std::vector<PluginManifest>& available,
                                   const std::vector<PluginId>& ready, std::vector<PluginId>* unavailable);
 
-// 写す必要が無い、入っているプラグイン。読めて、このエンジンの写しと同じもの。違う写し
-// (古いエンジンのもの: 前提が違う、コネクターの決まりが無いなど) は、次の入れる計画でもう一度
-// 写す。このエンジンに無いプラグインは、そのまま受け取る。
+// 写す必要が無い、入っているプラグイン。読めて、このエンジンの写しと同じもの、またはエンジンの写しより
+// 新しい版 (ダウンロードした物)。違う写し (古いエンジンのもの: 前提が違う、コネクターの決まりが無い
+// など) は、次の入れる計画でもう一度写す。このエンジンに無いプラグインは、そのまま受け取る。
 std::vector<PluginId> ReadyPlugins(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available);
+// 入っている写しが、このエンジンの写しより新しい版 (ダウンロードした物)。エンジンを更新したときの
+// 写し直しは、これを古いエンジンの写しで上書きしない。
+bool NewerThanEngine(const PluginManifest& installed, const std::vector<PluginManifest>& available);
 
 // エンジンの最初の起動で入れるもの (自分用の入れたプラグインのフォルダーが新しい): 前は
 // 全エンジンで共有していたフォルダーにユーザーが入れていたもの (`legacyInstalled`。あれば)、
@@ -116,6 +125,15 @@ std::vector<PluginId> FirstStartInstalls(const std::vector<PluginId>& available,
 // (新しいエンジンが足したコネクター - ゲーム制作 × 3D × 物理 - を、前から入っているプラグイン用に):
 // 起動時に入れる。プラグインを入れたときに一緒に来たはずのものと同じ扱い。エンジンの順で。
 std::vector<PluginId> ConnectorsToBring(const std::vector<PluginManifest>& installed, const std::vector<PluginManifest>& available);
+
+// 入っている写しのうち、前のエンジンが写した (ダウンロードした物ではない) のに、このエンジンには
+// もう無いもの (やめた・ほかのプラグインに移した。例: 2026-11-19 の ゲーム制作 × 3D × 物理 → 天候 × 物理):
+// 起動時に消す。ダウンロードした物 (download.json がある) は消さない。入っている順で。
+struct InstalledCopy {
+    PluginId id;
+    bool downloaded = false;
+};
+std::vector<PluginId> RetiredCopies(const std::vector<InstalledCopy>& installed, const std::vector<PluginId>& engine);
 
 struct Dependent {
     PluginId id;

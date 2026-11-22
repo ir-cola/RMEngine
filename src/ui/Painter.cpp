@@ -264,6 +264,55 @@ void Painter::Text(const Rect& r, std::wstring_view text, const TextStyle& st) {
                   D2D1_DRAW_TEXT_OPTIONS_CLIP);
 }
 
+ComPtr<IDWriteTextLayout> Painter::RichLayout(std::wstring_view text, float size, float width, std::span<const TextRun> runs,
+                                              std::vector<ComPtr<ID2D1SolidColorBrush>>* brushes) {
+    ComPtr<IDWriteTextLayout> layout;
+    IDWriteTextFormat* fmt = Format(size, false);
+    if (!fmt || width <= 0) return layout;
+    fmt->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+    fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+    DWRITE_TRIMMING none{DWRITE_TRIMMING_GRANULARITY_NONE, 0, 0};
+    fmt->SetTrimming(&none, nullptr);
+    if (FAILED(dwrite_->CreateTextLayout(text.data(), static_cast<UINT32>(text.size()), fmt, width, 100000.f, &layout))) return nullptr;
+    for (const TextRun& run : runs) {
+        if (run.length == 0 || run.start >= text.size()) continue;
+        const DWRITE_TEXT_RANGE range{run.start, run.length};
+        if (run.bold) layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, range);
+        if (run.mono) layout->SetFontFamilyName(L"Consolas", range);  // (日本語は DirectWrite が別の書体で補う)
+        if (run.underline) layout->SetUnderline(TRUE, range);
+        if (run.color && brushes && dc_) {
+            ComPtr<ID2D1SolidColorBrush> b;
+            if (SUCCEEDED(dc_->CreateSolidColorBrush(ToD2D(*run.color), &b))) {
+                layout->SetDrawingEffect(b.Get(), range);
+                brushes->push_back(b);
+            }
+        }
+    }
+    return layout;
+}
+
+float Painter::RichText(const Rect& r, std::wstring_view text, float size, Color color, std::span<const TextRun> runs, bool draw) {
+    if (text.empty() || r.w <= 0) return 0.f;
+    std::vector<ComPtr<ID2D1SolidColorBrush>> brushes;
+    auto layout = RichLayout(text, size, r.w, runs, draw ? &brushes : nullptr);
+    if (!layout) return 0.f;
+    DWRITE_TEXT_METRICS m{};
+    layout->GetMetrics(&m);
+    if (draw) dc_->DrawTextLayout({r.x, r.y}, layout.Get(), Brush(color), D2D1_DRAW_TEXT_OPTIONS_NONE);
+    return m.height;
+}
+
+std::optional<size_t> Painter::RichHitTest(const Rect& r, std::wstring_view text, float size, std::span<const TextRun> runs, float x, float y) {
+    if (text.empty() || r.w <= 0) return std::nullopt;
+    auto layout = RichLayout(text, size, r.w, runs, nullptr);
+    if (!layout) return std::nullopt;
+    BOOL trailing = FALSE, inside = FALSE;
+    DWRITE_HIT_TEST_METRICS hm{};
+    if (FAILED(layout->HitTestPoint(x - r.x, y - r.y, &trailing, &inside, &hm)) || !inside) return std::nullopt;
+    return static_cast<size_t>(hm.textPosition);
+}
+
 float Painter::TextWidth(std::wstring_view text, float size, bool bold) {
     if (text.empty()) return 0.f;
     auto layout = Layout(text, size, bold);
@@ -306,12 +355,27 @@ size_t Painter::HitTest(std::wstring_view text, float x, float size, bool bold) 
     return pos > text.size() ? text.size() : pos;
 }
 
-void Painter::Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity) {
-    if (!bmp) return;
-    dc_->DrawBitmap(bmp, ToD2D(dst), opacity, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr, nullptr);
+namespace {
+
+// 画素で数えた四角 -> ビットマップの DIP (Direct2D の元の四角の単位)。DPI を書かずに作ったビットマップは
+// 作ったウィンドウの DPI を持つので、150% の画面では 1 画素 = 1/1.5 DIP (2026-11-22: アイコンがずれた)。
+Rect PixelsToDips(ID2D1Bitmap* bmp, const Rect& px) {
+    const D2D1_SIZE_U pixels = bmp->GetPixelSize();
+    const D2D1_SIZE_F dips = bmp->GetSize();
+    const float sx = pixels.width ? dips.width / static_cast<float>(pixels.width) : 1.f;
+    const float sy = pixels.height ? dips.height / static_cast<float>(pixels.height) : 1.f;
+    return {px.x * sx, px.y * sy, px.w * sx, px.h * sy};
 }
 
-void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
+}  // namespace
+
+void Painter::Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity, const Rect* src) {
+    if (!bmp) return;
+    const D2D1_RECT_F from = src ? ToD2D(PixelsToDips(bmp, *src)) : D2D1_RECT_F{};
+    dc_->DrawBitmap(bmp, ToD2D(dst), opacity, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, src ? &from : nullptr, nullptr);
+}
+
+void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c, const Rect* src) {
     if (!bmp || dst.w <= 0 || dst.h <= 0) return;
     if (tintOwner_ != dc_) {
         tint_.Reset();
@@ -329,12 +393,16 @@ void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
     tint_->SetInput(0, bmp);
     tint_->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
     // 変形で拡大縮小されるので、Image() と同じようにきれいに補間される。
+    // 一部だけ (`src`): DrawImage はその四角を切り出して、(0, 0) に置いて描く。
     const D2D1_SIZE_F size = bmp->GetSize();
-    if (size.width <= 0 || size.height <= 0) return;
+    const Rect from = src ? PixelsToDips(bmp, *src) : Rect{0, 0, size.width, size.height};
+    if (from.w <= 0 || from.h <= 0) return;
     D2D1_MATRIX_3X2_F old;
     dc_->GetTransform(&old);
-    dc_->SetTransform(D2D1::Matrix3x2F::Scale(dst.w / size.width, dst.h / size.height) * D2D1::Matrix3x2F::Translation(dst.x, dst.y) * old);
-    dc_->DrawImage(tint_.Get(), D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+    dc_->SetTransform(D2D1::Matrix3x2F::Scale(dst.w / from.w, dst.h / from.h) * D2D1::Matrix3x2F::Translation(dst.x, dst.y) * old);
+    const D2D1_RECT_F crop = ToD2D(from);
+    const D2D1_POINT_2F at{0, 0};
+    dc_->DrawImage(tint_.Get(), &at, &crop, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
     dc_->SetTransform(old);
 }
 

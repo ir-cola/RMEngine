@@ -3,6 +3,7 @@
   "author": "rm_engine",
   "name": "theme_paper",
   "displayName": "紙",
-  "version": 1,
+  "version": "0.0.1",
+  "code": false,
   "requires": []
 }

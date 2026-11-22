@@ -91,7 +91,7 @@
 
 - **ImGui のように 1 回の呼び出しで描いて、何をされたかを返す**: `w::Button` / `w::IconButton` / `w::Selectable` / `w::NavItem` / `w::CollapsingHeader` / `w::ComboBox` / `w::TextField` / `w::Checkbox` / `w::MenuPopup` / `w::BeginModal` / `w::Tooltip` / `w::BeginScroll` …
 - **画面のコードは四角を自分で塗らない**。箱は `w::DrawSurface` (Panel / Raised / Hovered / Pressed / Sunken / Accent / Selected / Popup)、一覧の行は `w::DrawRow`、タブは `w::DrawTab`、窓の帯 (メニューバー・ステータスバー・サイドバー) は `w::DrawBar`、印 (× ・ ⋯ ・ ⋮ ・ ▾ ・ ▸ ・ ✓) は `w::DrawIcon`。見た目を変えるときはここを 1 か所直せば全部の画面が変わる (憲法 3)
-- 印は文字ではなく線と点で描く (文字の「…」は下に寄る。線ならどの大きさでも箱の真ん中に来る)
+- 印は文字ではなく `w::DrawIcon` で描く (文字の「…」は下に寄る)。絵のある印は 1 枚にまとめた絵 (`resources/icons/`。白 1 色の絵はテーマの色で塗る)、無い印 (× ✓ 矢印など) は線と点。どの印にどの絵かは `editor/widgets/IconAtlas.cpp` の表 1 か所。データの型の項目の前の絵は `RM_PROPERTY(Icon="...")`
 - **色はテーマの色にグラデーションを掛ける**: 上が少し明るく下が少し暗い (光が上から当たる)。色合いはパレットのまま。`theme::Raised` (ボタン・見出し・タブ) / `theme::Gentle` (パネル・帯) / `theme::Sunken` (入力欄: 上が暗い) / `theme::AccentOf` (アクセント)。盛り上がった面の上の縁に 1 本の明るい線 (`theme::Highlight`)。押したときはグラデーションを上下逆にする
 - 影は `Painter::Shadow` (少しずつ広く・薄くした角丸を 4 枚重ねる。ぼかしの代わり)。メニュー・ダイアログ・ツールチップ・ドラッグ中の札に付く
 - グラデーションのブラシは色の組ごとに 1 つ作って使い回す (`Painter::Gradient`。毎回作らない)
@@ -178,6 +178,16 @@ Node = 分割 (横 / 縦・比率) | 葉 (パネル ID のタブの束)
 
 - 木を変えるのは**フレームの最後** (描いている途中の節を消さない)。ウィンドウを作る / 壊すのは**メッセージループに戻ってから** (`RequestSyncFloating` → `Defer`)
 - 新しく出すウィンドウは、そのモニターの作業領域 (タスクバーを除く) に収める。保存した位置のモニターが無ければ中央に出す
+
+## 5-2. ヘルプ (`editor/help`。2026-11-22。決め事は ブランチ `claude/awesome-edison-h34h8a` の `作業内容.md` 2026-11-21 の 4 項)
+
+- **核のパネル** `core.help` (どのソフトにも。最初は閉じている。ヘルプのメニュー / F1)。Hub にはドッキングが無いので、Hub からは**別の窓** (`HelpWindow`、1 つだけ)。中身はどちらも `HelpView` が描く (憲法 3)
+- 上にフォルダーのタブ (`w::FolderTab`、デバッグの窓と同じ部品): 「Hub とエディター本体」= 核の本 (`resources/help/` → `<exe>/Help/`)、「プラグイン」= 入っていて使えるプラグインの本 (`<入れたプラグイン>/help/`)。**核が描くものは本体、プラグインが足すものはプラグイン**
+- 左に核のツリービュー (検索付き)、右に本文 (`w::DocView`)。細いとき (230 + 320 DIP より狭い) は ≡ で木を出す (0.3 秒待って消す・押している間と打っている間は消さない)
+- ページはファイル (Markdown の一部。`HelpDoc`)。英語は `en/` に同じ形で。ID は「本 / フォルダー / 名前」。並びは `_order.json`。つなぎのプラグインの本は元の本の下 (`ArrangeBooks`)。書き出したゲームには入らない
+- 見え方 (タブ・ページ・木の開き方) は `UserSettings/Layout.json` の `"help"` (Undo・未保存にしない)
+- スクリプトの API の説明はヘッダー (`RM.h` など) のコメントが本物 (憲法 2: ヘルプに書き写さない)
+- 検査: `check_lang.ps1` が、日本語のページに英語のページがあるか (と逆) を見る。テスト: `tests/TestHelp.cpp`
 
 ## 6. プラグインとソフト (`editor/plugin`)
 
@@ -503,6 +513,13 @@ Step         Transform を読む (作る・作り直す・消す・スクリプ�
 - **エディター** (`editor/Connector.cpp`): 口 `rm_engine.game_production.scene_lines` (`SceneLinesInfo`、`game_production/editor/SceneView.h`) にコライダーとキャラクターの線を差し出す。3D / 2D のシーンビューは帯の「形: 選択 / 全部」(`SceneViewState(2D)::allShapes`) で、選んだ物だけか全部か。トリガーは別の色、無効な物は薄く (`theme::SceneCollider` / `SceneTrigger` / `SceneColliderInactive`)
 - **書き出し**: 物理のランタイムは GameKit の `lib/rm_engine/physics/runtime.lib`、Jolt は `core.lib` に入る (`make_gamekit.ps1 -ExtraCoreLibs`)。ゲームが物理の部品を使うときだけプラグインが入る (今までの「使う部品から選ぶ」)
 - テスト: `tests/TestPhysics.cpp` (落ちて止まる・トリガーの出入り・OnHit は 1 回・2D は Z が動かない・Play のコピーを捨てる・保存と読み込み・光線・キャラクター・1000 個の箱の時間)。見本: テンプレート「物理の見本 (3D)」(`physics/templates/physics_3d`。`check_export.ps1` が書き出して起動する)
+
+### 気候 (`plugins/rm_engine/climate`。2026-11-22。設計: [CLIMATE.md](CLIMATE.md))
+
+- 前提 = ゲーム制作・3D 空間・2D 空間 (物理と同じく、1 つのプラグインに 2D と 3D の部品)。シーンの設定「気候」(エリアの外) と部品「気候エリア」(3D) /「気候エリア 2D」(`runtime/Climate.h` の `RM_STRUCT`)
+- 計算は純粋 (`ZoneDepth` → `ZoneWeight` (境目の幅でなめらかな段) → `Blend` (優先度の小さい順に重みの分だけ寄せる) → `CooledByHeight`)。`ClimateField` がシーンから有効なエリアを置かれた所と一緒に 1 回集め、何度でも答える
+- スクリプトの部分 `rm_engine.climate.climate` (`RMClimate.h`)。エディター: 口 `kSceneLinesPoint` にエリアの枠 (`theme::SceneArea` / `SceneAreaInner`)
+- 天候は気候を知らない。つなぎ「天候 × 気候」(`plugins/rm_engine/weather_x_climate`) が天候の一般の口 `rm_engine.weather.place` (`WeatherPlace.h`: 格子の点ごとの雪の割合と降る量の倍率。粒のシェーダーが補間して、1 粒ずつ出る / 消えるを決める) に答え、Play の間はシステム「天候 × 気候」(天候の前) がカメラのいる所の降り方を `Weather::placeSnow` / `placeMore` に書く
 
 ### Prefab (`plugins/rm_engine/game_production/runtime/Prefab.h`)
 

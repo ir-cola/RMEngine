@@ -14,6 +14,7 @@ plugins/
     lang/en.json               画面の文字の英語
     themes/*.json              テーマ (テーマパック)
     templates/<id>/template.json   新しいプロジェクトのテンプレート (Hub の新規作成の木)
+    help/*.md  help/en/*.md        ヘルプのページ (日本語と英語。フォルダーの入れ子 = 機能 → 細かい仕様。docs/HOW_TO_TRY.md の「ヘルプ」)
 ```
 
 | 決まり | 中身 |
@@ -32,6 +33,7 @@ plugins/
 | ランタイムだけ | エディターの部分が無いプラグインも `BuiltinPlugins.cpp` に `RegisterEditor` 無し (`nullptr`) で載せる |
 | ビルド | 全部 `RM_Engine.exe` に静的リンク。ソースはワイルドカードで拾うので vcxproj を書き直さなくてよい。`plugin.json` はビルドで `build/bin/.../Plugins/<作者>/<名前>/` へ写る (= このエンジンが持っているもの) |
 | インストール | Hub で入れると `%LOCALAPPDATA%\RM_Engine\Engines\<エンジン>\Plugins\<作者>\<名前>\` へフォルダごと写る。入っていないプラグインは初期化されない。最初の起動では全部入る |
+| 版とダウンロード | `plugin.json` の `"version"` は数 3 つの文字 (`"0.0.1"`)、`"engine": { "min": ... }` は動く一番古いエンジン、`"code": false` はテーマとテンプレートだけの物。コードの無い物は `tools/make_plugin_package.ps1` で zip と一覧 `index.json` にしてポートフォリオに置くと、Hub の「ダウンロードできるプラグイン」から落として入れられる ([docs/PLUGIN_DISTRIBUTION.md](../docs/PLUGIN_DISTRIBUTION.md) 段階 1) |
 
 決まりは `tools/check_layers.ps1` がビルドと CI のたびに検査する。
 
@@ -61,5 +63,7 @@ plugins/
 | `rm_engine` / `particles` (パーティクル) | 前提なし。エフェクト `.rmparticle` (エミッターとモジュールの並び)・モジュール `.rmfx` (HLSL + `param` / `attr`。用意したモジュールも同じ形: `runtime/BuiltinModules`)・モジュールから 1 本のシェーダーを組み立てる (`runtime/ParticleShader`)・GPU で動かして描く (`runtime/ParticlePlayer`: Compute Shader)。ゲーム制作を知らない |
 | `rm_engine` / `game_x_particles` (ゲーム制作 × パーティクル) | つなぎ。前提 = ゲーム制作・パーティクル・ゲーム制作 × 3D・3D 空間。部品「パーティクル」・3D の絵への描き込み (ゲーム制作 × 3D の口 `rm_engine.game_x_3d.world_draw`)・「パーティクル」タブ (`editor/ParticleTab`: 並び・値・プレビュー) |
 | `rm_engine` / `weather` (天候) | 前提 = ゲーム制作・ゲーム制作 × 3D・3D 空間。シーンの設定「天候」(雲の量・降水量・霧の量 0〜100・雪にする・積もる高さ cm・雷・風、テンプレート。`runtime/Weather.*`・テンプレートの行は `editor/Register.cpp`)・Play の間のシステム「天候」(フェード・濡れ・風で流れる距離)・空に雲と雷を伝える (ゲーム制作 × 3D の口 `rm_engine.game_x_3d.sky_weather`)・雨と雪と濡れの描画 (口 `rm_engine.game_x_3d.world_draw`。3D 空間の「向きの地図」と「面の塗りに足す口」を使う: `runtime/WeatherDraw.*`・`Falling.*`)・スクリプトの部分 `rm_engine.weather.weather` (`RMWeather.h`)・雨と雪が当たる形の口 `rm_engine.weather.blockers` |
+| `rm_engine` / `climate` (気候) | 前提 = ゲーム制作・3D 空間・2D 空間。シーンの設定「気候」(エリアの外の気温・湿り気・高さで冷える・基準の高さ)・部品「気候エリア」(3D: 箱 / 円柱) /「気候エリア 2D」(長方形 / 円)。境目の幅でなめらかに重なり、優先度で上下 (`runtime/Climate.*`)・スクリプトの部分 `rm_engine.climate.climate` (`RMClimate.h`)・シーンビューのエリアの枠 (`editor/Register.cpp`)。設計 [docs/CLIMATE.md](../docs/CLIMATE.md) |
+| `rm_engine` / `weather_x_climate` (天候 × 気候) | つなぎ。前提 = 天候・気候 (ほか)。気温で雨 / みぞれ / 雪、湿り気で降る量を、天候の口 `rm_engine.weather.place` に答える (粒ごと)。Play の間のシステム「天候 × 気候」がカメラのいる所の降り方を天候に書く |
 | `rm_engine` / `weather_x_physics` (天候 × 物理) | つなぎ。前提 = 天候・物理 (ほか)。物理のコライダー (箱・球・カプセル・メッシュ。トリガーは除く) とキャラクターを、雨・雪が当たる形にして渡す (天候の口 `rm_engine.weather.blockers`) |
 | `rm_engine` / `particles_x_physics` (パーティクル × 物理) | つなぎ。前提 = ゲーム制作 × パーティクル・物理 (ほか)。物理のコライダー (箱・球・カプセル。トリガーとメッシュは除く) とキャラクターを、粒が当たる形にして渡す (ゲーム制作 × パーティクルの口 `rm_engine.game_x_particles.collision_shapes`) |

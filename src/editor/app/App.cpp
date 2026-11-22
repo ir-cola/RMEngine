@@ -5,7 +5,10 @@
 
 #include "base/Log.h"
 #include "base/Utf.h"
+#include "base/Version.h"
 #include "editor/hub/HubScreen.h"
+#include "editor/plugin/PluginDownload.h"
+#include "platform/Http.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/ThemeFile.h"
@@ -100,15 +103,18 @@ int App::Run(const LaunchOptions& options) {
         MessageBoxW(nullptr, Tr(L"グラフィックスを初期化できませんでした (Direct3D 11 / Direct2D)。").c_str(), L"RM Engine", MB_ICONERROR);
         return 1;
     }
+    w::InitIcons(gfx_);
     settings_.Load();
     LoadLanguageCatalogs();
     ApplyOptions();
     SetUiThread();
     plugins_.Load(paths::EnginePlugins(), paths::InstalledPlugins(), paths::LegacyInstalledPlugins());
     StartEngineRefresh();  // 新しいエンジン: 入っているプラグインの新しいコピー (このスレッドの外でハッシュを取る)
+    LoadLanguageCatalogs();  // (ダウンロードしたプラグインの英語も)
     LoadThemes();
     ApplyOptions();  // 選んだテーマはパックのものかもしれない
     if (!options.exportTemplate.empty() || !options.newFromTemplate.empty() || !options.exportProject.empty()) return RunExportCheck(options);
+    StartCatalog();  // ダウンロードできるプラグインの一覧 (立ち上げたときだけ)
     if (!options.projectFile.empty()) {
         RequestOpenProject(options.projectFile);
     } else {
@@ -185,6 +191,10 @@ void App::LoadLanguageCatalogs() {
             files.push_back(n->path() / L"lang" / L"en.json");
         }
     }
+    // ダウンロードしたプラグイン (exe に無い物と、エンジンの写しより新しい物) は、入れた写しの英語。
+    for (const Plugins::Entry& e : plugins_.Entries()) {
+        if (e.downloaded) files.push_back(plugins_.InstalledFolder(e.status.id) / L"lang" / L"en.json");
+    }
     size_t count = 0;
     for (const auto& file : files) {
         std::error_code e3;
@@ -228,8 +238,125 @@ void App::ApplyEngineRefreshIfReady() {
 
 void App::ReloadPlugins() {
     plugins_.Reload();
+    LoadLanguageCatalogs();
     LoadThemes();
     ApplyOptions();
+}
+
+void App::StartCatalog() {
+    std::string url = kPluginIndexUrl;
+    wchar_t* over = nullptr;
+    size_t overLen = 0;
+    if (_wdupenv_s(&over, &overLen, kPluginIndexEnv) == 0 && over) {
+        if (*over) url = WideToUtf8(over);  // (試すとき: 別の URL かローカルの index.json)
+        free(over);
+    }
+    catalog_ = {};
+    catalog_.url = url;
+    catalogWorker_.Run([this, url](std::stop_token stop, const Worker::Post& post) {
+        platform::FetchResult r = platform::Fetch(url, kMaxIndexBytes, stop);
+        post([this, r = std::move(r)] {
+            if (!r.body) {
+                catalog_.state = PluginCatalog::State::Failed;
+                catalog_.error = DescribeFetch(r);
+                log::Warn("ダウンロードできるプラグインの一覧を読めませんでした: {} ({})", catalog_.url, WideToUtf8(catalog_.error));
+                return;
+            }
+            json::ParseError pe;
+            std::string err;
+            const auto doc = json::Parse(*r.body, &pe);
+            auto index = doc ? ParsePluginIndex(*doc, &err) : std::nullopt;
+            if (!doc) err = TrU8F("JSON が壊れています ({} 行 {} 文字目: {})", pe.line, pe.column, pe.message);
+            if (!index) {
+                catalog_.state = PluginCatalog::State::Failed;
+                catalog_.error = Utf8ToWide(err);
+                log::Warn("ダウンロードできるプラグインの一覧を読めませんでした: {} ({})", catalog_.url, err);
+                return;
+            }
+            for (const std::string& s : index->skipped) log::Warn("プラグインの一覧: {}", s);
+            log::Info("ダウンロードできるプラグインの一覧を読みました: {} ({} 個)", catalog_.url, index->plugins.size());
+            if (EngineUpdateAvailable(*index, kEngineVersion)) log::Info("新しいエンジンがあります: {} (今は {})", index->engine->version, kEngineVersion);
+            catalog_.index = std::move(index);
+            catalog_.state = PluginCatalog::State::Ready;
+        });
+    });
+}
+
+std::vector<PluginOffer> App::PluginOffersNow() const {
+    if (!catalog_.index) return {};
+    return PluginOffers(*catalog_.index, plugins_.InstalledManifests(), plugins_.Available(), kEngineVersion);
+}
+
+void App::DownloadPlugin(const PluginId& id) {
+    if (catalog_.downloading) return;
+    const std::vector<PluginOffer> offers = PluginOffersNow();
+    const auto offer = std::find_if(offers.begin(), offers.end(), [&](const PluginOffer& o) { return o.plugin->id == id; });
+    if (offer == offers.end()) return;
+    const IndexPackage& pkg = *offer->package;
+    // 前提: このエンジンにある物は一緒に入れる。無い物 (ほかにダウンロードが要る物) は先に入れてもらう。
+    std::vector<PluginId> withEngine, missing;
+    for (const PluginId& req : pkg.requirements) {
+        if (plugins_.IsEnabled(req)) continue;
+        std::vector<PluginId> unavailable;
+        const auto plan = plugins_.InstallPlan(req, &unavailable);
+        if (!unavailable.empty()) {
+            missing.push_back(req);
+            continue;
+        }
+        for (const PluginId& p : plan) {
+            if (std::find(withEngine.begin(), withEngine.end(), p) == withEngine.end()) withEngine.push_back(p);
+        }
+    }
+    if (!missing.empty()) {
+        std::wstring names;
+        for (const PluginId& m : missing) names += L"\n" + Utf8ToWide(m.Text());
+        if (auto* hub = dynamic_cast<HubScreen*>(screen_.get())) hub->ShowError(Tr(L"先に次の前提プラグインを入れてください。") + names, {}, Tr(L"インストールできません"));
+        return;
+    }
+    catalog_.downloading = id;
+    const std::string url = ResolveUrl(catalog_.url, pkg.url);
+    const std::filesystem::path folder = paths::InstalledPlugins() / L".downloads" / PathFromUtf8(id.author + "." + id.name);
+    log::Info("プラグインを落としています: {} 版 {} ({})", id.Text(), pkg.version, url);
+    downloadWorker_.Run([this, id, url, folder, size = pkg.size, sha = pkg.sha256, version = pkg.version, withEngine](std::stop_token stop,
+                                                                                                              const Worker::Post& post) {
+        PackageFetch r = FetchPackage(url, size, sha, folder, stop);
+        post([this, id, url, folder, sha, version, withEngine, r = std::move(r)] {
+            FinishedDownload done{id, version, sha, url, folder, DescribePackageFetch(r), withEngine};
+            finishedDownload_ = std::move(done);
+            ApplyDownloadIfReady();
+        });
+    });
+}
+
+void App::ApplyDownloadIfReady() {
+    // エディターを開いていない間だけ (Reload がプラグインの登録簿を作り直す)。
+    auto* hub = dynamic_cast<HubScreen*>(screen_.get());
+    if (!finishedDownload_ || !hub) return;
+    FinishedDownload d = std::move(*finishedDownload_);
+    finishedDownload_.reset();
+    catalog_.downloading.reset();
+    if (!d.error.empty()) {
+        std::error_code ec;
+        std::filesystem::remove_all(d.folder, ec);
+        log::Warn("プラグインを落とせませんでした: {} ({})", d.id.Text(), WideToUtf8(d.error));
+        hub->ShowError(d.error, {}, Tr(L"ダウンロードできませんでした"));
+        return;
+    }
+    std::string err;
+    bool ok = d.requirements.empty() || plugins_.Install(d.requirements, &err);
+    json::Value marker = json::Value::MakeObject();
+    marker.Set("source", "download");
+    marker.Set("version", d.version);
+    marker.Set("sha256", d.sha256);
+    marker.Set("url", d.url);
+    ok = ok && plugins_.InstallDownloaded(d.id, d.folder, marker, &err);
+    ReloadPlugins();
+    if (!ok) {
+        std::error_code ec;
+        std::filesystem::remove_all(d.folder, ec);
+        log::Warn("落としたプラグインを置けませんでした: {} ({})", d.id.Text(), err);
+        hub->ShowError(Utf8ToWide(err), {}, Tr(L"インストールできませんでした"));
+    }
 }
 
 void App::LoadThemes() {
@@ -371,6 +498,7 @@ void App::ShowHub(const std::string& errorMessage) {
     if (!errorMessage.empty()) hub->ShowError(Utf8ToWide(errorMessage));
     Replace(std::move(hub));
     ApplyEngineRefreshIfReady();  // エディター (開いていれば) はもうない
+    ApplyDownloadIfReady();
 }
 
 HubScreen* App::EnsureHub() {

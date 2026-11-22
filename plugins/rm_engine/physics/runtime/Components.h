@@ -41,9 +41,9 @@ struct Rigidbody {
     RM_PROPERTY(Edit, Label="摩擦", Tooltip="0: つるつる 〜 1: すべりにくい (ぶつかった 2 つを掛けた値の平方根)", Min=0, Max=10) float friction = 0.5f;
     RM_PROPERTY(Edit, Label="跳ね返り", Tooltip="0: 跳ねない 〜 1: そのまま跳ね返る (2 つの大きい方)", Min=0, Max=1) float bounciness = 0.f;
     RM_PROPERTY(Edit, Label="重力の倍率", Tooltip="シーンの「重力」に掛けます (0: 浮く)", Min=-100, Max=100) float gravityScale = 1.f;
-    RM_PROPERTY(Edit, Label="回転の固定 X") bool lockRotationX = false;
-    RM_PROPERTY(Edit, Label="回転の固定 Y") bool lockRotationY = false;
-    RM_PROPERTY(Edit, Label="回転の固定 Z", Tooltip="2D の物は Z だけが回るので、これで回らなくなります") bool lockRotationZ = false;
+    RM_PROPERTY(Edit, Label="回転の固定 X", Icon="RotationLock") bool lockRotationX = false;
+    RM_PROPERTY(Edit, Label="回転の固定 Y", Icon="RotationLock") bool lockRotationY = false;
+    RM_PROPERTY(Edit, Label="回転の固定 Z", Icon="RotationLock", Tooltip="2D の物は Z だけが回るので、これで回らなくなります") bool lockRotationZ = false;
 };
 
 RM_ENUM(Label="形")

@@ -1,6 +1,7 @@
 #include "Scanner.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <format>
 #include <map>
@@ -381,7 +382,8 @@ private:
                                          {"Label", Attr::Kind::String},    {"Tooltip", Attr::Kind::String},
                                          {"Min", Attr::Kind::Number},      {"Max", Attr::Kind::Number},
                                          {"Step", Attr::Kind::Number},     {"AssetKind", Attr::Kind::String},
-                                         {"ShowIf", Attr::Kind::String},  {"Decimals", Attr::Kind::Number}};
+                                         {"ShowIf", Attr::Kind::String},  {"Decimals", Attr::Kind::Number},
+                                         {"Icon", Attr::Kind::String}};
         static const Rule kLabelOnly[] = {{"Label", Attr::Kind::String}};
         std::span<const Rule> rules;
         if (macro == "RM_PROPERTY") {
@@ -895,6 +897,12 @@ void Validate(std::vector<Header>& headers, std::vector<Diagnostic>& diags) {
                     if ((a.key == "Min" || a.key == "Max" || a.key == "Step") && !numeric) {
                         diags.push_back({h.file, a.line, a.col, "RM0003", std::format("{} は数値・ベクトル・色だけに付けられます", a.key)});
                     }
+                    if (a.key == "Icon") {
+                        // 絵の名前 (resources/icons/source/ のファイルの名前)。あるかはエディターが描くときに見る。
+                        const bool word = !a.value.empty() && std::isalpha(static_cast<unsigned char>(a.value[0])) &&
+                                          std::all_of(a.value.begin(), a.value.end(), [](char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0; });
+                        if (!word) diags.push_back({h.file, a.line, a.col, "RM0003", std::format("Icon=\"{}\": 絵の名前 (英字と数字) を書いてください", a.value)});
+                    }
                     if (a.key == "Decimals") {
                         const bool floats = numeric && base.kind != TypeRef::Kind::Int;
                         const bool whole = a.kind == Attr::Kind::Number && a.value.size() == 1 && a.value[0] >= '0' && a.value[0] <= '6';
@@ -1071,11 +1079,12 @@ std::string EmitHeader(const std::vector<Header>& all, const Header& h) {
                 const Attr* kinds = attr("AssetKind");
                 const Attr* showIf = attr("ShowIf");
                 const Attr* decimals = attr("Decimals");
+                const Attr* icon = attr("Icon");
                 auto num = [](const Attr* a) { return a && a->kind == Attr::Kind::Number ? NumberLiteral(a->value) : std::string("0.0"); };
                 o += std::format(
                     "    {{.name = \"{}\", .value = {}, .access = [](void* o) -> void* {{ return &static_cast<{}*>(o)->{}; }}, .array = {},\n"
                     "     .edit = {}, .readOnly = {}, .label = {}, .tooltip = {},\n"
-                    "     .hasMin = {}, .hasMax = {}, .hasStep = {}, .min = {}, .max = {}, .step = {}, .line = {}, .assetKinds = {}, .showIf = {}, .decimals = {}}},\n",
+                    "     .hasMin = {}, .hasMax = {}, .hasStep = {}, .min = {}, .max = {}, .step = {}, .line = {}, .assetKinds = {}, .showIf = {}, .icon = {}, .decimals = {}}},\n",
                     f.name, ValueTypeInit(f.type), cpp, f.name, f.type.kind == TypeRef::Kind::Vector ? "&A_" + id + "_" + f.name : "nullptr",
                     attr("Edit") ? "true" : "false", attr("ReadOnly") ? "true" : "false",
                     label ? "\"" + label->value + "\"" : "nullptr", tip ? "\"" + tip->value + "\"" : "nullptr",
@@ -1083,6 +1092,7 @@ std::string EmitHeader(const std::vector<Header>& all, const Header& h) {
                     st && st->kind == Attr::Kind::Number ? "true" : "false", num(mn), num(mx), num(st), f.line,
                     kinds && kinds->kind == Attr::Kind::String ? "\"" + kinds->value + "\"" : std::string("nullptr"),
                     showIf && showIf->kind == Attr::Kind::String ? "\"" + showIf->value + "\"" : std::string("nullptr"),
+                    icon && icon->kind == Attr::Kind::String ? "\"" + icon->value + "\"" : std::string("nullptr"),
                     decimals && decimals->kind == Attr::Kind::Number && decimals->value.size() == 1 && decimals->value[0] >= '0' && decimals->value[0] <= '6'
                         ? decimals->value
                         : std::string("-1"));

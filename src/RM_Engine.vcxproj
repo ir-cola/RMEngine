@@ -78,6 +78,7 @@
     <ClCompile Include="platform\Process.cpp" />
     <ClCompile Include="platform\Crypto.cpp" />
     <ClCompile Include="platform\SystemInfo.cpp" />
+    <ClCompile Include="platform\Http.cpp" />
     <ClCompile Include="editor\export\Exporter.cpp" />
     <ClCompile Include="ui\Context.cpp" />
     <ClCompile Include="ui\Painter.cpp" />
@@ -89,6 +90,13 @@
     <ClCompile Include="editor\app\Worker.cpp" />
     <ClCompile Include="editor\lang\Lang.cpp" />
     <ClCompile Include="editor\hub\Updates.cpp" />
+    <ClCompile Include="editor\help\HelpDoc.cpp" />
+    <ClCompile Include="editor\help\HelpTree.cpp" />
+    <ClCompile Include="editor\help\HelpLibrary.cpp" />
+    <ClCompile Include="editor\help\HelpBooks.cpp" />
+    <ClCompile Include="editor\help\HelpView.cpp" />
+    <ClCompile Include="editor\help\HelpWindow.cpp" />
+    <ClCompile Include="editor\widgets\DocView.cpp" />
     <ClCompile Include="editor\dock\DockLayout.cpp" />
     <ClCompile Include="editor\dock\DockSpace.cpp" />
     <ClCompile Include="editor\dock\NamedLayouts.cpp" />
@@ -97,6 +105,8 @@
     <ClCompile Include="editor\assets\AssetPanel.cpp" />
     <ClCompile Include="editor\assets\Thumbnails.cpp" />
     <ClCompile Include="editor\plugin\PluginManifest.cpp" />
+    <ClCompile Include="editor\plugin\PluginIndex.cpp" />
+    <ClCompile Include="editor\plugin\PluginDownload.cpp" />
     <ClCompile Include="editor\tree\TreeModel.cpp" />
     <ClCompile Include="editor\tree\TreeView.cpp" />
     <ClCompile Include="editor\plugin\Plugins.cpp" />
@@ -112,6 +122,7 @@
     <ClCompile Include="editor\shell\FloatWindow.cpp" />
     <ClCompile Include="editor\shell\ShapedWindow.cpp" />
     <ClCompile Include="editor\widgets\Widgets.cpp" />
+    <ClCompile Include="editor\widgets\IconAtlas.cpp" />
     <ClCompile Include="editor\widgets\PickTree.cpp" />
     <ClCompile Include="editor\widgets\ThemeFile.cpp" />
   </ItemGroup>
@@ -132,6 +143,7 @@
     <ClInclude Include="platform\Pixels.h" />
     <ClInclude Include="platform\Shell.h" />
     <ClInclude Include="platform\SystemInfo.h" />
+    <ClInclude Include="platform\Http.h" />
     <ClInclude Include="platform\Win.h" />
     <ClInclude Include="platform\Window.h" />
     <ClInclude Include="ui\Context.h" />
@@ -145,6 +157,13 @@
     <ClInclude Include="editor\app\Worker.h" />
     <ClInclude Include="editor\lang\Lang.h" />
     <ClInclude Include="editor\hub\Updates.h" />
+    <ClInclude Include="editor\help\HelpDoc.h" />
+    <ClInclude Include="editor\help\HelpTree.h" />
+    <ClInclude Include="editor\help\HelpLibrary.h" />
+    <ClInclude Include="editor\help\HelpBooks.h" />
+    <ClInclude Include="editor\help\HelpView.h" />
+    <ClInclude Include="editor\help\HelpWindow.h" />
+    <ClInclude Include="editor\widgets\DocView.h" />
     <ClInclude Include="editor\project\Options.h" />
     <ClInclude Include="editor\app\ScreenWindow.h" />
     <ClInclude Include="editor\dock\DockLayout.h" />
@@ -156,6 +175,8 @@
     <ClInclude Include="editor\assets\AssetPreview.h" />
     <ClInclude Include="editor\assets\Thumbnails.h" />
     <ClInclude Include="editor\plugin\PluginManifest.h" />
+    <ClInclude Include="editor\plugin\PluginIndex.h" />
+    <ClInclude Include="editor\plugin\PluginDownload.h" />
     <ClInclude Include="editor\plugin\Plugins.h" />
     <ClInclude Include="editor\plugin\Software.h" />
     <ClInclude Include="editor\tree\TreeModel.h" />
@@ -172,6 +193,7 @@
     <ClInclude Include="editor\widgets\ThemeFile.h" />
     <ClInclude Include="ui\Path.h" />
     <ClInclude Include="editor\widgets\Widgets.h" />
+    <ClInclude Include="editor\widgets\IconAtlas.h" />
     <ClInclude Include="editor\widgets\PickTree.h" />
     <ClInclude Include="..\resources\resource.h" />
   </ItemGroup>
@@ -203,8 +225,10 @@
   <!-- plugin.json ファイル (と、その英語・テーマ・テンプレートのファイル) を exe の隣に Plugins/<作者>/<名前>/... として置く (起動時に読む)。 -->
   <Target Name="CopyPluginManifests" AfterTargets="Build">
     <ItemGroup>
-      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json;$(RMRoot)plugins\**\themes\*.json;$(RMRoot)plugins\**\templates\**\*" />
+      <PluginManifest Include="$(RMRoot)plugins\**\plugin.json;$(RMRoot)plugins\**\lang\*.json;$(RMRoot)plugins\**\themes\*.json;$(RMRoot)plugins\**\templates\**\*;$(RMRoot)plugins\**\help\**\*" />
       <LangFile Include="$(RMRoot)resources\lang\*.json" />
+      <!-- 核のヘルプ: <exe>/Help/ (editor/help) -->
+      <HelpFile Include="$(RMRoot)resources\help\**\*" />
       <!-- ゲームのスクリプトがインクルードするヘッダー (RM.h とプラグインの部品): <exe>/Sdk/ -->
       <ScriptSdk Include="$(RMRoot)plugins\**\runtime\sdk\*.h" />
     </ItemGroup>
@@ -212,6 +236,15 @@
     <Copy SourceFiles="@(PluginManifest)" DestinationFiles="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <!-- 核の翻訳: <exe>/Lang/en.json (editor/lang) -->
     <Copy SourceFiles="@(LangFile)" DestinationFolder="$(OutDir)Lang" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(HelpFile)" DestinationFiles="@(HelpFile->'$(OutDir)Help\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <!-- リポジトリから消えたもの (やめたプラグイン・ヘルプのページ) を exe の隣からも消す。写すだけでは前の写しが残り、
+         エンジンにはもう無いプラグインがあるように見える (2026-11-22: ゲーム制作 × 3D × 物理)。空になったフォルダーも消す。 -->
+    <ItemGroup>
+      <CopiedOut Include="@(PluginManifest->'$(OutDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)');@(HelpFile->'$(OutDir)Help\%(RecursiveDir)%(Filename)%(Extension)')" />
+      <StaleOut Include="$(OutDir)Plugins\**\*;$(OutDir)Help\**\*" Exclude="@(CopiedOut)" />
+    </ItemGroup>
+    <Delete Files="@(StaleOut)" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;foreach ($d in 'Plugins','Help') { $r = Join-Path '$(OutDir).' $d; if (Test-Path $r) { Get-ChildItem $r -Directory -Recurse | Sort-Object { $_.FullName.Length } -Descending | Where-Object { -not (Get-ChildItem $_.FullName -Force) } | Remove-Item } }&quot;" />
     <!-- エンジンのファイルと SHA-256 の一覧。整合性チェック用 (Hub > オプション) -->
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(RMRoot)tools\make_filelist.ps1&quot; -Dir &quot;$(OutDir).&quot;" />
   </Target>

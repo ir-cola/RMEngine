@@ -1,53 +1,122 @@
-# RM Engine
+<p align="center">
+  <img src="RM_Engine_logo.png" alt="RM Engine" width="220">
+</p>
 
-デジタルクリエイターのための、**プラグインで形を変える制作ソフト**。
-ゲーム制作を中心に、イラスト・作曲・3D モデルなどの機能を「ソフト」としてプラグインで足していく。
+<h1 align="center">RM Engine</h1>
 
-- 対象: **Windows 10 / 11 + Visual Studio 2022** (C++ のデスクトップ開発)
-- 言語・描画: C++20 / Direct3D 11 + Direct2D + DirectWrite
-- UI: **ImGui は使わない。自作の軽い UI** (変わったときだけ描き直す。何もしていないときの CPU はほぼ 0)
+<p align="center">
+  <b>プラグインで形を変える、クリエイターのための制作ソフト</b><br>
+  A plugin-driven creative suite for Windows, written from scratch in C++20.
+</p>
 
-## いまできること (0.0.1)
+<p align="center">
+  C++20 ・ Direct3D 11 / Direct2D / DirectWrite ・ Windows 10 / 11 ・ Visual Studio 2022 ・ v0.0.2
+</p>
 
-| 画面 | 内容 |
+---
+
+## これは何か
+
+RM Engine は、**ゲーム制作を中心に、イラスト・作曲・3D モデルなどの「ソフト」をプラグインで足していく**ための制作ソフトです。
+エンジンの核は小さく保ち、ゲーム制作も 3D も物理も音も、すべてプラグインとして作っています。
+
+UI ライブラリ (ImGui など) やゲームエンジンは使わず、**ウィンドウ・UI・描画・データの仕組みまで自作**しています。
+
+## 見どころ
+
+### 1. 自作の UI (ImGui を使わない)
+- 入力・フォーカス・文字入力 (IME)・描画を持つ**土台**と、見た目の**部品**を分けた 2 層の作り
+- **変わったときだけ描き直す**ので、何もしていないときの CPU はほぼ 0
+- パネルのドッキング (分割・タブ・**別ウィンドウへ切り離し**)、黒 / 白のテーマとテーマパック、日本語 / English の切り替え
+
+### 2. プラグインで形を変える
+- 核 (`src/`) は**プラグインを知らない**。ソフト・部品・システム・描画は、すべてプラグインが「口」に差し出す
+- ゲーム制作は 3D も 2D も知らない。両方を知る部分は**つなぎのプラグイン** (「ゲーム制作 × 3D」など) に置き、依存が一方向になるようにした
+- 層の柵 (`layers.txt`) を**ビルドのたびにスクリプトで検査**し、ゲームに入る層がエディターを読めないようにしている
+
+### 3. データの型を 1 か所に書くだけ (リフレクション + コード生成)
+- `RM_STRUCT` / `RM_PROPERTY` で型を書くと、自作のコード生成ツール **`rmgen`** がビルドのたびに型の表を作る
+- **保存 (JSON)・読み込み・インスペクター・Undo・範囲のチェック**がすべてそこから出る。手で書き足す所が無い
+- 保存形式は自己記述型の JSON。**知らないキーは捨てずに書き戻す** (新旧の版の間でデータが失われない)
+
+### 4. ゲーム制作
+| 分野 | 中身 |
 |---|---|
-| **Hub** | 最近のプロジェクト一覧 (名前 / 更新日時 / 場所で並べ替え・検索)、新規作成 (テンプレート・名前・保存先)、`.rmpf` を開く、右クリック / 「…」メニュー (開く・名前を変更 (フォルダごと)・エクスプローラーで表示・一覧から外す)、プラグインページ (枠だけ) |
-| **オプション** | Hub の「オプション」: 色のテーマ (黒 / 白 / PC の設定に合わせる)・言語 (日本語 / English)・自動保存の間隔 (1〜60 分)・エディターの自動アップデート (設定のみ)・エディターの整合性の確認 (エンジンのファイルを SHA-256 で確かめ、入れたプラグインを直す)。「アップデート情報」で変更の一覧 |
-| **エディター** | Hub から開くと最大化で起動。メニューバー / ソフトのタブ / 階層・インスペクター・コンソール・アセットのパネル (ソフトが無いときは「スタート」も)。保存 (Ctrl+S)、閉じるときの未保存確認 (保存して閉じる / 保存せずに閉じる / キャンセル)、✕ で Hub に戻る |
-| **ソフトとプラグイン** | プラグインがソフト (タブ) を出す。いまは「ゲーム制作」プラグインのソフト「ゲーム」(空の枠: シーン / ゲーム + 核のパネル)。ソフトごとにパネルの配置と Undo の履歴を持つ。使えないプラグインは理由を出して有効にしない |
-| **プラグインの管理** | Hub の「プラグイン」でインストール / 再インストール / 削除 (前提は一緒に入る・前提になっているものを消すときは警告)。エディターの「プラグイン」メニューからもインストールできる (保存して開き直す)。`.rmpf` が使うプラグインがそろわなければ「起動できません」→ インストールして開ける |
-| **階層** | 木の表示は核、中身はソフト。開く・閉じる / クリック・Ctrl・Shift で選ぶ / ドラッグで並べ替え・親子付け / F2・ダブルクリックで名前の変更 / 検索 / 右クリックのメニュー。ゲームではシーンのエンティティが並び、選ぶとインスペクターに出る (作る・子を作る・複製・削除・親から外す。全部 Undo できる) |
-| **部品 (コンポーネント)** | エンティティに部品を付ける (ECS の C)。インスペクターに部品を上から並べ、「＋ 部品を足す」/ ⋮ →「外す」。部品の種類はプラグインが増やす。いまは **3D 空間** プラグインの Transform を、つなぎの **ゲーム制作 × 3D** が出す (ゲーム制作は 3D を知らない)。使えない部品もデータは消さない |
-| **シーンビュー (3D)** | 「シーン」パネルに 3D で映る: 床のグリッドと軸、Transform の付いたエンティティを箱で (親子も)。Unity と同じカメラ操作 (右ドラッグ + WASD・中ドラッグ・ホイール・Alt+左ドラッグ・F)、クリックで選ぶ。描くのは **3D 空間** プラグイン (Direct3D 11) |
-| **リフレクション** | データの型を `RM_STRUCT` / `RM_PROPERTY` で 1 か所に書けば、保存 (JSON・知らないキーは保持)・読み込み (範囲のクランプ)・インスペクター・Undo がそこから出る。`tools/rmgen` がビルドのたびに型の表を作り、書き忘れは `error RM####` で止める。例: ゲーム制作の「ゲームの設定」 |
-| **パネルのドッキング** | タブをドラッグして並べ替え・分割・別のパネルのタブへ。仕切りをドラッグして大きさを変える。目印の外で離すと**別ウィンドウ**になり、そのタブやタイトルバーを持ってエディターへ戻せる。× / 中クリック / 右クリックで閉じる。「ウィンドウ」メニューで開き直し・配置を元に戻す。配置はプロジェクトごとに `UserSettings/Layout.json` に保存 |
+| シーン | エンティティと部品 (ECS)・階層・Prefab・Play (シーンのコピーを動かす)・Undo |
+| 3D 描画 | Direct3D 11。PBR 風の光・カスケードの影・空 (パノラマ / 6 面)・glTF / OBJ / FBX の取り込み (座標系と単位を選べる)・左手系 (Y が上) |
+| 2D 描画 | Direct2D。スプライト (アトラス)・アニメーション |
+| 天候 | 雲・雨・雪・霧を 0〜100 で。**雨の染み・雪の積もり (高さのある層)・歩いた跡が残る**・風向きで屋根の下へ吹き込む |
+| パーティクル | **GPU (Compute Shader)** で動かす。モジュールの HLSL を 1 本のシェーダーに組み立てる |
+| 物理 | Jolt Physics (剛体・当たり判定・キャラクター) |
+| 音 | XAudio2 / X3DAudio。WAV・OGG・MP3 などを読み、長い音は流して再生 |
+| ゲーム UI | キャンバス・アンカー・文字・画像 (9 スライス)・ボタン・バー |
+| C++ スクリプト | ゲームのコードは **C++ の DLL**。保存するとビルドして**ホットリロード** (値を引き継ぐ)。エンジンとの境目は C だけの ABI |
+| 書き出し | エディターを含まないゲームの exe を作る。アセットは AES-256 (Windows CNG) で暗号化した `.rmpak` に |
 
-Hub とエディターは同じ `RM_Engine.exe` の別ウィンドウ。`RM_Engine.exe --project <ファイル.rmpf>` で Hub を飛ばして直接開ける (プラグインを入れた後の再起動で使う予定)。
+### 5. 品質の守り方
+- **496 個のテスト (13,000 以上の確かめ)** を、ビルドのたびに全部走らせる (純粋な計算は I/O と描画から離してテストする)
+- 警告レベル `/W4` で**警告 0** を保つ
+- 層の柵・画面の文字の翻訳漏れも、スクリプトがビルドのたびに止める
+- 前に作ったエンジンの失敗から決めた **10 条の「憲法」** ([CLAUDE.md](CLAUDE.md)) を守って作っている
 
-## ビルド
+## 技術
 
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1            # Debug + テスト + 層チェック
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 -Config Release
-```
+| 分類 | 使っているもの |
+|---|---|
+| 言語 | C++20 (`/W4`・`/utf-8`) |
+| 描画 | Direct3D 11 (HLSL・Compute Shader)・Direct2D・DirectWrite |
+| OS | Win32 API・WIC・Media Foundation・XAudio2・CNG (暗号・SHA-256) |
+| 外部ライブラリ | Jolt Physics (物理。MIT)・stb_vorbis (OGG) |
+| ビルド | Visual Studio 2022 / MSBuild・PowerShell のスクリプト・自作のコード生成 `rmgen` |
 
-Visual Studio で `RM_Engine.sln` を開いてもよい。出力は `build\bin\x64\<構成>\RM_Engine.exe`。
-
-## フォルダ
+## 作り (層)
 
 ```
 src/
-  base/       L0  文字列・UTF・JSON・ログ (標準ライブラリだけ・テストあり)
-  core/       L2  Undo 履歴など、どのソフトにも依らない核
-  platform/   L3  Win32 ウィンドウ・D3D11/D2D・ダイアログ・ファイル
-  ui/         L4  核の UI の土台 (入力・フォーカス・文字入力・描画。色を持たない)
-  editor/     L6  Hub・エディターの枠・エディター用の部品 (ゲームには入らない)
-tests/        純粋計算のテスト (GPU もファイルも使わない)
-tools/        build.ps1 / check_layers.ps1 / make_resources.ps1 / rmgen (リフレクションの表を作る)
-resources/    アイコン・ロゴ・マニフェスト
-plugins/      プラグイン (<作者>/<名前>/ に plugin.json + runtime/ + editor/)。BuiltinPlugins.cpp が一覧
-docs/         設計と決めたこと
-layers.txt    フォルダ → 層 の唯一の出所 (CI で検査)
+  base/       L0  文字列・UTF-8・JSON・ログ (標準ライブラリだけ)
+  core/       L2  Undo・リフレクション・アセットの ID・プラグインの ID
+  platform/   L3  Win32 ウィンドウ・D3D11 / D2D・ファイル・暗号
+  ui/         L4  UI の土台 (入力・フォーカス・文字入力・描画。色を持たない)
+  game/       L5  書き出したゲームの枠 (エディターを含まない)
+  editor/     L6  Hub・エディターの枠・見た目の部品・インスペクター・ドッキング
+plugins/rm_engine/
+  game_production   ゲーム制作 (シーン・部品・Play・スクリプト・Prefab)
+  space3d / space2d 3D / 2D の空間と描画
+  game_x_3d / game_x_2d / game_x_audio / game_x_particles   つなぎのプラグイン
+  physics / audio / particles / weather / game_ui           機能のプラグイン
+  theme_*           テーマパック
+tests/        テスト (RMTests.exe)
+tools/        ビルド・層の検査・翻訳の検査・rmgen
 ```
 
-詳しくは [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。いま作ってあるものの試し方は [docs/HOW_TO_TRY.md](docs/HOW_TO_TRY.md)。使っている技術の説明は [docs/TECHNOLOGIES.md](docs/TECHNOLOGIES.md)。
+数字の小さい層は、大きい層を読めません。ゲームに入る層 (`base`〜`game` と、プラグインの `runtime/`) は、エディターを読めません。
+
+## ビルド
+
+Windows 10 / 11 と、Visual Studio 2022 (「C++ によるデスクトップ開発」) が要ります。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 -Config Release
+```
+
+ビルド → テスト → 層の検査 → 翻訳の検査の順に走ります。できた exe は `build\bin\x64\Release\RM_Engine.exe` です。`RM_Engine.sln` を Visual Studio で開いてもビルドできます。
+
+## これから
+
+- **プラグインの配布**: エンジン本体だけを配り、プラグインはダウンロードして入れる形に ([設計](docs/PLUGIN_DISTRIBUTION.md))。DLL の境目は Godot の GDExtension と同じ「C の境目 + C++ の包み」
+- アニメーション (状態のグラフ)・UI エディター
+- イラスト・作曲・3D モデルのソフト
+
+## ドキュメント
+
+| 文書 | 中身 |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 全体の設計と、決めたこと |
+| [docs/TECHNOLOGIES.md](docs/TECHNOLOGIES.md) | 使った技術の説明 |
+| [docs/PLUGIN_DISTRIBUTION.md](docs/PLUGIN_DISTRIBUTION.md) | プラグインの配布の設計 |
+| [docs/HOW_TO_TRY.md](docs/HOW_TO_TRY.md) | 機能ごとの試し方 |
+| [plugins/README.md](plugins/README.md) | プラグインの作りと決まり |
+
+## 作者
+
+**ir-cola** — ポートフォリオ: https://ir-cola.github.io/

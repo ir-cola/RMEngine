@@ -10,9 +10,9 @@ namespace rm::space3d {
 
 RM_STRUCT(Label="Transform (位置・回転・大きさ)")
 struct Transform {
-    RM_PROPERTY(Edit, Label="位置") Vec3 position{0, 0, 0};
-    RM_PROPERTY(Edit, Label="回転 (度)", Tooltip="X 軸 → Y 軸 → Z 軸 の順に回します (オイラー角)") Vec3 rotation{0, 0, 0};
-    RM_PROPERTY(Edit, Label="大きさ") Vec3 scale{1, 1, 1};
+    RM_PROPERTY(Edit, Label="位置", Icon="Position") Vec3 position{0, 0, 0};
+    RM_PROPERTY(Edit, Label="回転 (度)", Icon="Rotation", Tooltip="X 軸 → Y 軸 → Z 軸 の順に回します (オイラー角)") Vec3 rotation{0, 0, 0};
+    RM_PROPERTY(Edit, Label="大きさ", Icon="Scale") Vec3 scale{1, 1, 1};
 };
 
 // 4x4 行列、列ベクトル (p' = M * p)、m[列][行]。
@@ -38,9 +38,9 @@ inline Mat4 WorldMatrix(const Mat4& parentWorld, const Transform& t) { return pa
 // 親も含めて、ものがワールドのどこにあるか - Transform のインスペクターの ワールド 表示。
 RM_STRUCT(Label="ワールドでの値 (親を含む)")
 struct WorldPlacement {
-    RM_PROPERTY(Edit, Label="位置") Vec3 position{0, 0, 0};
-    RM_PROPERTY(Edit, Label="回転 (度)", Tooltip="X 軸 → Y 軸 → Z 軸 の順に回します (オイラー角)") Vec3 rotation{0, 0, 0};
-    RM_PROPERTY(Edit, Label="大きさ", Tooltip="親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です") Vec3 scale{1, 1, 1};
+    RM_PROPERTY(Edit, Label="位置", Icon="Position") Vec3 position{0, 0, 0};
+    RM_PROPERTY(Edit, Label="回転 (度)", Icon="Rotation", Tooltip="X 軸 → Y 軸 → Z 軸 の順に回します (オイラー角)") Vec3 rotation{0, 0, 0};
+    RM_PROPERTY(Edit, Label="大きさ", Icon="Scale", Tooltip="親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です") Vec3 scale{1, 1, 1};
 };
 // ワールド行列を、位置・回転・(正の) スケールに分ける。鏡写しの行列は X のスケールが負になる。
 // `hint`: EulerFromRotation と同じ。

@@ -79,6 +79,7 @@
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestSky.cpp" />
     <ClCompile Include="TestWeather.cpp" />
+    <ClCompile Include="TestClimate.cpp" />
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
     <ClCompile Include="TestSystems.cpp" />
@@ -100,6 +101,9 @@
     <ClCompile Include="TestEntityRefs.cpp" />
     <ClCompile Include="TestTemplates.cpp" />
     <ClCompile Include="TestSceneFile.cpp" />
+    <ClCompile Include="TestDownload.cpp" />
+    <ClCompile Include="TestHelp.cpp" />
+    <ClCompile Include="TestIcons.cpp" />
     <ClCompile Include="TestMeshBake.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
     <ClCompile Include="TestBakedImage.cpp" />
@@ -116,6 +120,9 @@
     <ClCompile Include="..\src\editor\dock\DockLayout.cpp" />
     <ClCompile Include="..\src\editor\dock\NamedLayouts.cpp" />
     <ClCompile Include="..\src\editor\plugin\PluginManifest.cpp" />
+    <ClCompile Include="..\src\editor\plugin\PluginIndex.cpp" />
+    <ClCompile Include="..\src\editor\plugin\PluginDownload.cpp" />
+    <ClCompile Include="..\src\platform\Http.cpp" />
     <ClCompile Include="..\src\editor\project\Templates.cpp" />
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
@@ -126,8 +133,11 @@
     <ClCompile Include="..\src\platform\Shell.cpp" />
     <ClCompile Include="..\src\editor\app\Worker.cpp" />
     <ClCompile Include="..\src\editor\hub\Updates.cpp" />
+    <ClCompile Include="..\src\editor\help\HelpDoc.cpp" />
+    <ClCompile Include="..\src\editor\help\HelpTree.cpp" />
     <ClCompile Include="..\src\editor\widgets\ThemeFile.cpp" />
     <ClCompile Include="..\src\editor\widgets\PickTree.cpp" />
+    <ClCompile Include="..\src\editor\widgets\IconAtlas.cpp" />
     <ClCompile Include="..\plugins\rm_engine\theme_seasons\editor\Ornament.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
     <ClCompile Include="..\plugins\rm_engine\audio\runtime\Sound.cpp" />
@@ -198,6 +208,14 @@
       <ObjectFileName>$(IntDir)weather\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\RendererShaders.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\climate\runtime\Climate.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\climate\runtime\ScriptClimate.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\climate\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)climate\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\weather_x_climate\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)weather_x_climate\</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\game_x_particles\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)game_x_particles\</ObjectFileName>
     </ClCompile>

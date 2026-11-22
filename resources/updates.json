@@ -3,6 +3,82 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.8",
+      "date": "2026-11-22",
+      "items": [
+        {
+          "ja": "つなぎ「天候 × 気候」: 天候と気候の両方を入れると、場所の気温で雨か雪かが決まる (+2 ℃ 以上は雨、-1 ℃ 以下は雪、間はみぞれ)。湿り気で降る量も変わる。雨粒と雪が 1 粒ずつ自分の場所で決めるので、気候エリアの境目では少しずつ雪に変わる",
+          "en": "Connector \"Weather × Climate\": with both Weather and Climate installed, the temperature of each place decides between rain and snow (rain at +2 °C or warmer, snow at -1 °C or colder, sleet in between), and humidity changes how much falls. Each raindrop and snowflake decides by its own place, so rain turns into snow gradually across a climate zone border"
+        },
+        {
+          "ja": "天候: 雲の量 100 で、切れ目のない厚い雲の層になる (75 を越えると切れ目が少しずつ埋まる)",
+          "en": "Weather: at cloudiness 100 the clouds form one thick layer with no gaps (above 75 the gaps fill in little by little)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.7",
+      "date": "2026-11-22",
+      "items": [
+        {
+          "ja": "新しいプラグイン「気候」: シーンに気温と湿り気を決め、部品「気候エリア」(3D) と「気候エリア 2D」で場所ごとに変える。境目の幅で少しずつ変わり、重なると優先度の大きいほうが上。3D は高い所ほど冷える。スクリプトで場所の気温を読める (RMClimate.h)。天候の雨と雪が気候を見るのはこの次",
+          "en": "New plugin \"Climate\": set a temperature and humidity for the scene and change them by place with the \"Climate zone\" (3D) and \"Climate zone 2D\" components. They change gradually across the border width, and the higher priority wins where zones overlap. In 3D it gets colder higher up. Scripts can read the temperature at a place (RMClimate.h). Weather using the climate for rain and snow comes next"
+        }
+      ]
+    },
+    {
+      "version": "0.0.6",
+      "date": "2026-11-22",
+      "items": [
+        {
+          "ja": "アイコンが 150% などの画面でずれて、違う絵が出ていたのを直した",
+          "en": "Fixed icons showing the wrong picture (shifted) on screens scaled to 150% and similar"
+        },
+        {
+          "ja": "雨: 弱い雨でも前より少し早く濡れるようにした (どしゃぶりは前と同じ)",
+          "en": "Rain: light rain now wets surfaces a little faster (downpours are unchanged)"
+        },
+        {
+          "ja": "一時停止の間は雨粒と雪が空中で止まる。■ で止めると濡れと積もった雪は消える (Play の前も無い)",
+          "en": "While paused, raindrops and snow stop in the air. Stopping clears the wetness and lying snow (none before Play either)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.5",
+      "date": "2026-11-22",
+      "items": [
+        {
+          "ja": "アイコン: 線で描いていた印 (カメラ・光・フォルダー・画像・音・立方体・シーン・メニュー・足す) を絵に替えた。シーンビューの左の道具の列も文字から絵に。インスペクターの位置・回転・大きさ・回転の固定と、コンソールの警告・エラーにも絵。白 1 色の絵はテーマの色になる",
+          "en": "Icons: the line-drawn marks (camera, light, folder, image, sound, cube, scene, menu, add) are now pictures. The tool column on the left of the scene view uses pictures instead of words. Position, rotation, scale and rotation lock in the inspector, and warnings and errors in the console, also get pictures. Single-colour pictures follow the theme colour"
+        }
+      ]
+    },
+    {
+      "version": "0.0.4",
+      "date": "2026-11-22",
+      "items": [
+        {
+          "ja": "ヘルプ: エディターは F1 (またはヘルプのメニュー) でドッキングできるヘルプのパネル、Hub はサイドバーの「ヘルプ」で別の窓。上のタブで「Hub とエディター本体」と「プラグイン」を切り替え、左の木からページを開く。シーンビュー・UI ビューの操作の説明もここに。細いときは ≡ で一覧を出す",
+          "en": "Help: in the editor, F1 (or the Help menu) opens a dockable help panel; in the Hub, \"Help\" in the sidebar opens it in its own window. Tabs switch between \"Hub and editor\" and \"Plugins\", and pages open from the tree on the left. The scene view and UI view controls are explained here. When narrow, ≡ shows the list"
+        },
+        {
+          "ja": "やめたプラグインの古い写し (ゲーム制作 × 3D × 物理。役目は天候 × 物理へ移った) が、Hub のつなぎの一覧に「使用中」で残っていた。起動したときに消すようにした (ダウンロードした物は消さない)",
+          "en": "An old copy of a retired plugin (Game × 3D × Physics, whose job moved to Weather × Physics) stayed in the Hub's connector list as \"In use\". It is now removed at startup (downloaded plugins are kept)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.3",
+      "date": "2026-11-21",
+      "items": [
+        {
+          "ja": "Hub の「プラグイン」に「ダウンロードできるプラグイン」: 公開している一覧 (ポートフォリオのページ) から、テーマやテンプレートだけのプラグインを落として入れる・新しい版に更新する。立ち上げたときに一覧を見て、新しいエンジンがあれば左下に知らせる",
+          "en": "Plugins page of the Hub: \"Plugins to download\" installs or updates theme and template plugins from the published list (the portfolio page). The list is checked at start-up, and a newer engine is shown at the bottom left"
+        }
+      ]
+    },
+    {
       "version": "0.0.2",
       "date": "2026-11-21",
       "items": [

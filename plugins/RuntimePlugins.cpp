@@ -22,6 +22,10 @@
 #include "rm_engine/weather/runtime/Register.h"
 #include "rm_engine/weather_x_physics/runtime/Id.h"
 #include "rm_engine/weather_x_physics/runtime/Register.h"
+#include "rm_engine/climate/runtime/Id.h"
+#include "rm_engine/climate/runtime/Register.h"
+#include "rm_engine/weather_x_climate/runtime/Id.h"
+#include "rm_engine/weather_x_climate/runtime/Register.h"
 
 namespace rm {
 
@@ -36,6 +40,8 @@ std::span<const RuntimePlugin> RuntimePlugins() {
         {particles_x_physics::kPluginId, &particles_x_physics::RegisterRuntime},
         {weather::kPluginId, &weather::RegisterRuntime},
         {weather_x_physics::kPluginId, &weather_x_physics::RegisterRuntime},
+        {climate::kPluginId, &climate::RegisterRuntime},
+        {weather_x_climate::kPluginId, &weather_x_climate::RegisterRuntime},
     };
     return kPlugins;
 }

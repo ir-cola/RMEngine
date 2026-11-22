@@ -24,6 +24,7 @@ std::filesystem::path LogFile();
 std::filesystem::path HubSettingsFile();
 std::filesystem::path SharedLayoutsFile();
 std::filesystem::path LangFolder();      // <exe>/Lang (核の翻訳)
+std::filesystem::path HelpFolder();      // <exe>/Help (核のヘルプ。リポジトリの resources/help)
 std::filesystem::path FileList();        // <exe>/RM_Engine.files.json (整合性の確認用)
 
 }  // namespace rm::editor::paths

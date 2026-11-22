@@ -44,6 +44,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **何に使っているか** — ビルド (`RM_Engine.sln` と各 `.vcxproj`)。共通の設定は `src/RM.Common.props` に 1 か所
 - **なぜそれか** — 対象が Windows だけなので、Windows の機能とデバッガーを一番うまく使える (ユーザーの決定)
 - **設定** — `/W4` (警告を多めに出す) で警告 0 を保つ / `/utf-8` (ソースは UTF-8) / 静的 CRT (配るときに追加のランタイムが要らない) / x64
+- **消えたファイルを出力からも消す** — ビルドの後に、プラグインとヘルプのファイルを exe の隣へ写す (`Copy`)。写すだけだと、リポジトリから消したもの (やめたプラグイン) の写しが残る。写す先の一覧 (`@(PluginManifest->'…')` で写し先の名前に変えたもの) を `Exclude` にして、出力のフォルダーの全部 (`**\*`) から引いた残りを `Delete` で消し、空になったフォルダーを PowerShell で消す (`src/RM_Engine.vcxproj` の `CopyPluginManifests`)。写す物の決まりは 1 か所のまま
 
 ### Git と GitHub Actions (CI)
 - **何か** — 変更の記録 (Git) と、GitHub のマシンでビルドする仕組み (CI)
@@ -191,6 +192,22 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **白か黒かの決め方** — 色の「見た目の明るさ」(相対輝度: 赤・緑・青を、人の目の感じ方の重み 0.2126 / 0.7152 / 0.0722 で足す。色の値はその前にガンマを外す) を出し、白との**コントラスト比**と黒とのコントラスト比 (Web のアクセシビリティの基準 WCAG と同じ式) の大きい方を選ぶ。テーマを足しても自動で合う (`theme::InkOn`。テストあり)
 - **1 色で塗る** — Direct2D の**効果** (エフェクト) の 1 つ、カラーマトリックス (`CLSID_D2D1ColorMatrix`)。色を「r, g, b, a に行列を掛ける」計算で変える。色の部分を決まった色にして、透明さ (アルファ) だけを残すと、絵の形をした 1 色の絵になる。縮めるときはきれいな補間 (`HIGH_QUALITY_CUBIC`) で描く。効果の識別子のために `dxguid.lib` をリンクした
 - **どこ** — `src/editor/widgets/Theme.h` (`Luminance` / `InkOn`)、`src/ui/Painter.cpp` (`ImageTinted`)、`src/editor/hub/HubScreen.cpp` (`DrawSidebar`)
+
+### 範囲をなめらかに重ねる (気候エリア)
+- **何か** — 気候エリアの中の気温を、縁でパッと切り替えずに、境目の幅の中で少しずつ変える (ゼルダの伝説 BotW のように、寒い土地へ歩くとだんだん寒くなる)
+- **深さ** — 点がエリアの「一番近い縁から何 m 内側か」。箱なら 3 つの軸それぞれの (半分の大きさ − 中心からの距離) の一番小さいもの、円柱なら (半径 − 横の距離) と (高さの半分 − 縦の距離) の小さいほう。点をエリアの向きに直すとき、回転だけ外し、長さはワールドのまま使う (大きさを掛けたエリアでも境目の幅は m のまま)
+- **なめらかな段** (smoothstep) — t = 深さ ÷ 境目の幅 を 0〜1 にして 3t² − 2t³。縁と内側の端で傾きが 0 になるので、変わり始めと終わりが目立たない
+- **重ね方** — 外の気候から始め、エリアを優先度の小さい順に「今の値 += (エリアの値 − 今の値) × 重み」。後のエリアほど上に乗る (寒い地方の中の、もっと寒い山頂)。同じ優先度は並びの順 (`stable_sort`)
+- **高さで冷える** — 本物の空気は 100 m 上がると約 0.6 ℃ 下がる (気温減率)。基準の高さからの差に掛けて引く
+- **どこ** — `plugins/rm_engine/climate/runtime/Climate.*`
+
+### アイコンを 1 枚にまとめる (スプライト / アトラス)
+- **何か** — 小さな絵をたくさん、1 枚の大きな画像のマスに並べて持つ (ゲームでいう「スプライトシート」「テクスチャアトラス」)。描くときは、その 1 枚の中の四角だけを切り出して描く。画像を 1 つしか読まないので、GPU に置く物も 1 つで済む
+- **作り方** — `tools/make_icon_atlas.ps1`。PowerShell から .NET の `System.Drawing` (GDI+) を使い、`resources/icons/source/*.png` を 1 マス 128 px に縮めて並べる (高品質の bicubic で縮め、マスの縁に 4 px の透明な余白: 小さく描くときに隣の絵がにじまない)。画素を `LockBits` でまとめて読み、色の付いた絵 (彩度の高い画素が多い物) を見分けて目次 (`icons.json`) に書く
+- **描き方** — Direct2D の `DrawBitmap` の「元の四角」(source rectangle) でマスを切り出す。白 1 色の絵は、ロゴと同じカラーマトリックスの効果で**テーマの色に塗る** (`DrawImage` の「画像の四角」で切り出す)。だからテーマを変えても絵を描き直さなくてよい。色付きの絵 (警告・エラー) はそのまま
+- **埋め込み** — 画像と目次は、ロゴと同じく exe のリソース (`RCDATA`) に入れる (`resources/app.rc`)。ファイルを置き忘れても絵が消えない
+- **どの印にどの絵** — `src/editor/widgets/IconAtlas.cpp` の表 1 か所。データの型の項目は `RM_PROPERTY(Icon="...")` (rmgen が表に書き、インスペクターが名前の前に描く)
+- **どこ** — `tools/make_icon_atlas.ps1`・`resources/icons/`・`src/editor/widgets/IconAtlas.*`・`src/editor/widgets/Widgets.cpp` (`DrawIcon`)・`src/ui/Painter.cpp` (`Image` / `ImageTinted` の `src`)
 
 ### 季節の絵 (図形を重ねて 1 つの影にする・決まった乱数)
 - **何か** — 季節のテーマの絵 (桜の木・太陽・浜辺・砂の城・椛・雪の結晶・降る雪・つらら・積もった雪など) を、画像ではなく線と曲線のパスで描く
@@ -996,10 +1013,31 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **モデルの座標系** — 取り込みの設定で「上にする軸」「奥にする軸」「左手系か」を選ぶ (プリセット: glTF・Blender・Unreal・Unity)。新しい座標は (右・上・奥 への射影) で、右は左手系なら 上 × 奥、右手系なら 奥 × 上 (= 鏡)。鏡のときは三角形の 2 つの頂点を入れ替えて表を保つ。FBX は「自動」のときだけファイルの GlobalSettings の軸と単位を使い、選んだときはファイルの数のまま読んでから選んだ座標系をかける
 - **どこ** — `space3d/runtime/View.cpp` (`LookAt`・`Perspective`・`Orthographic`・`OrbitView`)・`Lighting.cpp` (影の段の深さ)・`Mesh.cpp` (`ApplyModelImport`)・`MeshFile.cpp` (`BasisOf`)・`Fbx.cpp`・`core/asset/ImportSettings.*` (`ModelAxes` と古い "up" の移行)・`game_production/runtime/SceneFile.*` (`MirrorZ`)・`Prefab.cpp` (`UpgradePrefab`)
 
+### プラグインのダウンロード: WinHTTP・zip と deflate を自分で読む・SHA-256 で確かめる
+- **何か** — Hub が、公開している一覧 `index.json` (ポートフォリオの GitHub Pages) を読み、テーマやテンプレートだけのプラグインの zip を落として入れる。流れ: 落とす → 一覧の大きさと SHA-256 と比べる → zip の中の名前を全部確かめる → 一時フォルダーに展開 → 前の写しを .old によけてから置く (失敗したら戻す)
+- **WinHTTP** — Windows に入っている HTTP の部品 (`winhttp.dll`)。`WinHttpCrackUrl` で URL を分け、`WinHttpOpen` (プロキシは Windows の設定) → `WinHttpConnect` → `WinHttpOpenRequest` (https なら `WINHTTP_FLAG_SECURE`) → `WinHttpSendRequest` / `WinHttpReceiveResponse` → 状態の番号 (200 か) → `WinHttpReadData` を上限まで。外のライブラリは要らない。試すときは file:/// かローカルのパスも読む (`platform/Http.*`)
+- **zip** — ファイルの終わりにある「中央の一覧」(End of central directory の印 `PK\x05\x06` を後ろから探す) から各ファイルの名前・大きさ・CRC・場所を読み、各ファイルの前の「ローカルの見出し」の後ろの中身を取り出す。中身は「そのまま」か **deflate** (RFC 1951)。deflate はハフマン符号 (よく出る記号ほど短いビット) と「前に出た何バイト前から何バイト写す」の組み合わせで、固定の表・ブロックごとの表 (表そのものもハフマンで書いてある)・圧縮なしの 3 種類の塊がある。zlib の作者の puff.c と同じ、短くて確かめやすい作りで自分で書いた (`base/Zip.*`。std だけ)。取り出した中身は CRC-32 で確かめる。テストは Python の zlib / zipfile で作ったバイト列で
+- **安全** — 落とした zip の中の名前に `..`・絶対パス・ドライブ (`C:`)・Windows の予約名 (`con`・`nul` …)・使えない文字があると、1 つでも何も書かない (「Zip Slip」と呼ばれる、展開先の外にファイルを書かせる攻撃を防ぐ)。一覧に書いた SHA-256 (Windows の BCrypt) と違う中身は捨てる。コードのあるプラグインはまだ入れない
+- **版** — エンジンもプラグインも数 3 つ (`0.0.3`)。プラグインの `plugin.json` の `engine.min` より古いエンジンでは使わない (Godot の `compatibility_minimum` と同じ)
+- **どこ** — `src/platform/Http.*`・`src/base/Zip.*`・`src/editor/plugin/PluginIndex.*` (一覧・版・何を出すか・zip のパスの検査: 純粋)・`PluginDownload.*` (落として展開)・`Plugins.cpp` (`InstallDownloaded`・exe に無いプラグインも一覧に)・`App.cpp` (`StartCatalog`・`DownloadPlugin`)・`HubScreen.cpp` (`DrawDownloads`)・`tools/make_plugin_package.ps1` (配る zip と一覧を作る)
+
+### ヘルプ: 書式のある文字・Markdown の一部・ページの木
+- **何か** — エディターのヘルプのパネル (と Hub の窓) の中身。ページはコードに書かず、プラグインごとのフォルダーに Markdown の小さな一部で書く (前のエンジンでは 5,411 行の C++ に本文を書き、API を足すたびに手で直していた)
+- **書式のある文字** — DirectWrite の `IDWriteTextLayout` に、文字の範囲ごとの太さ (`SetFontWeight`)・書体 (`SetFontFamilyName`: コードは Consolas。日本語の字は DirectWrite が別の書体で補う)・下線 (`SetUnderline`)・色 (`SetDrawingEffect` にブラシを渡す) を付けて 1 回で描く (`ui::Painter::RichText`)。リンクを押したかは `HitTestPoint` でマウスの下の文字の番号を聞いて決める (`RichHitTest`)
+- **Markdown の一部** — 行ごとに見て、見出し・箇条書き (下げた幅で深さ)・番号・注意書き・表・コード・画像・横線に分け、行の中の `**` `` ` `` `[ ](…)` を拾う (`editor/help/HelpDoc`。純粋なのでテストがある)。続く行は段落につなぎ、英語の単語の間にだけ空白を入れる
+- **ページの木** — フォルダーの入れ子をそのまま木にし、並びはフォルダーごとの `_order.json`。ページの ID は「本 / フォルダー / 名前」で、見出しの文字は使わない (英語にしてもリンクが切れない)。つなぎのプラグインの本は、元のプラグインの本の下に入れる (`ArrangeBooks`)。木は核のツリービューをそのまま使う (検索・開く / 閉じる)
+- **Web のリンク** — `ShellExecuteW("open")` でいつものブラウザーに渡す。`http://` と `https://` で始まるものだけ (ファイルやプログラムは開かない。`platform::OpenWebPage`)
+- **どこ** — `src/editor/help/` (HelpDoc・HelpTree・HelpLibrary・HelpBooks・HelpView・HelpWindow)・`src/editor/widgets/DocView.*`・`src/ui/Painter.*` (RichText)・`resources/help/`・`plugins/<作者>/<名前>/help/`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-22 | 範囲をなめらかに重ねる (気候エリアの深さ・smoothstep・優先度で重ねる・気温減率) を足した |
+| 2026-11-22 | アイコンを 1 枚にまとめる (スプライト / アトラス・System.Drawing・DrawBitmap の元の四角) を足した |
+| 2026-11-22 | ビルドの出力から、リポジトリで消したファイルを消す (MSBuild の Exclude と Delete) を足した |
+| 2026-11-22 | ヘルプ (DirectWrite の書式のある文字と HitTestPoint・Markdown の一部の読み・ページの木・Web のリンクを開く) を足した |
+| 2026-11-21 | プラグインのダウンロード (WinHTTP・zip と deflate の自作の読み・SHA-256 の確認・zip の中のパスの検査・版の比べ) を足した |
 | 2026-11-20 | 左手系への切り替え (LookAt・射影・古いシーンを Z で写す口)・モデルの座標系の選び方を足した |
 | 2026-11-20 | 積雪を真上からの格子 1 枚に戻した・雨と雪を 1 つの降水量に・霧の量と天気で変わる霧の色・作った物に足す口 (kCreatedPoint: 3D オブジェクトにコライダー) を足した |
 | 2026-11-20 | 天候を数値で持つ・テンプレートの行・データの小数の桁 (Decimals)・雨の強さで変わる雨粒・霧 (RenderFrame::fog) を足した |

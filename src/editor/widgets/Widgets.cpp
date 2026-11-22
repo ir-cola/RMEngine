@@ -1,9 +1,13 @@
 #include "editor/widgets/Widgets.h"
 
+#include "base/Log.h"
 #include "base/Utf.h"
 #include "editor/lang/Lang.h"
+#include "editor/widgets/IconAtlas.h"
 #include "editor/widgets/PickTree.h"
 #include "editor/widgets/Theme.h"
+#include "platform/Gfx.h"
+#include "resource.h"
 #include "ui/Path.h"
 
 #include <algorithm>
@@ -126,7 +130,64 @@ void DrawBar(ui::Context& c, const Rect& r, Color base) {
     DrawBackdropOn(c, r, 0, false);  // 絵だけ。細い帯には雪を積もらせない
 }
 
-void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
+namespace {
+
+// 1 枚にまとめた絵 (IconAtlas.h)。どのウィンドウも同じ GPU のデバイスなので、絵は 1 つでよい。
+struct Icons {
+    platform::Gfx* gfx = nullptr;
+    std::optional<IconAtlas> atlas;
+    bool atlasRead = false;
+    Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
+    uint64_t madeIn = 0;  // bitmap を作った Gfx::Generation (0: まだ)
+    std::set<std::string, std::less<>> missing;  // 1 枚の画像に無かった絵 (ログは 1 回だけ)
+};
+Icons& IconStore() {
+    static Icons s;
+    return s;
+}
+
+// 絵があれば描いて true。
+bool DrawPicture(ui::Context& c, const Rect& r, Icon icon, Color color, float size) {
+    const std::string_view name = IconPicture(icon);
+    Icons& s = IconStore();
+    if (name.empty() || !s.gfx) return false;
+    if (!s.atlasRead) {
+        s.atlasRead = true;
+        const auto bytes = platform::ResourceBytes(IDR_ICONS_INDEX);
+        std::string err;
+        json::ParseError pe;
+        if (auto doc = json::Parse({reinterpret_cast<const char*>(bytes.data()), bytes.size()}, &pe)) {
+            s.atlas = ParseIconAtlas(*doc, &err);
+        } else {
+            err = std::format("{} 行 {} 文字目: {}", pe.line, pe.column, pe.message);
+        }
+        if (!s.atlas) log::Error("アイコンの目次を読めませんでした: {}", err);
+    }
+    if (!s.atlas) return false;
+    if (s.madeIn != s.gfx->Generation()) {  // (初めて、または GPU を作り直した: 読めなくても毎フレームは読み直さない)
+        s.madeIn = s.gfx->Generation();
+        s.bitmap = platform::LoadBitmapFromMemory(*s.gfx, c.P().DC(), platform::ResourceBytes(IDR_ICONS));
+    }
+    const IconCell* cell = s.atlas->Find(name);
+    if (!cell && s.missing.emplace(name).second) log::Error("アイコンの絵「{}」が 1 枚の画像にありません (tools/make_icon_atlas.ps1)", name);
+    if (!s.bitmap || !cell) return false;
+    const float side = size > 0 ? size : std::min(std::round(std::min(r.w, r.h) * 0.8f), 16.f);
+    const Rect dst{std::round(r.x + (r.w - side) * 0.5f), std::round(r.y + (r.h - side) * 0.5f), side, side};
+    const Rect src{cell->x, cell->y, s.atlas->cell, s.atlas->cell};
+    if (cell->color) {
+        c.P().Image(s.bitmap.Get(), dst, color.a, &src);
+    } else {
+        c.P().ImageTinted(s.bitmap.Get(), dst, color, &src);
+    }
+    return true;
+}
+
+}  // namespace
+
+void InitIcons(platform::Gfx& gfx) { IconStore().gfx = &gfx; }
+
+void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color, float size) {
+    if (DrawPicture(c, r, icon, color, size)) return;
     auto& p = c.P();
     const float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
     const float s = std::clamp(std::min(r.w, r.h) * 0.22f, 2.5f, 5.f);  // 印の半分の大きさ
@@ -171,6 +232,9 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color) {
             break;
         case Icon::Grip:  // つかんでドラッグするもの: 短い線が 3 本
             for (int i = -1; i <= 1; ++i) p.Line(cx - s, cy + static_cast<float>(i) * s * 0.75f, cx + s, cy + static_cast<float>(i) * s * 0.75f, color, 1.3f);
+            break;
+        case Icon::Menu:  // 隠した一覧を出す: 長めの線が 3 本
+            for (int i = -1; i <= 1; ++i) p.Line(cx - s * 1.3f, cy + static_cast<float>(i) * s, cx + s * 1.3f, cy + static_cast<float>(i) * s, color, kW);
             break;
         case Icon::Object: {
             const float rr = std::min(r.w, r.h) * 0.27f;
@@ -512,7 +576,7 @@ bool IconToggle(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon
     return enabled && b.clicked;
 }
 
-ui::Context::ButtonResult ToolSquare(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view label, bool on,
+ui::Context::ButtonResult ToolSquare(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon, bool on,
                                      std::wstring_view tooltip) {
     const ui::Context::ButtonResult b = c.ButtonBehavior(c.MakeId(idStr), r);
     const bool down = b.held && b.hovered;
@@ -521,13 +585,7 @@ ui::Context::ButtonResult ToolSquare(ui::Context& c, std::string_view idStr, con
     } else {
         DrawSurface(c, r, down ? Surface::Pressed : b.hovered ? Surface::Hovered : Surface::Raised);
     }
-    ui::TextStyle ts;
-    ts.size = 10.5f;
-    ts.color = on ? theme::OnAccent() : b.hovered ? theme::Text : theme::TextDim;
-    ts.h = ui::HAlign::Center;
-    ts.v = ui::VAlign::Center;
-    ts.wrap = true;
-    c.P().Text(r.Inset(2), label, ts);
+    DrawIcon(c, r, icon, on ? theme::OnAccent() : b.hovered ? theme::Text : theme::TextDim, std::round(std::min(r.w, r.h) * 0.55f));
     if (b.hovered && !tooltip.empty()) Tooltip(c, tooltip);
     return b;
 }

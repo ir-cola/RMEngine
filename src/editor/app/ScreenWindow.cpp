@@ -37,6 +37,7 @@ ui::Key MapKey(WPARAM vk) {
         case VK_RETURN: return ui::Key::Enter;
         case VK_ESCAPE: return ui::Key::Escape;
         case VK_TAB: return ui::Key::Tab;
+        case VK_F1: return ui::Key::F1;
         case VK_F2: return ui::Key::F2;
         case VK_F5: return ui::Key::F5;
         case VK_SPACE: return ui::Key::Space;

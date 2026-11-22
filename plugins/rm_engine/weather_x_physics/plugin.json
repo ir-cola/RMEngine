@@ -3,7 +3,7 @@
   "author": "rm_engine",
   "name": "weather_x_physics",
   "displayName": "天候 × 物理",
-  "version": 1,
+  "version": "0.0.1",
   "connectorFor": { "author": "rm_engine", "name": "weather" },
   "requires": [
     { "author": "rm_engine", "name": "weather" },
