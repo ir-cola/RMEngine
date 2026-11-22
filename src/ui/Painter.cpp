@@ -355,9 +355,23 @@ size_t Painter::HitTest(std::wstring_view text, float x, float size, bool bold) 
     return pos > text.size() ? text.size() : pos;
 }
 
+namespace {
+
+// 画素で数えた四角 -> ビットマップの DIP (Direct2D の元の四角の単位)。DPI を書かずに作ったビットマップは
+// 作ったウィンドウの DPI を持つので、150% の画面では 1 画素 = 1/1.5 DIP (2026-11-22: アイコンがずれた)。
+Rect PixelsToDips(ID2D1Bitmap* bmp, const Rect& px) {
+    const D2D1_SIZE_U pixels = bmp->GetPixelSize();
+    const D2D1_SIZE_F dips = bmp->GetSize();
+    const float sx = pixels.width ? dips.width / static_cast<float>(pixels.width) : 1.f;
+    const float sy = pixels.height ? dips.height / static_cast<float>(pixels.height) : 1.f;
+    return {px.x * sx, px.y * sy, px.w * sx, px.h * sy};
+}
+
+}  // namespace
+
 void Painter::Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity, const Rect* src) {
     if (!bmp) return;
-    const D2D1_RECT_F from = src ? ToD2D(*src) : D2D1_RECT_F{};
+    const D2D1_RECT_F from = src ? ToD2D(PixelsToDips(bmp, *src)) : D2D1_RECT_F{};
     dc_->DrawBitmap(bmp, ToD2D(dst), opacity, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, src ? &from : nullptr, nullptr);
 }
 
@@ -381,7 +395,7 @@ void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c, const Rect
     // 変形で拡大縮小されるので、Image() と同じようにきれいに補間される。
     // 一部だけ (`src`): DrawImage はその四角を切り出して、(0, 0) に置いて描く。
     const D2D1_SIZE_F size = bmp->GetSize();
-    const Rect from = src ? *src : Rect{0, 0, size.width, size.height};
+    const Rect from = src ? PixelsToDips(bmp, *src) : Rect{0, 0, size.width, size.height};
     if (from.w <= 0 || from.h <= 0) return;
     D2D1_MATRIX_3X2_F old;
     dc_->GetTransform(&old);

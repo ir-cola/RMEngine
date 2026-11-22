@@ -179,10 +179,10 @@ struct Wetting {
 std::vector<Wetting> WettingNow(const WeatherNow& now) {
     std::vector<Wetting> out;
     const Vec3 wind{now.windX, 0, now.windZ};
-    // 雨: 最後は全部濡れる。強く降るほど早い (どしゃぶりで 25 秒ほど、霧雨で 2 分ほど)。
+    // 雨: 最後は全部濡れる。強く降るほど早い (RainWetSpeed: どしゃぶりで 25 秒ほど、霧雨で 1 分半ほど)。
     // 覆いの下へしみこむ: どしゃぶりは 2 分足らずで 1 m、霧雨は 7 分ほどで (2026-11-20)。
     if (const float rain = RainNow(now); rain > 0) {
-        out.push_back({FallDirection(Precipitation::Kind::Rain, wind), 1.f, 0.004f + rain * 0.036f, kSeepRain, 0.002f + rain * 0.008f});
+        out.push_back({FallDirection(Precipitation::Kind::Rain, wind), 1.f, RainWetSpeed(rain), kSeepRain, 0.002f + rain * 0.008f});
     }
     // 雪: 溶ける所で少し濡れる。ゆっくりで (2026-11-19)、しみこむ距離も短い。
     if (const float snow = SnowNow(now); snow > 0) {
@@ -193,26 +193,10 @@ std::vector<Wetting> WettingNow(const WeatherNow& now) {
 
 }  // namespace
 
-std::vector<WetWay> WetAtOnce(const WeatherNow& now, float snowMost) {
-    // (しばらく降ったあとの状態として: 降るものそれぞれの向きごとの、濡らす程度)
-    std::vector<WetWay> out;
-    const float close = std::cos(kWetWayDegrees * kDegrees);
-    for (const Wetting& w : WettingNow(now)) {
-        auto same = std::find_if(out.begin(), out.end(), [&](const WetWay& o) { return o.way.x * w.way.x + o.way.y * w.way.y + o.way.z * w.way.z >= close; });
-        if (same != out.end()) {
-            same->sun = same->shade = std::max(same->sun, w.most);
-            same->seep = std::max(same->seep, w.seepMost);
-        } else {
-            out.push_back({w.way, w.most, w.most, w.seepMost});
-        }
-    }
-    // 積もっている雪 (しばらく降ったあとの状態として): 積もる高さの全部を、降る向きに。
-    if (SnowNow(now) > 0) {
-        const Vec3 snowWay = FallDirection(Precipitation::Kind::Snow, {now.windX, 0, now.windZ});
-        auto it = std::find_if(out.begin(), out.end(), [&](const WetWay& o) { return o.way.x * snowWay.x + o.way.y * snowWay.y + o.way.z * snowWay.z >= close; });
-        if (it != out.end()) it->snow = StepSnowCover(0, now, snowMost, 1e9f);
-    }
-    return out;
+float RainWetSpeed(float rain) {
+    // 弱い雨ほど前より少し速く (2026-11-22)、どしゃぶり (1) は前と同じ 0.04。
+    const float r = std::isfinite(rain) ? std::clamp(rain, 0.f, 1.f) : 0.f;
+    return 0.006f + 0.034f * std::pow(r, 0.75f);
 }
 
 void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt, float snowMost) {
@@ -271,7 +255,7 @@ float WetnessOf(const std::vector<WetWay>& ways) {
     return most;
 }
 
-std::vector<WetWay> WetNow(const Weather& w) { return w.wetCounted ? w.wetWays : WetAtOnce(NowOf(w), SnowMostOf(w)); }
+std::vector<WetWay> WetNow(const Weather& w) { return w.wetCounted ? w.wetWays : std::vector<WetWay>{}; }
 
 float StepSnowCover(float cover, const WeatherNow& now, float most, float dt) {
     dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;

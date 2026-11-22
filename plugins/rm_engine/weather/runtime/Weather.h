@@ -97,7 +97,7 @@ struct Weather {
     RM_TRANSIENT() float fadeSeconds = 0;
     RM_TRANSIENT() float fadeElapsed = 0;
     // ゲームが動いている間の 濡れ (StepWet): 雨が降った向きと、それぞれがどれだけ濡らしたか。まだ
-    // 数えていない (Play 前のエディター) ときは、今降っている雨が濡らすものを、すぐに (WetAtOnce)。
+    // 数えていない (Play 前と止めた後のエディター) ときは、濡れも積雪も無い (2026-11-22: 前は降った後の見た目)。
     RM_TRANSIENT() std::vector<WetWay> wetWays;
     RM_TRANSIENT() bool wetCounted = false;
     // ゲームが動いている間に、風が雲・粒・ひらひらをどれだけ運んだか (ワールド単位: 風を足し
@@ -138,7 +138,7 @@ Vec3 WindOf(float directionDegrees, float strength);
 game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds);
 
 // `dt` ゲーム秒あとの 濡れ。雨の間: 今降っている向き (風で斜め) が濡れていく
-// (最後は全部: どしゃぶりで約 25 秒、霧雨で 2 分) - kWetWayDegrees 以内の向きが
+// (最後は全部: RainWetSpeed。どしゃぶりで約 25 秒、霧雨で 1 分半) - kWetWayDegrees 以内の向きが
 // すでにあれば、それとみなす。ほかの向きは今までと同じ濡れのまま (雨が届いた所は、
 // 降っている間は濡れたまま)。雨が降っていない間: すべて乾く - 日なたで 1 分半、日かげで 5 分あまり - そして
 // 乾いたら消える。最大 kWetWays (新しい向きは、一番濡れていないものに代わる)。降る向きは、覆いの下への
@@ -150,12 +150,12 @@ inline constexpr float kSnowWet = 0.45f;
 // 積雪 (`snowMost`: 積もる高さ): 積もっている雪を、すべての向きまとめて、StepSnowCover の言うとおりに
 // 動かす - 降ったものは降る向きに入り (WetWay::snow)、溶けるものは全部の向きから同じだけ引く。
 void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt, float snowMost = 0);
-// エディターが Play 前に見せる、今の濡れ: 今降っているもの (雨、雪)、その向き、どれだけ濡らすか。
-// (Play は乾いて始まり、雨が降るにつれて濡れる: RunWeather。)
-std::vector<WetWay> WetAtOnce(const WeatherNow& now, float snowMost = 0);
+// 雨 (0 .. 1) が 1 秒にどれだけ濡らすか (最後は 1)。どしゃぶり (1) で 0.04 (25 秒)、弱い雨は量に比べて
+// 少し速め (2026-11-22)。
+float RainWetSpeed(float rain);
 // どれだけ濡れているか (スクリプトの rm::Sky::Wetness): 日なたで一番濡れている向き。
 float WetnessOf(const std::vector<WetWay>& ways);
-// 絵が見せる濡れ: ゲームが数えたとおり (Play)、またはすぐに。
+// 絵が見せる濡れ: ゲームが数えたとおり (Play)。Play の前と止めた後は無い (Play の跡は残さない)。
 std::vector<WetWay> WetNow(const Weather& w);
 
 // 積雪: `dt` ゲーム秒あとの雪の深さ (m)、全部。雪の間: `most` (積もる高さ) まで、降る雪の

@@ -3,6 +3,24 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.6",
+      "date": "2026-11-22",
+      "items": [
+        {
+          "ja": "アイコンが 150% などの画面でずれて、違う絵が出ていたのを直した",
+          "en": "Fixed icons showing the wrong picture (shifted) on screens scaled to 150% and similar"
+        },
+        {
+          "ja": "雨: 弱い雨でも前より少し早く濡れるようにした (どしゃぶりは前と同じ)",
+          "en": "Rain: light rain now wets surfaces a little faster (downpours are unchanged)"
+        },
+        {
+          "ja": "一時停止の間は雨粒と雪が空中で止まる。■ で止めると濡れと積もった雪は消える (Play の前も無い)",
+          "en": "While paused, raindrops and snow stop in the air. Stopping clears the wetness and lying snow (none before Play either)"
+        }
+      ]
+    },
+    {
       "version": "0.0.5",
       "date": "2026-11-22",
       "items": [

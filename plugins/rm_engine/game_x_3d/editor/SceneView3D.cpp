@@ -205,8 +205,9 @@ public:
         cameraType_ = reflect::TypeOf<Camera>().name;
         lightType_ = reflect::TypeOf<Light>().name;
         ambientType_ = reflect::TypeOf<AmbientLight>().name;
-        // 空の時間はゲームが動く間進む (雲が流れ、星が瞬く)。それ以外は止まっている。
-        skySeconds_ = host.playing ? skySeconds_ + std::clamp(c.Time() - now_, 0.0, 0.1) : 0.0;
+        // 空の時間はゲームが動く間、ゲームの時間の速さで進む (雲が流れ、星が瞬き、雨粒と雪が降る)。
+        // 一時停止の間 (timeScale 0) は止まる (2026-11-22: 前は雨粒と雪が降り続けた)。Play の外は 0。
+        skySeconds_ = host.playing ? skySeconds_ + std::clamp(c.Time() - now_, 0.0, 0.1) * std::max(host.timeScale, 0.f) : 0.0;
         now_ = c.Time();
         if (!looksMade_) MakeLooks(host);
         Place(host);
