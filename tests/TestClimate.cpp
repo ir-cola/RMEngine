@@ -8,6 +8,10 @@
 #include "rm_engine/climate/runtime/sdk/RMClimateAbi.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
+#include "rm_engine/game_production/runtime/Systems.h"
+#include "rm_engine/weather/runtime/Weather.h"
+#include "rm_engine/weather_x_climate/runtime/Register.h"
+#include "core/RuntimeRegistry.h"
 
 #include <cmath>
 
@@ -134,4 +138,50 @@ RM_TEST(Climate_Script) {
     CHECK(api->set(&world, 1, 400) == 1 && api->get(&world, 1, &h) == 1 && Near(h, 100.f));  // (0 .. 100 に)
     CHECK(api->set(&world, 9, 1) == 0 && api->set(&world, 0, NAN) == 0);
     CHECK(api->at(nullptr, inside, 0, &t, &h) == 0);
+}
+
+// 天候 × 気候: 気温 -> 雪の割合、湿り気 -> 降る量、カメラのいる所へ数秒かけて、天候の今の天候。
+RM_TEST(Climate_WeatherPlace) {
+    using namespace rm::weather_x_climate;
+    CHECK(SnowShareOf(5) == 0.f && SnowShareOf(2) == 0.f && SnowShareOf(-1) == 1.f && SnowShareOf(-20) == 1.f);
+    CHECK(Near(SnowShareOf(0.5f), 0.5f) && SnowShareOf(1) < 0.5f && SnowShareOf(0) > 0.5f && SnowShareOf(NAN) == 0.f);  // (みぞれ)
+    CHECK(MoreOf(0) == 0.f && Near(MoreOf(25), 0.5f) && Near(MoreOf(50), 1.f) && Near(MoreOf(100), weather::kPlaceMostMore) && Near(MoreOf(75), 1.25f));
+    // 近づける: 初めはすぐ。そのあとは 2 秒で 63 %。
+    float s = -1, m = 1;
+    Approach(s, m, {1.f, 0.5f}, 0.016f);
+    CHECK(s == 1.f && m == 0.5f);
+    Approach(s, m, {0.f, 1.5f}, 2.f);
+    CHECK(Near(s, 0.3679f) && Near(m, 1.5f - 0.3679f));
+    // 天候の今の天候: 雪の割合で分ける (雪にする は使わない)。降る量は倍率を掛けて 1 まで。
+    weather::Weather w;
+    w.precipitation = 60;
+    w.snowing = false;
+    w.placeSnow = 0.25f;
+    w.placeMore = 1.f;
+    CHECK(Near(weather::NowOf(w).snow, 0.15f) && Near(weather::NowOf(w).rain, 0.45f));
+    w.placeMore = 2.f;
+    CHECK(Near(weather::NowOf(w).snow + weather::NowOf(w).rain, 1.f));
+    w.placeSnow = -1;  // (答える者がいない: 雪にする で)
+    CHECK(weather::NowOf(w).snow == 0.f && Near(weather::NowOf(w).rain, 0.6f));
+    // 口とシステム: 寒いエリアの真ん中にカメラ。
+    Scene sc = ClimateScene();
+    sc.SetSettingTypes({&reflect::TypeOf<ClimateSettings>(), &reflect::TypeOf<weather::Weather>()});
+    const int cold = sc.Create("雪の山");
+    Add<space3d::Transform>(sc, cold).position = {100, 0, 0};
+    ClimateZone& z = Add<ClimateZone>(sc, cold);
+    z.border = 0;
+    z.temperature = -10;
+    RuntimeRegistry reg;
+    RegisterRuntime(reg);
+    const auto places = reg.Contributions<weather::WeatherPlaceInfo>(weather::kWeatherPlacePoint);
+    CHECK(places.size() == 1);
+    weather::WeatherPlace grid[9];
+    places[0].item->grid(sc, {100, 0, 0}, 30.f, 3, grid);  // (x: 70, 100, 130 - 箱は 80 .. 120)
+    CHECK(grid[4].snow == 1.f && grid[3].snow == 0.f && grid[5].snow == 0.f && Near(grid[4].more, 1.f));
+    const int cam = sc.Create("カメラ");
+    Add<space3d::Transform>(sc, cam).position = {100, 0, 0};
+    game_production::SystemContext ctx{sc, 0.016f};
+    ctx.camera = static_cast<uint64_t>(cam);
+    for (const auto& sys : reg.Contributions<game_production::SystemInfo>(game_production::kSystemPoint)) sys.item->run(ctx);
+    CHECK(sc.Setting<weather::Weather>()->placeSnow == 1.f);
 }

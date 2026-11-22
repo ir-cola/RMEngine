@@ -87,8 +87,15 @@ WeatherNow TargetOf(const Weather& w) {
     WeatherNow n;
     const float p = Unit(w.precipitation), x = SnowInOf(w);
     n.clouds = Unit(w.cloudAmount);
-    n.rain = p * RainShare(x);
-    n.snow = p * SnowShare(x);
+    if (std::isfinite(w.placeSnow) && w.placeSnow >= 0) {
+        // 場所の降り方 (つなぎが書いた、カメラのいる所): その割合で雨と雪に分ける (みぞれは両方)。
+        const float snow = std::min(w.placeSnow, 1.f), more = std::isfinite(w.placeMore) ? std::clamp(w.placeMore, 0.f, 4.f) : 1.f;
+        n.rain = std::min(p * more, 1.f) * (1 - snow);
+        n.snow = std::min(p * more, 1.f) * snow;
+    } else {
+        n.rain = p * RainShare(x);
+        n.snow = p * SnowShare(x);
+    }
     n.fog = Unit(w.fogAmount);
     const Vec3 wind = WindOf(w.windDirection, w.windStrength);
     n.windX = wind.x;
@@ -108,6 +115,13 @@ WeatherNow NowOf(const Weather& w) {
     to.windX = Lerp(a.windX, to.windX, t);  // (風はベクトルとして混ぜる: 近い回り方で向きが変わる)
     to.windZ = Lerp(a.windZ, to.windZ, t);
     return to;
+}
+
+float PrecipitationNow(const Weather& w) {
+    const float p = Unit(w.precipitation);
+    if (!(w.fadeSeconds > 0) || !(w.fadeElapsed < w.fadeSeconds)) return p;
+    const float t = Smooth(0.f, 1.f, std::max(w.fadeElapsed, 0.f) / w.fadeSeconds);
+    return Lerp(std::clamp(w.fadeFrom.rain + w.fadeFrom.snow, 0.f, 1.f), p, t);
 }
 
 void BeginFade(Weather& w, float seconds) {

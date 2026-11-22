@@ -82,7 +82,7 @@ RM_STRUCT(Label="天候")
 struct Weather {
     RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲ひとつ無い晴れ 〜 40: 雲の多い晴れ 〜 70: くもり 〜 100: 空一面の厚い雲 (暗くなり、日の光も弱まります)。雨や雪が降ると、少なくても雲が出ます (雲は空が「地球の空」のとき)", Min=0, Max=100, Step=0.1, Decimals=1) float cloudAmount = 20.f;
     RM_PROPERTY(Edit, Label="降水量", Tooltip="雨 (雪にするときは雪) の降る量。0: 降らない / 〜10: ぽつぽつ / 〜30: 小雨 / 〜60: 雨 / 〜85: どしゃぶり / 100: 嵐 (雪: 〜20 ちらつく / 〜50 雪 / 〜80 大雪 / 100 吹雪)。増えるほど雲が暗くなり、強い雨・雪では霧も出ます", Min=0, Max=100, Step=0.1, Decimals=1) float precipitation = 0.f;
-    RM_PROPERTY(Edit, Label="雪にする", Tooltip="入れると、雨がだんだん小雨になってから雪に変わり、雪が強まって降水量に戻ります。外すと逆に、雪が弱まってから雨に (Play 中は 5 秒ほど。エディターではすぐその見た目)。雨と雪が一緒に降ることはありません") bool snowing = false;
+    RM_PROPERTY(Edit, Label="雪にする", Tooltip="入れると、雨がだんだん小雨になってから雪に変わり、雪が強まって降水量に戻ります。外すと逆に、雪が弱まってから雨に (Play 中は 5 秒ほど。エディターではすぐその見た目)。雨と雪が一緒に降ることはありません。プラグイン「気候」があるとき (つなぎ「天候 × 気候」) は使わず、場所の気温で決まります") bool snowing = false;
     RM_PROPERTY(Edit, Label="積もる高さ (cm)", Tooltip="雪がこの高さまで積もります (cm、整数。最大 1000)。Play 中は降っている間に少しずつ、降る量が多いほど速く (降水量 100 で 1 分に 2.5 cm ほど)。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)", Min=0, Max=1000, Step=1, Decimals=0, ShowIf="snowing") float snowDepthCm = 10.f;
     RM_PROPERTY(Edit, Label="霧の量", Tooltip="0: 無し 〜 50: 20 m ほど先がかすむ 〜 100: 数 m 先しか見えない。色は天気で変わります (晴れ・くもり: 白っぽい / 雨: 暗い灰色 / 雪: 白)。強い雨・雪では、これに加えて霧が出ます", Min=0, Max=100, Step=0.1, Decimals=1) float fogAmount = 0.f;
     RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中。雲の多いとき)") bool lightning = false;
@@ -100,6 +100,11 @@ struct Weather {
     // 数えていない (Play 前と止めた後のエディター) ときは、濡れも積雪も無い (2026-11-22: 前は降った後の見た目)。
     RM_TRANSIENT() std::vector<WetWay> wetWays;
     RM_TRANSIENT() bool wetCounted = false;
+    // 場所の降り方 (WeatherPlace.h): 答える者 (つなぎ 天候 × 気候) が Play の間、カメラのいる所について
+    // 毎フレーム書く - 降るもののうち雪の割合 (0 .. 1) と、降水量の倍率。placeSnow < 0: 書く者がいない
+    // (雪にする で決める)。
+    RM_TRANSIENT() float placeSnow = -1;
+    RM_TRANSIENT() float placeMore = 1;
     // ゲームが動いている間に、風が雲・粒・ひらひらをどれだけ運んだか (ワールド単位: 風を足し
     // 合わせたもの - 風が変わっても跳ばない)。
     RM_TRANSIENT() float driftX = 0;
@@ -110,6 +115,7 @@ struct Weather {
 // (風の向きと積もる高さはそのまま)。新しい版の値: 何もしない。
 void ApplyPreset(Weather& w, WeatherPreset preset);
 // 雪にする がどこまで来たか (0: 雨 .. 1: 雪): ゲームが数えたとおり、エディターでは箱の言うとおり。
+// (場所の降り方があるとき (placeSnow >= 0) は使わない: TargetOf はそちらで雨と雪に分ける。)
 float SnowInOf(const Weather& w);
 // 間の道のりで、降水量のうち雨として降る分 / 雪として降る分 (x: SnowInOf): 雨が弱まって霧雨になり
 // (真ん中で 0.15)、そこから軽い雪になって増えていく - 両方が同時に降ることはない。
@@ -117,6 +123,8 @@ float RainShare(float x);
 float SnowShare(float x);
 // 積もる高さ in metres.
 float SnowMostOf(const Weather& w);
+// 今の降水量 (0 .. 1。フェードの途中は緩急つき): 雨と雪に分ける前のもの (場所の降り方で、粒を用意する量)。
+float PrecipitationNow(const Weather& w);
 // フィールドの言う天候 (フェードの行き先) / 今の天候 (フェードの途中: 緩急つき)。
 WeatherNow TargetOf(const Weather& w);
 WeatherNow NowOf(const Weather& w);

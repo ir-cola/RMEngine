@@ -2,7 +2,7 @@
 
 This plugin lets one scene have cold, warm, humid and dry places. It works in both 2D and 3D games. Scripts can read the temperature and humidity at any place (to lose health in the cold, show white breath, and so on).
 
-> Together with the Weather plugin, the connector "Weather × Climate" will make snow fall in cold places and rain in warm ones (coming next).
+> Together with the Weather plugin, the connector "Weather × Climate" comes in by itself: snow falls in cold places and rain in warm ones (Weather → Weather × Climate page).
 
 ## The scene setting "Climate"
 

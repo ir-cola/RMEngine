@@ -6,6 +6,7 @@
 
 #include "base/Math.h"
 #include "rm_engine/weather/runtime/Weather.h"
+#include "rm_engine/weather/runtime/WeatherPlace.h"
 
 #include <cstdint>
 #include <span>
@@ -26,6 +27,8 @@ struct Precipitation {
     float windX = 0, windZ = 0;    // 今の風 (m/s、ワールド)
     float driftX = 0, driftZ = 0;  // 風が運んだ距離 (ワールド単位)
     int map = -1;                  // 落ちる向きの 向きの地図 (-1: なし - 当たるものがない)
+    // 場所ごとの降り方 (WeatherPlace.h) を見る: 粒ごとに、その場所の割合で出る (雨: 1 - 雪の割合)。
+    bool placed = false;
 };
 // (2026-11-20: 4 倍に - 一番強い雨が軽く感じた。嵐は雨の壁)
 // (2026-11-20 また: 雨は減らす - どしゃぶりは粒より霧。雪はずっと多く)
@@ -49,6 +52,7 @@ FallSpeed FallOf(Precipitation::Kind kind);
 // 風の中で平均してどちらへ行くか (長さ 1): 当たるものはそこから見る。
 Vec3 FallDirection(Precipitation::Kind kind, Vec3 wind);
 
+inline constexpr int kPlaceGridPoints = kPlaceGrid * kPlaceGrid;
 // 粒と雪片のシェーダー: FallVS / FallPS (vs_4_0 / ps_4_0)。3D 空間の kColorHlsl と
 // kDirectionMapHlsl の後。その数値: FallConstants (b4)。
 extern const char kFallHlsl[];
@@ -61,8 +65,11 @@ struct FallConstants {
     float up[4];     // xyz: カメラの上
     float wind[4];   // xy: 今の風 (m/s、ワールドの x z)、zw: 風が運んだ距離
     float fall[4];   // x: 最小の落下 (m/s)、y: それぞれがさらに速くなれる量、z: 風がどれだけ運ぶか
+    float place[4];  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う
+    float placeSnow[(kPlaceGridPoints + 3) / 4 * 4];  // 格子の点ごとの雪の割合 (行が z、列が x)
 };
 static_assert(sizeof(FallConstants) % 16 == 0);
+static_assert((kPlaceGridPoints + 3) / 4 == 13, "kFallHlsl の precipPlaceSnow[13] と合わせる");
 
 // 濡れ と 積雪: すべての面への働き (3D 空間の RenderFrame::surface: Surface(...)) とその数値 -
 // 雨と雪の降り方ごとに、それを見る 向きの地図 (`maps`、-1: なし - 全部開いている)、覆うものの

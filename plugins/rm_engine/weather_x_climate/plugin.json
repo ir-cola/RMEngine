@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "weather_x_climate",
+  "displayName": "天候 × 気候",
+  "version": "0.0.1",
+  "connectorFor": { "author": "rm_engine", "name": "weather" },
+  "requires": [
+    { "author": "rm_engine", "name": "weather" },
+    { "author": "rm_engine", "name": "climate" },
+    { "author": "rm_engine", "name": "game_production" },
+    { "author": "rm_engine", "name": "game_x_3d" },
+    { "author": "rm_engine", "name": "space3d" }
+  ]
+}
