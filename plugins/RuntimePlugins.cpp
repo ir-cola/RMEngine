@@ -4,6 +4,8 @@
 // エディター専用のものがここに入っていないかは tools/check_layers.ps1 が調べる。
 
 #include "core/RuntimeRegistry.h"
+#include "rm_engine/game_production/runtime/Id.h"
+#include "rm_engine/game_production/runtime/Register.h"
 #include "rm_engine/game_x_3d/runtime/Id.h"
 #include "rm_engine/game_x_3d/runtime/Register.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
@@ -31,6 +33,7 @@ namespace rm {
 
 std::span<const RuntimePlugin> RuntimePlugins() {
     static constexpr RuntimePlugin kPlugins[] = {
+        {game_production::kPluginId, &game_production::RegisterRuntime},
         {game_x_3d::kPluginId, &game_x_3d::RegisterRuntime},
         {game_x_2d::kPluginId, &game_x_2d::RegisterRuntime},
         {physics::kPluginId, &physics::RegisterRuntime},

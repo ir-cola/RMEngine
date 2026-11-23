@@ -1207,6 +1207,9 @@ private:
         world.sceneIndex = -1;
         world.sceneAsked = -1;
         world.quitAsked = false;
+        world.worldAsked = json::Value();
+        world.worldAskedScene = -1;
+        world.sceneBase = playScene_->NextId();  // (世界のセーブ: これ以上の id は Play の中で作った物)
         scripts_.StartInput();
         for (size_t i = 0; i < playScenes_.size(); ++i) {
             world.sceneNames.push_back(SceneTitle(playScenes_[i]));
