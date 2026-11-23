@@ -435,4 +435,89 @@ struct UiBar {
     RM_PROPERTY(Edit, Label="内側の余白", Tooltip="地の縁と中身の間 (DIP)", Min=0, Max=1000) float padding = 4;
 };
 
+// --- 入力の部品 (入力欄・スライダー・トグル・スクロール) -----------------------------------------
+// 入力欄・スライダー・トグルは、同じエンティティの「ボタン (UI)」で選ばれる (マウスの乗った / 押した
+// 見た目・キーとパッドの選択・移る先・音・押せる)。だから選び方は 1 つの仕組みのまま (NextButton)。
+// 「追加 ▸ UI」はボタンも一緒に付ける。値が変わるとスクリプトの OnEvent に "UIChanged" (数 = 値、
+// 文字 = 入力欄の文字)、入力欄で Enter を押すと "UISubmitted" が届く (RMUI.h の rm::UI::kChanged)。
+
+RM_ENUM(Label="入力できる文字")
+enum class UiInputContent {
+    RM_ITEM(Label="何でも") Any,
+    RM_ITEM(Label="整数") Integer,
+    RM_ITEM(Label="数 (小数も)") Decimal,
+    RM_ITEM(Label="英字と数字") Alphanumeric,
+};
+
+RM_STRUCT(Label="入力欄 (UI)")
+struct UiInputField {
+    RM_PROPERTY(Edit, Label="入っている文字", Tooltip="ゲームの始めに入っている文字。打った文字はここに入ります (スクリプトの rm::UI::Text)") std::string text;
+    RM_PROPERTY(Edit, Label="空のときの案内", Tooltip="何も入っていないときに薄く出す文字") std::string placeholder = "ここに入力";
+    RM_PROPERTY(Edit, Label="案内の色", Min=0, Max=1) Color placeholderColor{1, 1, 1, 0.4f};
+    RM_PROPERTY(Edit, Label="最大の文字数", Tooltip="0 なら決めない (見える 1 文字を 1 と数えます)", Min=0, Max=100000) int maxLength = 0;
+    RM_PROPERTY(Edit, Label="入力できる文字", Tooltip="整数・数・英字と数字: ほかの文字は入りません (全角の数字と英字は半角にします)")
+    UiInputContent content = UiInputContent::Any;
+    RM_PROPERTY(Edit, Label="パスワード", Tooltip="打った文字を ● で隠します (コピーもできません)") bool password = false;
+    RM_PROPERTY(Edit, Label="左右の余白", Tooltip="枠の左右と文字の間 (DIP)", Min=0, Max=1000) float padding = 16;
+    RM_PROPERTY(Edit, Label="カーソルの色", Min=0, Max=1) Color caretColor{1, 1, 1, 1};
+    RM_PROPERTY(Edit, Label="選んだ所の色", Min=0, Max=1) Color selectionColor{0.35f, 0.55f, 1, 0.45f};
+    RM_TRANSIENT() bool typing = false;   // 今この欄に打っている (UI サービス)
+    RM_TRANSIENT() int caret = 0;         // カーソル (text を UTF-16 にした位置)
+    RM_TRANSIENT() int anchor = 0;        // 選び始めた所 (caret と違えば選んでいる)
+    RM_TRANSIENT() std::string composing; // IME で変換中の文字 (UTF-8。まだ text に入っていない)
+    RM_TRANSIENT() int composingCaret = 0;
+};
+
+RM_ENUM(Label="トグルの形")
+enum class UiToggleLook {
+    RM_ITEM(Label="チェックの箱") Check,
+    RM_ITEM(Label="スイッチ") Switch,
+};
+
+RM_STRUCT(Label="トグル (UI)")
+struct UiToggle {
+    RM_PROPERTY(Edit, Label="オン", Tooltip="押すたびにオンとオフが入れ替わります (スクリプトの rm::UI::IsOn)") bool on = false;
+    RM_PROPERTY(Edit, Label="形") UiToggleLook look = UiToggleLook::Check;
+    RM_PROPERTY(Edit, Label="印の大きさ", Tooltip="箱 (スイッチ) の高さ (DIP)。0 なら枠の高さ。枠の左に描きます", Min=0, Max=1000) float markSize = 0;
+    RM_PROPERTY(Edit, Label="地の色", Min=0, Max=1) Color back{0.12f, 0.12f, 0.15f, 0.9f};
+    RM_PROPERTY(Edit, Label="オンの色", Tooltip="オンのときの箱 (スイッチ) の色", Min=0, Max=1) Color onColor{0.3f, 0.65f, 1, 1};
+    RM_PROPERTY(Edit, Label="印の色", Tooltip="チェックの印・スイッチのつまみ", Min=0, Max=1) Color mark{1, 1, 1, 1};
+    RM_PROPERTY(Edit, Label="グループ", Tooltip="同じウィンドウで同じ名前のトグルは 1 つだけオンになります (ラジオボタン。オンのものを押してもオンのまま)。空なら別々")
+    std::string group;
+    RM_TRANSIENT() float shown = 0;    // 見えているオンの量 0..1 (UI サービスがなめらかに寄せる)
+    RM_TRANSIENT() bool ready = false;  // `shown` が入っている (無ければ on のとおり)
+};
+
+RM_STRUCT(Label="スライダー (UI)")
+struct UiSlider {
+    RM_PROPERTY(Edit, Label="値", Tooltip="最小から最大の間 (刻みに合わせます。スクリプトの rm::UI::Value)", Min=-1000000, Max=1000000) float value = 0.5f;
+    RM_PROPERTY(Edit, Label="最小", Min=-1000000, Max=1000000) float min = 0;
+    RM_PROPERTY(Edit, Label="最大", Min=-1000000, Max=1000000) float max = 1;
+    RM_PROPERTY(Edit, Label="値の刻み", Tooltip="0 ならなめらか。1 で整数だけ", Min=0, Max=1000000) float step = 0;
+    RM_PROPERTY(Edit, Label="伸びる向き", Tooltip="値が増える向き。左から右・右から左はキーの ← →、下から上・上から下は ↑ ↓ で動きます")
+    UiBarDirection direction = UiBarDirection::LeftToRight;
+    RM_PROPERTY(Edit, Label="キーで動く量", Tooltip="キー・パッドの 1 回で動く量。0 なら刻み (刻みも 0 なら幅の 20 分の 1)", Min=0, Max=1000000) float keyStep = 0;
+    RM_PROPERTY(Edit, Label="溝の太さ", Tooltip="地と中身の帯の太さ (DIP)", Min=0, Max=1000) float trackWidth = 12;
+    RM_PROPERTY(Edit, Label="つまみの大きさ", Tooltip="丸いつまみの直径 (DIP)。0 ならつまみなし", Min=0, Max=1000) float handleSize = 36;
+    RM_PROPERTY(Edit, Label="地の色", Min=0, Max=1) Color back{0.12f, 0.12f, 0.15f, 0.85f};
+    RM_PROPERTY(Edit, Label="中身の色", Min=0, Max=1) Color fill{0.3f, 0.65f, 1, 1};
+    RM_PROPERTY(Edit, Label="つまみの色", Min=0, Max=1) Color handle{1, 1, 1, 1};
+};
+
+RM_STRUCT(Label="スクロール (UI)")
+struct UiScroll {
+    RM_PROPERTY(Edit, Label="縦に動く") bool vertical = true;
+    RM_PROPERTY(Edit, Label="横に動く") bool horizontal = false;
+    RM_PROPERTY(Edit, Label="ホイールの 1 目盛り", Tooltip="ホイールを 1 つ回すと動く長さ (DIP)", Min=0, Max=100000) float wheelStep = 80;
+    RM_PROPERTY(Edit, Label="つかんで動かす", Tooltip="中身の空いた所をドラッグして動かせます (スマホのように)") bool drag = true;
+    RM_PROPERTY(Edit, Label="選んだ物を見せる", Tooltip="キーやパッドで中のボタンを選ぶと、それが見えるまで動きます") bool followFocus = true;
+    RM_PROPERTY(Edit, Label="スクロールバー", Tooltip="枠の右 (横は下) に、今どこを見ているかの帯を出します。つまみはドラッグできます") bool scrollbar = true;
+    RM_PROPERTY(Edit, Label="バーの太さ", Min=1, Max=200, ShowIf="scrollbar") float barWidth = 10;
+    RM_PROPERTY(Edit, Label="バーの地の色", Min=0, Max=1, ShowIf="scrollbar") Color barBack{1, 1, 1, 0.12f};
+    RM_PROPERTY(Edit, Label="バーのつまみの色", Min=0, Max=1, ShowIf="scrollbar") Color barThumb{1, 1, 1, 0.55f};
+    RM_TRANSIENT() Vec2 offset{0, 0};  // どれだけ動かしたか (中身が上 / 左へ動く。UI サービス)
+    RM_TRANSIENT() Vec2 low{0, 0};   // 動かせる範囲 (UI サービスが毎フレーム書く: スクリプトの 0..1)
+    RM_TRANSIENT() Vec2 high{0, 0};
+};
+
 }  // namespace rm::game_ui

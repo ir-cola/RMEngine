@@ -65,6 +65,16 @@ struct KeyEvent {
 
 enum class Mouse : int { Left = 0, Right = 1, Middle = 2 };
 
+// ウィンドウが集めた、文字を打つ 1 フレーム分 (ゲーム UI の入力欄に渡す。エディターの Play は下の Input
+// から、書き出したゲームはそのウィンドウが自分で集める: game::Host::TakeTyped)。
+struct TypedText {
+    std::wstring chars;           // 打った文字 (WM_CHAR)
+    std::vector<KeyEvent> keys;   // 押したキー (リピートつき: ← → Home End Backspace Delete Enter Esc、Ctrl+A / C / V / X)
+    std::wstring imeResult;       // 確定した IME の文字
+    std::wstring imeComposition;  // 変換中の文字 (フレームをまたいで残る)
+    int imeCursor = 0;            // 変換中の文字の中のカーソル
+};
+
 // フレームとフレームの間にウィンドウが集めた入力。座標は DIP。
 struct Input {
     float mouseX = -1e6f, mouseY = -1e6f;

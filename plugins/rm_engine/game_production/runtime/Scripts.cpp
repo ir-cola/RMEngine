@@ -1296,7 +1296,12 @@ void ScriptRunner::DeliverEvents(Scene& scene, ScriptWorld& world, const ScriptM
 
 void ScriptRunner::Deliver(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
                            std::span<const HookCall> calls) {
-    if (calls.empty() || !module.Loaded()) return;
+    if (!module.Loaded()) {
+        world.events.clear();  // (受け取るスクリプトが無い: サービスが送ったものも溜めない)
+        return;
+    }
+    // フックが無くても、サービスが送ったイベント (ゲーム UI の "UIChanged" …) はここで届ける。
+    if (calls.empty() && world.events.empty()) return;
     world.scene = &scene;
     const std::vector<Instance> list = Collect(scene, module, order);
     for (const HookCall& h : calls) {

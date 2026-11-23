@@ -257,6 +257,7 @@
     <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiLayout.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiService.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiMotion.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiControls.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\ScriptUi.cpp" />
     <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
   </ItemGroup>

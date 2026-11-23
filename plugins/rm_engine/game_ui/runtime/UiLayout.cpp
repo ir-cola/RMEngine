@@ -241,7 +241,10 @@ UiTree OnlyCanvas(const UiTree& tree, int canvas) {
         if (tree.nodes[i].canvas != canvas) continue;
         UiNode n = tree.nodes[i];
         n.parent = n.parent >= 0 ? moved[static_cast<size_t>(n.parent)] : -1;
+        n.clip = n.clip >= 0 ? moved[static_cast<size_t>(n.clip)] : -1;
         moved[i] = static_cast<int>(out.nodes.size());
+        // (1 つのキャンバスのノードは並んでいる: 下の範囲は同じだけずれる)
+        n.end = moved[i] + (n.end - static_cast<int>(i));
         out.nodes.push_back(n);
     }
     return out;
@@ -388,6 +391,8 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
         root.bar = PartOf<UiBar>(*ca.e);
         root.style = PartOf<UiStyle>(*ca.e);
         root.video = PartOf<UiVideo>(*ca.e);
+        root.scroll = PartOf<UiScroll>(*ca.e);
+        root.inner = root.scroll ? root.self * Translate({-root.scroll->offset.x, -root.scroll->offset.y}) : root.self;
         tree.nodes.push_back(root);
         // 深さ優先。UI の配置 を持たないものは、親の枠をそのまま子に渡す。
         struct Step {
@@ -430,17 +435,44 @@ UiTree BuildUi(const game_production::Scene& scene, const UiScreen& screen, std:
             n.bar = PartOf<UiBar>(*s.e);
             n.style = PartOf<UiStyle>(*s.e);
             n.video = PartOf<UiVideo>(*s.e);
+            n.input = PartOf<UiInputField>(*s.e);
+            n.toggle = PartOf<UiToggle>(*s.e);
+            n.slider = PartOf<UiSlider>(*s.e);
+            n.scroll = PartOf<UiScroll>(*s.e);
             n.box = PlaceBox(*place, parent.box);
             // 今動いている (出る・消える動き、道、スクリプトのトゥイーン): 枠が動き、回転と大きさはその 中心 を
             // 中心にする。
             n.box.x += live.offset.x;
             n.box.y += live.offset.y;
-            n.toScreen = parent.self;
-            n.self = parent.self * About(PivotPoint(*place, n.box), place->rotation + live.turn, (n.button ? ButtonScale(*n.button) : 1.f) * live.scale);
+            // (親がスクロールなら、その中身の単位: 動かした分ずれ、枠の外は切り取られる)
+            n.toScreen = parent.inner;
+            n.self = parent.inner * About(PivotPoint(*place, n.box), place->rotation + live.turn, (n.button ? ButtonScale(*n.button) : 1.f) * live.scale);
+            n.inner = n.scroll ? n.self * Translate({-n.scroll->offset.x, -n.scroll->offset.y}) : n.self;
+            n.clip = parent.scroll ? s.parentNode : parent.clip;
             n.alpha = parent.alpha * std::clamp(live.alpha, 0.f, 1.f);
             n.closing = parent.closing || going(s.e);
             tree.nodes.push_back(n);
             push(n.entity, static_cast<int>(tree.nodes.size()) - 1);
+        }
+    }
+    // 下のノードの範囲 (end) と、子の箱を合わせた中身 (スクロール)。ノードは深さ優先なので、後ろから親へ。
+    std::vector<bool> hasChild(tree.nodes.size(), false);
+    for (size_t i = 0; i < tree.nodes.size(); ++i) {
+        tree.nodes[i].end = static_cast<int>(i) + 1;
+        tree.nodes[i].content = tree.nodes[i].box;
+    }
+    for (size_t i = tree.nodes.size(); i-- > 0;) {
+        const int p = tree.nodes[i].parent;
+        if (p < 0 || p >= static_cast<int>(tree.nodes.size())) continue;
+        UiNode& par = tree.nodes[static_cast<size_t>(p)];
+        const UiNode& kid = tree.nodes[i];
+        par.end = std::max(par.end, kid.end);
+        if (!hasChild[static_cast<size_t>(p)]) {
+            hasChild[static_cast<size_t>(p)] = true;
+            par.content = kid.box;
+        } else {
+            const float l = std::min(par.content.x, kid.box.x), t = std::min(par.content.y, kid.box.y);
+            par.content = {l, t, std::max(par.content.Right(), kid.box.Right()) - l, std::max(par.content.Bottom(), kid.box.Bottom()) - t};
         }
     }
     return tree;
@@ -453,12 +485,42 @@ bool Hits(const UiNode& n, Vec2 p) {
     return inv && n.box.Contains(Apply(*inv, p));
 }
 
+bool InsideClips(const UiTree& tree, const UiNode& n, Vec2 p) {
+    size_t guard = 0;
+    for (int c = n.clip; c >= 0 && c < static_cast<int>(tree.nodes.size()) && guard++ <= tree.nodes.size(); c = tree.nodes[static_cast<size_t>(c)].clip) {
+        if (!Hits(tree.nodes[static_cast<size_t>(c)], p)) return false;
+    }
+    return true;
+}
+
+int ScrollAt(const UiTree& tree, Vec2 p) {
+    for (size_t i = tree.nodes.size(); i-- > 0;) {
+        const UiNode& n = tree.nodes[i];
+        if (n.scroll && !n.closing && Hits(n, p) && InsideClips(tree, n, p)) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+UiBox BoxInScroll(const UiTree& tree, int scroll, const UiNode& item) {
+    if (scroll < 0 || scroll >= static_cast<int>(tree.nodes.size())) return item.box;
+    const auto inv = Invert(tree.nodes[static_cast<size_t>(scroll)].inner);
+    if (!inv) return item.box;
+    const UiBox& b = item.box;
+    const Vec2 corners[4] = {{b.x, b.y}, {b.Right(), b.y}, {b.Right(), b.Bottom()}, {b.x, b.Bottom()}};
+    float l = std::numeric_limits<float>::max(), t = l, r = -l, bt = -l;
+    for (const Vec2& c : corners) {
+        const Vec2 q = Apply(*inv, Apply(item.self, c));
+        l = std::min(l, q.x), t = std::min(t, q.y), r = std::max(r, q.x), bt = std::max(bt, q.y);
+    }
+    return {l, t, r - l, bt - t};
+}
+
 int TopAt(const UiTree& tree, Vec2 p) {
     for (auto it = tree.nodes.rbegin(); it != tree.nodes.rend(); ++it) {
         if (it->parent < 0) continue;  // キャンバス自身は何も受け取らない (ウィンドウの一部が空でもよい)
         if (it->closing) continue;     // 消えていく途中 (消えるとき): 見えるが、触れない
-        if (!(it->image || it->bar || it->button || it->video || (it->style && it->style->background.enabled))) continue;
-        if (Hits(*it, p)) return it->entity;
+        if (!(it->image || it->bar || it->button || it->video || it->scroll || (it->style && it->style->background.enabled))) continue;
+        if (Hits(*it, p) && InsideClips(tree, *it, p)) return it->entity;
     }
     return 0;
 }

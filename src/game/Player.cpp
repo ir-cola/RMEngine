@@ -16,9 +16,39 @@
 #include <utility>
 #include <algorithm>
 
+#include <imm.h>
+#pragma comment(lib, "imm32.lib")  // (ゲームの入力欄の IME)
+
 namespace rm::game {
 
 namespace {
+
+// ゲームの入力欄が使うキー (ほかのキーは集めない: ゲームはキーを GetAsyncKeyState で読む)。
+ui::Key EditKey(WPARAM vk) {
+    switch (vk) {
+        case VK_LEFT: return ui::Key::Left;
+        case VK_RIGHT: return ui::Key::Right;
+        case VK_HOME: return ui::Key::Home;
+        case VK_END: return ui::Key::End;
+        case VK_BACK: return ui::Key::Backspace;
+        case VK_DELETE: return ui::Key::Delete;
+        case VK_RETURN: return ui::Key::Enter;
+        case VK_ESCAPE: return ui::Key::Escape;
+        case 'A': return ui::Key::A;
+        case 'C': return ui::Key::C;
+        case 'V': return ui::Key::V;
+        case 'X': return ui::Key::X;
+        default: return ui::Key::None;  // VK_PROCESSKEY (IME が食べたキー) も
+    }
+}
+
+std::wstring ReadIme(HIMC imc, DWORD type) {
+    const LONG bytes = ImmGetCompositionStringW(imc, type, nullptr, 0);
+    if (bytes <= 0) return {};
+    std::wstring s(static_cast<size_t>(bytes) / sizeof(wchar_t), L'\0');
+    ImmGetCompositionStringW(imc, type, s.data(), static_cast<DWORD>(bytes));
+    return s;
+}
 
 // exe の隣の game.log (そのフォルダに書けるとき。Program Files の下では書けない)。
 void InstallLog(const std::filesystem::path& folder) {
@@ -67,6 +97,7 @@ public:
         d.minHeightDip = 240;
         d.captionRgb = 0x000000;
         if (!window_.Create(d, this)) return Fail("ウィンドウを作れませんでした");
+        ImmAssociateContextEx(window_.Handle(), nullptr, 0);  // IME は入力欄に打つ間だけ (SetTextInput)
         if (display_.mode != Game::Display::Mode::Windowed) CoverMonitor();
         if (!target_.Create(gfx_, window_.Handle(), window_.Dpi())) return Fail("描く場所 (スワップチェーン) を作れませんでした");
         ShowWindow(window_.Handle(), smoke_ ? SW_SHOWNOACTIVATE : SW_SHOWNORMAL);
@@ -131,6 +162,43 @@ public:
         if (window_.Handle()) window_.SetTitle(Utf8ToWide(title_));
     }
     PointerPresses TakePointerPresses() override { return std::exchange(presses_, PointerPresses{}); }
+    ui::TypedText TakeTyped() override {
+        ui::TypedText out = std::exchange(typed_, ui::TypedText{});
+        typed_.imeComposition = out.imeComposition;  // (変換中の文字はフレームをまたいで残る)
+        typed_.imeCursor = out.imeCursor;
+        return out;
+    }
+    void SetTextInput(bool want, float x, float y, float w, float h) override {
+        const HWND hwnd = window_.Handle();
+        if (!hwnd) return;
+        if (want != textWanted_) {
+            textWanted_ = want;
+            if (!want) {
+                if (HIMC imc = ImmGetContext(hwnd)) {
+                    ImmNotifyIME(imc, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+                    ImmReleaseContext(hwnd, imc);
+                }
+                typed_ = {};
+            }
+            ImmAssociateContextEx(hwnd, nullptr, want ? IACE_DEFAULT : 0);
+        }
+        if (!want) return;
+        // 候補の窓をその欄の下に (変換中の文字は欄の中にゲームが描く)。
+        if (HIMC imc = ImmGetContext(hwnd)) {
+            const float s = target_.Dpi() / 96.f;
+            COMPOSITIONFORM cf{};
+            cf.dwStyle = CFS_POINT;
+            cf.ptCurrentPos = {static_cast<LONG>(x * s), static_cast<LONG>(y * s)};
+            ImmSetCompositionWindow(imc, &cf);
+            CANDIDATEFORM cand{};
+            cand.dwIndex = 0;
+            cand.dwStyle = CFS_EXCLUDE;
+            cand.ptCurrentPos = {static_cast<LONG>(x * s), static_cast<LONG>((y + h) * s)};
+            cand.rcArea = {static_cast<LONG>(x * s), static_cast<LONG>(y * s), static_cast<LONG>((x + w) * s), static_cast<LONG>((y + h) * s)};
+            ImmSetCandidateWindow(imc, &cand);
+            ImmReleaseContext(hwnd, imc);
+        }
+    }
     void Quit() override { quit_ = true; }
     // クライアント領域の上のマウス (DIP。Draw に渡される大きさ)。このウィンドウが手前にあるときだけ。
     std::optional<Vec2> Pointer() const override {
@@ -145,7 +213,7 @@ public:
     }
 
     // --- Window -----------------------------------------------------------------------------------
-    LRESULT OnMessage(HWND, UINT msg, WPARAM wp, LPARAM lp, bool& handled) override {
+    LRESULT OnMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, bool& handled) override {
         switch (msg) {
             case WM_SIZE:
                 if (target_.Context()) {
@@ -165,6 +233,48 @@ public:
                 return 0;
             case WM_LBUTTONUP:
                 ++presses_.up;
+                return 0;
+            // ゲームの入力欄 (打っている間だけ集める。そうでないときは何もしない: Windows のまま)。
+            case WM_KEYDOWN:
+                if (textWanted_) {
+                    if (const ui::Key k = EditKey(wp); k != ui::Key::None) {
+                        const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0, shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                        typed_.keys.push_back({k, ctrl, shift, false});
+                    }
+                }
+                return 0;
+            case WM_CHAR:
+                if (textWanted_) {
+                    const wchar_t ch = static_cast<wchar_t>(wp);
+                    if (ch >= 0x20 && ch != 0x7F) typed_.chars.push_back(ch);
+                    handled = true;  // (Esc などの音を鳴らさない)
+                }
+                return 0;
+            case WM_IME_SETCONTEXT:
+                // 変換中の文字はゲームが欄の中に描く (Windows の窓は出さない)。
+                handled = true;
+                return DefWindowProcW(hwnd, msg, wp, lp & ~static_cast<LPARAM>(ISC_SHOWUICOMPOSITIONWINDOW));
+            case WM_IME_COMPOSITION:
+                if (HIMC imc = ImmGetContext(hwnd)) {
+                    if (lp & GCS_RESULTSTR) typed_.imeResult += ReadIme(imc, GCS_RESULTSTR);
+                    if (lp & GCS_COMPSTR) {
+                        typed_.imeComposition = ReadIme(imc, GCS_COMPSTR);
+                        typed_.imeCursor = (lp & GCS_CURSORPOS) ? LOWORD(ImmGetCompositionStringW(imc, GCS_CURSORPOS, nullptr, 0))
+                                                                : static_cast<int>(typed_.imeComposition.size());
+                    } else if (lp & GCS_RESULTSTR) {
+                        typed_.imeComposition.clear();
+                    }
+                    ImmReleaseContext(hwnd, imc);
+                }
+                handled = true;  // (WM_IME_CHAR / WM_CHAR と重ならないように先へ渡さない)
+                return 0;
+            case WM_IME_ENDCOMPOSITION:
+                typed_.imeComposition.clear();
+                typed_.imeCursor = 0;
+                handled = true;
+                return 0;
+            case WM_IME_CHAR:
+                handled = true;
                 return 0;
             case WM_CLOSE:
                 quit_ = true;
@@ -266,6 +376,8 @@ private:
     Game::Display display_;
     bool quit_ = false;
     PointerPresses presses_;  // 前のフレームから今までの左ボタン (TakePointerPresses)
+    ui::TypedText typed_;     // 前のフレームから今までに打たれた文字 (TakeTyped。打っている間だけ)
+    bool textWanted_ = false; // ゲームが入力欄に打っている (SetTextInput): IME をつないでいる
     bool started_ = false;   // ウィンドウがあって、ゲームが動いている
     bool drawing_ = false;   // DrawFrame の中 (その中では WM_SIZE は描き直さない)
     bool toldDraw_ = false;  // EndDraw の失敗を知らせた (1 回だけ)

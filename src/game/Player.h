@@ -18,6 +18,7 @@
 #include "base/Math.h"
 #include "core/RuntimeRegistry.h"
 #include "platform/Gfx.h"
+#include "ui/Types.h"
 
 #include <d2d1_1.h>
 
@@ -69,6 +70,14 @@ public:
         int down = 0, up = 0;
     };
     virtual PointerPresses TakePointerPresses() { return {}; }
+    // 前に呼んでから打たれた文字・キー・IME (SetTextInput で打っていると言われている間だけ集める)。
+    // 呼ぶと空に戻る (変換中の文字は残る)。
+    virtual ui::TypedText TakeTyped() { return {}; }
+    // ゲームが文字を打っている (入力欄): IME をつなぎ、候補の窓を (x, y, w, h) (DIP: Draw の大きさ) の
+    // 下に出す。false: IME を切る (ゲームのキーが IME に食べられない)。
+    virtual void SetTextInput(bool want, float x, float y, float w, float h) {
+        (void)want, (void)x, (void)y, (void)w, (void)h;
+    }
     // ゲームが終わりを求める: このフレームのあとにウィンドウが閉じる (× を押したときと同じ)。
     virtual void Quit() {}
 };
