@@ -14,6 +14,7 @@ plugins/
     lang/en.json               画面の文字の英語
     themes/*.json              テーマ (テーマパック)
     templates/<id>/template.json   新しいプロジェクトのテンプレート (Hub の新規作成の木)
+    licenses/*.txt                 ランタイムが使う外のコードのライセンスの文章 (ファイル名 = ソフトの名前。書き出したゲームの LICENSES.txt に入る)
     help/*.md  help/en/*.md        ヘルプのページ (日本語と英語。フォルダーの入れ子 = 機能 → 細かい仕様。docs/HOW_TO_TRY.md の「ヘルプ」)
 ```
 

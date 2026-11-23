@@ -61,6 +61,15 @@ std::optional<std::string> IcoFromPng(std::string_view png);
 // 入れる (IcoFromPng)。それ以外は nullopt。
 std::optional<std::string> IconFile(std::string_view bytes);
 
+// ゲームが使う外のソフトの、ライセンスの文章 1 つ (ゲームキットの licenses/*.txt)。
+struct LicenseNotice {
+    std::string name;  // ソフトの名前 (ファイル名から: "Jolt Physics")
+    std::string text;  // 文章そのまま
+};
+// 書き出したゲームの横に置く LICENSES.txt の中身: ゲームの名前と、使っているソフトの文章を順に。
+// 同じ名前は 1 回だけ (先のもの)。`notices` が空なら空 (ファイルを作らない)。
+std::string LicensesText(std::string_view titleUtf8, const std::vector<LicenseNotice>& notices);
+
 // 書き出しの番号 (exe と .rmpak が持つ): .rmpak に入るものから作るので、同じゲームを
 // もう一度書き出すと同じ番号 (つまり同じファイル) になる。0 にはならない。
 uint64_t BuildNumber(const std::vector<std::pair<std::string, std::string>>& entries);

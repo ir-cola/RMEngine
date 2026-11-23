@@ -213,10 +213,11 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 ### アイコンを 1 枚にまとめる (スプライト / アトラス)
 - **何か** — 小さな絵をたくさん、1 枚の大きな画像のマスに並べて持つ (ゲームでいう「スプライトシート」「テクスチャアトラス」)。描くときは、その 1 枚の中の四角だけを切り出して描く。画像を 1 つしか読まないので、GPU に置く物も 1 つで済む
 - **作り方** — `tools/make_icon_atlas.ps1`。PowerShell から .NET の `System.Drawing` (GDI+) を使い、`resources/icons/source/*.png` を 1 マス 128 px に縮めて並べる (高品質の bicubic で縮め、マスの縁に 4 px の透明な余白: 小さく描くときに隣の絵がにじまない)。画素を `LockBits` でまとめて読み、色の付いた絵 (彩度の高い画素が多い物) を見分けて目次 (`icons.json`) に書く
-- **描き方** — Direct2D の `DrawBitmap` の「元の四角」(source rectangle) でマスを切り出す。白 1 色の絵は、ロゴと同じカラーマトリックスの効果で**テーマの色に塗る** (`DrawImage` の「画像の四角」で切り出す)。だからテーマを変えても絵を描き直さなくてよい。色付きの絵 (警告・エラー) はそのまま
+- **描き方** — 読み込むとき、1 枚の画像を `CopyFromBitmap` で**1 マスずつ別のビットマップに写す** (四角は画素で数えるので、画面の DPI に関係ない)。描くときはその 1 枚を丸ごと描く。白 1 色の絵は、ロゴと同じカラーマトリックスの効果で**テーマの色に塗る**。だからテーマを変えても絵を描き直さなくてよい。色付きの絵 (警告・エラー) はそのまま
+- **つまずいた所 (DPI と効果の座標)** — 初めは 1 枚のまま `DrawBitmap` の「元の四角」と `DrawImage` の「画像の四角」で切り出していた。DPI を書かずに作ったビットマップは画面の DPI を持つので、元の四角は DIP (125 % の画面では 1 画素 = 0.8 DIP) で渡す必要があった。さらに効果 (エフェクト) を通すと、画像の四角の単位がまた違い、125 % の画面で白 1 色の絵だけ隣の絵のかけらが出た。1 マスずつに分けて「切り出さない」ことで、単位の違いをなくした。それでも色を塗り替える道の絵は 125 % の画面で 0.8 倍に縮み、左上に寄った: 効果は画素で動き、出力の 1 画素は画面の DPI で DIP に直されるのに、大きさをビットマップ自身の DPI で測っていた。今は効果の出力の大きさを `GetImageLocalBounds` (この画面での DIP) で測って合わせる (2026-11-24)
 - **埋め込み** — 画像と目次は、ロゴと同じく exe のリソース (`RCDATA`) に入れる (`resources/app.rc`)。ファイルを置き忘れても絵が消えない
 - **どの印にどの絵** — `src/editor/widgets/IconAtlas.cpp` の表 1 か所。データの型の項目は `RM_PROPERTY(Icon="...")` (rmgen が表に書き、インスペクターが名前の前に描く)
-- **どこ** — `tools/make_icon_atlas.ps1`・`resources/icons/`・`src/editor/widgets/IconAtlas.*`・`src/editor/widgets/Widgets.cpp` (`DrawIcon`)・`src/ui/Painter.cpp` (`Image` / `ImageTinted` の `src`)
+- **どこ** — `tools/make_icon_atlas.ps1`・`resources/icons/`・`src/editor/widgets/IconAtlas.*`・`src/editor/widgets/Widgets.cpp` (`DrawIcon`・`SplitPictures`)・`src/ui/Painter.cpp` (`Image` / `ImageTinted`)
 
 ### 季節の絵 (図形を重ねて 1 つの影にする・決まった乱数)
 - **何か** — 季節のテーマの絵 (桜の木・太陽・浜辺・砂の城・椛・雪の結晶・降る雪・つらら・積もった雪など) を、画像ではなく線と曲線のパスで描く
@@ -1038,10 +1039,19 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **Web のリンク** — `ShellExecuteW("open")` でいつものブラウザーに渡す。`http://` と `https://` で始まるものだけ (ファイルやプログラムは開かない。`platform::OpenWebPage`)
 - **どこ** — `src/editor/help/` (HelpDoc・HelpTree・HelpLibrary・HelpBooks・HelpView・HelpWindow)・`src/editor/widgets/DocView.*`・`src/ui/Painter.*` (RichText)・`resources/help/`・`plugins/<作者>/<名前>/help/`
 
+### 外のソフトのライセンスの文章を書き出しに入れる
+- **何か** — ゲームに入る外のコード (物理の Jolt Physics、音の stb_vorbis) は MIT ライセンス。MIT は「著作権の表示とこの許可の文章を、ソフトのすべての写しに入れる」ことを条件に、自由に使い・配ってよいと決めている。書き出したゲームはその写しなので、文章を一緒に配る
+- **しくみ** — プラグインの `licenses/*.txt` に文章を置く (ファイル名 = ソフトの名前)。エンジンのビルドがゲームの部品 (GameKit) を作るとき、`tools/make_gamekit.ps1` がそれを `GameKit/lib/<作者>/<名前>/licenses/` に写し、`kit.json` のそのプラグインの `licenses` に並べる。書き出しは、ゲームに入れるプラグインの分だけを集めて、出力先の `LICENSES.txt` にまとめる。使わないプラグインの文章は入らない (2D のゲームに Jolt の文章は出ない)
+- **stb_vorbis** — MIT と パブリックドメイン の好きな方を選べる。文章は両方そのまま入れる
+- **どこ** — `plugins/rm_engine/physics/licenses/`・`plugins/rm_engine/audio/licenses/`・`tools/make_gamekit.ps1`・`src/editor/export/ExportPlan.cpp` (`LicensesText`。テスト `Export_Licenses`)・`Exporter.cpp`・`tools/check_export.ps1` (書き出したフォルダに文章があるか)
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-24 | 外のソフトのライセンスの文章を書き出しに入れる (MIT の「すべての写しに入れる」) を足した |
+| 2026-11-24 | 1 枚にまとめたアイコン: 効果の出力の大きさを GetImageLocalBounds で測る (125 % の画面で左上に寄った) |
+| 2026-11-23 | アイコンを 1 枚にまとめる に「1 マスずつのビットマップに写す (CopyFromBitmap)」と「DPI と効果の座標でつまずいた所」を足した |
 | 2026-11-23 | 場所ごとの状態をマス目の地図で持つ (カメラについてくる地図・端を延ばす・Load で自分で線形補間・面の塗りの口に絵を足す) を足した |
 | 2026-11-22 | 範囲をなめらかに重ねる (気候エリアの深さ・smoothstep・優先度で重ねる・気温減率) を足した |
 | 2026-11-22 | アイコンを 1 枚にまとめる (スプライト / アトラス・System.Drawing・DrawBitmap の元の四角) を足した |

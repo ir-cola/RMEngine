@@ -406,6 +406,7 @@
   "C++ のランタイムを写せませんでした: {}\n{}": "Could not copy the C++ runtime: {}\n{}",
   "★ Visual Studio の C++ ランタイム (Redist) が見つからないので、横に置いていません": "★ Visual Studio's C++ runtime (Redist) was not found, so it is not placed next to the game",
   "C++ のランタイム: {} 個": "C++ runtime: {} files",
+  "ライセンスの文章: LICENSES.txt ({})": "License texts: LICENSES.txt ({})",
   "★ exe の中にこの PC のパスが残っています: {}": "★ The exe still holds a path of this PC: {}",
   "書き出しました: {}": "Exported: {}",
   "書き出せるソフトがありません (ゲーム制作のプラグインが要ります)": "No software can export (the Game Production plugin is needed)",
