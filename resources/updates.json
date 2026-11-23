@@ -9,6 +9,10 @@
         {
           "ja": "天候 × 気候: 濡れと積もった雪を場所ごとに持つ (Play の間、カメラのまわり 128 m 四方を 2 m のマスで)。雪の所だけ積もり、雨の所だけ濡れ、雨の所の雪は溶ける。気候エリアの境目では、積もった雪がなめらかに薄れる",
           "en": "Weather × Climate: wetness and lying snow are now kept per place (in Play, on a 2 m grid within 128 m around the camera). Snow piles up only where it snows, only rainy places get wet, and rain melts the snow. Across a climate zone border the lying snow thins out smoothly"
+        },
+        {
+          "ja": "天候: 雪は Play の始めから「積もる高さ」いっぱいに積もっている (「はじめから積もっている」。切ると前と同じく少しずつ)。足場の端と丸い物の上では薄くなって丸く終わり、物の根元は雪に埋まる",
+          "en": "Weather: snow is already lying at the full Snow depth when Play starts (\"Already lying at the start\"; turn it off to build up gradually as before). It thins and ends in a rounded edge at ledges and on round objects, and the base of objects is buried"
         }
       ]
     },

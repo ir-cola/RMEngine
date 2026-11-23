@@ -569,6 +569,7 @@ RM_TEST(Weather_WetMapRun) {
     w.precipitation = 50;
     w.windStrength = 0;
     w.placeSnow = 0.5f;
+    w.snowFromStart = false;  // (降るにつれて積もる。はじめから積もっている: Weather_SnowFromStart)
     const WeatherPlaceInfo info{&FakeGrid};
     PlaceCellsFor(w, scene, {3.f, 7.f, 1.f}, info);
     CHECK(w.placeCells.size() == size_t{kWetMapCells} * kWetMapCells && w.placeFirstX == 1 - kWetMapCells / 2 && w.placeFirstZ == -kWetMapCells / 2);
@@ -595,6 +596,59 @@ RM_TEST(Weather_WetMapRun) {
     game_production::SystemContext first{scene, 0.f};
     RunWeather(first);
     CHECK(WetMapNow(w) != nullptr && WetMapMostSnow(w.wetMap) == 0.f && WetCellAt(w.wetMap, -20, 0)->at(0).sun == 0.f);
+}
+
+// はじめから積もっている (既定): Play の最初のフレームで、雪の降る所に積もる高さいっぱいの雪。
+// シーン全体でも、場所ごとでも (雨の所には置かない)。雪が降っていなければ置かない。
+RM_TEST(Weather_SnowFromStart) {
+    CHECK(Weather{}.snowFromStart);
+    // シーン全体: 雪にする で降っている。
+    {
+        game_production::Scene scene;
+        scene.SetSettingTypes({&reflect::TypeOf<Weather>()});
+        Weather& w = *scene.Setting<Weather>();
+        w.precipitation = 50;
+        w.snowing = true;
+        w.windStrength = 0;
+        w.snowDepthCm = 20;
+        game_production::SystemContext first{scene, 0.f};
+        RunWeather(first);
+        CHECK(w.wetWays.size() == 1 && Near(SnowCoverNow(w), 0.2f));
+        game_production::SystemContext later{scene, 60.f};
+        RunWeather(later);
+        CHECK(Near(SnowCoverNow(w), 0.2f));  // (積もる高さを超えない)
+        // 雨のときは置かない。
+        w.wetCounted = false;
+        w.snowing = false;
+        RunWeather(first);
+        CHECK(SnowCoverNow(w) == 0.f);
+    }
+    // 場所ごと: 雪の所 (x >= 0) だけ。
+    {
+        game_production::Scene scene;
+        scene.SetSettingTypes({&reflect::TypeOf<Weather>()});
+        Weather& w = *scene.Setting<Weather>();
+        w.precipitation = 50;
+        w.windStrength = 0;
+        w.placeSnow = 0.5f;
+        w.snowDepthCm = 30;
+        PlaceCellsFor(w, scene, {3.f, 7.f, 1.f}, WeatherPlaceInfo{&FakeGrid});
+        game_production::SystemContext first{scene, 0.f};
+        RunWeather(first);
+        CHECK(WetMapNow(w) != nullptr && Near(WetCellAt(w.wetMap, 20, 0)->at(0).snow, 0.3f) && WetCellAt(w.wetMap, -20, 0)->at(0).snow == 0.f);
+        CHECK(!w.snowStartPending);
+    }
+    // 純粋な部分: 雪が降っていなければ何もしない。向きがいっぱいなら置かない。
+    std::vector<WetWay> ways;
+    WeatherNow fair;
+    StartSnow(ways, fair, 0.1f);
+    CHECK(ways.empty());
+    WeatherNow snowy;
+    snowy.snow = 0.5f;
+    StartSnow(ways, snowy, 0.1f);
+    CHECK(ways.size() == 1 && Near(ways[0].snow, 0.1f));
+    StartSnow(ways, snowy, 0.f);
+    CHECK(ways.size() == 1 && Near(ways[0].snow, 0.1f));  // (高さ 0: 何もしない)
 }
 
 // シェーダーは描くときと同じやり方でコンパイルする: 雨粒と雪片 (3D 空間の 向きの地図 を使う) と、

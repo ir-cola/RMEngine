@@ -446,6 +446,35 @@ float EdgeReach(float2 xz, float2 dir, float level, float ledge, float most, boo
     return most;
 }
 
+// 足場の端 (下の面が 45 度より急に落ちる所・下に何もない所) が、(x, z) から -x / +x / -z / +z の向きに
+// どれだけ離れているか (x y z w。見つからなければ `reach`)。雪の格子と同じ間隔で読む。上る段 (壁) は端ではない。
+float4 DropDistances(float2 xz, float ground, float reach, float pace) {
+    int m = (int)layerInfo.x;
+    float4 dist = reach;
+    int steps = (int)ceil(reach / pace);
+    const float2 dirs[4] = {float2(-1, 0), float2(1, 0), float2(0, -1), float2(0, 1)};
+    [unroll] for (int k = 0; k < 4; ++k) {
+        [loop] for (int s = 1; s <= steps; ++s) {
+            float along = s * pace;
+            float2 at = xz + dirs[k] * along;
+            float past = MapPastAt(m, mul(mapViewProj[m], float4(at.x, layerInfo.y, at.y, 1)));
+            if (past < -1e29 || layerInfo.y + past < ground - (0.06 + along)) {
+                dist[k] = min(dist[k], along - 0.5 * pace);
+                break;
+            }
+        }
+    }
+    return dist;
+}
+// 端から `dist` の所に、雪がどれだけ残るか (0 .. 1): 端で 0、`reach` で 1 の四分円 (枕のように丸い縁)。
+float Pillow(float dist, float reach) {
+    float t = saturate(dist / reach);
+    return sqrt(saturate(1 - (1 - t) * (1 - t)));
+}
+// 隣の角から見た端までの距離 (真ん中の角が読んだもの `d` から、`by` だけ動いた所)。見つからなかった
+// 向き (`reach`) は、隣でも見つからないとみなす。
+float Shifted(float d, float by, float reach) { return d >= reach - 1e-4 ? reach : clamp(d + by, 0, reach); }
+
 struct SnowOut {
     float4 pos : SV_Position;
     float3 nrm : NORMAL;
@@ -465,11 +494,34 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
     SnowCorner c = CornerAt(xz, fade);
     SnowCorner l = CornerAt(xz - float2(pace, 0), fade), r = CornerAt(xz + float2(pace, 0), fade);
     SnowCorner d = CornerAt(xz - float2(0, pace), fade), u = CornerAt(xz + float2(0, pace), fade);
+    // 足場の端に向かって雪は薄くなり、枕のように丸く終わる (2026-11-24): 端までの距離を 4 つの向きで探し、
+    // 雪の深さの 3 倍の幅で減らす。急な斜面 (球の肩) も端になるので、丸い物の上の雪は山の形になる。
+    if (!c.none && c.depth > 0) {
+        float reach = clamp(c.depth * 3, 0.15, 1.5);
+        float4 e = DropDistances(xz, c.ground, reach, pace);
+        c.top = c.ground + (c.top - c.ground) * Pillow(min(min(e.x, e.y), min(e.z, e.w)), reach);
+        l.top = l.ground + (l.top - l.ground) * Pillow(min(min(Shifted(e.x, -pace, reach), Shifted(e.y, pace, reach)), min(e.z, e.w)), reach);
+        r.top = r.ground + (r.top - r.ground) * Pillow(min(min(Shifted(e.x, pace, reach), Shifted(e.y, -pace, reach)), min(e.z, e.w)), reach);
+        d.top = d.ground + (d.top - d.ground) * Pillow(min(min(e.x, e.y), min(Shifted(e.z, -pace, reach), Shifted(e.w, pace, reach))), reach);
+        u.top = u.ground + (u.top - u.ground) * Pillow(min(min(e.x, e.y), min(Shifted(e.z, pace, reach), Shifted(e.w, -pace, reach))), reach);
+    }
     float ledge = 0.12 + pace;  // (約 45 度より急な段)
     bool foot = (!l.none && l.ground - c.ground > ledge) || (!r.none && r.ground - c.ground > ledge) ||
                 (!d.none && d.ground - c.ground > ledge) || (!u.none && u.ground - c.ground > ledge);
     bool rim = l.none || r.none || d.none || u.none || c.ground - l.ground > ledge || c.ground - r.ground > ledge ||
                c.ground - d.ground > ledge || c.ground - u.ground > ledge;
+    // 斜めの隣も見る: 格子の三角形は斜めの辺も持つ。丸い物の縁では、上下左右は物の上なのに斜めだけが
+    // 地面という角があり、それを段と見ないと、地面から物の肩へ立ち上がる三角すいの雪ができた (2026-11-24)。
+    {
+        int m = (int)layerInfo.x;
+        [unroll] for (int k = 0; k < 4; ++k) {
+            float2 at = xz + float2(k % 2 == 0 ? -pace : pace, k < 2 ? -pace : pace);
+            float past = MapPastAt(m, mul(mapViewProj[m], float4(at.x, layerInfo.y, at.y, 1)));
+            float g = layerInfo.y + past;
+            if (past < -1e29 || c.ground - g > ledge) rim = true;
+            else if (g - c.ground > ledge) foot = true;
+        }
+    }
     // 下の面の傾きと雪の傾き (段の向こうの隣は、これと同じ高さとみなす)。
     float gl = l.none || abs(l.ground - c.ground) > ledge ? c.ground : l.ground, gr = r.none || abs(r.ground - c.ground) > ledge ? c.ground : r.ground;
     float gd = d.none || abs(d.ground - c.ground) > ledge ? c.ground : d.ground, gu = u.none || abs(u.ground - c.ground) > ledge ? c.ground : u.ground;
@@ -504,8 +556,16 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
         float2 inward = float2((!l.none && l.ground - c.ground > ledge ? -1 : 0) + (!r.none && r.ground - c.ground > ledge ? 1 : 0),
                                (!d.none && d.ground - c.ground > ledge ? -1 : 0) + (!u.none && u.ground - c.ground > ledge ? 1 : 0));
         if (dot(inward, inward) > 0.5) {
-            float t = EdgeReach(xz, normalize(inward), c.ground + ledge, ledge, pace * length(inward), false);
-            at += normalize(inward) * max(t - 0.02, 0);
+            float2 into = normalize(inward);
+            float t = EdgeReach(xz, into, c.ground + ledge, ledge, pace * length(inward), false);
+            // 物の下 (球の下のくぼみ) にも、雪の深さの 4 倍 (多くて 60 cm) まで雪の面を入れる: 根元が雪に
+            // 埋まって見える (2026-11-24)。物の中なら隠れる。薄い壁を突き抜けて向こうの地面に出るときは入れない。
+            float skirt = min(c.depth * 4, 0.6);
+            float2 end = at + into * (max(t - 0.02, 0) + skirt);
+            int m = (int)layerInfo.x;
+            float past = MapPastAt(m, mul(mapViewProj[m], float4(end.x, layerInfo.y, end.y, 1)));
+            if (past < -1e29 || layerInfo.y + past <= c.ground + ledge) skirt = 0;
+            at += into * (max(t - 0.02, 0) + skirt);
         }
     }
     o.edge = float2(foot ? 1 : 0, rim ? 1 : 0);

@@ -85,10 +85,29 @@ public:
             falls_.push_back(p);
         }
         wet_ = WetNow(*w);
-        if (wet_.size() > kWetWays) wet_.resize(kWetWays);
         // 場所ごとの濡れと積雪の地図 (答える者がいる Play の間): 絵にして、面と積もった雪がその場所の値を読む。
         // (無い: 向きの濡れと積雪がどこでも同じ - シーン全体で 1 つ)
         const WetMap* map = WetMapNow(*w);
+        // エディター (Play の前と止めた後): はじめから積もっている雪を、Play の最初のフレームと同じように
+        // 見せる (場所ごとのときは、原点のまわりの地図で)。
+        if (!w->wetCounted && w->snowFromStart) {
+            previewWays_.clear();
+            previewMap_ = {};
+            if (place_) {
+                int firstX = 0, firstZ = 0;
+                WetMapFirst({0, 0, 0}, firstX, firstZ);
+                const Vec3 center{static_cast<float>(firstX + kWetMapCells / 2) * kWetMapCell, 0, static_cast<float>(firstZ + kWetMapCells / 2) * kWetMapCell};
+                previewPlaces_.assign(size_t{kWetMapCells} * kWetMapCells, WeatherPlace{});
+                place_(f.scene, center, kWetMapCell, kWetMapCells, previewPlaces_.data());
+                MoveWetMap(previewMap_, previewWays_, firstX, firstZ);
+                StartSnowMap(previewMap_, previewWays_, previewPlaces_, now, PrecipitationNow(*w), SnowMostOf(*w));
+                if (!previewWays_.empty()) map = &previewMap_;
+            } else {
+                StartSnow(previewWays_, now, SnowMostOf(*w));
+            }
+            wet_ = previewWays_;
+        }
+        if (wet_.size() > kWetWays) wet_.resize(kWetWays);
         mapInfo_ = map && !wet_.empty() && UploadWetMap(f.gfx, *map) ? WetMapInfoOf(*map) : WetMapInfo{};
         wetMaps_.clear();
         for (const WetWay& way : wet_) {
@@ -472,6 +491,10 @@ private:
     std::vector<WetWay> wet_;
     // 場所ごとの降り方に答える者 (null: いない) と、このフレームのシーン (DrawFall が格子を聞く)。
     void (*place_)(const game_production::Scene&, Vec3, float, int, WeatherPlace*) = nullptr;
+    // エディターで見せる、はじめから積もっている雪 (PrepareFrame が毎フレーム作る)。
+    std::vector<WetWay> previewWays_;
+    WetMap previewMap_;
+    std::vector<WeatherPlace> previewPlaces_;
     const game_production::Scene* scene_ = nullptr;
     std::vector<int> wetMaps_;
     // 場所ごとの濡れと積雪の地図 (このフレーム。cells が 0: 使わない) とその絵。

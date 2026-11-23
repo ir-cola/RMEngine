@@ -102,7 +102,8 @@ struct Weather {
     RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲ひとつ無い晴れ 〜 40: 雲の多い晴れ 〜 70: くもり 〜 100: 空一面の厚い雲 (暗くなり、日の光も弱まります)。雨や雪が降ると、少なくても雲が出ます (雲は空が「地球の空」のとき)", Min=0, Max=100, Step=0.1, Decimals=1) float cloudAmount = 20.f;
     RM_PROPERTY(Edit, Label="降水量", Tooltip="雨 (雪にするときは雪) の降る量。0: 降らない / 〜10: ぽつぽつ / 〜30: 小雨 / 〜60: 雨 / 〜85: どしゃぶり / 100: 嵐 (雪: 〜20 ちらつく / 〜50 雪 / 〜80 大雪 / 100 吹雪)。増えるほど雲が暗くなり、強い雨・雪では霧も出ます", Min=0, Max=100, Step=0.1, Decimals=1) float precipitation = 0.f;
     RM_PROPERTY(Edit, Label="雪にする", Tooltip="入れると、雨がだんだん小雨になってから雪に変わり、雪が強まって降水量に戻ります。外すと逆に、雪が弱まってから雨に (Play 中は 5 秒ほど。エディターではすぐその見た目)。雨と雪が一緒に降ることはありません。プラグイン「気候」があるとき (つなぎ「天候 × 気候」) は使わず、場所の気温で決まります") bool snowing = false;
-    RM_PROPERTY(Edit, Label="積もる高さ (cm)", Tooltip="雪がこの高さまで積もります (cm、整数。最大 1000)。Play 中は降っている間に少しずつ、降る量が多いほど速く (降水量 100 で 1 分に 2.5 cm ほど)。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)", Min=0, Max=1000, Step=1, Decimals=0, ShowIf="snowing") float snowDepthCm = 10.f;
+    RM_PROPERTY(Edit, Label="積もる高さ (cm)", Tooltip="雪がこの高さまで積もります (cm、整数。最大 1000)。Play 中は降っている間に少しずつ、降る量が多いほど速く (降水量 100 で 1 分に 2.5 cm ほど)。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)", Min=0, Max=1000, Step=1, Decimals=0) float snowDepthCm = 10.f;
+    RM_PROPERTY(Edit, Label="はじめから積もっている", Tooltip="入れると、雪の降る所には、Play の始めから「積もる高さ」いっぱいに雪が積もっています (エディターのシーンビューでも見えます)。外すと、雪の無い地面から、降るにつれて積もります") bool snowFromStart = true;
     RM_PROPERTY(Edit, Label="霧の量", Tooltip="0: 無し 〜 50: 20 m ほど先がかすむ 〜 100: 数 m 先しか見えない。色は天気で変わります (晴れ・くもり: 白っぽい / 雨: 暗い灰色 / 雪: 白)。強い雨・雪では、これに加えて霧が出ます", Min=0, Max=100, Step=0.1, Decimals=1) float fogAmount = 0.f;
     RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中。雲の多いとき)") bool lightning = false;
     RM_PROPERTY(Edit, Label="風の向き (度)", Tooltip="風の吹いていく向き (真上から見て)。0: 前 (+Z) へ / 90: 左 (-X) へ / -90: 右 (+X) へ。雲・雨粒・雪が流されます", Min=-360, Max=360) float windDirection = 0.f;
@@ -119,6 +120,9 @@ struct Weather {
     // 数えていない (Play 前と止めた後のエディター) ときは、濡れも積雪も無い (2026-11-22: 前は降った後の見た目)。
     RM_TRANSIENT() std::vector<WetWay> wetWays;
     RM_TRANSIENT() bool wetCounted = false;
+    // はじめから積もっている: 数え始めたフレームで、まだ雪を置いていない (場所ごとのときは、答える者の
+    // マスが届いたフレームで置く)。
+    RM_TRANSIENT() bool snowStartPending = false;
     // 場所の降り方 (WeatherPlace.h): 答える者 (つなぎ 天候 × 気候) が Play の間、カメラのいる所について
     // 毎フレーム書く - 降るもののうち雪の割合 (0 .. 1) と、降水量の倍率。placeSnow < 0: 書く者がいない
     // (雪にする で決める)。
@@ -208,6 +212,9 @@ float SnowFallRate(const WeatherNow& now);
 // 絵が見せる雪の深さ、すべての向きまとめて: ゲームが数えたとおり (Play)、またはエディターでは
 // 雪が降っている間は積もる高さいっぱいで。
 float SnowCoverNow(const Weather& w);
+// はじめから積もっている雪 (Weather::snowFromStart。Play の最初のフレームと、エディターの見た目)。
+// シーン全体: 雪が降っていれば、雪の降る向きの積雪を `most` (積もる高さ) に (向きが無ければ足す)。
+void StartSnow(std::vector<WetWay>& ways, const WeatherNow& now, float most);
 
 // 場所ごとの濡れと積雪の地図 (WetMap)。
 // `eye` のまわりの地図の最初のマス (ワールドのマス番号)。
@@ -225,6 +232,10 @@ void MoveWetMap(WetMap& map, std::span<const WetWay> ways, int firstX, int first
 // (スクリプトの rm::Sky::Wetness など)。
 void StepWetMap(WetMap& map, std::vector<WetWay>& ways, std::span<const WeatherPlace> places, const WeatherNow& now, float precipitation, float dt,
                 float snowMost, Vec3 eye);
+// はじめから積もっている雪の、場所ごと: 各マスに、その場所で降るもののうち雪の割合のぶん `most` に
+// (雨の所・降らない所: なし。境目では割合のとおり薄い)。`map` は MoveWetMap で作ってあること。
+void StartSnowMap(WetMap& map, std::vector<WetWay>& ways, std::span<const WeatherPlace> places, const WeatherNow& now, float precipitation,
+                  float most);
 // ワールドの (x, z) のマス (地図の外: 一番近いマス。地図が空: null)。
 const WetCell* WetCellAt(const WetMap& map, float x, float z);
 // 地図の中で一番深い積雪 (全部の向きを足したもの、m)。
