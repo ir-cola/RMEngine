@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.10",
+      "date": "2026-11-24",
+      "items": [
+        {
+          "ja": "ゲーム UI に入力欄・スライダー・トグル・スクロールを足しました (日本語の入力もできます。追加 ▸ UI から作れます)",
+          "en": "Added input fields, sliders, toggles and scroll views to the game UI (Japanese input works too; create them from Add ▸ UI)"
+        }
+      ]
+    },
+    {
       "version": "0.0.9",
       "date": "2026-11-24",
       "items": [
