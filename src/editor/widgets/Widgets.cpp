@@ -14,6 +14,7 @@
 #include <charconv>
 #include <cmath>
 #include <format>
+#include <map>
 #include <unordered_map>
 
 namespace rm::editor::w {
@@ -133,14 +134,36 @@ void DrawBar(ui::Context& c, const Rect& r, Color base) {
 namespace {
 
 // 1 枚にまとめた絵 (IconAtlas.h)。どのウィンドウも同じ GPU のデバイスなので、絵は 1 つでよい。
+// 描くときは 1 マスずつ別のビットマップに写したものを使う: 色を塗り替える道 (ColorMatrix のエフェクト) で
+// 1 枚の一部を切り出すと、その四角の単位が画面の DPI で変わり、125 % / 150% の画面で隣の絵が出た (2026-11-23)。
 struct Icons {
     platform::Gfx* gfx = nullptr;
     std::optional<IconAtlas> atlas;
     bool atlasRead = false;
-    Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
-    uint64_t madeIn = 0;  // bitmap を作った Gfx::Generation (0: まだ)
+    std::map<std::string, Microsoft::WRL::ComPtr<ID2D1Bitmap>, std::less<>> pictures;  // 絵の名前 -> その 1 マス
+    uint64_t madeIn = 0;  // pictures を作った Gfx::Generation (0: まだ)
     std::set<std::string, std::less<>> missing;  // 1 枚の画像に無かった絵 (ログは 1 回だけ)
 };
+
+// 1 枚の画像を 1 マスずつのビットマップに分ける (画素で写す: DPI に関係ない)。
+void SplitPictures(Icons& s, ID2D1DeviceContext* dc) {
+    s.pictures.clear();
+    const Microsoft::WRL::ComPtr<ID2D1Bitmap> sheet = platform::LoadBitmapFromMemory(*s.gfx, dc, platform::ResourceBytes(IDR_ICONS));
+    if (!sheet || !dc) return;
+    const UINT side = static_cast<UINT>(s.atlas->cell);
+    const D2D1_SIZE_U all = sheet->GetPixelSize();
+    float dpiX = 96, dpiY = 96;
+    sheet->GetDpi(&dpiX, &dpiY);
+    const D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(sheet->GetPixelFormat(), dpiX, dpiY);
+    for (const auto& [name, cell] : s.atlas->cells) {
+        const UINT x = static_cast<UINT>(cell.x), y = static_cast<UINT>(cell.y);
+        if (side == 0 || x + side > all.width || y + side > all.height) continue;
+        Microsoft::WRL::ComPtr<ID2D1Bitmap> one;
+        if (FAILED(dc->CreateBitmap(D2D1::SizeU(side, side), nullptr, 0, props, &one))) continue;
+        const D2D1_RECT_U from{x, y, x + side, y + side};
+        if (SUCCEEDED(one->CopyFromBitmap(nullptr, sheet.Get(), &from))) s.pictures.emplace(name, std::move(one));
+    }
+}
 Icons& IconStore() {
     static Icons s;
     return s;
@@ -166,18 +189,18 @@ bool DrawPicture(ui::Context& c, const Rect& r, Icon icon, Color color, float si
     if (!s.atlas) return false;
     if (s.madeIn != s.gfx->Generation()) {  // (初めて、または GPU を作り直した: 読めなくても毎フレームは読み直さない)
         s.madeIn = s.gfx->Generation();
-        s.bitmap = platform::LoadBitmapFromMemory(*s.gfx, c.P().DC(), platform::ResourceBytes(IDR_ICONS));
+        SplitPictures(s, c.P().DC());
     }
     const IconCell* cell = s.atlas->Find(name);
     if (!cell && s.missing.emplace(name).second) log::Error("アイコンの絵「{}」が 1 枚の画像にありません (tools/make_icon_atlas.ps1)", name);
-    if (!s.bitmap || !cell) return false;
+    const auto picture = s.pictures.find(name);
+    if (!cell || picture == s.pictures.end()) return false;
     const float side = size > 0 ? size : std::min(std::round(std::min(r.w, r.h) * 0.8f), 16.f);
     const Rect dst{std::round(r.x + (r.w - side) * 0.5f), std::round(r.y + (r.h - side) * 0.5f), side, side};
-    const Rect src{cell->x, cell->y, s.atlas->cell, s.atlas->cell};
     if (cell->color) {
-        c.P().Image(s.bitmap.Get(), dst, color.a, &src);
+        c.P().Image(picture->second.Get(), dst, color.a);
     } else {
-        c.P().ImageTinted(s.bitmap.Get(), dst, color, &src);
+        c.P().ImageTinted(picture->second.Get(), dst, color);
     }
     return true;
 }
