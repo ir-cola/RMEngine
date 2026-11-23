@@ -118,6 +118,7 @@ public:
         // (動画 はここでは再生しない - ゲームのビューが再生する、音は 1 つ - 最初の絵だけ。虹色 は
         // 回る: あるあいだは毎フレーム描き直す)
         renderer_.SetPlaying(false);
+        renderer_.SetShowClipped(true);  // (スクロールの枠の外の物も薄く: 並べるため)
         renderer_.Draw(dc, host.host.Graphics(), tree_, toDc, [&host](const AssetRef& ref) { return host.host.AssetContent(ref); });
         if (UiRenderer::Animates(tree_)) c.RequestAnimation();
         const std::optional<Rect> strip = Strip(r);

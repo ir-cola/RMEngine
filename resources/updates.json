@@ -3,7 +3,7 @@
   "format": 1,
   "updates": [
     {
-      "version": "0.0.10",
+      "version": "0.0.11",
       "date": "2026-11-24",
       "items": [
         {
@@ -17,6 +17,16 @@
         {
           "ja": "気候のタブ: シーンを真上から見た地図に、ペンで気候 (気温と湿り気) を塗れるように。同じタブで天候も変えられる",
           "en": "Climate tab: paint climates (temperature and humidity) with a pen on a map of the scene seen from straight above, and change the weather in the same tab"
+        }
+      ]
+    },
+    {
+      "version": "0.0.10",
+      "date": "2026-11-24",
+      "items": [
+        {
+          "ja": "ゲーム UI に入力欄・スライダー・トグル・スクロールを足しました (日本語の入力もできます。追加 ▸ UI から作れます)",
+          "en": "Added input fields, sliders, toggles and scroll views to the game UI (Japanese input works too; create them from Add ▸ UI)"
         }
       ]
     },

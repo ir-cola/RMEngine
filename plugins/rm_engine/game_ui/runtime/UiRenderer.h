@@ -10,6 +10,11 @@
 //   文字  DirectWrite: 名前で指定する Windows のフォント、またはゲームのフォントファイル (アセット:
 //         .ttf / .otf、メモリから専用のフォントコレクションに読む)。その影、縁取り (まわりに描く)、本体
 //
+// 入力の部品: 入力欄 (同じエンティティの文字の見た目で、打った文字・案内・選んだ所・IME の変換中の下線・
+// 点滅するカーソル。はみ出す文字はカーソルが見えるようにずらす)、スライダー (溝・中身・丸いつまみ)、
+// トグル (チェックの箱 / スイッチ)、スクロール (中の物を枠で切り取り、その上にスクロールバー)。
+// 場所の計算はどれも UiControls.h (描いた所が触れる所)。
+//
 // ボタンは自分のエンティティの絵とバーを塗り (今の見た目: ButtonNow - 掛け合わせ、カラー
 // マトリックスで置き換える色へ寄せる)、状態で絵を差し替え (ButtonImage)、箱のまわりに縁取りを描き
 // (ButtonOutline)、子と一緒にそれらを拡大縮小する (レイアウトで)。
@@ -56,6 +61,8 @@ public:
     static bool Animates(const UiTree& tree);
     // 画像のファイルのピクセルでの大きさ (0, 0: まだ読んでいない / 絵ではない)。
     Vec2 ImageSize(const AssetRef& ref) const;
+    // スクロールの枠の外にはみ出した物も薄く描く (UI タブ: 並べるときに見えるように)。
+    void SetShowClipped(bool on) { showClipped_ = on; }
 
 private:
     struct Picture {
@@ -92,6 +99,15 @@ private:
     ID2D1Effect* Effect(Microsoft::WRL::ComPtr<ID2D1Effect>& slot, const CLSID& id);
     void DrawText(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset);
     void DrawFocus(const UiNode& n, const Affine& full);
+    void DrawNode(const UiNode& n, const Affine& toDc, platform::Gfx& gfx, const AssetReader& asset);
+    void DrawInput(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset);
+    void DrawSlider(const UiNode& n, const Affine& full, const UiPaint& paint);
+    void DrawToggle(const UiNode& n, const Affine& full, const UiPaint& paint);
+    void DrawScrollBars(const UiNode& n, const Affine& full);
+    // そのノードを切り取るスクロールの枠 (上の全部) で切り取る / 戻す (軸に沿った切り取り: 回した枠は
+    // それを囲む四角。数を返す)。
+    int PushClips(const UiTree& tree, int clip, const Affine& toDc);
+    void PopClips(int count);
 
     ID2D1DeviceContext* dc_ = nullptr;
     ID2D1DeviceContext* owner_ = nullptr;  // brush_ と tint_ を作ったコンテキスト
@@ -102,6 +118,7 @@ private:
     // 専用のものを使う (リストを描くまでここに保つ)。
     bool fresh_ = false;
     bool playing_ = false;
+    bool showClipped_ = false;
     double time_ = 0;  // seconds (虹色)
     struct Video {
         std::unique_ptr<VideoPlayer> player;

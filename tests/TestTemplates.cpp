@@ -341,7 +341,8 @@ RM_TEST(Template_ThePlugins) {
                                      &reflect::TypeOf<physics::Collider>(), &reflect::TypeOf<physics::Collider2D>(), &reflect::TypeOf<game_x_audio::AudioSource>(),
                                      &reflect::TypeOf<game_x_2d::Spin2D>(), &reflect::TypeOf<game_ui::UiCanvas>(), &reflect::TypeOf<game_ui::UiRect>(),
                                      &reflect::TypeOf<game_ui::UiText>(), &reflect::TypeOf<game_ui::UiImage>(), &reflect::TypeOf<game_ui::UiButton>(),
-                                     &reflect::TypeOf<game_ui::UiBar>()});
+                                     &reflect::TypeOf<game_ui::UiBar>(), &reflect::TypeOf<game_ui::UiStyle>(), &reflect::TypeOf<game_ui::UiInputField>(),
+                                     &reflect::TypeOf<game_ui::UiToggle>(), &reflect::TypeOf<game_ui::UiSlider>(), &reflect::TypeOf<game_ui::UiScroll>()});
             // 新しい形: シーンは自分のファイルに (テンプレートの Assets/ をプロジェクトへコピー)。
             // リストには .meta の id で名前をつける。
             CHECK(!data.Find("scene"));

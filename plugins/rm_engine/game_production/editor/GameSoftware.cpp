@@ -1282,7 +1282,16 @@ private:
         pf.actions = &world.Actions();  // (プレイヤーのキー割り当て)
         pf.hooks = &asked;
         pf.world = &world;
+        // ゲーム UI の入力欄に打った文字 (ゲームビューが集めた: TypeIntoGame)。サービスが「打っている」と
+        // 言えば、ゲームビューがこのウィンドウの IME をつなぐ。
+        pf.typed = &typed_;
+        TextInputAsk textAsk;
+        pf.textInput = &textAsk;
         services_.Frame(pf);
+        textAsk_ = textAsk;
+        typed_.chars.clear();
+        typed_.keys.clear();
+        typed_.imeResult.clear();
         lap(times.services);
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, asked);
         lap(times.hooks);
@@ -1354,6 +1363,8 @@ private:
 
     void StopPlay() {
         if (!Running()) return;
+        textAsk_ = {};  // (ゲーム UI の入力欄: 打つのは終わり。フォーカスは次に描くとき離す)
+        typed_ = {};
         log::Info("■ 停止 ({:.2f} 秒・{} コマ)。シーンは Play の前に戻りました", runner_.Time(), runner_.Frames());
         const auto kept = TakeKept();  // (見せていたとおりに: スクリプトの EndPlay の前)
         scripts_.Runner().Stop(*playScene_, scripts_.World(), scripts_.Module(), settings_.scriptOrder);  // EndPlay
@@ -1684,7 +1695,34 @@ private:
             pointer_ = Vec2{(in.mouseX - game.x) / game.w * screen.x, (in.mouseY - game.y) / game.h * screen.y};
         }
         DrawScreen(c, game, screen);
+        TypeIntoGame(c, game, screen);
         if (play_ == PlayState::Playing) c.RequestAnimation();
+    }
+
+    // ゲーム UI の入力欄に打っている間 (サービスがそう言った: textAsk_): このウィンドウのキー・文字・IME を
+    // ゲームへ渡す。エディターの欄と同じフォーカスを取るので、その間はエディターのショートカットが効かない。
+    // 候補の窓はその欄の下に。
+    void TypeIntoGame(ui::Context& c, const Rect& game, Vec2 screen) {
+        const ui::Id id = c.MakeId("game_typing");
+        if (play_ != PlayState::Playing || !textAsk_.want || game.w < 1 || game.h < 1) {
+            if (gameTyping_ && c.Focused() == id) c.ClearFocus();
+            gameTyping_ = false;
+            return;
+        }
+        if (!gameTyping_) {
+            c.FocusText(id, L"", false);  // (打ち始めた: 欄を押した人はここに打ちたい)
+            gameTyping_ = true;
+        }
+        if (c.Focused() != id) return;  // (エディターのほかの欄に移った: ゲームには何も届かない)
+        c.MarkFocusAlive();
+        const float kx = game.w / screen.x, ky = game.h / screen.y;
+        c.SetTextInput({game.x + textAsk_.x * kx, game.y + textAsk_.y * ky, textAsk_.w * kx, textAsk_.h * ky});
+        const ui::Input& in = c.In();
+        typed_.chars += in.chars;
+        typed_.keys.insert(typed_.keys.end(), in.keys.begin(), in.keys.end());
+        typed_.imeResult += in.imeResult;
+        typed_.imeComposition = in.imeComposition;
+        typed_.imeCursor = in.imeCursor;
     }
 
     // ゲームの画面 (ゲーム設定の 画面 のとおり、DIP)。
@@ -3365,6 +3403,9 @@ private:
     std::optional<Vec2> sceneMouse_;
     std::optional<Vec2> pointer_;       // ... ゲーム画面の上 (ゲーム設定の 画面 の DIP)。nullopt: その上にない
     bool pointerWentDown_ = false, pointerWentUp_ = false;  // このフレームの左ボタンの押下 (PlayFrame)
+    ui::TypedText typed_;     // ゲームビューが集めた、ゲーム UI の入力欄に打った文字 (次の PlayFrame)
+    TextInputAsk textAsk_;    // 前のフレームでサービスが言った: 入力欄に打っている
+    bool gameTyping_ = false; // その間、このパネルがウィンドウのキーのフォーカスを持っている
     std::vector<std::unique_ptr<ScreenDrawer>> screenDrawers_;  // ゲームビューの上 (ゲーム UI)
     std::map<std::string, std::unique_ptr<SceneView>> viewPanels_;  // プラグインのパネル (ViewPanelInfo)、id ごと
     bool screensAsked_ = false;

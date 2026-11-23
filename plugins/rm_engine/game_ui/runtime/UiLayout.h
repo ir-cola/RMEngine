@@ -103,8 +103,17 @@ struct UiNode {
     const UiBar* bar = nullptr;
     const UiStyle* style = nullptr;  // 見た目 (UI-5)
     const UiVideo* video = nullptr;  // 動画 (UI-5)
+    const UiInputField* input = nullptr;  // 入力の部品
+    const UiToggle* toggle = nullptr;
+    const UiSlider* slider = nullptr;
+    const UiScroll* scroll = nullptr;
     float alpha = 1;       // 薄くなった割合 (自分の UiLive と親の): 描くものにかかる
     bool closing = false;  // オフになって消えていく (消えるとき)、またはそうなっているものの下: 描くがクリックはされない
+    // 子が並ぶ単位 -> 画面 DIP: ふつうは self。スクロールは self を動かした分だけずらしたもの (中身が動く)。
+    Affine inner;
+    int clip = -1;    // 一番近い上のスクロールのノード (その枠の外は描かず、触れない)。-1: なし
+    int end = 0;      // このノードとその下の全部のノードの次の番号 (nodes[自分 .. end) がこの下)
+    UiBox content;    // スクロール: 子の箱を合わせたもの (自分の box と同じ単位。動かす前)。子が無ければ box
 };
 
 // 表示されているもの全部を奥から手前へ: キャンバスは 手前の順 (次に 階層の順)、各キャンバスの中は
@@ -129,8 +138,14 @@ UiTree OnlyCanvas(const UiTree& tree, int canvas);
 // --- マウスとキー --------------------------------------------------------------------------
 // 点 (画面 DIP) がノードの箱の上にある (回転込み)。
 bool Hits(const UiNode& n, Vec2 screenPoint);
-// `p` の下にある、マウスを受けるいちばん手前のものの エンティティ (画像・バー・ボタン。テキストは
-// 受けない: ラベルがボタンを隠すことはない)。0: なし。
+// 点がそのノードを切り取るスクロールの枠 (上の全部) の中にある (外にはみ出した物は見えないので触れない)。
+bool InsideClips(const UiTree& tree, const UiNode& n, Vec2 screenPoint);
+// 点の下の一番内側のスクロールのノード (tree.nodes の番号。-1: なし)。
+int ScrollAt(const UiTree& tree, Vec2 screenPoint);
+// ノード `item` の箱を、スクロールのノード `scroll` の中身の単位 (動かす前) にした箱 (回したものは囲む箱)。
+UiBox BoxInScroll(const UiTree& tree, int scroll, const UiNode& item);
+// `p` の下にある、マウスを受けるいちばん手前のものの エンティティ (画像・バー・ボタン・背景・スクロール。
+// テキストは受けない: ラベルがボタンを隠すことはない。スクロールの枠の外にはみ出した物は受けない)。0: なし。
 int TopAt(const UiTree& tree, Vec2 p);
 // `entity` 自身か、それを持つ (一番近い) ボタン。0: なし。
 int ButtonOf(const UiTree& tree, int entity);

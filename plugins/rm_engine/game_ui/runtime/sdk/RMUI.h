@@ -10,9 +10,20 @@
 //   rm::UI::MoveTo(panel, {0, 40}, 0.3f);              // 位置 をそこへ 0.3 秒かけて (rm::UI::Ease::Out)
 //   rm::UI::ScaleTo(icon, 1.2f, 0.2f, rm::UI::Ease::Back); rm::UI::RotateTo(arrow, 90, 0.5f); rm::UI::FadeTo(hint, 0, 1);
 //   rm::UI::PlayPath(bird); rm::UI::StopPath(bird);    // その 道に沿って動く
+//   rm::UI::Text(nameField);  rm::UI::SetText(nameField, "");   // 入力欄の入っている文字
+//   rm::UI::Value(volume);  rm::UI::SetValue(volume, 0.8f);     // スライダーの値
+//   rm::UI::IsOn(sound);  rm::UI::SetOn(sound, false);          // トグル
+//   rm::UI::StartTyping(nameField);  rm::UI::Typing();          // 入力欄に打たせる / 打っている欄
+//   rm::UI::SetScroll(list, {0, 1});                            // スクロールを一番下へ (0..1)
 //
 // ボタンは自分のエンティティのスクリプトを呼ぶ:
 //   void OnClick(rm::Entity self);   // マウスで押された、または選ばれたボタンへの 決定 (キー / パッド)
+// 入力の部品は、値が変わると自分のエンティティのスクリプトの OnEvent を呼ぶ (RM.h のイベント):
+//   void OnEvent(rm::Entity self, const rm::Event& e) {
+//       if (e.Is(rm::UI::kChanged)) volume = e.number;          // スライダーの値・トグルの 1 / 0・入力欄は e.text
+//       if (e.Is(rm::UI::kSubmitted)) Send(std::string(e.text)); // 入力欄で Enter
+//   }
+// 入力欄に打っている間は、ゲームのキー (移動など) を止めるとよい: if (rm::UI::Typing()) return;
 //
 // 1 つのものを表示・非表示にするには、そのエンティティを切り替える: rm::Entity::SetActive (RM.h)。
 // その UI の部分のないエンティティ: セッターは何もせず、ゲッターは "" / -1 を返す。
@@ -104,6 +115,46 @@ inline void RotateTo(Entity e, float degrees, float seconds, Ease ease = Ease::O
 // 0: 見えない .. 1: そのまま (子も一緒に薄くなる)。
 inline void FadeTo(Entity e, float alpha, float seconds, Ease ease = Ease::Out) {
     if (const RmUiApi* u = detail::Get()) u->fadeTo(Api()->ctx, e.id, alpha, seconds, static_cast<int>(ease));
+}
+// --- 入力の部品 (入力欄・スライダー・トグル・スクロール) ---
+// OnEvent に届くイベントの名前。
+inline constexpr const char* kChanged = "UIChanged";      // 値が変わった (e.number: 値 / 1 0、e.text: 入力欄の文字)
+inline constexpr const char* kSubmitted = "UISubmitted";  // 入力欄で Enter (e.text: 入っている文字)
+// スライダーの値、トグルは 1 / 0 (どちらも無ければ 0)。
+inline float Value(Entity e) {
+    const RmUiApi* u = detail::Get();
+    float v = 0;
+    if (u) u->getValue(Api()->ctx, e.id, &v);
+    return v;
+}
+// スライダー (刻みに合わせる) / トグル (0 以外でオン)。OnEvent は呼ばない。
+inline void SetValue(Entity e, float value) {
+    if (const RmUiApi* u = detail::Get()) u->setValue(Api()->ctx, e.id, value);
+}
+inline bool IsOn(Entity toggle) { return Value(toggle) != 0; }
+inline void SetOn(Entity toggle, bool on) { SetValue(toggle, on ? 1.0f : 0.0f); }
+// 文字を打っている入力欄 (無効: どこにも打っていない)。
+inline Entity Typing() {
+    const RmUiApi* u = detail::Get();
+    return Entity(u ? u->typing(Api()->ctx) : 0);
+}
+// その入力欄に打ち始める (カーソルは最後) / 打つのをやめる。
+inline bool StartTyping(Entity field) {
+    const RmUiApi* u = detail::Get();
+    return u && u->startTyping(Api()->ctx, field.id) != 0;
+}
+inline void StopTyping() {
+    if (const RmUiApi* u = detail::Get()) u->startTyping(Api()->ctx, 0);
+}
+// スクロールの位置 0..1 (x 横、y 縦: 0 が始め / 1 が終わり)。
+inline Vec2 Scroll(Entity e) {
+    const RmUiApi* u = detail::Get();
+    float v[2] = {0, 0};
+    if (u) u->getScroll(Api()->ctx, e.id, v);
+    return {v[0], v[1]};
+}
+inline void SetScroll(Entity e, Vec2 at) {
+    if (const RmUiApi* u = detail::Get()) u->setScroll(Api()->ctx, e.id, at.x, at.y);
 }
 // その 道に沿って動く: 今の所から続ける / 止める / 最初から。
 inline void PlayPath(Entity e) {

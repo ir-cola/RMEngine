@@ -1069,6 +1069,12 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **作り直す** — ゲームの中で Prefab から作った物は、同じ Prefab を置き直し、その中の物は Prefab のファイルの中の id で探して当てる (入れ子の Prefab の一番上は外のファイルの id)。部品の中の参照 (`EntityRef`) は、前の id → 新しい id の表で付け替える (`reflect::MapEntityRefs`)
 - **フレームの切れ目で入れ替える** — スクリプトが ReadWorld を呼んだフレームの途中でシーンを入れ替えると、動いているスクリプトの物を壊してしまう。シーンの切り替え (`Game::LoadScene`) と同じく、フレームの後で読み直して当てる
 - **どこ** — `plugins/rm_engine/game_production/runtime/WorldSave.*`・`Globals.*` (`WriteSave` の `world`・`ReadSaveDoc`)・`Scripts.cpp` (`RmSaveApi2`・`SwitchAskedScene`)・`runtime/Register.cpp`・`sdk/RmAbi.h` / `RM.h`・`tests/TestWorldSave.cpp`・設計 `docs/SAVE.md`
+### ゲームの入力欄 (書き出したゲームの IME・DirectWrite の当たり・軸に沿った切り取り。2026-11-24)
+
+- **何か** — ゲームの画面の中に作る文字の入力欄。Windows の IME (IMM32) を書き出したゲームのウィンドウにもつなぎ、DirectWrite の `IDWriteTextLayout::HitTestTextPosition` / `HitTestTextRange` でカーソルと選んだ所の場所を測り、Direct2D の `PushAxisAlignedClip` で欄やスクロールの枠の外を切り取る
+- **何に使っているか** — ゲーム UI の部品「入力欄」(名前の入力など)。打つ間だけ `ImmAssociateContextEx` で IME をつなぎ (ふだんは切る: ゲームのキーが IME に取られない)、`WM_IME_SETCONTEXT` で Windows の変換中の窓を消して、変換中の文字を欄の中に下線つきで自分で描く。候補の窓は `ImmSetCandidateWindow` で欄の下に。エディターの Play では、ゲームビューがエディターの欄と同じフォーカス (`ui::Context::FocusText`) を取って同じ IME を使う。値が変わったことは、スクリプトの ABI を変えずに既にあるイベント (`OnEvent`) で届ける
+- **なぜそれか** — 文字の編集 (カーソル・選択・サロゲートペア) はエディターの `ui::TextEdit` をそのまま使い (ゲームに入る層 `ui` にある)、IME のつなぎ方もエディターの `ScreenWindow` と同じ形にした (2 通りの作り方を持たない)。カーソルの位置は自分でフォントの幅を足すと日本語や合字でずれるので、描いた DirectWrite に聞く。切り取りはレイヤー (`PushLayer`) でもできるが、軸に沿った切り取りは軽く、効果 (影・ぼかし) の描き先の切り替えとも一緒に使える (回したスクロールは囲む四角で切る)
+- **どこ** — `src/game/Player.cpp` (`TakeTyped` / `SetTextInput`)、`plugins/rm_engine/game_production/editor/GameSoftware.cpp` (`TypeIntoGame`)、`plugins/rm_engine/game_ui/runtime/UiControls.*` (純粋な計算)・`UiService.cpp`・`UiRenderer.cpp` (`DrawInput` / `PushClips`)
 
 ## 追記の記録
 
@@ -1077,6 +1083,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 | 2026-11-24 | 積もった雪の縁を丸く (四分円の形・端までの距離を 4 向きで探す・隣の角は同じ探した結果から) を足した |
 | 2026-11-24 | 地図に塗った気候 (ランレングス・積分画像 summed-area table・表の使い回し・真上からの正射影・ドラッグ 1 回を Undo 1 件に) を足した |
 | 2026-11-24 | 世界のセーブ: リフレクションのまま部品の値を保存・使い回さない id で「ゲームの中で作った物」を見分ける・フレームの切れ目で当てる |
+| 2026-11-24 | ゲームの入力欄 (書き出したゲームの IME・DirectWrite の HitTestTextPosition / HitTestTextRange・PushAxisAlignedClip で切り取る) を足した |
 | 2026-11-24 | 外のソフトのライセンスの文章を書き出しに入れる (MIT の「すべての写しに入れる」) を足した |
 | 2026-11-24 | 1 枚にまとめたアイコン: 効果の出力の大きさを GetImageLocalBounds で測る (125 % の画面で左上に寄った) |
 | 2026-11-23 | アイコンを 1 枚にまとめる に「1 マスずつのビットマップに写す (CopyFromBitmap)」と「DPI と効果の座標でつまずいた所」を足した |
