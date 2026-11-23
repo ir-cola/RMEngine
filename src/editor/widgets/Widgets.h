@@ -167,6 +167,18 @@ void LineGraph(ui::Context& c, const ui::Rect& r, std::span<const float> a, std:
 
 // --- 線とヒント ------------------------------------------------------------------------------
 void Separator(ui::Context& c, float x, float y, float width);
+// 色見本 (インスペクターの色の欄、気候の種類の行): `color` (ユーザーのデータの色) の角の丸い四角と縁。
+void DrawSwatch(ui::Context& c, const ui::Rect& r, ui::Color color);
+
+// --- 地図 (真上から見た絵の上に描くもの: 気候のタブ) ----------------------------------------
+// 塗った所 (同じ色のマスの並び 1 つ): `color` (ユーザーのデータの色) を、下の絵が透けるように。
+void DrawMapPaint(ui::Context& c, const ui::Rect& r, ui::Color color);
+// マス目の線: `area` の中に、(x0, y0) を通って `step` DIP ごと。薄く。
+void DrawMapGrid(ui::Context& c, const ui::Rect& area, float x0, float y0, float step);
+// 地図の上の線 (気候エリアの縁など)。
+void DrawMapLine(ui::Context& c, float x1, float y1, float x2, float y2, ui::Color color);
+// 塗る筆の輪 (真ん中と半径 DIP)。`erase`: 消しゴム (危険の色)。
+void DrawMapBrush(ui::Context& c, float cx, float cy, float radius, bool erase);
 // マウスの横のヒント。フレームの最後に (何よりも上に) 描く。
 void Tooltip(ui::Context& c, std::wstring_view text);
 

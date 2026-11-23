@@ -1628,6 +1628,13 @@ private:
             EditTouching(std::move(touched), std::move(label), [&] { select = change(scene_); });
             if (!select.empty()) host_.SelectInTree(std::vector<tree::ItemId>(select.begin(), select.end()));
         };
+        h.setting = [this](const std::string& type) -> std::function<reflect::EditTarget()> {
+            return [this, type] {
+                Component* s = scene_.FindSetting(type);
+                return s && s->Known() ? reflect::EditTarget{s->value.Get(), &s->unknowns} : reflect::EditTarget{};
+            };
+        };
+        h.space = CurrentSpace();
         return h;
     }
 

@@ -325,9 +325,7 @@ void DrawValue(Pass& x, const Spot& s) {
             Rect area = s.r;
             if (isColor) {
                 const Rect swatch = ui::TakeLeft(area, 26);
-                const Color col{values[0], values[1], values[2], values[3]};
-                p.FillRoundRect(swatch.Inset(0, 1, 4, 1), 4, col);
-                p.StrokeRoundRect(swatch.Inset(0, 1, 4, 1), 4, theme::Border);
+                w::DrawSwatch(c, swatch.Inset(0, 1, 4, 1), Color{values[0], values[1], values[2], values[3]});
             }
             const float each = (area.w - 4.f * static_cast<float>(n - 1)) / static_cast<float>(n);
             static const char* kIds[] = {"x", "y", "z", "w"};
