@@ -229,6 +229,8 @@ inline Color SceneColliderInactive() { return Mix(SceneCollider(), SceneBackgrou
 // シーンの上に描くエリアの枠 (気候エリアなど): 縁と、境目の内側の縁 (薄く)。
 inline Color SceneArea() { return IsLight ? Color::Hex(0x2B6FD6) : Color::Hex(0x7DB8FF); }
 inline Color SceneAreaInner() { return Mix(SceneArea(), SceneBackground(), 0.55f); }
+// 真上から見た地図 (気候のタブ) に塗った所の濃さ (色はユーザーのもの: 下の絵が透けるように)。
+inline float MapPaintAlpha() { return IsLight ? 0.50f : 0.45f; }
 
 // --- ソフトが動いている (Play 中のゲーム): そのタブの行をアクセント色で染める -----------------
 inline Color RunningBar() { return Mix(Bg, Accent, IsLight ? 0.22f : 0.28f); }

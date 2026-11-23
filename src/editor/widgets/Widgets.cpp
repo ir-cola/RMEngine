@@ -767,6 +767,36 @@ ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view idStr, const
 
 void Separator(ui::Context& c, float x, float y, float width) { c.P().FillRect({x, y, width, 1}, theme::Border); }
 
+void DrawSwatch(ui::Context& c, const Rect& r, ui::Color color) {
+    c.P().FillRoundRect(r, 4, color);
+    c.P().StrokeRoundRect(r, 4, theme::Border);
+}
+
+void DrawMapPaint(ui::Context& c, const Rect& r, ui::Color color) {
+    if (r.w <= 0 || r.h <= 0) return;
+    c.P().FillRect(r, color.Alpha(theme::MapPaintAlpha()));
+}
+
+void DrawMapGrid(ui::Context& c, const Rect& area, float x0, float y0, float step) {
+    if (!(step >= 2.f) || area.w <= 0 || area.h <= 0) return;
+    const ui::Color col = theme::SceneGrid();
+    for (float x = x0 + std::ceil((area.x - x0) / step) * step; x <= area.Right(); x += step) c.P().Line(x, area.y, x, area.Bottom(), col);
+    for (float y = y0 + std::ceil((area.y - y0) / step) * step; y <= area.Bottom(); y += step) c.P().Line(area.x, y, area.Right(), y, col);
+}
+
+void DrawMapLine(ui::Context& c, float x1, float y1, float x2, float y2, ui::Color color) { c.P().Line(x1, y1, x2, y2, color, 1.5f); }
+
+void DrawMapBrush(ui::Context& c, float cx, float cy, float radius, bool erase) {
+    const ui::Color col = erase ? theme::Danger : theme::Accent;
+    const float r = std::max(radius, 2.f);
+    constexpr int kSegments = 48;
+    for (int i = 0; i < kSegments; ++i) {
+        const float a0 = 6.2831853f * static_cast<float>(i) / kSegments, a1 = 6.2831853f * static_cast<float>(i + 1) / kSegments;
+        c.P().Line(cx + std::cos(a0) * r, cy + std::sin(a0) * r, cx + std::cos(a1) * r, cy + std::sin(a1) * r, col, 1.5f);
+    }
+    c.P().FillCircle(cx, cy, 1.5f, col);
+}
+
 void Tooltip(ui::Context& c, std::wstring_view text) {
     const std::wstring tip(text);
     c.AddOverlay([&c, tip] {

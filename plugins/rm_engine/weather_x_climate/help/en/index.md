@@ -14,3 +14,4 @@ A connector that comes in by itself when both "Weather" and "Climate" are instal
 1. In a 3D scene, set the weather's precipitation to about 60 (the scene is 15 °C: rain)
 2. Add a "Climate zone" to an empty entity: box, size 40, border width 10, temperature -5 °C
 3. Set the Shapes switch to "all" to see the outline and move the camera into the zone: snow starts mixing in around the faint line, and in the middle only snow falls
+4. Painting part of the map with "Cold" on the Climate tab works the same way: only the painted area gets snow (Climate → the Climate tab). Switch the tab to "Weather" to change the precipitation and so on right there

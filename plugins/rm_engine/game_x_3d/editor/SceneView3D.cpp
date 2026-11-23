@@ -214,6 +214,10 @@ public:
         ForgetUnusedModels();
         // 他のスレッドで読み込み中のモデル (と画像) が届くまで描き直す。
         if (loader_.Pending() > 0 || textures_.Waiting(now_) > 0) c.RequestAnimation();
+        if (host.overhead) {  // 真上から見た地図 (気候のタブ): 絵だけ。入力は持ち主のもの
+            DrawOverhead(c, r, host);
+            return;
+        }
         if (host.game) {  // ゲームビュー: 絵だけを、ゲームのカメラ越しに
             DrawGame(c, r, host);
             return;
@@ -915,7 +919,8 @@ private:
         // シーンの 空 は何よりも後ろ (シーンビュー自身のカメラ: 空 がオンのとき)。それに従う光も
         // 同じ - シーンビューでもゲームでも同じになる。
         frameLights_ = lights_;
-        const game_x_3d::Sky* sky = host.scene.Setting<game_x_3d::Sky>();
+        // (真上から見た地図: 空とそれに従う光・天候の粒は描かない)
+        const game_x_3d::Sky* sky = overhead_ ? nullptr : host.scene.Setting<game_x_3d::Sky>();
         const bool ownCamera = &pic == &main_ && !host.game;
         if (sky && sky->kind != game_x_3d::SkyKind::None) {
             skyLook_ = game_x_3d::LookOf(*sky, skySeconds_, game_x_3d::SkyWeatherOf(&host.host.Registry(), host.scene, skySeconds_));
@@ -936,13 +941,17 @@ private:
         }
         f.lights = frameLights_;
         // (空と一緒の 天候: シーンビュー自身のカメラは、空 がオンのとき見せる)
-        PrepareExtras(c, host, pic, f, sky && sky->kind != game_x_3d::SkyKind::None ? &skyLook_ : nullptr, !ownCamera || state_.sky);
+        if (overhead_) {
+            pic.extras.clear();
+        } else {
+            PrepareExtras(c, host, pic, f, sky && sky->kind != game_x_3d::SkyKind::None ? &skyLook_ : nullptr, !ownCamera || state_.sky);
+        }
         f.extras = pic.extras;
 
         // Direct2D のここまでの描画をまず GPU に送り、そのあと Direct3D が自分の絵に描く。
         dc->Flush();
         ID3D11Texture2D* picture = pic.renderer.Render(host.host.Graphics().D3DContext(), f);
-        if (game_production::ViewReportsWanted() && (host.game || &pic == &main_)) ReportDrawing(host, pic, f);
+        if (game_production::ViewReportsWanted() && !overhead_ && (host.game || &pic == &main_)) ReportDrawing(host, pic, f);
         if (!picture) return;
         if (picture != pic.texture || dc != pic.dc || !pic.bitmap) {
             pic.bitmap.Reset();
@@ -1068,6 +1077,35 @@ private:
         }
         Build(host, true);
         Show(c, Fit(r, host.aspect), host, main_, CameraFrame(*cam, host));
+    }
+
+    // --- 真上から見た地図 (SceneViewHost::overhead) -----------------------------------------
+    // 正射影でまっすぐ見下ろす。画面の右が +X、上が +Z (LookAt の上の向きを +Z に)。高さの範囲は
+    // 置いた物の上から下まで (深度と影の地図をむだに広げない)。
+    void DrawOverhead(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) {
+        const game_production::SceneViewHost::Overhead& o = *host.overhead;
+        const float halfW = std::isfinite(o.halfWidth) ? std::max(o.halfWidth, 0.01f) : 50.f;
+        const float halfH = halfW * r.h / std::max(r.w, 1.f);
+        float top = 1.f, bottom = -1.f;
+        for (const Placed& p : placed_) {
+            if (!p.active || p.marker) continue;
+            const space3d::Bounds b = space3d::WorldBounds(p.world, p.min, p.max);
+            if (!std::isfinite(b.min.y) || !std::isfinite(b.max.y)) continue;
+            top = std::max(top, b.max.y);
+            bottom = std::min(bottom, b.min.y);
+        }
+        const float eyeY = top + 10.f;
+        const Vec3 eye{o.center.x, eyeY, o.center.y};
+        Build(host, true);
+        space3d::RenderFrame f;
+        f.view = space3d::LookAt(eye, {eye.x, eye.y - 1.f, eye.z}, {0, 0, 1});
+        f.projection = space3d::Orthographic(-halfW, halfW, -halfH, halfH, 0.5f, eyeY - bottom + 10.f);
+        f.clear = theme::SceneBackground();
+        f.shadows = true;
+        f.shadowColor = theme::SceneShadow();
+        overhead_ = true;
+        Show(c, r, host, main_, f);
+        overhead_ = false;
     }
 
     // --- シーンビューのカメラとライト ---------------------------------------------------
@@ -1426,6 +1464,7 @@ private:
     double skySeconds_ = 0;       // 空の時間 (SkyLook): Play 中はゲームのもの
     game_x_3d::SkyLook skyLook_;  // 描いている絵のもの (天候の粒はこれで照らされる)
     bool looksMade_ = false;
+    bool overhead_ = false;  // 真上から見た地図を描いている最中 (Show が空と天候を描かない)
     std::optional<space3d::Ambient> ambient_;  // シーンの 環境光 (無ければ既定)
     size_t warnedShadows_ = 0;  // 影のマップが残っていないと知らせたライト
     std::vector<Placed> placed_;

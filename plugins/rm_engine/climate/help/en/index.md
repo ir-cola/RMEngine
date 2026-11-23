@@ -32,6 +32,20 @@ Add the component "**Climate zone**" (3D) or "**Climate zone 2D**" to an entity 
 - 3D zones affect 3D places only, 2D zones 2D places only
 - The scene view's "Shapes" switch (selected / all) shows each zone's **edge** (strong line) and the **inner edge of the border** (faint line). Inside the faint line the climate is the zone's own
 
+## The Climate tab: paint on a map (3D)
+
+The "**Climate**" tab, next to the Scene and Game tabs, shows the scene **seen from straight above** as a map, and you can **paint climates on it with a pen**. Where you paint gets that climate (no zones needed).
+
+- Switch with "**Climate**" / "**Weather**" at the top. "Fit" brings the whole scene into the map
+- The map: right is +X, up is +Z. **Left drag** paints, the **wheel** zooms, **right / middle drag** moves. One drag is one Ctrl+Z
+- On the right: "Pen" / "Eraser", the brush radius and the **cell size** (1 to 16 m. Smaller paints finer shapes. Changing it keeps what you painted in place)
+- **Climate types**: at first Temperate (15 °C, 50 %), Cold (-8 °C, 60 %), Desert (32 °C, 10 %) and Tropical (28 °C, 85 %). Pick one and paint. "+ Add" makes more, and the fields below change the name, color, temperature and humidity. "Delete" removes the type and what was painted with it. The color is only for the map and does not show in the game
+- **Map border width**: across the edge of what you painted, the climate changes smoothly over this width (default 8 m)
+- Unpainted places keep the scene setting "Climate" (the climate outside zones). **Climate zones go on top of the painted climate**
+- The edges of 3D climate zones are drawn on the map too
+- Switch to "**Weather**" to change the scene's weather (clouds, precipitation, fog, lightning, wind, templates) here (with the Weather plugin). Whether it rains or snows depends on the temperature there
+- The map is for 3D scenes only for now. 2D scenes use "Climate zone 2D"
+
 ## Scripts
 
 ```
