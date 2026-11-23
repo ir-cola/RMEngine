@@ -1036,10 +1036,19 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **stb_vorbis** — MIT と パブリックドメイン の好きな方を選べる。文章は両方そのまま入れる
 - **どこ** — `plugins/rm_engine/physics/licenses/`・`plugins/rm_engine/audio/licenses/`・`tools/make_gamekit.ps1`・`src/editor/export/ExportPlan.cpp` (`LicensesText`。テスト `Export_Licenses`)・`Exporter.cpp`・`tools/check_export.ps1` (書き出したフォルダに文章があるか)
 
+### 世界のセーブ (リフレクションで型を知らずに保存・使い回さない id で「後から作った物」を見分ける)
+- **何か** — ゲームのセーブに「物の位置と状態」を足した。部品「セーブする」を付けた物だけを、グローバル変数と同じ `save_<slot>.json` の `"world"` に書く。読むときはセーブしたシーンを読み直し、その上に当てる
+- **リフレクションで保存** — 部品の値は、シーンのファイルと同じ形 (`{"type": C++ の型の名前, "data": 欄の名前と値}`) で書く。書く・読むのは型の表 (`TypeDesc`) を辿る共通の関数 1 本ずつなので、Transform・スプライト・スクリプトの部品のどれにも型ごとのコードが無い。ゲーム制作は 3D / 2D を知らないので、「位置」は部品の種類の印 (`ComponentInfo::placement`。Prefab の置き場所にも使っている物) で選ぶ
+- **使い回さない id** — シーンは消した物の id を二度と使わない (次の id `nextId` を保存する)。だから「シーンを読んだときの次の id」(`base`) より大きい id はゲームの中で作った物、小さい id はシーンにあった物。セーブの後でゲームを直してシーンに足した物は、もっと大きい id になるので「ゲームの中で消した物」と取り違えない。保存形式に「作った物」の印を足さずに済んだ
+- **作り直す** — ゲームの中で Prefab から作った物は、同じ Prefab を置き直し、その中の物は Prefab のファイルの中の id で探して当てる (入れ子の Prefab の一番上は外のファイルの id)。部品の中の参照 (`EntityRef`) は、前の id → 新しい id の表で付け替える (`reflect::MapEntityRefs`)
+- **フレームの切れ目で入れ替える** — スクリプトが ReadWorld を呼んだフレームの途中でシーンを入れ替えると、動いているスクリプトの物を壊してしまう。シーンの切り替え (`Game::LoadScene`) と同じく、フレームの後で読み直して当てる
+- **どこ** — `plugins/rm_engine/game_production/runtime/WorldSave.*`・`Globals.*` (`WriteSave` の `world`・`ReadSaveDoc`)・`Scripts.cpp` (`RmSaveApi2`・`SwitchAskedScene`)・`runtime/Register.cpp`・`sdk/RmAbi.h` / `RM.h`・`tests/TestWorldSave.cpp`・設計 `docs/SAVE.md`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-24 | 世界のセーブ: リフレクションのまま部品の値を保存・使い回さない id で「ゲームの中で作った物」を見分ける・フレームの切れ目で当てる |
 | 2026-11-24 | 外のソフトのライセンスの文章を書き出しに入れる (MIT の「すべての写しに入れる」) を足した |
 | 2026-11-24 | 1 枚にまとめたアイコン: 効果の出力の大きさを GetImageLocalBounds で測る (125 % の画面で左上に寄った) |
 | 2026-11-23 | アイコンを 1 枚にまとめる に「1 マスずつのビットマップに写す (CopyFromBitmap)」と「DPI と効果の座標でつまずいた所」を足した |
