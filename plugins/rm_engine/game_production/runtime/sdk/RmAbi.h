@@ -386,6 +386,21 @@ typedef struct RmSaveApi {
     int (*remove)(void* ctx, const char* slot);
 } RmSaveApi;
 
+/* セーブ、版 2: 版 1 の 4 つと、世界 (部品「セーブする」を付けた物の位置・有効・部品の値) のセーブ。
+ * writeWorld: グローバル変数と今のシーンの世界をスロットに書く。readWorld: グローバル変数をすぐ読み、
+ * 世界はこのフレームの後で (セーブしたシーンを読み直し、その上に当てる。シーンの切り替えと同じ: スクリプト
+ * は EndPlay と BeginPlay を受ける)。hasWorld: そのスロットに世界がある。1 = できた、0 = できなかった。 */
+#define RM_PART_SAVE_VERSION2 2u
+typedef struct RmSaveApi2 {
+    int (*write)(void* ctx, const char* slot);
+    int (*read)(void* ctx, const char* slot);
+    int (*exists)(void* ctx, const char* slot);
+    int (*remove)(void* ctx, const char* slot);
+    int (*writeWorld)(void* ctx, const char* slot);
+    int (*readWorld)(void* ctx, const char* slot);
+    int (*hasWorld)(void* ctx, const char* slot);
+} RmSaveApi2;
+
 /* ゲームそのもの: "rm_engine.game_production.game"、1。quit: このフレームのあとでゲームが終わる
  * (書き出したゲームのウィンドウが閉じる。エディターの Play は ■ のように止まる)。 */
 #define RM_PART_GAME "rm_engine.game_production.game"

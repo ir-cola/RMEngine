@@ -140,6 +140,14 @@ struct ScriptWorld {
     // (空: rm::Save は何もしない)。
     GlobalStore globals;
     std::filesystem::path saveFolder;
+    // 世界のセーブ (rm::Save::WriteWorld / ReadWorld。WorldSave.h): Play しているシーンを読んだときの
+    // Scene::NextId (これ以上の id はゲームの中で作った物。0: 分からない)。ホストが Play / ゲームの始めに、
+    // SwitchAskedScene が切り替えのたびに決める。
+    int sceneBase = 0;
+    // ReadWorld が頼んだ世界と、そのシーン (world.sceneNames での位置)。SwitchAskedScene がシーンを
+    // 読み直した後で当てる (null: 頼まれていない)。
+    json::Value worldAsked;
+    int worldAskedScene = -1;
     // rm::Spawn(prefab): Prefab のファイル (ホストのもの: エディターは Assets、ゲームは .rmpak)。空:
     // Prefab を出しても何も出ない。
     PrefabReader prefab;
@@ -348,6 +356,8 @@ enum class SceneSwitch { None, Switched, Failed };
 // 位置) を渡されたシーン (部品の型は設定済み) に読み込む。そのあと `playing` の始まった全スクリプトの
 // EndPlay を呼び、`playing` を新しいシーンにする。そのスクリプトは次の Frame で BeginPlay を受ける。
 // None: 何も頼まれていない。失敗 (*error に理由): `playing` はそのまま続く。
+// rm::Save::ReadWorld が頼んだ世界 (world.worldAsked) は、読んだシーンに当ててから切り替える
+// (ApplyWorld。飛ばしたものはコンソールに)。world.sceneBase は読んだシーンの次の id になる。
 SceneSwitch SwitchAskedScene(Scene& playing, ScriptWorld& world, ScriptRunner& runner, const ScriptModule& module,
                              std::span<const ScriptOrderEntry> order, const std::function<bool(size_t index, Scene& into, std::string* error)>& load,
                              std::string* error);

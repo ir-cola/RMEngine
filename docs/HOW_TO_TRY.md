@@ -1460,6 +1460,29 @@ struct WeatherShow {
 
 **スクリプトから**: `Global::名前` (読む・`=`・`+=`・`-=`・`*=`・`/=`・`++`・`--`。文字は `+=`。`.Get()` で値)、`rm::GlobalVar<int>("名前")` (名前で)、`rm::Save::Write(1)` / `Read(1)` / `Exists(1)` / `Delete(1)` (`Write("auto")` のように名前でも。false はできなかった: 理由はコンソール)
 
+**世界のセーブ (物の位置と状態)** (2026-11-24。画面では**未確認**。テストは通っている。設計 [SAVE.md](SAVE.md))
+
+1. テンプレート「ゲーム」でプロジェクトを作る (見本のスクリプト `ArrowMover` が入っている)。階層で「Box」を作り (Transform 付き)、インスペクターの「部品を足す」で `ArrowMover` と「ゲーム」→「セーブする」を足す。「セーブする」の欄は「位置・回転・大きさ」(オン)・「有効」(オン)・「全部の部品の値」(オフ)。英語の画面では「Save State」と出る。もう 1 つ「Saver」を作り、`ArrowMover` だけを足す (「セーブする」は付けない)
+2. ゲームの設定の「入力」に `Save` (キー F5) と `Load` (キー F9) を足す
+3. `ArrowMover.cpp` の `Tick` の最後に次を書いて保存 (ビルドされる):
+   ```cpp
+   if (self.Name() == "Saver" && rm::Input::Pressed("Save")) rm::Log::Info(rm::Save::WriteWorld(1) ? "世界をセーブしました" : "セーブできません");
+   if (self.Name() == "Saver" && rm::Input::Pressed("Load")) rm::Save::ReadWorld(1);
+   if (self.Name() == "Box" && rm::Input::Pressed("Fire")) self.Destroy();
+   ```
+4. Play → 矢印キーで Box (と Saver) を動かす → F5 → `<プロジェクト>/Library/Saves/save_1.json` の `"world"` に `"entities"` (Box の id と `rm::space3d::Transform` の `"position"`) が入る。Saver は入らない
+5. さらに動かしてから F9 → 次のフレームでシーンが読み直され、Box が F5 の場所に戻る。Saver は Play の始めの場所 (印が無いのでセーブに無い)。コンソールに「セーブした世界を読みました: 値を戻した物 1 個・作り直した物 0 個・消した物 0 個」。スクリプトは EndPlay → BeginPlay を受ける (シーンの切り替えと同じ。「… コマ動きました」の後に「… 動かせます」)
+6. Z (Fire) で Box を消す → F5 → F9 → Box は消えたまま (コンソールに「消した物 1 個」: 読み直したシーンの Box は、セーブに無いので消える)
+7. ■ で止める → Box は Play の前の場所 (セーブは Play の中だけのもの。`Library/Saves` には残る)
+8. もう一度 Play → すぐ F9 → セーブした状態 (Box が消えている) から始まる
+9. 弾の Prefab に「セーブする」を付け、`rm::Spawn(bullet)` で作ってから F5 → 弾を動かす・消す → F9 → 弾が F5 のときの場所に作り直される (コンソールの「作り直した物」)
+10. 2D のゲーム (「2D のゲーム」テンプレート) でも同じ: Transform 2D の位置が戻る
+11. `rm::Save::Write(1)` (グローバル変数だけ) を後で呼んでも、`save_1.json` の `"world"` は消えない。`rm::Save::HasWorld(2)` は世界の無いスロットで false
+12. `save_1.json` をメモ帳で開き、`"world"` の中の `"entities"` に `{"id": 9999}` を足す・部品の `"type"` を `"rm::nobody::Thing"` に書き換える → F9 → 落ちずに、コンソールに「世界のセーブ: セーブにあるエンティティ (id 9999) がシーンにありません。飛ばします」などが出る
+13. 書き出したゲームでも同じ (`%LOCALAPPDATA%\<exe の名前>\Saves\save_1.json`)
+
+**スクリプトから** (世界): `rm::Save::WriteWorld(1)` / `ReadWorld(1)` / `HasWorld(1)` (名前でも)。`Exists` / `Delete` はグローバル変数と同じスロットの物
+
 **作る・消す・部品・新しい欄の型** (画面では**未確認**。テストは通っている。本物の MSBuild で、作る・消す・Transform を足す・列挙・一覧・構造体・PrefabRef の欄を持つスクリプトをビルドして動かすテストも通っている)
 
 1. 弾の Prefab を作る: 階層で「Bullet」を作り (3D なら Transform 付き)、右クリック →「Prefab にする」→ `Assets/Bullet.rmprefab` ができる。階層の Bullet は消してよい

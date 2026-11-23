@@ -12,6 +12,9 @@
 //       { "kind": "rm_engine.save", "format": 1, "globals": { "score": 3, "name": "A", "pos": [1, 2] } }
 //     書くときは、そこにあるファイル (なければ最後に読んだもの) から始める: このバージョンが知らない
 //     キー - 一覧からなくなった変数や、別のメンバー - は、そのまま書き戻す。
+//   世界のセーブ (rm::Save::WriteWorld。WorldSave.h、docs/SAVE.md) は同じファイルのキー "world" に
+//   入る。WriteSave は `world` を渡されたときだけそれを書き換え (前の "world" の知らないキーは残す)、
+//   渡されなければ "world" はそのまま残る。
 //
 // 場所: エディターの Play は <project>/Library/Saves/ (Assets の中には決して置かない)、書き出した
 // ゲームは %LOCALAPPDATA%\<exe name>\Saves\。
@@ -69,15 +72,20 @@ private:
 };
 
 inline constexpr char kSaveKind[] = "rm_engine.save";
+inline constexpr char kWorldSaveKey[] = "world";  // 世界のセーブ (WorldSave.h) が入るキー
 inline constexpr int64_t kSaveFormat = 1;
 
 // スロット: "0"、"auto"、"slot-2" (ASCII の英字・数字・_ と -、1 から 64 文字): パスには決してしない。
 bool IsSaveSlot(std::string_view slot);
 std::filesystem::path SaveFile(const std::filesystem::path& folder, std::string_view slot);
-bool WriteSave(GlobalStore& store, const std::filesystem::path& folder, std::string_view slot, std::string* why);
+// `world`: 世界のセーブ (CaptureWorld) も "world" に書く。null: グローバル変数だけ。
+bool WriteSave(GlobalStore& store, const std::filesystem::path& folder, std::string_view slot, std::string* why,
+               const json::Value* world = nullptr);
 bool ReadSave(GlobalStore& store, const std::filesystem::path& folder, std::string_view slot, std::vector<std::string>* warnings,
               std::string* why);
 bool SaveExists(const std::filesystem::path& folder, std::string_view slot);
+// セーブのファイルの中身そのもの (rm_engine.save であること)。読めない / 無い / スロットが使えない: nullopt と *why。
+std::optional<json::Value> ReadSaveDoc(const std::filesystem::path& folder, std::string_view slot, std::string* why);
 bool DeleteSave(const std::filesystem::path& folder, std::string_view slot, std::string* why);
 
 // <project>/Library/Saves (エディターの Play)
