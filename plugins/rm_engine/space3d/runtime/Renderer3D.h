@@ -156,10 +156,12 @@ struct MapShape {
 
 // プラグインが全部の面に加える手 (RenderFrame::surface。RendererShaders.h): Surface(...) を
 // 定義する HLSL (デバイスとテキストごとに 1 回コンパイルする) と、その数値 (cbuffer SurfaceData。
-// 最大 kSurfaceData 個の float4)。
+// 最大 kSurfaceData 個の float4)、読む絵 (surfaceMap: t10。null: 無い。プラグインが持ち、
+// このフレームの間は消さない - 天候: 場所ごとの濡れと積雪の地図)。
 struct SurfaceTouch {
     std::string code;
     std::vector<float> data;
+    ID3D11ShaderResourceView* texture = nullptr;
 };
 
 // プラグインが自分で絵に描くもの (パーティクル): 透ける部品の後、デバッグの線の前に、自分の

@@ -184,4 +184,20 @@ RM_TEST(Climate_WeatherPlace) {
     ctx.camera = static_cast<uint64_t>(cam);
     for (const auto& sys : reg.Contributions<game_production::SystemInfo>(game_production::kSystemPoint)) sys.item->run(ctx);
     CHECK(sc.Setting<weather::Weather>()->placeSnow == 1.f);
+    // 場所ごとの濡れと積雪 (段階 2): 同じシステムが、カメラのまわりの地図のマスごとの降り方も書く。
+    // 天候のシステムがそれで進めると、雪の所だけ積もり、雨の所だけよく濡れる。
+    weather::Weather& ww = *sc.Setting<weather::Weather>();
+    CHECK(ww.placeCells.size() == size_t{weather::kWetMapCells} * weather::kWetMapCells);
+    ww.precipitation = 60;
+    ww.windStrength = 0;
+    game_production::SystemContext minute{sc, 60.f};
+    minute.camera = static_cast<uint64_t>(cam);
+    weather::RunWeather(minute);
+    const weather::WetMap* map = weather::WetMapNow(ww);
+    CHECK(map != nullptr);
+    if (map) {
+        CHECK(weather::WetCellAt(*map, 100, 0)->at(0).snow > 0.01f && weather::WetCellAt(*map, 60, 0)->at(0).snow == 0.f);
+        CHECK(weather::WetCellAt(*map, 60, 0)->at(0).sun > weather::WetCellAt(*map, 100, 0)->at(0).sun);
+        CHECK(weather::WetCellAt(*map, 119, 0)->at(0).snow > 0.01f && weather::WetCellAt(*map, 125, 0)->at(0).snow == 0.f);  // (縁が 120 m: 境目 0)
+    }
 }

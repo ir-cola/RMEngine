@@ -20,8 +20,11 @@
 #include "base/Math.h"
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
+#include "rm_engine/weather/runtime/WeatherPlace.h"
 
+#include <array>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace rm::game_production {
@@ -78,6 +81,22 @@ struct WetWay {
 inline constexpr size_t kWetWays = 4;  // 持てる最大数 (それぞれ向きの地図 1 枚)
 inline constexpr float kSeepRain = 1.f, kSeepSnow = 0.4f;
 
+// 場所ごとの濡れと積雪 (段階 2。docs/CLIMATE.md): 1 つの場所の、向き k (WetWay と同じ並び) ごとの
+// 日なた・日陰の濡れと積雪 (m)。
+struct WetLevel {
+    float sun = 0, shade = 0, snow = 0;
+};
+using WetCell = std::array<WetLevel, kWetWays>;
+// 地面を真上から見たマス目の地図: カメラのまわり kWetMapCells x kWetMapCells マス (1 マス kWetMapCell m:
+// 128 m 四方)。マスはワールドに固定 (カメラが動くと地図がずれる。新しく入るマスは、地図の一番近い
+// マスの値で始まる。地図の外も、描くときは一番近いマス)。
+inline constexpr int kWetMapCells = 64;
+inline constexpr float kWetMapCell = 2.f;
+struct WetMap {
+    int firstX = 0, firstZ = 0;  // 最初のマス (ワールドのマス番号: floor(x / kWetMapCell))
+    std::vector<WetCell> cells;  // kWetMapCells^2 (行が z、z の小さい行から)。空: 地図を使わない
+};
+
 RM_STRUCT(Label="天候")
 struct Weather {
     RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲ひとつ無い晴れ 〜 40: 雲の多い晴れ 〜 70: くもり 〜 100: 空一面の厚い雲 (暗くなり、日の光も弱まります)。雨や雪が降ると、少なくても雲が出ます (雲は空が「地球の空」のとき)", Min=0, Max=100, Step=0.1, Decimals=1) float cloudAmount = 20.f;
@@ -105,6 +124,13 @@ struct Weather {
     // (雪にする で決める)。
     RM_TRANSIENT() float placeSnow = -1;
     RM_TRANSIENT() float placeMore = 1;
+    // 場所ごとの濡れと積雪 (段階 2): 答える者が Play の間、毎フレーム、地図のマスごとの降り方を
+    // placeCells に書く (PlaceCellsFor。最初のマスが placeFirstX / Z)。天候のシステムがそれを読んで
+    // wetMap を進め、空にする (書く者がいない: 地図を使わず、シーン全体で 1 つ - wetWays)。
+    RM_TRANSIENT() std::vector<WeatherPlace> placeCells;
+    RM_TRANSIENT() int placeFirstX = 0;
+    RM_TRANSIENT() int placeFirstZ = 0;
+    RM_TRANSIENT() WetMap wetMap;
     // ゲームが動いている間に、風が雲・粒・ひらひらをどれだけ運んだか (ワールド単位: 風を足し
     // 合わせたもの - 風が変わっても跳ばない)。
     RM_TRANSIENT() float driftX = 0;
@@ -121,6 +147,8 @@ float SnowInOf(const Weather& w);
 // (真ん中で 0.15)、そこから軽い雪になって増えていく - 両方が同時に降ることはない。
 float RainShare(float x);
 float SnowShare(float x);
+// 場所の降り方 `place` で、降水量 `precipitation` (0 .. 1) のうち雨として / 雪として降るもの。
+void PlacedShare(float precipitation, const WeatherPlace& place, float& rain, float& snow);
 // 積もる高さ in metres.
 float SnowMostOf(const Weather& w);
 // 今の降水量 (0 .. 1。フェードの途中は緩急つき): 雨と雪に分ける前のもの (場所の降り方で、粒を用意する量)。
@@ -180,6 +208,37 @@ float SnowFallRate(const WeatherNow& now);
 // 絵が見せる雪の深さ、すべての向きまとめて: ゲームが数えたとおり (Play)、またはエディターでは
 // 雪が降っている間は積もる高さいっぱいで。
 float SnowCoverNow(const Weather& w);
+
+// 場所ごとの濡れと積雪の地図 (WetMap)。
+// `eye` のまわりの地図の最初のマス (ワールドのマス番号)。
+void WetMapFirst(Vec3 eye, int& firstX, int& firstZ);
+// 答える者 (つなぎ) が Play の間、毎フレーム呼ぶ: `eye` のまわりの地図のマスの真ん中 (高さは eye.y) の
+// 降り方を `info` に聞いて、w.placeCells / placeFirstX / Z に書く。
+void PlaceCellsFor(Weather& w, const game_production::Scene& scene, Vec3 eye, const WeatherPlaceInfo& info);
+// 地図を、最初のマスが (firstX, firstZ) になるようにずらす。新しく入るマスは地図の一番近いマスの値。
+// 地図がまだ無いときは、全部のマスが `ways` (シーン全体で 1 つの濡れ) の値で始まる。
+void MoveWetMap(WetMap& map, std::span<const WetWay> ways, int firstX, int firstZ);
+// `dt` ゲーム秒あとの地図: マスごとに、その場所の降り方 (`places`: マスと同じ並び) で StepWet と
+// 同じように進める (雪の所だけ積もり、雨の所だけ濡れ、雨の所の雪は溶ける)。`now` は霧・風・向き、
+// `precipitation` (PrecipitationNow) が分ける前の降水量。向き (`ways`) はどこかで降っている
+// もので作り、全部のマスで乾いたら消す。そのあと `ways` の濡れと積雪を `eye` のいるマスの値にする
+// (スクリプトの rm::Sky::Wetness など)。
+void StepWetMap(WetMap& map, std::vector<WetWay>& ways, std::span<const WeatherPlace> places, const WeatherNow& now, float precipitation, float dt,
+                float snowMost, Vec3 eye);
+// ワールドの (x, z) のマス (地図の外: 一番近いマス。地図が空: null)。
+const WetCell* WetCellAt(const WetMap& map, float x, float z);
+// 地図の中で一番深い積雪 (全部の向きを足したもの、m)。
+float WetMapMostSnow(const WetMap& map);
+// 描くための地図: 最初のマスの角 (ワールドの x z、m)・1 マス (m)・一辺のマス数 (0: 使わない)。
+struct WetMapInfo {
+    float x = 0, z = 0, cell = 0, cells = 0;
+};
+WetMapInfo WetMapInfoOf(const WetMap& map);
+// テクスチャにする値 (幅 3 x kWetMapCells、高さ kWetMapCells、1 テクセル 4 つ: 向き 0 .. 3): 左から
+// 日なたの濡れ・日陰の濡れ・積雪 (m) のブロック。行が z。地図が空: 空。
+std::vector<float> WetMapTexels(const WetMap& map);
+// 絵が見せる地図: ゲームが数えたとおり (Play)。Play の前と止めた後は無い。
+const WetMap* WetMapNow(const Weather& w);
 
 // システム 天候: ゲームが動いている間、フェードが進み、雪を降らせる が入り (または抜け)、
 // 雨が届いた所が濡れ (そして乾き)、雪が積もり、風が雲と降るものを運ぶ。

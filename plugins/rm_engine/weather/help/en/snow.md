@@ -8,6 +8,7 @@
 - **It depends on how much snow falls.** At precipitation 100 it grows 2.5 cm a minute, at 50 1.25 cm, at 10 0.25 cm. It stops at the snow depth
 - When it stops snowing it melts about 1 cm a minute, faster in rain
 - In the editor (before Play and after Stop) nothing has piled up. Press Play and it piles up as the snow falls
+- With the "Climate" plugin it piles up **per place**: only where it is cold enough, and it melts where it rains (within 128 m around the camera. See the help of the "Weather × Climate" connector)
 
 ## Where it lies
 - Snow with height lies on surfaces you can see from straight above (the top surface). It ends along the edge of each object

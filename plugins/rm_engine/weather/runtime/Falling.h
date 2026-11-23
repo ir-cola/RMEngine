@@ -74,9 +74,11 @@ static_assert((kPlaceGridPoints + 3) / 4 == 13, "kFallHlsl の precipPlaceSnow[1
 // 濡れ と 積雪: すべての面への働き (3D 空間の RenderFrame::surface: Surface(...)) とその数値 -
 // 雨と雪の降り方ごとに、それを見る 向きの地図 (`maps`、-1: なし - 全部開いている)、覆うものの
 // 下へどれだけしみこむか、雪がどれだけ深く積もるか (float4 1 + k: 日なた、日陰、地図、
-// しみこみ。float4 1 + kWetWays + k: x が雪)。
+// しみこみ。float4 1 + kWetWays + k: x が雪)。float4 1 + 2 kWetWays: 場所ごとの地図 `place`
+// (cells が 0: なし - 向きの濡れと積雪がどこでも同じ。あるとき: その絵 (WetMapTexels) を
+// SurfaceTouch::texture に結び、濡れと積雪の量はそちらから読む)。
 extern const char kWetSurfaceHlsl[];
-std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps);
+std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps, const WetMapInfo& place = {});
 
 // 高さのある 積雪 (RenderFrame::solids): SnowLayerVS / SnowLayerPS。
 // RendererShaderText(kWetSurfaceHlsl) の後 - 目のまわりに、kSnowCell のマスを kSnowCells x
@@ -95,6 +97,7 @@ struct SnowLayerConstants {
     float snow[4][4];    // 各降り方: x: その雪 (m)、y: その 向きの地図 (-1: なし)
     float trail[4];      // 足跡: xy: 最初のマス (ワールドの x z)、z: 1 マス (m)、w: 1 辺のマス数 (0: なし)
     float trailMore[4];  // x: 足跡の数のうちどれか
+    float place[4];      // 場所ごとの地図: xy 最初のマスの角 (ワールドの x z)、z: 1 マス (m)、w: 一辺のマス数 (0: なし)
 };
 static_assert(sizeof(SnowLayerConstants) % 16 == 0);
 struct SnowTrailConstants {
@@ -103,8 +106,9 @@ struct SnowTrailConstants {
 };
 static_assert(sizeof(SnowTrailConstants) % 16 == 0);
 // `eye` のまわりに積もる雪: `downMap` (まっすぐ下) が見るものの上に、`ways` (`maps` で見る) が
-// 残した分の深さで。`trails` のとき足跡を読む。
-SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, int downMap, uint32_t trailCount, bool trails);
+// 残した分の深さで (`place` があるとき: その地図の場所ごとの深さで)。`trails` のとき足跡を読む。
+SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, int downMap, uint32_t trailCount, bool trails,
+                               const WetMapInfo& place = {});
 // 足跡のフレーム: 前から `fill` m 埋まった。`upMap`: 動く形を下から見た地図。
 SnowTrailConstants SnowTrailOf(Vec3 eye, uint32_t count, float fill, int upMap);
 

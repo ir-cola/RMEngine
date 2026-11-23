@@ -448,12 +448,153 @@ RM_TEST(Weather_Falling) {
     const WetWay ways[2] = {{{0, -1, 0}, 0.5f, 0.75f, 0.6f}, {{1, 0, 0}, 2.f, 0.1f}};
     const int maps[2] = {3, -1};
     const std::vector<float> d = WetSurfaceData(ways, maps);
-    CHECK(d.size() == 4 * (1 + 2 * kWetWays) && d[0] == 2.f);
+    CHECK(d.size() == 4 * (2 + 2 * kWetWays) && d[0] == 2.f);
     CHECK(d[4] == 0.5f && d[5] == 0.75f && d[6] == 3.f && d[7] == 0.6f && d[8] == 1.f && d[10] == -1.f && d[11] == 0.f);  // (clamped to 1; w: しみこみ)
     CHECK(d.size() <= 4 * space3d::kSurfaceData);
-    CHECK(d.size() == 4 * (1 + 2 * kWetWays) && d[20] == 0.f);  // (方向ごとの雪: なし)
+    CHECK(d[20] == 0.f && d[39] == 0.f);  // (方向ごとの雪: なし。場所ごとの地図: なし)
     const WetWay snowy[1] = {{{0, -1, 0}, 0, 0, 0, 0.25f}};
     CHECK(WetSurfaceData(snowy, maps)[20] == 0.25f);
+    const std::vector<float> placed = WetSurfaceData(snowy, maps, {-64, 2, 2, 64});  // (surfaceData[9]: 地図の角・1 マス・マス数)
+    CHECK(placed[36] == -64.f && placed[37] == 2.f && placed[38] == 2.f && placed[39] == 64.f);
+    CHECK(SnowLayerOf({0, 0, 0}, snowy, maps, 6, 1, false, {-64, 2, 2, 64}).place[3] == 64.f && SnowLayerOf({0, 0, 0}, snowy, maps, 6, 1, false).place[3] == 0.f);
+}
+
+namespace {
+
+// 地図の左半分 (x が小さい 32 列) が雨、右半分が雪の降り方 (降る量はそのまま)。
+std::vector<WeatherPlace> HalfAndHalf() {
+    std::vector<WeatherPlace> out(size_t{kWetMapCells} * kWetMapCells);
+    for (size_t i = 0; i < out.size(); ++i) out[i] = {i % kWetMapCells < kWetMapCells / 2 ? 0.f : 1.f, 1.f};
+    return out;
+}
+
+// 天候の口の代わり: x が 0 より小さい所は雨、それ以外は雪。最後に聞かれた真ん中も覚える。
+Vec3 gAskedCenter{};
+void FakeGrid(const game_production::Scene&, Vec3 center, float step, int count, WeatherPlace* out) {
+    gAskedCenter = center;
+    const float half = static_cast<float>(count - 1) * 0.5f;
+    for (int z = 0; z < count; ++z) {
+        for (int x = 0; x < count; ++x) out[z * count + x] = {center.x + (static_cast<float>(x) - half) * step < 0 ? 0.f : 1.f, 1.f};
+    }
+}
+
+}  // namespace
+
+// 場所ごとの濡れと積雪 (段階 2): カメラのまわりのマス目の地図。雪の所だけ積もり、雨の所だけ濡れ、
+// 雨の所の雪は溶ける。どこでも同じ降り方なら、シーン全体で 1 つのとき (StepWet) とまったく同じ。
+RM_TEST(Weather_WetMap) {
+    int fx = 0, fz = 0;
+    WetMapFirst({1.f, 5.f, -0.5f}, fx, fz);
+    CHECK(fx == -kWetMapCells / 2 && fz == -1 - kWetMapCells / 2);
+    WetMapFirst({std::nanf(""), 0, 1e30f}, fx, fz);  // (おかしな数でも落ちない)
+    CHECK(fx == -kWetMapCells / 2);
+    // 地図が無いとき: 全部のマスが、シーン全体の濡れの値で始まる。
+    WetMap map;
+    CHECK(WetCellAt(map, 0, 0) == nullptr && WetMapInfoOf(map).cells == 0.f && WetMapTexels(map).empty());
+    std::vector<WetWay> ways = {{{0, -1, 0}, 0.5f, 0.6f, 0, 0.02f}};
+    MoveWetMap(map, ways, -32, -32);
+    CHECK(map.cells.size() == size_t{kWetMapCells} * kWetMapCells && map.firstX == -32);
+    CHECK(Near(WetCellAt(map, 10, -20)->at(0).sun, 0.5f) && Near(WetCellAt(map, 10, -20)->at(0).snow, 0.02f) && WetCellAt(map, 10, -20)->at(1).sun == 0.f);
+    const WetMapInfo info = WetMapInfoOf(map);
+    CHECK(info.x == -64.f && info.z == -64.f && info.cell == kWetMapCell && info.cells == static_cast<float>(kWetMapCells));
+    // 雨と雪 (半分ずつ)、風なし: 向きは 1 つ。1 分で、雨の所は濡れ、雪の所は積もる (と、溶けて少し濡れる)。
+    map = {};
+    ways.clear();
+    MoveWetMap(map, ways, -32, -32);
+    const std::vector<WeatherPlace> half = HalfAndHalf();
+    WeatherNow now;
+    StepWetMap(map, ways, half, now, 0.5f, 60, 0.24f, {-10, 0, 0});
+    CHECK(ways.size() == 1 && Near(ways[0].way, {0, -1, 0}) && Near(ways[0].seep, kSeepSnow));  // (しみこみ: どこかで降る雨 (0.36 m) と雪の強いほう)
+    const WetCell& rainy = *WetCellAt(map, -10, 0);
+    const WetCell& snowy = *WetCellAt(map, 10, 0);
+    CHECK(Near(rainy[0].sun, std::min(1.f, 60 * RainWetSpeed(0.5f))) && rainy[0].snow == 0.f);
+    CHECK(Near(snowy[0].sun, kSnowWet) && Near(snowy[0].snow, 0.0125f));
+    CHECK(Near(ways[0].sun, rainy[0].sun) && ways[0].snow == 0.f);  // (スクリプトが読むのはカメラのいるマス: 雨の所)
+    CHECK(Near(WetMapMostSnow(map), 0.0125f));
+    // 絵: 左から日なた・日陰・積雪のブロック。1 テクセルに向き 4 つ。
+    const std::vector<float> texels = WetMapTexels(map);
+    const size_t n = kWetMapCells;
+    CHECK(texels.size() == n * 3 * n * 4);
+    CHECK(Near(texels[(32 * 3 * n + 40) * 4], snowy[0].sun) && Near(texels[(32 * 3 * n + 2 * n + 40) * 4], 0.0125f) && texels[(32 * 3 * n + 2 * n + 10) * 4] == 0.f);
+    // 全部が雨になる: 雪の所の雪は溶ける (雨では速い)、そこも濡れる。
+    std::vector<WeatherPlace> allRain(half.size(), WeatherPlace{0, 1});
+    StepWetMap(map, ways, allRain, now, 0.5f, 60, 0.24f, {10, 0, 0});
+    CHECK(WetCellAt(map, 10, 0)->at(0).snow == 0.f && WetCellAt(map, 10, 0)->at(0).sun > kSnowWet);
+    // やむ: 全部のマスで乾いたら向きが消える。
+    StepWetMap(map, ways, allRain, now, 0.f, 100000, 0.24f, {10, 0, 0});
+    CHECK(ways.empty() && WetCellAt(map, -10, 0)->at(0).sun == 0.f);
+    // 一時停止 (dt 0): 何も変わらない。
+    StepWetMap(map, ways, half, now, 0.5f, 10, 0.24f, {0, 0, 0});
+    const float before = WetCellAt(map, 10, 0)->at(0).snow;
+    StepWetMap(map, ways, half, now, 0.5f, 0, 0.24f, {0, 0, 0});
+    CHECK(before > 0.f && WetCellAt(map, 10, 0)->at(0).snow == before);
+    // カメラが動く: 地図がずれ、新しく入るマスは一番近いマスの値。地図の外は一番近いマス。
+    MoveWetMap(map, ways, -29, -32);
+    CHECK(map.firstX == -29 && Near(WetCellAt(map, -58 + 1, 0)->at(0).snow, 0.f) && Near(WetCellAt(map, 1000, 0)->at(0).snow, before));
+    CHECK(WetCellAt(map, -1000, 0) == &map.cells[size_t{kWetMapCells / 2} * kWetMapCells]);
+    // どこでも同じ降り方なら、シーン全体で 1 つのとき (StepWet) と同じ: 風が回り、雪と雨が入れ替わっても。
+    WetMap same;
+    std::vector<WetWay> mapWays, sceneWays;
+    MoveWetMap(same, mapWays, 0, 0);
+    struct Phase {
+        float wind, snow, precipitation, seconds;
+    };
+    for (const Phase& p : {Phase{0, 0, 0.6f, 30}, Phase{6, 0, 0.6f, 20}, Phase{12, 1, 0.8f, 200}, Phase{18, 0.5f, 0.3f, 40}, Phase{24, 0, 0.5f, 10},
+                           Phase{3, 0, 0, 120}}) {
+        WeatherNow w;
+        w.windX = p.wind;
+        const WeatherPlace everywhere{p.snow, 1};
+        PlacedShare(p.precipitation, everywhere, w.rain, w.snow);
+        const std::vector<WeatherPlace> places(size_t{kWetMapCells} * kWetMapCells, everywhere);
+        StepWetMap(same, mapWays, places, w, p.precipitation, p.seconds, 0.24f, {0, 0, 0});
+        StepWet(sceneWays, w, p.seconds, 0.24f);
+    }
+    CHECK(mapWays.size() == sceneWays.size() && !sceneWays.empty());
+    for (size_t k = 0; k < sceneWays.size() && k < mapWays.size(); ++k) {
+        const WetLevel& at = WetCellAt(same, 50, 50)->at(k);
+        CHECK(Near(mapWays[k].way, sceneWays[k].way) && Near(mapWays[k].seep, sceneWays[k].seep));
+        CHECK(Near(at.sun, sceneWays[k].sun) && Near(at.shade, sceneWays[k].shade) && Near(at.snow, sceneWays[k].snow));
+    }
+    // 降り方の数が合わない: 何もしない。
+    StepWetMap(same, mapWays, std::span<const WeatherPlace>(half.data(), 10), WeatherNow{}, 1, 10, 0.24f, {});
+    CHECK(Near(WetCellAt(same, 50, 50)->at(0).sun, sceneWays[0].sun));
+}
+
+// システム 天候: 答える者がマスを書いたフレームは地図で進め (書いたものは使ったら空にする)、書かない
+// フレームは地図を捨ててシーン全体で 1 つに戻る。Play の前 (数えていない) は地図も見せない。
+RM_TEST(Weather_WetMapRun) {
+    game_production::Scene scene;
+    scene.SetSettingTypes({&reflect::TypeOf<Weather>()});
+    Weather& w = *scene.Setting<Weather>();
+    w.precipitation = 50;
+    w.windStrength = 0;
+    w.placeSnow = 0.5f;
+    const WeatherPlaceInfo info{&FakeGrid};
+    PlaceCellsFor(w, scene, {3.f, 7.f, 1.f}, info);
+    CHECK(w.placeCells.size() == size_t{kWetMapCells} * kWetMapCells && w.placeFirstX == 1 - kWetMapCells / 2 && w.placeFirstZ == -kWetMapCells / 2);
+    CHECK(Near(gAskedCenter, {2.f, 7.f, 0.f}));  // (地図の真ん中: カメラのいるマスの角。高さはカメラ)
+    CHECK(w.placeCells[0].snow == 0.f && w.placeCells[kWetMapCells - 1].snow == 1.f);
+    CHECK(WetMapNow(w) == nullptr);  // (Play の前)
+    game_production::SystemContext ctx{scene, 30.f};
+    RunWeather(ctx);
+    CHECK(w.placeCells.empty() && WetMapNow(w) == &w.wetMap);
+    CHECK(WetCellAt(w.wetMap, -20, 0)->at(0).snow == 0.f && WetCellAt(w.wetMap, 20, 0)->at(0).snow > 0.f);  // (雪の所だけ積もる)
+    CHECK(WetCellAt(w.wetMap, -20, 0)->at(0).sun > WetCellAt(w.wetMap, 20, 0)->at(0).sun);                 // (雨の所がよく濡れる)
+    // 一時停止 (timeScale 0: dt 0) では止まる。
+    PlaceCellsFor(w, scene, {3.f, 7.f, 1.f}, info);
+    const float snow = WetCellAt(w.wetMap, 20, 0)->at(0).snow;
+    game_production::SystemContext paused{scene, 0.f};
+    RunWeather(paused);
+    CHECK(WetCellAt(w.wetMap, 20, 0)->at(0).snow == snow);
+    // 答える者がいなくなった: 地図を捨て、シーン全体で 1 つ。
+    RunWeather(ctx);
+    CHECK(w.wetMap.cells.empty() && WetMapNow(w) == nullptr && !w.wetWays.empty());
+    // Play を止めた (数えていない): 次の Play は乾いた所から。
+    PlaceCellsFor(w, scene, {3.f, 7.f, 1.f}, info);
+    w.wetCounted = false;
+    game_production::SystemContext first{scene, 0.f};
+    RunWeather(first);
+    CHECK(WetMapNow(w) != nullptr && WetMapMostSnow(w.wetMap) == 0.f && WetCellAt(w.wetMap, -20, 0)->at(0).sun == 0.f);
 }
 
 // シェーダーは描くときと同じやり方でコンパイルする: 雨粒と雪片 (3D 空間の 向きの地図 を使う) と、

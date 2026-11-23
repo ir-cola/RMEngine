@@ -2,8 +2,9 @@
 // コネクター 天候 × 気候 (plugins/RuntimePlugins.cpp に並べる。書き出したゲームは RM_RUNTIME_ENTRY から呼ぶ):
 // 気候の気温と湿り気から、天候の「場所ごとの降り方」(WeatherPlace.h) に答える。設計: docs/CLIMATE.md。
 //   - 雨粒と雪の 1 粒ずつ: カメラのまわりの格子 (天候の口 rm_engine.weather.place)
-//   - Play の間の今の天候 (霧・濡れ・積雪): カメラのいる所を、数秒かけて Weather::placeSnow / placeMore に
+//   - Play の間の今の天候 (霧など): カメラのいる所を、数秒かけて Weather::placeSnow / placeMore に
 //     (システム「天候 × 気候」: 天候のシステムの前)
+//   - Play の間の濡れと積雪: カメラのまわりの地図のマスごと (weather::PlaceCellsFor。同じシステム)
 
 #include "core/RuntimeRegistry.h"
 #include "rm_engine/climate/runtime/Climate.h"

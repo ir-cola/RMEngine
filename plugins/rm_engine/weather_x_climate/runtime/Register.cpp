@@ -26,7 +26,10 @@ void Grid(const game_production::Scene& scene, Vec3 center, float step, int coun
     }
 }
 
+const weather::WeatherPlaceInfo kPlace{&Grid};
+
 // システム: Play の間、ゲームのカメラのいる所の降り方を、天候の今の天候に (天候のシステムの前)。
+// カメラのまわりの地図のマスごとの降り方も (天候が場所ごとの濡れと積雪を進める)。
 void RunPlace(game_production::SystemContext& ctx) {
     weather::Weather* w = ctx.scene.Setting<weather::Weather>();
     if (!w) return;
@@ -38,6 +41,7 @@ void RunPlace(game_production::SystemContext& ctx) {
     }
     const climate::ClimateField field(ctx.scene);
     Approach(w->placeSnow, w->placeMore, PlaceOf(field.At(at)), std::isfinite(ctx.dt) ? std::max(ctx.dt, 0.f) : 0.f);
+    weather::PlaceCellsFor(*w, ctx.scene, at, kPlace);
 }
 
 }  // namespace
@@ -67,7 +71,6 @@ void Approach(float& placeSnow, float& placeMore, const weather::WeatherPlace& t
 }
 
 void RegisterRuntime(RuntimeRegistry& registry) {
-    static const weather::WeatherPlaceInfo kPlace{&Grid};
     registry.Contribute(weather::kWeatherPlacePoint, kPlace);
     static const game_production::SystemInfo kSystem{"天候 × 気候", game_production::SystemPhase::Frame, -1, &RunPlace};
     registry.Contribute(game_production::kSystemPoint, kSystem);

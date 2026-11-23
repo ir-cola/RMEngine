@@ -341,6 +341,8 @@ const char kSurfaceHlsl[] = R"(
 cbuffer SurfaceData : register(b5) {
     float4 surfaceData[16];
 };
+// 面の手の絵 (SurfaceTouch::texture。無いとき: 何も結ばれていない - Load は 0)。
+Texture2D<float4> surfaceMap : register(t10);
 )";
 
 std::string RendererShaderText(std::string_view surface) {

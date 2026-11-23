@@ -1345,6 +1345,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ID3D11Buffer* extraCbs[2] = {s.surfaceCb.Get(), s.directionCb.Get()};
     ctx->PSSetShaderResources(8, 1, &mapsSrv);
     ctx->PSSetConstantBuffers(5, 2, extraCbs);
+    ID3D11ShaderResourceView* surfaceSrv = f.surface ? f.surface->texture : nullptr;
+    ctx->PSSetShaderResources(10, 1, &surfaceSrv);  // (面の手の絵。無い: 外す)
     ctx->VSSetShader(s.meshVs.Get(), nullptr, 0);
     ctx->PSSetShader(meshPs, nullptr, 0);
     run(opaqueFirst, opaqueEnd, true);
@@ -1468,6 +1470,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->OMSetRenderTargets(0, nullptr, nullptr);
     ctx->PSSetShaderResources(0, 8, noSrvs);
     ctx->PSSetShaderResources(8, 1, noSrvs);
+    ctx->PSSetShaderResources(10, 1, noSrvs);
     ctx->VSSetShaderResources(6, 1, noSrvs);
     ID3D11Buffer* noCbs[7] = {};
     ctx->PSSetConstantBuffers(0, 7, noCbs);

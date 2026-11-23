@@ -5,10 +5,9 @@ A connector that comes in by itself when both "Weather" and "Climate" are instal
 - **+2 °C or warmer** rains, **-1 °C or colder** snows. In between, raindrops and snowflakes fall together (sleet)
 - **Humidity** changes how much falls. 50 % as it is, 0 % nothing (a desert), 100 % one and a half times
 - Each raindrop and snowflake decides by where it is, so across a climate zone's border the rain turns into snow little by little right in front of you
-- Fog colour, wetness and lying snow (in Play) follow what falls **where the camera is**, changing over about 2 seconds after crossing a border
+- Fog colour (in Play) follows what falls **where the camera is**, changing over about 2 seconds after crossing a border
+- **Wetness and lying snow are kept per place** (in Play). Snow piles up only where it snows, only rainy places get wet, and rain melts the snow. Across a border the lying snow thins out smoothly. Places are split within 128 m around the camera (a 2 m grid); farther away looks the same as the nearest place
 - The weather's "**Snow**" checkbox is not used (the temperature decides). How stormy the sky is (clouds, precipitation, wind, lightning) is set in Weather as before
-
-> Wetness and lying snow are still one for the whole scene (while the camera is in snow, it piles up everywhere). Splitting them by place comes next.
 
 ## Try it
 

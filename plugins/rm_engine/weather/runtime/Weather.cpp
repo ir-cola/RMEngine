@@ -81,6 +81,14 @@ float SnowInOf(const Weather& w) {
 float RainShare(float x) { return x < 0.5f ? 1 - 0.85f * Smooth(0.f, 0.5f, x) : 0.f; }
 float SnowShare(float x) { return x >= 0.5f ? 0.15f + 0.85f * Smooth(0.5f, 1.f, x) : 0.f; }
 
+void PlacedShare(float precipitation, const WeatherPlace& place, float& rain, float& snow) {
+    const float p = std::isfinite(precipitation) ? std::clamp(precipitation, 0.f, 1.f) : 0.f;
+    const float s = std::isfinite(place.snow) ? std::clamp(place.snow, 0.f, 1.f) : 0.f;
+    const float more = std::isfinite(place.more) ? std::clamp(place.more, 0.f, 4.f) : 1.f;
+    rain = std::min(p * more, 1.f) * (1 - s);
+    snow = std::min(p * more, 1.f) * s;
+}
+
 float SnowMostOf(const Weather& w) { return std::isfinite(w.snowDepthCm) ? std::clamp(w.snowDepthCm / 100.f, 0.f, kMostSnowDepth) : 0.f; }
 
 WeatherNow TargetOf(const Weather& w) {
@@ -89,9 +97,7 @@ WeatherNow TargetOf(const Weather& w) {
     n.clouds = Unit(w.cloudAmount);
     if (std::isfinite(w.placeSnow) && w.placeSnow >= 0) {
         // 場所の降り方 (つなぎが書いた、カメラのいる所): その割合で雨と雪に分ける (みぞれは両方)。
-        const float snow = std::min(w.placeSnow, 1.f), more = std::isfinite(w.placeMore) ? std::clamp(w.placeMore, 0.f, 4.f) : 1.f;
-        n.rain = std::min(p * more, 1.f) * (1 - snow);
-        n.snow = std::min(p * more, 1.f) * snow;
+        PlacedShare(p, {w.placeSnow, w.placeMore}, n.rain, n.snow);
     } else {
         n.rain = p * RainShare(x);
         n.snow = p * SnowShare(x);
@@ -213,55 +219,240 @@ float RainWetSpeed(float rain) {
     return 0.006f + 0.034f * std::pow(r, 0.75f);
 }
 
+namespace {
+
+float Finite0(float v) { return std::isfinite(v) ? std::max(v, 0.f) : 0.f; }
+float Dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+
+// `way` とみなせる向き (kWetWayDegrees 以内) の番号 (無い: -1)。
+int WayFor(std::span<const WetWay> ways, Vec3 way) {
+    const float close = std::cos(kWetWayDegrees * kDegrees);
+    for (size_t k = 0; k < ways.size() && k < kWetWays; ++k) {
+        if (Dot(ways[k].way, way) >= close) return static_cast<int>(k);
+    }
+    return -1;
+}
+
+// 今の濡らすもの (`wetting`: どこかで降っているもの) の向きを `ways` に用意し、しみこみを進める。
+// 新しい向きの入る所がないときは、一番濡れていない向き (`totals`: 向きごとの濡れと積雪の合計) に代わる
+// (このフレームで使う向きは除く)。代わった向き・新しい向きは `fresh` に (その濡れは 0 から)。
+void PrepareWays(std::vector<WetWay>& ways, const std::vector<Wetting>& wetting, float dt, std::array<float, kWetWays> totals,
+                 std::array<bool, kWetWays>& fresh) {
+    fresh.fill(false);
+    std::array<bool, kWetWays> used{};
+    for (const Wetting& w : wetting) {
+        int k = WayFor(ways, w.way);
+        if (k < 0) {
+            if (ways.size() < kWetWays) {
+                ways.push_back({w.way, 0, 0});
+                k = static_cast<int>(ways.size()) - 1;
+            } else {
+                for (size_t j = 0; j < kWetWays; ++j) {
+                    if (!used[j] && (k < 0 || totals[j] < totals[static_cast<size_t>(k)])) k = static_cast<int>(j);
+                }
+                if (k < 0) continue;
+                ways[static_cast<size_t>(k)] = {w.way, 0, 0};
+            }
+            fresh[static_cast<size_t>(k)] = true;
+            totals[static_cast<size_t>(k)] = 0;
+        }
+        used[static_cast<size_t>(k)] = true;
+        WetWay& it = ways[static_cast<size_t>(k)];
+        if (it.seep < w.seepMost) it.seep = std::min(w.seepMost, it.seep + dt * w.seepSpeed);
+    }
+}
+
+// 1 つの場所の濡れと積雪 (`levels`: `ways` と同じ並び) を、その場所の今の天候 `now` で `dt` 進める
+// (向きは PrepareWays が用意したもの)。作れる分まで濡れ、雨や雪が降っている間は何も乾かない。積雪は
+// 全部の向きまとめて StepSnowCover のとおりに動かす - 降ったものは降る向きに入り、溶けるものは全部の
+// 向きから同じだけ引く。
+void StepLevels(std::span<const WetWay> ways, WetLevel* levels, const WeatherNow& now, float dt, float snowMost) {
+    const size_t count = std::min(ways.size(), kWetWays);
+    float snowBefore = 0;
+    for (size_t k = 0; k < count; ++k) snowBefore += Finite0(levels[k].snow);
+    const float snowAfter = StepSnowCover(snowBefore, now, snowMost, dt);
+    const std::vector<Wetting> wetting = WettingNow(now);
+    for (const Wetting& w : wetting) {
+        const int k = WayFor(ways, w.way);
+        if (k < 0) continue;
+        for (float* level : {&levels[k].sun, &levels[k].shade}) {
+            if (*level < w.most) *level = std::min(w.most, *level + dt * w.speed);
+        }
+    }
+    if (wetting.empty()) {
+        for (size_t k = 0; k < count; ++k) {
+            levels[k].sun = std::max(0.f, levels[k].sun - dt / 90.f);
+            levels[k].shade = std::max(0.f, levels[k].shade - dt / 300.f);
+        }
+    }
+    if (snowAfter > snowBefore && SnowNow(now) > 0) {
+        const int k = WayFor(ways, FallDirection(Precipitation::Kind::Snow, {now.windX, 0, now.windZ}));
+        if (k >= 0) levels[k].snow = Finite0(levels[k].snow) + (snowAfter - snowBefore);
+    } else if (snowAfter < snowBefore) {
+        const float keep = snowBefore > 0 ? snowAfter / snowBefore : 0.f;
+        for (size_t k = 0; k < count; ++k) levels[k].snow = Finite0(levels[k].snow) * keep;
+    }
+}
+
+bool Dry(const WetLevel& l) { return l.sun <= 0 && l.shade <= 0 && !(l.snow > 0); }
+
+}  // namespace
+
 void StepWet(std::vector<WetWay>& ways, const WeatherNow& now, float dt, float snowMost) {
     dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
-    const float close = std::cos(kWetWayDegrees * kDegrees);
-    auto dot = [](Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
-    // 積雪、今もこのあとも全部まとめて: 下で分ける。
-    float snowBefore = 0;
-    for (const WetWay& w : ways) snowBefore += std::isfinite(w.snow) ? std::max(w.snow, 0.f) : 0.f;
-    const float snowAfter = StepSnowCover(snowBefore, now, snowMost, dt);
-    auto shareSnow = [&] {
-        if (snowAfter > snowBefore && SnowNow(now) > 0) {
-            // 降ったものは、降る向きに入る (WettingNow が向きにした)。
-            const Vec3 snowWay = FallDirection(Precipitation::Kind::Snow, {now.windX, 0, now.windZ});
-            auto it = std::find_if(ways.begin(), ways.end(), [&](const WetWay& o) { return dot(o.way, snowWay) >= close; });
-            if (it != ways.end()) it->snow = std::max(it->snow, 0.f) + (snowAfter - snowBefore);
-        } else if (snowAfter < snowBefore) {
-            // 溶けるものは、全部の向きから同じだけ引く。
-            const float keep = snowBefore > 0 ? snowAfter / snowBefore : 0.f;
-            for (WetWay& w : ways) w.snow = std::isfinite(w.snow) ? std::max(w.snow, 0.f) * keep : 0.f;
-        }
-    };
+    // シーン全体で 1 つの場所: 向きの濡れと積雪が、その場所の値。
+    std::array<float, kWetWays> totals{};
+    for (size_t k = 0; k < ways.size() && k < kWetWays; ++k) totals[k] = ways[k].sun + ways[k].shade + ways[k].snow;
+    std::array<bool, kWetWays> fresh{};
     const std::vector<Wetting> wetting = WettingNow(now);
-    if (!wetting.empty()) {
-        for (const Wetting& w : wetting) {
-            auto it = std::find_if(ways.begin(), ways.end(), [&](const WetWay& o) { return dot(o.way, w.way) >= close; });
-            if (it == ways.end()) {
-                if (ways.size() < kWetWays) {
-                    ways.push_back({w.way, 0, 0});
-                    it = ways.end() - 1;
-                } else {
-                    it = std::min_element(ways.begin(), ways.end(), [](const WetWay& a, const WetWay& b) { return a.sun + a.shade + a.snow < b.sun + b.shade + b.snow; });
-                    *it = {w.way, 0, 0};
-                }
-            }
-            // 作れる分まで濡れる (何かが降っている間は乾かない)。
-            for (float* level : {&it->sun, &it->shade}) {
-                if (*level < w.most) *level = std::min(w.most, *level + dt * w.speed);
-            }
-            if (it->seep < w.seepMost) it->seep = std::min(w.seepMost, it->seep + dt * w.seepSpeed);
-        }
-        shareSnow();
+    PrepareWays(ways, wetting, dt, totals, fresh);
+    WetCell levels{};
+    for (size_t k = 0; k < ways.size() && k < kWetWays; ++k) levels[k] = {ways[k].sun, ways[k].shade, ways[k].snow};
+    StepLevels(ways, levels.data(), now, dt, snowMost);
+    for (size_t k = 0; k < ways.size() && k < kWetWays; ++k) {
+        ways[k].sun = levels[k].sun;
+        ways[k].shade = levels[k].shade;
+        ways[k].snow = levels[k].snow;
+    }
+    if (wetting.empty()) std::erase_if(ways, [](const WetWay& w) { return Dry({w.sun, w.shade, w.snow}); });
+}
+
+void WetMapFirst(Vec3 eye, int& firstX, int& firstZ) {
+    auto first = [](float v) {
+        const float c = std::isfinite(v) ? std::clamp(std::floor(v / kWetMapCell), -1e8f, 1e8f) : 0.f;
+        return static_cast<int>(c) - kWetMapCells / 2;
+    };
+    firstX = first(eye.x);
+    firstZ = first(eye.z);
+}
+
+void PlaceCellsFor(Weather& w, const game_production::Scene& scene, Vec3 eye, const WeatherPlaceInfo& info) {
+    if (!info.grid) return;
+    WetMapFirst(eye, w.placeFirstX, w.placeFirstZ);
+    // (一辺が偶数: 真ん中は最初のマスから kWetMapCells / 2 マスの角。点はマスの真ん中)
+    const Vec3 center{static_cast<float>(w.placeFirstX + kWetMapCells / 2) * kWetMapCell, std::isfinite(eye.y) ? eye.y : 0.f,
+                      static_cast<float>(w.placeFirstZ + kWetMapCells / 2) * kWetMapCell};
+    w.placeCells.assign(size_t{kWetMapCells} * kWetMapCells, WeatherPlace{});
+    info.grid(scene, center, kWetMapCell, kWetMapCells, w.placeCells.data());
+}
+
+void MoveWetMap(WetMap& map, std::span<const WetWay> ways, int firstX, int firstZ) {
+    const size_t n = size_t{kWetMapCells};
+    if (map.cells.size() != n * n) {
+        WetCell start{};
+        for (size_t k = 0; k < ways.size() && k < kWetWays; ++k) start[k] = {ways[k].sun, ways[k].shade, ways[k].snow};
+        map.cells.assign(n * n, start);
+        map.firstX = firstX;
+        map.firstZ = firstZ;
         return;
     }
-    for (WetWay& w : ways) {
-        w.sun = std::max(0.f, w.sun - dt / 90.f);
-        w.shade = std::max(0.f, w.shade - dt / 300.f);
+    if (firstX == map.firstX && firstZ == map.firstZ) return;
+    std::vector<WetCell> moved(n * n);
+    const long long last = kWetMapCells - 1;
+    for (long long z = 0; z < kWetMapCells; ++z) {
+        const long long fromZ = std::clamp(z + firstZ - map.firstZ, 0LL, last);
+        for (long long x = 0; x < kWetMapCells; ++x) {
+            const long long fromX = std::clamp(x + firstX - map.firstX, 0LL, last);
+            moved[static_cast<size_t>(z) * n + static_cast<size_t>(x)] = map.cells[static_cast<size_t>(fromZ) * n + static_cast<size_t>(fromX)];
+        }
     }
-    shareSnow();
-    std::erase_if(ways, [](const WetWay& w) { return w.sun <= 0 && w.shade <= 0 && !(w.snow > 0); });
+    map.cells = std::move(moved);
+    map.firstX = firstX;
+    map.firstZ = firstZ;
 }
+
+void StepWetMap(WetMap& map, std::vector<WetWay>& ways, std::span<const WeatherPlace> places, const WeatherNow& now, float precipitation, float dt,
+                float snowMost, Vec3 eye) {
+    dt = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
+    if (map.cells.empty() || places.size() != map.cells.size()) return;
+    // マスごとの今の天候 (雨と雪だけが場所で変わる) と、どこかで降っている一番多いもの (向きとしみこみ)。
+    std::vector<WeatherNow> here(map.cells.size(), now);
+    WeatherNow most = now;
+    most.rain = most.snow = 0;
+    for (size_t i = 0; i < here.size(); ++i) {
+        PlacedShare(precipitation, places[i], here[i].rain, here[i].snow);
+        most.rain = std::max(most.rain, here[i].rain);
+        most.snow = std::max(most.snow, here[i].snow);
+    }
+    std::array<float, kWetWays> totals{};
+    for (const WetCell& c : map.cells) {
+        for (size_t k = 0; k < kWetWays; ++k) totals[k] = std::max(totals[k], c[k].sun + c[k].shade + c[k].snow);
+    }
+    std::array<bool, kWetWays> fresh{};
+    const std::vector<Wetting> wetting = WettingNow(most);
+    PrepareWays(ways, wetting, dt, totals, fresh);
+    for (size_t i = 0; i < map.cells.size(); ++i) {
+        WetCell& c = map.cells[i];
+        for (size_t k = 0; k < kWetWays; ++k) {
+            if (fresh[k] || k >= ways.size()) c[k] = {};
+        }
+        StepLevels(ways, c.data(), here[i], dt, snowMost);
+    }
+    if (wetting.empty()) {
+        // 全部のマスで乾いて溶けた向きは消す (マスの並びも詰める)。
+        for (size_t k = std::min(ways.size(), kWetWays); k-- > 0;) {
+            const bool dry = std::all_of(map.cells.begin(), map.cells.end(), [k](const WetCell& c) { return Dry(c[k]); });
+            if (!dry) continue;
+            ways.erase(ways.begin() + static_cast<std::ptrdiff_t>(k));
+            for (WetCell& c : map.cells) {
+                std::move(c.begin() + static_cast<std::ptrdiff_t>(k) + 1, c.end(), c.begin() + static_cast<std::ptrdiff_t>(k));
+                c.back() = {};
+            }
+        }
+    }
+    // スクリプトが読む濡れと積雪 (rm::Sky::Wetness など): カメラのいるマス。
+    if (const WetCell* at = WetCellAt(map, eye.x, eye.z)) {
+        for (size_t k = 0; k < ways.size() && k < kWetWays; ++k) {
+            ways[k].sun = (*at)[k].sun;
+            ways[k].shade = (*at)[k].shade;
+            ways[k].snow = (*at)[k].snow;
+        }
+    }
+}
+
+const WetCell* WetCellAt(const WetMap& map, float x, float z) {
+    const size_t n = size_t{kWetMapCells};
+    if (map.cells.size() != n * n) return nullptr;
+    auto index = [](float v, int first) {
+        const float c = std::isfinite(v) ? std::floor(v / kWetMapCell) - static_cast<float>(first) : 0.f;
+        return static_cast<size_t>(std::clamp(c, 0.f, static_cast<float>(kWetMapCells - 1)));
+    };
+    return &map.cells[index(z, map.firstZ) * n + index(x, map.firstX)];
+}
+
+float WetMapMostSnow(const WetMap& map) {
+    float most = 0;
+    for (const WetCell& c : map.cells) {
+        float all = 0;
+        for (const WetLevel& l : c) all += Finite0(l.snow);
+        most = std::max(most, all);
+    }
+    return most;
+}
+
+WetMapInfo WetMapInfoOf(const WetMap& map) {
+    if (map.cells.size() != size_t{kWetMapCells} * kWetMapCells) return {};
+    return {static_cast<float>(map.firstX) * kWetMapCell, static_cast<float>(map.firstZ) * kWetMapCell, kWetMapCell, static_cast<float>(kWetMapCells)};
+}
+
+std::vector<float> WetMapTexels(const WetMap& map) {
+    const size_t n = size_t{kWetMapCells};
+    if (map.cells.size() != n * n) return {};
+    std::vector<float> out(n * 3 * n * 4, 0.f);
+    for (size_t z = 0; z < n; ++z) {
+        for (size_t x = 0; x < n; ++x) {
+            const WetCell& c = map.cells[z * n + x];
+            for (size_t k = 0; k < kWetWays; ++k) {
+                out[(z * 3 * n + x) * 4 + k] = std::isfinite(c[k].sun) ? std::clamp(c[k].sun, 0.f, 1.f) : 0.f;
+                out[(z * 3 * n + n + x) * 4 + k] = std::isfinite(c[k].shade) ? std::clamp(c[k].shade, 0.f, 1.f) : 0.f;
+                out[(z * 3 * n + 2 * n + x) * 4 + k] = std::isfinite(c[k].snow) ? std::clamp(c[k].snow, 0.f, kMostSnowDepth) : 0.f;
+            }
+        }
+    }
+    return out;
+}
+
+const WetMap* WetMapNow(const Weather& w) { return w.wetCounted && !w.wetMap.cells.empty() ? &w.wetMap : nullptr; }
 
 float WetnessOf(const std::vector<WetWay>& ways) {
     float most = 0;
@@ -301,9 +492,20 @@ void RunWeather(game_production::SystemContext& ctx) {
     const WeatherNow now = NowOf(*w);
     if (!w->wetCounted) {
         w->wetWays.clear();  // (ゲームは乾いて雪なしで始まる。降るにつれて積もる - 2026-11-19 / 20)
+        w->wetMap = {};
         w->wetCounted = true;
     }
-    StepWet(w->wetWays, now, dt, SnowMostOf(*w));
+    if (w->placeCells.size() == size_t{kWetMapCells} * kWetMapCells) {
+        // 場所ごと (答える者が今のフレームのマスを書いた): 地図をカメラのまわりへずらし、マスごとに進める。
+        MoveWetMap(w->wetMap, w->wetWays, w->placeFirstX, w->placeFirstZ);
+        const Vec3 eye{static_cast<float>(w->placeFirstX + kWetMapCells / 2) * kWetMapCell, 0,
+                       static_cast<float>(w->placeFirstZ + kWetMapCells / 2) * kWetMapCell};
+        StepWetMap(w->wetMap, w->wetWays, w->placeCells, now, PrecipitationNow(*w), dt, SnowMostOf(*w), eye);
+    } else {
+        w->wetMap = {};  // (答える者がいない: シーン全体で 1 つ)
+        StepWet(w->wetWays, now, dt, SnowMostOf(*w));
+    }
+    w->placeCells.clear();  // (次のフレームも、答える者が書く)
     w->driftX = std::fmod(w->driftX + now.windX * dt, kDriftWrap);
     w->driftZ = std::fmod(w->driftZ + now.windZ * dt, kDriftWrap);
 }
