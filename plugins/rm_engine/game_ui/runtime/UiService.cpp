@@ -5,9 +5,13 @@
 
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
 
+#include "base/Utf.h"
+#include "platform/Shell.h"
+
 #include <algorithm>
 #include <cmath>
 #include <unordered_set>
+#include <utility>
 
 namespace rm::game_ui {
 
@@ -35,10 +39,135 @@ void Held(std::span<const InputAction> actions, const InputFrame& f, int& dx, in
     if (std::abs(v) >= 0.5f && std::abs(v) >= std::abs(h)) dy = v > 0 ? 1 : -1;
 }
 
-UiButton* MutableButton(game_production::Scene& scene, int entity) {
-    game_production::SceneEntity* e = scene.Find(entity);
-    game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<UiButton>().name) : nullptr;
-    return c && c->Known() ? static_cast<UiButton*>(c->value.Get()) : nullptr;
+template <class T>
+T* Mutable(game_production::Scene& scene, int entity) {
+    game_production::SceneEntity* e = entity ? scene.Find(entity) : nullptr;
+    game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<T>().name) : nullptr;
+    return c && c->Known() ? static_cast<T*>(c->value.Get()) : nullptr;
+}
+
+UiButton* MutableButton(game_production::Scene& scene, int entity) { return Mutable<UiButton>(scene, entity); }
+
+// 点 (画面 DIP) をノード自身の単位に。
+std::optional<Vec2> Local(const UiNode& n, Vec2 p) {
+    const auto inv = Invert(n.self);
+    if (!inv) return std::nullopt;
+    return Apply(*inv, p);
+}
+
+// ノードの箱を画面で囲む箱。
+UiBox ScreenBox(const UiNode& n) {
+    const UiBox& b = n.box;
+    const Vec2 c[4] = {Apply(n.self, {b.x, b.y}), Apply(n.self, {b.Right(), b.y}), Apply(n.self, {b.Right(), b.Bottom()}), Apply(n.self, {b.x, b.Bottom()})};
+    float l = c[0].x, t = c[0].y, r = c[0].x, bt = c[0].y;
+    for (const Vec2& v : c) l = std::min(l, v.x), t = std::min(t, v.y), r = std::max(r, v.x), bt = std::max(bt, v.y);
+    return {l, t, r - l, bt - t};
+}
+
+// --- 入力の部品の 1 フレーム (StepUi の中) ---------------------------------------------------------
+
+// スライダーを `v` に (刻みに合わせる)。変わったら *changes に。
+void SetSlider(UiSlider& s, int entity, float v, std::vector<UiChange>& changes) {
+    const float before = SliderSnap(s, s.value);
+    s.value = SliderSnap(s, v);
+    if (s.value != before) changes.push_back({entity, false, s.value, {}});
+}
+
+// トグルを押した: 入れ替える (グループなら自分をオンに、同じウィンドウの同じグループのほかをオフに)。
+void PressToggle(game_production::Scene& scene, const UiTree& tree, const UiNode& n, std::vector<UiChange>& changes) {
+    UiToggle* t = Mutable<UiToggle>(scene, n.entity);
+    if (!t) return;
+    const bool was = t->on;
+    if (t->group.empty()) {
+        t->on = !t->on;
+    } else {
+        t->on = true;
+        for (const UiNode& o : tree.nodes) {
+            if (o.entity == n.entity || o.canvas != n.canvas || !o.toggle || o.toggle->group != t->group) continue;
+            UiToggle* other = Mutable<UiToggle>(scene, o.entity);
+            if (!other || !other->on) continue;
+            other->on = false;
+            changes.push_back({o.entity, false, 0.0, {}});
+        }
+    }
+    if (t->on != was) changes.push_back({n.entity, false, t->on ? 1.0 : 0.0, {}});
+}
+
+// ホイールとドラッグ (スクロールバーのつまみ・溝、中身の空いた所)。
+void StepScroll(game_production::Scene& scene, const UiTree& tree, std::optional<Vec2> pointer, bool down, bool wentDown, float wheel, int hoveredButton,
+                UiFocus& state) {
+    if (!down) state.scrolling = 0;
+    if (pointer && wheel != 0) {
+        const int si = ScrollAt(tree, *pointer);
+        const UiNode* n = si >= 0 ? &tree.nodes[static_cast<size_t>(si)] : nullptr;
+        if (UiScroll* sc = n ? Mutable<UiScroll>(scene, n->entity) : nullptr) {
+            const UiScrollRange r = ScrollRange(*sc, n->box, n->content);
+            // (縦に動けば縦、動かなければ横へ。+ は奥へ回す = 上を見る)
+            if (r.high.y - r.low.y > 0.5f) {
+                sc->offset.y -= wheel * sc->wheelStep;
+            } else {
+                sc->offset.x -= wheel * sc->wheelStep;
+            }
+            sc->offset = ClampScroll(sc->offset, r);
+        }
+    }
+    if (pointer && wentDown && !state.scrolling) {
+        const int si = ScrollAt(tree, *pointer);
+        const UiNode* n = si >= 0 ? &tree.nodes[static_cast<size_t>(si)] : nullptr;
+        UiScroll* sc = n ? Mutable<UiScroll>(scene, n->entity) : nullptr;
+        const auto local = n ? Local(*n, *pointer) : std::nullopt;
+        if (sc && local) {
+            const UiScrollRange r = ScrollRange(*sc, n->box, n->content);
+            for (const bool vertical : {true, false}) {
+                const UiScrollBar bar = ScrollBar(*sc, n->box, n->content, sc->offset, vertical);
+                if (!bar.shown || !bar.track.Contains(*local)) continue;
+                if (!bar.thumb.Contains(*local)) {
+                    // 溝: 枠 1 つ分だけその向きへ。
+                    const float page = vertical ? n->box.h : n->box.w;
+                    const bool before = vertical ? local->y < bar.thumb.y : local->x < bar.thumb.x;
+                    (vertical ? sc->offset.y : sc->offset.x) += before ? -page : page;
+                    sc->offset = ClampScroll(sc->offset, r);
+                }
+                state.scrolling = n->entity;
+                state.thumb = true;
+                state.thumbVertical = vertical;
+                state.dragFrom = *local;
+                state.offsetFrom = sc->offset;
+                return;
+            }
+            if (sc->drag && !hoveredButton) {
+                state.scrolling = n->entity;
+                state.thumb = false;
+                state.dragFrom = *local;
+                state.offsetFrom = sc->offset;
+            }
+        }
+        return;
+    }
+    if (pointer && down && state.scrolling) {
+        const UiNode* n = tree.Find(state.scrolling);
+        UiScroll* sc = n ? Mutable<UiScroll>(scene, n->entity) : nullptr;
+        const auto local = n ? Local(*n, *pointer) : std::nullopt;
+        if (!sc || !local) {
+            state.scrolling = 0;
+            return;
+        }
+        const UiScrollRange r = ScrollRange(*sc, n->box, n->content);
+        const Vec2 moved{local->x - state.dragFrom.x, local->y - state.dragFrom.y};
+        Vec2 to = state.offsetFrom;
+        if (state.thumb) {
+            const UiScrollBar bar = ScrollBar(*sc, n->box, n->content, sc->offset, state.thumbVertical);
+            if (state.thumbVertical) {
+                to.y += ThumbDrag(bar, moved.y, r.low.y, r.high.y, true);
+            } else {
+                to.x += ThumbDrag(bar, moved.x, r.low.x, r.high.x, false);
+            }
+        } else {
+            // 中身をつかんでいる: マウスと一緒に動く (動かない向きは範囲が 0)。
+            to = {to.x - moved.x, to.y - moved.y};
+        }
+        sc->offset = ClampScroll(to, r);
+    }
 }
 
 bool PressableIn(const UiTree& tree, int canvas, int entity) {
@@ -86,18 +215,85 @@ UiKeys ReadUiKeys(std::span<const InputAction> actions, const InputFrame& now, c
     return k;
 }
 
+bool StartTyping(game_production::Scene& scene, UiFocus& state, int entity) {
+    UiInputField* f = Mutable<UiInputField>(scene, entity);
+    const UiButton* b = Mutable<UiButton>(scene, entity);
+    if (!f || (b && !b->interactable)) return false;
+    if (state.typing == entity) return true;
+    if (state.typing) StopTyping(scene, state, false);
+    state.typing = entity;
+    state.typedBefore = f->text;
+    f->typing = true;
+    f->caret = f->anchor = static_cast<int>(Utf8ToWide(f->text).size());
+    f->composing.clear();
+    f->composingCaret = 0;
+    return true;
+}
+
+void StopTyping(game_production::Scene& scene, UiFocus& state, bool restore, std::vector<UiChange>* changes) {
+    const int id = std::exchange(state.typing, 0);
+    UiInputField* f = Mutable<UiInputField>(scene, id);
+    if (!f) return;
+    f->typing = false;
+    f->composing.clear();
+    f->composingCaret = 0;
+    if (restore && f->text != state.typedBefore) {
+        f->text = state.typedBefore;
+        if (changes) changes->push_back({id, false, 0.0, f->text});
+    }
+    f->caret = f->anchor = std::min(f->caret, static_cast<int>(Utf8ToWide(f->text).size()));
+}
+
 UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<Vec2> pointer, bool down, bool wentDown, bool wentUp,
-              std::span<const InputAction> actions, const InputFrame* now, const InputFrame* before, float dt, UiFocus& state) {
+              std::span<const InputAction> actions, const InputFrame* now, const InputFrame* before, float dt, UiFocus& state,
+              const ui::TypedText* typed, const UiClipboard* clip) {
     UiStep step;
     FollowWindows(tree, state);
+    // 打っている入力欄: このフレームの打鍵 (Enter で決まり、Esc で前に戻る)。押せなくなった・見えなく
+    // なった欄はやめる。
+    const int typingAtStart = state.typing;
+    if (state.typing) {
+        const UiNode* n = tree.Find(state.typing);
+        UiInputField* f = Mutable<UiInputField>(scene, state.typing);
+        if (!n || !f || n->closing || (n->button && !n->button->interactable)) {
+            StopTyping(scene, state, false);
+        } else if (typed) {
+            std::wstring text = Utf8ToWide(f->text);
+            const UiTypeResult r = TypeInto(text, f->caret, f->anchor, *f, *typed, clip ? *clip : UiClipboard{});
+            if (r.changed) {
+                f->text = WideToUtf8(text);
+                step.changes.push_back({state.typing, false, 0.0, f->text});
+            }
+            f->composing = WideToUtf8(typed->imeComposition);
+            f->composingCaret = typed->imeCursor;
+            if (r.submitted) {
+                step.changes.push_back({state.typing, true, 0.0, f->text});
+                StopTyping(scene, state, false);
+            } else if (r.cancelled) {
+                StopTyping(scene, state, true, &step.changes);
+            }
+        }
+    }
     // マウス。
     const PointerResult pr = StepPointer(tree, pointer, down, wentDown, wentUp, state.pointer);
     const bool moved = pointer && state.lastPointer && std::abs(pointer->x - state.lastPointer->x) + std::abs(pointer->y - state.lastPointer->y) > 0.5f;
-    if (moved || (pointer && wentDown)) state.keyboard = false;  // マウスを使っている: 選択は表示しない
+    if (moved || (pointer && (wentDown || (now && now->wheel != 0)))) state.keyboard = false;  // マウスを使っている: 選択は表示しない
     state.lastPointer = pointer;
+    // ほかの所を押した: 打つのをやめる (文字はそのまま)。
+    if (state.typing && pointer && wentDown && pr.hovered != state.typing) StopTyping(scene, state, false);
+    StepScroll(scene, tree, pointer, down, wentDown, now ? now->wheel : 0.f, pr.hovered, state);
     if (pr.clicked) {
         step.clicked.push_back(pr.clicked);
         state.focus = pr.clicked;  // (キーはそこから続ける)
+    }
+    // スライダー: 押している間 (外へ出ても)、マウスの所の値。速いクリックも。
+    if (pointer) {
+        const int held = state.pointer.pressed ? state.pointer.pressed : pr.clicked;
+        const UiNode* n = held ? tree.Find(held) : nullptr;
+        UiSlider* s = n && n->slider ? Mutable<UiSlider>(scene, held) : nullptr;
+        if (s) {
+            if (const auto local = Local(*n, *pointer)) SetSlider(*s, held, SliderAt(*s, n->box, *local), step.changes);
+        }
     }
     // キーとパッドは、それを受ける一番手前のウィンドウで: そこには必ず選ばれたボタンがある。
     const int window = NavigationCanvas(tree);
@@ -133,23 +329,46 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
         } else {
             state.heldDx = state.heldDy = 0;
         }
-        if (keys.dx || keys.dy) {
-            // マウスの後の最初の 1 歩は選択を再び見せるだけ。その次から 1 歩ずつ動かす。
-            if (state.keyboard && state.focus) state.focus = NextButton(tree, window, state.focus, keys.dx, keys.dy);
-            state.keyboard = true;
-        }
-        if (keys.submit && state.focus) {
-            step.clicked.push_back(state.focus);
-            state.keyboard = true;
-        }
-        if (keys.cancel) {
-            const int cancelButton = static_cast<int>(wn->canvasPart->cancelButton.id);
-            if (PressableIn(tree, window, cancelButton)) {
-                step.clicked.push_back(cancelButton);
-            } else if (CloseWindow(scene, state, window)) {
-                step.closed = window;
+        if (typingAtStart) {
+            // 文字を打っている (打ち始めたフレームも): 矢印・Enter・Space は欄のもの。戻る (パッドの B) は
+            // 打つのをやめるだけ (ウィンドウは閉じない。Esc は欄が受けた)。
+            if (keys.cancel && state.typing) StopTyping(scene, state, true, &step.changes);
+        } else {
+            if (keys.dx || keys.dy) {
+                // 選んでいるスライダーの向きのキー: 値を動かす (ほかの向きは選択が移る)。
+                const UiNode* fn = state.keyboard && state.focus ? tree.Find(state.focus) : nullptr;
+                UiSlider* s = fn && fn->slider && fn->button && fn->button->interactable ? Mutable<UiSlider>(scene, state.focus) : nullptr;
+                const int nudge = s ? SliderKey(*s, keys.dx, keys.dy) : 0;
+                if (s && nudge) {
+                    SetSlider(*s, state.focus, SliderNudge(*s, nudge), step.changes);
+                } else if (state.keyboard && state.focus) {
+                    // マウスの後の最初の 1 歩は選択を再び見せるだけ。その次から 1 歩ずつ動かす。
+                    state.focus = NextButton(tree, window, state.focus, keys.dx, keys.dy);
+                }
+                state.keyboard = true;
+            }
+            if (keys.submit && state.focus) {
+                step.clicked.push_back(state.focus);
+                state.keyboard = true;
+            }
+            if (keys.cancel) {
+                const int cancelButton = static_cast<int>(wn->canvasPart->cancelButton.id);
+                if (PressableIn(tree, window, cancelButton)) {
+                    step.clicked.push_back(cancelButton);
+                } else if (CloseWindow(scene, state, window)) {
+                    step.closed = window;
+                }
             }
         }
+    } else if (typingAtStart && now && before && state.typing && ReadUiKeys(actions, *now, *before).cancel) {
+        StopTyping(scene, state, true, &step.changes);  // (キーとパッドで選ばないウィンドウの欄)
+    }
+    // 押された入力の部品: トグルは入れ替わり、入力欄は打ち始める。
+    for (const int id : step.clicked) {
+        const UiNode* n = tree.Find(id);
+        if (!n || !n->button || !n->button->interactable) continue;
+        if (n->toggle) PressToggle(scene, tree, *n, step.changes);
+        if (n->input && id != typingAtStart) StartTyping(scene, state, id);
     }
     // このフレームの各ボタンの見た目。
     for (const UiNode& n : tree.nodes) {
@@ -190,6 +409,43 @@ UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<V
         b->hot = false;
         if (b->ready) b->now = ButtonTarget(*b);
     }
+    // トグルの見た目 (スイッチのつまみ) をオン / オフへなめらかに。スクロール: 選んだボタンを見せ、範囲に
+    // 収め、その範囲を書く (スクリプトの 0..1)。
+    for (const UiNode& n : tree.nodes) {
+        if (n.toggle) {
+            if (UiToggle* t = Mutable<UiToggle>(scene, n.entity)) {
+                const float goal = t->on ? 1.f : 0.f;
+                const float k = EaseAmount(dt, n.button ? n.button->transition : 0.08f);
+                t->shown = t->ready ? t->shown + (goal - t->shown) * k : goal;
+                if (std::abs(goal - t->shown) < 1e-3f) t->shown = goal;
+                t->ready = true;
+            }
+        }
+    }
+    const UiNode* focusNode = state.keyboard && state.focus && state.focus != state.shownFocus ? tree.Find(state.focus) : nullptr;
+    if (focusNode) {
+        // 内側のスクロールから順に (どれも同じフレームの並びで)。
+        size_t guard = 0;
+        for (int c = focusNode->clip; c >= 0 && guard++ <= tree.nodes.size(); c = tree.nodes[static_cast<size_t>(c)].clip) {
+            const UiNode& sn = tree.nodes[static_cast<size_t>(c)];
+            UiScroll* sc = Mutable<UiScroll>(scene, sn.entity);
+            if (!sc || !sc->followFocus) continue;
+            sc->offset = ScrollToShow(sc->offset, sn.box, BoxInScroll(tree, c, *focusNode), ScrollRange(*sc, sn.box, sn.content));
+        }
+    }
+    if (state.keyboard) state.shownFocus = state.focus;
+    for (const UiNode& n : tree.nodes) {
+        if (!n.scroll) continue;
+        if (UiScroll* sc = Mutable<UiScroll>(scene, n.entity)) {
+            const UiScrollRange r = ScrollRange(*sc, n.box, n.content);
+            sc->offset = ClampScroll(sc->offset, r);
+            sc->low = r.low;
+            sc->high = r.high;
+        }
+    }
+    // 打っている欄 (ホストは IME をつなぎ、候補の窓をその下に出す)。
+    step.typing = state.typing;
+    if (const UiNode* n = state.typing ? tree.Find(state.typing) : nullptr) step.typingBox = ScreenBox(*n);
     return step;
 }
 
@@ -444,7 +700,32 @@ void UiService::Frame(const game_production::PlayFrame& f) {
     // 1 フレームに両方ある (ボタンはどちらの見た目でも上がっている): StepPointer はそれをクリックと扱う。
     const bool wentDown = f.pointerWentDown || (down && !before);
     const bool wentUp = f.pointerWentUp || (!down && before);
-    const UiStep step = StepUi(f.scene, tree, f.pointer, down, wentDown, wentUp, actions, f.input, f.inputBefore, f.dt, state_);
+    // 入力欄のコピーと貼り付け: Windows のクリップボード (持ち主はこのスレッドの手前のウィンドウ: 打っている
+    // ゲームの / エディターのウィンドウ。null では書けない)。
+    UiClipboard clip;
+    clip.get = [] { return platform::GetClipboardText(GetActiveWindow()); };
+    clip.set = [](const std::wstring& s) { platform::SetClipboardText(GetActiveWindow(), s); };
+    const UiStep step = StepUi(f.scene, tree, f.pointer, down, wentDown, wentUp, actions, f.input, f.inputBefore, f.dt, state_, f.typed, &clip);
+    if (f.textInput) {
+        f.textInput->want = step.typing != 0;
+        f.textInput->x = step.typingBox.x, f.textInput->y = step.typingBox.y;
+        f.textInput->w = step.typingBox.w, f.textInput->h = step.typingBox.h;
+    }
+    // 値が変わった入力の部品: そのエンティティのスクリプトの OnEvent へ (このフレームの終わりに届く)。
+    for (const UiChange& c : step.changes) {
+        if (c.submitted && host_.log) {
+            if (const game_production::SceneEntity* e = f.scene.Find(c.entity)) host_.log(0, "ゲーム UI: 「" + e->data.name + "」で Enter を押しました");
+        }
+        if (!f.world || f.world->events.size() >= 10000) continue;
+        game_production::QueuedEvent q;
+        q.name = c.submitted ? kSubmittedEvent : kChangedEvent;
+        q.number = c.number;
+        q.text = c.text;
+        q.entity = c.entity;
+        q.scope = 1;
+        q.target = c.entity;
+        f.world->events.push_back(std::move(q));
+    }
     // 押された各ボタンについて: その音、次にそれがすること、次にスクリプトの OnClick (仕様 §6-6:
     // OnClick はアクションがしたことを読む。シーンと終了は依頼され、フレームの後に行う)。
     game_production::SoundPlayer* sounds = f.services ? f.services->Sounds() : nullptr;

@@ -3,6 +3,7 @@
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "core/asset/BakedImage.h"
+#include "rm_engine/game_ui/runtime/UiControls.h"
 #include "platform/Image.h"
 #include "platform/Shell.h"
 
@@ -14,6 +15,7 @@
 #include <functional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 namespace rm::game_ui {
 
@@ -470,7 +472,173 @@ void UiRenderer::DrawBody(const UiNode& n, const Affine& full, platform::Gfx& gf
         if (ID2D1SolidColorBrush* b = Brush(Paint(n.bar->fill, paint))) dc_->FillRectangle(ToD2D(BarFill(*n.bar, n.box)), b);
         dc_->SetTransform(old);
     }
-    if (n.text) DrawText(n, full, gfx, asset);
+    if (n.slider) DrawSlider(n, full, paint);
+    if (n.toggle) DrawToggle(n, full, paint);
+    if (n.input) {
+        DrawInput(n, full, gfx, asset);  // (同じエンティティの文字は、その見た目として使う)
+    } else if (n.text) {
+        DrawText(n, full, gfx, asset);
+    }
+}
+
+// --- 入力の部品 ---------------------------------------------------------------------------------
+
+void UiRenderer::DrawSlider(const UiNode& n, const Affine& full, const UiPaint& paint) {
+    const UiSlider& s = *n.slider;
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(ToD2D(full) * old);
+    auto bar = [&](const UiBox& b, Color c) {
+        if (b.w <= 0 || b.h <= 0) return;
+        const float r = std::min(b.w, b.h) * 0.5f;
+        if (ID2D1SolidColorBrush* br = Brush(Paint(c, paint))) dc_->FillRoundedRectangle(D2D1::RoundedRect(ToD2D(b), r, r), br);
+    };
+    bar(SliderTrack(s, n.box), s.back);
+    bar(SliderFill(s, n.box), s.fill);
+    const UiBox h = SliderHandle(s, n.box);
+    if (h.w > 0) {
+        if (ID2D1SolidColorBrush* br = Brush(Paint(s.handle, paint))) {
+            dc_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(h.x + h.w * 0.5f, h.y + h.h * 0.5f), h.w * 0.5f, h.h * 0.5f), br);
+        }
+    }
+    dc_->SetTransform(old);
+}
+
+void UiRenderer::DrawToggle(const UiNode& n, const Affine& full, const UiPaint& paint) {
+    const UiToggle& t = *n.toggle;
+    const UiBox m = ToggleMark(t, n.box);
+    if (m.w <= 0 || m.h <= 0) return;
+    const float on = ToggleShown(t);
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(ToD2D(full) * old);
+    const Color body = Paint(Mix(t.back, t.onColor, on), paint);
+    if (t.look == UiToggleLook::Switch) {
+        // 溝 (地の色からオンの色へ) と、左 (オフ) から右 (オン) へ動く丸いつまみ。
+        const float r = m.h * 0.5f;
+        if (ID2D1SolidColorBrush* br = Brush(body)) dc_->FillRoundedRectangle(D2D1::RoundedRect(ToD2D(m), r, r), br);
+        const float knob = m.h * 0.38f;
+        const float cx = m.x + r + (m.w - 2 * r) * on;
+        if (ID2D1SolidColorBrush* br = Brush(Paint(t.mark, paint))) dc_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, m.y + r), knob, knob), br);
+    } else {
+        // 角の丸い箱と、オンのときのチェックの印 (薄くなって出る)。
+        const float r = m.h * 0.2f;
+        if (ID2D1SolidColorBrush* br = Brush(body)) dc_->FillRoundedRectangle(D2D1::RoundedRect(ToD2D(m), r, r), br);
+        Color c = Paint(t.mark, paint);
+        c.a *= on;
+        if (c.a > 0.001f) {
+            if (ID2D1SolidColorBrush* br = Brush(c)) {
+                const float w = std::max(1.f, m.h * 0.12f);
+                const D2D1_POINT_2F a{m.x + m.w * 0.24f, m.y + m.h * 0.52f}, b{m.x + m.w * 0.43f, m.y + m.h * 0.71f}, e{m.x + m.w * 0.77f, m.y + m.h * 0.3f};
+                dc_->DrawLine(a, b, br, w);
+                dc_->DrawLine(b, e, br, w);
+            }
+        }
+    }
+    dc_->SetTransform(old);
+}
+
+void UiRenderer::DrawInput(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset) {
+    const UiInputField& f = *n.input;
+    const UiText style = n.text ? *n.text : UiText{};
+    const UiInputView v = InputView(f);
+    const float pad = std::clamp(f.padding, 0.f, n.box.w * 0.5f);
+    const UiBox in{n.box.x + pad, n.box.y, n.box.w - 2 * pad, n.box.h};
+    if (in.w <= 0 || in.h <= 0) return;
+    const Font* font = FontOf(gfx, style.fontFile, asset);
+    const std::wstring family = font ? font->family : Utf8ToWide(style.font.empty() ? std::string("Yu Gothic UI") : style.font);
+    IDWriteTextFormat* fmt = Format(gfx, family, font ? font->collection.Get() : nullptr, std::max(style.size, 1.f), style.bold, style.italic);
+    if (!fmt) return;
+    Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+    if (FAILED(gfx.DWrite()->CreateTextLayout(v.shown.c_str(), static_cast<UINT32>(v.shown.size()), fmt, 100000.f, in.h, &layout))) return;
+    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    layout->SetParagraphAlignment(style.alignY == UiAlignY::Top      ? DWRITE_PARAGRAPH_ALIGNMENT_NEAR
+                                  : style.alignY == UiAlignY::Bottom ? DWRITE_PARAGRAPH_ALIGNMENT_FAR
+                                                                     : DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    if (v.compLength > 0) layout->SetUnderline(TRUE, {v.compStart, v.compLength});  // (IME の変換中)
+    DWRITE_TEXT_METRICS tm{};
+    layout->GetMetrics(&tm);
+    const float width = tm.widthIncludingTrailingWhitespace;
+    FLOAT caretX = 0, caretY = 0;
+    DWRITE_HIT_TEST_METRICS hm{};
+    layout->HitTestTextPosition(v.caret, FALSE, &caretX, &caretY, &hm);
+    // 横の場所: 入るなら揃えのとおり。入らなければ、打っている間はカーソルが見えるように左へずらす。
+    float x = 0;
+    if (width <= in.w) {
+        x = style.alignX == UiAlignX::Center ? (in.w - width) * 0.5f : style.alignX == UiAlignX::Right ? in.w - width : 0.f;
+    } else if (f.typing) {
+        x = -std::clamp(caretX - (in.w - 2.f), 0.f, width - in.w + 2.f);
+    }
+    const D2D1_POINT_2F at{in.x + x, in.y};
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(ToD2D(full) * old);
+    dc_->PushAxisAlignedClip(ToD2D(in), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    auto ranges = [&](uint32_t start, uint32_t length) {
+        std::vector<DWRITE_HIT_TEST_METRICS> out;
+        UINT32 count = 0;
+        layout->HitTestTextRange(start, length, at.x, at.y, nullptr, 0, &count);
+        if (count == 0) return out;
+        out.resize(count);
+        if (FAILED(layout->HitTestTextRange(start, length, at.x, at.y, out.data(), count, &count))) out.clear();
+        out.resize(std::min<size_t>(out.size(), count));
+        return out;
+    };
+    auto faded = [&](Color c) {
+        c.a *= n.alpha;
+        return c;
+    };
+    if (f.typing && v.selEnd > v.selStart) {
+        if (ID2D1SolidColorBrush* b = Brush(faded(f.selectionColor))) {
+            for (const auto& r : ranges(v.selStart, v.selEnd - v.selStart)) dc_->FillRectangle(D2D1::RectF(r.left, r.top, r.left + r.width, r.top + r.height), b);
+        }
+    }
+    if (ID2D1SolidColorBrush* b = Brush(faded(v.placeholder ? f.placeholderColor : style.color))) dc_->DrawTextLayout(at, layout.Get(), b, D2D1_DRAW_TEXT_OPTIONS_NONE);
+    // カーソル: 打っている間、0.5 秒ごとに点滅する。
+    if (f.typing && std::fmod(time_, 1.0) < 0.5) {
+        const float cx = at.x + caretX;
+        const float top = at.y + hm.top, h = hm.height > 0 ? hm.height : std::max(style.size, 1.f);
+        if (ID2D1SolidColorBrush* b = Brush(faded(f.caretColor))) dc_->DrawLine({cx, top}, {cx, top + h}, b, std::max(1.5f, style.size * 0.05f));
+    }
+    dc_->PopAxisAlignedClip();
+    dc_->SetTransform(old);
+}
+
+void UiRenderer::DrawScrollBars(const UiNode& n, const Affine& full) {
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    dc_->SetTransform(ToD2D(full) * old);
+    for (const bool vertical : {true, false}) {
+        const UiScrollBar bar = ScrollBar(*n.scroll, n.box, n.content, n.scroll->offset, vertical);
+        if (!bar.shown) continue;
+        const float r = std::min(bar.track.w, bar.track.h) * 0.5f;
+        Color back = n.scroll->barBack, thumb = n.scroll->barThumb;
+        back.a *= n.alpha;
+        thumb.a *= n.alpha;
+        if (ID2D1SolidColorBrush* b = Brush(back)) dc_->FillRoundedRectangle(D2D1::RoundedRect(ToD2D(bar.track), r, r), b);
+        if (ID2D1SolidColorBrush* b = Brush(thumb)) dc_->FillRoundedRectangle(D2D1::RoundedRect(ToD2D(bar.thumb), r, r), b);
+    }
+    dc_->SetTransform(old);
+}
+
+int UiRenderer::PushClips(const UiTree& tree, int clip, const Affine& toDc) {
+    // 外側の枠から順に。
+    std::vector<int> chain;
+    for (int c = clip; c >= 0 && c < static_cast<int>(tree.nodes.size()) && chain.size() <= tree.nodes.size(); c = tree.nodes[static_cast<size_t>(c)].clip) chain.push_back(c);
+    D2D1_MATRIX_3X2_F old;
+    dc_->GetTransform(&old);
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+        const UiNode& s = tree.nodes[static_cast<size_t>(*it)];
+        dc_->SetTransform(ToD2D(toDc * s.self) * old);
+        dc_->PushAxisAlignedClip(ToD2D(s.box), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    }
+    dc_->SetTransform(old);
+    return static_cast<int>(chain.size());
+}
+
+void UiRenderer::PopClips(int count) {
+    for (int i = 0; i < count; ++i) dc_->PopAxisAlignedClip();
 }
 
 void UiRenderer::DrawWithEffects(const UiNode& n, const Affine& full, platform::Gfx& gfx, const AssetReader& asset, const UiPaint& paint) {
@@ -588,7 +756,7 @@ void UiRenderer::SetPlaying(bool playing) { playing_ = playing; }
 
 bool UiRenderer::Animates(const UiTree& tree) {
     for (const UiNode& n : tree.nodes) {
-        if (n.video || (n.style && n.style->rainbow.enabled)) return true;
+        if (n.video || (n.style && n.style->rainbow.enabled) || (n.input && n.input->typing)) return true;  // (カーソルの点滅)
     }
     return false;
 }
@@ -613,37 +781,59 @@ void UiRenderer::Draw(ID2D1DeviceContext* dc, platform::Gfx& gfx, const UiTree& 
     // 回したり拡大縮小したテキストは ClearType にできない: 全部グレースケールにする (あとで戻す)。
     const D2D1_TEXT_ANTIALIAS_MODE aa = dc->GetTextAntialiasMode();
     dc->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
-    for (const UiNode& n : tree.nodes) {
-        const Affine full = toDc * n.self;
-        if (n.alpha <= 0.001f) continue;  // 全体が消えた (子も: その alpha はこの下にある)
-        const UiButtonLook look = n.button ? ButtonNow(*n.button) : UiButtonLook{};
-        UiPaint paint = PaintOf(look);
-        paint.tint.a *= n.alpha;  // (出る・消える動き / FadeTo: 描くものすべて)
-        if (const auto rb = RainbowFor(n, &UiRainbow::body)) paint.tint = Multiply(paint.tint, *rb);
-        // 順序: 影 - 発光 - 本体 (背景、画像、バー、文字; ぼかし) - 立体 - 枠 - キーの選択 (仕様 §3-4 は
-        // 光を本体の上に置く: 本体そのものが白くなった - 2026-11-17 画面で確認)。
-        const UiStyle* st = n.style;
-        if (st && (st->shadow.enabled || st->glow.enabled || (st->blur.enabled && st->blur.radius > 0))) {
-            DrawWithEffects(n, full, gfx, asset, paint);
-        } else {
-            DrawBody(n, full, gfx, asset, paint);
+    std::vector<int> open;  // 中を描いている途中のスクロール (下の物を全部描いたら、その上にバー)
+    for (size_t i = 0; i < tree.nodes.size(); ++i) {
+        const UiNode& n = tree.nodes[i];
+        if (n.alpha > 0.001f) {  // (全体が消えた物は描かない。子も: その alpha はこの下にある)
+            if (n.clip >= 0 && showClipped_) {
+                UiNode ghost = n;  // 枠の外の分も薄く (UI タブ)
+                ghost.alpha *= 0.25f;
+                DrawNode(ghost, toDc, gfx, asset);
+            }
+            const int clips = n.clip >= 0 ? PushClips(tree, n.clip, toDc) : 0;
+            DrawNode(n, toDc, gfx, asset);
+            PopClips(clips);
+            if (n.scroll) open.push_back(static_cast<int>(i));
         }
-        if (st && BevelShown(*st)) DrawBevel(n, full, BevelInset(*st, n.button));
-        if (st && st->border.enabled) {
-            // その 枠 を、ボタンの状態の縁取りと混ぜる (UI-2: 自分の枠へ向かい、細くはならない)。
-            const UiStroke own{st->border.width, Rainbowed(st->border.color, RainbowFor(n, &UiRainbow::border))};
-            UiStroke stroke = n.button ? ButtonOutline(look, own) : own;
-            stroke.color.a *= n.alpha;
-            DrawBorder(n, full, stroke);
-        } else if (n.button) {
-            UiStroke stroke = ButtonOutline(look);
-            stroke.color.a *= n.alpha;
-            DrawOutline(n, full, stroke);
+        while (!open.empty() && tree.nodes[static_cast<size_t>(open.back())].end <= static_cast<int>(i) + 1) {
+            const UiNode& s = tree.nodes[static_cast<size_t>(open.back())];
+            open.pop_back();
+            const int clips = s.clip >= 0 ? PushClips(tree, s.clip, toDc) : 0;
+            DrawScrollBars(s, toDc * s.self);
+            PopClips(clips);
         }
-        if (n.button && n.button->focused && n.button->interactable) DrawFocus(n, full);
     }
     dc->SetTextAntialiasMode(aa);
     std::erase_if(videos_, [](const auto& kv) { return !kv.second.seen; });  // (描かれていない: 止める - 音も)
+}
+
+void UiRenderer::DrawNode(const UiNode& n, const Affine& toDc, platform::Gfx& gfx, const AssetReader& asset) {
+    const Affine full = toDc * n.self;
+    const UiButtonLook look = n.button ? ButtonNow(*n.button) : UiButtonLook{};
+    UiPaint paint = PaintOf(look);
+    paint.tint.a *= n.alpha;  // (出る・消える動き / FadeTo: 描くものすべて)
+    if (const auto rb = RainbowFor(n, &UiRainbow::body)) paint.tint = Multiply(paint.tint, *rb);
+    // 順序: 影 - 発光 - 本体 (背景、画像、バー、文字; ぼかし) - 立体 - 枠 - キーの選択 (仕様 §3-4 は
+    // 光を本体の上に置く: 本体そのものが白くなった - 2026-11-17 画面で確認)。
+    const UiStyle* st = n.style;
+    if (st && (st->shadow.enabled || st->glow.enabled || (st->blur.enabled && st->blur.radius > 0))) {
+        DrawWithEffects(n, full, gfx, asset, paint);
+    } else {
+        DrawBody(n, full, gfx, asset, paint);
+    }
+    if (st && BevelShown(*st)) DrawBevel(n, full, BevelInset(*st, n.button));
+    if (st && st->border.enabled) {
+        // その 枠 を、ボタンの状態の縁取りと混ぜる (UI-2: 自分の枠へ向かい、細くはならない)。
+        const UiStroke own{st->border.width, Rainbowed(st->border.color, RainbowFor(n, &UiRainbow::border))};
+        UiStroke stroke = n.button ? ButtonOutline(look, own) : own;
+        stroke.color.a *= n.alpha;
+        DrawBorder(n, full, stroke);
+    } else if (n.button) {
+        UiStroke stroke = ButtonOutline(look);
+        stroke.color.a *= n.alpha;
+        DrawOutline(n, full, stroke);
+    }
+    if (n.button && n.button->focused && n.button->interactable) DrawFocus(n, full);
 }
 
 }  // namespace rm::game_ui

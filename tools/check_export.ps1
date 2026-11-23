@@ -358,14 +358,17 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     } else {
         $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
         $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        # 入力の部品 (入力欄・スライダー・トグル・スクロール) も読めて、スクリプトの rm::UI がその値を読める (見本の ControlValue)。
         $ok = $r.ExitCode -eq 0 -and $gameLog.Contains('シーン 2 個。最初のシーン: Title') -and $gameLog.Contains('「はじめる」が押されました') -and
-              $gameLog.Contains('シーンを切り替えました: Title → Game') -and -not $gameLog.Contains('rm::game_ui::')
+              $gameLog.Contains('シーンを切り替えました: Title → Game') -and -not $gameLog.Contains('rm::game_ui::') -and
+              $gameLog.Contains('入力の部品の見本: 名前 = 「RM」') -and $gameLog.Contains('入力の部品の見本: 音量 = 0.70') -and
+              $gameLog.Contains('入力の部品の見本: 効果音 = 1.00')
         if (-not $ok) {
             Write-Host "NG  game_ui: UI の見本が動いていません (終了コード $($r.ExitCode))"
             $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
             $failed++
         } else {
-            Write-Host "OK  game_ui: UI の見本を書き出し、UI の部品が読めて、はじめるの OnClick で Title から Game に切り替わりました"
+            Write-Host "OK  game_ui: UI の見本を書き出し、UI の部品 (入力欄・スライダー・トグル・スクロールも) が読めて、はじめるの OnClick で Title から Game に切り替わりました"
         }
     }
 }

@@ -232,8 +232,18 @@ public:
         pf.actions = &world_.Actions();  // (プレイヤーの割り当て)
         pf.hooks = &asked;
         pf.world = &world_;
+        // 打たれた文字 (ゲーム UI の入力欄)。サービスが「打っている」と言えば、ウィンドウが IME をつなぐ。
+        const ui::TypedText typed = host_.TakeTyped();
+        pf.typed = &typed;
+        TextInputAsk textAsk;
+        pf.textInput = &textAsk;
         services_.Frame(pf);
-        if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, asked);
+        host_.SetTextInput(textAsk.want, textAsk.x, textAsk.y, textAsk.w, textAsk.h);
+        if (scripts_.Loaded()) {
+            scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, asked);
+        } else {
+            world_.events.clear();  // (受け取るスクリプトが無い)
+        }
         if (std::exchange(world_.quitAsked, false)) {
             host_.Log(0, "ゲームを終わります");
             host_.Quit();

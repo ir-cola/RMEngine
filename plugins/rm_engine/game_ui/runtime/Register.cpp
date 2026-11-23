@@ -22,7 +22,13 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     static const ComponentInfo kPath{.type = &reflect::TypeOf<UiPath>, .folder = "UI"};      // 道に沿って動く (UI-4)
     static const ComponentInfo kStyle{.type = &reflect::TypeOf<UiStyle>, .folder = "UI"};    // 見た目 (UI-5)
     static const ComponentInfo kVideo{.type = &reflect::TypeOf<UiVideo>, .folder = "UI"};    // 動画 (UI-5)
-    for (const ComponentInfo* c : {&kCanvas, &kRect, &kText, &kImage, &kButton, &kBar, &kMotion, &kPath, &kStyle, &kVideo}) {
+    // 入力の部品 (選ぶのは同じエンティティのボタン)。
+    static const ComponentInfo kInput{.type = &reflect::TypeOf<UiInputField>, .folder = "UI"};
+    static const ComponentInfo kToggle{.type = &reflect::TypeOf<UiToggle>, .folder = "UI"};
+    static const ComponentInfo kSlider{.type = &reflect::TypeOf<UiSlider>, .folder = "UI"};
+    static const ComponentInfo kScroll{.type = &reflect::TypeOf<UiScroll>, .folder = "UI"};
+    for (const ComponentInfo* c : {&kCanvas, &kRect, &kText, &kImage, &kButton, &kBar, &kMotion, &kPath, &kStyle, &kVideo, &kInput, &kToggle, &kSlider,
+                                   &kScroll}) {
         registry.Contribute(kComponentPoint, *c);
     }
     // ゲームが動いているあいだ: マウス、キー、ボタンの OnClick。
@@ -30,6 +36,7 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kPlayServicePoint, kService);
     // スクリプト: sdk/RMUI.h。
     registry.Contribute(game_production::kScriptApiPoint, ScriptUiPart());
+    registry.Contribute(game_production::kScriptApiPoint, ScriptUiPartVersion2());  // (入力の部品より前に作ったスクリプト)
     registry.Contribute(game_production::kScriptApiPoint, ScriptUiPartVersion1());  // (トゥイーンより前に作ったスクリプト)
 }
 
