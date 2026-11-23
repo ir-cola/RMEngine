@@ -378,11 +378,19 @@ void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
     tint_->SetInput(0, bmp);
     tint_->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, m);
     // 変形で拡大縮小されるので、Image() と同じようにきれいに補間される。
-    const D2D1_SIZE_F size = bmp->GetSize();
-    if (size.width <= 0 || size.height <= 0) return;
+    // 大きさは効果の出力をこの画面で測って合わせる: 効果は画素で動き、出力の 1 画素が画面の DPI で
+    // DIP に直される。bmp->GetSize() (ビットマップ自身の DPI) で割ると、125 % の画面で 0.8 倍に縮み、
+    // 左上に寄った (2026-11-24)。
+    Microsoft::WRL::ComPtr<ID2D1Image> out;
+    tint_->GetOutput(&out);
+    D2D1_RECT_F bounds{};
+    if (!out || FAILED(dc_->GetImageLocalBounds(out.Get(), &bounds))) return;
+    const float bw = bounds.right - bounds.left, bh = bounds.bottom - bounds.top;
+    if (bw <= 0 || bh <= 0) return;
     D2D1_MATRIX_3X2_F old;
     dc_->GetTransform(&old);
-    dc_->SetTransform(D2D1::Matrix3x2F::Scale(dst.w / size.width, dst.h / size.height) * D2D1::Matrix3x2F::Translation(dst.x, dst.y) * old);
+    dc_->SetTransform(D2D1::Matrix3x2F::Translation(-bounds.left, -bounds.top) * D2D1::Matrix3x2F::Scale(dst.w / bw, dst.h / bh) *
+                      D2D1::Matrix3x2F::Translation(dst.x, dst.y) * old);
     dc_->DrawImage(tint_.Get(), D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
     dc_->SetTransform(old);
 }

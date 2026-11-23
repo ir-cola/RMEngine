@@ -608,7 +608,7 @@ ui::Context::ButtonResult ToolSquare(ui::Context& c, std::string_view idStr, con
     } else {
         DrawSurface(c, r, down ? Surface::Pressed : b.hovered ? Surface::Hovered : Surface::Raised);
     }
-    DrawIcon(c, r, icon, on ? theme::OnAccent() : b.hovered ? theme::Text : theme::TextDim, std::round(std::min(r.w, r.h) * 0.55f));
+    DrawIcon(c, r, icon, on ? theme::OnAccent() : b.hovered ? theme::Text : theme::TextDim, std::round(std::min(r.w, r.h) * 0.8f));
     if (b.hovered && !tooltip.empty()) Tooltip(c, tooltip);
     return b;
 }

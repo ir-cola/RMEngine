@@ -17,6 +17,10 @@
         {
           "ja": "アイコン: 125 % などの画面で、白 1 色のアイコンに隣の絵のかけらが出ていたのを直した",
           "en": "Icons: fixed single-colour icons showing pieces of neighbouring pictures on screens scaled to 125 % and similar"
+        },
+        {
+          "ja": "アイコン: 125 % などの画面で、シーンビューの左の列のアイコンが小さく左上に寄っていたのを直し、ボタンいっぱいの大きさにした",
+          "en": "Icons: on screens scaled to 125 % and similar, the icons in the scene view's left column were small and pushed to the top left; they are now centred and fill the button"
         }
       ]
     },
