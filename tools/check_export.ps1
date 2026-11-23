@@ -48,6 +48,14 @@ foreach ($t in $templates) {
     if ($exe.Count -ne 1) { Write-Host "NG  $($t[2]): exe が 1 つではありません"; $failed++; continue }
     if (-not (Test-Path (Join-Path $game 'Game.rmpak'))) { Write-Host "NG  $($t[2]): Game.rmpak がありません"; $failed++; continue }
     if (@(Get-ChildItem $game -Filter *.pdb).Count -gt 0) { Write-Host "NG  $($t[2]): .pdb が入っています"; $failed++; continue }
+    # 外のソフトのライセンスの文章 (LICENSES.txt): 音のあるゲームは stb_vorbis、物理のゲームは Jolt Physics。
+    $needs = @()
+    if ($t[2] -eq 'game_2d' -or $t[2] -eq 'game_3d') { $needs += 'stb_vorbis' }
+    if ($t[2] -eq 'physics_3d') { $needs += 'Jolt Physics' }
+    $licenseFile = Join-Path $game 'LICENSES.txt'
+    $licenses = if (Test-Path $licenseFile) { [IO.File]::ReadAllText($licenseFile, (New-Object System.Text.UTF8Encoding $false)) } else { '' }
+    $lacking = @($needs | Where-Object { -not $licenses.Contains($_) })
+    if ($lacking.Count -gt 0) { Write-Host "NG  $($t[2]): LICENSES.txt に $($lacking -join ', ') のライセンスがありません"; $failed++; continue }
     # exe (プロジェクトの、エンジンの) にこの PC のパスがない。UTF-8 でも UTF-16 でも調べる。
     $leak = Find-PcPath $exe[0].FullName $dir
     if ($leak) { Write-Host "NG  $($t[2]): exe にこの PC のパスが残っています: $leak"; $failed++; continue }

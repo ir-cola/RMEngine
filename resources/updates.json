@@ -21,6 +21,10 @@
         {
           "ja": "アイコン: 125 % などの画面で、シーンビューの左の列のアイコンが小さく左上に寄っていたのを直し、ボタンいっぱいの大きさにした",
           "en": "Icons: on screens scaled to 125 % and similar, the icons in the scene view's left column were small and pushed to the top left; they are now centred and fill the button"
+        },
+        {
+          "ja": "書き出し: ゲームが使う外のソフト (Jolt Physics・stb_vorbis) のライセンスの文章を、書き出したフォルダの LICENSES.txt に入れる (使うものだけ)",
+          "en": "Export: the license texts of the outside software a game uses (Jolt Physics, stb_vorbis) now go into LICENSES.txt in the exported folder (only what the game uses)"
         }
       ]
     },

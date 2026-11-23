@@ -1030,10 +1030,17 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **Web のリンク** — `ShellExecuteW("open")` でいつものブラウザーに渡す。`http://` と `https://` で始まるものだけ (ファイルやプログラムは開かない。`platform::OpenWebPage`)
 - **どこ** — `src/editor/help/` (HelpDoc・HelpTree・HelpLibrary・HelpBooks・HelpView・HelpWindow)・`src/editor/widgets/DocView.*`・`src/ui/Painter.*` (RichText)・`resources/help/`・`plugins/<作者>/<名前>/help/`
 
+### 外のソフトのライセンスの文章を書き出しに入れる
+- **何か** — ゲームに入る外のコード (物理の Jolt Physics、音の stb_vorbis) は MIT ライセンス。MIT は「著作権の表示とこの許可の文章を、ソフトのすべての写しに入れる」ことを条件に、自由に使い・配ってよいと決めている。書き出したゲームはその写しなので、文章を一緒に配る
+- **しくみ** — プラグインの `licenses/*.txt` に文章を置く (ファイル名 = ソフトの名前)。エンジンのビルドがゲームの部品 (GameKit) を作るとき、`tools/make_gamekit.ps1` がそれを `GameKit/lib/<作者>/<名前>/licenses/` に写し、`kit.json` のそのプラグインの `licenses` に並べる。書き出しは、ゲームに入れるプラグインの分だけを集めて、出力先の `LICENSES.txt` にまとめる。使わないプラグインの文章は入らない (2D のゲームに Jolt の文章は出ない)
+- **stb_vorbis** — MIT と パブリックドメイン の好きな方を選べる。文章は両方そのまま入れる
+- **どこ** — `plugins/rm_engine/physics/licenses/`・`plugins/rm_engine/audio/licenses/`・`tools/make_gamekit.ps1`・`src/editor/export/ExportPlan.cpp` (`LicensesText`。テスト `Export_Licenses`)・`Exporter.cpp`・`tools/check_export.ps1` (書き出したフォルダに文章があるか)
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-24 | 外のソフトのライセンスの文章を書き出しに入れる (MIT の「すべての写しに入れる」) を足した |
 | 2026-11-24 | 1 枚にまとめたアイコン: 効果の出力の大きさを GetImageLocalBounds で測る (125 % の画面で左上に寄った) |
 | 2026-11-23 | アイコンを 1 枚にまとめる に「1 マスずつのビットマップに写す (CopyFromBitmap)」と「DPI と効果の座標でつまずいた所」を足した |
 | 2026-11-22 | 範囲をなめらかに重ねる (気候エリアの深さ・smoothstep・優先度で重ねる・気温減率) を足した |

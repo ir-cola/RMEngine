@@ -227,6 +227,27 @@ std::optional<std::string> IconFile(std::string_view bytes) {
     return IcoFromPng(bytes);
 }
 
+std::string LicensesText(std::string_view titleUtf8, const std::vector<LicenseNotice>& notices) {
+    if (notices.empty()) return {};
+    const std::string rule(72, '=');
+    std::string out;
+    out += std::string(titleUtf8) + "\n\n";
+    // (遊ぶ人が読むファイル: どの言語のゲームでも読めるよう、英語と日本語の両方で書く)
+    out += "This game uses the following software. Their licenses are below.\n";
+    out += "このゲームは次のソフトウェアを使っています。そのライセンスは下のとおりです。\n";
+    std::vector<std::string_view> done;
+    for (const LicenseNotice& n : notices) {
+        if (std::find(done.begin(), done.end(), n.name) != done.end()) continue;
+        done.push_back(n.name);
+        out += "\n" + rule + "\n" + n.name + "\n" + rule + "\n\n";
+        std::string text = n.text;
+        if (text.starts_with("\xEF\xBB\xBF")) text.erase(0, 3);  // (UTF-8 の印)
+        while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ')) text.pop_back();
+        out += text + "\n";
+    }
+    return out;
+}
+
 uint64_t BuildNumber(const std::vector<std::pair<std::string, std::string>>& entries) {
     uint64_t h = 1469598103934665603ull;
     auto mix = [&](std::string_view s) {
