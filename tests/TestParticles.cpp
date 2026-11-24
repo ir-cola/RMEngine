@@ -295,29 +295,6 @@ RM_TEST(Particles_Physics_CollidersBecomeShapes) {
         const auto* t = static_cast<const space3d::Transform*>(e.FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get());
         worlds[e.data.id] = space3d::WorldMatrix(space3d::Mat4{}, *t);
     }
-    // 雨と雪が当たるもの (天候 × 物理): レンダラーの単純な形と同じコライダー。
-    {
-        using weather::WeatherBlocker;
-        const int capsule = add("カプセル", {0, 5, 0}, {1, 1, 1}, physics::Shape::Capsule, false);
-        auto* cc = static_cast<physics::Collider*>(scene.Find(capsule)->FindComponent(reflect::TypeOf<physics::Collider>().name)->value.Get());
-        cc->radius = 0.5f;
-        cc->height = 3;
-        worlds[capsule] = space3d::WorldMatrix(space3d::Mat4{}, space3d::Transform{{0, 5, 0}, {0, 0, 0}, {1, 1, 1}});
-        std::vector<WeatherBlocker> blocks;
-        weather_x_physics::GatherBlockers(scene, [&](int id) -> const space3d::Mat4* { return worlds.count(id) ? &worlds[id] : nullptr; }, blocks);
-        // 箱, 球, (トリガー: 無し), メッシュ, カプセル (円柱 1 つと球 2 つ)。
-        CHECK(blocks.size() == 6);
-        if (blocks.size() == 6) {
-            CHECK(blocks[0].kind == WeatherBlocker::Kind::Box && blocks[0].world.m[0][0] == 2 && blocks[0].world.m[3][1] == 2);  // 1 x 拡大 2 で幅 2
-            CHECK(blocks[1].kind == WeatherBlocker::Kind::Sphere && blocks[1].world.m[1][1] == 3);  // 半径 0.5 x 3: 幅 3
-            CHECK(blocks[2].kind == WeatherBlocker::Kind::Model && blocks[2].entity == scene.Entities()[3].data.id);
-            CHECK(blocks[3].kind == WeatherBlocker::Kind::Cylinder && blocks[3].world.m[1][1] == 2 && blocks[3].world.m[0][0] == 1);  // 3 - 両端
-            CHECK(blocks[4].kind == WeatherBlocker::Kind::Sphere && blocks[4].world.m[3][1] == 6 && blocks[5].world.m[3][1] == 4);
-        }
-        const int gone[] = {capsule};
-        scene.Delete(gone);
-        worlds.erase(capsule);
-    }
     std::vector<CollisionShape> shapes;
     particles_x_physics::GatherShapes(scene, [&](int id) -> const space3d::Mat4* { return id == box || worlds.count(id) ? &worlds[id] : nullptr; }, shapes);
     CHECK(shapes.size() == 2);
@@ -381,4 +358,45 @@ RM_TEST(Particles_Presets_UseModulesThatExistAndCompile) {
         const auto back = ReadEffect(WriteEffect(e), &err);
         CHECK(back && back->emitters.size() == e.emitters.size());
     }
+}
+
+RM_TEST(Weather_MeshesBlockRainAndSnow) {
+    // 雨と雪が当たるもの: 見えているメッシュ (コライダーではない)。天候 × 物理 は動くもの
+    // (動かない ではない体・キャラクター) を言い、動くものの子のメッシュも動く (雪に足跡)。
+    game_production::Scene scene;
+    scene.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<physics::Collider>(),
+                             &reflect::TypeOf<physics::Character>(), &reflect::TypeOf<physics::Rigidbody>()});
+    const int box = scene.Create("箱");
+    scene.AddComponent(box, reflect::TypeOf<physics::Collider>());  // (コライダーがあっても、動かない)
+    const int walker = scene.Create("歩く人");
+    scene.AddComponent(walker, reflect::TypeOf<physics::Character>());
+    const int look = scene.Create("見た目", walker);
+    const int ghost = scene.Create("見えない壁");
+    scene.AddComponent(ghost, reflect::TypeOf<physics::Collider>());
+    std::vector<int> movers;
+    weather_x_physics::GatherMovers(scene, movers);
+    CHECK(movers == std::vector<int>{walker});
+    const char meshes[2] = {};
+    const auto* boxMesh = reinterpret_cast<const space3d::GpuMesh*>(&meshes[0]);
+    const auto* lookMesh = reinterpret_cast<const space3d::GpuMesh*>(&meshes[1]);
+    std::map<int, space3d::Mat4> placed;
+    for (const int id : {box, walker, look, ghost}) placed[id] = space3d::Mat4{};
+    placed[box].m[3][1] = 2;
+    auto blocks = [&] {
+        std::vector<space3d::MapShape> shapes;
+        weather::WeatherBlocksOf(
+            scene, movers, [&](int id) -> const space3d::Mat4* { return placed.count(id) ? &placed[id] : nullptr; },
+            [&](int id) -> const space3d::GpuMesh* { return id == box ? boxMesh : id == look ? lookMesh : nullptr; }, shapes);
+        return shapes;
+    };
+    // 見えない壁 (コライダーだけ) と、メッシュの無い歩く人自身は通り抜ける。
+    auto shapes = blocks();
+    CHECK(shapes.size() == 2);
+    if (shapes.size() == 2) {
+        CHECK(shapes[0].mesh == boxMesh && !shapes[0].moving && shapes[0].world.m[3][1] == 2);
+        CHECK(shapes[1].mesh == lookMesh && shapes[1].moving);
+    }
+    // 切ってある (場所が無い) ものも通り抜ける。
+    placed.erase(box);
+    CHECK(blocks().size() == 1);
 }

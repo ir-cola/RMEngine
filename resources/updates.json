@@ -29,6 +29,10 @@
         {
           "ja": "季節のテーマ: ウィンターの積もった雪の輪郭を薄く、形をなだらかに。上の端のつららは外した",
           "en": "Seasons theme: the lying snow in Winter has a lighter outline and a gentler shape, and the icicles along the top are gone"
+        },
+        {
+          "ja": "天候: 雨の染みと雪の積もる所を、コライダーではなく画面に見えているメッシュで決める (見えないコライダーの所には積もらない)",
+          "en": "Weather: where rain wets and snow lies is now decided by the meshes you can see, not by colliders (no more snow on invisible collider parts)"
         }
       ]
     },

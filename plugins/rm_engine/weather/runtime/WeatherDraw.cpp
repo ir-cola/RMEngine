@@ -145,11 +145,12 @@ public:
         movingOnly_.assign(directions_.size(), 0);
         if (upMap_ >= 0) movingOnly_[static_cast<size_t>(upMap_)] = 1;
         if (directions_.empty()) return;
-        // それらが当たるもの: コライダー (コネクター 天候 × 物理)。描かない。
+        // それらが当たるもの: 見えているメッシュ (2026-11-25 から。前はコライダー)。どれが動くか (足跡) は
+        // コネクター 天候 × 物理 が言う。
         if (f.registry) {
-            MakeWeatherBlocks(f.scene, *f.registry, f.world, f.shape, f.model, shapes_, blockers_);
+            MakeWeatherBlocks(f.scene, *f.registry, f.world, f.model, shapes_, movers_);
         } else {
-            shapes_.clear();  // (前のフレームのは使わない: モデルが消えているかもしれない)
+            WeatherBlocksOf(f.scene, {}, f.world, f.model, shapes_);
         }
         if (shapes_.empty()) {
             for (Precipitation& p : falls_) p.map = -1;  // (当たるものなし: 地図なし - すべて開いている)
@@ -514,7 +515,7 @@ private:
     uint64_t mapGeneration_ = ~uint64_t{0};
     bool mapFailed_ = false;
     std::vector<space3d::MapShape> shapes_;
-    std::vector<WeatherBlocker> blockers_;
+    std::vector<int> movers_;
     space3d::SurfaceTouch surface_;
     std::vector<space3d::ExtraDraw> solids_;
     std::vector<uint8_t> movingOnly_;  // RenderFrame::mapMovingOnly: 下から見た地図
