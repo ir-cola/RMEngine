@@ -49,6 +49,9 @@ ui::Path CherryTree(const ui::Rect& window, float size);
 ui::Path PetalStream(const ui::Rect& window, float fromX, int count, float size, uint32_t seed);
 // `area` に散らした小さな花びら (吹雪のように)。それぞれ長さ約 `size`。
 ui::Path Petals(const ui::Rect& area, int count, float size, uint32_t seed);
+// `window` の上に沿って濃く、`depth` くらいまで下に向かって薄くなる桜の花びら (秋の Canopy と同じ散らばり)。
+// 少しずつ違う 4 色 (1 色に 1 パス)。`perPixel` = 幅 1 ピクセルあたりの花びらの数。
+std::array<ui::Path, 4> PetalCanopy(const ui::Rect& window, float depth, float perPixel, uint32_t seed);
 
 // --- 夏 -----------------------------------------------------------------------------------
 // 太陽: 丸い円盤とそのまわりのとがった光線 12 本 (長いのと短いのが交互。radius = 長い光線の先まで)。

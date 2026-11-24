@@ -19,13 +19,17 @@ using ui::Rect;
 // 季節の絵の色 (内容の後ろにうっすら敷く: アルファも色のうち)。絵そのものの色は、どのパレットでも同じ。
 // 影はテーマのアクセント色 (theme::OrnamentColor) を使う。
 namespace season {
-Color Petal() { return Color::Hex(0xEE8FAE, 0.42f); }       // 春: 吹雪
+Color Petal() { return Color::Hex(0xEE8FAE, 0.42f); }       // 春: 吹雪 (パネルのウィンドウ)
+Color PetalTone(int i) {                                    // 春: 上に沿って散る花びら、4 色 (少しずつ違う桜色)
+    constexpr uint32_t k[4] = {0xEE8FAE, 0xF5ABC3, 0xE57399, 0xF8C6D6};
+    return Color::Hex(k[i & 3], 0.42f);
+}
 Color CloudColor() { return Color::Hex(0xFFFFFF, 0.40f); }  // 夏: 右上の雲
 Color Leaf(int i) {                                         // 秋: 樹冠、4 色
     constexpr uint32_t k[4] = {0xD8432A, 0xE8832A, 0xE7B43A, 0xB0432A};
     return Color::Hex(k[i & 3], 0.34f);
 }
-Color Snow() { return Color::Hex(0xFFFFFF); }             // 冬: パネルの下に積もる
+Color Snow() { return Color::Hex(0xFFFFFF); }             // 冬: ウィンドウの一番下に積もる
 Color SnowShade() { return Color::Hex(0x8CA3BD); }        // その輪郭
 Color SnowLow() { return Color::Hex(0xE6EEF7); }          // 吹きだまりの影になった足元
 Color Flake() { return Color::Hex(0xFFFFFF, 0.9f); }      // 降る雪
@@ -79,6 +83,16 @@ void WinterSky(Picture& pic, const Rect& w, float scale) {
     pic.push_back({std::move(ice.snow), season::Snow()});
 }
 
+// 冬: ウィンドウ (エディター本体・Hub) の一番下に積もった雪: 上に輪郭、白い雪、その影になった足元。
+// パネルのウィンドウには積もらない。パネルごとにも積もらせない (2026-11-24: ユーザーの希望。前は
+// どのパネルの下にも積もった)。ウィンドウの絵なので、一番下のパネルやバーの塗りの上にも内容の後ろに出る。
+void WinterGround(Picture& pic, const Rect& w) {
+    constexpr float kDepth = 24.f;
+    pic.push_back({ornament::SnowDrift({w.x, w.y - 1.5f, w.w, w.h}, kDepth, 0), season::SnowShade()});
+    pic.push_back({ornament::SnowDrift(w, kDepth, 0), season::Snow()});
+    pic.push_back({ornament::SnowDrift(w, kDepth * 0.45f, 0), season::SnowLow()});
+}
+
 Picture Make(Kind kind, const Rect& w, bool floating) {
     Picture pic;
     switch (kind) {
@@ -88,14 +102,11 @@ Picture Make(Kind kind, const Rect& w, bool floating) {
                 break;
             }
             {
-                // 右の下の端から生える桜の木。上のほうで満開で、花びらが左へ吹き飛ぶ。
-                // 左下に花、左上に花びら。
-                const float d = std::clamp(std::max(w.w * 0.18f, w.h * 0.25f), 150.f, 340.f);
-                pic.push_back({ornament::CherryTree(w, d), theme::OrnamentColor()});
-                const int stream = std::max(24, static_cast<int>(w.w * w.h / 16000.f));
-                pic.push_back({ornament::PetalStream(w, w.Right() - d * 1.3f, stream, 9.f, 0xB10Fu), season::Petal()});
+                // 秋の葉と同じように、少しずつ違う桜色の花びらが上に沿って濃く、下へ散らばる。左下に桜の花。
+                // (2026-11-24: 右の桜の木はユーザーの希望で外した)
+                auto petals = ornament::PetalCanopy(w, std::clamp(w.h * 0.32f, 120.f, 300.f), 1.f / 4.f, 0x5A4Bu);
+                for (int i = 0; i < 4; ++i) pic.push_back({std::move(petals[static_cast<size_t>(i)]), season::PetalTone(i)});
                 Silhouette(pic, w, ornament::Sakura({0, 0}, 1.f, 10.f));
-                SpringFlurry(pic, w, 1.f);
             }
             break;
         case Kind::Summer:
@@ -122,7 +133,10 @@ Picture Make(Kind kind, const Rect& w, bool floating) {
             break;
         case Kind::Winter:
             WinterSky(pic, w, floating ? 0.8f : 1.f);
-            if (!floating) Silhouette(pic, w, ornament::Snowflake({0, 0}, 1.f, 10.f));
+            if (!floating) {
+                Silhouette(pic, w, ornament::Snowflake({0, 0}, 1.f, 10.f));
+                WinterGround(pic, w);
+            }
             break;
     }
     return pic;
@@ -155,19 +169,10 @@ void DrawWindow(ui::Context& c, const Rect& window, bool floating) {
     for (const Layer& l : Cached(K, window, floating)) c.P().FillPath(l.path, l.color);
 }
 
-// 冬: パネルの下に積もった雪を、内容の後ろに: 上に輪郭、白い雪、その影になった足元。
-void WinterPanel(ui::Context& c, const Rect& r, float corner) {
-    constexpr float kDepth = 22.f;
-    auto& p = c.P();
-    p.FillPath(ornament::SnowDrift({r.x, r.y - 1.5f, r.w, r.h}, kDepth, corner), season::SnowShade());
-    p.FillPath(ornament::SnowDrift(r, kDepth, corner), season::Snow());
-    p.FillPath(ornament::SnowDrift(r, kDepth * 0.45f, corner), season::SnowLow());
-}
-
 constexpr editor::w::OrnamentInfo kSpring{"spring", &DrawWindow<Kind::Spring>, nullptr};
 constexpr editor::w::OrnamentInfo kSummer{"summer", &DrawWindow<Kind::Summer>, nullptr};
 constexpr editor::w::OrnamentInfo kFall{"fall", &DrawWindow<Kind::Fall>, nullptr};
-constexpr editor::w::OrnamentInfo kWinter{"winter", &DrawWindow<Kind::Winter>, &WinterPanel};
+constexpr editor::w::OrnamentInfo kWinter{"winter", &DrawWindow<Kind::Winter>, nullptr};
 
 }  // namespace
 

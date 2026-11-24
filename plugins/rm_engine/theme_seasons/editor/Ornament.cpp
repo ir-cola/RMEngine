@@ -344,22 +344,41 @@ ui::Path MapleLeaf(Vec2 center, float r, float degreesCcw, int points) {
     return p;
 }
 
-std::array<ui::Path, 4> Canopy(const ui::Rect& win, float depth, float perPixel, uint32_t seed) {
+namespace {
+
+// 上の端に沿って濃く、下に向かって薄く散らす (いくつかは `depth` までずっと流れ落ちる)。1 つずつ、場所・
+// 大きさ・4 色のどれか・向き (度) で `shape` が形を作る。秋の葉も春の花びらもこれ (同じ散らばり)。
+template <class Shape>
+std::array<ui::Path, 4> AlongTop(const ui::Rect& win, float depth, float perPixel, uint32_t seed, float least, float more, Shape shape) {
     std::array<ui::Path, 4> out;
     Random rnd{seed};
-    // いちばん上に沿って濃く、下に向かって薄くなる (いくつかは `depth` までずっと流れ落ちる)。
     const int count = std::max(12, static_cast<int>(win.w * perPixel));
     for (int i = 0; i < count; ++i) {
         const float x = win.x - 10.f + (win.w + 20.f) * rnd.Next();
         const float v = rnd.Next();
         const float y = win.y - 6.f + depth * std::pow(v, 2.2f);
-        const float size = (7.f + 9.f * rnd.Next()) * (1.f - 0.35f * v);
+        const float size = (least + more * rnd.Next()) * (1.f - 0.35f * v);
         const int color = static_cast<int>(rnd.Next() * 4.f) % 4;
-        const ui::Path leaf = MapleLeaf({x, y}, size, rnd.Next() * 360.f, 40);
+        const ui::Path one = shape(Vec2{x, y}, size, rnd.Next() * 360.f);
         auto& dst = out[static_cast<size_t>(color)].steps;
-        dst.insert(dst.end(), leaf.steps.begin(), leaf.steps.end());
+        dst.insert(dst.end(), one.steps.begin(), one.steps.end());
     }
     return out;
+}
+
+}  // namespace
+
+std::array<ui::Path, 4> Canopy(const ui::Rect& win, float depth, float perPixel, uint32_t seed) {
+    return AlongTop(win, depth, perPixel, seed, 7.f, 9.f, [](Vec2 c, float size, float deg) { return MapleLeaf(c, size, deg, 40); });
+}
+
+std::array<ui::Path, 4> PetalCanopy(const ui::Rect& win, float depth, float perPixel, uint32_t seed) {
+    // 花びら 1 枚: 細長いだ円 (長さ約 size)。
+    return AlongTop(win, depth, perPixel, seed, 6.f, 6.f, [](Vec2 c, float size, float deg) {
+        ui::Path p;
+        AddEllipse(p, c, size * 0.5f, size * 0.3f, deg);
+        return p;
+    });
 }
 
 // --- 冬 -----------------------------------------------------------------------------------
