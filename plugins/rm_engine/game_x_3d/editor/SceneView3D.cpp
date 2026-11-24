@@ -16,6 +16,7 @@
 #include "rm_engine/game_x_3d/editor/SceneViewState.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
+#include "rm_engine/game_x_3d/runtime/Material.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/SkyPaint.h"
@@ -39,6 +40,7 @@
 #include <optional>
 #include <string_view>
 #include <cstring>
+#include <deque>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -69,6 +71,7 @@ constexpr float kToolSquare = 44.f, kToolGap = 4.f;   // 左の縦の列の正�
 constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // グリッドの箱 (グリッド配置 の横)
 constexpr double kModelCheckSeconds = 1.0;    // モデルのファイルを調べ直す間隔 (ディスクで変わったか)
 constexpr double kModelForgetSeconds = 10.0;  // この間どのエンティティも使わないモデルは GPU から外す
+constexpr double kMaterialLookSeconds = 0.25;  // マテリアル (.rmmat) を読み直す間隔 (インスペクターでの編集・ディスクでの変更)
 constexpr float kFrustumShown = 10.f;  // カメラの形はここまでしか描かない (遠い面が 1000 でもよい)
 constexpr float kMarkSize = 18.f;      // カメラ / ライト / 空のエンティティなどの印 (ピクセル)
 constexpr float kMarkPick = 11.f;      // 印にこれだけ近いクリックで、そのエンティティを選ぶ
@@ -90,8 +93,8 @@ struct Placed {
     // 描くもの: モデル (null: 単位立方体 - ファイルが無い メッシュ) と、その自分の空間での
     // 境界 - クリックが当たるものと、F で合わせる範囲。
     const space3d::GpuMesh* mesh = nullptr;
-    bool plain = false;  // `mesh` が単純な形 (メッシュ の 形) で、箱と同じ色
-    std::span<const space3d::DrawMaterial> materials;  // モデルの色と画像
+    bool plain = false;  // `mesh` が単純な形 (メッシュ の 形) で、マテリアルが無い: 箱と同じ色
+    std::span<const space3d::DrawMaterial> materials;  // モデルの色と画像 (メッシュのマテリアルの欄で替えたもの)
     bool castShadow = true;
     Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
     bool loading = false;  // モデルを読んでいる最中 (それまでは箱で、上に 読み込み中 を出す)
@@ -159,6 +162,17 @@ struct ModelEntry {
     bool told = false;    // 無い / プロジェクトの外にあることをコンソールに書いた
     std::filesystem::file_time_type time{};
     double checkedAt = 0, usedAt = 0;
+};
+
+// メッシュのマテリアルの欄が指すマテリアル (.rmmat)。kMaterialLookSeconds ごとに中身
+// (SoftwareHost::AssetContent: インスペクターでの、まだ書いていない編集も) を見て、変わったら読み直す。
+// 絵はテクスチャのキャッシュから毎フレーム (ファイルが変わるとキャッシュが読み直す)。
+struct MaterialEntry {
+    std::string bytes;              // 最後に読んだ中身
+    std::optional<Material> material;
+    space3d::DrawMaterial draw;     // このフレームの描き方 (MaterialLook)
+    bool told = false;              // 読めないことをコンソールに書いた
+    double lookedAt = -1e9, usedAt = 0;
 };
 
 // ギズモでドラッグしている 1 つ: ドラッグを始めたときの状態と、今の状態。
@@ -254,6 +268,7 @@ private:
         generation_ = now;
         for (auto& [guid, m] : models_) loader_.Cancel(m.ticket);
         models_.clear();
+        materials_.clear();
         textures_.Clear();
         main_ = Picture{};
         preview_ = Picture{};
@@ -284,6 +299,8 @@ private:
     void Place(game_production::SceneViewHost& host) {
         const game_production::Scene& scene = host.scene;
         placed_.clear();
+        usedStores_ = 0;
+        textures_.SetCacheFolder(host.host.GetProject().CacheDir() / L"Textures");
         ambient_.reset();
         std::unordered_map<int, Mat4> world;  // 親は TreeOrder で子より先に来る
         for (const auto& t : scene.TreeOrder()) {
@@ -304,10 +321,14 @@ private:
                 if (mc && mc->Known()) {
                     const auto& mr = *static_cast<const MeshRenderer*>(mc->value.Get());
                     p.castShadow = p.castShadow && mr.castShadows;
+                    // マテリアルの欄 (形は 0 番、モデルは i 番が自身の i 番の代わり: Material.h の MeshMaterials)。
+                    slots_.clear();
+                    for (const AssetRef& ref : mr.materials) slots_.push_back(MaterialOf(ref, host));
                     if (const auto shape = ShapeOf(mr.shape)) {
                         if (const space3d::GpuMesh* g = main_.renderer.ShapeOf(*shape)) {
                             p.mesh = g;
-                            p.plain = true;
+                            p.materials = MeshMaterials(true, {}, slots_, Store());
+                            p.plain = p.materials.empty();  // マテリアルがあればモデルと同じ描き方 (選ぶと縁が光る)
                             p.min = g->min;
                             p.max = g->max;
                         }
@@ -315,8 +336,7 @@ private:
                         bool loading = false;
                         if (ModelEntry* m = Model(mr.model, host, loading)) {
                             p.mesh = m->gpu.get();
-                            textures_.SetCacheFolder(host.host.GetProject().CacheDir() / L"Textures");
-                            p.materials = m->paint.Materials(main_.renderer, textures_, now_);
+                            p.materials = MeshMaterials(false, m->paint.Materials(main_.renderer, textures_, now_), slots_, Store());
                             p.min = p.mesh->min;
                             p.max = p.mesh->max;
                         }
@@ -340,6 +360,48 @@ private:
                 world[e.data.id] = parent;  // 自分の位置は無い: 子は親に付いてくる
             }
         }
+    }
+
+    // `ref` が指すマテリアルの、このフレームの描き方。null: 空の欄、見つからない、読めない (その欄は
+    // 無いものとして描く。見つからない・読めないことは 1 度だけコンソールに)。
+    const space3d::DrawMaterial* MaterialOf(const AssetRef& ref, game_production::SceneViewHost& host) {
+        if (ref.Empty()) return nullptr;
+        MaterialEntry& m = materials_[ref.guid];
+        m.usedAt = now_;
+        if (now_ - m.lookedAt >= kMaterialLookSeconds) {
+            m.lookedAt = now_;
+            const auto bytes = host.host.AssetContent(ref);
+            if (!bytes) {
+                m.material.reset();
+                m.bytes.clear();
+                if (!m.told) log::Warn("シーンビュー: マテリアル ({}) がプロジェクトに見つからないので、その欄なしで描きます", ref.guid);
+                m.told = true;
+            } else if (*bytes != m.bytes || !m.material) {
+                const bool changed = *bytes != m.bytes;
+                m.bytes = *bytes;
+                std::string err;
+                m.material = ReadMaterial(*bytes, &err);
+                if (m.material) {
+                    m.told = false;
+                } else if (!m.told || changed) {
+                    log::Warn("シーンビュー: マテリアル「{}」を読めないので、その欄なしで描きます: {}", PathToUtf8(host.host.AssetFile(ref).filename()), err);
+                    m.told = true;
+                }
+            }
+        }
+        if (!m.material) return nullptr;
+        // 絵はキャッシュから (毎フレーム頼む: 使っている間は残り、ファイルが変わると読み直される)。
+        m.draw = MaterialLook(*m.material, [&](const MaterialPicture& pic, size_t) -> space3d::TextureRef {
+            const std::filesystem::path file = host.host.AssetFile(pic.image);
+            return file.empty() ? nullptr : textures_.Get(main_.renderer, file, pic.use, pic.srgb, now_);
+        });
+        return &m.draw;
+    }
+
+    // このフレームでマテリアルを替えた物の材質の置き場 (Placed::materials が指す。次の Place まで動かない)。
+    std::vector<space3d::DrawMaterial>& Store() {
+        if (usedStores_ == stores_.size()) stores_.emplace_back();
+        return stores_[usedStores_++];
     }
 
     // `ref` が指すモデル (アセット - 今どこにあっても)。最初に求められたときに
@@ -398,9 +460,10 @@ private:
             log::Warn("シーンビュー: モデル「{}」を読めないので箱で描きます: {}", m.name, done->error);
             return;
         }
-        const space3d::MeshData& mesh = *done->mesh;
+        space3d::MeshData& mesh = *done->mesh;
         for (const std::string& w : mesh.warnings) log::Warn("シーンビュー: モデル「{}」: {}", m.name, w);
         std::string error;
+        UseSlotZeroForBareModel(mesh);  // (材質の無いモデルにも、メッシュの 0 番のマテリアルが入る)
         m.gpu = main_.renderer.Upload(mesh, &error);
         if (!m.gpu) {
             log::Warn("シーンビュー: モデル「{}」を GPU に載せられないので箱で描きます: {}", m.name, error);
@@ -419,6 +482,7 @@ private:
             loader_.Cancel(kv.second.ticket);  // もう要らない: 読まない (または結果を捨てる)
             return true;
         });
+        std::erase_if(materials_, [&](const auto& kv) { return now_ - kv.second.usedAt > kModelForgetSeconds; });
         textures_.ForgetUnused(now_, kModelForgetSeconds);
     }
 
@@ -1438,7 +1502,11 @@ private:
     size_t warnedLights_ = 0;  // 知らせたライトの数 (多すぎる)
     std::unordered_map<std::string, ModelEntry> models_;  // MeshRenderer::model (アセットの id) ごと
     space3d::MeshLoader loader_;                          // モデルファイルを自分のスレッドで読む
-    space3d::TextureCache textures_;                      // モデルの画像ファイル。フルパスごと
+    space3d::TextureCache textures_;                      // モデルとマテリアルの画像ファイル。フルパスごと
+    std::unordered_map<std::string, MaterialEntry> materials_;  // マテリアルの欄 (アセットの id) ごと
+    std::vector<const space3d::DrawMaterial*> slots_;           // Place: 今のエンティティのマテリアルの欄
+    std::deque<std::vector<space3d::DrawMaterial>> stores_;     // Store (deque: 足しても前のものは動かない)
+    size_t usedStores_ = 0;
     double now_ = 0;
     struct Motion {
         Mat4 world;

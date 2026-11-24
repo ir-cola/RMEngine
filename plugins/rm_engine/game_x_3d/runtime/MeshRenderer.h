@@ -14,6 +14,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace rm::game_x_3d {
 
@@ -45,6 +46,10 @@ struct MeshRenderer {
     RM_PROPERTY(Edit, Label="形", Tooltip="モデル: 下で選んだ 3D モデルのファイルで描きます / 箱・球・円柱・カプセル・平面: ファイルなしで、その形で描きます (大きさは 1。カプセルは高さ 2、平面は 10 x 10)")
     MeshShape shape = MeshShape::Model;
     RM_PROPERTY(Edit, Label="モデル", Tooltip="3D モデルのアセット (.gltf / .glb / .obj / .fbx が読めます)。アセットのパネルからドラッグするか、クリックして選びます", AssetKind="model") AssetRef model;  // (形 is モデル)
+    // マテリアル (Material.h の .rmmat): 形は 0 番で塗る。モデルは i 番がモデル自身の i 番の材質の
+    // 代わり (空の欄はモデルのまま)。無い (前のデータ): 形は灰色、モデルはファイルの材質のまま。
+    RM_PROPERTY(Edit, Label="マテリアル", Tooltip="見た目 (.rmmat。アセットのパネルの右クリック →「作成」→「マテリアル」で作ります)。形は 1 つ目で塗ります。モデルは i 番目がモデルの i 番目の材質の代わりで、空の欄はモデルのままです", AssetKind=".rmmat")
+    std::vector<AssetRef> materials;
     RM_PROPERTY(Edit, Label="影を落とす") bool castShadows = true;
 };
 

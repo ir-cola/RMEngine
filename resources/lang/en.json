@@ -529,5 +529,8 @@
   "このページにはまだ説明がありません。": "This page has no help yet.",
   "ヘルプのページがありません。": "There are no help pages.",
   "左の一覧からページを選んでください。": "Pick a page from the list on the left.",
-  "ページを読めませんでした: {}": "Could not read the page: {}"
+  "ページを読めませんでした: {}": "Could not read the page: {}",
+  "ファイルを作れませんでした: {}": "Could not create the file: {}",
+  "このファイルは{}として読めません (JSON が壊れているか、別の種類のファイルです)": "This file cannot be read as {} (the JSON is broken, or it is another kind of file)",
+  "変えるとすぐに使っている所 (シーンビューなど) に出て、編集が終わるとファイルに書きます。Ctrl+Z で戻せます": "Changes show at once where it is used (the scene view and so on) and are written to the file when you finish editing. Ctrl+Z undoes them"
 }

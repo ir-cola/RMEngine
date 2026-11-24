@@ -4,6 +4,7 @@
 #include "base/Utf.h"
 #include "core/asset/ImportSettings.h"
 #include "core/reflect/Data.h"
+#include "editor/assets/AssetFileType.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "platform/Image.h"
@@ -121,6 +122,15 @@ void AssetPanel::SetPreviews(const PluginRegistry* registry, std::function<void(
     described_ = redraw ? std::make_unique<UiWake>(std::move(redraw)) : nullptr;
 }
 
+const AssetFileType* FileTypeFor(const PluginRegistry& registry, std::string_view fileName) {
+    const std::string ext = asset::Extension(asset::FileNameOf(fileName));
+    if (ext.empty()) return nullptr;
+    for (const auto& t : registry.Contributions<AssetFileType>(kAssetFileTypePoint)) {
+        if (t.item->extension && t.item->type && ext == t.item->extension) return t.item;
+    }
+    return nullptr;
+}
+
 const AssetPreview* PreviewFor(const PluginRegistry& registry, asset::Kind kind) {
     for (const auto& p : registry.Contributions<AssetPreview>(kAssetPreviewPoint)) {
         if (p.item->kind == kind) return p.item;
@@ -158,7 +168,15 @@ ID2D1Bitmap* AssetThumbnail(ui::Context& c, const AssetLibrary& lib, Thumbnails&
     const asset::Entry* e = lib.Index().ByGuid(guid);
     if (!e) return nullptr;
     const asset::Kind kind = asset::KindOf(e->path, e->folder);
-    if (!thumbnails.Has(kind)) return nullptr;
+    if (!thumbnails.Has(kind, e->path)) return nullptr;
+    // (マテリアルのように別のアセットを名指すファイルのために: 今の id -> ファイルの表。変わったときだけ作る)
+    thumbnails.KeepAssets(lib.Version(), [&lib] {
+        std::unordered_map<std::string, std::filesystem::path> all;
+        for (const asset::Entry& a : lib.Index().Entries()) {
+            if (!a.folder) all.emplace(a.guid, lib.FullPath(a));
+        }
+        return all;
+    });
     // ウィンドウのピクセルで (高 DPI の画面でもくっきり)。
     float dpiX = 96, dpiY = 96;
     if (ID2D1DeviceContext* dc = c.P().DC()) dc->GetDpi(&dpiX, &dpiY);
@@ -234,6 +252,26 @@ std::vector<tree::Action> AssetPanel::Actions(std::span<const tree::ItemId> sele
         if (!made.empty()) tree::RequestSelect(state_, {asset::NumberOf(made)}, true);  // 名前を打つ
     };
     list.push_back(std::move(folder));
+    // 作成 ▸ プラグインが作る種類のファイル (マテリアルなど: AssetFileType.h)。選んでいる所に作り、名前を打たせる。
+    if (registry_) {
+        for (const auto& t : registry_->Contributions<AssetFileType>(kAssetFileTypePoint)) {
+            const AssetFileType* ft = t.item;
+            if (!ft->extension || !ft->type || !ft->label) continue;
+            tree::Action make;
+            make.label = Tr(ft->label);
+            make.folder = Tr(L"作成");
+            make.run = [this, ft, where] {
+                std::string made;
+                const reflect::TypeDesc& type = ft->type();
+                const reflect::Object fresh(type);  // (既定値の新しいもの)
+                const std::string bytes = json::Write(reflect::Save(type, fresh.Get()));
+                Report(lib_.NewFile(where, ft->folder ? ft->folder : "", WideToUtf8(Tr(ft->newName ? ft->newName : ft->label)), ft->extension,
+                                    bytes, &made));
+                if (!made.empty()) tree::RequestSelect(state_, {asset::NumberOf(made)}, true);  // 名前を打つ
+            };
+            list.push_back(std::move(make));
+        }
+    }
     separator();
 
     if (guids.empty()) {
@@ -328,6 +366,56 @@ private:
     uint64_t merge_ = 0;
 };
 
+// プラグインが作る種類のファイル (AssetFileType) の中身の 1 回の編集: 前と後の中身 (1 つの欄に打つ間は 1 件)。
+// エディターの持つ中身を替える (シーンビューなどがすぐ読む)。ファイルには編集が終わったときに書く。
+class ContentCommand final : public ICommand {
+public:
+    ContentCommand(AssetLibrary& lib, std::string guid, std::string before, std::string after, std::string label, uint64_t merge)
+        : lib_(lib), guid_(std::move(guid)), before_(std::move(before)), after_(std::move(after)), label_(std::move(label)), merge_(merge) {}
+
+    void Do() override { Apply(after_); }
+    void Undo() override { Apply(before_); }
+    std::string Label() const override { return label_; }
+    bool IsNoOp() const override { return before_ == after_; }
+    bool CanMergeWith(const ICommand& next) const override {
+        const auto* n = dynamic_cast<const ContentCommand*>(&next);
+        return n && merge_ != 0 && n->merge_ == merge_ && n->guid_ == guid_;
+    }
+    bool MergeWith(const ICommand& next) override {
+        if (!CanMergeWith(next)) return false;
+        after_ = static_cast<const ContentCommand&>(next).after_;
+        return true;
+    }
+    size_t Bytes() const override { return before_.size() + after_.size(); }
+
+private:
+    void Apply(const std::string& bytes) {
+        if (!lib_.Index().ByGuid(guid_)) return;  // (削除された)
+        lib_.QueueContent(guid_, bytes);
+    }
+
+    AssetLibrary& lib_;
+    std::string guid_;
+    std::string before_, after_;
+    std::string label_;
+    uint64_t merge_ = 0;
+};
+
+namespace {
+
+// 中身 `bytes` を `type` の物 `o` (と、その知らないキー) に読む。JSON でない・`kind` が違う: false。
+bool ReadContent(const AssetFileType& ft, const reflect::TypeDesc& type, std::string_view bytes, reflect::Object& o, reflect::Unknowns& u) {
+    const auto v = json::Parse(bytes);
+    if (!v || !v->IsObject()) return false;
+    if (ft.kind && v->Get("kind").AsString() != ft.kind) return false;
+    o = reflect::Object(type);
+    u = {};
+    reflect::Load(type, o.Get(), *v, &u);
+    return true;
+}
+
+}  // namespace
+
 void AssetPanel::SetInspector(std::function<void(Inspectable)> inspect, std::function<void(std::unique_ptr<ICommand>)> push) {
     inspect_ = std::move(inspect);
     push_ = std::move(push);
@@ -383,19 +471,73 @@ void AssetPanel::InspectSelected() {
     std::shared_ptr<ImportView> view = view_;
     auto push = push_;
     const AssetPreview* preview = registry_ ? PreviewFor(*registry_, kind) : nullptr;
+    const AssetFileType* fileType = registry_ && !e->folder ? FileTypeFor(*registry_, e->path) : nullptr;
     std::function<void()> known = described_ ? described_->Signal() : std::function<void()>();
-    target.blocks = [lib, view, guid, type, push, preview, known, facts] {
+    // プラグインが作る種類のファイル: その中身 (エディターの持つもの) を、欄で編集する。
+    struct ContentView {
+        std::string bytes;  // `object` を読んだ元
+        reflect::Object object;
+        reflect::Unknowns unknowns;
+        bool ok = false;
+        double readAt = -1e9;
+    };
+    auto content = std::make_shared<ContentView>();
+    target.blocks = [lib, view, guid, type, push, preview, known, facts, fileType, content] {
         std::vector<InspectBlock> blocks;
         const asset::Entry* now = lib->Index().ByGuid(guid);
         if (!now) return blocks;  // 削除された: 何も出さない
         InspectBlock info;
-        info.note = KindLabel(asset::KindOf(now->path, now->folder)) + L"  ·  Assets/" + Utf8ToWide(now->path) + L"\nID " + Utf8ToWide(guid);
+        const std::wstring kindName = fileType ? Tr(fileType->label) : KindLabel(asset::KindOf(now->path, now->folder));
+        info.note = kindName + L"  ·  Assets/" + Utf8ToWide(now->path) + L"\nID " + Utf8ToWide(guid);
         if (!facts.empty()) info.note += L"\n" + facts;
         if (preview && preview->describe) {
             // (音: 長さと形式 - 「鳴らしてみる」はブロックの ⋮ メニューにある)
             if (const std::wstring line = preview->describe(lib->FullPath(*now), known); !line.empty()) info.note += L"\n" + line;
             info.title = KindLabel(asset::KindOf(now->path, now->folder));
             info.menu = PreviewActions(*lib, preview, guid);
+        }
+        if (fileType) {
+            const reflect::TypeDesc& ctype = fileType->type();
+            // 今の中身 (書いていない編集があればそれ。ファイルは 0.5 秒に 1 回まで読み直す)。
+            const double t = platform::NowSeconds();
+            if (lib->HasQueuedContent(guid) || t - content->readAt > 0.5) {
+                content->readAt = t;
+                if (const auto bytes = lib->Content(guid); bytes && (*bytes != content->bytes || content->object.Empty())) {
+                    content->bytes = *bytes;
+                    content->ok = ReadContent(*fileType, ctype, *bytes, content->object, content->unknowns);
+                }
+            }
+            if (!content->ok) {
+                info.note += L"\n" + TrF(L"このファイルは{}として読めません (JSON が壊れているか、別の種類のファイルです)", Tr(fileType->label));
+                blocks.push_back(std::move(info));
+                return blocks;
+            }
+            blocks.push_back(std::move(info));
+            InspectBlock edit;
+            edit.type = &ctype;
+            edit.title = Tr(fileType->label);
+            edit.note = fileType->note ? Tr(fileType->note) : Tr(L"変えるとすぐに使っている所 (シーンビューなど) に出て、編集が終わるとファイルに書きます。Ctrl+Z で戻せます");
+            edit.resolve = [content]() -> reflect::EditTarget {
+                if (!content->ok || content->object.Empty()) return {};
+                return {content->object.Get(), &content->unknowns};
+            };
+            edit.onEdit = [lib, guid, fileType, push](InspectBlock::Change ch) {
+                // 今の中身に、この欄だけを変えたもの (ほかの欄と知らないキーはそのまま)。
+                const auto bytes = lib->Content(guid);
+                if (!bytes || !push) return;
+                const reflect::TypeDesc& ct = fileType->type();
+                reflect::Object o;
+                reflect::Unknowns u;
+                if (!ReadContent(*fileType, ct, *bytes, o, u)) return;
+                const reflect::PathTarget pt = reflect::Resolve(ct, o.Get(), &u, ch.path);
+                if (!pt.field) return;
+                reflect::LoadField(*pt.field, pt.owner, ch.after, pt.unknowns, nullptr);
+                std::string after = json::Write(reflect::Save(ct, o.Get(), &u));
+                if (after == *bytes) return;
+                push(std::make_unique<ContentCommand>(*lib, guid, *bytes, std::move(after), std::move(ch.label), ch.merge));
+            };
+            blocks.push_back(std::move(edit));
+            return blocks;
         }
         blocks.push_back(std::move(info));
         if (!type) return blocks;
@@ -437,7 +579,8 @@ void AssetPanel::Draw(ui::Context& c, const Rect& r) {
     if (sel.size() == 1) {
         if (const asset::Entry* e = lib_.Index().ByGuid(sel[0])) {
             const asset::Kind kind = asset::KindOf(e->path, e->folder);
-            text = KindLabel(kind) + L"  ·  Assets/" + Utf8ToWide(e->path);
+            const AssetFileType* fileType = registry_ && !e->folder ? FileTypeFor(*registry_, e->path) : nullptr;
+            text = (fileType ? Tr(fileType->label) : KindLabel(kind)) + L"  ·  Assets/" + Utf8ToWide(e->path);
             const AssetPreview* preview = registry_ ? PreviewFor(*registry_, kind) : nullptr;
             if (preview && preview->describe) {
                 const std::function<void()> known = described_ ? described_->Signal() : std::function<void()>();
