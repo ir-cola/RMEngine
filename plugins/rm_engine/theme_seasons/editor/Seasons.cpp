@@ -30,13 +30,9 @@ Color Leaf(int i) {                                         // 秋: 樹冠、4 �
     return Color::Hex(k[i & 3], 0.34f);
 }
 Color Snow() { return Color::Hex(0xFFFFFF); }             // 冬: ウィンドウの一番下に積もる
-Color SnowShade() { return Color::Hex(0x8CA3BD); }        // つららの上の雪の輪郭
 Color SnowEdge() { return Color::Hex(0xA9BBCF, 0.55f); }  // 積もった雪の輪郭 (薄く: 2026-11-24 ユーザーの希望)
 Color SnowLow() { return Color::Hex(0xE6EEF7); }          // 吹きだまりの影になった足元
 Color Flake() { return Color::Hex(0xFFFFFF, 0.9f); }      // 降る雪
-Color Ice() { return Color::Hex(0xD6E7F6, 0.88f); }       // つらら: 淡くて、少し透ける
-Color IceShade() { return Color::Hex(0x6F8AA8, 0.75f); }  // その縁
-Color IceShine() { return Color::Hex(0xFFFFFF, 0.95f); }
 }  // namespace season
 
 enum class Kind { Spring, Summer, Fall, Winter };
@@ -69,19 +65,11 @@ void SummerClouds(Picture& pic, const Rect& w, float scale) {
     pic.push_back({ornament::Cloud({w.Right() - w.w * 0.06f, w.y + std::max(150.f, w.h * 0.25f) * scale}, cw * 0.5f), season::CloudColor()});
 }
 
-// 冬: ウィンドウに降る雪 (止めたもの) と、上の端からのつらら: その縁 (氷を右下に 1 px ずらしたもの)、
-// 淡い氷、左側のつや、ぶら下がる雪。
+// 冬: ウィンドウに降る雪 (止めたもの)。(2026-11-24: 上の端のつららはユーザーの希望で外した。
+// 形を作る ornament::Icicles は残してある)
 void WinterSky(Picture& pic, const Rect& w, float scale) {
     const int count = std::max(20, static_cast<int>(w.w * w.h / 3600.f));
     pic.push_back({ornament::Snowfall(w, count, 5.5f * scale, 0x5A0Fu), season::Flake()});
-    const float icicle = 40.f * scale;
-    ornament::IcicleShapes edge = ornament::Icicles({w.x + 0.8f, w.y + 1.f, w.w, w.h}, icicle, 0x1C1Eu);
-    ornament::IcicleShapes ice = ornament::Icicles(w, icicle, 0x1C1Eu);
-    pic.push_back({std::move(edge.ice), season::IceShade()});
-    pic.push_back({std::move(ice.ice), season::Ice()});
-    pic.push_back({std::move(ice.shine), season::IceShine()});
-    pic.push_back({std::move(edge.snow), season::SnowShade()});
-    pic.push_back({std::move(ice.snow), season::Snow()});
 }
 
 // 冬: ウィンドウ (エディター本体・Hub) の一番下に積もった雪: 上に輪郭、白い雪、その影になった足元。
