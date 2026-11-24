@@ -421,10 +421,12 @@ ui::Path SnowDrift(const ui::Rect& r, float depth, float corner) {
     const float l0 = corner * 0.6f, l1 = r.w - corner * 0.6f;
     if (l1 - l0 < 6.f || depth <= 0) return p;
     const float bottom = r.y + r.h;
-    constexpr float kSlope = 26.f;  // 吹きだまりは、両端でこのピクセル数をかけてゼロまで下がる
+    constexpr float kSlope = 48.f;  // 吹きだまりは、両端でこのピクセル数をかけてゼロまで下がる
+    // なだらかに (2026-11-24: ユーザーの希望。前は 50 ピクセルほどの細かい波があった): 長い波 2 つだけ。
     auto top = [&](float l) {
-        const float ends = std::min(1.f, std::min(l - l0, l1 - l) / kSlope);
-        const float swells = 0.62f + 0.22f * std::sin(l * 0.045f) + 0.16f * std::sin(l * 0.13f + 1.f);
+        const float t = std::min(1.f, std::min(l - l0, l1 - l) / kSlope);
+        const float ends = t * t * (3.f - 2.f * t);  // 端の下がり方も角を作らない
+        const float swells = 0.72f + 0.17f * std::sin(l * 0.017f) + 0.09f * std::sin(l * 0.039f + 1.f);
         return Vec2{r.x + l, bottom - depth * std::max(0.f, ends) * swells};
     };
     // 画面上で時計回り: 吹きだまりの上を右へ (左から 4 ピクセルごとに点を置くので、幅が変わっても

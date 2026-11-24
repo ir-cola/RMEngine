@@ -299,6 +299,36 @@ RM_TEST(Dock_TabStripInsertIndex) {
     CHECK(TabInsertIndex(kFour, 2, 999) == 4);
 }
 
+RM_TEST(Dock_TabMoveWithinStrip) {
+    // タブ 1 を少しだけ動かしても場所は変わらない。隣の真ん中を越えたら入れ替わる。
+    CHECK(TabMoveIndex(kFour, 2, 1, 102) == 1);
+    CHECK(TabMoveIndex(kFour, 2, 1, 40) == 1);
+    CHECK(TabMoveIndex(kFour, 2, 1, -10) == 0);
+    CHECK(TabMoveIndex(kFour, 2, 1, 160) == 2);
+    CHECK(TabMoveIndex(kFour, 2, 1, 999) == 3);
+    CHECK(TabMoveIndex(kFour, 2, 9, 50) == 0);  // ない番号
+    // 動かした並び: 1 を最後へ -> 0, 2, 3, 1。
+    const std::vector<float> lefts = TabLeftsMoved(kFour, 2, 1, 3);
+    CHECK(lefts.size() == 4 && lefts[0] == 0 && lefts[2] == 102 && lefts[3] == 204 && lefts[1] == 306);
+    const std::vector<float> same = TabLeftsMoved(kFour, 2, 2, 2);
+    CHECK(same[0] == 0 && same[1] == 102 && same[2] == 204 && same[3] == 306);
+    // Dock の番号: 前へは同じ、後ろへは 1 つ足す (Dock が取り除いた分を引くので)。
+    CHECK(TabMoveToDockIndex(2, 0) == 0);
+    CHECK(TabMoveToDockIndex(2, 2) == 3);
+    CHECK(TabMoveToDockIndex(1, 3) == 4);
+    Layout l;
+    l.main = l.MakeLeaf({"a", "b", "c", "d"});
+    CHECK(l.Dock("b", l.main->id, Zone::Center, TabMoveToDockIndex(1, 3)));
+    CHECK(l.main->tabs == std::vector<std::string>({"a", "c", "d", "b"}));
+    // 滑らかに近づく: 少しずつ近づき、最後は目標そのもの。
+    float x = 0;
+    x = SlideToward(x, 100, 1.f / 60);
+    CHECK(x > 0 && x < 100);
+    for (int i = 0; i < 120; ++i) x = SlideToward(x, 100, 1.f / 60);
+    CHECK(x == 100);
+    CHECK(SlideToward(NAN, 5, 0.016f) == 5);
+}
+
 // --- 名前つきの配置 (editor/dock/NamedLayouts): 名前、保存 / 名前変更 / 削除、保存の形 ---
 namespace {
 

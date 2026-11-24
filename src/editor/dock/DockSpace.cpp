@@ -300,15 +300,54 @@ void DockSpace::DrawTabStrip(ui::Context& c, const Node& leaf, const Rect& strip
     }
     st.scroll = fit.scroll;
 
-    c.PushClip(view);
-    float x = view.x - fit.scroll;
+    // 各タブの場所。同じ行の中で並べ替えるドラッグの間は、ほかのタブが入る場所を空けるようによけ、
+    // ドラッグ中のタブはマウスについて行の中を横に動く。見えている場所は目標へ滑らかに動く
+    // (離したあとはマウスの所から収まる場所へ、閉じたタブの後ろは詰まる)。
+    int dragged = -1;
+    if (drag_.kind == DragKind::Tab && drag_.target.valid && drag_.target.reorder && drag_.target.node == leaf.id) {
+        for (size_t i = 0; i < leaf.tabs.size(); ++i) {
+            if (leaf.tabs[i] == drag_.panel) dragged = static_cast<int>(i);
+        }
+    }
+    std::vector<float> lefts;
+    if (dragged >= 0) {
+        lefts = TabLeftsMoved(geo.widths, kTabSpacing, static_cast<size_t>(dragged), static_cast<size_t>(std::max(0, drag_.target.moveTo)));
+    } else {
+        for (size_t i = 0; i < leaf.tabs.size(); ++i) lefts.push_back(TabLeft(geo.widths, kTabSpacing, i));
+    }
+    const double now = platform::NowSeconds();
+    const float dt = st.time > 0 ? static_cast<float>(now - st.time) : 0.f;
+    st.time = now;
+    std::unordered_map<std::string, float> slide;
+    std::vector<float> xs(leaf.tabs.size(), 0.f);
+    bool moving = false;
     for (size_t i = 0; i < leaf.tabs.size(); ++i) {
+        const auto was = st.slide.find(leaf.tabs[i]);
+        float sx = was != st.slide.end() ? SlideToward(was->second, lefts[i], dt) : lefts[i];
+        if (static_cast<int>(i) == dragged) {
+            sx = std::clamp(c.In().mouseX - drag_.grabX - view.x + fit.scroll, 0.f, std::max(0.f, fit.content - geo.widths[i]));
+        } else if (sx != lefts[i]) {
+            moving = true;
+        }
+        xs[i] = sx;
+        slide[leaf.tabs[i]] = sx;
+    }
+    st.slide = std::move(slide);
+    if (moving) c.RequestAnimation();
+    // ドラッグ中のタブは最後に (ほかのタブの上に) 描く。
+    std::vector<size_t> order;
+    for (size_t i = 0; i < leaf.tabs.size(); ++i) {
+        if (static_cast<int>(i) != dragged) order.push_back(i);
+    }
+    if (dragged >= 0) order.push_back(static_cast<size_t>(dragged));
+
+    c.PushClip(view);
+    for (const size_t i : order) {
         const std::string& id = leaf.tabs[i];
         const std::wstring& title = titles[i];
         const bool sel = static_cast<int>(i) == leaf.active;
         const float tw = geo.widths[i];
-        const Rect tab{x, strip.y + 3, tw, strip.h - 3};
-        x += tw + kTabSpacing;
+        const Rect tab{view.x - fit.scroll + xs[i], strip.y + 3, tw, strip.h - 3};
         if (tab.Right() < view.x || tab.x > view.Right()) continue;  // 見えない: 描くことも触ることもない
 
         c.PushId(id);
@@ -324,6 +363,7 @@ void DockSpace::DrawTabStrip(ui::Context& c, const Node& leaf, const Rect& strip
             drag_.fromSite = siteId;
             drag_.startX = c.In().mouseX;
             drag_.startY = c.In().mouseY;
+            drag_.grabX = c.In().mouseX - tab.x;
             drag_.fromLeaf = geo.rect;
         }
         if ((b.hovered && c.MousePressed(ui::Mouse::Middle)) || cb.clicked) {
@@ -437,19 +477,37 @@ void DockSpace::UpdateHover(HWND exclude) {
         }
         if (!t.valid) {
             for (const auto& leaf : s.leaves) {
-                if (!leaf.strip.Contains(hx, hy)) continue;
+                // ドラッグ中のタブがいる葉か (そのときは同じ行の中の並べ替え)。
+                int from = -1;
+                if (drag_.kind == DragKind::Tab) {
+                    if (const Node* n = layout_.FindNode(leaf.id); n && n->IsLeaf()) {
+                        for (size_t i = 0; i < n->tabs.size() && i < leaf.widths.size(); ++i) {
+                            if (n->tabs[i] == drag_.panel) from = static_cast<int>(i);
+                        }
+                    }
+                }
+                // 自分の行は上下に少し外れても並べ替えのまま (横に動かしている間に行から外れにくく)。
+                const Rect hit = from >= 0 ? leaf.strip.Inset(0, -6, 0, -18) : leaf.strip;
+                if (!hit.Contains(hx, hy)) continue;
                 if (leaf.overflow) ScrollWhileDragging(leaf, hx, pt);
                 // 行の中で数える (隠れたタブも)。ボタンの上へのドロップは、見えている最後のタブの後ろになる。
                 const auto st = strips_.find(leaf.id);
                 const float scroll = leaf.overflow && st != strips_.end() ? st->second.scroll : 0.f;
-                const float rx = std::clamp(hx, leaf.view.x, leaf.view.Right()) - leaf.view.x + scroll;
-                const int index = TabInsertIndex(leaf.widths, kTabSpacing, rx);
                 t.valid = true;
                 t.site = hover;
                 t.node = leaf.id;
                 t.zone = Zone::Center;
-                t.tabIndex = index;
-                t.preview = leaf.rect;
+                if (from >= 0) {
+                    // 並べ替え: ドラッグ中のタブの左端 (つかんだ所から) で、ほかのタブの真ん中を越えたら入れ替わる。
+                    const float left = hx - drag_.grabX - leaf.view.x + scroll;
+                    t.reorder = true;
+                    t.moveTo = TabMoveIndex(leaf.widths, kTabSpacing, static_cast<size_t>(from), left);
+                    t.tabIndex = TabMoveToDockIndex(static_cast<size_t>(from), t.moveTo);
+                } else {
+                    const float rx = std::clamp(hx, leaf.view.x, leaf.view.Right()) - leaf.view.x + scroll;
+                    t.tabIndex = TabInsertIndex(leaf.widths, kTabSpacing, rx);
+                    t.preview = leaf.rect;
+                }
                 break;
             }
         }
@@ -553,7 +611,7 @@ void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
     auto& p = c.P();
     const auto siteIt = sites_.find(siteId);
     if (IsDragging() && drag_.hoverSite == siteId && siteIt != sites_.end()) {
-        if (drag_.target.valid && drag_.target.site == siteId) {
+        if (drag_.target.valid && drag_.target.site == siteId && !drag_.target.reorder) {
             const Rect& pr = drag_.target.preview;
             p.FillRoundRect(pr, 6, theme::Accent.Alpha(0.18f));
             p.StrokeRoundRect(pr.Inset(1), 6, theme::Accent.Alpha(0.9f), 2);
@@ -562,8 +620,10 @@ void DockSpace::DrawOverlay(ui::Context& c, uint32_t siteId) {
             DrawGuide(c, g.rect, g.zone, g.rect.Contains(drag_.hoverX, drag_.hoverY));
         }
     }
-    // ドラッグ中のタブは、元のウィンドウの中でマウスについてくる。
-    if (drag_.kind == DragKind::Tab && drag_.fromSite == siteId && c.Viewport().Contains(c.In().mouseX, c.In().mouseY)) {
+    // ドラッグ中のタブは、元のウィンドウの中でマウスについてくる (自分の行の中で並べ替えている間は、
+    // タブそのものが行の中で動くので出さない)。
+    const bool reordering = drag_.target.valid && drag_.target.reorder;
+    if (drag_.kind == DragKind::Tab && drag_.fromSite == siteId && !reordering && c.Viewport().Contains(c.In().mouseX, c.In().mouseY)) {
         const PanelType* type = FindPanel(drag_.panel);
         const std::wstring title = type ? Tr(type->title) : Utf8ToWide(drag_.panel);
         const float tw = p.TextWidth(title, 12, true) + 24;

@@ -21,6 +21,14 @@
         {
           "ja": "物理: コライダーの形に「円柱」を足した。「追加 ▸ 3D オブジェクト ▸ 円柱」の物はこれが付き、雪も丸く積もる (前は囲む箱だった)",
           "en": "Physics: added a \"Cylinder\" collider shape. Cylinders made with Add ▸ 3D Object get it, so snow lies round on them too (it used to be the enclosing box)"
+        },
+        {
+          "ja": "タブ: 同じタブ列の中でドラッグすると、つかんだタブがついて動き、ほかのタブが滑らかによける。離すとその場所へ収まる。閉じたときも後ろが滑らかに詰まる",
+          "en": "Tabs: dragging a tab within its own row now moves the tab with the mouse while the others slide out of the way, and it settles into place on release. Closing a tab slides the rest over"
+        },
+        {
+          "ja": "季節のテーマ: ウィンターの積もった雪の輪郭を薄く、形をなだらかに",
+          "en": "Seasons theme: the lying snow in Winter has a lighter outline and a gentler shape"
         }
       ]
     },

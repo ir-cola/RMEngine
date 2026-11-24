@@ -30,7 +30,8 @@ Color Leaf(int i) {                                         // 秋: 樹冠、4 �
     return Color::Hex(k[i & 3], 0.34f);
 }
 Color Snow() { return Color::Hex(0xFFFFFF); }             // 冬: ウィンドウの一番下に積もる
-Color SnowShade() { return Color::Hex(0x8CA3BD); }        // その輪郭
+Color SnowShade() { return Color::Hex(0x8CA3BD); }        // つららの上の雪の輪郭
+Color SnowEdge() { return Color::Hex(0xA9BBCF, 0.55f); }  // 積もった雪の輪郭 (薄く: 2026-11-24 ユーザーの希望)
 Color SnowLow() { return Color::Hex(0xE6EEF7); }          // 吹きだまりの影になった足元
 Color Flake() { return Color::Hex(0xFFFFFF, 0.9f); }      // 降る雪
 Color Ice() { return Color::Hex(0xD6E7F6, 0.88f); }       // つらら: 淡くて、少し透ける
@@ -88,7 +89,7 @@ void WinterSky(Picture& pic, const Rect& w, float scale) {
 // どのパネルの下にも積もった)。ウィンドウの絵なので、一番下のパネルやバーの塗りの上にも内容の後ろに出る。
 void WinterGround(Picture& pic, const Rect& w) {
     constexpr float kDepth = 24.f;
-    pic.push_back({ornament::SnowDrift({w.x, w.y - 1.5f, w.w, w.h}, kDepth, 0), season::SnowShade()});
+    pic.push_back({ornament::SnowDrift({w.x, w.y - 1.5f, w.w, w.h}, kDepth, 0), season::SnowEdge()});
     pic.push_back({ornament::SnowDrift(w, kDepth, 0), season::Snow()});
     pic.push_back({ornament::SnowDrift(w, kDepth * 0.45f, 0), season::SnowLow()});
 }

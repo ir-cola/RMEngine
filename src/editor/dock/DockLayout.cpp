@@ -549,4 +549,44 @@ int TabInsertIndex(std::span<const float> widths, float spacing, float x) {
     return index;
 }
 
+int TabMoveIndex(std::span<const float> widths, float spacing, size_t from, float left) {
+    if (from >= widths.size()) return 0;
+    const float center = left + widths[from] * 0.5f;
+    int index = 0;
+    float x = 0;  // ドラッグ中のタブを抜いて詰めた並びでの左端
+    for (size_t i = 0; i < widths.size(); ++i) {
+        if (i == from) continue;
+        if (x + widths[i] * 0.5f < center) ++index;
+        x += widths[i] + spacing;
+    }
+    return index;
+}
+
+std::vector<float> TabLeftsMoved(std::span<const float> widths, float spacing, size_t from, size_t to) {
+    std::vector<size_t> order;
+    for (size_t i = 0; i < widths.size(); ++i) {
+        if (i != from) order.push_back(i);
+    }
+    if (from < widths.size()) order.insert(order.begin() + static_cast<std::ptrdiff_t>(std::min(to, order.size())), from);
+    std::vector<float> lefts(widths.size(), 0.f);
+    float x = 0;
+    for (size_t i : order) {
+        lefts[i] = x;
+        x += widths[i] + spacing;
+    }
+    return lefts;
+}
+
+int TabMoveToDockIndex(size_t from, int to) {
+    // Dock は、同じ葉の中で後ろへ動かすとき、取り除いた分を 1 つ引く。
+    return to < static_cast<int>(from) ? to : to + 1;
+}
+
+float SlideToward(float shown, float target, float dt) {
+    if (!std::isfinite(shown)) return target;
+    const float k = 1.f - std::exp(-std::clamp(dt, 0.f, 0.1f) * 16.f);  // 1 秒に残りの距離が e^-16 まで縮む
+    const float next = shown + (target - shown) * k;
+    return std::abs(target - next) < 0.5f ? target : next;
+}
+
 }  // namespace rm::editor::dock
