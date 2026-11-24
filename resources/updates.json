@@ -37,6 +37,10 @@
         {
           "ja": "シーンビューのボタンを小さくし、3D / 2D・ローカル / ワールド・中心・影・空・デバッグ・形を上の帯にまとめた。2D は同じ 3D のシーンを正面から平行投影で見る (ゲームの空間の切り替えは ゲームの設定 ▸ ゲーム設定 へ)",
           "en": "Scene view buttons are smaller, and 3D / 2D, Local / World, Center, Shadows, Sky, Debug and Shapes now share one bar at the top. 2D shows the same 3D scene from the front in parallel projection (switching the game's space moved to Game Settings ▸ Game)"
+        },
+        {
+          "ja": "コンソール: 上の帯に 情報・警告・エラー の数と表示の切り替え、クリア、自動スクロール、検索を足した",
+          "en": "Console: a toolbar with Info / Warnings / Error counts and filters, Clear, Auto-scroll and Search"
         }
       ]
     },
