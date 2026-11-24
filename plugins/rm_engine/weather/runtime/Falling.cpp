@@ -19,7 +19,7 @@ cbuffer Fall : register(b4) {
     float4 camUp;        // xyz: カメラの上
     float4 precipWind;   // xy: 今の風 (m/s、ワールドの x z)、zw: 風が運んだ距離
     float4 precipFall;   // x: 最小の落下 (m/s)、y: それぞれがさらに速くなれる量、z: 風がどれだけ運ぶか (Falling.h の FallOf)
-    float4 precipPlace;  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う
+    float4 precipPlace;  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う。w: 積もった雪の深さ (m)
     float4 precipPlaceSnow[13];  // 格子の点ごとの雪の割合 (4 つずつ。行が z、列が x)
 };
 float PlaceCell(int k) { return precipPlaceSnow[k >> 2][k & 3]; }
@@ -82,6 +82,9 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
     // 行く手にあるもの (落ちる向きの地図を、風で傾けたもの): 今それをどれだけ過ぎているか。
     // 過ぎていれば、当たった (屋根、壁、地面)。そのあとそこには何も落ちない。
     float past = MapPast((int)precipInfo.w, w);
+    // 雪片は積もった雪の上に落ちる (当たるものの地図は雪の下の面を見ている): 雪の深さぶん上で当たる。
+    // (2026-11-24: 前は雪の中へ入って、瞬間的に消えた。今は上に横たわり、縮んで溶ける)
+    if (snow && past > -1e29) past += precipPlace.w / max(-dir.y, 0.3);
     float since = past / speed;  // 当たってからの秒
     float3 hit = w - dir * past;  // 当たった場所
     if (snow) {

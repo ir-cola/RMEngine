@@ -118,6 +118,14 @@ public:
         // 下から見たもの (それだけの専用の地図)。
         for (const WetWay& way : wet_) anySnow_ = anySnow_ || way.snow > 0.0005f;
         if (mapInfo_.cells > 0) anySnow_ = WetMapMostSnow(*map) > 0.0005f;  // (どこかの場所に)
+        // 雪片が落ちる高さ: 積もった雪の上 (場所ごとのときは一番深い所。雪片は雪の降る所にだけ出る)。
+        float lying = 0;
+        if (mapInfo_.cells > 0) {
+            lying = WetMapMostSnow(*map);
+        } else {
+            for (const WetWay& way : wet_) lying += std::isfinite(way.snow) ? std::max(way.snow, 0.f) : 0.f;
+        }
+        for (Precipitation& p : falls_) p.lying = p.kind == Precipitation::Kind::Snow ? lying : 0.f;
         if (!f.playing) {
             trailsOn_ = false;
         } else if (!trailsOn_) {
@@ -435,6 +443,7 @@ private:
         k.up[0] = dc.view.m[0][1], k.up[1] = dc.view.m[1][1], k.up[2] = dc.view.m[2][1];
         k.wind[0] = p.windX, k.wind[1] = p.windZ, k.wind[2] = p.driftX, k.wind[3] = p.driftZ;
         k.fall[0] = speed.least, k.fall[1] = speed.spread, k.fall[2] = speed.carried;
+        k.place[3] = std::isfinite(p.lying) ? std::clamp(p.lying, 0.f, kMostSnowDepth) : 0.f;
         if (p.placed && place_ && scene_) {
             // カメラのまわりの格子で、場所ごとの雪の割合 (と降る量の倍率: 多いほうの倍率から減らす)。
             const float step = (snow ? kSnowBox : kRainBox) / static_cast<float>(kPlaceGrid - 1);

@@ -27,6 +27,7 @@ struct Precipitation {
     float windX = 0, windZ = 0;    // 今の風 (m/s、ワールド)
     float driftX = 0, driftZ = 0;  // 風が運んだ距離 (ワールド単位)
     int map = -1;                  // 落ちる向きの 向きの地図 (-1: なし - 当たるものがない)
+    float lying = 0;               // 雪: 積もっている雪の深さ (m)。雪片はその上に落ちる (当たるものの面より上)
     // 場所ごとの降り方 (WeatherPlace.h) を見る: 粒ごとに、その場所の割合で出る (雨: 1 - 雪の割合)。
     bool placed = false;
 };
@@ -65,7 +66,7 @@ struct FallConstants {
     float up[4];     // xyz: カメラの上
     float wind[4];   // xy: 今の風 (m/s、ワールドの x z)、zw: 風が運んだ距離
     float fall[4];   // x: 最小の落下 (m/s)、y: それぞれがさらに速くなれる量、z: 風がどれだけ運ぶか
-    float place[4];  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う
+    float place[4];  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う。w: 積もった雪の深さ (m。雪片はその上に落ちる)
     float placeSnow[(kPlaceGridPoints + 3) / 4 * 4];  // 格子の点ごとの雪の割合 (行が z、列が x)
 };
 static_assert(sizeof(FallConstants) % 16 == 0);
