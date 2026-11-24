@@ -82,6 +82,7 @@
     <ClCompile Include="TestClimate.cpp" />
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
+    <ClCompile Include="TestConsole.cpp" />
     <ClCompile Include="TestSystems.cpp" />
     <ClCompile Include="TestPhysics.cpp" />
     <ClCompile Include="TestPrefab.cpp" />
@@ -126,6 +127,7 @@
     <ClCompile Include="..\src\platform\Http.cpp" />
     <ClCompile Include="..\src\editor\project\Templates.cpp" />
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
+    <ClCompile Include="..\src\editor\console\ConsoleModel.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
     <ClCompile Include="..\src\editor\app\Integrity.cpp" />
     <ClCompile Include="..\src\editor\app\EngineKey.cpp" />

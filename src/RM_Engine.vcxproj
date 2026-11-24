@@ -109,6 +109,8 @@
     <ClCompile Include="editor\plugin\PluginDownload.cpp" />
     <ClCompile Include="editor\tree\TreeModel.cpp" />
     <ClCompile Include="editor\tree\TreeView.cpp" />
+    <ClCompile Include="editor\console\ConsoleModel.cpp" />
+    <ClCompile Include="editor\console\ConsolePanel.cpp" />
     <ClCompile Include="editor\plugin\Plugins.cpp" />
     <ClCompile Include="editor\app\Main.cpp" />
     <ClCompile Include="editor\app\ScreenWindow.cpp" />
@@ -181,6 +183,8 @@
     <ClInclude Include="editor\plugin\Software.h" />
     <ClInclude Include="editor\tree\TreeModel.h" />
     <ClInclude Include="editor\tree\TreeView.h" />
+    <ClInclude Include="editor\console\ConsoleModel.h" />
+    <ClInclude Include="editor\console\ConsolePanel.h" />
     <ClInclude Include="editor\hub\HubScreen.h" />
     <ClInclude Include="editor\project\HubSettings.h" />
     <ClInclude Include="editor\project\Project.h" />

@@ -180,6 +180,12 @@ bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::stri
 // ラベル付きのチェックボックス。値が変わったら true を返す。
 // mixed: まとめて編集しているオブジェクトが一致しない - チェックの代わりに横棒を出す。クリックするとオンになる。
 bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label, bool mixed = false);
+// 数の付いたチェックボックス (コンソールの 情報 / 警告 / エラー): Checkbox の後ろに、`count` を太字の
+// `countColor` で。`label` は空でもよい (狭いとき: チェックと数だけ)。値が変わったら true。
+// 要る幅: CheckboxCountWidth (`count` が空なら、ふつうの Checkbox の幅)。
+bool CheckboxCount(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label,
+                   std::wstring_view count, ui::Color countColor);
+float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_view count = {});
 // テキストフィールドの数 (ビューの設定 - シーンビューの刻み): フォーカスがある間は打ったままの
 // 文字、それ以外は値 (`text` がフレームの間それを持つ)。`value` が変わったら true: 数が
 // 打たれた (min .. max に収める); 数でない文字は何も変えない。
@@ -212,6 +218,9 @@ float BeginScroll(ui::Context& c, std::string_view id, const ui::Rect& view, flo
 void EndScroll(ui::Context& c, std::string_view id, const ui::Rect& view, float contentHeight);
 // 次の BeginScroll で末尾へ飛ぶ (新しい出力を追うコンソール用)。
 void ScrollToEnd(ui::Context& c, std::string_view id);
+// 今 (このフレームの EndScroll の後で) 末尾にいるか。中身が見える高さに収まるときも true
+// (コンソール: 一番下にいる間だけ新しい出力を追う)。
+bool ScrollAtEnd(ui::Context& c, std::string_view id, const ui::Rect& view, float contentHeight);
 
 // --- ポップアップメニュー ---------------------------------------------------
 struct MenuItem {

@@ -998,6 +998,31 @@ bool Checkbox(ui::Context& c, std::string_view idStr, const Rect& r, bool& value
 }
 
 namespace {
+constexpr float kCheckBoxW = 16.f, kCheckLabelGap = 8.f, kCountGap = 5.f;
+}  // namespace
+
+float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_view count) {
+    float w = kCheckBoxW;
+    if (!label.empty()) w += kCheckLabelGap + c.P().TextWidth(label, theme::FontSize);
+    if (!count.empty()) w += (label.empty() ? kCheckLabelGap : kCountGap) + c.P().TextWidth(count, theme::FontSize, true);
+    return w + 2.f;
+}
+
+bool CheckboxCount(ui::Context& c, std::string_view id, const Rect& r, bool& value, std::wstring_view label,
+                   std::wstring_view count, ui::Color countColor) {
+    const bool changed = Checkbox(c, id, r, value, label);  // 箱とラベルは Checkbox の 1 本の道で
+    if (count.empty()) return changed;
+    float x = r.x + kCheckBoxW + kCheckLabelGap;
+    if (!label.empty()) x += c.P().TextWidth(label, theme::FontSize) + kCountGap;
+    ui::TextStyle ts;
+    ts.size = theme::FontSize;
+    ts.bold = true;
+    ts.color = countColor;
+    c.P().Text({x, r.y, std::max(0.f, r.Right() - x), r.h}, count, ts);
+    return changed;
+}
+
+namespace {
 constexpr float kTrackW = 40.f, kLabelGap = 8.f;
 }  // namespace
 
@@ -1145,6 +1170,10 @@ void EndScroll(ui::Context& c, std::string_view idStr, const Rect& view, float c
 }
 
 void ScrollToEnd(ui::Context& c, std::string_view idStr) { c.FloatState(c.MakeId(idStr)) = 1e9f; }
+
+bool ScrollAtEnd(ui::Context& c, std::string_view idStr, const Rect& view, float contentHeight) {
+    return c.FloatState(c.MakeId(idStr)) >= std::max(0.f, contentHeight - view.h) - 1.f;
+}
 
 namespace {
 constexpr float kItemH = 28.f;

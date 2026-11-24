@@ -22,6 +22,7 @@
 
 #include "base/Log.h"
 #include "core/UndoHistory.h"
+#include "editor/console/ConsolePanel.h"
 #include "editor/help/HelpView.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/assets/AssetLibrary.h"
@@ -260,6 +261,7 @@ private:
     UiWake assetsWake_{[this] { RedrawAll(); }};
     std::unique_ptr<AssetLibrary> assets_;    // プロジェクトの Assets/ (ID、ファイル操作) - どのソフトのものでも
     HelpView help_;                           // ヘルプのパネルの中身 (どのソフトでも同じ 1 つ)
+    ConsolePanel console_;                    // コンソールのパネルの中身 (どのソフトでも同じ 1 つ)
     std::unique_ptr<Thumbnails> thumbnails_;  // アセットの小さな絵 - どのソフトのパネルも共有する (そのスレッドはここで終わる)
 
     std::vector<std::unique_ptr<Workspace>> workspaces_;  // 空にはならない
@@ -274,8 +276,6 @@ private:
     HWND dragTarget_ = nullptr;  // 最後にドラッグの上に来たと知らせたウィンドウ (ForwardDrag)
 
     int logSink_ = 0;
-    // 各ウィンドウのコンソールが最後に追ったログの項目 (パネルはウィンドウの間を動ける)。
-    std::unordered_map<const ui::Context*, uint64_t> consoleSeenSeq_;
 };
 
 }  // namespace rm::editor
