@@ -223,19 +223,64 @@ ui::Path Sun(Vec2 center, float r, float degreesCcw) {
     return p;
 }
 
-ui::Path Cloud(Vec2 c, float w) {
-    ui::Path p;
-    AddCircle(p, {c.x - 0.30f * w, c.y + 0.02f * w}, 0.17f * w);
-    AddCircle(p, {c.x - 0.10f * w, c.y - 0.09f * w}, 0.24f * w);
-    AddCircle(p, {c.x + 0.14f * w, c.y - 0.06f * w}, 0.21f * w);
-    AddCircle(p, {c.x + 0.33f * w, c.y + 0.04f * w}, 0.15f * w);
-    // ふくらみの下の平らな足。
-    const Vec2 foot[4] = {{c.x - 0.36f * w, c.y + 0.04f * w}, {c.x + 0.42f * w, c.y + 0.04f * w}, {c.x + 0.42f * w, c.y + 0.17f * w},
-                          {c.x - 0.36f * w, c.y + 0.17f * w}};
-    AddPolygon(p, foot);
-    AddCircle(p, {c.x - 0.36f * w, c.y + 0.105f * w}, 0.065f * w);
-    AddCircle(p, {c.x + 0.42f * w, c.y + 0.105f * w}, 0.065f * w);
-    return p;
+CloudShapes Cumulus(Vec2 c, float w, uint32_t seed) {
+    CloudShapes out;
+    if (w <= 0) return out;
+    Random rnd{seed};
+    auto jitter = [&](float amount) { return (rnd.Next() - 0.5f) * 2.f * amount; };
+    const float base = c.y + 0.16f * w;  // 平らな底
+    struct Puff {
+        float x, y, r;
+    };
+    std::vector<Puff> puffs;
+    // 底に並ぶ小さめのふくらみ (両端はもっと小さい)。どれも底の線より少し下まで出て、そこで平らに切る。
+    constexpr float kRow[] = {-0.43f, -0.30f, -0.16f, -0.02f, 0.13f, 0.27f, 0.40f};
+    for (size_t i = 0; i < std::size(kRow); ++i) {
+        const float end = (i == 0 || i + 1 == std::size(kRow)) ? 0.75f : 1.f;
+        const float r = (0.095f + 0.035f * rnd.Next()) * end * w;
+        puffs.push_back({c.x + (kRow[i] + jitter(0.015f)) * w, base - 0.78f * r, r});
+    }
+    // その上に積み上がる大きなふくらみ。少し左寄りの真ん中が一番高い。肩には小さなふくらみ (でこぼこの上の縁)。
+    // (x, 底からの高さ, 半径)
+    constexpr std::array<std::array<float, 3>, 7> kTall{{{-0.25f, 0.16f, 0.13f}, {0.23f, 0.15f, 0.12f}, {-0.09f, 0.21f, 0.17f},
+                                                         {0.10f, 0.19f, 0.15f}, {-0.02f, 0.30f, 0.13f}, {-0.17f, 0.32f, 0.07f},
+                                                         {0.15f, 0.30f, 0.075f}}};
+    for (const auto& [x, lift, r] : kTall)
+        puffs.push_back({c.x + (x + jitter(0.02f)) * w, base - (lift + jitter(0.015f)) * w, r * (0.9f + 0.2f * rnd.Next()) * w});
+
+    // 縦の列ごとに、ふくらみの重なりの上の縁と下の縁 (底の線で切る。底に並ぶふくらみの間は底まで埋める)。
+    float x0 = 1e30f, x1 = -1e30f;
+    for (const Puff& f : puffs) x0 = std::min(x0, f.x - f.r), x1 = std::max(x1, f.x + f.r);
+    const float flatFrom = puffs.front().x, flatTo = puffs[std::size(kRow) - 1].x;
+    const int n = std::clamp(static_cast<int>((x1 - x0) / 2.5f), 24, 120);
+    std::vector<float> xs(static_cast<size_t>(n) + 1), tops(xs.size()), bottoms(xs.size());
+    for (size_t i = 0; i < xs.size(); ++i) {
+        const float x = x0 + (x1 - x0) * static_cast<float>(i) / static_cast<float>(n);
+        float top = base, bottom = -1e30f;
+        for (const Puff& f : puffs) {
+            const float dx = x - f.x;
+            if (std::fabs(dx) > f.r + 1e-3f) continue;
+            const float half = std::sqrt(std::max(0.f, f.r * f.r - dx * dx));
+            top = std::min(top, f.y - half);
+            bottom = std::max(bottom, f.y + half);
+        }
+        bottom = (x >= flatFrom && x <= flatTo) ? base : std::clamp(bottom, top, base);
+        xs[i] = x, tops[i] = top, bottoms[i] = bottom;
+    }
+    // 各列の上の縁から底までのうち、`from` .. `to` の割合の帯 (0 = 上の縁、1 = 底)。上を右へ、下を左へ戻る (時計回り)。
+    auto band = [&](float from, float to) {
+        std::vector<Vec2> pts;
+        pts.reserve(2 * xs.size());
+        for (size_t i = 0; i < xs.size(); ++i) pts.push_back({xs[i], tops[i] + (bottoms[i] - tops[i]) * from});
+        for (size_t i = xs.size(); i-- > 0;) pts.push_back({xs[i], tops[i] + (bottoms[i] - tops[i]) * to});
+        ui::Path p;
+        AddPolygon(p, pts);
+        return p;
+    };
+    out.body = band(0.f, 1.f);
+    out.light = {band(0.f, 0.42f), band(0.f, 0.26f), band(0.f, 0.12f)};
+    out.shade = {band(0.45f, 1.f), band(0.60f, 1.f), band(0.74f, 1.f), band(0.87f, 1.f)};
+    return out;
 }
 
 ui::Path SandCastle(Vec2 base, float h) {
@@ -415,27 +460,29 @@ ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed) {
     return p;
 }
 
-ui::Path SnowDrift(const ui::Rect& r, float depth, float corner) {
+ui::Path SnowDrift(const ui::Rect& r, float depth) {
     ui::Path p;
-    // 箱自身の座標で (左端から): どこにあっても同じ吹きだまり。
-    const float l0 = corner * 0.6f, l1 = r.w - corner * 0.6f;
-    if (l1 - l0 < 6.f || depth <= 0) return p;
+    if (r.w <= 0 || depth <= 0) return p;
     const float bottom = r.y + r.h;
-    constexpr float kSlope = 48.f;  // 吹きだまりは、両端でこのピクセル数をかけてゼロまで下がる
-    // なだらかに (2026-11-24: ユーザーの希望。前は 50 ピクセルほどの細かい波があった): 長い波 2 つだけ。
+    // 高さは左端からのピクセル `l` だけで決まる (ウィンドウの幅・高さに関係しない)。なだらかに
+    // (2026-11-24: ユーザーの希望。前は 50 ピクセルほどの細かい波があった): 長い波 2 つだけ。0.46 .. 0.98 倍。
     auto top = [&](float l) {
-        const float t = std::min(1.f, std::min(l - l0, l1 - l) / kSlope);
-        const float ends = t * t * (3.f - 2.f * t);  // 端の下がり方も角を作らない
         const float swells = 0.72f + 0.17f * std::sin(l * 0.017f) + 0.09f * std::sin(l * 0.039f + 1.f);
-        return Vec2{r.x + l, bottom - depth * std::max(0.f, ends) * swells};
+        return Vec2{r.x + l, bottom - depth * swells};
     };
-    // 画面上で時計回り: 吹きだまりの上を右へ (左から 4 ピクセルごとに点を置くので、幅が変わっても
-    // 左側は変わらない)、そのあと下を戻る。
-    p.Begin(top(l0));
-    for (int i = 1; l0 + 4.f * static_cast<float>(i) < l1; ++i) p.Line(top(l0 + 4.f * static_cast<float>(i)));
-    p.Line(top(l1));
-    p.Line({r.x + l1, bottom});
-    p.Line({r.x + l0, bottom});
+    // 画面上で時計回り: 吹きだまりの上を右へ、そのあと下を戻る。点は左端から 4 ピクセルごとの決まった所だけに
+    // 置き、両端は 1 区切り越える (2026-11-25: 端まで積もる。前は両端で下がっていた): 見える線はいつも同じ点の
+    // 間なので、幅を変えても形は変わらない。
+    p.Begin(top(-4.f));
+    for (int i = 0;; ++i) {
+        const float l = 4.f * static_cast<float>(i);
+        p.Line(top(l));
+        if (l >= r.w) {
+            p.Line({r.x + l, bottom});
+            break;
+        }
+    }
+    p.Line({r.x - 4.f, bottom});
     return p;
 }
 
