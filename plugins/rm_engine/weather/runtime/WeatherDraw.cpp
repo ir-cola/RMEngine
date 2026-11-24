@@ -116,8 +116,9 @@ public:
         }
         // 積雪は、各向きの地図が見ている所に積もる。足跡 (ゲームが動いている間だけ): 動く形を
         // 下から見たもの (それだけの専用の地図)。
-        for (const WetWay& way : wet_) anySnow_ = anySnow_ || way.snow > 0.0005f;
-        if (mapInfo_.cells > 0) anySnow_ = WetMapMostSnow(*map) > 0.0005f;  // (どこかの場所に)
+        // (0.1 mm まで: 溶けて小さくなった最後の塊まで描く)
+        for (const WetWay& way : wet_) anySnow_ = anySnow_ || way.snow > 0.0001f;
+        if (mapInfo_.cells > 0) anySnow_ = WetMapMostSnow(*map) > 0.0001f;  // (どこかの場所に)
         // 雪片が落ちる高さ: 積もった雪の上 (場所ごとのときは一番深い所。雪片は雪の降る所にだけ出る)。
         float lying = 0;
         if (mapInfo_.cells > 0) {

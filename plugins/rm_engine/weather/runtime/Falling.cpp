@@ -295,7 +295,10 @@ float SnowShape(float2 xz, float depth) {
     if (depth <= 0) return 0;
     float n = 0.65 * WetNoise(xz * 2.2 + 1.7) + 0.35 * WetNoise(xz * 5.3 + 4.1);
     float cover = saturate(depth / 0.015);  // (1.5 cm で全部覆う)
-    float lump = saturate((n - (1 - cover)) / 0.3);
+    // 塊になる所: ノイズが しきい値 より高い所。ノイズの値はほとんどが 0.2 .. 0.8 に集まるので、しきい値を
+    // その間で動かす - 白い面積が雪の量にほぼ比例して縮み、最後は小さな塊になって消える (2026-11-24: 前は
+    // 1 - cover で、半分ほど覆った所から少し溶けると一気に消えた)。
+    float lump = saturate((n - lerp(0.85, 0.15, cover)) / 0.12);
     lump = lump * lump * (3 - 2 * lump);
     float thin = lump * lerp(2.5, 1, saturate(depth / 0.03));
     float deep = 1 + (0.4 * n - 0.2) * min(1, 0.1 / depth);
