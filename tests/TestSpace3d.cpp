@@ -330,6 +330,90 @@ RM_TEST(Gizmo_HitTestFindsTheHandle) {
     CHECK(gizmo::HitTest(Tool::Rotate, f, s, v.Eye(), {400 + r, 300 - r}) == Handle::Z);
 }
 
+// シーンビューの 2D: 正面 (+Z を向く) からの平行投影。奥へ行っても縮まず、レイはどれも同じ向き。
+RM_TEST(Space3d_OrbitView_Orthographic) {
+    OrbitView v = FrontView();
+    v.orthographic = true;
+    v.pivot = {2, 1, 0};
+    const float aspect = 800.f / 600.f;
+    const Mat4 vp = v.ProjectionMatrix(aspect) * v.ViewMatrix();
+    const float hh = v.OrthoHalfHeight();
+    CHECK(NearF(hh, 10.f * std::tan(30.f * 3.14159265f / 180.f)));  // 遠近法がピボットの距離で見せる大きさ
+    // ピボットは真ん中。同じ X / Y で奥や手前にずらしても、画面の同じ所 (平行: 狭まらない)。
+    const auto mid = ProjectToNdc(vp, v.pivot);
+    CHECK(mid && NearF(mid->x, 0) && NearF(mid->y, 0) && mid->z > 0 && mid->z < 1);
+    for (const float z : {-200.f, -5.f, 7.f, 300.f}) {
+        const auto p = ProjectToNdc(vp, {3, 2, z});
+        CHECK(p && NearF(p->x, 1.f / (hh * aspect)) && NearF(p->y, 1.f / hh));
+        CHECK(p && p->z > 0 && p->z < 1);  // ピボットの前後 500 までは切れない
+    }
+    // 画面の右端は、ピボットから右へ縦の半分 × 縦横比。
+    const auto edge = ProjectToNdc(vp, v.pivot + Vec3{hh * aspect, 0, 0});
+    CHECK(edge && NearF(edge->x, 1));
+    // 1 ピクセルの長さは奥行きに関係ない。
+    CHECK(NearF(v.WorldPerPixel({0, 0, -100}, 600), 2.f * hh / 600.f) && NearF(v.WorldPerPixel({0, 0, 100}, 600), 2.f * hh / 600.f));
+    // レイ: どれも前を向き、出る所だけが違う。画面の点の上の箱に当たる。
+    const auto inv = Inverse(vp);
+    CHECK(inv.has_value());
+    const Ray a = ScreenRay(*inv, 0, 0), b = ScreenRay(*inv, 0.5f, -0.5f);
+    CHECK(Near(a.dir, {0, 0, 1}) && Near(b.dir, {0, 0, 1}));
+    CHECK(NearF(b.origin.x - a.origin.x, 0.5f * hh * aspect) && NearF(b.origin.y - a.origin.y, -0.5f * hh));
+    const Vec3 at = v.pivot + Vec3{0.5f * hh * aspect, -0.5f * hh, 40};
+    CHECK(IntersectBox(b, at - Vec3{0.1f, 0.1f, 0.1f}, at + Vec3{0.1f, 0.1f, 0.1f}).has_value());
+    CHECK(!IntersectBox(a, at - Vec3{0.1f, 0.1f, 0.1f}, at + Vec3{0.1f, 0.1f, 0.1f}).has_value());
+    // ギズモの輪のための目: どの点からも真正面。
+    CHECK(Near(Normalize(v.EyeFor({5, -3, 9}) - Vec3{5, -3, 9}), {0, 0, -1}));
+    // ドラッグ: 絵がマウスについてくる (ピボットの距離と同じ 1 ピクセル)。
+    const Vec3 before = v.pivot;
+    Pan(v, 60, 0, 600);
+    CHECK(NearF(before.x - v.pivot.x, 60 * 2.f * hh / 600.f) && NearF(v.pivot.y, before.y));
+}
+
+RM_TEST(Space3d_OrbitView_OrthographicZoomKeepsTheMousePoint) {
+    OrbitView v = FrontView();
+    v.orthographic = true;
+    v.pivot = {-1, 4, 2};
+    const float aspect = 16.f / 9.f;
+    const float mx = 0.6f, my = -0.25f;
+    // マウスの下のワールドの点 (ピボットの面の上)。
+    const Ray ray = ScreenRay(*Inverse(v.ProjectionMatrix(aspect) * v.ViewMatrix()), mx, my);
+    const Vec3 under = ray.origin + ray.dir * Dot(v.pivot - ray.origin, ray.dir);
+    const float size = v.distance;
+    ZoomAt(v, 2, mx, my, aspect);  // 近づく: 小さく見える範囲
+    CHECK(v.distance < size);
+    const auto still = ProjectToNdc(v.ProjectionMatrix(aspect) * v.ViewMatrix(), under);
+    CHECK(still && NearF(still->x, mx) && NearF(still->y, my));
+    ZoomAt(v, -5, mx, my, aspect);  // 離れても
+    const auto again = ProjectToNdc(v.ProjectionMatrix(aspect) * v.ViewMatrix(), under);
+    CHECK(again && NearF(again->x, mx) && NearF(again->y, my));
+    // 遠近法では Dolly と同じ (ピボットは動かない)。
+    OrbitView p = FrontView();
+    const Vec3 pivot = p.pivot;
+    ZoomAt(p, 1, mx, my, aspect);
+    CHECK(Near(p.pivot, pivot) && p.distance < 10.f);
+}
+
+// 平行投影でも、ギズモは同じ大きさで同じ所をつかみ、マウスについて動く。
+RM_TEST(Gizmo_WorksInOrthographic) {
+    OrbitView v = FrontView();
+    v.orthographic = true;
+    const gizmo::Screen s = ScreenOf(v);
+    using gizmo::Handle;
+    using gizmo::Tool;
+    const gizmo::Frame f = *gizmo::MakeFrame(Mat4{}, Tool::Move, gizmo::Space::World, v, 600);
+    CHECK(gizmo::HitTest(Tool::Move, f, s, v.EyeFor(f.origin), {488, 301}) == Handle::X);
+    CHECK(gizmo::HitTest(Tool::Move, f, s, v.EyeFor(f.origin), {401, 240}) == Handle::Y);
+    CHECK(gizmo::HitTest(Tool::Move, f, s, v.EyeFor(f.origin), {600, 500}) == Handle::None);
+    const auto drag = gizmo::BeginDrag(Tool::Move, Handle::X, f, s, v.EyeFor(f.origin), {490, 300});
+    CHECK(drag.has_value());
+    const float px = 90.f / f.size;
+    const auto c = gizmo::Update(*drag, s, {490 + px, 300}, gizmo::Snap{});
+    CHECK(c && Near(c->move, {1, 0, 0}));
+    const gizmo::Frame r = *gizmo::MakeFrame(Mat4{}, Tool::Rotate, gizmo::Space::World, v, 600);
+    const float d = 90.f * 0.70710678f;
+    CHECK(gizmo::HitTest(Tool::Rotate, r, s, v.EyeFor(r.origin), {400 + d, 300 - d}) == Handle::Z);
+}
+
 RM_TEST(Gizmo_DragMovesRotatesScales) {
     const OrbitView v = FrontView();
     const gizmo::Screen s = ScreenOf(v);

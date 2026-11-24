@@ -62,7 +62,7 @@ constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
 constexpr char kScenesPanel[] = "scenes";
 constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" の行数 (階層のメニュー)
-constexpr float kSpaceStripH = 34.f;   // シーンビューの上の空間 (3D / 2D) の帯
+constexpr float kSpaceStripH = 34.f;   // ゲームビューの上の帯 (止まっています ...)
 
 // 1 つの空間のビュー (SceneViewInfo): シーンビューと、Play 中にゲームを映すゲームビュー
 // (同じ種類のビュー)。
@@ -1512,22 +1512,52 @@ private:
         return v ? v->info->space : std::string{};
     }
 
-    // 空間が 2 つ以上あるとき、シーンビューの上に出る帯: 切り替えはゲームの編集 (GameSettings::space
-    // - Undo、未保存): ゲームビューと新しいエンティティがそれに従う。
-    void DrawSpaceStrip(ui::Context& c, const Rect& strip) {
-        editor::w::DrawBar(c, strip, theme::Bg);
-        std::vector<std::wstring> labels;
-        for (const View& v : views_) labels.push_back(v.info->label ? Tr(v.info->label) : Utf8ToWide(v.info->space));
-        const std::vector<std::wstring_view> views(labels.begin(), labels.end());
-        const std::wstring tip = Running() ? Tr(L"Play 中は切り替えられません")
-                                           : Tr(L"このゲームの空間。新しいエンティティに付く Transform と、ゲームビューもこれに合わせます");
-        const std::vector<std::wstring_view> tips(labels.size(), tip);
+    // ゲームの設定 ▸ ゲーム設定 の「ゲームの空間」(空間が 2 つ以上あるとき): 切り替えはゲームの編集
+    // (GameSettings::space - Undo、未保存): シーンビュー・ゲームビューと新しいエンティティがそれに従う。
+    // (2026-11-25 まではシーンビューの上の帯の 3D / 2D だった。今その帯の 3D / 2D は、同じ 3D の
+    // シーンを正面から平行投影で見るだけ - シーンビューの見え方で、ゲームは変えない)
+    // 描いた高さを返す (出さないときは 0)。
+    float DrawSpaceChoice(ui::Context& c, const Rect& r, float y) {
+        EnsureViews();
+        if (views_.size() < 2) return 0;
+        auto& p = c.P();
+        ui::TextStyle label;
+        label.size = 12;
+        label.color = theme::Text;
+        label.v = ui::VAlign::Center;
+        p.Text({r.x + 14, y, 120, 26}, Tr(L"ゲームの空間"), label);
+        auto nameOf = [](const View& v) { return v.info->label ? Tr(v.info->label) : Utf8ToWide(v.info->space); };
         const View* now = Current();
-        const int selected = static_cast<int>(now - views_.data());
-        const float w = std::min(strip.w - 16, 64.f * static_cast<float>(labels.size()));
-        const Rect at{strip.x + 8, strip.y + 4, w, strip.h - 8};
-        const int i = editor::w::Segmented(c, "space", at, views, selected, tips);
-        if (i >= 0 && i != selected && !Running()) ChooseSpace(views_[static_cast<size_t>(i)].info->space);
+        const Rect combo{r.x + 140, y, std::max(80.f, r.w - 160), 26};
+        if (editor::w::ComboBox(c, "game_space", combo, now ? nameOf(*now) : std::wstring{}, !Running()).clicked) spacePopup_.OpenAt(combo.x, combo.Bottom());
+        if (c.IsHovered(combo)) {
+            editor::w::Tooltip(c, Running() ? Tr(L"Play 中は切り替えられません")
+                                            : Tr(L"このゲームの空間。新しいエンティティに付く Transform と、シーンビュー・ゲームビューもこれに合わせます"));
+        }
+        if (spacePopup_.open && Running()) spacePopup_.open = false;
+        if (spacePopup_.open) {
+            std::vector<editor::w::MenuItem> items;
+            for (const View& v : views_) {
+                editor::w::MenuItem it;
+                it.label = nameOf(v);
+                it.checked = &v == now;
+                items.push_back(std::move(it));
+            }
+            const int chosen = editor::w::MenuPopup(c, spacePopup_, items, combo.w);
+            if (chosen >= 0 && static_cast<size_t>(chosen) < views_.size() && &views_[static_cast<size_t>(chosen)] != now) {
+                ChooseSpace(views_[static_cast<size_t>(chosen)].info->space);
+            }
+        }
+        float h = 30;
+        ui::TextStyle note;
+        note.size = 12;
+        note.color = theme::TextDim;
+        note.wrap = true;
+        const std::wstring text = Tr(L"シーンビューの上の 3D / 2D は見え方だけを変えます (2D: 同じシーンを正面から平行投影で)。2D 空間のゲームを作るときは、ここで 2D を選びます");
+        const float th = p.TextHeight(text, 12, r.w - 28);
+        p.Text({r.x + 14, y + h, r.w - 28, th}, text, note);
+        h += th + 10;
+        return h;
     }
 
     // ゲームビューの上 (停止中): 止まっていること、それとゲーム設定 (最初のカメラ ...)。
@@ -1617,9 +1647,9 @@ private:
             json::Value after = json::Value(space);
             host_.History().Push(std::make_unique<reflect::SetFieldCommand>(
                                      type, reflect::FieldPath{f}, std::move(before), std::move(after),
-                                     [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, "シーンの空間を切り替え"),
+                                     [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, "ゲームの空間を切り替え"),
                                  false);
-            log::Info("シーンの空間を「{}」にしました (新しいエンティティの Transform とゲームビューも)", space);
+            log::Info("ゲームの空間を「{}」にしました (シーンビュー・ゲームビューと、新しいエンティティの Transform も)", space);
             return;
         }
     }
@@ -1652,10 +1682,8 @@ private:
                         Tr(L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。"));
             return;
         }
-        Rect r = panel;
-        if (views_.size() >= 2 && r.h > 120) DrawSpaceStrip(c, ui::TakeTop(r, kSpaceStripH));
         SceneViewHost h = ViewHost(false);
-        Current()->scene->Draw(c, r, h);  // (帯が今切り替えたかもしれない)
+        Current()->scene->Draw(c, panel, h);  // (上の帯はビューが自分で描く: 3D は 3D / 2D と見え方)
         if (play_ == PlayState::Playing) c.RequestAnimation();  // このパネルは専用のウィンドウにあるかもしれない
     }
 
@@ -1992,6 +2020,7 @@ private:
             p.Text({r.x + 14, y, r.w - 28, h}, note, ts);
             y += h + 10;
         }
+        if (tab == 0) y += DrawSpaceChoice(c, r, y);
         if (tab == 2) {
             const std::wstring note = Tr(L"グローバル変数はゲーム全体の値で、rm::Save で保存できます。Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)");
             const float h = p.TextHeight(note, 12, r.w - 28);
@@ -3386,6 +3415,7 @@ private:
     std::array<editor::inspector::State, 4> settingsInspectors_;
     editor::inspector::State outputInspector_;
     editor::w::Popup firstScenePopup_;
+    editor::w::Popup spacePopup_;  // ゲームの設定の「ゲームの空間」
     FrameMeter sceneMeter_, gameMeter_, updateMeter_;
     json::Value settingsBeforePlay_;  // Play が始まったときのゲーム設定 (null: Play 中ではない)
     double debugShownAt_ = -1e9;  // そのときウィンドウを描いた (見せている間は Play の各部分の時間を測る)

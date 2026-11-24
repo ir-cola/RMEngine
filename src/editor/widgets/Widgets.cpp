@@ -481,6 +481,17 @@ bool Button(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_
     return enabled && b.clicked;
 }
 
+// Button と Segmented の文字の大きさと、その左右の余白 (描くのと幅を測るので同じ値)。
+constexpr float kButtonPad = 10.f, kSegmentText = 12.f, kSegmentPad = 8.f;
+
+float ButtonWidth(ui::Context& c, std::wstring_view label) { return std::ceil(c.P().TextWidth(label, theme::FontSize, true)) + 2 * kButtonPad; }
+
+float SegmentedWidth(ui::Context& c, std::span<const std::wstring_view> labels) {
+    float widest = 0;
+    for (const std::wstring_view l : labels) widest = std::max(widest, c.P().TextWidth(l, kSegmentText, true));
+    return (std::ceil(widest) + 2 * kSegmentPad) * static_cast<float>(labels.size()) + 4.f;
+}
+
 int Segmented(ui::Context& c, std::string_view idStr, const Rect& r, std::span<const std::wstring_view> labels, int selected,
               std::span<const std::wstring_view> tooltips) {
     if (labels.empty()) return -1;
@@ -498,7 +509,7 @@ int Segmented(ui::Context& c, std::string_view idStr, const Rect& r, std::span<c
             DrawSurface(c, seg, down ? Surface::Pressed : Surface::Hovered, theme::Radius - 1.f);
         }
         ui::TextStyle ts;
-        ts.size = 12;
+        ts.size = kSegmentText;
         ts.bold = on;
         ts.h = ui::HAlign::Center;
         ts.color = on ? theme::OnAccent() : b.hovered ? theme::Text : theme::TextDim;

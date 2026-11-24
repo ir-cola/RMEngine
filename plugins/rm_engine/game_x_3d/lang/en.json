@@ -156,5 +156,7 @@
   "移動 (W)": "Move (W)",
   "回転 (E)": "Rotate (E)",
   "拡縮": "Scale",
-  "拡縮 (R)": "Scale (R)"
+  "拡縮 (R)": "Scale (R)",
+  "遠近法で見る (奥ほど小さい)。右ドラッグで見回し、Alt + 左ドラッグで回る": "View in perspective (farther things look smaller). Right-drag to look around, Alt + left-drag to orbit",
+  "同じシーンを正面 (Z の向き) から平行投影で見る (奥へ行っても狭まらない)。ドラッグでずらし、ホイールで大きさを変える": "View the same scene from the front (along Z) in parallel projection (nothing narrows with distance). Drag to pan, wheel to zoom"
 }

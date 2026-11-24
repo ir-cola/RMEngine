@@ -166,9 +166,9 @@ struct GameSettings {
     RM_PROPERTY(Edit, Label="アイコン", Tooltip="書き出したゲームのウィンドウとタスクバーの絵 (画像のアセット)", AssetKind="image") AssetRef icon;
     RM_PROPERTY(Edit, Label="最初のカメラ", Tooltip="ゲームビューと Play はこのエンティティのカメラから見ます (カメラの部品を付けたエンティティを選びます)") EntityRef startCamera;
     // ゲームの空間 (シーンビューの SceneViewInfo::space: "3d"、"2d" - ゲーム制作はそれを知らない)。
-    // 2 つ以上あるときは、シーンパネルの帯で選ぶ。空: 既定のもの。
-    // インスペクターには出さない (選択肢はプラグインから来る)。そのプラグインがないときも、書かれた
-    // まま保持する。
+    // 2 つ以上あるときは、ゲームの設定 ▸ ゲーム設定 の「ゲームの空間」で選ぶ。空: 既定のもの。
+    // インスペクターの欄にはしない (選択肢はプラグインから来る: その窓が自分で描く)。そのプラグインが
+    // ないときも、書かれたまま保持する。
     RM_PROPERTY() std::string space;
     // どのスクリプトがどれより先に動くか (型ごと。同じ型は、つけた順)。
     RM_PROPERTY(Edit, Label="スクリプトの実行順", Tooltip="プレイヤーが動いてからカメラが追う、のように型の順番を決めます。小さいほど先") std::vector<ScriptOrderEntry> scriptOrder;
