@@ -24,6 +24,7 @@
 
 #include "rm_engine/game_production/runtime/Globals.h"
 #include "rm_engine/game_production/runtime/PlayServices.h"
+#include "rm_engine/game_ui/runtime/UiControls.h"
 #include "rm_engine/game_ui/runtime/UiLayout.h"
 #include "rm_engine/game_ui/runtime/UiMotion.h"
 
@@ -56,8 +57,26 @@ struct UiVisit {
     std::vector<int> hid;
 };
 
+// 入力の部品の値が変わった (スクリプトの OnEvent に、そのエンティティへ届く。名前は RMUI.h の
+// rm::UI::kChanged / kSubmitted と同じ)。
+inline constexpr char kChangedEvent[] = "UIChanged";
+inline constexpr char kSubmittedEvent[] = "UISubmitted";
+struct UiChange {
+    int entity = 0;
+    bool submitted = false;  // 入力欄で Enter (でなければ値が変わった)
+    double number = 0;       // スライダーの値・トグルの 1 / 0
+    std::string text;        // 入力欄の文字
+};
+
 // 1 回の Play のフォーカス、マウス、ウィンドウ (フレーム間で保つ)。
 struct UiFocus {
+    int typing = 0;              // 文字を打っている入力欄 (0: なし。その間キーとパッドで選ぶのは止まる)
+    std::string typedBefore;     // 打ち始めたときの文字 (Esc で戻す)
+    int scrolling = 0;           // マウスで動かしているスクロール (0: なし)
+    bool thumb = false;          // ... そのスクロールバーのつまみを (縦なら thumbVertical)
+    bool thumbVertical = true;
+    Vec2 dragFrom{0, 0}, offsetFrom{0, 0};  // つかんだ所 (スクロールの単位) と、そのときの offset
+    int shownFocus = 0;          // スクロールに見せた選んだボタン (変わったら見せ直す)
     PointerState pointer;
     int window = 0;          // 前のフレームでキーが効いたウィンドウ
     int focus = 0;           // その選ばれたボタン
@@ -76,13 +95,24 @@ struct UiStep {
     std::vector<int> clicked;  // 押されたボタンを順に (OnClick)
     std::vector<int> hovered;  // このフレームに 乗った (または押された、選ばれた) ボタン: その 乗ったときの音
     int closed = 0;            // 戻る で閉じたウィンドウ (0: なし)
+    std::vector<UiChange> changes;  // 値が変わった入力の部品 (順に)
+    int typing = 0;            // このフレームの後に文字を打っている入力欄 (ホストは IME をつなぐ)
+    UiBox typingBox;           // その欄の画面の箱 (DIP。IME の候補の窓をその下に出す)
 };
 
 // 1 フレーム (純粋: シーンのボタンに状態が付き、戻る で閉じたウィンドウはオフになり、それが
-// 隠していたものは再びオンになる)。
+// 隠していたものは再びオンになる)。入力の部品: トグルは押すと入れ替わり、スライダーはドラッグとキー、
+// スクロールはホイール (now->wheel)・ドラッグ・選んだ物を見せる、入力欄は押すと打ち始め、`typed` を
+// 打つ (`clip`: Ctrl+C / V)。打っている間は、キーとパッドでボタンを選ばない (戻るは打つのをやめる)。
 UiStep StepUi(game_production::Scene& scene, const UiTree& tree, std::optional<Vec2> pointer, bool down, bool wentDown, bool wentUp,
               std::span<const game_production::InputAction> actions, const game_production::InputFrame* now,
-              const game_production::InputFrame* before, float dt, UiFocus& state);
+              const game_production::InputFrame* before, float dt, UiFocus& state, const ui::TypedText* typed = nullptr,
+              const UiClipboard* clip = nullptr);
+
+// 入力欄 `entity` に打ち始める (カーソルは最後。前に打っていた欄はやめる)。False: 押せる入力欄ではない。
+bool StartTyping(game_production::Scene& scene, UiFocus& state, int entity);
+// 打つのをやめる (`restore`: 打ち始める前の文字に戻す - 戻したら *change に入れる)。
+void StopTyping(game_production::Scene& scene, UiFocus& state, bool restore, std::vector<UiChange>* changes = nullptr);
 
 // --- 動き (UI-4): 出る・消える動き、道、スクリプトのトゥイーン -----------------------------------
 // スクリプトのトゥイーン (rm::UI::MoveTo ...): 頼まれたときの所から行く先まで、`seconds` かけて。
@@ -147,6 +177,7 @@ public:
     UiMotionWorld& Motion() { return motion_; }
     // いまのフォーカス、ウィンドウ、マウス (エディターの デバッグ パネル)。
     const UiFocus& State() const { return state_; }
+    UiFocus& MutableState() { return state_; }  // (スクリプトの rm::UI::StartTyping)
     // スクリプトがボタンを選んだ (rm::UI::Focus): マウスが動くまで選ばれたものとして表示する。
     void Focus(int entity) {
         state_.focus = entity;

@@ -14,6 +14,7 @@ plugins/
     lang/en.json               画面の文字の英語
     themes/*.json              テーマ (テーマパック)
     templates/<id>/template.json   新しいプロジェクトのテンプレート (Hub の新規作成の木)
+    licenses/*.txt                 ランタイムが使う外のコードのライセンスの文章 (ファイル名 = ソフトの名前。書き出したゲームの LICENSES.txt に入る)
     help/*.md  help/en/*.md        ヘルプのページ (日本語と英語。フォルダーの入れ子 = 機能 → 細かい仕様。docs/HOW_TO_TRY.md の「ヘルプ」)
 ```
 
@@ -48,7 +49,7 @@ plugins/
 
 | プラグイン | 中身 |
 |---|---|
-| `rm_engine` / `game_production` (ゲーム制作) | ソフト「ゲーム」。シーンは 1 つずつ `Assets/Scenes/*.rmscene` (`runtime/SceneFile`。`.rmpf` にはシーンの一覧だけ)。テンプレート「ゲーム」(`templates/game`: 空のシーン。3D と 2D の両方が入る)。ゲームの設定・シーン (エンティティの親子)・部品 (コンポーネント) の仕組み。**つなぎが要る** (空間を知らない)。部品の種類は口 `rm_engine.game_production.component`、システム (毎フレーム動く処理) は口 `rm_engine.game_production.system` で受け取る。Play (シーンのコピーを動かす・ゲームビュー)・同じ部品を複数・Prefab (`.rmprefab`) |
+| `rm_engine` / `game_production` (ゲーム制作) | ソフト「ゲーム」。シーンは 1 つずつ `Assets/Scenes/*.rmscene` (`runtime/SceneFile`。`.rmpf` にはシーンの一覧だけ)。テンプレート「ゲーム」(`templates/game`: 空のシーン。3D と 2D の両方が入る)。ゲームの設定・シーン (エンティティの親子)・部品 (コンポーネント) の仕組み。**つなぎが要る** (空間を知らない)。部品の種類は口 `rm_engine.game_production.component`、システム (毎フレーム動く処理) は口 `rm_engine.game_production.system` で受け取る。Play (シーンのコピーを動かす・ゲームビュー)・同じ部品を複数・Prefab (`.rmprefab`)。ランタイムの部分 (`runtime/Register.cpp`) が部品「セーブする」(世界のセーブ: [docs/SAVE.md](../docs/SAVE.md)) を差し出す |
 | `rm_engine` / `space3d` (3D 空間) | Transform と行列の計算・カメラとレイ・Direct3D 11 での 3D の描画 (線と箱)。ランタイムだけ |
 | `rm_engine` / `theme_colors` (基本カラーテーマパック) | テーマのファイルだけ: 青・緑 (`themes/*.json`)。コードは `runtime/Id.h` だけ |
 | `rm_engine` / `theme_seasons` (季節テーマパック) | テーマのファイル (スプリング・サマー・フォール・ウィンター) と、その絵を描くコード (`editor/Seasons.cpp`。口 `core.theme_ornament` に差し出す。形は `editor/Ornament.*`、テストあり) |

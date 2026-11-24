@@ -990,9 +990,18 @@ private:
 // ゲームの保存: すべてのグローバル変数を、スロット (番号、または名前: "auto") に、プレイヤーの PC の
 // ファイルとして書く (エディターの Play: <project>/Library/Saves、ゲーム: %LOCALAPPDATA%\<exe>\Saves)。
 // Read は、保存した値をグローバル変数に戻す。false: できなかった (コンソールに知らせる)。
+//
+// 世界のセーブ: WriteWorld はグローバル変数に加えて、部品「セーブする」を付けた物の位置・有効・部品の値
+// (ゲームの中で Spawn した物も、消した物も) と今のシーンを同じスロットに書く。ReadWorld はグローバル
+// 変数をすぐ戻し、世界はこのフレームの後で戻す: セーブしたシーンを読み直して (Game::LoadScene と同じ。
+// スクリプトは EndPlay → 読み直した物で BeginPlay)、その上にセーブの状態を当てる。
+//   if (rm::Input::Pressed("Save")) rm::Save::WriteWorld(1);
+//   if (rm::Input::Pressed("Load") && rm::Save::HasWorld(1)) rm::Save::ReadWorld(1);
+// Write (グローバル変数だけ) は、スロットの世界を変えない。
 namespace Save {
 namespace detail {
 inline const RmSaveApi* Table() { return Part<RmSaveApi>(RM_PART_SAVE, RM_PART_SAVE_VERSION); }
+inline const RmSaveApi2* Table2() { return Part<RmSaveApi2>(RM_PART_SAVE, RM_PART_SAVE_VERSION2); }
 inline std::string Slot(int slot) { return std::to_string(slot); }
 }  // namespace detail
 inline bool Write(const char* slot) {
@@ -1011,10 +1020,25 @@ inline bool Delete(const char* slot) {
     const RmSaveApi* t = detail::Table();
     return t && t->remove(Api()->ctx, slot) != 0;
 }
+inline bool WriteWorld(const char* slot) {
+    const RmSaveApi2* t = detail::Table2();
+    return t && t->writeWorld(Api()->ctx, slot) != 0;
+}
+inline bool ReadWorld(const char* slot) {
+    const RmSaveApi2* t = detail::Table2();
+    return t && t->readWorld(Api()->ctx, slot) != 0;
+}
+inline bool HasWorld(const char* slot) {
+    const RmSaveApi2* t = detail::Table2();
+    return t && t->hasWorld(Api()->ctx, slot) != 0;
+}
 inline bool Write(int slot = 0) { return Write(detail::Slot(slot).c_str()); }
 inline bool Read(int slot = 0) { return Read(detail::Slot(slot).c_str()); }
 inline bool Exists(int slot = 0) { return Exists(detail::Slot(slot).c_str()); }
 inline bool Delete(int slot = 0) { return Delete(detail::Slot(slot).c_str()); }
+inline bool WriteWorld(int slot = 0) { return WriteWorld(detail::Slot(slot).c_str()); }
+inline bool ReadWorld(int slot = 0) { return ReadWorld(detail::Slot(slot).c_str()); }
+inline bool HasWorld(int slot = 0) { return HasWorld(detail::Slot(slot).c_str()); }
 }  // namespace Save
 
 namespace detail {

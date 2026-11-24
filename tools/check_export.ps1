@@ -48,6 +48,14 @@ foreach ($t in $templates) {
     if ($exe.Count -ne 1) { Write-Host "NG  $($t[2]): exe が 1 つではありません"; $failed++; continue }
     if (-not (Test-Path (Join-Path $game 'Game.rmpak'))) { Write-Host "NG  $($t[2]): Game.rmpak がありません"; $failed++; continue }
     if (@(Get-ChildItem $game -Filter *.pdb).Count -gt 0) { Write-Host "NG  $($t[2]): .pdb が入っています"; $failed++; continue }
+    # 外のソフトのライセンスの文章 (LICENSES.txt): 音のあるゲームは stb_vorbis、物理のゲームは Jolt Physics。
+    $needs = @()
+    if ($t[2] -eq 'game_2d' -or $t[2] -eq 'game_3d') { $needs += 'stb_vorbis' }
+    if ($t[2] -eq 'physics_3d') { $needs += 'Jolt Physics' }
+    $licenseFile = Join-Path $game 'LICENSES.txt'
+    $licenses = if (Test-Path $licenseFile) { [IO.File]::ReadAllText($licenseFile, (New-Object System.Text.UTF8Encoding $false)) } else { '' }
+    $lacking = @($needs | Where-Object { -not $licenses.Contains($_) })
+    if ($lacking.Count -gt 0) { Write-Host "NG  $($t[2]): LICENSES.txt に $($lacking -join ', ') のライセンスがありません"; $failed++; continue }
     # exe (プロジェクトの、エンジンの) にこの PC のパスがない。UTF-8 でも UTF-16 でも調べる。
     $leak = Find-PcPath $exe[0].FullName $dir
     if ($leak) { Write-Host "NG  $($t[2]): exe にこの PC のパスが残っています: $leak"; $failed++; continue }
@@ -127,6 +135,67 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         } else {
             $size = [Math]::Round($exe[0].Length / 1KB)
             Write-Host "OK  game_scripts: $($exe[0].Name) ($size KB) + Scripts.dll を書き出し、--smoke で BeginPlay と Tick ($($ticked.Groups[1].Value) コマ) が回りました"
+        }
+    }
+}
+
+# 世界のセーブ (docs/SAVE.md): テンプレート 「ゲーム」 に、「セーブする」と見本のスクリプト WorldCheck を付けた
+# Player を置いて書き出す。WorldCheck は最初の Tick で Player を x = 5 に置いて rm::Save::WriteWorld、x = -1 に
+# 動かしてから ReadWorld。フレームの後でシーンが読み直されて x = 5 に戻り、BeginPlay がそれを game.log に書く
+# (本物のスクリプトの DLL・%LOCALAPPDATA%\<exe>\Saves のファイル・書き出したゲームの切り替え)。
+$dir = Join-Path $work 'game_world_save'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+$p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_production', 'game', "`"$dir`"") -Wait -PassThru
+$rmpf = Join-Path $dir 'Project\Project.rmpf'
+if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
+    Write-Host "NG  game_world_save: プロジェクトを作れませんでした。$log を見てください"
+    $failed++
+} else {
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $scripts = Join-Path $dir 'Project\Assets\Scripts'
+    $header = "#pragma once`n#include `"RM.h`"`n`nRM_SCRIPT(Label=`"WorldCheck`")`nstruct WorldCheck {`n    RM_TRANSIENT() int frames = 0;`n" +
+              "    void BeginPlay(rm::Entity self);`n    void Tick(rm::Entity self, float dt);`n};`n"
+    $source = "#include `"WorldCheck.h`"`n#include `"RM3D.h`"`n#include <string>`n`nnamespace {`nbool g_asked = false;`n}`n`n" +
+              "void WorldCheck::BeginPlay(rm::Entity self) {`n    rm::Log::Info(`"WorldCheck: x = `" + std::to_string(static_cast<int>(rm::Transform3D(self).Position().x)));`n}`n`n" +
+              "void WorldCheck::Tick(rm::Entity self, float) {`n    if (g_asked) return;`n    g_asked = true;`n    rm::Transform3D t(self);`n" +
+              "    t.SetPosition(rm::Vec3{5, 0, 0});`n    const bool wrote = rm::Save::WriteWorld(`"check`");`n    t.SetPosition(rm::Vec3{-1, 0, 0});`n" +
+              "    const bool read = rm::Save::ReadWorld(`"check`");`n    rm::Log::Info(std::string(`"WorldCheck: wrote `") + (wrote ? `"1`" : `"0`") + `" read `" + (read ? `"1`" : `"0`"));`n}`n"
+    [IO.File]::WriteAllText((Join-Path $scripts 'WorldCheck.h'), $header, $utf8)
+    [IO.File]::WriteAllText((Join-Path $scripts 'WorldCheck.cpp'), $source, $utf8)
+    $guid = [Guid]::NewGuid().ToString('N')
+    $scenes = Join-Path $dir 'Project\Assets\Scenes'
+    New-Item -ItemType Directory -Force $scenes | Out-Null
+    $scene = '{"kind": "rm_engine.scene", "format": 2, "nextId": 2, "entities": [{"id": 1, "parent": 0, "name": "Player", "active": true, "components": [' +
+             '{"type": "rm::space3d::Transform", "data": {}}, {"type": "rm::game_production::Saveable", "data": {}}, {"type": "WorldCheck", "data": {}}]}]}'
+    [IO.File]::WriteAllText((Join-Path $scenes 'Main.rmscene'), $scene, $utf8)
+    [IO.File]::WriteAllText((Join-Path $scenes 'Main.rmscene.meta'), "{`"guid`": `"$guid`", `"name`": `"Main.rmscene`"}", $utf8)
+    $doc = [IO.File]::ReadAllText($rmpf, $utf8) | ConvertFrom-Json
+    $entry = [ordered]@{ author = 'rm_engine'; plugin = 'game_production'; software = 'game';
+                         data = [ordered]@{ settings = @{ space = '3d' }; sceneList = [ordered]@{ scenes = @($guid); open = $guid } } }
+    $doc | Add-Member -NotePropertyName softwareData -NotePropertyValue @($entry) -Force
+    [IO.File]::WriteAllText($rmpf, ($doc | ConvertTo-Json -Depth 20), $utf8)
+    $game = Join-Path $dir 'Game'
+    $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
+    $exe = @(Get-ChildItem $game -Filter *.exe -ErrorAction SilentlyContinue)
+    if ($p.ExitCode -ne 0 -or $exe.Count -ne 1 -or -not (Test-Path (Join-Path $game 'Scripts.dll'))) {
+        Write-Host "NG  game_world_save: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
+        $failed++
+    } else {
+        # (このゲームのセーブの置き場所。前の検査の残りを消してから走らせ、終わったら消す)
+        $save = Join-Path $env:LOCALAPPDATA "$($exe[0].BaseName)\Saves\save_check.json"
+        Remove-Item $save -ErrorAction SilentlyContinue
+        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        $wroteWorld = (Test-Path $save) -and ([IO.File]::ReadAllText($save, $utf8) -match '"world"')
+        Remove-Item $save -ErrorAction SilentlyContinue
+        $ok = $r.ExitCode -eq 0 -and $wroteWorld -and $gameLog.Contains('WorldCheck: x = 0') -and $gameLog.Contains('WorldCheck: wrote 1 read 1') -and
+              $gameLog.Contains('セーブした世界を読みました: 値を戻した物 1 個') -and $gameLog.Contains('WorldCheck: x = 5')
+        if (-not $ok) {
+            Write-Host "NG  game_world_save: 世界のセーブで場所が戻っていません (終了コード $($r.ExitCode)・セーブのファイル $wroteWorld)"
+            $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+        } else {
+            Write-Host "OK  game_world_save: WriteWorld でセーブのファイルに世界を書き、ReadWorld でシーンを読み直して Player が x = 5 に戻りました"
         }
     }
 }
@@ -289,14 +358,17 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     } else {
         $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
         $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        # 入力の部品 (入力欄・スライダー・トグル・スクロール) も読めて、スクリプトの rm::UI がその値を読める (見本の ControlValue)。
         $ok = $r.ExitCode -eq 0 -and $gameLog.Contains('シーン 2 個。最初のシーン: Title') -and $gameLog.Contains('「はじめる」が押されました') -and
-              $gameLog.Contains('シーンを切り替えました: Title → Game') -and -not $gameLog.Contains('rm::game_ui::')
+              $gameLog.Contains('シーンを切り替えました: Title → Game') -and -not $gameLog.Contains('rm::game_ui::') -and
+              $gameLog.Contains('入力の部品の見本: 名前 = 「RM」') -and $gameLog.Contains('入力の部品の見本: 音量 = 0.70') -and
+              $gameLog.Contains('入力の部品の見本: 効果音 = 1.00')
         if (-not $ok) {
             Write-Host "NG  game_ui: UI の見本が動いていません (終了コード $($r.ExitCode))"
             $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
             $failed++
         } else {
-            Write-Host "OK  game_ui: UI の見本を書き出し、UI の部品が読めて、はじめるの OnClick で Title から Game に切り替わりました"
+            Write-Host "OK  game_ui: UI の見本を書き出し、UI の部品 (入力欄・スライダー・トグル・スクロールも) が読めて、はじめるの OnClick で Title から Game に切り替わりました"
         }
     }
 }

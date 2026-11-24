@@ -26,6 +26,7 @@
 #include "rm_engine/game_production/runtime/Input.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/Systems.h"
+#include "ui/Types.h"
 
 #include <cstdint>
 #include <functional>
@@ -58,6 +59,12 @@ struct PlayHost {
     bool silent = false;  // 何も聞こえない (テスト): サービスはデバイスを開かない
 };
 
+// サービスがホストに言う、文字を打つこと (PlayFrame::textInput)。
+struct TextInputAsk {
+    bool want = false;            // 文字を打っている: IME をつなぐ (外すと切る)
+    float x = 0, y = 0, w = 0, h = 0;  // その欄 (ゲームの画面の DIP)
+};
+
 // 1 フレーム分。スクリプトとシステムのあとに呼ばれる。
 struct PlayFrame {
     Scene& scene;
@@ -87,6 +94,12 @@ struct PlayFrame {
     // quitAsked): スクリプトと同じように、サービスがゲームに頼んでよいこと (ゲーム UI の 押したときの動作)。
     // 何も渡さないテストでは null。
     ScriptWorld* world = nullptr;
+    // 前のフレームから打たれた文字 (ゲーム UI の入力欄。ホストのウィンドウが集めたもの: 打っていると
+    // 言われている間だけ)。null: なし。
+    const ui::TypedText* typed = nullptr;
+    // サービスが言う: 文字を打っている (ゲーム UI の入力欄)。ホストはフレームの後に IME をつなぎ、
+    // 候補の窓を `x y w h` (ゲームの画面の DIP: その欄) の下に出す。null: 頼めない。
+    TextInputAsk* textInput = nullptr;
 };
 
 class PlayService {

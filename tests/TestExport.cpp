@@ -144,6 +144,19 @@ RM_TEST(Export_ExeName) {
     CHECK(ExeNameProblem(ExeNameFrom("名前<>|?.")).empty());
 }
 
+RM_TEST(Export_Licenses) {
+    CHECK(LicensesText("Game", {}).empty());  // 外のソフトを使わない: ファイルを作らない
+    const std::string t = LicensesText("My Game", {{"Jolt Physics", "\xEF\xBB\xBF" "Copyright 2021 Jorrit Rouwe\r\n\r\n"},
+                                                    {"stb_vorbis", "MIT"},
+                                                    {"Jolt Physics", "two"}});
+    CHECK(t.starts_with("My Game\n"));
+    CHECK(t.find("Jolt Physics\n") != std::string::npos && t.find("stb_vorbis\n") != std::string::npos);
+    CHECK(t.find("Copyright 2021 Jorrit Rouwe\n") != std::string::npos);  // 印と末尾の空行は取る
+    CHECK(t.find("\xEF\xBB\xBF") == std::string::npos);
+    CHECK(t.find("two") == std::string::npos);  // 同じ名前は 1 回だけ
+    CHECK(t.find("Jolt Physics") < t.find("stb_vorbis"));  // 渡した順
+}
+
 RM_TEST(Export_Plugins) {
     const auto world = World();
     std::vector<PluginId> missing;

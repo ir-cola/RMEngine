@@ -158,6 +158,7 @@ bool Run(const Request& r, const Report& report, std::string* error) {
     }
     std::vector<GameLib> libs;
     std::vector<fs::path> libFiles{kit / PathFromUtf8(kitDoc->Get("core").AsString())};
+    std::vector<LicenseNotice> notices;  // 入れるプラグインが使う外のソフトのライセンス
     auto readReflect = [&](const fs::path& dir, GameLib& lib) {
         std::error_code ec;
         for (fs::directory_iterator it(dir / L"reflect", ec), end; !ec && it != end; it.increment(ec)) {
@@ -180,6 +181,12 @@ bool Run(const Request& r, const Report& report, std::string* error) {
             lib.registers = entry->Get("entry").AsBool();
             libFiles.push_back(kit / PathFromUtf8(entry->Get("lib").AsString()));
             readReflect(kit / L"lib" / PathFromUtf8(id.author) / PathFromUtf8(id.name), lib);
+            for (const auto& l : entry->Get("licenses").Items()) {
+                const fs::path file = kit / PathFromUtf8(l.AsString());
+                const auto text = ReadFile(file);
+                if (!text) return fail(TrU8F("ゲームの部品が欠けています: {}\nエンジンをビルドし直してください。", PathToUtf8(file)));
+                notices.push_back({PathToUtf8(file.stem()), *text});
+            }
             report(0.05f, TrU8F("プラグイン: {}", id.Text()));
         } else {
             report(0.05f, TrU8F("プラグイン: {} (ゲームに入る部分がありません)", id.Text()));
@@ -260,6 +267,15 @@ bool Run(const Request& r, const Report& report, std::string* error) {
     }
     report(0.85f, dlls.empty() ? TrU8("★ Visual Studio の C++ ランタイム (Redist) が見つからないので、横に置いていません")
                                : TrU8F("C++ のランタイム: {} 個", dlls.size()));
+    // 使っている外のソフトのライセンスの文章 (MIT などは「すべての写しに入れる」決まり)。
+    if (const std::string licenses = LicensesText(r.titleUtf8, notices); !licenses.empty()) {
+        if (!WriteFile(r.outDir / L"LICENSES.txt", licenses, &err)) return fail(err);
+        std::string names;
+        for (const LicenseNotice& n : notices) names += (names.empty() ? "" : ", ") + n.name;
+        report(0.87f, TrU8F("ライセンスの文章: LICENSES.txt ({})", names));
+    } else {
+        fs::remove(r.outDir / L"LICENSES.txt", ec);  // (前の書き出しのもの)
+    }
 
     // 5. 書いたもののどこにもこの PC のパスを残さない: exe、スクリプトの DLL、.rmpak の全ファイル
     // (暗号化する前) - プロジェクトのフォルダ、エンジンのフォルダ、ユーザーのフォルダ。

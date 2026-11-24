@@ -3,6 +3,26 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.10",
+      "date": "2026-11-24",
+      "items": [
+        {
+          "ja": "ゲーム UI に入力欄・スライダー・トグル・スクロールを足しました (日本語の入力もできます。追加 ▸ UI から作れます)",
+          "en": "Added input fields, sliders, toggles and scroll views to the game UI (Japanese input works too; create them from Add ▸ UI)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.9",
+      "date": "2026-11-24",
+      "items": [
+        {
+          "ja": "世界のセーブ: 部品「セーブする」を付けた物の位置・有効・部品の値を、スクリプトの rm::Save::WriteWorld / ReadWorld でセーブして戻せるようにしました (ゲームの中で作った物は作り直し、消した物は消えたまま)",
+          "en": "World saves: things with the \"Save State\" component keep their position, active state and component values with rm::Save::WriteWorld / ReadWorld in scripts (things made during the game are made again, destroyed ones stay destroyed)"
+        }
+      ]
+    },
+    {
       "version": "0.0.8",
       "date": "2026-11-22",
       "items": [
@@ -11,8 +31,20 @@
           "en": "Connector \"Weather × Climate\": with both Weather and Climate installed, the temperature of each place decides between rain and snow (rain at +2 °C or warmer, snow at -1 °C or colder, sleet in between), and humidity changes how much falls. Each raindrop and snowflake decides by its own place, so rain turns into snow gradually across a climate zone border"
         },
         {
-          "ja": "天候: 雲の量 100 で、切れ目のない厚い雲の層になる (75 を越えると切れ目が少しずつ埋まる)",
-          "en": "Weather: at cloudiness 100 the clouds form one thick layer with no gaps (above 75 the gaps fill in little by little)"
+          "ja": "天候: 雲の量 100 で、切れ目のない厚い雲の層になる (75 を越えると切れ目が少しずつ埋まる)。地平線まで雲が続き、明るい帯が出ない",
+          "en": "Weather: at cloudiness 100 the clouds form one thick layer with no gaps (above 75 the gaps fill in little by little), reaching down to the horizon without a bright band"
+        },
+        {
+          "ja": "アイコン: 125 % などの画面で、白 1 色のアイコンに隣の絵のかけらが出ていたのを直した",
+          "en": "Icons: fixed single-colour icons showing pieces of neighbouring pictures on screens scaled to 125 % and similar"
+        },
+        {
+          "ja": "アイコン: 125 % などの画面で、シーンビューの左の列のアイコンが小さく左上に寄っていたのを直し、ボタンいっぱいの大きさにした",
+          "en": "Icons: on screens scaled to 125 % and similar, the icons in the scene view's left column were small and pushed to the top left; they are now centred and fill the button"
+        },
+        {
+          "ja": "書き出し: ゲームが使う外のソフト (Jolt Physics・stb_vorbis) のライセンスの文章を、書き出したフォルダの LICENSES.txt に入れる (使うものだけ)",
+          "en": "Export: the license texts of the outside software a game uses (Jolt Physics, stb_vorbis) now go into LICENSES.txt in the exported folder (only what the game uses)"
         }
       ]
     },

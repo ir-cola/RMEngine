@@ -3,6 +3,9 @@
 #   lib/core.lib  + lib/core/reflect/       ゲームに入る層 (base core platform ui game) と、
 #                                           単独で作った外のライブラリ (-ExtraCoreLibs: Jolt Physics)
 #   lib/<author>/<name>/runtime.lib  + reflect/   ランタイム部のあるプラグインごとに 1 つ
+#   lib/<author>/<name>/licenses/*.txt     そのランタイムが使う外のコードのライセンスの文章
+#                                           (プラグインの licenses/ から。ファイル名 = ソフトの名前)。
+#                                           書き出しがゲームの横の LICENSES.txt にまとめる
 # reflect/ には、lib のヘッダーの rmgen のファイルが入る: 書き出しはそこから反射した型の名前を読み、
 # ゲームが生成する main に並べる (editor/export ExportPlan: ReadSymbols)。
 # プラグインの "entry" は、そのランタイムのソースに RM_RUNTIME_ENTRY があるかどうか (core/RuntimeRegistry.h)。
@@ -87,7 +90,17 @@ foreach ($authorDir in Get-ChildItem (Join-Path $Root 'plugins') -Directory) {
                 if ([IO.File]::ReadAllText($f.FullName, $utf8) -match 'RM_RUNTIME_ENTRY\(') { $entry = $true; break }
             }
         }
-        $plugins += [ordered]@{ author = $author; name = $name; lib = "lib/$author/$name/runtime.lib"; entry = $entry }
+        $licenses = @()
+        $licenseDir = Join-Path $pluginDir.FullName 'licenses'
+        if (Test-Path $licenseDir) {
+            $to = Join-Path $dir 'licenses'
+            New-Item -ItemType Directory -Force $to | Out-Null
+            foreach ($f in Get-ChildItem $licenseDir -Filter *.txt -File | Sort-Object Name) {
+                Copy-Item $f.FullName $to
+                $licenses += "lib/$author/$name/licenses/$($f.Name)"
+            }
+        }
+        $plugins += [ordered]@{ author = $author; name = $name; lib = "lib/$author/$name/runtime.lib"; entry = $entry; licenses = @($licenses) }
     }
 }
 

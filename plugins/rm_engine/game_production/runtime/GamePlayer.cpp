@@ -8,6 +8,7 @@
 #include "rm_engine/game_production/runtime/GameDraw.h"
 #include "rm_engine/game_production/runtime/GameSettings.h"
 #include "rm_engine/game_production/runtime/PlayServices.h"
+#include "rm_engine/game_production/runtime/Register.h"
 #include "rm_engine/game_production/runtime/SceneFile.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_production/runtime/Systems.h"
@@ -126,6 +127,7 @@ public:
         if (first < scenePaths_.size()) {
             if (!ReadScene(first, scene_, &err)) return fail(err);
             world_.sceneIndex = static_cast<int>(first);
+            world_.sceneBase = scene_.NextId();  // (世界のセーブ: これ以上の id はゲームの中で作った物)
         }
         host_.Log(0, std::format("シーン {} 個。最初のシーン: {}", scenePaths_.size(), first < scenePaths_.size() ? world_.sceneNames[first] : std::string("(なし)")));
         cameraTypes_ = CameraTypes(host_.Registry());
@@ -230,8 +232,18 @@ public:
         pf.actions = &world_.Actions();  // (プレイヤーの割り当て)
         pf.hooks = &asked;
         pf.world = &world_;
+        // 打たれた文字 (ゲーム UI の入力欄)。サービスが「打っている」と言えば、ウィンドウが IME をつなぐ。
+        const ui::TypedText typed = host_.TakeTyped();
+        pf.typed = &typed;
+        TextInputAsk textAsk;
+        pf.textInput = &textAsk;
         services_.Frame(pf);
-        if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, asked);
+        host_.SetTextInput(textAsk.want, textAsk.x, textAsk.y, textAsk.w, textAsk.h);
+        if (scripts_.Loaded()) {
+            scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, asked);
+        } else {
+            world_.events.clear();  // (受け取るスクリプトが無い)
+        }
         if (std::exchange(world_.quitAsked, false)) {
             host_.Log(0, "ゲームを終わります");
             host_.Quit();
@@ -347,6 +359,7 @@ std::unique_ptr<game::Game> CreateGame(game::Host& host) { return std::make_uniq
 // 書き出したゲームがゲーム制作について登録するもの (生成された main が、下の C の名前で呼ぶ):
 // ゲーム自身 (枠の game/Player.h) はソフトを知らない。エディターにはこれはない。
 void RegisterForGame(RuntimeRegistry& registry) {
+    RegisterRuntime(registry);  // (エディターと同じ部品: セーブする ...)
     static const game::GameInfo kGame{&CreateGame};
     registry.Contribute(game::kGamePoint, kGame);
 }

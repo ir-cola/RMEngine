@@ -179,17 +179,22 @@ float3 Sky(SkyInput i) {
     c += sunLight * (sunDisk * 40 + pow(saturate(toSun), 600) * 1.5 + pow(saturate(toSun), 12) * 0.1) * (1 - cover * 0.85) * smoothstep(-0.02, 0.02, d.y);
     // 雲: 高い所の 1 つの層を斜めに見る (地平線に近いほど薄い)。流れる。
     // 雲の量 75 % を越えると切れ目を下から埋めはじめ、100 % で空一面の厚い層 (切れ目なし)。
-    if (d.y > 0 && cover > 0.001) {
-        float2 p = d.xz / (d.y + 0.08) * 0.8 - skyParam[5].xy * 0.003;  // 風に運ばれる
+    // 厚い層は地平線より下まで続け (地面の色へつながる)、地平線に明るい帯を残さない。
+    float solid = smoothstep(0.75, 1.0, cover);
+    if ((d.y > 0 || solid > 0) && cover > 0.001) {
+        float2 p = d.xz / (max(d.y, 0) + 0.08) * 0.8 - skyParam[5].xy * 0.003;  // 風に運ばれる
         float n = SkyFbm(float3(p, i.time * 0.004), 6);
         float edge = lerp(0.78, 0.22, cover);
-        float solid = smoothstep(0.75, 1.0, cover);
-        float density = max(smoothstep(edge, edge + 0.18, n), solid) * smoothstep(0.0, lerp(0.1, 0.03, solid), d.y);
+        float below = saturate(-d.y * 20);  // (地平線より下: 模様は使わない)
+        float density = max(smoothstep(edge, edge + 0.18, lerp(n, 0.5, below)), solid) * lerp(smoothstep(0.0, 0.1, d.y), 1, solid);
         float through = SkyFbm(float3(p + i.sun.xz * 0.06, i.time * 0.004), 4);  // 太陽に近いほど薄い
+        // 地平線の近く (真横から見る所) は模様が縦の筋になるので、色のむらをならす。
+        float flat = 1 - smoothstep(0.0, 0.12, d.y);
+        float shadeN = lerp(n, 0.5, flat), shadeThrough = lerp(through, 0.5, flat);
         float3 lit = sunLight * 0.85 + zenith * 0.7 + horizon * 0.35;
         float3 shade = (zenith + horizon) * 0.3;
-        float3 cloud = lerp(lit, shade, saturate(dark + (through - n) * 1.5 + 0.25)) * (1 - dark * 0.6);
-        cloud *= lerp(1, 0.75 + 0.3 * n, solid);  // 厚い層: 濃い所と薄い所のむら (切れ目にはしない)
+        float3 cloud = lerp(lit, shade, saturate(dark + (shadeThrough - shadeN) * 1.5 + 0.25)) * (1 - dark * 0.6);
+        cloud *= lerp(1, 0.75 + 0.3 * shadeN, solid);  // 厚い層: 濃い所と薄い所のむら (切れ目にはしない)
         cloud += flash * float3(0.8, 0.85, 1.0) * 2.5;  // 雷 (光るとき: CPU が知らせる)
         c = lerp(c, cloud, density);
     }

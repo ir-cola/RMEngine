@@ -9,5 +9,6 @@ namespace rm::game_ui {
 const game_production::ScriptApiPart& ScriptUiPart();
 // バージョン 1 と同じ表 (その先頭): トゥイーンより前に作ったスクリプトも、これを見つけられる。
 const game_production::ScriptApiPart& ScriptUiPartVersion1();
+const game_production::ScriptApiPart& ScriptUiPartVersion2();
 
 }  // namespace rm::game_ui

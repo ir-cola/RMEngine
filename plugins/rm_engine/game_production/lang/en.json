@@ -354,5 +354,11 @@
   "ビルドし直す: 全部作り直します ・ 読み込み直す: いちばん新しい DLL をもう一度読みます": "Rebuild: makes everything again ・ Reload: reads the newest DLL again",
   "(エディターを起動してから、または 0 に戻してからの数。コンソールの中身は消えません)": "(Counted since the editor started or since reset to 0. The console keeps its messages)",
   "数を 0 に戻す": "Reset to 0",
-  " (保存していないシーン: いつも入る)": " (not saved yet: always in)"
+  " (保存していないシーン: いつも入る)": " (not saved yet: always in)",
+  "セーブする": "Save State",
+  "位置・回転・大きさ": "Position, rotation and scale",
+  "置き場所の部品 (Transform / Transform 2D) の値と親をセーブします": "Saves the placement component (Transform / Transform 2D) values and the parent",
+  "有効かどうかをセーブします": "Saves whether it is active",
+  "全部の部品の値": "All component values",
+  "スクリプトも含めた全部の部品の値と、名前・タグ・レイヤーをセーブします。ゲームの中で足した部品も足し直します": "Saves the values of every component (scripts too) and the name, tag and layer. Components added during the game are added again"
 }

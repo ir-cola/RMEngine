@@ -7,6 +7,7 @@
 #include "platform/Shell.h"
 #include "platform/Win.h"
 #include "rm_engine/game_production/runtime/SceneFile.h"
+#include "rm_engine/game_production/runtime/WorldSave.h"
 
 #include <algorithm>
 #include <chrono>
@@ -242,6 +243,62 @@ int ApiSaveRemove(void* ctx, const char* slot) {
     return 0;
 }
 constexpr RmSaveApi kSave{&ApiSaveWrite, &ApiSaveRead, &ApiSaveExists, &ApiSaveRemove};
+
+// 世界のセーブ (版 2。WorldSave.h・docs/SAVE.md): グローバル変数と、「セーブする」を付けた物の状態を
+// 同じスロットに書く。読むときはグローバル変数をすぐ、世界はフレームの後で (SwitchAskedScene)。
+int ApiSaveWriteWorld(void* ctx, const char* slot) {
+    ScriptWorld& w = W(ctx);
+    const std::string s = slot ? slot : "";
+    std::string why = "Play しているシーンがありません";
+    if (w.scene) {
+        WorldScene name;
+        if (w.sceneIndex >= 0 && static_cast<size_t>(w.sceneIndex) < w.sceneNames.size()) name.name = w.sceneNames[static_cast<size_t>(w.sceneIndex)];
+        if (w.sceneIndex >= 0 && static_cast<size_t>(w.sceneIndex) < w.sceneIds.size()) name.id = w.sceneIds[static_cast<size_t>(w.sceneIndex)];
+        const std::vector<std::string> placement = w.registry ? PlacementTypes(*w.registry) : std::vector<std::string>{};
+        // (このフレームの終わりに消える物は入れない: Destroy した物はもう無い物)
+        const json::Value world = CaptureWorld(*w.scene, w.sceneBase, placement, name, w.destroyAsked);
+        if (WriteSave(w.globals, w.saveFolder, s, &why, &world)) return 1;
+    }
+    if (w.log) w.log(1, std::format("Save::WriteWorld(\"{}\"): 書けませんでした: {}", s, why));
+    return 0;
+}
+int ApiSaveReadWorld(void* ctx, const char* slot) {
+    ScriptWorld& w = W(ctx);
+    const std::string s = slot ? slot : "";
+    std::string why;
+    const auto doc = ReadSaveDoc(w.saveFolder, s, &why);
+    if (!doc) {
+        // (まだセーブが無いのはふつう: false で伝える。読めないセーブがあるときだけ知らせる)
+        if (w.log && SaveExists(w.saveFolder, s)) w.log(1, std::format("Save::ReadWorld(\"{}\"): 読めませんでした: {}", s, why));
+        return 0;
+    }
+    const json::Value* world = doc->Find(kWorldSaveKey);
+    if (!world || !world->IsObject()) {
+        if (w.log) w.log(1, std::format("Save::ReadWorld(\"{}\"): このセーブには世界がありません (Save::WriteWorld で書きます)", s));
+        return 0;
+    }
+    const auto at = FindSavedScene(*world, w.sceneNames, w.sceneIds);
+    if (!at) {
+        if (w.log) w.log(1, std::format("Save::ReadWorld(\"{}\"): セーブしたシーン「{}」がゲームのシーンの一覧にありません", s, SavedScene(*world).name));
+        return 0;
+    }
+    std::vector<std::string> warnings;
+    w.globals.FromSave(*doc, &warnings);
+    if (w.log) {
+        for (const std::string& m : warnings) w.log(1, m);
+    }
+    w.worldAsked = *world;
+    w.worldAskedScene = static_cast<int>(*at);
+    w.sceneAsked = static_cast<int>(*at);
+    return 1;
+}
+int ApiSaveHasWorld(void* ctx, const char* slot) {
+    std::string why;
+    const auto doc = ReadSaveDoc(W(ctx).saveFolder, slot ? slot : "", &why);
+    return doc && doc->Get(kWorldSaveKey).IsObject() ? 1 : 0;
+}
+constexpr RmSaveApi2 kSave2{&ApiSaveWrite,      &ApiSaveRead,      &ApiSaveExists,  &ApiSaveRemove,
+                            &ApiSaveWriteWorld, &ApiSaveReadWorld, &ApiSaveHasWorld};
 
 // 入力 バージョン 2: プレイヤーごと、とプレイヤーの割り当て。
 int ApiInput2Down(void* ctx, const char* name, int32_t player) {
@@ -479,6 +536,7 @@ const void* ApiPart(void* ctx, const char* name, uint32_t version) {
     if (name && version == RM_PART_INPUT_VERSION && std::strcmp(name, RM_PART_INPUT) == 0) return &kInput;
     if (name && version == RM_PART_GLOBALS_VERSION && std::strcmp(name, RM_PART_GLOBALS) == 0) return &kGlobals;
     if (name && version == RM_PART_SAVE_VERSION && std::strcmp(name, RM_PART_SAVE) == 0) return &kSave;
+    if (name && version == RM_PART_SAVE_VERSION2 && std::strcmp(name, RM_PART_SAVE) == 0) return &kSave2;
     if (name && version == RM_PART_GAME_VERSION && std::strcmp(name, RM_PART_GAME) == 0) return &kGame;
     if (name && version == RM_PART_INPUT_VERSION2 && std::strcmp(name, RM_PART_INPUT) == 0) return &kInput2;
     if (name && version == RM_PART_MOUSE_VERSION && std::strcmp(name, RM_PART_MOUSE) == 0) return &kMouse;
@@ -1296,7 +1354,12 @@ void ScriptRunner::DeliverEvents(Scene& scene, ScriptWorld& world, const ScriptM
 
 void ScriptRunner::Deliver(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order,
                            std::span<const HookCall> calls) {
-    if (calls.empty() || !module.Loaded()) return;
+    if (!module.Loaded()) {
+        world.events.clear();  // (受け取るスクリプトが無い: サービスが送ったものも溜めない)
+        return;
+    }
+    // フックが無くても、サービスが送ったイベント (ゲーム UI の "UIChanged" …) はここで届ける。
+    if (calls.empty() && world.events.empty()) return;
     world.scene = &scene;
     const std::vector<Instance> list = Collect(scene, module, order);
     for (const HookCall& h : calls) {
@@ -1407,17 +1470,37 @@ SceneSwitch SwitchAskedScene(Scene& playing, ScriptWorld& world, ScriptRunner& r
                              std::span<const ScriptOrderEntry> order, const std::function<bool(size_t index, Scene& into, std::string* error)>& load,
                              std::string* error) {
     const int asked = std::exchange(world.sceneAsked, -1);
+    // rm::Save::ReadWorld が頼んだ世界 (このフレームの 1 回だけ: 失敗しても次へ持ち越さない)。
+    const json::Value savedWorld = std::exchange(world.worldAsked, json::Value());
+    const int savedWorldScene = std::exchange(world.worldAskedScene, -1);
     if (asked < 0) return SceneSwitch::None;
     // 先に読む: 読めないシーンのときは、Play 中のシーンをそのまま残す (スクリプトは動き続ける)。
     Scene next;
     next.SetComponentTypes(playing.ComponentTypes(), playing.MultipleTypes());
     next.SetSettingTypes(playing.SettingTypes());
     if (!load(static_cast<size_t>(asked), next, error)) return SceneSwitch::Failed;
+    const int base = next.NextId();  // (読んだまま: 世界のセーブが作り直す物は、ゲームの中で作った物)
+    if (!savedWorld.IsNull()) {
+        if (savedWorldScene == asked) {
+            reflect::Warnings warnings;
+            const WorldApplied done = ApplyWorld(next, savedWorld, world.prefab, warnings);
+            if (world.log) {
+                for (const std::string& m : warnings) world.log(1, "世界のセーブ: " + m);
+                world.log(0, std::format("セーブした世界を読みました: 値を戻した物 {} 個・作り直した物 {} 個・消した物 {} 個", done.restored, done.made,
+                                         done.removed));
+            }
+        } else if (world.log) {
+            world.log(1, "世界のセーブを読む前に、別のシーンへの切り替えを頼まれたので、セーブした世界は読みませんでした");
+        }
+    }
     if (module.Loaded()) runner.Stop(playing, world, module, order);  // このシーンのスクリプトの EndPlay
     runner.Reset();
     playing = std::move(next);
     world.sceneIndex = asked;
     world.sceneAsked = -1;  // (EndPlay の中でまた頼まれた: 受けない。切り替えはこの 1 回)
+    world.worldAsked = json::Value();
+    world.worldAskedScene = -1;
+    world.sceneBase = base;
     world.scene = &playing;
     return SceneSwitch::Switched;
 }

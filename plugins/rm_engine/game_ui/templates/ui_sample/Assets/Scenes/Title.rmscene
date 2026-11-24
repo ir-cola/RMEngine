@@ -1,7 +1,7 @@
 {
   "kind": "rm_engine.scene",
   "format": 2,
-  "nextId": 8,
+  "nextId": 16,
   "entities": [
     {
       "id": 1,
@@ -269,6 +269,359 @@
               1
             ],
             "alignX": "Center"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "parent": 2,
+      "name": "設定",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Left",
+            "position": [
+              80,
+              40
+            ],
+            "size": [
+              600,
+              360
+            ],
+            "pivot": [
+              0,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiStyle",
+          "data": {
+            "rounding": 16,
+            "background": {
+              "enabled": true,
+              "color": [
+                0.05,
+                0.07,
+                0.16,
+                0.85
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "parent": 8,
+      "name": "名前",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Top",
+            "position": [
+              0,
+              30
+            ],
+            "size": [
+              520,
+              80
+            ],
+            "pivot": [
+              0.5,
+              0
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiStyle",
+          "data": {
+            "rounding": 8,
+            "background": {
+              "enabled": true,
+              "color": [
+                0.09,
+                0.1,
+                0.13,
+                1
+              ]
+            },
+            "border": {
+              "enabled": true,
+              "width": 2,
+              "color": [
+                1,
+                1,
+                1,
+                0.35
+              ]
+            }
+          }
+        },
+        {
+          "type": "rm::game_ui::UiButton",
+          "data": {
+            "hoverScale": 1,
+            "pressedScale": 1
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "",
+            "size": 36,
+            "alignX": "Left"
+          }
+        },
+        {
+          "type": "rm::game_ui::UiInputField",
+          "data": {
+            "text": "RM",
+            "placeholder": "名前を入れる",
+            "maxLength": 12
+          }
+        },
+        {
+          "type": "ControlValue",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "parent": 8,
+      "name": "音量",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Top",
+            "position": [
+              0,
+              150
+            ],
+            "size": [
+              520,
+              48
+            ],
+            "pivot": [
+              0.5,
+              0
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiButton",
+          "data": {
+            "hoverScale": 1,
+            "pressedScale": 1
+          }
+        },
+        {
+          "type": "rm::game_ui::UiSlider",
+          "data": {
+            "value": 0.7,
+            "step": 0.1
+          }
+        },
+        {
+          "type": "ControlValue",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "parent": 8,
+      "name": "効果音",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Top",
+            "position": [
+              0,
+              240
+            ],
+            "size": [
+              520,
+              60
+            ],
+            "pivot": [
+              0.5,
+              0
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiButton",
+          "data": {
+            "hoverScale": 1,
+            "pressedScale": 1
+          }
+        },
+        {
+          "type": "rm::game_ui::UiToggle",
+          "data": {
+            "on": true,
+            "look": "Switch"
+          }
+        },
+        {
+          "type": "ControlValue",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "parent": 11,
+      "name": "文字",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Stretch",
+            "position": [
+              65,
+              0
+            ],
+            "size": [
+              -130,
+              0
+            ],
+            "pivot": [
+              0.5,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "効果音",
+            "size": 36,
+            "alignX": "Left"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "parent": 2,
+      "name": "お知らせ",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Right",
+            "position": [
+              -80,
+              40
+            ],
+            "size": [
+              520,
+              360
+            ],
+            "pivot": [
+              1,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiStyle",
+          "data": {
+            "rounding": 16,
+            "background": {
+              "enabled": true,
+              "color": [
+                0.05,
+                0.07,
+                0.16,
+                0.85
+              ]
+            }
+          }
+        },
+        {
+          "type": "rm::game_ui::UiScroll",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "parent": 13,
+      "name": "中身",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "StretchTop",
+            "position": [
+              -12,
+              0
+            ],
+            "size": [
+              -24,
+              640
+            ],
+            "pivot": [
+              0.5,
+              0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "parent": 14,
+      "name": "文",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::game_ui::UiRect",
+          "data": {
+            "anchor": "Stretch",
+            "position": [
+              0,
+              0
+            ],
+            "size": [
+              -48,
+              -48
+            ],
+            "pivot": [
+              0.5,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::game_ui::UiText",
+          "data": {
+            "text": "お知らせ\n\n・左の「名前」を押すと文字を打てます (日本語も)。Enter で決まり、Esc で前に戻ります\n・「音量」はドラッグか ← → で動きます\n・「効果音」は押すたびにオンとオフが入れ替わります\n・この枠はホイールとドラッグで動きます\n\n値はコンソールに出ます (見本のスクリプト ControlValue)",
+            "size": 30,
+            "alignX": "Left",
+            "alignY": "Top",
+            "color": [
+              0.85,
+              0.9,
+              1,
+              1
+            ]
           }
         }
       ]

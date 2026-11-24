@@ -87,6 +87,7 @@
     <ClCompile Include="TestPrefab.cpp" />
     <ClCompile Include="TestSceneRecord.cpp" />
     <ClCompile Include="TestGlobals.cpp" />
+    <ClCompile Include="TestWorldSave.cpp" />
     <ClCompile Include="TestInput.cpp" />
     <ClCompile Include="TestScriptsMore.cpp" />
     <ClCompile Include="TestScriptsAbi7.cpp" />
@@ -150,6 +151,10 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\SceneFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\SceneRecord.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Globals.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\WorldSave.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)game_production\</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Input.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scripts.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\ScriptGuard.cpp" />
@@ -257,6 +262,7 @@
     <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiLayout.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiService.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiMotion.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\UiControls.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_ui\runtime\ScriptUi.cpp" />
     <ClCompile Include="..\tools\rmgen\Scanner.cpp" />
   </ItemGroup>

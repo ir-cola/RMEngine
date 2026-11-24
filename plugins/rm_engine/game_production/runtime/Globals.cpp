@@ -241,7 +241,7 @@ std::optional<json::Value> ReadDoc(const fs::path& file, std::string* why) {
 
 }  // namespace
 
-bool WriteSave(GlobalStore& store, const fs::path& folder, std::string_view slot, std::string* why) {
+bool WriteSave(GlobalStore& store, const fs::path& folder, std::string_view slot, std::string* why, const json::Value* world) {
     if (!CheckSlot(folder, slot, why)) return false;
     const fs::path file = SaveFile(folder, slot);
     std::error_code ec;
@@ -249,11 +249,24 @@ bool WriteSave(GlobalStore& store, const fs::path& folder, std::string_view slot
     // そこにあるファイルから (そのキーは保持する)。新しいものは、最後に読んだものから (知らないキーも
     // 一緒に行く)。
     json::Value base = store.lastRead;
+    bool fromFile = false;
     if (fs::exists(file, ec)) {
         std::string ignored;
-        if (auto doc = ReadDoc(file, &ignored); doc && doc->IsObject()) base = std::move(*doc);
+        if (auto doc = ReadDoc(file, &ignored); doc && doc->IsObject()) {
+            base = std::move(*doc);
+            fromFile = true;
+        }
     }
-    return platform::WriteFileAtomic(file, json::Write(store.ToSave(std::move(base))), why);
+    // 世界はスロットのもの: 最後に読んだ別のスロットの世界は持って来ない。
+    if (!fromFile && base.IsObject()) base.Erase(kWorldSaveKey);
+    json::Value doc = store.ToSave(std::move(base));
+    if (world) {
+        // 前の "world" に重ねる: このバージョンが知らないキーは残る (憲法 6)。
+        json::Value w = doc.Get(kWorldSaveKey).IsObject() ? doc.Get(kWorldSaveKey) : json::Value::MakeObject();
+        for (const auto& [key, value] : world->Members()) w.Set(key, value);
+        doc.Set(kWorldSaveKey, std::move(w));
+    }
+    return platform::WriteFileAtomic(file, json::Write(doc), why);
 }
 
 bool ReadSave(GlobalStore& store, const fs::path& folder, std::string_view slot, std::vector<std::string>* warnings, std::string* why) {
@@ -265,6 +278,16 @@ bool ReadSave(GlobalStore& store, const fs::path& folder, std::string_view slot,
         return false;
     }
     return true;
+}
+
+std::optional<json::Value> ReadSaveDoc(const fs::path& folder, std::string_view slot, std::string* why) {
+    if (!CheckSlot(folder, slot, why)) return std::nullopt;
+    auto doc = ReadDoc(SaveFile(folder, slot), why);
+    if (doc && (!doc->IsObject() || doc->Get("kind").AsString() != kSaveKind)) {
+        if (why) *why = "セーブのファイルではありません";
+        return std::nullopt;
+    }
+    return doc;
 }
 
 bool SaveExists(const fs::path& folder, std::string_view slot) {

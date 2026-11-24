@@ -9,6 +9,7 @@
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
 #include "rm_engine/game_ui/runtime/ScriptUi.h"
 #include "rm_engine/game_ui/runtime/UiComponents.h"
+#include "rm_engine/game_ui/runtime/UiControls.h"
 #include "rm_engine/game_ui/runtime/UiLayout.h"
 #include "rm_engine/game_ui/runtime/UiMotion.h"
 #include "rm_engine/game_ui/runtime/UiService.h"
@@ -1106,4 +1107,423 @@ RM_TEST(GameUi_CropAndRainbow) {
     r.brightness = 0.5f;
     c = RainbowColor(r, 1.234);
     CHECK(Near(c.r, 0.5f) && Near(c.g, 0.5f) && Near(c.b, 0.5f));
+}
+
+// --- 入力の部品 (入力欄・スライダー・トグル・スクロール) ----------------------------------------------
+
+namespace {
+
+Scene ControlsScene() {
+    Scene s;
+    s.SetComponentTypes({&reflect::TypeOf<UiCanvas>(), &reflect::TypeOf<UiRect>(), &reflect::TypeOf<UiText>(), &reflect::TypeOf<UiImage>(),
+                         &reflect::TypeOf<UiButton>(), &reflect::TypeOf<UiBar>(), &reflect::TypeOf<UiStyle>(), &reflect::TypeOf<UiInputField>(),
+                         &reflect::TypeOf<UiToggle>(), &reflect::TypeOf<UiSlider>(), &reflect::TypeOf<UiScroll>()},
+                        {});
+    return s;
+}
+
+int Canvas1280(Scene& s, const char* name = "UI") {
+    const int canvas = s.Create(name);
+    Add<UiCanvas>(s, canvas)->reference = {1280, 720};
+    return canvas;
+}
+
+// `T` の部品を持つ、ボタンで選ぶ物 (中央から `pos` に `size`)。
+template <class T>
+int MakeControl(Scene& s, int parent, Vec2 pos, Vec2 size, const char* name) {
+    const int id = s.Create(name, parent);
+    UiRect* r = Add<UiRect>(s, id);
+    r->position = pos;
+    r->size = size;
+    Add<UiButton>(s, id);
+    Add<T>(s, id);
+    return id;
+}
+
+template <class T>
+T& PartIn(Scene& s, int id) {
+    return *static_cast<T*>(s.Find(id)->FindComponent(reflect::TypeOf<T>().name)->value.Get());
+}
+
+ui::TypedText Chars(std::wstring_view chars) {
+    ui::TypedText t;
+    t.chars = std::wstring(chars);
+    return t;
+}
+
+ui::TypedText Keys(std::initializer_list<ui::KeyEvent> keys) {
+    ui::TypedText t;
+    t.keys = keys;
+    return t;
+}
+
+}  // namespace
+
+RM_TEST(GameUi_Input_TypeIntoTheText) {
+    UiInputField f;
+    std::wstring text;
+    int caret = 0, anchor = 0;
+    UiTypeResult r = TypeInto(text, caret, anchor, f, Chars(L"abc"));
+    CHECK(r.changed && text == L"abc" && caret == 3 && anchor == 3);
+    r = TypeInto(text, caret, anchor, f, Keys({{ui::Key::Backspace}}));
+    CHECK(r.changed && text == L"ab" && caret == 2);
+    // Shift + ← で選び、打つと置き換わる。Home / End、Ctrl で単語。
+    TypeInto(text, caret, anchor, f, Keys({{ui::Key::Left, false, true}}));
+    CHECK(caret == 1 && anchor == 2);
+    TypeInto(text, caret, anchor, f, Chars(L"X"));
+    CHECK(text == L"aX" && caret == 2 && anchor == 2);
+    TypeInto(text, caret, anchor, f, Keys({{ui::Key::Home}}));
+    CHECK(caret == 0);
+    TypeInto(text, caret, anchor, f, Keys({{ui::Key::Delete}}));
+    CHECK(text == L"X");
+    // IME の確定した文字も入る。範囲の外のカーソルは収める。
+    caret = anchor = 99;
+    TypeInto(text, caret, anchor, f, [] {
+        ui::TypedText t;
+        t.imeResult = L"名前";
+        return t;
+    }());
+    CHECK(text == L"X名前" && caret == 3);
+    // Enter: 決まり (その後の文字は入らない)。Esc: やめる。
+    ui::TypedText enter = Keys({{ui::Key::Enter}});
+    enter.chars = L"zz";
+    r = TypeInto(text, caret, anchor, f, enter);
+    CHECK(r.submitted && !r.changed && text == L"X名前");
+    CHECK(TypeInto(text, caret, anchor, f, Keys({{ui::Key::Escape}})).cancelled);
+
+    // 最大の文字数は見える文字で (絵文字の 2 単位も 1 文字)。
+    f.maxLength = 3;
+    text = L"a";
+    caret = anchor = 1;
+    TypeInto(text, caret, anchor, f, Chars(L"\U0001F600bc"));
+    CHECK(text == L"a\U0001F600b" && CountChars(text) == 3 && caret == 4);
+    // 選んだ所を置き換えるときは、消える分も数える。
+    TypeInto(text, caret, anchor, f, Keys({{ui::Key::A, true}}));
+    CHECK(caret == 4 && anchor == 0);
+    TypeInto(text, caret, anchor, f, Chars(L"wxyz"));
+    CHECK(text == L"wxy");
+    f.maxLength = 0;
+
+    // 入れてよい文字 (全角の英数字は半角に)。
+    CHECK(FilterTyped(UiInputContent::Integer, L"", 0, L"-1\xFF12" L"a3") == L"-123");
+    CHECK(FilterTyped(UiInputContent::Integer, L"12", 2, L"-") == L"");
+    CHECK(FilterTyped(UiInputContent::Integer, L"-5", 0, L"7") == L"");  // (- の前には入らない)
+    CHECK(FilterTyped(UiInputContent::Decimal, L"", 0, L"1.5.2") == L"1.52");
+    CHECK(FilterTyped(UiInputContent::Alphanumeric, L"", 0, L"ab_c\xFF11 ") == L"abc1");
+    CHECK(FilterTyped(UiInputContent::Any, L"", 0, L"あ_1") == L"あ_1");
+    f.content = UiInputContent::Integer;
+    text.clear();
+    caret = anchor = 0;
+    r = TypeInto(text, caret, anchor, f, Chars(L"x"));
+    CHECK(!r.changed && text.empty());
+
+    // コピーと貼り付け (パスワードはコピーしない)。
+    f.content = UiInputContent::Any;
+    std::wstring board;
+    UiClipboard clip;
+    clip.get = [&] { return std::wstring(L"貼る"); };
+    clip.set = [&](const std::wstring& s) { board = s; };
+    text = L"秘密";
+    caret = 2, anchor = 0;
+    TypeInto(text, caret, anchor, f, Keys({{ui::Key::C, true}}), clip);
+    CHECK(board == L"秘密");
+    TypeInto(text, caret, anchor, f, Keys({{ui::Key::X, true}}), clip);
+    CHECK(text.empty() && board == L"秘密");
+    TypeInto(text, caret, anchor, f, Keys({{ui::Key::V, true}}), clip);
+    CHECK(text == L"貼る");
+    f.password = true;
+    board.clear();
+    anchor = 0;
+    TypeInto(text, caret, anchor, f, Keys({{ui::Key::C, true}}), clip);
+    CHECK(board.empty());
+}
+
+RM_TEST(GameUi_Input_WhatIsDrawn) {
+    UiInputField f;
+    f.placeholder = "名前";
+    UiInputView v = InputView(f);
+    CHECK(v.placeholder && v.shown == L"名前");
+    f.text = "a\xF0\x9F\x98\x80" "b";  // a😀b
+    f.typing = true;
+    f.caret = 3;  // (😀 の後: UTF-16 で 3)
+    f.anchor = 0;
+    v = InputView(f);
+    CHECK(!v.placeholder && v.shown == L"a\U0001F600b" && v.caret == 3 && v.selStart == 0 && v.selEnd == 3);
+    // パスワード: 見える 1 文字に ● 1 つ。位置も文字の数で。
+    f.password = true;
+    v = InputView(f);
+    CHECK(v.shown == L"\x25CF\x25CF\x25CF" && v.caret == 2 && v.selEnd == 2);
+    // IME で変換中: カーソルの所に差し込み、その所に下線。
+    f.password = false;
+    f.anchor = f.caret = 1;
+    f.composing = "かな";
+    f.composingCaret = 1;
+    v = InputView(f);
+    CHECK(v.shown == L"aかな\U0001F600b" && v.compStart == 1 && v.compLength == 2 && v.caret == 2 && v.selStart == v.selEnd);
+    // 打っていない欄は変換中の文字を見せない。
+    f.typing = false;
+    CHECK(InputView(f).shown == L"a\U0001F600b");
+}
+
+RM_TEST(GameUi_Input_ClickTypeSubmitAndCancel) {
+    Scene s = ControlsScene();
+    const int canvas = Canvas1280(s);
+    const int field = MakeControl<UiInputField>(s, canvas, {0, 0}, {400, 80}, "名前");
+    const int other = MakeControl<UiImage>(s, canvas, {0, 200}, {200, 80}, "ほか");
+    const UiTree t = BuildUi(s, {});
+    const auto actions = game_production::DefaultInputActions();
+    InputFrame none;
+    UiFocus state;
+    // 押す: 打ち始める (IME をつないでと頼む: その欄の箱)。
+    UiStep step = StepUi(s, t, Vec2{640, 360}, false, true, true, actions, &none, &none, 0.016f, state);
+    CHECK(state.typing == field && step.typing == field && PartIn<UiInputField>(s, field).typing);
+    CHECK(Near(step.typingBox.x, 440) && Near(step.typingBox.w, 400));
+    // 打つ: 変わった (文字を付けて)。
+    ui::TypedText typed = Chars(L"りむ");
+    typed.imeComposition = L"えん";
+    step = StepUi(s, t, std::nullopt, false, false, false, actions, &none, &none, 0.016f, state, &typed);
+    CHECK(PartIn<UiInputField>(s, field).text == "りむ" && PartIn<UiInputField>(s, field).composing == "えん");
+    CHECK(step.changes.size() == 1 && step.changes[0].entity == field && !step.changes[0].submitted && step.changes[0].text == "りむ");
+    // 打っている間、Enter (UISubmit) と矢印はボタンを押さない / 選ばない。Enter は欄が決める。
+    InputFrame enterKey;
+    enterKey.keys[0x0D] = 1;
+    enterKey.keys[0x28] = 1;  // ↓
+    ui::TypedText enter = Keys({{ui::Key::Enter}});
+    step = StepUi(s, t, std::nullopt, false, false, false, actions, &enterKey, &none, 0.016f, state, &enter);
+    CHECK(step.clicked.empty() && state.typing == 0 && !PartIn<UiInputField>(s, field).typing);
+    CHECK(step.changes.size() == 1 && step.changes[0].submitted && step.changes[0].text == "りむ");
+    CHECK(PartIn<UiInputField>(s, field).composing.empty());
+    // もう一度: 決定 (キー) でも打ち始める。Esc は打つ前に戻す。
+    state.focus = field;
+    state.keyboard = true;
+    InputFrame enterOnly;
+    enterOnly.keys[0x0D] = 1;
+    step = StepUi(s, t, std::nullopt, false, false, false, actions, &enterOnly, &none, 0.016f, state);
+    CHECK(state.typing == field);
+    ui::TypedText more = Chars(L"!");
+    StepUi(s, t, std::nullopt, false, false, false, actions, &enterOnly, &enterOnly, 0.016f, state, &more);
+    CHECK(PartIn<UiInputField>(s, field).text == "りむ!");
+    ui::TypedText esc = Keys({{ui::Key::Escape}});
+    InputFrame escKey;
+    escKey.keys[0x1B] = 1;
+    step = StepUi(s, t, std::nullopt, false, false, false, actions, &escKey, &none, 0.016f, state, &esc);
+    CHECK(state.typing == 0 && PartIn<UiInputField>(s, field).text == "りむ" && step.closed == 0);
+    CHECK(step.changes.size() == 1 && step.changes[0].text == "りむ");
+    // ほかの所を押すと打つのをやめる (文字はそのまま)。
+    StartTyping(s, state, field);
+    StepUi(s, t, Vec2{640, 560}, true, true, false, actions, &none, &none, 0.016f, state);
+    CHECK(state.typing == 0 && PartIn<UiInputField>(s, field).text == "りむ");
+    (void)other;
+    // 押せない欄には打てない。
+    PartIn<UiButton>(s, field).interactable = false;
+    CHECK(!StartTyping(s, state, field));
+}
+
+RM_TEST(GameUi_Slider_SnapDragAndKeys) {
+    UiSlider sl;
+    sl.min = 0, sl.max = 10, sl.step = 2;
+    CHECK(Near(SliderSnap(sl, 3.1f), 4) && Near(SliderSnap(sl, -5), 0) && Near(SliderSnap(sl, 99), 10));
+    sl.min = 10, sl.max = 0;  // (逆でもよい)
+    CHECK(Near(SliderSnap(sl, 3.1f), 4));
+    sl = UiSlider{};
+    sl.value = 0.25f;
+    CHECK(Near(SliderFraction(sl), 0.25f));
+    const UiBox box{0, 0, 236, 40};  // つまみ 36: 真ん中は 18 .. 218 を動く
+    CHECK(Near(SliderAt(sl, box, {118, 20}), 0.5f) && Near(SliderAt(sl, box, {-50, 0}), 0) && Near(SliderAt(sl, box, {500, 0}), 1));
+    CHECK(Near(SliderHandle(sl, box).x + 18, 18 + 200 * 0.25f));
+    CHECK(Near(SliderFill(sl, box).w, 50) && Near(SliderTrack(sl, box).w, 200) && Near(SliderTrack(sl, box).h, 12));
+    sl.direction = UiBarDirection::RightToLeft;
+    CHECK(Near(SliderAt(sl, box, {18, 20}), 1));
+    CHECK(SliderKey(sl, -1, 0) == 1 && SliderKey(sl, 0, 1) == 0);
+    sl.direction = UiBarDirection::BottomToTop;
+    CHECK(SliderVertical(sl) && SliderKey(sl, 0, -1) == 1 && SliderKey(sl, 1, 0) == 0);
+    sl.direction = UiBarDirection::LeftToRight;
+    CHECK(Near(SliderNudge(sl, 1), 0.3f) && Near(SliderNudge(sl, -1), 0.2f));  // (幅の 20 分の 1)
+    sl.keyStep = 0.5f;
+    CHECK(Near(SliderNudge(sl, 1), 0.75f));
+
+    // フレームを通しで: マウスで押した所へ、押したまま外へ出ても動き、キーは向きが合えば値を、違えば選択を動かす。
+    using game_production::InputControl;
+    Scene s = ControlsScene();
+    const int canvas = Canvas1280(s);
+    const int slider = MakeControl<UiSlider>(s, canvas, {0, 0}, {436, 40}, "音量");  // 箱 422 .. 858、真ん中は 440 .. 840
+    const int below = MakeControl<UiImage>(s, canvas, {0, 200}, {200, 80}, "下");
+    const UiTree t = BuildUi(s, {});
+    const auto actions = game_production::DefaultInputActions();
+    InputFrame none;
+    UiFocus state;
+    UiStep step = StepUi(s, t, Vec2{540, 360}, true, true, false, actions, &none, &none, 0.016f, state);
+    CHECK(Near(PartIn<UiSlider>(s, slider).value, 0.25f) && step.changes.size() == 1 && Near(static_cast<float>(step.changes[0].number), 0.25f));
+    step = StepUi(s, t, Vec2{2000, 900}, true, false, false, actions, &none, &none, 0.016f, state);
+    CHECK(Near(PartIn<UiSlider>(s, slider).value, 1));
+    StepUi(s, t, Vec2{2000, 900}, false, false, true, actions, &none, &none, 0.016f, state);
+    step = StepUi(s, t, Vec2{640, 360}, false, false, false, actions, &none, &none, 0.016f, state);
+    CHECK(step.changes.empty());  // (離した後は動かない)
+    auto pad = [](InputControl c) {
+        InputFrame f;
+        f.pad[static_cast<size_t>(static_cast<int>(c) - game_production::kPadControlBase)] = 1;
+        return f;
+    };
+    state.focus = slider;
+    state.keyboard = true;
+    const InputFrame left = pad(InputControl::PadLeft), down = pad(InputControl::PadDown);
+    step = StepUi(s, t, std::nullopt, false, false, false, actions, &left, &none, 0.016f, state);
+    CHECK(Near(PartIn<UiSlider>(s, slider).value, 0.95f) && state.focus == slider && step.changes.size() == 1);
+    StepUi(s, t, std::nullopt, false, false, false, actions, &down, &none, 0.016f, state);
+    CHECK(state.focus == below);
+}
+
+RM_TEST(GameUi_Toggle_FlipsAndRadioGroups) {
+    UiToggle tg;
+    CHECK(Near(ToggleMark(tg, {10, 0, 300, 50}), {10, 0, 50, 50}));
+    tg.look = UiToggleLook::Switch;
+    tg.markSize = 30;
+    CHECK(Near(ToggleMark(tg, {10, 0, 300, 50}), {10, 10, 54, 30}));
+    CHECK(Near(ToggleMark(tg, {0, 0, 27, 50}), {0, 17.5f, 27, 15}));  // (入らなければ縮める)
+    CHECK(ToggleShown(tg) == 0);
+
+    Scene s = ControlsScene();
+    const int canvas = Canvas1280(s);
+    const int sound = MakeControl<UiToggle>(s, canvas, {0, -200}, {300, 60}, "効果音");
+    const int easy = MakeControl<UiToggle>(s, canvas, {0, 0}, {300, 60}, "やさしい");
+    const int hard = MakeControl<UiToggle>(s, canvas, {0, 100}, {300, 60}, "むずかしい");
+    PartIn<UiToggle>(s, easy).group = PartIn<UiToggle>(s, hard).group = "level";
+    PartIn<UiToggle>(s, easy).on = true;
+    const UiTree t = BuildUi(s, {});
+    const auto actions = game_production::DefaultInputActions();
+    InputFrame none;
+    UiFocus state;
+    UiStep step = StepUi(s, t, Vec2{640, 160}, false, true, true, actions, &none, &none, 0.016f, state);
+    CHECK(PartIn<UiToggle>(s, sound).on && step.changes.size() == 1 && step.changes[0].number == 1);
+    CHECK(Near(PartIn<UiToggle>(s, sound).shown, 1));  // (最初のフレームは、なめらかにせずそのまま)
+    step = StepUi(s, t, Vec2{640, 160}, false, true, true, actions, &none, &none, 0.016f, state);
+    CHECK(!PartIn<UiToggle>(s, sound).on && PartIn<UiToggle>(s, sound).shown > 0.5f);  // (つまみはなめらかに)
+    // グループ: 押したものがオン、ほかはオフ。オンのものを押してもオンのまま。
+    step = StepUi(s, t, Vec2{640, 460}, false, true, true, actions, &none, &none, 0.016f, state);
+    CHECK(PartIn<UiToggle>(s, hard).on && !PartIn<UiToggle>(s, easy).on && step.changes.size() == 2);
+    step = StepUi(s, t, Vec2{640, 460}, false, true, true, actions, &none, &none, 0.016f, state);
+    CHECK(PartIn<UiToggle>(s, hard).on && step.changes.empty());
+
+    // UI サービス: 変わったものはそのエンティティへのイベント "UIChanged" (スクリプトの OnEvent) になる。
+    game_production::GameSettings settings;
+    game_production::PlayHost host;
+    host.settings = &settings;
+    UiService service(host);
+    game_production::ScriptWorld world;
+    world.scene = &s;
+    game_production::PlayFrame f{s, 0, 0.016f};
+    f.screen = {1280, 720};
+    f.pointer = Vec2{640, 160};
+    f.pointerWentDown = f.pointerWentUp = true;
+    f.world = &world;
+    game_production::TextInputAsk ask;
+    f.textInput = &ask;
+    service.Frame(f);
+    CHECK(world.events.size() == 1 && world.events[0].name == kChangedEvent && world.events[0].target == sound && world.events[0].scope == 1 &&
+          world.events[0].number == 1);
+    CHECK(!ask.want);
+}
+
+RM_TEST(GameUi_Scroll_ClipsWheelDragAndFocus) {
+    // 純粋: 範囲・見せる・バー。
+    UiScroll sc;
+    const UiBox view{0, 0, 400, 300};
+    const UiBox content{0, 0, 380, 600};
+    UiScrollRange r = ScrollRange(sc, view, content);
+    CHECK(Near(r.low.y, 0) && Near(r.high.y, 300) && Near(r.high.x, 0));
+    CHECK(Near(ClampScroll({50, 400}, r).y, 300) && Near(ClampScroll({50, 400}, r).x, 0));
+    CHECK(Near(ScrollToShow({0, 0}, view, {0, 450, 100, 100}, r).y, 250));  // 下にはみ出す: 下の端を合わせる
+    CHECK(Near(ScrollToShow({0, 250}, view, {0, 100, 100, 100}, r).y, 100));  // 上にはみ出す
+    CHECK(Near(ScrollToShow({0, 100}, view, {0, 150, 100, 100}, r).y, 100));  // 見えている: そのまま
+    UiScrollBar bar = ScrollBar(sc, view, content, {0, 150}, true);
+    CHECK(bar.shown && Near(bar.track.x, 390) && Near(bar.track.h, 300) && Near(bar.thumb.h, 150) && Near(bar.thumb.y, 75));
+    CHECK(Near(ThumbDrag(bar, 15, r.low.y, r.high.y, true), 30));
+    CHECK(!ScrollBar(sc, view, content, {0, 0}, false).shown);
+
+    // シーン: 枠 400 x 300 (中央)、その中に 100 ずつの行 6 つ。
+    Scene s = ControlsScene();
+    const int canvas = Canvas1280(s);
+    const int scroll = s.Create("リスト", canvas);
+    {
+        UiRect* rr = Add<UiRect>(s, scroll);
+        rr->size = {400, 300};
+        Add<UiScroll>(s, scroll)->wheelStep = 50;
+    }
+    std::vector<int> rows;
+    for (int i = 0; i < 6; ++i) {
+        const int row = s.Create("行", scroll);
+        UiRect* rr = Add<UiRect>(s, row);
+        rr->anchor = UiAnchor::TopLeft;
+        rr->pivot = {0, 0};
+        rr->position = {0, 100.f * static_cast<float>(i)};
+        rr->size = {300, 90};
+        Add<UiImage>(s, row);
+        Add<UiButton>(s, row);
+        rows.push_back(row);
+    }
+    UiTree t = BuildUi(s, {});
+    const UiNode* sn = t.Find(scroll);
+    CHECK(sn && sn->scroll && Near(sn->content, {440, 210, 300, 590}) && sn->end == static_cast<int>(t.nodes.size()));
+    CHECK(t.Find(rows[5])->clip == static_cast<int>(sn - t.nodes.data()));
+    // 枠の外の行は見えないので触れない (枠は 440..840 × 210..510)。行 4 は 610..700。
+    CHECK(TopAt(t, {500, 650}) == 0 && TopAt(t, {500, 250}) == rows[0]);
+    CHECK(ScrollAt(t, {500, 250}) == static_cast<int>(sn - t.nodes.data()) && ScrollAt(t, {100, 100}) == -1);
+    // ホイール (手前へ 2 つ = 下を見る)。
+    const auto actions = game_production::DefaultInputActions();
+    UiFocus state;
+    InputFrame wheel;
+    wheel.wheel = -2;
+    InputFrame none;
+    StepUi(s, t, Vec2{500, 250}, false, false, false, actions, &wheel, &none, 0.016f, state);
+    CHECK(Near(PartIn<UiScroll>(s, scroll).offset.y, 100) && Near(PartIn<UiScroll>(s, scroll).high.y, 290));
+    t = BuildUi(s, {});
+    CHECK(TopAt(t, {500, 250}) == rows[1]);  // (中身が 100 上へ)
+    // 空いた所 (行の右) をつかんで上へ 40 動かす: 中身もついてくる。
+    StepUi(s, t, Vec2{800, 400}, true, true, false, actions, &none, &none, 0.016f, state);
+    StepUi(s, t, Vec2{800, 360}, true, false, false, actions, &none, &none, 0.016f, state);
+    CHECK(Near(PartIn<UiScroll>(s, scroll).offset.y, 140));
+    StepUi(s, t, Vec2{800, 360}, false, false, true, actions, &none, &none, 0.016f, state);
+    CHECK(state.scrolling == 0);
+    // キーで一番下の行を選ぶ: 見えるまで動く。
+    t = BuildUi(s, {});
+    state.focus = rows[5];
+    state.keyboard = true;
+    StepUi(s, t, std::nullopt, false, false, false, actions, &none, &none, 0.016f, state);
+    CHECK(Near(PartIn<UiScroll>(s, scroll).offset.y, 290));
+    state.focus = rows[0];
+    StepUi(s, t, std::nullopt, false, false, false, actions, &none, &none, 0.016f, state);
+    CHECK(Near(PartIn<UiScroll>(s, scroll).offset.y, 0));
+}
+
+RM_TEST(GameUi_Scripts_InputParts) {
+    Scene s = ControlsScene();
+    const int canvas = Canvas1280(s, "Settings");
+    const int field = MakeControl<UiInputField>(s, canvas, {0, 0}, {400, 80}, "name");
+    Add<UiText>(s, field)->text = "見た目だけ";
+    const int slider = MakeControl<UiSlider>(s, canvas, {0, 100}, {400, 40}, "volume");
+    const int a = MakeControl<UiToggle>(s, canvas, {0, 200}, {300, 60}, "a");
+    const int b = MakeControl<UiToggle>(s, canvas, {0, 300}, {300, 60}, "b");
+    PartIn<UiToggle>(s, a).group = PartIn<UiToggle>(s, b).group = "g";
+    const int list = s.Create("list", canvas);
+    Add<UiRect>(s, list);
+    UiScroll& sc = *Add<UiScroll>(s, list);
+    sc.low = {0, 0};
+    sc.high = {0, 200};
+    game_production::ScriptWorld world;
+    world.scene = &s;
+    const auto* api = static_cast<const RmUiApi*>(ScriptUiPart().table);
+    CHECK(RM_PART_UI_VERSION == 3u && ScriptUiPartVersion2().version == 2u && ScriptUiPartVersion2().table == api);
+    // 入力欄の文字は入力欄のもの (同じエンティティの文字 (UI) ではない)。
+    CHECK(api->setText(&world, field, "りむ") == 1 && PartIn<UiInputField>(s, field).text == "りむ" && PartIn<UiText>(s, field).text == "見た目だけ");
+    char buf[32];
+    CHECK(api->getText(&world, field, buf, sizeof(buf)) == std::string("りむ").size() && std::string(buf) == "りむ");
+    float v = -1;
+    CHECK(api->setValue(&world, slider, 2) == 1 && api->getValue(&world, slider, &v) == 1 && Near(v, 1));
+    CHECK(api->setValue(&world, a, 1) == 1 && api->getValue(&world, a, &v) == 1 && v == 1);
+    CHECK(api->setValue(&world, b, 1) == 1 && !PartIn<UiToggle>(s, a).on && PartIn<UiToggle>(s, b).on);  // (同じグループ)
+    CHECK(api->getValue(&world, field, &v) == 0 && api->setValue(&world, field, 1) == 0);
+    float at[2] = {-1, -1};
+    CHECK(api->setScroll(&world, list, 0, 0.5f) == 1 && Near(sc.offset.y, 100));
+    CHECK(api->getScroll(&world, list, at) == 1 && Near(at[0], 0) && Near(at[1], 0.5f));
+    CHECK(api->typing(&world) == 0 && api->startTyping(&world, field) == 0);  // (UI サービスが無い: テスト)
 }
