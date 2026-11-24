@@ -33,6 +33,10 @@
         {
           "ja": "3D のマテリアル (.rmmat): アセットのパネルの右クリック「作成 ▸ マテリアル」で作り、インスペクターで色・絵・金属・ラフネス・法線・発光・透明・絵の繰り返しを編集して、メッシュの「マテリアル」の欄に入れると箱・球などの形やモデルの見た目が変わる (書き出したゲームも同じ見た目)",
           "en": "3D materials (.rmmat): make one with right-click \"Create ▸ Material\" in the Assets panel, edit color, pictures, metallic, roughness, normal, emission, transparency and tiling in the Inspector, and put it in a Mesh's \"Material\" slots to change the look of shapes and models (exported games look the same)"
+        },
+        {
+          "ja": "シーンビューのボタンを小さくし、3D / 2D・ローカル / ワールド・中心・影・空・デバッグ・形を上の帯にまとめた。2D は同じ 3D のシーンを正面から平行投影で見る (ゲームの空間の切り替えは ゲームの設定 ▸ ゲーム設定 へ)",
+          "en": "Scene view buttons are smaller, and 3D / 2D, Local / World, Center, Shadows, Sky, Debug and Shapes now share one bar at the top. 2D shows the same 3D scene from the front in parallel projection (switching the game's space moved to Game Settings ▸ Game)"
         }
       ]
     },

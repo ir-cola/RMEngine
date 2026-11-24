@@ -1060,12 +1060,20 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **サムネイルが別のアセットを引く** — マテリアルのサムネイル (塗った球) は、絵のアセットを ID からファイルに引く必要がある。サムネイルの作業スレッドは UI のスレッドの ID の表に触れないので、表の写し (`AssetFinder`。ID の表が変わったときだけ作り直す) を仕事と一緒に渡す
 - **書き出し** — マテリアルの絵は、モデルの絵と同じコード (`PictureDecoder`: テクスチャキャッシュの DDS があればそれ) で GPU の形 (BC1 / BC5 / BC7 …) に焼き、焼いた絵の場所と読み方を .rmmat に `"baked"` として足す。ゲームとエディターは同じ `MaterialLook` で描く形にする (違うのは絵をどこから持ってくるかだけ)
 - **どこ** — `plugins/rm_engine/game_x_3d/runtime/Material.*`・`MeshRenderer.h`・`GameDraw3D.cpp`・`editor/SceneView3D.cpp`・`editor/MaterialEditor.*`・`editor/ExportBake.cpp`、`plugins/rm_engine/space3d/runtime/Renderer3D.*`・`RendererShaders.cpp`・`MaterialSlots.cpp`・`editor/Thumbnail.*`、`src/editor/assets/AssetFileType.h`・`AssetPanel.cpp`・`AssetLibrary.*`・`Thumbnails.*`、`tests/TestMaterial.cpp`
+### シーンビューの 2D: 平行投影のカメラと、そのレイ・ホイール (2026-11-25)
+
+- **何か** — 平行投影 (正射影・orthographic projection): 遠くの物を小さくしない写し方。目から見た四角い箱 (左右・上下・手前と奥) をそのまま画面に写す行列 (`space3d::Orthographic`)。遠近法 (透視投影) と違って、画面の点を通るレイは**どれも同じ向き**で、出る場所だけが違う
+- **何に使っているか** — 3D のシーンビューの上の帯の **2D**。同じ 3D のシーンを正面 (+Z を向く) から平行投影で見る (Unity の 2D の見え方と同じ)。編集用カメラ `OrbitView` に `orthographic` を足した。見える縦の半分は「ピボットの距離で遠近法が見せる大きさ」(`distance × tan(視野角 / 2)`) なので、ずらす (Pan) 計算も 1 ピクセルの長さも同じ式のまま使える。ホイールは見える大きさを変え、マウスの下の点が画面の同じ所に残るよう、ピボットをその点へ `(1 - 新しい大きさ / 前の大きさ)` だけ寄せる (`space3d::ZoomAt`)
+- **レイとギズモ** — クリックで選ぶレイは、ビュー射影の逆行列で画面の点の「手前の面」と「奥の面」を戻して作る (`ScreenRay`)。この作り方は遠近法でも平行投影でもそのまま正しい (平行投影では向きが全部同じになる)。ギズモの輪は「点から目への向き」を使うので、平行投影ではどの点にも真正面の目 (`OrbitView::EyeFor`) を渡す。目そのものはピボットのずっと手前 (500 以上) に下げ、深さの範囲をピボットの前後に取る (平行投影の深さは線形なので遠くても精度が落ちない)
+- **なぜそれか** — 別の 2D のシーン (2D 空間のプラグイン) に切り替えるのではなく、同じ 3D のシーンをそのまま横から見たい (ユーザーの要望 2026-11-25)。カメラを 2 つ (3D と 2D) 覚えるので、3D に戻すと前の見え方に戻る
+- **どこ** — `plugins/rm_engine/space3d/runtime/View.*` (`OrbitView::orthographic` / `EyeFor` / `OrthoHalfHeight`・`ZoomAt`)、`plugins/rm_engine/game_x_3d/editor/SceneView3D.cpp` (`Cam` / `DrawStrip`)・`SceneViewState.h` (`flat` / `flatCamera`)、`tests/TestSpace3d.cpp` (`Space3d_OrbitView_Orthographic` ほか)
 
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
 | 2026-11-25 | マテリアル: 材質ごとの UV の繰り返しとずらし (シェーダーで掛ける)・選んだ色を線形の光に直す・プラグインが作るファイルの種類を核が型の表から編集する・サムネイルの作業スレッドに ID の表の写しを渡す |
+| 2026-11-25 | シーンビューの 2D: 平行投影の編集用カメラ・そのレイとギズモ・マウスの下を残すホイール |
 | 2026-11-24 | ドッキング: タブを滑らかに動かす (指数的に目標へ近づける) と、同じ列の中の並べ替え |
 | 2026-11-24 | 1 枚にまとめたアイコン: 画面の画素で真ん中に置く (偶奇をそろえる) |
 | 2026-11-24 | 世界のセーブ: リフレクションのまま部品の値を保存・使い回さない id で「ゲームの中で作った物」を見分ける・フレームの切れ目で当てる |

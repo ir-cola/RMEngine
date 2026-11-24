@@ -98,6 +98,8 @@ void InitIcons(platform::Gfx& gfx);
 // --- ボタン ----------------------------------------------------------------------------------
 bool Button(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label,
             ButtonKind kind = ButtonKind::Secondary, bool enabled = true);
+// `label` の Button がちょうど入る幅 (太字でも: Primary とほかを切り替えても幅が変わらない)。
+float ButtonWidth(ui::Context& c, std::wstring_view label);
 // アイコンのある小さな四角のボタン (Ghost の見た目: マウスの下のときだけ面が出る)。
 bool IconButton(ui::Context& c, std::string_view id, const ui::Rect& r, Icon icon, bool enabled = true);
 // `on` の間、押し込まれたままの (アクセントの) アイコンボタン - 動いている間のゲームの ▶。
@@ -114,6 +116,8 @@ ui::Context::ButtonResult ToolSquare(ui::Context& c, std::string_view id, const 
 // ラベルごとに 1 つ) はマウスの下に出る。
 int Segmented(ui::Context& c, std::string_view id, const ui::Rect& r, std::span<const std::wstring_view> labels, int selected,
               std::span<const std::wstring_view> tooltips = {});
+// `labels` の Segmented がちょうど入る幅 (どの区切りも一番長いラベルの幅: 選んだ太字でも切れない)。
+float SegmentedWidth(ui::Context& c, std::span<const std::wstring_view> labels);
 
 // --- 行 (リスト、ツリー、メニュー、サイドバー) -----------------------------------------------
 struct RowLook {

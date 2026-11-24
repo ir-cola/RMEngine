@@ -190,5 +190,7 @@
   "絵のずらし": "Picture Offset",
   "絵をどれだけずらすか (1 で絵 1 枚分)": "How far the picture is shifted (1 is one whole picture)",
   "見た目 (.rmmat。アセットのパネルの右クリック →「作成」→「マテリアル」で作ります)。形は 1 つ目で塗ります。モデルは i 番目がモデルの i 番目の材質の代わりで、空の欄はモデルのままです": "The look (.rmmat; make one with right-click in the Assets panel -> \"Create\" -> \"Material\"). A shape is painted with the first one. For a model, the i-th one replaces the model's i-th material, and an empty slot keeps the model's own",
-  "メッシュの「マテリアル」の欄に入れると、その見た目で描きます。変えるとすぐシーンビューに出ます。Ctrl+Z で戻せます": "Put it in a Mesh's \"Material\" slots to draw with this look. Changes show in the scene view at once. Ctrl+Z undoes them"
+  "メッシュの「マテリアル」の欄に入れると、その見た目で描きます。変えるとすぐシーンビューに出ます。Ctrl+Z で戻せます": "Put it in a Mesh's \"Material\" slots to draw with this look. Changes show in the scene view at once. Ctrl+Z undoes them",
+  "遠近法で見る (奥ほど小さい)。右ドラッグで見回し、Alt + 左ドラッグで回る": "View in perspective (farther things look smaller). Right-drag to look around, Alt + left-drag to orbit",
+  "同じシーンを正面 (Z の向き) から平行投影で見る (奥へ行っても狭まらない)。ドラッグでずらし、ホイールで大きさを変える": "View the same scene from the front (along Z) in parallel projection (nothing narrows with distance). Drag to pan, wheel to zoom"
 }

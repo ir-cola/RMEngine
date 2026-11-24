@@ -91,22 +91,34 @@ std::optional<Vec3> ProjectToNdc(const Mat4& viewProjection, Vec3 p);
 
 // 見ている点 (ピボット) のまわりを回る編集用カメラ。エディターが覚えておけるよう reflect して
 // ある (ユーザーの見方であって、プロジェクトのデータではない)。インスペクターには出さない。
+//
+// 平行投影 (`orthographic`: シーンビューの 2D): 奥へ行っても小さくならない。見える縦の半分は
+// OrthoHalfHeight (= ピボットの距離で遠近法が見せる大きさ - 切り替えても絵の大きさが変わらない)。
+// `distance` は大きさを決めるだけで、目は見えるもの全部の手前 (EyeDistance) に下がる。
 RM_STRUCT()
 struct OrbitView {
     RM_PROPERTY() Vec3 pivot{0, 0, 0};
     RM_PROPERTY(Min=-100000, Max=100000) float yaw = 35.f;  // Y まわりの度。0 は +Z を向く (増やすと左へ)
     RM_PROPERTY(Min=-89, Max=89) float pitch = 25.f;        // 度。正は下を向く
-    RM_PROPERTY(Min=0.05, Max=10000) float distance = 9.f;  // 目からピボットまで
+    RM_PROPERTY(Min=0.05, Max=10000) float distance = 9.f;  // 目からピボットまで (平行投影: 見える大きさ)
     RM_PROPERTY(Min=10, Max=120) float fovY = 60.f;         // 度
+    RM_PROPERTY() bool orthographic = false;                // 平行投影
 
     Vec3 Forward() const;  // 目が見る向き
     Vec3 Right() const;
     Vec3 Up() const;
-    Vec3 Eye() const { return pivot - Forward() * distance; }
+    // 目からピボットまで: 遠近法は `distance`。平行投影は、ピボットの前後の物が切れないよう遠くに下がる。
+    float EyeDistance() const;
+    Vec3 Eye() const { return pivot - Forward() * EyeDistance(); }
+    // 点 p を見る目 (p から目への向きを取るもの: ギズモの輪)。遠近法は Eye()。平行投影はどの点も
+    // 真正面から見るので、p のちょうど手前。
+    Vec3 EyeFor(Vec3 p) const;
+    // 平行投影で見える縦の半分 (ワールドの長さ)。
+    float OrthoHalfHeight() const;
     Mat4 ViewMatrix() const { return LookAt(Eye(), pivot, {0, 1, 0}); }
     Mat4 ProjectionMatrix(float aspect) const;
     // `viewHeight` ピクセルの高さの絵の 1 ピクセルが、点 p でどれだけの長さか (距離に関係なく画面で
-    // 同じ大きさに描くもの: ギズモ)。p が目の後ろなら 0。
+    // 同じ大きさに描くもの: ギズモ)。p が目の後ろなら 0。平行投影はどこでも同じ。
     float WorldPerPixel(Vec3 p, float viewHeight) const;
 };
 
@@ -115,6 +127,9 @@ void Look(OrbitView& v, float dYaw, float dPitch);       // 首を振る: 目は
 void Orbit(OrbitView& v, float dYaw, float dPitch);      // ピボットのまわりを回る: ピボットはそのまま
 void Pan(OrbitView& v, float dxPixels, float dyPixels, float viewHeightPixels);  // 絵と一緒にずらす
 void Dolly(OrbitView& v, float notches);                 // ピボットへ近づく (> 0)、または離れる
+// ホイール (平行投影): 見える大きさを変え、マウスの下の点 (ndc の x / y: -1 .. 1、y が上) は画面の
+// 同じ所に残る。遠近法では Dolly と同じ。
+void ZoomAt(OrbitView& v, float notches, float ndcX, float ndcY, float aspect);
 void Fly(OrbitView& v, Vec3 move);                       // x = 右、y = 上 (ワールド)、z = 前: 目もピボットも動く
 void Frame(OrbitView& v, Vec3 target, float radius);     // ものが収まる距離から、そのものを見る
 
