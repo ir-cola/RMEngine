@@ -91,6 +91,19 @@ public:
         (void)r;
         return false;
     }
+    // 省略可: 上に検索ボックスを出すか (アセット パネルの左のフォルダーの木: 検索はパネルの上にある)。
+    virtual bool Searchable() const { return true; }
+    // 省略可: ツリーの外から (別の部品・パネルから) ドラッグしてきたもの (w::DragThing) を、行 `onto` に
+    // 落とせるか / 落とした (アセット パネル: 右の並びのファイルを、左の木のフォルダーへ)。
+    virtual bool CanDrop(const w::DragThing& thing, ItemId onto) const {
+        (void)thing;
+        (void)onto;
+        return false;
+    }
+    virtual void Drop(const w::DragThing& thing, ItemId onto) {
+        (void)thing;
+        (void)onto;
+    }
 };
 
 // ツリーごと (ソフトごとに 1 つ): 選択、開いている / 閉じている項目、検索、名前変更、ドラッグ。

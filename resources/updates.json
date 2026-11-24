@@ -25,6 +25,10 @@
         {
           "ja": "季節のテーマ: ウィンターの積もった雪の輪郭を薄く、形をなだらかに。上の端のつららは外した",
           "en": "Seasons theme: the lying snow in Winter has a lighter outline and a gentler shape, and the icicles along the top are gone"
+        },
+        {
+          "ja": "アセットのパネル: 左にフォルダの木、右に今のフォルダの中身をタイルで並べる (「戻る」・パンくずリスト・検索・ドラッグで移動)",
+          "en": "Assets panel: a folder tree on the left and the current folder's contents as tiles on the right (Back, breadcrumbs, search, drag to move)"
         }
       ]
     },

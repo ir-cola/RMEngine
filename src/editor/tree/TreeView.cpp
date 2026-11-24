@@ -180,13 +180,18 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
 
     // --- 検索ボックス ------------------------------------------------------------------------
     Rect body = area;
-    const Rect search = ui::TakeTop(body, 36).Inset(8, 6, 8, 4);
-    const ui::Id searchId = c.MakeId("tree.search");
-    if (c.Focused() == searchId && c.KeyPressed(ui::Key::Escape)) {
+    if (src.Searchable()) {
+        const Rect search = ui::TakeTop(body, 36).Inset(8, 6, 8, 4);
+        const ui::Id searchId = c.MakeId("tree.search");
+        if (c.Focused() == searchId && c.KeyPressed(ui::Key::Escape)) {
+            st.filter.clear();
+            c.ClearFocus();
+        }
+        w::TextField(c, "tree.search", search, st.filter, Tr(L"検索"));
+    } else {
         st.filter.clear();
-        c.ClearFocus();
+        ui::TakeTop(body, 4);
     }
-    w::TextField(c, "tree.search", search, st.filter, Tr(L"検索"));
     // 一番上の行 (Source::Top): 検索ボックスの下で、スクロールする行の外。
     const std::optional<Source::TopRow> top = src.Top();
     std::optional<Rect> topRect;
@@ -375,6 +380,15 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         }
 
         w::DrawRow(c, row, {selected, hovered && !st.dragging, st.hasKeys});
+        // ツリーの外からのドラッグ (Source::CanDrop): この行に落とせる。
+        if (!st.dragging && w::DraggedThing()) {
+            const ItemId onto = it.id;
+            if (const w::DragThing* t = w::DropTarget(c, row, [&](const w::DragThing& d) { return src.CanDrop(d, onto); })) {
+                const w::DragThing dropped = *t;
+                src.Drop(dropped, onto);
+                c.RequestRedraw();
+            }
+        }
         if (rw.hasChildren) {
             w::DrawIcon(c, arrow, rw.expanded ? w::Icon::ChevronDown : w::Icon::ChevronRight, onArrow ? theme::Text : theme::TextDim);
         }
@@ -507,17 +521,7 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
         // ドラッグしているものを、マウスの横に (すべての上に。パネルの外でも)。
         const size_t i = st.moving.size() == 1 ? Find(items, st.moving[0]) : npos;
         const std::wstring tag = i != npos ? Utf8ToWide(items[i].name) : TrF(L"{} 個", st.moving.size());
-        const bool inTree = drop.has_value();
-        c.AddOverlay([&c, tag, inTree] {
-            // (フレームの終わりに: ツリーのあとに描く参照フィールドが、受け取るかどうかを答えてから)
-            const bool ok = w::TakeDragAccepted() || inTree;
-            auto& pp = c.P();
-            const float wdt = std::min(260.f, pp.TextWidth(tag, 12) + 20);
-            const Rect r{c.In().mouseX + 14, c.In().mouseY + 10, wdt, 24};
-            w::DrawSurface(c, r, w::Surface::Popup, 5.f);
-            if (ok) pp.StrokeRoundRect(r, 5, theme::Accent);
-            pp.Text(r.Inset(10, 0, 10, 0), tag, Style(12, ok ? theme::Text : theme::TextDim));
-        });
+        w::DragTag(c, tag, drop.has_value());
     }
 
     c.SetInputEnabled(inputWas);

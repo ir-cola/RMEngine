@@ -102,6 +102,7 @@
     <ClCompile Include="editor\dock\NamedLayouts.cpp" />
     <ClCompile Include="editor\inspector\Inspector.cpp" />
     <ClCompile Include="editor\assets\AssetLibrary.cpp" />
+    <ClCompile Include="editor\assets\AssetGrid.cpp" />
     <ClCompile Include="editor\assets\AssetPanel.cpp" />
     <ClCompile Include="editor\assets\Thumbnails.cpp" />
     <ClCompile Include="editor\plugin\PluginManifest.cpp" />
@@ -171,6 +172,7 @@
     <ClInclude Include="editor\dock\NamedLayouts.h" />
     <ClInclude Include="editor\inspector\Inspector.h" />
     <ClInclude Include="editor\assets\AssetLibrary.h" />
+    <ClInclude Include="editor\assets\AssetGrid.h" />
     <ClInclude Include="editor\assets\AssetPanel.h" />
     <ClInclude Include="editor\assets\AssetPreview.h" />
     <ClInclude Include="editor\assets\Thumbnails.h" />

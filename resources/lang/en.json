@@ -98,7 +98,6 @@
   "インスペクター": "Inspector",
   "ウィンドウ": "Window",
   "エクスプローラーで表示": "Show in Explorer",
-  "サムネイルの大きさ (左の端: サムネイルなし)": "Thumbnail size (left end: no thumbnails)",
   "エディターのウィンドウに戻す": "Back to the editor window",
   "エディターのウィンドウを作れませんでした。": "Could not create the editor window.",
   "エディターの整合性": "Editor integrity",
@@ -529,5 +528,10 @@
   "このページにはまだ説明がありません。": "This page has no help yet.",
   "ヘルプのページがありません。": "There are no help pages.",
   "左の一覧からページを選んでください。": "Pick a page from the list on the left.",
-  "ページを読めませんでした: {}": "Could not read the page: {}"
+  "ページを読めませんでした: {}": "Could not read the page: {}",
+  "Assets フォルダは空です。": "The Assets folder is empty.",
+  "このフォルダは空です。": "This folder is empty.",
+  "戻る": "Back",
+  "{} 個見つかりました": "{} found",
+  "絵の大きさ (左の端: サムネイルなし)": "Picture size (far left: no thumbnails)"
 }

@@ -123,6 +123,12 @@ struct RowLook {
     bool flat = false;    // 四角で、端から端まで: 線で区切ったリストの行 (Hub のページ、プロジェクトの一覧)
 };
 void DrawRow(ui::Context& c, const ui::Rect& r, RowLook look);
+// 並びの 1 つのタイル (アセット パネルの右側): 選んだもの / マウスの下のものの面。行と同じ色で、
+// 棒の代わりに、キーを受け取っている間は選んだタイルをアクセントで縁取る。
+void DrawTile(ui::Context& c, const ui::Rect& r, bool selected, bool hovered, bool focused = true);
+// ドラッグしているもの (ツリーの行、アセットのタイル) の札を、マウスの横に (フレームの終わりに、
+// すべての上に)。`inside`: 自分の中に落とせる所の上 - 受け取る所が無くても縁取る。
+void DragTag(ui::Context& c, std::wstring text, bool inside);
 // クリックできる行 (ImGui の Selectable)。行を描く。行の上にあるものは呼び出し側が描く。
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view id, const ui::Rect& r, bool selected, bool flat = false);
 // 選ぶテーマ 1 つ (テーマの画面): そのテーマ自身の色で描いた小さなウィンドウと、その下に名前。
@@ -167,6 +173,8 @@ void LineGraph(ui::Context& c, const ui::Rect& r, std::span<const float> a, std:
 
 // --- 線とヒント ------------------------------------------------------------------------------
 void Separator(ui::Context& c, float x, float y, float width);
+// 縦の区切り線 (並んだ 2 つの部分の間: アセット パネルの木と並び)。
+void VSeparator(ui::Context& c, float x, float y, float height);
 // マウスの横のヒント。フレームの最後に (何よりも上に) 描く。
 void Tooltip(ui::Context& c, std::wstring_view text);
 

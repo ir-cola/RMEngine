@@ -126,6 +126,7 @@
     <ClCompile Include="..\src\platform\Http.cpp" />
     <ClCompile Include="..\src\editor\project\Templates.cpp" />
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
+    <ClCompile Include="..\src\editor\assets\AssetGrid.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
     <ClCompile Include="..\src\editor\app\Integrity.cpp" />
     <ClCompile Include="..\src\editor\app\EngineKey.cpp" />

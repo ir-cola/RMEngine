@@ -645,6 +645,36 @@ void DrawRow(ui::Context& c, const Rect& r, RowLook look) {
     }
 }
 
+void DrawTile(ui::Context& c, const Rect& r, bool selected, bool hovered, bool focused) {
+    auto& p = c.P();
+    constexpr float kRadius = 6.f;
+    if (selected) {
+        const theme::Gradient g = theme::Raised(focused ? theme::Selected : theme::Pressed);
+        p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
+        TopLight(p, r, kRadius, theme::Highlight());
+        if (focused) p.StrokeRoundRect(r.Inset(0.5f), kRadius, theme::Accent.Alpha(0.8f), 1.f);
+    } else if (hovered) {
+        const theme::Gradient g = theme::Gentle(theme::Hover);
+        p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
+    }
+}
+
+void DragTag(ui::Context& c, std::wstring text, bool inside) {
+    c.AddOverlay([&c, tag = std::move(text), inside] {
+        // (フレームの終わりに: あとに描く参照フィールドが、受け取るかどうかを答えてから)
+        const bool ok = TakeDragAccepted() || inside;
+        auto& pp = c.P();
+        const float wdt = std::min(260.f, pp.TextWidth(tag, 12) + 20);
+        const Rect r{c.In().mouseX + 14, c.In().mouseY + 10, wdt, 24};
+        DrawSurface(c, r, Surface::Popup, 5.f);
+        if (ok) pp.StrokeRoundRect(r, 5, theme::Accent);
+        ui::TextStyle s;
+        s.size = 12;
+        s.color = ok ? theme::Text : theme::TextDim;
+        pp.Text(r.Inset(10, 0, 10, 0), tag, s);
+    });
+}
+
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view idStr, const Rect& r, bool selected, bool flat) {
     const auto b = c.ButtonBehavior(c.MakeId(idStr), r);
     if (b.hovered) c.SetCursor(ui::Cursor::Hand);
@@ -779,6 +809,7 @@ ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view idStr, const
 }
 
 void Separator(ui::Context& c, float x, float y, float width) { c.P().FillRect({x, y, width, 1}, theme::Border); }
+void VSeparator(ui::Context& c, float x, float y, float height) { c.P().FillRect({x, y, 1, height}, theme::Border); }
 
 void Tooltip(ui::Context& c, std::wstring_view text) {
     const std::wstring tip(text);

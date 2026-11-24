@@ -176,7 +176,7 @@ private:
         dock::NamedLayouts& Named(bool sharedList) { return sharedList ? shared : named; }
         const dock::NamedLayouts& Named(bool sharedList) const { return sharedList ? shared : named; }
         std::unique_ptr<AssetPanel> assetPanel;  // アセット パネル (最初に描くときに作る)
-        float assetThumbnail = 40.f;             // そのサムネイルの大きさ (UserSettings: "assets": {"thumbnail"})
+        float assetThumbnail = 64.f;             // そのサムネイルの大きさ (UserSettings: "assets": {"thumbnail"})
 
     private:
         EditorScreen& editor_;
