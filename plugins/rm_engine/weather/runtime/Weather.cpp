@@ -103,6 +103,7 @@ WeatherNow TargetOf(const Weather& w) {
         n.snow = p * SnowShare(x);
     }
     n.fog = Unit(w.fogAmount);
+    n.snowSpeed = std::isfinite(w.snowSpeedCm) ? std::clamp(w.snowSpeedCm, 0.f, 1000.f) / 100.f / 60.f : 0.f;
     const Vec3 wind = WindOf(w.windDirection, w.windStrength);
     n.windX = wind.x;
     n.windZ = wind.z;
@@ -512,12 +513,12 @@ float StepSnowCover(float cover, const WeatherNow& now, float most, float dt) {
     most = std::isfinite(most) ? std::clamp(most, 0.f, kMostSnowDepth) : 0.f;
     cover = std::isfinite(cover) ? std::clamp(cover, 0.f, most) : 0.f;
     if (const float rate = SnowFallRate(now); rate > 0) {
-        return std::min(most, cover + dt * rate);  // (量 1 で 1 分に 2.5 cm、量 0.5 で 1.25 cm)
+        return std::min(most, cover + dt * rate);  // (降る量に比例: 量 0.5 なら量 1 の半分)
     }
     return std::max(0.f, cover - dt * (0.0002f + RainNow(now) * 0.002f));
 }
 
-float SnowFallRate(const WeatherNow& now) { return SnowNow(now) * kSnowFallMost; }
+float SnowFallRate(const WeatherNow& now) { return SnowNow(now) * (std::isfinite(now.snowSpeed) ? std::max(now.snowSpeed, 0.f) : 0.f); }
 
 float SnowCoverNow(const Weather& w) {
     float all = 0;

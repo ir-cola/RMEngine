@@ -48,6 +48,9 @@ void AddShapes(const physics::ShapeDims& d, const physics::Pose& pose, int entit
             }
             break;
         }
+        case physics::ShapeDims::Kind::Cylinder:
+            out.push_back({WeatherBlocker::Kind::Cylinder, Placed(pose.turn, {d.radius * 2, d.halfHeight * 2, d.radius * 2}, center)});
+            break;
         case physics::ShapeDims::Kind::Mesh: out.push_back({WeatherBlocker::Kind::Model, world, entity}); break;
     }
 }

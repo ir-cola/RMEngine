@@ -111,6 +111,11 @@ ShapeDims DimsOf(const Collider& c, Vec3 scale) {
             break;
         }
         case Shape::Mesh: d.kind = ShapeDims::Kind::Mesh; break;
+        case Shape::Cylinder:
+            d.kind = ShapeDims::Kind::Cylinder;
+            d.radius = std::max(c.radius * std::max(s.x, s.z), 0.001f);
+            d.halfHeight = std::max(c.height * s.y * 0.5f, 0.001f);
+            break;
     }
     return d;
 }
@@ -203,6 +208,21 @@ void Outline(const ShapeDims& dims, const Pose& pose, bool flat, std::vector<Seg
                 arc(top, X, Z, r, 0, 1);
                 arc(bottom, X, Z, r, 0, 1);
             }
+            break;
+        }
+        case ShapeDims::Kind::Cylinder: {
+            const float r = dims.radius, hh = dims.halfHeight;
+            if (flat) {  // (2D では使わない: 正面から見た長方形)
+                line({-r, -hh, 0}, {r, -hh, 0});
+                line({r, -hh, 0}, {r, hh, 0});
+                line({r, hh, 0}, {-r, hh, 0});
+                line({-r, hh, 0}, {-r, -hh, 0});
+                break;
+            }
+            // 上と下の輪と、4 本の縦の線。
+            arc({0, hh, 0}, X, Z, r, 0, 1);
+            arc({0, -hh, 0}, X, Z, r, 0, 1);
+            for (const Vec3 side : {Vec3{r, 0, 0}, Vec3{-r, 0, 0}, Vec3{0, 0, r}, Vec3{0, 0, -r}}) line({side.x, hh, side.z}, {side.x, -hh, side.z});
             break;
         }
         case ShapeDims::Kind::Mesh: break;  // モデル自身が形になる (シーンビューがもう描いている)

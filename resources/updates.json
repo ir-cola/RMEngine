@@ -11,12 +11,16 @@
           "en": "Weather × Climate: wetness and lying snow are now kept per place (in Play, on a 2 m grid within 128 m around the camera). Snow piles up only where it snows, only rainy places get wet, and rain melts the snow. Across a climate zone border the lying snow thins out smoothly"
         },
         {
-          "ja": "天候: 雪は Play の始めから「積もる高さ」いっぱいに積もっている (「はじめから積もっている」。切ると前と同じく少しずつ)。足場の端と丸い物の上では薄くなって丸く終わり、物の根元は雪に埋まる",
-          "en": "Weather: snow is already lying at the full Snow depth when Play starts (\"Already lying at the start\"; turn it off to build up gradually as before). It thins and ends in a rounded edge at ledges and on round objects, and the base of objects is buried"
+          "ja": "天候: 雪は Play の始めから「積もる高さ」いっぱいに積もっている (「はじめから積もっている」。切ると降るにつれて)。積もる速さを「積もる速さ (cm / 分)」で決められ、最初は前の 8 倍 (降水量に比例)。足場の端と丸い物の上では薄くなって丸く終わる",
+          "en": "Weather: snow is already lying at the full Snow depth when Play starts (\"Already lying at the start\"; turn it off to build up as it falls). \"Snow speed (cm / min)\" sets how fast it piles up, 8 times faster than before by default (proportional to precipitation). It thins and ends in a rounded edge at ledges and on round objects"
         },
         {
           "ja": "気候のタブ: シーンを真上から見た地図に、ペンで気候 (気温と湿り気) を塗れるように。同じタブで天候も変えられる",
           "en": "Climate tab: paint climates (temperature and humidity) with a pen on a map of the scene seen from straight above, and change the weather in the same tab"
+        },
+        {
+          "ja": "物理: コライダーの形に「円柱」を足した。「追加 ▸ 3D オブジェクト ▸ 円柱」の物はこれが付き、雪も丸く積もる (前は囲む箱だった)",
+          "en": "Physics: added a \"Cylinder\" collider shape. Cylinders made with Add ▸ 3D Object get it, so snow lies round on them too (it used to be the enclosing box)"
         }
       ]
     },

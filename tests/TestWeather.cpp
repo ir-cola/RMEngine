@@ -302,8 +302,17 @@ RM_TEST(Weather_SnowWets) {
 
 // 積雪: 雪が降る間は深くなり、積もる高さ まで。やむと溶ける (雨では速い)。エディターは積もった状態を見せる。
 RM_TEST(Weather_SnowCover) {
+    CHECK(Near(WeatherNow{}.snowSpeed, 0.2f / 60.f) && Weather{}.snowSpeedCm == 20.f);  // (既定: 量 1 で 1 分に 20 cm)
+    Weather fast;
+    fast.snowSpeedCm = 60;
+    fast.precipitation = 50;
+    fast.snowing = true;
+    CHECK(Near(SnowFallRate(NowOf(fast)), 0.3f / 60.f));  // (降る量に比例: 50 で半分)
+    fast.snowSpeedCm = std::nanf("");
+    CHECK(SnowFallRate(NowOf(fast)) == 0.f);
     WeatherNow snowy;
     snowy.snow = 1;
+    snowy.snowSpeed = 0.025f / 60.f;  // (下は 1 分に 2.5 cm として確かめる)
     float cover = StepSnowCover(0, snowy, 0.24f, 60);  // (量 1: 1 分に 2.5 cm - 積もる高さに関係なく)
     CHECK(Near(cover, 0.025f) && Near(StepSnowCover(0, snowy, 1.f, 60), 0.025f));
     cover = StepSnowCover(cover, snowy, 0.24f, 1000);
@@ -503,6 +512,7 @@ RM_TEST(Weather_WetMap) {
     MoveWetMap(map, ways, -32, -32);
     const std::vector<WeatherPlace> half = HalfAndHalf();
     WeatherNow now;
+    now.snowSpeed = 0.025f / 60.f;  // (1 分に 2.5 cm として確かめる)
     StepWetMap(map, ways, half, now, 0.5f, 60, 0.24f, {-10, 0, 0});
     CHECK(ways.size() == 1 && Near(ways[0].way, {0, -1, 0}) && Near(ways[0].seep, kSeepSnow));  // (しみこみ: どこかで降る雨 (0.36 m) と雪の強いほう)
     const WetCell& rainy = *WetCellAt(map, -10, 0);

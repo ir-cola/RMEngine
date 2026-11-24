@@ -5,9 +5,9 @@
 - Above about 30 cm, steps and small things start to get buried
 
 ## How fast it piles up
-- **It depends on how much snow falls.** At precipitation 100 it grows 2.5 cm a minute, at 50 1.25 cm, at 10 0.25 cm. It stops at the snow depth
+- Set it with "**Snow speed (cm / min)**" (default 20). It is the speed at precipitation 100 and is proportional to how much snow falls: with 20 it grows 20 cm a minute at precipitation 100, 10 cm at 50, 2 cm at 10. It stops at the snow depth
 - When it stops snowing it melts about 1 cm a minute, faster in rain
-- In the editor (before Play and after Stop) nothing has piled up. Press Play and it piles up as the snow falls
+- "**Already lying at the start**" (on by default): the snow already lies at the full depth when Play starts, and the editor's scene view shows the same. Turn it off and, in Play, it piles up from bare ground as the snow falls
 - With the "Climate" plugin it piles up **per place**: only where it is cold enough, and it melts where it rains (within 128 m around the camera. See the help of the "Weather × Climate" connector)
 
 ## Where it lies

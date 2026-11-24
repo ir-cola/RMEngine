@@ -61,6 +61,7 @@ struct WeatherNow {
     float snow = 0;       // 雪として降るもの
     float fog = 0;        // 霧の量
     float windX = 0, windZ = 0;  // 風の行き先、真上から見たもの (m/s、ワールド)
+    float snowSpeed = 0.2f / 60.f;  // 雪の量 1 のとき積もる速さ (m / 秒。Weather::snowSpeedCm から)
 };
 
 // 濡れ: 雨が降っている間にその雨が降った向き (風で斜めになる) と、その向きで雨が届いたものがどれだけ濡れているか
@@ -102,7 +103,8 @@ struct Weather {
     RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲ひとつ無い晴れ 〜 40: 雲の多い晴れ 〜 70: くもり 〜 100: 空一面の厚い雲 (暗くなり、日の光も弱まります)。雨や雪が降ると、少なくても雲が出ます (雲は空が「地球の空」のとき)", Min=0, Max=100, Step=0.1, Decimals=1) float cloudAmount = 20.f;
     RM_PROPERTY(Edit, Label="降水量", Tooltip="雨 (雪にするときは雪) の降る量。0: 降らない / 〜10: ぽつぽつ / 〜30: 小雨 / 〜60: 雨 / 〜85: どしゃぶり / 100: 嵐 (雪: 〜20 ちらつく / 〜50 雪 / 〜80 大雪 / 100 吹雪)。増えるほど雲が暗くなり、強い雨・雪では霧も出ます", Min=0, Max=100, Step=0.1, Decimals=1) float precipitation = 0.f;
     RM_PROPERTY(Edit, Label="雪にする", Tooltip="入れると、雨がだんだん小雨になってから雪に変わり、雪が強まって降水量に戻ります。外すと逆に、雪が弱まってから雨に (Play 中は 5 秒ほど。エディターではすぐその見た目)。雨と雪が一緒に降ることはありません。プラグイン「気候」があるとき (つなぎ「天候 × 気候」) は使わず、場所の気温で決まります") bool snowing = false;
-    RM_PROPERTY(Edit, Label="積もる高さ (cm)", Tooltip="雪がこの高さまで積もります (cm、整数。最大 1000)。Play 中は降っている間に少しずつ、降る量が多いほど速く (降水量 100 で 1 分に 2.5 cm ほど)。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)", Min=0, Max=1000, Step=1, Decimals=0) float snowDepthCm = 10.f;
+    RM_PROPERTY(Edit, Label="積もる高さ (cm)", Tooltip="雪がこの高さまで積もります (cm、整数。最大 1000)。Play 中は降っている間に「積もる速さ」で。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)", Min=0, Max=1000, Step=1, Decimals=0) float snowDepthCm = 10.f;
+    RM_PROPERTY(Edit, Label="積もる速さ (cm / 分)", Tooltip="降水量 100 のとき、1 分に積もる高さ。降る雪の量に比例します (降水量 50 なら半分、10 なら 10 分の 1)。積もる高さに届いたら止まります。足跡も同じ速さで埋まります", Min=0, Max=1000, Step=1, Decimals=1) float snowSpeedCm = 20.f;
     RM_PROPERTY(Edit, Label="はじめから積もっている", Tooltip="入れると、雪の降る所には、Play の始めから「積もる高さ」いっぱいに雪が積もっています (エディターのシーンビューでも見えます)。外すと、雪の無い地面から、降るにつれて積もります") bool snowFromStart = true;
     RM_PROPERTY(Edit, Label="霧の量", Tooltip="0: 無し 〜 50: 20 m ほど先がかすむ 〜 100: 数 m 先しか見えない。色は天気で変わります (晴れ・くもり: 白っぽい / 雨: 暗い灰色 / 雪: 白)。強い雨・雪では、これに加えて霧が出ます", Min=0, Max=100, Step=0.1, Decimals=1) float fogAmount = 0.f;
     RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中。雲の多いとき)") bool lightning = false;
@@ -204,10 +206,9 @@ std::vector<WetWay> WetNow(const Weather& w);
 // 積もる高さは多くて kMostSnowDepth (10 m。2026-11-20: 前は 5 cm まで)。
 inline constexpr float kMostSnowDepth = 10.f;
 float StepSnowCover(float cover, const WeatherNow& now, float most, float dt);
-// 積もっている雪が今どれだけの速さで増えるか (1 秒あたり m、0: 雪ではない) - 降る雪の量だけで
-// 決まる (量 1 で 1 分に 2.5 cm。2026-11-20: 前は積もる高さに比べていて、どの高さでも 4 分で
-// 積もりきった)。足跡も同じ速さで埋まる。
-inline constexpr float kSnowFallMost = 0.025f / 60.f;
+// 積もっている雪が今どれだけの速さで増えるか (1 秒あたり m、0: 雪ではない) - 降る雪の量に比例
+// (量 1 で WeatherNow::snowSpeed: 天候の「積もる速さ」。既定は 1 分に 20 cm。2026-11-24: 前は
+// 1 分に 2.5 cm で、ユーザーが遅いと言った)。足跡も同じ速さで埋まる。
 float SnowFallRate(const WeatherNow& now);
 // 絵が見せる雪の深さ、すべての向きまとめて: ゲームが数えたとおり (Play)、またはエディターでは
 // 雪が降っている間は積もる高さいっぱいで。

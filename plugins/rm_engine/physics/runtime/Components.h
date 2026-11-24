@@ -52,6 +52,7 @@ enum class Shape {
     RM_ITEM(Label="球") Sphere,
     RM_ITEM(Label="カプセル") Capsule,
     RM_ITEM(Label="メッシュ") Mesh,
+    RM_ITEM(Label="円柱") Cylinder,
 };
 
 RM_STRUCT(Label="コライダー")
@@ -59,8 +60,8 @@ struct Collider {
     RM_PROPERTY(Edit, Label="形", Tooltip="メッシュ: 同じエンティティのメッシュ (3D モデル) の形。動かない物だけ (剛体が無いか「動かない」)")
     Shape shape = Shape::Box;
     RM_PROPERTY(Edit, Label="箱の大きさ", Tooltip="箱の幅・高さ・奥行き (Transform の大きさを掛けます)", Min=0.001, Max=100000) Vec3 size{1, 1, 1};
-    RM_PROPERTY(Edit, Label="半径", Tooltip="球とカプセル", Min=0.001, Max=100000) float radius = 0.5f;
-    RM_PROPERTY(Edit, Label="高さ", Tooltip="カプセルの端から端まで (Y の向き。半径の 2 倍より短いと球)", Min=0.001, Max=100000) float height = 2.f;
+    RM_PROPERTY(Edit, Label="半径", Tooltip="球・カプセル・円柱", Min=0.001, Max=100000) float radius = 0.5f;
+    RM_PROPERTY(Edit, Label="高さ", Tooltip="カプセル: 端から端まで (Y の向き。半径の 2 倍より短いと球)。円柱: 上の面から下の面まで", Min=0.001, Max=100000) float height = 2.f;
     RM_PROPERTY(Edit, Label="ずらし", Tooltip="エンティティの中心から形の中心まで (エンティティの向きで)") Vec3 offset{0, 0, 0};
     RM_PROPERTY(Edit, Label="トリガー", Tooltip="ぶつからずに通り抜け、出入りをスクリプトに知らせます (OnTriggerEnter / OnTriggerExit)") bool trigger = false;
 };

@@ -558,14 +558,9 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
         if (dot(inward, inward) > 0.5) {
             float2 into = normalize(inward);
             float t = EdgeReach(xz, into, c.ground + ledge, ledge, pace * length(inward), false);
-            // 物の下 (球の下のくぼみ) にも、雪の深さの 4 倍 (多くて 60 cm) まで雪の面を入れる: 根元が雪に
-            // 埋まって見える (2026-11-24)。物の中なら隠れる。薄い壁を突き抜けて向こうの地面に出るときは入れない。
-            float skirt = min(c.depth * 4, 0.6);
-            float2 end = at + into * (max(t - 0.02, 0) + skirt);
-            int m = (int)layerInfo.x;
-            float past = MapPastAt(m, mul(mapViewProj[m], float4(end.x, layerInfo.y, end.y, 1)));
-            if (past < -1e29 || layerInfo.y + past <= c.ground + ledge) skirt = 0;
-            at += into * (max(t - 0.02, 0) + skirt);
+            // (2026-11-24: 物の下へ雪の面を伸ばして根元を埋めようとしたが、伸ばした所が物の影の中で黒く見え、
+            // カメラの角度で物の外へはみ出したので、やめた。根元を埋めるのは別のやり方で)
+            at += into * max(t - 0.02, 0);
         }
     }
     o.edge = float2(foot ? 1 : 0, rim ? 1 : 0);

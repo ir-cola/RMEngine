@@ -85,6 +85,16 @@ RM_TEST(Physics_Shapes_SizesTakeTheScale) {
     c.radius = 0.5f;
     d = DimsOf(c, {1, 4, 2});
     CHECK(d.kind == ShapeDims::Kind::Sphere && Near(d.radius, 2));  // 一番大きい軸
+    c.shape = Shape::Cylinder;
+    c.radius = 0.5f;
+    c.height = 1.f;
+    {
+        const ShapeDims cyl = DimsOf(c, {2, 3, 1});  // (横は大きいほうの拡大率、高さは Y の拡大率)
+        CHECK(cyl.kind == ShapeDims::Kind::Cylinder && Near(cyl.radius, 1.f) && Near(cyl.halfHeight, 1.5f));
+        std::vector<Segment> lines;
+        Outline(cyl, Pose{}, false, lines);
+        CHECK(!lines.empty());
+    }
     c.shape = Shape::Capsule;
     c.height = 2;
     d = DimsOf(c, {1, 1, 1});
