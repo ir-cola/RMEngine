@@ -37,14 +37,24 @@ Thumbnails::~Thumbnails() {
     }
 }
 
-const ThumbnailMaker* Thumbnails::MakerFor(asset::Kind kind) const {
+const ThumbnailMaker* Thumbnails::MakerFor(asset::Kind kind, std::string_view fileName) const {
+    const std::string ext = asset::Extension(asset::FileNameOf(fileName));
     for (const auto& m : registry_.Contributions<ThumbnailMaker>(kThumbnailPoint)) {
-        if (m.item->kind == kind && m.item->prepare && m.item->draw) return m.item;
+        if (!(m.item->prepare || m.item->prepareWith) || !m.item->draw) continue;
+        if (m.item->extension ? (!ext.empty() && ext == m.item->extension) : m.item->kind == kind) return m.item;
     }
     return nullptr;
 }
 
-bool Thumbnails::Has(asset::Kind kind) const { return kind == asset::Kind::Image || MakerFor(kind) != nullptr; }
+bool Thumbnails::Has(asset::Kind kind, std::string_view fileName) const {
+    return kind == asset::Kind::Image || MakerFor(kind, fileName) != nullptr;
+}
+
+void Thumbnails::KeepAssets(uint64_t version, const std::function<std::unordered_map<std::string, std::filesystem::path>()>& make) {
+    if (version == assetsVersion_ && assets_) return;
+    assetsVersion_ = version;
+    assets_ = std::make_shared<const std::unordered_map<std::string, std::filesystem::path>>(make());
+}
 
 // 作れなかった理由だけを言う結果。
 Thumbnails::Done Thumbnails::Failed(Job job, std::string why) {
@@ -73,8 +83,18 @@ void Thumbnails::Work(std::stop_token stop) {
                                                      {d.job.size, d.job.size}, &d.error);
                 d.ok = image.has_value();
                 if (image) d.image = std::move(*image);
-            } else if (const ThumbnailMaker* maker = MakerFor(d.job.kind)) {
-                d.prepared = maker->prepare(d.job.file, root_, d.job.size, &d.error);
+            } else if (const ThumbnailMaker* maker = MakerFor(d.job.kind, PathToUtf8(d.job.file.filename()))) {
+                if (maker->prepareWith) {
+                    const auto assets = d.job.assets;
+                    const AssetFinder find = [assets](std::string_view guid) -> std::filesystem::path {
+                        if (!assets) return {};
+                        const auto it = assets->find(std::string(guid));
+                        return it != assets->end() ? it->second : std::filesystem::path{};
+                    };
+                    d.prepared = maker->prepareWith(d.job.file, find, d.job.size, &d.error);
+                } else {
+                    d.prepared = maker->prepare(d.job.file, root_, d.job.size, &d.error);
+                }
                 d.ok = d.prepared != nullptr;
             }
         } catch (const std::bad_alloc&) {
@@ -99,7 +119,7 @@ void Thumbnails::Finish(Done& d, ui::Context& c) {
     // 置き換えることはない。
     if (!e.failed && e.image.width > 0 && d.job.size < e.size) return;
     if (d.ok && d.prepared) {
-        const ThumbnailMaker* maker = MakerFor(d.job.kind);
+        const ThumbnailMaker* maker = MakerFor(d.job.kind, PathToUtf8(d.job.file.filename()));
         if (ID2D1DeviceContext* dc = c.P().DC()) dc->Flush();  // Direct2D がここまでに描いた物を、先に GPU へ送る
         try {
             d.ok = maker && maker->draw(gfx_, d.prepared.get(), d.job.size, d.image, &d.error);
@@ -136,7 +156,7 @@ void Thumbnails::Collect(ui::Context& c) {
 }
 
 ID2D1Bitmap* Thumbnails::Get(ui::Context& c, const std::string& guid, asset::Kind kind, const std::filesystem::path& file, uint32_t pixels) {
-    if (!Has(kind)) return nullptr;
+    if (!Has(kind, PathToUtf8(file.filename()))) return nullptr;
     const double now = c.Time();
     if (now != frame_) {
         frame_ = now;
@@ -174,7 +194,7 @@ ID2D1Bitmap* Thumbnails::Get(ui::Context& c, const std::string& guid, asset::Kin
         ++working_;
         {
             std::lock_guard lock(mu_);
-            jobs_.push_back({guid, kind, file, want, e.time});
+            jobs_.push_back({guid, kind, file, want, e.time, assets_});
         }
         if (!worker_.joinable()) worker_ = std::jthread([this](std::stop_token stop) { Work(stop); });
         wake_.notify_one();

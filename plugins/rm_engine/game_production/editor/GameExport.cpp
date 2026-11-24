@@ -90,6 +90,9 @@ std::vector<ExportAsset> CollectAssets(const GameExportInput& in) {
             }
         }
     }
+    auto files = std::make_shared<std::map<std::string, fs::path>>();
+    for (const ExportAsset& a : out) files->emplace(a.id, a.file);
+    for (ExportAsset& a : out) a.files = files;
     return out;
 }
 

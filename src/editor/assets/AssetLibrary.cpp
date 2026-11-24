@@ -354,6 +354,35 @@ std::wstring AssetLibrary::NewFolder(const std::string& whereGuid, std::string* 
     return {};
 }
 
+std::wstring AssetLibrary::NewFile(const std::string& whereGuid, const std::string& defaultFolder, const std::string& baseNameUtf8,
+                                   const std::string& extension, const std::string& bytes, std::string* made) {
+    std::string folder;
+    std::error_code ec;
+    if (const asset::Entry* e = whereGuid.empty() ? nullptr : index_.ByGuid(whereGuid)) {
+        folder = e->folder ? e->path : std::string(asset::ParentOf(e->path));
+    } else if (!defaultFolder.empty()) {
+        // (決まったフォルダ: 無ければ作り、先にその id を付ける - ファイルがその下に並ぶように)
+        folder = defaultFolder;
+        if (!fs::is_directory(asset::FullPath(root_, folder), ec)) {
+            fs::create_directories(asset::FullPath(root_, folder), ec);
+            if (ec) return Problem(TrKey(L"フォルダを作れませんでした: {}"), Why(ec));
+            log::Info("フォルダを作りました: {}", folder);
+        }
+        AdoptFile(folder);
+    }
+    std::string name = baseNameUtf8 + extension;
+    for (int i = 2; fs::exists(asset::FullPath(root_, asset::Join(folder, name)), ec) && i < 1000; ++i) name = std::format("{} {}{}", baseNameUtf8, i, extension);
+    const std::string path = asset::Join(folder, name);
+    std::string err;
+    if (!platform::WriteFileAtomic(asset::FullPath(root_, path), bytes, &err)) {
+        return Problem(TrKey(L"ファイルを作れませんでした: {}"), Utf8ToWide(err));
+    }
+    log::Info("ファイルを作りました: {}", path);
+    const std::string guid = AdoptFile(path);  // その id (パネルが選んで、名前を付けさせる)
+    if (made) *made = guid;
+    return {};
+}
+
 std::wstring AssetLibrary::Delete(std::span<const std::string> guids) {
     // アセットを 1 つずつ (ファイルとその .meta を一緒に): ごみ箱へ行けない物は残り、
     // ほかは消える。

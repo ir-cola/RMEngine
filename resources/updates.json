@@ -29,6 +29,10 @@
         {
           "ja": "アセットのパネル: 左にフォルダの木、右に今のフォルダの中身をタイルで並べる (「戻る」・パンくずリスト・検索・ドラッグで移動)",
           "en": "Assets panel: a folder tree on the left and the current folder's contents as tiles on the right (Back, breadcrumbs, search, drag to move)"
+        },
+        {
+          "ja": "3D のマテリアル (.rmmat): アセットのパネルの右クリック「作成 ▸ マテリアル」で作り、インスペクターで色・絵・金属・ラフネス・法線・発光・透明・絵の繰り返しを編集して、メッシュの「マテリアル」の欄に入れると箱・球などの形やモデルの見た目が変わる (書き出したゲームも同じ見た目)",
+          "en": "3D materials (.rmmat): make one with right-click \"Create ▸ Material\" in the Assets panel, edit color, pictures, metallic, roughness, normal, emission, transparency and tiling in the Inspector, and put it in a Mesh's \"Material\" slots to change the look of shapes and models (exported games look the same)"
         }
       ]
     },

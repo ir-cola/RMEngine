@@ -59,6 +59,9 @@ struct PictureSlot {
     TextureUse use = TextureUse::Color;
 };
 constexpr size_t kPictureSlots = 4;
+// スロットの読み方 (image は -1): 色の絵か、何に使うか。どの材質でも同じ (ゲーム制作 × 3D の
+// マテリアルのファイルも、このスロットの順で絵を持つ)。
+PictureSlot SlotKind(size_t slot);
 std::array<PictureSlot, kPictureSlots> PictureSlots(const MeshMaterial& m);
 void SetPicture(DrawMaterial& d, size_t slot, TextureRef texture);
 

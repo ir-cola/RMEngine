@@ -1051,10 +1051,21 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — 文字の編集 (カーソル・選択・サロゲートペア) はエディターの `ui::TextEdit` をそのまま使い (ゲームに入る層 `ui` にある)、IME のつなぎ方もエディターの `ScreenWindow` と同じ形にした (2 通りの作り方を持たない)。カーソルの位置は自分でフォントの幅を足すと日本語や合字でずれるので、描いた DirectWrite に聞く。切り取りはレイヤー (`PushLayer`) でもできるが、軸に沿った切り取りは軽く、効果 (影・ぼかし) の描き先の切り替えとも一緒に使える (回したスクロールは囲む四角で切る)
 - **どこ** — `src/game/Player.cpp` (`TakeTyped` / `SetTextInput`)、`plugins/rm_engine/game_production/editor/GameSoftware.cpp` (`TypeIntoGame`)、`plugins/rm_engine/game_ui/runtime/UiControls.*` (純粋な計算)・`UiService.cpp`・`UiRenderer.cpp` (`DrawInput` / `PushClips`)
 
+### マテリアル: 絵の UV を材質ごとに動かす (繰り返し・ずらし) と、プラグインが作るファイルの種類 (2026-11-25)
+
+- **何か** — 1 つのファイル (`.rmmat`) が 1 つの材質。形 (箱・平面 …) とモデルの部品の見た目を、ファイルを付け替えるだけで変える。絵を何回並べるか・ずらすか (UV の変え方 `uv x 繰り返し + ずらし`) を、材質の数の中に入れてピクセルシェーダーで掛ける
+- **何に使っているか** — メッシュの部品の「マテリアル」の欄 (形は 0 番、モデルは i 番が自身の i 番の代わり)。UV の変え方は、物と材質の数をまとめて 1 回で送るバッファー (`Buffer<float4>`) の材質の 5 つ目の float4 (`kMaterialFloat4s`)。シェーダーは `MeshPS` の最初で `i.uv` を変えるので、色・金属 / ラフネス・法線 (接線の向きを UV の変わり方から作る「cotangent frame」も)・発光の絵が全部同じに動く。ミップマップのストリーミングは、繰り返しの分だけ粗いレベルでよいと数える
+- **色の決まり** — 選んだ色は画面の色 (sRGB) として持ち、描くときに線形の光に直す (`ScreenToLinear`)。光の計算は線形で行うので、そのままの数を光の色として使うと、選んだ色より明るく (白っぽく) 見えてしまう。OBJ の .mtl の色と同じ扱い。光の部品の色は前と同じく光の量 (線形)
+- **プラグインが作るファイルの種類** (`editor/assets/AssetFileType.h`) — 核のアセットのパネルは、型の表 (`RM_STRUCT`) だけを受け取り、新しいファイル (既定値を `reflect::Save`)・インスペクターの欄 (型の表から)・Undo (前と後の中身を持つ命令。1 つの欄に打つ間は 1 つにまとめる)・ファイルへの書き込み (編集が終わったとき) を作る。核はマテリアルを知らない (憲法 10)。ファイルはその型をそのまま JSON にしたものなので、知らないキーは型の表の `Unknowns` が書き戻す (憲法 6)
+- **サムネイルが別のアセットを引く** — マテリアルのサムネイル (塗った球) は、絵のアセットを ID からファイルに引く必要がある。サムネイルの作業スレッドは UI のスレッドの ID の表に触れないので、表の写し (`AssetFinder`。ID の表が変わったときだけ作り直す) を仕事と一緒に渡す
+- **書き出し** — マテリアルの絵は、モデルの絵と同じコード (`PictureDecoder`: テクスチャキャッシュの DDS があればそれ) で GPU の形 (BC1 / BC5 / BC7 …) に焼き、焼いた絵の場所と読み方を .rmmat に `"baked"` として足す。ゲームとエディターは同じ `MaterialLook` で描く形にする (違うのは絵をどこから持ってくるかだけ)
+- **どこ** — `plugins/rm_engine/game_x_3d/runtime/Material.*`・`MeshRenderer.h`・`GameDraw3D.cpp`・`editor/SceneView3D.cpp`・`editor/MaterialEditor.*`・`editor/ExportBake.cpp`、`plugins/rm_engine/space3d/runtime/Renderer3D.*`・`RendererShaders.cpp`・`MaterialSlots.cpp`・`editor/Thumbnail.*`、`src/editor/assets/AssetFileType.h`・`AssetPanel.cpp`・`AssetLibrary.*`・`Thumbnails.*`、`tests/TestMaterial.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-25 | マテリアル: 材質ごとの UV の繰り返しとずらし (シェーダーで掛ける)・選んだ色を線形の光に直す・プラグインが作るファイルの種類を核が型の表から編集する・サムネイルの作業スレッドに ID の表の写しを渡す |
 | 2026-11-24 | ドッキング: タブを滑らかに動かす (指数的に目標へ近づける) と、同じ列の中の並べ替え |
 | 2026-11-24 | 1 枚にまとめたアイコン: 画面の画素で真ん中に置く (偶奇をそろえる) |
 | 2026-11-24 | 世界のセーブ: リフレクションのまま部品の値を保存・使い回さない id で「ゲームの中で作った物」を見分ける・フレームの切れ目で当てる |
