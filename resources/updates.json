@@ -17,6 +17,14 @@
         {
           "ja": "季節のテーマ: スプリングは右の桜の木をやめ、少しずつ色の違う花びらを上に沿って散らす。ウィンターの雪はエディター本体と Hub のウィンドウの一番下にだけ積もる",
           "en": "Seasons theme: Spring drops the cherry tree on the right and scatters petals of slightly different pinks along the top. In Winter, snow now lies only along the bottom of the editor and Hub windows"
+        },
+        {
+          "ja": "タブ: 同じタブ列の中でドラッグすると、つかんだタブがついて動き、ほかのタブが滑らかによける。離すとその場所へ収まる。閉じたときも後ろが滑らかに詰まる",
+          "en": "Tabs: dragging a tab within its own row now moves the tab with the mouse while the others slide out of the way, and it settles into place on release. Closing a tab slides the rest over"
+        },
+        {
+          "ja": "季節のテーマ: ウィンターの積もった雪の輪郭を薄く、形をなだらかに",
+          "en": "Seasons theme: the lying snow in Winter has a lighter outline and a gentler shape"
         }
       ]
     },

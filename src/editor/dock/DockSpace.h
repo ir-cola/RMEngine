@@ -84,6 +84,10 @@ private:
         float scroll = 0;
         std::string shown;  // 前のフレームで手前にあったタブ: 新しくなったら見える所に動かす
         size_t count = 0;
+        // 各タブの今見えている左端 (行の始まりから、パネル ID ごと)。目標の場所へ滑らかに動く
+        // (並べ替えのドラッグ中によける・離したあと収まる・閉じたタブの後ろが詰まる)。
+        std::unordered_map<std::string, float> slide;
+        double time = 0;  // 前に描いた時刻 (秒)
     };
     struct Site {
         HWND hwnd = nullptr;
@@ -107,6 +111,9 @@ private:
         Zone zone = Zone::Center;
         int tabIndex = -1;
         ui::Rect preview;  // 対象ウィンドウでの DIP
+        // 自分の葉のタブの行の中: 並べ替え。moveTo = ドラッグ中のタブを抜いた並びで入る番号 (TabMoveIndex)。
+        bool reorder = false;
+        int moveTo = -1;
     };
     struct Drag {
         DragKind kind = DragKind::None;
@@ -114,6 +121,7 @@ private:
         uint32_t floating = 0;  // ウィンドウ
         uint32_t fromSite = 0;
         float startX = 0, startY = 0;
+        float grabX = 0;  // タブのどこをつかんだか (タブの左端からの DIP)
         ui::Rect fromLeaf;
         // ホバー (画面上のカーソル位置から更新する)
         uint32_t hoverSite = ~0u;

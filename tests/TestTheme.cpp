@@ -309,7 +309,7 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     const std::vector<float> narrow = heights({100, 200, 300, 150}), wide = heights({100, 200, 600, 150});
     const std::vector<float> moved = heights({250, 200, 300, 150});
     CHECK(narrow.size() > 40 && wide.size() > narrow.size());
-    for (size_t i = 0; i + 10 < narrow.size(); ++i) CHECK(narrow[i] == wide[i]);  // 右端の傾きまでは
+    for (size_t i = 0; i + 16 < narrow.size(); ++i) CHECK(narrow[i] == wide[i]);  // 右端の傾きまでは
     CHECK(moved == narrow);
 
     // つらら (氷柱) は上の縁から下がる。頼まれた長さより長くならず、ところどころに少しだけ。

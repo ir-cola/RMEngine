@@ -162,4 +162,16 @@ float StepTabScroll(std::span<const float> widths, float spacing, float view, fl
 // x (行の始まりからの相対、scroll は足し済み) にドロップしたタブが入る場所。
 int TabInsertIndex(std::span<const float> widths, float spacing, float x);
 
+// --- 同じ行の中でタブを並べ替えるドラッグ (純粋) ---
+// タブ `from` を、その左端が `left` (行の始まりからの相対) に来るまでドラッグしているときに入る番号
+// (ドラッグ中のタブを取り除いた並びで 0 .. widths.size() - 1)。ドラッグ中のタブの真ん中が、ほかのタブの
+// 真ん中を越えたら入れ替わる。
+int TabMoveIndex(std::span<const float> widths, float spacing, size_t from, float left);
+// タブ `from` を `to` 番目 (TabMoveIndex の数え方) へ動かした並びでの、元の番号ごとの左端。
+std::vector<float> TabLeftsMoved(std::span<const float> widths, float spacing, size_t from, size_t to);
+// TabMoveIndex の番号を、Layout::Dock に渡す番号 (取り除く前の並びでの挿入位置) にする。
+int TabMoveToDockIndex(size_t from, int to);
+// 見えている位置 `shown` を目標 `target` へ滑らかに近づける (`dt` 秒の分)。半ピクセルまで来たら目標そのもの。
+float SlideToward(float shown, float target, float dt);
+
 }  // namespace rm::editor::dock
