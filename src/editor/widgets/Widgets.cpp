@@ -195,8 +195,21 @@ bool DrawPicture(ui::Context& c, const Rect& r, Icon icon, Color color, float si
     if (!cell && s.missing.emplace(name).second) log::Error("アイコンの絵「{}」が 1 枚の画像にありません (tools/make_icon_atlas.ps1)", name);
     const auto picture = s.pictures.find(name);
     if (!cell || picture == s.pictures.end()) return false;
-    const float side = size > 0 ? size : std::min(std::round(std::min(r.w, r.h) * 0.8f), 16.f);
-    const Rect dst{std::round(r.x + (r.w - side) * 0.5f), std::round(r.y + (r.h - side) * 0.5f), side, side};
+    // 画面の画素で置く: 枠の左右・上下の余りがちょうど同じになるよう、絵の一辺の画素数を枠と同じ偶奇に
+    // する (2026-11-24: DIP で丸めていたので、44 の枠に 35 の絵だと片側 4、もう片側 5 になり、125 % の画面では
+    // さらに画素の端数がずれて、少し左上に寄って見えた)。
+    const float want = size > 0 ? size : std::min(std::round(std::min(r.w, r.h) * 0.8f), 16.f);
+    float dpiX = 96, dpiY = 96;
+    if (ID2D1DeviceContext* dc = c.P().DC()) dc->GetDpi(&dpiX, &dpiY);
+    const float k = dpiX > 0 ? dpiX / 96.f : 1.f;
+    const float left = std::round(r.x * k), top = std::round(r.y * k);
+    const float boxW = std::round((r.x + r.w) * k) - left, boxH = std::round((r.y + r.h) * k) - top;
+    float px = std::max(1.f, std::round(want * k));
+    if (std::fmod(boxW - px, 2.f) != 0.f) px -= 1;  // (余りを偶数に: 左右に同じだけ)
+    px = std::max(1.f, px);
+    const float padX = (boxW - px) * 0.5f;
+    const float padY = std::round((boxH - px) * 0.5f);
+    const Rect dst{(left + padX) / k, (top + padY) / k, px / k, px / k};
     if (cell->color) {
         c.P().Image(picture->second.Get(), dst, color.a);
     } else {

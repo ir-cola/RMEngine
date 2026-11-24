@@ -31,6 +31,10 @@
         {
           "ja": "ゲーム UI に入力欄・スライダー・トグル・スクロールを足しました (日本語の入力もできます。追加 ▸ UI から作れます)",
           "en": "Added input fields, sliders, toggles and scroll views to the game UI (Japanese input works too; create them from Add ▸ UI)"
+        },
+        {
+          "ja": "アイコン: ボタンの中のアイコンを画面の画素でちょうど真ん中に置く (少しずれていた)",
+          "en": "Icons: icons inside buttons are now placed exactly in the middle in screen pixels (they were slightly off)"
         }
       ]
     },
