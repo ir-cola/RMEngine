@@ -24,7 +24,13 @@ Color PetalTone(int i) {                                    // 春: 上に沿っ
     constexpr uint32_t k[4] = {0xEE8FAE, 0xF5ABC3, 0xE57399, 0xF8C6D6};
     return Color::Hex(k[i & 3], 0.42f);
 }
-Color CloudColor() { return Color::Hex(0xFFFFFF, 0.40f); }  // 夏: 右上の雲
+// 夏: 右上の雲 (2026-11-25: 本物らしく)。半透明の白い雲に、上の縁の明るい帯を重ね、下ほど濃くなる
+// 青灰色の影を重ねる (帯が重なるほど明るい / 暗い)。空 (背景の青) の上でも砂 (パネル) の上でも雲に見える。
+Color CloudBody() { return Color::Hex(0xFFFFFF, 0.34f); }
+Color CloudLight() { return Color::Hex(0xFFFFFF, 0.16f); }   // 3 枚重なる
+Color CloudShade() { return Color::Hex(0x7F94AC, 0.075f); }  // 4 枚重なる
+// 夏: 左下の太陽は、ほかの季節のシルエット (theme::OrnamentColor) より濃く (2026-11-25: ユーザーの希望)。
+Color SunShade() { return theme::Accent.Alpha(0.24f); }
 Color Leaf(int i) {                                         // 秋: 樹冠、4 色
     constexpr uint32_t k[4] = {0xD8432A, 0xE8832A, 0xE7B43A, 0xB0432A};
     return Color::Hex(k[i & 3], 0.34f);
@@ -48,8 +54,8 @@ using Picture = std::vector<Layer>;
 // 大きさはウィンドウで決まる。
 float CornerRadius(const Rect& w) { return std::clamp(std::min(w.w, w.h) * 0.17f, 56.f, 150.f); }
 Rect Corner(const Rect& w, float r) { return {w.x + 28.f, w.Bottom() - 28.f - 2.f * r, 2.f * r, 2.f * r}; }
-void Silhouette(Picture& pic, const Rect& w, ui::Path shape) {
-    pic.push_back({ornament::FitInto(shape, Corner(w, CornerRadius(w))), theme::OrnamentColor()});
+void Silhouette(Picture& pic, const Rect& w, ui::Path shape, Color color = theme::OrnamentColor()) {
+    pic.push_back({ornament::FitInto(shape, Corner(w, CornerRadius(w))), color});
 }
 
 void SpringFlurry(Picture& pic, const Rect& w, float scale) {
@@ -58,11 +64,18 @@ void SpringFlurry(Picture& pic, const Rect& w, float scale) {
     pic.push_back({ornament::Petals(area, count, 9.f * std::max(scale, 0.7f), 0x5A6E7Au), season::Petal()});
 }
 
+void SummerCloud(Picture& pic, Vec2 center, float width, uint32_t seed) {
+    ornament::CloudShapes cloud = ornament::Cumulus(center, width, seed);
+    pic.push_back({std::move(cloud.body), season::CloudBody()});
+    for (ui::Path& band : cloud.light) pic.push_back({std::move(band), season::CloudLight()});
+    for (ui::Path& band : cloud.shade) pic.push_back({std::move(band), season::CloudShade()});
+}
+
 void SummerClouds(Picture& pic, const Rect& w, float scale) {
     const float cw = std::clamp(w.w * 0.16f, 110.f, 260.f) * scale;
-    pic.push_back({ornament::Cloud({w.Right() - w.w * 0.17f, w.y + std::max(70.f, w.h * 0.12f) * scale}, cw), season::CloudColor()});
-    pic.push_back({ornament::Cloud({w.Right() - w.w * 0.40f, w.y + std::max(42.f, w.h * 0.07f) * scale}, cw * 0.62f), season::CloudColor()});
-    pic.push_back({ornament::Cloud({w.Right() - w.w * 0.06f, w.y + std::max(150.f, w.h * 0.25f) * scale}, cw * 0.5f), season::CloudColor()});
+    SummerCloud(pic, {w.Right() - w.w * 0.17f, w.y + std::max(70.f, w.h * 0.12f) * scale}, cw, 0x5C10u);
+    SummerCloud(pic, {w.Right() - w.w * 0.40f, w.y + std::max(42.f, w.h * 0.07f) * scale}, cw * 0.62f, 0x5C21u);
+    SummerCloud(pic, {w.Right() - w.w * 0.06f, w.y + std::max(150.f, w.h * 0.25f) * scale}, cw * 0.5f, 0x5C32u);
 }
 
 // 冬: ウィンドウに降る雪 (止めたもの)。(2026-11-24: 上の端のつららはユーザーの希望で外した。
@@ -75,11 +88,13 @@ void WinterSky(Picture& pic, const Rect& w, float scale) {
 // 冬: ウィンドウ (エディター本体・Hub) の一番下に積もった雪: 上に輪郭、白い雪、その影になった足元。
 // パネルのウィンドウには積もらない。パネルごとにも積もらせない (2026-11-24: ユーザーの希望。前は
 // どのパネルの下にも積もった)。ウィンドウの絵なので、一番下のパネルやバーの塗りの上にも内容の後ろに出る。
+// 左右の端まで積もり、ウィンドウの端で切れる。高さは決まった値で、形は左端からの位置だけで決まる
+// (2026-11-25: ユーザーの希望。大きさを変えても形が変わらない)。
 void WinterGround(Picture& pic, const Rect& w) {
     constexpr float kDepth = 24.f;
-    pic.push_back({ornament::SnowDrift({w.x, w.y - 1.5f, w.w, w.h}, kDepth, 0), season::SnowEdge()});
-    pic.push_back({ornament::SnowDrift(w, kDepth, 0), season::Snow()});
-    pic.push_back({ornament::SnowDrift(w, kDepth * 0.45f, 0), season::SnowLow()});
+    pic.push_back({ornament::SnowDrift({w.x, w.y - 1.5f, w.w, w.h}, kDepth), season::SnowEdge()});
+    pic.push_back({ornament::SnowDrift(w, kDepth), season::Snow()});
+    pic.push_back({ornament::SnowDrift(w, kDepth * 0.45f), season::SnowLow()});
 }
 
 Picture Make(Kind kind, const Rect& w, bool floating) {
@@ -107,7 +122,7 @@ Picture Make(Kind kind, const Rect& w, bool floating) {
                 // 左下に太陽、右下に影 (春の木のような、パラソルと砂のお城のある砂の小山)、右上に雲。
                 const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
                 pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h), theme::OrnamentColor()});
-                Silhouette(pic, w, ornament::Sun({0, 0}, 1.f, 10.f));
+                Silhouette(pic, w, ornament::Sun({0, 0}, 1.f, 10.f), season::SunShade());
                 SummerClouds(pic, w, 1.f);
             }
             break;
