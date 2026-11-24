@@ -35,6 +35,10 @@
         {
           "ja": "アイコン: ボタンの中のアイコンを画面の画素でちょうど真ん中に置く (少しずれていた)",
           "en": "Icons: icons inside buttons are now placed exactly in the middle in screen pixels (they were slightly off)"
+        },
+        {
+          "ja": "季節のテーマ: スプリングは右の桜の木をやめ、少しずつ色の違う花びらを上に沿って散らす。ウィンターの雪はエディター本体と Hub のウィンドウの一番下にだけ積もる",
+          "en": "Seasons theme: Spring drops the cherry tree on the right and scatters petals of slightly different pinks along the top. In Winter, snow now lies only along the bottom of the editor and Hub windows"
         }
       ]
     },

@@ -278,6 +278,17 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
         for (const auto& st : part.steps) (st.a.y < 60 ? above : below) += st.op == rm::ui::Path::Op::Begin ? 1 : 0;
     }
     CHECK(above + below >= 200 && above > below);  // 800 x 0.25 枚の葉 (それぞれ茎つき)。大半は上の近く
+    // 春の花びらも同じ散らばり: 4 色に分かれ、上の近くが多く、`depth` より下には出ない。
+    above = below = 0;
+    int colors = 0;
+    for (const auto& part : PetalCanopy(win, 200, 0.25f, 9)) {
+        if (part.steps.empty()) continue;
+        ++colors;
+        CHECK(BoundsOf(part).y1 < 200 + 20);
+        CHECK(AllClockwise(part));
+        for (const auto& st : part.steps) (st.a.y < 60 ? above : below) += st.op == rm::ui::Path::Op::Begin ? 1 : 0;
+    }
+    CHECK(colors == 4 && above + below >= 200 && above > below);
 
     // 降る雪は領域の中に収まる。同じシードなら同じ雪片。
     const Bounds flakes = BoundsOf(Snowfall({0, 0, 400, 300}, 50, 6, 3));
