@@ -78,10 +78,12 @@
     <ClCompile Include="TestProcess.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestSky.cpp" />
+    <ClCompile Include="TestMaterial.cpp" />
     <ClCompile Include="TestWeather.cpp" />
     <ClCompile Include="TestClimate.cpp" />
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
+    <ClCompile Include="TestConsole.cpp" />
     <ClCompile Include="TestSystems.cpp" />
     <ClCompile Include="TestPhysics.cpp" />
     <ClCompile Include="TestPrefab.cpp" />
@@ -126,6 +128,8 @@
     <ClCompile Include="..\src\platform\Http.cpp" />
     <ClCompile Include="..\src\editor\project\Templates.cpp" />
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
+    <ClCompile Include="..\src\editor\assets\AssetGrid.cpp" />
+    <ClCompile Include="..\src\editor\console\ConsoleModel.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
     <ClCompile Include="..\src\editor\app\Integrity.cpp" />
     <ClCompile Include="..\src\editor\app\EngineKey.cpp" />
@@ -163,6 +167,8 @@
     <ClCompile Include="..\src\platform\Image.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Sky.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Material.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MaterialSlots.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\SkyShader.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Register.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\ScriptTransform3D.cpp" />

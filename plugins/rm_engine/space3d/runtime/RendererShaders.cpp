@@ -30,11 +30,12 @@ float3 Fogged(float3 c, float3 wpos) {
 //   材質: material (その色。線形: `color` を掛ける)、paint (x: 1 = 色の絵あり、y: アルファ
 //         0 不透明 / 1 マスク / 2 ブレンド、z: マスクのしきい値、w: 1 = 法線マップあり)、
 //         pbr (x: 金属度、y: 粗さ、z: 法線マップの強さ、w: 1 = 金属 / 粗さの絵あり)、
-//         emissive (rgb: 出す光。線形、w: 1 = 発光の絵あり)
+//         emissive (rgb: 出す光。線形、w: 1 = 発光の絵あり)、
+//         uvMove (xy: 絵の繰り返し、zw: 絵のずらし - 絵の uv = 頂点の uv * xy + zw。材質の数は kMaterialFloat4s)
 Buffer<float4> things : register(t6);
 static float4x4 world;
 static float3x3 normalWorld;
-static float4 color, highlight, material, paint, pbr, emissive;
+static float4 color, highlight, material, paint, pbr, emissive, uvMove;
 void LoadPlace(uint at) {
     world = transpose(float4x4(things.Load(at), things.Load(at + 1), things.Load(at + 2), things.Load(at + 3)));
     normalWorld = transpose(float3x3(things.Load(at + 4).xyz, things.Load(at + 5).xyz, things.Load(at + 6).xyz));
@@ -46,6 +47,7 @@ void LoadLook(uint2 draw) {
     paint = things.Load(draw.y + 1);
     pbr = things.Load(draw.y + 2);
     emissive = things.Load(draw.y + 3);
+    uvMove = things.Load(draw.y + 4);
 }
 // フレームの光 (Lighting.h の LightBlock: 1 フレームに 1 回入れる)。
 cbuffer Lights : register(b1) {
@@ -243,6 +245,7 @@ float4 Paint(MeshOut i) {
 
 float4 MeshPS(MeshOut i) : SV_Target {
     LoadLook(i.draw);
+    i.uv = i.uv * uvMove.xy + uvMove.zw;  // 材質の絵の繰り返しとずらし (どの絵も、法線の向きの計算も、この uv で)
     float4 base = Paint(i);
     // 見える側は、目に向いている側 (開いたモデルの裏側は、その側の面として光を受ける)。
     // 画面上の三角形の巻き方ではなく目から判断するので、鏡写しのモデルや反転した射影でも

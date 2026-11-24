@@ -134,7 +134,13 @@ struct DrawMaterial {
     float normalScale = 1.f;
     Color emissive{0, 0, 0, 1};  // 線形の光。1 より大きくてもよい
     TextureRef emission;         // sRGB
+    // 絵を貼る UV の変え方 (全部の絵に同じ): 絵の uv = 頂点の uv x uvScale + uvOffset
+    // (ゲーム制作 × 3D のマテリアルの「絵の繰り返し」「絵のずらし」。モデルの材質は 1 / 0 のまま)。
+    Vec2 uvScale{1, 1};
+    Vec2 uvOffset{0, 0};
 };
+// 1 つの材質がフレームの数値 (Renderer の things_) で使う float4 の数 (AddMaterial とシェーダーの LoadLook)。
+inline constexpr uint32_t kMaterialFloat4s = 5;
 
 struct MeshDraw {
     const GpuMesh* mesh = nullptr;

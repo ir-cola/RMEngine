@@ -98,6 +98,8 @@ void InitIcons(platform::Gfx& gfx);
 // --- ボタン ----------------------------------------------------------------------------------
 bool Button(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label,
             ButtonKind kind = ButtonKind::Secondary, bool enabled = true);
+// `label` の Button がちょうど入る幅 (太字でも: Primary とほかを切り替えても幅が変わらない)。
+float ButtonWidth(ui::Context& c, std::wstring_view label);
 // アイコンのある小さな四角のボタン (Ghost の見た目: マウスの下のときだけ面が出る)。
 bool IconButton(ui::Context& c, std::string_view id, const ui::Rect& r, Icon icon, bool enabled = true);
 // `on` の間、押し込まれたままの (アクセントの) アイコンボタン - 動いている間のゲームの ▶。
@@ -114,6 +116,8 @@ ui::Context::ButtonResult ToolSquare(ui::Context& c, std::string_view id, const 
 // ラベルごとに 1 つ) はマウスの下に出る。
 int Segmented(ui::Context& c, std::string_view id, const ui::Rect& r, std::span<const std::wstring_view> labels, int selected,
               std::span<const std::wstring_view> tooltips = {});
+// `labels` の Segmented がちょうど入る幅 (どの区切りも一番長いラベルの幅: 選んだ太字でも切れない)。
+float SegmentedWidth(ui::Context& c, std::span<const std::wstring_view> labels);
 
 // --- 行 (リスト、ツリー、メニュー、サイドバー) -----------------------------------------------
 struct RowLook {
@@ -123,6 +127,12 @@ struct RowLook {
     bool flat = false;    // 四角で、端から端まで: 線で区切ったリストの行 (Hub のページ、プロジェクトの一覧)
 };
 void DrawRow(ui::Context& c, const ui::Rect& r, RowLook look);
+// 並びの 1 つのタイル (アセット パネルの右側): 選んだもの / マウスの下のものの面。行と同じ色で、
+// 棒の代わりに、キーを受け取っている間は選んだタイルをアクセントで縁取る。
+void DrawTile(ui::Context& c, const ui::Rect& r, bool selected, bool hovered, bool focused = true);
+// ドラッグしているもの (ツリーの行、アセットのタイル) の札を、マウスの横に (フレームの終わりに、
+// すべての上に)。`inside`: 自分の中に落とせる所の上 - 受け取る所が無くても縁取る。
+void DragTag(ui::Context& c, std::wstring text, bool inside);
 // クリックできる行 (ImGui の Selectable)。行を描く。行の上にあるものは呼び出し側が描く。
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view id, const ui::Rect& r, bool selected, bool flat = false);
 // 選ぶテーマ 1 つ (テーマの画面): そのテーマ自身の色で描いた小さなウィンドウと、その下に名前。
@@ -179,6 +189,8 @@ void DrawMapGrid(ui::Context& c, const ui::Rect& area, float x0, float y0, float
 void DrawMapLine(ui::Context& c, float x1, float y1, float x2, float y2, ui::Color color);
 // 塗る筆の輪 (真ん中と半径 DIP)。`erase`: 消しゴム (危険の色)。
 void DrawMapBrush(ui::Context& c, float cx, float cy, float radius, bool erase);
+// 縦の区切り線 (並んだ 2 つの部分の間: アセット パネルの木と並び)。
+void VSeparator(ui::Context& c, float x, float y, float height);
 // マウスの横のヒント。フレームの最後に (何よりも上に) 描く。
 void Tooltip(ui::Context& c, std::wstring_view text);
 
@@ -192,6 +204,12 @@ bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::stri
 // ラベル付きのチェックボックス。値が変わったら true を返す。
 // mixed: まとめて編集しているオブジェクトが一致しない - チェックの代わりに横棒を出す。クリックするとオンになる。
 bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label, bool mixed = false);
+// 数の付いたチェックボックス (コンソールの 情報 / 警告 / エラー): Checkbox の後ろに、`count` を太字の
+// `countColor` で。`label` は空でもよい (狭いとき: チェックと数だけ)。値が変わったら true。
+// 要る幅: CheckboxCountWidth (`count` が空なら、ふつうの Checkbox の幅)。
+bool CheckboxCount(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label,
+                   std::wstring_view count, ui::Color countColor);
+float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_view count = {});
 // テキストフィールドの数 (ビューの設定 - シーンビューの刻み): フォーカスがある間は打ったままの
 // 文字、それ以外は値 (`text` がフレームの間それを持つ)。`value` が変わったら true: 数が
 // 打たれた (min .. max に収める); 数でない文字は何も変えない。
@@ -224,6 +242,9 @@ float BeginScroll(ui::Context& c, std::string_view id, const ui::Rect& view, flo
 void EndScroll(ui::Context& c, std::string_view id, const ui::Rect& view, float contentHeight);
 // 次の BeginScroll で末尾へ飛ぶ (新しい出力を追うコンソール用)。
 void ScrollToEnd(ui::Context& c, std::string_view id);
+// 今 (このフレームの EndScroll の後で) 末尾にいるか。中身が見える高さに収まるときも true
+// (コンソール: 一番下にいる間だけ新しい出力を追う)。
+bool ScrollAtEnd(ui::Context& c, std::string_view id, const ui::Rect& view, float contentHeight);
 
 // --- ポップアップメニュー ---------------------------------------------------
 struct MenuItem {

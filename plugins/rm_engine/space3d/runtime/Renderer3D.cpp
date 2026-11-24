@@ -660,9 +660,11 @@ void Renderer::Stream(const RenderFrame& f, const Vec3& eye) {
         const float d = std::max(Length(c - eye) - r, 0.05f);
         const float onScreen = std::max(1.f, 2.f * r * pixelsPerUnit / (ortho ? 1.f : d));
         for (const DrawMaterial& m : it.materials) {
+            // 絵の繰り返し (uvScale) が大きいほど、1 回分の絵は画面で小さい。
+            const float tiles = std::max({std::fabs(m.uvScale.x), std::fabs(m.uvScale.y), 1e-3f});
             for (const GpuTexture* t : {m.texture.get(), m.metalRough.get(), m.normal.get(), m.emission.get()}) {
                 if (!t || !t->stream_) continue;
-                const float ratio = static_cast<float>(std::max(t->width, t->height)) / onScreen;
+                const float ratio = static_cast<float>(std::max(t->width, t->height)) * tiles / onScreen;
                 const uint32_t level = ratio <= 2.f ? 0u : static_cast<uint32_t>(std::floor(std::log2(ratio))) - 1u;
                 auto [at, added] = streamSeen_.try_emplace(t, level);
                 if (!added) at->second = std::min(at->second, level);
@@ -832,6 +834,7 @@ uint32_t Renderer::AddMaterial(const DrawMaterial& m) {
     things_.push_back({m.texture ? 1.f : 0.f, mode, m.alphaCutoff, flag(m.normal, 2)});
     things_.push_back({m.metallic, m.roughness, m.normalScale, flag(m.metalRough, 1)});
     things_.push_back({m.emissive.r, m.emissive.g, m.emissive.b, m.emission ? 1.f : 0.f});
+    things_.push_back({m.uvScale.x, m.uvScale.y, m.uvOffset.x, m.uvOffset.y});
     return at;
 }
 
@@ -949,7 +952,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     };
     auto partDraw = [&](const Item& it, const MeshPart& part) {
         const auto k = static_cast<uint32_t>(&part - it.mesh->parts.data());
-        Emit(it.mesh, part.firstIndex, part.indexCount, AddDraw(it.thing, it.firstMaterial + k * 4), &materialOf(it, part));
+        Emit(it.mesh, part.firstIndex, part.indexCount, AddDraw(it.thing, it.firstMaterial + k * kMaterialFloat4s), &materialOf(it, part));
     };
 
     // 影を落とすものを、メッシュごとにまとめる (安定: DrawOrder.h)。全部のマップに対して 1 回。

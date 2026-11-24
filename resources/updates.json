@@ -3,8 +3,8 @@
   "format": 1,
   "updates": [
     {
-      "version": "0.0.11",
-      "date": "2026-11-24",
+      "version": "0.0.12",
+      "date": "2026-11-25",
       "items": [
         {
           "ja": "天候 × 気候: 濡れと積もった雪を場所ごとに持つ (Play の間、カメラのまわり 128 m 四方を 2 m のマスで)。雪の所だけ積もり、雨の所だけ濡れ、雨の所の雪は溶ける。気候エリアの境目では、積もった雪がなめらかに薄れる",
@@ -23,16 +23,34 @@
           "en": "Physics: added a \"Cylinder\" collider shape. Cylinders made with Add ▸ 3D Object get it, so snow lies round on them too (it used to be the enclosing box)"
         },
         {
-          "ja": "タブ: 同じタブ列の中でドラッグすると、つかんだタブがついて動き、ほかのタブが滑らかによける。離すとその場所へ収まる。閉じたときも後ろが滑らかに詰まる",
-          "en": "Tabs: dragging a tab within its own row now moves the tab with the mouse while the others slide out of the way, and it settles into place on release. Closing a tab slides the rest over"
-        },
-        {
-          "ja": "季節のテーマ: ウィンターの積もった雪の輪郭を薄く、形をなだらかに。上の端のつららは外した",
-          "en": "Seasons theme: the lying snow in Winter has a lighter outline and a gentler shape, and the icicles along the top are gone"
-        },
-        {
           "ja": "天候: 雨の染みと雪の積もる所を、コライダーではなく画面に見えているメッシュで決める (見えないコライダーの所には積もらない)",
           "en": "Weather: where rain wets and snow lies is now decided by the meshes you can see, not by colliders (no more snow on invisible collider parts)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.11",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "アセットのパネル: 左にフォルダの木、右に今のフォルダの中身をタイルで並べる (「戻る」・パンくずリスト・検索・ドラッグで移動)",
+          "en": "Assets panel: a folder tree on the left and the current folder's contents as tiles on the right (Back, breadcrumbs, search, drag to move)"
+        },
+        {
+          "ja": "3D のマテリアル (.rmmat): アセットのパネルの右クリック「作成 ▸ マテリアル」で作り、インスペクターで色・絵・金属・ラフネス・法線・発光・透明・絵の繰り返しを編集して、メッシュの「マテリアル」の欄に入れると箱・球などの形やモデルの見た目が変わる (書き出したゲームも同じ見た目)",
+          "en": "3D materials (.rmmat): make one with right-click \"Create ▸ Material\" in the Assets panel, edit color, pictures, metallic, roughness, normal, emission, transparency and tiling in the Inspector, and put it in a Mesh's \"Material\" slots to change the look of shapes and models (exported games look the same)"
+        },
+        {
+          "ja": "シーンビューのボタンを小さくし、3D / 2D・ローカル / ワールド・中心・影・空・デバッグ・形を上の帯にまとめた。2D は同じ 3D のシーンを正面から平行投影で見る (ゲームの空間の切り替えは ゲームの設定 ▸ ゲーム設定 へ)",
+          "en": "Scene view buttons are smaller, and 3D / 2D, Local / World, Center, Shadows, Sky, Debug and Shapes now share one bar at the top. 2D shows the same 3D scene from the front in parallel projection (switching the game's space moved to Game Settings ▸ Game)"
+        },
+        {
+          "ja": "コンソール: 上の帯に 情報・警告・エラー の数と表示の切り替え、クリア、自動スクロール、検索を足した",
+          "en": "Console: a toolbar with Info / Warnings / Error counts and filters, Clear, Auto-scroll and Search"
+        },
+        {
+          "ja": "季節のテーマ: ウィンターの積もる雪がウィンドウの左右の端まで届き、大きさを変えても形が変わらない。サマーは砂らしい色のパネル・淡い空と海の青・濃い太陽・本物らしい雲 (底が平らで上が明るく下が影)",
+          "en": "Seasonal themes: Winter's snow bank now reaches both window edges and keeps its shape when the window is resized. Summer gets sandy beige panels, paler sky and sea blues, a stronger sun, and more realistic clouds (flat bases, bright tops, shaded undersides)"
         }
       ]
     },
@@ -51,6 +69,14 @@
         {
           "ja": "季節のテーマ: スプリングは右の桜の木をやめ、少しずつ色の違う花びらを上に沿って散らす。ウィンターの雪はエディター本体と Hub のウィンドウの一番下にだけ積もる",
           "en": "Seasons theme: Spring drops the cherry tree on the right and scatters petals of slightly different pinks along the top. In Winter, snow now lies only along the bottom of the editor and Hub windows"
+        },
+        {
+          "ja": "タブ: 同じタブ列の中でドラッグすると、つかんだタブがついて動き、ほかのタブが滑らかによける。離すとその場所へ収まる。閉じたときも後ろが滑らかに詰まる",
+          "en": "Tabs: dragging a tab within its own row now moves the tab with the mouse while the others slide out of the way, and it settles into place on release. Closing a tab slides the rest over"
+        },
+        {
+          "ja": "季節のテーマ: ウィンターの積もった雪の輪郭を薄く、形をなだらかに。上の端のつららは外した",
+          "en": "Seasons theme: the lying snow in Winter has a lighter outline and a gentler shape, and the icicles along the top are gone"
         }
       ]
     },

@@ -1,5 +1,5 @@
 #pragma once
-// ユーザーが、ゲームの 3D シーンビューをどう見るか: カメラ、選んだギズモとその刻み、影のオン / オフ。
+// ユーザーが、ゲームの 3D シーンビューをどう見るか: カメラ (3D と 2D)、選んだギズモとその刻み、影のオン / オフ。
 // パネルのレイアウト (UserSettings/Layout.json) の隣に残し、プロジェクトには入れない - ここに
 // 1 度だけ書くので、保存と読み込みは定義から作られる (憲法 9)。インスペクターには出さない。
 
@@ -11,6 +11,10 @@ namespace rm::game_x_3d {
 RM_STRUCT()
 struct SceneViewState {
     RM_PROPERTY() space3d::OrbitView camera;
+    // 2D (上の帯の 3D / 2D): 同じシーンを、正面 (+Z を向く) から平行投影で見る。そのときのカメラは
+    // `flatCamera` (3D の `camera` はそのまま残り、3D に戻すと元の見え方)。
+    RM_PROPERTY() bool flat = false;
+    RM_PROPERTY() space3d::OrbitView flatCamera{.yaw = 0.f, .pitch = 0.f, .orthographic = true};
     RM_PROPERTY() space3d::gizmo::Tool tool = space3d::gizmo::Tool::Move;
     // 選択の道具 (Q): ギズモを出さず、クリックで選ぶだけ。外れているときは `tool` のギズモ。
     RM_PROPERTY() bool selecting = false;

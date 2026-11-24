@@ -248,6 +248,59 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
+# マテリアルつきの 3D のゲーム: テンプレート 「3D のゲーム」 の箱に、色の絵 (docs/samples/models/house_walls.png)
+# を持つマテリアル (Assets/Materials/Red.rmmat) を付ける。書き出しはマテリアルとその絵を焼き (DDS)、ゲームは
+# それを読んで、絵つきで GPU に載せなければならない (game.log)。
+$dir = Join-Path $work 'game_material'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+$p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_3d', 'game_3d', "`"$dir`"") -Wait -PassThru
+$rmpf = Join-Path $dir 'Project\Project.rmpf'
+if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
+    Write-Host "NG  game_material: プロジェクトを作れませんでした。$log を見てください"
+    $failed++
+} else {
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $images = Join-Path $dir 'Project\Assets\Images'
+    $materials = Join-Path $dir 'Project\Assets\Materials'
+    New-Item -ItemType Directory -Force $images, $materials | Out-Null
+    Copy-Item (Join-Path $root 'docs\samples\models\house_walls.png') $images
+    $imageGuid = [Guid]::NewGuid().ToString('N')
+    [IO.File]::WriteAllText((Join-Path $images 'house_walls.png.meta'), "{`"guid`": `"$imageGuid`", `"name`": `"house_walls.png`"}", $utf8)
+    $matGuid = [Guid]::NewGuid().ToString('N')
+    $mat = [ordered]@{ kind = 'rm_engine.material'; format = 1; color = @(1, 0.2, 0.2, 1); colorImage = $imageGuid; metallic = 0.3; tiling = @(2, 2) }
+    [IO.File]::WriteAllText((Join-Path $materials 'Red.rmmat'), ($mat | ConvertTo-Json -Depth 5), $utf8)
+    [IO.File]::WriteAllText((Join-Path $materials 'Red.rmmat.meta'), "{`"guid`": `"$matGuid`", `"name`": `"Red.rmmat`"}", $utf8)
+    $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Main.rmscene'
+    $scene = [IO.File]::ReadAllText($sceneFile, $utf8) | ConvertFrom-Json
+    $id = [int]$scene.nextId
+    $box = [ordered]@{ id = $id; parent = 0; name = 'RedBox'; active = $true; components = @(
+        [ordered]@{ type = 'rm::space3d::Transform'; data = [ordered]@{ position = @(-3, 0.5, 0) } },
+        [ordered]@{ type = 'rm::game_x_3d::MeshRenderer'; data = [ordered]@{ shape = 'Box'; materials = @($matGuid) } }) }
+    $scene.entities = @($scene.entities) + @($box)
+    $scene.nextId = $id + 1
+    [IO.File]::WriteAllText($sceneFile, ($scene | ConvertTo-Json -Depth 20), $utf8)
+    $game = Join-Path $dir 'Game'
+    $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
+    $exe = @(Get-ChildItem $game -Filter *.exe -ErrorAction SilentlyContinue)
+    if ($p.ExitCode -ne 0 -or $exe.Count -ne 1) {
+        Write-Host "NG  game_material: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
+        $failed++
+    } else {
+        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        $up = [regex]::Match($gameLog, "マテリアルを GPU に上げました: $matGuid \(絵 (\d+)\)")
+        if ($r.ExitCode -ne 0 -or -not $up.Success -or [int]$up.Groups[1].Value -lt 1 -or $gameLog.Contains('マテリアルを読めない') -or $gameLog.Contains('マテリアルの絵を')) {
+            Write-Host "NG  game_material: マテリアルが絵つきで上がっていません (終了コード $($r.ExitCode))"
+            $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+        } else {
+            $size = [Math]::Round($exe[0].Length / 1KB)
+            $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB)
+            Write-Host "OK  game_material: $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB)。マテリアル (Red.rmmat) を絵 $($up.Groups[1].Value) 枚つきで GPU に上げました"
+        }
+    }
+}
+
 # 画像つきの 2D のゲームのスプライト: ファイルをそのまま、前に大きさと取り込みの設定をつけて
 # (ここでは くっきり と 大きさの上限 64): ゲームはそれを小さく、くっきり読み、ファイル自身の
 # 大きさも知っている。

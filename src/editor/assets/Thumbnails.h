@@ -22,9 +22,11 @@
 
 #include <condition_variable>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -35,6 +37,9 @@ class PluginRegistry;
 
 // プラグインがある種類のアセットを小さく描くと申し出る所: registry.Contribute(kThumbnailPoint, maker)。
 inline constexpr char kThumbnailPoint[] = "core.thumbnail";
+
+// アセットの id -> 今のファイル (フルパス。無ければ空)。サムネイルを頼んだ時点の写しで、どのスレッドでも使える。
+using AssetFinder = std::function<std::filesystem::path(std::string_view guid)>;
 
 struct ThumbnailMaker {
     asset::Kind kind = asset::Kind::Model;
@@ -47,6 +52,10 @@ struct ThumbnailMaker {
     // prepare が作った物を `size` x `size` ピクセルに描く - platform::PixelOrder::PremultipliedBgra、
     // 何もない所は透ける。false: *error が理由を言う。
     bool (*draw)(platform::Gfx& gfx, const void* prepared, uint32_t size, platform::Image& out, std::string* error) = nullptr;
+    // 拡張子で選ぶ (".rmmat": プラグインが作るファイル。`kind` は見ない)。null: `kind` で選ぶ。
+    const char* extension = nullptr;
+    // `prepare` の代わり (あれば): ファイルが名指す別のアセット (マテリアルの絵) を `find` で引ける。
+    std::shared_ptr<void> (*prepareWith)(const std::filesystem::path& file, const AssetFinder& find, uint32_t size, std::string* error) = nullptr;
 };
 
 class Thumbnails {
@@ -58,8 +67,11 @@ public:
     Thumbnails(const Thumbnails&) = delete;
     Thumbnails& operator=(const Thumbnails&) = delete;
 
-    // この種類のファイルがサムネイルを持つか (画像と、プラグインが描く種類)。
-    bool Has(asset::Kind kind) const;
+    // この種類のファイル (`fileName`: 拡張子で選ぶ描き方のため) がサムネイルを持つか (画像と、プラグインが描く種類)。
+    bool Has(asset::Kind kind, std::string_view fileName = {}) const;
+    // 今のアセットの id -> ファイルの表 (ThumbnailMaker::prepareWith の `find`)。`version` (AssetLibrary::Version)
+    // が前と違うときだけ `make` で作り直す。
+    void KeepAssets(uint64_t version, const std::function<std::unordered_map<std::string, std::filesystem::path>()>& make);
     // `file` (アセット `guid`) のサムネイル。少なくとも `pixels` の大きさ。まだ作っていないとき
     // (別のフレームを頼む) と、作れないとき (理由は 1 度だけコンソールに出た) は null。
     ID2D1Bitmap* Get(ui::Context& c, const std::string& guid, asset::Kind kind, const std::filesystem::path& file, uint32_t pixels);
@@ -83,6 +95,7 @@ private:
         std::filesystem::path file;
         uint32_t size = 0;
         std::filesystem::file_time_type time{};
+        std::shared_ptr<const std::unordered_map<std::string, std::filesystem::path>> assets;  // (頼んだ時点の写し)
     };
     struct Done {
         Job job;
@@ -92,7 +105,7 @@ private:
         std::string error;
     };
 
-    const ThumbnailMaker* MakerFor(asset::Kind kind) const;
+    const ThumbnailMaker* MakerFor(asset::Kind kind, std::string_view fileName) const;
     static Done Failed(Job job, std::string why);
     void Work(std::stop_token stop);         // worker スレッド
     void Collect(ui::Context& c);            // worker の結果を entries に入れる (UI スレッド)
@@ -106,6 +119,8 @@ private:
     double spentMs_ = 0;   // このフレームでサムネイル作りに使った分
     double sweptAt_ = 0;
     uint64_t generation_ = 0;  // ビットマップを作った GPU のデバイス (platform::Gfx::Generation)
+    std::shared_ptr<const std::unordered_map<std::string, std::filesystem::path>> assets_;  // KeepAssets
+    uint64_t assetsVersion_ = ~uint64_t{0};
 
     // worker と共有する (mu_ のもとで)。
     std::mutex mu_;

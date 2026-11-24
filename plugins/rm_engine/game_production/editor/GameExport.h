@@ -16,6 +16,8 @@
 
 #include <filesystem>
 #include <functional>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -78,6 +80,9 @@ struct ExportAsset {
     std::filesystem::path file;
     std::string rel;  // プロジェクトのフォルダから ("Assets/Models/house.gltf")
     std::filesystem::path projectRoot;
+    // このゲームに入るアセット全部の id -> ファイル (CollectAssets が作る。ほかのアセットを名指すアセット -
+    // マテリアルの絵 - を焼くときに引く。ワーカーのスレッドでも読める写し)。
+    std::shared_ptr<const std::map<std::string, std::filesystem::path>> files;
 };
 enum class BakeResult { NotMine, Done, Failed };
 struct ExportBaked {

@@ -1,5 +1,5 @@
 #pragma once
-// 季節テーマパック - 季節の絵の形 (桜の木、太陽、もみじの葉、雪の結晶、雲、縁に積もる雪 ...)。
+// 季節テーマパック - 季節の絵の形 (桜の木、太陽、もみじの葉、雪の結晶、雲、下に積もる雪 ...)。
 // 純粋: ui::Path を作るだけ (tests/TestTheme.cpp でテストする)。Seasons.cpp が季節の色で、
 // 内容の後ろに描く。
 //
@@ -57,7 +57,17 @@ std::array<ui::Path, 4> PetalCanopy(const ui::Rect& window, float depth, float p
 // 太陽: 丸い円盤とそのまわりのとがった光線 12 本 (長いのと短いのが交互。radius = 長い光線の先まで)。
 // `degreesCcw` 回す。
 ui::Path Sun(Vec2 center, float radius, float degreesCcw);
-ui::Path Cloud(Vec2 center, float width);
+// 積雲 (もくもくした夏の雲): 大きさの違うふくらみ (円) がいくつも重なった形で、底は平ら。ふくらみの並びは
+// `seed` で少しずつ変わる。`center` = 雲のおおよその真ん中、`width` = 横幅 (底は center.y + 0.16 * width)。
+// 塗る順: `body` (雲全体) → `light` (上の縁に沿った明るい帯。上ほど重なって明るい) → `shade` (下ほど重なって
+// 暗くなる影の帯)。帯はどれも body の内側 (各 x で、雲の上の縁から底までの間の決まった割合)。
+// 塗りは 1 色ずつなので、薄い帯を重ねてなめらかな明るさの変わり方に見せる。
+struct CloudShapes {
+    ui::Path body;
+    std::array<ui::Path, 3> light;  // 上の縁から雲の高さの 42% / 26% / 12% まで
+    std::array<ui::Path, 4> shade;  // 底から雲の高さの 55% / 40% / 26% / 13% まで
+};
+CloudShapes Cumulus(Vec2 center, float width, uint32_t seed);
 // `base` (足の真ん中) に立つ砂のお城。手で作る: 壁と塔 3 つ (少し傾いてふくらむ)、
 // てっぺんの丸い塊、足元の砂の山 (だから、浜と一緒に塗ると、砂から生えているように見える)。
 ui::Path SandCastle(Vec2 base, float height);
@@ -81,10 +91,11 @@ std::array<ui::Path, 4> Canopy(const ui::Rect& window, float depth, float perPix
 ui::Path Snowflake(Vec2 center, float radius, float degreesCcw);
 // 降る雪を止めたもの: `area` に散らした、約 `size` の丸い雪片。
 ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed);
-// `r` (パネル、ウィンドウ) の下に積もった雪: 下の端から最大 `depth` まで盛り上がる、内側の柔らかく波打つ
-// 吹きだまり。両端の最後の数ピクセルで下がる (丸い角から外れる)。うねりは r の左端からのピクセルで測るので、
-// 箱が大きくなったり動いたりしても同じ吹きだまりのまま (右端だけがついてくる)。
-ui::Path SnowDrift(const ui::Rect& r, float depth, float cornerRadius);
+// `r` (ウィンドウ) の下に積もった雪: 下の端から最大 `depth` まで盛り上がる、なだらかに波打つ吹きだまり。
+// 左右の端まで積もり (端で下がらない。端を 2 ピクセル越えるので、描く側がウィンドウの端で切る)、
+// うねりの高さは r の左端からのピクセルだけで決まる: ウィンドウの幅や高さを変えても形は変わらず、
+// 右に見える分が増えたり減ったりするだけ。高さは `depth` を越えない。
+ui::Path SnowDrift(const ui::Rect& r, float depth);
 // `window` の上の端からぶら下がるつららがところどころに: 260 .. 640 ピクセルごとに、雪の塊の下に 1 本から 3 本の
 // 小さな 1 組。組はウィンドウの左端から並べ、内側で始まる組はすべて作る (右端を越えるものはそこで切るだけ)。
 // だからウィンドウの大きさを変えても、出たり消えたりしない。つららはそれぞれ、小さな波 (`ice`) のある鋭い先に向かって

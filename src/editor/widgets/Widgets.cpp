@@ -481,6 +481,17 @@ bool Button(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_
     return enabled && b.clicked;
 }
 
+// Button と Segmented の文字の大きさと、その左右の余白 (描くのと幅を測るので同じ値)。
+constexpr float kButtonPad = 10.f, kSegmentText = 12.f, kSegmentPad = 8.f;
+
+float ButtonWidth(ui::Context& c, std::wstring_view label) { return std::ceil(c.P().TextWidth(label, theme::FontSize, true)) + 2 * kButtonPad; }
+
+float SegmentedWidth(ui::Context& c, std::span<const std::wstring_view> labels) {
+    float widest = 0;
+    for (const std::wstring_view l : labels) widest = std::max(widest, c.P().TextWidth(l, kSegmentText, true));
+    return (std::ceil(widest) + 2 * kSegmentPad) * static_cast<float>(labels.size()) + 4.f;
+}
+
 int Segmented(ui::Context& c, std::string_view idStr, const Rect& r, std::span<const std::wstring_view> labels, int selected,
               std::span<const std::wstring_view> tooltips) {
     if (labels.empty()) return -1;
@@ -498,7 +509,7 @@ int Segmented(ui::Context& c, std::string_view idStr, const Rect& r, std::span<c
             DrawSurface(c, seg, down ? Surface::Pressed : Surface::Hovered, theme::Radius - 1.f);
         }
         ui::TextStyle ts;
-        ts.size = 12;
+        ts.size = kSegmentText;
         ts.bold = on;
         ts.h = ui::HAlign::Center;
         ts.color = on ? theme::OnAccent() : b.hovered ? theme::Text : theme::TextDim;
@@ -645,6 +656,36 @@ void DrawRow(ui::Context& c, const Rect& r, RowLook look) {
     }
 }
 
+void DrawTile(ui::Context& c, const Rect& r, bool selected, bool hovered, bool focused) {
+    auto& p = c.P();
+    constexpr float kRadius = 6.f;
+    if (selected) {
+        const theme::Gradient g = theme::Raised(focused ? theme::Selected : theme::Pressed);
+        p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
+        TopLight(p, r, kRadius, theme::Highlight());
+        if (focused) p.StrokeRoundRect(r.Inset(0.5f), kRadius, theme::Accent.Alpha(0.8f), 1.f);
+    } else if (hovered) {
+        const theme::Gradient g = theme::Gentle(theme::Hover);
+        p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
+    }
+}
+
+void DragTag(ui::Context& c, std::wstring text, bool inside) {
+    c.AddOverlay([&c, tag = std::move(text), inside] {
+        // (フレームの終わりに: あとに描く参照フィールドが、受け取るかどうかを答えてから)
+        const bool ok = TakeDragAccepted() || inside;
+        auto& pp = c.P();
+        const float wdt = std::min(260.f, pp.TextWidth(tag, 12) + 20);
+        const Rect r{c.In().mouseX + 14, c.In().mouseY + 10, wdt, 24};
+        DrawSurface(c, r, Surface::Popup, 5.f);
+        if (ok) pp.StrokeRoundRect(r, 5, theme::Accent);
+        ui::TextStyle s;
+        s.size = 12;
+        s.color = ok ? theme::Text : theme::TextDim;
+        pp.Text(r.Inset(10, 0, 10, 0), tag, s);
+    });
+}
+
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view idStr, const Rect& r, bool selected, bool flat) {
     const auto b = c.ButtonBehavior(c.MakeId(idStr), r);
     if (b.hovered) c.SetCursor(ui::Cursor::Hand);
@@ -779,6 +820,7 @@ ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view idStr, const
 }
 
 void Separator(ui::Context& c, float x, float y, float width) { c.P().FillRect({x, y, width, 1}, theme::Border); }
+void VSeparator(ui::Context& c, float x, float y, float height) { c.P().FillRect({x, y, 1, height}, theme::Border); }
 
 void DrawSwatch(ui::Context& c, const Rect& r, ui::Color color) {
     c.P().FillRoundRect(r, 4, color);
@@ -1028,6 +1070,31 @@ bool Checkbox(ui::Context& c, std::string_view idStr, const Rect& r, bool& value
 }
 
 namespace {
+constexpr float kCheckBoxW = 16.f, kCheckLabelGap = 8.f, kCountGap = 5.f;
+}  // namespace
+
+float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_view count) {
+    float w = kCheckBoxW;
+    if (!label.empty()) w += kCheckLabelGap + c.P().TextWidth(label, theme::FontSize);
+    if (!count.empty()) w += (label.empty() ? kCheckLabelGap : kCountGap) + c.P().TextWidth(count, theme::FontSize, true);
+    return w + 2.f;
+}
+
+bool CheckboxCount(ui::Context& c, std::string_view id, const Rect& r, bool& value, std::wstring_view label,
+                   std::wstring_view count, ui::Color countColor) {
+    const bool changed = Checkbox(c, id, r, value, label);  // 箱とラベルは Checkbox の 1 本の道で
+    if (count.empty()) return changed;
+    float x = r.x + kCheckBoxW + kCheckLabelGap;
+    if (!label.empty()) x += c.P().TextWidth(label, theme::FontSize) + kCountGap;
+    ui::TextStyle ts;
+    ts.size = theme::FontSize;
+    ts.bold = true;
+    ts.color = countColor;
+    c.P().Text({x, r.y, std::max(0.f, r.Right() - x), r.h}, count, ts);
+    return changed;
+}
+
+namespace {
 constexpr float kTrackW = 40.f, kLabelGap = 8.f;
 }  // namespace
 
@@ -1175,6 +1242,10 @@ void EndScroll(ui::Context& c, std::string_view idStr, const Rect& view, float c
 }
 
 void ScrollToEnd(ui::Context& c, std::string_view idStr) { c.FloatState(c.MakeId(idStr)) = 1e9f; }
+
+bool ScrollAtEnd(ui::Context& c, std::string_view idStr, const Rect& view, float contentHeight) {
+    return c.FloatState(c.MakeId(idStr)) >= std::max(0.f, contentHeight - view.h) - 1.f;
+}
 
 namespace {
 constexpr float kItemH = 28.f;
