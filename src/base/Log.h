@@ -26,6 +26,9 @@ struct Entry {
     double time = 0.0;  // 最初のログ呼び出しからの秒数
     uint64_t seq = 0;   // 1, 2, 3 ...
     std::string text;   // UTF-8
+    // 書いたときの PC の時計 (地方時) を、1970-01-01 0:00 (地方時) からのミリ秒で (コンソールの時刻)。
+    // 地方時が分からないときは UTC のまま。
+    int64_t clockMs = 0;
 };
 
 using Sink = std::function<void(const Entry&)>;
