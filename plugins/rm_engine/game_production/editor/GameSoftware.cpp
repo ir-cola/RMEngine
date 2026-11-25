@@ -959,6 +959,8 @@ public:
         return TopRow{name.empty() ? Tr(L"シーン") : Utf8ToWide(name), editor::w::Icon::Scene, inspectingScene_};
     }
     void TopClicked() override { InspectScene(); }
+    // 一番上の行の右クリック: 開いているシーンの複製・削除 (シーン パネルの行と同じもの)。
+    std::vector<tree::Action> TopActions() override { return SceneFileActions(AssetRef{slot_.guid}); }
 
     std::wstring EmptyText() const override {
         return Tr(L"エンティティはまだありません。\nここを右クリックして「追加」から作れます。");
@@ -2538,6 +2540,153 @@ private:
         });
     }
 
+    // シーンの右クリック (シーン パネルの行・ヒエラルキーの一番上の行) の「複製」「削除」。
+    // ファイルの操作なので Undo には積まない (アセットのパネルと同じ: 削除の戻り道はごみ箱)。
+    // ゲームの一覧の変更だけが、ほかの一覧の編集と同じく履歴に積まれ、未保存になる。
+    std::vector<tree::Action> SceneFileActions(const AssetRef& ref) {
+        std::vector<tree::Action> list;
+        const bool playing = Running();
+        const bool isOpen = ref.Empty() || ref.guid == slot_.guid;
+        const bool hasFile = !ref.Empty() && !host_.AssetFile(ref).empty();
+        tree::Action dup;
+        dup.label = Tr(L"複製");
+        dup.enabled = !playing && (hasFile || isOpen);
+        dup.run = [this, ref] { DuplicateScene(ref); };
+        list.push_back(std::move(dup));
+        tree::Action del;
+        del.label = Tr(L"削除");
+        if (ref.Empty()) {
+            del.label = Tr(L"削除 (まだ保存していないシーン)");
+            del.enabled = false;
+        } else if (isOpen && SceneToShowAfterDeleting(ref).Empty()) {
+            del.label = Tr(L"削除 (ほかにシーンが無いので消せません)");
+            del.enabled = false;
+        } else {
+            del.enabled = !playing;
+        }
+        del.run = [this, ref] { DeleteSceneAsked(ref); };
+        list.push_back(std::move(del));
+        return list;
+    }
+
+    // 複製: 元と同じフォルダーに "<名前> 2" ... (CopyScenePath)、新しい id (.meta はアセットの表が
+    // 今付ける)。開いているシーンは画面の今の中身 (保存していない変更も。保存と同じテキスト)、
+    // ほかのものはファイルのまま (新しい版の知らないキーも)。エンティティの id はシーンごとなので
+    // そのまま。ゲームの一覧にあれば、そのすぐ後ろに入れる。開いているシーンは変わらない。
+    void DuplicateScene(const AssetRef& ref) {
+        if (Running()) {
+            log::Info("Play 中はシーンを複製できません (■ で止めてから)");
+            return;
+        }
+        const bool isOpen = ref.Empty() || ref.guid == slot_.guid;
+        const fs::path file = ref.Empty() ? fs::path() : host_.AssetFile(ref);
+        std::string from = file.empty() ? std::string() : RelativePath(file);
+        std::optional<std::string> text;
+        if (isOpen && !(sceneUnread_ && scene_.Empty())) {
+            Scene saved = scene_;
+            UpdateOverrides(saved);
+            text = SceneFileText(saved.Save());
+            if (from.empty()) from = slot_.path;  // (まだ保存していない新しいシーン: これからできるファイルの隣)
+        } else if (file.empty()) {
+            log::Warn("シーン ({}) のファイルが Assets に見つからないので、複製できません", ref.guid);
+            return;
+        } else {
+            std::string err;
+            text = platform::ReadFileBytes(file, &err);
+            if (!text) {
+                log::Error("シーン「{}」を読めないので、複製できません: {}", SceneNameOf(from), err);
+                return;
+            }
+        }
+        const std::string to = CopyScenePath(from, [this](const std::string& p) {
+            std::error_code ec;
+            return fs::exists(FullPath(p), ec);
+        });
+        std::string err;
+        if (!platform::WriteFileAtomic(FullPath(to), *text, &err)) {
+            log::Error("シーンの複製 ({}) を書けませんでした: {}", to, err);
+            return;
+        }
+        const AssetRef copy = host_.AssetOf(FullPath(to));  // (新しい .meta: 見るのを待たずに今)
+        sceneFilesTime_ = 0;  // (一覧に無いシーンとして、すぐ出す)
+        if (copy.Empty()) {
+            log::Warn("シーンの複製 ({}) に id を付けられませんでした。ゲームの一覧には足していません", to);
+        } else {
+            const SceneList next = SceneListWithCopy(sceneList_, ref, copy, AssetRef{slot_.guid});
+            if (next.scenes != sceneList_.scenes) EditSceneList(TrU8("シーンを複製する"), [&](SceneList& l) { l = next; });
+        }
+        log::Info("シーン「{}」を複製しました: {}", SceneNameOf(from), to);
+        host_.Redraw();
+    }
+
+    // 開いているシーン `gone` を消したあとに開くもの (空: ほかにシーンが無い)。
+    AssetRef SceneToShowAfterDeleting(const AssetRef& gone) {
+        return SceneAfterDelete(sceneList_, gone, ScenesNotListed(), [this](const AssetRef& r) { return !host_.AssetFile(r).empty(); });
+    }
+
+    // 削除: 名前を出して確かめてから、ファイルを (.meta と一緒に) ごみ箱へ。ファイルがもう無い一覧の
+    // 行は、確かめずに一覧から外すだけ (Undo で戻る)。
+    void DeleteSceneAsked(const AssetRef& ref) {
+        if (Running()) {
+            log::Info("Play 中はシーンを削除できません (■ で止めてから)");
+            return;
+        }
+        if (ref.Empty()) return;
+        const bool isOpen = ref.guid == slot_.guid;
+        const bool hasFile = !host_.AssetFile(ref).empty();
+        if (!hasFile && !isOpen) {
+            DeleteScene(ref);
+            return;
+        }
+        const AssetRef next = isOpen ? SceneToShowAfterDeleting(ref) : AssetRef{};
+        if (isOpen && next.Empty()) {
+            log::Info("ほかにシーンが無いので、このシーンは削除できません (先に新しいシーンを作ってください)");
+            return;
+        }
+        std::wstring text = hasFile ? TrF(L"シーン「{}」をごみ箱へ移しますか？", Utf8ToWide(SceneTitle(ref)))
+                                    : TrF(L"シーン「{}」を削除しますか？ (ファイルはもうありません)", Utf8ToWide(SceneNameOf(slot_.path)));
+        if (isOpen) text += TrF(L"\n開いているシーンなので、保存していない変更は失われ、「{}」を開きます。", Utf8ToWide(SceneTitle(next)));
+        if (ref == FirstScene(sceneList_)) text += Tr(L"\nゲームが始まるシーンです。ほかのシーン (一覧の最初のもの) から始まるようになります。");
+        if (hasFile) text += Tr(L"\nファイルはごみ箱から戻せます (Ctrl+Z では戻りません)。");
+        host_.Ask(Tr(L"シーンを削除"), text, {Tr(L"削除する"), Tr(L"キャンセル")}, [this, ref](int answer) {
+            if (answer == 0) DeleteScene(ref);
+        });
+    }
+
+    void DeleteScene(const AssetRef& ref) {
+        if (Running() || ref.Empty()) return;  // (確かめている間に Play が始まった)
+        const bool isOpen = ref.guid == slot_.guid;
+        const AssetRef next = isOpen ? SceneToShowAfterDeleting(ref) : AssetRef{};
+        if (isOpen && next.Empty()) return;
+        const std::string name = SceneTitle(ref);
+        const bool hadFile = !host_.AssetFile(ref).empty();
+        if (hadFile) {
+            const std::wstring problem = host_.DeleteAsset(ref);  // (理由はコンソールにも出る)
+            if (!problem.empty() || !host_.AssetFile(ref).empty()) {
+                log::Warn("シーン「{}」を削除できませんでした{}", name, problem.empty() ? std::string() : ": " + WideToUtf8(problem));
+                return;
+            }
+        }
+        // 開いていたもの: 別のシーンを開く (その編集は失われる - 確かめた。履歴はシーンを開くと消える
+        // ので、一覧の変更はその後に積む)。
+        if (isOpen) ShowScene(next);
+        const AssetRef firstBefore = FirstScene(sceneList_);
+        const SceneList after = SceneListWithout(sceneList_, ref);
+        if (after.scenes != sceneList_.scenes || after.notBuilt != sceneList_.notBuilt || after.first != sceneList_.first || after.open != sceneList_.open) {
+            EditSceneList(TrU8("シーンを削除する"), [&](SceneList& l) { l = after; });
+        }
+        sceneFilesTime_ = 0;
+        if (hadFile) {
+            log::Info("シーン「{}」をごみ箱へ移しました", name);
+        } else {
+            log::Info("ファイルの無いシーン ({}) をゲームの一覧から外しました", ref.guid);
+        }
+        if (const AssetRef first = FirstScene(sceneList_); first != firstBefore && !first.Empty()) {
+            log::Info("ゲームが始まるシーンは「{}」になりました", SceneTitle(first));
+        }
+        host_.Redraw();
+    }
+
     // シーン: ゲームのシーンを、ヒエラルキー がエンティティを見せるとおりに (同じツリー表示):
     // クリックで 1 つ開き (開いているものが選ばれた行)、ドラッグで順を変え (ゲームの順)、
     // F2 / ダブルクリック / メニューで名前を変え、右クリックで: 開く、新しいシーン
@@ -2569,6 +2718,10 @@ private:
                 it.canHaveChildren = false;
                 it.icon = editor::tree::Icon::Scene;
                 if (r.Empty()) it.badge = Tr(L"未保存");
+                if (it.name.empty() && !r.Empty()) {  // (一覧にあるがファイルが無い: 消された・Assets の外へ)
+                    it.name = TrU8("(ファイルが見つかりません)");
+                    it.dimmed = true;
+                }
                 if (i >= listed_) {
                     it.dimmed = true;
                     it.badge = Tr(L"一覧に無い");
@@ -2643,6 +2796,8 @@ private:
                     }
                     editor::tree::Action sep;
                     sep.separator = true;
+                    list.push_back(sep);
+                    for (auto& a : g_.SceneFileActions(ref)) list.push_back(std::move(a));
                     list.push_back(std::move(sep));
                 }
             }

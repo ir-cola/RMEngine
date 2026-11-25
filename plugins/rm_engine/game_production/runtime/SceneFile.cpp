@@ -59,6 +59,38 @@ std::string SceneNameOf(std::string_view path) {
     return std::string(name);
 }
 
+std::pair<std::string, int> SplitSceneNumber(std::string_view name) {
+    size_t digits = 0;
+    while (digits < name.size() && name[name.size() - 1 - digits] >= '0' && name[name.size() - 1 - digits] <= '9') ++digits;
+    // "<名前> <数>" だけ: 前に空白と名前があり、数は 1 から 6 桁 (大きすぎる数で溢れない)。
+    if (digits == 0 || digits > 6 || digits + 1 >= name.size() || name[name.size() - 1 - digits] != ' ') return {std::string(name), 0};
+    const int number = std::stoi(std::string(name.substr(name.size() - digits)));
+    if (number <= 0) return {std::string(name), 0};
+    return {std::string(name.substr(0, name.size() - digits - 1)), number};
+}
+
+SceneList SceneListWithCopy(const SceneList& list, const AssetRef& original, const AssetRef& copy, const AssetRef& open) {
+    SceneList out = list;
+    if (copy.Empty() || std::find(out.scenes.begin(), out.scenes.end(), copy) != out.scenes.end()) return out;
+    const auto at = original.Empty() ? out.scenes.end() : std::find(out.scenes.begin(), out.scenes.end(), original);
+    if (at != out.scenes.end()) {
+        out.scenes.insert(at + 1, copy);
+    } else if (original == open) {
+        out.scenes.push_back(copy);
+    }
+    return out;
+}
+
+SceneList SceneListWithout(const SceneList& list, const AssetRef& gone) {
+    SceneList out = list;
+    if (gone.Empty()) return out;
+    std::erase(out.scenes, gone);
+    std::erase(out.notBuilt, gone);
+    if (out.first == gone) out.first = {};
+    if (out.open == gone) out.open = {};
+    return out;
+}
+
 std::optional<size_t> FindSceneByName(const std::vector<std::string>& names, std::string_view name) {
     for (size_t i = 0; i < names.size(); ++i) {
         if (names[i] == name) return i;

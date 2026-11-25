@@ -48,7 +48,8 @@ public:
 
     // 省略可: 項目の上にある、項目ではない行 (階層 のシーン): いつもあり、スクロールせず、検索にも
     // 掛からない。クリックすると選択を消し、TopClicked を呼ぶ (SelectionChanged のあと)。右クリックは
-    // 何もない所のメニュー (Actions に何も無い) を開く。ここにドロップした行は最上位の最後に行く。
+    // TopActions の行と、その下に何もない所のメニュー (Actions に何も無い) を開く。ここにドロップした
+    // 行は最上位の最後に行く。
     struct TopRow {
         std::wstring name;
         w::Icon icon = w::Icon::Object;
@@ -56,6 +57,8 @@ public:
     };
     virtual std::optional<TopRow> Top() const { return std::nullopt; }
     virtual void TopClicked() {}
+    // 一番上の行を右クリックしたときのメニューの、先頭の行 (階層 のシーン: 複製・削除)。
+    virtual std::vector<Action> TopActions() { return {}; }
 
     virtual bool CanRename(ItemId id) const {
         (void)id;

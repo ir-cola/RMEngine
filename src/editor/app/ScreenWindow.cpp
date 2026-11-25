@@ -252,6 +252,17 @@ void ScreenWindow::RunFrame() {
     frameInput_ = input_;
     input_.EndFrame();
     ctx_.BeginFrame(&painter_, &frameInput_, {0, 0, w, h}, platform::NowSeconds());
+    // このウィンドウがある画面 (モニターの作業領域) を、このウィンドウの DIP で (季節の絵の雪だるま)。
+    if (HMONITOR mon = MonitorFromWindow(window_.Handle(), MONITOR_DEFAULTTONEAREST)) {
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        POINT origin{0, 0};
+        if (GetMonitorInfoW(mon, &mi) && ClientToScreen(window_.Handle(), &origin)) {
+            const RECT& a = mi.rcWork;
+            ctx_.SetScreen({static_cast<float>(a.left - origin.x) / scale, static_cast<float>(a.top - origin.y) / scale,
+                            static_cast<float>(a.right - a.left) / scale, static_cast<float>(a.bottom - a.top) / scale});
+        }
+    }
     OnFrame(ctx_, w, h);
     ctx_.RunOverlays();
     ctx_.EndFrame();

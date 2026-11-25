@@ -51,7 +51,7 @@ Color SnowLow() { return Color::Hex(0xE6EEF7); }          // 吹きだまりの�
 Color Flake() { return Color::Hex(0xFFFFFF, 0.9f); }      // 降る雪
 Color Bucket() { return Color::Hex(0xD9412E); }           // 雪だるまのバケツ
 Color BucketRim() { return Color::Hex(0xB0301F); }        // その縁
-Color SnowmanEye() { return Color::Hex(0x3A3F4A); }
+
 }  // namespace season
 
 enum class Kind { Spring, Summer, Fall, Winter };
@@ -103,33 +103,33 @@ void WinterSky(Picture& pic, const Rect& w, float scale) {
 // どのパネルの下にも積もった)。ウィンドウの絵なので、一番下のパネルやバーの塗りの上にも内容の後ろに出る。
 // 左右の端まで積もり、ウィンドウの端で切れる。高さは決まった値で、形は左端からの位置だけで決まる
 // (2026-11-25: ユーザーの希望。大きさを変えても形が変わらない)。
-void WinterGround(Picture& pic, const Rect& w) {
+void WinterGround(Picture& pic, const Rect& w, const Rect& screen) {
     constexpr float kDepth = 24.f;
-    // 右下の積もった雪の上に雪だるま (2026-11-25)。大きさは DIP で決める (文字と同じく Windows の拡大率で
-    // 大きくなる)。右下の角からの場所なので、どの画面の大きさ・比率でも右下に立つ。狭いウィンドウでは出さない。
-    // 体を先に描き、その上に雪を重ねる (足元が少し雪に埋もれて見える)。バケツと目は最後。
-    const bool snowman = w.w >= 480 && w.h >= 300;
-    ornament::SnowmanShapes man;
+    // 雪だるま (2026-11-25): **画面** (モニター) の右下に立つ。ウィンドウが画面の右端まで無いと (小さいウィンドウ、
+    // Hub のそのままの大きさ) その外になって見えない。全画面 (最大化) で右下に出る。大きさは DIP (文字と同じく
+    // Windows の拡大率で大きくなる)。体は雪と同じ白で、輪郭は雪の輪郭と 1 つにつながる: 輪郭 (雪の縁と、
+    // 少し太らせた丸) を先に描き、その上に白 (丸と雪) を重ねる。足元は雪に埋もれる。
+    constexpr float kHeight = 58.f;
+    const float x = screen.Right() - 64.f;
+    const bool snowman = x + kHeight * 0.4f > w.x && x - kHeight * 0.4f < w.Right();
+    ornament::SnowmanShapes man, edge;
     if (snowman) {
-        constexpr float kHeight = 58.f;
-        const float x = w.Right() - 64.f;
         const float ground = w.y + w.h - ornament::SnowDriftHeight(x - w.x, kDepth) + 4.f;
-        ornament::SnowmanShapes edge = ornament::Snowman({x + 0.8f, ground + 1.f}, kHeight);
+        edge = ornament::Snowman({x, ground}, kHeight, 1.5f);
         man = ornament::Snowman({x, ground}, kHeight);
-        pic.push_back({std::move(edge.body), season::SnowEdge()});  // 白い丸の縁 (右下に少しずらした影)
-        pic.push_back({std::move(man.body), season::Snow()});
     }
+    if (snowman) pic.push_back({std::move(edge.body), season::SnowEdge()});
     pic.push_back({ornament::SnowDrift({w.x, w.y - 1.5f, w.w, w.h}, kDepth), season::SnowEdge()});
+    if (snowman) pic.push_back({std::move(man.body), season::Snow()});
     pic.push_back({ornament::SnowDrift(w, kDepth), season::Snow()});
     pic.push_back({ornament::SnowDrift(w, kDepth * 0.45f), season::SnowLow()});
     if (snowman) {
         pic.push_back({std::move(man.bucket), season::Bucket()});
         pic.push_back({std::move(man.rim), season::BucketRim()});
-        pic.push_back({std::move(man.eyes), season::SnowmanEye()});
     }
 }
 
-Picture Make(Kind kind, const Rect& w, bool floating) {
+Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
     Picture pic;
     switch (kind) {
         case Kind::Spring:
@@ -180,7 +180,7 @@ Picture Make(Kind kind, const Rect& w, bool floating) {
             WinterSky(pic, w, floating ? 0.8f : 1.f);
             if (!floating) {
                 Silhouette(pic, w, ornament::Snowflake({0, 0}, 1.f, 10.f));
-                WinterGround(pic, w);
+                WinterGround(pic, w, screen);
             }
             break;
     }
@@ -189,29 +189,32 @@ Picture Make(Kind kind, const Rect& w, bool floating) {
 
 // 絵は 1 フレームに何度も描かれる (背景、そして各パネルとバー、切り抜きつき) ので、
 // ウィンドウの大きさごとに 1 回だけ作る: 最近のいくつかのウィンドウ (メインとパネルのウィンドウ) の分を覚えておく。
-const Picture& Cached(Kind kind, const Rect& w, bool floating) {
+const Picture& Cached(Kind kind, const Rect& w, bool floating, const Rect& screen) {
     struct Entry {
         Kind kind;
         Rect w;
         bool floating;
+        Rect screen;  // (冬の雪だるまだけが使う: ほかの季節では空)
         Color accent;  // 影の色はテーマから来る
         Picture picture;
     };
     static std::vector<Entry> cache;
     for (const Entry& e : cache) {
         if (e.kind == kind && e.floating == floating && e.accent == theme::Accent && e.w.x == w.x && e.w.y == w.y && e.w.w == w.w &&
-            e.w.h == w.h) {
+            e.w.h == w.h && e.screen.x == screen.x && e.screen.y == screen.y && e.screen.w == screen.w && e.screen.h == screen.h) {
             return e.picture;
         }
     }
     if (cache.size() >= 4) cache.erase(cache.begin());
-    cache.push_back({kind, w, floating, theme::Accent, Make(kind, w, floating)});
+    cache.push_back({kind, w, floating, screen, theme::Accent, Make(kind, w, floating, screen)});
     return cache.back().picture;
 }
 
 template <Kind K>
 void DrawWindow(ui::Context& c, const Rect& window, bool floating) {
-    for (const Layer& l : Cached(K, window, floating)) c.P().FillPath(l.path, l.color);
+    // 画面 (モニター) の場所を使うのは冬の雪だるまだけ (ほかの季節は、ウィンドウを動かしても作り直さない)。
+    const Rect screen = K == Kind::Winter && !floating ? c.Screen() : Rect{};
+    for (const Layer& l : Cached(K, window, floating, screen)) c.P().FillPath(l.path, l.color);
 }
 
 constexpr editor::w::OrnamentInfo kSpring{"spring", &DrawWindow<Kind::Spring>, nullptr};

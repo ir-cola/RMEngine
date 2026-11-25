@@ -261,6 +261,11 @@ std::wstring EditorScreen::Workspace::RenameAsset(const AssetRef& ref, const std
     return editor_.assets_->Rename(ref.guid, newNameUtf8);
 }
 
+std::wstring EditorScreen::Workspace::DeleteAsset(const AssetRef& ref) {
+    const std::string guids[] = {ref.guid};
+    return editor_.assets_->Delete(guids);
+}
+
 bool EditorScreen::ExportForCheck(const fs::path& outDir, std::string* error) {
     for (auto& ws : workspaces_) {
         if (ws->software && ws->software->CanExport()) return ws->software->ExportNow(outDir, error);

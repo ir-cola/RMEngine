@@ -31,6 +31,10 @@ public:
     Painter& P() { return *painter_; }
     const Input& In() const { return *in_; }
     const Rect& Viewport() const { return viewport_; }
+    // このウィンドウがある画面 (モニターの作業領域。タスクバーを除く) を、このウィンドウの DIP の座標で
+    // (季節の絵: 画面の右下に置く物は、ウィンドウが画面の右端まで無いと見えない)。知らないときは Viewport。
+    const Rect& Screen() const { return screen_; }
+    void SetScreen(const Rect& r) { screen_ = r; }
     double Time() const { return time_; }
 
     // --- ID ---
@@ -119,6 +123,7 @@ private:
     Painter* painter_ = nullptr;
     const Input* in_ = nullptr;
     Rect viewport_;
+    Rect screen_;
     double time_ = 0;
 
     std::vector<Id> idStack_;

@@ -557,14 +557,14 @@ float SnowDriftHeight(float l, float depth) {
     return depth * (0.72f + 0.17f * std::sin(l * 0.017f) + 0.09f * std::sin(l * 0.039f + 1.f));
 }
 
-SnowmanShapes Snowman(Vec2 base, float height) {
+SnowmanShapes Snowman(Vec2 base, float height, float grow) {
     SnowmanShapes s;
     // 高さの割り振り: 下の丸 0.46、頭 0.32 (少し重なる)、バケツ 0.20 ほど。
     const float r1 = height * 0.23f, r2 = height * 0.16f;
     const Vec2 c1{base.x, base.y - r1};
     const Vec2 c2{base.x + height * 0.01f, c1.y - r1 - r2 + height * 0.05f};
-    AddCircle(s.body, c1, r1);
-    AddCircle(s.body, c2, r2);
+    AddCircle(s.body, c1, r1 + grow);
+    AddCircle(s.body, c2, r2 + grow);
     // バケツ: 逆さにかぶる (口が下で広い)。頭の上の方から、少し右へ傾ける。
     const float tilt = -12.f;  // 度 (画面で時計回り = 右へ傾く)
     auto at = [&](float x, float y) { return Add(c2, Rotate({x, y}, tilt)); };
@@ -574,9 +574,6 @@ SnowmanShapes Snowman(Vec2 base, float height) {
     const Vec2 rim[] = {at(-r2 * 0.95f, y0 + height * 0.035f), at(-r2 * 0.95f, y0 - height * 0.015f), at(r2 * 0.95f, y0 - height * 0.015f),
                         at(r2 * 0.95f, y0 + height * 0.035f)};
     AddPolygon(s.rim, rim);
-    // 目: 頭の真ん中より少し上に 2 つ。
-    AddCircle(s.eyes, {c2.x - r2 * 0.35f, c2.y - r2 * 0.05f}, std::max(1.2f, height * 0.022f));
-    AddCircle(s.eyes, {c2.x + r2 * 0.30f, c2.y - r2 * 0.05f}, std::max(1.2f, height * 0.022f));
     return s;
 }
 
