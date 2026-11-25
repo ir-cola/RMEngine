@@ -62,7 +62,8 @@ int ComponentCount(std::string_view type) {
     if (type == "VEC2") return 2;
     if (type == "VEC3") return 3;
     if (type == "VEC4") return 4;
-    return 0;  // 行列: ここで読むものには使わない
+    if (type == "MAT4") return 16;  // スキンの逆バインド行列 (列の順)
+    return 0;  // ほかの行列: ここで読むものには使わない
 }
 
 // 1 つのアクセサーの数がある場所 (base が null: すべて 0。バッファービューの無いアクセサー)。
@@ -117,6 +118,126 @@ float Number(const json::Value& arr, size_t i, float def, bool scalar = false) {
 
 float Unit(float v) { return std::clamp(v, 0.f, 1.f); }
 
+// ノードの親の空間での行列 (matrix、または T * R * S)。
+Mat4 NodeLocal(const json::Value& n) {
+    Mat4 local;
+    if (const json::Value* m = n.Find("matrix"); m && m->Size() == 16) {
+        for (int c = 0; c < 4; ++c) {
+            for (int r = 0; r < 4; ++r) local.m[c][r] = Number(*m, static_cast<size_t>(c * 4 + r), c == r ? 1.f : 0.f);
+        }
+    } else {
+        const json::Value& t = n.Get("translation");
+        const json::Value& q = n.Get("rotation");
+        const json::Value& s = n.Get("scale");
+        Mat4 tm, sm;
+        tm.m[3][0] = Number(t, 0, 0), tm.m[3][1] = Number(t, 1, 0), tm.m[3][2] = Number(t, 2, 0);
+        sm.m[0][0] = Number(s, 0, 1), sm.m[1][1] = Number(s, 1, 1), sm.m[2][2] = Number(s, 2, 1);
+        local = tm * FromQuaternion(Number(q, 0, 0), Number(q, 1, 0), Number(q, 2, 0), Number(q, 3, 1)) * sm;
+    }
+    return local;
+}
+
+// ノードの位置・回転・大きさ (matrix で書いてあれば、それを分ける)。
+BoneTRS NodeTRS(const json::Value& n) {
+    if (const json::Value* m = n.Find("matrix"); m && m->Size() == 16) return DecomposeTRS(NodeLocal(n));
+    const json::Value& t = n.Get("translation");
+    const json::Value& q = n.Get("rotation");
+    const json::Value& s = n.Get("scale");
+    BoneTRS p;
+    p.t = {Number(t, 0, 0), Number(t, 1, 0), Number(t, 2, 0)};
+    p.r = QuatNormalize({Number(q, 0, 0), Number(q, 1, 0), Number(q, 2, 0), Number(q, 3, 1)});
+    p.s = {Number(s, 0, 1), Number(s, 1, 1), Number(s, 2, 1)};
+    return p;
+}
+
+bool IsIdentity(const Mat4& m) {
+    const Mat4 one;
+    for (int c = 0; c < 4; ++c) {
+        for (int r = 0; r < 4; ++r) {
+            if (m.m[c][r] != one.m[c][r]) return false;
+        }
+    }
+    return true;
+}
+
+// 球面線形補間 (近い方の回り方: q と -q は同じ回転なので、内積が負なら片方を裏返す)。
+Quat Slerp(Quat a, Quat b, float s) {
+    float d = QuatDot(a, b);
+    if (d < 0) b = {-b.x, -b.y, -b.z, -b.w}, d = -d;
+    float wa = 1 - s, wb = s;
+    if (d < 0.9995f) {  // ほとんど同じ向きなら線形 (sin がほぼ 0 で割れない)
+        const float theta = std::acos(std::min(d, 1.f));
+        const float sn = std::sin(theta);
+        wa = std::sin((1 - s) * theta) / sn;
+        wb = std::sin(s * theta) / sn;
+    }
+    return QuatNormalize({a.x * wa + b.x * wb, a.y * wa + b.y * wb, a.z * wa + b.z * wb, a.w * wa + b.w * wb});
+}
+
+// glTF のアニメーションのサンプラー 1 つ: キーの時刻と値。
+enum class Interp : uint8_t { Linear, Step, Cubic };
+struct Curve {
+    std::vector<float> times;
+    std::vector<float> values;  // キーごとに comps 個 (CUBICSPLINE: 入りの接線・値・出の接線 の 3 組ずつ)
+    int comps = 0;              // 0: まだ読んでいない
+    Interp interp = Interp::Linear;
+
+    const float* Key(size_t k, int which) const {  // which: 0 入りの接線、1 値、2 出の接線
+        return interp == Interp::Cubic ? &values[(k * 3 + static_cast<size_t>(which)) * static_cast<size_t>(comps)]
+                                       : &values[k * static_cast<size_t>(comps)];
+    }
+    // 時刻 `t` の値を out (comps 個) に。最初のキーより前は最初の値、最後より後は最後の値。
+    void Sample(float t, float* out) const {
+        const size_t n = times.size();
+        const size_t c = static_cast<size_t>(comps);
+        auto copy = [&](const float* v) { std::copy(v, v + c, out); };
+        if (n == 1 || t <= times[0]) {
+            copy(Key(0, 1));
+        } else if (t >= times[n - 1]) {
+            copy(Key(n - 1, 1));
+        } else {
+            const size_t k = static_cast<size_t>(std::upper_bound(times.begin(), times.end(), t) - times.begin()) - 1;
+            const float td = times[k + 1] - times[k];
+            const float s = td > 0 ? (t - times[k]) / td : 0.f;
+            const float* a = Key(k, 1);
+            const float* b = Key(k + 1, 1);
+            if (interp == Interp::Step) {
+                copy(a);
+            } else if (interp == Interp::Linear) {
+                if (comps == 4) {  // 回転
+                    const Quat q = Slerp({a[0], a[1], a[2], a[3]}, {b[0], b[1], b[2], b[3]}, s);
+                    out[0] = q.x, out[1] = q.y, out[2] = q.z, out[3] = q.w;
+                } else {
+                    for (size_t i = 0; i < c; ++i) out[i] = a[i] + (b[i] - a[i]) * s;
+                }
+            } else {
+                // エルミート曲線 (glTF の付録 C): 接線は 1 秒あたりなので、キーの間の長さを掛ける。
+                const float s2 = s * s, s3 = s2 * s;
+                const float h00 = 2 * s3 - 3 * s2 + 1, h10 = s3 - 2 * s2 + s, h01 = -2 * s3 + 3 * s2, h11 = s3 - s2;
+                const float* outTangent = Key(k, 2);
+                const float* inTangent = Key(k + 1, 0);
+                for (size_t i = 0; i < c; ++i) out[i] = h00 * a[i] + h10 * td * outTangent[i] + h01 * b[i] + h11 * td * inTangent[i];
+            }
+        }
+        if (comps == 4) {
+            const Quat q = QuatNormalize({out[0], out[1], out[2], out[3]});
+            out[0] = q.x, out[1] = q.y, out[2] = q.z, out[3] = q.w;
+        }
+    }
+};
+
+// 列の値が全部同じなら 1 つにする (ずっと同じ値: BoneTrack の決まり)。
+template <class T, class Same>
+void Squash(std::vector<T>& v, Same same) {
+    for (size_t i = 1; i < v.size(); ++i) {
+        if (!same(v[0], v[i])) return;
+    }
+    if (v.size() > 1) v.resize(1);
+}
+bool Close(float a, float b) { return std::fabs(a - b) <= 1e-6f; }
+bool CloseV(Vec3 a, Vec3 b) { return Close(a.x, b.x) && Close(a.y, b.y) && Close(a.z, b.z); }
+bool CloseQ(Quat a, Quat b) { return Close(a.x, b.x) && Close(a.y, b.y) && Close(a.z, b.z) && Close(a.w, b.w); }
+
 class GltfReader {
 public:
     GltfReader(const json::Value& doc, std::span<const uint8_t> glbBin, const ReadRelated& read, std::string* error, ReadBudget& budget)
@@ -129,7 +250,7 @@ public:
             Fail(error_, std::format("glTF {} には対応していません (2.0 だけ読めます)", version));
             return std::nullopt;
         }
-        if (!LoadBuffers() || !LoadMaterials()) return std::nullopt;
+        if (!LoadBuffers() || !LoadMaterials() || !LoadSkeleton()) return std::nullopt;
 
         const json::Value& scenes = doc_.Get("scenes");
         const json::Value& nodes = doc_.Get("nodes");
@@ -140,7 +261,7 @@ public:
                 return std::nullopt;
             }
             for (const json::Value& n : scenes.At(static_cast<size_t>(which)).Get("nodes").Items()) {
-                if (!Node(n.AsInt(-1), Mat4{}, 0)) return std::nullopt;
+                if (!Node(n.AsInt(-1), Mat4{}, 0, -1)) return std::nullopt;
             }
         } else if (nodes.IsArray() && nodes.Size() > 0) {
             // シーンが無い: 誰の子でもないノードすべて。
@@ -152,12 +273,12 @@ public:
                 }
             }
             for (size_t i = 0; i < nodes.Size(); ++i) {
-                if (!child[i] && !Node(static_cast<int64_t>(i), Mat4{}, 0)) return std::nullopt;
+                if (!child[i] && !Node(static_cast<int64_t>(i), Mat4{}, 0, -1)) return std::nullopt;
             }
         } else {
             // ノードすらない: メッシュをそのまま。
             for (size_t i = 0; i < doc_.Get("meshes").Size(); ++i) {
-                if (!Mesh(static_cast<int64_t>(i), Mat4{})) return std::nullopt;
+                if (!Mesh(static_cast<int64_t>(i), Mat4{}, -1, -1)) return std::nullopt;
             }
         }
         if (out_.indices.empty()) {
@@ -166,10 +287,204 @@ public:
         }
         ComputeBounds(out_);
         SortByMaterial(out_, triangleMaterial_);
+        if (skinned_) {
+            if (!LoadClips()) return std::nullopt;
+            if (dropped_ > 0) out_.warnings.push_back(std::format("頂点 {} 個に 5 本以上の骨が付いています (重い 4 本だけで動かします)", dropped_));
+            std::vector<Vec3> positions(out_.vertices.size());
+            for (size_t i = 0; i < positions.size(); ++i) positions[i] = out_.vertices[i].position;
+            ComputeBoneBounds(skin_, positions);
+            out_.skin = std::move(skin_);
+        }
         return std::move(out_);
     }
 
 private:
+    // --- 骨 (skins) ---------------------------------------------------------------------------
+    // 骨の木はモデルに 1 つ: すべてのスキンの joints を合わせたもの。骨の親は、骨でもある一番近い祖先の
+    // ノード。骨と骨 (や根) の間に骨でないノード (Blender の「アーマチュア」など) があれば、その行列を
+    // 子の骨の休みの姿勢とクリップに掛けておく (骨の行列 = glTF のノードのワールド行列になる)。
+    bool LoadSkeleton() {
+        const json::Value& skins = doc_.Get("skins");
+        if (!skins.IsArray() || skins.Size() == 0) return true;
+        const json::Value& nodes = doc_.Get("nodes");
+        const size_t count = nodes.Size();
+        if (!budget_.Take(0, uint64_t{count} * sizeof(int) * 2, error_)) return false;
+        // ノードの親 (glTF のノードは親を 1 つだけ持つ。2 つ目は無視する)。
+        parentOfNode_.assign(count, -1);
+        for (size_t i = 0; i < count; ++i) {
+            for (const json::Value& c : nodes.At(i).Get("children").Items()) {
+                if (!budget_.Step(error_)) return false;
+                const int64_t k = c.AsInt(-1);
+                if (k >= 0 && static_cast<size_t>(k) < count && static_cast<size_t>(k) != i && parentOfNode_[static_cast<size_t>(k)] < 0) {
+                    parentOfNode_[static_cast<size_t>(k)] = static_cast<int>(i);
+                }
+            }
+        }
+        // 骨になるノード (すべてのスキンの joints を、最初に出た順に)。
+        std::vector<bool> joint(count, false);
+        std::vector<int> jointNodes;
+        for (size_t s = 0; s < skins.Size(); ++s) {
+            const json::Value& joints = skins.At(s).Get("joints");
+            if (!joints.IsArray() || joints.Size() == 0) return Fail(error_, std::format("スキン {} に骨 (joints) がありません", s));
+            for (const json::Value& j : joints.Items()) {
+                const int64_t k = j.AsInt(-1);
+                if (k < 0 || static_cast<size_t>(k) >= count) return Fail(error_, std::format("スキン {} の骨のノード {} がありません", s, k));
+                if (!joint[static_cast<size_t>(k)]) {
+                    joint[static_cast<size_t>(k)] = true;
+                    jointNodes.push_back(static_cast<int>(k));
+                }
+            }
+        }
+        if (jointNodes.size() > kMaxBones) {
+            return Fail(error_, std::format("骨が {} 本あるので読めません (1 つのモデルで {} 本まで)", jointNodes.size(), kMaxBones));
+        }
+        if (!budget_.Take(0, uint64_t{jointNodes.size()} * (sizeof(Bone) + 64 + sizeof(Mat4) * 3 + sizeof(BoneTRS)), error_)) return false;
+        // 骨ごとに、骨でもある一番近い祖先 (-1: 根)。親が輪になっていれば止める。
+        std::vector<int> jointParent(count, -1);
+        for (const int n : jointNodes) {
+            int p = parentOfNode_[static_cast<size_t>(n)];
+            for (int depth = 0; p >= 0 && !joint[static_cast<size_t>(p)]; ++depth) {
+                if (depth > kMaxNodeDepth) return Fail(error_, "ノードの親子が深すぎるか、輪になっています");
+                p = parentOfNode_[static_cast<size_t>(p)];
+            }
+            jointParent[static_cast<size_t>(n)] = p;
+        }
+        // 親が先に並ぶように (ファイルの順を保ち、まだ無い親をその前に入れる)。
+        boneOfNode_.assign(count, -1);
+        Skeleton& sk = skin_.skeleton;
+        for (const int n : jointNodes) {
+            std::vector<int> chain;  // n とまだ入っていない祖先の骨 (子から親へ)
+            for (int k = n; k >= 0 && boneOfNode_[static_cast<size_t>(k)] < 0; k = jointParent[static_cast<size_t>(k)]) {
+                if (chain.size() > static_cast<size_t>(kMaxNodeDepth)) return Fail(error_, "ノードの親子が深すぎるか、輪になっています");
+                chain.push_back(k);
+            }
+            for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+                const int node = *it;
+                const json::Value& nd = nodes.At(static_cast<size_t>(node));
+                const int parentBone = jointParent[static_cast<size_t>(node)] >= 0 ? boneOfNode_[static_cast<size_t>(jointParent[static_cast<size_t>(node)])] : -1;
+                // 親の骨 (無ければ根) とこの骨の間の、骨でないノードの行列。
+                Mat4 between;
+                for (int k = parentOfNode_[static_cast<size_t>(node)]; k >= 0 && k != jointParent[static_cast<size_t>(node)];
+                     k = parentOfNode_[static_cast<size_t>(k)]) {
+                    between = NodeLocal(nodes.At(static_cast<size_t>(k))) * between;
+                }
+                Bone b;
+                b.name = nd.Get("name").AsString();
+                if (b.name.empty()) b.name = std::format("骨 {}", sk.bones.size());
+                b.parent = parentBone;
+                const BoneTRS own = NodeTRS(nd);
+                b.rest = IsIdentity(between) ? own : DecomposeTRS(between * TRSMatrix(own));
+                boneOfNode_[static_cast<size_t>(node)] = static_cast<int>(sk.bones.size());
+                nodeRest_.push_back(own);
+                between_.push_back(between);
+                restModel_.push_back(parentBone >= 0 ? restModel_[static_cast<size_t>(parentBone)] * TRSMatrix(b.rest) : TRSMatrix(b.rest));
+                sk.bones.push_back(std::move(b));
+            }
+        }
+        // 逆バインド行列 (無ければ単位行列: glTF の決まり)。2 つのスキンが同じ骨に違う行列を書いていれば最初のもの。
+        skin_.inverseBind.assign(sk.bones.size(), Mat4{});
+        std::vector<bool> bound(sk.bones.size(), false);
+        size_t differ = 0;
+        skinBones_.resize(skins.Size());
+        for (size_t s = 0; s < skins.Size(); ++s) {
+            const json::Value& skin = skins.At(s);
+            const json::Value& joints = skin.Get("joints");
+            Accessor ibm;
+            if (const json::Value* a = skin.Find("inverseBindMatrices")) {
+                if (!Open(a->AsInt(-1), 16, ibm)) return false;
+                if (ibm.components != 16 || ibm.componentType != 5126 || ibm.count < joints.Size()) {
+                    return Fail(error_, std::format("スキン {} の逆バインド行列 (inverseBindMatrices) が正しくありません", s));
+                }
+            }
+            for (size_t j = 0; j < joints.Size(); ++j) {
+                const int bone = boneOfNode_[static_cast<size_t>(joints.At(j).AsInt(-1))];
+                skinBones_[s].push_back(bone);
+                Mat4 m;
+                if (ibm.count > 0) {
+                    for (int c = 0; c < 4; ++c) {
+                        for (int r = 0; r < 4; ++r) m.m[c][r] = ibm.Float(j, c * 4 + r);
+                    }
+                }
+                Mat4& have = skin_.inverseBind[static_cast<size_t>(bone)];
+                if (!bound[static_cast<size_t>(bone)]) {
+                    have = m;
+                    bound[static_cast<size_t>(bone)] = true;
+                    continue;
+                }
+                bool same = true;
+                for (int c = 0; c < 4; ++c) {
+                    for (int r = 0; r < 4; ++r) same = same && std::fabs(have.m[c][r] - m.m[c][r]) <= 1e-4f * std::max(1.f, std::fabs(m.m[c][r]));
+                }
+                if (!same) ++differ;
+            }
+        }
+        if (differ > 0) {
+            out_.warnings.push_back(std::format("{} 本の骨で、スキンによってバインドの姿勢が違います (最初のスキンのものを使います)", differ));
+        }
+        skinned_ = true;
+        return true;
+    }
+
+    // スキンの無いメッシュで、どの骨の下にも無いものを付ける、動かない骨 (要るときに 1 本だけ作る)。-1: 骨が多すぎる。
+    int StaticBone() {
+        if (staticBone_ >= 0) return staticBone_;
+        Skeleton& sk = skin_.skeleton;
+        if (sk.bones.size() >= kMaxBones) {
+            Fail(error_, std::format("骨が {} 本を超えるので読めません", kMaxBones));
+            return -1;
+        }
+        Bone b;
+        b.name = std::string(kStaticBoneName);
+        staticBone_ = static_cast<int>(sk.bones.size());
+        sk.bones.push_back(std::move(b));
+        skin_.inverseBind.push_back(Mat4{});
+        nodeRest_.push_back({});
+        between_.push_back(Mat4{});
+        restModel_.push_back(Mat4{});
+        return staticBone_;
+    }
+
+    // スキンのあるプリミティブの頂点ごとの骨とウェイト (JOINTS_n / WEIGHTS_n。n = 0, 1, ...)。
+    bool SkinOf(const json::Value& attrs, size_t count, int64_t skin, std::vector<SkinVertex>& out) {
+        if (skin < 0 || static_cast<size_t>(skin) >= skinBones_.size()) return Fail(error_, std::format("スキン {} がありません", skin));
+        const std::vector<int>& bones = skinBones_[static_cast<size_t>(skin)];
+        std::vector<std::pair<Accessor, Accessor>> sets;
+        for (int k = 0; k < 8; ++k) {
+            const json::Value* j = attrs.Find(std::format("JOINTS_{}", k));
+            const json::Value* w = attrs.Find(std::format("WEIGHTS_{}", k));
+            if (!j || !w) break;
+            Accessor ja, wa;
+            if (!Open(j->AsInt(-1), 4, ja) || !Open(w->AsInt(-1), 4, wa)) return false;
+            if ((ja.componentType != 5121 && ja.componentType != 5123) || ja.normalized) {
+                return Fail(error_, std::format("骨の番号 (JOINTS_{}) の型が正しくありません (unsigned byte か unsigned short)", k));
+            }
+            if (wa.componentType != 5126 && !((wa.componentType == 5121 || wa.componentType == 5123) && wa.normalized)) {
+                return Fail(error_, std::format("ウェイト (WEIGHTS_{}) の型が正しくありません (float か、正規化した unsigned byte / short)", k));
+            }
+            if (ja.count < count || wa.count < count) return Fail(error_, std::format("骨の番号かウェイト (JOINTS_{} / WEIGHTS_{}) の数が頂点より少なすぎます", k, k));
+            sets.push_back({ja, wa});
+        }
+        if (!budget_.Take(0, uint64_t{count} * sizeof(SkinVertex), error_)) return false;
+        out.resize(count);
+        const uint32_t fallback = static_cast<uint32_t>(bones[0]);
+        std::vector<std::pair<uint32_t, float>> influences;
+        for (size_t i = 0; i < count; ++i) {
+            influences.clear();
+            for (const auto& [ja, wa] : sets) {
+                for (int c = 0; c < 4; ++c) {
+                    const float weight = wa.Float(i, c);
+                    if (!(weight > 0.f)) continue;
+                    const uint32_t j = static_cast<uint32_t>(ja.Float(i, c));  // (正規化しない整数: そのままの数)
+                    if (j >= bones.size()) return Fail(error_, std::format("骨の番号 {} がスキンの骨の数 ({}) を超えています", j, bones.size()));
+                    influences.push_back({static_cast<uint32_t>(bones[j]), weight});
+                }
+            }
+            bool dropped = false;
+            out[i] = PackInfluences(influences, fallback, &dropped);
+            if (dropped) ++dropped_;
+        }
+        return true;
+    }
     bool LoadBuffers() {
         const json::Value& buffers = doc_.Get("buffers");
         for (size_t i = 0; i < buffers.Size(); ++i) {
@@ -321,47 +636,37 @@ private:
         return std::span<const uint8_t>(buffer.data() + offset, static_cast<size_t>(length));
     }
 
-    bool Node(int64_t index, const Mat4& parent, int depth) {
+    // `bone`: このノードの一番近い祖先の骨 (-1: 無い。スキンのあるモデルだけ)。
+    bool Node(int64_t index, const Mat4& parent, int depth, int bone) {
         // 訪れるたびに数える: ノードは、どの階層でも同じ子を 2 回名指しできる (2^深さ 回の探索)。
         if (!budget_.Step(error_)) return false;
         const json::Value& nodes = doc_.Get("nodes");
         if (index < 0 || static_cast<size_t>(index) >= nodes.Size()) return Fail(error_, std::format("ノード {} がありません", index));
         if (depth > kMaxNodeDepth) return Fail(error_, "ノードの親子が深すぎるか、輪になっています");
         const json::Value& n = nodes.At(static_cast<size_t>(index));
-        Mat4 local;
-        if (const json::Value* m = n.Find("matrix"); m && m->Size() == 16) {
-            for (int c = 0; c < 4; ++c) {
-                for (int r = 0; r < 4; ++r) local.m[c][r] = Number(*m, static_cast<size_t>(c * 4 + r), c == r ? 1.f : 0.f);
-            }
-        } else {
-            const json::Value& t = n.Get("translation");
-            const json::Value& q = n.Get("rotation");
-            const json::Value& s = n.Get("scale");
-            Mat4 tm, sm;
-            tm.m[3][0] = Number(t, 0, 0), tm.m[3][1] = Number(t, 1, 0), tm.m[3][2] = Number(t, 2, 0);
-            sm.m[0][0] = Number(s, 0, 1), sm.m[1][1] = Number(s, 1, 1), sm.m[2][2] = Number(s, 2, 1);
-            local = tm * FromQuaternion(Number(q, 0, 0), Number(q, 1, 0), Number(q, 2, 0), Number(q, 3, 1)) * sm;
-        }
-        const Mat4 world = parent * local;
+        const Mat4 world = parent * NodeLocal(n);
+        if (skinned_ && boneOfNode_[static_cast<size_t>(index)] >= 0) bone = boneOfNode_[static_cast<size_t>(index)];
         if (const json::Value* mesh = n.Find("mesh")) {
-            if (!Mesh(mesh->AsInt(-1), world)) return false;
+            const json::Value* skin = n.Find("skin");
+            if (!Mesh(mesh->AsInt(-1), world, skin ? skin->AsInt(-1) : -1, bone)) return false;
         }
         for (const json::Value& c : n.Get("children").Items()) {
-            if (!Node(c.AsInt(-1), world, depth + 1)) return false;
+            if (!Node(c.AsInt(-1), world, depth + 1, bone)) return false;
         }
         return true;
     }
 
-    bool Mesh(int64_t index, const Mat4& world) {
+    // `skin`: ノードの skin (-1: 無い)。`bone`: ノードかその祖先の一番近い骨。
+    bool Mesh(int64_t index, const Mat4& world, int64_t skin, int bone) {
         const json::Value& meshes = doc_.Get("meshes");
         if (index < 0 || static_cast<size_t>(index) >= meshes.Size()) return Fail(error_, std::format("メッシュ {} がありません", index));
         for (const json::Value& prim : meshes.At(static_cast<size_t>(index)).Get("primitives").Items()) {
-            if (!Primitive(prim, world)) return false;
+            if (!Primitive(prim, world, skin, bone)) return false;
         }
         return true;
     }
 
-    bool Primitive(const json::Value& prim, const Mat4& world) {
+    bool Primitive(const json::Value& prim, const Mat4& world, int64_t skin, int bone) {
         const int64_t mode = prim.Get("mode").AsInt(4);
         if (mode != 4 && mode != 5 && mode != 6) {
             ++skipped_;  // 点と線: 塗るものが無い
@@ -431,13 +736,180 @@ private:
             }
         }
         if (!hasNormals) ComputeNormals(part);
-        Append(part, world);
+        if (!skinned_) {
+            Append(part, world);
+        } else if (skin >= 0) {
+            // スキンのあるメッシュ: 頂点は骨の行列だけで動く。ノードの行列は掛けない (glTF の決まり)。
+            std::vector<SkinVertex> weights;
+            if (!SkinOf(attrs, pos.count, skin, weights)) return false;
+            Append(part, Mat4{});
+            skin_.vertices.insert(skin_.vertices.end(), weights.begin(), weights.end());
+        } else {
+            // スキンの無いメッシュ: 一番近い祖先の骨 (無ければ動かない骨) にウェイト 1 で付ける。休みの
+            // 姿勢でノードの置き場所に来るように、頂点を骨の空間に移してからバインドの姿勢に置く:
+            //   頂点 = 逆バインド⁻¹ x 休みの骨の行列⁻¹ x ノードのワールド行列 x 頂点
+            // (スキンの行列 = 休みの骨の行列 x 逆バインド なので、休みの姿勢ではちょうど ノードのワールド行列 x 頂点)。
+            const int b = bone >= 0 ? bone : StaticBone();
+            if (b < 0) return false;
+            Mat4 place = world;
+            const auto unbind = Inverse(skin_.inverseBind[static_cast<size_t>(b)]);
+            const auto unrest = Inverse(restModel_[static_cast<size_t>(b)]);
+            if (unbind && unrest) place = *unbind * *unrest * world;
+            if (!budget_.Take(0, uint64_t{pos.count} * sizeof(SkinVertex), error_)) return false;
+            Append(part, place);
+            SkinVertex one;
+            one.bone[0] = static_cast<uint16_t>(b);
+            one.weight[0] = 65535;
+            skin_.vertices.resize(out_.vertices.size(), one);
+        }
         triangleMaterial_.resize(out_.indices.size() / 3, material);
         return true;
     }
 
     // ノードの位置を頂点に反映する (モデルの空間での 1 つのメッシュ)。
     void Append(const MeshData& part, const Mat4& world) { AppendPlaced(out_, part, world); }
+
+    // --- アニメーション (animations) ----------------------------------------------------------
+    // 骨のノードの translation / rotation / scale のチャンネルを、kDefaultClipRate ごとにサンプルし直して
+    // クリップにする (時刻 0 から最後のキーまで)。骨でないノードと weights (モーフ) は読まない。
+    bool LoadClips() {
+        const json::Value& anims = doc_.Get("animations");
+        if (!anims.IsArray()) return true;
+        const Skeleton& sk = skin_.skeleton;
+        const size_t bones = sk.bones.size();
+        bool morph = false;
+        std::vector<bool> animated(bones, false);
+        for (size_t ai = 0; ai < anims.Size(); ++ai) {
+            const json::Value& a = anims.At(ai);
+            const json::Value& samplers = a.Get("samplers");
+            // 骨ごと、位置・回転・大きさのそれぞれのサンプラー (-1: 無い)。
+            std::vector<std::array<int64_t, 3>> use(bones, {-1, -1, -1});
+            bool any = false;
+            for (const json::Value& ch : a.Get("channels").Items()) {
+                if (!budget_.Step(error_)) return false;
+                const json::Value& target = ch.Get("target");
+                const std::string& path = target.Get("path").AsString();
+                if (path == "weights") {
+                    morph = true;
+                    continue;
+                }
+                const int p = path == "translation" ? 0 : path == "rotation" ? 1 : path == "scale" ? 2 : -1;
+                const int64_t node = target.Get("node").AsInt(-1);
+                if (p < 0 || node < 0 || static_cast<size_t>(node) >= boneOfNode_.size() || boneOfNode_[static_cast<size_t>(node)] < 0) continue;
+                const int64_t si = ch.Get("sampler").AsInt(-1);
+                if (si < 0 || static_cast<size_t>(si) >= samplers.Size()) return Fail(error_, std::format("アニメーション {} のサンプラー {} がありません", ai, si));
+                int64_t& slot = use[static_cast<size_t>(boneOfNode_[static_cast<size_t>(node)])][static_cast<size_t>(p)];
+                if (slot < 0) slot = si, any = true;  // 同じ骨の同じものが 2 つ: 最初のもの
+            }
+            if (!any) continue;  // 骨を動かさない (骨でないノードだけ)
+            std::vector<Curve> curves(samplers.Size());
+            float duration = 0;
+            size_t tracks = 0;
+            for (size_t b = 0; b < bones; ++b) {
+                bool moved = false;
+                for (int p = 0; p < 3; ++p) {
+                    const int64_t si = use[b][static_cast<size_t>(p)];
+                    if (si < 0) continue;
+                    moved = true;
+                    Curve& c = curves[static_cast<size_t>(si)];
+                    const int comps = p == 1 ? 4 : 3;
+                    if (c.comps == 0 && !LoadCurve(samplers.At(static_cast<size_t>(si)), comps, c, ai, si)) return false;
+                    if (c.comps != comps) return Fail(error_, std::format("アニメーション {} のサンプラー {} が、違う種類のチャンネルに使われています", ai, si));
+                    duration = std::max(duration, c.times.back());
+                }
+                tracks += moved ? 1 : 0;
+            }
+            Clip clip;
+            clip.name = a.Get("name").AsString();
+            if (clip.name.empty()) clip.name = std::format("アニメーション {}", ai);
+            clip.rate = kDefaultClipRate;
+            if (static_cast<double>(duration) * clip.rate > static_cast<double>(kMaxCount)) {
+                return Fail(error_, std::format("アニメーション「{}」が長すぎます ({} 秒)", clip.name, duration));
+            }
+            clip.duration = duration;
+            clip.frames = ClipFrames(duration, clip.rate);
+            if (!budget_.Take(0, uint64_t{clip.frames} * tracks * (sizeof(Vec3) * 2 + sizeof(Quat)), error_)) return false;
+            for (size_t b = 0; b < bones; ++b) {
+                const auto& u = use[b];
+                if (u[0] < 0 && u[1] < 0 && u[2] < 0) continue;
+                animated[b] = true;
+                // 骨と親の骨の間に骨でないノードがあれば、その行列を掛けて分け直す (3 つとも変わりうる)。
+                const bool folded = !IsIdentity(between_[b]);
+                BoneTrack track;
+                track.bone = sk.bones[b].name;
+                for (uint32_t k = 0; k < clip.frames; ++k) {
+                    const float t = std::min(static_cast<float>(k) / clip.rate, duration);
+                    BoneTRS v = nodeRest_[b];
+                    float out[4];
+                    if (u[0] >= 0) {
+                        curves[static_cast<size_t>(u[0])].Sample(t, out);
+                        v.t = {out[0], out[1], out[2]};
+                    }
+                    if (u[1] >= 0) {
+                        curves[static_cast<size_t>(u[1])].Sample(t, out);
+                        v.r = {out[0], out[1], out[2], out[3]};
+                    }
+                    if (u[2] >= 0) {
+                        curves[static_cast<size_t>(u[2])].Sample(t, out);
+                        v.s = {out[0], out[1], out[2]};
+                    }
+                    if (folded) v = DecomposeTRS(between_[b] * TRSMatrix(v));
+                    // 前のサンプルと同じ側の四元数に (q と -q は同じ回転。補間が遠回りしないように)。
+                    if (!track.r.empty() && QuatDot(track.r.back(), v.r) < 0) v.r = {-v.r.x, -v.r.y, -v.r.z, -v.r.w};
+                    if (folded || u[0] >= 0) track.t.push_back(v.t);
+                    if (folded || u[1] >= 0) track.r.push_back(v.r);
+                    if (folded || u[2] >= 0) track.s.push_back(v.s);
+                }
+                Squash(track.t, CloseV);
+                Squash(track.r, CloseQ);
+                Squash(track.s, CloseV);
+                clip.tracks.push_back(std::move(track));
+            }
+            out_.clips.push_back(std::move(clip));
+        }
+        if (morph) out_.warnings.push_back("モーフ (weights) のアニメーションはまだ読みません");
+        // クリップは骨を名前で指す: 同じ名前の骨があると、動くのは最初の骨だけ。
+        size_t ambiguous = 0;
+        for (size_t b = 0; b < bones; ++b) {
+            if (!animated[b]) continue;
+            for (size_t o = 0; o < bones; ++o) {
+                if (o != b && sk.bones[o].name == sk.bones[b].name) {
+                    ++ambiguous;
+                    break;
+                }
+            }
+        }
+        if (ambiguous > 0) {
+            out_.warnings.push_back(std::format("動く骨のうち {} 本は、同じ名前の骨がほかにあります (クリップは名前で骨を指すので、その名前の最初の骨が動きます)", ambiguous));
+        }
+        return true;
+    }
+
+    // サンプラー 1 つ (input: 時刻、output: 値、interpolation)。
+    bool LoadCurve(const json::Value& s, int comps, Curve& c, size_t ai, int64_t si) {
+        const std::string& mode = s.Get("interpolation").AsString();
+        c.interp = mode == "STEP" ? Interp::Step : mode == "CUBICSPLINE" ? Interp::Cubic : Interp::Linear;
+        Accessor in, out;
+        if (!Open(s.Get("input").AsInt(-1), 1, in) || !Open(s.Get("output").AsInt(-1), comps, out)) return false;
+        if (in.componentType != 5126) return Fail(error_, std::format("アニメーション {} のサンプラー {} の時刻が float ではありません", ai, si));
+        if (in.count == 0) return Fail(error_, std::format("アニメーション {} のサンプラー {} にキーがありません", ai, si));
+        const size_t values = in.count * (c.interp == Interp::Cubic ? 3 : 1);
+        if (out.count < values) return Fail(error_, std::format("アニメーション {} のサンプラー {} の値の数がキーより少なすぎます", ai, si));
+        if (!budget_.Take(0, (uint64_t{in.count} + uint64_t{values} * static_cast<uint64_t>(comps)) * sizeof(float), error_)) return false;
+        c.times.resize(in.count);
+        for (size_t i = 0; i < in.count; ++i) {
+            c.times[i] = in.Float(i, 0);
+            if (!std::isfinite(c.times[i]) || c.times[i] < 0 || (i > 0 && c.times[i] < c.times[i - 1])) {
+                return Fail(error_, std::format("アニメーション {} のサンプラー {} の時刻が正しくありません (0 以上で、増えていく数)", ai, si));
+            }
+        }
+        c.values.resize(values * static_cast<size_t>(comps));
+        for (size_t i = 0; i < values; ++i) {
+            for (int k = 0; k < comps; ++k) c.values[i * static_cast<size_t>(comps) + static_cast<size_t>(k)] = out.Float(i, k);
+        }
+        c.comps = comps;
+        return true;
+    }
 
     // アクセサーの数。バッファーの中に収まるか確かめる。
     bool Open(int64_t index, int wantComponents, Accessor& out) {
@@ -483,6 +955,17 @@ private:
     std::vector<int> triangleMaterial_;  // out_ の三角形 1 つにつき 1 つ
     std::vector<int> imageOf_;           // glTF の画像 -> out_.images (kBroken: まだ)
     int skipped_ = 0;
+    // 骨 (スキンのあるモデルだけ)
+    bool skinned_ = false;
+    SkinData skin_;                            // 骨の木・逆バインド・頂点ごとの骨 (out_.vertices と同じ数)
+    std::vector<int> parentOfNode_;            // ノード -> 親のノード (-1: 根)
+    std::vector<int> boneOfNode_;              // ノード -> 骨 (-1: 骨ではない)
+    std::vector<std::vector<int>> skinBones_;  // スキン -> (その joints の番号 -> 骨)
+    std::vector<Mat4> between_;                // 骨ごと: 親の骨 (か根) との間の、骨でないノードの行列
+    std::vector<BoneTRS> nodeRest_;            // 骨ごと: ノードそのものの値 (クリップの、チャンネルが無いもの)
+    std::vector<Mat4> restModel_;              // 骨ごと: 休みの姿勢の骨の行列 (モデルの空間)
+    int staticBone_ = -1;                      // 骨の下に無いメッシュの付く、動かない骨
+    size_t dropped_ = 0;                       // 5 本以上の骨が付いていた頂点の数
 };
 
 // --- OBJ --------------------------------------------------------------------------------------
@@ -973,6 +1456,52 @@ void ApplyModelImport(MeshData& mesh, const ModelBasis& basis, bool turnAround, 
         for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) std::swap(mesh.indices[i + 1], mesh.indices[i + 2]);
     }
     ComputeBounds(mesh);
+    if (!mesh.skin && mesh.clips.empty()) return;
+
+    // 骨とクリップ: 頂点に掛けたもの (大きさを抜いた座標系の行列 C。鏡のこともある) で、骨の行列を
+    // はさむ: L' = C x L x C⁻¹ (位置だけ scale 倍)。親から子へ掛けても C が打ち消し合うので、骨の行列も
+    // スキンの行列もはさんだものになり、スキンで動かした頂点 = C x scale x (元の動かした頂点)。
+    // 鏡ではさんでも回転は回転のまま (行列式 +1)。四元数で直接: 軸を C で写し、鏡なら逆回りにする。
+    // 大きさは軸の入れ替えだけ (ModelBasis の軸はいつも座標軸に沿っている)。
+    Mat4 c;
+    const Vec3 rows[3] = {right * turn, up, depth * turn};
+    for (int r = 0; r < 3; ++r) c.m[0][r] = rows[r].x, c.m[1][r] = rows[r].y, c.m[2][r] = rows[r].z;
+    const float mirror = Dot(Cross(rows[0], rows[1]), rows[2]) < 0 ? -1.f : 1.f;
+    auto mapT = [&](Vec3 t) { return TransformDirection(c, t) * scale; };
+    auto mapR = [&](Quat q) {
+        const Vec3 axis = TransformDirection(c, {q.x, q.y, q.z}) * mirror;
+        return Quat{axis.x, axis.y, axis.z, q.w};
+    };
+    auto mapS = [&](Vec3 s) {
+        const float in[3] = {s.x, s.y, s.z};
+        float out[3] = {0, 0, 0};
+        for (int r = 0; r < 3; ++r) {
+            for (int k = 0; k < 3; ++k) out[r] += std::fabs(c.m[k][r]) * in[k];
+        }
+        return Vec3{out[0], out[1], out[2]};
+    };
+    if (mesh.skin) {
+        SkinData& skin = *mesh.skin;
+        for (Bone& b : skin.skeleton.bones) b.rest = {mapT(b.rest.t), mapR(b.rest.r), mapS(b.rest.s)};
+        // 逆バインド: I' = (scale x C) x I x (scale x C)⁻¹。
+        Mat4 sc = c;
+        for (int k = 0; k < 3; ++k) {
+            for (int r = 0; r < 3; ++r) sc.m[k][r] *= scale;
+        }
+        if (const auto inv = Inverse(sc)) {
+            for (Mat4& m : skin.inverseBind) m = sc * m * *inv;
+        }
+        std::vector<Vec3> positions(mesh.vertices.size());
+        for (size_t i = 0; i < positions.size(); ++i) positions[i] = mesh.vertices[i].position;
+        ComputeBoneBounds(skin, positions);
+    }
+    for (Clip& clip : mesh.clips) {
+        for (BoneTrack& track : clip.tracks) {
+            for (Vec3& t : track.t) t = mapT(t);
+            for (Quat& r : track.r) r = mapR(r);
+            for (Vec3& s : track.s) s = mapS(s);
+        }
+    }
 }
 
 void ComputeBounds(MeshData& mesh) {

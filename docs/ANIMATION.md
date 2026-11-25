@@ -48,7 +48,7 @@
 - **イベント**: `rm::Events` と `OnEvent` (`game_production/runtime/sdk/RM.h`)。エンジンからも送れる
 - **2D のコマ送り**: `game_x_2d/runtime/SpriteAnimation.*` (純粋なシステム。時間を進めてコマを決める)
 - **数学**: 行列 `space3d::Mat4` (`Transform.h`)。**エンジン側に四元数の型は無い** (`Mesh.cpp` の中の `FromQuaternion` と、スクリプトの `rm::Quat` だけ)
-- **見本のモデル**: `docs/samples/models/` に骨のあるモデルは無い
+- **見本のモデル**: `docs/samples/models/` に骨のあるモデルは無い (2026-11-25: 自作の `skinned_arm.gltf` を足した。骨 3 本・クリップ 2 つ)
 
 ## 2. プラグインの分け方
 
@@ -87,6 +87,7 @@
 - スキンのあるメッシュは**ノードの行列で焼かない** (glTF の決まり: 頂点は骨の行列だけで動く)。今の `AppendPlaced` の道を、スキンのあるものだけ分ける
 - `animations[]`: チャンネル (ノード・`translation` / `rotation` / `scale`)・サンプラー (`LINEAR` / `STEP` / `CUBICSPLINE`)。`weights` (モーフ) は段階 6
 - 骨の下にある普通のメッシュ (手に持った剣・頭の帽子) は、**その骨にウェイト 1 で付いたスキン**にする。骨に付いて動く
+- (作った。2026-11-25) 決めたこと: どの骨の下にも無い普通のメッシュは、動かない骨 `(骨の外)` (休みの姿勢も逆バインドも単位行列。要るときだけ最後に足す) に付ける。骨の上や骨の間にある骨でないノード (アーマチュア) の行列は、子の骨の休みの姿勢とクリップに掛けておく。クリップは時刻 0 から最後のキーまで。骨でないノードのアニメーションは読まない
 
 **FBX**
 - `Deformer` (Skin) → `SubDeformer` (Cluster): `Indexes` / `Weights` (コントロール点ごと)・`Transform` / `TransformLink` (バインドの行列)。骨は `LimbNode` のモデル
