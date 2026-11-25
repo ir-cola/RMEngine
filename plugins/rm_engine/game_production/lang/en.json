@@ -362,5 +362,17 @@
   "置き場所の部品 (Transform / Transform 2D) の値と親をセーブします": "Saves the placement component (Transform / Transform 2D) values and the parent",
   "有効かどうかをセーブします": "Saves whether it is active",
   "全部の部品の値": "All component values",
-  "スクリプトも含めた全部の部品の値と、名前・タグ・レイヤーをセーブします。ゲームの中で足した部品も足し直します": "Saves the values of every component (scripts too) and the name, tag and layer. Components added during the game are added again"
+  "スクリプトも含めた全部の部品の値と、名前・タグ・レイヤーをセーブします。ゲームの中で足した部品も足し直します": "Saves the values of every component (scripts too) and the name, tag and layer. Components added during the game are added again",
+  "削除 (まだ保存していないシーン)": "Delete (scene not saved yet)",
+  "削除 (ほかにシーンが無いので消せません)": "Delete (not possible: there is no other scene)",
+  "シーンを複製する": "Duplicate scene",
+  "シーンを削除する": "Delete scene",
+  "(ファイルが見つかりません)": "(file not found)",
+  "シーン「{}」をごみ箱へ移しますか？": "Move the scene \"{}\" to the Recycle Bin?",
+  "シーン「{}」を削除しますか？ (ファイルはもうありません)": "Delete the scene \"{}\"? (its file is already gone)",
+  "\n開いているシーンなので、保存していない変更は失われ、「{}」を開きます。": "\nIt is the open scene: unsaved changes are lost and \"{}\" opens.",
+  "\nゲームが始まるシーンです。ほかのシーン (一覧の最初のもの) から始まるようになります。": "\nThe game starts with this scene. It will start with another scene (the first in the list).",
+  "\nファイルはごみ箱から戻せます (Ctrl+Z では戻りません)。": "\nThe file can be restored from the Recycle Bin (Ctrl+Z does not bring it back).",
+  "シーンを削除": "Delete Scene",
+  "削除する": "Delete"
 }

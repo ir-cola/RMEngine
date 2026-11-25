@@ -208,6 +208,9 @@ public:
     // アセットのファイルの名前を変える (その .meta も付いてくる。ID は変わらない)。空、
     // または失敗した理由 (画面の言語で)。
     virtual std::wstring RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) = 0;
+    // アセットのファイルを、その .meta と一緒にごみ箱へ (アセットのパネルの「削除」と同じ。完全には
+    // 消さない)。空、または消せなかった理由 (画面の言語で。コンソールにも出る)。Undo には積まない。
+    virtual std::wstring DeleteAsset(const AssetRef& ref) = 0;
     // ソフトが自分で (自分用のウィンドウで) 描くインスペクターのために、参照の欄が並べるもの
     // (プロジェクトのファイル、階層の項目): `out` に入れる。何も入れなければ "(なし)" だけ出る。
     virtual void FillInspectorRefs(inspector::Refs& out) { (void)out; }

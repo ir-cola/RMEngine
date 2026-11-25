@@ -297,7 +297,14 @@ void Draw(ui::Context& c, State& st, Source& src, const Rect& area) {
             topRightClicked = true;
             st.sel.ids.clear();
             st.sel.anchor = st.sel.focus = 0;
-            st.menuActions = MenuFor(src, st, items);
+            st.menuActions = src.TopActions();
+            std::vector<Action> rest = MenuFor(src, st, items);
+            if (!st.menuActions.empty() && !rest.empty()) {
+                Action sep;
+                sep.separator = true;
+                st.menuActions.push_back(std::move(sep));
+            }
+            for (auto& a : rest) st.menuActions.push_back(std::move(a));
             if (!st.menuActions.empty()) st.menu.OpenAt(in.mouseX, in.mouseY);
         }
         w::DrawRow(c, *topRect, {top->selected, hovered && !st.dragging, st.hasKeys});

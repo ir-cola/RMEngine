@@ -151,6 +151,7 @@ private:
             editor_.SetDirty(was);
         }
         std::wstring RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) override;
+        std::wstring DeleteAsset(const AssetRef& ref) override;
         std::unique_ptr<ToolWindow> OpenToolWindow(ToolWindowSpec spec) override;
         void FillInspectorRefs(inspector::Refs& out) override { out = editor_.MakeRefs(); }
         void SelectInTree(std::vector<tree::ItemId> ids, bool rename) override {
