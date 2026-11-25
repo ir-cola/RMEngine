@@ -108,6 +108,7 @@
     <ClCompile Include="TestHelp.cpp" />
     <ClCompile Include="TestIcons.cpp" />
     <ClCompile Include="TestMeshBake.cpp" />
+    <ClCompile Include="TestSkeleton.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
     <ClCompile Include="TestBakedImage.cpp" />
     <ClCompile Include="..\src\core\asset\BakedImage.cpp" />
@@ -244,6 +245,7 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\View.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\DrawOrder.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Mesh.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Skeleton.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Primitives.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Fbx.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Inflate.cpp" />
