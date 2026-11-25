@@ -754,6 +754,8 @@ void DrawHeader(Pass& x, const Block& b, bool folded) {
 
 }  // namespace
 
+uint64_t NewMergeKey() { return NewSession(); }
+
 std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<const Block> blocks, std::wstring_view addLabel,
                          const std::function<std::vector<w::Action>()>& addMenu, const Refs* refs) {
     std::optional<Edit> result = std::move(st.pending);
@@ -809,6 +811,16 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                     x.st.menu.OpenAt(valueR.x, valueR.Bottom() + 2);
                 }
                 x.y += kRow + 6;
+            }
+            if (b.customHeight && b.customDraw) {
+                // 自分で描く中身: 欄と同じ左右の余白で。
+                const float wdt = std::max(0.f, x.view.w - 24);
+                const float h = std::max(0.f, b.customHeight(c, wdt));
+                const bool inputBefore = c.InputEnabled();
+                if (b.readOnly) c.SetInputEnabled(false);
+                b.customDraw(c, {x.view.x + 12, x.y, wdt, h});
+                c.SetInputEnabled(inputBefore);
+                x.y += h + 4;
             }
             if (b.type && b.object) {
                 x.fieldMenu = b.fieldMenu ? &b.fieldMenu : nullptr;
