@@ -102,15 +102,15 @@ ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed);
 ui::Path SnowDrift(const ui::Rect& r, float depth);
 // その積もった雪の、左端から `l` ピクセルの所の高さ (下の辺から上へ。depth の 0.46 .. 0.98 倍)。
 float SnowDriftHeight(float l, float depth);
-// 雪だるま: 白い丸 2 つ (下が大きい) と、頭に少し傾けてかぶった赤いバケツと、小さな目。
-// `base` = 下の丸の底 (雪の上)、`height` = 底からバケツのてっぺんまで。
+// 雪だるま: 白い丸 2 つ (下が大きい) と、頭に少し傾けてかぶった赤いバケツ。
+// `base` = 下の丸の底 (雪の上)、`height` = 底からバケツのてっぺんまで。`grow`: 丸を太らせる量
+// (輪郭: 太らせた丸を輪郭の色で先に描き、その上に白い丸)。
 struct SnowmanShapes {
     ui::Path body;    // 丸 2 つ
-    ui::Path bucket;  // バケツ (縁ごと)
+    ui::Path bucket;  // バケツ
     ui::Path rim;     // バケツの縁 (少し濃く)
-    ui::Path eyes;
 };
-SnowmanShapes Snowman(Vec2 base, float height);
+SnowmanShapes Snowman(Vec2 base, float height, float grow = 0);
 // `window` の上の端からぶら下がるつららがところどころに: 260 .. 640 ピクセルごとに、雪の塊の下に 1 本から 3 本の
 // 小さな 1 組。組はウィンドウの左端から並べ、内側で始まる組はすべて作る (右端を越えるものはそこで切るだけ)。
 // だからウィンドウの大きさを変えても、出たり消えたりしない。つららはそれぞれ、小さな波 (`ice`) のある鋭い先に向かって

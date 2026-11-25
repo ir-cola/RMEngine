@@ -10,6 +10,7 @@ constexpr uint64_t kFnvPrime = 1099511628211ull;
 }  // namespace
 
 void Context::BeginFrame(Painter* painter, const Input* input, Rect viewport, double timeSec) {
+    screen_ = viewport;  // (ウィンドウが SetScreen で本当の画面を言う)
     painter_ = painter;
     in_ = input;
     viewport_ = viewport;

@@ -428,10 +428,13 @@ RM_TEST(Theme_Susuki) {
 
 RM_TEST(Theme_Snowman) {
     using namespace rm::theme_seasons::ornament;
-    // 雪だるま: 底が base、高さの中に収まる。丸 2 つ・バケツ・縁・目 2 つ。どれも時計回り。
+    // 雪だるま: 底が base、高さの中に収まる。丸 2 つ・バケツ・縁。どれも時計回り。
     const SnowmanShapes s = Snowman({500, 400}, 60);
     const Bounds body = BoundsOf(s.body), bucket = BoundsOf(s.bucket);
-    CHECK(body.figures == 2 && BoundsOf(s.eyes).figures == 2 && bucket.figures == 1 && BoundsOf(s.rim).figures == 1);
+    CHECK(body.figures == 2 && bucket.figures == 1 && BoundsOf(s.rim).figures == 1);
+    // 輪郭: 太らせた丸は同じ所で少し大きい。
+    const Bounds grown = BoundsOf(Snowman({500, 400}, 60, 1.5f).body);
+    CHECK(std::abs(grown.y1 - 401.5f) < 0.5f && grown.x0 < body.x0 - 1.f);
     CHECK(std::abs(body.y1 - 400) < 0.5f && body.y0 > 400 - 60);
     CHECK(bucket.y0 >= 400 - 60 - 2 && bucket.y1 < body.y0 + 30);  // バケツは頭の上
     CHECK(AllClockwise(s.body) && AllClockwise(s.bucket) && AllClockwise(s.rim));

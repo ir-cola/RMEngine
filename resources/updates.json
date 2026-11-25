@@ -43,8 +43,8 @@
           "en": "Seasonal themes: Fall gets a clump of Japanese pampas grass at the bottom right (stems and leaves rise at a slant, and the plumes hang to the left in many fine strands)"
         },
         {
-          "ja": "季節のテーマ: ウィンターの右下、積もった雪の上に雪だるま (白い丸 2 つと赤いバケツ)",
-          "en": "Seasonal themes: in Winter, a snowman (two white balls and a red bucket) stands on the snow at the bottom right"
+          "ja": "季節のテーマ: ウィンターで、画面の右下の積もった雪の上に雪だるま (白い丸 2 つと赤いバケツ。ウィンドウを最大化すると見え、小さいウィンドウでは見えない)",
+          "en": "Seasonal themes: in Winter, a snowman (two white balls and a red bucket) stands on the snow at the bottom right of the screen (visible when the window is maximized, hidden in small windows)"
         }
       ]
     },
