@@ -51,6 +51,7 @@ plugins/
 |---|---|
 | `rm_engine` / `game_production` (ゲーム制作) | ソフト「ゲーム」。シーンは 1 つずつ `Assets/Scenes/*.rmscene` (`runtime/SceneFile`。`.rmpf` にはシーンの一覧だけ)。テンプレート「ゲーム」(`templates/game`: 空のシーン。3D と 2D の両方が入る)。ゲームの設定・シーン (エンティティの親子)・部品 (コンポーネント) の仕組み。**つなぎが要る** (空間を知らない)。部品の種類は口 `rm_engine.game_production.component`、システム (毎フレーム動く処理) は口 `rm_engine.game_production.system` で受け取る。Play (シーンのコピーを動かす・ゲームビュー)・同じ部品を複数・Prefab (`.rmprefab`)。ランタイムの部分 (`runtime/Register.cpp`) が部品「セーブする」(世界のセーブ: [docs/SAVE.md](../docs/SAVE.md)) を差し出す |
 | `rm_engine` / `space3d` (3D 空間) | Transform と行列の計算・カメラとレイ・Direct3D 11 での 3D の描画 (線と箱)。ランタイムだけ |
+| `rm_engine` / `animation3d` (3D アニメーション) | 前提 = 3D 空間。ランタイムだけ (純粋)。骨の姿勢の計算: クリップを名前で骨につなぐ・サンプル (補間・ループ)・クロスフェードと重みの和・親から順の骨の行列・スキンの行列 (`runtime/Pose`)、時刻を進めて通ったイベントを数える (`runtime/ClipTime`)、1 体の再生 (`runtime/Player`)。設計 [docs/ANIMATION.md](../docs/ANIMATION.md) 3-3 / 3-6 |
 | `rm_engine` / `theme_colors` (基本カラーテーマパック) | テーマのファイルだけ: 青・緑 (`themes/*.json`)。コードは `runtime/Id.h` だけ |
 | `rm_engine` / `theme_seasons` (季節テーマパック) | テーマのファイル (スプリング・サマー・フォール・ウィンター) と、その絵を描くコード (`editor/Seasons.cpp`。口 `core.theme_ornament` に差し出す。形は `editor/Ornament.*`、テストあり) |
 | `rm_engine` / `theme_paper` (紙) | テーマのファイルだけ: 紙 |
