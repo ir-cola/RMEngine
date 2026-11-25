@@ -111,7 +111,7 @@ EditorScreen::~EditorScreen() {
 
 bool EditorScreen::Open() {
     platform::WindowDesc d;
-    d.title = Utf8ToWide(project_.Name()) + L" - RM Engine";
+    d.title = TitleText();
     d.widthDip = 1600;
     d.heightDip = 900;
     d.minWidthDip = 960;
@@ -701,9 +701,10 @@ void EditorScreen::SetDirty(bool dirty) {
     Invalidate();
 }
 
-void EditorScreen::UpdateTitle() {
-    SetTitle((dirty_ ? L"* " : L"") + Utf8ToWide(project_.Name()) + L" - RM Engine");
-}
+// ウィンドウの名前: "RM Engine - プロジェクト名" (エンジンの名前が先。未保存なら名前の前に "* ")。
+std::wstring EditorScreen::TitleText() const { return L"RM Engine - " + std::wstring(dirty_ ? L"* " : L"") + Utf8ToWide(project_.Name()); }
+
+void EditorScreen::UpdateTitle() { SetTitle(TitleText()); }
 
 void EditorScreen::FlushAssetEdits(const ui::Context& c) {
     // 取り込みの設定は編集が終わってから書く: ボタンを押していない (数のドラッグ)、

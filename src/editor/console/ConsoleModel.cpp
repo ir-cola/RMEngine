@@ -63,16 +63,16 @@ BarFit FitBar(float barW, float full, float compact, float searchMin, float sear
 std::string ClockText(int64_t clockMs) {
     constexpr int64_t kDay = 24ll * 60 * 60 * 1000;
     const int64_t ms = ((clockMs % kDay) + kDay) % kDay;  // (負の値もその日の時刻に)
-    return std::format("{:02}:{:02}:{:02}.{:03}", ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60, ms % 1000);
+    return std::format("{:02}:{:02}:{:02}", ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60);  // (秒より細かくは出さない)
 }
 
 std::string_view LevelTag(log::Level level) {
     switch (level) {
-        case log::Level::Warn: return "WARN";
-        case log::Level::Error: return "ERROR";
+        case log::Level::Warn: return "Warn";
+        case log::Level::Error: return "Error";
         case log::Level::Info: break;
     }
-    return "INFO";
+    return "Info";
 }
 
 std::string CopyLine(const log::Entry& e) { return std::format("{} [{}] {}", ClockText(e.clockMs), LevelTag(e.level), e.text); }

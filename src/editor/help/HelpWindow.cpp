@@ -20,7 +20,7 @@ bool HelpWindow::Show(HWND owner) {
         return true;
     }
     platform::WindowDesc d;
-    d.title = Tr(L"ヘルプ") + L" - RM Engine";
+    d.title = L"RM Engine - " + Tr(L"ヘルプ");
     d.widthDip = 1000;
     d.heightDip = 680;
     d.minWidthDip = 360;
@@ -33,7 +33,7 @@ bool HelpWindow::Show(HWND owner) {
 
 void HelpWindow::OnLookChanged() {
     view_.SetLibrary(LoadHelpLibrary(app_.GetPlugins()), lang::Current() == lang::Language::English);
-    SetTitle(Tr(L"ヘルプ") + L" - RM Engine");
+    SetTitle(L"RM Engine - " + Tr(L"ヘルプ"));
     ScreenWindow::OnLookChanged();
 }
 

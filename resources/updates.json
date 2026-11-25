@@ -59,6 +59,14 @@
         {
           "ja": "シーンのパネルとヒエラルキーの一番上のシーンの行を右クリックして、シーンを「複製」(「名前 2」…) と「削除」(確かめてからごみ箱へ) ができるように",
           "en": "Right-click a scene in the Scenes panel or the scene row at the top of the Hierarchy to Duplicate it (\"Name 2\"…) or Delete it (moved to the Recycle Bin after a confirmation)"
+        },
+        {
+          "ja": "コンソール: 時刻から小数 (ミリ秒) を外して「時:分:秒」に。帯の名前を Info / Warn / Error にし、警告とエラーの印を名前の前 (⚠Warn 1) に。コピーした行は「[Info]」「[Warn]」「[Error]」",
+          "en": "Console: times without milliseconds (hours:minutes:seconds). The filters are now named Info / Warn / Error with the warning and error marks before the name (⚠Warn 1). Copied lines use [Info] / [Warn] / [Error]"
+        },
+        {
+          "ja": "エディターのウィンドウの名前を「RM Engine - プロジェクト名」の順に (ヘルプも「RM Engine - ヘルプ」)",
+          "en": "The editor window title is now \"RM Engine - project name\" (and \"RM Engine - Help\")"
         }
       ]
     },

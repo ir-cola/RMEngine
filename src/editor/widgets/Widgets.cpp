@@ -1074,28 +1074,35 @@ constexpr float kCheckBoxW = 16.f, kCheckLabelGap = 8.f, kCountGap = 5.f;
 }  // namespace
 
 namespace {
-constexpr float kCountMarkW = 14.f, kCountMarkGap = 3.f;  // 数の前の印
+constexpr float kCountMarkW = 14.f, kCountMarkGap = 2.f;  // 名前の前の印
 }  // namespace
 
 float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_view count, std::optional<Icon> mark) {
     float w = kCheckBoxW;
-    if (!label.empty()) w += kCheckLabelGap + c.P().TextWidth(label, theme::FontSize);
-    if (!count.empty()) {
-        w += (label.empty() ? kCheckLabelGap : kCountGap) + c.P().TextWidth(count, theme::FontSize, true);
-        if (mark) w += kCountMarkW + kCountMarkGap;
-    }
-    return w + 2.f;
+    if (count.empty()) return w + (label.empty() ? 0.f : kCheckLabelGap + c.P().TextWidth(label, theme::FontSize)) + 2.f;
+    w += kCheckLabelGap;
+    if (mark) w += kCountMarkW + kCountMarkGap;
+    if (!label.empty()) w += c.P().TextWidth(label, theme::FontSize) + kCountGap;
+    return w + c.P().TextWidth(count, theme::FontSize, true) + 2.f;
 }
 
 bool CheckboxCount(ui::Context& c, std::string_view id, const Rect& r, bool& value, std::wstring_view label,
                    std::wstring_view count, ui::Color countColor, std::optional<Icon> mark, float markAlpha) {
-    const bool changed = Checkbox(c, id, r, value, label);  // 箱とラベルは Checkbox の 1 本の道で
-    if (count.empty()) return changed;
+    if (count.empty()) return Checkbox(c, id, r, value, label);
+    // 並び: [箱] 印 名前 数  (箱と押せる所は Checkbox の 1 本の道で。名前は印の後ろに自分で書く)
+    const bool changed = Checkbox(c, id, r, value, {});
     float x = r.x + kCheckBoxW + kCheckLabelGap;
-    if (!label.empty()) x += c.P().TextWidth(label, theme::FontSize) + kCountGap;
     if (mark) {
         DrawIcon(c, {x, r.y, kCountMarkW, r.h}, *mark, countColor.Alpha(markAlpha), 13);
         x += kCountMarkW + kCountMarkGap;
+    }
+    if (!label.empty()) {
+        ui::TextStyle ls;
+        ls.size = theme::FontSize;
+        ls.color = theme::Text;
+        const float lw = c.P().TextWidth(label, theme::FontSize);
+        c.P().Text({x, r.y, lw + 1.f, r.h}, label, ls);
+        x += lw + kCountGap;
     }
     ui::TextStyle ts;
     ts.size = theme::FontSize;
