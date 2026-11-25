@@ -553,16 +553,40 @@ ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed) {
     return p;
 }
 
+float SnowDriftHeight(float l, float depth) {
+    return depth * (0.72f + 0.17f * std::sin(l * 0.017f) + 0.09f * std::sin(l * 0.039f + 1.f));
+}
+
+SnowmanShapes Snowman(Vec2 base, float height) {
+    SnowmanShapes s;
+    // 高さの割り振り: 下の丸 0.46、頭 0.32 (少し重なる)、バケツ 0.20 ほど。
+    const float r1 = height * 0.23f, r2 = height * 0.16f;
+    const Vec2 c1{base.x, base.y - r1};
+    const Vec2 c2{base.x + height * 0.01f, c1.y - r1 - r2 + height * 0.05f};
+    AddCircle(s.body, c1, r1);
+    AddCircle(s.body, c2, r2);
+    // バケツ: 逆さにかぶる (口が下で広い)。頭の上の方から、少し右へ傾ける。
+    const float tilt = -12.f;  // 度 (画面で時計回り = 右へ傾く)
+    auto at = [&](float x, float y) { return Add(c2, Rotate({x, y}, tilt)); };
+    const float y0 = -r2 * 0.55f, y1 = y0 - height * 0.20f;
+    const Vec2 bucket[] = {at(-r2 * 0.80f, y0), at(-r2 * 0.58f, y1), at(r2 * 0.58f, y1), at(r2 * 0.80f, y0)};
+    AddPolygon(s.bucket, bucket);
+    const Vec2 rim[] = {at(-r2 * 0.95f, y0 + height * 0.035f), at(-r2 * 0.95f, y0 - height * 0.015f), at(r2 * 0.95f, y0 - height * 0.015f),
+                        at(r2 * 0.95f, y0 + height * 0.035f)};
+    AddPolygon(s.rim, rim);
+    // 目: 頭の真ん中より少し上に 2 つ。
+    AddCircle(s.eyes, {c2.x - r2 * 0.35f, c2.y - r2 * 0.05f}, std::max(1.2f, height * 0.022f));
+    AddCircle(s.eyes, {c2.x + r2 * 0.30f, c2.y - r2 * 0.05f}, std::max(1.2f, height * 0.022f));
+    return s;
+}
+
 ui::Path SnowDrift(const ui::Rect& r, float depth) {
     ui::Path p;
     if (r.w <= 0 || depth <= 0) return p;
     const float bottom = r.y + r.h;
     // 高さは左端からのピクセル `l` だけで決まる (ウィンドウの幅・高さに関係しない)。なだらかに
     // (2026-11-24: ユーザーの希望。前は 50 ピクセルほどの細かい波があった): 長い波 2 つだけ。0.46 .. 0.98 倍。
-    auto top = [&](float l) {
-        const float swells = 0.72f + 0.17f * std::sin(l * 0.017f) + 0.09f * std::sin(l * 0.039f + 1.f);
-        return Vec2{r.x + l, bottom - depth * swells};
-    };
+    auto top = [&](float l) { return Vec2{r.x + l, bottom - SnowDriftHeight(l, depth)}; };
     // 画面上で時計回り: 吹きだまりの上を右へ、そのあと下を戻る。点は左端から 4 ピクセルごとの決まった所だけに
     // 置き、両端は 1 区切り越える (2026-11-25: 端まで積もる。前は両端で下がっていた): 見える線はいつも同じ点の
     // 間なので、幅を変えても形は変わらない。
