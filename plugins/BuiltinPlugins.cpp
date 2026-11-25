@@ -10,6 +10,7 @@
 // 順番は関係ない: ローダーが requires を先に有効にする。
 
 #include "editor/plugin/Software.h"
+#include "rm_engine/animation3d/runtime/Id.h"
 #include "rm_engine/audio/editor/Preview.h"
 #include "rm_engine/audio/runtime/Id.h"
 #include "rm_engine/particles/runtime/Id.h"
@@ -56,6 +57,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {climate::kPluginId, &climate::RegisterEditor},
         {weather_x_climate::kPluginId, nullptr},
         {space3d::kPluginId, &space3d::RegisterEditor},
+        {animation3d::kPluginId, nullptr},  // ランタイムだけ (姿勢の計算。ほかのプラグインが使う)
         {game_x_3d::kPluginId, &game_x_3d::RegisterEditor},
         {space2d::kPluginId, nullptr},
         {game_x_2d::kPluginId, &game_x_2d::RegisterEditor},
