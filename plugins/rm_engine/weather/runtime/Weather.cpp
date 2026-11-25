@@ -85,8 +85,10 @@ void PlacedShare(float precipitation, const WeatherPlace& place, float& rain, fl
     const float p = std::isfinite(precipitation) ? std::clamp(precipitation, 0.f, 1.f) : 0.f;
     const float s = std::isfinite(place.snow) ? std::clamp(place.snow, 0.f, 1.f) : 0.f;
     const float more = std::isfinite(place.more) ? std::clamp(place.more, 0.f, 4.f) : 1.f;
-    rain = std::min(p * more, 1.f) * (1 - s);
-    snow = std::min(p * more, 1.f) * s;
+    const float local = std::isfinite(place.local) ? std::clamp(place.local, 0.f, 1.f) : 0.f;
+    const float amount = std::max(std::min(p * more, 1.f), local);
+    rain = amount * (1 - s);
+    snow = amount * s;
 }
 
 float SnowMostOf(const Weather& w) { return std::isfinite(w.snowDepthCm) ? std::clamp(w.snowDepthCm / 100.f, 0.f, kMostSnowDepth) : 0.f; }
@@ -102,7 +104,7 @@ WeatherNow TargetOf(const Weather& w) {
     }
     if (std::isfinite(w.placeSnow) && w.placeSnow >= 0) {
         // 場所の降り方 (つなぎが書いた、カメラのいる所): その割合で雨と雪に分ける (みぞれは両方)。
-        PlacedShare(p, {w.placeSnow, w.placeMore}, n.rain, n.snow);
+        PlacedShare(p, {w.placeSnow, w.placeMore, w.placeLocal}, n.rain, n.snow);
     } else {
         n.rain = p * RainShare(x);
         n.snow = p * SnowShare(x);

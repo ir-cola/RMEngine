@@ -434,6 +434,52 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color, float size)
             p.FillCircle(cx, cy, h * 0.18f, color);
             break;
         }
+        case Icon::Brush: {
+            // 筆: 右上から斜めの柄、金具 (太い短い線)、左下に向かって細くなる穂先。
+            const float h = std::min(r.w, r.h) * 0.36f;
+            p.Line(cx + h * 0.95f, cy - h * 0.95f, cx + h * 0.1f, cy - h * 0.1f, color, 1.8f);
+            p.Line(cx + h * 0.15f, cy - h * 0.15f, cx - h * 0.15f, cy + h * 0.15f, color, 3.2f);
+            const float d = 0.7071f;  // (左下へ (-d, d)、横へ (d, d))
+            const float bx = cx - h * 0.15f, by = cy + h * 0.15f, wide = h * 0.3f;
+            ui::Path tip;
+            tip.Begin({bx + d * wide, by + d * wide});
+            tip.Line({bx - d * h * 0.45f + d * wide * 0.8f, by + d * h * 0.45f + d * wide * 0.8f});
+            tip.Line({bx - d * h * 0.95f, by + d * h * 0.95f});
+            tip.Line({bx - d * h * 0.45f - d * wide * 0.8f, by + d * h * 0.45f - d * wide * 0.8f});
+            tip.Line({bx - d * wide, by - d * wide});
+            p.FillPath(tip, color);
+            break;
+        }
+        case Icon::Eraser: {
+            // 消しゴム: 斜めに置いた長方形 (左下の 3 分の 1 は塗る) と、下の線 (消した跡)。
+            const float h = std::min(r.w, r.h) * 0.36f, d = 0.7071f;
+            const float ax = d, ay = -d;          // 長い向き (右上へ)
+            const float nx = d, ny = d;           // 短い向き
+            const float len = h * 0.95f, half = h * 0.42f;
+            const float ox = cx - h * 0.05f, oy = cy - h * 0.1f;
+            auto at = [&](float u, float v) { return Vec2{ox + ax * u + nx * v, oy + ay * u + ny * v}; };
+            const Vec2 c0 = at(-len, -half), c1 = at(len, -half), c2 = at(len, half), c3 = at(-len, half);
+            ui::Path filled;
+            const Vec2 m0 = at(-len * 0.3f, -half), m1 = at(-len * 0.3f, half);
+            filled.Begin(c0);
+            filled.Line(m0);
+            filled.Line(m1);
+            filled.Line(c3);
+            p.FillPath(filled, color);
+            const Vec2 q[4] = {c0, c1, c2, c3};
+            for (int i = 0; i < 4; ++i) p.Line(q[i].x, q[i].y, q[(i + 1) % 4].x, q[(i + 1) % 4].y, color, 1.4f);
+            p.Line(cx - h * 0.2f, cy + h * 0.95f, cx + h * 0.95f, cy + h * 0.95f, color, 1.4f);
+            break;
+        }
+        case Icon::Pen: {
+            // ペン (囲む): 3 つの点を線でつないだ形と、その角の小さな四角。
+            const float h = std::min(r.w, r.h) * 0.36f;
+            const Vec2 q[3] = {{cx - h * 0.9f, cy + h * 0.7f}, {cx - h * 0.15f, cy - h * 0.85f}, {cx + h * 0.9f, cy + h * 0.45f}};
+            for (int i = 0; i < 3; ++i) p.Line(q[i].x, q[i].y, q[(i + 1) % 3].x, q[(i + 1) % 3].y, color, 1.4f);
+            const float k = std::max(2.f, h * 0.22f);
+            for (const Vec2& v : q) p.FillRect({v.x - k, v.y - k, k * 2, k * 2}, color);
+            break;
+        }
         case Icon::Cube: {
             // 角の上から見た形: 輪郭 (六角形) と、手前の角の 3 本の辺。
             const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;

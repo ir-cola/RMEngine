@@ -41,6 +41,8 @@ constexpr float kPad = 8, kRow = 26, kBarH = 28, kSideW = 300;
 constexpr float kMinHalfWidth = 2.f, kMaxHalfWidth = 200000.f;
 constexpr float kCellChoices[] = {1, 2, 4, 8, 16};  // マスの大きさ (m) の選べるもの
 constexpr float kHeatColdest = -20.f, kHeatHottest = 40.f;  // 見る = 気温: 色の段の両端 (℃)
+constexpr float kToolSquare = 37.f, kToolGap = 4.f;  // 地図の左上の道具のボタン (シーンビューの左の列と同じ大きさ)
+constexpr int kTools = 4;
 
 float CellSizeOf(const ClimateMap& map) { return std::isfinite(map.cellSize) ? std::clamp(map.cellSize, kMinCellSize, kMaxCellSize) : 4.f; }
 
@@ -128,12 +130,14 @@ public:
         if (r.w < 120 || r.h < 120) return;
         const Rect bar{r.x + kPad, r.y + kPad, r.w - 2 * kPad, kBarH};
         const std::wstring modes[] = {Tr(L"気候"), Tr(L"天候")};
-        const std::wstring tips[] = {Tr(L"地図に気候 (気温と湿り気) を塗ります"), Tr(L"シーンの天気 (雲・雨や雪の量・霧・風) を変えます")};
+        const std::wstring tips[] = {Tr(L"地図に気候 (気温と湿り気) を塗ります"), Tr(L"地図に雲と雨雲を描きます。シーン全体の天気 (降水量・霧・風) もここで変えます")};
         const std::wstring_view modeLabels[] = {modes[0], modes[1]};
         const std::wstring_view modeTips[] = {tips[0], tips[1]};
         if (const int picked = w::Segmented(c, "climate.mode", {bar.x, bar.y, std::min(220.f, bar.w * 0.5f), bar.h}, modeLabels, state_.mode == 1 ? 1 : 0, modeTips);
-            picked >= 0) {
+            picked >= 0 && picked != state_.mode) {
             state_.mode = picked;
+            selected_ = -1;
+            pen_.clear();
         }
         const Rect body{r.x + kPad, bar.Bottom() + kPad, r.w - 2 * kPad, r.Bottom() - kPad - (bar.Bottom() + kPad)};
         if (host.space == "2d") {
@@ -146,19 +150,20 @@ public:
             return;
         }
         const bool frame = w::Button(c, "climate.frame", {bar.Right() - 130, bar.y, 130, bar.h}, Tr(L"全体を見る"));
-        {  // 見る: 塗り / 気温 / 湿り気 / 雲
+        {  // 見る: 塗り / 気温 / 湿り気 / 雲 / 雨
             const float x0 = bar.x + std::min(220.f, bar.w * 0.5f) + 12;
             const float room = bar.Right() - 138 - x0;
-            if (room >= 200) {
+            if (room >= 220) {
                 const float labelW = 40;
                 Label(c, {x0, bar.y, labelW, bar.h}, Tr(L"見る"));
-                const std::wstring views[] = {Tr(L"塗り"), Tr(L"気温"), Tr(L"湿り気"), Tr(L"雲")};
-                const std::wstring viewTips[] = {Tr(L"描いた気候の種類 (雲の層では雲) を色で"), Tr(L"その場所の気温 (基準の高さで) を色の段で"),
-                                             Tr(L"その場所の湿り気を色の段で"), Tr(L"地図に塗った雲の量を色の段で (塗っていない所は天気のまま)")};
-                const std::wstring_view labels[] = {views[0], views[1], views[2], views[3]};
-                const std::wstring_view tipViews[] = {viewTips[0], viewTips[1], viewTips[2], viewTips[3]};
-                if (const int picked = w::Segmented(c, "climate.view", {x0 + labelW, bar.y, std::min(300.f, room - labelW), bar.h}, labels,
-                                                    std::clamp(state_.view, 0, 3), tipViews);
+                const std::wstring views[] = {Tr(L"塗り"), Tr(L"気温"), Tr(L"湿り気"), Tr(L"雲"), Tr(L"雨")};
+                const std::wstring viewTips[] = {Tr(L"描いたもの (気候の種類 / 天候では雲・雨雲) を色で"), Tr(L"その場所の気温 (基準の高さで) を色の段で"),
+                                                 Tr(L"その場所の湿り気を色の段で"), Tr(L"地図に塗った雲の量を色の段で (塗っていない所は天気のまま)"),
+                                                 Tr(L"描いた雨雲の降る量を色の段で (描いていない所はシーン全体の降水量)")};
+                const std::wstring_view labels[] = {views[0], views[1], views[2], views[3], views[4]};
+                const std::wstring_view tipViews[] = {viewTips[0], viewTips[1], viewTips[2], viewTips[3], viewTips[4]};
+                if (const int picked = w::Segmented(c, "climate.view", {x0 + labelW, bar.y, std::min(360.f, room - labelW), bar.h}, labels,
+                                                    std::clamp(state_.view, 0, 4), tipViews);
                     picked >= 0) {
                     state_.view = picked;
                 }
@@ -180,15 +185,16 @@ public:
         state_.halfWidth = std::clamp(std::isfinite(state_.halfWidth) ? state_.halfWidth : 50.f, kMinHalfWidth, kMaxHalfWidth);
         if (!std::isfinite(state_.center.x) || !std::isfinite(state_.center.y)) state_.center = {0, 0};
         if (map->kinds.empty() || !FindKind(*map, state_.kind)) state_.kind = map->kinds.empty() ? 0 : map->kinds.front().id;
-        state_.tool = std::clamp(state_.tool, 0, 3);
-        state_.layer = state_.layer == 1 ? 1 : 0;
-        state_.view = std::clamp(state_.view, 0, 3);
+        state_.tool = std::clamp(state_.tool, 0, kTools - 1);
+        state_.weatherLayer = state_.weatherLayer == 0 ? 0 : 1;
+        state_.view = std::clamp(state_.view, 0, 4);
         state_.clouds = std::isfinite(state_.clouds) ? std::clamp(state_.clouds, 0.f, 100.f) : 80.f;
+        state_.rain = std::isfinite(state_.rain) ? std::clamp(state_.rain, 0.f, 100.f) : 60.f;
 
         DrawMap(c, mapR, host, *map);
         if (side.w >= 60 && side.h >= 60) {
             if (state_.mode == 1) {
-                DrawWeatherSide(c, side, host);
+                DrawWeatherSide(c, side, host, *map);
             } else {
                 DrawClimateSide(c, side, host, *map);
             }
@@ -232,7 +238,7 @@ private:
             add(z.world.m[3][0] - reach, z.world.m[3][2] - reach);
             add(z.world.m[3][0] + reach, z.world.m[3][2] + reach);
         }
-        for (const MapLayer layer : {MapLayer::Climate, MapLayer::Clouds}) {
+        for (const MapLayer layer : {MapLayer::Climate, MapLayer::Clouds, MapLayer::Rain}) {
             const PaintGrid g = PaintOf(map, layer);
             if (g.Empty()) continue;
             const float cs = CellSizeOf(map);
@@ -253,8 +259,11 @@ private:
     }
 
     // --- 地図 ---------------------------------------------------------------------------------
-    MapLayer Layer() const { return state_.layer == 1 ? MapLayer::Clouds : MapLayer::Climate; }
-    bool Drawing() const { return state_.mode == 0; }  // 気候の側 (描ける)
+    // 描いている層: 気候の側は気候、天候の側は雲か雨雲。
+    MapLayer Layer() const { return state_.mode != 1 ? MapLayer::Climate : state_.weatherLayer == 0 ? MapLayer::Clouds : MapLayer::Rain; }
+    // 地図の左上の道具の列 (シーンビューの左の列と同じ所)。
+    static Rect ToolsRect(const Rect& map) { return {map.x + 7, map.y + 7, kToolSquare, kTools * kToolSquare + (kTools - 1) * kToolGap}; }
+    bool OverTools(ui::Context& c, const Rect& map) const { return ToolsRect(map).Contains(c.In().mouseX, c.In().mouseY); }
 
     void DrawMap(ui::Context& c, const Rect& r, SceneViewHost& host, const ClimateMap& map) {
         if (r.w < 20 || r.h < 20) return;
@@ -290,8 +299,8 @@ private:
         DrawZones(c, r, field);
         const MapView v = ViewOf(r);
         const ui::Input& in = c.In();
-        const bool hovered = c.IsHovered(r);
-        if (Drawing() && CanEdit(host) && hovered && !panning_ && state_.tool <= 1) DrawBrushAt(c, v, in.mouseX, in.mouseY);
+        const bool hovered = c.IsHovered(r) && !OverTools(c, r);
+        if (CanEdit(host) && hovered && !panning_ && state_.tool <= 1) DrawBrushAt(c, v, in.mouseX, in.mouseY);
         if (hovered && !panning_) DrawReadout(c, r, v, field, in.mouseX, in.mouseY);
         DrawLegend(c, r);
         // 下に、縮尺と使い方。上に、描けないわけ。
@@ -302,12 +311,30 @@ private:
         c.P().Text({r.x + 8, r.Bottom() - 38, r.w - 16, 16}, TrF(L"1 マス {} m ・ 地図の幅 {} m", cs, static_cast<int>(std::round(state_.halfWidth * 2))), ts);
         c.P().Text({r.x + 8, r.Bottom() - 20, r.w - 16, 16}, HelpLine(), ts);
         if (!view_) Note(c, r.Inset(16), Tr(L"3D 空間のプラグイン (ゲーム制作 × 3D) が入ると、ここにシーンを真上から見た絵が出ます。塗ることはできます。"));
-        if (host.playing) Note(c, {r.x + 8, r.y + 8, r.w - 16, 40}, Tr(L"Play 中は描けません (■ で止めてから)"));
+        if (host.playing) Note(c, {r.x + kToolSquare + 18, r.y + 8, r.w - kToolSquare - 26, 40}, Tr(L"Play 中は描けません (■ で止めてから)"));
+        DrawTools(c, r);
         c.PopClip();
     }
 
+    // 地図の左上の道具: 筆・消しゴム・ペン・選ぶ (シーンビューの左の列と同じ正方形のボタン)。
+    void DrawTools(ui::Context& c, const Rect& map) {
+        const Rect col = ToolsRect(map);
+        if (map.h < col.h + 40 || map.w < col.w + 60) return;
+        const std::wstring tips[kTools] = {
+            Tr(L"筆: 丸い筆でマスを塗ります"), Tr(L"消しゴム: 筆で塗ったマスを消します (ペンの形は「選ぶ」で消します)"),
+            Tr(L"ペン: 線を引いて囲みます。囲んだ中がその気候 (天候では雲・雨雲) になります"), Tr(L"選ぶ: 囲んだ形を選んで、点を動かして直します")};
+        constexpr w::Icon kIcons[kTools] = {w::Icon::Brush, w::Icon::Eraser, w::Icon::Pen, w::Icon::Cursor};
+        constexpr const char* kIds[kTools] = {"climate.tool.brush", "climate.tool.eraser", "climate.tool.pen", "climate.tool.select"};
+        for (int i = 0; i < kTools; ++i) {
+            const Rect sq{col.x, col.y + static_cast<float>(i) * (kToolSquare + kToolGap), kToolSquare, kToolSquare};
+            if (w::ToolSquare(c, kIds[i], sq, kIcons[i], state_.tool == i, tips[i]).clicked && state_.tool != i) {
+                state_.tool = i;
+                c.RequestRedraw();
+            }
+        }
+    }
+
     std::wstring HelpLine() const {
-        if (!Drawing()) return Tr(L"ホイール: 拡大縮小 ・ 右 / 中ドラッグ: 動かす");
         switch (state_.tool) {
             case 1: return Tr(L"左ドラッグ: 筆で塗った所を消す ・ ホイール: 拡大縮小 ・ 右 / 中ドラッグ: 動かす");
             case 2: return Tr(L"クリック: 点を置く ・ ドラッグ: なぞる ・ 最初の点 / ダブルクリック / Enter: 閉じる ・ Esc: やめる");
@@ -325,15 +352,18 @@ private:
             drag_ = Drag::None;
         }
         if (state_.tool != 3) drag_ = Drag::None;
+        if (selected_ < 0 && drag_ != Drag::None) drag_ = Drag::None;
     }
     const ClimateShape* Selected(const ClimateMap& map) const {
         return selected_ >= 0 && static_cast<size_t>(selected_) < map.shapes.size() ? &map.shapes[static_cast<size_t>(selected_)] : nullptr;
     }
 
     // ホイール: カーソルの所を中心に拡大縮小。右 / 中ドラッグ: 動かす。左: 道具ごと (筆・消しゴムは離したら Undo の 1 件)。
+    // 左上の道具のボタンの上は地図ではない (ボタンはこのあと描くので、押したのはボタンのものになる)。
     void HandleInput(ui::Context& c, const Rect& r, SceneViewHost& host, const ClimateMap& map) {
         const ui::Input& in = c.In();
-        const bool hovered = c.IsHovered(r);
+        const bool overTools = OverTools(c, r);
+        const bool hovered = c.IsHovered(r) && !overTools;
         const MapView v = ViewOf(r);
         if (hovered && in.wheel != 0) {
             const Vec2 at = v.ToWorld(in.mouseX, in.mouseY);
@@ -343,7 +373,7 @@ private:
             state_.halfWidth = hw;
             c.RequestRedraw();
         }
-        const bool editing = Drawing() && CanEdit(host);
+        const bool editing = CanEdit(host);
         // 選ぶ: 点の上で右クリックすると、その点を消す (動かす代わりに)。
         bool rightUsed = false;
         if (editing && state_.tool == 3 && hovered && c.MousePressed(ui::Mouse::Right)) rightUsed = RemovePointAt(host, map, v, in.mouseX, in.mouseY);
@@ -358,7 +388,8 @@ private:
                 panning_ = false;
             }
         }
-        const auto b = c.ButtonBehavior(c.MakeId("climate.map"), r);
+        auto b = c.ButtonBehavior(c.MakeId("climate.map"), r);
+        if (overTools && !stroking_ && !penDragging_ && drag_ == Drag::None) b = {};  // (ボタンの上: 地図は何もしない)
         if (!editing) {
             stroking_ = false;
             pen_.clear();
@@ -376,10 +407,13 @@ private:
         const ui::Input& in = c.In();
         const bool erase = state_.tool == 1;
         const MapLayer layer = Layer();
-        const int id = erase ? 0 : layer == MapLayer::Clouds ? CloudCellOf(state_.clouds) : state_.kind;
+        const int id = erase                         ? 0
+                       : layer == MapLayer::Clouds   ? CloudCellOf(state_.clouds)
+                       : layer == MapLayer::Rain     ? CloudCellOf(state_.rain)
+                                                     : state_.kind;
         // (押して離したのが同じフレームに届いたクリックも、1 回塗る)
         const bool down = b.held || (b.clicked && c.MousePressed());
-        if (down && (erase || layer == MapLayer::Clouds || FindKind(map, id))) {
+        if (down && (erase || layer != MapLayer::Climate || FindKind(map, id))) {
             const Vec2 at = v.ToWorld(in.mouseX, in.mouseY);
             const float cs = CellSizeOf(map);
             if (!stroking_) {
@@ -405,7 +439,9 @@ private:
             const PaintGrid done = std::move(stroke_);
             stroke_ = {};
             const MapLayer l = strokeLayer_;
-            const char* label = l == MapLayer::Clouds ? (erase ? "地図の雲を消す" : "地図に雲を塗る") : (erase ? "気候の地図を消す" : "気候の地図に塗る");
+            const char* label = l == MapLayer::Clouds ? (erase ? "地図の雲を消す" : "地図に雲を塗る")
+                                : l == MapLayer::Rain ? (erase ? "地図の雨雲を消す" : "地図に雨雲を塗る")
+                                                      : (erase ? "気候の地図を消す" : "気候の地図に塗る");
             EditMap(host, label, 0, [&done, l](ClimateMap& m) { SetPaint(m, done, l); });
         }
     }
@@ -443,12 +479,14 @@ private:
         s.layer = Layer();
         s.kind = state_.kind;
         s.clouds = std::clamp(state_.clouds, 0.f, 100.f);
+        s.rain = std::clamp(state_.rain, 0.f, 100.f);
         s.points = std::move(pen_);
         pen_.clear();
         penDragging_ = false;
         if (s.layer == MapLayer::Climate && !FindKind(map, s.kind)) return;
         const size_t index = map.shapes.size();
-        if (EditMap(host, s.layer == MapLayer::Clouds ? "雲をペンで囲む" : "気候をペンで囲む", 0, [&s](ClimateMap& m) { m.shapes.push_back(s); })) {
+        const char* label = s.layer == MapLayer::Clouds ? "雲をペンで囲む" : s.layer == MapLayer::Rain ? "雨雲をペンで囲む" : "気候をペンで囲む";
+        if (EditMap(host, label, 0, [&s](ClimateMap& m) { m.shapes.push_back(s); })) {
             selected_ = static_cast<int>(index);
         }
     }
@@ -601,6 +639,8 @@ private:
                     const Rect cell{a.x, a.y, bb.x - a.x, bb.y - a.y};
                     if (layer == MapLayer::Clouds) {
                         w::DrawMapHeat(c, cell, theme::MapClouds(CloudsOfCell(id) / 100.f));
+                    } else if (layer == MapLayer::Rain) {
+                        w::DrawMapHeat(c, cell, theme::MapRain(CloudsOfCell(id) / 100.f));
                     } else if (const auto it = colors.find(id); it != colors.end()) {
                         w::DrawMapPaint(c, cell, it->second);
                     }
@@ -619,11 +659,14 @@ private:
         if (layer == MapLayer::Clouds) {
             return s.cloudCells == m.cloudCells && s.cloudX == m.cloudX && s.cloudZ == m.cloudZ && s.cloudWidth == m.cloudWidth && s.cloudDepth == m.cloudDepth;
         }
+        if (layer == MapLayer::Rain) {
+            return s.rainCells == m.rainCells && s.rainX == m.rainX && s.rainZ == m.rainZ && s.rainWidth == m.rainWidth && s.rainDepth == m.rainDepth;
+        }
         return s.cells == m.cells && s.cellX == m.cellX && s.cellZ == m.cellZ && s.width == m.width && s.depth == m.depth;
     }
 
-    // 見る = 気温 / 湿り気 / 雲: 地図の上に、8 DIP ごとの値の色 (ClimateField が答えるもの: 塗った気候・形・
-    // 気候エリア・境目の幅。気温は基準の高さでの値)。雲は塗った所だけ (塗った割合の濃さで)。
+    // 見る = 気温 / 湿り気 / 雲 / 雨: 地図の上に、8 DIP ごとの値の色 (ClimateField が答えるもの: 塗った気候・形・
+    // 気候エリア・境目の幅。気温は基準の高さでの値)。雲と雨は描いた所だけ (描いた割合の濃さで)。
     void DrawHeat(ui::Context& c, const Rect& r, const ClimateField& field) {
         constexpr float kStep = 8.f;
         const MapView v = ViewOf(r);
@@ -636,6 +679,7 @@ private:
                 switch (state_.view) {
                     case 1: w::DrawMapHeat(c, cell, theme::MapTemperature((h.temperature - kHeatColdest) / (kHeatHottest - kHeatColdest))); break;
                     case 2: w::DrawMapHeat(c, cell, theme::MapHumidity(h.humidity / 100.f)); break;
+                    case 4: w::DrawMapHeat(c, cell, theme::MapRain(h.rainAmount / 100.f), h.rainWeight); break;
                     default: w::DrawMapHeat(c, cell, theme::MapClouds(h.cloudAmount / 100.f), h.cloudWeight); break;
                 }
             }
@@ -648,6 +692,7 @@ private:
         switch (state_.view) {
             case 1: w::DrawMapLegend(c, box, Tr(L"気温 (基準の高さ)"), &theme::MapTemperature, std::format(L"{:g} ℃", kHeatColdest), std::format(L"{:g} ℃", kHeatHottest)); break;
             case 2: w::DrawMapLegend(c, box, Tr(L"湿り気"), &theme::MapHumidity, Tr(L"0 % (からから)"), Tr(L"100 % (じめじめ)")); break;
+            case 4: w::DrawMapLegend(c, box, Tr(L"降る量 (雨雲の所)"), &theme::MapRain, Tr(L"0 %"), Tr(L"100 % (嵐)")); break;
             default: w::DrawMapLegend(c, box, Tr(L"雲の量 (塗った所)"), &theme::MapClouds, Tr(L"0 % (晴れ)"), Tr(L"100 % (厚い雲)")); break;
         }
     }
@@ -659,7 +704,8 @@ private:
         const ClimateHere h = field.At({at.x, height, at.y});
         std::wstring text = TrF(L"{:.1f} ℃ ・ 湿り気 {:.0f} %", h.temperature, h.humidity);
         text += h.cloudWeight > 0.005f ? TrF(L" ・ 雲 {:.0f} % ({:.0f} % 塗った所)", h.cloudAmount, h.cloudWeight * 100.f) : Tr(L" ・ 雲: 天気のまま");
-        const float x = std::min(sx + 16.f, r.Right() - 260.f), y = std::min(sy + 18.f, r.Bottom() - 64.f);
+        if (h.rainWeight > 0.005f) text += TrF(L" ・ 雨雲 {:.0f} % ({:.0f} % 描いた所)", h.rainAmount, h.rainWeight * 100.f);
+        const float x = std::min(sx + 16.f, r.Right() - 320.f), y = std::min(sy + 18.f, r.Bottom() - 64.f);
         w::DrawMapReadout(c, std::max(x, r.x + 4), std::max(y, r.y + 4), text);
     }
 
@@ -677,7 +723,7 @@ private:
             const ClimateShape& s = map.shapes[i];
             if (s.layer != Layer() || s.points.empty()) continue;
             screen(s.points);
-            const bool sel = static_cast<int>(i) == selected_ && Drawing();
+            const bool sel = static_cast<int>(i) == selected_;
             int hot = -1;
             if (sel && state_.tool == 3) hot = PointAt(s, v, in.mouseX, in.mouseY);
             w::DrawMapShape(c, pts, true, Color{0, 0, 0, 0}, sel, hot);
@@ -686,7 +732,10 @@ private:
             screen(pen_);
             const Vec2 tail{in.mouseX, in.mouseY};
             const ClimateKind* k = FindKind(map, state_.kind);
-            const Color fill = Layer() == MapLayer::Clouds ? theme::MapClouds(state_.clouds / 100.f) : k ? k->color : Color{0, 0, 0, 0};
+            const Color fill = Layer() == MapLayer::Clouds ? theme::MapClouds(state_.clouds / 100.f)
+                               : Layer() == MapLayer::Rain ? theme::MapRain(state_.rain / 100.f)
+                               : k                         ? k->color
+                                                           : Color{0, 0, 0, 0};
             w::DrawMapShape(c, pts, false, fill, false, pen_.size() >= 3 ? 0 : -1, c.IsHovered(r) ? &tail : nullptr);
         }
     }
@@ -707,39 +756,20 @@ private:
         }
     }
 
-    // --- 「気候」の側: 道具・層・筆・マスの大きさ・気候の種類 / 雲の量・選んだ形・選んだ種類の値 ---------
+    // 筆の半径 (筆と消しゴムのとき)。下の y を返す。
+    float DrawBrushRow(ui::Context& c, const Rect& r) {
+        if (state_.tool > 1) return r.y;
+        const float labelW = std::floor(r.w * 0.42f);
+        Label(c, {r.x, r.y, labelW, kRow}, Tr(L"筆の半径 (m)"));
+        w::NumberField(c, "climate.brush", {r.x + labelW, r.y, r.w - labelW, kRow}, state_.brush, 0.5f, 10000.f, brushText_);
+        return r.y + kRow + 6;
+    }
+
+    // --- 「気候」の側: 筆・マスの大きさ・気候の種類・選んだ形・選んだ種類の値 (道具は地図の左上) ---------
     void DrawClimateSide(ui::Context& c, const Rect& r, SceneViewHost& host, const ClimateMap& map) {
         const bool canEdit = CanEdit(host);
-        float y = r.y;
-        {
-            const std::wstring tools[] = {Tr(L"筆"), Tr(L"消しゴム"), Tr(L"ペン"), Tr(L"選ぶ")};
-            const std::wstring tips[] = {Tr(L"丸い筆でマスを塗ります"), Tr(L"筆で塗ったマスを消します (ペンの形は「選ぶ」で消します)"),
-                                         Tr(L"線を引いて囲みます。囲んだ中がその気候 (雲) になります"), Tr(L"囲んだ形を選んで、点を動かして直します")};
-            const std::wstring_view labels[] = {tools[0], tools[1], tools[2], tools[3]};
-            const std::wstring_view tipViews[] = {tips[0], tips[1], tips[2], tips[3]};
-            if (const int t = w::Segmented(c, "climate.tool", {r.x, y, r.w, kRow}, labels, std::clamp(state_.tool, 0, 3), tipViews); t >= 0) state_.tool = t;
-        }
-        y += kRow + 8;
+        float y = DrawBrushRow(c, r);
         const float labelW = std::floor(r.w * 0.42f);
-        {
-            Label(c, {r.x, y, labelW, kRow}, Tr(L"描く層"));
-            const std::wstring layers[] = {Tr(L"気候"), Tr(L"雲")};
-            const std::wstring tips[] = {Tr(L"気候の種類 (気温と湿り気) を描きます"), Tr(L"雲の量を描きます。雨と雪は雲のある所だけ降ります")};
-            const std::wstring_view labels[] = {layers[0], layers[1]};
-            const std::wstring_view tipViews[] = {tips[0], tips[1]};
-            if (const int l = w::Segmented(c, "climate.layer", {r.x + labelW, y, r.w - labelW, kRow}, labels, state_.layer == 1 ? 1 : 0, tipViews);
-                l >= 0 && l != state_.layer) {
-                state_.layer = l;
-                selected_ = -1;
-                pen_.clear();
-            }
-        }
-        y += kRow + 6;
-        if (state_.tool <= 1) {
-            Label(c, {r.x, y, labelW, kRow}, Tr(L"筆の半径 (m)"));
-            w::NumberField(c, "climate.brush", {r.x + labelW, y, r.w - labelW, kRow}, state_.brush, 0.5f, 10000.f, brushText_);
-            y += kRow + 6;
-        }
         Label(c, {r.x, y, labelW, kRow}, Tr(L"マスの大きさ (m)"));
         {
             std::vector<std::wstring> texts;
@@ -757,24 +787,21 @@ private:
                 EditMap(host, std::format("マスの大きさを {:g} m に", to), 0, [to](ClimateMap& m) {
                     const PaintGrid g = Resample(PaintOf(m), m.cellSize, to);
                     const PaintGrid clouds = Resample(PaintOf(m, MapLayer::Clouds), m.cellSize, to);
+                    const PaintGrid rain = Resample(PaintOf(m, MapLayer::Rain), m.cellSize, to);
                     m.cellSize = to;
                     SetPaint(m, g);
                     SetPaint(m, clouds, MapLayer::Clouds);
+                    SetPaint(m, rain, MapLayer::Rain);
                 });
             }
         }
         y += kRow + 12;
 
-        const ClimateShape* shape = Selected(map);
-        if (Layer() == MapLayer::Clouds) {
-            y = DrawCloudSide(c, {r.x, y, r.w, r.Bottom() - y}, host, map, shape);
-        } else {
-            y = DrawKindList(c, {r.x, y, r.w, r.Bottom() - y}, host, map, shape);
-        }
+        y = DrawKindList(c, {r.x, y, r.w, r.Bottom() - y}, host, map, Selected(map));
         if (r.Bottom() - y < 40) return;
 
         // 選んだ種類の値 (名前・色・気温・湿り気) と、地図の境目の幅: インスペクターと同じ描き方。
-        const ClimateKind* chosen = Layer() == MapLayer::Climate ? FindKind(map, state_.kind) : nullptr;
+        const ClimateKind* chosen = FindKind(map, state_.kind);
         std::vector<inspector::Block> blocks;
         if (chosen) {
             kindCopy_ = *chosen;
@@ -820,29 +847,35 @@ private:
         return r.y + kRow + 8;
     }
 
-    // 雲の層: 塗る雲の量 (選んだ形があれば、その形の雲の量)。下の y を返す。
-    float DrawCloudSide(ui::Context& c, const Rect& r, SceneViewHost& host, const ClimateMap& map, const ClimateShape* shape) {
+    // 雲 / 雨雲の層: 塗る量 (選んだ形があれば、その形の量)。下の y を返す。
+    float DrawAmountSide(ui::Context& c, const Rect& r, SceneViewHost& host, const ClimateShape* shape) {
+        const bool rain = Layer() == MapLayer::Rain;
         float y = r.y;
         const float labelW = std::floor(r.w * 0.42f);
-        if (shape) y = DrawShapeRow(c, {r.x, y, r.w, r.Bottom() - y}, host, Tr(L"選んだ形 (雲)"));
-        Label(c, {r.x, y, labelW, kRow}, shape ? Tr(L"形の雲の量 (%)") : Tr(L"雲の量 (%)"));
+        if (shape) y = DrawShapeRow(c, {r.x, y, r.w, r.Bottom() - y}, host, rain ? Tr(L"選んだ形 (雨雲)") : Tr(L"選んだ形 (雲)"));
+        Label(c, {r.x, y, labelW, kRow}, rain ? (shape ? Tr(L"形の降る量 (%)") : Tr(L"降る量 (%)")) : (shape ? Tr(L"形の雲の量 (%)") : Tr(L"雲の量 (%)")));
+        const Rect field{r.x + labelW, y, r.w - labelW, kRow};
         if (shape) {
-            float value = shape->clouds;
-            if (w::NumberField(c, "climate.shape.clouds", {r.x + labelW, y, r.w - labelW, kRow}, value, 0.f, 100.f, shapeCloudText_) && CanEdit(host)) {
+            float value = rain ? shape->rain : shape->clouds;
+            if (w::NumberField(c, rain ? "climate.shape.rain" : "climate.shape.clouds", field, value, 0.f, 100.f, shapeAmountText_) && CanEdit(host)) {
                 const size_t index = static_cast<size_t>(selected_);
-                EditMap(host, "形の雲の量", 0xC10D5u + index, [index, value](ClimateMap& m) {
-                    if (index < m.shapes.size()) m.shapes[index].clouds = std::clamp(value, 0.f, 100.f);
+                EditMap(host, rain ? "形の降る量" : "形の雲の量", (rain ? 0x5A1Au : 0xC10D5u) + index, [index, value, rain](ClimateMap& m) {
+                    if (index >= m.shapes.size()) return;
+                    (rain ? m.shapes[index].rain : m.shapes[index].clouds) = std::clamp(value, 0.f, 100.f);
                 });
             }
+        } else if (rain) {
+            w::NumberField(c, "climate.rain", field, state_.rain, 0.f, 100.f, rainText_);
         } else {
-            w::NumberField(c, "climate.clouds", {r.x + labelW, y, r.w - labelW, kRow}, state_.clouds, 0.f, 100.f, cloudText_);
+            w::NumberField(c, "climate.clouds", field, state_.clouds, 0.f, 100.f, cloudText_);
         }
         y += kRow + 6;
-        w::DrawSwatch(c, {r.x, y + 3, 16, 16}, theme::MapClouds((shape ? shape->clouds : state_.clouds) / 100.f));
-        Note(c, {r.x + 24, y, r.w - 24, 72},
-             Tr(L"塗った所は、空の雲がこの量になります。雲が 30 % より少ない所では雨も雪も降らず、60 % 以上でふつうに降ります。塗っていない所は、シーンの天気の雲のままです。"));
-        (void)map;
-        return y + 78;
+        const float amount = shape ? (rain ? shape->rain : shape->clouds) : (rain ? state_.rain : state_.clouds);
+        w::DrawSwatch(c, {r.x, y + 3, 16, 16}, rain ? theme::MapRain(amount / 100.f) : theme::MapClouds(amount / 100.f));
+        Note(c, {r.x + 24, y, r.w - 24, 92},
+             rain ? Tr(L"雨雲を描いた所だけ、この量が降ります (シーン全体の降水量が 0 でも)。目盛りは降水量と同じ (10: ぽつぽつ 〜 60: 雨 〜 100: 嵐)。雨か雪かはその場所の気温で決まり、空もその上だけ厚い雲になります。")
+                  : Tr(L"塗った所は、空の雲がこの量になります。塗っていない所は、シーン全体の天気の雲のままです。雨を降らせるのは雨雲の層です。"));
+        return y + 98;
     }
 
     // 気候の層: 気候の種類の一覧と ＋ / 消す (選んだ形があれば、種類を選ぶとその形の種類が変わる)。下の y を返す。
@@ -922,14 +955,34 @@ private:
         }
     }
 
-    // --- 「天候」の側: シーンの天気 (ClimatePages.h の口に差し出された設定) ------------------------
-    // 段階 3 (docs/CLIMATE.md): エリアごとの天気をこの地図に塗れるようにする。今はシーン全体で 1 つ。
-    void DrawWeatherSide(ui::Context& c, const Rect& r, SceneViewHost& host) {
+    // --- 「天候」の側: 描く層 (雲 / 雨雲)・筆・量・選んだ形と、シーン全体の天気 (ClimatePages.h の口に
+    // 差し出された設定: インスペクターのシーンと同じもの) ---------------------------------------------
+    void DrawWeatherSide(ui::Context& c, const Rect& r, SceneViewHost& host, const ClimateMap& map) {
         const bool canEdit = CanEdit(host);
         float y = r.y;
+        const float labelW = std::floor(r.w * 0.42f);
+        {
+            Label(c, {r.x, y, labelW, kRow}, Tr(L"描く層"));
+            const std::wstring layers[] = {Tr(L"雲"), Tr(L"雨雲")};
+            const std::wstring tips[] = {Tr(L"雲の量を描きます (空の雲だけ。雨は降らせません)"), Tr(L"雨雲を描きます。描いた所だけ雨 (寒い所では雪) が降ります")};
+            const std::wstring_view labels[] = {layers[0], layers[1]};
+            const std::wstring_view tipViews[] = {tips[0], tips[1]};
+            if (const int l = w::Segmented(c, "climate.weather.layer", {r.x + labelW, y, r.w - labelW, kRow}, labels, state_.weatherLayer == 0 ? 0 : 1, tipViews);
+                l >= 0 && l != state_.weatherLayer) {
+                state_.weatherLayer = l;
+                selected_ = -1;
+                pen_.clear();
+            }
+        }
+        y += kRow + 6;
+        y = DrawBrushRow(c, {r.x, y, r.w, r.Bottom() - y});
+        y = DrawAmountSide(c, {r.x, y, r.w, r.Bottom() - y}, host, Selected(map));
+        if (r.Bottom() - y < 60) return;
+        Label(c, {r.x, y, r.w, kRow}, Tr(L"シーン全体の天気"), true);
+        y += kRow;
         Note(c, {r.x, y, r.w, 58},
              host.playing ? Tr(L"Play 中は変えられません (■ で止めてから)")
-                          : Tr(L"ここの天気は、地図に描いていない所全部に効きます。雲を塗った所はその雲になり、雨か雪かはその場所の気温 (描いた気候・気候エリア・高さ) で決まります。"));
+                          : Tr(L"インスペクターのシーンと同じものです。地図に描いていない所全部に効きます。シーン全体に雨や雪を降らせるときは「降水量」を上げます (雨か雪かはその場所の気温)。"));
         y += 62;
         std::vector<inspector::Block> blocks;
         std::vector<const reflect::TypeDesc*> types;
@@ -997,7 +1050,7 @@ private:
     ClimateShape dragOriginal_, dragShape_;  // 動かしている形の、始めと今
     ClimateMap dragMap_;                     // 動かしている形を入れた地図 (見せるため)
     ClimateKind kindCopy_;  // インスペクターに見せる、選んだ種類の写し
-    std::string brushText_, cloudText_, shapeCloudText_;
+    std::string brushText_, cloudText_, rainText_, shapeAmountText_;
     inspector::State inspector_, weatherInspector_;
 };
 

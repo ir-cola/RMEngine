@@ -52,12 +52,16 @@ public:
         // 場所ごとの降り方 (WeatherPlace.h) に答える者: 雨も雪も降る量のぶん用意し、粒が自分の場所で決める。
         place_ = nullptr;
         scene_ = &f.scene;
+        float mostLocal = 0;  // (雨雲: シーンの降水量が 0 でも、その場所だけ降る)
         if (f.registry) {
             for (const auto& c : f.registry->Contributions<WeatherPlaceInfo>(kWeatherPlacePoint)) {
-                if (c.item->grid) place_ = c.item->grid;
+                if (!c.item->grid) continue;
+                place_ = c.item->grid;
+                const float m = c.item->mostLocal ? c.item->mostLocal(f.scene) : 0.f;
+                mostLocal = std::isfinite(m) ? std::clamp(m, 0.f, 1.f) : 0.f;
             }
         }
-        const float placedAmount = std::min(PrecipitationNow(*w) * kPlaceMostMore, 1.f);
+        const float placedAmount = std::min(std::max(PrecipitationNow(*w) * kPlaceMostMore, mostLocal), 1.f);
         // 降るもの (それぞれの向きの向きの地図つき) と、濡れたもの (向きごとの地図)。
         const Color light = LightOf(f.sky);
         // 霧 (と、どしゃぶり・吹雪のぶん): 色は天候から、空気中の光で決まる。
@@ -72,6 +76,7 @@ public:
             if (place_) {
                 p.amount = placedAmount;  // (どちらも、多いほうの倍率のぶん: 場所で減らす)
                 p.placed = true;
+                p.base = PrecipitationNow(*w);
             }
             if (!(p.amount > 0)) continue;
             p.seconds = static_cast<float>(f.seconds);
@@ -451,11 +456,13 @@ private:
             const float step = (snow ? kSnowBox : kRainBox) / static_cast<float>(kPlaceGrid - 1);
             WeatherPlace grid[kPlaceGridPoints];
             place_(*scene_, dc.eye, step, kPlaceGrid, grid);
-            const float most = kPlaceMostMore;
             bool any = false;
             for (int i = 0; i < kPlaceGridPoints; ++i) {
                 const float s = std::isfinite(grid[i].snow) ? std::clamp(grid[i].snow, 0.f, 1.f) : 0.f;
-                const float more = std::isfinite(grid[i].more) ? std::clamp(grid[i].more / most, 0.f, 1.f) : 1.f;
+                // その場所で降る量 (雨雲を含む) を、用意した量で割ったもの。
+                float rainHere = 0, snowHere = 0;
+                PlacedShare(p.base, grid[i], rainHere, snowHere);
+                const float more = p.amount > 0 ? std::clamp((rainHere + snowHere) / p.amount, 0.f, 1.f) : 0.f;
                 // (割合 x 倍率: 粒が出る割合。雨は 1 - 雪)
                 k.placeSnow[i] = snow ? s * more : 1 - (1 - s) * more;
                 any = any || (snow ? k.placeSnow[i] > 0 : k.placeSnow[i] < 1);

@@ -233,7 +233,7 @@ inline Color SceneAreaInner() { return Mix(SceneArea(), SceneBackground(), 0.55f
 // 真上から見た地図 (気候のタブ) に塗った所の濃さ (色はユーザーのもの: 下の絵が透けるように)。
 inline float MapPaintAlpha() { return IsLight ? 0.50f : 0.45f; }
 // 地図に重ねる値の色 (気候のタブの「見る」: 0 .. 1 の値を色の段に)。気温: 寒い青 -> 暑い赤。湿り気: 乾いた
-// 黄土 -> 湿った青緑。雲: 晴れの空色 -> 厚い雲の灰色。
+// 黄土 -> 湿った青緑。雲: 晴れの空色 -> 厚い雲の灰色。雨: 淡い水色 -> 嵐の濃い藍。
 namespace map_detail {
 inline Color Ramp(std::span<const uint32_t> stops, float t) {
     if (stops.empty()) return Color{};
@@ -252,6 +252,10 @@ inline Color MapHumidity(float t) {
 }
 inline Color MapClouds(float t) {
     static constexpr uint32_t kStops[] = {0x9FD3F5, 0xE8EEF2, 0xA9B1B8, 0x5D646B};
+    return map_detail::Ramp(kStops, t);
+}
+inline Color MapRain(float t) {
+    static constexpr uint32_t kStops[] = {0xCDE7FA, 0x7DB4EC, 0x3A78D0, 0x24439E, 0x2E1F6E};
     return map_detail::Ramp(kStops, t);
 }
 // 値の色の濃さ (下の絵が少し透ける)。

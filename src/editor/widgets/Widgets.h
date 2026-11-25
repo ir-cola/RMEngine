@@ -89,6 +89,8 @@ enum class Icon {
     // 絵はあるが、まだどこにも出していない物
     Back, Undo, Redo, Lock, Unlock, Search, Trash, Color, Settings, Help, Human, Prefab,
     BoneMoveX, BoneMoveY, BoneMoveZ, BoneRotateX, BoneRotateY, BoneRotateZ,
+    // 線で描く印 (絵が無い): 描く道具 - 筆・消しゴム・ペン (点をつないで囲む)。気候のタブの地図の左の列
+    Brush, Eraser, Pen,
 };
 // `size`: 絵のアイコンの一辺 (DIP)。0 = 四角に合わせる (短い辺の 8 割。16 まで)。線で描く印は四角に合わせる。
 void DrawIcon(ui::Context& c, const ui::Rect& r, Icon icon, ui::Color color, float size = 0);

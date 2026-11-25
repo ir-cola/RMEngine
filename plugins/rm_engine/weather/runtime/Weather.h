@@ -105,7 +105,7 @@ struct WetMap {
 RM_STRUCT(Label="天候")
 struct Weather {
     RM_PROPERTY(Edit, Label="雲の量", Tooltip="0: 雲ひとつ無い晴れ 〜 40: 雲の多い晴れ 〜 70: くもり 〜 100: 空一面の厚い雲 (暗くなり、日の光も弱まります)。雨や雪が降ると、少なくても雲が出ます (雲は空が「地球の空」のとき)", Min=0, Max=100, Step=0.1, Decimals=1) float cloudAmount = 20.f;
-    RM_PROPERTY(Edit, Label="降水量", Tooltip="雨 (雪にするときは雪) の降る量。0: 降らない / 〜10: ぽつぽつ / 〜30: 小雨 / 〜60: 雨 / 〜85: どしゃぶり / 100: 嵐 (雪: 〜20 ちらつく / 〜50 雪 / 〜80 大雪 / 100 吹雪)。増えるほど雲が暗くなり、強い雨・雪では霧も出ます", Min=0, Max=100, Step=0.1, Decimals=1) float precipitation = 0.f;
+    RM_PROPERTY(Edit, Label="降水量", Tooltip="シーン全体に降る雨 (雪にするときは雪) の量。0: 降らない / 〜10: ぽつぽつ / 〜30: 小雨 / 〜60: 雨 / 〜85: どしゃぶり / 100: 嵐 (雪: 〜20 ちらつく / 〜50 雪 / 〜80 大雪 / 100 吹雪)。増えるほど雲が暗くなり、強い雨・雪では霧も出ます。一部の場所だけに降らせるときは、プラグイン「気候」の気候のタブ (天候 → 雨雲) で雨雲を描きます", Min=0, Max=100, Step=0.1, Decimals=1) float precipitation = 0.f;
     RM_PROPERTY(Edit, Label="雪にする", Tooltip="入れると、雨がだんだん小雨になってから雪に変わり、雪が強まって降水量に戻ります。外すと逆に、雪が弱まってから雨に (Play 中は 5 秒ほど。エディターではすぐその見た目)。雨と雪が一緒に降ることはありません。プラグイン「気候」があるとき (つなぎ「天候 × 気候」) は使わず、場所の気温で決まります") bool snowing = false;
     RM_PROPERTY(Edit, Label="積もる高さ (cm)", Tooltip="雪がこの高さまで積もります (cm、整数。最大 1000)。Play 中は降っている間に「積もる速さ」で。0: 積もらない。屋根の下には積もらず、やむと少しずつ溶けます (雨だと早く)", Min=0, Max=1000, Step=1, Decimals=0) float snowDepthCm = 10.f;
     RM_PROPERTY(Edit, Label="積もる速さ (cm / 分)", Tooltip="降水量 100 のとき、1 分に積もる高さ。降る雪の量に比例します (降水量 50 なら半分、10 なら 10 分の 1)。積もる高さに届いたら止まります。足跡も同じ速さで埋まります", Min=0, Max=1000, Step=1, Decimals=1) float snowSpeedCm = 20.f;
@@ -134,6 +134,7 @@ struct Weather {
     // (雪にする で決める)。
     RM_TRANSIENT() float placeSnow = -1;
     RM_TRANSIENT() float placeMore = 1;
+    RM_TRANSIENT() float placeLocal = 0;  // その場所だけ降る量 (0 .. 1: 雨雲。WeatherPlace::local)
     // 場所ごとの濡れと積雪 (段階 2): 答える者が Play の間、毎フレーム、地図のマスごとの降り方を
     // placeCells に書く (PlaceCellsFor。最初のマスが placeFirstX / Z)。天候のシステムがそれを読んで
     // wetMap を進め、空にする (書く者がいない: 地図を使わず、シーン全体で 1 つ - wetWays)。
@@ -174,6 +175,7 @@ float SnowInOf(const Weather& w);
 float RainShare(float x);
 float SnowShare(float x);
 // 場所の降り方 `place` で、降水量 `precipitation` (0 .. 1) のうち雨として / 雪として降るもの。
+// その場所で降る量は max(降水量 x 倍率 (1 まで), その場所だけ降る量)。
 void PlacedShare(float precipitation, const WeatherPlace& place, float& rain, float& snow);
 // 積もる高さ in metres.
 float SnowMostOf(const Weather& w);

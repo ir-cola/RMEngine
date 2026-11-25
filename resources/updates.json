@@ -3,6 +3,24 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.17",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "雨を「シーン全体」と「一部だけ」の 2 通りに: シーン全体はインスペクターの降水量、一部だけは気候のタブの「天候」で雨雲をペンで描きます (描いた所だけ降り、寒い所では雪)",
+          "en": "Rain now comes two ways: over the whole scene with Precipitation in the inspector, or only in some places by drawing rain clouds with the pen under \"Weather\" in the Climate tab (it falls only there, as snow where it is cold)"
+        },
+        {
+          "ja": "気候のタブの道具 (筆・消しゴム・ペン・選ぶ) を、シーンビューと同じ地図の左上のボタンに。「気候」と「天候」の両方で使えます",
+          "en": "The Climate tab tools (Brush, Eraser, Pen, Select) are now buttons at the top left of the map, like the Scene view. They work under both \"Climate\" and \"Weather\""
+        },
+        {
+          "ja": "雲の層は「天候」の側に移り、塗った雲が雨を止めることはなくなりました。「見る」に「雨」を追加",
+          "en": "The clouds layer moved to the \"Weather\" side, and painted clouds no longer stop the rain. \"Show\" has a new \"Rain\" view"
+        }
+      ]
+    },
+    {
       "version": "0.0.16",
       "date": "2026-11-25",
       "items": [

@@ -24,7 +24,7 @@
   "くもり": "Cloudy",
   "霧": "Fog",
   "降水量": "Precipitation",
-  "雨 (雪にするときは雪) の降る量。0: 降らない / 〜10: ぽつぽつ / 〜30: 小雨 / 〜60: 雨 / 〜85: どしゃぶり / 100: 嵐 (雪: 〜20 ちらつく / 〜50 雪 / 〜80 大雪 / 100 吹雪)。増えるほど雲が暗くなり、強い雨・雪では霧も出ます": "How much rain (snow when Snow is on) falls. 0: none / up to 10: a few drops / up to 30: drizzle / up to 60: rain / up to 85: downpour / 100: storm (snow: up to 20 a few flakes / up to 50 snow / up to 80 heavy snow / 100 blizzard). The more, the darker the clouds; heavy rain or snow brings fog too",
+  "シーン全体に降る雨 (雪にするときは雪) の量。0: 降らない / 〜10: ぽつぽつ / 〜30: 小雨 / 〜60: 雨 / 〜85: どしゃぶり / 100: 嵐 (雪: 〜20 ちらつく / 〜50 雪 / 〜80 大雪 / 100 吹雪)。増えるほど雲が暗くなり、強い雨・雪では霧も出ます。一部の場所だけに降らせるときは、プラグイン「気候」の気候のタブ (天候 → 雨雲) で雨雲を描きます": "Amount of rain (snow when snowing) over the whole scene. 0: none / ~10: sprinkle / ~30: light rain / ~60: rain / ~85: downpour / 100: storm (snow: ~20 flurries / ~50 snow / ~80 heavy snow / 100 blizzard). More makes the clouds darker, and heavy rain or snow brings fog. To make it fall only in some places, draw rain clouds in the Climate tab of the Climate plugin (Weather -> Rain clouds)",
   "雪にする": "Snow",
   "積もる高さ (cm)": "Snow depth (cm)",
   "はじめから積もっている": "Already lying at the start",

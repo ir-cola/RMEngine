@@ -194,6 +194,7 @@ struct LayerFields {
 };
 LayerFields FieldsOf(ClimateMap& m, MapLayer layer) {
     if (layer == MapLayer::Clouds) return {&m.cloudX, &m.cloudZ, &m.cloudWidth, &m.cloudDepth, &m.cloudCells};
+    if (layer == MapLayer::Rain) return {&m.rainX, &m.rainZ, &m.rainWidth, &m.rainDepth, &m.rainCells};
     return {&m.cellX, &m.cellZ, &m.width, &m.depth, &m.cells};
 }
 
@@ -237,7 +238,7 @@ bool SetCell(PaintGrid& g, int x, int z, int id) {
 }  // namespace
 
 bool operator==(const ClimateShape& a, const ClimateShape& b) {
-    return a.layer == b.layer && a.kind == b.kind && a.clouds == b.clouds && a.points == b.points;
+    return a.layer == b.layer && a.kind == b.kind && a.clouds == b.clouds && a.rain == b.rain && a.points == b.points;
 }
 
 PaintGrid PaintOf(const ClimateMap& map, MapLayer layer) {
@@ -359,6 +360,7 @@ bool FillShape(PaintGrid& g, float cellSize, std::span<const Vec2> pts, int id) 
 
 int ShapeCellOf(const ClimateMap& map, const ClimateShape& s) {
     if (s.layer == MapLayer::Clouds) return CloudCellOf(s.clouds);
+    if (s.layer == MapLayer::Rain) return CloudCellOf(s.rain);
     return s.kind > 0 && FindKind(map, s.kind) ? s.kind : 0;
 }
 
@@ -433,14 +435,12 @@ PaintTables::Table PaintTables::MakeTable(const PaintGrid& g, const std::functio
 
 PaintTables::PaintTables(const ClimateMap& map) {
     grid_ = BakedOf(map, MapLayer::Climate);
-    clouds_ = BakedOf(map, MapLayer::Clouds);
     cellSize_ = CellSizeOf(map.cellSize);
     half_ = std::isfinite(map.border) ? std::max(map.border, 0.f) * 0.5f : 0.f;
     kindCount_ = map.kinds.size();
-    if (!clouds_.Empty()) {
-        cloudCount_ = MakeTable(clouds_, [](int cell) { return cell > 0 ? 1 : 0; });
-        cloudSum_ = MakeTable(clouds_, [](int cell) { return static_cast<int>(CloudsOfCell(cell)); });
-    }
+    clouds_ = MakeAmount(BakedOf(map, MapLayer::Clouds));
+    rain_ = MakeAmount(BakedOf(map, MapLayer::Rain));
+    for (const int cell : rain_.grid.ids) mostRain_ = std::max(mostRain_, CloudsOfCell(cell));
     if (grid_.Empty()) return;
     std::vector<char> present;
     for (const int id : grid_.ids) {
@@ -500,26 +500,39 @@ std::vector<float> PaintTables::Weights(Vec2 xz) const {
     return out;
 }
 
-void PaintTables::Clouds(Vec2 xz, float half, float& weight, float& amount) const {
+PaintTables::AmountLayer PaintTables::MakeAmount(PaintGrid grid) {
+    AmountLayer a;
+    a.grid = std::move(grid);
+    if (a.grid.Empty()) return a;
+    a.count = MakeTable(a.grid, [](int cell) { return cell > 0 ? 1 : 0; });
+    a.sum = MakeTable(a.grid, [](int cell) { return static_cast<int>(CloudsOfCell(cell)); });
+    return a;
+}
+
+void PaintTables::AmountAt(const AmountLayer& layer, Vec2 xz, float half, float& weight, float& amount) const {
     weight = 0, amount = 0;
-    if (cloudCount_.sums.empty() || !std::isfinite(xz.x) || !std::isfinite(xz.y)) return;
+    if (layer.count.sums.empty() || !std::isfinite(xz.x) || !std::isfinite(xz.y)) return;
     const float h = std::isfinite(half) && half >= 0 ? half : half_;
     if (!(h > 0)) {
-        const int cell = clouds_.At(FloorCell(xz.x / cellSize_), FloorCell(xz.y / cellSize_));
+        const int cell = layer.grid.At(FloorCell(xz.x / cellSize_), FloorCell(xz.y / cellSize_));
         if (cell > 0) weight = 1, amount = CloudsOfCell(cell);
         return;
     }
     const double u0 = (xz.x - h) / cellSize_, u1 = (xz.x + h) / cellSize_;
     const double v0 = (xz.y - h) / cellSize_, v1 = (xz.y + h) / cellSize_;
-    const double count = cloudCount_.Area(u0, v0, u1, v1);
+    const double count = layer.count.Area(u0, v0, u1, v1);
     if (!(count > 1e-9)) return;
     weight = static_cast<float>(std::clamp(count / ((u1 - u0) * (v1 - v0)), 0.0, 1.0));
-    amount = static_cast<float>(std::clamp(cloudSum_.Area(u0, v0, u1, v1) / count, 0.0, 100.0));
+    amount = static_cast<float>(std::clamp(layer.sum.Area(u0, v0, u1, v1) / count, 0.0, 100.0));
 }
+
+void PaintTables::Clouds(Vec2 xz, float half, float& weight, float& amount) const { AmountAt(clouds_, xz, half, weight, amount); }
+void PaintTables::Rain(Vec2 xz, float half, float& weight, float& amount) const { AmountAt(rain_, xz, half, weight, amount); }
 
 ClimateHere PaintTables::Blend(ClimateHere outside, Vec2 xz) const {
     ClimateHere c = outside;
     Clouds(xz, -1.f, c.cloudWeight, c.cloudAmount);
+    Rain(xz, -1.f, c.rainWeight, c.rainAmount);
     if (kinds_.empty()) return c;
     const std::vector<float> w = Weights(xz);
     double total = 0, t = 0, h = 0;
@@ -542,7 +555,8 @@ namespace {
 bool SameForTables(const ClimateMap& a, const ClimateMap& b) {
     if (a.cellX != b.cellX || a.cellZ != b.cellZ || a.width != b.width || a.depth != b.depth || a.cellSize != b.cellSize || a.border != b.border ||
         a.kinds.size() != b.kinds.size() || a.cells != b.cells || a.cloudX != b.cloudX || a.cloudZ != b.cloudZ || a.cloudWidth != b.cloudWidth ||
-        a.cloudDepth != b.cloudDepth || a.cloudCells != b.cloudCells || a.shapes != b.shapes) {
+        a.cloudDepth != b.cloudDepth || a.cloudCells != b.cloudCells || a.rainX != b.rainX || a.rainZ != b.rainZ || a.rainWidth != b.rainWidth ||
+        a.rainDepth != b.rainDepth || a.rainCells != b.rainCells || a.shapes != b.shapes) {
         return false;
     }
     for (size_t i = 0; i < a.kinds.size(); ++i) {
@@ -555,7 +569,8 @@ bool SameForTables(const ClimateMap& a, const ClimateMap& b) {
 }  // namespace
 
 std::shared_ptr<const PaintTables> PaintTablesOf(const ClimateMap& map) {
-    const bool painted = (map.width > 0 && map.depth > 0 && !map.cells.empty()) || (map.cloudWidth > 0 && map.cloudDepth > 0 && !map.cloudCells.empty());
+    const bool painted = (map.width > 0 && map.depth > 0 && !map.cells.empty()) || (map.cloudWidth > 0 && map.cloudDepth > 0 && !map.cloudCells.empty()) ||
+                         (map.rainWidth > 0 && map.rainDepth > 0 && !map.rainCells.empty());
     if (!painted && map.shapes.empty()) return nullptr;
     struct Entry {
         ClimateMap map;
@@ -630,6 +645,11 @@ ClimateHere ClimateField::At(Vec3 position) const {
 void ClimateField::CloudsAt(Vec2 xz, float half, float& weight, float& amount) const {
     weight = 0, amount = 0;
     if (paint_) paint_->Clouds(xz, half, weight, amount);
+}
+
+void ClimateField::RainAt(Vec2 xz, float half, float& weight, float& amount) const {
+    weight = 0, amount = 0;
+    if (paint_) paint_->Rain(xz, half, weight, amount);
 }
 
 ClimateHere ClimateField::At2D(Vec2 position) const {
