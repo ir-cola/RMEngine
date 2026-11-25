@@ -114,6 +114,7 @@
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\ClipTime.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Player.cpp" />
     <ClCompile Include="TestSkinning.cpp" />
+    <ClCompile Include="TestFbxSkin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
     <ClCompile Include="TestBakedImage.cpp" />
     <ClCompile Include="..\src\core\asset\BakedImage.cpp" />
