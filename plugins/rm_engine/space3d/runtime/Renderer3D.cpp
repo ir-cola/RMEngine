@@ -130,6 +130,10 @@ struct Renderer::Shared {
     std::shared_ptr<const GpuMesh> cube, floor;
     std::array<std::shared_ptr<const GpuMesh>, 5> shapes;  // Shape ごと (箱は `cube`)
     Ptr<ID3D11RasterizerState> raster, shadowRaster;
+    // 床の影: 少し奥に押す (床と同じ高さ y = 0 に置いた平面の後ろに必ず隠れる。押さないと、平面と
+    // 床が同じ深さで z ファイティングし、カメラの向きで平面の影の上に床の影が重なったり重ならなかったりして、
+    // 影の濃さが変わって見えた - 2026-11-25)。
+    Ptr<ID3D11RasterizerState> floorRaster;
     Ptr<ID3D11DepthStencilState> depth, depthNoWrite, depthClear, depthBehind;
     Ptr<ID3D11BlendState> blend;
     // 絵: フィルタと端の扱いごとに 1 つ (画像の取り込みの設定 - TextureSampling.h の SamplerIndex):
@@ -276,6 +280,9 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     D3D11_RASTERIZER_DESC sd = rd;
     sd.MultisampleEnable = FALSE;
     sd.SlopeScaledDepthBias = 1.5f;  // 光から斜めに見える面は、より奥に押す
+    D3D11_RASTERIZER_DESC fd = rd;  // 床の影 (floorRaster): 深度 (24 ビット) で 1000 刻みと、斜めに見るほど少し多く奥へ
+    fd.DepthBias = 1000;
+    fd.SlopeScaledDepthBias = 1.f;
     D3D11_DEPTH_STENCIL_DESC dd{};
     dd.DepthEnable = TRUE;
     dd.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
@@ -310,6 +317,7 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
     ss.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
     ss.MaxLOD = D3D11_FLOAT32_MAX;
     if (FAILED(device->CreateRasterizerState(&rd, &raster)) || FAILED(device->CreateRasterizerState(&sd, &shadowRaster)) ||
+        FAILED(device->CreateRasterizerState(&fd, &floorRaster)) ||
         FAILED(device->CreateDepthStencilState(&dd, &depth)) || FAILED(device->CreateDepthStencilState(&dn, &depthNoWrite)) ||
         FAILED(device->CreateDepthStencilState(&db, &depthBehind)) ||
         FAILED(device->CreateDepthStencilState(&dc, &depthClear)) || FAILED(device->CreateBlendState(&bl, &blend))) {
@@ -1382,8 +1390,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     // 書かない (グリッドが床の上にある)。
     if (floorEnd > opaqueEnd) {
         ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
+        ctx->RSSetState(s.floorRaster.Get());  // 少し奥へ: 床と同じ高さの物 (平面) があれば、その物の影だけが見える
         ctx->PSSetShader(s.floorPs.Get(), nullptr, 0);
         run(opaqueEnd, floorEnd, false);
+        ctx->RSSetState(s.raster.Get());
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
     }
 
