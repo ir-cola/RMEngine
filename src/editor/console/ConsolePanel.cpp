@@ -24,7 +24,7 @@ constexpr float kBarH = 28.f;       // ツールバーの高さ
 constexpr float kItemH = 22.f;      // その中のボタン・チェック・欄の高さ
 constexpr float kLineH = 20.f;      // ログの 1 行
 constexpr float kGroupGap = 14.f;   // クリア | 自動スクロール | レベル | 検索 の間
-constexpr float kLevelGap = 10.f;   // 情報 / 警告 / エラー の間
+constexpr float kLevelGap = 10.f;   // Info / Warn / Error の間
 constexpr float kSearchIcon = 16.f;
 constexpr float kSearchMin = 90.f, kSearchMax = 220.f;
 constexpr float kScrollBarW = 12.f;  // 行の右の、スクロールバーのための空き
@@ -40,7 +40,7 @@ ui::Color LevelColor(log::Level level) {
     return theme::Text;
 }
 
-// レベルの印: 行の頭と、ツールバーの数の前の 1 か所。情報は印なし。
+// レベルの印: 行の頭と、ツールバーの名前の前の 1 か所。Info は印なし。
 std::optional<w::Icon> LevelMark(log::Level level) {
     switch (level) {
         case log::Level::Error: return w::Icon::Error;
@@ -89,10 +89,12 @@ void ConsolePanel::DrawToolbar(ui::Context& c, const Rect& bar, size_t info, siz
         size_t count;
         log::Level level;
     };
+    // 名前は、どの言語でも同じ英語の語 (コピーした行の [Info] / [Warn] / [Error] と同じ: LevelTag の 1 か所から)。
+    auto name = [](log::Level lv) { return Utf8ToWide(std::string(console::LevelTag(lv))); };
     Level levels[] = {
-        {"console.info", Tr(L"情報"), &settings_.showInfo, info, log::Level::Info},
-        {"console.warn", Tr(L"警告"), &settings_.showWarn, warn, log::Level::Warn},
-        {"console.error", Tr(L"エラー"), &settings_.showError, error, log::Level::Error},
+        {"console.info", name(log::Level::Info), &settings_.showInfo, info, log::Level::Info},
+        {"console.warn", name(log::Level::Warn), &settings_.showWarn, warn, log::Level::Warn},
+        {"console.error", name(log::Level::Error), &settings_.showError, error, log::Level::Error},
     };
 
     // 幅: 検索の欄より前のもの (ラベルあり / なし)。狭いときは欄が先に縮み、次にラベルが外れる。
@@ -269,7 +271,7 @@ void ConsolePanel::Draw(ui::Context& c, const Rect& r) {
     const Rect rowsArea{rowX, view.y, rowW, view.h};
     // 列: 時刻 | 印 (情報は空けたまま: 本文の頭がそろう) | 本文
     const float timeX = rowX + 8;
-    const float timeW = p.TextWidth(L"00:00:00.000", 12) + 6;
+    const float timeW = p.TextWidth(L"00:00:00", 12) + 6;
     const float markX = timeX + timeW;
     const float textX = markX + kMarkW + 6;
 

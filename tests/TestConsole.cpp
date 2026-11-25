@@ -138,14 +138,15 @@ RM_TEST(Console_FitBar) {
 // --- 時刻・選択・コピー --------------------------------------------------------------------
 
 RM_TEST(Console_ClockText) {
-    CHECK(console::ClockText(0) == "00:00:00.000");
-    CHECK(console::ClockText(((13ll * 60 + 4) * 60 + 5) * 1000 + 67) == "13:04:05.067");
-    CHECK(console::ClockText(24ll * 3600 * 1000 - 1) == "23:59:59.999");
+    CHECK(console::ClockText(0) == "00:00:00");
+    // 秒より細かい所は出さない (切り捨て)
+    CHECK(console::ClockText(((13ll * 60 + 4) * 60 + 5) * 1000 + 67) == "13:04:05");
+    CHECK(console::ClockText(24ll * 3600 * 1000 - 1) == "23:59:59");
     // 日付は出さない (何日目でも、その日の時刻)
-    CHECK(console::ClockText(20000ll * 24 * 3600 * 1000 + 9 * 3600 * 1000 + 500) == "09:00:00.500");
+    CHECK(console::ClockText(20000ll * 24 * 3600 * 1000 + 9 * 3600 * 1000 + 500) == "09:00:00");
     // 1970 年より前 (負): 前の日の終わり
-    CHECK(console::ClockText(-1) == "23:59:59.999");
-    CHECK(console::ClockText(-1000) == "23:59:59.000");
+    CHECK(console::ClockText(-1) == "23:59:59");
+    CHECK(console::ClockText(-1000) == "23:59:59");
 }
 
 RM_TEST(Console_CopyLine) {
@@ -153,11 +154,11 @@ RM_TEST(Console_CopyLine) {
     e.level = log::Level::Warn;
     e.clockMs = ((8ll * 60 + 30) * 60 + 1) * 1000 + 2;
     e.text = "Texture が見つかりません";
-    CHECK(console::CopyLine(e) == "08:30:01.002 [WARN] Texture が見つかりません");
+    CHECK(console::CopyLine(e) == "08:30:01 [Warn] Texture が見つかりません");
     e.level = log::Level::Error;
-    CHECK(console::CopyLine(e) == "08:30:01.002 [ERROR] Texture が見つかりません");
+    CHECK(console::CopyLine(e) == "08:30:01 [Error] Texture が見つかりません");
     e.level = log::Level::Info;
-    CHECK(console::CopyLine(e) == "08:30:01.002 [INFO] Texture が見つかりません");
+    CHECK(console::CopyLine(e) == "08:30:01 [Info] Texture が見つかりません");
 }
 
 RM_TEST(Console_ClickSelects) {
@@ -262,18 +263,18 @@ RM_TEST(Console_CopyTextUsesShownOrder) {
     console::Filter f;
     std::string text = console::CopyText(entries, console::Apply(entries, f).visible, sel);
     CHECK(text ==
-          "00:00:01.000 [WARN] Texture が見つかりません\r\n"
-          "00:00:02.000 [INFO] 保存しました (Main.rmscene)\r\n"
-          "00:00:03.000 [ERROR] スクリプトのビルドに失敗");
+          "00:00:01 [Warn] Texture が見つかりません\r\n"
+          "00:00:02 [Info] 保存しました (Main.rmscene)\r\n"
+          "00:00:03 [Error] スクリプトのビルドに失敗");
     CHECK(console::CopyText(entries, console::Apply(entries, f).visible, sel, true) ==
           "Texture が見つかりません\r\n保存しました (Main.rmscene)\r\nスクリプトのビルドに失敗");
     // 隠した行はコピーしない
     f.info = false;
     text = console::CopyText(entries, console::Apply(entries, f).visible, sel);
-    CHECK(text == "00:00:01.000 [WARN] Texture が見つかりません\r\n00:00:03.000 [ERROR] スクリプトのビルドに失敗");
+    CHECK(text == "00:00:01 [Warn] Texture が見つかりません\r\n00:00:03 [Error] スクリプトのビルドに失敗");
     // 1 行: 改行を付けない
     sel.seqs = {1};
-    CHECK(console::CopyText(entries, console::Apply(entries, {}).visible, sel) == "00:00:00.000 [INFO] プロジェクトを開きました");
+    CHECK(console::CopyText(entries, console::Apply(entries, {}).visible, sel) == "00:00:00 [Info] プロジェクトを開きました");
     sel.seqs.clear();
     CHECK(console::CopyText(entries, console::Apply(entries, {}).visible, sel).empty());
 }

@@ -192,10 +192,10 @@ bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::stri
 // ラベル付きのチェックボックス。値が変わったら true を返す。
 // mixed: まとめて編集しているオブジェクトが一致しない - チェックの代わりに横棒を出す。クリックするとオンになる。
 bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label, bool mixed = false);
-// 数の付いたチェックボックス (コンソールの 情報 / 警告 / エラー): Checkbox の後ろに、`count` を太字の
-// `countColor` で。`label` は空でもよい (狭いとき: チェックと数だけ)。値が変わったら true。
+// 数の付いたチェックボックス (コンソールの Info / Warn / Error): [箱] 印 ラベル 数 の並び。`count` は太字の
+// `countColor` で。`label` は空でもよい (狭いとき: チェックと印と数だけ)。値が変わったら true。
 // 要る幅: CheckboxCountWidth (`count` が空なら、ふつうの Checkbox の幅)。
-// `mark` (省略可): 数のすぐ前に出す印 (警告 / エラーの絵)。`markAlpha` の濃さで (数が 0 のとき薄く)。
+// `mark` (省略可): ラベルのすぐ前に出す印 (警告 / エラーの絵)。`markAlpha` の濃さで (数が 0 のとき薄く)。
 bool CheckboxCount(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label,
                    std::wstring_view count, ui::Color countColor, std::optional<Icon> mark = std::nullopt,
                    float markAlpha = 1.f);

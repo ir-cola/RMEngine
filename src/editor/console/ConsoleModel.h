@@ -4,14 +4,14 @@
 // ログ (base/Log) の残っている項目 (Snapshot: 新しいもの 2000 件まで) から:
 //   - 「クリア」より後の項目だけを使う (ログ自身は消さない: ほかのウィンドウ・ログのファイル・
 //     デバッグの窓の数はそのまま。クリアはコンソールの見え方だけ)
-//   - 情報 / 警告 / エラーの数 (クリアより後の、そのレベルの項目すべて。絞り込みと検索に関係なく)
+//   - Info / Warn / Error の数 (クリアより後の、そのレベルの項目すべて。絞り込みと検索に関係なく)
 //   - 見せる行 (レベルの表示が入っていて、検索の文字を含むもの)
 // 検索は本文だけを見て、英字の大文字と小文字を区別しない (日本語などはそのまま比べる)。空なら全部。
 //
 // ツールバーの幅の割り振り (FitBar) もここ: 狭いときは検索の欄が先に縮み、それでも入らなければ
 // ラベルを外す (チェックと数だけ)。
 //
-// 時刻 (ClockText): 行を書いたときの PC の時計 (地方時。Entry::clockMs) を "HH:MM:SS.mmm" で。日付は出さない。
+// 時刻 (ClockText): 行を書いたときの PC の時計 (地方時。Entry::clockMs) を "HH:MM:SS" で。日付と秒より細かい所は出さない。
 //
 // 行の選択 (Selection): 行の番号ではなく項目の seq で持つ (新しい行が来ても・自動スクロールしても
 // 同じ行のまま)。並び (`order`) は今見せている行の seq を表示順 (古い順) に並べたもの:
@@ -21,7 +21,7 @@
 // 選んだまま残る (戻すとまた選ばれている) が、コピーするのは見せている行だけ。
 //
 // コピー (CopyText): 選んだ行のうち見せているものを表示順に、1 行ずつ
-//   "HH:MM:SS.mmm [INFO] 本文" / "[WARN]" / "[ERROR]"   (messagesOnly: 本文だけ)
+//   "HH:MM:SS [Info] 本文" / "[Warn]" / "[Error]"   (messagesOnly: 本文だけ)
 // 行の間は "\r\n" (Windows のクリップボード。最後の行の後には付けない)。本文の中の改行はそのまま。
 
 #include "base/Log.h"
@@ -68,7 +68,7 @@ BarFit FitBar(float barW, float full, float compact, float searchMin, float sear
 std::string ClockText(int64_t clockMs);
 // コピーの文字のレベル: "INFO" / "WARN" / "ERROR"。
 std::string_view LevelTag(log::Level level);
-// "HH:MM:SS.mmm [WARN] 本文"
+// "HH:MM:SS [Warn] 本文"
 std::string CopyLine(const log::Entry& e);
 
 struct Selection {

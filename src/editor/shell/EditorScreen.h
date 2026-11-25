@@ -91,6 +91,7 @@ private:
     bool Save();
     void SetDirty(bool dirty);
     void UpdateTitle();
+    std::wstring TitleText() const;
     // インスペクターの参照フィールドが出すもの (アセット、表示中のソフトの 階層 の項目)。
     inspector::Refs MakeRefs();
     std::vector<w::MenuItem> MenuItems(Menu m) const;
