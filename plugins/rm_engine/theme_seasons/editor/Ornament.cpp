@@ -416,7 +416,7 @@ ui::Path Susuki(Vec2 base, float h, uint32_t seed) {
         const Vec2 c{x0 - lean * 0.55f, base.y - tall * 0.9f}, top{x0 - lean - tall * 0.08f, base.y - tall};
         AddBlade(p, a, b, c, top, h * 0.009f, 16, 0.3f);
         // 穂の軸: 茎の先から左へ出て、すぐに下へ垂れる。
-        const float plume = tall * (0.34f + 0.08f * rnd.Next());
+        const float plume = tall * (0.34f + 0.08f * rnd.Next()) * 1.5f;  // (2026-11-25: 穂を 1.5 倍に)
         const Vec2 r0 = top, r1{top.x - plume * 0.30f, top.y + plume * 0.02f};
         const Vec2 r2{top.x - plume * 0.52f, top.y + plume * 0.30f}, r3{top.x - plume * 0.60f, top.y + plume * 0.80f};
         AddBlade(p, r0, r1, r2, r3, h * 0.008f, 14, 0.7f);
