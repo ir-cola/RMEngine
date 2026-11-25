@@ -418,10 +418,18 @@ std::array<ui::Path, 4> Canopy(const ui::Rect& win, float depth, float perPixel,
 }
 
 std::array<ui::Path, 4> PetalCanopy(const ui::Rect& win, float depth, float perPixel, uint32_t seed) {
-    // 花びら 1 枚: 細長いだ円 (長さ約 size)。
-    return AlongTop(win, depth, perPixel, seed, 6.f, 6.f, [](Vec2 c, float size, float deg) {
+    // 花びら 1 枚 (長さ約 size): 付け根が細く、先がふくらみ、先の真ん中に小さな切れ込みのある桜の花びら
+    // (2026-11-25: 前はだ円)。
+    return AlongTop(win, depth, perPixel, seed, 6.f, 7.f, [](Vec2 c, float size, float deg) {
+        // 長さを 1 にした形 (y: 付け根 -0.5 .. 先 0.5)。右側を下り、切れ込み、左側を上る。
+        static constexpr Vec2 kShape[] = {{0, -0.5f},     {0.12f, -0.38f}, {0.22f, -0.2f}, {0.29f, 0},      {0.31f, 0.18f},
+                                          {0.27f, 0.34f}, {0.17f, 0.46f},  {0.07f, 0.5f},  {0, 0.4f},       {-0.07f, 0.5f},
+                                          {-0.17f, 0.46f}, {-0.27f, 0.34f}, {-0.31f, 0.18f}, {-0.29f, 0},   {-0.22f, -0.2f},
+                                          {-0.12f, -0.38f}};
+        std::vector<Vec2> pts;
+        for (const Vec2 v : kShape) pts.push_back(Add(c, Rotate({v.x * size, v.y * size}, deg)));
         ui::Path p;
-        AddEllipse(p, c, size * 0.5f, size * 0.3f, deg);
+        AddPolygon(p, pts);
         return p;
     });
 }

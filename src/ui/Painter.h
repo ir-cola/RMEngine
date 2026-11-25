@@ -5,6 +5,7 @@
 // (憲法 7: 「同じものを描くコードを 2 本書かない」)。
 
 #include "ui/Path.h"
+#include "ui/Grain.h"
 #include "ui/Types.h"
 
 #include <d2d1_1.h>
@@ -48,6 +49,9 @@ public:
     void Clear(Color c);
     void FillRect(const Rect& r, Color c);
     void FillRoundRect(const Rect& r, float radius, Color c);
+    // 細かい粒の模様 (Grain.h: 砂のざらざら) で `r` (角の丸み `radius`) を塗る。模様はウィンドウの左上に
+    // 固定 (パネルを動かしても粒は同じ所)。粒の絵は見た目ごとに 1 回だけ作り、繰り返して敷く。
+    void FillGrain(const Rect& r, float radius, const GrainLook& look);
     void StrokeRect(const Rect& r, Color c, float width = 1.f);
     void StrokeRoundRect(const Rect& r, float radius, Color c, float width = 1.f);
     void Line(float x1, float y1, float x2, float y2, Color c, float width = 1.f);
@@ -105,6 +109,8 @@ private:
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
     // 色の組ごとにグラデーションのブラシを 1 つ (1 回作り、矩形ごとに動かす)。
     std::unordered_map<uint64_t, Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush>> gradients_;
+    // 粒の模様の見た目ごとに 1 つ (FillGrain)。
+    std::unordered_map<uint64_t, Microsoft::WRL::ComPtr<ID2D1BitmapBrush>> grains_;
     std::unordered_map<uint32_t, Microsoft::WRL::ComPtr<IDWriteTextFormat>> formats_;
     std::unordered_map<uint32_t, Microsoft::WRL::ComPtr<IDWriteInlineObject>> ellipsis_;
     int clipDepth_ = 0;

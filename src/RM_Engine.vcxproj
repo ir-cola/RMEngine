@@ -82,6 +82,7 @@
     <ClCompile Include="editor\export\Exporter.cpp" />
     <ClCompile Include="ui\Context.cpp" />
     <ClCompile Include="ui\Painter.cpp" />
+    <ClCompile Include="ui\Grain.cpp" />
     <ClCompile Include="ui\TextEdit.cpp" />
     <ClCompile Include="editor\app\App.cpp" />
     <ClCompile Include="editor\app\Paths.cpp" />

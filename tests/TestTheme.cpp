@@ -3,6 +3,7 @@
 // (plugins/rm_engine/theme_seasons/editor/Ornament.h)。
 
 #include "Test.h"
+#include "ui/Grain.h"
 
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/ThemeFile.h"
@@ -383,4 +384,30 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     };
     const auto tipsNarrow = tips(Icicles({0, 0, 800, 600}, 40, 5).ice, 800), tipsWide = tips(Icicles({0, 0, 2000, 600}, 40, 5).ice, 800);
     CHECK(!tipsNarrow.empty() && tipsNarrow == tipsWide);
+}
+
+RM_TEST(Theme_Grain) {
+    // 砂のざらざらの絵: 決めた割合ほどの粒、同じ見た目なら同じ絵、アルファを掛けた色。
+    rm::ui::GrainLook g;
+    g.light = {1, 1, 1, 0.5f};
+    g.dark = {0, 0, 0, 0.25f};
+    g.lightShare = 0.1f;
+    g.darkShare = 0.1f;
+    g.clumps = 0;
+    const std::vector<uint32_t> px = rm::ui::GrainPixels(128, g);
+    CHECK(px.size() == 128u * 128u);
+    size_t light = 0, dark = 0, other = 0;
+    for (const uint32_t p : px) {
+        if (p == 0) continue;
+        const uint32_t a = p >> 24, b = p & 0xFF;
+        if (a == 128 && b == 128) ++light;       // 白 x 0.5 (アルファを掛けた)
+        else if (a == 64 && b == 0) ++dark;      // 黒 x 0.25
+        else ++other;
+    }
+    CHECK(other == 0);
+    CHECK(light > 1300 && light < 2000 && dark > 1300 && dark < 2000);  // 16384 の 1 割ほどずつ
+    CHECK(rm::ui::GrainPixels(128, g) == px);
+    g.seed = 2;
+    CHECK(rm::ui::GrainPixels(128, g) != px);
+    CHECK(rm::ui::GrainPixels(0, g).empty());
 }
