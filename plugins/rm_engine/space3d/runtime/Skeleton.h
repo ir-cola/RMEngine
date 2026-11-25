@@ -109,12 +109,23 @@ struct BoneTrack {
     std::vector<Vec3> s;
 };
 
+// クリップのイベント (docs/ANIMATION.md 3-6): 再生の位置がその時刻を通ったら、そのエンティティのスクリプトの
+// OnEvent に名前・数・文字が届く。置くのはモデルの .meta の取り込みの設定 (ClipSettings.h)。
+struct ClipEvent {
+    float time = 0;  // 秒 ([0, duration])
+    std::string name;
+    double number = 0;
+    std::string text;
+    bool operator==(const ClipEvent&) const = default;
+};
+
 struct Clip {
     std::string name;
     float duration = 0;              // 秒
     float rate = kDefaultClipRate;   // 1 秒のサンプル数
     uint32_t frames = 1;             // サンプルの数 = round(duration x rate) + 1
     std::vector<BoneTrack> tracks;
+    std::vector<ClipEvent> events;   // 時刻の順
 };
 // duration と rate からサンプルの数。
 uint32_t ClipFrames(float duration, float rate);

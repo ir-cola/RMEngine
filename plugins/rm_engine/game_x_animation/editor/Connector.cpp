@@ -30,8 +30,8 @@ namespace w = editor::w;
 using editor::Tr;
 using editor::TrF;
 
-// --- クリップの欄の選択肢 ----------------------------------------------------------------
-// モデルのファイルごとに、クリップの名前と長さを 1 度読んで覚える (1 秒ごとに、ファイルか .meta が変わったかを
+// --- クリップの欄・骨の欄の選択肢 ------------------------------------------------------
+// モデルのファイルごとに、クリップの名前と長さ・骨の名前を 1 度読んで覚える (1 秒ごとに、ファイルか .meta が変わったかを
 // 見て、変わったら読み直す)。
 struct ClipList {
     std::filesystem::path file;
@@ -40,6 +40,7 @@ struct ClipList {
     bool looked = false;  // 1 度は探した
     bool ok = false;      // ... そして読めた
     std::vector<std::pair<std::string, float>> clips;  // 名前と長さ (秒)
+    std::vector<std::string> bones;                    // 骨の名前 (親が先)
 };
 
 const ClipList* ClipsOf(editor::SoftwareHost& host, const AssetRef& ref) {
@@ -62,39 +63,71 @@ const ClipList* ClipsOf(editor::SoftwareHost& host, const AssetRef& ref) {
     l.file = file;
     l.time = time;
     l.clips.clear();
+    l.bones.clear();
     std::string err;  // (読めないことはシーンビューがコンソールに出す)
     const auto mesh = space3d::LoadMeshFile(file, &err);
     l.ok = mesh.has_value();
     if (mesh) {
         for (const space3d::Clip& c : mesh->clips) l.clips.emplace_back(c.name, c.duration);
+        if (mesh->skin) {
+            for (const space3d::Bone& b : mesh->skin->skeleton.bones) {
+                if (b.name != space3d::kStaticBoneName) l.bones.push_back(b.name);
+            }
+        }
     }
     return l.ok ? &l : nullptr;
 }
 
-size_t ClipField() {
-    const auto fields = reflect::TypeOf<Animator>().fields;
+template <class T>
+size_t FieldOf(std::string_view name) {
+    const auto fields = reflect::TypeOf<T>().fields;
     for (size_t i = 0; i < fields.size(); ++i) {
-        if (std::string_view(fields[i].name) == "clip") return i;
+        if (std::string_view(fields[i].name) == name) return i;
     }
     return fields.size();
+}
+
+// エンティティの「メッシュ (3D モデル)」のモデル (形がモデルのとき。無ければ空)。
+AssetRef ModelOn(const game_production::SceneEntity& e) {
+    const game_production::Component* mc = e.FindComponent(reflect::TypeOf<game_x_3d::MeshRenderer>().name);
+    if (!mc || !mc->Known()) return {};
+    const auto& mr = *static_cast<const game_x_3d::MeshRenderer*>(mc->value.Get());
+    return mr.shape == game_x_3d::MeshShape::Model ? mr.model : AssetRef{};
 }
 
 // アニメーターのクリップの欄: 同じエンティティの「メッシュ (3D モデル)」のモデルのクリップ。モデルが無い・
 // 読めないときは、ふつうの文字の欄 (名前を打てる)。
 std::optional<std::vector<editor::inspector::Choice>> ClipChoices(editor::SoftwareHost& host, const game_production::Scene& scene, int entity,
                                                                   const reflect::FieldPath& path) {
-    if (path.size() != 1 || path[0] != ClipField()) return std::nullopt;
+    if (path.size() != 1 || path[0] != FieldOf<Animator>("clip")) return std::nullopt;
     const game_production::SceneEntity* e = scene.Find(entity);
-    const game_production::Component* mc = e ? e->FindComponent(reflect::TypeOf<game_x_3d::MeshRenderer>().name) : nullptr;
-    if (!mc || !mc->Known()) return std::nullopt;
-    const auto& mr = *static_cast<const game_x_3d::MeshRenderer*>(mc->value.Get());
-    if (mr.shape != game_x_3d::MeshShape::Model) return std::nullopt;
-    const ClipList* list = ClipsOf(host, mr.model);
+    const ClipList* list = e ? ClipsOf(host, ModelOn(*e)) : nullptr;
     if (!list) return std::nullopt;
     std::vector<editor::inspector::Choice> out;
     out.push_back({"", Tr(L"(最初のクリップ)")});
     for (const auto& [name, seconds] : list->clips) out.push_back({name, TrF(L"{} ({:.1f} 秒)", Utf8ToWide(name), seconds)});
     return out;
+}
+
+// 骨に付ける の骨の欄: アニメーターを持つ一番近い祖先の、メッシュのモデルの骨。見つからない・読めないときは、
+// ふつうの文字の欄 (名前を打てる)。
+std::optional<std::vector<editor::inspector::Choice>> BoneChoices(editor::SoftwareHost& host, const game_production::Scene& scene, int entity,
+                                                                  const reflect::FieldPath& path) {
+    if (path.size() != 1 || path[0] != FieldOf<BoneAttach>("bone")) return std::nullopt;
+    const game_production::SceneEntity* e = scene.Find(entity);
+    const std::string animator = reflect::TypeOf<Animator>().name;
+    size_t steps = 0;
+    for (const game_production::SceneEntity* p = e ? scene.Find(e->data.parent) : nullptr; p && steps++ <= scene.Entities().size();
+         p = scene.Find(p->data.parent)) {
+        if (!p->FindComponent(animator)) continue;
+        const ClipList* list = ClipsOf(host, ModelOn(*p));
+        if (!list || list->bones.empty()) return std::nullopt;
+        std::vector<editor::inspector::Choice> out;
+        out.push_back({"", Tr(L"(付けない)")});
+        for (const std::string& b : list->bones) out.push_back({b, Utf8ToWide(b)});
+        return out;
+    }
+    return std::nullopt;
 }
 
 // --- シーンビューのプレビュー --------------------------------------------------------------
@@ -162,6 +195,9 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // アニメーターのクリップの欄: モデルのクリップから選ぶ。
     static const game_production::ComponentLook kLook{.type = &reflect::TypeOf<Animator>, .choices = &ClipChoices};
     registry.Contribute(game_production::kComponentLookPoint, kLook);
+    // 骨に付ける の骨の欄: 祖先のアニメーターのモデルの骨から選ぶ。
+    static const game_production::ComponentLook kAttachLook{.type = &reflect::TypeOf<BoneAttach>, .choices = &BoneChoices};
+    registry.Contribute(game_production::kComponentLookPoint, kAttachLook);
     // 止まっているシーンビューで、選んだアニメーターを流して見る。
     static const game_x_3d::SceneOverlayInfo kOverlay{&PreviewArea, &DrawPreviewBar};
     registry.Contribute(game_x_3d::kSceneOverlayPoint, kOverlay);

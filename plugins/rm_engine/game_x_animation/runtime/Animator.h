@@ -8,12 +8,17 @@
 //                                    選んでいないもの: クリップの最初のコマ (クリップが無ければバインドの形)
 //
 // 姿勢はゲーム制作 × 3D の口 rm_engine.game_x_3d.mesh_pose に答えて渡す (AnimatorPoser.h)。
+// ゲームが動いている間は、システム「アニメーション」(AnimationSystem.h) が 1 フレームに 1 回進めたもの
+// (AnimatorRun.h)。スクリプトからは RMAnim.h の rm::Animator で動かす。
 
 #include "core/reflect/Reflect.h"
 
+#include <memory>
 #include <string>
 
 namespace rm::game_x_animation {
+
+struct AnimatorRun;
 
 RM_STRUCT(Label="アニメーター")
 struct Animator {
@@ -23,6 +28,21 @@ struct Animator {
     RM_PROPERTY(Edit, Label="速さ", Tooltip="再生の速さの倍率 (2 で倍の速さ。負の数で逆に流れます)", Min=-10, Max=10, Step=0.05) float speed = 1;
     RM_PROPERTY(Edit, Label="始めから流す", Tooltip="外すと、ゲームでは最初のコマで止まったままです (止まっているシーンビューでは、選ぶと流れます)")
     bool playOnStart = true;
+    // ゲームが動いている間の再生 (システム「アニメーション」が作る。Play するコピーだけが持つ)。
+    RM_TRANSIENT() std::shared_ptr<AnimatorRun> run;
+};
+
+// 部品 骨に付ける (docs/ANIMATION.md 3-7): このエンティティを、アニメーターを持つ祖先 (親・その親 ...) の
+// モデルの骨に、毎フレーム合わせる (Transform の位置と回転を書く。大きさは変えない)。剣・帽子・エフェクト・
+// カメラを手や頭に。ゲームが動いている間だけ (止まっているエディターでは置いた所のまま)。
+RM_STRUCT(Label="骨に付ける")
+struct BoneAttach {
+    RM_PROPERTY(Edit, Label="骨", Tooltip="付ける骨の名前 (アニメーターを持つ祖先の「メッシュ (3D モデル)」のモデルの骨から選びます)")
+    std::string bone;
+    RM_PROPERTY(Edit, Label="位置のずれ", Tooltip="骨から見た位置 (骨の向きで。単位はモデルと同じ)") Vec3 position{0, 0, 0};
+    RM_PROPERTY(Edit, Label="回転のずれ (度)", Tooltip="骨から見た回転 (X → Y → Z の順)") Vec3 rotation{0, 0, 0};
+    RM_PROPERTY(Edit, Label="回転も合わせる", Tooltip="外すと、位置だけが骨について行きます (向きはそのまま)") bool followRotation = true;
+    RM_TRANSIENT() std::string told;  // 付けられないと知らせた理由 (同じことは 1 度だけ)
 };
 
 }  // namespace rm::game_x_animation

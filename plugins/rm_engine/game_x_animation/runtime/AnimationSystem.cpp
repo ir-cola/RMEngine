@@ -1,0 +1,158 @@
+#include "rm_engine/game_x_animation/runtime/AnimationSystem.h"
+
+#include "base/Log.h"
+#include "rm_engine/game_x_3d/runtime/MeshPose.h"
+#include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
+#include "rm_engine/game_x_animation/runtime/AnimatorLogic.h"
+#include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
+#include "rm_engine/space3d/runtime/MeshBake.h"
+#include "rm_engine/space3d/runtime/MeshFile.h"
+
+#include <format>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <utility>
+
+namespace rm::game_x_animation {
+
+namespace {
+
+using game_production::Component;
+using game_production::SceneEntity;
+
+// 読んだモデルの骨とクリップ (アセット id ごと)。同じモデルのアニメーターは 1 つを分け合う。使っている
+// アニメーター (AnimatorRun) が無くなれば (ゲームが終わった) 忘れるので、次の Play はファイルを読み直す。
+std::unordered_map<std::string, game_x_3d::SkinnedModel>& Loaded() {
+    static std::unordered_map<std::string, game_x_3d::SkinnedModel> loaded;
+    return loaded;
+}
+
+// モデルを読む (エディター: そのファイルと取り込みの設定。ゲーム: 焼いたもの)。骨が無い・読めない: skin が null。
+game_x_3d::SkinnedModel LoadSkinned(const game_production::AssetAccess* assets, const AssetRef& model, std::string* err) {
+    auto& loaded = Loaded();
+    std::erase_if(loaded, [](const auto& kv) { return kv.second.skin.use_count() <= 1; });
+    if (const auto it = loaded.find(model.guid); it != loaded.end()) return it->second;
+    std::optional<space3d::MeshData> mesh;
+    if (assets && assets->file) {
+        if (const auto file = assets->file(model); !file.empty()) mesh = space3d::LoadMeshFile(file, err);
+    }
+    if (!mesh && assets && assets->bytes) {
+        if (const auto bytes = assets->bytes(model)) mesh = space3d::ReadBakedMesh(*bytes, err);
+    }
+    if (!mesh) return {};
+    game_x_3d::SkinnedModel skinned = game_x_3d::TakeSkinned(*mesh);
+    if (skinned.skin) loaded[model.guid] = skinned;
+    return skinned;
+}
+
+const game_x_3d::MeshRenderer* MeshOn(const SceneEntity& e) {
+    const Component* c = e.FindComponent(reflect::TypeOf<game_x_3d::MeshRenderer>().name);
+    return c && c->Known() ? static_cast<const game_x_3d::MeshRenderer*>(c->value.Get()) : nullptr;
+}
+
+}  // namespace
+
+void RunAnimation(game_production::SystemContext& ctx) {
+    const std::string type = reflect::TypeOf<Animator>().name;
+    std::vector<const space3d::ClipEvent*> fired;
+    game_production::ForEachComponent(ctx.scene, type, [&](SceneEntity& e, Component& c) {
+        if (!c.Known()) return;
+        Animator& a = *static_cast<Animator*>(c.value.Get());
+        AnimatorRun& run = RunOf(a, e.data.id);
+        // モデル: 同じエンティティの「メッシュ (3D モデル)」のもの (替えたら読み直す)。
+        const game_x_3d::MeshRenderer* mr = MeshOn(e);
+        const AssetRef model = mr && mr->shape == game_x_3d::MeshShape::Model ? mr->model : AssetRef{};
+        if (model.guid != run.model) {
+            run.model = model.guid;
+            run.failed = false;
+            BindModel(run, nullptr, nullptr);
+        }
+        if (!run.skin && !run.failed && !model.Empty()) {
+            std::string err;
+            game_x_3d::SkinnedModel m = LoadSkinned(ctx.assets, model, &err);
+            if (!m.skin) {
+                run.failed = true;
+                log::Warn("アニメーター ({}): モデルに骨がないか、読めません{}", e.data.name, err.empty() ? std::string() : " (" + err + ")");
+                return;
+            }
+            BindModel(run, m.skin, m.clips);
+        }
+        if (!run.skin) return;
+        if (!a.clip.empty() && FindClip(*run.clips, a.clip) < 0 && run.missing != a.clip) {
+            log::Warn("アニメーター ({}): モデルにクリップ「{}」がないので、バインドの形で描きます", e.data.name, a.clip);
+            run.missing = a.clip;
+        }
+        fired.clear();
+        StepAnimator(run, a, ctx.dt, fired, &space3d::NextPoseVersion);
+        if (ctx.events) {
+            for (const space3d::ClipEvent* ev : fired) ctx.events->push_back({e.data.id, ev->name, ev->number, ev->text, e.data.id});
+        }
+        if (!run.toldPlaying && run.moving && !run.paused && run.player.ClipIndex() >= 0 &&
+            run.player.Time() != StartTime(run.player.speed, Duration(run), run.player.loop)) {
+            // (書き出したゲームの検査 tools/check_export.ps1 の game_anim がこの行を探す)
+            log::Info("アニメーター: 「{}」がクリップ「{}」で骨 {} 本を動かしました ({:.2f} 秒)", e.data.name,
+                      (*run.clips)[static_cast<size_t>(run.player.ClipIndex())].name, run.bones.size(), run.player.Time());
+            run.toldPlaying = true;
+        }
+    });
+}
+
+space3d::Transform AttachedTransform(const space3d::Transform& current, const space3d::Mat4& parentWorld, const space3d::Mat4& boneWorld,
+                                     const BoneAttach& attach) {
+    const space3d::Mat4 want = boneWorld * space3d::LocalMatrix({attach.position, attach.rotation, {1, 1, 1}});
+    const space3d::WorldPlacement now = space3d::Decompose(space3d::WorldMatrix(parentWorld, current), current.rotation);
+    space3d::WorldPlacement place = space3d::Decompose(want, now.rotation);
+    place.scale = now.scale;  // (大きさは変えない: 骨の大きさを剣に移さない)
+    if (!attach.followRotation) place.rotation = now.rotation;
+    return space3d::FromWorld(current, parentWorld, place);
+}
+
+void RunBoneAttach(game_production::SystemContext& ctx) {
+    const std::string type = reflect::TypeOf<BoneAttach>().name;
+    const std::string animator = reflect::TypeOf<Animator>().name;
+    const std::string transform = reflect::TypeOf<space3d::Transform>().name;
+    game_production::ForEachComponent(ctx.scene, type, [&](SceneEntity& e, Component& c) {
+        if (!c.Known()) return;
+        BoneAttach& b = *static_cast<BoneAttach*>(c.value.Get());
+        auto tell = [&](std::string why) {
+            if (b.told == why) return;
+            log::Warn("骨に付ける ({}): {}", e.data.name, why);
+            b.told = std::move(why);
+        };
+        if (b.bone.empty()) return;
+        // アニメーターを持つ一番近い祖先。
+        const SceneEntity* owner = nullptr;
+        const Animator* a = nullptr;
+        size_t steps = 0;
+        for (const SceneEntity* p = ctx.scene.Find(e.data.parent); p && steps++ <= ctx.scene.Entities().size(); p = ctx.scene.Find(p->data.parent)) {
+            if (const Component* ac = p->FindComponent(animator); ac && ac->Known()) {
+                owner = p;
+                a = static_cast<const Animator*>(ac->value.Get());
+                break;
+            }
+        }
+        if (!owner) {
+            tell("親 (かその上) にアニメーターがありません");
+            return;
+        }
+        if (!a->run || !a->run->skin) return;  // (まだ読んでいない・読めない: アニメーターが知らせる)
+        const space3d::Mat4* bone = BoneModelMatrix(*a->run, b.bone);
+        if (!bone) {
+            if (a->run->skin->skeleton.Find(b.bone) < 0) tell(std::format("「{}」のモデルに骨「{}」がありません", owner->data.name, b.bone));
+            return;
+        }
+        Component* tc = e.FindComponent(transform);
+        if (!tc || !tc->Known()) {
+            tell("Transform がありません");
+            return;
+        }
+        auto& t = *static_cast<space3d::Transform*>(tc->value.Get());
+        const space3d::Mat4 boneWorld = game_x_3d::WorldMatrixOf(ctx.scene, owner->data.id) * *bone;
+        t = AttachedTransform(t, game_x_3d::WorldMatrixOf(ctx.scene, e.data.id, false), boneWorld, b);
+        b.told.clear();
+    });
+}
+
+}  // namespace rm::game_x_animation

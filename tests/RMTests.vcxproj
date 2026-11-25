@@ -116,6 +116,9 @@
     <ClCompile Include="TestGameAnimation.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorLogic.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorPoser.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorRun.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimationSystem.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\ScriptAnimator.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)game_x_animation\</ObjectFileName>
     </ClCompile>
@@ -266,6 +269,7 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Inflate.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Lighting.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshFile.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\ClipSettings.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\TexturePixels.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\BlockCompress.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\TextureFile.cpp" />

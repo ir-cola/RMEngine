@@ -1267,6 +1267,7 @@ private:
         lap(times.scripts);
         runner_.SetCamera(world.camera);
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
+        QueueSystemEvents(world, runner_.Events());  // (クリップのイベント ...: OnEvent へ)
         lap(times.systems);
         // システムの固定ステップがスクリプトに伝えること (物理の接触 ...)。
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, runner_.Hooks());
