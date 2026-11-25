@@ -1,5 +1,7 @@
 #include "rm_engine/space3d/runtime/SkyShader.h"
 
+#include <algorithm>
+#include <cmath>
 #include <format>
 
 namespace rm::space3d {
@@ -21,7 +23,7 @@ cbuffer SkyFrame : register(b3) {
     float4x4 skyInvViewProj;  // クリップ空間 -> ワールドでの向き (カメラの回転だけ)
     float4 skySun;            // xyz: 太陽の向き、w: 秒
     float4 skyMoon;           // xyz: 月の向き、w: 時刻 0..24
-    float4 skyInfo;           // x: 明るさ
+    float4 skyInfo;           // x: 明るさ、yzw: カメラの場所
     float4 skyParam[8];       // 空自身の数値 (SkyShader.h)
 };
 Texture2D sky0 : register(t0);
@@ -30,6 +32,7 @@ Texture2D sky2 : register(t2);
 Texture2D sky3 : register(t3);
 Texture2D sky4 : register(t4);
 Texture2D sky5 : register(t5);
+Texture2D skyClouds : register(t6);     // 地球の空の雲の地図 (無いときは何も結ばれていない)
 SamplerState skySmooth : register(s1);  // なめらか、繰り返す (パノラマは 1 周する)
 SamplerState skyEdge : register(s2);    // なめらか、端で止まる (6 枚のうちの 1 枚)
 
@@ -44,6 +47,7 @@ struct SkyInput {
     float hour;    // 0 .. 24 (地球の空's 時刻)
     float3 value;  // インスペクターの 値 (自分のシェーダー)
     float4 color;  // インスペクターの 色 (リニア)
+    float3 eye;    // カメラの場所 (ワールド)
 };
 
 // 0 .. 1。同じ点なら同じ値 (模様は見えない)。
@@ -135,14 +139,30 @@ float4 SkyPS(SkyOut o) : SV_Target {
     i.hour = skyMoon.w;
     i.value = skyParam[0].xyz;
     i.color = skyParam[1];
+    i.eye = skyInfo.yzw;
     float3 c = Sky(i) * skyInfo.x;
     return float4(ToScreen(c), 1);
 }
 )";
 
 // 地球の空: 空気の色 (CPU が時刻と天気から計算する: game_x_3d の Sky)、太陽とそのにじみ、
-// 夜の月と星、流れる雲、もや、雷。
+// 夜の月と星、流れる雲、もや、雷。前に SKY_CLOUD_LAYER と SKY_CLOUD_FADE (SkyShader.h の
+// kCloudLayerHeight / kCloudFadeFrom) が付く (EarthCode)。
 constexpr char kEarth[] = R"(
+// 場所ごとの雲 (CloudMapAt と同じ式): 向き d が、カメラの SKY_CLOUD_LAYER m 上の雲の層と交わる所の
+// 雲の量。塗った割合の分だけ塗った雲の量へ寄せる (塗っていない所は cover)。地図の縁へ向かって
+// 薄れ、地図の外・地平線と下は cover のまま。
+float CloudsHere(float3 d, float3 eye, float cover) {
+    float4 m = skyParam[6];  // xy: 最初のマスの真ん中、z: 1 マスの一辺、w: マスの数
+    if (m.w < 0.5 || m.z <= 0 || d.y <= 0.001) return cover;
+    float2 at = eye.xz + d.xz * (SKY_CLOUD_LAYER / d.y);
+    float2 cell = (at - m.xy) / m.z;  // マスの番号 (真ん中で整数)
+    float2 fromMid = abs(cell - (m.w - 1) * 0.5) / (m.w * 0.5);  // 地図の縁で 1
+    float weight = 1 - smoothstep(SKY_CLOUD_FADE, 1.0, max(fromMid.x, fromMid.y));
+    if (weight <= 0) return cover;
+    float2 painted = skyClouds.SampleLevel(skyEdge, (cell + 0.5) / m.w, 0).rg;  // 割合、量
+    return lerp(cover, saturate(painted.g), saturate(painted.r) * weight);
+}
 float3 Sky(SkyInput i) {
     float3 d = i.dir;
     float3 sunLight = skyParam[0].rgb;
@@ -180,11 +200,13 @@ float3 Sky(SkyInput i) {
     // 雲: 高い所の 1 つの層を斜めに見る (地平線に近いほど薄い)。流れる。
     // 雲の量 75 % を越えると切れ目を下から埋めはじめ、100 % で空一面の厚い層 (切れ目なし)。
     // 厚い層は地平線より下まで続け (地面の色へつながる)、地平線に明るい帯を残さない。
-    float solid = smoothstep(0.75, 1.0, cover);
-    if ((d.y > 0 || solid > 0) && cover > 0.001) {
+    // 雲の量はこの向きのもの (雲の地図があれば場所ごと)。暗さ・太陽の弱まり・星はカメラのいる所のまま。
+    float here = CloudsHere(d, i.eye, cover);
+    float solid = smoothstep(0.75, 1.0, here);
+    if ((d.y > 0 || solid > 0) && here > 0.001) {
         float2 p = d.xz / (max(d.y, 0) + 0.08) * 0.8 - skyParam[5].xy * 0.003;  // 風に運ばれる
         float n = SkyFbm(float3(p, i.time * 0.004), 6);
-        float edge = lerp(0.78, 0.22, cover);
+        float edge = lerp(0.78, 0.22, here);
         float below = saturate(-d.y * 20);  // (地平線より下: 模様は使わない)
         float density = max(smoothstep(edge, edge + 0.18, lerp(n, 0.5, below)), solid) * lerp(smoothstep(0.0, 0.1, d.y), 1, solid);
         float through = SkyFbm(float3(p + i.sun.xz * 0.06, i.time * 0.004), 4);  // 太陽に近いほど薄い
@@ -260,6 +282,7 @@ constexpr char kNewSky[] = R"(// 空のシェーダー (RM Engine)
 //   i.sun    太陽の向き (インスペクターの「太陽の高さ」「太陽の向き」)
 //   i.value  インスペクターの「値」(float3)
 //   i.color  インスペクターの「色」(float4)
+//   i.eye    カメラの場所 (ワールド)
 //   sky0     インスペクターの「画像」。SamplePanorama(sky0, i.dir) でパノラマとして読めます
 //   関数:    SkyNoise(p)  SkyFbm(p, 回数)  SkyHash(p)  RotateY(向き, 角度)  PI
 float3 Sky(SkyInput i) {
@@ -287,9 +310,40 @@ std::string AssembleSky(std::string_view code, std::string_view fileName) {
     return out;
 }
 
+namespace {
+
+// 地球の空のコード: 雲の層の数 (SkyShader.h。1 か所) を前に付けたもの。
+const std::string& EarthCode() {
+    static const std::string code =
+        std::format("static const float SKY_CLOUD_LAYER = {:.1f};\nstatic const float SKY_CLOUD_FADE = {:.3f};\n", kCloudLayerHeight, kCloudFadeFrom) + kEarth;
+    return code;
+}
+
+float SmoothStep(float edge0, float edge1, float x) {
+    const float t = std::clamp((x - edge0) / (edge1 - edge0), 0.f, 1.f);
+    return t * t * (3 - 2 * t);
+}
+
+}  // namespace
+
+CloudMapPoint CloudMapAt(Vec3 d, Vec3 eye, const CloudMapPlace& map) {
+    CloudMapPoint out;
+    const float n = static_cast<float>(map.cells);
+    if (map.cells <= 0 || !(map.cell > 0) || !(d.y > 0.001f)) return out;
+    const float reach = kCloudLayerHeight / d.y;
+    const float cellX = (eye.x + d.x * reach - map.firstX) / map.cell, cellZ = (eye.z + d.z * reach - map.firstZ) / map.cell;
+    const float mid = (n - 1) * 0.5f, half = n * 0.5f;
+    const float fromMid = std::max(std::fabs(cellX - mid), std::fabs(cellZ - mid)) / half;
+    out.weight = 1 - SmoothStep(kCloudFadeFrom, 1.f, fromMid);
+    if (!(out.weight > 0)) out.weight = 0;  // (遠すぎて数が無限・NaN のときも 0)
+    out.u = (cellX + 0.5f) / n;
+    out.v = (cellZ + 0.5f) / n;
+    return out;
+}
+
 std::string_view BuiltinSkyCode(BuiltinSky sky) {
     switch (sky) {
-        case BuiltinSky::Earth: return kEarth;
+        case BuiltinSky::Earth: return EarthCode();
         case BuiltinSky::Space: return kSpace;
         case BuiltinSky::Panorama: return kPanorama;
         case BuiltinSky::SixFaces: return kSixFaces;

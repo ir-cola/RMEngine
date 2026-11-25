@@ -78,6 +78,7 @@
     <ClCompile Include="TestProcess.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestSky.cpp" />
+    <ClCompile Include="TestSkyClouds.cpp" />
     <ClCompile Include="TestMaterial.cpp" />
     <ClCompile Include="TestWeather.cpp" />
     <ClCompile Include="TestClimate.cpp" />

@@ -241,7 +241,11 @@ struct SkyProgram;
 struct SkyDraw {
     std::shared_ptr<const SkyProgram> program;
     std::array<TextureRef, kSkyTextures> textures;  // sky0 .. sky5 (null: 無い - 黒として読む)
-    SkyConstants constants{};  // invViewProj はレンダラーのもの (描くときに入れる)
+    SkyConstants constants{};  // invViewProj とカメラの場所 (info.yzw) はレンダラーのもの (描くときに入れる)
+    // 雲の地図 (skyClouds、t6): cloudCells x cloudCells のマスごとに 2 つの数 (r, g。行が v)。
+    // レンダラーが描くたびに R32G32_FLOAT の絵にして送る。空 (または数が合わない): 何も結ばない。
+    std::vector<float> clouds;
+    uint32_t cloudCells = 0;
 };
 
 struct RenderFrame {
@@ -424,6 +428,10 @@ private:
     Ptr<ID3D11Texture2D> depthTex_;
     Ptr<ID3D11DepthStencilView> dsv_;
     Ptr<ID3D11ShaderResourceView> depthSrv_;  // シェーダー用の深度 (ExtraDrawContext::depth)。null: 無し
+    // 空の雲の地図 (SkyDraw::clouds) を送る絵 (R32G32_FLOAT。一辺 cloudSize_。大きさが変わったら作り直す)。
+    Ptr<ID3D11Texture2D> cloudTex_;
+    Ptr<ID3D11ShaderResourceView> cloudSrv_;
+    uint32_t cloudSize_ = 0;
 };
 
 }  // namespace rm::space3d

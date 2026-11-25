@@ -3,6 +3,28 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.16",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "気候のタブが気候ビューに: 「見る」で気温・湿り気・雲の量を地図の上に色の段で見られます (目盛りとカーソルの所の値つき)",
+          "en": "The Climate tab is now a climate view: \"Show\" puts temperature, humidity and cloud amount on the map as color scales (with a scale and the value under the cursor)"
+        },
+        {
+          "ja": "気候のタブの道具に「ペン」(線で囲む) と「選ぶ」(囲んだ形の点を動かして直す) を追加。今までの丸い筆は「筆」に",
+          "en": "Climate tab tools: \"Pen\" (draw around an area) and \"Select\" (move the points of a drawn shape). The round brush is now called \"Brush\""
+        },
+        {
+          "ja": "地図に雲の量を描けるように (描く層「雲」)。雨と雪は雲のある所だけ降り、空の雲もその場所だけ厚くなります",
+          "en": "You can draw the cloud amount on the map (the \"Clouds\" layer). Rain and snow fall only under clouds, and the sky gets thick clouds just there"
+        },
+        {
+          "ja": "気候のプラグインがあるときは、天候の「雪にする」を出さないように (雨か雪かは気温で決まるため)",
+          "en": "With the Climate plugin installed, the weather's \"Snow\" switch is hidden (the temperature decides rain or snow)"
+        }
+      ]
+    },
+    {
       "version": "0.0.15",
       "date": "2026-11-25",
       "items": [
