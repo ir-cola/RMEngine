@@ -93,6 +93,10 @@ using WetCell = std::array<WetLevel, kWetWays>;
 // マスの値で始まる。地図の外も、描くときは一番近いマス)。
 inline constexpr int kWetMapCells = 64;
 inline constexpr float kWetMapCell = 2.f;
+// 場所ごとの雲の地図 (気候の地図に塗った雲。docs/CLIMATE.md の「気候ビュー」): カメラのまわり
+// kCloudMapCells x kCloudMapCells マス (1 マス kCloudMapCell m: 3 km 四方ほど)。空は遠くまで見えるので粗い。
+inline constexpr int kCloudMapCells = 48;
+inline constexpr float kCloudMapCell = 64.f;
 struct WetMap {
     int firstX = 0, firstZ = 0;  // 最初のマス (ワールドのマス番号: floor(x / kWetMapCell))
     std::vector<WetCell> cells;  // kWetMapCells^2 (行が z、z の小さい行から)。空: 地図を使わない
@@ -136,6 +140,16 @@ struct Weather {
     RM_TRANSIENT() std::vector<WeatherPlace> placeCells;
     RM_TRANSIENT() int placeFirstX = 0;
     RM_TRANSIENT() int placeFirstZ = 0;
+    // 場所ごとの雲 (気候の地図に塗った雲): 答える者 (つなぎ 天候 × 気候) が Play の間、毎フレーム書く。
+    // placeClouds: カメラのいる所の雲の量 (0 .. 100。数秒かけて近づける)。< 0: 書く者がいない (雲の量のまま)。
+    // 空の暗さ・日の光・雲の厚さはこれで決まる (TargetOf)。
+    RM_TRANSIENT() float placeClouds = -1;
+    // cloudCells: カメラのまわりの雲の地図 (kCloudMapCells x kCloudMapCells。行が z、z の小さい行から)。
+    // 値はそのマスの真ん中の雲の量 (0 .. 100)。最初のマスの真ん中のワールドの x, z が cloudFirstX / Z。
+    // 空: 書く者がいない (空の雲はどこも同じ量)。空の絵はこれで、向きごとに雲の量を変える。
+    RM_TRANSIENT() std::vector<float> cloudCells;
+    RM_TRANSIENT() float cloudFirstX = 0;
+    RM_TRANSIENT() float cloudFirstZ = 0;
     RM_TRANSIENT() WetMap wetMap;
     // ゲームが動いている間に、風が雲・粒・ひらひらをどれだけ運んだか (ワールド単位: 風を足し
     // 合わせたもの - 風が変わっても跳ばない)。
