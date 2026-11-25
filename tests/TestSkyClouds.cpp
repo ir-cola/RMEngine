@@ -1,0 +1,294 @@
+// 地球の空の、場所ごとの雲 (docs/CLIMATE.md の「雲の地図」→「空の絵」) のテスト:
+// 向きと雲の層の交わる所 (space3d::CloudMapAt)・空の絵へ渡す形 (LookOf の雲の地図)・天候が地図を
+// 空へ渡すこと・GPU で描いた空が CloudMapAt と同じ所に雲を出すこと (シェーダーの CloudsHere と C++ の
+// 式を結びつける)・地図が無いときと塗っていないときは今までと 1 ピクセルも変わらないこと。
+
+#include "Test.h"
+
+#include "rm_engine/game_x_3d/runtime/Sky.h"
+#include "rm_engine/space3d/runtime/Renderer3D.h"
+#include "rm_engine/space3d/runtime/SkyShader.h"
+#include "rm_engine/space3d/runtime/View.h"
+#include "rm_engine/weather/runtime/Weather.h"
+
+#include <d3d11.h>
+#include <wrl/client.h>
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
+#include <string>
+#include <vector>
+
+#pragma comment(lib, "d3d11.lib")
+
+using namespace rm;
+using rm::space3d::CloudMapAt;
+using rm::space3d::CloudMapPlace;
+using rm::space3d::CloudMapPoint;
+using rm::space3d::operator+;
+using rm::space3d::operator*;
+
+namespace {
+
+bool Near(float a, float b, float eps = 1e-4f) { return std::fabs(a - b) < eps; }
+
+Vec3 Unit(Vec3 v) { return space3d::Normalize(v); }
+
+// eye を真ん中にした、天候の地図と同じ大きさの地図 (48 x 48 マス、1 マス 64 m)。
+CloudMapPlace MapAround(Vec3 eye) {
+    CloudMapPlace m;
+    m.cells = weather::kCloudMapCells;
+    m.cell = weather::kCloudMapCell;
+    m.firstX = eye.x - (m.cells - 1) * 0.5f * m.cell;
+    m.firstZ = eye.z - (m.cells - 1) * 0.5f * m.cell;
+    return m;
+}
+
+game_x_3d::Sky Noon() {
+    game_x_3d::Sky s;
+    s.kind = game_x_3d::SkyKind::Earth;
+    s.hour = 12;
+    return s;
+}
+
+// 割合と量がどのマスも同じ地図 (SkyWeather の形)。
+void FillMap(game_x_3d::SkyWeather& w, const CloudMapPlace& m, float share, float amount) {
+    const size_t count = static_cast<size_t>(m.cells) * m.cells;
+    w.cloudShares.assign(count, share);
+    w.cloudAmounts.assign(count, amount);
+    w.cloudCells = m.cells;
+    w.cloudCell = m.cell;
+    w.cloudFirstX = m.firstX;
+    w.cloudFirstZ = m.firstZ;
+}
+
+Microsoft::WRL::ComPtr<ID3D11Device> TestDevice(Microsoft::WRL::ComPtr<ID3D11DeviceContext>& ctx) {
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
+    D3D_FEATURE_LEVEL fl{};
+    HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, &fl, &ctx);
+    if (FAILED(hr)) hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, &fl, &ctx);
+    if (FAILED(hr)) device.Reset();
+    return device;
+}
+
+// 絵 (B8G8R8A8) の全部のピクセル。
+std::vector<uint8_t> PixelsOf(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Texture2D* picture) {
+    D3D11_TEXTURE2D_DESC td{};
+    picture->GetDesc(&td);
+    td.Usage = D3D11_USAGE_STAGING;
+    td.BindFlags = 0;
+    td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    td.MiscFlags = 0;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+    if (FAILED(device->CreateTexture2D(&td, nullptr, &staging))) return {};
+    ctx->CopyResource(staging.Get(), picture);
+    D3D11_MAPPED_SUBRESOURCE map{};
+    if (FAILED(ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &map))) return {};
+    std::vector<uint8_t> out(static_cast<size_t>(td.Width) * td.Height * 4);
+    for (UINT y = 0; y < td.Height; ++y) {
+        const auto* row = static_cast<const uint8_t*>(map.pData) + static_cast<size_t>(y) * map.RowPitch;
+        std::copy(row, row + td.Width * 4, out.begin() + static_cast<ptrdiff_t>(y) * td.Width * 4);
+    }
+    ctx->Unmap(staging.Get(), 0);
+    return out;
+}
+
+// 2 つの絵のピクセル (x, y) の色の差 (チャンネルの差の一番大きいもの)。
+int Differ(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b, int size, int x, int y) {
+    const size_t at = (static_cast<size_t>(y) * size + x) * 4;
+    int most = 0;
+    for (size_t k = 0; k < 3; ++k) most = std::max(most, std::abs(static_cast<int>(a[at + k]) - static_cast<int>(b[at + k])));
+    return most;
+}
+
+}  // namespace
+
+RM_TEST(Sky_CloudMapAt) {
+    const Vec3 eye{100, 5, -200};
+    const CloudMapPlace map = MapAround(eye);
+    // 真上: 地図の真ん中 (カメラの真上)。地図の値をそのまま使う。
+    CloudMapPoint p = CloudMapAt({0, 1, 0}, eye, map);
+    CHECK(Near(p.u, 0.5f) && Near(p.v, 0.5f) && Near(p.weight, 1));
+    // 斜め: 雲の層 (kCloudLayerHeight m 上) で x に 600 m、z に -300 m 先。
+    const Vec3 slant = Unit({1, 1, -0.5f});
+    p = CloudMapAt(slant, eye, map);
+    const float n = static_cast<float>(map.cells);
+    CHECK(Near(p.u, 0.5f + space3d::kCloudLayerHeight / map.cell / n, 1e-3f));
+    CHECK(Near(p.v, 0.5f - 0.5f * space3d::kCloudLayerHeight / map.cell / n, 1e-3f));
+    CHECK(Near(p.weight, 1));
+    // 地図の縁の近く: 薄れる (縁までの kCloudFadeFrom から)。地図の縁と外: 0。
+    const float half = n * 0.5f * map.cell;
+    auto reachingX = [&](float distance) { return Unit({distance, space3d::kCloudLayerHeight, 0}); };
+    CHECK(Near(CloudMapAt(reachingX(half * 0.6f), eye, map).weight, 1));
+    const float mid = CloudMapAt(reachingX(half * 0.85f), eye, map).weight;
+    CHECK(mid > 0.1f && mid < 0.9f);
+    CHECK(CloudMapAt(reachingX(half * 0.95f), eye, map).weight < mid);
+    CHECK(CloudMapAt(reachingX(half * 1.01f), eye, map).weight == 0.f);
+    CHECK(CloudMapAt(reachingX(half * 50), eye, map).weight == 0.f);
+    // 地平線と下・地図が無い・数でない向き: 使わない。
+    CHECK(CloudMapAt({1, 0, 0}, eye, map).weight == 0.f);
+    CHECK(CloudMapAt(Unit({1, -0.3f, 0}), eye, map).weight == 0.f);
+    CHECK(CloudMapAt({0, 1, 0}, eye, CloudMapPlace{}).weight == 0.f);
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    CHECK(CloudMapAt({nan, nan, nan}, eye, map).weight == 0.f);
+    // カメラが地図から離れている (エディターのカメラ): 真上でも地図の外なら使わない。
+    CHECK(CloudMapAt({0, 1, 0}, {eye.x + 5000, 5, eye.z}, map).weight == 0.f);
+}
+
+RM_TEST(Sky_CloudMapPacked) {
+    const CloudMapPlace map = MapAround({0, 0, 0});
+    game_x_3d::SkyWeather w;
+    FillMap(w, map, 0.5f, 0.25f);
+    w.cloudShares[3] = 2.f;  // 0 .. 1 にそろえる
+    w.cloudAmounts[4] = -1.f;
+    w.cloudAmounts[5] = std::numeric_limits<float>::quiet_NaN();
+    const game_x_3d::SkyLook look = game_x_3d::LookOf(Noon(), 0, w);
+    const size_t count = static_cast<size_t>(map.cells) * map.cells;
+    CHECK(look.cloudCells == static_cast<uint32_t>(map.cells) && look.clouds.size() == count * 2);
+    CHECK(look.clouds[0] == 0.5f && look.clouds[1] == 0.25f);
+    CHECK(look.clouds[3 * 2] == 1.f && look.clouds[4 * 2 + 1] == 0.f && look.clouds[5 * 2 + 1] == 0.f);
+    const float* m = look.constants.param[6];
+    CHECK(m[0] == map.firstX && m[1] == map.firstZ && m[2] == map.cell && m[3] == static_cast<float>(map.cells));
+    // 雲の量 (cover) はカメラのいる所のまま (地図は向きごとにだけ効く)。
+    CHECK(look.constants.param[1][0] == w.cover);
+    // 数が合わない・マスの大きさが無い・地図が無い・地球の空でない: 地図は渡さない (今までの空)。
+    game_x_3d::SkyWeather bad = w;
+    bad.cloudShares.pop_back();
+    const game_x_3d::SkyLook none = game_x_3d::LookOf(Noon(), 0, bad);
+    CHECK(none.clouds.empty() && none.cloudCells == 0 && none.constants.param[6][3] == 0.f);
+    bad = w;
+    bad.cloudCell = 0;
+    CHECK(game_x_3d::LookOf(Noon(), 0, bad).clouds.empty());
+    CHECK(game_x_3d::LookOf(Noon(), 0, game_x_3d::SkyWeather{}).clouds.empty());
+    game_x_3d::Sky space;
+    space.kind = game_x_3d::SkyKind::Space;
+    CHECK(game_x_3d::LookOf(space, 0, w).clouds.empty());
+}
+
+RM_TEST(Sky_CloudMapFromWeather) {
+    weather::Weather w;
+    // 書く者がいない: 地図は無い。
+    CHECK(weather::SkyWeatherOf(w, 0).cloudShares.empty() && weather::SkyWeatherOf(w, 0).cloudCells == 0);
+    const size_t count = static_cast<size_t>(weather::kCloudMapCells) * weather::kCloudMapCells;
+    w.cloudCells.assign(count, 80.f);
+    w.cloudShares.assign(count, 0.f);
+    w.cloudCells[7] = 150.f;
+    w.cloudShares[7] = 1.f;
+    w.cloudFirstX = -10;
+    w.cloudFirstZ = 20;
+    const game_x_3d::SkyWeather s = weather::SkyWeatherOf(w, 0);
+    CHECK(s.cloudCells == weather::kCloudMapCells && s.cloudCell == weather::kCloudMapCell && s.cloudFirstX == -10 && s.cloudFirstZ == 20);
+    CHECK(s.cloudShares.size() == count && s.cloudAmounts.size() == count);
+    CHECK(Near(s.cloudAmounts[0], 0.8f) && s.cloudAmounts[7] == 1.f && s.cloudShares[7] == 1.f && s.cloudShares[0] == 0.f);
+    // 片方だけ・数が違う: 渡さない。
+    w.cloudShares.clear();
+    CHECK(weather::SkyWeatherOf(w, 0).cloudCells == 0);
+}
+
+RM_TEST(Sky_CloudMapOnGpu) {
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
+    const auto device = TestDevice(ctx);
+    CHECK(device);
+    if (!device) return;
+    space3d::Renderer r;
+    std::string error;
+    CHECK(r.Init(device.Get(), &error));
+    if (!r.Ready()) return;
+    space3d::SkyDraw draw;
+    draw.program = r.MakeSky(space3d::AssembleSky(space3d::BuiltinSkyCode(space3d::BuiltinSky::Earth), "地球の空"), &error);
+    CHECK(draw.program);
+    if (!draw.program) return;
+
+    constexpr int kSize = 64;
+    const Vec3 eye{100, 5, -200};
+    const Vec3 look = Unit({0.3f, 1, 0.4f});  // 上の方を見る
+    space3d::RenderFrame f;
+    f.width = f.height = kSize;
+    f.view = space3d::LookAt(eye, eye + look * 10.f, {0, 0, 1});
+    f.projection = space3d::Perspective(60, 1, 0.1f, 100);
+    f.sky = &draw;
+    // ピクセル (x, y) が見ている向き (シェーダーと同じ: カメラの回転だけの逆行列)。
+    space3d::Mat4 turn = f.view;
+    turn.m[3][0] = turn.m[3][1] = turn.m[3][2] = 0;
+    const auto inv = space3d::Inverse(f.projection * turn);
+    CHECK(inv.has_value());
+    if (!inv) return;
+    auto dirOf = [&](const space3d::Mat4& inverse, int x, int y) {
+        const float nx = (static_cast<float>(x) + 0.5f) / kSize * 2 - 1, ny = 1 - (static_cast<float>(y) + 0.5f) / kSize * 2;
+        return space3d::ScreenRay(inverse, nx, ny).dir;
+    };
+    auto dirAt = [&](int x, int y) { return dirOf(*inv, x, y); };
+    auto render = [&](const game_x_3d::SkyWeather& w) {
+        const game_x_3d::SkyLook l = game_x_3d::LookOf(Noon(), 0, w);
+        draw.constants = l.constants;
+        draw.clouds = l.clouds;
+        draw.cloudCells = l.cloudCells;
+        ID3D11Texture2D* picture = r.Render(ctx.Get(), f);
+        return picture ? PixelsOf(device.Get(), ctx.Get(), picture) : std::vector<uint8_t>{};
+    };
+
+    // 晴れ (雲 0)。地図なし・塗っていない地図 (割合 0) は、まったく同じ絵。
+    game_x_3d::SkyWeather clear;
+    clear.cover = 0;
+    clear.dark = 0;
+    clear.haze = 0;
+    const std::vector<uint8_t> plain = render(clear);
+    CHECK(plain.size() == static_cast<size_t>(kSize) * kSize * 4);
+    if (plain.empty()) return;
+    const CloudMapPlace map = MapAround(eye);
+    game_x_3d::SkyWeather unpainted = clear;
+    FillMap(unpainted, map, 0.f, 1.f);
+    CHECK(render(unpainted) == plain);
+
+    // 真ん中のピクセルが見る所 (CloudMapAt) のまわりの 5 x 5 マスだけに、厚い雲 (100 %) を塗る。
+    const int cx = kSize / 2, cy = kSize / 2;
+    const CloudMapPoint hit = CloudMapAt(dirAt(cx, cy), eye, map);
+    CHECK(hit.weight > 0.99f);
+    const int ci = static_cast<int>(std::floor(hit.u * map.cells)), cj = static_cast<int>(std::floor(hit.v * map.cells));
+    game_x_3d::SkyWeather painted = clear;
+    FillMap(painted, map, 0.f, 0.f);
+    for (int j = cj - 2; j <= cj + 2; ++j) {
+        for (int i = ci - 2; i <= ci + 2; ++i) {
+            if (i < 0 || j < 0 || i >= map.cells || j >= map.cells) continue;
+            painted.cloudShares[static_cast<size_t>(j) * map.cells + i] = 1;
+            painted.cloudAmounts[static_cast<size_t>(j) * map.cells + i] = 1;
+        }
+    }
+    const std::vector<uint8_t> cloudy = render(painted);
+    CHECK(cloudy.size() == plain.size());
+    if (cloudy.size() != plain.size()) return;
+    // 塗った所を見るピクセルは雲になり、塗った所から 4 マスより離れた所を見るピクセルは晴れのまま。
+    CHECK(Differ(cloudy, plain, kSize, cx, cy) > 20);
+    int away = 0, awaySame = 0;
+    for (int y = 0; y < kSize; y += 4) {
+        for (int x = 0; x < kSize; x += 4) {
+            const CloudMapPoint q = CloudMapAt(dirAt(x, y), eye, map);
+            const float di = std::fabs(q.u * map.cells - (ci + 0.5f)), dj = std::fabs(q.v * map.cells - (cj + 0.5f));
+            if (std::max(di, dj) < 4) continue;
+            ++away;
+            if (Differ(cloudy, plain, kSize, x, y) == 0) ++awaySame;
+        }
+    }
+    CHECK(away > 20 && awaySame == away);
+
+    // 地平線の近く (層と交わる所が地図の外): 地図ぜんぶに厚い雲を塗っても、雲の量 (cover) のまま。
+    f.view = space3d::LookAt(eye, eye + Unit({0, 0.03f, 1}) * 10.f, {0, 1, 0});
+    turn = f.view;
+    turn.m[3][0] = turn.m[3][1] = turn.m[3][2] = 0;
+    const auto invLow = space3d::Inverse(f.projection * turn);
+    CHECK(invLow.has_value());
+    if (!invLow) return;
+    const Vec3 low = dirOf(*invLow, cx, cy);
+    CHECK(CloudMapAt(low, eye, map).weight == 0.f);
+    const std::vector<uint8_t> lowPlain = render(clear);
+    game_x_3d::SkyWeather everywhere = clear;
+    FillMap(everywhere, map, 1.f, 1.f);
+    const std::vector<uint8_t> lowCloudy = render(everywhere);
+    CHECK(lowPlain.size() == lowCloudy.size());
+    if (lowPlain.size() == lowCloudy.size()) CHECK(Differ(lowCloudy, lowPlain, kSize, cx, cy) == 0);
+}

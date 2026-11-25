@@ -189,6 +189,17 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds) {
     s.driftZ = w.driftZ;
     s.windX = now.windX;
     s.windZ = now.windZ;
+    // 場所ごとの雲 (つなぎ 天候 × 気候 が書いた地図): 空がその向きの雲を描く。
+    constexpr size_t kCount = static_cast<size_t>(kCloudMapCells) * kCloudMapCells;
+    if (w.cloudCells.size() == kCount && w.cloudShares.size() == kCount) {
+        s.cloudShares = w.cloudShares;
+        s.cloudAmounts.resize(kCount);
+        for (size_t k = 0; k < kCount; ++k) s.cloudAmounts[k] = Unit(w.cloudCells[k]);
+        s.cloudCells = kCloudMapCells;
+        s.cloudCell = kCloudMapCell;
+        s.cloudFirstX = w.cloudFirstX;
+        s.cloudFirstZ = w.cloudFirstZ;
+    }
     return s;
 }
 

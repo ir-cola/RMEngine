@@ -1165,10 +1165,20 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **イベントの型は 1 つ** — `ClipEvent` (`RM_STRUCT`) は 3D 空間に置き、エディターの欄・`.meta` から読む・`.rmmesh` の EVNT に焼くのが全部同じ型 (憲法 1)。ゲームは `.meta` を読まない
 - **どこ** — `plugins/rm_engine/game_x_animation/runtime/` (`AnimatorRun.*`: 純粋な 1 体の再生・`AnimationSystem.*`: 2 つのシステムと `AttachedTransform`・`ScriptAnimator.*`・`sdk/RMAnim.h` / `RMAnimAbi.h`)・`plugins/rm_engine/game_production/runtime/Systems.h` (`SystemEvent`)・`Scripts.h` (`QueueSystemEvents`)・`plugins/rm_engine/space3d/runtime/ClipSettings.*`・`Skeleton.h` (`ClipEvent`)・`MeshBake.*` (EVNT)、`tests/TestGameAnimation.cpp`・`TestMeshBake.cpp`
 
+### 空の雲を場所ごとに: 向きと雲の層の交点で地図を引く・毎フレーム送る小さな浮動小数の絵 (2026-11-25)
+
+- **何か** — 気候の地図に塗った雲を、地球の空のその方向に描く。空はピクセルごとに「見ている向き」しか持たないので、カメラの 600 m 上に水平な雲の層 (平面) を考え、向きとその平面の交点 (カメラの x, z + 向きの xz × 600 / 向きの y: レイと平面の交差) の地面の場所で雲の地図を引く
+- **何に使っているか** — 地球の空のシェーダー (`kEarth` の `CloudsHere`) が、その向きの雲の量 = (1 − 塗った割合) × 一様な雲の量 + 塗った割合 × 塗った雲の量 にして、雲の模様と厚い層を描く。交点が地図の縁に近づくと薄れて一様な雲の量に戻す (地平線の近くは交点がとても遠いので、筋が出ない)
+- **毎フレーム送る小さな浮動小数の絵** — 地図 (48 x 48 マス、2 つの数) を `R32G32_FLOAT` のテクスチャにして `UpdateSubresource` で毎フレーム送り、なめらか・端で止まるサンプラーで読む。マスの真ん中の間が線形に補間されるので、マスの角が見えない。CPU で向きごとに計算するより、GPU のピクセルシェーダーに地図を渡す方が速く、空を描くコードも 1 本のまま
+- **C++ の写しと GPU のテスト** — 同じ式を C++ (`space3d::CloudMapAt`) にも書き、テストでは本物のレンダラー (無ければソフトの GPU: WARP) で空を描いて、C++ が「ここを見る」と言うマスにだけ雲を塗ると、そのピクセルだけが変わることを確かめる (式が 2 か所でずれたらテストが落ちる)
+- **なぜそれか** — 雲を 3D の物 (ボリューム) にするのは重く、空の絵の作りも変わる。平面との交点なら、今の空の模様 (風で流れるノイズ) をそのまま使い、濃さだけを場所で変えられる
+- **どこ** — `plugins/rm_engine/space3d/runtime/SkyShader.*` (`kCloudLayerHeight` / `kCloudFadeFrom` / `CloudMapAt` / `kEarth`)・`Renderer3D.*` (t6 の雲の地図)・`plugins/rm_engine/game_x_3d/runtime/Sky.*` (`SkyWeather` の雲の地図・`LookOf`)・`SkyPaint.cpp`・`plugins/rm_engine/weather/runtime/Weather.cpp` (`SkyWeatherOf`)、`tests/TestSkyClouds.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-25 | 空の雲を場所ごとに (向きとカメラの上の雲の層の交点で雲の地図を引く・縁で薄れる・毎フレーム送る R32G32_FLOAT の絵・C++ の写しを GPU で描いて確かめるテスト) |
 | 2026-11-25 | 雨と雪が当たる物をコライダーから見えているメッシュに (同じ GPU のメッシュを地図にだけ描く・動く物を言う口) |
 | 2026-11-24 | 積もった雪の縁を丸く (四分円の形・端までの距離を 4 向きで探す・隣の角は同じ探した結果から) を足した |
 | 2026-11-24 | 地図に塗った気候 (ランレングス・積分画像 summed-area table・表の使い回し・真上からの正射影・ドラッグ 1 回を Undo 1 件に) を足した |

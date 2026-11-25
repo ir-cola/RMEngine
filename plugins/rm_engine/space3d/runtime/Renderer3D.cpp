@@ -461,6 +461,9 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     depthTex_.Reset();
     dsv_.Reset();
     depthSrv_.Reset();
+    cloudTex_.Reset();
+    cloudSrv_.Reset();
+    cloudSize_ = 0;
     width_ = height_ = 0;
     samples_ = 1;
     device_ = device;
@@ -1411,6 +1414,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     // 空は、すべての後ろ: 絵の上に三角形 1 つ、深度テストはオフ (何も書かない)。
     if (f.sky && f.sky->program) {
         SkyConstants skyK = f.sky->constants;
+        skyK.info[1] = eye.x, skyK.info[2] = eye.y, skyK.info[3] = eye.z;  // (SkyInput::eye)
         Mat4 turn = f.view;  // カメラの回転だけ: 空は無限に遠い
         turn.m[3][0] = turn.m[3][1] = turn.m[3][2] = 0;
         if (const auto inv = Inverse(f.projection * turn)) {
@@ -1421,13 +1425,41 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             ID3D11ShaderResourceView* views[kSkyTextures] = {};
             for (size_t k = 0; k < kSkyTextures; ++k) views[k] = f.sky->textures[k] ? f.sky->textures[k]->view.Get() : nullptr;
             ctx->PSSetShaderResources(0, static_cast<UINT>(kSkyTextures), views);
+            // 雲の地図 (t6): 毎フレーム送る (小さい: 48 x 48 マス x 2 つの数)。
+            ID3D11ShaderResourceView* cloudView = nullptr;
+            const uint32_t n = f.sky->cloudCells;
+            if (n > 0 && f.sky->clouds.size() == static_cast<size_t>(n) * n * 2) {
+                if (n != cloudSize_ || !cloudTex_) {
+                    cloudTex_.Reset();
+                    cloudSrv_.Reset();
+                    cloudSize_ = 0;
+                    D3D11_TEXTURE2D_DESC td{};
+                    td.Width = td.Height = n;
+                    td.MipLevels = td.ArraySize = 1;
+                    td.Format = DXGI_FORMAT_R32G32_FLOAT;
+                    td.SampleDesc.Count = 1;
+                    td.Usage = D3D11_USAGE_DEFAULT;
+                    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                    if (SUCCEEDED(device_->CreateTexture2D(&td, nullptr, &cloudTex_)) && SUCCEEDED(device_->CreateShaderResourceView(cloudTex_.Get(), nullptr, &cloudSrv_))) {
+                        cloudSize_ = n;
+                    } else {
+                        cloudTex_.Reset();
+                        cloudSrv_.Reset();
+                    }
+                }
+                if (cloudSrv_) {
+                    ctx->UpdateSubresource(cloudTex_.Get(), 0, nullptr, f.sky->clouds.data(), static_cast<UINT>(n * 2 * sizeof(float)), 0);
+                    cloudView = cloudSrv_.Get();
+                }
+            }
+            ctx->PSSetShaderResources(kSkyCloudSlot, 1, &cloudView);
             ID3D11SamplerState* samplers[2] = {s.samplers[0].Get(), s.edgeSampler.Get()};
             ctx->PSSetSamplers(1, 2, samplers);
             ctx->OMSetDepthStencilState(s.depthOff.Get(), 0);
             ctx->VSSetShader(f.sky->program->vs.Get(), nullptr, 0);
             ctx->PSSetShader(f.sky->program->ps.Get(), nullptr, 0);
             ctx->Draw(3, 0);
-            ctx->PSSetShaderResources(0, static_cast<UINT>(kSkyTextures), noSrvs);
+            ctx->PSSetShaderResources(0, static_cast<UINT>(kSkyTextures) + 1, noSrvs);  // (と雲の地図)
         }
     }
     ctx->OMSetDepthStencilState(s.depth.Get(), 0);
