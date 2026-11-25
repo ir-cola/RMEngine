@@ -67,6 +67,10 @@
         {
           "ja": "エディターのウィンドウの名前を「RM Engine - プロジェクト名」の順に (ヘルプも「RM Engine - ヘルプ」)",
           "en": "The editor window title is now \"RM Engine - project name\" (and \"RM Engine - Help\")"
+        },
+        {
+          "ja": "3D: 床の平面の上の影が、カメラの向きで濃くなったり薄くなったりしていたのを直した",
+          "en": "3D: fixed shadows on a floor plane getting darker or lighter depending on the camera direction"
         }
       ]
     },

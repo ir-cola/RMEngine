@@ -25,6 +25,7 @@
 //   auto mesh = space3d::ParseMesh(".glb", bytes, readRelated, &error);   // nullopt: error が理由を言う (日本語)
 
 #include "base/Math.h"
+#include "rm_engine/space3d/runtime/Skeleton.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <atomic>
@@ -94,6 +95,9 @@ struct MeshData {
     std::vector<MeshMaterial> materials;
     std::vector<MeshImage> images;
     std::vector<std::string> warnings;  // 読めたが何かが足りなかった (OBJ の .mtl など) - 日本語
+    // 骨のあるモデル (Skeleton.h): 頂点を骨で動かす。あるとき、頂点はバインドしたときの形 (モデルの空間)。
+    std::optional<SkinData> skin;
+    std::vector<Clip> clips;  // ファイルのアニメーション (glTF の animations・FBX のテイク)。骨は名前で指す
 };
 
 // --- 1 つのモデルが読む間に使ってよい量 (どのリーダーも、場所を作る前に確かめる) ---
