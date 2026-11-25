@@ -49,6 +49,9 @@ Color Snow() { return Color::Hex(0xFFFFFF); }             // 冬: ウィンド�
 Color SnowEdge() { return Color::Hex(0xA9BBCF, 0.55f); }  // 積もった雪の輪郭 (薄く: 2026-11-24 ユーザーの希望)
 Color SnowLow() { return Color::Hex(0xE6EEF7); }          // 吹きだまりの影になった足元
 Color Flake() { return Color::Hex(0xFFFFFF, 0.9f); }      // 降る雪
+Color Bucket() { return Color::Hex(0xD9412E); }           // 雪だるまのバケツ
+Color BucketRim() { return Color::Hex(0xB0301F); }        // その縁
+Color SnowmanEye() { return Color::Hex(0x3A3F4A); }
 }  // namespace season
 
 enum class Kind { Spring, Summer, Fall, Winter };
@@ -102,9 +105,28 @@ void WinterSky(Picture& pic, const Rect& w, float scale) {
 // (2026-11-25: ユーザーの希望。大きさを変えても形が変わらない)。
 void WinterGround(Picture& pic, const Rect& w) {
     constexpr float kDepth = 24.f;
+    // 右下の積もった雪の上に雪だるま (2026-11-25)。大きさは DIP で決める (文字と同じく Windows の拡大率で
+    // 大きくなる)。右下の角からの場所なので、どの画面の大きさ・比率でも右下に立つ。狭いウィンドウでは出さない。
+    // 体を先に描き、その上に雪を重ねる (足元が少し雪に埋もれて見える)。バケツと目は最後。
+    const bool snowman = w.w >= 480 && w.h >= 300;
+    ornament::SnowmanShapes man;
+    if (snowman) {
+        constexpr float kHeight = 58.f;
+        const float x = w.Right() - 64.f;
+        const float ground = w.y + w.h - ornament::SnowDriftHeight(x - w.x, kDepth) + 4.f;
+        ornament::SnowmanShapes edge = ornament::Snowman({x + 0.8f, ground + 1.f}, kHeight);
+        man = ornament::Snowman({x, ground}, kHeight);
+        pic.push_back({std::move(edge.body), season::SnowEdge()});  // 白い丸の縁 (右下に少しずらした影)
+        pic.push_back({std::move(man.body), season::Snow()});
+    }
     pic.push_back({ornament::SnowDrift({w.x, w.y - 1.5f, w.w, w.h}, kDepth), season::SnowEdge()});
     pic.push_back({ornament::SnowDrift(w, kDepth), season::Snow()});
     pic.push_back({ornament::SnowDrift(w, kDepth * 0.45f), season::SnowLow()});
+    if (snowman) {
+        pic.push_back({std::move(man.bucket), season::Bucket()});
+        pic.push_back({std::move(man.rim), season::BucketRim()});
+        pic.push_back({std::move(man.eyes), season::SnowmanEye()});
+    }
 }
 
 Picture Make(Kind kind, const Rect& w, bool floating) {
