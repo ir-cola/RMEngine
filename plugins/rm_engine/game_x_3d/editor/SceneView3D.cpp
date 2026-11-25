@@ -13,10 +13,12 @@
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_x_3d/editor/SceneOverlay.h"
 #include "rm_engine/game_x_3d/editor/SceneViewState.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/Material.h"
+#include "rm_engine/game_x_3d/runtime/MeshPose.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/SkyPaint.h"
@@ -95,6 +97,7 @@ struct Placed {
     const space3d::GpuMesh* mesh = nullptr;
     bool plain = false;  // `mesh` が単純な形 (メッシュ の 形) で、マテリアルが無い: 箱と同じ色
     std::span<const space3d::DrawMaterial> materials;  // モデルの色と画像 (メッシュのマテリアルの欄で替えたもの)
+    const SkinnedModel* skinned = nullptr;  // 骨のあるモデル: 骨とクリップ (姿勢は MeshPose.h の口に尋ねる)
     bool castShadow = true;
     Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
     bool loading = false;  // モデルを読んでいる最中 (それまでは箱で、上に 読み込み中 を出す)
@@ -127,6 +130,9 @@ struct Picture {
     std::optional<double> drawnAt;
     std::vector<space3d::ExtraDraw> extras;
     game_x_3d::SkyPainter sky;  // この絵が描くシーンの 空
+    // 骨のあるモデルの姿勢を決めるもの (MeshPose.h: アニメーター)。最初のフレームで作る。
+    std::vector<std::unique_ptr<MeshPoser>> posers;
+    bool posersMade = false;
 };
 
 // r の真ん中にある、縦横比 `aspect` (幅 / 高さ) の最大の長方形。
@@ -154,6 +160,7 @@ std::pair<Vec3, Vec3> Across(Vec3 d) {
 struct ModelEntry {
     std::shared_ptr<const space3d::GpuMesh> gpu;
     space3d::ModelPaint paint;
+    SkinnedModel skinned;  // 骨のあるモデルの骨とクリップ (無ければ skin は null)。読み直すと新しいもの
     space3d::MeshLoader::Ticket ticket = 0;  // 読み込み中
     std::filesystem::path file;              // ... このファイル
     std::string name;                        // その名前 (コンソール用)
@@ -242,6 +249,7 @@ public:
         const std::optional<BarLayout> bar = Bar(r);
         if (!bar) snapOpen_ = false;
         previewAt_ = PreviewRect(r, host);  // プレビューへのクリックはシーンに届かない
+        OverlayAreas(r, host);              // ほかのプラグインの操作 (アニメーターのプレビュー) も
         if (HandleInput(c, r, host, bar)) Place(host);  // このフレームにギズモのドラッグで物が動いた
         Build(host, false);
         Show(c, r, host, main_, SceneFrame(r));
@@ -249,6 +257,8 @@ public:
         DrawGizmo(c, r, host);
         previewAt_ = PreviewRect(r, host);
         if (previewAt_) DrawPreview(c, *previewAt_, host);
+        OverlayAreas(r, host);
+        for (const auto& [o, at] : overlays_) o->draw(c, at, host);
         if (bar) DrawBar(c, *bar);
         if (bar && snapOpen_) DrawSnapBox(c, SnapBox(r, *bar));
     }
@@ -353,6 +363,7 @@ private:
                         if (ModelEntry* m = Model(mr.model, host, loading)) {
                             p.mesh = m->gpu.get();
                             p.materials = MeshMaterials(false, m->paint.Materials(main_.renderer, textures_, now_), slots_, Store());
+                            p.skinned = m->skinned.skin ? &m->skinned : nullptr;
                             p.min = p.mesh->min;
                             p.max = p.mesh->max;
                         }
@@ -473,6 +484,7 @@ private:
         const bool again = m.gpu != nullptr;
         if (!done->mesh) {
             m.gpu.reset();
+            m.skinned = {};
             log::Warn("シーンビュー: モデル「{}」を読めないので箱で描きます: {}", m.name, done->error);
             return;
         }
@@ -482,11 +494,13 @@ private:
         UseSlotZeroForBareModel(mesh);  // (材質の無いモデルにも、メッシュの 0 番のマテリアルが入る)
         m.gpu = main_.renderer.Upload(mesh, &error);
         if (!m.gpu) {
+            m.skinned = {};
             log::Warn("シーンビュー: モデル「{}」を GPU に載せられないので箱で描きます: {}", m.name, error);
             return;
         }
         m.paint = {};
         m.paint.Load(mesh, m.file, host.host.GetProject().AssetsDir(), m.name);
+        m.skinned = TakeSkinned(mesh);  // (GPU に上げた後で。姿勢を尋ねるときに渡す)
         log::Info("シーンビュー: モデル「{}」を{}読みました (頂点 {}・三角形 {}・材質 {}・テクスチャ {}・{:.2f} 秒)", m.name, again ? "もう一度" : "",
                   mesh.vertices.size(), mesh.indices.size() / 3, mesh.materials.size(), m.paint.Pictures(), done->seconds);
     }
@@ -556,8 +570,26 @@ private:
         return {b.grid.Right() + 6, std::min(b.grid.y, r.Bottom() - 8 - h), kSnapBoxW, h};
     }
 
+    // ほかのプラグインが絵の上に置く操作 (SceneOverlay.h) の、今の場所。止まっているシーンビューだけ。
+    void OverlayAreas(const Rect& r, const game_production::SceneViewHost& host) {
+        overlays_.clear();
+        if (host.playing || host.game) return;
+        if (!overlayInfos_) {
+            overlayInfos_.emplace();
+            for (const auto& o : host.host.Registry().Contributions<SceneOverlayInfo>(kSceneOverlayPoint)) {
+                if (o.item->area && o.item->draw) overlayInfos_->push_back(o.item);
+            }
+        }
+        for (const SceneOverlayInfo* o : *overlayInfos_) {
+            if (const auto at = o->area(r, host)) overlays_.emplace_back(o, *at);
+        }
+    }
+
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (previewAt_ && previewAt_->Inset(-4, -24, -4, -4).Contains(x, y)) return true;  // カメラプレビュー
+        for (const auto& [o, at] : overlays_) {
+            if (at.Contains(x, y)) return true;
+        }
         if (!bar) return false;
         for (const Rect& part : {bar->grid, bar->select, bar->move, bar->rotate, bar->scale}) {
             if (part.Contains(x, y)) return true;
@@ -868,6 +900,7 @@ private:
         lines_.clear();
         boxes_.clear();
         meshes_.clear();
+        meshOwners_.clear();
         lights_.clear();
         auto line = [&](Vec3 a, Vec3 b, ui::Color col) {
             lines_.push_back({a, col});
@@ -921,11 +954,13 @@ private:
                 // 単純な形: 箱の色。
                 const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
                 meshes_.push_back({p.mesh, p.world, col, p.castShadow, {}, {0, 0, 0, 0}, Moving(p.id)});
+                meshOwners_.push_back({p.id, nullptr});
             } else if (p.mesh) {
                 // モデルは自分の色を持つ: 選んだものは縁が光る (枠も付く)。
                 const ui::Color glow = theme::SceneSelectedGlow();
                 meshes_.push_back({p.mesh, p.world, p.active ? theme::SceneModel() : theme::SceneModelInactive(), p.castShadow, p.materials,
                                    selected ? glow : glow.Alpha(0), Moving(p.id)});
+                meshOwners_.push_back({p.id, p.skinned});
             } else {
                 const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
                 boxes_.push_back({p.world, col, p.castShadow, Moving(p.id)});
@@ -1005,13 +1040,26 @@ private:
             game_x_3d::FollowSky(look, frameLights_, f.ambient);
         }
         f.lights = frameLights_;
+        // この絵の時間: 前に描いたときからの秒数 (Play 中はゲームの時間の速さを掛ける)。他のプラグインの絵と
+        // 骨の姿勢は、その分だけ進む。
+        const float dt = (pic.drawnAt ? static_cast<float>(std::clamp(now_ - *pic.drawnAt, 0.0, 0.1)) : 0.f) * (host.playing ? host.timeScale : 1.f);
+        pic.drawnAt = now_;
+        const char* pictureName = host.game ? "game" : &pic == &main_ ? "scene" : "preview";
         // (空と一緒の 天候: シーンビュー自身のカメラは、空 がオンのとき見せる)
         if (overhead_) {
             pic.extras.clear();
         } else {
-            PrepareExtras(c, host, pic, f, sky && sky->kind != game_x_3d::SkyKind::None ? &skyLook_ : nullptr, !ownCamera || state_.sky);
+            PrepareExtras(c, host, pic, f, sky && sky->kind != game_x_3d::SkyKind::None ? &skyLook_ : nullptr, !ownCamera || state_.sky, dt, pictureName);
         }
         f.extras = pic.extras;
+        // 骨のあるモデルの姿勢 (アニメーター: MeshPose.h。書き出したゲームと同じ ApplyPoses)。
+        if (!pic.posersMade) {
+            pic.posersMade = true;
+            pic.posers = MakePosers(&host.host.Registry());
+        }
+        const MeshPoseFrame pf{host.scene, dt, host.playing, host.selection, skySeconds_, pictureName, &host.host.Registry()};
+        if (ApplyPoses(pic.posers, pf, meshOwners_, meshes_)) c.RequestAnimation();
+        f.meshes = meshes_;
 
         // Direct2D のここまでの描画をまず GPU に送り、そのあと Direct3D が自分の絵に描く。
         dc->Flush();
@@ -1059,7 +1107,7 @@ private:
     // 1 度尋ねる。Play していないときは、描き手は選んだものが動くのを見せる。その動きがある
     // 間、ビューは描き直される。
     void PrepareExtras(ui::Context& c, game_production::SceneViewHost& host, Picture& pic, space3d::RenderFrame& frame, const SkyLook* sky,
-                       bool atmosphere) {
+                       bool atmosphere, float dt, const char* picture) {
         pic.extras.clear();
         if (!pic.drawersMade) {
             pic.drawersMade = true;
@@ -1068,8 +1116,6 @@ private:
             }
         }
         if (pic.drawers.empty()) return;
-        const float dt = (pic.drawnAt ? static_cast<float>(std::clamp(now_ - *pic.drawnAt, 0.0, 0.1)) : 0.f) * (host.playing ? host.timeScale : 1.f);
-        pic.drawnAt = now_;
         WorldDrawFrame wf{host.scene, host.host.Graphics(),
                           [this](int id) -> const Mat4* {
                               const Placed* p = FindPlaced(id);
@@ -1080,7 +1126,7 @@ private:
                           [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
                           [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); },
                           &host.host.Registry(),
-                          host.game ? "game" : &pic == &main_ ? "scene" : "preview"};
+                          picture};
         wf.seconds = skySeconds_;
         wf.sky = sky;
         wf.atmosphere = atmosphere;
@@ -1564,6 +1610,8 @@ private:
     Picture main_;     // ビュー
     Picture preview_;  // 選んだカメラの絵 (最初に必要になったときに始める)
     std::optional<Rect> previewAt_;
+    std::optional<std::vector<const SceneOverlayInfo*>> overlayInfos_;           // 寄せられた操作 (最初に集める)
+    std::vector<std::pair<const SceneOverlayInfo*, Rect>> overlays_;             // ... このフレームに出すものと場所
     std::string transformType_, meshType_, cameraType_, lightType_, ambientType_;
     std::unordered_map<std::string, w::Icon> markOf_;  // 部品の型 -> その印 (MakeLooks)
     std::vector<space3d::Light> frameLights_;          // 絵が描くとおりの lights_ (空の光)
@@ -1579,6 +1627,7 @@ private:
     game_production::DebugDraw sceneLines_;          // このフレームのプラグインのシーンの線 (SceneLinesInfo)
     std::vector<space3d::Box> boxes_;
     std::vector<space3d::MeshDraw> meshes_;
+    std::vector<PoseOwner> meshOwners_;  // meshes_ と同じ並び: 持ち主のエンティティと、骨のあるモデル
     std::vector<space3d::Light> lights_;
     size_t warnedLights_ = 0;  // 知らせたライトの数 (多すぎる)
     std::unordered_map<std::string, ModelEntry> models_;  // MeshRenderer::model (アセットの id) ごと

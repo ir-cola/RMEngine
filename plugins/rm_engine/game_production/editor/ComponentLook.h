@@ -10,8 +10,15 @@
 // 見た目のない型はそのまま素朴に表示する (階層の「object」の絵、自分の値だけ)。
 
 #include "core/reflect/Data.h"
+#include "editor/inspector/Inspector.h"
 
+#include <optional>
 #include <span>
+#include <vector>
+
+namespace rm::editor {
+class SoftwareHost;
+}
 
 namespace rm::game_production {
 
@@ -44,6 +51,12 @@ struct ComponentLook {
     // 編集の前のもの。
     void (*adjust)(const Scene& scene, const GameSettings& settings, int entity, const reflect::FieldPath& path, const void* before,
                    void* after) = nullptr;
+    // 省略可: 文字の欄の選択肢 (インスペクターがドロップダウンにする: inspector::Block::choices)。エンティティ
+    // `entity` (`scene` は見せているもの: Play 中は動いているコピー) のこの部品の欄 `path` に、今選べる値を
+    // 返す (アニメーター: 同じエンティティのモデルのクリップの名前)。nullopt: ふつうの文字の欄。
+    // インスペクターを描くたびに呼ぶので、重いもの (ファイルを読む) は自分で覚えておく。
+    std::optional<std::vector<editor::inspector::Choice>> (*choices)(editor::SoftwareHost& host, const Scene& scene, int entity,
+                                                                    const reflect::FieldPath& path) = nullptr;
 
     bool HasDerived() const { return derivedType && derive && underive && ownLabel && derivedLabel; }
 };

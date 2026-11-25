@@ -1,0 +1,17 @@
+{
+  "ゲーム制作 × アニメーション": "Game production × Animation",
+  "アニメーター": "Animator",
+  "クリップ": "Clip",
+  "流すクリップ (同じエンティティの「メッシュ (3D モデル)」のモデルが持つもの)。空なら、モデルの最初のクリップ": "The clip to play (one of the clips of the model in the same entity's Mesh (3D model)). When empty, the model's first clip",
+  "ループ": "Loop",
+  "外すと、最後まで流して止まります": "When off, it plays to the end and stops",
+  "速さ": "Speed",
+  "再生の速さの倍率 (2 で倍の速さ。負の数で逆に流れます)": "How fast it plays (2 is twice as fast. A negative number plays it backwards)",
+  "始めから流す": "Play on start",
+  "外すと、ゲームでは最初のコマで止まったままです (止まっているシーンビューでは、選ぶと流れます)": "When off, it stays on the first frame in the game (in the scene view while stopped it plays when selected)",
+  "(最初のクリップ)": "(first clip)",
+  "{} ({:.1f} 秒)": "{} ({:.1f} s)",
+  "動かせるクリップがありません (骨とクリップのあるモデルを「メッシュ (3D モデル)」に)": "No clip to play (put a model with bones and clips on the Mesh (3D model))",
+  "モデルにクリップ「{}」がありません": "The model has no clip \"{}\"",
+  "{:.2f} / {:.2f} 秒": "{:.2f} / {:.2f} s"
+}

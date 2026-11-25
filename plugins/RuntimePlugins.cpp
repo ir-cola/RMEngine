@@ -8,6 +8,8 @@
 #include "rm_engine/game_production/runtime/Register.h"
 #include "rm_engine/game_x_3d/runtime/Id.h"
 #include "rm_engine/game_x_3d/runtime/Register.h"
+#include "rm_engine/game_x_animation/runtime/Id.h"
+#include "rm_engine/game_x_animation/runtime/Register.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
 #include "rm_engine/game_x_2d/runtime/Register.h"
 #include "rm_engine/physics/runtime/Id.h"
@@ -40,6 +42,7 @@ std::span<const RuntimePlugin> RuntimePlugins() {
         {game_x_audio::kPluginId, &game_x_audio::RegisterRuntime},
         {game_ui::kPluginId, &game_ui::RegisterRuntime},
         {game_x_particles::kPluginId, &game_x_particles::RegisterRuntime},
+        {game_x_animation::kPluginId, &game_x_animation::RegisterRuntime},
         {particles_x_physics::kPluginId, &particles_x_physics::RegisterRuntime},
         {weather::kPluginId, &weather::RegisterRuntime},
         {weather_x_physics::kPluginId, &weather_x_physics::RegisterRuntime},

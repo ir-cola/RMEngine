@@ -20,6 +20,7 @@
 #include "core/reflect/FieldCommand.h"
 #include "editor/dock/DockLayout.h"
 #include "editor/dock/DockSpace.h"
+#include "editor/inspector/Inspector.h"
 #include "editor/tree/TreeView.h"
 #include "platform/Gfx.h"
 #include "platform/Shell.h"
@@ -88,6 +89,8 @@ struct InspectBlock {
     // 決まった値を一度に入れる: 欄の上の 1 行 (inspector::Block::presets)。
     std::wstring presetLabel;
     std::vector<w::Action> presets;
+    // 文字の欄の選択肢 (inspector::Block::choices: その欄をドロップダウンにする)。
+    std::function<std::optional<std::vector<inspector::Choice>>(const reflect::FieldPath& path)> choices;
 };
 
 struct Inspectable {

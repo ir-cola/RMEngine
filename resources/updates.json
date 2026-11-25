@@ -3,7 +3,7 @@
   "format": 1,
   "updates": [
     {
-      "version": "0.0.13",
+      "version": "0.0.14",
       "date": "2026-11-25",
       "items": [
         {
@@ -25,6 +25,24 @@
         {
           "ja": "天候: 雨の染みと雪の積もる所を、コライダーではなく画面に見えているメッシュで決める (見えないコライダーの所には積もらない)",
           "en": "Weather: where rain wets and snow lies is now decided by the meshes you can see, not by colliders (no more snow on invisible collider parts)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.13",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "骨のあるモデルが動くようになりました: 部品「アニメーター」でモデルのクリップを選ぶと、シーンビュー (選んだもの。再生 / 一時停止・時間のつまみ)・Play・書き出したゲームで流れます",
+          "en": "Models with bones now move: pick one of the model's clips in the new Animator component and it plays in the scene view (the selected one, with play / pause and a time slider), in Play and in the exported game"
+        },
+        {
+          "ja": "glTF と FBX のモデルから、骨・ウェイト・アニメーション (クリップ) を読むように。取り込みの設定 (向き・大きさ) も骨に同じに掛かります",
+          "en": "glTF and FBX models now bring their bones, weights and animations (clips). Import settings (axes, scale) apply to the bones too"
+        },
+        {
+          "ja": "骨で曲がるモデルを GPU で描くように (影も一緒に動きます)。試し用のモデル docs/samples/models/skinned_arm.gltf (腕を振る柱)",
+          "en": "Models bent by bones are drawn on the GPU (their shadows follow). Sample model: docs/samples/models/skinned_arm.gltf (a waving column)"
         }
       ]
     },

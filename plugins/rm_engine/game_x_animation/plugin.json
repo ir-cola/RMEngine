@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "game_x_animation",
+  "displayName": "ゲーム制作 × アニメーション",
+  "version": "0.0.1",
+  "connectorFor": { "author": "rm_engine", "name": "game_production" },
+  "requires": [
+    { "author": "rm_engine", "name": "game_production" },
+    { "author": "rm_engine", "name": "game_x_3d" },
+    { "author": "rm_engine", "name": "space3d" },
+    { "author": "rm_engine", "name": "animation3d" }
+  ]
+}

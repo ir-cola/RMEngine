@@ -113,6 +113,13 @@
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Pose.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\ClipTime.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Player.cpp" />
+    <ClCompile Include="TestGameAnimation.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorLogic.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorPoser.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)game_x_animation\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\MeshPose.cpp" />
     <ClCompile Include="TestSkinning.cpp" />
     <ClCompile Include="TestFbxSkin.cpp" />
     <ClCompile Include="TestGltfSkin.cpp" />
