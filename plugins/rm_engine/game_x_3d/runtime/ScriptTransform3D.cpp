@@ -177,6 +177,8 @@ const game_production::ScriptApiPart& ScriptTransform3DPart2() {
     return part;
 }
 
+space3d::Mat4 WorldMatrixOf(const game_production::Scene& scene, int entity, bool self) { return ChainMatrix(scene, entity, self); }
+
 bool Pose3D(const game_production::Scene& scene, int entity, game_production::Pose& out) {
     if (!TransformIn(scene, entity)) return false;
     // 一番上の親から下へ、Transform を並べる (持たない親は飛ばす)。

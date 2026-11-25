@@ -6,6 +6,7 @@
 #include "core/reflect/Data.h"
 #include "editor/assets/AssetFileType.h"
 #include "editor/assets/AssetGrid.h"
+#include "editor/assets/AssetInspect.h"
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "platform/Image.h"
@@ -123,6 +124,14 @@ const AssetPreview* PreviewFor(const PluginRegistry& registry, asset::Kind kind)
         if (p.item->kind == kind) return p.item;
     }
     return nullptr;
+}
+
+std::vector<const AssetInspectPart*> InspectPartsFor(const PluginRegistry& registry, asset::Kind kind) {
+    std::vector<const AssetInspectPart*> out;
+    for (const auto& p : registry.Contributions<AssetInspectPart>(kAssetInspectPoint)) {
+        if (p.item->kind == kind && p.item->open) out.push_back(p.item);
+    }
+    return out;
 }
 
 namespace {
@@ -450,6 +459,50 @@ private:
     uint64_t merge_ = 0;
 };
 
+// 取り込みの設定 (.meta の "import") の 1 つのキーの 1 回の編集: 前と後の値 (null = キーが無い)。プラグインが
+// 自分のキーを書く口 (AssetInspect.h の setImportKey)。ほかのキーはそのときの値のまま (別のソフトの履歴の
+// 編集と混ざっても、そのキーだけが戻る)。同じ鍵の 1 回のドラッグ・1 つの欄への入力は 1 件にまとまる。
+class ImportKeyCommand final : public ICommand {
+public:
+    ImportKeyCommand(AssetLibrary& lib, std::string guid, std::string key, json::Value before, json::Value after, std::string label, uint64_t merge)
+        : lib_(lib), guid_(std::move(guid)), key_(std::move(key)), before_(std::move(before)), after_(std::move(after)), label_(std::move(label)),
+          merge_(merge) {}
+
+    void Do() override { Apply(after_); }
+    void Undo() override { Apply(before_); }
+    std::string Label() const override { return label_; }
+    bool IsNoOp() const override { return before_ == after_; }
+    bool CanMergeWith(const ICommand& next) const override {
+        const auto* n = dynamic_cast<const ImportKeyCommand*>(&next);
+        return n && merge_ != 0 && n->merge_ == merge_ && n->guid_ == guid_ && n->key_ == key_;
+    }
+    bool MergeWith(const ICommand& next) override {
+        if (!CanMergeWith(next)) return false;
+        after_ = static_cast<const ImportKeyCommand&>(next).after_;
+        return true;
+    }
+
+private:
+    void Apply(const json::Value& v) {
+        if (!lib_.Index().ByGuid(guid_)) return;  // (削除された)
+        json::Value import = lib_.Import(guid_);
+        if (!import.IsObject()) import = json::Value::MakeObject();
+        if (v.IsNull()) {
+            import.Erase(key_);
+        } else {
+            import.Set(key_, v);
+        }
+        lib_.QueueImport(guid_, std::move(import));  // .meta へは編集が終わってから (FlushImports)
+    }
+
+    AssetLibrary& lib_;
+    std::string guid_;
+    std::string key_;
+    json::Value before_, after_;
+    std::string label_;
+    uint64_t merge_ = 0;
+};
+
 // プラグインが作る種類のファイル (AssetFileType) の中身の 1 回の編集: 前と後の中身 (1 つの欄に打つ間は 1 件)。
 // エディターの持つ中身を替える (シーンビューなどがすぐ読む)。ファイルには編集が終わったときに書く。
 class ContentCommand final : public ICommand {
@@ -561,7 +614,47 @@ void AssetPanel::Inspect(const std::string& which) {
         double readAt = -1e9;
     };
     auto content = std::make_shared<ContentView>();
-    target.blocks = [lib, view, guid, type, push, preview, known, facts, fileType, content] {
+    // プラグインが足すブロック (AssetInspect.h: モデルのクリップの帯)。開くのはここで 1 回。
+    std::vector<std::function<std::vector<InspectBlock>()>> extras;
+    if (registry_ && !e->folder) {
+        const std::vector<const AssetInspectPart*> parts = InspectPartsFor(*registry_, kind);
+        if (!parts.empty()) {
+            struct RawImport {
+                json::Value value;
+                double readAt = -1e9;
+            };
+            auto raw = std::make_shared<RawImport>();
+            AssetImportAccess access;
+            access.guid = guid;
+            access.kind = kind;
+            access.file = [lib, guid]() -> std::filesystem::path {
+                const asset::Entry* now = lib->Index().ByGuid(guid);
+                return now ? lib->FullPath(*now) : std::filesystem::path();
+            };
+            access.import = [lib, guid, raw]() -> const json::Value& {
+                // 待っている編集があればそれ。無ければ .meta を 0.5 秒に 1 回まで読み直す (毎フレームは読まない)。
+                const double t = platform::NowSeconds();
+                if (lib->HasQueuedImport(guid) || t - raw->readAt > 0.5) {
+                    raw->value = lib->Import(guid);
+                    raw->readAt = t;
+                }
+                return raw->value;
+            };
+            access.setImportKey = [lib, guid, push, raw](std::string key, json::Value after, std::string label, uint64_t merge) {
+                if (!push || !lib->Index().ByGuid(guid)) return;
+                const json::Value now = lib->Import(guid);
+                const json::Value* was = now.IsObject() ? now.Find(key) : nullptr;
+                json::Value before = was ? *was : json::Value();
+                if (before == after) return;
+                push(std::make_unique<ImportKeyCommand>(*lib, guid, std::move(key), std::move(before), std::move(after), std::move(label), merge));
+                raw->readAt = -1e9;  // 次の import() で読み直す
+            };
+            for (const AssetInspectPart* part : parts) {
+                if (auto blocksOf = part->open(access)) extras.push_back(std::move(blocksOf));
+            }
+        }
+    }
+    target.blocks = [lib, view, guid, type, push, preview, known, facts, fileType, content, extras] {
         std::vector<InspectBlock> blocks;
         const asset::Entry* now = lib->Index().ByGuid(guid);
         if (!now) return blocks;  // 削除された: 何も出さない
@@ -619,7 +712,15 @@ void AssetPanel::Inspect(const std::string& which) {
             return blocks;
         }
         blocks.push_back(std::move(info));
-        if (!type) return blocks;
+        auto addExtras = [&blocks, &extras] {
+            for (const auto& more : extras) {
+                for (InspectBlock& b : more()) blocks.push_back(std::move(b));
+            }
+        };
+        if (!type) {
+            addExtras();
+            return blocks;
+        }
         InspectBlock settings;
         settings.type = type;
         settings.title = Utf8ToWide(TrU8(type->label));
@@ -634,6 +735,7 @@ void AssetPanel::Inspect(const std::string& which) {
                                                            std::move(ch.label), ch.merge));
         };
         blocks.push_back(std::move(settings));
+        addExtras();
         return blocks;
     };
     inspect_(std::move(target));

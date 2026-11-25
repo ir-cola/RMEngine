@@ -25,4 +25,27 @@
 ## Play と書き出したゲーム
 「始めから流す」が付いたアニメーターは、すべて流れます。書き出したゲームには、骨とクリップがモデルと一緒に入ります。
 
-> まだ無いもの: クリップの切り替えとクロスフェード (スクリプトの `RMAnim.h`)・イベント・骨に付ける・アニメーションのタブとルール (docs/ANIMATION.md の段階 2 と 3)。
+Play 中にインスペクターで「クリップ」を変えると、そのクリップが始めから流れます。
+
+## スクリプトから動かす
+```cpp
+#include "RMAnim.h"
+rm::Animator anim(self);
+anim.PlayClip("Run", 0.2f);   // Run を始めから。0.2 秒かけて今の姿勢から移る (クロスフェード)
+anim.Pause();  anim.Resume();  anim.SetSpeed(1.5f);
+if (anim.Ended()) anim.PlayClip("Idle", 0.3f);   // ループでないクリップが終わった
+rm::Vec3 hand = anim.BonePosition("RightHand");    // 骨のワールドの位置 (BoneRotation で回転)
+```
+`PlayClip` と `SetSpeed` は部品の欄を書き換えます (Play 中のインスペクターにも出ます)。
+
+## クリップのイベント
+アセットのパネルでモデルを選び、インスペクターの「クリップとイベント」でクリップの帯にイベント (時刻・名前・数値・文字) を置きます。再生がその時刻を通ると、そのエンティティのスクリプトの `OnEvent` に届きます (送り手はエンジン)。
+```cpp
+void OnEvent(rm::Entity self, const rm::Event& e) { if (e.Is("Footstep")) { /* e.number・e.text */ } }
+```
+ループの継ぎ目をまたいでも、逆に流しても数えます。書き出したゲームにも入ります。
+
+## 骨に付ける
+剣や帽子を骨について行かせるには、子のエンティティに部品「骨に付ける」を足します ([骨に付ける](bone_attach.md))。
+
+> まだ無いもの: アニメーションのタブとルール (docs/ANIMATION.md の段階 3)・混ぜる・重ねる (段階 4)。

@@ -3,7 +3,7 @@
   "format": 1,
   "updates": [
     {
-      "version": "0.0.14",
+      "version": "0.0.15",
       "date": "2026-11-25",
       "items": [
         {
@@ -25,6 +25,28 @@
         {
           "ja": "天候: 雨の染みと雪の積もる所を、コライダーではなく画面に見えているメッシュで決める (見えないコライダーの所には積もらない)",
           "en": "Weather: where rain wets and snow lies is now decided by the meshes you can see, not by colliders (no more snow on invisible collider parts)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.14",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "スクリプトから骨のアニメーションを動かせるように (RMAnim.h の rm::Animator): PlayClip でクロスフェードしながら切り替え・一時停止・速さ・時刻・骨の位置と回転",
+          "en": "Scripts can drive bone animation (rm::Animator in RMAnim.h): PlayClip switches clips with a crossfade; pause, speed, time, and bone positions and rotations"
+        },
+        {
+          "ja": "3D モデルのインスペクターに「クリップとイベント」: クリップの帯に ▲ でイベント (時刻・名前・数値・文字) を置き、ドラッグで動かせます。.meta に保存され、Ctrl+Z で戻せます",
+          "en": "3D model inspector: \"Clips and events\" — place events (time, name, number, text) as ▲ markers on a clip's strip and drag them. Saved to the .meta; Ctrl+Z undoes"
+        },
+        {
+          "ja": "クリップのイベントが、再生がその時刻を通ったときにスクリプトの OnEvent に届くように (書き出したゲームでも)",
+          "en": "Clip events reach the script's OnEvent when playback passes their time (in the exported game too)"
+        },
+        {
+          "ja": "部品「骨に付ける」: 剣や帽子などを、親のアニメーターのモデルの骨について行かせます (骨は一覧から選ぶ)",
+          "en": "New \"Attach to bone\" component: makes a sword, a hat and so on follow a bone of the parent Animator's model (pick the bone from a list)"
         }
       ]
     },

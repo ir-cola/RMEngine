@@ -91,6 +91,10 @@ struct InspectBlock {
     std::vector<w::Action> presets;
     // 文字の欄の選択肢 (inspector::Block::choices: その欄をドロップダウンにする)。
     std::function<std::optional<std::vector<inspector::Choice>>(const reflect::FieldPath& path)> choices;
+    // 欄でなく自分で描くブロック (`type` は null。inspector::Block::customHeight / customDraw): 幅に対する
+    // 高さと、その四角に描くもの。編集は描く側が自分で Undo に積む (憲法 7)。
+    std::function<float(ui::Context& c, float width)> customHeight;
+    std::function<void(ui::Context& c, const ui::Rect& r)> customDraw;
 };
 
 struct Inspectable {

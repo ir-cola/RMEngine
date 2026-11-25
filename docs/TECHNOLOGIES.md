@@ -1145,6 +1145,26 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — Unity の Animator のように描画とアニメーションを 1 つにすると、3D だけのゲームにもアニメーションが入り、2D や別の描き手を足すたびに中を直すことになる。口にすると、描画は「骨の行列をもらう」ことだけを知り、何がそれを決めるか (クリップ・後のルール・スクリプト・IK) は後から差し替えられる
 - **どこ** — `plugins/rm_engine/game_x_3d/runtime/MeshPose.*` (口と `ApplyPoses`)・`game_x_3d/editor/SceneOverlay.h`・`plugins/rm_engine/game_x_animation/runtime/` (`Animator.h`・`AnimatorLogic.*`: 純粋な決まり・`AnimatorPoser.*`)・`game_x_animation/editor/Connector.cpp` (クリップの選択肢・プレビューの操作)・`src/editor/inspector/Inspector.*` (`Choice`)、`tests/TestGameAnimation.cpp`、`tools/check_export.ps1` の `game_anim`
 
+### クリップの帯: プラグインが .meta に自分のキーを書く口・キー 1 つの Undo・自分で描くインスペクターのブロック・読み直す間は前の一覧 (2026-11-25)
+
+- **何か** — 3D モデルのアセットのインスペクターに出る「クリップとイベント」(プラグイン 3D アニメーション)。モデルのクリップを並べ、選んだクリップの帯 (0 秒から長さまでの目盛り) にイベントの ▲ を置く・ドラッグで動かす・欄で名前 / 数値 / 文字 / 時刻を変える。イベントはモデルの `.meta` の `"import"` の `"clips"` に書き、ゲームのランタイムがそれを読んで `OnEvent` に届ける
+- **プラグインが .meta に自分のキーを書く口** — 取り込みの設定 (`ModelImport`) は核にあるが、クリップの設定はアニメーションのもの。核にアニメーションを足さず、口 `core.asset_inspect` (`AssetInspectPart{種類, open}`) を作った。アセットを選ぶと核が `open` を 1 回呼び、「今の `"import"` を読む関数」と「`"import"` のキー 1 つを替える関数」を渡す。核は `"clips"` の意味を知らない (憲法 10)
+- **キー 1 つの前と後の Undo** — `ImportKeyCommand` は `"import"` の 1 つのキーだけを前と後の値で持つ (null = キーが無い)。`"import"` 全体を持つと、別のソフトの履歴の編集 (大きさを変えた) と順番が入れ替わったときに、戻すと相手の変更まで消える。キーだけなら、そのキーだけが戻る。同じ鍵 (`inspector::NewMergeKey`) が続く間は 1 件にまとまる = 1 回のドラッグで Undo 1 件。`.meta` へ書くのは核の取り込みの設定と同じく編集が終わったとき (`FlushImports`)
+- **自分で描くインスペクターのブロック** — インスペクターは型の表 (`RM_STRUCT`) から欄を作るが、帯のような絵は欄にならない。`InspectBlock::customHeight` (幅に対する高さ) と `customDraw` (その四角に描く) を足し、見出し・たたむ・スクロールはインスペクターに任せた。選んだイベントの欄は `ClipEvent` (`RM_STRUCT`) のふつうのブロックなので、数のドラッグ・打つ間の Undo のまとめはほかの欄と同じ。帯の見た目 (溝・目盛り・▲) は部品 `w::DrawTimeStrip` / `w::DrawTimeMarker` に 1 つずつ (憲法 3)
+- **読み直す間は前の一覧 (stale-while-revalidate)** — クリップの名前と長さはモデルを読まないと分からない。大きな FBX は数秒かかるので、3D 空間の `MeshLoader` (専用のスレッド) で読み、ファイルと `.meta` の時刻 (1 秒に 1 回だけ見る) が変わったら読み直す。読み直している間は前の一覧を出し続けるので、イベントを動かして `.meta` が書かれても表示がちらつかない。初めての 1 回だけ「クリップを読んでいます…」
+- **なぜそれか** — 前のエンジンは取り込みの設定の型にアニメーションの欄を直に足していき、核が全部の機能を知る形になった。口にしておけば、後でループ・範囲・ルートモーションのキーを足すのもプラグインの中だけで済む。イベントの計算 (足す・動かす・変える・消す・時刻の順・知らないキーを残す・空になったら消す) は JSON だけを触る純粋な関数にしてテストした
+- **どこ** — `src/editor/assets/AssetInspect.h` (口)・`src/editor/assets/AssetPanel.cpp` (`ImportKeyCommand`・`open` を呼ぶ所)・`src/editor/inspector/Inspector.*` (`customHeight` / `customDraw`・`NewMergeKey`)・`src/editor/widgets/Widgets.*` (`DrawTimeStrip` / `DrawTimeMarker`)・`plugins/rm_engine/animation3d/editor/` (`ClipEvents.*`: 純粋な計算。型 `ClipEvent` はゲームが読むときと同じ 3D 空間の `Skeleton.h` のもの・`ClipStrip.*`: ブロック・`Register.cpp`)、`tests/TestClipEvents.cpp`、設計 `docs/ANIMATION.md` 3-1 の注・3-6
+
+### スクリプトで動かす骨のアニメーション: 姿勢を 1 か所で決めるシステム・止め絵からのクロスフェード・システムが送るイベント・骨に付ける (2026-11-25)
+
+- **何か** — アニメーションの段階 2。スクリプトの `rm::Animator` (`RMAnim.h`) でクリップを切り替え (クロスフェード)・止め・速さを変え・骨の位置を聞く。クリップに置いたイベントがそのエンティティのスクリプトの `OnEvent` に届く。部品「骨に付ける」で剣や帽子が骨について動く
+- **姿勢を 1 か所で決めるシステム** — 段階 1 は描く画面ごと (シーンビュー・ゲームビュー) に姿勢を計算していた。それだとイベントが画面の数だけ出て、スクリプトが聞く骨の位置も画面によって違う。Play と書き出したゲームでは、Frame のシステム「アニメーション」が 1 フレームに 1 回だけ時刻を進めて骨の行列を作り、部品の一時の欄 (`RM_TRANSIENT` の `Animator::run`) に置く。描く画面はそれを使うだけ。ゲームの決まり (時刻・イベント) が描画に左右されない
+- **止め絵からのクロスフェード** — 切り替えた瞬間に見えていた姿勢を固め (止め絵)、そこから新しいクリップへ `fade` 秒かけて骨ごとに混ぜる (位置・大きさは直線、回転は向きをそろえた nlerp)。前のクリップは進めないので、フェードの途中でまた切り替えても止め絵を替えるだけで済み、イベントも今のクリップのものだけが出る
+- **システムが送るイベント** — 物理の接触と同じく、システムはスクリプトを知らない。システムは `SystemContext::events` に「誰に・名前・数・文字」を積むだけで、ホストがそれを `rm::Events` と同じ列に移す (`QueueSystemEvents`)。届け方 (`OnEvent`・順番・送り合いの上限) は 1 本のまま (憲法 3)
+- **骨に付ける** — 骨のワールド行列 = アニメーターのエンティティのワールド行列 × 骨の行列 (モデルの空間) × ずれ。それを位置・回転に分けて、親の空間に直して Transform に書く (`Decompose` → `FromWorld`。インスペクターの「ワールド」の値と同じ計算)。大きさは書かない (骨の大きさが剣に移らない)
+- **イベントの型は 1 つ** — `ClipEvent` (`RM_STRUCT`) は 3D 空間に置き、エディターの欄・`.meta` から読む・`.rmmesh` の EVNT に焼くのが全部同じ型 (憲法 1)。ゲームは `.meta` を読まない
+- **どこ** — `plugins/rm_engine/game_x_animation/runtime/` (`AnimatorRun.*`: 純粋な 1 体の再生・`AnimationSystem.*`: 2 つのシステムと `AttachedTransform`・`ScriptAnimator.*`・`sdk/RMAnim.h` / `RMAnimAbi.h`)・`plugins/rm_engine/game_production/runtime/Systems.h` (`SystemEvent`)・`Scripts.h` (`QueueSystemEvents`)・`plugins/rm_engine/space3d/runtime/ClipSettings.*`・`Skeleton.h` (`ClipEvent`)・`MeshBake.*` (EVNT)、`tests/TestGameAnimation.cpp`・`TestMeshBake.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
@@ -1152,6 +1172,8 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 | 2026-11-25 | 雨と雪が当たる物をコライダーから見えているメッシュに (同じ GPU のメッシュを地図にだけ描く・動く物を言う口) |
 | 2026-11-24 | 積もった雪の縁を丸く (四分円の形・端までの距離を 4 向きで探す・隣の角は同じ探した結果から) を足した |
 | 2026-11-24 | 地図に塗った気候 (ランレングス・積分画像 summed-area table・表の使い回し・真上からの正射影・ドラッグ 1 回を Undo 1 件に) を足した |
+| 2026-11-25 | スクリプトで動かす骨のアニメーション: 姿勢を 1 か所で決めるシステム・止め絵からのクロスフェード・システムが送るイベント (SystemEvent)・骨に付ける (行列を分けて親の空間へ) |
+| 2026-11-25 | クリップの帯: プラグインが .meta の "import" に自分のキーを書く口 (core.asset_inspect)・キー 1 つの前と後の Undo・自分で描くインスペクターのブロック・別のスレッドで読み直す間は前の一覧を出す |
 | 2026-11-25 | アニメーターをつなぐ: 描画がアニメーションを知らない「姿勢を尋ねる口」(mesh_pose)・姿勢の版で計算と影を使い回す・止まった画面のプレビューの時計と絵の上の操作の口・インスペクターの文字の欄の選択肢 |
 | 2026-11-25 | 骨のアニメーションの姿勢: 四元数の nlerp (向きをそろえる)・クリップのサンプルとループの継ぎ目・クロスフェードと重みの和・親から順の骨の行列とスキンの行列・通ったイベントの数え方 |
 | 2026-11-25 | GPU スキニング: 骨のあるメッシュの 2 本目の頂点バッファ (骨の番号とウェイト)・フレームの骨の行列を 1 つのバッファーに・骨ごとの箱で動いた形の範囲・姿勢の版で影の地図を使い回す |

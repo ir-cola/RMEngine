@@ -237,6 +237,18 @@ void DrawThumbnail(ui::Context& c, const ui::Rect& r, ID2D1Bitmap* bitmap, bool 
 // 値を変えている間 true を返す。
 bool Slider(ui::Context& c, std::string_view id, const ui::Rect& r, float& value, float min, float max);
 
+// --- 時間の帯 (モデルのクリップの帯: 0 から `duration` 秒の目盛りの上に、時刻に置いた印) -----------
+// 帯は 3 段: 上が印の名前、真ん中が溝 (印の ▲ と縦の線)、下が目盛りの秒。高さは kTimeStripHeight。
+inline constexpr float kTimeStripHeight = 58.f;
+// 時刻 `t` の帯の上の x と、その逆 (帯の外は 0 と `duration` に収める)。
+float TimeStripX(const ui::Rect& r, float duration, float t);
+float TimeStripTime(const ui::Rect& r, float duration, float x);
+// 溝と目盛り (詰まらない間: 0.1 / 0.2 / 0.5 / 1 / 2 / 5 … 秒) とその秒の数。`cursor` >= 0: その時刻に縦の線。
+void DrawTimeStrip(ui::Context& c, const ui::Rect& r, float duration, float cursor = -1.f);
+// 時刻の印 1 つ: 溝の中の ▲ と縦の線、上に名前 (`x` は TimeStripX)。押せる所は TimeMarkerRect。
+ui::Rect TimeMarkerRect(const ui::Rect& strip, float x);
+void DrawTimeMarker(ui::Context& c, const ui::Rect& strip, float x, std::wstring_view label, bool selected, bool hovered);
+
 // タイトルバー付きの角の丸いパネル。内容の領域を返す。
 ui::Rect Panel(ui::Context& c, const ui::Rect& r, std::wstring_view title);
 

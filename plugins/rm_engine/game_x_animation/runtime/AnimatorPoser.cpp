@@ -3,6 +3,7 @@
 #include "base/Log.h"
 #include "rm_engine/animation3d/runtime/Player.h"
 #include "rm_engine/game_x_animation/runtime/Animator.h"
+#include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 
 #include <cmath>
 #include <cstring>
@@ -55,6 +56,13 @@ public:
     game_x_3d::MeshPoseAnswer Pose(int entity, const game_x_3d::SkinnedModel& model) override {
         const Animator* a = AnimatorOf(entity);
         if (!a || !model.skin || !model.clips) return {};  // アニメーターが無い: 休みの姿勢 (ゲーム制作 × 3D のまま)
+        if (playing_ && a->run && a->run->version != 0 && a->run->skin && a->run->owner == entity &&
+            a->run->skin->skeleton.bones.size() == model.skin->skeleton.bones.size()) {
+            // ゲームが動いている: システム「アニメーション」が決めた姿勢 (このフレームにもう 1 度は計算しない)。
+            const AnimatorRun& run = *a->run;
+            animating_ = animating_ || run.moving || (!run.paused && run.player.ClipIndex() >= 0);
+            return {run.bones, run.version, run.moving};
+        }
         Body& b = bodies_[entity];
         b.used = true;
         if (b.skin != model.skin || b.clips != model.clips) {
@@ -113,15 +121,7 @@ public:
         }
         b.clip = clip;
         b.showing = show;
-        if (b.stamp.Update(b.skin.get(), clip, b.player.Time(), a->loop, &space3d::NextPoseVersion)) {
-            b.player.Evaluate(*b.skin, b.bones);
-            if (show == Showing::Playing && !b.toldPlaying && b.player.Time() != StartTime(speed, (*b.clips)[static_cast<size_t>(clip)].duration, a->loop)) {
-                // (書き出したゲームの検査 tools/check_export.ps1 の game_anim がこの行を探す)
-                log::Info("アニメーター: 「{}」がクリップ「{}」で骨 {} 本を動かしました ({:.2f} 秒)", Name(entity), (*b.clips)[static_cast<size_t>(clip)].name,
-                          b.bones.size(), b.player.Time());
-                b.toldPlaying = true;
-            }
-        }
+        if (b.stamp.Update(b.skin.get(), clip, b.player.Time(), a->loop, &space3d::NextPoseVersion)) b.player.Evaluate(*b.skin, b.bones);
         return {b.bones, b.stamp.Version(), moving};
     }
 
@@ -137,7 +137,6 @@ private:
         PoseStamp stamp;
         std::vector<space3d::BoneMatrix> bones;
         std::string told;          // 見つからないと知らせたクリップの名前
-        bool toldPlaying = false;  // 動かしたことを 1 度知らせた
         bool used = true;          // このフレームに尋ねられた
     };
 

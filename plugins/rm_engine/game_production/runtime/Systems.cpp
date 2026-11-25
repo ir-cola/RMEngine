@@ -98,6 +98,7 @@ void SystemRunner::Run(size_t index, SystemContext& ctx) {
 int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
     dt = std::max(0.0, dt);
     hooks_.clear();
+    events_.clear();
     times_.assign(timing_ ? systems_.size() : 0, {});
     for (size_t i = 0; i < times_.size(); ++i) times_[i].system = systems_[i];
     int steps = 0;
@@ -108,7 +109,7 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
         while (carry_ + eps >= fixedStep && steps < kMaxFixedSteps) {
             for (size_t i = 0; i < systems_.size(); ++i) {
                 if (systems_[i]->phase != SystemPhase::Fixed) continue;
-                SystemContext ctx{scene, fixedStep, fixedTime_, frames_, camera_, &hooks_, &assets_};
+                SystemContext ctx{scene, fixedStep, fixedTime_, frames_, camera_, &hooks_, &assets_, &events_};
                 Run(i, ctx);
                 camera_ = ctx.camera;
             }
@@ -121,7 +122,7 @@ int SystemRunner::Advance(Scene& scene, double dt, float fixedStep) {
     }
     for (size_t i = 0; i < systems_.size(); ++i) {
         if (systems_[i]->phase != SystemPhase::Frame) continue;
-        SystemContext ctx{scene, static_cast<float>(dt), time_, frames_, camera_, &hooks_, &assets_};
+        SystemContext ctx{scene, static_cast<float>(dt), time_, frames_, camera_, &hooks_, &assets_, &events_};
         Run(i, ctx);
         camera_ = ctx.camera;
     }

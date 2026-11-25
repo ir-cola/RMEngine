@@ -52,6 +52,17 @@ struct HookCall {
     int other = 0;
 };
 
+// システムがスクリプトに送るイベント (クリップのイベント ...)。送り手はエンジン (rm::Event::sender は無効)。
+// 届け方は rm::Events::SendTo と同じ: このフレームの Tick の後に、`target` のスクリプトの OnEvent へ
+// (ホストが ScriptWorld::events に移す: QueueSystemEvents)。
+struct SystemEvent {
+    int target = 0;
+    std::string name;
+    double number = 0;
+    std::string text;
+    int entity = 0;  // 運ぶエンティティ (rm::Event::entity。0: なし)
+};
+
 // システムが動くたびに受け取るもの。
 struct SystemContext {
     Scene& scene;
@@ -66,6 +77,8 @@ struct SystemContext {
     std::vector<HookCall>* hooks = nullptr;
     // ホストのアセット (null: なし)。
     const AssetAccess* assets = nullptr;
+    // スクリプトへのイベントの届け先 (null: 届ける者がいない)。
+    std::vector<SystemEvent>* events = nullptr;
 };
 
 struct SystemInfo {
@@ -116,6 +129,8 @@ public:
     void SetAssets(AssetAccess a) { assets_ = std::move(a); }
     // 最後の Advance でシステムが頼んだフック (ScriptRunner::Deliver 用)。
     const std::vector<HookCall>& Hooks() const { return hooks_; }
+    // 最後の Advance でシステムが送ったイベント (ホストが QueueSystemEvents で ScriptWorld に移す)。
+    const std::vector<SystemEvent>& Events() const { return events_; }
 
     // 最後の Advance で各システムにかかった時間 (固定の刻みは合計)。頼まれている間だけ測る
     // (エディターの デバッグ パネル)。それと、最後の Advance で動いた固定の刻みの数。
@@ -136,6 +151,7 @@ private:
     uint64_t frames_ = 0;
     uint64_t camera_ = 0;
     std::vector<HookCall> hooks_;
+    std::vector<SystemEvent> events_;
     AssetAccess assets_;
     bool timing_ = false;
     std::vector<SystemTime> times_;

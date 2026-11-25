@@ -112,6 +112,11 @@ struct Block {
     // 文字のフィールド (配列の要素でないもの) の選択肢: `path` のフィールドに値を返すと、文字の欄の
     // 代わりにそれらのドロップダウンを出す。nullopt / null: ふつうの文字の欄。描くたびに尋ねる。
     std::function<std::optional<std::vector<Choice>>(const reflect::FieldPath& path)> choices;
+    // 欄の代わりに、ブロックが自分で描く中身 (`type` は null。モデルのクリップの帯): `customHeight` が幅に
+    // 対する高さ、`customDraw` がその四角 (見出しと注記の下) に描く。インスペクターは見出し・たたむ・
+    // スクロールだけを受け持ち、編集は描く側が自分で (ソフトの履歴に積んで) する。どちらかが null: 無し。
+    std::function<float(ui::Context& c, float width)> customHeight;
+    std::function<void(ui::Context& c, const ui::Rect& r)> customDraw;
 };
 
 // インスペクターごと: 打っている最中の文字、開いているドロップダウン / メニュー、たたんだブロック。
@@ -141,6 +146,10 @@ struct State {
     std::unordered_set<std::wstring> folded;  // ブロックのタイトル
     float contentHeight = 0;
 };
+
+// 入力・ドラッグ 1 回分の Undo のまとめの鍵 (プログラムの中で重ならない: インスペクターの欄が使うものと
+// 同じ数え方)。自分で描くブロック (Block::customDraw) がドラッグを 1 件にまとめるのに使う。
+uint64_t NewMergeKey();
 
 // ブロックを `area` に描く (必要ならスクロールする)。`addLabel` が空でなければ、その下に
 // `addMenu` が返すものを並べるパネルを開くボタンを置く (フォルダに入れて: w::Action::folder)。

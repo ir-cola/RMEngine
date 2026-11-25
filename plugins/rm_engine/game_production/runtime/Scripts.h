@@ -280,6 +280,10 @@ int ScriptOrderOf(std::string_view type, std::span<const ScriptOrderEntry> order
 // 後に置く。
 std::vector<std::string> SortScriptTypes(std::vector<std::string> types, std::span<const ScriptOrderEntry> order);
 
+// システムが送ったイベント (SystemRunner::Events) を、スクリプトが送ったものと同じ列に足す (送り手はエンジン。
+// 届くのは次の Deliver: そのエンティティのスクリプトの OnEvent)。
+void QueueSystemEvents(ScriptWorld& world, std::span<const SystemEvent> events);
+
 // --- 動かす -------------------------------------------------------------------------------------
 class ScriptRunner {
 public:

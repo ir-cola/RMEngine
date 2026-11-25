@@ -1207,6 +1207,93 @@ bool Slider(ui::Context& c, std::string_view idStr, const Rect& r, float& value,
     return changed;
 }
 
+namespace {
+
+constexpr float kStripLabelH = 18.f;  // 時間の帯の上の段 (印の名前)
+constexpr float kStripTrackH = 22.f;  // 溝
+constexpr float kStripPad = 8.f;      // 溝の左右の端から 0 秒と終わりまで
+
+Rect StripTrack(const Rect& r) { return {r.x, r.y + kStripLabelH, r.w, kStripTrackH}; }
+
+// 目盛りの間 (秒): 隣と `minGap` DIP より近づかない、一番細かいきりのよい数。
+float TickStep(float duration, float width, float minGap) {
+    static constexpr float kSteps[] = {0.05f, 0.1f, 0.2f, 0.25f, 0.5f, 1.f, 2.f, 5.f, 10.f, 15.f, 30.f, 60.f, 120.f, 300.f, 600.f, 1800.f, 3600.f};
+    if (duration <= 0 || width <= 0) return 1.f;
+    const float perSecond = width / duration;
+    for (const float s : kSteps) {
+        if (s * perSecond >= minGap) return s;
+    }
+    return kSteps[std::size(kSteps) - 1];
+}
+
+}  // namespace
+
+float TimeStripX(const Rect& r, float duration, float t) {
+    const float x0 = r.x + kStripPad, x1 = r.Right() - kStripPad;
+    if (duration <= 0 || x1 <= x0) return x0;
+    return x0 + (x1 - x0) * std::clamp(t / duration, 0.f, 1.f);
+}
+
+float TimeStripTime(const Rect& r, float duration, float x) {
+    const float x0 = r.x + kStripPad, x1 = r.Right() - kStripPad;
+    if (duration <= 0 || x1 <= x0) return 0.f;
+    return duration * std::clamp((x - x0) / (x1 - x0), 0.f, 1.f);
+}
+
+void DrawTimeStrip(ui::Context& c, const Rect& r, float duration, float cursor) {
+    auto& p = c.P();
+    const Rect track = StripTrack(r);
+    DrawSurface(c, track, Surface::Sunken, 3.f);
+    const float step = TickStep(duration, r.w - 2 * kStripPad, 44.f);
+    ui::TextStyle ts;
+    ts.size = 10;
+    ts.color = theme::TextFaint;
+    ts.h = ui::HAlign::Center;
+    const int count = duration > 0 ? static_cast<int>(std::floor(duration / step + 1e-4f)) : 0;
+    for (int i = 0; i <= count; ++i) {
+        const float t = static_cast<float>(i) * step;
+        const float x = TimeStripX(r, duration, t);
+        p.Line(x, track.Bottom() - 6, x, track.Bottom() - 1, theme::TextFaint, 1.f);
+        const std::wstring label = std::format(L"{:g}s", std::round(t * 100.f) / 100.f);  // (0.30000001 でなく 0.3)
+        const float lw = 40.f;
+        const float lx = std::clamp(x - lw * 0.5f, r.x, r.Right() - lw);
+        p.Text({lx, track.Bottom() + 2, lw, r.Bottom() - track.Bottom() - 2}, label, ts);
+    }
+    if (cursor >= 0) {
+        const float x = TimeStripX(r, duration, cursor);
+        p.Line(x, track.y + 2, x, track.Bottom() - 2, theme::Accent, 2.f);
+    }
+}
+
+Rect TimeMarkerRect(const Rect& strip, float x) {
+    const Rect track = StripTrack(strip);
+    return {x - 7, strip.y, 14, track.Bottom() - strip.y};
+}
+
+void DrawTimeMarker(ui::Context& c, const Rect& strip, float x, std::wstring_view label, bool selected, bool hovered) {
+    auto& p = c.P();
+    const Rect track = StripTrack(strip);
+    const Color color = selected ? theme::Accent : hovered ? theme::Text : theme::TextDim;
+    // ▲ (底は溝の下の近く) と、その先から溝の上までの線。
+    const float base = track.Bottom() - 3, apex = base - 9;
+    ui::Path tri;
+    tri.Begin({x - 5.5f, base});
+    tri.Line({x, apex});
+    tri.Line({x + 5.5f, base});
+    p.FillPath(tri, color);
+    p.Line(x, track.y + 2, x, apex, color, selected ? 2.f : 1.f);
+    if (!label.empty()) {
+        ui::TextStyle ts;
+        ts.size = 11;
+        ts.color = color;
+        ts.bold = selected;
+        ts.h = ui::HAlign::Center;
+        const float lw = std::min(120.f, std::max(24.f, p.TextWidth(label, 11, selected) + 8));
+        const float lx = std::clamp(x - lw * 0.5f, strip.x, std::max(strip.x, strip.Right() - lw));
+        p.Text({lx, strip.y, lw, kStripLabelH - 2}, label, ts);
+    }
+}
+
 Rect Panel(ui::Context& c, const Rect& r, std::wstring_view title) {
     auto& p = c.P();
     DrawSurface(c, r, Surface::Panel, 6.f);

@@ -1,3 +1,21 @@
 {
-  "3D アニメーション": "3D Animation"
+  "3D アニメーション": "3D Animation",
+  "イベント": "Event",
+  "時刻 (秒)": "Time (s)",
+  "クリップの始めからの秒。再生がここを通るとイベントが出ます": "Seconds from the start of the clip. The event fires when playback passes here",
+  "名前": "Name",
+  "スクリプトの OnEvent に届く名前 (足音なら Footstep など)": "The name a script's OnEvent receives (for example Footstep for footsteps)",
+  "数値": "Number",
+  "名前と一緒に届く数": "A number sent with the name",
+  "文字": "Text",
+  "名前と一緒に届く文字": "Text sent with the name",
+  "クリップとイベント": "Clips and events",
+  "クリップを読んでいます…": "Reading the clips…",
+  "イベント {}  ·  {:.2f} 秒": "{} events  ·  {:.2f} s",
+  "{:.2f} 秒": "{:.2f} s",
+  "＋ イベント": "+ Event",
+  "削除": "Delete",
+  "足す所 {:.2f} 秒": "Add at {:.2f} s",
+  "帯をクリックすると、足す所を選べます": "Click the strip to choose where to add",
+  "帯の ▲ がイベントです。再生がそこを通ると、スクリプトの OnEvent に名前・数・文字が届きます。▲ はドラッグで動かせます (Ctrl+Z で戻せます)": "Each ▲ on the strip is an event. When playback passes it, the script's OnEvent receives its name, number and text. Drag a ▲ to move it (Ctrl+Z undoes)"
 }

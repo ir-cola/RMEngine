@@ -216,6 +216,7 @@ public:
             world_.ReadInput();  // (ゲーム UI もこれを読む)
         }
         runner_.Advance(scene_, dt, settings_.fixedTimestep);
+        QueueSystemEvents(world_, runner_.Events());  // (クリップのイベント ...: OnEvent へ)
         // システムの固定ステップがスクリプトに伝えること (物理の接触など)。
         if (scripts_.Loaded()) scriptRunner_.Deliver(scene_, world_, scripts_, settings_.scriptOrder, runner_.Hooks());
         // サービス (音、ゲーム UI など) - 画面、マウス、入力を渡す。サービスが求めるフック (ボタンの OnClick) は

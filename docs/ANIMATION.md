@@ -403,6 +403,9 @@ rule any  :             -> Idle 0.2
 
 - **段階 1 でしたこと (2026-11-25)**: 読み込み (glTF / FBX の骨・スキン・クリップ。テストは自作の `skinned_arm.gltf` と FBX のテストの形)・GPU スキニング・`.rmmesh` の骨のチャンク (`SKEL` `SKIN` `IBND` `BBOX`) とクリップのチャンク `ANIM`・つなぎ ゲーム制作 × アニメーション (部品「アニメーター」: クリップ 1 つを名前で・ループ・速さ・始めから流す。クリップの欄はモデルのクリップから選ぶドロップダウン)・止まっているシーンビューの再生 / 一時停止 / 時間のつまみ (選んだもの。選んでいないものは最初のコマ)・Play と書き出したゲームで流れる (`tools/check_export.ps1` の `game_anim`)
 - **段階 1 で後にしたこと**: アセットのパネルでモデルの中にクリップを並べる (サブアセット)・`.meta` のクリップの設定 (名前・範囲・ループ・イベント。核の口 3-1 の注) — 今はファイルのクリップをそのまま使う・`.rmclip` に分けて「使っているクリップだけ」を焼く (3-8) — 今はクリップが `.rmmesh` の `ANIM` に入って、モデルと一緒にゲームへ行く・システム「アニメーション」(3-10 の 3) — 今は姿勢を描く画面ごとに計算する (シーンビューとゲームビューが両方出ていると 2 回。段階 2 の「骨に付ける」と `RMAnim.h` で Frame のシステムに移す)
+- **段階 2 でしたこと (2026-11-25)**: モデルのインスペクターの「クリップとイベント」(クリップの一覧とイベントの帯。プラグイン 3D アニメーションの `editor/ClipStrip`)。イベントは `.meta` の `"import"` の `"clips": {"<クリップの名前>": {"events": [{time, name, number, text}]}}` (時刻の順。知らないキーは残す。計算は `editor/ClipEvents`、テスト `tests/TestClipEvents.cpp`)。核の口は `core.asset_inspect` (3-1 の注のもの。`src/editor/assets/AssetInspect.h`)
+- (続き。版 0.0.14) スクリプトの `RMAnim.h` (`rm::Animator`: `PlayClip` とクロスフェード・`Pause` / `Resume`・`SetSpeed`・`SetLoop`・`Time` / `SetTime` / `Duration` / `Ended`・`Clip`・`BonePosition` / `BoneRotation`)・クリップのイベント (モデルの `.meta` の `"clips"`。型は 3D 空間の `space3d::ClipEvent` 1 つ。読むのは `ClipSettings.h`、焼くのは `.rmmesh` の `EVNT`。届け方はシステムが送る `SystemEvent` → `rm::Events` と同じ列 → `OnEvent`)・部品「骨に付ける」・システム「アニメーション」(order 100) と「骨に付ける」(order 110): Play と書き出したゲームの姿勢は 1 フレームに 1 回だけここで決まり、描く画面はそれを使う (`AnimatorRun.h`)
+- **段階 2 で後にしたこと**: 止まっているエディターで骨に付けた物を骨について行かせる (今は Play の間だけ)・混ぜているときのイベントの決まり (今はクロスフェードの前のクリップを止めるので、イベントは今のクリップだけ。段階 4 のブレンドで「一番重いもの」)
 - 段階ごとに版を 0.0.1 上げ、`resources/updates.json`・`docs/HOW_TO_TRY.md`・`docs/TEST_LIST.md`・`docs/TECHNOLOGIES.md` (スキニング・四元数・ドロネーなど) に書く
 - 段階 1 の前に、骨のある見本のモデルを決める (6 章の 4)
 

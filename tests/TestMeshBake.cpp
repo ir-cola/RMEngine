@@ -5,8 +5,10 @@
 #include "Test.h"
 
 #include "rm_engine/space3d/runtime/MeshBake.h"
+#include "rm_engine/space3d/runtime/ClipSettings.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 
@@ -261,4 +263,56 @@ RM_TEST(MeshBake_ASkinnedModel) {
     if (!mesh || !mesh->skin) return;
     const auto back = ReadBakedMesh(WriteBakedMesh(*mesh, {}), &err);
     CHECK(back && back->skin && SameSkin(*back->skin, *mesh->skin) && SameClips(back->clips, mesh->clips));
+}
+
+// .meta の "clips" のイベントを、名前の同じクリップに (時刻の順・範囲の中・壊れたものは捨てる)。
+RM_TEST(ClipSettings_ReadsEvents) {
+    std::vector<Clip> clips(2);
+    clips[0].name = "歩く";
+    clips[0].duration = 1;
+    clips[1].name = "idle";
+    clips[1].duration = 2;
+    clips[1].events = {{0.5f, "old", 0, ""}};
+    const auto import = json::Parse(R"({"axes": "Auto", "clips": {
+        "歩く": {"loop": true, "events": [
+            {"time": 0.8, "name": "右足", "number": 2, "text": "砂"},
+            {"time": 0.2, "name": "左足"},
+            {"time": 5, "name": "遅い"},
+            {"time": -1, "name": "早い"},
+            {"time": 0.3, "name": ""},
+            {"name": "時刻が無い"},
+            "壊れた"]},
+        "無いクリップ": {"events": [{"time": 0, "name": "x"}]}}})");
+    CHECK(import.has_value());
+    if (!import) return;
+    ApplyClipSettings(clips, *import);
+    CHECK(clips[0].events.size() == 5);
+    if (clips[0].events.size() == 5) {
+        CHECK(clips[0].events[0].name == "早い" && clips[0].events[0].time == 0);
+        CHECK(clips[0].events[1].name == "時刻が無い" && clips[0].events[1].time == 0);  // (同じ時刻は書いた順)
+        CHECK(clips[0].events[2].name == "左足" && clips[0].events[2].number == 0 && clips[0].events[2].text.empty());
+        CHECK(clips[0].events[3].name == "右足" && clips[0].events[3].number == 2 && clips[0].events[3].text == "砂");
+        CHECK(clips[0].events[4].name == "遅い" && clips[0].events[4].time == 1);
+    }
+    CHECK(clips[1].events.size() == 1 && clips[1].events[0].name == "old");  // 書いていないクリップはそのまま
+    ApplyClipSettings(clips, json::Value::MakeObject());                     // "clips" が無い: 何もしない
+    CHECK(clips[0].events.size() == 5);
+    CHECK(ClampEventTime(std::nanf(""), 1) == 0 && ClampEventTime(2, 1) == 1 && ClampEventTime(0.5f, -1) == 0);
+}
+
+// クリップのイベントは EVNT のチャンクに入り、同じに読み戻す。イベントが無ければ書かない。
+RM_TEST(MeshBake_ClipEventsRoundTrip) {
+    MeshData m = SkinnedSample();
+    const std::string plain = WriteBakedMesh(m, {});
+    CHECK(plain.find("EVNT") == std::string::npos);
+    m.clips[1].events = {{0, "始め", 1.5, "テキスト"}, {0, "同じ時刻", 0, ""}};
+    const std::string bytes = WriteBakedMesh(m, {});
+    CHECK(bytes.find("EVNT") != std::string::npos);
+    std::string err;
+    const auto back = ReadBakedMesh(bytes, &err);
+    CHECK(back && back->clips.size() == 2);
+    if (!back || back->clips.size() != 2) return;
+    CHECK(back->clips[0].events.empty());
+    CHECK(back->clips[1].events == m.clips[1].events);
+    CHECK(WriteBakedMesh(*back, {}) == bytes);
 }

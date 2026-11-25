@@ -80,6 +80,7 @@ public:
     // その変更: 保持し、編集が終わったとき (ドラッグを離した、入力が済んだ) に FlushImports が
     // .meta に書く。1 歩ごとには書かない。そのアセットを読む側は、そのときに読み直す。
     void QueueImport(const std::string& guid, json::Value import);
+    bool HasQueuedImport(const std::string& guid) const { return queuedImports_.contains(guid); }
     // エディターが今持っているアセットの中身 (ソフト独自の種類のファイル - パーティクルの
     // エフェクトなど - を編集して、まだ書いていない物)。なければファイル。ないときは nullopt。
     std::optional<std::string> Content(const std::string& guid) const;

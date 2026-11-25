@@ -1,5 +1,6 @@
 #include "rm_engine/space3d/runtime/MeshBake.h"
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 
@@ -184,6 +185,20 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
                 }
             }
         });
+        if (std::any_of(mesh.clips.begin(), mesh.clips.end(), [](const Clip& c) { return !c.events.empty(); })) {
+            o.Chunk("EVNT", [&] {
+                o.Put<uint32_t>(static_cast<uint32_t>(mesh.clips.size()));
+                for (const Clip& clip : mesh.clips) {
+                    o.Put<uint32_t>(static_cast<uint32_t>(clip.events.size()));
+                    for (const ClipEvent& ev : clip.events) {
+                        o.Put(ev.time);
+                        o.Str(ev.name);
+                        o.Put(ev.number);
+                        o.Str(ev.text);
+                    }
+                }
+            });
+        }
     }
     return o.bytes;
 }
@@ -320,6 +335,15 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
                     t.s.resize(ok ? k : 0);
                     for (Vec3& v : t.s) ok = ok && c.V3(v);
                 }
+            }
+        } else if (tag == "EVNT") {
+            // (ANIM の後に書く。クリップの数が合わなければ壊れている)
+            ok = c.Count(n, 4) && n == m.clips.size();
+            for (size_t k = 0; ok && k < n; ++k) {
+                uint32_t events = 0;
+                ok = c.Count(events, 4 + 4 + 4 + 4);
+                m.clips[k].events.resize(ok ? events : 0);
+                for (ClipEvent& ev : m.clips[k].events) ok = ok && c.Get(ev.time) && c.Str(ev.name) && c.Get(ev.number) && c.Str(ev.text);
             }
         }  // (このバージョンが知らないタグ: 飛ばす)
         if (!ok) return fail(std::format("焼いたモデルの {} が壊れています", std::string(tag)));

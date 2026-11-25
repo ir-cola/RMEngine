@@ -1204,6 +1204,8 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
         shown.back().presetLabel = b.presetLabel;
         shown.back().presets = b.presets;
         shown.back().choices = b.choices;
+        shown.back().customHeight = b.customHeight;
+        shown.back().customDraw = b.customDraw;
         source.push_back(i);
     }
     const bool gone = target.blocks && shown.empty();
