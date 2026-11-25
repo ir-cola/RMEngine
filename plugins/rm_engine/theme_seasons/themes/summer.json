@@ -10,8 +10,8 @@
   "colors": {
     "bg": "#CCE6F8",
     "sidebar": "#BEDCF4",
-    "panel": "#F3E5C9",
-    "panelHeader": "#EAD8B4",
+    "panel": "#F5EBC6",
+    "panelHeader": "#EEE1B6",
     "border": "#ADCFEB",
     "borderHover": "#88B7DC",
     "field": "#FAF3E3",

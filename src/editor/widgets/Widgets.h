@@ -57,14 +57,14 @@ struct OrnamentInfo {
     // ウィンドウ全体の絵 (`floating`: 独立したパネルのウィンドウ - 明るめの絵)。ウィンドウの背景に描き、
     // その後、各パネルとバーの塗りの後にもう一度描く (それに切り取って)。
     void (*window)(ui::Context& c, const ui::Rect& window, bool floating);
-    // パネル自身のもの。ウィンドウの絵の後にその上へ描く (冬: 下に雪)。null でもよい。
+    // パネル自身の地 (夏: 砂の粒)。パネルを塗った後、ウィンドウの絵より先に描く (絵が上になる)。null でもよい。
     void (*panel)(ui::Context& c, const ui::Rect& r, float corner);
 };
 inline constexpr char kOrnamentPoint[] = "core.theme_ornament";
 // フレームの最初、ウィンドウをクリアした後: 背景にテーマの絵を描く。
 void DrawBackdrop(ui::Context& c, bool floating);
-// 塗ったばかりの面にもう一度絵を描く (DrawPanelFrame / DrawBar がやる)。`r` に切り取り、
-// (`panelThings`) パックのパネル用のもの (冬: 下に積もった雪) も描く - バーには描かない。
+// 塗ったばかりの面にもう一度絵を描く (DrawPanelFrame / DrawBar がやる)。`r` に切り取る。
+// (`panelThings`) 先にパックのパネル用の地 (夏: 砂の粒) も描く - バーには描かない。
 void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0, bool panelThings = true);
 
 // ウィンドウの枠の帯 (メニューバー、ステータスバー、サイドバー): 穏やかなグラデーション、枠なし。

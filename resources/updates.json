@@ -71,6 +71,10 @@
         {
           "ja": "3D: 床の平面の上の影が、カメラの向きで濃くなったり薄くなったりしていたのを直した",
           "en": "3D: fixed shadows on a floor plane getting darker or lighter depending on the camera direction"
+        },
+        {
+          "ja": "季節のテーマ: サマーの砂の粒を明るく淡い黄色に (汚れて見えないように)。シルエットが砂の粒の上に出るように",
+          "en": "Seasonal themes: Summer sand grain is now a bright pale yellow (no longer looks dirty), and the silhouettes are drawn above the grain"
         }
       ]
     },
