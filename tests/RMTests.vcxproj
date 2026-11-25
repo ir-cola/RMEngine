@@ -109,6 +109,7 @@
     <ClCompile Include="TestIcons.cpp" />
     <ClCompile Include="TestMeshBake.cpp" />
     <ClCompile Include="TestSkeleton.cpp" />
+    <ClCompile Include="TestFbxSkin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
     <ClCompile Include="TestBakedImage.cpp" />
     <ClCompile Include="..\src\core\asset\BakedImage.cpp" />
