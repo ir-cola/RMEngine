@@ -1,7 +1,8 @@
 #pragma once
 // レンダラーのシェーダー (HLSL のテキスト。Renderer3D.cpp がコンパイルする。
 // tests/TestRendererShaders.cpp でテストする):
-// 線、モデル (MeshVS / MeshPS)、床の影、シャドウマップ - と、プラグインが加われるもの:
+// 線、モデル (MeshVS / MeshPS。骨のあるモデルは SkinnedMeshVS / SkinnedShadowVS: 式は Skinning.h)、
+// 床の影、シャドウマップ - と、プラグインが加われるもの:
 //
 //   向きの地図   RenderFrame::mapDirections / mapShapes: 描かれない形 (天候: コライダー) の深度を
 //                ある向きから見たもの。MapPast で読む (kDirectionMapHlsl: プラグイン自身の
