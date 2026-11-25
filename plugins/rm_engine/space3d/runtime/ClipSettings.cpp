@@ -1,12 +1,20 @@
 #include "rm_engine/space3d/runtime/ClipSettings.h"
 
+#include "core/reflect/Data.h"
+
 #include <algorithm>
 #include <cmath>
 
 namespace rm::space3d {
 
+float ClampEventTime(float time, float duration) {
+    if (!std::isfinite(time)) return 0.f;
+    const float end = std::isfinite(duration) ? std::max(duration, 0.f) : 0.f;
+    return std::clamp(time, 0.f, end);
+}
+
 void ApplyClipSettings(std::vector<Clip>& clips, const json::Value& import) {
-    const json::Value* all = import.IsObject() ? import.Find("clips") : nullptr;
+    const json::Value* all = import.IsObject() ? import.Find(kClipsKey) : nullptr;
     if (!all || !all->IsObject()) return;
     for (Clip& clip : clips) {
         const json::Value* one = all->Find(clip.name);
@@ -14,20 +22,14 @@ void ApplyClipSettings(std::vector<Clip>& clips, const json::Value& import) {
         const json::Value* events = one->Find("events");
         if (!events || !events->IsArray()) continue;
         clip.events.clear();
-        for (const json::Value& ev : events->Items()) {
+        for (const json::Value& v : events->Items()) {
             if (clip.events.size() >= kMaxClipEvents) break;
-            if (!ev.IsObject()) continue;
-            const json::Value& time = ev.Get("time");
-            const json::Value& name = ev.Get("name");
-            if (!time.IsNumber() || !name.IsString() || name.AsString().empty()) continue;
-            const double t = time.AsDouble();
-            if (!std::isfinite(t)) continue;
+            if (!v.IsObject()) continue;
             ClipEvent e;
-            e.time = std::clamp(static_cast<float>(t), 0.f, std::max(clip.duration, 0.f));
-            e.name = name.AsString();
-            const double number = ev.Get("number").AsDouble();
-            e.number = std::isfinite(number) ? number : 0;
-            if (const json::Value& text = ev.Get("text"); text.IsString()) e.text = text.AsString();
+            reflect::Load(e, v);
+            if (e.name.empty()) continue;
+            e.time = ClampEventTime(e.time, clip.duration);
+            if (!std::isfinite(e.number)) e.number = 0;
             clip.events.push_back(std::move(e));
         }
         std::stable_sort(clip.events.begin(), clip.events.end(), [](const ClipEvent& a, const ClipEvent& b) { return a.time < b.time; });

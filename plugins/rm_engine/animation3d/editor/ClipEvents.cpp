@@ -68,12 +68,6 @@ ClipEvent EventOf(const json::Value& v, reflect::Unknowns* unknowns) {
 
 }  // namespace
 
-float ClampEventTime(float time, float duration) {
-    if (!std::isfinite(time)) return 0.f;
-    const float end = std::isfinite(duration) ? std::max(duration, 0.f) : 0.f;
-    return std::clamp(time, 0.f, end);
-}
-
 std::vector<ClipEvent> ReadClipEvents(const json::Value& clips, std::string_view clip) {
     std::vector<ClipEvent> out;
     // 配列の要素 1 つに 1 つ (番号を配列と同じにする。オブジェクトでない物は既定の値)。

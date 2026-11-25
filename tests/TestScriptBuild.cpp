@@ -107,6 +107,7 @@ struct Waiter {
 #include "RM2D.h"
 #include "RM3D.h"
 #include "RMParticles.h"
+#include "RMAnim.h"
 static rm::Task Count(Waiter* w) {
     w->log += "a";
     co_await rm::NextFrame();
@@ -133,6 +134,10 @@ void Waiter::BeginPlay(rm::Entity self) {
     rm::SetTimeScale(1.0f);
     rm::SpriteAnimation(self).Play();
     rm::Particles(self).Emit(1);
+    const rm::Animator anim(self);  // (アニメーターが無い: 何もしない)
+    (void)anim.PlayClip("Run", 0.2f);
+    (void)anim.BonePosition("Hand");
+    (void)anim.Ended();
     rm::Transform3D(self).LookAt(rm::Vec3{0, 0, -1});
     rm::Transform2D(self).LookAt(rm::Vec2{1, 0});
 }
@@ -186,7 +191,7 @@ void Waiter::OnEvent(rm::Entity, const rm::Event& e) {
     req.engine = ExeFolder();  // rmgen.exe はテストの隣にビルドされる
     req.sdk = {Repo() / L"plugins/rm_engine/game_production/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_3d/runtime/sdk",
                Repo() / L"plugins/rm_engine/game_x_2d/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_audio/runtime/sdk",
-               Repo() / L"plugins/rm_engine/game_x_particles/runtime/sdk"};
+               Repo() / L"plugins/rm_engine/game_x_particles/runtime/sdk", Repo() / L"plugins/rm_engine/game_x_animation/runtime/sdk"};
 #ifdef _DEBUG
     req.debug = true;
 #endif

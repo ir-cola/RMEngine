@@ -8,6 +8,7 @@
 #include "rm_engine/space3d/runtime/ClipSettings.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 
@@ -285,16 +286,18 @@ RM_TEST(ClipSettings_ReadsEvents) {
     CHECK(import.has_value());
     if (!import) return;
     ApplyClipSettings(clips, *import);
-    CHECK(clips[0].events.size() == 4);
-    if (clips[0].events.size() == 4) {
+    CHECK(clips[0].events.size() == 5);
+    if (clips[0].events.size() == 5) {
         CHECK(clips[0].events[0].name == "早い" && clips[0].events[0].time == 0);
-        CHECK(clips[0].events[1].name == "左足" && clips[0].events[1].number == 0 && clips[0].events[1].text.empty());
-        CHECK(clips[0].events[2].name == "右足" && clips[0].events[2].number == 2 && clips[0].events[2].text == "砂");
-        CHECK(clips[0].events[3].name == "遅い" && clips[0].events[3].time == 1);
+        CHECK(clips[0].events[1].name == "時刻が無い" && clips[0].events[1].time == 0);  // (同じ時刻は書いた順)
+        CHECK(clips[0].events[2].name == "左足" && clips[0].events[2].number == 0 && clips[0].events[2].text.empty());
+        CHECK(clips[0].events[3].name == "右足" && clips[0].events[3].number == 2 && clips[0].events[3].text == "砂");
+        CHECK(clips[0].events[4].name == "遅い" && clips[0].events[4].time == 1);
     }
     CHECK(clips[1].events.size() == 1 && clips[1].events[0].name == "old");  // 書いていないクリップはそのまま
     ApplyClipSettings(clips, json::Value::MakeObject());                     // "clips" が無い: 何もしない
-    CHECK(clips[0].events.size() == 4);
+    CHECK(clips[0].events.size() == 5);
+    CHECK(ClampEventTime(std::nanf(""), 1) == 0 && ClampEventTime(2, 1) == 1 && ClampEventTime(0.5f, -1) == 0);
 }
 
 // クリップのイベントは EVNT のチャンクに入り、同じに読み戻す。イベントが無ければ書かない。

@@ -20,7 +20,7 @@
 // 関数はどれも "import" の "clips" の値を受け取り、変えた後の値を返す (null: "clips" を消す)。
 
 #include "base/Json.h"
-#include "core/reflect/Reflect.h"
+#include "rm_engine/space3d/runtime/ClipSettings.h"
 
 #include <cstddef>
 #include <string>
@@ -29,21 +29,11 @@
 
 namespace rm::animation3d {
 
-// イベント 1 つ。保存・読み込み・インスペクターの欄はこの定義から (憲法 9)。
-RM_STRUCT(Label="イベント")
-struct ClipEvent {
-    RM_PROPERTY(Edit, Label="時刻 (秒)", Tooltip="クリップの始めからの秒。再生がここを通るとイベントが出ます", Min=0, Step=0.01)
-    float time = 0;
-    RM_PROPERTY(Edit, Label="名前", Tooltip="スクリプトの OnEvent に届く名前 (足音なら Footstep など)")
-    std::string name = "Event";
-    RM_PROPERTY(Edit, Label="数値", Tooltip="名前と一緒に届く数") float number = 0;
-    RM_PROPERTY(Edit, Label="文字", Tooltip="名前と一緒に届く文字") std::string text;
-};
-
-inline constexpr char kClipsKey[] = "clips";  // "import" の中のキー
-
-// 時刻を [0, duration] に (数でない・負の長さは 0)。
-float ClampEventTime(float time, float duration);
+// イベント 1 つの型・"import" の中のキー・時刻を収める式は、ゲームが読むときと同じもの (3D 空間の Skeleton.h /
+// ClipSettings.h。定義は 1 か所: 憲法 1)。
+using space3d::ClampEventTime;
+using space3d::ClipEvent;
+using space3d::kClipsKey;
 
 // クリップ `clip` のイベント (ファイルの並びのまま。書いた物は時刻の順)。無ければ空。
 std::vector<ClipEvent> ReadClipEvents(const json::Value& clips, std::string_view clip);

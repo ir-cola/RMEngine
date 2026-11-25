@@ -18,9 +18,15 @@ namespace rm::space3d {
 // 1 つのクリップのイベントの上限 (壊れた / 大きすぎる .meta で膨らまないように)。
 inline constexpr size_t kMaxClipEvents = 1024;
 
+// "import" の中のキー。
+inline constexpr char kClipsKey[] = "clips";
+
+// イベントの時刻を [0, duration] に (数でない時刻・負の長さは 0)。読むときもエディターで置くときも。
+float ClampEventTime(float time, float duration);
+
 // `import` (.meta の "import") の "clips" を、名前の同じクリップに入れる (それまでの events は置き換える)。
-// 時刻は [0, duration] に収め、時刻の順に並べる (同じ時刻は書いた順)。名前が空のイベント・時刻が数で
-// ないイベントは捨てる。名前の同じクリップが 2 つあれば両方に。
+// イベントは ClipEvent の欄の決まりで読み (無い欄は既定の値)、時刻を収め、時刻の順に並べる (同じ時刻は
+// 書いた順)。オブジェクトでないもの・名前が空のものは捨てる。名前の同じクリップが 2 つあれば両方に。
 void ApplyClipSettings(std::vector<Clip>& clips, const json::Value& import);
 
 }  // namespace rm::space3d

@@ -12,6 +12,7 @@
 // 頂点の位置 = sum(ウェイト x スキンの行列 x 頂点)。
 
 #include "base/Math.h"
+#include "core/reflect/Reflect.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <array>
@@ -110,14 +111,20 @@ struct BoneTrack {
 };
 
 // クリップのイベント (docs/ANIMATION.md 3-6): 再生の位置がその時刻を通ったら、そのエンティティのスクリプトの
-// OnEvent に名前・数・文字が届く。置くのはモデルの .meta の取り込みの設定 (ClipSettings.h)。
+// OnEvent に名前・数・文字が届く。置くのはモデルの .meta の取り込みの設定 (ClipSettings.h。編集は 3D アニメーションの
+// インスペクターの「クリップとイベント」)。保存・読み込み・インスペクターの欄はこの定義から (憲法 9)。
+RM_STRUCT(Label="イベント")
 struct ClipEvent {
-    float time = 0;  // 秒 ([0, duration])
-    std::string name;
-    double number = 0;
-    std::string text;
-    bool operator==(const ClipEvent&) const = default;
+    RM_PROPERTY(Edit, Label="時刻 (秒)", Tooltip="クリップの始めからの秒。再生がここを通るとイベントが出ます", Min=0, Step=0.01)
+    float time = 0;
+    RM_PROPERTY(Edit, Label="名前", Tooltip="スクリプトの OnEvent に届く名前 (足音なら Footstep など)")
+    std::string name = "Event";
+    RM_PROPERTY(Edit, Label="数値", Tooltip="名前と一緒に届く数") float number = 0;
+    RM_PROPERTY(Edit, Label="文字", Tooltip="名前と一緒に届く文字") std::string text;
 };
+inline bool operator==(const ClipEvent& a, const ClipEvent& b) {
+    return a.time == b.time && a.name == b.name && a.number == b.number && a.text == b.text;
+}
 
 struct Clip {
     std::string name;

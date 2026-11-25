@@ -12,6 +12,7 @@
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 #include "rm_engine/game_x_animation/runtime/AnimationSystem.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "core/asset/ImportSettings.h"
 #include "base/Json.h"
@@ -418,6 +419,11 @@ RM_TEST(GameAnim_SystemsPlayTheSampleAndAttach) {
     if (runner.Events().size() == 1) {
         const game_production::SystemEvent& ev = runner.Events()[0];
         CHECK(ev.name == "Step" && ev.number == 3 && ev.text == "左" && ev.target == arm && ev.entity == arm);
+        // ホストはそれをスクリプトのイベントの列へ (送り手はエンジン・そのエンティティだけへ)
+        game_production::ScriptWorld world;
+        game_production::QueueSystemEvents(world, runner.Events());
+        CHECK(world.events.size() == 1 && world.events[0].name == "Step" && world.events[0].scope == 1 && world.events[0].target == arm &&
+              world.events[0].sender == 0 && world.events[0].text == "左");
     }
     // 帽子は骨 Top の所: 親 (arm) から見た値 = 骨のモデルの空間の位置
     const space3d::Mat4* top = an.run ? BoneModelMatrix(*an.run, "Top") : nullptr;

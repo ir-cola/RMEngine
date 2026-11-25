@@ -13,5 +13,15 @@
   "{} ({:.1f} 秒)": "{} ({:.1f} s)",
   "動かせるクリップがありません (骨とクリップのあるモデルを「メッシュ (3D モデル)」に)": "No clip to play (put a model with bones and clips on the Mesh (3D model))",
   "モデルにクリップ「{}」がありません": "The model has no clip \"{}\"",
-  "{:.2f} / {:.2f} 秒": "{:.2f} / {:.2f} s"
+  "{:.2f} / {:.2f} 秒": "{:.2f} / {:.2f} s",
+  "(付けない)": "(none)",
+  "骨に付ける": "Attach to bone",
+  "骨": "Bone",
+  "付ける骨の名前 (アニメーターを持つ祖先の「メッシュ (3D モデル)」のモデルの骨から選びます)": "The bone to attach to (pick one of the bones of the model in the Mesh (3D model) of the nearest ancestor with an Animator)",
+  "位置のずれ": "Position offset",
+  "骨から見た位置 (骨の向きで。単位はモデルと同じ)": "Position seen from the bone (along the bone's axes, in the model's units)",
+  "回転のずれ (度)": "Rotation offset (degrees)",
+  "骨から見た回転 (X → Y → Z の順)": "Rotation seen from the bone (X → Y → Z order)",
+  "回転も合わせる": "Follow rotation",
+  "外すと、位置だけが骨について行きます (向きはそのまま)": "When off, only the position follows the bone (the facing stays as it is)"
 }

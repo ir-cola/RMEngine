@@ -341,7 +341,7 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
             ok = c.Count(n, 4) && n == m.clips.size();
             for (size_t k = 0; ok && k < n; ++k) {
                 uint32_t events = 0;
-                ok = c.Count(events, 4 + 4 + 8 + 4);
+                ok = c.Count(events, 4 + 4 + 4 + 4);
                 m.clips[k].events.resize(ok ? events : 0);
                 for (ClipEvent& ev : m.clips[k].events) ok = ok && c.Get(ev.time) && c.Str(ev.name) && c.Get(ev.number) && c.Str(ev.text);
             }
