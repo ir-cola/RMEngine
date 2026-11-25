@@ -195,9 +195,12 @@ bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& valu
 // 数の付いたチェックボックス (コンソールの 情報 / 警告 / エラー): Checkbox の後ろに、`count` を太字の
 // `countColor` で。`label` は空でもよい (狭いとき: チェックと数だけ)。値が変わったら true。
 // 要る幅: CheckboxCountWidth (`count` が空なら、ふつうの Checkbox の幅)。
+// `mark` (省略可): 数のすぐ前に出す印 (警告 / エラーの絵)。`markAlpha` の濃さで (数が 0 のとき薄く)。
 bool CheckboxCount(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label,
-                   std::wstring_view count, ui::Color countColor);
-float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_view count = {});
+                   std::wstring_view count, ui::Color countColor, std::optional<Icon> mark = std::nullopt,
+                   float markAlpha = 1.f);
+float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_view count = {},
+                         std::optional<Icon> mark = std::nullopt);
 // テキストフィールドの数 (ビューの設定 - シーンビューの刻み): フォーカスがある間は打ったままの
 // 文字、それ以外は値 (`text` がフレームの間それを持つ)。`value` が変わったら true: 数が
 // 打たれた (min .. max に収める); 数でない文字は何も変えない。

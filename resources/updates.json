@@ -45,6 +45,10 @@
         {
           "ja": "季節のテーマ: ウィンターで、画面の右下の積もった雪の上に雪だるま (白い丸 2 つと赤いバケツ。ウィンドウを最大化すると見え、小さいウィンドウでは見えない)",
           "en": "Seasonal themes: in Winter, a snowman (two white balls and a red bucket) stands on the snow at the bottom right of the screen (visible when the window is maximized, hidden in small windows)"
+        },
+        {
+          "ja": "コンソール: 警告とエラーの行と数に印。時刻を「時:分:秒.ミリ秒」(PC の時計) で表示。行をクリック・Ctrl・Shift・ドラッグ・Ctrl+A で選び、Ctrl+C や右クリックのメニューでコピーできるように",
+          "en": "Console: warning and error marks on lines and counts. Times shown as hours:minutes:seconds.milliseconds (PC clock). Select lines with click, Ctrl, Shift, drag or Ctrl+A, and copy them with Ctrl+C or the right-click menu"
         }
       ]
     },
