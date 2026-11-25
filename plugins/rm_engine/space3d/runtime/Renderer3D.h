@@ -35,6 +35,22 @@
 // (光の、カスケードの: Frustum) で調べ、中身が変わったときだけ描き直す。動くもの
 // (Box / MeshDraw::moving) があるマップは、動かないものの層を残しておき、動くものだけを描く前に
 // それを敷き戻す。
+//
+// 骨のあるモデル (GPU スキニング。docs/ANIMATION.md 3-4): MeshData::skin があるメッシュは、Upload が
+// 2 本目の頂点バッファ (スロット 2: 頂点ごとの骨 4 本 R16G16B16A16_UINT + ウェイト R16G16B16A16_UNORM、
+// 16 バイト) も作る (GpuMesh::skinned)。描く側はスキンの行列 (骨の行列 x 逆バインド行列。モデルの空間)
+// を MeshDraw::bones に渡す - 計算するのは呼ぶ側 (animation3d)。フレームの全部の骨の行列は 1 つの
+// Buffer<float4> bones (t10。things と同じ作り) に 1 回書き、描画ごとのデータ DRAW (スロット 1。uint4)
+// の z がその描画の最初の行を指す。だから同じメッシュを違う姿勢で描いても 1 回のインスタンス描画に
+// まとまる。頂点シェーダーは SkinnedMeshVS / SkinnedShadowVS (ピクセルシェーダーは同じ)。式は
+// Skinning.h (CPU の同じもの)。
+//   - bones が空: 休みの姿勢 (骨はあるがアニメーターが無いモデルも、そのまま出る)。骨の数と違う数:
+//     休みの姿勢で描き、Stats::wrongBoneCounts に数える (落ちない)。
+//   - 見えるかの判定: 骨ごとの箱 (GpuMesh::boneBoxes) を今のスキンの行列で動かした和 (SkinnedBounds)。
+//   - 影の地図の使い回し: MeshDraw::poseVersion を見る (MeshDraw のコメント)。
+//   - 向きの地図の形 (MapShape) は骨の行列を持たない: 骨のあるメッシュでも休みの姿勢で入る。
+//   - 1 回の描画の骨は kMaxBones (Skeleton.h) 本まで (Upload が確かめる)。1 フレームの合計に上限は
+//     無い (メモリーだけ)。Stats::skinnedDraws / bonesUploaded に数える。
 
 #include "base/Math.h"
 #include "platform/Image.h"
@@ -42,6 +58,8 @@
 #include "rm_engine/space3d/runtime/Lighting.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Primitives.h"
+#include "rm_engine/space3d/runtime/Skeleton.h"
+#include "rm_engine/space3d/runtime/Skinning.h"
 #include "rm_engine/space3d/runtime/SkyShader.h"
 #include "rm_engine/space3d/runtime/TexturePixels.h"
 #include "rm_engine/space3d/runtime/TextureSampling.h"
@@ -86,10 +104,17 @@ public:
     uint32_t indexCount = 0;
     std::vector<MeshPart> parts;      // 材質ごとに 1 つずつ描く (最低 1 つ)
     std::vector<Vec3> partCenters;    // 各部品の範囲の真ん中 (透ける部品はこれで並べる)
+    // 骨のあるメッシュ (MeshData::skin): 骨で動く (2 本目の頂点バッファがある)。MeshDraw::bones は
+    // boneCount 個。boneBoxes: 骨ごとの、その骨が動かす頂点の箱 (Skinning.h。見えるかの判定)。
+    // min / max はバインドしたときの形の範囲。
+    bool skinned = false;
+    uint32_t boneCount = 0;
+    std::vector<BoneBox> boneBoxes;
 
 private:
     friend class Renderer;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertices, indices;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> skin;  // スロット 2 (skinned のときだけ): SkinVertex (16 バイト / 頂点)
 };
 
 // GPU 上の絵 (Renderer::UploadTexture)。
@@ -141,6 +166,10 @@ struct DrawMaterial {
 };
 // 1 つの材質がフレームの数値 (Renderer の things_) で使う float4 の数 (AddMaterial とシェーダーの LoadLook)。
 inline constexpr uint32_t kMaterialFloat4s = 5;
+// 描画ごとのデータ (DRAW。スロット 1) の uint の数: 物、材質、骨の行列の最初の行、空き。
+inline constexpr uint32_t kDrawUints = 4;
+// DRAW.z の「骨の行列が無い」(休みの姿勢。シェーダーの kNoBones と同じ)。
+inline constexpr uint32_t kNoBones = 0xFFFFFFFFu;
 
 struct MeshDraw {
     const GpuMesh* mesh = nullptr;
@@ -150,7 +179,20 @@ struct MeshDraw {
     std::span<const DrawMaterial> materials;  // MeshPart::material で引く。ここに無い部品は白
     Color highlight{0, 0, 0, 0};              // 縁の光 (選択中): その色。アルファ = 強さ
     bool moving = false;                      // Box::moving と同じ
+    // 骨のあるメッシュ (GpuMesh::skinned) のスキンの行列 (骨の行列 x 逆バインド行列。モデルの空間)。
+    // mesh->boneCount 個。空: 休みの姿勢。違う数: 休みの姿勢 (Stats::wrongBoneCounts)。Render の
+    // 間だけ読む (コピーする)。骨の無いメッシュでは使わない。
+    std::span<const BoneMatrix> bones;
+    // 姿勢の版 (影の地図の使い回し)。bones があるときだけ意味がある:
+    //   0 (既定): 姿勢は毎フレーム変わるかもしれない - `moving` として扱い、その影は毎フレーム描く。
+    //   0 以外: 同じメッシュで同じ番号なら同じ bones (呼ぶ側の約束)。番号はその描画の置き場所と一緒に
+    //   影の地図の指紋に入る: 止まった姿勢 (一時停止) は描き直さない。番号は NextPoseVersion() から
+    //   取る (プログラム全体で 2 度出ない)。姿勢を変えたら新しい番号にする。このときは `moving` も
+    //   呼ぶ側が決める (再生中は true にすると、動かないものの層が使い回される)。
+    uint64_t poseVersion = 0;
 };
+// MeshDraw::poseVersion の新しい番号 (0 は出ない。どのスレッドからでもよい)。
+uint64_t NextPoseVersion();
 
 // 向きの地図 (RenderFrame::mapShapes) の形: 描かれず、その地図にだけ見える (天候: 雨や雪が
 // 当たるコライダー - 箱・球・円柱 (ShapeOf)・モデル)。
@@ -286,6 +328,9 @@ public:
         size_t textureBytes = 0; // ... 今 GPU にある量
         size_t streamed = 0;     // ... のうちストリーミングされているもの (ミップマップ・ストリーミング)
         size_t streamedCut = 0;  // ... と、今は一番細かいレベルを持たないもの (遠い)
+        size_t skinnedDraws = 0;     // 渡されたモデルのうち骨のあるメッシュのもの (休みの姿勢も)
+        size_t bonesUploaded = 0;    // GPU に書いた骨の行列 (フレームの合計)
+        size_t wrongBoneCounts = 0;  // MeshDraw::bones の数がメッシュの骨の数と違った (休みの姿勢で描いた)
     };
     // デバイスごと (そのデバイスの全レンダラーで共有: シーンビュー、カメラのプレビュー、
     // サムネイル): シェーダーと状態、立方体と床、定数バッファ、シャドウマップと各マップが今
@@ -308,6 +353,9 @@ private:
         bool moving = false;         // Box / MeshDraw::moving
         uint64_t hash = 0;           // そのメッシュと置き場所 (シャドウマップが覚えるもの)
         bool mapOnly = false;        // MapShape: 向きの地図にだけある
+        uint32_t bones = kNoBones;   // 骨の行列 (bones_) の最初の行 (float4 単位)。kNoBones: 休みの姿勢
+        std::span<const BoneMatrix> skin;  // ... そのスキンの行列 (見えるかの判定)
+        uint64_t pose = 0;           // 姿勢の版 (hash に入る。0: 休みの姿勢)
     };
     // 描画 1 つ: メッシュの三角形のいくつかと、物の数値と材質 (`slot`: draws_ での場所。
     // シェーダーがインスタンスのデータとして読む)。
@@ -325,7 +373,7 @@ private:
     bool UploadFrame(ID3D11DeviceContext* ctx);
     uint32_t AddThing(const Mat4& world, Color color, Color highlight);
     uint32_t AddMaterial(const DrawMaterial& m);
-    uint32_t AddDraw(uint32_t thing, uint32_t material);
+    uint32_t AddDraw(uint32_t thing, uint32_t material, uint32_t bones = kNoBones);
     // cmds_ に描画を足す - 直前の描画の次のインスタンスなら (同じメッシュ・部品・絵で、次の
     // スロット)、それに足す。mergeFloor_ より前の描画とはまとめない。
     void Emit(const GpuMesh* mesh, uint32_t firstIndex, uint32_t indexCount, uint32_t slot, const DrawMaterial* material);
@@ -344,10 +392,11 @@ private:
     size_t lineCapacity_ = 0;
     // 全部の物と材質の数値と、全部の描画 (物、材質) を、1 フレームに 1 回書く。
     std::vector<std::array<float, 4>> things_;
-    std::vector<uint32_t> draws_;  // 2 つで 1 組
-    Ptr<ID3D11Buffer> thingsBuffer_, drawsBuffer_;
-    Ptr<ID3D11ShaderResourceView> thingsView_;
-    size_t thingsCapacity_ = 0, drawsCapacity_ = 0;
+    std::vector<uint32_t> draws_;  // kDrawUints 個で 1 組 (物、材質、骨の行列、空き)
+    std::vector<BoneMatrix> bones_;  // フレームの全部のスキンの行列 (Item::bones が指す)
+    Ptr<ID3D11Buffer> thingsBuffer_, drawsBuffer_, bonesBuffer_;
+    Ptr<ID3D11ShaderResourceView> thingsView_, bonesView_;
+    size_t thingsCapacity_ = 0, drawsCapacity_ = 0, bonesCapacity_ = 0;
     std::vector<Item> items_;
     std::unordered_map<const GpuTexture*, uint32_t> streamSeen_;  // Stream: 各絵がこのフレームで見られている一番細かいレベル
     std::vector<Cmd> cmds_;

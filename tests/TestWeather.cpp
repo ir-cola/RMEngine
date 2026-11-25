@@ -672,7 +672,7 @@ RM_TEST(Weather_ShadersCompile) {
     error.clear();
     const std::string plain = space3d::RendererShaderText();
     for (const char* entry : {"MeshPS", "FloorPS", "CopyDepthPS", "LinePS"}) CHECK(Compiles(plain, entry, "ps_4_0", &error));
-    for (const char* entry : {"MeshVS", "ShadowVS", "ClearVS", "LineVS"}) CHECK(Compiles(plain, entry, "vs_4_0", &error));
+    for (const char* entry : {"MeshVS", "ShadowVS", "SkinnedMeshVS", "SkinnedShadowVS", "ClearVS", "LineVS"}) CHECK(Compiles(plain, entry, "vs_4_0", &error));
     CHECK(Compiles(space3d::RendererShaderText(kWetSurfaceHlsl), "MeshPS", "ps_4_0", &error));
     const std::string layer = space3d::RendererShaderText(kWetSurfaceHlsl) + kSnowLayerHlsl;
     CHECK(Compiles(layer, "SnowLayerVS", "vs_4_0", &error));

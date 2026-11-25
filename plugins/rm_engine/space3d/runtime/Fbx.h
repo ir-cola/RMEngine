@@ -1,6 +1,6 @@
 #pragma once
 // 3D 空間 - FBX を読む (Autodesk の形式。Blender、Maya、3ds Max、多くのアセットストアが書く)。
-// 純粋: バイト列を渡す - tests/TestSpace3d.cpp でテストする。FBX SDK を使わずここで書く
+// 純粋: バイト列を渡す - tests/TestSpace3d.cpp (スキンとテイクは tests/TestFbxSkin.cpp) でテストする。FBX SDK を使わずここで書く
 // (そのライセンスではエンジンに自由に同梱できず、必要なのは形だけだから)。
 //
 //   バイナリ FBX 7.x (7100 .. 7700。Blender と FBX SDK が書くもの) と ASCII FBX 7.x。どちらも
@@ -14,7 +14,19 @@
 //   Blender が書くとおり、リニアの光として扱う) と、その拡散色に付いた画像 (モデルの隣のファイル、
 //   またはファイルの中に書かれた画像: Video の Content)。
 //   ポリゴンは最初の角から三角形に切る。
-//   読まないもの: スキン、ブレンドシェイプ、アニメーション、カメラとライト、NURBS、FBX 6 以前。
+//   スキン (MeshData::skin。docs/ANIMATION.md 3-2): Deformer (Skin) -> SubDeformer (Cluster) の
+//   Indexes / Weights (コントロール点ごと) と Transform / TransformLink (バインドの行列)。骨 = クラスターの
+//   骨のモデルと、それをつなぐ祖先 (LimbNode / Null / Root)。親は骨として登録された一番近い祖先。スキンの
+//   あるメッシュはバインドしたときの形 (Transform) で置く。スキンのあるファイルの、スキンの無いメッシュと
+//   ウェイトの無い点は、そのメッシュのモデルを骨にしてウェイト 1 で付ける。5 本目より後の骨は捨てて警告。
+//   骨が kMaxBones を超えたら読めない。
+//   テイク (MeshData::clips。スキンのあるファイルだけ): AnimationStack -> 最初の AnimationLayer ->
+//   AnimationCurveNode (Lcl Translation / Rotation / Scaling) -> AnimationCurve (直線 / 一定。曲線の補間は
+//   直線として)。ファイルの刻み (GlobalSettings の TimeMode / CustomFrameRate。上限 kMaxClipRate) ごとに
+//   骨の位置・回転・大きさのサンプルに焼く。長さはテイクの LocalStart / LocalStop (無ければキーの範囲)。
+//   骨もクリップも、頂点と同じくファイルの軸と単位をこのエンジンのものに直す。
+//   読まないもの: ブレンドシェイプ、2 つ目からのアニメーションのレイヤー、スキンの無いファイルのテイク、
+//   カメラとライト、NURBS、FBX 6 以前。
 
 #include "rm_engine/space3d/runtime/Mesh.h"
 
