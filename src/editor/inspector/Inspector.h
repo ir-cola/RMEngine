@@ -105,6 +105,9 @@ struct Block {
     std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
     // この型のこれらのフィールドだけ (名前で。大きな型をタブで見せるウィンドウ用)。空: 全部。
     std::vector<std::string> fields;
+    // この型のこれらのフィールドは出さない (名前で。ほかのプラグインがあると意味の無い欄: 気候があるときの天候の
+    // 「雪にする」)。空: 隠さない。
+    std::vector<std::string> hidden;
     // いっぺんに設定するできあいの値 (天候の 快晴 / 雨 / 嵐 ...): フィールドの上に 1 行 - 名前と
     // これらのドロップダウン。選んだ行が動く (呼んだ側が履歴に積む)。空: 行なし。
     std::wstring presetLabel;

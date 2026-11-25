@@ -1201,6 +1201,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
             if (const reflect::EditTarget o = resolveOther ? resolveOther() : reflect::EditTarget{}; o.object) others.push_back(o.object);
         }
         shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode, std::move(others), b.readOnly, b.fieldMenu});
+        shown.back().hidden = b.hidden;
         shown.back().presetLabel = b.presetLabel;
         shown.back().presets = b.presets;
         shown.back().choices = b.choices;

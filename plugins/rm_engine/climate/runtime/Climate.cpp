@@ -5,6 +5,7 @@
 #include <climits>
 #include <cmath>
 #include <iterator>
+#include <limits>
 #include <mutex>
 #include <numeric>
 #include <string>
@@ -181,18 +182,78 @@ std::vector<int> DecodeRuns(std::string_view text, size_t count) {
     return out;
 }
 
-PaintGrid PaintOf(const ClimateMap& map) {
+namespace {
+
+// 層 `layer` の筆の塗りが入っている地図のフィールド。
+struct LayerFields {
+    int* x;
+    int* z;
+    int* width;
+    int* depth;
+    std::string* cells;
+};
+LayerFields FieldsOf(ClimateMap& m, MapLayer layer) {
+    if (layer == MapLayer::Clouds) return {&m.cloudX, &m.cloudZ, &m.cloudWidth, &m.cloudDepth, &m.cloudCells};
+    return {&m.cellX, &m.cellZ, &m.width, &m.depth, &m.cells};
+}
+
+// 長方形をワールドのマス x0 .. x1, z0 .. z1 が入るように広げる (一辺 kMaxPaintCells まで)。その中で塗れる
+// 所に x0 .. z1 を縮める。塗れる所が無ければ false。
+bool GrowTo(PaintGrid& g, int& x0, int& z0, int& x1, int& z1, int mx, int mz) {
+    if (g.Empty()) {
+        x0 = std::max(x0, mx - kMaxPaintCells / 2), x1 = std::min(x1, x0 + kMaxPaintCells - 1);
+        z0 = std::max(z0, mz - kMaxPaintCells / 2), z1 = std::min(z1, z0 + kMaxPaintCells - 1);
+    } else {
+        x0 = std::max(x0, g.cellX + g.width - kMaxPaintCells), x1 = std::min(x1, g.cellX + kMaxPaintCells - 1);
+        z0 = std::max(z0, g.cellZ + g.depth - kMaxPaintCells), z1 = std::min(z1, g.cellZ + kMaxPaintCells - 1);
+    }
+    if (x0 > x1 || z0 > z1) return false;
+    const int nx0 = g.Empty() ? x0 : std::min(g.cellX, x0), nz0 = g.Empty() ? z0 : std::min(g.cellZ, z0);
+    const int nx1 = g.Empty() ? x1 : std::max(g.cellX + g.width - 1, x1), nz1 = g.Empty() ? z1 : std::max(g.cellZ + g.depth - 1, z1);
+    if (g.Empty() || nx0 != g.cellX || nz0 != g.cellZ || nx1 - nx0 + 1 != g.width || nz1 - nz0 + 1 != g.depth) {
+        PaintGrid grown;
+        grown.cellX = nx0;
+        grown.cellZ = nz0;
+        grown.width = nx1 - nx0 + 1;
+        grown.depth = nz1 - nz0 + 1;
+        grown.ids.assign(static_cast<size_t>(grown.width) * static_cast<size_t>(grown.depth), 0);
+        for (int j = 0; j < g.depth; ++j) {
+            for (int i = 0; i < g.width; ++i) grown.ids[CellIndex(i + g.cellX - nx0, j + g.cellZ - nz0, grown.width)] = g.ids[CellIndex(i, j, g.width)];
+        }
+        g = std::move(grown);
+    }
+    return true;
+}
+
+bool SetCell(PaintGrid& g, int x, int z, int id) {
+    const int64_t i = static_cast<int64_t>(x) - g.cellX, j = static_cast<int64_t>(z) - g.cellZ;
+    if (i < 0 || j < 0 || i >= g.width || j >= g.depth) return false;
+    int& cell = g.ids[CellIndex(static_cast<int>(i), static_cast<int>(j), g.width)];
+    if (cell == id) return false;
+    cell = id;
+    return true;
+}
+
+}  // namespace
+
+bool operator==(const ClimateShape& a, const ClimateShape& b) {
+    return a.layer == b.layer && a.kind == b.kind && a.clouds == b.clouds && a.points == b.points;
+}
+
+PaintGrid PaintOf(const ClimateMap& map, MapLayer layer) {
+    const LayerFields f = FieldsOf(const_cast<ClimateMap&>(map), layer);
     PaintGrid g;
-    if (map.width <= 0 || map.depth <= 0 || map.width > kMaxPaintCells || map.depth > kMaxPaintCells) return g;
-    g.cellX = map.cellX;
-    g.cellZ = map.cellZ;
-    g.width = map.width;
-    g.depth = map.depth;
-    g.ids = DecodeRuns(map.cells, static_cast<size_t>(g.width) * static_cast<size_t>(g.depth));
+    if (*f.width <= 0 || *f.depth <= 0 || *f.width > kMaxPaintCells || *f.depth > kMaxPaintCells) return g;
+    g.cellX = *f.x;
+    g.cellZ = *f.z;
+    g.width = *f.width;
+    g.depth = *f.depth;
+    g.ids = DecodeRuns(*f.cells, static_cast<size_t>(g.width) * static_cast<size_t>(g.depth));
     return g;
 }
 
-void SetPaint(ClimateMap& map, const PaintGrid& g) {
+void SetPaint(ClimateMap& map, const PaintGrid& g, MapLayer layer) {
+    const LayerFields f = FieldsOf(map, layer);
     int x0 = INT_MAX, z0 = INT_MAX, x1 = INT_MIN, z1 = INT_MIN;
     for (int j = 0; j < g.depth; ++j) {
         for (int i = 0; i < g.width; ++i) {
@@ -202,8 +263,8 @@ void SetPaint(ClimateMap& map, const PaintGrid& g) {
         }
     }
     if (x0 > x1) {
-        map.cellX = map.cellZ = map.width = map.depth = 0;
-        map.cells.clear();
+        *f.x = *f.z = *f.width = *f.depth = 0;
+        f.cells->clear();
         return;
     }
     std::vector<int> ids;
@@ -211,12 +272,15 @@ void SetPaint(ClimateMap& map, const PaintGrid& g) {
     for (int j = z0; j <= z1; ++j) {
         for (int i = x0; i <= x1; ++i) ids.push_back(g.ids[CellIndex(i, j, g.width)]);
     }
-    map.cellX = g.cellX + x0;
-    map.cellZ = g.cellZ + z0;
-    map.width = x1 - x0 + 1;
-    map.depth = z1 - z0 + 1;
-    map.cells = EncodeRuns(ids);
+    *f.x = g.cellX + x0;
+    *f.z = g.cellZ + z0;
+    *f.width = x1 - x0 + 1;
+    *f.depth = z1 - z0 + 1;
+    *f.cells = EncodeRuns(ids);
 }
+
+int CloudCellOf(float clouds) { return static_cast<int>(std::lround(std::clamp(Finite(clouds, 0.f), 0.f, 100.f))) + 1; }
+float CloudsOfCell(int cell) { return cell > 0 ? static_cast<float>(std::min(cell, 101) - 1) : 0.f; }
 
 bool PaintCircle(PaintGrid& g, float cellSize, Vec2 center, float radius, int id) {
     if (!std::isfinite(center.x) || !std::isfinite(center.y)) return false;
@@ -230,30 +294,8 @@ bool PaintCircle(PaintGrid& g, float cellSize, Vec2 center, float radius, int id
         if (g.Empty()) return false;
         x0 = std::max(x0, g.cellX), z0 = std::max(z0, g.cellZ);
         x1 = std::min(x1, g.cellX + g.width - 1), z1 = std::min(z1, g.cellZ + g.depth - 1);
-    } else {
-        // 長方形が一辺 kMaxPaintCells を越えない所だけ。
-        if (g.Empty()) {
-            x0 = std::max(x0, mx - kMaxPaintCells / 2), x1 = std::min(x1, x0 + kMaxPaintCells - 1);
-            z0 = std::max(z0, mz - kMaxPaintCells / 2), z1 = std::min(z1, z0 + kMaxPaintCells - 1);
-        } else {
-            x0 = std::max(x0, g.cellX + g.width - kMaxPaintCells), x1 = std::min(x1, g.cellX + kMaxPaintCells - 1);
-            z0 = std::max(z0, g.cellZ + g.depth - kMaxPaintCells), z1 = std::min(z1, g.cellZ + kMaxPaintCells - 1);
-        }
-        if (x0 > x1 || z0 > z1) return false;
-        const int nx0 = g.Empty() ? x0 : std::min(g.cellX, x0), nz0 = g.Empty() ? z0 : std::min(g.cellZ, z0);
-        const int nx1 = g.Empty() ? x1 : std::max(g.cellX + g.width - 1, x1), nz1 = g.Empty() ? z1 : std::max(g.cellZ + g.depth - 1, z1);
-        if (g.Empty() || nx0 != g.cellX || nz0 != g.cellZ || nx1 - nx0 + 1 != g.width || nz1 - nz0 + 1 != g.depth) {
-            PaintGrid grown;
-            grown.cellX = nx0;
-            grown.cellZ = nz0;
-            grown.width = nx1 - nx0 + 1;
-            grown.depth = nz1 - nz0 + 1;
-            grown.ids.assign(static_cast<size_t>(grown.width) * static_cast<size_t>(grown.depth), 0);
-            for (int j = 0; j < g.depth; ++j) {
-                for (int i = 0; i < g.width; ++i) grown.ids[CellIndex(i + g.cellX - nx0, j + g.cellZ - nz0, grown.width)] = g.ids[CellIndex(i, j, g.width)];
-            }
-            g = std::move(grown);
-        }
+    } else if (!GrowTo(g, x0, z0, x1, z1, mx, mz)) {
+        return false;
     }
     bool changed = false;
     const double r2 = static_cast<double>(r) * r;
@@ -261,16 +303,74 @@ bool PaintCircle(PaintGrid& g, float cellSize, Vec2 center, float radius, int id
         for (int x = x0; x <= x1; ++x) {
             const double dx = (x + 0.5) * cs - center.x, dz = (z + 0.5) * cs - center.y;
             if (dx * dx + dz * dz > r2 && !(x == mx && z == mz)) continue;
-            const int64_t i = static_cast<int64_t>(x) - g.cellX, j = static_cast<int64_t>(z) - g.cellZ;
-            if (i < 0 || j < 0 || i >= g.width || j >= g.depth) continue;
-            int& cell = g.ids[CellIndex(static_cast<int>(i), static_cast<int>(j), g.width)];
-            if (cell != id) {
-                cell = id;
-                changed = true;
-            }
+            changed = SetCell(g, x, z, id) || changed;
         }
     }
     return changed;
+}
+
+bool InsideShape(std::span<const Vec2> pts, Vec2 p) {
+    if (pts.size() < 3) return false;
+    bool inside = false;
+    for (size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
+        const Vec2 a = pts[i], b = pts[j];
+        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+}
+
+bool FillShape(PaintGrid& g, float cellSize, std::span<const Vec2> pts, int id) {
+    if (pts.size() < 3) return false;
+    const float cs = CellSizeOf(cellSize);
+    float lx = std::numeric_limits<float>::max(), lz = lx, hx = -lx, hz = -lx;
+    for (const Vec2& p : pts) {
+        if (!std::isfinite(p.x) || !std::isfinite(p.y)) return false;
+        lx = std::min(lx, p.x), hx = std::max(hx, p.x), lz = std::min(lz, p.y), hz = std::max(hz, p.y);
+    }
+    int x0 = FloorCell(lx / cs), x1 = FloorCell(hx / cs), z0 = FloorCell(lz / cs), z1 = FloorCell(hz / cs);
+    id = std::max(id, 0);
+    if (id == 0) {
+        if (g.Empty()) return false;
+        x0 = std::max(x0, g.cellX), z0 = std::max(z0, g.cellZ);
+        x1 = std::min(x1, g.cellX + g.width - 1), z1 = std::min(z1, g.cellZ + g.depth - 1);
+        if (x0 > x1 || z0 > z1) return false;
+    } else if (!GrowTo(g, x0, z0, x1, z1, static_cast<int>((int64_t{x0} + x1) / 2), static_cast<int>((int64_t{z0} + z1) / 2))) {
+        return false;
+    }
+    // 行ごとに、マスの真ん中の高さで辺と交わる所を出し、その間 (偶奇) のマスを塗る。
+    bool changed = false;
+    std::vector<double> cross;
+    for (int z = z0; z <= z1; ++z) {
+        const double cz = (z + 0.5) * cs;
+        cross.clear();
+        for (size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
+            const Vec2 a = pts[i], b = pts[j];
+            if ((a.y > cz) != (b.y > cz)) cross.push_back(a.x + (cz - a.y) * (static_cast<double>(b.x) - a.x) / (static_cast<double>(b.y) - a.y));
+        }
+        std::sort(cross.begin(), cross.end());
+        for (size_t k = 0; k + 1 < cross.size(); k += 2) {
+            // 真ん中 (x + 0.5) * cs が [cross[k], cross[k + 1]) にあるマス。
+            const int a = std::max(x0, FloorCell(std::ceil(cross[k] / cs - 0.5))), b = std::min(x1, FloorCell(std::ceil(cross[k + 1] / cs - 0.5)) - 1);
+            for (int x = a; x <= b; ++x) changed = SetCell(g, x, z, id) || changed;
+        }
+    }
+    return changed;
+}
+
+int ShapeCellOf(const ClimateMap& map, const ClimateShape& s) {
+    if (s.layer == MapLayer::Clouds) return CloudCellOf(s.clouds);
+    return s.kind > 0 && FindKind(map, s.kind) ? s.kind : 0;
+}
+
+PaintGrid BakedOf(const ClimateMap& map, MapLayer layer) {
+    PaintGrid g = PaintOf(map, layer);
+    for (const ClimateShape& s : map.shapes) {
+        if (s.layer != layer || s.points.size() < 3) continue;
+        const int id = ShapeCellOf(map, s);
+        if (id == 0) continue;
+        FillShape(g, map.cellSize, std::span(s.points).first(std::min(s.points.size(), kMaxShapePoints)), id);
+    }
+    return g;
 }
 
 PaintGrid Resample(const PaintGrid& g, float from, float to) {
@@ -308,6 +408,7 @@ const ClimateKind* FindKind(const ClimateMap& map, int id) {
 
 void RemoveKind(ClimateMap& map, int id) {
     std::erase_if(map.kinds, [id](const ClimateKind& k) { return k.id == id; });
+    std::erase_if(map.shapes, [id](const ClimateShape& s) { return s.layer == MapLayer::Climate && s.kind == id; });
     PaintGrid g = PaintOf(map);
     for (int& cell : g.ids) {
         if (cell == id) cell = 0;
@@ -315,12 +416,31 @@ void RemoveKind(ClimateMap& map, int id) {
     SetPaint(map, g);
 }
 
+PaintTables::Table PaintTables::MakeTable(const PaintGrid& g, const std::function<int(int)>& value) {
+    Table t;
+    t.cellX = g.cellX, t.cellZ = g.cellZ, t.width = g.width, t.depth = g.depth;
+    const size_t w = static_cast<size_t>(g.width) + 1;
+    t.sums.assign(w * (static_cast<size_t>(g.depth) + 1), 0);
+    for (int j = 0; j < g.depth; ++j) {
+        int32_t row = 0;
+        for (int i = 0; i < g.width; ++i) {
+            row += value(g.ids[CellIndex(i, j, g.width)]);
+            t.sums[(static_cast<size_t>(j) + 1) * w + static_cast<size_t>(i) + 1] = t.sums[static_cast<size_t>(j) * w + static_cast<size_t>(i) + 1] + row;
+        }
+    }
+    return t;
+}
+
 PaintTables::PaintTables(const ClimateMap& map) {
-    grid_ = PaintOf(map);
+    grid_ = BakedOf(map, MapLayer::Climate);
+    clouds_ = BakedOf(map, MapLayer::Clouds);
     cellSize_ = CellSizeOf(map.cellSize);
     half_ = std::isfinite(map.border) ? std::max(map.border, 0.f) * 0.5f : 0.f;
-    cellX_ = grid_.cellX, cellZ_ = grid_.cellZ, width_ = grid_.width, depth_ = grid_.depth;
     kindCount_ = map.kinds.size();
+    if (!clouds_.Empty()) {
+        cloudCount_ = MakeTable(clouds_, [](int cell) { return cell > 0 ? 1 : 0; });
+        cloudSum_ = MakeTable(clouds_, [](int cell) { return static_cast<int>(CloudsOfCell(cell)); });
+    }
     if (grid_.Empty()) return;
     std::vector<char> present;
     for (const int id : grid_.ids) {
@@ -328,7 +448,6 @@ PaintTables::PaintTables(const ClimateMap& map) {
         if (static_cast<size_t>(id) >= present.size()) present.resize(static_cast<size_t>(id) + 1, 0);
         present[static_cast<size_t>(id)] = 1;
     }
-    const size_t w = static_cast<size_t>(width_) + 1;
     for (size_t k = 0; k < map.kinds.size(); ++k) {
         const ClimateKind& kind = map.kinds[k];
         if (kind.id <= 0 || static_cast<size_t>(kind.id) >= present.size() || !present[static_cast<size_t>(kind.id)]) continue;
@@ -339,32 +458,29 @@ PaintTables::PaintTables(const ClimateMap& map) {
         t.id = kind.id;
         t.temperature = Finite(kind.temperature, 15.f);
         t.humidity = std::clamp(Finite(kind.humidity, 50.f), 0.f, 100.f);
-        t.sums.assign(w * (static_cast<size_t>(depth_) + 1), 0);
-        for (int j = 0; j < depth_; ++j) {
-            int32_t row = 0;
-            for (int i = 0; i < width_; ++i) {
-                row += grid_.ids[CellIndex(i, j, width_)] == kind.id ? 1 : 0;
-                t.sums[(static_cast<size_t>(j) + 1) * w + static_cast<size_t>(i) + 1] = t.sums[static_cast<size_t>(j) * w + static_cast<size_t>(i) + 1] + row;
-            }
-        }
+        const int id = kind.id;
+        t.table = MakeTable(grid_, [id](int cell) { return cell == id ? 1 : 0; });
         kinds_.push_back(std::move(t));
     }
 }
 
-// 長方形 (0, 0) .. (u, v) (マスの単位。塗った所の長方形の角から) の中のその種類の面積: 表の値の間を
-// 双線形に補う (マスの中では塗りが一様なので、これがちょうど面積になる)。
-double PaintTables::Sum(const Kind& k, double u, double v) const {
-    u = std::clamp(u, 0.0, static_cast<double>(width_));
-    v = std::clamp(v, 0.0, static_cast<double>(depth_));
-    const int i = std::clamp(static_cast<int>(std::floor(u)), 0, width_ - 1), j = std::clamp(static_cast<int>(std::floor(v)), 0, depth_ - 1);
+// 長方形 (0, 0) .. (u, v) (マスの単位。塗った所の長方形の角から) の中の値の和: 表の値の間を
+// 双線形に補う (マスの中では塗りが一様なので、これがちょうど面積の分になる)。
+double PaintTables::Table::Sum(double u, double v) const {
+    u = std::clamp(u, 0.0, static_cast<double>(width));
+    v = std::clamp(v, 0.0, static_cast<double>(depth));
+    const int i = std::clamp(static_cast<int>(std::floor(u)), 0, width - 1), j = std::clamp(static_cast<int>(std::floor(v)), 0, depth - 1);
     const double fu = u - i, fv = v - j;
-    const size_t w = static_cast<size_t>(width_) + 1;
-    const auto at = [&](int a, int b) { return static_cast<double>(k.sums[static_cast<size_t>(b) * w + static_cast<size_t>(a)]); };
+    const size_t w = static_cast<size_t>(width) + 1;
+    const auto at = [&](int a, int b) { return static_cast<double>(sums[static_cast<size_t>(b) * w + static_cast<size_t>(a)]); };
     return at(i, j) * (1 - fu) * (1 - fv) + at(i + 1, j) * fu * (1 - fv) + at(i, j + 1) * (1 - fu) * fv + at(i + 1, j + 1) * fu * fv;
 }
 
-double PaintTables::Area(const Kind& k, double u0, double v0, double u1, double v1) const {
-    return Sum(k, u1, v1) - Sum(k, u0, v1) - Sum(k, u1, v0) + Sum(k, u0, v0);
+double PaintTables::Table::Area(double u0, double v0, double u1, double v1) const {
+    if (sums.empty() || width <= 0 || depth <= 0) return 0;
+    u0 -= cellX, u1 -= cellX, v0 -= cellZ, v1 -= cellZ;
+    if (u1 <= 0 || v1 <= 0 || u0 >= width || v0 >= depth) return 0;
+    return Sum(u1, v1) - Sum(u0, v1) - Sum(u1, v0) + Sum(u0, v0);
 }
 
 std::vector<float> PaintTables::Weights(Vec2 xz) const {
@@ -377,16 +493,34 @@ std::vector<float> PaintTables::Weights(Vec2 xz) const {
         }
         return out;
     }
-    const double u0 = (xz.x - half_) / cellSize_ - cellX_, u1 = (xz.x + half_) / cellSize_ - cellX_;
-    const double v0 = (xz.y - half_) / cellSize_ - cellZ_, v1 = (xz.y + half_) / cellSize_ - cellZ_;
-    if (u1 <= 0 || v1 <= 0 || u0 >= width_ || v0 >= depth_) return out;
+    const double u0 = (xz.x - half_) / cellSize_, u1 = (xz.x + half_) / cellSize_;
+    const double v0 = (xz.y - half_) / cellSize_, v1 = (xz.y + half_) / cellSize_;
     const double box = (u1 - u0) * (v1 - v0);
-    for (const Kind& k : kinds_) out[k.index] = static_cast<float>(std::clamp(Area(k, u0, v0, u1, v1) / box, 0.0, 1.0));
+    for (const Kind& k : kinds_) out[k.index] = static_cast<float>(std::clamp(k.table.Area(u0, v0, u1, v1) / box, 0.0, 1.0));
     return out;
 }
 
+void PaintTables::Clouds(Vec2 xz, float half, float& weight, float& amount) const {
+    weight = 0, amount = 0;
+    if (cloudCount_.sums.empty() || !std::isfinite(xz.x) || !std::isfinite(xz.y)) return;
+    const float h = std::isfinite(half) && half >= 0 ? half : half_;
+    if (!(h > 0)) {
+        const int cell = clouds_.At(FloorCell(xz.x / cellSize_), FloorCell(xz.y / cellSize_));
+        if (cell > 0) weight = 1, amount = CloudsOfCell(cell);
+        return;
+    }
+    const double u0 = (xz.x - h) / cellSize_, u1 = (xz.x + h) / cellSize_;
+    const double v0 = (xz.y - h) / cellSize_, v1 = (xz.y + h) / cellSize_;
+    const double count = cloudCount_.Area(u0, v0, u1, v1);
+    if (!(count > 1e-9)) return;
+    weight = static_cast<float>(std::clamp(count / ((u1 - u0) * (v1 - v0)), 0.0, 1.0));
+    amount = static_cast<float>(std::clamp(cloudSum_.Area(u0, v0, u1, v1) / count, 0.0, 100.0));
+}
+
 ClimateHere PaintTables::Blend(ClimateHere outside, Vec2 xz) const {
-    if (kinds_.empty()) return outside;
+    ClimateHere c = outside;
+    Clouds(xz, -1.f, c.cloudWeight, c.cloudAmount);
+    if (kinds_.empty()) return c;
     const std::vector<float> w = Weights(xz);
     double total = 0, t = 0, h = 0;
     for (const Kind& k : kinds_) {
@@ -395,9 +529,8 @@ ClimateHere PaintTables::Blend(ClimateHere outside, Vec2 xz) const {
         t += wk * k.temperature;
         h += wk * k.humidity;
     }
-    if (!(total > 0)) return outside;
+    if (!(total > 0)) return c;
     total = std::min(total, 1.0);
-    ClimateHere c;
     c.temperature = static_cast<float>(t + (1 - total) * outside.temperature);
     c.humidity = std::clamp(static_cast<float>(h + (1 - total) * outside.humidity), 0.f, 100.f);
     return c;
@@ -408,7 +541,8 @@ namespace {
 // 表を作った地図 (表に効くものだけ比べる)。
 bool SameForTables(const ClimateMap& a, const ClimateMap& b) {
     if (a.cellX != b.cellX || a.cellZ != b.cellZ || a.width != b.width || a.depth != b.depth || a.cellSize != b.cellSize || a.border != b.border ||
-        a.kinds.size() != b.kinds.size() || a.cells != b.cells) {
+        a.kinds.size() != b.kinds.size() || a.cells != b.cells || a.cloudX != b.cloudX || a.cloudZ != b.cloudZ || a.cloudWidth != b.cloudWidth ||
+        a.cloudDepth != b.cloudDepth || a.cloudCells != b.cloudCells || a.shapes != b.shapes) {
         return false;
     }
     for (size_t i = 0; i < a.kinds.size(); ++i) {
@@ -421,7 +555,8 @@ bool SameForTables(const ClimateMap& a, const ClimateMap& b) {
 }  // namespace
 
 std::shared_ptr<const PaintTables> PaintTablesOf(const ClimateMap& map) {
-    if (map.width <= 0 || map.depth <= 0 || map.cells.empty()) return nullptr;
+    const bool painted = (map.width > 0 && map.depth > 0 && !map.cells.empty()) || (map.cloudWidth > 0 && map.cloudDepth > 0 && !map.cloudCells.empty());
+    if (!painted && map.shapes.empty()) return nullptr;
     struct Entry {
         ClimateMap map;
         std::shared_ptr<const PaintTables> tables;
@@ -487,9 +622,14 @@ ClimateHere ClimateField::At(Vec3 position) const {
     }
     ClimateHere outside{settings_.temperature, settings_.humidity};
     if (paint_) outside = paint_->Blend(outside, {position.x, position.z});  // (塗った地図が下の層)
-    ClimateHere c = Blend(outside, effects);
+    ClimateHere c = Blend(outside, effects);  // (気候エリアは雲を変えない: 塗った雲のまま)
     c.temperature = CooledByHeight(c.temperature, position.y, settings_);
     return c;
+}
+
+void ClimateField::CloudsAt(Vec2 xz, float half, float& weight, float& amount) const {
+    weight = 0, amount = 0;
+    if (paint_) paint_->Clouds(xz, half, weight, amount);
 }
 
 ClimateHere ClimateField::At2D(Vec2 position) const {

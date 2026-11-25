@@ -38,12 +38,16 @@ The "**Climate**" tab, next to the Scene and Game tabs, shows the scene **seen f
 
 - Switch with "**Climate**" / "**Weather**" at the top. "Fit" brings the whole scene into the map
 - The map: right is +X, up is +Z. **Left drag** paints, the **wheel** zooms, **right / middle drag** moves. One drag is one Ctrl+Z
-- On the right: "Pen" / "Eraser", the brush radius and the **cell size** (1 to 16 m. Smaller paints finer shapes. Changing it keeps what you painted in place)
+- Tools on the right: "**Brush**" (paint with a round brush), "**Eraser**" (erase brush paint), "**Pen**" (draw around an area) and "**Select**" (fix drawn shapes). The brush radius and the **cell size** (1 to 16 m. Smaller paints finer shapes. Changing it keeps what you painted in place)
+- **Pen**: each click adds a point, and dragging with the button held traces points. Click the first point, double-click or press Enter to close it, and the inside takes that climate (Esc cancels). Shapes go on top of brush paint, later shapes on top
+- **Select**: click a shape to select it, drag a point or the inside to move, right-click a point to delete it, Delete removes the shape. With a shape selected, clicking a climate type changes the shape's climate
+- **Layer**: "**Climate**" (draw types) and "**Clouds**" (draw the cloud amount). Where you draw clouds, the sky gets that much cloud, and **rain and snow fall only under clouds** (none below 30 %, normal from 60 %). Places without drawn clouds keep the clouds of the scene weather
+- "**Show**" at the top: "Paint" (drawn types and clouds) / "Temperature" / "Humidity" / "Clouds". Temperature, humidity and clouds show **the value at each place as a color scale**, with everything drawn, shapes, climate zones and borders included (a scale at the bottom right; the temperature is at the base height). The value under the cursor is shown too
 - **Climate types**: at first Temperate (15 °C, 50 %), Cold (-8 °C, 60 %), Desert (32 °C, 10 %) and Tropical (28 °C, 85 %). Pick one and paint. "+ Add" makes more, and the fields below change the name, color, temperature and humidity. "Delete" removes the type and what was painted with it. The color is only for the map and does not show in the game
 - **Map border width**: across the edge of what you painted, the climate changes smoothly over this width (default 8 m)
-- Unpainted places keep the scene setting "Climate" (the climate outside zones). **Climate zones go on top of the painted climate**
+- Every place you did not draw keeps the scene settings "Climate" and "Weather" from the inspector. What you drew wins where you drew it. **Climate zones go on top of the drawn climate**. "Cooling with height" applies to drawn places too (snow only on the mountain top)
 - The edges of 3D climate zones are drawn on the map too
-- Switch to "**Weather**" to change the scene's weather (clouds, precipitation, fog, lightning, wind, templates) here (with the Weather plugin). Whether it rains or snows depends on the temperature there
+- Switch to "**Weather**" to change the scene's weather (clouds, precipitation, fog, lightning, wind, templates) here (with the Weather plugin). Whether it rains or snows depends on the temperature there (so the weather's "Snow" switch is not shown while Climate is installed)
 - The map is for 3D scenes only for now. 2D scenes use "Climate zone 2D"
 
 ## Scripts

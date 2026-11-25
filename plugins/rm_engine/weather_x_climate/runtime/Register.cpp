@@ -40,8 +40,17 @@ void RunPlace(game_production::SystemContext& ctx) {
         at = pose.position;
     }
     const climate::ClimateField field(ctx.scene);
-    Approach(w->placeSnow, w->placeMore, PlaceOf(field.At(at)), std::isfinite(ctx.dt) ? std::max(ctx.dt, 0.f) : 0.f);
+    const float dt = std::isfinite(ctx.dt) ? std::max(ctx.dt, 0.f) : 0.f;
+    const climate::ClimateHere here = field.At(at);
+    Approach(w->placeSnow, w->placeMore, PlaceOf(here), dt);
     weather::PlaceCellsFor(*w, ctx.scene, at, kPlace);
+    if (field.HasClouds()) {
+        ApproachClouds(w->placeClouds, w->placeCloudShare, here.cloudWeight, here.cloudAmount, dt);
+    } else {
+        w->placeClouds = -1;
+        w->placeCloudShare = 0;
+    }
+    CloudCellsFor(*w, field, at);
 }
 
 }  // namespace
@@ -57,7 +66,24 @@ float MoreOf(float humidity) {
     return h <= 50.f ? h / 50.f : 1.f + (h - 50.f) / 50.f * (weather::kPlaceMostMore - 1.f);
 }
 
-weather::WeatherPlace PlaceOf(const climate::ClimateHere& c) { return {SnowShareOf(c.temperature), MoreOf(c.humidity)}; }
+float RainUnderClouds(float clouds) {
+    const float t = std::isfinite(clouds) ? std::clamp((clouds - 30.f) / 30.f, 0.f, 1.f) : 1.f;
+    return t * t * (3.f - 2.f * t);
+}
+
+float CloudRainOf(float weight, float amount) {
+    const float w = std::isfinite(weight) ? std::clamp(weight, 0.f, 1.f) : 0.f;
+    return (1.f - w) + w * RainUnderClouds(amount);
+}
+
+weather::WeatherPlace PlaceOf(const climate::ClimateHere& c) {
+    return {SnowShareOf(c.temperature), MoreOf(c.humidity) * CloudRainOf(c.cloudWeight, c.cloudAmount)};
+}
+
+void ApproachValue(float& value, float to, float dt) {
+    const float k = 1.f - std::exp(-(std::isfinite(dt) ? std::max(dt, 0.f) : 0.f) / 2.f);
+    value += (to - value) * k;
+}
 
 void Approach(float& placeSnow, float& placeMore, const weather::WeatherPlace& to, float dt) {
     if (!std::isfinite(placeSnow) || placeSnow < 0 || !std::isfinite(placeMore)) {
@@ -65,9 +91,44 @@ void Approach(float& placeSnow, float& placeMore, const weather::WeatherPlace& t
         placeMore = to.more;
         return;
     }
-    const float k = 1.f - std::exp(-dt / 2.f);
-    placeSnow += (to.snow - placeSnow) * k;
-    placeMore += (to.more - placeMore) * k;
+    ApproachValue(placeSnow, to.snow, dt);
+    ApproachValue(placeMore, to.more, dt);
+}
+
+void ApproachClouds(float& placeClouds, float& placeShare, float weight, float amount, float dt) {
+    weight = std::isfinite(weight) ? std::clamp(weight, 0.f, 1.f) : 0.f;
+    amount = std::isfinite(amount) ? std::clamp(amount, 0.f, 100.f) : 0.f;
+    if (!std::isfinite(placeClouds) || placeClouds < 0 || !std::isfinite(placeShare)) {
+        placeClouds = amount;
+        placeShare = weight;
+        return;
+    }
+    ApproachValue(placeShare, weight, dt);
+    if (weight > 0) ApproachValue(placeClouds, amount, dt);
+}
+
+void CloudCellsFor(weather::Weather& w, const climate::ClimateField& field, Vec3 eye) {
+    if (!field.HasClouds() || !std::isfinite(eye.x) || !std::isfinite(eye.z)) {
+        w.cloudCells.clear();
+        w.cloudShares.clear();
+        return;
+    }
+    constexpr int n = weather::kCloudMapCells;
+    constexpr float cell = weather::kCloudMapCell;
+    const float firstX = (std::floor(eye.x / cell) - static_cast<float>(n / 2) + 0.5f) * cell;
+    const float firstZ = (std::floor(eye.z / cell) - static_cast<float>(n / 2) + 0.5f) * cell;
+    w.cloudFirstX = firstX;
+    w.cloudFirstZ = firstZ;
+    w.cloudCells.assign(size_t{n} * n, 0.f);
+    w.cloudShares.assign(size_t{n} * n, 0.f);
+    for (int z = 0; z < n; ++z) {
+        for (int x = 0; x < n; ++x) {
+            float share = 0, amount = 0;
+            field.CloudsAt({firstX + static_cast<float>(x) * cell, firstZ + static_cast<float>(z) * cell}, cell * 0.5f, share, amount);
+            w.cloudShares[static_cast<size_t>(z) * n + static_cast<size_t>(x)] = share;
+            w.cloudCells[static_cast<size_t>(z) * n + static_cast<size_t>(x)] = amount;
+        }
+    }
 }
 
 void RegisterRuntime(RuntimeRegistry& registry) {

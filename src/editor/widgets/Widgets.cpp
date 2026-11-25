@@ -853,6 +853,65 @@ void DrawMapBrush(ui::Context& c, float cx, float cy, float radius, bool erase) 
     c.P().FillCircle(cx, cy, 1.5f, col);
 }
 
+void DrawMapHeat(ui::Context& c, const Rect& r, ui::Color color, float strength) {
+    if (r.w <= 0 || r.h <= 0 || !(strength > 0)) return;
+    c.P().FillRect(r, color.Alpha(theme::MapHeatAlpha() * std::min(strength, 1.f)));
+}
+
+void DrawMapLegend(ui::Context& c, const Rect& r, std::wstring_view title, ui::Color (*ramp)(float), std::wstring_view low, std::wstring_view high) {
+    if (!ramp || r.w < 40 || r.h < 40) return;
+    c.P().FillRoundRect(r, 6, theme::Panel.Alpha(0.92f));
+    c.P().StrokeRoundRect(r, 6, theme::Border);
+    ui::TextStyle ts;
+    ts.size = 11;
+    ts.color = theme::Text;
+    c.P().Text({r.x + 8, r.y + 4, r.w - 16, 16}, title, ts);
+    const Rect bar{r.x + 8, r.y + 22, r.w - 16, 10};
+    constexpr int kSteps = 32;
+    for (int i = 0; i < kSteps; ++i) {
+        const float x0 = bar.x + bar.w * static_cast<float>(i) / kSteps, x1 = bar.x + bar.w * static_cast<float>(i + 1) / kSteps;
+        c.P().FillRect({x0, bar.y, x1 - x0 + 0.5f, bar.h}, ramp((static_cast<float>(i) + 0.5f) / kSteps));
+    }
+    c.P().StrokeRect(bar, theme::Border);
+    ts.color = theme::TextDim;
+    c.P().Text({bar.x, bar.Bottom() + 2, bar.w, 14}, low, ts);
+    ts.h = ui::HAlign::Right;
+    c.P().Text({bar.x, bar.Bottom() + 2, bar.w, 14}, high, ts);
+}
+
+void DrawMapShape(ui::Context& c, std::span<const Vec2> pts, bool closed, ui::Color fill, bool selected, int hot, const Vec2* tail) {
+    if (pts.empty()) return;
+    if (closed && pts.size() >= 3 && fill.a > 0) {
+        ui::Path path;
+        path.Begin(pts[0]);
+        for (size_t i = 1; i < pts.size(); ++i) path.Line(pts[i]);
+        c.P().FillPath(path, fill.Alpha(fill.a * 0.35f));
+    }
+    const ui::Color line = selected ? theme::MapShapeSelected() : theme::MapShape();
+    const float width = selected ? 2.f : 1.5f;
+    for (size_t i = 0; i + 1 < pts.size(); ++i) c.P().Line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, line, width);
+    if (closed && pts.size() >= 3) c.P().Line(pts.back().x, pts.back().y, pts[0].x, pts[0].y, line, width);
+    if (tail) c.P().Line(pts.back().x, pts.back().y, tail->x, tail->y, line.Alpha(0.6f), 1.f);
+    if (!selected && closed) return;
+    for (size_t i = 0; i < pts.size(); ++i) {
+        const float s = static_cast<int>(i) == hot ? 5.f : 3.5f;
+        c.P().FillRect({pts[i].x - s, pts[i].y - s, 2 * s, 2 * s}, theme::Panel);
+        c.P().StrokeRect({pts[i].x - s, pts[i].y - s, 2 * s, 2 * s}, line, 1.5f);
+    }
+}
+
+void DrawMapReadout(ui::Context& c, float x, float y, std::wstring_view text) {
+    if (text.empty()) return;
+    const float w = c.P().TextWidth(text, 11) + 12;
+    const Rect r{x, y, w, 20};
+    c.P().FillRoundRect(r, 5, theme::Panel.Alpha(0.92f));
+    c.P().StrokeRoundRect(r, 5, theme::Border);
+    ui::TextStyle ts;
+    ts.size = 11;
+    ts.color = theme::Text;
+    c.P().Text({r.x + 6, r.y, r.w - 12, r.h}, text, ts);
+}
+
 void Tooltip(ui::Context& c, std::wstring_view text) {
     const std::wstring tip(text);
     c.AddOverlay([&c, tip] {

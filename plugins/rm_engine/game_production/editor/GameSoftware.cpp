@@ -1901,6 +1901,7 @@ private:
                                        },
                                        Utf8ToWide(TrU8(c.value.Type()->label)), {}, {}};
                 b.direct = play;  // (Play: 動いているコピーを、その場で変える)
+                b.hidden = HiddenSettingFields(host_.Registry(), *c.value.Type());  // (ほかのプラグインが隠す欄)
                 if (const SceneSettingLook* look = SettingLookOf(type); look && (look->menu || look->presets)) {
                     SceneSettingMenuHost mh;
                     mh.host = &host_;

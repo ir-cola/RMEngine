@@ -86,6 +86,8 @@ struct InspectBlock {
     bool direct = false;
     // 欄での右クリック (読み取り専用のブロックでも): その欄のメニュー (inspector::Block::fieldMenu)。
     std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
+    // 出さない欄 (inspector::Block::hidden)。
+    std::vector<std::string> hidden;
     // 決まった値を一度に入れる: 欄の上の 1 行 (inspector::Block::presets)。
     std::wstring presetLabel;
     std::vector<w::Action> presets;

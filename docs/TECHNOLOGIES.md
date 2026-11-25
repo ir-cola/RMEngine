@@ -1165,10 +1165,20 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **イベントの型は 1 つ** — `ClipEvent` (`RM_STRUCT`) は 3D 空間に置き、エディターの欄・`.meta` から読む・`.rmmesh` の EVNT に焼くのが全部同じ型 (憲法 1)。ゲームは `.meta` を読まない
 - **どこ** — `plugins/rm_engine/game_x_animation/runtime/` (`AnimatorRun.*`: 純粋な 1 体の再生・`AnimationSystem.*`: 2 つのシステムと `AttachedTransform`・`ScriptAnimator.*`・`sdk/RMAnim.h` / `RMAnimAbi.h`)・`plugins/rm_engine/game_production/runtime/Systems.h` (`SystemEvent`)・`Scripts.h` (`QueueSystemEvents`)・`plugins/rm_engine/space3d/runtime/ClipSettings.*`・`Skeleton.h` (`ClipEvent`)・`MeshBake.*` (EVNT)、`tests/TestGameAnimation.cpp`・`TestMeshBake.cpp`
 
+### 気候ビュー: 多角形を走査線で塗る・積分画像で平均を出す・ほかのプラグインが欄を隠す口 (2026-11-25)
+
+- **何か** — 気候のタブを「気候ビュー」にした。地図に気温・湿り気・雲の量を色の段で見せ、地帯を筆で塗るほかに**ペンで囲む**ことができ、囲んだ形は点を動かして直せる。雲の量も同じ地図に描き、雨と雪は雲のある所だけ降る
+- **多角形を走査線で塗る** (scanline polygon fill) — 形 (点の並び) をマス目に焼くとき、マスの行ごとに「その行の真ん中の高さで、どの辺と交わるか」を出して並べ、2 つずつ組にした間のマスを塗る (偶奇の規則: 自分と交わる形でも、交わる回数で内と外が決まる)。点が何千あっても、行の数 x 辺の数で済む。クリックの「形の中か」も同じ規則 (`InsideShape`)
+- **形はデータ、計算はマス** — 形は点のまま保存し (後で直せる)、計算の前にマス目へ焼いて、筆の塗りと同じ表 (積分画像) を引く。計算の式は 1 つのまま (憲法 2)。焼いた結果は地図の中身ごとに 1 回だけ作る
+- **積分画像で平均を出す** — 前は「その種類のマスの数」の表だけだった。雲では「塗ったマスの数」と「雲の量の和」の 2 つの表を作り、同じ箱の中で 和 ÷ 数 = 塗った所の平均、数 ÷ 箱の面積 = 塗った割合を、どちらも 4 回ずつ表を引くだけで出す。空に描く雲の地図 (64 m のマス) のように箱を大きくしても速さは同じ
+- **ほかのプラグインが欄を隠す口** — 天候の「雪にする」は、気候があると意味が無い (雨か雪かは気温で決まる)。でも天候は気候を知らない (憲法 10 の考え方)。そこで、ゲーム制作に「この設定のこの欄を隠して」と頼む口 (`kSceneSettingHidePoint`) を作り、両方を知っているつなぎ「天候 × 気候」が頼む。インスペクターは頼まれた欄を描かないだけで、値はファイルに残る (憲法 6)
+- **どこ** — `plugins/rm_engine/climate/runtime/Climate.*` (`ClimateShape`・`FillShape`・`InsideShape`・`BakedOf`・雲の層・`PaintTables::Clouds`)・`plugins/rm_engine/climate/editor/ClimateTab.cpp`・`plugins/rm_engine/weather_x_climate/runtime/Register.cpp` (`CloudRainOf`・`ApproachClouds`・`CloudCellsFor`)・`plugins/rm_engine/game_production/editor/SceneSettingLook.h` (`SceneSettingHide`)・`src/editor/widgets/Widgets.*` (`DrawMapHeat`・`DrawMapLegend`・`DrawMapShape`・`DrawMapReadout`)、`tests/TestClimate.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-25 | 気候ビュー: 多角形を走査線で塗る (偶奇の規則)・形はデータで計算はマス・積分画像で平均と割合・ほかのプラグインが欄を隠す口 |
 | 2026-11-25 | 雨と雪が当たる物をコライダーから見えているメッシュに (同じ GPU のメッシュを地図にだけ描く・動く物を言う口) |
 | 2026-11-24 | 積もった雪の縁を丸く (四分円の形・端までの距離を 4 向きで探す・隣の角は同じ探した結果から) を足した |
 | 2026-11-24 | 地図に塗った気候 (ランレングス・積分画像 summed-area table・表の使い回し・真上からの正射影・ドラッグ 1 回を Undo 1 件に) を足した |

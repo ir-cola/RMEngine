@@ -12,6 +12,7 @@
 #include "editor/lang/Lang.h"
 #include "ui/Types.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -231,6 +232,33 @@ inline Color SceneArea() { return IsLight ? Color::Hex(0x2B6FD6) : Color::Hex(0x
 inline Color SceneAreaInner() { return Mix(SceneArea(), SceneBackground(), 0.55f); }
 // 真上から見た地図 (気候のタブ) に塗った所の濃さ (色はユーザーのもの: 下の絵が透けるように)。
 inline float MapPaintAlpha() { return IsLight ? 0.50f : 0.45f; }
+// 地図に重ねる値の色 (気候のタブの「見る」: 0 .. 1 の値を色の段に)。気温: 寒い青 -> 暑い赤。湿り気: 乾いた
+// 黄土 -> 湿った青緑。雲: 晴れの空色 -> 厚い雲の灰色。
+namespace map_detail {
+inline Color Ramp(std::span<const uint32_t> stops, float t) {
+    if (stops.empty()) return Color{};
+    const float x = (std::isfinite(t) ? std::clamp(t, 0.f, 1.f) : 0.f) * static_cast<float>(stops.size() - 1);
+    const size_t i = std::min(static_cast<size_t>(x), stops.size() - 1), j = std::min(i + 1, stops.size() - 1);
+    return Mix(Color::Hex(stops[i]), Color::Hex(stops[j]), x - static_cast<float>(i));
+}
+}  // namespace map_detail
+inline Color MapTemperature(float t) {
+    static constexpr uint32_t kStops[] = {0x3B4CC0, 0x6F9BEF, 0xC9E3F2, 0xF6D776, 0xF08A4B, 0xB2182B};
+    return map_detail::Ramp(kStops, t);
+}
+inline Color MapHumidity(float t) {
+    static constexpr uint32_t kStops[] = {0xB98A4A, 0xE3CD8C, 0xBFE0B0, 0x52B3A6, 0x1F6F8B};
+    return map_detail::Ramp(kStops, t);
+}
+inline Color MapClouds(float t) {
+    static constexpr uint32_t kStops[] = {0x9FD3F5, 0xE8EEF2, 0xA9B1B8, 0x5D646B};
+    return map_detail::Ramp(kStops, t);
+}
+// 値の色の濃さ (下の絵が少し透ける)。
+inline float MapHeatAlpha() { return IsLight ? 0.62f : 0.58f; }
+// 地図に描いた形 (ペンで囲んだ所) の縁と、その点の印。
+inline Color MapShape() { return IsLight ? Color::Hex(0x1C2430) : Color::Hex(0xF2F5F8); }
+inline Color MapShapeSelected() { return Accent; }
 
 // --- ソフトが動いている (Play 中のゲーム): そのタブの行をアクセント色で染める -----------------
 inline Color RunningBar() { return Mix(Bg, Accent, IsLight ? 0.22f : 0.28f); }

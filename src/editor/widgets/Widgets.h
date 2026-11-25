@@ -189,6 +189,18 @@ void DrawMapGrid(ui::Context& c, const ui::Rect& area, float x0, float y0, float
 void DrawMapLine(ui::Context& c, float x1, float y1, float x2, float y2, ui::Color color);
 // 塗る筆の輪 (真ん中と半径 DIP)。`erase`: 消しゴム (危険の色)。
 void DrawMapBrush(ui::Context& c, float cx, float cy, float radius, bool erase);
+// 値の色のマス (気候のタブの「見る」: 気温・湿り気・雲)。`color` は theme::MapTemperature などのもの。
+// `strength`: 濃さに掛ける (0 .. 1。雲を塗った割合)。
+void DrawMapHeat(ui::Context& c, const ui::Rect& r, ui::Color color, float strength = 1.f);
+// 色の目盛り: 左から右へ `ramp` (0 .. 1) の色の帯、その下に左端・右端の値、上に見出し。
+void DrawMapLegend(ui::Context& c, const ui::Rect& r, std::wstring_view title, ui::Color (*ramp)(float), std::wstring_view low, std::wstring_view high);
+// ペンで囲んだ形 (画面の点。閉じていない = 描いている途中: `tail` があればそこまで線を伸ばす)。
+// `fill`: 中を薄く塗る色 (透明 = 塗らない)。`selected`: 縁をアクセントの色にし、点の印を出す。
+// `hot`: 印を大きくする点 (マウスが上にある。-1: 無し)。
+void DrawMapShape(ui::Context& c, std::span<const Vec2> points, bool closed, ui::Color fill, bool selected, int hot = -1,
+                  const Vec2* tail = nullptr);
+// カーソルの所の値 (地図の上の小さな札)。
+void DrawMapReadout(ui::Context& c, float x, float y, std::wstring_view text);
 // 縦の区切り線 (並んだ 2 つの部分の間: アセット パネルの木と並び)。
 void VSeparator(ui::Context& c, float x, float y, float height);
 // マウスの横のヒント。フレームの最後に (何よりも上に) 描く。

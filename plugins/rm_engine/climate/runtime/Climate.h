@@ -13,6 +13,7 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -83,6 +84,24 @@ struct ClimateKind {
     RM_PROPERTY(Edit, Label="湿り気 (%)", Tooltip="この気候の湿り気。0: からから 〜 50: ふつう 〜 100: じめじめ", Min=0, Max=100, Step=1, Decimals=0) float humidity = 50.f;
 };
 
+// 地図に描く層: 気候の種類 / 雲の量。
+RM_ENUM(Label="地図の層")
+enum class MapLayer {
+    RM_ITEM(Label="気候") Climate,
+    RM_ITEM(Label="雲") Clouds,
+};
+
+// 地図にペンで囲んだ形 (気候のタブ)。中のマスが、その層の値 (気候の種類 / 雲の量) になる。点は
+// ワールドの (x, z)。筆で塗ったマスの上に、並びの順で重なる (あとのものが上)。
+RM_STRUCT(Label="地図の形")
+struct ClimateShape {
+    RM_PROPERTY() MapLayer layer = MapLayer::Climate;
+    RM_PROPERTY() int kind = 0;           // 気候の層: 種類 (ClimateKind::id)
+    RM_PROPERTY() float clouds = 80.f;    // 雲の層: 雲の量 (%)
+    RM_PROPERTY() std::vector<Vec2> points;  // (x, z)。3 点から形になる
+};
+bool operator==(const ClimateShape& a, const ClimateShape& b);
+
 // 新しい地図に最初からある種類: 温帯 15 ℃ 50 % / 寒冷 -8 ℃ 60 % / 砂漠 32 ℃ 10 % / 熱帯 28 ℃ 85 %。
 std::vector<ClimateKind> DefaultClimateKinds();
 // 足した種類の色 (n 番目に足したもの。順に回る)。
@@ -93,6 +112,8 @@ Color ClimateKindColor(size_t n);
 // 幅 width・奥行き depth マス) の中を、行 (z の小さい行から) ごとに続けて読んだ種類の番号を、
 // 同じ番号の続き (ランレングス) で `cells` に書く。0 は塗っていない。地図の外と塗っていない所は
 // シーンの「気候」(エリアの外の気候) のまま。気候エリアは、この上に重なる。
+// 雲の量も同じマス目に塗る (cloud* : 値は 雲の量 + 1。0 は塗っていない = シーンの天気の雲のまま)。
+// ペンで囲んだ形 (shapes) は、計算の前にマスに焼いて、筆の塗りの上に重ねる (BakedOf)。
 RM_STRUCT(Label="気候の地図")
 struct ClimateMap {
     RM_PROPERTY(Edit, Label="地図の境目の幅 (m)", Tooltip="気候のタブで塗った所の縁をはさんで、この幅でなめらかに気候が変わります。0: マスの縁で切り替わる。塗るのは「気候」のタブです", Min=0, Max=10000, Step=1, Decimals=1) float border = 8.f;
@@ -103,18 +124,30 @@ struct ClimateMap {
     RM_PROPERTY() int width = 0;
     RM_PROPERTY() int depth = 0;
     RM_PROPERTY() std::string cells;  // ランレングス: "番号" か "番号*数" をカンマで区切る (EncodeRuns)
+    RM_PROPERTY() int cloudX = 0;
+    RM_PROPERTY() int cloudZ = 0;
+    RM_PROPERTY() int cloudWidth = 0;
+    RM_PROPERTY() int cloudDepth = 0;
+    RM_PROPERTY() std::string cloudCells;  // 雲の量 + 1 のランレングス
+    RM_PROPERTY() std::vector<ClimateShape> shapes;
 };
 
 // ある場所の気候。
 struct ClimateHere {
     float temperature = 15.f;  // ℃
     float humidity = 50.f;     // %
+    // 地図に塗った雲: まわりの (境目の幅の正方形の) うち雲を塗った割合 (0 .. 1) と、そこの雲の量の
+    // 平均 (%)。その場所の雲の量 = (1 - cloudWeight) x シーンの雲の量 + cloudWeight x cloudAmount
+    // (シーンの雲の量は天候のもの: 混ぜるのはつなぎ 天候 × 気候)。
+    float cloudWeight = 0;
+    float cloudAmount = 0;
 };
 
 // --- 気候の地図 (純粋) -----------------------------------------------------------------------
 
 inline constexpr float kMinCellSize = 0.5f, kMaxCellSize = 1000.f;
 inline constexpr int kMaxPaintCells = 2048;  // 塗った所の長方形の一辺のマスの数の上限 (表の大きさを抑える)
+inline constexpr size_t kMaxShapePoints = 4096;  // 1 つの形の点の数の上限
 
 // 塗ったマスを広げたもの (地図の `cells` を読んだもの)。マスの番号はワールドのもの: floor(x / cellSize)。
 struct PaintGrid {
@@ -129,9 +162,22 @@ struct PaintGrid {
 std::string EncodeRuns(std::span<const int> ids);
 // その逆。`count` 個にそろえる (足りない分は 0、多い分は捨てる)。読めない所は 0。
 std::vector<int> DecodeRuns(std::string_view text, size_t count);
-PaintGrid PaintOf(const ClimateMap& map);
-// `grid` を地図に書く (塗った所だけを囲む長方形に縮める。何も塗っていない: 幅 0)。
-void SetPaint(ClimateMap& map, const PaintGrid& grid);
+// 層 `layer` の筆の塗り (気候: 種類の番号 / 雲: 雲の量 + 1)。
+PaintGrid PaintOf(const ClimateMap& map, MapLayer layer = MapLayer::Climate);
+// `grid` を地図の層 `layer` に書く (塗った所だけを囲む長方形に縮める。何も塗っていない: 幅 0)。
+void SetPaint(ClimateMap& map, const PaintGrid& grid, MapLayer layer = MapLayer::Climate);
+// 雲の量 (%) <-> 雲の層のマスの値 (雲の量 + 1。0 は塗っていない)。
+int CloudCellOf(float clouds);
+float CloudsOfCell(int cell);
+// 形のマスの値 (気候: 種類 (地図に無い種類: 0) / 雲: 雲の量 + 1)。
+int ShapeCellOf(const ClimateMap& map, const ClimateShape& shape);
+// 点 `points` (x, z) で囲んだ形の中に、真ん中が入るマス (偶奇の規則) を `id` にする。長方形は
+// いるだけ広げる (PaintCircle と同じ上限)。変わったら true。3 点より少ないと何もしない。
+bool FillShape(PaintGrid& grid, float cellSize, std::span<const Vec2> points, int id);
+// 層 `layer` の、計算に使うマス: 筆の塗りの上に、その層の形を並びの順に焼いたもの。
+PaintGrid BakedOf(const ClimateMap& map, MapLayer layer);
+// 点 `p` が形の中か (偶奇の規則)。
+bool InsideShape(std::span<const Vec2> points, Vec2 p);
 // 真ん中 `center` (ワールドの x, z)・半径 `radius` (m) の円の中に、真ん中が入るマスを `id` にする
 // (0: 消す)。円が小さくてもその真ん中のマス 1 つは塗る。長方形はいるだけ広げる (一辺 kMaxPaintCells
 // まで。それより外は塗らない)。変わったら true。
@@ -140,7 +186,7 @@ bool PaintCircle(PaintGrid& grid, float cellSize, Vec2 center, float radius, int
 PaintGrid Resample(const PaintGrid& grid, float from, float to);
 // 地図に足す種類の新しい番号 (今の一番大きいものの次)。
 int NewKindId(const ClimateMap& map);
-// 種類 `id` と、それで塗ったマスを消す。
+// 種類 `id` と、それで塗ったマスと、その種類の形を消す。
 void RemoveKind(ClimateMap& map, int id);
 const ClimateKind* FindKind(const ClimateMap& map, int id);
 
@@ -152,25 +198,36 @@ public:
     explicit PaintTables(const ClimateMap& map);
     // 場所 `xz` (ワールドの x, z) の気候: 塗った割合 w の分だけ、その種類の気温と湿り気に寄せる
     // (残りの 1 - Σw は `outside`)。
+    // 雲も入れる (cloudWeight / cloudAmount)。
     ClimateHere Blend(ClimateHere outside, Vec2 xz) const;
     // それぞれの種類の割合 (地図の kinds の並び。塗っていない種類は 0)。
     std::vector<float> Weights(Vec2 xz) const;
-    bool Empty() const { return kinds_.empty(); }
+    // 場所 `xz` のまわりの、一辺 2 x `half` m (< 0: 境目の幅) の正方形の中の雲 (割合と、塗った所の平均)。
+    void Clouds(Vec2 xz, float half, float& weight, float& amount) const;
+    bool Empty() const { return kinds_.empty() && cloudCount_.sums.empty(); }
+    bool HasClouds() const { return !cloudCount_.sums.empty(); }
 
 private:
+    // 積分画像: (width + 1) x (depth + 1)。行 < j、列 < i の中のマスの値の和。
+    struct Table {
+        int cellX = 0, cellZ = 0, width = 0, depth = 0;
+        std::vector<int32_t> sums;
+        // 長方形 (ワールドのマスの単位 u0 .. u1, v0 .. v1) の中の値の和 (端数のマスは面積の分)。
+        double Area(double u0, double v0, double u1, double v1) const;
+        double Sum(double u, double v) const;  // (長方形の角から)
+    };
+    static Table MakeTable(const PaintGrid& g, const std::function<int(int)>& value);
     struct Kind {
         size_t index = 0;  // 地図の kinds の中
         int id = 0;
         float temperature = 0, humidity = 0;
-        std::vector<int32_t> sums;  // (width + 1) x (depth + 1): 行 < j、列 < i の中のこの種類のマスの数
+        Table table;  // この種類のマスの数
     };
-    double Area(const Kind& k, double u0, double v0, double u1, double v1) const;
-    double Sum(const Kind& k, double u, double v) const;
-    int cellX_ = 0, cellZ_ = 0, width_ = 0, depth_ = 0;
     float cellSize_ = 4, half_ = 0;  // 正方形の半分の一辺 (m) = 境目の幅 / 2
     size_t kindCount_ = 0;
-    PaintGrid grid_;  // (境目の幅 0: そのマスだけを見る)
+    PaintGrid grid_, clouds_;  // (境目の幅 0: そのマスだけを見る)
     std::vector<Kind> kinds_;
+    Table cloudCount_, cloudSum_;  // 雲を塗ったマスの数と、雲の量の和
 };
 // 地図 `map` の表 (同じ中身の地図には、作ってある表を使い回す: 天候は 1 コマに何十回も ClimateField
 // を作るため)。塗った所が無ければ null。
@@ -210,6 +267,11 @@ public:
     explicit ClimateField(const game_production::Scene& scene);
     // 3D の場所 (気候の地図・3D のエリアと、高さで冷える)。地図は (x, z) で引く。
     ClimateHere At(Vec3 position) const;
+    // 地図に塗った雲だけ (ワールドの x, z)。`half`: 見る正方形の半分の一辺 (m。< 0: 地図の境目の幅の半分)。
+    // 雲を塗っていない: weight 0。
+    void CloudsAt(Vec2 xz, float half, float& weight, float& amount) const;
+    // 地図に雲を塗った所があるか。
+    bool HasClouds() const { return paint_ && paint_->HasClouds(); }
     // 2D の場所 (2D のエリアだけ。高さでは冷えない)。
     ClimateHere At2D(Vec2 position) const;
     // エリアの外の気候 (シーンに設定が無ければ既定の値)。

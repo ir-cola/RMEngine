@@ -3,6 +3,7 @@
 
 #include "Test.h"
 
+#include "core/reflect/Data.h"
 #include "rm_engine/climate/runtime/Climate.h"
 #include "rm_engine/climate/runtime/ScriptClimate.h"
 #include "rm_engine/climate/runtime/sdk/RMClimateAbi.h"
@@ -333,4 +334,174 @@ RM_TEST(Climate_WeatherPlace) {
         CHECK(weather::WetCellAt(*map, 60, 0)->at(0).sun > weather::WetCellAt(*map, 100, 0)->at(0).sun);
         CHECK(weather::WetCellAt(*map, 119, 0)->at(0).snow > 0.01f && weather::WetCellAt(*map, 125, 0)->at(0).snow == 0.f);  // (縁が 120 m: 境目 0)
     }
+}
+
+// 気候ビュー: ペンで囲んだ形。中のマス (真ん中が入るもの) がその値になり、筆の塗りの上に重なる。
+RM_TEST(Climate_ShapeFill) {
+    const std::vector<Vec2> square{{0, 0}, {8, 0}, {8, 8}, {0, 8}};
+    CHECK(InsideShape(square, {4, 4}) && !InsideShape(square, {9, 4}) && !InsideShape(std::vector<Vec2>{{0, 0}, {1, 1}}, {0.5f, 0.5f}));
+    PaintGrid g;
+    CHECK(FillShape(g, 2.f, square, 3));
+    CHECK(g.At(0, 0) == 3 && g.At(3, 3) == 3 && g.At(4, 0) == 0 && g.At(-1, 0) == 0);
+    CHECK(!FillShape(g, 2.f, square, 3));  // (変わらない)
+    // 三角: 斜めの辺の外のマスは入らない。
+    PaintGrid t;
+    FillShape(t, 1.f, std::vector<Vec2>{{0, 0}, {10, 0}, {0, 10}}, 1);
+    CHECK(t.At(0, 0) == 1 && t.At(8, 0) == 1 && t.At(8, 8) == 0 && t.At(4, 4) == 1 && t.At(5, 5) == 0);
+    // 3 点より少ない・壊れた点: 何もしない。
+    PaintGrid none;
+    CHECK(!FillShape(none, 1.f, std::vector<Vec2>{{0, 0}, {1, 0}}, 1) && none.Empty());
+    CHECK(!FillShape(none, 1.f, std::vector<Vec2>{{0, 0}, {NAN, 0}, {1, 1}}, 1));
+
+    // 地図: 筆で温帯 (1) を塗った上に、砂漠 (3) の形。焼いたマスと計算。
+    ClimateMap map;
+    map.cellSize = 2;
+    map.border = 0;
+    PaintGrid brush;
+    PaintCircle(brush, 2, {0, 0}, 20, 1);
+    SetPaint(map, brush);
+    ClimateShape desert;
+    desert.kind = 3;
+    desert.points = {{-6, -6}, {6, -6}, {6, 6}, {-6, 6}};
+    map.shapes.push_back(desert);
+    const PaintGrid baked = BakedOf(map, MapLayer::Climate);
+    CHECK(baked.At(0, 0) == 3 && baked.At(-3, -3) == 3 && baked.At(5, 0) == 1);
+    const auto tables = PaintTablesOf(map);
+    CHECK(tables != nullptr);
+    const ClimateHere inDesert = tables->Blend({15, 50}, {1, 1}), inBrush = tables->Blend({15, 50}, {12, 0});
+    CHECK(Near(inDesert.temperature, 32) && Near(inDesert.humidity, 10) && Near(inBrush.temperature, 15));
+    // 形だけの地図でも表ができる。無い種類の形は焼かない。
+    ClimateMap only;
+    only.border = 0;
+    ClimateShape cold;
+    cold.kind = 2;
+    cold.points = {{0, 0}, {20, 0}, {20, 20}};
+    only.shapes.push_back(cold);
+    CHECK(PaintTablesOf(only) != nullptr && Near(PaintTablesOf(only)->Blend({15, 50}, {15, 3}).temperature, -8));
+    only.shapes[0].kind = 99;
+    CHECK(BakedOf(only, MapLayer::Climate).Empty());
+    // 種類を消すと、その種類の形も消える。
+    RemoveKind(map, 3);
+    CHECK(map.shapes.empty() && BakedOf(map, MapLayer::Climate).At(0, 0) == 1);
+    // 保存と読み込み (形・雲の塗り): 自己記述の JSON で戻る。
+    ClimateMap saved;
+    saved.shapes.push_back(desert);
+    saved.shapes[0].layer = MapLayer::Clouds;
+    saved.shapes[0].clouds = 65;
+    saved.cloudX = 3;
+    saved.cloudWidth = 2;
+    saved.cloudDepth = 1;
+    saved.cloudCells = "81*2";
+    ClimateMap loaded;
+    reflect::Load(loaded, reflect::Save(saved));
+    CHECK(loaded.shapes.size() == 1 && loaded.shapes[0] == saved.shapes[0] && loaded.cloudCells == "81*2" && loaded.cloudX == 3 && loaded.cloudWidth == 2);
+}
+
+// 気候ビュー: 雲の層。塗った雲の割合と、そこの雲の量の平均 (箱フィルター)。気候エリアは雲を変えない。
+RM_TEST(Climate_CloudLayer) {
+    CHECK(CloudCellOf(0) == 1 && CloudCellOf(80) == 81 && CloudCellOf(150) == 101 && CloudCellOf(NAN) == 1);
+    CHECK(CloudsOfCell(0) == 0.f && CloudsOfCell(81) == 80.f && CloudsOfCell(500) == 100.f);
+    Scene sc = ClimateScene();
+    sc.SetSettingTypes({&reflect::TypeOf<ClimateSettings>(), &reflect::TypeOf<ClimateMap>()});
+    ClimateMap& map = *sc.Setting<ClimateMap>();
+    map.cellSize = 2;
+    map.border = 8;
+    PaintGrid clouds;
+    PaintCircle(clouds, 2, {0, 0}, 30, CloudCellOf(80));
+    SetPaint(map, clouds, MapLayer::Clouds);
+    CHECK(PaintOf(map).Empty() && !PaintOf(map, MapLayer::Clouds).Empty());  // (気候の層はそのまま)
+    // 雲の形 (20 %) を右に重ねる。
+    ClimateShape thin;
+    thin.layer = MapLayer::Clouds;
+    thin.clouds = 20;
+    thin.points = {{100, -10}, {120, -10}, {120, 10}, {100, 10}};
+    map.shapes.push_back(thin);
+    const ClimateField field(sc);
+    CHECK(field.HasClouds());
+    ClimateHere mid = field.At({0, 0, 0});
+    CHECK(Near(mid.cloudWeight, 1) && Near(mid.cloudAmount, 80) && Near(mid.temperature, 15));
+    ClimateHere far = field.At({60, 0, 0});
+    CHECK(far.cloudWeight == 0.f);
+    float w = 0, a = 0;
+    field.CloudsAt({110, 0}, -1, w, a);
+    CHECK(Near(w, 1) && Near(a, 20));
+    // 縁: 境目の幅の正方形の半分だけ塗った所。
+    field.CloudsAt({100, 0}, -1, w, a);
+    CHECK(Near(w, 0.5f, 0.05f) && Near(a, 20));
+    // 広い箱で見る (空の雲の地図: 64 m 四方): 塗った所の割合と平均。
+    field.CloudsAt({110, 0}, 32, w, a);
+    CHECK(w > 0.05f && w < 0.15f && Near(a, 20));
+    // 2 種類の量がまざる所は平均。
+    ClimateMap both;
+    both.border = 0;
+    PaintGrid half;
+    PaintCircle(half, 4, {2, 2}, 1, CloudCellOf(100));
+    PaintCircle(half, 4, {6, 2}, 1, CloudCellOf(0));
+    SetPaint(both, half, MapLayer::Clouds);
+    const auto t = PaintTablesOf(both);
+    CHECK(t && t->HasClouds());
+    t->Clouds({4, 2}, 4, w, a);  // (0 .. 8 x 0 .. 4 の半分ずつ。箱は -0 .. 8 x -2 .. 6)
+    CHECK(Near(w, 0.5f) && Near(a, 50));
+}
+
+// 天候 × 気候: 雨と雪は雲のある所だけ。カメラのいる所の雲と、空に描く雲の地図。
+RM_TEST(Climate_CloudWeather) {
+    using namespace rm::weather_x_climate;
+    CHECK(RainUnderClouds(10) == 0.f && RainUnderClouds(30) == 0.f && RainUnderClouds(60) == 1.f && RainUnderClouds(90) == 1.f);
+    CHECK(Near(RainUnderClouds(45), 0.5f));
+    CHECK(CloudRainOf(0, 0) == 1.f && CloudRainOf(1, 0) == 0.f && Near(CloudRainOf(0.5f, 0), 0.5f) && CloudRainOf(1, 80) == 1.f);
+    ClimateHere dry;
+    dry.cloudWeight = 1;
+    dry.cloudAmount = 10;
+    CHECK(PlaceOf(dry).more == 0.f);
+    ClimateHere wet = dry;
+    wet.cloudAmount = 90;
+    CHECK(Near(PlaceOf(wet).more, 1.f));
+    // 近づける: 初めはすぐ。量は塗った所にいるときだけ動く。
+    float clouds = -1, share = 0;
+    ApproachClouds(clouds, share, 1.f, 90.f, 0.016f);
+    CHECK(clouds == 90.f && share == 1.f);
+    ApproachClouds(clouds, share, 0.f, 0.f, 2.f);
+    CHECK(clouds == 90.f && Near(share, 0.3679f));
+    // 天候の今の天候: 雲の量を、塗った割合の分だけ寄せる。
+    weather::Weather w;
+    w.cloudAmount = 20;
+    CHECK(Near(weather::TargetOf(w).clouds, 0.2f));
+    w.placeClouds = 100;
+    w.placeCloudShare = 0.5f;
+    CHECK(Near(weather::TargetOf(w).clouds, 0.6f));
+    w.placeClouds = -1;
+    CHECK(Near(weather::TargetOf(w).clouds, 0.2f));
+    // シーン: 雲を (0, 0) のまわりに塗る。カメラがそこにいると、システムが雲と雲の地図を書く。
+    Scene sc = ClimateScene();
+    sc.SetSettingTypes({&reflect::TypeOf<ClimateSettings>(), &reflect::TypeOf<ClimateMap>(), &reflect::TypeOf<weather::Weather>()});
+    ClimateMap& map = *sc.Setting<ClimateMap>();
+    map.cellSize = 4;
+    map.border = 0;
+    PaintGrid g;
+    PaintCircle(g, 4, {0, 0}, 100, CloudCellOf(10));  // 晴れの雲 (10 %): そこでは降らない
+    SetPaint(map, g, MapLayer::Clouds);
+    RuntimeRegistry reg;
+    RegisterRuntime(reg);
+    const auto places = reg.Contributions<weather::WeatherPlaceInfo>(weather::kWeatherPlacePoint);
+    weather::WeatherPlace grid[9];
+    places[0].item->grid(sc, {150, 0, 0}, 150.f, 3, grid);  // (x: 0, 150, 300)
+    CHECK(grid[3].more == 0.f && Near(grid[4].more, 1.f) && Near(grid[5].more, 1.f));
+    const int cam = sc.Create("カメラ");
+    Add<space3d::Transform>(sc, cam).position = {0, 0, 0};
+    game_production::SystemContext ctx{sc, 0.016f};
+    ctx.camera = static_cast<uint64_t>(cam);
+    for (const auto& sys : reg.Contributions<game_production::SystemInfo>(game_production::kSystemPoint)) sys.item->run(ctx);
+    const weather::Weather& ww = *sc.Setting<weather::Weather>();
+    CHECK(Near(ww.placeClouds, 10) && Near(ww.placeCloudShare, 1));
+    constexpr size_t n = weather::kCloudMapCells;
+    CHECK(ww.cloudCells.size() == n * n && ww.cloudShares.size() == n * n);
+    // カメラのマス (真ん中の 1 つ前後) は塗った所、端は塗っていない。
+    const size_t center = (n / 2) * n + n / 2;
+    CHECK(Near(ww.cloudShares[center], 1) && Near(ww.cloudCells[center], 10) && ww.cloudShares[0] == 0.f);
+    CHECK(Near(ww.cloudFirstX, (-static_cast<float>(n / 2) + 0.5f) * weather::kCloudMapCell));
+    // 雲を塗っていない地図: 書かない (今までどおり)。
+    SetPaint(map, PaintGrid{}, MapLayer::Clouds);
+    for (const auto& sys : reg.Contributions<game_production::SystemInfo>(game_production::kSystemPoint)) sys.item->run(ctx);
+    CHECK(ww.placeClouds == -1.f && ww.cloudCells.empty() && ww.cloudShares.empty());
 }
