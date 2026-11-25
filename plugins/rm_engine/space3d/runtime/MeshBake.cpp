@@ -1,5 +1,6 @@
 #include "rm_engine/space3d/runtime/MeshBake.h"
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 
@@ -27,6 +28,17 @@ public:
         Put(c.g);
         Put(c.b);
         Put(c.a);
+    }
+    void V3(Vec3 v) {
+        Put(v.x);
+        Put(v.y);
+        Put(v.z);
+    }
+    void Q(Quat q) {
+        Put(q.x);
+        Put(q.y);
+        Put(q.z);
+        Put(q.w);
     }
     // 1 つのチャンク: タグ、サイズ、そして `fill` が書くもの。
     template <class F>
@@ -58,6 +70,8 @@ public:
         return true;
     }
     bool Color4(Color& c) { return Get(c.r) && Get(c.g) && Get(c.b) && Get(c.a); }
+    bool V3(Vec3& v) { return Get(v.x) && Get(v.y) && Get(v.z); }
+    bool Q(Quat& q) { return Get(q.x) && Get(q.y) && Get(q.z) && Get(q.w); }
     // 少なくとも 1 つ `each` バイトある項目の個数 (残りのバイトに収まる数を超えない)。
     bool Count(uint32_t& n, size_t each) { return Get(n) && static_cast<uint64_t>(n) * each <= b_.size(); }
     std::string_view Rest() const { return b_; }
@@ -114,6 +128,78 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
             for (size_t s = 0; s < 4; ++s) o.Put<uint8_t>(i < pictures.size() ? PackSampling(pictures[i].sampling[s]) : 0);
         }
     });
+    if (mesh.skin) {
+        const SkinData& skin = *mesh.skin;
+        const size_t bones = skin.skeleton.bones.size();
+        o.Chunk("SKEL", [&] {
+            o.Put<uint32_t>(static_cast<uint32_t>(bones));
+            for (const Bone& b : skin.skeleton.bones) {
+                o.Str(b.name);
+                o.Put<int32_t>(b.parent);
+                o.V3(b.rest.t);
+                o.Q(b.rest.r);
+                o.V3(b.rest.s);
+            }
+        });
+        o.Chunk("SKIN", [&] {
+            o.Put<uint32_t>(static_cast<uint32_t>(skin.vertices.size()));
+            for (const SkinVertex& v : skin.vertices) {
+                for (const uint16_t b : v.bone) o.Put(b);
+                for (const uint16_t w : v.weight) o.Put(w);
+            }
+        });
+        o.Chunk("IBND", [&] {
+            o.Put<uint32_t>(static_cast<uint32_t>(bones));
+            for (size_t i = 0; i < bones; ++i) {
+                const Mat4 m = i < skin.inverseBind.size() ? skin.inverseBind[i] : Mat4{};
+                for (int c = 0; c < 4; ++c) {
+                    for (int r = 0; r < 4; ++r) o.Put(m.m[c][r]);
+                }
+            }
+        });
+        o.Chunk("BBOX", [&] {
+            o.Put<uint32_t>(static_cast<uint32_t>(bones));
+            for (size_t i = 0; i < bones; ++i) {
+                o.V3(i < skin.boundsMin.size() ? skin.boundsMin[i] : Vec3{1e30f, 1e30f, 1e30f});
+                o.V3(i < skin.boundsMax.size() ? skin.boundsMax[i] : Vec3{-1e30f, -1e30f, -1e30f});
+            }
+        });
+    }
+    if (!mesh.clips.empty()) {
+        o.Chunk("ANIM", [&] {
+            o.Put<uint32_t>(static_cast<uint32_t>(mesh.clips.size()));
+            for (const Clip& clip : mesh.clips) {
+                o.Str(clip.name);
+                o.Put(clip.duration);
+                o.Put(clip.rate);
+                o.Put(clip.frames);
+                o.Put<uint32_t>(static_cast<uint32_t>(clip.tracks.size()));
+                for (const BoneTrack& t : clip.tracks) {
+                    o.Str(t.bone);
+                    o.Put<uint32_t>(static_cast<uint32_t>(t.t.size()));
+                    for (const Vec3& v : t.t) o.V3(v);
+                    o.Put<uint32_t>(static_cast<uint32_t>(t.r.size()));
+                    for (const Quat& q : t.r) o.Q(q);
+                    o.Put<uint32_t>(static_cast<uint32_t>(t.s.size()));
+                    for (const Vec3& v : t.s) o.V3(v);
+                }
+            }
+        });
+        if (std::any_of(mesh.clips.begin(), mesh.clips.end(), [](const Clip& c) { return !c.events.empty(); })) {
+            o.Chunk("EVNT", [&] {
+                o.Put<uint32_t>(static_cast<uint32_t>(mesh.clips.size()));
+                for (const Clip& clip : mesh.clips) {
+                    o.Put<uint32_t>(static_cast<uint32_t>(clip.events.size()));
+                    for (const ClipEvent& ev : clip.events) {
+                        o.Put(ev.time);
+                        o.Str(ev.name);
+                        o.Put(ev.number);
+                        o.Str(ev.text);
+                    }
+                }
+            });
+        }
+    }
     return o.bytes;
 }
 
@@ -129,6 +215,11 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
     if (format > kBakedMeshFormat) return fail(std::format("新しい版で焼いたモデルです (形式 {} / この版は {} まで)", format, kBakedMeshFormat));
     MeshData m;
     std::vector<std::array<uint8_t, 4>> sharp;  // マテリアルごと (SHRP)
+    // 骨 (SKEL SKIN IBND BBOX): 全部読んでから確かめて、MeshData::skin にする。
+    std::optional<Skeleton> skel;
+    std::optional<std::vector<SkinVertex>> skinVertices;
+    std::optional<std::vector<Mat4>> inverseBind;
+    std::vector<Vec3> boundsMin, boundsMax;
     std::string_view rest = in.Rest();
     while (!rest.empty()) {
         if (rest.size() < 12) return fail("焼いたモデルが壊れています (途中で切れています)");
@@ -193,6 +284,67 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
             for (auto& sm : sharp) {
                 for (uint8_t& b : sm) ok = ok && c.Get(b);
             }
+        } else if (tag == "SKEL") {
+            ok = c.Count(n, 4 + 4 + 40) && n <= kMaxBones;
+            skel.emplace();
+            skel->bones.resize(ok ? n : 0);
+            for (Bone& b : skel->bones) {
+                int32_t parent = -1;
+                ok = ok && c.Str(b.name) && c.Get(parent) && c.V3(b.rest.t) && c.Q(b.rest.r) && c.V3(b.rest.s);
+                b.parent = parent;
+            }
+        } else if (tag == "SKIN") {
+            ok = c.Count(n, 16);
+            skinVertices.emplace(ok ? n : 0);
+            for (SkinVertex& v : *skinVertices) {
+                for (uint16_t& b : v.bone) ok = ok && c.Get(b);
+                for (uint16_t& w : v.weight) ok = ok && c.Get(w);
+            }
+        } else if (tag == "IBND") {
+            ok = c.Count(n, 64);
+            inverseBind.emplace(ok ? n : 0);
+            for (Mat4& mat : *inverseBind) {
+                for (int col = 0; col < 4; ++col) {
+                    for (int r = 0; r < 4; ++r) ok = ok && c.Get(mat.m[col][r]);
+                }
+            }
+        } else if (tag == "BBOX") {
+            ok = c.Count(n, 24);
+            boundsMin.resize(ok ? n : 0);
+            boundsMax.resize(ok ? n : 0);
+            for (size_t i = 0; ok && i < n; ++i) ok = c.V3(boundsMin[i]) && c.V3(boundsMax[i]);
+        } else if (tag == "ANIM") {
+            ok = c.Count(n, 4 + 12 + 4);
+            m.clips.resize(ok ? n : 0);
+            for (Clip& clip : m.clips) {
+                uint32_t tracks = 0;
+                ok = ok && c.Str(clip.name) && c.Get(clip.duration) && c.Get(clip.rate) && c.Get(clip.frames) && c.Count(tracks, 4 + 12);
+                ok = ok && clip.frames >= 1 && clip.rate > 0 && clip.rate <= kMaxClipRate && clip.duration >= 0;
+                clip.tracks.resize(ok ? tracks : 0);
+                for (BoneTrack& t : clip.tracks) {
+                    // 各列の数は 0・1・frames のどれか。
+                    auto count = [&](uint32_t& k, size_t each) { return c.Count(k, each) && (k <= 1 || k == clip.frames); };
+                    uint32_t k = 0;
+                    ok = ok && c.Str(t.bone) && count(k, 12);
+                    t.t.resize(ok ? k : 0);
+                    for (Vec3& v : t.t) ok = ok && c.V3(v);
+                    ok = ok && count(k, 16);
+                    t.r.resize(ok ? k : 0);
+                    for (Quat& q : t.r) ok = ok && c.Q(q);
+                    ok = ok && count(k, 12);
+                    t.s.resize(ok ? k : 0);
+                    for (Vec3& v : t.s) ok = ok && c.V3(v);
+                }
+            }
+        } else if (tag == "EVNT") {
+            // (ANIM の後に書く。クリップの数が合わなければ壊れている)
+            ok = c.Count(n, 4) && n == m.clips.size();
+            for (size_t k = 0; ok && k < n; ++k) {
+                uint32_t events = 0;
+                ok = c.Count(events, 4 + 4 + 4 + 4);
+                m.clips[k].events.resize(ok ? events : 0);
+                for (ClipEvent& ev : m.clips[k].events) ok = ok && c.Get(ev.time) && c.Str(ev.name) && c.Get(ev.number) && c.Str(ev.text);
+            }
         }  // (このバージョンが知らないタグ: 飛ばす)
         if (!ok) return fail(std::format("焼いたモデルの {} が壊れています", std::string(tag)));
     }
@@ -203,6 +355,31 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
         if (static_cast<uint64_t>(p.firstIndex) + p.indexCount > m.indices.size() || p.material >= static_cast<int>(m.materials.size())) {
             return fail("焼いたモデルの部分が壊れています");
         }
+    }
+    if (skel || skinVertices || inverseBind) {
+        if (!skel || !skinVertices || !inverseBind) return fail("焼いたモデルの骨が壊れています (SKEL / SKIN / IBND のどれかがありません)");
+        const size_t bones = skel->bones.size();
+        if (!ParentsFirst(*skel) || inverseBind->size() != bones || skinVertices->size() != m.vertices.size()) {
+            return fail("焼いたモデルの骨が壊れています (親の番号か、数が合いません)");
+        }
+        for (const SkinVertex& v : *skinVertices) {
+            for (size_t k = 0; k < 4; ++k) {
+                if (v.weight[k] > 0 && v.bone[k] >= bones) return fail("焼いたモデルの骨が壊れています (頂点が無い骨を指しています)");
+            }
+        }
+        SkinData skin;
+        skin.skeleton = std::move(*skel);
+        skin.vertices = std::move(*skinVertices);
+        skin.inverseBind = std::move(*inverseBind);
+        if (boundsMin.size() == bones) {
+            skin.boundsMin = std::move(boundsMin);
+            skin.boundsMax = std::move(boundsMax);
+        } else {
+            std::vector<Vec3> positions(m.vertices.size());
+            for (size_t i = 0; i < positions.size(); ++i) positions[i] = m.vertices[i].position;
+            ComputeBoneBounds(skin, positions);
+        }
+        m.skin = std::move(skin);
     }
     if (samplingOfImage) {
         samplingOfImage->assign(m.images.size(), TextureSampling{});

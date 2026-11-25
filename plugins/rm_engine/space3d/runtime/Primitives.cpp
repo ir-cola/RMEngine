@@ -153,6 +153,9 @@ MeshData ShapeMesh(Shape shape) {
     }
     FaceOut(m);  // (箱の角は、巻き方向で並べていない)
     ComputeBounds(m);
+    // 部品は 1 つで、材質の 0 番で塗る (形は自分の材質を持たない: 描く物が 0 番を渡せばそれ、
+    // 渡さなければ白 x 描画の色 - ゲーム制作 × 3D のマテリアル)。
+    m.parts = {MeshPart{0, static_cast<uint32_t>(m.indices.size()), 0}};
     return m;
 }
 

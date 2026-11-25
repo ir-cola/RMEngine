@@ -53,6 +53,8 @@ struct Pass {
     // フィールドのブロックのメニュー (Block::fieldMenu) と、今右クリックで開いてよいか。
     const std::function<std::vector<w::Action>(const reflect::FieldPath&, std::string_view)>* fieldMenu = nullptr;
     bool menusOk = false;
+    // 文字のフィールドの選択肢 (Block::choices)。
+    const std::function<std::optional<std::vector<Choice>>(const reflect::FieldPath&)>* choices = nullptr;
 
     void Put(Edit e) {
         if (!wrap) {
@@ -159,6 +161,8 @@ struct Spot {
     Rect scrub;                   // ドラッグすると 1 つの数を変えるラベル (w = 0: なし)
     // 新しい値の Edit (path、before、label - ブロックのもの)。`merge` / `component` を足す。
     std::function<Edit(json::Value)> editFor;
+    // 文字: 選べる値 (Block::choices。nullopt: 文字の欄)。
+    std::optional<std::vector<Choice>> choices;
 };
 
 // 参照が持つ ID を文字にしたもの ("" = なし)。
@@ -277,6 +281,54 @@ void DrawRef(Pass& x, const Spot& s, const Put& put) {
     });
 }
 
+// 選択肢のある文字: 箱に今の値の名前 (クリックでリスト)。一覧に無い値はそのまま見せて残す。
+void DrawChoices(Pass& x, const Spot& s, const std::string& cur, bool differ) {
+    ui::Context& c = x.c;
+    const std::vector<Choice>& list = *s.choices;
+    const auto found = std::find_if(list.begin(), list.end(), [&](const Choice& ch) { return ch.value == cur; });
+    const std::wstring shown = differ ? Utf8ToWide(kMixed) : found != list.end() ? found->label : Utf8ToWide(cur) + L" " + Tr(L"(見つかりません)");
+    const ui::Id popupId = c.MakeId("v");
+    if (w::ComboBox(c, "v", s.r, shown, s.enabled).clicked) {
+        x.st.popup.OpenAt(s.r.x, s.r.Bottom() + 2);
+        x.st.popupId = popupId;
+        x.st.pickSearch.clear();
+    }
+    if (!x.st.popup.open || x.st.popupId != popupId) return;
+    State* st = &x.st;
+    const bool longList = list.size() > kShortEnum;
+    const float width = std::max(s.r.w, longList ? 260.f : 180.f);
+    const bool withOthers = !s.others.empty();
+    c.AddOverlay([&c, st, list, width, withOthers, longList, editFor = s.editFor, wrap = x.wrap] {
+        const bool wasEnabled = c.InputEnabled();
+        c.SetInputEnabled(true);
+        int picked = -1;
+        if (longList) {
+            std::vector<size_t> which;
+            std::vector<w::PickRow> rows;
+            for (size_t i = 0; i < list.size(); ++i) {
+                if (!st->pickSearch.empty() && !tree::NameMatches(WideToUtf8(list[i].label), st->pickSearch)) continue;
+                rows.push_back({list[i].label});
+                which.push_back(i);
+            }
+            const int row = w::PickerPopup(c, st->popup, "choicepick", st->pickSearch, rows, width);
+            if (row >= 0) picked = static_cast<int>(which[static_cast<size_t>(row)]);
+        } else {
+            std::vector<w::MenuItem> items;
+            for (const Choice& ch : list) items.push_back({ch.label});
+            picked = w::MenuPopup(c, st->popup, items, width);
+        }
+        c.SetInputEnabled(wasEnabled);
+        if (picked < 0) return;
+        Edit ed = editFor(json::Value(list[static_cast<size_t>(picked)].value));
+        if (ed.before == ed.after && !withOthers) return;
+        if (wrap) {
+            if (auto outer = wrap(std::move(ed))) st->pending = std::move(*outer);
+        } else {
+            st->pending = std::move(ed);
+        }
+    });
+}
+
 void DrawValue(Pass& x, const Spot& s) {
     ui::Context& c = x.c;
     auto& p = c.P();
@@ -313,6 +365,10 @@ void DrawValue(Pass& x, const Spot& s) {
         case FieldType::String: {
             const std::string cur = reflect::ReadString(s.f, s.value);
             const bool differ = std::any_of(s.others.begin(), s.others.end(), [&](const void* o) { return reflect::ReadString(s.f, o) != cur; });
+            if (s.choices) {
+                DrawChoices(x, s, cur, differ);
+                break;
+            }
             if (auto typed = LiveField(x, "v", s.r, differ ? std::string(kMixed) : cur, s.enabled, merge)) put(json::Value(*typed), merge);
             break;
         }
@@ -325,9 +381,7 @@ void DrawValue(Pass& x, const Spot& s) {
             Rect area = s.r;
             if (isColor) {
                 const Rect swatch = ui::TakeLeft(area, 26);
-                const Color col{values[0], values[1], values[2], values[3]};
-                p.FillRoundRect(swatch.Inset(0, 1, 4, 1), 4, col);
-                p.StrokeRoundRect(swatch.Inset(0, 1, 4, 1), 4, theme::Border);
+                w::DrawSwatch(c, swatch.Inset(0, 1, 4, 1), Color{values[0], values[1], values[2], values[3]});
             }
             const float each = (area.w - 4.f * static_cast<float>(n - 1)) / static_cast<float>(n);
             static const char* kIds[] = {"x", "y", "z", "w"};
@@ -663,6 +717,7 @@ void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t in
             // 単独の数: ラベルがドラッグのつまみ。
             if (f.value.type == FieldType::Int || f.value.type == FieldType::Float) s.scrub = labelR;
             s.editFor = editFor;
+            if (f.value.type == FieldType::String && !x.wrap && x.choices && *x.choices) s.choices = (*x.choices)(path);
             DrawValue(x, s);
             break;
         }
@@ -696,6 +751,8 @@ void DrawHeader(Pass& x, const Block& b, bool folded) {
 }
 
 }  // namespace
+
+uint64_t NewMergeKey() { return NewSession(); }
 
 std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<const Block> blocks, std::wstring_view addLabel,
                          const std::function<std::vector<w::Action>()>& addMenu, const Refs* refs) {
@@ -753,16 +810,29 @@ std::optional<Edit> Draw(ui::Context& c, State& st, const Rect& area, std::span<
                 }
                 x.y += kRow + 6;
             }
+            if (b.customHeight && b.customDraw) {
+                // 自分で描く中身: 欄と同じ左右の余白で。
+                const float wdt = std::max(0.f, x.view.w - 24);
+                const float h = std::max(0.f, b.customHeight(c, wdt));
+                const bool inputBefore = c.InputEnabled();
+                if (b.readOnly) c.SetInputEnabled(false);
+                b.customDraw(c, {x.view.x + 12, x.y, wdt, h});
+                c.SetInputEnabled(inputBefore);
+                x.y += h + 4;
+            }
             if (b.type && b.object) {
                 x.fieldMenu = b.fieldMenu ? &b.fieldMenu : nullptr;
+                x.choices = b.choices ? &b.choices : nullptr;
                 FieldPath prefix;
                 const bool inputBefore = c.InputEnabled();
                 if (b.readOnly) c.SetInputEnabled(false);  // 表示だけ: どの欄もクリックもキーも受けない
-                if (b.fields.empty()) {
+                if (b.fields.empty() && b.hidden.empty()) {
                     DrawStruct(x, *b.type, b.object, b.others, b.unknowns, prefix, 0);
                 } else {
                     for (size_t i = 0; i < b.type->fields.size(); ++i) {
-                        if (std::find(b.fields.begin(), b.fields.end(), b.type->fields[i].name) == b.fields.end()) continue;
+                        const std::string& name = b.type->fields[i].name;
+                        if (!b.fields.empty() && std::find(b.fields.begin(), b.fields.end(), name) == b.fields.end()) continue;
+                        if (std::find(b.hidden.begin(), b.hidden.end(), name) != b.hidden.end()) continue;
                         DrawField(x, *b.type, b.type->fields[i], i, b.object, b.others, b.unknowns, prefix, 0);
                     }
                 }

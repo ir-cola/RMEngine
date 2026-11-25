@@ -11,6 +11,7 @@
 #include "rm_engine/game_production/editor/SceneSettingLook.h"
 #include "rm_engine/game_production/editor/SceneView.h"
 #include "rm_engine/game_x_3d/editor/ExportBake.h"
+#include "rm_engine/game_x_3d/editor/MaterialEditor.h"
 #include "rm_engine/game_x_3d/editor/SceneView3D.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
@@ -166,6 +167,8 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     registry.Contribute(game_production::kSceneSettingLookPoint, kSky);
     // 書き出したゲームには、モデルと画像を焼き込む (ゲーム用の形: ExportBake.cpp)。
     RegisterExportBake(registry);
+    // マテリアル (.rmmat): アセットのパネルで作り、インスペクターで編集し、球のサムネイルで見せる。
+    RegisterMaterialEditor(registry);
 }
 
 }  // namespace rm::game_x_3d

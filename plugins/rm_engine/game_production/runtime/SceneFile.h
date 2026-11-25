@@ -27,6 +27,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace rm::game_production {
@@ -110,6 +111,64 @@ std::string NewScenePath(std::string_view name, Taken taken) {
         std::string p = std::string(kScenesFolder) + "/" + std::string(name) + (i == 1 ? "" : " " + std::to_string(i)) + kSceneExtension;
         if (!taken(p) || i > 10000) return p;
     }
+}
+
+// シーンの名前の終わりの数 ("Stage 2" -> {"Stage", 2})。数で終わらないものは {名前, 0}
+// ("Stage" / "2" / "Stage2")。
+std::pair<std::string, int> SplitSceneNumber(std::string_view name);
+
+// シーンの複製の置き場所: 元 `path` (プロジェクトのフォルダから) と同じフォルダーの "<名前> 2"、
+// "<名前> 3" ... (`taken` がそれは有ると言うものは飛ばす)。元が数で終わるなら、その次から数える
+// ("Stage 2" の複製は "Stage 3"、"Level 10" は "Level 11")。
+template <class Taken>
+std::string CopyScenePath(std::string_view path, Taken taken) {
+    const size_t slash = path.find_last_of('/');
+    const std::string folder = slash == std::string_view::npos ? std::string() : std::string(path.substr(0, slash + 1));
+    const auto [base, number] = SplitSceneNumber(SceneNameOf(path));
+    for (int i = number > 0 ? number + 1 : 2;; ++i) {
+        std::string p = folder + base + " " + std::to_string(i) + kSceneExtension;
+        if (!taken(p) || i > 100000) return p;
+    }
+}
+
+// シーンを複製したあとの一覧: 複製 `copy` を元 `original` のすぐ後ろに。元が一覧に無くても、それが
+// 開いているシーン `open` なら (一覧の後ろでゲームに入っている: GameScenes) 最後に。どちらでもない
+// (一覧に無い Assets のシーン) か `copy` が空なら、一覧はそのまま。
+SceneList SceneListWithCopy(const SceneList& list, const AssetRef& original, const AssetRef& copy, const AssetRef& open);
+// シーン `gone` を消したあとの一覧: 並びとビルドの外しから除く。ゲームが始まるシーン (`first`) や
+// 見せるシーン (`open`) だったものは空にする (一覧の最初のものになる: FirstScene / OpenScene)。
+SceneList SceneListWithout(const SceneList& list, const AssetRef& gone);
+// 開いているシーン `gone` を消したあとに開くもの: ゲームが始まるシーン、一覧で `gone` の次のもの、
+// 前のもの (近い順)、一覧に無い Assets のシーン `unlisted` の順で、`exists` がファイルがあると言う最初の
+// もの。どれも無ければ空 (ほかにシーンが無い: 消させない)。
+template <class Exists>
+AssetRef SceneAfterDelete(const SceneList& list, const AssetRef& gone, const std::vector<AssetRef>& unlisted, Exists exists) {
+    auto ok = [&](const AssetRef& r) { return !r.Empty() && r != gone && exists(r); };
+    if (const AssetRef f = FirstScene(list); ok(f)) return f;
+    const auto& s = list.scenes;
+    size_t at = s.size();
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == gone) {
+            at = i;
+            break;
+        }
+    }
+    if (at < s.size()) {
+        for (size_t i = at + 1; i < s.size(); ++i) {
+            if (ok(s[i])) return s[i];
+        }
+        for (size_t i = at; i-- > 0;) {
+            if (ok(s[i])) return s[i];
+        }
+    } else {
+        for (const AssetRef& r : s) {
+            if (ok(r)) return r;
+        }
+    }
+    for (const AssetRef& r : unlisted) {
+        if (ok(r)) return r;
+    }
+    return {};
 }
 
 // 1 つのシーンの保存分: 何を書くか。

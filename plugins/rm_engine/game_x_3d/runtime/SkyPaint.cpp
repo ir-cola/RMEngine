@@ -59,6 +59,8 @@ const space3d::SkyDraw* SkyPainter::Prepare(space3d::Renderer& renderer, const S
     const bool anyPicture = std::any_of(draw_.textures.begin(), draw_.textures.end(), [](const auto& t) { return t != nullptr; });
     if ((sky.kind == SkyKind::Panorama || sky.kind == SkyKind::SixImages) && !anyPicture) return nullptr;
     draw_.constants = look.constants;
+    draw_.clouds = look.clouds;
+    draw_.cloudCells = look.cloudCells;
     return &draw_;
 }
 

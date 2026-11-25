@@ -9,8 +9,8 @@
 //
 // シーンビューはそれぞれ 1 つの空間 (`space`: "3d"、"2d" - ゲーム制作にとってはただの名前) に属す。
 // ゲームは 1 つを選ぶ (GameSettings::space - プロジェクトのデータ: ゲームビューと新しいエンティティが
-// それに従う)。2 つ以上あるときは、シーンパネルに切り替えのラベルの帯が出る (編集: Undo に積み、
-// 未保存になる)。まだ選んでいない (または選んだ空間のプラグインがない) ときは、`order` が一番小さいもの。
+// それに従う)。2 つ以上あるときは、ゲームの設定 ▸ ゲーム設定 に「ゲームの空間」の選択が出る (編集: Undo に
+// 積み、未保存になる)。シーンパネルの上の帯はビューが自分で描く (3D: 3D / 2D の見え方と、ギズモ・影 ...)。まだ選んでいない (または選んだ空間のプラグインがない) ときは、`order` が一番小さいもの。
 // 1 つもなければ、パネルがどのプラグインが持ってくるかを表示する。
 
 #include "core/reflect/FieldCommand.h"
@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <string>
@@ -69,6 +70,23 @@ struct SceneViewHost {
     // ものは自動で見つかる - SceneRecord)。Undo は `label` という名前の 1 件。`change` は、変更の後に
     // 選ぶエンティティを返す (空: 選択はそのまま)。Play 中は何もしない。
     std::function<void(std::vector<int> touched, std::string label, std::function<std::vector<int>(Scene&)> change)> editScene;
+    // シーン自身の値 (SceneSettingInfo: 型の TypeDesc::name) がある場所 (呼ぶたびに探し直す)。いつも
+    // 編集するシーン (Play 中でも Play 前のもの)。編集するときは `component` と同じく、これを使った
+    // reflect::SetFieldCommand を host.History() に積む。Play 中は編集しない (`scene` は Play 中のコピー)。
+    std::function<std::function<reflect::EditTarget()>(const std::string& type)> setting;
+    // ゲームの空間 (SceneViewInfo::space: "3d"、"2d"。空間のプラグインが無ければ空)。
+    std::string space;
+
+    // 真上から見た地図 (気候のタブ): あると、3D のビューはカメラの代わりに、シーンを真上からまっすぐ
+    // 見下ろした絵 (正射影: 遠くても小さくならない) を、ゲームの見た目 (グリッド・ツール・ギズモ・印・
+    // 選択の枠なし) で描く。空・天候の粒は描かない。3D では (x, z) が地図の (横, 縦): 画面の右が +X、
+    // 画面の上が +Z (左手系で上から見るので、+Z を下にすると鏡に映った絵になる)。`center` が r の
+    // 真ん中に、r の幅がちょうど 2 x `halfWidth` m に映る。
+    struct Overhead {
+        Vec2 center{0, 0};
+        float halfWidth = 50;
+    };
+    std::optional<Overhead> overhead;
 };
 
 // 開いているゲームとビュー (シーンビュー、ゲームビュー) ごとに 1 つ: 自分のカメラを持つ。

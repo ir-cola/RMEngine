@@ -3,6 +3,7 @@
 // (plugins/rm_engine/theme_seasons/editor/Ornament.h)。
 
 #include "Test.h"
+#include "ui/Grain.h"
 
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/ThemeFile.h"
@@ -15,6 +16,8 @@
 #include <iterator>
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace rm::editor;
 namespace ornament = rm::theme_seasons::ornament;
@@ -278,28 +281,83 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
         for (const auto& st : part.steps) (st.a.y < 60 ? above : below) += st.op == rm::ui::Path::Op::Begin ? 1 : 0;
     }
     CHECK(above + below >= 200 && above > below);  // 800 x 0.25 枚の葉 (それぞれ茎つき)。大半は上の近く
+    // 春の花びらも同じ散らばり: 4 色に分かれ、上の近くが多く、`depth` より下には出ない。
+    above = below = 0;
+    int colors = 0;
+    for (const auto& part : PetalCanopy(win, 200, 0.25f, 9)) {
+        if (part.steps.empty()) continue;
+        ++colors;
+        CHECK(BoundsOf(part).y1 < 200 + 20);
+        CHECK(AllClockwise(part));
+        for (const auto& st : part.steps) (st.a.y < 60 ? above : below) += st.op == rm::ui::Path::Op::Begin ? 1 : 0;
+    }
+    CHECK(colors == 4 && above + below >= 200 && above > below);
 
     // 降る雪は領域の中に収まる。同じシードなら同じ雪片。
     const Bounds flakes = BoundsOf(Snowfall({0, 0, 400, 300}, 50, 6, 3));
     CHECK(flakes.figures == 50 && flakes.x0 > -4 && flakes.y0 > -4 && flakes.x1 < 404 && flakes.y1 < 304);
-    // 雪は下の縁の内側に積もる: 縁から `depth` より上にはならず、角にはかからない。
-    const rm::ui::Rect panel{100, 200, 300, 150};
-    const Bounds drift = BoundsOf(SnowDrift(panel, 9, 8));
-    CHECK(drift.y1 == 350 && drift.y0 >= 350 - 9.01f);
-    CHECK(drift.x0 >= 100 + 4.f && drift.x1 <= 400 - 4.f);
-    CHECK(AllClockwise(SnowDrift(panel, 9, 8)));
-    CHECK(SnowDrift({0, 0, 5, 10}, 6, 8).steps.empty());  // 狭すぎて何も入らない
-    // パネルがどこにあっても、どんなに広くなっても同じ吹きだまり (右端だけがついていく)。
-    const auto heights = [](const rm::ui::Rect& r) {
-        std::vector<float> out;
-        for (const auto& st : SnowDrift(r, 9, 8).steps) out.push_back(st.a.y);
+    // ウィンドウの下に積もる雪: 下の縁から `depth` より上にはならず、左右の端まで (少し越えて) 積もる。
+    const rm::ui::Rect window{100, 200, 300, 150};
+    const rm::ui::Path driftPath = SnowDrift(window, 24);
+    const Bounds drift = BoundsOf(driftPath);
+    CHECK(drift.y1 == 350 && drift.y0 >= 350 - 24.01f && drift.y0 < 350 - 12.f);
+    CHECK(drift.x0 <= 100 && drift.x1 >= 400 && drift.x0 >= 100 - 4.01f && drift.x1 <= 400 + 4.01f);
+    CHECK(AllClockwise(driftPath));
+    CHECK(SnowDrift(window, 0).steps.empty() && SnowDrift({0, 0, 0, 10}, 6).steps.empty());
+    // 両端で下がらない: 端の上の点も、ちゃんと積もった高さ (depth の 4 割より高い)。
+    const auto snowAt = [](const rm::ui::Path& p, float x) {  // x に一番近い上の縁の点の、下の縁からの高さ
+        float best = 1e9f, h = 0;
+        for (size_t i = 0; i + 2 < p.steps.size(); ++i) {  // 最後の 2 つは下の縁
+            if (std::fabs(p.steps[i].a.x - x) < best) best = std::fabs(p.steps[i].a.x - x), h = 350 - p.steps[i].a.y;
+        }
+        return h;
+    };
+    CHECK(snowAt(driftPath, 100) > 24 * 0.4f && snowAt(driftPath, 400) > 24 * 0.4f);
+    // 形は左端からの位置だけで決まる: 幅を変えても、高さ (h) を変えても、動かしても、同じ点が同じ高さ。
+    // 広げると右に点が増えるだけ。
+    const auto profile = [](const rm::ui::Rect& r) {
+        std::vector<std::pair<float, float>> out;  // (左端からの x, 下の縁からの高さ)。下の縁の 2 点は除く
+        const rm::ui::Path p = SnowDrift(r, 24);
+        for (size_t i = 0; i + 2 < p.steps.size(); ++i) out.push_back({p.steps[i].a.x - r.x, r.y + r.h - p.steps[i].a.y});
         return out;
     };
-    const std::vector<float> narrow = heights({100, 200, 300, 150}), wide = heights({100, 200, 600, 150});
-    const std::vector<float> moved = heights({250, 200, 300, 150});
-    CHECK(narrow.size() > 40 && wide.size() > narrow.size());
-    for (size_t i = 0; i + 10 < narrow.size(); ++i) CHECK(narrow[i] == wide[i]);  // 右端の傾きまでは
-    CHECK(moved == narrow);
+    const auto narrow = profile({100, 200, 300, 150}), wide = profile({100, 200, 900, 150});
+    const auto tall = profile({100, 200, 300, 600}), moved = profile({250, 40, 300, 150});
+    const auto samePrefix = [](const std::vector<std::pair<float, float>>& a, const std::vector<std::pair<float, float>>& b) {
+        if (b.size() < a.size()) return false;
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (std::fabs(a[i].first - b[i].first) > 1e-3f || std::fabs(a[i].second - b[i].second) > 1e-3f) return false;
+        }
+        return true;
+    };
+    CHECK(narrow.size() > 70 && wide.size() > narrow.size());
+    CHECK(samePrefix(narrow, wide));
+    CHECK(tall.size() == narrow.size() && samePrefix(narrow, tall) && moved.size() == narrow.size() && samePrefix(narrow, moved));
+    for (const auto& pt : wide) CHECK(pt.second > 0 && pt.second <= 24.01f);
+
+    // 夏の雲: 平らな底 (中心 + 0.16 * 幅) から上へふくらむ。明るい帯と影の帯は雲の内側。同じシードなら同じ雲。
+    const rm::Vec2 cc{600, 300};
+    const CloudShapes cloud = Cumulus(cc, 200, 11);
+    const Bounds body = BoundsOf(cloud.body);
+    CHECK(body.figures == 1 && AllClockwise(cloud.body));
+    CHECK(std::fabs(body.y1 - (300 + 0.16f * 200)) < 0.01f);  // 底
+    CHECK(body.y0 > 300 - 0.4f * 200 && body.y0 < 300 - 0.2f * 200);  // 上へふくらむ (底からの高さは幅の半分ほど)
+    CHECK(body.x0 > 600 - 0.6f * 200 && body.x1 < 600 + 0.6f * 200 && body.x1 - body.x0 > 0.9f * 200);
+    int onBase = 0;  // 底は平ら: 底の線の上に点がたくさん並ぶ
+    for (const auto& st : cloud.body.steps) onBase += std::fabs(st.a.y - body.y1) < 0.01f ? 1 : 0;
+    CHECK(onBase > 20);
+    for (const rm::ui::Path* band : {&cloud.light[0], &cloud.light[1], &cloud.light[2], &cloud.shade[0], &cloud.shade[1],
+                                     &cloud.shade[2], &cloud.shade[3]}) {
+        const Bounds bb = BoundsOf(*band);
+        CHECK(bb.figures == 1 && AllClockwise(*band));
+        CHECK(bb.x0 >= body.x0 - 0.01f && bb.x1 <= body.x1 + 0.01f && bb.y0 >= body.y0 - 0.01f && bb.y1 <= body.y1 + 0.01f);
+    }
+    CHECK(BoundsOf(cloud.light[0]).y1 < BoundsOf(cloud.shade[0]).y1);  // 明るい帯は上、影は下
+    CHECK(std::fabs(BoundsOf(cloud.shade[3]).y1 - body.y1) < 0.01f && BoundsOf(cloud.shade[3]).y0 > BoundsOf(cloud.shade[0]).y0);
+    const CloudShapes same = Cumulus(cc, 200, 11), other = Cumulus(cc, 200, 12);
+    CHECK(BoundsOf(same.body).y0 == body.y0 && same.body.steps.size() == cloud.body.steps.size());
+    CHECK(BoundsOf(other.body).y0 != body.y0 || BoundsOf(other.body).x0 != body.x0);  // シードで少し違う形
+    CHECK(Cumulus(cc, 0, 1).body.steps.empty());
 
     // つらら (氷柱) は上の縁から下がる。頼まれた長さより長くならず、ところどころに少しだけ。
     const IcicleShapes ice = Icicles(win, 40, 5);
@@ -326,4 +384,60 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     };
     const auto tipsNarrow = tips(Icicles({0, 0, 800, 600}, 40, 5).ice, 800), tipsWide = tips(Icicles({0, 0, 2000, 600}, 40, 5).ice, 800);
     CHECK(!tipsNarrow.empty() && tipsNarrow == tipsWide);
+}
+
+RM_TEST(Theme_Grain) {
+    // 砂のざらざらの絵: 決めた割合ほどの粒、同じ見た目なら同じ絵、アルファを掛けた色。
+    rm::ui::GrainLook g;
+    g.light = {1, 1, 1, 0.5f};
+    g.dark = {0, 0, 0, 0.25f};
+    g.lightShare = 0.1f;
+    g.darkShare = 0.1f;
+    g.clumps = 0;
+    const std::vector<uint32_t> px = rm::ui::GrainPixels(128, g);
+    CHECK(px.size() == 128u * 128u);
+    size_t light = 0, dark = 0, other = 0;
+    for (const uint32_t p : px) {
+        if (p == 0) continue;
+        const uint32_t a = p >> 24, b = p & 0xFF;
+        if (a == 128 && b == 128) ++light;       // 白 x 0.5 (アルファを掛けた)
+        else if (a == 64 && b == 0) ++dark;      // 黒 x 0.25
+        else ++other;
+    }
+    CHECK(other == 0);
+    CHECK(light > 1300 && light < 2000 && dark > 1300 && dark < 2000);  // 16384 の 1 割ほどずつ
+    CHECK(rm::ui::GrainPixels(128, g) == px);
+    g.seed = 2;
+    CHECK(rm::ui::GrainPixels(128, g) != px);
+    CHECK(rm::ui::GrainPixels(0, g).empty());
+}
+
+RM_TEST(Theme_Susuki) {
+    // ススキ: 根元の上に立ち (下の辺より下へは出ない)、高さまで。穂は根元より左へ垂れる。時計回り。
+    const rm::Vec2 base{900, 600};
+    using namespace rm::theme_seasons::ornament;
+    const rm::ui::Path s = Susuki(base, 300, 7);
+    const Bounds b = BoundsOf(s);
+    CHECK(b.figures > 100);
+    CHECK(b.y1 <= 600 + 3 && b.y0 >= 600 - 300 - 20);
+    CHECK(b.x0 < 900 - 300 * 0.35f);  // 穂は左へ
+    CHECK(b.x1 < 900 + 300 * 0.2f);  // 右へはあまり出ない
+    CHECK(AllClockwise(s));
+    CHECK(BoundsOf(Susuki(base, 300, 7)).x0 == b.x0);  // 同じ種なら同じ形
+}
+
+RM_TEST(Theme_Snowman) {
+    using namespace rm::theme_seasons::ornament;
+    // 雪だるま: 底が base、高さの中に収まる。丸 2 つ・バケツ・縁。どれも時計回り。
+    const SnowmanShapes s = Snowman({500, 400}, 60);
+    const Bounds body = BoundsOf(s.body), bucket = BoundsOf(s.bucket);
+    CHECK(body.figures == 2 && bucket.figures == 1 && BoundsOf(s.rim).figures == 1);
+    // 輪郭: 太らせた丸は同じ所で少し大きい。
+    const Bounds grown = BoundsOf(Snowman({500, 400}, 60, 1.5f).body);
+    CHECK(std::abs(grown.y1 - 401.5f) < 0.5f && grown.x0 < body.x0 - 1.f);
+    CHECK(std::abs(body.y1 - 400) < 0.5f && body.y0 > 400 - 60);
+    CHECK(bucket.y0 >= 400 - 60 - 2 && bucket.y1 < body.y0 + 30);  // バケツは頭の上
+    CHECK(AllClockwise(s.body) && AllClockwise(s.bucket) && AllClockwise(s.rim));
+    // 積もった雪の高さは SnowDrift の上の線と同じ。
+    CHECK(SnowDriftHeight(100, 24) > 24 * 0.45f && SnowDriftHeight(100, 24) < 24 * 0.99f);
 }

@@ -264,32 +264,7 @@ void TextureCache::ForgetUnused(double now, double seconds) {
 }
 
 // --- Materials -----------------------------------------------------------------------------------
-
-DrawMaterial MaterialNumbers(const MeshMaterial& m) {
-    DrawMaterial d;
-    d.color = m.baseColor;
-    d.alpha = m.alpha;
-    d.alphaCutoff = m.alphaCutoff;
-    d.metallic = m.metallic;
-    d.roughness = m.roughness;
-    d.normalScale = m.normalScale;
-    d.emissive = m.emissive;
-    return d;
-}
-
-std::array<PictureSlot, kPictureSlots> PictureSlots(const MeshMaterial& m) {
-    return {PictureSlot{m.image, true, TextureUse::Color}, PictureSlot{m.metallicRoughnessImage, false, TextureUse::Data},
-            PictureSlot{m.normalImage, false, TextureUse::Normal}, PictureSlot{m.emissiveImage, true, TextureUse::Color}};
-}
-
-void SetPicture(DrawMaterial& d, size_t slot, TextureRef texture) {
-    switch (slot) {
-        case 0: d.texture = std::move(texture); break;
-        case 1: d.metalRough = std::move(texture); break;
-        case 2: d.normal = std::move(texture); break;
-        default: d.emission = std::move(texture); break;
-    }
-}
+// (MaterialNumbers / PictureSlots / SetPicture は MaterialSlots.cpp: GPU もスレッドも要らない)
 
 void ModelPaint::Load(const MeshData& mesh, const std::filesystem::path& modelFile, const std::filesystem::path& root,
                       const std::string& modelName) {

@@ -27,12 +27,32 @@ struct SkyConstants {
     float invViewProj[16];
     float sun[4];       // xyz: 太陽の向き (長さ 1)、w: 秒 (SkyInput::time)
     float moon[4];      // xyz: 月の向き、w: 時刻 0..24 (SkyInput::hour)
-    float info[4];      // x: 明るさ (Sky の結果に掛ける)、yzw: 使わない
+    float info[4];      // x: 明るさ (Sky の結果に掛ける)、yzw: カメラの場所 (ワールド。Renderer が入れる: SkyInput::eye)
     float param[8][4];  // 空自身の数値 (組み込みの空の色、ユーザーの 値 と 色)
 };
 static_assert(sizeof(SkyConstants) % 16 == 0);
 inline constexpr size_t kSkyParams = 8;
 inline constexpr size_t kSkyTextures = 6;  // sky0 .. sky5 (t0 .. t5)
+// 雲の地図 (skyClouds: t6。SkyDraw::clouds。1 枚の R32G32_FLOAT、なめらか、端で止まる)。
+inline constexpr unsigned kSkyCloudSlot = 6;
+
+// 地球の空の、場所ごとの雲 (docs/CLIMATE.md の「雲の地図」→「空の絵」): 見ている向きが、
+// カメラの kCloudLayerHeight m 上の水平な雲の層と交わる所の、雲の地図 (マス目) での場所。
+// 地図の真ん中から縁へ向かって、縁までの kCloudFadeFrom の所から縁で 0 になるように薄れる
+// (地平線の近くは遠くまで届くので、地図の外 = どこも同じ雲の量へ、なめらかにつなぐ)。
+// シェーダー (kEarth の CloudsHere) と同じ式。tests/TestSky.cpp の Sky_CloudMapOnGpu が両方を比べる。
+inline constexpr float kCloudLayerHeight = 600.f;
+inline constexpr float kCloudFadeFrom = 0.7f;
+struct CloudMapPlace {
+    float firstX = 0, firstZ = 0;  // 最初のマスの真ん中 (ワールドの x, z)
+    float cell = 0;                // 1 マスの一辺 (m)
+    int cells = 0;                 // 一辺のマスの数 (0: 地図が無い)
+};
+struct CloudMapPoint {
+    float u = 0, v = 0;  // 地図の絵の座標 (0 .. 1 が地図。u が x、v が z。外は端のマスを読む)
+    float weight = 0;    // 地図の値をどれだけ使うか (0 .. 1。0: 地図の外、地平線と下、地図が無い)
+};
+CloudMapPoint CloudMapAt(Vec3 dir, Vec3 eye, const CloudMapPlace& map);
 
 // 光 <-> 画面の数値 (sRGB)。レンダラーのシェーダーと空のもので同じ。
 extern const char kColorHlsl[];
@@ -49,6 +69,9 @@ std::string AssembleSky(std::string_view code, std::string_view fileName);
 //             param[3] rgb: 地平線の空、a: 月の光
 //             param[4] rgb: 地平線より下の地面、a: 夕焼けのにじみ (0 .. 1)
 //             param[5] xy: 風が雲をどれだけ運んだか (ワールド x, z)、zw: 今の風 (m/s)
+//             param[6] 雲の地図 (CloudMapPlace): xy: 最初のマスの真ん中、z: 1 マスの一辺、w: マスの数 (0: 無し)
+//             skyClouds (t6): 雲の地図。マスごとの r: 雲を塗った割合 (0 .. 1)、g: 塗った所の雲の量 (0 .. 1)。
+//             その向きの雲の量 = lerp(param[1].x, g, r x CloudMapAt の weight)
 //   Space     param[0] x: 星、y: 星雲、z: 天の川、w: 1 = 太陽を描く
 //             param[1] rgb: 星雲の 1 つ目の色、param[2] rgb: その 2 つ目の色
 //   Panorama  sky0: 周り 1 周の絵 (正距円筒: 360 x 180 度)、param[0] x: 回した量 (ラジアン)

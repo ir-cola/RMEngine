@@ -2,6 +2,7 @@
 
 #include "base/Utf.h"
 #include "core/asset/ImportSettings.h"
+#include "rm_engine/space3d/runtime/ClipSettings.h"
 
 #include <format>
 #include <fstream>
@@ -43,11 +44,16 @@ std::optional<MeshData> Load(const std::filesystem::path& file, const std::strin
         if (at.empty()) return std::nullopt;
         return ReadAll(at);
     };
-    const auto imp = asset::ReadImport<asset::ModelImport>(file);
+    const json::Value raw = asset::ReadImportJson(file);
+    asset::ModelImport imp;
+    reflect::Load(reflect::TypeOf<asset::ModelImport>(), &imp, raw);
     auto mesh = ParseMesh(PathToUtf8(file.extension()), *bytes, related, &why, &budget, imp.axes == asset::ModelAxes::Auto,
                           imp.unit == asset::ModelUnit::Auto);
     if (!mesh && error) *error = std::format("「{}」: {}", name, why);
-    if (mesh) ApplyModelImport(*mesh, BasisOf(imp), imp.turnAround, UnitOf(imp.unit) * imp.scale);
+    if (mesh) {
+        ApplyModelImport(*mesh, BasisOf(imp), imp.turnAround, UnitOf(imp.unit) * imp.scale);
+        ApplyClipSettings(mesh->clips, raw);  // (クリップのイベント: .meta の "clips")
+    }
     return mesh;
 }
 

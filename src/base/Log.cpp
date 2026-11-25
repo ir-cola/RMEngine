@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <ctime>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -58,6 +59,19 @@ void Call(State& s, const std::shared_ptr<SinkRec>& rec, const Entry& e) {
     s.idle.notify_all();
 }
 
+// `now` を、地方時の 1970-01-01 0:00 からのミリ秒に。
+int64_t LocalClockMs(std::chrono::system_clock::time_point now) {
+    using namespace std::chrono;
+    const int64_t ms = duration_cast<milliseconds>(now.time_since_epoch()).count();
+    const int64_t sec = ms >= 0 ? ms / 1000 : (ms - 999) / 1000;
+    const std::time_t t = static_cast<std::time_t>(sec);
+    std::tm tm{};
+    if (localtime_s(&tm, &t) != 0) return ms;  // (地方時が分からない: UTC のまま)
+    const sys_days d = year{tm.tm_year + 1900} / month{static_cast<unsigned>(tm.tm_mon + 1)} / day{static_cast<unsigned>(tm.tm_mday)};
+    const int64_t localSec = duration_cast<seconds>(d.time_since_epoch()).count() + tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec;
+    return localSec * 1000 + (ms - sec * 1000);
+}
+
 }  // namespace
 
 int AddSink(Sink sink, Delivery delivery) {
@@ -97,6 +111,7 @@ void Write(Level level, std::string text) {
     Entry e;
     std::vector<std::shared_ptr<SinkRec>> now;
     std::function<void()> wake;
+    e.clockMs = LocalClockMs(std::chrono::system_clock::now());  // (ロックの外で: 地方時を調べるのは少し重い)
     {
         std::lock_guard lock(s.mtx);
         e.level = level;

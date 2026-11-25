@@ -123,3 +123,22 @@ RM_TEST(Log_SinkMayRemoveItselfAndLog) {
     log::Info("not seen");
     CHECK(calls == 1);
 }
+
+// 項目に書いたときの PC の時計 (地方時) が入る (コンソールの HH:MM:SS.mmm)。地方時と UTC の差は
+// 多くて 14 時間で、15 分の倍数 (ミリ秒の端は UTC と同じ)。
+RM_TEST(Log_EntryHasLocalClock) {
+    using namespace std::chrono;
+    const int64_t utcBefore = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    log::Info("clock");
+    const int64_t utcAfter = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    const std::vector<log::Entry> all = log::Snapshot();
+    CHECK(!all.empty());
+    if (all.empty()) return;
+    const log::Entry& e = all.back();
+    CHECK(e.text == "clock");
+    constexpr int64_t kQuarter = 15 * 60 * 1000;
+    const int64_t offset = e.clockMs - utcBefore;  // 地方時 - UTC (+ 書くまでにかかった時間)
+    CHECK(offset >= -14 * 4 * kQuarter && offset <= 14 * 4 * kQuarter + (utcAfter - utcBefore));
+    const int64_t rest = ((offset % kQuarter) + kQuarter) % kQuarter;
+    CHECK(rest <= utcAfter - utcBefore);
+}

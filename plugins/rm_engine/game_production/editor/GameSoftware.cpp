@@ -62,7 +62,7 @@ constexpr char kSceneView[] = "scene_view";
 constexpr char kGameView[] = "game_view";
 constexpr char kScenesPanel[] = "scenes";
 constexpr size_t kMaxPrefabRows = 20;  // "Prefab を置く" の行数 (階層のメニュー)
-constexpr float kSpaceStripH = 34.f;   // シーンビューの上の空間 (3D / 2D) の帯
+constexpr float kSpaceStripH = 34.f;   // ゲームビューの上の帯 (止まっています ...)
 
 // 1 つの空間のビュー (SceneViewInfo): シーンビューと、Play 中にゲームを映すゲームビュー
 // (同じ種類のビュー)。
@@ -959,6 +959,8 @@ public:
         return TopRow{name.empty() ? Tr(L"シーン") : Utf8ToWide(name), editor::w::Icon::Scene, inspectingScene_};
     }
     void TopClicked() override { InspectScene(); }
+    // 一番上の行の右クリック: 開いているシーンの複製・削除 (シーン パネルの行と同じもの)。
+    std::vector<tree::Action> TopActions() override { return SceneFileActions(AssetRef{slot_.guid}); }
 
     std::wstring EmptyText() const override {
         return Tr(L"エンティティはまだありません。\nここを右クリックして「追加」から作れます。");
@@ -1265,6 +1267,7 @@ private:
         lap(times.scripts);
         runner_.SetCamera(world.camera);
         runner_.Advance(*playScene_, dt, settings_.fixedTimestep);
+        QueueSystemEvents(world, runner_.Events());  // (クリップのイベント ...: OnEvent へ)
         lap(times.systems);
         // システムの固定ステップがスクリプトに伝えること (物理の接触 ...)。
         scripts_.Runner().Deliver(*playScene_, world, scripts_.Module(), settings_.scriptOrder, runner_.Hooks());
@@ -1512,22 +1515,52 @@ private:
         return v ? v->info->space : std::string{};
     }
 
-    // 空間が 2 つ以上あるとき、シーンビューの上に出る帯: 切り替えはゲームの編集 (GameSettings::space
-    // - Undo、未保存): ゲームビューと新しいエンティティがそれに従う。
-    void DrawSpaceStrip(ui::Context& c, const Rect& strip) {
-        editor::w::DrawBar(c, strip, theme::Bg);
-        std::vector<std::wstring> labels;
-        for (const View& v : views_) labels.push_back(v.info->label ? Tr(v.info->label) : Utf8ToWide(v.info->space));
-        const std::vector<std::wstring_view> views(labels.begin(), labels.end());
-        const std::wstring tip = Running() ? Tr(L"Play 中は切り替えられません")
-                                           : Tr(L"このゲームの空間。新しいエンティティに付く Transform と、ゲームビューもこれに合わせます");
-        const std::vector<std::wstring_view> tips(labels.size(), tip);
+    // ゲームの設定 ▸ ゲーム設定 の「ゲームの空間」(空間が 2 つ以上あるとき): 切り替えはゲームの編集
+    // (GameSettings::space - Undo、未保存): シーンビュー・ゲームビューと新しいエンティティがそれに従う。
+    // (2026-11-25 まではシーンビューの上の帯の 3D / 2D だった。今その帯の 3D / 2D は、同じ 3D の
+    // シーンを正面から平行投影で見るだけ - シーンビューの見え方で、ゲームは変えない)
+    // 描いた高さを返す (出さないときは 0)。
+    float DrawSpaceChoice(ui::Context& c, const Rect& r, float y) {
+        EnsureViews();
+        if (views_.size() < 2) return 0;
+        auto& p = c.P();
+        ui::TextStyle label;
+        label.size = 12;
+        label.color = theme::Text;
+        label.v = ui::VAlign::Center;
+        p.Text({r.x + 14, y, 120, 26}, Tr(L"ゲームの空間"), label);
+        auto nameOf = [](const View& v) { return v.info->label ? Tr(v.info->label) : Utf8ToWide(v.info->space); };
         const View* now = Current();
-        const int selected = static_cast<int>(now - views_.data());
-        const float w = std::min(strip.w - 16, 64.f * static_cast<float>(labels.size()));
-        const Rect at{strip.x + 8, strip.y + 4, w, strip.h - 8};
-        const int i = editor::w::Segmented(c, "space", at, views, selected, tips);
-        if (i >= 0 && i != selected && !Running()) ChooseSpace(views_[static_cast<size_t>(i)].info->space);
+        const Rect combo{r.x + 140, y, std::max(80.f, r.w - 160), 26};
+        if (editor::w::ComboBox(c, "game_space", combo, now ? nameOf(*now) : std::wstring{}, !Running()).clicked) spacePopup_.OpenAt(combo.x, combo.Bottom());
+        if (c.IsHovered(combo)) {
+            editor::w::Tooltip(c, Running() ? Tr(L"Play 中は切り替えられません")
+                                            : Tr(L"このゲームの空間。新しいエンティティに付く Transform と、シーンビュー・ゲームビューもこれに合わせます"));
+        }
+        if (spacePopup_.open && Running()) spacePopup_.open = false;
+        if (spacePopup_.open) {
+            std::vector<editor::w::MenuItem> items;
+            for (const View& v : views_) {
+                editor::w::MenuItem it;
+                it.label = nameOf(v);
+                it.checked = &v == now;
+                items.push_back(std::move(it));
+            }
+            const int chosen = editor::w::MenuPopup(c, spacePopup_, items, combo.w);
+            if (chosen >= 0 && static_cast<size_t>(chosen) < views_.size() && &views_[static_cast<size_t>(chosen)] != now) {
+                ChooseSpace(views_[static_cast<size_t>(chosen)].info->space);
+            }
+        }
+        float h = 30;
+        ui::TextStyle note;
+        note.size = 12;
+        note.color = theme::TextDim;
+        note.wrap = true;
+        const std::wstring text = Tr(L"シーンビューの上の 3D / 2D は見え方だけを変えます (2D: 同じシーンを正面から平行投影で)。2D 空間のゲームを作るときは、ここで 2D を選びます");
+        const float th = p.TextHeight(text, 12, r.w - 28);
+        p.Text({r.x + 14, y + h, r.w - 28, th}, text, note);
+        h += th + 10;
+        return h;
     }
 
     // ゲームビューの上 (停止中): 止まっていること、それとゲーム設定 (最初のカメラ ...)。
@@ -1617,9 +1650,9 @@ private:
             json::Value after = json::Value(space);
             host_.History().Push(std::make_unique<reflect::SetFieldCommand>(
                                      type, reflect::FieldPath{f}, std::move(before), std::move(after),
-                                     [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, "シーンの空間を切り替え"),
+                                     [this] { return reflect::EditTarget{&settings_, &unknowns_}; }, "ゲームの空間を切り替え"),
                                  false);
-            log::Info("シーンの空間を「{}」にしました (新しいエンティティの Transform とゲームビューも)", space);
+            log::Info("ゲームの空間を「{}」にしました (シーンビュー・ゲームビューと、新しいエンティティの Transform も)", space);
             return;
         }
     }
@@ -1642,6 +1675,13 @@ private:
             EditTouching(std::move(touched), std::move(label), [&] { select = change(scene_); });
             if (!select.empty()) host_.SelectInTree(std::vector<tree::ItemId>(select.begin(), select.end()));
         };
+        h.setting = [this](const std::string& type) -> std::function<reflect::EditTarget()> {
+            return [this, type] {
+                Component* s = scene_.FindSetting(type);
+                return s && s->Known() ? reflect::EditTarget{s->value.Get(), &s->unknowns} : reflect::EditTarget{};
+            };
+        };
+        h.space = CurrentSpace();
         return h;
     }
 
@@ -1652,10 +1692,8 @@ private:
                         Tr(L"3D 空間 / 2D 空間のプラグインが入ると、ここにシーンが映り、エンティティを置いて動かせます。"));
             return;
         }
-        Rect r = panel;
-        if (views_.size() >= 2 && r.h > 120) DrawSpaceStrip(c, ui::TakeTop(r, kSpaceStripH));
         SceneViewHost h = ViewHost(false);
-        Current()->scene->Draw(c, r, h);  // (帯が今切り替えたかもしれない)
+        Current()->scene->Draw(c, panel, h);  // (上の帯はビューが自分で描く: 3D は 3D / 2D と見え方)
         if (play_ == PlayState::Playing) c.RequestAnimation();  // このパネルは専用のウィンドウにあるかもしれない
     }
 
@@ -1863,6 +1901,7 @@ private:
                                        },
                                        Utf8ToWide(TrU8(c.value.Type()->label)), {}, {}};
                 b.direct = play;  // (Play: 動いているコピーを、その場で変える)
+                b.hidden = HiddenSettingFields(host_.Registry(), *c.value.Type());  // (ほかのプラグインが隠す欄)
                 if (const SceneSettingLook* look = SettingLookOf(type); look && (look->menu || look->presets)) {
                     SceneSettingMenuHost mh;
                     mh.host = &host_;
@@ -1992,6 +2031,7 @@ private:
             p.Text({r.x + 14, y, r.w - 28, h}, note, ts);
             y += h + 10;
         }
+        if (tab == 0) y += DrawSpaceChoice(c, r, y);
         if (tab == 2) {
             const std::wstring note = Tr(L"グローバル変数はゲーム全体の値で、rm::Save で保存できます。Play 中の rm::Save は、このプロジェクトの Library/Saves に書きます (書き出したゲームは %LOCALAPPDATA% の「exe の名前/Saves」)");
             const float h = p.TextHeight(note, 12, r.w - 28);
@@ -2297,6 +2337,9 @@ private:
                             b.onEdit = [this, id, type, info, play](editor::InspectBlock::Change ch) { EditDerived(id, type, info, std::move(ch), play); };
                         }
                     }
+                    if (const ComponentLook* info = LookOf(c.type); info && info->choices && !b.onEdit) {
+                        b.choices = [this, id, info](const reflect::FieldPath& path) { return info->choices(host_, Shown(), id, path); };
+                    }
                     if (const ComponentLook* info = LookOf(c.type); info && info->adjust && !b.onEdit) {
                         b.onEdit = [this, id, type, nth, info, play](editor::InspectBlock::Change ch) {
                             EditAdjusted(id, type, nth, info, std::move(ch), play);
@@ -2502,6 +2545,153 @@ private:
         });
     }
 
+    // シーンの右クリック (シーン パネルの行・ヒエラルキーの一番上の行) の「複製」「削除」。
+    // ファイルの操作なので Undo には積まない (アセットのパネルと同じ: 削除の戻り道はごみ箱)。
+    // ゲームの一覧の変更だけが、ほかの一覧の編集と同じく履歴に積まれ、未保存になる。
+    std::vector<tree::Action> SceneFileActions(const AssetRef& ref) {
+        std::vector<tree::Action> list;
+        const bool playing = Running();
+        const bool isOpen = ref.Empty() || ref.guid == slot_.guid;
+        const bool hasFile = !ref.Empty() && !host_.AssetFile(ref).empty();
+        tree::Action dup;
+        dup.label = Tr(L"複製");
+        dup.enabled = !playing && (hasFile || isOpen);
+        dup.run = [this, ref] { DuplicateScene(ref); };
+        list.push_back(std::move(dup));
+        tree::Action del;
+        del.label = Tr(L"削除");
+        if (ref.Empty()) {
+            del.label = Tr(L"削除 (まだ保存していないシーン)");
+            del.enabled = false;
+        } else if (isOpen && SceneToShowAfterDeleting(ref).Empty()) {
+            del.label = Tr(L"削除 (ほかにシーンが無いので消せません)");
+            del.enabled = false;
+        } else {
+            del.enabled = !playing;
+        }
+        del.run = [this, ref] { DeleteSceneAsked(ref); };
+        list.push_back(std::move(del));
+        return list;
+    }
+
+    // 複製: 元と同じフォルダーに "<名前> 2" ... (CopyScenePath)、新しい id (.meta はアセットの表が
+    // 今付ける)。開いているシーンは画面の今の中身 (保存していない変更も。保存と同じテキスト)、
+    // ほかのものはファイルのまま (新しい版の知らないキーも)。エンティティの id はシーンごとなので
+    // そのまま。ゲームの一覧にあれば、そのすぐ後ろに入れる。開いているシーンは変わらない。
+    void DuplicateScene(const AssetRef& ref) {
+        if (Running()) {
+            log::Info("Play 中はシーンを複製できません (■ で止めてから)");
+            return;
+        }
+        const bool isOpen = ref.Empty() || ref.guid == slot_.guid;
+        const fs::path file = ref.Empty() ? fs::path() : host_.AssetFile(ref);
+        std::string from = file.empty() ? std::string() : RelativePath(file);
+        std::optional<std::string> text;
+        if (isOpen && !(sceneUnread_ && scene_.Empty())) {
+            Scene saved = scene_;
+            UpdateOverrides(saved);
+            text = SceneFileText(saved.Save());
+            if (from.empty()) from = slot_.path;  // (まだ保存していない新しいシーン: これからできるファイルの隣)
+        } else if (file.empty()) {
+            log::Warn("シーン ({}) のファイルが Assets に見つからないので、複製できません", ref.guid);
+            return;
+        } else {
+            std::string err;
+            text = platform::ReadFileBytes(file, &err);
+            if (!text) {
+                log::Error("シーン「{}」を読めないので、複製できません: {}", SceneNameOf(from), err);
+                return;
+            }
+        }
+        const std::string to = CopyScenePath(from, [this](const std::string& p) {
+            std::error_code ec;
+            return fs::exists(FullPath(p), ec);
+        });
+        std::string err;
+        if (!platform::WriteFileAtomic(FullPath(to), *text, &err)) {
+            log::Error("シーンの複製 ({}) を書けませんでした: {}", to, err);
+            return;
+        }
+        const AssetRef copy = host_.AssetOf(FullPath(to));  // (新しい .meta: 見るのを待たずに今)
+        sceneFilesTime_ = 0;  // (一覧に無いシーンとして、すぐ出す)
+        if (copy.Empty()) {
+            log::Warn("シーンの複製 ({}) に id を付けられませんでした。ゲームの一覧には足していません", to);
+        } else {
+            const SceneList next = SceneListWithCopy(sceneList_, ref, copy, AssetRef{slot_.guid});
+            if (next.scenes != sceneList_.scenes) EditSceneList(TrU8("シーンを複製する"), [&](SceneList& l) { l = next; });
+        }
+        log::Info("シーン「{}」を複製しました: {}", SceneNameOf(from), to);
+        host_.Redraw();
+    }
+
+    // 開いているシーン `gone` を消したあとに開くもの (空: ほかにシーンが無い)。
+    AssetRef SceneToShowAfterDeleting(const AssetRef& gone) {
+        return SceneAfterDelete(sceneList_, gone, ScenesNotListed(), [this](const AssetRef& r) { return !host_.AssetFile(r).empty(); });
+    }
+
+    // 削除: 名前を出して確かめてから、ファイルを (.meta と一緒に) ごみ箱へ。ファイルがもう無い一覧の
+    // 行は、確かめずに一覧から外すだけ (Undo で戻る)。
+    void DeleteSceneAsked(const AssetRef& ref) {
+        if (Running()) {
+            log::Info("Play 中はシーンを削除できません (■ で止めてから)");
+            return;
+        }
+        if (ref.Empty()) return;
+        const bool isOpen = ref.guid == slot_.guid;
+        const bool hasFile = !host_.AssetFile(ref).empty();
+        if (!hasFile && !isOpen) {
+            DeleteScene(ref);
+            return;
+        }
+        const AssetRef next = isOpen ? SceneToShowAfterDeleting(ref) : AssetRef{};
+        if (isOpen && next.Empty()) {
+            log::Info("ほかにシーンが無いので、このシーンは削除できません (先に新しいシーンを作ってください)");
+            return;
+        }
+        std::wstring text = hasFile ? TrF(L"シーン「{}」をごみ箱へ移しますか？", Utf8ToWide(SceneTitle(ref)))
+                                    : TrF(L"シーン「{}」を削除しますか？ (ファイルはもうありません)", Utf8ToWide(SceneNameOf(slot_.path)));
+        if (isOpen) text += TrF(L"\n開いているシーンなので、保存していない変更は失われ、「{}」を開きます。", Utf8ToWide(SceneTitle(next)));
+        if (ref == FirstScene(sceneList_)) text += Tr(L"\nゲームが始まるシーンです。ほかのシーン (一覧の最初のもの) から始まるようになります。");
+        if (hasFile) text += Tr(L"\nファイルはごみ箱から戻せます (Ctrl+Z では戻りません)。");
+        host_.Ask(Tr(L"シーンを削除"), text, {Tr(L"削除する"), Tr(L"キャンセル")}, [this, ref](int answer) {
+            if (answer == 0) DeleteScene(ref);
+        });
+    }
+
+    void DeleteScene(const AssetRef& ref) {
+        if (Running() || ref.Empty()) return;  // (確かめている間に Play が始まった)
+        const bool isOpen = ref.guid == slot_.guid;
+        const AssetRef next = isOpen ? SceneToShowAfterDeleting(ref) : AssetRef{};
+        if (isOpen && next.Empty()) return;
+        const std::string name = SceneTitle(ref);
+        const bool hadFile = !host_.AssetFile(ref).empty();
+        if (hadFile) {
+            const std::wstring problem = host_.DeleteAsset(ref);  // (理由はコンソールにも出る)
+            if (!problem.empty() || !host_.AssetFile(ref).empty()) {
+                log::Warn("シーン「{}」を削除できませんでした{}", name, problem.empty() ? std::string() : ": " + WideToUtf8(problem));
+                return;
+            }
+        }
+        // 開いていたもの: 別のシーンを開く (その編集は失われる - 確かめた。履歴はシーンを開くと消える
+        // ので、一覧の変更はその後に積む)。
+        if (isOpen) ShowScene(next);
+        const AssetRef firstBefore = FirstScene(sceneList_);
+        const SceneList after = SceneListWithout(sceneList_, ref);
+        if (after.scenes != sceneList_.scenes || after.notBuilt != sceneList_.notBuilt || after.first != sceneList_.first || after.open != sceneList_.open) {
+            EditSceneList(TrU8("シーンを削除する"), [&](SceneList& l) { l = after; });
+        }
+        sceneFilesTime_ = 0;
+        if (hadFile) {
+            log::Info("シーン「{}」をごみ箱へ移しました", name);
+        } else {
+            log::Info("ファイルの無いシーン ({}) をゲームの一覧から外しました", ref.guid);
+        }
+        if (const AssetRef first = FirstScene(sceneList_); first != firstBefore && !first.Empty()) {
+            log::Info("ゲームが始まるシーンは「{}」になりました", SceneTitle(first));
+        }
+        host_.Redraw();
+    }
+
     // シーン: ゲームのシーンを、ヒエラルキー がエンティティを見せるとおりに (同じツリー表示):
     // クリックで 1 つ開き (開いているものが選ばれた行)、ドラッグで順を変え (ゲームの順)、
     // F2 / ダブルクリック / メニューで名前を変え、右クリックで: 開く、新しいシーン
@@ -2533,6 +2723,10 @@ private:
                 it.canHaveChildren = false;
                 it.icon = editor::tree::Icon::Scene;
                 if (r.Empty()) it.badge = Tr(L"未保存");
+                if (it.name.empty() && !r.Empty()) {  // (一覧にあるがファイルが無い: 消された・Assets の外へ)
+                    it.name = TrU8("(ファイルが見つかりません)");
+                    it.dimmed = true;
+                }
                 if (i >= listed_) {
                     it.dimmed = true;
                     it.badge = Tr(L"一覧に無い");
@@ -2607,6 +2801,8 @@ private:
                     }
                     editor::tree::Action sep;
                     sep.separator = true;
+                    list.push_back(sep);
+                    for (auto& a : g_.SceneFileActions(ref)) list.push_back(std::move(a));
                     list.push_back(std::move(sep));
                 }
             }
@@ -3386,6 +3582,7 @@ private:
     std::array<editor::inspector::State, 4> settingsInspectors_;
     editor::inspector::State outputInspector_;
     editor::w::Popup firstScenePopup_;
+    editor::w::Popup spacePopup_;  // ゲームの設定の「ゲームの空間」
     FrameMeter sceneMeter_, gameMeter_, updateMeter_;
     json::Value settingsBeforePlay_;  // Play が始まったときのゲーム設定 (null: Play 中ではない)
     double debugShownAt_ = -1e9;  // そのときウィンドウを描いた (見せている間は Play の各部分の時間を測る)

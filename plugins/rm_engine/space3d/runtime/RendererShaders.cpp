@@ -24,17 +24,18 @@ float3 Fogged(float3 c, float3 wpos) {
     return lerp(fog.rgb, c, exp(-fog.a * distance(wpos, eye.xyz)));
 }
 // フレームの全部の物と材質の数値。1 フレームに 1 回書く (Renderer3D.cpp の things_)。
-// 描画は、その物と材質がどこにあるかを持つ (DRAW: x, y。float4 単位):
+// 描画は、その物と材質がどこにあるかを持つ (DRAW: x, y。float4 単位。z は骨の行列 - 下の bones):
 //   物:   world (4 列)、normalWorld (3 列: world の逆行列の転置 - 法線が直角のまま保たれる)、
 //         color (画面の色)、highlight (縁の光: rgb、a = 強さ)
 //   材質: material (その色。線形: `color` を掛ける)、paint (x: 1 = 色の絵あり、y: アルファ
 //         0 不透明 / 1 マスク / 2 ブレンド、z: マスクのしきい値、w: 1 = 法線マップあり)、
 //         pbr (x: 金属度、y: 粗さ、z: 法線マップの強さ、w: 1 = 金属 / 粗さの絵あり)、
-//         emissive (rgb: 出す光。線形、w: 1 = 発光の絵あり)
+//         emissive (rgb: 出す光。線形、w: 1 = 発光の絵あり)、
+//         uvMove (xy: 絵の繰り返し、zw: 絵のずらし - 絵の uv = 頂点の uv * xy + zw。材質の数は kMaterialFloat4s)
 Buffer<float4> things : register(t6);
 static float4x4 world;
 static float3x3 normalWorld;
-static float4 color, highlight, material, paint, pbr, emissive;
+static float4 color, highlight, material, paint, pbr, emissive, uvMove;
 void LoadPlace(uint at) {
     world = transpose(float4x4(things.Load(at), things.Load(at + 1), things.Load(at + 2), things.Load(at + 3)));
     normalWorld = transpose(float3x3(things.Load(at + 4).xyz, things.Load(at + 5).xyz, things.Load(at + 6).xyz));
@@ -46,6 +47,7 @@ void LoadLook(uint2 draw) {
     paint = things.Load(draw.y + 1);
     pbr = things.Load(draw.y + 2);
     emissive = things.Load(draw.y + 3);
+    uvMove = things.Load(draw.y + 4);
 }
 // フレームの光 (Lighting.h の LightBlock: 1 フレームに 1 回入れる)。
 cbuffer Lights : register(b1) {
@@ -90,7 +92,8 @@ LineOut LineVS(LineIn i) {
 }
 float4 LinePS(LineOut i) : SV_Target { return i.col; }
 
-struct MeshIn  { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; uint2 draw : DRAW; };
+// DRAW (描画ごと。Renderer3D.cpp の draws_): x 物、y 材質、z 骨の行列の最初の行 (kNoBones: 休みの姿勢)、w 空き。
+struct MeshIn  { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; uint4 draw : DRAW; };
 struct MeshOut { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float3 wpos : TEXCOORD2; nointerpolation uint2 draw : DRAW; };
 MeshOut MeshVS(MeshIn i) {
     LoadPlace(i.draw.x);
@@ -100,9 +103,40 @@ MeshOut MeshVS(MeshIn i) {
     o.nrm = mul(normalWorld, i.nrm);
     o.wpos = w.xyz;
     o.uv = i.uv;
-    o.draw = i.draw;
+    o.draw = i.draw.xy;
     return o;
 }
+
+// GPU スキニング (骨のあるメッシュ: Renderer3D.h の MeshDraw::bones)。骨の行列はフレームの全部の
+// 描画の分を 1 回書く (Renderer3D.cpp の bones_)。1 本 = float4 3 つ (BoneMatrix: 3x4 の行。
+// dot(行, float4(p, 1)))。頂点の骨とウェイトは 2 本目の頂点バッファ (スロット 2: R16G16B16A16_UINT と
+// _UNORM)。式は Skinning.h (CPU の同じもの。テストが比べる) と同じ。
+Buffer<float4> bones : register(t10);
+static const uint kNoBones = 0xFFFFFFFF;
+struct SkinnedMeshIn { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; uint4 draw : DRAW; uint4 bone : BONES; float4 weight : WEIGHTS; };
+// 骨で動かした頂点 (モデルの空間): ウェイトで混ぜた 3x4 の行列 (Skinning.h の SkinMatrix) を掛ける。
+// 法線は 3x3 の部分で動かし、長さ 1 に直す (接線はピクセルシェーダーが作るので要らない)。
+MeshIn Skin(SkinnedMeshIn i) {
+    MeshIn o;
+    o.pos = i.pos;
+    o.nrm = i.nrm;
+    o.uv = i.uv;
+    o.draw = i.draw;
+    if (i.draw.z == kNoBones) return o;  // 休みの姿勢 (骨の行列を渡されなかった)
+    float4 r0 = 0, r1 = 0, r2 = 0;
+    [unroll] for (int k = 0; k < 4; ++k) {
+        uint at = i.draw.z + i.bone[k] * 3;
+        r0 += i.weight[k] * bones.Load(at);
+        r1 += i.weight[k] * bones.Load(at + 1);
+        r2 += i.weight[k] * bones.Load(at + 2);
+    }
+    float4 p = float4(i.pos, 1);
+    o.pos = float3(dot(r0, p), dot(r1, p), dot(r2, p));
+    float3 n = float3(dot(r0.xyz, i.nrm), dot(r1.xyz, i.nrm), dot(r2.xyz, i.nrm));
+    o.nrm = dot(n, n) > 1e-20 ? normalize(n) : i.nrm;
+    return o;
+}
+MeshOut SkinnedMeshVS(SkinnedMeshIn i) { return MeshVS(Skin(i)); }
 
 // 1 = 光が当たる、0 = 影: `maps` のマップ `tile` (タイルは `grid` 列 x 行に並ぶ) の p での値
 // (割り算の後: x, y -1..1、深度 0..1)。3 x 3 回見る。1 回ごとに 2 x 2 テクセルをすでに混ぜている
@@ -243,6 +277,7 @@ float4 Paint(MeshOut i) {
 
 float4 MeshPS(MeshOut i) : SV_Target {
     LoadLook(i.draw);
+    i.uv = i.uv * uvMove.xy + uvMove.zw;  // 材質の絵の繰り返しとずらし (どの絵も、法線の向きの計算も、この uv で)
     float4 base = Paint(i);
     // 見える側は、目に向いている側 (開いたモデルの裏側は、その側の面として光を受ける)。
     // 画面上の三角形の巻き方ではなく目から判断するので、鏡写しのモデルや反転した射影でも
@@ -286,6 +321,7 @@ float4 ShadowVS(MeshIn i) : SV_Position {
     LoadPlace(i.draw.x);
     return mul(lightViewProj, mul(world, float4(i.pos, 1)));
 }
+float4 SkinnedShadowVS(SkinnedMeshIn i) : SV_Position { return ShadowVS(Skin(i)); }
 
 // シャドウマップのタイルを、残しておいた層 (動かないもの: 別のテクスチャの同じタイル) から
 // そのまま敷き戻す。動くものを上に描く前に行う。ClearVS の三角形で描く。
@@ -341,6 +377,8 @@ const char kSurfaceHlsl[] = R"(
 cbuffer SurfaceData : register(b5) {
     float4 surfaceData[16];
 };
+// 面の手の絵 (SurfaceTouch::texture。無いとき: 何も結ばれていない - Load は 0)。
+Texture2D<float4> surfaceMap : register(t10);
 )";
 
 std::string RendererShaderText(std::string_view surface) {

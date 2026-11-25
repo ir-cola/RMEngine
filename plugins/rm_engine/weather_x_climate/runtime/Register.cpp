@@ -26,7 +26,12 @@ void Grid(const game_production::Scene& scene, Vec3 center, float step, int coun
     }
 }
 
+float MostLocal(const game_production::Scene& scene) { return MostLocalOf(scene); }
+
+const weather::WeatherPlaceInfo kPlace{&Grid, &MostLocal};
+
 // システム: Play の間、ゲームのカメラのいる所の降り方を、天候の今の天候に (天候のシステムの前)。
+// カメラのまわりの地図のマスごとの降り方も (天候が場所ごとの濡れと積雪を進める)。
 void RunPlace(game_production::SystemContext& ctx) {
     weather::Weather* w = ctx.scene.Setting<weather::Weather>();
     if (!w) return;
@@ -37,7 +42,19 @@ void RunPlace(game_production::SystemContext& ctx) {
         at = pose.position;
     }
     const climate::ClimateField field(ctx.scene);
-    Approach(w->placeSnow, w->placeMore, PlaceOf(field.At(at)), std::isfinite(ctx.dt) ? std::max(ctx.dt, 0.f) : 0.f);
+    const float dt = std::isfinite(ctx.dt) ? std::max(ctx.dt, 0.f) : 0.f;
+    const climate::ClimateHere here = field.At(at);
+    Approach(w->placeSnow, w->placeMore, w->placeLocal, PlaceOf(here), dt);
+    weather::PlaceCellsFor(*w, ctx.scene, at, kPlace);
+    if (field.HasClouds() || field.HasRain()) {
+        float weight = here.cloudWeight, amount = here.cloudAmount;
+        MixRainClouds(weight, amount, here.rainWeight, here.rainAmount);
+        ApproachClouds(w->placeClouds, w->placeCloudShare, weight, amount, dt);
+    } else {
+        w->placeClouds = -1;
+        w->placeCloudShare = 0;
+    }
+    CloudCellsFor(*w, field, at);
 }
 
 }  // namespace
@@ -53,21 +70,89 @@ float MoreOf(float humidity) {
     return h <= 50.f ? h / 50.f : 1.f + (h - 50.f) / 50.f * (weather::kPlaceMostMore - 1.f);
 }
 
-weather::WeatherPlace PlaceOf(const climate::ClimateHere& c) { return {SnowShareOf(c.temperature), MoreOf(c.humidity)}; }
+weather::WeatherPlace PlaceOf(const climate::ClimateHere& c) {
+    const float weight = std::isfinite(c.rainWeight) ? std::clamp(c.rainWeight, 0.f, 1.f) : 0.f;
+    const float amount = std::isfinite(c.rainAmount) ? std::clamp(c.rainAmount, 0.f, 100.f) : 0.f;
+    return {SnowShareOf(c.temperature), MoreOf(c.humidity), weight * amount / 100.f};
+}
 
-void Approach(float& placeSnow, float& placeMore, const weather::WeatherPlace& to, float dt) {
-    if (!std::isfinite(placeSnow) || placeSnow < 0 || !std::isfinite(placeMore)) {
+float RainCloudsOf(float rain) {
+    const float r = std::isfinite(rain) ? std::clamp(rain, 0.f, 100.f) : 0.f;
+    return 70.f + 0.3f * r;
+}
+
+void MixRainClouds(float& weight, float& amount, float rainWeight, float rainAmount) {
+    const float w = std::isfinite(weight) ? std::clamp(weight, 0.f, 1.f) : 0.f;
+    const float a = std::isfinite(amount) ? std::clamp(amount, 0.f, 100.f) : 0.f;
+    const float rw = std::isfinite(rainWeight) ? std::clamp(rainWeight, 0.f, 1.f) : 0.f;
+    weight = 1.f - (1.f - w) * (1.f - rw);
+    amount = w + rw > 0 ? (w * a + rw * RainCloudsOf(rainAmount)) / (w + rw) : a;
+}
+
+float MostLocalOf(const game_production::Scene& scene) {
+    const climate::ClimateMap* map = scene.Setting<climate::ClimateMap>();
+    if (!map) return 0.f;
+    const auto tables = climate::PaintTablesOf(*map);
+    return tables ? std::clamp(tables->MostRain() / 100.f, 0.f, 1.f) : 0.f;
+}
+
+void ApproachValue(float& value, float to, float dt) {
+    const float k = 1.f - std::exp(-(std::isfinite(dt) ? std::max(dt, 0.f) : 0.f) / 2.f);
+    value += (to - value) * k;
+}
+
+void Approach(float& placeSnow, float& placeMore, float& placeLocal, const weather::WeatherPlace& to, float dt) {
+    if (!std::isfinite(placeSnow) || placeSnow < 0 || !std::isfinite(placeMore) || !std::isfinite(placeLocal)) {
         placeSnow = to.snow;
         placeMore = to.more;
+        placeLocal = to.local;
         return;
     }
-    const float k = 1.f - std::exp(-dt / 2.f);
-    placeSnow += (to.snow - placeSnow) * k;
-    placeMore += (to.more - placeMore) * k;
+    ApproachValue(placeSnow, to.snow, dt);
+    ApproachValue(placeMore, to.more, dt);
+    ApproachValue(placeLocal, to.local, dt);
+}
+
+void ApproachClouds(float& placeClouds, float& placeShare, float weight, float amount, float dt) {
+    weight = std::isfinite(weight) ? std::clamp(weight, 0.f, 1.f) : 0.f;
+    amount = std::isfinite(amount) ? std::clamp(amount, 0.f, 100.f) : 0.f;
+    if (!std::isfinite(placeClouds) || placeClouds < 0 || !std::isfinite(placeShare)) {
+        placeClouds = amount;
+        placeShare = weight;
+        return;
+    }
+    ApproachValue(placeShare, weight, dt);
+    if (weight > 0) ApproachValue(placeClouds, amount, dt);
+}
+
+void CloudCellsFor(weather::Weather& w, const climate::ClimateField& field, Vec3 eye) {
+    if (!(field.HasClouds() || field.HasRain()) || !std::isfinite(eye.x) || !std::isfinite(eye.z)) {
+        w.cloudCells.clear();
+        w.cloudShares.clear();
+        return;
+    }
+    constexpr int n = weather::kCloudMapCells;
+    constexpr float cell = weather::kCloudMapCell;
+    const float firstX = (std::floor(eye.x / cell) - static_cast<float>(n / 2) + 0.5f) * cell;
+    const float firstZ = (std::floor(eye.z / cell) - static_cast<float>(n / 2) + 0.5f) * cell;
+    w.cloudFirstX = firstX;
+    w.cloudFirstZ = firstZ;
+    w.cloudCells.assign(size_t{n} * n, 0.f);
+    w.cloudShares.assign(size_t{n} * n, 0.f);
+    for (int z = 0; z < n; ++z) {
+        for (int x = 0; x < n; ++x) {
+            const Vec2 at{firstX + static_cast<float>(x) * cell, firstZ + static_cast<float>(z) * cell};
+            float share = 0, amount = 0, rainShare = 0, rain = 0;
+            field.CloudsAt(at, cell * 0.5f, share, amount);
+            field.RainAt(at, cell * 0.5f, rainShare, rain);
+            MixRainClouds(share, amount, rainShare, rain);
+            w.cloudShares[static_cast<size_t>(z) * n + static_cast<size_t>(x)] = share;
+            w.cloudCells[static_cast<size_t>(z) * n + static_cast<size_t>(x)] = amount;
+        }
+    }
 }
 
 void RegisterRuntime(RuntimeRegistry& registry) {
-    static const weather::WeatherPlaceInfo kPlace{&Grid};
     registry.Contribute(weather::kWeatherPlacePoint, kPlace);
     static const game_production::SystemInfo kSystem{"天候 × 気候", game_production::SystemPhase::Frame, -1, &RunPlace};
     registry.Contribute(game_production::kSystemPoint, kSystem);

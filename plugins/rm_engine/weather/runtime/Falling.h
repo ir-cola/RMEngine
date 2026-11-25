@@ -27,8 +27,10 @@ struct Precipitation {
     float windX = 0, windZ = 0;    // 今の風 (m/s、ワールド)
     float driftX = 0, driftZ = 0;  // 風が運んだ距離 (ワールド単位)
     int map = -1;                  // 落ちる向きの 向きの地図 (-1: なし - 当たるものがない)
+    float lying = 0;               // 雪: 積もっている雪の深さ (m)。雪片はその上に落ちる (当たるものの面より上)
     // 場所ごとの降り方 (WeatherPlace.h) を見る: 粒ごとに、その場所の割合で出る (雨: 1 - 雪の割合)。
     bool placed = false;
+    float base = 0;  // (場所ごと) 分ける前の今の降水量: その場所で降る量 = max(base x 倍率, その場所だけ降る量)
 };
 // (2026-11-20: 4 倍に - 一番強い雨が軽く感じた。嵐は雨の壁)
 // (2026-11-20 また: 雨は減らす - どしゃぶりは粒より霧。雪はずっと多く)
@@ -65,7 +67,7 @@ struct FallConstants {
     float up[4];     // xyz: カメラの上
     float wind[4];   // xy: 今の風 (m/s、ワールドの x z)、zw: 風が運んだ距離
     float fall[4];   // x: 最小の落下 (m/s)、y: それぞれがさらに速くなれる量、z: 風がどれだけ運ぶか
-    float place[4];  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う
+    float place[4];  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う。w: 積もった雪の深さ (m。雪片はその上に落ちる)
     float placeSnow[(kPlaceGridPoints + 3) / 4 * 4];  // 格子の点ごとの雪の割合 (行が z、列が x)
 };
 static_assert(sizeof(FallConstants) % 16 == 0);
@@ -74,9 +76,11 @@ static_assert((kPlaceGridPoints + 3) / 4 == 13, "kFallHlsl の precipPlaceSnow[1
 // 濡れ と 積雪: すべての面への働き (3D 空間の RenderFrame::surface: Surface(...)) とその数値 -
 // 雨と雪の降り方ごとに、それを見る 向きの地図 (`maps`、-1: なし - 全部開いている)、覆うものの
 // 下へどれだけしみこむか、雪がどれだけ深く積もるか (float4 1 + k: 日なた、日陰、地図、
-// しみこみ。float4 1 + kWetWays + k: x が雪)。
+// しみこみ。float4 1 + kWetWays + k: x が雪)。float4 1 + 2 kWetWays: 場所ごとの地図 `place`
+// (cells が 0: なし - 向きの濡れと積雪がどこでも同じ。あるとき: その絵 (WetMapTexels) を
+// SurfaceTouch::texture に結び、濡れと積雪の量はそちらから読む)。
 extern const char kWetSurfaceHlsl[];
-std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps);
+std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps, const WetMapInfo& place = {});
 
 // 高さのある 積雪 (RenderFrame::solids): SnowLayerVS / SnowLayerPS。
 // RendererShaderText(kWetSurfaceHlsl) の後 - 目のまわりに、kSnowCell のマスを kSnowCells x
@@ -95,6 +99,7 @@ struct SnowLayerConstants {
     float snow[4][4];    // 各降り方: x: その雪 (m)、y: その 向きの地図 (-1: なし)
     float trail[4];      // 足跡: xy: 最初のマス (ワールドの x z)、z: 1 マス (m)、w: 1 辺のマス数 (0: なし)
     float trailMore[4];  // x: 足跡の数のうちどれか
+    float place[4];      // 場所ごとの地図: xy 最初のマスの角 (ワールドの x z)、z: 1 マス (m)、w: 一辺のマス数 (0: なし)
 };
 static_assert(sizeof(SnowLayerConstants) % 16 == 0);
 struct SnowTrailConstants {
@@ -103,8 +108,9 @@ struct SnowTrailConstants {
 };
 static_assert(sizeof(SnowTrailConstants) % 16 == 0);
 // `eye` のまわりに積もる雪: `downMap` (まっすぐ下) が見るものの上に、`ways` (`maps` で見る) が
-// 残した分の深さで。`trails` のとき足跡を読む。
-SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, int downMap, uint32_t trailCount, bool trails);
+// 残した分の深さで (`place` があるとき: その地図の場所ごとの深さで)。`trails` のとき足跡を読む。
+SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, int downMap, uint32_t trailCount, bool trails,
+                               const WetMapInfo& place = {});
 // 足跡のフレーム: 前から `fill` m 埋まった。`upMap`: 動く形を下から見た地図。
 SnowTrailConstants SnowTrailOf(Vec3 eye, uint32_t count, float fill, int upMap);
 

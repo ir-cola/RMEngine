@@ -43,4 +43,24 @@ struct SceneSettingLook {
     std::wstring (*presetLabel)() = nullptr;
 };
 
+// PluginRegistry の口: 中身は SceneSettingHide (static)。ほかのプラグインがあると意味の無くなるシーンの設定の欄を、
+// インスペクター (と気候のタブ) から隠す。設定を出すプラグインは隠す者を知らない (つなぎが足す: 天候 × 気候 が
+// 天候の「雪にする」を。雨か雪かは気温で決まるため)。値はファイルにそのまま残る。
+//
+//   static const game_production::SceneSettingHide kHide{&reflect::TypeOf<weather::Weather>, "snowing"};
+//   registry.Contribute(game_production::kSceneSettingHidePoint, kHide);
+inline constexpr char kSceneSettingHidePoint[] = "rm_engine.game_production.scene_setting_hide";
+struct SceneSettingHide {
+    const reflect::TypeDesc& (*type)();
+    const char* field = nullptr;
+};
+// 型 `type` の、隠す欄の名前。
+inline std::vector<std::string> HiddenSettingFields(const editor::PluginRegistry& registry, const reflect::TypeDesc& type) {
+    std::vector<std::string> out;
+    for (const auto& h : registry.Contributions<SceneSettingHide>(kSceneSettingHidePoint)) {
+        if (h.item->type && h.item->field && &h.item->type() == &type) out.emplace_back(h.item->field);
+    }
+    return out;
+}
+
 }  // namespace rm::game_production

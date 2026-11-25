@@ -20,6 +20,7 @@
 #include "core/reflect/FieldCommand.h"
 #include "editor/dock/DockLayout.h"
 #include "editor/dock/DockSpace.h"
+#include "editor/inspector/Inspector.h"
 #include "editor/tree/TreeView.h"
 #include "platform/Gfx.h"
 #include "platform/Shell.h"
@@ -85,9 +86,17 @@ struct InspectBlock {
     bool direct = false;
     // 欄での右クリック (読み取り専用のブロックでも): その欄のメニュー (inspector::Block::fieldMenu)。
     std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
+    // 出さない欄 (inspector::Block::hidden)。
+    std::vector<std::string> hidden;
     // 決まった値を一度に入れる: 欄の上の 1 行 (inspector::Block::presets)。
     std::wstring presetLabel;
     std::vector<w::Action> presets;
+    // 文字の欄の選択肢 (inspector::Block::choices: その欄をドロップダウンにする)。
+    std::function<std::optional<std::vector<inspector::Choice>>(const reflect::FieldPath& path)> choices;
+    // 欄でなく自分で描くブロック (`type` は null。inspector::Block::customHeight / customDraw): 幅に対する
+    // 高さと、その四角に描くもの。編集は描く側が自分で Undo に積む (憲法 7)。
+    std::function<float(ui::Context& c, float width)> customHeight;
+    std::function<void(ui::Context& c, const ui::Rect& r)> customDraw;
 };
 
 struct Inspectable {
@@ -208,6 +217,9 @@ public:
     // アセットのファイルの名前を変える (その .meta も付いてくる。ID は変わらない)。空、
     // または失敗した理由 (画面の言語で)。
     virtual std::wstring RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) = 0;
+    // アセットのファイルを、その .meta と一緒にごみ箱へ (アセットのパネルの「削除」と同じ。完全には
+    // 消さない)。空、または消せなかった理由 (画面の言語で。コンソールにも出る)。Undo には積まない。
+    virtual std::wstring DeleteAsset(const AssetRef& ref) = 0;
     // ソフトが自分で (自分用のウィンドウで) 描くインスペクターのために、参照の欄が並べるもの
     // (プロジェクトのファイル、階層の項目): `out` に入れる。何も入れなければ "(なし)" だけ出る。
     virtual void FillInspectorRefs(inspector::Refs& out) { (void)out; }

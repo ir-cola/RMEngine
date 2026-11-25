@@ -5,8 +5,10 @@
 #include "Test.h"
 
 #include "rm_engine/space3d/runtime/MeshBake.h"
+#include "rm_engine/space3d/runtime/ClipSettings.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 
@@ -115,6 +117,124 @@ RM_TEST(MeshBake_UnknownChunksAndBroken) {
     CHECK(!ReadBakedMesh(later, &err));
 }
 
+namespace {
+
+// 骨 2 本・頂点 4 つのスキンと、クリップ 2 つ (位置だけ・回転と大きさ) を Sample() に足したもの。
+MeshData SkinnedSample() {
+    MeshData m = Sample();
+    SkinData s;
+    Bone root;
+    root.name = "根";
+    root.rest = {{0, 1, 0}, QuatAxisAngle({0, 1, 0}, 0.5f), {1, 2, 1}};
+    Bone arm;
+    arm.name = "arm";
+    arm.parent = 0;
+    arm.rest.t = {0, 0.5f, 0};
+    s.skeleton.bones = {root, arm};
+    s.vertices.resize(4);
+    s.vertices[0].weight = {65535, 0, 0, 0};
+    s.vertices[1].bone = {1, 0, 0, 0};
+    s.vertices[1].weight = {65535, 0, 0, 0};
+    s.vertices[2].bone = {1, 0, 0, 0};
+    s.vertices[2].weight = {40000, 25535, 0, 0};
+    s.vertices[3].weight = {65535, 0, 0, 0};
+    Mat4 ibm;
+    ibm.m[3][1] = -1.5f;
+    s.inverseBind = {Mat4{}, ibm};
+    std::vector<Vec3> positions;
+    for (const MeshVertex& v : m.vertices) positions.push_back(v.position);
+    ComputeBoneBounds(s, positions);
+    m.skin = s;
+    Clip walk;
+    walk.name = "歩く";
+    walk.duration = 0.1f;
+    walk.frames = ClipFrames(walk.duration, walk.rate);
+    walk.tracks.push_back({"arm", {{0, 0, 0}, {0, 0.1f, 0}, {0, 0.2f, 0}, {0, 0.3f, 0}}, {}, {}});
+    Clip idle;
+    idle.name = "idle";
+    idle.rate = 60;
+    idle.tracks.push_back({"根", {}, {QuatAxisAngle({1, 0, 0}, 0.25f)}, {{1, 1, 1}}});
+    m.clips = {walk, idle};
+    return m;
+}
+
+bool SameSkin(const SkinData& a, const SkinData& b) {
+    if (a.skeleton.bones.size() != b.skeleton.bones.size() || !(a.vertices == b.vertices) || a.inverseBind.size() != b.inverseBind.size()) return false;
+    for (size_t i = 0; i < a.skeleton.bones.size(); ++i) {
+        const Bone& x = a.skeleton.bones[i];
+        const Bone& y = b.skeleton.bones[i];
+        if (x.name != y.name || x.parent != y.parent || !(x.rest.t == y.rest.t) || !(x.rest.r == y.rest.r) || !(x.rest.s == y.rest.s)) return false;
+        if (std::memcmp(&a.inverseBind[i], &b.inverseBind[i], sizeof(Mat4)) != 0) return false;
+    }
+    return a.boundsMin == b.boundsMin && a.boundsMax == b.boundsMax;
+}
+
+bool SameClips(const std::vector<Clip>& a, const std::vector<Clip>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].name != b[i].name || a[i].duration != b[i].duration || a[i].rate != b[i].rate || a[i].frames != b[i].frames ||
+            a[i].tracks.size() != b[i].tracks.size()) {
+            return false;
+        }
+        for (size_t k = 0; k < a[i].tracks.size(); ++k) {
+            const BoneTrack& x = a[i].tracks[k];
+            const BoneTrack& y = b[i].tracks[k];
+            if (x.bone != y.bone || x.t != y.t || x.r != y.r || x.s != y.s) return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+// 骨・スキン・逆バインド・骨ごとの範囲・クリップを書いて、同じに読み戻す。
+RM_TEST(MeshBake_SkinAndClipsRoundTrip) {
+    const MeshData m = SkinnedSample();
+    const std::string bytes = WriteBakedMesh(m, {});
+    std::string err;
+    const auto back = ReadBakedMesh(bytes, &err);
+    CHECK(back && back->skin);
+    if (!back || !back->skin) return;
+    CHECK(SameSkin(*back->skin, *m.skin));
+    CHECK(SameClips(back->clips, m.clips));
+    CHECK(back->clips.size() == 2 && back->clips[0].tracks[0].t.size() == 4 && back->clips[1].tracks[0].r.size() == 1);
+    CHECK(WriteBakedMesh(*back, {}) == bytes);
+    // 骨の無いモデルは骨のチャンクを書かない (読むと skin が無い)。
+    const auto plain = ReadBakedMesh(WriteBakedMesh(Sample(), {}), &err);
+    CHECK(plain && !plain->skin && plain->clips.empty());
+}
+
+// 形式 1 (骨の前) のファイルも読める。骨のチャンクが壊れている・足りない・骨の番号を越えるものは断る。
+RM_TEST(MeshBake_SkinFormatAndBroken) {
+    std::string err;
+    std::string old = WriteBakedMesh(Sample(), {});
+    const uint32_t one = 1;
+    std::memcpy(old.data() + 8, &one, 4);
+    CHECK(ReadBakedMesh(old, &err).has_value());
+    // 骨の番号が骨の数を越える。
+    MeshData bad = SkinnedSample();
+    bad.skin->vertices[1].bone[0] = 7;
+    CHECK(!ReadBakedMesh(WriteBakedMesh(bad, {}), &err) && !err.empty());
+    // 頂点とスキンの数が合わない。
+    bad = SkinnedSample();
+    bad.skin->vertices.pop_back();
+    CHECK(!ReadBakedMesh(WriteBakedMesh(bad, {}), &err));
+    // 親が後ろにある。
+    bad = SkinnedSample();
+    bad.skin->skeleton.bones[0].parent = 1;
+    CHECK(!ReadBakedMesh(WriteBakedMesh(bad, {}), &err));
+    // サンプルの数が 0・1・frames のどれでもない。
+    bad = SkinnedSample();
+    bad.clips[0].tracks[0].t.pop_back();
+    CHECK(!ReadBakedMesh(WriteBakedMesh(bad, {}), &err) && err.find("ANIM") != std::string::npos);
+    // SKIN のチャンクを消す (名前を知らないものに変える): 骨が足りない。
+    std::string noSkin = WriteBakedMesh(SkinnedSample(), {});
+    const size_t at = noSkin.find("SKIN");
+    CHECK(at != std::string::npos);
+    noSkin.replace(at, 4, "XKIN");
+    CHECK(!ReadBakedMesh(noSkin, &err) && err.find("SKIN") != std::string::npos);
+}
+
 // 本物のモデルを、エディターが読むとおりに読み (LoadMeshFile: 取り込みの設定を適用)、焼いて読む。
 RM_TEST(MeshBake_ARealModel) {
     const std::filesystem::path file = std::filesystem::path(__FILE__).parent_path().parent_path() / "docs" / "samples" / "models" / "house.gltf";
@@ -132,4 +252,67 @@ RM_TEST(MeshBake_ARealModel) {
     size_t withPicture = 0;
     for (const auto& mat : mesh->materials) withPicture += mat.image >= 0 ? 1 : 0;
     CHECK(withPicture > 0 && back && !back->images.empty());
+}
+
+// 骨のある見本のモデル (取り込みの設定を掛けたもの) を焼いて読む: 骨もクリップも同じ。
+RM_TEST(MeshBake_ASkinnedModel) {
+    const std::filesystem::path file = std::filesystem::path(__FILE__).parent_path().parent_path() / "docs" / "samples" / "models" / "skinned_arm.gltf";
+    std::string err;
+    const auto mesh = LoadMeshFile(file, &err);
+    CHECK(mesh && mesh->skin && mesh->clips.size() == 2);
+    if (!mesh || !mesh->skin) return;
+    const auto back = ReadBakedMesh(WriteBakedMesh(*mesh, {}), &err);
+    CHECK(back && back->skin && SameSkin(*back->skin, *mesh->skin) && SameClips(back->clips, mesh->clips));
+}
+
+// .meta の "clips" のイベントを、名前の同じクリップに (時刻の順・範囲の中・壊れたものは捨てる)。
+RM_TEST(ClipSettings_ReadsEvents) {
+    std::vector<Clip> clips(2);
+    clips[0].name = "歩く";
+    clips[0].duration = 1;
+    clips[1].name = "idle";
+    clips[1].duration = 2;
+    clips[1].events = {{0.5f, "old", 0, ""}};
+    const auto import = json::Parse(R"({"axes": "Auto", "clips": {
+        "歩く": {"loop": true, "events": [
+            {"time": 0.8, "name": "右足", "number": 2, "text": "砂"},
+            {"time": 0.2, "name": "左足"},
+            {"time": 5, "name": "遅い"},
+            {"time": -1, "name": "早い"},
+            {"time": 0.3, "name": ""},
+            {"name": "時刻が無い"},
+            "壊れた"]},
+        "無いクリップ": {"events": [{"time": 0, "name": "x"}]}}})");
+    CHECK(import.has_value());
+    if (!import) return;
+    ApplyClipSettings(clips, *import);
+    CHECK(clips[0].events.size() == 5);
+    if (clips[0].events.size() == 5) {
+        CHECK(clips[0].events[0].name == "早い" && clips[0].events[0].time == 0);
+        CHECK(clips[0].events[1].name == "時刻が無い" && clips[0].events[1].time == 0);  // (同じ時刻は書いた順)
+        CHECK(clips[0].events[2].name == "左足" && clips[0].events[2].number == 0 && clips[0].events[2].text.empty());
+        CHECK(clips[0].events[3].name == "右足" && clips[0].events[3].number == 2 && clips[0].events[3].text == "砂");
+        CHECK(clips[0].events[4].name == "遅い" && clips[0].events[4].time == 1);
+    }
+    CHECK(clips[1].events.size() == 1 && clips[1].events[0].name == "old");  // 書いていないクリップはそのまま
+    ApplyClipSettings(clips, json::Value::MakeObject());                     // "clips" が無い: 何もしない
+    CHECK(clips[0].events.size() == 5);
+    CHECK(ClampEventTime(std::nanf(""), 1) == 0 && ClampEventTime(2, 1) == 1 && ClampEventTime(0.5f, -1) == 0);
+}
+
+// クリップのイベントは EVNT のチャンクに入り、同じに読み戻す。イベントが無ければ書かない。
+RM_TEST(MeshBake_ClipEventsRoundTrip) {
+    MeshData m = SkinnedSample();
+    const std::string plain = WriteBakedMesh(m, {});
+    CHECK(plain.find("EVNT") == std::string::npos);
+    m.clips[1].events = {{0, "始め", 1.5, "テキスト"}, {0, "同じ時刻", 0, ""}};
+    const std::string bytes = WriteBakedMesh(m, {});
+    CHECK(bytes.find("EVNT") != std::string::npos);
+    std::string err;
+    const auto back = ReadBakedMesh(bytes, &err);
+    CHECK(back && back->clips.size() == 2);
+    if (!back || back->clips.size() != 2) return;
+    CHECK(back->clips[0].events.empty());
+    CHECK(back->clips[1].events == m.clips[1].events);
+    CHECK(WriteBakedMesh(*back, {}) == bytes);
 }

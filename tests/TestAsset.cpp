@@ -9,6 +9,7 @@
 #include "core/asset/AssetIndex.h"
 #include "core/asset/ImportSettings.h"
 #include "editor/app/Worker.h"
+#include "editor/assets/AssetGrid.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 #include "core/reflect/Reflect.h"
@@ -704,4 +705,29 @@ RM_TEST(Asset_Look_CaseOfANameDoesNotCount) {
     CHECK(GuidInMeta(std::string{std::istreambuf_iterator<char>(again), std::istreambuf_iterator<char>()}) == guid);
     again.close();
     fs::remove_all(root.parent_path(), ec);
+}
+
+RM_TEST(Asset_Grid) {
+    using namespace rm::editor;
+    // 並べ方: 幅に入るだけ列を作り、左上から右へ。タイルの間や外は何も無い。
+    const AssetGridMetrics m = MeasureAssetGrid(8 * 2 + 84 * 3 + 6 * 2 + 10, 64);  // 3 列ちょうど (+ 少し)
+    CHECK(m.tileW == 84 && m.columns == 3);
+    CHECK(MeasureAssetGrid(10, 64).columns == 1);  // 狭くても 1 列
+    const rm::ui::Rect t4 = AssetTileRect(m, 0, 0, 4);  // 2 行目の 2 つ目
+    CHECK(t4.x == 8 + 90 && t4.y == 8 + m.tileH + 6);
+    CHECK(AssetTileAt(m, 0, 0, 5, t4.x + 1, t4.y + 1) == 4);
+    CHECK(AssetTileAt(m, 0, 0, 4, t4.x + 1, t4.y + 1) == -1);  // 4 個しか無い
+    CHECK(AssetTileAt(m, 0, 0, 5, 8 + 84 + 2, 10) == -1);      // タイルの間
+    CHECK(AssetGridHeight(m, 0) == 16 && AssetGridHeight(m, 4) == 16 + m.tileH * 2 + 6);
+    // フォルダーの直下だけ (並びはそのまま)。検索は全体から、名前で。
+    const std::vector<rm::asset::Entry> entries = {
+        {"Models", "a", true}, {"Models/robot.glb", "b", false}, {"Models/Old", "c", true}, {"Models/Old/robot2.glb", "d", false}, {"logo.png", "e", false}};
+    const std::vector<size_t> order = {0, 2, 3, 1, 4};
+    CHECK(AssetsInFolder(entries, order, "") == std::vector<size_t>({0, 4}));
+    CHECK(AssetsInFolder(entries, order, "Models") == std::vector<size_t>({2, 1}));
+    CHECK(AssetsMatching(entries, order, "ROBOT") == std::vector<size_t>({3, 1}));
+    CHECK(AssetsMatching(entries, order, "").empty());
+    // パンくずリストの段。
+    CHECK(AssetFolderSteps("Models/Old") == std::vector<std::string>({"Models", "Models/Old"}));
+    CHECK(AssetFolderSteps("").empty());
 }

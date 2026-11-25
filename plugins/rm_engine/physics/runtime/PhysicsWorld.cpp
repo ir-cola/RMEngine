@@ -30,6 +30,7 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
@@ -325,6 +326,9 @@ struct PhysicsWorld::Impl {
             case ShapeDims::Kind::Capsule:
                 s = d.halfHeight > 1e-4f ? JPH::RefConst<JPH::Shape>(new JPH::CapsuleShape(d.halfHeight, d.radius))
                                          : JPH::RefConst<JPH::Shape>(new JPH::SphereShape(d.radius));
+                break;
+            case ShapeDims::Kind::Cylinder:
+                s = new JPH::CylinderShape(d.halfHeight, d.radius, std::min({d.halfHeight, d.radius, JPH::cDefaultConvexRadius}) * 0.5f);
                 break;
             case ShapeDims::Kind::Mesh: {
                 JPH::RefConst<JPH::Shape> mesh = MeshShapeOf(e);

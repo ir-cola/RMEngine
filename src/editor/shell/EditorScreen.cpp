@@ -111,7 +111,7 @@ EditorScreen::~EditorScreen() {
 
 bool EditorScreen::Open() {
     platform::WindowDesc d;
-    d.title = Utf8ToWide(project_.Name()) + L" - RM Engine";
+    d.title = TitleText();
     d.widthDip = 1600;
     d.heightDip = 900;
     d.minWidthDip = 960;
@@ -259,6 +259,11 @@ void EditorScreen::Workspace::Ask(std::wstring title, std::wstring text, std::ve
 
 std::wstring EditorScreen::Workspace::RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) {
     return editor_.assets_->Rename(ref.guid, newNameUtf8);
+}
+
+std::wstring EditorScreen::Workspace::DeleteAsset(const AssetRef& ref) {
+    const std::string guids[] = {ref.guid};
+    return editor_.assets_->Delete(guids);
 }
 
 bool EditorScreen::ExportForCheck(const fs::path& outDir, std::string* error) {
@@ -440,6 +445,7 @@ void EditorScreen::LoadLayout() {
         ws->dock.SetLayout(std::move(layout));
     }
     help_.LoadState(layoutDoc_.Get("help"));
+    console_.LoadState(layoutDoc_.Get("console"));
     if (broken) log::Warn("パネルの配置を一部読めなかったので、最初の配置で開きます: {}", PathToUtf8(file));
     LoadSharedLayouts();
     const json::Value& active = layoutDoc_.Get("active");
@@ -553,6 +559,7 @@ void EditorScreen::SaveLayout() {
     }
 
     layoutDoc_.Set("help", help_.SaveState());  // (ヘルプのタブ・見ていたページ・開いた木: どのソフトでも同じ 1 つ)
+    layoutDoc_.Set("console", console_.SaveState());  // (コンソールの自動スクロールと表示するレベル: どのソフトでも同じ 1 つ)
 
     const fs::path file = LayoutFile();
     std::error_code ec;
@@ -694,9 +701,10 @@ void EditorScreen::SetDirty(bool dirty) {
     Invalidate();
 }
 
-void EditorScreen::UpdateTitle() {
-    SetTitle((dirty_ ? L"* " : L"") + Utf8ToWide(project_.Name()) + L" - RM Engine");
-}
+// ウィンドウの名前: "RM Engine - プロジェクト名" (エンジンの名前が先。未保存なら名前の前に "* ")。
+std::wstring EditorScreen::TitleText() const { return L"RM Engine - " + std::wstring(dirty_ ? L"* " : L"") + Utf8ToWide(project_.Name()); }
+
+void EditorScreen::UpdateTitle() { SetTitle(TitleText()); }
 
 void EditorScreen::FlushAssetEdits(const ui::Context& c) {
     // 取り込みの設定は編集が終わってから書く: ボタンを押していない (数のドラッグ)、
@@ -1193,8 +1201,12 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
             if (const reflect::EditTarget o = resolveOther ? resolveOther() : reflect::EditTarget{}; o.object) others.push_back(o.object);
         }
         shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode, std::move(others), b.readOnly, b.fieldMenu});
+        shown.back().hidden = b.hidden;
         shown.back().presetLabel = b.presetLabel;
         shown.back().presets = b.presets;
+        shown.back().choices = b.choices;
+        shown.back().customHeight = b.customHeight;
+        shown.back().customDraw = b.customDraw;
         source.push_back(i);
     }
     const bool gone = target.blocks && shown.empty();
@@ -1271,31 +1283,7 @@ void EditorScreen::DrawStart(ui::Context& c, Rect r) {
            body);
 }
 
-void EditorScreen::DrawConsole(ui::Context& c, Rect r) {
-    auto& p = c.P();
-    const std::vector<log::Entry> entries = log::Snapshot();
-    const float lineH = 20;
-    const float content = lineH * static_cast<float>(entries.size()) + 8;
-    const uint64_t last = entries.empty() ? 0 : entries.back().seq;
-    auto seen = consoleSeenSeq_.try_emplace(&c, ~0ull).first;
-    if (last != seen->second) {
-        w::ScrollToEnd(c, "console");  // 新しい出力を追う (新しいウィンドウでは最後から始める)
-        seen->second = last;
-    }
-    const Rect view = r.Inset(0, 2, 0, 2);
-    const float off = w::BeginScroll(c, "console", view, content);
-    const size_t first = static_cast<size_t>(std::max(0.f, (off - 4) / lineH));
-    for (size_t i = first; i < entries.size(); ++i) {
-        const float y = view.y + 4 + lineH * static_cast<float>(i) - off;
-        if (y > view.Bottom()) break;
-        const auto& e = entries[i];
-        const ui::Color col = e.level == log::Level::Error ? theme::Danger : e.level == log::Level::Warn ? theme::Warn : theme::Text;
-        p.Text({view.x + 12, y, 70, lineH}, std::format(L"{:8.2f}", e.time), Style(12, theme::TextFaint));
-        if (e.level != log::Level::Info) w::DrawIcon(c, {view.x + 86, y, 14, lineH}, e.level == log::Level::Error ? w::Icon::Error : w::Icon::Warning, theme::Text, 13);
-        p.Text({view.x + 106, y, view.w - 120, lineH}, Utf8ToWide(e.text), Style(12, col));
-    }
-    w::EndScroll(c, "console", view, content);
-}
+void EditorScreen::DrawConsole(ui::Context& c, Rect r) { console_.Draw(c, r); }
 
 void EditorScreen::DrawAssets(ui::Context& c, Rect r) {
     Workspace& ws = Active();

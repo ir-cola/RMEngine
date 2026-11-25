@@ -44,6 +44,7 @@ public:
         upMap_ = -1;
         downMap_ = -1;
         anySnow_ = false;
+        mapInfo_ = {};
         const Weather* w = f.scene.Setting<Weather>();
         if (!w || !f.atmosphere) return;
         const WeatherNow now = NowOf(*w);
@@ -51,12 +52,16 @@ public:
         // 場所ごとの降り方 (WeatherPlace.h) に答える者: 雨も雪も降る量のぶん用意し、粒が自分の場所で決める。
         place_ = nullptr;
         scene_ = &f.scene;
+        float mostLocal = 0;  // (雨雲: シーンの降水量が 0 でも、その場所だけ降る)
         if (f.registry) {
             for (const auto& c : f.registry->Contributions<WeatherPlaceInfo>(kWeatherPlacePoint)) {
-                if (c.item->grid) place_ = c.item->grid;
+                if (!c.item->grid) continue;
+                place_ = c.item->grid;
+                const float m = c.item->mostLocal ? c.item->mostLocal(f.scene) : 0.f;
+                mostLocal = std::isfinite(m) ? std::clamp(m, 0.f, 1.f) : 0.f;
             }
         }
-        const float placedAmount = std::min(PrecipitationNow(*w) * kPlaceMostMore, 1.f);
+        const float placedAmount = std::min(std::max(PrecipitationNow(*w) * kPlaceMostMore, mostLocal), 1.f);
         // 降るもの (それぞれの向きの向きの地図つき) と、濡れたもの (向きごとの地図)。
         const Color light = LightOf(f.sky);
         // 霧 (と、どしゃぶり・吹雪のぶん): 色は天候から、空気中の光で決まる。
@@ -71,6 +76,7 @@ public:
             if (place_) {
                 p.amount = placedAmount;  // (どちらも、多いほうの倍率のぶん: 場所で減らす)
                 p.placed = true;
+                p.base = PrecipitationNow(*w);
             }
             if (!(p.amount > 0)) continue;
             p.seconds = static_cast<float>(f.seconds);
@@ -84,7 +90,30 @@ public:
             falls_.push_back(p);
         }
         wet_ = WetNow(*w);
+        // 場所ごとの濡れと積雪の地図 (答える者がいる Play の間): 絵にして、面と積もった雪がその場所の値を読む。
+        // (無い: 向きの濡れと積雪がどこでも同じ - シーン全体で 1 つ)
+        const WetMap* map = WetMapNow(*w);
+        // エディター (Play の前と止めた後): はじめから積もっている雪を、Play の最初のフレームと同じように
+        // 見せる (場所ごとのときは、原点のまわりの地図で)。
+        if (!w->wetCounted && w->snowFromStart) {
+            previewWays_.clear();
+            previewMap_ = {};
+            if (place_) {
+                int firstX = 0, firstZ = 0;
+                WetMapFirst({0, 0, 0}, firstX, firstZ);
+                const Vec3 center{static_cast<float>(firstX + kWetMapCells / 2) * kWetMapCell, 0, static_cast<float>(firstZ + kWetMapCells / 2) * kWetMapCell};
+                previewPlaces_.assign(size_t{kWetMapCells} * kWetMapCells, WeatherPlace{});
+                place_(f.scene, center, kWetMapCell, kWetMapCells, previewPlaces_.data());
+                MoveWetMap(previewMap_, previewWays_, firstX, firstZ);
+                StartSnowMap(previewMap_, previewWays_, previewPlaces_, now, PrecipitationNow(*w), SnowMostOf(*w));
+                if (!previewWays_.empty()) map = &previewMap_;
+            } else {
+                StartSnow(previewWays_, now, SnowMostOf(*w));
+            }
+            wet_ = previewWays_;
+        }
         if (wet_.size() > kWetWays) wet_.resize(kWetWays);
+        mapInfo_ = map && !wet_.empty() && UploadWetMap(f.gfx, *map) ? WetMapInfoOf(*map) : WetMapInfo{};
         wetMaps_.clear();
         for (const WetWay& way : wet_) {
             wetMaps_.push_back(static_cast<int>(directions_.size()));
@@ -92,7 +121,17 @@ public:
         }
         // 積雪は、各向きの地図が見ている所に積もる。足跡 (ゲームが動いている間だけ): 動く形を
         // 下から見たもの (それだけの専用の地図)。
-        for (const WetWay& way : wet_) anySnow_ = anySnow_ || way.snow > 0.0005f;
+        // (0.1 mm まで: 溶けて小さくなった最後の塊まで描く)
+        for (const WetWay& way : wet_) anySnow_ = anySnow_ || way.snow > 0.0001f;
+        if (mapInfo_.cells > 0) anySnow_ = WetMapMostSnow(*map) > 0.0001f;  // (どこかの場所に)
+        // 雪片が落ちる高さ: 積もった雪の上 (場所ごとのときは一番深い所。雪片は雪の降る所にだけ出る)。
+        float lying = 0;
+        if (mapInfo_.cells > 0) {
+            lying = WetMapMostSnow(*map);
+        } else {
+            for (const WetWay& way : wet_) lying += std::isfinite(way.snow) ? std::max(way.snow, 0.f) : 0.f;
+        }
+        for (Precipitation& p : falls_) p.lying = p.kind == Precipitation::Kind::Snow ? lying : 0.f;
         if (!f.playing) {
             trailsOn_ = false;
         } else if (!trailsOn_) {
@@ -111,11 +150,12 @@ public:
         movingOnly_.assign(directions_.size(), 0);
         if (upMap_ >= 0) movingOnly_[static_cast<size_t>(upMap_)] = 1;
         if (directions_.empty()) return;
-        // それらが当たるもの: コライダー (コネクター 天候 × 物理)。描かない。
+        // それらが当たるもの: 見えているメッシュ (2026-11-25 から。前はコライダー)。どれが動くか (足跡) は
+        // コネクター 天候 × 物理 が言う。
         if (f.registry) {
-            MakeWeatherBlocks(f.scene, *f.registry, f.world, f.shape, f.model, shapes_, blockers_);
+            MakeWeatherBlocks(f.scene, *f.registry, f.world, f.model, shapes_, movers_);
         } else {
-            shapes_.clear();  // (前のフレームのは使わない: モデルが消えているかもしれない)
+            WeatherBlocksOf(f.scene, {}, f.world, f.model, shapes_);
         }
         if (shapes_.empty()) {
             for (Precipitation& p : falls_) p.map = -1;  // (当たるものなし: 地図なし - すべて開いている)
@@ -129,7 +169,8 @@ public:
         }
         if (!wet_.empty()) {
             surface_.code = kWetSurfaceHlsl;
-            surface_.data = WetSurfaceData(wet_, wetMaps_);
+            surface_.data = WetSurfaceData(wet_, wetMaps_, mapInfo_);
+            surface_.texture = mapInfo_.cells > 0 ? wetMapSrv_.Get() : nullptr;
             out.surface = &surface_;
         }
         // 高さのある積もった雪 (向きの地図が見ている所に。薄いうちはまだらに) と、その足跡。
@@ -278,6 +319,39 @@ private:
         return true;
     }
 
+    // 場所ごとの濡れと積雪の地図の絵 (WetMapTexels: デバイスごとに 1 回作り、毎フレーム送る)。
+    bool UploadWetMap(platform::Gfx& gfx, const WetMap& map) {
+        if (mapGeneration_ != gfx.Generation()) {
+            mapGeneration_ = gfx.Generation();
+            wetMapTexture_.Reset();
+            wetMapSrv_.Reset();
+            mapFailed_ = false;
+            ID3D11Device* device = gfx.D3D();
+            if (!device) return false;
+            D3D11_TEXTURE2D_DESC td{};
+            td.Width = static_cast<UINT>(3 * kWetMapCells);
+            td.Height = static_cast<UINT>(kWetMapCells);
+            td.MipLevels = td.ArraySize = 1;
+            td.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+            td.SampleDesc.Count = 1;
+            td.Usage = D3D11_USAGE_DEFAULT;
+            td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+            if (FAILED(device->CreateTexture2D(&td, nullptr, &wetMapTexture_)) ||
+                FAILED(device->CreateShaderResourceView(wetMapTexture_.Get(), nullptr, &wetMapSrv_))) {
+                log::Error("場所ごとの濡れと積雪の地図を作れません (シーン全体で 1 つの濡れと積雪で描きます)");
+                wetMapTexture_.Reset();
+                wetMapSrv_.Reset();
+                mapFailed_ = true;
+            }
+        }
+        ID3D11DeviceContext* ctx = gfx.D3DContext();
+        if (mapFailed_ || !wetMapTexture_ || !ctx) return false;
+        const std::vector<float> texels = WetMapTexels(map);
+        if (texels.empty()) return false;
+        ctx->UpdateSubresource(wetMapTexture_.Get(), 0, nullptr, texels.data(), static_cast<UINT>(3 * kWetMapCells * 4 * sizeof(float)), 0);
+        return true;
+    }
+
     // 積雪 (RenderFrame::solids: モデルのあと、深度を書き、モデルと同じように照らす): まず足跡が
     // 1 フレーム進み (ゲームが動いている間)、そのあと雪のある向きごとに 1 層。
     void DrawSnow(const space3d::ExtraDrawContext& dc) {
@@ -338,12 +412,14 @@ private:
         ctx->VSSetConstantBuffers(6, 1, &maps);
         ctx->VSSetShaderResources(8, 1, &mapTexture);
         ctx->VSSetShaderResources(9, 1, &trail);
+        ID3D11ShaderResourceView* place = mapInfo_.cells > 0 ? wetMapSrv_.Get() : nullptr;
+        ctx->VSSetShaderResources(10, 1, &place);  // (場所ごとの雪の深さ)
         ctx->IASetInputLayout(nullptr);  // (頂点は番号から作る)
         ctx->IASetIndexBuffer(layerIndices_.Get(), DXGI_FORMAT_R32_UINT, 0);
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(layerVs_.Get(), nullptr, 0);
         ctx->PSSetShader(layerPs_.Get(), nullptr, 0);
-        const SnowLayerConstants lk = SnowLayerOf(dc.eye, wet_, wetMaps_, downMap_, trailCount_, trailsOn_);
+        const SnowLayerConstants lk = SnowLayerOf(dc.eye, wet_, wetMaps_, downMap_, trailCount_, trailsOn_, mapInfo_);
         ctx->UpdateSubresource(cb, 0, nullptr, &lk, 0, 0);
         ctx->DrawIndexed(kSnowCells * kSnowCells * 6, 0, 0);
         ctx->VSSetConstantBuffers(4, 1, &none);
@@ -351,6 +427,7 @@ private:
         ctx->VSSetConstantBuffers(6, 1, &none);
         ctx->VSSetShaderResources(8, 1, &noTexture);
         ctx->VSSetShaderResources(9, 1, &noTexture);
+        ctx->VSSetShaderResources(10, 1, &noTexture);
     }
 
     // 目のまわりの雨や雪: 透けて、深度テストをし、深度は書かない (ExtraDraw の描き方と同じ)。
@@ -373,16 +450,19 @@ private:
         k.up[0] = dc.view.m[0][1], k.up[1] = dc.view.m[1][1], k.up[2] = dc.view.m[2][1];
         k.wind[0] = p.windX, k.wind[1] = p.windZ, k.wind[2] = p.driftX, k.wind[3] = p.driftZ;
         k.fall[0] = speed.least, k.fall[1] = speed.spread, k.fall[2] = speed.carried;
+        k.place[3] = std::isfinite(p.lying) ? std::clamp(p.lying, 0.f, kMostSnowDepth) : 0.f;
         if (p.placed && place_ && scene_) {
             // カメラのまわりの格子で、場所ごとの雪の割合 (と降る量の倍率: 多いほうの倍率から減らす)。
             const float step = (snow ? kSnowBox : kRainBox) / static_cast<float>(kPlaceGrid - 1);
             WeatherPlace grid[kPlaceGridPoints];
             place_(*scene_, dc.eye, step, kPlaceGrid, grid);
-            const float most = kPlaceMostMore;
             bool any = false;
             for (int i = 0; i < kPlaceGridPoints; ++i) {
                 const float s = std::isfinite(grid[i].snow) ? std::clamp(grid[i].snow, 0.f, 1.f) : 0.f;
-                const float more = std::isfinite(grid[i].more) ? std::clamp(grid[i].more / most, 0.f, 1.f) : 1.f;
+                // その場所で降る量 (雨雲を含む) を、用意した量で割ったもの。
+                float rainHere = 0, snowHere = 0;
+                PlacedShare(p.base, grid[i], rainHere, snowHere);
+                const float more = p.amount > 0 ? std::clamp((rainHere + snowHere) / p.amount, 0.f, 1.f) : 0.f;
                 // (割合 x 倍率: 粒が出る割合。雨は 1 - 雪)
                 k.placeSnow[i] = snow ? s * more : 1 - (1 - s) * more;
                 any = any || (snow ? k.placeSnow[i] > 0 : k.placeSnow[i] < 1);
@@ -429,10 +509,20 @@ private:
     std::vector<WetWay> wet_;
     // 場所ごとの降り方に答える者 (null: いない) と、このフレームのシーン (DrawFall が格子を聞く)。
     void (*place_)(const game_production::Scene&, Vec3, float, int, WeatherPlace*) = nullptr;
+    // エディターで見せる、はじめから積もっている雪 (PrepareFrame が毎フレーム作る)。
+    std::vector<WetWay> previewWays_;
+    WetMap previewMap_;
+    std::vector<WeatherPlace> previewPlaces_;
     const game_production::Scene* scene_ = nullptr;
     std::vector<int> wetMaps_;
+    // 場所ごとの濡れと積雪の地図 (このフレーム。cells が 0: 使わない) とその絵。
+    WetMapInfo mapInfo_;
+    Ptr<ID3D11Texture2D> wetMapTexture_;
+    Ptr<ID3D11ShaderResourceView> wetMapSrv_;
+    uint64_t mapGeneration_ = ~uint64_t{0};
+    bool mapFailed_ = false;
     std::vector<space3d::MapShape> shapes_;
-    std::vector<WeatherBlocker> blockers_;
+    std::vector<int> movers_;
     space3d::SurfaceTouch surface_;
     std::vector<space3d::ExtraDraw> solids_;
     std::vector<uint8_t> movingOnly_;  // RenderFrame::mapMovingOnly: 下から見た地図

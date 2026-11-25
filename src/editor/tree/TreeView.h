@@ -48,7 +48,8 @@ public:
 
     // 省略可: 項目の上にある、項目ではない行 (階層 のシーン): いつもあり、スクロールせず、検索にも
     // 掛からない。クリックすると選択を消し、TopClicked を呼ぶ (SelectionChanged のあと)。右クリックは
-    // 何もない所のメニュー (Actions に何も無い) を開く。ここにドロップした行は最上位の最後に行く。
+    // TopActions の行と、その下に何もない所のメニュー (Actions に何も無い) を開く。ここにドロップした
+    // 行は最上位の最後に行く。
     struct TopRow {
         std::wstring name;
         w::Icon icon = w::Icon::Object;
@@ -56,6 +57,8 @@ public:
     };
     virtual std::optional<TopRow> Top() const { return std::nullopt; }
     virtual void TopClicked() {}
+    // 一番上の行を右クリックしたときのメニューの、先頭の行 (階層 のシーン: 複製・削除)。
+    virtual std::vector<Action> TopActions() { return {}; }
 
     virtual bool CanRename(ItemId id) const {
         (void)id;
@@ -90,6 +93,19 @@ public:
         (void)item;
         (void)r;
         return false;
+    }
+    // 省略可: 上に検索ボックスを出すか (アセット パネルの左のフォルダーの木: 検索はパネルの上にある)。
+    virtual bool Searchable() const { return true; }
+    // 省略可: ツリーの外から (別の部品・パネルから) ドラッグしてきたもの (w::DragThing) を、行 `onto` に
+    // 落とせるか / 落とした (アセット パネル: 右の並びのファイルを、左の木のフォルダーへ)。
+    virtual bool CanDrop(const w::DragThing& thing, ItemId onto) const {
+        (void)thing;
+        (void)onto;
+        return false;
+    }
+    virtual void Drop(const w::DragThing& thing, ItemId onto) {
+        (void)thing;
+        (void)onto;
     }
 };
 

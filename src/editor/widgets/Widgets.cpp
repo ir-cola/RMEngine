@@ -106,10 +106,11 @@ void DrawBackdropOn(ui::Context& c, const Rect& r, float corner, bool panelThing
     const OrnamentInfo* o = theme::CurrentOrnament;
     if (!o || r.w <= 0 || r.h <= 0) return;
     const auto it = FloatingWindows().find(&c);
+    // パネルの地 (夏の砂の粒) が先、ウィンドウの絵 (シルエット) がその上 (2026-11-25: 絵が粒に埋もれない)。
+    if (panelThings && o->panel) o->panel(c, r, corner);
     c.P().PushClip(r);
     o->window(c, c.Viewport(), it != FloatingWindows().end() && it->second);
     c.P().PopClip();
-    if (panelThings && o->panel) o->panel(c, r, corner);
 }
 
 void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
@@ -195,8 +196,21 @@ bool DrawPicture(ui::Context& c, const Rect& r, Icon icon, Color color, float si
     if (!cell && s.missing.emplace(name).second) log::Error("アイコンの絵「{}」が 1 枚の画像にありません (tools/make_icon_atlas.ps1)", name);
     const auto picture = s.pictures.find(name);
     if (!cell || picture == s.pictures.end()) return false;
-    const float side = size > 0 ? size : std::min(std::round(std::min(r.w, r.h) * 0.8f), 16.f);
-    const Rect dst{std::round(r.x + (r.w - side) * 0.5f), std::round(r.y + (r.h - side) * 0.5f), side, side};
+    // 画面の画素で置く: 枠の左右・上下の余りがちょうど同じになるよう、絵の一辺の画素数を枠と同じ偶奇に
+    // する (2026-11-24: DIP で丸めていたので、44 の枠に 35 の絵だと片側 4、もう片側 5 になり、125 % の画面では
+    // さらに画素の端数がずれて、少し左上に寄って見えた)。
+    const float want = size > 0 ? size : std::min(std::round(std::min(r.w, r.h) * 0.8f), 16.f);
+    float dpiX = 96, dpiY = 96;
+    if (ID2D1DeviceContext* dc = c.P().DC()) dc->GetDpi(&dpiX, &dpiY);
+    const float k = dpiX > 0 ? dpiX / 96.f : 1.f;
+    const float left = std::round(r.x * k), top = std::round(r.y * k);
+    const float boxW = std::round((r.x + r.w) * k) - left, boxH = std::round((r.y + r.h) * k) - top;
+    float px = std::max(1.f, std::round(want * k));
+    if (std::fmod(boxW - px, 2.f) != 0.f) px -= 1;  // (余りを偶数に: 左右に同じだけ)
+    px = std::max(1.f, px);
+    const float padX = (boxW - px) * 0.5f;
+    const float padY = std::round((boxH - px) * 0.5f);
+    const Rect dst{(left + padX) / k, (top + padY) / k, px / k, px / k};
     if (cell->color) {
         c.P().Image(picture->second.Get(), dst, color.a);
     } else {
@@ -420,6 +434,52 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color, float size)
             p.FillCircle(cx, cy, h * 0.18f, color);
             break;
         }
+        case Icon::Brush: {
+            // 筆: 右上から斜めの柄、金具 (太い短い線)、左下に向かって細くなる穂先。
+            const float h = std::min(r.w, r.h) * 0.36f;
+            p.Line(cx + h * 0.95f, cy - h * 0.95f, cx + h * 0.1f, cy - h * 0.1f, color, 1.8f);
+            p.Line(cx + h * 0.15f, cy - h * 0.15f, cx - h * 0.15f, cy + h * 0.15f, color, 3.2f);
+            const float d = 0.7071f;  // (左下へ (-d, d)、横へ (d, d))
+            const float bx = cx - h * 0.15f, by = cy + h * 0.15f, wide = h * 0.3f;
+            ui::Path tip;
+            tip.Begin({bx + d * wide, by + d * wide});
+            tip.Line({bx - d * h * 0.45f + d * wide * 0.8f, by + d * h * 0.45f + d * wide * 0.8f});
+            tip.Line({bx - d * h * 0.95f, by + d * h * 0.95f});
+            tip.Line({bx - d * h * 0.45f - d * wide * 0.8f, by + d * h * 0.45f - d * wide * 0.8f});
+            tip.Line({bx - d * wide, by - d * wide});
+            p.FillPath(tip, color);
+            break;
+        }
+        case Icon::Eraser: {
+            // 消しゴム: 斜めに置いた長方形 (左下の 3 分の 1 は塗る) と、下の線 (消した跡)。
+            const float h = std::min(r.w, r.h) * 0.36f, d = 0.7071f;
+            const float ax = d, ay = -d;          // 長い向き (右上へ)
+            const float nx = d, ny = d;           // 短い向き
+            const float len = h * 0.95f, half = h * 0.42f;
+            const float ox = cx - h * 0.05f, oy = cy - h * 0.1f;
+            auto at = [&](float u, float v) { return Vec2{ox + ax * u + nx * v, oy + ay * u + ny * v}; };
+            const Vec2 c0 = at(-len, -half), c1 = at(len, -half), c2 = at(len, half), c3 = at(-len, half);
+            ui::Path filled;
+            const Vec2 m0 = at(-len * 0.3f, -half), m1 = at(-len * 0.3f, half);
+            filled.Begin(c0);
+            filled.Line(m0);
+            filled.Line(m1);
+            filled.Line(c3);
+            p.FillPath(filled, color);
+            const Vec2 q[4] = {c0, c1, c2, c3};
+            for (int i = 0; i < 4; ++i) p.Line(q[i].x, q[i].y, q[(i + 1) % 4].x, q[(i + 1) % 4].y, color, 1.4f);
+            p.Line(cx - h * 0.2f, cy + h * 0.95f, cx + h * 0.95f, cy + h * 0.95f, color, 1.4f);
+            break;
+        }
+        case Icon::Pen: {
+            // ペン (囲む): 3 つの点を線でつないだ形と、その角の小さな四角。
+            const float h = std::min(r.w, r.h) * 0.36f;
+            const Vec2 q[3] = {{cx - h * 0.9f, cy + h * 0.7f}, {cx - h * 0.15f, cy - h * 0.85f}, {cx + h * 0.9f, cy + h * 0.45f}};
+            for (int i = 0; i < 3; ++i) p.Line(q[i].x, q[i].y, q[(i + 1) % 3].x, q[(i + 1) % 3].y, color, 1.4f);
+            const float k = std::max(2.f, h * 0.22f);
+            for (const Vec2& v : q) p.FillRect({v.x - k, v.y - k, k * 2, k * 2}, color);
+            break;
+        }
         case Icon::Cube: {
             // 角の上から見た形: 輪郭 (六角形) と、手前の角の 3 本の辺。
             const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;
@@ -468,6 +528,17 @@ bool Button(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_
     return enabled && b.clicked;
 }
 
+// Button と Segmented の文字の大きさと、その左右の余白 (描くのと幅を測るので同じ値)。
+constexpr float kButtonPad = 10.f, kSegmentText = 12.f, kSegmentPad = 8.f;
+
+float ButtonWidth(ui::Context& c, std::wstring_view label) { return std::ceil(c.P().TextWidth(label, theme::FontSize, true)) + 2 * kButtonPad; }
+
+float SegmentedWidth(ui::Context& c, std::span<const std::wstring_view> labels) {
+    float widest = 0;
+    for (const std::wstring_view l : labels) widest = std::max(widest, c.P().TextWidth(l, kSegmentText, true));
+    return (std::ceil(widest) + 2 * kSegmentPad) * static_cast<float>(labels.size()) + 4.f;
+}
+
 int Segmented(ui::Context& c, std::string_view idStr, const Rect& r, std::span<const std::wstring_view> labels, int selected,
               std::span<const std::wstring_view> tooltips) {
     if (labels.empty()) return -1;
@@ -485,7 +556,7 @@ int Segmented(ui::Context& c, std::string_view idStr, const Rect& r, std::span<c
             DrawSurface(c, seg, down ? Surface::Pressed : Surface::Hovered, theme::Radius - 1.f);
         }
         ui::TextStyle ts;
-        ts.size = 12;
+        ts.size = kSegmentText;
         ts.bold = on;
         ts.h = ui::HAlign::Center;
         ts.color = on ? theme::OnAccent() : b.hovered ? theme::Text : theme::TextDim;
@@ -632,6 +703,36 @@ void DrawRow(ui::Context& c, const Rect& r, RowLook look) {
     }
 }
 
+void DrawTile(ui::Context& c, const Rect& r, bool selected, bool hovered, bool focused) {
+    auto& p = c.P();
+    constexpr float kRadius = 6.f;
+    if (selected) {
+        const theme::Gradient g = theme::Raised(focused ? theme::Selected : theme::Pressed);
+        p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
+        TopLight(p, r, kRadius, theme::Highlight());
+        if (focused) p.StrokeRoundRect(r.Inset(0.5f), kRadius, theme::Accent.Alpha(0.8f), 1.f);
+    } else if (hovered) {
+        const theme::Gradient g = theme::Gentle(theme::Hover);
+        p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
+    }
+}
+
+void DragTag(ui::Context& c, std::wstring text, bool inside) {
+    c.AddOverlay([&c, tag = std::move(text), inside] {
+        // (フレームの終わりに: あとに描く参照フィールドが、受け取るかどうかを答えてから)
+        const bool ok = TakeDragAccepted() || inside;
+        auto& pp = c.P();
+        const float wdt = std::min(260.f, pp.TextWidth(tag, 12) + 20);
+        const Rect r{c.In().mouseX + 14, c.In().mouseY + 10, wdt, 24};
+        DrawSurface(c, r, Surface::Popup, 5.f);
+        if (ok) pp.StrokeRoundRect(r, 5, theme::Accent);
+        ui::TextStyle s;
+        s.size = 12;
+        s.color = ok ? theme::Text : theme::TextDim;
+        pp.Text(r.Inset(10, 0, 10, 0), tag, s);
+    });
+}
+
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view idStr, const Rect& r, bool selected, bool flat) {
     const auto b = c.ButtonBehavior(c.MakeId(idStr), r);
     if (b.hovered) c.SetCursor(ui::Cursor::Hand);
@@ -766,6 +867,96 @@ ui::Context::ButtonResult ComboBox(ui::Context& c, std::string_view idStr, const
 }
 
 void Separator(ui::Context& c, float x, float y, float width) { c.P().FillRect({x, y, width, 1}, theme::Border); }
+void VSeparator(ui::Context& c, float x, float y, float height) { c.P().FillRect({x, y, 1, height}, theme::Border); }
+
+void DrawSwatch(ui::Context& c, const Rect& r, ui::Color color) {
+    c.P().FillRoundRect(r, 4, color);
+    c.P().StrokeRoundRect(r, 4, theme::Border);
+}
+
+void DrawMapPaint(ui::Context& c, const Rect& r, ui::Color color) {
+    if (r.w <= 0 || r.h <= 0) return;
+    c.P().FillRect(r, color.Alpha(theme::MapPaintAlpha()));
+}
+
+void DrawMapGrid(ui::Context& c, const Rect& area, float x0, float y0, float step) {
+    if (!(step >= 2.f) || area.w <= 0 || area.h <= 0) return;
+    const ui::Color col = theme::SceneGrid();
+    for (float x = x0 + std::ceil((area.x - x0) / step) * step; x <= area.Right(); x += step) c.P().Line(x, area.y, x, area.Bottom(), col);
+    for (float y = y0 + std::ceil((area.y - y0) / step) * step; y <= area.Bottom(); y += step) c.P().Line(area.x, y, area.Right(), y, col);
+}
+
+void DrawMapLine(ui::Context& c, float x1, float y1, float x2, float y2, ui::Color color) { c.P().Line(x1, y1, x2, y2, color, 1.5f); }
+
+void DrawMapBrush(ui::Context& c, float cx, float cy, float radius, bool erase) {
+    const ui::Color col = erase ? theme::Danger : theme::Accent;
+    const float r = std::max(radius, 2.f);
+    constexpr int kSegments = 48;
+    for (int i = 0; i < kSegments; ++i) {
+        const float a0 = 6.2831853f * static_cast<float>(i) / kSegments, a1 = 6.2831853f * static_cast<float>(i + 1) / kSegments;
+        c.P().Line(cx + std::cos(a0) * r, cy + std::sin(a0) * r, cx + std::cos(a1) * r, cy + std::sin(a1) * r, col, 1.5f);
+    }
+    c.P().FillCircle(cx, cy, 1.5f, col);
+}
+
+void DrawMapHeat(ui::Context& c, const Rect& r, ui::Color color, float strength) {
+    if (r.w <= 0 || r.h <= 0 || !(strength > 0)) return;
+    c.P().FillRect(r, color.Alpha(theme::MapHeatAlpha() * std::min(strength, 1.f)));
+}
+
+void DrawMapLegend(ui::Context& c, const Rect& r, std::wstring_view title, ui::Color (*ramp)(float), std::wstring_view low, std::wstring_view high) {
+    if (!ramp || r.w < 40 || r.h < 40) return;
+    c.P().FillRoundRect(r, 6, theme::Panel.Alpha(0.92f));
+    c.P().StrokeRoundRect(r, 6, theme::Border);
+    ui::TextStyle ts;
+    ts.size = 11;
+    ts.color = theme::Text;
+    c.P().Text({r.x + 8, r.y + 4, r.w - 16, 16}, title, ts);
+    const Rect bar{r.x + 8, r.y + 22, r.w - 16, 10};
+    constexpr int kSteps = 32;
+    for (int i = 0; i < kSteps; ++i) {
+        const float x0 = bar.x + bar.w * static_cast<float>(i) / kSteps, x1 = bar.x + bar.w * static_cast<float>(i + 1) / kSteps;
+        c.P().FillRect({x0, bar.y, x1 - x0 + 0.5f, bar.h}, ramp((static_cast<float>(i) + 0.5f) / kSteps));
+    }
+    c.P().StrokeRect(bar, theme::Border);
+    ts.color = theme::TextDim;
+    c.P().Text({bar.x, bar.Bottom() + 2, bar.w, 14}, low, ts);
+    ts.h = ui::HAlign::Right;
+    c.P().Text({bar.x, bar.Bottom() + 2, bar.w, 14}, high, ts);
+}
+
+void DrawMapShape(ui::Context& c, std::span<const Vec2> pts, bool closed, ui::Color fill, bool selected, int hot, const Vec2* tail) {
+    if (pts.empty()) return;
+    if (closed && pts.size() >= 3 && fill.a > 0) {
+        ui::Path path;
+        path.Begin(pts[0]);
+        for (size_t i = 1; i < pts.size(); ++i) path.Line(pts[i]);
+        c.P().FillPath(path, fill.Alpha(fill.a * 0.35f));
+    }
+    const ui::Color line = selected ? theme::MapShapeSelected() : theme::MapShape();
+    const float width = selected ? 2.f : 1.5f;
+    for (size_t i = 0; i + 1 < pts.size(); ++i) c.P().Line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, line, width);
+    if (closed && pts.size() >= 3) c.P().Line(pts.back().x, pts.back().y, pts[0].x, pts[0].y, line, width);
+    if (tail) c.P().Line(pts.back().x, pts.back().y, tail->x, tail->y, line.Alpha(0.6f), 1.f);
+    if (!selected && closed) return;
+    for (size_t i = 0; i < pts.size(); ++i) {
+        const float s = static_cast<int>(i) == hot ? 5.f : 3.5f;
+        c.P().FillRect({pts[i].x - s, pts[i].y - s, 2 * s, 2 * s}, theme::Panel);
+        c.P().StrokeRect({pts[i].x - s, pts[i].y - s, 2 * s, 2 * s}, line, 1.5f);
+    }
+}
+
+void DrawMapReadout(ui::Context& c, float x, float y, std::wstring_view text) {
+    if (text.empty()) return;
+    const float w = c.P().TextWidth(text, 11) + 12;
+    const Rect r{x, y, w, 20};
+    c.P().FillRoundRect(r, 5, theme::Panel.Alpha(0.92f));
+    c.P().StrokeRoundRect(r, 5, theme::Border);
+    ui::TextStyle ts;
+    ts.size = 11;
+    ts.color = theme::Text;
+    c.P().Text({r.x + 6, r.y, r.w - 12, r.h}, text, ts);
+}
 
 void Tooltip(ui::Context& c, std::wstring_view text) {
     const std::wstring tip(text);
@@ -985,6 +1176,49 @@ bool Checkbox(ui::Context& c, std::string_view idStr, const Rect& r, bool& value
 }
 
 namespace {
+constexpr float kCheckBoxW = 16.f, kCheckLabelGap = 8.f, kCountGap = 5.f;
+}  // namespace
+
+namespace {
+constexpr float kCountMarkW = 14.f, kCountMarkGap = 2.f;  // 名前の前の印
+}  // namespace
+
+float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_view count, std::optional<Icon> mark) {
+    float w = kCheckBoxW;
+    if (count.empty()) return w + (label.empty() ? 0.f : kCheckLabelGap + c.P().TextWidth(label, theme::FontSize)) + 2.f;
+    w += kCheckLabelGap;
+    if (mark) w += kCountMarkW + kCountMarkGap;
+    if (!label.empty()) w += c.P().TextWidth(label, theme::FontSize) + kCountGap;
+    return w + c.P().TextWidth(count, theme::FontSize, true) + 2.f;
+}
+
+bool CheckboxCount(ui::Context& c, std::string_view id, const Rect& r, bool& value, std::wstring_view label,
+                   std::wstring_view count, ui::Color countColor, std::optional<Icon> mark, float markAlpha) {
+    if (count.empty()) return Checkbox(c, id, r, value, label);
+    // 並び: [箱] 印 名前 数  (箱と押せる所は Checkbox の 1 本の道で。名前は印の後ろに自分で書く)
+    const bool changed = Checkbox(c, id, r, value, {});
+    float x = r.x + kCheckBoxW + kCheckLabelGap;
+    if (mark) {
+        DrawIcon(c, {x, r.y, kCountMarkW, r.h}, *mark, countColor.Alpha(markAlpha), 13);
+        x += kCountMarkW + kCountMarkGap;
+    }
+    if (!label.empty()) {
+        ui::TextStyle ls;
+        ls.size = theme::FontSize;
+        ls.color = theme::Text;
+        const float lw = c.P().TextWidth(label, theme::FontSize);
+        c.P().Text({x, r.y, lw + 1.f, r.h}, label, ls);
+        x += lw + kCountGap;
+    }
+    ui::TextStyle ts;
+    ts.size = theme::FontSize;
+    ts.bold = true;
+    ts.color = countColor;
+    c.P().Text({x, r.y, std::max(0.f, r.Right() - x), r.h}, count, ts);
+    return changed;
+}
+
+namespace {
 constexpr float kTrackW = 40.f, kLabelGap = 8.f;
 }  // namespace
 
@@ -1078,6 +1312,93 @@ bool Slider(ui::Context& c, std::string_view idStr, const Rect& r, float& value,
     return changed;
 }
 
+namespace {
+
+constexpr float kStripLabelH = 18.f;  // 時間の帯の上の段 (印の名前)
+constexpr float kStripTrackH = 22.f;  // 溝
+constexpr float kStripPad = 8.f;      // 溝の左右の端から 0 秒と終わりまで
+
+Rect StripTrack(const Rect& r) { return {r.x, r.y + kStripLabelH, r.w, kStripTrackH}; }
+
+// 目盛りの間 (秒): 隣と `minGap` DIP より近づかない、一番細かいきりのよい数。
+float TickStep(float duration, float width, float minGap) {
+    static constexpr float kSteps[] = {0.05f, 0.1f, 0.2f, 0.25f, 0.5f, 1.f, 2.f, 5.f, 10.f, 15.f, 30.f, 60.f, 120.f, 300.f, 600.f, 1800.f, 3600.f};
+    if (duration <= 0 || width <= 0) return 1.f;
+    const float perSecond = width / duration;
+    for (const float s : kSteps) {
+        if (s * perSecond >= minGap) return s;
+    }
+    return kSteps[std::size(kSteps) - 1];
+}
+
+}  // namespace
+
+float TimeStripX(const Rect& r, float duration, float t) {
+    const float x0 = r.x + kStripPad, x1 = r.Right() - kStripPad;
+    if (duration <= 0 || x1 <= x0) return x0;
+    return x0 + (x1 - x0) * std::clamp(t / duration, 0.f, 1.f);
+}
+
+float TimeStripTime(const Rect& r, float duration, float x) {
+    const float x0 = r.x + kStripPad, x1 = r.Right() - kStripPad;
+    if (duration <= 0 || x1 <= x0) return 0.f;
+    return duration * std::clamp((x - x0) / (x1 - x0), 0.f, 1.f);
+}
+
+void DrawTimeStrip(ui::Context& c, const Rect& r, float duration, float cursor) {
+    auto& p = c.P();
+    const Rect track = StripTrack(r);
+    DrawSurface(c, track, Surface::Sunken, 3.f);
+    const float step = TickStep(duration, r.w - 2 * kStripPad, 44.f);
+    ui::TextStyle ts;
+    ts.size = 10;
+    ts.color = theme::TextFaint;
+    ts.h = ui::HAlign::Center;
+    const int count = duration > 0 ? static_cast<int>(std::floor(duration / step + 1e-4f)) : 0;
+    for (int i = 0; i <= count; ++i) {
+        const float t = static_cast<float>(i) * step;
+        const float x = TimeStripX(r, duration, t);
+        p.Line(x, track.Bottom() - 6, x, track.Bottom() - 1, theme::TextFaint, 1.f);
+        const std::wstring label = std::format(L"{:g}s", std::round(t * 100.f) / 100.f);  // (0.30000001 でなく 0.3)
+        const float lw = 40.f;
+        const float lx = std::clamp(x - lw * 0.5f, r.x, r.Right() - lw);
+        p.Text({lx, track.Bottom() + 2, lw, r.Bottom() - track.Bottom() - 2}, label, ts);
+    }
+    if (cursor >= 0) {
+        const float x = TimeStripX(r, duration, cursor);
+        p.Line(x, track.y + 2, x, track.Bottom() - 2, theme::Accent, 2.f);
+    }
+}
+
+Rect TimeMarkerRect(const Rect& strip, float x) {
+    const Rect track = StripTrack(strip);
+    return {x - 7, strip.y, 14, track.Bottom() - strip.y};
+}
+
+void DrawTimeMarker(ui::Context& c, const Rect& strip, float x, std::wstring_view label, bool selected, bool hovered) {
+    auto& p = c.P();
+    const Rect track = StripTrack(strip);
+    const Color color = selected ? theme::Accent : hovered ? theme::Text : theme::TextDim;
+    // ▲ (底は溝の下の近く) と、その先から溝の上までの線。
+    const float base = track.Bottom() - 3, apex = base - 9;
+    ui::Path tri;
+    tri.Begin({x - 5.5f, base});
+    tri.Line({x, apex});
+    tri.Line({x + 5.5f, base});
+    p.FillPath(tri, color);
+    p.Line(x, track.y + 2, x, apex, color, selected ? 2.f : 1.f);
+    if (!label.empty()) {
+        ui::TextStyle ts;
+        ts.size = 11;
+        ts.color = color;
+        ts.bold = selected;
+        ts.h = ui::HAlign::Center;
+        const float lw = std::min(120.f, std::max(24.f, p.TextWidth(label, 11, selected) + 8));
+        const float lx = std::clamp(x - lw * 0.5f, strip.x, std::max(strip.x, strip.Right() - lw));
+        p.Text({lx, strip.y, lw, kStripLabelH - 2}, label, ts);
+    }
+}
+
 Rect Panel(ui::Context& c, const Rect& r, std::wstring_view title) {
     auto& p = c.P();
     DrawSurface(c, r, Surface::Panel, 6.f);
@@ -1132,6 +1453,10 @@ void EndScroll(ui::Context& c, std::string_view idStr, const Rect& view, float c
 }
 
 void ScrollToEnd(ui::Context& c, std::string_view idStr) { c.FloatState(c.MakeId(idStr)) = 1e9f; }
+
+bool ScrollAtEnd(ui::Context& c, std::string_view idStr, const Rect& view, float contentHeight) {
+    return c.FloatState(c.MakeId(idStr)) >= std::max(0.f, contentHeight - view.h) - 1.f;
+}
 
 namespace {
 constexpr float kItemH = 28.f;

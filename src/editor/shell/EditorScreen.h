@@ -22,6 +22,7 @@
 
 #include "base/Log.h"
 #include "core/UndoHistory.h"
+#include "editor/console/ConsolePanel.h"
 #include "editor/help/HelpView.h"
 #include "editor/app/ScreenWindow.h"
 #include "editor/assets/AssetLibrary.h"
@@ -90,6 +91,7 @@ private:
     bool Save();
     void SetDirty(bool dirty);
     void UpdateTitle();
+    std::wstring TitleText() const;
     // インスペクターの参照フィールドが出すもの (アセット、表示中のソフトの 階層 の項目)。
     inspector::Refs MakeRefs();
     std::vector<w::MenuItem> MenuItems(Menu m) const;
@@ -150,6 +152,7 @@ private:
             editor_.SetDirty(was);
         }
         std::wstring RenameAsset(const AssetRef& ref, const std::string& newNameUtf8) override;
+        std::wstring DeleteAsset(const AssetRef& ref) override;
         std::unique_ptr<ToolWindow> OpenToolWindow(ToolWindowSpec spec) override;
         void FillInspectorRefs(inspector::Refs& out) override { out = editor_.MakeRefs(); }
         void SelectInTree(std::vector<tree::ItemId> ids, bool rename) override {
@@ -176,7 +179,7 @@ private:
         dock::NamedLayouts& Named(bool sharedList) { return sharedList ? shared : named; }
         const dock::NamedLayouts& Named(bool sharedList) const { return sharedList ? shared : named; }
         std::unique_ptr<AssetPanel> assetPanel;  // アセット パネル (最初に描くときに作る)
-        float assetThumbnail = 40.f;             // そのサムネイルの大きさ (UserSettings: "assets": {"thumbnail"})
+        float assetThumbnail = 64.f;             // そのサムネイルの大きさ (UserSettings: "assets": {"thumbnail"})
 
     private:
         EditorScreen& editor_;
@@ -260,6 +263,7 @@ private:
     UiWake assetsWake_{[this] { RedrawAll(); }};
     std::unique_ptr<AssetLibrary> assets_;    // プロジェクトの Assets/ (ID、ファイル操作) - どのソフトのものでも
     HelpView help_;                           // ヘルプのパネルの中身 (どのソフトでも同じ 1 つ)
+    ConsolePanel console_;                    // コンソールのパネルの中身 (どのソフトでも同じ 1 つ)
     std::unique_ptr<Thumbnails> thumbnails_;  // アセットの小さな絵 - どのソフトのパネルも共有する (そのスレッドはここで終わる)
 
     std::vector<std::unique_ptr<Workspace>> workspaces_;  // 空にはならない
@@ -274,8 +278,6 @@ private:
     HWND dragTarget_ = nullptr;  // 最後にドラッグの上に来たと知らせたウィンドウ (ForwardDrag)
 
     int logSink_ = 0;
-    // 各ウィンドウのコンソールが最後に追ったログの項目 (パネルはウィンドウの間を動ける)。
-    std::unordered_map<const ui::Context*, uint64_t> consoleSeenSeq_;
 };
 
 }  // namespace rm::editor

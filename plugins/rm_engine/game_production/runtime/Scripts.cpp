@@ -1322,6 +1322,19 @@ void ScriptRunner::Frame(Scene& scene, ScriptWorld& world, const ScriptModule& m
     ++world.frame;
 }
 
+void QueueSystemEvents(ScriptWorld& world, std::span<const SystemEvent> events) {
+    for (const SystemEvent& s : events) {
+        QueuedEvent q;
+        q.name = s.name;
+        q.number = s.number;
+        q.text = s.text;
+        q.entity = s.entity;
+        q.scope = 1;
+        q.target = s.target;
+        world.events.push_back(std::move(q));
+    }
+}
+
 void ScriptRunner::DeliverEvents(Scene& scene, ScriptWorld& world, const ScriptModule& module, std::span<const ScriptOrderEntry> order) {
     if (!module.Loaded()) {
         world.events.clear();

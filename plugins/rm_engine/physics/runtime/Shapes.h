@@ -39,10 +39,10 @@ float AngleOf(const Pose& pose);
 // 物理が作るコライダーの形: ワールドでの半分の大きさ (エンティティの拡大率を取り込む) と、
 // エンティティから見た中心の位置 (エンティティの回した軸で)。
 struct ShapeDims {
-    enum class Kind { Box, Sphere, Capsule, Mesh } kind = Kind::Box;
+    enum class Kind { Box, Sphere, Capsule, Mesh, Cylinder } kind = Kind::Box;
     Vec3 half{0.5f, 0.5f, 0.5f};  // 箱: 各軸の大きさの半分。2D の箱もこれ (z: kPlaneHalfDepth)
     float radius = 0.5f;           // 球 / カプセル / 円
-    float halfHeight = 0.5f;       // カプセル: まっすぐな部分 (Y) の半分。0: 球
+    float halfHeight = 0.5f;       // カプセル: まっすぐな部分 (Y) の半分。0: 球。円柱: 高さの半分
     Vec3 offset{0, 0, 0};          // エンティティから見たもの。拡大率をかけてある
     Vec3 meshScale{1, 1, 1};       // メッシュ: エンティティの拡大率 (モデル自身の点にこれをかける)
 };

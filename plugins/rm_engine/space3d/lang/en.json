@@ -6,5 +6,14 @@
   "回転 (度)": "Rotation (degrees)",
   "大きさ": "Scale",
   "ワールドでの値 (親を含む)": "In the world (parents included)",
-  "親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です": "When a parent is scaled unevenly and turned, the shape is skewed, so this is an approximation"
+  "親の大きさが軸ごとに違い、しかも回っているときは、ゆがみが出るので近い値です": "When a parent is scaled unevenly and turned, the shape is skewed, so this is an approximation",
+  "イベント": "Event",
+  "時刻 (秒)": "Time (s)",
+  "クリップの始めからの秒。再生がここを通るとイベントが出ます": "Seconds from the start of the clip. The event fires when playback passes here",
+  "名前": "Name",
+  "スクリプトの OnEvent に届く名前 (足音なら Footstep など)": "The name a script's OnEvent receives (for example Footstep for footsteps)",
+  "数値": "Number",
+  "名前と一緒に届く数": "A number sent with the name",
+  "文字": "Text",
+  "名前と一緒に届く文字": "Text sent with the name"
 }

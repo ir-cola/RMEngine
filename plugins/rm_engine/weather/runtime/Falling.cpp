@@ -19,7 +19,7 @@ cbuffer Fall : register(b4) {
     float4 camUp;        // xyz: カメラの上
     float4 precipWind;   // xy: 今の風 (m/s、ワールドの x z)、zw: 風が運んだ距離
     float4 precipFall;   // x: 最小の落下 (m/s)、y: それぞれがさらに速くなれる量、z: 風がどれだけ運ぶか (Falling.h の FallOf)
-    float4 precipPlace;  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う
+    float4 precipPlace;  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う。w: 積もった雪の深さ (m)
     float4 precipPlaceSnow[13];  // 格子の点ごとの雪の割合 (4 つずつ。行が z、列が x)
 };
 float PlaceCell(int k) { return precipPlaceSnow[k >> 2][k & 3]; }
@@ -82,6 +82,9 @@ PrecipOut FallVS(uint vid : SV_VertexID) {
     // 行く手にあるもの (落ちる向きの地図を、風で傾けたもの): 今それをどれだけ過ぎているか。
     // 過ぎていれば、当たった (屋根、壁、地面)。そのあとそこには何も落ちない。
     float past = MapPast((int)precipInfo.w, w);
+    // 雪片は積もった雪の上に落ちる (当たるものの地図は雪の下の面を見ている): 雪の深さぶん上で当たる。
+    // (2026-11-24: 前は雪の中へ入って、瞬間的に消えた。今は上に横たわり、縮んで溶ける)
+    if (snow && past > -1e29) past += precipPlace.w / max(-dir.y, 0.3);
     float since = past / speed;  // 当たってからの秒
     float3 hit = w - dir * past;  // 当たった場所
     if (snow) {
@@ -164,6 +167,23 @@ float WetNoise(float2 p) {
     return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
 }
 
+// 場所ごとの濡れと積雪の地図 (Weather.h の WetMap。surfaceMap: 幅 3 x n、高さ n、1 テクセルに向き 0 .. 3)。
+// `place`: xy 最初のマスの角 (ワールドの x z)、z: 1 マス (m)、w: 一辺のマス数 (0: 地図なし)。(x, z) での
+// `block` (0: 日なたの濡れ、1: 日陰の濡れ、2: 積雪 m) の値: マスの真ん中の間を線形に、地図の外は一番
+// 近いマス。だから気候の境目で、濡れも積雪もなめらかに薄れる。
+float4 WetPlace(float4 place, float2 xz, int block) {
+    float n = place.w;
+    float2 g = clamp((xz - place.xy) / place.z - 0.5, 0, n - 1);
+    float2 b = min(floor(g), n - 2);
+    float2 f = g - b;
+    int2 i = (int2)b + int2(block * (int)n, 0);
+    float4 a = lerp(surfaceMap.Load(int3(i, 0)), surfaceMap.Load(int3(i + int2(1, 0), 0)), f.x);
+    float4 c = lerp(surfaceMap.Load(int3(i + int2(0, 1), 0)), surfaceMap.Load(int3(i + int2(1, 1), 0)), f.x);
+    return lerp(a, c, f.y);
+}
+// 向き `k` (0 .. 3) の値。
+float WetPick(float4 v, int k) { return dot(v, float4(k == 0, k == 1, k == 2, k == 3)); }
+
 // 雨粒が落ちた所の小さな濡れた点 (数センチ、不均一)。`density` が言う数だけ (0: なし .. 1: 全部
 // 濡れ)。細かいノイズのうち、しきい値より下の部分。遠く (点が 1、2 ピクセルより小さい) では
 // 点を平均に溶かし、ちらつかない。`s`: 面上の場所 (メートル)、`footprint`: 1 ピクセルで
@@ -220,7 +240,8 @@ float WetSeep(int k, float3 p, float2 s, float reach) {
 // 面がどれだけ濡れて見えるか (0 .. 1): それに届いた雨の降り方のうち一番濡れるもの (届いた
 // 場所は、雨が降る間は濡れたまま。その後の風がどうであれ)。日なたか日陰か (日陰は乾くのが
 // 遅い)。小さい点が、どんどん増えて全部濡れるまで。屋根の縁に向かって、少しずつ減る (線も波も
-// なし: 濡れ具合と同じだけの点)。上を向く所が最大で、下を向く所は 0。
+// なし: 濡れ具合と同じだけの点)。上を向く所が最大で、下を向く所は 0。場所ごとの地図
+// (surfaceData[9]) があるときは、どれだけ濡れたかをその場所の値で (雨の所だけ濡れる)。
 float WetAt(float3 wpos, float3 n) {
     // 面の 2 つの軸 (面がだいたい載っている平面): 点はその上に平らに載る。
     float3 a = abs(n);
@@ -230,12 +251,15 @@ float WetAt(float3 wpos, float3 n) {
     if (count <= 0 || n.y < -0.3) return 0;
     float lit = shadowInfo.x > 0 ? SunShadow(wpos, n) : 1;
     float3 p = wpos + n * 0.12;
+    float4 place = surfaceData[9];
+    bool placed = place.w > 1.5;
+    float4 sunHere = placed ? WetPlace(place, wpos.xz, 0) : 0, shadeHere = placed ? WetPlace(place, wpos.xz, 1) : 0;
     // どれだけ濡れたか (時間で: `level`) と、そのうちここにどれだけ届くか (`wet`: level に場所の
     // 開き具合を掛けたもの)。点の数は `wet`、点の暗さは `level`。
     float wet = 0, level = 0;
     [loop] for (int k = 0; k < count; ++k) {
         float4 way = surfaceData[1 + k];  // x: 日なたでの濡れ、y: 日陰での濡れ、z: その 向きの地図 (-1: なし)、w: しみこみ (m)
-        float l = lerp(way.y, way.x, lit);
+        float l = placed ? lerp(WetPick(shadeHere, k), WetPick(sunHere, k), lit) : lerp(way.y, way.x, lit);
         level = max(level, l);
         if (l <= wet) continue;
         int m = (int)way.z;
@@ -271,7 +295,10 @@ float SnowShape(float2 xz, float depth) {
     if (depth <= 0) return 0;
     float n = 0.65 * WetNoise(xz * 2.2 + 1.7) + 0.35 * WetNoise(xz * 5.3 + 4.1);
     float cover = saturate(depth / 0.015);  // (1.5 cm で全部覆う)
-    float lump = saturate((n - (1 - cover)) / 0.3);
+    // 塊になる所: ノイズが しきい値 より高い所。ノイズの値はほとんどが 0.2 .. 0.8 に集まるので、しきい値を
+    // その間で動かす - 白い面積が雪の量にほぼ比例して縮み、最後は小さな塊になって消える (2026-11-24: 前は
+    // 1 - cover で、半分ほど覆った所から少し溶けると一気に消えた)。
+    float lump = saturate((n - lerp(0.85, 0.15, cover)) / 0.12);
     lump = lump * lump * (3 - 2 * lump);
     float thin = lump * lerp(2.5, 1, saturate(depth / 0.03));
     float deep = 1 + (0.4 * n - 0.2) * min(1, 0.1 / depth);
@@ -285,6 +312,7 @@ float OpenFor(int m, float3 p) {
 // 屋根の縁に向かって 1 m ほどかけて、雪のまだら (点が集まった塊) が少しずつ減る。全部届く所では
 // 雪が立つ所が白い (積もった雪の足元は高さに合わせる - SnowLayerVS と同じ形)。(2026-11-20:
 // 前は 1 か所だけ読んでいて、屋根の下に吹き込む所は地図のマスの線が見え、範囲が一様に白かった。)
+// 場所ごとの地図があるときは、積もった深さをその場所の値で (雪の所だけ積もる)。
 float SnowAt(float3 wpos, float3 n) {
     float3 a = abs(n);
     float2 s = a.y >= a.x && a.y >= a.z ? wpos.xz : a.x >= a.z ? wpos.zy : wpos.xy;
@@ -292,9 +320,12 @@ float SnowAt(float3 wpos, float3 n) {
     int count = (int)surfaceData[0].x;
     if (n.y < 0.3 || count <= 0) return 0;
     float3 p = wpos + n * 0.12;
+    float4 place = surfaceData[9];
+    bool placed = place.w > 1.5;
+    float4 snowHere = placed ? WetPlace(place, wpos.xz, 2) : 0;
     float depth = 0, most = 0;
     [loop] for (int k = 0; k < count; ++k) {
-        float snow = surfaceData[5 + k].x;
+        float snow = placed ? WetPick(snowHere, k) : surfaceData[5 + k].x;
         if (snow <= 0) continue;
         most += snow;
         int m = (int)surfaceData[1 + k].z;
@@ -335,6 +366,8 @@ const char kSnowLayerHlsl[] = R"(
 // なくなる (丸い縁)。急すぎる所と下に何もない所では、角を除く (NaN: その三角形は描かない)。
 // 段をまたぐ三角形は捨てる - 雪が立たず、ものの中にもない。傾いた向きの降り方が屋根の下に
 // 吹き込む分は、そこでは白い (SnowAt) が高さはない。縁の角は本当の縁まで外へ動かす (EdgeReach)。
+// 場所ごとの地図 (layerPlace。surfaceMap を頂点シェーダーにも結ぶ) があるときは、各降り方の雪の
+// 深さをその場所の値で。
 // モデルと同じ光 (Shade)、霧の中 (Fogged)。RendererShaderText(kWetSurfaceHlsl) の後。
 cbuffer SnowLayer : register(b4) {
     float4 layerGrid;     // xy: 格子の角 (ワールドの x z、ちょうどのマス単位)、z: 1 マス (m)、w: 1 辺のマス数
@@ -342,6 +375,7 @@ cbuffer SnowLayer : register(b4) {
     float4 layerSnow[4];  // 各降り方: x: その雪 (m)、y: その 向きの地図 (-1: なし)
     float4 trailInfo;     // xy: 足跡の最初のマス (ワールドの x z)、z: 1 マス (m)、w: 1 辺のマス数 (0: なし)
     float4 trailMore;     // x: 足跡の数のうちどれか (Play ごとに別)
+    float4 layerPlace;    // 場所ごとの地図 (WetPlace の place。w が 0: なし)
 };
 Texture2D<float4> trailMap : register(t9);
 
@@ -373,8 +407,11 @@ SnowCorner CornerAt(float2 xz, float fade) {
     c.top = c.ground;
     if (c.none) return c;
     float3 above = float3(xz.x, c.ground + 0.05, xz.y);
+    bool placed = layerPlace.w > 1.5;
+    float4 snowHere = placed ? WetPlace(layerPlace, xz, 2) : 0;
     [unroll] for (int j = 0; j < 4; ++j) {
-        if (layerSnow[j].x > 0) c.depth += layerSnow[j].x * OpenFor((int)layerSnow[j].y, above);
+        float snow = placed ? WetPick(snowHere, j) : layerSnow[j].x;
+        if (snow > 0) c.depth += snow * OpenFor((int)layerSnow[j].y, above);
     }
     float h = c.depth * SnowShape(xz, c.depth) * fade;
     c.top = max(c.ground, min(c.ground + h, TrailCeiling(xz)));
@@ -415,6 +452,35 @@ float EdgeReach(float2 xz, float2 dir, float level, float ledge, float most, boo
     return most;
 }
 
+// 足場の端 (下の面が 45 度より急に落ちる所・下に何もない所) が、(x, z) から -x / +x / -z / +z の向きに
+// どれだけ離れているか (x y z w。見つからなければ `reach`)。雪の格子と同じ間隔で読む。上る段 (壁) は端ではない。
+float4 DropDistances(float2 xz, float ground, float reach, float pace) {
+    int m = (int)layerInfo.x;
+    float4 dist = reach;
+    int steps = (int)ceil(reach / pace);
+    const float2 dirs[4] = {float2(-1, 0), float2(1, 0), float2(0, -1), float2(0, 1)};
+    [unroll] for (int k = 0; k < 4; ++k) {
+        [loop] for (int s = 1; s <= steps; ++s) {
+            float along = s * pace;
+            float2 at = xz + dirs[k] * along;
+            float past = MapPastAt(m, mul(mapViewProj[m], float4(at.x, layerInfo.y, at.y, 1)));
+            if (past < -1e29 || layerInfo.y + past < ground - (0.06 + along)) {
+                dist[k] = min(dist[k], along - 0.5 * pace);
+                break;
+            }
+        }
+    }
+    return dist;
+}
+// 端から `dist` の所に、雪がどれだけ残るか (0 .. 1): 端で 0、`reach` で 1 の四分円 (枕のように丸い縁)。
+float Pillow(float dist, float reach) {
+    float t = saturate(dist / reach);
+    return sqrt(saturate(1 - (1 - t) * (1 - t)));
+}
+// 隣の角から見た端までの距離 (真ん中の角が読んだもの `d` から、`by` だけ動いた所)。見つからなかった
+// 向き (`reach`) は、隣でも見つからないとみなす。
+float Shifted(float d, float by, float reach) { return d >= reach - 1e-4 ? reach : clamp(d + by, 0, reach); }
+
 struct SnowOut {
     float4 pos : SV_Position;
     float3 nrm : NORMAL;
@@ -434,11 +500,34 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
     SnowCorner c = CornerAt(xz, fade);
     SnowCorner l = CornerAt(xz - float2(pace, 0), fade), r = CornerAt(xz + float2(pace, 0), fade);
     SnowCorner d = CornerAt(xz - float2(0, pace), fade), u = CornerAt(xz + float2(0, pace), fade);
+    // 足場の端に向かって雪は薄くなり、枕のように丸く終わる (2026-11-24): 端までの距離を 4 つの向きで探し、
+    // 雪の深さの 3 倍の幅で減らす。急な斜面 (球の肩) も端になるので、丸い物の上の雪は山の形になる。
+    if (!c.none && c.depth > 0) {
+        float reach = clamp(c.depth * 3, 0.15, 1.5);
+        float4 e = DropDistances(xz, c.ground, reach, pace);
+        c.top = c.ground + (c.top - c.ground) * Pillow(min(min(e.x, e.y), min(e.z, e.w)), reach);
+        l.top = l.ground + (l.top - l.ground) * Pillow(min(min(Shifted(e.x, -pace, reach), Shifted(e.y, pace, reach)), min(e.z, e.w)), reach);
+        r.top = r.ground + (r.top - r.ground) * Pillow(min(min(Shifted(e.x, pace, reach), Shifted(e.y, -pace, reach)), min(e.z, e.w)), reach);
+        d.top = d.ground + (d.top - d.ground) * Pillow(min(min(e.x, e.y), min(Shifted(e.z, -pace, reach), Shifted(e.w, pace, reach))), reach);
+        u.top = u.ground + (u.top - u.ground) * Pillow(min(min(e.x, e.y), min(Shifted(e.z, pace, reach), Shifted(e.w, -pace, reach))), reach);
+    }
     float ledge = 0.12 + pace;  // (約 45 度より急な段)
     bool foot = (!l.none && l.ground - c.ground > ledge) || (!r.none && r.ground - c.ground > ledge) ||
                 (!d.none && d.ground - c.ground > ledge) || (!u.none && u.ground - c.ground > ledge);
     bool rim = l.none || r.none || d.none || u.none || c.ground - l.ground > ledge || c.ground - r.ground > ledge ||
                c.ground - d.ground > ledge || c.ground - u.ground > ledge;
+    // 斜めの隣も見る: 格子の三角形は斜めの辺も持つ。丸い物の縁では、上下左右は物の上なのに斜めだけが
+    // 地面という角があり、それを段と見ないと、地面から物の肩へ立ち上がる三角すいの雪ができた (2026-11-24)。
+    {
+        int m = (int)layerInfo.x;
+        [unroll] for (int k = 0; k < 4; ++k) {
+            float2 at = xz + float2(k % 2 == 0 ? -pace : pace, k < 2 ? -pace : pace);
+            float past = MapPastAt(m, mul(mapViewProj[m], float4(at.x, layerInfo.y, at.y, 1)));
+            float g = layerInfo.y + past;
+            if (past < -1e29 || c.ground - g > ledge) rim = true;
+            else if (g - c.ground > ledge) foot = true;
+        }
+    }
     // 下の面の傾きと雪の傾き (段の向こうの隣は、これと同じ高さとみなす)。
     float gl = l.none || abs(l.ground - c.ground) > ledge ? c.ground : l.ground, gr = r.none || abs(r.ground - c.ground) > ledge ? c.ground : r.ground;
     float gd = d.none || abs(d.ground - c.ground) > ledge ? c.ground : d.ground, gu = u.none || abs(u.ground - c.ground) > ledge ? c.ground : u.ground;
@@ -473,8 +562,11 @@ SnowOut SnowLayerVS(uint id : SV_VertexID) {
         float2 inward = float2((!l.none && l.ground - c.ground > ledge ? -1 : 0) + (!r.none && r.ground - c.ground > ledge ? 1 : 0),
                                (!d.none && d.ground - c.ground > ledge ? -1 : 0) + (!u.none && u.ground - c.ground > ledge ? 1 : 0));
         if (dot(inward, inward) > 0.5) {
-            float t = EdgeReach(xz, normalize(inward), c.ground + ledge, ledge, pace * length(inward), false);
-            at += normalize(inward) * max(t - 0.02, 0);
+            float2 into = normalize(inward);
+            float t = EdgeReach(xz, into, c.ground + ledge, ledge, pace * length(inward), false);
+            // (2026-11-24: 物の下へ雪の面を伸ばして根元を埋めようとしたが、伸ばした所が物の影の中で黒く見え、
+            // カメラの角度で物の外へはみ出したので、やめた。根元を埋めるのは別のやり方で)
+            at += into * max(t - 0.02, 0);
         }
     }
     o.edge = float2(foot ? 1 : 0, rim ? 1 : 0);
@@ -544,8 +636,10 @@ void TrailFirstCell(Vec3 eye, float out[4]) {
 
 }  // namespace
 
-SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, int downMap, uint32_t trailCount, bool trails) {
+SnowLayerConstants SnowLayerOf(Vec3 eye, std::span<const WetWay> ways, std::span<const int> maps, int downMap, uint32_t trailCount, bool trails,
+                               const WetMapInfo& place) {
     SnowLayerConstants k{};
+    k.place[0] = place.x, k.place[1] = place.z, k.place[2] = place.cell, k.place[3] = place.cells;
     if (!std::isfinite(eye.x) || !std::isfinite(eye.y) || !std::isfinite(eye.z)) eye = {0, 0, 0};
     const float half = kSnowCell * static_cast<float>(kSnowCells) * 0.5f;
     k.grid[0] = std::floor(eye.x / kSnowCell) * kSnowCell - half;  // (ちょうどのマス単位: 目が動いても格子が泳がない)
@@ -593,10 +687,12 @@ Vec3 FallDirection(Precipitation::Kind kind, Vec3 wind) {
     return {x / len, y / len, z / len};
 }
 
-std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps) {
+std::vector<float> WetSurfaceData(std::span<const WetWay> ways, std::span<const int> maps, const WetMapInfo& place) {
     const size_t count = std::min(ways.size(), kWetWays);
-    std::vector<float> data(4 * (1 + 2 * kWetWays), 0.f);
+    std::vector<float> data(4 * (2 + 2 * kWetWays), 0.f);
     data[0] = static_cast<float>(count);
+    float* at = &data[4 * (1 + 2 * kWetWays)];  // (surfaceData[9]: 場所ごとの地図)
+    at[0] = place.x, at[1] = place.z, at[2] = place.cell, at[3] = place.cells;
     for (size_t k = 0; k < count; ++k) {
         float* way = &data[4 * (1 + k)];
         way[0] = std::clamp(ways[k].sun, 0.f, 1.f);

@@ -11,4 +11,4 @@
 | Lightning | Flashes |
 | Wind direction and strength | Where rain and snow drift. Slanted rain and snow reach under the edges of roofs |
 
-> Rain and snow hit **things with a collider** (the connector plugin "Weather × Physics").
+> Rain and snow hit the **meshes you can see** (shapes and models, not colliders).

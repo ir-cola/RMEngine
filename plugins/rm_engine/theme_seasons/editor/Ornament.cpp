@@ -223,19 +223,64 @@ ui::Path Sun(Vec2 center, float r, float degreesCcw) {
     return p;
 }
 
-ui::Path Cloud(Vec2 c, float w) {
-    ui::Path p;
-    AddCircle(p, {c.x - 0.30f * w, c.y + 0.02f * w}, 0.17f * w);
-    AddCircle(p, {c.x - 0.10f * w, c.y - 0.09f * w}, 0.24f * w);
-    AddCircle(p, {c.x + 0.14f * w, c.y - 0.06f * w}, 0.21f * w);
-    AddCircle(p, {c.x + 0.33f * w, c.y + 0.04f * w}, 0.15f * w);
-    // ふくらみの下の平らな足。
-    const Vec2 foot[4] = {{c.x - 0.36f * w, c.y + 0.04f * w}, {c.x + 0.42f * w, c.y + 0.04f * w}, {c.x + 0.42f * w, c.y + 0.17f * w},
-                          {c.x - 0.36f * w, c.y + 0.17f * w}};
-    AddPolygon(p, foot);
-    AddCircle(p, {c.x - 0.36f * w, c.y + 0.105f * w}, 0.065f * w);
-    AddCircle(p, {c.x + 0.42f * w, c.y + 0.105f * w}, 0.065f * w);
-    return p;
+CloudShapes Cumulus(Vec2 c, float w, uint32_t seed) {
+    CloudShapes out;
+    if (w <= 0) return out;
+    Random rnd{seed};
+    auto jitter = [&](float amount) { return (rnd.Next() - 0.5f) * 2.f * amount; };
+    const float base = c.y + 0.16f * w;  // 平らな底
+    struct Puff {
+        float x, y, r;
+    };
+    std::vector<Puff> puffs;
+    // 底に並ぶ小さめのふくらみ (両端はもっと小さい)。どれも底の線より少し下まで出て、そこで平らに切る。
+    constexpr float kRow[] = {-0.43f, -0.30f, -0.16f, -0.02f, 0.13f, 0.27f, 0.40f};
+    for (size_t i = 0; i < std::size(kRow); ++i) {
+        const float end = (i == 0 || i + 1 == std::size(kRow)) ? 0.75f : 1.f;
+        const float r = (0.095f + 0.035f * rnd.Next()) * end * w;
+        puffs.push_back({c.x + (kRow[i] + jitter(0.015f)) * w, base - 0.78f * r, r});
+    }
+    // その上に積み上がる大きなふくらみ。少し左寄りの真ん中が一番高い。肩には小さなふくらみ (でこぼこの上の縁)。
+    // (x, 底からの高さ, 半径)
+    constexpr std::array<std::array<float, 3>, 7> kTall{{{-0.25f, 0.16f, 0.13f}, {0.23f, 0.15f, 0.12f}, {-0.09f, 0.21f, 0.17f},
+                                                         {0.10f, 0.19f, 0.15f}, {-0.02f, 0.30f, 0.13f}, {-0.17f, 0.32f, 0.07f},
+                                                         {0.15f, 0.30f, 0.075f}}};
+    for (const auto& [x, lift, r] : kTall)
+        puffs.push_back({c.x + (x + jitter(0.02f)) * w, base - (lift + jitter(0.015f)) * w, r * (0.9f + 0.2f * rnd.Next()) * w});
+
+    // 縦の列ごとに、ふくらみの重なりの上の縁と下の縁 (底の線で切る。底に並ぶふくらみの間は底まで埋める)。
+    float x0 = 1e30f, x1 = -1e30f;
+    for (const Puff& f : puffs) x0 = std::min(x0, f.x - f.r), x1 = std::max(x1, f.x + f.r);
+    const float flatFrom = puffs.front().x, flatTo = puffs[std::size(kRow) - 1].x;
+    const int n = std::clamp(static_cast<int>((x1 - x0) / 2.5f), 24, 120);
+    std::vector<float> xs(static_cast<size_t>(n) + 1), tops(xs.size()), bottoms(xs.size());
+    for (size_t i = 0; i < xs.size(); ++i) {
+        const float x = x0 + (x1 - x0) * static_cast<float>(i) / static_cast<float>(n);
+        float top = base, bottom = -1e30f;
+        for (const Puff& f : puffs) {
+            const float dx = x - f.x;
+            if (std::fabs(dx) > f.r + 1e-3f) continue;
+            const float half = std::sqrt(std::max(0.f, f.r * f.r - dx * dx));
+            top = std::min(top, f.y - half);
+            bottom = std::max(bottom, f.y + half);
+        }
+        bottom = (x >= flatFrom && x <= flatTo) ? base : std::clamp(bottom, top, base);
+        xs[i] = x, tops[i] = top, bottoms[i] = bottom;
+    }
+    // 各列の上の縁から底までのうち、`from` .. `to` の割合の帯 (0 = 上の縁、1 = 底)。上を右へ、下を左へ戻る (時計回り)。
+    auto band = [&](float from, float to) {
+        std::vector<Vec2> pts;
+        pts.reserve(2 * xs.size());
+        for (size_t i = 0; i < xs.size(); ++i) pts.push_back({xs[i], tops[i] + (bottoms[i] - tops[i]) * from});
+        for (size_t i = xs.size(); i-- > 0;) pts.push_back({xs[i], tops[i] + (bottoms[i] - tops[i]) * to});
+        ui::Path p;
+        AddPolygon(p, pts);
+        return p;
+    };
+    out.body = band(0.f, 1.f);
+    out.light = {band(0.f, 0.42f), band(0.f, 0.26f), band(0.f, 0.12f)};
+    out.shade = {band(0.45f, 1.f), band(0.60f, 1.f), band(0.74f, 1.f), band(0.87f, 1.f)};
+    return out;
 }
 
 ui::Path SandCastle(Vec2 base, float h) {
@@ -315,6 +360,91 @@ ui::Path BeachScene(Vec2 base, float h) {
 
 // --- 秋 -----------------------------------------------------------------------------------
 
+namespace {
+
+Vec2 Bezier(Vec2 a, Vec2 b, Vec2 c, Vec2 d, float t) {
+    const float u = 1 - t;
+    const float k0 = u * u * u, k1 = 3 * u * u * t, k2 = 3 * u * t * t, k3 = t * t * t;
+    return {a.x * k0 + b.x * k1 + c.x * k2 + d.x * k3, a.y * k0 + b.y * k1 + c.y * k2 + d.y * k3};
+}
+
+// 曲線 (3 次ベジエ a..d) に沿った細長い形: 太さは根元で `width`、先へ向かって細くなり、先はとがる。
+// 葉・茎・小穂。`steps` 点ずつ両側に置いて 1 つの多角形にする。
+void AddBlade(ui::Path& p, Vec2 a, Vec2 b, Vec2 c, Vec2 d, float width, int steps = 14, float taper = 1.f) {
+    std::vector<Vec2> left, right;
+    for (int i = 0; i <= steps; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(steps);
+        const Vec2 q = Bezier(a, b, c, d, t);
+        const Vec2 q2 = Bezier(a, b, c, d, std::min(1.f, t + 0.01f));
+        const Vec2 q1 = Bezier(a, b, c, d, std::max(0.f, t - 0.01f));
+        float dx = q2.x - q1.x, dy = q2.y - q1.y;
+        const float len = std::max(1e-4f, std::sqrt(dx * dx + dy * dy));
+        dx /= len, dy /= len;
+        const float half = width * 0.5f * std::pow(1 - t, taper);
+        left.push_back({q.x - dy * half, q.y + dx * half});
+        right.push_back({q.x + dy * half, q.y - dx * half});
+    }
+    std::vector<Vec2> pts(left.begin(), left.end());
+    for (auto it = right.rbegin(); it != right.rend(); ++it) pts.push_back(*it);
+    AddPolygon(p, pts);
+}
+
+}  // namespace
+
+ui::Path Susuki(Vec2 base, float h, uint32_t seed) {
+    ui::Path p;
+    Random rnd{seed};
+    auto jitter = [&](float amount) { return (rnd.Next() - 0.5f) * 2.f * amount; };
+    // 細長い葉: 根元からほぼまっすぐ、左へ傾いて立ち、上で左へしなる (いくつかは大きく垂れる)。
+    for (int i = 0; i < 10; ++i) {
+        const float x0 = base.x + jitter(h * 0.10f);
+        const float tall = h * (0.38f + 0.40f * rnd.Next());
+        const float lean = h * (0.14f + 0.12f * rnd.Next());
+        const float arch = rnd.Next();
+        const Vec2 a{x0, base.y + 2}, b{x0 - lean * 0.2f, base.y - tall * 0.6f};
+        const Vec2 c{x0 - lean * 0.7f - tall * 0.05f, base.y - tall};
+        const Vec2 d{x0 - lean - tall * (0.25f + 0.30f * arch), base.y - tall * (0.95f - 0.45f * arch)};
+        AddBlade(p, a, b, c, d, h * (0.016f + 0.008f * rnd.Next()), 20, 0.9f);
+    }
+    // 穂のある茎 (高さを変えて 5 本)。
+    for (int s = 0; s < 5; ++s) {
+        const float x0 = base.x + jitter(h * 0.03f) + static_cast<float>(s - 2) * h * 0.055f;
+        const float tall = h * (s == 2 ? 1.f : 0.62f + 0.30f * rnd.Next());
+        const float lean = tall * (0.28f + 0.10f * rnd.Next());
+        // 茎: 根元はほぼまっすぐ、左へ傾き、上で左へ曲がる。
+        const Vec2 a{x0, base.y + 2}, b{x0 - lean * 0.15f, base.y - tall * 0.55f};
+        const Vec2 c{x0 - lean * 0.55f, base.y - tall * 0.9f}, top{x0 - lean - tall * 0.08f, base.y - tall};
+        AddBlade(p, a, b, c, top, h * 0.009f, 16, 0.3f);
+        // 穂の軸: 茎の先から左へ出て、すぐに下へ垂れる。
+        const float plume = tall * (0.34f + 0.08f * rnd.Next()) * 1.5f;  // (2026-11-25: 穂を 1.5 倍に)
+        const Vec2 r0 = top, r1{top.x - plume * 0.30f, top.y + plume * 0.02f};
+        const Vec2 r2{top.x - plume * 0.52f, top.y + plume * 0.30f}, r3{top.x - plume * 0.60f, top.y + plume * 0.80f};
+        AddBlade(p, r0, r1, r2, r3, h * 0.008f, 14, 0.7f);
+        // 小穂: 軸のあちこちから、軸に沿って少し広がり (左右交互)、重さで下へ垂れる細い房。上ほど長い。
+        constexpr int kCount = 30;
+        for (int k = 0; k < kCount; ++k) {
+            const float t = 0.04f + 0.92f * static_cast<float>(k) / static_cast<float>(kCount - 1);
+            const Vec2 q = Bezier(r0, r1, r2, r3, t);
+            const Vec2 qn = Bezier(r0, r1, r2, r3, std::min(1.f, t + 0.02f));
+            float dx = qn.x - q.x, dy = qn.y - q.y;
+            const float len = std::max(1e-4f, std::sqrt(dx * dx + dy * dy));
+            dx /= len, dy /= len;
+            const float side = k % 2 == 0 ? 1.f : -1.f;
+            const float branch = plume * (0.60f - 0.35f * t) * (0.75f + 0.5f * rnd.Next());
+            const float fan = side * (0.12f + 0.28f * rnd.Next());
+            const float tx = dx * std::cos(fan) - dy * std::sin(fan), ty = dx * std::sin(fan) + dy * std::cos(fan);
+            float vx = tx * 0.55f - 0.10f, vy = ty * 0.55f + 0.85f;  // 下へ垂れる向き
+            const float vl = std::max(1e-4f, std::sqrt(vx * vx + vy * vy));
+            vx /= vl, vy /= vl;
+            const Vec2 e1{q.x + tx * branch * 0.30f, q.y + ty * branch * 0.30f};
+            const Vec2 e2{q.x + (tx * 0.4f + vx * 0.6f) * branch * 0.65f, q.y + (ty * 0.4f + vy * 0.6f) * branch * 0.65f};
+            const Vec2 e3{q.x + vx * branch - side * branch * 0.06f, q.y + vy * branch};
+            AddBlade(p, q, e1, e2, e3, h * (0.0065f + 0.004f * rnd.Next()), 12, 0.7f);
+        }
+    }
+    return p;
+}
+
 ui::Path MapleLeaf(Vec2 center, float r, float degreesCcw, int points) {
     // とがった 5 つの葉先 (真上に 1 つ、斜め上へ外に 2 つ、斜め下へ外に 2 つ)、縁に小さなぎざぎざ、
     // その間に深い切れ込み。葉柄は下に垂れる。
@@ -344,22 +474,49 @@ ui::Path MapleLeaf(Vec2 center, float r, float degreesCcw, int points) {
     return p;
 }
 
-std::array<ui::Path, 4> Canopy(const ui::Rect& win, float depth, float perPixel, uint32_t seed) {
+namespace {
+
+// 上の端に沿って濃く、下に向かって薄く散らす (いくつかは `depth` までずっと流れ落ちる)。1 つずつ、場所・
+// 大きさ・4 色のどれか・向き (度) で `shape` が形を作る。秋の葉も春の花びらもこれ (同じ散らばり)。
+template <class Shape>
+std::array<ui::Path, 4> AlongTop(const ui::Rect& win, float depth, float perPixel, uint32_t seed, float least, float more, Shape shape) {
     std::array<ui::Path, 4> out;
     Random rnd{seed};
-    // いちばん上に沿って濃く、下に向かって薄くなる (いくつかは `depth` までずっと流れ落ちる)。
     const int count = std::max(12, static_cast<int>(win.w * perPixel));
     for (int i = 0; i < count; ++i) {
         const float x = win.x - 10.f + (win.w + 20.f) * rnd.Next();
         const float v = rnd.Next();
         const float y = win.y - 6.f + depth * std::pow(v, 2.2f);
-        const float size = (7.f + 9.f * rnd.Next()) * (1.f - 0.35f * v);
+        const float size = (least + more * rnd.Next()) * (1.f - 0.35f * v);
         const int color = static_cast<int>(rnd.Next() * 4.f) % 4;
-        const ui::Path leaf = MapleLeaf({x, y}, size, rnd.Next() * 360.f, 40);
+        const ui::Path one = shape(Vec2{x, y}, size, rnd.Next() * 360.f);
         auto& dst = out[static_cast<size_t>(color)].steps;
-        dst.insert(dst.end(), leaf.steps.begin(), leaf.steps.end());
+        dst.insert(dst.end(), one.steps.begin(), one.steps.end());
     }
     return out;
+}
+
+}  // namespace
+
+std::array<ui::Path, 4> Canopy(const ui::Rect& win, float depth, float perPixel, uint32_t seed) {
+    return AlongTop(win, depth, perPixel, seed, 7.f, 9.f, [](Vec2 c, float size, float deg) { return MapleLeaf(c, size, deg, 40); });
+}
+
+std::array<ui::Path, 4> PetalCanopy(const ui::Rect& win, float depth, float perPixel, uint32_t seed) {
+    // 花びら 1 枚 (長さ約 size): 付け根が細く、先がふくらみ、先の真ん中に小さな切れ込みのある桜の花びら
+    // (2026-11-25: 前はだ円)。
+    return AlongTop(win, depth, perPixel, seed, 6.f, 7.f, [](Vec2 c, float size, float deg) {
+        // 長さを 1 にした形 (y: 付け根 -0.5 .. 先 0.5)。右側を下り、切れ込み、左側を上る。
+        static constexpr Vec2 kShape[] = {{0, -0.5f},     {0.12f, -0.38f}, {0.22f, -0.2f}, {0.29f, 0},      {0.31f, 0.18f},
+                                          {0.27f, 0.34f}, {0.17f, 0.46f},  {0.07f, 0.5f},  {0, 0.4f},       {-0.07f, 0.5f},
+                                          {-0.17f, 0.46f}, {-0.27f, 0.34f}, {-0.31f, 0.18f}, {-0.29f, 0},   {-0.22f, -0.2f},
+                                          {-0.12f, -0.38f}};
+        std::vector<Vec2> pts;
+        for (const Vec2 v : kShape) pts.push_back(Add(c, Rotate({v.x * size, v.y * size}, deg)));
+        ui::Path p;
+        AddPolygon(p, pts);
+        return p;
+    });
 }
 
 // --- 冬 -----------------------------------------------------------------------------------
@@ -396,25 +553,50 @@ ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed) {
     return p;
 }
 
-ui::Path SnowDrift(const ui::Rect& r, float depth, float corner) {
+float SnowDriftHeight(float l, float depth) {
+    return depth * (0.72f + 0.17f * std::sin(l * 0.017f) + 0.09f * std::sin(l * 0.039f + 1.f));
+}
+
+SnowmanShapes Snowman(Vec2 base, float height, float grow) {
+    SnowmanShapes s;
+    // 高さの割り振り: 下の丸 0.46、頭 0.32 (少し重なる)、バケツ 0.20 ほど。
+    const float r1 = height * 0.23f, r2 = height * 0.16f;
+    const Vec2 c1{base.x, base.y - r1};
+    const Vec2 c2{base.x + height * 0.01f, c1.y - r1 - r2 + height * 0.05f};
+    AddCircle(s.body, c1, r1 + grow);
+    AddCircle(s.body, c2, r2 + grow);
+    // バケツ: 逆さにかぶる (口が下で広い)。頭の上の方から、少し右へ傾ける。
+    const float tilt = -12.f;  // 度 (画面で時計回り = 右へ傾く)
+    auto at = [&](float x, float y) { return Add(c2, Rotate({x, y}, tilt)); };
+    const float y0 = -r2 * 0.55f, y1 = y0 - height * 0.20f;
+    const Vec2 bucket[] = {at(-r2 * 0.80f, y0), at(-r2 * 0.58f, y1), at(r2 * 0.58f, y1), at(r2 * 0.80f, y0)};
+    AddPolygon(s.bucket, bucket);
+    const Vec2 rim[] = {at(-r2 * 0.95f, y0 + height * 0.035f), at(-r2 * 0.95f, y0 - height * 0.015f), at(r2 * 0.95f, y0 - height * 0.015f),
+                        at(r2 * 0.95f, y0 + height * 0.035f)};
+    AddPolygon(s.rim, rim);
+    return s;
+}
+
+ui::Path SnowDrift(const ui::Rect& r, float depth) {
     ui::Path p;
-    // 箱自身の座標で (左端から): どこにあっても同じ吹きだまり。
-    const float l0 = corner * 0.6f, l1 = r.w - corner * 0.6f;
-    if (l1 - l0 < 6.f || depth <= 0) return p;
+    if (r.w <= 0 || depth <= 0) return p;
     const float bottom = r.y + r.h;
-    constexpr float kSlope = 26.f;  // 吹きだまりは、両端でこのピクセル数をかけてゼロまで下がる
-    auto top = [&](float l) {
-        const float ends = std::min(1.f, std::min(l - l0, l1 - l) / kSlope);
-        const float swells = 0.62f + 0.22f * std::sin(l * 0.045f) + 0.16f * std::sin(l * 0.13f + 1.f);
-        return Vec2{r.x + l, bottom - depth * std::max(0.f, ends) * swells};
-    };
-    // 画面上で時計回り: 吹きだまりの上を右へ (左から 4 ピクセルごとに点を置くので、幅が変わっても
-    // 左側は変わらない)、そのあと下を戻る。
-    p.Begin(top(l0));
-    for (int i = 1; l0 + 4.f * static_cast<float>(i) < l1; ++i) p.Line(top(l0 + 4.f * static_cast<float>(i)));
-    p.Line(top(l1));
-    p.Line({r.x + l1, bottom});
-    p.Line({r.x + l0, bottom});
+    // 高さは左端からのピクセル `l` だけで決まる (ウィンドウの幅・高さに関係しない)。なだらかに
+    // (2026-11-24: ユーザーの希望。前は 50 ピクセルほどの細かい波があった): 長い波 2 つだけ。0.46 .. 0.98 倍。
+    auto top = [&](float l) { return Vec2{r.x + l, bottom - SnowDriftHeight(l, depth)}; };
+    // 画面上で時計回り: 吹きだまりの上を右へ、そのあと下を戻る。点は左端から 4 ピクセルごとの決まった所だけに
+    // 置き、両端は 1 区切り越える (2026-11-25: 端まで積もる。前は両端で下がっていた): 見える線はいつも同じ点の
+    // 間なので、幅を変えても形は変わらない。
+    p.Begin(top(-4.f));
+    for (int i = 0;; ++i) {
+        const float l = 4.f * static_cast<float>(i);
+        p.Line(top(l));
+        if (l >= r.w) {
+            p.Line({r.x + l, bottom});
+            break;
+        }
+    }
+    p.Line({r.x - 4.f, bottom});
     return p;
 }
 

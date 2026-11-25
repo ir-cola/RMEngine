@@ -78,10 +78,13 @@
     <ClCompile Include="TestProcess.cpp" />
     <ClCompile Include="TestSpace3d.cpp" />
     <ClCompile Include="TestSky.cpp" />
+    <ClCompile Include="TestSkyClouds.cpp" />
+    <ClCompile Include="TestMaterial.cpp" />
     <ClCompile Include="TestWeather.cpp" />
     <ClCompile Include="TestClimate.cpp" />
     <ClCompile Include="TestSpace2d.cpp" />
     <ClCompile Include="TestTree.cpp" />
+    <ClCompile Include="TestConsole.cpp" />
     <ClCompile Include="TestSystems.cpp" />
     <ClCompile Include="TestPhysics.cpp" />
     <ClCompile Include="TestPrefab.cpp" />
@@ -106,6 +109,26 @@
     <ClCompile Include="TestHelp.cpp" />
     <ClCompile Include="TestIcons.cpp" />
     <ClCompile Include="TestMeshBake.cpp" />
+    <ClCompile Include="TestSkeleton.cpp" />
+    <ClCompile Include="TestAnimation3d.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Pose.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\ClipTime.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Player.cpp" />
+    <ClCompile Include="TestClipEvents.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\animation3d\editor\ClipEvents.cpp" />
+    <ClCompile Include="TestGameAnimation.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorLogic.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorPoser.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorRun.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimationSystem.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\ScriptAnimator.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)game_x_animation\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\MeshPose.cpp" />
+    <ClCompile Include="TestSkinning.cpp" />
+    <ClCompile Include="TestFbxSkin.cpp" />
+    <ClCompile Include="TestGltfSkin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshBake.cpp" />
     <ClCompile Include="TestBakedImage.cpp" />
     <ClCompile Include="..\src\core\asset\BakedImage.cpp" />
@@ -126,6 +149,9 @@
     <ClCompile Include="..\src\platform\Http.cpp" />
     <ClCompile Include="..\src\editor\project\Templates.cpp" />
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
+    <ClCompile Include="..\src\editor\assets\AssetGrid.cpp" />
+    <ClCompile Include="..\src\ui\Grain.cpp" />
+    <ClCompile Include="..\src\editor\console\ConsoleModel.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
     <ClCompile Include="..\src\editor\app\Integrity.cpp" />
     <ClCompile Include="..\src\editor\app\EngineKey.cpp" />
@@ -163,6 +189,8 @@
     <ClCompile Include="..\src\platform\Image.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Spin.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Sky.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Material.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MaterialSlots.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\SkyShader.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\Register.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_3d\runtime\ScriptTransform3D.cpp" />
@@ -213,6 +241,7 @@
       <ObjectFileName>$(IntDir)weather\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\RendererShaders.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Renderer3D.cpp" />
     <ClCompile Include="..\plugins\rm_engine\climate\runtime\Climate.cpp" />
     <ClCompile Include="..\plugins\rm_engine\climate\runtime\ScriptClimate.cpp" />
     <ClCompile Include="..\plugins\rm_engine\climate\runtime\Register.cpp">
@@ -237,11 +266,13 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\View.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\DrawOrder.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Mesh.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Skeleton.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Primitives.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Fbx.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Inflate.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Lighting.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshFile.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\ClipSettings.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\TexturePixels.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\BlockCompress.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\TextureFile.cpp" />

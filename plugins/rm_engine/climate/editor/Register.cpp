@@ -1,5 +1,9 @@
 #include "rm_engine/climate/editor/Register.h"
 
+#include "rm_engine/climate/editor/ClimateTab.h"
+#include "rm_engine/climate/editor/ZoneLines.h"
+
+#include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
 #include "rm_engine/climate/runtime/Climate.h"
 #include "rm_engine/game_production/editor/SceneView.h"
@@ -29,8 +33,10 @@ Vec3 UnitAxis(const space3d::Mat4& m, int c) {
     return c == 0 ? Vec3{1, 0, 0} : c == 1 ? Vec3{0, 1, 0} : Vec3{0, 0, 1};
 }
 
+}  // namespace
+
 // 3D のエリアの形を `inset` だけ内側に縮めたもの (縮めきったら描かない)。
-void Outline3D(const ClimateField::Zone3D& z, float inset, Color color, DebugDraw& out) {
+void ZoneOutline3D(const ClimateField::Zone3D& z, float inset, Color color, DebugDraw& out) {
     ZoneBody b = BodyOf(z.zone, z.world);
     const Vec3 center{z.world.m[3][0], z.world.m[3][1], z.world.m[3][2]};
     const Vec3 ax = UnitAxis(z.world, 0), ay = UnitAxis(z.world, 1), az = UnitAxis(z.world, 2);
@@ -63,6 +69,8 @@ void Outline3D(const ClimateField::Zone3D& z, float inset, Color color, DebugDra
         line(at(std::cos(a) * h.x, -h.y, std::sin(a) * h.x), at(std::cos(a) * h.x, h.y, std::sin(a) * h.x));
     }
 }
+
+namespace {
 
 void Outline2D(const ClimateField::Zone2D& z, float inset, Color color, DebugDraw& out) {
     ZoneBody b = BodyOf(z.zone, z.world);
@@ -97,8 +105,8 @@ void ZoneLines(const game_production::Scene& scene, std::span<const int> selecti
     const ClimateField field(scene);
     for (const ClimateField::Zone3D& z : field.Zones3D()) {
         if (!chosen(z.entity)) continue;
-        Outline3D(z, 0, theme::SceneArea(), out);
-        if (z.zone.border > 0) Outline3D(z, z.zone.border, theme::SceneAreaInner(), out);
+        ZoneOutline3D(z, 0, theme::SceneArea(), out);
+        if (z.zone.border > 0) ZoneOutline3D(z, z.zone.border, theme::SceneAreaInner(), out);
     }
     for (const ClimateField::Zone2D& z : field.Zones2D()) {
         if (!chosen(z.entity)) continue;
@@ -112,6 +120,9 @@ void ZoneLines(const game_production::Scene& scene, std::span<const int> selecti
 void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::SceneLinesInfo kLines{&ZoneLines};
     registry.Contribute(game_production::kSceneLinesPoint, kLines);
+    // 「気候」タブ: シーンを真上から見た地図に気候を塗る・天候を変える (ClimateTab.h)。
+    static const game_production::ViewPanelInfo kTab{"climate", editor::TrKey(L"気候"), &CreateClimateTab};
+    registry.Contribute(game_production::kViewPanelPoint, kTab);
 }
 
 }  // namespace rm::climate

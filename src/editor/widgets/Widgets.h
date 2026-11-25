@@ -57,14 +57,14 @@ struct OrnamentInfo {
     // ウィンドウ全体の絵 (`floating`: 独立したパネルのウィンドウ - 明るめの絵)。ウィンドウの背景に描き、
     // その後、各パネルとバーの塗りの後にもう一度描く (それに切り取って)。
     void (*window)(ui::Context& c, const ui::Rect& window, bool floating);
-    // パネル自身のもの。ウィンドウの絵の後にその上へ描く (冬: 下に雪)。null でもよい。
+    // パネル自身の地 (夏: 砂の粒)。パネルを塗った後、ウィンドウの絵より先に描く (絵が上になる)。null でもよい。
     void (*panel)(ui::Context& c, const ui::Rect& r, float corner);
 };
 inline constexpr char kOrnamentPoint[] = "core.theme_ornament";
 // フレームの最初、ウィンドウをクリアした後: 背景にテーマの絵を描く。
 void DrawBackdrop(ui::Context& c, bool floating);
-// 塗ったばかりの面にもう一度絵を描く (DrawPanelFrame / DrawBar がやる)。`r` に切り取り、
-// (`panelThings`) パックのパネル用のもの (冬: 下に積もった雪) も描く - バーには描かない。
+// 塗ったばかりの面にもう一度絵を描く (DrawPanelFrame / DrawBar がやる)。`r` に切り取る。
+// (`panelThings`) 先にパックのパネル用の地 (夏: 砂の粒) も描く - バーには描かない。
 void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0, bool panelThings = true);
 
 // ウィンドウの枠の帯 (メニューバー、ステータスバー、サイドバー): 穏やかなグラデーション、枠なし。
@@ -89,6 +89,8 @@ enum class Icon {
     // 絵はあるが、まだどこにも出していない物
     Back, Undo, Redo, Lock, Unlock, Search, Trash, Color, Settings, Help, Human, Prefab,
     BoneMoveX, BoneMoveY, BoneMoveZ, BoneRotateX, BoneRotateY, BoneRotateZ,
+    // 線で描く印 (絵が無い): 描く道具 - 筆・消しゴム・ペン (点をつないで囲む)。気候のタブの地図の左の列
+    Brush, Eraser, Pen,
 };
 // `size`: 絵のアイコンの一辺 (DIP)。0 = 四角に合わせる (短い辺の 8 割。16 まで)。線で描く印は四角に合わせる。
 void DrawIcon(ui::Context& c, const ui::Rect& r, Icon icon, ui::Color color, float size = 0);
@@ -98,6 +100,8 @@ void InitIcons(platform::Gfx& gfx);
 // --- ボタン ----------------------------------------------------------------------------------
 bool Button(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label,
             ButtonKind kind = ButtonKind::Secondary, bool enabled = true);
+// `label` の Button がちょうど入る幅 (太字でも: Primary とほかを切り替えても幅が変わらない)。
+float ButtonWidth(ui::Context& c, std::wstring_view label);
 // アイコンのある小さな四角のボタン (Ghost の見た目: マウスの下のときだけ面が出る)。
 bool IconButton(ui::Context& c, std::string_view id, const ui::Rect& r, Icon icon, bool enabled = true);
 // `on` の間、押し込まれたままの (アクセントの) アイコンボタン - 動いている間のゲームの ▶。
@@ -114,6 +118,8 @@ ui::Context::ButtonResult ToolSquare(ui::Context& c, std::string_view id, const 
 // ラベルごとに 1 つ) はマウスの下に出る。
 int Segmented(ui::Context& c, std::string_view id, const ui::Rect& r, std::span<const std::wstring_view> labels, int selected,
               std::span<const std::wstring_view> tooltips = {});
+// `labels` の Segmented がちょうど入る幅 (どの区切りも一番長いラベルの幅: 選んだ太字でも切れない)。
+float SegmentedWidth(ui::Context& c, std::span<const std::wstring_view> labels);
 
 // --- 行 (リスト、ツリー、メニュー、サイドバー) -----------------------------------------------
 struct RowLook {
@@ -123,6 +129,12 @@ struct RowLook {
     bool flat = false;    // 四角で、端から端まで: 線で区切ったリストの行 (Hub のページ、プロジェクトの一覧)
 };
 void DrawRow(ui::Context& c, const ui::Rect& r, RowLook look);
+// 並びの 1 つのタイル (アセット パネルの右側): 選んだもの / マウスの下のものの面。行と同じ色で、
+// 棒の代わりに、キーを受け取っている間は選んだタイルをアクセントで縁取る。
+void DrawTile(ui::Context& c, const ui::Rect& r, bool selected, bool hovered, bool focused = true);
+// ドラッグしているもの (ツリーの行、アセットのタイル) の札を、マウスの横に (フレームの終わりに、
+// すべての上に)。`inside`: 自分の中に落とせる所の上 - 受け取る所が無くても縁取る。
+void DragTag(ui::Context& c, std::wstring text, bool inside);
 // クリックできる行 (ImGui の Selectable)。行を描く。行の上にあるものは呼び出し側が描く。
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view id, const ui::Rect& r, bool selected, bool flat = false);
 // 選ぶテーマ 1 つ (テーマの画面): そのテーマ自身の色で描いた小さなウィンドウと、その下に名前。
@@ -167,6 +179,32 @@ void LineGraph(ui::Context& c, const ui::Rect& r, std::span<const float> a, std:
 
 // --- 線とヒント ------------------------------------------------------------------------------
 void Separator(ui::Context& c, float x, float y, float width);
+// 色見本 (インスペクターの色の欄、気候の種類の行): `color` (ユーザーのデータの色) の角の丸い四角と縁。
+void DrawSwatch(ui::Context& c, const ui::Rect& r, ui::Color color);
+
+// --- 地図 (真上から見た絵の上に描くもの: 気候のタブ) ----------------------------------------
+// 塗った所 (同じ色のマスの並び 1 つ): `color` (ユーザーのデータの色) を、下の絵が透けるように。
+void DrawMapPaint(ui::Context& c, const ui::Rect& r, ui::Color color);
+// マス目の線: `area` の中に、(x0, y0) を通って `step` DIP ごと。薄く。
+void DrawMapGrid(ui::Context& c, const ui::Rect& area, float x0, float y0, float step);
+// 地図の上の線 (気候エリアの縁など)。
+void DrawMapLine(ui::Context& c, float x1, float y1, float x2, float y2, ui::Color color);
+// 塗る筆の輪 (真ん中と半径 DIP)。`erase`: 消しゴム (危険の色)。
+void DrawMapBrush(ui::Context& c, float cx, float cy, float radius, bool erase);
+// 値の色のマス (気候のタブの「見る」: 気温・湿り気・雲)。`color` は theme::MapTemperature などのもの。
+// `strength`: 濃さに掛ける (0 .. 1。雲を塗った割合)。
+void DrawMapHeat(ui::Context& c, const ui::Rect& r, ui::Color color, float strength = 1.f);
+// 色の目盛り: 左から右へ `ramp` (0 .. 1) の色の帯、その下に左端・右端の値、上に見出し。
+void DrawMapLegend(ui::Context& c, const ui::Rect& r, std::wstring_view title, ui::Color (*ramp)(float), std::wstring_view low, std::wstring_view high);
+// ペンで囲んだ形 (画面の点。閉じていない = 描いている途中: `tail` があればそこまで線を伸ばす)。
+// `fill`: 中を薄く塗る色 (透明 = 塗らない)。`selected`: 縁をアクセントの色にし、点の印を出す。
+// `hot`: 印を大きくする点 (マウスが上にある。-1: 無し)。
+void DrawMapShape(ui::Context& c, std::span<const Vec2> points, bool closed, ui::Color fill, bool selected, int hot = -1,
+                  const Vec2* tail = nullptr);
+// カーソルの所の値 (地図の上の小さな札)。
+void DrawMapReadout(ui::Context& c, float x, float y, std::wstring_view text);
+// 縦の区切り線 (並んだ 2 つの部分の間: アセット パネルの木と並び)。
+void VSeparator(ui::Context& c, float x, float y, float height);
 // マウスの横のヒント。フレームの最後に (何よりも上に) 描く。
 void Tooltip(ui::Context& c, std::wstring_view text);
 
@@ -180,6 +218,15 @@ bool TextField(ui::Context& c, std::string_view id, const ui::Rect& r, std::stri
 // ラベル付きのチェックボックス。値が変わったら true を返す。
 // mixed: まとめて編集しているオブジェクトが一致しない - チェックの代わりに横棒を出す。クリックするとオンになる。
 bool Checkbox(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label, bool mixed = false);
+// 数の付いたチェックボックス (コンソールの Info / Warn / Error): [箱] 印 ラベル 数 の並び。`count` は太字の
+// `countColor` で。`label` は空でもよい (狭いとき: チェックと印と数だけ)。値が変わったら true。
+// 要る幅: CheckboxCountWidth (`count` が空なら、ふつうの Checkbox の幅)。
+// `mark` (省略可): ラベルのすぐ前に出す印 (警告 / エラーの絵)。`markAlpha` の濃さで (数が 0 のとき薄く)。
+bool CheckboxCount(ui::Context& c, std::string_view id, const ui::Rect& r, bool& value, std::wstring_view label,
+                   std::wstring_view count, ui::Color countColor, std::optional<Icon> mark = std::nullopt,
+                   float markAlpha = 1.f);
+float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_view count = {},
+                         std::optional<Icon> mark = std::nullopt);
 // テキストフィールドの数 (ビューの設定 - シーンビューの刻み): フォーカスがある間は打ったままの
 // 文字、それ以外は値 (`text` がフレームの間それを持つ)。`value` が変わったら true: 数が
 // 打たれた (min .. max に収める); 数でない文字は何も変えない。
@@ -204,6 +251,18 @@ void DrawThumbnail(ui::Context& c, const ui::Rect& r, ID2D1Bitmap* bitmap, bool 
 // 値を変えている間 true を返す。
 bool Slider(ui::Context& c, std::string_view id, const ui::Rect& r, float& value, float min, float max);
 
+// --- 時間の帯 (モデルのクリップの帯: 0 から `duration` 秒の目盛りの上に、時刻に置いた印) -----------
+// 帯は 3 段: 上が印の名前、真ん中が溝 (印の ▲ と縦の線)、下が目盛りの秒。高さは kTimeStripHeight。
+inline constexpr float kTimeStripHeight = 58.f;
+// 時刻 `t` の帯の上の x と、その逆 (帯の外は 0 と `duration` に収める)。
+float TimeStripX(const ui::Rect& r, float duration, float t);
+float TimeStripTime(const ui::Rect& r, float duration, float x);
+// 溝と目盛り (詰まらない間: 0.1 / 0.2 / 0.5 / 1 / 2 / 5 … 秒) とその秒の数。`cursor` >= 0: その時刻に縦の線。
+void DrawTimeStrip(ui::Context& c, const ui::Rect& r, float duration, float cursor = -1.f);
+// 時刻の印 1 つ: 溝の中の ▲ と縦の線、上に名前 (`x` は TimeStripX)。押せる所は TimeMarkerRect。
+ui::Rect TimeMarkerRect(const ui::Rect& strip, float x);
+void DrawTimeMarker(ui::Context& c, const ui::Rect& strip, float x, std::wstring_view label, bool selected, bool hovered);
+
 // タイトルバー付きの角の丸いパネル。内容の領域を返す。
 ui::Rect Panel(ui::Context& c, const ui::Rect& r, std::wstring_view title);
 
@@ -212,6 +271,9 @@ float BeginScroll(ui::Context& c, std::string_view id, const ui::Rect& view, flo
 void EndScroll(ui::Context& c, std::string_view id, const ui::Rect& view, float contentHeight);
 // 次の BeginScroll で末尾へ飛ぶ (新しい出力を追うコンソール用)。
 void ScrollToEnd(ui::Context& c, std::string_view id);
+// 今 (このフレームの EndScroll の後で) 末尾にいるか。中身が見える高さに収まるときも true
+// (コンソール: 一番下にいる間だけ新しい出力を追う)。
+bool ScrollAtEnd(ui::Context& c, std::string_view id, const ui::Rect& view, float contentHeight);
 
 // --- ポップアップメニュー ---------------------------------------------------
 struct MenuItem {

@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "animation3d",
+  "displayName": "3D アニメーション",
+  "version": "0.0.1",
+  "requires": [
+    { "author": "rm_engine", "name": "space3d" }
+  ]
+}

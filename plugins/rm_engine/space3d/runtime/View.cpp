@@ -10,6 +10,8 @@ namespace rm::space3d {
 namespace {
 
 constexpr float kDeg = std::numbers::pi_v<float> / 180.f;
+// 平行投影の目は、少なくともこれだけピボットの手前に下がる (その前後のこの長さの物が見える)。
+constexpr float kOrthoBack = 500.f;
 
 // (x, y, z, w) = M * (p, w)
 void Transform4(const Mat4& m, float x, float y, float z, float w, float out[4]) {
@@ -270,13 +272,23 @@ Vec3 OrbitView::Forward() const {
 }
 Vec3 OrbitView::Right() const { return Normalize(Cross({0, 1, 0}, Forward())); }
 Vec3 OrbitView::Up() const { return Cross(Forward(), Right()); }
+float OrbitView::EyeDistance() const { return orthographic ? std::max(kOrthoBack, distance * 4.f) : distance; }
+Vec3 OrbitView::EyeFor(Vec3 p) const { return orthographic ? p - Forward() * EyeDistance() : Eye(); }
+float OrbitView::OrthoHalfHeight() const { return distance * std::tan(fovY * kDeg * 0.5f); }
 float OrbitView::WorldPerPixel(Vec3 p, float viewHeight) const {
+    if (orthographic) return 2.f * OrthoHalfHeight() / std::max(viewHeight, 1.f);
     const float depth = Dot(p - Eye(), Forward());
     if (depth <= 1e-4f) return 0.f;
     return 2.f * depth * std::tan(fovY * kDeg * 0.5f) / std::max(viewHeight, 1.f);
 }
 
 Mat4 OrbitView::ProjectionMatrix(float aspect) const {
+    if (orthographic) {
+        // 目はピボットの EyeDistance 手前: ピボットの前後に同じだけ (と少し) 見える。深さは線形なので
+        // 遠い面が遠くても精度は落ちない。
+        const float hh = OrthoHalfHeight(), hw = hh * std::max(aspect, 1e-3f);
+        return Orthographic(-hw, hw, -hh, hh, 0.01f, EyeDistance() * 2.f);
+    }
     // ニアプレーンは距離に合わせて動くので、小さいシーンでも大きいシーンでも深度の精度を保つ。
     const float nearZ = std::clamp(distance * 0.01f, 0.01f, 1.f);
     return Perspective(fovY, aspect, nearZ, std::max(1000.f, distance * 50.f));
@@ -286,7 +298,7 @@ void Look(OrbitView& v, float dYaw, float dPitch) {
     const Vec3 eye = v.Eye();
     v.yaw += dYaw;
     v.pitch = std::clamp(v.pitch + dPitch, -89.f, 89.f);
-    v.pivot = eye + v.Forward() * v.distance;
+    v.pivot = eye + v.Forward() * v.EyeDistance();
 }
 
 void Orbit(OrbitView& v, float dYaw, float dPitch) {
@@ -301,6 +313,20 @@ void Pan(OrbitView& v, float dx, float dy, float viewHeight) {
 }
 
 void Dolly(OrbitView& v, float notches) { v.distance = std::clamp(v.distance * std::pow(0.85f, notches), 0.05f, 10000.f); }
+
+void ZoomAt(OrbitView& v, float notches, float ndcX, float ndcY, float aspect) {
+    if (!v.orthographic) {
+        Dolly(v, notches);
+        return;
+    }
+    // マウスの下の点は、ピボットから画面の面に沿ってこれだけ離れている (大きさに比例する)。大きさが
+    // k 倍になると、その点が同じ所に残るには、ピボットがその点へ (1 - k) だけ寄る。
+    const float hh = v.OrthoHalfHeight();
+    const Vec3 offset = v.Right() * (ndcX * hh * std::max(aspect, 1e-3f)) + v.Up() * (ndcY * hh);
+    const float before = v.distance;
+    Dolly(v, notches);
+    v.pivot = v.pivot + offset * (1.f - v.distance / before);
+}
 
 void Fly(OrbitView& v, Vec3 move) { v.pivot = v.pivot + v.Right() * move.x + Vec3{0, 1, 0} * move.y + v.Forward() * move.z; }
 

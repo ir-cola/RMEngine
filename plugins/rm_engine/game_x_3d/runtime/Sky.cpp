@@ -53,6 +53,27 @@ void EarthAir(float e, const SkyWeather& w, Vec3& zenith, Vec3& horizon, float& 
     horizon = Scale(Mix(horizon, Scale(Vec3{1, 1, 1}, Luminance(horizon)), grey), 1 - w.dark * 0.5f);
 }
 
+// 雲の地図を空の絵の形 (マスごとに 割合、量: 0 .. 1。数でないものは 0) にする。数が合わない: 無し。
+void PackCloudMap(const SkyWeather& w, SkyLook& look) {
+    const int n = w.cloudCells;
+    const size_t count = n > 0 ? static_cast<size_t>(n) * static_cast<size_t>(n) : 0;
+    if (count == 0 || w.cloudShares.size() != count || w.cloudAmounts.size() != count || !(w.cloudCell > 0) || !std::isfinite(w.cloudCell) ||
+        !std::isfinite(w.cloudFirstX) || !std::isfinite(w.cloudFirstZ))
+        return;
+    auto unit = [](float v) { return std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f; };
+    look.clouds.resize(count * 2);
+    for (size_t k = 0; k < count; ++k) {
+        look.clouds[k * 2] = unit(w.cloudShares[k]);
+        look.clouds[k * 2 + 1] = unit(w.cloudAmounts[k]);
+    }
+    look.cloudCells = static_cast<uint32_t>(n);
+    float* m = look.constants.param[6];
+    m[0] = w.cloudFirstX;
+    m[1] = w.cloudFirstZ;
+    m[2] = w.cloudCell;
+    m[3] = static_cast<float>(n);
+}
+
 }  // namespace
 
 SkyWeather SkyWeatherOf(const RuntimeRegistry* registry, const game_production::Scene& scene, double seconds) {
@@ -111,6 +132,7 @@ SkyLook LookOf(const Sky& sky, double seconds, const SkyWeather& weather) {
             k.param[5][1] = w.driftZ;
             k.param[5][2] = w.windX;
             k.param[5][3] = w.windZ;
+            PackCloudMap(w, look);  // 場所ごとの雲 (param[6] と clouds)
             // 光: 太陽が出ている間は太陽、そのあとは月 (弱い青)。
             look.drivesLight = sky.driveLight;
             const float sunStrength = up * w.through;

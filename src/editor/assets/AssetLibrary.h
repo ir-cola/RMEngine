@@ -80,11 +80,13 @@ public:
     // その変更: 保持し、編集が終わったとき (ドラッグを離した、入力が済んだ) に FlushImports が
     // .meta に書く。1 歩ごとには書かない。そのアセットを読む側は、そのときに読み直す。
     void QueueImport(const std::string& guid, json::Value import);
+    bool HasQueuedImport(const std::string& guid) const { return queuedImports_.contains(guid); }
     // エディターが今持っているアセットの中身 (ソフト独自の種類のファイル - パーティクルの
     // エフェクトなど - を編集して、まだ書いていない物)。なければファイル。ないときは nullopt。
     std::optional<std::string> Content(const std::string& guid) const;
     // その編集: 保持し、FlushImports がファイルに書く (取り込みの設定と同じ)。
     void QueueContent(const std::string& guid, std::string bytes);
+    bool HasQueuedContent(const std::string& guid) const { return queuedContents_.contains(guid); }
     bool HasQueuedImports() const { return !queuedImports_.empty() || !queuedContents_.empty(); }
     // 待っている物を、それぞれの .meta とファイルに書く (そのためにフォルダーをもう一度調べはしない)。
     void FlushImports();
@@ -101,6 +103,11 @@ public:
     // `whereGuid` (フォルダー、またはファイルのあるフォルダー。"" = 一番上) の中に、新しいフォルダー
     // "新しいフォルダ" を作る (使われていれば 2、3 ...)。*made = その id。
     std::wstring NewFolder(const std::string& whereGuid, std::string* made);
+    // `whereGuid` (フォルダー、またはファイルのあるフォルダー。"" = `defaultFolder` - Assets/ からの
+    // パス。無ければ作る。"" なら一番上) の中に、新しいファイル "<baseName><extension>" (使われていれば
+    // "<baseName> 2<extension>" …) を中身 `bytes` で作る (プラグインが作る種類: AssetFileType.h)。*made = その id。
+    std::wstring NewFile(const std::string& whereGuid, const std::string& defaultFolder, const std::string& baseNameUtf8,
+                         const std::string& extension, const std::string& bytes, std::string* made);
     // ごみ箱へ、その .meta ファイルと一緒に。
     std::wstring Delete(std::span<const std::string> guids);
 

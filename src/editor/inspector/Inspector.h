@@ -27,6 +27,8 @@
 //   EntityRef      種類だけ)。クリックすると選ぶリストが開く (検索欄つき)、× で消す。
 //                  エンティティ: 同じように 階層 の項目。もう無い ID は
 //                  "(見つかりません)" と出て、残る。何があるかは Refs (エディターのもの) から来る。
+//   (文字で、Block::choices が選択肢を返すもの: ドロップダウンリスト。一覧に無い値は "値 (見つかりません)"
+//                  と出て、残る。選択肢はソフトが今のデータから作る - アニメーターのクリップの名前)
 //   std::vector    "N 個" と ＋ (最後のコピーを足す)、そして各要素: ドラッグして別の場所へ
 //                  動かすつまみ、番号、値 (上のどれか)、消す ×。変更は毎回配列全体を
 //                  いっぺんに設定する (Undo は 1 つの項目)。
@@ -73,6 +75,12 @@ struct Refs {
     std::function<ID2D1Bitmap*(ui::Context& c, const std::string& guid, float size)> thumbnail;
 };
 
+// 文字のフィールドの選択肢 1 つ (Block::choices): 保存する値と、見せる名前。
+struct Choice {
+    std::string value;
+    std::wstring label;
+};
+
 // 値のかたまり 1 つ。
 struct Block {
     const reflect::TypeDesc* type = nullptr;  // null: `note` だけ出す (たとえばプラグインが無い部品)
@@ -97,10 +105,21 @@ struct Block {
     std::function<std::vector<w::Action>(const reflect::FieldPath& path, std::string_view label)> fieldMenu;
     // この型のこれらのフィールドだけ (名前で。大きな型をタブで見せるウィンドウ用)。空: 全部。
     std::vector<std::string> fields;
+    // この型のこれらのフィールドは出さない (名前で。ほかのプラグインがあると意味の無い欄: 気候があるときの天候の
+    // 「雪にする」)。空: 隠さない。
+    std::vector<std::string> hidden;
     // いっぺんに設定するできあいの値 (天候の 快晴 / 雨 / 嵐 ...): フィールドの上に 1 行 - 名前と
     // これらのドロップダウン。選んだ行が動く (呼んだ側が履歴に積む)。空: 行なし。
     std::wstring presetLabel;
     std::vector<w::Action> presets;
+    // 文字のフィールド (配列の要素でないもの) の選択肢: `path` のフィールドに値を返すと、文字の欄の
+    // 代わりにそれらのドロップダウンを出す。nullopt / null: ふつうの文字の欄。描くたびに尋ねる。
+    std::function<std::optional<std::vector<Choice>>(const reflect::FieldPath& path)> choices;
+    // 欄の代わりに、ブロックが自分で描く中身 (`type` は null。モデルのクリップの帯): `customHeight` が幅に
+    // 対する高さ、`customDraw` がその四角 (見出しと注記の下) に描く。インスペクターは見出し・たたむ・
+    // スクロールだけを受け持ち、編集は描く側が自分で (ソフトの履歴に積んで) する。どちらかが null: 無し。
+    std::function<float(ui::Context& c, float width)> customHeight;
+    std::function<void(ui::Context& c, const ui::Rect& r)> customDraw;
 };
 
 // インスペクターごと: 打っている最中の文字、開いているドロップダウン / メニュー、たたんだブロック。
@@ -130,6 +149,10 @@ struct State {
     std::unordered_set<std::wstring> folded;  // ブロックのタイトル
     float contentHeight = 0;
 };
+
+// 入力・ドラッグ 1 回分の Undo のまとめの鍵 (プログラムの中で重ならない: インスペクターの欄が使うものと
+// 同じ数え方)。自分で描くブロック (Block::customDraw) がドラッグを 1 件にまとめるのに使う。
+uint64_t NewMergeKey();
 
 // ブロックを `area` に描く (必要ならスクロールする)。`addLabel` が空でなければ、その下に
 // `addMenu` が返すものを並べるパネルを開くボタンを置く (フォルダに入れて: w::Action::folder)。

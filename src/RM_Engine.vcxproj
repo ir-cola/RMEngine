@@ -82,6 +82,7 @@
     <ClCompile Include="editor\export\Exporter.cpp" />
     <ClCompile Include="ui\Context.cpp" />
     <ClCompile Include="ui\Painter.cpp" />
+    <ClCompile Include="ui\Grain.cpp" />
     <ClCompile Include="ui\TextEdit.cpp" />
     <ClCompile Include="editor\app\App.cpp" />
     <ClCompile Include="editor\app\Paths.cpp" />
@@ -102,6 +103,7 @@
     <ClCompile Include="editor\dock\NamedLayouts.cpp" />
     <ClCompile Include="editor\inspector\Inspector.cpp" />
     <ClCompile Include="editor\assets\AssetLibrary.cpp" />
+    <ClCompile Include="editor\assets\AssetGrid.cpp" />
     <ClCompile Include="editor\assets\AssetPanel.cpp" />
     <ClCompile Include="editor\assets\Thumbnails.cpp" />
     <ClCompile Include="editor\plugin\PluginManifest.cpp" />
@@ -109,6 +111,8 @@
     <ClCompile Include="editor\plugin\PluginDownload.cpp" />
     <ClCompile Include="editor\tree\TreeModel.cpp" />
     <ClCompile Include="editor\tree\TreeView.cpp" />
+    <ClCompile Include="editor\console\ConsoleModel.cpp" />
+    <ClCompile Include="editor\console\ConsolePanel.cpp" />
     <ClCompile Include="editor\plugin\Plugins.cpp" />
     <ClCompile Include="editor\app\Main.cpp" />
     <ClCompile Include="editor\app\ScreenWindow.cpp" />
@@ -171,6 +175,7 @@
     <ClInclude Include="editor\dock\NamedLayouts.h" />
     <ClInclude Include="editor\inspector\Inspector.h" />
     <ClInclude Include="editor\assets\AssetLibrary.h" />
+    <ClInclude Include="editor\assets\AssetGrid.h" />
     <ClInclude Include="editor\assets\AssetPanel.h" />
     <ClInclude Include="editor\assets\AssetPreview.h" />
     <ClInclude Include="editor\assets\Thumbnails.h" />
@@ -181,6 +186,8 @@
     <ClInclude Include="editor\plugin\Software.h" />
     <ClInclude Include="editor\tree\TreeModel.h" />
     <ClInclude Include="editor\tree\TreeView.h" />
+    <ClInclude Include="editor\console\ConsoleModel.h" />
+    <ClInclude Include="editor\console\ConsolePanel.h" />
     <ClInclude Include="editor\hub\HubScreen.h" />
     <ClInclude Include="editor\project\HubSettings.h" />
     <ClInclude Include="editor\project\Project.h" />

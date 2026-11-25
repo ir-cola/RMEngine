@@ -85,11 +85,11 @@ void PhysicsLines(const game_production::DebugContext& ctx, std::vector<game_pro
 }
 
 // 追加 ▸ 3D オブジェクト で作った 3D オブジェクトは、その形のコライダーを持つ (2026-11-20): 箱、球、
-// カプセルはそのまま; 円柱はそれを囲む箱 (円柱のコライダーは無い); 平面はその下の薄い箱。形を
-// 言えないもの (ライト、カメラ): 何も付けない。
+// カプセル、円柱 (2026-11-24 から。前は囲む箱で、雪が四角く積もった) はそのまま; 平面はその下の薄い箱。
+// 形を言えないもの (ライト、カメラ): 何も付けない。
 void AddCollider(Scene& scene, int entity, std::string_view made) {
-    const bool box = made == "box" || made == "cylinder";
-    if (!box && made != "sphere" && made != "capsule" && made != "plane") return;
+    const bool box = made == "box";
+    if (!box && made != "sphere" && made != "capsule" && made != "cylinder" && made != "plane") return;
     Collider* c = game_production::AddComponentTo<Collider>(scene, entity);
     if (!c) return;
     if (box) {
@@ -98,6 +98,10 @@ void AddCollider(Scene& scene, int entity, std::string_view made) {
     } else if (made == "sphere") {
         c->shape = Shape::Sphere;
         c->radius = 0.5f;
+    } else if (made == "cylinder") {
+        c->shape = Shape::Cylinder;
+        c->radius = 0.5f;
+        c->height = 1.f;
     } else if (made == "capsule") {
         c->shape = Shape::Capsule;
         c->radius = 0.5f;

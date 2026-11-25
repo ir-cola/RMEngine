@@ -11,6 +11,9 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     // シーンの 気候 (エリアの外の気温と湿り気: 2D でも 3D でも)。
     static const game_production::SceneSettingInfo kSettings{.type = &reflect::TypeOf<ClimateSettings>};
     registry.Contribute(game_production::kSceneSettingPoint, kSettings);
+    // 気候の地図 (気候のタブで真上から塗る): 今は 3D のシーンだけ。
+    static const game_production::SceneSettingInfo kMap{.type = &reflect::TypeOf<ClimateMap>, .space = "3d"};
+    registry.Contribute(game_production::kSceneSettingPoint, kMap);
     // 気候エリア: 3D と 2D。
     static const game_production::ComponentInfo kZone{.type = &reflect::TypeOf<ClimateZone>, .space = "3d", .folder = "気候"};
     registry.Contribute(game_production::kComponentPoint, kZone);

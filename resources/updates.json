@@ -3,12 +3,220 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.18",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "雨雲の「雨の濃さ」を目安 (ぽつぽつ・小雨・雨・大雨・嵐) か数で選べるように。ペンで囲んだ雨雲は、真ん中がその濃さで、縁に向かってだんだん弱くなります (「ぼかし」で弱くなる幅を変えられます)",
+          "en": "Rain clouds now have a \"Rain strength\" you can pick from presets (Sprinkle, Drizzle, Rain, Heavy, Storm) or as a number. Rain clouds drawn with the pen are at that strength in the center and get gradually weaker toward the edge (\"Soften\" sets how wide the fade is)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.17",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "雨を「シーン全体」と「一部だけ」の 2 通りに: シーン全体はインスペクターの降水量、一部だけは気候のタブの「天候」で雨雲をペンで描きます (描いた所だけ降り、寒い所では雪)",
+          "en": "Rain now comes two ways: over the whole scene with Precipitation in the inspector, or only in some places by drawing rain clouds with the pen under \"Weather\" in the Climate tab (it falls only there, as snow where it is cold)"
+        },
+        {
+          "ja": "気候のタブの道具 (筆・消しゴム・ペン・選ぶ) を、シーンビューと同じ地図の左上のボタンに。「気候」と「天候」の両方で使えます",
+          "en": "The Climate tab tools (Brush, Eraser, Pen, Select) are now buttons at the top left of the map, like the Scene view. They work under both \"Climate\" and \"Weather\""
+        },
+        {
+          "ja": "雲の層は「天候」の側に移り、塗った雲が雨を止めることはなくなりました。「見る」に「雨」を追加",
+          "en": "The clouds layer moved to the \"Weather\" side, and painted clouds no longer stop the rain. \"Show\" has a new \"Rain\" view"
+        }
+      ]
+    },
+    {
+      "version": "0.0.16",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "気候のタブが気候ビューに: 「見る」で気温・湿り気・雲の量を地図の上に色の段で見られます (目盛りとカーソルの所の値つき)",
+          "en": "The Climate tab is now a climate view: \"Show\" puts temperature, humidity and cloud amount on the map as color scales (with a scale and the value under the cursor)"
+        },
+        {
+          "ja": "気候のタブの道具に「ペン」(線で囲む) と「選ぶ」(囲んだ形の点を動かして直す) を追加。今までの丸い筆は「筆」に",
+          "en": "Climate tab tools: \"Pen\" (draw around an area) and \"Select\" (move the points of a drawn shape). The round brush is now called \"Brush\""
+        },
+        {
+          "ja": "地図に雲の量を描けるように (描く層「雲」)。雨と雪は雲のある所だけ降り、空の雲もその場所だけ厚くなります",
+          "en": "You can draw the cloud amount on the map (the \"Clouds\" layer). Rain and snow fall only under clouds, and the sky gets thick clouds just there"
+        },
+        {
+          "ja": "気候のプラグインがあるときは、天候の「雪にする」を出さないように (雨か雪かは気温で決まるため)",
+          "en": "With the Climate plugin installed, the weather's \"Snow\" switch is hidden (the temperature decides rain or snow)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.15",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "天候 × 気候: 濡れと積もった雪を場所ごとに持つ (Play の間、カメラのまわり 128 m 四方を 2 m のマスで)。雪の所だけ積もり、雨の所だけ濡れ、雨の所の雪は溶ける。気候エリアの境目では、積もった雪がなめらかに薄れる",
+          "en": "Weather × Climate: wetness and lying snow are now kept per place (in Play, on a 2 m grid within 128 m around the camera). Snow piles up only where it snows, only rainy places get wet, and rain melts the snow. Across a climate zone border the lying snow thins out smoothly"
+        },
+        {
+          "ja": "天候: 雪は Play の始めから「積もる高さ」いっぱいに積もっている (「はじめから積もっている」。切ると降るにつれて)。積もる速さを「積もる速さ (cm / 分)」で決められ、最初は前の 8 倍 (降水量に比例)。足場の端と丸い物の上では薄くなって丸く終わる",
+          "en": "Weather: snow is already lying at the full Snow depth when Play starts (\"Already lying at the start\"; turn it off to build up as it falls). \"Snow speed (cm / min)\" sets how fast it piles up, 8 times faster than before by default (proportional to precipitation). It thins and ends in a rounded edge at ledges and on round objects"
+        },
+        {
+          "ja": "気候のタブ: シーンを真上から見た地図に、ペンで気候 (気温と湿り気) を塗れるように。同じタブで天候も変えられる",
+          "en": "Climate tab: paint climates (temperature and humidity) with a pen on a map of the scene seen from straight above, and change the weather in the same tab"
+        },
+        {
+          "ja": "物理: コライダーの形に「円柱」を足した。「追加 ▸ 3D オブジェクト ▸ 円柱」の物はこれが付き、雪も丸く積もる (前は囲む箱だった)",
+          "en": "Physics: added a \"Cylinder\" collider shape. Cylinders made with Add ▸ 3D Object get it, so snow lies round on them too (it used to be the enclosing box)"
+        },
+        {
+          "ja": "天候: 雨の染みと雪の積もる所を、コライダーではなく画面に見えているメッシュで決める (見えないコライダーの所には積もらない)",
+          "en": "Weather: where rain wets and snow lies is now decided by the meshes you can see, not by colliders (no more snow on invisible collider parts)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.14",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "スクリプトから骨のアニメーションを動かせるように (RMAnim.h の rm::Animator): PlayClip でクロスフェードしながら切り替え・一時停止・速さ・時刻・骨の位置と回転",
+          "en": "Scripts can drive bone animation (rm::Animator in RMAnim.h): PlayClip switches clips with a crossfade; pause, speed, time, and bone positions and rotations"
+        },
+        {
+          "ja": "3D モデルのインスペクターに「クリップとイベント」: クリップの帯に ▲ でイベント (時刻・名前・数値・文字) を置き、ドラッグで動かせます。.meta に保存され、Ctrl+Z で戻せます",
+          "en": "3D model inspector: \"Clips and events\" — place events (time, name, number, text) as ▲ markers on a clip's strip and drag them. Saved to the .meta; Ctrl+Z undoes"
+        },
+        {
+          "ja": "クリップのイベントが、再生がその時刻を通ったときにスクリプトの OnEvent に届くように (書き出したゲームでも)",
+          "en": "Clip events reach the script's OnEvent when playback passes their time (in the exported game too)"
+        },
+        {
+          "ja": "部品「骨に付ける」: 剣や帽子などを、親のアニメーターのモデルの骨について行かせます (骨は一覧から選ぶ)",
+          "en": "New \"Attach to bone\" component: makes a sword, a hat and so on follow a bone of the parent Animator's model (pick the bone from a list)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.13",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "骨のあるモデルが動くようになりました: 部品「アニメーター」でモデルのクリップを選ぶと、シーンビュー (選んだもの。再生 / 一時停止・時間のつまみ)・Play・書き出したゲームで流れます",
+          "en": "Models with bones now move: pick one of the model's clips in the new Animator component and it plays in the scene view (the selected one, with play / pause and a time slider), in Play and in the exported game"
+        },
+        {
+          "ja": "glTF と FBX のモデルから、骨・ウェイト・アニメーション (クリップ) を読むように。取り込みの設定 (向き・大きさ) も骨に同じに掛かります",
+          "en": "glTF and FBX models now bring their bones, weights and animations (clips). Import settings (axes, scale) apply to the bones too"
+        },
+        {
+          "ja": "骨で曲がるモデルを GPU で描くように (影も一緒に動きます)。試し用のモデル docs/samples/models/skinned_arm.gltf (腕を振る柱)",
+          "en": "Models bent by bones are drawn on the GPU (their shadows follow). Sample model: docs/samples/models/skinned_arm.gltf (a waving column)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.12",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "シーンビュー: 小さくしすぎたボタンを少し大きく (左の道具の列は 37、上の帯の部品は高さ 25)",
+          "en": "Scene view: the buttons that had become too small are a little bigger again (tool column 37, top bar items 25 high)"
+        },
+        {
+          "ja": "季節のテーマ: サマーの右下の砂浜とパラソル、雲も、左下の太陽と同じ濃さのシルエットの色に (雲は形だけ本物らしく)",
+          "en": "Seasonal themes: in Summer, the beach and parasol at the bottom right and the clouds now use the same silhouette colour as the sun (the clouds keep only their realistic shape)"
+        },
+        {
+          "ja": "季節のテーマ: スプリングの花びらとフォールの葉がウィンドウの下の方まで (下ほどまばらに) 散る。花びらは切れ込みのある形と、白に近い淡い桃色。サマーのパネルは砂のようにざらざら",
+          "en": "Seasonal themes: Spring petals and Fall leaves now drift far down the window, thinning out lower down. Petals have a notched shape and pale, near-white pinks. Summer panels have a sandy, grainy texture"
+        },
+        {
+          "ja": "季節のテーマ: フォールの右下にススキのひとむら (茎と葉はほぼまっすぐ斜めに立ち、穂は細い小穂が何本も左へ垂れる)",
+          "en": "Seasonal themes: Fall gets a clump of Japanese pampas grass at the bottom right (stems and leaves rise at a slant, and the plumes hang to the left in many fine strands)"
+        },
+        {
+          "ja": "季節のテーマ: ウィンターで、画面の右下の積もった雪の上に雪だるま (白い丸 2 つと赤いバケツ。ウィンドウを最大化すると見え、小さいウィンドウでは見えない)",
+          "en": "Seasonal themes: in Winter, a snowman (two white balls and a red bucket) stands on the snow at the bottom right of the screen (visible when the window is maximized, hidden in small windows)"
+        },
+        {
+          "ja": "コンソール: 警告とエラーの行と数に印。時刻を「時:分:秒.ミリ秒」(PC の時計) で表示。行をクリック・Ctrl・Shift・ドラッグ・Ctrl+A で選び、Ctrl+C や右クリックのメニューでコピーできるように",
+          "en": "Console: warning and error marks on lines and counts. Times shown as hours:minutes:seconds.milliseconds (PC clock). Select lines with click, Ctrl, Shift, drag or Ctrl+A, and copy them with Ctrl+C or the right-click menu"
+        },
+        {
+          "ja": "シーンのパネルとヒエラルキーの一番上のシーンの行を右クリックして、シーンを「複製」(「名前 2」…) と「削除」(確かめてからごみ箱へ) ができるように",
+          "en": "Right-click a scene in the Scenes panel or the scene row at the top of the Hierarchy to Duplicate it (\"Name 2\"…) or Delete it (moved to the Recycle Bin after a confirmation)"
+        },
+        {
+          "ja": "コンソール: 時刻から小数 (ミリ秒) を外して「時:分:秒」に。帯の名前を Info / Warn / Error にし、警告とエラーの印を名前の前 (⚠Warn 1) に。コピーした行は「[Info]」「[Warn]」「[Error]」",
+          "en": "Console: times without milliseconds (hours:minutes:seconds). The filters are now named Info / Warn / Error with the warning and error marks before the name (⚠Warn 1). Copied lines use [Info] / [Warn] / [Error]"
+        },
+        {
+          "ja": "エディターのウィンドウの名前を「RM Engine - プロジェクト名」の順に (ヘルプも「RM Engine - ヘルプ」)",
+          "en": "The editor window title is now \"RM Engine - project name\" (and \"RM Engine - Help\")"
+        },
+        {
+          "ja": "3D: 床の平面の上の影が、カメラの向きで濃くなったり薄くなったりしていたのを直した",
+          "en": "3D: fixed shadows on a floor plane getting darker or lighter depending on the camera direction"
+        },
+        {
+          "ja": "季節のテーマ: サマーの砂の粒を明るく淡い黄色に (汚れて見えないように)。シルエットが砂の粒の上に出るように",
+          "en": "Seasonal themes: Summer sand grain is now a bright pale yellow (no longer looks dirty), and the silhouettes are drawn above the grain"
+        }
+      ]
+    },
+    {
+      "version": "0.0.11",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "アセットのパネル: 左にフォルダの木、右に今のフォルダの中身をタイルで並べる (「戻る」・パンくずリスト・検索・ドラッグで移動)",
+          "en": "Assets panel: a folder tree on the left and the current folder's contents as tiles on the right (Back, breadcrumbs, search, drag to move)"
+        },
+        {
+          "ja": "3D のマテリアル (.rmmat): アセットのパネルの右クリック「作成 ▸ マテリアル」で作り、インスペクターで色・絵・金属・ラフネス・法線・発光・透明・絵の繰り返しを編集して、メッシュの「マテリアル」の欄に入れると箱・球などの形やモデルの見た目が変わる (書き出したゲームも同じ見た目)",
+          "en": "3D materials (.rmmat): make one with right-click \"Create ▸ Material\" in the Assets panel, edit color, pictures, metallic, roughness, normal, emission, transparency and tiling in the Inspector, and put it in a Mesh's \"Material\" slots to change the look of shapes and models (exported games look the same)"
+        },
+        {
+          "ja": "シーンビューのボタンを小さくし、3D / 2D・ローカル / ワールド・中心・影・空・デバッグ・形を上の帯にまとめた。2D は同じ 3D のシーンを正面から平行投影で見る (ゲームの空間の切り替えは ゲームの設定 ▸ ゲーム設定 へ)",
+          "en": "Scene view buttons are smaller, and 3D / 2D, Local / World, Center, Shadows, Sky, Debug and Shapes now share one bar at the top. 2D shows the same 3D scene from the front in parallel projection (switching the game's space moved to Game Settings ▸ Game)"
+        },
+        {
+          "ja": "コンソール: 上の帯に 情報・警告・エラー の数と表示の切り替え、クリア、自動スクロール、検索を足した",
+          "en": "Console: a toolbar with Info / Warnings / Error counts and filters, Clear, Auto-scroll and Search"
+        },
+        {
+          "ja": "季節のテーマ: ウィンターの積もる雪がウィンドウの左右の端まで届き、大きさを変えても形が変わらない。サマーは砂らしい色のパネル・淡い空と海の青・濃い太陽・本物らしい雲 (底が平らで上が明るく下が影)",
+          "en": "Seasonal themes: Winter's snow bank now reaches both window edges and keeps its shape when the window is resized. Summer gets sandy beige panels, paler sky and sea blues, a stronger sun, and more realistic clouds (flat bases, bright tops, shaded undersides)"
+        }
+      ]
+    },
+    {
       "version": "0.0.10",
       "date": "2026-11-24",
       "items": [
         {
           "ja": "ゲーム UI に入力欄・スライダー・トグル・スクロールを足しました (日本語の入力もできます。追加 ▸ UI から作れます)",
           "en": "Added input fields, sliders, toggles and scroll views to the game UI (Japanese input works too; create them from Add ▸ UI)"
+        },
+        {
+          "ja": "アイコン: ボタンの中のアイコンを画面の画素でちょうど真ん中に置く (少しずれていた)",
+          "en": "Icons: icons inside buttons are now placed exactly in the middle in screen pixels (they were slightly off)"
+        },
+        {
+          "ja": "季節のテーマ: スプリングは右の桜の木をやめ、少しずつ色の違う花びらを上に沿って散らす。ウィンターの雪はエディター本体と Hub のウィンドウの一番下にだけ積もる",
+          "en": "Seasons theme: Spring drops the cherry tree on the right and scatters petals of slightly different pinks along the top. In Winter, snow now lies only along the bottom of the editor and Hub windows"
+        },
+        {
+          "ja": "タブ: 同じタブ列の中でドラッグすると、つかんだタブがついて動き、ほかのタブが滑らかによける。離すとその場所へ収まる。閉じたときも後ろが滑らかに詰まる",
+          "en": "Tabs: dragging a tab within its own row now moves the tab with the mouse while the others slide out of the way, and it settles into place on release. Closing a tab slides the rest over"
+        },
+        {
+          "ja": "季節のテーマ: ウィンターの積もった雪の輪郭を薄く、形をなだらかに。上の端のつららは外した",
+          "en": "Seasons theme: the lying snow in Winter has a lighter outline and a gentler shape, and the icicles along the top are gone"
         }
       ]
     },

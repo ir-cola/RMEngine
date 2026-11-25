@@ -10,6 +10,8 @@
 // 順番は関係ない: ローダーが requires を先に有効にする。
 
 #include "editor/plugin/Software.h"
+#include "rm_engine/animation3d/editor/Register.h"
+#include "rm_engine/animation3d/runtime/Id.h"
 #include "rm_engine/audio/editor/Preview.h"
 #include "rm_engine/audio/runtime/Id.h"
 #include "rm_engine/particles/runtime/Id.h"
@@ -21,11 +23,14 @@
 #include "rm_engine/weather_x_physics/runtime/Id.h"
 #include "rm_engine/climate/editor/Register.h"
 #include "rm_engine/climate/runtime/Id.h"
+#include "rm_engine/weather_x_climate/editor/Register.h"
 #include "rm_engine/weather_x_climate/runtime/Id.h"
 #include "rm_engine/game_production/editor/GameSoftware.h"
 #include "rm_engine/game_production/runtime/Id.h"
 #include "rm_engine/game_x_3d/editor/Connector.h"
 #include "rm_engine/game_x_3d/runtime/Id.h"
+#include "rm_engine/game_x_animation/editor/Connector.h"
+#include "rm_engine/game_x_animation/runtime/Id.h"
 #include "rm_engine/game_x_2d/editor/Connector.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
 #include "rm_engine/physics/editor/Connector.h"
@@ -54,9 +59,11 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {weather::kPluginId, &weather::RegisterEditor},
         {weather_x_physics::kPluginId, nullptr},
         {climate::kPluginId, &climate::RegisterEditor},
-        {weather_x_climate::kPluginId, nullptr},
+        {weather_x_climate::kPluginId, &weather_x_climate::RegisterEditor},
         {space3d::kPluginId, &space3d::RegisterEditor},
+        {animation3d::kPluginId, &animation3d::RegisterEditor},  // 姿勢の計算 (ランタイム) と、モデルのクリップの帯 (エディター)
         {game_x_3d::kPluginId, &game_x_3d::RegisterEditor},
+        {game_x_animation::kPluginId, &game_x_animation::RegisterEditor},
         {space2d::kPluginId, nullptr},
         {game_x_2d::kPluginId, &game_x_2d::RegisterEditor},
         {physics::kPluginId, &physics::RegisterEditor},

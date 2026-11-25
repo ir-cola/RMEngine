@@ -13,9 +13,12 @@
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_x_3d/editor/SceneOverlay.h"
 #include "rm_engine/game_x_3d/editor/SceneViewState.h"
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
+#include "rm_engine/game_x_3d/runtime/Material.h"
+#include "rm_engine/game_x_3d/runtime/MeshPose.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/SkyPaint.h"
@@ -39,6 +42,7 @@
 #include <optional>
 #include <string_view>
 #include <cstring>
+#include <deque>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -63,23 +67,24 @@ constexpr float kLookDegreesPerDip = 0.25f;
 constexpr float kOrbitDegreesPerDip = 0.4f;
 constexpr float kClickSlop = 4.f;  // これより小さくしか動かない押下はクリック
 constexpr int kGridHalf = 20;      // 格子は -20 から 20 まで (1 本ごと、10 本ごとに濃く)
-constexpr float kBarH = 28.f;      // 左上のツール帯
-constexpr float kSpaceW = 168.f, kPivotW = 150.f, kShadowW = 84.f, kSkyW = 64.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
-constexpr float kToolSquare = 44.f, kToolGap = 4.f;   // 左の縦の列の正方形のボタン
+// 上の帯 (3D / 2D と見え方のスイッチ): 1 行の高さ、その中のボタンの高さ、ボタンの間。
+// (2026-11-25: 左上に浮かんでいた 28 の高さのボタンをこの帯に移し、小さくした)
+// (2026-11-25: 一度 28 / 22 / 6 と 30 / 3 まで小さくしたが小さすぎたので、前 (28 / 44 / 4) との中ほどに)
+constexpr float kStripH = 31.f, kStripItemH = 25.f, kStripGap = 7.f;
+constexpr float kToolSquare = 37.f, kToolGap = 4.f;   // 左の縦の列の正方形のボタン (最初は 44 / 4、小さすぎた 30 / 3)
 constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // グリッドの箱 (グリッド配置 の横)
 constexpr double kModelCheckSeconds = 1.0;    // モデルのファイルを調べ直す間隔 (ディスクで変わったか)
 constexpr double kModelForgetSeconds = 10.0;  // この間どのエンティティも使わないモデルは GPU から外す
+constexpr double kMaterialLookSeconds = 0.25;  // マテリアル (.rmmat) を読み直す間隔 (インスペクターでの編集・ディスクでの変更)
 constexpr float kFrustumShown = 10.f;  // カメラの形はここまでしか描かない (遠い面が 1000 でもよい)
 constexpr float kMarkSize = 18.f;      // カメラ / ライト / 空のエンティティなどの印 (ピクセル)
 constexpr float kMarkPick = 11.f;      // 印にこれだけ近いクリックで、そのエンティティを選ぶ
 constexpr float kPreviewMaxW = 360.f;  // 右下のカメラプレビュー
 
-// 左の縦の列 (正方形のボタン): グリッド配置・選択・移動・回転・拡縮。上の帯: ローカル / ワールド、
-// それぞれ / 中心、影、空、デバッグ、形。帯はビューが 1 行に収まらないほど狭いと 2 行目に回る。
-// `all` = 帯のすべてを丸める。
+// 左の縦の列 (正方形のボタン): グリッド配置・選択・移動・回転・拡縮。絵の左上に浮かぶ。
+// (3D / 2D、ローカル / ワールド、それぞれ / 中心、影、空、デバッグ、形 は絵の上の帯: DrawStrip)
 struct BarLayout {
     Rect grid, select, move, rotate, scale;
-    Rect space, pivot, shadow, sky, debug, shapes, all;
 };
 
 struct Placed {
@@ -90,8 +95,9 @@ struct Placed {
     // 描くもの: モデル (null: 単位立方体 - ファイルが無い メッシュ) と、その自分の空間での
     // 境界 - クリックが当たるものと、F で合わせる範囲。
     const space3d::GpuMesh* mesh = nullptr;
-    bool plain = false;  // `mesh` が単純な形 (メッシュ の 形) で、箱と同じ色
-    std::span<const space3d::DrawMaterial> materials;  // モデルの色と画像
+    bool plain = false;  // `mesh` が単純な形 (メッシュ の 形) で、マテリアルが無い: 箱と同じ色
+    std::span<const space3d::DrawMaterial> materials;  // モデルの色と画像 (メッシュのマテリアルの欄で替えたもの)
+    const SkinnedModel* skinned = nullptr;  // 骨のあるモデル: 骨とクリップ (姿勢は MeshPose.h の口に尋ねる)
     bool castShadow = true;
     Vec3 min{-0.5f, -0.5f, -0.5f}, max{0.5f, 0.5f, 0.5f};
     bool loading = false;  // モデルを読んでいる最中 (それまでは箱で、上に 読み込み中 を出す)
@@ -124,6 +130,9 @@ struct Picture {
     std::optional<double> drawnAt;
     std::vector<space3d::ExtraDraw> extras;
     game_x_3d::SkyPainter sky;  // この絵が描くシーンの 空
+    // 骨のあるモデルの姿勢を決めるもの (MeshPose.h: アニメーター)。最初のフレームで作る。
+    std::vector<std::unique_ptr<MeshPoser>> posers;
+    bool posersMade = false;
 };
 
 // r の真ん中にある、縦横比 `aspect` (幅 / 高さ) の最大の長方形。
@@ -151,6 +160,7 @@ std::pair<Vec3, Vec3> Across(Vec3 d) {
 struct ModelEntry {
     std::shared_ptr<const space3d::GpuMesh> gpu;
     space3d::ModelPaint paint;
+    SkinnedModel skinned;  // 骨のあるモデルの骨とクリップ (無ければ skin は null)。読み直すと新しいもの
     space3d::MeshLoader::Ticket ticket = 0;  // 読み込み中
     std::filesystem::path file;              // ... このファイル
     std::string name;                        // その名前 (コンソール用)
@@ -159,6 +169,17 @@ struct ModelEntry {
     bool told = false;    // 無い / プロジェクトの外にあることをコンソールに書いた
     std::filesystem::file_time_type time{};
     double checkedAt = 0, usedAt = 0;
+};
+
+// メッシュのマテリアルの欄が指すマテリアル (.rmmat)。kMaterialLookSeconds ごとに中身
+// (SoftwareHost::AssetContent: インスペクターでの、まだ書いていない編集も) を見て、変わったら読み直す。
+// 絵はテクスチャのキャッシュから毎フレーム (ファイルが変わるとキャッシュが読み直す)。
+struct MaterialEntry {
+    std::string bytes;              // 最後に読んだ中身
+    std::optional<Material> material;
+    space3d::DrawMaterial draw;     // このフレームの描き方 (MaterialLook)
+    bool told = false;              // 読めないことをコンソールに書いた
+    double lookedAt = -1e9, usedAt = 0;
 };
 
 // ギズモでドラッグしている 1 つ: ドラッグを始めたときの状態と、今の状態。
@@ -188,7 +209,8 @@ std::optional<size_t> FieldIndex(const char* name) {
 
 class SceneView3D final : public game_production::SceneView {
 public:
-    void Draw(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) override {
+    void Draw(ui::Context& c, const Rect& panel, game_production::SceneViewHost& host) override {
+        Rect r = panel;
         if (r.w < 8 || r.h < 8) return;
         DropGpuIfNew(host);
         if (!Ready(host)) {
@@ -214,13 +236,20 @@ public:
         ForgetUnusedModels();
         // 他のスレッドで読み込み中のモデル (と画像) が届くまで描き直す。
         if (loader_.Pending() > 0 || textures_.Waiting(now_) > 0) c.RequestAnimation();
+        if (host.overhead) {  // 真上から見た地図 (気候のタブ): 絵だけ。入力は持ち主のもの
+            DrawOverhead(c, r, host);
+            return;
+        }
         if (host.game) {  // ゲームビュー: 絵だけを、ゲームのカメラ越しに
             DrawGame(c, r, host);
             return;
         }
+        // 上の帯 (3D / 2D と見え方): 絵はその下。ビューが低すぎるときは帯を出さない。
+        if (r.h > 3 * kStripH + 40 && r.w > 120) DrawStrip(c, r);
         const std::optional<BarLayout> bar = Bar(r);
         if (!bar) snapOpen_ = false;
         previewAt_ = PreviewRect(r, host);  // プレビューへのクリックはシーンに届かない
+        OverlayAreas(r, host);              // ほかのプラグインの操作 (アニメーターのプレビュー) も
         if (HandleInput(c, r, host, bar)) Place(host);  // このフレームにギズモのドラッグで物が動いた
         Build(host, false);
         Show(c, r, host, main_, SceneFrame(r));
@@ -228,6 +257,8 @@ public:
         DrawGizmo(c, r, host);
         previewAt_ = PreviewRect(r, host);
         if (previewAt_) DrawPreview(c, *previewAt_, host);
+        OverlayAreas(r, host);
+        for (const auto& [o, at] : overlays_) o->draw(c, at, host);
         if (bar) DrawBar(c, *bar);
         if (bar && snapOpen_) DrawSnapBox(c, SnapBox(r, *bar));
     }
@@ -238,11 +269,20 @@ public:
         reflect::Warnings warnings;
         if (s.IsObject()) reflect::Load(state_, s, &unknowns_, &warnings);
         for (const auto& w : warnings) log::Warn("シーンビューの見え方: {}", w);
+        // 3D のカメラは遠近法、2D のカメラは正面からの平行投影 (ファイルに何が書かれていても)。
+        state_.camera.orthographic = false;
+        state_.flatCamera.orthographic = true;
+        state_.flatCamera.yaw = 0;
+        state_.flatCamera.pitch = 0;
     }
     json::Value SaveState() const override { return reflect::Save(state_, &unknowns_); }
 
 private:
     bool Ready(game_production::SceneViewHost& host) { return Start(main_, host); }
+
+    // 今のシーンビューのカメラ: 3D (遠近法) か 2D (正面からの平行投影)。それぞれ自分の見え方を覚える。
+    space3d::OrbitView& Cam() { return state_.flat ? state_.flatCamera : state_.camera; }
+    const space3d::OrbitView& Cam() const { return state_.flat ? state_.flatCamera : state_.camera; }
 
     // GPU のデバイスが作り直された (GPU が失われた: platform::Gfx::Generation): 古いものの上に
     // 作ったものはすべて消す - レンダラー (シェーダー、バッファー、影のマップ、画像とそのビット
@@ -254,6 +294,7 @@ private:
         generation_ = now;
         for (auto& [guid, m] : models_) loader_.Cancel(m.ticket);
         models_.clear();
+        materials_.clear();
         textures_.Clear();
         main_ = Picture{};
         preview_ = Picture{};
@@ -284,6 +325,8 @@ private:
     void Place(game_production::SceneViewHost& host) {
         const game_production::Scene& scene = host.scene;
         placed_.clear();
+        usedStores_ = 0;
+        textures_.SetCacheFolder(host.host.GetProject().CacheDir() / L"Textures");
         ambient_.reset();
         std::unordered_map<int, Mat4> world;  // 親は TreeOrder で子より先に来る
         for (const auto& t : scene.TreeOrder()) {
@@ -304,10 +347,14 @@ private:
                 if (mc && mc->Known()) {
                     const auto& mr = *static_cast<const MeshRenderer*>(mc->value.Get());
                     p.castShadow = p.castShadow && mr.castShadows;
+                    // マテリアルの欄 (形は 0 番、モデルは i 番が自身の i 番の代わり: Material.h の MeshMaterials)。
+                    slots_.clear();
+                    for (const AssetRef& ref : mr.materials) slots_.push_back(MaterialOf(ref, host));
                     if (const auto shape = ShapeOf(mr.shape)) {
                         if (const space3d::GpuMesh* g = main_.renderer.ShapeOf(*shape)) {
                             p.mesh = g;
-                            p.plain = true;
+                            p.materials = MeshMaterials(true, {}, slots_, Store());
+                            p.plain = p.materials.empty();  // マテリアルがあればモデルと同じ描き方 (選ぶと縁が光る)
                             p.min = g->min;
                             p.max = g->max;
                         }
@@ -315,8 +362,8 @@ private:
                         bool loading = false;
                         if (ModelEntry* m = Model(mr.model, host, loading)) {
                             p.mesh = m->gpu.get();
-                            textures_.SetCacheFolder(host.host.GetProject().CacheDir() / L"Textures");
-                            p.materials = m->paint.Materials(main_.renderer, textures_, now_);
+                            p.materials = MeshMaterials(false, m->paint.Materials(main_.renderer, textures_, now_), slots_, Store());
+                            p.skinned = m->skinned.skin ? &m->skinned : nullptr;
                             p.min = p.mesh->min;
                             p.max = p.mesh->max;
                         }
@@ -340,6 +387,48 @@ private:
                 world[e.data.id] = parent;  // 自分の位置は無い: 子は親に付いてくる
             }
         }
+    }
+
+    // `ref` が指すマテリアルの、このフレームの描き方。null: 空の欄、見つからない、読めない (その欄は
+    // 無いものとして描く。見つからない・読めないことは 1 度だけコンソールに)。
+    const space3d::DrawMaterial* MaterialOf(const AssetRef& ref, game_production::SceneViewHost& host) {
+        if (ref.Empty()) return nullptr;
+        MaterialEntry& m = materials_[ref.guid];
+        m.usedAt = now_;
+        if (now_ - m.lookedAt >= kMaterialLookSeconds) {
+            m.lookedAt = now_;
+            const auto bytes = host.host.AssetContent(ref);
+            if (!bytes) {
+                m.material.reset();
+                m.bytes.clear();
+                if (!m.told) log::Warn("シーンビュー: マテリアル ({}) がプロジェクトに見つからないので、その欄なしで描きます", ref.guid);
+                m.told = true;
+            } else if (*bytes != m.bytes || !m.material) {
+                const bool changed = *bytes != m.bytes;
+                m.bytes = *bytes;
+                std::string err;
+                m.material = ReadMaterial(*bytes, &err);
+                if (m.material) {
+                    m.told = false;
+                } else if (!m.told || changed) {
+                    log::Warn("シーンビュー: マテリアル「{}」を読めないので、その欄なしで描きます: {}", PathToUtf8(host.host.AssetFile(ref).filename()), err);
+                    m.told = true;
+                }
+            }
+        }
+        if (!m.material) return nullptr;
+        // 絵はキャッシュから (毎フレーム頼む: 使っている間は残り、ファイルが変わると読み直される)。
+        m.draw = MaterialLook(*m.material, [&](const MaterialPicture& pic, size_t) -> space3d::TextureRef {
+            const std::filesystem::path file = host.host.AssetFile(pic.image);
+            return file.empty() ? nullptr : textures_.Get(main_.renderer, file, pic.use, pic.srgb, now_);
+        });
+        return &m.draw;
+    }
+
+    // このフレームでマテリアルを替えた物の材質の置き場 (Placed::materials が指す。次の Place まで動かない)。
+    std::vector<space3d::DrawMaterial>& Store() {
+        if (usedStores_ == stores_.size()) stores_.emplace_back();
+        return stores_[usedStores_++];
     }
 
     // `ref` が指すモデル (アセット - 今どこにあっても)。最初に求められたときに
@@ -395,19 +484,23 @@ private:
         const bool again = m.gpu != nullptr;
         if (!done->mesh) {
             m.gpu.reset();
+            m.skinned = {};
             log::Warn("シーンビュー: モデル「{}」を読めないので箱で描きます: {}", m.name, done->error);
             return;
         }
-        const space3d::MeshData& mesh = *done->mesh;
+        space3d::MeshData& mesh = *done->mesh;
         for (const std::string& w : mesh.warnings) log::Warn("シーンビュー: モデル「{}」: {}", m.name, w);
         std::string error;
+        UseSlotZeroForBareModel(mesh);  // (材質の無いモデルにも、メッシュの 0 番のマテリアルが入る)
         m.gpu = main_.renderer.Upload(mesh, &error);
         if (!m.gpu) {
+            m.skinned = {};
             log::Warn("シーンビュー: モデル「{}」を GPU に載せられないので箱で描きます: {}", m.name, error);
             return;
         }
         m.paint = {};
         m.paint.Load(mesh, m.file, host.host.GetProject().AssetsDir(), m.name);
+        m.skinned = TakeSkinned(mesh);  // (GPU に上げた後で。姿勢を尋ねるときに渡す)
         log::Info("シーンビュー: モデル「{}」を{}読みました (頂点 {}・三角形 {}・材質 {}・テクスチャ {}・{:.2f} 秒)", m.name, again ? "もう一度" : "",
                   mesh.vertices.size(), mesh.indices.size() / 3, mesh.materials.size(), m.paint.Pictures(), done->seconds);
     }
@@ -419,6 +512,7 @@ private:
             loader_.Cancel(kv.second.ticket);  // もう要らない: 読まない (または結果を捨てる)
             return true;
         });
+        std::erase_if(materials_, [&](const auto& kv) { return now_ - kv.second.usedAt > kModelForgetSeconds; });
         textures_.ForgetUnused(now_, kModelForgetSeconds);
     }
 
@@ -443,7 +537,7 @@ private:
         if (state_.selecting) return std::nullopt;  // (選択の道具: ギズモは出さない)
         const Placed* p = Primary(host);
         if (!p) return std::nullopt;
-        if (state_.pivot == gizmo::Pivot::Each) return gizmo::MakeFrame(p->world, state_.tool, state_.space, state_.camera, r.h);
+        if (state_.pivot == gizmo::Pivot::Each) return gizmo::MakeFrame(p->world, state_.tool, state_.space, Cam(), r.h);
         Vec3 sum{0, 0, 0};
         int n = 0;
         for (const int id : host.scene.Roots(host.selection)) {
@@ -453,42 +547,20 @@ private:
             }
         }
         const Vec3 center = n > 0 ? sum * (1.f / static_cast<float>(n)) : space3d::TransformPoint(p->world, {0, 0, 0});
-        return gizmo::MakeFrame(center, gizmo::AxesOf(p->world, state_.tool, state_.space), state_.camera, r.h);
+        return gizmo::MakeFrame(center, gizmo::AxesOf(p->world, state_.tool, state_.space), Cam(), r.h);
     }
 
-    Mat4 ViewProjection(const Rect& r) const { return state_.camera.ProjectionMatrix(r.w / r.h) * state_.camera.ViewMatrix(); }
+    Mat4 ViewProjection(const Rect& r) const { return Cam().ProjectionMatrix(r.w / r.h) * Cam().ViewMatrix(); }
 
-    // ツール帯 (左上): 部品を左から右へ並べ、ビューの端で次の行へ回す。最初の部品さえ
-    // 入らないほどビューが小さいときは出さない。
+    // 道具の列 (絵の左上)。入らないほどビューが小さいときは出さない。
     static std::optional<BarLayout> Bar(const Rect& r) {
-        if (r.w < kSpaceW + kToolSquare + 32 || r.h < 5 * (kToolSquare + kToolGap) + 16) return std::nullopt;
+        if (r.w < kToolSquare + 32 || r.h < 5 * (kToolSquare + kToolGap) + 16) return std::nullopt;
         BarLayout b;
-        // 左の縦の列。
-        float ty = r.y + 8;
+        float ty = r.y + 7;
         for (Rect* sq : {&b.grid, &b.select, &b.move, &b.rotate, &b.scale}) {
-            *sq = {r.x + 8, ty, kToolSquare, kToolSquare};
+            *sq = {r.x + 7, ty, kToolSquare, kToolSquare};
             ty += kToolSquare + kToolGap;
         }
-        // 上の帯は列の右から。
-        const float left = r.x + 8 + kToolSquare + 8;
-        float x = left, y = r.y + 8;
-        auto place = [&](float w) {
-            if (x > left && x + w > r.Right() - 8) {
-                x = left;
-                y += kBarH + 6;
-            }
-            const Rect at{x, y, w, kBarH};
-            x += w + kBarGap;
-            return at;
-        };
-        b.space = place(kSpaceW);
-        b.pivot = place(kPivotW);
-        b.shadow = place(kShadowW);
-        b.sky = place(kSkyW);
-        b.debug = place(kDebugW);
-        b.shapes = place(kShapesW);
-        const float right = std::max({b.space.Right(), b.pivot.Right(), b.shadow.Right(), b.sky.Right(), b.debug.Right(), b.shapes.Right()});
-        b.all = {left, r.y + 8, right - left, b.shapes.Bottom() - (r.y + 8)};
         return b;
     }
 
@@ -498,11 +570,28 @@ private:
         return {b.grid.Right() + 6, std::min(b.grid.y, r.Bottom() - 8 - h), kSnapBoxW, h};
     }
 
+    // ほかのプラグインが絵の上に置く操作 (SceneOverlay.h) の、今の場所。止まっているシーンビューだけ。
+    void OverlayAreas(const Rect& r, const game_production::SceneViewHost& host) {
+        overlays_.clear();
+        if (host.playing || host.game) return;
+        if (!overlayInfos_) {
+            overlayInfos_.emplace();
+            for (const auto& o : host.host.Registry().Contributions<SceneOverlayInfo>(kSceneOverlayPoint)) {
+                if (o.item->area && o.item->draw) overlayInfos_->push_back(o.item);
+            }
+        }
+        for (const SceneOverlayInfo* o : *overlayInfos_) {
+            if (const auto at = o->area(r, host)) overlays_.emplace_back(o, *at);
+        }
+    }
+
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (previewAt_ && previewAt_->Inset(-4, -24, -4, -4).Contains(x, y)) return true;  // カメラプレビュー
+        for (const auto& [o, at] : overlays_) {
+            if (at.Contains(x, y)) return true;
+        }
         if (!bar) return false;
-        for (const Rect& part : {bar->grid, bar->select, bar->move, bar->rotate, bar->scale, bar->space, bar->pivot, bar->shadow, bar->sky, bar->debug,
-                                 bar->shapes}) {
+        for (const Rect& part : {bar->grid, bar->select, bar->move, bar->rotate, bar->scale}) {
             if (part.Contains(x, y)) return true;
         }
         return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
@@ -535,20 +624,24 @@ private:
         // マウスの下のハンドル (黄色)。ほかに何も起きていないとき。
         if (drag_ == Drag::None) {
             hot_ = hovered && !in.alt && frame && screen
-                       ? gizmo::HitTest(state_.tool, *frame, *screen, state_.camera.Eye(), mouse)
+                       ? gizmo::HitTest(state_.tool, *frame, *screen, Cam().EyeFor(frame->origin), mouse)
                        : gizmo::Handle::None;
         } else if (drag_ != Drag::Gizmo) {
             hot_ = gizmo::Handle::None;  // 見回し中: ハンドルは光らない
         }
 
         // ドラッグを始める (ビューの中だけ)。ボタンを離すまで、外に出ても続く。
+        // 2D (平行投影の正面): 回さない - 右ドラッグと Alt + 左ドラッグもずらす。
         if (drag_ == Drag::None && hovered) {
+            dragButton_ = 0;
             if (c.MousePressed(ui::Mouse::Right)) {
-                drag_ = Drag::Look;
+                drag_ = state_.flat ? Drag::Pan : Drag::Look;
+                dragButton_ = 1;
             } else if (c.MousePressed(ui::Mouse::Middle)) {
                 drag_ = Drag::Pan;
+                dragButton_ = 2;
             } else if (c.MousePressed() && in.alt) {
-                drag_ = Drag::Orbit;
+                drag_ = state_.flat ? Drag::Pan : Drag::Orbit;
             } else if (c.MousePressed() && hot_ != gizmo::Handle::None && BeginGizmo(host, *frame, *screen, mouse)) {
                 drag_ = Drag::Gizmo;
             } else if (c.MousePressed()) {
@@ -563,18 +656,18 @@ private:
                 AbandonGizmo();
                 drag_ = Drag::Cancelled;
             }
-            const bool held = drag_ == Drag::Look ? in.down[1] : drag_ == Drag::Pan ? in.down[2] : in.down[0];
+            const bool held = in.down[dragButton_];
             if (!held) {
                 if (drag_ == Drag::Click && std::hypot(in.mouseX - pressX_, in.mouseY - pressY_) < kClickSlop) Pick(r, host);
                 if (drag_ == Drag::Gizmo) EndGizmo(host);
                 drag_ = Drag::None;
             } else if (drag_ == Drag::Look) {
-                space3d::Look(state_.camera, -dx * kLookDegreesPerDip, dy * kLookDegreesPerDip);
+                space3d::Look(Cam(), -dx * kLookDegreesPerDip, dy * kLookDegreesPerDip);
                 Fly(c, dt);
             } else if (drag_ == Drag::Pan) {
-                space3d::Pan(state_.camera, dx, dy, r.h);
+                space3d::Pan(Cam(), dx, dy, r.h);
             } else if (drag_ == Drag::Orbit) {
-                space3d::Orbit(state_.camera, -dx * kOrbitDegreesPerDip, dy * kOrbitDegreesPerDip);
+                space3d::Orbit(Cam(), -dx * kOrbitDegreesPerDip, dy * kOrbitDegreesPerDip);
             } else if (drag_ == Drag::Gizmo) {
                 if (c.KeyPressed(ui::Key::Escape)) {
                     CancelGizmo();  // すべて元の場所に戻る。ボタンはまだ離す必要がある
@@ -594,7 +687,10 @@ private:
         // 回す / 動かすのは画面の端で止まらない: カーソルは隠れ、ドラッグを始めた所に留まり
         // (最初のフレームから)、ボタンを離すとそこへ戻る。
         if (drag_ == Drag::Look || drag_ == Drag::Pan || drag_ == Drag::Orbit) c.LockMouse();
-        if (hovered && in.wheel != 0.f) space3d::Dolly(state_.camera, in.wheel);
+        // ホイール: 3D は近づく / 遠ざかる。2D は見える大きさを変え、マウスの下の点はそこに残る。
+        if (hovered && in.wheel != 0.f) {
+            space3d::ZoomAt(Cam(), in.wheel, (in.mouseX - r.x) / r.w * 2.f - 1.f, 1.f - (in.mouseY - r.y) / r.h * 2.f, r.w / r.h);
+        }
         if (hovered && c.Focused() == 0 && drag_ != Drag::Look && drag_ != Drag::Gizmo) {
             if (c.KeyPressed(ui::Key::F)) FrameSelection(host);
             if (c.KeyPressed(ui::Key::Q)) state_.selecting = true;
@@ -628,15 +724,15 @@ private:
         if (dir.x == 0 && dir.y == 0 && dir.z == 0) return;
         // ゆっくり。細かく動かすため (2026-11-19: 前の 4 分の 1 - 少なくとも 0.4 m/s、距離の 0.15 倍)。
         // 長い距離は Shift。
-        const float speed = std::max(0.4f, state_.camera.distance * 0.15f) * (c.In().shift ? 4.f : 1.f);
-        space3d::Fly(state_.camera, dir * (speed * dt));
+        const float speed = std::max(0.4f, Cam().distance * 0.15f) * (c.In().shift ? 4.f : 1.f);
+        space3d::Fly(Cam(), dir * (speed * dt));
     }
 
     // --- ギズモ ------------------------------------------------------------------------------
     // 位置を持つ選んだものはすべてギズモと一緒に動く - ただし親も選ばれているものは別
     // (もう親と一緒に動く)。
     bool BeginGizmo(game_production::SceneViewHost& host, const gizmo::Frame& frame, const gizmo::Screen& screen, Vec2 mouse) {
-        auto drag = gizmo::BeginDrag(state_.tool, hot_, frame, screen, state_.camera.Eye(), mouse);
+        auto drag = gizmo::BeginDrag(state_.tool, hot_, frame, screen, Cam().EyeFor(frame.origin), mouse);
         if (!drag || !host.component) return false;
         edited_.clear();
         for (const int id : host.scene.Roots(host.selection)) {
@@ -763,12 +859,12 @@ private:
 
     void FrameSelection(game_production::SceneViewHost& host) {
         if (const Placed* p = Primary(host); p && p->marker) {
-            space3d::Frame(state_.camera, space3d::TransformPoint(p->world, {0, 0, 0}), 1.f);  // 印
+            space3d::Frame(Cam(), space3d::TransformPoint(p->world, {0, 0, 0}), 1.f);  // 印
         } else if (p) {
             // その境界の真ん中 (モデルの原点は足元にあることがある)。届く範囲まで。
             const Vec3 center = space3d::TransformPoint(p->world, (p->min + p->max) * 0.5f);
             const float size = space3d::Length(space3d::TransformDirection(p->world, p->max - p->min));
-            space3d::Frame(state_.camera, center, std::max(size * 0.5f, 0.5f));
+            space3d::Frame(Cam(), center, std::max(size * 0.5f, 0.5f));
         }
     }
 
@@ -804,20 +900,26 @@ private:
         lines_.clear();
         boxes_.clear();
         meshes_.clear();
+        meshOwners_.clear();
         lights_.clear();
         auto line = [&](Vec3 a, Vec3 b, ui::Color col) {
             lines_.push_back({a, col});
             lines_.push_back({b, col});
         };
-        // 床 (y = 0) の格子と、真ん中を通る軸。
+        // 床 (y = 0) の格子と、真ん中を通る軸。2D (正面から) は、カメラの方を向く XY の面 (z = 0) の格子。
         const float h = static_cast<float>(kGridHalf);
         for (int i = -kGridHalf; i <= kGridHalf && !gameLook; ++i) {
             const float v = static_cast<float>(i);
             const ui::Color minor = i % 10 == 0 ? theme::SceneGridMajor() : theme::SceneGrid();
-            line({v, 0, -h}, {v, 0, h}, i == 0 ? theme::AxisZ() : minor);  // Z に沿って (線 x = 0 が Z 軸)
-            line({-h, 0, v}, {h, 0, v}, i == 0 ? theme::AxisX() : minor);  // X に沿って
+            if (state_.flat) {
+                line({v, -h, 0}, {v, h, 0}, i == 0 ? theme::AxisY() : minor);  // Y に沿って (線 x = 0 が Y 軸)
+                line({-h, v, 0}, {h, v, 0}, i == 0 ? theme::AxisX() : minor);  // X に沿って
+            } else {
+                line({v, 0, -h}, {v, 0, h}, i == 0 ? theme::AxisZ() : minor);  // Z に沿って (線 x = 0 が Z 軸)
+                line({-h, 0, v}, {h, 0, v}, i == 0 ? theme::AxisX() : minor);  // X に沿って
+            }
         }
-        if (!gameLook) line({0, 0, 0}, {0, 1.5f, 0}, theme::AxisY());
+        if (!gameLook && !state_.flat) line({0, 0, 0}, {0, 1.5f, 0}, theme::AxisY());
         // Play: スクリプトが rm::Debug で 3D に描いた線 (このシーンビューだけ、デバッグ がオンのとき)。
         debugLines_.clear();
         if (host.debug && (gameLook || state_.debugDraw)) {
@@ -852,11 +954,13 @@ private:
                 // 単純な形: 箱の色。
                 const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
                 meshes_.push_back({p.mesh, p.world, col, p.castShadow, {}, {0, 0, 0, 0}, Moving(p.id)});
+                meshOwners_.push_back({p.id, nullptr});
             } else if (p.mesh) {
                 // モデルは自分の色を持つ: 選んだものは縁が光る (枠も付く)。
                 const ui::Color glow = theme::SceneSelectedGlow();
                 meshes_.push_back({p.mesh, p.world, p.active ? theme::SceneModel() : theme::SceneModelInactive(), p.castShadow, p.materials,
                                    selected ? glow : glow.Alpha(0), Moving(p.id)});
+                meshOwners_.push_back({p.id, p.skinned});
             } else {
                 const ui::Color col = selected ? theme::SceneObjectSelected() : p.active ? theme::SceneObject() : theme::SceneObjectInactive();
                 boxes_.push_back({p.world, col, p.castShadow, Moving(p.id)});
@@ -868,7 +972,7 @@ private:
         }
         warnedLights_ = lights_.size() > space3d::kMaxLights ? lights_.size() : 0;
         // 影が使えるマップを見つけられなかった点光源とスポット (番号ごとに 1 度だけ知らせる)。
-        const size_t leftOut = gameLook ? warnedShadows_ : space3d::MakeLights(lights_, {}, {}, state_.camera.Eye()).shadowsLeftOut;
+        const size_t leftOut = gameLook ? warnedShadows_ : space3d::MakeLights(lights_, {}, {}, Cam().Eye()).shadowsLeftOut;
         if (leftOut > 0 && leftOut != warnedShadows_) {
             log::Warn("シーンビュー: 影の地図が足りないので、点光源・スポットの {} 個は影を落としません (地図は {} 枚: 点光源は 6 枚、スポットは 1 枚)", leftOut,
                       space3d::kLocalShadowSlices);
@@ -879,8 +983,8 @@ private:
     // シーンビュー自身のカメラ (編集用のカメラ)。
     space3d::RenderFrame SceneFrame(const Rect& r) const {
         space3d::RenderFrame f;
-        f.view = state_.camera.ViewMatrix();
-        f.projection = state_.camera.ProjectionMatrix(r.w / r.h);
+        f.view = Cam().ViewMatrix();
+        f.projection = Cam().ProjectionMatrix(r.w / r.h);
         f.clear = theme::SceneBackground();
         f.shadows = state_.shadows;
         f.shadowColor = theme::SceneShadow();
@@ -915,7 +1019,8 @@ private:
         // シーンの 空 は何よりも後ろ (シーンビュー自身のカメラ: 空 がオンのとき)。それに従う光も
         // 同じ - シーンビューでもゲームでも同じになる。
         frameLights_ = lights_;
-        const game_x_3d::Sky* sky = host.scene.Setting<game_x_3d::Sky>();
+        // (真上から見た地図: 空とそれに従う光・天候の粒は描かない)
+        const game_x_3d::Sky* sky = overhead_ ? nullptr : host.scene.Setting<game_x_3d::Sky>();
         const bool ownCamera = &pic == &main_ && !host.game;
         if (sky && sky->kind != game_x_3d::SkyKind::None) {
             skyLook_ = game_x_3d::LookOf(*sky, skySeconds_, game_x_3d::SkyWeatherOf(&host.host.Registry(), host.scene, skySeconds_));
@@ -935,14 +1040,31 @@ private:
             game_x_3d::FollowSky(look, frameLights_, f.ambient);
         }
         f.lights = frameLights_;
+        // この絵の時間: 前に描いたときからの秒数 (Play 中はゲームの時間の速さを掛ける)。他のプラグインの絵と
+        // 骨の姿勢は、その分だけ進む。
+        const float dt = (pic.drawnAt ? static_cast<float>(std::clamp(now_ - *pic.drawnAt, 0.0, 0.1)) : 0.f) * (host.playing ? host.timeScale : 1.f);
+        pic.drawnAt = now_;
+        const char* pictureName = host.game ? "game" : &pic == &main_ ? "scene" : "preview";
         // (空と一緒の 天候: シーンビュー自身のカメラは、空 がオンのとき見せる)
-        PrepareExtras(c, host, pic, f, sky && sky->kind != game_x_3d::SkyKind::None ? &skyLook_ : nullptr, !ownCamera || state_.sky);
+        if (overhead_) {
+            pic.extras.clear();
+        } else {
+            PrepareExtras(c, host, pic, f, sky && sky->kind != game_x_3d::SkyKind::None ? &skyLook_ : nullptr, !ownCamera || state_.sky, dt, pictureName);
+        }
         f.extras = pic.extras;
+        // 骨のあるモデルの姿勢 (アニメーター: MeshPose.h。書き出したゲームと同じ ApplyPoses)。
+        if (!pic.posersMade) {
+            pic.posersMade = true;
+            pic.posers = MakePosers(&host.host.Registry());
+        }
+        const MeshPoseFrame pf{host.scene, dt, host.playing, host.selection, skySeconds_, pictureName, &host.host.Registry()};
+        if (ApplyPoses(pic.posers, pf, meshOwners_, meshes_)) c.RequestAnimation();
+        f.meshes = meshes_;
 
         // Direct2D のここまでの描画をまず GPU に送り、そのあと Direct3D が自分の絵に描く。
         dc->Flush();
         ID3D11Texture2D* picture = pic.renderer.Render(host.host.Graphics().D3DContext(), f);
-        if (game_production::ViewReportsWanted() && (host.game || &pic == &main_)) ReportDrawing(host, pic, f);
+        if (game_production::ViewReportsWanted() && !overhead_ && (host.game || &pic == &main_)) ReportDrawing(host, pic, f);
         if (!picture) return;
         if (picture != pic.texture || dc != pic.dc || !pic.bitmap) {
             pic.bitmap.Reset();
@@ -985,7 +1107,7 @@ private:
     // 1 度尋ねる。Play していないときは、描き手は選んだものが動くのを見せる。その動きがある
     // 間、ビューは描き直される。
     void PrepareExtras(ui::Context& c, game_production::SceneViewHost& host, Picture& pic, space3d::RenderFrame& frame, const SkyLook* sky,
-                       bool atmosphere) {
+                       bool atmosphere, float dt, const char* picture) {
         pic.extras.clear();
         if (!pic.drawersMade) {
             pic.drawersMade = true;
@@ -994,8 +1116,6 @@ private:
             }
         }
         if (pic.drawers.empty()) return;
-        const float dt = (pic.drawnAt ? static_cast<float>(std::clamp(now_ - *pic.drawnAt, 0.0, 0.1)) : 0.f) * (host.playing ? host.timeScale : 1.f);
-        pic.drawnAt = now_;
         WorldDrawFrame wf{host.scene, host.host.Graphics(),
                           [this](int id) -> const Mat4* {
                               const Placed* p = FindPlaced(id);
@@ -1006,7 +1126,7 @@ private:
                           [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
                           [&host](const AssetRef& ref) { return PathToUtf8(host.host.AssetFile(ref).filename().wstring()); },
                           &host.host.Registry(),
-                          host.game ? "game" : &pic == &main_ ? "scene" : "preview"};
+                          picture};
         wf.seconds = skySeconds_;
         wf.sky = sky;
         wf.atmosphere = atmosphere;
@@ -1068,6 +1188,35 @@ private:
         }
         Build(host, true);
         Show(c, Fit(r, host.aspect), host, main_, CameraFrame(*cam, host));
+    }
+
+    // --- 真上から見た地図 (SceneViewHost::overhead) -----------------------------------------
+    // 正射影でまっすぐ見下ろす。画面の右が +X、上が +Z (LookAt の上の向きを +Z に)。高さの範囲は
+    // 置いた物の上から下まで (深度と影の地図をむだに広げない)。
+    void DrawOverhead(ui::Context& c, const Rect& r, game_production::SceneViewHost& host) {
+        const game_production::SceneViewHost::Overhead& o = *host.overhead;
+        const float halfW = std::isfinite(o.halfWidth) ? std::max(o.halfWidth, 0.01f) : 50.f;
+        const float halfH = halfW * r.h / std::max(r.w, 1.f);
+        float top = 1.f, bottom = -1.f;
+        for (const Placed& p : placed_) {
+            if (!p.active || p.marker) continue;
+            const space3d::Bounds b = space3d::WorldBounds(p.world, p.min, p.max);
+            if (!std::isfinite(b.min.y) || !std::isfinite(b.max.y)) continue;
+            top = std::max(top, b.max.y);
+            bottom = std::min(bottom, b.min.y);
+        }
+        const float eyeY = top + 10.f;
+        const Vec3 eye{o.center.x, eyeY, o.center.y};
+        Build(host, true);
+        space3d::RenderFrame f;
+        f.view = space3d::LookAt(eye, {eye.x, eye.y - 1.f, eye.z}, {0, 0, 1});
+        f.projection = space3d::Orthographic(-halfW, halfW, -halfH, halfH, 0.5f, eyeY - bottom + 10.f);
+        f.clear = theme::SceneBackground();
+        f.shadows = true;
+        f.shadowColor = theme::SceneShadow();
+        overhead_ = true;
+        Show(c, r, host, main_, f);
+        overhead_ = false;
     }
 
     // --- シーンビューのカメラとライト ---------------------------------------------------
@@ -1252,11 +1401,12 @@ private:
             }
         };
         const ui::Color viewColor = theme::Text.Alpha(0.85f);
+        const Vec3 eye = Cam().EyeFor(f.origin);  // (2D: 真正面から - 輪はどれも同じ向きで見える)
 
         p.PushClip(r);
         if (tool == gizmo::Tool::Rotate) {
             // 球の輪郭 (その中のドラッグは自由に回す: 回せるときは薄く塗る)。
-            const std::vector<Vec3> ball = gizmo::FacingCircle(f, state_.camera.Eye(), 1.f);
+            const std::vector<Vec3> ball = gizmo::FacingCircle(f, eye, 1.f);
             if (active == gizmo::Handle::Free) {
                 ui::Path disc;
                 for (size_t i = 0; i < ball.size(); ++i) {
@@ -1277,12 +1427,12 @@ private:
                     const bool hot = handleOf(a) == active;
                     const ui::Color col = colorOf(handleOf(a), a).Alpha(front ? 1.f : hot ? 0.6f : 0.3f);
                     const float width = front ? (hot ? 3.f : 2.f) : 1.5f;
-                    for (const auto& arc : gizmo::RingArcs(f, a, state_.camera.Eye(), front)) polyline(arc, col, width);
+                    for (const auto& arc : gizmo::RingArcs(f, a, eye, front)) polyline(arc, col, width);
                 }
             }
             // 目の方を向く外側の輪: 視線を軸に回す。
             const bool viewHot = active == gizmo::Handle::View;
-            polyline(gizmo::FacingCircle(f, state_.camera.Eye(), gizmo::kViewRing), viewHot ? theme::GizmoHot() : viewColor,
+            polyline(gizmo::FacingCircle(f, eye, gizmo::kViewRing), viewHot ? theme::GizmoHot() : viewColor,
                      viewHot ? 3.f : 2.f);
         } else {
             if (tool == gizmo::Tool::Move) {
@@ -1325,8 +1475,7 @@ private:
         p.PopClip();
     }
 
-    // 左の縦の列 (グリッド配置・選択・移動・回転・拡縮) と、上の帯 (ローカル / ワールド、それぞれ / 中心、
-    // 影、空、デバッグ、形)。ビューの左上に浮かぶ。
+    // 左の縦の列 (グリッド配置・選択・移動・回転・拡縮)。絵の左上に浮かぶ。
     void DrawBar(ui::Context& c, const BarLayout& bar) {
         // グリッド配置: 押すと切り替え (オンの間はギズモが常にグリッドの幅で動く)。右クリックで幅の箱。
         const auto grid = w::ToolSquare(c, "tool_grid", bar.grid, w::Icon::Grid, state_.snapAlways, Tr(L"グリッド配置 (右クリックで幅)"));
@@ -1342,41 +1491,82 @@ private:
         if (w::ToolSquare(c, "tool_scale", bar.scale, w::Icon::Scale, !state_.selecting && state_.tool == gizmo::Tool::Scale, Tr(L"拡縮 (R)")).clicked) {
             PickTool(gizmo::Tool::Scale);
         }
+    }
+
+    // 絵の上の帯 (`r` の上から取る。ビューが狭いときは 2 行目、3 行目に回る): 3D / 2D (同じシーンを
+    // 遠近法か、正面から平行投影で)、ローカル / ワールド、それぞれ / 中心、影、空、デバッグ、形。
+    // それぞれの幅は文字に合わせる (英語でも切れない)。
+    void DrawStrip(ui::Context& c, Rect& r) {
+        const std::wstring d3 = Tr(L"3D"), d2 = Tr(L"2D");
+        const std::wstring d3Tip = Tr(L"遠近法で見る (奥ほど小さい)。右ドラッグで見回し、Alt + 左ドラッグで回る");
+        const std::wstring d2Tip = Tr(L"同じシーンを正面 (Z の向き) から平行投影で見る (奥へ行っても狭まらない)。ドラッグでずらし、ホイールで大きさを変える");
+        const std::array<std::wstring_view, 2> views{d3, d2};
+        const std::array<std::wstring_view, 2> viewTips{d3Tip, d2Tip};
         const std::wstring local = Tr(L"ローカル"), world = Tr(L"ワールド");
         const std::wstring localTip = Tr(L"選んだ物の向きに合わせる (X で切り替え)"), worldTip = Tr(L"世界の向き (X で切り替え)。大きさは常に物の向き");
         const std::array<std::wstring_view, 2> spaces{local, world};
         const std::array<std::wstring_view, 2> spaceTips{localTip, worldTip};
-        if (const int i = w::Segmented(c, "gizmo_space", bar.space, spaces, static_cast<int>(state_.space), spaceTips); i >= 0) {
-            state_.space = static_cast<gizmo::Space>(i);
-        }
         const std::wstring each = Tr(L"それぞれ"), center = Tr(L"中心");
         const std::wstring eachTip = Tr(L"選んだ物をそれぞれの場所で回す・大きさを変える。ギズモは最後に選んだ物に (Z で切り替え)");
         const std::wstring centerTip = Tr(L"選んだ物全部の真ん中にギズモを出し、そこを中心に回す・大きさを変える (Z で切り替え)");
         const std::array<std::wstring_view, 2> pivots{each, center};
         const std::array<std::wstring_view, 2> pivotTips{eachTip, centerTip};
-        if (const int i = w::Segmented(c, "gizmo_pivot", bar.pivot, pivots, static_cast<int>(state_.pivot), pivotTips); i >= 0) {
+        const std::wstring shadow = Tr(L"影"), sky = Tr(L"空"), debug = Tr(L"デバッグ");
+        const std::wstring shapesSel = Tr(L"形: 選択"), shapesAll = Tr(L"形: 全部");
+        // 並べる: 幅を測り、左から右へ、入らなければ次の行。3D / 2D の後ろは少し広く空ける。
+        const float widths[] = {w::SegmentedWidth(c, views),
+                                w::SegmentedWidth(c, spaces),
+                                w::SegmentedWidth(c, pivots),
+                                w::ButtonWidth(c, shadow),
+                                w::ButtonWidth(c, sky),
+                                w::ButtonWidth(c, debug),
+                                std::max(w::ButtonWidth(c, shapesSel), w::ButtonWidth(c, shapesAll))};
+        constexpr size_t kItems = std::size(widths);
+        std::array<Rect, kItems> at{};
+        const float left = r.x + 8, pad = (kStripH - kStripItemH) * 0.5f;
+        float x = left, y = 0;
+        for (size_t i = 0; i < kItems; ++i) {
+            if (x > left && x + widths[i] > r.Right() - 8) {
+                x = left;
+                y += kStripH;
+            }
+            at[i] = {x, y + pad, widths[i], kStripItemH};
+            x += widths[i] + (i == 0 ? 2 * kStripGap : kStripGap);
+        }
+        const Rect strip = ui::TakeTop(r, y + kStripH);
+        w::DrawBar(c, strip, theme::Bg);
+        for (Rect& a : at) a.y += strip.y;
+        if (const int i = w::Segmented(c, "scene_view_mode", at[0], views, state_.flat ? 1 : 0, viewTips); i >= 0 && (i == 1) != state_.flat) {
+            state_.flat = i == 1;
+            drag_ = Drag::None;  // (始めていたドラッグは、前のカメラのもの)
+            log::Info("シーンビュー: {} で見ます", state_.flat ? "2D (正面からの平行投影)" : "3D (遠近法)");
+        }
+        if (const int i = w::Segmented(c, "gizmo_space", at[1], spaces, static_cast<int>(state_.space), spaceTips); i >= 0) {
+            state_.space = static_cast<gizmo::Space>(i);
+        }
+        if (const int i = w::Segmented(c, "gizmo_pivot", at[2], pivots, static_cast<int>(state_.pivot), pivotTips); i >= 0) {
             state_.pivot = static_cast<gizmo::Pivot>(i);
         }
         // 影: ライトが床と物に落とす影 (オンの間は強調色)。
-        if (w::Button(c, "scene_shadows", bar.shadow, Tr(L"影"), state_.shadows ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+        if (w::Button(c, "scene_shadows", at[3], shadow, state_.shadows ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.shadows = !state_.shadows;
         }
-        if (c.IsHovered(bar.shadow)) w::Tooltip(c, Tr(L"光の影を床と物に落とす (光の部品の「影を落とす」に従う。光の部品が無いときは上からの光。押すと切り替え)"));
+        if (c.IsHovered(at[3])) w::Tooltip(c, Tr(L"光の影を床と物に落とす (光の部品の「影を落とす」に従う。光の部品が無いときは上からの光。押すと切り替え)"));
         // 空: シーンの空をこのビューの後ろにも出す (ゲームビューは常に出す)。
-        if (w::Button(c, "scene_sky", bar.sky, Tr(L"空"), state_.sky ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+        if (w::Button(c, "scene_sky", at[4], sky, state_.sky ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.sky = !state_.sky;
         }
-        if (c.IsHovered(bar.sky)) w::Tooltip(c, Tr(L"シーンの「空」をこのシーンビューの後ろにも描く (階層の一番上の行を選ぶと設定できます。ゲームビューにはいつも出る。押すと切り替え)"));
+        if (c.IsHovered(at[4])) w::Tooltip(c, Tr(L"シーンの「空」をこのシーンビューの後ろにも描く (階層の一番上の行を選ぶと設定できます。ゲームビューにはいつも出る。押すと切り替え)"));
         // デバッグ: ゲームのスクリプトが動く間に描く線 (rm::Debug) を、このビューに出す。
-        if (w::Button(c, "scene_debug_draw", bar.debug, Tr(L"デバッグ"), state_.debugDraw ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
+        if (w::Button(c, "scene_debug_draw", at[5], debug, state_.debugDraw ? w::ButtonKind::Primary : w::ButtonKind::Secondary)) {
             state_.debugDraw = !state_.debugDraw;
         }
-        if (c.IsHovered(bar.debug)) w::Tooltip(c, Tr(L"Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)"));
+        if (c.IsHovered(at[5])) w::Tooltip(c, Tr(L"Play 中にスクリプトが rm::Debug で描く線を、このシーンビューに出す (押すと切り替え。ゲームビューにはいつも出る)"));
         // 形: プラグインがシーンの上に見せる線 (物理: コライダー) - 選んだものか、すべてか。
-        if (w::Button(c, "scene_shapes", bar.shapes, state_.allShapes ? Tr(L"形: 全部") : Tr(L"形: 選択"), w::ButtonKind::Secondary)) {
+        if (w::Button(c, "scene_shapes", at[6], state_.allShapes ? shapesAll : shapesSel, w::ButtonKind::Secondary)) {
             state_.allShapes = !state_.allShapes;
         }
-        if (c.IsHovered(bar.shapes)) w::Tooltip(c, Tr(L"コライダー (物理の当たりの形) などの線を、選んだ物だけに出すか、全部の物に出すか (押すと切り替え)"));
+        if (c.IsHovered(at[6])) w::Tooltip(c, Tr(L"コライダー (物理の当たりの形) などの線を、選んだ物だけに出すか、全部の物に出すか (押すと切り替え)"));
     }
 
     // ギズモの刻み: 1 回に移動・回転・拡大縮小がどれだけ進むか。それと、常にそうかどうか。
@@ -1420,12 +1610,15 @@ private:
     Picture main_;     // ビュー
     Picture preview_;  // 選んだカメラの絵 (最初に必要になったときに始める)
     std::optional<Rect> previewAt_;
+    std::optional<std::vector<const SceneOverlayInfo*>> overlayInfos_;           // 寄せられた操作 (最初に集める)
+    std::vector<std::pair<const SceneOverlayInfo*, Rect>> overlays_;             // ... このフレームに出すものと場所
     std::string transformType_, meshType_, cameraType_, lightType_, ambientType_;
     std::unordered_map<std::string, w::Icon> markOf_;  // 部品の型 -> その印 (MakeLooks)
     std::vector<space3d::Light> frameLights_;          // 絵が描くとおりの lights_ (空の光)
     double skySeconds_ = 0;       // 空の時間 (SkyLook): Play 中はゲームのもの
     game_x_3d::SkyLook skyLook_;  // 描いている絵のもの (天候の粒はこれで照らされる)
     bool looksMade_ = false;
+    bool overhead_ = false;  // 真上から見た地図を描いている最中 (Show が空と天候を描かない)
     std::optional<space3d::Ambient> ambient_;  // シーンの 環境光 (無ければ既定)
     size_t warnedShadows_ = 0;  // 影のマップが残っていないと知らせたライト
     std::vector<Placed> placed_;
@@ -1434,11 +1627,16 @@ private:
     game_production::DebugDraw sceneLines_;          // このフレームのプラグインのシーンの線 (SceneLinesInfo)
     std::vector<space3d::Box> boxes_;
     std::vector<space3d::MeshDraw> meshes_;
+    std::vector<PoseOwner> meshOwners_;  // meshes_ と同じ並び: 持ち主のエンティティと、骨のあるモデル
     std::vector<space3d::Light> lights_;
     size_t warnedLights_ = 0;  // 知らせたライトの数 (多すぎる)
     std::unordered_map<std::string, ModelEntry> models_;  // MeshRenderer::model (アセットの id) ごと
     space3d::MeshLoader loader_;                          // モデルファイルを自分のスレッドで読む
-    space3d::TextureCache textures_;                      // モデルの画像ファイル。フルパスごと
+    space3d::TextureCache textures_;                      // モデルとマテリアルの画像ファイル。フルパスごと
+    std::unordered_map<std::string, MaterialEntry> materials_;  // マテリアルの欄 (アセットの id) ごと
+    std::vector<const space3d::DrawMaterial*> slots_;           // Place: 今のエンティティのマテリアルの欄
+    std::deque<std::vector<space3d::DrawMaterial>> stores_;     // Store (deque: 足しても前のものは動かない)
+    size_t usedStores_ = 0;
     double now_ = 0;
     struct Motion {
         Mat4 world;
@@ -1447,6 +1645,7 @@ private:
     std::unordered_map<int, Motion> motion_;  // エンティティごと
 
     Drag drag_ = Drag::None;
+    int dragButton_ = 0;  // ドラッグを続けるボタン (ui::Input::down の番号: 0 左、1 右、2 中)
     float pressX_ = 0, pressY_ = 0;
     double lastTime_ = 0;
 
