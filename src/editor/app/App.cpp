@@ -78,6 +78,22 @@ int App::RunExportCheck(const LaunchOptions& options) {
             log::Error("書き出しの確かめ: {}", err);
             return false;
         }
+        // プロジェクトが記録したプラグインで、まだ入っていないもの (と、その前提とつなぎ) を入れる。エディターで
+        // 開くときに「入れて開く」を出すのと同じ (ここはウィンドウが無いので、聞かずに入れる)。
+        if (const auto recorded = ParsePluginIdList(project->doc.Get("plugins"), nullptr)) {
+            std::vector<PluginId> plan;
+            for (const PluginId& id : *recorded) {
+                if (plugins_.IsEnabled(id)) continue;
+                std::vector<PluginId> unavailable;
+                for (const PluginId& p : plugins_.InstallPlan(id, &unavailable)) {
+                    if (std::find(plan.begin(), plan.end(), p) == plan.end()) plan.push_back(p);
+                }
+            }
+            if (!plan.empty() && !InstallPlugins(plan, &err)) {
+                log::Error("書き出しの確かめ: プラグインを入れられません: {}", err);
+                return false;
+            }
+        }
         EditorScreen editor(*this, std::move(*project));
         if (!editor.ExportForCheck(out, &err)) {
             log::Error("書き出しの確かめ: 書き出せませんでした: {}", err);

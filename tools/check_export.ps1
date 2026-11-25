@@ -248,6 +248,60 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
+# 骨で動く 3D のゲーム: テンプレート 「3D のゲーム」 に docs/samples/models/skinned_arm.gltf (骨 3 本・クリップ
+# Wave と Idle) をメッシュとアニメーター (クリップ Wave) でつける。書き出しはモデルを骨とクリップごと焼き
+# (.rmmesh の SKEL / SKIN / ANIM)、プラグイン ゲーム制作 × アニメーション を入れる。ゲームは骨のあるモデルとして
+# 上げ、アニメーターが時間でクリップを流して骨の行列を計算しなければならない (game.log)。
+$dir = Join-Path $work 'game_anim'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+$p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_3d', 'game_3d', "`"$dir`"") -Wait -PassThru
+$rmpf = Join-Path $dir 'Project\Project.rmpf'
+if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
+    Write-Host "NG  game_anim: プロジェクトを作れませんでした。$log を見てください"
+    $failed++
+} else {
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $models = Join-Path $dir 'Project\Assets\Models'
+    New-Item -ItemType Directory -Force $models | Out-Null
+    Copy-Item (Join-Path $root 'docs\samples\models\skinned_arm.gltf') $models
+    $guid = [Guid]::NewGuid().ToString('N')
+    [IO.File]::WriteAllText((Join-Path $models 'skinned_arm.gltf.meta'), "{`"guid`": `"$guid`", `"name`": `"skinned_arm.gltf`"}", $utf8)
+    $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Main.rmscene'
+    $scene = [IO.File]::ReadAllText($sceneFile, $utf8) | ConvertFrom-Json
+    $id = [int]$scene.nextId
+    $arm = [ordered]@{ id = $id; parent = 0; name = 'Arm'; active = $true; components = @(
+        [ordered]@{ type = 'rm::space3d::Transform'; data = [ordered]@{ position = @(0, 0, 0) } },
+        [ordered]@{ type = 'rm::game_x_3d::MeshRenderer'; data = [ordered]@{ model = $guid } },
+        [ordered]@{ type = 'rm::game_x_animation::Animator'; data = [ordered]@{ clip = 'Wave' } }) }
+    $scene.entities = @($scene.entities) + @($arm)
+    $scene.nextId = $id + 1
+    [IO.File]::WriteAllText($sceneFile, ($scene | ConvertTo-Json -Depth 20), $utf8)
+    # (エディターでアニメーターを使うプロジェクトは、使うプラグインを .rmpf に記録する。書き出しの確かめは記録された
+    # プラグインを入れてから書き出す)
+    $project = [IO.File]::ReadAllText($rmpf, $utf8) | ConvertFrom-Json
+    $project.plugins = @($project.plugins) + @([ordered]@{ author = 'rm_engine'; name = 'game_x_animation' })
+    [IO.File]::WriteAllText($rmpf, ($project | ConvertTo-Json -Depth 30), $utf8)
+    $game = Join-Path $dir 'Game'
+    $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
+    $exe = @(Get-ChildItem $game -Filter *.exe -ErrorAction SilentlyContinue)
+    if ($p.ExitCode -ne 0 -or $exe.Count -ne 1) {
+        Write-Host "NG  game_anim: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
+        $failed++
+    } else {
+        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        $skinned = [regex]::Match($gameLog, "骨のあるモデルです: $guid \(骨 (\d+) 本・クリップ (\d+) 個\)")
+        $moved = [regex]::Match($gameLog, 'アニメーター: 「Arm」がクリップ「Wave」で骨 (\d+) 本を動かしました \(([\d.]+) 秒\)')
+        if ($r.ExitCode -ne 0 -or -not $skinned.Success -or -not $moved.Success -or [int]$moved.Groups[1].Value -lt 1 -or $gameLog.Contains('箱で描きます')) {
+            Write-Host "NG  game_anim: アニメーターが骨を動かしていません (終了コード $($r.ExitCode))"
+            $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+        } else {
+            Write-Host "OK  game_anim: 骨のあるモデル (骨 $($skinned.Groups[1].Value) 本・クリップ $($skinned.Groups[2].Value) 個) を上げ、アニメーターがクリップ Wave で骨 $($moved.Groups[1].Value) 本を動かしました ($($moved.Groups[2].Value) 秒)"
+        }
+    }
+}
+
 # マテリアルつきの 3D のゲーム: テンプレート 「3D のゲーム」 の箱に、色の絵 (docs/samples/models/house_walls.png)
 # を持つマテリアル (Assets/Materials/Red.rmmat) を付ける。書き出しはマテリアルとその絵を焼き (DDS)、ゲームは
 # それを読んで、絵つきで GPU に載せなければならない (game.log)。

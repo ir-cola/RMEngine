@@ -27,6 +27,8 @@
 #include "rm_engine/game_production/runtime/Id.h"
 #include "rm_engine/game_x_3d/editor/Connector.h"
 #include "rm_engine/game_x_3d/runtime/Id.h"
+#include "rm_engine/game_x_animation/editor/Connector.h"
+#include "rm_engine/game_x_animation/runtime/Id.h"
 #include "rm_engine/game_x_2d/editor/Connector.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
 #include "rm_engine/physics/editor/Connector.h"
@@ -59,6 +61,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {space3d::kPluginId, &space3d::RegisterEditor},
         {animation3d::kPluginId, nullptr},  // ランタイムだけ (姿勢の計算。ほかのプラグインが使う)
         {game_x_3d::kPluginId, &game_x_3d::RegisterEditor},
+        {game_x_animation::kPluginId, &game_x_animation::RegisterEditor},
         {space2d::kPluginId, nullptr},
         {game_x_2d::kPluginId, &game_x_2d::RegisterEditor},
         {physics::kPluginId, &physics::RegisterEditor},

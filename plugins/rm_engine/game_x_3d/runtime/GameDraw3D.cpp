@@ -8,6 +8,8 @@
 // 同じ MaterialLook / MeshMaterials を通して描く。
 // メッシュ の無い物は描かない (エディターでは印で出る)。ライト、環境光、影、カメラ、シーンの
 // 空 (SkyPaint.h: エディターと同じ描き手)、オフの物は、エディターのゲームビューと同じ。
+// 骨のあるモデルは、その骨とクリップ (焼いた .rmmesh の SKEL / SKIN / ANIM) を GPU の形の隣に持ち、姿勢を
+// 口 rm_engine.game_x_3d.mesh_pose に尋ねる (MeshPose.h: エディターのビューと同じ ApplyPoses)。
 
 #include "rm_engine/game_x_3d/runtime/GameDraw3D.h"
 
@@ -19,6 +21,7 @@
 #include "rm_engine/game_x_3d/runtime/Camera.h"
 #include "rm_engine/game_x_3d/runtime/Light.h"
 #include "rm_engine/game_x_3d/runtime/Material.h"
+#include "rm_engine/game_x_3d/runtime/MeshPose.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/game_x_3d/runtime/SkyPaint.h"
@@ -69,6 +72,7 @@ public:
                           ambient = reflect::TypeOf<AmbientLight>().name;
         boxes_.clear();
         meshes_.clear();
+        owners_.clear();
         usedStores_ = 0;
         lights_.clear();
         std::optional<space3d::Ambient> amb;
@@ -107,12 +111,14 @@ public:
                 if (const space3d::GpuMesh* g = renderer_.ShapeOf(*shape)) {
                     const auto mats = MeshMaterials(true, {}, slots_, Store());
                     meshes_.push_back({g, w, mats.empty() ? kPlain : Color{1, 1, 1, 1}, shadow, mats});
+                    owners_.push_back({e.data.id, nullptr});
                     drawnWith_[e.data.id] = g;
                 }
                 continue;
             }
             if (const Model* model = ModelOf(f, mr->model)) {
                 meshes_.push_back({model->gpu.get(), w, Color{1, 1, 1, 1}, shadow, MeshMaterials(false, model->materials, slots_, Store())});
+                owners_.push_back({e.data.id, model->skinned.skin ? &model->skinned : nullptr});
                 drawnWith_[e.data.id] = model->gpu.get();
                 continue;
             }
@@ -191,6 +197,14 @@ public:
             for (const auto& d : drawers_) d->Prepare(wf, extras_);
         }
         frame.extras = extras_;
+        // 骨のあるモデルの姿勢 (アニメーター: MeshPose.h)。誰も答えなければ休みの姿勢。
+        if (!posersMade_) {
+            posersMade_ = true;
+            posers_ = MakePosers(f.registry);
+        }
+        MeshPoseFrame pf{f.scene, f.dt, true, {}, seconds_, nullptr, f.registry};
+        ApplyPoses(posers_, pf, owners_, meshes_);
+        frame.meshes = meshes_;
         f.dc->Flush();  // 先に Direct2D の描画、そのあと Direct3D の絵
         ID3D11Texture2D* picture = renderer_.Render(f.gfx.D3DContext(), frame);
         if (!picture) return;
@@ -210,6 +224,7 @@ private:
     struct Model {
         std::shared_ptr<const space3d::GpuMesh> gpu;
         std::vector<space3d::DrawMaterial> materials;
+        SkinnedModel skinned;  // 骨のあるモデル: 骨とクリップ (無ければ skin は null)
     };
     // アセット id が指す焼いたモデルを、最初に GPU に置く (null: 箱を描く - 1 度だけ知らせる)。
     const Model* ModelOf(const game_production::GameDrawFrame& f, const AssetRef& ref) {
@@ -230,6 +245,10 @@ private:
         if (!m.gpu) {
             log::Warn("モデルを GPU に上げられないので箱で描きます ({}): {}", ref.guid, err);
             return nullptr;
+        }
+        m.skinned = TakeSkinned(*mesh);  // (骨とクリップ: 姿勢を尋ねるときに渡す)
+        if (m.skinned.skin) {
+            log::Info("骨のあるモデルです: {} (骨 {} 本・クリップ {} 個)", ref.guid, m.skinned.skin->skeleton.bones.size(), m.skinned.clips->size());
         }
         int pictures = 0;
         for (const space3d::MeshMaterial& mat : mesh->materials) {
@@ -342,6 +361,10 @@ private:
     std::vector<space3d::ExtraDraw> extras_;
     std::unordered_map<int, space3d::Mat4> shown_;
     std::unordered_map<int, const space3d::GpuMesh*> drawnWith_;  // 各エンティティを描くモデル
+    // 骨のあるモデルの姿勢を決めるもの (MeshPose.h)。最初のフレームで作る。
+    std::vector<std::unique_ptr<MeshPoser>> posers_;
+    bool posersMade_ = false;
+    std::vector<PoseOwner> owners_;  // meshes_ と同じ並び
 };
 
 }  // namespace

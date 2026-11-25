@@ -2328,6 +2328,9 @@ private:
                             b.onEdit = [this, id, type, info, play](editor::InspectBlock::Change ch) { EditDerived(id, type, info, std::move(ch), play); };
                         }
                     }
+                    if (const ComponentLook* info = LookOf(c.type); info && info->choices && !b.onEdit) {
+                        b.choices = [this, id, info](const reflect::FieldPath& path) { return info->choices(host_, Shown(), id, path); };
+                    }
                     if (const ComponentLook* info = LookOf(c.type); info && info->adjust && !b.onEdit) {
                         b.onEdit = [this, id, type, nth, info, play](editor::InspectBlock::Change ch) {
                             EditAdjusted(id, type, nth, info, std::move(ch), play);

@@ -1203,6 +1203,7 @@ void EditorScreen::DrawInspector(ui::Context& c, Rect r) {
         shown.push_back({b.type, obj.object, obj.unknowns, b.title, b.note, b.menu, b.modes, b.mode, b.setMode, std::move(others), b.readOnly, b.fieldMenu});
         shown.back().presetLabel = b.presetLabel;
         shown.back().presets = b.presets;
+        shown.back().choices = b.choices;
         source.push_back(i);
     }
     const bool gone = target.blocks && shown.empty();

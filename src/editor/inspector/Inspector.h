@@ -27,6 +27,8 @@
 //   EntityRef      種類だけ)。クリックすると選ぶリストが開く (検索欄つき)、× で消す。
 //                  エンティティ: 同じように 階層 の項目。もう無い ID は
 //                  "(見つかりません)" と出て、残る。何があるかは Refs (エディターのもの) から来る。
+//   (文字で、Block::choices が選択肢を返すもの: ドロップダウンリスト。一覧に無い値は "値 (見つかりません)"
+//                  と出て、残る。選択肢はソフトが今のデータから作る - アニメーターのクリップの名前)
 //   std::vector    "N 個" と ＋ (最後のコピーを足す)、そして各要素: ドラッグして別の場所へ
 //                  動かすつまみ、番号、値 (上のどれか)、消す ×。変更は毎回配列全体を
 //                  いっぺんに設定する (Undo は 1 つの項目)。
@@ -73,6 +75,12 @@ struct Refs {
     std::function<ID2D1Bitmap*(ui::Context& c, const std::string& guid, float size)> thumbnail;
 };
 
+// 文字のフィールドの選択肢 1 つ (Block::choices): 保存する値と、見せる名前。
+struct Choice {
+    std::string value;
+    std::wstring label;
+};
+
 // 値のかたまり 1 つ。
 struct Block {
     const reflect::TypeDesc* type = nullptr;  // null: `note` だけ出す (たとえばプラグインが無い部品)
@@ -101,6 +109,9 @@ struct Block {
     // これらのドロップダウン。選んだ行が動く (呼んだ側が履歴に積む)。空: 行なし。
     std::wstring presetLabel;
     std::vector<w::Action> presets;
+    // 文字のフィールド (配列の要素でないもの) の選択肢: `path` のフィールドに値を返すと、文字の欄の
+    // 代わりにそれらのドロップダウンを出す。nullopt / null: ふつうの文字の欄。描くたびに尋ねる。
+    std::function<std::optional<std::vector<Choice>>(const reflect::FieldPath& path)> choices;
 };
 
 // インスペクターごと: 打っている最中の文字、開いているドロップダウン / メニュー、たたんだブロック。
