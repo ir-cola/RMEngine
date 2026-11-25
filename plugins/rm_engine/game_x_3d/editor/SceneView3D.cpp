@@ -67,8 +67,9 @@ constexpr float kClickSlop = 4.f;  // これより小さくしか動かない押
 constexpr int kGridHalf = 20;      // 格子は -20 から 20 まで (1 本ごと、10 本ごとに濃く)
 // 上の帯 (3D / 2D と見え方のスイッチ): 1 行の高さ、その中のボタンの高さ、ボタンの間。
 // (2026-11-25: 左上に浮かんでいた 28 の高さのボタンをこの帯に移し、小さくした)
-constexpr float kStripH = 28.f, kStripItemH = 22.f, kStripGap = 6.f;
-constexpr float kToolSquare = 30.f, kToolGap = 3.f;   // 左の縦の列の正方形のボタン (前は 44 / 4)
+// (2026-11-25: 一度 28 / 22 / 6 と 30 / 3 まで小さくしたが小さすぎたので、前 (28 / 44 / 4) との中ほどに)
+constexpr float kStripH = 31.f, kStripItemH = 25.f, kStripGap = 7.f;
+constexpr float kToolSquare = 37.f, kToolGap = 4.f;   // 左の縦の列の正方形のボタン (最初は 44 / 4、小さすぎた 30 / 3)
 constexpr float kSnapBoxW = 260.f, kSnapRowH = 30.f;  // グリッドの箱 (グリッド配置 の横)
 constexpr double kModelCheckSeconds = 1.0;    // モデルのファイルを調べ直す間隔 (ディスクで変わったか)
 constexpr double kModelForgetSeconds = 10.0;  // この間どのエンティティも使わないモデルは GPU から外す
@@ -537,9 +538,9 @@ private:
     static std::optional<BarLayout> Bar(const Rect& r) {
         if (r.w < kToolSquare + 32 || r.h < 5 * (kToolSquare + kToolGap) + 16) return std::nullopt;
         BarLayout b;
-        float ty = r.y + 6;
+        float ty = r.y + 7;
         for (Rect* sq : {&b.grid, &b.select, &b.move, &b.rotate, &b.scale}) {
-            *sq = {r.x + 6, ty, kToolSquare, kToolSquare};
+            *sq = {r.x + 7, ty, kToolSquare, kToolSquare};
             ty += kToolSquare + kToolGap;
         }
         return b;

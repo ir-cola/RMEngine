@@ -25,6 +25,10 @@
         {
           "ja": "季節のテーマ: ウィンターの積もる雪がウィンドウの左右の端まで届き、大きさを変えても形が変わらない。サマーは砂らしい色のパネル・淡い空と海の青・濃い太陽・本物らしい雲 (底が平らで上が明るく下が影)",
           "en": "Seasonal themes: Winter's snow bank now reaches both window edges and keeps its shape when the window is resized. Summer gets sandy beige panels, paler sky and sea blues, a stronger sun, and more realistic clouds (flat bases, bright tops, shaded undersides)"
+        },
+        {
+          "ja": "シーンビュー: 小さくしすぎたボタンを少し大きく (左の道具の列は 37、上の帯の部品は高さ 25)",
+          "en": "Scene view: the buttons that had become too small are a little bigger again (tool column 37, top bar items 25 high)"
         }
       ]
     },
