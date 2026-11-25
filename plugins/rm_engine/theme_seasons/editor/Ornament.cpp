@@ -360,6 +360,91 @@ ui::Path BeachScene(Vec2 base, float h) {
 
 // --- 秋 -----------------------------------------------------------------------------------
 
+namespace {
+
+Vec2 Bezier(Vec2 a, Vec2 b, Vec2 c, Vec2 d, float t) {
+    const float u = 1 - t;
+    const float k0 = u * u * u, k1 = 3 * u * u * t, k2 = 3 * u * t * t, k3 = t * t * t;
+    return {a.x * k0 + b.x * k1 + c.x * k2 + d.x * k3, a.y * k0 + b.y * k1 + c.y * k2 + d.y * k3};
+}
+
+// 曲線 (3 次ベジエ a..d) に沿った細長い形: 太さは根元で `width`、先へ向かって細くなり、先はとがる。
+// 葉・茎・小穂。`steps` 点ずつ両側に置いて 1 つの多角形にする。
+void AddBlade(ui::Path& p, Vec2 a, Vec2 b, Vec2 c, Vec2 d, float width, int steps = 14, float taper = 1.f) {
+    std::vector<Vec2> left, right;
+    for (int i = 0; i <= steps; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(steps);
+        const Vec2 q = Bezier(a, b, c, d, t);
+        const Vec2 q2 = Bezier(a, b, c, d, std::min(1.f, t + 0.01f));
+        const Vec2 q1 = Bezier(a, b, c, d, std::max(0.f, t - 0.01f));
+        float dx = q2.x - q1.x, dy = q2.y - q1.y;
+        const float len = std::max(1e-4f, std::sqrt(dx * dx + dy * dy));
+        dx /= len, dy /= len;
+        const float half = width * 0.5f * std::pow(1 - t, taper);
+        left.push_back({q.x - dy * half, q.y + dx * half});
+        right.push_back({q.x + dy * half, q.y - dx * half});
+    }
+    std::vector<Vec2> pts(left.begin(), left.end());
+    for (auto it = right.rbegin(); it != right.rend(); ++it) pts.push_back(*it);
+    AddPolygon(p, pts);
+}
+
+}  // namespace
+
+ui::Path Susuki(Vec2 base, float h, uint32_t seed) {
+    ui::Path p;
+    Random rnd{seed};
+    auto jitter = [&](float amount) { return (rnd.Next() - 0.5f) * 2.f * amount; };
+    // 細長い葉: 根元からほぼまっすぐ、左へ傾いて立ち、上で左へしなる (いくつかは大きく垂れる)。
+    for (int i = 0; i < 10; ++i) {
+        const float x0 = base.x + jitter(h * 0.10f);
+        const float tall = h * (0.38f + 0.40f * rnd.Next());
+        const float lean = h * (0.14f + 0.12f * rnd.Next());
+        const float arch = rnd.Next();
+        const Vec2 a{x0, base.y + 2}, b{x0 - lean * 0.2f, base.y - tall * 0.6f};
+        const Vec2 c{x0 - lean * 0.7f - tall * 0.05f, base.y - tall};
+        const Vec2 d{x0 - lean - tall * (0.25f + 0.30f * arch), base.y - tall * (0.95f - 0.45f * arch)};
+        AddBlade(p, a, b, c, d, h * (0.016f + 0.008f * rnd.Next()), 20, 0.9f);
+    }
+    // 穂のある茎 (高さを変えて 5 本)。
+    for (int s = 0; s < 5; ++s) {
+        const float x0 = base.x + jitter(h * 0.03f) + static_cast<float>(s - 2) * h * 0.055f;
+        const float tall = h * (s == 2 ? 1.f : 0.62f + 0.30f * rnd.Next());
+        const float lean = tall * (0.28f + 0.10f * rnd.Next());
+        // 茎: 根元はほぼまっすぐ、左へ傾き、上で左へ曲がる。
+        const Vec2 a{x0, base.y + 2}, b{x0 - lean * 0.15f, base.y - tall * 0.55f};
+        const Vec2 c{x0 - lean * 0.55f, base.y - tall * 0.9f}, top{x0 - lean - tall * 0.08f, base.y - tall};
+        AddBlade(p, a, b, c, top, h * 0.009f, 16, 0.3f);
+        // 穂の軸: 茎の先から左へ出て、すぐに下へ垂れる。
+        const float plume = tall * (0.34f + 0.08f * rnd.Next());
+        const Vec2 r0 = top, r1{top.x - plume * 0.30f, top.y + plume * 0.02f};
+        const Vec2 r2{top.x - plume * 0.52f, top.y + plume * 0.30f}, r3{top.x - plume * 0.60f, top.y + plume * 0.80f};
+        AddBlade(p, r0, r1, r2, r3, h * 0.008f, 14, 0.7f);
+        // 小穂: 軸のあちこちから、軸に沿って少し広がり (左右交互)、重さで下へ垂れる細い房。上ほど長い。
+        constexpr int kCount = 30;
+        for (int k = 0; k < kCount; ++k) {
+            const float t = 0.04f + 0.92f * static_cast<float>(k) / static_cast<float>(kCount - 1);
+            const Vec2 q = Bezier(r0, r1, r2, r3, t);
+            const Vec2 qn = Bezier(r0, r1, r2, r3, std::min(1.f, t + 0.02f));
+            float dx = qn.x - q.x, dy = qn.y - q.y;
+            const float len = std::max(1e-4f, std::sqrt(dx * dx + dy * dy));
+            dx /= len, dy /= len;
+            const float side = k % 2 == 0 ? 1.f : -1.f;
+            const float branch = plume * (0.60f - 0.35f * t) * (0.75f + 0.5f * rnd.Next());
+            const float fan = side * (0.12f + 0.28f * rnd.Next());
+            const float tx = dx * std::cos(fan) - dy * std::sin(fan), ty = dx * std::sin(fan) + dy * std::cos(fan);
+            float vx = tx * 0.55f - 0.10f, vy = ty * 0.55f + 0.85f;  // 下へ垂れる向き
+            const float vl = std::max(1e-4f, std::sqrt(vx * vx + vy * vy));
+            vx /= vl, vy /= vl;
+            const Vec2 e1{q.x + tx * branch * 0.30f, q.y + ty * branch * 0.30f};
+            const Vec2 e2{q.x + (tx * 0.4f + vx * 0.6f) * branch * 0.65f, q.y + (ty * 0.4f + vy * 0.6f) * branch * 0.65f};
+            const Vec2 e3{q.x + vx * branch - side * branch * 0.06f, q.y + vy * branch};
+            AddBlade(p, q, e1, e2, e3, h * (0.0065f + 0.004f * rnd.Next()), 12, 0.7f);
+        }
+    }
+    return p;
+}
+
 ui::Path MapleLeaf(Vec2 center, float r, float degreesCcw, int points) {
     // とがった 5 つの葉先 (真上に 1 つ、斜め上へ外に 2 つ、斜め下へ外に 2 つ)、縁に小さなぎざぎざ、
     // その間に深い切れ込み。葉柄は下に垂れる。

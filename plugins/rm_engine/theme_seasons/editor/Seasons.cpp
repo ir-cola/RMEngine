@@ -149,6 +149,9 @@ Picture Make(Kind kind, const Rect& w, bool floating) {
                 auto canopy = ornament::Canopy(w, std::max(200.f, w.h * 0.85f), 0.3f, 0xF411u);
                 for (int i = 0; i < 4; ++i) pic.push_back({std::move(canopy[static_cast<size_t>(i)]), season::Leaf(i)});
                 Silhouette(pic, w, ornament::MapleLeaf({0, 0}, 1.f, 10.f));
+                // 右下にススキのひとむら (夏の砂浜のように右下の景色。穂は左へ垂れる)。
+                const float h = std::clamp(w.h * 0.36f, 140.f, 340.f);
+                pic.push_back({ornament::Susuki({w.Right() - 0.18f * h, w.Bottom()}, h, 0x5A5Au), theme::OrnamentColor()});
             }
             break;
         case Kind::Winter:
