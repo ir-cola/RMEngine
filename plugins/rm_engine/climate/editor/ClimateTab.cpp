@@ -159,7 +159,7 @@ public:
                 const std::wstring views[] = {Tr(L"塗り"), Tr(L"気温"), Tr(L"湿り気"), Tr(L"雲"), Tr(L"雨")};
                 const std::wstring viewTips[] = {Tr(L"描いたもの (気候の種類 / 天候では雲・雨雲) を色で"), Tr(L"その場所の気温 (基準の高さで) を色の段で"),
                                                  Tr(L"その場所の湿り気を色の段で"), Tr(L"地図に塗った雲の量を色の段で (塗っていない所は天気のまま)"),
-                                                 Tr(L"描いた雨雲の降る量を色の段で (描いていない所はシーン全体の降水量)")};
+                                                 Tr(L"描いた雨雲の雨の濃さを色の段で (描いていない所はシーン全体の降水量)")};
                 const std::wstring_view labels[] = {views[0], views[1], views[2], views[3], views[4]};
                 const std::wstring_view tipViews[] = {viewTips[0], viewTips[1], viewTips[2], viewTips[3], viewTips[4]};
                 if (const int picked = w::Segmented(c, "climate.view", {x0 + labelW, bar.y, std::min(360.f, room - labelW), bar.h}, labels,
@@ -190,6 +190,7 @@ public:
         state_.view = std::clamp(state_.view, 0, 4);
         state_.clouds = std::isfinite(state_.clouds) ? std::clamp(state_.clouds, 0.f, 100.f) : 80.f;
         state_.rain = std::isfinite(state_.rain) ? std::clamp(state_.rain, 0.f, 100.f) : 60.f;
+        state_.soft = std::isfinite(state_.soft) ? std::clamp(state_.soft, 0.f, 100.f) : 100.f;
 
         DrawMap(c, mapR, host, *map);
         if (side.w >= 60 && side.h >= 60) {
@@ -480,6 +481,7 @@ private:
         s.kind = state_.kind;
         s.clouds = std::clamp(state_.clouds, 0.f, 100.f);
         s.rain = std::clamp(state_.rain, 0.f, 100.f);
+        s.soft = std::clamp(state_.soft, 0.f, 100.f);
         s.points = std::move(pen_);
         pen_.clear();
         penDragging_ = false;
@@ -596,7 +598,7 @@ private:
         if (stroking_ && strokeLayer_ == layer) {
             preview = stroke_;  // (塗っている途中: その上に形を焼く)
             for (const ClimateShape& s : map.shapes) {
-                if (s.layer == layer && s.points.size() >= 3) FillShape(preview, map.cellSize, s.points, ShapeCellOf(map, s));
+                if (s.layer == layer) BakeShape(preview, map, s);
             }
             shown = &preview;
         } else if (&map != &source) {
@@ -692,7 +694,7 @@ private:
         switch (state_.view) {
             case 1: w::DrawMapLegend(c, box, Tr(L"気温 (基準の高さ)"), &theme::MapTemperature, std::format(L"{:g} ℃", kHeatColdest), std::format(L"{:g} ℃", kHeatHottest)); break;
             case 2: w::DrawMapLegend(c, box, Tr(L"湿り気"), &theme::MapHumidity, Tr(L"0 % (からから)"), Tr(L"100 % (じめじめ)")); break;
-            case 4: w::DrawMapLegend(c, box, Tr(L"降る量 (雨雲の所)"), &theme::MapRain, Tr(L"0 %"), Tr(L"100 % (嵐)")); break;
+            case 4: w::DrawMapLegend(c, box, Tr(L"雨の濃さ (雨雲の所)"), &theme::MapRain, Tr(L"0 %"), Tr(L"100 % (嵐)")); break;
             default: w::DrawMapLegend(c, box, Tr(L"雲の量 (塗った所)"), &theme::MapClouds, Tr(L"0 % (晴れ)"), Tr(L"100 % (厚い雲)")); break;
         }
     }
@@ -849,33 +851,84 @@ private:
 
     // 雲 / 雨雲の層: 塗る量 (選んだ形があれば、その形の量)。下の y を返す。
     float DrawAmountSide(ui::Context& c, const Rect& r, SceneViewHost& host, const ClimateShape* shape) {
-        const bool rain = Layer() == MapLayer::Rain;
+        if (Layer() == MapLayer::Rain) return DrawRainSide(c, r, host, shape);
         float y = r.y;
         const float labelW = std::floor(r.w * 0.42f);
-        if (shape) y = DrawShapeRow(c, {r.x, y, r.w, r.Bottom() - y}, host, rain ? Tr(L"選んだ形 (雨雲)") : Tr(L"選んだ形 (雲)"));
-        Label(c, {r.x, y, labelW, kRow}, rain ? (shape ? Tr(L"形の降る量 (%)") : Tr(L"降る量 (%)")) : (shape ? Tr(L"形の雲の量 (%)") : Tr(L"雲の量 (%)")));
+        if (shape) y = DrawShapeRow(c, {r.x, y, r.w, r.Bottom() - y}, host, Tr(L"選んだ形 (雲)"));
+        Label(c, {r.x, y, labelW, kRow}, shape ? Tr(L"形の雲の量 (%)") : Tr(L"雲の量 (%)"));
         const Rect field{r.x + labelW, y, r.w - labelW, kRow};
         if (shape) {
-            float value = rain ? shape->rain : shape->clouds;
-            if (w::NumberField(c, rain ? "climate.shape.rain" : "climate.shape.clouds", field, value, 0.f, 100.f, shapeAmountText_) && CanEdit(host)) {
+            float value = shape->clouds;
+            if (w::NumberField(c, "climate.shape.clouds", field, value, 0.f, 100.f, shapeAmountText_) && CanEdit(host)) {
                 const size_t index = static_cast<size_t>(selected_);
-                EditMap(host, rain ? "形の降る量" : "形の雲の量", (rain ? 0x5A1Au : 0xC10D5u) + index, [index, value, rain](ClimateMap& m) {
-                    if (index >= m.shapes.size()) return;
-                    (rain ? m.shapes[index].rain : m.shapes[index].clouds) = std::clamp(value, 0.f, 100.f);
+                EditMap(host, "形の雲の量", 0xC10D5u + index, [index, value](ClimateMap& m) {
+                    if (index < m.shapes.size()) m.shapes[index].clouds = std::clamp(value, 0.f, 100.f);
                 });
             }
-        } else if (rain) {
-            w::NumberField(c, "climate.rain", field, state_.rain, 0.f, 100.f, rainText_);
         } else {
             w::NumberField(c, "climate.clouds", field, state_.clouds, 0.f, 100.f, cloudText_);
         }
         y += kRow + 6;
-        const float amount = shape ? (rain ? shape->rain : shape->clouds) : (rain ? state_.rain : state_.clouds);
-        w::DrawSwatch(c, {r.x, y + 3, 16, 16}, rain ? theme::MapRain(amount / 100.f) : theme::MapClouds(amount / 100.f));
-        Note(c, {r.x + 24, y, r.w - 24, 92},
-             rain ? Tr(L"雨雲を描いた所だけ、この量が降ります (シーン全体の降水量が 0 でも)。目盛りは降水量と同じ (10: ぽつぽつ 〜 60: 雨 〜 100: 嵐)。雨か雪かはその場所の気温で決まり、空もその上だけ厚い雲になります。")
-                  : Tr(L"塗った所は、空の雲がこの量になります。塗っていない所は、シーン全体の天気の雲のままです。雨を降らせるのは雨雲の層です。"));
+        const float amount = shape ? shape->clouds : state_.clouds;
+        w::DrawSwatch(c, {r.x, y + 3, 16, 16}, theme::MapClouds(amount / 100.f));
+        Note(c, {r.x + 24, y, r.w - 24, 92}, Tr(L"塗った所は、空の雲がこの量になります。塗っていない所は、シーン全体の天気の雲のままです。雨を降らせるのは雨雲の層です。"));
         return y + 98;
+    }
+
+    // 雨雲の層: 雨の濃さ (目安を選ぶか数で) と、ペンの形のぼかし (選んだ形があれば、その形の値)。下の y を返す。
+    float DrawRainSide(ui::Context& c, const Rect& r, SceneViewHost& host, const ClimateShape* shape) {
+        static constexpr float kSteps[] = {10, 30, 60, 85, 100};  // (降水量の目盛りと同じ)
+        float y = r.y;
+        const float labelW = std::floor(r.w * 0.42f);
+        if (shape) y = DrawShapeRow(c, {r.x, y, r.w, r.Bottom() - y}, host, Tr(L"選んだ形 (雨雲)"));
+        float amount = shape ? shape->rain : state_.rain;
+        float soft = shape ? shape->soft : state_.soft;
+        bool amountChanged = false, softChanged = false;
+
+        Label(c, {r.x, y, labelW, kRow}, shape ? Tr(L"形の雨の濃さ (%)") : Tr(L"雨の濃さ (%)"));
+        amountChanged = w::NumberField(c, shape ? "climate.shape.rain" : "climate.rain", {r.x + labelW, y, r.w - labelW, kRow}, amount, 0.f, 100.f,
+                                       shape ? shapeAmountText_ : rainText_);
+        y += kRow + 4;
+        {
+            const std::wstring names[] = {Tr(L"ぽつぽつ"), Tr(L"小雨"), Tr(L"雨"), Tr(L"大雨"), Tr(L"嵐")};
+            std::wstring tips[std::size(kSteps)];
+            std::wstring_view labels[std::size(kSteps)], tipViews[std::size(kSteps)];
+            int sel = -1;
+            for (size_t i = 0; i < std::size(kSteps); ++i) {
+                tips[i] = TrF(L"雨の濃さを {:.0f} % に", kSteps[i]);
+                labels[i] = names[i], tipViews[i] = tips[i];
+                if (std::fabs(amount - kSteps[i]) < 0.5f) sel = static_cast<int>(i);
+            }
+            const int pick = w::Segmented(c, shape ? "climate.shape.rainStep" : "climate.rainStep", {r.x, y, r.w, kRow}, labels, sel, tipViews);
+            if (pick >= 0) amount = kSteps[pick], amountChanged = true;
+        }
+        y += kRow + 6;
+        if (shape || state_.tool == 2) {  // (ぼかしはペンで囲んだ形だけ)
+            Label(c, {r.x, y, labelW, kRow}, shape ? Tr(L"形のぼかし (%)") : Tr(L"ぼかし (%)"));
+            softChanged = w::NumberField(c, shape ? "climate.shape.soft" : "climate.soft", {r.x + labelW, y, r.w - labelW, kRow}, soft, 0.f, 100.f,
+                                         shape ? shapeSoftText_ : softText_);
+            y += kRow + 6;
+        }
+        if (shape && CanEdit(host) && (amountChanged || softChanged)) {
+            const size_t index = static_cast<size_t>(selected_);
+            if (amountChanged) {
+                EditMap(host, "形の雨の濃さ", 0x5A1Au + index, [index, amount](ClimateMap& m) {
+                    if (index < m.shapes.size()) m.shapes[index].rain = std::clamp(amount, 0.f, 100.f);
+                });
+            }
+            if (softChanged) {
+                EditMap(host, "形のぼかし", 0x50F7u + index, [index, soft](ClimateMap& m) {
+                    if (index < m.shapes.size()) m.shapes[index].soft = std::clamp(soft, 0.f, 100.f);
+                });
+            }
+        } else if (!shape) {
+            state_.rain = std::clamp(amount, 0.f, 100.f);
+            state_.soft = std::clamp(soft, 0.f, 100.f);
+        }
+        w::DrawSwatch(c, {r.x, y + 3, 16, 16}, theme::MapRain(amount / 100.f));
+        Note(c, {r.x + 24, y, r.w - 24, 132},
+             Tr(L"雨雲を描いた所だけ、この濃さで降ります (シーン全体の降水量が 0 でも)。目盛りは降水量と同じです。ペンで囲んだ形は、真ん中がこの濃さで、縁に向かってだんだん弱くなります (ぼかし: 縁から真ん中までのうち、弱くなる幅。0 % で縁まで同じ濃さ)。筆はぼかしません。雨か雪かはその場所の気温で決まり、空もその上だけ厚い雲になります。"));
+        return y + 138;
     }
 
     // 気候の層: 気候の種類の一覧と ＋ / 消す (選んだ形があれば、種類を選ぶとその形の種類が変わる)。下の y を返す。
@@ -1050,7 +1103,7 @@ private:
     ClimateShape dragOriginal_, dragShape_;  // 動かしている形の、始めと今
     ClimateMap dragMap_;                     // 動かしている形を入れた地図 (見せるため)
     ClimateKind kindCopy_;  // インスペクターに見せる、選んだ種類の写し
-    std::string brushText_, cloudText_, rainText_, shapeAmountText_;
+    std::string brushText_, cloudText_, rainText_, softText_, shapeAmountText_, shapeSoftText_;
     inspector::State inspector_, weatherInspector_;
 };
 

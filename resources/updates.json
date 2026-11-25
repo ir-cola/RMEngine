@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.18",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "雨雲の「雨の濃さ」を目安 (ぽつぽつ・小雨・雨・大雨・嵐) か数で選べるように。ペンで囲んだ雨雲は、真ん中がその濃さで、縁に向かってだんだん弱くなります (「ぼかし」で弱くなる幅を変えられます)",
+          "en": "Rain clouds now have a \"Rain strength\" you can pick from presets (Sprinkle, Drizzle, Rain, Heavy, Storm) or as a number. Rain clouds drawn with the pen are at that strength in the center and get gradually weaker toward the edge (\"Soften\" sets how wide the fade is)"
+        }
+      ]
+    },
+    {
       "version": "0.0.17",
       "date": "2026-11-25",
       "items": [

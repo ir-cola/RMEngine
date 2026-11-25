@@ -93,13 +93,15 @@ enum class MapLayer {
 };
 
 // 地図にペンで囲んだ形 (気候のタブ)。中のマスが、その層の値 (気候の種類 / 雲の量) になる。点は
-// ワールドの (x, z)。筆で塗ったマスの上に、並びの順で重なる (あとのものが上)。
+// ワールドの (x, z)。筆で塗ったマスの上に、並びの順で重なる (あとのものが上)。雨雲の形だけは、
+// 縁から遠い所ほど濃く (ぼかし) し、重なった所は濃いほうになる (BakeShape)。
 RM_STRUCT(Label="地図の形")
 struct ClimateShape {
     RM_PROPERTY() MapLayer layer = MapLayer::Climate;
     RM_PROPERTY() int kind = 0;           // 気候の層: 種類 (ClimateKind::id)
     RM_PROPERTY() float clouds = 80.f;    // 雲の層: 雲の量 (%)
-    RM_PROPERTY() float rain = 60.f;      // 雨雲の層: 降る量 (%。天候の降水量と同じ目盛り)
+    RM_PROPERTY() float rain = 60.f;      // 雨雲の層: 雨の濃さ = 降る量 (%。天候の降水量と同じ目盛り)。真ん中の値
+    RM_PROPERTY() float soft = 100.f;     // 雨雲の層: ぼかし (%)。縁から真ん中までのうち、だんだん濃くなる幅。0: 縁まで同じ
     RM_PROPERTY() std::vector<Vec2> points;  // (x, z)。3 点から形になる
 };
 bool operator==(const ClimateShape& a, const ClimateShape& b);
@@ -186,6 +188,12 @@ int ShapeCellOf(const ClimateMap& map, const ClimateShape& shape);
 // 点 `points` (x, z) で囲んだ形の中に、真ん中が入るマス (偶奇の規則) を `id` にする。長方形は
 // いるだけ広げる (PaintCircle と同じ上限)。変わったら true。3 点より少ないと何もしない。
 bool FillShape(PaintGrid& grid, float cellSize, std::span<const Vec2> points, int id);
+// 雨雲の形: FillShape と同じマスを、縁から遠いほど濃く塗る。縁から一番遠いマスが `amount` (%)、
+// 縁から (一番遠い所までの距離 x `soft` (0..1)) より内側は `amount` のまま、その外は縁へなめらかに
+// 薄くなる。今のマスより濃い所だけ塗る (重なった所は濃いほう)。1 % より薄くなるマスは塗らない。
+bool FillShapeSoft(PaintGrid& grid, float cellSize, std::span<const Vec2> points, float amount, float soft);
+// 形 1 つを層のマスに焼く (雨雲: FillShapeSoft / ほか: FillShape で上書き)。
+bool BakeShape(PaintGrid& grid, const ClimateMap& map, const ClimateShape& shape);
 // 層 `layer` の、計算に使うマス: 筆の塗りの上に、その層の形を並びの順に焼いたもの。
 PaintGrid BakedOf(const ClimateMap& map, MapLayer layer);
 // 点 `p` が形の中か (偶奇の規則)。

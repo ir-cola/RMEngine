@@ -336,6 +336,47 @@ RM_TEST(Climate_WeatherPlace) {
     }
 }
 
+// 雨雲の形のぼかし: 縁から一番遠いマスが濃さ、縁へなめらかに薄くなる。重なった所は濃いほう。
+RM_TEST(Climate_RainSoft) {
+    const std::vector<Vec2> square{{0, 0}, {20, 0}, {20, 20}, {0, 20}};  // (1 m のマスで 0 .. 19)
+    PaintGrid g;
+    CHECK(FillShapeSoft(g, 1.f, square, 80.f, 1.f));
+    const auto at = [&g](int x, int z) { return CloudsOfCell(g.At(x, z)); };
+    CHECK(Near(at(9, 9), 80) && Near(at(10, 10), 80));                         // 真ん中
+    CHECK(at(0, 10) >= 1 && at(0, 10) < 5);                                     // 縁 (薄い)
+    CHECK(at(0, 10) < at(3, 10) && at(3, 10) < at(6, 10) && at(6, 10) < at(9, 10));  // 真ん中へだんだん濃く
+    CHECK(at(0, 10) == at(19, 10) && at(10, 0) == at(10, 19) && at(0, 10) == at(10, 0));  // 縁はどこも同じ
+    CHECK(at(-1, 10) == 0 && at(20, 10) == 0);                                  // 外は塗らない
+    // ぼかし 0: 縁まで同じ / 半分: 真ん中から半分までは同じ。
+    PaintGrid flat;
+    FillShapeSoft(flat, 1.f, square, 80.f, 0.f);
+    CHECK(CloudsOfCell(flat.At(0, 10)) == 80 && CloudsOfCell(flat.At(9, 9)) == 80);
+    PaintGrid half;
+    FillShapeSoft(half, 1.f, square, 80.f, 0.5f);
+    CHECK(CloudsOfCell(half.At(5, 10)) == 80 && CloudsOfCell(half.At(1, 10)) < 80);
+    // 重なった所は濃いほう (薄い形を重ねても変わらない)。濃さ 0 は塗らない。
+    CHECK(!FillShapeSoft(flat, 1.f, square, 50.f, 1.f) && CloudsOfCell(flat.At(0, 10)) == 80);
+    PaintGrid none;
+    CHECK(!FillShapeSoft(none, 1.f, square, 0.f, 1.f) && none.Empty());
+    CHECK(!FillShapeSoft(none, 1.f, std::vector<Vec2>{{0, 0}, {NAN, 0}, {1, 1}}, 50.f, 1.f));
+    // 地図の雨雲の形: 焼くとぼかす (ほかの層の形はぼかさない)。
+    ClimateMap map;
+    map.cellSize = 1;
+    ClimateShape storm;
+    storm.layer = MapLayer::Rain;
+    storm.rain = 80;
+    storm.points = square;
+    map.shapes.push_back(storm);
+    const PaintGrid baked = BakedOf(map, MapLayer::Rain);
+    CHECK(CloudsOfCell(baked.At(9, 9)) == 80 && CloudsOfCell(baked.At(0, 10)) < 5);
+    map.shapes[0].soft = 0;
+    CHECK(CloudsOfCell(BakedOf(map, MapLayer::Rain).At(0, 10)) == 80);
+    map.shapes[0].layer = MapLayer::Clouds;
+    map.shapes[0].clouds = 40;
+    map.shapes[0].soft = 100;
+    CHECK(CloudsOfCell(BakedOf(map, MapLayer::Clouds).At(0, 10)) == 40);
+}
+
 // 気候ビュー: ペンで囲んだ形。中のマス (真ん中が入るもの) がその値になり、筆の塗りの上に重なる。
 RM_TEST(Climate_ShapeFill) {
     const std::vector<Vec2> square{{0, 0}, {8, 0}, {8, 8}, {0, 8}};
@@ -511,6 +552,7 @@ RM_TEST(Climate_CloudWeather) {
     ClimateShape storm;
     storm.layer = MapLayer::Rain;
     storm.rain = 70;
+    storm.soft = 0;  // (ぼかさない: 縁まで 70 %。ぼかしは Climate_RainSoft)
     storm.points = {{280, -20}, {320, -20}, {320, 20}, {280, 20}};
     map.shapes.push_back(storm);
     RuntimeRegistry reg;

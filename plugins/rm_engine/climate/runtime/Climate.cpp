@@ -238,7 +238,7 @@ bool SetCell(PaintGrid& g, int x, int z, int id) {
 }  // namespace
 
 bool operator==(const ClimateShape& a, const ClimateShape& b) {
-    return a.layer == b.layer && a.kind == b.kind && a.clouds == b.clouds && a.rain == b.rain && a.points == b.points;
+    return a.layer == b.layer && a.kind == b.kind && a.clouds == b.clouds && a.rain == b.rain && a.soft == b.soft && a.points == b.points;
 }
 
 PaintGrid PaintOf(const ClimateMap& map, MapLayer layer) {
@@ -320,6 +320,79 @@ bool InsideShape(std::span<const Vec2> pts, Vec2 p) {
     return inside;
 }
 
+namespace {
+
+// 形 `pts` の中に真ん中が入るマス (偶奇の規則) を、行 z ごとに x の範囲 [a, b] で `f(z, a, b)` に渡す
+// (x0 .. x1, z0 .. z1 の中だけ)。
+template <class F>
+void ForInside(std::span<const Vec2> pts, float cs, int x0, int z0, int x1, int z1, F&& f) {
+    std::vector<double> cross;
+    for (int z = z0; z <= z1; ++z) {
+        const double cz = (z + 0.5) * cs;
+        cross.clear();
+        for (size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
+            const Vec2 a = pts[i], b = pts[j];
+            if ((a.y > cz) != (b.y > cz)) cross.push_back(a.x + (cz - a.y) * (static_cast<double>(b.x) - a.x) / (static_cast<double>(b.y) - a.y));
+        }
+        std::sort(cross.begin(), cross.end());
+        for (size_t k = 0; k + 1 < cross.size(); k += 2) {
+            // 真ん中 (x + 0.5) * cs が [cross[k], cross[k + 1]) にあるマス。
+            const int a = std::max(x0, FloorCell(std::ceil(cross[k] / cs - 0.5))), b = std::min(x1, FloorCell(std::ceil(cross[k + 1] / cs - 0.5)) - 1);
+            if (a <= b) f(z, a, b);
+        }
+    }
+}
+
+// 形の点の範囲 (ワールド)。点に数でないものがあれば false。
+bool ShapeBounds(std::span<const Vec2> pts, float& lx, float& lz, float& hx, float& hz) {
+    lx = std::numeric_limits<float>::max(), lz = lx, hx = -lx, hz = -lx;
+    for (const Vec2& p : pts) {
+        if (!std::isfinite(p.x) || !std::isfinite(p.y)) return false;
+        lx = std::min(lx, p.x), hx = std::max(hx, p.x), lz = std::min(lz, p.y), hz = std::max(hz, p.y);
+    }
+    return true;
+}
+
+// 2 乗した距離の表 `d2` (w x h。0: 形の外 / それ以外: 形の中) を、形の外の一番近いマスまでの
+// 距離の 2 乗 (マスの単位) にする。行ごとに横の距離を出してから、列ごとに放物線の下側の包み
+// (Felzenszwalb と Huttenlocher の距離変換) で縦を足す。どちらもマスの数に比例する手間。
+void DistanceTransform(std::vector<float>& d2, int w, int h) {
+    const float kFar = static_cast<float>(w + h) * static_cast<float>(w + h);
+    for (int j = 0; j < h; ++j) {  // 横: 左から右、右から左で、同じ行の一番近い外のマス
+        float* row = d2.data() + static_cast<size_t>(j) * static_cast<size_t>(w);
+        float run = kFar;
+        for (int i = 0; i < w; ++i) run = row[i] == 0 ? 0 : run + 1, row[i] = run;
+        run = kFar;
+        for (int i = w - 1; i >= 0; --i) run = row[i] == 0 ? 0 : run + 1, row[i] = std::min(row[i], run);
+        for (int i = 0; i < w; ++i) row[i] = row[i] >= kFar ? kFar : row[i] * row[i];
+    }
+    std::vector<float> f(static_cast<size_t>(h)), z(static_cast<size_t>(h) + 1);
+    std::vector<int> v(static_cast<size_t>(h));
+    for (int i = 0; i < w; ++i) {  // 縦: d(q) = min_p ((q - p)^2 + f(p))
+        for (int j = 0; j < h; ++j) f[j] = d2[static_cast<size_t>(j) * w + i];
+        int k = 0;
+        v[0] = 0;
+        z[0] = -std::numeric_limits<float>::infinity(), z[1] = std::numeric_limits<float>::infinity();
+        const auto cut = [&](int q, int p) { return ((f[q] + static_cast<float>(q) * q) - (f[p] + static_cast<float>(p) * p)) / (2.f * static_cast<float>(q - p)); };
+        for (int q = 1; q < h; ++q) {
+            float s = cut(q, v[k]);
+            while (s <= z[k]) s = cut(q, v[--k]);  // (z[0] は -無限: k は 0 より下がらない)
+            ++k;
+            v[k] = q;
+            z[k] = s;
+            z[k + 1] = std::numeric_limits<float>::infinity();
+        }
+        k = 0;
+        for (int q = 0; q < h; ++q) {
+            while (z[k + 1] < static_cast<float>(q)) ++k;
+            const float dq = static_cast<float>(q - v[k]);
+            d2[static_cast<size_t>(q) * w + i] = dq * dq + f[v[k]];
+        }
+    }
+}
+
+}  // namespace
+
 bool FillShape(PaintGrid& g, float cellSize, std::span<const Vec2> pts, int id) {
     if (pts.size() < 3) return false;
     const float cs = CellSizeOf(cellSize);
@@ -340,22 +413,57 @@ bool FillShape(PaintGrid& g, float cellSize, std::span<const Vec2> pts, int id) 
     }
     // 行ごとに、マスの真ん中の高さで辺と交わる所を出し、その間 (偶奇) のマスを塗る。
     bool changed = false;
-    std::vector<double> cross;
-    for (int z = z0; z <= z1; ++z) {
-        const double cz = (z + 0.5) * cs;
-        cross.clear();
-        for (size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
-            const Vec2 a = pts[i], b = pts[j];
-            if ((a.y > cz) != (b.y > cz)) cross.push_back(a.x + (cz - a.y) * (static_cast<double>(b.x) - a.x) / (static_cast<double>(b.y) - a.y));
-        }
-        std::sort(cross.begin(), cross.end());
-        for (size_t k = 0; k + 1 < cross.size(); k += 2) {
-            // 真ん中 (x + 0.5) * cs が [cross[k], cross[k + 1]) にあるマス。
-            const int a = std::max(x0, FloorCell(std::ceil(cross[k] / cs - 0.5))), b = std::min(x1, FloorCell(std::ceil(cross[k + 1] / cs - 0.5)) - 1);
-            for (int x = a; x <= b; ++x) changed = SetCell(g, x, z, id) || changed;
+    ForInside(pts, cs, x0, z0, x1, z1, [&](int z, int a, int b) {
+        for (int x = a; x <= b; ++x) changed = SetCell(g, x, z, id) || changed;
+    });
+    return changed;
+}
+
+bool FillShapeSoft(PaintGrid& g, float cellSize, std::span<const Vec2> pts, float amount, float soft) {
+    if (pts.size() < 3 || !std::isfinite(amount)) return false;
+    amount = std::clamp(amount, 0.f, 100.f);
+    soft = std::isfinite(soft) ? std::clamp(soft, 0.f, 1.f) : 1.f;
+    if (CloudCellOf(amount) < 2) return false;  // (1 % より薄い: 塗らない)
+    const float cs = CellSizeOf(cellSize);
+    float lx, lz, hx, hz;
+    if (!ShapeBounds(pts, lx, lz, hx, hz)) return false;
+    int x0 = FloorCell(lx / cs), x1 = FloorCell(hx / cs), z0 = FloorCell(lz / cs), z1 = FloorCell(hz / cs);
+    if (!GrowTo(g, x0, z0, x1, z1, static_cast<int>((int64_t{x0} + x1) / 2), static_cast<int>((int64_t{z0} + z1) / 2))) return false;
+    // 中のマスに印 (まわりに 1 マスの外を足す) -> 外までの距離。
+    const int w = x1 - x0 + 3, h = z1 - z0 + 3;
+    std::vector<float> d2(static_cast<size_t>(w) * static_cast<size_t>(h), 0.f);
+    bool any = false;
+    ForInside(pts, cs, x0, z0, x1, z1, [&](int z, int a, int b) {
+        for (int x = a; x <= b; ++x) d2[static_cast<size_t>(z - z0 + 1) * w + static_cast<size_t>(x - x0 + 1)] = 1.f;
+        any = true;
+    });
+    if (!any) return false;
+    DistanceTransform(d2, w, h);
+    // 縁からの距離 = 外のマスの真ん中までの距離 - 半マス (縁のマスは半マス)。
+    const float most = std::sqrt(*std::max_element(d2.begin(), d2.end())) - 0.5f;
+    const float full = most * soft;  // (ここより内側は amount のまま)
+    bool changed = false;
+    for (int j = 1; j + 1 < h; ++j) {
+        for (int i = 1; i + 1 < w; ++i) {
+            const float dd = d2[static_cast<size_t>(j) * w + i];
+            if (dd <= 0) continue;
+            const float t = full > 0 ? std::clamp((std::sqrt(dd) - 0.5f) / full, 0.f, 1.f) : 1.f;
+            const int id = CloudCellOf(amount * t * t * (3.f - 2.f * t));  // (なめらかな段: smoothstep)
+            if (id < 2) continue;
+            const int x = x0 + i - 1, z = z0 + j - 1;
+            if (id > g.At(x, z)) changed = SetCell(g, x, z, id) || changed;
         }
     }
     return changed;
+}
+
+bool BakeShape(PaintGrid& g, const ClimateMap& map, const ClimateShape& s) {
+    if (s.layer != MapLayer::Climate && s.layer != MapLayer::Clouds && s.layer != MapLayer::Rain) return false;
+    if (s.points.size() < 3) return false;
+    const std::span<const Vec2> pts = std::span(s.points).first(std::min(s.points.size(), kMaxShapePoints));
+    if (s.layer == MapLayer::Rain) return FillShapeSoft(g, map.cellSize, pts, s.rain, s.soft / 100.f);
+    const int id = ShapeCellOf(map, s);
+    return id != 0 && FillShape(g, map.cellSize, pts, id);
 }
 
 int ShapeCellOf(const ClimateMap& map, const ClimateShape& s) {
@@ -367,10 +475,7 @@ int ShapeCellOf(const ClimateMap& map, const ClimateShape& s) {
 PaintGrid BakedOf(const ClimateMap& map, MapLayer layer) {
     PaintGrid g = PaintOf(map, layer);
     for (const ClimateShape& s : map.shapes) {
-        if (s.layer != layer || s.points.size() < 3) continue;
-        const int id = ShapeCellOf(map, s);
-        if (id == 0) continue;
-        FillShape(g, map.cellSize, std::span(s.points).first(std::min(s.points.size(), kMaxShapePoints)), id);
+        if (s.layer == layer) BakeShape(g, map, s);
     }
     return g;
 }
