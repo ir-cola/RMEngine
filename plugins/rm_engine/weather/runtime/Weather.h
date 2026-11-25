@@ -141,13 +141,19 @@ struct Weather {
     RM_TRANSIENT() int placeFirstX = 0;
     RM_TRANSIENT() int placeFirstZ = 0;
     // 場所ごとの雲 (気候の地図に塗った雲): 答える者 (つなぎ 天候 × 気候) が Play の間、毎フレーム書く。
-    // placeClouds: カメラのいる所の雲の量 (0 .. 100。数秒かけて近づける)。< 0: 書く者がいない (雲の量のまま)。
-    // 空の暗さ・日の光・雲の厚さはこれで決まる (TargetOf)。
+    // カメラのいる所の、雲を塗った割合 placeCloudShare (0 .. 1) とそこの雲の量 placeClouds (0 .. 100)。
+    // 数秒かけて近づける。placeClouds < 0: 書く者がいない (雲の量のまま)。
+    // 今の雲の量 = (1 - 割合) x 雲の量 (天気のもの) + 割合 x placeClouds (TargetOf)。空の暗さ・日の光・
+    // 雲の厚さはこれで決まる。
     RM_TRANSIENT() float placeClouds = -1;
-    // cloudCells: カメラのまわりの雲の地図 (kCloudMapCells x kCloudMapCells。行が z、z の小さい行から)。
-    // 値はそのマスの真ん中の雲の量 (0 .. 100)。最初のマスの真ん中のワールドの x, z が cloudFirstX / Z。
-    // 空: 書く者がいない (空の雲はどこも同じ量)。空の絵はこれで、向きごとに雲の量を変える。
+    RM_TRANSIENT() float placeCloudShare = 0;
+    // cloudCells / cloudShares: カメラのまわりの雲の地図 (kCloudMapCells x kCloudMapCells。行が z、z の
+    // 小さい行から)。そのマスの、雲を塗った割合 (cloudShares: 0 .. 1) と、塗った所の雲の量 (cloudCells:
+    // 0 .. 100)。その向きの雲の量 = (1 - 割合) x 空の雲の量 + 割合 x cloudCells (塗っていない所は天気の
+    // 雲のまま: 雨で増えた雲・テンプレートのフェードも)。最初のマスの真ん中のワールドの x, z が
+    // cloudFirstX / Z。空: 書く者がいない (空の雲はどこも同じ量)。空の絵はこれで、向きごとに雲の量を変える。
     RM_TRANSIENT() std::vector<float> cloudCells;
+    RM_TRANSIENT() std::vector<float> cloudShares;
     RM_TRANSIENT() float cloudFirstX = 0;
     RM_TRANSIENT() float cloudFirstZ = 0;
     RM_TRANSIENT() WetMap wetMap;

@@ -95,8 +95,11 @@ WeatherNow TargetOf(const Weather& w) {
     WeatherNow n;
     const float p = Unit(w.precipitation), x = SnowInOf(w);
     n.clouds = Unit(w.cloudAmount);
-    // 場所ごとの雲 (つなぎが書いた、カメラのいる所の雲の量)。
-    if (std::isfinite(w.placeClouds) && w.placeClouds >= 0) n.clouds = Unit(w.placeClouds);
+    // 場所ごとの雲 (つなぎが書いた、カメラのいる所の塗った雲): 塗った割合の分だけその量へ。
+    if (std::isfinite(w.placeClouds) && w.placeClouds >= 0 && std::isfinite(w.placeCloudShare)) {
+        const float share = std::clamp(w.placeCloudShare, 0.f, 1.f);
+        n.clouds += (Unit(w.placeClouds) - n.clouds) * share;
+    }
     if (std::isfinite(w.placeSnow) && w.placeSnow >= 0) {
         // 場所の降り方 (つなぎが書いた、カメラのいる所): その割合で雨と雪に分ける (みぞれは両方)。
         PlacedShare(p, {w.placeSnow, w.placeMore}, n.rain, n.snow);
