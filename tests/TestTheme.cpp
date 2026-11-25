@@ -411,3 +411,17 @@ RM_TEST(Theme_Grain) {
     CHECK(rm::ui::GrainPixels(128, g) != px);
     CHECK(rm::ui::GrainPixels(0, g).empty());
 }
+
+RM_TEST(Theme_Susuki) {
+    // ススキ: 根元の上に立ち (下の辺より下へは出ない)、高さまで。穂は根元より左へ垂れる。時計回り。
+    const rm::Vec2 base{900, 600};
+    using namespace rm::theme_seasons::ornament;
+    const rm::ui::Path s = Susuki(base, 300, 7);
+    const Bounds b = BoundsOf(s);
+    CHECK(b.figures > 100);
+    CHECK(b.y1 <= 600 + 3 && b.y0 >= 600 - 300 - 20);
+    CHECK(b.x0 < 900 - 300 * 0.35f);  // 穂は左へ
+    CHECK(b.x1 < 900 + 300 * 0.2f);  // 右へはあまり出ない
+    CHECK(AllClockwise(s));
+    CHECK(BoundsOf(Susuki(base, 300, 7)).x0 == b.x0);  // 同じ種なら同じ形
+}
