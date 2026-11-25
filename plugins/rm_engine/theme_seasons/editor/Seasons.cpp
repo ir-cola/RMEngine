@@ -26,11 +26,8 @@ Color PetalTone(int i) {                                    // 春: 上に沿っ
 }
 // 夏: 右上の雲 (2026-11-25: 本物らしく)。半透明の白い雲に、上の縁の明るい帯を重ね、下ほど濃くなる
 // 青灰色の影を重ねる (帯が重なるほど明るい / 暗い)。空 (背景の青) の上でも砂 (パネル) の上でも雲に見える。
-Color CloudBody() { return Color::Hex(0xFFFFFF, 0.34f); }
-Color CloudLight() { return Color::Hex(0xFFFFFF, 0.16f); }   // 3 枚重なる
-Color CloudShade() { return Color::Hex(0x7F94AC, 0.075f); }  // 4 枚重なる
 // 夏: 左下の太陽は、ほかの季節のシルエット (theme::OrnamentColor) より濃く (2026-11-25: ユーザーの希望)。
-Color SunShade() { return theme::Accent.Alpha(0.24f); }
+Color SummerShade() { return theme::Accent.Alpha(0.24f); }  // 夏のシルエット: 太陽・砂浜とパラソル・雲 (同じ濃さ)
 Color Leaf(int i) {                                         // 秋: 樹冠、4 色
     constexpr uint32_t k[4] = {0xD8432A, 0xE8832A, 0xE7B43A, 0xB0432A};
     return Color::Hex(k[i & 3], 0.34f);
@@ -64,11 +61,11 @@ void SpringFlurry(Picture& pic, const Rect& w, float scale) {
     pic.push_back({ornament::Petals(area, count, 9.f * std::max(scale, 0.7f), 0x5A6E7Au), season::Petal()});
 }
 
+// 雲: 形は本物らしい積雲 (底が平らで、上がもくもく)。色はほかの夏のシルエットと同じ 1 色
+// (2026-11-25: ユーザーの希望。白と影の帯で色をリアルにしたものはやめた)。
 void SummerCloud(Picture& pic, Vec2 center, float width, uint32_t seed) {
     ornament::CloudShapes cloud = ornament::Cumulus(center, width, seed);
-    pic.push_back({std::move(cloud.body), season::CloudBody()});
-    for (ui::Path& band : cloud.light) pic.push_back({std::move(band), season::CloudLight()});
-    for (ui::Path& band : cloud.shade) pic.push_back({std::move(band), season::CloudShade()});
+    pic.push_back({std::move(cloud.body), season::SummerShade()});
 }
 
 void SummerClouds(Picture& pic, const Rect& w, float scale) {
@@ -121,8 +118,8 @@ Picture Make(Kind kind, const Rect& w, bool floating) {
             {
                 // 左下に太陽、右下に影 (春の木のような、パラソルと砂のお城のある砂の小山)、右上に雲。
                 const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
-                pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h), theme::OrnamentColor()});
-                Silhouette(pic, w, ornament::Sun({0, 0}, 1.f, 10.f), season::SunShade());
+                pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h), season::SummerShade()});  // (太陽と同じ濃さ)
+                Silhouette(pic, w, ornament::Sun({0, 0}, 1.f, 10.f), season::SummerShade());
                 SummerClouds(pic, w, 1.f);
             }
             break;
