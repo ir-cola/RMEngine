@@ -29,14 +29,16 @@ Color PetalEdge() { return Color::Hex(0xD98AA3, 0.38f); }  // その縁 (右下�
 // 夏: 右上の雲 (2026-11-25: 本物らしく)。半透明の白い雲に、上の縁の明るい帯を重ね、下ほど濃くなる
 // 青灰色の影を重ねる (帯が重なるほど明るい / 暗い)。空 (背景の青) の上でも砂 (パネル) の上でも雲に見える。
 // 夏: 左下の太陽は、ほかの季節のシルエット (theme::OrnamentColor) より濃く (2026-11-25: ユーザーの希望)。
-// 夏: パネルの砂のざらざら (Painter::FillGrain)。砂色の上に、明るい粒と暗い粒と少し大きな粒。
+// 夏: パネルの砂のざらざら (Painter::FillGrain)。明るい砂色の上に、白っぽい粒と少し濃い砂色の粒
+// (2026-11-25 の 2 回目: 茶色の粒と大きな粒が汚れて見えたので、Minecraft の砂ブロックのような明るく
+// 淡い黄色の、差の小さい粒に。大きな粒は無し)。
 ui::GrainLook Sand() {
     ui::GrainLook g;
-    g.light = Color::Hex(0xFFFDF6, 0.55f);
-    g.dark = Color::Hex(0x9C7F4E, 0.26f);
-    g.lightShare = 0.10f;
-    g.darkShare = 0.10f;
-    g.clumps = 0.025f;
+    g.light = Color::Hex(0xFFFDF0, 0.60f);
+    g.dark = Color::Hex(0xD9C58C, 0.42f);
+    g.lightShare = 0.14f;
+    g.darkShare = 0.14f;
+    g.clumps = 0.f;
     g.seed = 0x5A9Du;
     return g;
 }

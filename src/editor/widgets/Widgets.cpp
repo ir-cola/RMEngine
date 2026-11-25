@@ -106,10 +106,11 @@ void DrawBackdropOn(ui::Context& c, const Rect& r, float corner, bool panelThing
     const OrnamentInfo* o = theme::CurrentOrnament;
     if (!o || r.w <= 0 || r.h <= 0) return;
     const auto it = FloatingWindows().find(&c);
+    // パネルの地 (夏の砂の粒) が先、ウィンドウの絵 (シルエット) がその上 (2026-11-25: 絵が粒に埋もれない)。
+    if (panelThings && o->panel) o->panel(c, r, corner);
     c.P().PushClip(r);
     o->window(c, c.Viewport(), it != FloatingWindows().end() && it->second);
     c.P().PopClip();
-    if (panelThings && o->panel) o->panel(c, r, corner);
 }
 
 void DrawPanelFrame(ui::Context& c, const Rect& r, ui::Corners k) {
