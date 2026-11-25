@@ -29,6 +29,10 @@
         {
           "ja": "シーンビュー: 小さくしすぎたボタンを少し大きく (左の道具の列は 37、上の帯の部品は高さ 25)",
           "en": "Scene view: the buttons that had become too small are a little bigger again (tool column 37, top bar items 25 high)"
+        },
+        {
+          "ja": "季節のテーマ: サマーの右下の砂浜とパラソル、雲も、左下の太陽と同じ濃さのシルエットの色に (雲は形だけ本物らしく)",
+          "en": "Seasonal themes: in Summer, the beach and parasol at the bottom right and the clouds now use the same silhouette colour as the sun (the clouds keep only their realistic shape)"
         }
       ]
     },
