@@ -1,5 +1,7 @@
 #include "ui/Painter.h"
 
+#include <cstring>
+
 #include <d2d1effects.h>
 
 #include <cmath>
@@ -29,6 +31,7 @@ void Painter::Init(IDWriteFactory* dwrite, std::wstring fontFamily) {
 void Painter::DeviceChanged() {
     brush_.Reset();
     gradients_.clear();
+    grains_.clear();
     brushOwner_ = nullptr;
     tint_.Reset();
     tintOwner_ = nullptr;
@@ -40,6 +43,7 @@ void Painter::Begin(ID2D1DeviceContext* dc) {
     if (brushOwner_ != dc) {
         brush_.Reset();
         gradients_.clear();  // ブラシはデバイスコンテキストに属する
+        grains_.clear();
         dc_->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &brush_);
         brushOwner_ = dc;
     }
@@ -172,6 +176,41 @@ void Painter::StrokeRoundRectGradient(const Rect& r, Corners radii, Color top, C
     auto path = RoundRectPath(in, {shrink(radii.tl), shrink(radii.tr), shrink(radii.br), shrink(radii.bl)});
     ID2D1Brush* b = Gradient(top, bottom, r.y, r.Bottom());
     if (path && b) dc_->DrawGeometry(path.Get(), b, width);
+}
+
+void Painter::FillGrain(const Rect& r, float radius, const GrainLook& look) {
+    if (r.w <= 0 || r.h <= 0) return;
+    // 見た目の指紋 (色・割合・種)。
+    uint64_t key = 1469598103934665603ull;
+    auto mix = [&](float v) {
+        uint32_t bits;
+        std::memcpy(&bits, &v, sizeof bits);
+        key = (key ^ bits) * 1099511628211ull;
+    };
+    for (const Color& c : {look.light, look.dark}) mix(c.r), mix(c.g), mix(c.b), mix(c.a);
+    mix(look.lightShare), mix(look.darkShare), mix(look.clumps), mix(static_cast<float>(look.seed));
+    auto it = grains_.find(key);
+    if (it == grains_.end()) {
+        if (grains_.size() > 16) grains_.clear();  // 際限なく増えない
+        constexpr int kTile = 128;  // DIP (96 DPI の絵として作る: 1 ピクセル = 1 DIP)
+        const std::vector<uint32_t> pixels = GrainPixels(kTile, look);
+        ComPtr<ID2D1Bitmap> bmp;
+        ComPtr<ID2D1BitmapBrush> brush;
+        const D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+        if (FAILED(dc_->CreateBitmap(D2D1::SizeU(kTile, kTile), pixels.data(), kTile * 4, props, &bmp)) ||
+            FAILED(dc_->CreateBitmapBrush(bmp.Get(), D2D1::BitmapBrushProperties(D2D1_EXTEND_MODE_WRAP, D2D1_EXTEND_MODE_WRAP), &brush))) {
+            grains_[key] = nullptr;  // (作れない: 何度も試さない)
+            return;
+        }
+        it = grains_.emplace(key, brush).first;
+    }
+    if (!it->second) return;
+    const D2D1_RECT_F rect = D2D1::RectF(r.x, r.y, r.x + r.w, r.y + r.h);
+    if (radius > 0) {
+        dc_->FillRoundedRectangle(D2D1::RoundedRect(rect, radius, radius), it->second.Get());
+    } else {
+        dc_->FillRectangle(rect, it->second.Get());
+    }
 }
 
 void Painter::FillPath(const Path& path, Color c) {

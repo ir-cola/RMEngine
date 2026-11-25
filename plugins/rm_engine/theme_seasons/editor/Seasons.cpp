@@ -20,13 +20,26 @@ using ui::Rect;
 // 影はテーマのアクセント色 (theme::OrnamentColor) を使う。
 namespace season {
 Color Petal() { return Color::Hex(0xEE8FAE, 0.42f); }       // 春: 吹雪 (パネルのウィンドウ)
-Color PetalTone(int i) {                                    // 春: 上に沿って散る花びら、4 色 (少しずつ違う桜色)
-    constexpr uint32_t k[4] = {0xEE8FAE, 0xF5ABC3, 0xE57399, 0xF8C6D6};
-    return Color::Hex(k[i & 3], 0.42f);
+Color PetalTone(int i) {                                    // 春: 上に沿って散る花びら、4 色 (ソメイヨシノの色:
+    // ほとんど白に近い淡い桃色から、少し濃い桃色まで。2026-11-25: 前は濃いピンクで本物らしくなかった)
+    constexpr uint32_t k[4] = {0xFBE3EA, 0xF7D0DB, 0xF2BCCB, 0xFDEFF3};
+    return Color::Hex(k[i & 3], 0.92f);
 }
+Color PetalEdge() { return Color::Hex(0xD98AA3, 0.38f); }  // その縁 (右下に少しずらした影: 淡い背景でも見える)
 // 夏: 右上の雲 (2026-11-25: 本物らしく)。半透明の白い雲に、上の縁の明るい帯を重ね、下ほど濃くなる
 // 青灰色の影を重ねる (帯が重なるほど明るい / 暗い)。空 (背景の青) の上でも砂 (パネル) の上でも雲に見える。
 // 夏: 左下の太陽は、ほかの季節のシルエット (theme::OrnamentColor) より濃く (2026-11-25: ユーザーの希望)。
+// 夏: パネルの砂のざらざら (Painter::FillGrain)。砂色の上に、明るい粒と暗い粒と少し大きな粒。
+ui::GrainLook Sand() {
+    ui::GrainLook g;
+    g.light = Color::Hex(0xFFFDF6, 0.55f);
+    g.dark = Color::Hex(0x9C7F4E, 0.26f);
+    g.lightShare = 0.10f;
+    g.darkShare = 0.10f;
+    g.clumps = 0.025f;
+    g.seed = 0x5A9Du;
+    return g;
+}
 Color SummerShade() { return theme::Accent.Alpha(0.24f); }  // 夏のシルエット: 太陽・砂浜とパラソル・雲 (同じ濃さ)
 Color Leaf(int i) {                                         // 秋: 樹冠、4 色
     constexpr uint32_t k[4] = {0xD8432A, 0xE8832A, 0xE7B43A, 0xB0432A};
@@ -105,7 +118,12 @@ Picture Make(Kind kind, const Rect& w, bool floating) {
             {
                 // 秋の葉と同じように、少しずつ違う桜色の花びらが上に沿って濃く、下へ散らばる。左下に桜の花。
                 // (2026-11-24: 右の桜の木はユーザーの希望で外した)
-                auto petals = ornament::PetalCanopy(w, std::clamp(w.h * 0.32f, 120.f, 300.f), 1.f / 4.f, 0x5A4Bu);
+                // ウィンドウの下の方まで散り、下ほどまばら (2026-11-25: 前は上の 3 割ほどまで)。縁 (少しずらした
+                // 同じ花びら) を先に描く。
+                const float depth = std::max(200.f, w.h * 0.85f);
+                auto edges = ornament::PetalCanopy({w.x + 0.8f, w.y + 1.f, w.w, w.h}, depth, 0.3f, 0x5A4Bu);
+                auto petals = ornament::PetalCanopy(w, depth, 0.3f, 0x5A4Bu);
+                for (int i = 0; i < 4; ++i) pic.push_back({std::move(edges[static_cast<size_t>(i)]), season::PetalEdge()});
                 for (int i = 0; i < 4; ++i) pic.push_back({std::move(petals[static_cast<size_t>(i)]), season::PetalTone(i)});
                 Silhouette(pic, w, ornament::Sakura({0, 0}, 1.f, 10.f));
             }
@@ -127,7 +145,8 @@ Picture Make(Kind kind, const Rect& w, bool floating) {
             if (floating) break;
             {
                 // 赤 / オレンジ / 黄色の葉が上に沿って濃く、下へ散らばる。左下にもみじの葉。
-                auto canopy = ornament::Canopy(w, std::clamp(w.h * 0.32f, 120.f, 300.f), 1.f / 4.f, 0xF411u);
+                // 春の花びらと同じく、ウィンドウの下の方まで散り、下ほどまばら (2026-11-25)。
+                auto canopy = ornament::Canopy(w, std::max(200.f, w.h * 0.85f), 0.3f, 0xF411u);
                 for (int i = 0; i < 4; ++i) pic.push_back({std::move(canopy[static_cast<size_t>(i)]), season::Leaf(i)});
                 Silhouette(pic, w, ornament::MapleLeaf({0, 0}, 1.f, 10.f));
             }
@@ -171,7 +190,10 @@ void DrawWindow(ui::Context& c, const Rect& window, bool floating) {
 }
 
 constexpr editor::w::OrnamentInfo kSpring{"spring", &DrawWindow<Kind::Spring>, nullptr};
-constexpr editor::w::OrnamentInfo kSummer{"summer", &DrawWindow<Kind::Summer>, nullptr};
+// 夏: パネルの面に砂のざらざら (中身の文字より奥に)。
+void SummerPanel(ui::Context& c, const Rect& r, float corner) { c.P().FillGrain(r, corner, season::Sand()); }
+
+constexpr editor::w::OrnamentInfo kSummer{"summer", &DrawWindow<Kind::Summer>, &SummerPanel};
 constexpr editor::w::OrnamentInfo kFall{"fall", &DrawWindow<Kind::Fall>, nullptr};
 constexpr editor::w::OrnamentInfo kWinter{"winter", &DrawWindow<Kind::Winter>, nullptr};
 
