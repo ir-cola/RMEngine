@@ -3,29 +3,9 @@
   "format": 1,
   "updates": [
     {
-      "version": "0.0.11",
+      "version": "0.0.12",
       "date": "2026-11-25",
       "items": [
-        {
-          "ja": "アセットのパネル: 左にフォルダの木、右に今のフォルダの中身をタイルで並べる (「戻る」・パンくずリスト・検索・ドラッグで移動)",
-          "en": "Assets panel: a folder tree on the left and the current folder's contents as tiles on the right (Back, breadcrumbs, search, drag to move)"
-        },
-        {
-          "ja": "3D のマテリアル (.rmmat): アセットのパネルの右クリック「作成 ▸ マテリアル」で作り、インスペクターで色・絵・金属・ラフネス・法線・発光・透明・絵の繰り返しを編集して、メッシュの「マテリアル」の欄に入れると箱・球などの形やモデルの見た目が変わる (書き出したゲームも同じ見た目)",
-          "en": "3D materials (.rmmat): make one with right-click \"Create ▸ Material\" in the Assets panel, edit color, pictures, metallic, roughness, normal, emission, transparency and tiling in the Inspector, and put it in a Mesh's \"Material\" slots to change the look of shapes and models (exported games look the same)"
-        },
-        {
-          "ja": "シーンビューのボタンを小さくし、3D / 2D・ローカル / ワールド・中心・影・空・デバッグ・形を上の帯にまとめた。2D は同じ 3D のシーンを正面から平行投影で見る (ゲームの空間の切り替えは ゲームの設定 ▸ ゲーム設定 へ)",
-          "en": "Scene view buttons are smaller, and 3D / 2D, Local / World, Center, Shadows, Sky, Debug and Shapes now share one bar at the top. 2D shows the same 3D scene from the front in parallel projection (switching the game's space moved to Game Settings ▸ Game)"
-        },
-        {
-          "ja": "コンソール: 上の帯に 情報・警告・エラー の数と表示の切り替え、クリア、自動スクロール、検索を足した",
-          "en": "Console: a toolbar with Info / Warnings / Error counts and filters, Clear, Auto-scroll and Search"
-        },
-        {
-          "ja": "季節のテーマ: ウィンターの積もる雪がウィンドウの左右の端まで届き、大きさを変えても形が変わらない。サマーは砂らしい色のパネル・淡い空と海の青・濃い太陽・本物らしい雲 (底が平らで上が明るく下が影)",
-          "en": "Seasonal themes: Winter's snow bank now reaches both window edges and keeps its shape when the window is resized. Summer gets sandy beige panels, paler sky and sea blues, a stronger sun, and more realistic clouds (flat bases, bright tops, shaded undersides)"
-        },
         {
           "ja": "シーンビュー: 小さくしすぎたボタンを少し大きく (左の道具の列は 37、上の帯の部品は高さ 25)",
           "en": "Scene view: the buttons that had become too small are a little bigger again (tool column 37, top bar items 25 high)"
@@ -49,6 +29,36 @@
         {
           "ja": "コンソール: 警告とエラーの行と数に印。時刻を「時:分:秒.ミリ秒」(PC の時計) で表示。行をクリック・Ctrl・Shift・ドラッグ・Ctrl+A で選び、Ctrl+C や右クリックのメニューでコピーできるように",
           "en": "Console: warning and error marks on lines and counts. Times shown as hours:minutes:seconds.milliseconds (PC clock). Select lines with click, Ctrl, Shift, drag or Ctrl+A, and copy them with Ctrl+C or the right-click menu"
+        },
+        {
+          "ja": "シーンのパネルとヒエラルキーの一番上のシーンの行を右クリックして、シーンを「複製」(「名前 2」…) と「削除」(確かめてからごみ箱へ) ができるように",
+          "en": "Right-click a scene in the Scenes panel or the scene row at the top of the Hierarchy to Duplicate it (\"Name 2\"…) or Delete it (moved to the Recycle Bin after a confirmation)"
+        }
+      ]
+    },
+    {
+      "version": "0.0.11",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "ja": "アセットのパネル: 左にフォルダの木、右に今のフォルダの中身をタイルで並べる (「戻る」・パンくずリスト・検索・ドラッグで移動)",
+          "en": "Assets panel: a folder tree on the left and the current folder's contents as tiles on the right (Back, breadcrumbs, search, drag to move)"
+        },
+        {
+          "ja": "3D のマテリアル (.rmmat): アセットのパネルの右クリック「作成 ▸ マテリアル」で作り、インスペクターで色・絵・金属・ラフネス・法線・発光・透明・絵の繰り返しを編集して、メッシュの「マテリアル」の欄に入れると箱・球などの形やモデルの見た目が変わる (書き出したゲームも同じ見た目)",
+          "en": "3D materials (.rmmat): make one with right-click \"Create ▸ Material\" in the Assets panel, edit color, pictures, metallic, roughness, normal, emission, transparency and tiling in the Inspector, and put it in a Mesh's \"Material\" slots to change the look of shapes and models (exported games look the same)"
+        },
+        {
+          "ja": "シーンビューのボタンを小さくし、3D / 2D・ローカル / ワールド・中心・影・空・デバッグ・形を上の帯にまとめた。2D は同じ 3D のシーンを正面から平行投影で見る (ゲームの空間の切り替えは ゲームの設定 ▸ ゲーム設定 へ)",
+          "en": "Scene view buttons are smaller, and 3D / 2D, Local / World, Center, Shadows, Sky, Debug and Shapes now share one bar at the top. 2D shows the same 3D scene from the front in parallel projection (switching the game's space moved to Game Settings ▸ Game)"
+        },
+        {
+          "ja": "コンソール: 上の帯に 情報・警告・エラー の数と表示の切り替え、クリア、自動スクロール、検索を足した",
+          "en": "Console: a toolbar with Info / Warnings / Error counts and filters, Clear, Auto-scroll and Search"
+        },
+        {
+          "ja": "季節のテーマ: ウィンターの積もる雪がウィンドウの左右の端まで届き、大きさを変えても形が変わらない。サマーは砂らしい色のパネル・淡い空と海の青・濃い太陽・本物らしい雲 (底が平らで上が明るく下が影)",
+          "en": "Seasonal themes: Winter's snow bank now reaches both window edges and keeps its shape when the window is resized. Summer gets sandy beige panels, paler sky and sea blues, a stronger sun, and more realistic clouds (flat bases, bright tops, shaded undersides)"
         }
       ]
     },

@@ -120,6 +120,86 @@ RM_TEST(SceneFile_NewPath) {
     CHECK(NewScenePath("Main", isTaken) == "Assets/Scenes/Main 3.rmscene");
 }
 
+// シーンの右クリックの「複製」: 元と同じフォルダーに "<名前> 2" ...。数で終わる名前はその次から。
+RM_TEST(SceneFile_CopyPath) {
+    CHECK((SplitSceneNumber("Stage 2") == std::pair<std::string, int>{"Stage", 2}));
+    CHECK((SplitSceneNumber("Stage") == std::pair<std::string, int>{"Stage", 0}));
+    CHECK((SplitSceneNumber("Stage2") == std::pair<std::string, int>{"Stage2", 0}));
+    CHECK((SplitSceneNumber("2") == std::pair<std::string, int>{"2", 0}));
+    CHECK((SplitSceneNumber(" 2") == std::pair<std::string, int>{" 2", 0}));
+    CHECK((SplitSceneNumber("Stage 0") == std::pair<std::string, int>{"Stage 0", 0}));
+    CHECK((SplitSceneNumber("Big 12345678901") == std::pair<std::string, int>{"Big 12345678901", 0}));  // (溢れない)
+    CHECK((SplitSceneNumber("ステージ 3") == std::pair<std::string, int>{"ステージ", 3}));
+
+    std::set<std::string> taken;
+    auto isTaken = [&](const std::string& p) { return taken.contains(p); };
+    taken = {"Assets/Scenes/Stage.rmscene"};
+    CHECK(CopyScenePath("Assets/Scenes/Stage.rmscene", isTaken) == "Assets/Scenes/Stage 2.rmscene");
+    taken = {"Assets/Scenes/Stage.rmscene", "Assets/Scenes/Stage 2.rmscene", "Assets/Scenes/Stage 3.rmscene"};
+    CHECK(CopyScenePath("Assets/Scenes/Stage.rmscene", isTaken) == "Assets/Scenes/Stage 4.rmscene");
+    CHECK(CopyScenePath("Assets/Scenes/Stage 2.rmscene", isTaken) == "Assets/Scenes/Stage 4.rmscene");
+    taken = {"Assets/Levels/Level 10.rmscene"};
+    CHECK(CopyScenePath("Assets/Levels/Level 10.rmscene", isTaken) == "Assets/Levels/Level 11.rmscene");  // (元と同じフォルダー)
+    taken.clear();
+    CHECK(CopyScenePath("Top.rmscene", isTaken) == "Top 2.rmscene");
+}
+
+// 複製は一覧で元のすぐ後ろに。一覧に無いシーンの複製は一覧に入れない (開いているシーンは別: 最後に)。
+RM_TEST(SceneFile_ListWithCopy) {
+    const AssetRef a{"a"}, b{"b"}, c{"c"}, x{"x"}, copy{"copy"};
+    SceneList list;
+    list.scenes = {a, b, c};
+    list.first = b;
+    CHECK((SceneListWithCopy(list, a, copy, a).scenes == std::vector<AssetRef>{a, copy, b, c}));
+    CHECK((SceneListWithCopy(list, c, copy, a).scenes == std::vector<AssetRef>{a, b, c, copy}));
+    CHECK(SceneListWithCopy(list, b, copy, a).first == b);  // (初期シーンは変わらない)
+    CHECK((SceneListWithCopy(list, x, copy, a).scenes == list.scenes));  // (一覧に無い Assets のシーン)
+    CHECK((SceneListWithCopy(list, x, copy, x).scenes == std::vector<AssetRef>{a, b, c, copy}));  // (開いているが一覧に無い)
+    CHECK((SceneListWithCopy(list, AssetRef{}, copy, AssetRef{}).scenes == std::vector<AssetRef>{a, b, c, copy}));  // (保存していない新しいシーン)
+    CHECK((SceneListWithCopy(list, a, AssetRef{}, a).scenes == list.scenes));  // (複製に id が無い)
+    list.scenes = {a, copy};
+    CHECK((SceneListWithCopy(list, a, copy, a).scenes == list.scenes));  // (2 度は入れない)
+}
+
+// 削除: 一覧・ビルドの外し・初期シーン・見せるシーンから除く。開いていたなら、次に開くものを選ぶ。
+RM_TEST(SceneFile_DeleteFromList) {
+    const AssetRef a{"a"}, b{"b"}, c{"c"}, d{"d"}, x{"x"}, y{"y"};
+    SceneList list;
+    list.scenes = {a, b, c, d};
+    list.notBuilt = {c};
+    list.first = c;
+    list.open = c;
+    const SceneList without = SceneListWithout(list, c);
+    CHECK((without.scenes == std::vector<AssetRef>{a, b, d}));
+    CHECK(without.notBuilt.empty() && without.first.Empty() && without.open.Empty());
+    CHECK(FirstScene(without) == a);  // (一覧の最初がゲームの始まるシーンになる)
+    const SceneList other = SceneListWithout(list, a);
+    CHECK(other.first == c && other.open == c && other.notBuilt.size() == 1);
+    CHECK((SceneListWithout(list, AssetRef{}).scenes == list.scenes));
+
+    auto all = [](const AssetRef&) { return true; };
+    const std::vector<AssetRef> unlisted{x, y};
+    // ゲームが始まるシーンが先
+    list.first = a;
+    CHECK(SceneAfterDelete(list, c, unlisted, all) == a);
+    // 消すのがゲームの始まるシーン: 一覧で次のもの、無ければ前のもの (近い順)
+    list.first = c;
+    CHECK(SceneAfterDelete(list, c, unlisted, all) == d);
+    CHECK(SceneAfterDelete(list, c, unlisted, [&](const AssetRef& r) { return r != d; }) == b);
+    list.first = d;
+    CHECK(SceneAfterDelete(list, d, unlisted, all) == c);
+    // ファイルの無いもの (一覧に残った消えたシーン) は飛ばし、一覧に無い Assets のシーンへ
+    list.scenes = {a, b};
+    list.first = {};
+    CHECK(SceneAfterDelete(list, a, unlisted, [&](const AssetRef& r) { return r != b; }) == x);
+    // 一覧に無いシーンを消す: 一覧のもの
+    CHECK(SceneAfterDelete(list, x, unlisted, all) == a);
+    // ほかにシーンが無い: 空 (消させない)
+    list.scenes = {a};
+    CHECK(SceneAfterDelete(list, a, {}, all).Empty());
+    CHECK(SceneAfterDelete(list, a, {a}, all).Empty());
+}
+
 RM_TEST(SceneFile_OnlyChangedScenesAreWritten) {
     Scene scene = MakeScene();
     Disk disk;
