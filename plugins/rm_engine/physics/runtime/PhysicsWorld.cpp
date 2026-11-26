@@ -45,6 +45,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include <format>
 #include <limits>
@@ -77,6 +79,19 @@ Jolt& JoltOnce() {
     static std::once_flag once;
     std::call_once(once, [] {
         JPH::RegisterDefaultAllocator();
+        // Jolt の文 (と Debug での Jolt の確認の失敗) をログへ。前は何も書かずにブレークで止まっていた。
+        JPH::Trace = [](const char* fmt, ...) {
+            char text[512];
+            va_list args;
+            va_start(args, fmt);
+            std::vsnprintf(text, sizeof text, fmt, args);
+            va_end(args);
+            log::Info("物理 (Jolt): {}", text);
+        };
+        JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = [](const char* expression, const char* message, const char* file, JPH::uint line) {
+            log::Error("物理 (Jolt) の確認に失敗しました: {} {} ({}:{})", expression, message ? message : "", file, line);
+            return true;  // (デバッガーで止める)
+        };)
         JPH::Factory::sInstance = new JPH::Factory();
         JPH::RegisterTypes();
         if (!JPH::VerifyJoltVersionID()) log::Error("物理: Jolt Physics のライブラリとヘッダーの設定が合っていません (RM.Common.props の JPH_*)");
@@ -471,7 +486,10 @@ struct PhysicsWorld::Impl {
             if (type == JPH::EMotionType::Dynamic) {
                 s.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
                 s.mMassPropertiesOverride.mMass = std::max(rb->mass, 0.001f);
-                s.mMotionQuality = JPH::EMotionQuality::LinearCast;  // 速いもの (弾) は壁を抜けない
+                // 速いもの (弾) は壁を抜けない (LinearCast)。ただし形の内側の半径が 0 の物 (円錐: 先の半径が 0、
+                // 凸包にしないメッシュ、つぶれた凸包) は Jolt がこれを扱えない (Debug では Jolt の確認で止まっていた:
+                // 2026-11-26) ので、ふつうの動き (Discrete) にする。
+                s.mMotionQuality = shape->GetInnerRadius() > 0.f ? JPH::EMotionQuality::LinearCast : JPH::EMotionQuality::Discrete;
             }
             if (type == JPH::EMotionType::Dynamic) s.mAllowedDOFs = dofs;
             const JPH::BodyID body = bi.CreateAndAddBody(s, type == JPH::EMotionType::Static ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
