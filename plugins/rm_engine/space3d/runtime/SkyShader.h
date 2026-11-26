@@ -33,7 +33,8 @@ struct SkyConstants {
 static_assert(sizeof(SkyConstants) % 16 == 0);
 inline constexpr size_t kSkyParams = 8;
 inline constexpr size_t kSkyTextures = 6;  // sky0 .. sky5 (t0 .. t5)
-// 雲の地図 (skyClouds: t6。SkyDraw::clouds。1 枚の R32G32_FLOAT、なめらか、端で止まる)。
+// 雲の地図 (skyClouds: t6。SkyDraw::clouds。1 枚の R32G32_FLOAT、なめらか、端で止まる)。t6 はモデルの
+// things と同じ番号: レンダラーは空を描いたあとに things を結び直す (tests/TestSkyClouds.cpp の Sky_MeshInFrontOfSky)。
 inline constexpr unsigned kSkyCloudSlot = 6;
 
 // 地球の空の、場所ごとの雲 (docs/CLIMATE.md の「雲の地図」→「空の絵」): 見ている向きが、

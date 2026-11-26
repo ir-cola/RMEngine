@@ -1460,6 +1460,9 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             ctx->PSSetShader(f.sky->program->ps.Get(), nullptr, 0);
             ctx->Draw(3, 0);
             ctx->PSSetShaderResources(0, static_cast<UINT>(kSkyTextures) + 1, noSrvs);  // (と雲の地図)
+            // 雲の地図は t6 (モデルの things と同じ番号): 外したので、モデルのものを結び直す
+            // (しないと、空がある絵ではモデルが things を読めず、1 つも出ない)。
+            ctx->PSSetShaderResources(6, 1, &thingsView);
         }
     }
     ctx->OMSetDepthStencilState(s.depth.Get(), 0);

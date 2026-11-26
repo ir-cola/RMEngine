@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.23",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "空 (地球の空・宇宙など) があるシーンで、メッシュが 1 つも描かれなくなっていたのを直しました (版 0.0.16 から)",
+          "en": "Fixed meshes not being drawn at all in scenes with a sky (Earth sky, Space, ...) (since version 0.0.16)"
+        }
+      ]
+    },
+    {
       "version": "0.0.22",
       "date": "2026-11-26",
       "items": [
