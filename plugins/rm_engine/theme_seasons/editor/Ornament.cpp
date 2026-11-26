@@ -1095,22 +1095,48 @@ ui::Path WaterYoyo(Vec2 center, float radius) {
 }
 
 
-ui::Path Chochin(Vec2 center, float radius) {
-    // 提灯 (2026-11-26 の 3 回目: 夏の夜の左下。ユーザーが選んだ)。つるす紐と手、上と下の枠、丸い紙の胴。
-    // 胴の竹の骨は細い穴 (横の帯) で見せる: 1 色の影でも提灯と分かる。
-    ui::Path p;
+ChochinShapes Chochin(Vec2 center, float radius) {
+    // 提灯 (2026-11-26 の 3 回目: 夏の夜の左下。ユーザーがくれた絵の形): 上に細い針金の持ち手 (縦長のアーチ)、
+    // 少し反った幅の広い上の帯、まるい胴、細い下の帯。胴の真ん中の白い面 (`panel`) は別の形で、少し明るく塗る。
+    // 竹の骨は胴と白い面の両方に、細い穴の線として通す。
+    ChochinShapes k;
     const Place at{center, radius, 0.f};
-    AddBar(p, at(0, -1.f), at(0, -0.86f), 0.04f * radius, 0.04f * radius);                       // 紐
-    AddShape(p, at, {{-0.12f, -0.9f}, {0.12f, -0.9f}, {0.12f, -0.84f}, {-0.12f, -0.84f}});         // 手
-    AddShape(p, at, {{-0.3f, -0.84f}, {0.3f, -0.84f}, {0.3f, -0.7f}, {-0.3f, -0.7f}});            // 上の枠
-    AddEllipse(p, at(0, 0), 0.56f * radius, 0.72f * radius, 0);                                    // 胴
-    AddShape(p, at, {{-0.3f, 0.7f}, {0.3f, 0.7f}, {0.3f, 0.84f}, {-0.3f, 0.84f}});                 // 下の枠
-    AddBar(p, at(0, 0.84f), at(0, 1.f), 0.05f * radius, 0.02f * radius);                           // 房
-    for (const float y : {-0.48f, -0.32f, -0.16f, 0.f, 0.16f, 0.32f, 0.48f}) {
-        const float half = 0.56f * std::sqrt(1.f - (y / 0.72f) * (y / 0.72f)) * 0.9f;
-        AddHole(p, at(0, y), half * radius, 0.014f * radius, 0);                                    // 竹の骨
+    {
+        std::vector<Vec2> arch;
+        std::vector<float> widths;
+        for (int i = 0; i <= 32; ++i) {
+            const float t = -0.5f * kPi + kPi * static_cast<float>(i) / 32.f;
+            arch.push_back(at(0.27f * std::sin(t), -0.5f - 0.5f * std::cos(t)));
+            widths.push_back(0.028f * radius);
+        }
+        AddStroke(k.body, arch, widths);
     }
-    return p;
+    AddShape(k.body, at, {{-0.29f, -0.55f}, {0, -0.575f}, {0.29f, -0.55f}, {0.29f, -0.44f}, {0, -0.425f}, {-0.29f, -0.44f}});  // 上の帯
+    AddEllipse(k.body, at(0, 0.05f), 0.56f * radius, 0.52f * radius, 0);                                                 // 胴
+    AddShape(k.body, at, {{-0.22f, 0.53f}, {0, 0.545f}, {0.22f, 0.53f}, {0.22f, 0.65f}, {0, 0.665f}, {-0.22f, 0.65f}});    // 下の帯
+    // 白い面: 上の帯から下の帯まで、真ん中がふくらむ縦長の形。
+    std::vector<Vec2> panel;
+    for (int i = 0; i <= 24; ++i) {
+        const float u = static_cast<float>(i) / 24.f;  // 0 = 上 .. 1 = 下
+        panel.push_back(at(0.13f + 0.15f * std::sin(kPi * u) - 0.04f * u, -0.43f + 0.97f * u));
+    }
+    for (int i = 24; i >= 0; --i) {
+        const float u = static_cast<float>(i) / 24.f;
+        panel.push_back(at(-(0.13f + 0.15f * std::sin(kPi * u) - 0.04f * u), -0.43f + 0.97f * u));
+    }
+    AddPolygon(k.panel, panel);
+    // 竹の骨: 胴の幅いっぱいの細い横線 (白い面の上も同じ所)。
+    for (int i = 0; i < 11; ++i) {
+        const float y = -0.36f + 0.083f * static_cast<float>(i);
+        const float d = (y - 0.05f) / 0.52f;
+        const float half = 0.56f * std::sqrt(std::max(0.f, 1.f - d * d)) * 0.9f;
+        AddHole(k.body, at(0, y), half * radius, 0.009f * radius, 0);
+        // 白い面の骨は、その幅の中だけ (外にはみ出した穴は、塗りの巻き数が -1 になって逆に塗られる)。
+        const float u = (y + 0.43f) / 0.97f;
+        const float panelHalf = (0.13f + 0.15f * std::sin(kPi * u) - 0.04f * u) * 0.92f;
+        AddHole(k.panel, at(0, y), panelHalf * radius, 0.009f * radius, 0);
+    }
+    return k;
 }
 
 }  // namespace rm::theme_seasons::ornament

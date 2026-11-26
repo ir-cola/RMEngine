@@ -34,6 +34,14 @@ Path WavyBottom(const Rect& r, float depth, float phase);
 
 // `box` の中に収まる最大の大きさで中央に置くよう、動かして拡大縮小したパス (縦横同じ倍率)。
 Path FitInto(const Path& path, const Rect& box);
+// その動かし方そのもの: 何枚かの形 (色の違う部分) を、1 枚目に合わせて同じように動かすときに使う。
+struct Fit {
+    float scale = 1;
+    Vec2 from{}, to{};  // from (元の箱の真ん中) が to (`box` の真ん中) に来る
+    Vec2 operator()(Vec2 v) const { return {to.x + (v.x - from.x) * scale, to.y + (v.y - from.y) * scale}; }
+};
+Fit FitOf(const Path& path, const Rect& box);  // (空の形・幅か高さが 0: 動かさない)
+Path Transformed(const Path& path, const Fit& fit);
 
 // 種から作る、何度でも同じになる小さな乱数 (0 .. 1)。毎フレーム同じ絵になる。
 struct Random {

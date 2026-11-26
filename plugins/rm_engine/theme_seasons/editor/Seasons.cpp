@@ -78,6 +78,7 @@ Color MoonHalo() { return Color::Hex(0xFFE9A8, 0.04f); }      // お月見: 月�
 Color Moon() { return Color::Hex(0xFFE7A0, 0.20f); }          // (上に文字が来ても読めるように、ごく薄く: 2026-11-26 の 2 回目)
 Color MoonSpot() { return Color::Hex(0xE2BF72, 0.12f); }
 Color Star() { return Color::Hex(0xFFFFFF, 0.38f); }          // 夜空の星
+Color LanternPanel() { return Color::Hex(0xFFFFFF, 0.10f); }  // 提灯の真ん中の白い面 (胴の影の上に重ねる)
 Color FallNightShade() { return theme::Accent.Alpha(0.17f); }  // お月見のシルエット (ほかの季節より少し明るく)
 Color WinterGreen() { return Color::Hex(0x3DBA74, 0.30f); }   // クリスマスのシルエット (緑で濃いめ)
 Color DoorDark() { return Color::Hex(0x0E1828, 0.85f); }      // かまくらの入り口
@@ -202,9 +203,11 @@ void Fireworks(Picture& pic, const Rect& w, float scale) {
 }
 
 // 夏: 下の端の海 (2 枚の波)。
-void Sea(Picture& pic, const Rect& w, Color far, Color near) {
-    pic.push_back({ui::shape::WavyBottom(w, 46.f, 0.f), far});
-    pic.push_back({ui::shape::WavyBottom(w, 24.f, 2.1f), near});
+// (名前を far / near にしない: Windows のヘッダーがそれを空のマクロにするので、引数の名前が消えて既定の色 = 黒で
+// 塗っていた。2026-11-26: 夏の夜の海が真っ黒)
+void Sea(Picture& pic, const Rect& w, Color back, Color front) {
+    pic.push_back({ui::shape::WavyBottom(w, 46.f, 0.f), back});
+    pic.push_back({ui::shape::WavyBottom(w, 24.f, 2.1f), front});
 }
 
 // 夜空の星 (お月見): 上半分に小さな点。
@@ -240,8 +243,8 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
             {
                 // 左下に太陽、右下に影 (春の木のような、パラソルと砂のお城のある砂の小山)、右上に雲。
                 const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
-                pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h), season::SummerShade()});  // (太陽と同じ濃さ)
-                Sea(pic, w, season::DaySeaFar(), season::DaySeaNear());  // (2026-11-26 の 2 回目: 砂浜より手前に海)
+                pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom() - 0.07f * h}, h), season::SummerShade()});  // (太陽と同じ濃さ)
+                Sea(pic, w, season::DaySeaFar(), season::DaySeaNear());  // (2026-11-26 の 2 回目: 砂浜より手前に海。砂浜は少し上げて海の上に出す)
                 Silhouette(pic, w, ornament::Sun({0, 0}, 1.f, 10.f), season::SummerShade());
                 SummerClouds(pic, w, 1.f);
             }
@@ -290,10 +293,16 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
             Fireworks(pic, w, 1.f);
             {
                 const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
-                pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h, false), theme::OrnamentColor()});
+                pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom() - 0.07f * h}, h, false), theme::OrnamentColor()});
             }
             Sea(pic, w, season::SeaFar(), season::SeaNear());
-            Silhouette(pic, w, ornament::Chochin({0, 0}, 1.f));
+            {
+                // 提灯: 胴と、少し明るい真ん中の白い面を、同じ動かし方で左下の箱に収める。
+                ornament::ChochinShapes lantern = ornament::Chochin({0, 0}, 1.f);
+                const ui::shape::Fit fit = ui::shape::FitOf(lantern.body, editor::w::OrnamentCorner(w));
+                pic.push_back({ui::shape::Transformed(lantern.body, fit), theme::OrnamentColor()});
+                pic.push_back({ui::shape::Transformed(lantern.panel, fit), season::LanternPanel()});
+            }
             break;
         case Kind::FallNight:
             Stars(pic, w);

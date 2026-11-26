@@ -31,8 +31,8 @@
           "en": "Fixed piled-up snow getting cut into rectangles around buttons. The Fireworks theme's fireworks are much fainter and Christmas's Santa is smaller"
         },
         {
-          "ja": "花火のテーマの左下の影を提灯に",
-          "en": "The Fireworks theme's corner silhouette is now a paper lantern (chochin)"
+          "ja": "花火のテーマの左下の影を、持ち手の付いたまるい提灯に。夜の海が真っ黒だったのを直し、砂浜を少し高く (サマーも)",
+          "en": "The Fireworks theme's corner silhouette is now a round paper lantern with a handle. Fixed the night sea being pitch black, and raised the beach a little (Summer too)"
         }
       ]
     },

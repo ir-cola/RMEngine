@@ -40,8 +40,9 @@ float Random::Next() {
     return static_cast<float>(state >> 8) / static_cast<float>(1u << 24);
 }
 
-Path FitInto(const Path& path, const Rect& box) {
-    if (path.steps.empty()) return path;
+Fit FitOf(const Path& path, const Rect& box) {
+    Fit f;
+    if (path.steps.empty()) return f;
     float x0 = 1e30f, y0 = 1e30f, x1 = -1e30f, y1 = -1e30f;
     auto grow = [&](Vec2 v) { x0 = std::min(x0, v.x), y0 = std::min(y0, v.y), x1 = std::max(x1, v.x), y1 = std::max(y1, v.y); };
     for (const auto& st : path.steps) {
@@ -49,18 +50,24 @@ Path FitInto(const Path& path, const Rect& box) {
         if (st.op == Path::Op::Cubic) grow(st.b), grow(st.c);
     }
     const float w = x1 - x0, h = y1 - y0;
-    if (w <= 0 || h <= 0) return path;
-    const float s = std::min(box.w / w, box.h / h);
-    const Vec2 from{(x0 + x1) * 0.5f, (y0 + y1) * 0.5f}, to{box.x + box.w * 0.5f, box.y + box.h * 0.5f};
-    auto move = [&](Vec2 v) { return Vec2{to.x + (v.x - from.x) * s, to.y + (v.y - from.y) * s}; };
+    if (w <= 0 || h <= 0) return f;
+    f.scale = std::min(box.w / w, box.h / h);
+    f.from = {(x0 + x1) * 0.5f, (y0 + y1) * 0.5f};
+    f.to = {box.x + box.w * 0.5f, box.y + box.h * 0.5f};
+    return f;
+}
+
+Path Transformed(const Path& path, const Fit& fit) {
     Path out = path;
     for (auto& st : out.steps) {
-        st.a = move(st.a);
-        st.b = move(st.b);
-        st.c = move(st.c);
+        st.a = fit(st.a);
+        st.b = fit(st.b);
+        st.c = fit(st.c);
     }
     return out;
 }
+
+Path FitInto(const Path& path, const Rect& box) { return Transformed(path, FitOf(path, box)); }
 
 void AddEllipse(Path& p, Vec2 c, float rx, float ry, float degrees) {
     // 3 次曲線 4 本 (おなじみの 0.5523 のハンドル)。画面上で時計回り: 右、下、左、上。

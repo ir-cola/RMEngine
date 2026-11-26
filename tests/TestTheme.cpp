@@ -556,6 +556,20 @@ bool InsideAndClockwise(const rm::ui::Path& p, float x0, float y0, float x1, flo
 }  // namespace
 
 // 核の部品 (ui/Shape.h): 星・散らした粒・下の波。
+// 何枚かの形を 1 枚目に合わせて同じに動かす (FitOf / Transformed)。FitInto と同じ結果。
+RM_TEST(Shape_FitOfMovesTogether) {
+    using namespace rm::ui::shape;
+    rm::ui::Path big, small;
+    AddCircle(big, {0, 0}, 2);
+    AddCircle(small, {0.5f, 0}, 0.5f);
+    const Fit f = FitOf(big, {100, 100, 40, 40});
+    CHECK(std::fabs(f.scale - 10) < 1e-4f);
+    const Bounds b = BoundsOf(Transformed(small, f));
+    CHECK(std::fabs(b.x0 - 120) < 0.01f && std::fabs(b.x1 - 130) < 0.01f);  // (小さい円も同じ倍率・同じずれ)
+    CHECK(BoundsOf(FitInto(big, {100, 100, 40, 40})).x0 == BoundsOf(Transformed(big, f)).x0);
+    CHECK(FitOf(rm::ui::Path{}, {0, 0, 10, 10}).scale == 1);
+}
+
 RM_TEST(Shape_StarDotsWaves) {
     using namespace rm::ui::shape;
     rm::ui::Path star;
@@ -606,12 +620,16 @@ RM_TEST(Ornament_NightShapes) {
         ++which;
     }
     // 夏の夜の別案: 半径の中。穴 (種・ビー玉・模様) があるので、時計回りでない図形もある。
-    for (const rm::ui::Path& sil : {SenkoHanabi(c, 100), Ramune(c, 100), Watermelon(c, 100), WaterYoyo(c, 100), Chochin(c, 100)}) {
+    for (const rm::ui::Path& sil : {SenkoHanabi(c, 100), Ramune(c, 100), Watermelon(c, 100), WaterYoyo(c, 100), Chochin(c, 100).body}) {
         const Bounds b = BoundsOf(sil);
         CHECK(b.figures >= 2 && b.x0 > 380 && b.x1 < 620 && b.y0 > 380 && b.y1 < 620);
     }
     CHECK(!AllClockwise(Watermelon(c, 100)) && BoundsOf(Watermelon(c, 100)).figures == 1 + 1 + 7);  // 半月・境目の線・種 7 つ
-    CHECK(BoundsOf(Chochin(c, 100)).figures == 6 + 7 && std::fabs(BoundsOf(Chochin(c, 100)).y0 - 400) < 0.5f);  // 紐・手・枠 2 つ・胴・房と骨 7 本
+    // 提灯: 持ち手・帯 2 つ・胴と骨 11 本。白い面は胴の内側で、同じ骨の線。持ち手のてっぺんは半径の所。
+    const ChochinShapes lantern = Chochin(c, 100);
+    const Bounds lb = BoundsOf(lantern.body), lp = BoundsOf(lantern.panel);
+    CHECK(lb.figures == 4 + 11 && lp.figures == 1 + 11 && std::fabs(lb.y0 - 400) < 1.5f);
+    CHECK(lp.x0 > lb.x0 + 20 && lp.x1 < lb.x1 - 20 && lp.y0 > lb.y0 && lp.y1 < lb.y1);
     // 花火 (リアル調): 菊・柳・牡丹。光の筋と先の星は半径の近くまで (柳は大きく垂れる)。
     for (const FireworkKind k : {FireworkKind::Chrysanthemum, FireworkKind::Willow, FireworkKind::Peony}) {
         const FireworkShapes f = FireworkShell(c, 100, k, 3);
@@ -713,6 +731,7 @@ RM_TEST(Gaming_Shapes) {
     CHECK(BoundsOf(Pixels(win, 30, 4, 1)).figures == 30 && AllClockwise(Pixels(win, 30, 4, 1)));
     CHECK(InsideAndClockwise(Controller({500, 500}, 100, 0), 400, 400, 600, 600, 2.f));
 }
+
 
 
 
