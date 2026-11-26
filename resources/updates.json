@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.35",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "探検テーマパック (宇宙・深海・火山) とゲーミングが、本物らしく動く背景に。流れる星雲と輪のある惑星・ゆらめく光の筋と泡・噴煙と流れる溶岩と火の粉・流れるネオンの格子と縞の太陽 (約 30 fps。最小化中やほかのアプリを使っている間は止まります)",
+          "en": "The Exploration Theme Pack (Space, Deep Sea, Volcano) and Gaming now have realistic, moving backgrounds: drifting nebulae and a ringed planet, shimmering light rays and bubbles, volcanic smoke with flowing lava and embers, a scrolling neon grid with a striped sun (about 30 fps; paused while minimized or while you use another app)"
+        },
+        {
+          "ja": "ゲーミングは、ウィンドウの縁と各パネルの縁を虹が流れます",
+          "en": "Gaming: a rainbow flows around the window edges and every panel's border"
+        }
+      ]
+    },
+    {
       "version": "0.0.34",
       "date": "2026-11-26",
       "items": [

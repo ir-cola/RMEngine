@@ -171,10 +171,10 @@
     <ClCompile Include="..\src\editor\widgets\PickTree.cpp" />
     <ClCompile Include="..\src\editor\widgets\IconAtlas.cpp" />
     <ClCompile Include="..\plugins\rm_engine\theme_seasons\editor\Ornament.cpp" />
-    <ClCompile Include="..\plugins\rm_engine\theme_explore\editor\Shapes.cpp">
+    <ClCompile Include="..\plugins\rm_engine\theme_explore\editor\Motion.cpp">
       <ObjectFileName>$(IntDir)theme_explore\</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="..\plugins\rm_engine\theme_gaming\editor\Shapes.cpp">
+    <ClCompile Include="..\plugins\rm_engine\theme_gaming\editor\Motion.cpp">
       <ObjectFileName>$(IntDir)theme_gaming\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />

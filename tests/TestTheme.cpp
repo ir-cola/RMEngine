@@ -1,6 +1,6 @@
 // カラーテーマ (editor/widgets/Theme.h, ThemeFile.h) のテスト: 組み込みの 3 つ、テーマパックの
 // テーマ (plugins/<author>/<name>/themes/ のファイル)、絵の形の部品 (ui/Shape.h)、季節パックの絵の形
-// (plugins/rm_engine/theme_seasons/editor/Ornament.h)、探検パックとゲーミングの絵の形 (各 editor/Shapes.h)。
+// (plugins/rm_engine/theme_seasons/editor/Ornament.h)、探検パックとゲーミングの動く絵の粒の動き (各 editor/Motion.h)。
 
 #include "Test.h"
 #include "ui/Grain.h"
@@ -8,8 +8,8 @@
 
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/ThemeFile.h"
-#include "rm_engine/theme_explore/editor/Shapes.h"
-#include "rm_engine/theme_gaming/editor/Shapes.h"
+#include "rm_engine/theme_explore/editor/Motion.h"
+#include "rm_engine/theme_gaming/editor/Motion.h"
 #include "rm_engine/theme_seasons/editor/Ornament.h"
 
 #include <algorithm>
@@ -675,61 +675,128 @@ RM_TEST(Ornament_NightShapes) {
     }
 }
 
-// 探検パックの形。
-RM_TEST(Explore_Shapes) {
-    using namespace rm::theme_explore::shapes;
-    const rm::Vec2 c{500, 500};
-    CHECK(InsideAndClockwise(Rocket(c, 100, 0), 440, 400, 560, 603, 2.f));
-    CHECK(std::fabs(BoundsOf(Rocket(c, 100, 0)).y0 - 400) < 0.5f);  // 先は半径の所
-    CHECK(InsideAndClockwise(Jellyfish(c, 100, 0), 400, 400, 600, 600, 8.f));
-    CHECK(InsideAndClockwise(Flame(c, 100, 0), 400, 400, 600, 600, 2.f));
-    CHECK(std::fabs(BoundsOf(Flame(c, 100, 0)).y0 - 400) < 1.f);
-    // 惑星: 輪は球の 2.2 倍まで。奥の半分は上、手前の半分は下 (傾けなければ)。
-    const PlanetShapes planet = RingedPlanet(c, 50, 0);
-    const Bounds back = BoundsOf(planet.ringBack), front = BoundsOf(planet.ringFront);
-    CHECK(std::fabs(back.x1 - 610) < 0.5f && std::fabs(back.x0 - 390) < 0.5f && back.y1 <= 500.5f && front.y0 >= 499.5f);
-    CHECK(AllClockwise(planet.ringBack) && AllClockwise(planet.ringFront) && AllClockwise(planet.body));
-    CHECK(InsideAndClockwise(ShootingStar(c, 100, 0), 490, 400, 510, 510));  // 尾は上へ
-    const rm::ui::Rect win{0, 0, 1200, 800};
-    for (const rm::ui::Path& n : Nebula(c, 200, 3)) CHECK(InsideAndClockwise(n, 200, 300, 800, 700));
-    CHECK(BoundsOf(Sparkles(win, 12, 16, 2)).figures == 12);
-    const std::vector<rm::ui::Path> rays = LightRays(win, 4, 1);
-    CHECK(rays.size() == 4);
-    for (const rm::ui::Path& r : rays) CHECK(InsideAndClockwise(r, 0, -3, 1200 + 800 * 0.3f + 200, 800));
-    const BubbleShapes bubbles = Bubbles(win, 20, 18, 4);
-    CHECK(BoundsOf(bubbles.body).figures == 20 && BoundsOf(bubbles.shine).figures == 20 && AllClockwise(bubbles.body));
-    const rm::ui::Path kelp = Kelp({1000, 800}, 300, 6);
-    const Bounds kb = BoundsOf(kelp);
-    CHECK(kb.figures > 0 && AllClockwise(kelp));
-    CHECK(kb.x0 > 850 && kb.x1 < 1150);
-    CHECK(kb.y0 >= 800 - 300 - 10 && kb.y1 <= 806);
-    CHECK(BoundsOf(FishSchool(c, 200, 10, 20, 9)).figures == 20 && AllClockwise(FishSchool(c, 200, 10, 20, 9)));
-    // 火山: 下の端の上に立つ山。火口は山のてっぺんの近く。照りと煙は火口の上。
-    const VolcanoShapes v = Volcano({900, 800}, 300, 2);
-    const Bounds m = BoundsOf(v.mountain);
-    CHECK(m.y1 <= 806.01f && std::fabs(m.y0 - 500) < 0.5f && AllClockwise(v.mountain) && AllClockwise(v.lava));
-    CHECK(std::fabs(v.crater.x - 900) < 0.01f && v.crater.y > 500 && v.crater.y < 530);
-    const Bounds smoke = BoundsOf(Smoke(v.crater, 300, 1));
-    CHECK(smoke.y1 < v.crater.y + 30 && smoke.y0 < v.crater.y - 250 && smoke.x0 < v.crater.x - 100);  // 上って左へ
-    const rm::ui::Path embers = Embers(win, 50, 8, 3);
-    CHECK(BoundsOf(embers).figures == 50 && AllClockwise(embers));
+// 探検パックの動く絵: 共通の部品 (乱数・回り込み・またたき・一生)。
+RM_TEST(Explore_MotionBasics) {
+    using namespace rm::theme_explore::motion;
+    CHECK(Rand(1, 2, 3) == Rand(1, 2, 3) && Rand(1, 2, 3) != Rand(1, 2, 4) && Rand(1, 2, 3) != Rand(2, 2, 3));
+    for (uint32_t i = 0; i < 500; ++i) CHECK(Rand(7, i) >= 0.f && Rand(7, i) < 1.f);
+    CHECK(Wrap(5, 0, 10) == 5 && Wrap(12, 0, 10) == 2 && Wrap(-1, 0, 10) == 9 && Wrap(10, 0, 10) == 0 && Wrap(3, 5, 5) == 5);
+    CHECK(std::fabs(Wrap(-25.5f, -4, 104) - 82.5f) < 1e-3f);
+    // またたき: 1 - depth .. 1 の間。depth 0 なら 1 のまま。大きな時刻でも。
+    float lo = 1, hi = 0;
+    for (int k = 0; k < 2000; ++k) {
+        const double t = k * 0.037 + (k % 2 ? 1.0e6 : 0.0);
+        const float v = Twinkle(t, 1.3f, 2.f, 0.4f);
+        lo = std::min(lo, v), hi = std::max(hi, v);
+        CHECK(Twinkle(t, 0.5f, 3.f, 0.f) == 1.f);
+        const float f = Flicker(t, 0.7f);
+        CHECK(f >= 0.f && f <= 1.f);
+        const float sw = Sway(t, 0.2f, 1.f);
+        CHECK(sw >= -1.001f && sw <= 1.001f);
+    }
+    CHECK(lo >= 0.6f - 1e-4f && hi <= 1.f && hi - lo > 0.2f);  // (ちゃんと揺れる)
+    // 一生: 周期ごとに年齢が 0 .. 1 を回り、回数が増える。ずれは年齢を進める。
+    const Life a = LifeAt(2.5, 1.f, 0.f), b = LifeAt(2.5, 1.f, 0.75f), none = LifeAt(3.0, 0.f, 0.f);
+    CHECK(std::fabs(a.age - 0.5f) < 1e-5f && a.cycle == 2 && std::fabs(b.age - 0.25f) < 1e-5f && b.cycle == 3 && none.age == 0 && none.cycle == 0);
 }
 
-// ゲーミングの形と虹の色。
-RM_TEST(Gaming_Shapes) {
-    using namespace rm::theme_gaming::shapes;
+// 宇宙: 星はウィンドウの中 (少しの余白) で、左へ流れて回り込み、またたく。流れ星はたまに出て、左下へ進む。
+RM_TEST(Explore_SpaceMotion) {
+    using namespace rm::theme_explore::motion;
+    const rm::ui::Rect win{0, 0, 1200, 800};
+    int movedLeft = 0, layers[3] = {};
+    for (uint32_t i = 0; i < 400; ++i) {
+        const Star s = StarAt(win, i, 10.0, 9), later = StarAt(win, i, 10.5, 9);
+        CHECK(s.at.x >= -4 && s.at.x < 1204 && s.at.y >= -4 && s.at.y < 804);
+        CHECK(s.brightness > 0.f && s.brightness <= 1.f && s.radius > 0.f && s.temperature >= 0.f && s.temperature <= 1.f);
+        CHECK(StarAt(win, i, 10.0, 9).at.x == s.at.x);  // (同じ時刻なら同じ場所)
+        if (later.at.x < s.at.x || later.at.x > 1100) ++movedLeft;  // (回り込んだものは右の端へ)
+        ++layers[s.layer];
+    }
+    CHECK(movedLeft == 400);
+    CHECK(layers[0] > layers[1] && layers[1] > layers[2] && layers[2] > 0);  // 遠い星ほど多い
+    CHECK(StarColor(0).b > StarColor(0).r && StarColor(1).r > StarColor(1).b);
+    int visible = 0;
+    for (int k = 0; k < 4000; ++k) {
+        const double t = k * 0.05;
+        const Meteor m = MeteorAt(win, t, 3);
+        if (!m.visible) continue;
+        ++visible;
+        CHECK(m.brightness >= 0.f && m.brightness <= 1.f && m.tail.y <= 0.f && m.tail.x >= 0.f);  // 尾は右上へ (来た方)
+        const Meteor next = MeteorAt(win, t + 0.02, 3);
+        if (next.visible) CHECK(next.head.y > m.head.y && next.head.x < m.head.x);  // 左下へ進む
+    }
+    CHECK(visible > 20 && visible < 4000 / 4);  // ときどき
+}
+
+// 深海: 泡は上り、マリンスノーは沈む。どれも見える強さは 0 .. 1。
+RM_TEST(Explore_DeepSeaMotion) {
+    using namespace rm::theme_explore::motion;
+    const rm::ui::Rect win{0, 0, 1000, 700};
+    int rose = 0, sank = 0;
+    for (uint32_t i = 0; i < 200; ++i) {
+        const Bubble b = BubbleAt(win, i, 20.0, 5), b2 = BubbleAt(win, i, 20.1, 5);
+        CHECK(b.alpha >= 0.f && b.alpha <= 1.f && b.radius > 0.f && b.at.y <= 720.01f && b.at.y >= -20.01f);
+        if (b2.at.y < b.at.y || b2.at.y > 650) ++rose;  // (上の端で消えたものは下から生まれ直す)
+        const Mote s = SnowAt(win, i, 20.0, 5), s2 = SnowAt(win, i, 20.5, 5);
+        CHECK(s.alpha >= 0.f && s.alpha <= 1.f && s.at.x >= -6 && s.at.x < 1006);
+        if (s2.at.y > s.at.y || s2.at.y < 20) ++sank;
+        const Mote g = GlowAt(win, i, 20.0, 5);
+        CHECK(g.alpha >= 0.f && g.alpha <= 1.f && g.at.y > 700 * 0.3f);  // 生き物の光は深い所
+    }
+    CHECK(rose == 200 && sank == 200);
+}
+
+// 火山: 火の粉は上り、冷めていく (熱は一生のうちに下がる)。火口から生まれるものは火口の近くから出る。
+RM_TEST(Explore_VolcanoMotion) {
+    using namespace rm::theme_explore::motion;
+    const rm::ui::Rect win{0, 0, 1000, 700};
+    const rm::Vec2 vent{700, 300};
+    int checked = 0;
+    for (uint32_t i = 0; i < 200; ++i) {
+        const Ember e = EmberAt(win, i, 30.0, 8, vent, 0.5f), e2 = EmberAt(win, i, 30.05, 8, vent, 0.5f);
+        CHECK(e.heat >= 0.f && e.heat <= 1.f && e.alpha >= 0.f && e.alpha <= 1.f && e.radius > 0.f);
+        CHECK(e.velocity.y < 0.f);  // 上へ
+        if (e2.heat <= e.heat + 1e-6f || e2.heat > 0.95f) ++checked;  // (生まれ直したものは熱い)
+    }
+    CHECK(checked == 200);
+    // 全部が火口から: 生まれてすぐ (熱いうち) は火口の近く。
+    for (uint32_t i = 0; i < 100; ++i) {
+        const Ember e = EmberAt(win, i, 12.0, 8, vent, 1.f);
+        if (e.heat > 0.97f) CHECK(std::fabs(e.at.x - vent.x) < 60.f && e.at.y <= vent.y + 0.01f && e.at.y > vent.y - 80.f);
+    }
+    const rm::Color cold = EmberColor(0), hot = EmberColor(1);
+    CHECK(hot.r + hot.g + hot.b > cold.r + cold.g + cold.b && cold.r > cold.b);
+}
+
+// ゲーミング: 虹の色 (一回り)、縁をたどる長さ、縁の虹の流れ、漂う光の粒。
+RM_TEST(Gaming_Motion) {
+    using namespace rm::theme_gaming::motion;
     auto near = [](rm::Color a, rm::Color b) { return std::fabs(a.r - b.r) < 0.01f && std::fabs(a.g - b.g) < 0.01f && std::fabs(a.b - b.b) < 0.01f; };
-    CHECK(near(Spectrum(0), {1, 0, 0, 1}) && near(Spectrum(0.2f), {1, 1, 0, 1}) && near(Spectrum(0.4f), {0, 1, 0, 1}));
-    CHECK(near(Spectrum(0.8f), {0, 0, 1, 1}) && near(Spectrum(1.f), {1, 0, 0, 1}) && near(Spectrum(-0.6f), {0, 1, 0, 1}));
-    CHECK(Spectrum(0.5f, 0.3f).a == 0.3f);
-    const rm::ui::Rect win{0, 0, 1000, 600};
-    const GridShapes g = NeonGrid(win, 400, 25);
-    CHECK(InsideAndClockwise(g.lines, -1500, 399, 2500, 603));  // (縦の線はウィンドウの左右の外まで広がる: 描く側が切る)
-    const Bounds hb = BoundsOf(g.horizonLine);
-    CHECK(hb.figures == 1 && std::fabs(hb.y0 - 399) < 0.01f);
-    CHECK(BoundsOf(NeonGrid(win, 700, 25).lines).figures == 0);  // 地平線が下の端より下: 何も無い
-    CHECK(BoundsOf(Pixels(win, 30, 4, 1)).figures == 30 && AllClockwise(Pixels(win, 30, 4, 1)));
-    CHECK(InsideAndClockwise(Controller({500, 500}, 100, 0), 400, 400, 600, 600, 2.f));
+    CHECK(near(Rainbow(0), {1, 0, 0, 1}) && near(Rainbow(1.f / 6), {1, 1, 0, 1}) && near(Rainbow(2.f / 6), {0, 1, 0, 1}));
+    CHECK(near(Rainbow(3.f / 6), {0, 1, 1, 1}) && near(Rainbow(4.f / 6), {0, 0, 1, 1}) && near(Rainbow(5.f / 6), {1, 0, 1, 1}));
+    CHECK(near(Rainbow(1.f), {1, 0, 0, 1}) && near(Rainbow(-0.5f), {0, 1, 1, 1}) && Rainbow(0.3f, 0.4f).a == 0.4f);
+    const rm::ui::Rect r{10, 20, 100, 50};
+    CHECK(PerimeterAt(r, 0, 0) == 0 && PerimeterAt(r, 1, 0) == 100 && PerimeterAt(r, 2, 0) == 150 && PerimeterAt(r, 3, 0) == 250 && PerimeterAt(r, 3, 50) == 300);
+    auto same = [](float a, float b) {
+        const float d = std::fabs(a - b);
+        return d < 1e-3f || d > 1.f - 1e-3f;
+    };
+    for (int k = 0; k < 50; ++k) {
+        const float s = static_cast<float>(k) * 37.f;
+        const double t = k * 0.71;
+        const float h = EdgeHue(s, t, 900.f, 0.25f);
+        CHECK(h >= 0.f && h < 1.f);
+        CHECK(same(EdgeHue(s + 900.f, t, 900.f, 0.25f), h));        // 一回りで同じ色
+        CHECK(same(EdgeHue(s, t + 4.0, 900.f, 0.25f), h));          // 4 秒で一回り (0.25 回り / 秒)
+        CHECK(same(EdgeHue(s + 225.f, t + 1.0, 900.f, 0.25f), h));  // 1 秒で 225 DIP 時計回りに進む
+    }
+    CHECK(EdgeHue(10.f, 1.0, 0.f, 1.f) == 0.f);
+    const rm::ui::Rect win{0, 0, 800, 600};
+    for (uint32_t i = 0; i < 100; ++i) {
+        const Mote m = MoteAt(win, i, 15.0, 2);
+        CHECK(m.at.x >= -4 && m.at.x < 804 && m.at.y >= -4 && m.at.y < 604 && m.alpha >= 0.f && m.alpha <= 1.f && m.hue >= 0.f && m.hue < 1.f);
+    }
 }
 
 
