@@ -270,8 +270,8 @@ void DebugPanel::Draw(ui::Context& c, const Rect& r, const DebugView& v) {
         gap();
     }
 
-    // --- マウス ---------------------------------------------------------------------------------
-    if (header(0, Tr(L"マウス"))) {
+    // --- マウス (コントローラーのタブ) ---------------------------------------------------------------------------------
+    if (header(1, Tr(L"マウス"))) {
         POINT cursor{};
         GetCursorPos(&cursor);
         row(Tr(L"画面 (ピクセル)"), std::format(L"{}, {}", cursor.x, cursor.y));

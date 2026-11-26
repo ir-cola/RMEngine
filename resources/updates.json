@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.20",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "ゲームデバッグの「マウス」を「基本情報」から「コントローラー」のタブへ移しました (キーボード・コントローラーと並びます)",
+          "en": "Moved \"Mouse\" in Game Debug from the \"Basics\" tab to the \"Controllers\" tab (next to the keyboard and controllers)"
+        }
+      ]
+    },
+    {
       "version": "0.0.19",
       "date": "2026-11-26",
       "items": [
