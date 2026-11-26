@@ -102,6 +102,13 @@ public:
     // 毎フレーム求められている間ずっと。これが無いと、画面は入力があったときだけ描く。
     void RequestAnimation() { animate_ = true; }
     bool AnimationRequested() const { return animate_; }
+    // ゆっくり動き続ける物 (テーマの動く絵): 約 `seconds` 秒あとに次のフレームを描く (入力が無くても)。
+    // RequestAnimation と違い、ウィンドウはタイマーで待つ (30 fps くらいでよい物向け)。最小化中・隠れている間・
+    // ほかのアプリが前にいる間は、ウィンドウが止める。毎フレーム求める (求めないフレームの後は止まる)。
+    void RequestFrameAfter(double seconds) {
+        if (seconds > 0 && (frameAfter_ <= 0 || seconds < frameAfter_)) frameAfter_ = seconds;
+    }
+    double FrameAfterRequested() const { return frameAfter_; }  // 0 = 求められていない
     // 回り続ける / 滑り続けるもの (カメラ) をドラッグしている間: カーソルを隠してドラッグを始めた所に
     // 留めるので、画面の端で止まらない。In().mouseDX / mouseDY がマウスの動いた量を伝える。
     // ドラッグ中は毎フレーム求める。求められなくなったら、カーソルは戻る。
@@ -145,6 +152,7 @@ private:
     std::vector<std::function<void()>> overlays_;
     bool redraw_ = false;
     bool animate_ = false;
+    double frameAfter_ = 0;
     bool lockMouse_ = false;
     Cursor cursor_ = Cursor::Arrow;
 };

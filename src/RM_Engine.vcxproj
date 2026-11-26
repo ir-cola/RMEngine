@@ -131,6 +131,7 @@
     <ClCompile Include="editor\widgets\PickTree.cpp" />
     <ClCompile Include="editor\widgets\ThemeFile.cpp" />
     <ClCompile Include="editor\widgets\OrnamentPicture.cpp" />
+    <ClCompile Include="editor\widgets\MovingBackdrop.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\PluginId.h" />
@@ -201,6 +202,7 @@
     <ClInclude Include="editor\widgets\Theme.h" />
     <ClInclude Include="editor\widgets\ThemeFile.h" />
     <ClInclude Include="editor\widgets\OrnamentPicture.h" />
+    <ClInclude Include="editor\widgets\MovingBackdrop.h" />
     <ClInclude Include="ui\Path.h" />
     <ClInclude Include="ui\Shape.h" />
     <ClInclude Include="editor\widgets\Widgets.h" />

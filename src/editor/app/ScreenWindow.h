@@ -4,7 +4,8 @@
 //
 // フレームの流れ:  入力メッセージ -> Invalidate -> WM_PAINT -> RunFrame (OnFrame + 描画 + Present)
 //                   サイズ変更    -> WM_SIZE の中で直接 RunFrame (ドラッグ中に絵が固まらない)
-// ユーザーが何もしない間は何も動かない (CPU 0%)。フォーカスのある欄のカーソル点滅タイマーだけは別。
+// ユーザーが何もしない間は何も動かない (CPU 0%)。フォーカスのある欄のカーソル点滅タイマーと、
+// 動くテーマの絵 (Context::RequestFrameAfter: 約 30 fps のタイマー。最小化中・ほかのアプリが前にいる間は止める) は別。
 
 #include "platform/Gfx.h"
 #include "platform/Window.h"
@@ -95,6 +96,7 @@ private:
     void UpdateModifiers();
     void UpdateIme();
     void RunDeferred();
+    void ScheduleTick(double seconds);  // Context::RequestFrameAfter (0: 止める)
     bool EnsureDevice();  // GPU が使え、このウィンドウの描画が今のデバイスの上にできている
 
     bool alive_ = false;
@@ -102,6 +104,7 @@ private:
     bool trackingMouse_ = false;
     bool imeOn_ = true;
     bool caretTimer_ = false;
+    bool tickTimer_ = false;
     bool mouseLocked_ = false;      // Context::LockMouse: 隠して、固定位置に留める
     float anchorX_ = 0, anchorY_ = 0;  // クライアント領域の DIP
     int chainedFrames_ = 0;

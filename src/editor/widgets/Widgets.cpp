@@ -128,9 +128,14 @@ void DrawBackdropOn(ui::Context& c, const Rect& r, float corner, bool panelThing
     const auto it = FloatingWindows().find(&c);
     // パネルの地 (夏の砂の粒) が先、ウィンドウの絵 (シルエット) がその上 (2026-11-25: 絵が粒に埋もれない)。
     if (panelThings && o->panel) o->panel(c, r, corner);
+    const bool floating = it != FloatingWindows().end() && it->second;
     const auto spots = Spots().find(&c);
     c.P().PushClipExcept(r, spots != Spots().end() ? std::span<const Rect>(spots->second.last) : std::span<const Rect>{});
-    o->window(c, c.Viewport(), it != FloatingWindows().end() && it->second);
+    if (o->surface) {
+        o->surface(c, r, corner, floating);  // (動く絵: 同じフレームの絵を r に弱く足す)
+    } else {
+        o->window(c, c.Viewport(), floating);
+    }
     c.P().PopClip();
 }
 

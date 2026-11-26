@@ -21,6 +21,7 @@ constexpr UINT kWmDeferred = WM_APP + 1;
 constexpr UINT_PTR kCaretTimer = 1;
 constexpr UINT_PTR kDeviceTimer = 2;  // GPU を作り直せなかった: 少し後にもう一度やってみる
 constexpr UINT kDeviceRetryMs = 1000;
+constexpr UINT_PTR kTickTimer = 3;  // ゆっくり動く物 (Context::RequestFrameAfter: テーマの動く絵) の次のフレーム
 
 ui::Key MapKey(WPARAM vk) {
     switch (vk) {
@@ -87,6 +88,8 @@ void ScreenWindow::Close() {
     alive_ = false;
     if (caretTimer_ && Hwnd()) KillTimer(Hwnd(), kCaretTimer);
     caretTimer_ = false;
+    if (tickTimer_ && Hwnd()) KillTimer(Hwnd(), kTickTimer);
+    tickTimer_ = false;
     target_.Reset();
     window_.Destroy();
 }
@@ -294,6 +297,29 @@ void ScreenWindow::RunFrame() {
     if ((ctx_.RedrawRequested() || hadInput) && ++chainedFrames_ < 4) Invalidate();
     // 何かが勝手に動いている (飛んでいるカメラ): フレームを続けて描く。
     if (ctx_.AnimationRequested()) Invalidate();
+    ScheduleTick(ctx_.AnimationRequested() ? 0 : ctx_.FrameAfterRequested());
+}
+
+namespace {
+// 前にいるウィンドウがこのアプリの物 (メインでもパネルのウィンドウでも)。
+bool AppInFront() {
+    DWORD pid = 0;
+    if (HWND f = GetForegroundWindow()) GetWindowThreadProcessId(f, &pid);
+    return pid == GetCurrentProcessId();
+}
+}  // namespace
+
+void ScreenWindow::ScheduleTick(double seconds) {
+    HWND h = Hwnd();
+    // 見えないとき・ほかのアプリを使っている間は待たない (動く絵は止まる)。戻ってきたら WM_SIZE / WM_PAINT /
+    // WM_ACTIVATEAPP がまたフレームを描き、そのフレームがまた求める。
+    if (seconds <= 0 || !IsWindowVisible(h) || IsIconic(h) || !AppInFront()) {
+        if (tickTimer_) KillTimer(h, kTickTimer);
+        tickTimer_ = false;
+        return;
+    }
+    SetTimer(h, kTickTimer, std::max<UINT>(USER_TIMER_MINIMUM, static_cast<UINT>(std::lround(seconds * 1000.0))), nullptr);
+    tickTimer_ = true;
 }
 
 void ScreenWindow::UpdateIme() {
@@ -493,6 +519,10 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
         case WM_TIMER:
             if (wp == kCaretTimer) {
                 Invalidate();
+            } else if (wp == kTickTimer) {
+                KillTimer(h, kTickTimer);
+                tickTimer_ = false;
+                Invalidate();
             } else if (wp == kDeviceTimer) {
                 KillTimer(h, kDeviceTimer);
                 Invalidate();  // 次のフレームでもう一度 GPU を試す
@@ -507,6 +537,11 @@ LRESULT ScreenWindow::OnMessage(HWND h, UINT m, WPARAM wp, LPARAM lp, bool& hand
             return OnQueryEndSession() ? TRUE : FALSE;
         case WM_ENDSESSION:
             if (wp) OnEndSession();
+            return 0;
+        case WM_ACTIVATEAPP:
+            if (wp) Invalidate();  // このアプリに戻ってきた: 止めていた動く絵をまた動かす
+            OnOtherMessage(m, wp, lp);
+            handled = false;
             return 0;
         case kWmDeferred:
             RunDeferred();

@@ -59,6 +59,9 @@ struct OrnamentInfo {
     void (*window)(ui::Context& c, const ui::Rect& window, bool floating);
     // パネル自身の地 (夏: 砂の粒)。パネルを塗った後、ウィンドウの絵より先に描く (絵が上になる)。null でもよい。
     void (*panel)(ui::Context& c, const ui::Rect& r, float corner);
+    // パネルとバーの上にもう一度描く絵 (null: `window` を r で切り取って描く)。動く絵 (MovingBackdrop.h) は
+    // ここで、同じフレームの絵を r に弱く足す (2026-11-26)。
+    void (*surface)(ui::Context& c, const ui::Rect& r, float corner, bool floating) = nullptr;
 };
 inline constexpr char kOrnamentPoint[] = "core.theme_ornament";
 // フレームの最初、ウィンドウをクリアした後: 背景にテーマの絵を描く。

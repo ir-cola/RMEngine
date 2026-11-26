@@ -55,8 +55,8 @@ plugins/
 | `rm_engine` / `theme_colors` (基本カラーテーマパック) | テーマのファイルだけ: 青・緑 (`themes/*.json`)。コードは `runtime/Id.h` だけ |
 | `rm_engine` / `theme_seasons` (季節テーマパック) | テーマのファイル (スプリング・サマー・フォール・ウィンター、夜用の 夜桜・花火・お月見・クリスマス、季節で切り替える) と、その絵を描くコード (`editor/Seasons.cpp`。口 `core.theme_ornament` に差し出す。形は `editor/Ornament.*`、テストあり) |
 | `rm_engine` / `theme_paper` (紙) | テーマのファイルだけ: 紙 |
-| `rm_engine` / `theme_explore` (探検テーマパック) | テーマのファイル (宇宙・深海・火山) と、その絵を描くコード (`editor/Explore.cpp`。形は `editor/Shapes.*`、テストあり) |
-| `rm_engine` / `theme_gaming` (ゲーミング) | テーマのファイル (ゲーミング) と、その絵を描くコード (`editor/Gaming.cpp`: 虹色の帯・パネルの縁の虹色の線・ネオンの格子。形と虹の色は `editor/Shapes.*`、テストあり) |
+| `rm_engine` / `theme_explore` (探検テーマパック) | テーマのファイル (宇宙・深海・火山) と、その**動く絵** (GPU のシェーダーで描く本物らしい背景。約 30 fps): `editor/Explore.cpp` (核に渡す)・`editor/Scenes.*` (HLSL と毎フレームの粒)・`editor/Motion.*` (粒の動き。純粋、テストあり)。描き方は核の `editor/widgets/MovingBackdrop.h` |
+| `rm_engine` / `theme_gaming` (ゲーミング) | テーマのファイル (ゲーミング) と、その**動く絵**: 縞のある太陽・流れるネオンの格子・ウィンドウの縁を流れる虹 (`editor/Scenes.*`)、パネルの縁を流れる虹の線 (`editor/Gaming.cpp`)、虹の色と動き (`editor/Motion.*`。純粋、テストあり) |
 | `rm_engine` / `game_x_3d` (ゲーム制作 × 3D) | つなぎ。前提 = ゲーム制作・3D 空間。Transform をゲームの部品として差し出し (3D のゲームの新しいエンティティに付く)、部品とシステム「回り続ける」(Play で確かめる用。`runtime/Spin.*`) を差し出し、3D のシーンビューを出す (口 `rm_engine.game_production.scene_view`、空間 `"3d"`)。ほかのプラグインに開く口: 世界に描く `rm_engine.game_x_3d.world_draw`・骨のあるモデルの姿勢を尋ねる `rm_engine.game_x_3d.mesh_pose` (`runtime/MeshPose.h`)・止まっているシーンビューの上の操作 `rm_engine.game_x_3d.scene_overlay` (`editor/SceneOverlay.h`)。テンプレート「3D のゲーム」(`templates/game_3d`: カメラ・光・床・箱) |
 | `rm_engine` / `space2d` (2D 空間) | Transform 2D (位置・回転・大きさ・並び順) と行列・2D のカメラと当たり・Direct2D での 2D の描画 (`runtime/Renderer2D`)。エディターの部分は 2D のギズモ (`editor/Gizmo2D`。ほかのプラグインのエディターが使う。登録するものは無い) |
 | `rm_engine` / `game_x_2d` (ゲーム制作 × 2D) | つなぎ。前提 = ゲーム制作・2D 空間。Transform 2D (2D のゲームの新しいエンティティに付く)・スプライト (アトラス)・スプライトのアニメーション・カメラ (2D)・回り続ける (2D) を差し出し、2D のシーンビューを出す (空間 `"2d"`)。3D と両方あるときは、シーンの上の帯でゲームの空間を選ぶ。テンプレート「2D のゲーム」(`templates/game_2d`: カメラ・地面・プレイヤー) |
