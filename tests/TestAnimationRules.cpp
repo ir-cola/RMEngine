@@ -5,10 +5,12 @@
 
 #include "base/Json.h"
 #include "core/reflect/Data.h"
+#include "rm_engine/animation/runtime/Blend.h"
 #include "rm_engine/animation/runtime/Condition.h"
 #include "rm_engine/animation/runtime/Controller.h"
 #include "rm_engine/animation/runtime/Rules.h"
 
+#include <cmath>
 #include <map>
 #include <string>
 #include <vector>
@@ -161,4 +163,45 @@ RM_TEST(Animation_RulesProblems) {
     CHECK(back && back->rules.size() == 6 && back->states[2].exit == StateExit::Own && back->params[2].type == ParamType::Trigger);
     CHECK(!ReadController(R"({"kind": "other"})", &err) && !err.empty());
     CHECK(!ReadController("{", &err));
+}
+
+// 混ぜる重み: 1D は両隣、2D は三角形の重心座標・外は一番近い辺・一直線は 1D。
+RM_TEST(Animation_BlendWeights) {
+    auto same = [](float a, float b) { return std::fabs(a - b) < 1e-4f; };
+    std::vector<float> w;
+    const std::vector<float> line{0.f, 4.f, 1.5f, 7.f};  // (並んでいなくてよい: Idle 0・Run 4・Walk 1.5・Sprint 7)
+    animation::BlendWeights1D(line, 2.75f, w);
+    CHECK(w.size() == 4 && same(w[2], 0.5f) && same(w[1], 0.5f) && w[0] == 0 && w[3] == 0);
+    animation::BlendWeights1D(line, -3.f, w);
+    CHECK(w[0] == 1 && w[1] == 0);
+    animation::BlendWeights1D(line, 99.f, w);
+    CHECK(w[3] == 1);
+    animation::BlendWeights1D(line, 1.5f, w);
+    CHECK(same(w[2], 1.f));
+    animation::BlendWeights1D({}, 1.f, w);
+    CHECK(w.empty());
+    // 2D: 十字 (前・左・真ん中・右・後ろ)。
+    const std::vector<Vec2> cross{{0, 1}, {-1, 0}, {0, 0}, {1, 0}, {0, -1}};
+    const auto tris = animation::Triangulate(cross);
+    CHECK(tris.size() == 4);
+    animation::BlendWeights2D(cross, tris, {0, 0}, w);
+    CHECK(same(w[2], 1.f));
+    animation::BlendWeights2D(cross, tris, {0.5f, 0.25f}, w);
+    float sum = 0;
+    for (float x : w) sum += x;
+    CHECK(same(sum, 1.f) && same(w[3], 0.5f) && same(w[0], 0.25f) && same(w[2], 0.25f) && w[1] == 0 && w[4] == 0);
+    // 外: 一番近い辺 (前と右の間の辺の外 → その 2 点)。
+    animation::BlendWeights2D(cross, tris, {1, 1}, w);
+    CHECK(same(w[0], 0.5f) && same(w[3], 0.5f));
+    // 一直線 (三角形が無い): 1D として。
+    const std::vector<Vec2> row{{0, 0}, {2, 0}, {1, 0}};
+    const auto none = animation::Triangulate(row);
+    CHECK(none.empty());
+    animation::BlendWeights2D(row, none, {1.5f, 3.f}, w);
+    CHECK(same(w[2], 0.5f) && same(w[1], 0.5f) && w[0] == 0);
+    // 点が 1 つ・2 つ。
+    animation::BlendWeights2D(std::vector<Vec2>{{5, 5}}, {}, {0, 0}, w);
+    CHECK(w.size() == 1 && w[0] == 1);
+    animation::BlendWeights2D(std::vector<Vec2>{{0, 0}, {4, 0}}, {}, {1, 9}, w);
+    CHECK(same(w[0], 0.75f) && same(w[1], 0.25f));
 }

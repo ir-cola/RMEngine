@@ -149,6 +149,50 @@ void PoseAccumulator::Finish(const space3d::Skeleton& skeleton, Pose& out) const
     }
 }
 
+std::vector<float> BoneMask(const space3d::Skeleton& skeleton, std::span<const std::string> roots) {
+    const size_t n = skeleton.bones.size();
+    if (roots.empty()) return std::vector<float>(n, 1.f);
+    std::vector<float> mask(n, 0.f);
+    for (size_t i = 0; i < n; ++i) {
+        const space3d::Bone& b = skeleton.bones[i];
+        bool hit = std::find(roots.begin(), roots.end(), b.name) != roots.end();
+        // (親が先に並んでいる: 親が入っていれば子も)
+        if (!hit && b.parent >= 0 && static_cast<size_t>(b.parent) < i) hit = mask[static_cast<size_t>(b.parent)] > 0;
+        mask[i] = hit ? 1.f : 0.f;
+    }
+    return mask;
+}
+
+void OverlayPose(Pose& base, const Pose& layer, float weight, std::span<const float> mask) {
+    if (!(weight > 0) || !std::isfinite(weight)) return;
+    const float w0 = std::min(weight, 1.f);
+    const size_t n = std::min(base.size(), layer.size());
+    for (size_t i = 0; i < n; ++i) {
+        const float w = w0 * (mask.empty() ? 1.f : (i < mask.size() ? mask[i] : 0.f));
+        if (w <= 0) continue;
+        base[i] = w >= 1 ? layer[i] : LerpTRS(base[i], layer[i], w);
+    }
+}
+
+void AddPose(Pose& base, const Pose& layer, const Pose& rest, float weight, std::span<const float> mask) {
+    if (!(weight > 0) || !std::isfinite(weight)) return;
+    const size_t n = std::min({base.size(), layer.size(), rest.size()});
+    const space3d::Quat identity{0, 0, 0, 1};
+    for (size_t i = 0; i < n; ++i) {
+        const float w = weight * (mask.empty() ? 1.f : (i < mask.size() ? mask[i] : 0.f));
+        if (w <= 0) continue;
+        const space3d::BoneTRS& l = layer[i];
+        const space3d::BoneTRS& r = rest[i];
+        space3d::BoneTRS& b = base[i];
+        b.t = {b.t.x + (l.t.x - r.t.x) * w, b.t.y + (l.t.y - r.t.y) * w, b.t.z + (l.t.z - r.t.z) * w};
+        const space3d::Quat delta = space3d::QuatNormalize(space3d::QuatConjugate(r.r) * l.r);
+        b.r = space3d::QuatNormalize(b.r * QuatNlerp(identity, delta, w));
+        auto ratio = [](float a, float c) { return std::fabs(c) > 1e-6f ? a / c : 1.f; };
+        const Vec3 s{ratio(l.s.x, r.s.x), ratio(l.s.y, r.s.y), ratio(l.s.z, r.s.z)};
+        b.s = {b.s.x * (1 + (s.x - 1) * w), b.s.y * (1 + (s.y - 1) * w), b.s.z * (1 + (s.z - 1) * w)};
+    }
+}
+
 void ModelMatrices(const space3d::Skeleton& skeleton, const Pose& pose, std::vector<Mat4>& out) {
     const size_t n = skeleton.bones.size();
     out.resize(n);

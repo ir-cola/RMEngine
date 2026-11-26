@@ -10,6 +10,7 @@
 #include "rm_engine/space3d/runtime/Skeleton.h"
 
 #include <span>
+#include <string>
 #include <vector>
 
 namespace rm::animation3d {
@@ -70,6 +71,16 @@ private:
     std::vector<float> w_;  // 骨ごとの重みの合計
     float total_ = 0;
 };
+
+// --- 重ねる (レイヤー。docs/ANIMATION.md 段階 4) ---
+// マスク: `roots` の名前の骨と、その下の骨すべてが 1、ほかは 0 (骨の数と同じ並び)。`roots` が空: 全部 1。
+// 無い名前は無視する (全部が無い名前なら全部 0)。
+std::vector<float> BoneMask(const space3d::Skeleton& skeleton, std::span<const std::string> roots);
+// 上書きのレイヤー: 骨ごとに base = LerpTRS(base, layer, weight x mask[骨])。mask が空: 全部 1。
+void OverlayPose(Pose& base, const Pose& layer, float weight, std::span<const float> mask);
+// 足すレイヤー: 休みの姿勢 `rest` からの差を足す。骨ごとに (w = weight x mask[骨])
+//   位置 += (layer.t - rest.t) x w、回転 = base.r x nlerp(1, rest.r⁻¹ x layer.r, w)、大きさ x= lerp(1, layer.s / rest.s, w)。
+void AddPose(Pose& base, const Pose& layer, const Pose& rest, float weight, std::span<const float> mask);
 
 // モデルの空間の骨の行列: 親の行列 x TRSMatrix(姿勢)。親が先に並んでいるので 1 回のループ。
 // 姿勢が骨の数より短いときは、足りない骨は休みの姿勢。親の番号が自分より後 (壊れた木) なら根として扱う。

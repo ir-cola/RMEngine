@@ -46,12 +46,68 @@ int CompiledController::FindParam(std::string_view name) const {
     return -1;
 }
 
+namespace {
+
+// 状態とルール (体か、1 つのレイヤー) を解く。パラメーターは全体のもの。
+CompiledController CompileRules(const std::vector<AnimParam>& params, const std::vector<AnimState>& states, const std::vector<AnimRule>& rules);
+
+}  // namespace
+
 CompiledController Compile(const AnimController& src) {
+    CompiledController c = CompileRules(src.params, src.states, src.rules);
+    for (const AnimLayer& l : src.layers) {
+        CompiledLayer cl;
+        cl.name = l.name;
+        cl.weight = std::isfinite(l.weight) ? std::clamp(l.weight, 0.f, 1.f) : 1.f;
+        cl.weightParam = l.weightParam.empty() ? -1 : c.FindParam(l.weightParam);
+        cl.mode = l.mode;
+        cl.mask = l.mask;
+        cl.rules = CompileRules(src.params, l.states, l.rules);
+        c.layers.push_back(std::move(cl));
+    }
+    return c;
+}
+
+void StateBlend(const CompiledController& c, const ParamValues& v, int state, std::vector<float>& out) {
+    out.clear();
+    if (state < 0 || static_cast<size_t>(state) >= c.states.size() || static_cast<size_t>(state) >= c.blends.size()) return;
+    const AnimState& s = c.states[static_cast<size_t>(state)];
+    const CompiledBlend& b = c.blends[static_cast<size_t>(state)];
+    auto param = [&](const std::string& name) {
+        const int i = c.FindParam(name);
+        return i >= 0 && static_cast<size_t>(i) < v.values.size() ? v.values[static_cast<size_t>(i)] : 0.f;
+    };
+    if (s.kind == StateKind::Blend1D) BlendWeights1D(b.xs, param(s.paramX), out);
+    if (s.kind == StateKind::Blend2D) BlendWeights2D(b.points, b.triangles, {param(s.paramX), param(s.paramY)}, out);
+}
+
+float LayerWeight(const CompiledLayer& layer, const ParamValues& v) {
+    if (layer.weightParam >= 0 && static_cast<size_t>(layer.weightParam) < v.values.size()) {
+        const float w = v.values[static_cast<size_t>(layer.weightParam)];
+        return std::isfinite(w) ? std::clamp(w, 0.f, 1.f) : 0.f;
+    }
+    return layer.weight;
+}
+
+namespace {
+
+CompiledController CompileRules(const std::vector<AnimParam>& params, const std::vector<AnimState>& states, const std::vector<AnimRule>& rules) {
     CompiledController c;
-    c.params = src.params;
-    c.states = src.states;
-    c.rules.reserve(src.rules.size());
-    for (const AnimRule& r : src.rules) {
+    c.params = params;
+    c.states = states;
+    for (const AnimState& s : c.states) {
+        CompiledBlend b;
+        if (s.kind != StateKind::Clip) {
+            for (const BlendMotion& m : s.motions) {
+                b.xs.push_back(std::isfinite(m.x) ? m.x : 0.f);
+                b.points.push_back({std::isfinite(m.x) ? m.x : 0.f, std::isfinite(m.y) ? m.y : 0.f});
+            }
+            if (s.kind == StateKind::Blend2D) b.triangles = Triangulate(b.points);
+        }
+        c.blends.push_back(std::move(b));
+    }
+    c.rules.reserve(rules.size());
+    for (const AnimRule& r : rules) {
         CompiledRule cr;
         cr.from = r.from.empty() ? -1 : c.FindState(r.from);
         cr.to = c.FindState(r.to);
@@ -79,6 +135,8 @@ CompiledController Compile(const AnimController& src) {
     }
     return c;
 }
+
+}  // namespace
 
 ParamValues StartValues(const CompiledController& c) {
     ParamValues v;

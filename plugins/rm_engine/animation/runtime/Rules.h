@@ -10,9 +10,11 @@
 //   4. 当たった行が使ったトリガーを消す。使われなかったトリガーは kTriggerHold 秒で消える
 //   5. 1 フレームに移るのは 1 回まで
 
+#include "rm_engine/animation/runtime/Blend.h"
 #include "rm_engine/animation/runtime/Condition.h"
 #include "rm_engine/animation/runtime/Controller.h"
 
+#include <array>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,14 +32,36 @@ struct CompiledRule {
     Condition condition;
     std::string problem;  // 当たらない理由 (式の間違い・無い状態・知らない名前)。空: 無し
 };
+struct ParamValues;
+// 混ぜる状態の点 (2D は三角形も: 読み込んだときに 1 回)。
+struct CompiledBlend {
+    std::vector<float> xs;
+    std::vector<Vec2> points;
+    std::vector<std::array<int, 3>> triangles;
+};
+struct CompiledLayer;
 struct CompiledController {
     std::vector<AnimParam> params;
     std::vector<AnimState> states;
+    std::vector<CompiledBlend> blends;  // 状態ごと (クリップの状態は空)
     std::vector<CompiledRule> rules;
+    std::vector<CompiledLayer> layers;  // 重ねるレイヤー (体のもの = この CompiledController 自身は入らない)
     int FindState(std::string_view name) const;
     int FindParam(std::string_view name) const;
 };
+struct CompiledLayer {
+    std::string name;
+    float weight = 1;
+    int weightParam = -1;  // (-1: weight の数)
+    LayerMode mode = LayerMode::Override;
+    std::vector<std::string> mask;
+    CompiledController rules;  // このレイヤーの状態とルール (params は全体のもの)
+};
 CompiledController Compile(const AnimController& c);
+// 混ぜる状態 `state` の、今のパラメーターでのクリップごとの重み (state の motions と同じ並び)。クリップの状態: 空。
+void StateBlend(const CompiledController& c, const ParamValues& v, int state, std::vector<float>& out);
+// レイヤーの今の重み (0..1)。
+float LayerWeight(const CompiledLayer& layer, const ParamValues& v);
 
 // パラメーターの今の値 (CompiledController::params と同じ並び)。トリガーは立っている間 1。
 struct ParamValues {

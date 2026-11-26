@@ -10,8 +10,12 @@
 //   毎フレーム: p.Tick(dt);  p.PassedEvents(events, fired);  p.Evaluate(skin, boneMatrices);
 //
 // クロスフェード: Play した瞬間の姿勢 (前のフェードの途中でも、見えていたもの) を固めて、そこから新しい
-// クリップへ fade 秒かけて移る。前のクリップは進めない (段階 1 はこれで足りる。歩き → 走りを両方進めて
-// 混ぜるのは段階 4 のブレンド)。
+// クリップへ fade 秒かけて移る。前のクリップは進めない。
+//
+// 混ぜる (段階 4): SetBlend でいくつものクリップを重みで混ぜる (歩き ↔ 走り)。足をそろえる: どのクリップも
+// 同じ割合の時刻 (主のクリップ = Play したものの 時刻 / 長さ) で読み、その割合は「重みで混ぜた長さ」で進む。
+// 重ねる (段階 4): EvaluatePose で姿勢だけ作り、MutablePose にレイヤーを重ねて (Pose.h の OverlayPose /
+// AddPose)、FinishPose で行列にする。
 
 #include "rm_engine/animation3d/runtime/ClipTime.h"
 #include "rm_engine/animation3d/runtime/Pose.h"
@@ -25,6 +29,14 @@ class Player {
 public:
     float speed = 1.f;  // 負: 逆再生
     bool loop = true;
+
+    // 混ぜるクリップ 1 つ: クリップの番号と重み (重みは合計 1 でなくてよい: 合計で割る)。
+    struct Motion {
+        int clip = -1;
+        float weight = 0;
+    };
+    // 混ぜるクリップ (毎フレーム重みを変えてよい)。空: Play したクリップだけ。Play しても残る (外すときは空を渡す)。
+    void SetBlend(std::span<const Motion> motions);
 
     // 骨の木とクリップの一覧をつなぐ (名前から番号を引く)。`clips` は持たないので、Player より長く置いておく。
     // Evaluate に渡すスキンの骨の木は、ここで渡したものと同じにする。流していたクリップは止める。
@@ -40,8 +52,15 @@ public:
     // Tick は、始めの時刻ちょうどのイベントも出す)。`eventTimes` は今のクリップのイベントの時刻 (秒)。
     void PassedEvents(std::span<const float> eventTimes, std::vector<int>& out) const;
 
-    // 今の姿勢 → 骨の行列 → スキンの行列 (GPU へ)。
+    // 今の姿勢 → 骨の行列 → スキンの行列 (GPU へ)。= EvaluatePose → FinishPose。
     void Evaluate(const space3d::SkinData& skin, std::vector<space3d::BoneMatrix>& out);
+    // 今の姿勢 (混ぜたもの・フェードの途中のもの) だけ。レイヤーはこれに重ねる。
+    const Pose& EvaluatePose(const space3d::Skeleton& skeleton);
+    Pose& MutablePose() { return pose_; }
+    // MutablePose の姿勢 → 骨の行列 → スキンの行列。
+    void FinishPose(const space3d::SkinData& skin, std::vector<space3d::BoneMatrix>& out);
+    // 混ぜたクリップの長さ (重みで混ぜたもの。混ぜていなければ今のクリップの長さ。無ければ 0)。
+    float BlendDuration() const;
 
     int ClipIndex() const { return clip_; }  // -1: 止まっている
     float Time() const { return time_; }
@@ -65,6 +84,9 @@ private:
     bool fresh_ = false;      // Play の後、まだ Tick していない
     bool lastFresh_ = false;  // 直前の Tick が Play の後の最初のもの
     float fadeLength_ = 0, fadeLeft_ = 0;
+    std::vector<Motion> blend_;
+    PoseAccumulator mix_;
+    Pose part_;
     Pose from_, sample_, pose_;
     std::vector<space3d::Mat4> model_;
 };

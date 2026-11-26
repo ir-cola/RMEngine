@@ -46,14 +46,36 @@ enum class StateExit {
     RM_ITEM(Label="終わるまで自分のルールだけ") OwnUntilEnd,
 };
 
+RM_ENUM(Label="状態の種類")
+enum class StateKind {
+    RM_ITEM(Label="クリップ") Clip,
+    RM_ITEM(Label="1D で混ぜる") Blend1D,
+    RM_ITEM(Label="2D で混ぜる") Blend2D,
+};
+
+// 混ぜる状態の 1 つのクリップと、その置き場所 (1D: x だけ / 2D: x と y)。
+RM_STRUCT(Label="混ぜるクリップ")
+struct BlendMotion {
+    RM_PROPERTY(Edit, Label="クリップ", Tooltip="混ぜるクリップの名前 (アニメーターのモデルのクリップ)") std::string clip;
+    RM_PROPERTY(Edit, Label="x", Tooltip="置き場所 (1D: パラメーターがこの値のとき、このクリップだけになる)", Min=-1000000, Max=1000000, Step=0.1) float x = 0.f;
+    RM_PROPERTY(Edit, Label="y", Tooltip="置き場所の y (2D のとき)", Min=-1000000, Max=1000000, Step=0.1) float y = 0.f;
+};
+
 RM_STRUCT(Label="状態")
 struct AnimState {
     RM_PROPERTY(Edit, Label="名前", Tooltip="ルールの「元」「先」で使う名前 (Idle・Move・Jump …)") std::string name;
-    RM_PROPERTY(Edit, Label="クリップ", Tooltip="この状態で流すクリップの名前 (アニメーターのモデルのクリップ)") std::string clip;
+    RM_PROPERTY(Edit, Label="クリップ", Tooltip="この状態で流すクリップの名前 (アニメーターのモデルのクリップ)", ShowIf="kind=Clip") std::string clip;
     RM_PROPERTY(Edit, Label="ループ", Tooltip="外すと 1 回流して最後のコマで止まります (条件の ended が真になる)") bool loop = true;
     RM_PROPERTY(Edit, Label="速さ", Tooltip="再生の速さの倍率", Min=-10, Max=10, Step=0.05) float speed = 1.f;
     RM_PROPERTY(Edit, Label="出口", Tooltip="自由: 全部のルールを調べる / 自分のルールだけ: 元がこの状態のルールと ⚡ のルールだけ (ジャンプの途中で歩きに戻らない) / 終わるまで自分のルールだけ: クリップが終わるまでは自分のルールだけ、終わったら全部 (攻撃・着地)")
     StateExit exit = StateExit::Free;
+    // (ここから下は段階 4。前のものは並びを変えない: 1 つずつ並べて作るコードがある)
+    RM_PROPERTY(Edit, Label="種類", Tooltip="クリップ: 1 つのクリップを流す / 1D で混ぜる: パラメーター 1 つの値で、数直線に置いたクリップを混ぜる (歩き ↔ 走り) / 2D で混ぜる: パラメーター 2 つの値で、平面に置いたクリップを混ぜる (8 方向の移動)")
+    StateKind kind = StateKind::Clip;
+    RM_PROPERTY(Edit, Label="パラメーター (x)", Tooltip="混ぜる位置を決めるパラメーター (数)", ShowIf="kind=Blend1D|Blend2D") std::string paramX;
+    RM_PROPERTY(Edit, Label="パラメーター (y)", Tooltip="2D の y を決めるパラメーター (数)", ShowIf="kind=Blend2D") std::string paramY;
+    RM_PROPERTY(Edit, Label="混ぜるクリップ", Tooltip="置いたクリップ。足はそろう (どれも同じ割合の時刻で読む)", ShowIf="kind=Blend1D|Blend2D")
+    std::vector<BlendMotion> motions;
 };
 
 RM_STRUCT(Label="ルール")
@@ -67,6 +89,24 @@ struct AnimRule {
     RM_PROPERTY(Edit, Label="やり直す", Tooltip="先が今の状態と同じでも、始めから流し直す (同じ攻撃を続ける)") bool restart = false;
 };
 
+RM_ENUM(Label="重ね方")
+enum class LayerMode {
+    RM_ITEM(Label="上書き") Override,
+    RM_ITEM(Label="足す") Additive,
+};
+
+// 重ねるレイヤー (段階 4): 自分の状態とルールを持ち、下の姿勢の上に重ねる (走りながら上半身で撃つ・呼吸を足す)。
+RM_STRUCT(Label="レイヤー")
+struct AnimLayer {
+    RM_PROPERTY(Edit, Label="名前") std::string name;
+    RM_PROPERTY(Edit, Label="重み", Tooltip="どれだけ重ねるか (0..1)。下の「重みのパラメーター」があれば、そちらの値", Min=0, Max=1, Step=0.01) float weight = 1.f;
+    RM_PROPERTY(Edit, Label="重みのパラメーター", Tooltip="重みをこのパラメーターの値にする (空: 上の数)") std::string weightParam;
+    RM_PROPERTY(Edit, Label="重ね方", Tooltip="上書き: このレイヤーの姿勢にする / 足す: 休みの姿勢からの差を足す (呼吸・揺れ)") LayerMode mode = LayerMode::Override;
+    RM_PROPERTY(Edit, Label="マスク", Tooltip="この骨と、その下の骨だけに重ねる (骨の名前。空: 全部)") std::vector<std::string> mask;
+    RM_PROPERTY(Edit, Label="状態", Tooltip="このレイヤーの状態 (1 つ目から始まる)") std::vector<AnimState> states;
+    RM_PROPERTY(Edit, Label="ルール", Tooltip="このレイヤーのルール (パラメーターは全部のレイヤーで同じ)") std::vector<AnimRule> rules;
+};
+
 RM_STRUCT(Label="アニメーター (状態とルール)")
 struct AnimController {
     RM_PROPERTY() std::string kind = kControllerKind;  // ファイルの種類 (インスペクターには出ない)
@@ -75,6 +115,7 @@ struct AnimController {
     RM_PROPERTY(Edit, Label="状態", Tooltip="1 つ目の状態から始まります") std::vector<AnimState> states;
     RM_PROPERTY(Edit, Label="ルール", Tooltip="毎フレーム上から調べて、元が合って条件が真の最初の 1 行で移ります。上ほど強い")
     std::vector<AnimRule> rules;
+    RM_PROPERTY(Edit, Label="レイヤー", Tooltip="上の状態とルール (体) の上に、並びの順に重ねる") std::vector<AnimLayer> layers;
 };
 
 // ファイルの中身 (JSON) を読む。読めない・種類が違う: nullopt (`error` に理由)。`unknowns`: 知らないキー (書き戻す)。

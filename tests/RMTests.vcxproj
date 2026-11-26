@@ -120,6 +120,7 @@
     <ClCompile Include="TestAnimationRules.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation\runtime\Condition.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation\runtime\Rules.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\animation\runtime\Blend.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorLogic.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorPoser.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorRun.cpp" />

@@ -17,6 +17,7 @@
 #include "core/asset/ImportSettings.h"
 #include "base/Json.h"
 #include "rm_engine/animation/runtime/Rules.h"
+#include "rm_engine/animation3d/runtime/Pose.h"
 
 #include <cmath>
 #include <filesystem>
@@ -357,6 +358,94 @@ RM_TEST(GameAnim_RulesDriveTheClip) {
     // 外す: 状態は無くなり、欄のクリップのまま。
     BindRules(run, a, nullptr);
     CHECK(StateName(run).empty() && !run.rules);
+}
+
+namespace {
+
+// 腕の骨 (1 番) の Y まわりの角度 (度)。
+float ArmDegrees(const AnimatorRun& run) {
+    const animation3d::Pose& pose = run.player.CurrentPose();
+    if (pose.size() < 2) return -999.f;
+    const space3d::Quat q = pose[1].r;
+    return 2.f * std::atan2(q.y, q.w) * 57.29578f;
+}
+
+}  // namespace
+
+// 混ぜる (1D): パラメーターで Still と Turn を混ぜる。重ねる: 腕だけのレイヤー (マスク) を重みで重ねる・足す。
+RM_TEST(GameAnim_BlendAndLayers) {
+    // 骨の木と、そのマスク・上書き・足す (Pose.h)。
+    {
+        const game_x_3d::SkinnedModel m = ArmWithTwoClips();
+        const auto& sk = m.skin->skeleton;
+        const std::vector<std::string> arm{"Arm"};
+        CHECK(animation3d::BoneMask(sk, arm) == std::vector<float>({0.f, 1.f}));
+        CHECK(animation3d::BoneMask(sk, {}) == std::vector<float>({1.f, 1.f}));
+        animation3d::Pose base = animation3d::RestPose(sk), layer = base;
+        layer[0].t = {5, 0, 0};
+        layer[1].r = space3d::QuatAxisAngle({0, 1, 0}, 1.5707963f);
+        animation3d::Pose over = base;
+        animation3d::OverlayPose(over, layer, 0.5f, animation3d::BoneMask(sk, arm));
+        CHECK(Near(over[0].t.x, 0.f) && Near(2.f * std::atan2(over[1].r.y, over[1].r.w) * 57.29578f, 45.f));
+        animation3d::Pose add = base;
+        add[1].r = space3d::QuatAxisAngle({0, 1, 0}, 0.5235988f);  // (30 度から)
+        animation3d::AddPose(add, layer, animation3d::RestPose(sk), 1.f, {});
+        CHECK(Near(add[0].t.x, 5.f) && Near(2.f * std::atan2(add[1].r.y, add[1].r.w) * 57.29578f, 120.f));
+    }
+    const game_x_3d::SkinnedModel m = ArmWithTwoClips();
+    animation::AnimController ctl;
+    ctl.params = {{"speed", animation::ParamType::Float, 0}, {"wave", animation::ParamType::Float, 0}};
+    animation::AnimState move{"Move", "", true, 1, animation::StateExit::Free};
+    move.kind = animation::StateKind::Blend1D;
+    move.paramX = "speed";
+    move.motions = {{"Still", 0, 0}, {"Turn", 1, 0}};
+    ctl.states = {move};
+    Animator a;
+    AnimatorRun run;
+    BindModel(run, m.skin, m.clips);
+    BindRules(run, a, std::make_shared<const animation::CompiledController>(animation::Compile(ctl)));
+    std::vector<const space3d::ClipEvent*> fired;
+    // speed 0: Still だけ (休みの姿勢)。
+    StepAnimatorRules(run, a, 0.f);
+    StepAnimator(run, a, 0.5f, fired, &NextForTest);
+    CHECK(run.blend.size() == 2 && Near(run.blend[0], 1.f) && Near(ArmDegrees(run), 0.f));
+    // speed 1: Turn だけ。足をそろえる時計は Still (1 秒) の割合: 0.5 秒進めると Turn の 0.5 → 45 度。
+    SetRuleParam(run, "speed", 1.f, false);
+    StepAnimatorRules(run, a, 0.f);
+    StepAnimator(run, a, 0.f, fired, &NextForTest);
+    CHECK(Near(run.blend[1], 1.f) && Near(ArmDegrees(run), 45.f));
+    // speed 0.5: 半分ずつ → 22.5 度。
+    SetRuleParam(run, "speed", 0.5f, false);
+    StepAnimatorRules(run, a, 0.f);
+    StepAnimator(run, a, 0.f, fired, &NextForTest);
+    CHECK(Near(run.blend[0], 0.5f) && Near(ArmDegrees(run), 22.5f));
+
+    // 重ねる: 体は Still、腕だけ (マスク Arm) のレイヤーで Turn。重みはパラメーター wave。
+    animation::AnimController lay;
+    lay.params = ctl.params;
+    lay.states = {{"Idle", "Still", true, 1, animation::StateExit::Free}};
+    animation::AnimLayer arm;
+    arm.name = "腕";
+    arm.weightParam = "wave";
+    arm.mask = {"Arm"};
+    arm.states = {{"Wave", "Turn", true, 1, animation::StateExit::Free}};
+    lay.layers = {arm};
+    Animator b;
+    AnimatorRun lr;
+    BindModel(lr, m.skin, m.clips);
+    BindRules(lr, b, std::make_shared<const animation::CompiledController>(animation::Compile(lay)));
+    CHECK(lr.layers.size() == 1 && lr.layers[0].mask == std::vector<float>({0.f, 1.f}));
+    StepAnimatorRules(lr, b, 0.f);
+    StepAnimator(lr, b, 0.5f, fired, &NextForTest);
+    CHECK(Near(ArmDegrees(lr), 0.f));  // (重み 0: 重ねない)
+    SetRuleParam(lr, "wave", 1.f, false);
+    StepAnimatorRules(lr, b, 0.f);
+    StepAnimator(lr, b, 0.f, fired, &NextForTest);
+    CHECK(Near(lr.layers[0].weight, 1.f) && Near(ArmDegrees(lr), 45.f));  // (レイヤーの Turn は 0.5 秒進んでいる)
+    SetRuleParam(lr, "wave", 0.5f, false);
+    StepAnimatorRules(lr, b, 0.f);
+    StepAnimator(lr, b, 0.f, fired, &NextForTest);
+    CHECK(Near(ArmDegrees(lr), 22.5f));
 }
 
 RM_TEST(GameAnim_RunWaitsWithoutPlayOnStart) {

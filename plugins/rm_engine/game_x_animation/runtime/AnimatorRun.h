@@ -55,6 +55,22 @@ struct AnimatorRun {
     std::vector<animation::RuleCheck> checks;  // 最後に調べた行ごとの結果 (「アニメーション」タブが光らせる)
     // スクリプトがルールを読む前に入れた値 (読んだときに入れる)。
     std::vector<std::pair<std::string, float>> pendingParams;
+    // 混ぜる状態の、今のクリップごとの重み (状態の motions の並び。「アニメーション」タブが出す)。
+    std::vector<float> blend;
+    // 重ねるレイヤー (段階 4。rules->layers と同じ並び): それぞれ自分の再生・状態・ルール。
+    struct Layer {
+        animation3d::Player player;
+        int state = -1;
+        float lastTime = 0;
+        bool looped = false;
+        int rule = -1;
+        std::vector<animation::RuleCheck> checks;
+        std::vector<float> blend;
+        std::vector<float> mask;  // 骨ごと (モデルを読んだときに作る)
+        float weight = 0;         // 今の重み
+    };
+    std::vector<Layer> layers;
+    animation3d::Pose rest;  // 休みの姿勢 (足すレイヤーの基準)
 
     // 出すもの: スキンの行列 (GPU へ)、骨の行列 (モデルの空間。骨に付ける・BonePosition)、姿勢の版、動いたか。
     std::vector<space3d::BoneMatrix> bones;

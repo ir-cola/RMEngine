@@ -40,6 +40,21 @@ void Player::Play(int clipIndex, float fade) {
     fresh_ = c != nullptr;
 }
 
+void Player::SetBlend(std::span<const Motion> motions) { blend_.assign(motions.begin(), motions.end()); }
+
+float Player::BlendDuration() const {
+    const space3d::Clip* c = Current();
+    if (blend_.empty()) return c ? c->duration : 0.f;
+    double total = 0, weight = 0;
+    for (const Motion& m : blend_) {
+        if (!(m.weight > 0) || m.clip < 0 || static_cast<size_t>(m.clip) >= clips_.size()) continue;
+        total += static_cast<double>(m.weight) * clips_[static_cast<size_t>(m.clip)].duration;
+        weight += m.weight;
+    }
+    if (!(weight > 0)) return c ? c->duration : 0.f;
+    return static_cast<float>(total / weight);
+}
+
 TimeStep Player::Tick(float dt) {
     if (!(dt > 0) || !std::isfinite(dt)) dt = 0;
     if (fadeLeft_ > 0) fadeLeft_ = std::max(0.f, fadeLeft_ - dt);
@@ -52,7 +67,13 @@ TimeStep Player::Tick(float dt) {
         return last_;
     }
     fresh_ = false;
-    last_ = AdvanceTime(time_, dt, speed, c->duration, loop);
+    // 足をそろえる: 主のクリップの時刻を、割合が「混ぜた長さ」で進むように進める。
+    float pace = speed;
+    if (!blend_.empty()) {
+        const float mixed = BlendDuration();
+        if (mixed > 0 && c->duration > 0) pace = speed * c->duration / mixed;
+    }
+    last_ = AdvanceTime(time_, dt, pace, c->duration, loop);
     time_ = last_.time;
     return last_;
 }
@@ -79,11 +100,34 @@ void Player::SetTime(float time) {
 float Player::FadeWeight() const { return fadeLeft_ > 0 && fadeLength_ > 0 ? 1.f - fadeLeft_ / fadeLength_ : 1.f; }
 
 void Player::Evaluate(const space3d::SkinData& skin, std::vector<space3d::BoneMatrix>& out) {
-    const space3d::Skeleton& skeleton = skin.skeleton;
-    if (const space3d::Clip* c = Current()) {
-        SampleClip(*c, bindings_[static_cast<size_t>(clip_)], skeleton, time_, loop, sample_);
-    } else {
-        sample_ = RestPose(skeleton);
+    EvaluatePose(skin.skeleton);
+    FinishPose(skin, out);
+}
+
+const Pose& Player::EvaluatePose(const space3d::Skeleton& skeleton) {
+    const space3d::Clip* c = Current();
+    bool mixed = false;
+    if (c && !blend_.empty()) {
+        // 混ぜる: どのクリップも、主のクリップと同じ割合の時刻で。
+        const float phase = c->duration > 0 ? time_ / c->duration : 0.f;
+        mix_.Begin(skeleton.bones.size());
+        for (const Motion& m : blend_) {
+            if (!(m.weight > 0) || m.clip < 0 || static_cast<size_t>(m.clip) >= clips_.size()) continue;
+            const space3d::Clip& mc = clips_[static_cast<size_t>(m.clip)];
+            SampleClip(mc, bindings_[static_cast<size_t>(m.clip)], skeleton, phase * mc.duration, loop, part_);
+            mix_.Add(part_, m.weight);
+        }
+        if (mix_.TotalWeight() > 0) {
+            mix_.Finish(skeleton, sample_);
+            mixed = true;
+        }
+    }
+    if (!mixed) {
+        if (c) {
+            SampleClip(*c, bindings_[static_cast<size_t>(clip_)], skeleton, time_, loop, sample_);
+        } else {
+            sample_ = RestPose(skeleton);
+        }
     }
     if (FadeWeight() < 1.f) {
         if (from_.size() != skeleton.bones.size()) from_ = RestPose(skeleton);
@@ -91,7 +135,11 @@ void Player::Evaluate(const space3d::SkinData& skin, std::vector<space3d::BoneMa
     } else {
         std::swap(pose_, sample_);  // sample_ は次のフレームで全部書き直す
     }
-    animation3d::ModelMatrices(skeleton, pose_, model_);
+    return pose_;
+}
+
+void Player::FinishPose(const space3d::SkinData& skin, std::vector<space3d::BoneMatrix>& out) {
+    animation3d::ModelMatrices(skin.skeleton, pose_, model_);
     SkinMatrices(model_, skin.inverseBind, out);
 }
 

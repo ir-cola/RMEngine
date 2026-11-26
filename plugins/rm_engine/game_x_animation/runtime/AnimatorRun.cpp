@@ -26,10 +26,36 @@ AnimatorRun& RunOf(Animator& a, int entity) {
     return *a.run;
 }
 
+namespace {
+
+// レイヤーの再生をモデルにつなぎ、マスクと休みの姿勢を作る。
+void BindLayers(AnimatorRun& run) {
+    run.rest.clear();
+    if (run.skin) run.rest = animation3d::RestPose(run.skin->skeleton);
+    if (!run.rules) {
+        run.layers.clear();
+        return;
+    }
+    run.layers.resize(run.rules->layers.size());
+    for (size_t i = 0; i < run.layers.size(); ++i) {
+        AnimatorRun::Layer& l = run.layers[i];
+        l.state = -1;
+        l.rule = -1;
+        l.checks.clear();
+        if (run.skin && run.clips) {
+            l.player.Bind(run.skin->skeleton, *run.clips);
+            l.mask = animation3d::BoneMask(run.skin->skeleton, run.rules->layers[i].mask);
+        }
+    }
+}
+
+}  // namespace
+
 void BindModel(AnimatorRun& run, std::shared_ptr<const space3d::SkinData> skin, std::shared_ptr<const std::vector<space3d::Clip>> clips) {
     run.skin = std::move(skin);
     run.clips = std::move(clips);
     if (run.skin && run.clips) run.player.Bind(run.skin->skeleton, *run.clips);
+    BindLayers(run);
     run.started = false;
     run.playing.clear();
     run.bones.clear();
@@ -68,8 +94,28 @@ void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<con
         }
         changed = changed || fading || p.Time() != before;
     }
+    // 重ねるレイヤー: それぞれ進めて、体の姿勢の上に重ねる (重ねている間は毎フレーム作り直す)。
+    bool layered = false;
+    for (size_t i = 0; i < run.layers.size() && run.rules && i < run.rules->layers.size(); ++i) {
+        AnimatorRun::Layer& l = run.layers[i];
+        if (!run.paused) l.player.Tick(std::isfinite(dt) && dt > 0 ? dt : 0.f);
+        layered = layered || (l.weight > 0 && l.player.ClipIndex() >= 0);
+    }
+    if (layered || !run.blend.empty()) changed = true;  // (混ぜている・重ねている間は、重みが変わるので毎フレーム)
     if (changed || run.version == 0) {
-        p.Evaluate(*run.skin, run.bones);
+        const animation3d::Pose& base = p.EvaluatePose(run.skin->skeleton);
+        (void)base;
+        for (size_t i = 0; i < run.layers.size() && run.rules && i < run.rules->layers.size(); ++i) {
+            AnimatorRun::Layer& l = run.layers[i];
+            if (!(l.weight > 0) || l.player.ClipIndex() < 0) continue;
+            const animation3d::Pose& pose = l.player.EvaluatePose(run.skin->skeleton);
+            if (run.rules->layers[i].mode == animation::LayerMode::Additive) {
+                animation3d::AddPose(p.MutablePose(), pose, run.rest, l.weight, l.mask);
+            } else {
+                animation3d::OverlayPose(p.MutablePose(), pose, l.weight, l.mask);
+            }
+        }
+        p.FinishPose(*run.skin, run.bones);
         run.version = next();
     }
     run.moving = changed;
@@ -105,17 +151,50 @@ bool Ended(const AnimatorRun& run, const Animator& a) {
 
 namespace {
 
+// 状態の主のクリップ: クリップの状態はそのクリップ、混ぜる状態は 1 つ目のクリップ (足をそろえる時計)。
+const std::string& MainClip(const animation::AnimState& s) {
+    static const std::string none;
+    if (s.kind == animation::StateKind::Clip) return s.clip;
+    return s.motions.empty() ? none : s.motions.front().clip;
+}
+
+// 混ぜる状態の重みを、今のパラメーターで再生に渡す (クリップの状態: 混ぜない)。
+void ApplyBlend(const AnimatorRun& run, const animation::CompiledController& c, int state, std::vector<float>& weights, animation3d::Player& player) {
+    animation::StateBlend(c, run.params, state, weights);
+    std::vector<animation3d::Player::Motion> motions;
+    if (!weights.empty() && run.clips && state >= 0 && static_cast<size_t>(state) < c.states.size()) {
+        const animation::AnimState& s = c.states[static_cast<size_t>(state)];
+        for (size_t k = 0; k < s.motions.size() && k < weights.size(); ++k) motions.push_back({FindClip(*run.clips, s.motions[k].clip), weights[k]});
+    }
+    player.SetBlend(motions);
+}
+
 // 状態 `index` に入る: そのクリップ・ループ・速さを欄に書き、`fade` 秒で移る。
 void EnterState(AnimatorRun& run, Animator& a, int index, float fade) {
     if (!run.rules || index < 0 || static_cast<size_t>(index) >= run.rules->states.size()) return;
     const animation::AnimState& s = run.rules->states[static_cast<size_t>(index)];
     a.loop = s.loop;
     a.speed = std::isfinite(s.speed) ? std::clamp(s.speed, -10.f, 10.f) : 1.f;
-    PlayClip(run, a, s.clip, fade);
+    PlayClip(run, a, MainClip(s), fade);
     run.state = index;
     run.stateClock = 0;
     run.looped = false;
     run.lastTime = run.player.Time();
+}
+
+// レイヤーの状態 `index` に入る。
+void EnterLayerState(AnimatorRun& run, size_t layer, int index, float fade) {
+    if (!run.rules || layer >= run.layers.size() || layer >= run.rules->layers.size()) return;
+    const animation::CompiledController& c = run.rules->layers[layer].rules;
+    AnimatorRun::Layer& l = run.layers[layer];
+    if (index < 0 || static_cast<size_t>(index) >= c.states.size()) return;
+    const animation::AnimState& s = c.states[static_cast<size_t>(index)];
+    l.player.loop = s.loop;
+    l.player.speed = std::isfinite(s.speed) ? std::clamp(s.speed, -10.f, 10.f) : 1.f;
+    l.player.Play(run.clips ? FindClip(*run.clips, MainClip(s)) : -1, std::isfinite(fade) && fade > 0 ? fade : 0.f);
+    l.state = index;
+    l.looped = false;
+    l.lastTime = l.player.Time();
 }
 
 }  // namespace
@@ -126,11 +205,15 @@ void BindRules(AnimatorRun& run, Animator& a, std::shared_ptr<const animation::C
     run.rule = -1;
     run.checks.clear();
     run.params = {};
+    run.blend.clear();
+    run.player.SetBlend({});
+    BindLayers(run);
     if (!run.rules) return;
     run.params = animation::StartValues(*run.rules);
     for (const auto& [name, value] : run.pendingParams) animation::SetParam(run.params, *run.rules, name, value);
     run.pendingParams.clear();
     EnterState(run, a, 0, 0.f);
+    for (size_t i = 0; i < run.layers.size(); ++i) EnterLayerState(run, i, 0, 0.f);
 }
 
 void StepAnimatorRules(AnimatorRun& run, Animator& a, float dt) {
@@ -149,6 +232,27 @@ void StepAnimatorRules(AnimatorRun& run, Animator& a, float dt) {
     const animation::RuleStep r = animation::StepRules(*run.rules, run.params, sn, step, &run.checks);
     if (r.rule >= 0) run.rule = r.rule;
     if (r.to >= 0) EnterState(run, a, r.to, r.fade);
+    ApplyBlend(run, *run.rules, run.state, run.blend, run.player);
+    // 重ねるレイヤー: それぞれのルール (パラメーターは同じもの)。
+    for (size_t i = 0; i < run.layers.size() && i < run.rules->layers.size(); ++i) {
+        const animation::CompiledLayer& cl = run.rules->layers[i];
+        AnimatorRun::Layer& l = run.layers[i];
+        l.weight = animation::LayerWeight(cl, run.params);
+        if (cl.rules.states.empty()) continue;
+        if (l.state < 0) EnterLayerState(run, i, 0, 0.f);
+        const float lt = l.player.Time();
+        if (l.player.loop && l.player.speed >= 0 && lt + 1e-4f < l.lastTime) l.looped = true;
+        l.lastTime = lt;
+        const space3d::Clip* lc = run.clips && l.player.ClipIndex() >= 0 ? &(*run.clips)[static_cast<size_t>(l.player.ClipIndex())] : nullptr;
+        animation::StateNow ln;
+        ln.state = l.state;
+        ln.t = lc && lc->duration > 0 ? std::clamp(lt / lc->duration, 0.f, 1.f) : 0.f;
+        ln.ended = l.player.loop ? l.looped : (lc && lt >= lc->duration);
+        const animation::RuleStep lr = animation::StepRules(cl.rules, run.params, ln, 0.f, &l.checks);
+        if (lr.rule >= 0) l.rule = lr.rule;
+        if (lr.to >= 0) EnterLayerState(run, i, lr.to, lr.fade);
+        ApplyBlend(run, cl.rules, l.state, l.blend, l.player);
+    }
 }
 
 bool PlayState(AnimatorRun& run, Animator& a, std::string_view state, float fade) {
