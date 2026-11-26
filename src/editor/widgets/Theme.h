@@ -8,11 +8,14 @@
 // 組み込みは 黒、白、PC の設定に合わせる。ほかのテーマはすべてテーマパックから来る: テーマファイルを
 // 持つプラグイン (plugins/<author>/<name>/themes/*.json。プラグインを読むときに ThemeFile.h が読む。
 // パックの絵はそのコードで、w::kOrnamentPoint に出る)。新しいテーマ = パックの中のテーマファイル。
+// ほかのテーマに従うテーマもある (2026-11-26: 季節テーマパックの「季節で切り替える」): ソフトを立ち上げた日付の
+// 季節 (と、予定では朝か夜か) で、パックのどのテーマの色と絵を使うかが決まる (ResolveFollowing)。
 
 #include "editor/lang/Lang.h"
 #include "ui/Types.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -81,6 +84,35 @@ inline uint32_t CaptionRgb = kDark.caption;
 inline bool IsLight = false;
 inline const w::OrnamentInfo* CurrentOrnament = nullptr;  // テーマの絵 (ほとんどは無し)
 
+// 季節。ソフトを立ち上げた日付の月で決まる: 春 = 3・4・5 月、夏 = 6・7・8 月、秋 = 9・10・11 月、冬 = 12・1・2 月。
+enum class Season { Spring, Summer, Fall, Winter };
+inline Season SeasonOfMonth(int month) {
+    const int m = ((month - 1) % 12 + 12) % 12 + 1;  // (1 .. 12 の外は回して読む)
+    if (m >= 3 && m <= 5) return Season::Spring;
+    if (m >= 6 && m <= 8) return Season::Summer;
+    if (m >= 9 && m <= 11) return Season::Fall;
+    return Season::Winter;
+}
+// 1 日のうちのどちらか: 季節のテーマは、1 つの季節に朝用と夜用を持てる (夜用はまだ無い: 予定は docs/HOW_TO_TRY.md の
+// テーマの章。朝か夜かをどう決めるかも、夜用を作るときに決める。今はいつも朝)。
+enum class DayPart { Morning, Night };
+// 1 つの季節に使うテーマの id: 朝用と夜用 (空: 朝用を使う)。
+struct SeasonThemes {
+    std::string morning, night;
+};
+// ほかのテーマに従うテーマの、従い方 (今は季節だけ: seasons は Season の順)。
+struct ThemeFollow {
+    std::array<SeasonThemes, 4> seasons;
+};
+// 季節 `season` の `part` に使うテーマの id の候補: 夜なら夜用、それが無ければ朝用。
+inline std::vector<std::string> FollowedIds(const ThemeFollow& f, Season season, DayPart part) {
+    const SeasonThemes& s = f.seasons[static_cast<size_t>(season)];
+    std::vector<std::string> ids;
+    if (part == DayPart::Night && !s.night.empty()) ids.push_back(s.night);
+    if (!s.morning.empty()) ids.push_back(s.morning);
+    return ids;
+}
+
 // 一覧の 1 つのテーマ。その id を hub.json が持つ (options.theme)。
 struct ThemeInfo {
     std::string id;
@@ -91,6 +123,9 @@ struct ThemeInfo {
     std::wstring pack;               // パックの名前 (そのプラグインの表示名。表示するとき Tr を通す)
     std::vector<std::string> aliases;           // 前に保存されていた id (そのころの hub.json がこれを持っている)
     const w::OrnamentInfo* ornament = nullptr;  // その絵。パックのコードから
+    // ほかのテーマに従う (季節で切り替える)。palette と ornament は ResolveFollowing が従うテーマのものにする。
+    std::optional<ThemeFollow> follow;
+    std::wstring followed;  // 今従っているテーマの名前 (日本語。表示するとき Tr を通す)。空: 従わない
 };
 
 namespace detail {
@@ -112,6 +147,36 @@ inline void SetPackThemes(std::vector<ThemeInfo> themes) {
     auto& list = detail::List();
     list.resize(detail::kBuiltIn);
     for (ThemeInfo& t : themes) list.push_back(std::move(t));
+}
+// ほかのテーマに従うテーマ (follow) に、季節 `season` の `part` のテーマの色・絵・名前を写す (同じ一覧か、組み込みの
+// テーマから探す。従う先がまた従うテーマなのは使わない)。従う先が無いものは一覧から外し、その id を `missing` に。
+inline void ResolveFollowing(std::vector<ThemeInfo>& themes, Season season, DayPart part, std::vector<std::string>* missing = nullptr) {
+    auto find = [&](const std::string& id) -> const ThemeInfo* {
+        for (const ThemeInfo& t : themes) {
+            if (t.id == id && !t.follow) return &t;
+        }
+        for (size_t i = 0; i < detail::kBuiltIn && i < detail::List().size(); ++i) {
+            if (detail::List()[i].id == id) return &detail::List()[i];
+        }
+        return nullptr;
+    };
+    std::vector<std::string> lost;
+    for (ThemeInfo& t : themes) {
+        if (!t.follow) continue;
+        const ThemeInfo* to = nullptr;
+        for (const std::string& id : FollowedIds(*t.follow, season, part)) {
+            if ((to = find(id)) != nullptr) break;
+        }
+        if (!to) {
+            lost.push_back(t.id);
+            continue;
+        }
+        t.palette = to->palette;
+        t.ornament = to->ornament;
+        t.followed = to->name;
+    }
+    std::erase_if(themes, [&](const ThemeInfo& t) { return std::find(lost.begin(), lost.end(), t.id) != lost.end(); });
+    if (missing) *missing = std::move(lost);
 }
 // 知らない id (入っていないパック、新しいバージョンのテーマ、hub.json の打ち間違い) は、
 // 一覧の最初のテーマ (そのあと App がそれを hub.json に書く: パックをもう一度入れても元には戻らない)。

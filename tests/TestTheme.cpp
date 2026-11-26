@@ -16,6 +16,7 @@
 #include <iterator>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -60,6 +61,62 @@ RM_TEST(Theme_PackThemesComeAndGo) {
     CHECK(&theme::FindTheme("Spring") == &theme::Themes()[0]);
 }
 
+// 季節で切り替える (2026-11-26): 月から季節、テーマファイルの follow、従うテーマの色と名前を写す。
+RM_TEST(Theme_FollowsTheSeason) {
+    using theme::Season;
+    const Season want[12] = {Season::Winter, Season::Winter, Season::Spring, Season::Spring, Season::Spring, Season::Summer,
+                             Season::Summer, Season::Summer, Season::Fall,   Season::Fall,   Season::Fall,   Season::Winter};
+    for (int m = 1; m <= 12; ++m) CHECK(theme::SeasonOfMonth(m) == want[m - 1]);
+    CHECK(theme::SeasonOfMonth(0) == Season::Winter && theme::SeasonOfMonth(13) == Season::Winter && theme::SeasonOfMonth(16) == Season::Spring);
+    // ファイル: 色の代わりに follow。夜用は省ける。
+    const auto doc = rm::json::Parse(R"({"kind": "rm_engine.theme", "format": 1, "id": "BySeason", "name": "季節で切り替える",
+        "follow": {"by": "season", "spring": {"morning": "Spring", "night": "SpringNight"}, "summer": {"morning": "Summer"},
+                   "fall": {"morning": "Fall"}, "winter": {"morning": "Winter"}}})");
+    CHECK(doc.has_value());
+    std::string err;
+    const auto t = theme::ParseThemeFile(*doc, &err);
+    CHECK(t && t->info.follow && !t->info.palette);
+    if (!t || !t->info.follow) return;
+    CHECK(theme::FollowedIds(*t->info.follow, Season::Spring, theme::DayPart::Night) == std::vector<std::string>({"SpringNight", "Spring"}));
+    CHECK(theme::FollowedIds(*t->info.follow, Season::Summer, theme::DayPart::Night) == std::vector<std::string>{"Summer"});
+    CHECK(theme::FollowedIds(*t->info.follow, Season::Winter, theme::DayPart::Morning) == std::vector<std::string>{"Winter"});
+    for (const char* bad : {R"({"kind": "rm_engine.theme", "id": "A", "name": "A", "follow": {"by": "weekday"}})",
+                            R"({"kind": "rm_engine.theme", "id": "A", "name": "A", "follow": {"by": "season", "spring": {"morning": "S"}}})"}) {
+        std::string why;
+        CHECK(!theme::ParseThemeFile(*rm::json::Parse(bad), &why) && !why.empty());
+    }
+    // 従うテーマの色・名前を写す。夜用が無ければ朝用。従う先が無いテーマは外す。
+    auto themeOf = [](const char* id, const wchar_t* name, uint32_t bg) {
+        theme::ThemeInfo i;
+        i.id = id;
+        i.name = name;
+        i.palette = theme::kLight;
+        i.palette->bg = rm::Color::Hex(bg);
+        return i;
+    };
+    std::vector<theme::ThemeInfo> pack = {themeOf("Spring", L"スプリング", 0x110000), themeOf("Summer", L"サマー", 0x220000),
+                                          themeOf("Fall", L"フォール", 0x330000), themeOf("Winter", L"ウィンター", 0x440000), t->info};
+    theme::ThemeInfo lost = t->info;
+    lost.id = "Lost";
+    lost.follow->seasons[3].morning = "Nowhere";
+    pack.push_back(lost);
+    for (const auto& [season, bg, name] : {std::tuple{Season::Spring, 0x110000u, L"スプリング"}, std::tuple{Season::Summer, 0x220000u, L"サマー"},
+                                           std::tuple{Season::Fall, 0x330000u, L"フォール"}, std::tuple{Season::Winter, 0x440000u, L"ウィンター"}}) {
+        std::vector<theme::ThemeInfo> list = pack;
+        std::vector<std::string> missing;
+        theme::ResolveFollowing(list, season, theme::DayPart::Night, &missing);
+        const auto by = std::find_if(list.begin(), list.end(), [](const theme::ThemeInfo& i) { return i.id == "BySeason"; });
+        CHECK(by != list.end() && by->palette && by->palette->bg == rm::Color::Hex(bg) && by->followed == name);
+        const bool lostGone = std::none_of(list.begin(), list.end(), [](const theme::ThemeInfo& i) { return i.id == "Lost"; });
+        CHECK(lostGone == (season == Season::Winter) && missing.size() == (season == Season::Winter ? 1u : 0u));
+    }
+    // 組み込みのテーマにも従える (PC の設定に合わせる: 色の組は無いまま)。
+    std::vector<theme::ThemeInfo> builtin = {t->info};
+    for (theme::SeasonThemes& s : builtin[0].follow->seasons) s = {"System", ""};
+    theme::ResolveFollowing(builtin, Season::Fall, theme::DayPart::Morning);
+    CHECK(builtin.size() == 1 && !builtin[0].palette && builtin[0].followed == L"PC の設定に合わせる");
+}
+
 RM_TEST(ThemeFile_ReadsColorsAndFillsTheRest) {
     CHECK(theme::ParseHexColor("#FF8000") == rm::Color::Hex(0xFF8000));
     CHECK(theme::ParseHexColor("00000080") == rm::Color::Hex(0x000000, 128.f / 255.f));
@@ -91,6 +148,7 @@ RM_TEST(ThemeFile_ReadsColorsAndFillsTheRest) {
 RM_TEST(ThemeFile_ThePacks) {
     const std::filesystem::path plugins = std::filesystem::path(__FILE__).parent_path().parent_path() / "plugins";
     std::set<std::string> ids{"Dark", "Light", "System"};
+    std::vector<std::string> follows;
     int count = 0;
     std::error_code ec;
     for (std::filesystem::recursive_directory_iterator it(plugins, ec), end; !ec && it != end; it.increment(ec)) {
@@ -106,13 +164,19 @@ RM_TEST(ThemeFile_ThePacks) {
         if (!t) continue;
         CHECK(ids.insert(t->info.id).second);
         for (const std::string& a : t->info.aliases) CHECK(ids.insert(a).second);
+        ++count;
+        if (t->info.follow) {  // (季節で切り替える: 色は従うテーマのもの)
+            for (const theme::SeasonThemes& s : t->info.follow->seasons) follows.push_back(s.morning);
+            continue;
+        }
         // ロゴのインク (目立つ方の白か黒) は、その種類のテーマが期待するもの。
         const rm::Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
         CHECK(theme::InkOn(t->info.palette->sidebar) == (t->info.palette->light ? black : white));
-        ++count;
     }
-    CHECK(count == 7);
-    for (const char* id : {"Midnight", "Forest", "Paper", "Spring", "Summer", "Fall", "Winter", "Sakura"}) CHECK(ids.count(id) == 1);
+    CHECK(count == 8);
+    CHECK(follows.size() == 4);
+    for (const std::string& id : follows) CHECK(ids.count(id) == 1);  // 従う先はパックにある
+    for (const char* id : {"Midnight", "Forest", "Paper", "Spring", "Summer", "Fall", "Winter", "Sakura", "BySeason"}) CHECK(ids.count(id) == 1);
 }
 
 RM_TEST(Ornament_SakuraShape) {

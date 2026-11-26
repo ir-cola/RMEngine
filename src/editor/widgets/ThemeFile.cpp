@@ -68,6 +68,17 @@ std::optional<ThemeFromFile> ParseThemeFile(const json::Value& v, std::string* e
     out.info.aliases = file.aliases;
     out.order = file.order;
     out.ornament = file.ornament;
+    if (!file.follow.by.empty()) {
+        if (file.follow.by != "season") return fail("\"follow\" の \"by\" は \"season\" だけです: \"" + file.follow.by + "\"");
+        ThemeFollow f;
+        const ThemeFileSeason* seasons[4] = {&file.follow.spring, &file.follow.summer, &file.follow.fall, &file.follow.winter};
+        for (size_t i = 0; i < 4; ++i) {
+            if (seasons[i]->morning.empty()) return fail("\"follow\" に、季節の朝用のテーマ (\"morning\") がありません");
+            f.seasons[i] = {seasons[i]->morning, seasons[i]->night};
+        }
+        out.info.follow = std::move(f);
+        out.info.palette = std::nullopt;  // (ResolveFollowing が、従うテーマのものにする)
+    }
     return out;
 }
 

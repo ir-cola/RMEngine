@@ -1066,7 +1066,10 @@ void HubScreen::DrawOptions(ui::Context& c, Rect area) {
         // テーマ: 専用の画面で選ぶ (たくさんできる予定)。ここには今使っているものを出す。
         const Rect row{area.x, y, area.w, 36};
         p.Text({row.x, row.y, labelW, row.h}, Tr(L"色のテーマ"), Style(13, theme::TextDim));
-        p.Text({row.x + labelW, row.y, row.w - labelW - buttonW - 16, row.h}, Tr(theme::FindTheme(opts.theme).name), Style(13, theme::Text));
+        // (季節で切り替える: 今従っているテーマも)
+        const theme::ThemeInfo& now = theme::FindTheme(opts.theme);
+        const std::wstring name = now.followed.empty() ? Tr(now.name) : TrF(L"{} (いまは {})", Tr(now.name), Tr(now.followed));
+        p.Text({row.x + labelW, row.y, row.w - labelW - buttonW - 16, row.h}, name, Style(13, theme::Text));
         if (w::Button(c, "opt.theme", {row.Right() - buttonW, row.y + 2, buttonW, row.h - 4}, Tr(L"テーマを変更…"), w::ButtonKind::Secondary)) {
             modal_ = Modal::Theme;
         }

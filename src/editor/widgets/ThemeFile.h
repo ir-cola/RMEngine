@@ -14,6 +14,12 @@
 //     "caption": "#F5E4EA",           タイトルバー
 //     "colors": { "bg": "#FBF1F4", "sidebar": ..., "shadow": "#00000021", ... }
 //   }
+//
+// ほかのテーマに従うテーマ (2026-11-26。季節テーマパックの「季節で切り替える」): 色の代わりに follow を書く。
+// 季節ごとに朝用 (要る) と夜用 (省略可: 無ければ朝用) のテーマの id。色と絵は従うテーマのもの (Theme.h の ResolveFollowing)。
+//
+//   { "kind": "rm_engine.theme", "format": 1, "id": "BySeason", "name": "季節で切り替える",
+//     "follow": { "by": "season", "spring": { "morning": "Spring", "night": "SpringNight" }, "summer": { ... }, ... } }
 
 #include "base/Json.h"
 #include "core/reflect/Reflect.h"
@@ -54,6 +60,21 @@ struct ThemeFileColors {
 };
 
 RM_STRUCT()
+struct ThemeFileSeason {
+    RM_PROPERTY() std::string morning;
+    RM_PROPERTY() std::string night;
+};
+
+RM_STRUCT()
+struct ThemeFileFollow {
+    RM_PROPERTY() std::string by;  // "season" だけ (空: 従わない)
+    RM_PROPERTY() ThemeFileSeason spring;
+    RM_PROPERTY() ThemeFileSeason summer;
+    RM_PROPERTY() ThemeFileSeason fall;
+    RM_PROPERTY() ThemeFileSeason winter;
+};
+
+RM_STRUCT()
 struct ThemeFile {
     RM_PROPERTY() std::string kind;
     RM_PROPERTY() int format = 1;
@@ -65,6 +86,7 @@ struct ThemeFile {
     RM_PROPERTY() std::string ornament;
     RM_PROPERTY() std::string caption;
     RM_PROPERTY() ThemeFileColors colors;
+    RM_PROPERTY() ThemeFileFollow follow;
 };
 
 inline constexpr char kThemeFileKind[] = "rm_engine.theme";

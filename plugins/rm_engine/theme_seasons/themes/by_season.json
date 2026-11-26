@@ -1,0 +1,14 @@
+{
+  "kind": "rm_engine.theme",
+  "format": 1,
+  "id": "BySeason",
+  "name": "季節で切り替える",
+  "order": 0,
+  "follow": {
+    "by": "season",
+    "spring": { "morning": "Spring" },
+    "summer": { "morning": "Summer" },
+    "fall": { "morning": "Fall" },
+    "winter": { "morning": "Winter" }
+  }
+}

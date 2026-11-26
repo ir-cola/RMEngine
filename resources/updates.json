@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.25",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "季節テーマパックに「季節で切り替える」を足しました。ソフトを立ち上げた日付で、春 (3〜5 月)・夏 (6〜8 月)・秋 (9〜11 月)・冬 (12〜2 月) のテーマになります",
+          "en": "Added \"Switch by season\" to the Seasons Theme Pack. It picks the spring (March-May), summer (June-August), fall (September-November) or winter (December-February) theme from the date you start the app"
+        },
+        {
+          "ja": "季節のテーマは 1 つの季節に朝用と夜用を持てる形にしました (今のテーマは全部朝用。夜用は予定です)",
+          "en": "Season themes can now have a morning and a night version for each season (today's themes are all morning ones; the night ones are planned)"
+        }
+      ]
+    },
+    {
       "version": "0.0.24",
       "date": "2026-11-26",
       "items": [

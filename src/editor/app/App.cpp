@@ -16,6 +16,7 @@
 #include "editor/shell/EditorScreen.h"
 #include "platform/Shell.h"
 
+#include <ctime>
 #include <format>
 #include <tuple>
 #include <algorithm>
@@ -375,6 +376,21 @@ void App::ApplyDownloadIfReady() {
     }
 }
 
+namespace {
+
+// ソフトを立ち上げた日の月 (1 .. 12)。最初に聞いた時のまま (季節で切り替えるテーマは、立ち上げた日付で決まる)。
+int LaunchMonth() {
+    static const int month = [] {
+        const std::time_t now = std::time(nullptr);
+        std::tm local{};
+        if (localtime_s(&local, &now) != 0) return 1;
+        return local.tm_mon + 1;
+    }();
+    return month;
+}
+
+}  // namespace
+
 void App::LoadThemes() {
     theme::SetPackThemes({});  // 組み込みの 3 つだけ。パックを読む間
     const auto ornaments = plugins_.Registry().Contributions<w::OrnamentInfo>(w::kOrnamentPoint);
@@ -421,6 +437,13 @@ void App::LoadThemes() {
             t.info.pack = Utf8ToWide(e.status.displayName);
             themes.push_back(std::move(t.info));
         }
+    }
+    // ほかのテーマに従うテーマ (季節で切り替える): 立ち上げた日付の季節の、朝用のテーマ (夜用は予定)。
+    std::vector<std::string> missing;
+    theme::ResolveFollowing(themes, theme::SeasonOfMonth(LaunchMonth()), theme::DayPart::Morning, &missing);
+    for (const std::string& id : missing) log::Warn("テーマ {} が従うテーマがありません (使いません)", id);
+    for (const theme::ThemeInfo& t : themes) {
+        if (t.follow) log::Info("テーマ {}: {} 月なので「{}」", t.id, LaunchMonth(), WideToUtf8(t.followed));
     }
     log::Info("テーマ: パックから {} 個", themes.size());
     theme::SetPackThemes(std::move(themes));
