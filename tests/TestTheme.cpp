@@ -109,6 +109,14 @@ RM_TEST(Theme_FollowsTheSeason) {
         CHECK(by != list.end() && by->palette && by->palette->bg == rm::Color::Hex(bg) && by->followed == name);
         const bool lostGone = std::none_of(list.begin(), list.end(), [](const theme::ThemeInfo& i) { return i.id == "Lost"; });
         CHECK(lostGone == (season == Season::Winter) && missing.size() == (season == Season::Winter ? 1u : 0u));
+        // テーマの画面の見本: 4 つの季節の朝用の色 (春 夏 秋 冬 の順)。どれかの季節が無いテーマは区切らない。
+        CHECK(by != list.end() && by->seasons.size() == 4);
+        if (by != list.end() && by->seasons.size() == 4) {
+            CHECK(by->seasons[0].bg == rm::Color::Hex(0x110000) && by->seasons[1].bg == rm::Color::Hex(0x220000) &&
+                  by->seasons[2].bg == rm::Color::Hex(0x330000) && by->seasons[3].bg == rm::Color::Hex(0x440000));
+        }
+        const auto lostAt = std::find_if(list.begin(), list.end(), [](const theme::ThemeInfo& i) { return i.id == "Lost"; });
+        CHECK(lostAt == list.end() || lostAt->seasons.empty());
     }
     // 組み込みのテーマにも従える (PC の設定に合わせる: 色の組は無いまま)。
     std::vector<theme::ThemeInfo> builtin = {t->info};

@@ -126,6 +126,9 @@ struct ThemeInfo {
     // ほかのテーマに従う (季節で切り替える)。palette と ornament は ResolveFollowing が従うテーマのものにする。
     std::optional<ThemeFollow> follow;
     std::wstring followed;  // 今従っているテーマの名前 (日本語。表示するとき Tr を通す)。空: 従わない
+    // 従うテーマの、季節ごとの朝用の色 (Season の順に 4 つ。テーマの画面の見本を 春｜夏｜秋｜冬 に区切って描く)。
+    // 空: 1 つの色で描く (従わない・どれかの季節のテーマが無い)。
+    std::vector<Palette> seasons;
 };
 
 namespace detail {
@@ -174,6 +177,19 @@ inline void ResolveFollowing(std::vector<ThemeInfo>& themes, Season season, DayP
         t.palette = to->palette;
         t.ornament = to->ornament;
         t.followed = to->name;
+        // 見本: 4 つの季節の朝用の色 (どれかが無ければ、見本は今の季節の色だけ)。
+        t.seasons.clear();
+        for (int s = 0; s < 4; ++s) {
+            const ThemeInfo* look = nullptr;
+            for (const std::string& id : FollowedIds(*t.follow, static_cast<Season>(s), DayPart::Morning)) {
+                if ((look = find(id)) != nullptr) break;
+            }
+            if (!look) {
+                t.seasons.clear();
+                break;
+            }
+            t.seasons.push_back(look->palette.value_or(kDark));
+        }
     }
     std::erase_if(themes, [&](const ThemeInfo& t) { return std::find(lost.begin(), lost.end(), t.id) != lost.end(); });
     if (missing) *missing = std::move(lost);

@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.30",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "テーマの画面の「季節で切り替える」のカードを、春｜夏｜秋｜冬 の 4 つに区切った見本にしました (前は今の季節の色だけ)",
+          "en": "The \"Switch by season\" card in the theme screen now shows a preview split into Spring | Summer | Fall | Winter (before, it showed only the current season's colors)"
+        }
+      ]
+    },
+    {
       "version": "0.0.29",
       "date": "2026-11-26",
       "items": [

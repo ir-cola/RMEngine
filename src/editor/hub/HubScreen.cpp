@@ -1311,7 +1311,21 @@ void HubScreen::DrawThemePicker(ui::Context& c) {
         }
         const Rect card{cr.x + cell.col * (cardW + kGap), top, cardW, kCardH};
         c.PushId(static_cast<uint64_t>(i));
-        const bool clicked = w::ThemeCard(c, "card", card, t.palette ? &*t.palette : nullptr, Tr(t.name), &t == &current).clicked;
+        // 見本: 季節で切り替える = 春｜夏｜秋｜冬、PC の設定に合わせる = 黒｜白、ほかは 1 つ。
+        static const wchar_t* const kSeasonNames[4] = {TrKey(L"春"), TrKey(L"夏"), TrKey(L"秋"), TrKey(L"冬")};
+        std::wstring seasonNames[4];
+        std::vector<w::ThemeSlice> slices;
+        if (t.seasons.size() == 4) {
+            for (size_t k = 0; k < 4; ++k) {
+                seasonNames[k] = Tr(kSeasonNames[k]);
+                slices.push_back({&t.seasons[k], seasonNames[k]});
+            }
+        } else if (t.palette) {
+            slices.push_back({&*t.palette, {}});
+        } else {
+            slices = {{&theme::kDark, {}}, {&theme::kLight, {}}};
+        }
+        const bool clicked = w::ThemeCard(c, "card", card, slices, Tr(t.name), &t == &current).clicked;
         c.PopId();
         if (clicked && &t != &current) {
             // プロジェクトのデータではない: すぐ反映し、hub.json に保存し、Undo はできない (ほかのオプションと同じ)。

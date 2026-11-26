@@ -775,24 +775,32 @@ void ThemePreview(ui::Painter& p, const Rect& r, const theme::Palette& k) {
 }
 }  // namespace
 
-ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view idStr, const Rect& r, const theme::Palette* palette,
+ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view idStr, const Rect& r, std::span<const ThemeSlice> slices,
                                     std::wstring_view name, bool selected) {
     auto& p = c.P();
     const auto b = c.ButtonBehavior(c.MakeId(idStr), r);
     if (b.hovered) c.SetCursor(ui::Cursor::Hand);
     DrawSurface(c, r, b.hovered && !selected ? Surface::Hovered : Surface::Panel, 8.f);
     const Rect pr{r.x + 10, r.y + 10, r.w - 20, r.h - 20 - 30};
-    if (palette) {
-        ThemePreview(p, pr, *palette);
-    } else {
-        // Windows に従う: 左が暗く、右が明るい。
-        const float half = std::round(pr.w * 0.5f);
-        p.PushClip({pr.x, pr.y, half, pr.h});
-        ThemePreview(p, pr, theme::kDark);
-        p.PopClip();
-        p.PushClip({pr.x + half, pr.y, pr.w - half, pr.h});
-        ThemePreview(p, pr, theme::kLight);
-        p.PopClip();
+    // 同じ小さなウィンドウを、区切りごとにその色で (縦に等しく分けた所だけ見せる)。
+    const size_t n = std::max<size_t>(slices.size(), 1);
+    for (size_t i = 0; i < slices.size(); ++i) {
+        const theme::Palette& k = slices[i].palette ? *slices[i].palette : theme::kDark;
+        const float x0 = std::round(pr.x + pr.w * static_cast<float>(i) / static_cast<float>(n));
+        const float x1 = std::round(pr.x + pr.w * static_cast<float>(i + 1) / static_cast<float>(n));
+        const Rect strip{x0, pr.y, x1 - x0, pr.h};
+        if (n > 1) p.PushClip(strip);
+        ThemePreview(p, pr, k);
+        if (!slices[i].label.empty()) {
+            ui::TextStyle ls;
+            ls.size = 11;
+            ls.bold = true;
+            ls.color = k.text;
+            ls.h = ui::HAlign::Center;
+            p.Text({strip.x, pr.Bottom() - 17, strip.w, 14}, slices[i].label, ls);
+        }
+        if (n > 1) p.PopClip();
+        if (i > 0) p.FillRect({x0 - 0.5f, pr.y, 1.f, pr.h}, theme::Border);  // (区切りの線)
     }
     ui::TextStyle ts;
     ts.size = 13;

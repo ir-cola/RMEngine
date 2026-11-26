@@ -137,10 +137,15 @@ void DrawTile(ui::Context& c, const ui::Rect& r, bool selected, bool hovered, bo
 void DragTag(ui::Context& c, std::wstring text, bool inside);
 // クリックできる行 (ImGui の Selectable)。行を描く。行の上にあるものは呼び出し側が描く。
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view id, const ui::Rect& r, bool selected, bool flat = false);
+// テーマの見本の 1 つ分: その色と、区切りの下の方に出す短い名前 (空: 出さない)。
+struct ThemeSlice {
+    const theme::Palette* palette = nullptr;
+    std::wstring_view label;
+};
 // 選ぶテーマ 1 つ (テーマの画面): そのテーマ自身の色で描いた小さなウィンドウと、その下に名前。
-// 選んだものはアクセントで縁取ってチェックを付ける。palette = nullptr: "PC の設定に合わせる"
-// (半分が暗く、半分が明るい)。
-ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view id, const ui::Rect& r, const theme::Palette* palette,
+// `slices` が 2 つ以上: 見本を縦に等しく区切り、それぞれをその色で描く ("PC の設定に合わせる" は 黒｜白、
+// "季節で切り替える" は 春｜夏｜秋｜冬)。選んだものはアクセントで縁取ってチェックを付ける。
+ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view id, const ui::Rect& r, std::span<const ThemeSlice> slices,
                                     std::wstring_view name, bool selected);
 // サイドバーのページへのリンク: 平らな行 (行の間の線は呼び出し側が描く)。クリックされたら true。
 bool NavItem(ui::Context& c, std::string_view id, const ui::Rect& r, std::wstring_view label, bool selected);
