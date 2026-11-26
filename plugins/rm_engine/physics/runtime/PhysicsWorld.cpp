@@ -30,11 +30,13 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/Shape/TaperedCylinderShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
@@ -211,17 +213,6 @@ public:
     bool ShouldCollideLocked(const JPH::Body& body) const override { return !body.IsSensor(); }
 };
 
-// エンティティの メッシュ (3D モデル) のモデル: メッシュコライダーの形。型の名前とフィールドの名前で
-// 読む: 物理 は ゲーム制作 × 3D を必要としない。空: 無し。
-AssetRef ModelOf(const game_production::SceneEntity& e) {
-    const game_production::Component* mr = e.FindComponent("rm::game_x_3d::MeshRenderer");
-    if (!mr || !mr->Known()) return {};
-    for (const reflect::FieldDesc& f : mr->value.Type()->fields) {
-        if (std::string_view(f.name) == "model") return *static_cast<const AssetRef*>(f.Get(mr->value.Get()));
-    }
-    return {};
-}
-
 }  // namespace
 
 // ------------------------------------------------------------------------------------------------
@@ -284,22 +275,53 @@ struct PhysicsWorld::Impl {
     }
 
     // --- 形 -------------------------------------------------------------------------------
-    JPH::RefConst<JPH::Shape> MeshShapeOf(const SceneEntity& e) {
-        const AssetRef model = ModelOf(e);
-        if (model.Empty()) return nullptr;
-        auto [it, first] = meshes.try_emplace(model.guid);
+    // エンティティのメッシュ (モデルか、ファイル無しの形: Shapes.h の MeshOf) の当たりの形。`hull`: それを包む凸の
+    // 形 (凸包。動く物: Jolt の三角形のメッシュは動かない物だけ - 2026-11-26)。作ったものは覚えておく。
+    JPH::RefConst<JPH::Shape> MeshShapeOf(const SceneEntity& e, bool hull) {
+        const MeshSource src = MeshOf(e);
+        if (!src.present || (!src.primitive && src.model.Empty())) return nullptr;
+        const std::string what = src.primitive ? std::format("形 {}", static_cast<int>(*src.primitive)) : src.model.guid;
+        auto [it, first] = meshes.try_emplace(what + (hull ? " (凸包)" : ""));
         if (!first) return it->second.shape;
         std::string err;
         std::optional<space3d::MeshData> mesh;
-        if (assets && assets->file) {
-            if (const auto file = assets->file(model); !file.empty()) mesh = space3d::LoadMeshFile(file, &err);
-        }
-        if (!mesh && assets && assets->bytes) {
-            if (const auto bytes = assets->bytes(model)) mesh = space3d::ReadBakedMesh(*bytes, &err);
+        if (src.primitive) {
+            mesh = space3d::ShapeMesh(*src.primitive);
+        } else {
+            if (assets && assets->file) {
+                if (const auto file = assets->file(src.model); !file.empty()) mesh = space3d::LoadMeshFile(file, &err);
+            }
+            if (!mesh && assets && assets->bytes) {
+                if (const auto bytes = assets->bytes(src.model)) mesh = space3d::ReadBakedMesh(*bytes, &err);
+            }
         }
         if (!mesh || mesh->indices.size() < 3) {
-            log::Warn("物理: メッシュのコライダーのモデルを読めません ({}): {}", model.guid, err.empty() ? std::string("モデルがありません") : err);
+            log::Warn("物理: メッシュのコライダーのモデルを読めません ({}): {}", what, err.empty() ? std::string("モデルがありません") : err);
             return nullptr;
+        }
+        if (hull) {
+            JPH::Array<JPH::Vec3> points;
+            points.reserve(mesh->vertices.size());
+            Vec3 lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
+            for (const auto& v : mesh->vertices) {
+                points.push_back(JPH::Vec3(v.position.x, v.position.y, v.position.z));
+                lo = {std::min(lo.x, v.position.x), std::min(lo.y, v.position.y), std::min(lo.z, v.position.z)};
+                hi = {std::max(hi.x, v.position.x), std::max(hi.y, v.position.y), std::max(hi.z, v.position.z)};
+            }
+            const float extent = std::min({hi.x - lo.x, hi.y - lo.y, hi.z - lo.z});
+            JPH::ConvexHullShapeSettings settings(points, std::min(JPH::cDefaultConvexRadius, std::max(extent, 0.f) * 0.25f));
+            const JPH::ShapeSettings::ShapeResult made = settings.Create();
+            if (!made.HasError()) {
+                it->second.shape = made.Get();
+                return it->second.shape;
+            }
+            // 平ら (平面) などで凸の形にできない: それを囲む箱で当てる (薄くても 0.02)。
+            log::Info("物理: メッシュ ({}) を包む凸の形を作れないので、囲む箱で当てます: {}", what, made.GetError().c_str());
+            const Vec3 half{std::max((hi.x - lo.x) * 0.5f, 0.01f), std::max((hi.y - lo.y) * 0.5f, 0.01f), std::max((hi.z - lo.z) * 0.5f, 0.01f)};
+            const Vec3 center{(lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f, (lo.z + hi.z) * 0.5f};
+            JPH::RefConst<JPH::Shape> box = new JPH::BoxShape(J(half), std::min({half.x, half.y, half.z, JPH::cDefaultConvexRadius}) * 0.5f);
+            it->second.shape = new JPH::RotatedTranslatedShape(J(center), JPH::Quat::sIdentity(), box);
+            return it->second.shape;
         }
         JPH::VertexList vertices;
         vertices.reserve(mesh->vertices.size());
@@ -311,14 +333,14 @@ struct PhysicsWorld::Impl {
         JPH::MeshShapeSettings settings(std::move(vertices), std::move(triangles));
         const JPH::ShapeSettings::ShapeResult made = settings.Create();
         if (made.HasError()) {
-            log::Warn("物理: メッシュのコライダーを作れません ({}): {}", model.guid, made.GetError().c_str());
+            log::Warn("物理: メッシュのコライダーを作れません ({}): {}", what, made.GetError().c_str());
             return nullptr;
         }
         it->second.shape = made.Get();
         return it->second.shape;
     }
 
-    JPH::RefConst<JPH::Shape> ShapeOf(const ShapeDims& d, const SceneEntity& e) {
+    JPH::RefConst<JPH::Shape> ShapeOf(const ShapeDims& d, const SceneEntity& e, bool hull) {
         JPH::RefConst<JPH::Shape> s;
         switch (d.kind) {
             case ShapeDims::Kind::Box: s = new JPH::BoxShape(J(d.half), std::min({d.half.x, d.half.y, d.half.z, JPH::cDefaultConvexRadius}) * 0.5f); break;
@@ -330,8 +352,25 @@ struct PhysicsWorld::Impl {
             case ShapeDims::Kind::Cylinder:
                 s = new JPH::CylinderShape(d.halfHeight, d.radius, std::min({d.halfHeight, d.radius, JPH::cDefaultConvexRadius}) * 0.5f);
                 break;
+            case ShapeDims::Kind::Cone: {
+                // 先の半径が 0 の、先細りの円柱 (Jolt: 円錐そのものの式で当たる。転がりもなめらか)。
+                const JPH::ShapeSettings::ShapeResult made = JPH::TaperedCylinderShapeSettings(d.halfHeight, 0.f, d.radius, 0.f).Create();
+                if (made.HasError()) return nullptr;
+                s = made.Get();
+                break;
+            }
+            case ShapeDims::Kind::Pyramid: {
+                // 5 つの角を包む凸の形 (凸包): 四角錐はちょうどその形。
+                JPH::Array<JPH::Vec3> points;
+                for (const Vec3& p : PyramidPoints(d)) points.push_back(JPH::Vec3(p.x, p.y, p.z));
+                const float radius = std::min({d.half.x, d.half.y, d.half.z, JPH::cDefaultConvexRadius}) * 0.5f;
+                const JPH::ShapeSettings::ShapeResult made = JPH::ConvexHullShapeSettings(points, radius).Create();
+                if (made.HasError()) return nullptr;
+                s = made.Get();
+                break;
+            }
             case ShapeDims::Kind::Mesh: {
-                JPH::RefConst<JPH::Shape> mesh = MeshShapeOf(e);
+                JPH::RefConst<JPH::Shape> mesh = MeshShapeOf(e, hull);
                 if (!mesh) return nullptr;
                 const Vec3 k = d.meshScale;
                 s = std::fabs(k.x - 1) + std::fabs(k.y - 1) + std::fabs(k.z - 1) < 1e-5f ? mesh
@@ -385,18 +424,20 @@ struct PhysicsWorld::Impl {
         const Pose pose = flat ? PoseOf(place.world2) : PoseOf(place.world3);
         const ShapeDims dims = c3 ? DimsOf(*c3, pose.scale) : DimsOf(*c2, pose.scale);
         const bool trigger = c3 ? c3->trigger : c2->trigger;
-        Motion motion = rb ? rb->motion : Motion::Static;
-        if (dims.kind == ShapeDims::Kind::Mesh && motion != Motion::Static) {
-            TellOnce(id, std::format("「{}」のメッシュのコライダーは動かない物だけです (動かない物として扱います)", e.data.name));
-            motion = Motion::Static;
-        }
+        const Motion motion = rb ? rb->motion : Motion::Static;
+        // メッシュのコライダー: 動かない物は三角形のまま、動く物 (キネマティックも) はそれを包む凸の形 (2026-11-26。
+        // 前は動かない物として扱っていた)。
+        const bool hull = dims.kind == ShapeDims::Kind::Mesh && motion != Motion::Static;
         // 物体を作り直す条件 (別の種類の物体) / そのまま変える部分 - 形と数値 (2026-11-19: 前は、どんな変更でも
         // 作り直していた: OnHit / OnTriggerEnter が終了なしにまた来て、動く物体が止まった)。
         Fingerprint fp;
         fp.Add(flat).Add(trigger).Add(static_cast<int>(motion));
         Fingerprint shapeFp;
         shapeFp.Add(static_cast<int>(dims.kind)).Add(dims.half).Add(dims.radius).Add(dims.halfHeight).Add(dims.offset).Add(dims.meshScale);
-        if (dims.kind == ShapeDims::Kind::Mesh) shapeFp.Add(ModelOf(e).guid);
+        if (dims.kind == ShapeDims::Kind::Mesh) {
+            const MeshSource src = MeshOf(e);
+            shapeFp.Add(src.model.guid).Add(src.primitive ? static_cast<int>(*src.primitive) : -1).Add(hull);
+        }
         Fingerprint numbersFp;
         if (rb) numbersFp.Add(rb->mass).Add(rb->friction).Add(rb->bounciness).Add(rb->gravityScale).Add(rb->lockRotationX).Add(rb->lockRotationY).Add(rb->lockRotationZ);
         // 平面では: X、Y と Z まわりの回転だけ。3D では: 固定していない回転。
@@ -414,7 +455,7 @@ struct PhysicsWorld::Impl {
             found = bodies.end();
         }
         if (found == bodies.end()) {
-            JPH::RefConst<JPH::Shape> shape = ShapeOf(dims, e);
+            JPH::RefConst<JPH::Shape> shape = ShapeOf(dims, e, hull);
             if (!shape) return false;
             // 何も動かさないトリガーはキネマティックにする (動かないものも見える)。
             const JPH::EMotionType type = motion == Motion::Dynamic   ? JPH::EMotionType::Dynamic
@@ -458,7 +499,7 @@ struct PhysicsWorld::Impl {
         // 形か数値が変わった (脈打つ大きさ、再生中に設定した摩擦): その場で変える - 触れているものと
         // 動き方はそのまま。
         if (r.shape != shapeFp.h) {
-            JPH::RefConst<JPH::Shape> shape = ShapeOf(dims, e);
+            JPH::RefConst<JPH::Shape> shape = ShapeOf(dims, e, hull);
             if (!shape) {
                 Remove(id);
                 return false;

@@ -3,6 +3,24 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.22",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "コライダーの形に「円錐」と「四角錐」を足しました。追加 ▸ 3D オブジェクトの円錐・四角錐には、その形のコライダーが付きます。円錐は横に倒れるとなめらかに転がります",
+          "en": "Added \"Cone\" and \"Pyramid\" collider shapes. Cones and pyramids from Add ▸ 3D Object get a collider of that shape. A cone on its side rolls smoothly"
+        },
+        {
+          "ja": "コライダーの形「メッシュ」が、動く物にも使えるように (メッシュを包む凸の形で当たります)。モデルだけでなく、箱・球・円錐などの形のメッシュでも使えます",
+          "en": "The \"Mesh\" collider shape now works for moving objects too (they collide with the convex shape wrapping the mesh). It also works for shape meshes such as boxes, spheres and cones, not only models"
+        },
+        {
+          "ja": "箱・円錐などのメッシュで、コライダーの「形」を選び直すと、大きさがメッシュの形に合うように",
+          "en": "On box, cone and other shape meshes, picking the collider's \"Shape\" again sizes it to fit the mesh"
+        }
+      ]
+    },
+    {
       "version": "0.0.21",
       "date": "2026-11-26",
       "items": [

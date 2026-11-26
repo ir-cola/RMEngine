@@ -2,6 +2,7 @@
 
 #include "editor/lang/Lang.h"
 #include "editor/widgets/Theme.h"
+#include "rm_engine/game_production/editor/ComponentLook.h"
 #include "rm_engine/game_production/editor/DebugPanel.h"
 #include "rm_engine/physics/runtime/PhysicsWorld.h"
 #include "rm_engine/game_production/editor/SceneView.h"
@@ -85,32 +86,30 @@ void PhysicsLines(const game_production::DebugContext& ctx, std::vector<game_pro
 }
 
 // 追加 ▸ 3D オブジェクト で作った 3D オブジェクトは、その形のコライダーを持つ (2026-11-20): 箱、球、
-// カプセル、円柱 (2026-11-24 から。前は囲む箱で、雪が四角く積もった) はそのまま; 平面はその下の薄い箱。
-// 形を言えないもの (ライト、カメラ): 何も付けない。
+// カプセル、円柱 (2026-11-24 から。前は囲む箱で、雪が四角く積もった)、円錐と四角錐 (2026-11-26) はそのまま;
+// 平面はその下の薄い箱。大きさは FitCollider (Shapes.h) の 1 か所。形を言えないもの (ライト、カメラ): 何も付けない。
 void AddCollider(Scene& scene, int entity, std::string_view made) {
-    const bool box = made == "box";
-    if (!box && made != "sphere" && made != "capsule" && made != "cylinder" && made != "plane") return;
+    static const std::pair<std::string_view, space3d::Shape> kMade[] = {
+        {"box", space3d::Shape::Box},         {"sphere", space3d::Shape::Sphere}, {"cylinder", space3d::Shape::Cylinder},
+        {"capsule", space3d::Shape::Capsule}, {"plane", space3d::Shape::Plane},   {"cone", space3d::Shape::Cone},
+        {"pyramid", space3d::Shape::Pyramid}};
+    const auto it = std::find_if(std::begin(kMade), std::end(kMade), [&](const auto& m) { return m.first == made; });
+    if (it == std::end(kMade)) return;
     Collider* c = game_production::AddComponentTo<Collider>(scene, entity);
     if (!c) return;
-    if (box) {
-        c->shape = Shape::Box;
-        c->size = {1, 1, 1};
-    } else if (made == "sphere") {
-        c->shape = Shape::Sphere;
-        c->radius = 0.5f;
-    } else if (made == "cylinder") {
-        c->shape = Shape::Cylinder;
-        c->radius = 0.5f;
-        c->height = 1.f;
-    } else if (made == "capsule") {
-        c->shape = Shape::Capsule;
-        c->radius = 0.5f;
-        c->height = 2.f;
-    } else {
-        c->shape = Shape::Box;
-        c->size = {10, 0.02f, 10};
-        c->offset = {0, -0.01f, 0};
-    }
+    FitCollider(*c, ColliderShapeFor(it->second), it->second);
+}
+
+// インスペクターでコライダーの「形」を選び直したとき: 同じエンティティのメッシュがファイル無しの形 (箱・円錐 ...)
+// なら、大きさとずらしをその形に合わせる (2026-11-26)。モデルのメッシュ・メッシュの無い物はそのまま。
+void FitToMesh(const Scene& scene, const game_production::GameSettings&, int entity, const reflect::FieldPath&, const void* before, void* after) {
+    const Collider& was = *static_cast<const Collider*>(before);
+    Collider& now = *static_cast<Collider*>(after);
+    if (now.shape == was.shape) return;
+    const SceneEntity* e = scene.Find(entity);
+    if (!e) return;
+    const MeshSource mesh = MeshOf(*e);
+    if (mesh.primitive) FitCollider(now, now.shape, *mesh.primitive);
 }
 
 }  // namespace
@@ -118,6 +117,8 @@ void AddCollider(Scene& scene, int entity, std::string_view made) {
 void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::CreatedInfo kCreated{&AddCollider};
     registry.Contribute(game_production::kCreatedPoint, kCreated);
+    static const game_production::ComponentLook kColliderLook{.type = &reflect::TypeOf<Collider>, .adjust = &FitToMesh};
+    registry.Contribute(game_production::kComponentLookPoint, kColliderLook);
     static const game_production::SceneLinesInfo kLines{&ShapeLines};
     registry.Contribute(game_production::kSceneLinesPoint, kLines);
     static const game_production::DebugInfoInfo kDebug{editor::TrKey(L"物理"), 20, game_production::DebugTab::Game, &PhysicsLines};

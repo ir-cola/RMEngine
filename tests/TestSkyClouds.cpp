@@ -8,6 +8,7 @@
 #include "rm_engine/game_x_3d/runtime/Sky.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 #include "rm_engine/space3d/runtime/SkyShader.h"
+#include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/space3d/runtime/View.h"
 #include "rm_engine/weather/runtime/Weather.h"
 
@@ -209,6 +210,48 @@ RM_TEST(Sky_CloudMapFromWeather) {
     local.placeLocal = 1;
     CHECK(weather::SkyWeatherOf(local, 0).dark == darkBefore && weather::SkyWeatherOf(local, 0).rain == 0.f);
     CHECK(weather::SkyWeatherOf(local, 0).through < weather::SkyWeatherOf(weather::Weather{}, 0).through);  // (日の光は弱まる)
+}
+
+// 空を描いた絵でも、手前のモデルが出る (空の雲の地図と、モデルの things は同じ t6: 空のあとに結び直す)。
+RM_TEST(Sky_MeshInFrontOfSky) {
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
+    const auto device = TestDevice(ctx);
+    CHECK(device);
+    if (!device) return;
+    space3d::Renderer r;
+    std::string error;
+    CHECK(r.Init(device.Get(), &error));
+    if (!r.Ready()) return;
+    space3d::SkyDraw draw;
+    draw.program = r.MakeSky(space3d::AssembleSky(space3d::BuiltinSkyCode(space3d::BuiltinSky::Earth), "地球の空"), &error);
+    CHECK(draw.program);
+    if (!draw.program) return;
+    const game_x_3d::SkyLook l = game_x_3d::LookOf(Noon(), 0, game_x_3d::SkyWeather{});
+    draw.constants = l.constants;
+
+    constexpr int kSize = 32;
+    const Vec3 eye{0, 1, -5};
+    space3d::RenderFrame f;
+    f.width = f.height = kSize;
+    f.view = space3d::LookAt(eye, {0, 1, 0}, {0, 1, 0});
+    f.projection = space3d::Perspective(60, 1, 0.1f, 100);
+    f.sky = &draw;
+    space3d::Transform t;
+    t.position = {0, 1, 0};
+    t.scale = {2, 2, 2};
+    const space3d::Box box{space3d::LocalMatrix(t), Color{1, 0, 0, 1}, false};
+    auto render = [&](bool withBox) {
+        f.boxes = withBox ? std::span<const space3d::Box>(&box, 1) : std::span<const space3d::Box>();
+        ID3D11Texture2D* picture = r.Render(ctx.Get(), f);
+        return picture ? PixelsOf(device.Get(), ctx.Get(), picture) : std::vector<uint8_t>{};
+    };
+    const std::vector<uint8_t> skyOnly = render(false), withBox = render(true);
+    CHECK(skyOnly.size() == static_cast<size_t>(kSize) * kSize * 4 && withBox.size() == skyOnly.size());
+    if (withBox.size() != skyOnly.size() || skyOnly.empty()) return;
+    // 真ん中のピクセル: 赤い箱 (B8G8R8A8: 赤が一番強い)。
+    const size_t at = (static_cast<size_t>(kSize / 2) * kSize + kSize / 2) * 4;
+    CHECK(Differ(withBox, skyOnly, kSize, kSize / 2, kSize / 2) > 30);
+    CHECK(withBox[at + 2] > withBox[at] + 20 && withBox[at + 2] > withBox[at + 1] + 20);
 }
 
 RM_TEST(Sky_CloudMapOnGpu) {

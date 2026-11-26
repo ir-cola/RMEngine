@@ -112,9 +112,14 @@ ShapeDims DimsOf(const Collider& c, Vec3 scale) {
         }
         case Shape::Mesh: d.kind = ShapeDims::Kind::Mesh; break;
         case Shape::Cylinder:
-            d.kind = ShapeDims::Kind::Cylinder;
+        case Shape::Cone:
+            d.kind = c.shape == Shape::Cone ? ShapeDims::Kind::Cone : ShapeDims::Kind::Cylinder;
             d.radius = std::max(c.radius * std::max(s.x, s.z), 0.001f);
             d.halfHeight = std::max(c.height * s.y * 0.5f, 0.001f);
+            break;
+        case Shape::Pyramid:
+            d.kind = ShapeDims::Kind::Pyramid;
+            d.half = {std::max(c.size.x * s.x, 0.001f) * 0.5f, std::max(c.size.y * s.y, 0.001f) * 0.5f, std::max(c.size.z * s.z, 0.001f) * 0.5f};
             break;
     }
     return d;
@@ -225,7 +230,99 @@ void Outline(const ShapeDims& dims, const Pose& pose, bool flat, std::vector<Seg
             for (const Vec3 side : {Vec3{r, 0, 0}, Vec3{-r, 0, 0}, Vec3{0, 0, r}, Vec3{0, 0, -r}}) line({side.x, hh, side.z}, {side.x, -hh, side.z});
             break;
         }
+        case ShapeDims::Kind::Cone: {
+            // 底の輪と、底から先への 4 本の線。
+            const float r = dims.radius, hh = dims.halfHeight;
+            if (flat) {
+                line({-r, -hh, 0}, {r, -hh, 0});
+                line({r, -hh, 0}, {0, hh, 0});
+                line({0, hh, 0}, {-r, -hh, 0});
+                break;
+            }
+            arc({0, -hh, 0}, X, Z, r, 0, 1);
+            for (const Vec3 side : {Vec3{r, 0, 0}, Vec3{-r, 0, 0}, Vec3{0, 0, r}, Vec3{0, 0, -r}}) line({side.x, -hh, side.z}, {0, hh, 0});
+            break;
+        }
+        case ShapeDims::Kind::Pyramid: {
+            // 底の 4 辺と、角から先への 4 本 (辺 8 本)。
+            const std::vector<Vec3> k = PyramidPoints(dims);
+            for (int i = 0; i < 4; ++i) {
+                line(k[static_cast<size_t>(i)], k[static_cast<size_t>((i + 1) % 4)]);
+                line(k[static_cast<size_t>(i)], k[4]);
+            }
+            break;
+        }
         case ShapeDims::Kind::Mesh: break;  // モデル自身が形になる (シーンビューがもう描いている)
+    }
+}
+
+std::vector<Vec3> PyramidPoints(const ShapeDims& d) {
+    const Vec3 h = d.half;
+    return {{-h.x, -h.y, -h.z}, {h.x, -h.y, -h.z}, {h.x, -h.y, h.z}, {-h.x, -h.y, h.z}, {0, h.y, 0}};
+}
+
+std::optional<space3d::Shape> PrimitiveNamed(std::string_view name) {
+    using P = space3d::Shape;
+    static const std::pair<std::string_view, P> kNames[] = {{"Box", P::Box},   {"Sphere", P::Sphere}, {"Cylinder", P::Cylinder}, {"Capsule", P::Capsule},
+                                                            {"Plane", P::Plane}, {"Cone", P::Cone},   {"Pyramid", P::Pyramid}};
+    for (const auto& [n, p] : kNames) {
+        if (n == name) return p;
+    }
+    return std::nullopt;
+}
+
+MeshSource MeshOf(const game_production::SceneEntity& e) {
+    MeshSource out;
+    const game_production::Component* mr = e.FindComponent("rm::game_x_3d::MeshRenderer");
+    if (!mr || !mr->Known()) return out;
+    out.present = true;
+    for (const reflect::FieldDesc& f : mr->value.Type()->fields) {
+        const std::string_view name = f.name;
+        if (name == "model" && f.value.type == reflect::FieldType::AssetRef) out.model = *static_cast<const AssetRef*>(f.Get(mr->value.Get()));
+        if (name == "shape" && f.value.type == reflect::FieldType::Enum && f.value.enumType) {
+            const int64_t v = f.value.enumType->get(f.Get(mr->value.Get()));
+            for (const reflect::EnumItem& item : f.value.enumType->items) {
+                if (item.value == v) out.primitive = PrimitiveNamed(item.name);
+            }
+        }
+    }
+    return out;
+}
+
+Shape ColliderShapeFor(space3d::Shape primitive) {
+    switch (primitive) {
+        case space3d::Shape::Box: return Shape::Box;
+        case space3d::Shape::Sphere: return Shape::Sphere;
+        case space3d::Shape::Cylinder: return Shape::Cylinder;
+        case space3d::Shape::Capsule: return Shape::Capsule;
+        case space3d::Shape::Plane: return Shape::Box;
+        case space3d::Shape::Cone: return Shape::Cone;
+        case space3d::Shape::Pyramid: return Shape::Pyramid;
+    }
+    return Shape::Box;
+}
+
+void FitCollider(Collider& c, Shape shape, space3d::Shape primitive) {
+    c.shape = shape;
+    if (shape == Shape::Mesh) return;
+    // 形の大きさ (Primitives.h が作る点を囲む箱: 大きさを 2 か所に書かない)。平面は厚さが無いので、下に
+    // 0.02 の板 (上の面が平面と同じ高さ)。
+    const space3d::MeshData m = space3d::ShapeMesh(primitive);
+    Vec3 lo = m.min, hi = m.max;
+    if (hi.y - lo.y < 0.02f) lo.y = hi.y - 0.02f;
+    const Vec3 size{hi.x - lo.x, hi.y - lo.y, hi.z - lo.z};
+    c.offset = {(lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f, (lo.z + hi.z) * 0.5f};
+    switch (shape) {
+        case Shape::Box:
+        case Shape::Pyramid: c.size = size; break;
+        case Shape::Sphere: c.radius = std::max({size.x, size.y, size.z}) * 0.5f; break;
+        case Shape::Capsule:
+        case Shape::Cylinder:
+        case Shape::Cone:
+            c.radius = std::max(size.x, size.z) * 0.5f;
+            c.height = size.y;
+            break;
+        case Shape::Mesh: break;
     }
 }
 

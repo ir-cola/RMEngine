@@ -4,8 +4,9 @@
 //
 //   剛体 (Rigidbody)      どう動くか: 動く (重力があり、他に押される) / 動かない / キネマティック (Transform
 //                         でだけ動かし、他を押す); 質量、摩擦、反発、重力、回転の固定
-//   コライダー (Collider)  3D での形: 箱 / 球 / カプセル / メッシュ (その メッシュ部品 のモデル: 動かない
-//                         ものだけ)、トリガー (知らせるだけで、止めない)、エンティティから動かす
+//   コライダー (Collider)  3D での形: 箱 / 球 / カプセル / 円柱 / 円錐 / 四角錐 / メッシュ (その メッシュ部品 の
+//                         モデルか形。動かない物はその三角形のまま、動く物はそれを包む凸の形 = 凸包: 2026-11-26)、
+//                         トリガー (知らせるだけで、止めない)、エンティティから動かす
 //   コライダー (2D)        平面での形: 箱 / 円 / カプセル - 平面に留まる物体 (Z は無く、Z まわりにだけ
 //                         回る)
 //   キャラクター          物体ではなく、歩く (坂、段差、地面) キャラクター
@@ -53,15 +54,17 @@ enum class Shape {
     RM_ITEM(Label="カプセル") Capsule,
     RM_ITEM(Label="メッシュ") Mesh,
     RM_ITEM(Label="円柱") Cylinder,
+    RM_ITEM(Label="円錐") Cone,      // 2026-11-26
+    RM_ITEM(Label="四角錐") Pyramid,  // 2026-11-26
 };
 
 RM_STRUCT(Label="コライダー")
 struct Collider {
-    RM_PROPERTY(Edit, Label="形", Tooltip="メッシュ: 同じエンティティのメッシュ (3D モデル) の形。動かない物だけ (剛体が無いか「動かない」)")
+    RM_PROPERTY(Edit, Label="形", Tooltip="メッシュ: 同じエンティティのメッシュ (3D モデル) の形 (モデルか、箱・円錐などの形)。動かない物はその三角形のまま、動く物はそれを包む凸の形 (へこみは埋まります) で当たります。形を選び直すと、メッシュの形に合った大きさになります")
     Shape shape = Shape::Box;
-    RM_PROPERTY(Edit, Label="箱の大きさ", Tooltip="箱の幅・高さ・奥行き (Transform の大きさを掛けます)", Min=0.001, Max=100000) Vec3 size{1, 1, 1};
-    RM_PROPERTY(Edit, Label="半径", Tooltip="球・カプセル・円柱", Min=0.001, Max=100000) float radius = 0.5f;
-    RM_PROPERTY(Edit, Label="高さ", Tooltip="カプセル: 端から端まで (Y の向き。半径の 2 倍より短いと球)。円柱: 上の面から下の面まで", Min=0.001, Max=100000) float height = 2.f;
+    RM_PROPERTY(Edit, Label="箱の大きさ", Tooltip="箱の幅・高さ・奥行き。四角錐: 底の幅・高さ・底の奥行き (Transform の大きさを掛けます)", Min=0.001, Max=100000) Vec3 size{1, 1, 1};
+    RM_PROPERTY(Edit, Label="半径", Tooltip="球・カプセル・円柱・円錐 (円錐は底の半径)", Min=0.001, Max=100000) float radius = 0.5f;
+    RM_PROPERTY(Edit, Label="高さ", Tooltip="カプセル: 端から端まで (Y の向き。半径の 2 倍より短いと球)。円柱: 上の面から下の面まで。円錐: 底から先まで", Min=0.001, Max=100000) float height = 2.f;
     RM_PROPERTY(Edit, Label="ずらし", Tooltip="エンティティの中心から形の中心まで (エンティティの向きで)") Vec3 offset{0, 0, 0};
     RM_PROPERTY(Edit, Label="トリガー", Tooltip="ぶつからずに通り抜け、出入りをスクリプトに知らせます (OnTriggerEnter / OnTriggerExit)") bool trigger = false;
 };

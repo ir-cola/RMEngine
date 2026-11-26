@@ -57,10 +57,17 @@ void GatherShapes(const game_production::Scene& scene, const std::function<const
                 s.sizeY = d.halfHeight;
                 break;
             case physics::ShapeDims::Kind::Cylinder:  // (粒には円柱が無い: それを囲む箱で当てる)
+            case physics::ShapeDims::Kind::Cone:      // (円錐も)
                 s.type = CollisionType::Box;
                 s.sizeX = d.radius;
                 s.sizeY = d.halfHeight;
                 s.sizeZ = d.radius;
+                break;
+            case physics::ShapeDims::Kind::Pyramid:  // (四角錐も: 囲む箱)
+                s.type = CollisionType::Box;
+                s.sizeX = d.half.x;
+                s.sizeY = d.half.y;
+                s.sizeZ = d.half.z;
                 break;
             case physics::ShapeDims::Kind::Mesh: return;  // (メッシュの形はモデルのもの: ここでは扱わない)
         }

@@ -8,6 +8,7 @@
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
+#include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/physics/runtime/Components.h"
 #include "rm_engine/physics/runtime/PhysicsWorld.h"
 #include "rm_engine/physics/runtime/Shapes.h"
@@ -317,6 +318,110 @@ RM_TEST(Physics_World_CharacterWalksAndStands) {
     CHECK(w.Jump(s, hero, 5));
     Run(w, s, 10);
     CHECK(!w.Grounded(hero) && Get<space3d::Transform>(s, hero).position.y > 0.3f);
+}
+
+// 円錐と四角錐のコライダー (2026-11-26): 大きさは拡大率を掛ける、線の数、四角錐の 5 つの角。
+RM_TEST(Physics_Shapes_ConeAndPyramid) {
+    Collider c;
+    c.shape = Shape::Cone;
+    c.radius = 0.5f;
+    c.height = 1;
+    ShapeDims d = DimsOf(c, {2, 3, 1});
+    CHECK(d.kind == ShapeDims::Kind::Cone && Near(d.radius, 1) && Near(d.halfHeight, 1.5f));
+    std::vector<Segment> lines;
+    Outline(d, Pose{}, false, lines);
+    CHECK(lines.size() == 32 + 4);  // 底の輪と、先への 4 本
+    bool tip = false;
+    for (const Segment& l : lines) tip = tip || (Near(l.b.y, 1.5f) && Near(l.b.x, 0) && Near(l.b.z, 0));
+    CHECK(tip);
+    c.shape = Shape::Pyramid;
+    c.size = {2, 1, 4};
+    d = DimsOf(c, {1, 2, 1});
+    CHECK(d.kind == ShapeDims::Kind::Pyramid && Near(d.half.x, 1) && Near(d.half.y, 1) && Near(d.half.z, 2));
+    const std::vector<Vec3> k = PyramidPoints(d);
+    CHECK(k.size() == 5 && Near(k[4].y, 1) && Near(k[4].x, 0) && Near(k[0].y, -1) && Near(k[2].x, 1) && Near(k[2].z, 2));
+    lines.clear();
+    Outline(d, Pose{}, false, lines);
+    CHECK(lines.size() == 8);  // 底の 4 辺と、角から先への 4 本
+}
+
+static Scene NewMeshScene() {
+    Scene s = NewScene();
+    std::vector<const reflect::TypeDesc*> types(s.ComponentTypes().begin(), s.ComponentTypes().end());
+    types.push_back(&reflect::TypeOf<game_x_3d::MeshRenderer>());
+    s.SetComponentTypes(types);
+    return s;
+}
+
+// メッシュの形に合わせたコライダー (FitCollider): 同じ形はぴったり、違う形は包む大きさ。メッシュの部品は名前で読む。
+RM_TEST(Physics_Shapes_FitToMeshShapes) {
+    using P = space3d::Shape;
+    CHECK(ColliderShapeFor(P::Cone) == Shape::Cone && ColliderShapeFor(P::Pyramid) == Shape::Pyramid && ColliderShapeFor(P::Plane) == Shape::Box);
+    CHECK(ColliderShapeFor(P::Box) == Shape::Box && ColliderShapeFor(P::Sphere) == Shape::Sphere && ColliderShapeFor(P::Cylinder) == Shape::Cylinder &&
+          ColliderShapeFor(P::Capsule) == Shape::Capsule);
+    Collider c;
+    FitCollider(c, Shape::Cone, P::Cone);
+    CHECK(c.shape == Shape::Cone && Near(c.radius, 0.5f) && Near(c.height, 1) && Near(c.offset.y, 0));
+    FitCollider(c, Shape::Capsule, P::Capsule);
+    CHECK(Near(c.radius, 0.5f) && Near(c.height, 2));
+    FitCollider(c, Shape::Cylinder, P::Cylinder);
+    CHECK(Near(c.radius, 0.5f) && Near(c.height, 1));
+    FitCollider(c, Shape::Box, P::Plane);  // 平面: 下に薄い板 (上の面が平面の高さ)
+    CHECK(Near(c.size.x, 10) && Near(c.size.y, 0.02f) && Near(c.size.z, 10) && Near(c.offset.y, -0.01f));
+    FitCollider(c, Shape::Sphere, P::Capsule);  // 違う形: 包む
+    CHECK(Near(c.radius, 1) && Near(c.offset.y, 0));
+    FitCollider(c, Shape::Pyramid, P::Pyramid);
+    CHECK(Near(c.size.x, 1) && Near(c.size.y, 1) && Near(c.size.z, 1));
+    c.trigger = true;
+    c.radius = 3;
+    FitCollider(c, Shape::Mesh, P::Cone);  // メッシュ: 大きさを持たない
+    CHECK(c.shape == Shape::Mesh && c.trigger && Near(c.radius, 3));
+    CHECK(PrimitiveNamed("Cone") == P::Cone && PrimitiveNamed("Pyramid") == P::Pyramid && PrimitiveNamed("Plane") == P::Plane);
+    CHECK(!PrimitiveNamed("Model") && !PrimitiveNamed("Teapot"));
+    // メッシュの部品 (ゲーム制作 × 3D) を型とフィールドの名前で読む。
+    Scene s = NewMeshScene();
+    const int id = s.Create("mesh");
+    Add<game_x_3d::MeshRenderer>(s, id).shape = game_x_3d::MeshShape::Pyramid;
+    MeshSource m = MeshOf(*s.Find(id));
+    CHECK(m.present && m.primitive == P::Pyramid);
+    Get<game_x_3d::MeshRenderer>(s, id).shape = game_x_3d::MeshShape::Model;
+    Get<game_x_3d::MeshRenderer>(s, id).model.guid = "0123456789abcdef0123456789abcdef";
+    m = MeshOf(*s.Find(id));
+    CHECK(m.present && !m.primitive && m.model.guid == "0123456789abcdef0123456789abcdef");
+    CHECK(!MeshOf(*s.Find(Box3(s, "plain", {0, 0, 0}, {1, 1, 1}, std::nullopt))).present);
+}
+
+// 円錐・四角錐が落ちて底で立つ。動くメッシュのコライダー (凸包) も落ちて止まる (前は動かない物として扱った)。
+// 動かない円錐の斜面にレイが当たる。動かないメッシュ (三角形のまま) の上に物が乗る。
+RM_TEST(Physics_World_ConePyramidAndMovingMesh) {
+    Scene s = NewMeshScene();
+    Box3(s, "floor", {0, -0.5f, 0}, {60, 1, 60}, std::nullopt);
+    auto shaped = [&](const char* name, Vec3 at, Shape shape, game_x_3d::MeshShape mesh, std::optional<Motion> motion) {
+        const int id = s.Create(name);
+        Add<space3d::Transform>(s, id).position = at;
+        Add<game_x_3d::MeshRenderer>(s, id).shape = mesh;
+        FitCollider(Add<Collider>(s, id), shape, *game_x_3d::ShapeOf(mesh));
+        if (motion) Add<Rigidbody>(s, id).motion = *motion;
+        return id;
+    };
+    using game_x_3d::MeshShape;
+    const int cone = shaped("cone", {-4, 3, 0}, Shape::Cone, MeshShape::Cone, Motion::Dynamic);
+    const int pyramid = shaped("pyramid", {0, 3, 0}, Shape::Pyramid, MeshShape::Pyramid, Motion::Dynamic);
+    const int ball = shaped("ball", {4, 3, 0}, Shape::Mesh, MeshShape::Sphere, Motion::Dynamic);
+    const int spike = shaped("spike", {10, 1, 0}, Shape::Cone, MeshShape::Cone, std::nullopt);
+    const int stand = shaped("stand", {20, 0.5f, 0}, Shape::Mesh, MeshShape::Box, std::nullopt);
+    const int onTop = Box3(s, "onTop", {20, 3, 0}, {1, 1, 1}, Motion::Dynamic);
+    PhysicsWorld w;
+    Run(w, s, 300);
+    CHECK(w.Bodies() == 7);
+    CHECK(Near(Get<space3d::Transform>(s, cone).position.y, 0.5f, 0.03f) && Near(Get<space3d::Transform>(s, cone).position.x, -4, 0.05f));
+    CHECK(Near(Get<space3d::Transform>(s, pyramid).position.y, 0.5f, 0.03f) && Near(Get<space3d::Transform>(s, pyramid).position.x, 0, 0.05f));
+    CHECK(Near(Get<space3d::Transform>(s, ball).position.y, 0.5f, 0.05f));
+    CHECK(Near(Get<space3d::Transform>(s, onTop).position.y, 1.5f, 0.03f));  // 箱の形のメッシュの上面 (y = 1) に乗る
+    // 円錐の軸から 0.2 の所の斜面: 先 (y = 1.5) から 0.2 x 2 下 (y = 1.1)。
+    const auto hit = w.Raycast({10.2f, 5, 0}, {0, -1, 0}, 10);
+    CHECK(hit && hit->entity == spike && Near(hit->point.y, 1.1f, 0.03f));
+    (void)stand;
 }
 
 RM_TEST(Physics_Components_SaveAndLoad) {

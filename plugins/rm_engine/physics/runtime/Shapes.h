@@ -6,8 +6,10 @@
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/physics/runtime/Components.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
+#include "rm_engine/space3d/runtime/Primitives.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
+#include <optional>
 #include <vector>
 
 namespace rm::physics {
@@ -39,10 +41,10 @@ float AngleOf(const Pose& pose);
 // 物理が作るコライダーの形: ワールドでの半分の大きさ (エンティティの拡大率を取り込む) と、
 // エンティティから見た中心の位置 (エンティティの回した軸で)。
 struct ShapeDims {
-    enum class Kind { Box, Sphere, Capsule, Mesh, Cylinder } kind = Kind::Box;
-    Vec3 half{0.5f, 0.5f, 0.5f};  // 箱: 各軸の大きさの半分。2D の箱もこれ (z: kPlaneHalfDepth)
-    float radius = 0.5f;           // 球 / カプセル / 円
-    float halfHeight = 0.5f;       // カプセル: まっすぐな部分 (Y) の半分。0: 球。円柱: 高さの半分
+    enum class Kind { Box, Sphere, Capsule, Mesh, Cylinder, Cone, Pyramid } kind = Kind::Box;
+    Vec3 half{0.5f, 0.5f, 0.5f};  // 箱: 各軸の大きさの半分。2D の箱もこれ (z: kPlaneHalfDepth)。四角錐: 底の幅・高さ・奥行きの半分
+    float radius = 0.5f;           // 球 / カプセル / 円 / 円柱 / 円錐 (底)
+    float halfHeight = 0.5f;       // カプセル: まっすぐな部分 (Y) の半分。0: 球。円柱・円錐: 高さの半分 (円錐の先は +Y)
     Vec3 offset{0, 0, 0};          // エンティティから見たもの。拡大率をかけてある
     Vec3 meshScale{1, 1, 1};       // メッシュ: エンティティの拡大率 (モデル自身の点にこれをかける)
 };
@@ -58,5 +60,28 @@ struct Segment {
     Vec3 a, b;
 };
 void Outline(const ShapeDims& dims, const Pose& pose, bool flat, std::vector<Segment>& out);
+
+// 四角錐の 5 つの角 (底の 4 つ、先): 物理はこれを包む凸の形 (凸包) で当てる。形の空間 (ずらす前)。
+std::vector<Vec3> PyramidPoints(const ShapeDims& dims);
+
+// --- メッシュ (3D モデル) の部品との組 (2026-11-26) -------------------------------------------------
+// 物理 は ゲーム制作 × 3D を必要としないので、メッシュの部品 (rm::game_x_3d::MeshRenderer) は型の名前と
+// フィールドの名前 ("shape" の列挙の名前と "model") で読む。
+struct MeshSource {
+    bool present = false;                       // メッシュの部品がある
+    std::optional<space3d::Shape> primitive;    // ファイル無しの形 (箱 / 球 / 円錐 ...)。無し: モデル
+    AssetRef model;                             // モデルのとき
+};
+MeshSource MeshOf(const game_production::SceneEntity& e);
+// メッシュの「形」の列挙の名前 ("Box" / "Cone" ...) -> 形。"Model" や知らない名前: 無し。
+std::optional<space3d::Shape> PrimitiveNamed(std::string_view name);
+
+// ファイル無しの形 `primitive` (Primitives.h の大きさ) にぴったりのコライダーの形: 箱 -> 箱、円錐 -> 円錐 ...
+// 平面 -> 箱 (薄い板)。
+Shape ColliderShapeFor(space3d::Shape primitive);
+// コライダーの形を `shape` にし、大きさとずらしを形 `primitive` に合わせる (同じ形ならぴったり。違う形なら
+// 包む大きさ: 球は一番長い半分、円柱・円錐・カプセルは横の半径と高さ)。メッシュは大きさを持たない
+// (そのまま)。トリガーは変えない。追加 ▸ 3D オブジェクトと、インスペクターで形を選び直したときに使う。
+void FitCollider(Collider& c, Shape shape, space3d::Shape primitive);
 
 }  // namespace rm::physics
