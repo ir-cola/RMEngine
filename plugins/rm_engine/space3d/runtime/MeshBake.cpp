@@ -199,6 +199,18 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
                 }
             });
         }
+        if (std::any_of(mesh.clips.begin(), mesh.clips.end(), [](const Clip& c) { return c.root.enabled; })) {
+            o.Chunk("ROOT", [&] {
+                o.Put<uint32_t>(static_cast<uint32_t>(mesh.clips.size()));
+                for (const Clip& clip : mesh.clips) {
+                    o.Put<uint8_t>(clip.root.enabled ? 1 : 0);
+                    o.Str(clip.root.bone);
+                    o.Put<uint8_t>(clip.root.horizontal ? 1 : 0);
+                    o.Put<uint8_t>(clip.root.vertical ? 1 : 0);
+                    o.Put<uint8_t>(clip.root.turn ? 1 : 0);
+                }
+            });
+        }
     }
     return o.bytes;
 }
@@ -344,6 +356,18 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
                 ok = c.Count(events, 4 + 4 + 4 + 4);
                 m.clips[k].events.resize(ok ? events : 0);
                 for (ClipEvent& ev : m.clips[k].events) ok = ok && c.Get(ev.time) && c.Str(ev.name) && c.Get(ev.number) && c.Str(ev.text);
+            }
+        } else if (tag == "ROOT") {
+            // (ANIM の後に書く。クリップの数が合わなければ壊れている)
+            ok = c.Count(n, 1 + 4 + 3) && n == m.clips.size();
+            for (size_t k = 0; ok && k < n; ++k) {
+                ClipRootMotion& r = m.clips[k].root;
+                uint8_t enabled = 0, horizontal = 0, vertical = 0, turn = 0;
+                ok = c.Get(enabled) && c.Str(r.bone) && c.Get(horizontal) && c.Get(vertical) && c.Get(turn);
+                r.enabled = enabled != 0;
+                r.horizontal = horizontal != 0;
+                r.vertical = vertical != 0;
+                r.turn = turn != 0;
             }
         }  // (このバージョンが知らないタグ: 飛ばす)
         if (!ok) return fail(std::format("焼いたモデルの {} が壊れています", std::string(tag)));

@@ -163,3 +163,22 @@ RM_TEST(ClipEvents_ReadsUnsortedAndOddFilesWithoutLosingThem) {
     const json::Value fixed = AddClipEvent(P("[1, 2]"), "Wave", Ev(0.f, "x"), 1.f);
     CHECK(fixed.IsObject() && ReadClipEvents(fixed, "Wave").size() == 1);
 }
+
+// ルートモーションの設定 (クリップの "root"): 書く・知らないキーを残す・既定に戻すと消える。イベントとは別の欄。
+RM_TEST(ClipEvents_RootMotionSetting) {
+    CHECK(!ReadClipRoot(json::Value(), "歩く").enabled);
+    ClipRootMotion r;
+    r.enabled = true;
+    r.bone = "Hips";
+    const json::Value one = SetClipRoot(json::Value(), "歩く", r);
+    CHECK(ReadClipRoot(one, "歩く") == r);
+    CHECK(one.Get("歩く").Get("root").Get("bone").AsString() == "Hips");
+    // イベントと並ぶ・知らないキー (root の中もクリップの中も) を残す
+    const json::Value mixed = P(R"({"歩く": {"events": [{"time": 0.5, "name": "Step"}], "loop": true, "root": {"enabled": true, "未来": 7}}})");
+    r.turn = false;
+    const json::Value both = SetClipRoot(mixed, "歩く", r);
+    CHECK(Events(both, "歩く").Size() == 1 && both.Get("歩く").Get("loop").AsBool());
+    CHECK(both.Get("歩く").Get("root").Get("未来").AsDouble() == 7 && !ReadClipRoot(both, "歩く").turn);
+    // 既定に戻すと "root" を消し、空になったクリップと "clips" も消す
+    CHECK(SetClipRoot(one, "歩く", ClipRootMotion{}).IsNull());
+}

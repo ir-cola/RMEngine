@@ -51,6 +51,21 @@ typedef struct RmAnimRulesApi {
     int (*playState)(void* ctx, uint64_t entity, const char* state, float fade);
 } RmAnimRulesApi;
 
+/* ルートモーション (段階 5) とレイヤーの重み。 */
+#define RM_PART_ANIM_ROOT "rm_engine.game_x_animation.animator_root"
+#define RM_PART_ANIM_ROOT_VERSION 1u
+typedef struct RmAnimRootApi {
+    /* 部品の欄「ルートモーション」: 0 動かす / 1 その場で / 2 スクリプトに渡す。 */
+    void (*setRootMotion)(void* ctx, uint64_t entity, int use);
+    int (*rootMotion)(void* ctx, uint64_t entity);
+    /* 直前のフレームに根が動いた分 (ワールド: float 3) と、回った角度 (度)。動いていない: 0。 */
+    int (*rootDelta)(void* ctx, uint64_t entity, float* move);
+    float (*rootTurn)(void* ctx, uint64_t entity);
+    /* レイヤーの重み (0..1。負の数: 外してルールの重みに戻す) と、今の重み。 */
+    void (*setLayerWeight)(void* ctx, uint64_t entity, const char* layer, float weight);
+    float (*layerWeight)(void* ctx, uint64_t entity, const char* layer);
+} RmAnimRootApi;
+
 #ifdef __cplusplus
 }
 #endif

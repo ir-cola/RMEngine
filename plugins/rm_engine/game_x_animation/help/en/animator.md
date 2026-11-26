@@ -66,3 +66,15 @@ std::string s = anim.State();   anim.Play("Attack", 0.1f);   // skip the rules a
 ## Blending and layers
 - **Blending**: choose a state's type: [Clip | 1D | 2D]. 1D uses one parameter (such as `speed`), 2D uses two (`moveX`, `moveY`). Place points (clips) on the diagram under the state and drag them around, or type clip, x and y in the table. Move the ▼ / + marker to see the weights at that value. Blended clips keep their feet in step
 - **Layers**: "+ Layer" adds a layer tab. A layer has its own states and rules and stacks on top of the body. Set its weight (a number or a parameter), mode (override / additive) and mask (a bone and the bones below it)
+
+## Root motion
+- The clip's root bone (such as the hips) moves the entity (no foot sliding, lunges that travel). In the model's inspector, pick the clip under Clips and events and check Use on the Root motion row below the strip (you can also choose the root bone, horizontal, vertical and turn; it shows "One pass: forward … m")
+- The animator's Root motion field: **Move** (the Transform moves; with a physics character it walks at that velocity, vertical is not used) / **In place** (the motion is thrown away) / **Give to script** (nothing moves; read `anim.RootDelta()` and `anim.RootTurn()`)
+- While a moving clip has weight, root motion wins over the script's `rm::Character::Move`
+- The preview at the top of the Animation tab runs the rules even when stopped. With [In place | Move] set to Move, the floor scrolls
+
+```cpp
+anim.SetRootMotion(rm::RootMotion::Script);
+rm::Vec3 d = anim.RootDelta();   float turn = anim.RootTurn();   // last frame's motion (world, degrees)
+anim.SetLayerWeight("UpperBody", 0.5f);                        // a layer's weight (stronger than the rules)
+```

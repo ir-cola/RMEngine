@@ -49,6 +49,9 @@ ClipBinding BindClip(const space3d::Clip& clip, const space3d::Skeleton& skeleto
 // 最後のサンプルで止める (壊れたファイルでも配列の外を読まない)。
 void SampleClip(const space3d::Clip& clip, const ClipBinding& binding, const space3d::Skeleton& skeleton, float time, bool loop,
                 Pose& out);
+// 骨 `bone` 1 本だけの SampleClip (同じ式。ルートモーションが根を何度も読む)。範囲の外の番号: 単位の値。
+space3d::BoneTRS SampleBone(const space3d::Clip& clip, const ClipBinding& binding, const space3d::Skeleton& skeleton, int bone, float time,
+                            bool loop);
 
 // クロスフェード: 骨ごとに LerpTRS(a, b, w)。`out` は a と b のどちらと同じでもよい。
 // 数が違うときは、短い方に無い骨は長い方の値のまま。

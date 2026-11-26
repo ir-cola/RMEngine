@@ -134,6 +134,7 @@ public:
 
         // システムと、ゲームの空間の描画担当。
         runner_.SetSystems(RegisteredSystems(host_.Registry()));
+        runner_.SetRegistry(&host_.Registry());
         // システムは、書き出しが入れたままの形で .rmpak からアセットを読む (メッシュコライダー: ベイクしたモデル)。
         runner_.SetAssets({[this](const AssetRef& ref) -> std::optional<std::string> {
                                const auto it = assets_.find(ref.guid);

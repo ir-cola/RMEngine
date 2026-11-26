@@ -66,6 +66,8 @@ void BindModel(AnimatorRun& run, std::shared_ptr<const space3d::SkinData> skin, 
 
 void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<const space3d::ClipEvent*>& fired, uint64_t (*next)()) {
     run.moving = false;
+    run.root = {};
+    run.rootActive = false;
     if (!run.skin || !run.clips) return;
     animation3d::Player& p = run.player;
     p.speed = std::isfinite(a.speed) ? a.speed : 1.f;
@@ -84,6 +86,9 @@ void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<con
         const float before = p.Time();
         const bool fading = p.FadeWeight() < 1.f;
         p.Tick(std::isfinite(dt) && dt > 0 ? dt : 0.f);
+        // 根が動いた分 (イベントと同じ区間。体だけ: docs/ANIMATION.md 6 章の 10)。
+        run.root = p.RootStep();
+        run.rootActive = p.RootActive();
         if (const space3d::Clip* c = CurrentClip(run); c && !c->events.empty()) {
             std::vector<float> times;
             times.reserve(c->events.size());
@@ -238,6 +243,9 @@ void StepAnimatorRules(AnimatorRun& run, Animator& a, float dt) {
         const animation::CompiledLayer& cl = run.rules->layers[i];
         AnimatorRun::Layer& l = run.layers[i];
         l.weight = animation::LayerWeight(cl, run.params);
+        for (const auto& [name, weight] : run.layerWeights) {
+            if (name == cl.name) l.weight = weight;  // (スクリプトの SetLayerWeight)
+        }
         if (cl.rules.states.empty()) continue;
         if (l.state < 0) EnterLayerState(run, i, 0, 0.f);
         const float lt = l.player.Time();
@@ -290,6 +298,23 @@ float RuleParam(const AnimatorRun& run, std::string_view name) {
         return 0.f;
     }
     return animation::ParamOf(run.params, *run.rules, name);
+}
+
+void SetLayerWeight(AnimatorRun& run, std::string_view layer, float weight) {
+    std::erase_if(run.layerWeights, [&](const auto& kv) { return kv.first == layer; });
+    if (std::isfinite(weight) && weight >= 0) run.layerWeights.emplace_back(std::string(layer), std::min(weight, 1.f));
+}
+
+float LayerWeightOf(const AnimatorRun& run, std::string_view layer) {
+    if (run.rules) {
+        for (size_t i = 0; i < run.rules->layers.size() && i < run.layers.size(); ++i) {
+            if (run.rules->layers[i].name == layer) return run.layers[i].weight;
+        }
+    }
+    for (const auto& [name, weight] : run.layerWeights) {
+        if (name == layer) return weight;
+    }
+    return 0.f;
 }
 
 const space3d::Mat4* BoneModelMatrix(const AnimatorRun& run, std::string_view bone) {

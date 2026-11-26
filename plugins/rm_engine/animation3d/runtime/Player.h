@@ -16,9 +16,15 @@
 // 同じ割合の時刻 (主のクリップ = Play したものの 時刻 / 長さ) で読み、その割合は「重みで混ぜた長さ」で進む。
 // 重ねる (段階 4): EvaluatePose で姿勢だけ作り、MutablePose にレイヤーを重ねて (Pose.h の OverlayPose /
 // AddPose)、FinishPose で行列にする。
+//
+// ルートモーション (段階 5。RootMotion.h): クリップの設定 (Clip::root) で使うクリップは、読んだ姿勢から根の動きを
+// 消し (stripRoot)、Tick の間に根が動いた分を RootStep に出す。混ぜているときは、混ぜるクリップごとにその時刻
+// (主の割合 x 長さ) で動いた分を出して同じ重みで混ぜる。フェードの間は、Play した瞬間の 1 秒あたりの動き
+// (止め絵の速さ) を (1 - 重み) だけ足す (止め絵は動かないので、フェードの間に遅くならない)。
 
 #include "rm_engine/animation3d/runtime/ClipTime.h"
 #include "rm_engine/animation3d/runtime/Pose.h"
+#include "rm_engine/animation3d/runtime/RootMotion.h"
 
 #include <span>
 #include <vector>
@@ -29,6 +35,8 @@ class Player {
 public:
     float speed = 1.f;  // 負: 逆再生
     bool loop = true;
+    // ルートモーションを使うクリップの姿勢から、根の動きを消す (外すと、根はクリップどおりに動いて見える)。
+    bool stripRoot = true;
 
     // 混ぜるクリップ 1 つ: クリップの番号と重み (重みは合計 1 でなくてよい: 合計で割る)。
     struct Motion {
@@ -62,6 +70,14 @@ public:
     // 混ぜたクリップの長さ (重みで混ぜたもの。混ぜていなければ今のクリップの長さ。無ければ 0)。
     float BlendDuration() const;
 
+    // 直前の Tick の間に根が動いた分 (RootMotion.h の RootDelta。モデルの空間)。SetTime の後: 0。
+    const RootDelta& RootStep() const { return root_; }
+    // 直前の Tick で、ルートモーションを使うクリップ (かフェードの止め絵の速さ) に重みがあった。
+    bool RootActive() const { return rootActive_; }
+    // クリップ `clip` の根の骨の番号 (使わない・無い: -1) と、1 回で動く分 (RootTotals)。
+    int RootBoneOf(int clip) const;
+    RootDelta RootTotalsOf(int clip) const;
+
     int ClipIndex() const { return clip_; }  // -1: 止まっている
     float Time() const { return time_; }
     // 時刻を直に置く (時間のつまみ。ループなら [0, duration) に回す)。イベントは出さない。
@@ -74,9 +90,19 @@ public:
 
 private:
     const space3d::Clip* Current() const;
+    // クリップ `clip` の prev から step までに根が動いた分と、読んだ姿勢の根を消すこと。
+    RootDelta ClipRoot(int clip, float prev, const TimeStep& step) const;
+    void Strip(int clip, Pose& pose) const;
 
     std::span<const space3d::Clip> clips_;
     std::vector<ClipBinding> bindings_;
+    const space3d::Skeleton* skeleton_ = nullptr;
+    std::vector<int> rootBone_;                // クリップごとの根の骨 (-1: 使わない)
+    std::vector<space3d::BoneTRS> rootStart_;  // クリップごとの、始めのコマの根
+    RootDelta root_;
+    bool rootActive_ = false;
+    RootDelta frozenVelocity_;  // フェードの止め絵の 1 秒あたりの動き (Play した瞬間のもの)
+    RootDelta lastVelocity_;    // 直前の Tick の 1 秒あたりの動き
     int clip_ = -1;
     float time_ = 0;
     float prevTime_ = 0;  // 直前の Tick の前の時刻

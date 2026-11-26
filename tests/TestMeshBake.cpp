@@ -259,7 +259,7 @@ RM_TEST(MeshBake_ASkinnedModel) {
     const std::filesystem::path file = std::filesystem::path(__FILE__).parent_path().parent_path() / "docs" / "samples" / "models" / "skinned_arm.gltf";
     std::string err;
     const auto mesh = LoadMeshFile(file, &err);
-    CHECK(mesh && mesh->skin && mesh->clips.size() == 2);
+    CHECK(mesh && mesh->skin && mesh->clips.size() == 3);
     if (!mesh || !mesh->skin) return;
     const auto back = ReadBakedMesh(WriteBakedMesh(*mesh, {}), &err);
     CHECK(back && back->skin && SameSkin(*back->skin, *mesh->skin) && SameClips(back->clips, mesh->clips));
@@ -315,4 +315,44 @@ RM_TEST(MeshBake_ClipEventsRoundTrip) {
     CHECK(back->clips[0].events.empty());
     CHECK(back->clips[1].events == m.clips[1].events);
     CHECK(WriteBakedMesh(*back, {}) == bytes);
+}
+
+// ルートモーションの設定 (docs/ANIMATION.md 7-1): .meta の "clips" の "root" を欄の決まりで読む。無い欄は既定の値。
+RM_TEST(ClipSettings_ReadsRootMotion) {
+    std::vector<Clip> clips(2);
+    clips[0].name = "歩く";
+    clips[1].name = "待つ";
+    clips[1].root.enabled = true;  // ("root" が無いクリップはそのまま)
+    const auto import = json::Parse(R"({"clips": {"歩く": {"root": {"enabled": true, "bone": "Hips", "vertical": true, "turn": false, "未来": 1}}}})");
+    CHECK(import.has_value());
+    if (!import) return;
+    ApplyClipSettings(clips, *import);
+    CHECK(clips[0].root.enabled && clips[0].root.bone == "Hips" && clips[0].root.horizontal && clips[0].root.vertical && !clips[0].root.turn);
+    CHECK(clips[1].root.enabled && clips[1].root.bone.empty());
+}
+
+// ルートモーションは ROOT のチャンクに入り、同じに読み戻す。使うクリップが無ければ書かない。形式は 3 (1・2 も読める)。
+RM_TEST(MeshBake_RootMotionRoundTrip) {
+    MeshData m = SkinnedSample();
+    const std::string plain = WriteBakedMesh(m, {});
+    CHECK(plain.find("ROOT") == std::string::npos);
+    m.clips[0].root = {true, "腰", true, false, true};
+    m.clips[1].root.bone = "使わないけれど残す";
+    const std::string bytes = WriteBakedMesh(m, {});
+    CHECK(bytes.find("ROOT") != std::string::npos);
+    uint32_t format = 0;
+    std::memcpy(&format, bytes.data() + 8, 4);
+    CHECK(format == 3 && kBakedMeshFormat == 3);
+    std::string err;
+    const auto back = ReadBakedMesh(bytes, &err);
+    CHECK(back && back->clips.size() == 2);
+    if (!back || back->clips.size() != 2) return;
+    CHECK(back->clips[0].root == m.clips[0].root && back->clips[1].root == m.clips[1].root);
+    CHECK(WriteBakedMesh(*back, {}) == bytes);
+    // 形式 2 のファイル (ROOT の前) も読める: ルートモーションは使わない
+    std::string two = plain;
+    const uint32_t v2 = 2;
+    std::memcpy(two.data() + 8, &v2, 4);
+    const auto old = ReadBakedMesh(two, &err);
+    CHECK(old && !old->clips.empty() && !old->clips[0].root.enabled);
 }

@@ -1286,10 +1286,21 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **どこ** — `src/third_party/RecastNavigation` (README に版と元の場所)・`plugins/rm_engine/navigation/runtime/` (`Bake.*` / `Query.*` / `NavFile.*`)・
   `game_x_navigation/` (部品・指紋・「ナビ」タブ・作業スレッドの焼く仕事)・`navigation_x_3d` / `navigation_x_physics` (焼く物を差し出す口)、`tests/TestNavigation.cpp`
 
+### ルートモーション: 根の骨の動きを取り出す (Y のひねりの分け方・継ぎ目で区切って足す・止め絵の速さ)・物理のキャラクターへの口 (2026-11-26)
+
+- **何か** — クリップの中で根の骨 (腰など) が動いた分を、毎フレーム「前の時刻 → 今の時刻」で取り出し、姿勢からは消して (根を始めのコマの所に止める)、エンティティの Transform に足す。向きは四元数を **Y のまわりのひねり**と残り (傾き) に分ける: ひねり = normalize(0, q.y, 0, q.w)。ひねりだけを取り、傾きは姿勢に残す。動いた分は「その区間の始めの根の向き」から見たものにするので、エンティティが回った後でも、前へ進んだ分は回った向きに足される
+- **ループの継ぎ目**: 歩くクリップは最後のコマで根が前にあり、最初のコマで元に戻る。そのまま差を取ると継ぎ目で後ろへ飛ぶので、区切って足す: 前の時刻 → 終わり、(またいだ回数 - 1) 回の 1 周、始め → 今。区切りごとに、それまでに回った分だけ回してから足す
+- **混ぜる・フェード**: 混ぜるときはクリップごとに同じ割合の時刻で動いた分を出し、姿勢と同じ重みで混ぜる。フェードの「止め絵」は動かないので、Play した瞬間の 1 秒あたりの動き (速さ) も一緒に止めておき、(1 - 重み) だけ足す (切り替えの途中で急に遅くならない)
+- **物理へ**: ゲーム制作 × アニメーションは物理を知らない。**口** `rm_engine.game_x_animation.root_motion` に「このエンティティをこれだけ動かしたい」を尋ね、つなぎ「アニメーション × 物理」がキャラクター (Jolt の CharacterVirtual) の欲しい速さ (動いた分 ÷ dt。横だけ) にして受け取る。受け取ったらアニメーションは位置を書かない (回転はいつも書く: キャラクターは回転を持たない)。キャラクターは次に頼むまで同じ速さで歩き続けるので、止まったフレームに 1 度だけ 0 を渡す。システムが口を読めるよう、`SystemContext` に registry を足した
+- **タブの中のプレビュー**: タブが自分の再生 (ゲームと同じ関数 `StepAnimatorRules` → `StepAnimator`) を持ち、止まっているエディターでもルールを動かす。「動かす」ではモデルを回し、床の格子を (位置の小数の部分だけ) 逆にずらして、カメラがついて行くように見せる
+- **なぜそれか** — 足が滑らない歩き・クリップどおりの踏み込みは、アニメーションを作った人の動きをそのまま使うのが一番。速さをスクリプトで合わせるより正確。口にしたので、物理の無いゲームにも、後でナビゲーション (動く者を動かす人は 1 人だけ: `DrivenByRootMotion`) にも同じ道を使える
+- **どこ** — `plugins/rm_engine/animation3d/runtime/RootMotion.*`・`Player.*` (`RootStep` / `stripRoot`)・`space3d/runtime/Skeleton.h` (`ClipRootMotion`)・`ClipSettings.*`・`MeshBake.*` (`ROOT`。形式 3)・`game_x_animation/runtime/RootMotionSink.h`・`AnimationSystem.cpp` (`ApplyRootMotion`)・`animation_x_physics/runtime/Register.cpp`・`game_x_animation/editor/TabPreview.*`・`animation3d/editor/ClipStrip.cpp`、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestAnimationPhysics.cpp`・`TestMeshBake.cpp`・`TestClipEvents.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-26 | ルートモーション (Y のひねりの分け方・ループの継ぎ目で区切って足す・止め絵の速さ・物理のキャラクターへの口)・タブの中のプレビュー |
 | 2026-11-26 | ナビメッシュを焼いて道を探す (Recast / Detour v1.6.0・ボクセル・領域・A*・ファネル・区画をスレッドに並べて同じバイト・形の指紋 FNV-1a) |
 | 2026-11-26 | 動くテーマの絵 (ピクセルシェーダーの背景・勾配ノイズと fBm とドメインワーピング・ディザ・頂点バッファなしの粒・足し算の合成・別のスレッドで D3DCompile・タイマーで約 30 fps) |
 | 2026-11-26 | 穴のあいた切り取り (D2D のレイヤーとマスク)・前のフレームのボタンの場所・見える色の違い (L*a*b* の ΔE) |

@@ -5,9 +5,12 @@
 #   skinned_arm.gltf   a square column 2 m tall in 3 segments (orange / cream / orange), 3 bones in a
 #                      chain (Base -> Middle -> Top, joints at 2/3 m and 4/3 m) under an "Arm" node that
 #                      is not a bone, smooth weights near the joints (at most 2 bones per vertex), and
-#                      two animations that loop cleanly:
+#                      three animations that loop cleanly:
 #                        "Wave"  2 s: the column bends from side to side (each bone a little later)
 #                        "Idle"  4 s: a slight sway
+#                        "Walk"  1 s: the root bone (Base) goes 0.8 m forward (+Z) with a small bob and
+#                                     sway - for root motion (docs/ANIMATION.md 7-1. Its position is
+#                                     not the same at the start and the end: root motion carries it on)
 #                      The buffer is written inside the file (data: URI).
 #
 # Only the Python standard library. Everything here is made by this script (no licence to follow).
@@ -123,7 +126,7 @@ ibm_accessor = accessor(struct.pack("<%df" % len(ibm), *ibm), FLOAT, SEGMENTS, "
 def turn_z(angle):
     return [0.0, 0.0, math.sin(angle / 2), math.cos(angle / 2)]
 
-def animation(name, duration, step, angle_of_bone):
+def animation(name, duration, step, angle_of_bone, root_position=None):
     keys = int(round(duration / step))
     times = [duration * k / keys for k in range(keys + 1)]
     t_acc = accessor(struct.pack("<%df" % len(times), *times), FLOAT, len(times), "SCALAR", None, [0.0], [duration])
@@ -133,11 +136,19 @@ def animation(name, duration, step, angle_of_bone):
         out = accessor(struct.pack("<%df" % len(values), *values), FLOAT, len(times), "VEC4")
         samplers.append({"input": t_acc, "output": out, "interpolation": "LINEAR"})
         channels.append({"sampler": bone, "target": {"node": 2 + bone, "path": "rotation"}})
+    if root_position:
+        # The root bone (Base, node 2) moves: root motion takes this out of the pose.
+        values = [v for t in times for v in root_position(t)]
+        out = accessor(struct.pack("<%df" % len(values), *values), FLOAT, len(times), "VEC3")
+        samplers.append({"input": t_acc, "output": out, "interpolation": "LINEAR"})
+        channels.append({"sampler": len(samplers) - 1, "target": {"node": 2, "path": "translation"}})
     return {"name": name, "samplers": samplers, "channels": channels}
 
 # Both loop: the angles are sines whose period is the length of the animation.
 wave = animation("Wave", 2.0, 1 / 12, lambda b, t: [0.25, 0.5, 0.6][b] * math.sin(math.pi * t - 0.6 * b))
 idle = animation("Idle", 4.0, 0.25, lambda b, t: [0.04, 0.06, 0.08][b] * math.sin(math.pi * t / 2 - 0.8 * b))
+walk = animation("Walk", 1.0, 1 / 30, lambda b, t: [0.05, 0.08, 0.1][b] * math.sin(2 * math.pi * t - 0.7 * b),
+                 lambda t: [0.0, 0.03 * (1 - math.cos(4 * math.pi * t)), 0.8 * t])
 
 doc = {
     "asset": {"version": "2.0", "generator": "RM Engine sample (docs/samples/models/make_skinned_sample.py)"},
@@ -156,7 +167,7 @@ doc = {
         {"name": "Orange", "pbrMetallicRoughness": {"baseColorFactor": [0.9, 0.35, 0.08, 1], "metallicFactor": 0, "roughnessFactor": 0.6}},
         {"name": "Cream", "pbrMetallicRoughness": {"baseColorFactor": [0.85, 0.8, 0.65, 1], "metallicFactor": 0, "roughnessFactor": 0.7}},
     ],
-    "animations": [wave, idle],
+    "animations": [wave, idle, walk],
     "accessors": accessors,
     "bufferViews": views,
     "buffers": [{"byteLength": len(buf), "uri": "data:application/octet-stream;base64," + base64.b64encode(bytes(buf)).decode()}],

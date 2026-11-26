@@ -50,4 +50,12 @@ json::Value MoveClipEvent(const json::Value& clips, std::string_view clip, size_
 // 番号 `index` のイベントを消す。
 json::Value RemoveClipEvent(const json::Value& clips, std::string_view clip, size_t index);
 
+// --- ルートモーション (docs/ANIMATION.md 7-1): クリップの "root" (ClipRootMotion の欄の決まり) ---
+using space3d::ClipRootMotion;
+// クリップ `clip` のルートモーションの設定 (無い: 既定 = 使わない)。
+ClipRootMotion ReadClipRoot(const json::Value& clips, std::string_view clip);
+// クリップ `clip` の "root" を `root` に (知らないキーは残す。既定の値で知らないキーも無ければ "root" を消し、
+// 空になったクリップと "clips" も消す)。
+json::Value SetClipRoot(const json::Value& clips, std::string_view clip, const ClipRootMotion& root);
+
 }  // namespace rm::animation3d

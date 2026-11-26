@@ -26,10 +26,16 @@ public:
     struct Content {
         std::span<const MeshDraw> meshes;
         std::span<const ExtraDraw> extras;
+        // 床の格子をずらす (XZ。物が動く代わりに床が流れる: アニメーションのタブのルートモーション)。
+        Vec3 gridShift{0, 0, 0};
     };
     // r に描く (その上のマウスも扱う: `id` でドラッグを区別する)。3D を描けないときは false。
     bool Draw(ui::Context& c, const ui::Rect& r, platform::Gfx& gfx, std::string_view id, const Content& content);
     OrbitView& Camera() { return camera_; }
+    // このプレビューのレンダラー (形を GPU に上げる: Renderer::Upload)。描けないときは null。GPU のデバイスが
+    // 作り直されると Generation が変わる: その前に上げた形は捨てて上げ直す。
+    Renderer* Gpu(platform::Gfx& gfx);
+    uint64_t Generation() const { return generation_; }
 
 private:
     Renderer renderer_;
@@ -41,6 +47,7 @@ private:
     OrbitView camera_;
     bool panning_ = false;
     std::vector<LineVertex> grid_;
+    std::vector<LineVertex> shifted_;  // ずらした格子 (Content::gridShift)
     bool gridLight_ = false;  // 格子の色を取ったテーマ
 };
 

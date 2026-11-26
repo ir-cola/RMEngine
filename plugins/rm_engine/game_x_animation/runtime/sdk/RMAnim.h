@@ -7,6 +7,8 @@
 //   std::string c = anim.Clip();  float t = anim.Time();  bool done = anim.Ended();
 //   rm::Vec3 hand = anim.BonePosition("RightHand");   // 骨のワールドの位置 (手に持たせる、エフェクトを出す)
 //   rm::Quat head = anim.BoneRotation("Head");
+//   anim.SetRootMotion(rm::RootMotion::Script);   // ルートモーションを自分で: rm::Vec3 d = anim.RootDelta();
+//   anim.SetLayerWeight("上半身", 0.5f);          // レイヤーの重み (ルールより強い)
 //
 // クリップのイベント (モデルのインスペクターの「クリップ」の帯で置く) は、そのエンティティのスクリプトの
 // OnEvent に届く (送り手はエンジン):
@@ -23,6 +25,9 @@
 #include <string_view>
 
 namespace rm {
+
+// アニメーターの欄「ルートモーション」(根の骨の動きをどうするか)。
+enum class RootMotion { Move = 0, InPlace = 1, Script = 2 };
 
 class Animator {
 public:
@@ -123,6 +128,33 @@ public:
         return rules_ && rules_->playState(Api()->ctx, entity_.id, s.c_str(), fade) != 0;
     }
 
+    // --- ルートモーション (モデルのインスペクターで、クリップごとに「使う」を入れたもの) ---
+    // 部品の欄「ルートモーション」を書き換える。Script にすると動かさないので、RootDelta を読んで自分で動かせる。
+    void SetRootMotion(RootMotion use) const {
+        if (root_) root_->setRootMotion(Api()->ctx, entity_.id, static_cast<int>(use));
+    }
+    RootMotion GetRootMotion() const { return root_ ? static_cast<RootMotion>(root_->rootMotion(Api()->ctx, entity_.id)) : RootMotion::Move; }
+    // 直前のフレームに根が動いた分 (ワールド) と、回った角度 (度)。Tick で読むと 1 フレーム前のもの。
+    Vec3 RootDelta() const {
+        float m[3] = {0, 0, 0};
+        if (root_) root_->rootDelta(Api()->ctx, entity_.id, m);
+        return {m[0], m[1], m[2]};
+    }
+    float RootTurn() const { return root_ ? root_->rootTurn(Api()->ctx, entity_.id) : 0.0f; }
+    // レイヤーの重み (0..1。ルールの重みより強い)。ClearLayerWeight でルールの重みに戻す。
+    void SetLayerWeight(std::string_view layer, float weight) const {
+        const std::string l(layer);
+        if (root_) root_->setLayerWeight(Api()->ctx, entity_.id, l.c_str(), weight < 0.0f ? 0.0f : weight);
+    }
+    void ClearLayerWeight(std::string_view layer) const {
+        const std::string l(layer);
+        if (root_) root_->setLayerWeight(Api()->ctx, entity_.id, l.c_str(), -1.0f);
+    }
+    float LayerWeight(std::string_view layer) const {
+        const std::string l(layer);
+        return root_ ? root_->layerWeight(Api()->ctx, entity_.id, l.c_str()) : 0.0f;
+    }
+
 private:
     bool Bone(std::string_view bone, float* p, float* r) const {
         const std::string b(bone);
@@ -136,6 +168,7 @@ private:
     Entity entity_;
     const RmAnimApi* api_;
     const RmAnimRulesApi* rules_ = Part<RmAnimRulesApi>(RM_PART_ANIM_RULES, RM_PART_ANIM_RULES_VERSION);
+    const RmAnimRootApi* root_ = Part<RmAnimRootApi>(RM_PART_ANIM_ROOT, RM_PART_ANIM_ROOT_VERSION);
 };
 
 }  // namespace rm

@@ -8,7 +8,11 @@
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorLogic.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
+#include "rm_engine/game_x_animation/runtime/RootMotionSink.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
+#include "rm_engine/space3d/runtime/View.h"
+
+#include <cmath>
 #include "rm_engine/space3d/runtime/MeshFile.h"
 
 #include <format>
@@ -70,7 +74,65 @@ const game_x_3d::MeshRenderer* MeshOn(const SceneEntity& e) {
     return c && c->Known() ? static_cast<const game_x_3d::MeshRenderer*>(c->value.Get()) : nullptr;
 }
 
+// ルートモーション (docs/ANIMATION.md 7-1): 根が動いた分をワールドにし、「動かす」なら行き先 (物理のキャラクター:
+// 口 root_motion) に渡すか、Transform の位置に足す。回転はいつも Transform に書く。
+void ApplyRootMotion(game_production::SystemContext& ctx, SceneEntity& e, const Animator& a, AnimatorRun& run) {
+    run.rootWorld = space3d::TransformDirection(game_x_3d::WorldMatrixOf(ctx.scene, e.data.id), run.root.move);
+    run.rootDt = ctx.dt;
+    if (a.rootMotion != RootMotionUse::Move) {
+        run.rootMoved = false;
+        return;
+    }
+    const bool active = run.rootActive;
+    if (!active && !run.rootMoved) return;
+    // 行き先に尋ねる (止まったフレームは 0 で 1 度だけ)。
+    bool taken = false;
+    if (ctx.registry) {
+        for (const auto& s : ctx.registry->Contributions<RootMotionSinkInfo>(kRootMotionPoint)) {
+            if (s.item->take && s.item->take(ctx.scene, e.data.id, active ? run.rootWorld : Vec3{0, 0, 0}, ctx.dt)) {
+                taken = true;
+                break;
+            }
+        }
+    }
+    run.rootMoved = active;
+    if (!active) return;
+    Component* tc = e.FindComponent(reflect::TypeOf<space3d::Transform>().name);
+    if (!tc || !tc->Known()) return;
+    auto& t = *static_cast<space3d::Transform*>(tc->value.Get());
+    t = RootMotionTransform(t, game_x_3d::WorldMatrixOf(ctx.scene, e.data.id, false), run.rootWorld, run.root.turn, !taken);
+    run.rootTravel += std::hypot(run.rootWorld.x, run.rootWorld.z);
+    if (!run.toldRoot && run.rootTravel > 0.1f) {
+        // (書き出したゲームの検査 tools/check_export.ps1 の game_anim がこの行を探す)
+        log::Info("アニメーター: 「{}」をルートモーションで {:.2f} m 動かしました{}", e.data.name, run.rootTravel, taken ? " (キャラクターの速さで)" : "");
+        run.toldRoot = true;
+    }
+}
+
 }  // namespace
+
+bool DrivenByRootMotion(const game_production::Scene& scene, int entity) {
+    const SceneEntity* e = scene.Find(entity);
+    const Component* c = e ? e->FindComponent(reflect::TypeOf<Animator>().name) : nullptr;
+    if (!c || !c->Known()) return false;
+    const Animator& a = *static_cast<const Animator*>(c->value.Get());
+    if (a.rootMotion != RootMotionUse::Move || !a.run) return false;
+    return a.run->rootActive || a.run->player.RootBoneOf(a.run->player.ClipIndex()) >= 0;
+}
+
+space3d::Transform RootMotionTransform(const space3d::Transform& current, const space3d::Mat4& parentWorld, Vec3 worldMove, float turnRadians,
+                                       bool writePosition) {
+    space3d::WorldPlacement place = space3d::Decompose(space3d::WorldMatrix(parentWorld, current), current.rotation);
+    if (writePosition && std::isfinite(worldMove.x) && std::isfinite(worldMove.y) && std::isfinite(worldMove.z)) {
+        place.position = {place.position.x + worldMove.x, place.position.y + worldMove.y, place.position.z + worldMove.z};
+    }
+    if (turnRadians != 0 && std::isfinite(turnRadians)) {
+        // 自分の Y のまわりに (クリップの根が回った向きと同じ: animation3d::YawQuat)。
+        const space3d::Mat4 r = space3d::RotationMatrix(place.rotation) * space3d::QuatMatrix(animation3d::YawQuat(turnRadians));
+        place.rotation = space3d::EulerFromRotation(r, place.rotation);
+    }
+    return space3d::FromWorld(current, parentWorld, place);
+}
 
 void RunAnimation(game_production::SystemContext& ctx) {
     const std::string type = reflect::TypeOf<Animator>().name;
@@ -125,6 +187,7 @@ void RunAnimation(game_production::SystemContext& ctx) {
         StepAnimatorRules(run, a, ctx.dt);
         fired.clear();
         StepAnimator(run, a, ctx.dt, fired, &space3d::NextPoseVersion);
+        ApplyRootMotion(ctx, e, a, run);  // (イベントの OnEvent はこの後: 足音は動いた後の位置で鳴る)
         if (ctx.events) {
             for (const space3d::ClipEvent* ev : fired) ctx.events->push_back({e.data.id, ev->name, ev->number, ev->text, e.data.id});
         }

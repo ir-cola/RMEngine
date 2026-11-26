@@ -210,6 +210,7 @@ public:
         for (const auto& l : host.Registry().Contributions<SceneSettingLook>(kSceneSettingLookPoint)) settingLooks_.push_back(l.item);
         // ... Play 中にそれを動かすシステムも同じ。
         runner_.SetSystems(RegisteredSystems(host.Registry()));
+        runner_.SetRegistry(&host.Registry());
         // システムはプロジェクトのファイルからアセットを読む (メッシュコライダー: シーンビューと同じ読み方のモデル)。
         runner_.SetAssets({nullptr, [this](const AssetRef& ref) { return host_.AssetFile(ref); }});
         cameraTypes_ = CameraTypes(host.Registry());

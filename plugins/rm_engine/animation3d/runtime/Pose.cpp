@@ -78,6 +78,23 @@ ClipBinding BindClip(const space3d::Clip& clip, const space3d::Skeleton& skeleto
     return binding;
 }
 
+namespace {
+
+// 骨 `i` の、刻みの位置 i0 + w の値 (SampleClip と SampleBone の 1 本の式)。
+BoneTRS SampleAt(const space3d::Clip& clip, const ClipBinding& binding, const space3d::Skeleton& skeleton, size_t i, size_t i0, float w) {
+    const BoneTRS& rest = skeleton.bones[i].rest;
+    const int ti = i < binding.track.size() ? binding.track[i] : -1;
+    if (ti < 0 || static_cast<size_t>(ti) >= clip.tracks.size()) return rest;
+    const space3d::BoneTrack& tr = clip.tracks[static_cast<size_t>(ti)];
+    BoneTRS out;
+    out.t = SampleChannel(tr.t, i0, w, rest.t, Lerp);
+    out.r = space3d::QuatNormalize(SampleChannel(tr.r, i0, w, rest.r, QuatNlerp));
+    out.s = SampleChannel(tr.s, i0, w, rest.s, Lerp);
+    return out;
+}
+
+}  // namespace
+
 void SampleClip(const space3d::Clip& clip, const ClipBinding& binding, const space3d::Skeleton& skeleton, float time, bool loop,
                 Pose& out) {
     const size_t n = skeleton.bones.size();
@@ -85,18 +102,14 @@ void SampleClip(const space3d::Clip& clip, const ClipBinding& binding, const spa
     const float f = FramePosition(clip, time, loop);
     const size_t i0 = static_cast<size_t>(f);
     const float w = f - static_cast<float>(i0);
-    for (size_t i = 0; i < n; ++i) {
-        const BoneTRS& rest = skeleton.bones[i].rest;
-        const int ti = i < binding.track.size() ? binding.track[i] : -1;
-        if (ti < 0 || static_cast<size_t>(ti) >= clip.tracks.size()) {
-            out[i] = rest;
-            continue;
-        }
-        const space3d::BoneTrack& tr = clip.tracks[static_cast<size_t>(ti)];
-        out[i].t = SampleChannel(tr.t, i0, w, rest.t, Lerp);
-        out[i].r = space3d::QuatNormalize(SampleChannel(tr.r, i0, w, rest.r, QuatNlerp));
-        out[i].s = SampleChannel(tr.s, i0, w, rest.s, Lerp);
-    }
+    for (size_t i = 0; i < n; ++i) out[i] = SampleAt(clip, binding, skeleton, i, i0, w);
+}
+
+BoneTRS SampleBone(const space3d::Clip& clip, const ClipBinding& binding, const space3d::Skeleton& skeleton, int bone, float time, bool loop) {
+    if (bone < 0 || static_cast<size_t>(bone) >= skeleton.bones.size()) return {};
+    const float f = FramePosition(clip, time, loop);
+    const size_t i0 = static_cast<size_t>(f);
+    return SampleAt(clip, binding, skeleton, static_cast<size_t>(bone), i0, f - static_cast<float>(i0));
 }
 
 void Blend(const Pose& a, const Pose& b, float w, Pose& out) {

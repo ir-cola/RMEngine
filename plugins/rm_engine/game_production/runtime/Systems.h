@@ -79,6 +79,8 @@ struct SystemContext {
     const AssetAccess* assets = nullptr;
     // スクリプトへのイベントの届け先 (null: 届ける者がいない)。
     std::vector<SystemEvent>* events = nullptr;
+    // ほかのプラグインの口を読む (つなぎが差し出したもの。null: 無い = テスト)。
+    const RuntimeRegistry* registry = nullptr;
 };
 
 struct SystemInfo {
@@ -127,6 +129,8 @@ public:
     uint64_t Camera() const { return camera_; }
     // システムがアセットを読む方法 (SystemContext::assets)。
     void SetAssets(AssetAccess a) { assets_ = std::move(a); }
+    // システムが口を読む registry (SystemContext::registry。ホストより長く生きるもの)。
+    void SetRegistry(const RuntimeRegistry* registry) { registry_ = registry; }
     // 最後の Advance でシステムが頼んだフック (ScriptRunner::Deliver 用)。
     const std::vector<HookCall>& Hooks() const { return hooks_; }
     // 最後の Advance でシステムが送ったイベント (ホストが QueueSystemEvents で ScriptWorld に移す)。
@@ -153,6 +157,7 @@ private:
     std::vector<HookCall> hooks_;
     std::vector<SystemEvent> events_;
     AssetAccess assets_;
+    const RuntimeRegistry* registry_ = nullptr;
     bool timing_ = false;
     std::vector<SystemTime> times_;
     int lastSteps_ = 0;
