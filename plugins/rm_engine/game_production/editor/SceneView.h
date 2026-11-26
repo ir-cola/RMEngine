@@ -178,8 +178,11 @@ inline constexpr char kSceneLinesPoint[] = "rm_engine.game_production.scene_line
 
 struct SceneLinesInfo {
     // 選択中のエンティティ (`all` のときは全エンティティ) の線を `out` に足す (seconds: 0)。
-    // ビューのツールバーに 形: 選択 / 全部 (`all`) のスイッチがある。
-    void (*lines)(const Scene& scene, std::span<const int> selection, bool all, DebugDraw& out);
+    // ビューのツールバーに 形: 選択 / 全部 (`all`) のスイッチがある。null 可。
+    void (*lines)(const Scene& scene, std::span<const int> selection, bool all, DebugDraw& out) = nullptr;
+    // 省略可: 同じことを、ソフトの手を借りて (アセットのファイルを読んで描く物: ナビの焼いたナビメッシュ)。
+    // 重い物 (ファイルを読む) は自分で覚えておく。両方あれば両方を呼ぶ。
+    void (*hostLines)(editor::SoftwareHost& host, const Scene& scene, std::span<const int> selection, bool all, DebugDraw& out) = nullptr;
 };
 
 }  // namespace rm::game_production

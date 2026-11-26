@@ -34,6 +34,11 @@
 #include "rm_engine/game_x_animation/editor/Connector.h"
 #include "rm_engine/game_x_animation/runtime/Id.h"
 #include "rm_engine/game_x_2d/editor/Connector.h"
+#include "rm_engine/game_x_navigation/editor/Connector.h"
+#include "rm_engine/game_x_navigation/runtime/Id.h"
+#include "rm_engine/navigation/runtime/Id.h"
+#include "rm_engine/navigation_x_3d/runtime/Id.h"
+#include "rm_engine/navigation_x_physics/runtime/Id.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
 #include "rm_engine/physics/editor/Connector.h"
 #include "rm_engine/physics/runtime/Id.h"
@@ -76,6 +81,10 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {physics::kPluginId, &physics::RegisterEditor},
         {game_x_audio::kPluginId, &game_x_audio::RegisterEditor},
         {game_ui::kPluginId, &game_ui::RegisterEditor},
+        {navigation::kPluginId, nullptr},  // 焼く・道を探す (Recast / Detour を包む。3D もゲーム制作も知らない)
+        {game_x_navigation::kPluginId, &game_x_navigation::RegisterEditor},
+        {navigation_x_3d::kPluginId, nullptr},
+        {navigation_x_physics::kPluginId, nullptr},
         {theme_colors::kPluginId, nullptr},  // テーマのファイルだけ (themes/*.json)
         {theme_paper::kPluginId, nullptr},
         {theme_seasons::kPluginId, &theme_seasons::RegisterEditor},

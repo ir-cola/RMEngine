@@ -22,9 +22,11 @@
       <AdditionalOptions>/utf-8 /Zc:__cplusplus /FS %(AdditionalOptions)</AdditionalOptions>
       <!-- JPH_*: Jolt Physics の設定 (RMJolt.vcxproj)。全プロジェクト・両方の構成で同じにする
            (Jolt はライブラリと、それを使うコードの設定が合っているか調べる)。結果が CPU によらない
-           (同じ手順なら、どの PC でも同じ位置になる) ので、リプレイとテストが正しく保てる。 -->
-      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;UNICODE;_UNICODE;JPH_CROSS_PLATFORM_DETERMINISTIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory);$(MSBuildThisFileDirectory)third_party\JoltPhysics;$(RMRoot)plugins;$(RMRoot)resources;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+           (同じ手順なら、どの PC でも同じ位置になる) ので、リプレイとテストが正しく保てる。
+           DT_POLYREF64: Recast Navigation (RMRecast.vcxproj) の多角形の番号を 64 ビットに (区画の数と多角形の数の上限を広く)。
+           Detour の型の大きさが変わるので、これも全プロジェクトで同じにする。 -->
+      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;UNICODE;_UNICODE;JPH_CROSS_PLATFORM_DETERMINISTIC;DT_POLYREF64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory);$(MSBuildThisFileDirectory)third_party\JoltPhysics;$(MSBuildThisFileDirectory)third_party\RecastNavigation\Recast\Include;$(MSBuildThisFileDirectory)third_party\RecastNavigation\Detour\Include;$(MSBuildThisFileDirectory)third_party\RecastNavigation\DetourCrowd\Include;$(MSBuildThisFileDirectory)third_party\RecastNavigation\DetourTileCache\Include;$(RMRoot)plugins;$(RMRoot)resources;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>

@@ -856,7 +856,8 @@ private:
         if (!game) {
             sceneLines_.Clear();
             for (const auto& l : host.host.Registry().Contributions<game_production::SceneLinesInfo>(game_production::kSceneLinesPoint)) {
-                l.item->lines(host.scene, host.selection, state_.allShapes, sceneLines_);
+                if (l.item->lines) l.item->lines(host.scene, host.selection, state_.allShapes, sceneLines_);
+                if (l.item->hostLines) l.item->hostLines(host.host, host.scene, host.selection, state_.allShapes, sceneLines_);
             }
             for (const game_production::DebugLine& l : sceneLines_.Lines()) {
                 if (l.space == game_production::DebugSpace::Space2D) debug_.push_back({{l.a.x, l.a.y}, {l.b.x, l.b.y}, l.color, 1.5f});

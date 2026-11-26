@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Recast Navigation (third_party/RecastNavigation: zlib、v1.6.0 のソースをそのまま。License.txt を見ること): 静的ライブラリ 1 つ。
+     Recast (焼く)・Detour (道を探す)・DetourCrowd (群れ)・DetourTileCache (動く障害物) の 4 つ。
+     Jolt (RMJolt.vcxproj) と同じ形: 1 回ビルドして、エディター・テスト・ゲームキットがリンクする
+     (make_gamekit.ps1 がキットの core.lib に入れる。書き出したゲームは、そのうち使う分だけをリンクする: 焼く Recast は入らない)。
+     設定 (RM.Common.props の DT_POLYREF64 と読む場所) は全プロジェクト・両方の構成で同じ。
+     Recast の警告はこちらで直すものではないので、Recast のファイルだけ警告を切る (エンジンのコードは /W4 のまま)。 -->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{7C2E4A91-5D3B-4F18-9E6A-0B4C8D2F1A73}</ProjectGuid>
+    <RootNamespace>RMRecast</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="RM.Common.props" />
+  </ImportGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <!-- ゲームのオブジェクトにはデバッグ情報を入れない (.pdb なし、この PC のパスも残らない) -->
+      <DebugInformationFormat>None</DebugInformationFormat>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <!-- ソースのフォルダーごとにオブジェクトのフォルダーを 1 つ (Jolt と同じ) -->
+    <ClCompile Include="third_party\RecastNavigation\Recast\Source\*.cpp;third_party\RecastNavigation\Detour\Source\*.cpp;third_party\RecastNavigation\DetourCrowd\Source\*.cpp;third_party\RecastNavigation\DetourTileCache\Source\*.cpp">
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+    </ClCompile>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

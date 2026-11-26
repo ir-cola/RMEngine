@@ -1,7 +1,7 @@
 ﻿# <exe のフォルダ>/GameKit/ を RMGameKit のオブジェクトから作る (src/RMGameKit.vcxproj が、そのビルドの後に走らせる):
 #   kit.json                               ここに何があるか、どう作ったか (C++ のランタイム)、システムライブラリ
 #   lib/core.lib  + lib/core/reflect/       ゲームに入る層 (base core platform ui game) と、
-#                                           単独で作った外のライブラリ (-ExtraCoreLibs: Jolt Physics)
+#                                           単独で作った外のライブラリ (-ExtraCoreLibs: Jolt Physics・Recast Navigation。; で区切る)
 #   lib/<author>/<name>/runtime.lib  + reflect/   ランタイム部のあるプラグインごとに 1 つ
 #   lib/<author>/<name>/licenses/*.txt     そのランタイムが使う外のコードのライセンスの文章
 #                                           (プラグインの licenses/ から。ファイル名 = ソフトの名前)。
@@ -63,7 +63,8 @@ $coreObjs = @(Get-ChildItem (Join-Path $ObjDir 'k') -Recurse -Filter *.obj | Whe
 $coreObjs = @($coreObjs | Where-Object { -not $_.StartsWith((Join-Path $ObjDir 'plugins')) })
 $coreObjs += @(Generated-For $corePrefixes | ForEach-Object FullName)
 # lib.exe は .lib ファイルも入力に取る: その中身は core.lib に入る (ゲームはそのうち使うものだけをリンクする)
-foreach ($x in $ExtraCoreLibs) {
+# (-File で呼ぶと配列は 1 つの文字になるので、; で区切った物も分ける)
+foreach ($x in @($ExtraCoreLibs | ForEach-Object { $_ -split ';' } | Where-Object { $_ -ne '' })) {
     if (-not (Test-Path $x)) { Write-Host "make_gamekit: $x がありません"; exit 1 }
     $coreObjs += (Resolve-Path $x).Path
 }

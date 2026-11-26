@@ -30,6 +30,12 @@
 #include "rm_engine/climate/runtime/Register.h"
 #include "rm_engine/weather_x_climate/runtime/Id.h"
 #include "rm_engine/weather_x_climate/runtime/Register.h"
+#include "rm_engine/game_x_navigation/runtime/Id.h"
+#include "rm_engine/game_x_navigation/runtime/Register.h"
+#include "rm_engine/navigation_x_3d/runtime/Id.h"
+#include "rm_engine/navigation_x_3d/runtime/Register.h"
+#include "rm_engine/navigation_x_physics/runtime/Id.h"
+#include "rm_engine/navigation_x_physics/runtime/Register.h"
 
 namespace rm {
 
@@ -48,6 +54,9 @@ std::span<const RuntimePlugin> RuntimePlugins() {
         {weather_x_physics::kPluginId, &weather_x_physics::RegisterRuntime},
         {climate::kPluginId, &climate::RegisterRuntime},
         {weather_x_climate::kPluginId, &weather_x_climate::RegisterRuntime},
+        {game_x_navigation::kPluginId, &game_x_navigation::RegisterRuntime},
+        {navigation_x_3d::kPluginId, &navigation_x_3d::RegisterRuntime},
+        {navigation_x_physics::kPluginId, &navigation_x_physics::RegisterRuntime},
     };
     return kPlugins;
 }
