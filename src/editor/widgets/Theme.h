@@ -42,7 +42,7 @@ struct Palette {
 
 inline constexpr Palette kDark{
     Color::Hex(0x1B1C1F), Color::Hex(0x151618), Color::Hex(0x232428), Color::Hex(0x2A2B30), Color::Hex(0x34363C),
-    Color::Hex(0x4A4D55), Color::Hex(0x141518), Color::Hex(0x2D2F35), Color::Hex(0x26282D), Color::Hex(0x3B2326),
+    Color::Hex(0x4A4D55), Color::Hex(0x141518), Color::Hex(0x2D2F35), Color::Hex(0x26282D), Color::Hex(0x552528),
     Color::Hex(0xD62828), Color::Hex(0xE84444), Color::Hex(0xB31F1F), Color::Hex(0xE8E8EA), Color::Hex(0x9EA1A9),
     Color::Hex(0x6B6E76), Color::Hex(0xFF6B6B), Color::Hex(0xF2C14E), Color::Hex(0xE3B341), Color::Hex(0x000000, 0.35f),
     Color::Hex(0x45474E), Color::Hex(0x6A6D75), Color::Hex(0x000000, 0.55f), 0x151618, false,
@@ -50,7 +50,7 @@ inline constexpr Palette kDark{
 
 inline constexpr Palette kLight{
     Color::Hex(0xF3F3F5), Color::Hex(0xE8E8EC), Color::Hex(0xFFFFFF), Color::Hex(0xEDEDF1), Color::Hex(0xD3D5DB),
-    Color::Hex(0xB2B5BE), Color::Hex(0xFFFFFF), Color::Hex(0xE3E4E9), Color::Hex(0xD8D9DF), Color::Hex(0xF8DADC),
+    Color::Hex(0xB2B5BE), Color::Hex(0xFFFFFF), Color::Hex(0xE3E4E9), Color::Hex(0xD8D9DF), Color::Hex(0xF2BCBC),
     Color::Hex(0xD62828), Color::Hex(0xE84444), Color::Hex(0xB31F1F), Color::Hex(0x1D1E23), Color::Hex(0x585B64),
     Color::Hex(0x8C8F98), Color::Hex(0xD03030), Color::Hex(0xA87A06), Color::Hex(0xC9921B), Color::Hex(0x000000, 0.14f),
     Color::Hex(0xC2C4CB), Color::Hex(0x9EA1AA), Color::Hex(0x000000, 0.35f), 0xE8E8EC, true,
@@ -268,6 +268,31 @@ inline Color OrnamentColor() { return Accent.Alpha(IsLight ? 0.10f : 0.12f); }
 inline float Luminance(Color c) {
     auto lin = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
     return 0.2126f * lin(c.r) + 0.7152f * lin(c.g) + 0.0722f * lin(c.b);
+}
+// 2 つの色のコントラスト比 (1 .. 21。WCAG: 文字は 4.5 以上で読みやすい)。
+inline float ContrastRatio(Color a, Color b) {
+    const float la = Luminance(a), lb = Luminance(b);
+    return (std::max(la, lb) + 0.05f) / (std::min(la, lb) + 0.05f);
+}
+// 人の目に見える色の違い (CIE L*a*b* の距離 ΔE。2 くらいでやっと分かる、25 ではっきり違う)。
+inline float ColorDifference(Color a, Color b) {
+    auto lab = [](Color c) {
+        auto lin = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
+        const float r = lin(c.r), g = lin(c.g), bl = lin(c.b);
+        const float x = (0.4124f * r + 0.3576f * g + 0.1805f * bl) / 0.95047f, y = 0.2126f * r + 0.7152f * g + 0.0722f * bl,
+                    z = (0.0193f * r + 0.1192f * g + 0.9505f * bl) / 1.08883f;
+        auto f = [](float t) { return t > 0.008856f ? std::cbrt(t) : 7.787f * t + 16.f / 116.f; };
+        return std::array<float, 3>{116.f * f(y) - 16.f, 500.f * (f(x) - f(y)), 200.f * (f(y) - f(z))};
+    };
+    const auto p = lab(a), q = lab(b);
+    return std::sqrt((p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]) + (p[2] - q[2]) * (p[2] - q[2]));
+}
+// どのテーマも守る決まり (2026-11-26 ユーザーの希望): 選んだ所の色 (selected) は、背景・パネルとはっきり違い
+// (ΔE 25 以上)、マウスを乗せた色とも違い (15 以上)、その上の文字が読める (4.5 以上)。
+// 色を決めるときは、アクセントをパネルの色に少しずつ混ぜて、これを満たす一番薄いものにする。
+inline bool SelectionStandsOut(const Palette& p) {
+    return ColorDifference(p.selected, p.bg) >= 25.f && ColorDifference(p.selected, p.panel) >= 25.f &&
+           ColorDifference(p.selected, p.hover) >= 15.f && ContrastRatio(p.selected, p.text) >= 4.5f;
 }
 // `bg` の上でより目立つほう、白か黒 (コントラスト比が高いほう): Hub のロゴのような
 // 単色の絵が、どのテーマでも見えるように。

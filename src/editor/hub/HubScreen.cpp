@@ -1311,15 +1311,11 @@ void HubScreen::DrawThemePicker(ui::Context& c) {
         }
         const Rect card{cr.x + cell.col * (cardW + kGap), top, cardW, kCardH};
         c.PushId(static_cast<uint64_t>(i));
-        // 見本: 季節で切り替える = 春｜夏｜秋｜冬、PC の設定に合わせる = 黒｜白、ほかは 1 つ。
-        static const wchar_t* const kSeasonNames[4] = {TrKey(L"春"), TrKey(L"夏"), TrKey(L"秋"), TrKey(L"冬")};
-        std::wstring seasonNames[4];
+        // 見本: 季節で切り替える = 春 夏 秋 冬 の色を並べる (区切りの線と名前は無し: 2026-11-26 ユーザーの希望)、
+        // PC の設定に合わせる = 黒｜白、ほかは 1 つ。
         std::vector<w::ThemeSlice> slices;
         if (t.seasons.size() == 4) {
-            for (size_t k = 0; k < 4; ++k) {
-                seasonNames[k] = Tr(kSeasonNames[k]);
-                slices.push_back({&t.seasons[k], seasonNames[k]});
-            }
+            for (size_t k = 0; k < 4; ++k) slices.push_back({&t.seasons[k], {}, false});
         } else if (t.palette) {
             slices.push_back({&*t.palette, {}});
         } else {

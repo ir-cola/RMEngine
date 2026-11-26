@@ -3,6 +3,28 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.34",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "季節のテーマ: スプリングと夜桜の花びらが風に吹かれて飛ぶように (朝は左から右、夜は右から左)。夜桜の団子は串の端に寄せ、提灯はいったん外しました",
+          "en": "Season themes: Spring and Night Sakura petals now fly on the wind (left to right in the morning, right to left at night). Night Sakura's dango sit at the end of the skewer, and the lanterns are gone for now"
+        },
+        {
+          "ja": "花火のテーマ: リアル調の花火 (菊・柳・牡丹) が画面の上のほう全体に。右下に砂浜と夜の海、左下に金魚。サマーにも下に海",
+          "en": "Fireworks theme: realistic fireworks (chrysanthemum, willow, peony) across the top of the screen, a beach and night sea at the bottom right, and a goldfish at the bottom left. Summer also gets a sea along the bottom"
+        },
+        {
+          "ja": "クリスマスのテーマ: 冷たい青の地、左上へ飛ぶサンタとトナカイ、緑のツリー、高く積もった雪とかまくら。お月見は月を暗くして文字を読みやすく",
+          "en": "Christmas theme: a cold blue background, Santa and reindeer flying to the upper left, a green tree, deeper snow and a snow hut (kamakura). Moon Viewing's moon is dimmer so text stays readable"
+        },
+        {
+          "ja": "どのテーマでも選んだ所の色がはっきり分かるように (背景と同じにならない決まり)。テーマの絵はメニューやボタンの後ろには出しません。季節で切り替えるの見本から区切りの線と文字を外しました",
+          "en": "Selected rows now stand out clearly in every theme (never the same as the background). Theme pictures no longer show behind menus and buttons. The \"Switch by season\" preview no longer has divider lines or labels"
+        }
+      ]
+    },
+    {
       "version": "0.0.33",
       "date": "2026-11-26",
       "items": [

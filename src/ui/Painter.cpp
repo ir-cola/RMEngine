@@ -1,5 +1,6 @@
 #include "ui/Painter.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include <d2d1effects.h>
@@ -39,7 +40,7 @@ void Painter::DeviceChanged() {
 
 void Painter::Begin(ID2D1DeviceContext* dc) {
     dc_ = dc;
-    clipDepth_ = 0;
+    clips_.clear();
     if (brushOwner_ != dc) {
         brush_.Reset();
         gradients_.clear();  // ブラシはデバイスコンテキストに属する
@@ -53,7 +54,7 @@ void Painter::Begin(ID2D1DeviceContext* dc) {
 }
 
 void Painter::End() {
-    while (clipDepth_ > 0) PopClip();
+    while (!clips_.empty()) PopClip();
     dc_ = nullptr;
 }
 
@@ -436,13 +437,53 @@ void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
 
 void Painter::PushClip(const Rect& r) {
     dc_->PushAxisAlignedClip(ToD2D(r), D2D1_ANTIALIAS_MODE_ALIASED);
-    ++clipDepth_;
+    clips_.push_back(false);
+}
+
+void Painter::PushClipExcept(const Rect& r, std::span<const Rect> holes) {
+    // 穴が無い: ふつうの四角の切り取り (速い)。
+    const auto inside = [&](const Rect& h) { return h.x < r.x + r.w && h.x + h.w > r.x && h.y < r.y + r.h && h.y + h.h > r.y; };
+    if (std::none_of(holes.begin(), holes.end(), inside)) {
+        PushClip(r);
+        return;
+    }
+    // 外の四角と穴の四角を 1 つの形にし、交互の塗り (ALTERNATE) で穴をあけて、それをマスクにしたレイヤー。
+    ComPtr<ID2D1Factory> factory;
+    dc_->GetFactory(&factory);
+    ComPtr<ID2D1PathGeometry> geo;
+    ComPtr<ID2D1GeometrySink> sink;
+    if (!factory || FAILED(factory->CreatePathGeometry(&geo)) || FAILED(geo->Open(&sink))) {
+        PushClip(r);
+        return;
+    }
+    sink->SetFillMode(D2D1_FILL_MODE_ALTERNATE);
+    auto box = [&](float x0, float y0, float x1, float y1) {
+        sink->BeginFigure(D2D1::Point2F(x0, y0), D2D1_FIGURE_BEGIN_FILLED);
+        const D2D1_POINT_2F pts[3] = {D2D1::Point2F(x1, y0), D2D1::Point2F(x1, y1), D2D1::Point2F(x0, y1)};
+        sink->AddLines(pts, 3);
+        sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    };
+    box(r.x, r.y, r.x + r.w, r.y + r.h);
+    for (const Rect& h : holes) {
+        if (!inside(h)) continue;
+        box(std::max(h.x, r.x), std::max(h.y, r.y), std::min(h.x + h.w, r.x + r.w), std::min(h.y + h.h, r.y + r.h));
+    }
+    if (FAILED(sink->Close())) {
+        PushClip(r);
+        return;
+    }
+    dc_->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), geo.Get(), D2D1_ANTIALIAS_MODE_ALIASED), nullptr);
+    clips_.push_back(true);
 }
 
 void Painter::PopClip() {
-    if (clipDepth_ <= 0) return;
-    dc_->PopAxisAlignedClip();
-    --clipDepth_;
+    if (clips_.empty()) return;
+    if (clips_.back()) {
+        dc_->PopLayer();
+    } else {
+        dc_->PopAxisAlignedClip();
+    }
+    clips_.pop_back();
 }
 
 }  // namespace rm::ui

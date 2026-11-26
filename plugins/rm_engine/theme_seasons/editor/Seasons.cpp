@@ -59,24 +59,28 @@ Color BucketRim() { return Color::Hex(0xB0301F); }        // その縁
 // 夜 (2026-11-26): 暗い地の上なので、明るい色を薄めに (文字が読めるように)。
 Color NightPetal(int i) { return PetalTone(i).Alpha(0.50f); }  // 夜桜: 花びら (縁は付けない: 暗い地ではいらない)
 Color NightFlurry() { return Color::Hex(0xF7C6D6, 0.36f); }   // 夜桜: 吹雪 (パネルのウィンドウ)
-Color LanternCord() { return Color::Hex(0x0A0610, 0.55f); }   // 提灯を下げる紐
-Color Lantern() { return Color::Hex(0xFF9C55, 0.70f); }       // 提灯の灯り
-Color LanternCap() { return Color::Hex(0x1E120E, 0.80f); }    // 提灯の上下の枠
-Color Firework(int i) {                                       // 花火: 金・桃・水色
-    constexpr uint32_t k[3] = {0xFFD46B, 0xFF7AB0, 0x7AE3FF};
-    return Color::Hex(k[i % 3], 0.45f);
-}
-Color SeaFar() { return Color::Hex(0x14456B, 0.50f); }   // 夜の海 (奥の波)
-Color SeaNear() { return Color::Hex(0x1F6394, 0.42f); }  // 手前の波
-Color MoonHalo() { return Color::Hex(0xFFE9A8, 0.06f); }  // お月見: 月のまわりの光 (2 重)
-Color Moon() { return Color::Hex(0xFFE7A0, 0.38f); }  // (上に文字が来ても読めるように薄く)
-Color MoonSpot() { return Color::Hex(0xE2BF72, 0.22f); }
-Color Star() { return Color::Hex(0xFFFFFF, 0.38f); }      // 夜空の星
-Color LightCord() { return Color::Hex(0x08110C, 0.60f); }  // クリスマス: 電球を下げる紐
-Color Bulb(int i) {                                        // 電球: 赤・金・緑・青
-    constexpr uint32_t k[4] = {0xFF5A5A, 0xFFD24D, 0x5BE38B, 0x6AB8FF};
-    return Color::Hex(k[i & 3], 0.85f);
-}
+Color WindStreak() { return Color::Hex(0xF2BCCB, 0.30f); }  // 春: 花びらを運ぶ風の筋 (2026-11-26 の 2 回目)
+// 花火 (リアル調): 1 発ごとに筋の色と先の星の色。まわりの光はごく薄く。
+struct FireworkLook {
+    uint32_t trail, tip;
+};
+constexpr FireworkLook kFireworks[6] = {{0xFFB347, 0xFFE3A0}, {0xFF5040, 0xFFB8A8}, {0x5CFF8A, 0xD6FFDF},
+                                        {0x7A9CFF, 0xE2EAFF}, {0xFF6FC0, 0xFFD3EE}, {0xE8ECFF, 0xFFFFFF}};
+Color FireworkGlow(int i) { return Color::Hex(kFireworks[i % 6].trail, 0.045f); }
+Color FireworkTrail(int i) { return Color::Hex(kFireworks[i % 6].trail, 0.42f); }
+Color FireworkTip(int i) { return Color::Hex(kFireworks[i % 6].tip, 0.62f); }
+Color SeaFar() { return Color::Hex(0x14456B, 0.50f); }        // 夜の海 (奥の波)
+Color SeaNear() { return Color::Hex(0x1F6394, 0.42f); }       // 手前の波
+Color DaySeaFar() { return Color::Hex(0x4FA3D9, 0.30f); }     // 夏の朝の海 (奥の波。2026-11-26 の 2 回目)
+Color DaySeaNear() { return Color::Hex(0x2F86C2, 0.28f); }    // 手前の波
+Color MoonHalo() { return Color::Hex(0xFFE9A8, 0.04f); }      // お月見: 月のまわりの光 (2 重)
+Color Moon() { return Color::Hex(0xFFE7A0, 0.20f); }          // (上に文字が来ても読めるように、ごく薄く: 2026-11-26 の 2 回目)
+Color MoonSpot() { return Color::Hex(0xE2BF72, 0.12f); }
+Color Star() { return Color::Hex(0xFFFFFF, 0.38f); }          // 夜空の星
+Color FallNightShade() { return theme::Accent.Alpha(0.17f); }  // お月見のシルエット (ほかの季節より少し明るく)
+Color WinterGreen() { return Color::Hex(0x3DBA74, 0.30f); }   // クリスマスのシルエット (緑で濃いめ)
+Color DoorDark() { return Color::Hex(0x0E1828, 0.85f); }      // かまくらの入り口
+Color DoorLight() { return Color::Hex(0xFFB357, 0.60f); }     // その中の灯り
 
 }  // namespace season
 
@@ -122,48 +126,84 @@ void WinterSky(Picture& pic, const Rect& w, float scale, Color flake) {
 // どのパネルの下にも積もった)。ウィンドウの絵なので、一番下のパネルやバーの塗りの上にも内容の後ろに出る。
 // 左右の端まで積もり、ウィンドウの端で切れる。高さは決まった値で、形は左端からの位置だけで決まる
 // (2026-11-25: ユーザーの希望。大きさを変えても形が変わらない)。
-void WinterGround(Picture& pic, const Rect& w, const Rect& screen) {
-    constexpr float kDepth = 24.f;
+// 夜 (クリスマス) は雪がもっと高く積もり、雪だるまの代わりに一回り大きいかまくら (2026-11-26 の 2 回目)。
+void WinterGround(Picture& pic, const Rect& w, const Rect& screen, bool night) {
+    const float kDepth = night ? 40.f : 24.f;
     // 雪だるま (2026-11-25): **画面** (モニター) の右下に立つ。ウィンドウが画面の右端まで無いと (小さいウィンドウ、
     // Hub のそのままの大きさ) その外になって見えない。全画面 (最大化) で右下に出る。大きさは DIP (文字と同じく
     // Windows の拡大率で大きくなる)。体は雪と同じ白で、輪郭は雪の輪郭と 1 つにつながる: 輪郭 (雪の縁と、
     // 少し太らせた丸) を先に描き、その上に白 (丸と雪) を重ねる。足元は雪に埋もれる。
-    constexpr float kHeight = 58.f;
-    const float x = screen.Right() - 64.f;
-    const bool snowman = x + kHeight * 0.4f > w.x && x - kHeight * 0.4f < w.Right();
+    const float kHeight = night ? 48.f : 58.f;  // (かまくら: 高さ 48・幅 77。雪だるまより一回り大きい)
+    const float x = screen.Right() - (night ? 80.f : 64.f);
+    const float half = night ? 0.8f * kHeight : 0.4f * kHeight;
+    const bool snowman = x + half > w.x && x - half < w.Right();
     ornament::SnowmanShapes man, edge;
+    ornament::KamakuraShapes hut;
     if (snowman) {
         const float ground = w.y + w.h - ornament::SnowDriftHeight(x - w.x, kDepth) + 4.f;
-        edge = ornament::Snowman({x, ground}, kHeight, 1.5f);
-        man = ornament::Snowman({x, ground}, kHeight);
+        if (night) {
+            edge.body = std::move(ornament::Kamakura({x, ground}, kHeight, 1.5f).dome);
+            hut = ornament::Kamakura({x, ground}, kHeight);
+            man.body = std::move(hut.dome);
+        } else {
+            edge = ornament::Snowman({x, ground}, kHeight, 1.5f);
+            man = ornament::Snowman({x, ground}, kHeight);
+        }
     }
     if (snowman) pic.push_back({std::move(edge.body), season::SnowEdge()});
     pic.push_back({ornament::SnowDrift({w.x, w.y - 1.5f, w.w, w.h}, kDepth), season::SnowEdge()});
     if (snowman) pic.push_back({std::move(man.body), season::Snow()});
     pic.push_back({ornament::SnowDrift(w, kDepth), season::Snow()});
     pic.push_back({ornament::SnowDrift(w, kDepth * 0.45f), season::SnowLow()});
-    if (snowman) {
+    if (snowman && night) {
+        pic.push_back({std::move(hut.door), season::DoorDark()});
+        pic.push_back({std::move(hut.light), season::DoorLight()});
+    } else if (snowman) {
         pic.push_back({std::move(man.bucket), season::Bucket()});
         pic.push_back({std::move(man.rim), season::BucketRim()});
     }
 }
 
-// 夜桜: 上の端にたるむ紐から下がる提灯。
-void Lanterns(Picture& pic, const Rect& w) {
-    ornament::GarlandShapes g = ornament::Garland(w, 300.f, 40.f, 3, 1.4f);
-    ui::Path body, caps;
-    for (const Vec2 at : g.points) ornament::AddLantern(body, caps, at, 40.f);
-    pic.push_back({std::move(g.cord), season::LanternCord()});
-    pic.push_back({std::move(body), season::Lantern()});
-    pic.push_back({std::move(caps), season::LanternCap()});
+// 春: 風に吹かれて飛ぶ花びら (朝 = 左から右へ、夜 = 右から左へ)。朝は少しずらした縁を先に描く。
+void PetalsInWind(Picture& pic, const Rect& w, float wind, bool night) {
+    const float depth = std::max(200.f, w.h * 0.85f);
+    if (!night) {
+        auto edges = ornament::PetalWind({w.x + 0.8f, w.y + 1.f, w.w, w.h}, depth, 0.3f, wind, 0x5A4Bu);
+        for (int i = 0; i < 4; ++i) pic.push_back({std::move(edges.petals[static_cast<size_t>(i)]), season::PetalEdge()});
+    }
+    auto petals = ornament::PetalWind(w, depth, 0.3f, wind, 0x5A4Bu);
+    pic.push_back({std::move(petals.streaks), season::WindStreak()});
+    for (int i = 0; i < 4; ++i) {
+        pic.push_back({std::move(petals.petals[static_cast<size_t>(i)]), night ? season::NightPetal(i) : season::PetalTone(i)});
+    }
 }
 
-// 夏の夜: 上のほうに花火 3 つ (大きさはウィンドウで決まる)。
+// 夏の夜: 画面の上のほう全体に、種類と色の違う花火 6 発 (リアル調。2026-11-26 の 2 回目)。
 void Fireworks(Picture& pic, const Rect& w, float scale) {
-    const float r = std::clamp(std::min(w.w, w.h) * 0.16f, 60.f, 200.f) * scale;
-    pic.push_back({ornament::Firework({w.Right() - w.w * 0.22f, w.y + w.h * 0.24f}, r, 28, 0xF1u), season::Firework(0)});
-    pic.push_back({ornament::Firework({w.Right() - w.w * 0.46f, w.y + w.h * 0.15f}, r * 0.7f, 22, 0xF2u), season::Firework(1)});
-    pic.push_back({ornament::Firework({w.Right() - w.w * 0.08f, w.y + w.h * 0.40f}, r * 0.55f, 18, 0xF3u), season::Firework(2)});
+    struct Shot {
+        float fx, fy, size;
+        ornament::FireworkKind kind;
+        int look;
+    };
+    using K = ornament::FireworkKind;
+    static constexpr Shot kShots[] = {{0.07f, 0.18f, 0.62f, K::Peony, 4},  {0.24f, 0.30f, 0.95f, K::Chrysanthemum, 0},
+                                      {0.43f, 0.14f, 0.78f, K::Willow, 0}, {0.61f, 0.27f, 1.f, K::Chrysanthemum, 2},
+                                      {0.79f, 0.13f, 0.7f, K::Peony, 3},   {0.94f, 0.34f, 0.6f, K::Chrysanthemum, 1}};
+    const float r = std::clamp(std::min(w.w, w.h) * 0.15f, 60.f, 190.f) * scale;
+    uint32_t seed = 0xF100u;
+    for (const Shot& s : kShots) {
+        ornament::FireworkShapes f = ornament::FireworkShell({w.x + w.w * s.fx, w.y + w.h * s.fy}, r * s.size, s.kind, ++seed);
+        pic.push_back({std::move(f.glow[0]), season::FireworkGlow(s.look)});
+        pic.push_back({std::move(f.glow[1]), season::FireworkGlow(s.look)});
+        pic.push_back({std::move(f.trails), season::FireworkTrail(s.look)});
+        pic.push_back({std::move(f.tips), season::FireworkTip(s.look)});
+    }
+}
+
+// 夏: 下の端の海 (2 枚の波)。
+void Sea(Picture& pic, const Rect& w, Color far, Color near) {
+    pic.push_back({ui::shape::WavyBottom(w, 46.f, 0.f), far});
+    pic.push_back({ui::shape::WavyBottom(w, 24.f, 2.1f), near});
 }
 
 // 夜空の星 (お月見): 上半分に小さな点。
@@ -171,18 +211,6 @@ void Stars(Picture& pic, const Rect& w) {
     const Rect sky{w.x, w.y, w.w, w.h * 0.55f};
     const int count = std::max(12, static_cast<int>(sky.w * sky.h / 9000.f));
     pic.push_back({ornament::Snowfall(sky, count, 2.4f, 0x57A2u), season::Star()});
-}
-
-// クリスマス: 上の端にたるむ紐から下がる、4 色の電球。
-void ChristmasLights(Picture& pic, const Rect& w) {
-    ornament::GarlandShapes g = ornament::Garland(w, 220.f, 26.f, 6, 1.2f);
-    std::array<ui::Path, 4> bulbs;
-    for (size_t i = 0; i < g.points.size(); ++i) {
-        const Vec2 at = g.points[i];
-        ornament::AddEllipse(bulbs[i & 3], {at.x, at.y + 6.f}, 4.f, 5.5f, 0);
-    }
-    pic.push_back({std::move(g.cord), season::LightCord()});
-    for (int i = 0; i < 4; ++i) pic.push_back({std::move(bulbs[static_cast<size_t>(i)]), season::Bulb(i)});
 }
 
 Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
@@ -198,11 +226,8 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
                 // (2026-11-24: 右の桜の木はユーザーの希望で外した)
                 // ウィンドウの下の方まで散り、下ほどまばら (2026-11-25: 前は上の 3 割ほどまで)。縁 (少しずらした
                 // 同じ花びら) を先に描く。
-                const float depth = std::max(200.f, w.h * 0.85f);
-                auto edges = ornament::PetalCanopy({w.x + 0.8f, w.y + 1.f, w.w, w.h}, depth, 0.3f, 0x5A4Bu);
-                auto petals = ornament::PetalCanopy(w, depth, 0.3f, 0x5A4Bu);
-                for (int i = 0; i < 4; ++i) pic.push_back({std::move(edges[static_cast<size_t>(i)]), season::PetalEdge()});
-                for (int i = 0; i < 4; ++i) pic.push_back({std::move(petals[static_cast<size_t>(i)]), season::PetalTone(i)});
+                // 2026-11-26 の 2 回目: 花びらは左から右へ吹かれて飛ぶ (風の筋も)。
+                PetalsInWind(pic, w, 1.f, false);
                 Silhouette(pic, w, ornament::Sakura({0, 0}, 1.f, 10.f));
             }
             break;
@@ -215,6 +240,7 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
                 // 左下に太陽、右下に影 (春の木のような、パラソルと砂のお城のある砂の小山)、右上に雲。
                 const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
                 pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h), season::SummerShade()});  // (太陽と同じ濃さ)
+                Sea(pic, w, season::DaySeaFar(), season::DaySeaNear());  // (2026-11-26 の 2 回目: 砂浜より手前に海)
                 Silhouette(pic, w, ornament::Sun({0, 0}, 1.f, 10.f), season::SummerShade());
                 SummerClouds(pic, w, 1.f);
             }
@@ -236,7 +262,7 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
             WinterSky(pic, w, floating ? 0.8f : 1.f, season::Flake());
             if (!floating) {
                 Silhouette(pic, w, ornament::Snowflake({0, 0}, 1.f, 10.f));
-                WinterGround(pic, w, screen);
+                WinterGround(pic, w, screen, false);
             }
             break;
         // --- 夜 (2026-11-26) ---
@@ -248,10 +274,9 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
                 break;
             }
             {
-                // 夜桜: 朝と同じ散り方の花びら (薄め)、上の端に提灯、左下に花見団子。
-                auto petals = ornament::PetalCanopy(w, std::max(200.f, w.h * 0.85f), 0.3f, 0x5A4Bu);
-                for (int i = 0; i < 4; ++i) pic.push_back({std::move(petals[static_cast<size_t>(i)]), season::NightPetal(i)});
-                Lanterns(pic, w);
+                // 夜桜: 右から左へ吹かれて飛ぶ花びら (薄め)、左下に花見団子。(提灯はいったん外した: 2026-11-26 の 2 回目。
+                // 形を作る ornament::Garland / AddLantern は残してある)
+                PetalsInWind(pic, w, -1.f, true);
                 Silhouette(pic, w, ornament::HanamiDango({0, 0}, 1.f, -30.f));
             }
             break;
@@ -260,11 +285,15 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
                 Fireworks(pic, {w.x, w.y, w.w, std::min(w.h, 300.f)}, 0.5f);
                 break;
             }
-            // 花火 (上)、夜の海 (下、2 枚の波)、左下にうちわ。
+            // 花火 (上のほう全体)、右下に砂浜 (パラソル無し) とその手前の夜の海、左下に金魚 (うちわから変えた。
+            // 案を見本で選んでもらう: 2026-11-26 の 2 回目)。
             Fireworks(pic, w, 1.f);
-            pic.push_back({ui::shape::WavyBottom(w, 46.f, 0.f), season::SeaFar()});
-            pic.push_back({ui::shape::WavyBottom(w, 24.f, 2.1f), season::SeaNear()});
-            Silhouette(pic, w, ornament::Uchiwa({0, 0}, 1.f, 20.f));
+            {
+                const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
+                pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h, false), theme::OrnamentColor()});
+            }
+            Sea(pic, w, season::SeaFar(), season::SeaNear());
+            Silhouette(pic, w, ornament::Goldfish({0, 0}, 1.f, 10.f));
             break;
         case Kind::FallNight:
             Stars(pic, w);
@@ -285,17 +314,20 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
                 pic.push_back({std::move(moon), season::Moon()});
                 pic.push_back({std::move(spots), season::MoonSpot()});
                 const float h = std::clamp(w.h * 0.36f, 140.f, 340.f);
-                pic.push_back({ornament::Susuki({w.Right() - 0.18f * h, w.Bottom()}, h, 0x5A5Au), theme::OrnamentColor()});
-                Silhouette(pic, w, ornament::TsukimiDango({0, 0}, 1.f));
+                pic.push_back({ornament::Susuki({w.Right() - 0.18f * h, w.Bottom()}, h, 0x5A5Au), season::FallNightShade()});
+                Silhouette(pic, w, ornament::TsukimiDango({0, 0}, 1.f), season::FallNightShade());
             }
             break;
         case Kind::WinterNight:
             WinterSky(pic, w, floating ? 0.8f : 1.f, season::NightFlake());
             if (!floating) {
-                // 降る雪、上の端に電球、左下にクリスマスツリー、下に積もった雪と雪だるま (朝と同じ)。
-                ChristmasLights(pic, w);
-                Silhouette(pic, w, ornament::ChristmasTree({0, 0}, 1.f, 0.f));
-                WinterGround(pic, w, screen);
+                // 降る雪、上のほうの真ん中に左上へ飛ぶサンタとトナカイ、左下にクリスマスツリー (どちらも緑)、
+                // 下に朝より高く積もった雪とかまくら。(上の電球はいったん外した: 2026-11-26 の 2 回目)
+                const float size = std::clamp(w.w * 0.11f, 90.f, 180.f);
+                pic.push_back({ornament::SantaSleigh({w.x + w.w * 0.5f, w.y + std::max(w.h * 0.2f, 1.2f * size)}, size, -14.f),
+                               season::WinterGreen()});
+                Silhouette(pic, w, ornament::ChristmasTree({0, 0}, 1.f, 0.f), season::WinterGreen());
+                WinterGround(pic, w, screen, true);
             }
             break;
     }

@@ -88,7 +88,10 @@ public:
     void ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c);
 
     void PushClip(const Rect& r);
-    void PopClip();
+    // `r` に切り取り、さらに `holes` の四角の中には描かない (2026-11-26: テーマの絵をボタンの下に出さない)。
+    // 重なった穴の重なりの所は穴にならない (ふつうは重ならない)。PopClip で戻す。
+    void PushClipExcept(const Rect& r, std::span<const Rect> holes);
+    void PopClip();  // (いちばん新しい切り取りを戻す: PushClip のものも PushClipExcept のものも)
 
 private:
     IDWriteTextFormat* Format(float size, bool bold);
@@ -113,7 +116,7 @@ private:
     std::unordered_map<uint64_t, Microsoft::WRL::ComPtr<ID2D1BitmapBrush>> grains_;
     std::unordered_map<uint32_t, Microsoft::WRL::ComPtr<IDWriteTextFormat>> formats_;
     std::unordered_map<uint32_t, Microsoft::WRL::ComPtr<IDWriteInlineObject>> ellipsis_;
-    int clipDepth_ = 0;
+    std::vector<bool> clips_;  // 切り取りの重なり: true = レイヤー (PushClipExcept)、false = 四角 (PushClip)
 };
 
 }  // namespace rm::ui

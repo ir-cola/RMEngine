@@ -95,11 +95,31 @@ std::unordered_map<const ui::Context*, bool>& FloatingWindows() {
     return floating;
 }
 
+// ウィンドウごとの、ボタンの場所 (KeepOrnamentOff): 今のフレームで集めているものと、前のフレームのもの。
+struct ButtonSpots {
+    std::vector<Rect> now, last;
+};
+std::unordered_map<const ui::Context*, ButtonSpots>& Spots() {
+    static std::unordered_map<const ui::Context*, ButtonSpots> spots;
+    return spots;
+}
+
 }  // namespace
 
 void DrawBackdrop(ui::Context& c, bool floating) {
     FloatingWindows()[&c] = floating;
-    if (const OrnamentInfo* o = theme::CurrentOrnament) o->window(c, c.Viewport(), floating);
+    ButtonSpots& spots = Spots()[&c];  // (フレームの始め: 前のフレームのボタンの場所を使う)
+    spots.last = std::move(spots.now);
+    spots.now.clear();
+    if (const OrnamentInfo* o = theme::CurrentOrnament) {
+        c.P().PushClipExcept(c.Viewport(), spots.last);
+        o->window(c, c.Viewport(), floating);
+        c.P().PopClip();
+    }
+}
+
+void KeepOrnamentOff(ui::Context& c, const Rect& r) {
+    if (theme::CurrentOrnament && r.w > 0 && r.h > 0) Spots()[&c].now.push_back(r);
 }
 
 void DrawBackdropOn(ui::Context& c, const Rect& r, float corner, bool panelThings) {
@@ -108,7 +128,8 @@ void DrawBackdropOn(ui::Context& c, const Rect& r, float corner, bool panelThing
     const auto it = FloatingWindows().find(&c);
     // パネルの地 (夏の砂の粒) が先、ウィンドウの絵 (シルエット) がその上 (2026-11-25: 絵が粒に埋もれない)。
     if (panelThings && o->panel) o->panel(c, r, corner);
-    c.P().PushClip(r);
+    const auto spots = Spots().find(&c);
+    c.P().PushClipExcept(r, spots != Spots().end() ? std::span<const Rect>(spots->second.last) : std::span<const Rect>{});
     o->window(c, c.Viewport(), it != FloatingWindows().end() && it->second);
     c.P().PopClip();
 }
@@ -496,6 +517,7 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color, float size)
 
 bool Button(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view label, ButtonKind kind, bool enabled) {
     auto& p = c.P();
+    KeepOrnamentOff(c, r);
     ui::Context::ButtonResult b;
     if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);
     const bool down = b.held && b.hovered;
@@ -648,6 +670,7 @@ void LineGraph(ui::Context& c, const Rect& r, std::span<const float> a, std::spa
 }
 
 bool IconButton(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon, bool enabled) {
+    KeepOrnamentOff(c, r);
     ui::Context::ButtonResult b;
     if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);
     const bool down = b.held && b.hovered;
@@ -800,7 +823,7 @@ ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view idStr, cons
             p.Text({strip.x, pr.Bottom() - 17, strip.w, 14}, slices[i].label, ls);
         }
         if (n > 1) p.PopClip();
-        if (i > 0) p.FillRect({x0 - 0.5f, pr.y, 1.f, pr.h}, theme::Border);  // (区切りの線)
+        if (i > 0 && slices[i].line) p.FillRect({x0 - 0.5f, pr.y, 1.f, pr.h}, theme::Border);  // (区切りの線)
     }
     ui::TextStyle ts;
     ts.size = 13;
@@ -827,6 +850,7 @@ bool NavItem(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring
 
 void DrawTab(ui::Context& c, const Rect& r, bool selected, bool hovered) {
     auto& p = c.P();
+    KeepOrnamentOff(c, r);
     if (selected) {
         const theme::Gradient g = theme::Raised(theme::PanelHeader);
         p.FillRoundRectGradient(r, theme::Radius, g.top, g.bottom);

@@ -68,7 +68,7 @@ ui::Path SandCastle(Vec2 base, float height);
 ui::Path BeachParasol(Vec2 base, float height, float degreesCcw);
 // 右下の角の夏の影 (春の桜の木のように): 低い砂の小山に、パラソルが刺さり、
 // そのそばに砂のお城。`base` = 小山の足の真ん中 (ウィンドウの下端上)、`height` = パラソルのてっぺんまで。
-ui::Path BeachScene(Vec2 base, float height);
+ui::Path BeachScene(Vec2 base, float height, bool parasol = true);  // (parasol: false = パラソル無し。夏の夜)
 // 右下の角の秋の影: ススキのひとむら。茎と細長い葉は根元からほぼまっすぐ、左へ少し傾いて立ち、
 // 上で左へ曲がる。穂は茎の先から左下へ垂れ、中心の軸から細い小穂が何本も、同じ向きに流れて垂れる。
 // `base` = 根元の真ん中 (ウィンドウの下端上)、`height` = 一番高い穂まで。
@@ -114,7 +114,7 @@ struct IcicleShapes {
 IcicleShapes Icicles(const ui::Rect& window, float maxLength, uint32_t seed);
 
 // --- 夜 (2026-11-26: 季節の夜用のテーマ) ---------------------------------------------------------
-// 花見団子: 斜めの串に丸い団子が 3 つ。radius = 中心から串の端まで。`degreesCcw` 回す (0: 串がまっすぐ上を向く)。
+// 花見団子: 斜めの串の上の端に寄せた丸い団子が 3 つ (下は持つ所)。radius = 中心から串の端まで。`degreesCcw` 回す (0: 串がまっすぐ上を向く)。
 ui::Path HanamiDango(Vec2 center, float radius, float degreesCcw);
 // 上の端に沿ってたるむ紐 (提灯やクリスマスの電球を下げる): `window` の左端から `swing` ピクセルごとに上の端に留め、
 // 留めた所の間で `sag` だけ下へたるむ。左端から並べるので、ウィンドウの大きさを変えても形は変わらない (右の端で切れる)。
@@ -126,13 +126,45 @@ struct GarlandShapes {
 GarlandShapes Garland(const ui::Rect& window, float swing, float sag, int perSwing, float width);
 // 提灯 (ちょうちん): `hang` (紐の所) から下がる。上と下の黒い枠 (`caps`) と、ふくらんだ紙の胴 (`body`)。`height` = 全体の高さ。
 void AddLantern(ui::Path& body, ui::Path& caps, Vec2 hang, float height);
-// 打ち上げ花火: 中心から `rays` 本の光の筋 (中心に近いほど小さい粒、先ほど大きい粒)。radius = 筋の先まで。
-ui::Path Firework(Vec2 center, float radius, int rays, uint32_t seed);
-// うちわ: 丸い面と柄。radius = 面の半径。`degreesCcw` 回す (0: 柄がまっすぐ下)。
-ui::Path Uchiwa(Vec2 center, float radius, float degreesCcw);
 // 月見団子: 三方 (台) の上に団子を 3・2・1 と積んだもの。radius = 中心から上の団子のてっぺんまで。
 ui::Path TsukimiDango(Vec2 center, float radius);
 // クリスマスツリー: 3 段の三角の葉、幹、てっぺんの星。radius = 中心から星の先まで。
 ui::Path ChristmasTree(Vec2 center, float radius, float degreesCcw);
+
+// --- 2026-11-26 の 2 回目 -------------------------------------------------------------------------
+// 風に吹かれて飛ぶ桜の花びら: 風上の上の角から、いくつかの風の道すじ (うねりながら少し下がる) に沿って、風下へ
+// 散りながら流れる (風上ほど多い)。花びらの長い向きは風の向き。`wind` > 0: 左から右へ (春の朝)、< 0: 右から左へ
+// (春の夜)。`petals` は少しずつ違う 4 色、`streaks` は道すじに沿った細い風の筋。`depth` = 下へどこまで流れるか。
+struct PetalWindShapes {
+    std::array<ui::Path, 4> petals;
+    ui::Path streaks;
+};
+PetalWindShapes PetalWind(const ui::Rect& window, float depth, float perPixel, float wind, uint32_t seed);
+// 打ち上げ花火 1 発 (リアル調): 中心のまわりの光 (`glow`: 外 → 内の 2 枚。重ねて塗る)、光の筋 (`trails`:
+// 中心の近くは細く消え、外ほど太い。重さで少し垂れる)、筋の先の星ときらめく粒 (`tips`)。
+// 菊 = 放射の筋と先の星 / 柳 = 金色の長い筋が大きく垂れる / 牡丹 = 筋の無い光の粒の 2 重の球。
+enum class FireworkKind { Chrysanthemum, Willow, Peony };
+struct FireworkShapes {
+    std::array<ui::Path, 2> glow;
+    ui::Path trails, tips;
+};
+FireworkShapes FireworkShell(Vec2 center, float radius, FireworkKind kind, uint32_t seed);
+// かまくら: `base` (地面の真ん中) に立つ雪のドーム (底の幅 1.6 h、高さ h)、手前の左寄りのアーチの入り口 (`door`)、
+// その中の灯り (`light`)。`grow` = ドームを太らせる量 (輪郭)。
+struct KamakuraShapes {
+    ui::Path dome, door, light;
+};
+KamakuraShapes Kamakura(Vec2 base, float height, float grow = 0);
+// 左へ飛ぶサンタクロースとトナカイ 2 頭のシルエット (駆けるトナカイ・手綱・そり・サンタ・袋)。`size` = 全長の半分ほど。
+// `degreesCcw` 回す (負: 左が上がる = 左上へ飛ぶ)。
+ui::Path SantaSleigh(Vec2 center, float size, float degreesCcw);
+// 左下の影の案 (見本にして選んでもらう。radius = 中心から一番遠い所まで、だいたい):
+ui::Path Bonbori(Vec2 center, float radius, float degreesCcw);      // 春の夜: ぼんぼり (屋根・紙のほや・柱・台)
+ui::Path SakuraBranch(Vec2 center, float radius, float degreesCcw); // 春の夜: 花の付いた桜の枝
+ui::Path TokkuriSakazuki(Vec2 center, float radius);                // 春の夜: 徳利と、桜の花が浮かぶ盃
+ui::Path Goldfish(Vec2 center, float radius, float degreesCcw);     // 夏の夜: 金魚 (左を向く。ひらひらの尾)
+ui::Path Furin(Vec2 center, float radius);                          // 夏の夜: 風鈴 (糸・ガラスの鉢・短冊)
+ui::Path Kakigori(Vec2 center, float radius);                       // 夏の夜: かき氷 (氷の山・足の付いた器・さじ)
+ui::Path MosquitoCoil(Vec2 center, float radius);                   // 夏の夜: 蚊取り線香 (渦巻きと煙)
 
 }  // namespace rm::theme_seasons::ornament

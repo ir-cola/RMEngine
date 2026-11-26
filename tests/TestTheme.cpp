@@ -39,6 +39,16 @@ RM_TEST(Theme_BuiltInThree) {
     CHECK(&theme::FindTheme("") == &theme::Themes()[0]);
 }
 
+// 選んだ所の色の決まり (組み込みの黒と白も)。背景と同じ色はだめ。
+RM_TEST(Theme_SelectionStandsOut) {
+    CHECK(theme::SelectionStandsOut(theme::kDark) && theme::SelectionStandsOut(theme::kLight));
+    theme::Palette same = theme::kLight;
+    same.selected = same.bg;
+    CHECK(!theme::SelectionStandsOut(same));
+    CHECK(theme::ColorDifference(rm::Color::Hex(0x000000), rm::Color::Hex(0xFFFFFF)) > 99.f);
+    CHECK(theme::ContrastRatio(rm::Color::Hex(0x000000), rm::Color::Hex(0xFFFFFF)) > 20.9f);
+}
+
 RM_TEST(Theme_SystemFollowsWindows) {
     const theme::ThemeInfo& sys = theme::FindTheme("System");
     CHECK(&theme::PaletteOf(sys, true) == &theme::kLight);
@@ -187,9 +197,11 @@ RM_TEST(ThemeFile_ThePacks) {
         // ロゴのインク (目立つ方の白か黒) は、その種類のテーマが期待するもの。
         const rm::Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
         CHECK(theme::InkOn(t->info.palette->sidebar) == (t->info.palette->light ? black : white));
-        // 文字は地 (パネル) の上で読める (コントラスト比 4.5 以上)。
-        const float lt = theme::Luminance(t->info.palette->text), lp = theme::Luminance(t->info.palette->panel);
-        CHECK((std::max(lt, lp) + 0.05f) / (std::min(lt, lp) + 0.05f) >= 4.5f);
+        // 文字は地 (パネル) の上で読める (コントラスト比 4.5 以上)。選んだ所の色ははっきり見える。
+        CHECK(theme::ContrastRatio(t->info.palette->text, t->info.palette->panel) >= 4.5f);
+        if (!theme::SelectionStandsOut(*t->info.palette)) {
+            rmtest::Fail(__FILE__, __LINE__, ("選んだ所の色が目立たない: " + t->info.id).c_str());
+        }
     }
     CHECK(count == 16);
     CHECK(follows.size() == 8);
@@ -204,39 +216,6 @@ RM_TEST(ThemeFile_ThePacks) {
 RM_TEST(Theme_DayPartOfHour) {
     for (int h = 0; h < 24; ++h) CHECK((theme::DayPartOfHour(h) == theme::DayPart::Morning) == (h >= 6 && h < 18));
     CHECK(theme::DayPartOfHour(24 + 7) == theme::DayPart::Morning && theme::DayPartOfHour(-1) == theme::DayPart::Night);
-}
-
-RM_TEST(Ornament_SakuraShape) {
-    using rm::ui::Path;
-    const rm::Vec2 c{200, 300};
-    const Path flat = ornament::Sakura(c, 100, 0);
-    int figures = 0;
-    float farthest = 0;
-    auto reach = [&](rm::Vec2 v) { farthest = std::max(farthest, std::hypot(v.x - c.x, v.y - c.y)); };
-    for (const Path::Step& s : flat.steps) {
-        if (s.op == Path::Op::Begin) ++figures;
-        reach(s.a);
-        if (s.op == Path::Op::Cubic) {
-            reach(s.b);
-            reach(s.c);
-        }
-    }
-    CHECK(figures == 5);                       // 花びら 5 枚
-    CHECK(std::fabs(farthest - 100) < 0.01f);  // 先端は半径に届き、それより先には出ない
-    // 回さない: 最初の花びらは真上を向き、切れ込みは中心線の上。
-    CHECK(flat.steps[3].op == Path::Op::Line);
-    CHECK(std::fabs(flat.steps[3].a.x - 200) < 0.01f && std::fabs(flat.steps[3].a.y - 216) < 0.01f);
-    // 反時計回りに 10 度回す: その切れ込みは左へ動く (中心から 84 のまま)。
-    const rm::Vec2 n = ornament::Sakura(c, 100, 10).steps[3].a;
-    CHECK(n.x < 200 - 14 && n.x > 200 - 15);
-    CHECK(std::fabs(std::hypot(n.x - c.x, n.y - c.y) - 84) < 0.01f);
-}
-
-RM_TEST(Theme_InkOn_WhiteOnDarkBlackOnLight) {
-    const rm::Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
-    CHECK(theme::InkOn(theme::kDark.sidebar) == white);
-    CHECK(theme::InkOn(theme::kLight.sidebar) == black);
-    CHECK(theme::InkOn(black) == white && theme::InkOn(white) == black);
 }
 
 namespace {
@@ -284,6 +263,41 @@ bool AllClockwise(const rm::ui::Path& p) {
 }
 
 }  // namespace
+
+RM_TEST(Ornament_SakuraShape) {
+    using rm::ui::Path;
+    const rm::Vec2 c{200, 300};
+    const Path flat = ornament::Sakura(c, 100, 0);
+    int figures = 0;
+    float farthest = 0;
+    auto reach = [&](rm::Vec2 v) { farthest = std::max(farthest, std::hypot(v.x - c.x, v.y - c.y)); };
+    for (const Path::Step& s : flat.steps) {
+        if (s.op == Path::Op::Begin) ++figures;
+        reach(s.a);
+        if (s.op == Path::Op::Cubic) {
+            reach(s.b);
+            reach(s.c);
+        }
+    }
+    CHECK(figures == 5);                       // 花びら 5 枚
+    CHECK(AllClockwise(flat) && AllClockwise(ornament::Sakura(c, 100, 33)));  // (ほかの形と重ねても穴があかない)
+    CHECK(std::fabs(farthest - 100) < 0.01f);  // 先端は半径に届き、それより先には出ない
+    // 回さない: 最初の花びらは真上を向き、切れ込みは中心線の上。
+    CHECK(flat.steps[3].op == Path::Op::Line);
+    CHECK(std::fabs(flat.steps[3].a.x - 200) < 0.01f && std::fabs(flat.steps[3].a.y - 216) < 0.01f);
+    // 反時計回りに 10 度回す: その切れ込みは左へ動く (中心から 84 のまま)。
+    const rm::Vec2 n = ornament::Sakura(c, 100, 10).steps[3].a;
+    CHECK(n.x < 200 - 14 && n.x > 200 - 15);
+    CHECK(std::fabs(std::hypot(n.x - c.x, n.y - c.y) - 84) < 0.01f);
+}
+
+RM_TEST(Theme_InkOn_WhiteOnDarkBlackOnLight) {
+    const rm::Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
+    CHECK(theme::InkOn(theme::kDark.sidebar) == white);
+    CHECK(theme::InkOn(theme::kLight.sidebar) == black);
+    CHECK(theme::InkOn(black) == white && theme::InkOn(white) == black);
+}
+
 
 RM_TEST(Ornament_ShapesStayInTheirPlace) {
     using namespace ornament;
@@ -569,18 +583,71 @@ RM_TEST(Ornament_NightShapes) {
     const rm::Vec2 c{500, 500};
     CHECK(InsideAndClockwise(HanamiDango(c, 100, 0), 400, 400, 600, 600, 2.f));
     CHECK(InsideAndClockwise(HanamiDango(c, 100, -30), 400, 400, 600, 600, 2.f));
-    CHECK(InsideAndClockwise(Uchiwa(c, 100, 0), 395, 400, 605, 690, 2.f));  // 柄は下へ
     CHECK(InsideAndClockwise(TsukimiDango(c, 100), 400, 400, 600, 600, 2.f));
     CHECK(std::fabs(BoundsOf(TsukimiDango(c, 100)).y0 - 400) < 1.f);  // てっぺんは半径の所
     CHECK(InsideAndClockwise(ChristmasTree(c, 100, 0), 400, 400, 600, 600, 2.f));
     CHECK(std::fabs(BoundsOf(ChristmasTree(c, 100, 0)).y0 - 400) < 1.f);  // 星の先は半径の所
-    CHECK(InsideAndClockwise(Firework(c, 100, 20, 5), 400, 400, 600, 600, 4.f));
-    CHECK(BoundsOf(Firework(c, 100, 20, 5)).figures == 20 * 6);
+    // 団子は串の上の端に寄る: 一番上の団子のてっぺんは半径の近く、下の 3 割は串だけ。
+    const rm::ui::Path dango = HanamiDango(c, 100, 0);
+    CHECK(BoundsOf(dango).y0 < 400 + 8);
+    int low = 0;
+    for (const auto& st : dango.steps) low += st.a.y > 500 + 40 && std::fabs(st.a.x - 500) > 6 ? 1 : 0;
+    CHECK(low == 0);
+    // 左下の影の案: どれも半径の中 (少しの余り)、時計回り。
+    int which = 0;
+    for (const rm::ui::Path& sil : {Bonbori(c, 100, 0), SakuraBranch(c, 100, 0), TokkuriSakazuki(c, 100), Goldfish(c, 100, 0), Furin(c, 100),
+                                     Kakigori(c, 100), MosquitoCoil(c, 100), ChristmasTree(c, 100, 0)}) {
+        const Bounds b = BoundsOf(sil);
+        if (!InsideAndClockwise(sil, 380, 380, 620, 620, 4.f)) {
+            const std::string why = "影の案 " + std::to_string(which) + " " + std::to_string(b.x0) + "," + std::to_string(b.y0) + " .. " +
+                                    std::to_string(b.x1) + "," + std::to_string(b.y1) + (AllClockwise(sil) ? "" : " 反時計回り");
+            rmtest::Fail(__FILE__, __LINE__, why.c_str());
+        }
+        ++which;
+    }
+    // 花火 (リアル調): 菊・柳・牡丹。光の筋と先の星は半径の近くまで (柳は大きく垂れる)。
+    for (const FireworkKind k : {FireworkKind::Chrysanthemum, FireworkKind::Willow, FireworkKind::Peony}) {
+        const FireworkShapes f = FireworkShell(c, 100, k, 3);
+        const Bounds all = BoundsOf(f.tips);
+        CHECK(all.figures > 30 && AllClockwise(f.trails) && AllClockwise(f.tips) && AllClockwise(f.glow[0]));
+        CHECK(all.x0 > 380 && all.x1 < 620 && all.y0 > 380 && all.y1 < 690);
+    }
+    CHECK(BoundsOf(FireworkShell(c, 100, FireworkKind::Chrysanthemum, 3).trails).figures == 72);
+    // かまくら: 地面の上の、幅 1.6 h・高さ h のドーム。入り口と灯りはドームの中。
+    const KamakuraShapes hut = Kamakura({500, 600}, 50);
+    const Bounds dome = BoundsOf(hut.dome), door = BoundsOf(hut.door), light = BoundsOf(hut.light);
+    CHECK(std::fabs(dome.y0 - 550) < 0.5f && dome.y1 <= 600.5f && std::fabs(dome.x1 - dome.x0 - 80) < 1);
+    CHECK(door.x0 > dome.x0 && door.x1 < dome.x1 && door.y0 > dome.y0 && light.x0 > door.x0 && light.y0 > door.y0);
+    CHECK(AllClockwise(hut.dome) && AllClockwise(hut.door) && AllClockwise(hut.light));
+    // サンタとトナカイ: 左上へ飛ぶ (左の端ほど上)。全長は size の 2 倍くらいまで。
+    const rm::ui::Path santa = SantaSleigh(c, 100, -14);
+    const Bounds sb = BoundsOf(santa);
+    CHECK(sb.x1 - sb.x0 < 220 && sb.x1 - sb.x0 > 150 && AllClockwise(santa));
+    float leftY = 0, rightY = 0;
+    int nl = 0, nr = 0;
+    for (const auto& st : santa.steps) {
+        if (st.a.x < sb.x0 + 30) leftY += st.a.y, ++nl;
+        if (st.a.x > sb.x1 - 30) rightY += st.a.y, ++nr;
+    }
+    CHECK(nl > 0 && nr > 0 && leftY / nl < rightY / nr);
     const rm::ui::Rect win{0, 0, 1000, 600};
     const GarlandShapes g = Garland(win, 250, 30, 3, 1.5f);
     CHECK(g.points.size() == 4 * 3);  // 0, 250, 500, 750 から 4 つのたるみ
     for (const rm::Vec2 v : g.points) CHECK(v.y > 0 && v.y <= 1 + 30 + 0.01f && v.x > 0 && v.x < 1000);
     CHECK(InsideAndClockwise(g.cord, -2, -2, 1002, 33));
+    // 風に吹かれる花びら: 右から左へ (wind < 0) なら、右の半分に多い (風上ほど多い)。左から右なら左に多い。
+    for (const float wind : {-1.f, 1.f}) {
+        const PetalWindShapes pw = PetalWind(win, 500, 0.3f, wind, 7);
+        int right = 0, left = 0;
+        for (const rm::ui::Path& p : pw.petals) {
+            for (const auto& st : p.steps) {
+                if (st.op == rm::ui::Path::Op::Begin) (st.a.x > 500 ? right : left) += 1;
+            }
+            CHECK(AllClockwise(p));
+        }
+        CHECK(wind < 0 ? right > left : left > right);
+        CHECK(BoundsOf(pw.streaks).figures == 14 && AllClockwise(pw.streaks));
+    }
 }
 
 // 探検パックの形。
@@ -639,4 +706,5 @@ RM_TEST(Gaming_Shapes) {
     CHECK(BoundsOf(Pixels(win, 30, 4, 1)).figures == 30 && AllClockwise(Pixels(win, 30, 4, 1)));
     CHECK(InsideAndClockwise(Controller({500, 500}, 100, 0), 400, 400, 600, 600, 2.f));
 }
+
 

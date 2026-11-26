@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <span>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -28,13 +29,15 @@ ui::Path Sakura(Vec2 center, float radius, float degreesCcw) {
     for (int i = 0; i < 5; ++i) {
         const float a = degreesCcw + 72.f * static_cast<float>(i);
         auto at = [&](float x, float y) { return Add(center, Scale(Rotate({x, y}, a), radius)); };
+        // (画面上で時計回り: 左側を上り、切れ込み、右側を下りる。2026-11-26: 前は反時計回りで、枝などと
+        // 重ねて塗ると重なった所が穴になった)
         path.Begin(at(0, -0.095f));
-        path.Cubic(at(0.17f, -0.17f), at(0.285f, -0.40f), at(0.285f, -0.58f));
-        path.Cubic(at(0.285f, -0.78f), at(0.19f, -0.92f), at(0.09f, -0.996f));
+        path.Cubic(at(-0.17f, -0.17f), at(-0.285f, -0.40f), at(-0.285f, -0.58f));
+        path.Cubic(at(-0.285f, -0.78f), at(-0.19f, -0.92f), at(-0.09f, -0.996f));
         path.Line(at(0, -0.84f));  // 切れ込み
-        path.Line(at(-0.09f, -0.996f));
-        path.Cubic(at(-0.19f, -0.92f), at(-0.285f, -0.78f), at(-0.285f, -0.58f));
-        path.Cubic(at(-0.285f, -0.40f), at(-0.17f, -0.17f), at(0, -0.095f));
+        path.Line(at(0.09f, -0.996f));
+        path.Cubic(at(0.19f, -0.92f), at(0.285f, -0.78f), at(0.285f, -0.58f));
+        path.Cubic(at(0.285f, -0.40f), at(0.17f, -0.17f), at(0, -0.095f));
     }
     return path;
 }
@@ -268,14 +271,16 @@ ui::Path BeachParasol(Vec2 base, float h, float degreesCcw) {
     return p;
 }
 
-ui::Path BeachScene(Vec2 base, float h) {
+ui::Path BeachScene(Vec2 base, float h, bool parasol) {
     ui::Path p;
     // 小山: 幅広で低い丘で、足はウィンドウの下端 (半分は下にはみ出す)。
     AddEllipse(p, {base.x, base.y + 0.04f * h}, 0.78f * h, 0.17f * h, 0);
     AddEllipse(p, {base.x + 0.42f * h, base.y + 0.02f * h}, 0.42f * h, 0.12f * h, -4.f);
     // そこに刺さった左に傾くパラソルと、小山の左にある砂のお城。
-    ui::Path parasol = BeachParasol({base.x + 0.18f * h, base.y - 0.08f * h}, 0.86f * h, 12.f);
-    p.steps.insert(p.steps.end(), parasol.steps.begin(), parasol.steps.end());
+    if (parasol) {
+        ui::Path shade = BeachParasol({base.x + 0.18f * h, base.y - 0.08f * h}, 0.86f * h, 12.f);
+        p.steps.insert(p.steps.end(), shade.steps.begin(), shade.steps.end());
+    }
     ui::Path castle = SandCastle({base.x - 0.36f * h, base.y - 0.09f * h}, 0.30f * h);
     p.steps.insert(p.steps.end(), castle.steps.begin(), castle.steps.end());
     return p;
@@ -399,6 +404,19 @@ ui::Path MapleLeaf(Vec2 center, float r, float degreesCcw, int points) {
 
 namespace {
 
+// 桜の花びら 1 枚 (長さ約 size): 付け根が細く、先がふくらみ、先の真ん中に小さな切れ込み (2026-11-25: 前はだ円)。
+// 回す前は付け根が上、先が下。
+void AddPetal(ui::Path& p, Vec2 c, float size, float deg) {
+    // 長さを 1 にした形 (y: 付け根 -0.5 .. 先 0.5)。右側を下り、切れ込み、左側を上る。
+    static constexpr Vec2 kShape[] = {{0, -0.5f},     {0.12f, -0.38f}, {0.22f, -0.2f}, {0.29f, 0},      {0.31f, 0.18f},
+                                      {0.27f, 0.34f}, {0.17f, 0.46f},  {0.07f, 0.5f},  {0, 0.4f},       {-0.07f, 0.5f},
+                                      {-0.17f, 0.46f}, {-0.27f, 0.34f}, {-0.31f, 0.18f}, {-0.29f, 0},   {-0.22f, -0.2f},
+                                      {-0.12f, -0.38f}};
+    std::vector<Vec2> pts;
+    for (const Vec2 v : kShape) pts.push_back(Add(c, Rotate({v.x * size, v.y * size}, deg)));
+    AddPolygon(p, pts);
+}
+
 // 上の端に沿って濃く、下に向かって薄く散らす (いくつかは `depth` までずっと流れ落ちる)。1 つずつ、場所・
 // 大きさ・4 色のどれか・向き (度) で `shape` が形を作る。秋の葉も春の花びらもこれ (同じ散らばり)。
 template <class Shape>
@@ -429,15 +447,8 @@ std::array<ui::Path, 4> PetalCanopy(const ui::Rect& win, float depth, float perP
     // 花びら 1 枚 (長さ約 size): 付け根が細く、先がふくらみ、先の真ん中に小さな切れ込みのある桜の花びら
     // (2026-11-25: 前はだ円)。
     return AlongTop(win, depth, perPixel, seed, 6.f, 7.f, [](Vec2 c, float size, float deg) {
-        // 長さを 1 にした形 (y: 付け根 -0.5 .. 先 0.5)。右側を下り、切れ込み、左側を上る。
-        static constexpr Vec2 kShape[] = {{0, -0.5f},     {0.12f, -0.38f}, {0.22f, -0.2f}, {0.29f, 0},      {0.31f, 0.18f},
-                                          {0.27f, 0.34f}, {0.17f, 0.46f},  {0.07f, 0.5f},  {0, 0.4f},       {-0.07f, 0.5f},
-                                          {-0.17f, 0.46f}, {-0.27f, 0.34f}, {-0.31f, 0.18f}, {-0.29f, 0},   {-0.22f, -0.2f},
-                                          {-0.12f, -0.38f}};
-        std::vector<Vec2> pts;
-        for (const Vec2 v : kShape) pts.push_back(Add(c, Rotate({v.x * size, v.y * size}, deg)));
         ui::Path p;
-        AddPolygon(p, pts);
+        AddPetal(p, c, size, deg);
         return p;
     });
 }
@@ -568,8 +579,9 @@ IcicleShapes Icicles(const ui::Rect& win, float maxLength, uint32_t seed) {
 ui::Path HanamiDango(Vec2 center, float r, float degreesCcw) {
     ui::Path p;
     auto at = [&](float x, float y) { return Add(center, Rotate({x * r, y * r}, degreesCcw)); };
-    AddBar(p, at(0, 1.f), at(0, -1.f), 0.07f * r, 0.05f * r);  // 串 (上の先は団子から出る)
-    for (int i = 0; i < 3; ++i) AddCircle(p, at(0, 0.5f - 0.46f * static_cast<float>(i)), 0.25f * r);
+    // 串の上の端に寄せた団子 3 つ (2026-11-26: 前は串の真ん中。下は持つ所)。
+    AddBar(p, at(0, 1.f), at(0, -0.99f), 0.07f * r, 0.05f * r);
+    for (int i = 0; i < 3; ++i) AddCircle(p, at(0, -0.71f + 0.43f * static_cast<float>(i)), 0.24f * r);
     return p;
 }
 
@@ -599,29 +611,6 @@ void AddLantern(ui::Path& body, ui::Path& caps, Vec2 hang, float h) {
         const Vec2 q[4] = {{r.x, r.y}, {r.Right(), r.y}, {r.Right(), r.Bottom()}, {r.x, r.Bottom()}};
         AddPolygon(caps, q);
     }
-}
-
-ui::Path Firework(Vec2 center, float radius, int rays, uint32_t seed) {
-    ui::Path p;
-    Random rnd{seed};
-    rays = std::max(rays, 3);
-    for (int i = 0; i < rays; ++i) {
-        const float a = (static_cast<float>(i) + 0.3f * (rnd.Next() - 0.5f)) * 360.f / static_cast<float>(rays);
-        const float len = radius * (0.86f + 0.14f * rnd.Next());
-        constexpr int kDots = 6;
-        for (int k = 0; k < kDots; ++k) {
-            const float f = 0.28f + 0.72f * static_cast<float>(k) / (kDots - 1);  // 中心の近く .. 先
-            AddCircle(p, Add(center, Rotate({0, -len * f}, a)), radius * (0.010f + 0.028f * f * f));
-        }
-    }
-    return p;
-}
-
-ui::Path Uchiwa(Vec2 center, float r, float degreesCcw) {
-    ui::Path p;
-    AddEllipse(p, center, r, 0.92f * r, degreesCcw);
-    AddBar(p, Add(center, Rotate({0, 0.6f * r}, degreesCcw)), Add(center, Rotate({0, 1.85f * r}, degreesCcw)), 0.16f * r, 0.12f * r);
-    return p;
 }
 
 ui::Path TsukimiDango(Vec2 center, float r) {
@@ -661,6 +650,350 @@ ui::Path ChristmasTree(Vec2 center, float r, float degreesCcw) {
     const Vec2 trunk[4] = {at(-0.11f, 0.60f), at(0.11f, 0.60f), at(0.11f, 0.86f), at(-0.11f, 0.86f)};
     AddPolygon(p, trunk);
     ui::shape::AddStar(p, at(0, -0.84f), 5, 0.16f * r, 0.07f * r, degreesCcw);
+    return p;
+}
+
+
+// --- 2026-11-26 の 2 回目: 風に吹かれる花びら・花火 (リアル)・かまくら・サンタ・左下の影の案 --------------------
+
+namespace {
+
+// 点の並び `pts` に沿った帯: 各点での太さ `widths` (0 で先がとがる)。1 つの多角形。
+void AddStroke(ui::Path& p, std::span<const Vec2> pts, std::span<const float> widths) {
+    if (pts.size() < 2 || widths.size() != pts.size()) return;
+    std::vector<Vec2> left, right;
+    for (size_t i = 0; i < pts.size(); ++i) {
+        const Vec2 a = pts[i > 0 ? i - 1 : 0], b = pts[i + 1 < pts.size() ? i + 1 : i];
+        const float dx = b.x - a.x, dy = b.y - a.y, len = std::max(std::hypot(dx, dy), 1e-4f);
+        const Vec2 n{-dy / len * widths[i] * 0.5f, dx / len * widths[i] * 0.5f};
+        left.push_back(Add(pts[i], n));
+        right.push_back(Add(pts[i], Scale(n, -1.f)));
+    }
+    left.insert(left.end(), right.rbegin(), right.rend());
+    AddPolygon(p, left);
+}
+
+// 半径 1 の向きで作った点を、`center` に `radius` 倍・`degreesCcw` 回して置く。
+struct Place {
+    Vec2 center;
+    float radius, degrees;
+    Vec2 operator()(float x, float y) const { return Add(center, Rotate({x * radius, y * radius}, degrees)); }
+};
+
+// 点を置いた多角形 (半径 1 の座標で)。
+void AddShape(ui::Path& p, const Place& at, std::initializer_list<Vec2> pts) {
+    std::vector<Vec2> out;
+    for (const Vec2 v : pts) out.push_back(at(v.x, v.y));
+    AddPolygon(p, out);
+}
+
+}  // namespace
+
+PetalWindShapes PetalWind(const ui::Rect& win, float depth, float perPixel, float wind, uint32_t seed) {
+    PetalWindShapes out;
+    Random rnd{seed};
+    const float dir = wind >= 0 ? 1.f : -1.f;
+    const float startX = dir > 0 ? win.x - 30.f : win.x + win.w + 30.f;
+    constexpr int kGusts = 7;
+    const int total = std::max(14, static_cast<int>(win.w * perPixel));
+    for (int g = 0; g < kGusts; ++g) {
+        const float u = (static_cast<float>(g) + 0.3f + 0.4f * rnd.Next()) / kGusts;  // 0 = 上 .. 1 = 下
+        const float y0 = win.y - 10.f + depth * 0.75f * std::pow(u, 1.3f);
+        const float len = win.w * (0.75f + 0.45f * rnd.Next());
+        const float drop = depth * (0.12f + 0.25f * rnd.Next());
+        const float amp = 14.f + 26.f * rnd.Next();
+        const float phase = rnd.Next() * 2.f * kPi;
+        // 風の道すじ: 風上の端から風下へ、少しずつ下がり、うねる。
+        auto at = [&](float s) { return Vec2{startX + dir * len * s, y0 + drop * s * s + amp * std::sin(2.f * kPi * 1.1f * s + phase) * s}; };
+        auto along = [&](float s) {
+            const Vec2 a = at(s), b = at(s + 0.01f);
+            return Vec2{b.x - a.x, b.y - a.y};
+        };
+        const int n = total / kGusts;
+        for (int i = 0; i < n; ++i) {
+            const float s = std::pow(rnd.Next(), 1.5f);  // 風上ほど多い
+            const Vec2 c0 = at(s);
+            const float spread = 8.f + 60.f * s;  // 風下ほど広がる
+            const Vec2 c{c0.x + (rnd.Next() - 0.5f) * spread * 0.6f, c0.y + (rnd.Next() - 0.5f) * spread};
+            if (c.y > win.y + win.h + 10.f) continue;
+            const float size = (6.f + 7.f * rnd.Next()) * (1.f - 0.25f * s);
+            const Vec2 t = along(s);
+            // 花びらの長い向きを風の向きにそろえ、少しだけ回る。
+            const float deg = std::atan2(t.x, t.y) / kDeg + (rnd.Next() - 0.5f) * 70.f;
+            AddPetal(out.petals[static_cast<size_t>(rnd.Next() * 4.f) % 4], c, size, deg);
+        }
+        // 風の筋: 道すじに沿った細い線 2 本 (両端がとがる)。
+        for (int k = 0; k < 2; ++k) {
+            const float s0 = 0.05f + 0.6f * rnd.Next(), s1 = s0 + 0.12f + 0.12f * rnd.Next();
+            const float off = (rnd.Next() - 0.5f) * 30.f;
+            constexpr int kSteps = 16;
+            std::vector<Vec2> pts;
+            std::vector<float> widths;
+            for (int j = 0; j <= kSteps; ++j) {
+                const float f = static_cast<float>(j) / kSteps;
+                const Vec2 q = at(s0 + (s1 - s0) * f);
+                pts.push_back({q.x, q.y + off});
+                widths.push_back(1.6f * std::sin(kPi * f));
+            }
+            AddStroke(out.streaks, pts, widths);
+        }
+    }
+    return out;
+}
+
+FireworkShapes FireworkShell(Vec2 c, float R, FireworkKind kind, uint32_t seed) {
+    FireworkShapes f;
+    Random rnd{seed};
+    AddCircle(f.glow[0], c, 0.95f * R);
+    AddCircle(f.glow[1], c, 0.55f * R);
+    auto trail = [&](float angle, float len, float inner, float droop, float width, int steps) {
+        std::vector<Vec2> pts;
+        std::vector<float> widths;
+        const Vec2 d = Rotate({0, -1}, angle);
+        for (int j = 0; j <= steps; ++j) {
+            const float s = static_cast<float>(j) / static_cast<float>(steps);
+            const float r = len * (inner + (1.f - inner) * s);
+            pts.push_back({c.x + d.x * r, c.y + d.y * r + droop * s * s});
+            widths.push_back(width * std::pow(s, 0.7f));  // 中心の近くは細く消え、外ほど太く明るい
+        }
+        AddStroke(f.trails, pts, widths);
+        return pts.back();
+    };
+    switch (kind) {
+        case FireworkKind::Chrysanthemum: {
+            // 菊: 中心から放射に広がる光の筋。少し重さで垂れ、先に明るい星。縁のまわりにきらめく粒。
+            constexpr int kRays = 72;
+            for (int i = 0; i < kRays; ++i) {
+                const float a = 360.f * (static_cast<float>(i) + 0.5f * (rnd.Next() - 0.5f)) / kRays;
+                const Vec2 tip = trail(a, R * (0.86f + 0.14f * rnd.Next()), 0.18f, 0.10f * R, R * 0.012f + 0.7f, 10);
+                AddCircle(f.tips, tip, R * 0.012f + 1.1f);
+            }
+            for (int i = 0; i < 40; ++i) {
+                const float a = rnd.Next() * 360.f, r = R * (0.75f + 0.35f * rnd.Next());
+                const Vec2 q = Add(c, Rotate({0, -r}, a));
+                AddCircle(f.tips, {q.x, q.y + 0.1f * R}, R * 0.005f + 0.6f);
+            }
+            break;
+        }
+        case FireworkKind::Willow: {
+            // 柳: 金色の長い筋が、大きく垂れて流れ落ちる。先に星は無く、筋の途中にこまかい粒。
+            constexpr int kRays = 46;
+            for (int i = 0; i < kRays; ++i) {
+                const float a = 360.f * (static_cast<float>(i) + 0.4f * (rnd.Next() - 0.5f)) / kRays;
+                const float len = R * (0.75f + 0.25f * rnd.Next());
+                trail(a, len, 0.08f, 0.6f * R, R * 0.007f + 0.6f, 14);
+                const Vec2 d = Rotate({0, -1}, a);
+                for (int k = 0; k < 3; ++k) {
+                    const float s = 0.5f + 0.5f * rnd.Next();
+                    const float r = len * (0.08f + 0.92f * s);
+                    AddCircle(f.tips, {c.x + d.x * r, c.y + d.y * r + 0.6f * R * s * s}, R * 0.004f + 0.5f);
+                }
+            }
+            break;
+        }
+        case FireworkKind::Peony: {
+            // 牡丹: 筋の無い光の粒が 2 重の球に。粒のうしろに短い残りの粒。
+            for (const auto& [count, reach, size] : {std::tuple{80, 1.f, 0.016f}, std::tuple{44, 0.55f, 0.012f}}) {
+                for (int i = 0; i < count; ++i) {
+                    const float a = 360.f * (static_cast<float>(i) + 0.5f * rnd.Next()) / static_cast<float>(count);
+                    const float r = R * reach * (0.9f + 0.1f * rnd.Next());
+                    const Vec2 d = Rotate({0, -1}, a);
+                    AddCircle(f.tips, {c.x + d.x * r, c.y + d.y * r + 0.06f * R}, R * size + 0.9f);
+                    for (int k = 1; k <= 2; ++k) {
+                        const float back = r * (1.f - 0.07f * static_cast<float>(k));
+                        AddCircle(f.trails, {c.x + d.x * back, c.y + d.y * back + 0.05f * R}, (R * size + 0.9f) * (1.f - 0.3f * static_cast<float>(k)));
+                    }
+                }
+            }
+            break;
+        }
+    }
+    return f;
+}
+
+KamakuraShapes Kamakura(Vec2 base, float h, float grow) {
+    KamakuraShapes k;
+    // 雪のドーム: 底の幅 1.6 h の、少し平たい半円。入り口は手前の左寄りに、アーチ形。中に灯り。
+    const float rx = 0.8f * h + grow, ry = (h + grow) / 0.92f;  // (下の 0.92: てっぺんが少し平たい。高さはちょうど h)
+    std::vector<Vec2> dome;
+    constexpr int kSteps = 40;
+    for (int i = 0; i <= kSteps; ++i) {
+        const float a = kPi + kPi * static_cast<float>(i) / kSteps;  // 左 → 上 → 右
+        dome.push_back({base.x + rx * std::cos(a), base.y + ry * std::sin(a) * (1.f - 0.08f * std::sin(a) * std::sin(a))});
+    }
+    AddPolygon(k.dome, dome);
+    auto arch = [&](ui::Path& p, float cx, float w, float top) {
+        std::vector<Vec2> pts{{cx - w, base.y + 2.f}};
+        for (int i = 0; i <= 16; ++i) {
+            const float a = kPi + kPi * static_cast<float>(i) / 16.f;
+            pts.push_back({cx + w * std::cos(a), base.y - top + w + w * std::sin(a)});
+        }
+        pts.push_back({cx + w, base.y + 2.f});
+        AddPolygon(p, pts);
+    };
+    arch(k.door, base.x - 0.18f * h, 0.27f * h, 0.52f * h);
+    arch(k.light, base.x - 0.18f * h, 0.19f * h, 0.42f * h);
+    return k;
+}
+
+ui::Path SantaSleigh(Vec2 center, float size, float degreesCcw) {
+    ui::Path p;
+    const Place at{center, size, degreesCcw};
+    // 左へ飛ぶトナカイ 2 頭 (前足を前へ、後ろ足を後ろへ伸ばして駆ける)。
+    for (const float x : {-0.78f, -0.30f}) {
+        auto q = [&](float u, float v) { return at(x + u, v); };
+        AddEllipse(p, q(0, 0), 0.20f * size, 0.075f * size, degreesCcw);                     // 胴
+        AddBar(p, q(-0.15f, -0.02f), q(-0.25f, -0.13f), 0.065f * size, 0.05f * size);      // 首
+        AddEllipse(p, q(-0.285f, -0.155f), 0.06f * size, 0.036f * size, degreesCcw + 20.f);  // 頭
+        AddBar(p, q(-0.32f, -0.15f), q(-0.355f, -0.13f), 0.03f * size, 0.02f * size);       // 鼻
+        // 角: 後ろ上へ枝分かれ。
+        AddBar(p, q(-0.27f, -0.18f), q(-0.22f, -0.30f), 0.016f * size, 0.01f * size);
+        AddBar(p, q(-0.245f, -0.24f), q(-0.29f, -0.30f), 0.012f * size, 0.008f * size);
+        AddBar(p, q(-0.23f, -0.27f), q(-0.17f, -0.31f), 0.012f * size, 0.008f * size);
+        // 足: 前 2 本と後ろ 2 本。
+        AddBar(p, q(-0.12f, 0.04f), q(-0.25f, 0.10f), 0.035f * size, 0.025f * size);
+        AddBar(p, q(-0.25f, 0.10f), q(-0.31f, 0.07f), 0.025f * size, 0.018f * size);
+        AddBar(p, q(-0.08f, 0.05f), q(-0.18f, 0.13f), 0.03f * size, 0.022f * size);
+        AddBar(p, q(0.12f, 0.04f), q(0.26f, 0.11f), 0.04f * size, 0.025f * size);
+        AddBar(p, q(0.26f, 0.11f), q(0.33f, 0.09f), 0.025f * size, 0.018f * size);
+        AddBar(p, q(0.08f, 0.05f), q(0.20f, 0.14f), 0.03f * size, 0.022f * size);
+        AddBar(p, q(0.19f, -0.03f), q(0.24f, -0.06f), 0.03f * size, 0.01f * size);  // しっぽ
+    }
+    // 手綱: トナカイからそりへ。
+    AddBar(p, at(-0.62f, -0.02f), at(-0.46f, 0.0f), 0.012f * size, 0.012f * size);
+    AddBar(p, at(-0.14f, -0.02f), at(0.22f, 0.02f), 0.012f * size, 0.012f * size);
+    // そり: 前が巻き上がった滑り木と、箱。
+    AddShape(p, at, {{0.20f, 0.13f}, {0.24f, 0.06f}, {0.28f, 0.10f}, {0.30f, 0.16f}, {0.86f, 0.16f}, {0.90f, 0.12f}, {0.92f, 0.13f}, {0.88f, 0.19f},
+                     {0.28f, 0.19f}, {0.22f, 0.17f}});
+    AddShape(p, at, {{0.32f, 0.13f}, {0.30f, -0.02f}, {0.36f, -0.06f}, {0.50f, 0.0f}, {0.80f, -0.03f}, {0.86f, 0.13f}});
+    // サンタ: 体と頭、とがった帽子、後ろに大きな袋。
+    AddCircle(p, at(0.56f, -0.07f), 0.10f * size);
+    AddCircle(p, at(0.53f, -0.20f), 0.055f * size);
+    AddShape(p, at, {{0.48f, -0.22f}, {0.58f, -0.24f}, {0.66f, -0.30f}, {0.70f, -0.27f}, {0.60f, -0.20f}});
+    AddCircle(p, at(0.705f, -0.28f), 0.022f * size);
+    AddEllipse(p, at(0.76f, -0.08f), 0.12f * size, 0.11f * size, degreesCcw);
+    return p;
+}
+
+// --- 左下の影の案 (2026-11-26: 見本にして選んでもらう) ---------------------------------------
+
+ui::Path Bonbori(Vec2 center, float radius, float degreesCcw) {
+    ui::Path p;
+    const Place at{center, radius, degreesCcw};
+    AddShape(p, at, {{-0.30f, -0.80f}, {-0.22f, -0.92f}, {0, -1.f}, {0.22f, -0.92f}, {0.30f, -0.80f}});         // 屋根
+    AddShape(p, at, {{-0.34f, -0.81f}, {0.34f, -0.81f}, {0.40f, -0.62f}, {0.36f, -0.20f}, {0.24f, -0.10f}, {-0.24f, -0.10f},
+                     {-0.36f, -0.20f}, {-0.40f, -0.62f}});                                                            // 紙のほや
+    AddBar(p, at(0, -0.12f), at(0, 0.80f), 0.08f * radius, 0.08f * radius);                                          // 柱
+    AddShape(p, at, {{-0.12f, 0.74f}, {0.12f, 0.74f}, {0.12f, 0.86f}, {-0.12f, 0.86f}});
+    AddShape(p, at, {{-0.38f, 0.86f}, {0.38f, 0.86f}, {0.30f, 1.f}, {-0.30f, 1.f}});                                  // 台
+    return p;
+}
+
+ui::Path SakuraBranch(Vec2 center, float radius, float degreesCcw) {
+    ui::Path p;
+    const Place at{center, radius, degreesCcw};
+    AddBlade(p, at(-1.f, 0.78f), at(-0.4f, 0.45f), at(0.2f, 0.0f), at(0.9f, -0.62f), 0.13f * radius, 18);  // 太い枝
+    AddBlade(p, at(-0.25f, 0.32f), at(-0.25f, 0.0f), at(-0.35f, -0.3f), at(-0.5f, -0.55f), 0.06f * radius, 12);
+    AddBlade(p, at(0.35f, -0.12f), at(0.5f, 0.1f), at(0.7f, 0.2f), at(0.95f, 0.18f), 0.05f * radius, 12);
+    const Vec2 flowers[] = {{-0.5f, -0.6f}, {-0.2f, -0.2f}, {0.92f, -0.66f}, {0.55f, -0.38f}, {0.97f, 0.16f}, {0.1f, 0.12f}};
+    const float sizes[] = {0.24f, 0.2f, 0.22f, 0.2f, 0.2f, 0.17f};
+    for (size_t i = 0; i < std::size(flowers); ++i) {
+        ui::Path f = Sakura(at(flowers[i].x, flowers[i].y), sizes[i] * radius, degreesCcw + 17.f * static_cast<float>(i));
+        p.steps.insert(p.steps.end(), f.steps.begin(), f.steps.end());
+    }
+    AddCircle(p, at(0.72f, -0.08f), 0.06f * radius);  // つぼみ
+    AddCircle(p, at(-0.6f, 0.2f), 0.06f * radius);
+    return p;
+}
+
+ui::Path TokkuriSakazuki(Vec2 center, float radius) {
+    ui::Path p;
+    const Place at{center, radius, 0.f};
+    // 徳利 (左): 口が少し開き、首が細く、下がふくらむ。
+    static constexpr Vec2 kHalf[] = {{0.13f, -1.f}, {0.09f, -0.9f}, {0.08f, -0.66f}, {0.16f, -0.45f}, {0.33f, -0.16f},
+                                     {0.40f, 0.14f}, {0.36f, 0.44f}, {0.25f, 0.60f}};
+    std::vector<Vec2> bottle;
+    for (const Vec2 v : kHalf) bottle.push_back(at(-0.38f + v.x, v.y));
+    for (size_t i = std::size(kHalf); i-- > 0;) bottle.push_back(at(-0.38f - kHalf[i].x, kHalf[i].y));
+    AddPolygon(p, bottle);
+    // 盃 (右): 浅い器と小さな足。上に桜の花が 1 つ浮かぶ。
+    AddShape(p, at, {{0.20f, 0.32f}, {0.98f, 0.32f}, {0.92f, 0.42f}, {0.78f, 0.50f}, {0.68f, 0.52f}, {0.70f, 0.60f}, {0.48f, 0.60f},
+                     {0.50f, 0.52f}, {0.40f, 0.50f}, {0.26f, 0.42f}});
+    ui::Path f = Sakura(at(0.6f, 0.05f), 0.2f * radius, 12.f);
+    p.steps.insert(p.steps.end(), f.steps.begin(), f.steps.end());
+    return p;
+}
+
+ui::Path Goldfish(Vec2 center, float radius, float degreesCcw) {
+    ui::Path p;
+    const Place at{center, radius, degreesCcw};
+    AddEllipse(p, at(-0.25f, 0), 0.48f * radius, 0.33f * radius, degreesCcw);  // 体 (左を向く)
+    AddShape(p, at, {{0.12f, -0.06f}, {0.45f, -0.42f}, {0.85f, -0.66f}, {0.72f, -0.28f}, {0.60f, 0.0f}, {0.72f, 0.30f}, {0.85f, 0.66f},
+                     {0.45f, 0.44f}, {0.12f, 0.06f}});                                                    // ひらひらの尾
+    AddShape(p, at, {{-0.35f, -0.28f}, {-0.05f, -0.52f}, {0.10f, -0.22f}});                                // 背びれ
+    AddShape(p, at, {{-0.30f, 0.22f}, {-0.12f, 0.44f}, {-0.05f, 0.24f}});                                   // 腹びれ
+    return p;
+}
+
+ui::Path Furin(Vec2 center, float radius) {
+    ui::Path p;
+    const Place at{center, radius, 0.f};
+    AddBar(p, at(0, -1.f), at(0, -0.6f), 0.03f * radius, 0.03f * radius);  // つるす糸
+    std::vector<Vec2> bell;
+    for (int i = 0; i <= 20; ++i) {
+        const float a = kPi + kPi * static_cast<float>(i) / 20.f;
+        bell.push_back(at(0.42f * std::cos(a), -0.12f + 0.5f * std::sin(a)));
+    }
+    bell.push_back(at(0.46f, -0.06f));
+    bell.push_back(at(-0.46f, -0.06f));
+    AddPolygon(p, bell);                                                     // ガラスの鉢
+    AddBar(p, at(0, -0.1f), at(0, 0.3f), 0.025f * radius, 0.025f * radius);  // 舌の糸
+    AddShape(p, at, {{-0.13f, 0.30f}, {0.13f, 0.30f}, {0.19f, 0.98f}, {-0.07f, 1.0f}});  // 短冊 (少し揺れる)
+    return p;
+}
+
+ui::Path Kakigori(Vec2 center, float radius) {
+    ui::Path p;
+    const Place at{center, radius, 0.f};
+    // 氷の山: 丸いふくらみを重ねる。
+    AddEllipse(p, at(0, -0.02f), 0.58f * radius, 0.5f * radius, 0);
+    AddCircle(p, at(-0.22f, -0.32f), 0.3f * radius);
+    AddCircle(p, at(0.2f, -0.36f), 0.3f * radius);
+    AddCircle(p, at(0, -0.6f), 0.26f * radius);
+    // 足の付いたガラスの器。
+    AddShape(p, at, {{-0.66f, 0.05f}, {0.66f, 0.05f}, {0.42f, 0.38f}, {0.10f, 0.46f}, {-0.10f, 0.46f}, {-0.42f, 0.38f}});
+    AddBar(p, at(0, 0.44f), at(0, 0.82f), 0.12f * radius, 0.1f * radius);
+    AddEllipse(p, at(0, 0.86f), 0.38f * radius, 0.08f * radius, 0);
+    // さじ。
+    AddBar(p, at(0.25f, -0.4f), at(0.62f, -0.95f), 0.06f * radius, 0.05f * radius);
+    AddEllipse(p, at(0.66f, -0.98f), 0.09f * radius, 0.05f * radius, -55.f);
+    return p;
+}
+
+ui::Path MosquitoCoil(Vec2 center, float radius) {
+    ui::Path p;
+    // 渦巻き: 外から内へ 3 周半。帯の太さ 0.1。中心から細い煙が立つ。
+    constexpr int kSteps = 220;
+    constexpr float kTurns = 3.5f;
+    std::vector<Vec2> pts;
+    std::vector<float> widths;
+    for (int i = 0; i <= kSteps; ++i) {
+        const float t = static_cast<float>(i) / kSteps;
+        const float a = 2.f * kPi * kTurns * t;
+        const float r = radius * (0.92f - 0.8f * t);
+        pts.push_back({center.x + r * std::cos(a), center.y + 0.62f * r * std::sin(a)});  // (斜めから見て少しつぶれる)
+        widths.push_back(0.1f * radius);
+    }
+    AddStroke(p, pts, widths);
+    std::vector<Vec2> smoke;
+    std::vector<float> sw;
+    const Vec2 from = pts.back();
+    for (int i = 0; i <= 20; ++i) {
+        const float s = static_cast<float>(i) / 20.f;
+        smoke.push_back({from.x + 0.12f * radius * std::sin(s * 2.f * kPi * 1.2f), from.y - 1.f * radius * s});
+        sw.push_back(0.04f * radius * (1.f - s));
+    }
+    AddStroke(p, smoke, sw);
     return p;
 }
 

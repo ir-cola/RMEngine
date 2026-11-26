@@ -66,6 +66,9 @@ void DrawBackdrop(ui::Context& c, bool floating);
 // 塗ったばかりの面にもう一度絵を描く (DrawPanelFrame / DrawBar がやる)。`r` に切り取る。
 // (`panelThings`) 先にパックのパネル用の地 (夏: 砂の粒) も描く - バーには描かない。
 void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0, bool panelThings = true);
+// ボタン (メニューの項目・ボタン・タブ) の場所: テーマの絵はそこには描かない (2026-11-26: 文字の後ろの絵で
+// ボタンが見づらかった)。ボタンを描く関数が毎フレーム呼ぶ。絵を描くのはボタンより先なので、前のフレームの場所を使う。
+void KeepOrnamentOff(ui::Context& c, const ui::Rect& r);
 
 // ウィンドウの枠の帯 (メニューバー、ステータスバー、サイドバー): 穏やかなグラデーション、枠なし。
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);
@@ -137,10 +140,11 @@ void DrawTile(ui::Context& c, const ui::Rect& r, bool selected, bool hovered, bo
 void DragTag(ui::Context& c, std::wstring text, bool inside);
 // クリックできる行 (ImGui の Selectable)。行を描く。行の上にあるものは呼び出し側が描く。
 ui::Context::ButtonResult Selectable(ui::Context& c, std::string_view id, const ui::Rect& r, bool selected, bool flat = false);
-// テーマの見本の 1 つ分: その色と、区切りの下の方に出す短い名前 (空: 出さない)。
+// テーマの見本の 1 つ分: その色と、区切りの下の方に出す短い名前 (空: 出さない)、左の区切りの線を引くか。
 struct ThemeSlice {
     const theme::Palette* palette = nullptr;
     std::wstring_view label;
+    bool line = true;
 };
 // 選ぶテーマ 1 つ (テーマの画面): そのテーマ自身の色で描いた小さなウィンドウと、その下に名前。
 // `slices` が 2 つ以上: 見本を縦に等しく区切り、それぞれをその色で描く ("PC の設定に合わせる" は 黒｜白、

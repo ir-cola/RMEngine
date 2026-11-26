@@ -1098,6 +1098,7 @@ void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
         const float wdt = p.TextWidth(menuTitle, 13) + 24;
         const Rect item{x, r.y + 3, wdt, r.h - 6};
         menuTitleRects_[i] = item;
+        w::KeepOrnamentOff(c, item);  // (テーマの絵をメニューの項目の後ろに出さない)
         c.PushId(static_cast<uint64_t>(i));
         const auto b = c.ButtonBehavior(c.MakeId("menubar"), item);
         c.PopId();
