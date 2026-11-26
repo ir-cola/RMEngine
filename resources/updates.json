@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.26",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "雨雲を描いた所の上空に、低い雨雲のかたまりが出るように。降る量に比例して、小雨は明るく薄い膜、嵐は黒ずんだ 3 段の厚い雲になります",
+          "en": "Low rain cloud puffs now appear in the sky right above drawn rain clouds. They follow the amount falling: a bright thin film for light rain, thick blackish clouds in three tiers for a storm"
+        }
+      ]
+    },
+    {
       "version": "0.0.25",
       "date": "2026-11-26",
       "items": [

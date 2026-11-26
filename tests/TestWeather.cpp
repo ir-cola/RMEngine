@@ -13,12 +13,14 @@
 #include "rm_engine/space3d/runtime/View.h"
 #include "rm_engine/weather/runtime/Falling.h"
 #include "rm_engine/weather/runtime/Lightning.h"
+#include "rm_engine/weather/runtime/RainClouds.h"
 #include "rm_engine/weather/runtime/Weather.h"
 
 #include <Windows.h>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -159,6 +161,70 @@ RM_TEST(Weather_SkyLook) {
 
 // 稲妻 (Lightning.h、2026-11-26): 空の閃光と同じ時に起き、光ってから kBoltLife 秒で消える。明るさは強く光る →
 // 暗く → もう一度 → 残光。形は雲の下から地面までつながった幹と、細く暗い枝。場所はカメラから遠すぎず近すぎない。
+// 描いた雨雲の上空の雨雲のかたまり: 降る所の上だけ・降る量で段と暗さと濃さ・ワールドに留まる・遠い順。
+RM_TEST(Weather_RainCloudPuffs) {
+    constexpr int n = 8;
+    constexpr float cell = 24.f;
+    PlaceClouds map;
+    map.firstX = 0, map.firstZ = 0;
+    map.rains.assign(n * n, 0.f);
+    map.rains[3 * n + 2] = 1.f;    // 嵐 (x 48, z 72)
+    map.rains[5 * n + 5] = 0.2f;   // 小雨 (x 120, z 120)
+    std::vector<CloudPuff> puffs;
+    RainCloudPuffs(map, n, cell, {0, 0, 0}, puffs);
+    CHECK(puffs.size() == 4);  // 嵐 3 段 + 小雨 1 段
+    int storm = 0, drizzle = 0;
+    float stormShade = 0, drizzleShade = 1, stormAlpha = 0, drizzleAlpha = 1;
+    for (const CloudPuff& p : puffs) {
+        CHECK(p.center.y >= kRainCloudBase && p.radius > 0);
+        if (std::fabs(p.center.x - 48) <= 0.35f * cell + 1e-3f && std::fabs(p.center.z - 72) <= 0.35f * cell + 1e-3f) {
+            ++storm;
+            stormShade = std::max(stormShade, p.shade);
+            stormAlpha = std::max(stormAlpha, p.alpha);
+        } else if (std::fabs(p.center.x - 120) <= 0.35f * cell + 1e-3f && std::fabs(p.center.z - 120) <= 0.35f * cell + 1e-3f) {
+            ++drizzle;
+            drizzleShade = p.shade;
+            drizzleAlpha = p.alpha;
+        }
+    }
+    CHECK(storm == 3 && drizzle == 1);
+    CHECK(stormShade > drizzleShade + 0.5f && stormAlpha > drizzleAlpha + 0.4f);  // 嵐は黒ずんで濃い、小雨は明るく薄い
+    // 遠い順。
+    auto dist = [](const CloudPuff& p) { return p.center.x * p.center.x + p.center.y * p.center.y + p.center.z * p.center.z; };
+    for (size_t k = 1; k < puffs.size(); ++k) CHECK(dist(puffs[k - 1]) >= dist(puffs[k]));
+    // 地図がずれても (カメラが動いても)、同じ所の雲は同じ。
+    PlaceClouds moved;
+    moved.firstX = -cell, moved.firstZ = 0;
+    moved.rains.assign(n * n, 0.f);
+    moved.rains[3 * n + 3] = 1.f;  // (同じ x 48)
+    std::vector<CloudPuff> again;
+    RainCloudPuffs(moved, n, cell, {0, 0, 0}, again);
+    CHECK(again.size() == 3);
+    for (const CloudPuff& p : again) {
+        CHECK(std::any_of(puffs.begin(), puffs.end(), [&](const CloudPuff& q) {
+            return q.seed == p.seed && std::fabs(q.center.x - p.center.x) < 1e-3f && std::fabs(q.center.z - p.center.z) < 1e-3f;
+        }));
+    }
+    // 降っていない・遠すぎる・数が合わない: 置かない。
+    PlaceClouds distant;
+    distant.firstX = kRainCloudReach + 100, distant.firstZ = 0;
+    distant.rains.assign(n * n, 1.f);
+    RainCloudPuffs(distant, n, cell, {0, 0, 0}, again);
+    CHECK(again.empty());
+    map.rains.pop_back();
+    RainCloudPuffs(map, n, cell, {0, 0, 0}, again);
+    CHECK(again.empty());
+    // カメラを向いた正方形: 1 つにつき頂点 6 個、角は 真ん中 ± 右 x 半径 ± 上 x 半径。
+    std::vector<PuffVertex> quads;
+    PuffQuads(puffs, {1, 0, 0}, {0, 1, 0}, quads);
+    CHECK(quads.size() == puffs.size() * 6);
+    const CloudPuff& p0 = puffs[0];
+    CHECK(std::fabs(quads[0].position.x - (p0.center.x - p0.radius)) < 1e-3f && std::fabs(quads[0].position.y - (p0.center.y - p0.radius)) < 1e-3f);
+    CHECK(std::fabs(quads[2].position.x - (p0.center.x + p0.radius)) < 1e-3f && quads[2].u == 1.f && quads[2].v == 1.f);
+    // シェーダーがコンパイルできる。
+    CHECK(Compiles(kRainPuffHlsl, "PuffVS", "vs_4_0") && Compiles(kRainPuffHlsl, "PuffPS", "ps_4_0"));
+}
+
 RM_TEST(Weather_LightningBolt) {
     // 起きる時: 空が光っている時は、いつも稲妻も見えている (同じ数から決まる)。
     Weather storm = Of(WeatherPreset::Storm);
