@@ -112,6 +112,10 @@ int Differ(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b, int siz
 RM_TEST(Sky_CloudMapAt) {
     const Vec3 eye{100, 5, -200};
     const CloudMapPlace map = MapAround(eye);
+    // 雨雲の層 (低い): 同じ向きでも、雲の層より近い所を読む。
+    const CloudMapPoint lowSlant = CloudMapAt(Unit({1, 1, 0}), eye, map, space3d::kRainCloudHeight);
+    CHECK(Near(lowSlant.u, 0.5f + space3d::kRainCloudHeight / map.cell / static_cast<float>(map.cells), 1e-3f));
+    CHECK(CloudMapAt({0, 1, 0}, eye, map, 0.f).weight == 0.f);
     // 真上: 地図の真ん中 (カメラの真上)。地図の値をそのまま使う。
     CloudMapPoint p = CloudMapAt({0, 1, 0}, eye, map);
     CHECK(Near(p.u, 0.5f) && Near(p.v, 0.5f) && Near(p.weight, 1));
@@ -339,12 +343,16 @@ RM_TEST(Sky_CloudMapOnGpu) {
     }
     CHECK(away > 20 && awaySame == away);
 
-    // 雨雲: 同じ所に降る量だけ置く (雲の量 0)。降る量が多いほど濃く暗い (小雨は薄い膜、嵐は黒ずむ)。
+    // 雨雲: 真ん中のピクセルが雨雲の層 (kRainCloudHeight m 上) で見る所のまわりに、降る量だけ置く (雲の量 0)。
+    // 降る量が多いほど厚く暗い (小雨は切れ切れの雲、嵐は切れ目のない黒ずんだ層)。
+    const CloudMapPoint rainHit = CloudMapAt(dirAt(cx, cy), eye, map, space3d::kRainCloudHeight);
+    CHECK(rainHit.weight > 0.99f);
+    const int ri = static_cast<int>(std::floor(rainHit.u * map.cells)), rj = static_cast<int>(std::floor(rainHit.v * map.cells));
     auto rainAt = [&](float rain) {
         game_x_3d::SkyWeather wet = clear;
         FillMap(wet, map, 0.f, 0.f);
-        for (int j = cj - 2; j <= cj + 2; ++j) {
-            for (int i = ci - 2; i <= ci + 2; ++i) {
+        for (int j = rj - 2; j <= rj + 2; ++j) {
+            for (int i = ri - 2; i <= ri + 2; ++i) {
                 if (i >= 0 && j >= 0 && i < map.cells && j < map.cells) wet.cloudRains[static_cast<size_t>(j) * map.cells + i] = rain;
             }
         }
@@ -355,9 +363,16 @@ RM_TEST(Sky_CloudMapOnGpu) {
     if (drizzle.size() == plain.size() && storm.size() == plain.size()) {
         const size_t at = (static_cast<size_t>(cy) * kSize + cx) * 4;
         auto bright = [&](const std::vector<uint8_t>& p) { return static_cast<int>(p[at]) + p[at + 1] + p[at + 2]; };
-        CHECK(Differ(drizzle, plain, kSize, cx, cy) > 3);                       // 薄い膜でも見える
-        CHECK(Differ(storm, plain, kSize, cx, cy) > Differ(drizzle, plain, kSize, cx, cy));  // 嵐ほど変わる
-        CHECK(bright(storm) < bright(drizzle));                                 // 嵐は暗い
+        auto change = [&](const std::vector<uint8_t>& p) {
+            int sum = 0;
+            for (int y = 0; y < kSize; ++y) {
+                for (int x = 0; x < kSize; ++x) sum += Differ(p, plain, kSize, x, y);
+            }
+            return sum;
+        };
+        CHECK(Differ(storm, plain, kSize, cx, cy) > 20 && bright(storm) < bright(plain));  // 嵐: 真上が黒ずんだ厚い雲
+        CHECK(change(drizzle) > 0 && change(storm) > change(drizzle));                    // 小雨でも雲が出る・嵐ほど変わる
+        // 雲の量 (cover) の地図には何も塗っていない: 上の雲の層は変わらない (変わったのは雨雲の層)。
     }
 
     // 地平線の近く (層と交わる所が地図の外): 地図ぜんぶに厚い雲を塗っても、雲の量 (cover) のまま。

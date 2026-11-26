@@ -44,6 +44,9 @@ inline constexpr unsigned kSkyCloudSlot = 6;
 // シェーダー (kEarth の CloudsHere) と同じ式。tests/TestSky.cpp の Sky_CloudMapOnGpu が両方を比べる。
 inline constexpr float kCloudLayerHeight = 600.f;
 inline constexpr float kCloudFadeFrom = 0.7f;
+// 雨雲の層: 雨 (雪) の降る所の上の、低い層 (カメラの kRainCloudHeight m 上)。地図の降る量をここで読む:
+// 低いので、小さく描いた雨雲でも、その上の空に大きく見える。描き方は上の雲の層と同じ (今までの天候の雲)。
+inline constexpr float kRainCloudHeight = 180.f;
 struct CloudMapPlace {
     float firstX = 0, firstZ = 0;  // 最初のマスの真ん中 (ワールドの x, z)
     float cell = 0;                // 1 マスの一辺 (m)
@@ -53,7 +56,8 @@ struct CloudMapPoint {
     float u = 0, v = 0;  // 地図の絵の座標 (0 .. 1 が地図。u が x、v が z。外は端のマスを読む)
     float weight = 0;    // 地図の値をどれだけ使うか (0 .. 1。0: 地図の外、地平線と下、地図が無い)
 };
-CloudMapPoint CloudMapAt(Vec3 dir, Vec3 eye, const CloudMapPlace& map);
+// `height`: 層の高さ (カメラから上へ m。雲の層 kCloudLayerHeight / 雨雲の層 kRainCloudHeight)。
+CloudMapPoint CloudMapAt(Vec3 dir, Vec3 eye, const CloudMapPlace& map, float height = kCloudLayerHeight);
 
 // 光 <-> 画面の数値 (sRGB)。レンダラーのシェーダーと空のもので同じ。
 extern const char kColorHlsl[];
@@ -73,8 +77,9 @@ std::string AssembleSky(std::string_view code, std::string_view fileName);
 //             param[6] 雲の地図 (CloudMapPlace): xy: 最初のマスの真ん中、z: 1 マスの一辺、w: マスの数 (0: 無し)
 //             param[7] x: 降る量 (0 .. 1: 雨雲)、y: そのうち雪の割合
 //             skyClouds (t6): 雲の地図。マスごとの r: 雲の量 (0 .. 1)、g: 降る量 (0 .. 1)。
-//             その向きの雲の量 = lerp(param[1].x, r, CloudMapAt の weight)、降る量 = lerp(param[7].x, g, weight)。
-//             雨雲は降る量に比例して濃く・暗く・厚くなる 1 枚の低い層 (小雨: 明るい薄い膜 / 嵐: 黒ずんだ分厚い層)
+//             その向きの雲の量 = lerp(param[1].x, r, CloudMapAt の weight) (雲の層で読む)、降る量 = lerp(param[7].x, g,
+//             weight) (雨雲の層 kRainCloudHeight で読む)。雨雲は今までの天候の雲と同じ描き方で、降る量に比例して
+//             厚く・暗くなる (小雨: 切れ切れの灰色の雲 / 嵐: 切れ目のない黒ずんだ厚い層)
 //   Space     param[0] x: 星、y: 星雲、z: 天の川、w: 1 = 太陽を描く
 //             param[1] rgb: 星雲の 1 つ目の色、param[2] rgb: その 2 つ目の色
 //   Panorama  sky0: 周り 1 周の絵 (正距円筒: 360 x 180 度)、param[0] x: 回した量 (ラジアン)

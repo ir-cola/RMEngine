@@ -7,7 +7,6 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/weather/runtime/Falling.h"
 #include "rm_engine/weather/runtime/Lightning.h"
-#include "rm_engine/weather/runtime/RainClouds.h"
 #include "rm_engine/weather/runtime/WeatherBlocks.h"
 #include "rm_engine/weather/runtime/WeatherPlace.h"
 
@@ -74,7 +73,6 @@ class WeatherDraw final : public game_x_3d::WorldDrawer {
 public:
     void PrepareFrame(const game_x_3d::WorldDrawFrame& f, game_x_3d::FrameAdditions& out) override {
         directions_.clear();
-        cloudsOf_ = nullptr;
         falls_.clear();
         solids_.clear();
         movingOnly_.clear();
@@ -94,7 +92,6 @@ public:
             for (const auto& c : f.registry->Contributions<WeatherPlaceInfo>(kWeatherPlacePoint)) {
                 if (!c.item->grid) continue;
                 place_ = c.item->grid;
-                cloudsOf_ = c.item->clouds;
                 const float m = c.item->mostLocal ? c.item->mostLocal(f.scene) : 0.f;
                 mostLocal = std::isfinite(m) ? std::clamp(m, 0.f, 1.f) : 0.f;
             }
@@ -102,7 +99,6 @@ public:
         const float placedAmount = std::min(std::max(PrecipitationNow(*w) * kPlaceMostMore, mostLocal), 1.f);
         // 降るもの (それぞれの向きの向きの地図つき) と、濡れたもの (向きごとの地図)。
         const Color light = LightOf(f.sky);
-        puffLight_ = light;
         // 霧 (と、どしゃぶり・吹雪のぶん): 色は天候から、空気中の光で決まる。
         if (const float fog = FogOf(now); fog > 0) {
             const Color c = FogColorOf(now, light);
@@ -228,10 +224,6 @@ public:
             if (const auto strike = StrikeAt(f.seconds); strike && BoltReady(f.gfx)) {
                 out.push_back([this, s = *strike](const space3d::ExtraDrawContext& dc) { DrawBolt(dc, s); });
             }
-        }
-        // 描いた雨雲の上空の雨雲のかたまり (雨より先: 遠く上にある)。
-        if (cloudsOf_ && scene_ && w && f.atmosphere && PuffReady(f.gfx)) {
-            out.push_back([this](const space3d::ExtraDrawContext& dc) { DrawPuffs(dc); });
         }
         if (falls_.empty() || !Ready(f.gfx)) return;
         for (const Precipitation& p : falls_) {
@@ -671,134 +663,6 @@ private:
         ctx->OMSetBlendState(blendBefore.Get(), factorBefore, maskBefore);
         ctx->RSSetState(rasterBefore.Get());
     }
-
-    // 雨雲のかたまりのシェーダーと頂点 (新しいデバイスのたびに作り直す)。
-    bool PuffReady(platform::Gfx& gfx) {
-        if (puffGeneration_ == gfx.Generation() && (puffVs_ || puffFailed_)) return puffVs_ != nullptr;
-        puffGeneration_ = gfx.Generation();
-        puffVs_.Reset();
-        puffPs_.Reset();
-        puffLayout_.Reset();
-        puffCb_.Reset();
-        puffVb_.Reset();
-        puffBlend_.Reset();
-        puffRaster_.Reset();
-        puffFailed_ = false;
-        ID3D11Device* device = gfx.D3D();
-        if (!device) return false;
-        const std::string text = kRainPuffHlsl;
-        Ptr<ID3DBlob> vs, ps;
-        std::string error;
-        D3D11_BUFFER_DESC cd{};
-        cd.Usage = D3D11_USAGE_DEFAULT;
-        cd.ByteWidth = sizeof(PuffConstants);
-        cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        D3D11_BUFFER_DESC vd{};
-        vd.Usage = D3D11_USAGE_DYNAMIC;
-        vd.ByteWidth = static_cast<UINT>(kMostRainPuffs * 6 * sizeof(PuffVertex));
-        vd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-        vd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-        // 透ける (アルファで重ねる。絵のアルファは濃くなるだけ)。
-        D3D11_BLEND_DESC bl{};
-        bl.RenderTarget[0].BlendEnable = TRUE;
-        bl.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-        bl.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-        bl.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-        bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-        bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
-        bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-        bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-        D3D11_RASTERIZER_DESC rd{};
-        rd.FillMode = D3D11_FILL_SOLID;
-        rd.CullMode = D3D11_CULL_NONE;
-        rd.DepthClipEnable = TRUE;
-        rd.MultisampleEnable = TRUE;
-        const D3D11_INPUT_ELEMENT_DESC layout[] = {
-            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
-            {"TEXCOORD", 1, DXGI_FORMAT_R32G32B32_FLOAT, 0, 20, D3D11_INPUT_PER_VERTEX_DATA, 0},
-        };
-        if (!Compile(text, "PuffVS", "vs_4_0", vs, error) || !Compile(text, "PuffPS", "ps_4_0", ps, error) ||
-            FAILED(device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &puffVs_)) ||
-            FAILED(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &puffPs_)) ||
-            FAILED(device->CreateInputLayout(layout, 3, vs->GetBufferPointer(), vs->GetBufferSize(), &puffLayout_)) ||
-            FAILED(device->CreateBuffer(&cd, nullptr, &puffCb_)) || FAILED(device->CreateBuffer(&vd, nullptr, &puffVb_)) ||
-            FAILED(device->CreateBlendState(&bl, &puffBlend_)) || FAILED(device->CreateRasterizerState(&rd, &puffRaster_))) {
-            log::Error("雨雲を描く準備ができません: {}", error);
-            puffVs_.Reset();
-            puffFailed_ = true;
-            return false;
-        }
-        return true;
-    }
-
-    // 描いた雨雲の上空の雨雲のかたまり: カメラのまわりの雲の地図を聞き、降る所の上に置いて、後ろから描く。
-    void DrawPuffs(const space3d::ExtraDrawContext& dc) {
-        if (!puffVs_ || !cloudsOf_ || !scene_) return;
-        cloudsOf_(*scene_, dc.eye, puffMap_);
-        RainCloudPuffs(puffMap_, kCloudMapCells, kCloudMapCell, dc.eye, puffs_);
-        if (puffs_.empty()) return;
-        const Vec3 right{dc.view.m[0][0], dc.view.m[1][0], dc.view.m[2][0]}, up{dc.view.m[0][1], dc.view.m[1][1], dc.view.m[2][1]};
-        PuffQuads(puffs_, right, up, puffVertices_);
-        const UINT count = static_cast<UINT>(std::min<size_t>(puffVertices_.size(), kMostRainPuffs * 6));
-        ID3D11DeviceContext* ctx = dc.ctx;
-        D3D11_MAPPED_SUBRESOURCE mapped{};
-        if (FAILED(ctx->Map(puffVb_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
-        std::memcpy(mapped.pData, puffVertices_.data(), count * sizeof(PuffVertex));
-        ctx->Unmap(puffVb_.Get(), 0);
-        PuffConstants k{};
-        const space3d::Mat4 viewProj = dc.projection * dc.view;
-        std::memcpy(k.viewProj, &viewProj.m[0][0], sizeof(k.viewProj));
-        k.light[0] = puffLight_.r, k.light[1] = puffLight_.g, k.light[2] = puffLight_.b;
-        k.eye[0] = dc.eye.x, k.eye[1] = dc.eye.y, k.eye[2] = dc.eye.z, k.eye[3] = kRainCloudReach;
-        ctx->UpdateSubresource(puffCb_.Get(), 0, nullptr, &k, 0, 0);
-        // 前の描画のステートは、描いた後に戻す (深度: ExtraDraw が受け取るとおり - テストする、書かない)。
-        Ptr<ID3D11BlendState> blendBefore;
-        Ptr<ID3D11RasterizerState> rasterBefore;
-        Ptr<ID3D11InputLayout> layoutBefore;
-        float factorBefore[4] = {};
-        UINT maskBefore = 0xFFFFFFFF;
-        ctx->OMGetBlendState(&blendBefore, factorBefore, &maskBefore);
-        ctx->RSGetState(&rasterBefore);
-        ctx->IAGetInputLayout(&layoutBefore);
-        const float factor[4] = {};
-        ctx->OMSetBlendState(puffBlend_.Get(), factor, 0xFFFFFFFF);
-        ctx->RSSetState(puffRaster_.Get());
-        ID3D11Buffer* cb = puffCb_.Get();
-        ID3D11Buffer* vb = puffVb_.Get();
-        const UINT stride = sizeof(PuffVertex), offset = 0;
-        ctx->IASetInputLayout(puffLayout_.Get());
-        ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
-        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        ctx->VSSetConstantBuffers(4, 1, &cb);
-        ctx->PSSetConstantBuffers(4, 1, &cb);
-        ctx->VSSetShader(puffVs_.Get(), nullptr, 0);
-        ctx->PSSetShader(puffPs_.Get(), nullptr, 0);
-        ctx->Draw(count, 0);
-        ID3D11Buffer* none = nullptr;
-        const UINT zero = 0;
-        ctx->VSSetConstantBuffers(4, 1, &none);
-        ctx->PSSetConstantBuffers(4, 1, &none);
-        ctx->IASetVertexBuffers(0, 1, &none, &zero, &zero);
-        ctx->IASetInputLayout(layoutBefore.Get());
-        ctx->OMSetBlendState(blendBefore.Get(), factorBefore, maskBefore);
-        ctx->RSSetState(rasterBefore.Get());
-    }
-
-    Ptr<ID3D11VertexShader> puffVs_;
-    Ptr<ID3D11PixelShader> puffPs_;
-    Ptr<ID3D11InputLayout> puffLayout_;
-    Ptr<ID3D11Buffer> puffCb_, puffVb_;
-    Ptr<ID3D11BlendState> puffBlend_;
-    Ptr<ID3D11RasterizerState> puffRaster_;
-    uint64_t puffGeneration_ = ~uint64_t{0};
-    bool puffFailed_ = false;
-    // 雲の地図に答える者 (null: いない)、このフレームの雲を照らす光、使い回す入れ物。
-    void (*cloudsOf_)(const game_production::Scene&, Vec3, PlaceClouds&) = nullptr;
-    Color puffLight_{0.6f, 0.6f, 0.65f, 1};
-    PlaceClouds puffMap_;
-    std::vector<CloudPuff> puffs_;
-    std::vector<PuffVertex> puffVertices_;
 
     Ptr<ID3D11VertexShader> boltVs_;
     Ptr<ID3D11PixelShader> boltPs_;

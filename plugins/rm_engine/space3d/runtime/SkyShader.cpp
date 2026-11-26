@@ -146,21 +146,44 @@ float4 SkyPS(SkyOut o) : SV_Target {
 )";
 
 // 地球の空: 空気の色 (CPU が時刻と天気から計算する: game_x_3d の Sky)、太陽とそのにじみ、
-// 夜の月と星、流れる雲、もや、雷。前に SKY_CLOUD_LAYER と SKY_CLOUD_FADE (SkyShader.h の
-// kCloudLayerHeight / kCloudFadeFrom) が付く (EarthCode)。
+// 夜の月と星、流れる雲、もや、雷。前に SKY_CLOUD_LAYER・SKY_RAIN_LAYER・SKY_CLOUD_FADE (SkyShader.h の
+// kCloudLayerHeight / kRainCloudHeight / kCloudFadeFrom) が付く (EarthCode)。
 constexpr char kEarth[] = R"(
-// 場所ごとの雲と雨雲 (CloudMapAt と同じ式): 向き d が、カメラの SKY_CLOUD_LAYER m 上の雲の層と交わる所の
-// (雲の量, 降る量)。地図の縁へ向かって薄れ、地図の外・地平線と下は (cover, rain) のまま。
-float2 CloudsHere(float3 d, float3 eye, float cover, float rain) {
+// 場所ごとの雲と雨雲 (CloudMapAt と同じ式): 向き d が、カメラの height m 上の層と交わる所の (雲の量, 降る量)。
+// 地図の縁へ向かって薄れ、地図の外・地平線と下は scene (シーン全体の雲の量, 降る量) のまま。
+float2 CloudsHere(float3 d, float3 eye, float height, float2 scene) {
     float4 m = skyParam[6];  // xy: 最初のマスの真ん中、z: 1 マスの一辺、w: マスの数
-    if (m.w < 0.5 || m.z <= 0 || d.y <= 0.001) return float2(cover, rain);
-    float2 at = eye.xz + d.xz * (SKY_CLOUD_LAYER / d.y);
+    if (m.w < 0.5 || m.z <= 0 || d.y <= 0.001) return scene;
+    float2 at = eye.xz + d.xz * (height / d.y);
     float2 cell = (at - m.xy) / m.z;  // マスの番号 (真ん中で整数)
     float2 fromMid = abs(cell - (m.w - 1) * 0.5) / (m.w * 0.5);  // 地図の縁で 1
     float weight = 1 - smoothstep(SKY_CLOUD_FADE, 1.0, max(fromMid.x, fromMid.y));
-    if (weight <= 0) return float2(cover, rain);
+    if (weight <= 0) return scene;
     float2 here = saturate(skyClouds.SampleLevel(skyEdge, (cell + 0.5) / m.w, 0).rg);  // 雲の量、降る量
-    return lerp(float2(cover, rain), here, weight);
+    return lerp(scene, here, weight);
+}
+// 天候の雲 (1 つの層を斜めに見る。地平線に近いほど薄い。流れる): 向き d の、雲の量 here・暗さ dark の雲の
+// 色 (rgb) と濃さ (a)。雲の量 75 % を越えると切れ目を下から埋めはじめ、100 % で空一面の厚い層 (切れ目なし)。
+// 厚い層は地平線より下まで続け (地面の色へつながる)、地平線に明るい帯を残さない。scale: 模様の細かさ
+// (近い層ほど小さく: 模様が大きく見える)、offset: 模様をずらす (層ごとに違う模様)。
+float4 CloudLayer(SkyInput i, float3 d, float here, float dark, float scale, float offset, float3 sunLight, float3 zenith, float3 horizon, float flash) {
+    float solid = smoothstep(0.75, 1.0, here);
+    if (!((d.y > 0 || solid > 0) && here > 0.001)) return float4(0, 0, 0, 0);
+    float2 p = d.xz / (max(d.y, 0) + 0.08) * scale - skyParam[5].xy * 0.003 + offset;  // 風に運ばれる
+    float n = SkyFbm(float3(p, i.time * 0.004), 6);
+    float edge = lerp(0.78, 0.22, here);
+    float below = saturate(-d.y * 20);  // (地平線より下: 模様は使わない)
+    float density = max(smoothstep(edge, edge + 0.18, lerp(n, 0.5, below)), solid) * lerp(smoothstep(0.0, 0.1, d.y), 1, solid);
+    float through = SkyFbm(float3(p + i.sun.xz * 0.06, i.time * 0.004), 4);  // 太陽に近いほど薄い
+    // 地平線の近く (真横から見る所) は模様が縦の筋になるので、色のむらをならす。
+    float flat = 1 - smoothstep(0.0, 0.12, d.y);
+    float shadeN = lerp(n, 0.5, flat), shadeThrough = lerp(through, 0.5, flat);
+    float3 lit = sunLight * 0.85 + zenith * 0.7 + horizon * 0.35;
+    float3 shade = (zenith + horizon) * 0.3;
+    float3 cloud = lerp(lit, shade, saturate(dark + (shadeThrough - shadeN) * 1.5 + 0.25)) * (1 - dark * 0.6);
+    cloud *= lerp(1, 0.75 + 0.3 * shadeN, solid);  // 厚い層: 濃い所と薄い所のむら (切れ目にはしない)
+    cloud += flash * float3(0.8, 0.85, 1.0) * 2.5;  // 雷 (光るとき: CPU が知らせる)
+    return float4(cloud, density);
 }
 float3 Sky(SkyInput i) {
     float3 d = i.dir;
@@ -196,47 +219,18 @@ float3 Sky(SkyInput i) {
     // 太陽: その円盤とまわりの光。
     float sunDisk = smoothstep(0.99990, 0.99996, toSun);
     c += sunLight * (sunDisk * 40 + pow(saturate(toSun), 600) * 1.5 + pow(saturate(toSun), 12) * 0.1) * (1 - cover * 0.85) * smoothstep(-0.02, 0.02, d.y);
-    // 雲: 高い所の 1 つの層を斜めに見る (地平線に近いほど薄い)。流れる。
-    // 雲の量 75 % を越えると切れ目を下から埋めはじめ、100 % で空一面の厚い層 (切れ目なし)。
-    // 厚い層は地平線より下まで続け (地面の色へつながる)、地平線に明るい帯を残さない。
-    // 雲の量はこの向きのもの (雲の地図があれば場所ごと)。暗さ・太陽の弱まり・星はシーン全体のもの。
-    float2 place = CloudsHere(d, i.eye, cover, skyParam[7].x);
-    float here = place.x;
-    float solid = smoothstep(0.75, 1.0, here);
-    if ((d.y > 0 || solid > 0) && here > 0.001) {
-        float2 p = d.xz / (max(d.y, 0) + 0.08) * 0.8 - skyParam[5].xy * 0.003;  // 風に運ばれる
-        float n = SkyFbm(float3(p, i.time * 0.004), 6);
-        float edge = lerp(0.78, 0.22, here);
-        float below = saturate(-d.y * 20);  // (地平線より下: 模様は使わない)
-        float density = max(smoothstep(edge, edge + 0.18, lerp(n, 0.5, below)), solid) * lerp(smoothstep(0.0, 0.1, d.y), 1, solid);
-        float through = SkyFbm(float3(p + i.sun.xz * 0.06, i.time * 0.004), 4);  // 太陽に近いほど薄い
-        // 地平線の近く (真横から見る所) は模様が縦の筋になるので、色のむらをならす。
-        float flat = 1 - smoothstep(0.0, 0.12, d.y);
-        float shadeN = lerp(n, 0.5, flat), shadeThrough = lerp(through, 0.5, flat);
-        float3 lit = sunLight * 0.85 + zenith * 0.7 + horizon * 0.35;
-        float3 shade = (zenith + horizon) * 0.3;
-        float3 cloud = lerp(lit, shade, saturate(dark + (shadeThrough - shadeN) * 1.5 + 0.25)) * (1 - dark * 0.6);
-        cloud *= lerp(1, 0.75 + 0.3 * shadeN, solid);  // 厚い層: 濃い所と薄い所のむら (切れ目にはしない)
-        cloud += flash * float3(0.8, 0.85, 1.0) * 2.5;  // 雷 (光るとき: CPU が知らせる)
-        c = lerp(c, cloud, density);
-    }
-    // 雨雲: 雨 (雪) の降る所の上の、低い 1 枚の層。降る量に比例して濃く・暗く・厚くなる: 小雨と
-    // 天気雨は明るい半透明の薄い膜 (日が透ける)、どしゃぶりと嵐は黒ずんだ分厚い層 (もくもくした
-    // むらと暗い底。地平線より下まで続く)。雪の雲は淡い。
-    float rain = saturate(place.y);
+    // 雲: 雲の量はこの向きのもの (雲の地図があれば場所ごと)。暗さ・太陽の弱まり・星はシーン全体のもの。
+    const float2 scene = float2(cover, skyParam[7].x);  // (シーン全体の雲の量, 降る量)
+    float4 high = CloudLayer(i, d, CloudsHere(d, i.eye, SKY_CLOUD_LAYER, scene).x, dark, 0.8, 0, sunLight, zenith, horizon, flash);
+    c = lerp(c, high.rgb, high.a);
+    // 雨雲: 雨 (雪) の降る所の上の低い層 (SKY_RAIN_LAYER m 上)。今までの天候の雲と同じ描き方で、降る量に
+    // 比例して厚く・暗く: 小雨は切れ切れの灰色の雲、嵐は切れ目のない黒ずんだ厚い層。雪の雲は少し淡い。
+    float rain = saturate(CloudsHere(d, i.eye, SKY_RAIN_LAYER, scene).y);
     if (rain > 0.001) {
-        float2 q = d.xz / (max(d.y, 0) + 0.12) * 0.45 - skyParam[5].xy * 0.004 + 17.3;  // 風に運ばれる
-        float lump = SkyFbm(float3(q, i.time * 0.006), 5);
-        float thick = smoothstep(0.15, 0.95, rain);  // 厚み (膜 0 .. 分厚い 1)
-        float opacity = smoothstep(0.0, 0.12, rain) * (0.25 + 0.75 * rain);
-        opacity *= lerp(0.7 + 0.6 * lump, 1, thick * thick);  // 膜はうすく波打つ
-        opacity *= lerp(smoothstep(-0.02, 0.15, d.y), 1, thick);  // 膜は地平線で薄れる
-        float3 film = sunLight * 0.75 + zenith * 0.6 + horizon * 0.55;
-        float3 heavy = (zenith + horizon) * 0.05;
-        float3 rc = lerp(film, heavy, thick) * lerp(1, 0.55 + 0.7 * lump, thick);
-        rc = lerp(rc, film * 0.85, skyParam[7].y * 0.6);
-        rc += flash * float3(0.8, 0.85, 1.0) * 2.5 * thick;  // 雷
-        c = lerp(c, rc, saturate(opacity));
+        float rainCover = 0.6 + 0.5 * rain;  // (小雨 0.65 .. 嵐 1.1: 75 % から切れ目が埋まる)
+        float rainDark = saturate(0.45 + 0.6 * rain) * (1 - 0.35 * skyParam[7].y);
+        float4 low = CloudLayer(i, d, rainCover, max(dark, rainDark), 0.8 * SKY_RAIN_LAYER / SKY_CLOUD_LAYER, 37.1, sunLight, zenith, horizon, flash);
+        c = lerp(c, low.rgb, low.a * smoothstep(0.0, 0.05, rain));
     }
     c += flash * float3(0.25, 0.27, 0.32) * up;  // 光ると空全体が少し明るくなる
     // もや: 全体が地平線の色へ寄る。低いほど強い (雨と雪)。
@@ -333,7 +327,8 @@ namespace {
 // 地球の空のコード: 雲の層の数 (SkyShader.h。1 か所) を前に付けたもの。
 const std::string& EarthCode() {
     static const std::string code =
-        std::format("static const float SKY_CLOUD_LAYER = {:.1f};\nstatic const float SKY_CLOUD_FADE = {:.3f};\n", kCloudLayerHeight, kCloudFadeFrom) + kEarth;
+        std::format("static const float SKY_CLOUD_LAYER = {:.1f};\nstatic const float SKY_RAIN_LAYER = {:.1f};\nstatic const float SKY_CLOUD_FADE = {:.3f};\n",
+                    kCloudLayerHeight, kRainCloudHeight, kCloudFadeFrom) + kEarth;
     return code;
 }
 
@@ -344,11 +339,11 @@ float SmoothStep(float edge0, float edge1, float x) {
 
 }  // namespace
 
-CloudMapPoint CloudMapAt(Vec3 d, Vec3 eye, const CloudMapPlace& map) {
+CloudMapPoint CloudMapAt(Vec3 d, Vec3 eye, const CloudMapPlace& map, float height) {
     CloudMapPoint out;
     const float n = static_cast<float>(map.cells);
-    if (map.cells <= 0 || !(map.cell > 0) || !(d.y > 0.001f)) return out;
-    const float reach = kCloudLayerHeight / d.y;
+    if (map.cells <= 0 || !(map.cell > 0) || !(d.y > 0.001f) || !(height > 0)) return out;
+    const float reach = height / d.y;
     const float cellX = (eye.x + d.x * reach - map.firstX) / map.cell, cellZ = (eye.z + d.z * reach - map.firstZ) / map.cell;
     const float mid = (n - 1) * 0.5f, half = n * 0.5f;
     const float fromMid = std::max(std::fabs(cellX - mid), std::fabs(cellZ - mid)) / half;

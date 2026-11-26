@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.27",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "雨雲のかたまりをやめ、雨の降る所の上空に、今までの天候の空の雲が低く・厚く・暗く出るようにしました (降る量に比例: 小雨は切れ切れの灰色の雲、嵐は切れ目のない黒ずんだ厚い雲)",
+          "en": "Replaced the rain cloud puffs: the sky's usual weather clouds now appear low, thick and dark above where rain falls (following the amount: broken grey clouds for light rain, an unbroken blackish layer for a storm)"
+        }
+      ]
+    },
+    {
       "version": "0.0.26",
       "date": "2026-11-26",
       "items": [
