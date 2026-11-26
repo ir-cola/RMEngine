@@ -7,8 +7,9 @@
 //   - Play の間の濡れと積雪: カメラのまわりの地図のマスごと (weather::PlaceCellsFor。同じシステム)
 //   - 気候の地図に描いた雨雲: その場所だけ降る量 (WeatherPlace::local。シーンの降水量が 0 でも降る。
 //     雨か雪かはその場所の気温)。シーン全体の雨は天候の「降水量」(インスペクター)
-//   - 気候の地図に塗った雲と雨雲: Play の間、カメラのいる所の雲 (Weather::placeClouds / placeCloudShare) と、
-//     空に描く雲の地図 (Weather::cloudCells / cloudShares)。雨雲の所は厚い雲 (RainCloudsOf)
+//   - 気候の地図に塗った雲: Play の間、カメラのいる所の雲 (Weather::placeClouds / placeCloudShare)
+//   - 空に描く雲の地図 (天候の口の clouds: 空を描くたび、エディターでも): 塗った雲と、描いた雨雲の降る量。
+//     天候は降る所の上に、降る量に比例した雨雲を描く (雨雲の無い所には降らない)
 
 #include "core/RuntimeRegistry.h"
 #include "rm_engine/climate/runtime/Climate.h"
@@ -26,11 +27,6 @@ float MoreOf(float humidity);
 // 気温・湿り気・描いた雨雲 -> 降り方 (雪の割合 = SnowShareOf、倍率 = MoreOf、
 // その場所だけ降る量 = 雨雲の割合 x 降る量)。
 weather::WeatherPlace PlaceOf(const climate::ClimateHere& c);
-// 雨雲の降る量 (%) -> そこの空の雲の量 (%): 70 % (弱い雨) 〜 100 % (嵐)。
-float RainCloudsOf(float rain);
-// 塗った雲 (割合 `weight`・量 `amount`) に、雨雲 (割合 `rainWeight`・降る量 `rainAmount`) を重ねた雲:
-// 割合 = 1 - (1 - weight)(1 - rainWeight)、量 = 割合で重みをつけた平均 (雨雲は RainCloudsOf)。
-void MixRainClouds(float& weight, float& amount, float rainWeight, float rainAmount);
 // シーンのどこかで、その場所だけ降る量の一番多いもの (0 .. 1: 描いた雨雲の降る量)。
 float MostLocalOf(const game_production::Scene& scene);
 // `value` を `to` へ `dt` 秒ぶん近づける (約 2 秒で 63 %)。
@@ -40,8 +36,8 @@ void Approach(float& placeSnow, float& placeMore, float& placeLocal, const weath
 // カメラのいる所の塗った雲 (割合 `weight`・量 `amount`) へ近づける (まだ無い (placeClouds < 0): すぐに)。
 // 量は、塗った所にいるときだけ動かす (割合 0 の所の量は意味が無い)。
 void ApproachClouds(float& placeClouds, float& placeShare, float weight, float amount, float dt);
-// `w` の雲の地図 (cloudCells / cloudShares / cloudFirstX / Z) を、カメラ `eye` のまわりで `field` から書く。
-// 雲も雨雲も描いていない地図: 空にする。
-void CloudCellsFor(weather::Weather& w, const climate::ClimateField& field, Vec3 eye);
+// カメラ `eye` のまわりの雲の地図 (weather::PlaceClouds) を `field` から書く: マスの真ん中のまわり 1 マス
+// 四方の、塗った雲の割合と量・その場所だけ降る量 (雨雲の割合 x 降る量)。雲も雨雲も描いていない地図: 空にする。
+void CloudMapFor(weather::PlaceClouds& out, const climate::ClimateField& field, Vec3 eye);
 
 }  // namespace rm::weather_x_climate

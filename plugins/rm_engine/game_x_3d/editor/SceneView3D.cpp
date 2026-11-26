@@ -1023,7 +1023,9 @@ private:
         const game_x_3d::Sky* sky = overhead_ ? nullptr : host.scene.Setting<game_x_3d::Sky>();
         const bool ownCamera = &pic == &main_ && !host.game;
         if (sky && sky->kind != game_x_3d::SkyKind::None) {
-            skyLook_ = game_x_3d::LookOf(*sky, skySeconds_, game_x_3d::SkyWeatherOf(&host.host.Registry(), host.scene, skySeconds_));
+            Vec3 eye{0, 0, 0};  // (場所ごとの雲の地図はカメラのまわり)
+            if (const auto toWorld = space3d::Inverse(f.view)) eye = space3d::TransformPoint(*toWorld, {0, 0, 0});
+            skyLook_ = game_x_3d::LookOf(*sky, skySeconds_, game_x_3d::SkyWeatherOf(&host.host.Registry(), host.scene, skySeconds_, eye));
             const game_x_3d::SkyLook& look = skyLook_;
             if (!ownCamera || state_.sky) {
                 game_x_3d::SkyPainter::Sources sources;

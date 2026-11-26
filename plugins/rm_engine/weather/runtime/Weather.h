@@ -93,10 +93,11 @@ using WetCell = std::array<WetLevel, kWetWays>;
 // マスの値で始まる。地図の外も、描くときは一番近いマス)。
 inline constexpr int kWetMapCells = 64;
 inline constexpr float kWetMapCell = 2.f;
-// 場所ごとの雲の地図 (気候の地図に塗った雲。docs/CLIMATE.md の「気候ビュー」): カメラのまわり
-// kCloudMapCells x kCloudMapCells マス (1 マス kCloudMapCell m: 3 km 四方ほど)。空は遠くまで見えるので粗い。
-inline constexpr int kCloudMapCells = 48;
-inline constexpr float kCloudMapCell = 64.f;
+// 場所ごとの雲の地図 (気候の地図に塗った雲と雨雲。docs/CLIMATE.md の「気候ビュー」): カメラのまわり
+// kCloudMapCells x kCloudMapCells マス (1 マス kCloudMapCell m: 3 km 四方ほど)。空は遠くまで見えるので粗い
+// (それでも、描いた雨雲の上に雨雲が見えるくらいには細かく)。
+inline constexpr int kCloudMapCells = 128;
+inline constexpr float kCloudMapCell = 24.f;
 struct WetMap {
     int firstX = 0, firstZ = 0;  // 最初のマス (ワールドのマス番号: floor(x / kWetMapCell))
     std::vector<WetCell> cells;  // kWetMapCells^2 (行が z、z の小さい行から)。空: 地図を使わない
@@ -144,19 +145,10 @@ struct Weather {
     // 場所ごとの雲 (気候の地図に塗った雲): 答える者 (つなぎ 天候 × 気候) が Play の間、毎フレーム書く。
     // カメラのいる所の、雲を塗った割合 placeCloudShare (0 .. 1) とそこの雲の量 placeClouds (0 .. 100)。
     // 数秒かけて近づける。placeClouds < 0: 書く者がいない (雲の量のまま)。
-    // 今の雲の量 = (1 - 割合) x 雲の量 (天気のもの) + 割合 x placeClouds (TargetOf)。空の暗さ・日の光・
-    // 雲の厚さはこれで決まる。
+    // 今の雲の量 = (1 - 割合) x 雲の量 (天気のもの) + 割合 x placeClouds (TargetOf)。日の光の弱まりと
+    // もやはこれで決まる (空の雲の模様・暗さは、場所ごとの雲の地図とシーン全体のもの: SkyWeatherOf)。
     RM_TRANSIENT() float placeClouds = -1;
     RM_TRANSIENT() float placeCloudShare = 0;
-    // cloudCells / cloudShares: カメラのまわりの雲の地図 (kCloudMapCells x kCloudMapCells。行が z、z の
-    // 小さい行から)。そのマスの、雲を塗った割合 (cloudShares: 0 .. 1) と、塗った所の雲の量 (cloudCells:
-    // 0 .. 100)。その向きの雲の量 = (1 - 割合) x 空の雲の量 + 割合 x cloudCells (塗っていない所は天気の
-    // 雲のまま: 雨で増えた雲・テンプレートのフェードも)。最初のマスの真ん中のワールドの x, z が
-    // cloudFirstX / Z。空: 書く者がいない (空の雲はどこも同じ量)。空の絵はこれで、向きごとに雲の量を変える。
-    RM_TRANSIENT() std::vector<float> cloudCells;
-    RM_TRANSIENT() std::vector<float> cloudShares;
-    RM_TRANSIENT() float cloudFirstX = 0;
-    RM_TRANSIENT() float cloudFirstZ = 0;
     RM_TRANSIENT() WetMap wetMap;
     // ゲームが動いている間に、風が雲・粒・ひらひらをどれだけ運んだか (ワールド単位: 風を足し
     // 合わせたもの - 風が変わっても跳ばない)。
@@ -181,9 +173,10 @@ void PlacedShare(float precipitation, const WeatherPlace& place, float& rain, fl
 float SnowMostOf(const Weather& w);
 // 今の降水量 (0 .. 1。フェードの途中は緩急つき): 雨と雪に分ける前のもの (場所の降り方で、粒を用意する量)。
 float PrecipitationNow(const Weather& w);
-// フィールドの言う天候 (フェードの行き先) / 今の天候 (フェードの途中: 緩急つき)。
-WeatherNow TargetOf(const Weather& w);
-WeatherNow NowOf(const Weather& w);
+// フィールドの言う天候 (フェードの行き先) / 今の天候 (フェードの途中: 緩急つき)。`place` false: カメラの
+// いる所の塗った雲 (placeClouds) と、その場所だけ降る量 (placeLocal: 雨雲) を入れない (シーン全体の天気)。
+WeatherNow TargetOf(const Weather& w, bool place = true);
+WeatherNow NowOf(const Weather& w, bool place = true);
 // 今の天候から `seconds` 秒のフェードを始める: そのあとフィールドを変える (0 秒: すぐに)。
 // フェード中に始めたフェードは、そのフェードが来たところから始まる。
 void BeginFade(Weather& w, float seconds);
@@ -198,8 +191,11 @@ Color FogColorOf(const WeatherNow& w, Color light);
 // 風の向き / 風の強さ の風 (m/s、ワールド: y は 0)。
 Vec3 WindOf(float directionDegrees, float strength);
 
-// 天候が `seconds` (ゲームの時間) の空に何をするか (雷は時間が進んでいる間だけ)。
-game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds);
+// 天候が `seconds` (ゲームの時間) の空に何をするか (雷は時間が進んでいる間だけ)。雲の模様・暗さ・雨雲は
+// シーン全体の天気 (NowOf(w, false))、日の光の弱まりともやはカメラのいる所 (NowOf(w))。`clouds`: 場所ごとの
+// 雲の地図 (WeatherPlaceInfo::clouds。null か数が合わない: 無し) - マスごとに、雲の量 = シーンの雲の量から
+// 塗った割合の分だけ塗った量へ、降る量 = max(シーン全体の降る量, その場所だけ降る量) (そこに雨雲が出る)。
+game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds, const PlaceClouds* clouds = nullptr);
 
 // `dt` ゲーム秒あとの 濡れ。雨の間: 今降っている向き (風で斜め) が濡れていく
 // (最後は全部: RainWetSpeed。どしゃぶりで約 25 秒、霧雨で 1 分半) - kWetWayDegrees 以内の向きが

@@ -93,18 +93,18 @@ void PlacedShare(float precipitation, const WeatherPlace& place, float& rain, fl
 
 float SnowMostOf(const Weather& w) { return std::isfinite(w.snowDepthCm) ? std::clamp(w.snowDepthCm / 100.f, 0.f, kMostSnowDepth) : 0.f; }
 
-WeatherNow TargetOf(const Weather& w) {
+WeatherNow TargetOf(const Weather& w, bool place) {
     WeatherNow n;
     const float p = Unit(w.precipitation), x = SnowInOf(w);
     n.clouds = Unit(w.cloudAmount);
     // 場所ごとの雲 (つなぎが書いた、カメラのいる所の塗った雲): 塗った割合の分だけその量へ。
-    if (std::isfinite(w.placeClouds) && w.placeClouds >= 0 && std::isfinite(w.placeCloudShare)) {
+    if (place && std::isfinite(w.placeClouds) && w.placeClouds >= 0 && std::isfinite(w.placeCloudShare)) {
         const float share = std::clamp(w.placeCloudShare, 0.f, 1.f);
         n.clouds += (Unit(w.placeClouds) - n.clouds) * share;
     }
     if (std::isfinite(w.placeSnow) && w.placeSnow >= 0) {
         // 場所の降り方 (つなぎが書いた、カメラのいる所): その割合で雨と雪に分ける (みぞれは両方)。
-        PlacedShare(p, {w.placeSnow, w.placeMore, w.placeLocal}, n.rain, n.snow);
+        PlacedShare(p, {w.placeSnow, w.placeMore, place ? w.placeLocal : 0.f}, n.rain, n.snow);
     } else {
         n.rain = p * RainShare(x);
         n.snow = p * SnowShare(x);
@@ -117,8 +117,8 @@ WeatherNow TargetOf(const Weather& w) {
     return n;
 }
 
-WeatherNow NowOf(const Weather& w) {
-    WeatherNow to = TargetOf(w);
+WeatherNow NowOf(const Weather& w, bool place) {
+    WeatherNow to = TargetOf(w, place);
     if (!(w.fadeSeconds > 0) || !(w.fadeElapsed < w.fadeSeconds)) return to;
     const float t = Smooth(0.f, 1.f, std::max(w.fadeElapsed, 0.f) / w.fadeSeconds);  // 緩急つき
     const WeatherNow& a = w.fadeFrom;
@@ -170,18 +170,25 @@ Vec3 WindOf(float directionDegrees, float strength) {
     return {d.x * strength, 0, d.z * strength};
 }
 
-game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds) {
-    const WeatherNow now = NowOf(w);
-    const float c = std::clamp(now.clouds, 0.f, 1.f), r = RainNow(now), sn = SnowNow(now);
+game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds, const PlaceClouds* clouds) {
     // 雨や雪が降ると、頼んだ雲が少なくても雲が出る。雨は雲を暗い雨雲にし、雪の雲は
     // 淡くかすむ。雲が多いと太陽が暗くなる。
-    const float falling = Smooth(0.f, 0.15f, std::max(r, sn));
-    const float cover = std::max(c, falling * (0.75f + 0.25f * std::max(r, sn)));
+    const auto coverOf = [](const WeatherNow& n) {
+        const float c = std::clamp(n.clouds, 0.f, 1.f), falls = std::max(RainNow(n), SnowNow(n));
+        return std::max(c, Smooth(0.f, 0.15f, falls) * (0.75f + 0.25f * falls));
+    };
+    const WeatherNow scene = NowOf(w, false);  // シーン全体: 空の雲・暗さ・雨雲 (場所ごとのものは地図で)
+    const WeatherNow now = NowOf(w);           // カメラのいる所: 日の光の弱まり・もや
+    const float r = RainNow(scene), sn = SnowNow(scene);
+    const float cover = coverOf(scene), coverHere = coverOf(now);
+    const float rHere = RainNow(now), snHere = SnowNow(now);
     game_x_3d::SkyWeather s;
     s.cover = cover;
     s.dark = std::clamp((0.15f * cover + 0.45f * Smooth(0.45f, 1.f, cover) + 0.5f * r * (0.5f + 0.5f * cover)) * (1 - 0.35f * sn), 0.f, 1.f);
-    s.haze = std::clamp(0.02f + 0.15f * cover * cover + 0.45f * r * r + 0.5f * sn + 0.6f * std::clamp(now.fog, 0.f, 1.f), 0.f, 1.f);
-    s.through = std::clamp(1 - 0.75f * Smooth(0.3f, 1.f, cover) - 0.35f * r - 0.15f * sn, 0.06f, 1.f);
+    s.haze = std::clamp(0.02f + 0.15f * coverHere * coverHere + 0.45f * rHere * rHere + 0.5f * snHere + 0.6f * std::clamp(now.fog, 0.f, 1.f), 0.f, 1.f);
+    s.through = std::clamp(1 - 0.75f * Smooth(0.3f, 1.f, coverHere) - 0.35f * rHere - 0.15f * snHere, 0.06f, 1.f);
+    s.rain = std::clamp(r + sn, 0.f, 1.f);  // 雨雲 (降るものの上)
+    s.snow = r + sn > 0 ? std::clamp(sn / (r + sn), 0.f, 1.f) : 0.f;
     // 雷: ときどき (一度に 8 分の 1 秒ほど) 光る。時間が進んでいる間だけ。
     if (w.lightning && cover > 0.5f && seconds > 0) {
         const auto tick = static_cast<uint32_t>(seconds * 8);
@@ -191,16 +198,22 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds) {
     s.driftZ = w.driftZ;
     s.windX = now.windX;
     s.windZ = now.windZ;
-    // 場所ごとの雲 (つなぎ 天候 × 気候 が書いた地図): 空がその向きの雲を描く。
+    // 場所ごとの雲と雨雲 (つなぎ 天候 × 気候 の地図): 空がその向きの雲を描く。塗っていないマスは
+    // シーン全体と同じ値 (割合 0・降る量 0 なら cover / rain そのもの)。
     constexpr size_t kCount = static_cast<size_t>(kCloudMapCells) * kCloudMapCells;
-    if (w.cloudCells.size() == kCount && w.cloudShares.size() == kCount) {
-        s.cloudShares = w.cloudShares;
-        s.cloudAmounts.resize(kCount);
-        for (size_t k = 0; k < kCount; ++k) s.cloudAmounts[k] = Unit(w.cloudCells[k]);
+    if (clouds && clouds->shares.size() == kCount && clouds->amounts.size() == kCount && clouds->rains.size() == kCount &&
+        std::isfinite(clouds->firstX) && std::isfinite(clouds->firstZ)) {
+        auto unit = [](float v) { return std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f; };
+        s.cloudCovers.resize(kCount);
+        s.cloudRains.resize(kCount);
+        for (size_t k = 0; k < kCount; ++k) {
+            s.cloudCovers[k] = cover + (unit(clouds->amounts[k]) - cover) * unit(clouds->shares[k]);
+            s.cloudRains[k] = std::max(s.rain, unit(clouds->rains[k]));
+        }
         s.cloudCells = kCloudMapCells;
         s.cloudCell = kCloudMapCell;
-        s.cloudFirstX = w.cloudFirstX;
-        s.cloudFirstZ = w.cloudFirstZ;
+        s.cloudFirstX = clouds->firstX;
+        s.cloudFirstZ = clouds->firstZ;
     }
     return s;
 }

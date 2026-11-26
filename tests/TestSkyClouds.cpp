@@ -39,7 +39,7 @@ bool Near(float a, float b, float eps = 1e-4f) { return std::fabs(a - b) < eps; 
 
 Vec3 Unit(Vec3 v) { return space3d::Normalize(v); }
 
-// eye を真ん中にした、天候の地図と同じ大きさの地図 (48 x 48 マス、1 マス 64 m)。
+// eye を真ん中にした、天候の地図と同じ大きさの地図 (kCloudMapCells マス、1 マス kCloudMapCell m)。
 CloudMapPlace MapAround(Vec3 eye) {
     CloudMapPlace m;
     m.cells = weather::kCloudMapCells;
@@ -56,11 +56,11 @@ game_x_3d::Sky Noon() {
     return s;
 }
 
-// 割合と量がどのマスも同じ地図 (SkyWeather の形)。
-void FillMap(game_x_3d::SkyWeather& w, const CloudMapPlace& m, float share, float amount) {
+// 雲の量と降る量がどのマスも同じ地図 (SkyWeather の形)。
+void FillMap(game_x_3d::SkyWeather& w, const CloudMapPlace& m, float cover, float rain) {
     const size_t count = static_cast<size_t>(m.cells) * m.cells;
-    w.cloudShares.assign(count, share);
-    w.cloudAmounts.assign(count, amount);
+    w.cloudCovers.assign(count, cover);
+    w.cloudRains.assign(count, rain);
     w.cloudCells = m.cells;
     w.cloudCell = m.cell;
     w.cloudFirstX = m.firstX;
@@ -144,9 +144,11 @@ RM_TEST(Sky_CloudMapPacked) {
     const CloudMapPlace map = MapAround({0, 0, 0});
     game_x_3d::SkyWeather w;
     FillMap(w, map, 0.5f, 0.25f);
-    w.cloudShares[3] = 2.f;  // 0 .. 1 にそろえる
-    w.cloudAmounts[4] = -1.f;
-    w.cloudAmounts[5] = std::numeric_limits<float>::quiet_NaN();
+    w.cloudCovers[3] = 2.f;  // 0 .. 1 にそろえる
+    w.cloudRains[4] = -1.f;
+    w.cloudRains[5] = std::numeric_limits<float>::quiet_NaN();
+    w.rain = 0.4f;
+    w.snow = 0.25f;
     const game_x_3d::SkyLook look = game_x_3d::LookOf(Noon(), 0, w);
     const size_t count = static_cast<size_t>(map.cells) * map.cells;
     CHECK(look.cloudCells == static_cast<uint32_t>(map.cells) && look.clouds.size() == count * 2);
@@ -154,11 +156,11 @@ RM_TEST(Sky_CloudMapPacked) {
     CHECK(look.clouds[3 * 2] == 1.f && look.clouds[4 * 2 + 1] == 0.f && look.clouds[5 * 2 + 1] == 0.f);
     const float* m = look.constants.param[6];
     CHECK(m[0] == map.firstX && m[1] == map.firstZ && m[2] == map.cell && m[3] == static_cast<float>(map.cells));
-    // 雲の量 (cover) はカメラのいる所のまま (地図は向きごとにだけ効く)。
-    CHECK(look.constants.param[1][0] == w.cover);
+    // 雲の量 (cover) と雨雲 (param[7]) はシーン全体のもの (地図は向きごとにだけ効く)。
+    CHECK(look.constants.param[1][0] == w.cover && look.constants.param[7][0] == 0.4f && look.constants.param[7][1] == 0.25f);
     // 数が合わない・マスの大きさが無い・地図が無い・地球の空でない: 地図は渡さない (今までの空)。
     game_x_3d::SkyWeather bad = w;
-    bad.cloudShares.pop_back();
+    bad.cloudCovers.pop_back();
     const game_x_3d::SkyLook none = game_x_3d::LookOf(Noon(), 0, bad);
     CHECK(none.clouds.empty() && none.cloudCells == 0 && none.constants.param[6][3] == 0.f);
     bad = w;
@@ -172,22 +174,41 @@ RM_TEST(Sky_CloudMapPacked) {
 
 RM_TEST(Sky_CloudMapFromWeather) {
     weather::Weather w;
-    // 書く者がいない: 地図は無い。
-    CHECK(weather::SkyWeatherOf(w, 0).cloudShares.empty() && weather::SkyWeatherOf(w, 0).cloudCells == 0);
+    w.cloudAmount = 20;
+    // 地図が無い: 渡さない。
+    CHECK(weather::SkyWeatherOf(w, 0).cloudCovers.empty() && weather::SkyWeatherOf(w, 0).cloudCells == 0);
     const size_t count = static_cast<size_t>(weather::kCloudMapCells) * weather::kCloudMapCells;
-    w.cloudCells.assign(count, 80.f);
-    w.cloudShares.assign(count, 0.f);
-    w.cloudCells[7] = 150.f;
-    w.cloudShares[7] = 1.f;
-    w.cloudFirstX = -10;
-    w.cloudFirstZ = 20;
-    const game_x_3d::SkyWeather s = weather::SkyWeatherOf(w, 0);
+    weather::PlaceClouds m;
+    m.shares.assign(count, 0.f);
+    m.amounts.assign(count, 0.8f);
+    m.rains.assign(count, 0.f);
+    m.shares[7] = 1.f, m.amounts[7] = 1.5f;     // 塗った雲 (0 .. 1 にそろえる)
+    m.shares[8] = 0.5f, m.amounts[8] = 0.6f;    // 半分塗った
+    m.rains[9] = 0.3f;                           // 雨雲 (シーンは降っていない)
+    m.firstX = -10;
+    m.firstZ = 20;
+    game_x_3d::SkyWeather s = weather::SkyWeatherOf(w, 0, &m);
     CHECK(s.cloudCells == weather::kCloudMapCells && s.cloudCell == weather::kCloudMapCell && s.cloudFirstX == -10 && s.cloudFirstZ == 20);
-    CHECK(s.cloudShares.size() == count && s.cloudAmounts.size() == count);
-    CHECK(Near(s.cloudAmounts[0], 0.8f) && s.cloudAmounts[7] == 1.f && s.cloudShares[7] == 1.f && s.cloudShares[0] == 0.f);
-    // 片方だけ・数が違う: 渡さない。
-    w.cloudShares.clear();
-    CHECK(weather::SkyWeatherOf(w, 0).cloudCells == 0);
+    CHECK(s.cloudCovers.size() == count && s.cloudRains.size() == count && s.rain == 0.f);
+    CHECK(s.cloudCovers[0] == s.cover && s.cloudCovers[7] == 1.f && Near(s.cloudCovers[8], s.cover + (0.6f - s.cover) * 0.5f));
+    CHECK(s.cloudRains[0] == 0.f && Near(s.cloudRains[9], 0.3f));
+    // シーン全体が降っている: どのマスにもその雨雲 (雨雲の所は多いほう)。
+    w.precipitation = 50;
+    s = weather::SkyWeatherOf(w, 0, &m);
+    CHECK(Near(s.rain, 0.5f) && Near(s.cloudRains[0], 0.5f) && Near(s.cloudRains[9], 0.5f));
+    m.rains[9] = 0.9f;
+    CHECK(Near(weather::SkyWeatherOf(w, 0, &m).cloudRains[9], 0.9f));
+    // 数が違う: 渡さない。
+    m.rains.pop_back();
+    CHECK(weather::SkyWeatherOf(w, 0, &m).cloudCells == 0);
+    // カメラのいる所だけ降る雨雲は、空全体の暗さを変えない (雨雲の層は地図の所だけ)。
+    weather::Weather local;
+    const float darkBefore = weather::SkyWeatherOf(local, 0).dark;
+    local.placeSnow = 0;
+    local.placeMore = 1;
+    local.placeLocal = 1;
+    CHECK(weather::SkyWeatherOf(local, 0).dark == darkBefore && weather::SkyWeatherOf(local, 0).rain == 0.f);
+    CHECK(weather::SkyWeatherOf(local, 0).through < weather::SkyWeatherOf(weather::Weather{}, 0).through);  // (日の光は弱まる)
 }
 
 RM_TEST(Sky_CloudMapOnGpu) {
@@ -232,7 +253,7 @@ RM_TEST(Sky_CloudMapOnGpu) {
         return picture ? PixelsOf(device.Get(), ctx.Get(), picture) : std::vector<uint8_t>{};
     };
 
-    // 晴れ (雲 0)。地図なし・塗っていない地図 (割合 0) は、まったく同じ絵。
+    // 晴れ (雲 0)。地図なし・塗っていない地図 (どのマスもシーン全体と同じ値) は、まったく同じ絵。
     game_x_3d::SkyWeather clear;
     clear.cover = 0;
     clear.dark = 0;
@@ -242,7 +263,7 @@ RM_TEST(Sky_CloudMapOnGpu) {
     if (plain.empty()) return;
     const CloudMapPlace map = MapAround(eye);
     game_x_3d::SkyWeather unpainted = clear;
-    FillMap(unpainted, map, 0.f, 1.f);
+    FillMap(unpainted, map, 0.f, 0.f);
     CHECK(render(unpainted) == plain);
 
     // 真ん中のピクセルが見る所 (CloudMapAt) のまわりの 5 x 5 マスだけに、厚い雲 (100 %) を塗る。
@@ -255,8 +276,7 @@ RM_TEST(Sky_CloudMapOnGpu) {
     for (int j = cj - 2; j <= cj + 2; ++j) {
         for (int i = ci - 2; i <= ci + 2; ++i) {
             if (i < 0 || j < 0 || i >= map.cells || j >= map.cells) continue;
-            painted.cloudShares[static_cast<size_t>(j) * map.cells + i] = 1;
-            painted.cloudAmounts[static_cast<size_t>(j) * map.cells + i] = 1;
+            painted.cloudCovers[static_cast<size_t>(j) * map.cells + i] = 1;
         }
     }
     const std::vector<uint8_t> cloudy = render(painted);
@@ -275,6 +295,27 @@ RM_TEST(Sky_CloudMapOnGpu) {
         }
     }
     CHECK(away > 20 && awaySame == away);
+
+    // 雨雲: 同じ所に降る量だけ置く (雲の量 0)。降る量が多いほど濃く暗い (小雨は薄い膜、嵐は黒ずむ)。
+    auto rainAt = [&](float rain) {
+        game_x_3d::SkyWeather wet = clear;
+        FillMap(wet, map, 0.f, 0.f);
+        for (int j = cj - 2; j <= cj + 2; ++j) {
+            for (int i = ci - 2; i <= ci + 2; ++i) {
+                if (i >= 0 && j >= 0 && i < map.cells && j < map.cells) wet.cloudRains[static_cast<size_t>(j) * map.cells + i] = rain;
+            }
+        }
+        return render(wet);
+    };
+    const std::vector<uint8_t> drizzle = rainAt(0.2f), storm = rainAt(1.f);
+    CHECK(drizzle.size() == plain.size() && storm.size() == plain.size());
+    if (drizzle.size() == plain.size() && storm.size() == plain.size()) {
+        const size_t at = (static_cast<size_t>(cy) * kSize + cx) * 4;
+        auto bright = [&](const std::vector<uint8_t>& p) { return static_cast<int>(p[at]) + p[at + 1] + p[at + 2]; };
+        CHECK(Differ(drizzle, plain, kSize, cx, cy) > 3);                       // 薄い膜でも見える
+        CHECK(Differ(storm, plain, kSize, cx, cy) > Differ(drizzle, plain, kSize, cx, cy));  // 嵐ほど変わる
+        CHECK(bright(storm) < bright(drizzle));                                 // 嵐は暗い
+    }
 
     // 地平線の近く (層と交わる所が地図の外): 地図ぜんぶに厚い雲を塗っても、雲の量 (cover) のまま。
     f.view = space3d::LookAt(eye, eye + Unit({0, 0.03f, 1}) * 10.f, {0, 1, 0});

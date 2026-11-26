@@ -28,7 +28,9 @@ void Grid(const game_production::Scene& scene, Vec3 center, float step, int coun
 
 float MostLocal(const game_production::Scene& scene) { return MostLocalOf(scene); }
 
-const weather::WeatherPlaceInfo kPlace{&Grid, &MostLocal};
+void Clouds(const game_production::Scene& scene, Vec3 eye, weather::PlaceClouds& out) { CloudMapFor(out, climate::ClimateField(scene), eye); }
+
+const weather::WeatherPlaceInfo kPlace{&Grid, &MostLocal, &Clouds};
 
 // システム: Play の間、ゲームのカメラのいる所の降り方を、天候の今の天候に (天候のシステムの前)。
 // カメラのまわりの地図のマスごとの降り方も (天候が場所ごとの濡れと積雪を進める)。
@@ -46,15 +48,12 @@ void RunPlace(game_production::SystemContext& ctx) {
     const climate::ClimateHere here = field.At(at);
     Approach(w->placeSnow, w->placeMore, w->placeLocal, PlaceOf(here), dt);
     weather::PlaceCellsFor(*w, ctx.scene, at, kPlace);
-    if (field.HasClouds() || field.HasRain()) {
-        float weight = here.cloudWeight, amount = here.cloudAmount;
-        MixRainClouds(weight, amount, here.rainWeight, here.rainAmount);
-        ApproachClouds(w->placeClouds, w->placeCloudShare, weight, amount, dt);
+    if (field.HasClouds()) {
+        ApproachClouds(w->placeClouds, w->placeCloudShare, here.cloudWeight, here.cloudAmount, dt);
     } else {
         w->placeClouds = -1;
         w->placeCloudShare = 0;
     }
-    CloudCellsFor(*w, field, at);
 }
 
 }  // namespace
@@ -74,19 +73,6 @@ weather::WeatherPlace PlaceOf(const climate::ClimateHere& c) {
     const float weight = std::isfinite(c.rainWeight) ? std::clamp(c.rainWeight, 0.f, 1.f) : 0.f;
     const float amount = std::isfinite(c.rainAmount) ? std::clamp(c.rainAmount, 0.f, 100.f) : 0.f;
     return {SnowShareOf(c.temperature), MoreOf(c.humidity), weight * amount / 100.f};
-}
-
-float RainCloudsOf(float rain) {
-    const float r = std::isfinite(rain) ? std::clamp(rain, 0.f, 100.f) : 0.f;
-    return 70.f + 0.3f * r;
-}
-
-void MixRainClouds(float& weight, float& amount, float rainWeight, float rainAmount) {
-    const float w = std::isfinite(weight) ? std::clamp(weight, 0.f, 1.f) : 0.f;
-    const float a = std::isfinite(amount) ? std::clamp(amount, 0.f, 100.f) : 0.f;
-    const float rw = std::isfinite(rainWeight) ? std::clamp(rainWeight, 0.f, 1.f) : 0.f;
-    weight = 1.f - (1.f - w) * (1.f - rw);
-    amount = w + rw > 0 ? (w * a + rw * RainCloudsOf(rainAmount)) / (w + rw) : a;
 }
 
 float MostLocalOf(const game_production::Scene& scene) {
@@ -125,29 +111,30 @@ void ApproachClouds(float& placeClouds, float& placeShare, float weight, float a
     if (weight > 0) ApproachValue(placeClouds, amount, dt);
 }
 
-void CloudCellsFor(weather::Weather& w, const climate::ClimateField& field, Vec3 eye) {
-    if (!(field.HasClouds() || field.HasRain()) || !std::isfinite(eye.x) || !std::isfinite(eye.z)) {
-        w.cloudCells.clear();
-        w.cloudShares.clear();
-        return;
-    }
+void CloudMapFor(weather::PlaceClouds& out, const climate::ClimateField& field, Vec3 eye) {
+    out.shares.clear();
+    out.amounts.clear();
+    out.rains.clear();
+    if (!(field.HasClouds() || field.HasRain()) || !std::isfinite(eye.x) || !std::isfinite(eye.z)) return;
     constexpr int n = weather::kCloudMapCells;
     constexpr float cell = weather::kCloudMapCell;
     const float firstX = (std::floor(eye.x / cell) - static_cast<float>(n / 2) + 0.5f) * cell;
     const float firstZ = (std::floor(eye.z / cell) - static_cast<float>(n / 2) + 0.5f) * cell;
-    w.cloudFirstX = firstX;
-    w.cloudFirstZ = firstZ;
-    w.cloudCells.assign(size_t{n} * n, 0.f);
-    w.cloudShares.assign(size_t{n} * n, 0.f);
+    out.firstX = firstX;
+    out.firstZ = firstZ;
+    out.shares.assign(size_t{n} * n, 0.f);
+    out.amounts.assign(size_t{n} * n, 0.f);
+    out.rains.assign(size_t{n} * n, 0.f);
     for (int z = 0; z < n; ++z) {
         for (int x = 0; x < n; ++x) {
             const Vec2 at{firstX + static_cast<float>(x) * cell, firstZ + static_cast<float>(z) * cell};
             float share = 0, amount = 0, rainShare = 0, rain = 0;
             field.CloudsAt(at, cell * 0.5f, share, amount);
             field.RainAt(at, cell * 0.5f, rainShare, rain);
-            MixRainClouds(share, amount, rainShare, rain);
-            w.cloudShares[static_cast<size_t>(z) * n + static_cast<size_t>(x)] = share;
-            w.cloudCells[static_cast<size_t>(z) * n + static_cast<size_t>(x)] = amount;
+            const size_t k = static_cast<size_t>(z) * n + static_cast<size_t>(x);
+            out.shares[k] = share;
+            out.amounts[k] = std::clamp(amount / 100.f, 0.f, 1.f);
+            out.rains[k] = std::clamp(rainShare * rain / 100.f, 0.f, 1.f);
         }
     }
 }

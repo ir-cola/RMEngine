@@ -90,22 +90,26 @@ struct SkyWeather {
     float flash = 0;                                      // 雷: いまの光り (0 .. 1)
     float driftX = 0, driftZ = 0;  // 風が雲をどれだけ運んだか (ワールドの単位)
     float windX = 0, windZ = 0;    // 今の風 (m/s、ワールド)
-    // 場所ごとの雲 (天候 × 気候。docs/CLIMATE.md の「雲の地図」): カメラのまわりの雲の地図。
-    // cloudCells x cloudCells マス (行が z、z の小さい行から)。マスの真ん中の、雲を塗った割合
-    // (cloudShares: 0 .. 1) と、塗った所の雲の量 (cloudAmounts: 0 .. 1)。その向きの雲の量 =
-    // (1 - 割合) x cover + 割合 x 量 (space3d::CloudMapAt の所)。最初のマスの真ん中が
-    // (cloudFirstX, cloudFirstZ)、1 マスの一辺が cloudCell m。空 (か数が合わない): どの向きも cover。
-    std::vector<float> cloudShares, cloudAmounts;
+    // 雨雲 (降るものの上の低い層): rain = 降る量 (0 .. 1。雨と雪の和)、snow = そのうち雪の割合 (0 .. 1:
+    // 雪の雲は淡い)。降る量に比例して、明るい薄い膜 (小雨・天気雨) から黒ずんだ分厚い層 (嵐) になる。
+    float rain = 0, snow = 0;
+    // 場所ごとの雲と雨雲 (天候 × 気候。docs/CLIMATE.md の「雲の地図」): カメラのまわりの地図。
+    // cloudCells x cloudCells マス (行が z、z の小さい行から)。マスの真ん中の、雲の量 (cloudCovers:
+    // 0 .. 1) と降る量 (cloudRains: 0 .. 1: その上に雨雲)。その向きの値 = 地図の値 (space3d::CloudMapAt の
+    // 所。地図の縁へ向かって cover / rain に戻る)。最初のマスの真ん中が (cloudFirstX, cloudFirstZ)、
+    // 1 マスの一辺が cloudCell m。空 (か数が合わない): どの向きも cover / rain。
+    std::vector<float> cloudCovers, cloudRains;
     int cloudCells = 0;
     float cloudCell = 0, cloudFirstX = 0, cloudFirstZ = 0;
 };
 // RuntimeRegistry の点: 項目は SkyWeatherInfo (static)。伝えてきた最初のものを使う。
 inline constexpr char kSkyWeatherPoint[] = "rm_engine.game_x_3d.sky_weather";
 struct SkyWeatherInfo {
-    // 空が見せる、`seconds` (ゲームの時間) のときのシーンの天気。false: 天気が無い。
-    bool (*of)(const game_production::Scene& scene, double seconds, SkyWeather& out) = nullptr;
+    // 空が見せる、`seconds` (ゲームの時間) のときのシーンの天気 (`eye`: 見ているカメラの場所。場所ごとの
+    // 雲の地図はそのまわり)。false: 天気が無い。
+    bool (*of)(const RuntimeRegistry& registry, const game_production::Scene& scene, double seconds, Vec3 eye, SkyWeather& out) = nullptr;
 };
-SkyWeather SkyWeatherOf(const RuntimeRegistry* registry, const game_production::Scene& scene, double seconds);
+SkyWeather SkyWeatherOf(const RuntimeRegistry* registry, const game_production::Scene& scene, double seconds, Vec3 eye = {0, 0, 0});
 
 // このフレームの空: 描くコード (組み込みのもの。nullopt: ユーザーの .rmsky か無し)、その数、
 // それに従う光。
@@ -118,7 +122,7 @@ struct SkyLook {
     float lightStrength = 1.f;          // 光の部品自身の 強さ に掛ける
     Color ambientSky{0.16f, 0.16f, 0.16f, 1}, ambientGround{0.08f, 0.08f, 0.08f, 1};
     float flash = 0;  // 雷: 今の閃光 (0 .. 1。雲と環境光を照らす)
-    // 雲の地図 (地球の空。SkyDraw::clouds の形: マスごとに 割合、量。0 .. 1 にそろえたもの)。
+    // 雲の地図 (地球の空。SkyDraw::clouds の形: マスごとに 雲の量、降る量。0 .. 1 にそろえたもの)。
     // 空: 無い (constants.param[6] も 0)。
     std::vector<float> clouds;
     uint32_t cloudCells = 0;

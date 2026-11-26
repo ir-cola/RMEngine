@@ -7,16 +7,24 @@
 #include "rm_engine/weather/runtime/ScriptWeather.h"
 #include "rm_engine/weather/runtime/Weather.h"
 #include "rm_engine/weather/runtime/WeatherDraw.h"
+#include "rm_engine/weather/runtime/WeatherPlace.h"
 
 namespace rm::weather {
 
 namespace {
 
-// シーンの 天候 が、その空にすること (地球の空の雲、雷、雲が流れる風)。
-bool SkyWeatherFor(const game_production::Scene& scene, double seconds, game_x_3d::SkyWeather& out) {
+// シーンの 天候 が、その空にすること (地球の空の雲、雨雲、雷、雲が流れる風)。場所ごとの雲と雨雲は、
+// 場所の口に答える者 (つなぎ 天候 × 気候) に、カメラのまわりの地図を聞く。
+bool SkyWeatherFor(const RuntimeRegistry& registry, const game_production::Scene& scene, double seconds, Vec3 eye, game_x_3d::SkyWeather& out) {
     const Weather* w = scene.Setting<Weather>();
     if (!w) return false;
-    out = SkyWeatherOf(*w, seconds);
+    PlaceClouds clouds;
+    for (const auto& c : registry.Contributions<WeatherPlaceInfo>(kWeatherPlacePoint)) {
+        if (!c.item->clouds) continue;
+        c.item->clouds(scene, eye, clouds);
+        if (!clouds.shares.empty()) break;
+    }
+    out = SkyWeatherOf(*w, seconds, clouds.shares.empty() ? nullptr : &clouds);
     return true;
 }
 

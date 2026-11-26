@@ -148,7 +148,7 @@ public:
         seconds_ += f.dt;
         const Sky* sky = f.scene.Setting<Sky>();
         if (sky && sky->kind != SkyKind::None) {
-            look_ = LookOf(*sky, seconds_, SkyWeatherOf(f.registry, f.scene, seconds_));  // (その雲: 天候のもの)
+            look_ = LookOf(*sky, seconds_, SkyWeatherOf(f.registry, f.scene, seconds_, Vec3{eye->second.m[3][0], eye->second.m[3][1], eye->second.m[3][2]}));  // (その雲: 天候のもの)
             const SkyLook& look = look_;
             SkyPainter::Sources sources;
             sources.picture = [&](const AssetRef& ref) { return PictureOf(f, ref); };

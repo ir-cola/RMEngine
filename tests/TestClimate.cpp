@@ -510,17 +510,6 @@ RM_TEST(Climate_CloudWeather) {
     under.rainWeight = 0.5f;
     under.rainAmount = 80;
     CHECK(Near(PlaceOf(under).local, 0.4f));
-    // 雨雲の空の雲: 70 % 〜 100 %。塗った雲と重ねる。
-    CHECK(Near(RainCloudsOf(0), 70) && Near(RainCloudsOf(100), 100) && Near(RainCloudsOf(50), 85));
-    float mw = 0, ma = 0;
-    MixRainClouds(mw, ma, 1.f, 100.f);
-    CHECK(Near(mw, 1) && Near(ma, 100));
-    mw = 0.5f, ma = 20;
-    MixRainClouds(mw, ma, 0.5f, 100.f);
-    CHECK(Near(mw, 0.75f) && Near(ma, 60));
-    mw = 0.4f, ma = 30;
-    MixRainClouds(mw, ma, 0.f, 0.f);
-    CHECK(Near(mw, 0.4f) && Near(ma, 30));
     // 天候: その場所で降る量 = max(降水量 x 倍率, その場所だけ降る量)。降水量 0 でも雨雲の所は降る。
     float rain = 0, snow = 0;
     weather::PlacedShare(0.f, {0.f, 1.f, 0.6f}, rain, snow);
@@ -549,6 +538,7 @@ RM_TEST(Climate_CloudWeather) {
     w.placeMore = 1;
     w.placeLocal = 0.5f;
     CHECK(Near(weather::TargetOf(w).rain, 0.5f));
+    CHECK(weather::TargetOf(w, false).rain == 0.f);  // (シーン全体の天気: その場所だけのものは入れない)
     w.placeSnow = -1;
     w.placeLocal = 0;
     // シーン: 雲を (0, 0) のまわりに塗る。カメラがそこにいると、システムが雲と雲の地図を書く。
@@ -581,22 +571,28 @@ RM_TEST(Climate_CloudWeather) {
     for (const auto& sys : reg.Contributions<game_production::SystemInfo>(game_production::kSystemPoint)) sys.item->run(ctx);
     const weather::Weather& ww = *sc.Setting<weather::Weather>();
     CHECK(Near(ww.placeClouds, 10) && Near(ww.placeCloudShare, 1));
+    // 空に描く雲の地図 (口の clouds: カメラのまわり)。
+    CHECK(places[0].item->clouds != nullptr);
+    weather::PlaceClouds cm;
+    places[0].item->clouds(sc, {0, 0, 0}, cm);
     constexpr size_t n = weather::kCloudMapCells;
-    CHECK(ww.cloudCells.size() == n * n && ww.cloudShares.size() == n * n);
-    // カメラのマス (真ん中の 1 つ前後) は塗った所、端は塗っていない。
+    CHECK(cm.shares.size() == n * n && cm.amounts.size() == n * n && cm.rains.size() == n * n);
+    // カメラのマス (真ん中) は塗った雲 (10 %)・雨雲なし、端は塗っていない。
     const size_t center = (n / 2) * n + n / 2;
-    CHECK(Near(ww.cloudShares[center], 1) && Near(ww.cloudCells[center], 10) && ww.cloudShares[0] == 0.f);
-    CHECK(Near(ww.cloudFirstX, (-static_cast<float>(n / 2) + 0.5f) * weather::kCloudMapCell));
-    // 雨雲の所は厚い雲 (雲の地図の x = 300 のマス)。
-    {
-        const float fx = (300.f - ww.cloudFirstX) / weather::kCloudMapCell;
-        const size_t col = static_cast<size_t>(std::lround(fx));
-        const size_t at = (n / 2) * n + col;
-        CHECK(col < n && ww.cloudShares[at] > 0.1f && ww.cloudCells[at] > 85.f);
-    }
-    // 雲も雨雲も描いていない地図: 書かない (今までどおり)。
+    CHECK(Near(cm.shares[center], 1) && Near(cm.amounts[center], 0.1f) && cm.rains[center] == 0.f && cm.shares[0] == 0.f);
+    CHECK(Near(cm.firstX, (-static_cast<float>(n / 2) + 0.5f) * weather::kCloudMapCell));
+    // 雨雲の所 (x = 300 のマス): その場所だけ降る量 (雨雲 0.7 x マスの箱のうち雨雲の割合)。
+    const size_t col = static_cast<size_t>(std::lround((300.f - cm.firstX) / weather::kCloudMapCell));
+    CHECK(col < n && cm.rains[(n / 2) * n + col] > 0.5f && cm.rains[(n / 2) * n + col] <= 0.701f);  // (マスの箱の 5 / 6 が雨雲)
+    // 空: 雨雲の所はそこで降る量の雨雲、ほかはシーン全体 (降水量 0: 雨雲なし)。塗った雲 10 % の所は 10 %。
+    const game_x_3d::SkyWeather sky = weather::SkyWeatherOf(ww, 0, &cm);
+    CHECK(sky.cloudCells == weather::kCloudMapCells && sky.cloudRains.size() == n * n && sky.rain == 0.f);
+    CHECK(sky.cloudRains[(n / 2) * n + col] == cm.rains[(n / 2) * n + col] && sky.cloudRains[0] == 0.f && sky.cloudRains[center] == 0.f);
+    CHECK(Near(sky.cloudCovers[center], 0.1f) && sky.cloudCovers[0] == sky.cover);
+    // 雲も雨雲も描いていない地図: 地図は空 (今までどおり)。
     SetPaint(map, PaintGrid{}, MapLayer::Clouds);
     map.shapes.clear();
     for (const auto& sys : reg.Contributions<game_production::SystemInfo>(game_production::kSystemPoint)) sys.item->run(ctx);
-    CHECK(ww.placeClouds == -1.f && ww.cloudCells.empty() && ww.cloudShares.empty());
+    places[0].item->clouds(sc, {0, 0, 0}, cm);
+    CHECK(ww.placeClouds == -1.f && cm.shares.empty() && cm.rains.empty());
 }

@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.19",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "雨を描いた所の空に雨雲が出るように。雨雲は降る量に比例して、小雨や天気雨では明るい薄い膜、どしゃぶりや嵐では黒ずんだ分厚い雲になります (シーン全体の雨も同じ)。シーンビューの空にも出ます",
+          "en": "Rain clouds now appear in the sky above drawn rain. They follow the amount falling: a bright thin film for drizzle or a sunshower, thick blackish clouds for a downpour or storm (whole-scene rain too). They show in the Scene view sky as well"
+        },
+        {
+          "ja": "雨雲の外の空は暗くならないように (前はカメラが雨雲に入ると空全体が暗くなっていました)",
+          "en": "The sky outside rain clouds no longer darkens (before, the whole sky got dark when the camera entered a rain cloud)"
+        }
+      ]
+    },
+    {
       "version": "0.0.18",
       "date": "2026-11-26",
       "items": [

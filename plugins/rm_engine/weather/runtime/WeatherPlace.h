@@ -16,6 +16,8 @@
 #include "core/RuntimeRegistry.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 
+#include <vector>
+
 namespace rm::weather {
 
 // RuntimeRegistry の口: 項目は WeatherPlaceInfo (static)。
@@ -28,12 +30,24 @@ struct WeatherPlace {
     float local = 0;
 };
 
+// カメラのまわりの雲の地図 (空に描く。kCloudMapCells x kCloudMapCells マス、1 マス kCloudMapCell m: Weather.h)。
+// 行が z (z の小さい行から)。マスの真ん中のまわり 1 マス四方の、雲を塗った割合 (shares: 0 .. 1)・塗った所の
+// 雲の量 (amounts: 0 .. 1)・その場所だけ降る量 (rains: 0 .. 1: 雨雲)。最初のマスの真ん中が (firstX, firstZ)。
+// 空のまま: 地図が無い (空の雲はどこも同じ)。
+struct PlaceClouds {
+    float firstX = 0, firstZ = 0;
+    std::vector<float> shares, amounts, rains;
+};
+
 struct WeatherPlaceInfo {
     // `center` を真ん中に、真上から見て `step` m おきに `count` x `count` 点 (高さは center.y) の降り方を
     // `out` に (行が z、列が x。z の小さい行から)。
     void (*grid)(const game_production::Scene& scene, Vec3 center, float step, int count, WeatherPlace* out) = nullptr;
     // シーンのどこかで、その場所だけ降る量 (local) の一番多いもの (0 .. 1)。粒をどれだけ用意するか。null: 0。
     float (*mostLocal)(const game_production::Scene& scene) = nullptr;
+    // カメラ `eye` のまわりの雲の地図を `out` に (描いた雲も雨雲も無い: 空のまま)。null: 地図は無い。
+    // 空を描くたびに呼ぶ (エディターのシーンビューでも)。
+    void (*clouds)(const game_production::Scene& scene, Vec3 eye, PlaceClouds& out) = nullptr;
 };
 
 // 降水量の倍率の一番大きいもの (答える者はこれまでにする): 粒はこの倍率のぶん (と、その場所だけ降る量の

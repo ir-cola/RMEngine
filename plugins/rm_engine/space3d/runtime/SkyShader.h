@@ -70,8 +70,10 @@ std::string AssembleSky(std::string_view code, std::string_view fileName);
 //             param[4] rgb: 地平線より下の地面、a: 夕焼けのにじみ (0 .. 1)
 //             param[5] xy: 風が雲をどれだけ運んだか (ワールド x, z)、zw: 今の風 (m/s)
 //             param[6] 雲の地図 (CloudMapPlace): xy: 最初のマスの真ん中、z: 1 マスの一辺、w: マスの数 (0: 無し)
-//             skyClouds (t6): 雲の地図。マスごとの r: 雲を塗った割合 (0 .. 1)、g: 塗った所の雲の量 (0 .. 1)。
-//             その向きの雲の量 = lerp(param[1].x, g, r x CloudMapAt の weight)
+//             param[7] x: 降る量 (0 .. 1: 雨雲)、y: そのうち雪の割合
+//             skyClouds (t6): 雲の地図。マスごとの r: 雲の量 (0 .. 1)、g: 降る量 (0 .. 1)。
+//             その向きの雲の量 = lerp(param[1].x, r, CloudMapAt の weight)、降る量 = lerp(param[7].x, g, weight)。
+//             雨雲は降る量に比例して濃く・暗く・厚くなる 1 枚の低い層 (小雨: 明るい薄い膜 / 嵐: 黒ずんだ分厚い層)
 //   Space     param[0] x: 星、y: 星雲、z: 天の川、w: 1 = 太陽を描く
 //             param[1] rgb: 星雲の 1 つ目の色、param[2] rgb: その 2 つ目の色
 //   Panorama  sky0: 周り 1 周の絵 (正距円筒: 360 x 180 度)、param[0] x: 回した量 (ラジアン)
