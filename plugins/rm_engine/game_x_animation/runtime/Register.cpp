@@ -27,6 +27,7 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     // スクリプト: クリップを流す / 骨の位置 (sdk/RMAnim.h)。
     registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorPart());
     registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorRulesPart());
+    registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorRootPart());
 }
 
 }  // namespace rm::game_x_animation

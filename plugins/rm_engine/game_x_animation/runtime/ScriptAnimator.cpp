@@ -143,6 +143,39 @@ int PlayStateOf(void* ctx, uint64_t id, const char* state, float fade) {
 }
 constexpr RmAnimRulesApi kRules{&SetParam, &Param, &State, &StateTimeOf, &PlayStateOf};
 
+// ルートモーションとレイヤーの重み。
+void SetRootUse(void* ctx, uint64_t id, int use) {
+    const Found f = AnimatorOf(ctx, id);
+    if (f.a && use >= 0 && use <= static_cast<int>(RootMotionUse::Script)) f.a->rootMotion = static_cast<RootMotionUse>(use);
+}
+int RootUse(void* ctx, uint64_t id) {
+    const Found f = AnimatorOf(ctx, id);
+    return f.a ? static_cast<int>(f.a->rootMotion) : 0;
+}
+int RootDeltaOf(void* ctx, uint64_t id, float* move) {
+    const Found f = AnimatorOf(ctx, id);
+    const Vec3 d = f.a && f.a->run ? f.a->run->rootWorld : Vec3{0, 0, 0};
+    if (move) {
+        move[0] = d.x;
+        move[1] = d.y;
+        move[2] = d.z;
+    }
+    return f.a && f.a->run && f.a->run->rootActive ? 1 : 0;
+}
+float RootTurnOf(void* ctx, uint64_t id) {
+    const Found f = AnimatorOf(ctx, id);
+    return f.a && f.a->run ? f.a->run->root.turn * 57.29577951308232f : 0.f;
+}
+void SetLayerWeightOf(void* ctx, uint64_t id, const char* layer, float weight) {
+    const Found f = AnimatorOf(ctx, id);
+    if (f.a) SetLayerWeight(RunOf(*f.a, f.id), layer ? layer : "", weight);
+}
+float LayerWeightOfApi(void* ctx, uint64_t id, const char* layer) {
+    const Found f = AnimatorOf(ctx, id);
+    return f.a && f.a->run ? LayerWeightOf(*f.a->run, layer ? layer : "") : 0.f;
+}
+constexpr RmAnimRootApi kRoot{&SetRootUse, &RootUse, &RootDeltaOf, &RootTurnOf, &SetLayerWeightOf, &LayerWeightOfApi};
+
 constexpr RmAnimApi kTable{&Has,   &Play, &HasClip, &ClipName, &SetPaused, &Paused, &Speed,      &SetSpeed,
                            &Loop,  &SetLoop, &Time, &SetTime,  &ClipDuration, &ClipEnded, &Bone};
 
@@ -155,6 +188,11 @@ const game_production::ScriptApiPart& ScriptAnimatorPart() {
 
 const game_production::ScriptApiPart& ScriptAnimatorRulesPart() {
     static const game_production::ScriptApiPart part{RM_PART_ANIM_RULES, RM_PART_ANIM_RULES_VERSION, &kRules};
+    return part;
+}
+
+const game_production::ScriptApiPart& ScriptAnimatorRootPart() {
+    static const game_production::ScriptApiPart part{RM_PART_ANIM_ROOT, RM_PART_ANIM_ROOT_VERSION, &kRoot};
     return part;
 }
 

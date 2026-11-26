@@ -11,6 +11,10 @@
 #include "rm_engine/game_x_animation/runtime/AnimatorPoser.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 #include "rm_engine/game_x_animation/runtime/AnimationSystem.h"
+#include "rm_engine/game_x_animation/runtime/RootMotionSink.h"
+#include "rm_engine/animation3d/runtime/RootMotion.h"
+#include "rm_engine/space3d/runtime/View.h"
+#include "core/RuntimeRegistry.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_production/runtime/Systems.h"
@@ -575,4 +579,124 @@ RM_TEST(GameAnim_SystemsPlayTheSampleAndAttach) {
         CHECK(top->m[3][1] > 0.5f);
     }
     fs::remove_all(dir, ec);
+}
+
+// --- ルートモーション (docs/ANIMATION.md 7-1) ---
+
+namespace {
+
+// 根 Root が 1 秒で Z へ 1 m 進む「Walk」(ルートモーションを使う) と、動かない「Still」。
+game_x_3d::SkinnedModel WalkingBody() {
+    game_x_3d::SkinnedModel m = TurningArm();
+    auto clips = std::make_shared<std::vector<space3d::Clip>>();
+    space3d::Clip walk = NamedClip("Walk", 1);
+    space3d::BoneTrack t;
+    t.bone = "Root";
+    for (uint32_t i = 0; i < walk.frames; ++i) t.t.push_back({0, 0, static_cast<float>(i) / static_cast<float>(walk.frames - 1)});
+    walk.tracks.push_back(t);
+    walk.root.enabled = true;
+    clips->push_back(walk);
+    clips->push_back(NamedClip("Still", 1));
+    return {m.skin, clips};
+}
+
+std::vector<Vec3> g_taken;
+bool g_takes = false;
+bool TakeForTest(Scene&, int, Vec3 move, float) {
+    g_taken.push_back(move);
+    return g_takes;
+}
+
+Vec3 Add(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+bool NearV(Vec3 a, Vec3 b, float eps = 1e-3f) { return Near(a.x, b.x, eps) && Near(a.y, b.y, eps) && Near(a.z, b.z, eps); }
+
+}  // namespace
+
+RM_TEST(GameAnim_RootMotionTransform) {
+    space3d::Transform t;
+    t.position = {1, 2, 3};
+    t.rotation = {0, 30, 0};
+    const space3d::Transform r = RootMotionTransform(t, space3d::Mat4{}, {1, 0, 0}, 1.5707963f);
+    CHECK(NearV(r.position, {2, 2, 3}));
+    // 自分の Y のまわりに、クリップの根と同じ向きに 90 度 (前が、前の向きで右へ回る)
+    const Vec3 fwd = space3d::TransformDirection(space3d::LocalMatrix(r), {0, 0, 1});
+    CHECK(NearV(fwd, space3d::TransformDirection(space3d::LocalMatrix(t), animation3d::RotateY({0, 0, 1}, 1.5707963f))));
+    CHECK(NearV(r.scale, t.scale));
+    // 位置を書かない (物理のキャラクターが受け取った)
+    CHECK(NearV(RootMotionTransform(t, space3d::Mat4{}, {5, 0, 0}, 0.f, false).position, t.position));
+}
+
+RM_TEST(GameAnim_RootMotionMovesTheEntity) {
+    const game_x_3d::SkinnedModel m = WalkingBody();
+    const reflect::TypeDesc& transform = reflect::TypeOf<space3d::Transform>();
+    const reflect::TypeDesc& mesh = reflect::TypeOf<game_x_3d::MeshRenderer>();
+    const reflect::TypeDesc& animator = reflect::TypeOf<Animator>();
+    Scene scene;
+    scene.SetComponentTypes({&transform, &mesh, &animator});
+    const int body = scene.Create("body");
+    CHECK(scene.AddComponent(body, transform) && scene.AddComponent(body, mesh) && scene.AddComponent(body, animator));
+    auto& mr = *static_cast<game_x_3d::MeshRenderer*>(scene.Find(body)->FindComponent(mesh.name)->value.Get());
+    mr.shape = game_x_3d::MeshShape::Model;
+    mr.model.guid = "e0e0e0e0f1f1f1f1a2a2a2a2b3b3b3b3";
+    auto& an = *static_cast<Animator*>(scene.Find(body)->FindComponent(animator.name)->value.Get());
+    an.clip = "Walk";
+    auto& at = *static_cast<space3d::Transform*>(scene.Find(body)->FindComponent(transform.name)->value.Get());
+    at.rotation = {0, 90, 0};
+    at.scale = {2, 2, 2};
+    // (モデルはもう読んだものとしてつなぐ: ファイルを読まない)
+    AnimatorRun& run = RunOf(an, body);
+    run.model = mr.model.guid;
+    BindModel(run, m.skin, m.clips);
+
+    static const game_production::SystemInfo kAnim{"アニメーション", game_production::SystemPhase::Frame, 100, &RunAnimation};
+    const game_production::SystemInfo* systems[] = {&kAnim};
+    game_production::SystemRunner runner;
+    runner.SetSystems(systems);
+    RuntimeRegistry registry;
+    runner.SetRegistry(&registry);
+
+    // 動かす: 0.5 秒で 0.5 m (エンティティの向きと大きさで)。姿勢の根は動かない
+    const space3d::Transform before = at;
+    runner.Advance(scene, 0.5, 0);
+    const Vec3 want = space3d::TransformDirection(space3d::LocalMatrix(before), {0, 0, 0.5f});
+    CHECK(NearV(at.position, Add(before.position, want)));
+    CHECK(Near(std::hypot(want.x, want.z), 1.f));  // (大きさ 2)
+    CHECK(an.run && NearV(an.run->rootWorld, want) && an.run->rootActive);
+    CHECK(an.run && Near(an.run->player.CurrentPose()[0].t.z, 0.f));
+    CHECK(DrivenByRootMotion(scene, body));
+    // その場で: 取り出して捨てる
+    an.rootMotion = RootMotionUse::InPlace;
+    const Vec3 p1 = at.position;
+    runner.Advance(scene, 0.25, 0);
+    CHECK(NearV(at.position, p1) && !DrivenByRootMotion(scene, body));
+    // スクリプトに渡す: 動かさず、動いた分だけ持つ
+    an.rootMotion = RootMotionUse::Script;
+    runner.Advance(scene, 0.25, 0);
+    CHECK(NearV(at.position, p1) && an.run && NearV(an.run->rootWorld, space3d::TransformDirection(space3d::LocalMatrix(at), {0, 0, 0.25f})));
+    // 行き先 (物理のキャラクター) が受け取ると、位置は書かない
+    static const RootMotionSinkInfo kSink{&TakeForTest};
+    registry.Contribute(kRootMotionPoint, kSink);
+    an.rootMotion = RootMotionUse::Move;
+    g_taken.clear();
+    g_takes = true;
+    runner.Advance(scene, 0.25, 0);
+    CHECK(g_taken.size() == 1 && g_taken.size() == 1 && std::hypot(g_taken[0].x, g_taken[0].z) > 0.4f);
+    CHECK(NearV(at.position, p1));
+    // 動かすクリップが止まった: 1 度だけ 0 を渡す (キャラクターが滑り続けない)、その後は尋ねない
+    an.clip = "Still";
+    runner.Advance(scene, 0.25, 0);
+    CHECK(g_taken.size() == 2 && NearV(g_taken[1], {0, 0, 0}));
+    runner.Advance(scene, 0.25, 0);
+    CHECK(g_taken.size() == 2);
+    g_takes = false;
+}
+
+RM_TEST(GameAnim_LayerWeightFromScript) {
+    AnimatorRun run;
+    SetLayerWeight(run, "上半身", 0.3f);
+    CHECK(Near(LayerWeightOf(run, "上半身"), 0.3f));
+    SetLayerWeight(run, "上半身", 2.f);  // (1 まで)
+    CHECK(Near(LayerWeightOf(run, "上半身"), 1.f));
+    SetLayerWeight(run, "上半身", -1.f);  // 外す
+    CHECK(run.layerWeights.empty() && Near(LayerWeightOf(run, "上半身"), 0.f));
 }

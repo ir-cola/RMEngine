@@ -9,5 +9,7 @@ namespace rm::game_x_animation {
 const game_production::ScriptApiPart& ScriptAnimatorPart();
 // 状態とルール (rm::Animator::SetFloat / SetTrigger / State / Play)。
 const game_production::ScriptApiPart& ScriptAnimatorRulesPart();
+// ルートモーションとレイヤーの重み (rm::Animator::SetRootMotion / RootDelta / RootTurn / SetLayerWeight)。
+const game_production::ScriptApiPart& ScriptAnimatorRootPart();
 
 }  // namespace rm::game_x_animation

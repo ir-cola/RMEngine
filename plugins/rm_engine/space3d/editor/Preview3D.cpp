@@ -26,8 +26,7 @@ Preview3D::Preview3D() {
     camera_.distance = 6;
 }
 
-bool Preview3D::Draw(ui::Context& c, const ui::Rect& r, platform::Gfx& gfx, std::string_view id, const Content& content) {
-    if (r.w < 8 || r.h < 8) return true;
+Renderer* Preview3D::Gpu(platform::Gfx& gfx) {
     if (gfx.Generation() != generation_) {
         // 新しいデバイス (GPU が失われた): 古いデバイスで作ったものは全部捨てる。
         renderer_ = Renderer{};
@@ -42,7 +41,12 @@ bool Preview3D::Draw(ui::Context& c, const ui::Rect& r, platform::Gfx& gfx, std:
         std::string err;
         if (!renderer_.Init(gfx.D3D(), &err)) log::Error("プレビュー: {}", err);
     }
-    if (!renderer_.Ready()) return false;
+    return renderer_.Ready() ? &renderer_ : nullptr;
+}
+
+bool Preview3D::Draw(ui::Context& c, const ui::Rect& r, platform::Gfx& gfx, std::string_view id, const Content& content) {
+    if (r.w < 8 || r.h < 8) return true;
+    if (!Gpu(gfx)) return false;
 
     // マウス: 左ドラッグで回し、右 / 中ドラッグで動かし、ホイールで近づく。
     const ui::Context::ButtonResult b = c.ButtonBehavior(c.MakeId(id), r);
@@ -87,6 +91,14 @@ bool Preview3D::Draw(ui::Context& c, const ui::Rect& r, platform::Gfx& gfx, std:
     f.projection = camera_.ProjectionMatrix(r.w / r.h);
     f.clear = theme::SceneBackground();
     f.lines = grid_;
+    if (content.gridShift.x != 0 || content.gridShift.z != 0) {
+        shifted_ = grid_;
+        for (LineVertex& v : shifted_) {
+            v.position.x += content.gridShift.x;
+            v.position.z += content.gridShift.z;
+        }
+        f.lines = shifted_;
+    }
     f.meshes = content.meshes;
     f.extras = content.extras;
     // Direct2D のここまでの描画を先に GPU へ送る。そのあと Direct3D が自分の画面に描く。

@@ -1,12 +1,13 @@
 // 3D アニメーション (plugins/rm_engine/animation3d/runtime) のテスト: クリップのサンプル (補間・ループの継ぎ目・
 // 止める・四元数の反対側・トラックの無い骨)・名前でつなぐ (日本語・同じ名前)・混ぜる (クロスフェードと重みの和)・
-// 親の順の骨の行列・休みの姿勢でスキンの行列が単位行列・時刻を進める・通ったイベント・Player。
+// 親の順の骨の行列・休みの姿勢でスキンの行列が単位行列・時刻を進める・通ったイベント・Player・ルートモーション。
 
 #include "Test.h"
 
 #include "rm_engine/animation3d/runtime/ClipTime.h"
 #include "rm_engine/animation3d/runtime/Player.h"
 #include "rm_engine/animation3d/runtime/Pose.h"
+#include "rm_engine/animation3d/runtime/RootMotion.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <cmath>
@@ -546,4 +547,185 @@ RM_TEST(Anim3d_PlayerCrossfadeAndEvents) {
     // 範囲の外の番号も止める
     p.Play(5);
     CHECK(p.ClipIndex() == -1);
+}
+
+// --- ルートモーション (docs/ANIMATION.md 7-1。RootMotion.h) ---
+
+namespace {
+
+// 根 (腰) が 1 秒で Z へ `meters` 進むクリップ (刻み 4: サンプル 5 つ)。腰の下に腕 1 本。
+Clip WalkClip(const char* name, float meters) {
+    Clip c = MakeClip(1.f, 4.f);
+    c.name = name;
+    BoneTrack t;
+    t.bone = "腰";
+    for (uint32_t i = 0; i < c.frames; ++i) t.t.push_back({0, 1, meters * static_cast<float>(i) / static_cast<float>(c.frames - 1)});
+    c.tracks.push_back(t);
+    c.root.enabled = true;
+    return c;
+}
+
+// 1 秒で前へ進みながら Y のまわりに 90 度曲がるクリップ (根の位置は四分円)。
+Clip TurnClip() {
+    Clip c = MakeClip(1.f, 8.f);
+    c.name = "曲がる";
+    BoneTrack t;
+    t.bone = "腰";
+    for (uint32_t i = 0; i < c.frames; ++i) {
+        const float a = 0.5f * kPi * static_cast<float>(i) / static_cast<float>(c.frames - 1);
+        t.t.push_back({1.f - std::cos(a), 1, std::sin(a)});
+        t.r.push_back(RotY(90.f * static_cast<float>(i) / static_cast<float>(c.frames - 1)));
+    }
+    c.tracks.push_back(t);
+    c.root.enabled = true;
+    return c;
+}
+
+bool NearDelta(const RootDelta& a, const RootDelta& b, float eps = 1e-3f) { return NearV(a.move, b.move, eps) && Near(a.turn, b.turn, eps); }
+
+}  // namespace
+
+RM_TEST(Anim3d_RootBoneAndYaw) {
+    Skeleton s = Chain();
+    CHECK(RootBone(s, "") == 0);
+    CHECK(RootBone(s, "腰") == 0);
+    CHECK(RootBone(s, "腕") == -1);  // 親がある骨は選べない
+    CHECK(RootBone(s, "無い") == -1);
+    // 自動は「(骨の外)」を飛ばす
+    Skeleton t;
+    t.bones.push_back(MakeBone("(骨の外)", -1, {}));
+    t.bones.push_back(MakeBone("Hips", -1, {}));
+    CHECK(RootBone(t, "") == 1);
+    // Y のまわりのひねりだけを取る (傾きは見ない)
+    CHECK(Near(YawOf(RotY(90)), kPi / 2));
+    CHECK(Near(YawOf(RotY(-30)), -kPi / 6));
+    CHECK(Near(YawOf(RotY(40) * QuatAxisAngle({1, 0, 0}, 0.5f)), 40.f * kPi / 180.f));
+    CHECK(NearV(RotateY({0, 0, 1}, kPi / 2), QuatRotate(RotY(90), {0, 0, 1})));
+}
+
+RM_TEST(Anim3d_RootDeltaStraightAndSeams) {
+    const Skeleton s = Chain();
+    const Clip walk = WalkClip("歩く", 2.f);  // 2 m / 秒
+    const ClipBinding b = BindClip(walk, s);
+    const ClipRootMotion& set = walk.root;
+    // まっすぐ: 0.25 秒で 0.5 m
+    CHECK(NearDelta(RootDeltaBetween(walk, b, s, 0, set, 0.f, AdvanceTime(0.f, 0.25f, 1, 1, true), 1, true), {{0, 0, 0.5f}, 0}));
+    // ループの継ぎ目をまたぐ: 0.75 → 0.25 で 1 m (根が始めに戻る所で飛ばない)
+    CHECK(NearDelta(RootDeltaBetween(walk, b, s, 0, set, 0.75f, AdvanceTime(0.75f, 0.5f, 1, 1, true), 1, true), {{0, 0, 1.f}, 0}));
+    // 1 フレームで何周も: 2.5 秒で 5 m
+    CHECK(NearDelta(RootDeltaBetween(walk, b, s, 0, set, 0.f, AdvanceTime(0.f, 2.5f, 1, 1, true), 1, true), {{0, 0, 5.f}, 0}));
+    // 逆再生: 0.25 → 0.75 (継ぎ目をまたいで戻る) で -1 m
+    CHECK(NearDelta(RootDeltaBetween(walk, b, s, 0, set, 0.25f, AdvanceTime(0.25f, 0.5f, -1, 1, true), -1, true), {{0, 0, -1.f}, 0}));
+    // ループでない: 端で止まる
+    CHECK(NearDelta(RootDeltaBetween(walk, b, s, 0, set, 0.75f, AdvanceTime(0.75f, 1.f, 1, 1, false), 1, false), {{0, 0, 0.5f}, 0}));
+    // 横を外すと動かない・縦は既定で取らない
+    ClipRootMotion noH = set;
+    noH.horizontal = false;
+    CHECK(NearDelta(RootSegment(walk, b, s, 0, noH, 0, 1), {}));
+    CHECK(NearDelta(RootTotals(walk, b, s, 0, set), {{0, 0, 2.f}, 0}));
+    // 使わない設定・根が無い: 0
+    ClipRootMotion off = set;
+    off.enabled = false;
+    CHECK(NearDelta(RootSegment(walk, b, s, 0, off, 0, 1), {}));
+    CHECK(NearDelta(RootSegment(walk, b, s, -1, set, 0, 1), {}));
+}
+
+RM_TEST(Anim3d_RootDeltaTurningClip) {
+    const Skeleton s = Chain();
+    const Clip turn = TurnClip();
+    const ClipBinding b = BindClip(turn, s);
+    // 1 回で 90 度回り、モデルの空間で (1, 0, 1) へ
+    const RootDelta whole = RootTotals(turn, b, s, 0, turn.root);
+    CHECK(NearDelta(whole, {{1, 0, 1}, kPi / 2}, 2e-3f));
+    // 半分ずつ足しても同じ (後の半分は、前の半分で回った向きから見たもの)
+    const RootDelta first = RootSegment(turn, b, s, 0, turn.root, 0.f, 0.5f);
+    const RootDelta second = RootSegment(turn, b, s, 0, turn.root, 0.5f, 1.f);
+    CHECK(Near(first.turn, kPi / 4, 2e-3f));
+    CHECK(NearDelta(AppendDelta(first, second), whole, 2e-3f));
+    // 後の半分を自分の向きから見ると、前へ進んで右 (+X) へ寄る (左手系: X が右、Z が前)
+    CHECK(second.move.z > 0.3f && second.move.x > 0.05f);
+    // 回転を取らないと、モデルの空間のまま
+    ClipRootMotion noTurn = turn.root;
+    noTurn.turn = false;
+    CHECK(NearDelta(RootSegment(turn, b, s, 0, noTurn, 0.f, 1.f), {{1, 0, 1}, 0}, 2e-3f));
+    // 2 周 (ループ) すると 180 度
+    CHECK(Near(RootDeltaBetween(turn, b, s, 0, turn.root, 0.f, AdvanceTime(0.f, 2.f, 1, 1, true), 1, true).turn, kPi, 4e-3f));
+}
+
+RM_TEST(Anim3d_StripRootKeepsTilt) {
+    Skeleton s = Chain();
+    Pose pose = RestPose(s);
+    BoneTRS start;
+    start.t = {0, 1, 0};
+    const Quat tilt = QuatAxisAngle({1, 0, 0}, 0.4f);
+    pose[0].t = {3, 1.2f, 4};
+    pose[0].r = RotY(70) * tilt;
+    ClipRootMotion set;
+    set.enabled = true;
+    StripRoot(pose, 0, set, start);
+    CHECK(NearV(pose[0].t, {0, 1.2f, 0}));        // 横だけ始めの値に (縦はそのまま)
+    CHECK(SameRotation(pose[0].r, tilt));         // Y のひねりだけ外れ、傾きは残る
+    CHECK(NearV(pose[1].t, s.bones[1].rest.t));   // ほかの骨はそのまま
+    set.vertical = true;
+    StripRoot(pose, 0, set, start);
+    CHECK(Near(pose[0].t.y, 1.f));
+}
+
+RM_TEST(Anim3d_MixRootDelta) {
+    const RootDelta a{{0, 0, 1}, 0.2f}, b{{0, 0, 3}, 0.f};
+    const RootDelta ds[] = {a, b};
+    const float half[] = {1, 1};
+    CHECK(NearDelta(MixRootDelta(ds, half), {{0, 0, 2}, 0.1f}));
+    const float onlyB[] = {0, 2};
+    CHECK(NearDelta(MixRootDelta(ds, onlyB), b));
+    const float none[] = {0, -1};
+    CHECK(NearDelta(MixRootDelta(ds, none), {}));
+}
+
+RM_TEST(Anim3d_PlayerRootMotion) {
+    SkinData skin;
+    skin.skeleton = Chain();
+    {
+        std::vector<Mat4> model;
+        ModelMatrices(skin.skeleton, RestPose(skin.skeleton), model);
+        for (const Mat4& m : model) skin.inverseBind.push_back(*Inverse(m));
+    }
+    std::vector<Clip> clips{WalkClip("歩く", 1.f), WalkClip("走る", 3.f), MakeClip(1.f, 4.f)};
+    clips[2].name = "待つ";  // (ルートモーションなし)
+    Player p;
+    p.Bind(skin.skeleton, clips);
+    std::vector<BoneMatrix> bones;
+    // 歩く: 0.5 秒で 0.5 m。姿勢の根は始めの所のまま (その場で歩く)
+    p.Play(0);
+    p.Tick(0.5f);
+    CHECK(NearDelta(p.RootStep(), {{0, 0, 0.5f}, 0}) && p.RootActive());
+    p.Evaluate(skin, bones);
+    CHECK(NearV(p.CurrentPose()[0].t, {0, 1, 0}));
+    // 消さないと、根はクリップどおり
+    p.stripRoot = false;
+    p.Evaluate(skin, bones);
+    CHECK(NearV(p.CurrentPose()[0].t, {0, 1, 0.5f}));
+    p.stripRoot = true;
+    // 時間のつまみは動かさない
+    p.SetTime(0.9f);
+    CHECK(NearDelta(p.RootStep(), {}));
+    // 混ぜる: 歩く (1 m/s) と走る (3 m/s) を半分ずつ → 2 m/s (足をそろえる: 割合は混ぜた長さで進む)
+    const Player::Motion mix[] = {{0, 1}, {1, 1}};
+    p.Play(0);
+    p.SetBlend(mix);
+    p.Tick(0.25f);
+    CHECK(NearDelta(p.RootStep(), {{0, 0, 0.5f}, 0}));
+    p.SetBlend({});
+    // フェード: 2 m/s で歩いている所から、動かない「待つ」へ 1 秒で。半分の所の 0.5 秒は 2 x 0.5 x (1 - 重み)
+    p.Play(1);
+    p.Tick(0.5f);  // 走る: 1.5 m (3 m/s)
+    CHECK(NearDelta(p.RootStep(), {{0, 0, 1.5f}, 0}));
+    p.Play(2, 1.f);
+    p.Tick(0.5f);
+    CHECK(Near(p.FadeWeight(), 0.5f));
+    CHECK(NearDelta(p.RootStep(), {{0, 0, 3.f * 0.5f * 0.5f}, 0}) && p.RootActive());
+    p.Tick(0.5f);  // フェードが終わった: 動かない
+    CHECK(NearDelta(p.RootStep(), {}) && !p.RootActive());
+    CHECK(p.RootBoneOf(0) == 0 && p.RootBoneOf(2) == -1);
+    CHECK(NearDelta(p.RootTotalsOf(1), {{0, 0, 3.f}, 0}));
 }

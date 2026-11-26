@@ -15,5 +15,16 @@
   "数値": "Number",
   "名前と一緒に届く数": "A number sent with the name",
   "文字": "Text",
-  "名前と一緒に届く文字": "Text sent with the name"
+  "名前と一緒に届く文字": "Text sent with the name",
+  "ルートモーション": "Root motion",
+  "使う": "Use",
+  "根の骨の動きを姿勢から取り出して、エンティティを動かします (アニメーターの「ルートモーション」の欄で、動かす / その場で / スクリプトに渡す を選べます)": "Takes the root bone's motion out of the pose and moves the entity (the animator's Root motion field chooses Move / In place / Give to script)",
+  "根の骨": "Root bone",
+  "動きを取り出す骨 (親の無い骨だけ)。空: 自動 (親の無い骨のうち「(骨の外)」でない最初のもの)": "The bone whose motion is taken out (only bones without a parent). Empty: automatic (the first parentless bone that is not \"(骨の外)\")",
+  "横の移動 (XZ)": "Horizontal movement (XZ)",
+  "前後・左右の動きを取り出します": "Takes out forward, backward and sideways movement",
+  "縦の移動 (Y)": "Vertical movement (Y)",
+  "上下の動きを取り出します (物理のキャラクターがあるときは使いません: 重力とジャンプは物理)": "Takes out up and down movement (not used with a physics character: gravity and jumping belong to physics)",
+  "Y のまわりの回転": "Rotation around Y",
+  "向きの変わり (曲がる・振り向く) を取り出して、エンティティを回します": "Takes out changes of facing (turning, looking back) and turns the entity"
 }

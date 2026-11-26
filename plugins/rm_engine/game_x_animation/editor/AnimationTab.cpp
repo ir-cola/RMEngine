@@ -13,6 +13,7 @@
 #include "rm_engine/animation/runtime/Controller.h"
 #include "rm_engine/animation/runtime/Rules.h"
 #include "rm_engine/game_x_animation/editor/Connector.h"
+#include "rm_engine/game_x_animation/editor/TabPreview.h"
 #include "rm_engine/game_x_animation/runtime/Animator.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 
@@ -206,22 +207,31 @@ public:
         }
         const AnimController& ctl = *controller_;
         layer_ = std::min(layer_, ctl.layers.size());
-        AnimatorRun* run = host.playing ? target->run : nullptr;
-        const bool live = run && run->rules;
         entity_ = target->entity;
 
-        // 帯: ファイルの名前と、Play 中の今の状態。
+        // 帯: ファイルの名前と、今の状態 (Play 中はゲームの、止まっているときはプレビューの)。
         const ui::Rect top{r.x + kPad, r.y + kPad, r.w - 2 * kPad, kHead};
         Label(c, {top.x, top.y, top.w * 0.4f, top.h}, host.host.AssetFile(ref_).filename().wstring(), theme::Text, true);
+        // タブの中のプレビュー (docs/ANIMATION.md 7-1): 止まっていても、ここでルールが動く。
+        float below = top.Bottom() + 4;
+        if (r.h >= 320 && target->animator) {
+            const float h = std::clamp(r.h * 0.36f, 150.f, 340.f);
+            preview_.Draw(c, {r.x + kPad, below, r.w - 2 * kPad, h}, host, target->entity, *target->animator, rulesShared_, host.playing ? target->run : nullptr);
+            below += h + 4;
+        }
+        AnimatorRun* run = host.playing ? target->run : preview_.Run();
+        const bool live = run && run->rules;
         std::wstring now;
         if (live) {
-            now = TrF(L"今: {} ・ t {:.2f} ・ ルール {}", Utf8ToWide(std::string(StateName(*run))), StateFraction(*run), run->rule >= 0 ? std::to_wstring(run->rule + 1) : L"-");
+            now = TrF(L"{}: {} ・ t {:.2f} ・ ルール {} ・ 動き {:.2f} m/s ・ 回る {:.0f}°/s", host.playing ? Tr(L"今") : Tr(L"プレビュー"),
+                      Utf8ToWide(std::string(StateName(*run))), StateFraction(*run), run->rule >= 0 ? std::to_wstring(run->rule + 1) : L"-", preview_.Speed(),
+                      preview_.TurnRate());
         } else {
             now = host.playing ? Tr(L"Play 中: このアニメーターはまだ動いていません (モデルを読んでいます)") : Tr(L"Play すると、今の状態と当たった行が光ります");
         }
         Label(c, {top.x + top.w * 0.4f, top.y, top.w * 0.6f, top.h}, now, live ? theme::Accent : theme::TextDim);
 
-        const ui::Rect view{r.x, top.Bottom() + 4, r.w, r.Bottom() - top.Bottom() - 4};
+        const ui::Rect view{r.x, below, r.w, r.Bottom() - below};
         const float off = w::BeginScroll(c, "anim_tab.scroll", view, content_);
         const float start = view.y + kPad - off;
         float y = start;
@@ -242,6 +252,7 @@ private:
         AssetRef rules;
         std::string name;
         AnimatorRun* run = nullptr;  // Play 中のもの (無い: null)
+        const Animator* animator = nullptr;
     };
 
     // 今のレイヤーの、Play 中の様子 (無い: null の欄)。
@@ -276,7 +287,7 @@ private:
             const game_production::Component* comp = e ? e->FindComponent(type) : nullptr;
             if (!comp || !comp->Known()) continue;
             const auto& a = *static_cast<const Animator*>(comp->value.Get());
-            return Target{id, a.rules, e->data.name, a.run.get()};
+            return Target{id, a.rules, e->data.name, a.run.get(), &a};
         }
         return std::nullopt;
     }
@@ -299,6 +310,7 @@ private:
             return;
         }
         compiled_ = animation::Compile(*c);
+        rulesShared_ = std::make_shared<const animation::CompiledController>(compiled_);  // (プレビューの再生が読む)
         controller_ = std::make_shared<const AnimController>(std::move(*c));
     }
 
@@ -954,6 +966,8 @@ private:
     std::string loadError_;
     std::shared_ptr<const AnimController> controller_;
     animation::CompiledController compiled_;
+    std::shared_ptr<const animation::CompiledController> rulesShared_;
+    TabPreview preview_;
     std::map<std::string, std::string> texts_;  // 数の欄の打っている文字
     std::map<std::string, Vec2> markers_;       // 混ぜる図の試す印 (レイヤー/状態ごと)
     size_t layer_ = 0;                          // 今のタブ (0: 体)

@@ -76,6 +76,17 @@ struct AnimatorRun {
     std::vector<space3d::BoneMatrix> bones;
     uint64_t version = 0;  // 0: まだ骨の行列が無い
     bool moving = false;
+
+    // ルートモーション (段階 5。docs/ANIMATION.md 7-1)。体だけが動かす (レイヤーは根を消すだけ)。
+    animation3d::RootDelta root;  // 直前の StepAnimator で根が動いた分 (モデルの空間。止まっている: 0)
+    bool rootActive = false;      // ... 動かすクリップに重みがあった
+    Vec3 rootWorld{0, 0, 0};      // システムがワールドにしたもの (スクリプトの RootDelta・タブの「今」)
+    float rootDt = 0;             // ... その秒数
+    bool rootMoved = false;       // 前のフレームに動かした (止まったら 1 度だけ 0 を渡す)
+    float rootTravel = 0;         // 動かした横の距離の合計 (システム。1 度だけ知らせる)
+    bool toldRoot = false;
+    // スクリプトの SetLayerWeight (レイヤーの名前 → 重み。ルールの重みより強い。消すと元に戻る)。
+    std::vector<std::pair<std::string, float>> layerWeights;
 };
 
 // 部品のゲームの間の再生 (無い・別のエンティティから写されたものなら新しく作る)。
@@ -113,5 +124,9 @@ std::string_view StateName(const AnimatorRun& run);
 // パラメーター (ルールを読む前なら、読んだときに入れる)。無い名前: false (読む前は true)。
 bool SetRuleParam(AnimatorRun& run, std::string_view name, float value, bool trigger);
 float RuleParam(const AnimatorRun& run, std::string_view name);
+// レイヤーの重みをスクリプトから (数でない・負の数: 外してルールの重みに戻す)。無い名前でも覚えておく (読んだら効く)。
+void SetLayerWeight(AnimatorRun& run, std::string_view layer, float weight);
+// 今のレイヤーの重み (無い名前: 0)。
+float LayerWeightOf(const AnimatorRun& run, std::string_view layer);
 
 }  // namespace rm::game_x_animation

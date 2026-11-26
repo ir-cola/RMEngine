@@ -265,7 +265,8 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     New-Item -ItemType Directory -Force $models | Out-Null
     Copy-Item (Join-Path $root 'docs\samples\models\skinned_arm.gltf') $models
     $guid = [Guid]::NewGuid().ToString('N')
-    [IO.File]::WriteAllText((Join-Path $models 'skinned_arm.gltf.meta'), "{`"guid`": `"$guid`", `"name`": `"skinned_arm.gltf`"}", $utf8)
+    # (クリップ Walk はルートモーションを使う: .meta の "clips" の "root"。焼くと .rmmesh の ROOT に入る)
+    [IO.File]::WriteAllText((Join-Path $models 'skinned_arm.gltf.meta'), "{`"guid`": `"$guid`", `"name`": `"skinned_arm.gltf`", `"import`": {`"clips`": {`"Walk`": {`"root`": {`"enabled`": true}}}}}", $utf8)
     $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Main.rmscene'
     $scene = [IO.File]::ReadAllText($sceneFile, $utf8) | ConvertFrom-Json
     $id = [int]$scene.nextId
@@ -273,8 +274,13 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         [ordered]@{ type = 'rm::space3d::Transform'; data = [ordered]@{ position = @(0, 0, 0) } },
         [ordered]@{ type = 'rm::game_x_3d::MeshRenderer'; data = [ordered]@{ model = $guid } },
         [ordered]@{ type = 'rm::game_x_animation::Animator'; data = [ordered]@{ clip = 'Wave' } }) }
-    $scene.entities = @($scene.entities) + @($arm)
-    $scene.nextId = $id + 1
+    # 歩く物: クリップ Walk のルートモーションで Transform が前へ動く (docs/ANIMATION.md 7-1)。
+    $walker = [ordered]@{ id = $id + 1; parent = 0; name = 'Walker'; active = $true; components = @(
+        [ordered]@{ type = 'rm::space3d::Transform'; data = [ordered]@{ position = @(3, 0, 0) } },
+        [ordered]@{ type = 'rm::game_x_3d::MeshRenderer'; data = [ordered]@{ model = $guid } },
+        [ordered]@{ type = 'rm::game_x_animation::Animator'; data = [ordered]@{ clip = 'Walk' } }) }
+    $scene.entities = @($scene.entities) + @($arm) + @($walker)
+    $scene.nextId = $id + 2
     [IO.File]::WriteAllText($sceneFile, ($scene | ConvertTo-Json -Depth 20), $utf8)
     # (エディターでアニメーターを使うプロジェクトは、使うプラグインを .rmpf に記録する。書き出しの確かめは記録された
     # プラグインを入れてから書き出す)
@@ -292,12 +298,13 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
         $skinned = [regex]::Match($gameLog, "骨のあるモデルです: $guid \(骨 (\d+) 本・クリップ (\d+) 個\)")
         $moved = [regex]::Match($gameLog, 'アニメーター: 「Arm」がクリップ「Wave」で骨 (\d+) 本を動かしました \(([\d.]+) 秒\)')
-        if ($r.ExitCode -ne 0 -or -not $skinned.Success -or -not $moved.Success -or [int]$moved.Groups[1].Value -lt 1 -or $gameLog.Contains('箱で描きます')) {
+        $walked = [regex]::Match($gameLog, 'アニメーター: 「Walker」をルートモーションで ([\d.]+) m 動かしました')
+        if ($r.ExitCode -ne 0 -or -not $skinned.Success -or -not $moved.Success -or [int]$moved.Groups[1].Value -lt 1 -or -not $walked.Success -or $gameLog.Contains('箱で描きます')) {
             Write-Host "NG  game_anim: アニメーターが骨を動かしていません (終了コード $($r.ExitCode))"
             $gameLog -split "`n" | Select-Object -Last 12 | ForEach-Object { Write-Host "    $_" }
             $failed++
         } else {
-            Write-Host "OK  game_anim: 骨のあるモデル (骨 $($skinned.Groups[1].Value) 本・クリップ $($skinned.Groups[2].Value) 個) を上げ、アニメーターがクリップ Wave で骨 $($moved.Groups[1].Value) 本を動かしました ($($moved.Groups[2].Value) 秒)"
+            Write-Host "OK  game_anim: 骨のあるモデル (骨 $($skinned.Groups[1].Value) 本・クリップ $($skinned.Groups[2].Value) 個) を上げ、アニメーターがクリップ Wave で骨 $($moved.Groups[1].Value) 本を動かしました ($($moved.Groups[2].Value) 秒)。Walker はルートモーションで $($walked.Groups[1].Value) m 進みました"
         }
     }
 }

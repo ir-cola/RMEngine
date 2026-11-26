@@ -17,5 +17,16 @@
   "削除": "Delete",
   "足す所 {:.2f} 秒": "Add at {:.2f} s",
   "帯をクリックすると、足す所を選べます": "Click the strip to choose where to add",
-  "帯の ▲ がイベントです。再生がそこを通ると、スクリプトの OnEvent に名前・数・文字が届きます。▲ はドラッグで動かせます (Ctrl+Z で戻せます)": "Each ▲ on the strip is an event. When playback passes it, the script's OnEvent receives its name, number and text. Drag a ▲ to move it (Ctrl+Z undoes)"
+  "帯の ▲ がイベントです。再生がそこを通ると、スクリプトの OnEvent に名前・数・文字が届きます。▲ はドラッグで動かせます (Ctrl+Z で戻せます)": "Each ▲ on the strip is an event. When playback passes it, the script's OnEvent receives its name, number and text. Drag a ▲ to move it (Ctrl+Z undoes)",
+  "ルートモーション": "Root motion",
+  "使う": "Use",
+  "自動 ({})": "Automatic ({})",
+  "自動": "Automatic",
+  "横": "Horizontal",
+  "縦": "Vertical",
+  "回転": "Rotate",
+  "使うと、根の骨の動きを姿勢から取り出して、アニメーターのエンティティを動かします": "When used, the root bone's motion is taken out of the pose and moves the animator's entity",
+  "根にできる骨がありません (親の無い骨だけ選べます)": "No bone can be the root (only bones without a parent can be chosen)",
+  "骨「{}」が無いか、親があります (親の無い骨だけ選べます)": "The bone \"{}\" is missing or has a parent (only bones without a parent can be chosen)",
+  "1 回で 前へ {:.2f} m · 右へ {:.2f} m · 上へ {:.2f} m · 回る {:.0f}°": "One pass: forward {:.2f} m · right {:.2f} m · up {:.2f} m · turn {:.0f}°"
 }

@@ -119,4 +119,35 @@ json::Value RemoveClipEvent(const json::Value& clips, std::string_view clip, siz
     return WithEvents(clips, clip, events, nullptr);
 }
 
+ClipRootMotion ReadClipRoot(const json::Value& clips, std::string_view clip) {
+    ClipRootMotion out;
+    const json::Value* c = clips.IsObject() ? clips.Find(clip) : nullptr;
+    const json::Value* root = c && c->IsObject() ? c->Find(space3d::kClipRootKey) : nullptr;
+    if (root && root->IsObject()) reflect::Load(out, *root);
+    return out;
+}
+
+json::Value SetClipRoot(const json::Value& clips, std::string_view clip, const ClipRootMotion& root) {
+    json::Value out = clips.IsObject() ? clips : json::Value::MakeObject();
+    const json::Value* was = out.Find(clip);
+    json::Value c = was && was->IsObject() ? *was : json::Value::MakeObject();
+    const json::Value* old = c.Find(space3d::kClipRootKey);
+    reflect::Unknowns unknowns;  // "root" の知らないキー (残す)
+    if (old && old->IsObject()) {
+        ClipRootMotion ignored;
+        reflect::Load(ignored, *old, &unknowns);
+    }
+    if (root == ClipRootMotion{} && unknowns.Empty()) {
+        c.Erase(space3d::kClipRootKey);  // (既定のまま: 書かない)
+    } else {
+        c.Set(space3d::kClipRootKey, reflect::Save(root, &unknowns));
+    }
+    if (c.Size() == 0) {
+        out.Erase(clip);
+    } else {
+        out.Set(clip, std::move(c));
+    }
+    return out.Size() == 0 ? json::Value() : out;
+}
+
 }  // namespace rm::animation3d

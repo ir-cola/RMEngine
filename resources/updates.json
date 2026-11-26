@@ -3,6 +3,28 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.35",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "骨のアニメーションのルートモーション: クリップの根の骨の動きでエンティティが動きます (足が滑らない)。モデルのインスペクターの「クリップとイベント」で、クリップごとに「使う」を入れます",
+          "en": "Root motion for bone animation: the clip's root bone motion now moves the entity (no foot sliding). Turn on Use per clip under Clips and events in the model's inspector"
+        },
+        {
+          "ja": "アニメーターの「ルートモーション」の欄 (動かす / その場で / スクリプトに渡す)。物理のキャラクターがあれば、その速さで歩きます",
+          "en": "The animator's Root motion field (Move / In place / Give to script). With a physics character, it walks at that velocity"
+        },
+        {
+          "ja": "アニメーション タブの中にプレビュー: 止まっていてもルールが動き、パラメーターを変えて試せます。その場で / 動かす で床が流れます",
+          "en": "A preview inside the Animation tab: the rules run even when stopped, so you can try parameters. In place / Move makes the floor scroll"
+        },
+        {
+          "ja": "スクリプトの rm::Animator に SetRootMotion・RootDelta・RootTurn・SetLayerWeight",
+          "en": "Scripts: rm::Animator gains SetRootMotion, RootDelta, RootTurn and SetLayerWeight"
+        }
+      ]
+    },
+    {
       "version": "0.0.34",
       "date": "2026-11-26",
       "items": [

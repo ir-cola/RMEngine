@@ -25,9 +25,12 @@
 //         (それぞれの数は 0・1・frames のどれか)
 //   EVNT  クリップのイベント (どれかのクリップにあるときだけ。ANIM の後): count u32 (= クリップの数)、続いて
 //         クリップごとに 数 u32、イベントごとに time (float)、name、number (float)、text
+//   ROOT  クリップのルートモーション (形式 3 から。どれかのクリップが使うときだけ。ANIM の後): count u32 (= クリップの数)、
+//         続いてクリップごとに enabled u8、bone (名前)、horizontal u8、vertical u8、turn u8
 // 文字 (name) は長さ u32 + UTF-8 のバイト列。
 // このバージョンが知らないタグのチャンクは飛ばす (キーの扱い。バイナリデータについての設計の決まりと同じ)。
 // 形式の番号は、古いゲームが骨のチャンクを黙って飛ばして休みの姿勢で描かないように上げた (形式 1 も読める)。
+// 形式 3 も同じ: 古いゲームが ROOT を飛ばして、根を動かしたまま描かないように (形式 1・2 も読める)。
 
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/TextureSampling.h"
@@ -40,7 +43,7 @@
 
 namespace rm::space3d {
 
-inline constexpr uint32_t kBakedMeshFormat = 2;  // 2: 骨 (SKEL SKIN IBND BBOX) とクリップ (ANIM)
+inline constexpr uint32_t kBakedMeshFormat = 3;  // 2: 骨 (SKEL SKIN IBND BBOX) とクリップ (ANIM)。3: ルートモーション (ROOT)
 
 // マテリアルの 4 枚の絵 (Texture.h のスロット: 色、金属 / ラフネス、法線、発光) をパスで、と、
 // それぞれの読み方 (その取り込みの設定: フィルタ・端の扱い・ストリーミング - 各 1 バイト、PackSampling)。

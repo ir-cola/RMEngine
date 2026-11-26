@@ -20,6 +20,7 @@
 #include "rm_engine/game_x_particles/editor/Connector.h"
 #include "rm_engine/game_x_particles/runtime/Id.h"
 #include "rm_engine/particles_x_physics/runtime/Id.h"
+#include "rm_engine/animation_x_physics/runtime/Id.h"
 #include "rm_engine/weather/editor/Register.h"
 #include "rm_engine/weather/runtime/Id.h"
 #include "rm_engine/weather_x_physics/runtime/Id.h"
@@ -71,6 +72,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {animation3d::kPluginId, &animation3d::RegisterEditor},  // 姿勢の計算 (ランタイム) と、モデルのクリップの帯 (エディター)
         {game_x_3d::kPluginId, &game_x_3d::RegisterEditor},
         {game_x_animation::kPluginId, &game_x_animation::RegisterEditor},
+        {animation_x_physics::kPluginId, nullptr},  // ルートモーションを物理のキャラクターの速さに (ランタイムだけ)
         {space2d::kPluginId, nullptr},
         {game_x_2d::kPluginId, &game_x_2d::RegisterEditor},
         {physics::kPluginId, &physics::RegisterEditor},

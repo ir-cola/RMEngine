@@ -114,9 +114,11 @@
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Pose.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\ClipTime.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Player.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\RootMotion.cpp" />
     <ClCompile Include="TestClipEvents.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\editor\ClipEvents.cpp" />
     <ClCompile Include="TestGameAnimation.cpp" />
+    <ClCompile Include="TestAnimationPhysics.cpp" />
     <ClCompile Include="TestAnimationRules.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation\runtime\Condition.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation\runtime\Rules.cpp" />
@@ -239,6 +241,9 @@
     <ClCompile Include="..\plugins\rm_engine\game_production\editor\DebugReports.cpp" />
     <ClCompile Include="..\plugins\rm_engine\particles_x_physics\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)particles_x_physics\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\animation_x_physics\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)animation_x_physics\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\weather_x_physics\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)weather_x_physics\</ObjectFileName>

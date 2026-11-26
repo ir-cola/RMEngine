@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "animation_x_physics",
+  "displayName": "アニメーション × 物理",
+  "version": "0.0.1",
+  "connectorFor": { "author": "rm_engine", "name": "game_x_animation" },
+  "requires": [
+    { "author": "rm_engine", "name": "game_x_animation" },
+    { "author": "rm_engine", "name": "physics" },
+    { "author": "rm_engine", "name": "game_production" },
+    { "author": "rm_engine", "name": "space3d" },
+    { "author": "rm_engine", "name": "animation3d" }
+  ]
+}

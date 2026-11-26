@@ -8,6 +8,8 @@
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/animation3d/editor/ClipEvents.h"
+#include "rm_engine/animation3d/runtime/RootMotion.h"
+#include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/MeshLoader.h"
 
 #include <algorithm>
@@ -38,6 +40,9 @@ struct Listing {
     bool known = false;  // 1 度は読み終えた (`ok` と `clips` が使える)
     bool ok = false;     // ... そして読めた
     std::vector<ClipInfo> clips;
+    // ルートモーションの「1 回で動く分」を出すための骨の木とクリップ (骨が無いモデル: null)。
+    std::shared_ptr<const space3d::Skeleton> skeleton;
+    std::shared_ptr<const std::vector<space3d::Clip>> data;
     std::filesystem::file_time_type time{};  // 読んだときのファイルと .meta の新しい方の時刻
     std::chrono::steady_clock::time_point checked{};
     space3d::MeshLoader::Ticket ticket = 0;  // 読んでいる最中 (0: なし)
@@ -56,8 +61,12 @@ public:
                 l.ok = done->mesh.has_value();
                 l.time = l.reading;
                 l.clips.clear();
+                l.skeleton.reset();
+                l.data.reset();
                 if (done->mesh) {
                     for (const space3d::Clip& c : done->mesh->clips) l.clips.push_back({c.name, c.duration});
+                    if (done->mesh->skin) l.skeleton = std::make_shared<const space3d::Skeleton>(done->mesh->skin->skeleton);
+                    l.data = std::make_shared<const std::vector<space3d::Clip>>(std::move(done->mesh->clips));
                 }
             }
         }
@@ -101,7 +110,14 @@ struct Strip {
     // 「イベント」のブロックの欄が見せるもの (描くたびに .meta の今の値から作る)
     ClipEvent shown;
     reflect::Unknowns shownUnknowns;
+    // ルートモーションの「根の骨」の ▾ (親の無い骨の名前。0 番は「自動」)
+    w::Popup bonePopup;
+    std::vector<std::string> boneChoices;
+    int boneChosen = -1;
 };
+
+// ルートモーションの 1 行と、その下の「1 回で …」の行。
+constexpr float kRootRowH = 26.f;
 
 constexpr float kRowH = 24.f;
 constexpr float kGap = 6.f;
@@ -126,9 +142,97 @@ void RemoveSelected(Strip& s) {
     s.event = -1;
 }
 
-float StripHeight(size_t clipCount) { return static_cast<float>(clipCount) * kRowH + kGap + w::kTimeStripHeight + kGap + kButtonH; }
+float StripHeight(size_t clipCount, bool root) {
+    return static_cast<float>(clipCount) * kRowH + kGap + w::kTimeStripHeight + kGap + kButtonH + (root ? kGap * 2 + kRootRowH + kRowH : 0.f);
+}
 
-void DrawStrip(ui::Context& c, const Rect& r, const std::shared_ptr<Strip>& sp, const std::vector<ClipInfo>& clips, bool reading) {
+struct RootView {
+    std::shared_ptr<const space3d::Skeleton> skeleton;
+    std::shared_ptr<const std::vector<space3d::Clip>> data;
+};
+
+// ルートモーション (docs/ANIMATION.md 7-1。見本 A: 帯の下に 1 行):
+//   ルートモーション [☑ 使う] [自動 (Hips) ▾] [☑ 横] [☐ 縦] [☑ 回転]
+//   1 回で 前へ 1.42 m · 右へ 0.05 m · 回る 0°
+// 変えるたびに .meta の "clips" の "root" を 1 件の Undo で書く (イベントと同じ道)。
+void DrawRootRow(ui::Context& c, const Rect& r, Strip& s, const json::Value& data, const RootView& view) {
+    auto& p = c.P();
+    const ClipRootMotion now = ReadClipRoot(data, s.clip);
+    ClipRootMotion want = now;
+    float x = r.x;
+    const std::wstring title = Tr(L"ルートモーション");
+    const float titleW = p.TextWidth(title, 12) + 12;
+    p.Text({x, r.y, titleW, kRootRowH}, title, Style(12, theme::TextDim));
+    x += titleW;
+    auto check = [&](const char* id, bool& v, std::wstring_view label) {
+        const float wdt = p.TextWidth(label, 12) + 30;
+        w::Checkbox(c, id, {x, r.y, wdt, kRootRowH}, v, label);
+        x += wdt + 6;
+    };
+    check("root.use", want.enabled, Tr(L"使う"));
+    // 根の骨: 親の無い骨だけ (6 章の 9)。空 = 自動。
+    const int autoBone = view.skeleton ? RootBone(*view.skeleton, "") : -1;
+    const std::wstring autoName = autoBone >= 0 ? TrF(L"自動 ({})", Utf8ToWide(view.skeleton->bones[static_cast<size_t>(autoBone)].name)) : Tr(L"自動");
+    const std::wstring boneText = want.bone.empty() ? autoName : Utf8ToWide(want.bone);
+    const float comboW = std::clamp(p.TextWidth(boneText, 12) + 40, 110.f, 220.f);
+    if (w::ComboBox(c, "root.bone", {x, r.y + 1, comboW, kRootRowH - 2}, boneText, want.enabled).clicked) {
+        s.boneChoices = {std::string()};
+        if (view.skeleton) {
+            for (const space3d::Bone& b : view.skeleton->bones) {
+                if (b.parent < 0 && b.name != space3d::kStaticBoneName) s.boneChoices.push_back(b.name);
+            }
+        }
+        s.bonePopup.OpenAt(x, r.y + kRootRowH);
+    }
+    x += comboW + 8;
+    check("root.h", want.horizontal, Tr(L"横"));
+    check("root.v", want.vertical, Tr(L"縦"));
+    check("root.t", want.turn, Tr(L"回転"));
+    if (const int chosen = std::exchange(s.boneChosen, -1); chosen >= 0 && static_cast<size_t>(chosen) < s.boneChoices.size()) {
+        want.bone = s.boneChoices[static_cast<size_t>(chosen)];
+    }
+    if (!(want == now)) {
+        s.access.setImportKey(kClipsKey, SetClipRoot(data, s.clip, want), "ルートモーションを変える", 0);
+        c.RequestRedraw();
+    }
+    if (s.bonePopup.open) {
+        c.AddOverlay([sp = &s, &c, autoName] {
+            const bool was = c.InputEnabled();
+            c.SetInputEnabled(true);
+            std::vector<w::MenuItem> items;
+            for (const std::string& name : sp->boneChoices) items.push_back({name.empty() ? autoName : Utf8ToWide(name)});
+            if (const int k = w::MenuPopup(c, sp->bonePopup, items, 220); k >= 0) {
+                sp->boneChosen = k;
+                c.RequestRedraw();
+            }
+            c.SetInputEnabled(was);
+        });
+    }
+
+    // 1 回で動く分 (今の設定で。根の骨が選べないときは理由)。
+    const Rect line{r.x, r.y + kRootRowH, r.w, kRowH};
+    if (!want.enabled) {
+        p.Text(line, Tr(L"使うと、根の骨の動きを姿勢から取り出して、アニメーターのエンティティを動かします"), Style(11, theme::TextFaint));
+        return;
+    }
+    const space3d::Clip* clip = nullptr;
+    if (view.data) {
+        for (const space3d::Clip& k : *view.data) {
+            if (k.name == s.clip) clip = &k;
+        }
+    }
+    const int root = view.skeleton ? RootBone(*view.skeleton, want.bone) : -1;
+    if (!clip || !view.skeleton || root < 0) {
+        p.Text(line, want.bone.empty() ? Tr(L"根にできる骨がありません (親の無い骨だけ選べます)") : TrF(L"骨「{}」が無いか、親があります (親の無い骨だけ選べます)", Utf8ToWide(want.bone)),
+               Style(11, theme::Warn));
+        return;
+    }
+    const RootDelta d = RootTotals(*clip, BindClip(*clip, *view.skeleton), *view.skeleton, root, want);
+    p.Text(line, TrF(L"1 回で 前へ {:.2f} m · 右へ {:.2f} m · 上へ {:.2f} m · 回る {:.0f}°", d.move.z, d.move.x, d.move.y, d.turn * 57.29578f),
+           Style(11, theme::TextDim));
+}
+
+void DrawStrip(ui::Context& c, const Rect& r, const std::shared_ptr<Strip>& sp, const std::vector<ClipInfo>& clips, bool reading, const RootView& view) {
     Strip& s = *sp;
     auto& p = c.P();
     if (reading) c.RequestAnimation();  // (読み直しが終わったら出す)
@@ -253,6 +357,13 @@ void DrawStrip(ui::Context& c, const Rect& r, const std::shared_ptr<Strip>& sp, 
     const std::wstring where = s.cursor >= 0 ? TrF(L"足す所 {:.2f} 秒", std::min(s.cursor, duration)) : Tr(L"帯をクリックすると、足す所を選べます");
     const float hx = remove.Right() + 10;
     if (r.Right() - hx > 40) p.Text({hx, y, r.Right() - hx, kButtonH}, where, Style(11, theme::TextFaint, ui::HAlign::Right));
+    y += kButtonH + kGap;
+
+    // ルートモーション (骨のあるモデルだけ)。
+    if (view.skeleton) {
+        w::Separator(c, r.x, y, r.w);
+        DrawRootRow(c, {r.x, y + kGap, r.w, kRootRowH + kRowH}, s, data, view);
+    }
 }
 
 std::vector<editor::InspectBlock> BlocksOf(const std::shared_ptr<Strip>& sp) {
@@ -298,8 +409,10 @@ std::vector<editor::InspectBlock> BlocksOf(const std::shared_ptr<Strip>& sp) {
     const size_t count = l.clips.size();
     const bool reading = l.ticket != 0;
     std::vector<ClipInfo> clips = l.clips;
-    strip.customHeight = [count](ui::Context&, float) { return StripHeight(count); };
-    strip.customDraw = [sp, clips = std::move(clips), reading](ui::Context& c, const Rect& r) { DrawStrip(c, r, sp, clips, reading); };
+    const RootView view{l.skeleton, l.data};
+    const bool root = view.skeleton != nullptr;
+    strip.customHeight = [count, root](ui::Context&, float) { return StripHeight(count, root); };
+    strip.customDraw = [sp, clips = std::move(clips), reading, view](ui::Context& c, const Rect& r) { DrawStrip(c, r, sp, clips, reading, view); };
     out.push_back(std::move(strip));
 
     if (s.event >= 0) {

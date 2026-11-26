@@ -126,6 +126,23 @@ inline bool operator==(const ClipEvent& a, const ClipEvent& b) {
     return a.time == b.time && a.name == b.name && a.number == b.number && a.text == b.text;
 }
 
+// クリップのルートモーション (docs/ANIMATION.md 3-5・7-1): 根の骨の動いた分を取り出して姿勢からは消し、
+// エンティティを動かす (足が滑らない・攻撃で踏み込む)。置くのはイベントと同じモデルの .meta の "clips"
+// (ClipSettings.h)。保存・読み込み・欄はこの定義から (憲法 9)。計算は 3D アニメーションの RootMotion.h。
+RM_STRUCT(Label="ルートモーション")
+struct ClipRootMotion {
+    RM_PROPERTY(Edit, Label="使う", Tooltip="根の骨の動きを姿勢から取り出して、エンティティを動かします (アニメーターの「ルートモーション」の欄で、動かす / その場で / スクリプトに渡す を選べます)")
+    bool enabled = false;
+    RM_PROPERTY(Edit, Label="根の骨", Tooltip="動きを取り出す骨 (親の無い骨だけ)。空: 自動 (親の無い骨のうち「(骨の外)」でない最初のもの)")
+    std::string bone;
+    RM_PROPERTY(Edit, Label="横の移動 (XZ)", Tooltip="前後・左右の動きを取り出します") bool horizontal = true;
+    RM_PROPERTY(Edit, Label="縦の移動 (Y)", Tooltip="上下の動きを取り出します (物理のキャラクターがあるときは使いません: 重力とジャンプは物理)") bool vertical = false;
+    RM_PROPERTY(Edit, Label="Y のまわりの回転", Tooltip="向きの変わり (曲がる・振り向く) を取り出して、エンティティを回します") bool turn = true;
+};
+inline bool operator==(const ClipRootMotion& a, const ClipRootMotion& b) {
+    return a.enabled == b.enabled && a.bone == b.bone && a.horizontal == b.horizontal && a.vertical == b.vertical && a.turn == b.turn;
+}
+
 struct Clip {
     std::string name;
     float duration = 0;              // 秒
@@ -133,6 +150,7 @@ struct Clip {
     uint32_t frames = 1;             // サンプルの数 = round(duration x rate) + 1
     std::vector<BoneTrack> tracks;
     std::vector<ClipEvent> events;   // 時刻の順
+    ClipRootMotion root;             // ルートモーション (既定: 使わない)
 };
 // duration と rate からサンプルの数。
 uint32_t ClipFrames(float duration, float rate);

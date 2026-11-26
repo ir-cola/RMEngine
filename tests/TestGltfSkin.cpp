@@ -5,6 +5,7 @@
 
 #include "Test.h"
 
+#include "rm_engine/animation3d/runtime/RootMotion.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -179,8 +180,8 @@ RM_TEST(GltfSkin_SampleArm) {
     for (size_t i = 0; i < rest.size(); ++i) same = same && NearV(rest[i], m->vertices[i].position);
     CHECK(same);
     // クリップ: 名前・長さ・サンプルの数。回るだけ (位置・大きさのトラックは無い)。ループする (最初と最後が同じ)。
-    CHECK(m->clips.size() == 2);
-    if (m->clips.size() != 2) return;
+    CHECK(m->clips.size() == 3);  // Wave・Idle・Walk (根が前へ進む: ルートモーション)
+    if (m->clips.size() != 3) return;
     const Clip& wave = m->clips[0];
     const Clip& idle = m->clips[1];
     CHECK(wave.name == "Wave" && std::abs(wave.duration - 2.f) < 1e-5f && wave.rate == kDefaultClipRate && wave.frames == 61);
@@ -204,8 +205,8 @@ RM_TEST(GltfSkin_SampleArm) {
 RM_TEST(GltfSkin_ImportSettingsMoveBonesLikeVertices) {
     std::string error;
     const auto raw = ReadSample(&error);
-    CHECK(raw && raw->skin && raw->clips.size() == 2);
-    if (!raw || !raw->skin || raw->clips.size() != 2) return;
+    CHECK(raw && raw->skin && raw->clips.size() == 3);
+    if (!raw || !raw->skin || raw->clips.size() != 3) return;
     struct Setting {
         ModelBasis basis;
         bool turn;
@@ -496,4 +497,25 @@ RM_TEST(GltfSkin_BrokenFilesAreToldWhy) {
                                       R"("channels":[{"sampler":0,"target":{"node":1,"path":"translation"}}]}])");
         CHECK(!ParseGltf(Bytes(doc), nullptr, &error) && error.find("時刻") != std::string::npos);
     }
+}
+
+// 見本のクリップ Walk (make_skinned_sample.py): 根の骨 Base が 1 秒で前へ 0.8 m。ルートモーションの自動の根は Base。
+RM_TEST(GltfSkin_SampleWalkHasRootMotion) {
+    std::string err;
+    const auto m = ReadSample(&err);
+    CHECK(m && m->skin);
+    if (!m || !m->skin) return;
+    const Skeleton& skel = m->skin->skeleton;
+    const Clip* walk = nullptr;
+    for (const Clip& c : m->clips) {
+        if (c.name == "Walk") walk = &c;
+    }
+    CHECK(walk != nullptr);
+    if (!walk) return;
+    const int root = animation3d::RootBone(skel, "");
+    CHECK(root >= 0 && skel.bones[static_cast<size_t>(root)].name == "Base");
+    ClipRootMotion set;
+    set.enabled = true;
+    const animation3d::RootDelta d = animation3d::RootTotals(*walk, animation3d::BindClip(*walk, skel), skel, root, set);
+    CHECK(std::abs(d.move.z - 0.8f) < 1e-3f && std::abs(d.move.x) < 1e-3f && std::abs(d.move.y) < 1e-6f && std::abs(d.turn) < 1e-3f);
 }

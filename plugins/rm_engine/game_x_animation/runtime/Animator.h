@@ -20,6 +20,14 @@ namespace rm::game_x_animation {
 
 struct AnimatorRun;
 
+// ルートモーション (docs/ANIMATION.md 7-1) の使い方。どれでも、使うクリップの姿勢からは根の動きを消す。
+RM_ENUM(Label="ルートモーション")
+enum class RootMotionUse {
+    RM_ITEM(Label="動かす") Move,             // Transform へ (物理のキャラクターがあれば、その速さへ)
+    RM_ITEM(Label="その場で") InPlace,        // 取り出して捨てる
+    RM_ITEM(Label="スクリプトに渡す") Script, // 動かさない。スクリプトが RootDelta / RootTurn で読む
+};
+
 RM_STRUCT(Label="アニメーター")
 struct Animator {
     RM_PROPERTY(Edit, Label="状態とルール", Tooltip="状態とルールのファイル (.rmanim。アセットのパネルの右クリック →「作成」→「アニメーター (状態とルール)」)。入れると、ゲームの間はルールが状態を決め、その状態のクリップ・ループ・速さで流します (下の 3 つは、そのとき今の状態のものになります)", AssetKind=".rmanim")
@@ -30,6 +38,8 @@ struct Animator {
     RM_PROPERTY(Edit, Label="速さ", Tooltip="再生の速さの倍率 (2 で倍の速さ。負の数で逆に流れます)", Min=-10, Max=10, Step=0.05) float speed = 1;
     RM_PROPERTY(Edit, Label="始めから流す", Tooltip="外すと、ゲームでは最初のコマで止まったままです (止まっているシーンビューでは、選ぶと流れます)")
     bool playOnStart = true;
+    RM_PROPERTY(Edit, Label="ルートモーション", Tooltip="クリップの根の骨の動き (モデルのインスペクターの「クリップとイベント」で、クリップごとに「使う」を入れたもの) をどうするか。動かす: エンティティが動きます (物理のキャラクターがあれば、その速さになります。動かすクリップに重みがある間は、スクリプトの Character::Move より強い)。その場で: 動きを捨てます。スクリプトに渡す: 動かさず、スクリプトの RootDelta / RootTurn で読めます")
+    RootMotionUse rootMotion = RootMotionUse::Move;
     // ゲームが動いている間の再生 (システム「アニメーション」が作る。Play するコピーだけが持つ)。
     RM_TRANSIENT() std::shared_ptr<AnimatorRun> run;
 };
