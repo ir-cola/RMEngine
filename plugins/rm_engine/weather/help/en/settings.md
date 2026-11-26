@@ -8,7 +8,7 @@
 | Snow | When checked, rain turns into drizzle and then into snow (and back when unchecked) |
 | Snow depth (cm) | How deep the snow piles up ([Snow and snow cover](snow)) |
 | Fog | 0-100. The color follows clear, rain and snow by itself. Heavy rain or snow also makes it harder to see |
-| Lightning | Flashes |
+| Lightning | With many clouds, now and then a lightning bolt runs from the sky to the ground and the clouds and scene flash (while playing) |
 | Wind direction and strength | Where rain and snow drift. Slanted rain and snow reach under the edges of roofs |
 
 > Rain and snow hit the **meshes you can see** (shapes and models, not colliders).

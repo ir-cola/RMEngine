@@ -234,6 +234,7 @@
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\weather\runtime\Weather.cpp" />
     <ClCompile Include="..\plugins\rm_engine\weather\runtime\Falling.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\weather\runtime\Lightning.cpp" />
     <ClCompile Include="..\plugins\rm_engine\weather\runtime\WeatherBlocks.cpp" />
     <ClCompile Include="..\plugins\rm_engine\weather\runtime\WeatherDraw.cpp" />
     <ClCompile Include="..\plugins\rm_engine\weather\runtime\ScriptWeather.cpp" />

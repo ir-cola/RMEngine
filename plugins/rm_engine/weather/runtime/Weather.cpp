@@ -2,6 +2,7 @@
 
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/weather/runtime/Falling.h"
+#include "rm_engine/weather/runtime/Lightning.h"
 
 #include <algorithm>
 #include <cmath>
@@ -20,16 +21,6 @@ float Smooth(float edge0, float edge1, float x) {
 float Lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 float Unit(float percent) { return std::isfinite(percent) ? std::clamp(percent / 100.f, 0.f, 1.f) : 0.f; }
-
-// 0 .. 1 の数を、ある数から毎回同じになるように作る (雷の起きる時と明るさ)。
-float Hash01(uint32_t x) {
-    x ^= x >> 16;
-    x *= 0x7feb352du;
-    x ^= x >> 15;
-    x *= 0x846ca68bu;
-    x ^= x >> 16;
-    return static_cast<float>(x & 0xFFFFFFu) / 16777216.f;
-}
 
 Vec3 TurnY(Vec3 d, float degrees) {
     const float c = std::cos(degrees * kDegrees), s = std::sin(degrees * kDegrees);
@@ -170,13 +161,23 @@ Vec3 WindOf(float directionDegrees, float strength) {
     return {d.x * strength, 0, d.z * strength};
 }
 
+namespace {
+
+// 雨や雪が降ると、頼んだ雲が少なくても雲が出る。
+float CoverOf(const WeatherNow& n) {
+    const float c = std::clamp(n.clouds, 0.f, 1.f), falls = std::max(RainNow(n), SnowNow(n));
+    return std::max(c, Smooth(0.f, 0.15f, falls) * (0.75f + 0.25f * falls));
+}
+
+}  // namespace
+
+float SkyCoverOf(const Weather& w) { return CoverOf(NowOf(w, false)); }
+
+bool LightningOn(const Weather& w) { return w.lightning && SkyCoverOf(w) > 0.5f; }
+
 game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds, const PlaceClouds* clouds) {
-    // 雨や雪が降ると、頼んだ雲が少なくても雲が出る。雨は雲を暗い雨雲にし、雪の雲は
-    // 淡くかすむ。雲が多いと太陽が暗くなる。
-    const auto coverOf = [](const WeatherNow& n) {
-        const float c = std::clamp(n.clouds, 0.f, 1.f), falls = std::max(RainNow(n), SnowNow(n));
-        return std::max(c, Smooth(0.f, 0.15f, falls) * (0.75f + 0.25f * falls));
-    };
+    // 雨は雲を暗い雨雲にし、雪の雲は淡くかすむ。雲が多いと太陽が暗くなる。
+    const auto coverOf = [](const WeatherNow& n) { return CoverOf(n); };
     const WeatherNow scene = NowOf(w, false);  // シーン全体: 空の雲・暗さ・雨雲 (場所ごとのものは地図で)
     const WeatherNow now = NowOf(w);           // カメラのいる所: 日の光の弱まり・もや
     const float r = RainNow(scene), sn = SnowNow(scene);
@@ -189,10 +190,9 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds, const Place
     s.through = std::clamp(1 - 0.75f * Smooth(0.3f, 1.f, coverHere) - 0.35f * rHere - 0.15f * snHere, 0.06f, 1.f);
     s.rain = std::clamp(r + sn, 0.f, 1.f);  // 雨雲 (降るものの上)
     s.snow = r + sn > 0 ? std::clamp(sn / (r + sn), 0.f, 1.f) : 0.f;
-    // 雷: ときどき (一度に 8 分の 1 秒ほど) 光る。時間が進んでいる間だけ。
-    if (w.lightning && cover > 0.5f && seconds > 0) {
-        const auto tick = static_cast<uint32_t>(seconds * 8);
-        if (Hash01(tick * 2u) > 0.975f) s.flash = 0.5f + 0.5f * Hash01(tick * 2u + 1u);
+    // 雷: ときどき光る (稲妻と同じ時: Lightning.h)。時間が進んでいる間だけ。
+    if (w.lightning && cover > 0.5f) {
+        if (const auto strike = StrikeAt(seconds)) s.flash = strike->strength * FlashGlow(strike->age);
     }
     s.driftX = w.driftX;
     s.driftZ = w.driftZ;

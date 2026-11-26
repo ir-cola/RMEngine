@@ -19,7 +19,7 @@
   "大雪": "Heavy snow",
   "吹雪": "Blizzard",
   "0: 雲ひとつ無い晴れ 〜 40: 雲の多い晴れ 〜 70: くもり 〜 100: 空一面の厚い雲 (暗くなり、日の光も弱まります)。雨や雪が降ると、少なくても雲が出ます (雲は空が「地球の空」のとき)": "0: not a cloud, fair / up to 40: fair with many clouds / up to 70: cloudy / 100: thick clouds over the whole sky (darker, and the sunlight weakens). Rain or snow brings clouds even when few are set (clouds with the earth sky)",
-  "ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中。雲の多いとき)": "Now and then the clouds flash and light up the scene for a moment (while playing, with many clouds)",
+  "ときどき稲妻が空から地面へ走り (光ったあとも少し残ります)、雲が光って場面も一瞬明るくなります (Play 中。雲の多いとき)": "Now and then a lightning bolt runs from the sky to the ground (it lingers a little after the flash), and the clouds flash and light up the scene for a moment (while playing, with many clouds)",
   "晴れ": "Fair",
   "くもり": "Cloudy",
   "霧": "Fog",

@@ -12,6 +12,7 @@
 #include "rm_engine/space3d/runtime/SkyShader.h"
 #include "rm_engine/space3d/runtime/View.h"
 #include "rm_engine/weather/runtime/Falling.h"
+#include "rm_engine/weather/runtime/Lightning.h"
 #include "rm_engine/weather/runtime/Weather.h"
 
 #include <Windows.h>
@@ -154,6 +155,83 @@ RM_TEST(Weather_SkyLook) {
     // Play の前 (と止めた後) の 濡れ: 雨でも雪でも無い (Play の跡を残さない - 2026-11-22)。
     CHECK(WetNow(Of(WeatherPreset::Rain)).empty() && WetNow(Of(WeatherPreset::Fair)).empty() && WetNow(Of(WeatherPreset::Snow)).empty());
     CHECK(SnowCoverNow(Of(WeatherPreset::Snow)) == 0.f);
+}
+
+// 稲妻 (Lightning.h、2026-11-26): 空の閃光と同じ時に起き、光ってから kBoltLife 秒で消える。明るさは強く光る →
+// 暗く → もう一度 → 残光。形は雲の下から地面までつながった幹と、細く暗い枝。場所はカメラから遠すぎず近すぎない。
+RM_TEST(Weather_LightningBolt) {
+    // 起きる時: 空が光っている時は、いつも稲妻も見えている (同じ数から決まる)。
+    Weather storm = Of(WeatherPreset::Storm);
+    CHECK(LightningOn(storm) && !LightningOn(Of(WeatherPreset::Clear)));
+    int strikes = 0;
+    for (int k = 1; k < 4000; ++k) {
+        const double t = k * 0.05;
+        const auto s = StrikeAt(t);
+        const float flash = SkyWeatherOf(storm, t).flash;
+        if (flash > 0) CHECK(s && Near(flash, s->strength * FlashGlow(s->age)));
+        if (s) {
+            ++strikes;
+            CHECK(s->age >= 0 && s->age < kBoltLife && s->strength >= 0.5f && s->strength <= 1.f);
+            // 同じ時間なら同じ稲妻。少し後でも、消えるまでは同じ稲妻 (年だけ進む)。
+            const auto again = StrikeAt(t);
+            CHECK(again && again->seed == s->seed && again->age == s->age);
+            if (s->age + 0.02f < kBoltLife) {
+                const auto later = StrikeAt(t + 0.02);
+                CHECK(later && later->seed >= s->seed);
+            }
+        }
+    }
+    CHECK(strikes > 20 && strikes < 3000);
+    CHECK(!StrikeAt(0) && !StrikeAt(-1));
+    // 明るさ: 落ちた瞬間が一番明るく、一度暗くなり、もう一度光ってから残光で消える。
+    CHECK(BoltGlow(0) == 1 && BoltGlow(0.07f) < BoltGlow(0.12f) && BoltGlow(0.12f) > BoltGlow(0.3f) && BoltGlow(0.3f) > BoltGlow(0.6f));
+    CHECK(BoltGlow(0.6f) > 0 && BoltGlow(kBoltLife) == 0 && BoltGlow(-0.1f) == 0);
+    CHECK(FlashGlow(0) == 1 && FlashGlow(0.45f) == 0 && FlashGlow(0.3f) < BoltGlow(0.3f) + 0.3f);
+    // 場所: 地面に、カメラから kBoltNear .. kBoltFar。上の端は雲の下 (地面から kBoltHeight)。
+    for (uint32_t seed = 1; seed < 200; ++seed) {
+        Vec3 top, bottom;
+        BoltPlace(seed, {10, 2, -5}, 0, top, bottom);
+        const float d = std::sqrt((bottom.x - 10) * (bottom.x - 10) + (bottom.z + 5) * (bottom.z + 5));
+        CHECK(d >= kBoltNear - 0.01f && d <= kBoltFar + 0.01f && bottom.y == 0 && Near(top.y, kBoltHeight));
+    }
+    // 形: 幹は top から bottom へつながる (128 本)。ぶれは長さの 3 割より小さい。枝は 2 〜 4 本で、細く暗い。
+    const Vec3 top{0, 260, 0}, bottom{30, 0, 200};
+    const std::vector<BoltSegment> path = BoltPath(7, top, bottom);
+    CHECK(path.size() > 128);
+    bool joined = Near(path[0].a.x, top.x) && Near(path[0].a.y, top.y) && Near(path[127].b.x, bottom.x) && Near(path[127].b.z, bottom.z);
+    const float len = std::sqrt(30.f * 30.f + 260.f * 260.f + 200.f * 200.f);
+    bool hugsLine = true;
+    for (size_t i = 0; i < 128; ++i) {
+        if (i > 0) joined = joined && path[i].a.x == path[i - 1].b.x && path[i].a.y == path[i - 1].b.y && path[i].a.z == path[i - 1].b.z;
+        // 線 top-bottom からの距離
+        const Vec3 p = path[i].b;
+        const Vec3 d{bottom.x - top.x, bottom.y - top.y, bottom.z - top.z};
+        const Vec3 q{p.x - top.x, p.y - top.y, p.z - top.z};
+        const Vec3 c{q.y * d.z - q.z * d.y, q.z * d.x - q.x * d.z, q.x * d.y - q.y * d.x};
+        hugsLine = hugsLine && std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z) / len < 0.3f * len;
+        CHECK(path[i].width == 1 && path[i].glow == 1);
+    }
+    CHECK(joined && hugsLine);
+    const size_t twigs = path.size() - 128;
+    CHECK(twigs % 32 == 0 && twigs / 32 >= 2 && twigs / 32 <= 4);
+    bool thin = true;
+    for (size_t i = 128; i < path.size(); ++i) thin = thin && path[i].width < 1 && path[i].glow < 1 && path[i].glow > 0;
+    CHECK(thin);
+    // 同じ種なら同じ形、違う種なら違う形。
+    const std::vector<BoltSegment> same = BoltPath(7, top, bottom), other = BoltPath(8, top, bottom);
+    CHECK(same.size() == path.size() && same[60].b.x == path[60].b.x && other[60].b.x != path[60].b.x);
+    CHECK(BoltPath(1, top, top).empty());
+    // 帯: 1 本につき 12 個の頂点 (芯とにじみ)。カメラの方を向く (帯の横の向きは見る向きと直角)。
+    std::vector<BoltVertex> verts;
+    const Vec3 eye{0, 2, -50};
+    BoltRibbons(path, eye, 1.4f, 10.f, verts);
+    CHECK(verts.size() == path.size() * 12);
+    const Vec3 side{verts[1].position.x - verts[0].position.x, verts[1].position.y - verts[0].position.y, verts[1].position.z - verts[0].position.z};
+    const Vec3 mid{(path[0].a.x + path[0].b.x) / 2 - eye.x, (path[0].a.y + path[0].b.y) / 2 - eye.y, (path[0].a.z + path[0].b.z) / 2 - eye.z};
+    const float sideLen = std::sqrt(side.x * side.x + side.y * side.y + side.z * side.z);
+    const float midLen = std::sqrt(mid.x * mid.x + mid.y * mid.y + mid.z * mid.z);
+    CHECK(Near(sideLen, 1.4f) && std::fabs(side.x * mid.x + side.y * mid.y + side.z * mid.z) / (sideLen * midLen) < 1e-3f);
+    CHECK(verts[0].across == -1 && verts[1].across == 1 && verts[6].light < verts[0].light);
 }
 
 // 雷: ときどき光る。時間が進んでいるときだけ (雲が多いときだけ)。

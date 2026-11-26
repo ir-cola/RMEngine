@@ -6,6 +6,7 @@
 #include "rm_engine/space3d/runtime/SkyShader.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/weather/runtime/Falling.h"
+#include "rm_engine/weather/runtime/Lightning.h"
 #include "rm_engine/weather/runtime/WeatherBlocks.h"
 #include "rm_engine/weather/runtime/WeatherPlace.h"
 
@@ -33,6 +34,40 @@ bool Compile(const std::string& text, const char* entry, const char* target, Ptr
     error = std::string(entry) + (messages ? std::string(": ") + static_cast<const char*>(messages->GetBufferPointer()) : std::string());
     return false;
 }
+
+// 稲妻 (Lightning.h の BoltRibbons の帯): 芯は白く、にじみは淡い青。足すだけ (加算)。
+const char kBoltHlsl[] = R"(
+cbuffer Bolt : register(b4) {
+    float4x4 boltViewProj;
+    float4 boltColor;  // rgb: 一番明るい所の色 (明るさを掛けたもの)
+};
+struct BoltIn {
+    float3 pos : POSITION;
+    float2 look : TEXCOORD0;  // x: 帯を横切る場所 (-1 .. 1)、y: 明るさの割合
+};
+struct BoltOut {
+    float4 pos : SV_Position;
+    float2 look : TEXCOORD0;
+};
+BoltOut BoltVS(BoltIn i) {
+    BoltOut o;
+    o.pos = mul(boltViewProj, float4(i.pos, 1));
+    o.look = i.look;
+    return o;
+}
+float4 BoltPS(BoltOut i) : SV_Target {
+    const float a = exp(-i.look.x * i.look.x * 3.0);
+    return float4(boltColor.rgb * (i.look.y * a), 0);
+}
+)";
+
+struct BoltConstants {
+    float viewProj[16];
+    float color[4];
+};
+static_assert(sizeof(BoltConstants) % 16 == 0);
+static_assert(sizeof(BoltVertex) == 20, "BoltIn と合わせる");
+constexpr UINT kBoltVertices = 4096;  // (幹 128 本 + 枝 4 x 32 本) x 12 より多く
 
 class WeatherDraw final : public game_x_3d::WorldDrawer {
 public:
@@ -181,7 +216,15 @@ public:
     }
 
     void Prepare(const game_x_3d::WorldDrawFrame& f, std::vector<space3d::ExtraDraw>& out) override {
-        animating_ = !falls_.empty() && f.playing;
+        // 雷の稲妻 (2026-11-26): ゲームが動いている間、雷が光ることのある天気なら (光っていなくても次のフレームを描く)。
+        const Weather* w = f.scene.Setting<Weather>();
+        const bool storm = w && f.atmosphere && f.playing && LightningOn(*w);
+        animating_ = (!falls_.empty() && f.playing) || storm;
+        if (storm) {
+            if (const auto strike = StrikeAt(f.seconds); strike && BoltReady(f.gfx)) {
+                out.push_back([this, s = *strike](const space3d::ExtraDrawContext& dc) { DrawBolt(dc, s); });
+            }
+        }
         if (falls_.empty() || !Ready(f.gfx)) return;
         for (const Precipitation& p : falls_) {
             out.push_back([this, p](const space3d::ExtraDrawContext& dc) { DrawFall(dc, p); });
@@ -503,6 +546,137 @@ private:
         ctx->OMSetBlendState(blendBefore.Get(), factorBefore, maskBefore);
         ctx->RSSetState(rasterBefore.Get());
     }
+
+    // 稲妻のシェーダーと頂点 (新しいデバイスのたびに作り直す)。
+    bool BoltReady(platform::Gfx& gfx) {
+        if (boltGeneration_ == gfx.Generation() && (boltVs_ || boltFailed_)) return boltVs_ != nullptr;
+        boltGeneration_ = gfx.Generation();
+        boltVs_.Reset();
+        boltPs_.Reset();
+        boltLayout_.Reset();
+        boltCb_.Reset();
+        boltVb_.Reset();
+        boltBlend_.Reset();
+        boltRaster_.Reset();
+        boltFailed_ = false;
+        boltPlaced_ = false;
+        ID3D11Device* device = gfx.D3D();
+        if (!device) return false;
+        const std::string text = kBoltHlsl;
+        Ptr<ID3DBlob> vs, ps;
+        std::string error;
+        D3D11_BUFFER_DESC cd{};
+        cd.Usage = D3D11_USAGE_DEFAULT;
+        cd.ByteWidth = sizeof(BoltConstants);
+        cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        D3D11_BUFFER_DESC vd{};
+        vd.Usage = D3D11_USAGE_DYNAMIC;
+        vd.ByteWidth = kBoltVertices * sizeof(BoltVertex);
+        vd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        vd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        // 光は足すだけ (色に加算。アルファはそのまま)。
+        D3D11_BLEND_DESC bl{};
+        bl.RenderTarget[0].BlendEnable = TRUE;
+        bl.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+        bl.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+        bl.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+        bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+        bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+        bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        D3D11_RASTERIZER_DESC rd{};
+        rd.FillMode = D3D11_FILL_SOLID;
+        rd.CullMode = D3D11_CULL_NONE;
+        rd.DepthClipEnable = TRUE;
+        rd.MultisampleEnable = TRUE;
+        const D3D11_INPUT_ELEMENT_DESC layout[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        };
+        if (!Compile(text, "BoltVS", "vs_4_0", vs, error) || !Compile(text, "BoltPS", "ps_4_0", ps, error) ||
+            FAILED(device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &boltVs_)) ||
+            FAILED(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &boltPs_)) ||
+            FAILED(device->CreateInputLayout(layout, 2, vs->GetBufferPointer(), vs->GetBufferSize(), &boltLayout_)) ||
+            FAILED(device->CreateBuffer(&cd, nullptr, &boltCb_)) || FAILED(device->CreateBuffer(&vd, nullptr, &boltVb_)) ||
+            FAILED(device->CreateBlendState(&bl, &boltBlend_)) || FAILED(device->CreateRasterizerState(&rd, &boltRaster_))) {
+            log::Error("稲妻を描く準備ができません: {}", error);
+            boltVs_.Reset();
+            boltFailed_ = true;
+            return false;
+        }
+        return true;
+    }
+
+    // 稲妻 1 つ: 新しい稲妻なら、そのときのカメラのまわりに置いて形を作る (光っている間はそこに留まる)。
+    void DrawBolt(const space3d::ExtraDrawContext& dc, const Strike& s) {
+        if (!boltVs_) return;
+        if (!boltPlaced_ || s.seed != boltSeed_) {
+            BoltPlace(s.seed, dc.eye, std::min(0.f, dc.eye.y - 1.f), boltTop_, boltBottom_);
+            boltPath_ = BoltPath(s.seed, boltTop_, boltBottom_);
+            boltSeed_ = s.seed;
+            boltPlaced_ = true;
+        }
+        const float glow = BoltGlow(s.age) * s.strength;
+        if (!(glow > 0) || boltPath_.empty()) return;
+        BoltRibbons(boltPath_, dc.eye, 1.4f, 10.f, boltVertices_);
+        const UINT count = static_cast<UINT>(std::min<size_t>(boltVertices_.size(), kBoltVertices));
+        ID3D11DeviceContext* ctx = dc.ctx;
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        if (FAILED(ctx->Map(boltVb_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+        std::memcpy(mapped.pData, boltVertices_.data(), count * sizeof(BoltVertex));
+        ctx->Unmap(boltVb_.Get(), 0);
+        BoltConstants k{};
+        const space3d::Mat4 viewProj = dc.projection * dc.view;
+        std::memcpy(k.viewProj, &viewProj.m[0][0], sizeof(k.viewProj));
+        // (芯は白く飛ぶほど明るく、にじみは淡い青)
+        k.color[0] = 3.2f * glow, k.color[1] = 3.4f * glow, k.color[2] = 4.f * glow;
+        ctx->UpdateSubresource(boltCb_.Get(), 0, nullptr, &k, 0, 0);
+        // 前の描画のステートは、描いた後に戻す (深度: ExtraDraw が受け取るとおり - テストする、書かない)。
+        Ptr<ID3D11BlendState> blendBefore;
+        Ptr<ID3D11RasterizerState> rasterBefore;
+        Ptr<ID3D11InputLayout> layoutBefore;
+        float factorBefore[4] = {};
+        UINT maskBefore = 0xFFFFFFFF;
+        ctx->OMGetBlendState(&blendBefore, factorBefore, &maskBefore);
+        ctx->RSGetState(&rasterBefore);
+        ctx->IAGetInputLayout(&layoutBefore);
+        const float factor[4] = {};
+        ctx->OMSetBlendState(boltBlend_.Get(), factor, 0xFFFFFFFF);
+        ctx->RSSetState(boltRaster_.Get());
+        ID3D11Buffer* cb = boltCb_.Get();
+        ID3D11Buffer* vb = boltVb_.Get();
+        const UINT stride = sizeof(BoltVertex), offset = 0;
+        ctx->IASetInputLayout(boltLayout_.Get());
+        ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->VSSetConstantBuffers(4, 1, &cb);
+        ctx->PSSetConstantBuffers(4, 1, &cb);
+        ctx->VSSetShader(boltVs_.Get(), nullptr, 0);
+        ctx->PSSetShader(boltPs_.Get(), nullptr, 0);
+        ctx->Draw(count, 0);
+        ID3D11Buffer* none = nullptr;
+        const UINT zero = 0;
+        ctx->VSSetConstantBuffers(4, 1, &none);
+        ctx->PSSetConstantBuffers(4, 1, &none);
+        ctx->IASetVertexBuffers(0, 1, &none, &zero, &zero);
+        ctx->IASetInputLayout(layoutBefore.Get());
+        ctx->OMSetBlendState(blendBefore.Get(), factorBefore, maskBefore);
+        ctx->RSSetState(rasterBefore.Get());
+    }
+
+    Ptr<ID3D11VertexShader> boltVs_;
+    Ptr<ID3D11PixelShader> boltPs_;
+    Ptr<ID3D11InputLayout> boltLayout_;
+    Ptr<ID3D11Buffer> boltCb_, boltVb_;
+    Ptr<ID3D11BlendState> boltBlend_;
+    Ptr<ID3D11RasterizerState> boltRaster_;
+    uint64_t boltGeneration_ = ~uint64_t{0};
+    bool boltFailed_ = false;
+    bool boltPlaced_ = false;  // 今の稲妻 (boltSeed_) を置いた
+    uint32_t boltSeed_ = 0;
+    Vec3 boltTop_{}, boltBottom_{};
+    std::vector<BoltSegment> boltPath_;
+    std::vector<BoltVertex> boltVertices_;
 
     std::vector<Vec3> directions_;
     std::vector<Precipitation> falls_;

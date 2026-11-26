@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.24",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "天候の「雷」をオンにすると、空から地面へ走る稲妻が見えるように。曲がりくねった幹と細い枝で、2 度光ってから残光でゆっくり消えます (雲と場面が光るのも同じ時)",
+          "en": "With \"Lightning\" on in the weather, you now see lightning bolts running from the sky to the ground. A winding trunk with thin branches flashes twice, then fades out slowly as an afterglow (the clouds and scene flash at the same moment)"
+        }
+      ]
+    },
+    {
       "version": "0.0.23",
       "date": "2026-11-26",
       "items": [

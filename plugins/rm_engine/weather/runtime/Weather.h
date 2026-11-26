@@ -112,7 +112,7 @@ struct Weather {
     RM_PROPERTY(Edit, Label="積もる速さ (cm / 分)", Tooltip="降水量 100 のとき、1 分に積もる高さ。降る雪の量に比例します (降水量 50 なら半分、10 なら 10 分の 1)。積もる高さに届いたら止まります。足跡も同じ速さで埋まります", Min=0, Max=1000, Step=1, Decimals=1) float snowSpeedCm = 20.f;
     RM_PROPERTY(Edit, Label="はじめから積もっている", Tooltip="入れると、雪の降る所には、Play の始めから「積もる高さ」いっぱいに雪が積もっています (エディターのシーンビューでも見えます)。外すと、雪の無い地面から、降るにつれて積もります") bool snowFromStart = true;
     RM_PROPERTY(Edit, Label="霧の量", Tooltip="0: 無し 〜 50: 20 m ほど先がかすむ 〜 100: 数 m 先しか見えない。色は天気で変わります (晴れ・くもり: 白っぽい / 雨: 暗い灰色 / 雪: 白)。強い雨・雪では、これに加えて霧が出ます", Min=0, Max=100, Step=0.1, Decimals=1) float fogAmount = 0.f;
-    RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき雲が光り、そのとき場面も一瞬明るくなります (Play 中。雲の多いとき)") bool lightning = false;
+    RM_PROPERTY(Edit, Label="雷", Tooltip="ときどき稲妻が空から地面へ走り (光ったあとも少し残ります)、雲が光って場面も一瞬明るくなります (Play 中。雲の多いとき)") bool lightning = false;
     RM_PROPERTY(Edit, Label="風の向き (度)", Tooltip="風の吹いていく向き (真上から見て)。0: 前 (+Z) へ / 90: 左 (-X) へ / -90: 右 (+X) へ。雲・雨粒・雪が流されます", Min=-360, Max=360) float windDirection = 0.f;
     RM_PROPERTY(Edit, Label="風の強さ (m/秒)", Tooltip="0: 無風 〜 30: 嵐。雲の流れる速さと、雨粒・雪の傾き", Min=0, Max=40, Step=0.5) float windStrength = 2.f;
     // ゲームが動いている間に 雪にする がどこまで来たか (0: 雨 .. 1: 雪)。約 5 秒かけて向かう
@@ -196,6 +196,10 @@ Vec3 WindOf(float directionDegrees, float strength);
 // 雲の地図 (WeatherPlaceInfo::clouds。null か数が合わない: 無し) - マスごとに、雲の量 = シーンの雲の量から
 // 塗った割合の分だけ塗った量へ、降る量 = max(シーン全体の降る量, その場所だけ降る量) (そこに雨雲が出る)。
 game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds, const PlaceClouds* clouds = nullptr);
+// シーン全体の空の雲の量 (0 .. 1: 雨や雪が降ると、頼んだ雲が少なくても増える)。
+float SkyCoverOf(const Weather& w);
+// 雷が光ることがある: 「雷」がオンで、雲が多い (SkyCoverOf が 0.5 より多い) とき。空の閃光と稲妻 (Lightning.h) はこのときだけ。
+bool LightningOn(const Weather& w);
 
 // `dt` ゲーム秒あとの 濡れ。雨の間: 今降っている向き (風で斜め) が濡れていく
 // (最後は全部: RainWetSpeed。どしゃぶりで約 25 秒、霧雨で 1 分半) - kWetWayDegrees 以内の向きが
