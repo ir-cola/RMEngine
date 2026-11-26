@@ -417,11 +417,20 @@ private:
         if (down && (erase || layer != MapLayer::Climate || FindKind(map, id))) {
             const Vec2 at = v.ToWorld(in.mouseX, in.mouseY);
             const float cs = CellSizeOf(map);
+            // 1 回押した所に塗る (雨雲の筆: 真ん中ほど濃く、ぼかし)。
+            const bool soft = !erase && layer == MapLayer::Rain;
+            const auto stamp = [&](Vec2 p) {
+                if (soft) {
+                    PaintCircleSoft(stroke_, cs, p, state_.brush, state_.rain, state_.soft / 100.f);
+                } else {
+                    PaintCircle(stroke_, cs, p, state_.brush, id);
+                }
+            };
             if (!stroking_) {
                 stroking_ = true;
                 strokeLayer_ = layer;
                 stroke_ = PaintOf(map, layer);
-                PaintCircle(stroke_, cs, at, state_.brush, id);
+                stamp(at);
             } else {
                 // 前の場所から今の場所まで、筆の半径の 3 割ごとに塗る (速く動かしても途切れない)。
                 const float dx = at.x - last_.x, dz = at.y - last_.y;
@@ -429,7 +438,7 @@ private:
                 const int n = std::clamp(static_cast<int>(std::ceil(std::sqrt(dx * dx + dz * dz) / step)), 1, 10000);
                 for (int i = 1; i <= n; ++i) {
                     const float t = static_cast<float>(i) / static_cast<float>(n);
-                    PaintCircle(stroke_, cs, {last_.x + dx * t, last_.y + dz * t}, state_.brush, id);
+                    stamp({last_.x + dx * t, last_.y + dz * t});
                 }
             }
             last_ = at;
@@ -903,7 +912,7 @@ private:
             if (pick >= 0) amount = kSteps[pick], amountChanged = true;
         }
         y += kRow + 6;
-        if (shape || state_.tool == 2) {  // (ぼかしはペンで囲んだ形だけ)
+        if (shape || state_.tool == 0 || state_.tool == 2) {  // (ぼかしは筆とペン)
             Label(c, {r.x, y, labelW, kRow}, shape ? Tr(L"形のぼかし (%)") : Tr(L"ぼかし (%)"));
             softChanged = w::NumberField(c, shape ? "climate.shape.soft" : "climate.soft", {r.x + labelW, y, r.w - labelW, kRow}, soft, 0.f, 100.f,
                                          shape ? shapeSoftText_ : softText_);
@@ -927,7 +936,7 @@ private:
         }
         w::DrawSwatch(c, {r.x, y + 3, 16, 16}, theme::MapRain(amount / 100.f));
         Note(c, {r.x + 24, y, r.w - 24, 132},
-             Tr(L"雨雲を描いた所だけ、この濃さで降ります (シーン全体の降水量が 0 でも)。目盛りは降水量と同じです。ペンで囲んだ形は、真ん中がこの濃さで、縁に向かってだんだん弱くなります (ぼかし: 縁から真ん中までのうち、弱くなる幅。0 % で縁まで同じ濃さ)。筆はぼかしません。雨か雪かはその場所の気温で決まり、空もその上だけ厚い雲になります。"));
+             Tr(L"雨雲を描いた所だけ、この濃さで降ります (シーン全体の降水量が 0 でも)。目盛りは降水量と同じです。ペンで囲んだ形と筆の円は、真ん中がこの濃さで、縁に向かってだんだん弱くなります (ぼかし: 縁から真ん中までのうち、弱くなる幅。0 % で縁まで同じ濃さ)。重ねて塗った所は濃いほうです (薄くするときは消しゴム)。雨か雪かはその場所の気温で決まり、空もその上だけ厚い雲になります。"));
         return y + 138;
     }
 

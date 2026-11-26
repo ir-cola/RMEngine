@@ -202,6 +202,10 @@ bool InsideShape(std::span<const Vec2> points, Vec2 p);
 // (0: 消す)。円が小さくてもその真ん中のマス 1 つは塗る。長方形はいるだけ広げる (一辺 kMaxPaintCells
 // まで。それより外は塗らない)。変わったら true。
 bool PaintCircle(PaintGrid& grid, float cellSize, Vec2 center, float radius, int id);
+// 雨雲の筆: PaintCircle と同じマスを、筆の真ん中ほど濃く塗る。真ん中が `amount` (%)、半径 x (1 − `soft`
+// (0..1)) より内側は `amount` のまま、その外は円の縁へなめらかに薄くなる (FillShapeSoft と同じ曲線)。
+// 今のマスより濃い所だけ塗る (重ねて塗っても薄くならない)。1 % より薄くなるマスは塗らない。
+bool PaintCircleSoft(PaintGrid& grid, float cellSize, Vec2 center, float radius, float amount, float soft);
 // `from` m のマスで塗ったものを、`to` m のマスで塗り直す (新しいマスの真ん中が入る古いマスの番号)。
 PaintGrid Resample(const PaintGrid& grid, float from, float to);
 // 地図に足す種類の新しい番号 (今の一番大きいものの次)。

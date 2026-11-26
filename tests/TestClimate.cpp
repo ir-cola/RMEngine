@@ -359,6 +359,18 @@ RM_TEST(Climate_RainSoft) {
     PaintGrid none;
     CHECK(!FillShapeSoft(none, 1.f, square, 0.f, 1.f) && none.Empty());
     CHECK(!FillShapeSoft(none, 1.f, std::vector<Vec2>{{0, 0}, {NAN, 0}, {1, 1}}, 50.f, 1.f));
+    // 雨雲の筆: 真ん中が濃さ、円の縁へ薄く。重ねても薄くならない。
+    PaintGrid brush;
+    CHECK(PaintCircleSoft(brush, 1.f, {0.5f, 0.5f}, 10.f, 60.f, 1.f));
+    const auto bat = [&brush](int x, int z) { return CloudsOfCell(brush.At(x, z)); };
+    CHECK(Near(bat(0, 0), 60) && bat(0, 0) > bat(3, 0) && bat(3, 0) > bat(6, 0) && bat(6, 0) > bat(9, 0) && bat(9, 0) >= 0);
+    CHECK(bat(3, 0) == bat(-3, 0) && bat(3, 0) == bat(0, 3) && bat(12, 0) == 0);
+    CHECK(!PaintCircleSoft(brush, 1.f, {0.5f, 0.5f}, 10.f, 30.f, 1.f) && Near(bat(0, 0), 60));
+    PaintGrid flatBrush;
+    PaintCircleSoft(flatBrush, 1.f, {0.5f, 0.5f}, 10.f, 60.f, 0.f);
+    CHECK(CloudsOfCell(flatBrush.At(9, 0)) == 60 && CloudsOfCell(flatBrush.At(0, 0)) == 60);
+    PaintGrid tiny;  // (マスより小さい筆でも真ん中のマスは濃さ)
+    CHECK(PaintCircleSoft(tiny, 4.f, {1, 1}, 0.5f, 40.f, 1.f) && CloudsOfCell(tiny.At(0, 0)) == 40);
     // 地図の雨雲の形: 焼くとぼかす (ほかの層の形はぼかさない)。
     ClimateMap map;
     map.cellSize = 1;

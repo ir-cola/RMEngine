@@ -353,6 +353,12 @@ bool ShapeBounds(std::span<const Vec2> pts, float& lx, float& lz, float& hx, flo
     return true;
 }
 
+// 縁からの割合 t (0: 縁 .. 1: 濃さのまま) -> 濃さに掛ける値。なめらかな段 (smoothstep)。
+float SoftFade(float t) {
+    t = std::clamp(t, 0.f, 1.f);
+    return t * t * (3.f - 2.f * t);
+}
+
 // 2 乗した距離の表 `d2` (w x h。0: 形の外 / それ以外: 形の中) を、形の外の一番近いマスまでの
 // 距離の 2 乗 (マスの単位) にする。行ごとに横の距離を出してから、列ごとに放物線の下側の包み
 // (Felzenszwalb と Huttenlocher の距離変換) で縦を足す。どちらもマスの数に比例する手間。
@@ -448,10 +454,39 @@ bool FillShapeSoft(PaintGrid& g, float cellSize, std::span<const Vec2> pts, floa
             const float dd = d2[static_cast<size_t>(j) * w + i];
             if (dd <= 0) continue;
             const float t = full > 0 ? std::clamp((std::sqrt(dd) - 0.5f) / full, 0.f, 1.f) : 1.f;
-            const int id = CloudCellOf(amount * t * t * (3.f - 2.f * t));  // (なめらかな段: smoothstep)
+            const int id = CloudCellOf(amount * SoftFade(t));
             if (id < 2) continue;
             const int x = x0 + i - 1, z = z0 + j - 1;
             if (id > g.At(x, z)) changed = SetCell(g, x, z, id) || changed;
+        }
+    }
+    return changed;
+}
+
+bool PaintCircleSoft(PaintGrid& g, float cellSize, Vec2 center, float radius, float amount, float soft) {
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(amount)) return false;
+    amount = std::clamp(amount, 0.f, 100.f);
+    soft = std::isfinite(soft) ? std::clamp(soft, 0.f, 1.f) : 1.f;
+    if (CloudCellOf(amount) < 2) return false;  // (1 % より薄い: 塗らない)
+    const float cs = CellSizeOf(cellSize);
+    const float r = std::isfinite(radius) ? std::max(radius, 0.f) : 0.f;
+    const int mx = FloorCell(center.x / cs), mz = FloorCell(center.y / cs);  // 真ん中のマス (いつも濃さのまま)
+    int x0 = std::min(FloorCell((center.x - r) / cs), mx), x1 = std::max(FloorCell((center.x + r) / cs), mx);
+    int z0 = std::min(FloorCell((center.y - r) / cs), mz), z1 = std::max(FloorCell((center.y + r) / cs), mz);
+    if (!GrowTo(g, x0, z0, x1, z1, mx, mz)) return false;
+    const double r2 = static_cast<double>(r) * r;
+    const float fade = r * soft;  // (縁からこの幅で薄くなる)
+    bool changed = false;
+    for (int z = z0; z <= z1; ++z) {
+        for (int x = x0; x <= x1; ++x) {
+            const double dx = (x + 0.5) * cs - center.x, dz = (z + 0.5) * cs - center.y;
+            const double d2 = dx * dx + dz * dz;
+            const bool middle = x == mx && z == mz;
+            if (d2 > r2 && !middle) continue;
+            const float t = middle || !(fade > 0) ? 1.f : static_cast<float>((r - std::sqrt(d2)) / fade);
+            const int id = CloudCellOf(amount * SoftFade(t));
+            if (id < 2 || id <= g.At(x, z)) continue;
+            changed = SetCell(g, x, z, id) || changed;
         }
     }
     return changed;
