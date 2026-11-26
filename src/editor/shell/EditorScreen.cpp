@@ -1098,12 +1098,12 @@ void EditorScreen::DrawMenuBar(ui::Context& c, Rect r) {
         const float wdt = p.TextWidth(menuTitle, 13) + 24;
         const Rect item{x, r.y + 3, wdt, r.h - 6};
         menuTitleRects_[i] = item;
-        w::KeepOrnamentOff(c, item);  // (テーマの絵をメニューの項目の後ろに出さない)
         c.PushId(static_cast<uint64_t>(i));
         const auto b = c.ButtonBehavior(c.MakeId("menubar"), item);
         c.PopId();
         const bool open = menuPopup_.open && static_cast<int>(openMenu_) == i;
         if (open || b.hovered) w::DrawSurface(c, item, open ? w::Surface::Pressed : w::Surface::Hovered);
+        if (!open && !b.hovered) w::KeepOrnamentOff(c, item);  // (箱を描かない間は、テーマの絵を項目の後ろに出さない)
         p.Text(item, menuTitle, Style(13, theme::Text, false, ui::HAlign::Center));
         if (b.clicked) {
             openMenu_ = static_cast<Menu>(i);

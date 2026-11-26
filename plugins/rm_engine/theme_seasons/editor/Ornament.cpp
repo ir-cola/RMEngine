@@ -997,4 +997,101 @@ ui::Path MosquitoCoil(Vec2 center, float radius) {
     return p;
 }
 
+
+// --- 夏の夜の影の別案 (2026-11-26 の 3 回目) -----------------------------------------------------
+
+namespace {
+
+// 穴: 反時計回りの楕円。同じパスの時計回りの形の中に置くと、そこだけ塗られない (巻き数が 0 になる)。
+void AddHole(ui::Path& p, Vec2 c, float rx, float ry, float degrees) {
+    constexpr float k = 0.5522847f;
+    auto at = [&](float x, float y) { return Add(c, Rotate({x, y}, degrees)); };
+    p.Begin(at(rx, 0));
+    p.Cubic(at(rx, -ry * k), at(rx * k, -ry), at(0, -ry));
+    p.Cubic(at(-rx * k, -ry), at(-rx, -ry * k), at(-rx, 0));
+    p.Cubic(at(-rx, ry * k), at(-rx * k, ry), at(0, ry));
+    p.Cubic(at(rx * k, ry), at(rx, ry * k), at(rx, 0));
+}
+
+}  // namespace
+
+ui::Path SenkoHanabi(Vec2 center, float radius) {
+    ui::Path p;
+    const Place at{center, radius, 0.f};
+    // こよりの持ち手: 左上から斜めに垂れ、先は少しよじれて細くなる。
+    AddBlade(p, at(-0.62f, -1.f), at(-0.4f, -0.72f), at(-0.12f, -0.42f), at(0.04f, -0.2f), 0.05f * radius, 16);
+    AddCircle(p, at(0.07f, -0.1f), 0.12f * radius);  // 火の玉
+    // 松葉のような火花: 玉から外へ伸びる筋の先が、何本にも細かく枝分かれする。
+    Random rnd{0x5E4Bu};
+    for (int i = 0; i < 9; ++i) {
+        const float a = -100.f + 260.f * static_cast<float>(i) / 8.f + (rnd.Next() - 0.5f) * 14.f;  // 上を除くまわり
+        const float len = 0.38f + 0.3f * rnd.Next();
+        const Vec2 from = at(0.07f, -0.1f);
+        const Vec2 d = Rotate({0, -1}, a);
+        const Vec2 mid = Add(from, Scale(d, len * radius));
+        AddBar(p, Add(from, Scale(d, 0.1f * radius)), mid, 0.022f * radius, 0.012f * radius);
+        for (int k = -2; k <= 2; ++k) {
+            const Vec2 e = Rotate(d, 22.f * static_cast<float>(k));
+            AddBar(p, mid, Add(mid, Scale(e, (0.12f + 0.06f * rnd.Next()) * radius)), 0.012f * radius, 0.004f * radius);
+        }
+    }
+    return p;
+}
+
+ui::Path Ramune(Vec2 center, float radius) {
+    ui::Path p;
+    const Place at{center, radius, 0.f};
+    // 瓶の片側の輪郭 (上から下へ): 口、細い首、ビー玉の入るふくらみ、くびれ、肩、まっすぐな胴、丸い底。
+    static constexpr Vec2 kHalf[] = {{0.11f, -1.f},  {0.11f, -0.9f},  {0.08f, -0.85f}, {0.17f, -0.73f}, {0.19f, -0.62f}, {0.15f, -0.52f},
+                                     {0.09f, -0.45f}, {0.14f, -0.32f}, {0.27f, -0.12f}, {0.30f, 0.05f},  {0.30f, 0.88f},  {0.27f, 0.97f},
+                                     {0.18f, 1.f}};
+    std::vector<Vec2> bottle;
+    for (const Vec2 v : kHalf) bottle.push_back(at(v.x, v.y));
+    for (size_t i = std::size(kHalf); i-- > 0;) bottle.push_back(at(-kHalf[i].x, kHalf[i].y));
+    AddPolygon(p, bottle);
+    AddHole(p, at(0, -0.62f), 0.1f * radius, 0.1f * radius, 0);              // ビー玉 (透けて見える)
+    AddHole(p, at(0, 0.38f), 0.2f * radius, 0.16f * radius, 0);              // 胴の模様 (丸いラベル)
+    return p;
+}
+
+ui::Path Watermelon(Vec2 center, float radius) {
+    ui::Path p;
+    // 半月に切ったスイカ (平らな切り口が上)。皮との境目の細い線と、種は穴。
+    const Vec2 c{center.x, center.y - 0.25f * radius};
+    std::vector<Vec2> half;
+    for (int i = 0; i <= 40; ++i) {
+        const float a = kPi * static_cast<float>(i) / 40.f;  // 右 → 下 → 左
+        half.push_back({c.x + radius * std::cos(a), c.y + radius * std::sin(a)});
+    }
+    AddPolygon(p, half);
+    // 皮との境目: 半径 0.80 .. 0.86 の細い弧 (反時計回りの帯 = 穴)。
+    std::vector<Vec2> band;
+    for (int i = 0; i <= 40; ++i) {
+        const float a = kPi * (0.04f + 0.92f * static_cast<float>(i) / 40.f);
+        band.push_back({c.x + 0.86f * radius * std::cos(a), c.y + 0.86f * radius * std::sin(a)});
+    }
+    for (int i = 40; i >= 0; --i) {
+        const float a = kPi * (0.04f + 0.92f * static_cast<float>(i) / 40.f);
+        band.push_back({c.x + 0.80f * radius * std::cos(a), c.y + 0.80f * radius * std::sin(a)});
+    }
+    p.Begin(band.back());
+    for (size_t i = band.size() - 1; i-- > 0;) p.Line(band[i]);  // (逆向きに: 穴)
+    static constexpr Vec2 kSeeds[] = {{-0.45f, 0.18f}, {-0.15f, 0.12f}, {0.18f, 0.16f}, {0.48f, 0.2f}, {-0.3f, 0.42f}, {0.05f, 0.45f}, {0.33f, 0.4f}};
+    for (const Vec2 s : kSeeds) AddHole(p, {c.x + s.x * radius, c.y + s.y * radius}, 0.035f * radius, 0.06f * radius, s.x * -40.f);
+    return p;
+}
+
+ui::Path WaterYoyo(Vec2 center, float radius) {
+    ui::Path p;
+    const Place at{center, radius, 0.f};
+    AddCircle(p, at(0, 0.36f), 0.62f * radius);                                     // 水の入った風船
+    AddShape(p, at, {{-0.08f, -0.24f}, {0.08f, -0.24f}, {0.05f, -0.36f}, {-0.05f, -0.36f}});  // 結び目
+    AddBar(p, at(0, -0.34f), at(0.08f, -0.8f), 0.03f * radius, 0.03f * radius);   // ゴムひも
+    AddCircle(p, at(0.1f, -0.88f), 0.12f * radius);                                 // 指にかける輪
+    AddHole(p, at(0.1f, -0.88f), 0.07f * radius, 0.07f * radius, 0);
+    AddHole(p, at(0, 0.18f), 0.5f * radius, 0.045f * radius, -12.f);                // 模様の帯
+    AddHole(p, at(0.02f, 0.5f), 0.52f * radius, 0.045f * radius, -12.f);
+    return p;
+}
+
 }  // namespace rm::theme_seasons::ornament

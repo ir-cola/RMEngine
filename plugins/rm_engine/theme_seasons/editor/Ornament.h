@@ -166,5 +166,10 @@ ui::Path Goldfish(Vec2 center, float radius, float degreesCcw);     // 夏の夜
 ui::Path Furin(Vec2 center, float radius);                          // 夏の夜: 風鈴 (糸・ガラスの鉢・短冊)
 ui::Path Kakigori(Vec2 center, float radius);                       // 夏の夜: かき氷 (氷の山・足の付いた器・さじ)
 ui::Path MosquitoCoil(Vec2 center, float radius);                   // 夏の夜: 蚊取り線香 (渦巻きと煙)
+// 夏の夜の別案 (2026-11-26 の 3 回目)。種・ビー玉・模様は穴 (反時計回りの図形) であける: 1 色でも何か分かる。
+ui::Path SenkoHanabi(Vec2 center, float radius);  // 線香花火 (こよりの持ち手・火の玉・松葉のように枝分かれする火花)
+ui::Path Ramune(Vec2 center, float radius);       // ラムネの瓶 (口・ビー玉のふくらみ・くびれ・胴。ビー玉と丸いラベルは穴)
+ui::Path Watermelon(Vec2 center, float radius);   // 半月に切ったスイカ (皮との境目の線と種は穴)
+ui::Path WaterYoyo(Vec2 center, float radius);    // 水ヨーヨー (風船・結び目・ゴムひもと指の輪。模様の帯は穴)
 
 }  // namespace rm::theme_seasons::ornament

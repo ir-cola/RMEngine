@@ -66,9 +66,10 @@ struct FireworkLook {
 };
 constexpr FireworkLook kFireworks[6] = {{0xFFB347, 0xFFE3A0}, {0xFF5040, 0xFFB8A8}, {0x5CFF8A, 0xD6FFDF},
                                         {0x7A9CFF, 0xE2EAFF}, {0xFF6FC0, 0xFFD3EE}, {0xE8ECFF, 0xFFFFFF}};
-Color FireworkGlow(int i) { return Color::Hex(kFireworks[i % 6].trail, 0.045f); }
-Color FireworkTrail(int i) { return Color::Hex(kFireworks[i % 6].trail, 0.42f); }
-Color FireworkTip(int i) { return Color::Hex(kFireworks[i % 6].tip, 0.62f); }
+// (2026-11-26 の 3 回目: 主張が強すぎたので、かなり薄く)
+Color FireworkGlow(int i) { return Color::Hex(kFireworks[i % 6].trail, 0.02f); }
+Color FireworkTrail(int i) { return Color::Hex(kFireworks[i % 6].trail, 0.15f); }
+Color FireworkTip(int i) { return Color::Hex(kFireworks[i % 6].tip, 0.24f); }
 Color SeaFar() { return Color::Hex(0x14456B, 0.50f); }        // 夜の海 (奥の波)
 Color SeaNear() { return Color::Hex(0x1F6394, 0.42f); }       // 手前の波
 Color DaySeaFar() { return Color::Hex(0x4FA3D9, 0.30f); }     // 夏の朝の海 (奥の波。2026-11-26 の 2 回目)
@@ -274,10 +275,10 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
                 break;
             }
             {
-                // 夜桜: 右から左へ吹かれて飛ぶ花びら (薄め)、左下に花見団子。(提灯はいったん外した: 2026-11-26 の 2 回目。
+                // 夜桜: 右から左へ吹かれて飛ぶ花びら (薄め)、左下にぼんぼり (ユーザーが案から選んだ)。(提灯はいったん外した: 2026-11-26 の 2 回目。
                 // 形を作る ornament::Garland / AddLantern は残してある)
                 PetalsInWind(pic, w, -1.f, true);
-                Silhouette(pic, w, ornament::HanamiDango({0, 0}, 1.f, -30.f));
+                Silhouette(pic, w, ornament::Bonbori({0, 0}, 1.f, 0.f));
             }
             break;
         case Kind::SummerNight:
@@ -323,7 +324,7 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
             if (!floating) {
                 // 降る雪、上のほうの真ん中に左上へ飛ぶサンタとトナカイ、左下にクリスマスツリー (どちらも緑)、
                 // 下に朝より高く積もった雪とかまくら。(上の電球はいったん外した: 2026-11-26 の 2 回目)
-                const float size = std::clamp(w.w * 0.11f, 90.f, 180.f);
+                const float size = std::clamp(w.w * 0.06f, 55.f, 100.f);  // (2026-11-26 の 3 回目: 小さく)
                 pic.push_back({ornament::SantaSleigh({w.x + w.w * 0.5f, w.y + std::max(w.h * 0.2f, 1.2f * size)}, size, -14.f),
                                season::WinterGreen()});
                 Silhouette(pic, w, ornament::ChristmasTree({0, 0}, 1.f, 0.f), season::WinterGreen());

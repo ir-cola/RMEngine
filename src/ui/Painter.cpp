@@ -472,7 +472,11 @@ void Painter::PushClipExcept(const Rect& r, std::span<const Rect> holes) {
         PushClip(r);
         return;
     }
-    dc_->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), geo.Get(), D2D1_ANTIALIAS_MODE_ALIASED), nullptr);
+    // 窓の面はアルファを持たない (D2D1_ALPHA_MODE_IGNORE) ので、レイヤーは今の絵から始める (INITIALIZE_FROM_BACKGROUND)。
+    // 付けないとレイヤーは透明な黒から始まり、半透明の物が黒くなった (2026-11-26: 夏の夜の海が真っ黒)。
+    dc_->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), geo.Get(), D2D1_ANTIALIAS_MODE_ALIASED, D2D1::IdentityMatrix(), 1.f, nullptr,
+                                          D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND | D2D1_LAYER_OPTIONS1_IGNORE_ALPHA),
+                   nullptr);
     clips_.push_back(true);
 }
 

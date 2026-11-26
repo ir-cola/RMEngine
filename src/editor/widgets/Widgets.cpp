@@ -517,7 +517,6 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color, float size)
 
 bool Button(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_view label, ButtonKind kind, bool enabled) {
     auto& p = c.P();
-    KeepOrnamentOff(c, r);
     ui::Context::ButtonResult b;
     if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);
     const bool down = b.held && b.hovered;
@@ -533,6 +532,9 @@ bool Button(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring_
             break;
         case ButtonKind::Ghost:
             if (b.hovered) DrawSurface(c, r, down ? Surface::Pressed : Surface::Hovered);
+            // 箱を描かない間だけ、後ろにテーマの絵を出さない (箱のあるボタンは箱が絵を隠す。穴をあけると、積もった雪
+            // などが四角く欠けて見えた: 2026-11-26)。
+            if (!b.hovered) KeepOrnamentOff(c, r);
             fg = b.hovered ? theme::Text : theme::TextDim;
             break;
     }
@@ -670,9 +672,9 @@ void LineGraph(ui::Context& c, const Rect& r, std::span<const float> a, std::spa
 }
 
 bool IconButton(ui::Context& c, std::string_view idStr, const Rect& r, Icon icon, bool enabled) {
-    KeepOrnamentOff(c, r);
     ui::Context::ButtonResult b;
     if (enabled) b = c.ButtonBehavior(c.MakeId(idStr), r);
+    if (!b.hovered) KeepOrnamentOff(c, r);  // (箱を描かない間だけ)
     const bool down = b.held && b.hovered;
     if (b.hovered) DrawSurface(c, r, down ? Surface::Pressed : Surface::Hovered);
     DrawIcon(c, r, icon, !enabled ? theme::TextFaint : b.hovered ? theme::Text : theme::TextDim);
@@ -850,7 +852,7 @@ bool NavItem(ui::Context& c, std::string_view idStr, const Rect& r, std::wstring
 
 void DrawTab(ui::Context& c, const Rect& r, bool selected, bool hovered) {
     auto& p = c.P();
-    KeepOrnamentOff(c, r);
+    if (!selected && !hovered) KeepOrnamentOff(c, r);  // (箱を描かない間だけ)
     if (selected) {
         const theme::Gradient g = theme::Raised(theme::PanelHeader);
         p.FillRoundRectGradient(r, theme::Radius, g.top, g.bottom);

@@ -66,7 +66,7 @@ void DrawBackdrop(ui::Context& c, bool floating);
 // 塗ったばかりの面にもう一度絵を描く (DrawPanelFrame / DrawBar がやる)。`r` に切り取る。
 // (`panelThings`) 先にパックのパネル用の地 (夏: 砂の粒) も描く - バーには描かない。
 void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0, bool panelThings = true);
-// ボタン (メニューの項目・ボタン・タブ) の場所: テーマの絵はそこには描かない (2026-11-26: 文字の後ろの絵で
+// 箱を描かない間のボタン (メニューの項目・薄いボタン・絵だけのボタン・選んでいないタブ) の場所: テーマの絵はそこには描かない (2026-11-26: 文字の後ろの絵で
 // ボタンが見づらかった)。ボタンを描く関数が毎フレーム呼ぶ。絵を描くのはボタンより先なので、前のフレームの場所を使う。
 void KeepOrnamentOff(ui::Context& c, const ui::Rect& r);
 

@@ -21,6 +21,14 @@
         {
           "ja": "どのテーマでも選んだ所の色がはっきり分かるように (背景と同じにならない決まり)。テーマの絵はメニューやボタンの後ろには出しません。季節で切り替えるの見本から区切りの線と文字を外しました",
           "en": "Selected rows now stand out clearly in every theme (never the same as the background). Theme pictures no longer show behind menus and buttons. The \"Switch by season\" preview no longer has divider lines or labels"
+        },
+        {
+          "ja": "夜桜の左下の影をぼんぼりに。テーマの絵の半透明の所が黒くなっていた (夏の夜の海が真っ黒) のを直しました",
+          "en": "Night Sakura's corner silhouette is now a bonbori lamp. Fixed translucent parts of theme pictures turning black (the summer night sea was pitch black)"
+        },
+        {
+          "ja": "積もった雪がボタンのまわりで四角く欠けていたのを直しました。花火のテーマの花火をかなり薄く、クリスマスのサンタを小さく",
+          "en": "Fixed piled-up snow getting cut into rectangles around buttons. The Fireworks theme's fireworks are much fainter and Christmas's Santa is smaller"
         }
       ]
     },
