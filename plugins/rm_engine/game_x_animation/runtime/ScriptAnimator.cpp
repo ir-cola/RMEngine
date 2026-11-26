@@ -116,6 +116,33 @@ int Bone(void* ctx, uint64_t id, const char* name, float* position, float* rotat
     return bone ? 1 : 0;
 }
 
+// 状態とルール。
+int SetParam(void* ctx, uint64_t id, const char* name, float value, int trigger) {
+    const Found f = AnimatorOf(ctx, id);
+    if (!f.a) return 0;
+    return SetRuleParam(RunOf(*f.a, f.id), name ? name : "", value, trigger != 0) ? 1 : 0;
+}
+float Param(void* ctx, uint64_t id, const char* name) {
+    const Found f = AnimatorOf(ctx, id);
+    return f.a && f.a->run ? RuleParam(*f.a->run, name ? name : "") : 0.f;
+}
+uint32_t State(void* ctx, uint64_t id, char* buf, uint32_t cap) {
+    const Found f = AnimatorOf(ctx, id);
+    if (!f.a || !f.a->run) return 0;
+    const std::string_view s = StateName(*f.a->run);
+    if (buf && cap > 0) std::memcpy(buf, s.data(), std::min<size_t>(s.size(), cap));
+    return static_cast<uint32_t>(s.size());
+}
+float StateTimeOf(void* ctx, uint64_t id) {
+    const Found f = AnimatorOf(ctx, id);
+    return f.a && f.a->run ? StateFraction(*f.a->run) : 0.f;
+}
+int PlayStateOf(void* ctx, uint64_t id, const char* state, float fade) {
+    const Found f = AnimatorOf(ctx, id);
+    return f.a && PlayState(RunOf(*f.a, f.id), *f.a, state ? state : "", fade) ? 1 : 0;
+}
+constexpr RmAnimRulesApi kRules{&SetParam, &Param, &State, &StateTimeOf, &PlayStateOf};
+
 constexpr RmAnimApi kTable{&Has,   &Play, &HasClip, &ClipName, &SetPaused, &Paused, &Speed,      &SetSpeed,
                            &Loop,  &SetLoop, &Time, &SetTime,  &ClipDuration, &ClipEnded, &Bone};
 
@@ -123,6 +150,11 @@ constexpr RmAnimApi kTable{&Has,   &Play, &HasClip, &ClipName, &SetPaused, &Paus
 
 const game_production::ScriptApiPart& ScriptAnimatorPart() {
     static const game_production::ScriptApiPart part{RM_PART_ANIM, RM_PART_ANIM_VERSION, &kTable};
+    return part;
+}
+
+const game_production::ScriptApiPart& ScriptAnimatorRulesPart() {
+    static const game_production::ScriptApiPart part{RM_PART_ANIM_RULES, RM_PART_ANIM_RULES_VERSION, &kRules};
     return part;
 }
 

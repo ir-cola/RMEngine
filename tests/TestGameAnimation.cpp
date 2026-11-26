@@ -16,6 +16,7 @@
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "core/asset/ImportSettings.h"
 #include "base/Json.h"
+#include "rm_engine/animation/runtime/Rules.h"
 
 #include <cmath>
 #include <filesystem>
@@ -306,6 +307,56 @@ RM_TEST(GameAnim_RunCrossfadesAndSwitches) {
     a.loop = false;
     StepAnimator(run, a, 2.f, fired, &NextForTest);
     CHECK(Ended(run, a) && Near(run.player.Time(), 1.f));
+}
+
+// 状態とルール (.rmanim): 1 つ目の状態から始まり、パラメーターでルールが状態を変え、そのクリップ・ループ・速さで流す。
+RM_TEST(GameAnim_RulesDriveTheClip) {
+    const game_x_3d::SkinnedModel m = ArmWithTwoClips();
+    animation::AnimController ctl;
+    ctl.params = {{"speed", animation::ParamType::Float, 0}, {"wave", animation::ParamType::Trigger, 0}};
+    ctl.states = {{"Idle", "Still", true, 1, animation::StateExit::Free},
+                  {"Move", "Turn", true, 2, animation::StateExit::Free},
+                  {"Wave", "Turn", false, 1, animation::StateExit::OwnUntilEnd}};
+    ctl.rules = {{"", "wave", "Wave", 0.f, false, false},
+                 {"Wave", "ended", "Idle", 0.f, false, false},
+                 {"", "speed > 0.1", "Move", 0.4f, false, false},
+                 {"", "", "Idle", 0.2f, false, false}};
+    Animator a;
+    AnimatorRun run;
+    BindModel(run, m.skin, m.clips);
+    // スクリプトがルールを読む前に入れた値は、読んだときに入る。
+    CHECK(SetRuleParam(run, "speed", 0.f, false));
+    BindRules(run, a, std::make_shared<const animation::CompiledController>(animation::Compile(ctl)));
+    CHECK(StateName(run) == "Idle" && a.clip == "Still" && a.loop);
+    std::vector<const space3d::ClipEvent*> fired;
+    StepAnimatorRules(run, a, 0.1f);
+    StepAnimator(run, a, 0.1f, fired, &NextForTest);
+    CHECK(StateName(run) == "Idle" && run.player.ClipIndex() == 1);
+    // 速さ → Move (0.4 秒のフェード)。状態の速さ 2 が欄に入る。
+    CHECK(SetRuleParam(run, "speed", 3.f, false) && RuleParam(run, "speed") == 3.f);
+    StepAnimatorRules(run, a, 0.1f);
+    CHECK(StateName(run) == "Move" && a.clip == "Turn" && a.speed == 2.f && run.rule == 2);
+    StepAnimator(run, a, 0.1f, fired, &NextForTest);
+    CHECK(run.player.ClipIndex() == 0 && run.player.FadeWeight() < 1.f);
+    CHECK(run.checks.size() == 4 && run.checks[2] == animation::RuleCheck::Chosen);
+    // トリガー → Wave (1 回)。終わるまで自分のルールだけ: speed があっても Move に戻らない。終わったら Idle。
+    CHECK(SetRuleParam(run, "wave", 1.f, true));
+    StepAnimatorRules(run, a, 0.1f);
+    CHECK(StateName(run) == "Wave" && !a.loop && RuleParam(run, "wave") == 0.f);
+    StepAnimator(run, a, 0.5f, fired, &NextForTest);
+    StepAnimatorRules(run, a, 0.5f);
+    CHECK(StateName(run) == "Wave" && StateFraction(run) > 0.4f && StateFraction(run) < 0.6f);
+    StepAnimator(run, a, 1.f, fired, &NextForTest);
+    StepAnimatorRules(run, a, 0.016f);
+    CHECK(StateName(run) == "Idle");
+    StepAnimatorRules(run, a, 0.016f);
+    CHECK(StateName(run) == "Move");
+    // スクリプトの Play: ルールを飛ばしてその状態へ。無い名前は false。
+    CHECK(PlayState(run, a, "Wave", 0.1f) && StateName(run) == "Wave" && !PlayState(run, a, "Fly", 0.f));
+    CHECK(!SetRuleParam(run, "nothing", 1.f, false));
+    // 外す: 状態は無くなり、欄のクリップのまま。
+    BindRules(run, a, nullptr);
+    CHECK(StateName(run).empty() && !run.rules);
 }
 
 RM_TEST(GameAnim_RunWaitsWithoutPlayOnStart) {

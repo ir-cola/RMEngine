@@ -11,6 +11,7 @@
 // 部品の欄 (Animator) は Play 中も見えていて、変えればそのまま効く: クリップの名前を変えると (スクリプトの
 // PlayClip も欄を書き換える) そのクリップを流し直す。
 
+#include "rm_engine/animation/runtime/Rules.h"
 #include "rm_engine/animation3d/runtime/Player.h"
 #include "rm_engine/game_x_animation/runtime/Animator.h"
 #include "rm_engine/space3d/runtime/Skeleton.h"
@@ -41,6 +42,20 @@ struct AnimatorRun {
     bool dirty = false;        // スクリプトが時刻を置いた: 次の StepAnimator で骨の行列を作り直す
     bool toldPlaying = false;  // 動かしたことを 1 度知らせた (システム)
 
+    // 状態とルール (.rmanim。Animator::rules): 読んだもの (null: 無い・読めない)、そのアセット id、読めなかったか。
+    std::string rulesId;
+    bool rulesFailed = false;
+    std::shared_ptr<const animation::CompiledController> rules;
+    animation::ParamValues params;  // パラメーターの今の値 (スクリプトが入れる)
+    int state = -1;                 // 今の状態 (rules->states の番号。-1: 無し)
+    float stateClock = 0;           // 今の状態に入ってからの秒
+    float lastTime = 0;             // 前のフレームのクリップの時刻 (ループが 1 周したかを見る)
+    bool looped = false;            // 今の状態のループのクリップが 1 周した
+    int rule = -1;                  // 最後に当たった行 (-1: 無し)
+    std::vector<animation::RuleCheck> checks;  // 最後に調べた行ごとの結果 (「アニメーション」タブが光らせる)
+    // スクリプトがルールを読む前に入れた値 (読んだときに入れる)。
+    std::vector<std::pair<std::string, float>> pendingParams;
+
     // 出すもの: スキンの行列 (GPU へ)、骨の行列 (モデルの空間。骨に付ける・BonePosition)、姿勢の版、動いたか。
     std::vector<space3d::BoneMatrix> bones;
     uint64_t version = 0;  // 0: まだ骨の行列が無い
@@ -67,5 +82,20 @@ float Duration(const AnimatorRun& run);
 bool Ended(const AnimatorRun& run, const Animator& a);
 // モデルの空間の骨の行列 (直前の StepAnimator のもの)。名前の骨が無い・まだ無い: null。
 const space3d::Mat4* BoneModelMatrix(const AnimatorRun& run, std::string_view bone);
+
+// --- 状態とルール (docs/ANIMATION.md 段階 3) ---
+// 状態とルールをつなぐ (null: 外す)。パラメーターは初めの値 (スクリプトが先に入れた値はその上に)、1 つ目の状態
+// から始める (その状態のクリップ・ループ・速さを欄に書いて流す)。
+void BindRules(AnimatorRun& run, Animator& a, std::shared_ptr<const animation::CompiledController> rules);
+// 1 フレーム (StepAnimator の前): 今の状態の t と ended を出してルールを調べ、移るなら先の状態へ (フェードつき)。
+void StepAnimatorRules(AnimatorRun& run, Animator& a, float dt);
+// 状態へ直に移る (スクリプトの Play: ルールを飛ばす。次のフレームからルールがまた働く)。無い名前: false。
+bool PlayState(AnimatorRun& run, Animator& a, std::string_view state, float fade);
+// 今の状態の中の割合 (0..1。クリップの長さに対する時刻) と、今の状態の名前 (無し: 空)。
+float StateFraction(const AnimatorRun& run);
+std::string_view StateName(const AnimatorRun& run);
+// パラメーター (ルールを読む前なら、読んだときに入れる)。無い名前: false (読む前は true)。
+bool SetRuleParam(AnimatorRun& run, std::string_view name, float value, bool trigger);
+float RuleParam(const AnimatorRun& run, std::string_view name);
 
 }  // namespace rm::game_x_animation

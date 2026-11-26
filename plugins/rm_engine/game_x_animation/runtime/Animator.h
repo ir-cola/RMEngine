@@ -22,6 +22,8 @@ struct AnimatorRun;
 
 RM_STRUCT(Label="アニメーター")
 struct Animator {
+    RM_PROPERTY(Edit, Label="状態とルール", Tooltip="状態とルールのファイル (.rmanim。アセットのパネルの右クリック →「作成」→「アニメーター (状態とルール)」)。入れると、ゲームの間はルールが状態を決め、その状態のクリップ・ループ・速さで流します (下の 3 つは、そのとき今の状態のものになります)", AssetKind=".rmanim")
+    AssetRef rules;
     RM_PROPERTY(Edit, Label="クリップ", Tooltip="流すクリップ (同じエンティティの「メッシュ (3D モデル)」のモデルが持つもの)。空なら、モデルの最初のクリップ")
     std::string clip;
     RM_PROPERTY(Edit, Label="ループ", Tooltip="外すと、最後まで流して止まります") bool loop = true;

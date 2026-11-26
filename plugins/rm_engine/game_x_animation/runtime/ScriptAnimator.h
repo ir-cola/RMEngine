@@ -7,5 +7,7 @@
 namespace rm::game_x_animation {
 
 const game_production::ScriptApiPart& ScriptAnimatorPart();
+// 状態とルール (rm::Animator::SetFloat / SetTrigger / State / Play)。
+const game_production::ScriptApiPart& ScriptAnimatorRulesPart();
 
 }  // namespace rm::game_x_animation

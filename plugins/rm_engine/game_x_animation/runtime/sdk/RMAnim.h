@@ -93,14 +93,49 @@ public:
         return Bone(bone, p, r);
     }
 
+    // --- 状態とルール (部品の「状態とルール」に .rmanim を入れたとき) ---
+    // パラメーター (ルールの条件で使う値)。スクリプトはこれを入れるだけで、どのクリップを流すかはルールが決める。
+    void SetFloat(std::string_view name, float value) const { SetParam(name, value, false); }
+    void SetInt(std::string_view name, int value) const { SetParam(name, static_cast<float>(value), false); }
+    void SetBool(std::string_view name, bool value) const { SetParam(name, value ? 1.0f : 0.0f, false); }
+    // トリガー: それを使ったルールが当たると (か 0.2 秒で) 消える (跳ぶ・攻撃)。
+    void SetTrigger(std::string_view name) const { SetParam(name, 1.0f, true); }
+    float GetFloat(std::string_view name) const {
+        const std::string n(name);
+        return rules_ ? rules_->param(Api()->ctx, entity_.id, n.c_str()) : 0.0f;
+    }
+    bool GetBool(std::string_view name) const { return GetFloat(name) != 0.0f; }
+    // 今の状態の名前と、その中の割合 (0..1)。
+    std::string State() const {
+        if (!rules_) return {};
+        char buf[128];
+        const uint32_t n = rules_->state(Api()->ctx, entity_.id, buf, sizeof(buf));
+        if (n < sizeof(buf)) return std::string(buf, n);
+        std::string s(n + 1, '\0');
+        rules_->state(Api()->ctx, entity_.id, s.data(), n + 1);
+        s.resize(n);
+        return s;
+    }
+    float StateTime() const { return rules_ ? rules_->stateTime(Api()->ctx, entity_.id) : 0.0f; }
+    // ルールを飛ばして状態へ (`fade` 秒で)。次のフレームからルールがまた働く。無い名前: false。
+    bool Play(std::string_view state, float fade = 0.0f) const {
+        const std::string s(state);
+        return rules_ && rules_->playState(Api()->ctx, entity_.id, s.c_str(), fade) != 0;
+    }
+
 private:
     bool Bone(std::string_view bone, float* p, float* r) const {
         const std::string b(bone);
         return api_ && api_->bone(Api()->ctx, entity_.id, b.c_str(), p, r) != 0;
     }
+    void SetParam(std::string_view name, float value, bool trigger) const {
+        const std::string n(name);
+        if (rules_) rules_->setParam(Api()->ctx, entity_.id, n.c_str(), value, trigger ? 1 : 0);
+    }
 
     Entity entity_;
     const RmAnimApi* api_;
+    const RmAnimRulesApi* rules_ = Part<RmAnimRulesApi>(RM_PART_ANIM_RULES, RM_PART_ANIM_RULES_VERSION);
 };
 
 }  // namespace rm

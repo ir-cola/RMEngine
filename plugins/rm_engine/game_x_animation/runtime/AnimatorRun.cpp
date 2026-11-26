@@ -2,6 +2,7 @@
 
 #include "rm_engine/game_x_animation/runtime/AnimatorLogic.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -100,6 +101,91 @@ bool Ended(const AnimatorRun& run, const Animator& a) {
     const space3d::Clip* c = CurrentClip(run);
     if (!c || a.loop || !run.started) return false;
     return a.speed < 0 ? run.player.Time() <= 0 : run.player.Time() >= c->duration;
+}
+
+namespace {
+
+// 状態 `index` に入る: そのクリップ・ループ・速さを欄に書き、`fade` 秒で移る。
+void EnterState(AnimatorRun& run, Animator& a, int index, float fade) {
+    if (!run.rules || index < 0 || static_cast<size_t>(index) >= run.rules->states.size()) return;
+    const animation::AnimState& s = run.rules->states[static_cast<size_t>(index)];
+    a.loop = s.loop;
+    a.speed = std::isfinite(s.speed) ? std::clamp(s.speed, -10.f, 10.f) : 1.f;
+    PlayClip(run, a, s.clip, fade);
+    run.state = index;
+    run.stateClock = 0;
+    run.looped = false;
+    run.lastTime = run.player.Time();
+}
+
+}  // namespace
+
+void BindRules(AnimatorRun& run, Animator& a, std::shared_ptr<const animation::CompiledController> rules) {
+    run.rules = std::move(rules);
+    run.state = -1;
+    run.rule = -1;
+    run.checks.clear();
+    run.params = {};
+    if (!run.rules) return;
+    run.params = animation::StartValues(*run.rules);
+    for (const auto& [name, value] : run.pendingParams) animation::SetParam(run.params, *run.rules, name, value);
+    run.pendingParams.clear();
+    EnterState(run, a, 0, 0.f);
+}
+
+void StepAnimatorRules(AnimatorRun& run, Animator& a, float dt) {
+    if (!run.rules || run.rules->states.empty()) return;
+    if (run.state < 0) EnterState(run, a, 0, 0.f);
+    const float step = std::isfinite(dt) && dt > 0 ? dt : 0.f;
+    run.stateClock += step;
+    // ループが 1 周したか (時刻が戻った: 前向きなら小さく、逆向きなら大きく)。
+    const float now = run.player.Time();
+    if (run.started && a.loop && !run.paused && ((a.speed >= 0 && now + 1e-4f < run.lastTime) || (a.speed < 0 && now > run.lastTime + 1e-4f))) run.looped = true;
+    run.lastTime = now;
+    animation::StateNow sn;
+    sn.state = run.state;
+    sn.t = StateFraction(run);
+    sn.ended = a.loop ? run.looped : Ended(run, a);
+    const animation::RuleStep r = animation::StepRules(*run.rules, run.params, sn, step, &run.checks);
+    if (r.rule >= 0) run.rule = r.rule;
+    if (r.to >= 0) EnterState(run, a, r.to, r.fade);
+}
+
+bool PlayState(AnimatorRun& run, Animator& a, std::string_view state, float fade) {
+    if (!run.rules) return false;
+    const int i = run.rules->FindState(state);
+    if (i < 0) return false;
+    EnterState(run, a, i, std::isfinite(fade) && fade > 0 ? fade : 0.f);
+    return true;
+}
+
+float StateFraction(const AnimatorRun& run) {
+    const float d = Duration(run);
+    if (!(d > 0)) return 0.f;
+    return std::clamp(run.player.Time() / d, 0.f, 1.f);
+}
+
+std::string_view StateName(const AnimatorRun& run) {
+    if (!run.rules || run.state < 0 || static_cast<size_t>(run.state) >= run.rules->states.size()) return {};
+    return run.rules->states[static_cast<size_t>(run.state)].name;
+}
+
+bool SetRuleParam(AnimatorRun& run, std::string_view name, float value, bool trigger) {
+    if (!run.rules) {
+        run.pendingParams.emplace_back(std::string(name), trigger ? 1.f : value);
+        return true;
+    }
+    return trigger ? animation::SetTrigger(run.params, *run.rules, name) : animation::SetParam(run.params, *run.rules, name, value);
+}
+
+float RuleParam(const AnimatorRun& run, std::string_view name) {
+    if (!run.rules) {
+        for (auto it = run.pendingParams.rbegin(); it != run.pendingParams.rend(); ++it) {
+            if (it->first == name) return it->second;
+        }
+        return 0.f;
+    }
+    return animation::ParamOf(run.params, *run.rules, name);
 }
 
 const space3d::Mat4* BoneModelMatrix(const AnimatorRun& run, std::string_view bone) {

@@ -23,5 +23,7 @@
   "回転のずれ (度)": "Rotation offset (degrees)",
   "骨から見た回転 (X → Y → Z の順)": "Rotation seen from the bone (X → Y → Z order)",
   "回転も合わせる": "Follow rotation",
-  "外すと、位置だけが骨について行きます (向きはそのまま)": "When off, only the position follows the bone (the facing stays as it is)"
+  "外すと、位置だけが骨について行きます (向きはそのまま)": "When off, only the position follows the bone (the facing stays as it is)",
+  "状態とルール": "States and rules",
+  "状態とルールのファイル (.rmanim。アセットのパネルの右クリック →「作成」→「アニメーター (状態とルール)」)。入れると、ゲームの間はルールが状態を決め、その状態のクリップ・ループ・速さで流します (下の 3 つは、そのとき今の状態のものになります)": "A states-and-rules file (.rmanim; right-click in the Assets panel -> \"Create\" -> \"Animator (states and rules)\"). While the game runs, the rules pick the state and its clip, loop and speed play (the three fields below then show the current state's values)"
 }

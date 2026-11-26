@@ -36,6 +36,21 @@ typedef struct RmAnimApi {
     int (*bone)(void* ctx, uint64_t entity, const char* name, float* position, float* rotation);
 } RmAnimApi;
 
+/* 状態とルール (部品「アニメーター」の「状態とルール」: .rmanim)。名前はすべて UTF-8。 */
+#define RM_PART_ANIM_RULES "rm_engine.game_x_animation.animator_rules"
+#define RM_PART_ANIM_RULES_VERSION 1u
+typedef struct RmAnimRulesApi {
+    /* パラメーターに値を入れる (数・整数・真偽: 0 / 1)。trigger が 1: トリガーを立てる。
+       無い名前は 0 (ルールをまだ読んでいなければ、読んだときに入れて 1)。 */
+    int (*setParam)(void* ctx, uint64_t entity, const char* name, float value, int trigger);
+    float (*param)(void* ctx, uint64_t entity, const char* name);
+    /* 今の状態の名前 (長さを返す。cap を超えたら書かない分もある)。状態が無い: 0。 */
+    uint32_t (*state)(void* ctx, uint64_t entity, char* buf, uint32_t cap);
+    float (*stateTime)(void* ctx, uint64_t entity);  /* 今の状態の中の割合 (0..1) */
+    /* ルールを飛ばして状態へ (`fade` 秒で)。無い名前: 0。次のフレームからルールがまた働く。 */
+    int (*playState)(void* ctx, uint64_t entity, const char* state, float fade);
+} RmAnimRulesApi;
+
 #ifdef __cplusplus
 }
 #endif

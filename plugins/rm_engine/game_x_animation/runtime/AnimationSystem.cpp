@@ -1,6 +1,8 @@
 #include "rm_engine/game_x_animation/runtime/AnimationSystem.h"
 
 #include "base/Log.h"
+#include "platform/Shell.h"
+#include "rm_engine/animation/runtime/Rules.h"
 #include "rm_engine/game_x_3d/runtime/MeshPose.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
@@ -47,6 +49,22 @@ game_x_3d::SkinnedModel LoadSkinned(const game_production::AssetAccess* assets, 
     return skinned;
 }
 
+// 状態とルールのファイルを読んで解く (ゲーム: 書き出した .rmpak のもの / エディター: そのファイル)。読めない: null。
+std::shared_ptr<const animation::CompiledController> LoadRules(const game_production::AssetAccess* assets, const AssetRef& ref, std::string* err) {
+    std::optional<std::string> bytes;
+    if (assets && assets->bytes) bytes = assets->bytes(ref);
+    if (!bytes && assets && assets->file) {
+        if (const auto file = assets->file(ref); !file.empty()) bytes = platform::ReadFileBytes(file, err);
+    }
+    if (!bytes) {
+        if (err && err->empty()) *err = "ファイルが見つかりません";
+        return nullptr;
+    }
+    const auto controller = animation::ReadController(*bytes, err);
+    if (!controller) return nullptr;
+    return std::make_shared<const animation::CompiledController>(animation::Compile(*controller));
+}
+
 const game_x_3d::MeshRenderer* MeshOn(const SceneEntity& e) {
     const Component* c = e.FindComponent(reflect::TypeOf<game_x_3d::MeshRenderer>().name);
     return c && c->Known() ? static_cast<const game_x_3d::MeshRenderer*>(c->value.Get()) : nullptr;
@@ -84,6 +102,27 @@ void RunAnimation(game_production::SystemContext& ctx) {
             log::Warn("アニメーター ({}): モデルにクリップ「{}」がないので、バインドの形で描きます", e.data.name, a.clip);
             run.missing = a.clip;
         }
+        // 状態とルール: 替えたら読み直す。行の問題 (式の間違い・無い状態) は 1 度だけ知らせる。
+        if (a.rules.guid != run.rulesId) {
+            run.rulesId = a.rules.guid;
+            run.rulesFailed = false;
+            BindRules(run, a, nullptr);
+            if (!a.rules.Empty()) {
+                std::string err;
+                auto rules = LoadRules(ctx.assets, a.rules, &err);
+                if (!rules) {
+                    run.rulesFailed = true;
+                    log::Warn("アニメーター ({}): 状態とルールを読めません ({})", e.data.name, err);
+                } else {
+                    for (size_t i = 0; i < rules->rules.size(); ++i) {
+                        if (!rules->rules[i].problem.empty()) log::Warn("アニメーター ({}): ルール {}: {}", e.data.name, i + 1, rules->rules[i].problem);
+                    }
+                    if (rules->states.empty()) log::Warn("アニメーター ({}): 状態とルールに状態がありません", e.data.name);
+                    BindRules(run, a, std::move(rules));
+                }
+            }
+        }
+        StepAnimatorRules(run, a, ctx.dt);
         fired.clear();
         StepAnimator(run, a, ctx.dt, fired, &space3d::NextPoseVersion);
         if (ctx.events) {
