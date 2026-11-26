@@ -21,6 +21,10 @@
         {
           "ja": "ゲーミング: 虹に光るのはマウスを乗せた物と選んだ物の枠だけに (ボタン・メニュー・行・タブ・カード)。パネルの縁と線は紫。ウィンドウの縁の虹はいつもくっきり (Hub でも)",
           "en": "Gaming: only the frames of hovered and selected things (buttons, menus, rows, tabs, cards) glow rainbow now; panel borders and lines are purple. The rainbow around the window edge is always crisp (in the Hub too)"
+        },
+        {
+          "ja": "テーマの画面: 季節テーマパックの「季節で切り替える」を最後のカードに",
+          "en": "Theme picker: \"Switch by season\" is now the last card of the Seasons Theme Pack"
         }
       ]
     },

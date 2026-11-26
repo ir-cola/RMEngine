@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <set>
 #include <string>
 #include <tuple>
@@ -170,6 +171,7 @@ RM_TEST(ThemeFile_ThePacks) {
     const std::filesystem::path plugins = std::filesystem::path(__FILE__).parent_path().parent_path() / "plugins";
     std::set<std::string> ids{"Dark", "Light", "System"};
     std::vector<std::string> follows;
+    std::map<std::string, std::vector<std::pair<int, std::string>>> orders;  // パックのフォルダ → (order, id)
     int count = 0;
     std::error_code ec;
     for (std::filesystem::recursive_directory_iterator it(plugins, ec), end; !ec && it != end; it.increment(ec)) {
@@ -186,6 +188,7 @@ RM_TEST(ThemeFile_ThePacks) {
         CHECK(ids.insert(t->info.id).second);
         for (const std::string& a : t->info.aliases) CHECK(ids.insert(a).second);
         ++count;
+        orders[it->path().parent_path().parent_path().generic_string()].push_back({t->order, t->info.id});
         if (t->info.follow) {  // (季節で切り替える: 色は従うテーマのもの)
             for (const theme::SeasonThemes& s : t->info.follow->seasons) {
                 follows.push_back(s.morning);
@@ -206,6 +209,15 @@ RM_TEST(ThemeFile_ThePacks) {
     CHECK(count == 16);
     CHECK(follows.size() == 8);
     for (const std::string& id : follows) CHECK(ids.count(id) == 1);  // 従う先はパックにある
+    // 「季節で切り替える」は季節テーマパックの一番最後のカード (order がパックの中でいちばん大きい。2026-11-26 ユーザーの希望)。
+    bool foundBySeason = false;
+    for (const auto& [folder, list] : orders) {
+        const auto by = std::find_if(list.begin(), list.end(), [](const auto& o) { return o.second == "BySeason"; });
+        if (by == list.end()) continue;
+        foundBySeason = true;
+        for (const auto& o : list) CHECK(o.second == "BySeason" || o.first < by->first);
+    }
+    CHECK(foundBySeason);
     for (const char* id : {"Midnight", "Forest", "Paper", "Spring", "Summer", "Fall", "Winter", "Sakura", "BySeason", "SpringNight", "SummerNight",
                            "FallNight", "WinterNight", "Space", "DeepSea", "Volcano", "Gaming"}) {
         CHECK(ids.count(id) == 1);
