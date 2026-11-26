@@ -6,6 +6,8 @@
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/game_production/editor/ComponentLook.h"
+#include "rm_engine/game_production/editor/SceneView.h"
+#include "rm_engine/game_x_animation/editor/AnimationTab.h"
 #include "rm_engine/game_x_3d/editor/SceneOverlay.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_animation/runtime/Animator.h"
@@ -191,7 +193,20 @@ void DrawPreviewBar(ui::Context& c, const ui::Rect& at, game_production::SceneVi
 
 }  // namespace
 
+std::vector<std::string> ModelClipNames(editor::SoftwareHost& host, const game_production::Scene& scene, int entity) {
+    std::vector<std::string> out;
+    const game_production::SceneEntity* e = scene.Find(entity);
+    const ClipList* list = e ? ClipsOf(host, ModelOn(*e)) : nullptr;
+    if (list) {
+        for (const auto& [name, seconds] : list->clips) out.push_back(name);
+    }
+    return out;
+}
+
 void RegisterEditor(editor::PluginRegistry& registry) {
+    // アニメーション タブ: 選んだアニメーターの状態とルール (.rmanim) を、ルールの並びで作る。
+    static const game_production::ViewPanelInfo kTab{"animation", editor::TrKey(L"アニメーション"), &CreateAnimationTab};
+    registry.Contribute(game_production::kViewPanelPoint, kTab);
     // アニメーターのクリップの欄: モデルのクリップから選ぶ。
     static const game_production::ComponentLook kLook{.type = &reflect::TypeOf<Animator>, .choices = &ClipChoices};
     registry.Contribute(game_production::kComponentLookPoint, kLook);

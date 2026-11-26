@@ -16,6 +16,7 @@
 | 2D の骨 | 今は入れない。2D はコマ送りのまま | ユーザー (2026-11-15) |
 | 線をつなぐ形 | **使わない**。前の案の「状態と遷移の図 (Unity の Animator)」はやめる | ユーザー (2026-11-24) |
 | テキストで書くこと | HLSL・C++ の文字で書くのはかまわない (パーティクルの `.rmfx` と同じ) | ユーザー (2026-11-16) |
+| 状態の切り替えの書き方 | **案 B: ルールの並び** (4 章。5 つの案の見本から選んだ: ルールの並び / 状態ごとの表 / 状態のカード / 状態の格子 / 文字で書く) | ユーザー (2026-11-26) |
 
 ## 1. 今あるもの (コードで確かめた。2026-11-24)
 
@@ -406,6 +407,8 @@ rule any  :             -> Idle 0.2
 - **段階 2 でしたこと (2026-11-25)**: モデルのインスペクターの「クリップとイベント」(クリップの一覧とイベントの帯。プラグイン 3D アニメーションの `editor/ClipStrip`)。イベントは `.meta` の `"import"` の `"clips": {"<クリップの名前>": {"events": [{time, name, number, text}]}}` (時刻の順。知らないキーは残す。計算は `editor/ClipEvents`、テスト `tests/TestClipEvents.cpp`)。核の口は `core.asset_inspect` (3-1 の注のもの。`src/editor/assets/AssetInspect.h`)
 - (続き。版 0.0.14) スクリプトの `RMAnim.h` (`rm::Animator`: `PlayClip` とクロスフェード・`Pause` / `Resume`・`SetSpeed`・`SetLoop`・`Time` / `SetTime` / `Duration` / `Ended`・`Clip`・`BonePosition` / `BoneRotation`)・クリップのイベント (モデルの `.meta` の `"clips"`。型は 3D 空間の `space3d::ClipEvent` 1 つ。読むのは `ClipSettings.h`、焼くのは `.rmmesh` の `EVNT`。届け方はシステムが送る `SystemEvent` → `rm::Events` と同じ列 → `OnEvent`)・部品「骨に付ける」・システム「アニメーション」(order 100) と「骨に付ける」(order 110): Play と書き出したゲームの姿勢は 1 フレームに 1 回だけここで決まり、描く画面はそれを使う (`AnimatorRun.h`)
 - **段階 2 で後にしたこと**: 止まっているエディターで骨に付けた物を骨について行かせる (今は Play の間だけ)・混ぜているときのイベントの決まり (今はクロスフェードの前のクリップを止めるので、イベントは今のクリップだけ。段階 4 のブレンドで「一番重いもの」)
+- **段階 3 でしたこと (2026-11-26。版 0.0.31)**: 新しいプラグイン **アニメーション** (`plugins/rm_engine/animation`: 3D も 2D も知らない) に、状態とルールのデータ `AnimController` (`.rmanim`。種類 `rm_engine.animator_rules`。パラメーター・状態 (クリップ・ループ・速さ・出口)・ルール (元・条件・先・フェード・⚡・やり直す))、条件の式 `Condition` (4-8 のとおり。再帰で下りる解き方・何文字目の間違い・知らない名前は 0)、ルールの決まり `Rules` (4-7 の 1〜7)。テスト `tests/TestAnimationRules.cpp`。`.rmanim` はアセットのパネルの「作成」でも作れ、インスペクターでも編集できる (核の口 `core.asset_file_type`)。部品「アニメーター」に「状態とルール」の欄: ゲームの間は `AnimatorRun` がルールを調べ (`StepAnimatorRules`: t・ended はクリップの時刻とループの 1 周から)、移るとその状態のクリップ・ループ・速さを欄に書いてフェードで流す。スクリプト `RMAnim.h` に `SetFloat` / `SetInt` / `SetBool` / `SetTrigger` / `GetFloat` / `State` / `StateTime` / `Play` (新しい部分 `animator_rules`)。**アニメーション タブ** (`game_x_animation/editor/AnimationTab`): パラメーター・ルール (案 B の並び)・状態をその場で編集 (Undo の 1 件ずつ。パーティクルのタブと同じ形)、パラメーターや状態の名前を変えるとルールの式・元・先も書き換える、行の下に問題 (式の間違いの何文字目・無い状態) と Play 中の結果 (当たった・偽・出口で調べない …)、Play 中は今の状態と当たった行が光り、パラメーターの「今」で値を入れて試せる (トリガーは「引く」)
+- **段階 3 で後にしたこと**: タブの中のプレビューの画面 (今はシーンビュー / ゲームビューで見る)・止まっているエディターでルールを動かして試す (今は Play の間だけ)・行のドラッグでの並べ替え (今は ↑ ↓)・打っている間のパラメーター名の候補・Play 中に `.rmanim` を変えたとき読み直す (今は Play を始めたときのもの)・「この行は上の行に隠れて当たりません」の警告
 - 段階ごとに版を 0.0.1 上げ、`resources/updates.json`・`docs/HOW_TO_TRY.md`・`docs/TEST_LIST.md`・`docs/TECHNOLOGIES.md` (スキニング・四元数・ドロネーなど) に書く
 - 段階 1 の前に、骨のある見本のモデルを決める (6 章の 4)
 

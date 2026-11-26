@@ -48,4 +48,19 @@ It counts across the loop seam and when playing backwards. The exported game has
 ## Attaching to bones
 To make a sword or a hat follow a bone, add the "Attach to bone" component to a child entity ([Attach to bone](bone_attach.md)).
 
-> Not yet: the animation tab and its rules (stage 3 of docs/ANIMATION.md), blending and layers (stage 4).
+## States and rules (the Animation tab)
+Select an animator, open the "Animation" tab and press "Create states and rules". (The Animator's "States and rules" field then points at the new .rmanim file.)
+
+- **Parameters**: values your script sets (number, integer, bool, trigger)
+- **States**: name, clip, loop, speed, exit (Free / Own only: only rows whose From is this state, and ⚡ rows / Until end: own rows until the clip ends)
+- **Rules**: checked **from the top** every frame; the **first row** whose From (empty: anywhere) matches and whose condition is true moves to its To state with a fade. Put "(always) → Idle" at the bottom to idle when nothing else matches
+- Conditions are written like C++: `speed > 0.1`, `jump`, `grounded && !attack`, `t > 0.5` (progress in the current state), `ended` (a one-shot clip finished / a loop went around), `abs` `min` `max`
+- During Play the current state and the matching row light up, and you can try parameter values in the "Now" fields
+
+```cpp
+rm::Animator anim(self);
+anim.SetFloat("speed", 2.0f);   anim.SetBool("grounded", true);   anim.SetTrigger("jump");
+std::string s = anim.State();   anim.Play("Attack", 0.1f);   // skip the rules and go to that state
+```
+
+> Not yet: blending and layers (stage 4 of docs/ANIMATION.md).

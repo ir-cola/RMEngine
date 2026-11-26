@@ -10,7 +10,7 @@
 
 namespace rm::animation {
 
-std::optional<AnimController> ReadController(std::string_view bytes, std::string* error) {
+std::optional<AnimController> ReadController(std::string_view bytes, std::string* error, reflect::Unknowns* unknowns) {
     json::ParseError pe;
     const auto v = json::Parse(bytes, &pe);
     if (!v) {
@@ -22,8 +22,14 @@ std::optional<AnimController> ReadController(std::string_view bytes, std::string
         return std::nullopt;
     }
     AnimController c;
-    reflect::Load(c, *v, nullptr);
+    reflect::Load(c, *v, unknowns);
     return c;
+}
+
+std::string WriteController(const AnimController& c, const reflect::Unknowns* unknowns) {
+    AnimController out = c;
+    out.kind = kControllerKind;
+    return json::Write(reflect::Save(out, unknowns));
 }
 
 int CompiledController::FindState(std::string_view name) const {

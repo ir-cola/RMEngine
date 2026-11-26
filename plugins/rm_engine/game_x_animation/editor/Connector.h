@@ -5,9 +5,15 @@
 // rm_engine.game_x_3d.scene_overlay)。
 
 #include "editor/plugin/Software.h"
+#include "rm_engine/game_production/runtime/Scene.h"
+
+#include <string>
+#include <vector>
 
 namespace rm::game_x_animation {
 
 void RegisterEditor(editor::PluginRegistry& registry);
+// エンティティ `entity` の「メッシュ (3D モデル)」のモデルのクリップの名前 (読めない・無い: 空)。アニメーション タブが使う。
+std::vector<std::string> ModelClipNames(editor::SoftwareHost& host, const game_production::Scene& scene, int entity);
 
 }  // namespace rm::game_x_animation

@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.31",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "アニメーションの「状態とルール」(.rmanim) と「アニメーション」タブ: ルールを上から調べ、当たった行の状態のクリップを流します (待機 → 歩く → 跳ぶ → 着地 → 攻撃をコードなしで)。Play 中は今の状態と当たった行が光り、パラメーターを変えて試せます",
+          "en": "Animation \"states and rules\" (.rmanim) and the \"Animation\" tab: rules are checked from the top and the matching row's state plays its clip (idle → walk → jump → land → attack without code). During Play the current state and matching row light up, and you can try parameter values"
+        },
+        {
+          "ja": "スクリプトの rm::Animator に SetFloat / SetBool / SetTrigger / State / Play (状態とルールを動かす)",
+          "en": "Scripts: rm::Animator gains SetFloat / SetBool / SetTrigger / State / Play (to drive states and rules)"
+        }
+      ]
+    },
+    {
       "version": "0.0.30",
       "date": "2026-11-26",
       "items": [

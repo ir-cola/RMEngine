@@ -10,6 +10,7 @@
 // 中身はこの RM_STRUCT をそのまま JSON にしたファイル (憲法 1・9): 保存・読み込み・インスペクター・Undo は
 // 型の表から作られる。計算は Condition.h (式) と Rules.h (ルール)。
 
+#include "core/reflect/Data.h"
 #include "core/reflect/Reflect.h"
 
 #include <optional>
@@ -76,7 +77,9 @@ struct AnimController {
     std::vector<AnimRule> rules;
 };
 
-// ファイルの中身 (JSON) を読む。読めない・種類が違う: nullopt (`error` に理由)。
-std::optional<AnimController> ReadController(std::string_view bytes, std::string* error = nullptr);
+// ファイルの中身 (JSON) を読む。読めない・種類が違う: nullopt (`error` に理由)。`unknowns`: 知らないキー (書き戻す)。
+std::optional<AnimController> ReadController(std::string_view bytes, std::string* error = nullptr, reflect::Unknowns* unknowns = nullptr);
+// ファイルの中身 (JSON)。知らないキー `unknowns` を書き戻す (憲法 6)。
+std::string WriteController(const AnimController& c, const reflect::Unknowns* unknowns = nullptr);
 
 }  // namespace rm::animation
