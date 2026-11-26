@@ -506,6 +506,16 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color, float size)
             for (const Vec2& v : q) p.FillRect({v.x - k, v.y - k, k * 2, k * 2}, color);
             break;
         }
+        case Icon::Route: {
+            // 経路: 左下の点から右上の点へ、角で 2 回曲がる線。両端は丸。
+            const float h = std::min(r.w, r.h) * 0.36f;
+            const Vec2 q[4] = {{cx - h * 0.85f, cy + h * 0.75f}, {cx - h * 0.1f, cy + h * 0.2f}, {cx + h * 0.15f, cy - h * 0.35f}, {cx + h * 0.85f, cy - h * 0.75f}};
+            for (int i = 0; i < 3; ++i) p.Line(q[i].x, q[i].y, q[i + 1].x, q[i + 1].y, color, 1.5f);
+            const float k = std::max(2.f, h * 0.24f);
+            p.FillCircle(q[0].x, q[0].y, k, color);
+            p.FillCircle(q[3].x, q[3].y, k, color);
+            break;
+        }
         case Icon::Cube: {
             // 角の上から見た形: 輪郭 (六角形) と、手前の角の 3 本の辺。
             const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;
@@ -1078,6 +1088,25 @@ PlotResult BlendPlot(ui::Context& c, std::string_view idStr, const Rect& r, std:
         p.FillPath(tri, theme::Accent);
     }
     return out;
+}
+
+void DrawMapFill(ui::Context& c, std::span<const Vec2> pts, ui::Color color) {
+    if (pts.size() < 3) return;
+    ui::Path path;
+    path.Begin(pts[0]);
+    for (size_t i = 1; i < pts.size(); ++i) path.Line(pts[i]);
+    c.P().FillPath(path, color.Alpha(theme::MapNavFillAlpha()));
+}
+
+void DrawMapRoute(ui::Context& c, std::span<const Vec2> pts) {
+    if (pts.empty()) return;
+    const ui::Color col = theme::NavRoute();
+    for (size_t i = 0; i + 1 < pts.size(); ++i) c.P().Line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, col, 3.f);
+    for (size_t i = 1; i + 1 < pts.size(); ++i) c.P().FillCircle(pts[i].x, pts[i].y, 2.5f, col);
+    for (const Vec2& end : {pts.front(), pts.back()}) {
+        c.P().FillCircle(end.x, end.y, 6.f, theme::Panel);
+        c.P().FillCircle(end.x, end.y, 4.5f, col);
+    }
 }
 
 void DrawMapReadout(ui::Context& c, float x, float y, std::wstring_view text) {

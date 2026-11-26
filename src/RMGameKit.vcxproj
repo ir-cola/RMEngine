@@ -57,6 +57,12 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
+    <!-- Recast Navigation (Detour ...): 同じく core.lib に入れる -->
+    <ProjectReference Include="RMRecast.vcxproj">
+      <Project>{7C2E4A91-5D3B-4F18-9E6A-0B4C8D2F1A73}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
   </ItemGroup>
   <!-- ゲームに入る層 (layers.txt で "yes" のもの): ソースのフォルダーごとに k\ の下に 1 つオブジェクトのフォルダー -->
   <ItemGroup>
@@ -85,6 +91,6 @@
     </ItemGroup>
   </Target>
   <Target Name="MakeGameKit" AfterTargets="Build">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(RMRoot)tools\make_gamekit.ps1&quot; -Root &quot;$(RMRoot).&quot; -ObjDir &quot;$(IntDir).&quot; -GenDir &quot;$(RmGenOut).&quot; -Out &quot;$(OutDir)GameKit&quot; -LibExe &quot;$(VCToolsInstallDir)bin\Hostx64\x64\lib.exe&quot; -Crt $(RmCrt) -ExtraCoreLibs &quot;$(OutDir)RMJolt.lib&quot;" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(RMRoot)tools\make_gamekit.ps1&quot; -Root &quot;$(RMRoot).&quot; -ObjDir &quot;$(IntDir).&quot; -GenDir &quot;$(RmGenOut).&quot; -Out &quot;$(OutDir)GameKit&quot; -LibExe &quot;$(VCToolsInstallDir)bin\Hostx64\x64\lib.exe&quot; -Crt $(RmCrt) -ExtraCoreLibs &quot;$(OutDir)RMJolt.lib;$(OutDir)RMRecast.lib&quot;" />
   </Target>
 </Project>

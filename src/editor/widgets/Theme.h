@@ -340,6 +340,14 @@ inline Color SceneColliderInactive() { return Mix(SceneCollider(), SceneBackgrou
 // シーンの上に描くエリアの枠 (気候エリアなど): 縁と、境目の内側の縁 (薄く)。
 inline Color SceneArea() { return IsLight ? Color::Hex(0x2B6FD6) : Color::Hex(0x7DB8FF); }
 inline Color SceneAreaInner() { return Mix(SceneArea(), SceneBackground(), 0.55f); }
+// ナビ (ナビのタブとシーンビュー): ナビメッシュの範囲の箱・歩ける面の縁 (壁) と内の線 (多角形の境目・薄く)・
+// 道 (経路を試す)・つなぎの線。面の塗りは地図の上だけ (色はエリアの種類の色: ユーザーのもの)。古い印は Warn。
+inline Color SceneNavVolume() { return IsLight ? Color::Hex(0x0E8A8A) : Color::Hex(0x5FD4D4); }
+inline Color SceneNavEdge() { return IsLight ? Color::Hex(0x0B6E4F) : Color::Hex(0x7BE8B8); }
+inline Color SceneNavInner() { return Mix(SceneNavEdge(), SceneBackground(), 0.55f); }
+inline Color NavRoute() { return IsLight ? Color::Hex(0xD9480F) : Color::Hex(0xFF9B5E); }
+inline Color NavLink() { return IsLight ? Color::Hex(0x7048E8) : Color::Hex(0xB197FC); }
+inline float MapNavFillAlpha() { return IsLight ? 0.38f : 0.34f; }
 // 真上から見た地図 (気候のタブ) に塗った所の濃さ (色はユーザーのもの: 下の絵が透けるように)。
 inline float MapPaintAlpha() { return IsLight ? 0.50f : 0.45f; }
 // 地図に重ねる値の色 (気候のタブの「見る」: 0 .. 1 の値を色の段に)。気温: 寒い青 -> 暑い赤。湿り気: 乾いた

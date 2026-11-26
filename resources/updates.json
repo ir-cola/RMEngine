@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.36",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "ナビゲーション (段階 1): 部品「ナビメッシュ」で範囲を決めて、「ナビ」タブで床と壁から歩ける所を焼き、地図の 2 か所をクリックして壁を回る道を試せるように。エリアの種類 (沼・立入禁止) と、形が変わったときの「古い」の印も",
+          "en": "Navigation (stage 1): set an area with the NavMesh component, bake the walkable area from floors and walls in the new Navigation tab, and click two places on its map to try a path around the walls. Area types (swamp, no entry) and an \"out of date\" mark when the shapes change"
+        }
+      ]
+    },
+    {
       "version": "0.0.35",
       "date": "2026-11-26",
       "items": [

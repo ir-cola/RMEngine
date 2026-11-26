@@ -97,6 +97,8 @@ enum class Icon {
     BoneMoveX, BoneMoveY, BoneMoveZ, BoneRotateX, BoneRotateY, BoneRotateZ,
     // 線で描く印 (絵が無い): 描く道具 - 筆・消しゴム・ペン (点をつないで囲む)。気候のタブの地図の左の列
     Brush, Eraser, Pen,
+    // 経路を試す (ナビのタブの地図の左の列): 2 つの点と、その間を曲がって結ぶ線。
+    Route,
 };
 // `size`: 絵のアイコンの一辺 (DIP)。0 = 四角に合わせる (短い辺の 8 割。16 まで)。線で描く印は四角に合わせる。
 void DrawIcon(ui::Context& c, const ui::Rect& r, Icon icon, ui::Color color, float size = 0);
@@ -213,6 +215,10 @@ void DrawMapLegend(ui::Context& c, const ui::Rect& r, std::wstring_view title, u
 // `hot`: 印を大きくする点 (マウスが上にある。-1: 無し)。
 void DrawMapShape(ui::Context& c, std::span<const Vec2> points, bool closed, ui::Color fill, bool selected, int hot = -1,
                   const Vec2* tail = nullptr);
+// ナビメッシュの多角形 1 つを、真上から見た地図に薄く塗る (縁は描かない: DrawMapLine で)。`color`: エリアの色。
+void DrawMapFill(ui::Context& c, std::span<const Vec2> points, ui::Color color);
+// 地図の上の道 (経路を試す): 角の点を結ぶ太い線と、始め・終わりの丸。点が 1 つなら始めの丸だけ。
+void DrawMapRoute(ui::Context& c, std::span<const Vec2> points);
 // カーソルの所の値 (地図の上の小さな札)。
 void DrawMapReadout(ui::Context& c, float x, float y, std::wstring_view text);
 // 縦の区切り線 (並んだ 2 つの部分の間: アセット パネルの木と並び)。

@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "navigation_x_physics",
+  "displayName": "ナビ × 物理",
+  "version": "0.0.1",
+  "connectorFor": { "author": "rm_engine", "name": "game_x_navigation" },
+  "requires": [
+    { "author": "rm_engine", "name": "game_x_navigation" },
+    { "author": "rm_engine", "name": "physics" },
+    { "author": "rm_engine", "name": "game_production" },
+    { "author": "rm_engine", "name": "navigation" },
+    { "author": "rm_engine", "name": "space3d" },
+    { "author": "rm_engine", "name": "space2d" }
+  ]
+}

@@ -1268,10 +1268,29 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — 2D の点の並べ方を自由にしても、三角形分割なら重みが必ず合計 1 で、点の上ではそのクリップだけになる。マスクつきのレイヤーなら、走りの足のまま上半身だけ撃つ
 - **どこ** — `plugins/rm_engine/animation/runtime/Blend.*`・`animation3d/runtime/Player.*` (`SetBlend` / `EvaluatePose` / `FinishPose`)・`Pose.*` (`BoneMask` / `OverlayPose` / `AddPose`)・`game_x_animation/runtime/AnimatorRun.cpp`・`editor/AnimationTab.cpp`・`src/editor/widgets/Widgets.*` (`BlendPlot`)、`tests/TestAnimationRules.cpp`・`TestGameAnimation.cpp`
 
+### ナビメッシュを焼いて道を探す: Recast / Detour・ボクセル・A*・ファネル・区画を並べて焼く (2026-11-26)
+
+- **何か** — **ナビメッシュ**は「歩ける床」を凸の多角形の網で表した地図。**Recast** (焼く) は、床と壁の三角形をまず細かい箱 (**ボクセル**: 縦の柱の集まり) に塗り、
+  坂が急すぎる・天井が低い・段差が高すぎる箱を外し、壁から体の半径の分だけ削り、つながった床を**領域**に分け (分水嶺: 壁からの距離の山を水で満たすように
+  分ける)、縁をたどって線にして、へこみの無い多角形にする。**Detour** (道を探す) は、その多角形の上で **A\*** (多角形から隣の多角形へ、「ここまでの距離 + ゴールまでの
+  直線距離」の小さい順に広げる探し方) で通る多角形の並び (**通路**) を出し、**ファネル** (漏斗: 通路の左右の縁をひもで挟み、角だけで曲がるように引き締める) で
+  角の点の並びにする。どちらも Mikko Mononen の Recast Navigation (zlib ライセンス、v1.6.0)
+- **何に使っているか** — 「ナビ」タブの「焼く」と「経路を試す」。焼く範囲は**区画** (タイル: 64 x 64 マス) に分け、区画は互いに関係しないので CPU の数 - 1 本の
+  スレッド (`std::jthread`) に並べる。結果は区画の順に並べるので、スレッドの数によらず同じバイトになる (テストで確かめる)。焼いた物は `.rmnav`
+  (`.rmmesh` と同じキー付きのチャンク: 頭は JSON・区画ごとに Detour のデータそのまま)。「古い」は形の**指紋** (FNV-1a の 64 ビットのハッシュ: 体の形・範囲・
+  焼く物の部品の値と位置・モデルのファイルの日付) を焼いたときのものと比べる。エリアの費用と「通れない」は道を探すときの重みと多角形の印 (Detour の
+  `dtQueryFilter`・`setPolyFlags`) なので焼き直さない
+- **なぜそれか** — 物理で Jolt を選んだのと同じ理由: 細い壁・重なった床 (橋の下)・階段の罠をもう踏んで直してある確かな物を使い、時間はエディターの使いやすさと
+  つなぎに使う。群れ (DetourCrowd) と動く障害物 (DetourTileCache) まで道がある。Jolt と同じ形で包む: 別の静的ライブラリ (`src/RMRecast.vcxproj`。警告を切る・
+  デバッグ情報なし)・Recast の型はプラグインの `.cpp` の中だけ (pimpl)・`DT_POLYREF64` (多角形の番号を 64 ビットに) を全部のプロジェクトで同じに
+- **どこ** — `src/third_party/RecastNavigation` (README に版と元の場所)・`plugins/rm_engine/navigation/runtime/` (`Bake.*` / `Query.*` / `NavFile.*`)・
+  `game_x_navigation/` (部品・指紋・「ナビ」タブ・作業スレッドの焼く仕事)・`navigation_x_3d` / `navigation_x_physics` (焼く物を差し出す口)、`tests/TestNavigation.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-26 | ナビメッシュを焼いて道を探す (Recast / Detour v1.6.0・ボクセル・領域・A*・ファネル・区画をスレッドに並べて同じバイト・形の指紋 FNV-1a) |
 | 2026-11-26 | 動くテーマの絵 (ピクセルシェーダーの背景・勾配ノイズと fBm とドメインワーピング・ディザ・頂点バッファなしの粒・足し算の合成・別のスレッドで D3DCompile・タイマーで約 30 fps) |
 | 2026-11-26 | 穴のあいた切り取り (D2D のレイヤーとマスク)・前のフレームのボタンの場所・見える色の違い (L*a*b* の ΔE) |
 | 2026-11-26 | Debug での Jolt の確認をログへ (AssertFailed / Trace)・LinearCast と内側の半径・cdb で落ちた所を探す・テストの出力をためない |
