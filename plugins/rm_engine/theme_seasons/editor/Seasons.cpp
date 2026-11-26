@@ -286,15 +286,14 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
                 Fireworks(pic, {w.x, w.y, w.w, std::min(w.h, 300.f)}, 0.5f);
                 break;
             }
-            // 花火 (上のほう全体)、右下に砂浜 (パラソル無し) とその手前の夜の海、左下に金魚 (うちわから変えた。
-            // 案を見本で選んでもらう: 2026-11-26 の 2 回目)。
+            // 花火 (上のほう全体)、右下に砂浜 (パラソル無し) とその手前の夜の海、左下に提灯 (案からユーザーが選んだ)。
             Fireworks(pic, w, 1.f);
             {
                 const float h = std::clamp(w.h * 0.40f, 150.f, 380.f);
                 pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom()}, h, false), theme::OrnamentColor()});
             }
             Sea(pic, w, season::SeaFar(), season::SeaNear());
-            Silhouette(pic, w, ornament::Goldfish({0, 0}, 1.f, 10.f));
+            Silhouette(pic, w, ornament::Chochin({0, 0}, 1.f));
             break;
         case Kind::FallNight:
             Stars(pic, w);

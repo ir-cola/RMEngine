@@ -171,5 +171,6 @@ ui::Path SenkoHanabi(Vec2 center, float radius);  // 線香花火 (こよりの�
 ui::Path Ramune(Vec2 center, float radius);       // ラムネの瓶 (口・ビー玉のふくらみ・くびれ・胴。ビー玉と丸いラベルは穴)
 ui::Path Watermelon(Vec2 center, float radius);   // 半月に切ったスイカ (皮との境目の線と種は穴)
 ui::Path WaterYoyo(Vec2 center, float radius);    // 水ヨーヨー (風船・結び目・ゴムひもと指の輪。模様の帯は穴)
+ui::Path Chochin(Vec2 center, float radius);      // 提灯 (紐・上下の枠・丸い胴。竹の骨は穴)。夏の夜の左下 (ユーザーが選んだ)
 
 }  // namespace rm::theme_seasons::ornament

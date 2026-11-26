@@ -29,6 +29,10 @@
         {
           "ja": "積もった雪がボタンのまわりで四角く欠けていたのを直しました。花火のテーマの花火をかなり薄く、クリスマスのサンタを小さく",
           "en": "Fixed piled-up snow getting cut into rectangles around buttons. The Fireworks theme's fireworks are much fainter and Christmas's Santa is smaller"
+        },
+        {
+          "ja": "花火のテーマの左下の影を提灯に",
+          "en": "The Fireworks theme's corner silhouette is now a paper lantern (chochin)"
         }
       ]
     },

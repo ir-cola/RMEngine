@@ -606,11 +606,12 @@ RM_TEST(Ornament_NightShapes) {
         ++which;
     }
     // 夏の夜の別案: 半径の中。穴 (種・ビー玉・模様) があるので、時計回りでない図形もある。
-    for (const rm::ui::Path& sil : {SenkoHanabi(c, 100), Ramune(c, 100), Watermelon(c, 100), WaterYoyo(c, 100)}) {
+    for (const rm::ui::Path& sil : {SenkoHanabi(c, 100), Ramune(c, 100), Watermelon(c, 100), WaterYoyo(c, 100), Chochin(c, 100)}) {
         const Bounds b = BoundsOf(sil);
         CHECK(b.figures >= 2 && b.x0 > 380 && b.x1 < 620 && b.y0 > 380 && b.y1 < 620);
     }
     CHECK(!AllClockwise(Watermelon(c, 100)) && BoundsOf(Watermelon(c, 100)).figures == 1 + 1 + 7);  // 半月・境目の線・種 7 つ
+    CHECK(BoundsOf(Chochin(c, 100)).figures == 6 + 7 && std::fabs(BoundsOf(Chochin(c, 100)).y0 - 400) < 0.5f);  // 紐・手・枠 2 つ・胴・房と骨 7 本
     // 花火 (リアル調): 菊・柳・牡丹。光の筋と先の星は半径の近くまで (柳は大きく垂れる)。
     for (const FireworkKind k : {FireworkKind::Chrysanthemum, FireworkKind::Willow, FireworkKind::Peony}) {
         const FireworkShapes f = FireworkShell(c, 100, k, 3);
@@ -712,6 +713,7 @@ RM_TEST(Gaming_Shapes) {
     CHECK(BoundsOf(Pixels(win, 30, 4, 1)).figures == 30 && AllClockwise(Pixels(win, 30, 4, 1)));
     CHECK(InsideAndClockwise(Controller({500, 500}, 100, 0), 400, 400, 600, 600, 2.f));
 }
+
 
 
 

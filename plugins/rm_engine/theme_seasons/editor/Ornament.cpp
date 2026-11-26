@@ -1094,4 +1094,23 @@ ui::Path WaterYoyo(Vec2 center, float radius) {
     return p;
 }
 
+
+ui::Path Chochin(Vec2 center, float radius) {
+    // 提灯 (2026-11-26 の 3 回目: 夏の夜の左下。ユーザーが選んだ)。つるす紐と手、上と下の枠、丸い紙の胴。
+    // 胴の竹の骨は細い穴 (横の帯) で見せる: 1 色の影でも提灯と分かる。
+    ui::Path p;
+    const Place at{center, radius, 0.f};
+    AddBar(p, at(0, -1.f), at(0, -0.86f), 0.04f * radius, 0.04f * radius);                       // 紐
+    AddShape(p, at, {{-0.12f, -0.9f}, {0.12f, -0.9f}, {0.12f, -0.84f}, {-0.12f, -0.84f}});         // 手
+    AddShape(p, at, {{-0.3f, -0.84f}, {0.3f, -0.84f}, {0.3f, -0.7f}, {-0.3f, -0.7f}});            // 上の枠
+    AddEllipse(p, at(0, 0), 0.56f * radius, 0.72f * radius, 0);                                    // 胴
+    AddShape(p, at, {{-0.3f, 0.7f}, {0.3f, 0.7f}, {0.3f, 0.84f}, {-0.3f, 0.84f}});                 // 下の枠
+    AddBar(p, at(0, 0.84f), at(0, 1.f), 0.05f * radius, 0.02f * radius);                           // 房
+    for (const float y : {-0.48f, -0.32f, -0.16f, 0.f, 0.16f, 0.32f, 0.48f}) {
+        const float half = 0.56f * std::sqrt(1.f - (y / 0.72f) * (y / 0.72f)) * 0.9f;
+        AddHole(p, at(0, y), half * radius, 0.014f * radius, 0);                                    // 竹の骨
+    }
+    return p;
+}
+
 }  // namespace rm::theme_seasons::ornament
