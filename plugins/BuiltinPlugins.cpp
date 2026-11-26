@@ -10,6 +10,8 @@
 // 順番は関係ない: ローダーが requires を先に有効にする。
 
 #include "editor/plugin/Software.h"
+#include "rm_engine/animation/editor/Register.h"
+#include "rm_engine/animation/runtime/Id.h"
 #include "rm_engine/animation3d/editor/Register.h"
 #include "rm_engine/animation3d/runtime/Id.h"
 #include "rm_engine/audio/editor/Preview.h"
@@ -61,6 +63,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {climate::kPluginId, &climate::RegisterEditor},
         {weather_x_climate::kPluginId, &weather_x_climate::RegisterEditor},
         {space3d::kPluginId, &space3d::RegisterEditor},
+        {animation::kPluginId, &animation::RegisterEditor},  // 状態とルール (.rmanim) とその計算 (3D も 2D も知らない)
         {animation3d::kPluginId, &animation3d::RegisterEditor},  // 姿勢の計算 (ランタイム) と、モデルのクリップの帯 (エディター)
         {game_x_3d::kPluginId, &game_x_3d::RegisterEditor},
         {game_x_animation::kPluginId, &game_x_animation::RegisterEditor},

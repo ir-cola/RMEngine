@@ -9,6 +9,7 @@
     { "author": "rm_engine", "name": "game_production" },
     { "author": "rm_engine", "name": "game_x_3d" },
     { "author": "rm_engine", "name": "space3d" },
-    { "author": "rm_engine", "name": "animation3d" }
+    { "author": "rm_engine", "name": "animation3d" },
+    { "author": "rm_engine", "name": "animation" }
   ]
 }
