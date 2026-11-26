@@ -414,6 +414,7 @@ rule any  :             -> Idle 0.2
 - **段階 4 で後にしたこと**: レイヤーのイベント (今は体のクリップのイベントだけ)・混ぜているときのイベントは主のクリップのもの (6 章の 7 の「一番重いもの」はまだ)・マスクを骨の木のチェックで選ぶ画面 (今は名前と ▾ で足す)・足すレイヤーの基準を「クリップの最初のコマ」にする選択 (今は休みの姿勢)・混ぜる状態ごとの「足をそろえない」
 - 段階ごとに版を 0.0.1 上げ、`resources/updates.json`・`docs/HOW_TO_TRY.md`・`docs/TEST_LIST.md`・`docs/TECHNOLOGIES.md` (スキニング・四元数・ドロネーなど) に書く
 - 段階 1 の前に、骨のある見本のモデルを決める (6 章の 4)
+- 段階 5〜7・2D のコマ送り・後にしたものの割り振り・ナビゲーションとのつなぎの詳しい設計は **7 章** (2026-11-26)
 
 ## 6. 決めていないこと (聞くこと)
 
@@ -427,3 +428,422 @@ rule any  :             -> Idle 0.2
 | 6 | 2D のコマ送りにも同じタブとルールを使う | **使えるようにする** (アニメーションのプラグインは 3D を知らないので、2D のクリップ = コマの並び を足すだけ)。段階 3 の後 |
 | 7 | 混ぜているときのイベント | **レイヤーごとに一番重いクリップだけ**出す |
 | 8 | トリガーの保持時間の既定 | **0.2 秒** (パラメーターごとに変えられる) |
+| 9 | ルートモーションの根の骨 (7-1) | **親の無い骨だけ**選べる。自動は「親の無い骨のうち (骨の外) でない最初のもの」。腰が親を持つモデルは後で (重心を床に写す形) |
+| 10 | レイヤーのルートモーション (7-1) | **体だけ**が動かす。根の骨を覆う上書きのレイヤーは、根を止めてから重ねる (2 回動かさない) |
+| 11 | キャラクターがあるときの縦のルートモーション (7-1) | **使わない** (重力とジャンプは物理)。はしご・よじ登りは後で「縦も使う (その間は重力を止める)」 |
+| 12 | ルートモーションとスクリプトの `Character::Move` が重なったとき (7-1) | 動かすクリップの重みがある間は**ルートモーションが勝つ**。止まったフレームに 1 度だけ速さ 0 |
+| 13 | 新しいチャンク (`ROOT`・`MRPH`・`MANI`) を足したときの `.rmmesh` の形式の番号 | **3 に上げる** (古いゲームが黙って根を動かしたまま・顔を止めたまま描かないように。今の決まりと同じ) |
+| 14 | IK の設定の置き場所 (7-2-1) | **新しい部品「IK」** (骨の名前はモデルごとに違うので `.rmanim` ではない)。重みだけ `.rmanim` のパラメーターで動かせる |
+| 15 | 足の IK の地面 (7-2-1) | **物理の光線** (つなぎ「アニメーション × 物理」の口 `ground`)。`PhysicsWorld::Raycast` に「除くエンティティ」を足す (自分のキャラクターに当たらない) |
+| 16 | VRoid / VRM の揺れの設定 (`VRMC_springBone`) を読む (7-2-3) | **段階 6 の後**。まずは部品「揺れる骨」に手で置く |
+| 17 | ゲームに入る作業スレッドの置き場所 (7-3) | **`base` に小さな作業の列** (標準ライブラリだけ。物理・パーティクル・天候も後で使える)。核に足すので `ARCHITECTURE.md` にも書く |
+| 18 | 見えないアニメーター (7-3) | **時刻・ルール・イベント・ルートモーションは進め**、姿勢・IK・揺れだけ作らない (ゲームの動きが見え方で変わらない) |
+| 19 | 2D のクリップの置き場所 (7-4) | **新しいアセット `.rmframes`** (コマのクリップ集)。型 `FrameClip` は 2D 空間に置き、タイルマップの動くタイルと 1 つにする (`TILEMAP.md` と合わせる) |
+| 20 | 2D のアニメーターをアニメーション タブでどう編集するか (7-4) | **タブをエディターだけの新しいつなぎ `game_x_animation_tab` (requires = ゲーム制作・アニメーション) に移す**。タブは口で「選んだエンティティのアニメーター」(`.rmanim`・クリップの名前・Play 中の状態) を尋ね、3D (`game_x_animation`) と 2D (`game_x_animation2d`) のエディターの部分が答える。タブは 1 つのまま、ランタイムが無いので 2D だけのゲームに 3D は入らない。ほかの案: 2D が `game_x_animation` を前提にする (簡単だが 2D だけのゲームに 3D が入る) |
+| 21 | 2D の「混ぜる」状態 (7-4) | **一番重いクリップを選ぶ** (割合を引き継いで切り替え)。フェードは使わない |
+| 22 | 段階の順番 | **5 → 2D → 6 → 7**。2D は小さく、タイルマップと型を早く合わせたい |
+| 23 | ナビとルートモーション (7-6) | 既定は**エージェントが動かし、速さをパラメーターへ** (案 A)。ルートモーションで動かす (案 B) は選べるように |
+| 24 | ブレンドシェイプを GPU で混ぜる形 (7-2-2) | **頂点シェーダー** (1 回の描画で重いものから 8 つまで)。段階 7 で Compute Shader のスキニングに入れる |
+| 25 | FBX の中間のシェイプ (in-between) (7-2-2) | **最初は最後の形だけ** + 警告。要る人が出たら読む |
+
+## 7. 段階 5〜7 と残りの設計 (2026-11-26。設計だけで、まだコードは無い)
+
+5 章の段階 5〜7 と、2D のコマ送り (6 章の 6)・段階 1〜4 で後にしたもの・ナビゲーションとのつなぎを、作れる細かさに書く。
+各節は **データ → 純粋な計算とテスト → 画面 → スクリプト → 書き出し** の順。決めていないことは 6 章の表の 9 から。
+
+### 7-0. 今あるもの (コードで確かめた。2026-11-26)
+
+| 何 | どこ | この章に関わること |
+|---|---|---|
+| 1 フレームの順番 | `docs/ARCHITECTURE.md` の「物理」・`game_production/runtime/Systems.h` (`SystemRunner`: Fixed が先、そのあと Frame。それぞれ order の順) | 実際は **スクリプトの Tick → 固定の刻み 0〜8 回 (システム「物理」: Fixed・order 0) → Frame のシステム → フック (`OnEvent` など) → 描く**。3-10 の「1. Fixed 2. Tick」とは Tick と Fixed の順が逆。Frame のシステムは 天候 × 気候 (-1)・スプライトのアニメーション / 回り続ける / 天候 / 空の時刻 など (0)・アニメーション (100)・骨に付ける (110) |
+| 1 体の再生 | `animation3d/runtime/Player.*` | `Tick` が `TimeStep{time, loops}` を返す。前の時刻 (`prevTime_`) と直前の刻み (`last_`) は中に持っていて、外からは読めない。混ぜるときは主のクリップの割合 (時刻 / 長さ) でどのクリップも読む。フェードは Play した瞬間の姿勢を固めた**止め絵** (`from_`) から |
+| 1 フレームの姿勢 | `game_x_animation/runtime/AnimatorRun.cpp` (`StepAnimator`) | 体の `Tick` → イベント (体の今のクリップだけ) → `EvaluatePose` → レイヤーを順に `OverlayPose` / `AddPose` → `FinishPose` |
+| 根の骨 | (無い) | ルートモーションのコードは無い。クリップの設定は `.meta` の `"clips"` の `"events"` だけ (`space3d/runtime/ClipSettings.h`) |
+| 物理のキャラクター | `physics/runtime/PhysicsWorld.cpp` (`CharRec`・`StepCharacters`) | Jolt の `CharacterVirtual`。回転は持たない (`Quat::sIdentity()`)。`Move` は「欲しい水平の速さ」`walk` を変えるまで持ち続ける。刻みごとに、縦は地面の速さか自分の落下 + 重力、横は `walk` で `SetLinearVelocity` → `ExtendedUpdate` (段差は `mWalkStairsStepUp`)。書き戻し (`WriteBack`) は**位置だけ** Jolt から、回転は Transform のまま |
+| 光線 | `PhysicsWorld::Raycast(origin, direction, maxDistance)` | トリガーは除く。**キャラクターにも当たる** (除く物は選べない) |
+| スクリプト | `game_x_animation/runtime/sdk/RMAnim.h` | 部分は `animator` (版 1) と `animator_rules` (版 1)。3-9 に書いた `SetLayerWeight` は**まだ無い** |
+| 焼いたモデル | `space3d/runtime/MeshBake.h` | チャンク `BNDS VERT INDX PART MATL SHRP` + `SKEL SKIN IBND BBOX` + `ANIM EVNT`。クリップは `.rmmesh` の中で、`.rmclip` は無い。知らないチャンクは飛ばす |
+| モーフ | `space3d/runtime/Mesh.h`・`Fbx.h` | glTF のモーフターゲット (と `weights` のアニメーション)・FBX のブレンドシェイプは読まない。頂点 `MeshVertex` は位置・法線・UV だけ |
+| GPU | `space3d/runtime/RendererShaders.cpp`・`particles/runtime/ParticlePlayer.cpp` | 骨の行列は `Buffer<float4> bones : register(t10)`。Compute Shader (`cs_5_0`) はパーティクルがもう使っている |
+| 2D のコマ送り | `game_x_2d/runtime/SpriteAnimation.h`・`Sprite.h`・`space2d/runtime/Atlas.h` | 部品「スプライトのアニメーション」(コマの並び・1 秒のコマ数・繰り返す) が、スプライトの `cell` を決める。計算は `space2d::AnimationCell` / `AnimationStep` |
+| 作業スレッド | `src/editor/app/Worker.h` | エディターだけ (ゲームに入らない)。Jolt の `JobSystemThreadPool` は物理の中だけ |
+| 地形・ナビ・タイルマップ | (無い) | プラグインは無い。地面の高さを知る道は物理の光線だけ。`docs/NAVIGATION.md`・`docs/TILEMAP.md` は同時に設計中 |
+| エンティティの参照 | `core/reflect/Reflect.h` (`EntityRef`) | 部品の欄にエンティティを入れられる (IK の目標に使う) |
+
+### 7-1. 段階 5: ルートモーション
+
+クリップの中で根の骨が動いた分を取り出し、姿勢からは消して、エンティティを動かす。足が滑らない・攻撃で踏み込む。
+
+**データ** (3-5 の設定を型にする)
+
+```cpp
+// space3d/runtime/Skeleton.h (ClipEvent の隣。クリップの設定は .meta の "clips" の 1 か所: 憲法 1)
+RM_STRUCT(Label="ルートモーション")
+struct ClipRootMotion {
+    RM_PROPERTY(Edit, Label="使う") bool enabled = false;
+    RM_PROPERTY(Edit, Label="根の骨", Tooltip="空: 自動 (親の無い骨のうち (骨の外) でない最初のもの)") std::string bone;
+    RM_PROPERTY(Edit, Label="横の移動 (XZ)") bool horizontal = true;
+    RM_PROPERTY(Edit, Label="縦の移動 (Y)") bool vertical = false;
+    RM_PROPERTY(Edit, Label="Y のまわりの回転") bool turn = true;
+};
+// Clip に ClipRootMotion root; を足す
+
+// game_x_animation/runtime/Animator.h (部品「アニメーター」に 1 つ足す)
+RM_ENUM(Label="ルートモーション")
+enum class RootMotionUse {
+    RM_ITEM(Label="動かす") Move,            // Transform へ (キャラクターがあれば、その速さへ)
+    RM_ITEM(Label="その場で") InPlace,       // 取り出して捨てる (姿勢からは消す)
+    RM_ITEM(Label="スクリプトに渡す") Script, // 動かさない。RootDelta() で読む
+};
+```
+
+- `.meta` の形: `"clips": {"Walk": {"events": [...], "root": {"enabled": true, "bone": "", "horizontal": true, "vertical": false, "turn": true}}}`。読むのは今の `ApplyClipSettings` (欄の決まりで。知らないキーは残す)
+- 根の骨は**親の無い骨だけ**選べる (6 章の 9)。親の無い骨なら、その姿勢がそのままモデルの空間 (段階 1 で骨の上のアーマチュアの行列は子に掛けてある)
+- `AnimatorRun` に (`RM_TRANSIENT` の中): 直前のフレームの動いた分 `rootMove` (ワールド)・`rootTurn` (ラジアン)・止め絵の速さ `frozenVelocity` / `frozenTurnRate`
+
+**純粋な計算** (`animation3d/runtime/RootMotion.*`)
+
+| 関数 | すること |
+|---|---|
+| `RootBone(skeleton, name)` | 根の骨の番号 (空の名前: 自動。無い・親がある: -1) |
+| `RootDeltaBetween(clip, binding, skeleton, settings, prevTime, step, speed)` | `TimeStep` の間に根が動いた分 `RootDelta{Vec3 move; float turn;}`。move は**前の時刻の根の向き**の空間で |
+| `StripRoot(pose, root, settings, start)` | 抜いた軸を、クリップの**始めのコマの値**に止める (位置の XZ / Y・Y のまわりの回転) |
+| `MixRootDelta(deltas, weights)` | 重みで混ぜる (合計で割る) |
+| `RootTotals(clip, ...)` | 1 回 (1 周) で動く距離と回る角度 (インスペクターに出す・7-6 の「速さを合わせる」) |
+| `RootMotionTransform(current, parentWorld, delta)` | (game_x_animation) Transform に足した後の Transform (`AttachedTransform` と同じ形) |
+
+- 回転は**Y のまわりの成分だけ**を取る (四元数をひねり (Y のまわり) と残りに分ける: ひねり = normalize(0, q.y, 0, q.w))。残りの傾きは姿勢に残す
+- 動いた分: `p(now) - p(prev)` を `yaw(prev)` の逆で回したもの。回るクリップ (90 度曲がる) でも、前へ進んだ分が回った向きに足される
+- **ループの継ぎ目**: 区切って足す。`prev → 終わり`、(`loops - 1` 回の 1 周分)、`始め → now`。区切りごとに、それまでに回った分で回してから足す。ループのクリップは最後と最初が同じ値なので、継ぎ目で飛ばない
+- ループでないクリップ: 端に着いたら動かない。逆再生: そのまま負の向きに動く
+- 時間のつまみ (`SetTime`)・Play の直後の最初の刻み: 動かさない (イベントと同じ決まり)
+- **混ぜているとき**: 混ぜるクリップごとに、そのクリップの時刻 (主の割合 x 長さ) で動いた分を出し、`SetBlend` と同じ重みで混ぜる
+- **フェードのとき**: 止め絵は動かないので、止めた瞬間の 1 秒あたりの動き (`frozenVelocity`) も一緒に止めておき、`(1 - w) x 速さ x dt` を足す。フェードの間に遅くならない
+- **レイヤーのとき**: 動かすのは**体だけ** (6 章の 10)。上書きのレイヤーのマスクが根の骨を含むときは、そのレイヤーの姿勢も `StripRoot` してから重ねる (根の位置を 2 回動かさない)
+- **イベントとの関係**: 動いた分とイベントは同じ `TimeStep` から出す (同じ区間)。Transform を動かすのはアニメーション (Frame) で、`OnEvent` はその後なので、足音は動いた後の位置で鳴る
+- 1 フレームの順 (`StepAnimator` に足す): Tick → 動いた分 → イベント → `EvaluatePose` → `StripRoot` → レイヤー → `FinishPose`。Transform へはシステムが書く (下)
+
+**物理のキャラクター: つなぎ「アニメーション × 物理」**
+
+```json
+{ "author": "rm_engine", "name": "animation_x_physics", "displayName": "アニメーション × 物理",
+  "connectorFor": { "author": "rm_engine", "name": "game_x_animation" },
+  "requires": [ game_x_animation, physics, game_production, space3d, animation3d ] }
+```
+
+- 形は `particles_x_physics` と同じ (`connectorFor` = 相手のつなぎ)。ゲーム制作 × アニメーション は物理を知らない
+- ゲーム制作 × アニメーション が口 `rm_engine.game_x_animation.root_motion` を開く: `RootMotionSinkInfo{ bool (*take)(Scene&, int entity, Vec3 worldMove, float dt); }`。true を返したら、アニメーションは**位置を書かない**
+- つなぎ: そのエンティティにキャラクターがあれば `PhysicsWorld::Move(scene, entity, worldMove / dt)` (水平だけ) して true
+- **回転**はいつもアニメーションが Transform に書く (キャラクターは回転を持たず、書き戻しも Transform の回転のまま。コードで確かめた)
+- **縦**: キャラクターがあるときは使わない (重力とジャンプは物理。6 章の 11)
+- **1 フレーム遅れる**: Tick → Fixed → Frame の順なので、フレーム N の速さはフレーム N+1 の刻みで使われる。刻みの数 (0〜8) で距離も少しずれる。クリップどおりの距離になるのは、キャラクターが無いときだけ
+- ルートモーションが止まったフレーム (前は動いていて、今は動かすクリップが無い) に、1 度だけ `Move(0)` を入れる (止まらずに滑り続けないように)
+- スクリプトの `rm::Character::Move` と重なったら、動かすクリップの重みがある間はルートモーションが勝つ (6 章の 12。欄の説明に書く)
+- 同じつなぎが、IK の地面 (7-2-1) とパラメーターの送り手 (7-6) も差し出す
+
+**画面**
+
+- モデルのインスペクター「クリップとイベント」(`animation3d/editor/ClipStrip`): 選んだクリップの帯の下に 1 行「ルートモーション [使う] 根の骨 [▾] [横] [縦] [回転]」と、`RootTotals` の「1 回で 前へ 1.42 m・右へ 0.05 m・回る 90°」。編集はイベントと同じ道 (`.meta` の 1 件ずつの Undo)。部品は `w::` の今のもの (チェック・ドロップダウン・文字)
+- 部品「アニメーター」の欄「ルートモーション」(`RM_PROPERTY` の列挙: インスペクターと Undo は型から)
+- アニメーション タブ: 上の行の「今」に「動き 1.4 m/s・回る 0°/s」(Play 中)。**タブの中のプレビュー** (段階 3 で後にしたもの) をここで作る: 床の格子と [その場で | 動かす] の切り替え (動かすとカメラがついて行く)。`space3d/editor/Preview3D` を使う
+- 文字は全部 `Tr(L"…")`。英語は `game_x_animation/lang/en.json` と `animation3d/lang/en.json`
+
+**スクリプト** (`RMAnim.h`。新しい部分 `rm_engine.game_x_animation.animator_root` 版 1: 今の部分の版を変えない)
+
+```cpp
+anim.SetRootMotion(rm::RootMotion::Move);   // Move / InPlace / Script (部品の欄を書き換える)
+rm::Vec3 d = anim.RootDelta();              // 直前のフレームに根が動いた分 (ワールド)
+float turn = anim.RootTurn();               // 直前のフレームに回った角度 (度)
+```
+
+- 「スクリプトに渡す」にすると、スクリプトが `Tick` で読んで自分で動かせる (1 フレーム遅れ)
+
+**書き出し**
+
+- `.rmmesh` にチャンク `ROOT` (クリップごと: 使う u8・根の骨の名前・横 / 縦 / 回転 u8。どれかのクリップが使うときだけ。`ANIM` の後)
+- 古いゲームは `ROOT` を飛ばすと、根が動いたまま描く (見た目がコライダーから離れる)。形式の番号を 3 に上げる (6 章の 13)
+- 部品の欄は今の JSON のまま
+
+**テスト**
+
+- `tests/TestAnimation3d.cpp`: まっすぐ歩くクリップの動いた分・ループをまたぐ・1 フレームで何周も・逆再生・90 度曲がるクリップ (進んだ分が回った向きに)・混ぜる重み・フェードの止め絵の速さ・`StripRoot` で根が始めの値・Y のひねりだけを取る・鏡のファイル
+- `tests/TestGameAnimation.cpp`: Transform が動く・その場で・スクリプトに渡す・イベントの時刻と動いた分が同じ区間
+- 物理のテスト (`tests/TestPhysics.cpp` の隣に新しく): キャラクターが 1 秒で歩くクリップの距離 (2% の中)・止まったら速さ 0・回転は Transform のもの
+- 見本: `docs/samples/models/make_skinned_sample.py` に根が前へ進むクリップを足す (実装のとき)。`tools/check_export.ps1` の `game_anim` で書き出したゲームでも動くこと
+
+### 7-2. 段階 6: 仕上げ
+
+#### 7-2-1. IK (2 本の骨・顔を向ける)
+
+**データ** (モデルごとに骨の名前が違うので、`.rmanim` ではなく部品にする: 6 章の 14)
+
+```cpp
+// game_x_animation/runtime/Animator.h に新しい部品「IK」(アニメーターと同じエンティティ)
+// (ここでは RM_PROPERTY を略す。実装では全部の欄に Label と Tooltip を付ける)
+RM_ENUM enum class IkKind { RM_ITEM(Label="2 本の骨") TwoBone, RM_ITEM(Label="向ける") LookAt };
+RM_ENUM enum class IkGoal { RM_ITEM(Label="地面") Ground, RM_ITEM(Label="エンティティ") Entity, RM_ITEM(Label="スクリプト") Script };
+RM_STRUCT(Label="IK の鎖") struct IkChain {
+    std::string name;            // スクリプトが呼ぶ名前 (左足・右手・頭)
+    IkKind kind;
+    std::string bone;            // 先の骨 (足首・手首・頭)。2 本の骨: 親と親の親が上と中
+    Vec3 pole;                   // 曲げる向き (モデルの空間。膝は前・肘は後ろ)
+    IkGoal goal;  EntityRef target;  Vec3 offset;
+    float weight = 1;  std::string weightParam;   // 重み (パラメーターでも: .rmanim の値)
+    float footHeight = 0.08f;    // 足首から足の裏まで (地面のとき)
+    float maxAngle = 70;         // 向ける: これより回さない (度)
+};
+RM_STRUCT(Label="IK") struct AnimatorIk {
+    std::vector<IkChain> chains;
+    std::string pelvis;  float pelvisDrop = 0.3f;   // 足を坂に: 腰を下げる骨と上限 (m)
+};
+```
+
+**純粋な計算** (`animation3d/runtime/Ik.*`)
+
+- `SolveTwoBone(a, b, c, target, pole, weight)`: 余弦定理で中の骨の角度を出し、上の骨を目標へ向ける。曲がる平面は `pole`。届かないときはまっすぐ伸ばす (長さは変えない)。近すぎるときは曲げられる所まで
+- `LookAt(boneMatrix, forwardAxis, target, maxAngle, weight)`: 骨の前を目標へ。首と頭など何本かに分けるときは重みを分ける
+- `ApplyIk(pose, skeleton, ...)`: 姿勢 (親の空間) から `ModelMatrices` を作り、鎖ごとに解いて回転を姿勢に戻し、下の骨の行列を作り直す
+- 足を坂に: 足ごとに、足の上 (腰の高さ) から下へ光線 → 当たった高さ + `footHeight` へ足首を動かし、足の向きを面の法線に (30 度まで)。腰は 2 本のうち大きく下がる方だけ下げる (`pelvisDrop` まで)。高さの変化は 0.1 秒でならす (光線の当たりが変わってもがたつかない)
+- 1 フレームの順: レイヤー → **IK** → 揺れ (7-2-3) → `FinishPose`
+- テスト (`tests/TestAnimation3d.cpp`): 届く目標にちょうど着く・届かないとまっすぐ・`pole` の向きに曲がる・重み 0 で変わらない・向けるの上限・作った地面の関数で坂に立つ・腰の下がり方
+
+**地形・光線とのつなぎ**
+
+- ゲーム制作 × アニメーション が口 `rm_engine.game_x_animation.ground` を開く: `GroundProbeInfo{ std::optional<GroundHit> (*cast)(Scene&, Vec3 from, Vec3 dir, float max, int ignore); }`
+- つなぎ「アニメーション × 物理」が `PhysicsWorld::Raycast` で答える。**自分のキャラクターの体に当たらないよう**、`Raycast` に「除くエンティティ」を足す (物理を少し変える。6 章の 15)
+- 物理が無いとき・口が無いとき: 「地面」の鎖は何もしない (足はクリップどおり)
+- 地形 (TERRAIN.md) は物理の口 `static_shapes` に高さの格子を答えるので、この光線は地形にも当たる (地形の側でこの口に答えなくてよい)。物理が無いときだけ、TERRAIN.md の口 `rm_engine.game_x_3d.ground` (「この (x, z) の地面の高さと向き」) を代わりに読む
+
+**画面**: 部品「IK」は `RM_STRUCT` なのでインスペクターと Undo は型から。骨の欄は「骨に付ける」と同じく、モデルの骨から選ぶドロップダウン (`ComponentLook::choices`)。選んだときシーンビューに鎖の線と目標の印 (口 `rm_engine.game_x_3d.scene_overlay`。色は `theme::`)
+
+**スクリプト** (新しい部分 `animator_ik` 版 1)
+
+```cpp
+anim.SetIkTarget("右手", pos, 1.0f);   // 目標 (ワールド) と重み。「スクリプト」の鎖
+anim.SetIkWeight("左足", 0.0f);        // 重みだけ (階段で切るなど)
+anim.LookAt(enemyPos, 0.8f);           // 「向ける」の鎖すべて
+```
+
+**書き出し**: 部品の JSON のまま。焼くものは無い
+
+#### 7-2-2. ブレンドシェイプ (表情)
+
+**データ** (`space3d`: 型は 3D 空間に。読む場所と焼く場所を 1 つに: 憲法 3)
+
+```cpp
+struct MorphTarget {             // space3d/runtime/Morph.h (読んだ形。計算の途中のもので、RM_STRUCT にしない: Skeleton と同じ)
+    std::string name;            // glTF: mesh.extras.targetNames (無ければ「形 N」)・FBX: BlendShapeChannel の名前
+    std::vector<uint32_t> vertices;          // 動く頂点の番号 (MeshData::vertices の。少ないものだけ持つ)
+    std::vector<Vec3> position, normal;      // その頂点の差
+};
+// MeshData に std::vector<MorphTarget> morphs; と std::vector<float> morphDefaults; (glTF の mesh.weights)
+struct MorphTrack { std::string target; std::vector<float> weights; };   // 列の長さは 0 / 1 / frames (BoneTrack と同じ)
+// Clip に std::vector<MorphTrack> morphs; を足す
+```
+
+- **glTF**: `primitives[].targets[]` の `POSITION` / `NORMAL` (`TANGENT` は使わない: 接線はピクセルシェーダーが作る)。`animations` の `weights` のチャンネル (そのノードのメッシュの全部の形。`CUBICSPLINE` も)。1 つのモデルに焼くので、メッシュが違っても**名前の同じ形は 1 つ**にまとめる
+- **FBX**: `Geometry` → `Deformer` (BlendShape) → `SubDeformer` (BlendShapeChannel: `DeformPercent`・`FullWeights`) → `Geometry` (Shape: `Indexes` / `Vertices` / `Normals`。コントロール点ごと)。コントロール点の番号 `cp` から角ごとの頂点へ広げる (段階 1 のウェイトと同じ道)。曲線は `DeformPercent` (0〜100 → 0〜1)。中間のシェイプ (`FullWeights` が 2 つ以上) は最初は最後の形だけで、警告 (6 章の 25)
+- 取り込みの設定: 差は**向き**なので、座標系・単位・大きさ・前後の反転を掛けるが、ずらしは掛けない。`ModelImport` に新しい欄は要らない
+- 頂点が 100 万を超える形・形が 256 を超えるモデルは警告して切る (`ReadBudget` で数える)
+
+**純粋な計算とテスト**
+
+- CPU の式 `MorphPosition(v, weights, targets)` (`space3d/runtime/Morph.h`。`Skinning.h` と同じく、GPU と**同じ式**でテストが比べる)。順は **形を足す → 骨で動かす**
+- 重み: クリップの `MorphTrack` を `Player` が骨と一緒に読み、混ぜる・フェードも同じ重みで。足すレイヤーは差を足す。スクリプトが置いた値はその上に**上書き**
+- テスト: `tests/TestGltfSkin.cpp` に形 2 つの見本 (`make_skinned_sample.py` に足す)・`tests/TestFbxSkin.cpp` に FBX のテストの形・重みの混ぜ方・CPU の式とシェーダーの式・取り込みの設定の向き
+
+**GPU** (`Renderer3D`)
+
+- `MeshDraw` に `std::span<const float> morphWeights` を足す (空: 形を動かさない)
+- メッシュを上げるとき、形ごとに「動く頂点の範囲 (最初〜最後の番号)」だけの差を 1 つの `Buffer<float4>` (空いているレジスター。t10 の次) に並べる
+- 描画ごとに、重みが 0 でない形を**重い方から 8 つまで** (6 章の 24)。頂点シェーダーが `SV_VertexID` で範囲に入っていれば `w x 差` を足し、それからスキニング。影のシェーダーも同じ
+- 見えるかの判定: 形ごとの一番大きな差の長さを、骨ごとの箱に足しておく (形ではみ出さない)
+- 影: 重みが変わる間は `moving`、止まっていれば重みを姿勢の版に入れる
+
+**画面**: モデルのインスペクターに新しいブロック「ブレンドシェイプ」(形の名前と `w::Slider`)。つまみは**試すだけ** (データではないので Undo に積まない。モデルのプレビューに映す)。クリップの帯には何も足さない
+
+**スクリプト** (`animator` の部分に足すか新しい部分 `animator_morph` 版 1)
+
+```cpp
+anim.SetBlendShape("まばたき", 1.0f);   // 上書き (クリップより強い)
+anim.ClearBlendShape("まばたき");       // クリップの値に戻す
+float w = anim.BlendShape("あ");
+```
+
+**書き出し**: `.rmmesh` にチャンク `MRPH` (形ごと: 名前・数・頂点の番号 u32 + 位置の差 float 3 + 法線の差 float 3) と `MANI` (クリップごとの形の曲線。`ANIM` の後)。古いゲームは飛ばして、顔が動かないだけ
+
+#### 7-2-3. 揺れ (ばねの骨)。後でラグドール
+
+**データ**
+
+```cpp
+// game_x_animation/runtime/Animator.h に新しい部品「揺れる骨」(RM_PROPERTY は略す)
+RM_STRUCT(Label="揺れる鎖") struct SpringChain {
+    std::string bone;            // この骨から下を全部揺らす (髪の根元・スカート)
+    float stiffness = 0.5f;      // 元の向きに戻る強さ
+    float drag = 0.4f;           // 動きを止める強さ
+    float gravity = 0.f;         // 下へ引く強さ
+    float radius = 0.02f;        // 当たりの太さ
+};
+RM_STRUCT(Label="揺れの当たり") struct SpringCollider { std::string bone; Vec3 offset; float radius = 0.1f; };
+RM_STRUCT(Label="揺れる骨") struct SpringBones {
+    std::vector<SpringChain> chains;  std::vector<SpringCollider> colliders;
+};
+```
+
+**純粋な計算** (`animation3d/runtime/Spring.*`)
+
+- 骨の先を**ワールドの空間**で Verlet で動かす (キャラクターが走ると髪が後ろへ流れる)。骨の長さは保つ。元の向き (アニメーションの姿勢) へ `stiffness` で引き、`drag` で止め、`gravity` で下へ
+- 当たり: 当たりの球から押し出す (髪が頭に埋まらない)
+- 刻みは `dt` に依らず 1/60 秒ずつ (多くて 1 フレーム 4 回)。1 フレームで大きく動いた (ワープ) ら止めた形から始め直す
+- 1 フレームの順: IK の後、`FinishPose` の前。止まっているエディターでは選んだものだけ (プレビュー)
+- テスト: 重力で垂れる・`stiffness` で戻る・長さが変わらない・球から出る・ワープで始め直す・30 fps と 60 fps でほぼ同じ形
+
+**画面**: 部品の欄は型から (Undo も)。骨は選ぶドロップダウン。選んだとき、シーンビューに鎖と当たりの球 (口 `scene_overlay`)
+
+**スクリプト**: `anim.ResetSprings();` (ワープの後)。部分 `animator_ik` に入れる
+
+**書き出し**: 部品の JSON のまま
+
+- VRoid の書き出し (VRM: glTF の拡張 `VRMC_springBone`) の揺れの設定を読むのは後で (6 章の 16)
+- **ラグドール** (後で): つなぎ「アニメーション × 物理」に置く。骨ごとのカプセルと関節 (Jolt の `Ragdoll`)。物理の姿勢 → `Pose` → スキンの行列。アニメーションに戻るときは、その時の姿勢を止め絵にしてフェード (今のクロスフェードと同じ)
+- 天候の風で揺らすのも後で (天候 × アニメーション のつなぎ)
+
+### 7-3. 段階 7: 速く
+
+**作業スレッド**
+
+- アニメーターごとの計算 (ルール → 時刻 → 姿勢 → IK → 揺れ → スキンの行列) はほかのアニメーターと関わらない。3 つに分ける:
+  1. 前 (主のスレッド): 部品の欄・スクリプトが頼んだこと・パラメーターの送り手・地面の光線の結果を `AnimatorRun` に写す
+  2. 並べて (作業スレッド): `StepAnimator` の中身
+  3. 後 (主のスレッド・エンティティの順): Transform (ルートモーション)・イベントを送る・骨に付ける
+- 地面の光線は 1 で前のフレームの姿勢から撃つ (1 フレーム遅れ。ならすので目に見えない)
+- 置き場所: ゲームに入る作業スレッドの仕組みは今は無い。`base` に小さな作業の列 (`std::jthread` だけ) を作る案と、プラグインの中に作る案 (6 章の 17)
+- テスト: 1 本のスレッドと N 本で、骨の行列・イベントの順・Transform がまったく同じ。時間はデバッグ パネルのシステムごとの時間 (`SystemRunner` が測っている) で見る
+
+**Compute Shader のスキニング**
+
+- 1 フレームに 1 回、Compute Shader (`cs_5_0`。パーティクルと同じ) が描くもの 1 つずつの頂点を動かして書く (形 → 骨の順。7-2-2 の形もここ)。描くときは動かない頂点のシェーダー (`MeshVS` / `ShadowVS`) で読むだけ
+- よいところ: 影の地図 (太陽の段・ほかの光) を何回描いても、スキニングは 1 回
+- 今の頂点シェーダーのスキニングは残す (Compute Shader が使えないとき・テストで比べる)。CPU の式 (`Skinning.h`) と 3 つが同じになるテスト
+
+**クリップの圧縮**
+
+- 変わらない列を 1 つにする (読み込みが今どこまでしているかを最初に確かめる)・回転を 48 ビット (大きい成分を除いた 3 つ)・位置と大きさを列ごとの範囲で 16 ビット・誤差の中で消せるサンプルを消す
+- 誤差は骨ごとではなく**骨の先の位置**で測る (親の誤差は子に積もる)。設定はクリップの設定に「圧縮 [しない | ふつう | 強く]」
+- メモリの中も圧縮のまま持ち、サンプルするときに前後 2 つだけ戻す
+- 同時に `.rmclip` に分けて「使っているクリップだけ」を焼く (段階 1 で後にしたもの。形式を 1 度で変える)
+- テスト: 誤差が上限の中・圧縮しないものと同じ再生・壊れたファイルで外を読まない
+
+**遠い物を間引く**
+
+- 画面の上の大きさで、姿勢を作るのを 1 / 2 / 4 フレームに 1 回にする (間は前の骨の行列のまま。姿勢の版は変えない: 影も使い回す)
+- **見えない物**: 時刻・ルール・イベント・ルートモーションは進める。姿勢・IK・揺れだけ作らない (ゲームの動きが見えるかどうかで変わらない。6 章の 18)
+- 見えたかは前のフレームの描画が知っている。口 `mesh_pose` に「前のフレームで見えたか」を返す欄を足す (ゲーム制作 × 3D)
+- 部品「アニメーター」に「遠いと間引く」(既定: 入れる) と「見えないとき [時間だけ進める | 全部計算]」
+- テスト: 間引きの決まり (大きさ → 何フレームに 1 回) は純粋・見えない物でもイベントが出る・ルートモーションで進む
+
+### 7-4. 2D のコマ送り (6 章の 6: 使えるようにする)
+
+アニメーションのプラグインは 3D を知らない (状態はクリップの**名前**を指すだけ) ので、2D のクリップを足せば同じルールが使える。
+
+**データ**
+
+```cpp
+// space2d/runtime/FrameClip.h (2D 空間。ゲームを知らない。タイルマップの「動くタイル」も同じ型を使う。RM_PROPERTY は略す)
+RM_STRUCT(Label="コマのイベント") struct FrameEvent { int step = 0; std::string name; float number = 0; std::string text; };
+RM_STRUCT(Label="コマのクリップ") struct FrameClip {
+    std::string name;
+    std::vector<int> frames;          // セルの番号の並び (今のスプライトのアニメーションと同じ)
+    float framesPerSecond = 8;  bool loop = true;
+    std::vector<FrameEvent> events;   // そのコマに着いたら
+};
+// 新しいアセット .rmframes「コマのクリップ集」(6 章の 19)
+RM_STRUCT(Label="コマのクリップ集") struct FrameClipSet {
+    std::string kind = "rm_engine.frame_clips";  int format = 1;
+    AssetRef image;  int columns = 1, rows = 1;   // スプライトの画像とその切り方
+    std::vector<FrameClip> clips;
+};
+// game_x_animation2d/runtime/SpriteAnimator.h: 部品「スプライトのアニメーター」
+//   rules (.rmanim)・clips (.rmframes)・clip・loop・speed・playOnStart・RM_TRANSIENT の run
+```
+
+**ルールの使い方 (2D の決まり)**
+
+- ルールの決まり (`StepRules`) とパラメーターはそのまま。t は「今のコマの位置 / コマの数」、ended は 1 回のクリップの最後のコマ・ループの 1 周
+- **フェード**: 2D は混ぜられないので、すぐ切り替える (フェードの秒は使わない)
+- **1D / 2D で混ぜる**: 重みの**一番大きいクリップを選ぶ** (8 方向の絵)。選ぶクリップが変わっても割合 (コマの位置 / コマの数) を引き継ぐ (歩きの足がそろう。6 章の 21)。重みの計算は今の `Blend` のまま
+- **レイヤー**: 2D では最初は使わない (体だけ)。後で「体と武器を別のスプライトで」
+- **イベント**: コマに着いたら、今の `rm::Events` → `OnEvent` (3D と同じ道)
+- 今の 3D の `StepAnimatorRules` のうち、ゲームの絵を知らない部分 (今の状態・入ってからの秒・ループの 1 周・レイヤーの状態) を `animation/runtime/RulesRun.*` に移して、3D と 2D で 1 本にする (憲法 2)。クリップの長さとループは関数で渡す
+- 同じエンティティに今の「スプライトのアニメーション」もあれば、アニメーターが勝つ (コンソールに 1 度)
+
+**プラグイン**: 新しいつなぎ `game_x_animation2d` (ゲーム制作 × 2D アニメーション)。`requires` = ゲーム制作・ゲーム制作 × 2D・2D 空間・アニメーション。**ゲーム制作 × アニメーション は前提にしない** (それは 3D を前提にしている。`ARCHITECTURE.md` 7-9「2D だけのゲームに 3D は入らない」を守る。タブの分け方は 6 章の 20)。システム「スプライトのアニメーター」(Frame・order 100) が Play の間にスプライトの `cell` (と、クリップ集の画像と切り方) を書く
+
+**純粋な計算とテスト**: コマの位置は今の `space2d::AnimationStep` を使う (2 つ作らない)。テスト (`tests/TestSpace2d.cpp` と `tests/TestAnimationRules.cpp`): 状態が変わるとセルが変わる・混ぜる状態で一番重いものを選ぶ・割合を引き継ぐ・コマのイベントがループをまたいでも 1 回ずつ・`RulesRun` が 3D と同じ結果
+
+**画面**
+
+- アニメーション タブ: 選んだエンティティが「スプライトのアニメーター」なら、状態のクリップの ▾ に `.rmframes` のクリップを出す。フェードの欄は出さない。混ぜる図 (`w::BlendPlot`) はそのまま (一番重い点がもう大きく光る)
+- `.rmframes` はアセットのパネルの「作成」で作り、インスペクターで編集 (核の口 `core.asset_file_type`。`.rmanim` と同じ)。コマを選ぶ新しい部品 `w::FramePicker` (画像をセルに切って並べ、クリックでコマの並びに足す) を `editor/widgets` に足す。編集は Undo の 1 件ずつ
+- タブの中の 2D のプレビューは後で (今はシーンビュー / ゲームビューで見る)
+
+**スクリプト** (`game_x_animation2d/runtime/sdk/RMAnim2D.h` に `rm::SpriteAnimator`。関数の名前は `rm::Animator` と同じ: `SetFloat` / `SetTrigger` / `Play` / `PlayClip` / `State` / `StateTime`。新しい部分 `rm_engine.game_x_animation2d.sprite_animator` 版 1)
+
+**書き出し**: `.rmframes` と `.rmanim` は JSON のまま。画像は今の 2D の焼き方 (`game_x_2d/editor/ExportBake2D`)
+
+**タイルマップとのつなぎ** (`docs/TILEMAP.md`): 動くタイルは `space2d::FrameClip` (コマの並び・速さ・ループ) を使う (型は 1 か所: 憲法 1)。タイルはルールを使わない。同じタイルは同じ時計 (シーンの時刻) で動き、コマは `AnimationCell` で出す
+
+### 7-5. 段階 1〜4 で後にしたものの割り振り
+
+| 後にしたもの | 出た段階 | 片付ける段階 | 理由 |
+|---|---|---|---|
+| `.meta` のクリップの設定 (名前・範囲・ループ) | 1 | **5** | ルートモーションの設定を同じ所に足す。範囲が決まらないとループの継ぎ目が決まらない |
+| 混ぜているときのイベントを「一番重いクリップ」から (6 章の 7) | 2・4 | **5** | ルートモーションも同じ重みで混ぜる。重みの持ち方を 1 度に作る |
+| レイヤーのイベント | 4 | **5** | 上と同じ所 (レイヤーごとに一番重いもの) |
+| スクリプトの `SetLayerWeight` (3-9 にあり、コードに無い) | 3-9 | **5** | 小さい。部分 `animator_root` と一緒に |
+| タブの中のプレビュー | 3 | **5** | ルートモーションの「その場で / 動かす」を見るのに要る |
+| 止まっているエディターでルールを動かして試す | 3 | **5** | プレビューと一緒 |
+| マスクを骨の木のチェックで選ぶ | 4 | **6** | IK・揺れの骨を選ぶのにも同じ骨の木の部品を使う |
+| 止まっているエディターで骨に付けた物がついて行く | 2 | **6** | IK の目標と揺れのプレビューで同じことが要る |
+| 足すレイヤーの基準を「クリップの最初のコマ」にする選択 | 4 | **6** | 表情 (ブレンドシェイプ) の足すレイヤーと一緒に |
+| `.rmclip` に分けて「使っているクリップだけ」を焼く | 1 | **7** | 圧縮と一緒に、形式を 1 度で変える |
+| アセットのパネルでモデルの中にクリップを並べる (サブアセット) | 1 | **7** | `.rmclip` が独り立ちするときに |
+| 行のドラッグでの並べ替え・打っている間のパラメーター名の候補・「この行は上の行に隠れて当たりません」・Play 中に `.rmanim` を読み直す | 3 | **いつでも** | 小さい。バグを直す版で 1 つずつ |
+| 混ぜる状態ごとの「足をそろえない」 | 4 | **いつでも** | 状態の欄 1 つ |
+| トリガーの保持時間をパラメーターごとに (6 章の 8。今は `kTriggerHold` の 1 つだけ) | 3 | **いつでも** | パラメーターの欄 1 つ |
+
+### 7-6. ナビゲーションとのつなぎ (`docs/NAVIGATION.md` と合わせる)
+
+**パラメーターの送り手** (ナビにも物理にも使う 1 本の道)
+
+```cpp
+// game_x_animation/runtime/ParamFeed.h: 口 rm_engine.game_x_animation.param_feed
+struct ParamFeedInfo {
+    const char* id;          // "rm_engine.physics.speed" など (保存する名前)
+    const char* label;       // 画面の名前 (TrKey)
+    float (*read)(game_production::Scene&, int entity);
+};
+// 部品「アニメーター」に足す
+RM_STRUCT(Label="パラメーターの送り手") struct ParamFeed {
+    RM_PROPERTY(Edit, Label="パラメーター") std::string param;
+    RM_PROPERTY(Edit, Label="入れるもの") std::string source;   // ParamFeedInfo::id を選ぶ (ComponentLook::choices)
+};
+//   std::vector<ParamFeed> feeds;
+```
+
+- システム「アニメーション」が、ルールを調べる前に毎フレーム読んで `SetRuleParam` する。送り手が無い (プラグインが無い) ものは何もしない (欄はそのまま残す)
+- つなぎ「アニメーション × 物理」が出すもの: キャラクターの前への速さ・横への速さ (エンティティの向きで。2D で混ぜる moveX / moveY に)・水平の速さ・縦の速さ・地面にいる
+- つなぎ「ナビ × アニメーション」`navigation_x_animation` (NAVIGATION.md の名前) が出すもの: エージェントの速さ・欲しい速さ・向きの差 (度。その場で回るクリップ)・残りの距離・着いた・リンクを渡っている (飛び越え・はしご → ルールの `jump` に)
+- テスト: 送り手から値が入る・無い送り手は何もしない・速さで 1D の重みが変わる
+
+**エージェントの速さで歩く (案 A。既定)**: エージェントがエンティティを動かし、アニメーションは送り手の速さで混ぜるだけ。足が滑るときは、アニメーターの「速さを合わせる」(新しい欄): 再生の速さ = 今の速さ / クリップの速さ (`RootTotals` の 1 秒あたりの距離)
+
+**ルートモーションでエージェントを動かす (案 B。選べる)**
+
+- エージェント (部品「ナビの動く者」) は道と欲しい速さだけを出し、**自分では位置を動かさない**。NAVIGATION.md の「動く者を動かす人は 1 人だけ」(口 `rm_engine.game_x_navigation.mover`) に合わせ、`navigation_x_animation` が「ルートモーションに任せる」動かし方を差し出す
+- アニメーションは「欲しい速さ」をパラメーターにして状態を選び、ルートモーションでエンティティ (かキャラクター) を動かす
+- ナビは次のフレームに、エンティティの今の位置から道を続ける (ずれたら道を探し直す)
+- 順: ナビのシステム (Frame・order 100 より前) → アニメーション (100)。キャラクターがあるときは、エージェントは `Character::Move` を呼ばない (ルートモーションのつなぎが呼ぶ。6 章の 12 と同じ決まり)
+- 置き場所は `navigation_x_animation` (`requires` = ゲーム制作 × ナビゲーション・ゲーム制作 × アニメーション。NAVIGATION.md のとおり)。送り手 (口 `param_feed`) と動かし方 (口 `mover`) の両方を差し出す。「着いた」などはナビのシステムが `SystemEvent` → `OnEvent` で送る (クリップのイベントと同じ道)
+- テスト: 欲しい速さ → 状態 → 動いた分 → エージェントが道を続ける (作ったナビの関数で)
