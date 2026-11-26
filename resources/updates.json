@@ -17,6 +17,10 @@
         {
           "ja": "季節のテーマ: 砂のお城を小さく (左下に飛び出ていた砂を外した)、花火の提灯を 1 色に、クリスマスのツリーの星を黄色に",
           "en": "Season themes: the sand castle is smaller (the sand sticking out at its lower left is gone), the Fireworks lantern is one color, and the Christmas tree's star is yellow"
+        },
+        {
+          "ja": "ゲーミング: 虹に光るのはマウスを乗せた物と選んだ物の枠だけに (ボタン・メニュー・行・タブ・カード)。パネルの縁と線は紫。ウィンドウの縁の虹はいつもくっきり (Hub でも)",
+          "en": "Gaming: only the frames of hovered and selected things (buttons, menus, rows, tabs, cards) glow rainbow now; panel borders and lines are purple. The rainbow around the window edge is always crisp (in the Hub too)"
         }
       ]
     },

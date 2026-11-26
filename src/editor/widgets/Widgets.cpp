@@ -53,11 +53,11 @@ void DrawSurface(ui::Context& c, const Rect& r, Surface s, float radius) {
         case Surface::Hovered:
             FillGradient(p, r, radius, theme::Raised(theme::Hover));
             TopLight(p, r, radius, theme::Highlight());
-            p.StrokeRoundRect(r, radius, theme::BorderHover);
+            if (!DrawThemeGlow(c, r, radius)) p.StrokeRoundRect(r, radius, theme::BorderHover);
             break;
         case Surface::Pressed:
             FillGradient(p, r, radius, theme::Raised(theme::Pressed).Flipped());
-            p.StrokeRoundRect(r, radius, theme::Border);
+            if (!DrawThemeGlow(c, r, radius)) p.StrokeRoundRect(r, radius, theme::Border);
             break;
         case Surface::Sunken:
             FillGradient(p, r, radius, theme::Sunken(theme::Field));
@@ -70,13 +70,13 @@ void DrawSurface(ui::Context& c, const Rect& r, Surface s, float radius) {
             const theme::Gradient g = theme::AccentOf(base);
             FillGradient(p, r, radius, s == Surface::AccentPressed ? g.Flipped() : g);
             if (s != Surface::AccentPressed) TopLight(p, r, radius, theme::AccentHighlight());
-            p.StrokeRoundRect(r, radius, theme::AccentPressed);
+            if (s == Surface::Accent || !DrawThemeGlow(c, r, radius)) p.StrokeRoundRect(r, radius, theme::AccentPressed);
             break;
         }
         case Surface::Selected:
             FillGradient(p, r, radius, theme::Raised(theme::Selected));
             TopLight(p, r, radius, theme::Highlight());
-            p.StrokeRoundRect(r, radius, theme::Accent.Alpha(0.35f));
+            if (!DrawThemeGlow(c, r, radius)) p.StrokeRoundRect(r, radius, theme::Accent.Alpha(0.35f));
             break;
         case Surface::Popup:
             p.Shadow(r, radius, theme::Shadow, 14);
@@ -116,6 +116,13 @@ void DrawBackdrop(ui::Context& c, bool floating) {
         o->window(c, c.Viewport(), floating);
         c.P().PopClip();
     }
+}
+
+bool DrawThemeGlow(ui::Context& c, const Rect& r, float corner) {
+    const OrnamentInfo* o = theme::CurrentOrnament;
+    if (!o || !o->glow || r.w <= 0 || r.h <= 0) return false;
+    o->glow(c, r, corner);
+    return true;
 }
 
 void KeepOrnamentOff(ui::Context& c, const Rect& r) {
@@ -721,7 +728,9 @@ void DrawRow(ui::Context& c, const Rect& r, RowLook look) {
         const theme::Gradient g = theme::Raised(look.focused ? theme::Selected : theme::Pressed);
         p.FillRoundRectGradient(r, radius, g.top, g.bottom);
         TopLight(p, r, radius, theme::Highlight());
-        if (look.focused) {
+        if (DrawThemeGlow(c, r, radius)) {
+            // (テーマの光る枠: アクセントの棒の代わり)
+        } else if (look.focused) {
             // アクセントの棒: 平らな行では端に、角の丸い行では内側に。
             const theme::Gradient a = theme::AccentOf(theme::Accent);
             const Rect bar = look.flat ? Rect{r.x, r.y, 3, r.h} : Rect{r.x, r.y + 4, 3, r.h - 8};
@@ -730,6 +739,7 @@ void DrawRow(ui::Context& c, const Rect& r, RowLook look) {
     } else if (look.hovered) {
         const theme::Gradient g = theme::Gentle(theme::Hover);
         p.FillRoundRectGradient(r, radius, g.top, g.bottom);
+        DrawThemeGlow(c, r, radius);
     }
 }
 
@@ -740,10 +750,11 @@ void DrawTile(ui::Context& c, const Rect& r, bool selected, bool hovered, bool f
         const theme::Gradient g = theme::Raised(focused ? theme::Selected : theme::Pressed);
         p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
         TopLight(p, r, kRadius, theme::Highlight());
-        if (focused) p.StrokeRoundRect(r.Inset(0.5f), kRadius, theme::Accent.Alpha(0.8f), 1.f);
+        if (!DrawThemeGlow(c, r, kRadius) && focused) p.StrokeRoundRect(r.Inset(0.5f), kRadius, theme::Accent.Alpha(0.8f), 1.f);
     } else if (hovered) {
         const theme::Gradient g = theme::Gentle(theme::Hover);
         p.FillRoundRectGradient(r, kRadius, g.top, g.bottom);
+        DrawThemeGlow(c, r, kRadius);
     }
 }
 
@@ -840,7 +851,7 @@ ui::Context::ButtonResult ThemeCard(ui::Context& c, std::string_view idStr, cons
     p.Text(label, name, ts);
     if (selected) {
         DrawIcon(c, {r.Right() - 12 - 16, label.y + 6, 16, 16}, Icon::Check, theme::Accent);
-        p.StrokeRoundRect(r.Inset(-1), 9.f, theme::Accent, 2.f);
+        if (!DrawThemeGlow(c, r.Inset(-1), 9.f)) p.StrokeRoundRect(r.Inset(-1), 9.f, theme::Accent, 2.f);
     }
     return b;
 }
@@ -862,11 +873,14 @@ void DrawTab(ui::Context& c, const Rect& r, bool selected, bool hovered) {
         const theme::Gradient g = theme::Raised(theme::PanelHeader);
         p.FillRoundRectGradient(r, theme::Radius, g.top, g.bottom);
         TopLight(p, r, theme::Radius, theme::Highlight());
-        const theme::Gradient a = theme::AccentOf(theme::Accent);
-        p.FillRoundRectGradient({r.x + 8, r.Bottom() - 2.5f, r.w - 16, 2.5f}, 1.25f, a.top, a.bottom);
+        if (!DrawThemeGlow(c, r, theme::Radius)) {
+            const theme::Gradient a = theme::AccentOf(theme::Accent);
+            p.FillRoundRectGradient({r.x + 8, r.Bottom() - 2.5f, r.w - 16, 2.5f}, 1.25f, a.top, a.bottom);
+        }
     } else if (hovered) {
         const theme::Gradient g = theme::Gentle(theme::Hover);
         p.FillRoundRectGradient(r, theme::Radius, g.top, g.bottom);
+        DrawThemeGlow(c, r, theme::Radius);
     }
 }
 
