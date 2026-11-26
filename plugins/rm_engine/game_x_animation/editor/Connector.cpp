@@ -203,6 +203,12 @@ std::vector<std::string> ModelClipNames(editor::SoftwareHost& host, const game_p
     return out;
 }
 
+std::vector<std::string> ModelBoneNames(editor::SoftwareHost& host, const game_production::Scene& scene, int entity) {
+    const game_production::SceneEntity* e = scene.Find(entity);
+    const ClipList* list = e ? ClipsOf(host, ModelOn(*e)) : nullptr;
+    return list ? list->bones : std::vector<std::string>{};
+}
+
 void RegisterEditor(editor::PluginRegistry& registry) {
     // アニメーション タブ: 選んだアニメーターの状態とルール (.rmanim) を、ルールの並びで作る。
     static const game_production::ViewPanelInfo kTab{"animation", editor::TrKey(L"アニメーション"), &CreateAnimationTab};

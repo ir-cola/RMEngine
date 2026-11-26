@@ -63,4 +63,6 @@ anim.SetFloat("speed", 2.0f);   anim.SetBool("grounded", true);   anim.SetTrigge
 std::string s = anim.State();   anim.Play("Attack", 0.1f);   // skip the rules and go to that state
 ```
 
-> Not yet: blending and layers (stage 4 of docs/ANIMATION.md).
+## Blending and layers
+- **Blending**: choose a state's type: [Clip | 1D | 2D]. 1D uses one parameter (such as `speed`), 2D uses two (`moveX`, `moveY`). Place points (clips) on the diagram under the state and drag them around, or type clip, x and y in the table. Move the ▼ / + marker to see the weights at that value. Blended clips keep their feet in step
+- **Layers**: "+ Layer" adds a layer tab. A layer has its own states and rules and stacks on top of the body. Set its weight (a number or a parameter), mode (override / additive) and mask (a bone and the bones below it)

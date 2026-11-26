@@ -236,6 +236,22 @@ float CheckboxCountWidth(ui::Context& c, std::wstring_view label, std::wstring_v
 // 文字、それ以外は値 (`text` がフレームの間それを持つ)。`value` が変わったら true: 数が
 // 打たれた (min .. max に収める); 数でない文字は何も変えない。
 bool NumberField(ui::Context& c, std::string_view id, const ui::Rect& r, float& value, float min, float max, std::string& text);
+// 混ぜる図 (アニメーションの 1D / 2D のブレンド): 数直線 (twoD = false) か平面の上の点と、試す印 (1D: ▼ / 2D: ＋)。
+// 点も印もドラッグで動かせる。点の丸は重み (0..1) が大きいほどアクセントの色で大きい。範囲は点と印が入るように
+// 自分で決める (少し余白)。点を動かしている間は `result.dragged` にその番号と新しい場所、印を動かしたら `markerMoved`。
+struct PlotPoint {
+    Vec2 at;                 // (1D: x だけ)
+    std::wstring_view label;
+    float weight = 0;        // 今の重み (0..1)
+};
+struct PlotResult {
+    int dragged = -1;        // 動かしている点 (-1: 無し)
+    Vec2 to{};               // その新しい場所
+    bool released = false;   // 点を離した (編集の終わり)
+    bool markerMoved = false;
+};
+PlotResult BlendPlot(ui::Context& c, std::string_view id, const ui::Rect& r, std::span<const PlotPoint> points, bool twoD, Vec2& marker,
+                     bool markerEditable = true);
 // 中のものを選ぶためにドラッグして作る四角 (シーンビュー): 薄いアクセントと、その縁。
 void DrawSelectionBand(ui::Context& c, const ui::Rect& r);
 // 携帯電話のようなスイッチ: 長い丸い溝と、オンのときに右へ滑る丸いつまみ (溝はアクセントの色に

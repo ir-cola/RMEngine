@@ -954,6 +954,101 @@ void DrawMapShape(ui::Context& c, std::span<const Vec2> pts, bool closed, ui::Co
     }
 }
 
+PlotResult BlendPlot(ui::Context& c, std::string_view idStr, const Rect& r, std::span<const PlotPoint> points, bool twoD, Vec2& marker,
+                     bool markerEditable) {
+    PlotResult out;
+    auto& p = c.P();
+    DrawSurface(c, r, Surface::Sunken);
+    const Rect area = r.Inset(14);
+    if (area.w < 20 || area.h < 10) return out;
+    // 範囲: 点と印が入るように (少し余白)。
+    float lx = marker.x, hx = marker.x, ly = marker.y, hy = marker.y;
+    for (const PlotPoint& pt : points) {
+        lx = std::min(lx, pt.at.x), hx = std::max(hx, pt.at.x), ly = std::min(ly, pt.at.y), hy = std::max(hy, pt.at.y);
+    }
+    // ドラッグしている間は範囲を止める (点がカーソルから逃げない)。
+    struct Frame {
+        float lx, hx, ly, hy;
+    };
+    static std::unordered_map<std::string, Frame> frozen;
+    const std::string key(idStr);
+    const bool anyHeld = c.Active() != 0 && frozen.contains(key) && c.In().down[0];
+    if (anyHeld) {
+        const Frame& f = frozen[key];
+        lx = f.lx, hx = f.hx, ly = f.ly, hy = f.hy;
+    } else {
+        const float padX = std::max((hx - lx) * 0.12f, 0.5f), padY = std::max((hy - ly) * 0.12f, 0.5f);
+        lx -= padX, hx += padX, ly -= padY, hy += padY;
+        frozen[key] = {lx, hx, ly, hy};
+    }
+    const float midY = area.y + area.h * 0.5f;
+    auto toScreen = [&](Vec2 v) {
+        const float sx = area.x + (v.x - lx) / (hx - lx) * area.w;
+        const float sy = twoD ? area.Bottom() - (v.y - ly) / (hy - ly) * area.h : midY;
+        return Vec2{sx, sy};
+    };
+    auto toValue = [&](float sx, float sy) {
+        const float vx = lx + (sx - area.x) / area.w * (hx - lx);
+        const float vy = twoD ? ly + (area.Bottom() - sy) / area.h * (hy - ly) : 0.f;
+        return Vec2{vx, vy};
+    };
+    // 軸。
+    if (twoD) {
+        const Vec2 o = toScreen({0, 0});
+        if (o.x >= area.x && o.x <= area.Right()) p.Line(o.x, area.y, o.x, area.Bottom(), theme::Border);
+        if (o.y >= area.y && o.y <= area.Bottom()) p.Line(area.x, o.y, area.Right(), o.y, theme::Border);
+    } else {
+        p.Line(area.x, midY, area.Right(), midY, theme::BorderHover, 1.5f);
+    }
+    ui::TextStyle ts;
+    ts.size = 11;
+    ts.color = theme::Text;
+    // 点 (重みの大きいものほど大きく、アクセントの色)。
+    for (size_t i = 0; i < points.size(); ++i) {
+        const PlotPoint& pt = points[i];
+        const Vec2 s = toScreen(pt.at);
+        const float rad = 5.f + 4.f * std::clamp(pt.weight, 0.f, 1.f);
+        const Rect hit{s.x - 9, s.y - 9, 18, 18};
+        const auto b = c.ButtonBehavior(c.MakeId(key + "#p" + std::to_string(i)), hit);
+        if (b.hovered || b.held) c.SetCursor(ui::Cursor::Hand);
+        if (b.held) {
+            Vec2 v = toValue(std::clamp(c.In().mouseX, area.x, area.Right()), std::clamp(c.In().mouseY, area.y, area.Bottom()));
+            if (!twoD) v.y = pt.at.y;
+            out.dragged = static_cast<int>(i);
+            out.to = v;
+        }
+        if (b.clicked) out.released = true;
+        const ui::Color fill = pt.weight > 0.001f ? theme::Accent : theme::TextDim;
+        p.FillCircle(s.x, s.y, rad, b.held || b.hovered ? theme::Text : fill);
+        const float lw = std::min(120.f, p.TextWidth(pt.label, 11) + 4);
+        p.Text({s.x - lw * 0.5f, twoD ? s.y + rad + 1 : midY + 10, lw, 14}, pt.label, ts);
+    }
+    // 試す印。
+    const Vec2 m = toScreen(marker);
+    const Rect mh{m.x - 9, (twoD ? m.y : midY - 22) - 9, 18, 18};
+    if (markerEditable) {
+        const auto b = c.ButtonBehavior(c.MakeId(key + "#marker"), mh);
+        if (b.hovered || b.held) c.SetCursor(ui::Cursor::Hand);
+        if (b.held) {
+            Vec2 v = toValue(std::clamp(c.In().mouseX, area.x, area.Right()), std::clamp(c.In().mouseY, area.y, area.Bottom()));
+            if (!twoD) v.y = marker.y;
+            marker = v;
+            out.markerMoved = true;
+        }
+    }
+    if (twoD) {
+        p.Line(m.x - 7, m.y, m.x + 7, m.y, theme::Accent, 2.f);
+        p.Line(m.x, m.y - 7, m.x, m.y + 7, theme::Accent, 2.f);
+    } else {
+        ui::Path tri;
+        tri.Begin({m.x - 6, midY - 18});
+        tri.Line({m.x + 6, midY - 18});
+        tri.Line({m.x, midY - 8});
+        p.FillPath(tri, theme::Accent);
+    }
+    return out;
+}
+
 void DrawMapReadout(ui::Context& c, float x, float y, std::wstring_view text) {
     if (text.empty()) return;
     const float w = c.P().TextWidth(text, 11) + 12;

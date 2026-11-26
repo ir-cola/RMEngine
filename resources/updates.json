@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.32",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "アニメーションの「混ぜる」: 状態を 1D / 2D で混ぜる状態にでき、クリップを数直線や平面の図に置いてドラッグで動かせます (歩き ↔ 走り・8 方向の移動)。足はそろいます",
+          "en": "Animation blending: a state can blend clips in 1D or 2D; place them on a number line or plane diagram and drag them around (walk ↔ run, 8-way movement). Feet stay in step"
+        },
+        {
+          "ja": "アニメーションの「重ねる」: レイヤーのタブで、体の上に自分の状態とルールを持つレイヤーを重ねられます (重み・上書き / 足す・骨のマスク)。走りながら上半身で撃つ・呼吸を足す",
+          "en": "Animation layers: layer tabs stack layers with their own states and rules on top of the body (weight, override / additive, bone mask). Shoot with the upper body while running, add breathing"
+        }
+      ]
+    },
+    {
       "version": "0.0.31",
       "date": "2026-11-26",
       "items": [
