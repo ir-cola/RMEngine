@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.21",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "3D の形に「円錐」と「四角錐」を足しました。階層の 追加 ▸ 3D オブジェクト から作れ、メッシュの「形」でも選べます",
+          "en": "Added \"Cone\" and \"Pyramid\" 3D shapes. Create them from Add ▸ 3D Object in the Hierarchy, or pick them in the Mesh's \"Shape\""
+        }
+      ]
+    },
+    {
       "version": "0.0.20",
       "date": "2026-11-26",
       "items": [

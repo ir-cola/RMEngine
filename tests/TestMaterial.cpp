@@ -142,7 +142,8 @@ RM_TEST(Material_BareModelPartsUseSlotZero) {
     UseSlotZeroForBareModel(made);
     CHECK(made.parts[0].material == -1);
     // 単純な形は 1 つの部品で 0 番の材質 (マテリアルの 0 番の欄で塗る)。
-    for (space3d::Shape s : {space3d::Shape::Box, space3d::Shape::Sphere, space3d::Shape::Cylinder, space3d::Shape::Capsule, space3d::Shape::Plane}) {
+    for (space3d::Shape s : {space3d::Shape::Box, space3d::Shape::Sphere, space3d::Shape::Cylinder, space3d::Shape::Capsule, space3d::Shape::Plane,
+                            space3d::Shape::Cone, space3d::Shape::Pyramid}) {
         const space3d::MeshData m = space3d::ShapeMesh(s);
         CHECK(m.parts.size() == 1 && m.parts[0].material == 0 && m.parts[0].firstIndex == 0 && m.parts[0].indexCount == m.indices.size());
     }

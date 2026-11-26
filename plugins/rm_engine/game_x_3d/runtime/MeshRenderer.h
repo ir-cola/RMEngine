@@ -1,7 +1,7 @@
 #pragma once
 // ゲーム制作 × 3D - 3D モデル (形はファイルから) として描くエンティティ。Transform で置く。
 // モデルが無い (または読めない) ときは、これまでどおり箱で描く。または、ファイルなしで作る
-// 単純な形 (形: 箱 / 球 / 円柱 / カプセル / 平面 - 3D 空間の Primitives.h、大きさはそこ):
+// 単純な形 (形: 箱 / 球 / 円柱 / カプセル / 平面 / 円錐 / 四角錐 - 3D 空間の Primitives.h、大きさはそこ):
 // 階層の 追加 ▸ 3D オブジェクト が、これらのエンティティを作る。
 //
 // `model` はアセットの参照 (ファイルの .meta にある id): アセット パネルや Explorer で
@@ -26,6 +26,8 @@ enum class MeshShape {
     RM_ITEM(Label="円柱") Cylinder,
     RM_ITEM(Label="カプセル") Capsule,
     RM_ITEM(Label="平面") Plane,
+    RM_ITEM(Label="円錐") Cone,
+    RM_ITEM(Label="四角錐") Pyramid,
 };
 
 // 描く単純な形。nullopt: モデル (MeshShape::Model)。
@@ -37,13 +39,15 @@ inline std::optional<space3d::Shape> ShapeOf(MeshShape s) {
         case MeshShape::Cylinder: return space3d::Shape::Cylinder;
         case MeshShape::Capsule: return space3d::Shape::Capsule;
         case MeshShape::Plane: return space3d::Shape::Plane;
+        case MeshShape::Cone: return space3d::Shape::Cone;
+        case MeshShape::Pyramid: return space3d::Shape::Pyramid;
     }
     return std::nullopt;
 }
 
 RM_STRUCT(Label="メッシュ (3D モデル)")
 struct MeshRenderer {
-    RM_PROPERTY(Edit, Label="形", Tooltip="モデル: 下で選んだ 3D モデルのファイルで描きます / 箱・球・円柱・カプセル・平面: ファイルなしで、その形で描きます (大きさは 1。カプセルは高さ 2、平面は 10 x 10)")
+    RM_PROPERTY(Edit, Label="形", Tooltip="モデル: 下で選んだ 3D モデルのファイルで描きます / 箱・球・円柱・カプセル・平面・円錐・四角錐: ファイルなしで、その形で描きます (大きさは 1。カプセルは高さ 2、平面は 10 x 10)")
     MeshShape shape = MeshShape::Model;
     RM_PROPERTY(Edit, Label="モデル", Tooltip="3D モデルのアセット (.gltf / .glb / .obj / .fbx が読めます)。アセットのパネルからドラッグするか、クリックして選びます", AssetKind="model") AssetRef model;  // (形 is モデル)
     // マテリアル (Material.h の .rmmat): 形は 0 番で塗る。モデルは i 番がモデル自身の i 番の材質の

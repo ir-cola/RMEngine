@@ -121,6 +121,36 @@ MeshData Capsule() {
     return m;
 }
 
+// 円錐: 先 (半径 0 の輪) から底の輪まで回し、底にふた。側面の法線は斜面に直角 (外へ 1・上へ 0.5 の割合)。
+MeshData Cone() {
+    MeshData m;
+    const float len = std::sqrt(1.f + 0.25f);
+    const float nr = 1.f / len, ny = 0.5f / len;
+    Revolve(m, {{0.f, 0.5f, nr, ny, 0}, {0.5f, -0.5f, nr, ny, 1}});
+    Lid(m, 0.5f, -0.5f, false);
+    return m;
+}
+
+// 四角錐: 底の正方形 (2 つの三角形) と、4 つの三角の面 (面ごとに自分の法線を持つ: 平らに見える)。
+MeshData Pyramid() {
+    MeshData m;
+    const Vec3 apex{0, 0.5f, 0};
+    const Vec3 base[4] = {{-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, 0.5f}, {-0.5f, -0.5f, 0.5f}};
+    for (int f = 0; f < 4; ++f) {
+        const Vec3 a = base[f], b = base[(f + 1) % 4];
+        const Vec3 n = Normalize(Cross(b - a, apex - a));
+        const uint32_t i = static_cast<uint32_t>(m.vertices.size());
+        m.vertices.push_back({a, n, {0, 0}});
+        m.vertices.push_back({b, n, {1, 0}});
+        m.vertices.push_back({apex, n, {0.5f, 1}});
+        m.indices.insert(m.indices.end(), {i, i + 1, i + 2});
+    }
+    const uint32_t i = static_cast<uint32_t>(m.vertices.size());
+    for (const Vec3& p : base) m.vertices.push_back({p, {0, -1, 0}, {p.x + 0.5f, p.z + 0.5f}});
+    m.indices.insert(m.indices.end(), {i, i + 1, i + 2, i, i + 2, i + 3});
+    return m;
+}
+
 MeshData Plane() {
     constexpr float s = 5.f;
     MeshData m;
@@ -150,6 +180,8 @@ MeshData ShapeMesh(Shape shape) {
         case Shape::Cylinder: m = Cylinder(); break;
         case Shape::Capsule: m = Capsule(); break;
         case Shape::Plane: m = Plane(); break;
+        case Shape::Cone: m = Cone(); break;
+        case Shape::Pyramid: m = Pyramid(); break;
     }
     FaceOut(m);  // (箱の角は、巻き方向で並べていない)
     ComputeBounds(m);

@@ -143,7 +143,7 @@ struct CreateItemInfo {
     void (*fill)(Scene& scene, int entity) = nullptr;
     bool child = false;  // 選択中のエンティティの下に作る (そうでなければ - 何も選んでいなくても - 選択の後ろに)
     // 何を作るかを、足すプラグイン (kCreatedPoint) 向けに平たく言ったもの: "box"、"sphere"、
-    // "cylinder"、"capsule"、"plane" (1 ユニットの 3D の形。plane は 10 x 10) - null: 言うことなし。
+    // "cylinder"、"capsule"、"plane"、"cone"、"pyramid" (1 ユニットの 3D の形。plane は 10 x 10) - null: 言うことなし。
     const char* made = nullptr;
 };
 

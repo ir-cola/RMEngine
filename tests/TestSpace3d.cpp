@@ -2358,6 +2358,8 @@ RM_TEST(Space3d_Shapes) {
         {Shape::Cylinder, {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}},
         {Shape::Capsule, {-0.5f, -1.f, -0.5f}, {0.5f, 1.f, 0.5f}},
         {Shape::Plane, {-5.f, 0.f, -5.f}, {5.f, 0.f, 5.f}},
+        {Shape::Cone, {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}},
+        {Shape::Pyramid, {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}},
     };
     auto near = [](rm::Vec3 a, rm::Vec3 b) { return std::fabs(a.x - b.x) < 1e-4f && std::fabs(a.y - b.y) < 1e-4f && std::fabs(a.z - b.z) < 1e-4f; };
     for (const Want& w : wants) {
@@ -2392,6 +2394,24 @@ RM_TEST(Space3d_Shapes) {
         round = round && std::fabs(std::sqrt(v.position.x * v.position.x + v.position.y * v.position.y + v.position.z * v.position.z) - 0.5f) < 1e-4f;
     }
     CHECK(round);
+    // 円錐: 側面の点は、高さに合わせて軸から (0.5 - y) / 2 (先は軸の上、底の輪は 0.5)。四角錐: 先は 1 点、底の角は 4 つ。
+    bool cone = true;
+    for (const auto& v : rm::space3d::ShapeMesh(Shape::Cone).vertices) {
+        if (v.normal.y < -0.99f) continue;  // (底のふた)
+        const float r = std::sqrt(v.position.x * v.position.x + v.position.z * v.position.z);
+        cone = cone && std::fabs(r - (0.5f - v.position.y) * 0.5f) < 1e-4f;
+    }
+    CHECK(cone);
+    const rm::space3d::MeshData pyramid = rm::space3d::ShapeMesh(Shape::Pyramid);
+    CHECK(pyramid.indices.size() == 18);
+    bool corners = true;
+    for (const auto& v : pyramid.vertices) {
+        corners = corners && (near(v.position, {0, 0.5f, 0}) || (std::fabs(v.position.y + 0.5f) < 1e-5f && std::fabs(std::fabs(v.position.x) - 0.5f) < 1e-5f &&
+                                                                  std::fabs(std::fabs(v.position.z) - 0.5f) < 1e-5f));
+    }
+    CHECK(corners);
+    CHECK(rm::game_x_3d::ShapeOf(rm::game_x_3d::MeshShape::Cone) == Shape::Cone);
+    CHECK(rm::game_x_3d::ShapeOf(rm::game_x_3d::MeshShape::Pyramid) == Shape::Pyramid);
     CHECK(!rm::game_x_3d::ShapeOf(rm::game_x_3d::MeshShape::Model));
     CHECK(rm::game_x_3d::ShapeOf(rm::game_x_3d::MeshShape::Cylinder) == Shape::Cylinder);
     // 形 が加わる前に書いた メッシュ は、モデルとして読む (描いていたとおり)。

@@ -57,7 +57,7 @@ int MakePlaced(Scene& scene, std::string name, int parent, size_t index, Vec3 po
 
 template <MeshShape S>
 int MakeShape(Scene& scene, int parent, size_t index) {
-    static constexpr const char* kNames[] = {"", "箱", "球", "円柱", "カプセル", "平面"};
+    static constexpr const char* kNames[] = {"", "箱", "球", "円柱", "カプセル", "平面", "円錐", "四角錐"};
     const int id = MakePlaced(scene, editor::TrU8(kNames[static_cast<size_t>(S)]), parent, index);
     if (auto* m = AddComponentTo<MeshRenderer>(scene, id)) m->shape = S;
     return id;
@@ -157,6 +157,8 @@ void RegisterEditor(editor::PluginRegistry& registry) {
         {.label = TrKey(L"円柱"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Cylinder>, .made = "cylinder"},
         {.label = TrKey(L"カプセル"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Capsule>, .made = "capsule"},
         {.label = TrKey(L"平面"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Plane>, .made = "plane"},
+        {.label = TrKey(L"円錐"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Cone>, .made = "cone"},
+        {.label = TrKey(L"四角錐"), .folder = TrKey(L"3D オブジェクト"), .make = &MakeShape<MeshShape::Pyramid>, .made = "pyramid"},
         {.label = TrKey(L"3D カメラ"), .folder = TrKey(L"カメラ"), .make = &MakeCamera},
         {.label = TrKey(L"光"), .folder = TrKey(L"ライト"), .make = &MakeLight},
         {.label = TrKey(L"環境光"), .folder = TrKey(L"ライト"), .make = &MakeAmbient},
