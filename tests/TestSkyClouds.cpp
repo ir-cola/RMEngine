@@ -156,9 +156,16 @@ RM_TEST(Sky_CloudMapPacked) {
     w.snow = 0.25f;
     const game_x_3d::SkyLook look = game_x_3d::LookOf(Noon(), 0, w);
     const size_t count = static_cast<size_t>(map.cells) * map.cells;
-    CHECK(look.cloudCells == static_cast<uint32_t>(map.cells) && look.clouds.size() == count * 2);
-    CHECK(look.clouds[0] == 0.5f && look.clouds[1] == 0.25f);
-    CHECK(look.clouds[3 * 2] == 1.f && look.clouds[4 * 2 + 1] == 0.f && look.clouds[5 * 2 + 1] == 0.f);
+    CHECK(look.cloudCells == static_cast<uint32_t>(map.cells) && look.clouds.size() == count * 4);
+    CHECK(look.clouds[0] == 0.5f && look.clouds[1] == 0.25f && look.clouds[2] == 0.f && look.clouds[3] == 0.f);  // (近さが無い: 0)
+    CHECK(look.clouds[3 * 4] == 1.f && look.clouds[4 * 4 + 1] == 0.f && look.clouds[5 * 4 + 1] == 0.f);
+    {
+        game_x_3d::SkyWeather withNears = w;
+        withNears.cloudNears.assign(count, 0.3f);
+        withNears.cloudNears[6] = 5.f;
+        const game_x_3d::SkyLook nl = game_x_3d::LookOf(Noon(), 0, withNears);
+        CHECK(nl.clouds[2] == 0.3f && nl.clouds[6 * 4 + 2] == 1.f);
+    }
     const float* m = look.constants.param[6];
     CHECK(m[0] == map.firstX && m[1] == map.firstZ && m[2] == map.cell && m[3] == static_cast<float>(map.cells));
     // 雲の量 (cover) と雨雲 (param[7]) はシーン全体のもの (地図は向きごとにだけ効く)。
@@ -177,6 +184,20 @@ RM_TEST(Sky_CloudMapPacked) {
     CHECK(game_x_3d::LookOf(space, 0, w).clouds.empty());
 }
 
+// 広げる: 離れるほどなめらかに薄く (縦横)、外は 0、数が合わない: 空。
+RM_TEST(Sky_SpreadMax) {
+    std::vector<float> in(9 * 9, 0.f), out;
+    in[4 * 9 + 4] = 1.f;
+    weather::SpreadMax(in, 9, 3.f, out);
+    CHECK(out.size() == in.size());
+    CHECK(out[4 * 9 + 4] == 1.f && out[4 * 9 + 5] > out[4 * 9 + 6] && out[4 * 9 + 6] > 0.f && out[4 * 9 + 7] == 0.f);
+    CHECK(Near(out[4 * 9 + 5], out[5 * 9 + 4]) && out[5 * 9 + 5] < out[4 * 9 + 5]);  // (縦も横も同じ・斜めは薄い)
+    weather::SpreadMax(in, 9, 0.f, out);
+    CHECK(out == in);
+    weather::SpreadMax(std::vector<float>(5, 1.f), 9, 2.f, out);
+    CHECK(out.empty());
+}
+
 RM_TEST(Sky_CloudMapFromWeather) {
     weather::Weather w;
     w.cloudAmount = 20;
@@ -189,20 +210,33 @@ RM_TEST(Sky_CloudMapFromWeather) {
     m.rains.assign(count, 0.f);
     m.shares[7] = 1.f, m.amounts[7] = 1.5f;     // 塗った雲 (0 .. 1 にそろえる)
     m.shares[8] = 0.5f, m.amounts[8] = 0.6f;    // 半分塗った
-    m.rains[9] = 0.3f;                           // 雨雲 (シーンは降っていない)
     m.firstX = -10;
     m.firstZ = 20;
     game_x_3d::SkyWeather s = weather::SkyWeatherOf(w, 0, &m);
     CHECK(s.cloudCells == weather::kCloudMapCells && s.cloudCell == weather::kCloudMapCell && s.cloudFirstX == -10 && s.cloudFirstZ == 20);
-    CHECK(s.cloudCovers.size() == count && s.cloudRains.size() == count && s.rain == 0.f);
+    CHECK(s.cloudCovers.size() == count && s.cloudRains.size() == count && s.cloudNears.size() == count && s.rain == 0.f);
     CHECK(s.cloudCovers[0] == s.cover && s.cloudCovers[7] == 1.f && Near(s.cloudCovers[8], s.cover + (0.6f - s.cover) * 0.5f));
-    CHECK(s.cloudRains[0] == 0.f && Near(s.cloudRains[9], 0.3f));
+    CHECK(s.cloudRains[0] == 0.f && s.cloudNears[0] == 0.f);  // (雨雲が無い: 近さ 0・雲はそのまま)
+    // 描いた雨雲 (真ん中のマス、小雨 0.3): 雨雲はまわりへ広がり (描いた所より大きい)、そのまわりは白い雲が増えて
+    // 近いほど少し暗い。遠い所 (地図の隅) は変わらない。
+    const int n = weather::kCloudMapCells, mid = n / 2;
+    auto at = [n](int i, int j) { return static_cast<size_t>(j) * static_cast<size_t>(n) + static_cast<size_t>(i); };
+    m.rains[at(mid, mid)] = 0.3f;
+    s = weather::SkyWeatherOf(w, 0, &m);
+    const int spreadCells = static_cast<int>(weather::kRainCloudSpread / weather::kCloudMapCell);
+    CHECK(Near(s.cloudRains[at(mid, mid)], 0.3f));
+    CHECK(s.cloudRains[at(mid + 2, mid)] > 0.1f && s.cloudRains[at(mid, mid - 2)] > 0.1f);              // まわり 48 m にも雨雲
+    CHECK(s.cloudRains[at(mid + spreadCells + 2, mid)] == 0.f);                                         // 広げる所の外は無し
+    CHECK(s.cloudNears[at(mid, mid)] > 0.99f && s.cloudNears[at(mid + 8, mid)] > 0.1f);
+    CHECK(s.cloudNears[at(mid + 8, mid)] > s.cloudNears[at(mid + 12, mid)]);                            // 近いほど暗い
+    CHECK(s.cloudCovers[at(mid + 8, mid)] > s.cover + 0.1f && s.cloudCovers[at(mid + 8, mid)] <= weather::kRainHaloCover + 1e-4f);  // 白い雲が増える
+    CHECK(s.cloudCovers[at(n - 1, n - 1)] == s.cover && s.cloudNears[at(n - 1, n - 1)] == 0.f);
     // シーン全体が降っている: どのマスにもその雨雲 (雨雲の所は多いほう)。
     w.precipitation = 50;
     s = weather::SkyWeatherOf(w, 0, &m);
-    CHECK(Near(s.rain, 0.5f) && Near(s.cloudRains[0], 0.5f) && Near(s.cloudRains[9], 0.5f));
-    m.rains[9] = 0.9f;
-    CHECK(Near(weather::SkyWeatherOf(w, 0, &m).cloudRains[9], 0.9f));
+    CHECK(Near(s.rain, 0.5f) && Near(s.cloudRains[0], 0.5f) && Near(s.cloudRains[at(mid, mid)], 0.5f));
+    m.rains[at(mid, mid)] = 0.9f;
+    CHECK(Near(weather::SkyWeatherOf(w, 0, &m).cloudRains[at(mid, mid)], 0.9f));
     // 数が違う: 渡さない。
     m.rains.pop_back();
     CHECK(weather::SkyWeatherOf(w, 0, &m).cloudCells == 0);

@@ -98,7 +98,8 @@ struct SkyWeather {
     // 0 .. 1) と降る量 (cloudRains: 0 .. 1: その上に雨雲)。その向きの値 = 地図の値 (space3d::CloudMapAt の
     // 所。地図の縁へ向かって cover / rain に戻る)。最初のマスの真ん中が (cloudFirstX, cloudFirstZ)、
     // 1 マスの一辺が cloudCell m。空 (か数が合わない): どの向きも cover / rain。
-    std::vector<float> cloudCovers, cloudRains;
+    // cloudNears: 雨雲のまわり (0 .. 1: 近いほど 1。そこの雲を少し暗く)。空 (か数が合わない): どこも 0。
+    std::vector<float> cloudCovers, cloudRains, cloudNears;
     int cloudCells = 0;
     float cloudCell = 0, cloudFirstX = 0, cloudFirstZ = 0;
 };
@@ -122,7 +123,7 @@ struct SkyLook {
     float lightStrength = 1.f;          // 光の部品自身の 強さ に掛ける
     Color ambientSky{0.16f, 0.16f, 0.16f, 1}, ambientGround{0.08f, 0.08f, 0.08f, 1};
     float flash = 0;  // 雷: 今の閃光 (0 .. 1。雲と環境光を照らす)
-    // 雲の地図 (地球の空。SkyDraw::clouds の形: マスごとに 雲の量、降る量。0 .. 1 にそろえたもの)。
+    // 雲の地図 (地球の空。SkyDraw::clouds の形: マスごとに 雲の量、降る量、雨雲の近さ、0。0 .. 1 にそろえたもの)。
     // 空: 無い (constants.param[6] も 0)。
     std::vector<float> clouds;
     uint32_t cloudCells = 0;

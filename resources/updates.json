@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.28",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "空の雨雲を、描いた所よりまわり 90 m ほど大きく広げました。小雨でも暗い灰色の厚い雲になり、大雨ほどさらに黒ずみます",
+          "en": "Rain clouds in the sky now spread about 90 m beyond the drawn area. Even light rain gives thick dark grey clouds, and heavier rain gets darker still"
+        },
+        {
+          "ja": "雨雲のまわり 400 m ほどに白い雲が増え、雨雲に近い雲ほど少し暗くなります",
+          "en": "White clouds now gather within about 400 m of rain clouds, getting slightly darker the closer they are"
+        }
+      ]
+    },
+    {
       "version": "0.0.27",
       "date": "2026-11-26",
       "items": [

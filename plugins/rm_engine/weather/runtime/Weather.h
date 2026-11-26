@@ -98,6 +98,12 @@ inline constexpr float kWetMapCell = 2.f;
 // (それでも、描いた雨雲の上に雨雲が見えるくらいには細かく)。
 inline constexpr int kCloudMapCells = 128;
 inline constexpr float kCloudMapCell = 24.f;
+// 描いた雨雲の空: 雨雲は描いた所からまわり kRainCloudSpread m まで広げる (空で見上げると、描いた所より
+// ずっと大きい)。そのまわり kRainHaloSpread m までは白い雲 (雲の量 kRainHaloCover まで) が増え、雨雲に近い
+// ほど少し暗い (空の雲の地図の nears)。
+inline constexpr float kRainCloudSpread = 90.f;
+inline constexpr float kRainHaloSpread = 400.f;
+inline constexpr float kRainHaloCover = 0.7f;
 struct WetMap {
     int firstX = 0, firstZ = 0;  // 最初のマス (ワールドのマス番号: floor(x / kWetMapCell))
     std::vector<WetCell> cells;  // kWetMapCells^2 (行が z、z の小さい行から)。空: 地図を使わない
@@ -191,10 +197,15 @@ Color FogColorOf(const WeatherNow& w, Color light);
 // 風の向き / 風の強さ の風 (m/s、ワールド: y は 0)。
 Vec3 WindOf(float directionDegrees, float strength);
 
+// マスの値 `in` (一辺 `cells` マス) を、まわり `reach` マスまでなめらかに薄くしながら広げた最大を `out` に:
+// 横、縦の順に、離れた分だけ (1 - smoothstep(0, reach, 離れたマスの数)) を掛けた一番大きいもの。
+void SpreadMax(std::span<const float> in, int cells, float reach, std::vector<float>& out);
+
 // 天候が `seconds` (ゲームの時間) の空に何をするか (雷は時間が進んでいる間だけ)。雲の模様・暗さ・雨雲は
 // シーン全体の天気 (NowOf(w, false))、日の光の弱まりともやはカメラのいる所 (NowOf(w))。`clouds`: 場所ごとの
 // 雲の地図 (WeatherPlaceInfo::clouds。null か数が合わない: 無し) - マスごとに、雲の量 = シーンの雲の量から
-// 塗った割合の分だけ塗った量へ、降る量 = max(シーン全体の降る量, その場所だけ降る量) (そこに雨雲が出る)。
+// 塗った割合の分だけ塗った量へ (雨雲のまわりは kRainHaloCover まで増やす)、降る量 = max(シーン全体の降る量,
+// その場所だけ降る量を kRainCloudSpread m 広げたもの) (そこに雨雲が出る)、近さ = 雨雲のまわり (0 .. 1)。
 game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds, const PlaceClouds* clouds = nullptr);
 // シーン全体の空の雲の量 (0 .. 1: 雨や雪が降ると、頼んだ雲が少なくても増える)。
 float SkyCoverOf(const Weather& w);

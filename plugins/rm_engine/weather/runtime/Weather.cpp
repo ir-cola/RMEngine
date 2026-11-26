@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <span>
 
 namespace rm::weather {
 
@@ -175,6 +176,34 @@ float SkyCoverOf(const Weather& w) { return CoverOf(NowOf(w, false)); }
 
 bool LightningOn(const Weather& w) { return w.lightning && SkyCoverOf(w) > 0.5f; }
 
+void SpreadMax(std::span<const float> in, int cells, float reach, std::vector<float>& out) {
+    out.clear();
+    if (cells <= 0 || in.size() != static_cast<size_t>(cells) * static_cast<size_t>(cells)) return;
+    const int r = std::isfinite(reach) && reach > 0 ? static_cast<int>(std::ceil(reach)) : 0;
+    std::vector<float> fall(static_cast<size_t>(r) + 1, 1.f);
+    for (int d = 1; d <= r; ++d) fall[static_cast<size_t>(d)] = 1 - Smooth(0.f, reach, static_cast<float>(d));
+    auto pass = [&](const std::vector<float>& from, std::vector<float>& to, bool rows) {
+        to.assign(from.size(), 0.f);
+        for (int a = 0; a < cells; ++a) {
+            for (int b = 0; b < cells; ++b) {
+                float most = 0;
+                for (int d = -r; d <= r; ++d) {
+                    const int c = b + d;
+                    if (c < 0 || c >= cells) continue;
+                    const size_t at = rows ? static_cast<size_t>(a) * cells + static_cast<size_t>(c) : static_cast<size_t>(c) * cells + static_cast<size_t>(a);
+                    most = std::max(most, from[at] * fall[static_cast<size_t>(std::abs(d))]);
+                }
+                to[rows ? static_cast<size_t>(a) * cells + static_cast<size_t>(b) : static_cast<size_t>(b) * cells + static_cast<size_t>(a)] = most;
+            }
+        }
+    };
+    std::vector<float> first(in.begin(), in.end());
+    for (float& v : first) v = std::isfinite(v) ? std::max(v, 0.f) : 0.f;
+    std::vector<float> across;
+    pass(first, across, true);
+    pass(across, out, false);
+}
+
 game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds, const PlaceClouds* clouds) {
     // 雨は雲を暗い雨雲にし、雪の雲は淡くかすむ。雲が多いと太陽が暗くなる。
     const auto coverOf = [](const WeatherNow& n) { return CoverOf(n); };
@@ -206,9 +235,25 @@ game_x_3d::SkyWeather SkyWeatherOf(const Weather& w, double seconds, const Place
         auto unit = [](float v) { return std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f; };
         s.cloudCovers.resize(kCount);
         s.cloudRains.resize(kCount);
+        s.cloudNears.assign(kCount, 0.f);
+        // 描いた雨雲: 雨雲は広げ、そのまわりには白い雲 (雨雲に近いほど少し暗い)。
+        std::vector<float> local(kCount), there(kCount), spread, halo;
+        bool any = false;
         for (size_t k = 0; k < kCount; ++k) {
-            s.cloudCovers[k] = cover + (unit(clouds->amounts[k]) - cover) * unit(clouds->shares[k]);
-            s.cloudRains[k] = std::max(s.rain, unit(clouds->rains[k]));
+            local[k] = unit(clouds->rains[k]);
+            there[k] = Smooth(0.f, 0.15f, local[k]);  // (小雨でも、まわりの雲は増える)
+            any = any || local[k] > 0;
+        }
+        if (any) {
+            SpreadMax(local, kCloudMapCells, kRainCloudSpread / kCloudMapCell, spread);
+            SpreadMax(there, kCloudMapCells, kRainHaloSpread / kCloudMapCell, halo);
+        }
+        for (size_t k = 0; k < kCount; ++k) {
+            const float base = cover + (unit(clouds->amounts[k]) - cover) * unit(clouds->shares[k]);
+            const float nearby = any ? halo[k] : 0.f;
+            s.cloudCovers[k] = std::max(base, kRainHaloCover * nearby);
+            s.cloudRains[k] = std::max(s.rain, any ? spread[k] : 0.f);
+            s.cloudNears[k] = nearby;
         }
         s.cloudCells = kCloudMapCells;
         s.cloudCell = kCloudMapCell;

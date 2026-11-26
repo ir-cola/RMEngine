@@ -33,7 +33,7 @@ struct SkyConstants {
 static_assert(sizeof(SkyConstants) % 16 == 0);
 inline constexpr size_t kSkyParams = 8;
 inline constexpr size_t kSkyTextures = 6;  // sky0 .. sky5 (t0 .. t5)
-// 雲の地図 (skyClouds: t6。SkyDraw::clouds。1 枚の R32G32_FLOAT、なめらか、端で止まる)。t6 はモデルの
+// 雲の地図 (skyClouds: t6。SkyDraw::clouds。1 枚の R32G32B32A32_FLOAT、なめらか、端で止まる)。t6 はモデルの
 // things と同じ番号: レンダラーは空を描いたあとに things を結び直す (tests/TestSkyClouds.cpp の Sky_MeshInFrontOfSky)。
 inline constexpr unsigned kSkyCloudSlot = 6;
 
@@ -76,10 +76,11 @@ std::string AssembleSky(std::string_view code, std::string_view fileName);
 //             param[5] xy: 風が雲をどれだけ運んだか (ワールド x, z)、zw: 今の風 (m/s)
 //             param[6] 雲の地図 (CloudMapPlace): xy: 最初のマスの真ん中、z: 1 マスの一辺、w: マスの数 (0: 無し)
 //             param[7] x: 降る量 (0 .. 1: 雨雲)、y: そのうち雪の割合
-//             skyClouds (t6): 雲の地図。マスごとの r: 雲の量 (0 .. 1)、g: 降る量 (0 .. 1)。
+//             skyClouds (t6): 雲の地図。マスごとの r: 雲の量 (0 .. 1)、g: 降る量 (0 .. 1)、b: 雨雲の近さ (0 .. 1: 雲の層の
+//             雲を少し暗く)。
 //             その向きの雲の量 = lerp(param[1].x, r, CloudMapAt の weight) (雲の層で読む)、降る量 = lerp(param[7].x, g,
-//             weight) (雨雲の層 kRainCloudHeight で読む)。雨雲は今までの天候の雲と同じ描き方で、降る量に比例して
-//             厚く・暗くなる (小雨: 切れ切れの灰色の雲 / 嵐: 切れ目のない黒ずんだ厚い層)
+//             weight) (雨雲の層 kRainCloudHeight で読む)。雨雲は今までの天候の雲と同じ描き方の厚い暗い層 (小雨でも
+//             暗い灰色、降る量が多いほどさらに黒ずむ)
 //   Space     param[0] x: 星、y: 星雲、z: 天の川、w: 1 = 太陽を描く
 //             param[1] rgb: 星雲の 1 つ目の色、param[2] rgb: その 2 つ目の色
 //   Panorama  sky0: 周り 1 周の絵 (正距円筒: 360 x 180 度)、param[0] x: 回した量 (ラジアン)

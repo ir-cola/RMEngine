@@ -1425,10 +1425,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
             ID3D11ShaderResourceView* views[kSkyTextures] = {};
             for (size_t k = 0; k < kSkyTextures; ++k) views[k] = f.sky->textures[k] ? f.sky->textures[k]->view.Get() : nullptr;
             ctx->PSSetShaderResources(0, static_cast<UINT>(kSkyTextures), views);
-            // 雲の地図 (t6): 毎フレーム送る (小さい: 48 x 48 マス x 2 つの数)。
+            // 雲の地図 (t6): 毎フレーム送る (小さい: 128 x 128 マス x 4 つの数)。
             ID3D11ShaderResourceView* cloudView = nullptr;
             const uint32_t n = f.sky->cloudCells;
-            if (n > 0 && f.sky->clouds.size() == static_cast<size_t>(n) * n * 2) {
+            if (n > 0 && f.sky->clouds.size() == static_cast<size_t>(n) * n * 4) {
                 if (n != cloudSize_ || !cloudTex_) {
                     cloudTex_.Reset();
                     cloudSrv_.Reset();
@@ -1436,7 +1436,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
                     D3D11_TEXTURE2D_DESC td{};
                     td.Width = td.Height = n;
                     td.MipLevels = td.ArraySize = 1;
-                    td.Format = DXGI_FORMAT_R32G32_FLOAT;
+                    td.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
                     td.SampleDesc.Count = 1;
                     td.Usage = D3D11_USAGE_DEFAULT;
                     td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -1448,7 +1448,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
                     }
                 }
                 if (cloudSrv_) {
-                    ctx->UpdateSubresource(cloudTex_.Get(), 0, nullptr, f.sky->clouds.data(), static_cast<UINT>(n * 2 * sizeof(float)), 0);
+                    ctx->UpdateSubresource(cloudTex_.Get(), 0, nullptr, f.sky->clouds.data(), static_cast<UINT>(n * 4 * sizeof(float)), 0);
                     cloudView = cloudSrv_.Get();
                 }
             }

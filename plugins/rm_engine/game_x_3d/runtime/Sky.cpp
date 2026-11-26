@@ -53,7 +53,8 @@ void EarthAir(float e, const SkyWeather& w, Vec3& zenith, Vec3& horizon, float& 
     horizon = Scale(Mix(horizon, Scale(Vec3{1, 1, 1}, Luminance(horizon)), grey), 1 - w.dark * 0.5f);
 }
 
-// 雲の地図を空の絵の形 (マスごとに 雲の量、降る量: 0 .. 1。数でないものは 0) にする。数が合わない: 無し。
+// 雲の地図を空の絵の形 (マスごとに 雲の量、降る量、雨雲の近さ、0: 0 .. 1。数でないものは 0) にする。
+// 雲の量か降る量の数が合わない: 無し (近さの数が合わない: どこも 0)。
 void PackCloudMap(const SkyWeather& w, SkyLook& look) {
     const int n = w.cloudCells;
     const size_t count = n > 0 ? static_cast<size_t>(n) * static_cast<size_t>(n) : 0;
@@ -61,10 +62,12 @@ void PackCloudMap(const SkyWeather& w, SkyLook& look) {
         !std::isfinite(w.cloudFirstX) || !std::isfinite(w.cloudFirstZ))
         return;
     auto unit = [](float v) { return std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f; };
-    look.clouds.resize(count * 2);
+    const bool nears = w.cloudNears.size() == count;
+    look.clouds.assign(count * 4, 0.f);
     for (size_t k = 0; k < count; ++k) {
-        look.clouds[k * 2] = unit(w.cloudCovers[k]);
-        look.clouds[k * 2 + 1] = unit(w.cloudRains[k]);
+        look.clouds[k * 4] = unit(w.cloudCovers[k]);
+        look.clouds[k * 4 + 1] = unit(w.cloudRains[k]);
+        look.clouds[k * 4 + 2] = nears ? unit(w.cloudNears[k]) : 0.f;
     }
     look.cloudCells = static_cast<uint32_t>(n);
     float* m = look.constants.param[6];

@@ -584,11 +584,14 @@ RM_TEST(Climate_CloudWeather) {
     // 雨雲の所 (x = 300 のマス): その場所だけ降る量 (雨雲 0.7 x マスの箱のうち雨雲の割合)。
     const size_t col = static_cast<size_t>(std::lround((300.f - cm.firstX) / weather::kCloudMapCell));
     CHECK(col < n && cm.rains[(n / 2) * n + col] > 0.5f && cm.rains[(n / 2) * n + col] <= 0.701f);  // (マスの箱の 5 / 6 が雨雲)
-    // 空: 雨雲の所はそこで降る量の雨雲、ほかはシーン全体 (降水量 0: 雨雲なし)。塗った雲 10 % の所は 10 %。
+    // 空: 雨雲の所はそこで降る量の雨雲 (まわりへ広げる)、ほかはシーン全体 (降水量 0: 雨雲なし)。塗った雲 10 % の
+    // 所 (カメラ: 雨雲から 288 m) は、雨雲のまわりの白い雲で少し増える。地図の隅は変わらない。
     const game_x_3d::SkyWeather sky = weather::SkyWeatherOf(ww, 0, &cm);
     CHECK(sky.cloudCells == weather::kCloudMapCells && sky.cloudRains.size() == n * n && sky.rain == 0.f);
-    CHECK(sky.cloudRains[(n / 2) * n + col] == cm.rains[(n / 2) * n + col] && sky.cloudRains[0] == 0.f && sky.cloudRains[center] == 0.f);
-    CHECK(Near(sky.cloudCovers[center], 0.1f) && sky.cloudCovers[0] == sky.cover);
+    CHECK(sky.cloudRains[(n / 2) * n + col] >= cm.rains[(n / 2) * n + col] && sky.cloudRains[(n / 2) * n + col - 2] > 0.1f);
+    CHECK(sky.cloudRains[0] == 0.f && sky.cloudRains[center] == 0.f);
+    CHECK(sky.cloudCovers[center] >= 0.1f - 1e-4f && sky.cloudNears[center] > 0.f && sky.cloudNears[center] < sky.cloudNears[(n / 2) * n + col]);
+    CHECK(sky.cloudCovers[0] == sky.cover && sky.cloudNears[0] == 0.f);
     // 雲も雨雲も描いていない地図: 地図は空 (今までどおり)。
     SetPaint(map, PaintGrid{}, MapLayer::Clouds);
     map.shapes.clear();
