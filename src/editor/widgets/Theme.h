@@ -9,7 +9,7 @@
 // 持つプラグイン (plugins/<author>/<name>/themes/*.json。プラグインを読むときに ThemeFile.h が読む。
 // パックの絵はそのコードで、w::kOrnamentPoint に出る)。新しいテーマ = パックの中のテーマファイル。
 // ほかのテーマに従うテーマもある (2026-11-26: 季節テーマパックの「季節で切り替える」): ソフトを立ち上げた日付の
-// 季節 (と、予定では朝か夜か) で、パックのどのテーマの色と絵を使うかが決まる (ResolveFollowing)。
+// 季節と時刻 (朝か夜か) で、パックのどのテーマの色と絵を使うかが決まる (ResolveFollowing)。
 
 #include "editor/lang/Lang.h"
 #include "ui/Types.h"
@@ -93,9 +93,13 @@ inline Season SeasonOfMonth(int month) {
     if (m >= 9 && m <= 11) return Season::Fall;
     return Season::Winter;
 }
-// 1 日のうちのどちらか: 季節のテーマは、1 つの季節に朝用と夜用を持てる (夜用はまだ無い: 予定は docs/HOW_TO_TRY.md の
-// テーマの章。朝か夜かをどう決めるかも、夜用を作るときに決める。今はいつも朝)。
+// 1 日のうちのどちらか: 季節のテーマは、1 つの季節に朝用と夜用を持てる (2026-11-26: 夜用 4 つ)。
+// ソフトを立ち上げた時刻で決まる: 6 時 .. 17 時台 = 朝 (昼も含む)、18 時 .. 翌 5 時台 = 夜。
 enum class DayPart { Morning, Night };
+inline DayPart DayPartOfHour(int hour) {
+    const int h = (hour % 24 + 24) % 24;  // (0 .. 23 の外は回して読む)
+    return h >= 6 && h < 18 ? DayPart::Morning : DayPart::Night;
+}
 // 1 つの季節に使うテーマの id: 朝用と夜用 (空: 朝用を使う)。
 struct SeasonThemes {
     std::string morning, night;

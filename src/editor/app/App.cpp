@@ -378,16 +378,18 @@ void App::ApplyDownloadIfReady() {
 
 namespace {
 
-// ソフトを立ち上げた日の月 (1 .. 12)。最初に聞いた時のまま (季節で切り替えるテーマは、立ち上げた日付で決まる)。
-int LaunchMonth() {
-    static const int month = [] {
+// ソフトを立ち上げた時の日時。最初に聞いた時のまま (季節で切り替えるテーマは、立ち上げた日付と時刻で決まる)。
+const std::tm& LaunchTime() {
+    static const std::tm when = [] {
         const std::time_t now = std::time(nullptr);
         std::tm local{};
-        if (localtime_s(&local, &now) != 0) return 1;
-        return local.tm_mon + 1;
+        if (localtime_s(&local, &now) != 0) local.tm_hour = 12;  // (読めないとき: 1 月の昼)
+        return local;
     }();
-    return month;
+    return when;
 }
+int LaunchMonth() { return LaunchTime().tm_mon + 1; }  // 1 .. 12
+int LaunchHour() { return LaunchTime().tm_hour; }      // 0 .. 23
 
 }  // namespace
 
@@ -438,12 +440,16 @@ void App::LoadThemes() {
             themes.push_back(std::move(t.info));
         }
     }
-    // ほかのテーマに従うテーマ (季節で切り替える): 立ち上げた日付の季節の、朝用のテーマ (夜用は予定)。
+    // ほかのテーマに従うテーマ (季節で切り替える): 立ち上げた日付の季節の、立ち上げた時刻が朝なら朝用・夜なら夜用のテーマ。
     std::vector<std::string> missing;
-    theme::ResolveFollowing(themes, theme::SeasonOfMonth(LaunchMonth()), theme::DayPart::Morning, &missing);
+    const theme::DayPart part = theme::DayPartOfHour(LaunchHour());
+    theme::ResolveFollowing(themes, theme::SeasonOfMonth(LaunchMonth()), part, &missing);
     for (const std::string& id : missing) log::Warn("テーマ {} が従うテーマがありません (使いません)", id);
     for (const theme::ThemeInfo& t : themes) {
-        if (t.follow) log::Info("テーマ {}: {} 月なので「{}」", t.id, LaunchMonth(), WideToUtf8(t.followed));
+        if (t.follow) {
+            log::Info("テーマ {}: {} 月の{} ({} 時) なので「{}」", t.id, LaunchMonth(), part == theme::DayPart::Night ? "夜" : "朝",
+                      LaunchHour(), WideToUtf8(t.followed));
+        }
     }
     log::Info("テーマ: パックから {} 個", themes.size());
     theme::SetPackThemes(std::move(themes));

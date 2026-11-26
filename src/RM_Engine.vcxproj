@@ -83,6 +83,7 @@
     <ClCompile Include="ui\Context.cpp" />
     <ClCompile Include="ui\Painter.cpp" />
     <ClCompile Include="ui\Grain.cpp" />
+    <ClCompile Include="ui\Shape.cpp" />
     <ClCompile Include="ui\TextEdit.cpp" />
     <ClCompile Include="editor\app\App.cpp" />
     <ClCompile Include="editor\app\Paths.cpp" />
@@ -129,6 +130,7 @@
     <ClCompile Include="editor\widgets\IconAtlas.cpp" />
     <ClCompile Include="editor\widgets\PickTree.cpp" />
     <ClCompile Include="editor\widgets\ThemeFile.cpp" />
+    <ClCompile Include="editor\widgets\OrnamentPicture.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\PluginId.h" />
@@ -198,7 +200,9 @@
     <ClInclude Include="editor\shell\ShapedWindow.h" />
     <ClInclude Include="editor\widgets\Theme.h" />
     <ClInclude Include="editor\widgets\ThemeFile.h" />
+    <ClInclude Include="editor\widgets\OrnamentPicture.h" />
     <ClInclude Include="ui\Path.h" />
+    <ClInclude Include="ui\Shape.h" />
     <ClInclude Include="editor\widgets\Widgets.h" />
     <ClInclude Include="editor\widgets\IconAtlas.h" />
     <ClInclude Include="editor\widgets\PickTree.h" />

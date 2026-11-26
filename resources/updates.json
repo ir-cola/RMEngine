@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.33",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "季節テーマパックに夜用の 4 つ: 夜桜 (提灯と花見団子)・花火 (花火と夜の海)・お月見 (満月とススキ)・クリスマス (電球とツリー)。「季節で切り替える」は立ち上げた時刻で朝用と夜用を選びます (18 時〜翌 5 時台は夜用)",
+          "en": "Four night themes in the Seasons Theme Pack: Night Sakura (lanterns and dango), Fireworks (fireworks over the night sea), Moon Viewing (full moon and susuki grass), Christmas (string lights and a tree). \"Switch by season\" now picks the morning or night theme by the time you start the app (6 PM to 5 AM is night)"
+        },
+        {
+          "ja": "新しいテーマパック「探検テーマパック」(宇宙・深海・火山) と「ゲーミング」(虹色の帯とネオンの格子)。Hub の「プラグイン」で入れると、テーマの画面に出ます",
+          "en": "New theme packs: \"Exploration Theme Pack\" (Space, Deep Sea, Volcano) and \"Gaming\" (rainbow bands and a neon grid). Install them from the Hub's Plugins page and they appear in the theme picker"
+        }
+      ]
+    },
+    {
       "version": "0.0.32",
       "date": "2026-11-26",
       "items": [

@@ -14,87 +14,10 @@ namespace {
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float kDeg = kPi / 180.f;
 
-Vec2 Rotate(Vec2 v, float degreesCcw) {
-    // 画面上で反時計回り (y は下向き): 上 (0, -1) は左へ行く。
-    const float a = degreesCcw * kDeg, cs = std::cos(a), sn = std::sin(a);
-    return {v.x * cs + v.y * sn, v.y * cs - v.x * sn};
-}
 Vec2 Add(Vec2 a, Vec2 b) { return {a.x + b.x, a.y + b.y}; }
 Vec2 Scale(Vec2 a, float s) { return {a.x * s, a.y * s}; }
 
-// 画面上で時計回り (y は下向き) = この座標では面積が正。
-float SignedArea(std::span<const Vec2> pts) {
-    float a = 0;
-    for (size_t i = 0; i < pts.size(); ++i) {
-        const Vec2 p = pts[i], q = pts[(i + 1) % pts.size()];
-        a += p.x * q.y - q.x * p.y;
-    }
-    return a * 0.5f;
-}
-
 }  // namespace
-
-float Random::Next() {
-    // xorshift32: 小さく速く、同じ種ならどこでも同じ数になる。
-    if (state == 0) state = 0x9E3779B9u;
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return static_cast<float>(state >> 8) / static_cast<float>(1u << 24);
-}
-
-// --- 部品 --------------------------------------------------------------------------
-
-ui::Path FitInto(const ui::Path& path, const ui::Rect& box) {
-    if (path.steps.empty()) return path;
-    float x0 = 1e30f, y0 = 1e30f, x1 = -1e30f, y1 = -1e30f;
-    auto grow = [&](Vec2 v) { x0 = std::min(x0, v.x), y0 = std::min(y0, v.y), x1 = std::max(x1, v.x), y1 = std::max(y1, v.y); };
-    for (const auto& st : path.steps) {
-        grow(st.a);
-        if (st.op == ui::Path::Op::Cubic) grow(st.b), grow(st.c);
-    }
-    const float w = x1 - x0, h = y1 - y0;
-    if (w <= 0 || h <= 0) return path;
-    const float s = std::min(box.w / w, box.h / h);
-    const Vec2 from{(x0 + x1) * 0.5f, (y0 + y1) * 0.5f}, to{box.x + box.w * 0.5f, box.y + box.h * 0.5f};
-    auto move = [&](Vec2 v) { return Vec2{to.x + (v.x - from.x) * s, to.y + (v.y - from.y) * s}; };
-    ui::Path out = path;
-    for (auto& st : out.steps) {
-        st.a = move(st.a);
-        st.b = move(st.b);
-        st.c = move(st.c);
-    }
-    return out;
-}
-
-void AddEllipse(ui::Path& p, Vec2 c, float rx, float ry, float degrees) {
-    // 3 次曲線 4 本 (おなじみの 0.5523 のハンドル)。画面上で時計回り: 右、下、左、上。
-    constexpr float k = 0.5522847f;
-    auto at = [&](float x, float y) { return Add(c, Rotate({x, y}, degrees)); };
-    p.Begin(at(rx, 0));
-    p.Cubic(at(rx, ry * k), at(rx * k, ry), at(0, ry));
-    p.Cubic(at(-rx * k, ry), at(-rx, ry * k), at(-rx, 0));
-    p.Cubic(at(-rx, -ry * k), at(-rx * k, -ry), at(0, -ry));
-    p.Cubic(at(rx * k, -ry), at(rx, -ry * k), at(rx, 0));
-}
-
-void AddCircle(ui::Path& p, Vec2 c, float r) { AddEllipse(p, c, r, r, 0); }
-
-void AddPolygon(ui::Path& p, std::span<const Vec2> pts) {
-    if (pts.size() < 3) return;
-    const bool clockwise = SignedArea(pts) >= 0;
-    p.Begin(clockwise ? pts.front() : pts.back());
-    for (size_t i = 1; i < pts.size(); ++i) p.Line(clockwise ? pts[i] : pts[pts.size() - 1 - i]);
-}
-
-void AddBar(ui::Path& p, Vec2 a, Vec2 b, float wa, float wb) {
-    const float dx = b.x - a.x, dy = b.y - a.y, len = std::hypot(dx, dy);
-    if (len <= 0) return;
-    const Vec2 n{-dy / len, dx / len};  // 棒を横切る向き
-    const Vec2 quad[4] = {Add(a, Scale(n, wa * 0.5f)), Add(b, Scale(n, wb * 0.5f)), Add(b, Scale(n, -wb * 0.5f)),
-                          Add(a, Scale(n, -wa * 0.5f))};
-    AddPolygon(p, quad);
-}
 
 // --- 春 -----------------------------------------------------------------------------------
 
@@ -543,15 +466,7 @@ ui::Path Snowflake(Vec2 center, float r, float degreesCcw) {
     return p;
 }
 
-ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed) {
-    ui::Path p;
-    Random rnd{seed};
-    for (int i = 0; i < count; ++i) {
-        const Vec2 c{area.x + area.w * rnd.Next(), area.y + area.h * rnd.Next()};
-        AddCircle(p, c, size * (0.35f + 0.65f * rnd.Next()) * 0.5f);
-    }
-    return p;
-}
+ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed) { return ui::shape::Dots(area, count, size, seed); }
 
 float SnowDriftHeight(float l, float depth) {
     return depth * (0.72f + 0.17f * std::sin(l * 0.017f) + 0.09f * std::sin(l * 0.039f + 1.f));
@@ -646,6 +561,107 @@ IcicleShapes Icicles(const ui::Rect& win, float maxLength, uint32_t seed) {
         }
     }
     return out;
+}
+
+// --- 夜 -----------------------------------------------------------------------------------
+
+ui::Path HanamiDango(Vec2 center, float r, float degreesCcw) {
+    ui::Path p;
+    auto at = [&](float x, float y) { return Add(center, Rotate({x * r, y * r}, degreesCcw)); };
+    AddBar(p, at(0, 1.f), at(0, -1.f), 0.07f * r, 0.05f * r);  // 串 (上の先は団子から出る)
+    for (int i = 0; i < 3; ++i) AddCircle(p, at(0, 0.5f - 0.46f * static_cast<float>(i)), 0.25f * r);
+    return p;
+}
+
+GarlandShapes Garland(const ui::Rect& win, float swing, float sag, int perSwing, float width) {
+    GarlandShapes g;
+    swing = std::max(swing, 20.f);
+    perSwing = std::max(perSwing, 0);
+    const float top = win.y + 1.f;
+    for (float x0 = win.x; x0 < win.Right(); x0 += swing) {
+        auto at = [&](float t) { return Vec2{x0 + swing * t, top + sag * 4.f * t * (1.f - t)}; };
+        constexpr int kSteps = 12;
+        for (int k = 0; k < kSteps; ++k) {
+            AddBar(g.cord, at(static_cast<float>(k) / kSteps), at(static_cast<float>(k + 1) / kSteps), width, width);
+        }
+        for (int k = 0; k < perSwing; ++k) g.points.push_back(at((static_cast<float>(k) + 0.5f) / static_cast<float>(perSwing)));
+    }
+    return g;
+}
+
+void AddLantern(ui::Path& body, ui::Path& caps, Vec2 hang, float h) {
+    const float w = 0.62f * h;
+    const Vec2 c{hang.x, hang.y + 0.5f * h};
+    AddEllipse(body, c, 0.5f * w, 0.40f * h, 0);
+    const ui::Rect top{hang.x - 0.24f * w, hang.y, 0.48f * w, 0.12f * h};
+    const ui::Rect bottom{hang.x - 0.24f * w, hang.y + 0.88f * h, 0.48f * w, 0.12f * h};
+    for (const ui::Rect& r : {top, bottom}) {
+        const Vec2 q[4] = {{r.x, r.y}, {r.Right(), r.y}, {r.Right(), r.Bottom()}, {r.x, r.Bottom()}};
+        AddPolygon(caps, q);
+    }
+}
+
+ui::Path Firework(Vec2 center, float radius, int rays, uint32_t seed) {
+    ui::Path p;
+    Random rnd{seed};
+    rays = std::max(rays, 3);
+    for (int i = 0; i < rays; ++i) {
+        const float a = (static_cast<float>(i) + 0.3f * (rnd.Next() - 0.5f)) * 360.f / static_cast<float>(rays);
+        const float len = radius * (0.86f + 0.14f * rnd.Next());
+        constexpr int kDots = 6;
+        for (int k = 0; k < kDots; ++k) {
+            const float f = 0.28f + 0.72f * static_cast<float>(k) / (kDots - 1);  // 中心の近く .. 先
+            AddCircle(p, Add(center, Rotate({0, -len * f}, a)), radius * (0.010f + 0.028f * f * f));
+        }
+    }
+    return p;
+}
+
+ui::Path Uchiwa(Vec2 center, float r, float degreesCcw) {
+    ui::Path p;
+    AddEllipse(p, center, r, 0.92f * r, degreesCcw);
+    AddBar(p, Add(center, Rotate({0, 0.6f * r}, degreesCcw)), Add(center, Rotate({0, 1.85f * r}, degreesCcw)), 0.16f * r, 0.12f * r);
+    return p;
+}
+
+ui::Path TsukimiDango(Vec2 center, float r) {
+    ui::Path p;
+    const float d = 0.19f * r;  // 団子の半径
+    // 上の団子のてっぺん = center.y - r。段は 1 つ上がるごとに 1.6 d。
+    const float row0 = center.y - r + d + 2.f * 1.6f * d;  // 一番下の段の中心
+    for (int row = 0; row < 3; ++row) {
+        const int n = 3 - row;
+        for (int i = 0; i < n; ++i) {
+            const float x = center.x + (static_cast<float>(i) - 0.5f * static_cast<float>(n - 1)) * 2.f * d;
+            AddCircle(p, {x, row0 - 1.6f * d * static_cast<float>(row)}, d);
+        }
+    }
+    // 三方: 団子の下の、少し広い盆と、下へ細くなる台。
+    const float tray = row0 + 0.9f * d;
+    const Vec2 board[4] = {{center.x - 3.9f * d, tray}, {center.x + 3.9f * d, tray}, {center.x + 3.6f * d, tray + 0.55f * d},
+                           {center.x - 3.6f * d, tray + 0.55f * d}};
+    AddPolygon(p, board);
+    const Vec2 stand[4] = {{center.x - 2.4f * d, tray + 0.5f * d}, {center.x + 2.4f * d, tray + 0.5f * d}, {center.x + 3.0f * d, tray + 2.6f * d},
+                           {center.x - 3.0f * d, tray + 2.6f * d}};
+    AddPolygon(p, stand);
+    return p;
+}
+
+ui::Path ChristmasTree(Vec2 center, float r, float degreesCcw) {
+    ui::Path p;
+    auto at = [&](float x, float y) { return Add(center, Rotate({x * r, y * r}, degreesCcw)); };
+    // 3 段: 上ほど小さく、下の段に少し重なる。
+    struct Tier {
+        float top, bottom, half;
+    };
+    for (const Tier& t : {Tier{-0.78f, -0.22f, 0.36f}, Tier{-0.48f, 0.18f, 0.52f}, Tier{-0.16f, 0.62f, 0.70f}}) {
+        const Vec2 tri[3] = {at(0, t.top), at(t.half, t.bottom), at(-t.half, t.bottom)};
+        AddPolygon(p, tri);
+    }
+    const Vec2 trunk[4] = {at(-0.11f, 0.60f), at(0.11f, 0.60f), at(0.11f, 0.86f), at(-0.11f, 0.86f)};
+    AddPolygon(p, trunk);
+    ui::shape::AddStar(p, at(0, -0.84f), 5, 0.16f * r, 0.07f * r, degreesCcw);
+    return p;
 }
 
 }  // namespace rm::theme_seasons::ornament

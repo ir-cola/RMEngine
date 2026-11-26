@@ -6,9 +6,9 @@
   "order": 0,
   "follow": {
     "by": "season",
-    "spring": { "morning": "Spring" },
-    "summer": { "morning": "Summer" },
-    "fall": { "morning": "Fall" },
-    "winter": { "morning": "Winter" }
+    "spring": { "morning": "Spring", "night": "SpringNight" },
+    "summer": { "morning": "Summer", "night": "SummerNight" },
+    "fall": { "morning": "Fall", "night": "FallNight" },
+    "winter": { "morning": "Winter", "night": "WinterNight" }
   }
 }

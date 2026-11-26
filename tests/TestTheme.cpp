@@ -1,12 +1,15 @@
 // カラーテーマ (editor/widgets/Theme.h, ThemeFile.h) のテスト: 組み込みの 3 つ、テーマパックの
-// テーマ (plugins/<author>/<name>/themes/ のファイル)、季節パックの絵の形
-// (plugins/rm_engine/theme_seasons/editor/Ornament.h)。
+// テーマ (plugins/<author>/<name>/themes/ のファイル)、絵の形の部品 (ui/Shape.h)、季節パックの絵の形
+// (plugins/rm_engine/theme_seasons/editor/Ornament.h)、探検パックとゲーミングの絵の形 (各 editor/Shapes.h)。
 
 #include "Test.h"
 #include "ui/Grain.h"
+#include "ui/Shape.h"
 
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/ThemeFile.h"
+#include "rm_engine/theme_explore/editor/Shapes.h"
+#include "rm_engine/theme_gaming/editor/Shapes.h"
 #include "rm_engine/theme_seasons/editor/Ornament.h"
 
 #include <algorithm>
@@ -174,17 +177,33 @@ RM_TEST(ThemeFile_ThePacks) {
         for (const std::string& a : t->info.aliases) CHECK(ids.insert(a).second);
         ++count;
         if (t->info.follow) {  // (季節で切り替える: 色は従うテーマのもの)
-            for (const theme::SeasonThemes& s : t->info.follow->seasons) follows.push_back(s.morning);
+            for (const theme::SeasonThemes& s : t->info.follow->seasons) {
+                follows.push_back(s.morning);
+                CHECK(!s.night.empty());  // (夜用もある: 2026-11-26)
+                follows.push_back(s.night);
+            }
             continue;
         }
         // ロゴのインク (目立つ方の白か黒) は、その種類のテーマが期待するもの。
         const rm::Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
         CHECK(theme::InkOn(t->info.palette->sidebar) == (t->info.palette->light ? black : white));
+        // 文字は地 (パネル) の上で読める (コントラスト比 4.5 以上)。
+        const float lt = theme::Luminance(t->info.palette->text), lp = theme::Luminance(t->info.palette->panel);
+        CHECK((std::max(lt, lp) + 0.05f) / (std::min(lt, lp) + 0.05f) >= 4.5f);
     }
-    CHECK(count == 8);
-    CHECK(follows.size() == 4);
+    CHECK(count == 16);
+    CHECK(follows.size() == 8);
     for (const std::string& id : follows) CHECK(ids.count(id) == 1);  // 従う先はパックにある
-    for (const char* id : {"Midnight", "Forest", "Paper", "Spring", "Summer", "Fall", "Winter", "Sakura", "BySeason"}) CHECK(ids.count(id) == 1);
+    for (const char* id : {"Midnight", "Forest", "Paper", "Spring", "Summer", "Fall", "Winter", "Sakura", "BySeason", "SpringNight", "SummerNight",
+                           "FallNight", "WinterNight", "Space", "DeepSea", "Volcano", "Gaming"}) {
+        CHECK(ids.count(id) == 1);
+    }
+}
+
+// 朝か夜か: 立ち上げた時刻。6 時 .. 17 時台は朝、18 時 .. 翌 5 時台は夜。
+RM_TEST(Theme_DayPartOfHour) {
+    for (int h = 0; h < 24; ++h) CHECK((theme::DayPartOfHour(h) == theme::DayPart::Morning) == (h >= 6 && h < 18));
+    CHECK(theme::DayPartOfHour(24 + 7) == theme::DayPart::Morning && theme::DayPartOfHour(-1) == theme::DayPart::Night);
 }
 
 RM_TEST(Ornament_SakuraShape) {
@@ -513,3 +532,111 @@ RM_TEST(Theme_Snowman) {
     // 積もった雪の高さは SnowDrift の上の線と同じ。
     CHECK(SnowDriftHeight(100, 24) > 24 * 0.45f && SnowDriftHeight(100, 24) < 24 * 0.99f);
 }
+
+namespace {
+// 図形が `box` の中 (少しの余り `slack` まで) にあり、図形が 1 つ以上で、すべて時計回り。
+bool InsideAndClockwise(const rm::ui::Path& p, float x0, float y0, float x1, float y1, float slack = 0.5f) {
+    const Bounds b = BoundsOf(p);
+    return b.figures > 0 && b.x0 >= x0 - slack && b.y0 >= y0 - slack && b.x1 <= x1 + slack && b.y1 <= y1 + slack && AllClockwise(p);
+}
+}  // namespace
+
+// 核の部品 (ui/Shape.h): 星・散らした粒・下の波。
+RM_TEST(Shape_StarDotsWaves) {
+    using namespace rm::ui::shape;
+    rm::ui::Path star;
+    AddStar(star, {100, 100}, 5, 50, 20);
+    const Bounds sb = BoundsOf(star);
+    CHECK(std::fabs(sb.y0 - 50) < 0.01f && sb.x0 > 50 && sb.x1 < 150 && sb.y1 < 150 && AllClockwise(star));
+    CHECK(star.steps.size() == 10);  // 先 5 つとへこみ 5 つ
+    const rm::ui::Rect area{10, 20, 300, 200};
+    const rm::ui::Path dots = Dots(area, 40, 6, 3);
+    CHECK(BoundsOf(dots).figures == 40 && InsideAndClockwise(dots, 10 - 3, 20 - 3, 310 + 3, 220 + 3));
+    CHECK(BoundsOf(Dots(area, 40, 6, 3)).x0 == BoundsOf(dots).x0);  // 同じ種なら同じ
+    // 波: 下の端から depth まで。左右と下は 2 ピクセル外まで。左端からの形は幅を変えても同じ。
+    const rm::ui::Rect win{0, 0, 800, 600};
+    const rm::ui::Path wave = WavyBottom(win, 40, 0);
+    const Bounds wb = BoundsOf(wave);
+    CHECK(wb.figures == 1 && wb.x0 >= -2.01f && wb.x1 <= 802.01f && wb.y1 <= 602.01f && wb.y0 >= 600 - 40 - 0.01f && wb.y0 < 600 - 30);
+    CHECK(AllClockwise(wave));
+    const rm::ui::Path narrow = WavyBottom({0, 0, 400, 600}, 40, 0);
+    CHECK(narrow.steps[5].a.y == wave.steps[5].a.y);
+}
+
+// 季節の夜用の形: 団子・うちわ・月見団子・ツリーは半径の中、時計回り。紐はたるみごとに下げる所があり、上の端の近く。
+RM_TEST(Ornament_NightShapes) {
+    using namespace ornament;
+    const rm::Vec2 c{500, 500};
+    CHECK(InsideAndClockwise(HanamiDango(c, 100, 0), 400, 400, 600, 600, 2.f));
+    CHECK(InsideAndClockwise(HanamiDango(c, 100, -30), 400, 400, 600, 600, 2.f));
+    CHECK(InsideAndClockwise(Uchiwa(c, 100, 0), 395, 400, 605, 690, 2.f));  // 柄は下へ
+    CHECK(InsideAndClockwise(TsukimiDango(c, 100), 400, 400, 600, 600, 2.f));
+    CHECK(std::fabs(BoundsOf(TsukimiDango(c, 100)).y0 - 400) < 1.f);  // てっぺんは半径の所
+    CHECK(InsideAndClockwise(ChristmasTree(c, 100, 0), 400, 400, 600, 600, 2.f));
+    CHECK(std::fabs(BoundsOf(ChristmasTree(c, 100, 0)).y0 - 400) < 1.f);  // 星の先は半径の所
+    CHECK(InsideAndClockwise(Firework(c, 100, 20, 5), 400, 400, 600, 600, 4.f));
+    CHECK(BoundsOf(Firework(c, 100, 20, 5)).figures == 20 * 6);
+    const rm::ui::Rect win{0, 0, 1000, 600};
+    const GarlandShapes g = Garland(win, 250, 30, 3, 1.5f);
+    CHECK(g.points.size() == 4 * 3);  // 0, 250, 500, 750 から 4 つのたるみ
+    for (const rm::Vec2 v : g.points) CHECK(v.y > 0 && v.y <= 1 + 30 + 0.01f && v.x > 0 && v.x < 1000);
+    CHECK(InsideAndClockwise(g.cord, -2, -2, 1002, 33));
+}
+
+// 探検パックの形。
+RM_TEST(Explore_Shapes) {
+    using namespace rm::theme_explore::shapes;
+    const rm::Vec2 c{500, 500};
+    CHECK(InsideAndClockwise(Rocket(c, 100, 0), 440, 400, 560, 603, 2.f));
+    CHECK(std::fabs(BoundsOf(Rocket(c, 100, 0)).y0 - 400) < 0.5f);  // 先は半径の所
+    CHECK(InsideAndClockwise(Jellyfish(c, 100, 0), 400, 400, 600, 600, 8.f));
+    CHECK(InsideAndClockwise(Flame(c, 100, 0), 400, 400, 600, 600, 2.f));
+    CHECK(std::fabs(BoundsOf(Flame(c, 100, 0)).y0 - 400) < 1.f);
+    // 惑星: 輪は球の 2.2 倍まで。奥の半分は上、手前の半分は下 (傾けなければ)。
+    const PlanetShapes planet = RingedPlanet(c, 50, 0);
+    const Bounds back = BoundsOf(planet.ringBack), front = BoundsOf(planet.ringFront);
+    CHECK(std::fabs(back.x1 - 610) < 0.5f && std::fabs(back.x0 - 390) < 0.5f && back.y1 <= 500.5f && front.y0 >= 499.5f);
+    CHECK(AllClockwise(planet.ringBack) && AllClockwise(planet.ringFront) && AllClockwise(planet.body));
+    CHECK(InsideAndClockwise(ShootingStar(c, 100, 0), 490, 400, 510, 510));  // 尾は上へ
+    const rm::ui::Rect win{0, 0, 1200, 800};
+    for (const rm::ui::Path& n : Nebula(c, 200, 3)) CHECK(InsideAndClockwise(n, 200, 300, 800, 700));
+    CHECK(BoundsOf(Sparkles(win, 12, 16, 2)).figures == 12);
+    const std::vector<rm::ui::Path> rays = LightRays(win, 4, 1);
+    CHECK(rays.size() == 4);
+    for (const rm::ui::Path& r : rays) CHECK(InsideAndClockwise(r, 0, -3, 1200 + 800 * 0.3f + 200, 800));
+    const BubbleShapes bubbles = Bubbles(win, 20, 18, 4);
+    CHECK(BoundsOf(bubbles.body).figures == 20 && BoundsOf(bubbles.shine).figures == 20 && AllClockwise(bubbles.body));
+    const rm::ui::Path kelp = Kelp({1000, 800}, 300, 6);
+    const Bounds kb = BoundsOf(kelp);
+    CHECK(kb.figures > 0 && AllClockwise(kelp));
+    CHECK(kb.x0 > 850 && kb.x1 < 1150);
+    CHECK(kb.y0 >= 800 - 300 - 10 && kb.y1 <= 806);
+    CHECK(BoundsOf(FishSchool(c, 200, 10, 20, 9)).figures == 20 && AllClockwise(FishSchool(c, 200, 10, 20, 9)));
+    // 火山: 下の端の上に立つ山。火口は山のてっぺんの近く。照りと煙は火口の上。
+    const VolcanoShapes v = Volcano({900, 800}, 300, 2);
+    const Bounds m = BoundsOf(v.mountain);
+    CHECK(m.y1 <= 806.01f && std::fabs(m.y0 - 500) < 0.5f && AllClockwise(v.mountain) && AllClockwise(v.lava));
+    CHECK(std::fabs(v.crater.x - 900) < 0.01f && v.crater.y > 500 && v.crater.y < 530);
+    const Bounds smoke = BoundsOf(Smoke(v.crater, 300, 1));
+    CHECK(smoke.y1 < v.crater.y + 30 && smoke.y0 < v.crater.y - 250 && smoke.x0 < v.crater.x - 100);  // 上って左へ
+    const rm::ui::Path embers = Embers(win, 50, 8, 3);
+    CHECK(BoundsOf(embers).figures == 50 && AllClockwise(embers));
+}
+
+// ゲーミングの形と虹の色。
+RM_TEST(Gaming_Shapes) {
+    using namespace rm::theme_gaming::shapes;
+    auto near = [](rm::Color a, rm::Color b) { return std::fabs(a.r - b.r) < 0.01f && std::fabs(a.g - b.g) < 0.01f && std::fabs(a.b - b.b) < 0.01f; };
+    CHECK(near(Spectrum(0), {1, 0, 0, 1}) && near(Spectrum(0.2f), {1, 1, 0, 1}) && near(Spectrum(0.4f), {0, 1, 0, 1}));
+    CHECK(near(Spectrum(0.8f), {0, 0, 1, 1}) && near(Spectrum(1.f), {1, 0, 0, 1}) && near(Spectrum(-0.6f), {0, 1, 0, 1}));
+    CHECK(Spectrum(0.5f, 0.3f).a == 0.3f);
+    const rm::ui::Rect win{0, 0, 1000, 600};
+    const GridShapes g = NeonGrid(win, 400, 25);
+    CHECK(InsideAndClockwise(g.lines, -1500, 399, 2500, 603));  // (縦の線はウィンドウの左右の外まで広がる: 描く側が切る)
+    const Bounds hb = BoundsOf(g.horizonLine);
+    CHECK(hb.figures == 1 && std::fabs(hb.y0 - 399) < 0.01f);
+    CHECK(BoundsOf(NeonGrid(win, 700, 25).lines).figures == 0);  // 地平線が下の端より下: 何も無い
+    CHECK(BoundsOf(Pixels(win, 30, 4, 1)).figures == 30 && AllClockwise(Pixels(win, 30, 4, 1)));
+    CHECK(InsideAndClockwise(Controller({500, 500}, 100, 0), 400, 400, 600, 600, 2.f));
+}
+

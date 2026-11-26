@@ -45,6 +45,10 @@
 #include "rm_engine/space3d/editor/Thumbnail.h"
 #include "rm_engine/space3d/runtime/Id.h"
 #include "rm_engine/theme_colors/runtime/Id.h"
+#include "rm_engine/theme_explore/editor/Explore.h"
+#include "rm_engine/theme_explore/runtime/Id.h"
+#include "rm_engine/theme_gaming/editor/Gaming.h"
+#include "rm_engine/theme_gaming/runtime/Id.h"
 #include "rm_engine/theme_paper/runtime/Id.h"
 #include "rm_engine/theme_seasons/editor/Seasons.h"
 #include "rm_engine/theme_seasons/runtime/Id.h"
@@ -75,6 +79,8 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {theme_colors::kPluginId, nullptr},  // テーマのファイルだけ (themes/*.json)
         {theme_paper::kPluginId, nullptr},
         {theme_seasons::kPluginId, &theme_seasons::RegisterEditor},
+        {theme_explore::kPluginId, &theme_explore::RegisterEditor},  // 宇宙・深海・火山 (テーマのファイルと絵)
+        {theme_gaming::kPluginId, &theme_gaming::RegisterEditor},
     };
     return kPlugins;
 }

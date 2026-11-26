@@ -1,5 +1,6 @@
 #include "rm_engine/theme_seasons/editor/Seasons.h"
 
+#include "editor/widgets/OrnamentPicture.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/theme_seasons/editor/Ornament.h"
@@ -51,26 +52,42 @@ Color Snow() { return Color::Hex(0xFFFFFF); }             // 冬: ウィンド�
 Color SnowEdge() { return Color::Hex(0xA9BBCF, 0.55f); }  // 積もった雪の輪郭 (薄く: 2026-11-24 ユーザーの希望)
 Color SnowLow() { return Color::Hex(0xE6EEF7); }          // 吹きだまりの影になった足元
 Color Flake() { return Color::Hex(0xFFFFFF, 0.9f); }      // 降る雪
+Color NightFlake() { return Color::Hex(0xFFFFFF, 0.55f); }  // 夜の降る雪 (暗い地では白が強いので薄く)
 Color Bucket() { return Color::Hex(0xD9412E); }           // 雪だるまのバケツ
 Color BucketRim() { return Color::Hex(0xB0301F); }        // その縁
 
+// 夜 (2026-11-26): 暗い地の上なので、明るい色を薄めに (文字が読めるように)。
+Color NightPetal(int i) { return PetalTone(i).Alpha(0.50f); }  // 夜桜: 花びら (縁は付けない: 暗い地ではいらない)
+Color NightFlurry() { return Color::Hex(0xF7C6D6, 0.36f); }   // 夜桜: 吹雪 (パネルのウィンドウ)
+Color LanternCord() { return Color::Hex(0x0A0610, 0.55f); }   // 提灯を下げる紐
+Color Lantern() { return Color::Hex(0xFF9C55, 0.70f); }       // 提灯の灯り
+Color LanternCap() { return Color::Hex(0x1E120E, 0.80f); }    // 提灯の上下の枠
+Color Firework(int i) {                                       // 花火: 金・桃・水色
+    constexpr uint32_t k[3] = {0xFFD46B, 0xFF7AB0, 0x7AE3FF};
+    return Color::Hex(k[i % 3], 0.45f);
+}
+Color SeaFar() { return Color::Hex(0x14456B, 0.50f); }   // 夜の海 (奥の波)
+Color SeaNear() { return Color::Hex(0x1F6394, 0.42f); }  // 手前の波
+Color MoonHalo() { return Color::Hex(0xFFE9A8, 0.06f); }  // お月見: 月のまわりの光 (2 重)
+Color Moon() { return Color::Hex(0xFFE7A0, 0.38f); }  // (上に文字が来ても読めるように薄く)
+Color MoonSpot() { return Color::Hex(0xE2BF72, 0.22f); }
+Color Star() { return Color::Hex(0xFFFFFF, 0.38f); }      // 夜空の星
+Color LightCord() { return Color::Hex(0x08110C, 0.60f); }  // クリスマス: 電球を下げる紐
+Color Bulb(int i) {                                        // 電球: 赤・金・緑・青
+    constexpr uint32_t k[4] = {0xFF5A5A, 0xFFD24D, 0x5BE38B, 0x6AB8FF};
+    return Color::Hex(k[i & 3], 0.85f);
+}
+
 }  // namespace season
 
-enum class Kind { Spring, Summer, Fall, Winter };
+enum class Kind { Spring, Summer, Fall, Winter, SpringNight, SummerNight, FallNight, WinterNight };
 
-// 絵 = 色の付いた図形を、順に塗ったもの。
-struct Layer {
-    ui::Path path;
-    Color color;
-};
-using Picture = std::vector<Layer>;
+// 絵 = 色の付いた図形を、順に塗ったもの (作ったものは w::DrawOrnamentPicture が覚えておく)。
+using Picture = editor::w::OrnamentPicture;
 
-// 左下の角の影: 10 度反時計回りに回し、どの季節も同じ正方形に収める (もみじの葉が桜の花と同じ高さになる)。
-// 大きさはウィンドウで決まる。
-float CornerRadius(const Rect& w) { return std::clamp(std::min(w.w, w.h) * 0.17f, 56.f, 150.f); }
-Rect Corner(const Rect& w, float r) { return {w.x + 28.f, w.Bottom() - 28.f - 2.f * r, 2.f * r, 2.f * r}; }
+// 左下の角の影: どの季節も同じ正方形 (w::OrnamentCorner) に収める (もみじの葉が桜の花と同じ高さになる)。
 void Silhouette(Picture& pic, const Rect& w, ui::Path shape, Color color = theme::OrnamentColor()) {
-    pic.push_back({ornament::FitInto(shape, Corner(w, CornerRadius(w))), color});
+    pic.push_back({ornament::FitInto(shape, editor::w::OrnamentCorner(w)), color});
 }
 
 void SpringFlurry(Picture& pic, const Rect& w, float scale) {
@@ -95,9 +112,9 @@ void SummerClouds(Picture& pic, const Rect& w, float scale) {
 
 // 冬: ウィンドウに降る雪 (止めたもの)。(2026-11-24: 上の端のつららはユーザーの希望で外した。
 // 形を作る ornament::Icicles は残してある)
-void WinterSky(Picture& pic, const Rect& w, float scale) {
+void WinterSky(Picture& pic, const Rect& w, float scale, Color flake) {
     const int count = std::max(20, static_cast<int>(w.w * w.h / 3600.f));
-    pic.push_back({ornament::Snowfall(w, count, 5.5f * scale, 0x5A0Fu), season::Flake()});
+    pic.push_back({ornament::Snowfall(w, count, 5.5f * scale, 0x5A0Fu), flake});
 }
 
 // 冬: ウィンドウ (エディター本体・Hub) の一番下に積もった雪: 上に輪郭、白い雪、その影になった足元。
@@ -129,6 +146,43 @@ void WinterGround(Picture& pic, const Rect& w, const Rect& screen) {
         pic.push_back({std::move(man.bucket), season::Bucket()});
         pic.push_back({std::move(man.rim), season::BucketRim()});
     }
+}
+
+// 夜桜: 上の端にたるむ紐から下がる提灯。
+void Lanterns(Picture& pic, const Rect& w) {
+    ornament::GarlandShapes g = ornament::Garland(w, 300.f, 40.f, 3, 1.4f);
+    ui::Path body, caps;
+    for (const Vec2 at : g.points) ornament::AddLantern(body, caps, at, 40.f);
+    pic.push_back({std::move(g.cord), season::LanternCord()});
+    pic.push_back({std::move(body), season::Lantern()});
+    pic.push_back({std::move(caps), season::LanternCap()});
+}
+
+// 夏の夜: 上のほうに花火 3 つ (大きさはウィンドウで決まる)。
+void Fireworks(Picture& pic, const Rect& w, float scale) {
+    const float r = std::clamp(std::min(w.w, w.h) * 0.16f, 60.f, 200.f) * scale;
+    pic.push_back({ornament::Firework({w.Right() - w.w * 0.22f, w.y + w.h * 0.24f}, r, 28, 0xF1u), season::Firework(0)});
+    pic.push_back({ornament::Firework({w.Right() - w.w * 0.46f, w.y + w.h * 0.15f}, r * 0.7f, 22, 0xF2u), season::Firework(1)});
+    pic.push_back({ornament::Firework({w.Right() - w.w * 0.08f, w.y + w.h * 0.40f}, r * 0.55f, 18, 0xF3u), season::Firework(2)});
+}
+
+// 夜空の星 (お月見): 上半分に小さな点。
+void Stars(Picture& pic, const Rect& w) {
+    const Rect sky{w.x, w.y, w.w, w.h * 0.55f};
+    const int count = std::max(12, static_cast<int>(sky.w * sky.h / 9000.f));
+    pic.push_back({ornament::Snowfall(sky, count, 2.4f, 0x57A2u), season::Star()});
+}
+
+// クリスマス: 上の端にたるむ紐から下がる、4 色の電球。
+void ChristmasLights(Picture& pic, const Rect& w) {
+    ornament::GarlandShapes g = ornament::Garland(w, 220.f, 26.f, 6, 1.2f);
+    std::array<ui::Path, 4> bulbs;
+    for (size_t i = 0; i < g.points.size(); ++i) {
+        const Vec2 at = g.points[i];
+        ornament::AddEllipse(bulbs[i & 3], {at.x, at.y + 6.f}, 4.f, 5.5f, 0);
+    }
+    pic.push_back({std::move(g.cord), season::LightCord()});
+    for (int i = 0; i < 4; ++i) pic.push_back({std::move(bulbs[static_cast<size_t>(i)]), season::Bulb(i)});
 }
 
 Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
@@ -179,9 +233,68 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
             }
             break;
         case Kind::Winter:
-            WinterSky(pic, w, floating ? 0.8f : 1.f);
+            WinterSky(pic, w, floating ? 0.8f : 1.f, season::Flake());
             if (!floating) {
                 Silhouette(pic, w, ornament::Snowflake({0, 0}, 1.f, 10.f));
+                WinterGround(pic, w, screen);
+            }
+            break;
+        // --- 夜 (2026-11-26) ---
+        case Kind::SpringNight:
+            if (floating) {
+                const Rect area{w.x, w.y, std::min(w.w * 0.42f, 336.f), std::min(w.h * 0.38f, 192.f)};
+                const int count = std::max(10, static_cast<int>(area.w * area.h / 4200.f));
+                pic.push_back({ornament::Petals(area, count, 6.3f, 0x5A6E7Au), season::NightFlurry()});
+                break;
+            }
+            {
+                // 夜桜: 朝と同じ散り方の花びら (薄め)、上の端に提灯、左下に花見団子。
+                auto petals = ornament::PetalCanopy(w, std::max(200.f, w.h * 0.85f), 0.3f, 0x5A4Bu);
+                for (int i = 0; i < 4; ++i) pic.push_back({std::move(petals[static_cast<size_t>(i)]), season::NightPetal(i)});
+                Lanterns(pic, w);
+                Silhouette(pic, w, ornament::HanamiDango({0, 0}, 1.f, -30.f));
+            }
+            break;
+        case Kind::SummerNight:
+            if (floating) {
+                Fireworks(pic, {w.x, w.y, w.w, std::min(w.h, 300.f)}, 0.5f);
+                break;
+            }
+            // 花火 (上)、夜の海 (下、2 枚の波)、左下にうちわ。
+            Fireworks(pic, w, 1.f);
+            pic.push_back({ui::shape::WavyBottom(w, 46.f, 0.f), season::SeaFar()});
+            pic.push_back({ui::shape::WavyBottom(w, 24.f, 2.1f), season::SeaNear()});
+            Silhouette(pic, w, ornament::Uchiwa({0, 0}, 1.f, 20.f));
+            break;
+        case Kind::FallNight:
+            Stars(pic, w);
+            if (floating) break;
+            {
+                // 右上に満月 (まわりの光 2 重と、薄い影)、右下にススキ、左下に月見団子。
+                const float r = std::clamp(std::min(w.w, w.h) * 0.11f, 44.f, 110.f);
+                const Vec2 c{w.Right() - std::max(w.w * 0.16f, 1.8f * r), w.y + std::max(w.h * 0.2f, 1.8f * r)};
+                ui::Path halo, inner, moon, spots;
+                ornament::AddCircle(halo, c, 1.7f * r);
+                ornament::AddCircle(inner, c, 1.3f * r);
+                ornament::AddCircle(moon, c, r);
+                ornament::AddCircle(spots, {c.x - 0.30f * r, c.y - 0.22f * r}, 0.22f * r);
+                ornament::AddCircle(spots, {c.x + 0.28f * r, c.y + 0.12f * r}, 0.30f * r);
+                ornament::AddCircle(spots, {c.x - 0.12f * r, c.y + 0.45f * r}, 0.14f * r);
+                pic.push_back({std::move(halo), season::MoonHalo()});
+                pic.push_back({std::move(inner), season::MoonHalo()});
+                pic.push_back({std::move(moon), season::Moon()});
+                pic.push_back({std::move(spots), season::MoonSpot()});
+                const float h = std::clamp(w.h * 0.36f, 140.f, 340.f);
+                pic.push_back({ornament::Susuki({w.Right() - 0.18f * h, w.Bottom()}, h, 0x5A5Au), theme::OrnamentColor()});
+                Silhouette(pic, w, ornament::TsukimiDango({0, 0}, 1.f));
+            }
+            break;
+        case Kind::WinterNight:
+            WinterSky(pic, w, floating ? 0.8f : 1.f, season::NightFlake());
+            if (!floating) {
+                // 降る雪、上の端に電球、左下にクリスマスツリー、下に積もった雪と雪だるま (朝と同じ)。
+                ChristmasLights(pic, w);
+                Silhouette(pic, w, ornament::ChristmasTree({0, 0}, 1.f, 0.f));
                 WinterGround(pic, w, screen);
             }
             break;
@@ -189,34 +302,13 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
     return pic;
 }
 
-// 絵は 1 フレームに何度も描かれる (背景、そして各パネルとバー、切り抜きつき) ので、
-// ウィンドウの大きさごとに 1 回だけ作る: 最近のいくつかのウィンドウ (メインとパネルのウィンドウ) の分を覚えておく。
-const Picture& Cached(Kind kind, const Rect& w, bool floating, const Rect& screen) {
-    struct Entry {
-        Kind kind;
-        Rect w;
-        bool floating;
-        Rect screen;  // (冬の雪だるまだけが使う: ほかの季節では空)
-        Color accent;  // 影の色はテーマから来る
-        Picture picture;
-    };
-    static std::vector<Entry> cache;
-    for (const Entry& e : cache) {
-        if (e.kind == kind && e.floating == floating && e.accent == theme::Accent && e.w.x == w.x && e.w.y == w.y && e.w.w == w.w &&
-            e.w.h == w.h && e.screen.x == screen.x && e.screen.y == screen.y && e.screen.w == screen.w && e.screen.h == screen.h) {
-            return e.picture;
-        }
-    }
-    if (cache.size() >= 4) cache.erase(cache.begin());
-    cache.push_back({kind, w, floating, screen, theme::Accent, Make(kind, w, floating, screen)});
-    return cache.back().picture;
-}
+Picture MakeAny(int kind, const Rect& w, bool floating, const Rect& screen) { return Make(static_cast<Kind>(kind), w, floating, screen); }
 
 template <Kind K>
 void DrawWindow(ui::Context& c, const Rect& window, bool floating) {
     // 画面 (モニター) の場所を使うのは冬の雪だるまだけ (ほかの季節は、ウィンドウを動かしても作り直さない)。
-    const Rect screen = K == Kind::Winter && !floating ? c.Screen() : Rect{};
-    for (const Layer& l : Cached(K, window, floating, screen)) c.P().FillPath(l.path, l.color);
+    const Rect screen = (K == Kind::Winter || K == Kind::WinterNight) && !floating ? c.Screen() : Rect{};
+    editor::w::DrawOrnamentPicture(c, &MakeAny, static_cast<int>(K), window, floating, screen);
 }
 
 constexpr editor::w::OrnamentInfo kSpring{"spring", &DrawWindow<Kind::Spring>, nullptr};
@@ -226,11 +318,15 @@ void SummerPanel(ui::Context& c, const Rect& r, float corner) { c.P().FillGrain(
 constexpr editor::w::OrnamentInfo kSummer{"summer", &DrawWindow<Kind::Summer>, &SummerPanel};
 constexpr editor::w::OrnamentInfo kFall{"fall", &DrawWindow<Kind::Fall>, nullptr};
 constexpr editor::w::OrnamentInfo kWinter{"winter", &DrawWindow<Kind::Winter>, nullptr};
+constexpr editor::w::OrnamentInfo kSpringNight{"spring_night", &DrawWindow<Kind::SpringNight>, nullptr};
+constexpr editor::w::OrnamentInfo kSummerNight{"summer_night", &DrawWindow<Kind::SummerNight>, nullptr};
+constexpr editor::w::OrnamentInfo kFallNight{"fall_night", &DrawWindow<Kind::FallNight>, nullptr};
+constexpr editor::w::OrnamentInfo kWinterNight{"winter_night", &DrawWindow<Kind::WinterNight>, nullptr};
 
 }  // namespace
 
 void RegisterEditor(editor::PluginRegistry& registry) {
-    for (const editor::w::OrnamentInfo* o : {&kSpring, &kSummer, &kFall, &kWinter}) registry.Contribute(editor::w::kOrnamentPoint, *o);
+    for (const editor::w::OrnamentInfo* o : {&kSpring, &kSummer, &kFall, &kWinter, &kSpringNight, &kSummerNight, &kFallNight, &kWinterNight}) registry.Contribute(editor::w::kOrnamentPoint, *o);
 }
 
 }  // namespace rm::theme_seasons

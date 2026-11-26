@@ -8,31 +8,24 @@
 // 「ランダム」な散らばりは固定した種から作る: 毎フレーム同じ絵になる。
 
 #include "ui/Path.h"
+#include "ui/Shape.h"
 #include "ui/Types.h"
 
 #include <array>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace rm::theme_seasons::ornament {
 
-// --- 部品 --------------------------------------------------------------------------
-void AddCircle(ui::Path& p, Vec2 center, float r);
-void AddEllipse(ui::Path& p, Vec2 center, float rx, float ry, float degrees);
-// 閉じた多角形。点がどちら回りに与えられても時計回りにする。
-void AddPolygon(ui::Path& p, std::span<const Vec2> points);
-// `a` から `b` への棒。a での幅が `wa`、b での幅が `wb` (枝、雪の結晶の腕)。
-void AddBar(ui::Path& p, Vec2 a, Vec2 b, float wa, float wb);
-
-// `box` の中に収まる最大の大きさで中央に置くよう、動かして拡大縮小したパス (縦横同じ倍率):
-// どの季節の角の影も、元の形に関係なく同じ箱を埋める。
-ui::Path FitInto(const ui::Path& path, const ui::Rect& box);
-
-// 種から作る、何度でも同じになる小さな乱数 (0 .. 1)。
-struct Random {
-    uint32_t state;
-    float Next();
-};
+// --- 部品 (核の ui/Shape.h。前はここにあった) ------------------------------------------------
+using ui::shape::AddBar;
+using ui::shape::AddCircle;
+using ui::shape::AddEllipse;
+using ui::shape::AddPolygon;
+using ui::shape::FitInto;
+using ui::shape::Random;
+using ui::shape::Rotate;
 
 // --- 春 -----------------------------------------------------------------------------------
 // 桜の花。1 つの影として塗る: 花びら 5 枚で、それぞれ先に切れ込みがある。回す前は、
@@ -93,7 +86,7 @@ std::array<ui::Path, 4> Canopy(const ui::Rect& window, float depth, float perPix
 // 雪の結晶: 太い腕 6 本 (それぞれ先は鋭い槍先)、各腕に太くとがった枝が 2 対、
 // 中心に六角形。radius = 腕の先まで。
 ui::Path Snowflake(Vec2 center, float radius, float degreesCcw);
-// 降る雪を止めたもの: `area` に散らした、約 `size` の丸い雪片。
+// 降る雪を止めたもの: `area` に散らした、約 `size` の丸い雪片 (ui::shape::Dots)。
 ui::Path Snowfall(const ui::Rect& area, int count, float size, uint32_t seed);
 // `r` (ウィンドウ) の下に積もった雪: 下の端から最大 `depth` まで盛り上がる、なだらかに波打つ吹きだまり。
 // 左右の端まで積もり (端で下がらない。端を 2 ピクセル越えるので、描く側がウィンドウの端で切る)、
@@ -119,5 +112,27 @@ struct IcicleShapes {
     ui::Path snow, ice, shine;
 };
 IcicleShapes Icicles(const ui::Rect& window, float maxLength, uint32_t seed);
+
+// --- 夜 (2026-11-26: 季節の夜用のテーマ) ---------------------------------------------------------
+// 花見団子: 斜めの串に丸い団子が 3 つ。radius = 中心から串の端まで。`degreesCcw` 回す (0: 串がまっすぐ上を向く)。
+ui::Path HanamiDango(Vec2 center, float radius, float degreesCcw);
+// 上の端に沿ってたるむ紐 (提灯やクリスマスの電球を下げる): `window` の左端から `swing` ピクセルごとに上の端に留め、
+// 留めた所の間で `sag` だけ下へたるむ。左端から並べるので、ウィンドウの大きさを変えても形は変わらない (右の端で切れる)。
+// `points` = たるみ 1 つに `perSwing` 個ずつ、紐の上の下げる所。紐の太さは `width`。
+struct GarlandShapes {
+    ui::Path cord;
+    std::vector<Vec2> points;
+};
+GarlandShapes Garland(const ui::Rect& window, float swing, float sag, int perSwing, float width);
+// 提灯 (ちょうちん): `hang` (紐の所) から下がる。上と下の黒い枠 (`caps`) と、ふくらんだ紙の胴 (`body`)。`height` = 全体の高さ。
+void AddLantern(ui::Path& body, ui::Path& caps, Vec2 hang, float height);
+// 打ち上げ花火: 中心から `rays` 本の光の筋 (中心に近いほど小さい粒、先ほど大きい粒)。radius = 筋の先まで。
+ui::Path Firework(Vec2 center, float radius, int rays, uint32_t seed);
+// うちわ: 丸い面と柄。radius = 面の半径。`degreesCcw` 回す (0: 柄がまっすぐ下)。
+ui::Path Uchiwa(Vec2 center, float radius, float degreesCcw);
+// 月見団子: 三方 (台) の上に団子を 3・2・1 と積んだもの。radius = 中心から上の団子のてっぺんまで。
+ui::Path TsukimiDango(Vec2 center, float radius);
+// クリスマスツリー: 3 段の三角の葉、幹、てっぺんの星。radius = 中心から星の先まで。
+ui::Path ChristmasTree(Vec2 center, float radius, float degreesCcw);
 
 }  // namespace rm::theme_seasons::ornament

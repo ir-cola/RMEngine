@@ -53,8 +53,10 @@ plugins/
 | `rm_engine` / `space3d` (3D 空間) | Transform と行列の計算・カメラとレイ・Direct3D 11 での 3D の描画 (線と箱)。ランタイムだけ |
 | `rm_engine` / `animation3d` (3D アニメーション) | 前提 = 3D 空間。ランタイムは純粋。骨の姿勢の計算: クリップを名前で骨につなぐ・サンプル (補間・ループ)・クロスフェードと重みの和・親から順の骨の行列・スキンの行列 (`runtime/Pose`)、時刻を進めて通ったイベントを数える (`runtime/ClipTime`)、1 体の再生 (`runtime/Player`)。エディターの部分は 3D モデルのインスペクターの「クリップとイベント」: クリップの一覧とイベントを置く帯 (核の口 `core.asset_inspect`。`.meta` の `"import"` の `"clips"` に書く。計算は純粋な `editor/ClipEvents`、テストあり)。設計 [docs/ANIMATION.md](../docs/ANIMATION.md) 3-3 / 3-6 |
 | `rm_engine` / `theme_colors` (基本カラーテーマパック) | テーマのファイルだけ: 青・緑 (`themes/*.json`)。コードは `runtime/Id.h` だけ |
-| `rm_engine` / `theme_seasons` (季節テーマパック) | テーマのファイル (スプリング・サマー・フォール・ウィンター) と、その絵を描くコード (`editor/Seasons.cpp`。口 `core.theme_ornament` に差し出す。形は `editor/Ornament.*`、テストあり) |
+| `rm_engine` / `theme_seasons` (季節テーマパック) | テーマのファイル (スプリング・サマー・フォール・ウィンター、夜用の 夜桜・花火・お月見・クリスマス、季節で切り替える) と、その絵を描くコード (`editor/Seasons.cpp`。口 `core.theme_ornament` に差し出す。形は `editor/Ornament.*`、テストあり) |
 | `rm_engine` / `theme_paper` (紙) | テーマのファイルだけ: 紙 |
+| `rm_engine` / `theme_explore` (探検テーマパック) | テーマのファイル (宇宙・深海・火山) と、その絵を描くコード (`editor/Explore.cpp`。形は `editor/Shapes.*`、テストあり) |
+| `rm_engine` / `theme_gaming` (ゲーミング) | テーマのファイル (ゲーミング) と、その絵を描くコード (`editor/Gaming.cpp`: 虹色の帯・パネルの縁の虹色の線・ネオンの格子。形と虹の色は `editor/Shapes.*`、テストあり) |
 | `rm_engine` / `game_x_3d` (ゲーム制作 × 3D) | つなぎ。前提 = ゲーム制作・3D 空間。Transform をゲームの部品として差し出し (3D のゲームの新しいエンティティに付く)、部品とシステム「回り続ける」(Play で確かめる用。`runtime/Spin.*`) を差し出し、3D のシーンビューを出す (口 `rm_engine.game_production.scene_view`、空間 `"3d"`)。ほかのプラグインに開く口: 世界に描く `rm_engine.game_x_3d.world_draw`・骨のあるモデルの姿勢を尋ねる `rm_engine.game_x_3d.mesh_pose` (`runtime/MeshPose.h`)・止まっているシーンビューの上の操作 `rm_engine.game_x_3d.scene_overlay` (`editor/SceneOverlay.h`)。テンプレート「3D のゲーム」(`templates/game_3d`: カメラ・光・床・箱) |
 | `rm_engine` / `space2d` (2D 空間) | Transform 2D (位置・回転・大きさ・並び順) と行列・2D のカメラと当たり・Direct2D での 2D の描画 (`runtime/Renderer2D`)。エディターの部分は 2D のギズモ (`editor/Gizmo2D`。ほかのプラグインのエディターが使う。登録するものは無い) |
 | `rm_engine` / `game_x_2d` (ゲーム制作 × 2D) | つなぎ。前提 = ゲーム制作・2D 空間。Transform 2D (2D のゲームの新しいエンティティに付く)・スプライト (アトラス)・スプライトのアニメーション・カメラ (2D)・回り続ける (2D) を差し出し、2D のシーンビューを出す (空間 `"2d"`)。3D と両方あるときは、シーンの上の帯でゲームの空間を選ぶ。テンプレート「2D のゲーム」(`templates/game_2d`: カメラ・地面・プレイヤー) |

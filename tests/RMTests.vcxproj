@@ -155,6 +155,7 @@
     <ClCompile Include="..\src\editor\tree\TreeModel.cpp" />
     <ClCompile Include="..\src\editor\assets\AssetGrid.cpp" />
     <ClCompile Include="..\src\ui\Grain.cpp" />
+    <ClCompile Include="..\src\ui\Shape.cpp" />
     <ClCompile Include="..\src\editor\console\ConsoleModel.cpp" />
     <ClCompile Include="..\src\editor\lang\Lang.cpp" />
     <ClCompile Include="..\src\editor\app\Integrity.cpp" />
@@ -170,6 +171,12 @@
     <ClCompile Include="..\src\editor\widgets\PickTree.cpp" />
     <ClCompile Include="..\src\editor\widgets\IconAtlas.cpp" />
     <ClCompile Include="..\plugins\rm_engine\theme_seasons\editor\Ornament.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\theme_explore\editor\Shapes.cpp">
+      <ObjectFileName>$(IntDir)theme_explore\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\theme_gaming\editor\Shapes.cpp">
+      <ObjectFileName>$(IntDir)theme_gaming\</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\game_production\runtime\Scene.cpp" />
     <ClCompile Include="..\plugins\rm_engine\audio\runtime\Sound.cpp" />
     <ClCompile Include="..\plugins\rm_engine\audio\runtime\Decoder.cpp" />
