@@ -101,8 +101,8 @@ inline constexpr float kCloudMapCell = 24.f;
 // 描いた雨雲の空: 雨雲は描いた所からまわり kRainCloudSpread m まで広げる (空で見上げると、描いた所より
 // ずっと大きい)。そのまわり kRainHaloSpread m までは白い雲 (雲の量 kRainHaloCover まで) が増え、雨雲に近い
 // ほど少し暗い (空の雲の地図の nears)。
-inline constexpr float kRainCloudSpread = 90.f;
-inline constexpr float kRainHaloSpread = 400.f;
+inline constexpr float kRainCloudSpread = 200.f;
+inline constexpr float kRainHaloSpread = 700.f;
 inline constexpr float kRainHaloCover = 0.7f;
 struct WetMap {
     int firstX = 0, firstZ = 0;  // 最初のマス (ワールドのマス番号: floor(x / kWetMapCell))

@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.29",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "ja": "描いた雨雲 (と、その雨) が、Play 中に風に運ばれて動くように (風が強いほど速い)。空の雨雲をさらに大きく (まわり 200 m)、白い雲は 700 m まで",
+          "en": "Drawn rain clouds (and their rain) now drift with the wind during Play (faster in stronger wind). Rain clouds in the sky are bigger still (200 m around), with white clouds out to 700 m"
+        },
+        {
+          "ja": "雨が描いた雨雲の境目の外へにじんで降っていたのを直しました。離れた所の雨も、縦に流れる雨の幕で見えるように",
+          "en": "Fixed rain spilling outside the edge of drawn rain clouds. Rain far away is now visible as streaked rain curtains"
+        }
+      ]
+    },
+    {
       "version": "0.0.28",
       "date": "2026-11-26",
       "items": [

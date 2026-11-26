@@ -7,6 +7,7 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 #include "rm_engine/weather/runtime/Falling.h"
 #include "rm_engine/weather/runtime/Lightning.h"
+#include "rm_engine/weather/runtime/RainShafts.h"
 #include "rm_engine/weather/runtime/WeatherBlocks.h"
 #include "rm_engine/weather/runtime/WeatherPlace.h"
 
@@ -73,6 +74,7 @@ class WeatherDraw final : public game_x_3d::WorldDrawer {
 public:
     void PrepareFrame(const game_x_3d::WorldDrawFrame& f, game_x_3d::FrameAdditions& out) override {
         directions_.clear();
+        cloudsOf_ = nullptr;
         falls_.clear();
         solids_.clear();
         movingOnly_.clear();
@@ -92,6 +94,7 @@ public:
             for (const auto& c : f.registry->Contributions<WeatherPlaceInfo>(kWeatherPlacePoint)) {
                 if (!c.item->grid) continue;
                 place_ = c.item->grid;
+                cloudsOf_ = c.item->clouds;
                 const float m = c.item->mostLocal ? c.item->mostLocal(f.scene) : 0.f;
                 mostLocal = std::isfinite(m) ? std::clamp(m, 0.f, 1.f) : 0.f;
             }
@@ -99,6 +102,7 @@ public:
         const float placedAmount = std::min(std::max(PrecipitationNow(*w) * kPlaceMostMore, mostLocal), 1.f);
         // 降るもの (それぞれの向きの向きの地図つき) と、濡れたもの (向きごとの地図)。
         const Color light = LightOf(f.sky);
+        shaftLight_ = light;
         // 霧 (と、どしゃぶり・吹雪のぶん): 色は天候から、空気中の光で決まる。
         if (const float fog = FogOf(now); fog > 0) {
             const Color c = FogColorOf(now, light);
@@ -224,6 +228,11 @@ public:
             if (const auto strike = StrikeAt(f.seconds); strike && BoltReady(f.gfx)) {
                 out.push_back([this, s = *strike](const space3d::ExtraDrawContext& dc) { DrawBolt(dc, s); });
             }
+        }
+        // 遠くの雨の幕 (描いた雨雲の下: 雨粒の見えない所)。粒より先 (遠くにある)。
+        if (cloudsOf_ && scene_ && w && f.atmosphere && ShaftReady(f.gfx)) {
+            const WeatherNow now = NowOf(*w);
+            out.push_back([this, seconds = f.seconds, wind = Vec2{now.windX, now.windZ}](const space3d::ExtraDrawContext& dc) { DrawShafts(dc, seconds, wind); });
         }
         if (falls_.empty() || !Ready(f.gfx)) return;
         for (const Precipitation& p : falls_) {
@@ -663,6 +672,135 @@ private:
         ctx->OMSetBlendState(blendBefore.Get(), factorBefore, maskBefore);
         ctx->RSSetState(rasterBefore.Get());
     }
+
+    // 雨の幕のシェーダーと頂点 (新しいデバイスのたびに作り直す)。
+    bool ShaftReady(platform::Gfx& gfx) {
+        if (shaftGeneration_ == gfx.Generation() && (shaftVs_ || shaftFailed_)) return shaftVs_ != nullptr;
+        shaftGeneration_ = gfx.Generation();
+        shaftVs_.Reset();
+        shaftPs_.Reset();
+        shaftLayout_.Reset();
+        shaftCb_.Reset();
+        shaftVb_.Reset();
+        shaftBlend_.Reset();
+        shaftRaster_.Reset();
+        shaftFailed_ = false;
+        ID3D11Device* device = gfx.D3D();
+        if (!device) return false;
+        const std::string text = kRainShaftHlsl;
+        Ptr<ID3DBlob> vs, ps;
+        std::string error;
+        D3D11_BUFFER_DESC cd{};
+        cd.Usage = D3D11_USAGE_DEFAULT;
+        cd.ByteWidth = sizeof(ShaftConstants);
+        cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        D3D11_BUFFER_DESC vd{};
+        vd.Usage = D3D11_USAGE_DYNAMIC;
+        vd.ByteWidth = static_cast<UINT>(kMostShafts * 6 * sizeof(ShaftVertex));
+        vd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        vd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        // 透ける (アルファで重ねる。絵のアルファは濃くなるだけ)。
+        D3D11_BLEND_DESC bl{};
+        bl.RenderTarget[0].BlendEnable = TRUE;
+        bl.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+        bl.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+        bl.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+        bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+        bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+        bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        D3D11_RASTERIZER_DESC rd{};
+        rd.FillMode = D3D11_FILL_SOLID;
+        rd.CullMode = D3D11_CULL_NONE;
+        rd.DepthClipEnable = TRUE;
+        rd.MultisampleEnable = TRUE;
+        const D3D11_INPUT_ELEMENT_DESC layout[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 1, DXGI_FORMAT_R32G32B32_FLOAT, 0, 20, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        };
+        if (!Compile(text, "ShaftVS", "vs_4_0", vs, error) || !Compile(text, "ShaftPS", "ps_4_0", ps, error) ||
+            FAILED(device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &shaftVs_)) ||
+            FAILED(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &shaftPs_)) ||
+            FAILED(device->CreateInputLayout(layout, 3, vs->GetBufferPointer(), vs->GetBufferSize(), &shaftLayout_)) ||
+            FAILED(device->CreateBuffer(&cd, nullptr, &shaftCb_)) || FAILED(device->CreateBuffer(&vd, nullptr, &shaftVb_)) ||
+            FAILED(device->CreateBlendState(&bl, &shaftBlend_)) || FAILED(device->CreateRasterizerState(&rd, &shaftRaster_))) {
+            log::Error("遠くの雨を描く準備ができません: {}", error);
+            shaftVs_.Reset();
+            shaftFailed_ = true;
+            return false;
+        }
+        return true;
+    }
+
+    // 遠くの雨の幕: カメラのまわりの雲の地図を聞き、雨の降るマスに雨雲の層から地面の下まで立てて、後ろから描く。
+    void DrawShafts(const space3d::ExtraDrawContext& dc, double seconds, Vec2 wind) {
+        if (!shaftVs_ || !cloudsOf_ || !scene_) return;
+        cloudsOf_(*scene_, dc.eye, shaftMap_);
+        RainShaftsOf(shaftMap_, kCloudMapCells, kCloudMapCell, dc.eye, shafts_);
+        if (shafts_.empty()) return;
+        const float top = dc.eye.y + space3d::kRainCloudHeight;
+        const float bottom = std::min(dc.eye.y - 40.f, -5.f);  // (地面の下まで: 地面が隠す)
+        ShaftQuads(shafts_, dc.eye, bottom, top, wind, shaftVertices_);
+        const UINT count = static_cast<UINT>(std::min<size_t>(shaftVertices_.size(), kMostShafts * 6));
+        ID3D11DeviceContext* ctx = dc.ctx;
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        if (FAILED(ctx->Map(shaftVb_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+        std::memcpy(mapped.pData, shaftVertices_.data(), count * sizeof(ShaftVertex));
+        ctx->Unmap(shaftVb_.Get(), 0);
+        ShaftConstants k{};
+        const space3d::Mat4 viewProj = dc.projection * dc.view;
+        std::memcpy(k.viewProj, &viewProj.m[0][0], sizeof(k.viewProj));
+        k.light[0] = shaftLight_.r, k.light[1] = shaftLight_.g, k.light[2] = shaftLight_.b;
+        k.look[0] = static_cast<float>(std::fmod(std::max(seconds, 0.0), 1000.0)), k.look[1] = 8.f, k.look[2] = 30.f, k.look[3] = kShaftReach;
+        ctx->UpdateSubresource(shaftCb_.Get(), 0, nullptr, &k, 0, 0);
+        // 前の描画のステートは、描いた後に戻す (深度: ExtraDraw が受け取るとおり - テストする、書かない)。
+        Ptr<ID3D11BlendState> blendBefore;
+        Ptr<ID3D11RasterizerState> rasterBefore;
+        Ptr<ID3D11InputLayout> layoutBefore;
+        float factorBefore[4] = {};
+        UINT maskBefore = 0xFFFFFFFF;
+        ctx->OMGetBlendState(&blendBefore, factorBefore, &maskBefore);
+        ctx->RSGetState(&rasterBefore);
+        ctx->IAGetInputLayout(&layoutBefore);
+        const float factor[4] = {};
+        ctx->OMSetBlendState(shaftBlend_.Get(), factor, 0xFFFFFFFF);
+        ctx->RSSetState(shaftRaster_.Get());
+        ID3D11Buffer* cb = shaftCb_.Get();
+        ID3D11Buffer* vb = shaftVb_.Get();
+        const UINT stride = sizeof(ShaftVertex), offset = 0;
+        ctx->IASetInputLayout(shaftLayout_.Get());
+        ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->VSSetConstantBuffers(4, 1, &cb);
+        ctx->PSSetConstantBuffers(4, 1, &cb);
+        ctx->VSSetShader(shaftVs_.Get(), nullptr, 0);
+        ctx->PSSetShader(shaftPs_.Get(), nullptr, 0);
+        ctx->Draw(count, 0);
+        ID3D11Buffer* none = nullptr;
+        const UINT zero = 0;
+        ctx->VSSetConstantBuffers(4, 1, &none);
+        ctx->PSSetConstantBuffers(4, 1, &none);
+        ctx->IASetVertexBuffers(0, 1, &none, &zero, &zero);
+        ctx->IASetInputLayout(layoutBefore.Get());
+        ctx->OMSetBlendState(blendBefore.Get(), factorBefore, maskBefore);
+        ctx->RSSetState(rasterBefore.Get());
+    }
+
+    Ptr<ID3D11VertexShader> shaftVs_;
+    Ptr<ID3D11PixelShader> shaftPs_;
+    Ptr<ID3D11InputLayout> shaftLayout_;
+    Ptr<ID3D11Buffer> shaftCb_, shaftVb_;
+    Ptr<ID3D11BlendState> shaftBlend_;
+    Ptr<ID3D11RasterizerState> shaftRaster_;
+    uint64_t shaftGeneration_ = ~uint64_t{0};
+    bool shaftFailed_ = false;
+    // 雲の地図に答える者 (null: いない)、このフレームの雨を照らす光、使い回す入れ物。
+    void (*cloudsOf_)(const game_production::Scene&, Vec3, PlaceClouds&) = nullptr;
+    Color shaftLight_{0.6f, 0.6f, 0.65f, 1};
+    PlaceClouds shaftMap_;
+    std::vector<RainShaft> shafts_;
+    std::vector<ShaftVertex> shaftVertices_;
 
     Ptr<ID3D11VertexShader> boltVs_;
     Ptr<ID3D11PixelShader> boltPs_;

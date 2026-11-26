@@ -564,6 +564,26 @@ RM_TEST(Climate_CloudWeather) {
     places[0].item->grid(sc, {150, 0, 0}, 150.f, 3, grid);  // (x: 0, 150, 300)
     CHECK(Near(grid[3].more, 1.f) && grid[3].local == 0.f && grid[4].local == 0.f && Near(grid[5].local, 0.7f));
     CHECK(places[0].item->mostLocal && Near(places[0].item->mostLocal(sc), 0.7f));
+    // 雨は描いた境目の外へにじまない (縁 x = 320 のすぐ内と外)。
+    weather::WeatherPlace edge[1];
+    places[0].item->grid(sc, {319, 0, 0}, 1.f, 1, edge);
+    CHECK(Near(edge[0].local, 0.7f));
+    places[0].item->grid(sc, {321, 0, 0}, 1.f, 1, edge);
+    CHECK(edge[0].local == 0.f);
+    // 風で運ばれる: 天候が足し合わせた風 (driftX) の分だけ、雨雲と雨は風下にある。
+    sc.Setting<weather::Weather>()->driftX = 100;
+    CHECK(CloudDriftOf(sc).x == 100.f);
+    places[0].item->grid(sc, {350, 0, 0}, 50.f, 3, grid);  // (x: 300, 350, 400)
+    CHECK(grid[3].local == 0.f && Near(grid[5].local, 0.7f));
+    {
+        weather::PlaceClouds moved;
+        places[0].item->clouds(sc, {0, 0, 0}, moved);
+        const size_t mid = weather::kCloudMapCells / 2;
+        const size_t at400 = mid * weather::kCloudMapCells + static_cast<size_t>(std::lround((400.f - moved.firstX) / weather::kCloudMapCell));
+        const size_t at300 = mid * weather::kCloudMapCells + static_cast<size_t>(std::lround((300.f - moved.firstX) / weather::kCloudMapCell));
+        CHECK(moved.rains[at400] > 0.5f && moved.rains[at300] == 0.f);
+    }
+    sc.Setting<weather::Weather>()->driftX = 0;
     const int cam = sc.Create("カメラ");
     Add<space3d::Transform>(sc, cam).position = {0, 0, 0};
     game_production::SystemContext ctx{sc, 0.016f};

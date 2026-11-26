@@ -54,6 +54,6 @@ struct WeatherPlaceInfo {
 // 一番多いもの: mostLocal の多いほう) 用意して、場所で減らす。
 inline constexpr float kPlaceMostMore = 1.5f;
 // 粒の格子の点の数 (一辺)。箱の一辺をこの数 - 1 で割った間隔で並べる。
-inline constexpr int kPlaceGrid = 7;
+inline constexpr int kPlaceGrid = 13;  // (雨の箱 24 m で 2 m おき: 雨雲の境目の外へ粒がにじまない)
 
 }  // namespace rm::weather

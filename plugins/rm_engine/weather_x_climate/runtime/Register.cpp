@@ -17,18 +17,23 @@ namespace {
 void Grid(const game_production::Scene& scene, Vec3 center, float step, int count, weather::WeatherPlace* out) {
     if (!out || count <= 0) return;
     const climate::ClimateField field(scene);
+    const Vec2 drift = CloudDriftOf(scene);
     const float half = static_cast<float>(count - 1) * 0.5f;
     for (int z = 0; z < count; ++z) {
         for (int x = 0; x < count; ++x) {
             const Vec3 at{center.x + (static_cast<float>(x) - half) * step, center.y, center.z + (static_cast<float>(z) - half) * step};
-            out[z * count + x] = PlaceOf(field.At(at));
+            climate::ClimateHere here = field.At(at);
+            DriftedClouds(field, {at.x, at.z}, drift, here);
+            out[z * count + x] = PlaceOf(here);
         }
     }
 }
 
 float MostLocal(const game_production::Scene& scene) { return MostLocalOf(scene); }
 
-void Clouds(const game_production::Scene& scene, Vec3 eye, weather::PlaceClouds& out) { CloudMapFor(out, climate::ClimateField(scene), eye); }
+void Clouds(const game_production::Scene& scene, Vec3 eye, weather::PlaceClouds& out) {
+    CloudMapFor(out, climate::ClimateField(scene), eye, CloudDriftOf(scene));
+}
 
 const weather::WeatherPlaceInfo kPlace{&Grid, &MostLocal, &Clouds};
 
@@ -45,7 +50,8 @@ void RunPlace(game_production::SystemContext& ctx) {
     }
     const climate::ClimateField field(ctx.scene);
     const float dt = std::isfinite(ctx.dt) ? std::max(ctx.dt, 0.f) : 0.f;
-    const climate::ClimateHere here = field.At(at);
+    climate::ClimateHere here = field.At(at);
+    DriftedClouds(field, {at.x, at.z}, {w->driftX, w->driftZ}, here);
     Approach(w->placeSnow, w->placeMore, w->placeLocal, PlaceOf(here), dt);
     weather::PlaceCellsFor(*w, ctx.scene, at, kPlace);
     if (field.HasClouds()) {
@@ -57,6 +63,18 @@ void RunPlace(game_production::SystemContext& ctx) {
 }
 
 }  // namespace
+
+Vec2 CloudDriftOf(const game_production::Scene& scene) {
+    const weather::Weather* w = scene.Setting<weather::Weather>();
+    if (!w || !std::isfinite(w->driftX) || !std::isfinite(w->driftZ)) return {0, 0};
+    return {w->driftX, w->driftZ};
+}
+
+void DriftedClouds(const climate::ClimateField& field, Vec2 xz, Vec2 drift, climate::ClimateHere& here) {
+    const Vec2 from{xz.x - drift.x, xz.y - drift.y};
+    field.CloudsAt(from, -1.f, here.cloudWeight, here.cloudAmount);
+    field.RainAt(from, 0.f, here.rainWeight, here.rainAmount);
+}
 
 float SnowShareOf(float celsius) {
     if (!std::isfinite(celsius)) return 0.f;
@@ -111,7 +129,7 @@ void ApproachClouds(float& placeClouds, float& placeShare, float weight, float a
     if (weight > 0) ApproachValue(placeClouds, amount, dt);
 }
 
-void CloudMapFor(weather::PlaceClouds& out, const climate::ClimateField& field, Vec3 eye) {
+void CloudMapFor(weather::PlaceClouds& out, const climate::ClimateField& field, Vec3 eye, Vec2 drift) {
     out.shares.clear();
     out.amounts.clear();
     out.rains.clear();
@@ -127,7 +145,7 @@ void CloudMapFor(weather::PlaceClouds& out, const climate::ClimateField& field, 
     out.rains.assign(size_t{n} * n, 0.f);
     for (int z = 0; z < n; ++z) {
         for (int x = 0; x < n; ++x) {
-            const Vec2 at{firstX + static_cast<float>(x) * cell, firstZ + static_cast<float>(z) * cell};
+            const Vec2 at{firstX + static_cast<float>(x) * cell - drift.x, firstZ + static_cast<float>(z) * cell - drift.y};
             float share = 0, amount = 0, rainShare = 0, rain = 0;
             field.CloudsAt(at, cell * 0.5f, share, amount);
             field.RainAt(at, cell * 0.5f, rainShare, rain);

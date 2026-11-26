@@ -36,8 +36,14 @@ void Approach(float& placeSnow, float& placeMore, float& placeLocal, const weath
 // カメラのいる所の塗った雲 (割合 `weight`・量 `amount`) へ近づける (まだ無い (placeClouds < 0): すぐに)。
 // 量は、塗った所にいるときだけ動かす (割合 0 の所の量は意味が無い)。
 void ApproachClouds(float& placeClouds, float& placeShare, float weight, float amount, float dt);
+// 描いた雲と雨雲を運んだ風 (x, z。m): 天候が Play の間に足し合わせた風 (Weather::driftX / Z)。天候が無い: 0。
+// 描いた雲と雨雲は、描いた所から風下へこの分だけ動いた所にある (強い風ほど速く動く)。
+Vec2 CloudDriftOf(const game_production::Scene& scene);
+// 場所 `xz` の、描いた雲と雨雲 (風で運ばれた分を戻した所を読む)。雨雲は点で読む (描いた境目の外へにじませない)。
+void DriftedClouds(const climate::ClimateField& field, Vec2 xz, Vec2 drift, climate::ClimateHere& here);
 // カメラ `eye` のまわりの雲の地図 (weather::PlaceClouds) を `field` から書く: マスの真ん中のまわり 1 マス
-// 四方の、塗った雲の割合と量・その場所だけ降る量 (雨雲の割合 x 降る量)。雲も雨雲も描いていない地図: 空にする。
-void CloudMapFor(weather::PlaceClouds& out, const climate::ClimateField& field, Vec3 eye);
+// 四方の、塗った雲の割合と量・その場所だけ降る量 (雨雲の割合 x 降る量)。風で運ばれた分 `drift` だけずらす。
+// 雲も雨雲も描いていない地図: 空にする。
+void CloudMapFor(weather::PlaceClouds& out, const climate::ClimateField& field, Vec3 eye, Vec2 drift = {0, 0});
 
 }  // namespace rm::weather_x_climate

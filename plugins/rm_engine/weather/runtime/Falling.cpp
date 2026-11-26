@@ -20,7 +20,7 @@ cbuffer Fall : register(b4) {
     float4 precipWind;   // xy: 今の風 (m/s、ワールドの x z)、zw: 風が運んだ距離
     float4 precipFall;   // x: 最小の落下 (m/s)、y: それぞれがさらに速くなれる量、z: 風がどれだけ運ぶか (Falling.h の FallOf)
     float4 precipPlace;  // 場所ごとの降り方: x: 格子の間隔 (m)、y: 一辺の点の数、z: 1 = 使う。w: 積もった雪の深さ (m)
-    float4 precipPlaceSnow[13];  // 格子の点ごとの雪の割合 (4 つずつ。行が z、列が x)
+    float4 precipPlaceSnow[43];  // 格子の点ごとの雪の割合 (4 つずつ。行が z、列が x)
 };
 float PlaceCell(int k) { return precipPlaceSnow[k >> 2][k & 3]; }
 // 目からの横のずれ `rel` (x z) の場所で、降るもののうち雪の割合 (格子を線形に補間)。

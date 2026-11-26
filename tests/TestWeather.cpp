@@ -13,6 +13,7 @@
 #include "rm_engine/space3d/runtime/View.h"
 #include "rm_engine/weather/runtime/Falling.h"
 #include "rm_engine/weather/runtime/Lightning.h"
+#include "rm_engine/weather/runtime/RainShafts.h"
 #include "rm_engine/weather/runtime/Weather.h"
 
 #include <Windows.h>
@@ -159,6 +160,51 @@ RM_TEST(Weather_SkyLook) {
 
 // 稲妻 (Lightning.h、2026-11-26): 空の閃光と同じ時に起き、光ってから kBoltLife 秒で消える。明るさは強く光る →
 // 暗く → もう一度 → 残光。形は雲の下から地面までつながった幹と、細く暗い枝。場所はカメラから遠すぎず近すぎない。
+// 遠くの雨の幕: 降る所だけ・近すぎる所と遠すぎる所は無し・遠い順・カメラの方を向いて風下へ傾く・シェーダー。
+RM_TEST(Weather_RainShafts) {
+    constexpr int n = 8;
+    constexpr float cell = 24.f;
+    PlaceClouds map;
+    map.firstX = 0, map.firstZ = 0;
+    map.rains.assign(n * n, 0.f);
+    map.rains[0] = 1.f;           // (0, 0): カメラの真下 -> 近すぎる (雨粒が見える)
+    map.rains[2 * n + 5] = 0.6f;  // (120, 48)
+    map.rains[6 * n + 1] = 0.3f;  // (24, 144)
+    map.rains[7 * n + 7] = 0.01f; // 少なすぎる
+    std::vector<RainShaft> shafts;
+    RainShaftsOf(map, n, cell, {0, 2, 0}, shafts);
+    CHECK(shafts.size() == 2);
+    if (shafts.size() == 2) {
+        CHECK(shafts[0].x == 24.f && shafts[0].z == 144.f && Near(shafts[0].rain, 0.3f));  // 遠いほうが先
+        CHECK(shafts[1].x == 120.f && shafts[1].z == 48.f && Near(shafts[1].rain, 0.6f) && shafts[1].width > cell);
+    }
+    // ずれた地図でも、同じ所は同じ模様。
+    PlaceClouds moved = map;
+    moved.firstX = -cell;
+    moved.rains.assign(n * n, 0.f);
+    moved.rains[2 * n + 6] = 0.6f;  // (同じ x 120)
+    std::vector<RainShaft> again;
+    RainShaftsOf(moved, n, cell, {0, 2, 0}, again);
+    CHECK(again.size() == 1 && shafts.size() == 2 && again[0].seed == shafts[1].seed);
+    PlaceClouds distant = map;
+    distant.firstX = kShaftReach + 100;
+    RainShaftsOf(distant, n, cell, {0, 2, 0}, again);
+    CHECK(again.empty());
+    map.rains.pop_back();
+    RainShaftsOf(map, n, cell, {0, 2, 0}, again);
+    CHECK(again.empty());
+    // 板: カメラの方を向き (横の向きはカメラへの向きに直角)、下から上へ、上は風上へずれる。
+    const RainShaft one{100, 0, 20, 0.5f, 7};
+    std::vector<ShaftVertex> quads;
+    ShaftQuads(std::span<const RainShaft>(&one, 1), {0, 2, 0}, -10, 170, {0, 0}, quads);
+    CHECK(quads.size() == 6);
+    CHECK(Near(quads[0].position, {100, -10, 10}) && Near(quads[1].position, {100, -10, -10}) && Near(quads[2].position, {100, 170, -10}));
+    CHECK(quads[2].v == 1.f && quads[0].v == 0.f && Near(quads[0].away, 100) && quads[0].rain == 0.5f);
+    ShaftQuads(std::span<const RainShaft>(&one, 1), {0, 2, 0}, -10, 170, {9, 0}, quads);
+    CHECK(Near(quads[2].position.x, 100 - 180) && Near(quads[1].position.x, 100));  // (風 9 m/s、高さ 180 m: 180 m 風上へ)
+    CHECK(Compiles(kRainShaftHlsl, "ShaftVS", "vs_4_0") && Compiles(kRainShaftHlsl, "ShaftPS", "ps_4_0"));
+}
+
 RM_TEST(Weather_LightningBolt) {
     // 起きる時: 空が光っている時は、いつも稲妻も見えている (同じ数から決まる)。
     Weather storm = Of(WeatherPreset::Storm);

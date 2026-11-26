@@ -71,7 +71,7 @@ struct FallConstants {
     float placeSnow[(kPlaceGridPoints + 3) / 4 * 4];  // 格子の点ごとの雪の割合 (行が z、列が x)
 };
 static_assert(sizeof(FallConstants) % 16 == 0);
-static_assert((kPlaceGridPoints + 3) / 4 == 13, "kFallHlsl の precipPlaceSnow[13] と合わせる");
+static_assert((kPlaceGridPoints + 3) / 4 == 43, "kFallHlsl の precipPlaceSnow[43] と合わせる");
 
 // 濡れ と 積雪: すべての面への働き (3D 空間の RenderFrame::surface: Surface(...)) とその数値 -
 // 雨と雪の降り方ごとに、それを見る 向きの地図 (`maps`、-1: なし - 全部開いている)、覆うものの
