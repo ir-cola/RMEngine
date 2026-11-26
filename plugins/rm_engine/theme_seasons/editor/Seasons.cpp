@@ -78,9 +78,9 @@ Color MoonHalo() { return Color::Hex(0xFFE9A8, 0.04f); }      // お月見: 月�
 Color Moon() { return Color::Hex(0xFFE7A0, 0.20f); }          // (上に文字が来ても読めるように、ごく薄く: 2026-11-26 の 2 回目)
 Color MoonSpot() { return Color::Hex(0xE2BF72, 0.12f); }
 Color Star() { return Color::Hex(0xFFFFFF, 0.38f); }          // 夜空の星
-Color LanternPanel() { return Color::Hex(0xFFFFFF, 0.10f); }  // 提灯の真ん中の白い面 (胴の影の上に重ねる)
 Color FallNightShade() { return theme::Accent.Alpha(0.17f); }  // お月見のシルエット (ほかの季節より少し明るく)
 Color WinterGreen() { return Color::Hex(0x3DBA74, 0.30f); }   // クリスマスのシルエット (緑で濃いめ)
+Color StarYellow() { return Color::Hex(0xFFD84D, 0.70f); }    // ツリーのてっぺんの星 (黄色: 2026-11-26 の 3 回目)
 Color DoorDark() { return Color::Hex(0x0E1828, 0.85f); }      // かまくらの入り口
 Color DoorLight() { return Color::Hex(0xFFB357, 0.60f); }     // その中の灯り
 
@@ -296,13 +296,7 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
                 pic.push_back({ornament::BeachScene({w.Right() - 0.62f * h, w.Bottom() - 0.07f * h}, h, false), theme::OrnamentColor()});
             }
             Sea(pic, w, season::SeaFar(), season::SeaNear());
-            {
-                // 提灯: 胴と、少し明るい真ん中の白い面を、同じ動かし方で左下の箱に収める。
-                ornament::ChochinShapes lantern = ornament::Chochin({0, 0}, 1.f);
-                const ui::shape::Fit fit = ui::shape::FitOf(lantern.body, editor::w::OrnamentCorner(w));
-                pic.push_back({ui::shape::Transformed(lantern.body, fit), theme::OrnamentColor()});
-                pic.push_back({ui::shape::Transformed(lantern.panel, fit), season::LanternPanel()});
-            }
+            Silhouette(pic, w, ornament::Chochin({0, 0}, 1.f));  // (1 色: 2026-11-26 の 3 回目)
             break;
         case Kind::FallNight:
             Stars(pic, w);
@@ -335,7 +329,15 @@ Picture Make(Kind kind, const Rect& w, bool floating, const Rect& screen) {
                 const float size = std::clamp(w.w * 0.06f, 55.f, 100.f);  // (2026-11-26 の 3 回目: 小さく)
                 pic.push_back({ornament::SantaSleigh({w.x + w.w * 0.5f, w.y + std::max(w.h * 0.2f, 1.2f * size)}, size, -14.f),
                                season::WinterGreen()});
-                Silhouette(pic, w, ornament::ChristmasTree({0, 0}, 1.f, 0.f), season::WinterGreen());
+                {
+                    // ツリー (緑) と星 (黄色) を、ツリー全体に合わせた同じ動かし方で左下の箱に収める。
+                    ornament::ChristmasTreeShapes tree = ornament::ChristmasTree({0, 0}, 1.f, 0.f);
+                    ui::Path whole = tree.tree;
+                    whole.steps.insert(whole.steps.end(), tree.star.steps.begin(), tree.star.steps.end());
+                    const ui::shape::Fit fit = ui::shape::FitOf(whole, editor::w::OrnamentCorner(w));
+                    pic.push_back({ui::shape::Transformed(tree.tree, fit), season::WinterGreen()});
+                    pic.push_back({ui::shape::Transformed(tree.star, fit), season::StarYellow()});
+                }
                 WinterGround(pic, w, screen, true);
             }
             break;

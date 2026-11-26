@@ -245,8 +245,7 @@ ui::Path SandCastle(Vec2 base, float h) {
     lump(0.36f, 0.70f, 0.56f, 2, -0.025f);
     lump(-0.19f, 0.19f, 0.86f, 3, 0.015f);    // 主塔
     AddEllipse(p, at(0.f, 0.86f + 0.07f), 0.07f * h, 0.06f * h, 0);  // てっぺんの丸いこぶ
-    // 足元の砂の山 (浜の上ではなく、浜に埋まっている)。
-    AddEllipse(p, at(0.f, 0.02f), 0.86f * h, 0.12f * h, 0);
+    // (足元の砂の山は外した: 浜の坂の左で飛び出して見えた。2026-11-26 の 3 回目。城の足は浜に少し埋めて置く)
     return p;
 }
 
@@ -281,7 +280,7 @@ ui::Path BeachScene(Vec2 base, float h, bool parasol) {
         ui::Path shade = BeachParasol({base.x + 0.18f * h, base.y - 0.08f * h}, 0.86f * h, 12.f);
         p.steps.insert(p.steps.end(), shade.steps.begin(), shade.steps.end());
     }
-    ui::Path castle = SandCastle({base.x - 0.36f * h, base.y - 0.09f * h}, 0.30f * h);
+    ui::Path castle = SandCastle({base.x - 0.30f * h, base.y - 0.085f * h}, 0.22f * h);  // (小さく: 2026-11-26 の 3 回目)
     p.steps.insert(p.steps.end(), castle.steps.begin(), castle.steps.end());
     return p;
 }
@@ -636,8 +635,9 @@ ui::Path TsukimiDango(Vec2 center, float r) {
     return p;
 }
 
-ui::Path ChristmasTree(Vec2 center, float r, float degreesCcw) {
-    ui::Path p;
+ChristmasTreeShapes ChristmasTree(Vec2 center, float r, float degreesCcw) {
+    ChristmasTreeShapes k;
+    ui::Path& p = k.tree;
     auto at = [&](float x, float y) { return Add(center, Rotate({x * r, y * r}, degreesCcw)); };
     // 3 段: 上ほど小さく、下の段に少し重なる。
     struct Tier {
@@ -649,8 +649,8 @@ ui::Path ChristmasTree(Vec2 center, float r, float degreesCcw) {
     }
     const Vec2 trunk[4] = {at(-0.11f, 0.60f), at(0.11f, 0.60f), at(0.11f, 0.86f), at(-0.11f, 0.86f)};
     AddPolygon(p, trunk);
-    ui::shape::AddStar(p, at(0, -0.84f), 5, 0.16f * r, 0.07f * r, degreesCcw);
-    return p;
+    ui::shape::AddStar(k.star, at(0, -0.84f), 5, 0.16f * r, 0.07f * r, degreesCcw);
+    return k;
 }
 
 
@@ -1095,11 +1095,10 @@ ui::Path WaterYoyo(Vec2 center, float radius) {
 }
 
 
-ChochinShapes Chochin(Vec2 center, float radius) {
+ui::Path Chochin(Vec2 center, float radius) {
     // 提灯 (2026-11-26 の 3 回目: 夏の夜の左下。ユーザーがくれた絵の形): 上に細い針金の持ち手 (縦長のアーチ)、
-    // 少し反った幅の広い上の帯、まるい胴、細い下の帯。胴の真ん中の白い面 (`panel`) は別の形で、少し明るく塗る。
-    // 竹の骨は胴と白い面の両方に、細い穴の線として通す。
-    ChochinShapes k;
+    // 少し反った幅の広い上の帯、まるい胴、細い下の帯。1 色 (ユーザーの希望)。竹の骨は胴の細い穴の線。
+    ui::Path p;
     const Place at{center, radius, 0.f};
     {
         std::vector<Vec2> arch;
@@ -1109,34 +1108,18 @@ ChochinShapes Chochin(Vec2 center, float radius) {
             arch.push_back(at(0.27f * std::sin(t), -0.5f - 0.5f * std::cos(t)));
             widths.push_back(0.028f * radius);
         }
-        AddStroke(k.body, arch, widths);
+        AddStroke(p, arch, widths);
     }
-    AddShape(k.body, at, {{-0.29f, -0.55f}, {0, -0.575f}, {0.29f, -0.55f}, {0.29f, -0.44f}, {0, -0.425f}, {-0.29f, -0.44f}});  // 上の帯
-    AddEllipse(k.body, at(0, 0.05f), 0.56f * radius, 0.52f * radius, 0);                                                 // 胴
-    AddShape(k.body, at, {{-0.22f, 0.53f}, {0, 0.545f}, {0.22f, 0.53f}, {0.22f, 0.65f}, {0, 0.665f}, {-0.22f, 0.65f}});    // 下の帯
-    // 白い面: 上の帯から下の帯まで、真ん中がふくらむ縦長の形。
-    std::vector<Vec2> panel;
-    for (int i = 0; i <= 24; ++i) {
-        const float u = static_cast<float>(i) / 24.f;  // 0 = 上 .. 1 = 下
-        panel.push_back(at(0.13f + 0.15f * std::sin(kPi * u) - 0.04f * u, -0.43f + 0.97f * u));
-    }
-    for (int i = 24; i >= 0; --i) {
-        const float u = static_cast<float>(i) / 24.f;
-        panel.push_back(at(-(0.13f + 0.15f * std::sin(kPi * u) - 0.04f * u), -0.43f + 0.97f * u));
-    }
-    AddPolygon(k.panel, panel);
-    // 竹の骨: 胴の幅いっぱいの細い横線 (白い面の上も同じ所)。
-    for (int i = 0; i < 11; ++i) {
+    AddShape(p, at, {{-0.29f, -0.55f}, {0, -0.575f}, {0.29f, -0.55f}, {0.29f, -0.44f}, {0, -0.425f}, {-0.29f, -0.44f}});  // 上の帯
+    AddEllipse(p, at(0, 0.05f), 0.56f * radius, 0.52f * radius, 0);                                                 // 胴
+    AddShape(p, at, {{-0.22f, 0.53f}, {0, 0.545f}, {0.22f, 0.53f}, {0.22f, 0.65f}, {0, 0.665f}, {-0.22f, 0.65f}});    // 下の帯
+    for (int i = 0; i < 11; ++i) {  // 竹の骨: 胴の幅いっぱいの細い横線
         const float y = -0.36f + 0.083f * static_cast<float>(i);
         const float d = (y - 0.05f) / 0.52f;
         const float half = 0.56f * std::sqrt(std::max(0.f, 1.f - d * d)) * 0.9f;
-        AddHole(k.body, at(0, y), half * radius, 0.009f * radius, 0);
-        // 白い面の骨は、その幅の中だけ (外にはみ出した穴は、塗りの巻き数が -1 になって逆に塗られる)。
-        const float u = (y + 0.43f) / 0.97f;
-        const float panelHalf = (0.13f + 0.15f * std::sin(kPi * u) - 0.04f * u) * 0.92f;
-        AddHole(k.panel, at(0, y), panelHalf * radius, 0.009f * radius, 0);
+        AddHole(p, at(0, y), half * radius, 0.009f * radius, 0);
     }
-    return k;
+    return p;
 }
 
 }  // namespace rm::theme_seasons::ornament

@@ -371,7 +371,7 @@ RM_TEST(Ornament_ShapesStayInTheirPlace) {
     // 浜辺: 右下の角だけ。その岸は (800 - 300, 600) から (800, 600 - 200) まで。
     // 砂の城: 土台の上 (その山は少し下、砂の中)。頼まれた幅と高さで。
     const Bounds castle = BoundsOf(SandCastle({400, 500}, 100));
-    CHECK(castle.x0 > 400 - 90 && castle.x1 < 400 + 90 && castle.y0 > 500 - 100 && castle.y1 < 500 + 12);
+    CHECK(castle.x0 > 400 - 90 && castle.x1 < 400 + 90 && castle.y0 > 500 - 100 && castle.y1 < 500 + 1);  // (足元の砂の山は無い)
     CHECK(AllClockwise(SandCastle({400, 500}, 100)));
     // 夏のシルエット: 下の縁の盛り上がり。パラソルがその上で一番高い。
     const Bounds scene = BoundsOf(BeachScene({500, 600}, 300));
@@ -599,8 +599,9 @@ RM_TEST(Ornament_NightShapes) {
     CHECK(InsideAndClockwise(HanamiDango(c, 100, -30), 400, 400, 600, 600, 2.f));
     CHECK(InsideAndClockwise(TsukimiDango(c, 100), 400, 400, 600, 600, 2.f));
     CHECK(std::fabs(BoundsOf(TsukimiDango(c, 100)).y0 - 400) < 1.f);  // てっぺんは半径の所
-    CHECK(InsideAndClockwise(ChristmasTree(c, 100, 0), 400, 400, 600, 600, 2.f));
-    CHECK(std::fabs(BoundsOf(ChristmasTree(c, 100, 0)).y0 - 400) < 1.f);  // 星の先は半径の所
+    CHECK(InsideAndClockwise(ChristmasTree(c, 100, 0).tree, 400, 400, 600, 600, 2.f));
+    CHECK(InsideAndClockwise(ChristmasTree(c, 100, 0).star, 480, 400, 520, 440, 2.f));  // 星は木のてっぺん
+    CHECK(std::fabs(BoundsOf(ChristmasTree(c, 100, 0).star).y0 - 400) < 1.f);  // 星の先は半径の所
     // 団子は串の上の端に寄る: 一番上の団子のてっぺんは半径の近く、下の 3 割は串だけ。
     const rm::ui::Path dango = HanamiDango(c, 100, 0);
     CHECK(BoundsOf(dango).y0 < 400 + 8);
@@ -610,7 +611,7 @@ RM_TEST(Ornament_NightShapes) {
     // 左下の影の案: どれも半径の中 (少しの余り)、時計回り。
     int which = 0;
     for (const rm::ui::Path& sil : {Bonbori(c, 100, 0), SakuraBranch(c, 100, 0), TokkuriSakazuki(c, 100), Goldfish(c, 100, 0), Furin(c, 100),
-                                     Kakigori(c, 100), MosquitoCoil(c, 100), ChristmasTree(c, 100, 0)}) {
+                                     Kakigori(c, 100), MosquitoCoil(c, 100), ChristmasTree(c, 100, 0).tree}) {
         const Bounds b = BoundsOf(sil);
         if (!InsideAndClockwise(sil, 380, 380, 620, 620, 4.f)) {
             const std::string why = "影の案 " + std::to_string(which) + " " + std::to_string(b.x0) + "," + std::to_string(b.y0) + " .. " +
@@ -620,16 +621,14 @@ RM_TEST(Ornament_NightShapes) {
         ++which;
     }
     // 夏の夜の別案: 半径の中。穴 (種・ビー玉・模様) があるので、時計回りでない図形もある。
-    for (const rm::ui::Path& sil : {SenkoHanabi(c, 100), Ramune(c, 100), Watermelon(c, 100), WaterYoyo(c, 100), Chochin(c, 100).body}) {
+    for (const rm::ui::Path& sil : {SenkoHanabi(c, 100), Ramune(c, 100), Watermelon(c, 100), WaterYoyo(c, 100), Chochin(c, 100)}) {
         const Bounds b = BoundsOf(sil);
         CHECK(b.figures >= 2 && b.x0 > 380 && b.x1 < 620 && b.y0 > 380 && b.y1 < 620);
     }
     CHECK(!AllClockwise(Watermelon(c, 100)) && BoundsOf(Watermelon(c, 100)).figures == 1 + 1 + 7);  // 半月・境目の線・種 7 つ
-    // 提灯: 持ち手・帯 2 つ・胴と骨 11 本。白い面は胴の内側で、同じ骨の線。持ち手のてっぺんは半径の所。
-    const ChochinShapes lantern = Chochin(c, 100);
-    const Bounds lb = BoundsOf(lantern.body), lp = BoundsOf(lantern.panel);
-    CHECK(lb.figures == 4 + 11 && lp.figures == 1 + 11 && std::fabs(lb.y0 - 400) < 1.5f);
-    CHECK(lp.x0 > lb.x0 + 20 && lp.x1 < lb.x1 - 20 && lp.y0 > lb.y0 && lp.y1 < lb.y1);
+    // 提灯: 持ち手・帯 2 つ・胴と骨 11 本 (1 色)。持ち手のてっぺんは半径の所。
+    const Bounds lb = BoundsOf(Chochin(c, 100));
+    CHECK(lb.figures == 4 + 11 && std::fabs(lb.y0 - 400) < 1.5f);
     // 花火 (リアル調): 菊・柳・牡丹。光の筋と先の星は半径の近くまで (柳は大きく垂れる)。
     for (const FireworkKind k : {FireworkKind::Chrysanthemum, FireworkKind::Willow, FireworkKind::Peony}) {
         const FireworkShapes f = FireworkShell(c, 100, k, 3);
@@ -798,6 +797,7 @@ RM_TEST(Gaming_Motion) {
         CHECK(m.at.x >= -4 && m.at.x < 804 && m.at.y >= -4 && m.at.y < 604 && m.alpha >= 0.f && m.alpha <= 1.f && m.hue >= 0.f && m.hue < 1.f);
     }
 }
+
 
 
 

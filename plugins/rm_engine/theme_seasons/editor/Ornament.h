@@ -128,8 +128,12 @@ GarlandShapes Garland(const ui::Rect& window, float swing, float sag, int perSwi
 void AddLantern(ui::Path& body, ui::Path& caps, Vec2 hang, float height);
 // 月見団子: 三方 (台) の上に団子を 3・2・1 と積んだもの。radius = 中心から上の団子のてっぺんまで。
 ui::Path TsukimiDango(Vec2 center, float radius);
-// クリスマスツリー: 3 段の三角の葉、幹、てっぺんの星。radius = 中心から星の先まで。
-ui::Path ChristmasTree(Vec2 center, float radius, float degreesCcw);
+// クリスマスツリー: 3 段の三角の葉と幹 (`tree`)、てっぺんの星 (`star`: 別の色で塗る。2026-11-26 の 3 回目: 黄色)。
+// radius = 中心から星の先まで。
+struct ChristmasTreeShapes {
+    ui::Path tree, star;
+};
+ChristmasTreeShapes ChristmasTree(Vec2 center, float radius, float degreesCcw);
 
 // --- 2026-11-26 の 2 回目 -------------------------------------------------------------------------
 // 風に吹かれて飛ぶ桜の花びら: 風上の上の角から、いくつかの風の道すじ (うねりながら少し下がる) に沿って、風下へ
@@ -171,11 +175,8 @@ ui::Path SenkoHanabi(Vec2 center, float radius);  // 線香花火 (こよりの�
 ui::Path Ramune(Vec2 center, float radius);       // ラムネの瓶 (口・ビー玉のふくらみ・くびれ・胴。ビー玉と丸いラベルは穴)
 ui::Path Watermelon(Vec2 center, float radius);   // 半月に切ったスイカ (皮との境目の線と種は穴)
 ui::Path WaterYoyo(Vec2 center, float radius);    // 水ヨーヨー (風船・結び目・ゴムひもと指の輪。模様の帯は穴)
-// 提灯 (夏の夜の左下。ユーザーがくれた絵の形): 針金の持ち手・上の帯・まるい胴・下の帯 (`body`) と、胴の真ん中の
-// 白い面 (`panel`: body より少し明るく、上に塗る)。竹の骨はどちらにも穴の線。radius = 持ち手のてっぺんまで、だいたい。
-struct ChochinShapes {
-    ui::Path body, panel;
-};
-ChochinShapes Chochin(Vec2 center, float radius);
+// 提灯 (夏の夜の左下。ユーザーがくれた絵の形): 針金の持ち手・上の帯・まるい胴・下の帯。1 色。竹の骨は穴の線。
+// radius = 持ち手のてっぺんまで、だいたい。
+ui::Path Chochin(Vec2 center, float radius);
 
 }  // namespace rm::theme_seasons::ornament
