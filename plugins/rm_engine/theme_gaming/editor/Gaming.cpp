@@ -1,6 +1,7 @@
 #include "rm_engine/theme_gaming/editor/Gaming.h"
 
 #include "editor/widgets/MovingBackdrop.h"
+#include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/theme_gaming/editor/Motion.h"
 #include "rm_engine/theme_gaming/editor/Scenes.h"
@@ -19,7 +20,14 @@ namespace {
 using Microsoft::WRL::ComPtr;
 using ui::Rect;
 
-void DrawWindow(ui::Context& c, const Rect&, bool floating) { editor::w::DrawMovingBackdrop(c, scenes::kGaming, floating); }
+void Glow(ui::Context& c, const Rect& r, float corner);
+
+// ウィンドウの絵。ウィンドウの縁の虹は、フレームの終わりに一番上へもう一度くっきり描く (メニューの帯・サイドバー・
+// パネルが縁を覆っても、いつも光る: 2026-11-26 ユーザーの希望。Hub でも)。
+void DrawWindow(ui::Context& c, const Rect&, bool floating) {
+    editor::w::DrawMovingBackdrop(c, scenes::kGaming, floating);
+    c.AddOverlay([&c] { Glow(c, c.Viewport(), 0.f); });
+}
 
 void DrawSurface(ui::Context& c, const Rect& r, float corner, bool floating) {
     editor::w::DrawMovingBackdropOn(c, scenes::kGaming, r, corner, floating, scenes::kPanelStrength);
@@ -49,9 +57,10 @@ ID2D1LinearGradientBrush* RainbowBrush(ID2D1DeviceContext* dc) {
     return brush.Get();
 }
 
-// パネルの縁を時計回りに流れる虹 (ウィンドウの縁の虹と同じ時計・同じ長さで一回り)。辺ごとに、その辺に沿って
-// 色の変わるブラシで、角の丸い枠を、その辺の帯に切り取って描く (角の丸みも、となりの辺とつながる)。
-void Panel(ui::Context& c, const Rect& r, float corner) {
+// 光る枠 (マウスを乗せた物・選んだ物): 縁を時計回りに流れる虹 (ウィンドウの縁の虹と同じ時計・同じ長さで一回り)。
+// 辺ごとに、その辺に沿って色の変わるブラシで、角の丸い枠を、その辺の帯に切り取って描く (角の丸みも、となりの辺と
+// つながる)。(2026-11-26: 前はどのパネルの縁にも出していた。ユーザーの希望で、乗せた物と選んだ物だけに)
+void Glow(ui::Context& c, const Rect& r, float corner) {
     if (r.w < 8 || r.h < 8) return;
     ID2D1DeviceContext* dc = c.P().DC();
     ID2D1LinearGradientBrush* brush = RainbowBrush(dc);
@@ -91,7 +100,13 @@ void Panel(ui::Context& c, const Rect& r, float corner) {
     }
 }
 
-constexpr editor::w::OrnamentInfo kGaming{"gaming", &DrawWindow, &Panel, &DrawSurface};
+// パネルの縁: 光っていない線は紫 (テーマの枠の色)。
+void Panel(ui::Context& c, const Rect& r, float corner) {
+    if (r.w < 4 || r.h < 4) return;
+    c.P().StrokeRoundRect({r.x + 0.5f, r.y + 0.5f, r.w - 1.f, r.h - 1.f}, std::max(corner - 0.5f, 0.f), editor::theme::Border, 1.f);
+}
+
+constexpr editor::w::OrnamentInfo kGaming{"gaming", &DrawWindow, &Panel, &DrawSurface, &Glow};
 
 }  // namespace
 

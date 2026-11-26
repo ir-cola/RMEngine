@@ -62,6 +62,10 @@ struct OrnamentInfo {
     // パネルとバーの上にもう一度描く絵 (null: `window` を r で切り取って描く)。動く絵 (MovingBackdrop.h) は
     // ここで、同じフレームの絵を r に弱く足す (2026-11-26)。
     void (*surface)(ui::Context& c, const ui::Rect& r, float corner, bool floating) = nullptr;
+    // マウスを乗せた物・選んだ物の枠を光らせる (null: ふつうの見た目)。ボタン・メニューの項目・行・タブ・カードが、
+    // 乗せている間と選んでいる間に呼ぶ。描いたときは、その物のアクセントの印 (行の棒・タブの下線・カードの枠) は
+    // 描かない (2026-11-26: ゲーミングの虹)。
+    void (*glow)(ui::Context& c, const ui::Rect& r, float corner) = nullptr;
 };
 inline constexpr char kOrnamentPoint[] = "core.theme_ornament";
 // フレームの最初、ウィンドウをクリアした後: 背景にテーマの絵を描く。
@@ -72,6 +76,8 @@ void DrawBackdropOn(ui::Context& c, const ui::Rect& r, float corner = 0, bool pa
 // 箱を描かない間のボタン (メニューの項目・薄いボタン・絵だけのボタン・選んでいないタブ) の場所: テーマの絵はそこには描かない (2026-11-26: 文字の後ろの絵で
 // ボタンが見づらかった)。ボタンを描く関数が毎フレーム呼ぶ。絵を描くのはボタンより先なので、前のフレームの場所を使う。
 void KeepOrnamentOff(ui::Context& c, const ui::Rect& r);
+// 今のテーマが光る枠 (OrnamentInfo::glow) を持っていれば `r` に描いて true。
+bool DrawThemeGlow(ui::Context& c, const ui::Rect& r, float corner);
 
 // ウィンドウの枠の帯 (メニューバー、ステータスバー、サイドバー): 穏やかなグラデーション、枠なし。
 void DrawBar(ui::Context& c, const ui::Rect& r, ui::Color base);

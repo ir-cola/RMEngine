@@ -3,7 +3,7 @@
   "format": 1,
   "id": "BySeason",
   "name": "季節で切り替える",
-  "order": 0,
+  "order": 9,
   "follow": {
     "by": "season",
     "spring": { "morning": "Spring", "night": "SpringNight" },
