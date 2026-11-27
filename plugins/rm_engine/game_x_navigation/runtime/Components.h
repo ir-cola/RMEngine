@@ -5,6 +5,7 @@
 //   ナビメッシュ (NavMeshVolume)         どこを焼くかの箱・どの型で・何を焼くか・焼いた物 (.rmnav)
 //   ナビの形 (NavGeometry)              焼く物を変える: 入れない / 歩けない (壁だけ) / エリアを決める
 //   ナビのエリア (NavArea)              箱 / 円柱の中の床を、そのエリアにする (沼・道路・入ってはいけない所)
+//   ナビの動く者 (NavAgent)             ナビメッシュの上を行き先まで歩く (段階 2。スクリプトの RMNav.h で行き先を決める)
 //
 // 型とエリアは番号 (id) で指す (並べ替えても消しても、ほかは変わらない。気候の種類と同じ)。部品の欄は
 // インスペクターのドロップダウン (ComponentLook::choices) で選ぶので、番号を文字で持つ ("1")。
@@ -52,6 +53,8 @@ RM_STRUCT(Label="ナビ")
 struct NavSettings {
     RM_PROPERTY() std::vector<NavAgentType> agentTypes = DefaultAgentTypes();
     RM_PROPERTY() std::vector<NavAreaKind> areas = DefaultAreaKinds();
+    RM_PROPERTY(Edit, Label="動く者の上限", Tooltip="1 つのナビメッシュの上を同時に歩ける「ナビの動く者」の数。超えた物は歩かず、コンソールに知らせます", Min=1, Max=1000)
+    int maxAgents = 128;
 };
 
 RM_STRUCT(Label="ナビメッシュ")
@@ -92,6 +95,20 @@ struct NavArea {
     RM_PROPERTY(Edit, Label="形", Tooltip="円柱は縦 (Y) が高さ") NavAreaShape shape = NavAreaShape::Box;
     RM_PROPERTY(Edit, Label="大きさ (m)", Tooltip="箱: 幅・高さ・奥行き / 円柱: X が直径、Y が高さ。Transform の大きさを掛けます", Min=0.01, Max=100000) Vec3 size{4, 2, 4};
     RM_PROPERTY(Edit, Label="エリア", Tooltip="中の床にするエリアの種類") std::string area = "1";
+};
+
+// ナビメッシュの上を歩く物 (Transform のある物。エンティティの位置が足元)。行き先はスクリプトが決める
+// (RMNav.h の rm::NavAgent(self).SetDestination)。頼んだこと (行き先・止まる) は保存しない: Play の間のナビの世界が持つ
+// (NavWorld.h)。段階 2 は Transform を直に動かす (物理の「キャラクター」があっても: キャラクターで歩くのは段階 3)。
+RM_STRUCT(Label="ナビの動く者")
+struct NavAgent {
+    RM_PROPERTY(Edit, Label="エージェントの型", Tooltip="この型で焼いたナビメッシュの上を歩きます (体の半径・高さは型のもの)") std::string agentType = "1";
+    RM_PROPERTY(Edit, Label="速さ (m/s)", Min=0, Max=1000, Step=0.1, Decimals=2) float speed = 3.5f;
+    RM_PROPERTY(Edit, Label="加速 (m/s²)", Tooltip="速さを変える速さ。大きいほどすぐ止まり、すぐ曲がります", Min=0, Max=10000, Step=0.5, Decimals=1) float acceleration = 8.f;
+    RM_PROPERTY(Edit, Label="回る速さ (度/秒)", Tooltip="進む向きへ体 (+Z) を回す速さ。0: 向きを変えない", Min=0, Max=100000, Step=10, Decimals=0) float turnSpeed = 360.f;
+    RM_PROPERTY(Edit, Label="止まる距離 (m)", Tooltip="行き先までこれより近くなったら着いたことにして止まります (スクリプトに NavArrived)", Min=0, Max=1000, Step=0.05, Decimals=2)
+    float stoppingDistance = 0.1f;
+    RM_PROPERTY(Edit, Label="着く前にゆるめる", Tooltip="行き先の手前で、止まれるように速さを落とします。切ると全速のまま着きます") bool slowDown = true;
 };
 
 }  // namespace rm::game_x_navigation

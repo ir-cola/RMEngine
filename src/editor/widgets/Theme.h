@@ -348,6 +348,9 @@ inline Color SceneNavInner() { return Mix(SceneNavEdge(), SceneBackground(), 0.5
 inline Color NavRoute() { return IsLight ? Color::Hex(0xD9480F) : Color::Hex(0xFF9B5E); }
 inline Color NavLink() { return IsLight ? Color::Hex(0x7048E8) : Color::Hex(0xB197FC); }
 inline float MapNavFillAlpha() { return IsLight ? 0.38f : 0.34f; }
+// ナビの動く者: 体の輪と今の速さの矢印・望む速さの矢印 (薄く)。
+inline Color SceneNavAgent() { return IsLight ? Color::Hex(0x1C6FD1) : Color::Hex(0x74B3FF); }
+inline Color SceneNavDesired() { return Mix(SceneNavAgent(), SceneBackground(), 0.45f); }
 // 真上から見た地図 (気候のタブ) に塗った所の濃さ (色はユーザーのもの: 下の絵が透けるように)。
 inline float MapPaintAlpha() { return IsLight ? 0.50f : 0.45f; }
 // 地図に重ねる値の色 (気候のタブの「見る」: 0 .. 1 の値を色の段に)。気温: 寒い青 -> 暑い赤。湿り気: 乾いた

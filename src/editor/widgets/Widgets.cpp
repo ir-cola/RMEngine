@@ -1123,6 +1123,15 @@ void DrawMapRoute(ui::Context& c, std::span<const Vec2> pts) {
     }
 }
 
+void DrawMapAgent(ui::Context& c, float x, float y, float radius, float dx, float dy) {
+    const ui::Color col = theme::SceneNavAgent();
+    const float r = std::max(radius, 4.f);
+    c.P().FillCircle(x, y, r + 1.5f, theme::Panel);
+    c.P().FillCircle(x, y, r, col);
+    const float len = std::sqrt(dx * dx + dy * dy);
+    if (len > 1e-4f) c.P().Line(x, y, x + dx / len * (r + 7.f), y + dy / len * (r + 7.f), col, 2.f);
+}
+
 void DrawMapReadout(ui::Context& c, float x, float y, std::wstring_view text) {
     if (text.empty()) return;
     const float w = c.P().TextWidth(text, 11) + 12;

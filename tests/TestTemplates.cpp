@@ -21,6 +21,7 @@
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/physics/runtime/Components.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
+#include "rm_engine/game_x_navigation/runtime/Components.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <algorithm>
@@ -315,8 +316,8 @@ RM_TEST(Template_ThePlugins) {
     }
     const TemplateTree tree = BuildTemplateTree(std::move(list));
     CHECK(tree.warnings.empty());
-    CHECK(tree.templates.size() == 7);
-    for (const auto& path : std::vector<std::vector<std::string>>{{"blank"}, {"game"}, {"game", "3d"}, {"game", "3d", "physics"}, {"game", "2d"}, {"game", "2d", "scenes"}, {"game", "2d", "ui"}}) {
+    CHECK(tree.templates.size() == 8);
+    for (const auto& path : std::vector<std::vector<std::string>>{{"blank"}, {"game"}, {"game", "3d"}, {"game", "3d", "physics"}, {"game", "3d", "navigation"}, {"game", "2d"}, {"game", "2d", "scenes"}, {"game", "2d", "ui"}}) {
         CHECK(tree.At(tree.Find(path)) != nullptr);
     }
     // ゲーム を選ぶと、両方の空間と両方のコネクターが付いてくる。
@@ -325,6 +326,9 @@ RM_TEST(Template_ThePlugins) {
     // UI サンプルはゲーム UI (とそれを作る 2D 空間) を持ってくる。3D は持ってこない。
     const auto ui = TemplatePlugins(tree, tree.Find({"game", "2d", "ui"}));
     CHECK(Has(ui, "game_ui") && Has(ui, "space2d") && !Has(ui, "space3d"));
+    // ナビの見本はナビゲーションと、そのつなぎ (ゲーム制作 × ナビゲーション) を持ってくる。
+    const auto nav = TemplatePlugins(tree, tree.Find({"game", "3d", "navigation"}));
+    CHECK(Has(nav, "navigation") && Has(nav, "game_x_navigation") && Has(nav, "space3d"));
     // ... と 音 (サンプルのジャンプ音、3D / 2D テンプレートの BGM。そのコネクターも一緒に来る)。
     for (const auto& path : std::vector<std::vector<std::string>>{{"game"}, {"game", "3d"}, {"game", "2d"}}) CHECK(Has(TemplatePlugins(tree, tree.Find(path)), "audio"));
 
@@ -342,7 +346,8 @@ RM_TEST(Template_ThePlugins) {
                                      &reflect::TypeOf<game_x_2d::Spin2D>(), &reflect::TypeOf<game_ui::UiCanvas>(), &reflect::TypeOf<game_ui::UiRect>(),
                                      &reflect::TypeOf<game_ui::UiText>(), &reflect::TypeOf<game_ui::UiImage>(), &reflect::TypeOf<game_ui::UiButton>(),
                                      &reflect::TypeOf<game_ui::UiBar>(), &reflect::TypeOf<game_ui::UiStyle>(), &reflect::TypeOf<game_ui::UiInputField>(),
-                                     &reflect::TypeOf<game_ui::UiToggle>(), &reflect::TypeOf<game_ui::UiSlider>(), &reflect::TypeOf<game_ui::UiScroll>()});
+                                     &reflect::TypeOf<game_ui::UiToggle>(), &reflect::TypeOf<game_ui::UiSlider>(), &reflect::TypeOf<game_ui::UiScroll>(),
+                                     &reflect::TypeOf<game_x_navigation::NavMeshVolume>(), &reflect::TypeOf<game_x_navigation::NavAgent>()});
             // 新しい形: シーンは自分のファイルに (テンプレートの Assets/ をプロジェクトへコピー)。
             // リストには .meta の id で名前をつける。
             CHECK(!data.Find("scene"));

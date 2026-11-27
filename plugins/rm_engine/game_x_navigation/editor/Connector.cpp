@@ -37,13 +37,22 @@ std::vector<editor::inspector::Choice> AreaChoices(const Scene& scene) {
     return out;
 }
 
-std::optional<std::vector<editor::inspector::Choice>> VolumeChoices(editor::SoftwareHost&, const Scene& scene, int, const reflect::FieldPath& path) {
-    if (!FieldIs(reflect::TypeOf<NavMeshVolume>(), path, "agentType")) return std::nullopt;
+std::vector<editor::inspector::Choice> TypeChoices(const Scene& scene) {
     std::vector<editor::inspector::Choice> out;
     if (const NavSettings* s = scene.Setting<NavSettings>()) {
         for (const NavAgentType& t : s->agentTypes) out.push_back({std::to_string(t.id), Utf8ToWide(TrU8(t.name))});
     }
     return out;
+}
+
+std::optional<std::vector<editor::inspector::Choice>> VolumeChoices(editor::SoftwareHost&, const Scene& scene, int, const reflect::FieldPath& path) {
+    if (!FieldIs(reflect::TypeOf<NavMeshVolume>(), path, "agentType")) return std::nullopt;
+    return TypeChoices(scene);
+}
+std::optional<std::vector<editor::inspector::Choice>> AgentChoices(editor::SoftwareHost& host, const Scene& scene, int entity, const reflect::FieldPath& path) {
+    if (!FieldIs(reflect::TypeOf<NavAgent>(), path, "agentType")) return std::nullopt;
+    (void)host, (void)entity;
+    return TypeChoices(scene);
 }
 std::optional<std::vector<editor::inspector::Choice>> GeometryChoices(editor::SoftwareHost&, const Scene& scene, int, const reflect::FieldPath& path) {
     if (!FieldIs(reflect::TypeOf<NavGeometry>(), path, "area")) return std::nullopt;
@@ -85,6 +94,13 @@ int MakeVolume(Scene& scene, int parent, size_t index) {
     return id;
 }
 
+int MakeAgent(Scene& scene, int parent, size_t index) {
+    const int id = scene.Create(TrU8("ナビの動く者"), parent, index);
+    game_production::AddComponentTo<space3d::Transform>(scene, id);
+    game_production::AddComponentTo<NavAgent>(scene, id);
+    return id;
+}
+
 int MakeArea(Scene& scene, int parent, size_t index) {
     const int id = scene.Create(TrU8("ナビのエリア"), parent, index);
     game_production::AddComponentTo<space3d::Transform>(scene, id);
@@ -103,6 +119,7 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     static const game_production::CreateItemInfo kItems[] = {
         {.label = TrKey(L"ナビメッシュ"), .folder = TrKey(L"ナビ"), .make = &MakeVolume},
         {.label = TrKey(L"ナビのエリア"), .folder = TrKey(L"ナビ"), .make = &MakeArea},
+        {.label = TrKey(L"ナビの動く者"), .folder = TrKey(L"ナビ"), .make = &MakeAgent},
     };
     for (const auto& item : kItems) registry.Contribute(game_production::kCreateItemPoint, item);
     // 部品の欄の型・エリアをドロップダウンで。
@@ -110,6 +127,8 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     registry.Contribute(game_production::kComponentLookPoint, kVolumeLook);
     static const game_production::ComponentLook kGeometryLook{.type = &reflect::TypeOf<NavGeometry>, .choices = &GeometryChoices};
     registry.Contribute(game_production::kComponentLookPoint, kGeometryLook);
+    static const game_production::ComponentLook kAgentLook{.type = &reflect::TypeOf<NavAgent>, .choices = &AgentChoices};
+    registry.Contribute(game_production::kComponentLookPoint, kAgentLook);
     static const game_production::ComponentLook kAreaLook{.type = &reflect::TypeOf<NavArea>, .choices = &AreaFieldChoices};
     registry.Contribute(game_production::kComponentLookPoint, kAreaLook);
     // 書き出し: 焼いたナビメッシュ (.rmnav)。

@@ -225,6 +225,8 @@ void DrawMapShape(ui::Context& c, std::span<const Vec2> points, bool closed, ui:
 void DrawMapFill(ui::Context& c, std::span<const Vec2> points, ui::Color color);
 // 地図の上の道 (経路を試す): 角の点を結ぶ太い線と、始め・終わりの丸。点が 1 つなら始めの丸だけ。
 void DrawMapRoute(ui::Context& c, std::span<const Vec2> points);
+// 地図の上のナビの動く者: 体の丸 (`radius` DIP) と、進む向き (`dx`, `dy`: 画面の向き。0 なら向きなし)。
+void DrawMapAgent(ui::Context& c, float x, float y, float radius, float dx, float dy);
 // カーソルの所の値 (地図の上の小さな札)。
 void DrawMapReadout(ui::Context& c, float x, float y, std::wstring_view text);
 // 縦の区切り線 (並んだ 2 つの部分の間: アセット パネルの木と並び)。

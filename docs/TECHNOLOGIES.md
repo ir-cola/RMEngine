@@ -882,6 +882,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 技術 | 使う所 | 状態 |
 |---|---|---|
+| 2026-11-27 | 動く者を歩かせる (DetourCrowd の通路・角の先読み・分けて探す・Play の間だけの世界・スクリプトへの C の表・見本の焼いた物をテストで見張る) |
 | 2026-11-16 | 文字の細かい見た目 (DirectWrite のテキストレイアウト)・動画を流す (Media Engine と GPU のテクスチャ) を足した |
 | 2026-11-16 | 影・発光・ぼかしを Direct2D の効果で (コマンドリスト) を足した |
 | 2026-11-16 | 動きの曲線 (イージング)・Catmull-Rom の道と長さでの位置・スクリプトの窓口の版を上げても前のスクリプトを動かす を足した |
@@ -1295,6 +1296,22 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **タブの中のプレビュー**: タブが自分の再生 (ゲームと同じ関数 `StepAnimatorRules` → `StepAnimator`) を持ち、止まっているエディターでもルールを動かす。「動かす」ではモデルを回し、床の格子を (位置の小数の部分だけ) 逆にずらして、カメラがついて行くように見せる
 - **なぜそれか** — 足が滑らない歩き・クリップどおりの踏み込みは、アニメーションを作った人の動きをそのまま使うのが一番。速さをスクリプトで合わせるより正確。口にしたので、物理の無いゲームにも、後でナビゲーション (動く者を動かす人は 1 人だけ: `DrivenByRootMotion`) にも同じ道を使える
 - **どこ** — `plugins/rm_engine/animation3d/runtime/RootMotion.*`・`Player.*` (`RootStep` / `stripRoot`)・`space3d/runtime/Skeleton.h` (`ClipRootMotion`)・`ClipSettings.*`・`MeshBake.*` (`ROOT`。形式 3)・`game_x_animation/runtime/RootMotionSink.h`・`AnimationSystem.cpp` (`ApplyRootMotion`)・`animation_x_physics/runtime/Register.cpp`・`game_x_animation/editor/TabPreview.*`・`animation3d/editor/ClipStrip.cpp`、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestAnimationPhysics.cpp`・`TestMeshBake.cpp`・`TestClipEvents.cpp`
+
+### 動く者を歩かせる: DetourCrowd (通路・角を先読みして曲がる・分けて探す)・Play の間だけの世界・スクリプトへの C の表 (2026-11-27)
+
+- **何か** — **DetourCrowd** (Recast Navigation の群れ) は、動く者ごとに**通路** (通る多角形の並び) を持ち、毎刻み、通路の先の角を数個だけ求めて
+  (`findCorners`)、次の角へ向かう「望む速さ」を出し、加速の上限で今の速さを変え、ナビメッシュの面に沿って進める (`moveAlongSurface`: 壁を抜けない)。
+  道探しは**分けて** (待ち行列で 1 刻みに調べる多角形の数に上限) 行い、角を先読みして早めに曲がる (`ANTICIPATE_TURNS`)・見通せる所まで通路を縮める
+  (`OPTIMIZE_VIS`)・通路を作り直す (`OPTIMIZE_TOPO`)。重なった者は押し離す。「よける」(速さの候補を試す・離れる) は段階 3 で入れる
+- **何に使っているか** — 部品「ナビの動く者」とシステム「ナビ」(固定の刻み・物理の前)。焼いた物はシーンの Play のコピーが持つ「ナビの世界」
+  (`Scene::PlayState`) が最初の刻みに読み、ナビメッシュごとに群れを 1 つ。Transform から今の位置を読み (スクリプトが動かしたら置き直す)、進めた位置と
+  向き (Y の角度を回る速さの上限で: 短い方へ) を Transform に書き、着いたら `SystemEvent` でスクリプトの `OnEvent` に `NavArrived`。スクリプトは
+  `RMNav.h` から、関数の表 (`RmNavApi`: 素の C の構造体。DLL の境目を越えても形が変わらない) を `rm_engine.game_x_navigation.nav` 版 1 の名前で受け取る
+- **なぜそれか** — 段階 3 の「よける」を同じ群れで入れるため (自分で歩かせると、群れに替えるときに書き直しになる)。Play の間だけの世界にすると、■ で
+  コピーごと捨てるので、前の Play の続きが残らない (物理の世界と同じ)。見本の焼いた物はリポジトリに入れ、テストが見本のシーンの指紋と比べて
+  見張る (シーンを変えたら `RM_REBAKE_NAV_TEMPLATE=1` で焼き直す)。指紋は口ごとに数えて名前の順に混ぜる (プラグインを読んだ順に左右されない)
+- **どこ** — `plugins/rm_engine/navigation/runtime/Crowd.*`・`DetourShared.h`、`game_x_navigation/runtime/NavWorld.*`・`ScriptNav.*`・`sdk/RMNav.h` / `RMNavAbi.h`、
+  `templates/nav_3d`、`tests/TestNavigation.cpp`
 
 ## 追記の記録
 

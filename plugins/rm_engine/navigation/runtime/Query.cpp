@@ -1,5 +1,7 @@
 #include "rm_engine/navigation/runtime/Query.h"
 
+#include "rm_engine/navigation/runtime/DetourShared.h"
+
 #pragma warning(push, 0)
 #include "DetourAlloc.h"
 #include "DetourCommon.h"
@@ -17,8 +19,8 @@ namespace rm::navigation {
 
 namespace {
 
-constexpr unsigned short kWalk = 1;     // Bake.cpp と同じ: 歩ける
-constexpr unsigned short kBlocked = 2;  // 通れないエリア (SetBlockedAreas)
+using detail::kBlocked;
+using detail::kWalk;
 constexpr int kMaxNodes = 4096;         // A* が一度に覚える多角形の数
 constexpr int kMaxPath = 1024;          // 通路の多角形の数の上限
 constexpr int kMaxCorners = 512;        // 角の点の数の上限
@@ -49,12 +51,7 @@ struct NavMesh::Impl {
 
     dtQueryFilter Filter(const NavFilter& f) const {
         dtQueryFilter q;
-        for (int i = 0; i < DT_MAX_AREAS && i < 64; ++i) {
-            const float c = f.costs[static_cast<size_t>(i)];
-            q.setAreaCost(i, std::isfinite(c) && c > 0 ? std::min(c, 1e6f) : 1.f);
-        }
-        q.setIncludeFlags(kWalk);
-        q.setExcludeFlags(kBlocked);
+        detail::ApplyFilter(f, q);
         return q;
     }
 
@@ -118,6 +115,7 @@ bool NavMesh::Load(const NavData& data, std::string* error) {
 bool NavMesh::Empty() const { return !impl_->mesh || impl_->polys == 0; }
 size_t NavMesh::Tiles() const { return impl_->tiles; }
 size_t NavMesh::Polygons() const { return impl_->polys; }
+void* NavMesh::Native() { return impl_->mesh.get(); }
 
 NavPath NavMesh::FindPath(Vec3 start, Vec3 end, const NavFilter& filter, Vec3 searchHalf) const {
     NavPath out;
