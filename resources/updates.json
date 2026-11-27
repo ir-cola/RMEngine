@@ -3,6 +3,24 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.43",
+      "date": "2026-11-28",
+      "items": [
+        {
+          "ja": "2D のタイルマップ: 画像を切ったタイルセット (.rmtileset) を作り、追加 ▸ 2D オブジェクト ▸ タイルマップで置いた層に、シーンビューの筆・四角・消しゴム・スポイトで塗れます (1 回のドラッグが Undo の 1 件)",
+          "en": "2D tilemaps: make a tileset (.rmtileset) by cutting an image, add a layer with Add ▸ 2D Object ▸ Tilemap, and paint it in the Scene view with the brush, rectangle, eraser and picker (one drag is one Undo step)"
+        },
+        {
+          "ja": "新しい「タイル」タブ: パレットでタイルを選び (ドラッグでスタンプ)、タイルセットの画像・タイルの大きさ・余白・間をその場で変えられます",
+          "en": "A new Tiles tab: choose tiles in the palette (drag for a stamp), and change the tileset's images, tile size, margin and spacing right there"
+        },
+        {
+          "ja": "タイルは 32 x 32 マスの区画ごとに Direct2D のスプライトの束でまとめて描き、スプライトと同じ並び順で前後に並びます。書き出したゲームでも同じに描きます",
+          "en": "Tiles are drawn in 32 x 32 chunks with Direct2D sprite batches, ordered with sprites by the same order. Exported games draw them the same way"
+        }
+      ]
+    },
+    {
       "version": "0.0.42",
       "date": "2026-11-27",
       "items": [

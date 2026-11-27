@@ -72,6 +72,8 @@
     <ClCompile Include="core\asset\ImportSettings.cpp" />
     <ClCompile Include="core\asset\BakedImage.cpp" />
     <ClCompile Include="core\pak\Pak.cpp" />
+    <ClCompile Include="core\paint\Runs.cpp" />
+    <ClCompile Include="core\paint\GridPaint.cpp" />
     <ClCompile Include="editor\export\ExportPlan.cpp" />
     <ClCompile Include="platform\Gfx.cpp" />
     <ClCompile Include="platform\Image.cpp" />
@@ -147,6 +149,8 @@
     <ClInclude Include="core\asset\AssetFiles.h" />
     <ClInclude Include="core\asset\ImportSettings.h" />
     <ClInclude Include="core\asset\BakedImage.h" />
+    <ClInclude Include="core\paint\Runs.h" />
+    <ClInclude Include="core\paint\GridPaint.h" />
     <ClInclude Include="platform\Gfx.h" />
     <ClInclude Include="platform\Image.h" />
     <ClInclude Include="platform\FileLock.h" />

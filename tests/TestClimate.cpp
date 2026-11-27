@@ -149,7 +149,7 @@ RM_TEST(Climate_PaintGrid) {
     CHECK(DecodeRuns("1*2", 4) == (std::vector<int>{1, 1, 0, 0}));       // (足りない分は 0)
     CHECK(DecodeRuns("3*9", 2) == (std::vector<int>{3, 3}));             // (多い分は捨てる)
     CHECK(DecodeRuns("x,-1,2*y,4", 4) == (std::vector<int>{0, 0, 4, 0}));  // (読めない: 0。数の読めない続きは 0 個)
-    CHECK(EncodeRuns({}).empty() && DecodeRuns("", 2) == (std::vector<int>{0, 0}));
+    CHECK(EncodeRuns(std::span<const int>{}).empty() && DecodeRuns("", 2) == (std::vector<int>{0, 0}));
     // 塗る: 4 m のマス。真ん中 (10, 10)、半径 4 m: 真ん中が円に入るマス。
     PaintGrid g;
     CHECK(PaintCircle(g, 4, {10, 10}, 4, 2));

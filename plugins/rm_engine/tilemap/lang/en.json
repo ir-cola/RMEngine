@@ -1,0 +1,23 @@
+{
+  "タイルマップ": "Tilemap",
+  "絵の元": "Source image",
+  "名前": "Name",
+  "パレットの「絵の元」の一覧に出る名前": "The name shown in the palette's list of source images",
+  "画像": "Image",
+  "タイルを並べた画像 (.png など)。アセットのパネルからドラッグするか、クリックして選びます": "An image with the tiles laid out (.png and so on). Drag one from the Assets panel, or click to choose",
+  "タイルの幅 (px)": "Tile width (px)",
+  "1 つのタイルの横のピクセル数": "How many pixels wide one tile is",
+  "タイルの高さ (px)": "Tile height (px)",
+  "1 つのタイルの縦のピクセル数": "How many pixels tall one tile is",
+  "余白 (px)": "Margin (px)",
+  "画像の縁の、タイルの無い幅": "The width without tiles along the image's edges",
+  "間 (px)": "Spacing (px)",
+  "タイルとタイルの間の、タイルの無い幅": "The width without tiles between two tiles",
+  "くっきり (ドット絵)": "Crisp (pixel art)",
+  "拡大してもぼかさず、ピクセルをそのまま大きくします": "Enlarges pixels as they are, without blurring",
+  "タイルセット": "Tileset",
+  "タイルを切り出す画像。1 つのタイルセットに何枚でも (255 枚まで)": "The images the tiles are cut from. A tileset can have any number of them (up to 255)",
+  "区画": "Chunk",
+  "新しいタイルセット": "New Tileset",
+  "タイルの層の「タイルセット」の欄に入れると、パネル「タイル」のパレットに並びます。絵の元と切り方はパネル「タイル」の「タイルセット」でも変えられます": "Put it in a tile layer's Tileset field and its tiles line up in the Tiles panel's palette. You can also change the source images and how they are cut in the Tiles panel's Tileset page"
+}
