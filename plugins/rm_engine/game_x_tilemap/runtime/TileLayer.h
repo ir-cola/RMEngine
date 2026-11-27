@@ -40,6 +40,7 @@ struct TileLayer {
     RM_PROPERTY(Edit, Label="並び順", Tooltip="Transform 2D の並び順が同じ物の中で、大きいほど手前に描きます (スプライトの並び順と同じ列)", Min=-100000, Max=100000)
     int order = 0;
     RM_PROPERTY(Edit, Label="色", Tooltip="タイルの色に掛けます (白でそのまま)。透明度も効きます", Min=0, Max=1) Color color{1, 1, 1, 1};
+    RM_PROPERTY(Edit, Label="当たりを作る", Tooltip="タイルセットで当たりの形を決めたタイルが、物理で当たります (プラグイン「物理」があるとき)。外すと絵だけ") bool collision = true;
     RM_PROPERTY() int chunk = tilemap::kChunkSize;  // 区画の一辺 (読むときは今の大きさに詰め直す)
     RM_PROPERTY() std::vector<tilemap::TileChunk> chunks;  // 塗ったマス (シーンビューの塗る道具で変える)
 };

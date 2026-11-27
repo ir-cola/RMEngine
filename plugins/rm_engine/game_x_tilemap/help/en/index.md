@@ -31,6 +31,12 @@ Select a tile layer and the tools appear in the bar at the Scene view's top left
 
 > One drag is one Undo step (Ctrl+Z). You can't paint while playing.
 
+## Colliders, tags and custom data
+
+On the Tiles tab, go to Tileset ▸ Tiles and paint collision shapes over the picture (the shape bar: Select, None, All, Top, Bottom, Left, Right, four slopes, Draw). Select a tile with Select to get its name, collider, tags and custom data fields. Add custom data fields (a name and a type) on the Custom data fields page.
+
+With the Physics plugin, layers with Make colliders on collide in physics (connected colliders are merged into large boxes). The Scene view's Shapes: Selected / All switch shows their outlines.
+
 ## Saving and exporting
 
 The painted cells go in the scene file as text per 32 x 32 chunk (a run of the same tile is written "value*count"). Chunks with nothing painted don't appear in the file. An exported game also gets the tileset and its images.

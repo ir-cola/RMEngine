@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <format>
+#include <tuple>
 
 namespace rm::tilemap {
 
@@ -67,6 +68,64 @@ const TileSource* FindSource(const Tileset& t, int id) {
         if (s.id == id) return &s;
     }
     return nullptr;
+}
+
+const TileInfo* FindTile(const Tileset& t, int source, int column, int row) {
+    for (const TileInfo& i : t.tiles) {
+        if (i.source == source && i.column == column && i.row == row) return &i;
+    }
+    return nullptr;
+}
+
+TileInfo TileOrDefault(const Tileset& t, int source, int column, int row) {
+    if (const TileInfo* i = FindTile(t, source, column, row)) return *i;
+    TileInfo out;
+    out.source = source;
+    out.column = column;
+    out.row = row;
+    return out;
+}
+
+bool IsDefaultTile(const TileInfo& i) {
+    return i.name.empty() && i.shape == TileShape::None && i.points.empty() && i.tags.empty() && i.data.empty();
+}
+
+void SetTile(Tileset& t, TileInfo info) {
+    auto same = [&](const TileInfo& i) { return i.source == info.source && i.column == info.column && i.row == info.row; };
+    const auto at = std::find_if(t.tiles.begin(), t.tiles.end(), same);
+    if (IsDefaultTile(info)) {
+        if (at != t.tiles.end()) t.tiles.erase(at);
+        return;
+    }
+    if (at != t.tiles.end()) {
+        *at = std::move(info);
+        return;
+    }
+    auto key = [](const TileInfo& i) { return std::tuple(i.source, i.row, i.column); };
+    const auto before = std::find_if(t.tiles.begin(), t.tiles.end(), [&](const TileInfo& i) { return key(i) > key(info); });
+    t.tiles.insert(before, std::move(info));
+}
+
+const TileField* FindField(const Tileset& t, std::string_view name) {
+    for (const TileField& f : t.fields) {
+        if (f.name == name) return &f;
+    }
+    return nullptr;
+}
+
+std::string TileData(const Tileset& t, const TileInfo& info, std::string_view field) {
+    for (const TileDataValue& v : info.data) {
+        if (v.name == field) return v.value;
+    }
+    const TileField* f = FindField(t, field);
+    return f ? f->defaultValue : std::string();
+}
+
+void SetTileData(const Tileset& t, TileInfo& info, std::string_view field, std::string value) {
+    std::erase_if(info.data, [&](const TileDataValue& v) { return v.name == field; });
+    const TileField* f = FindField(t, field);
+    if (f && f->defaultValue == value) return;  // (既定値: 持たない)
+    info.data.push_back({std::string(field), std::move(value)});
 }
 
 space2d::GridCut CutOf(const TileSource& s) {

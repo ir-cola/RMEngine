@@ -1350,10 +1350,20 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **描く物を集める所を 1 本に** — シーンビュー・ゲームビュー・書き出したゲームが、同じ関数 (`game_x_2d/runtime/World2D`) でスプライトを置き、ほかのプラグインの描く物 (口 `rm_engine.game_x_2d.world_draw`) と 1 本の列にして、(ワールドの並び順・自分の並び順・階層の順) で並べる。だからキャラクターを層の間に挟める
 - **どこ** — `plugins/rm_engine/tilemap/runtime/` (`TileCell.h`・`TileStore.*`・`TilePaint.*`・`Tileset.*`)・`game_x_tilemap/runtime/TileDraw.*` (束)・`game_x_tilemap/editor/` (`TileTool`・`TilePanel`・`TileEdit`)・`space2d/runtime/Renderer2D.*` (`SpriteDraw::batch`)・`space2d/runtime/Atlas.*` (`GridCellOf`: 余白と間)・`src/core/paint/` (`Runs`・`GridPaint`)、`tests/TestTilemap.cpp`
 
+### タイルの当たりをまとめる: 細かい格子の貪欲な長方形・凸包・Jolt の寄せ集めの形と内側の辺 (2026-11-28)
+
+- **何か** — タイルを 1 つずつ四角にすると数千の形になり、つなぎ目で転がる物が引っかかる。そこで区画 (32 x 32 マス) ごとに、当たりのあるマスをできるだけ大きな長方形にまとめる (**貪欲な長方形の詰め方**: greedy meshing。下の行から、まだ使っていない横の帯を取り、すぐ上の行に同じ帯がある限り上へ伸ばす)。マスを縦横 2 つずつに割った細かい格子 (区画で 64 x 64) に塗るので、「全部」と半分の形 (上・下・左・右) が一緒にまとまる。タイルの絵が違っても当たりがつながっていれば 1 つの箱 (床一面 = 箱 1 つ、L 字 = 箱 2 つ)。2026-11-28 のユーザーの決定
+- **凸包** — 斜めと「自分で描く」形は、点を包む一番小さい凸の多角形 (**凸包**) にする。Andrew の単調鎖のやり方: 点を x の順に並べ、下の縁と上の縁を「左に曲がらない点を捨てる」(外積の符号) で作ってつなぐ。へこんだ点は自然に落ちる
+- **反転も形に** — マスの値の反転 (Tiled と同じ: 斜め → 左右 → 上下) を、形の点 (マスの中の 0〜1) にそのまま当てる。半分の形は 2 x 2 の小さな四角の中心を反転して、どの四角が塗られるかを決める
+- **物理の新しい口 `static_shapes`** — 物理はタイルを知らない。つなぎ「タイルマップ × 物理」が、持ち主 (層のエンティティ)・鍵 (区画)・版・形 (2D の箱と凸の多角形) を渡し、物理は区画 1 つ = 動かない物体 1 つを作る。形は Jolt の **StaticCompoundShape** (動かない形の寄せ集め: 中の形を探す木を 1 度だけ作るので、たくさんの箱でも当たりを調べるのが速い) に、箱 (`BoxShape`) と凸の形 (`ConvexHullShape`。平面の点を厚さ 1 m に押し出す) を入れる。版が変わった区画だけ作り直す。後で地形の高さの格子 (`HeightFieldShape`) も同じ口に足す
+- **内側の辺の引っかかり** — 隣り合う箱の境目では、転がる物が「境目の角」に当たって跳ねることがある。Jolt の `BodyCreationSettings::mEnhancedInternalEdgeRemoval` を立てると、接触を調べるときに「その辺は内側か」を見て、内側の辺の当たりを捨てる
+- **どこ** — `plugins/rm_engine/tilemap/runtime/TileCollision.*`・`Tileset.*` (`TileInfo` / `TileField`)・`physics/runtime/StaticShapes.h`・`PhysicsWorld.cpp` (`SyncStatic`)・`tilemap_x_physics/` (`TileColliders`・当たりの線)・`game_x_tilemap/editor/TilePanel.cpp` (塗る・選ぶ・点)・`src/editor/widgets` (`TileMark`・`ShapePoints`)、`tests/TestTilemap.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-28 | タイルの当たり (細かい格子の貪欲な長方形・凸包 (Andrew の単調鎖)・Jolt の StaticCompoundShape と mEnhancedInternalEdgeRemoval・物理の口 static_shapes) |
 | 2026-11-27 | 2D のタイルマップ (Direct2D のスプライトの束 `ID2D1SpriteBatch`・CLAMP_TO_SOURCE_RECTANGLE のにじみ止め・32 x 32 の区画とランレングス・ブレゼンハムの線) |
 | 2026-11-27 | 揺れる骨 (Verlet・長さを保つ・球から押し出す・決まった刻み)・VRM の揺れの設定 (VRMC_springBone / secondaryAnimation) |
 | 2026-11-27 | ブレンドシェイプ (形の差を重みで足す・Compute Shader で頂点を作る: 生のバイトのバッファと UAV・FBX の BlendShape) |

@@ -1356,7 +1356,7 @@ bool NumberField(ui::Context& c, std::string_view id, const Rect& r, float& valu
 }
 
 bool TilePalette(ui::Context& c, std::string_view idStr, const Rect& r, ID2D1Bitmap* bitmap, bool crisp, const TileGridCut& cut,
-                 TileSelection& selection, bool pick) {
+                 TileSelection& selection, bool pick, std::span<const TileMark> marks) {
     auto& p = c.P();
     p.FillRect(r, theme::ThumbnailBack());
     if (bitmap) {
@@ -1379,6 +1379,25 @@ bool TilePalette(ui::Context& c, std::string_view idStr, const Rect& r, ID2D1Bit
         const Color line = theme::Text.Alpha(theme::IsLight ? 0.22f : 0.16f);
         for (int row = 0; row < cut.rows; ++row) {
             for (int col = 0; col < cut.columns; ++col) p.StrokeRect(cellRect(col, row, 1, 1), line, 1.f);
+        }
+    }
+    // セルの上の形 (当たり): 薄く塗って縁を引く。
+    for (const TileMark& m : marks) {
+        if (m.points.size() < 3) continue;
+        const Rect cell = cellRect(m.column, m.row, 1, 1);
+        ui::Path path;
+        for (size_t i = 0; i < m.points.size(); ++i) {
+            const Vec2 q{cell.x + m.points[i].x * cell.w, cell.y + (1 - m.points[i].y) * cell.h};
+            if (i == 0) {
+                path.Begin(q);
+            } else {
+                path.Line(q);
+            }
+        }
+        p.FillPath(path, theme::SceneCollider().Alpha(0.40f));
+        for (size_t i = 0; i < m.points.size(); ++i) {
+            const Vec2 a = m.points[i], b = m.points[(i + 1) % m.points.size()];
+            p.Line(cell.x + a.x * cell.w, cell.y + (1 - a.y) * cell.h, cell.x + b.x * cell.w, cell.y + (1 - b.y) * cell.h, theme::SceneCollider(), 1.f);
         }
     }
     // マウスの下のセル。
@@ -1418,6 +1437,70 @@ bool TilePalette(ui::Context& c, std::string_view idStr, const Rect& r, ID2D1Bit
         const Rect sel = cellRect(shown.column, shown.row, shown.width, shown.height);
         p.FillRect(sel, theme::Accent.Alpha(0.18f));
         p.StrokeRect(sel, theme::Accent, 2.f);
+    }
+    return done;
+}
+
+bool ShapePoints(ui::Context& c, std::string_view idStr, const Rect& r, ID2D1Bitmap* bitmap, const Rect& source, bool crisp,
+                 std::span<const Vec2> outline, std::vector<Vec2>& points) {
+    auto& p = c.P();
+    p.FillRect(r, theme::ThumbnailBack());
+    if (bitmap) p.ImagePart(bitmap, r, source, crisp);
+    p.StrokeRect(r, theme::Border, 1.f);
+    auto toScreen = [&](Vec2 q) { return Vec2{r.x + q.x * r.w, r.y + (1 - q.y) * r.h}; };
+    auto toCell = [&](float x, float y) { return Vec2{std::clamp((x - r.x) / std::max(r.w, 1.f), 0.f, 1.f), std::clamp(1 - (y - r.y) / std::max(r.h, 1.f), 0.f, 1.f)}; };
+    if (outline.size() >= 3) {
+        ui::Path path;
+        for (size_t i = 0; i < outline.size(); ++i) {
+            if (i == 0) {
+                path.Begin(toScreen(outline[i]));
+            } else {
+                path.Line(toScreen(outline[i]));
+            }
+        }
+        p.FillPath(path, theme::SceneCollider().Alpha(0.35f));
+        for (size_t i = 0; i < outline.size(); ++i) {
+            const Vec2 a = toScreen(outline[i]), b = toScreen(outline[(i + 1) % outline.size()]);
+            p.Line(a.x, a.y, b.x, b.y, theme::SceneCollider(), 1.5f);
+        }
+    }
+    static std::unordered_map<ui::Id, int> grabbed;  // つかんでいる点 (ウィジェットごと)
+    const ui::Id id = c.MakeId(idStr);
+    const auto b = c.ButtonBehavior(id, r);
+    const float mx = c.In().mouseX, my = c.In().mouseY;
+    constexpr float kGrab = 7.f;
+    int closest = -1;
+    float best = kGrab * kGrab;
+    for (size_t i = 0; i < points.size(); ++i) {
+        const Vec2 s = toScreen(points[i]);
+        const float d = (s.x - mx) * (s.x - mx) + (s.y - my) * (s.y - my);
+        if (d <= best) best = d, closest = static_cast<int>(i);
+    }
+    bool done = false;
+    if (b.hovered) c.SetCursor(closest >= 0 ? ui::Cursor::Hand : ui::Cursor::Arrow);
+    if (b.hovered && c.MousePressed()) {
+        if (closest < 0) {
+            points.push_back(toCell(mx, my));
+            closest = static_cast<int>(points.size()) - 1;
+        }
+        grabbed[id] = closest;
+    }
+    if (const auto it = grabbed.find(id); it != grabbed.end()) {
+        if (it->second >= 0 && static_cast<size_t>(it->second) < points.size()) points[static_cast<size_t>(it->second)] = toCell(mx, my);
+        if (!b.held) {
+            grabbed.erase(it);
+            done = true;
+        } else {
+            c.RequestRedraw();
+        }
+    }
+    if (b.hovered && c.MousePressed(ui::Mouse::Right) && closest >= 0) {
+        points.erase(points.begin() + closest);
+        done = true;
+    }
+    for (size_t i = 0; i < points.size(); ++i) {
+        const Vec2 s = toScreen(points[i]);
+        p.FillCircle(s.x, s.y, static_cast<int>(i) == closest ? 5.f : 4.f, static_cast<int>(i) == closest ? theme::Accent : theme::Text);
     }
     return done;
 }

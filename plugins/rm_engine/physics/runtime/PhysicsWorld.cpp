@@ -8,6 +8,7 @@
 #include "rm_engine/game_production/runtime/sdk/RmAbi.h"
 #include "rm_engine/physics/runtime/Components.h"
 #include "rm_engine/physics/runtime/Shapes.h"
+#include "rm_engine/physics/runtime/StaticShapes.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
@@ -36,6 +37,7 @@
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/TaperedCylinderShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -263,6 +265,17 @@ struct PhysicsWorld::Impl {
     };
     std::unordered_map<std::string, MeshEntry> meshes;  // メッシュコライダーのモデル、アセット ID ごと
     std::unordered_set<int> told;                       // 知らせたエンティティ (1 つにつき 1 度)
+    // ほかのプラグインの動かない形 (口 static_shapes): 持ち主・鍵ごとの物体。
+    struct StaticRec {
+        JPH::BodyID id;
+        uint64_t version = 0, scale = 0;
+        Vec3 position{0, 0, 0};
+        JPH::Quat turn = JPH::Quat::sIdentity();
+        bool seen = false;
+    };
+    std::map<std::pair<int, uint64_t>, StaticRec> statics;
+    std::vector<std::unique_ptr<StaticShapeSource>> sources;
+    bool sourcesMade = false;
 
     Impl() {
         JoltOnce();
@@ -277,6 +290,10 @@ struct PhysicsWorld::Impl {
             bi.DestroyBody(b.id);
         }
         chars.clear();  // (その内側の物体も一緒に消える)
+        for (auto& [k, s] : statics) {
+            bi.RemoveBody(s.id);
+            bi.DestroyBody(s.id);
+        }
     }
 
     void TellOnce(int entity, const std::string& text) {
@@ -594,6 +611,115 @@ struct PhysicsWorld::Impl {
         }
     }
 
+    // --- ほかのプラグインの動かない形 (口 static_shapes) -------------------------------------------------
+    void RemoveStatic(std::map<std::pair<int, uint64_t>, StaticRec>::iterator it) {
+        JPH::BodyInterface& bi = system.GetBodyInterface();
+        bi.RemoveBody(it->second.id);
+        bi.DestroyBody(it->second.id);
+        contacts.Forget(Key(it->second.id));
+        owner.erase(Key(it->second.id));
+        statics.erase(it);
+    }
+
+    // 形の中身を、持ち主の大きさ `scale` を掛けた Jolt の形の寄せ集めに (何も無い: null)。
+    static JPH::RefConst<JPH::Shape> StaticShapeOf(const StaticGeometry& g, Vec3 scale) {
+        JPH::StaticCompoundShapeSettings parts;
+        size_t count = 0;
+        for (const StaticBox2D& b : g.boxes2D) {
+            const Vec2 lo{b.min.x * scale.x, b.min.y * scale.y}, hi{b.max.x * scale.x, b.max.y * scale.y};
+            const Vec3 half{std::max(std::fabs(hi.x - lo.x) * 0.5f, 0.005f), std::max(std::fabs(hi.y - lo.y) * 0.5f, 0.005f), kPlaneHalfDepth};
+            const float radius = std::min({half.x, half.y, half.z, JPH::cDefaultConvexRadius}) * 0.5f;
+            parts.AddShape(JPH::Vec3((lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f, 0), JPH::Quat::sIdentity(), new JPH::BoxShape(J(half), radius));
+            ++count;
+        }
+        for (const std::vector<Vec2>& poly : g.polygons2D) {
+            if (poly.size() < 3) continue;
+            JPH::Array<JPH::Vec3> points;
+            for (const Vec2& p : poly) {
+                points.push_back(JPH::Vec3(p.x * scale.x, p.y * scale.y, -kPlaneHalfDepth));
+                points.push_back(JPH::Vec3(p.x * scale.x, p.y * scale.y, kPlaneHalfDepth));
+            }
+            const JPH::ShapeSettings::ShapeResult made = JPH::ConvexHullShapeSettings(points, 0.01f).Create();
+            if (made.HasError()) continue;  // (つぶれた形: 当てない)
+            parts.AddShape(JPH::Vec3::sZero(), JPH::Quat::sIdentity(), made.Get());
+            ++count;
+        }
+        if (count == 0) return nullptr;
+        const JPH::ShapeSettings::ShapeResult made = parts.Create();
+        if (made.HasError()) {
+            log::Warn("物理: ほかのプラグインの動かない形を作れません: {}", made.GetError().c_str());
+            return nullptr;
+        }
+        return made.Get();
+    }
+
+    // 口 static_shapes の形を尋ねて、持ち主・鍵ごとの物体を作る / 保つ / 動かす / 消す (SyncAll の後: 持ち主の場所が要る)。
+    void SyncStatic(Scene& scene, const RuntimeRegistry* registry) {
+        if (!sourcesMade && registry) {
+            sourcesMade = true;
+            for (const auto& c : registry->Contributions<StaticShapesInfo>(kStaticShapesPoint)) {
+                if (c.item->create) {
+                    if (auto made = c.item->create()) sources.push_back(std::move(made));
+                }
+            }
+        }
+        if (sources.empty() && statics.empty()) return;
+        for (auto& [k, s] : statics) s.seen = false;
+        std::vector<StaticOwner> owners;
+        for (const auto& src : sources) src->Collect(scene, assets, owners);
+        JPH::BodyInterface& bi = system.GetBodyInterface();
+        for (const StaticOwner& o : owners) {
+            const auto place = placesCache.find(o.entity);
+            if (place == placesCache.end()) continue;  // (場所を持たない持ち主)
+            const Pose pose = place->second.flat ? PoseOf(place->second.world2) : PoseOf(place->second.world3);
+            const uint64_t scale = Fingerprint().Add(pose.scale).h;
+            const JPH::Quat turn = QuatOf(pose.turn);
+            for (const StaticPiece& piece : o.pieces) {
+                if (!piece.geometry || piece.geometry->Empty()) continue;
+                const std::pair<int, uint64_t> key{o.entity, piece.key};
+                auto it = statics.find(key);
+                if (it != statics.end() && (it->second.version != piece.version || it->second.scale != scale)) {
+                    RemoveStatic(it);
+                    it = statics.end();
+                }
+                if (it == statics.end()) {
+                    JPH::RefConst<JPH::Shape> shape = StaticShapeOf(*piece.geometry, pose.scale);
+                    if (!shape) continue;
+                    JPH::BodyCreationSettings s(shape, J(pose.position), turn, JPH::EMotionType::Static, Layer::kStatic);
+                    s.mUserData = static_cast<JPH::uint64>(o.entity);
+                    s.mFriction = piece.geometry->friction;
+                    s.mRestitution = piece.geometry->bounciness;
+                    s.mEnhancedInternalEdgeRemoval = true;  // (区画の境目・長方形の境目で引っかかりにくい)
+                    const JPH::BodyID body = bi.CreateAndAddBody(s, JPH::EActivation::DontActivate);
+                    if (body.IsInvalid()) {
+                        TellOnce(o.entity, "物の数が多すぎて体を作れません (65536 まで)");
+                        continue;
+                    }
+                    owner[Key(body)] = o.entity;
+                    it = statics.emplace(key, StaticRec{body, piece.version, scale, pose.position, turn, false}).first;
+                }
+                StaticRec& r = it->second;
+                r.seen = true;
+                const bool moved = std::fabs(pose.position.x - r.position.x) + std::fabs(pose.position.y - r.position.y) +
+                                       std::fabs(pose.position.z - r.position.z) > 1e-4f ||
+                                   std::fabs(turn.Dot(r.turn)) < 1 - 1e-5f;
+                if (moved) {  // (スクリプトが層を動かした)
+                    bi.SetPositionAndRotation(r.id, J(pose.position), turn, JPH::EActivation::DontActivate);
+                    r.position = pose.position;
+                    r.turn = turn;
+                }
+            }
+        }
+        for (auto it = statics.begin(); it != statics.end();) {
+            auto next = std::next(it);
+            if (!it->second.seen) RemoveStatic(it);
+            it = next;
+        }
+        if (!toldStatics && !statics.empty()) log::Info("物理: ほかのプラグインの動かない形を {} 個作りました (タイルの区画など)", statics.size());
+        toldStatics = toldStatics || !statics.empty();
+    }
+    bool toldStatics = false;  // (初めて作ったことを 1 度だけコンソールに)
+
     // すべてのエンティティの位置 (親が先)、そして部品の通りに、すべての物体を作る / 保つ / 消す。
     void SyncAll(Scene& scene, float dt) {
         for (auto& [e, b] : bodies) b.seen = false;
@@ -768,10 +894,12 @@ struct PhysicsWorld::Impl {
 PhysicsWorld::PhysicsWorld() : impl_(std::make_unique<Impl>()) {}
 PhysicsWorld::~PhysicsWorld() = default;
 
-void PhysicsWorld::Step(Scene& scene, float dt, Vec3 gravity, std::vector<HookCall>* hooks, const game_production::AssetAccess* assets) {
+void PhysicsWorld::Step(Scene& scene, float dt, Vec3 gravity, std::vector<HookCall>* hooks, const game_production::AssetAccess* assets,
+                        const RuntimeRegistry* registry) {
     Impl& w = *impl_;
     if (assets) w.assets = assets;
     w.SyncAll(scene, dt);
+    w.SyncStatic(scene, registry);
     if (dt <= 0) return;
     if (gravity.x != w.gravityNow.x || gravity.y != w.gravityNow.y || gravity.z != w.gravityNow.z) {
         // 新しい重力 (シーンの 重力 が変わった): 止まっている物体は、それを感じるよう起きる。
@@ -901,6 +1029,7 @@ std::optional<Vec3> PhysicsWorld::GroundNormal(int entity) const {
 
 size_t PhysicsWorld::Bodies() const { return impl_->bodies.size(); }
 size_t PhysicsWorld::Characters() const { return impl_->chars.size(); }
+size_t PhysicsWorld::StaticPieces() const { return impl_->statics.size(); }
 size_t PhysicsWorld::ActiveBodies() const { return impl_->system.GetNumActiveBodies(JPH::EBodyType::RigidBody); }
 size_t PhysicsWorld::TouchingPairs() const { return impl_->contacts.Touching(); }
 double PhysicsWorld::LastStepMs() const { return impl_->stepMs; }
@@ -911,7 +1040,7 @@ PhysicsWorld& WorldOf(Scene& scene) { return scene.PlayState<PhysicsWorld>("rm_e
 
 void RunPhysics(game_production::SystemContext& ctx) {
     const PhysicsSettings* settings = ctx.scene.Setting<PhysicsSettings>();
-    WorldOf(ctx.scene).Step(ctx.scene, ctx.dt, settings ? settings->gravity : PhysicsSettings{}.gravity, ctx.hooks, ctx.assets);
+    WorldOf(ctx.scene).Step(ctx.scene, ctx.dt, settings ? settings->gravity : PhysicsSettings{}.gravity, ctx.hooks, ctx.assets, ctx.registry);
 }
 
 }  // namespace rm::physics

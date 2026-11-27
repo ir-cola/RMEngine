@@ -85,6 +85,8 @@ public:
     void Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity = 1.f);
     // ピクセルをぼかさずに (最近傍で) 拡大する: ドット絵のタイルのパレット。
     void ImageCrisp(ID2D1Bitmap* bmp, const Rect& dst, float opacity = 1.f);
+    // 画像の一部 `source` (ビットマップのピクセル) を `dst` に。`crisp`: 最近傍で。
+    void ImagePart(ID2D1Bitmap* bmp, const Rect& dst, const Rect& source, bool crisp, float opacity = 1.f);
     // 1 色の画像: 形 (アルファ) だけを残し、すべてのピクセルを `c` で塗る
     // (1 色のロゴやアイコンを、背景やテーマに合わせた色で出す)。
     void ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c);

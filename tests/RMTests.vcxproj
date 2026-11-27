@@ -290,6 +290,11 @@
     <ClCompile Include="..\plugins\rm_engine\game_x_tilemap\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)game_x_tilemap\</ObjectFileName>
     </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\tilemap\runtime\TileCollision.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\tilemap_x_physics\runtime\TileColliders.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\tilemap_x_physics\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)tilemap_x_physics\</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="TestNavigation.cpp" />
     <ClCompile Include="..\plugins\rm_engine\navigation\runtime\Bake.cpp" />
     <ClCompile Include="..\plugins\rm_engine\navigation\runtime\NavFile.cpp" />
