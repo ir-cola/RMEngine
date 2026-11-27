@@ -14,6 +14,8 @@
 #include "rm_engine/game_x_2d/runtime/Register.h"
 #include "rm_engine/game_x_tilemap/runtime/Id.h"
 #include "rm_engine/game_x_tilemap/runtime/Register.h"
+#include "rm_engine/tilemap_x_physics/runtime/Id.h"
+#include "rm_engine/tilemap_x_physics/runtime/Register.h"
 #include "rm_engine/physics/runtime/Id.h"
 #include "rm_engine/physics/runtime/Register.h"
 #include "rm_engine/game_x_audio/runtime/Id.h"
@@ -51,6 +53,7 @@ std::span<const RuntimePlugin> RuntimePlugins() {
         {game_x_3d::kPluginId, &game_x_3d::RegisterRuntime},
         {game_x_2d::kPluginId, &game_x_2d::RegisterRuntime},
         {game_x_tilemap::kPluginId, &game_x_tilemap::RegisterRuntime},
+        {tilemap_x_physics::kPluginId, &tilemap_x_physics::RegisterRuntime},
         {physics::kPluginId, &physics::RegisterRuntime},
         {game_x_audio::kPluginId, &game_x_audio::RegisterRuntime},
         {game_ui::kPluginId, &game_ui::RegisterRuntime},

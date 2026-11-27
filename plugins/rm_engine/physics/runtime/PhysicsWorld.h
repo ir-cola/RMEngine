@@ -6,7 +6,8 @@
 //
 //   固定ステップごと (システム 物理、SystemPhase::Fixed - スクリプトの Tick のあと):
 //     1 部品の通りに物体を作る (作る、変わったら作り直す、エンティティ / 部品 / 有効 が無くなれば消す);
-//       スクリプトが Transform を置いたなら、物体もそこへ行く
+//       スクリプトが Transform を置いたなら、物体もそこへ行く。ほかのプラグインの動かない形 (口
+//       static_shapes: タイルマップの区画) も、版の変わった物だけ作り直す (StaticShapes.h)
 //     2 ゲーム設定の 物理の刻み で、ゲーム設定の 重力 を使って Jolt が進む
 //     3 物体が動いた先を Transform に書き戻す (動く 物体、キャラクター)
 //     4 触れた / 離れたもの: スクリプトへ HookCall (OnHit / OnTriggerEnter / OnTriggerExit)
@@ -15,6 +16,7 @@
 // Z まわりにだけ回る (Jolt の AllowedDOFs) - 2D と 3D は 1 つのワールドを共有する。
 
 #include "base/Math.h"
+#include "core/RuntimeRegistry.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_production/runtime/Systems.h"
 
@@ -32,9 +34,10 @@ public:
     PhysicsWorld(const PhysicsWorld&) = delete;
     PhysicsWorld& operator=(const PhysicsWorld&) = delete;
 
-    // `scene` に対する `dt` 秒の固定ステップ 1 回。`hooks` / `assets`: SystemContext と同じ (null でもよい)。
+    // `scene` に対する `dt` 秒の固定ステップ 1 回。`hooks` / `assets` / `registry`: SystemContext と同じ (null でもよい。
+    // `registry` が無いと、ほかのプラグインの動かない形 (口 static_shapes) は作らない)。
     void Step(game_production::Scene& scene, float dt, Vec3 gravity, std::vector<game_production::HookCall>* hooks,
-              const game_production::AssetAccess* assets);
+              const game_production::AssetAccess* assets, const RuntimeRegistry* registry = nullptr);
 
     // --- スクリプト用 (RMPhysics.h)。まだ物体が無いエンティティには、ここで作る (Tick で作った弾に
     // すぐ速さを与えられる)。false / nullopt: 物体が無い (コライダーが無い、力に対するトリガー ...)。
@@ -62,6 +65,8 @@ public:
     // いま物体 / キャラクターがいくつあるか (テスト、コンソール用)。
     size_t Bodies() const;
     size_t Characters() const;
+    // ほかのプラグインの動かない形の物体の数 (口 static_shapes の持ち主・鍵ごとに 1 つ)。
+    size_t StaticPieces() const;
     // エディターの デバッグ パネル用: 起きている (動いている: 他は眠っている) 物体、いま触れている組、
     // 直近のステップにかかった時間。
     size_t ActiveBodies() const;

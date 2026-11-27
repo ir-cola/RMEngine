@@ -3,6 +3,24 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.50",
+      "date": "2026-11-28",
+      "items": [
+        {
+          "ja": "タイルに当たり: 「タイル」タブの「タイルセット」で、絵の上に当たりの形 (全部・半分・斜め・自分で描く) を塗ると、物理で物が床の上を転がり、壁で止まります",
+          "en": "Tile colliders: paint collision shapes (full, halves, slopes, custom) over the picture on the Tiles tab's Tileset page, and physics objects roll on the floor and stop at walls"
+        },
+        {
+          "ja": "つながった当たりは大きな箱にまとめて物理に渡します (床一面 = 箱 1 つ)。シーンビューの「形」で当たりの線が出ます",
+          "en": "Connected colliders are merged into large boxes for physics (a whole floor = one box). The Scene view's Shapes switch shows their outlines"
+        },
+        {
+          "ja": "タイルに名前・タグ・独自データ (真偽・整数・数・文字の欄) を持たせられます",
+          "en": "Tiles can have a name, tags and custom data (bool, integer, number and text fields)"
+        }
+      ]
+    },
+    {
       "version": "0.0.49",
       "date": "2026-11-28",
       "items": [

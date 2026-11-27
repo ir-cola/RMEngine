@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "tilemap_x_physics",
+  "displayName": "タイルマップ × 物理",
+  "version": "0.0.1",
+  "connectorFor": { "author": "rm_engine", "name": "game_x_tilemap" },
+  "requires": [
+    { "author": "rm_engine", "name": "game_x_tilemap" },
+    { "author": "rm_engine", "name": "physics" },
+    { "author": "rm_engine", "name": "tilemap" },
+    { "author": "rm_engine", "name": "game_production" },
+    { "author": "rm_engine", "name": "space2d" },
+    { "author": "rm_engine", "name": "space3d" }
+  ]
+}

@@ -438,7 +438,7 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     $utf8 = New-Object System.Text.UTF8Encoding $false
     # プロジェクトが使うプラグインに「タイルマップ」を記録する (書き出しが入れる。つなぎ「ゲーム制作 × タイルマップ」も一緒に)。
     $proj = [IO.File]::ReadAllText($rmpf, $utf8) | ConvertFrom-Json
-    $proj.plugins = @($proj.plugins) + @([ordered]@{ author = 'rm_engine'; name = 'tilemap' })
+    $proj.plugins = @($proj.plugins) + @([ordered]@{ author = 'rm_engine'; name = 'tilemap' }, [ordered]@{ author = 'rm_engine'; name = 'physics' })
     [IO.File]::WriteAllText($rmpf, ($proj | ConvertTo-Json -Depth 20), $utf8)
     $tiles = Join-Path $dir 'Project\Assets\Tiles'
     New-Item -ItemType Directory -Force $tiles | Out-Null
@@ -446,7 +446,7 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     $imageGuid = [Guid]::NewGuid().ToString('N')
     [IO.File]::WriteAllText((Join-Path $tiles 'sample_tiles_16px.png.meta'), "{`"guid`": `"$imageGuid`", `"name`": `"sample_tiles_16px.png`", `"import`": {`"sharp`": true}}", $utf8)
     $setGuid = [Guid]::NewGuid().ToString('N')
-    [IO.File]::WriteAllText((Join-Path $tiles 'Ground.rmtileset'), "{`"kind`": `"rm_engine.tileset`", `"format`": 1, `"sources`": [{`"id`": 1, `"name`": `"見本`", `"image`": `"$imageGuid`", `"tileWidth`": 16, `"tileHeight`": 16}]}", $utf8)
+    [IO.File]::WriteAllText((Join-Path $tiles 'Ground.rmtileset'), "{`"kind`": `"rm_engine.tileset`", `"format`": 1, `"sources`": [{`"id`": 1, `"name`": `"見本`", `"image`": `"$imageGuid`", `"tileWidth`": 16, `"tileHeight`": 16}], `"tiles`": [{`"source`": 1, `"column`": 0, `"row`": 0, `"shape`": `"Full`"}]}", $utf8)
     [IO.File]::WriteAllText((Join-Path $tiles 'Ground.rmtileset.meta'), "{`"guid`": `"$setGuid`", `"name`": `"Ground.rmtileset`"}", $utf8)
     $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Main.rmscene'
     $scene = [IO.File]::ReadAllText($sceneFile, $utf8) | ConvertFrom-Json
@@ -460,8 +460,13 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         [ordered]@{ type = 'rm::game_x_tilemap::TileLayer'; data = [ordered]@{ tileset = $setGuid; chunk = 32; chunks = @(
             [ordered]@{ x = -1; y = 0; cells = '65536*32,0*992' },
             [ordered]@{ x = 0; y = 0; cells = '65537*32,65536*32,0*960' }) } }) }
-    $scene.entities = @($scene.entities) + @($grid, $layer)
-    $scene.nextId = $id + 2
+    # 段階 2: 草 (0 列 0 行) は当たりの形「全部」。その上に落ちる箱 (物理): 区画の当たりが物理の動かない形になる。
+    $box = [ordered]@{ id = $id + 2; parent = 0; name = 'Crate'; active = $true; components = @(
+        [ordered]@{ type = 'rm::space2d::Transform2D'; data = [ordered]@{ position = @(-3, 0) } },
+        [ordered]@{ type = 'rm::physics::Collider2D'; data = [ordered]@{} },
+        [ordered]@{ type = 'rm::physics::Rigidbody'; data = [ordered]@{} }) }
+    $scene.entities = @($scene.entities) + @($grid, $layer, $box)
+    $scene.nextId = $id + 3
     [IO.File]::WriteAllText($sceneFile, ($scene | ConvertTo-Json -Depth 20), $utf8)
     $game = Join-Path $dir 'Game'
     $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
@@ -470,18 +475,23 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         Write-Host "NG  game_tilemap: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
         $failed++
     } else {
-        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
-        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        # 当たりは物理の固定の刻みで作る: --smoke の 5 フレームが速すぎると 1 度も刻まないことがあるので、5 回まで走らせる。
+        for ($try = 1; $try -le 5; $try++) {
+            $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+            $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+            $collided = $gameLog -match '物理: ほかのプラグインの動かない形を 2 個作りました'
+            if ($r.ExitCode -ne 0 -or $collided) { break }
+        }
         $readSet = $gameLog -match "タイルの層: タイルセット \($setGuid\) を読みました \(絵の元 1 枚\)"
         $readImage = $gameLog -match "画像を読みました: $imageGuid \(64 x 48・くっきり"
-        if ($r.ExitCode -ne 0 -or -not $readSet -or -not $readImage) {
-            Write-Host "NG  game_tilemap: タイルの層のタイルセットと画像を読めていません (終了コード $($r.ExitCode)・タイルセット $readSet・画像 $readImage)"
+        if ($r.ExitCode -ne 0 -or -not $readSet -or -not $readImage -or -not $collided) {
+            Write-Host "NG  game_tilemap: タイルの層のタイルセット・画像・当たりを読めていません (終了コード $($r.ExitCode)・タイルセット $readSet・画像 $readImage・当たり $collided)"
             $gameLog -split "`n" | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" }
             $failed++
         } else {
             $size = [Math]::Round($exe[0].Length / 1KB)
             $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB)
-            Write-Host "OK  game_tilemap: $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB)。タイルの層がタイルセットとその画像 (64 x 48) を読みました"
+            Write-Host "OK  game_tilemap: $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB)。タイルの層がタイルセットとその画像 (64 x 48) を読み、2 つの区画の当たりが物理の動かない形になりました"
         }
     }
 }

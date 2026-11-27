@@ -10,13 +10,20 @@
 #include "core/reflect/Data.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/game_x_tilemap/runtime/TileLayer.h"
+#include "rm_engine/physics/runtime/Components.h"
+#include "rm_engine/physics/runtime/PhysicsWorld.h"
+#include "rm_engine/tilemap_x_physics/runtime/Register.h"
+#include "core/RuntimeRegistry.h"
+#include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/space2d/runtime/Atlas.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
 #include "rm_engine/tilemap/runtime/TileCell.h"
+#include "rm_engine/tilemap/runtime/TileCollision.h"
 #include "rm_engine/tilemap/runtime/TilePaint.h"
 #include "rm_engine/tilemap/runtime/TileStore.h"
 #include "rm_engine/tilemap/runtime/Tileset.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <set>
@@ -233,4 +240,243 @@ RM_TEST(TilemapThousandSquareLayerLoadsAndEditsQuickly) {
     CHECK(s.ChunkCount() == 1024 && s.Get({500, 500}) == MakeTile(2, 1, 1));
     CHECK(ChunkCells(chunks, 15, 15) != "65536*512,65537*512");
     CHECK(ms < 2000);  // (Release でふつう数十 ms。Debug でも通るゆるさ)
+}
+
+// --- 段階 2: 当たり・タグ・独自データ ---------------------------------------------------------------
+
+namespace {
+
+Tileset ShapeSet() {
+    Tileset t;
+    t.sources.push_back({});
+    auto add = [&](int col, TileShape s) {
+        TileInfo i;
+        i.source = 1;
+        i.column = col;
+        i.shape = s;
+        SetTile(t, i);
+    };
+    add(0, TileShape::Full);
+    add(1, TileShape::Bottom);
+    add(2, TileShape::SlopeBottomLeft);
+    add(3, TileShape::Left);
+    TileInfo custom;
+    custom.source = 1;
+    custom.column = 4;
+    custom.shape = TileShape::Custom;
+    custom.points = {{0, 0}, {1, 0}, {0.5f, 0.2f}, {0.5f, 1}};  // (へこみの点 0.5, 0.2 は包む形の中)
+    SetTile(t, custom);
+    return t;
+}
+
+std::vector<TileValue> EmptyChunk() { return std::vector<TileValue>(static_cast<size_t>(kChunkCells), 0); }
+void Put(std::vector<TileValue>& cells, int x, int y, TileValue v) { cells[static_cast<size_t>(IndexInChunk({x, y}))] = v; }
+float Area(const CollisionBox& b) { return (b.max.x - b.min.x) * (b.max.y - b.min.y); }
+
+}  // namespace
+
+RM_TEST(TilemapTilesStaySparseAndKeepData) {
+    Tileset t;
+    t.fields.push_back({"かたさ", TileFieldKind::Int, "1"});
+    TileInfo i = TileOrDefault(t, 1, 2, 3);
+    CHECK(IsDefaultTile(i) && i.source == 1 && i.column == 2 && i.row == 3);
+    SetTile(t, i);
+    CHECK(t.tiles.empty());  // (既定: ファイルに出ない)
+    i.tags = {"壊せる"};
+    SetTileData(t, i, "かたさ", "3");
+    SetTile(t, i);
+    CHECK(t.tiles.size() == 1 && TileData(t, *FindTile(t, 1, 2, 3), "かたさ") == "3");
+    CHECK(TileData(t, TileOrDefault(t, 1, 0, 0), "かたさ") == "1");  // (値の無いタイル: 欄の既定値)
+    SetTileData(t, i, "かたさ", "1");
+    CHECK(i.data.empty());  // (既定値と同じ: 持たない)
+    TileInfo first = TileOrDefault(t, 1, 0, 0);
+    first.name = "草";
+    SetTile(t, first);
+    CHECK(t.tiles.size() == 2 && t.tiles[0].column == 0);  // (絵の元・行・列の順)
+    // 欄を消しても値はファイルに残る。
+    i.data.push_back({"移動コスト", "5"});
+    SetTile(t, i);
+    t.fields.clear();
+    const auto back = ReadTileset(WriteTileset(t), nullptr);
+    CHECK(back && TileData(*back, *FindTile(*back, 1, 2, 3), "移動コスト") == "5");
+    i.tags.clear();
+    i.data.clear();
+    SetTile(t, i);
+    CHECK(t.tiles.size() == 1);  // (既定に戻した: 消える)
+}
+
+RM_TEST(TilemapShapePolygonsAndFlips) {
+    TileInfo i;
+    i.shape = TileShape::SlopeBottomLeft;
+    const std::vector<Vec2> p = ShapePolygon(i, 0);
+    CHECK(p.size() == 3);
+    const std::vector<Vec2> flipped = ShapePolygon(i, kFlipX);  // (左右反転: 直角が右下)
+    i.shape = TileShape::SlopeBottomRight;
+    std::vector<Vec2> want = ShapePolygon(i, 0);
+    CHECK(flipped == want);
+    i.shape = TileShape::Custom;
+    i.points = {{0, 0}, {1, 0}, {0.5f, 0.2f}, {0.5f, 1}};
+    CHECK(ShapePolygon(i, 0).size() == 3);  // (へこみの点は包む形に入らない)
+    i.points = {{0, 0}, {1, 1}};
+    CHECK(ShapePolygon(i, 0).empty());  // (2 点: 形にならない)
+    CHECK(ConvexHull({{0, 0}, {1, 1}, {2, 2}}).empty());  // (一直線)
+}
+
+RM_TEST(TilemapCollisionMergesConnectedCellsIntoBoxes) {
+    const CollisionTable table(ShapeSet());
+    // 床一面 (32 マス x 2 行): 箱 1 つ。
+    std::vector<TileValue> floor = EmptyChunk();
+    for (int x = 0; x < 32; ++x) {
+        Put(floor, x, 0, MakeTile(1, 0, 0));
+        Put(floor, x, 1, MakeTile(1, 0, 0));
+    }
+    ChunkCollision c = CollideChunk(floor, {0, 0}, {1, 1}, table);
+    CHECK(c.boxes.size() == 1 && c.polygons.empty());
+    CHECK((c.boxes[0] == CollisionBox{{0, 0}, {32, 2}}));
+    // L 字: 箱 2 つ。
+    std::vector<TileValue> el = EmptyChunk();
+    Put(el, 0, 0, MakeTile(1, 0, 0));
+    Put(el, 1, 0, MakeTile(1, 0, 0));
+    Put(el, 0, 1, MakeTile(1, 0, 0));
+    c = CollideChunk(el, {0, 0}, {1, 1}, table);
+    CHECK(c.boxes.size() == 2);
+    // 穴のある 3 x 3: 箱 4 つ、面積 8 マス。
+    std::vector<TileValue> ring = EmptyChunk();
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 3; ++x) {
+            if (x != 1 || y != 1) Put(ring, x, y, MakeTile(1, 0, 0));
+        }
+    }
+    c = CollideChunk(ring, {0, 0}, {1, 1}, table);
+    float area = 0;
+    for (const auto& b : c.boxes) area += Area(b);
+    CHECK(c.boxes.size() == 4 && std::fabs(area - 8) < 1e-4f);
+    // 「全部」の上の「下半分」は 1 つの箱 (高さ 1.5)。左右反転した「左半分」= 右半分。
+    std::vector<TileValue> half = EmptyChunk();
+    Put(half, 5, 0, MakeTile(1, 0, 0));
+    Put(half, 5, 1, MakeTile(1, 1, 0));
+    Put(half, 10, 0, MakeTile(1, 3, 0, kFlipX));
+    c = CollideChunk(half, {0, 0}, {1, 1}, table);
+    CHECK(c.boxes.size() == 2);
+    CHECK(std::any_of(c.boxes.begin(), c.boxes.end(), [](const CollisionBox& b) { return b == CollisionBox{{5, 0}, {6, 1.5f}}; }));
+    CHECK(std::any_of(c.boxes.begin(), c.boxes.end(), [](const CollisionBox& b) { return b == CollisionBox{{10.5f, 0}, {11, 1}}; }));
+    // 斜めと自分で描いた形: 1 マスずつの多角形。区画の場所・マスの大きさが効く。当たりの無いタイルは何も出さない。
+    std::vector<TileValue> slopes = EmptyChunk();
+    Put(slopes, 0, 0, MakeTile(1, 2, 0));
+    Put(slopes, 1, 0, MakeTile(1, 4, 0));
+    Put(slopes, 2, 0, MakeTile(1, 7, 0));
+    c = CollideChunk(slopes, {-1, 0}, {2, 1}, table);
+    CHECK(c.boxes.empty() && c.polygons.size() == 2);
+    CHECK(!c.polygons.empty() && c.polygons[0][0].x <= -64 + 1e-4f);  // (区画 -1: x は -32 マス x 2 から)
+}
+
+RM_TEST(TilemapCollisionHasFewerShapesThanCells) {
+    const CollisionTable table(ShapeSet());
+    std::vector<TileValue> cells = EmptyChunk();
+    size_t filled = 0;
+    for (int y = 0; y < 32; ++y) {
+        for (int x = 0; x < 32; ++x) {
+            if ((x / 4 + y / 4) % 2 == 0) continue;  // (市松の 4 x 4 の島)
+            Put(cells, x, y, MakeTile(1, 0, 0));
+            ++filled;
+        }
+    }
+    const ChunkCollision c = CollideChunk(cells, {0, 0}, {1, 1}, table);
+    CHECK(c.boxes.size() * 5 < filled);  // (島 1 つ = 箱 1 つ: 64 個。マスは 512)
+    CHECK(CollisionTable(Tileset{}).Empty() && CollideChunk(cells, {0, 0}, {1, 1}, CollisionTable(Tileset{})).Empty());
+}
+
+namespace {
+
+// 床 (区画 (0, 0) の下の 1 行、「全部」) を塗った層と、その上の動く箱。タイルセットはアセットのバイトとして渡す。
+struct TileWorld {
+    game_production::Scene scene;
+    RuntimeRegistry registry;
+    game_production::AssetAccess assets;
+    std::string tileset;
+    int layer = 0, box = 0;
+};
+
+void MakeTileWorld(TileWorld& w, float boxX) {
+    using namespace rm::game_x_tilemap;
+    w.scene.SetComponentTypes({&reflect::TypeOf<space2d::Transform2D>(), &reflect::TypeOf<TileGrid>(), &reflect::TypeOf<TileLayer>(),
+                               &reflect::TypeOf<physics::Rigidbody>(), &reflect::TypeOf<physics::Collider2D>()});
+    Tileset set;
+    set.sources.push_back({});
+    TileInfo floor;
+    floor.source = 1;
+    floor.shape = tilemap::TileShape::Full;
+    SetTile(set, floor);
+    w.tileset = WriteTileset(set);
+    w.assets.bytes = [&w](const AssetRef& ref) -> std::optional<std::string> {
+        if (ref.guid == "tiles") return w.tileset;
+        return std::nullopt;
+    };
+    const int grid = w.scene.Create("grid");
+    w.scene.AddComponent(grid, reflect::TypeOf<space2d::Transform2D>());
+    w.scene.AddComponent(grid, reflect::TypeOf<TileGrid>());
+    w.layer = w.scene.Create("ground", grid);
+    w.scene.AddComponent(w.layer, reflect::TypeOf<space2d::Transform2D>());
+    w.scene.AddComponent(w.layer, reflect::TypeOf<TileLayer>());
+    auto& layer = *static_cast<TileLayer*>(w.scene.Find(w.layer)->FindComponent(reflect::TypeOf<TileLayer>().name)->value.Get());
+    layer.tileset.guid = "tiles";
+    layer.chunks = {{0, 0, "65536*32,0*992"}};  // (y = 0 の行: 0 〜 32 m、上の面は 1 m)
+    w.box = w.scene.Create("box");
+    w.scene.AddComponent(w.box, reflect::TypeOf<space2d::Transform2D>());
+    static_cast<space2d::Transform2D*>(w.scene.Find(w.box)->FindComponent(reflect::TypeOf<space2d::Transform2D>().name)->value.Get())->position = {boxX, 4};
+    w.scene.AddComponent(w.box, reflect::TypeOf<physics::Collider2D>());
+    w.scene.AddComponent(w.box, reflect::TypeOf<physics::Rigidbody>());
+    tilemap_x_physics::RegisterRuntime(w.registry);
+}
+
+Vec2 BoxAt(TileWorld& w) {
+    return static_cast<space2d::Transform2D*>(w.scene.Find(w.box)->FindComponent(reflect::TypeOf<space2d::Transform2D>().name)->value.Get())->position;
+}
+
+}  // namespace
+
+RM_TEST(TilemapPhysicsBoxRestsOnTheTileFloor) {
+    TileWorld w;
+    MakeTileWorld(w, 5.5f);
+    physics::PhysicsWorld world;
+    std::vector<game_production::HookCall> hooks;
+    for (int i = 0; i < 180; ++i) world.Step(w.scene, 1.f / 60.f, {0, -9.81f, 0}, &hooks, &w.assets, &w.registry);
+    CHECK(world.StaticPieces() == 1);  // (区画 1 つ = 動かない物体 1 つ)
+    const Vec2 at = BoxAt(w);
+    CHECK(at.y > 1.3f && at.y < 1.7f);  // (床の上の面 1 m の上に、高さ 1 の箱の真ん中)
+    // 当たった相手は層のエンティティ。
+    CHECK(std::any_of(hooks.begin(), hooks.end(), [&](const game_production::HookCall& h) { return h.entity == w.box && h.other == w.layer; }));
+    // 光線も層に当たる。
+    const auto hit = world.Raycast({20, 5, 0}, {0, -1, 0}, 10);
+    CHECK(hit && hit->entity == w.layer && std::fabs(hit->point.y - 1) < 0.05f);
+}
+
+RM_TEST(TilemapPhysicsRebuildsOnlyChangedChunksAndFollowsTheLayer) {
+    TileWorld w;
+    MakeTileWorld(w, -10.f);  // (箱は床の外: 落ちていく)
+    physics::PhysicsWorld world;
+    world.Step(w.scene, 1.f / 60.f, {0, -9.81f, 0}, nullptr, &w.assets, &w.registry);
+    CHECK(world.StaticPieces() == 1);
+    auto& layer = *static_cast<game_x_tilemap::TileLayer*>(w.scene.Find(w.layer)->FindComponent(reflect::TypeOf<game_x_tilemap::TileLayer>().name)->value.Get());
+    // ゲーム中に区画 (-1, 0) を足す: 物体が 2 つ。消すと 1 つに戻る。
+    layer.chunks.insert(layer.chunks.begin(), tilemap::TileChunk{-1, 0, "65536*32,0*992"});
+    world.Step(w.scene, 1.f / 60.f, {0, -9.81f, 0}, nullptr, &w.assets, &w.registry);
+    CHECK(world.StaticPieces() == 2);
+    layer.chunks.erase(layer.chunks.begin());
+    world.Step(w.scene, 1.f / 60.f, {0, -9.81f, 0}, nullptr, &w.assets, &w.registry);
+    CHECK(world.StaticPieces() == 1);
+    // 「当たりを作る」を外すと消える。層を有効でなくしても消える。
+    layer.collision = false;
+    world.Step(w.scene, 1.f / 60.f, {0, -9.81f, 0}, nullptr, &w.assets, &w.registry);
+    CHECK(world.StaticPieces() == 0);
+    layer.collision = true;
+    w.scene.Find(w.layer)->data.active = false;
+    world.Step(w.scene, 1.f / 60.f, {0, -9.81f, 0}, nullptr, &w.assets, &w.registry);
+    CHECK(world.StaticPieces() == 0);
+    // 口が無い (registry なし): 作らない。
+    TileWorld w2;
+    MakeTileWorld(w2, 5.5f);
+    physics::PhysicsWorld none;
+    none.Step(w2.scene, 1.f / 60.f, {0, -9.81f, 0}, nullptr, &w2.assets);
+    CHECK(none.StaticPieces() == 0);
 }

@@ -46,6 +46,8 @@
 #include "rm_engine/game_x_tilemap/runtime/Id.h"
 #include "rm_engine/tilemap/editor/Register.h"
 #include "rm_engine/tilemap/runtime/Id.h"
+#include "rm_engine/tilemap_x_physics/editor/Register.h"
+#include "rm_engine/tilemap_x_physics/runtime/Id.h"
 #include "rm_engine/physics/editor/Connector.h"
 #include "rm_engine/physics/runtime/Id.h"
 #include "rm_engine/game_x_audio/editor/Connector.h"
@@ -87,6 +89,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {game_x_2d::kPluginId, &game_x_2d::RegisterEditor},
         {tilemap::kPluginId, &tilemap::RegisterEditor},  // タイルセット (.rmtileset) と純粋な計算 (ゲーム制作を知らない)
         {game_x_tilemap::kPluginId, &game_x_tilemap::RegisterEditor},
+        {tilemap_x_physics::kPluginId, &tilemap_x_physics::RegisterEditor},  // タイルの当たりを物理の動かない形に・当たりの線
         {physics::kPluginId, &physics::RegisterEditor},
         {game_x_audio::kPluginId, &game_x_audio::RegisterEditor},
         {game_ui::kPluginId, &game_ui::RegisterEditor},

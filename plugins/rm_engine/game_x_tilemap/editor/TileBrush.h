@@ -26,6 +26,8 @@ struct TileBrushState {
     RM_PROPERTY() int height = 0;
     RM_PROPERTY(Min=0.25, Max=16) float zoom = 2;  // パレットの拡大 (1 ピクセル = zoom DIP)
     RM_PROPERTY() int page = 0;         // 0: パレット / 1: タイルセット
+    RM_PROPERTY() int tilesetPage = 0;  // タイルセットの中: 0: 切り方 / 1: タイル (当たり・タグ・独自データ) / 2: 独自データの欄
+    RM_PROPERTY() int paint = 0;        // タイル: 0: 選ぶ / 1〜: 当たりの形を塗る (tilemap::TileShape + 1)
 };
 
 struct TileBrush {

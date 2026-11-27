@@ -300,8 +300,19 @@ struct TileSelection {
     int column = 0, row = 0, width = 0, height = 0;
     bool operator==(const TileSelection&) const = default;
 };
+// セルの上に重ねる形 (タイルの当たり): セルの中の点 (0〜1、Y が上) の凸の多角形。
+struct TileMark {
+    int column = 0, row = 0;
+    std::vector<Vec2> points;
+};
 bool TilePalette(ui::Context& c, std::string_view id, const ui::Rect& r, ID2D1Bitmap* bitmap, bool crisp, const TileGridCut& cut,
-                 TileSelection& selection, bool pick = true);
+                 TileSelection& selection, bool pick = true, std::span<const TileMark> marks = {});
+// 形の点を置く (タイルの当たりの「自分で描く」): `r` (正方形) に画像 `bitmap` の一部 `source` (ピクセル) を拡大して描き、
+// 包む形 `outline` (点 0〜1、Y が上。呼ぶ側が凸にしたもの) と点 `points` を重ねる。左クリック: 点を足す (点の上なら
+// つかんで動かす)・右クリック: 近い点を消す。変わり終えた (離した・消した) フレームに true。ドラッグの間も
+// `points` は動く (呼ぶ側の写しを渡す)。
+bool ShapePoints(ui::Context& c, std::string_view id, const ui::Rect& r, ID2D1Bitmap* bitmap, const ui::Rect& source, bool crisp,
+                 std::span<const Vec2> outline, std::vector<Vec2>& points);
 
 // ファイルの小さな絵 (アセットパネルのサムネイル): 薄い四角の上に、形を保って `r` の中に収める。
 // `dimmed` のときは薄く。
