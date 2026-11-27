@@ -724,6 +724,9 @@ Prefab のファイル (.rmprefab)   { "kind": "rm_engine.game_production.prefab
 - ゲームビュー: 3D と同じ (`SceneViewHost::game` で絵だけ・有効でない物は出さない・背景はゲームの設定の色かカメラの色)。部品「回り続ける (2D)」(`Spin2D`、複数可) とそのシステム
 - **3D の上に 2D を重ねる** (ゲームビュー): ゲーム制作はまずゲームの空間のビューで描き、ほかの空間のビューに `SceneView::DrawLayer` (既定は何もしない) を順に頼む。2D は、カメラ (2D) の「3D の上に重ねる」が入った有効なカメラ (「最初のカメラ」がそれならそれ、違えば階層で一番上) があれば、同じゲームの画面の四角に**背景を塗らずに** (`RenderFrame2D::clear` の透明度 0) 描く。ゲーム制作は 3D も 2D も知らないまま (「重ねる」口があるだけ)。★ 2D のゲームの下に 3D (3D のビューの `DrawLayer`) はまだ
 - ★ 未確認 (画面)。書き出したゲームでの 2D の描画は `game_x_2d/runtime/GameDraw2D` (2026-11-12。7-9 章)
+- **描く物を置いて並べるのは 1 か所** (2026-11-27。タイルマップの段階 1): `game_x_2d/runtime/World2D` の `PlaceScene` (親子をたどってワールド行列・並び順・スプライトの形) と `CollectDraws` (スプライトと、口 `rm_engine.game_x_2d.world_draw` の `WorldDrawer2D` が足す物を 1 本の列にして `DrawKey` で並べる)。シーンビュー・ゲームビュー・書き出したゲームが同じ関数を呼ぶ (前は SceneView2D と GameDraw2D が別々に集めていた: 憲法 3)。エディターの画像の覚え方も 1 本 (`game_x_2d/editor/EditorImages2D`)
+- **スプライトの束** (`SpriteDraw::batch`): `ID2D1SpriteBatch` (1 枚の画像から切った多くの四角を 1 回で描く。Windows 10 の `ID2D1DeviceContext3`)。描く間だけ `ALIASED`、`CLAMP_TO_SOURCE_RECTANGLE` で隣のタイルがにじまない。タイルの層の区画 (32 x 32 マス x 絵の元 1 つ) が使う。束はそれを作った描き手が持ち、区画が変わったときだけ作り直す
+- **2D のシーンビューの道具の口** `rm_engine.game_x_2d.scene_tool` (`editor/SceneTool2D.h`): 帯の移動 / 回転 / 拡大縮小の隣に正方形のボタン。使えるとき (`Available`) だけ出る。選んでいる間は左ボタンと置く前の絵が道具のもの (右 / 中ドラッグとホイールは今のまま)。W / E / R / Esc で戻る。タイルマップの筆・四角・消しゴム・スポイトがこれ。設計 [TILEMAP.md](TILEMAP.md)
 
 ### 3D と 2D の両方があるとき (シーンの空間)
 

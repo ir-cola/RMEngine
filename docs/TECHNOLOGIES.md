@@ -1355,6 +1355,17 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **どこ** — `plugins/rm_engine/navigation/runtime/Crowd.*`・`game_x_navigation/runtime/NavWorld.*`・`NavPorts.h`・`editor/Connector.cpp` (印)・`editor/NavTab.cpp` (型の一覧)、
   `game_x_animation/runtime/ParamFeed.h`・`AnimationSystem.cpp`、`navigation_x_animation/`、`navigation_x_physics/`、`game_production/editor/ComponentLook.h`、`tests/TestNavigation.cpp`
 
+### 2D のタイルマップ: スプライトの束 (ID2D1SpriteBatch)・区画とランレングス・ブレゼンハムの線 (2026-11-27)
+
+- **何か** — タイルマップは、小さな四角い絵 (タイル) をマス目に並べて地面や壁を作る 2D のゲームの定番の作り方。1 枚の画像を同じ大きさに切ったもの (**タイルセット**) を用意し、マスごとに「どの絵の元の、何列何行のタイルか」を 32 ビットの数 1 つで持つ (下 8 ビットが列、次が行、次が絵の元の番号 (0 = 空)、その上に左右・上下・斜めの反転。反転の考え方は地図エディターの Tiled と同じ)
+- **スプライトの束 (`ID2D1SpriteBatch`)** — Direct2D (Windows 10 から) の、1 枚の画像から切った多くの四角を **1 回の命令**で描く仕組み。`ID2D1DeviceContext3::CreateSpriteBatch` で作り、`AddSprites` に「置く四角・画像の中の四角 (ピクセル)・色・行列」の並びを渡し、`DrawSpriteBatch` で描く。中では GPU のまとめ描き (インスタンシング) になる。束は GPU の側に残るので、区画が変わらない限り毎フレームの CPU の仕事は「描く」の 1 回だけ。描く間は角のぼかしを切る決まり (`D2D1_ANTIALIAS_MODE_ALIASED`) がある
+- **にじみ止め** — `D2D1_SPRITE_OPTIONS_CLAMP_TO_SOURCE_RECTANGLE`: 拡大・縮小で混ぜるとき、画像の中の自分の四角の外 (隣のタイル) を読まない。だから設計で考えた「タイルの縁を 1 ピクセル伸ばした絵を作る」をしなくて済んだ。置く四角は整数のマスの角から作り、同じ行列で置くので、隣どうしの辺がぴったり重なってすき間が出ない
+- **なぜ Direct3D にしなかったか** — Direct3D のシェーダーで 1 区画を 1 枚の四角にし、GPU にマスの値を引かせる形は、数の上では CPU がもう少し減る。しかし 2D の絵は Direct2D で描いているので、スプライトと前後に混ぜるたびに Direct2D の描きためを吐き出す (`Flush`) ことになり、層とキャラクターが交互だとかえって遅くなる。束は Direct2D の中で前後の順にそのまま入る (2026-11-27 のユーザーの決定)
+- **区画 (チャンク) とランレングス** — マス目を 32 x 32 マスの区画に分け、塗った区画だけを持つ (どの向きにも広がる地図。区画の番号は floor(マス ÷ 32) で、負の場所も同じ式)。保存は区画ごとに、1024 マスを「値*数」でまとめた文字 (**ランレングス**: 同じ値の続きを短く書く。地面のように同じタイルが続くと短い)。シーンの JSON の中の文字なので GitHub で差分が読める。気候の地図と同じ関数を核の `core/paint/Runs` に移して、両方が使う
+- **ブレゼンハムの線** — 筆を速く動かすと、前のフレームのマスと今のマスが離れる。その間を「横・縦・斜めの隣へ 1 歩ずつ」で埋める整数だけの線の引き方 (1962 年の Bresenham のアルゴリズム: 誤差を足していき、半分を超えたらもう一方の向きにも 1 歩)。四角は 2 つの角の間の全部のマス
+- **描く物を集める所を 1 本に** — シーンビュー・ゲームビュー・書き出したゲームが、同じ関数 (`game_x_2d/runtime/World2D`) でスプライトを置き、ほかのプラグインの描く物 (口 `rm_engine.game_x_2d.world_draw`) と 1 本の列にして、(ワールドの並び順・自分の並び順・階層の順) で並べる。だからキャラクターを層の間に挟める
+- **どこ** — `plugins/rm_engine/tilemap/runtime/` (`TileCell.h`・`TileStore.*`・`TilePaint.*`・`Tileset.*`)・`game_x_tilemap/runtime/TileDraw.*` (束)・`game_x_tilemap/editor/` (`TileTool`・`TilePanel`・`TileEdit`)・`space2d/runtime/Renderer2D.*` (`SpriteDraw::batch`)・`space2d/runtime/Atlas.*` (`GridCellOf`: 余白と間)・`src/core/paint/` (`Runs`・`GridPaint`)、`tests/TestTilemap.cpp`
+
 ### つなぎの線・扉・止まったら穴 (DetourTileCache)・変わった区画だけ焼く・面を塗る (2026-11-28)
 
 - **何か** — **オフメッシュリンク**: ナビメッシュの面の外を通る 2 点の線 (始め・終わり・半径・向き)。Detour は線を 1 つの「多角形」として持ち、
@@ -1377,6 +1388,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 | 日付 | 足したこと |
 |---|---|
 | 2026-11-28 | つなぎの線 (オフメッシュリンク)・扉 (リージョンを分ける印)・止まったら穴 (DetourTileCache)・区画ごとの指紋で変わった所だけ焼く・シーンビューの半透明の塗り |
+| 2026-11-27 | 2D のタイルマップ (Direct2D のスプライトの束 `ID2D1SpriteBatch`・CLAMP_TO_SOURCE_RECTANGLE のにじみ止め・32 x 32 の区画とランレングス・ブレゼンハムの線) |
 | 2026-11-27 | 揺れる骨 (Verlet・長さを保つ・球から押し出す・決まった刻み)・VRM の揺れの設定 (VRMC_springBone / secondaryAnimation) |
 | 2026-11-27 | ブレンドシェイプ (形の差を重みで足す・Compute Shader で頂点を作る: 生のバイトのバッファと UAV・FBX の BlendShape) |
 | 2026-11-27 | IK (2 本の骨を余弦定理で・回転を骨の空間へ戻す・足を坂に: 光線と高さのならし)・配列の要素の中のドロップダウン |

@@ -144,43 +144,6 @@ int PaintGrid::At(int x, int z) const {
     return at < ids.size() ? ids[at] : 0;
 }
 
-std::string EncodeRuns(std::span<const int> ids) {
-    std::string out;
-    for (size_t i = 0; i < ids.size();) {
-        size_t n = 1;
-        while (i + n < ids.size() && ids[i + n] == ids[i]) ++n;
-        if (!out.empty()) out += ',';
-        out += std::to_string(ids[i]);
-        if (n > 1) out += '*' + std::to_string(n);
-        i += n;
-    }
-    return out;
-}
-
-std::vector<int> DecodeRuns(std::string_view text, size_t count) {
-    std::vector<int> out;
-    out.reserve(count);
-    size_t pos = 0;
-    while (pos < text.size() && out.size() < count) {
-        size_t end = text.find(',', pos);
-        if (end == std::string_view::npos) end = text.size();
-        const std::string_view token = text.substr(pos, end - pos);
-        pos = end + 1;
-        const size_t star = token.find('*');
-        const std::string_view idText = token.substr(0, star);
-        int id = 0;
-        long long n = 1;
-        if (std::from_chars(idText.data(), idText.data() + idText.size(), id).ec != std::errc{} || id < 0) id = 0;
-        if (star != std::string_view::npos) {
-            const std::string_view nText = token.substr(star + 1);
-            if (std::from_chars(nText.data(), nText.data() + nText.size(), n).ec != std::errc{} || n < 0) n = 0;
-        }
-        const size_t take = std::min(static_cast<size_t>(n), count - out.size());
-        out.insert(out.end(), take, id);
-    }
-    out.resize(count, 0);
-    return out;
-}
 
 namespace {
 

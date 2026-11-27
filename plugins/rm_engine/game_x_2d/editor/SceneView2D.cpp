@@ -2,20 +2,19 @@
 
 #include "base/Log.h"
 #include "base/Utf.h"
-#include "core/asset/ImportSettings.h"
 #include "core/reflect/Data.h"
 #include "core/reflect/FieldCommand.h"
-#include "editor/app/Worker.h"
 #include "editor/lang/Lang.h"
 #include "rm_engine/game_production/editor/DebugPanel.h"
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "platform/Gfx.h"
-#include "platform/Image.h"
+#include "rm_engine/game_x_2d/editor/EditorImages2D.h"
+#include "rm_engine/game_x_2d/editor/SceneTool2D.h"
 #include "rm_engine/game_x_2d/editor/SceneViewState2D.h"
-#include "core/asset/BakedImage.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
 #include "rm_engine/game_x_2d/runtime/Sprite.h"
+#include "rm_engine/game_x_2d/runtime/World2D.h"
 #include "rm_engine/space2d/editor/Gizmo2D.h"
 #include "rm_engine/space2d/runtime/Atlas.h"
 #include "rm_engine/space2d/runtime/Renderer2D.h"
@@ -25,20 +24,15 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <filesystem>
+#include <format>
 #include <functional>
 #include <optional>
 #include <span>
 #include <string_view>
-#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace rm::game_x_2d {
-
-using asset::BakedImageInfo;
-using asset::kMaxImageSize;
-using asset::ReadBakedImage;
-using asset::WriteBakedImage;
 
 namespace {
 
@@ -59,25 +53,14 @@ constexpr float kMarkRadius = 7.f;    // スプライトのないエンティテ
 constexpr float kBarH = 28.f;         // 左上のツールの帯
 constexpr float kToolW = 196.f, kSpaceW = 168.f, kPivotW = 150.f, kSnapW = 64.f, kGridW = 56.f, kDebugW = 84.f, kShapesW = 96.f, kBarGap = 8.f;
 constexpr float kSnapBoxW = 280.f, kSnapRowH = 30.f;  // 刻みの箱 (刻みの下)
-constexpr double kImageCheckSeconds = 1.0;    // 画像ファイルを見直す間隔 (ディスクで変わったか)
-constexpr double kImageForgetSeconds = 10.0;  // どのエンティティも使わないままこの時間がたった画像は手放す
+constexpr float kExtraGap = 3.f;  // ほかのプラグインの道具のボタンの間
 
 struct BarLayout {
-    Rect tool, space, pivot, snap, grid, debug, shapes, all;
+    Rect tool, extra, space, pivot, snap, grid, debug, shapes, all;  // extra: ほかのプラグインの道具 (幅 0: なし)
 };
 
-// Transform 2D を持つエンティティの、このフレームでの状態。
-struct Placed {
-    int id = 0;
-    Mat3 world, parentWorld;
-    int order = 0;        // ワールドでの順番 (親の分を足したもの)
-    size_t tree = 0;      // 階層での位置 (後ろほど手前)
-    bool active = true;
-    bool sprite = false;  // スプライトがある (なければ小さな輪で描く。ゲームには出ない)
-    space2d::SpriteDraw draw;
-    int subOrder = 0;     // スプライトの 並び順
-    std::optional<Camera2D> camera;  // カメラである (カメラ (2D))
-};
+// Transform 2D を持つエンティティの、このフレームでの状態 (置き方は World2D の 1 か所)。
+using Placed = Placed2D;
 
 // r の真ん中にある、`aspect` (幅 / 高さ) の一番大きい長方形 (ゲーム画面の形)。
 Rect Fit(const Rect& r, float aspect) {
@@ -90,28 +73,6 @@ Rect Fit(const Rect& r, float aspect) {
     return {r.x + (r.w - w) * 0.5f, r.y + (r.h - h) * 0.5f, w, h};
 }
 
-// アセットの id で一度だけ読む画像ファイル (同じ画像のエンティティが
-// いくつあっても共有する)。ときどき見直す: ディスクで変わったファイルは
-// 読み直し、読めないファイルは一度だけ知らせる。
-struct ImageEntry {
-    Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
-    uint32_t width = 0, height = 0;  // ファイルのピクセル数 (ビットマップはもっと小さいことがある: kMaxImageSize)
-    bool sharp = false;  // 画像の取り込みの設定の くっきり (スプライト自身の設定とあわせる)
-    bool looked = false, loaded = false, told = false;
-    std::filesystem::file_time_type time{};
-    double checkedAt = 0, usedAt = 0;
-    // 専用のスレッドで読む (ファイルと WIC)。ビットマップだけは、届いたときに
-    // UI スレッドで作る。エントリを捨てると、ワーカーとこれから届く分も捨てる。
-    std::unique_ptr<editor::Worker> worker;
-    bool reading = false;
-    struct Arrived {
-        std::optional<platform::Image> image;  // nullopt: 理由は `error` にある
-        std::string error;
-        uint32_t width = 0, height = 0;
-        bool sharp = false;
-    };
-    std::optional<Arrived> arrived;
-};
 
 // ドラッグされている 1 つ分: ドラッグを始めたときの状態と、最後にドラッグが残した状態。
 struct Edited {
@@ -144,7 +105,8 @@ public:
             return;
         }
         c.P().PushClip(r);
-        const std::optional<BarLayout> bar = Bar(r);
+        SyncTools(host);
+        const std::optional<BarLayout> bar = Bar(r, ExtraWidth(host));
         if (!bar) snapOpen_ = false;
         if (HandleInput(c, r, host, bar)) Place(c, host);  // このフレームのドラッグで物が動いた
         Render(c, r, host, state_.camera, theme::SceneBackground());
@@ -184,7 +146,6 @@ public:
         if (const uint64_t now = host.host.Graphics().Generation(); now != generation_) {
             generation_ = now;
             renderer_ = {};
-            images_.clear();
         }
     }
 
@@ -203,151 +164,19 @@ private:
         spriteType_ = reflect::TypeOf<Sprite>().name;
         cameraType_ = reflect::TypeOf<Camera2D>().name;
         now_ = c.Time();
+        scene_ = &host.scene;
+        images_.Begin(now_, generation_, "2D のシーンビュー");
+        drawers_.Sync(host.host.Registry());
         Place(c, host);
-        ForgetUnusedImages();
     }
 
     // --- 物の置き場所 ---------------------------------------------------------------------
     void Place(ui::Context& c, game_production::SceneViewHost& host) {
-        placed_.clear();
-        struct Parent {
-            Mat3 world;
-            int order = 0;
-        };
-        std::unordered_map<int, Parent> parents;  // 親は TreeOrder で子より先に来る
-        size_t index = 0;
-        for (const auto& t : host.scene.TreeOrder()) {
-            const auto& e = *t.entity;
-            const auto it = parents.find(e.data.parent);
-            const Parent parent = it != parents.end() ? it->second : Parent{};
-            const game_production::Component* comp = e.FindComponent(transformType_);
-            if (!comp || !comp->Known()) {
-                parents[e.data.id] = parent;  // 自分の場所を持たない: 子は親についていく
-                ++index;
-                continue;
-            }
-            const auto& tr = *static_cast<const Transform2D*>(comp->value.Get());
-            Placed p;
-            p.id = e.data.id;
-            p.parentWorld = parent.world;
-            p.world = space2d::WorldMatrix(parent.world, tr);
-            p.order = parent.order + tr.order;
-            p.tree = index++;
-            p.active = t.activeInHierarchy;
-            parents[e.data.id] = {p.world, p.order};
-            if (const game_production::Component* cc = e.FindComponent(cameraType_); cc && cc->Known()) {
-                p.camera = *static_cast<const Camera2D*>(cc->value.Get());
-            }
-            if (const game_production::Component* sc = e.FindComponent(spriteType_); sc && sc->Known()) {
-                const auto& sp = *static_cast<const Sprite*>(sc->value.Get());
-                p.sprite = true;
-                p.subOrder = sp.order;
-                p.draw.world = p.world;
-                p.draw.color = sp.color;
-                p.draw.flipX = sp.flipX;
-                p.draw.flipY = sp.flipY;
-                const ImageEntry* img = Image(c, sp.image, host);
-                p.draw.crisp = sp.crisp || (img && img->sharp);  // スプライト自身の設定、または画像の取り込みの設定
-                if (img) {
-                    p.draw.image = img->bitmap.Get();
-                    // アトラスのセル (ビットマップのピクセル単位)。平面での大きさはファイルの
-                    // ピクセル数から決める (縮小したビットマップでも、スプライトの大きさは変わらない)。
-                    const D2D1_SIZE_U px = img->bitmap->GetPixelSize();
-                    p.draw.part = space2d::CellOf(px.width, px.height, sp.columns, sp.rows, sp.cell);
-                    const space2d::PixelRect file = space2d::CellOf(img->width, img->height, sp.columns, sp.rows, sp.cell);
-                    const float ppu = std::max(sp.pixelsPerUnit, 0.01f);
-                    p.draw.size = {static_cast<float>(file.w) / ppu, static_cast<float>(file.h) / ppu};
-                }
-            }
-            placed_.push_back(p);
-        }
+        toolImages_ = images_.Lookup(c, host.host);
+        placed_ = PlaceScene(host.scene, toolImages_);
     }
 
-    // `ref` が指す画像 (今どこにあっても) を、最初に求められたときに読む。null: 四角。
-    // 核の画像の読み方 (platform/Image: WIC) 1 本で読み、Direct2D のビットマップにする。
-    const ImageEntry* Image(ui::Context& c, const AssetRef& ref, game_production::SceneViewHost& host) {
-        if (ref.Empty()) return nullptr;
-        ImageEntry& m = images_[ref.guid];
-        m.usedAt = now_;
-        if (m.arrived) {
-            // ワーカーで読む: ビットマップはここで作る (Direct2D は UI スレッドのもの)。
-            const bool again = m.bitmap != nullptr;
-            ImageEntry::Arrived got = std::move(*m.arrived);
-            m.arrived.reset();
-            m.reading = false;
-            const std::string name = PathToUtf8(host.host.AssetFile(ref).filename());
-            m.bitmap = got.image ? platform::BitmapFromImage(c.P().DC(), *got.image) : nullptr;
-            if (got.image && !m.bitmap) got.error = "Direct2D のビットマップにできませんでした";
-            if (m.bitmap) {
-                m.width = got.width;
-                m.height = got.height;
-                m.sharp = got.sharp;
-                log::Info("2D のシーンビュー: 画像「{}」を{}読みました ({} x {} ピクセル)", name, again ? "もう一度" : "", m.width, m.height);
-            } else {
-                log::Warn("2D のシーンビュー: 画像「{}」を読めないので四角で描きます: {}", name, got.error);
-            }
-        }
-        if (m.reading) c.RequestAnimation();  // 読んでいる絵が届くまで描き直し続ける
-        if (m.looked && now_ - m.checkedAt < kImageCheckSeconds) return m.bitmap ? &m : nullptr;
-        m.looked = true;
-        m.checkedAt = now_;
-        const std::filesystem::path file = host.host.AssetFile(ref);
-        const std::string name = file.empty() ? ref.guid : PathToUtf8(file.filename());
-        std::error_code ec;
-        // (画像そのものか、.meta の取り込みの設定)
-        const auto time = file.empty() ? std::filesystem::file_time_type{} : asset::ChangedAt(file, ec);
-        if (file.empty() || ec) {
-            m.bitmap.Reset();
-            m.loaded = false;
-            if (!m.told) {
-                log::Warn("2D のシーンビュー: 画像「{}」がプロジェクトに見つからないので四角で描きます (消されたか、アセットの外のファイル)", name);
-                m.told = true;
-            }
-            return nullptr;
-        }
-        m.told = false;
-        if (m.loaded && time == m.time) return m.bitmap ? &m : nullptr;  // 変わっていない
-        m.loaded = true;
-        m.time = time;
-        // ワーカーへ渡す。新しい絵が届くまで古いビットマップは残す。
-        if (!m.worker) m.worker = std::make_unique<editor::Worker>();
-        m.reading = true;
-        ImageEntry* entry = &m;  // (エントリはワーカーの投稿より長く生きる: 投稿はエントリと一緒に捨てる)
-        m.worker->Run([file, entry](std::stop_token stop, const editor::Worker::Post& post) {
-            ImageEntry::Arrived got;
-            // 画像の取り込みの設定 (.meta): くっきり と、どこまで大きくしてよいか。
-            const auto imp = asset::ReadImport<asset::ImageImport>(file);
-            got.sharp = imp.filter == asset::TextureFilter::Sharp;
-            const uint32_t most = std::min<uint32_t>(kMaxImageSize, static_cast<uint32_t>(std::max(imp.maxSize, 1)));
-            IWICImagingFactory* wic = platform::ThreadImagingFactory();
-            // (まずファイル自身の大きさ。ビットマップより大きい絵は縮小するが、スプライトの大きさは変えない)
-            auto whole = platform::LoadImageFile(wic, file, platform::PixelOrder::PremultipliedBgra, {}, &got.error);
-            if (whole) {
-                got.width = whole->width;
-                got.height = whole->height;
-                const bool big = whole->width > most || whole->height > most;
-                if (big && !stop.stop_requested()) {
-                    auto fitted = platform::LoadImageFile(wic, file, platform::PixelOrder::PremultipliedBgra, {most, most}, &got.error);
-                    if (fitted) whole = std::move(fitted);
-                }
-                got.image = std::move(whole);
-            }
-            if (stop.stop_requested()) return;
-            post([entry, got = std::move(got)]() mutable { entry->arrived = std::move(got); });
-        });
-        return m.bitmap ? &m : nullptr;
-    }
-
-    void ForgetUnusedImages() {
-        std::erase_if(images_, [&](const auto& kv) { return now_ - kv.second.usedAt > kImageForgetSeconds; });
-    }
-
-    const Placed* FindPlaced(int id) const {
-        for (const Placed& p : placed_) {
-            if (p.id == id) return &p;
-        }
-        return nullptr;
-    }
+    const Placed* FindPlaced(int id) const { return game_x_2d::FindPlaced(placed_, id); }
 
     // ギズモの軸は、場所を持つ最後に選んだエンティティ (最後にクリックしたもの) から取る。
     const Placed* Primary(std::span<const int> selection) const {
@@ -377,6 +206,10 @@ private:
         if (p.sprite) {
             const Vec2 half = p.draw.size * 0.5f;
             return space2d::InsidePlacedBox(space2d::ToWorld(state_.camera, sr, mouse), p.world, {-half.x, -half.y}, half);
+        }
+        const Vec2 world = space2d::ToWorld(state_.camera, sr, mouse);
+        for (const auto& d : drawers_.All()) {
+            if (d->Covers(*scene_, placed_, p.id, world)) return true;  // (タイルの層: 絵のあるマスの上)
         }
         const Vec2 at = space2d::ToScreen(state_.camera, sr, space2d::TransformPoint(p.world, {0, 0}));
         return space2d::Length(mouse - at) <= kMarkRadius + 3.f;
@@ -419,8 +252,45 @@ private:
         return space2d::DrawOrder(keys);
     }
 
+    // --- ほかのプラグインの道具 (口 kSceneTool2DPoint) ----------------------------------------
+    // 道具を作り (1 度)、どれが今使えるかを決める。使えなくなった道具を選んでいたら、やめる。
+    void SyncTools(game_production::SceneViewHost& host) {
+        if (!toolsMade_) {
+            toolsMade_ = true;
+            for (const auto& t : host.host.Registry().Contributions<SceneTool2DInfo>(kSceneTool2DPoint)) {
+                if (t.item->create) {
+                    if (auto made = t.item->create()) tools_.push_back(std::move(made));
+                }
+            }
+        }
+        host_ = &host;
+        shown_.assign(tools_.size(), false);
+        for (size_t t = 0; t < tools_.size(); ++t) shown_[t] = !host.playing && tools_[t]->Available(host);
+        if (active_ && !shown_[*active_]) StopTool();
+    }
+    // 帯の道具のボタンの幅 (0: なし)。
+    float ExtraWidth(const game_production::SceneViewHost& host) const {
+        (void)host;
+        size_t n = 0;
+        for (size_t t = 0; t < tools_.size(); ++t) {
+            if (shown_.size() > t && shown_[t]) n += tools_[t]->Buttons().size();
+        }
+        return n == 0 ? 0.f : static_cast<float>(n) * (kBarH + kExtraGap) - kExtraGap;
+    }
+    void StartTool(size_t tool, int mode) {
+        if (active_ && *active_ != tool) StopTool();
+        if (drag_ == Drag::Gizmo || drag_ == Drag::Body) return;  // (移動のドラッグの途中)
+        active_ = tool;
+        mode_ = mode;
+        hot_ = gizmo::Handle::None;
+    }
+    void StopTool() {
+        if (active_ && host_) tools_[*active_]->Cancel(*host_);
+        active_.reset();
+    }
+
     // --- ツールの帯と刻みの箱 -------------------------------------------------------------
-    static std::optional<BarLayout> Bar(const Rect& r) {
+    static std::optional<BarLayout> Bar(const Rect& r, float extraW) {
         if (r.w < kToolW + 16 || r.h < kBarH + 60) return std::nullopt;
         BarLayout b;
         float x = r.x + 8, y = r.y + 8;
@@ -434,13 +304,14 @@ private:
             return at;
         };
         b.tool = place(kToolW);
+        b.extra = extraW > 0 ? place(extraW) : Rect{b.tool.Right(), b.tool.y, 0, 0};
         b.space = place(kSpaceW);
         b.pivot = place(kPivotW);
         b.snap = place(kSnapW);
         b.grid = place(kGridW);
         b.debug = place(kDebugW);
         b.shapes = place(kShapesW);
-        const float right = std::max({b.tool.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.grid.Right(), b.debug.Right(), b.shapes.Right()});
+        const float right = std::max({b.tool.Right(), b.extra.Right(), b.space.Right(), b.pivot.Right(), b.snap.Right(), b.grid.Right(), b.debug.Right(), b.shapes.Right()});
         b.all = {r.x + 8, r.y + 8, right - (r.x + 8), b.shapes.Bottom() - (r.y + 8)};
         return b;
     }
@@ -453,7 +324,7 @@ private:
 
     bool OverBar(const Rect& r, const std::optional<BarLayout>& bar, float x, float y) const {
         if (!bar) return false;
-        for (const Rect& part : {bar->tool, bar->space, bar->pivot, bar->snap, bar->grid, bar->debug, bar->shapes}) {
+        for (const Rect& part : {bar->tool, bar->extra, bar->space, bar->pivot, bar->snap, bar->grid, bar->debug, bar->shapes}) {
             if (part.Contains(x, y)) return true;
         }
         return snapOpen_ && SnapBox(r, *bar).Contains(x, y);
@@ -464,8 +335,24 @@ private:
         const std::wstring moveTip = Tr(L"矢印で動かす (W)"), rotateTip = Tr(L"輪で回す (E)"), scaleTip = Tr(L"箱で大きさを変える (R)");
         const std::array<std::wstring_view, 3> tools{move, rotate, scale};
         const std::array<std::wstring_view, 3> toolTips{moveTip, rotateTip, scaleTip};
-        if (const int i = w::Segmented(c, "gizmo2d_tool", bar.tool, tools, static_cast<int>(state_.tool), toolTips); i >= 0) {
+        if (const int i = w::Segmented(c, "gizmo2d_tool", bar.tool, tools, active_ ? -1 : static_cast<int>(state_.tool), toolTips); i >= 0) {
             state_.tool = static_cast<gizmo::Tool>(i);
+            StopTool();
+        }
+        // ほかのプラグインの道具 (タイルの 筆・四角 …): 正方形のボタン。
+        float x = bar.extra.x;
+        for (size_t t = 0; t < tools_.size(); ++t) {
+            if (!shown_[t]) continue;
+            const auto buttons = tools_[t]->Buttons();
+            for (size_t k = 0; k < buttons.size(); ++k) {
+                const Rect sq{x, bar.extra.y, kBarH, kBarH};
+                x += kBarH + kExtraGap;
+                const bool on = active_ && *active_ == t && mode_ == static_cast<int>(k);
+                const std::string id = std::format("scene2d_tool_{}_{}", t, k);
+                if (w::ToolSquare(c, id, sq, buttons[k].icon, on, buttons[k].tooltip ? Tr(buttons[k].tooltip) : std::wstring()).clicked && !on) {
+                    StartTool(t, static_cast<int>(k));
+                }
+            }
         }
         const std::wstring local = Tr(L"ローカル"), world = Tr(L"ワールド");
         const std::wstring localTip = Tr(L"選んだ物の向きに合わせる (X で切り替え)"), worldTip = Tr(L"世界の向き (X で切り替え)。大きさは常に物の向き");
@@ -552,8 +439,14 @@ private:
         const space2d::ScreenRect sr = ToScreenRect(r);
         bool changed = false;
 
+        // ほかのプラグインの道具を選んでいる間: 左ボタンはその道具のもの (右 / 中ドラッグ・ホイールは下のまま)。
+        const bool toolWasBusy = active_ && tools_[*active_]->Busy();
+        if (active_ && (drag_ == Drag::None || drag_ == Drag::PanRight || drag_ == Drag::PanMiddle)) {
+            const SceneTool2DFrame tf{c, r, host, state_.camera, placed_, toolImages_, hovered};
+            if (drag_ == Drag::None || in.down[0]) tools_[*active_]->Input(tf, mode_);
+        }
         // Play ではシーンは動いているコピー: 見せるだけで編集しない (ギズモもなく、物をドラッグできない)。
-        const std::optional<gizmo::Frame> frame = host.playing ? std::nullopt : GizmoFrame(host, state_.tool);
+        const std::optional<gizmo::Frame> frame = host.playing || active_ ? std::nullopt : GizmoFrame(host, state_.tool);
         if (drag_ == Drag::None) {
             hot_ = hovered && frame ? gizmo::HitTest(state_.tool, *frame, state_.camera, sr, mouse) : gizmo::Handle::None;
         }
@@ -563,6 +456,8 @@ private:
                 drag_ = Drag::PanRight;
             } else if (c.MousePressed(ui::Mouse::Middle)) {
                 drag_ = Drag::PanMiddle;
+            } else if (active_) {
+                // (左ボタンは道具が受け取った)
             } else if (c.MousePressed() && hot_ != gizmo::Handle::None && frame &&
                        BeginEdit(host, host.scene.Roots(host.selection))) {
                 gizmo_ = gizmo::BeginDrag(state_.tool, hot_, *frame, state_.camera, sr, mouse);
@@ -630,11 +525,21 @@ private:
             }
         }
         if (hovered && in.wheel != 0.f) space2d::ZoomAt(state_.camera, sr, mouse, in.wheel);
-        if (hovered && c.Focused() == 0 && drag_ != Drag::Gizmo && drag_ != Drag::Body) {
+        const bool toolBusy = toolWasBusy || (active_ && tools_[*active_]->Busy());
+        if (hovered && c.Focused() == 0 && drag_ != Drag::Gizmo && drag_ != Drag::Body && !toolBusy) {
             if (c.KeyPressed(ui::Key::F)) FrameSelection(host, r);
-            if (c.KeyPressed(ui::Key::W)) state_.tool = gizmo::Tool::Move;
-            if (c.KeyPressed(ui::Key::E)) state_.tool = gizmo::Tool::Rotate;
-            if (c.KeyPressed(ui::Key::R)) state_.tool = gizmo::Tool::Scale;
+            if (c.KeyPressed(ui::Key::W)) state_.tool = gizmo::Tool::Move, StopTool();
+            if (c.KeyPressed(ui::Key::E)) state_.tool = gizmo::Tool::Rotate, StopTool();
+            if (c.KeyPressed(ui::Key::R)) state_.tool = gizmo::Tool::Scale, StopTool();
+            if (active_ && c.KeyPressed(ui::Key::Escape)) StopTool();  // 移動の道具に戻る
+            // ほかのプラグインの道具のキー (タイル: B / U / I)。
+            for (size_t t = 0; t < tools_.size(); ++t) {
+                if (!shown_[t]) continue;
+                const auto buttons = tools_[t]->Buttons();
+                for (size_t k = 0; k < buttons.size(); ++k) {
+                    if (buttons[k].key != ui::Key::None && c.KeyPressed(buttons[k].key)) StartTool(t, static_cast<int>(k));
+                }
+            }
             if (c.KeyPressed(ui::Key::X)) state_.space = state_.space == gizmo::Space::Local ? gizmo::Space::World : gizmo::Space::Local;
             if (c.KeyPressed(ui::Key::Z)) state_.pivot = state_.pivot == gizmo::Pivot::Each ? gizmo::Pivot::Center : gizmo::Pivot::Each;
         }
@@ -820,12 +725,26 @@ private:
             lines_.push_back({{a.x, 0}, {b.x, 0}, theme::AxisX().Alpha(0.8f), 1.f});
             lines_.push_back({{0, a.y}, {0, b.y}, theme::AxisY().Alpha(0.8f), 1.f});
         }
-        for (const size_t i : DrawOrder()) {
-            const Placed& p = placed_[i];
-            if (!p.sprite || (game && !p.active)) continue;  // オフ: ゲームには出ない
-            space2d::SpriteDraw d = p.draw;
-            if (!p.active) d.color = d.color.Alpha(d.color.a * 0.35f);  // オフ: シーンビューでは薄く
-            sprites_.push_back(d);
+        // スプライトと、ほかのプラグインの描く物 (タイルの層) を 1 本の列で前後に並べる (World2D の 1 か所)。
+        const WorldDraw2DFrame wf{.scene = host.scene,
+                                  .placed = placed_,
+                                  .dc = c.P().DC(),
+                                  .generation = generation_,
+                                  .images = toolImages_,
+                                  .asset = [&host](const AssetRef& ref) { return host.host.AssetContent(ref); },
+                                  .camera = view,
+                                  .viewport = sr,
+                                  .game = game,
+                                  .time = now_};
+        CollectDraws(wf, drawers_.All(), drawn_);
+        std::unordered_set<int> drew;  // 描く物のあるエンティティ (印の輪を出さない)
+        for (const Drawn2D& d : drawn_) {
+            sprites_.push_back(d.draw);
+            drew.insert(d.entity);
+        }
+        if (!game && active_ && !host.playing) {  // 道具の置く前の絵とマスの枠 (全部の物の上)
+            const SceneTool2DFrame tf{c, r, host, state_.camera, placed_, toolImages_, c.IsHovered(r)};
+            tools_[*active_]->Draw(tf, mode_, sprites_, overlay_);
         }
         if (!game) {
             for (const Placed& p : placed_) {
@@ -833,7 +752,7 @@ private:
                 if (p.camera) CameraFrame(p, host.aspect, selected ? theme::Accent : theme::SceneCamera());
                 if (p.sprite) {
                     if (selected) Outline(p, theme::Accent);
-                } else {
+                } else if (!drew.contains(p.id)) {
                     Mark(p, selected ? theme::Accent : p.active ? theme::SceneObject() : theme::SceneObjectInactive());
                 }
             }
@@ -936,7 +855,7 @@ private:
 
     // 絵の上のギズモ (gizmo2d の形から画面に描く: 描いた物がそのままつかめる物)。
     void DrawGizmo(ui::Context& c, const Rect& r, const game_production::SceneViewHost& host) {
-        if (host.playing || drag_ == Drag::Body || drag_ == Drag::Band) return;  // Play: 編集しない
+        if (host.playing || active_ || drag_ == Drag::Body || drag_ == Drag::Band) return;  // Play: 編集しない (ほかの道具の間も出さない)
         const gizmo::Tool tool = drag_ == Drag::Gizmo && gizmo_ ? gizmo_->tool : state_.tool;
         // ドラッグ中、ギズモは物についていく (今ある場所から作り直す)。
         const std::optional<gizmo::Frame> shown = GizmoFrame(host, tool);
@@ -1001,8 +920,19 @@ private:
     std::vector<space2d::Line2D> lines_, overlay_, debug_;
     game_production::DebugDraw sceneLines_;  // このフレームのプラグインのシーンの線 (SceneLinesInfo)
     std::vector<space2d::SpriteDraw> sprites_;
-    std::unordered_map<std::string, ImageEntry> images_;  // Sprite::image (アセットの id) ごと
+    EditorImages2D images_;  // Sprite::image (アセットの id) ごと
+    ImageLookup2D toolImages_;  // このフレームの images_ (描き手と道具に渡す)
+    WorldDrawers2D drawers_;    // ほかのプラグインの描き手 (タイルの層)
+    std::vector<Drawn2D> drawn_;
+    const game_production::Scene* scene_ = nullptr;  // このフレームのシーン (Hits)
     double now_ = 0;
+    // ほかのプラグインの道具: 作った物・今使えるか・選んでいる物 (無し: 移動 / 回転 / 拡大縮小)。
+    std::vector<std::unique_ptr<SceneTool2D>> tools_;
+    std::vector<bool> shown_;
+    bool toolsMade_ = false;
+    std::optional<size_t> active_;
+    int mode_ = 0;
+    game_production::SceneViewHost* host_ = nullptr;  // (StopTool がドラッグを戻すため。このフレームのもの)
 
     Drag drag_ = Drag::None;
     Vec2 press_{0, 0};

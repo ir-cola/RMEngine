@@ -1,7 +1,7 @@
 // 書き出したゲームの 2D の描画 (game_production/runtime/GameDraw.h): ゲームの カメラ (2D) 越しに
-// 平面を、2D 空間のレンダラーでウィンドウに描く。順番も見た目もエディターのゲームビューと同じ:
-// スプライトは奥から手前へ (Transform 2D の 並び順、次にスプライトの、次に階層の)、画像の
-// アトラスのセル、画像がなければ色の四角。オフの物は描かない。
+// 平面を、2D 空間のレンダラーでウィンドウに描く。物を置く・並べるのはエディターと同じ 1 か所
+// (runtime/World2D: スプライトとタイルの層などほかのプラグインの描く物を、Transform 2D の 並び順、
+// 次に自分の並び順、次に階層の順に)。画像がなければ色の四角。オフの物は描かない。
 // 3D のゲームの上では (DrawOverlay): 「3D の上に重ねる」の カメラ (2D) 越しに、最初のカメラ が
 // それならそれ、そうでなければ最初の有効なもの。背景は塗りつぶさない (エディターのゲームビューと同じ)。
 
@@ -12,8 +12,7 @@
 #include "core/asset/BakedImage.h"
 #include "rm_engine/game_x_2d/runtime/Register.h"
 #include "rm_engine/game_x_2d/runtime/Camera2D.h"
-#include "rm_engine/game_x_2d/runtime/Sprite.h"
-#include "rm_engine/space2d/runtime/Atlas.h"
+#include "rm_engine/game_x_2d/runtime/World2D.h"
 #include "rm_engine/space2d/runtime/Renderer2D.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
 
@@ -46,62 +45,18 @@ private:
             images_.clear();
             renderer_ = {};
         }
-        const std::string transform = reflect::TypeOf<space2d::Transform2D>().name, sprite = reflect::TypeOf<Sprite>().name,
-                          camera = reflect::TypeOf<Camera2D>().name;
-        struct Placed {
-            space2d::SpriteDraw draw;
-            space2d::DrawKey key;
+        if (f.registry) drawers_.Sync(*f.registry);
+        // 物を置く・並べるのはシーンビューと同じ 1 か所 (World2D)。画像はゲームのアセットから。
+        const ImageLookup2D images = [&](const AssetRef& ref) -> const Image2D* {
+            const Loaded* img = Image(f, ref);
+            return img ? &img->view : nullptr;
         };
-        std::vector<Placed> placed;
+        const std::vector<Placed2D> placed = PlaceScene(f.scene, images);
         std::optional<std::pair<Camera2D, space2d::Mat3>> eye, firstOverlay;
-        struct Parent {
-            space2d::Mat3 world;
-            int order = 0;
-        };
-        std::unordered_map<int, Parent> parents;
-        size_t index = 0;
-        for (const auto& t : f.scene.TreeOrder()) {
-            const auto& e = *t.entity;
-            const auto it = parents.find(e.data.parent);
-            const Parent parent = it != parents.end() ? it->second : Parent{};
-            const game_production::Component* tc = e.FindComponent(transform);
-            if (!tc || !tc->Known()) {
-                parents[e.data.id] = parent;
-                ++index;
-                continue;
-            }
-            const auto& tr = *static_cast<const space2d::Transform2D*>(tc->value.Get());
-            const space2d::Mat3 world = space2d::WorldMatrix(parent.world, tr);
-            const int order = parent.order + tr.order;
-            parents[e.data.id] = {world, order};
-            const size_t tree = index++;
-            if (!t.activeInHierarchy) continue;  // オフ: ゲームには出ない
-            if (const game_production::Component* cc = e.FindComponent(camera); cc && cc->Known()) {
-                const auto& cam = *static_cast<const Camera2D*>(cc->value.Get());
-                if (static_cast<uint64_t>(e.data.id) == f.camera && (!overlay || cam.overlay)) eye.emplace(cam, world);
-                if (overlay && cam.overlay && !firstOverlay) firstOverlay.emplace(cam, world);
-            }
-            const game_production::Component* sc = e.FindComponent(sprite);
-            if (!sc || !sc->Known()) continue;
-            const auto& sp = *static_cast<const Sprite*>(sc->value.Get());
-            Placed p;
-            p.key = {order, sp.order, tree};
-            p.draw.world = world;
-            p.draw.color = sp.color;
-            p.draw.flipX = sp.flipX;
-            p.draw.flipY = sp.flipY;
-            const Loaded* img = Image(f, sp.image);
-            p.draw.crisp = sp.crisp || (img && img->sharp);  // スプライト自身の設定、または画像の取り込みの設定 (エディターと同じ)
-            if (img) {
-                // ビットマップのピクセルでのセル。ワールドでの大きさはファイルのピクセル数から (2D シーンビューと同じ)。
-                const D2D1_SIZE_U px = img->bitmap->GetPixelSize();
-                p.draw.image = img->bitmap.Get();
-                p.draw.part = space2d::CellOf(px.width, px.height, sp.columns, sp.rows, sp.cell);
-                const space2d::PixelRect file = space2d::CellOf(img->width, img->height, sp.columns, sp.rows, sp.cell);
-                const float ppu = std::max(sp.pixelsPerUnit, 0.01f);
-                p.draw.size = {static_cast<float>(file.w) / ppu, static_cast<float>(file.h) / ppu};
-            }
-            placed.push_back(p);
+        for (const Placed2D& p : placed) {
+            if (!p.active || !p.camera) continue;  // オフ: ゲームには出ない
+            if (static_cast<uint64_t>(p.id) == f.camera && (!overlay || p.camera->overlay)) eye.emplace(*p.camera, p.world);
+            if (overlay && p.camera->overlay && !firstOverlay) firstOverlay.emplace(*p.camera, p.world);
         }
         if (overlay) {
             if (!eye) eye = firstOverlay;
@@ -113,14 +68,23 @@ private:
             f.dc->Clear(D2D1::ColorF(f.background.r, f.background.g, f.background.b, 1));
             return;
         }
-        std::vector<space2d::DrawKey> keys;
-        for (const Placed& p : placed) keys.push_back(p.key);
-        sprites_.clear();
-        for (const size_t i : space2d::DrawOrder(keys)) sprites_.push_back(placed[i].draw);
         space2d::RenderFrame2D frame;
         frame.viewport = {0, 0, f.width, f.height};
         frame.camera = ViewOf(eye->first, eye->second, f.height);
         frame.clear = overlay ? Color{0, 0, 0, 0} : BackgroundOf(eye->first, f.background);
+        const WorldDraw2DFrame wf{.scene = f.scene,
+                                  .placed = placed,
+                                  .dc = f.dc,
+                                  .generation = generation_,
+                                  .images = images,
+                                  .asset = f.asset,
+                                  .camera = frame.camera,
+                                  .viewport = frame.viewport,
+                                  .game = true,
+                                  .time = clock_ += f.dt};
+        CollectDraws(wf, drawers_.All(), drawn_);
+        sprites_.clear();
+        for (const Drawn2D& d : drawn_) sprites_.push_back(d.draw);
         frame.sprites = sprites_;
         renderer_.Render(f.dc, frame);
     }
@@ -130,6 +94,7 @@ private:
         Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
         uint32_t width = 0, height = 0;
         bool sharp = false;
+        Image2D view;  // (描く側に見せる形)
     };
 
     // アセット id が指す画像を、ゲームのアセットから一度だけ読む (null: 色の四角)。
@@ -153,6 +118,7 @@ private:
                     m.width = info.width > 0 ? info.width : pixels->width;  // (ベイクしていない画像: そのピクセル数)
                     m.height = info.height > 0 ? info.height : pixels->height;
                     m.sharp = info.sharp;
+                    m.view = {m.bitmap.Get(), m.width, m.height, m.sharp};
                     log::Info("画像を読みました: {} ({} x {}{}{})", ref.guid, m.width, m.height, m.sharp ? "・くっきり" : "",
                               pixels->width != m.width ? std::format("・{} x {} に縮めて", pixels->width, pixels->height) : std::string());
                 }
@@ -170,6 +136,9 @@ private:
     uint64_t generation_ = 0;
     ID2D1DeviceContext* dc_ = nullptr;
     std::unordered_map<std::string, Loaded> images_;
+    WorldDrawers2D drawers_;  // ほかのプラグインの描き手 (タイルの層)
+    double clock_ = 0;        // (描き手の時計: 進んだ秒の和)
+    std::vector<Drawn2D> drawn_;
     std::vector<space2d::SpriteDraw> sprites_;
     bool told_ = false;
 };
