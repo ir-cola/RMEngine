@@ -105,6 +105,8 @@ public:
 
         auto last = std::chrono::steady_clock::now();
         int frames = 0;
+        double smokeTime = 0;  // --smoke: 進めたゲームの時間 (秒)
+        constexpr double kSmokeSeconds = 0.1;
         while (!quit_) {
             MSG msg;
             while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -126,6 +128,7 @@ public:
             const double dt = std::min(std::chrono::duration<double>(now - last).count(), 0.25);
             last = now;
             game_->Update(dt);
+            smokeTime += dt;
             if (!DrawFrame()) {
                 if (!Recover()) return Fail("描けませんでした (GPU が失われ、作り直せませんでした)");
                 continue;
@@ -135,10 +138,16 @@ public:
                 const auto next = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / display_.targetFps));
                 std::this_thread::sleep_until(next);
             }
-            if (smoke_ && ++frames >= 5) break;
+            // --smoke: 5 フレーム描き、ゲームの時間も 0.1 秒は進める (速い PC だと 5 フレームが 20 ms ほどで終わり、
+            // 物理の固定の刻みが 1 度も来ないことがあった: 2026-11-28 check_export の game_tilemap)。
+            if (smoke_ && ++frames >= 5 && smokeTime >= kSmokeSeconds) break;
         }
         game_->Stop();
-        log::Info("ゲームを終わりました{}", smoke_ ? " (--smoke: 5 フレーム描けました)" : "");
+        if (smoke_) {
+            log::Info("ゲームを終わりました (--smoke: {} フレーム描けました)", frames);
+        } else {
+            log::Info("ゲームを終わりました");
+        }
         window_.Destroy();
         return 0;
     }

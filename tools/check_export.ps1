@@ -475,7 +475,7 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         Write-Host "NG  game_tilemap: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
         $failed++
     } else {
-        # 当たりは物理の固定の刻みで作る: --smoke の 5 フレームが速すぎると 1 度も刻まないことがあるので、5 回まで走らせる。
+        # 当たりは物理の固定の刻みで作る (--smoke はゲームの時間を 0.1 秒は進めるので刻みは来る。念のため 5 回まで走らせる)。
         for ($try = 1; $try -le 5; $try++) {
             $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
             $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
