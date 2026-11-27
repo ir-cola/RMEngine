@@ -23,6 +23,8 @@
 #include "rm_engine/navigation/runtime/NavFile.h"
 #include "rm_engine/navigation/runtime/Query.h"
 #include "rm_engine/navigation_x_3d/runtime/Register.h"
+#include "rm_engine/navigation_x_animation/runtime/Register.h"
+#include "rm_engine/game_x_animation/runtime/ParamFeed.h"
 #include "rm_engine/navigation_x_physics/runtime/Register.h"
 #include "rm_engine/physics/runtime/Components.h"
 #include "rm_engine/space3d/runtime/Primitives.h"
@@ -681,4 +683,117 @@ RM_TEST(NavTemplateIsBaked) {
     CHECK(data.has_value() && !data->tiles.empty());
     CHECK(head.fingerprint == print);  // 違う: 見本のシーンが変わった。RM_REBAKE_NAV_TEMPLATE=1 で焼き直す
     CHECK(vols[0].volume.baked.guid == "c1e84b2f7d9a4c3e9f0b6a5d8e2c7b13");
+}
+
+// --- 段階 3: よける・動かす人は 1 人だけ (口 mover)・アニメーションへの送り手・体の形 -------------------------------
+RM_TEST(NavCrowdAgentsAvoidEachOther) {
+    NavInput in;
+    Floor(in, 20, 6);  // 狭い通路 (奥行き 6 m)
+    NavMesh mesh;
+    CHECK(mesh.Load(BakeOk(in, Options({-11, -1, -4}, {11, 3, 4})), nullptr));
+    NavCrowd crowd;
+    CHECK(crowd.Init(mesh, 8, 0.5f));
+    AgentParams p;
+    p.maxSpeed = 3;
+    p.maxAcceleration = 10;
+    p.avoid = 1;
+    const int a = crowd.Add({-6, 0, 0}, p), b = crowd.Add({6, 0, 0}, p);
+    CHECK(a >= 0 && b >= 0);
+    CHECK(crowd.SetTarget(a, {6, 0, 0}) && crowd.SetTarget(b, {-6, 0, 0}));  // 正面から来る 2 人
+    float closest = 100;
+    for (int i = 0; i < 60 * 10; ++i) {
+        crowd.Update(1.f / 60);
+        const Vec3 pa = crowd.View(a).position, pb = crowd.View(b).position;
+        closest = std::min(closest, std::sqrt((pa.x - pb.x) * (pa.x - pb.x) + (pa.z - pb.z) * (pa.z - pb.z)));
+    }
+    CHECK(closest > 0.3f * 2 * 0.8f);  // すれ違う (体が重ならない)
+    CHECK(Near(crowd.View(a).position.x, 6, 0.5f) && Near(crowd.View(b).position.x, -6, 0.5f));
+    // 外から動かす (キャラクター・ルートモーション): 通路を保ったまま。
+    AgentParams q = p;
+    q.avoid = 0;
+    const int c = crowd.Add({-6, 0, 2}, q);
+    CHECK(crowd.SetTarget(c, {6, 0, 2}));
+    crowd.Update(1.f / 60);
+    crowd.MoveTo(c, {-3, 0, 2});
+    CHECK(Near(crowd.View(c).position.x, -3, 0.05f));
+    CHECK(crowd.View(c).target == AgentView::Target::Moving && Near(crowd.Remaining(c), 9, 0.3f));
+}
+
+namespace {
+
+// 口 mover の代わり (テスト): 持ち主・頼まれた速さ・呼ばれた数。
+struct FakeMover {
+    static inline int owner = 0;
+    static inline Vec3 last{};
+    static inline int calls = 0;
+    static inline int lowCalls = 0;
+    static bool Owns(Scene&, int e) { return e == owner; }
+    static void Move(Scene&, int, Vec3 v) { last = v, ++calls; }
+    static void MoveLow(Scene&, int, Vec3) { ++lowCalls; }
+};
+
+}  // namespace
+
+RM_TEST(NavWorldLetsTheMoverMoveIt) {
+    NavPlay play;
+    FakeMover::owner = play.agent, FakeMover::calls = 0, FakeMover::lowCalls = 0, FakeMover::last = {};
+    static const NavMoverInfo kLater{&FakeMover::Owns, &FakeMover::Move, 5, false, nullptr};
+    static const NavMoverInfo kFirst{&FakeMover::Owns, &FakeMover::MoveLow, -5, false, nullptr};
+    play.reg.Contribute(kNavMoverPoint, kLater);
+    play.Step(1);
+    FakeMover::calls = 0;
+    const Vec3 start = play.Position();
+    NavWorldOf(play.scene).SetDestination(play.agent, {-5, 0, 8});
+    play.Step(30);
+    CHECK(FakeMover::calls == 30);                        // 毎刻み速さを渡す
+    CHECK(FakeMover::last.z > 0.5f && FakeMover::last.y == 0);  // 行き先へ (横だけ)
+    CHECK(Near(play.Position().x, start.x) && Near(play.Position().z, start.z));  // ナビは位置を書かない
+    // 持ち主が動かした分 (ここでは手で) を、ナビは道を保って読む。
+    auto* t = static_cast<space3d::Transform*>(play.scene.Find(play.agent)->FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get());
+    t->position.z += 2;
+    play.Step(1);
+    const NavWorld::Agent* a = FindNavWorld(play.scene)->FindAgent(play.agent);
+    CHECK(a && Near(a->view.position.z, t->position.z, 0.1f) && a->hasTarget);
+    // 2 人が持ち主と言うと、order の小さいほうだけが動かす。
+    play.reg.Contribute(kNavMoverPoint, kFirst);
+    const int before = FakeMover::calls;
+    play.Step(5);
+    CHECK(FakeMover::lowCalls == 5 && FakeMover::calls == before);
+}
+
+RM_TEST(NavFeedsGiveTheAgentValues) {
+    NavPlay play;
+    navigation_x_animation::RegisterRuntime(play.reg);
+    CHECK(play.reg.Contributions<game_x_animation::ParamFeedInfo>(game_x_animation::kParamFeedPoint).size() == 7);
+    CHECK(navigation_x_animation::AgentSpeed(play.scene, play.agent) == 0);  // (Play の前: 0)
+    play.Step(1);
+    NavWorldOf(play.scene).SetDestination(play.agent, {-5, 0, 8});  // +Z へ
+    play.Step(60);
+    CHECK(navigation_x_animation::AgentSpeed(play.scene, play.agent) > 2.f);
+    CHECK(navigation_x_animation::AgentDesiredSpeed(play.scene, play.agent) > 2.f);
+    CHECK(navigation_x_animation::AgentMoveY(play.scene, play.agent) > 2.f);  // 体は進む向きを向く: 前へ
+    CHECK(std::fabs(navigation_x_animation::AgentMoveX(play.scene, play.agent)) < 0.5f);
+    CHECK(std::fabs(navigation_x_animation::AgentTurn(play.scene, play.agent)) < 20.f);
+    CHECK(navigation_x_animation::AgentRemaining(play.scene, play.agent) > 0);
+    play.Step(60 * 6);
+    CHECK(navigation_x_animation::AgentArrived(play.scene, play.agent) == 1.f);
+    CHECK(navigation_x_animation::AgentSpeed(play.scene, play.agent) < 0.5f);
+}
+
+RM_TEST(NavBodyFromTheCharacter) {
+    RuntimeRegistry reg;
+    navigation_x_physics::RegisterRuntime(reg);
+    const auto bodies = reg.Contributions<NavBodyInfo>(kNavBodyPoint);
+    CHECK(bodies.size() == 1);
+    Scene s = NavScene();
+    s.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<physics::Character>(), &reflect::TypeOf<NavAgent>()});
+    const int id = s.Create("敵");
+    AddTo<physics::Character>(s, id).radius = 0.5f;
+    NavBody b;
+    CHECK(bodies.size() == 1 && bodies[0].item->bodyOf(s, id, b) && Near(b.radius, 0.5f) && Near(b.height, 1.8f));
+    const int other = s.Create("箱");
+    CHECK(!bodies[0].item->bodyOf(s, other, b));
+    // キャラクターのある物は、ナビ × 物理の mover が持つ (order 0)。
+    const auto movers = reg.Contributions<NavMoverInfo>(kNavMoverPoint);
+    CHECK(movers.size() == 1 && movers[0].item->owns(s, id) && !movers[0].item->owns(s, other) && movers[0].item->order == 0);
 }

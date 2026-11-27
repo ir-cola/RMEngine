@@ -177,5 +177,11 @@
   "全部計算": "Compute everything",
   "遠いと間引く": "Thin out when far",
   "画面の上で小さい (遠い) とき、姿勢を作るのを 2 フレーム / 4 フレームに 1 回にします (数百体のときに速く。間は前の姿勢のまま)": "When small on screen (far away), the pose is made only every 2 or 4 frames (faster with hundreds of characters; in between the previous pose stays)",
-  "カメラに映らないとき。時間だけ進める: 時刻・ルール・イベント・ルートモーションは進め、姿勢・IK・揺れは作りません (ゲームの動きは見え方で変わりません)。全部計算: いつも姿勢も作ります": "When the camera doesn't see it. Advance time only: time, rules, events and root motion go on, but no pose, IK or springs are made (the game's behavior doesn't depend on what is seen). Compute everything: the pose is always made too"
+  "カメラに映らないとき。時間だけ進める: 時刻・ルール・イベント・ルートモーションは進め、姿勢・IK・揺れは作りません (ゲームの動きは見え方で変わりません)。全部計算: いつも姿勢も作ります": "When the camera doesn't see it. Advance time only: time, rules, events and root motion go on, but no pose, IK or springs are made (the game's behavior doesn't depend on what is seen). Compute everything: the pose is always made too",
+  "(なし)": "(none)",
+  "パラメーターの送り手": "Parameter feeds",
+  "毎フレーム、状態とルールのパラメーターに値を入れます (ナビの動く者の速さなど: ParamFeed.h)。スクリプトの SetFloat より先に入るので、同じ名前はスクリプトが上書きします": "Puts values into the states-and-rules parameters every frame (such as a Nav agent's speed: ParamFeed.h). They go in before the script's SetFloat, so a script setting the same name wins",
+  "状態とルールのパラメーターの名前 (speed など)": "The name of a states-and-rules parameter (such as speed)",
+  "入れるもの": "Value",
+  "毎フレームこのパラメーターに入れる値 (ナビの速さ・向きの差 など。入っているプラグインが出すもの)": "The value put into this parameter every frame (navigation speed, turn angle and so on: whatever the installed plugins offer)"
 }

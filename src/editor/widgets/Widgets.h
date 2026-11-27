@@ -105,6 +105,8 @@ enum class Icon {
     Brush, Eraser, Pen,
     // 経路を試す (ナビのタブの地図の左の列): 2 つの点と、その間を曲がって結ぶ線。
     Route,
+    // タイルの道具 (2D のシーンビューの帯): 四角で塗る (角に点のある四角)・スポイト (マスのタイルを取る)。
+    TileRect, Picker,
 };
 // `size`: 絵のアイコンの一辺 (DIP)。0 = 四角に合わせる (短い辺の 8 割。16 まで)。線で描く印は四角に合わせる。
 void DrawIcon(ui::Context& c, const ui::Rect& r, Icon icon, ui::Color color, float size = 0);
@@ -283,6 +285,23 @@ bool Switch(ui::Context& c, std::string_view id, float x, float y, bool& on, std
             std::wstring_view onLabel = {});
 float SwitchWidth(ui::Context& c, std::wstring_view offLabel = {}, std::wstring_view onLabel = {});
 inline constexpr float kSwitchH = 22.f;
+
+// タイルの格子 (パネル「タイル」のパレットとタイルセット): 画像 `bitmap` を `r` いっぱいに描き (`crisp`:
+// 最近傍で拡大。ドット絵)、切ったセルの線と、選んだ四角を重ねる。セルの場所はピクセルで (`r` は画像全体を
+// `zoom` 倍したもの)。クリックで 1 つ、ドラッグで四角を選ぶ: 離したフレームに true を返し `selection` を
+// 新しい値にする。`selection` の幅が 0: 選んでいない (枠を出さない)。`pick` が false なら見せるだけ。
+struct TileGridCut {
+    int columns = 0, rows = 0;            // セルの数
+    float cellW = 16, cellH = 16;         // セルの大きさ (ピクセル)
+    float margin = 0, spacing = 0;        // 画像の縁の余白・セルの間 (ピクセル)
+    float zoom = 1;                       // 1 ピクセル = zoom DIP
+};
+struct TileSelection {
+    int column = 0, row = 0, width = 0, height = 0;
+    bool operator==(const TileSelection&) const = default;
+};
+bool TilePalette(ui::Context& c, std::string_view id, const ui::Rect& r, ID2D1Bitmap* bitmap, bool crisp, const TileGridCut& cut,
+                 TileSelection& selection, bool pick = true);
 
 // ファイルの小さな絵 (アセットパネルのサムネイル): 薄い四角の上に、形を保って `r` の中に収める。
 // `dimmed` のときは薄く。

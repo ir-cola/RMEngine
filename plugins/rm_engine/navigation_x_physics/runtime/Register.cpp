@@ -51,6 +51,14 @@ bool OwnsCharacter(game_production::Scene& scene, int entity) {
 
 void MoveCharacter(game_production::Scene& scene, int entity, Vec3 velocity) { physics::WorldOf(scene).Move(scene, entity, velocity); }
 
+bool CharacterBody(const game_production::Scene& scene, int entity, game_x_navigation::NavBody& out) {
+    const SceneEntity* e = scene.Find(entity);
+    const physics::Character* c = e ? Find<physics::Character>(*e) : nullptr;
+    if (!c) return false;
+    out.radius = c->radius, out.height = c->height, out.maxSlope = c->maxSlope, out.stepHeight = c->stepHeight;
+    return true;
+}
+
 }  // namespace
 
 bool Moves(const SceneEntity& e) {
@@ -123,9 +131,12 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     // 焼く物「動かないコライダー」: 部品「ナビメッシュ」の「コライダーを焼く」で切り替える (欄の名前 colliders)。
     static const game_x_navigation::NavSourceInfo kColliders{"colliders", "動かないコライダー", "3d", &CollectColliders, &ColliderPrint, &Moves};
     registry.Contribute(game_x_navigation::kNavSourcePoint, kColliders);
-    // 動く者を動かす道: キャラクター (ナビの動く者は段階 2 で、これを使う)。
-    static const game_x_navigation::NavMoverInfo kMover{&OwnsCharacter, &MoveCharacter};
+    // 動く者を動かす道: キャラクター (坂・段差・押されるのが物理どおり)。向きはナビが回す (キャラクターは回転を持たない)。
+    static const game_x_navigation::NavMoverInfo kMover{&OwnsCharacter, &MoveCharacter, 0, false, "「{}」はキャラクターで歩きます"};
     registry.Contribute(game_x_navigation::kNavMoverPoint, kMover);
+    // 体の形: キャラクターの値 (型と違えば、インスペクターに印と「キャラクターに合わせる」)。
+    static const game_x_navigation::NavBodyInfo kBody{"キャラクター", &CharacterBody};
+    registry.Contribute(game_x_navigation::kNavBodyPoint, kBody);
 }
 
 }  // namespace rm::navigation_x_physics

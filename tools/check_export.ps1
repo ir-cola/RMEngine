@@ -424,6 +424,68 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
     }
 }
 
+# タイルマップ (docs/TILEMAP.md 段階 1): 2D のゲームに、見本のタイルセット (docs/samples/tiles) と、グリッドと
+# 塗った層を置いて書き出す。.rmtileset はシーンが名指すアセットとして入り、その中の画像も (CollectAssets が
+# アセットの中の ID をたどる) 焼いて入る。ゲームは層を描くときにタイルセットとその画像を読む (game.log)。
+$dir = Join-Path $work 'game_tilemap'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+$p = Start-Process -FilePath $engine -ArgumentList @('--new-from-template', 'rm_engine', 'game_x_2d', 'game_2d', "`"$dir`"") -Wait -PassThru
+$rmpf = Join-Path $dir 'Project\Project.rmpf'
+if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
+    Write-Host "NG  game_tilemap: プロジェクトを作れませんでした。$log を見てください"
+    $failed++
+} else {
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    # プロジェクトが使うプラグインに「タイルマップ」を記録する (書き出しが入れる。つなぎ「ゲーム制作 × タイルマップ」も一緒に)。
+    $proj = [IO.File]::ReadAllText($rmpf, $utf8) | ConvertFrom-Json
+    $proj.plugins = @($proj.plugins) + @([ordered]@{ author = 'rm_engine'; name = 'tilemap' })
+    [IO.File]::WriteAllText($rmpf, ($proj | ConvertTo-Json -Depth 20), $utf8)
+    $tiles = Join-Path $dir 'Project\Assets\Tiles'
+    New-Item -ItemType Directory -Force $tiles | Out-Null
+    Copy-Item (Join-Path $root 'docs\samples\tiles\sample_tiles_16px.png') $tiles
+    $imageGuid = [Guid]::NewGuid().ToString('N')
+    [IO.File]::WriteAllText((Join-Path $tiles 'sample_tiles_16px.png.meta'), "{`"guid`": `"$imageGuid`", `"name`": `"sample_tiles_16px.png`", `"import`": {`"sharp`": true}}", $utf8)
+    $setGuid = [Guid]::NewGuid().ToString('N')
+    [IO.File]::WriteAllText((Join-Path $tiles 'Ground.rmtileset'), "{`"kind`": `"rm_engine.tileset`", `"format`": 1, `"sources`": [{`"id`": 1, `"name`": `"見本`", `"image`": `"$imageGuid`", `"tileWidth`": 16, `"tileHeight`": 16}]}", $utf8)
+    [IO.File]::WriteAllText((Join-Path $tiles 'Ground.rmtileset.meta'), "{`"guid`": `"$setGuid`", `"name`": `"Ground.rmtileset`"}", $utf8)
+    $sceneFile = Join-Path $dir 'Project\Assets\Scenes\Main.rmscene'
+    $scene = [IO.File]::ReadAllText($sceneFile, $utf8) | ConvertFrom-Json
+    $id = [int]$scene.nextId
+    # 区画 (0, 0) の下の 2 行: 草 (絵の元 1 の 0 列 0 行 = 65536) と土 (1 列 = 65537)。区画 (-1, 0) にも草を 1 行。
+    $grid = [ordered]@{ id = $id; parent = 0; name = 'Tilemap'; active = $true; components = @(
+        [ordered]@{ type = 'rm::space2d::Transform2D'; data = [ordered]@{ position = @(-8, -4) } },
+        [ordered]@{ type = 'rm::game_x_tilemap::TileGrid'; data = [ordered]@{ cellSize = @(1, 1) } }) }
+    $layer = [ordered]@{ id = $id + 1; parent = $id; name = 'Ground'; active = $true; components = @(
+        [ordered]@{ type = 'rm::space2d::Transform2D'; data = [ordered]@{} },
+        [ordered]@{ type = 'rm::game_x_tilemap::TileLayer'; data = [ordered]@{ tileset = $setGuid; chunk = 32; chunks = @(
+            [ordered]@{ x = -1; y = 0; cells = '65536*32,0*992' },
+            [ordered]@{ x = 0; y = 0; cells = '65537*32,65536*32,0*960' }) } }) }
+    $scene.entities = @($scene.entities) + @($grid, $layer)
+    $scene.nextId = $id + 2
+    [IO.File]::WriteAllText($sceneFile, ($scene | ConvertTo-Json -Depth 20), $utf8)
+    $game = Join-Path $dir 'Game'
+    $p = Start-Process -FilePath $engine -ArgumentList @('--export', "`"$rmpf`"", "`"$game`"") -Wait -PassThru
+    $exe = @(Get-ChildItem $game -Filter *.exe -ErrorAction SilentlyContinue)
+    if ($p.ExitCode -ne 0 -or $exe.Count -ne 1) {
+        Write-Host "NG  game_tilemap: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
+        $failed++
+    } else {
+        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        $readSet = $gameLog -match "タイルの層: タイルセット \($setGuid\) を読みました \(絵の元 1 枚\)"
+        $readImage = $gameLog -match "画像を読みました: $imageGuid \(64 x 48・くっきり"
+        if ($r.ExitCode -ne 0 -or -not $readSet -or -not $readImage) {
+            Write-Host "NG  game_tilemap: タイルの層のタイルセットと画像を読めていません (終了コード $($r.ExitCode)・タイルセット $readSet・画像 $readImage)"
+            $gameLog -split "`n" | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+        } else {
+            $size = [Math]::Round($exe[0].Length / 1KB)
+            $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB)
+            Write-Host "OK  game_tilemap: $($exe[0].Name) ($size KB)・Game.rmpak ($pak KB)。タイルの層がタイルセットとその画像 (64 x 48) を読みました"
+        }
+    }
+}
+
 # シーンが 2 つ (テンプレート 「シーンを切り替える見本」: Title -> Stage、スクリプトの GoToScene):
 # どちらも入り、ゲームは最初のシーンで始まり、書き出したゲームでスクリプトの Game::LoadScene が
 # 切り替える (「自動で切り替える (秒)」 をここで決めるので、--smoke はキーなしで切り替わる)。

@@ -523,6 +523,26 @@ void DrawIcon(ui::Context& c, const Rect& r, Icon icon, Color color, float size)
             p.FillCircle(q[3].x, q[3].y, k, color);
             break;
         }
+        case Icon::TileRect: {
+            // 四角で塗る: 四角の輪郭と、4 つの角の小さな四角 (ドラッグで広げる角)。
+            const float h = std::min(r.w, r.h) * 0.34f;
+            const float x0 = cx - h, x1 = cx + h, y0 = cy - h * 0.8f, y1 = cy + h * 0.8f;
+            p.StrokeRect({x0, y0, x1 - x0, y1 - y0}, color, 1.4f);
+            const float k = std::max(1.8f, h * 0.2f);
+            for (const float x : {x0, x1}) {
+                for (const float y : {y0, y1}) p.FillRect({x - k, y - k, k * 2, k * 2}, color);
+            }
+            break;
+        }
+        case Icon::Picker: {
+            // スポイト: 右上の丸いゴム (塗る) と、左下へ伸びる細い管。
+            const float h = std::min(r.w, r.h) * 0.36f, d = 0.7071f;
+            p.FillCircle(cx + h * 0.6f, cy - h * 0.6f, h * 0.32f, color);
+            p.Line(cx + h * 0.25f, cy - h * 0.25f, cx - h * 0.75f, cy + h * 0.75f, color, 2.4f);
+            p.Line(cx + h * 0.2f + d * h * 0.3f, cy - h * 0.2f + d * h * 0.3f, cx + h * 0.2f - d * h * 0.3f, cy - h * 0.2f - d * h * 0.3f, color, 1.6f);
+            p.FillCircle(cx - h * 0.9f, cy + h * 0.9f, 1.4f, color);
+            break;
+        }
         case Icon::Cube: {
             // 角の上から見た形: 輪郭 (六角形) と、手前の角の 3 本の辺。
             const float h = std::min(r.w, r.h) * 0.36f, k = h * 0.866f;
@@ -1333,6 +1353,73 @@ bool NumberField(ui::Context& c, std::string_view id, const Rect& r, float& valu
     if (clamped == value) return false;
     value = clamped;
     return true;
+}
+
+bool TilePalette(ui::Context& c, std::string_view idStr, const Rect& r, ID2D1Bitmap* bitmap, bool crisp, const TileGridCut& cut,
+                 TileSelection& selection, bool pick) {
+    auto& p = c.P();
+    p.FillRect(r, theme::ThumbnailBack());
+    if (bitmap) {
+        if (crisp) {
+            p.ImageCrisp(bitmap, r);
+        } else {
+            p.Image(bitmap, r);
+        }
+    }
+    const float z = std::max(cut.zoom, 0.01f);
+    auto cellRect = [&](int col, int row, int w, int h) {
+        const float x = r.x + (cut.margin + static_cast<float>(col) * (cut.cellW + cut.spacing)) * z;
+        const float y = r.y + (cut.margin + static_cast<float>(row) * (cut.cellH + cut.spacing)) * z;
+        const float wd = (static_cast<float>(w) * cut.cellW + static_cast<float>(std::max(w - 1, 0)) * cut.spacing) * z;
+        const float ht = (static_cast<float>(h) * cut.cellH + static_cast<float>(std::max(h - 1, 0)) * cut.spacing) * z;
+        return Rect{x, y, wd, ht};
+    };
+    // セルの線 (切り方が見える)。小さすぎると描かない。
+    if (cut.columns > 0 && cut.rows > 0 && cut.cellW * z >= 4 && cut.cellH * z >= 4 && cut.columns * cut.rows <= 65536) {
+        const Color line = theme::Text.Alpha(theme::IsLight ? 0.22f : 0.16f);
+        for (int row = 0; row < cut.rows; ++row) {
+            for (int col = 0; col < cut.columns; ++col) p.StrokeRect(cellRect(col, row, 1, 1), line, 1.f);
+        }
+    }
+    // マウスの下のセル。
+    auto cellAt = [&](float mx, float my, int& col, int& row) {
+        const float sx = (cut.cellW + cut.spacing) * z, sy = (cut.cellH + cut.spacing) * z;
+        if (sx <= 0 || sy <= 0) return false;
+        col = std::clamp(static_cast<int>(std::floor((mx - r.x - cut.margin * z) / sx)), 0, std::max(cut.columns - 1, 0));
+        row = std::clamp(static_cast<int>(std::floor((my - r.y - cut.margin * z) / sy)), 0, std::max(cut.rows - 1, 0));
+        return cut.columns > 0 && cut.rows > 0;
+    };
+    static std::unordered_map<ui::Id, std::pair<int, int>> anchors;  // ドラッグを始めたセル (パレットごと)
+    const ui::Id id = c.MakeId(idStr);
+    bool done = false;
+    TileSelection shown = selection;
+    if (pick) {
+        const auto b = c.ButtonBehavior(id, r);
+        if (b.hovered || b.held) c.SetCursor(ui::Cursor::Hand);
+        int col = 0, row = 0;
+        const bool on = cellAt(c.In().mouseX, c.In().mouseY, col, row);
+        if (on && c.MousePressed() && b.hovered) anchors[id] = {col, row};
+        if (const auto it = anchors.find(id); it != anchors.end() && on) {
+            shown = {std::min(col, it->second.first), std::min(row, it->second.second), std::abs(col - it->second.first) + 1,
+                     std::abs(row - it->second.second) + 1};
+            if (!b.held) {  // 離した: 決まり
+                selection = shown;
+                anchors.erase(it);
+                done = true;
+            } else {
+                c.RequestRedraw();
+            }
+        } else if (!b.held) {
+            anchors.erase(id);
+        }
+        if (b.hovered && !b.held && on) p.StrokeRect(cellRect(col, row, 1, 1), theme::Accent.Alpha(0.6f), 1.f);
+    }
+    if (shown.width > 0 && shown.height > 0) {
+        const Rect sel = cellRect(shown.column, shown.row, shown.width, shown.height);
+        p.FillRect(sel, theme::Accent.Alpha(0.18f));
+        p.StrokeRect(sel, theme::Accent, 2.f);
+    }
+    return done;
 }
 
 void DrawSelectionBand(ui::Context& c, const Rect& r) {

@@ -3,7 +3,7 @@
   "format": 1,
   "updates": [
     {
-      "version": "0.0.45",
+      "version": "0.0.47",
       "date": "2026-11-28",
       "items": [
         {
@@ -13,17 +13,17 @@
       ]
     },
     {
-      "version": "0.0.44",
+      "version": "0.0.46",
       "date": "2026-11-28",
       "items": [
         {
           "ja": "骨のアニメーションのクリップを圧縮: 既定の「ふつう」で骨の先のずれ 1 mm まで、大きさが 4 割ほどに (インスペクターの「クリップの書き出し」で しない / ふつう / 強く)",
-          "en": "Bone animation clips are compressed: the default Normal keeps bone tips within 1 mm at about 40% of the size (None / Normal / Strong in the inspector's Clip export)"
+          "en": "Bone animation clips are compressed: the default Normal keeps bone tips within 1 mm at about 40% of the size (Off / Normal / Strong in the inspector's Clip export)"
         }
       ]
     },
     {
-      "version": "0.0.43",
+      "version": "0.0.45",
       "date": "2026-11-28",
       "items": [
         {
@@ -33,7 +33,7 @@
       ]
     },
     {
-      "version": "0.0.42",
+      "version": "0.0.44",
       "date": "2026-11-27",
       "items": [
         {
@@ -43,6 +43,34 @@
         {
           "ja": "アニメーターに「遠いと間引く」と「見えないとき」: 遠い物は姿勢を 2 / 4 フレームに 1 回、見えない物は時間だけ進めます",
           "en": "Animator fields Thin out when far and When unseen: far characters update their pose every 2 or 4 frames, unseen ones only advance time"
+        }
+      ]
+    },
+    {
+      "version": "0.0.43",
+      "date": "2026-11-28",
+      "items": [
+        {
+          "ja": "2D のタイルマップ: 画像を切ったタイルセット (.rmtileset) を作り、追加 ▸ 2D オブジェクト ▸ タイルマップで置いた層に、シーンビューの筆・四角・消しゴム・スポイトで塗れます (1 回のドラッグが Undo の 1 件)",
+          "en": "2D tilemaps: make a tileset (.rmtileset) by cutting an image, add a layer with Add ▸ 2D Object ▸ Tilemap, and paint it in the Scene view with the brush, rectangle, eraser and picker (one drag is one Undo step)"
+        },
+        {
+          "ja": "新しい「タイル」タブ: パレットでタイルを選び (ドラッグでスタンプ)、タイルセットの画像・タイルの大きさ・余白・間をその場で変えられます",
+          "en": "A new Tiles tab: choose tiles in the palette (drag for a stamp), and change the tileset's images, tile size, margin and spacing right there"
+        },
+        {
+          "ja": "タイルは 32 x 32 マスの区画ごとに Direct2D のスプライトの束でまとめて描き、スプライトと同じ並び順で前後に並びます。書き出したゲームでも同じに描きます",
+          "en": "Tiles are drawn in 32 x 32 chunks with Direct2D sprite batches, ordered with sprites by the same order. Exported games draw them the same way"
+        }
+      ]
+    },
+    {
+      "version": "0.0.42",
+      "date": "2026-11-27",
+      "items": [
+        {
+          "ja": "ナビゲーション (段階 3): 動く者がお互いをよけてすれ違い、物理のキャラクターがあればキャラクターで歩くように。アニメーターの「パラメーターの送り手」でナビの速さや向きの差を状態とルールに入れられます。「ナビ」タブで型を増やせ、キャラクターと型の体の形が違うとインスペクターに印と「合わせる」",
+          "en": "Navigation (stage 3): agents now avoid each other and pass, and walk with the physics Character when they have one. The Animator's new parameter feeds put the navigation speed, turn angle and more into states and rules. The Navigation tab can add agent types, and the inspector marks a Character whose body differs from the type, with a one-click match"
         }
       ]
     },

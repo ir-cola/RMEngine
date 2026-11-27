@@ -97,9 +97,16 @@ struct NavArea {
     RM_PROPERTY(Edit, Label="エリア", Tooltip="中の床にするエリアの種類") std::string area = "1";
 };
 
+RM_ENUM(Label="よけ方")
+enum class NavAvoid {
+    RM_ITEM(Label="しない") None,
+    RM_ITEM(Label="ふつう") Normal,
+    RM_ITEM(Label="ていねい") Careful,
+};
+
 // ナビメッシュの上を歩く物 (Transform のある物。エンティティの位置が足元)。行き先はスクリプトが決める
 // (RMNav.h の rm::NavAgent(self).SetDestination)。頼んだこと (行き先・止まる) は保存しない: Play の間のナビの世界が持つ
-// (NavWorld.h)。段階 2 は Transform を直に動かす (物理の「キャラクター」があっても: キャラクターで歩くのは段階 3)。
+// (NavWorld.h)。物理の「キャラクター」があればキャラクターで歩き (口 mover)、無ければ Transform を直に動かす。
 RM_STRUCT(Label="ナビの動く者")
 struct NavAgent {
     RM_PROPERTY(Edit, Label="エージェントの型", Tooltip="この型で焼いたナビメッシュの上を歩きます (体の半径・高さは型のもの)") std::string agentType = "1";
@@ -109,6 +116,10 @@ struct NavAgent {
     RM_PROPERTY(Edit, Label="止まる距離 (m)", Tooltip="行き先までこれより近くなったら着いたことにして止まります (スクリプトに NavArrived)", Min=0, Max=1000, Step=0.05, Decimals=2)
     float stoppingDistance = 0.1f;
     RM_PROPERTY(Edit, Label="着く前にゆるめる", Tooltip="行き先の手前で、止まれるように速さを落とします。切ると全速のまま着きます") bool slowDown = true;
+    RM_PROPERTY(Edit, Label="よける", Tooltip="まわりの動く者をよけます。ていねい: 試す向きが多く、混んだ所でもぶつかりにくい (少し重い)")
+    NavAvoid avoid = NavAvoid::Normal;
+    RM_PROPERTY(Edit, Label="よける優先度", Tooltip="0〜99。小さいほど道をゆずられ (まっすぐ進み)、大きいほどよく道をゆずります", Min=0, Max=99)
+    int priority = 50;
 };
 
 }  // namespace rm::game_x_navigation

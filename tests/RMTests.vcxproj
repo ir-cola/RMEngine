@@ -273,12 +273,25 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\RendererShaders.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Renderer3D.cpp" />
     <ClCompile Include="..\plugins\rm_engine\climate\runtime\Climate.cpp" />
+    <ClCompile Include="..\src\core\paint\Runs.cpp" />
+    <ClCompile Include="..\src\core\paint\GridPaint.cpp" />
     <ClCompile Include="..\plugins\rm_engine\climate\runtime\ScriptClimate.cpp" />
     <ClCompile Include="..\plugins\rm_engine\climate\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)climate\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\weather_x_climate\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)weather_x_climate\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="TestTilemap.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\tilemap\runtime\TileCell.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\tilemap\runtime\TileStore.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\tilemap\runtime\Tileset.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\tilemap\runtime\TilePaint.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_tilemap\runtime\TileLayer.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_tilemap\runtime\TileDraw.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_2d\runtime\World2D.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_tilemap\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)game_x_tilemap\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="TestNavigation.cpp" />
     <ClCompile Include="..\plugins\rm_engine\navigation\runtime\Bake.cpp" />
@@ -294,6 +307,9 @@
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\navigation_x_3d\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)navigation_x_3d\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\navigation_x_animation\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)navigation_x_animation\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\navigation_x_physics\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)navigation_x_physics\</ObjectFileName>

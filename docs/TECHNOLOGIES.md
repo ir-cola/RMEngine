@@ -882,6 +882,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 技術 | 使う所 | 状態 |
 |---|---|---|
+| 2026-11-27 | 群れでよける (速さの候補を試す・離れる強さ)・通路を保って外から動かす・動かす人は 1 人だけ (口 mover の order)・パラメーターの送り手 (口 param_feed)・部品の注記と直す行 |
 | 2026-11-27 | 動く者を歩かせる (DetourCrowd の通路・角の先読み・分けて探す・Play の間だけの世界・スクリプトへの C の表・見本の焼いた物をテストで見張る) |
 | 2026-11-16 | 文字の細かい見た目 (DirectWrite のテキストレイアウト)・動画を流す (Media Engine と GPU のテクスチャ) を足した |
 | 2026-11-16 | 影・発光・ぼかしを Direct2D の効果で (コマンドリスト) を足した |
@@ -1348,7 +1349,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **誤差の測り方** — 骨ごとではなく**骨の先の位置**で: 回転の誤差 (ラジアン) x その骨から一番遠い子孫の骨までの長さ = 先のずれ (m)。親の誤差は子に積もるので、上限 (ふつう 1 mm・強く 4 mm) を、その骨を通る一番長い鎖の骨の数で分ける。回転の違いは `acos(内積)` だと 1 の近くで float の丸めが 0.0003 ラジアンもあるので、`4 x atan2(|a - b|, |a + b|)` で測る
 - **使い方** — モデルを読むときに .meta のクリップの設定 (`"bake"` の `"compression"`) で圧縮し、メモリの中も圧縮のまま持つ。姿勢を作るときに、前後 2 つの鍵だけを二分探索で見つけて戻す。焼いたモデル (.rmmesh) には新しいチャンク `CPAK` で書く (読むときは鍵が 0 から frames - 1 まで増える順か・数が合うかを確かめ、壊れていれば読まない)
 - **数字** — `tools/benchanim` のクリップ 2 つ: 122.0 KB → 49.6 KB。姿勢の計算は戻す分だけ遅くなる (1 本のスレッドで 2.6 → 4.2 ms)。メモリと引き換え
-- **使っているクリップだけ書き出す** (版 0.0.45) — 書き出すときは、使っているクリップだけを 1 つずつ `.rmclip` に焼く。「使っている」は、ゲームに入る JSON (シーン・プレハブ・状態とルール) の文字列の値のどれかがクリップの名前か、スクリプトのソースに `"名前"` と書いてあるか、最初のクリップか、「いつも入れる」か。シーンの形をたどらずに文字列で見るので、多めに残ることはあっても、名前で指したクリップを落とすことはない
+- **使っているクリップだけ書き出す** (版 0.0.47) — 書き出すときは、使っているクリップだけを 1 つずつ `.rmclip` に焼く。「使っている」は、ゲームに入る JSON (シーン・プレハブ・状態とルール) の文字列の値のどれかがクリップの名前か、スクリプトのソースに `"名前"` と書いてあるか、最初のクリップか、「いつも入れる」か。シーンの形をたどらずに文字列で見るので、多めに残ることはあっても、名前で指したクリップを落とすことはない
 - **どこ** — `space3d/runtime/ClipPack.*`・`Skeleton.h` (`ClipCompression`・`ClipBake`・`PackedChannel`・`PackedTrack`)・`MeshBake.cpp` (`CPAK`)・`MeshFile.cpp` (`PackClips`)・`ClipSettings.*` (`"bake"`)・`animation3d/runtime/Pose.cpp`・`animation3d/editor/ClipStrip.cpp` (「クリップの書き出し」)・`ClipEvents.*`、`tests/TestClipPack.cpp`
 
 ### Compute Shader のスキニング (1 本の置き場所・まとめ描きのまま) (2026-11-28)
@@ -1366,15 +1367,41 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **遠い物を間引く** — レンダラーが描いた物ごとに、画面の上の高さの割合 (囲む球の半径 x 投影の縦の倍率 / 奥行き) を覚え、描いた後に口 `mesh_pose` の `MeshPoser::Seen` で知らせる。アニメーションは次のフレームに、それが小さければ姿勢を 2 / 4 フレームに 1 回だけ作る (物ごとに番号でずらして、同じフレームに集まらないように)。映らなかった物は姿勢を作らないが、時刻・イベント・ルートモーションは進める
 - **数字** — `tools/benchanim` (骨 64 本・頂点 4,000 個のキャラクター 300 体): 姿勢を作る時間が 1 フレーム 2.43 ms → 作業スレッド (7 本 + 呼んだスレッド) で 0.65 ms → 遠い物を間引くと 0.28 ms
 - **どこ** — `src/base/WorkQueue.*`・`plugins/rm_engine/animation3d/runtime/Thinning.*`・`game_x_animation/runtime/AnimationSystem.cpp`・`AnimatorRun.cpp` (`skipPose`)・`AnimatorPoser.cpp` (`Seen`)・`game_x_3d/runtime/MeshPose.*` (`ReportSeen`)・`space3d/runtime/Renderer3D.*` (`MeshScreenSizes`)・`tools/benchanim`、`tests/TestWorkQueue.cpp`・`TestAnimation3d.cpp`・`TestGameAnimation.cpp`
+### 群れでよける・動かす人は 1 人だけ・パラメーターの送り手 (2026-11-27)
+
+- **何か** — **よける** (DetourCrowd の obstacle avoidance): まわりの動く者の位置と速さから、望む速さのまわりに速さの候補を同心円と放射状に並べて
+  (方向の数 x 輪の数。細かい所をもう一度細かく = adaptive)、それぞれ「何秒後にぶつかるか・望む速さからどれだけ離れるか・今の速さからどれだけ変わるか」の
+  重みの和が一番小さい物を選ぶ (速さの空間で探す: VO / RVO の考え)。離れる強さ (separation) で優先度の差を作る。**外から動かす** (キャラクター・ルートモーション):
+  通路 (`dtPathCorridor`) を保ったまま、今の位置だけをナビメッシュの面に沿って移す (`movePosition`)
+- **何に使っているか** — 部品「ナビの動く者」の「よける」「よける優先度」。口 `mover` に `order` (何人もが持ち主のとき小さい方が動かす: ルートモーション -10 →
+  キャラクター 0) と `turns` を足し、「動かす人は 1 人だけ」を口の形で守る。アニメーションへは口 `param_feed` (ゲーム制作 × アニメーション): つなぎが
+  「エンティティ → 数」の関数を名前つきで差し出し、アニメーターの「パラメーターの送り手」の行が、どの値をどのパラメーターに入れるかを持つ (送り手が無い
+  行は何もしない)。インスペクターの印は ComponentLook の `note` / `fixes` (部品のブロックの注記と「直す」の行) と、体の形を答える口 `body`
+- **なぜそれか** — 体の値を持つのは型だけ (憲法 2)。違いを見せて 1 回で合わせるほうが、2 か所に書いて同期するより壊れにくい。送り手を名前で持つと、
+  アニメーションはナビも物理も知らずに済み、物理の速さも同じ道で入れられる
+- **どこ** — `plugins/rm_engine/navigation/runtime/Crowd.*`・`game_x_navigation/runtime/NavWorld.*`・`NavPorts.h`・`editor/Connector.cpp` (印)・`editor/NavTab.cpp` (型の一覧)、
+  `game_x_animation/runtime/ParamFeed.h`・`AnimationSystem.cpp`、`navigation_x_animation/`、`navigation_x_physics/`、`game_production/editor/ComponentLook.h`、`tests/TestNavigation.cpp`
+
+### 2D のタイルマップ: スプライトの束 (ID2D1SpriteBatch)・区画とランレングス・ブレゼンハムの線 (2026-11-27)
+
+- **何か** — タイルマップは、小さな四角い絵 (タイル) をマス目に並べて地面や壁を作る 2D のゲームの定番の作り方。1 枚の画像を同じ大きさに切ったもの (**タイルセット**) を用意し、マスごとに「どの絵の元の、何列何行のタイルか」を 32 ビットの数 1 つで持つ (下 8 ビットが列、次が行、次が絵の元の番号 (0 = 空)、その上に左右・上下・斜めの反転。反転の考え方は地図エディターの Tiled と同じ)
+- **スプライトの束 (`ID2D1SpriteBatch`)** — Direct2D (Windows 10 から) の、1 枚の画像から切った多くの四角を **1 回の命令**で描く仕組み。`ID2D1DeviceContext3::CreateSpriteBatch` で作り、`AddSprites` に「置く四角・画像の中の四角 (ピクセル)・色・行列」の並びを渡し、`DrawSpriteBatch` で描く。中では GPU のまとめ描き (インスタンシング) になる。束は GPU の側に残るので、区画が変わらない限り毎フレームの CPU の仕事は「描く」の 1 回だけ。描く間は角のぼかしを切る決まり (`D2D1_ANTIALIAS_MODE_ALIASED`) がある
+- **にじみ止め** — `D2D1_SPRITE_OPTIONS_CLAMP_TO_SOURCE_RECTANGLE`: 拡大・縮小で混ぜるとき、画像の中の自分の四角の外 (隣のタイル) を読まない。だから設計で考えた「タイルの縁を 1 ピクセル伸ばした絵を作る」をしなくて済んだ。置く四角は整数のマスの角から作り、同じ行列で置くので、隣どうしの辺がぴったり重なってすき間が出ない
+- **なぜ Direct3D にしなかったか** — Direct3D のシェーダーで 1 区画を 1 枚の四角にし、GPU にマスの値を引かせる形は、数の上では CPU がもう少し減る。しかし 2D の絵は Direct2D で描いているので、スプライトと前後に混ぜるたびに Direct2D の描きためを吐き出す (`Flush`) ことになり、層とキャラクターが交互だとかえって遅くなる。束は Direct2D の中で前後の順にそのまま入る (2026-11-27 のユーザーの決定)
+- **区画 (チャンク) とランレングス** — マス目を 32 x 32 マスの区画に分け、塗った区画だけを持つ (どの向きにも広がる地図。区画の番号は floor(マス ÷ 32) で、負の場所も同じ式)。保存は区画ごとに、1024 マスを「値*数」でまとめた文字 (**ランレングス**: 同じ値の続きを短く書く。地面のように同じタイルが続くと短い)。シーンの JSON の中の文字なので GitHub で差分が読める。気候の地図と同じ関数を核の `core/paint/Runs` に移して、両方が使う
+- **ブレゼンハムの線** — 筆を速く動かすと、前のフレームのマスと今のマスが離れる。その間を「横・縦・斜めの隣へ 1 歩ずつ」で埋める整数だけの線の引き方 (1962 年の Bresenham のアルゴリズム: 誤差を足していき、半分を超えたらもう一方の向きにも 1 歩)。四角は 2 つの角の間の全部のマス
+- **描く物を集める所を 1 本に** — シーンビュー・ゲームビュー・書き出したゲームが、同じ関数 (`game_x_2d/runtime/World2D`) でスプライトを置き、ほかのプラグインの描く物 (口 `rm_engine.game_x_2d.world_draw`) と 1 本の列にして、(ワールドの並び順・自分の並び順・階層の順) で並べる。だからキャラクターを層の間に挟める
+- **どこ** — `plugins/rm_engine/tilemap/runtime/` (`TileCell.h`・`TileStore.*`・`TilePaint.*`・`Tileset.*`)・`game_x_tilemap/runtime/TileDraw.*` (束)・`game_x_tilemap/editor/` (`TileTool`・`TilePanel`・`TileEdit`)・`space2d/runtime/Renderer2D.*` (`SpriteDraw::batch`)・`space2d/runtime/Atlas.*` (`GridCellOf`: 余白と間)・`src/core/paint/` (`Runs`・`GridPaint`)、`tests/TestTilemap.cpp`
 
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
-| 2026-11-27 | 作業の列 (std::jthread の小さなスレッドの組・ParallelFor)・遠い物を間引く (画面の上の大きさ)・アニメーションの計測 tools/benchanim |
 | 2026-11-28 | 使っているクリップだけ書き出す (.rmclip・JSON の文字列とスクリプトの "名前" で使っているかを見る) |
 | 2026-11-28 | クリップの圧縮 (48 ビットの回転・16 ビットの範囲・骨の先の誤差で鍵を選ぶ・atan2 で回転の違いを測る)・焼いたモデルのチャンク CPAK |
 | 2026-11-28 | Compute Shader のスキニング (1 本の置き場所・SV_VertexID で読む・まとめ描きのまま)・ComPtr の & の落とし穴・性能の高い GPU を選ぶ (EnumAdapterByGpuPreference) |
+| 2026-11-27 | 作業の列 (std::jthread の小さなスレッドの組・ParallelFor)・遠い物を間引く (画面の上の大きさ)・アニメーションの計測 tools/benchanim |
+| 2026-11-27 | 2D のタイルマップ (Direct2D のスプライトの束 `ID2D1SpriteBatch`・CLAMP_TO_SOURCE_RECTANGLE のにじみ止め・32 x 32 の区画とランレングス・ブレゼンハムの線) |
 | 2026-11-27 | 揺れる骨 (Verlet・長さを保つ・球から押し出す・決まった刻み)・VRM の揺れの設定 (VRMC_springBone / secondaryAnimation) |
 | 2026-11-27 | ブレンドシェイプ (形の差を重みで足す・Compute Shader で頂点を作る: 生のバイトのバッファと UAV・FBX の BlendShape) |
 | 2026-11-27 | IK (2 本の骨を余弦定理で・回転を骨の空間へ戻す・足を坂に: 光線と高さのならし)・配列の要素の中のドロップダウン |

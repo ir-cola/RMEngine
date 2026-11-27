@@ -12,6 +12,8 @@
 #include "rm_engine/game_x_animation/runtime/Register.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
 #include "rm_engine/game_x_2d/runtime/Register.h"
+#include "rm_engine/game_x_tilemap/runtime/Id.h"
+#include "rm_engine/game_x_tilemap/runtime/Register.h"
 #include "rm_engine/physics/runtime/Id.h"
 #include "rm_engine/physics/runtime/Register.h"
 #include "rm_engine/game_x_audio/runtime/Id.h"
@@ -38,6 +40,8 @@
 #include "rm_engine/navigation_x_3d/runtime/Register.h"
 #include "rm_engine/navigation_x_physics/runtime/Id.h"
 #include "rm_engine/navigation_x_physics/runtime/Register.h"
+#include "rm_engine/navigation_x_animation/runtime/Id.h"
+#include "rm_engine/navigation_x_animation/runtime/Register.h"
 
 namespace rm {
 
@@ -46,6 +50,7 @@ std::span<const RuntimePlugin> RuntimePlugins() {
         {game_production::kPluginId, &game_production::RegisterRuntime},
         {game_x_3d::kPluginId, &game_x_3d::RegisterRuntime},
         {game_x_2d::kPluginId, &game_x_2d::RegisterRuntime},
+        {game_x_tilemap::kPluginId, &game_x_tilemap::RegisterRuntime},
         {physics::kPluginId, &physics::RegisterRuntime},
         {game_x_audio::kPluginId, &game_x_audio::RegisterRuntime},
         {game_ui::kPluginId, &game_ui::RegisterRuntime},
@@ -60,6 +65,7 @@ std::span<const RuntimePlugin> RuntimePlugins() {
         {game_x_navigation::kPluginId, &game_x_navigation::RegisterRuntime},
         {navigation_x_3d::kPluginId, &navigation_x_3d::RegisterRuntime},
         {navigation_x_physics::kPluginId, &navigation_x_physics::RegisterRuntime},
+        {navigation_x_animation::kPluginId, &navigation_x_animation::RegisterRuntime},
     };
     return kPlugins;
 }

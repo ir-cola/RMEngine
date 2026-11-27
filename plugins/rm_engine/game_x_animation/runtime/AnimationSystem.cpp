@@ -155,6 +155,10 @@ void RunAnimation(game_production::SystemContext& ctx) {
         std::vector<const space3d::ClipEvent*> fired;
     };
     std::vector<Job> jobs;
+    std::vector<const ParamFeedInfo*> feeds;  // 口 param_feed (ANIMATION.md 7-6)
+    if (ctx.registry) {
+        for (const auto& f : ctx.registry->Contributions<ParamFeedInfo>(kParamFeedPoint)) feeds.push_back(f.item);
+    }
     game_production::ForEachComponent(ctx.scene, type, [&](SceneEntity& e, Component& c) {
         if (!c.Known()) return;
         Animator& a = *static_cast<Animator*>(c.value.Get());
@@ -199,6 +203,16 @@ void RunAnimation(game_production::SystemContext& ctx) {
                     }
                     if (rules->states.empty()) log::Warn("アニメーター ({}): 状態とルールに状態がありません", e.data.name);
                     BindRules(run, a, std::move(rules));
+                }
+            }
+        }
+        // パラメーターの送り手: ルールを調べる前に (無い送り手の行は何もしない)。
+        for (const ParamFeed& f : a.feeds) {
+            if (f.param.empty()) continue;
+            for (const ParamFeedInfo* info : feeds) {
+                if (info->read && f.source == info->id) {
+                    SetRuleParam(run, f.param, info->read(ctx.scene, e.data.id), false);
+                    break;
                 }
             }
         }

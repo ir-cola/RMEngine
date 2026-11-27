@@ -19,6 +19,22 @@ struct PixelRect {
 // 引き受ける (画像の端を超えることはない)。
 PixelRect CellOf(uint32_t width, uint32_t height, int columns, int rows, int index);
 
+// タイルセットの切り方 (タイルマップ): 1 つのセルの幅 / 高さ (ピクセル) を決め、画像の縁に余白 `margin`、
+// セルとセルの間に間 `spacing` をとる (タイルセットによくある形。Tiled と同じ)。
+struct GridCut {
+    uint32_t cellWidth = 16, cellHeight = 16;
+    uint32_t margin = 0, spacing = 0;
+};
+// `width` x `height` の画像を `cut` で切ったときの、横と縦のセルの数 (画像に丸ごと入るものだけ。
+// セルの大きさが 0: 0 個)。
+struct GridCount {
+    int columns = 0, rows = 0;
+    bool operator==(const GridCount&) const = default;
+};
+GridCount GridCountOf(uint32_t width, uint32_t height, const GridCut& cut);
+// 列 `column`・行 `row` (左上が 0, 0) のセル。画像に丸ごと入らないセル (範囲の外): 空 (w = h = 0)。
+PixelRect GridCellOf(uint32_t width, uint32_t height, const GridCut& cut, int column, int row);
+
 // `framesPerSecond` で `seconds` 秒再生したアニメーションのセル: `frames` のセルを順に (空: 0 .. cellCount - 1)。
 // `loop` が false なら最後で止まる。
 int AnimationCell(std::span<const int> frames, int cellCount, float framesPerSecond, double seconds, bool loop, int startStep = 0);

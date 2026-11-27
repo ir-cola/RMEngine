@@ -19,6 +19,8 @@ ID2D1SolidColorBrush* Renderer2D::Brush(ID2D1DeviceContext* dc, Color c) {
     if (owner_ != dc) {
         brush_.Reset();
         tint_.Reset();
+        dc3_.Reset();
+        dc->QueryInterface(IID_PPV_ARGS(&dc3_));  // (無ければ束は描かない)
         owner_ = dc;
     }
     if (!brush_ && FAILED(dc->CreateSolidColorBrush(ToD2D(c), &brush_))) return nullptr;
@@ -69,6 +71,20 @@ void Renderer2D::Render(ID2D1DeviceContext* dc, const RenderFrame2D& f) {
 
     const Mat3 screen = ScreenMatrix(f.camera, f.viewport);
     for (const SpriteDraw& s : f.sprites) {
+        if (s.batch) {
+            // 束: 四角は平面の単位で並んでいる。束の決まりで、描く間だけ角のぼかしを切る (ALIASED)。
+            // 四角は自分の元の四角の外を読まない (CLAMP: 隣のタイルの色がにじまない)。
+            Brush(dc, s.color);  // (dc3_ がこのコンテキストのものであることを確かめる)
+            if (!dc3_ || !s.image) continue;
+            dc->SetTransform(ToD2D(screen * s.world) * old);
+            const D2D1_ANTIALIAS_MODE aa = dc->GetAntialiasMode();
+            dc->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+            dc3_->DrawSpriteBatch(s.batch, s.image,
+                                  s.crisp ? D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR : D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                                  D2D1_SPRITE_OPTIONS_CLAMP_TO_SOURCE_RECTANGLE);
+            dc->SetAntialiasMode(aa);
+            continue;
+        }
         const float fx = s.flipX ? -1.f : 1.f, fy = s.flipY ? -1.f : 1.f;
         // 描くもの (画像の DIP のままか、単位の正方形) -> スプライト自身の空間:
         // 中心が原点、Y が上、幅 `size` 単位 (反転しているときは裏返す)。

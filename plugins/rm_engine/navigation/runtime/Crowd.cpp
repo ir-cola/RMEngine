@@ -3,6 +3,7 @@
 #include "rm_engine/navigation/runtime/DetourShared.h"
 
 #pragma warning(push, 0)
+#include "DetourCommon.h"
 #include "DetourCrowd.h"
 #include "DetourNavMesh.h"
 #pragma warning(pop)
@@ -34,10 +35,10 @@ dtCrowdAgentParams ParamsOf(const AgentParams& p) {
     d.maxAcceleration = std::max(0.f, std::isfinite(p.maxAcceleration) ? p.maxAcceleration : 0.f);
     d.collisionQueryRange = std::max(d.radius * 12.f, 1.f);
     d.pathOptimizationRange = std::max(d.radius * 30.f, 3.f);
-    d.separationWeight = p.avoid ? 2.f : 0.f;
+    d.separationWeight = std::clamp(std::isfinite(p.separation) ? p.separation : 1.f, 0.f, 4.f);
     d.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO;
-    if (p.avoid) d.updateFlags |= DT_CROWD_OBSTACLE_AVOIDANCE | DT_CROWD_SEPARATION;
-    d.obstacleAvoidanceType = 0;
+    if (p.avoid > 0) d.updateFlags |= DT_CROWD_OBSTACLE_AVOIDANCE | DT_CROWD_SEPARATION;
+    d.obstacleAvoidanceType = static_cast<unsigned char>(p.avoid >= 2 ? 2 : 1);  // (Init で 1 = ふつう・2 = ていねい を決める)
     d.queryFilterType = 0;
     return d;
 }
@@ -72,6 +73,15 @@ bool NavCrowd::Init(NavMesh& mesh, int maxAgents, float maxRadius) {
     if (!nav || maxAgents <= 0) return false;
     std::unique_ptr<dtCrowd, Free> c(dtAllocCrowd());
     if (!c || !c->init(maxAgents, std::max(0.05f, maxRadius), nav)) return false;
+    // よけ方 (Detour の見本と同じ値): 1 = ふつう (速さの候補 5 方向 x 2 輪・細かく 2 回)、2 = ていねい (7 方向 x 3 輪・3 回)。
+    dtObstacleAvoidanceParams oa = *c->getObstacleAvoidanceParams(0);
+    oa.velBias = 0.5f;
+    oa.adaptiveDivs = 5, oa.adaptiveRings = 2, oa.adaptiveDepth = 1;
+    c->setObstacleAvoidanceParams(0, &oa);
+    oa.adaptiveDivs = 5, oa.adaptiveRings = 2, oa.adaptiveDepth = 2;
+    c->setObstacleAvoidanceParams(1, &oa);
+    oa.adaptiveDivs = 7, oa.adaptiveRings = 3, oa.adaptiveDepth = 3;
+    c->setObstacleAvoidanceParams(2, &oa);
     impl_->crowd = std::move(c);
     impl_->mesh = &mesh;
     impl_->max = maxAgents;
@@ -118,6 +128,16 @@ bool NavCrowd::SetTarget(int agent, Vec3 target) {
 
 void NavCrowd::ClearTarget(int agent) {
     if (impl_->Agent(agent)) impl_->crowd->resetMoveTarget(agent);
+}
+
+void NavCrowd::MoveTo(int agent, Vec3 position) {
+    if (!impl_->Agent(agent)) return;
+    dtCrowdAgent* a = impl_->crowd->getEditableAgent(agent);
+    const float p[3] = {position.x, position.y, position.z};
+    if (a->corridor.getPathCount() > 0 && a->state == DT_CROWDAGENT_STATE_WALKING) {
+        a->corridor.movePosition(p, const_cast<dtNavMeshQuery*>(impl_->crowd->getNavMeshQuery()), impl_->crowd->getFilter(0));
+        dtVcopy(a->npos, a->corridor.getPos());
+    }
 }
 
 void NavCrowd::Update(float dt) {

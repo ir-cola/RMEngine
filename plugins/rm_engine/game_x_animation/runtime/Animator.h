@@ -12,6 +12,7 @@
 // (AnimatorRun.h)。スクリプトからは RMAnim.h の rm::Animator で動かす。
 
 #include "core/reflect/Reflect.h"
+#include "rm_engine/game_x_animation/runtime/ParamFeed.h"
 
 #include <memory>
 #include <string>
@@ -51,6 +52,8 @@ struct Animator {
     bool thinOut = true;
     RM_PROPERTY(Edit, Label="見えないとき", Tooltip="カメラに映らないとき。時間だけ進める: 時刻・ルール・イベント・ルートモーションは進め、姿勢・IK・揺れは作りません (ゲームの動きは見え方で変わりません)。全部計算: いつも姿勢も作ります")
     WhenUnseen whenUnseen = WhenUnseen::TimeOnly;
+    RM_PROPERTY(Edit, Label="パラメーターの送り手", Tooltip="毎フレーム、状態とルールのパラメーターに値を入れます (ナビの動く者の速さなど: ParamFeed.h)。スクリプトの SetFloat より先に入るので、同じ名前はスクリプトが上書きします")
+    std::vector<ParamFeed> feeds;
     // ゲームが動いている間の再生 (システム「アニメーション」が作る。Play するコピーだけが持つ)。
     RM_TRANSIENT() std::shared_ptr<AnimatorRun> run;
 };
