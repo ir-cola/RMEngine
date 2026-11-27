@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.42",
+      "date": "2026-11-27",
+      "items": [
+        {
+          "ja": "ナビゲーション (段階 3): 動く者がお互いをよけてすれ違い、物理のキャラクターがあればキャラクターで歩くように。アニメーターの「パラメーターの送り手」でナビの速さや向きの差を状態とルールに入れられます。「ナビ」タブで型を増やせ、キャラクターと型の体の形が違うとインスペクターに印と「合わせる」",
+          "en": "Navigation (stage 3): agents now avoid each other and pass, and walk with the physics Character when they have one. The Animator's new parameter feeds put the navigation speed, turn angle and more into states and rules. The Navigation tab can add agent types, and the inspector marks a Character whose body differs from the type, with a one-click match"
+        }
+      ]
+    },
+    {
       "version": "0.0.41",
       "date": "2026-11-27",
       "items": [

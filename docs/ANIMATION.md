@@ -828,7 +828,8 @@ RM_STRUCT(Label="コマのクリップ集") struct FrameClipSet {
 
 ### 7-6. ナビゲーションとのつなぎ (`docs/NAVIGATION.md` と合わせる)
 
-**パラメーターの送り手** (ナビにも物理にも使う 1 本の道)
+**パラメーターの送り手** (ナビにも物理にも使う 1 本の道。口と欄は 2026-11-27 にナビ段階 3 で作った: `runtime/ParamFeed.h`。
+ナビの送り手は `navigation_x_animation`。物理の送り手はまだ)
 
 ```cpp
 // game_x_animation/runtime/ParamFeed.h: 口 rm_engine.game_x_animation.param_feed

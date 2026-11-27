@@ -133,5 +133,18 @@
   "着く前にゆるめる": "Slow down before arriving",
   "行き先の手前で、止まれるように速さを落とします。切ると全速のまま着きます": "Slows down before the destination so it can stop. Off: arrives at full speed",
   "ナビの見本 (3D)": "Navigation sample (3D)",
-  "敵がプレイヤーを追いかけ、村人がうろうろ歩きます (部品「ナビの動く者」とスクリプト Chaser / Wanderer)。プレイヤーは矢印か WASD で歩きます。床と壁のナビメッシュは焼いてあります (「ナビ」タブ)。": "An enemy chases the player and a villager wanders around (the Nav agent component and the Chaser / Wanderer scripts). The player walks with the arrow keys or WASD. The navmesh of the floor and walls is already baked (Navigation tab)."
+  "敵がプレイヤーを追いかけ、村人がうろうろ歩きます (部品「ナビの動く者」とスクリプト Chaser / Wanderer)。プレイヤーは矢印か WASD で歩きます。床と壁のナビメッシュは焼いてあります (「ナビ」タブ)。": "An enemy chases the player and a villager wanders around (the Nav agent component and the Chaser / Wanderer scripts). The player walks with the arrow keys or WASD. The navmesh of the floor and walls is already baked (Navigation tab).",
+  "⚠ {}と体の形が違います (半径 {:.2f} / 型 {:.2f}・高さ {:.2f} / {:.2f}・坂 {:.0f} / {:.0f}・段差 {:.2f} / {:.2f})": "⚠ The body differs from the {} (radius {:.2f} / type {:.2f}, height {:.2f} / {:.2f}, slope {:.0f} / {:.0f}, step {:.2f} / {:.2f})",
+  "型「{}」を{}に合わせる": "Match type \"{}\" to the {}",
+  "直す": "Fix",
+  "新しい型": "New type",
+  "半径 {:.2f} ・ 高さ {:.2f}": "Radius {:.2f} · height {:.2f}",
+  "よけ方": "Avoidance",
+  "しない": "Off",
+  "ていねい": "Careful",
+  "よける": "Avoid others",
+  "まわりの動く者をよけます。ていねい: 試す向きが多く、混んだ所でもぶつかりにくい (少し重い)": "Steers around nearby agents. Careful: tries more directions, so it bumps less in crowds (a little slower to compute)",
+  "よける優先度": "Avoidance priority",
+  "0〜99。小さいほど道をゆずられ (まっすぐ進み)、大きいほどよく道をゆずります": "0–99. Lower: others make way (it goes straight). Higher: it makes way for others more",
+  "キャラクター": "Character"
 }

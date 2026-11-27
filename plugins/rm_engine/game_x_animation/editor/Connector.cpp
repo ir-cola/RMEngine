@@ -110,6 +110,13 @@ AssetRef ModelOn(const game_production::SceneEntity& e) {
 // 読めないときは、ふつうの文字の欄 (名前を打てる)。
 std::optional<std::vector<editor::inspector::Choice>> ClipChoices(editor::SoftwareHost& host, const game_production::Scene& scene, int entity,
                                                                   const reflect::FieldPath& path) {
+    // パラメーターの送り手の「入れるもの」: 入っているプラグインが差し出した値 (口 param_feed)。
+    if (path.size() == 3 && path[0] == FieldOf<Animator>("feeds") && path[2] == FieldOf<ParamFeed>("source")) {
+        std::vector<editor::inspector::Choice> out;
+        out.push_back({"", Tr(L"(なし)")});
+        for (const auto& f : host.Registry().Contributions<ParamFeedInfo>(kParamFeedPoint)) out.push_back({f.item->id, Utf8ToWide(editor::TrU8(f.item->label))});
+        return out;
+    }
     if (path.size() != 1 || path[0] != FieldOf<Animator>("clip")) return std::nullopt;
     const game_production::SceneEntity* e = scene.Find(entity);
     const ClipList* list = e ? ClipsOf(host, ModelOn(*e)) : nullptr;

@@ -26,6 +26,7 @@ struct NavTabState {
     RM_PROPERTY() int tool = 0;     // 0: 選ぶ / 1: 経路を試す
     RM_PROPERTY() int volume = 0;   // 選んだ範囲 (部品「ナビメッシュ」のエンティティ)
     RM_PROPERTY() int area = 0;     // 選んだエリアの種類 (NavAreaKind::id)
+    RM_PROPERTY() int type = 0;     // 選んだエージェントの型 (NavAgentType::id。0: 選んだ範囲の型)
     RM_PROPERTY() Vec2 center{0, 0};  // 地図の真ん中 (ワールドの x, z)
     RM_PROPERTY() float halfWidth = 0;  // 地図の幅の半分 (m)。0: まだ (最初にシーン全体を見る)
 };

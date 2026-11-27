@@ -39,6 +39,7 @@
 #include "rm_engine/game_x_navigation/runtime/Id.h"
 #include "rm_engine/navigation/runtime/Id.h"
 #include "rm_engine/navigation_x_3d/runtime/Id.h"
+#include "rm_engine/navigation_x_animation/runtime/Id.h"
 #include "rm_engine/navigation_x_physics/runtime/Id.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
 #include "rm_engine/physics/editor/Connector.h"
@@ -87,6 +88,7 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {game_x_navigation::kPluginId, &game_x_navigation::RegisterEditor},
         {navigation_x_3d::kPluginId, nullptr},
         {navigation_x_physics::kPluginId, nullptr},
+        {navigation_x_animation::kPluginId, nullptr},
         {theme_colors::kPluginId, nullptr},  // テーマのファイルだけ (themes/*.json)
         {theme_paper::kPluginId, nullptr},
         {theme_seasons::kPluginId, &theme_seasons::RegisterEditor},
