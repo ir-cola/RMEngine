@@ -148,5 +148,7 @@
   "腰を下げる上限": "Pelvis drop limit",
   "腰を下げるのはここまで (m)": "Lowers the pelvis by at most this much (m)",
   "(下げない)": "(do not lower)",
-  "(選んでいない)": "(none)"
+  "(選んでいない)": "(none)",
+  "休みの姿勢から": "From the rest pose",
+  "最初のコマから": "From the first frame"
 }

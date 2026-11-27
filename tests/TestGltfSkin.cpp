@@ -7,10 +7,16 @@
 
 #include "rm_engine/animation3d/runtime/RootMotion.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
+#include "rm_engine/space3d/runtime/Morph.h"
+#include "rm_engine/space3d/runtime/RendererShaders.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <cmath>
+#include <algorithm>
+#include <cstdio>
+#include <d3dcompiler.h>
+#include <wrl/client.h>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -180,8 +186,8 @@ RM_TEST(GltfSkin_SampleArm) {
     for (size_t i = 0; i < rest.size(); ++i) same = same && NearV(rest[i], m->vertices[i].position);
     CHECK(same);
     // クリップ: 名前・長さ・サンプルの数。回るだけ (位置・大きさのトラックは無い)。ループする (最初と最後が同じ)。
-    CHECK(m->clips.size() == 3);  // Wave・Idle・Walk (根が前へ進む: ルートモーション)
-    if (m->clips.size() != 3) return;
+    CHECK(m->clips.size() == 4);  // Wave・Idle・Walk (根が前へ進む: ルートモーション)・Puff (形の重みだけ)
+    if (m->clips.size() != 4) return;
     const Clip& wave = m->clips[0];
     const Clip& idle = m->clips[1];
     CHECK(wave.name == "Wave" && std::abs(wave.duration - 2.f) < 1e-5f && wave.rate == kDefaultClipRate && wave.frames == 61);
@@ -205,8 +211,8 @@ RM_TEST(GltfSkin_SampleArm) {
 RM_TEST(GltfSkin_ImportSettingsMoveBonesLikeVertices) {
     std::string error;
     const auto raw = ReadSample(&error);
-    CHECK(raw && raw->skin && raw->clips.size() == 3);
-    if (!raw || !raw->skin || raw->clips.size() != 3) return;
+    CHECK(raw && raw->skin && raw->clips.size() == 4);
+    if (!raw || !raw->skin || raw->clips.size() != 4) return;
     struct Setting {
         ModelBasis basis;
         bool turn;
@@ -299,7 +305,8 @@ RM_TEST(GltfSkin_SamplersAreResampled) {
     bool sameSide = true;
     for (size_t i = 1; i < ro.tracks[0].r.size(); ++i) sameSide = sameSide && QuatDot(ro.tracks[0].r[i - 1], ro.tracks[0].r[i]) > 0;
     CHECK(sameSide);
-    CHECK(HasWarning(*m, "モーフ"));
+    // weights のチャンネル: 形 (targets) の無いメッシュを指すものは黙って飛ばす (形の重みは段階 6 から読む)。
+    CHECK(!HasWarning(*m, "モーフ"));
 }
 
 // JOINTS_0 が unsigned byte、WEIGHTS_0 が正規化した unsigned byte / short。スキンの joints の番号から骨の番号へ
@@ -518,4 +525,49 @@ RM_TEST(GltfSkin_SampleWalkHasRootMotion) {
     set.enabled = true;
     const animation3d::RootDelta d = animation3d::RootTotals(*walk, animation3d::BindClip(*walk, skel), skel, root, set);
     CHECK(std::abs(d.move.z - 0.8f) < 1e-3f && std::abs(d.move.x) < 1e-3f && std::abs(d.move.y) < 1e-6f && std::abs(d.turn) < 1e-3f);
+}
+
+// ブレンドシェイプ (docs/ANIMATION.md 7-2-2): 見本の形 Fat・Lean と、形の重みだけのクリップ Puff。
+RM_TEST(GltfSkin_SampleBlendShapes) {
+    std::string err;
+    const auto m = ReadSample(&err);
+    CHECK(m && m->morphs.size() == 2);
+    if (!m || m->morphs.size() != 2) return;
+    CHECK(m->morphs[0].name == "Fat" && m->morphs[1].name == "Lean");
+    CHECK(m->morphDefaults.size() == 2 && m->morphDefaults[0] == 0.f);
+    // 動く頂点だけを持つ (Fat は上の段だけ)。番号は小さい順。
+    CHECK(!m->morphs[0].vertices.empty() && m->morphs[0].vertices.size() < m->vertices.size());
+    CHECK(std::is_sorted(m->morphs[0].vertices.begin(), m->morphs[0].vertices.end()));
+    // CPU の式: Fat を 1 で、上の段の頂点が横へ 0.1 m
+    const uint32_t v = m->morphs[0].vertices.front();
+    Vec3 p = m->vertices[v].position, n = m->vertices[v].normal;
+    const Vec3 before = p;
+    const float w[] = {1.f, 0.f};
+    MorphVertex(v, p, n, w, m->morphs);
+    CHECK(std::abs(std::abs(p.x - before.x) + std::abs(p.z - before.z) - 0.1f) < 1e-4f || std::abs(Length(p - before) - 0.1f) < 0.05f);
+    CHECK(std::abs(p.y - before.y) < 1e-6f);
+    // 重み 0 なら動かない
+    Vec3 q = before, qn = m->vertices[v].normal;
+    const float none[] = {0.f, 0.f};
+    MorphVertex(v, q, qn, none, m->morphs);
+    CHECK(q == before);
+    // Puff: 形の重みの曲線だけ (骨のトラックは無い)。1 秒で Fat が 1
+    const Clip* puff = nullptr;
+    for (const Clip& c : m->clips) {
+        if (c.name == "Puff") puff = &c;
+    }
+    CHECK(puff && puff->tracks.empty() && !puff->morphs.empty());
+    if (puff && !puff->morphs.empty()) {
+        CHECK(puff->morphs[0].target == "Fat" && puff->morphs[0].weights.size() == puff->frames);
+        CHECK(std::abs(puff->morphs[0].weights[puff->frames / 2] - 1.f) < 1e-3f);
+    }
+    CHECK(MorphReach(m->morphs[1]) > 0.19f && FindMorph(m->morphs, "Lean") == 1 && FindMorph(m->morphs, "無い") == -1);
+}
+
+// Compute Shader (ブレンドシェイプを混ぜる) が fxc でコンパイルできる。
+RM_TEST(GltfSkin_MorphShaderCompiles) {
+    Microsoft::WRL::ComPtr<ID3DBlob> code, errors;
+    const HRESULT hr = D3DCompile(kMorphCsHlsl, std::strlen(kMorphCsHlsl), "morph", nullptr, nullptr, "MorphCS", "cs_5_0", 0, 0, &code, &errors);
+    CHECK(SUCCEEDED(hr));
+    if (FAILED(hr) && errors) std::printf("%s\n", static_cast<const char*>(errors->GetBufferPointer()));
 }

@@ -343,6 +343,52 @@ void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, f
 
 }  // namespace
 
+// ブレンドシェイプ (docs/ANIMATION.md 7-2-2): 重みの付いた形を足した頂点を作る Compute Shader (cs_5_0)。
+// 頂点 1 つに 1 本のスレッド。形ごとに「動く頂点の範囲 (最初・数)」と差 (位置 3・法線 3 の float) の場所と重みを
+// active で受け取り、範囲に入っていれば 重み x 差 を足す。法線は足した後に長さを 1 に (space3d::MorphVertex と同じ式)。
+const char kMorphCsHlsl[] = R"(
+ByteAddressBuffer baseVertices : register(t0);   // MeshVertex (位置 3・法線 3・UV 2 の float = 32 バイト)
+ByteAddressBuffer deltas : register(t1);         // 形の差 (頂点ごとに位置 3・法線 3 の float)
+Buffer<uint4> active : register(t2);             // 形ごと: 最初の頂点・頂点の数・差の場所 (float の番号)・重み (asuint)
+RWByteAddressBuffer outVertices : register(u0);
+cbuffer MorphFrame : register(b0) {
+    uint vertexCount;
+    uint activeCount;
+    uint2 morphPad;
+};
+[numthreads(64, 1, 1)]
+void MorphCS(uint3 id : SV_DispatchThreadID) {
+    const uint v = id.x;
+    if (v >= vertexCount) return;
+    const uint at = v * 32;
+    float3 p = asfloat(baseVertices.Load3(at));
+    float3 n = asfloat(baseVertices.Load3(at + 12));
+    const uint2 uv = baseVertices.Load2(at + 24);
+    float3 dn = float3(0, 0, 0);
+    bool bent = false;
+    for (uint k = 0; k < activeCount; ++k) {
+        const uint4 a = active[k];
+        if (v < a.x || v >= a.x + a.y) continue;
+        const float w = asfloat(a.w);
+        const uint o = (a.z + (v - a.x) * 6) * 4;
+        p += w * asfloat(deltas.Load3(o));
+        const float3 e = asfloat(deltas.Load3(o + 12));
+        if (any(e != 0)) {
+            dn += w * e;
+            bent = true;
+        }
+    }
+    if (bent) {
+        const float3 m = n + dn;
+        const float len = length(m);
+        if (len > 1e-6) n = m / len;
+    }
+    outVertices.Store3(at, asuint(p));
+    outVertices.Store3(at + 12, asuint(n));
+    outVertices.Store2(at + 24, uv);
+}
+)";
+
 const char kDirectionMapHlsl[] = R"(
 // 向きの地図 (RenderFrame::mapDirections): 隠れた形 (RenderFrame::mapShapes) の深度を、各向きから
 // 見たもの。タイルを 1 枚のテクスチャに並べる (Lighting.h の PlanCover、RendererShaders.h の

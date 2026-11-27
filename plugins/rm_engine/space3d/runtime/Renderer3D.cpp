@@ -465,6 +465,27 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     cloudSrv_.Reset();
     cloudSize_ = 0;
     width_ = height_ = 0;
+    morphCs_.Reset();
+    morphActive_.Reset();
+    morphCb_.Reset();
+    morphActiveView_.Reset();
+    morphActiveCapacity_ = 0;
+    morphPool_.clear();
+    if (device && device->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0) {
+        // ブレンドシェイプの Compute Shader (できなければ、形を動かさずに描く: 止めない)。
+        Ptr<ID3DBlob> cs;
+        std::string why;
+        if (Compile(kMorphCsHlsl, "morph", "MorphCS", "cs_5_0", cs, &why) &&
+            SUCCEEDED(device->CreateComputeShader(cs->GetBufferPointer(), cs->GetBufferSize(), nullptr, &morphCs_))) {
+            D3D11_BUFFER_DESC cd{};
+            cd.ByteWidth = 16;
+            cd.Usage = D3D11_USAGE_DEFAULT;
+            cd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            if (FAILED(device->CreateBuffer(&cd, nullptr, &morphCb_))) morphCs_.Reset();
+        } else {
+            morphCs_.Reset();
+        }
+    }
     samples_ = 1;
     device_ = device;
     static std::atomic<uint64_t> next{0};
@@ -548,8 +569,55 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     bd.Usage = D3D11_USAGE_IMMUTABLE;  // 1 度だけ書き、変えない
     bd.ByteWidth = static_cast<UINT>(mesh.vertices.size() * sizeof(MeshVertex));
     bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    // ブレンドシェイプのあるメッシュ: Compute Shader が頂点を読めるように (生のバイトの口)。
+    const bool morphs = !mesh.morphs.empty() && morphCs_ && mesh.skin;
+    if (morphs) {
+        bd.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
+        bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+    }
     D3D11_SUBRESOURCE_DATA init{mesh.vertices.data(), 0, 0};
     if (FAILED(device_->CreateBuffer(&bd, &init, &gpu->vertices))) return fail("頂点を GPU に載せられませんでした (メモリーが足りない?)");
+    bd.MiscFlags = 0;
+    gpu->vertexCount = static_cast<uint32_t>(mesh.vertices.size());
+    if (morphs) {
+        // 形ごとに、動く頂点の最初から最後までの範囲の差 (位置 3・法線 3) を 1 本に並べる。
+        std::vector<float> deltas;
+        for (const MorphTarget& t : mesh.morphs) {
+            GpuMesh::MorphRange r;
+            r.offset = static_cast<uint32_t>(deltas.size());
+            const size_t n = std::min(t.vertices.size(), t.position.size());
+            if (n > 0 && t.vertices[n - 1] < mesh.vertices.size()) {
+                r.first = t.vertices.front();
+                r.count = t.vertices[n - 1] - r.first + 1;
+                deltas.resize(deltas.size() + static_cast<size_t>(r.count) * 6, 0.f);
+                for (size_t i = 0; i < n; ++i) {
+                    float* d = &deltas[r.offset + static_cast<size_t>(t.vertices[i] - r.first) * 6];
+                    d[0] = t.position[i].x, d[1] = t.position[i].y, d[2] = t.position[i].z;
+                    if (i < t.normal.size()) d[3] = t.normal[i].x, d[4] = t.normal[i].y, d[5] = t.normal[i].z;
+                }
+            }
+            gpu->morphRanges.push_back(r);
+            gpu->morphReach.push_back(MorphReach(t));
+        }
+        if (deltas.empty()) deltas.resize(6, 0.f);
+        D3D11_BUFFER_DESC md{};
+        md.Usage = D3D11_USAGE_IMMUTABLE;
+        md.ByteWidth = static_cast<UINT>(deltas.size() * sizeof(float));
+        md.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        md.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+        D3D11_SUBRESOURCE_DATA mi{deltas.data(), 0, 0};
+        D3D11_SHADER_RESOURCE_VIEW_DESC sv{};
+        sv.Format = DXGI_FORMAT_R32_TYPELESS;
+        sv.ViewDimension = D3D11_SRV_DIMENSION_BUFFEREX;
+        sv.BufferEx.Flags = D3D11_BUFFEREX_SRV_FLAG_RAW;
+        sv.BufferEx.NumElements = static_cast<UINT>(deltas.size());
+        if (FAILED(device_->CreateBuffer(&md, &mi, &gpu->morphDeltas)) || FAILED(device_->CreateShaderResourceView(gpu->morphDeltas.Get(), &sv, &gpu->morphView))) {
+            return fail("ブレンドシェイプを GPU に載せられませんでした (メモリーが足りない?)");
+        }
+        sv.BufferEx.NumElements = static_cast<UINT>(mesh.vertices.size() * sizeof(MeshVertex) / 4);
+        if (FAILED(device_->CreateShaderResourceView(gpu->vertices.Get(), &sv, &gpu->vertexView))) return fail("ブレンドシェイプの頂点の口を作れませんでした");
+        gpu->morphCount = static_cast<uint32_t>(mesh.morphs.size());
+    }
     bd.ByteWidth = static_cast<UINT>(mesh.indices.size() * sizeof(uint32_t));
     bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
     init.pSysMem = mesh.indices.data();
@@ -955,13 +1023,128 @@ uint32_t Renderer::PictureSet(const DrawMaterial* m) {
     return it->second;
 }
 
-ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f) {
-    if (!Ready() || f.width == 0 || f.height == 0 || !Resize(f.width, f.height)) return nullptr;
+const GpuMesh* Renderer::Morphed(ID3D11DeviceContext* ctx, const GpuMesh& mesh, std::span<const float> weights, size_t slot) {
+    // 重みの付いた形 (重み 0 は飛ばす)。無ければ差し替えない。
+    std::vector<std::array<uint32_t, 4>> active;
+    float reach = 0;
+    for (size_t k = 0; k < weights.size() && k < mesh.morphRanges.size(); ++k) {
+        const float w = weights[k];
+        const GpuMesh::MorphRange& r = mesh.morphRanges[k];
+        if (w == 0 || !std::isfinite(w) || r.count == 0) continue;
+        uint32_t bits = 0;
+        std::memcpy(&bits, &w, 4);
+        active.push_back({r.first, r.count, r.offset, bits});
+        reach += std::fabs(w) * (k < mesh.morphReach.size() ? mesh.morphReach[k] : 0.f);
+    }
+    if (active.empty() || !morphCs_ || !mesh.vertexView || !mesh.morphView) return nullptr;
+    // 形の重みの表 (足りなければ大きくする)。
+    if (active.size() > morphActiveCapacity_) {
+        morphActive_.Reset();
+        morphActiveView_.Reset();
+        const size_t cap = std::max<size_t>(64, active.size() * 2);
+        D3D11_BUFFER_DESC ad{};
+        ad.Usage = D3D11_USAGE_DEFAULT;
+        ad.ByteWidth = static_cast<UINT>(cap * 16);
+        ad.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SHADER_RESOURCE_VIEW_DESC sv{};
+        sv.Format = DXGI_FORMAT_R32G32B32A32_UINT;
+        sv.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        sv.Buffer.NumElements = static_cast<UINT>(cap);
+        if (FAILED(device_->CreateBuffer(&ad, nullptr, &morphActive_)) || FAILED(device_->CreateShaderResourceView(morphActive_.Get(), &sv, &morphActiveView_))) {
+            morphActiveCapacity_ = 0;
+            return nullptr;
+        }
+        morphActiveCapacity_ = cap;
+    }
+    // この描画の、形を足した頂点の置き場所 (使い回す)。
+    if (morphPool_.size() <= slot) morphPool_.resize(slot + 1);
+    MorphOut& out = morphPool_[slot];
+    const uint32_t bytes = mesh.vertexCount * static_cast<uint32_t>(sizeof(MeshVertex));
+    if (!out.buffer || out.bytes < bytes) {
+        out = {};
+        D3D11_BUFFER_DESC od{};
+        od.Usage = D3D11_USAGE_DEFAULT;
+        od.ByteWidth = bytes;
+        od.BindFlags = D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_UNORDERED_ACCESS;
+        od.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+        D3D11_UNORDERED_ACCESS_VIEW_DESC uv{};
+        uv.Format = DXGI_FORMAT_R32_TYPELESS;
+        uv.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+        uv.Buffer.NumElements = bytes / 4;
+        uv.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
+        if (FAILED(device_->CreateBuffer(&od, nullptr, &out.buffer)) || FAILED(device_->CreateUnorderedAccessView(out.buffer.Get(), &uv, &out.uav))) {
+            out = {};
+            return nullptr;
+        }
+        out.bytes = bytes;
+    }
+    const D3D11_BOX box{0, 0, 0, static_cast<UINT>(active.size() * 16), 1, 1};
+    ctx->UpdateSubresource(morphActive_.Get(), 0, &box, active.data(), 0, 0);
+    const uint32_t cb[4] = {mesh.vertexCount, static_cast<uint32_t>(active.size()), 0, 0};
+    ctx->UpdateSubresource(morphCb_.Get(), 0, nullptr, cb, 0, 0);
+    ID3D11ShaderResourceView* views[3] = {mesh.vertexView.Get(), mesh.morphView.Get(), morphActiveView_.Get()};
+    ID3D11UnorderedAccessView* uav = out.uav.Get();
+    ID3D11Buffer* cbuf = morphCb_.Get();
+    ctx->CSSetShader(morphCs_.Get(), nullptr, 0);
+    ctx->CSSetShaderResources(0, 3, views);
+    ctx->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+    ctx->CSSetConstantBuffers(0, 1, &cbuf);
+    ctx->Dispatch((mesh.vertexCount + 63) / 64, 1, 1);
+    ID3D11ShaderResourceView* noViews[3] = {};
+    ID3D11UnorderedAccessView* noUav = nullptr;
+    ctx->CSSetShaderResources(0, 3, noViews);
+    ctx->CSSetUnorderedAccessViews(0, 1, &noUav, nullptr);
+    ctx->CSSetShader(nullptr, nullptr, 0);
+    // 元のメッシュの写し: 頂点だけ差し替え、範囲は形の分だけ広げる。
+    if (!out.mesh) out.mesh = std::make_shared<GpuMesh>();
+    GpuMesh& m = *out.mesh;
+    const uint64_t serial = m.serial != 0 ? m.serial : ++g_meshSerial;
+    m = mesh;
+    m.serial = serial;
+    m.vertices = out.buffer;
+    m.vertexView.Reset();
+    m.morphView.Reset();
+    m.morphCount = 0;
+    m.min = {m.min.x - reach, m.min.y - reach, m.min.z - reach};
+    m.max = {m.max.x + reach, m.max.y + reach, m.max.z + reach};
+    for (BoneBox& b : m.boneBoxes) {
+        for (Vec3& h : b.half) {
+            const float len = Length(h);
+            if (len > 1e-6f) h = h * ((len + reach) / len);
+        }
+    }
+    ++stats_.morphedDraws;
+    return out.mesh.get();
+}
+
+const RenderFrame& Renderer::PrepareMorphs(ID3D11DeviceContext* ctx, const RenderFrame& in, RenderFrame& scratch) {
+    bool any = false;
+    for (const MeshDraw& d : in.meshes) any = any || (d.mesh && d.mesh->morphCount > 0 && !d.morphWeights.empty());
+    if (!any || !morphCs_) return in;
+    morphDraws_.assign(in.meshes.begin(), in.meshes.end());
+    size_t slot = 0;
+    for (MeshDraw& d : morphDraws_) {
+        if (!d.mesh || d.mesh->morphCount == 0 || d.morphWeights.empty()) continue;
+        if (const GpuMesh* m = Morphed(ctx, *d.mesh, d.morphWeights, slot)) {
+            d.mesh = m;
+            d.moving = true;  // (形が変わるかもしれない: 影の地図はそのつど描く)
+            ++slot;
+        }
+    }
+    scratch = in;
+    scratch.meshes = morphDraws_;
+    return scratch;
+}
+
+ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& frame) {
+    if (!Ready() || frame.width == 0 || frame.height == 0 || !Resize(frame.width, frame.height)) return nullptr;
     Shared& s = *shared_;
+    stats_ = Stats{};
+    RenderFrame morphScratch;
+    const RenderFrame& f = PrepareMorphs(ctx, frame, morphScratch);
 
     // 塗ったものすべて: 箱とモデル (それぞれ自分の場所と色)。骨のあるモデルは、そのスキンの行列を
-    // フレームの骨の行列 (bones_) に足す (描画が DRAW.z で指す)。
-    stats_ = Stats{};
+    // フレームの骨の行列 (bones_) に足す (描画が DRAW.z で指す)。(stats_ は形を足す前に空にした)
     items_.clear();
     bones_.clear();
     for (const Box& b : f.boxes) {

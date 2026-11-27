@@ -70,5 +70,9 @@
   "この骨と、その下の骨だけに重ねる (骨の名前。空: 全部)": "Layer only onto these bones and the bones below them (bone names; empty: all)",
   "このレイヤーの状態 (1 つ目から始まる)": "This layer's states (starts in the first one)",
   "このレイヤーのルール (パラメーターは全部のレイヤーで同じ)": "This layer's rules (parameters are shared by all layers)",
-  "上の状態とルール (体) の上に、並びの順に重ねる": "Layered in order on top of the states and rules above (the body)"
+  "上の状態とルール (体) の上に、並びの順に重ねる": "Layered in order on top of the states and rules above (the body)",
+  "足す基準": "Additive base",
+  "休みの姿勢": "Rest pose",
+  "クリップの最初のコマ": "The clip's first frame",
+  "足すとき、何からの差を足すか。休みの姿勢: モデルの休みの姿勢から。クリップの最初のコマ: そのクリップの始めの姿勢から (表情・息のクリップを、どの姿勢にも足せる)": "When adding, what the difference is taken from. Rest pose: the model's rest pose. The clip's first frame: that clip's starting pose (so face and breathing clips add onto any pose)"
 }

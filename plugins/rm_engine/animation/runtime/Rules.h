@@ -54,6 +54,7 @@ struct CompiledLayer {
     float weight = 1;
     int weightParam = -1;  // (-1: weight の数)
     LayerMode mode = LayerMode::Override;
+    AdditiveBase additiveBase = AdditiveBase::Rest;
     std::vector<std::string> mask;
     CompiledController rules;  // このレイヤーの状態とルール (params は全体のもの)
 };

@@ -53,6 +53,7 @@ struct MeshPoseFrame {
 // 1 つの物の姿勢。
 struct MeshPoseAnswer {
     std::span<const space3d::BoneMatrix> bones;  // スキンの行列 (モデルの空間)。空: 答えない (休みの姿勢)
+    std::span<const float> morphWeights;          // ブレンドシェイプの重み (SkinData::morphs の並び。空: 形を動かさない)
     uint64_t poseVersion = 0;                     // MeshDraw::poseVersion (0: 毎フレーム変わるかもしれない)
     bool moving = false;                          // 姿勢が動いている (影の地図: MeshDraw::moving)
 };

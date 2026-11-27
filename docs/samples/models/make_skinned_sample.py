@@ -11,6 +11,10 @@
 #                        "Walk"  1 s: the root bone (Base) goes 0.8 m forward (+Z) with a small bob and
 #                                     sway - for root motion (docs/ANIMATION.md 7-1. Its position is
 #                                     not the same at the start and the end: root motion carries it on)
+#                        "Puff"  2 s: blend shape weights only (docs/ANIMATION.md 7-2-2): "Fat" goes 0 -> 1 -> 0
+#                      and two blend shapes (morph targets, names in mesh.extras.targetNames):
+#                        "Fat"   the top segment swells sideways by 0.1 m (and its side normals don't change)
+#                        "Lean"  the whole column leans 0.2 m to +X at the top (more the higher the vertex)
 #                      The buffer is written inside the file (data: URI).
 #
 # Only the Python standard library. Everything here is made by this script (no licence to follow).
@@ -114,8 +118,17 @@ for seg, part in enumerate(parts):
     joints = accessor(struct.pack("<%dH" % (4 * n), *[k for w in influences for k, _ in w]), USHORT, n, "VEC4", ARRAY)
     weights = accessor(struct.pack("<%df" % (4 * n), *[v for w in influences for _, v in w]), FLOAT, n, "VEC4", ARRAY)
     idx = accessor(struct.pack("<%dH" % len(part.idx), *part.idx), USHORT, len(part.idx), "SCALAR", ELEMENTS)
+    # Blend shapes: differences of position per vertex (no NORMAL: normals stay).
+    fat = [[(0.1 if p[0] > 0 else -0.1 if p[0] < 0 else 0.0) if seg == SEGMENTS - 1 else 0.0, 0.0,
+            (0.1 if p[2] > 0 else -0.1 if p[2] < 0 else 0.0) if seg == SEGMENTS - 1 else 0.0] for p in part.pos]
+    lean = [[0.2 * p[1] / HEIGHT, 0.0, 0.0] for p in part.pos]
+    targets = []
+    for shape in (fat, lean):
+        flat = [v for d in shape for v in d]
+        targets.append({"POSITION": accessor(struct.pack("<%df" % (3 * n), *flat), FLOAT, n, "VEC3", ARRAY,
+                                             [min(d[i] for d in shape) for i in range(3)], [max(d[i] for d in shape) for i in range(3)])})
     primitives.append({"attributes": {"POSITION": pos, "NORMAL": nrm, "JOINTS_0": joints, "WEIGHTS_0": weights},
-                       "indices": idx, "material": seg % 2})
+                       "indices": idx, "material": seg % 2, "targets": targets})
 
 # Inverse bind matrices (column by column): bone k sits at (0, JOINTS[k], 0) when bound.
 ibm = []
@@ -150,6 +163,18 @@ idle = animation("Idle", 4.0, 0.25, lambda b, t: [0.04, 0.06, 0.08][b] * math.si
 walk = animation("Walk", 1.0, 1 / 30, lambda b, t: [0.05, 0.08, 0.1][b] * math.sin(2 * math.pi * t - 0.7 * b),
                  lambda t: [0.0, 0.03 * (1 - math.cos(4 * math.pi * t)), 0.8 * t])
 
+def morph_animation(name, duration, step, weights_at):
+    # A clip of blend shape weights only: the "weights" channel of the mesh node (ArmMesh, node 1).
+    keys = int(round(duration / step))
+    times = [duration * k / keys for k in range(keys + 1)]
+    t_acc = accessor(struct.pack("<%df" % len(times), *times), FLOAT, len(times), "SCALAR", None, [0.0], [duration])
+    values = [v for t in times for v in weights_at(t)]
+    out = accessor(struct.pack("<%df" % len(values), *values), FLOAT, len(values), "SCALAR")
+    return {"name": name, "samplers": [{"input": t_acc, "output": out, "interpolation": "LINEAR"}],
+            "channels": [{"sampler": 0, "target": {"node": 1, "path": "weights"}}]}
+
+puff = morph_animation("Puff", 2.0, 0.25, lambda t: [0.5 - 0.5 * math.cos(math.pi * t), 0.0])
+
 doc = {
     "asset": {"version": "2.0", "generator": "RM Engine sample (docs/samples/models/make_skinned_sample.py)"},
     "scene": 0,
@@ -162,12 +187,12 @@ doc = {
         {"name": "Top", "translation": [0, JOINTS[2] - JOINTS[1], 0]},
     ],
     "skins": [{"name": "ArmSkin", "joints": [2, 3, 4], "skeleton": 2, "inverseBindMatrices": ibm_accessor}],
-    "meshes": [{"name": "ArmMesh", "primitives": primitives}],
+    "meshes": [{"name": "ArmMesh", "primitives": primitives, "weights": [0.0, 0.0], "extras": {"targetNames": ["Fat", "Lean"]}}],
     "materials": [
         {"name": "Orange", "pbrMetallicRoughness": {"baseColorFactor": [0.9, 0.35, 0.08, 1], "metallicFactor": 0, "roughnessFactor": 0.6}},
         {"name": "Cream", "pbrMetallicRoughness": {"baseColorFactor": [0.85, 0.8, 0.65, 1], "metallicFactor": 0, "roughnessFactor": 0.7}},
     ],
-    "animations": [wave, idle, walk],
+    "animations": [wave, idle, walk, puff],
     "accessors": accessors,
     "bufferViews": views,
     "buffers": [{"byteLength": len(buf), "uri": "data:application/octet-stream;base64," + base64.b64encode(bytes(buf)).decode()}],

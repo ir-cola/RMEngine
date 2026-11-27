@@ -801,3 +801,72 @@ RM_TEST(Anim3d_ApplyTwoBoneAndLookAt) {
     CHECK(AlignToNormal(foot, s, model, 3, n, 1.f, 1.f));
     CHECK(NearV(TransformDirection(model[3], {0, 1, 0}), n, 1e-3f));
 }
+
+// ブレンドシェイプの重み (docs/ANIMATION.md 7-2-2): クリップの曲線を姿勢と一緒に読み、混ぜる・フェードも同じ重みで。
+RM_TEST(Anim3d_PlayerMorphWeights) {
+    SkinData skin;
+    skin.skeleton = Chain();
+    std::vector<Clip> clips(3);
+    clips[0] = MakeClip(1.f, 4.f);
+    clips[0].name = "笑う";
+    clips[0].morphs = {{"口", {0, 0.25f, 0.5f, 0.75f, 1.f}}};
+    clips[1] = MakeClip(1.f, 4.f);
+    clips[1].name = "怒る";
+    clips[1].morphs = {{"眉", {1.f}}};
+    clips[2] = MakeClip(1.f, 4.f);
+    clips[2].name = "何もしない";
+    const std::string names[] = {"口", "眉", "目"};
+    const float defaults[] = {0.f, 0.f, 0.3f};
+    Player p;
+    p.Bind(skin.skeleton, clips);
+    p.BindMorphs(names, defaults);
+    p.Play(0);
+    p.Tick(0.5f);
+    p.EvaluatePose(skin.skeleton);
+    CHECK(Near(p.MorphWeights()[0], 0.5f) && Near(p.MorphWeights()[1], 0.f) && Near(p.MorphWeights()[2], 0.3f));  // 曲線の無い形は初めの値
+    CHECK(p.MorphAnimated(0) && !p.MorphAnimated(1));
+    // 混ぜる: 同じ割合の時刻で読み、重みで混ぜる (笑う 0.5 と 怒る の眉 1 を半分ずつ)
+    const Player::Motion mix[] = {{0, 1}, {1, 1}};
+    p.SetBlend(mix);
+    p.EvaluatePose(skin.skeleton);
+    CHECK(Near(p.MorphWeights()[0], 0.25f) && Near(p.MorphWeights()[1], 0.5f));
+    p.SetBlend({});
+    // フェード: 止めた重みから新しいクリップの重みへ
+    p.Play(0);
+    p.Tick(1.f);  // (ループで 0 に戻る手前ではなく、時刻 0)
+    p.SetTime(1.f - 1e-4f);
+    p.EvaluatePose(skin.skeleton);
+    const float start = p.MorphWeights()[0];
+    p.Play(2, 1.f);
+    p.Tick(0.5f);
+    p.EvaluatePose(skin.skeleton);
+    CHECK(Near(p.MorphWeights()[0], start * 0.5f, 1e-3f));
+    // 形の無いモデル: 空
+    Player none;
+    none.Bind(skin.skeleton, clips);
+    none.Play(0);
+    none.EvaluatePose(skin.skeleton);
+    CHECK(none.MorphWeights().empty());
+}
+
+// 足すレイヤーの基準「クリップの最初のコマ」(7-5): 今のクリップの始めの姿勢と形の重み。
+RM_TEST(Anim3d_PlayerFirstFrame) {
+    SkinData skin;
+    skin.skeleton = Chain();
+    std::vector<Clip> clips{WalkClip("歩く", 2.f)};
+    clips[0].root.enabled = false;  // (根を消さない: 始めの姿勢そのもの)
+    clips[0].morphs = {{"口", {0.2f, 0.4f, 0.6f, 0.8f, 1.f}}};
+    const std::string names[] = {"口"};
+    const float defaults[] = {0.f};
+    Player p;
+    p.Bind(skin.skeleton, clips);
+    p.BindMorphs(names, defaults);
+    Pose first;
+    std::vector<float> morphs;
+    p.FirstFrame(skin.skeleton, first, morphs);  // クリップが無い: 休みの姿勢
+    CHECK(NearV(first[0].t, {0, 1, 0}) && morphs.size() == 1 && Near(morphs[0], 0.f));
+    p.Play(0);
+    p.Tick(0.5f);
+    p.FirstFrame(skin.skeleton, first, morphs);
+    CHECK(NearV(first[0].t, {0, 1, 0}) && Near(morphs[0], 0.2f));  // 今の時刻 (0.5 秒) ではなく始め
+}

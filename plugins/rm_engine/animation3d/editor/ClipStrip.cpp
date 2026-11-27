@@ -8,7 +8,10 @@
 #include "editor/widgets/Theme.h"
 #include "editor/widgets/Widgets.h"
 #include "rm_engine/animation3d/editor/ClipEvents.h"
+#include "rm_engine/animation3d/runtime/MorphPreview.h"
 #include "rm_engine/animation3d/runtime/RootMotion.h"
+#include "rm_engine/space3d/editor/Preview3D.h"
+#include "rm_engine/space3d/runtime/Texture.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/MeshLoader.h"
 
@@ -43,6 +46,8 @@ struct Listing {
     // ルートモーションの「1 回で動く分」を出すための骨の木とクリップ (骨が無いモデル: null)。
     std::shared_ptr<const space3d::Skeleton> skeleton;
     std::shared_ptr<const std::vector<space3d::Clip>> data;
+    // ブレンドシェイプのあるモデル: 形と頂点 (インスペクターの小さな絵に上げる)。無い: null。
+    std::shared_ptr<const space3d::MeshData> mesh;
     std::filesystem::file_time_type time{};  // 読んだときのファイルと .meta の新しい方の時刻
     std::chrono::steady_clock::time_point checked{};
     space3d::MeshLoader::Ticket ticket = 0;  // 読んでいる最中 (0: なし)
@@ -63,10 +68,12 @@ public:
                 l.clips.clear();
                 l.skeleton.reset();
                 l.data.reset();
+                l.mesh.reset();
                 if (done->mesh) {
                     for (const space3d::Clip& c : done->mesh->clips) l.clips.push_back({c.name, c.duration});
                     if (done->mesh->skin) l.skeleton = std::make_shared<const space3d::Skeleton>(done->mesh->skin->skeleton);
                     l.data = std::make_shared<const std::vector<space3d::Clip>>(std::move(done->mesh->clips));
+                    if (!done->mesh->morphs.empty()) l.mesh = std::make_shared<const space3d::MeshData>(std::move(*done->mesh));
                 }
             }
         }
@@ -114,6 +121,14 @@ struct Strip {
     w::Popup bonePopup;
     std::vector<std::string> boneChoices;
     int boneChosen = -1;
+    // ブレンドシェイプの小さな絵
+    space3d::Preview3D preview;
+    std::shared_ptr<const space3d::GpuMesh> previewMesh;
+    const space3d::MeshData* previewOf = nullptr;
+    uint64_t previewGeneration = 0;
+    std::vector<space3d::DrawMaterial> previewMaterials;
+    std::vector<space3d::BoneMatrix> previewBones;
+    std::vector<float> previewWeights;
 };
 
 // ルートモーションの 1 行と、その下の「1 回で …」の行。
@@ -366,6 +381,96 @@ void DrawStrip(ui::Context& c, const Rect& r, const std::shared_ptr<Strip>& sp, 
     }
 }
 
+// --- ブレンドシェイプ (docs/ANIMATION.md 7-2-2。見本 S1 + S2) -----------------------------------------------
+//   ┌ ブレンドシェイプ (2) ─ シーンビューの選んだ物にも映します            [全部 0 に] ┐
+//   │ ┌────────┐  Fat   [=======|----]  0.80                                           │
+//   │ │ (絵)    │  Lean  [-----------]  0.00                                           │
+//   │ └────────┘                                                                      │
+// つまみは試すだけ (データではないので Undo に積まない・保存しない: MorphPreview.h)。
+constexpr float kMorphRowH = 26.f, kMorphPicture = 132.f;
+
+float MorphHeight(size_t count) { return kButtonH + kGap + std::max(kMorphPicture, static_cast<float>(count) * kMorphRowH); }
+
+struct MorphView {
+    std::shared_ptr<const space3d::MeshData> mesh;  // 形と頂点 (絵に上げる)
+};
+
+void DrawMorphs(ui::Context& c, const Rect& r, Strip& s, const MorphView& view) {
+    auto& p = c.P();
+    const space3d::MeshData& mesh = *view.mesh;
+    const std::string& model = s.access.guid;
+    const MorphTry* tried = TriedMorphs(model);
+    auto weightOf = [&](size_t k) {
+        if (tried) {
+            for (const auto& [name, w] : *tried) {
+                if (name == mesh.morphs[k].name) return w;
+            }
+        }
+        return k < mesh.morphDefaults.size() ? mesh.morphDefaults[k] : 0.f;
+    };
+    // 1 行目: 説明と「全部 0 に」。
+    const std::wstring resetLabel = Tr(L"全部 0 に");
+    const float resetW = w::ButtonWidth(c, resetLabel);
+    p.Text({r.x, r.y, r.w - resetW - 8, kButtonH}, Tr(L"つまみは試すだけです (保存しません)。シーンビューで選んだ、このモデルの物にも映ります"),
+           Style(11, theme::TextFaint));
+    if (w::Button(c, "morph.reset", {r.Right() - resetW, r.y, resetW, kButtonH}, resetLabel, w::ButtonKind::Secondary, tried != nullptr)) {
+        ClearTriedMorphs(model);
+        c.RequestRedraw();
+    }
+    const float top = r.y + kButtonH + kGap;
+    // 左: 小さな絵 (S1)。骨は休みの姿勢、形は今のつまみの重み。
+    const Rect pic{r.x, top, std::min(kMorphPicture, r.w * 0.4f), kMorphPicture};
+    platform::Gfx* gfx = s.access.graphics ? s.access.graphics() : nullptr;
+    if (gfx) {
+        if (space3d::Renderer* gpu = s.preview.Gpu(*gfx); gpu && (!s.previewMesh || s.previewGeneration != s.preview.Generation() || s.previewOf != view.mesh.get())) {
+            std::string err;
+            s.previewMesh = gpu->Upload(mesh, &err);
+            s.previewGeneration = s.preview.Generation();
+            s.previewOf = view.mesh.get();
+            s.previewMaterials.clear();
+            for (const space3d::MeshMaterial& m : mesh.materials) s.previewMaterials.push_back(space3d::MaterialNumbers(m));
+            if (s.previewMesh) {
+                const Vec3 lo = s.previewMesh->min, hi = s.previewMesh->max;
+                const float size = std::max({hi.x - lo.x, hi.y - lo.y, hi.z - lo.z, 0.1f});
+                s.preview.Camera().pivot = {(lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f, (lo.z + hi.z) * 0.5f};
+                s.preview.Camera().distance = size * 2.2f;
+            }
+        }
+        std::vector<space3d::MeshDraw> draws;
+        if (s.previewMesh) {
+            s.previewWeights.assign(mesh.morphs.size(), 0.f);
+            for (size_t k = 0; k < mesh.morphs.size(); ++k) s.previewWeights[k] = weightOf(k);
+            s.previewBones.assign(s.previewMesh->boneCount, space3d::BoneMatrix{});
+            space3d::MeshDraw d;
+            d.mesh = s.previewMesh.get();
+            d.materials = s.previewMaterials;
+            d.bones = s.previewBones;
+            d.morphWeights = s.previewWeights;
+            d.moving = true;
+            draws.push_back(d);
+        }
+        space3d::Preview3D::Content content;
+        content.meshes = draws;
+        s.preview.Draw(c, pic, *gfx, "morph.preview", content);
+    }
+    // 右: 形ごとのつまみ (S2: 選んだ物にも映る)。
+    const float x = pic.Right() + 12, wdt = r.Right() - x;
+    for (size_t k = 0; k < mesh.morphs.size(); ++k) {
+        const float y = top + static_cast<float>(k) * kMorphRowH;
+        c.PushId(static_cast<uint64_t>(k));
+        const float nameW = std::min(110.f, wdt * 0.35f);
+        p.Text({x, y, nameW, kMorphRowH}, Utf8ToWide(mesh.morphs[k].name), Style(12, theme::Text));
+        float v = weightOf(k);
+        const Rect slider{x + nameW + 6, y + 4, std::max(30.f, wdt - nameW - 60), kMorphRowH - 8};
+        if (w::Slider(c, "w", slider, v, 0.f, 1.f)) {
+            TryMorph(model, mesh.morphs[k].name, v);
+            c.RequestRedraw();
+        }
+        p.Text({slider.Right() + 6, y, 48, kMorphRowH}, TrF(L"{:.2f}", v), Style(11, theme::TextDim, ui::HAlign::Right));
+        c.PopId();
+    }
+}
+
 std::vector<editor::InspectBlock> BlocksOf(const std::shared_ptr<Strip>& sp) {
     Strip& s = *sp;
     std::vector<editor::InspectBlock> out;
@@ -385,6 +490,16 @@ std::vector<editor::InspectBlock> BlocksOf(const std::shared_ptr<Strip>& sp) {
             out.push_back(std::move(b));
         }
         return out;
+    }
+    if (l.ok && l.mesh && !l.mesh->morphs.empty()) {
+        // ブレンドシェイプ (クリップが無くても出す)。
+        editor::InspectBlock morph;
+        morph.title = TrF(L"ブレンドシェイプ ({})", l.mesh->morphs.size());
+        const MorphView mv{l.mesh};
+        const size_t n = l.mesh->morphs.size();
+        morph.customHeight = [n](ui::Context&, float) { return MorphHeight(n); };
+        morph.customDraw = [sp, mv](ui::Context& c, const Rect& r) { DrawMorphs(c, r, *sp, mv); };
+        out.push_back(std::move(morph));
     }
     if (!l.ok || l.clips.empty()) return out;  // クリップの無いモデル: 何も出さない
 

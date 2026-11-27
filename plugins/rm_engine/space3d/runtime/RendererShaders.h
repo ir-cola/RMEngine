@@ -30,6 +30,8 @@ inline constexpr uint32_t kSurfaceData = 16;
 
 // cbuffer、テクスチャ (t8)、MapPast / MapPastAt。
 extern const char kDirectionMapHlsl[];
+// ブレンドシェイプの Compute Shader (入口 MorphCS。cs_5_0)。Renderer が使う。
+extern const char kMorphCsHlsl[];
 // レンダラーのテキスト全体: ToScreen / ToLinear、そのシェーダー、地図の部分、そして `surface` -
 // Surface(...) を定義するプラグインのコード (空: 無し。面はそのまま)。
 std::string RendererShaderText(std::string_view surface = {});

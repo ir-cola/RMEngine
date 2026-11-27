@@ -3,6 +3,24 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.39",
+      "date": "2026-11-27",
+      "items": [
+        {
+          "ja": "骨のアニメーションにブレンドシェイプ (表情): glTF の形と FBX の BlendShape を読み、クリップの曲線で動かします (GPU の Compute Shader で足すので、形の数に上限はありません)",
+          "en": "Blend shapes (facial expressions) for bone animation: glTF morph targets and FBX blend shapes are read and driven by clip curves (added on the GPU with a compute shader, so there is no limit on the number of shapes)"
+        },
+        {
+          "ja": "モデルのインスペクターに「ブレンドシェイプ」: つまみで形を試せて、小さな絵とシーンビューの選んだ物に映ります",
+          "en": "A Blend shapes block in the model inspector: try shapes with sliders, shown in a small preview and on the selected objects in the scene view"
+        },
+        {
+          "ja": "足すレイヤーの基準を「クリップの最初のコマ」にも。スクリプトの rm::Animator に SetBlendShape・ClearBlendShape・BlendShape",
+          "en": "Additive layers can take their base from the clip's first frame. Scripts: rm::Animator gains SetBlendShape, ClearBlendShape and BlendShape"
+        }
+      ]
+    },
+    {
       "version": "0.0.38",
       "date": "2026-11-27",
       "items": [

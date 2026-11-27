@@ -112,6 +112,9 @@ struct MeshData {
     // 骨のあるモデル (Skeleton.h): 頂点を骨で動かす。あるとき、頂点はバインドしたときの形 (モデルの空間)。
     std::optional<SkinData> skin;
     std::vector<Clip> clips;  // ファイルのアニメーション (glTF の animations・FBX のテイク)。骨は名前で指す
+    // ブレンドシェイプ (Morph.h。表情)。名前の同じ形は 1 つ。morphDefaults: 形ごとの初めの重み (glTF の mesh.weights)。
+    std::vector<MorphTarget> morphs;
+    std::vector<float> morphDefaults;
 };
 
 // --- 1 つのモデルが読む間に使ってよい量 (どのリーダーも、場所を作る前に確かめる) ---

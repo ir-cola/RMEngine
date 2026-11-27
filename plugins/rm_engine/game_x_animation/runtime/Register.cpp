@@ -32,6 +32,7 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorRulesPart());
     registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorRootPart());
     registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorIkPart());
+    registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorMorphPart());
 }
 
 }  // namespace rm::game_x_animation

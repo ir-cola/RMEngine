@@ -480,6 +480,17 @@ private:
                 if (li < a.layers.size()) a.layers[li].mode = static_cast<LayerMode>(mode);
             });
         }
+        // 足すとき: 何からの差を足すか (休みの姿勢 / クリップの最初のコマ)。
+        if (l.mode == LayerMode::Additive && x + wdt - 130 - (cx + 136) >= 200) {
+            const std::wstring bases[] = {Tr(L"休みの姿勢から"), Tr(L"最初のコマから")};
+            const std::wstring_view baseLabels[] = {bases[0], bases[1]};
+            const int base = w::Segmented(c, "base", {cx + 136, y, 200, kRow}, baseLabels, static_cast<int>(l.additiveBase));
+            if (base >= 0 && base != static_cast<int>(l.additiveBase)) {
+                Edit(host, "足す基準", 0, [li, base](AnimController& a) {
+                    if (li < a.layers.size()) a.layers[li].additiveBase = static_cast<animation::AdditiveBase>(base);
+                });
+            }
+        }
         if (w::Button(c, "remove", {x + wdt - 130, y, 130, kRow}, Tr(L"レイヤーを消す"))) {
             Edit(host, "レイヤーを消す", 0, [li](AnimController& a) {
                 if (li < a.layers.size()) a.layers.erase(a.layers.begin() + static_cast<std::ptrdiff_t>(li));

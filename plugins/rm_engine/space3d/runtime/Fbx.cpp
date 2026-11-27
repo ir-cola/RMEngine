@@ -423,6 +423,7 @@ struct Take {
     double start = 0, stop = 0;  // 秒
     std::unordered_map<int64_t, Channels> models;
     std::vector<Curve> curves;
+    std::vector<std::pair<int, Curve>> morphs;  // ブレンドシェイプの形の番号と、その DeformPercent の曲線 (0..100)
 };
 
 // ある時刻のテイクの姿勢 (モデルのワールド行列を覚える: 同じ親を何度も計算しない)。
@@ -759,6 +760,7 @@ private:
         if (skin && !budget_.Take(0, uint64_t{corners.size()} * sizeof(SkinVertex) * 2, error_)) return false;
 
         MeshData part;
+        std::vector<uint32_t> partPoint;  // 角ごとのコントロール点 (ブレンドシェイプの差を広げる)
         std::vector<SkinVertex> partSkin;
         std::vector<int> partMaterial;
         bool missingNormal = normals == nullptr;
@@ -780,6 +782,7 @@ private:
             v.normal = {n[0], n[1], n[2]};
             v.uv = {uv[0], 1.f - uv[1]};  // FBX の V は上向き
             part.vertices.push_back(v);
+            partPoint.push_back(static_cast<uint32_t>(cp));
             if (skin) partSkin.push_back(cp < skin->points.size() ? skin->points[cp] : skin->rigid);
             if (!last) continue;
             // ポリゴンがそろった: 最初の角から扇形に。
@@ -801,10 +804,85 @@ private:
         }
         if (part.indices.empty()) return true;
         if (missingNormal) ComputeNormals(part);
+        const uint32_t base = static_cast<uint32_t>(out_.vertices.size());
         AppendPlaced(out_, part, world);  // 頂点は角の順のまま足される (partSkin と同じ順)
+        if (!geo.props.empty() && !Shapes(geo.props[0].integer, partPoint, base, world)) return false;
         if (skin) out_.skin->vertices.insert(out_.skin->vertices.end(), partSkin.begin(), partSkin.end());
         triangleMaterial_.insert(triangleMaterial_.end(), partMaterial.begin(), partMaterial.end());
         return true;
+    }
+
+    // --- ブレンドシェイプ (docs/ANIMATION.md 7-2-2) ---------------------------------------------------
+    //   Geometry <- Deformer (BlendShape) <- Deformer (SubDeformer::BlendShapeChannel) <- Geometry (Shape)
+    // Shape の Indexes (コントロール点の番号)・Vertices・Normals (どちらも差) を、角ごとの頂点へ広げる (`points`:
+    // 角のコントロール点。モデルの頂点 `base` から)。重みはチャンネルの DeformPercent (0..100)。中間のシェイプ
+    // (1 つのチャンネルに 2 つ以上の Shape: FullWeights) は最後の形だけ使い、警告する (6 章の 25)。
+    bool Shapes(int64_t geometry, const std::vector<uint32_t>& points, uint32_t base, const Mat4& world) {
+        const Mat4 nm = Inv(world);  // (法線の差は逆転置で)
+        bool ok = true;
+        ForChildren(geometry, [&](const Link& bl) {
+            const FbxNode* bs = bl.kind == "OO" ? Object(bl.child, "Deformer") : nullptr;
+            if (!bs || bs->props.size() < 3 || bs->props[2].text != "BlendShape") return true;
+            ForChildren(bl.child, [&](const Link& cl) {
+                const FbxNode* ch = cl.kind == "OO" ? Object(cl.child, "Deformer") : nullptr;
+                if (!ch || ch->props.size() < 3 || ch->props[2].text != "BlendShapeChannel") return true;
+                if (!budget_.Step(error_)) return ok = false;
+                std::vector<const FbxNode*> shapes;
+                ForChildren(cl.child, [&](const Link& sl) {
+                    const FbxNode* s = sl.kind == "OO" ? Object(sl.child, "Geometry") : nullptr;
+                    if (s && s->props.size() >= 3 && s->props[2].text == "Shape") shapes.push_back(s);
+                    return true;
+                });
+                if (shapes.empty()) return true;
+                std::string name = WithoutClass(ch->props.size() > 1 ? ch->props[1].text : std::string(), "SubDeformer");
+                if (name.empty()) name = std::format("形 {}", out_.morphs.size());
+                if (shapes.size() > 1) {
+                    out_.warnings.push_back(std::format("FBX のブレンドシェイプ「{}」に中間の形が {} 個あります。最後の形だけを使います", name, shapes.size() - 1));
+                }
+                int at = FindMorph(out_.morphs, name);
+                if (at < 0) {
+                    if (out_.morphs.size() >= kMaxMorphTargets) return true;
+                    at = static_cast<int>(out_.morphs.size());
+                    out_.morphs.push_back({name, {}, {}, {}});
+                    out_.morphDefaults.push_back(std::clamp(ToFloat(PNumber(ch, "DeformPercent", 0) / 100.0), 0.f, 1.f));
+                }
+                channelMorph_[cl.child] = at;
+                const FbxNode& shape = *shapes.back();
+                const FbxNode* idx = shape.Child("Indexes");
+                const FbxNode* dv = shape.Child("Vertices");
+                const FbxNode* dn = shape.Child("Normals");
+                if (!idx || idx->props.empty() || !dv || dv->props.empty()) return true;
+                const std::vector<double>& ix = idx->props[0].numbers;
+                const std::vector<double>& vs = dv->props[0].numbers;
+                const std::vector<double>* ns = dn && !dn->props.empty() ? &dn->props[0].numbers : nullptr;
+                if (!budget_.Take(0, uint64_t{points.size()} * (sizeof(uint32_t) + 2 * sizeof(Vec3)) + ix.size() * 16, error_)) return ok = false;
+                std::unordered_map<uint32_t, size_t> byPoint;  // コントロール点 -> Indexes の何番目
+                for (size_t k = 0; k < ix.size() && k * 3 + 2 < vs.size(); ++k) {
+                    const int64_t p = ToInteger(ix[k], -1);
+                    if (p >= 0 && p <= std::numeric_limits<uint32_t>::max()) byPoint.emplace(static_cast<uint32_t>(p), k);
+                }
+                MorphTarget& m = out_.morphs[static_cast<size_t>(at)];
+                const bool normals = ns != nullptr || !m.normal.empty();
+                if (normals && m.normal.size() < m.vertices.size()) m.normal.resize(m.vertices.size());
+                for (size_t c = 0; c < points.size(); ++c) {
+                    const auto it = byPoint.find(points[c]);
+                    if (it == byPoint.end() || m.vertices.size() >= kMaxMorphVertices) continue;
+                    const size_t k = it->second;
+                    const Vec3 d{ToFloat(vs[k * 3]), ToFloat(vs[k * 3 + 1]), ToFloat(vs[k * 3 + 2])};
+                    m.vertices.push_back(base + static_cast<uint32_t>(c));
+                    m.position.push_back(TransformDirection(world, d));
+                    if (normals) {
+                        Vec3 e{};
+                        if (ns && k * 3 + 2 < ns->size()) e = {ToFloat((*ns)[k * 3]), ToFloat((*ns)[k * 3 + 1]), ToFloat((*ns)[k * 3 + 2])};
+                        m.normal.push_back({nm.m[0][0] * e.x + nm.m[0][1] * e.y + nm.m[0][2] * e.z, nm.m[1][0] * e.x + nm.m[1][1] * e.y + nm.m[1][2] * e.z,
+                                            nm.m[2][0] * e.x + nm.m[2][1] * e.y + nm.m[2][2] * e.z});
+                    }
+                }
+                return true;
+            });
+            return ok;
+        });
+        return ok;
     }
 
     // --- スキン ---------------------------------------------------------------------------------
@@ -1137,8 +1215,12 @@ private:
     bool ReadTakes() {
         // 曲線ノード -> それが動かすモデルとプロパティ。
         std::unordered_map<int64_t, std::pair<int64_t, std::string>> target;
+        std::unordered_map<int64_t, int> morphOf;  // 曲線ノード -> ブレンドシェイプの形 (チャンネルの DeformPercent)
         for (const Link& l : links_) {
             if (l.kind == "OP" && Object(l.child, "AnimationCurveNode") && Object(l.parent, "Model")) target.emplace(l.child, std::pair{l.parent, l.property});
+            if (l.kind == "OP" && l.property == "DeformPercent" && Object(l.child, "AnimationCurveNode")) {
+                if (const auto c = channelMorph_.find(l.parent); c != channelMorph_.end()) morphOf.emplace(l.child, c->second);
+            }
         }
         const float rate = FileRate();
         SkinData& skin = *out_.skin;
@@ -1162,6 +1244,17 @@ private:
             ForChildren(layers[0], [&](const Link& l) {
                 if (l.kind != "OO" || !Object(l.child, "AnimationCurveNode")) return true;
                 if (!budget_.Step(error_)) return ok = false;
+                if (const auto mo = morphOf.find(l.child); mo != morphOf.end()) {
+                    // ブレンドシェイプの重み (DeformPercent)。
+                    ForChildren(l.child, [&](const Link& cl) {
+                        if (cl.kind != "OP" || !Object(cl.child, "AnimationCurve")) return true;
+                        Curve curve;
+                        if (!ReadCurve(*Object(cl.child, "AnimationCurve"), curve)) return ok = false;
+                        if (!curve.value.empty()) take.morphs.emplace_back(mo->second, std::move(curve));
+                        return false;  // (1 本だけ)
+                    });
+                    return ok;
+                }
                 const auto t = target.find(l.child);
                 if (t == target.end()) return true;
                 const int k = t->second.second == "Lcl Translation" ? 0 : t->second.second == "Lcl Rotation" ? 1 : t->second.second == "Lcl Scaling" ? 2 : -1;
@@ -1208,11 +1301,15 @@ private:
                     at = p->second;
                 }
             }
-            if (moving.empty()) continue;
+            if (moving.empty() && take.morphs.empty()) continue;
 
             // 長さ: テイクの LocalStart / LocalStop。無ければキーの範囲。
             double first = std::numeric_limits<double>::infinity(), last = -first;
             for (const Curve& c : take.curves) {
+                first = std::min(first, c.time.front());
+                last = std::max(last, c.time.back());
+            }
+            for (const auto& [m, c] : take.morphs) {
                 first = std::min(first, c.time.front());
                 last = std::max(last, c.time.back());
             }
@@ -1263,6 +1360,17 @@ private:
                 Squeeze(tr.s, rest.s);
                 if (!tr.t.empty() || !tr.r.empty() || !tr.s.empty()) clip.tracks.push_back(std::move(tr));
             }
+            // ブレンドシェイプの重みの曲線 (0..100 -> 0..1)。
+            for (const auto& [m, c] : take.morphs) {
+                if (m < 0 || static_cast<size_t>(m) >= out_.morphs.size()) continue;
+                MorphTrack track;
+                track.target = out_.morphs[static_cast<size_t>(m)].name;
+                for (uint32_t f = 0; f < clip.frames; ++f) {
+                    track.weights.push_back(Evaluate(c, take.start + std::min(static_cast<double>(f) / rate, duration)) / 100.f);
+                }
+                Squeeze(track.weights, static_cast<size_t>(m) < out_.morphDefaults.size() ? out_.morphDefaults[static_cast<size_t>(m)] : 0.f);
+                if (!track.weights.empty()) clip.morphs.push_back(std::move(track));
+            }
             out_.clips.push_back(std::move(clip));
         }
         return true;
@@ -1298,6 +1406,7 @@ private:
     std::unordered_map<int64_t, size_t> objectOrder_;  // オブジェクト -> Objects の中の何番目
     Mat4 axes_, axesInv_;                              // ファイルの軸と単位 -> このエンジンの (とその逆)
     std::vector<int64_t> boneIds_;                     // スキンの骨 (Skeleton::bones と同じ順) のモデル
+    std::unordered_map<int64_t, int> channelMorph_;    // ブレンドシェイプのチャンネル -> out_.morphs の番号
     MeshData out_;
     std::vector<int> triangleMaterial_;
     std::string* error_;

@@ -105,6 +105,14 @@ void SampleClip(const space3d::Clip& clip, const ClipBinding& binding, const spa
     for (size_t i = 0; i < n; ++i) out[i] = SampleAt(clip, binding, skeleton, i, i0, w);
 }
 
+float SampleMorph(const space3d::Clip& clip, int track, float time, bool loop) {
+    if (track < 0 || static_cast<size_t>(track) >= clip.morphs.size()) return 0.f;
+    const float f = FramePosition(clip, time, loop);
+    const size_t i0 = static_cast<size_t>(f);
+    return SampleChannel(clip.morphs[static_cast<size_t>(track)].weights, i0, f - static_cast<float>(i0), 0.f,
+                         [](float a, float b, float w) { return a + (b - a) * w; });
+}
+
 BoneTRS SampleBone(const space3d::Clip& clip, const ClipBinding& binding, const space3d::Skeleton& skeleton, int bone, float time, bool loop) {
     if (bone < 0 || static_cast<size_t>(bone) >= skeleton.bones.size()) return {};
     const float f = FramePosition(clip, time, loop);

@@ -8,6 +8,10 @@ namespace rm::game_x_3d {
 SkinnedModel TakeSkinned(space3d::MeshData& mesh) {
     SkinnedModel m;
     if (mesh.skin) {
+        mesh.skin->morphs.clear();
+        for (const space3d::MorphTarget& t : mesh.morphs) mesh.skin->morphs.push_back(t.name);
+        mesh.skin->morphDefaults = mesh.morphDefaults;
+        mesh.skin->morphDefaults.resize(mesh.skin->morphs.size(), 0.f);
         m.skin = std::make_shared<const space3d::SkinData>(std::move(*mesh.skin));
         m.clips = std::make_shared<const std::vector<space3d::Clip>>(std::move(mesh.clips));
     }
@@ -38,6 +42,7 @@ bool ApplyPoses(std::span<const std::unique_ptr<MeshPoser>> posers, const MeshPo
             const MeshPoseAnswer a = p->Pose(o.entity, *o.model);
             if (a.bones.empty()) continue;
             d.bones = a.bones;
+            d.morphWeights = a.morphWeights;
             d.poseVersion = a.poseVersion;
             d.moving = d.moving || a.moving;
             break;

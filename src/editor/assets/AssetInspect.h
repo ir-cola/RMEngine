@@ -43,6 +43,8 @@ struct AssetImportAccess {
     // 同じ鍵が続く間 (1 回のドラッグ・1 つの欄への入力) は Undo の 1 件にまとまる
     // (inspector::NewMergeKey で作る)。`label` は Undo の履歴の名前。
     std::function<void(std::string key, json::Value after, std::string label, uint64_t merge)> setImportKey;
+    // 絵を描く GPU (ブロックの中の小さな 3D の絵: モデルのブレンドシェイプのプレビュー)。無い: null。
+    std::function<platform::Gfx*()> graphics;
 };
 
 struct AssetInspectPart {

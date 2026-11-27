@@ -1305,10 +1305,20 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **ついでに** — インスペクターのドロップダウンを**配列の要素の中**の欄でも出せるようにした (道 = 配列の欄 + 要素の番号 + 要素の中の欄)。IK の鎖の骨の ▾ がこれを使う
 - **どこ** — `plugins/rm_engine/animation3d/runtime/Ik.*`・`game_x_animation/runtime/AnimatorIk.*`・`GroundProbe.h`・`Animator.h` (`AnimatorIk`・`IkChain`)・`animation_x_physics/runtime/Register.cpp` (`CastGround`)・`physics/runtime/PhysicsWorld.*` (`Raycast` の除くエンティティ)・`src/editor/inspector/Inspector.cpp` (`choicePrefix`)、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestAnimationPhysics.cpp`
 
+### ブレンドシェイプ: 形の差を重みで足す・Compute Shader で頂点を作る (生のバイトのバッファ・UAV)・FBX の BlendShape (2026-11-27)
+
+- **何か** — ブレンドシェイプ (モーフ) は、表情や口の形を「基本の形からの差」で持ち、重み (0..1) を掛けて足すもの。差は動く頂点だけ持つ (番号・位置の差・法線の差)。順は**形を足す → 骨で動かす** (スキニングの前)
+- **Compute Shader** — 形を足した頂点を、描く前に GPU で作る。頂点 1 つに 1 本のスレッド (`[numthreads(64,1,1)]`)。元の頂点・形の差は**生のバイトのバッファ** (`ByteAddressBuffer`。`D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS` で作り、`Load3` / `asfloat` で読む)、重みの付いた形の一覧 (最初の頂点・数・差の場所・重み) は `Buffer<uint4>`。出力は頂点バッファと **UAV** (書ける口) を兼ねたバッファ (`D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_UNORDERED_ACCESS`) に書き、そのまま頂点バッファとして描く (書き終えたら UAV を外す)。形の数に上限は無い (ユーザーが選んだ。頂点シェーダーで 8 つまでの案より、作るのは大きいが制限が無い)。描画ごとに出力の置き場所を持ち、毎フレーム使い回す。CPU にも同じ式 (`space3d::MorphVertex`) があり、テストが比べる
+- **glTF** — プリミティブの `targets` (`POSITION` / `NORMAL` の差)・名前は `mesh.extras.targetNames`・初めの重みは `mesh.weights`・アニメーションは `weights` のチャンネル (出力はキーごとに形の数だけのスカラー)。形の数がちょうど 4 のとき回転と間違えないよう、曲線に「回転か」の印を持たせた
+- **FBX** — Geometry ← Deformer (BlendShape) ← Deformer (BlendShapeChannel) ← Geometry (Shape)。Shape の Indexes (コントロール点) の差を、角ごとの頂点へ広げる (骨のウェイトと同じ道)。重みは DeformPercent (0..100)
+- **混ぜ方** — 形の重みは骨の姿勢と同じ道で混ぜる (混ぜる状態・フェードの止め絵・レイヤー)。足すレイヤーは「初めの重みからの差」、新しく選べる基準「クリップの最初のコマ」ではその差を最初のコマから取る
+- **どこ** — `plugins/rm_engine/space3d/runtime/Morph.*`・`Mesh.cpp` (glTF)・`Fbx.cpp` (`Shapes`)・`MeshBake.*` (`MRPH` / `MANI`)・`Renderer3D.*` (`PrepareMorphs` / `Morphed`)・`RendererShaders.cpp` (`kMorphCsHlsl`)・`animation3d/runtime/Player.*` (`BindMorphs` / `MorphWeights` / `FirstFrame`)・`MorphPreview.*`・`editor/ClipStrip.cpp` (つまみと小さな絵)・`game_x_animation/runtime/AnimatorRun.cpp`・`AnimatorPoser.cpp`、`tests/TestGltfSkin.cpp`・`TestFbxSkin.cpp`・`TestMeshBake.cpp`・`TestAnimation3d.cpp`・`TestGameAnimation.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-27 | ブレンドシェイプ (形の差を重みで足す・Compute Shader で頂点を作る: 生のバイトのバッファと UAV・FBX の BlendShape) |
 | 2026-11-27 | IK (2 本の骨を余弦定理で・回転を骨の空間へ戻す・足を坂に: 光線と高さのならし)・配列の要素の中のドロップダウン |
 | 2026-11-26 | ルートモーション (Y のひねりの分け方・ループの継ぎ目で区切って足す・止め絵の速さ・物理のキャラクターへの口)・タブの中のプレビュー |
 | 2026-11-26 | ナビメッシュを焼いて道を探す (Recast / Detour v1.6.0・ボクセル・領域・A*・ファネル・区画をスレッドに並べて同じバイト・形の指紋 FNV-1a) |

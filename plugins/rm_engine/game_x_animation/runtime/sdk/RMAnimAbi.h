@@ -78,6 +78,18 @@ typedef struct RmAnimIkApi {
     void (*lookAt)(void* ctx, uint64_t entity, const float* position, float weight);
 } RmAnimIkApi;
 
+/* ブレンドシェイプ (表情。段階 6)。名前はモデルの形の名前 (UTF-8)。 */
+#define RM_PART_ANIM_MORPH "rm_engine.game_x_animation.animator_morph"
+#define RM_PART_ANIM_MORPH_VERSION 1u
+typedef struct RmAnimMorphApi {
+    /* 形の重みを上書き (クリップより強い)。負の数: 外してクリップの値に戻す。 */
+    void (*setBlendShape)(void* ctx, uint64_t entity, const char* name, float weight);
+    float (*blendShape)(void* ctx, uint64_t entity, const char* name);   /* 今の重み (無い名前: 0) */
+    uint32_t (*blendShapeCount)(void* ctx, uint64_t entity);              /* モデルの形の数 */
+    /* 番号 `index` の形の名前 (長さを返す。cap を超えたら書かない分もある)。 */
+    uint32_t (*blendShapeName)(void* ctx, uint64_t entity, uint32_t index, char* buf, uint32_t cap);
+} RmAnimMorphApi;
+
 #ifdef __cplusplus
 }
 #endif

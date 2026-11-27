@@ -13,5 +13,7 @@ const game_production::ScriptApiPart& ScriptAnimatorRulesPart();
 const game_production::ScriptApiPart& ScriptAnimatorRootPart();
 // IK (rm::Animator::SetIkTarget / SetIkWeight / LookAt)。
 const game_production::ScriptApiPart& ScriptAnimatorIkPart();
+// ブレンドシェイプ (rm::Animator::SetBlendShape / ClearBlendShape / BlendShape)。
+const game_production::ScriptApiPart& ScriptAnimatorMorphPart();
 
 }  // namespace rm::game_x_animation

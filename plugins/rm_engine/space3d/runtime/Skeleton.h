@@ -13,6 +13,7 @@
 
 #include "base/Math.h"
 #include "core/reflect/Reflect.h"
+#include "rm_engine/space3d/runtime/Morph.h"
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <array>
@@ -96,6 +97,10 @@ struct SkinData {
     // 骨ごと: その骨が動かす頂点 (ウェイト > 0) を、バインドしたときの骨の空間で囲む箱
     // (見えるかの判定: 今の骨の行列で動かした箱の和)。動かす頂点が無い骨は min > max。
     std::vector<Vec3> boundsMin, boundsMax;
+    // ブレンドシェイプの名前と初めの重み (MeshData::morphs の並び)。姿勢を作る側 (アニメーション) がクリップの曲線を
+    // 名前で引くのに使う。読み込み・焼いたものは空のまま: GPU に上げた後で game_x_3d::TakeSkinned が入れる。
+    std::vector<std::string> morphs;
+    std::vector<float> morphDefaults;
 };
 // 頂点と inverseBind から boundsMin / boundsMax を作る。
 void ComputeBoneBounds(SkinData& skin, const std::vector<Vec3>& positions);
@@ -151,6 +156,7 @@ struct Clip {
     std::vector<BoneTrack> tracks;
     std::vector<ClipEvent> events;   // 時刻の順
     ClipRootMotion root;             // ルートモーション (既定: 使わない)
+    std::vector<MorphTrack> morphs;  // ブレンドシェイプの重みの曲線 (Morph.h。形は名前で指す)
 };
 // duration と rate からサンプルの数。
 uint32_t ClipFrames(float duration, float rate);

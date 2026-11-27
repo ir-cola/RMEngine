@@ -181,6 +181,7 @@ struct Curve {
     std::vector<float> values;  // キーごとに comps 個 (CUBICSPLINE: 入りの接線・値・出の接線 の 3 組ずつ)
     int comps = 0;              // 0: まだ読んでいない
     Interp interp = Interp::Linear;
+    bool quat = false;          // 回転 (球面線形補間・長さを 1 に)。ブレンドシェイプの重みが 4 つでも回転ではない
 
     const float* Key(size_t k, int which) const {  // which: 0 入りの接線、1 値、2 出の接線
         return interp == Interp::Cubic ? &values[(k * 3 + static_cast<size_t>(which)) * static_cast<size_t>(comps)]
@@ -204,7 +205,7 @@ struct Curve {
             if (interp == Interp::Step) {
                 copy(a);
             } else if (interp == Interp::Linear) {
-                if (comps == 4) {  // 回転
+                if (quat) {  // 回転
                     const Quat q = Slerp({a[0], a[1], a[2], a[3]}, {b[0], b[1], b[2], b[3]}, s);
                     out[0] = q.x, out[1] = q.y, out[2] = q.z, out[3] = q.w;
                 } else {
@@ -219,7 +220,7 @@ struct Curve {
                 for (size_t i = 0; i < c; ++i) out[i] = h00 * a[i] + h10 * td * outTangent[i] + h01 * b[i] + h11 * td * inTangent[i];
             }
         }
-        if (comps == 4) {
+        if (quat) {
             const Quat q = QuatNormalize({out[0], out[1], out[2], out[3]});
             out[0] = q.x, out[1] = q.y, out[2] = q.z, out[3] = q.w;
         }
@@ -660,8 +661,73 @@ private:
     bool Mesh(int64_t index, const Mat4& world, int64_t skin, int bone) {
         const json::Value& meshes = doc_.Get("meshes");
         if (index < 0 || static_cast<size_t>(index) >= meshes.Size()) return Fail(error_, std::format("メッシュ {} がありません", index));
+        mesh_ = index;
         for (const json::Value& prim : meshes.At(static_cast<size_t>(index)).Get("primitives").Items()) {
             if (!Primitive(prim, world, skin, bone)) return false;
+        }
+        return true;
+    }
+
+    // --- ブレンドシェイプ (primitives の targets。docs/ANIMATION.md 7-2-2) ------------------------------------
+    // メッシュ `mesh_` の形 k の、モデルの中の形の番号 (名前の同じ形は 1 つにまとめる)。上限を超えた: -1。
+    int MorphOf(size_t k) {
+        auto& map = meshMorphs_[mesh_];
+        if (k < map.size() && map[k] != -2) return map[k];
+        if (map.size() <= k) map.resize(k + 1, -2);
+        const json::Value& m = doc_.Get("meshes").At(static_cast<size_t>(mesh_));
+        const json::Value& names = m.Get("extras").Get("targetNames");
+        std::string name = k < names.Size() ? names.At(k).AsString() : std::string();
+        if (name.empty()) name = std::format("形 {}", k);
+        int at = FindMorph(out_.morphs, name);
+        if (at < 0) {
+            if (out_.morphs.size() >= kMaxMorphTargets) {
+                if (!toldMorphs_) out_.warnings.push_back(std::format("ブレンドシェイプが多すぎます ({} より後は読みません)", kMaxMorphTargets));
+                toldMorphs_ = true;
+                map[k] = -1;
+                return -1;
+            }
+            at = static_cast<int>(out_.morphs.size());
+            out_.morphs.push_back({name, {}, {}, {}});
+            out_.morphDefaults.push_back(Number(m.Get("weights"), k, 0.f));
+        }
+        map[k] = at;
+        return at;
+    }
+
+    // プリミティブの形を、モデルに足した頂点 (`base` から `count` 個。置いた行列 `placed`) の差として読む。
+    bool Targets(const json::Value& prim, const Mat4& placed, uint32_t base, size_t count) {
+        const json::Value& targets = prim.Get("targets");
+        if (!targets.IsArray() || targets.Size() == 0) return true;
+        const auto inv = Inverse(placed);
+        const Mat4 normalM = inv ? *inv : Mat4{};
+        for (size_t k = 0; k < targets.Size(); ++k) {
+            const int mi = MorphOf(k);
+            if (mi < 0) continue;
+            MorphTarget& m = out_.morphs[static_cast<size_t>(mi)];
+            const json::Value& t = targets.At(k);
+            Accessor dp, dn;
+            const json::Value* pi = t.Find("POSITION");
+            const json::Value* ni = t.Find("NORMAL");
+            if (pi && !Open(pi->AsInt(-1), 3, dp)) return false;
+            if (ni && !Open(ni->AsInt(-1), 3, dn)) return false;
+            if ((pi && dp.count < count) || (ni && dn.count < count)) return Fail(error_, "ブレンドシェイプ (targets) の数が頂点より少なすぎます");
+            if (!budget_.Take(0, uint64_t{count} * (sizeof(uint32_t) + 2 * sizeof(Vec3)), error_)) return false;
+            // 法線の差を持つ形は、全部の頂点に法線の列を揃える (形ごとに同じ長さ)。
+            const bool normals = ni != nullptr || !m.normal.empty();
+            if (normals && m.normal.size() < m.vertices.size()) m.normal.resize(m.vertices.size());
+            for (size_t i = 0; i < count; ++i) {
+                const Vec3 d = pi ? Vec3{dp.Float(i, 0), dp.Float(i, 1), dp.Float(i, 2)} : Vec3{};
+                const Vec3 e = ni ? Vec3{dn.Float(i, 0), dn.Float(i, 1), dn.Float(i, 2)} : Vec3{};
+                if (d.x == 0 && d.y == 0 && d.z == 0 && e.x == 0 && e.y == 0 && e.z == 0) continue;
+                if (m.vertices.size() >= kMaxMorphVertices) break;
+                m.vertices.push_back(base + static_cast<uint32_t>(i));
+                m.position.push_back(TransformDirection(placed, d));
+                if (normals) {
+                    m.normal.push_back({normalM.m[0][0] * e.x + normalM.m[0][1] * e.y + normalM.m[0][2] * e.z,
+                                        normalM.m[1][0] * e.x + normalM.m[1][1] * e.y + normalM.m[1][2] * e.z,
+                                        normalM.m[2][0] * e.x + normalM.m[2][1] * e.y + normalM.m[2][2] * e.z});
+                }
+            }
         }
         return true;
     }
@@ -736,6 +802,8 @@ private:
             }
         }
         if (!hasNormals) ComputeNormals(part);
+        const uint32_t base = static_cast<uint32_t>(out_.vertices.size());
+        Mat4 placed = world;
         if (!skinned_) {
             Append(part, world);
         } else if (skin >= 0) {
@@ -743,6 +811,7 @@ private:
             std::vector<SkinVertex> weights;
             if (!SkinOf(attrs, pos.count, skin, weights)) return false;
             Append(part, Mat4{});
+            placed = Mat4{};
             skin_.vertices.insert(skin_.vertices.end(), weights.begin(), weights.end());
         } else {
             // スキンの無いメッシュ: 一番近い祖先の骨 (無ければ動かない骨) にウェイト 1 で付ける。休みの
@@ -757,13 +826,14 @@ private:
             if (unbind && unrest) place = *unbind * *unrest * world;
             if (!budget_.Take(0, uint64_t{pos.count} * sizeof(SkinVertex), error_)) return false;
             Append(part, place);
+            placed = place;
             SkinVertex one;
             one.bone[0] = static_cast<uint16_t>(b);
             one.weight[0] = 65535;
             skin_.vertices.resize(out_.vertices.size(), one);
         }
         triangleMaterial_.resize(out_.indices.size() / 3, material);
-        return true;
+        return Targets(prim, placed, base, pos.count);
     }
 
     // ノードの位置を頂点に反映する (モデルの空間での 1 つのメッシュ)。
@@ -777,20 +847,28 @@ private:
         if (!anims.IsArray()) return true;
         const Skeleton& sk = skin_.skeleton;
         const size_t bones = sk.bones.size();
-        bool morph = false;
         std::vector<bool> animated(bones, false);
         for (size_t ai = 0; ai < anims.Size(); ++ai) {
             const json::Value& a = anims.At(ai);
             const json::Value& samplers = a.Get("samplers");
-            // 骨ごと、位置・回転・大きさのそれぞれのサンプラー (-1: 無い)。
+            // 骨ごと、位置・回転・大きさのそれぞれのサンプラー (-1: 無い)。形の重みのチャンネル (サンプラー・メッシュ)。
             std::vector<std::array<int64_t, 3>> use(bones, {-1, -1, -1});
+            std::vector<std::pair<int64_t, int64_t>> weightUse;
             bool any = false;
             for (const json::Value& ch : a.Get("channels").Items()) {
                 if (!budget_.Step(error_)) return false;
                 const json::Value& target = ch.Get("target");
                 const std::string& path = target.Get("path").AsString();
                 if (path == "weights") {
-                    morph = true;
+                    const int64_t node = target.Get("node").AsInt(-1);
+                    const int64_t si = ch.Get("sampler").AsInt(-1);
+                    const json::Value& nodes = doc_.Get("nodes");
+                    if (node < 0 || static_cast<size_t>(node) >= nodes.Size() || si < 0 || static_cast<size_t>(si) >= samplers.Size()) continue;
+                    const int64_t mesh = nodes.At(static_cast<size_t>(node)).Get("mesh").AsInt(-1);
+                    const auto mm = meshMorphs_.find(mesh);
+                    if (mm == meshMorphs_.end() || mm->second.empty()) continue;
+                    weightUse.push_back({si, mesh});
+                    any = true;
                     continue;
                 }
                 const int p = path == "translation" ? 0 : path == "rotation" ? 1 : path == "scale" ? 2 : -1;
@@ -815,9 +893,17 @@ private:
                     const int comps = p == 1 ? 4 : 3;
                     if (c.comps == 0 && !LoadCurve(samplers.At(static_cast<size_t>(si)), comps, c, ai, si)) return false;
                     if (c.comps != comps) return Fail(error_, std::format("アニメーション {} のサンプラー {} が、違う種類のチャンネルに使われています", ai, si));
+                    if (p == 1) c.quat = true;
                     duration = std::max(duration, c.times.back());
                 }
                 tracks += moved ? 1 : 0;
+            }
+            // 形の重み: 出力はキーごとに「そのメッシュの形の数」個のスカラー。
+            std::vector<Curve> weightCurves(weightUse.size());
+            for (size_t w = 0; w < weightUse.size(); ++w) {
+                const size_t n = meshMorphs_[weightUse[w].second].size();
+                if (!LoadWeights(samplers.At(static_cast<size_t>(weightUse[w].first)), n, weightCurves[w], ai, weightUse[w].first)) return false;
+                duration = std::max(duration, weightCurves[w].times.back());
             }
             Clip clip;
             clip.name = a.Get("name").AsString();
@@ -865,9 +951,25 @@ private:
                 Squash(track.s, CloseV);
                 clip.tracks.push_back(std::move(track));
             }
+            std::vector<float> buf;
+            for (size_t w = 0; w < weightUse.size(); ++w) {
+                const std::vector<int>& map = meshMorphs_[weightUse[w].second];
+                const Curve& c = weightCurves[w];
+                buf.resize(static_cast<size_t>(c.comps));
+                std::vector<MorphTrack> tracksOf(map.size());
+                for (uint32_t k = 0; k < clip.frames; ++k) {
+                    c.Sample(std::min(static_cast<float>(k) / clip.rate, duration), buf.data());
+                    for (size_t j = 0; j < map.size(); ++j) tracksOf[j].weights.push_back(j < buf.size() ? buf[j] : 0.f);
+                }
+                for (size_t j = 0; j < map.size(); ++j) {
+                    if (map[j] < 0) continue;
+                    tracksOf[j].target = out_.morphs[static_cast<size_t>(map[j])].name;
+                    Squash(tracksOf[j].weights, Close);
+                    if (FindMorphTrack(clip, tracksOf[j].target) < 0) clip.morphs.push_back(std::move(tracksOf[j]));
+                }
+            }
             out_.clips.push_back(std::move(clip));
         }
-        if (morph) out_.warnings.push_back("モーフ (weights) のアニメーションはまだ読みません");
         // クリップは骨を名前で指す: 同じ名前の骨があると、動くのは最初の骨だけ。
         size_t ambiguous = 0;
         for (size_t b = 0; b < bones; ++b) {
@@ -882,6 +984,36 @@ private:
         if (ambiguous > 0) {
             out_.warnings.push_back(std::format("動く骨のうち {} 本は、同じ名前の骨がほかにあります (クリップは名前で骨を指すので、その名前の最初の骨が動きます)", ambiguous));
         }
+        return true;
+    }
+
+    static int FindMorphTrack(const Clip& clip, std::string_view name) {
+        for (size_t i = 0; i < clip.morphs.size(); ++i) {
+            if (clip.morphs[i].target == name) return static_cast<int>(i);
+        }
+        return -1;
+    }
+
+    // 形の重みのサンプラー: 出力はスカラーの列 (キーごとに n 個)。Curve の comps を n にして持つ。
+    bool LoadWeights(const json::Value& s, size_t n, Curve& c, size_t ai, int64_t si) {
+        const std::string& mode = s.Get("interpolation").AsString();
+        c.interp = mode == "STEP" ? Interp::Step : mode == "CUBICSPLINE" ? Interp::Cubic : Interp::Linear;
+        Accessor in, out;
+        if (!Open(s.Get("input").AsInt(-1), 1, in) || !Open(s.Get("output").AsInt(-1), 1, out)) return false;
+        if (in.componentType != 5126 || in.count == 0) return Fail(error_, std::format("アニメーション {} のサンプラー {} の時刻が正しくありません", ai, si));
+        const size_t values = in.count * (c.interp == Interp::Cubic ? 3 : 1) * n;
+        if (out.count < values) return Fail(error_, std::format("アニメーション {} のサンプラー {} の形の重みの数が足りません", ai, si));
+        if (!budget_.Take(0, (uint64_t{in.count} + values) * sizeof(float), error_)) return false;
+        c.times.resize(in.count);
+        for (size_t i = 0; i < in.count; ++i) {
+            c.times[i] = in.Float(i, 0);
+            if (!std::isfinite(c.times[i]) || c.times[i] < 0 || (i > 0 && c.times[i] < c.times[i - 1])) {
+                return Fail(error_, std::format("アニメーション {} のサンプラー {} の時刻が正しくありません (0 以上で、増えていく数)", ai, si));
+            }
+        }
+        c.values.resize(values);
+        for (size_t i = 0; i < values; ++i) c.values[i] = out.Float(i, 0);
+        c.comps = static_cast<int>(n);
         return true;
     }
 
@@ -965,6 +1097,10 @@ private:
     std::vector<BoneTRS> nodeRest_;            // 骨ごと: ノードそのものの値 (クリップの、チャンネルが無いもの)
     std::vector<Mat4> restModel_;              // 骨ごと: 休みの姿勢の骨の行列 (モデルの空間)
     int staticBone_ = -1;                      // 骨の下に無いメッシュの付く、動かない骨
+    // ブレンドシェイプ: 今読んでいるメッシュ・メッシュごとの (形 k -> out_.morphs の番号。-1: 捨てた・-2: まだ)
+    int64_t mesh_ = -1;
+    std::unordered_map<int64_t, std::vector<int>> meshMorphs_;
+    bool toldMorphs_ = false;
     size_t dropped_ = 0;                       // 5 本以上の骨が付いていた頂点の数
 };
 
@@ -1450,6 +1586,11 @@ void ApplyModelImport(MeshData& mesh, const ModelBasis& basis, bool turnAround, 
         const Vec3 p = v.position, n = v.normal;
         v.position = {Dot(p, right) * turn * scale, Dot(p, up) * scale, Dot(p, depth) * turn * scale};
         v.normal = {Dot(n, right) * turn, Dot(n, up), Dot(n, depth) * turn};
+    }
+    // ブレンドシェイプの差は向き: 同じ軸の入れ替えと大きさを掛ける (ずらしは掛けない。法線の差は大きさを掛けない)。
+    for (MorphTarget& m : mesh.morphs) {
+        for (Vec3& d : m.position) d = {Dot(d, right) * turn * scale, Dot(d, up) * scale, Dot(d, depth) * turn * scale};
+        for (Vec3& d : m.normal) d = {Dot(d, right) * turn, Dot(d, up), Dot(d, depth) * turn};
     }
     if (!basis.leftHanded) {
         // 鏡に映した: 三角形を裏返して、表 (反時計回り) を保つ。

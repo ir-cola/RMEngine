@@ -61,6 +61,7 @@ CompiledController Compile(const AnimController& src) {
         cl.weight = std::isfinite(l.weight) ? std::clamp(l.weight, 0.f, 1.f) : 1.f;
         cl.weightParam = l.weightParam.empty() ? -1 : c.FindParam(l.weightParam);
         cl.mode = l.mode;
+        cl.additiveBase = l.additiveBase;
         cl.mask = l.mask;
         cl.rules = CompileRules(src.params, l.states, l.rules);
         c.layers.push_back(std::move(cl));

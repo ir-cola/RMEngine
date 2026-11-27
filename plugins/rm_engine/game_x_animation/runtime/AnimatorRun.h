@@ -69,6 +69,8 @@ struct AnimatorRun {
         std::vector<float> blend;
         std::vector<float> mask;  // 骨ごと (モデルを読んだときに作る)
         float weight = 0;         // 今の重み
+        animation3d::Pose base;   // 足す基準「クリップの最初のコマ」の姿勢と形の重み (毎フレーム作る)
+        std::vector<float> baseMorphs;
     };
     std::vector<Layer> layers;
     animation3d::Pose rest;  // 休みの姿勢 (足すレイヤーの基準)
@@ -90,6 +92,11 @@ struct AnimatorRun {
     std::vector<std::pair<std::string, float>> layerWeights;
 
     // IK (段階 6。部品「IK」: AnimatorIk.h)。スクリプトが置いた目標と重み・足の高さのならし・作業の骨の行列。
+    // ブレンドシェイプ (段階 6): 今の重み (SkinData::morphs の並び。クリップ・レイヤー・スクリプトの上書きの後) と、
+    // スクリプトの SetBlendShape の上書き (形の名前 → 重み。クリップより強い)。
+    std::vector<float> morphs;
+    std::vector<std::pair<std::string, float>> morphOverride;
+
     struct IkScript {
         std::string chain;       // 鎖の名前
         bool hasTarget = false;  // SetIkTarget した (目標はワールド)
@@ -151,5 +158,8 @@ float RuleParam(const AnimatorRun& run, std::string_view name);
 void SetLayerWeight(AnimatorRun& run, std::string_view layer, float weight);
 // 今のレイヤーの重み (無い名前: 0)。
 float LayerWeightOf(const AnimatorRun& run, std::string_view layer);
+// ブレンドシェイプをスクリプトから上書き (数でない・負の数: 外してクリップの値に戻す)。今の重み (無い名前: 0)。
+void SetBlendShape(AnimatorRun& run, std::string_view name, float weight);
+float BlendShapeOf(const AnimatorRun& run, std::string_view name);
 
 }  // namespace rm::game_x_animation

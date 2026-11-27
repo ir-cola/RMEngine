@@ -649,6 +649,8 @@ void AssetPanel::Inspect(const std::string& which) {
                 push(std::make_unique<ImportKeyCommand>(*lib, guid, std::move(key), std::move(before), std::move(after), std::move(label), merge));
                 raw->readAt = -1e9;  // 次の import() で読み直す
             };
+            Thumbnails* thumbs = thumbnails_;
+            access.graphics = [thumbs]() -> platform::Gfx* { return thumbs ? &thumbs->Graphics() : nullptr; };
             for (const AssetInspectPart* part : parts) {
                 if (auto blocksOf = part->open(access)) extras.push_back(std::move(blocksOf));
             }

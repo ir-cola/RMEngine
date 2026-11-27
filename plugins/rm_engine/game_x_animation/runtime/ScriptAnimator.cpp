@@ -193,6 +193,28 @@ void LookAtOf(void* ctx, uint64_t id, const float* position, float weight) {
 }
 constexpr RmAnimIkApi kIk{&SetIkTargetOf, &SetIkWeightOf, &LookAtOf};
 
+// ブレンドシェイプ。
+void SetBlendShapeOf(void* ctx, uint64_t id, const char* name, float weight) {
+    const Found f = AnimatorOf(ctx, id);
+    if (f.a) SetBlendShape(RunOf(*f.a, f.id), name ? name : "", weight);
+}
+float BlendShapeOfApi(void* ctx, uint64_t id, const char* name) {
+    const Found f = AnimatorOf(ctx, id);
+    return f.a && f.a->run ? BlendShapeOf(*f.a->run, name ? name : "") : 0.f;
+}
+uint32_t BlendShapeCount(void* ctx, uint64_t id) {
+    const Found f = AnimatorOf(ctx, id);
+    return f.a && f.a->run && f.a->run->skin ? static_cast<uint32_t>(f.a->run->skin->morphs.size()) : 0u;
+}
+uint32_t BlendShapeName(void* ctx, uint64_t id, uint32_t index, char* buf, uint32_t cap) {
+    const Found f = AnimatorOf(ctx, id);
+    if (!f.a || !f.a->run || !f.a->run->skin || index >= f.a->run->skin->morphs.size()) return 0;
+    const std::string& s = f.a->run->skin->morphs[index];
+    if (buf && cap > 0) std::memcpy(buf, s.data(), std::min<size_t>(s.size(), cap));
+    return static_cast<uint32_t>(s.size());
+}
+constexpr RmAnimMorphApi kMorph{&SetBlendShapeOf, &BlendShapeOfApi, &BlendShapeCount, &BlendShapeName};
+
 constexpr RmAnimApi kTable{&Has,   &Play, &HasClip, &ClipName, &SetPaused, &Paused, &Speed,      &SetSpeed,
                            &Loop,  &SetLoop, &Time, &SetTime,  &ClipDuration, &ClipEnded, &Bone};
 
@@ -210,6 +232,11 @@ const game_production::ScriptApiPart& ScriptAnimatorRulesPart() {
 
 const game_production::ScriptApiPart& ScriptAnimatorRootPart() {
     static const game_production::ScriptApiPart part{RM_PART_ANIM_ROOT, RM_PART_ANIM_ROOT_VERSION, &kRoot};
+    return part;
+}
+
+const game_production::ScriptApiPart& ScriptAnimatorMorphPart() {
+    static const game_production::ScriptApiPart part{RM_PART_ANIM_MORPH, RM_PART_ANIM_MORPH_VERSION, &kMorph};
     return part;
 }
 

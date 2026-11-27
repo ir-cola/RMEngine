@@ -259,7 +259,7 @@ RM_TEST(MeshBake_ASkinnedModel) {
     const std::filesystem::path file = std::filesystem::path(__FILE__).parent_path().parent_path() / "docs" / "samples" / "models" / "skinned_arm.gltf";
     std::string err;
     const auto mesh = LoadMeshFile(file, &err);
-    CHECK(mesh && mesh->skin && mesh->clips.size() == 3);
+    CHECK(mesh && mesh->skin && mesh->clips.size() == 4);
     if (!mesh || !mesh->skin) return;
     const auto back = ReadBakedMesh(WriteBakedMesh(*mesh, {}), &err);
     CHECK(back && back->skin && SameSkin(*back->skin, *mesh->skin) && SameClips(back->clips, mesh->clips));
@@ -355,4 +355,32 @@ RM_TEST(MeshBake_RootMotionRoundTrip) {
     std::memcpy(two.data() + 8, &v2, 4);
     const auto old = ReadBakedMesh(two, &err);
     CHECK(old && !old->clips.empty() && !old->clips[0].root.enabled);
+}
+
+// ブレンドシェイプは MRPH と MANI のチャンクに入り、同じに読み戻す。
+RM_TEST(MeshBake_BlendShapesRoundTrip) {
+    MeshData m = SkinnedSample();
+    const std::string plain = WriteBakedMesh(m, {});
+    CHECK(plain.find("MRPH") == std::string::npos && plain.find("MANI") == std::string::npos);
+    MorphTarget t;
+    t.name = "まばたき";
+    t.vertices = {0, 2};
+    t.position = {{0, 0.1f, 0}, {0.2f, 0, 0}};
+    t.normal = {{0, 0, 1}, {1, 0, 0}};
+    m.morphs = {t};
+    m.morphDefaults = {0.25f};
+    m.clips[1].morphs = {{"まばたき", {0.5f}}};
+    const std::string bytes = WriteBakedMesh(m, {});
+    std::string err;
+    const auto back = ReadBakedMesh(bytes, &err);
+    CHECK(back && back->morphs.size() == 1);
+    if (!back || back->morphs.size() != 1) return;
+    CHECK(back->morphs[0].name == "まばたき" && back->morphs[0].vertices == t.vertices && back->morphs[0].position == t.position &&
+          back->morphs[0].normal == t.normal);
+    CHECK(back->morphDefaults.size() == 1 && back->morphDefaults[0] == 0.25f);
+    CHECK(back->clips[0].morphs.empty() && back->clips[1].morphs.size() == 1 && back->clips[1].morphs[0].weights == std::vector<float>{0.5f});
+    CHECK(WriteBakedMesh(*back, {}) == bytes);
+    // 頂点の外を指す形は断る
+    m.morphs[0].vertices = {0, 999};
+    CHECK(!ReadBakedMesh(WriteBakedMesh(m, {}), &err));
 }

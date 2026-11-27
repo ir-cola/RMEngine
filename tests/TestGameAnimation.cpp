@@ -817,3 +817,27 @@ RM_TEST(GameAnim_IkScriptAndEntityTargets) {
     animation3d::ModelMatrices(m.skin->skeleton, pose, model);
     CHECK(Near(Pos(model, 6).y, 0.4f, 2e-3f) && Near(Pos(model, 6).z, 0.2f, 2e-3f));
 }
+
+// ブレンドシェイプ: クリップの重みが答えに入り、スクリプトの SetBlendShape がクリップより強い。
+RM_TEST(GameAnim_BlendShapesFromClipAndScript) {
+    game_x_3d::SkinnedModel m = TurningArm();
+    auto skin = std::make_shared<space3d::SkinData>(*m.skin);
+    skin->morphs = {"まばたき", "あ"};
+    skin->morphDefaults = {0.f, 0.f};
+    auto clips = std::make_shared<std::vector<space3d::Clip>>(*m.clips);
+    (*clips)[0].morphs = {{"あ", {0.4f}}};
+    Animator a;
+    AnimatorRun run;
+    BindModel(run, skin, clips);
+    std::vector<const space3d::ClipEvent*> fired;
+    StepAnimator(run, a, 0.1f, fired, &NextForTest);
+    CHECK(run.morphs.size() == 2 && Near(run.morphs[0], 0.f) && Near(run.morphs[1], 0.4f));
+    SetBlendShape(run, "まばたき", 1.f);
+    SetBlendShape(run, "あ", 0.f);
+    StepAnimator(run, a, 0.1f, fired, &NextForTest);
+    CHECK(Near(run.morphs[0], 1.f) && Near(run.morphs[1], 0.f));
+    CHECK(Near(BlendShapeOf(run, "まばたき"), 1.f) && Near(BlendShapeOf(run, "無い"), 0.f));
+    SetBlendShape(run, "あ", -1.f);  // 外す: クリップの値
+    StepAnimator(run, a, 0.1f, fired, &NextForTest);
+    CHECK(Near(run.morphs[1], 0.4f));
+}

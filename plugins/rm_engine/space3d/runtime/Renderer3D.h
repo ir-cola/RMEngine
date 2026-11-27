@@ -110,11 +110,22 @@ public:
     bool skinned = false;
     uint32_t boneCount = 0;
     std::vector<BoneBox> boneBoxes;
+    // ブレンドシェイプ (MeshData::morphs): 形の数と、形ごとの一番大きな差の長さ (見えるかの判定を広げる)。
+    uint32_t morphCount = 0;
+    std::vector<float> morphReach;
+    uint32_t vertexCount = 0;
 
 private:
     friend class Renderer;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertices, indices;
     Microsoft::WRL::ComPtr<ID3D11Buffer> skin;  // スロット 2 (skinned のときだけ): SkinVertex (16 バイト / 頂点)
+    // ブレンドシェイプ: 頂点 (vertices) を Compute Shader が読む口・形の差・形ごとの範囲 (最初の頂点・数・差の場所)。
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexView, morphView;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> morphDeltas;
+    struct MorphRange {
+        uint32_t first = 0, count = 0, offset = 0;
+    };
+    std::vector<MorphRange> morphRanges;
 };
 
 // GPU 上の絵 (Renderer::UploadTexture)。
@@ -183,6 +194,9 @@ struct MeshDraw {
     // mesh->boneCount 個。空: 休みの姿勢。違う数: 休みの姿勢 (Stats::wrongBoneCounts)。Render の
     // 間だけ読む (コピーする)。骨の無いメッシュでは使わない。
     std::span<const BoneMatrix> bones;
+    // ブレンドシェイプの重み (MeshData::morphs の並び。docs/ANIMATION.md 7-2-2)。空・全部 0: 形を動かさない。重みのある
+    // 形は Compute Shader が頂点に足してから描く (スキニングの前)。Render の間だけ読む。重みが変わる間は `moving` を立てる。
+    std::span<const float> morphWeights;
     // 姿勢の版 (影の地図の使い回し)。bones があるときだけ意味がある:
     //   0 (既定): 姿勢は毎フレーム変わるかもしれない - `moving` として扱い、その影は毎フレーム描く。
     //   0 以外: 同じメッシュで同じ番号なら同じ bones (呼ぶ側の約束)。番号はその描画の置き場所と一緒に
@@ -335,12 +349,15 @@ public:
         size_t skinnedDraws = 0;     // 渡されたモデルのうち骨のあるメッシュのもの (休みの姿勢も)
         size_t bonesUploaded = 0;    // GPU に書いた骨の行列 (フレームの合計)
         size_t wrongBoneCounts = 0;  // MeshDraw::bones の数がメッシュの骨の数と違った (休みの姿勢で描いた)
+        size_t morphedDraws = 0;     // ブレンドシェイプを Compute Shader で足した描画
     };
     // デバイスごと (そのデバイスの全レンダラーで共有: シーンビュー、カメラのプレビュー、
     // サムネイル): シェーダーと状態、立方体と床、定数バッファ、シャドウマップと各マップが今
     // 持っている中身。Renderer3D.cpp。
     struct Shared;
     const Stats& LastStats() const { return stats_; }
+    // Compute Shader でブレンドシェイプを混ぜられる (機能レベル 11 以上)。できないときは形を動かさずに描く。
+    bool CanMorph() const { return morphCs_ != nullptr; }
 
 private:
     struct Item {
@@ -432,6 +449,22 @@ private:
     Ptr<ID3D11Texture2D> cloudTex_;
     Ptr<ID3D11ShaderResourceView> cloudSrv_;
     uint32_t cloudSize_ = 0;
+    // ブレンドシェイプ: Compute Shader・形の重みの表・フレームごとの、形を足した頂点 (描画ごとに 1 つ。使い回す)。
+    Ptr<ID3D11ComputeShader> morphCs_;
+    Ptr<ID3D11Buffer> morphActive_, morphCb_;
+    Ptr<ID3D11ShaderResourceView> morphActiveView_;
+    size_t morphActiveCapacity_ = 0;
+    struct MorphOut {
+        Ptr<ID3D11Buffer> buffer;
+        Ptr<ID3D11UnorderedAccessView> uav;
+        uint32_t bytes = 0;
+        std::shared_ptr<GpuMesh> mesh;  // 元のメッシュの写しで、頂点だけこれを指す
+    };
+    std::vector<MorphOut> morphPool_;
+    std::vector<MeshDraw> morphDraws_;  // 形を足した物を差し替えた描画 (Render の間だけ)
+    // `in` に重みの付いた形があれば、その頂点を Compute Shader で作り、メッシュを差し替えたフレームを返す。
+    const RenderFrame& PrepareMorphs(ID3D11DeviceContext* ctx, const RenderFrame& in, RenderFrame& scratch);
+    const GpuMesh* Morphed(ID3D11DeviceContext* ctx, const GpuMesh& mesh, std::span<const float> weights, size_t slot);
 };
 
 }  // namespace rm::space3d

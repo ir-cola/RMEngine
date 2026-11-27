@@ -21,6 +21,7 @@ void Player::Bind(const space3d::Skeleton& skeleton, std::span<const space3d::Cl
     }
     root_ = frozenVelocity_ = lastVelocity_ = {};
     rootActive_ = false;
+    BindMorphs(morphNames_, morphDefaults_);  // (クリップが変わった: 曲線を引き直す)
     clip_ = -1;
     time_ = prevTime_ = 0;
     last_ = {};
@@ -37,6 +38,7 @@ void Player::Play(int clipIndex, float fade) {
     // 今見えている姿勢を固めて、そこから移る (まだ Evaluate していなければ休みの姿勢から)
     if (fade > 0 && std::isfinite(fade)) {
         from_ = pose_;
+        fromMorph_ = morph_;
         fadeLength_ = fadeLeft_ = fade;
         frozenVelocity_ = lastVelocity_;  // (止め絵と一緒に、その時の動きも止めておく)
     } else {
@@ -65,6 +67,60 @@ float Player::BlendDuration() const {
     }
     if (!(weight > 0)) return c ? c->duration : 0.f;
     return static_cast<float>(total / weight);
+}
+
+void Player::BindMorphs(std::span<const std::string> names, std::span<const float> defaults) {
+    std::vector<std::string> n(names.begin(), names.end());
+    std::vector<float> d(defaults.begin(), defaults.end());
+    morphNames_ = std::move(n);
+    morphDefaults_ = std::move(d);
+    morphDefaults_.resize(morphNames_.size(), 0.f);
+    morphTrack_.assign(clips_.size(), {});
+    for (size_t c = 0; c < clips_.size(); ++c) {
+        morphTrack_[c].assign(morphNames_.size(), -1);
+        const auto& tracks = clips_[c].morphs;
+        for (size_t t = 0; t < tracks.size(); ++t) {
+            for (size_t k = 0; k < morphNames_.size(); ++k) {
+                if (morphTrack_[c][k] < 0 && tracks[t].target == morphNames_[k]) morphTrack_[c][k] = static_cast<int>(t);
+            }
+        }
+    }
+    morph_ = morphDefaults_;
+    fromMorph_ = morphDefaults_;
+}
+
+bool Player::MorphAnimated(size_t k) const {
+    auto has = [&](int clip) {
+        return clip >= 0 && static_cast<size_t>(clip) < morphTrack_.size() && k < morphTrack_[static_cast<size_t>(clip)].size() &&
+               morphTrack_[static_cast<size_t>(clip)][k] >= 0;
+    };
+    if (has(clip_)) return true;
+    for (const Motion& m : blend_) {
+        if (m.weight > 0 && has(m.clip)) return true;
+    }
+    return false;
+}
+
+void Player::FirstFrame(const space3d::Skeleton& skeleton, Pose& out, std::vector<float>& morphs) const {
+    const space3d::Clip* c = Current();
+    if (!c) {
+        out = RestPose(skeleton);
+        morphs = morphDefaults_;
+        return;
+    }
+    const float start = speed < 0 && !loop ? c->duration : 0.f;
+    SampleClip(*c, bindings_[static_cast<size_t>(clip_)], skeleton, start, loop, out);
+    Strip(clip_, out);
+    MorphsAt(clip_, start, morphs);
+}
+
+void Player::MorphsAt(int clip, float time, std::vector<float>& out) const {
+    out = morphDefaults_;
+    if (clip < 0 || static_cast<size_t>(clip) >= morphTrack_.size()) return;
+    const std::vector<int>& tracks = morphTrack_[static_cast<size_t>(clip)];
+    for (size_t k = 0; k < tracks.size() && k < out.size(); ++k) {
+        if (tracks[k] >= 0) out[k] = SampleMorph(clips_[static_cast<size_t>(clip)], tracks[k], time, loop);
+    }
 }
 
 int Player::RootBoneOf(int clip) const {
@@ -183,15 +239,19 @@ const Pose& Player::EvaluatePose(const space3d::Skeleton& skeleton) {
         // 混ぜる: どのクリップも、主のクリップと同じ割合の時刻で。
         const float phase = c->duration > 0 ? time_ / c->duration : 0.f;
         mix_.Begin(skeleton.bones.size());
+        sampleMorph_.assign(morphDefaults_.size(), 0.f);
         for (const Motion& m : blend_) {
             if (!(m.weight > 0) || m.clip < 0 || static_cast<size_t>(m.clip) >= clips_.size()) continue;
             const space3d::Clip& mc = clips_[static_cast<size_t>(m.clip)];
             SampleClip(mc, bindings_[static_cast<size_t>(m.clip)], skeleton, phase * mc.duration, loop, part_);
             Strip(m.clip, part_);
             mix_.Add(part_, m.weight);
+            MorphsAt(m.clip, phase * mc.duration, partMorph_);
+            for (size_t k = 0; k < sampleMorph_.size(); ++k) sampleMorph_[k] += partMorph_[k] * m.weight;
         }
         if (mix_.TotalWeight() > 0) {
             mix_.Finish(skeleton, sample_);
+            for (float& w : sampleMorph_) w /= mix_.TotalWeight();
             mixed = true;
         }
     }
@@ -202,12 +262,18 @@ const Pose& Player::EvaluatePose(const space3d::Skeleton& skeleton) {
         } else {
             sample_ = RestPose(skeleton);
         }
+        MorphsAt(c ? clip_ : -1, time_, sampleMorph_);
     }
     if (FadeWeight() < 1.f) {
         if (from_.size() != skeleton.bones.size()) from_ = RestPose(skeleton);
         Blend(from_, sample_, FadeWeight(), pose_);
+        if (fromMorph_.size() != sampleMorph_.size()) fromMorph_ = morphDefaults_;
+        morph_.resize(sampleMorph_.size());
+        const float w = FadeWeight();
+        for (size_t k = 0; k < morph_.size(); ++k) morph_[k] = fromMorph_[k] + (sampleMorph_[k] - fromMorph_[k]) * w;
     } else {
         std::swap(pose_, sample_);  // sample_ は次のフレームで全部書き直す
+        morph_ = sampleMorph_;
     }
     return pose_;
 }

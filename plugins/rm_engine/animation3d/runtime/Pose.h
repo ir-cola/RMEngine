@@ -49,6 +49,8 @@ ClipBinding BindClip(const space3d::Clip& clip, const space3d::Skeleton& skeleto
 // 最後のサンプルで止める (壊れたファイルでも配列の外を読まない)。
 void SampleClip(const space3d::Clip& clip, const ClipBinding& binding, const space3d::Skeleton& skeleton, float time, bool loop,
                 Pose& out);
+// クリップの形の重みの曲線 `track` (Clip::morphs の番号) の `time` 秒の値 (SampleClip と同じ刻みの読み方)。
+float SampleMorph(const space3d::Clip& clip, int track, float time, bool loop);
 // 骨 `bone` 1 本だけの SampleClip (同じ式。ルートモーションが根を何度も読む)。範囲の外の番号: 単位の値。
 space3d::BoneTRS SampleBone(const space3d::Clip& clip, const ClipBinding& binding, const space3d::Skeleton& skeleton, int bone, float time,
                             bool loop);

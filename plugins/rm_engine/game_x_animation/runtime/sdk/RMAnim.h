@@ -10,6 +10,7 @@
 //   anim.SetRootMotion(rm::RootMotion::Script);   // ルートモーションを自分で: rm::Vec3 d = anim.RootDelta();
 //   anim.SetLayerWeight("上半身", 0.5f);          // レイヤーの重み (ルールより強い)
 //   anim.SetIkTarget("右手", cupPos);  anim.LookAt(enemyPos, 0.8f);   // IK (部品「IK」の鎖)
+//   anim.SetBlendShape("まばたき", 1.0f);  anim.ClearBlendShape("まばたき");   // 表情 (ブレンドシェイプ)
 //
 // クリップのイベント (モデルのインスペクターの「クリップ」の帯で置く) は、そのエンティティのスクリプトの
 // OnEvent に届く (送り手はエンジン):
@@ -168,6 +169,32 @@ public:
         const std::string c(chain);
         if (ik_) ik_->setIkWeight(Api()->ctx, entity_.id, c.c_str(), weight);
     }
+    // --- ブレンドシェイプ (表情。モデルの形の名前) ---
+    // 重みを上書き (クリップより強い)。ClearBlendShape でクリップの値に戻す。
+    void SetBlendShape(std::string_view name, float weight) const {
+        const std::string n(name);
+        if (morph_) morph_->setBlendShape(Api()->ctx, entity_.id, n.c_str(), weight < 0.0f ? 0.0f : weight);
+    }
+    void ClearBlendShape(std::string_view name) const {
+        const std::string n(name);
+        if (morph_) morph_->setBlendShape(Api()->ctx, entity_.id, n.c_str(), -1.0f);
+    }
+    float BlendShape(std::string_view name) const {
+        const std::string n(name);
+        return morph_ ? morph_->blendShape(Api()->ctx, entity_.id, n.c_str()) : 0.0f;
+    }
+    int BlendShapeCount() const { return morph_ ? static_cast<int>(morph_->blendShapeCount(Api()->ctx, entity_.id)) : 0; }
+    std::string BlendShapeName(int index) const {
+        if (!morph_ || index < 0) return {};
+        char buf[128];
+        const uint32_t n = morph_->blendShapeName(Api()->ctx, entity_.id, static_cast<uint32_t>(index), buf, sizeof(buf));
+        if (n < sizeof(buf)) return std::string(buf, n);
+        std::string s(n + 1, '\0');
+        morph_->blendShapeName(Api()->ctx, entity_.id, static_cast<uint32_t>(index), s.data(), n + 1);
+        s.resize(n);
+        return s;
+    }
+
     // 「向ける」の鎖すべてをその位置へ (重み 0: やめる)。
     void LookAt(Vec3 position, float weight = 1.0f) const {
         const float p[3] = {position.x, position.y, position.z};
@@ -189,6 +216,7 @@ private:
     const RmAnimRulesApi* rules_ = Part<RmAnimRulesApi>(RM_PART_ANIM_RULES, RM_PART_ANIM_RULES_VERSION);
     const RmAnimRootApi* root_ = Part<RmAnimRootApi>(RM_PART_ANIM_ROOT, RM_PART_ANIM_ROOT_VERSION);
     const RmAnimIkApi* ik_ = Part<RmAnimIkApi>(RM_PART_ANIM_IK, RM_PART_ANIM_IK_VERSION);
+    const RmAnimMorphApi* morph_ = Part<RmAnimMorphApi>(RM_PART_ANIM_MORPH, RM_PART_ANIM_MORPH_VERSION);
 };
 
 }  // namespace rm

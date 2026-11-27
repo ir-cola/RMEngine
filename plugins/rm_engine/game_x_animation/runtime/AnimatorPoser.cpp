@@ -1,7 +1,11 @@
 #include "rm_engine/game_x_animation/runtime/AnimatorPoser.h"
 
 #include "base/Log.h"
+#include "rm_engine/animation3d/runtime/MorphPreview.h"
 #include "rm_engine/animation3d/runtime/Player.h"
+#include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+
+#include <algorithm>
 #include "rm_engine/game_x_animation/runtime/Animator.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 
@@ -25,6 +29,7 @@ public:
     void Begin(const game_x_3d::MeshPoseFrame& f) override {
         if (type_.empty()) type_ = reflect::TypeOf<Animator>().name;
         scene_ = &f.scene;
+        selection_.assign(f.selection.begin(), f.selection.end());
         dt_ = std::isfinite(f.dt) && f.dt > 0 ? f.dt : 0.f;
         playing_ = f.playing;
         ownsClock_ = !f.playing && f.picture && std::strcmp(f.picture, "scene") == 0;
@@ -55,13 +60,23 @@ public:
 
     game_x_3d::MeshPoseAnswer Pose(int entity, const game_x_3d::SkinnedModel& model) override {
         const Animator* a = AnimatorOf(entity);
+        if (!a && model.skin && !playing_) {
+            // アニメーターが無い物: 止まっていて選んだ物だけ、インスペクターのつまみで試す形の重みを見せる (休みの姿勢で)。
+            Body& b = bodies_[entity];
+            b.used = true;
+            b.morphs = model.skin->morphDefaults;
+            if (!TryOn(entity, *model.skin, b.morphs)) return {};
+            animating_ = true;
+            b.rest.assign(model.skin->skeleton.bones.size(), space3d::BoneMatrix{});
+            return {b.rest, b.morphs, 0, true};
+        }
         if (!a || !model.skin || !model.clips) return {};  // アニメーターが無い: 休みの姿勢 (ゲーム制作 × 3D のまま)
         if (playing_ && a->run && a->run->version != 0 && a->run->skin && a->run->owner == entity &&
             a->run->skin->skeleton.bones.size() == model.skin->skeleton.bones.size()) {
             // ゲームが動いている: システム「アニメーション」が決めた姿勢 (このフレームにもう 1 度は計算しない)。
             const AnimatorRun& run = *a->run;
             animating_ = animating_ || run.moving || (!run.paused && run.player.ClipIndex() >= 0);
-            return {run.bones, run.version, run.moving};
+            return {run.bones, run.morphs, run.version, run.moving};
         }
         Body& b = bodies_[entity];
         b.used = true;
@@ -70,6 +85,7 @@ public:
             b.skin = model.skin;
             b.clips = model.clips;
             b.player.Bind(b.skin->skeleton, *b.clips);
+            b.player.BindMorphs(b.skin->morphs, b.skin->morphDefaults);
             b.clip = -2;
             b.stamp.Reset();
             b.told.clear();
@@ -122,7 +138,10 @@ public:
         b.clip = clip;
         b.showing = show;
         if (b.stamp.Update(b.skin.get(), clip, b.player.Time(), a->loop, &space3d::NextPoseVersion)) b.player.Evaluate(*b.skin, b.bones);
-        return {b.bones, b.stamp.Version(), moving};
+        // 形の重み: クリップのもの。止まっていて選んだ物は、モデルのインスペクターのつまみで試す重みを上書き。
+        b.morphs = b.player.MorphWeights();
+        if (TryOn(entity, *b.skin, b.morphs)) moving = animating_ = true;  // (つまみを動かすと描き直す)
+        return {b.bones, b.morphs, b.stamp.Version(), moving};
     }
 
     bool Animating() const override { return animating_; }
@@ -138,7 +157,28 @@ private:
         std::vector<space3d::BoneMatrix> bones;
         std::string told;          // 見つからないと知らせたクリップの名前
         bool used = true;          // このフレームに尋ねられた
+        std::vector<float> morphs;               // 形の重みの答え
+        std::vector<space3d::BoneMatrix> rest;   // (アニメーターの無い物: 休みの姿勢のスキンの行列 = 単位)
     };
+
+    // 止まっていて選んだエンティティなら、そのモデルの試している形の重みを `morphs` に上書きする。上書きした: true。
+    bool TryOn(int entity, const space3d::SkinData& skin, std::vector<float>& morphs) const {
+        if (playing_ || std::find(selection_.begin(), selection_.end(), entity) == selection_.end()) return false;
+        const game_production::SceneEntity* e = scene_ ? scene_->Find(entity) : nullptr;
+        const game_production::Component* c = e ? e->FindComponent(reflect::TypeOf<game_x_3d::MeshRenderer>().name) : nullptr;
+        if (!c || !c->Known()) return false;
+        const auto& mr = *static_cast<const game_x_3d::MeshRenderer*>(c->value.Get());
+        const animation3d::MorphTry* tried = animation3d::TriedMorphs(mr.model.guid);
+        if (!tried) return false;
+        morphs.resize(skin.morphs.size(), 0.f);
+        bool any = false;
+        for (const auto& [name, weight] : *tried) {
+            for (size_t k = 0; k < skin.morphs.size(); ++k) {
+                if (skin.morphs[k] == name) morphs[k] = weight, any = true;
+            }
+        }
+        return any;
+    }
 
     const Animator* AnimatorOf(int entity) const {
         const game_production::SceneEntity* e = scene_ ? scene_->Find(entity) : nullptr;
@@ -155,6 +195,7 @@ private:
     float dt_ = 0;
     bool playing_ = false, ownsClock_ = false, animating_ = false;
     int previewed_ = 0;
+    std::vector<int> selection_;
     std::unordered_map<int, Body> bodies_;
 };
 

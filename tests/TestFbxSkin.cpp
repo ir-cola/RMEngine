@@ -441,3 +441,46 @@ RM_TEST(FbxSkin_TooManyBonesIsToldWhy) {
     CHECK(!ParseFbx(Bytes(s + links + "}\n"), &error));
     CHECK(error.find("骨") != std::string::npos && error.find(std::to_string(kMaxBones)) != std::string::npos);
 }
+
+// ブレンドシェイプ (docs/ANIMATION.md 7-2-2): BlendShape -> BlendShapeChannel -> Shape の差を、角ごとの頂点へ広げる。
+// 重みはチャンネルの DeformPercent (25 -> 0.25)、テイクの DeformPercent の曲線 (0 -> 100) は 0..1 の形の曲線に。
+// 中間の形 (Shape が 2 つ) は最後の形だけ + 警告。
+RM_TEST(FbxSkin_BlendShapes) {
+    Character c;
+    c.take = true;
+    std::string doc = Doc(c);
+    const std::string objects =
+        "\tDeformer: 700, \"Deformer::Face\", \"BlendShape\" {\n\t\tVersion: 100\n\t}\n"
+        "\tDeformer: 701, \"SubDeformer::笑う\", \"BlendShapeChannel\" {\n\t\tVersion: 100\n\t\tProperties70:  {\n" +
+        P1("DeformPercent", 25) + "\t\t}\n" + Arr("FullWeights", {50, 100}) + "\t}\n" +
+        "\tGeometry: 702, \"Geometry::笑う半分\", \"Shape\" {\n" + Arr("Indexes", {4}) + Arr("Vertices", {0, 0, 9}) + "\t}\n" +
+        "\tGeometry: 703, \"Geometry::笑う\", \"Shape\" {\n" + Arr("Indexes", {4, 5}) + Arr("Vertices", {0, 0, 1, 0, 0, 1}) + "\t}\n" +
+        "\tAnimationCurveNode: 712, \"AnimCurveNode::DeformPercent\", \"\" {\n\t}\n" + Curve(723, {0, 1}, {0, 100}, 0x4);
+    const std::string links = "\tC: \"OO\",700,100\n\tC: \"OO\",701,700\n\tC: \"OO\",702,701\n\tC: \"OO\",703,701\n"
+                              "\tC: \"OO\",712,601\n\tC: \"OP\",712,701, \"DeformPercent\"\n\tC: \"OP\",723,712, \"d|DeformPercent\"\n";
+    doc.insert(doc.find("}\nConnections:"), objects);
+    doc.insert(doc.rfind("}\n"), links);
+    std::string err;
+    const auto m = ParseFbx(Bytes(doc), &err);
+    CHECK(m.has_value());
+    if (!m) return;
+    CHECK(m->morphs.size() == 1 && m->morphDefaults.size() == 1);
+    if (m->morphs.size() != 1) return;
+    const MorphTarget& t = m->morphs[0];
+    CHECK(t.name == "笑う" && std::abs(m->morphDefaults[0] - 0.25f) < 1e-6f);
+    // コントロール点 4 と 5 を使う角の頂点だけが動く (どれも上へ 1 単位 = 0.1 m のファイルの Z → こちらの Y)。
+    CHECK(!t.vertices.empty() && t.vertices.size() == t.position.size());
+    bool up = true;
+    for (const Vec3& d : t.position) up = up && std::abs(d.y - 0.1f) < 1e-4f;
+    CHECK(up);
+    bool warned = false;
+    for (const std::string& w : m->warnings) warned = warned || w.find("中間") != std::string::npos;
+    CHECK(warned);
+    // テイク: 形の重みの曲線 (0 → 1)
+    CHECK(m->clips.size() == 1 && m->clips[0].morphs.size() == 1);
+    if (m->clips.size() == 1 && m->clips[0].morphs.size() == 1) {
+        const MorphTrack& tr = m->clips[0].morphs[0];
+        CHECK(tr.target == "笑う" && tr.weights.size() == m->clips[0].frames);
+        CHECK(std::abs(tr.weights.front()) < 1e-5f && std::abs(tr.weights.back() - 1.f) < 1e-5f);
+    }
+}

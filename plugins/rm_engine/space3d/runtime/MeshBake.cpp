@@ -199,6 +199,19 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
                 }
             });
         }
+        if (std::any_of(mesh.clips.begin(), mesh.clips.end(), [](const Clip& c) { return !c.morphs.empty(); })) {
+            o.Chunk("MANI", [&] {
+                o.Put<uint32_t>(static_cast<uint32_t>(mesh.clips.size()));
+                for (const Clip& clip : mesh.clips) {
+                    o.Put<uint32_t>(static_cast<uint32_t>(clip.morphs.size()));
+                    for (const MorphTrack& t : clip.morphs) {
+                        o.Str(t.target);
+                        o.Put<uint32_t>(static_cast<uint32_t>(t.weights.size()));
+                        for (const float w : t.weights) o.Put(w);
+                    }
+                }
+            });
+        }
         if (std::any_of(mesh.clips.begin(), mesh.clips.end(), [](const Clip& c) { return c.root.enabled; })) {
             o.Chunk("ROOT", [&] {
                 o.Put<uint32_t>(static_cast<uint32_t>(mesh.clips.size()));
@@ -211,6 +224,27 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
                 }
             });
         }
+    }
+    if (!mesh.morphs.empty()) {
+        o.Chunk("MRPH", [&] {
+            o.Put<uint32_t>(static_cast<uint32_t>(mesh.morphs.size()));
+            for (size_t k = 0; k < mesh.morphs.size(); ++k) {
+                const MorphTarget& m = mesh.morphs[k];
+                o.Str(m.name);
+                o.Put(k < mesh.morphDefaults.size() ? mesh.morphDefaults[k] : 0.f);
+                const size_t n = std::min(m.vertices.size(), m.position.size());
+                o.Put<uint32_t>(static_cast<uint32_t>(n));
+                for (size_t i = 0; i < n; ++i) {
+                    o.Put(m.vertices[i]);
+                    o.V3(m.position[i]);
+                }
+                const bool normals = m.normal.size() >= n && n > 0;
+                o.Put<uint8_t>(normals ? 1 : 0);
+                if (normals) {
+                    for (size_t i = 0; i < n; ++i) o.V3(m.normal[i]);
+                }
+            }
+        });
     }
     return o.bytes;
 }
@@ -357,6 +391,38 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
                 m.clips[k].events.resize(ok ? events : 0);
                 for (ClipEvent& ev : m.clips[k].events) ok = ok && c.Get(ev.time) && c.Str(ev.name) && c.Get(ev.number) && c.Str(ev.text);
             }
+        } else if (tag == "MRPH") {
+            ok = c.Count(n, 4 + 4 + 4 + 1);
+            m.morphs.resize(ok ? n : 0);
+            m.morphDefaults.assign(m.morphs.size(), 0.f);
+            for (size_t k = 0; ok && k < m.morphs.size(); ++k) {
+                MorphTarget& t = m.morphs[k];
+                uint32_t count = 0;
+                ok = c.Str(t.name) && c.Get(m.morphDefaults[k]) && c.Count(count, 16);
+                t.vertices.resize(ok ? count : 0);
+                t.position.resize(ok ? count : 0);
+                for (size_t i = 0; ok && i < t.vertices.size(); ++i) ok = c.Get(t.vertices[i]) && c.V3(t.position[i]);
+                uint8_t normals = 0;
+                ok = ok && c.Get(normals);
+                if (ok && normals) {
+                    t.normal.resize(t.vertices.size());
+                    for (Vec3& v : t.normal) ok = ok && c.V3(v);
+                }
+            }
+        } else if (tag == "MANI") {
+            // (ANIM の後に書く。クリップの数が合わなければ壊れている)
+            ok = c.Count(n, 4) && n == m.clips.size();
+            for (size_t k = 0; ok && k < n; ++k) {
+                uint32_t tracks = 0;
+                ok = c.Count(tracks, 4 + 4);
+                m.clips[k].morphs.resize(ok ? tracks : 0);
+                for (MorphTrack& t : m.clips[k].morphs) {
+                    uint32_t count = 0;
+                    ok = ok && c.Str(t.target) && c.Count(count, 4) && (count <= 1 || count == m.clips[k].frames);
+                    t.weights.resize(ok ? count : 0);
+                    for (float& w : t.weights) ok = ok && c.Get(w);
+                }
+            }
         } else if (tag == "ROOT") {
             // (ANIM の後に書く。クリップの数が合わなければ壊れている)
             ok = c.Count(n, 1 + 4 + 3) && n == m.clips.size();
@@ -375,6 +441,13 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
     if (m.parts.empty() && !m.indices.empty()) m.parts.push_back({0, static_cast<uint32_t>(m.indices.size()), -1});
     std::string why;
     if (!IndicesInRange(m, &why)) return fail("焼いたモデルが壊れています: " + why);
+    for (const MorphTarget& t : m.morphs) {
+        for (size_t i = 0; i < t.vertices.size(); ++i) {
+            if (t.vertices[i] >= m.vertices.size() || (i > 0 && t.vertices[i] <= t.vertices[i - 1])) {
+                return fail("焼いたモデルのブレンドシェイプが壊れています (頂点の番号)");
+            }
+        }
+    }
     for (const MeshPart& p : m.parts) {
         if (static_cast<uint64_t>(p.firstIndex) + p.indexCount > m.indices.size() || p.material >= static_cast<int>(m.materials.size())) {
             return fail("焼いたモデルの部分が壊れています");

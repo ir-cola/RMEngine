@@ -44,6 +44,7 @@ void BindLayers(AnimatorRun& run) {
         l.checks.clear();
         if (run.skin && run.clips) {
             l.player.Bind(run.skin->skeleton, *run.clips);
+            l.player.BindMorphs(run.skin->morphs, run.skin->morphDefaults);
             l.mask = animation3d::BoneMask(run.skin->skeleton, run.rules->layers[i].mask);
         }
     }
@@ -54,7 +55,11 @@ void BindLayers(AnimatorRun& run) {
 void BindModel(AnimatorRun& run, std::shared_ptr<const space3d::SkinData> skin, std::shared_ptr<const std::vector<space3d::Clip>> clips) {
     run.skin = std::move(skin);
     run.clips = std::move(clips);
-    if (run.skin && run.clips) run.player.Bind(run.skin->skeleton, *run.clips);
+    if (run.skin && run.clips) {
+        run.player.Bind(run.skin->skeleton, *run.clips);
+        run.player.BindMorphs(run.skin->morphs, run.skin->morphDefaults);
+    }
+    run.morphs = run.skin ? run.skin->morphDefaults : std::vector<float>{};
     BindLayers(run);
     run.started = false;
     run.playing.clear();
@@ -117,10 +122,30 @@ void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<con
             AnimatorRun::Layer& l = run.layers[i];
             if (!(l.weight > 0) || l.player.ClipIndex() < 0) continue;
             const animation3d::Pose& pose = l.player.EvaluatePose(run.skin->skeleton);
+            const bool fromFirst = run.rules->layers[i].additiveBase == animation::AdditiveBase::FirstFrame;
+            if (fromFirst) l.player.FirstFrame(run.skin->skeleton, l.base, l.baseMorphs);
             if (run.rules->layers[i].mode == animation::LayerMode::Additive) {
-                animation3d::AddPose(p.MutablePose(), pose, run.rest, l.weight, l.mask);
+                animation3d::AddPose(p.MutablePose(), pose, fromFirst ? l.base : run.rest, l.weight, l.mask);
             } else {
                 animation3d::OverlayPose(p.MutablePose(), pose, l.weight, l.mask);
+            }
+            // 形の重み: 上書きはレイヤーのクリップが持つ形だけ寄せ、足すは初めの重みからの差を足す。
+            std::vector<float>& mw = p.MutableMorphWeights();
+            const std::vector<float>& lw = l.player.MorphWeights();
+            const std::vector<float>& def = fromFirst ? l.baseMorphs : l.player.MorphDefaults();
+            for (size_t k = 0; k < mw.size() && k < lw.size(); ++k) {
+                if (run.rules->layers[i].mode == animation::LayerMode::Additive) {
+                    mw[k] += (lw[k] - (k < def.size() ? def[k] : 0.f)) * l.weight;
+                } else if (l.player.MorphAnimated(k)) {
+                    mw[k] += (lw[k] - mw[k]) * l.weight;
+                }
+            }
+        }
+        // 形の重みの答え (スクリプトの上書きはクリップより強い)。
+        run.morphs = p.MorphWeights();
+        for (const auto& [name, weight] : run.morphOverride) {
+            for (size_t k = 0; k < run.skin->morphs.size() && k < run.morphs.size(); ++k) {
+                if (run.skin->morphs[k] == name) run.morphs[k] = weight;
             }
         }
         if (hooked) (*post)(p.MutablePose());
@@ -302,6 +327,24 @@ float RuleParam(const AnimatorRun& run, std::string_view name) {
         return 0.f;
     }
     return animation::ParamOf(run.params, *run.rules, name);
+}
+
+void SetBlendShape(AnimatorRun& run, std::string_view name, float weight) {
+    std::erase_if(run.morphOverride, [&](const auto& kv) { return kv.first == name; });
+    if (std::isfinite(weight) && weight >= 0) run.morphOverride.emplace_back(std::string(name), weight);
+    run.dirty = true;  // (次の StepAnimator で作り直す)
+}
+
+float BlendShapeOf(const AnimatorRun& run, std::string_view name) {
+    if (run.skin) {
+        for (size_t k = 0; k < run.skin->morphs.size() && k < run.morphs.size(); ++k) {
+            if (run.skin->morphs[k] == name) return run.morphs[k];
+        }
+    }
+    for (const auto& [n, w] : run.morphOverride) {
+        if (n == name) return w;
+    }
+    return 0.f;
 }
 
 void SetLayerWeight(AnimatorRun& run, std::string_view layer, float weight) {

@@ -63,6 +63,8 @@ public:
     static constexpr double kFrameBudgetMs = 30.0;
 
     Thumbnails(platform::Gfx& gfx, const PluginRegistry& registry, std::filesystem::path root);
+    // 絵を描く GPU (インスペクターのブロックが小さな 3D の絵を描く: AssetImportAccess::graphics)。
+    platform::Gfx& Graphics() { return gfx_; }
     ~Thumbnails();  // worker を止める (作っているサムネイルは終わらせて、捨てる)
     Thumbnails(const Thumbnails&) = delete;
     Thumbnails& operator=(const Thumbnails&) = delete;

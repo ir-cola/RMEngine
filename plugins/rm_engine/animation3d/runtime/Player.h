@@ -46,6 +46,16 @@ public:
     // 混ぜるクリップ (毎フレーム重みを変えてよい)。空: Play したクリップだけ。Play しても残る (外すときは空を渡す)。
     void SetBlend(std::span<const Motion> motions);
 
+    // ブレンドシェイプ (段階 6): 形の名前と初めの重み (SkinData::morphs / morphDefaults) をつなぐ (Bind の後に。
+    // 無いモデルは呼ばなくてよい)。重みは EvaluatePose が姿勢と一緒に決める (混ぜる・フェードも同じ重みで)。
+    void BindMorphs(std::span<const std::string> names, std::span<const float> defaults);
+    // 今の形の重み (BindMorphs の並び)。レイヤーはこれに重ねる。
+    const std::vector<float>& MorphWeights() const { return morph_; }
+    std::vector<float>& MutableMorphWeights() { return morph_; }
+    // 今のクリップ (混ぜているときはどれか) が形 `k` の曲線を持つ (上書きのレイヤーは、持つ形だけ重ねる)。
+    bool MorphAnimated(size_t k) const;
+    const std::vector<float>& MorphDefaults() const { return morphDefaults_; }
+
     // 骨の木とクリップの一覧をつなぐ (名前から番号を引く)。`clips` は持たないので、Player より長く置いておく。
     // Evaluate に渡すスキンの骨の木は、ここで渡したものと同じにする。流していたクリップは止める。
     void Bind(const space3d::Skeleton& skeleton, std::span<const space3d::Clip> clips);
@@ -67,6 +77,8 @@ public:
     Pose& MutablePose() { return pose_; }
     // MutablePose の姿勢 → 骨の行列 → スキンの行列。
     void FinishPose(const space3d::SkinData& skin, std::vector<space3d::BoneMatrix>& out);
+    // 今のクリップの最初のコマの姿勢と形の重み (足すレイヤーの基準「クリップの最初のコマ」)。クリップが無い: 休みの姿勢。
+    void FirstFrame(const space3d::Skeleton& skeleton, Pose& out, std::vector<float>& morphs) const;
     // 混ぜたクリップの長さ (重みで混ぜたもの。混ぜていなければ今のクリップの長さ。無ければ 0)。
     float BlendDuration() const;
 
@@ -115,6 +127,12 @@ private:
     Pose part_;
     Pose from_, sample_, pose_;
     std::vector<space3d::Mat4> model_;
+    // ブレンドシェイプ
+    std::vector<std::string> morphNames_;
+    std::vector<float> morphDefaults_;
+    std::vector<std::vector<int>> morphTrack_;  // クリップごと: 形ごとの Clip::morphs の番号 (-1: 無い)
+    std::vector<float> morph_, fromMorph_, sampleMorph_, partMorph_;
+    void MorphsAt(int clip, float time, std::vector<float>& out) const;
 };
 
 }  // namespace rm::animation3d

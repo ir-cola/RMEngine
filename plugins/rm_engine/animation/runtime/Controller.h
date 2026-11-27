@@ -95,6 +95,13 @@ enum class LayerMode {
     RM_ITEM(Label="足す") Additive,
 };
 
+// 足すレイヤーが差を取る基準 (段階 6。docs/ANIMATION.md 7-5)。
+RM_ENUM(Label="足す基準")
+enum class AdditiveBase {
+    RM_ITEM(Label="休みの姿勢") Rest,
+    RM_ITEM(Label="クリップの最初のコマ") FirstFrame,
+};
+
 // 重ねるレイヤー (段階 4): 自分の状態とルールを持ち、下の姿勢の上に重ねる (走りながら上半身で撃つ・呼吸を足す)。
 RM_STRUCT(Label="レイヤー")
 struct AnimLayer {
@@ -102,6 +109,7 @@ struct AnimLayer {
     RM_PROPERTY(Edit, Label="重み", Tooltip="どれだけ重ねるか (0..1)。下の「重みのパラメーター」があれば、そちらの値", Min=0, Max=1, Step=0.01) float weight = 1.f;
     RM_PROPERTY(Edit, Label="重みのパラメーター", Tooltip="重みをこのパラメーターの値にする (空: 上の数)") std::string weightParam;
     RM_PROPERTY(Edit, Label="重ね方", Tooltip="上書き: このレイヤーの姿勢にする / 足す: 休みの姿勢からの差を足す (呼吸・揺れ)") LayerMode mode = LayerMode::Override;
+    RM_PROPERTY(Edit, Label="足す基準", Tooltip="足すとき、何からの差を足すか。休みの姿勢: モデルの休みの姿勢から。クリップの最初のコマ: そのクリップの始めの姿勢から (表情・息のクリップを、どの姿勢にも足せる)") AdditiveBase additiveBase = AdditiveBase::Rest;
     RM_PROPERTY(Edit, Label="マスク", Tooltip="この骨と、その下の骨だけに重ねる (骨の名前。空: 全部)") std::vector<std::string> mask;
     RM_PROPERTY(Edit, Label="状態", Tooltip="このレイヤーの状態 (1 つ目から始まる)") std::vector<AnimState> states;
     RM_PROPERTY(Edit, Label="ルール", Tooltip="このレイヤーのルール (パラメーターは全部のレイヤーで同じ)") std::vector<AnimRule> rules;
