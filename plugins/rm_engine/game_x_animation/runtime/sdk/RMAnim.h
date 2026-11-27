@@ -195,6 +195,10 @@ public:
         return s;
     }
 
+    // 揺れる骨 (部品「揺れる骨」) を始め直す。遠くへワープさせた後に呼ぶ (髪が大きく引っぱられない)。
+    void ResetSprings() const {
+        if (ik_) ik_->resetSprings(Api()->ctx, entity_.id);
+    }
     // 「向ける」の鎖すべてをその位置へ (重み 0: やめる)。
     void LookAt(Vec3 position, float weight = 1.0f) const {
         const float p[3] = {position.x, position.y, position.z};

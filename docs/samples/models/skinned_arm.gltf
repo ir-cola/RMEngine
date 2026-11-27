@@ -323,6 +323,70 @@
    ]
   }
  ],
+ "extensionsUsed": [
+  "VRMC_springBone"
+ ],
+ "extensions": {
+  "VRMC_springBone": {
+   "specVersion": "1.0",
+   "colliders": [
+    {
+     "node": 2,
+     "shape": {
+      "sphere": {
+       "offset": [
+        0.3,
+        0.5,
+        0
+       ],
+       "radius": 0.1
+      }
+     }
+    }
+   ],
+   "colliderGroups": [
+    {
+     "colliders": [
+      0
+     ]
+    }
+   ],
+   "springs": [
+    {
+     "name": "Top",
+     "joints": [
+      {
+       "node": 3,
+       "hitRadius": 0.02,
+       "stiffness": 1.0,
+       "gravityPower": 0.5,
+       "gravityDir": [
+        0,
+        -1,
+        0
+       ],
+       "dragForce": 0.4
+      },
+      {
+       "node": 4,
+       "hitRadius": 0.02,
+       "stiffness": 1.0,
+       "gravityPower": 0.5,
+       "gravityDir": [
+        0,
+        -1,
+        0
+       ],
+       "dragForce": 0.4
+      }
+     ],
+     "colliderGroups": [
+      0
+     ]
+    }
+   ]
+  }
+ },
  "accessors": [
   {
    "bufferView": 0,

@@ -384,3 +384,25 @@ RM_TEST(MeshBake_BlendShapesRoundTrip) {
     m.morphs[0].vertices = {0, 999};
     CHECK(!ReadBakedMesh(WriteBakedMesh(m, {}), &err));
 }
+
+// 揺れる骨の設定は SPRG のチャンクに入り、同じに読み戻す。
+RM_TEST(MeshBake_SpringBonesRoundTrip) {
+    MeshData m = SkinnedSample();
+    CHECK(WriteBakedMesh(m, {}).find("SPRG") == std::string::npos);
+    SpringChainSetting ch;
+    ch.name = "髪";
+    ch.below = true;
+    ch.joints.push_back({m.skin->skeleton.bones[0].name, 0.8f, 0.3f, 0.5f, 0.03f, {0, -1, 0}});
+    m.skin->springs = {ch};
+    m.skin->springColliders = {{m.skin->skeleton.bones[0].name, {0, 0.1f, 0}, 0.2f}};
+    const std::string bytes = WriteBakedMesh(m, {});
+    CHECK(bytes.find("SPRG") != std::string::npos);
+    std::string err;
+    const auto back = ReadBakedMesh(bytes, &err);
+    CHECK(back && back->skin && back->skin->springs.size() == 1 && back->skin->springColliders.size() == 1);
+    if (!back || !back->skin || back->skin->springs.size() != 1) return;
+    const SpringChainSetting& b = back->skin->springs[0];
+    CHECK(b.name == "髪" && b.below && b.joints.size() == 1 && b.joints[0].stiffness == 0.8f && b.joints[0].radius == 0.03f);
+    CHECK(back->skin->springColliders[0].radius == 0.2f);
+    CHECK(WriteBakedMesh(*back, {}) == bytes);
+}

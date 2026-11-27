@@ -7,6 +7,7 @@
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorIk.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorLogic.h"
+#include "rm_engine/game_x_animation/runtime/AnimatorSprings.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 #include "rm_engine/game_x_animation/runtime/sdk/RMAnimAbi.h"
 
@@ -191,7 +192,11 @@ void LookAtOf(void* ctx, uint64_t id, const float* position, float weight) {
     const Found f = AnimatorOf(ctx, id);
     if (f.a) SetLookAt(RunOf(*f.a, f.id), Point(position), weight);
 }
-constexpr RmAnimIkApi kIk{&SetIkTargetOf, &SetIkWeightOf, &LookAtOf};
+void ResetSpringsOf(void* ctx, uint64_t id) {
+    const Found f = AnimatorOf(ctx, id);
+    if (f.a) ResetSprings(RunOf(*f.a, f.id));
+}
+constexpr RmAnimIkApi kIk{&SetIkTargetOf, &SetIkWeightOf, &LookAtOf, &ResetSpringsOf};
 
 // ブレンドシェイプ。
 void SetBlendShapeOf(void* ctx, uint64_t id, const char* name, float weight) {

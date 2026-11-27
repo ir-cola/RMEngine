@@ -19,6 +19,9 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     // IK (アニメーターと同じエンティティ。足を坂に・手を物に・顔を向ける)。
     static const game_production::ComponentInfo kIk{.type = &reflect::TypeOf<AnimatorIk>, .folder = "3D"};
     registry.Contribute(game_production::kComponentPoint, kIk);
+    // 揺れる骨 (髪・スカート。VRM の揺れの設定も使える)。
+    static const game_production::ComponentInfo kSprings{.type = &reflect::TypeOf<SpringBones>, .folder = "3D"};
+    registry.Contribute(game_production::kComponentPoint, kSprings);
     // ゲームが動いている間: 進める (クリップのイベントも) → 骨に付ける (AnimationSystem.h)。
     static const game_production::SystemInfo kAnimation{"アニメーション", game_production::SystemPhase::Frame, 100, &RunAnimation};
     registry.Contribute(game_production::kSystemPoint, kAnimation);

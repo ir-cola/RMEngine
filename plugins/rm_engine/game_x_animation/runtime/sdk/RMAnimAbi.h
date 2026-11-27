@@ -76,6 +76,8 @@ typedef struct RmAnimIkApi {
     void (*setIkWeight)(void* ctx, uint64_t entity, const char* chain, float weight);
     /* 「向ける」で目標が「スクリプト」の鎖すべてを、その位置へ (重み 0: やめる)。 */
     void (*lookAt)(void* ctx, uint64_t entity, const float* position, float weight);
+    /* 揺れる骨を始め直す (ワープ・場面の切り替えの後)。 */
+    void (*resetSprings)(void* ctx, uint64_t entity);
 } RmAnimIkApi;
 
 /* ブレンドシェイプ (表情。段階 6)。名前はモデルの形の名前 (UTF-8)。 */

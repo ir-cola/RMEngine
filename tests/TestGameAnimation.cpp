@@ -12,6 +12,7 @@
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 #include "rm_engine/game_x_animation/runtime/AnimationSystem.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorIk.h"
+#include "rm_engine/game_x_animation/runtime/AnimatorSprings.h"
 #include "rm_engine/game_x_animation/runtime/RootMotionSink.h"
 #include "rm_engine/animation3d/runtime/RootMotion.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -840,4 +841,45 @@ RM_TEST(GameAnim_BlendShapesFromClipAndScript) {
     SetBlendShape(run, "あ", -1.f);  // 外す: クリップの値
     StepAnimator(run, a, 0.1f, fired, &NextForTest);
     CHECK(Near(run.morphs[1], 0.4f));
+}
+
+// 揺れる骨 (AnimatorSprings.h): 部品の鎖とモデルの VRM の設定から鎖を作り、姿勢を揺らす。部品が変わったら作り直す。
+RM_TEST(GameAnim_SpringBonesFromComponentAndModel) {
+    const game_x_3d::SkinnedModel m = Legs();
+    auto skin = std::make_shared<space3d::SkinData>(*m.skin);
+    // モデルの設定: Hips → RThigh → RKnee の並び (2 つ目から動く)
+    space3d::SpringChainSetting ch;
+    ch.joints = {{"RThigh", 1, 0.4f, 0, 0.02f, {0, -1, 0}}, {"RKnee", 1, 0.4f, 0, 0.02f, {0, -1, 0}}};
+    skin->springs = {ch};
+    AnimatorRun run;
+    BindModel(run, skin, m.clips);
+    SpringBones sb;
+    SpringChain mine;
+    mine.bone = "LThigh";  // 左の腿の下 (膝・足) を揺らす
+    sb.chains = {mine};
+    animation3d::Pose pose = animation3d::RestPose(skin->skeleton);
+    ApplyAnimatorSprings(run, sb, space3d::Mat4{}, 1.f / 60.f, pose);
+    CHECK(run.springs.joints.size() == 3);  // LKnee・LFoot (部品) と RKnee (モデル)
+    // モデルの設定を使わない: 部品の鎖だけ
+    sb.useModel = false;
+    ApplyAnimatorSprings(run, sb, space3d::Mat4{}, 1.f / 60.f, pose);
+    CHECK(run.springs.joints.size() == 2);
+    // 重力で垂れる (エンティティが横へ動くと、足は遅れてついて行く)
+    sb.chains[0].gravity = 0;
+    sb.chains[0].stiffness = 0;
+    space3d::Transform at;
+    for (int i = 0; i < 10; ++i) {
+        at.position.x = 0.05f * static_cast<float>(i);
+        pose = animation3d::RestPose(skin->skeleton);
+        ApplyAnimatorSprings(run, sb, space3d::LocalMatrix(at), 1.f / 60.f, pose);
+    }
+    std::vector<space3d::Mat4> model;
+    animation3d::ModelMatrices(skin->skeleton, pose, model);
+    CHECK(Pos(model, 3).x < -0.1f - 0.01f);  // (休みの姿勢なら -0.1: 左の足首は遅れて後ろ)
+    // ResetSprings: 次で始め直す (休みの形)
+    ResetSprings(run);
+    pose = animation3d::RestPose(skin->skeleton);
+    ApplyAnimatorSprings(run, sb, space3d::LocalMatrix(at), 0.f, pose);
+    animation3d::ModelMatrices(skin->skeleton, pose, model);
+    CHECK(Near(Pos(model, 3).x, -0.1f, 1e-3f));
 }

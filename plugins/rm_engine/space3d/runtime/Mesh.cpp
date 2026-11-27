@@ -290,6 +290,7 @@ public:
         SortByMaterial(out_, triangleMaterial_);
         if (skinned_) {
             if (!LoadClips()) return std::nullopt;
+            ReadSprings();
             if (dropped_ > 0) out_.warnings.push_back(std::format("頂点 {} 個に 5 本以上の骨が付いています (重い 4 本だけで動かします)", dropped_));
             std::vector<Vec3> positions(out_.vertices.size());
             for (size_t i = 0; i < positions.size(); ++i) positions[i] = out_.vertices[i].position;
@@ -987,6 +988,88 @@ private:
         return true;
     }
 
+    // --- 揺れる骨の設定 (VRM。docs/ANIMATION.md 7-2-3) ---------------------------------------------------------
+    // VRM 1.0 の extensions.VRMC_springBone (springs の joints を順に) と、VRM 0.x の extensions.VRM.secondaryAnimation
+    // (boneGroups の bones: その骨と下全部)。当たりは球だけ (カプセルは頭の球にして、警告)。当たりのグループは
+    // 分けずに、どの鎖も全部の当たりを見る。VRM 0.x の値は Unity の向き (X が反対) なので X を返す。
+    void ReadSprings() {
+        const json::Value& ext = doc_.Get("extensions");
+        auto boneOf = [&](const json::Value& node) -> std::string {
+            const int64_t n = node.AsInt(-1);
+            if (n < 0 || static_cast<size_t>(n) >= boneOfNode_.size() || boneOfNode_[static_cast<size_t>(n)] < 0) return {};
+            return skin_.skeleton.bones[static_cast<size_t>(boneOfNode_[static_cast<size_t>(n)])].name;
+        };
+        auto vec = [](const json::Value& v, Vec3 def) {
+            if (v.IsArray() && v.Size() >= 3) return Vec3{Number(v, 0, def.x), Number(v, 1, def.y), Number(v, 2, def.z)};
+            if (v.IsObject()) return Vec3{static_cast<float>(v.Get("x").AsDouble(def.x)), static_cast<float>(v.Get("y").AsDouble(def.y)), static_cast<float>(v.Get("z").AsDouble(def.z))};
+            return def;
+        };
+        bool capsule = false;
+        if (const json::Value* sb = ext.Find("VRMC_springBone"); sb && sb->IsObject()) {
+            for (const json::Value& c : sb->Get("colliders").Items()) {
+                SpringColliderSetting s;
+                s.bone = boneOf(c.Get("node"));
+                const json::Value& shape = c.Get("shape");
+                const json::Value* sphere = shape.Find("sphere");
+                const json::Value* cap = shape.Find("capsule");
+                if (cap) capsule = true;
+                const json::Value* use = sphere ? sphere : cap;
+                if (s.bone.empty() || !use) continue;
+                s.offset = vec(use->Get("offset"), {});
+                s.radius = static_cast<float>(use->Get("radius").AsDouble(0.1));
+                skin_.springColliders.push_back(std::move(s));
+            }
+            for (const json::Value& sp : sb->Get("springs").Items()) {
+                SpringChainSetting chain;
+                chain.name = sp.Get("name").AsString();
+                for (const json::Value& j : sp.Get("joints").Items()) {
+                    SpringJointSetting js;
+                    js.bone = boneOf(j.Get("node"));
+                    if (js.bone.empty()) continue;
+                    js.stiffness = static_cast<float>(j.Get("stiffness").AsDouble(1.0));
+                    js.drag = static_cast<float>(j.Get("dragForce").AsDouble(0.5));
+                    js.gravity = static_cast<float>(j.Get("gravityPower").AsDouble(0.0));
+                    js.radius = static_cast<float>(j.Get("hitRadius").AsDouble(0.0));
+                    js.gravityDir = vec(j.Get("gravityDir"), {0, -1, 0});
+                    chain.joints.push_back(std::move(js));
+                }
+                if (chain.joints.size() >= 2) skin_.springs.push_back(std::move(chain));
+            }
+        } else if (const json::Value* v0 = ext.Find("VRM"); v0 && v0->IsObject()) {
+            const json::Value& sa = v0->Get("secondaryAnimation");
+            auto unity = [](Vec3 v) { return Vec3{-v.x, v.y, v.z}; };
+            for (const json::Value& g : sa.Get("colliderGroups").Items()) {
+                const std::string bone = boneOf(g.Get("node"));
+                if (bone.empty()) continue;
+                for (const json::Value& c : g.Get("colliders").Items()) {
+                    SpringColliderSetting s;
+                    s.bone = bone;
+                    s.offset = unity(vec(c.Get("offset"), {}));
+                    s.radius = static_cast<float>(c.Get("radius").AsDouble(0.1));
+                    skin_.springColliders.push_back(std::move(s));
+                }
+            }
+            for (const json::Value& g : sa.Get("boneGroups").Items()) {
+                for (const json::Value& b : g.Get("bones").Items()) {
+                    SpringChainSetting chain;
+                    chain.name = g.Get("comment").AsString();
+                    chain.below = true;
+                    SpringJointSetting js;
+                    js.bone = boneOf(b);
+                    if (js.bone.empty()) continue;
+                    js.stiffness = static_cast<float>(g.Get("stiffiness").AsDouble(1.0));  // (VRM 0.x の綴りのまま)
+                    js.drag = static_cast<float>(g.Get("dragForce").AsDouble(0.4));
+                    js.gravity = static_cast<float>(g.Get("gravityPower").AsDouble(0.0));
+                    js.radius = static_cast<float>(g.Get("hitRadius").AsDouble(0.02));
+                    js.gravityDir = unity(vec(g.Get("gravityDir"), {0, -1, 0}));
+                    chain.joints.push_back(std::move(js));
+                    skin_.springs.push_back(std::move(chain));
+                }
+            }
+        }
+        if (capsule) out_.warnings.push_back("VRM の揺れの当たりのカプセルは、頭の球として使います");
+    }
+
     static int FindMorphTrack(const Clip& clip, std::string_view name) {
         for (size_t i = 0; i < clip.morphs.size(); ++i) {
             if (clip.morphs[i].target == name) return static_cast<int>(i);
@@ -1635,6 +1718,17 @@ void ApplyModelImport(MeshData& mesh, const ModelBasis& basis, bool turnAround, 
         std::vector<Vec3> positions(mesh.vertices.size());
         for (size_t i = 0; i < positions.size(); ++i) positions[i] = mesh.vertices[i].position;
         ComputeBoneBounds(skin, positions);
+        // 揺れる骨の設定: 骨の空間の位置は骨と同じにはさみ (mapT)、向きは軸だけ、半径は大きさを掛ける。
+        for (SpringColliderSetting& col : skin.springColliders) {
+            col.offset = mapT(col.offset);
+            col.radius *= scale;
+        }
+        for (SpringChainSetting& ch : skin.springs) {
+            for (SpringJointSetting& j : ch.joints) {
+                j.radius *= scale;
+                j.gravityDir = {Dot(j.gravityDir, right) * turn, Dot(j.gravityDir, up), Dot(j.gravityDir, depth) * turn};
+            }
+        }
     }
     for (Clip& clip : mesh.clips) {
         for (BoneTrack& track : clip.tracks) {

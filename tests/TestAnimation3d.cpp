@@ -9,6 +9,7 @@
 #include "rm_engine/animation3d/runtime/Player.h"
 #include "rm_engine/animation3d/runtime/Pose.h"
 #include "rm_engine/animation3d/runtime/RootMotion.h"
+#include "rm_engine/animation3d/runtime/Spring.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <cmath>
@@ -869,4 +870,94 @@ RM_TEST(Anim3d_PlayerFirstFrame) {
     p.Tick(0.5f);
     p.FirstFrame(skin.skeleton, first, morphs);
     CHECK(NearV(first[0].t, {0, 1, 0}) && Near(morphs[0], 0.2f));  // 今の時刻 (0.5 秒) ではなく始め
+}
+
+// --- 揺れる骨 (docs/ANIMATION.md 7-2-3。Spring.h) ---
+
+namespace {
+
+// 根 → 1 → 2 (+X へ 1 ずつ、横に寝た鎖)。
+Skeleton Tail() {
+    Skeleton s;
+    s.bones.push_back(MakeBone("根", -1, {0, 0, 0}));
+    s.bones.push_back(MakeBone("一", 0, {1, 0, 0}));
+    s.bones.push_back(MakeBone("二", 1, {1, 0, 0}));
+    return s;
+}
+
+Vec3 Tip(const Skeleton& s, const Pose& pose) {
+    std::vector<Mat4> m;
+    ModelMatrices(s, pose, m);
+    return BonePosition(m, 2);
+}
+
+}  // namespace
+
+RM_TEST(Anim3d_SpringsSagAndKeepLength) {
+    const Skeleton s = Tail();
+    SpringState st;
+    SpringJoint set;
+    set.stiffness = 0;
+    set.gravity = 9.8f;
+    AddSpringChain(s, 0, set, st.joints);
+    CHECK(st.joints.size() == 2 && st.joints[0].bone == 1 && st.joints[1].parent == 1);
+    std::vector<Mat4> model;
+    Pose pose;
+    for (int i = 0; i < 120; ++i) {
+        pose = RestPose(s);
+        StepSprings(st, s, pose, model, Mat4{}, 1.f / 60.f, false);
+    }
+    const Vec3 tip = Tip(s, pose);
+    CHECK(tip.y < -1.f);                                              // 重力で垂れる
+    CHECK(Near(Length(BonePosition(model, 1)), 1.f, 1e-3f));          // 長さは変わらない
+    CHECK(Near(Length(tip - BonePosition(model, 1)), 1.f, 1e-3f));
+    // 戻る強さだけにすると、アニメーションの向き (横) へ戻っていく
+    for (SpringJoint& j : st.joints) j.gravity = 0, j.stiffness = 4.f;
+    for (int i = 0; i < 240; ++i) {
+        pose = RestPose(s);
+        StepSprings(st, s, pose, model, Mat4{}, 1.f / 60.f, false);
+    }
+    CHECK(Tip(s, pose).y > tip.y + 0.5f);
+}
+
+RM_TEST(Anim3d_SpringsCollideWarpAndFrameRate) {
+    const Skeleton s = Tail();
+    SpringJoint set;
+    set.stiffness = 0;
+    set.gravity = 0;
+    // 当たりの球: 先 (2, 0, 0) を囲む。押し出されて、球の外 (半径 + 太さ) に出る
+    SpringState st;
+    AddSpringChain(s, 0, set, st.joints);
+    st.spheres.push_back({0, {2, 0, 0.2f}, 0.5f});
+    std::vector<Mat4> model;
+    Pose pose = RestPose(s);
+    StepSprings(st, s, pose, model, Mat4{}, 1.f / 60.f, false);
+    CHECK(Length(Tip(s, pose) - Vec3{2, 0, 0.2f}) > 0.45f);  // (長さに戻すので、ほぼ球の外)
+    // ワープ: エンティティが遠くへ飛んだら、始め直す (アニメーションの形のまま)
+    SpringState w;
+    SpringJoint g = set;
+    g.gravity = 9.8f;
+    AddSpringChain(s, 0, g, w.joints);
+    for (int i = 0; i < 30; ++i) {
+        pose = RestPose(s);
+        StepSprings(w, s, pose, model, Mat4{}, 1.f / 60.f, false);
+    }
+    const Mat4 far = space3d::LocalMatrix({{50, 0, 0}, {0, 0, 0}, {1, 1, 1}});
+    pose = RestPose(s);
+    StepSprings(w, s, pose, model, far, 0.f, false);
+    CHECK(NearV(Tip(s, pose), {2, 0, 0}, 1e-3f));
+    // 30 fps と 60 fps でほぼ同じ形 (刻みは 1/60 秒ずつ)
+    SpringState a, b;
+    AddSpringChain(s, 0, g, a.joints);
+    AddSpringChain(s, 0, g, b.joints);
+    Pose pa, pb;
+    for (int i = 0; i < 30; ++i) {
+        pa = RestPose(s);
+        StepSprings(a, s, pa, model, Mat4{}, 1.f / 30.f, false);
+    }
+    for (int i = 0; i < 60; ++i) {
+        pb = RestPose(s);
+        StepSprings(b, s, pb, model, Mat4{}, 1.f / 60.f, false);
+    }
+    CHECK(Length(Tip(s, pa) - Tip(s, pb)) < 0.02f);
 }

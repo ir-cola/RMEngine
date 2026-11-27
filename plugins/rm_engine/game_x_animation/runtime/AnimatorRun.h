@@ -13,6 +13,7 @@
 
 #include "rm_engine/animation/runtime/Rules.h"
 #include "rm_engine/animation3d/runtime/Player.h"
+#include "rm_engine/animation3d/runtime/Spring.h"
 #include "rm_engine/game_x_animation/runtime/Animator.h"
 #include "rm_engine/space3d/runtime/Skeleton.h"
 
@@ -113,6 +114,12 @@ struct AnimatorRun {
         std::vector<space3d::Mat4> model;
         bool active = false;        // 直前のフレームに IK をかけた
     } ik;
+
+    // 揺れる骨 (段階 6。部品「揺れる骨」: AnimatorSprings.h)。鎖と揺れの今・作り直す鍵・スクリプトの ResetSprings。
+    animation3d::SpringState springs;
+    std::string springsKey;
+    bool springReset = false;
+    std::vector<space3d::Mat4> springModel;
 };
 
 // 部品のゲームの間の再生 (無い・別のエンティティから写されたものなら新しく作る)。

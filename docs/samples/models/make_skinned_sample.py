@@ -12,6 +12,8 @@
 #                                     sway - for root motion (docs/ANIMATION.md 7-1. Its position is
 #                                     not the same at the start and the end: root motion carries it on)
 #                        "Puff"  2 s: blend shape weights only (docs/ANIMATION.md 7-2-2): "Fat" goes 0 -> 1 -> 0
+#                      a spring bone setting (VRM 1.0 extension VRMC_springBone, docs/ANIMATION.md 7-2-3): the
+#                      chain Middle -> Top sways (gravity 0.5), and a sphere collider sits on Base,
 #                      and two blend shapes (morph targets, names in mesh.extras.targetNames):
 #                        "Fat"   the top segment swells sideways by 0.1 m (and its side normals don't change)
 #                        "Lean"  the whole column leans 0.2 m to +X at the top (more the higher the vertex)
@@ -193,6 +195,15 @@ doc = {
         {"name": "Cream", "pbrMetallicRoughness": {"baseColorFactor": [0.85, 0.8, 0.65, 1], "metallicFactor": 0, "roughnessFactor": 0.7}},
     ],
     "animations": [wave, idle, walk, puff],
+    "extensionsUsed": ["VRMC_springBone"],
+    "extensions": {"VRMC_springBone": {
+        "specVersion": "1.0",
+        "colliders": [{"node": 2, "shape": {"sphere": {"offset": [0.3, 0.5, 0], "radius": 0.1}}}],
+        "colliderGroups": [{"colliders": [0]}],
+        "springs": [{"name": "Top", "joints": [
+            {"node": 3, "hitRadius": 0.02, "stiffness": 1.0, "gravityPower": 0.5, "gravityDir": [0, -1, 0], "dragForce": 0.4},
+            {"node": 4, "hitRadius": 0.02, "stiffness": 1.0, "gravityPower": 0.5, "gravityDir": [0, -1, 0], "dragForce": 0.4}],
+            "colliderGroups": [0]}]}},
     "accessors": accessors,
     "bufferViews": views,
     "buffers": [{"byteLength": len(buf), "uri": "data:application/octet-stream;base64," + base64.b64encode(bytes(buf)).decode()}],

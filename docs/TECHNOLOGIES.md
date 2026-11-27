@@ -1314,10 +1314,19 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **混ぜ方** — 形の重みは骨の姿勢と同じ道で混ぜる (混ぜる状態・フェードの止め絵・レイヤー)。足すレイヤーは「初めの重みからの差」、新しく選べる基準「クリップの最初のコマ」ではその差を最初のコマから取る
 - **どこ** — `plugins/rm_engine/space3d/runtime/Morph.*`・`Mesh.cpp` (glTF)・`Fbx.cpp` (`Shapes`)・`MeshBake.*` (`MRPH` / `MANI`)・`Renderer3D.*` (`PrepareMorphs` / `Morphed`)・`RendererShaders.cpp` (`kMorphCsHlsl`)・`animation3d/runtime/Player.*` (`BindMorphs` / `MorphWeights` / `FirstFrame`)・`MorphPreview.*`・`editor/ClipStrip.cpp` (つまみと小さな絵)・`game_x_animation/runtime/AnimatorRun.cpp`・`AnimatorPoser.cpp`、`tests/TestGltfSkin.cpp`・`TestFbxSkin.cpp`・`TestMeshBake.cpp`・`TestAnimation3d.cpp`・`TestGameAnimation.cpp`
 
+### 揺れる骨: Verlet で骨の先を動かす・長さを保つ・球から押し出す・決まった刻み・VRM の揺れの設定 (2026-11-27)
+
+- **何か** — 髪やスカートの骨の先を、ワールドの空間で **Verlet 積分** (速さを持たず「今の位置 − 前の位置」を速さとみなす) で動かす: 次 = 今 + (今 − 前) × (1 − 止める強さ) + アニメーションの向き × 戻る強さ × 刻み + 重力の向き × 重力 × 刻み。そのあと親 (頭) からの長さに戻し、当たりの球の中にあれば外へ押し出す。最後に、親の骨をその向きへ回して姿勢に戻す (IK と同じ「モデルの空間の回転を骨の空間へ」)
+- **決まった刻み** — 1/60 秒ずつ進める (1 フレームに多くて 4 回)。フレームの速さ (30 fps / 60 fps) で揺れ方が変わらない。根が 1 フレームで大きく動いた (ワープ) ら、アニメーションの形から始め直す
+- **VRM の揺れの設定** — VRoid などの VRM は glTF の拡張に揺れの設定を持つ: VRM 1.0 は `VRMC_springBone` (springs の joints を順に・colliders の sphere / capsule)、VRM 0.x は `VRM.secondaryAnimation` (boneGroups: その骨と下全部・colliderGroups。値は Unity の向きなので X を返す・綴りは stiffiness)。式が同じなので値をそのまま写す。焼くと `.rmmesh` の `SPRG`
+- **なぜそれか** — Verlet は少ない計算で安定し、長さを保つ (位置を直すだけ) のと相性がよい。VRM と同じ式にしたので、VRoid のモデルの揺れを作り直さずに使える
+- **どこ** — `plugins/rm_engine/animation3d/runtime/Spring.*`・`game_x_animation/runtime/AnimatorSprings.*`・`Animator.h` (`SpringBones`)・`space3d/runtime/Skeleton.h` (`SpringChainSetting`)・`Mesh.cpp` (`ReadSprings`)・`MeshBake.*` (`SPRG`)、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestGltfSkin.cpp`・`TestMeshBake.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-27 | 揺れる骨 (Verlet・長さを保つ・球から押し出す・決まった刻み)・VRM の揺れの設定 (VRMC_springBone / secondaryAnimation) |
 | 2026-11-27 | ブレンドシェイプ (形の差を重みで足す・Compute Shader で頂点を作る: 生のバイトのバッファと UAV・FBX の BlendShape) |
 | 2026-11-27 | IK (2 本の骨を余弦定理で・回転を骨の空間へ戻す・足を坂に: 光線と高さのならし)・配列の要素の中のドロップダウン |
 | 2026-11-26 | ルートモーション (Y のひねりの分け方・ループの継ぎ目で区切って足す・止め絵の速さ・物理のキャラクターへの口)・タブの中のプレビュー |

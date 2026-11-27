@@ -571,3 +571,18 @@ RM_TEST(GltfSkin_MorphShaderCompiles) {
     CHECK(SUCCEEDED(hr));
     if (FAILED(hr) && errors) std::printf("%s\n", static_cast<const char*>(errors->GetBufferPointer()));
 }
+
+// 揺れる骨の設定 (VRM 1.0 の VRMC_springBone): 見本の鎖 Middle → Top と、Base の当たりの球。
+RM_TEST(GltfSkin_SampleSpringBones) {
+    std::string err;
+    const auto m = ReadSample(&err);
+    CHECK(m && m->skin);
+    if (!m || !m->skin) return;
+    const SkinData& skin = *m->skin;
+    CHECK(skin.springs.size() == 1 && skin.springColliders.size() == 1);
+    if (skin.springs.size() != 1 || skin.springColliders.size() != 1) return;
+    const SpringChainSetting& ch = skin.springs[0];
+    CHECK(ch.name == "Top" && !ch.below && ch.joints.size() == 2 && ch.joints[0].bone == "Middle" && ch.joints[1].bone == "Top");
+    CHECK(std::abs(ch.joints[0].gravity - 0.5f) < 1e-6f && std::abs(ch.joints[0].drag - 0.4f) < 1e-6f && NearV(ch.joints[0].gravityDir, {0, -1, 0}));
+    CHECK(skin.springColliders[0].bone == "Base" && std::abs(skin.springColliders[0].radius - 0.1f) < 1e-6f);
+}

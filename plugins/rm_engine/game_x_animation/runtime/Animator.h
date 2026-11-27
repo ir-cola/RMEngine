@@ -92,4 +92,29 @@ struct AnimatorIk {
     RM_PROPERTY(Edit, Label="腰を下げる上限", Tooltip="腰を下げるのはここまで (m)", Min=0, Step=0.01) float pelvisDrop = 0.3f;
 };
 
+// --- 揺れる骨 (ばねの骨。docs/ANIMATION.md 7-2-3): 髪・スカート・しっぽ。値の意味は VRM の揺れと同じ ---
+RM_STRUCT(Label="揺れる鎖")
+struct SpringChain {
+    RM_PROPERTY(Edit, Label="骨", Tooltip="この骨の下の骨を全部揺らします (この骨自身はアニメーションのまま。髪の根元・スカートの付け根)") std::string bone;
+    RM_PROPERTY(Edit, Label="戻る強さ", Tooltip="アニメーションの向きへ戻る強さ (VRM の stiffness)", Min=0, Max=4, Step=0.05) float stiffness = 1.f;
+    RM_PROPERTY(Edit, Label="止める強さ", Tooltip="揺れを止める強さ (0: いつまでも揺れる … 1: すぐ止まる。VRM の dragForce)", Min=0, Max=1, Step=0.05) float drag = 0.4f;
+    RM_PROPERTY(Edit, Label="重力", Tooltip="下へ引く強さ (VRM の gravityPower)", Min=0, Max=4, Step=0.05) float gravity = 0.f;
+    RM_PROPERTY(Edit, Label="当たりの太さ", Tooltip="当たりの球から押し出すときの、骨の太さ (m)", Min=0, Step=0.005) float radius = 0.02f;
+};
+
+RM_STRUCT(Label="揺れの当たり")
+struct SpringCollider {
+    RM_PROPERTY(Edit, Label="骨", Tooltip="当たりの球を付ける骨 (頭・体)") std::string bone;
+    RM_PROPERTY(Edit, Label="ずれ", Tooltip="骨から見た球の中心") Vec3 offset{0, 0, 0};
+    RM_PROPERTY(Edit, Label="半径", Tooltip="球の半径 (m)。揺れる骨はこの中へ入らない (髪が頭に埋まらない)", Min=0, Step=0.01) float radius = 0.1f;
+};
+
+RM_STRUCT(Label="揺れる骨")
+struct SpringBones {
+    RM_PROPERTY(Edit, Label="モデルの揺れの設定を使う", Tooltip="モデルのファイルが持つ揺れの設定 (VRoid などの VRM の揺れ: VRMC_springBone / secondaryAnimation) も使います。下の鎖と当たりはその上に足します")
+    bool useModel = true;
+    RM_PROPERTY(Edit, Label="鎖", Tooltip="揺らす骨の鎖 (同じエンティティのアニメーターの姿勢の上で、IK の後に揺れます)") std::vector<SpringChain> chains;
+    RM_PROPERTY(Edit, Label="当たり", Tooltip="揺れる骨が入らない球") std::vector<SpringCollider> colliders;
+};
+
 }  // namespace rm::game_x_animation

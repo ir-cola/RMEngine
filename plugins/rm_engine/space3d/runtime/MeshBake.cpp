@@ -157,6 +157,30 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
                 }
             }
         });
+        if (!skin.springs.empty() || !skin.springColliders.empty()) {
+            o.Chunk("SPRG", [&] {
+                o.Put<uint32_t>(static_cast<uint32_t>(skin.springs.size()));
+                for (const SpringChainSetting& ch : skin.springs) {
+                    o.Str(ch.name);
+                    o.Put<uint8_t>(ch.below ? 1 : 0);
+                    o.Put<uint32_t>(static_cast<uint32_t>(ch.joints.size()));
+                    for (const SpringJointSetting& j : ch.joints) {
+                        o.Str(j.bone);
+                        o.Put(j.stiffness);
+                        o.Put(j.drag);
+                        o.Put(j.gravity);
+                        o.Put(j.radius);
+                        o.V3(j.gravityDir);
+                    }
+                }
+                o.Put<uint32_t>(static_cast<uint32_t>(skin.springColliders.size()));
+                for (const SpringColliderSetting& c : skin.springColliders) {
+                    o.Str(c.bone);
+                    o.V3(c.offset);
+                    o.Put(c.radius);
+                }
+            });
+        }
         o.Chunk("BBOX", [&] {
             o.Put<uint32_t>(static_cast<uint32_t>(bones));
             for (size_t i = 0; i < bones; ++i) {
@@ -265,6 +289,8 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
     std::optional<Skeleton> skel;
     std::optional<std::vector<SkinVertex>> skinVertices;
     std::optional<std::vector<Mat4>> inverseBind;
+    std::vector<SpringChainSetting> springs;
+    std::vector<SpringColliderSetting> springColliders;
     std::vector<Vec3> boundsMin, boundsMax;
     std::string_view rest = in.Rest();
     while (!rest.empty()) {
@@ -391,6 +417,23 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
                 m.clips[k].events.resize(ok ? events : 0);
                 for (ClipEvent& ev : m.clips[k].events) ok = ok && c.Get(ev.time) && c.Str(ev.name) && c.Get(ev.number) && c.Str(ev.text);
             }
+        } else if (tag == "SPRG") {
+            ok = c.Count(n, 4 + 1 + 4);
+            springs.resize(ok ? n : 0);
+            for (SpringChainSetting& ch : springs) {
+                uint8_t below = 0;
+                uint32_t joints = 0;
+                ok = ok && c.Str(ch.name) && c.Get(below) && c.Count(joints, 4 + 16 + 12);
+                ch.below = below != 0;
+                ch.joints.resize(ok ? joints : 0);
+                for (SpringJointSetting& j : ch.joints) {
+                    ok = ok && c.Str(j.bone) && c.Get(j.stiffness) && c.Get(j.drag) && c.Get(j.gravity) && c.Get(j.radius) && c.V3(j.gravityDir);
+                }
+            }
+            uint32_t colliders = 0;
+            ok = ok && c.Count(colliders, 4 + 12 + 4);
+            springColliders.resize(ok ? colliders : 0);
+            for (SpringColliderSetting& sc : springColliders) ok = ok && c.Str(sc.bone) && c.V3(sc.offset) && c.Get(sc.radius);
         } else if (tag == "MRPH") {
             ok = c.Count(n, 4 + 4 + 4 + 1);
             m.morphs.resize(ok ? n : 0);
@@ -476,6 +519,8 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
             for (size_t i = 0; i < positions.size(); ++i) positions[i] = m.vertices[i].position;
             ComputeBoneBounds(skin, positions);
         }
+        skin.springs = std::move(springs);
+        skin.springColliders = std::move(springColliders);
         m.skin = std::move(skin);
     }
     if (samplingOfImage) {

@@ -9,6 +9,7 @@
 #include "rm_engine/game_x_animation/runtime/AnimatorLogic.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorIk.h"
+#include "rm_engine/game_x_animation/runtime/AnimatorSprings.h"
 #include "rm_engine/game_x_animation/runtime/GroundProbe.h"
 #include "rm_engine/game_x_animation/runtime/RootMotionSink.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
@@ -188,11 +189,19 @@ void RunAnimation(game_production::SystemContext& ctx) {
         }
         StepAnimatorRules(run, a, ctx.dt);
         fired.clear();
-        // IK (部品「IK」が同じエンティティにあれば): 体とレイヤーの後、行列にする前。
+        // IK (部品「IK」が同じエンティティにあれば) → 揺れる骨 (部品「揺れる骨」): 体とレイヤーの後、行列にする前。
         PoseHook post;
+        const AnimatorIk* ikOn = nullptr;
+        const SpringBones* springsOn = nullptr;
+        if (const Component* sc = e.FindComponent(reflect::TypeOf<SpringBones>().name); sc && sc->Known()) {
+            springsOn = static_cast<const SpringBones*>(sc->value.Get());
+        }
         if (const Component* ikc = e.FindComponent(reflect::TypeOf<AnimatorIk>().name); ikc && ikc->Known()) {
             const AnimatorIk& ik = *static_cast<const AnimatorIk*>(ikc->value.Get());
-            if (!ik.chains.empty()) {
+            if (!ik.chains.empty()) ikOn = &ik;
+        }
+        if (ikOn || springsOn) {
+            {
                 IkWorld world;
                 world.entityWorld = game_x_3d::WorldMatrixOf(ctx.scene, e.data.id);
                 world.dt = ctx.dt;
@@ -209,7 +218,11 @@ void RunAnimation(game_production::SystemContext& ctx) {
                     if (target.id == 0 || target.id > 0x7fffffffu || !ctx.scene.Find(static_cast<int>(target.id))) return std::nullopt;
                     return space3d::TransformPoint(game_x_3d::WorldMatrixOf(ctx.scene, static_cast<int>(target.id)), offset);
                 };
-                post = [&run, &ik, world](animation3d::Pose& pose) mutable { return ApplyAnimatorIk(run, ik, world, pose); };
+                post = [&run, ikOn, springsOn, world, dt = ctx.dt](animation3d::Pose& pose) mutable {
+                    bool changed = ikOn && ApplyAnimatorIk(run, *ikOn, world, pose);
+                    if (springsOn) changed = ApplyAnimatorSprings(run, *springsOn, world.entityWorld, dt, pose) || changed;
+                    return changed;
+                };
             }
         }
         StepAnimator(run, a, ctx.dt, fired, &space3d::NextPoseVersion, &post);

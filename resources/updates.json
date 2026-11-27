@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.40",
+      "date": "2026-11-27",
+      "items": [
+        {
+          "ja": "骨のアニメーションに「揺れる骨」: 髪やスカートが動きに遅れて揺れます (重力・戻る強さ・当たりの球)",
+          "en": "Spring bones for bone animation: hair and skirts sway behind the motion (gravity, stiffness, collider spheres)"
+        },
+        {
+          "ja": "VRoid などの VRM の揺れの設定 (VRMC_springBone・secondaryAnimation) を読んで、そのまま使えます。スクリプトの rm::Animator に ResetSprings",
+          "en": "VRM spring settings (VRMC_springBone, secondaryAnimation) from VRoid and others are read and used as is. Scripts: rm::Animator gains ResetSprings"
+        }
+      ]
+    },
+    {
       "version": "0.0.39",
       "date": "2026-11-27",
       "items": [

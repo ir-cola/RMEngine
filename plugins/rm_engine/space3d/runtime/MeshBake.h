@@ -19,6 +19,8 @@
 //   SKIN  count u32 (= 頂点の数)、続いて頂点ごとに 骨 u16 x 4、ウェイト u16 x 4 (unorm16)
 //   IBND  count u32 (= 骨の数)、続いて骨ごとに逆バインド行列 (float 16。m[列][行] の順)
 //   BBOX  count u32 (= 骨の数)、続いて骨ごとに min、max (float 6)
+//   SPRG  揺れる骨の設定 (SkinData::springs。あるときだけ): 鎖の数 u32、鎖ごとに name・below u8・数 u32・骨ごとに
+//         bone・stiffness・drag・gravity・radius (float)・gravityDir (float 3)。続いて当たりの数 u32・bone・offset (float 3)・radius
 // クリップ (MeshData::clips。形式 2 から。無ければ書かない):
 //   ANIM  count u32、続いてクリップごとに: name、duration、rate (float)、frames u32、tracks u32、続いて
 //         トラックごとに: bone (名前)、位置の数 u32 + float 3 ずつ、回転の数 u32 + float 4 ずつ、大きさの数 u32 + float 3 ずつ

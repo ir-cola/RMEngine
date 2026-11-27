@@ -90,6 +90,24 @@ struct SkinVertex {
 // ウェイトが全部 0 (や負) のときは骨 `fallback` にウェイト 1。
 SkinVertex PackInfluences(std::vector<std::pair<uint32_t, float>> influences, uint32_t fallback, bool* dropped = nullptr);
 
+// 揺れる骨の設定 (docs/ANIMATION.md 7-2-3)。モデルのファイル (VRM の VRMC_springBone / secondaryAnimation) から読む。
+// 部品「揺れる骨」の「モデルの揺れの設定を使う」で使われる。値は VRM と同じ意味 (Spring.h の式)。
+struct SpringJointSetting {
+    std::string bone;
+    float stiffness = 1.f, drag = 0.4f, gravity = 0.f, radius = 0.02f;
+    Vec3 gravityDir{0, -1, 0};
+};
+struct SpringChainSetting {
+    std::string name;
+    std::vector<SpringJointSetting> joints;  // below: 1 つ目の骨の下全部をその設定で。でなければ並びのとおり (2 つ目から動く)
+    bool below = false;
+};
+struct SpringColliderSetting {
+    std::string bone;
+    Vec3 offset{0, 0, 0};  // 骨の空間
+    float radius = 0.1f;
+};
+
 struct SkinData {
     Skeleton skeleton;
     std::vector<SkinVertex> vertices;  // MeshData::vertices と同じ数・同じ順
@@ -101,6 +119,9 @@ struct SkinData {
     // 名前で引くのに使う。読み込み・焼いたものは空のまま: GPU に上げた後で game_x_3d::TakeSkinned が入れる。
     std::vector<std::string> morphs;
     std::vector<float> morphDefaults;
+    // 揺れる骨の設定 (VRM から読んだもの。無ければ空)。焼くと .rmmesh の SPRG。
+    std::vector<SpringChainSetting> springs;
+    std::vector<SpringColliderSetting> springColliders;
 };
 // 頂点と inverseBind から boundsMin / boundsMax を作る。
 void ComputeBoneBounds(SkinData& skin, const std::vector<Vec3>& positions);
